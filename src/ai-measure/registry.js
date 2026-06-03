@@ -27,7 +27,7 @@ export const MEASURE_MENUS = [
     id: 'timer',
     no: 11,
     title: '초시계 · 메트로놈',
-    desc: '정밀 타이머 · 박자',
+    desc: '초시계 · 타이머 · 메트로놈',
     icon: '⏱️',
     status: 'ready',
     component: lazy(() => import('./menus/TimerTool.jsx')),

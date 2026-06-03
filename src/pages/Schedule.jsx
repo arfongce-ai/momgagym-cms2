@@ -33,6 +33,22 @@ const fmt      = d => new Date(d).toISOString().slice(0,10);
 const fmtKo    = d => new Date(d+'T12:00:00').toLocaleDateString('ko-KR',{month:'short',day:'numeric',weekday:'short'});
 const addD     = (d,n) => { const r=new Date(d+'T12:00:00'); r.setDate(r.getDate()+n); return fmt(r); };
 
+// 회원이름(잔여N) 표시용 — 해당 스케줄의 회원·트레이너 기준 잔여 세션 조회.
+// members 배열을 받아 실시간 잔여를 계산(자동 변경 반영).
+function remainOf(s, members) {
+  if (!s.memberId) return null;
+  const m = (members||[]).find(x => x.id === s.memberId);
+  if (!m || !m.trainerSessions) return null;
+  const ts = m.trainerSessions[s.trainerId];
+  return ts ? ts.remaining : null;
+}
+// 회원이름 + (잔여N) 문자열
+function nameWithRemain(s, members) {
+  const base = s.isExternal || !s.memberId ? (s.memo?.slice(0,8) || '외부') : s.memberName;
+  const r = remainOf(s, members);
+  return r != null ? `${base}(${r})` : base;
+}
+
 const STATUS_MAP = {
   scheduled:{ label:'예정', bg:'bg-slate-700 text-slate-300',        dot:'bg-slate-400'   },
   attended: { label:'출석', bg:'bg-emerald-500/20 text-emerald-400', dot:'bg-emerald-400' },
@@ -83,6 +99,19 @@ function deductSession(memberId, trainerId, status) {
   store.updateMember(memberId, patch);
 }
 
+// ── 세션 복원 (예약 취소/삭제 시 +1) ──────────────────────
+function restoreSession(memberId, trainerId) {
+  if (!memberId) return;
+  const member = store.getMembers().find(m=>m.id===memberId);
+  if (!member) return;
+  const ts = JSON.parse(JSON.stringify(member.trainerSessions||{}));
+  if (ts[trainerId]) {
+    const cap = ts[trainerId].total ?? Infinity;
+    ts[trainerId].remaining = Math.min(cap, ts[trainerId].remaining + 1);
+    store.updateMember(memberId, { trainerSessions: ts });
+  }
+}
+
 // ── 예약 상세/수정/삭제 모달 ─────────────────────────────
 function ScheduleDetailModal({ schedule:initS, onClose, onUpdate, onDelete }) {
   const [s, setS]           = useState(initS);
@@ -108,10 +137,18 @@ function ScheduleDetailModal({ schedule:initS, onClose, onUpdate, onDelete }) {
 
   const markStatus = status => {
     const fresh = store.getSchedules().find(sc=>sc.id===s.id);
-    if (fresh?.sessionDeducted) { alert('이미 처리된 스케줄입니다.'); return; }
-    store.updateSchedule(s.id, { status, sessionDeducted: true });
-    // ★ 외부 일정(memberId=null)은 절대 세션 차감 안 함
-    if (!isExt) deductSession(s.memberId, s.trainerId, status);
+    if (fresh?.statusFinalized) { alert('이미 처리된 스케줄입니다.'); return; }
+    // 예약 시점에 이미 1회 차감됨. 여기서는 상태만 확정.
+    //  - 출석(attended): 그대로 유지(차감 유지) + 마지막 출석일 기록
+    //  - 취소/노쇼(canceled/noshow): 예약 차감을 복원(+1) — 정책상 되돌림
+    store.updateSchedule(s.id, { status, statusFinalized: true });
+    if (!isExt) {
+      if (status === 'attended') {
+        store.updateMember(s.memberId, { lastAttendedDate: fmt(new Date()) });
+      } else if (status === 'canceled' || status === 'noshow') {
+        restoreSession(s.memberId, s.trainerId);
+      }
+    }
     onUpdate();
   };
 
@@ -166,8 +203,8 @@ function ScheduleDetailModal({ schedule:initS, onClose, onUpdate, onDelete }) {
                 </div>
               ))}
 
-              {/* 출석 처리 — 외부 일정도 상태 변경 가능(차감만 안 함) */}
-              {!s.sessionDeducted ? (
+              {/* 처리: 예약 시 차감 완료. 출석=유지, 취소/노쇼=잔여 복원 */}
+              {!s.statusFinalized ? (
                 <div>
                   <p className="text-xs text-slate-500 uppercase tracking-widest font-semibold mb-2">
                     처리 {isExt && <span className="text-purple-400">(외부·세션 차감 없음)</span>}
@@ -184,7 +221,8 @@ function ScheduleDetailModal({ schedule:initS, onClose, onUpdate, onDelete }) {
                 </div>
               ) : (
                 <div className={`text-center py-3 rounded-xl text-xs font-bold ${st.bg}`}>
-                  ✓ {st.label} 처리 완료{!isExt && ' · 세션 차감됨'}
+                  ✓ {st.label} 처리 완료
+                  {!isExt && (s.status==='canceled'||s.status==='noshow' ? ' · 세션 복원됨' : ' · 세션 차감됨')}
                 </div>
               )}
 
@@ -193,7 +231,11 @@ function ScheduleDetailModal({ schedule:initS, onClose, onUpdate, onDelete }) {
                   className="flex-1 py-2.5 rounded-xl border border-slate-700 text-slate-300 hover:text-white text-sm font-semibold transition-colors">
                   ✏️ 수정
                 </button>
-                <button onClick={()=>{if(window.confirm('예약을 삭제하시겠습니까?')){store.deleteSchedule(s.id);onDelete();}}}
+                <button onClick={()=>{if(window.confirm('예약을 삭제하시겠습니까?')){
+                  // 예약 시 차감했고 아직 확정(출석/취소) 전이면 잔여 복원
+                  if(!isExt && s.sessionDeducted && !s.statusFinalized) restoreSession(s.memberId, s.trainerId);
+                  store.deleteSchedule(s.id);onDelete();
+                }}}
                   className="flex-1 py-2.5 rounded-xl border border-red-500/30 text-red-400 hover:bg-red-500/10 text-sm font-semibold transition-colors">
                   🗑 삭제
                 </button>
@@ -559,10 +601,10 @@ function AddModal({ members, trainers, onAdd, onClose }) {
 }
 
 // ── 스케줄 블록 ───────────────────────────────────────────
-function Block({ s, onClick, compact=false }) {
+function Block({ s, onClick, compact=false, members }) {
   const st    = STATUS_MAP[s.status] || STATUS_MAP.scheduled;
   const isExt = s.isExternal || !s.memberId;
-  const name  = isExt ? (s.memo?.slice(0,8)||'외부') : s.memberName;
+  const name  = nameWithRemain(s, members);
   const bColor = s.trainerColor || '#94a3b8';
 
   if (compact) return (
@@ -601,7 +643,7 @@ function Block({ s, onClick, compact=false }) {
 }
 
 // ── 월 뷰 ─────────────────────────────────────────────────
-function MonthView({ pivotDate, schedules, onBlockClick, todayStr }) {
+function MonthView({ pivotDate, schedules, onBlockClick, todayStr, members, onDayClick }) {
   const d=new Date(pivotDate+'T12:00:00');
   const y=d.getFullYear(), mo=d.getMonth();
   const first=new Date(y,mo,1).getDay(), days=new Date(y,mo+1,0).getDate();
@@ -619,15 +661,16 @@ function MonthView({ pivotDate, schedules, onBlockClick, todayStr }) {
           if(!date) return <div key={i} className="min-h-16 border-b border-r border-slate-800 opacity-20"/>;
           const ds=schedules.filter(s=>s.date===date), isToday=date===todayStr;
           return (
-            <div key={date} className={`min-h-16 border-b border-r border-slate-800 p-1 ${isToday?'bg-amber-500/5':''}`}>
+            <div key={date} onClick={()=>onDayClick&&onDayClick(date)}
+              className={`min-h-16 border-b border-r border-slate-800 p-1 cursor-pointer hover:bg-slate-800/40 transition-colors ${isToday?'bg-amber-500/5':''}`}>
               <p className={`text-[10px] font-mono font-bold mb-0.5 ${isToday?'text-amber-400':'text-slate-400'}`}>
                 {parseInt(date.split('-')[2])}
               </p>
               {ds.slice(0,2).map(s=>{
                 const isExt=s.isExternal||!s.memberId;
-                const name=isExt?(s.memo?.slice(0,5)||'외부'):s.memberName;
+                const name=nameWithRemain(s, members);
                 return (
-                  <div key={s.id} onClick={()=>onBlockClick(s)}
+                  <div key={s.id} onClick={(e)=>{e.stopPropagation(); onBlockClick(s);}}
                     className="text-[9px] rounded px-1 py-0.5 mb-0.5 truncate cursor-pointer hover:opacity-80 transition-opacity"
                     style={{background:(s.trainerColor||'#94a3b8')+'33', color:(isExt?'#c084fc':s.trainerColor)||'#94a3b8'}}>
                     {isExt?'[외]':''}{name}
@@ -718,7 +761,7 @@ export default function Schedule() {
                   {new Date(date+'T12:00:00').toLocaleDateString('ko-KR',{weekday:'short'})}<br/>
                   <span className={`font-mono text-xs ${isToday?'text-amber-400':'text-slate-300'}`}>{new Date(date+'T12:00:00').getDate()}</span>
                 </p>
-                {ds.map(s=><Block key={s.id} s={s} onClick={setDetail} compact/>)}
+                {ds.map(s=><Block key={s.id} s={s} onClick={setDetail} compact members={members}/>)}
               </div>
             );
           })}
@@ -733,20 +776,30 @@ export default function Schedule() {
           </div>
           {forDate(pivot).length===0
             ? <p className="text-center text-slate-600 py-12 text-sm">예정된 일정이 없습니다</p>
-            : <div className="divide-y divide-slate-800">{forDate(pivot).map(s=><Block key={s.id} s={s} onClick={setDetail}/>)}</div>
+            : <div className="divide-y divide-slate-800">{forDate(pivot).map(s=><Block key={s.id} s={s} onClick={setDetail} members={members}/>)}</div>
           }
         </div>
       )}
 
       {view==='month'&&(
-        <MonthView pivotDate={pivot} schedules={schedules} onBlockClick={setDetail} todayStr={todayStr}/>
+        <MonthView pivotDate={pivot} schedules={schedules} onBlockClick={setDetail} todayStr={todayStr}
+          members={members}
+          onDayClick={(date)=>{ setPivot(date); setView('day'); }}/>
       )}
 
       {showAdd && (
         <AddModal
           members={members}
           trainers={trainers}
-          onAdd={d=>{store.addSchedule(d); setShowAdd(false); load();}}
+          onAdd={d=>{
+            const ns = store.addSchedule(d);
+            // 요구사항: 예약 시점에 잔여 세션 자동 차감 (일반 수업만, 외부 일정 제외)
+            if (!ns.isExternal && ns.memberId) {
+              deductSession(ns.memberId, ns.trainerId, 'scheduled');
+              store.updateSchedule(ns.id, { sessionDeducted: true });
+            }
+            setShowAdd(false); load();
+          }}
           onClose={()=>setShowAdd(false)}
         />
       )}
