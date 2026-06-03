@@ -1,0 +1,26 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html { font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; }
+  body { background: #0f172a; color: #f1f5f9; min-height: 100vh; }
+  * { -webkit-tap-highlight-color: transparent; box-sizing: border-box; }
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: #1e293b; }
+  ::-webkit-scrollbar-thumb { background: #475569; border-radius: 99px; }
+}
+
+/* Page transition */
+.page-fade { animation: fadeIn 0.18s ease forwards; }
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(5px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Dark/light theme via data attribute */
+[data-theme="light"] body,
+.light-mode { background: #f8fafc; color: #0f172a; }
+
+/* Canvas signature */
+canvas { touch-action: none; }

@@ -1,0 +1,764 @@
+// Schedule.jsx — v5
+// ✅ 요구사항1: 트레이너별 세션 배지
+// ✅ 요구사항2: 회원 기반 트레이너 필터링
+// ✅ 요구사항3: 회원 기반 수업종류 필터링
+// ✅ 요구사항4: 10분 단위 스냅 + 종료시간 자동 +1hr
+// ✅ 요구사항5: 외부 일정 탭 (출강/교육/현장, 자유 시간, memberId=null)
+import { useState, useEffect } from 'react';
+import { store } from '../demoData';
+
+// ── 시간 유틸 ─────────────────────────────────────────────
+// 10분 단위 반올림 스냅
+function snapTo10(t) {
+  if (!t) return '';
+  const [h, m] = t.split(':').map(Number);
+  const rounded = Math.round(m / 10) * 10;
+  if (rounded === 60) {
+    const nh = Math.min(h + 1, 23);
+    return `${String(nh).padStart(2,'0')}:00`;
+  }
+  return `${String(h).padStart(2,'0')}:${String(rounded).padStart(2,'0')}`;
+}
+// 시작 +1시간
+function addHour(t) {
+  if (!t) return '';
+  const [h, m] = t.split(':').map(Number);
+  const nh = h + 1;
+  return nh <= 23 ? `${String(nh).padStart(2,'0')}:${String(m).padStart(2,'0')}` : t;
+}
+
+const WEEKDAYS = ['일','월','화','수','목','금','토'];
+const weekday  = d => d ? WEEKDAYS[new Date(d+'T12:00:00').getDay()] : '';
+const fmt      = d => new Date(d).toISOString().slice(0,10);
+const fmtKo    = d => new Date(d+'T12:00:00').toLocaleDateString('ko-KR',{month:'short',day:'numeric',weekday:'short'});
+const addD     = (d,n) => { const r=new Date(d+'T12:00:00'); r.setDate(r.getDate()+n); return fmt(r); };
+
+const STATUS_MAP = {
+  scheduled:{ label:'예정', bg:'bg-slate-700 text-slate-300',        dot:'bg-slate-400'   },
+  attended: { label:'출석', bg:'bg-emerald-500/20 text-emerald-400', dot:'bg-emerald-400' },
+  canceled: { label:'취소', bg:'bg-red-500/20 text-red-400',         dot:'bg-red-400'     },
+  noshow:   { label:'노쇼', bg:'bg-orange-500/20 text-orange-400',   dot:'bg-orange-400'  },
+};
+
+const SEL = "w-full bg-slate-800 border border-slate-700 text-slate-100 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-amber-500 disabled:opacity-40 disabled:cursor-not-allowed";
+const INP = "w-full bg-slate-800 border border-slate-700 text-slate-100 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-amber-500";
+const LBL = "block text-xs font-semibold text-slate-400 uppercase tracking-widest mb-1.5";
+
+// ── 날짜+요일 인풋 ────────────────────────────────────────
+function DateWd({ label, value, onChange }) {
+  const wd = weekday(value);
+  return (
+    <div>
+      <label className={LBL}>{label}</label>
+      <div className="flex items-center gap-2">
+        <input type="date" value={value} onChange={e=>onChange(e.target.value)}
+          className="flex-1 bg-slate-800 border border-slate-700 text-slate-100 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-amber-500"/>
+        {wd && (
+          <span className="text-amber-400 font-black text-sm px-2.5 py-2 bg-amber-500/10 border border-amber-500/20 rounded-xl whitespace-nowrap">
+            {wd}요일
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── 세션 차감 (외부 일정 방어 포함) ──────────────────────
+function deductSession(memberId, trainerId, status) {
+  if (!memberId) {
+    console.log('[세션차감] 외부 일정 — 차감 건너뜀');
+    return;
+  }
+  const member = store.getMembers().find(m=>m.id===memberId);
+  if (!member) { console.warn('[세션차감] 회원 없음:', memberId); return; }
+  const ts = JSON.parse(JSON.stringify(member.trainerSessions||{}));
+  if (ts[trainerId]) {
+    ts[trainerId].remaining = Math.max(0, ts[trainerId].remaining - 1);
+    console.log('[세션차감] 완료:', trainerId, '잔여:', ts[trainerId].remaining);
+  } else {
+    console.warn('[세션차감] 트레이너 세션 없음:', trainerId, Object.keys(ts));
+  }
+  const patch = { trainerSessions: ts };
+  if (status==='attended') patch.lastAttendedDate = fmt(new Date());
+  store.updateMember(memberId, patch);
+}
+
+// ── 예약 상세/수정/삭제 모달 ─────────────────────────────
+function ScheduleDetailModal({ schedule:initS, onClose, onUpdate, onDelete }) {
+  const [s, setS]           = useState(initS);
+  const [editMode, setEdit] = useState(false);
+  const [trainers, setTr]   = useState([]);
+  const [members,  setMb]   = useState([]);
+  const [form, setForm]     = useState({
+    date:initS.date, startTime:initS.startTime, endTime:initS.endTime||'',
+    classType:initS.classType, trainerId:initS.trainerId||'',
+    memberId:initS.memberId||'', memo:initS.memo||'',
+  });
+
+  useEffect(() => {
+    setTr(store.getTrainers()); setMb(store.getMembers());
+    const fresh = store.getSchedules().find(sc=>sc.id===initS.id);
+    if (fresh) setS(fresh);
+  }, [initS.id]);
+
+  const st     = STATUS_MAP[s.status] || STATUS_MAP.scheduled;
+  const wd     = weekday(s.date);
+  const isExt  = s.isExternal || !s.memberId;
+  const dispName = isExt ? (s.memo||'외부 일정') : s.memberName;
+
+  const markStatus = status => {
+    const fresh = store.getSchedules().find(sc=>sc.id===s.id);
+    if (fresh?.sessionDeducted) { alert('이미 처리된 스케줄입니다.'); return; }
+    store.updateSchedule(s.id, { status, sessionDeducted: true });
+    // ★ 외부 일정(memberId=null)은 절대 세션 차감 안 함
+    if (!isExt) deductSession(s.memberId, s.trainerId, status);
+    onUpdate();
+  };
+
+  const saveEdit = () => {
+    const t = trainers.find(tr=>tr.id===form.trainerId);
+    const m = members.find(me=>me.id===form.memberId);
+    store.updateSchedule(s.id, {
+      date:form.date, startTime:form.startTime, endTime:form.endTime,
+      classType:form.classType, trainerId:form.trainerId,
+      trainerName:t?.name||s.trainerName, trainerColor:t?.color||s.trainerColor,
+      ...(isExt ? { memo:form.memo } : { memberId:form.memberId, memberName:m?.name||s.memberName }),
+    });
+    setEdit(false); onUpdate();
+  };
+
+  const trainerCT = trainers.find(t=>t.id===form.trainerId)?.classTypes||[];
+  const pf = f => e => setForm(p=>({...p,[f]:e.target.value}));
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/70 backdrop-blur-sm">
+      <div className="w-full md:max-w-md bg-slate-900 md:rounded-2xl rounded-t-2xl border-t md:border border-slate-700 shadow-2xl max-h-[90dvh] flex flex-col overflow-hidden">
+
+        {/* 헤더 */}
+        <div className="flex items-center gap-3 px-5 py-4 border-b border-slate-800 flex-shrink-0">
+          <div className="w-3 h-10 rounded-full flex-shrink-0" style={{background:s.trainerColor||'#94a3b8'}}/>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2">
+              <h3 className="font-bold truncate">{dispName}</h3>
+              {isExt && (
+                <span className="text-[10px] bg-purple-500/20 text-purple-400 border border-purple-500/30 px-1.5 py-0.5 rounded font-bold flex-shrink-0">외부</span>
+              )}
+            </div>
+            <p className="text-slate-500 text-xs">{s.trainerName||'트레이너'} · {s.date} ({wd}요일) · {s.startTime}</p>
+          </div>
+          <span className={`text-xs px-2 py-1 rounded-lg font-bold flex-shrink-0 ${st.bg}`}>{st.label}</span>
+          <button onClick={onClose} className="text-slate-500 hover:text-white text-2xl leading-none ml-1">×</button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-5 space-y-4">
+          {!editMode ? (
+            <>
+              {[
+                {l: isExt?'메모':'회원',  v: dispName},
+                {l:'트레이너',           v: s.trainerName||'-'},
+                {l:'날짜',               v: `${s.date} (${wd}요일)`},
+                {l:'시간',               v: `${s.startTime} — ${s.endTime}`},
+                {l:'수업',               v: s.classType},
+              ].map(row=>(
+                <div key={row.l} className="flex items-center justify-between py-2 border-b border-slate-800">
+                  <span className="text-xs text-slate-500 uppercase tracking-wide font-semibold w-20 flex-shrink-0">{row.l}</span>
+                  <span className="text-sm font-medium text-right">{row.v}</span>
+                </div>
+              ))}
+
+              {/* 출석 처리 — 외부 일정도 상태 변경 가능(차감만 안 함) */}
+              {!s.sessionDeducted ? (
+                <div>
+                  <p className="text-xs text-slate-500 uppercase tracking-widest font-semibold mb-2">
+                    처리 {isExt && <span className="text-purple-400">(외부·세션 차감 없음)</span>}
+                  </p>
+                  <div className="grid grid-cols-3 gap-2">
+                    {['attended','canceled','noshow'].map(status=>(
+                      <button key={status} onClick={()=>markStatus(status)}
+                        className={`py-3 rounded-xl text-xs font-bold border transition-all active:scale-95 ${STATUS_MAP[status].bg} border-current/20 hover:opacity-80`}>
+                        <div className={`w-2 h-2 rounded-full mx-auto mb-1 ${STATUS_MAP[status].dot}`}/>
+                        {STATUS_MAP[status].label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className={`text-center py-3 rounded-xl text-xs font-bold ${st.bg}`}>
+                  ✓ {st.label} 처리 완료{!isExt && ' · 세션 차감됨'}
+                </div>
+              )}
+
+              <div className="flex gap-2 pt-1">
+                <button onClick={()=>setEdit(true)}
+                  className="flex-1 py-2.5 rounded-xl border border-slate-700 text-slate-300 hover:text-white text-sm font-semibold transition-colors">
+                  ✏️ 수정
+                </button>
+                <button onClick={()=>{if(window.confirm('예약을 삭제하시겠습니까?')){store.deleteSchedule(s.id);onDelete();}}}
+                  className="flex-1 py-2.5 rounded-xl border border-red-500/30 text-red-400 hover:bg-red-500/10 text-sm font-semibold transition-colors">
+                  🗑 삭제
+                </button>
+              </div>
+            </>
+          ) : (
+            <div className="space-y-3">
+              <p className="text-xs text-amber-400 font-bold uppercase tracking-widest">✏️ 수정</p>
+              {!isExt && (
+                <div>
+                  <label className={LBL}>회원</label>
+                  <select value={form.memberId} onChange={pf('memberId')} className={SEL}>
+                    {members.map(m=><option key={m.id} value={m.id}>{m.name}</option>)}
+                  </select>
+                </div>
+              )}
+              {isExt && (
+                <div>
+                  <label className={LBL}>메모</label>
+                  <input value={form.memo} onChange={pf('memo')} className={INP}/>
+                </div>
+              )}
+              <div>
+                <label className={LBL}>트레이너</label>
+                <select value={form.trainerId} onChange={pf('trainerId')} className={SEL}>
+                  <option value="">선택 안 함</option>
+                  {trainers.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}
+                </select>
+              </div>
+              <DateWd label="날짜" value={form.date} onChange={v=>setForm(p=>({...p,date:v}))}/>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className={LBL}>시작</label>
+                  <input type="time" step={isExt?undefined:"600"} value={form.startTime}
+                    onChange={e=>{
+                      const t = isExt ? e.target.value : snapTo10(e.target.value);
+                      setForm(p=>({...p, startTime:t, ...(!isExt && {endTime:addHour(t)})}));
+                    }} className={INP}/>
+                </div>
+                <div>
+                  <label className={LBL}>종료</label>
+                  <input type="time" value={form.endTime} onChange={pf('endTime')} className={INP}/>
+                </div>
+              </div>
+              <div>
+                <label className={LBL}>수업 종류</label>
+                <select value={form.classType} onChange={pf('classType')} className={SEL}>
+                  <option value="">선택</option>
+                  {(isExt ? ['출강','교육','현장'] : (trainerCT.length?trainerCT:['트레이닝','선수','재활','외부','컨디셔닝'])).map(ct=>(
+                    <option key={ct} value={ct}>{ct}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex gap-2">
+                <button onClick={()=>setEdit(false)}
+                  className="py-2.5 px-4 rounded-xl border border-slate-700 text-slate-300 hover:text-white text-sm font-semibold transition-colors">취소</button>
+                <button onClick={saveEdit}
+                  className="flex-1 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold py-2.5 rounded-xl text-sm transition-colors">저장</button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── 예약 추가 모달 — 5가지 요구사항 통합 ─────────────────
+function AddModal({ members, trainers, onAdd, onClose }) {
+  const today = fmt(new Date());
+  // 탭: 'regular' | 'external'
+  const [tab, setTab] = useState('regular');
+
+  const [form, setForm] = useState({
+    memberId:'', trainerId:'', date:today,
+    startTime:'', endTime:'',
+    classType:'', memo:'', externalType:'출강',
+  });
+
+  const pf = f => val => setForm(p=>({...p,[f]:val}));
+  const pe = f => e  => setForm(p=>({...p,[f]:e.target.value}));
+
+  // 탭 전환 시 폼 리셋
+  const switchTab = t => {
+    setTab(t);
+    setForm({ memberId:'', trainerId:'', date:today, startTime:'', endTime:'', classType:'', memo:'', externalType:'출강' });
+  };
+
+  // ── 요구사항2,3: 회원 기반 필터링 ─────────────────────
+  const selectedMember   = members.find(m=>m.id===form.memberId);
+  // 해당 회원의 trainerSessions 키 목록에 있는 트레이너만
+  const memberTrainerIds = Object.keys(selectedMember?.trainerSessions||{});
+  const filteredTrainers = trainers.filter(t=>memberTrainerIds.includes(t.id));
+  // 해당 회원의 classTypes
+  const memberClassTypes = selectedMember?.classTypes || [];
+
+  // 회원 변경 시 트레이너/수업종류 리셋
+  const handleMemberChange = id => {
+    setForm(p=>({...p, memberId:id, trainerId:'', classType:''}));
+  };
+
+  // ── 요구사항4: 10분 스냅 + 자동 종료 ──────────────────
+  const handleStartTimeRegular = e => {
+    const snapped = snapTo10(e.target.value);
+    setForm(p=>({...p, startTime:snapped, endTime:addHour(snapped)}));
+  };
+  // 요구사항5: 외부 일정 — 스냅 없이 자유 입력
+  const handleStartTimeExternal = e => {
+    setForm(p=>({...p, startTime:e.target.value}));
+  };
+
+  // 완성 여부
+  const canSubmitRegular  = form.memberId && form.trainerId && form.date && form.startTime && form.classType;
+  const canSubmitExternal = form.date && form.startTime && form.endTime && form.externalType;
+
+  const handleAdd = () => {
+    if (tab === 'regular') {
+      if (!canSubmitRegular) return;
+      const m = members.find(me=>me.id===form.memberId);
+      const t = trainers.find(tr=>tr.id===form.trainerId);
+      onAdd({
+        memberId:form.memberId, memberName:m?.name||'',
+        trainerId:form.trainerId, trainerName:t?.name||'',
+        trainerColor:t?.color||'#94a3b8',
+        date:form.date, startTime:form.startTime, endTime:form.endTime||addHour(form.startTime),
+        classType:form.classType, memo:'',
+        status:'scheduled', sessionDeducted:false, isExternal:false,
+      });
+    } else {
+      if (!canSubmitExternal) return;
+      const t = trainers.find(tr=>tr.id===form.trainerId);
+      onAdd({
+        // ★ 요구사항5: memberId = null, sessionDeducted = true (영구 차감 방지)
+        memberId:null, memberName:null,
+        trainerId:form.trainerId||null, trainerName:t?.name||'외부',
+        trainerColor:t?.color||'#a855f7',
+        date:form.date, startTime:form.startTime, endTime:form.endTime,
+        classType:form.externalType, memo:form.memo,
+        status:'scheduled', sessionDeducted:true, isExternal:true,
+      });
+    }
+  };
+
+  const selectedTrainer  = trainers.find(t=>t.id===form.trainerId);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/70 backdrop-blur-sm">
+      <div className="w-full md:max-w-md bg-slate-900 md:rounded-2xl rounded-t-2xl border-t md:border border-slate-700 shadow-2xl max-h-[92dvh] flex flex-col overflow-hidden">
+
+        {/* 헤더 + 탭 */}
+        <div className="flex-shrink-0">
+          <div className="flex items-center justify-between px-5 pt-4 pb-3">
+            <h3 className="font-bold text-base">수업 예약</h3>
+            <button onClick={onClose} className="text-slate-500 hover:text-white text-2xl">×</button>
+          </div>
+          {/* 탭 전환 */}
+          <div className="flex mx-5 mb-3 bg-slate-800 rounded-xl p-1">
+            {[['regular','📋 일반 수업'],['external','📤 외부 일정']].map(([t,l])=>(
+              <button key={t} onClick={()=>switchTab(t)}
+                className={`flex-1 py-2 rounded-lg text-xs font-bold transition-colors ${tab===t?'bg-amber-500 text-slate-950':'text-slate-400 hover:text-white'}`}>
+                {l}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-5 pb-5 space-y-4">
+
+          {/* ══ 일반 수업 탭 ══════════════════════════════ */}
+          {tab==='regular' && (
+            <>
+              {/* ① 회원 선택 */}
+              <div>
+                <label className={LBL}>① 회원 선택 <span className="text-red-400">*</span></label>
+                <select value={form.memberId} onChange={e=>handleMemberChange(e.target.value)} className={SEL}>
+                  <option value="">회원을 먼저 선택하세요</option>
+                  {members.map(m=><option key={m.id} value={m.id}>{m.name} ({m.phone?.slice(-4)})</option>)}
+                </select>
+              </div>
+
+              {/* ② 트레이너 — 회원의 담당 트레이너만 표시 */}
+              <div>
+                <label className={LBL}>
+                  ② 담당 트레이너
+                  {form.memberId && filteredTrainers.length === 0 && (
+                    <span className="ml-1 text-red-400 normal-case font-normal">— 등록된 담당 트레이너가 없습니다</span>
+                  )}
+                  {!form.memberId && <span className="ml-1 text-slate-600 normal-case font-normal">— 회원 선택 후 활성화</span>}
+                </label>
+                <select value={form.trainerId}
+                  onChange={e=>setForm(p=>({...p,trainerId:e.target.value,classType:''}))}
+                  disabled={!form.memberId}
+                  className={SEL}>
+                  <option value="">트레이너 선택</option>
+                  {filteredTrainers.map(t=>(
+                    <option key={t.id} value={t.id}>
+                      {t.name} (잔여 {selectedMember?.trainerSessions?.[t.id]?.remaining||0}회)
+                    </option>
+                  ))}
+                </select>
+                {/* 선택된 트레이너 색상 미리보기 */}
+                {selectedTrainer && (
+                  <div className="flex items-center gap-1.5 mt-1.5">
+                    <div className="w-3 h-3 rounded-full" style={{background:selectedTrainer.color}}/>
+                    <span className="text-xs text-slate-500">{selectedTrainer.name} 트레이너</span>
+                  </div>
+                )}
+              </div>
+
+              {/* ③ 날짜 + 요일 */}
+              <DateWd label="③ 날짜" value={form.date} onChange={pf('date')}/>
+
+              {/* ④ 시작 시간 — 10분 단위 스냅 */}
+              <div>
+                <label className={LBL}>
+                  ④ 시작 시간
+                  <span className="ml-1 text-slate-500 normal-case font-normal">(10분 단위 자동 보정)</span>
+                </label>
+                <input type="time" step="600" value={form.startTime}
+                  onChange={handleStartTimeRegular}
+                  className={INP}/>
+              </div>
+
+              {/* 종료 시간 — 시작+1시간 자동 + 수정 가능 */}
+              <div>
+                <label className={LBL}>
+                  종료 시간
+                  <span className="ml-1 text-slate-500 normal-case font-normal">(시작 +1시간 자동 설정)</span>
+                </label>
+                <input type="time" step="600" value={form.endTime}
+                  onChange={e=>setForm(p=>({...p,endTime:e.target.value}))}
+                  className={INP}/>
+              </div>
+
+              {/* ⑤ 수업 종류 — 회원의 classTypes만 표시 */}
+              <div>
+                <label className={LBL}>
+                  ⑤ 수업 종류
+                  {!form.memberId && <span className="ml-1 text-slate-600 normal-case font-normal">— 회원 선택 후 활성화</span>}
+                </label>
+                <select value={form.classType} onChange={pe('classType')}
+                  disabled={!form.memberId}
+                  className={SEL}>
+                  <option value="">{form.memberId ? '수업 선택' : '회원을 먼저 선택하세요'}</option>
+                  {memberClassTypes.map(ct=><option key={ct} value={ct}>{ct}</option>)}
+                </select>
+                {form.memberId && memberClassTypes.length === 0 && (
+                  <p className="text-xs text-orange-400 mt-1">이 회원에게 등록된 수업 종류가 없습니다</p>
+                )}
+              </div>
+
+              {/* 예약 미리보기 */}
+              {canSubmitRegular && (
+                <div className="bg-slate-800 border border-amber-500/20 rounded-xl p-3 space-y-1">
+                  <p className="text-xs text-amber-400 font-semibold">예약 확인</p>
+                  <div className="flex items-center gap-2 text-sm">
+                    <div className="w-2 h-2 rounded-full" style={{background:selectedTrainer?.color}}/>
+                    <span className="font-semibold">{members.find(m=>m.id===form.memberId)?.name}</span>
+                    <span className="text-slate-500">·</span>
+                    <span className="text-slate-300">{selectedTrainer?.name}</span>
+                  </div>
+                  <p className="text-slate-400 text-xs">
+                    {form.date} ({weekday(form.date)}요일) · {form.startTime} — {form.endTime} · {form.classType}
+                  </p>
+                </div>
+              )}
+            </>
+          )}
+
+          {/* ══ 외부 일정 탭 ══════════════════════════════ */}
+          {tab==='external' && (
+            <>
+              {/* 외부 종류: 출강/교육/현장 */}
+              <div>
+                <label className={LBL}>외부 일정 종류 <span className="text-red-400">*</span></label>
+                <div className="flex gap-2">
+                  {['출강','교육','현장'].map(type=>(
+                    <div key={type} onClick={()=>setForm(p=>({...p,externalType:type}))}
+                      className={`flex-1 py-2.5 rounded-xl text-sm font-bold border cursor-pointer text-center transition-colors select-none
+                        ${form.externalType===type
+                          ? 'bg-purple-500/20 border-purple-500/40 text-purple-300'
+                          : 'border-slate-700 text-slate-400 hover:border-slate-500 hover:text-slate-300'}`}>
+                      {type}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* 메모 — 회원 대신 */}
+              <div>
+                <label className={LBL}>일정 내용 메모</label>
+                <textarea rows={3} value={form.memo} onChange={pe('memo')}
+                  placeholder="외부 일정 내용을 입력하세요&#10;예: ○○짐 출강, 트레이너 교육 세미나 등"
+                  className={INP+" resize-none"}/>
+              </div>
+
+              {/* 담당 트레이너 (선택사항) */}
+              <div>
+                <label className={LBL}>트레이너 (선택사항)</label>
+                <select value={form.trainerId} onChange={pe('trainerId')} className={SEL}>
+                  <option value="">선택 안 함</option>
+                  {trainers.map(t=>(
+                    <option key={t.id} value={t.id}>{t.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* 날짜 + 요일 */}
+              <DateWd label="날짜" value={form.date} onChange={pf('date')}/>
+
+              {/* 시작/종료 시간 — 자유 입력 (스냅 없음, 독립 설정) */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className={LBL}>
+                    시작 시간
+                    <span className="block text-[10px] text-purple-400 normal-case font-normal mt-0.5">자유 입력</span>
+                  </label>
+                  {/* ★ 요구사항5-3: step 없음, 분 단위 자유 */}
+                  <input type="time" value={form.startTime}
+                    onChange={handleStartTimeExternal}
+                    className={INP}/>
+                </div>
+                <div>
+                  <label className={LBL}>
+                    종료 시간
+                    <span className="block text-[10px] text-purple-400 normal-case font-normal mt-0.5">독립 입력</span>
+                  </label>
+                  <input type="time" value={form.endTime}
+                    onChange={e=>setForm(p=>({...p,endTime:e.target.value}))}
+                    className={INP}/>
+                </div>
+              </div>
+
+              {/* 안내 */}
+              <div className="bg-purple-500/5 border border-purple-500/20 rounded-xl px-3 py-2.5">
+                <p className="text-xs text-purple-400 font-semibold mb-1">외부 일정 안내</p>
+                <p className="text-xs text-slate-500 leading-relaxed">
+                  외부 일정은 특정 회원에 종속되지 않으며, 세션 차감이 일어나지 않습니다.
+                </p>
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* 하단 등록 버튼 */}
+        <div className="flex gap-2 px-5 py-4 border-t border-slate-800 flex-shrink-0">
+          <button onClick={onClose}
+            className="py-2.5 px-4 rounded-xl border border-slate-700 text-slate-300 hover:text-white text-sm font-semibold transition-colors">
+            취소
+          </button>
+          <button onClick={handleAdd}
+            disabled={tab==='regular' ? !canSubmitRegular : !canSubmitExternal}
+            className={`flex-1 font-bold py-2.5 rounded-xl text-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed
+              ${tab==='external'
+                ? 'bg-purple-600 hover:bg-purple-500 text-white'
+                : 'bg-amber-500 hover:bg-amber-400 text-slate-950'}`}>
+            {tab==='regular' ? '수업 예약' : '외부 일정 등록'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── 스케줄 블록 ───────────────────────────────────────────
+function Block({ s, onClick, compact=false }) {
+  const st    = STATUS_MAP[s.status] || STATUS_MAP.scheduled;
+  const isExt = s.isExternal || !s.memberId;
+  const name  = isExt ? (s.memo?.slice(0,8)||'외부') : s.memberName;
+  const bColor = s.trainerColor || '#94a3b8';
+
+  if (compact) return (
+    <div onClick={()=>onClick(s)}
+      className={`text-[10px] rounded-md px-1.5 py-1 mb-0.5 cursor-pointer hover:opacity-75 transition-opacity border-l-2 ${isExt?'bg-purple-900/30':'bg-slate-800'}`}
+      style={{borderColor:bColor}}>
+      <div className="flex items-center gap-1">
+        {isExt && <span className="text-purple-400 text-[8px] font-bold">외</span>}
+        <p className="font-bold truncate text-slate-200 leading-tight">{name}</p>
+      </div>
+      <p className="text-slate-500 leading-tight">{s.startTime}</p>
+      <div className="flex items-center gap-0.5 mt-0.5">
+        <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${st.dot}`}/>
+        <span className="text-slate-500">{st.label}</span>
+      </div>
+    </div>
+  );
+  return (
+    <div onClick={()=>onClick(s)} className="flex items-start gap-3 p-4 hover:bg-slate-800/50 cursor-pointer transition-colors">
+      <div className="w-1 min-h-12 rounded-full flex-shrink-0 mt-0.5" style={{background:bColor}}/>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <div className="flex items-center gap-2">
+              <p className="font-semibold text-sm">{name}</p>
+              {isExt && <span className="text-[10px] bg-purple-500/20 text-purple-400 border border-purple-500/30 px-1.5 py-0.5 rounded font-bold">외부</span>}
+            </div>
+            <p className="text-slate-500 text-xs mt-0.5">{s.trainerName||'트레이너'} · {s.classType}</p>
+            <p className="text-slate-500 text-xs">{s.startTime} – {s.endTime}</p>
+          </div>
+          <span className={`text-[10px] px-2 py-1 rounded-lg font-bold flex-shrink-0 ${st.bg}`}>{st.label}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── 월 뷰 ─────────────────────────────────────────────────
+function MonthView({ pivotDate, schedules, onBlockClick, todayStr }) {
+  const d=new Date(pivotDate+'T12:00:00');
+  const y=d.getFullYear(), mo=d.getMonth();
+  const first=new Date(y,mo,1).getDay(), days=new Date(y,mo+1,0).getDate();
+  const cells=Array.from({length:Math.ceil((first+days)/7)*7},(_,i)=>{
+    const day=i-first+1;
+    return (day>0&&day<=days)?`${y}-${String(mo+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`:null;
+  });
+  return (
+    <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
+      <div className="grid grid-cols-7 text-center text-xs font-bold text-slate-500 border-b border-slate-800">
+        {['월','화','수','목','금','토','일'].map(d=><div key={d} className="py-2">{d}</div>)}
+      </div>
+      <div className="grid grid-cols-7">
+        {cells.map((date,i)=>{
+          if(!date) return <div key={i} className="min-h-16 border-b border-r border-slate-800 opacity-20"/>;
+          const ds=schedules.filter(s=>s.date===date), isToday=date===todayStr;
+          return (
+            <div key={date} className={`min-h-16 border-b border-r border-slate-800 p-1 ${isToday?'bg-amber-500/5':''}`}>
+              <p className={`text-[10px] font-mono font-bold mb-0.5 ${isToday?'text-amber-400':'text-slate-400'}`}>
+                {parseInt(date.split('-')[2])}
+              </p>
+              {ds.slice(0,2).map(s=>{
+                const isExt=s.isExternal||!s.memberId;
+                const name=isExt?(s.memo?.slice(0,5)||'외부'):s.memberName;
+                return (
+                  <div key={s.id} onClick={()=>onBlockClick(s)}
+                    className="text-[9px] rounded px-1 py-0.5 mb-0.5 truncate cursor-pointer hover:opacity-80 transition-opacity"
+                    style={{background:(s.trainerColor||'#94a3b8')+'33', color:(isExt?'#c084fc':s.trainerColor)||'#94a3b8'}}>
+                    {isExt?'[외]':''}{name}
+                  </div>
+                );
+              })}
+              {ds.length>2&&<p className="text-[9px] text-slate-600">+{ds.length-2}</p>}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ── 메인 ──────────────────────────────────────────────────
+export default function Schedule() {
+  const [view, setView]         = useState('week');
+  const [pivot, setPivot]       = useState(fmt(new Date()));
+  const [schedules, setSchedules] = useState([]);
+  const [members,   setMembers]   = useState([]);
+  const [trainers,  setTrainers]  = useState([]);
+  const [showAdd,   setShowAdd]   = useState(false);
+  const [detail,    setDetail]    = useState(null);
+
+  const load = () => {
+    setSchedules(store.getSchedules());
+    setMembers(store.getMembers());
+    setTrainers(store.getTrainers());
+  };
+  useEffect(load, []);
+
+  const todayStr = fmt(new Date());
+  const nav = view==='day'?1:view==='week'?7:30;
+
+  const weekDates = Array.from({length:7},(_,i)=>{
+    const base=new Date(pivot+'T12:00:00');
+    const day=base.getDay();
+    const mon=new Date(base); mon.setDate(base.getDate()-((day+6)%7));
+    return addD(fmt(mon),i);
+  });
+
+  const forDate = d => schedules.filter(s=>s.date===d).sort((a,b)=>a.startTime.localeCompare(b.startTime));
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <h1 className="text-2xl font-black tracking-tight">스케줄</h1>
+        <div className="flex items-center gap-2">
+          <div className="flex bg-slate-800 rounded-xl p-1 text-xs">
+            {[['day','일'],['week','주'],['month','월']].map(([v,l])=>(
+              <button key={v} onClick={()=>setView(v)}
+                className={`px-3 py-1.5 rounded-lg font-bold transition-colors ${view===v?'bg-amber-500 text-slate-950':'text-slate-400 hover:text-white'}`}>
+                {l}
+              </button>
+            ))}
+          </div>
+          <button onClick={()=>setShowAdd(true)}
+            className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold px-4 py-2.5 rounded-xl text-sm transition-colors">
+            + 예약
+          </button>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-2">
+        <button onClick={()=>setPivot(addD(pivot,-nav))}
+          className="w-8 h-8 rounded-lg border border-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition-colors text-lg">‹</button>
+        <span className="text-sm font-semibold flex-1 text-center text-slate-300">
+          {view==='week'
+            ? `${fmtKo(weekDates[0])} — ${fmtKo(weekDates[6])}`
+            : view==='month'
+            ? new Date(pivot+'T12:00:00').toLocaleDateString('ko-KR',{year:'numeric',month:'long'})
+            : fmtKo(pivot)}
+        </span>
+        <button onClick={()=>setPivot(addD(pivot,nav))}
+          className="w-8 h-8 rounded-lg border border-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition-colors text-lg">›</button>
+        <button onClick={()=>setPivot(todayStr)}
+          className="text-xs border border-amber-500/30 text-amber-400 px-3 py-1.5 rounded-lg hover:bg-amber-500/10 transition-colors font-semibold">오늘</button>
+      </div>
+
+      {view==='week'&&(
+        <div className="grid grid-cols-7 gap-1">
+          {weekDates.map(date=>{
+            const ds=forDate(date), isToday=date===todayStr;
+            return (
+              <div key={date} className={`bg-slate-900 border rounded-xl p-1.5 min-h-28 ${isToday?'border-amber-500/40':'border-slate-800'}`}>
+                <p className={`text-center text-[10px] font-bold mb-1 leading-tight ${isToday?'text-amber-400':'text-slate-500'}`}>
+                  {new Date(date+'T12:00:00').toLocaleDateString('ko-KR',{weekday:'short'})}<br/>
+                  <span className={`font-mono text-xs ${isToday?'text-amber-400':'text-slate-300'}`}>{new Date(date+'T12:00:00').getDate()}</span>
+                </p>
+                {ds.map(s=><Block key={s.id} s={s} onClick={setDetail} compact/>)}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {view==='day'&&(
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
+          <div className="p-4 border-b border-slate-800">
+            <p className="font-bold">{fmtKo(pivot)}</p>
+            <p className="text-slate-500 text-xs">{forDate(pivot).length}개 일정</p>
+          </div>
+          {forDate(pivot).length===0
+            ? <p className="text-center text-slate-600 py-12 text-sm">예정된 일정이 없습니다</p>
+            : <div className="divide-y divide-slate-800">{forDate(pivot).map(s=><Block key={s.id} s={s} onClick={setDetail}/>)}</div>
+          }
+        </div>
+      )}
+
+      {view==='month'&&(
+        <MonthView pivotDate={pivot} schedules={schedules} onBlockClick={setDetail} todayStr={todayStr}/>
+      )}
+
+      {showAdd && (
+        <AddModal
+          members={members}
+          trainers={trainers}
+          onAdd={d=>{store.addSchedule(d); setShowAdd(false); load();}}
+          onClose={()=>setShowAdd(false)}
+        />
+      )}
+
+      {detail && (
+        <ScheduleDetailModal
+          schedule={detail}
+          onClose={()=>setDetail(null)}
+          onUpdate={()=>{load(); setDetail(null);}}
+          onDelete={()=>{load(); setDetail(null);}}
+        />
+      )}
+    </div>
+  );
+}
