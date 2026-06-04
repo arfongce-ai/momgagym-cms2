@@ -90,7 +90,7 @@ export default function Members() {
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-black tracking-tight">회원 관리</h1>
         <button onClick={() => setShowRegister(true)}
-          className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold px-4 py-2.5 rounded-xl text-sm transition-colors">
+          className="btn btn-primary btn-sm">
           + 신규 등록
         </button>
       </div>

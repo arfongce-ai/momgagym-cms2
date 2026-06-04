@@ -2,25 +2,63 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ============================================================
+   몸가짐 CMS 디자인 시스템
+   다크 슬레이트 + 앰버 강조 + JetBrains Mono(숫자)
+   공통 컴포넌트 클래스로 화면 간 통일감 확보
+   ============================================================ */
+
 @layer base {
-  html { font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; }
-  body { background: #0f172a; color: #f1f5f9; min-height: 100vh; }
-  * { -webkit-tap-highlight-color: transparent; box-sizing: border-box; }
-  ::-webkit-scrollbar { width: 4px; }
-  ::-webkit-scrollbar-track { background: #1e293b; }
-  ::-webkit-scrollbar-thumb { background: #475569; border-radius: 99px; }
+  :root {
+    --bg:#0b1120; --surface:#0f172a; --surface-2:#1e293b;
+    --border:#1e293b; --border-2:#334155;
+    --text:#f1f5f9; --text-dim:#94a3b8; --text-mute:#64748b;
+    --accent:#f59e0b; --accent-2:#fbbf24;
+    --ok:#34d399; --warn:#fbbf24; --bad:#f87171; --info:#22d3ee;
+  }
+  html { font-family:'Pretendard', system-ui, -apple-system, 'Segoe UI', sans-serif; }
+  body { background:var(--bg); color:var(--text); min-height:100vh; }
+  * { -webkit-tap-highlight-color:transparent; box-sizing:border-box; }
+  ::-webkit-scrollbar { width:4px; height:4px; }
+  ::-webkit-scrollbar-track { background:var(--surface-2); }
+  ::-webkit-scrollbar-thumb { background:#475569; border-radius:99px; }
+  .num, .font-mono { font-family:'JetBrains Mono', monospace; font-variant-numeric:tabular-nums; }
 }
 
-/* Page transition */
-.page-fade { animation: fadeIn 0.18s ease forwards; }
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(5px); }
-  to   { opacity: 1; transform: translateY(0); }
+@layer components {
+  .btn { @apply inline-flex items-center justify-center gap-1.5 rounded-xl font-bold text-sm py-3 px-4 transition-all active:scale-[0.97] select-none; }
+  .btn-primary { @apply bg-amber-500 text-slate-950 hover:bg-amber-400 shadow-lg shadow-amber-500/10; }
+  .btn-ghost { @apply border border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white; }
+  .btn-danger { @apply border border-red-500/30 text-red-400 hover:bg-red-500/10; }
+  .btn-sm { @apply py-2 px-3 text-xs rounded-lg; }
+
+  .card { @apply bg-slate-900 border border-slate-800 rounded-2xl; }
+  .card-accent { @apply bg-slate-900 border border-amber-500/30 rounded-2xl; }
+  .panel { @apply bg-slate-800 rounded-xl; }
+
+  .input { @apply w-full bg-slate-800 border border-slate-700 text-slate-100 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-amber-500 transition-colors; }
+  .input-mono { @apply w-full bg-slate-800 border border-slate-700 text-slate-100 rounded-xl px-3 py-2.5 text-sm font-mono focus:outline-none focus:border-amber-500 transition-colors; }
+  .label { @apply block text-xs font-semibold text-slate-400 uppercase tracking-widest mb-1.5; }
+
+  .seg { @apply flex gap-1 rounded-xl bg-slate-800 p-1; }
+  .seg-item { @apply flex-1 rounded-lg py-1.5 text-xs font-bold text-center text-slate-400 transition-colors; }
+  .seg-item-active { @apply bg-amber-500 text-slate-950; }
+
+  .badge { @apply inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold; }
+  .badge-ok { @apply text-emerald-400 bg-emerald-500/10; }
+  .badge-warn { @apply text-amber-400 bg-amber-500/10; }
+  .badge-bad { @apply text-red-400 bg-red-500/10; }
+
+  .metric-row { @apply flex items-center justify-between bg-slate-800 rounded-xl px-3 py-2.5; }
+  .metric-label { @apply text-xs text-slate-400; }
+  .metric-value { @apply font-mono font-black text-sm text-slate-100; }
+
+  .measure-head { @apply flex items-center justify-between mb-1; }
+  .measure-title { @apply text-lg font-black text-slate-100; }
+  .measure-back { @apply text-slate-400 text-sm hover:text-white transition-colors; }
 }
 
-/* Dark/light theme via data attribute */
-[data-theme="light"] body,
-.light-mode { background: #f8fafc; color: #0f172a; }
-
-/* Canvas signature */
-canvas { touch-action: none; }
+.page-fade, .animate-fade-in { animation:fadeIn 0.2s ease forwards; }
+@keyframes fadeIn { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:translateY(0); } }
+[data-theme="light"] body, .light-mode { background:#f8fafc; color:#0f172a; }
+canvas { touch-action:none; }

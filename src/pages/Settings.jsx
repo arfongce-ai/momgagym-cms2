@@ -192,7 +192,7 @@ export default function Settings({ darkMode, setDarkMode }) {
               </select>
             </div>
             <button onClick={handleBackup}
-              className="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold py-2.5 rounded-xl text-sm transition-colors">
+              className="btn btn-primary w-full">
               📥 JSON 다운로드
             </button>
           </div>
@@ -207,7 +207,7 @@ export default function Settings({ darkMode, setDarkMode }) {
               <span className="text-slate-600">스케줄·수납 기록·신체정보도 함께 삭제됩니다.</span>
             </p>
             <button onClick={loadPurgeList}
-              className="w-full mb-3 border border-slate-700 text-slate-300 hover:text-white py-2 rounded-xl text-sm font-semibold transition-colors">
+              className="btn btn-ghost w-full mb-3">
               🔍 파기 대상 조회
             </button>
             {purgeMsg && (

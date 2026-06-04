@@ -35,8 +35,8 @@ export default function VbtMeasure({ member, onSave, onBack }) {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <button onClick={onBack} className="text-slate-400 text-sm">← 메뉴</button>
-        <h2 className="text-lg font-black">VBT · 속도기반</h2>
+        <button onClick={onBack} className="measure-back">← 메뉴</button>
+        <h2 className="measure-title">VBT · 속도기반</h2>
         <span className="w-12" />
       </div>
 
@@ -44,19 +44,19 @@ export default function VbtMeasure({ member, onSave, onBack }) {
         <div>
           <label className="block text-xs font-semibold text-slate-400 uppercase tracking-widest mb-1.5">바벨 이동 거리 (m)</label>
           <input type="number" step="0.01" value={distance} onChange={e => setDistance(e.target.value)}
-            placeholder="0.60" className="w-full bg-slate-800 border border-slate-700 text-slate-100 rounded-xl px-3 py-2.5 text-sm font-mono focus:outline-none focus:border-amber-500" />
+            placeholder="0.60" className="input-mono" />
         </div>
         <div>
           <label className="block text-xs font-semibold text-slate-400 uppercase tracking-widest mb-1.5">추진 시간 (초)</label>
           <input type="number" step="0.01" value={time} onChange={e => setTime(e.target.value)}
-            placeholder="0.50" className="w-full bg-slate-800 border border-slate-700 text-slate-100 rounded-xl px-3 py-2.5 text-sm font-mono focus:outline-none focus:border-amber-500" />
+            placeholder="0.50" className="input-mono" />
         </div>
       </div>
 
-      <button onClick={calc} className="w-full rounded-xl bg-amber-500 text-slate-950 font-bold py-3 text-sm">속도 계산</button>
+      <button onClick={calc} className="btn btn-primary w-full">속도 계산</button>
 
       {result && (
-        <div className="rounded-2xl bg-slate-900 border border-amber-500/30 p-4 space-y-3 animate-fade-in">
+        <div className="card-accent p-4 space-y-3 animate-fade-in">
           <div className="flex items-baseline justify-between">
             <p className="text-xs font-bold text-amber-400 uppercase tracking-widest">평균 속도</p>
             {result.zone && <p className={`text-sm font-bold ${ZONE_COLOR[result.zone.color]}`}>{result.zone.label}</p>}
@@ -78,7 +78,7 @@ export default function VbtMeasure({ member, onSave, onBack }) {
               );
             })}
           </div>
-          {onSave && <button onClick={save} className="w-full rounded-xl bg-amber-500 text-slate-950 font-bold py-2.5 text-sm">이 측정 저장</button>}
+          {onSave && <button onClick={save} className="btn btn-primary w-full">이 측정 저장</button>}
         </div>
       )}
 

@@ -136,7 +136,7 @@ export default function Report() {
 
           {/* JPG 다운로드 */}
           <button onClick={handleDownload} disabled={downloading}
-            className="w-full rounded-xl bg-amber-500 text-slate-950 font-bold py-3.5 text-sm disabled:opacity-50">
+            className="btn btn-primary w-full disabled:opacity-50">
             {downloading ? '이미지 생성 중…' : '📷 리포트 JPG 다운로드'}
           </button>
           {msg && <p className="text-center text-xs text-slate-400">{msg}</p>}

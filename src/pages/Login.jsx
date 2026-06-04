@@ -50,7 +50,7 @@ export default function Login() {
           </div>
           {error && <p className="text-red-400 text-xs bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">{error}</p>}
           <button type="submit" disabled={loading}
-            className="w-full bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-bold py-3 rounded-xl text-sm transition-colors">
+            className="btn btn-primary w-full disabled:opacity-50">
             {loading ? '로그인 중…' : '로그인'}
           </button>
         </form>

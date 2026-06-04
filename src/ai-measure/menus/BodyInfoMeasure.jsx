@@ -54,8 +54,8 @@ export default function BodyInfoMeasure({ member, onSave, onBack }) {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <button onClick={onBack} className="text-slate-400 text-sm">← 메뉴</button>
-        <h2 className="text-lg font-black">신체 정보</h2>
+        <button onClick={onBack} className="measure-back">← 메뉴</button>
+        <h2 className="measure-title">신체 정보</h2>
         <span className="w-12" />
       </div>
 
@@ -66,10 +66,10 @@ export default function BodyInfoMeasure({ member, onSave, onBack }) {
         <div><label className={LBL}>최저혈압</label><input type="number" value={form.diastolic} onChange={pf('diastolic')} placeholder="80" className={INP} /></div>
       </div>
 
-      <button onClick={analyze} className="w-full rounded-xl bg-amber-500 text-slate-950 font-bold py-3 text-sm">분석</button>
+      <button onClick={analyze} className="btn btn-primary w-full">분석</button>
 
       {result && (
-        <div className="rounded-2xl bg-slate-900 border border-amber-500/30 p-4 space-y-3 animate-fade-in">
+        <div className="card-accent p-4 space-y-3 animate-fade-in">
           <p className="text-xs font-bold text-amber-400 uppercase tracking-widest">분석 결과</p>
           {result.items.map(item => (
             <div key={item.key} className="bg-slate-800 rounded-xl px-3 py-2.5">
@@ -86,7 +86,7 @@ export default function BodyInfoMeasure({ member, onSave, onBack }) {
           <div className="bg-slate-800/50 rounded-xl px-3 py-2.5">
             <p className="text-[11px] text-slate-300 leading-relaxed">{result.summary}</p>
           </div>
-          <button onClick={save} className="w-full rounded-xl bg-amber-500 text-slate-950 font-bold py-2.5 text-sm">회원 기록에 저장</button>
+          <button onClick={save} className="btn btn-primary w-full">회원 기록에 저장</button>
         </div>
       )}
 

@@ -116,7 +116,7 @@ export default function Home() {
               className="w-full bg-slate-900 border border-slate-700 text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-amber-500 resize-none"/>
             <div className="flex gap-2 justify-end">
               <button onClick={()=>setShowForm(false)} className="text-xs text-slate-400 hover:text-white px-3 py-1.5 rounded-lg transition-colors">취소</button>
-              <button onClick={addNotice} className="text-xs bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold px-3 py-1.5 rounded-lg transition-colors">등록</button>
+              <button onClick={addNotice} className="btn btn-primary btn-sm">등록</button>
             </div>
           </div>
         )}

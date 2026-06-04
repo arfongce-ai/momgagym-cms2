@@ -157,7 +157,7 @@ export default function Trainers() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-black tracking-tight">트레이너 관리</h1>
-        <button onClick={openAdd} className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold px-4 py-2.5 rounded-xl text-sm transition-colors">+ 트레이너 등록</button>
+        <button onClick={openAdd} className="btn btn-primary btn-sm">+ 트레이너 등록</button>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -239,8 +239,8 @@ export default function Trainers() {
             </div>
 
             <div className="flex gap-2 px-5 py-4 border-t border-slate-800 flex-shrink-0">
-              <button onClick={closeForm} className="py-2.5 px-4 rounded-xl border border-slate-700 text-slate-300 hover:text-white text-sm font-semibold transition-colors">취소</button>
-              <button onClick={saveTrainer} className="flex-1 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold py-2.5 rounded-xl text-sm transition-colors">{editTarget?'수정 완료':'등록'}</button>
+              <button onClick={closeForm} className="btn btn-ghost">취소</button>
+              <button onClick={saveTrainer} className="btn btn-primary flex-1">{editTarget?'수정 완료':'등록'}</button>
             </div>
           </div>
         </div>

@@ -249,7 +249,7 @@ function ScheduleDetailModal({ schedule:initS, onClose, onUpdate, onDelete }) {
 
               <div className="flex gap-2 pt-1">
                 <button onClick={()=>setEdit(true)}
-                  className="flex-1 py-2.5 rounded-xl border border-slate-700 text-slate-300 hover:text-white text-sm font-semibold transition-colors">
+                  className="btn btn-ghost flex-1">
                   ✏️ 수정
                 </button>
                 <button onClick={()=>{if(window.confirm('예약을 삭제하시겠습니까?')){
@@ -312,9 +312,9 @@ function ScheduleDetailModal({ schedule:initS, onClose, onUpdate, onDelete }) {
               </div>
               <div className="flex gap-2">
                 <button onClick={()=>setEdit(false)}
-                  className="py-2.5 px-4 rounded-xl border border-slate-700 text-slate-300 hover:text-white text-sm font-semibold transition-colors">취소</button>
+                  className="btn btn-ghost">취소</button>
                 <button onClick={saveEdit}
-                  className="flex-1 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold py-2.5 rounded-xl text-sm transition-colors">저장</button>
+                  className="btn btn-primary flex-1">저장</button>
               </div>
             </div>
           )}
@@ -607,7 +607,7 @@ function AddModal({ members, trainers, onAdd, onClose }) {
         {/* 하단 등록 버튼 */}
         <div className="flex gap-2 px-5 py-4 border-t border-slate-800 flex-shrink-0">
           <button onClick={onClose}
-            className="py-2.5 px-4 rounded-xl border border-slate-700 text-slate-300 hover:text-white text-sm font-semibold transition-colors">
+            className="btn btn-ghost">
             취소
           </button>
           <button onClick={handleAdd}
@@ -753,7 +753,7 @@ export default function Schedule() {
             ))}
           </div>
           <button onClick={()=>setShowAdd(true)}
-            className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold px-4 py-2.5 rounded-xl text-sm transition-colors">
+            className="btn btn-primary btn-sm">
             + 예약
           </button>
         </div>

@@ -35,8 +35,8 @@ export default function OneRMEstimate({ member, onSave, onBack }) {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <button onClick={onBack} className="text-slate-400 text-sm">← 메뉴</button>
-        <h2 className="text-lg font-black">1RM 추정</h2>
+        <button onClick={onBack} className="measure-back">← 메뉴</button>
+        <h2 className="measure-title">1RM 추정</h2>
         <span className="w-12" />
       </div>
 
@@ -55,20 +55,20 @@ export default function OneRMEstimate({ member, onSave, onBack }) {
         <div>
           <label className="block text-xs font-semibold text-slate-400 uppercase tracking-widest mb-1.5">든 무게 (kg)</label>
           <input type="number" step="2.5" value={weight} onChange={e => setWeight(e.target.value)}
-            placeholder="80" className="w-full bg-slate-800 border border-slate-700 text-slate-100 rounded-xl px-3 py-2.5 text-sm font-mono focus:outline-none focus:border-amber-500" />
+            placeholder="80" className="input-mono" />
         </div>
         <div>
           <label className="block text-xs font-semibold text-slate-400 uppercase tracking-widest mb-1.5">반복 횟수</label>
           <input type="number" value={reps} onChange={e => setReps(e.target.value)}
-            placeholder="5" className="w-full bg-slate-800 border border-slate-700 text-slate-100 rounded-xl px-3 py-2.5 text-sm font-mono focus:outline-none focus:border-amber-500" />
+            placeholder="5" className="input-mono" />
         </div>
       </div>
 
-      <button onClick={calc} className="w-full rounded-xl bg-amber-500 text-slate-950 font-bold py-3 text-sm">1RM 계산</button>
+      <button onClick={calc} className="btn btn-primary w-full">1RM 계산</button>
 
       {/* 결과 */}
       {result && (
-        <div className="rounded-2xl bg-slate-900 border border-amber-500/30 p-4 space-y-3 animate-fade-in">
+        <div className="card-accent p-4 space-y-3 animate-fade-in">
           <p className="text-xs font-bold text-amber-400 uppercase tracking-widest">추정 1RM</p>
           <p className="text-center font-mono font-black text-5xl text-slate-100">
             {result.average}<span className="text-lg text-slate-500"> kg</span>
@@ -96,7 +96,7 @@ export default function OneRMEstimate({ member, onSave, onBack }) {
             </div>
           </div>
           {onSave && (
-            <button onClick={save} className="w-full rounded-xl bg-amber-500 text-slate-950 font-bold py-2.5 text-sm">이 측정 저장</button>
+            <button onClick={save} className="btn btn-primary w-full">이 측정 저장</button>
           )}
         </div>
       )}

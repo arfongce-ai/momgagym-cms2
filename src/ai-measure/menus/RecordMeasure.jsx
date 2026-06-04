@@ -17,7 +17,6 @@ export default function RecordMeasure({ member, onBack }) {
   const [elapsed, setElapsed] = useState(0);
   const [videoUrl, setVideoUrl] = useState(null);
   const [aspect, setAspect] = useState('3/4');
-  const [zoom, setZoom] = useState(1);
   const startTsRef = useRef(0);
   const timerRef   = useRef(null);
 
@@ -105,41 +104,31 @@ export default function RecordMeasure({ member, onBack }) {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <button onClick={onBack} className="text-slate-400 text-sm">← 메뉴</button>
-        <h2 className="text-lg font-black">일반 영상 녹화</h2>
+        <button onClick={onBack} className="measure-back">← 메뉴</button>
+        <h2 className="measure-title">일반 영상 녹화</h2>
         <span className="w-12" />
       </div>
 
       {status !== 'done' ? (
         <>
-          {/* 비율·줌 컨트롤 */}
+          {/* 비율 선택 */}
           {status === 'ready' && (
-            <div className="flex items-center gap-2">
-              <div className="flex gap-1 rounded-lg bg-slate-800 p-0.5">
-                {['3/4','1/1'].map(r=>(
-                  <button key={r} onClick={()=>setAspect(r)}
-                    className={`px-2.5 py-1 rounded text-[11px] font-bold ${aspect===r?'bg-amber-500 text-slate-950':'text-slate-400'}`}>
-                    {r==='3/4'?'3:4':'1:1'}
-                  </button>
-                ))}
-              </div>
-              <div className="flex items-center gap-1.5 flex-1">
-                <span className="text-[11px] text-slate-500">축소</span>
-                <input type="range" min="1" max="3" step="0.1" value={zoom}
-                  onChange={e=>setZoom(Number(e.target.value))} className="flex-1 accent-amber-500"/>
-                <span className="text-[11px] text-slate-500">확대 {zoom.toFixed(1)}x</span>
-              </div>
+            <div className="flex gap-1 rounded-lg bg-slate-800 p-0.5 w-fit">
+              {['3/4','1/1'].map(r=>(
+                <button key={r} onClick={()=>setAspect(r)}
+                  className={`px-3 py-1 rounded text-[11px] font-bold ${aspect===r?'bg-amber-500 text-slate-950':'text-slate-400'}`}>
+                  {r==='3/4'?'3:4':'1:1'}
+                </button>
+              ))}
             </div>
           )}
 
           <div className="relative w-full rounded-2xl overflow-hidden bg-black mx-auto"
-            style={{aspectRatio:aspect.replace('/',' / '), maxHeight:'60vh'}}>
+            style={{aspectRatio:aspect.replace('/',' / '), maxHeight:'58vh'}}>
             <video ref={videoRef} autoPlay playsInline muted
-              className="absolute inset-0 w-full h-full object-cover"
-              style={{transform:`scale(${zoom})`, transformOrigin:'center center'}} />
+              className="absolute inset-0 w-full h-full object-contain" />
             <canvas ref={canvasRef}
-              className="absolute inset-0 w-full h-full object-cover pointer-events-none"
-              style={{transform:`scale(${zoom})`, transformOrigin:'center center'}} />
+              className="absolute inset-0 w-full h-full object-contain pointer-events-none" />
             {status === 'idle' && (
               <div className="absolute inset-0 flex items-center justify-center text-slate-400 text-sm text-center px-4">
                 {error || '카메라를 시작하세요'}
@@ -171,7 +160,7 @@ export default function RecordMeasure({ member, onBack }) {
           </div>
 
           {status === 'idle' && (
-            <button onClick={startCamera} className="w-full rounded-xl bg-amber-500 text-slate-950 font-bold py-3 text-sm">
+            <button onClick={startCamera} className="btn btn-primary w-full">
               카메라 시작
             </button>
           )}
@@ -192,7 +181,7 @@ export default function RecordMeasure({ member, onBack }) {
               다시 녹화
             </button>
             <a href={videoUrl} download={fname}
-              className="rounded-xl bg-amber-500 text-slate-950 font-bold py-3 text-sm text-center">
+              className="btn btn-primary">
               영상 저장
             </a>
           </div>

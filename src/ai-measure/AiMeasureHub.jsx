@@ -65,7 +65,7 @@ export default function AiMeasureHub() {
           회원 선택 (저장 시 필요)
         </label>
         <select value={memberId} onChange={e => setMemberId(e.target.value)}
-          className="w-full bg-slate-800 border border-slate-700 text-slate-100 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-amber-500">
+          className="input">
           <option value="">선택 안 함 (측정만)</option>
           {members.map(m => <option key={m.id} value={m.id}>{m.name} ({m.phone?.slice(-4)})</option>)}
         </select>

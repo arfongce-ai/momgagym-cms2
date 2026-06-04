@@ -46,7 +46,6 @@ export default function PostureMeasure({ member, onSave, onBack }) {
   const [captured, setCaptured] = useState(null);
   const [results, setResults] = useState([]);
   const [aspect, setAspect] = useState('3/4');
-  const [zoom, setZoom] = useState(1);
   const [groundY, setGroundY] = useState(0.85);   // 지면선(0~1) — 고정, 슬라이더로 조정
   const [side, setSide] = useState('right');       // 옆면 방향
   const [heightCm, setHeightCm] = useState(member?.height || '');
@@ -180,8 +179,8 @@ export default function PostureMeasure({ member, onSave, onBack }) {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <button onClick={onBack} className="text-slate-400 text-sm">← 메뉴</button>
-        <h2 className="text-lg font-black">자세 · 체형 측정</h2>
+        <button onClick={onBack} className="measure-back">← 메뉴</button>
+        <h2 className="measure-title">자세 · 체형 측정</h2>
         <span className="w-12" />
       </div>
 
@@ -220,32 +219,22 @@ export default function PostureMeasure({ member, onSave, onBack }) {
             </div>
           )}
 
-          {/* 비율·줌 */}
-          <div className="flex items-center gap-2">
-            <div className="flex gap-1 rounded-lg bg-slate-800 p-0.5">
-              {['3/4','1/1'].map(r=>(
-                <button key={r} onClick={()=>setAspect(r)}
-                  className={`px-2.5 py-1 rounded text-[11px] font-bold ${aspect===r?'bg-amber-500 text-slate-950':'text-slate-400'}`}>
-                  {r==='3/4'?'3:4':'1:1'}
-                </button>
-              ))}
-            </div>
-            <div className="flex items-center gap-1.5 flex-1">
-              <span className="text-[11px] text-slate-500">축소</span>
-              <input type="range" min="1" max="3" step="0.1" value={zoom}
-                onChange={e=>setZoom(Number(e.target.value))} className="flex-1 accent-amber-500"/>
-              <span className="text-[11px] text-slate-500">{zoom.toFixed(1)}x</span>
-            </div>
+          {/* 비율 선택 (줌 제거 — 좌표 정확도 우선) */}
+          <div className="flex gap-1 rounded-lg bg-slate-800 p-0.5 w-fit">
+            {['3/4','1/1'].map(r=>(
+              <button key={r} onClick={()=>setAspect(r)}
+                className={`px-3 py-1 rounded text-[11px] font-bold ${aspect===r?'bg-amber-500 text-slate-950':'text-slate-400'}`}>
+                {r==='3/4'?'3:4':'1:1'}
+              </button>
+            ))}
           </div>
 
           <div className="relative w-full rounded-2xl overflow-hidden bg-black mx-auto"
             style={{aspectRatio:aspect.replace('/',' / '), maxHeight:'58vh'}}>
             <video ref={videoRef} autoPlay playsInline muted
-              className="absolute inset-0 w-full h-full object-cover"
-              style={{transform:`scale(${zoom})`, transformOrigin:'center center'}} />
+              className="absolute inset-0 w-full h-full object-contain" />
             <canvas ref={canvasRef}
-              className="absolute inset-0 w-full h-full object-cover pointer-events-none"
-              style={{transform:`scale(${zoom})`, transformOrigin:'center center'}} />
+              className="absolute inset-0 w-full h-full object-contain pointer-events-none" />
             {status !== 'running' && (
               <div className="absolute inset-0 flex items-center justify-center text-slate-400 text-sm text-center px-4">
                 {status === 'loading' ? 'AI 모델 로딩 중…'
@@ -255,13 +244,16 @@ export default function PostureMeasure({ member, onSave, onBack }) {
             )}
             {status === 'running' && (
               <>
-                <div className="absolute top-2 left-1/2 -translate-x-1/2 bg-black/60 rounded-full px-3 py-1">
-                  <span className="text-[11px] text-cyan-300 font-bold">{view.label} · 지면선에 발끝, 십자선에 맞추기</span>
+                {/* 상단 안내 — 한 줄, 작게 */}
+                <div className="absolute top-2 left-2 right-2 flex items-center justify-between gap-2">
+                  <span className="bg-black/65 rounded-full px-2.5 py-1 text-[10px] text-cyan-300 font-bold truncate">
+                    {view.label} · 지면선=발끝, 십자선=중앙
+                  </span>
+                  <span ref={liveRef} className="bg-black/65 rounded-full px-2.5 py-1 text-[11px] text-amber-400 font-mono font-bold whitespace-nowrap">
+                    측정 준비
+                  </span>
                 </div>
-                <div className="absolute top-11 left-1/2 -translate-x-1/2 bg-black/55 rounded-lg px-3 py-1">
-                  <span ref={liveRef} className="font-mono font-bold text-amber-400 text-xs">측정 준비</span>
-                </div>
-                {/* 갤럭시 스타일 셔터 버튼 */}
+                {/* 갤럭시 스타일 셔터 */}
                 <div className="absolute bottom-4 left-0 right-0 flex items-center justify-center gap-8">
                   <button onClick={() => stop()}
                     className="w-11 h-11 rounded-full bg-black/50 border border-white/30 text-white text-xs font-bold backdrop-blur-sm active:scale-90 transition-transform">
@@ -288,7 +280,7 @@ export default function PostureMeasure({ member, onSave, onBack }) {
           )}
 
           {status !== 'running' && (
-            <button onClick={() => start()} className="w-full rounded-xl bg-amber-500 text-slate-950 font-bold py-3 text-sm">
+            <button onClick={() => start()} className="btn btn-primary w-full">
               카메라 시작
             </button>
           )}
