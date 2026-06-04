@@ -324,17 +324,22 @@ function AddModal({ members, trainers, onAdd, onClose }) {
     setForm({ memberId:'', trainerId:'', date:today, startTime:'', endTime:'', classType:'', memo:'', externalType:'출강' });
   };
 
-  // ── 요구사항2,3: 회원 기반 필터링 ─────────────────────
+  // ── 트레이너 먼저 선택 → 담당 회원 필터링 ─────────────────
+  const selectedTrainerObj = trainers.find(t=>t.id===form.trainerId);
+  // 선택된 트레이너를 담당 트레이너로 둔 회원만 표시
+  const filteredMembers = form.trainerId
+    ? members.filter(m => Object.keys(m.trainerSessions||{}).includes(form.trainerId))
+    : [];
   const selectedMember   = members.find(m=>m.id===form.memberId);
-  // 해당 회원의 trainerSessions 키 목록에 있는 트레이너만
-  const memberTrainerIds = Object.keys(selectedMember?.trainerSessions||{});
-  const filteredTrainers = trainers.filter(t=>memberTrainerIds.includes(t.id));
-  // 해당 회원의 classTypes
   const memberClassTypes = selectedMember?.classTypes || [];
 
-  // 회원 변경 시 트레이너/수업종류 리셋
+  // 트레이너 변경 시 회원/수업종류 리셋
+  const handleTrainerChange = id => {
+    setForm(p=>({...p, trainerId:id, memberId:'', classType:''}));
+  };
+  // 회원 변경 시 수업종류 리셋
   const handleMemberChange = id => {
-    setForm(p=>({...p, memberId:id, trainerId:'', classType:''}));
+    setForm(p=>({...p, memberId:id, classType:''}));
   };
 
   // ── 요구사항4: 10분 스냅 + 자동 종료 ──────────────────
@@ -379,8 +384,6 @@ function AddModal({ members, trainers, onAdd, onClose }) {
     }
   };
 
-  const selectedTrainer  = trainers.find(t=>t.id===form.trainerId);
-
   return (
     <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/70 backdrop-blur-sm">
       <div className="w-full md:max-w-md bg-slate-900 md:rounded-2xl rounded-t-2xl border-t md:border border-slate-700 shadow-2xl max-h-[92dvh] flex flex-col overflow-hidden">
@@ -407,42 +410,42 @@ function AddModal({ members, trainers, onAdd, onClose }) {
           {/* ══ 일반 수업 탭 ══════════════════════════════ */}
           {tab==='regular' && (
             <>
-              {/* ① 회원 선택 */}
+              {/* ① 트레이너 선택 */}
               <div>
-                <label className={LBL}>① 회원 선택 <span className="text-red-400">*</span></label>
-                <select value={form.memberId} onChange={e=>handleMemberChange(e.target.value)} className={SEL}>
-                  <option value="">회원을 먼저 선택하세요</option>
-                  {members.map(m=><option key={m.id} value={m.id}>{m.name} ({m.phone?.slice(-4)})</option>)}
+                <label className={LBL}>① 담당 트레이너 <span className="text-red-400">*</span></label>
+                <select value={form.trainerId} onChange={e=>handleTrainerChange(e.target.value)} className={SEL}>
+                  <option value="">트레이너를 먼저 선택하세요</option>
+                  {trainers.map(t=>(
+                    <option key={t.id} value={t.id}>{t.name}</option>
+                  ))}
                 </select>
+                {selectedTrainerObj && (
+                  <div className="flex items-center gap-1.5 mt-1.5">
+                    <div className="w-3 h-3 rounded-full" style={{background:selectedTrainerObj.color}}/>
+                    <span className="text-xs text-slate-500">{selectedTrainerObj.name} 트레이너</span>
+                  </div>
+                )}
               </div>
 
-              {/* ② 트레이너 — 회원의 담당 트레이너만 표시 */}
+              {/* ② 회원 선택 — 해당 트레이너의 담당 회원만 */}
               <div>
                 <label className={LBL}>
-                  ② 담당 트레이너
-                  {form.memberId && filteredTrainers.length === 0 && (
-                    <span className="ml-1 text-red-400 normal-case font-normal">— 등록된 담당 트레이너가 없습니다</span>
+                  ② 회원 선택
+                  {form.trainerId && filteredMembers.length === 0 && (
+                    <span className="ml-1 text-red-400 normal-case font-normal">— 담당 회원이 없습니다</span>
                   )}
-                  {!form.memberId && <span className="ml-1 text-slate-600 normal-case font-normal">— 회원 선택 후 활성화</span>}
+                  {!form.trainerId && <span className="ml-1 text-slate-600 normal-case font-normal">— 트레이너 선택 후 활성화</span>}
                 </label>
-                <select value={form.trainerId}
-                  onChange={e=>setForm(p=>({...p,trainerId:e.target.value,classType:''}))}
-                  disabled={!form.memberId}
+                <select value={form.memberId} onChange={e=>handleMemberChange(e.target.value)}
+                  disabled={!form.trainerId}
                   className={SEL}>
-                  <option value="">트레이너 선택</option>
-                  {filteredTrainers.map(t=>(
-                    <option key={t.id} value={t.id}>
-                      {t.name} (잔여 {selectedMember?.trainerSessions?.[t.id]?.remaining||0}회)
+                  <option value="">회원 선택</option>
+                  {filteredMembers.map(m=>(
+                    <option key={m.id} value={m.id}>
+                      {m.name} (잔여 {m.trainerSessions?.[form.trainerId]?.remaining||0}회)
                     </option>
                   ))}
                 </select>
-                {/* 선택된 트레이너 색상 미리보기 */}
-                {selectedTrainer && (
-                  <div className="flex items-center gap-1.5 mt-1.5">
-                    <div className="w-3 h-3 rounded-full" style={{background:selectedTrainer.color}}/>
-                    <span className="text-xs text-slate-500">{selectedTrainer.name} 트레이너</span>
-                  </div>
-                )}
               </div>
 
               {/* ③ 날짜 + 요일 */}
@@ -492,10 +495,10 @@ function AddModal({ members, trainers, onAdd, onClose }) {
                 <div className="bg-slate-800 border border-amber-500/20 rounded-xl p-3 space-y-1">
                   <p className="text-xs text-amber-400 font-semibold">예약 확인</p>
                   <div className="flex items-center gap-2 text-sm">
-                    <div className="w-2 h-2 rounded-full" style={{background:selectedTrainer?.color}}/>
+                    <div className="w-2 h-2 rounded-full" style={{background:selectedTrainerObj?.color}}/>
                     <span className="font-semibold">{members.find(m=>m.id===form.memberId)?.name}</span>
                     <span className="text-slate-500">·</span>
-                    <span className="text-slate-300">{selectedTrainer?.name}</span>
+                    <span className="text-slate-300">{selectedTrainerObj?.name}</span>
                   </div>
                   <p className="text-slate-400 text-xs">
                     {form.date} ({weekday(form.date)}요일) · {form.startTime} — {form.endTime} · {form.classType}
@@ -752,16 +755,48 @@ export default function Schedule() {
       </div>
 
       {view==='week'&&(
-        <div className="grid grid-cols-7 gap-1">
+        <div className="space-y-2">
           {weekDates.map(date=>{
             const ds=forDate(date), isToday=date===todayStr;
+            const dObj=new Date(date+'T12:00:00');
+            const wd=dObj.toLocaleDateString('ko-KR',{weekday:'short'});
+            const dayNum=dObj.getDate();
             return (
-              <div key={date} className={`bg-slate-900 border rounded-xl p-1.5 min-h-28 ${isToday?'border-amber-500/40':'border-slate-800'}`}>
-                <p className={`text-center text-[10px] font-bold mb-1 leading-tight ${isToday?'text-amber-400':'text-slate-500'}`}>
-                  {new Date(date+'T12:00:00').toLocaleDateString('ko-KR',{weekday:'short'})}<br/>
-                  <span className={`font-mono text-xs ${isToday?'text-amber-400':'text-slate-300'}`}>{new Date(date+'T12:00:00').getDate()}</span>
-                </p>
-                {ds.map(s=><Block key={s.id} s={s} onClick={setDetail} compact members={members}/>)}
+              <div key={date} className={`bg-slate-900 border rounded-xl overflow-hidden ${isToday?'border-amber-500/40':'border-slate-800'}`}>
+                {/* 요일 헤더 — 클릭 시 일 뷰로 */}
+                <button onClick={()=>{ setPivot(date); setView('day'); }}
+                  className={`w-full flex items-center gap-2 px-3 py-2 border-b border-slate-800 hover:bg-slate-800/50 transition-colors ${isToday?'bg-amber-500/5':''}`}>
+                  <span className={`font-mono font-black text-lg ${isToday?'text-amber-400':'text-slate-300'}`}>{dayNum}</span>
+                  <span className={`text-xs font-bold ${isToday?'text-amber-400':'text-slate-500'}`}>{wd}요일</span>
+                  {isToday && <span className="text-[10px] text-amber-400 font-bold">오늘</span>}
+                  <span className="ml-auto text-[11px] text-slate-600">{ds.length>0?`${ds.length}건`:'일정 없음'}</span>
+                </button>
+                {/* 해당 요일 일정 — 위아래 스크롤 */}
+                {ds.length>0 && (
+                  <div className="max-h-44 overflow-y-auto divide-y divide-slate-800/60">
+                    {ds.map(s=>{
+                      const isExt=s.isExternal||!s.memberId;
+                      const nm=nameWithRemain(s, members);
+                      const st=STATUS_MAP[s.status]||STATUS_MAP.scheduled;
+                      return (
+                        <div key={s.id} onClick={()=>setDetail(s)}
+                          className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-slate-800/50 transition-colors">
+                          <div className="w-1 h-8 rounded-full flex-shrink-0" style={{background:s.trainerColor||'#94a3b8'}}/>
+                          <div className="flex-shrink-0 w-12 text-[11px] font-mono text-slate-400 leading-tight">
+                            {s.startTime}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-semibold truncate text-slate-200">
+                              {isExt&&<span className="text-purple-400 text-[10px] mr-1">[외]</span>}{nm}
+                            </p>
+                            <p className="text-[10px] text-slate-500 truncate">{s.trainerName||'트레이너'}{s.classType?` · ${s.classType}`:''}</p>
+                          </div>
+                          <span className={`flex-shrink-0 w-1.5 h-1.5 rounded-full ${st.dot}`}/>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             );
           })}
@@ -776,7 +811,7 @@ export default function Schedule() {
           </div>
           {forDate(pivot).length===0
             ? <p className="text-center text-slate-600 py-12 text-sm">예정된 일정이 없습니다</p>
-            : <div className="divide-y divide-slate-800">{forDate(pivot).map(s=><Block key={s.id} s={s} onClick={setDetail} members={members}/>)}</div>
+            : <div className="divide-y divide-slate-800 max-h-[65vh] overflow-y-auto">{forDate(pivot).map(s=><Block key={s.id} s={s} onClick={setDetail} members={members}/>)}</div>
           }
         </div>
       )}

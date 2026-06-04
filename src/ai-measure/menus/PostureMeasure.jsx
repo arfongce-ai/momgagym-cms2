@@ -1,11 +1,12 @@
 // ai-measure/menus/PostureMeasure.jsx
-// 메뉴 1: 자세·체형 측정 (앞/옆/뒤)
-//  - 어깨 기울기, 골반 기울기, 중심선(코→골반중점) 기울기 측정
-//  - 실시간 관절점·선 오버레이 (Canvas, React state 우회)
-//  - "측정" 누르면 현재 프레임 각도를 캡처 → 결과 표시
+// 메뉴 1: 자세·체형 측정 (앞→옆→뒤 순서 흐름)
+//  - 측정 캡처 → 결과 전용 화면으로 전환 (요청1)
+//  - 결과 화면: [재측정](현재 방향) / [다음](다음 방향) / [종료(적용)](저장) (요청2)
+//  - 카메라 화면에 수평·수직 가이드라인 오버레이 (요청3)
 import { useRef, useState, useEffect, useCallback } from 'react';
 import { usePoseEngine } from '../core/usePoseEngine';
 import { symmetryTilt, verticalDeviationDeg, midpoint, isVisible, LM } from '../core/geometry';
+import { drawGuides } from '../core/cameraGuide';
 
 const VIEWS = [
   { key: 'front', label: '앞면' },
@@ -13,7 +14,6 @@ const VIEWS = [
   { key: 'back',  label: '뒷면' },
 ];
 
-// 골격 연결선 (그리기용)
 const BONES = [
   [LM.LEFT_SHOULDER, LM.RIGHT_SHOULDER],
   [LM.LEFT_HIP, LM.RIGHT_HIP],
@@ -27,13 +27,16 @@ const BONES = [
 
 export default function PostureMeasure({ member, onSave, onBack }) {
   const canvasRef = useRef(null);
-  const latestRef = useRef(null);   // 최신 랜드마크 (고주파, state 우회)
-  const liveRef   = useRef(null);   // 실시간 수치 표시용 DOM
+  const latestRef = useRef(null);
+  const liveRef   = useRef(null);
 
-  const [view, setView] = useState('front');
-  const [captured, setCaptured] = useState(null); // 캡처된 측정 결과
+  // step: 'measuring'(카메라) | 'result'(캡처 결과)
+  const [step, setStep] = useState('measuring');
+  const [viewIdx, setViewIdx] = useState(0);          // 현재 방향(0앞 1옆 2뒤)
+  const [captured, setCaptured] = useState(null);     // 현재 방향 결과
+  const [results, setResults] = useState([]);         // 누적 결과(방향별)
+  const view = VIEWS[viewIdx];
 
-  // 매 프레임: 캔버스에 그리고, 실시간 각도를 DOM 에 직접 주입
   const handleResult = useCallback((lms, ts, video) => {
     latestRef.current = lms;
     const canvas = canvasRef.current;
@@ -41,9 +44,11 @@ export default function PostureMeasure({ member, onSave, onBack }) {
     const cw = canvas.width, ch = canvas.height;
     const ctx = canvas.getContext('2d');
     ctx.clearRect(0, 0, cw, ch);
-    if (!lms) return;
 
-    // 관절선
+    // 가이드라인(맨 아래) — 요청3
+    drawGuides(ctx, cw, ch);
+
+    if (!lms) return;
     ctx.strokeStyle = 'rgba(245,158,11,0.9)';
     ctx.lineWidth = 3;
     for (const [a, b] of BONES) {
@@ -54,7 +59,6 @@ export default function PostureMeasure({ member, onSave, onBack }) {
         ctx.stroke();
       }
     }
-    // 관절점
     ctx.fillStyle = '#22d3ee';
     for (const lm of lms) {
       if (isVisible(lm)) {
@@ -63,8 +67,6 @@ export default function PostureMeasure({ member, onSave, onBack }) {
         ctx.fill();
       }
     }
-
-    // 실시간 수치 (state 우회)
     const sh = symmetryTilt(lms[LM.LEFT_SHOULDER], lms[LM.RIGHT_SHOULDER]);
     const hip = symmetryTilt(lms[LM.LEFT_HIP], lms[LM.RIGHT_HIP]);
     if (liveRef.current) {
@@ -75,7 +77,6 @@ export default function PostureMeasure({ member, onSave, onBack }) {
 
   const { videoRef, start, stop, status, error } = usePoseEngine({ onResult: handleResult });
 
-  // 비디오 크기에 맞춰 캔버스 동기화
   const syncCanvas = useCallback(() => {
     const v = videoRef.current, c = canvasRef.current;
     if (v && c && v.videoWidth) { c.width = v.videoWidth; c.height = v.videoHeight; }
@@ -87,25 +88,51 @@ export default function PostureMeasure({ member, onSave, onBack }) {
     return () => { if (v) v.removeEventListener('loadedmetadata', syncCanvas); stop(); };
   }, [videoRef, syncCanvas, stop]);
 
-  // 현재 프레임 캡처 → 측정값 산출
+  // 측정 캡처 → 즉시 결과 화면으로 전환 (요청1)
   const capture = () => {
     const lms = latestRef.current;
-    if (!lms) return;
+    if (!lms) { alert('인식된 자세가 없습니다. 전신이 화면에 보이게 한 뒤 다시 시도하세요.'); return; }
     const shoulder = symmetryTilt(lms[LM.LEFT_SHOULDER], lms[LM.RIGHT_SHOULDER]);
     const hip = symmetryTilt(lms[LM.LEFT_HIP], lms[LM.RIGHT_HIP]);
     const shMid = midpoint(lms[LM.LEFT_SHOULDER], lms[LM.RIGHT_SHOULDER]);
     const hipMid = midpoint(lms[LM.LEFT_HIP], lms[LM.RIGHT_HIP]);
     const centerline = verticalDeviationDeg(shMid, hipMid);
-
     setCaptured({
-      view,
+      view: view.key,
+      viewLabel: view.label,
       at: new Date().toISOString(),
       shoulderTilt: shoulder,
       hipTilt: hip,
       centerlineDeg: centerline,
     });
+    stop();              // 카메라 정지
+    setStep('result');
   };
 
+  // 다음 방향으로
+  const goNext = () => {
+    const merged = upsertResult(results, captured);
+    setResults(merged);
+    setViewIdx(viewIdx + 1);
+    setCaptured(null);
+    setStep('measuring');
+  };
+  // 현재 방향 재측정
+  const retry = () => {
+    setCaptured(null);
+    setStep('measuring');
+  };
+  // 종료(적용): 누적 저장 후 메뉴로
+  const finish = () => {
+    const merged = upsertResult(results, captured);
+    if (onSave && merged.length) {
+      const primary = merged.find(r => r.view === 'front') || merged[0];
+      onSave({ ...primary, allViews: merged });
+    }
+    onBack && onBack();
+  };
+
+  const isLast = viewIdx >= VIEWS.length - 1;
   const dirText = (d) =>
     d === 'level' ? '균형' : d === 'right_low' ? '오른쪽 처짐' : d === 'left_low' ? '왼쪽 처짐' : '-';
 
@@ -117,91 +144,128 @@ export default function PostureMeasure({ member, onSave, onBack }) {
         <span className="w-12" />
       </div>
 
-      {/* 촬영 방향 선택 */}
+      {/* 진행 표시: 앞 → 옆 → 뒤 */}
       <div className="flex gap-1 rounded-xl bg-slate-800 p-1">
-        {VIEWS.map(v => (
-          <button key={v.key} onClick={() => setView(v.key)}
-            className={`flex-1 rounded-lg py-1.5 text-xs font-bold ${view === v.key ? 'bg-amber-500 text-slate-950' : 'text-slate-400'}`}>
-            {v.label}
-          </button>
+        {VIEWS.map((v, i) => (
+          <div key={v.key}
+            className={`flex-1 rounded-lg py-1.5 text-xs font-bold text-center
+              ${i === viewIdx ? 'bg-amber-500 text-slate-950'
+              : results.some(r => r.view === v.key) ? 'text-emerald-400' : 'text-slate-500'}`}>
+            {results.some(r => r.view === v.key) ? '✓ ' : ''}{v.label}
+          </div>
         ))}
       </div>
 
-      {/* 카메라 + 오버레이 */}
-      <div className="relative w-full rounded-2xl overflow-hidden bg-black aspect-[3/4]">
-        <video ref={videoRef} autoPlay playsInline muted
-          className="absolute inset-0 w-full h-full object-contain" />
-        <canvas ref={canvasRef}
-          className="absolute inset-0 w-full h-full object-contain pointer-events-none" />
-        {status !== 'running' && (
-          <div className="absolute inset-0 flex items-center justify-center text-slate-400 text-sm">
-            {status === 'loading' ? 'AI 모델 로딩 중…' :
-             status === 'error' ? `오류: ${error}` :
-             '아래 버튼으로 카메라를 시작하세요'}
+      {/* ── 측정 화면 ── */}
+      {step === 'measuring' && (
+        <>
+          <div className="relative w-full rounded-2xl overflow-hidden bg-black aspect-[3/4]">
+            <video ref={videoRef} autoPlay playsInline muted
+              className="absolute inset-0 w-full h-full object-contain" />
+            <canvas ref={canvasRef}
+              className="absolute inset-0 w-full h-full object-contain pointer-events-none" />
+            {status !== 'running' && (
+              <div className="absolute inset-0 flex items-center justify-center text-slate-400 text-sm text-center px-4">
+                {status === 'loading' ? 'AI 모델 로딩 중…'
+                  : status === 'error' ? `오류: ${error}`
+                  : `[${view.label}] 측정 — 카메라를 시작하세요`}
+              </div>
+            )}
+            {status === 'running' && (
+              <div className="absolute top-2 left-1/2 -translate-x-1/2 bg-black/60 rounded-full px-3 py-1">
+                <span className="text-[11px] text-cyan-300 font-bold">{view.label} · 중심선에 몸을 맞추세요</span>
+              </div>
+            )}
           </div>
-        )}
-      </div>
 
-      {/* 실시간 수치 */}
-      <div className="rounded-xl bg-slate-900 border border-slate-800 p-3 text-center">
-        <p className="text-[10px] text-slate-500 uppercase tracking-widest mb-1">실시간</p>
-        <p ref={liveRef} className="font-mono font-black text-amber-400">어깨 -  |  골반 -</p>
-      </div>
+          <div className="rounded-xl bg-slate-900 border border-slate-800 p-3 text-center">
+            <p className="text-[10px] text-slate-500 uppercase tracking-widest mb-1">실시간</p>
+            <p ref={liveRef} className="font-mono font-black text-amber-400">어깨 -  |  골반 -</p>
+          </div>
 
-      {/* 컨트롤 */}
-      <div className="grid grid-cols-2 gap-2">
-        {status !== 'running' ? (
-          <button onClick={() => start()} className="col-span-2 rounded-xl bg-amber-500 text-slate-950 font-bold py-3 text-sm">
-            카메라 시작
-          </button>
-        ) : (
-          <>
-            <button onClick={() => stop()} className="rounded-xl border border-slate-700 text-slate-300 font-bold py-3 text-sm">
-              정지
-            </button>
-            <button onClick={capture} className="rounded-xl bg-amber-500 text-slate-950 font-bold py-3 text-sm">
-              측정 캡처
-            </button>
-          </>
-        )}
-      </div>
+          <div className="grid grid-cols-2 gap-2">
+            {status !== 'running' ? (
+              <button onClick={() => start()} className="col-span-2 rounded-xl bg-amber-500 text-slate-950 font-bold py-3 text-sm">
+                카메라 시작
+              </button>
+            ) : (
+              <>
+                <button onClick={() => stop()} className="rounded-xl border border-slate-700 text-slate-300 font-bold py-3 text-sm">
+                  정지
+                </button>
+                <button onClick={capture} className="rounded-xl bg-amber-500 text-slate-950 font-bold py-3 text-sm">
+                  측정 캡처
+                </button>
+              </>
+            )}
+          </div>
 
-      {/* 캡처 결과 */}
-      {captured && (
-        <div className="rounded-2xl bg-slate-900 border border-amber-500/30 p-4 space-y-3 animate-fade-in">
-          <p className="text-xs font-bold text-amber-400 uppercase tracking-widest">
-            측정 결과 ({VIEWS.find(v => v.key === captured.view)?.label})
+          <p className="text-[11px] text-slate-500 leading-relaxed">
+            ※ 청록색 격자와 중앙 십자선에 맞춰 카메라를 수평으로 두고, 전신이 화면에
+            들어오도록 2~3m 거리에서 측정하세요.
           </p>
-          {[
-            { label: '어깨 기울기', d: captured.shoulderTilt },
-            { label: '골반 기울기', d: captured.hipTilt },
-          ].map(row => (
-            <div key={row.label} className="flex items-center justify-between bg-slate-800 rounded-xl px-3 py-2">
-              <span className="text-xs text-slate-400">{row.label}</span>
-              <span className="font-mono font-black text-sm">
-                {row.d ? `${row.d.deg}° · ${dirText(row.d.direction)}` : '측정 불가'}
-              </span>
-            </div>
-          ))}
-          <div className="flex items-center justify-between bg-slate-800 rounded-xl px-3 py-2">
-            <span className="text-xs text-slate-400">중심선 기울기</span>
-            <span className="font-mono font-black text-sm">
-              {captured.centerlineDeg != null ? `${Math.abs(captured.centerlineDeg)}°` : '측정 불가'}
-            </span>
-          </div>
-          {onSave && (
-            <button onClick={() => onSave(captured)}
-              className="w-full rounded-xl bg-amber-500 text-slate-950 font-bold py-2.5 text-sm">
-              이 측정 저장
-            </button>
-          )}
-        </div>
+        </>
       )}
 
-      <p className="text-[11px] text-slate-500 leading-relaxed">
-        ※ 측정 정확도는 촬영 거리·각도·조명에 영향받습니다. 전신이 화면에 들어오도록
-        2~3m 거리에서 카메라를 수평으로 고정하세요.
-      </p>
+      {/* ── 결과 화면 (요청1: 캡처 즉시 전환) ── */}
+      {step === 'result' && captured && (
+        <div className="space-y-4 animate-fade-in">
+          <div className="rounded-2xl bg-slate-900 border border-amber-500/30 p-4 space-y-3">
+            <p className="text-xs font-bold text-amber-400 uppercase tracking-widest">
+              측정 결과 · {captured.viewLabel}
+            </p>
+            {[
+              { label: '어깨 기울기', d: captured.shoulderTilt },
+              { label: '골반 기울기', d: captured.hipTilt },
+            ].map(row => (
+              <div key={row.label} className="flex items-center justify-between bg-slate-800 rounded-xl px-3 py-2">
+                <span className="text-xs text-slate-400">{row.label}</span>
+                <span className="font-mono font-black text-sm">
+                  {row.d ? `${row.d.deg}° · ${dirText(row.d.direction)}` : '측정 불가'}
+                </span>
+              </div>
+            ))}
+            <div className="flex items-center justify-between bg-slate-800 rounded-xl px-3 py-2">
+              <span className="text-xs text-slate-400">중심선 기울기</span>
+              <span className="font-mono font-black text-sm">
+                {captured.centerlineDeg != null ? `${Math.abs(captured.centerlineDeg)}°` : '측정 불가'}
+              </span>
+            </div>
+          </div>
+
+          {/* 요청2: 재측정 / 다음 / 종료(적용) */}
+          <div className="grid grid-cols-3 gap-2">
+            <button onClick={retry}
+              className="rounded-xl border border-slate-700 text-slate-300 font-bold py-3 text-xs">
+              재측정
+            </button>
+            {!isLast ? (
+              <button onClick={goNext}
+                className="rounded-xl bg-slate-700 text-white font-bold py-3 text-xs">
+                다음 ({VIEWS[viewIdx + 1].label})
+              </button>
+            ) : (
+              <div className="rounded-xl border border-slate-800 text-slate-600 font-bold py-3 text-xs text-center flex items-center justify-center">
+                마지막
+              </div>
+            )}
+            <button onClick={finish}
+              className="rounded-xl bg-amber-500 text-slate-950 font-bold py-3 text-xs">
+              종료(적용)
+            </button>
+          </div>
+          <p className="text-[11px] text-slate-500 text-center">
+            다음: 다른 방향 측정 · 재측정: 현재 방향 다시 · 종료: 저장 후 메뉴로
+          </p>
+        </div>
+      )}
     </div>
   );
+}
+
+// 같은 방향이면 교체, 아니면 추가
+function upsertResult(list, item) {
+  if (!item) return list;
+  const rest = list.filter(r => r.view !== item.view);
+  return [...rest, item];
 }
