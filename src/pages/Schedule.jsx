@@ -168,8 +168,8 @@ function ScheduleDetailModal({ schedule:initS, onClose, onUpdate, onDelete }) {
   const pf = f => e => setForm(p=>({...p,[f]:e.target.value}));
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/70 backdrop-blur-sm">
-      <div className="w-full md:max-w-md bg-slate-900 md:rounded-2xl rounded-t-2xl border-t md:border border-slate-700 shadow-2xl max-h-[90dvh] flex flex-col overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-3">
+      <div className="w-full md:max-w-md bg-slate-900 md:rounded-2xl rounded-t-2xl border-t md:border border-slate-700 shadow-2xl max-h-[85dvh] flex flex-col overflow-hidden">
 
         {/* 헤더 */}
         <div className="flex items-center gap-3 px-5 py-4 border-b border-slate-800 flex-shrink-0">
@@ -385,8 +385,8 @@ function AddModal({ members, trainers, onAdd, onClose }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/70 backdrop-blur-sm">
-      <div className="w-full md:max-w-md bg-slate-900 md:rounded-2xl rounded-t-2xl border-t md:border border-slate-700 shadow-2xl max-h-[92dvh] flex flex-col overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-3">
+      <div className="w-full md:max-w-md bg-slate-900 md:rounded-2xl rounded-t-2xl border-t md:border border-slate-700 shadow-2xl max-h-[85dvh] flex flex-col overflow-hidden">
 
         {/* 헤더 + 탭 */}
         <div className="flex-shrink-0">
@@ -771,9 +771,9 @@ export default function Schedule() {
                   {isToday && <span className="text-[10px] text-amber-400 font-bold">오늘</span>}
                   <span className="ml-auto text-[11px] text-slate-600">{ds.length>0?`${ds.length}건`:'일정 없음'}</span>
                 </button>
-                {/* 해당 요일 일정 — 위아래 스크롤 */}
+                {/* 해당 요일 일정 — 내용만큼 표시, 많으면 스크롤 */}
                 {ds.length>0 && (
-                  <div className="max-h-44 overflow-y-auto divide-y divide-slate-800/60">
+                  <div className="max-h-[40vh] overflow-y-auto divide-y divide-slate-800/60">
                     {ds.map(s=>{
                       const isExt=s.isExternal||!s.memberId;
                       const nm=nameWithRemain(s, members);

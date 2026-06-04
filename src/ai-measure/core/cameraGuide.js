@@ -7,6 +7,7 @@ export function drawGuides(ctx, w, h, opts = {}) {
     color = 'rgba(34,211,238,0.35)',   // 청록 반투명
     centerColor = 'rgba(245,158,11,0.6)', // 중심 십자(앰버)
     thirds = true,
+    groundY = null,   // 0~1 비율. 지정 시 그 높이에 지면선(초록) 표시
   } = opts;
 
   ctx.save();
@@ -54,6 +55,20 @@ export function drawGuides(ctx, w, h, opts = {}) {
   ctx.moveTo(cx - s, cy); ctx.lineTo(cx + s, cy);
   ctx.moveTo(cx, cy - s); ctx.lineTo(cx, cy + s);
   ctx.stroke();
+
+  // 지면선 (발끝 기준) — 초록 실선 + 라벨
+  if (groundY != null) {
+    const gy = h * groundY;
+    ctx.strokeStyle = 'rgba(52,211,153,0.9)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    ctx.moveTo(0, gy); ctx.lineTo(w, gy);
+    ctx.stroke();
+    ctx.fillStyle = 'rgba(52,211,153,0.95)';
+    ctx.font = `${Math.round(h*0.022)}px sans-serif`;
+    ctx.fillText('지면선', 8, gy - 6);
+  }
 
   ctx.restore();
 }

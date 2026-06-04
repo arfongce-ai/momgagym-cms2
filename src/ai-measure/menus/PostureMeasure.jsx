@@ -7,6 +7,7 @@ import { useRef, useState, useEffect, useCallback } from 'react';
 import { usePoseEngine } from '../core/usePoseEngine';
 import { symmetryTilt, verticalDeviationDeg, midpoint, isVisible, LM } from '../core/geometry';
 import { drawGuides } from '../core/cameraGuide';
+import { createSmoother } from '../core/smoothing';
 
 const VIEWS = [
   { key: 'front', label: '앞면' },
@@ -29,6 +30,7 @@ export default function PostureMeasure({ member, onSave, onBack }) {
   const canvasRef = useRef(null);
   const latestRef = useRef(null);
   const liveRef   = useRef(null);
+  const smootherRef = useRef(createSmoother(0.4));
 
   // step: 'measuring'(카메라) | 'result'(캡처 결과)
   const [step, setStep] = useState('measuring');
@@ -37,7 +39,9 @@ export default function PostureMeasure({ member, onSave, onBack }) {
   const [results, setResults] = useState([]);         // 누적 결과(방향별)
   const view = VIEWS[viewIdx];
 
-  const handleResult = useCallback((lms, ts, video) => {
+  const handleResult = useCallback((rawLms, ts, video) => {
+    // 떨림 완화: 임계값으로 버리지 않고 위치를 부드럽게(요청5)
+    const lms = smootherRef.current(rawLms);
     latestRef.current = lms;
     const canvas = canvasRef.current;
     if (!canvas || !video) return;
@@ -45,14 +49,22 @@ export default function PostureMeasure({ member, onSave, onBack }) {
     const ctx = canvas.getContext('2d');
     ctx.clearRect(0, 0, cw, ch);
 
-    // 가이드라인(맨 아래) — 요청3
-    drawGuides(ctx, cw, ch);
+    // 발(발목/뒤꿈치/발끝) 기준 지면선 — 가시성 낮아도 표시(요청4)
+    let groundY = null;
+    if (lms) {
+      const feet = [lms[LM.LEFT_HEEL], lms[LM.RIGHT_HEEL], lms[LM.LEFT_FOOT], lms[LM.RIGHT_FOOT],
+                    lms[LM.LEFT_ANKLE], lms[LM.RIGHT_ANKLE]]
+                    .filter(p => p && (p.visibility == null || p.visibility >= 0.3));
+      if (feet.length) groundY = Math.max(...feet.map(p => p.y));
+    }
+    drawGuides(ctx, cw, ch, { groundY });
 
     if (!lms) return;
+    // 관절선 — 임계 0.3(다리 유지). 스무딩으로 떨림은 이미 완화됨
     ctx.strokeStyle = 'rgba(245,158,11,0.9)';
     ctx.lineWidth = 3;
     for (const [a, b] of BONES) {
-      if (isVisible(lms[a]) && isVisible(lms[b])) {
+      if (isVisible(lms[a], 0.3) && isVisible(lms[b], 0.3)) {
         ctx.beginPath();
         ctx.moveTo(lms[a].x * cw, lms[a].y * ch);
         ctx.lineTo(lms[b].x * cw, lms[b].y * ch);
@@ -61,7 +73,7 @@ export default function PostureMeasure({ member, onSave, onBack }) {
     }
     ctx.fillStyle = '#22d3ee';
     for (const lm of lms) {
-      if (isVisible(lm)) {
+      if (isVisible(lm, 0.3)) {
         ctx.beginPath();
         ctx.arc(lm.x * cw, lm.y * ch, 4, 0, Math.PI * 2);
         ctx.fill();
@@ -159,7 +171,7 @@ export default function PostureMeasure({ member, onSave, onBack }) {
       {/* ── 측정 화면 ── */}
       {step === 'measuring' && (
         <>
-          <div className="relative w-full rounded-2xl overflow-hidden bg-black aspect-[3/4]">
+          <div className="relative w-full rounded-2xl overflow-hidden bg-black" style={{height:'60vh'}}>
             <video ref={videoRef} autoPlay playsInline muted
               className="absolute inset-0 w-full h-full object-contain" />
             <canvas ref={canvasRef}
@@ -172,37 +184,40 @@ export default function PostureMeasure({ member, onSave, onBack }) {
               </div>
             )}
             {status === 'running' && (
-              <div className="absolute top-2 left-1/2 -translate-x-1/2 bg-black/60 rounded-full px-3 py-1">
-                <span className="text-[11px] text-cyan-300 font-bold">{view.label} · 중심선에 몸을 맞추세요</span>
-              </div>
-            )}
-          </div>
-
-          <div className="rounded-xl bg-slate-900 border border-slate-800 p-3 text-center">
-            <p className="text-[10px] text-slate-500 uppercase tracking-widest mb-1">실시간</p>
-            <p ref={liveRef} className="font-mono font-black text-amber-400">어깨 -  |  골반 -</p>
-          </div>
-
-          <div className="grid grid-cols-2 gap-2">
-            {status !== 'running' ? (
-              <button onClick={() => start()} className="col-span-2 rounded-xl bg-amber-500 text-slate-950 font-bold py-3 text-sm">
-                카메라 시작
-              </button>
-            ) : (
               <>
-                <button onClick={() => stop()} className="rounded-xl border border-slate-700 text-slate-300 font-bold py-3 text-sm">
-                  정지
-                </button>
-                <button onClick={capture} className="rounded-xl bg-amber-500 text-slate-950 font-bold py-3 text-sm">
-                  측정 캡처
-                </button>
+                {/* 상단 안내 */}
+                <div className="absolute top-2 left-1/2 -translate-x-1/2 bg-black/60 rounded-full px-3 py-1">
+                  <span className="text-[11px] text-cyan-300 font-bold">{view.label} · 중심선·지면선에 맞추세요</span>
+                </div>
+                {/* 실시간 수치 — 카메라 위 오버레이 */}
+                <div className="absolute top-12 left-1/2 -translate-x-1/2 bg-black/55 rounded-lg px-3 py-1">
+                  <span ref={liveRef} className="font-mono font-bold text-amber-400 text-sm">어깨 -  |  골반 -</span>
+                </div>
+                {/* 측정/정지 버튼 — 카메라 하단 오버레이(요청6: 스크롤 없이 촬영) */}
+                <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-2 w-[90%]">
+                  <button onClick={() => stop()}
+                    className="flex-1 rounded-xl bg-black/60 border border-white/20 text-white font-bold py-3 text-sm backdrop-blur-sm active:scale-95 transition-transform">
+                    정지
+                  </button>
+                  <button onClick={capture}
+                    className="flex-[2] rounded-xl bg-amber-500 text-slate-950 font-black py-3 text-base shadow-lg active:scale-95 transition-transform">
+                    📸 측정 캡처
+                  </button>
+                </div>
               </>
             )}
           </div>
 
+          {status !== 'running' && (
+            <button onClick={() => start()} className="w-full rounded-xl bg-amber-500 text-slate-950 font-bold py-3 text-sm">
+              카메라 시작
+            </button>
+          )}
+
           <p className="text-[11px] text-slate-500 leading-relaxed">
-            ※ 청록색 격자와 중앙 십자선에 맞춰 카메라를 수평으로 두고, 전신이 화면에
-            들어오도록 2~3m 거리에서 측정하세요.
+            ※ 청록색 격자·중앙 십자선에 몸을 맞추고, 초록색 <span className="text-emerald-400 font-bold">지면선</span>이
+            발끝에 오도록 카메라를 수평으로 두세요. 전신이 들어오게 2~3m 거리에서 측정합니다.
+            측정 버튼은 화면 위에 있어 스크롤 없이 바로 누를 수 있습니다.
           </p>
         </>
       )}
