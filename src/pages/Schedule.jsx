@@ -112,6 +112,27 @@ function restoreSession(memberId, trainerId) {
   }
 }
 
+// 주/일 뷰 공통 일정 행 (동일 높이·스타일)
+function CompactRow({ s, members, onClick }) {
+  const isExt = s.isExternal || !s.memberId;
+  const nm = nameWithRemain(s, members);
+  const st = STATUS_MAP[s.status] || STATUS_MAP.scheduled;
+  return (
+    <div onClick={() => onClick(s)}
+      className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-slate-800/50 transition-colors">
+      <div className="w-1 h-8 rounded-full flex-shrink-0" style={{ background: s.trainerColor || '#94a3b8' }} />
+      <div className="flex-shrink-0 w-12 text-[11px] font-mono text-slate-400 leading-tight">{s.startTime}</div>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-semibold truncate text-slate-200">
+          {isExt && <span className="text-purple-400 text-[10px] mr-1">[외]</span>}{nm}
+        </p>
+        <p className="text-[10px] text-slate-500 truncate">{s.trainerName || '트레이너'}{s.classType ? ` · ${s.classType}` : ''}</p>
+      </div>
+      <span className={`flex-shrink-0 w-1.5 h-1.5 rounded-full ${st.dot}`} />
+    </div>
+  );
+}
+
 // ── 예약 상세/수정/삭제 모달 ─────────────────────────────
 function ScheduleDetailModal({ schedule:initS, onClose, onUpdate, onDelete }) {
   const [s, setS]           = useState(initS);
@@ -774,27 +795,7 @@ export default function Schedule() {
                 {/* 해당 요일 일정 — 내용만큼 표시, 많으면 스크롤 */}
                 {ds.length>0 && (
                   <div className="max-h-[40vh] overflow-y-auto divide-y divide-slate-800/60">
-                    {ds.map(s=>{
-                      const isExt=s.isExternal||!s.memberId;
-                      const nm=nameWithRemain(s, members);
-                      const st=STATUS_MAP[s.status]||STATUS_MAP.scheduled;
-                      return (
-                        <div key={s.id} onClick={()=>setDetail(s)}
-                          className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-slate-800/50 transition-colors">
-                          <div className="w-1 h-8 rounded-full flex-shrink-0" style={{background:s.trainerColor||'#94a3b8'}}/>
-                          <div className="flex-shrink-0 w-12 text-[11px] font-mono text-slate-400 leading-tight">
-                            {s.startTime}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-semibold truncate text-slate-200">
-                              {isExt&&<span className="text-purple-400 text-[10px] mr-1">[외]</span>}{nm}
-                            </p>
-                            <p className="text-[10px] text-slate-500 truncate">{s.trainerName||'트레이너'}{s.classType?` · ${s.classType}`:''}</p>
-                          </div>
-                          <span className={`flex-shrink-0 w-1.5 h-1.5 rounded-full ${st.dot}`}/>
-                        </div>
-                      );
-                    })}
+                    {ds.map(s=><CompactRow key={s.id} s={s} members={members} onClick={setDetail}/>)}
                   </div>
                 )}
               </div>
@@ -811,7 +812,7 @@ export default function Schedule() {
           </div>
           {forDate(pivot).length===0
             ? <p className="text-center text-slate-600 py-12 text-sm">예정된 일정이 없습니다</p>
-            : <div className="divide-y divide-slate-800 max-h-[65vh] overflow-y-auto">{forDate(pivot).map(s=><Block key={s.id} s={s} onClick={setDetail} members={members}/>)}</div>
+            : <div className="divide-y divide-slate-800 max-h-[65vh] overflow-y-auto">{forDate(pivot).map(s=><CompactRow key={s.id} s={s} members={members} onClick={setDetail}/>)}</div>
           }
         </div>
       )}

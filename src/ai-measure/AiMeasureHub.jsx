@@ -11,7 +11,16 @@ export default function AiMeasureHub() {
   const [memberId, setMemberId] = useState('');
   const [active, setActive] = useState(null); // 선택된 메뉴 객체
 
-  const member = members.find(m => m.id === memberId);
+  const baseMember = members.find(m => m.id === memberId);
+  // 회원의 최근 신체기록에서 키를 자동 연동
+  const member = baseMember ? (() => {
+    const records = store.getBodyRecords(baseMember.id) || [];
+    const withHeight = records.filter(r => r.height);
+    const latestHeight = withHeight.length
+      ? withHeight.sort((a, b) => (a.recordedAt < b.recordedAt ? 1 : -1))[0].height
+      : null;
+    return { ...baseMember, height: baseMember.height || latestHeight || null };
+  })() : null;
 
   // 측정 저장 (회원 선택 시 측정이력에 누적)
   const handleSave = (data) => {

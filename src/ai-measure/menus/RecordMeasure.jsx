@@ -16,6 +16,8 @@ export default function RecordMeasure({ member, onBack }) {
   const [error, setError]   = useState(null);
   const [elapsed, setElapsed] = useState(0);
   const [videoUrl, setVideoUrl] = useState(null);
+  const [aspect, setAspect] = useState('3/4');
+  const [zoom, setZoom] = useState(1);
   const startTsRef = useRef(0);
   const timerRef   = useRef(null);
 
@@ -110,11 +112,34 @@ export default function RecordMeasure({ member, onBack }) {
 
       {status !== 'done' ? (
         <>
-          <div className="relative w-full rounded-2xl overflow-hidden bg-black" style={{height:'60vh'}}>
+          {/* 비율·줌 컨트롤 */}
+          {status === 'ready' && (
+            <div className="flex items-center gap-2">
+              <div className="flex gap-1 rounded-lg bg-slate-800 p-0.5">
+                {['3/4','1/1'].map(r=>(
+                  <button key={r} onClick={()=>setAspect(r)}
+                    className={`px-2.5 py-1 rounded text-[11px] font-bold ${aspect===r?'bg-amber-500 text-slate-950':'text-slate-400'}`}>
+                    {r==='3/4'?'3:4':'1:1'}
+                  </button>
+                ))}
+              </div>
+              <div className="flex items-center gap-1.5 flex-1">
+                <span className="text-[11px] text-slate-500">축소</span>
+                <input type="range" min="1" max="3" step="0.1" value={zoom}
+                  onChange={e=>setZoom(Number(e.target.value))} className="flex-1 accent-amber-500"/>
+                <span className="text-[11px] text-slate-500">확대 {zoom.toFixed(1)}x</span>
+              </div>
+            </div>
+          )}
+
+          <div className="relative w-full rounded-2xl overflow-hidden bg-black mx-auto"
+            style={{aspectRatio:aspect.replace('/',' / '), maxHeight:'60vh'}}>
             <video ref={videoRef} autoPlay playsInline muted
-              className="absolute inset-0 w-full h-full object-contain" />
+              className="absolute inset-0 w-full h-full object-cover"
+              style={{transform:`scale(${zoom})`, transformOrigin:'center center'}} />
             <canvas ref={canvasRef}
-              className="absolute inset-0 w-full h-full object-contain pointer-events-none" />
+              className="absolute inset-0 w-full h-full object-cover pointer-events-none"
+              style={{transform:`scale(${zoom})`, transformOrigin:'center center'}} />
             {status === 'idle' && (
               <div className="absolute inset-0 flex items-center justify-center text-slate-400 text-sm text-center px-4">
                 {error || '카메라를 시작하세요'}
