@@ -1,5 +1,13 @@
-// demoData.js — v5 (수납·신체정보 추가)
-const DATA_VERSION = 'v5.0';
+// demoData.js — v6 (Firebase 연동)
+// ⚠️ 화면 코드는 그대로 둡니다. store / aiStore / DEMO_USERS 의 사용법은 기존과 100% 동일합니다.
+//    내부 저장소만 "브라우저(localStorage)" → "Firebase(Firestore) + 로컬 캐시"로 바뀌었습니다.
+
+import { db } from './firebase';
+import {
+  collection, doc, getDocs, setDoc, deleteDoc, writeBatch,
+} from 'firebase/firestore';
+
+const DATA_VERSION = 'v6.0';
 
 export const DEMO_USERS = [
   { id:'admin1',   email:'admin@fitcms.demo',   password:'admin1234',   role:'admin',   name:'관리자'   },
@@ -15,7 +23,6 @@ const INITIAL_TRAINERS = [
   { id:'t2', name:'이서연', phone:'010-9876-5432', birthDate:'1993-07-22', hireDate:'2022-05-01', classTypes:['6대체력','다이어트'], status:'freelance', color:'#10b981', memo:'주 4일 근무'  },
   { id:'t3', name:'박지훈', phone:'010-5555-1234', birthDate:'1988-11-08', hireDate:'2020-03-15', classTypes:['선수','6대체력'],   status:'full',      color:'#6366f1', memo:'' },
 ];
-
 const INITIAL_MEMBERS = [
   { id:'m1', name:'홍길동', phone:'010-1111-2222', birthDate:'1985-06-20',
     joinDate:'2024-01-15', lastPaymentDate:'2024-11-01', lastAttendedDate:fmt(ago(today,16)),
@@ -38,8 +45,6 @@ const INITIAL_MEMBERS = [
     classTypes:['컨디셔닝'], memo:'대회 준비',
     trainerSessions:{ t3:{total:30,remaining:2} }, isActive:true },
 ];
-
-// 수납 기록 (memberId 키로 배열)
 const INITIAL_PAYMENTS = {
   m1: [
     { id:'p1', paidAt:'2024-01-15', amount:500000, method:'card',     isUnpaid:false, note:'PT 20회 등록' },
@@ -54,8 +59,6 @@ const INITIAL_PAYMENTS = {
     { id:'p6', paidAt:'2024-09-01', amount:900000, method:'card',     isUnpaid:false, note:'선수반 30회' },
   ],
 };
-
-// 신체정보 기록 (memberId 키로 배열)
 const INITIAL_BODY = {
   m1: [
     { id:'b1', recordedAt:'2024-01-15', height:178, weight:82.5, systolic:138, diastolic:88, note:'최초 측정' },
@@ -66,7 +69,6 @@ const INITIAL_BODY = {
     { id:'b4', recordedAt:'2024-10-10', height:162, weight:55.5, systolic:115, diastolic:74, note:'재측정' },
   ],
 };
-
 const INITIAL_SCHEDULES = [
   { id:'s1', memberId:'m1', memberName:'홍길동', trainerId:'t1', trainerName:'김민준', trainerColor:'#f59e0b', date:fmt(today), startTime:'10:00', endTime:'11:00', classType:'재활',     status:'scheduled', sessionDeducted:false, isExternal:false },
   { id:'s2', memberId:'m2', memberName:'김영희', trainerId:'t1', trainerName:'김민준', trainerColor:'#f59e0b', date:fmt(today), startTime:'11:00', endTime:'12:00', classType:'트레이닝', status:'attended',  sessionDeducted:true,  isExternal:false },
@@ -75,103 +77,105 @@ const INITIAL_SCHEDULES = [
   { id:'s5', memberId:'m1', memberName:'홍길동', trainerId:'t1', trainerName:'김민준', trainerColor:'#f59e0b', date:fmt(ago(today,1)), startTime:'10:00', endTime:'11:00', classType:'컨디셔닝', status:'attended', sessionDeducted:true, isExternal:false },
   { id:'s6', memberId:null, memberName:null, trainerId:'t2', trainerName:'이서연', trainerColor:'#10b981', date:fmt(ago(today,-2)), startTime:'09:00', endTime:'17:00', classType:'출강', memo:'○○피트니스 출강', status:'scheduled', sessionDeducted:true, isExternal:true },
 ];
-
 const INITIAL_NOTICES = [
   { id:'n1', title:'🎉 몸가짐운동센터 시스템 오픈', content:'센터 통합 관리 시스템이 오픈되었습니다.\n\n데모 계정\n• 관리자: admin@fitcms.demo / admin1234\n• 트레이너: trainer@fitcms.demo / trainer1234', createdAt:new Date().toISOString(), isPinned:true },
   { id:'n2', title:'📅 휴무 안내', content:'공휴일은 센터 휴무입니다.', createdAt:new Date(Date.now()-864e5).toISOString(), isPinned:false },
 ];
 
-function load(key, init) {
-  try { const v=localStorage.getItem('fitcms_'+key); return v?JSON.parse(v):init; } catch { return init; }
-}
-function save(key, data) {
-  try { localStorage.setItem('fitcms_'+key, JSON.stringify(data)); } catch {} }
-
-// 버전 불일치 시 전체 재시딩
-if (localStorage.getItem('fitcms_seeded') !== DATA_VERSION) {
-  save('members',   INITIAL_MEMBERS);
-  save('trainers',  INITIAL_TRAINERS);
-  save('schedules', INITIAL_SCHEDULES);
-  save('notices',   INITIAL_NOTICES);
-  save('payments',  INITIAL_PAYMENTS);
-  save('body',      INITIAL_BODY);
-  localStorage.setItem('fitcms_seeded', DATA_VERSION);
-  console.log('[FitCMS] Seeded:', DATA_VERSION);
-}
-
-export const store = {
-  // Members
-  getMembers:    ()     => load('members', []),
-  addMember:     m      => { const a=store.getMembers(); const nm={...m,id:'m'+Date.now()}; save('members',[...a,nm]); return nm; },
-  updateMember:  (id,p) => { save('members', store.getMembers().map(m=>m.id===id?{...m,...p}:m)); },
-  deleteMember:  id     => save('members', store.getMembers().filter(m=>m.id!==id)),
-
-  // Trainers
-  getTrainers:    ()     => load('trainers', []),
-  addTrainer:     t      => { const a=store.getTrainers(); const nt={...t,id:'t'+Date.now()}; save('trainers',[...a,nt]); return nt; },
-  updateTrainer:  (id,p) => { save('trainers', store.getTrainers().map(t=>t.id===id?{...t,...p}:t)); },
-  deleteTrainer:  id     => save('trainers', store.getTrainers().filter(t=>t.id!==id)),
-
-  // Schedules
-  getSchedules:    ()     => load('schedules', []),
-  addSchedule:     s      => { const a=store.getSchedules(); const ns={...s,id:'s'+Date.now()}; save('schedules',[...a,ns]); return ns; },
-  updateSchedule:  (id,p) => { save('schedules', store.getSchedules().map(s=>s.id===id?{...s,...p}:s)); },
-  deleteSchedule:  id     => save('schedules', store.getSchedules().filter(s=>s.id!==id)),
-
-  // Notices
-  getNotices: ()  => load('notices', []),
-  addNotice:  n   => { const a=store.getNotices(); const nn={...n,id:'n'+Date.now()}; save('notices',[...a,nn]); return nn; },
-
-  // Payments (수납)
-  getPayments:   (mid)    => (load('payments',{}))[mid] || [],
-  addPayment:    (mid,p)  => {
-    const all=load('payments',{}); const list=all[mid]||[];
-    const np={...p,id:'p'+Date.now()}; all[mid]=[...list,np]; save('payments',all); return np;
-  },
-  deletePayment: (mid,pid)=> {
-    const all=load('payments',{}); all[mid]=(all[mid]||[]).filter(p=>p.id!==pid); save('payments',all);
-  },
-  deleteAllPayments: (mid)=> { const all=load('payments',{}); delete all[mid]; save('payments',all); },
-
-  // Body records (신체정보)
-  getBodyRecords:   (mid)    => (load('body',{}))[mid] || [],
-  addBodyRecord:    (mid,r)  => {
-    const all=load('body',{}); const list=all[mid]||[];
-    const nr={...r,id:'b'+Date.now()}; all[mid]=[...list,nr]; save('body',all); return nr;
-  },
-  deleteBodyRecord: (mid,rid)=> {
-    const all=load('body',{}); all[mid]=(all[mid]||[]).filter(r=>r.id!==rid); save('body',all);
-  },
-  deleteAllBodyRecords: (mid)=> { const all=load('body',{}); delete all[mid]; save('body',all); },
+const cache = {
+  members:[], trainers:[], schedules:[], notices:[], payments:{}, body:{}, ai:{},
 };
 
-// ── AI 측정 세션 (aiSessions) ──────────────────────────────
-// AiSession = { id, memberId, recordedAt, measurements, analysisResult, memo }
+async function loadCollection(name) {
+  const snap = await getDocs(collection(db, name));
+  return snap.docs.map(d => d.data());
+}
+async function loadGrouped(name) {
+  const snap = await getDocs(collection(db, name));
+  const grouped = {};
+  snap.docs.forEach(d => {
+    const data = d.data();
+    const mid = data.__mid;
+    if (!mid) return;
+    if (!grouped[mid]) grouped[mid] = [];
+    const { __mid, ...rest } = data;
+    grouped[mid].push(rest);
+  });
+  return grouped;
+}
+async function seedIfEmpty() {
+  const membersSnap = await getDocs(collection(db, 'members'));
+  if (!membersSnap.empty) return;
+  const batch = writeBatch(db);
+  INITIAL_MEMBERS.forEach(m  => batch.set(doc(db, 'members', m.id), m));
+  INITIAL_TRAINERS.forEach(t => batch.set(doc(db, 'trainers', t.id), t));
+  INITIAL_SCHEDULES.forEach(s => batch.set(doc(db, 'schedules', s.id), s));
+  INITIAL_NOTICES.forEach(n  => batch.set(doc(db, 'notices', n.id), n));
+  Object.entries(INITIAL_PAYMENTS).forEach(([mid, list]) =>
+    list.forEach(p => batch.set(doc(db, 'payments', p.id), { ...p, __mid: mid })));
+  Object.entries(INITIAL_BODY).forEach(([mid, list]) =>
+    list.forEach(b => batch.set(doc(db, 'body', b.id), { ...b, __mid: mid })));
+  await batch.commit();
+  console.log('[FitCMS] Firebase 최초 시드 완료:', DATA_VERSION);
+}
+
+export async function initStore() {
+  try {
+    await seedIfEmpty();
+    const [members, trainers, schedules, notices, payments, body, ai] = await Promise.all([
+      loadCollection('members'),
+      loadCollection('trainers'),
+      loadCollection('schedules'),
+      loadCollection('notices'),
+      loadGrouped('payments'),
+      loadGrouped('body'),
+      loadGrouped('ai'),
+    ]);
+    cache.members=members; cache.trainers=trainers; cache.schedules=schedules;
+    cache.notices=notices; cache.payments=payments; cache.body=body; cache.ai=ai;
+    console.log('[FitCMS] Firebase 로딩 완료');
+  } catch (e) {
+    console.error('[FitCMS] Firebase 로딩 실패:', e);
+    throw e;
+  }
+}
+
+function fbSet(name, id, data) { setDoc(doc(db, name, id), data).catch(e => console.error('[fbSet]', name, e)); }
+function fbDelete(name, id)    { deleteDoc(doc(db, name, id)).catch(e => console.error('[fbDelete]', name, e)); }
+
+export const store = {
+  getMembers:    ()     => cache.members,
+  addMember:     m      => { const nm={...m,id:'m'+Date.now()}; cache.members=[...cache.members,nm]; fbSet('members',nm.id,nm); return nm; },
+  updateMember:  (id,p) => { cache.members=cache.members.map(m=>m.id===id?{...m,...p}:m); const u=cache.members.find(m=>m.id===id); if(u) fbSet('members',id,u); },
+  deleteMember:  id     => { cache.members=cache.members.filter(m=>m.id!==id); fbDelete('members',id); },
+
+  getTrainers:    ()     => cache.trainers,
+  addTrainer:     t      => { const nt={...t,id:'t'+Date.now()}; cache.trainers=[...cache.trainers,nt]; fbSet('trainers',nt.id,nt); return nt; },
+  updateTrainer:  (id,p) => { cache.trainers=cache.trainers.map(t=>t.id===id?{...t,...p}:t); const u=cache.trainers.find(t=>t.id===id); if(u) fbSet('trainers',id,u); },
+  deleteTrainer:  id     => { cache.trainers=cache.trainers.filter(t=>t.id!==id); fbDelete('trainers',id); },
+
+  getSchedules:    ()     => cache.schedules,
+  addSchedule:     s      => { const ns={...s,id:'s'+Date.now()}; cache.schedules=[...cache.schedules,ns]; fbSet('schedules',ns.id,ns); return ns; },
+  updateSchedule:  (id,p) => { cache.schedules=cache.schedules.map(s=>s.id===id?{...s,...p}:s); const u=cache.schedules.find(s=>s.id===id); if(u) fbSet('schedules',id,u); },
+  deleteSchedule:  id     => { cache.schedules=cache.schedules.filter(s=>s.id!==id); fbDelete('schedules',id); },
+
+  getNotices: ()  => cache.notices,
+  addNotice:  n   => { const nn={...n,id:'n'+Date.now()}; cache.notices=[...cache.notices,nn]; fbSet('notices',nn.id,nn); return nn; },
+
+  getPayments:   (mid)    => cache.payments[mid] || [],
+  addPayment:    (mid,p)  => { const np={...p,id:'p'+Date.now()}; cache.payments[mid]=[...(cache.payments[mid]||[]), np]; fbSet('payments', np.id, {...np, __mid:mid}); return np; },
+  deletePayment: (mid,pid)=> { cache.payments[mid]=(cache.payments[mid]||[]).filter(p=>p.id!==pid); fbDelete('payments', pid); },
+  deleteAllPayments: (mid)=> { (cache.payments[mid]||[]).forEach(p=>fbDelete('payments', p.id)); delete cache.payments[mid]; },
+
+  getBodyRecords:   (mid)    => cache.body[mid] || [],
+  addBodyRecord:    (mid,r)  => { const nr={...r,id:'b'+Date.now()}; cache.body[mid]=[...(cache.body[mid]||[]), nr]; fbSet('body', nr.id, {...nr, __mid:mid}); return nr; },
+  deleteBodyRecord: (mid,rid)=> { cache.body[mid]=(cache.body[mid]||[]).filter(r=>r.id!==rid); fbDelete('body', rid); },
+  deleteAllBodyRecords: (mid)=> { (cache.body[mid]||[]).forEach(r=>fbDelete('body', r.id)); delete cache.body[mid]; },
+};
+
 export const aiStore = {
-  getSessions:   (mid)    => {
-    try { const all=JSON.parse(localStorage.getItem('fitcms_ai')||'{}'); return all[mid]||[]; } catch { return []; }
-  },
-  addSession:    (mid, s) => {
-    try {
-      const all=JSON.parse(localStorage.getItem('fitcms_ai')||'{}');
-      const ns={...s, id:'ai'+Date.now()};
-      all[mid]=[...(all[mid]||[]), ns];
-      localStorage.setItem('fitcms_ai', JSON.stringify(all));
-      return ns;
-    } catch(e) { console.error('[aiStore.add]', e); return null; }
-  },
-  deleteSession: (mid, sid) => {
-    try {
-      const all=JSON.parse(localStorage.getItem('fitcms_ai')||'{}');
-      all[mid]=(all[mid]||[]).filter(s=>s.id!==sid);
-      localStorage.setItem('fitcms_ai', JSON.stringify(all));
-    } catch(e) { console.error('[aiStore.delete]', e); }
-  },
-  deleteAll:     (mid) => {
-    try {
-      const all=JSON.parse(localStorage.getItem('fitcms_ai')||'{}');
-      delete all[mid];
-      localStorage.setItem('fitcms_ai', JSON.stringify(all));
-    } catch(e) { console.error('[aiStore.deleteAll]', e); }
-  },
+  getSessions:   (mid)    => cache.ai[mid] || [],
+  addSession:    (mid, s) => { const ns={...s, id:'ai'+Date.now()}; cache.ai[mid]=[...(cache.ai[mid]||[]), ns]; fbSet('ai', ns.id, {...ns, __mid:mid}); return ns; },
+  deleteSession: (mid, sid) => { cache.ai[mid]=(cache.ai[mid]||[]).filter(s=>s.id!==sid); fbDelete('ai', sid); },
+  deleteAll:     (mid) => { (cache.ai[mid]||[]).forEach(s=>fbDelete('ai', s.id)); delete cache.ai[mid]; },
 };
