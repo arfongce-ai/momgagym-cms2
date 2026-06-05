@@ -138,9 +138,9 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
   const TABS = [['info','기본정보'],['sessions','세션'],['payments','수납'],['body','신체정보'],['ai','측정이력'],['memo','메모']];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/70 backdrop-blur-sm">
-      <div className="w-full md:max-w-lg bg-slate-900 md:rounded-2xl rounded-t-2xl border-t md:border
-                      border-slate-700 shadow-2xl max-h-[92dvh] flex flex-col overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-3">
+      <div className="w-full md:max-w-lg bg-slate-900 rounded-2xl border
+                      border-slate-700 shadow-2xl max-h-[85dvh] flex flex-col overflow-hidden">
 
         {/* 헤더 */}
         <div className="flex items-center gap-3 px-5 py-4 border-b border-slate-800 flex-shrink-0">

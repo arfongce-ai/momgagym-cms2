@@ -179,13 +179,13 @@ export default function AiMeasureReport({ member, onClose, onSaved }) {
   return (
     // touch-action:none — 모바일 스크롤 간섭 차단
     <div
-      className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/70 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-3"
       style={{ touchAction: 'none' }}
     >
-      <div className="w-full md:max-w-lg bg-slate-900 md:rounded-2xl rounded-t-2xl
-                      border-t md:border border-slate-700 shadow-2xl
+      <div className="w-full md:max-w-lg bg-slate-900 rounded-2xl
+                      border border-slate-700 shadow-2xl
                       flex flex-col overflow-hidden"
-           style={{ maxHeight: '92dvh' }}>
+           style={{ maxHeight: '85dvh' }}>
 
         {/* 헤더 */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-slate-800 flex-shrink-0">
