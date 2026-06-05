@@ -185,7 +185,7 @@ export default function AiMeasureReport({ member, onClose, onSaved }) {
       <div className="w-full md:max-w-lg bg-slate-900 rounded-2xl
                       border border-slate-700 shadow-2xl
                       flex flex-col overflow-hidden"
-           style={{ maxHeight: '85dvh' }}>
+           style={{ maxHeight: '85vh' }}>
 
         {/* 헤더 */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-slate-800 flex-shrink-0">
