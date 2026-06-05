@@ -4,6 +4,7 @@
 // ✅ 이미 사용 중인 색상 선택 불가 (복수 선택 방지)
 import { useState, useEffect } from 'react';
 import { store } from '../demoData';
+import { useAuth } from '../contexts/AuthContext';
 
 const TRAINER_CLASS_TYPES = ['6대체력','다이어트','선수','재활','노인','외부','임산부','장애인','기저질환','컨디셔닝'];
 
@@ -100,7 +101,7 @@ function ColorPalette({ value, onChange, usedColors=[] }) {
   );
 }
 
-const EMPTY = { name:'', phone:'', birthDate:'', hireDate:'', classTypes:[], status:'full', color:'#f59e0b', memo:'' };
+const EMPTY = { name:'', phone:'', birthDate:'', hireDate:'', classTypes:[], status:'full', color:'#f59e0b', memo:'', loginEmail:'', loginPassword:'' };
 
 // 다음 사용 가능한 색상 자동 계산
 function getNextColor(usedColors) {
@@ -108,10 +109,13 @@ function getNextColor(usedColors) {
 }
 
 export default function Trainers() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'admin';
   const [trainers,   setTrainers]   = useState([]);
   const [showForm,   setShowForm]   = useState(false);
   const [editTarget, setEditTarget] = useState(null);
   const [form,       setForm]       = useState(EMPTY);
+  const [showPw,     setShowPw]     = useState({}); // 트레이너별 비번 보기 토글
 
   const load = () => setTrainers(store.getTrainers());
   useEffect(load, []);
@@ -135,7 +139,8 @@ export default function Trainers() {
   const openEdit = t => {
     setEditTarget(t);
     setForm({ name:t.name, phone:t.phone, birthDate:t.birthDate||'', hireDate:t.hireDate||'',
-              classTypes:t.classTypes||[], status:t.status||'full', color:t.color||'#f59e0b', memo:t.memo||'' });
+              classTypes:t.classTypes||[], status:t.status||'full', color:t.color||'#f59e0b', memo:t.memo||'',
+              loginEmail:t.loginEmail||'', loginPassword:t.loginPassword||'' });
     setShowForm(true);
   };
 
@@ -143,6 +148,14 @@ export default function Trainers() {
 
   const saveTrainer = () => {
     if (!form.name.trim() || !form.phone.trim()) { alert('이름과 연락처는 필수입니다.'); return; }
+    // 로그인 계정을 적었다면 이메일+비번 둘 다 있어야 하고, 이메일이 겹치면 안 됨
+    const email = (form.loginEmail||'').trim().toLowerCase();
+    if (email || form.loginPassword) {
+      if (!email || !form.loginPassword) { alert('로그인 계정을 만들려면 이메일과 비밀번호를 모두 입력하세요.'); return; }
+      const dupDemo = ['admin@fitcms.demo','trainer@fitcms.demo'].includes(email);
+      const dupTrainer = trainers.some(t => t.id!==editTarget?.id && (t.loginEmail||'').trim().toLowerCase()===email);
+      if (dupDemo || dupTrainer) { alert('이미 사용 중인 이메일입니다. 다른 이메일을 입력하세요.'); return; }
+    }
     if (editTarget) store.updateTrainer(editTarget.id, form);
     else store.addTrainer(form);
     load(); closeForm();
@@ -187,6 +200,24 @@ export default function Trainers() {
                   <span className="text-[10px] text-slate-600">{COLOR_PALETTE.find(c=>c.hex===t.color)?.name||''}</span>
                 </div>
                 {t.memo&&<p className="text-slate-600 text-xs mt-1 truncate">{t.memo}</p>}
+
+                {/* ── 로그인 계정 정보 (관리자만) ── */}
+                {isAdmin && t.loginEmail && (
+                  <div className="mt-2 p-2 rounded-lg bg-slate-800/60 border border-slate-700/60 space-y-1">
+                    <div className="flex items-center gap-1.5 text-[11px]">
+                      <span className="text-slate-500 w-12 flex-shrink-0">아이디</span>
+                      <span className="text-slate-300 font-mono break-all">{t.loginEmail}</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 text-[11px]">
+                      <span className="text-slate-500 w-12 flex-shrink-0">비번</span>
+                      <span className="text-slate-300 font-mono">{showPw[t.id] ? t.loginPassword : '••••••••'}</span>
+                      <button type="button" onClick={()=>setShowPw(p=>({...p,[t.id]:!p[t.id]}))}
+                        className="ml-auto text-[10px] px-1.5 py-0.5 rounded border border-slate-600 text-slate-400 hover:text-white">
+                        {showPw[t.id] ? '숨기기' : '보기'}
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
             <div className="flex gap-2 mt-3 pt-3 border-t border-slate-800">
@@ -236,6 +267,20 @@ export default function Trainers() {
               <ColorPalette value={form.color} onChange={v=>setForm(f=>({...f,color:v}))} usedColors={usedColors}/>
 
               <div><label className={LBL}>메모</label><textarea rows={2} value={form.memo} onChange={pf('memo')} placeholder="특이사항" className={INP+" resize-none"}/></div>
+
+              {/* ── 로그인 계정 (관리자만 설정) ── */}
+              <div className="pt-4 border-t border-slate-800">
+                <label className={LBL}>로그인 계정 <span className="normal-case text-slate-500 font-normal">(이 트레이너가 직접 로그인할 때 사용 · 선택)</span></label>
+                <div className="grid grid-cols-1 gap-3">
+                  <div>
+                    <input value={form.loginEmail} onChange={pf('loginEmail')} placeholder="이메일 (예: trainer-kim@momgagym.com)" className={INP} autoComplete="off"/>
+                  </div>
+                  <div>
+                    <input value={form.loginPassword} onChange={pf('loginPassword')} placeholder="비밀번호" className={INP} autoComplete="off"/>
+                    <p className="text-[11px] text-slate-500 mt-1">※ 센터 내부용이라 비밀번호는 관리자가 확인할 수 있게 저장됩니다.</p>
+                  </div>
+                </div>
+              </div>
             </div>
 
             <div className="flex gap-2 px-5 py-4 border-t border-slate-800 flex-shrink-0">
