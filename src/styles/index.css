@@ -81,9 +81,9 @@ canvas { touch-action:none; }
 /* 안쪽: 실제 창. 중앙 + 반응형 너비 + 화면 85% 높이 제한 + 내부 스크롤 */
 .modal-box {
   width: 100%;
-  max-width: 600px;
-  max-height: 85vh;            /* 구형 브라우저 폴백 */
-  max-height: 85dvh;           /* 최신 모바일(주소창 대응) */
+  max-width: 680px;
+  max-height: 92vh;            /* 구형 브라우저 폴백 */
+  max-height: 92dvh;           /* 최신 모바일(주소창 대응) */
   display: flex;
   flex-direction: column;
   overflow: hidden;            /* 모서리 둥글게 유지 */
@@ -97,6 +97,7 @@ canvas { touch-action:none; }
 .modal-body {
   flex: 1 1 auto;
   overflow-y: auto;
+  min-height: 0;
   -webkit-overflow-scrolling: touch;
 }
 .modal-box::-webkit-scrollbar, .modal-body::-webkit-scrollbar { width: 8px; }
