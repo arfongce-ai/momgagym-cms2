@@ -62,3 +62,42 @@
 @keyframes fadeIn { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:translateY(0); } }
 [data-theme="light"] body, .light-mode { background:#f8fafc; color:#0f172a; }
 canvas { touch-action:none; }
+
+/* ===== 모달 공통 (모든 등록/상세 창에 적용) ===== */
+/* 바깥: 화면 전체를 덮는 어두운 배경 + 가운데 정렬 + 넘치면 배경 스크롤 */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(0,0,0,0.7);
+  backdrop-filter: blur(4px);
+  overflow-y: auto;            /* 창이 화면보다 길면 배경이 스크롤됨 */
+  -webkit-overflow-scrolling: touch;
+}
+/* 안쪽: 실제 창. 중앙 + 반응형 너비 + 화면 85% 높이 제한 + 내부 스크롤 */
+.modal-box {
+  width: 100%;
+  max-width: 600px;
+  max-height: 85vh;            /* 구형 브라우저 폴백 */
+  max-height: 85dvh;           /* 최신 모바일(주소창 대응) */
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;            /* 모서리 둥글게 유지 */
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 16px;
+  box-shadow: 0 25px 50px -12px rgba(0,0,0,0.6);
+  margin: auto;                /* 세로로도 가운데 */
+}
+/* 안쪽 본문(스크롤되는 영역) */
+.modal-body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.modal-box::-webkit-scrollbar, .modal-body::-webkit-scrollbar { width: 8px; }
+.modal-box::-webkit-scrollbar-thumb, .modal-body::-webkit-scrollbar-thumb { background:#475569; border-radius:4px; }

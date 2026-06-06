@@ -229,8 +229,8 @@ export default function Trainers() {
       </div>
 
       {showForm&&(
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-3">
-          <div className="w-full md:max-w-lg bg-slate-900 rounded-2xl border border-slate-700 shadow-2xl flex flex-col overflow-hidden" style={{ maxHeight: '85vh' }}>
+        <div className="modal-overlay">
+          <div className="modal-box">
             <div className="flex items-center justify-between px-5 py-4 border-b border-slate-800 flex-shrink-0">
               <div>
                 <h3 className="font-bold text-base">{editTarget?'트레이너 수정':'트레이너 등록'}</h3>

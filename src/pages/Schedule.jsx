@@ -189,8 +189,8 @@ function ScheduleDetailModal({ schedule:initS, onClose, onUpdate, onDelete }) {
   const pf = f => e => setForm(p=>({...p,[f]:e.target.value}));
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-3">
-      <div className="w-full md:max-w-md bg-slate-900 rounded-2xl border border-slate-700 shadow-2xl flex flex-col overflow-hidden" style={{ maxHeight: '85vh' }}>
+    <div className="modal-overlay">
+      <div className="modal-box">
 
         {/* 헤더 */}
         <div className="flex items-center gap-3 px-5 py-4 border-b border-slate-800 flex-shrink-0">
@@ -406,8 +406,8 @@ function AddModal({ members, trainers, onAdd, onClose }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-3">
-      <div className="w-full md:max-w-md bg-slate-900 rounded-2xl border border-slate-700 shadow-2xl flex flex-col overflow-hidden" style={{ maxHeight: '85vh' }}>
+    <div className="modal-overlay">
+      <div className="modal-box">
 
         {/* 헤더 + 탭 */}
         <div className="flex-shrink-0">
