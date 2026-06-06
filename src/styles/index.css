@@ -58,7 +58,8 @@
   .measure-back { @apply text-slate-400 text-sm hover:text-white transition-colors; }
 }
 
-.page-fade, .animate-fade-in { animation:fadeIn 0.2s ease forwards; }
+.page-fade { animation:fadeIn 0.2s ease; }
+.animate-fade-in { animation:fadeIn 0.2s ease forwards; }
 @keyframes fadeIn { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:translateY(0); } }
 [data-theme="light"] body, .light-mode { background:#f8fafc; color:#0f172a; }
 canvas { touch-action:none; }
@@ -102,8 +103,10 @@ canvas { touch-action:none; }
 }
 .modal-box-large {
   max-width: 960px;
-  height: 94vh;
-  height: 94dvh;
+  height: calc(100vh - 16px);
+  height: calc(100dvh - 16px);
+  max-height: calc(100vh - 16px);
+  max-height: calc(100dvh - 16px);
 }
 .modal-box::-webkit-scrollbar, .modal-body::-webkit-scrollbar { width: 8px; }
 .modal-box::-webkit-scrollbar-thumb, .modal-body::-webkit-scrollbar-thumb { background:#475569; border-radius:4px; }
