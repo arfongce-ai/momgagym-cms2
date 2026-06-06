@@ -207,7 +207,7 @@ export default function MemberRegister({ trainers=[], onSuccess, onCancel }) {
           )}
         </div>
 
-        <div className="flex-1 overflow-y-auto">
+        <div className="modal-body">
 
           {/* ─ STEP 1: 기본 정보 ──────────────────────── */}
           {step==='form'&&(

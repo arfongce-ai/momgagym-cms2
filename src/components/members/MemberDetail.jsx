@@ -164,7 +164,7 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
           ))}
         </div>
 
-        <div className="flex-1 overflow-y-auto p-5">
+        <div className="modal-body p-5">
 
           {/* ━━ 기본정보 탭 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
           {tab==='info' && (

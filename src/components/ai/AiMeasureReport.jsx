@@ -199,7 +199,7 @@ export default function AiMeasureReport({ member, onClose, onSaved }) {
         </div>
 
         {/* ── 고정 높이 스크롤 영역 ── */}
-        <div className="flex-1 overflow-y-auto" style={{ touchAction: 'pan-y' }}>
+        <div className="modal-body" style={{ touchAction: 'pan-y' }}>
 
           {/* ─ 상단: 측정값 입력 ─────────────────────── */}
           {phase === 'input' && (

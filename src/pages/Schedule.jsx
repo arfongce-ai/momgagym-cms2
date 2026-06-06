@@ -208,7 +208,7 @@ function ScheduleDetailModal({ schedule:initS, onClose, onUpdate, onDelete }) {
           <button onClick={onClose} className="text-slate-500 hover:text-white text-2xl leading-none ml-1">×</button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-5 space-y-4">
+        <div className="modal-body p-5 space-y-4">
           {!editMode ? (
             <>
               {[
@@ -426,7 +426,7 @@ function AddModal({ members, trainers, onAdd, onClose }) {
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-5 pb-5 space-y-4">
+        <div className="modal-body px-5 pb-5 space-y-4">
 
           {/* ══ 일반 수업 탭 ══════════════════════════════ */}
           {tab==='regular' && (

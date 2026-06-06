@@ -239,7 +239,7 @@ export default function Trainers() {
               <button onClick={closeForm} className="text-slate-500 hover:text-white text-2xl leading-none">×</button>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-5 space-y-4">
+            <div className="modal-body p-5 space-y-4">
               <div className="grid grid-cols-2 gap-3">
                 <div><label className={LBL}>이름 *</label><input value={form.name} onChange={pf('name')} placeholder="김민준" className={INP}/></div>
                 <div><label className={LBL}>연락처 *</label><input value={form.phone} onChange={pf('phone')} placeholder="010-0000-0000" className={INP}/></div>
