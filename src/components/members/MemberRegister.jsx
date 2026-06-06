@@ -190,7 +190,7 @@ export default function MemberRegister({ trainers=[], onSuccess, onCancel }) {
 
   return (
     <div className="modal-overlay">
-      <div className="modal-box">
+      <div className="modal-box modal-box-large">
 
         {/* 헤더 */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-slate-800 flex-shrink-0">

@@ -407,7 +407,7 @@ function AddModal({ members, trainers, onAdd, onClose }) {
 
   return (
     <div className="modal-overlay">
-      <div className="modal-box">
+      <div className="modal-box modal-box-large">
 
         {/* 헤더 + 탭 */}
         <div className="flex-shrink-0">
