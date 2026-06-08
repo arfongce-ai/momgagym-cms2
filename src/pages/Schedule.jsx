@@ -44,6 +44,7 @@ function remainOf(s, members) {
 }
 // 회원이름 + (잔여N) 문자열
 function nameWithRemain(s, members) {
+  if (s.isConsult || s.classType === '상담') return '상담';
   const base = s.isExternal || !s.memberId ? (s.memo?.slice(0,8) || '외부') : s.memberName;
   const r = remainOf(s, members);
   return r != null ? `${base}(${r})` : base;
@@ -154,7 +155,8 @@ function ScheduleDetailModal({ schedule:initS, onClose, onUpdate, onDelete }) {
   const st     = STATUS_MAP[s.status] || STATUS_MAP.scheduled;
   const wd     = weekday(s.date);
   const isExt  = s.isExternal || !s.memberId;
-  const dispName = isExt ? (s.memo||'외부 일정') : s.memberName;
+  const isConsult = s.isConsult || s.classType === '상담';
+  const dispName = isConsult ? '💬 상담' : (isExt ? (s.memo||'외부 일정') : s.memberName);
 
   const markStatus = status => {
     const fresh = store.getSchedules().find(sc=>sc.id===s.id);
@@ -334,6 +336,10 @@ function AddModal({ members, trainers, onAdd, onClose }) {
     memberId:'', trainerId:'', date:today,
     startTime:'', endTime:'',
     classType:'', memo:'', externalType:'출강',
+    // ★ 외부 일정 기간 모드 — 'single'(하루) | 'range'(여러 날)
+    extDateMode:'single', endDate:today,
+    // ★ 일반 수업 모드 — 'member'(회원 수업) | 'consult'(상담, 회원 없음)
+    regularMode:'member',
   });
 
   const pf = f => val => setForm(p=>({...p,[f]:val}));
@@ -342,7 +348,7 @@ function AddModal({ members, trainers, onAdd, onClose }) {
   // 탭 전환 시 폼 리셋
   const switchTab = t => {
     setTab(t);
-    setForm({ memberId:'', trainerId:'', date:today, startTime:'', endTime:'', classType:'', memo:'', externalType:'출강' });
+    setForm({ memberId:'', trainerId:'', date:today, startTime:'', endTime:'', classType:'', memo:'', externalType:'출강', extDateMode:'single', endDate:today, regularMode:'member' });
   };
 
   // ── 트레이너 먼저 선택 → 담당 회원 필터링 ─────────────────
@@ -374,33 +380,62 @@ function AddModal({ members, trainers, onAdd, onClose }) {
   };
 
   // 완성 여부
-  const canSubmitRegular  = form.memberId && form.trainerId && form.date && form.startTime && form.classType;
-  const canSubmitExternal = form.date && form.startTime && form.endTime && form.externalType;
+  // 일반 수업: 회원 수업 모드는 회원·수업종류 필수 / 상담 모드는 회원·수업종류 불필요
+  const isConsult = form.regularMode === 'consult';
+  const canSubmitRegular = isConsult
+    ? (form.trainerId && form.date && form.startTime)
+    : (form.memberId && form.trainerId && form.date && form.startTime && form.classType);
+  // 외부 일정: 기간 모드면 종료 날짜가 시작 날짜 이상이어야 함
+  const isRange = form.extDateMode === 'range';
+  const rangeValid = !isRange || (form.endDate && form.endDate >= form.date);
+  const canSubmitExternal = form.date && form.startTime && form.endTime && form.externalType && rangeValid;
 
   const handleAdd = () => {
     if (tab === 'regular') {
       if (!canSubmitRegular) return;
-      const m = members.find(me=>me.id===form.memberId);
       const t = trainers.find(tr=>tr.id===form.trainerId);
-      onAdd({
-        memberId:form.memberId, memberName:m?.name||'',
-        trainerId:form.trainerId, trainerName:t?.name||'',
-        trainerColor:t?.color||'#94a3b8',
-        date:form.date, startTime:form.startTime, endTime:form.endTime||addHour(form.startTime),
-        classType:form.classType, memo:'',
-        status:'scheduled', sessionDeducted:false, isExternal:false,
-      });
+      if (isConsult) {
+        // ★ 상담: 회원 없음, 세션 차감 없음 (isExternal=true로 차감 방어)
+        onAdd({
+          memberId:null, memberName:null,
+          trainerId:form.trainerId, trainerName:t?.name||'',
+          trainerColor:t?.color||'#94a3b8',
+          date:form.date, startTime:form.startTime, endTime:form.endTime||addHour(form.startTime),
+          classType:'상담', memo:form.memo||'',
+          status:'scheduled', sessionDeducted:true, isExternal:true, isConsult:true,
+        });
+      } else {
+        const m = members.find(me=>me.id===form.memberId);
+        onAdd({
+          memberId:form.memberId, memberName:m?.name||'',
+          trainerId:form.trainerId, trainerName:t?.name||'',
+          trainerColor:t?.color||'#94a3b8',
+          date:form.date, startTime:form.startTime, endTime:form.endTime||addHour(form.startTime),
+          classType:form.classType, memo:'',
+          status:'scheduled', sessionDeducted:false, isExternal:false,
+        });
+      }
     } else {
       if (!canSubmitExternal) return;
       const t = trainers.find(tr=>tr.id===form.trainerId);
-      onAdd({
-        // ★ 요구사항5: memberId = null, sessionDeducted = true (영구 차감 방지)
-        memberId:null, memberName:null,
-        trainerId:form.trainerId||null, trainerName:t?.name||'외부',
-        trainerColor:t?.color||'#a855f7',
-        date:form.date, startTime:form.startTime, endTime:form.endTime,
-        classType:form.externalType, memo:form.memo,
-        status:'scheduled', sessionDeducted:true, isExternal:true,
+      // ★ 기간 모드: 시작~종료 날짜 사이 모든 날에 일정 생성
+      const dates = [];
+      if (isRange) {
+        let d = form.date;
+        while (d <= form.endDate) { dates.push(d); d = addD(d, 1); }
+      } else {
+        dates.push(form.date);
+      }
+      dates.forEach(d => {
+        onAdd({
+          // ★ memberId = null, sessionDeducted = true (영구 차감 방지)
+          memberId:null, memberName:null,
+          trainerId:form.trainerId||null, trainerName:t?.name||'외부',
+          trainerColor:t?.color||'#a855f7',
+          date:d, startTime:form.startTime, endTime:form.endTime,
+          classType:form.externalType, memo:form.memo,
+          status:'scheduled', sessionDeducted:true, isExternal:true,
+        });
       });
     }
   };
@@ -431,6 +466,22 @@ function AddModal({ members, trainers, onAdd, onClose }) {
           {/* ══ 일반 수업 탭 ══════════════════════════════ */}
           {tab==='regular' && (
             <>
+              {/* ★ 모드 선택: 회원 수업 / 상담 */}
+              <div>
+                <label className={LBL}>유형</label>
+                <div className="flex gap-2">
+                  {[['member','👤 회원 수업'],['consult','💬 상담 (회원 없음)']].map(([m,l])=>(
+                    <div key={m} onClick={()=>setForm(p=>({...p, regularMode:m, memberId:'', classType:''}))}
+                      className={`flex-1 py-2.5 rounded-xl text-sm font-bold border cursor-pointer text-center transition-colors select-none
+                        ${form.regularMode===m
+                          ? 'bg-amber-500/20 border-amber-500/40 text-amber-300'
+                          : 'border-slate-700 text-slate-400 hover:border-slate-500 hover:text-slate-300'}`}>
+                      {l}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
               {/* ① 트레이너 선택 */}
               <div>
                 <label className={LBL}>① 담당 트레이너 <span className="text-red-400">*</span></label>
@@ -448,7 +499,8 @@ function AddModal({ members, trainers, onAdd, onClose }) {
                 )}
               </div>
 
-              {/* ② 회원 선택 — 해당 트레이너의 담당 회원만 */}
+              {/* ② 회원 선택 — 상담 모드에서는 숨김 */}
+              {!isConsult && (
               <div>
                 <label className={LBL}>
                   ② 회원 선택
@@ -468,6 +520,7 @@ function AddModal({ members, trainers, onAdd, onClose }) {
                   ))}
                 </select>
               </div>
+              )}
 
               {/* ③ 날짜 + 요일 */}
               <DateWd label="③ 날짜" value={form.date} onChange={pf('date')}/>
@@ -494,7 +547,8 @@ function AddModal({ members, trainers, onAdd, onClose }) {
                   className={INP}/>
               </div>
 
-              {/* ⑤ 수업 종류 — 회원의 classTypes만 표시 */}
+              {/* ⑤ 수업 종류 — 회원 수업 모드에서만, 상담은 '상담' 고정 */}
+              {!isConsult ? (
               <div>
                 <label className={LBL}>
                   ⑤ 수업 종류
@@ -510,19 +564,29 @@ function AddModal({ members, trainers, onAdd, onClose }) {
                   <p className="text-xs text-orange-400 mt-1">이 회원에게 등록된 수업 종류가 없습니다</p>
                 )}
               </div>
+              ) : (
+              <div>
+                <label className={LBL}>일정 내용 메모 (선택)</label>
+                <textarea rows={2} value={form.memo} onChange={pe('memo')}
+                  placeholder="상담 내용을 입력하세요 (예: 신규 회원 상담)"
+                  className={INP+" resize-none"}/>
+              </div>
+              )}
 
               {/* 예약 미리보기 */}
               {canSubmitRegular && (
                 <div className="bg-slate-800 border border-amber-500/20 rounded-xl p-3 space-y-1">
-                  <p className="text-xs text-amber-400 font-semibold">예약 확인</p>
+                  <p className="text-xs text-amber-400 font-semibold">{isConsult ? '상담 확인' : '예약 확인'}</p>
                   <div className="flex items-center gap-2 text-sm">
                     <div className="w-2 h-2 rounded-full" style={{background:selectedTrainerObj?.color}}/>
-                    <span className="font-semibold">{members.find(m=>m.id===form.memberId)?.name}</span>
+                    {isConsult
+                      ? <span className="font-semibold text-amber-300">💬 상담</span>
+                      : <span className="font-semibold">{members.find(m=>m.id===form.memberId)?.name}</span>}
                     <span className="text-slate-500">·</span>
                     <span className="text-slate-300">{selectedTrainerObj?.name}</span>
                   </div>
                   <p className="text-slate-400 text-xs">
-                    {form.date} ({weekday(form.date)}요일) · {form.startTime} — {form.endTime} · {form.classType}
+                    {form.date} ({weekday(form.date)}요일) · {form.startTime} — {form.endTime} · {isConsult ? '상담' : form.classType}
                   </p>
                 </div>
               )}
@@ -567,8 +631,45 @@ function AddModal({ members, trainers, onAdd, onClose }) {
                 </select>
               </div>
 
-              {/* 날짜 + 요일 */}
-              <DateWd label="날짜" value={form.date} onChange={pf('date')}/>
+              {/* ★ 기간 모드 선택: 하루 / 여러 날 */}
+              <div>
+                <label className={LBL}>기간 설정</label>
+                <div className="flex gap-2">
+                  {[['single','📅 하루'],['range','🗓 여러 날 (기간)']].map(([m,l])=>(
+                    <div key={m} onClick={()=>setForm(p=>({...p, extDateMode:m, endDate:p.date}))}
+                      className={`flex-1 py-2.5 rounded-xl text-sm font-bold border cursor-pointer text-center transition-colors select-none
+                        ${form.extDateMode===m
+                          ? 'bg-purple-500/20 border-purple-500/40 text-purple-300'
+                          : 'border-slate-700 text-slate-400 hover:border-slate-500 hover:text-slate-300'}`}>
+                      {l}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* 날짜 + 요일 — 하루 모드면 '날짜', 기간 모드면 '시작 날짜' */}
+              <DateWd label={isRange ? '시작 날짜' : '날짜'} value={form.date}
+                onChange={v=>setForm(p=>({...p, date:v, endDate:(p.endDate < v ? v : p.endDate)}))}/>
+
+              {/* ★ 기간 모드일 때만 종료 날짜 */}
+              {isRange && (
+                <>
+                  <DateWd label="종료 날짜" value={form.endDate} onChange={pf('endDate')}/>
+                  {!rangeValid && (
+                    <p className="text-xs text-red-400 -mt-2">종료 날짜는 시작 날짜와 같거나 이후여야 합니다</p>
+                  )}
+                  {rangeValid && (
+                    <div className="bg-purple-500/5 border border-purple-500/20 rounded-xl px-3 py-2 -mt-1">
+                      <p className="text-xs text-purple-300 font-semibold">
+                        총 {(() => { let n=0,d=form.date; while(d<=form.endDate){n++;d=addD(d,1);} return n; })()}일간 일정이 등록됩니다
+                      </p>
+                      <p className="text-[11px] text-slate-500 mt-0.5">
+                        {fmtKo(form.date)} ~ {fmtKo(form.endDate)} · 매일 {form.startTime||'--:--'}~{form.endTime||'--:--'}
+                      </p>
+                    </div>
+                  )}
+                </>
+              )}
 
               {/* 시작/종료 시간 — 자유 입력 (스냅 없음, 독립 설정) */}
               <div className="grid grid-cols-2 gap-3">
@@ -577,7 +678,7 @@ function AddModal({ members, trainers, onAdd, onClose }) {
                     시작 시간
                     <span className="block text-[10px] text-purple-400 normal-case font-normal mt-0.5">자유 입력</span>
                   </label>
-                  {/* ★ 요구사항5-3: step 없음, 분 단위 자유 */}
+                  {/* ★ step 없음, 분 단위 자유 */}
                   <input type="time" value={form.startTime}
                     onChange={handleStartTimeExternal}
                     className={INP}/>
@@ -598,6 +699,7 @@ function AddModal({ members, trainers, onAdd, onClose }) {
                 <p className="text-xs text-purple-400 font-semibold mb-1">외부 일정 안내</p>
                 <p className="text-xs text-slate-500 leading-relaxed">
                   외부 일정은 특정 회원에 종속되지 않으며, 세션 차감이 일어나지 않습니다.
+                  {isRange && ' 여러 날 모드에서는 시작~종료 날짜의 모든 날에 같은 시간으로 일정이 만들어집니다.'}
                 </p>
               </div>
             </>
@@ -616,7 +718,9 @@ function AddModal({ members, trainers, onAdd, onClose }) {
               ${tab==='external'
                 ? 'bg-purple-600 hover:bg-purple-500 text-white'
                 : 'bg-amber-500 hover:bg-amber-400 text-slate-950'}`}>
-            {tab==='regular' ? '수업 예약' : '외부 일정 등록'}
+            {tab==='regular'
+              ? (isConsult ? '상담 등록' : '수업 예약')
+              : (isRange ? '기간 일정 등록' : '외부 일정 등록')}
           </button>
         </div>
       </div>
