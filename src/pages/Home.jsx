@@ -64,9 +64,13 @@ export default function Home() {
   const [members,   setMembers]   = useState([]);
   const [showForm,  setShowForm]  = useState(false);
   const [newNotice, setNewNotice] = useState({ title:'', content:'' });
+  const [editId,    setEditId]    = useState(null);
+  const [editNotice,setEditNotice]= useState({ title:'', content:'' });
+
+  const refreshNotices = () => setNotices(store.getNotices().sort((a,b) => b.isPinned - a.isPinned));
 
   useEffect(() => {
-    setNotices(store.getNotices().sort((a,b) => b.isPinned - a.isPinned));
+    refreshNotices();
     setSchedules(store.getSchedules());
     setMembers(store.getMembers());
   }, []);
@@ -75,10 +79,41 @@ export default function Home() {
     if (!newNotice.title.trim()) return;
     try {
       await store.addNotice({ ...newNotice, createdAt:new Date().toISOString(), isPinned:false, authorId:user.id });
-      setNotices(store.getNotices().sort((a,b) => b.isPinned - a.isPinned));
+      refreshNotices();
       setNewNotice({ title:'', content:'' });
       setShowForm(false);
     } catch (e) { alert('공지 등록에 실패했습니다. 네트워크 확인 후 다시 시도하세요.'); }
+  };
+
+  const startEdit = (n) => {
+    setEditId(n.id);
+    setEditNotice({ title:n.title, content:n.content||'' });
+    setShowForm(false);
+  };
+
+  const saveEdit = async () => {
+    if (!editNotice.title.trim()) return;
+    try {
+      await store.updateNotice(editId, { title:editNotice.title, content:editNotice.content });
+      refreshNotices();
+      setEditId(null);
+    } catch (e) { alert('공지 수정에 실패했습니다. 네트워크 확인 후 다시 시도하세요.'); }
+  };
+
+  const togglePin = async (n) => {
+    try {
+      await store.updateNotice(n.id, { isPinned: !n.isPinned });
+      refreshNotices();
+    } catch (e) { alert('고정 변경에 실패했습니다.'); }
+  };
+
+  const removeNotice = async (n) => {
+    if (!window.confirm(`"${n.title}" 공지를 삭제할까요?`)) return;
+    try {
+      await store.deleteNotice(n.id);
+      refreshNotices();
+      if (editId === n.id) setEditId(null);
+    } catch (e) { alert('공지 삭제에 실패했습니다. 네트워크 확인 후 다시 시도하세요.'); }
   };
 
   const todayStr   = new Date().toISOString().slice(0,10);
@@ -127,12 +162,41 @@ export default function Home() {
             ? <p className="text-slate-600 text-sm text-center py-4">공지사항이 없습니다</p>
             : notices.map(n=>(
               <div key={n.id} className={`p-3 rounded-xl ${n.isPinned?'bg-amber-500/10 border border-amber-500/20':'bg-slate-800/60'}`}>
-                <div className="flex items-center gap-2 flex-wrap">
-                  {n.isPinned&&<span className="text-[10px] bg-amber-500 text-slate-950 font-black px-1.5 py-0.5 rounded">📌고정</span>}
-                  <span className="font-semibold text-sm">{n.title}</span>
-                </div>
-                {n.content&&<p className="text-slate-400 text-xs mt-1.5 whitespace-pre-line leading-relaxed">{n.content}</p>}
-                <p className="text-slate-600 text-[10px] mt-1.5">{fmtDate(n.createdAt)}</p>
+                {editId===n.id ? (
+                  <div className="space-y-2">
+                    <input value={editNotice.title} onChange={e=>setEditNotice({...editNotice,title:e.target.value})}
+                      placeholder="제목"
+                      className="w-full bg-slate-900 border border-slate-700 text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-amber-500"/>
+                    <textarea value={editNotice.content} onChange={e=>setEditNotice({...editNotice,content:e.target.value})}
+                      placeholder="내용" rows={3}
+                      className="w-full bg-slate-900 border border-slate-700 text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-amber-500 resize-none"/>
+                    <div className="flex gap-2 justify-end">
+                      <button onClick={()=>setEditId(null)} className="text-xs text-slate-400 hover:text-white px-3 py-1.5 rounded-lg transition-colors">취소</button>
+                      <button onClick={saveEdit} className="btn btn-primary btn-sm">저장</button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-center gap-2 flex-wrap min-w-0">
+                        {n.isPinned&&<span className="text-[10px] bg-amber-500 text-slate-950 font-black px-1.5 py-0.5 rounded">📌고정</span>}
+                        <span className="font-semibold text-sm">{n.title}</span>
+                      </div>
+                      {user?.role==='admin' && (
+                        <div className="flex items-center gap-1.5 flex-shrink-0">
+                          <button onClick={()=>togglePin(n)} title="고정/해제"
+                            className="text-[11px] text-slate-400 hover:text-amber-400 transition-colors">{n.isPinned?'고정해제':'고정'}</button>
+                          <button onClick={()=>startEdit(n)}
+                            className="text-[11px] text-slate-400 hover:text-blue-400 transition-colors">수정</button>
+                          <button onClick={()=>removeNotice(n)}
+                            className="text-[11px] text-slate-400 hover:text-red-400 transition-colors">삭제</button>
+                        </div>
+                      )}
+                    </div>
+                    {n.content&&<p className="text-slate-400 text-xs mt-1.5 whitespace-pre-line leading-relaxed">{n.content}</p>}
+                    <p className="text-slate-600 text-[10px] mt-1.5">{fmtDate(n.createdAt)}</p>
+                  </>
+                )}
               </div>
             ))
           }

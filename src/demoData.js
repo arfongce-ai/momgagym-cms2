@@ -225,6 +225,19 @@ export const store = {
     try { await fbSet('notices',nn.id,nn); return nn; }
     catch(e){ cache.notices=prev; throw e; }
   },
+  updateNotice: async (id,p) => {
+    const prev=cache.notices;
+    cache.notices=cache.notices.map(n=>n.id===id?{...n,...p}:n);
+    const u=cache.notices.find(n=>n.id===id);
+    try { if(u) await fbSet('notices',id,u); return u; }
+    catch(e){ cache.notices=prev; throw e; }
+  },
+  deleteNotice: async id => {
+    const prev=cache.notices;
+    cache.notices=cache.notices.filter(n=>n.id!==id);
+    try { await fbDelete('notices',id); }
+    catch(e){ cache.notices=prev; throw e; }
+  },
 
   getPayments:   (mid)    => cache.payments[mid] || [],
   addPayment:    async (mid,p) => {
