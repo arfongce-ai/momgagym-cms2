@@ -23,10 +23,10 @@ export default function AiMeasureHub() {
   })() : null;
 
   // 측정 저장 (회원 선택 시 측정이력에 누적)
-  const handleSave = (data) => {
+  const handleSave = async (data) => {
     if (!member) { alert('먼저 회원을 선택하세요.'); return; }
     try {
-      aiStore.addSession(member.id, {
+      await aiStore.addSession(member.id, {
         menu: active.id,
         menuTitle: active.title,
         recordedAt: new Date().toISOString().slice(0, 10),
@@ -35,7 +35,7 @@ export default function AiMeasureHub() {
       });
       alert('측정이 저장되었습니다.');
     } catch (e) {
-      alert('저장 중 오류: ' + e.message);
+      alert('저장에 실패했습니다. 네트워크 확인 후 다시 시도하세요.\n' + (e?.message || ''));
     }
   };
 

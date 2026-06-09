@@ -183,7 +183,7 @@ export default function LiftingMeasure({ member, onSave, onBack }) {
         <span className="text-[10px] text-slate-500">cm 환산에 사용</span>
       </div>
 
-      <div className="relative w-full rounded-2xl overflow-hidden bg-black mx-auto" style={{ aspectRatio: '3 / 4', maxHeight: '56vh' }}>
+      <div className="measure-camera">
         <video ref={videoRef} autoPlay playsInline muted className="absolute inset-0 w-full h-full object-contain" />
         <canvas ref={canvasRef} className="absolute inset-0 w-full h-full object-contain pointer-events-none" />
         {/* 탭 입력 레이어 */}

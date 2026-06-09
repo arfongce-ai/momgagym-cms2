@@ -28,16 +28,18 @@ export default function BodyInfoMeasure({ member, onSave, onBack }) {
     setResult(analyzeBody(measurements));
   };
 
-  const save = () => {
+  const save = async () => {
     if (!member) { alert('저장하려면 먼저 회원을 선택하세요(허브 상단).'); return; }
-    store.addBodyRecord(member.id, {
-      recordedAt: new Date().toISOString().slice(0, 10),
-      height:    form.height    ? Number(form.height)    : null,
-      weight:    Number(form.weight),
-      systolic:  form.systolic  ? Number(form.systolic)  : null,
-      diastolic: form.diastolic ? Number(form.diastolic) : null,
-      note: 'AI 측정 입력',
-    });
+    try {
+      await store.addBodyRecord(member.id, {
+        recordedAt: new Date().toISOString().slice(0, 10),
+        height:    form.height    ? Number(form.height)    : null,
+        weight:    Number(form.weight),
+        systolic:  form.systolic  ? Number(form.systolic)  : null,
+        diastolic: form.diastolic ? Number(form.diastolic) : null,
+        note: 'AI 측정 입력',
+      });
+    } catch (e) { alert('신체정보 저장에 실패했습니다. 네트워크 확인 후 다시 시도하세요.'); return; }
     // 허브의 onSave 도 호출(측정 이력 누적용)
     onSave?.({
       height: form.height ? Number(form.height) : null,

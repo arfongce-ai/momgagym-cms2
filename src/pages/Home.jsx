@@ -71,12 +71,14 @@ export default function Home() {
     setMembers(store.getMembers());
   }, []);
 
-  const addNotice = () => {
+  const addNotice = async () => {
     if (!newNotice.title.trim()) return;
-    store.addNotice({ ...newNotice, createdAt:new Date().toISOString(), isPinned:false, authorId:user.id });
-    setNotices(store.getNotices().sort((a,b) => b.isPinned - a.isPinned));
-    setNewNotice({ title:'', content:'' });
-    setShowForm(false);
+    try {
+      await store.addNotice({ ...newNotice, createdAt:new Date().toISOString(), isPinned:false, authorId:user.id });
+      setNotices(store.getNotices().sort((a,b) => b.isPinned - a.isPinned));
+      setNewNotice({ title:'', content:'' });
+      setShowForm(false);
+    } catch (e) { alert('공지 등록에 실패했습니다. 네트워크 확인 후 다시 시도하세요.'); }
   };
 
   const todayStr   = new Date().toISOString().slice(0,10);

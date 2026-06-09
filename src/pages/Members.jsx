@@ -75,14 +75,16 @@ export default function Members() {
 
   const isExpired = m => m.lastPaymentDate && m.lastPaymentDate < oneYearAgo;
 
-  const handleZeroSessions = () => {
+  const handleZeroSessions = async () => {
     if (!window.confirm('만료 회원의 모든 잔여 세션을 0으로 처리하시겠습니까?')) return;
-    members.filter(isExpired).forEach(m => {
-      const ts = {};
-      Object.entries(m.trainerSessions||{}).forEach(([k,v]) => { ts[k] = {...v, remaining:0}; });
-      store.updateMember(m.id, { trainerSessions: ts });
-    });
-    load();
+    try {
+      await Promise.all(members.filter(isExpired).map(m => {
+        const ts = {};
+        Object.entries(m.trainerSessions||{}).forEach(([k,v]) => { ts[k] = {...v, remaining:0}; });
+        return store.updateMember(m.id, { trainerSessions: ts });
+      }));
+      load();
+    } catch (e) { alert('일부 회원 처리에 실패했습니다. 네트워크 확인 후 다시 시도하세요.'); load(); }
   };
 
   return (

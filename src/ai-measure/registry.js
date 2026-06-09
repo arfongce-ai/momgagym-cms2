@@ -9,10 +9,9 @@ export const MEASURE_MENUS = [
     id: 'posture',
     no: 1,
     title: '자세 · 체형 측정',
-    desc: '앞/옆/뒤 · 어깨·골반·중심선 기울기',
+    desc: '재설계 예정',
     icon: '🧍',
-    status: 'ready',
-    component: lazy(() => import('./menus/PostureMeasure.jsx')),
+    status: 'planned',
   },
   {
     id: 'onerm',

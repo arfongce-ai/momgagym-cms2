@@ -81,7 +81,7 @@ function DateWd({ label, value, onChange }) {
 }
 
 // ── 세션 차감 (외부 일정 방어 포함) ──────────────────────
-function deductSession(memberId, trainerId, status) {
+async function deductSession(memberId, trainerId, status) {
   if (!memberId) {
     console.log('[세션차감] 외부 일정 — 차감 건너뜀');
     return;
@@ -97,11 +97,11 @@ function deductSession(memberId, trainerId, status) {
   }
   const patch = { trainerSessions: ts };
   if (status==='attended') patch.lastAttendedDate = fmt(new Date());
-  store.updateMember(memberId, patch);
+  await store.updateMember(memberId, patch);
 }
 
 // ── 세션 복원 (예약 취소/삭제 시 +1) ──────────────────────
-function restoreSession(memberId, trainerId) {
+async function restoreSession(memberId, trainerId) {
   if (!memberId) return;
   const member = store.getMembers().find(m=>m.id===memberId);
   if (!member) return;
@@ -109,7 +109,7 @@ function restoreSession(memberId, trainerId) {
   if (ts[trainerId]) {
     const cap = ts[trainerId].total ?? Infinity;
     ts[trainerId].remaining = Math.min(cap, ts[trainerId].remaining + 1);
-    store.updateMember(memberId, { trainerSessions: ts });
+    await store.updateMember(memberId, { trainerSessions: ts });
   }
 }
 
@@ -158,21 +158,16 @@ function ScheduleDetailModal({ schedule:initS, onClose, onUpdate, onDelete }) {
   const isConsult = s.isConsult || s.classType === '상담';
   const dispName = isConsult ? '💬 상담' : (isExt ? (s.memo||'외부 일정') : s.memberName);
 
-  const markStatus = status => {
+  const markStatus = async status => {
     const fresh = store.getSchedules().find(sc=>sc.id===s.id);
     if (fresh?.statusFinalized) { alert('이미 처리된 스케줄입니다.'); return; }
-    // 예약 시점에 이미 1회 차감됨. 여기서는 상태만 확정.
-    //  - 출석(attended): 그대로 유지(차감 유지) + 마지막 출석일 기록
-    //  - 취소/노쇼(canceled/noshow): 예약 차감을 복원(+1) — 정책상 되돌림
-    store.updateSchedule(s.id, { status, statusFinalized: true });
-    if (!isExt) {
-      if (status === 'attended') {
-        store.updateMember(s.memberId, { lastAttendedDate: fmt(new Date()) });
-      } else if (status === 'canceled' || status === 'noshow') {
-        restoreSession(s.memberId, s.trainerId);
-      }
+    try {
+      await store.finalizeSchedule(s.id, status);  // 상태확정+출석일/세션복원 원자적 처리
+      onUpdate();
+    } catch (e) {
+      console.error('[상태 확정 실패]', e);
+      alert('처리에 실패했습니다. 네트워크 확인 후 다시 시도하세요.');
     }
-    onUpdate();
   };
 
   const saveEdit = () => {
@@ -931,12 +926,12 @@ export default function Schedule() {
         <AddModal
           members={members}
           trainers={trainers}
-          onAdd={d=>{
-            const ns = store.addSchedule(d);
-            // 요구사항: 예약 시점에 잔여 세션 자동 차감 (일반 수업만, 외부 일정 제외)
-            if (!ns.isExternal && ns.memberId) {
-              deductSession(ns.memberId, ns.trainerId, 'scheduled');
-              store.updateSchedule(ns.id, { sessionDeducted: true });
+          onAdd={async d=>{
+            try {
+              await store.createScheduleWithDeduction(d);  // 예약+세션차감 원자적 처리
+            } catch(e) {
+              console.error('[예약 추가 실패]', e);
+              alert('예약 저장에 실패했습니다. 네트워크 확인 후 다시 시도하세요.');
             }
             setShowAdd(false); load();
           }}

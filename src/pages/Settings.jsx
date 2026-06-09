@@ -2,7 +2,7 @@
 // ✅ 백업: body records 포함 + 완전한 Timestamp 직렬화
 // ✅ 파기: 스케줄+수납+신체정보 일괄 삭제
 import { useState, useEffect } from 'react';
-import { store } from '../demoData';
+import { store, aiStore } from '../demoData';
 import { useAuth } from '../contexts/AuthContext';
 
 function serializeDate(v) {
@@ -37,40 +37,52 @@ export default function Settings({ darkMode, setDarkMode }) {
   const [purgeLoading, setPurgeLoading] = useState(false);
   const [purgeMsg,     setPurgeMsg]     = useState('');
 
-  // ── JSON 백업 (수납 + 신체정보 포함) ──────────────────
+  // ── JSON 백업 (수납 + 신체정보 + AI측정 포함, Firestore 캐시 기반) ──────
   const handleBackup = () => {
     const mm         = String(backupMonth).padStart(2, '0');
     const datePrefix = `${backupYear}-${mm}`;
 
-    const members   = serializeDoc(store.getMembers());
+    const memberList = store.getMembers();
+    const members   = serializeDoc(memberList);
     const trainers  = serializeDoc(store.getTrainers());
     const schedules = serializeDoc(
       store.getSchedules().filter(s => (s.date || '').startsWith(datePrefix))
     );
 
-    // 수납 기록 (해당 월)
-    const allPayments = JSON.parse(localStorage.getItem('fitcms_payments') || '{}');
-    const payments    = Object.fromEntries(
-      Object.entries(allPayments)
-        .map(([mid, list]) => [
-          mid,
-          serializeDoc((list || []).filter(p => (p.paidAt || '').startsWith(datePrefix)))
-        ])
-        .filter(([, list]) => list.length > 0)
-    );
+    // 수납 기록 (해당 월) — store(Firestore 캐시)에서 직접 읽음
+    const payments = {};
+    memberList.forEach(m => {
+      const list = store.getPayments(m.id).filter(p => (p.paidAt || '').startsWith(datePrefix));
+      if (list.length) payments[m.id] = serializeDoc(list);
+    });
 
-    // 신체정보 기록 (전체 — 월별 필터 없음, 날짜 필드 직렬화만)
-    const allBody = JSON.parse(localStorage.getItem('fitcms_body') || '{}');
-    const bodyRecords = Object.fromEntries(
-      Object.entries(allBody)
-        .map(([mid, list]) => [mid, serializeDoc(list || [])])
-        .filter(([, list]) => list.length > 0)
-    );
+    // 신체정보 기록 (전체) — store에서 직접 읽음
+    const bodyRecords = {};
+    memberList.forEach(m => {
+      const list = store.getBodyRecords(m.id);
+      if (list.length) bodyRecords[m.id] = serializeDoc(list);
+    });
+
+    // AI 측정 이력 (전체) — store에서 직접 읽음
+    const aiSessions = {};
+    memberList.forEach(m => {
+      const list = aiStore.getSessions(m.id);
+      if (list.length) aiSessions[m.id] = serializeDoc(list);
+    });
+
+    // 백업 항목 수 (사용자 검증용)
+    const counts = {
+      members: members.length,
+      payments: Object.values(payments).reduce((a, l) => a + l.length, 0),
+      bodyRecords: Object.values(bodyRecords).reduce((a, l) => a + l.length, 0),
+      aiSessions: Object.values(aiSessions).reduce((a, l) => a + l.length, 0),
+    };
 
     const payload = JSON.stringify({
       exportedAt: new Date().toISOString().slice(0, 16).replace('T', ' '),
       year: backupYear, month: backupMonth,
-      members, trainers, schedules, payments, bodyRecords,
+      counts,
+      members, trainers, schedules, payments, bodyRecords, aiSessions,
     }, null, 2);
 
     const blob = new Blob([payload], { type: 'application/json' });
@@ -80,6 +92,7 @@ export default function Settings({ darkMode, setDarkMode }) {
     a.download = `몸가짐_백업_${backupYear}_${mm}.json`;
     a.click();
     URL.revokeObjectURL(url);
+    alert(`백업 완료\n· 회원 ${counts.members}명\n· 수납 ${counts.payments}건\n· 신체정보 ${counts.bodyRecords}건\n· AI측정 ${counts.aiSessions}건`);
   };
 
   // ── 파기 대상 조회 ─────────────────────────────────────
@@ -105,24 +118,24 @@ export default function Settings({ darkMode, setDarkMode }) {
     if (purgeList.length === 0) return;
     if (!window.confirm(
       `${purgeList.length}명의 회원 데이터를 영구 삭제합니다.\n` +
-      `· 회원 기본 정보\n· 관련 스케줄 전체\n· 수납 기록 전체\n· 신체정보 기록 전체\n\n이 작업은 되돌릴 수 없습니다.`
+      `· 회원 기본 정보\n· 관련 스케줄 전체\n· 수납 기록 전체\n· 신체정보 기록 전체\n· AI 측정 기록 전체\n\n이 작업은 되돌릴 수 없습니다.`
     )) return;
 
     setPurgeLoading(true);
-    await new Promise(r => setTimeout(r, 600));
-
-    purgeList.forEach(m => {
-      store.getSchedules()
-        .filter(s => s.memberId === m.id)
-        .forEach(s => store.deleteSchedule(s.id));
-      store.deleteAllPayments(m.id);
-      store.deleteAllBodyRecords(m.id);
-      store.deleteMember(m.id);
-    });
-
-    setPurgeMsg(`✅ ${purgeList.length}명 파기 완료`);
-    setPurgeList([]);
+    let ok = 0; const failed = [];
+    for (const m of purgeList) {
+      try { await store.purgeMember(m.id); ok++; }    // 회원별 원자적 삭제(AI 포함)
+      catch (e) { console.error('[파기 실패]', m.name, e); failed.push(m.name); }
+    }
     setPurgeLoading(false);
+
+    if (failed.length === 0) {
+      setPurgeMsg(`✅ ${ok}명 파기 완료`);
+      setPurgeList([]);
+    } else {
+      setPurgeMsg(`⚠️ ${ok}명 완료, ${failed.length}명 실패: ${failed.join(', ')} — 네트워크 확인 후 다시 시도하세요.`);
+      loadPurgeList();   // 실패분이 목록에 다시 남도록 갱신
+    }
   };
 
   return (
@@ -145,26 +158,14 @@ export default function Settings({ darkMode, setDarkMode }) {
         </div>
       </div>
 
-      {/* 데모 안내 */}
+      {/* 저장소 안내 */}
       <div className="bg-amber-500/10 border border-amber-500/20 rounded-2xl p-4">
-        <h2 className="text-xs font-bold uppercase tracking-widest text-amber-400 mb-2">데모 모드 안내</h2>
+        <h2 className="text-xs font-bold uppercase tracking-widest text-amber-400 mb-2">저장소 안내</h2>
         <div className="text-xs text-slate-400 space-y-1.5">
-          <p>• 데이터는 브라우저 <strong className="text-slate-300">localStorage</strong>에 저장됩니다</p>
-          <p>• 실제 운영 시 <strong className="text-slate-300">Firebase</strong>로 전환하세요</p>
-          <p className="pt-1 border-t border-amber-500/20">관리자: <code className="text-amber-400">admin@fitcms.demo</code> / <code className="text-amber-400">admin1234</code></p>
-          <p>트레이너: <code className="text-amber-400">trainer@fitcms.demo</code> / <code className="text-amber-400">trainer1234</code></p>
+          <p>• 데이터는 <strong className="text-slate-300">Firebase Firestore</strong>에 저장됩니다</p>
+          <p>• 화면에 보이는 값은 빠른 조회를 위한 임시 캐시이며, 실제 저장은 Firestore에서 이뤄집니다</p>
+          <p className="pt-1 border-t border-amber-500/20 text-slate-500">데이터 초기화가 필요하면 Firebase 콘솔에서 직접 컬렉션을 관리하세요. (앱에서 임의 초기화 시 운영 데이터가 손실될 수 있어 버튼을 제공하지 않습니다.)</p>
         </div>
-        <button
-          onClick={() => {
-            if (!window.confirm('데모 데이터를 초기화하시겠습니까?')) return;
-            localStorage.removeItem('fitcms_seeded');
-            ['members','trainers','schedules','notices','payments','body']
-              .forEach(k => localStorage.removeItem('fitcms_' + k));
-            window.location.reload();
-          }}
-          className="mt-3 text-xs text-red-400 hover:text-red-300 font-semibold transition-colors">
-          🔄 데모 데이터 초기화
-        </button>
       </div>
 
       {user?.role === 'admin' && (
