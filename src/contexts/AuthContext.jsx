@@ -1,42 +1,87 @@
 import { createContext, useContext, useState, useEffect } from 'react';
-import { DEMO_USERS, store } from '../demoData';
+import {
+  signInWithEmailAndPassword, signOut, onAuthStateChanged,
+} from 'firebase/auth';
+import { doc, getDoc } from 'firebase/firestore';
+import { auth, db } from '../firebase';
+import { store } from '../demoData';
 
 const AuthContext = createContext(null);
+
+// roles/{uid} 문서에서 역할을 읽는다. 없으면 권한 없음(null).
+async function fetchRole(uid) {
+  try {
+    const snap = await getDoc(doc(db, 'roles', uid));
+    if (snap.exists()) return snap.data().role || null;
+  } catch (e) { console.error('[역할 조회 실패]', e); }
+  return null;
+}
+
 export function AuthProvider({ children }) {
   const [user, setUser]       = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // 한 번 로그인하면 자동 로그인 유지 (브라우저에 세션 저장)
+  // Firebase 로그인 상태를 신뢰의 원천으로 사용한다.
+  // (localStorage의 role을 더 이상 신뢰하지 않음 → 관리자 위장 불가)
   useEffect(() => {
-    try { const s=localStorage.getItem('fitcms_session'); if(s) setUser(JSON.parse(s)); } catch {}
-    setLoading(false);
+    const unsub = onAuthStateChanged(auth, async (fbUser) => {
+      if (fbUser) {
+        // 관리자/직원: Firebase 계정 → roles 문서로 역할 확정
+        const role = await fetchRole(fbUser.uid);
+        setUser({
+          id: fbUser.uid,
+          email: fbUser.email,
+          role: role || 'staff',     // roles 문서 없으면 일반 직원(관리자 화면 불가)
+          name: fbUser.displayName || fbUser.email,
+          source: 'firebase',
+        });
+      } else {
+        // Firebase 비로그인 상태 — 트레이너(앱 자체 계정) 세션이 있으면 복원
+        try {
+          const s = localStorage.getItem('fitcms_trainer_session');
+          if (s) { setUser(JSON.parse(s)); setLoading(false); return; }
+        } catch {}
+        setUser(null);
+      }
+      setLoading(false);
+    });
+    return () => unsub();
   }, []);
 
   const login = async (email, password) => {
-    const e = (email||'').trim().toLowerCase();
+    const e = (email || '').trim().toLowerCase();
 
-    // 1) 기본 계정(관리자/데모 트레이너)에서 먼저 찾기
-    let found = DEMO_USERS.find(u => u.email.toLowerCase()===e && u.password===password);
-    let u = null;
-    if (found) {
-      u = { id:found.id, email:found.email, role:found.role, name:found.name };
-    } else {
-      // 2) 등록된 트레이너 계정에서 찾기 (관리자가 만든 직원 계정)
+    // 1) Firebase 계정(관리자/직원)으로 먼저 시도
+    try {
+      const cred = await signInWithEmailAndPassword(auth, e, password);
+      const role = await fetchRole(cred.user.uid);
+      const u = {
+        id: cred.user.uid, email: cred.user.email,
+        role: role || 'staff', name: cred.user.displayName || cred.user.email,
+        source: 'firebase',
+      };
+      // onAuthStateChanged가 user를 세팅하지만, 즉시 반환값도 제공
+      return u;
+    } catch (fbErr) {
+      // 2) Firebase에 없으면 트레이너(앱 자체 계정)에서 찾기
       const t = store.getTrainers().find(
-        t => (t.loginEmail||'').trim().toLowerCase()===e && t.loginPassword===password
+        t => (t.loginEmail || '').trim().toLowerCase() === e && t.loginPassword === password
       );
       if (t) {
-        u = { id:t.id, email:t.loginEmail, role:'trainer', name:t.name, trainerId:t.id };
+        const u = { id: t.id, email: t.loginEmail, role: 'trainer', name: t.name, trainerId: t.id, source: 'trainer' };
+        localStorage.setItem('fitcms_trainer_session', JSON.stringify(u));
+        setUser(u);
+        return u;
       }
+      throw new Error('이메일 또는 비밀번호가 올바르지 않습니다.');
     }
-
-    if (!u) throw new Error('이메일 또는 비밀번호가 올바르지 않습니다.');
-    localStorage.setItem('fitcms_session', JSON.stringify(u));
-    setUser(u);
-    return u;
   };
 
-  const logout = () => { localStorage.removeItem('fitcms_session'); setUser(null); };
+  const logout = async () => {
+    localStorage.removeItem('fitcms_trainer_session');
+    try { await signOut(auth); } catch {}
+    setUser(null);
+  };
 
   return <AuthContext.Provider value={{ user, loading, login, logout }}>{children}</AuthContext.Provider>;
 }
