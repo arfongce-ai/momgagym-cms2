@@ -14,7 +14,9 @@ import {
   suggestSidePlates, totalWeight,
 } from '../core/plates';
 import { usePoseEngine } from '../core/usePoseEngine';
-import { barbellPoint, createBarbellTracker, personHeightRatio, romToCm } from '../core/barbell';
+import { personHeightRatio, romToCm } from '../core/barbell';
+import { createMultiTracker } from '../core/endcapTracker';
+import { assessFraming, FRAMING_PRESETS } from '../core/framingGuide';
 import { drawGuides } from '../core/cameraGuide';
 
 // 편측 원판 후보(장수 조절용) 색상 배지
@@ -34,10 +36,16 @@ export default function OneRMEstimate({ member, onSave, onBack }) {
   const [camOpen, setCamOpen] = useState(false);
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
-  const trackerRef = useRef(createBarbellTracker());
+  const trackerRef = useRef(createMultiTracker());
   const roiRef = useRef({ x: 0.05, y: 0.35, w: 0.22, h: 0.45 }); // 바벨 끝(좌측) ROI
   const [detected, setDetected] = useState([]);    // 색 추정 결과(편측 후보)
   const [romCm, setRomCm] = useState(null);
+  const [seeded, setSeeded] = useState(false);     // 추적점 지정 여부
+  const [ptCount, setPtCount] = useState(0);
+  const [activePts, setActivePts] = useState(0);
+  const seededRef = useRef(false);
+  const framingRef = useRef({ level: 'bad', message: '' });
+  const [framing, setFraming] = useState({ level: 'bad', message: '카메라 준비 중…' });
   const heightCm = member?.height || null;
 
   // 총중량(색인식/수동 분기)
@@ -46,6 +54,8 @@ export default function OneRMEstimate({ member, onSave, onBack }) {
     : totalWeight(sidePlates, barKg).total;
 
   // ───────── 카메라 프레임 처리 ─────────
+  const liftRef = useRef(lift);
+  liftRef.current = lift;
   const handleResult = useCallback((lms, ts, video) => {
     const canvas = canvasRef.current;
     if (canvas && video) {
@@ -53,6 +63,14 @@ export default function OneRMEstimate({ member, onSave, onBack }) {
       const ctx = canvas.getContext('2d');
       ctx.clearRect(0, 0, cw, ch);
       drawGuides(ctx, cw, ch, {});
+
+      // 촬영 위치·거리 실시간 판정(종목별 권장 방향)
+      const want = (FRAMING_PRESETS[liftRef.current] || FRAMING_PRESETS.squat).want;
+      const fr = assessFraming(lms, { want });
+      if (fr.level !== framingRef.current.level || fr.message !== framingRef.current.message) {
+        framingRef.current = fr;
+        setFraming({ level: fr.level, message: fr.message });
+      }
       // ROI 박스(플레이트 색 인식 영역) 표시
       const r = roiRef.current;
       ctx.save();
@@ -63,17 +81,33 @@ export default function OneRMEstimate({ member, onSave, onBack }) {
       ctx.font = 'bold 12px sans-serif';
       ctx.fillText('원판을 이 박스에', r.x * cw + 4, r.y * ch - 6);
       ctx.restore();
-      // 바벨(손목 중점) 점 표시
-      const bp = barbellPoint(lms);
-      if (bp) {
-        ctx.save();
-        ctx.fillStyle = '#22d3ee';
-        ctx.beginPath(); ctx.arc(bp.x * cw, bp.y * ch, 7, 0, Math.PI * 2); ctx.fill();
-        ctx.restore();
-        trackerRef.current.push(bp, ts);
+      // 다중점 추적(탭으로 1개 이상 지정된 경우)
+      const cap = trackerRef.current;
+      if (cap.isSeeded()) {
+        const p = cap.update(video);
+        if (p) cap.push(p, ts);
+        const act = cap.activeCount();
+        if (act !== activePts) setActivePts(act);
+        // 각 추적점(보조)
+        cap.points().forEach(pt => {
+          if (!pt.ema) return;
+          ctx.save();
+          ctx.fillStyle = pt.alive ? 'rgba(16,185,129,0.9)' : 'rgba(148,163,184,0.6)';
+          ctx.beginPath(); ctx.arc(pt.ema.x * cw, pt.ema.y * ch, 5, 0, Math.PI * 2); ctx.fill();
+          ctx.restore();
+        });
+        // 대표 위치(큰 점)
+        if (p) {
+          ctx.save();
+          ctx.fillStyle = '#22d3ee';
+          ctx.beginPath(); ctx.arc(p.x * cw, p.y * ch, 8, 0, Math.PI * 2); ctx.fill();
+          ctx.lineWidth = 2; ctx.strokeStyle = '#fff';
+          ctx.beginPath(); ctx.arc(p.x * cw, p.y * ch, 8, 0, Math.PI * 2); ctx.stroke();
+          ctx.restore();
+        }
       }
     }
-  }, []);
+  }, [activePts]);
 
   const { start, stop, status, error } = usePoseEngine({ onResult: handleResult });
 
@@ -88,13 +122,46 @@ export default function OneRMEstimate({ member, onSave, onBack }) {
     return () => { if (v) v.removeEventListener('loadedmetadata', syncCanvas); stop(); };
   }, [syncCanvas, stop]);
 
-  const openCam = async () => {
+  const openCam = () => {
     setCamOpen(true);
     setUseManual(false);
-    trackerRef.current.reset();
-    setTimeout(() => start(videoRef.current), 50);
+    trackerRef.current.clear();
+    seededRef.current = false; setSeeded(false);
+    setPtCount(0); setActivePts(0);
+    // setCamOpen으로 video 요소가 화면에 렌더된 뒤 카메라를 붙인다.
+    // (즉시 start 하면 아직 그려지지 않은 video에 연결되어 검은 화면이 됨)
   };
   const closeCam = () => { stop(); setCamOpen(false); };
+
+  // 화면 탭 → 엔드캡 색 학습(seed). object-contain 좌표 보정 포함.
+  const onTapVideo = (e) => {
+    const v = videoRef.current;
+    if (!v || !v.videoWidth || status !== 'running') return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const clientX = (e.touches?.[0]?.clientX ?? e.clientX) - rect.left;
+    const clientY = (e.touches?.[0]?.clientY ?? e.clientY) - rect.top;
+    const vAR = v.videoWidth / v.videoHeight;
+    const bAR = rect.width / rect.height;
+    let drawW = rect.width, drawH = rect.height, offX = 0, offY = 0;
+    if (vAR > bAR) { drawH = rect.width / vAR; offY = (rect.height - drawH) / 2; }
+    else { drawW = rect.height * vAR; offX = (rect.width - drawW) / 2; }
+    const nx = (clientX - offX) / drawW;
+    const ny = (clientY - offY) / drawH;
+    if (nx < 0 || nx > 1 || ny < 0 || ny > 1) return;
+    const ok = trackerRef.current.seed(v, nx, ny);
+    if (ok) {
+      seededRef.current = true; setSeeded(true);
+      setPtCount(trackerRef.current.pointCount());
+    }
+  };
+
+  // camOpen이 true가 되어 video 요소가 실제로 렌더된 다음에 카메라 시작
+  useEffect(() => {
+    if (camOpen && videoRef.current && status === 'idle') {
+      const id = setTimeout(() => start(videoRef.current), 80);
+      return () => clearTimeout(id);
+    }
+  }, [camOpen, status, start]);
 
   // 색 자동인식(보조) — 현재 프레임에서 ROI 색 집계 → 후보 제시
   const scanColors = () => {
@@ -197,15 +264,44 @@ export default function OneRMEstimate({ member, onSave, onBack }) {
         <div className="space-y-3">
           {/* 카메라 */}
           {!camOpen ? (
-            <button onClick={openCam} className="btn btn-primary w-full">📷 카메라로 원판 색 인식</button>
+            <FramingIntro
+              preset={FRAMING_PRESETS[lift] || FRAMING_PRESETS.squat}
+              onStart={openCam}
+              startLabel="📷 카메라로 원판 색 인식"
+            />
           ) : (
             <div className="space-y-2">
               <div className="relative w-full rounded-2xl overflow-hidden bg-black mx-auto" style={{ aspectRatio: '3 / 4', maxHeight: '52vh' }}>
                 <video ref={videoRef} autoPlay playsInline muted className="absolute inset-0 w-full h-full object-contain" />
                 <canvas ref={canvasRef} className="absolute inset-0 w-full h-full object-contain pointer-events-none" />
+                {/* 탭 입력 레이어(엔드캡 지정) */}
+                {status === 'running' && (
+                  <div className="absolute inset-0" onClick={onTapVideo} onTouchStart={onTapVideo} />
+                )}
                 {status !== 'running' && (
                   <div className="absolute inset-0 flex items-center justify-center text-slate-400 text-sm text-center px-4">
                     {status === 'loading' ? 'AI 모델 로딩 중…' : status === 'error' ? `오류: ${error}` : '카메라 준비 중…'}
+                  </div>
+                )}
+                {status === 'running' && (
+                  <div className="absolute top-2 left-2 right-2 flex items-center justify-between gap-2">
+                    <span className="bg-black/65 rounded-full px-2.5 py-1 text-[10px] text-cyan-300 font-bold">
+                      {ptCount === 0
+                        ? '바벨 끝·원판을 눌러 추적점 지정 (최대 3개)'
+                        : `추적점 ${activePts}/${ptCount} · ROM으로 가동범위 기록`}
+                    </span>
+                    {ptCount > 0 && (
+                      <span className={`rounded-full px-2 py-1 text-[10px] font-bold ${activePts >= 2 ? 'bg-emerald-500/80 text-slate-950' : activePts === 1 ? 'bg-amber-500/80 text-slate-950' : 'bg-red-500/80 text-white'}`}>
+                        신뢰도 {activePts >= 2 ? '높음' : activePts === 1 ? '보통' : '낮음'}
+                      </span>
+                    )}
+                  </div>
+                )}
+                {status === 'running' && (
+                  <div className="absolute top-11 left-2 right-2 flex justify-center">
+                    <span className={`rounded-full px-3 py-1 text-[11px] font-bold ${framing.level === 'good' ? 'bg-emerald-500/85 text-slate-950' : framing.level === 'warn' ? 'bg-amber-500/85 text-slate-950' : 'bg-red-500/85 text-white'}`}>
+                      {framing.level === 'good' ? '✓ ' : '⚠ '}{framing.message}
+                    </span>
                   </div>
                 )}
                 {status === 'running' && (

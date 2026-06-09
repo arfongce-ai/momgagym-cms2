@@ -60,12 +60,12 @@ function hueInRange(h, range) {
 // 한 픽셀 색을 IWF 원판 종류로 분류 (없으면 null)
 export function classifyPixel(r, g, b) {
   const { h, s, v } = rgbToHsv(r, g, b);
-  // 너무 어두우면(검정 봉/그림자) 무시
-  if (v < 0.12) return null;
+  // 너무 어두우면(검정 봉/그림자/빈 화면) 무시 — 검은 카메라 화면 오인식 방지
+  if (v < 0.20) return null;
   // 흰색: 채도 매우 낮고 밝음
   if (s < 0.12 && v > 0.72) return 'white';
   // 크롬/회색: 채도 낮고 중간 밝기 → 무게로 안 셈(소형 보조판)
-  if (s < 0.16 && v > 0.35 && v <= 0.72) return 'chrome';
+  if (s < 0.16 && v > 0.40 && v <= 0.72) return 'chrome';
   // 유채색 매칭
   for (const p of IWF_PLATES) {
     if (!p.hue) continue;
@@ -109,12 +109,15 @@ export function detectPlatesFromVideo(video, roi) {
 
   const counts = {};
   let total = 0;
+  const totalPixels = (data.length / 4);
   for (let i = 0; i < data.length; i += 4) {
     const tag = classifyPixel(data[i], data[i + 1], data[i + 2]);
     if (!tag) continue;
     counts[tag] = (counts[tag] || 0) + 1;
     total++;
   }
+  // ROI 안에 유효 색 픽셀이 너무 적으면(거의 검은/빈 화면) 인식 실패로 본다.
+  if (total < totalPixels * 0.15) return { counts: {}, dominant: [] };
   const dominant = Object.entries(counts)
     .filter(([tag]) => tag !== 'chrome')         // 크롬은 무게 0 → 후보에서 제외
     .map(([tag, n]) => ({

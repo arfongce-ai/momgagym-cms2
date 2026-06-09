@@ -19,22 +19,56 @@ export function barbellPoint(lms) {
   return null;
 }
 
+// 추적 안정화 상수 (민감도 낮춤)
+//  - EMA_ALPHA: 작을수록 부드러움↑(떨림↓). 0.25 = 강한 떨림 완화.
+//  - DEADZONE:  이보다 작은 프레임 간 이동은 "정지"로 보고 무시(미세 흔들림 컷).
+const EMA_ALPHA = 0.25;
+const DEADZONE = 0.004; // 화면비율(0~1) 기준 약 0.4% — 미세 떨림 흡수
+
 /**
  * 한 세트(reps) 동안 바벨 궤적을 누적해 ROM·반복을 추정하는 트래커.
  * createBarbellTracker() → tracker.push(point, ts) 반복 → tracker.summary().
+ *
+ * 안정화 처리:
+ *  1) EMA 평활 — 들어온 좌표를 부드럽게 만들어 떨림 제거.
+ *  2) 데드존 — 직전 평활값과의 이동이 미세하면 위치를 갱신하지 않음(정지로 간주).
+ *  이 두 가지로 "가만히 있어도 ROM이 커지는" 문제와 "선이 튀는" 문제를 함께 잡는다.
  */
 export function createBarbellTracker() {
-  const samples = [];     // { y, ts }
+  const samples = [];     // { x, y, ts } — 평활·데드존 적용된 안정 좌표
   let minY = Infinity, maxY = -Infinity;
+  let sx = null, sy = null; // EMA 상태(평활 좌표)
 
   return {
-    reset() { samples.length = 0; minY = Infinity; maxY = -Infinity; },
+    reset() {
+      samples.length = 0; minY = Infinity; maxY = -Infinity; sx = null; sy = null;
+    },
     push(point, ts) {
       if (!point) return;
-      samples.push({ y: point.y, x: point.x, ts });
-      if (point.y < minY) minY = point.y;
-      if (point.y > maxY) maxY = point.y;
+      // 1) EMA 평활
+      if (sx == null) { sx = point.x; sy = point.y; }
+      else {
+        sx = sx + (point.x - sx) * EMA_ALPHA;
+        sy = sy + (point.y - sy) * EMA_ALPHA;
+      }
+      // 2) 데드존 — 직전 안정 좌표와 거의 같으면 정지로 보고 새 점 추가 안 함
+      const last = samples[samples.length - 1];
+      if (last) {
+        const dx = sx - last.x, dy = sy - last.y;
+        if (Math.hypot(dx, dy) < DEADZONE) {
+          // 시간만 갱신(정지 구간도 시간엔 포함되도록)
+          last.ts = ts;
+          return;
+        }
+      }
+      samples.push({ x: sx, y: sy, ts });
+      if (sy < minY) minY = sy;
+      if (sy > maxY) maxY = sy;
     },
+    /** 화면에 그릴 안정 좌표(궤적) 반환 */
+    path() { return samples; },
+    /** 현재 안정(평활) 좌표 — 점 표시용 */
+    current() { return sx == null ? null : { x: sx, y: sy }; },
     /** @returns {{ romRatio:number, samples:number, durationMs:number }|null} */
     summary() {
       if (samples.length < 5) return null;
