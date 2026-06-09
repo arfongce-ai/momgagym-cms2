@@ -3,6 +3,7 @@
 // AI 분석 없이 순수 녹화. MediaRecorder API 사용.
 import { useRef, useState, useEffect, useCallback } from 'react';
 import { drawGuides } from '../core/cameraGuide';
+import { openMainCameraStream } from '../core/cameraSelect';
 
 export default function RecordMeasure({ member, onBack }) {
   const videoRef    = useRef(null);   // 라이브 프리뷰
@@ -10,6 +11,8 @@ export default function RecordMeasure({ member, onBack }) {
   const streamRef   = useRef(null);
   const recorderRef = useRef(null);
   const chunksRef   = useRef([]);
+  const blobRef     = useRef(null);
+  const mimeRef     = useRef('video/webm');
   const rafRef      = useRef(null);
 
   const [status, setStatus] = useState('idle'); // idle|ready|recording|done
@@ -35,10 +38,7 @@ export default function RecordMeasure({ member, onBack }) {
   const startCamera = async () => {
     setError(null);
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
-        audio: true,
-      });
+      const stream = await openMainCameraStream({ audio: true });
       streamRef.current = stream;
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
@@ -55,15 +55,20 @@ export default function RecordMeasure({ member, onBack }) {
   const startRec = () => {
     if (!streamRef.current) return;
     chunksRef.current = [];
-    // 지원 포맷 선택
-    let mime = 'video/webm;codecs=vp9,opus';
+    // 지원 포맷 선택 — 갤러리(사진앱) 호환성 위해 mp4 우선, 없으면 webm
+    let mime = 'video/mp4;codecs=h264,aac';
+    if (!MediaRecorder.isTypeSupported(mime)) mime = 'video/mp4';
+    if (!MediaRecorder.isTypeSupported(mime)) mime = 'video/webm;codecs=vp9,opus';
     if (!MediaRecorder.isTypeSupported(mime)) mime = 'video/webm;codecs=vp8,opus';
     if (!MediaRecorder.isTypeSupported(mime)) mime = 'video/webm';
     if (!MediaRecorder.isTypeSupported(mime)) mime = '';
+    mimeRef.current = mime || 'video/webm';
     const rec = new MediaRecorder(streamRef.current, mime ? { mimeType: mime } : undefined);
     rec.ondataavailable = e => { if (e.data.size > 0) chunksRef.current.push(e.data); };
     rec.onstop = () => {
-      const blob = new Blob(chunksRef.current, { type: mime || 'video/webm' });
+      const type = mimeRef.current;
+      const blob = new Blob(chunksRef.current, { type });
+      blobRef.current = blob;
       const url = URL.createObjectURL(blob);
       setVideoUrl(url);
       setStatus('done');
@@ -99,7 +104,32 @@ export default function RecordMeasure({ member, onBack }) {
   useEffect(() => () => { stopAll(); if (videoUrl) URL.revokeObjectURL(videoUrl); }, [stopAll, videoUrl]);
 
   const mmss = `${String(Math.floor(elapsed/60)).padStart(2,'0')}:${String(elapsed%60).padStart(2,'0')}`;
-  const fname = `녹화_${member?.name||'영상'}_${new Date().toISOString().slice(0,10)}.webm`;
+  const ext = (mimeRef.current || '').includes('mp4') ? 'mp4' : 'webm';
+  // 폴더 의미를 파일명 접두어로 부여(갤러리 앱이 같은 접두어끼리 묶어 보여줌)
+  const fname = `몸가짐_측정영상_${member?.name||'영상'}_${new Date().toISOString().slice(0,10).replace(/-/g,'')}.${ext}`;
+
+  // 사진앱/갤러리에 저장 — Web Share(파일 공유 시트)로 "사진에 저장" 가능(S25/iPhone)
+  const [shareSupported] = useState(() =>
+    typeof navigator !== 'undefined' && !!navigator.canShare
+  );
+  const saveToGallery = async () => {
+    try {
+      const blob = blobRef.current;
+      if (!blob) return;
+      const file = new File([blob], fname, { type: blob.type });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file], title: fname });
+      } else {
+        // 폴백: 다운로드
+        const a = document.createElement('a');
+        a.href = videoUrl; a.download = fname; a.click();
+      }
+    } catch (e) {
+      if (e?.name !== 'AbortError') {
+        alert('갤러리 저장 공유 시트를 열 수 없습니다. "영상 다운로드"로 저장하세요.');
+      }
+    }
+  };
 
   return (
     <div className="space-y-4">
@@ -179,13 +209,26 @@ export default function RecordMeasure({ member, onBack }) {
               className="rounded-xl border border-slate-700 text-slate-300 font-bold py-3 text-sm">
               다시 녹화
             </button>
-            <a href={videoUrl} download={fname}
-              className="btn btn-primary">
-              영상 저장
-            </a>
+            {shareSupported ? (
+              <button onClick={saveToGallery} className="btn btn-primary">
+                📷 사진앱에 저장
+              </button>
+            ) : (
+              <a href={videoUrl} download={fname} className="btn btn-primary">
+                영상 다운로드
+              </a>
+            )}
           </div>
-          <p className="text-[11px] text-slate-500 text-center">
-            저장한 영상은 휴대폰 다운로드 폴더에 들어갑니다 (.webm 형식).
+          {shareSupported && (
+            <a href={videoUrl} download={fname}
+              className="block text-center text-[11px] text-slate-400 underline">
+              또는 파일로 다운로드
+            </a>
+          )}
+          <p className="text-[11px] text-slate-500 text-center leading-relaxed">
+            "사진앱에 저장"을 누르면 공유 시트에서 <strong className="text-slate-300">사진/갤러리</strong>를
+            선택해 카메라 롤에 바로 넣을 수 있습니다. 파일명은 <strong className="text-slate-300">몸가짐_측정영상</strong>으로
+            시작해 갤러리에서 모아 보기 쉽습니다.
           </p>
         </div>
       )}

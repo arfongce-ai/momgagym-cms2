@@ -12,14 +12,14 @@
 // 좌표는 모두 정규화(0~1). MediaPipe 트래커와 동일한 좌표계라
 // barbell.js 의 romToCm/personHeightRatio 와 그대로 호환된다.
 
-const SEARCH_RADIUS = 0.10;   // 검색창 반경(화면비율) — 직전 위치 둘레만 탐색
-const SEED_RADIUS = 0.02;     // seed 평균색 샘플 반경
-const COLOR_TOL = 60;         // 색 거리 허용치(RGB 유클리드) — 작을수록 엄격
+const SEARCH_RADIUS = 0.14;   // 검색창 반경(화면비율) — 직전 위치 둘레만 탐색 (넓힘: 빠른 움직임 대응)
+const SEED_RADIUS = 0.035;    // seed 평균색 샘플 반경 (넓힘: 탭이 살짝 빗나가도 색 학습 성공)
+const COLOR_TOL = 85;         // 색 거리 허용치(RGB 유클리드) — 작을수록 엄격 (완화: 조명 변화 대응)
 const SAMPLE_STEP = 2;        // 픽셀 샘플 간격(속도/정확도 균형)
-const EMA_ALPHA = 0.35;       // 위치 평활
-const MIN_MATCH = 8;          // 이보다 매칭 픽셀 적으면 "못 찾음"(가려짐)으로 보고 유지
+const EMA_ALPHA = 0.4;        // 위치 평활
+const MIN_MATCH = 4;          // 이보다 매칭 픽셀 적으면 "못 찾음"(가려짐)으로 보고 유지 (완화: 작은 점도 감지)
 
-/** 영상에서 정규화 좌표 둘레의 평균색 샘플 */
+/** 영상에서 정규화 좌표 둘레의 평균색 샘플 (RGB + HSV) */
 function sampleColor(ctx, w, h, nx, ny, rNorm) {
   const cx = Math.round(nx * w), cy = Math.round(ny * h);
   const r = Math.max(2, Math.round(rNorm * Math.min(w, h)));
@@ -30,12 +30,18 @@ function sampleColor(ctx, w, h, nx, ny, rNorm) {
   let R = 0, G = 0, B = 0, n = 0;
   for (let i = 0; i < data.length; i += 4) { R += data[i]; G += data[i + 1]; B += data[i + 2]; n++; }
   if (!n) return null;
-  return { r: R / n, g: G / n, b: B / n };
+  const r0 = R / n, g0 = G / n, b0 = B / n;
+  const hsv = toHsv(r0, g0, b0);
+  return { r: r0, g: g0, b: b0, h: hsv.h, s: hsv.s, v: hsv.v };
 }
 
-/** 한 점의 색 매칭 추적(직전 위치 둘레 검색). 매칭 부족 시 null 반환 */
-function trackOne(ctx, w, h, pos, target) {
-  const cx = pos.x * w, cy = pos.y * h;
+/**
+ * 한 점의 색 매칭 추적. HSV 거리 기반(조명에 강함) + 속도 예측(pred) 중심 검색.
+ * @param pos 직전 위치, @param target 학습색, @param pred 예측 위치(없으면 pos)
+ */
+function trackOne(ctx, w, h, pos, target, pred) {
+  const center = pred || pos;
+  const cx = center.x * w, cy = center.y * h;
   const rad = SEARCH_RADIUS * Math.min(w, h);
   const x0 = Math.max(0, Math.floor(cx - rad));
   const y0 = Math.max(0, Math.floor(cy - rad));
@@ -44,20 +50,46 @@ function trackOne(ctx, w, h, pos, target) {
   if (x1 <= x0 || y1 <= y0) return null;
   const bw = x1 - x0, bh = y1 - y0;
   const { data } = ctx.getImageData(x0, y0, bw, bh);
-  let sumX = 0, sumY = 0, n = 0;
+  // 매칭 픽셀의 가중 무게중심(거리가 가까울수록 가중) → 서브픽셀 안정
+  let sumX = 0, sumY = 0, sumWt = 0, n = 0;
+  const TOL = COLOR_TOL / 255; // HSV 거리 스케일에 맞춘 허용치
   for (let yy = 0; yy < bh; yy += SAMPLE_STEP) {
     for (let xx = 0; xx < bw; xx += SAMPLE_STEP) {
       const idx = (yy * bw + xx) * 4;
-      const dr = data[idx] - target.r;
-      const dg = data[idx + 1] - target.g;
-      const db = data[idx + 2] - target.b;
-      if (Math.sqrt(dr * dr + dg * dg + db * db) <= COLOR_TOL) {
-        sumX += (x0 + xx); sumY += (y0 + yy); n++;
+      const c = toHsv(data[idx], data[idx + 1], data[idx + 2]);
+      const dist = hsvDist(c, target);
+      if (dist <= TOL) {
+        const wt = 1 - dist / TOL;          // 가까운 색일수록 큰 가중
+        sumX += (x0 + xx) * wt; sumY += (y0 + yy) * wt; sumWt += wt; n++;
       }
     }
   }
-  if (n < MIN_MATCH) return null;
-  return { x: (sumX / n) / w, y: (sumY / n) / h };
+  if (n < MIN_MATCH || sumWt <= 0) return null;
+  return { x: (sumX / sumWt) / w, y: (sumY / sumWt) / h };
+}
+
+/** RGB → HSV (h는 0~360, s·v는 0~1) — 조명 변화에 강한 매칭용 */
+function toHsv(r, g, b) {
+  r /= 255; g /= 255; b /= 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b), d = max - min;
+  let h = 0;
+  if (d !== 0) {
+    if (max === r) h = ((g - b) / d) % 6;
+    else if (max === g) h = (b - r) / d + 2;
+    else h = (r - g) / d + 4;
+    h *= 60; if (h < 0) h += 360;
+  }
+  return { h, s: max === 0 ? 0 : d / max, v: max };
+}
+
+/** 두 색의 HSV 거리(조명/밝기 변화에 RGB보다 강함) */
+function hsvDist(c, t) {
+  let dh = Math.abs(c.h - t.h); if (dh > 180) dh = 360 - dh;
+  const dH = dh / 180;
+  const dS = Math.abs(c.s - t.s);
+  const dV = Math.abs(c.v - t.v);
+  const wH = Math.min(c.s, t.s); // 둘 다 채도 높을 때만 색상 강조
+  return Math.sqrt((dH * wH) ** 2 + (dS * 0.6) ** 2 + (dV * 0.5) ** 2);
 }
 
 function median(arr) {
@@ -109,7 +141,7 @@ export function createMultiTracker() {
       c.drawImage(video, 0, 0, w, h);
       const col = sampleColor(c, w, h, nx, ny, SEED_RADIUS);
       if (!col) return false;
-      points.push({ target: col, pos: { x: nx, y: ny }, ema: { x: nx, y: ny }, alive: true });
+      points.push({ target: col, pos: { x: nx, y: ny }, prev: null, ema: { x: nx, y: ny }, alive: true });
       return true;
     },
 
@@ -124,10 +156,13 @@ export function createMultiTracker() {
       const c = ensureCanvas(w, h);
       c.drawImage(video, 0, 0, w, h);
 
-      // 1) 각 점 추적
+      // 1) 각 점 추적 (직전 속도로 검색창 중심을 미리 이동 → 빠른 움직임 대응)
       const found = points.map(p => {
-        const r = trackOne(c, w, h, p.pos, p.target);
-        if (r) { p.pos = r; p.alive = true; }
+        const pred = p.prev
+          ? { x: p.pos.x + (p.pos.x - p.prev.x), y: p.pos.y + (p.pos.y - p.prev.y) }
+          : p.pos;
+        const r = trackOne(c, w, h, p.pos, p.target, pred);
+        if (r) { p.prev = p.pos; p.pos = r; p.alive = true; }
         else { p.alive = false; }
         return p.alive ? r : null;
       });

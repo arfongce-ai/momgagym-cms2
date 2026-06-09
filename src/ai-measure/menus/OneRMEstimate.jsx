@@ -92,17 +92,19 @@ export default function OneRMEstimate({ member, onSave, onBack }) {
         cap.points().forEach(pt => {
           if (!pt.ema) return;
           ctx.save();
-          ctx.fillStyle = pt.alive ? 'rgba(16,185,129,0.9)' : 'rgba(148,163,184,0.6)';
-          ctx.beginPath(); ctx.arc(pt.ema.x * cw, pt.ema.y * ch, 5, 0, Math.PI * 2); ctx.fill();
+          ctx.fillStyle = pt.alive ? 'rgba(16,185,129,0.95)' : 'rgba(148,163,184,0.6)';
+          ctx.beginPath(); ctx.arc(pt.ema.x * cw, pt.ema.y * ch, 11, 0, Math.PI * 2); ctx.fill();
+          ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(255,255,255,0.8)';
+          ctx.beginPath(); ctx.arc(pt.ema.x * cw, pt.ema.y * ch, 11, 0, Math.PI * 2); ctx.stroke();
           ctx.restore();
         });
         // 대표 위치(큰 점)
         if (p) {
           ctx.save();
           ctx.fillStyle = '#22d3ee';
-          ctx.beginPath(); ctx.arc(p.x * cw, p.y * ch, 8, 0, Math.PI * 2); ctx.fill();
-          ctx.lineWidth = 2; ctx.strokeStyle = '#fff';
-          ctx.beginPath(); ctx.arc(p.x * cw, p.y * ch, 8, 0, Math.PI * 2); ctx.stroke();
+          ctx.beginPath(); ctx.arc(p.x * cw, p.y * ch, 16, 0, Math.PI * 2); ctx.fill();
+          ctx.lineWidth = 3; ctx.strokeStyle = '#fff';
+          ctx.beginPath(); ctx.arc(p.x * cw, p.y * ch, 16, 0, Math.PI * 2); ctx.stroke();
           ctx.restore();
         }
       }
@@ -248,7 +250,7 @@ export default function OneRMEstimate({ member, onSave, onBack }) {
         </button>
         <button onClick={() => setUseManual(false)}
           className={`px-3 py-1 rounded font-bold ${!useManual ? 'bg-amber-500 text-slate-950' : 'text-slate-400'}`}>
-          원판 색 인식(보조)
+          영상 인식(보조)
         </button>
       </div>
 
@@ -260,14 +262,14 @@ export default function OneRMEstimate({ member, onSave, onBack }) {
             placeholder="80" className="input-mono" />
         </div>
       ) : (
-        /* ── 원판 색 인식(보조) + 수동 확인 ── */
+        /* ── 영상 인식(보조) + 수동 확인 ── */
         <div className="space-y-3">
           {/* 카메라 */}
           {!camOpen ? (
             <FramingIntro
               preset={FRAMING_PRESETS[lift] || FRAMING_PRESETS.squat}
               onStart={openCam}
-              startLabel="📷 카메라로 원판 색 인식"
+              startLabel="📷 카메라로 영상 인식"
             />
           ) : (
             <div className="space-y-2">
@@ -307,7 +309,7 @@ export default function OneRMEstimate({ member, onSave, onBack }) {
                 {status === 'running' && (
                   <div className="absolute bottom-3 left-0 right-0 flex items-center justify-center gap-4">
                     <button onClick={closeCam} className="w-10 h-10 rounded-full bg-black/50 border border-white/30 text-white text-[10px] font-bold">닫기</button>
-                    <button onClick={scanColors} className="px-4 h-10 rounded-full bg-amber-500 text-slate-950 text-xs font-black active:scale-95">색 인식</button>
+                    <button onClick={scanColors} className="px-4 h-10 rounded-full bg-amber-500 text-slate-950 text-xs font-black active:scale-95">영상 인식</button>
                     <button onClick={finishTrack} className="w-10 h-10 rounded-full bg-black/50 border border-white/30 text-white text-[10px] font-bold">ROM</button>
                   </div>
                 )}
@@ -426,7 +428,7 @@ export default function OneRMEstimate({ member, onSave, onBack }) {
       )}
 
       <p className="text-[11px] text-slate-500 leading-relaxed">
-        ※ 원판 색 인식은 보조 기능입니다. 조명·각도·겹침에 따라 틀릴 수 있으니 항상 장수를 직접
+        ※ 영상 인식(원판 색)은 보조 기능입니다. 조명·각도·겹침에 따라 틀릴 수 있으니 항상 장수를 직접
         확인·수정한 뒤 계산하세요. 추정식은 1~10회에서 가장 정확합니다(무거운 부하일수록 정확).
       </p>
     </div>

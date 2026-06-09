@@ -57,13 +57,14 @@
   .measure-title { @apply text-lg font-black text-slate-100; }
   .measure-back { @apply text-slate-400 text-sm hover:text-white transition-colors; }
 
-  /* 측정 카메라 — 앱 안에서 꽉 차는 전체화면.
-     모든 측정 화면이 이 클래스를 쓰면, 여기만 고쳐도 일괄 적용된다.
-     헤더(약 56px)·하단 탭바(약 64px)는 유지하고 그 사이를 채운다. */
+  /* 측정 카메라 — 컨트롤·무게입력이 한 화면에 함께 보이도록 적당한 높이로 제한.
+     세로로 너무 길면 색인식·측정 버튼이 화면 밖으로 밀려 스크롤이 필요해진다.
+     aspect-ratio로 화면 너비에 비례하되, 최대 높이를 화면의 절반 정도로 묶는다. */
   .measure-camera {
     @apply relative w-full overflow-hidden bg-black;
-    height: calc(100dvh - 120px);
-    border-radius: 0;
+    aspect-ratio: 3 / 4;
+    max-height: 52dvh;
+    border-radius: 1rem;
   }
 }
 

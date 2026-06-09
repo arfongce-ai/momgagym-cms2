@@ -42,10 +42,13 @@ export default function PlateWeightInput({ value, onChange, getVideo, roi = DEFA
       .filter(x => x.count > 0));
   };
 
-  // 색 자동인식(보조) — 현재 프레임 ROI 색 집계 → 후보 자동 채움(사용자 보정)
+  // 영상 인식(보조) — 현재 프레임 ROI 색 집계 → 후보 자동 채움(사용자 보정)
   const scanColors = () => {
     const v = getVideo?.();
-    if (!v || !v.videoWidth) { alert('카메라가 아직 준비되지 않았습니다.'); return; }
+    if (!v || !v.videoWidth) {
+      alert('카메라가 아직 켜지지 않았습니다. 위에서 카메라를 먼저 시작한 뒤 다시 누르세요.');
+      return;
+    }
     const { dominant } = detectPlatesFromVideo(v, roi);
     if (!dominant.length) { alert('원판 색을 찾지 못했습니다. 원판이 잘 보이게 한 뒤 다시 시도하세요.'); return; }
     setDetected(dominant);
@@ -58,7 +61,7 @@ export default function PlateWeightInput({ value, onChange, getVideo, roi = DEFA
         <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest">원판 무게 (기록용)</p>
         {getVideo && (
           <button onClick={scanColors} className="px-3 py-1 rounded-lg bg-amber-500 text-slate-950 text-[11px] font-black active:scale-95">
-            색 인식
+            영상 인식
           </button>
         )}
       </div>

@@ -27,6 +27,8 @@ export default function VbtMeasure({ member, onSave, onBack }) {
   const canvasRef = useRef(null);
   const capRef = useRef(createMultiTracker());
   const phRef = useRef(null);              // 사람키 비율(최근값)
+  const phSamplesRef = useRef([]);         // 측정 중 키 비율 누적(중앙값용)
+  const frameStatsRef = useRef({ total: 0, lost: 0 }); // 추적 손실 프레임 집계
   const recordingRef = useRef(false);
   const seededRef = useRef(false);
   const framingRef = useRef({ level: 'bad', message: '' });
@@ -37,6 +39,12 @@ export default function VbtMeasure({ member, onSave, onBack }) {
   const [activePts, setActivePts] = useState(0);
   const [result, setResult] = useState(null);
   const [heightCm, setHeightCm] = useState(member?.height || '');
+  const [heightInput, setHeightInput] = useState(member?.height || '');
+  const confirmHeight = () => {
+    const n = Number(heightInput);
+    if (!n || n < 80 || n > 250) { alert('키를 80~250cm 사이로 입력한 뒤 확인을 누르세요.'); return; }
+    setHeightCm(n);
+  };
   const [plate, setPlate] = useState({ barKg: 20, sidePlates: [] }); // 원판 무게(기록용)
   const [framing, setFraming] = useState({ level: 'bad', message: '카메라 준비 중…' });
 
@@ -49,7 +57,11 @@ export default function VbtMeasure({ member, onSave, onBack }) {
     drawGuides(ctx, cw, ch, {});
 
     const ph = personHeightRatio(lms);
-    if (ph) phRef.current = ph;
+    if (ph) {
+      phRef.current = ph;
+      // 측정 중 키 비율을 누적 → 종료 시 중앙값 사용(단일 프레임 노이즈 제거)
+      if (recordingRef.current) phSamplesRef.current.push(ph);
+    }
 
     // 촬영 위치·거리 실시간 판정(VBT=측면 권장)
     const fr = assessFraming(lms, { want: FRAMING_PRESETS.vbt.want });
@@ -64,11 +76,18 @@ export default function VbtMeasure({ member, onSave, onBack }) {
       if (p && recordingRef.current) cap.push(p, ts);
       const act = cap.activeCount();
       if (act !== activePts) setActivePts(act);
+      // 측정 중 추적 손실(활성 0) 프레임 집계 → 종료 시 신뢰도 판단
+      if (recordingRef.current) {
+        frameStatsRef.current.total += 1;
+        if (act === 0) frameStatsRef.current.lost += 1;
+      }
 
       const path = cap.path();
       ctx.save();
-      ctx.strokeStyle = 'rgba(34,211,238,0.9)';
-      ctx.lineWidth = 3;
+      ctx.strokeStyle = 'rgba(34,211,238,0.95)';
+      ctx.lineWidth = 6;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
       ctx.beginPath();
       path.forEach((q, i) => {
         const X = q.x * cw, Y = q.y * ch;
@@ -77,14 +96,16 @@ export default function VbtMeasure({ member, onSave, onBack }) {
       ctx.stroke();
       cap.points().forEach(pt => {
         if (!pt.ema) return;
-        ctx.fillStyle = pt.alive ? 'rgba(16,185,129,0.9)' : 'rgba(148,163,184,0.6)';
-        ctx.beginPath(); ctx.arc(pt.ema.x * cw, pt.ema.y * ch, 5, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = pt.alive ? 'rgba(16,185,129,0.95)' : 'rgba(148,163,184,0.6)';
+        ctx.beginPath(); ctx.arc(pt.ema.x * cw, pt.ema.y * ch, 11, 0, Math.PI * 2); ctx.fill();
+        ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(255,255,255,0.8)';
+        ctx.beginPath(); ctx.arc(pt.ema.x * cw, pt.ema.y * ch, 11, 0, Math.PI * 2); ctx.stroke();
       });
       if (p) {
         ctx.fillStyle = '#f59e0b';
-        ctx.beginPath(); ctx.arc(p.x * cw, p.y * ch, 9, 0, Math.PI * 2); ctx.fill();
-        ctx.lineWidth = 2; ctx.strokeStyle = '#fff';
-        ctx.beginPath(); ctx.arc(p.x * cw, p.y * ch, 9, 0, Math.PI * 2); ctx.stroke();
+        ctx.beginPath(); ctx.arc(p.x * cw, p.y * ch, 16, 0, Math.PI * 2); ctx.fill();
+        ctx.lineWidth = 3; ctx.strokeStyle = '#fff';
+        ctx.beginPath(); ctx.arc(p.x * cw, p.y * ch, 16, 0, Math.PI * 2); ctx.stroke();
       }
       ctx.restore();
     }
@@ -137,6 +158,8 @@ export default function VbtMeasure({ member, onSave, onBack }) {
     if (!seededRef.current) { alert('먼저 화면에서 바벨 끝이나 원판을 눌러 추적점을 1개 이상 지정하세요.'); return; }
     if (!recording) {
       capRef.current.reset();
+      phSamplesRef.current = [];
+      frameStatsRef.current = { total: 0, lost: 0 };
       recordingRef.current = true;
       setRecording(true);
     } else {
@@ -144,9 +167,17 @@ export default function VbtMeasure({ member, onSave, onBack }) {
       setRecording(false);
       const sum = capRef.current.summary();
       if (!sum) { alert('기록된 움직임이 부족합니다. 다시 측정하세요.'); return; }
+      const fs = frameStatsRef.current;
+      const lostRatio = fs.total ? fs.lost / fs.total : 1;
+      if (lostRatio > 0.4) {
+        alert('추적이 자주 끊겼습니다(인식 ' + Math.round((1 - lostRatio) * 100) + '%). 더 잘 보이는 지점을 2~3곳 눌러 다시 측정하면 정확합니다.');
+      }
       const H = Number(heightCm) || null;
-      const cm = romToCm(sum.romRatio, phRef.current, H);
-      if (!cm) { alert('키(cm)를 입력해야 거리·속도를 환산할 수 있습니다.'); return; }
+      // 측정 중 누적한 키 비율의 중앙값(노이즈 제거). 없으면 최근값 폴백.
+      const phs = phSamplesRef.current.filter(Boolean).sort((a, b) => a - b);
+      const phMed = phs.length ? phs[Math.floor(phs.length / 2)] : phRef.current;
+      const cm = romToCm(sum.romRatio, phMed, H);
+      if (!cm) { alert('키(cm)를 입력하고 확인을 누른 뒤, 사람 전신이 보이게 측정하세요.'); return; }
       const distanceM = cm / 100;
       const timeSec = sum.durationMs / 1000;
       const vbt = calcVBT(distanceM, timeSec);
@@ -179,13 +210,21 @@ export default function VbtMeasure({ member, onSave, onBack }) {
         <span className="w-12" />
       </div>
 
-      <div className="flex items-center gap-2">
-        <input type="number" value={heightCm} onChange={e => setHeightCm(e.target.value)}
+      <div className="flex items-center gap-2 flex-wrap">
+        <input type="number" inputMode="numeric" value={heightInput}
+          onChange={e => setHeightInput(e.target.value)}
           placeholder="키(cm)" className="w-28 bg-slate-800 border border-slate-700 text-slate-100 rounded-lg px-2 py-1 text-xs font-mono" />
+        <button onClick={confirmHeight}
+          className="px-3 py-1 rounded-lg bg-amber-500 text-slate-950 text-xs font-black active:scale-95">
+          확인
+        </button>
+        {heightCm && Number(heightCm) === Number(heightInput) && (
+          <span className="text-[10px] text-emerald-400 font-bold">✓ {heightCm}cm 적용됨</span>
+        )}
         {member?.height && Number(heightCm) === Number(member.height) && (
           <span className="text-[9px] text-emerald-400">기록에서 불러옴</span>
         )}
-        <span className="text-[10px] text-slate-500">거리·속도 환산에 사용</span>
+        <span className="text-[10px] text-slate-500 w-full">거리·속도 환산에 사용 (입력 후 확인을 눌러주세요)</span>
       </div>
 
       <div className="measure-camera">
