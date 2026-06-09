@@ -1,8 +1,8 @@
 // ai-measure/menus/VbtMeasure.jsx
 // 메뉴 7: VBT (속도 기반 트레이닝) — 바벨 엔드캡(봉 끝) 탭 추적으로 자동 측정.
+//  - [재설계] 카메라를 켜면 화면 전체를 덮는 풀스크린 오버레이로 전환.
 //  - 화면에서 엔드캡을 한 번 누르면 그 색을 학습해 따라간다.
-//  - 측정 시작 → 한 렙 동작 → 측정 종료 시: 수직 이동거리(키 환산 m) ÷ 시간 = 평균속도.
-//  - cm·m 환산은 회원 키 기준(근사). 전용 엔코더보다 정밀하진 않으나 추세 파악엔 충분.
+//  - 측정 시작 → 한 렙 동작 → 종료 시: 수직 이동거리(키 환산 m) ÷ 시간 = 평균속도.
 import { useRef, useState, useEffect, useCallback } from 'react';
 import { usePoseEngine } from '../core/usePoseEngine';
 import { drawGuides } from '../core/cameraGuide';
@@ -13,6 +13,8 @@ import { totalWeight } from '../core/plates';
 import { assessFraming, FRAMING_PRESETS } from '../core/framingGuide';
 import PlateWeightInput from './PlateWeightInput';
 import FramingIntro from './FramingIntro';
+import HeightField from './HeightField';
+import CameraStage from './CameraStage';
 
 const ZONE_COLOR = {
   blue:   'text-blue-400',
@@ -23,12 +25,11 @@ const ZONE_COLOR = {
 };
 
 export default function VbtMeasure({ member, onSave, onBack }) {
-  const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const capRef = useRef(createMultiTracker());
-  const phRef = useRef(null);              // 사람키 비율(최근값)
-  const phSamplesRef = useRef([]);         // 측정 중 키 비율 누적(중앙값용)
-  const frameStatsRef = useRef({ total: 0, lost: 0 }); // 추적 손실 프레임 집계
+  const phRef = useRef(null);
+  const phSamplesRef = useRef([]);
+  const frameStatsRef = useRef({ total: 0, lost: 0 });
   const recordingRef = useRef(false);
   const seededRef = useRef(false);
   const framingRef = useRef({ level: 'bad', message: '' });
@@ -39,13 +40,7 @@ export default function VbtMeasure({ member, onSave, onBack }) {
   const [activePts, setActivePts] = useState(0);
   const [result, setResult] = useState(null);
   const [heightCm, setHeightCm] = useState(member?.height || '');
-  const [heightInput, setHeightInput] = useState(member?.height || '');
-  const confirmHeight = () => {
-    const n = Number(heightInput);
-    if (!n || n < 80 || n > 250) { alert('키를 80~250cm 사이로 입력한 뒤 확인을 누르세요.'); return; }
-    setHeightCm(n);
-  };
-  const [plate, setPlate] = useState({ barKg: 20, sidePlates: [] }); // 원판 무게(기록용)
+  const [plate, setPlate] = useState({ barKg: 20, sidePlates: [] });
   const [framing, setFraming] = useState({ level: 'bad', message: '카메라 준비 중…' });
 
   const handleResult = useCallback((lms, ts, video) => {
@@ -59,11 +54,9 @@ export default function VbtMeasure({ member, onSave, onBack }) {
     const ph = personHeightRatio(lms);
     if (ph) {
       phRef.current = ph;
-      // 측정 중 키 비율을 누적 → 종료 시 중앙값 사용(단일 프레임 노이즈 제거)
       if (recordingRef.current) phSamplesRef.current.push(ph);
     }
 
-    // 촬영 위치·거리 실시간 판정(VBT=측면 권장)
     const fr = assessFraming(lms, { want: FRAMING_PRESETS.vbt.want });
     if (fr.level !== framingRef.current.level || fr.message !== framingRef.current.message) {
       framingRef.current = fr;
@@ -76,7 +69,6 @@ export default function VbtMeasure({ member, onSave, onBack }) {
       if (p && recordingRef.current) cap.push(p, ts);
       const act = cap.activeCount();
       if (act !== activePts) setActivePts(act);
-      // 측정 중 추적 손실(활성 0) 프레임 집계 → 종료 시 신뢰도 판단
       if (recordingRef.current) {
         frameStatsRef.current.total += 1;
         if (act === 0) frameStatsRef.current.lost += 1;
@@ -111,7 +103,7 @@ export default function VbtMeasure({ member, onSave, onBack }) {
     }
   }, [activePts]);
 
-  const { start, stop, status, error } = usePoseEngine({ onResult: handleResult });
+  const { videoRef, start, stop, status, error } = usePoseEngine({ onResult: handleResult });
 
   const syncCanvas = useCallback(() => {
     const v = videoRef.current, c = canvasRef.current;
@@ -129,10 +121,10 @@ export default function VbtMeasure({ member, onSave, onBack }) {
     seededRef.current = false; setSeeded(false);
     setPtCount(0); setActivePts(0);
     capRef.current.clear();
-    setTimeout(() => start(videoRef.current), 50);
+    start();
   };
+  const closeCam = () => { stop(); recordingRef.current = false; setRecording(false); };
 
-  // 화면 탭 → 엔드캡 색 학습(seed). object-contain 좌표 보정 포함.
   const onTapVideo = (e) => {
     const v = videoRef.current;
     if (!v || !v.videoWidth || status !== 'running') return;
@@ -162,6 +154,7 @@ export default function VbtMeasure({ member, onSave, onBack }) {
       frameStatsRef.current = { total: 0, lost: 0 };
       recordingRef.current = true;
       setRecording(true);
+      setResult(null);
     } else {
       recordingRef.current = false;
       setRecording(false);
@@ -173,11 +166,10 @@ export default function VbtMeasure({ member, onSave, onBack }) {
         alert('추적이 자주 끊겼습니다(인식 ' + Math.round((1 - lostRatio) * 100) + '%). 더 잘 보이는 지점을 2~3곳 눌러 다시 측정하면 정확합니다.');
       }
       const H = Number(heightCm) || null;
-      // 측정 중 누적한 키 비율의 중앙값(노이즈 제거). 없으면 최근값 폴백.
       const phs = phSamplesRef.current.filter(Boolean).sort((a, b) => a - b);
       const phMed = phs.length ? phs[Math.floor(phs.length / 2)] : phRef.current;
       const cm = romToCm(sum.romRatio, phMed, H);
-      if (!cm) { alert('키(cm)를 입력하고 확인을 누른 뒤, 사람 전신이 보이게 측정하세요.'); return; }
+      if (!cm) { alert('키(cm)를 입력·적용한 뒤, 사람 전신이 보이게 측정하세요.'); return; }
       const distanceM = cm / 100;
       const timeSec = sum.durationMs / 1000;
       const vbt = calcVBT(distanceM, timeSec);
@@ -202,6 +194,72 @@ export default function VbtMeasure({ member, onSave, onBack }) {
     });
   };
 
+  // ───────── 풀스크린 카메라(측정 중) ─────────
+  if (status !== 'idle') {
+    const topBar = (
+      <>
+        <div className="flex items-center gap-1.5 flex-wrap justify-end">
+          <span className="bg-black/65 rounded-full px-2.5 py-1 text-[10px] text-cyan-300 font-bold">
+            {ptCount === 0
+              ? '바벨 끝·원판을 눌러 추적점 지정 (최대 3개)'
+              : recording
+                ? `추적점 ${activePts}/${ptCount} 인식 중`
+                : `추적점 ${ptCount}개 · 측정 시작 후 1렙`}
+          </span>
+          {ptCount > 0 && (
+            <span className={`rounded-full px-2 py-1 text-[10px] font-bold ${activePts >= 2 ? 'bg-emerald-500/85 text-slate-950' : activePts === 1 ? 'bg-amber-500/85 text-slate-950' : 'bg-red-500/85 text-white'}`}>
+              신뢰도 {activePts >= 2 ? '높음' : activePts === 1 ? '보통' : '낮음'}
+            </span>
+          )}
+        </div>
+        <span className={`rounded-full px-3 py-1 text-[11px] font-bold ${framing.level === 'good' ? 'bg-emerald-500/85 text-slate-950' : framing.level === 'warn' ? 'bg-amber-500/85 text-slate-950' : 'bg-red-500/85 text-white'}`}>
+          {framing.level === 'good' ? '✓ ' : '⚠ '}{framing.message}
+        </span>
+        {!heightCm && (
+          <span className="rounded-full px-2.5 py-1 text-[10px] font-bold bg-amber-500/85 text-slate-950">
+            키 미입력 — 속도 계산엔 키 필요
+          </span>
+        )}
+      </>
+    );
+
+    const controls = (
+      <button onClick={toggleRecord}
+        className={`px-6 h-14 rounded-full text-base font-black active:scale-95 shadow-lg ${recording ? 'bg-red-500 text-white' : seeded ? 'bg-amber-500 text-slate-950' : 'bg-slate-600 text-slate-200'}`}>
+        {recording ? '■ 측정 종료' : '● 측정 시작'}
+      </button>
+    );
+
+    return (
+      <CameraStage
+        videoRef={videoRef} canvasRef={canvasRef} status={status} error={error}
+        onTapVideo={onTapVideo} onClose={closeCam} topBar={topBar} controls={controls}
+      >
+        {result && (
+          <div className="mx-auto max-w-md w-full card-accent p-3 space-y-2 animate-fade-in">
+            <div className="flex items-baseline justify-between">
+              <p className="text-[11px] font-bold text-amber-400 uppercase tracking-widest">평균 속도</p>
+              {result.zone && <p className={`text-xs font-bold ${ZONE_COLOR[result.zone.color]}`}>{result.zone.label}</p>}
+            </div>
+            <p className="text-center font-mono font-black text-4xl text-slate-100">{result.meanVelocity}<span className="text-base text-slate-500"> m/s</span></p>
+            <div className="grid grid-cols-2 gap-2 text-center">
+              <div className="bg-slate-800 rounded-xl py-2">
+                <p className="text-[10px] text-slate-500">이동 거리</p>
+                <p className="font-mono font-bold text-slate-100 text-sm">{result.romCm}cm</p>
+              </div>
+              <div className="bg-slate-800 rounded-xl py-2">
+                <p className="text-[10px] text-slate-500">추진 시간</p>
+                <p className="font-mono font-bold text-slate-100 text-sm">{result.timeSec}s</p>
+              </div>
+            </div>
+            {onSave && <button onClick={save} className="btn btn-primary w-full">이 측정 저장</button>}
+          </div>
+        )}
+      </CameraStage>
+    );
+  }
+
+  // ───────── 준비 화면(카메라 꺼짐) ─────────
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -210,120 +268,27 @@ export default function VbtMeasure({ member, onSave, onBack }) {
         <span className="w-12" />
       </div>
 
-      <div className="flex items-center gap-2 flex-wrap">
-        <input type="number" inputMode="numeric" value={heightInput}
-          onChange={e => setHeightInput(e.target.value)}
-          placeholder="키(cm)" className="w-28 bg-slate-800 border border-slate-700 text-slate-100 rounded-lg px-2 py-1 text-xs font-mono" />
-        <button onClick={confirmHeight}
-          className="px-3 py-1 rounded-lg bg-amber-500 text-slate-950 text-xs font-black active:scale-95">
-          확인
-        </button>
-        {heightCm && Number(heightCm) === Number(heightInput) && (
-          <span className="text-[10px] text-emerald-400 font-bold">✓ {heightCm}cm 적용됨</span>
-        )}
-        {member?.height && Number(heightCm) === Number(member.height) && (
-          <span className="text-[9px] text-emerald-400">기록에서 불러옴</span>
-        )}
-        <span className="text-[10px] text-slate-500 w-full">거리·속도 환산에 사용 (입력 후 확인을 눌러주세요)</span>
+      <HeightField value={heightCm} onChange={setHeightCm} member={member}
+        hint="거리·속도 환산에 사용" />
+
+      <FramingIntro preset={FRAMING_PRESETS.vbt} onStart={startCam} startLabel="📷 카메라 시작 (전체화면)" />
+
+      <PlateWeightInput value={plate} onChange={setPlate} getVideo={null} />
+
+      <div className="bg-slate-800 rounded-xl p-3 space-y-1">
+        <p className="text-[10px] text-slate-500 mb-1">속도 구간별 훈련 목적 (참고)</p>
+        {VBT_ZONES.map((z, i) => (
+          <div key={i} className="flex justify-between text-[11px] px-2 py-1">
+            <span className="text-slate-500">{z.min}{z.max === Infinity ? '+' : `~${z.max}`} m/s</span>
+            <span className="text-slate-400">{z.label}</span>
+          </div>
+        ))}
       </div>
-
-      <div className="measure-camera">
-        <video ref={videoRef} autoPlay playsInline muted className="absolute inset-0 w-full h-full object-contain" />
-        <canvas ref={canvasRef} className="absolute inset-0 w-full h-full object-contain pointer-events-none" />
-        {status === 'running' && (
-          <div className="absolute inset-0" onClick={onTapVideo} onTouchStart={onTapVideo} />
-        )}
-        {status !== 'running' && (
-          <div className="absolute inset-0 flex items-center justify-center text-slate-400 text-sm text-center px-4">
-            {status === 'loading' ? 'AI 모델 로딩 중…' : status === 'error' ? `오류: ${error}` : '카메라를 시작하세요 (옆에서 촬영 권장)'}
-          </div>
-        )}
-        {status === 'running' && (
-          <>
-            <div className="absolute top-2 left-2 right-2 flex items-center justify-between gap-2">
-              <span className="bg-black/65 rounded-full px-2.5 py-1 text-[10px] text-cyan-300 font-bold">
-                {ptCount === 0
-                  ? '바벨 끝·원판을 눌러 추적점 지정 (최대 3개)'
-                  : recording
-                    ? `추적점 ${activePts}/${ptCount} 인식 중`
-                    : `추적점 ${ptCount}개 지정됨 · 측정 시작 후 1렙`}
-              </span>
-              {ptCount > 0 && (
-                <span className={`rounded-full px-2 py-1 text-[10px] font-bold ${activePts >= 2 ? 'bg-emerald-500/80 text-slate-950' : activePts === 1 ? 'bg-amber-500/80 text-slate-950' : 'bg-red-500/80 text-white'}`}>
-                  신뢰도 {activePts >= 2 ? '높음' : activePts === 1 ? '보통' : '낮음'}
-                </span>
-              )}
-            </div>
-            {/* 실시간 촬영 위치·거리 가이드 */}
-            <div className="absolute top-11 left-2 right-2 flex justify-center">
-              <span className={`rounded-full px-3 py-1 text-[11px] font-bold ${framing.level === 'good' ? 'bg-emerald-500/85 text-slate-950' : framing.level === 'warn' ? 'bg-amber-500/85 text-slate-950' : 'bg-red-500/85 text-white'}`}>
-                {framing.level === 'good' ? '✓ ' : '⚠ '}{framing.message}
-              </span>
-            </div>
-            <div className="absolute bottom-4 left-0 right-0 flex items-center justify-center gap-6">
-              <button onClick={stop} className="w-11 h-11 rounded-full bg-black/50 border border-white/30 text-white text-xs font-bold">정지</button>
-              <button onClick={toggleRecord}
-                className={`px-5 h-12 rounded-full text-sm font-black active:scale-95 ${recording ? 'bg-red-500 text-white' : seeded ? 'bg-amber-500 text-slate-950' : 'bg-slate-600 text-slate-300'}`}>
-                {recording ? '■ 측정 종료' : '● 측정 시작'}
-              </button>
-              <span className="w-11" />
-            </div>
-          </>
-        )}
-      </div>
-
-      {status !== 'running' && (
-        <FramingIntro preset={FRAMING_PRESETS.vbt} onStart={startCam} />
-      )}
-
-      <PlateWeightInput
-        value={plate}
-        onChange={setPlate}
-        getVideo={status === 'running' ? () => videoRef.current : null}
-      />
-
-      {result && (
-        <div className="card-accent p-4 space-y-3 animate-fade-in">
-          <div className="flex items-baseline justify-between">
-            <p className="text-xs font-bold text-amber-400 uppercase tracking-widest">평균 속도</p>
-            {result.zone && <p className={`text-sm font-bold ${ZONE_COLOR[result.zone.color]}`}>{result.zone.label}</p>}
-          </div>
-          <p className="text-center font-mono font-black text-5xl text-slate-100">{result.meanVelocity}<span className="text-lg text-slate-500"> m/s</span></p>
-
-          <div className="grid grid-cols-2 gap-2 text-center">
-            <div className="bg-slate-800 rounded-xl py-2">
-              <p className="text-[10px] text-slate-500">이동 거리</p>
-              <p className="font-mono font-bold text-slate-100">{result.romCm}cm</p>
-            </div>
-            <div className="bg-slate-800 rounded-xl py-2">
-              <p className="text-[10px] text-slate-500">추진 시간</p>
-              <p className="font-mono font-bold text-slate-100">{result.timeSec}s</p>
-            </div>
-          </div>
-
-          {/* 속도 존 표 */}
-          <div className="bg-slate-800 rounded-xl p-3 space-y-1">
-            <p className="text-[10px] text-slate-500 mb-1">속도 구간별 훈련 목적</p>
-            {VBT_ZONES.map((z, i) => {
-              const active = result.zone && z.label === result.zone.label;
-              return (
-                <div key={i} className={`flex justify-between text-[11px] px-2 py-1 rounded ${active ? 'bg-slate-700' : ''}`}>
-                  <span className={active ? ZONE_COLOR[z.color] + ' font-bold' : 'text-slate-500'}>
-                    {z.min}{z.max === Infinity ? '+' : `~${z.max}`} m/s
-                  </span>
-                  <span className={active ? 'text-slate-100 font-bold' : 'text-slate-500'}>{z.label}</span>
-                </div>
-              );
-            })}
-          </div>
-          {onSave && <button onClick={save} className="btn btn-primary w-full">이 측정 저장</button>}
-        </div>
-      )}
 
       <p className="text-[11px] text-slate-500 leading-relaxed">
-        ※ 바벨 끝·원판 등 잘 보이는 곳을 2~3군데 눌러 추적점을 지정하면, 한 점이 가려지거나
-        튀어도 나머지 점으로 보완해 오차를 줄입니다. 카메라 한 대 추정이라 전용 엔코더보다
-        정밀하진 않으며, 평균속도 추세 파악용으로 적합합니다.
+        ※ 카메라를 켜면 전체 화면으로 전환됩니다. 옆에서 촬영해야 바벨 수직 속도가 정확히 잡히며,
+        한 번에 1렙만 측정하면 속도가 더 정확합니다. 카메라 한 대 추정이라 전용 엔코더보다
+        정밀하진 않으며 평균속도 추세 파악용으로 적합합니다.
       </p>
     </div>
   );

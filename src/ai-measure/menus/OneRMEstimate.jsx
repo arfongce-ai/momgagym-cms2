@@ -1,117 +1,77 @@
 // ai-measure/menus/OneRMEstimate.jsx
-// 메뉴 5: 1RM 추정 (벤치프레스 / 스쿼트 / 데드리프트 3종목).
-//
-// 입력 방식(동규님 지침):
-//   1) 무게: "색 자동인식(보조) + 수동 확인" — 카메라로 IWF 규격 플레이트 색을
-//      추정해 후보를 띄우되, 최종 무게는 사용자가 +/- 로 확정/수정한다.
-//   2) 반복: 3회·5회 기준(프리셋) + 직접 입력 가능.
-//   3) (선택) 카메라로 바벨(손목 중점) 수직 변위(ROM)를 함께 기록.
-//   4) 1RM = Epley·Brzycki 평균.
+// 메뉴 5: 1RM 추정 (벤치프레스 / 스쿼트 / 데드리프트).
+//  - [재설계] 역도·VBT와 동일한 통일 UX:
+//      · 무게는 "직접 입력"이 기본(가장 확실). 카메라는 원판 색 인식 보조.
+//      · 카메라를 켜면 풀스크린 오버레이로 전환 → 영상 인식 후 닫으면
+//        인식된 원판이 자동 채워지고, 장수를 직접 확인·수정한다.
+//      · 인식이 안 되면 그냥 직접 입력으로 진행(폴백).
+//  - 1RM = Epley·Brzycki 등 검증된 공식 평균.
 import { useRef, useState, useEffect, useCallback } from 'react';
-import { estimate1RM, LIFTS, REP_PRESETS, repTargets } from '../core/strength';
+import { estimate1RM, LIFTS, REP_PRESETS } from '../core/strength';
 import {
   IWF_PLATES, BAR_WEIGHTS, detectPlatesFromVideo,
   suggestSidePlates, totalWeight,
 } from '../core/plates';
+import { repTargets } from '../core/strength';
 import { usePoseEngine } from '../core/usePoseEngine';
-import { personHeightRatio, romToCm } from '../core/barbell';
-import { createMultiTracker } from '../core/endcapTracker';
 import { assessFraming, FRAMING_PRESETS } from '../core/framingGuide';
 import { drawGuides } from '../core/cameraGuide';
+import FramingIntro from './FramingIntro';
+import CameraStage from './CameraStage';
 
-// 편측 원판 후보(장수 조절용) 색상 배지
 const PLATE_HEX = { 빨강:'#D7263D', 파랑:'#0B61A4', 노랑:'#F2C200', 초록:'#1F9D55', 흰색:'#E8E8E8' };
 
 export default function OneRMEstimate({ member, onSave, onBack }) {
   const [lift, setLift] = useState('squat');
   const [reps, setReps] = useState(5);
   const [barKg, setBarKg] = useState(20);
-  // 편측 원판 구성 [{kg,label,count}]
   const [sidePlates, setSidePlates] = useState([]);
-  const [manualWeight, setManualWeight] = useState(''); // 색인식 안 쓰고 직접 무게
-  const [useManual, setUseManual] = useState(true);     // 기본: 수동 입력
+  const [manualWeight, setManualWeight] = useState('');
+  const [useManual, setUseManual] = useState(true);   // 기본: 직접 입력
   const [result, setResult] = useState(null);
 
-  // ── 카메라(보조) ──
-  const [camOpen, setCamOpen] = useState(false);
-  const videoRef = useRef(null);
+  // ── 카메라(원판 색 인식 보조) ──
   const canvasRef = useRef(null);
-  const trackerRef = useRef(createMultiTracker());
-  const roiRef = useRef({ x: 0.05, y: 0.35, w: 0.22, h: 0.45 }); // 바벨 끝(좌측) ROI
-  const [detected, setDetected] = useState([]);    // 색 추정 결과(편측 후보)
-  const [romCm, setRomCm] = useState(null);
-  const [seeded, setSeeded] = useState(false);     // 추적점 지정 여부
-  const [ptCount, setPtCount] = useState(0);
-  const [activePts, setActivePts] = useState(0);
-  const seededRef = useRef(false);
+  const roiRef = useRef({ x: 0.30, y: 0.30, w: 0.40, h: 0.45 }); // 화면 중앙 박스
+  const [detected, setDetected] = useState([]);
   const framingRef = useRef({ level: 'bad', message: '' });
   const [framing, setFraming] = useState({ level: 'bad', message: '카메라 준비 중…' });
-  const heightCm = member?.height || null;
+  const liftRef = useRef(lift);
+  liftRef.current = lift;
 
-  // 총중량(색인식/수동 분기)
   const computedWeight = useManual
     ? Number(manualWeight) || 0
     : totalWeight(sidePlates, barKg).total;
 
-  // ───────── 카메라 프레임 처리 ─────────
-  const liftRef = useRef(lift);
-  liftRef.current = lift;
   const handleResult = useCallback((lms, ts, video) => {
     const canvas = canvasRef.current;
-    if (canvas && video) {
-      const cw = canvas.width, ch = canvas.height;
-      const ctx = canvas.getContext('2d');
-      ctx.clearRect(0, 0, cw, ch);
-      drawGuides(ctx, cw, ch, {});
+    if (!canvas || !video) return;
+    const cw = canvas.width, ch = canvas.height;
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, cw, ch);
+    drawGuides(ctx, cw, ch, {});
 
-      // 촬영 위치·거리 실시간 판정(종목별 권장 방향)
-      const want = (FRAMING_PRESETS[liftRef.current] || FRAMING_PRESETS.squat).want;
-      const fr = assessFraming(lms, { want });
-      if (fr.level !== framingRef.current.level || fr.message !== framingRef.current.message) {
-        framingRef.current = fr;
-        setFraming({ level: fr.level, message: fr.message });
-      }
-      // ROI 박스(플레이트 색 인식 영역) 표시
-      const r = roiRef.current;
-      ctx.save();
-      ctx.strokeStyle = 'rgba(245,158,11,0.9)';
-      ctx.lineWidth = 2; ctx.setLineDash([5, 4]);
-      ctx.strokeRect(r.x * cw, r.y * ch, r.w * cw, r.h * ch);
-      ctx.fillStyle = 'rgba(245,158,11,0.9)';
-      ctx.font = 'bold 12px sans-serif';
-      ctx.fillText('원판을 이 박스에', r.x * cw + 4, r.y * ch - 6);
-      ctx.restore();
-      // 다중점 추적(탭으로 1개 이상 지정된 경우)
-      const cap = trackerRef.current;
-      if (cap.isSeeded()) {
-        const p = cap.update(video);
-        if (p) cap.push(p, ts);
-        const act = cap.activeCount();
-        if (act !== activePts) setActivePts(act);
-        // 각 추적점(보조)
-        cap.points().forEach(pt => {
-          if (!pt.ema) return;
-          ctx.save();
-          ctx.fillStyle = pt.alive ? 'rgba(16,185,129,0.95)' : 'rgba(148,163,184,0.6)';
-          ctx.beginPath(); ctx.arc(pt.ema.x * cw, pt.ema.y * ch, 11, 0, Math.PI * 2); ctx.fill();
-          ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(255,255,255,0.8)';
-          ctx.beginPath(); ctx.arc(pt.ema.x * cw, pt.ema.y * ch, 11, 0, Math.PI * 2); ctx.stroke();
-          ctx.restore();
-        });
-        // 대표 위치(큰 점)
-        if (p) {
-          ctx.save();
-          ctx.fillStyle = '#22d3ee';
-          ctx.beginPath(); ctx.arc(p.x * cw, p.y * ch, 16, 0, Math.PI * 2); ctx.fill();
-          ctx.lineWidth = 3; ctx.strokeStyle = '#fff';
-          ctx.beginPath(); ctx.arc(p.x * cw, p.y * ch, 16, 0, Math.PI * 2); ctx.stroke();
-          ctx.restore();
-        }
-      }
+    const want = (FRAMING_PRESETS[liftRef.current] || FRAMING_PRESETS.squat).want;
+    const fr = assessFraming(lms, { want });
+    if (fr.level !== framingRef.current.level || fr.message !== framingRef.current.message) {
+      framingRef.current = fr;
+      setFraming({ level: fr.level, message: fr.message });
     }
-  }, [activePts]);
 
-  const { start, stop, status, error } = usePoseEngine({ onResult: handleResult });
+    // 원판 색 인식 ROI 박스 표시
+    const r = roiRef.current;
+    ctx.save();
+    ctx.strokeStyle = 'rgba(245,158,11,0.95)';
+    ctx.lineWidth = 3; ctx.setLineDash([8, 6]);
+    ctx.strokeRect(r.x * cw, r.y * ch, r.w * cw, r.h * ch);
+    ctx.setLineDash([]);
+    ctx.fillStyle = 'rgba(245,158,11,0.95)';
+    ctx.font = 'bold 14px sans-serif';
+    ctx.fillText('원판을 이 박스 안에', r.x * cw + 6, r.y * ch - 8);
+    ctx.restore();
+  }, []);
+
+  const { videoRef, start, stop, status, error } = usePoseEngine({ onResult: handleResult });
 
   const syncCanvas = useCallback(() => {
     const v = videoRef.current, c = canvasRef.current;
@@ -125,65 +85,28 @@ export default function OneRMEstimate({ member, onSave, onBack }) {
   }, [syncCanvas, stop]);
 
   const openCam = () => {
-    setCamOpen(true);
     setUseManual(false);
-    trackerRef.current.clear();
-    seededRef.current = false; setSeeded(false);
-    setPtCount(0); setActivePts(0);
-    // setCamOpen으로 video 요소가 화면에 렌더된 뒤 카메라를 붙인다.
-    // (즉시 start 하면 아직 그려지지 않은 video에 연결되어 검은 화면이 됨)
+    setDetected([]);
+    // video 요소가 풀스크린으로 렌더된 뒤 카메라 연결(검은 화면 방지)
+    start();
   };
-  const closeCam = () => { stop(); setCamOpen(false); };
-
-  // 화면 탭 → 엔드캡 색 학습(seed). object-contain 좌표 보정 포함.
-  const onTapVideo = (e) => {
-    const v = videoRef.current;
-    if (!v || !v.videoWidth || status !== 'running') return;
-    const rect = e.currentTarget.getBoundingClientRect();
-    const clientX = (e.touches?.[0]?.clientX ?? e.clientX) - rect.left;
-    const clientY = (e.touches?.[0]?.clientY ?? e.clientY) - rect.top;
-    const vAR = v.videoWidth / v.videoHeight;
-    const bAR = rect.width / rect.height;
-    let drawW = rect.width, drawH = rect.height, offX = 0, offY = 0;
-    if (vAR > bAR) { drawH = rect.width / vAR; offY = (rect.height - drawH) / 2; }
-    else { drawW = rect.height * vAR; offX = (rect.width - drawW) / 2; }
-    const nx = (clientX - offX) / drawW;
-    const ny = (clientY - offY) / drawH;
-    if (nx < 0 || nx > 1 || ny < 0 || ny > 1) return;
-    const ok = trackerRef.current.seed(v, nx, ny);
-    if (ok) {
-      seededRef.current = true; setSeeded(true);
-      setPtCount(trackerRef.current.pointCount());
-    }
+  // 카메라를 닫으면, 인식된 원판이 없을 때는 직접 입력으로 자연스럽게 되돌린다.
+  const closeCam = () => {
+    stop();
+    if (detected.length === 0 && sidePlates.length === 0) setUseManual(true);
   };
 
-  // camOpen이 true가 되어 video 요소가 실제로 렌더된 다음에 카메라 시작
-  useEffect(() => {
-    if (camOpen && videoRef.current && status === 'idle') {
-      const id = setTimeout(() => start(videoRef.current), 80);
-      return () => clearTimeout(id);
-    }
-  }, [camOpen, status, start]);
-
-  // 색 자동인식(보조) — 현재 프레임에서 ROI 색 집계 → 후보 제시
+  // 색 자동인식(보조) — 현재 프레임 ROI 색 집계 → 후보 채움
   const scanColors = () => {
     const v = videoRef.current;
     if (!v || !v.videoWidth) { alert('카메라가 아직 준비되지 않았습니다.'); return; }
     const { dominant } = detectPlatesFromVideo(v, roiRef.current);
     if (!dominant.length) { alert('원판 색을 찾지 못했습니다. 원판이 박스 안에 잘 보이게 한 뒤 다시 시도하세요.'); return; }
     setDetected(dominant);
-    setSidePlates(suggestSidePlates(dominant)); // 자동 채움(사용자가 보정)
+    setSidePlates(suggestSidePlates(dominant));
+    stop(); // 인식했으면 카메라 닫고 아래에서 장수 확인·수정
   };
 
-  // 바벨 ROM 기록 멈추고 cm 변환
-  const finishTrack = () => {
-    const sum = trackerRef.current.summary();
-    const v = videoRef.current;
-    // 마지막 프레임 사람키 비율로 cm 환산(근사)
-    setRomCm(sum && heightCm ? `${sum.romRatio} (화면비율)` : sum ? `${sum.romRatio}` : null);
-  };
-
-  // ───────── 수동 원판 조절 ─────────
   const addPlate = (p) => {
     setUseManual(false);
     setSidePlates(prev => {
@@ -198,10 +121,9 @@ export default function OneRMEstimate({ member, onSave, onBack }) {
       .filter(x => x.count > 0));
   };
 
-  // ───────── 계산 ─────────
   const calc = () => {
     const w = computedWeight, r = Number(reps);
-    if (!w || w <= 0) { alert('무게가 0보다 커야 합니다. 원판 구성 또는 무게를 확인하세요.'); return; }
+    if (!w || w <= 0) { alert('무게가 0보다 커야 합니다. 무게를 직접 입력하거나 원판을 구성하세요.'); return; }
     if (!r || r <= 0) { alert('반복 횟수를 입력하세요.'); return; }
     if (r > 12) { alert('반복 횟수가 12회를 넘으면 추정 오차가 큽니다. 12회 이하로 입력하세요.'); return; }
     setResult({ ...estimate1RM(w, r), usedWeight: w });
@@ -220,10 +142,40 @@ export default function OneRMEstimate({ member, onSave, onBack }) {
       barKg: useManual ? null : barKg,
       sidePlates: useManual ? null : sidePlates,
       weightSource: useManual ? 'manual' : 'plate-color',
-      romRatio: trackerRef.current.summary()?.romRatio ?? null,
     });
   };
 
+  // ───────── 풀스크린 카메라(원판 색 인식) ─────────
+  if (status !== 'idle') {
+    const topBar = (
+      <>
+        <span className="bg-black/65 rounded-full px-2.5 py-1 text-[10px] text-cyan-300 font-bold">
+          원판을 박스 안에 두고 [색 인식]
+        </span>
+        <span className={`rounded-full px-3 py-1 text-[11px] font-bold ${framing.level === 'good' ? 'bg-emerald-500/85 text-slate-950' : framing.level === 'warn' ? 'bg-amber-500/85 text-slate-950' : 'bg-red-500/85 text-white'}`}>
+          {framing.level === 'good' ? '✓ ' : '⚠ '}{framing.message}
+        </span>
+      </>
+    );
+    const controls = (
+      <button onClick={scanColors}
+        className="px-6 h-14 rounded-full text-base font-black bg-amber-500 text-slate-950 active:scale-95 shadow-lg">
+        🎨 원판 색 인식
+      </button>
+    );
+    return (
+      <CameraStage
+        videoRef={videoRef} canvasRef={canvasRef} status={status} error={error}
+        onClose={closeCam} topBar={topBar} controls={controls} tappable={false}
+      >
+        <div className="mx-auto max-w-md w-full bg-black/60 rounded-xl px-3 py-2 text-center">
+          <p className="text-[11px] text-slate-300">인식이 잘 안 되면 [닫기] 후 무게를 직접 입력하세요.</p>
+        </div>
+      </CameraStage>
+    );
+  }
+
+  // ───────── 입력/결과 화면 ─────────
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -232,7 +184,7 @@ export default function OneRMEstimate({ member, onSave, onBack }) {
         <span className="w-12" />
       </div>
 
-      {/* 종목 (3종) */}
+      {/* 종목 */}
       <div className="flex gap-1 rounded-xl bg-slate-800 p-1">
         {LIFTS.map(l => (
           <button key={l.key} onClick={() => { setLift(l.key); setResult(null); }}
@@ -250,76 +202,30 @@ export default function OneRMEstimate({ member, onSave, onBack }) {
         </button>
         <button onClick={() => setUseManual(false)}
           className={`px-3 py-1 rounded font-bold ${!useManual ? 'bg-amber-500 text-slate-950' : 'text-slate-400'}`}>
-          영상 인식(보조)
+          원판 색 인식(보조)
         </button>
       </div>
 
       {useManual ? (
-        /* ── 직접 입력 ── */
+        /* ── 직접 입력(기본) ── */
         <div>
           <label className="block text-xs font-semibold text-slate-400 uppercase tracking-widest mb-1.5">든 무게 (kg)</label>
           <input type="number" step="2.5" value={manualWeight} onChange={e => setManualWeight(e.target.value)}
             placeholder="80" className="input-mono" />
         </div>
       ) : (
-        /* ── 영상 인식(보조) + 수동 확인 ── */
+        /* ── 원판 색 인식(보조) + 수동 확인 ── */
         <div className="space-y-3">
-          {/* 카메라 */}
-          {!camOpen ? (
-            <FramingIntro
-              preset={FRAMING_PRESETS[lift] || FRAMING_PRESETS.squat}
-              onStart={openCam}
-              startLabel="📷 카메라로 영상 인식"
-            />
-          ) : (
-            <div className="space-y-2">
-              <div className="measure-camera">
-                <video ref={videoRef} autoPlay playsInline muted className="absolute inset-0 w-full h-full object-contain" />
-                <canvas ref={canvasRef} className="absolute inset-0 w-full h-full object-contain pointer-events-none" />
-                {/* 탭 입력 레이어(엔드캡 지정) */}
-                {status === 'running' && (
-                  <div className="absolute inset-0" onClick={onTapVideo} onTouchStart={onTapVideo} />
-                )}
-                {status !== 'running' && (
-                  <div className="absolute inset-0 flex items-center justify-center text-slate-400 text-sm text-center px-4">
-                    {status === 'loading' ? 'AI 모델 로딩 중…' : status === 'error' ? `오류: ${error}` : '카메라 준비 중…'}
-                  </div>
-                )}
-                {status === 'running' && (
-                  <div className="absolute top-2 left-2 right-2 flex items-center justify-between gap-2">
-                    <span className="bg-black/65 rounded-full px-2.5 py-1 text-[10px] text-cyan-300 font-bold">
-                      {ptCount === 0
-                        ? '바벨 끝·원판을 눌러 추적점 지정 (최대 3개)'
-                        : `추적점 ${activePts}/${ptCount} · ROM으로 가동범위 기록`}
-                    </span>
-                    {ptCount > 0 && (
-                      <span className={`rounded-full px-2 py-1 text-[10px] font-bold ${activePts >= 2 ? 'bg-emerald-500/80 text-slate-950' : activePts === 1 ? 'bg-amber-500/80 text-slate-950' : 'bg-red-500/80 text-white'}`}>
-                        신뢰도 {activePts >= 2 ? '높음' : activePts === 1 ? '보통' : '낮음'}
-                      </span>
-                    )}
-                  </div>
-                )}
-                {status === 'running' && (
-                  <div className="absolute top-11 left-2 right-2 flex justify-center">
-                    <span className={`rounded-full px-3 py-1 text-[11px] font-bold ${framing.level === 'good' ? 'bg-emerald-500/85 text-slate-950' : framing.level === 'warn' ? 'bg-amber-500/85 text-slate-950' : 'bg-red-500/85 text-white'}`}>
-                      {framing.level === 'good' ? '✓ ' : '⚠ '}{framing.message}
-                    </span>
-                  </div>
-                )}
-                {status === 'running' && (
-                  <div className="absolute bottom-3 left-0 right-0 flex items-center justify-center gap-4">
-                    <button onClick={closeCam} className="w-10 h-10 rounded-full bg-black/50 border border-white/30 text-white text-[10px] font-bold">닫기</button>
-                    <button onClick={scanColors} className="px-4 h-10 rounded-full bg-amber-500 text-slate-950 text-xs font-black active:scale-95">영상 인식</button>
-                    <button onClick={finishTrack} className="w-10 h-10 rounded-full bg-black/50 border border-white/30 text-white text-[10px] font-bold">ROM</button>
-                  </div>
-                )}
-              </div>
-              {detected.length > 0 && (
-                <p className="text-[11px] text-cyan-400">
-                  인식된 색: {detected.map(d => `${d.label}(${Math.round(d.ratio * 100)}%)`).join(', ')} — 아래에서 장수를 확인·수정하세요.
-                </p>
-              )}
-            </div>
+          <FramingIntro
+            preset={FRAMING_PRESETS[lift] || FRAMING_PRESETS.squat}
+            onStart={openCam}
+            startLabel="📷 카메라로 원판 색 인식 (전체화면)"
+          />
+
+          {detected.length > 0 && (
+            <p className="text-[11px] text-cyan-400">
+              인식된 색: {detected.map(d => `${d.label}(${Math.round(d.ratio * 100)}%)`).join(', ')} — 아래에서 장수를 확인·수정하세요.
+            </p>
           )}
 
           {/* 봉 무게 */}
@@ -330,7 +236,7 @@ export default function OneRMEstimate({ member, onSave, onBack }) {
             </select>
           </div>
 
-          {/* 편측 원판 추가 버튼 */}
+          {/* 편측 원판 추가 */}
           <div>
             <label className="block text-xs font-semibold text-slate-400 uppercase tracking-widest mb-1.5">한쪽 원판 추가 (양쪽 동일 적용)</label>
             <div className="flex flex-wrap gap-1.5">
@@ -344,7 +250,6 @@ export default function OneRMEstimate({ member, onSave, onBack }) {
             </div>
           </div>
 
-          {/* 현재 편측 구성 */}
           {sidePlates.length > 0 && (
             <div className="bg-slate-800 rounded-xl p-3 space-y-2">
               <p className="text-[10px] text-slate-500">한쪽 구성 (확인·수정)</p>
@@ -363,7 +268,6 @@ export default function OneRMEstimate({ member, onSave, onBack }) {
             </div>
           )}
 
-          {/* 총중량 미리보기 */}
           <div className="card-accent p-3 text-center">
             <p className="text-[10px] text-slate-500">총중량 (양쪽 + 봉)</p>
             <p className="font-mono font-black text-2xl text-slate-100">{computedWeight}<span className="text-sm text-slate-500"> kg</span></p>
@@ -371,7 +275,7 @@ export default function OneRMEstimate({ member, onSave, onBack }) {
         </div>
       )}
 
-      {/* 반복 횟수 (3·5회 프리셋 + 직접) */}
+      {/* 반복 횟수 */}
       <div>
         <label className="block text-xs font-semibold text-slate-400 uppercase tracking-widest mb-1.5">반복 횟수</label>
         <div className="flex items-center gap-2">
@@ -387,7 +291,6 @@ export default function OneRMEstimate({ member, onSave, onBack }) {
 
       <button onClick={calc} className="btn btn-primary w-full">1RM 계산</button>
 
-      {/* 결과 */}
       {result && (
         <div className="card-accent p-4 space-y-3 animate-fade-in">
           <p className="text-xs font-bold text-amber-400 uppercase tracking-widest">
@@ -398,7 +301,6 @@ export default function OneRMEstimate({ member, onSave, onBack }) {
           </p>
           <p className="text-center text-[10px] text-slate-500">검증된 {result.formulas.length}개 공식 평균</p>
 
-          {/* 공식별 추정값 */}
           <div className="bg-slate-800 rounded-xl p-3">
             <p className="text-[10px] text-slate-500 mb-1.5">공식별 추정 (kg)</p>
             <div className="grid grid-cols-2 gap-1.5 text-center text-[11px]">
@@ -411,7 +313,6 @@ export default function OneRMEstimate({ member, onSave, onBack }) {
             </div>
           </div>
 
-          {/* 3·5회 목표 무게 (표준표 기반 · 참고용) */}
           <div className="bg-slate-800 rounded-xl p-3">
             <p className="text-[10px] text-slate-500 mb-1.5">반복별 목표 무게 (참고 · 회원별 실제값은 측정으로 확정)</p>
             <div className="grid grid-cols-2 gap-1 text-center text-[11px]">
@@ -428,8 +329,8 @@ export default function OneRMEstimate({ member, onSave, onBack }) {
       )}
 
       <p className="text-[11px] text-slate-500 leading-relaxed">
-        ※ 영상 인식(원판 색)은 보조 기능입니다. 조명·각도·겹침에 따라 틀릴 수 있으니 항상 장수를 직접
-        확인·수정한 뒤 계산하세요. 추정식은 1~10회에서 가장 정확합니다(무거운 부하일수록 정확).
+        ※ 무게는 직접 입력이 가장 확실합니다. 원판 색 인식은 보조 기능으로, 조명·각도·겹침에 따라
+        틀릴 수 있으니 항상 장수를 직접 확인·수정한 뒤 계산하세요. 추정식은 1~10회에서 가장 정확합니다.
       </p>
     </div>
   );

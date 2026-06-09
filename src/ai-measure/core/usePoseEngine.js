@@ -54,10 +54,31 @@ export function usePoseEngine({ onResult } = {}) {
       const stream = await openMainCameraStream({ audio: false });
 
       streamRef.current = stream;
-      const video = videoEl || videoRef.current;
-      if (!video) { stream.getTracks().forEach(t => t.stop()); return; }
+      // video 요소를 다시 취득(풀스크린 오버레이가 status 변경 후 렌더되는 경우 대비).
+      // 호출 시점에 null이었어도, loading 상태로 바뀌며 요소가 렌더되므로 충분히 기다린다.
+      // (1RM처럼 status!=='idle'일 때만 video가 렌더되는 화면에서 검은화면 방지)
+      let video = videoEl || videoRef.current;
+      for (let i = 0; i < 80 && !video; i++) {
+        await new Promise(r => setTimeout(r, 25)); // 최대 약 2초 대기
+        video = videoRef.current;
+      }
+      if (!video) {
+        // video 요소를 끝내 못 잡으면 조용히 idle로 빠지지 말고 오류로 알린다.
+        stream.getTracks().forEach(t => t.stop());
+        streamRef.current = null;
+        throw new Error('영상 화면을 준비하지 못했습니다. 화면을 닫고 다시 시도해 주세요.');
+      }
       video.srcObject = stream;
-      await video.play();
+      // 메타데이터(해상도)가 준비될 때까지 기다린 뒤 재생 — 캔버스 정렬·검은화면 방지
+      if (!video.videoWidth) {
+        await new Promise((res) => {
+          let done = false;
+          const finish = () => { if (!done) { done = true; res(); } };
+          video.addEventListener('loadedmetadata', finish, { once: true });
+          setTimeout(finish, 1500); // 안전장치
+        });
+      }
+      try { await video.play(); } catch (e) { /* 자동재생 정책: 무음·playsInline이라 보통 통과 */ }
 
       setStatus('ready');
       runningRef.current = true;
