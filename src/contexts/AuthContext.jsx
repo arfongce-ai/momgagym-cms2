@@ -64,6 +64,10 @@ export function AuthProvider({ children }) {
       return u;
     } catch (fbErr) {
       // 2) Firebase에 없으면 트레이너(앱 자체 계정)에서 찾기
+      //    빈 이메일/비번이면 조회하지 않음(로그인 계정 없는 트레이너 오매칭 방지)
+      if (!e || !password) {
+        throw new Error('이메일 또는 비밀번호가 올바르지 않습니다.');
+      }
       const t = store.getTrainers().find(
         t => (t.loginEmail || '').trim().toLowerCase() === e && t.loginPassword === password
       );

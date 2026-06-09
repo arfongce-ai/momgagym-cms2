@@ -28,6 +28,7 @@ export default function Login() {
           <h1 className="text-2xl font-black text-white tracking-tight">몸가짐운동센터</h1>
           <p className="text-slate-400 text-sm mt-1 font-semibold">관리 시스템</p>
         </div>
+        <p className="text-center text-slate-500 text-xs mb-4">관리자·트레이너 모두 이곳에서 이메일로 로그인합니다</p>
         <form onSubmit={handleSubmit} className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4">
           <div>
             <label className="block text-xs font-semibold text-slate-400 uppercase tracking-widest mb-1.5">이메일</label>

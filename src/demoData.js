@@ -1,5 +1,5 @@
 // demoData.js — v6 (Firebase 연동)
-// ⚠️ 화면 코드는 그대로 둡니다. store / aiStore / DEMO_USERS 의 사용법은 기존과 100% 동일합니다.
+// ⚠️ 화면 코드는 그대로 둡니다. store / aiStore 의 사용법은 기존과 호환됩니다.
 //    내부 저장소만 "브라우저(localStorage)" → "Firebase(Firestore) + 로컬 캐시"로 바뀌었습니다.
 
 import { db } from './firebase';
