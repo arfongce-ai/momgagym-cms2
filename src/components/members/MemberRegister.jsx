@@ -45,7 +45,13 @@ function TrainerSlot({ slot, label, trainers, usedIds, onChange }) {
   const inp = "w-full bg-slate-800 border border-slate-700 text-slate-100 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-amber-500 disabled:opacity-40";
 
   const handleTrainerChange = tid => {
-    onChange({ trainerId: tid, classType: '', sessionTotal: tid ? 10 : 0 });
+    onChange({ trainerId: tid, classTypes: [], sessionTotal: tid ? 10 : 0 });
+  };
+
+  const toggleClassType = ct => {
+    const cur = slot.classTypes || [];
+    const next = cur.includes(ct) ? cur.filter(c => c !== ct) : [...cur, ct];
+    onChange({ ...slot, classTypes: next });
   };
 
   return (
@@ -69,14 +75,32 @@ function TrainerSlot({ slot, label, trainers, usedIds, onChange }) {
         </select>
       </div>
 
-      {/* ② 수업 종류 */}
+      {/* ② 수업 종류 — 다중 선택 (체크박스) */}
       <div>
-        <label className="block text-xs font-semibold text-slate-400 uppercase tracking-widest mb-1">수업 종류</label>
-        <select value={slot.classType} onChange={e => onChange({ ...slot, classType: e.target.value })}
-          disabled={!slot.trainerId} className={inp}>
-          <option value="">{slot.trainerId ? '수업 선택' : '선택 안 함'}</option>
-          {classTypes.map(ct => <option key={ct} value={ct}>{ct}</option>)}
-        </select>
+        <label className="block text-xs font-semibold text-slate-400 uppercase tracking-widest mb-1.5">수업 종류 (복수 선택)</label>
+        {!slot.trainerId ? (
+          <p className="text-xs text-slate-500 px-1 py-2">트레이너를 먼저 선택하세요</p>
+        ) : classTypes.length === 0 ? (
+          <p className="text-xs text-slate-500 px-1 py-2">이 트레이너에 등록된 수업 종류가 없습니다</p>
+        ) : (
+          <div className="grid grid-cols-2 gap-1.5">
+            {classTypes.map(ct => {
+              const on = (slot.classTypes || []).includes(ct);
+              return (
+                <div key={ct} onClick={() => toggleClassType(ct)}
+                  className={`flex items-center gap-2 px-2.5 py-2 rounded-lg border cursor-pointer transition-colors select-none
+                    ${on ? 'bg-amber-500/15 border-amber-500/40 text-amber-300' : 'border-slate-700 text-slate-400 hover:border-slate-500 hover:text-slate-300'}`}>
+                  <span className={`w-4 h-4 rounded flex items-center justify-center flex-shrink-0 border transition-colors ${on ? 'bg-amber-500 border-amber-500' : 'border-slate-600 bg-slate-800'}`}>
+                    {on && <svg className="w-2.5 h-2.5 text-slate-950" viewBox="0 0 10 8" fill="none">
+                      <path d="M1 4l3 3 5-6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>}
+                  </span>
+                  <span className="text-sm font-medium">{ct}</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* ③ 등록 세션 수 */}
@@ -122,7 +146,7 @@ function useSignatureCanvas(canvasRef) {
 const INP = "w-full bg-slate-800 border border-slate-700 text-slate-100 rounded-xl px-3 py-2.5 text-sm placeholder-slate-500 focus:outline-none focus:border-amber-500";
 const LBL = "block text-xs font-semibold text-slate-400 uppercase tracking-widest mb-1.5";
 
-const EMPTY_SLOT = { trainerId:'', classType:'', sessionTotal:0 };
+const EMPTY_SLOT = { trainerId:'', classTypes:[], sessionTotal:0 };
 
 export default function MemberRegister({ trainers=[], onSuccess, onCancel }) {
   const [step, setStep]     = useState('form');
@@ -179,9 +203,9 @@ export default function MemberRegister({ trainers=[], onSuccess, onCancel }) {
         }
       });
 
-      // classTypes: 슬롯에서 선택된 수업 종류 집합 (중복 제거)
+      // classTypes: 모든 슬롯에서 선택된 수업 종류 집합 (중복 제거)
       const classTypes = [...new Set(
-        form.trainerSlots.map(s => s.classType).filter(Boolean)
+        form.trainerSlots.flatMap(s => s.classTypes || [])
       )];
 
       await store.addMember({
@@ -223,23 +247,26 @@ export default function MemberRegister({ trainers=[], onSuccess, onCancel }) {
           {step==='form'&&(
             <form onSubmit={handleNext} className="p-5 space-y-4">
 
-              {/* 이름(+성별)/연락처 */}
+              {/* 이름 + 성별(옆) / 연락처 */}
               <div className="grid grid-cols-2 gap-3">
+                {/* 이름 + 성별을 한 줄에 */}
                 <div>
                   <label className={LBL}>이름 *</label>
-                  <input required value={form.name} onChange={pf('name')} placeholder="홍길동" className={INP}/>
-                  {/* 성별 선택 */}
-                  <div className="flex gap-2 mt-2">
-                    {[['male','남'],['female','여']].map(([val,lbl])=>(
-                      <button type="button" key={val}
-                        onClick={()=>setForm(f=>({...f, gender: f.gender===val ? '' : val}))}
-                        className={`flex-1 py-2 rounded-xl text-sm font-bold border transition-colors
-                          ${form.gender===val
-                            ? 'bg-amber-500/20 border-amber-500/40 text-amber-300'
-                            : 'border-slate-700 text-slate-400 hover:border-slate-500'}`}>
-                        {lbl}
-                      </button>
-                    ))}
+                  <div className="flex gap-2">
+                    <input required value={form.name} onChange={pf('name')} placeholder="홍길동" className={INP + " flex-1"}/>
+                    {/* 성별 토글 — 이름 입력칸 바로 옆 */}
+                    <div className="flex gap-1 flex-shrink-0">
+                      {[['male','남'],['female','여']].map(([val,lbl])=>(
+                        <button type="button" key={val}
+                          onClick={()=>setForm(f=>({...f, gender: f.gender===val ? '' : val}))}
+                          className={`w-11 rounded-xl text-sm font-bold border transition-colors
+                            ${form.gender===val
+                              ? 'bg-amber-500/20 border-amber-500/40 text-amber-300'
+                              : 'border-slate-700 text-slate-400 hover:border-slate-500'}`}>
+                          {lbl}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </div>
                 <div><label className={LBL}>연락처 *</label><input required value={form.phone} onChange={pf('phone')} placeholder="010-0000-0000" inputMode="tel" className={INP}/></div>
@@ -324,7 +351,8 @@ export default function MemberRegister({ trainers=[], onSuccess, onCancel }) {
               <div className="bg-slate-800 rounded-xl p-3 text-left space-y-1">
                 {form.trainerSlots.filter(s=>s.trainerId).map((s,i)=>{
                   const t=trainers.find(tr=>tr.id===s.trainerId);
-                  return <p key={i} className="text-xs text-slate-400">• {t?.name||'트레이너'} · {s.classType||'수업 미지정'} · {s.sessionTotal}회</p>;
+                  const cts = (s.classTypes||[]).join(', ') || '수업 미지정';
+                  return <p key={i} className="text-xs text-slate-400">• {t?.name||'트레이너'} · {cts} · {s.sessionTotal}회</p>;
                 })}
               </div>
               <button onClick={onSuccess} className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold py-2.5 px-8 rounded-xl text-sm transition-colors">확인</button>
