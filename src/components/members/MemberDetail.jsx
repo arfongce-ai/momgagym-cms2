@@ -34,7 +34,7 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
   // 수납
   const [payments,     setPayments]    = useState([]);
   const [showAddPay,   setShowAddPay]  = useState(false);
-  const [payForm,      setPayForm]     = useState({ paidAt: new Date().toISOString().slice(0,10), amount:'', method:'pay', isUnpaid:false, note:'', trainerIds:[], isReEnroll:false, isNew:false, category:'normal' });
+  const [payForm,      setPayForm]     = useState({ paidAt: new Date().toISOString().slice(0,10), amount:'', method:'pay', isUnpaid:false, note:'', trainerIds:[], isReEnroll:false, reEnrollNo:'', isNew:false, category:'normal' });
 
   // 신체정보
   const [bodyRecords,  setBodyRecords] = useState([]);
@@ -59,8 +59,10 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
   const saveEdit = async () => {
     try {
       await store.updateMember(member.id, {
-        name:editForm.name, phone:editForm.phone, phone2:editForm.phone2||'',
-        birthDate:editForm.birthDate||'', joinDate:editForm.joinDate||'',
+        name:editForm.name, gender:editForm.gender||'',
+        phone:editForm.phone, phone2:editForm.phone2||'',
+        birthDate:editForm.birthDate||'', address:editForm.address||'',
+        joinDate:editForm.joinDate||'',
         lastPaymentDate:editForm.lastPaymentDate||'',
         classTypes:editForm.classTypes||[], memo:editForm.memo||'',
       });
@@ -136,11 +138,14 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
   const handleAddPayment = async () => {
     if (!payForm.amount) { alert('금액을 입력해 주세요.'); return; }
     try {
-      await store.addPayment(member.id, { ...payForm, amount:Number(payForm.amount) });
+      // 재등록일 때만 회차 저장(숫자), 아니면 회차 비움
+      const reEnrollNo = payForm.isReEnroll && payForm.reEnrollNo
+        ? Number(payForm.reEnrollNo) : null;
+      await store.addPayment(member.id, { ...payForm, amount:Number(payForm.amount), reEnrollNo });
       // 결제일 자동 업데이트
       await store.updateMember(member.id, { lastPaymentDate:payForm.paidAt });
       refresh(); setShowAddPay(false);
-      setPayForm({ paidAt:new Date().toISOString().slice(0,10), amount:'', method:'pay', isUnpaid:false, note:'', trainerIds:[], isReEnroll:false, isNew:false, category:'normal' });
+      setPayForm({ paidAt:new Date().toISOString().slice(0,10), amount:'', method:'pay', isUnpaid:false, note:'', trainerIds:[], isReEnroll:false, reEnrollNo:'', isNew:false, category:'normal' });
       onUpdate?.();
     } catch (e) { alert('수납 등록에 실패했습니다. 네트워크 확인 후 다시 시도하세요.'); }
   };
@@ -226,9 +231,11 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
               <div className="space-y-1">
                 {[
                   {l:'이름',       v:member.name},
+                  {l:'성별',       v:member.gender==='male'?'남':member.gender==='female'?'여':'미등록'},
                   {l:'연락처',     v:member.phone},
                   {l:'연락처 2',   v:member.phone2||'미등록'},
                   {l:'생년월일',   v:member.birthDate||'미등록'},
+                  {l:'주소',       v:member.address||'미등록'},
                   {l:'가입일',     v:member.joinDate||'미등록'},
                   {l:'최근결제일', v:member.lastPaymentDate||'미등록'},
                   {l:'최근출석일', v:member.lastAttendedDate||'미출석'},
@@ -260,11 +267,29 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
               <div className="space-y-3">
                 <p className="text-xs text-amber-400 font-semibold uppercase tracking-widest">✏️ 정보 수정 중</p>
                 <div className="grid grid-cols-2 gap-3">
-                  <div><label className={LBL}>이름</label><input value={editForm.name||''} onChange={pfe('name')} className={INP}/></div>
+                  <div>
+                    <label className={LBL}>이름</label>
+                    <input value={editForm.name||''} onChange={pfe('name')} className={INP}/>
+                    <div className="flex gap-2 mt-2">
+                      {[['male','남'],['female','여']].map(([val,lbl])=>(
+                        <button type="button" key={val}
+                          onClick={()=>setEF(f=>({...f, gender: f.gender===val ? '' : val}))}
+                          className={`flex-1 py-2 rounded-xl text-sm font-bold border transition-colors
+                            ${editForm.gender===val
+                              ? 'bg-amber-500/20 border-amber-500/40 text-amber-300'
+                              : 'border-slate-700 text-slate-400 hover:border-slate-500'}`}>
+                          {lbl}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                   <div><label className={LBL}>연락처</label><input value={editForm.phone||''} onChange={pfe('phone')} className={INP}/></div>
                 </div>
-                <div><label className={LBL}>연락처 2 (보호자·비상)</label><input value={editForm.phone2||''} onChange={pfe('phone2')} className={INP}/></div>
-                <div><label className={LBL}>생년월일</label><input type="date" value={editForm.birthDate||''} onChange={pfe('birthDate')} className={INP}/></div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div><label className={LBL}>생년월일</label><input type="date" value={editForm.birthDate||''} onChange={pfe('birthDate')} className={INP}/></div>
+                  <div><label className={LBL}>연락처 2 (보호자·비상)</label><input value={editForm.phone2||''} onChange={pfe('phone2')} className={INP}/></div>
+                </div>
+                <div><label className={LBL}>주소 (선택)</label><input value={editForm.address||''} onChange={pfe('address')} placeholder="주소를 입력하세요 (선택)" className={INP}/></div>
                 <div className="grid grid-cols-2 gap-3">
                   <div><label className={LBL}>가입일</label><input type="date" value={editForm.joinDate||''} onChange={pfe('joinDate')} className={INP}/></div>
                   <div><label className={LBL}>최근결제일</label><input type="date" value={editForm.lastPaymentDate||''} onChange={pfe('lastPaymentDate')} className={INP}/></div>
@@ -427,7 +452,7 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
                           <span className={`text-xs font-bold ${METHOD_CLR[p.method]}`}>{METHOD_LBL[p.method]}</span>
                           {p.isUnpaid&&<span className="text-[10px] bg-red-500/20 text-red-400 border border-red-500/30 px-1.5 py-0.5 rounded font-bold">미수금</span>}
                           {p.isNew&&<span className="text-[10px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-1.5 py-0.5 rounded font-bold">신규</span>}
-                          {p.isReEnroll&&<span className="text-[10px] bg-blue-500/20 text-blue-400 border border-blue-500/30 px-1.5 py-0.5 rounded font-bold">재등록</span>}
+                          {p.isReEnroll&&<span className="text-[10px] bg-blue-500/20 text-blue-400 border border-blue-500/30 px-1.5 py-0.5 rounded font-bold">재등록{p.reEnrollNo?` ${p.reEnrollNo}회차`:''}</span>}
                           {p.category==='edu_center'&&<span className="text-[10px] bg-amber-500/20 text-amber-400 border border-amber-500/30 px-1.5 py-0.5 rounded font-bold">센터교육</span>}
                           {p.category==='edu_external'&&<span className="text-[10px] bg-amber-500/20 text-amber-400 border border-amber-500/30 px-1.5 py-0.5 rounded font-bold">외부활동</span>}
                         </div>
@@ -523,7 +548,13 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
                       </span>
                       <span className="text-xs font-semibold">신규등록</span>
                     </div>
-                    <div onClick={()=>setPayForm(p=>({...p,isReEnroll:!p.isReEnroll, isNew:false}))}
+                    <div onClick={()=>setPayForm(p=>{
+                      const turningOn = !p.isReEnroll;
+                      // 켤 때: 기존 재등록 결제 건수 + 1을 자동 제안(첫 기입 후 자동 적용)
+                      const nextNo = (payments.filter(x=>x.isReEnroll).length) + 1;
+                      return { ...p, isReEnroll:turningOn, isNew:false,
+                        reEnrollNo: turningOn ? (p.reEnrollNo || String(nextNo)) : '' };
+                    })}
                       className={`flex items-center gap-2 px-3 py-2 rounded-xl border cursor-pointer transition-colors select-none
                         ${payForm.isReEnroll?'border-blue-500/40 bg-blue-500/10 text-blue-400':'border-slate-700 text-slate-400 hover:border-slate-500'}`}>
                       <span className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 ${payForm.isReEnroll?'bg-blue-500 border-blue-500':'border-slate-600 bg-slate-800'}`}>
@@ -532,6 +563,22 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
                       <span className="text-xs font-semibold">재등록</span>
                     </div>
                   </div>
+
+                  {/* 재등록 회차 — 체크 시에만 표시, 자동 제안값 수정 가능 */}
+                  {payForm.isReEnroll && (
+                    <div className="bg-blue-500/5 border border-blue-500/20 rounded-xl px-3 py-2.5">
+                      <label className={LBL}>재등록 회차</label>
+                      <div className="flex items-center gap-2">
+                        <input type="number" min="1" value={payForm.reEnrollNo}
+                          onChange={ppf('reEnrollNo')}
+                          className={INP+" font-mono w-24"}/>
+                        <span className="text-sm text-blue-400 font-bold">회차</span>
+                        <span className="text-[11px] text-slate-500">
+                          (자동 제안: {payments.filter(x=>x.isReEnroll).length + 1}회차 · 수정 가능)
+                        </span>
+                      </div>
+                    </div>
+                  )}
                   <div><label className={LBL}>메모</label><input value={payForm.note} onChange={ppf('note')} placeholder="PT 10회 등록" className={INP}/></div>
                   <div className="flex gap-2">
                     <button onClick={()=>setShowAddPay(false)} className="py-2 px-4 rounded-xl border border-slate-700 text-slate-300 hover:text-white text-sm font-semibold transition-colors">취소</button>

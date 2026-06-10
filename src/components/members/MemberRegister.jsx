@@ -131,7 +131,7 @@ export default function MemberRegister({ trainers=[], onSuccess, onCancel }) {
   const today = new Date().toISOString().slice(0,10);
 
   const [form, setForm] = useState({
-    name:'', phone:'', phone2:'', birthDate:'',
+    name:'', gender:'', phone:'', phone2:'', birthDate:'', address:'',
     joinDate:today, lastPaymentDate:today,
     memo:'',
     // 2개 담당 트레이너 슬롯
@@ -185,7 +185,8 @@ export default function MemberRegister({ trainers=[], onSuccess, onCancel }) {
       )];
 
       await store.addMember({
-        name:form.name, phone:form.phone, phone2:form.phone2, birthDate:form.birthDate,
+        name:form.name, gender:form.gender, phone:form.phone, phone2:form.phone2,
+        birthDate:form.birthDate, address:form.address,
         joinDate:form.joinDate, lastPaymentDate:form.lastPaymentDate,
         lastAttendedDate:null, memo:form.memo,
         classTypes, trainerSessions,
@@ -222,15 +223,38 @@ export default function MemberRegister({ trainers=[], onSuccess, onCancel }) {
           {step==='form'&&(
             <form onSubmit={handleNext} className="p-5 space-y-4">
 
-              {/* 이름/연락처 */}
+              {/* 이름(+성별)/연락처 */}
               <div className="grid grid-cols-2 gap-3">
-                <div><label className={LBL}>이름 *</label><input required value={form.name} onChange={pf('name')} placeholder="홍길동" className={INP}/></div>
+                <div>
+                  <label className={LBL}>이름 *</label>
+                  <input required value={form.name} onChange={pf('name')} placeholder="홍길동" className={INP}/>
+                  {/* 성별 선택 */}
+                  <div className="flex gap-2 mt-2">
+                    {[['male','남'],['female','여']].map(([val,lbl])=>(
+                      <button type="button" key={val}
+                        onClick={()=>setForm(f=>({...f, gender: f.gender===val ? '' : val}))}
+                        className={`flex-1 py-2 rounded-xl text-sm font-bold border transition-colors
+                          ${form.gender===val
+                            ? 'bg-amber-500/20 border-amber-500/40 text-amber-300'
+                            : 'border-slate-700 text-slate-400 hover:border-slate-500'}`}>
+                        {lbl}
+                      </button>
+                    ))}
+                  </div>
+                </div>
                 <div><label className={LBL}>연락처 *</label><input required value={form.phone} onChange={pf('phone')} placeholder="010-0000-0000" inputMode="tel" className={INP}/></div>
               </div>
-              <div><label className={LBL}>연락처 2 (보호자·비상)</label><input value={form.phone2} onChange={pf('phone2')} placeholder="010-0000-0000 (선택)" inputMode="tel" className={INP}/></div>
 
-              {/* 날짜들 */}
-              <div><label className={LBL}>생년월일</label><input type="date" value={form.birthDate} onChange={pf('birthDate')} className={INP}/></div>
+              {/* 생년월일 + 연락처2 (같은 줄) */}
+              <div className="grid grid-cols-2 gap-3">
+                <div><label className={LBL}>생년월일</label><input type="date" value={form.birthDate} onChange={pf('birthDate')} className={INP}/></div>
+                <div><label className={LBL}>연락처 2 (보호자·비상)</label><input value={form.phone2} onChange={pf('phone2')} placeholder="010-0000-0000 (선택)" inputMode="tel" className={INP}/></div>
+              </div>
+
+              {/* 주소 (선택) */}
+              <div><label className={LBL}>주소 (선택)</label><input value={form.address} onChange={pf('address')} placeholder="주소를 입력하세요 (선택)" className={INP}/></div>
+
+              {/* 가입일 / 최근 결제일 */}
               <div className="grid grid-cols-2 gap-3">
                 <div><label className={LBL}>가입일</label><input type="date" value={form.joinDate} onChange={pf('joinDate')} className={INP}/></div>
                 <div><label className={LBL}>최근 결제일</label><input type="date" value={form.lastPaymentDate} onChange={pf('lastPaymentDate')} className={INP}/></div>
