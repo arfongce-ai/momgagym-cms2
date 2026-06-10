@@ -141,23 +141,26 @@ export default function RecordMeasure({ member, onBack }) {
 
       {status !== 'done' ? (
         <>
-          {/* 비율 선택 */}
-          {status === 'ready' && (
-            <div className="flex gap-1 rounded-lg bg-slate-800 p-0.5 w-fit">
-              {['3/4','1/1'].map(r=>(
-                <button key={r} onClick={()=>setAspect(r)}
-                  className={`px-3 py-1 rounded text-[11px] font-bold ${aspect===r?'bg-amber-500 text-slate-950':'text-slate-400'}`}>
-                  {r==='3/4'?'3:4':'1:1'}
-                </button>
-              ))}
+          {/* 비율 선택 — 카메라 켜기 전·후 모두 변경 가능 */}
+          {status !== 'recording' && (
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] text-slate-400 font-semibold">화면 비율</span>
+              <div className="flex gap-1 rounded-lg bg-slate-800 p-0.5 w-fit">
+                {['3/4','1/1'].map(r=>(
+                  <button key={r} onClick={()=>setAspect(r)}
+                    className={`px-3 py-1 rounded text-[11px] font-bold ${aspect===r?'bg-amber-500 text-slate-950':'text-slate-400'}`}>
+                    {r==='3/4'?'세로 3:4':'정사각 1:1'}
+                  </button>
+                ))}
+              </div>
             </div>
           )}
 
-          <div className="measure-camera">
+          <div className="measure-camera" style={{ aspectRatio: aspect.replace('/', ' / '), maxHeight: '70dvh' }}>
             <video ref={videoRef} autoPlay playsInline muted
-              className="absolute inset-0 w-full h-full object-contain" />
+              className="absolute inset-0 w-full h-full object-cover" />
             <canvas ref={canvasRef}
-              className="absolute inset-0 w-full h-full object-contain pointer-events-none" />
+              className="absolute inset-0 w-full h-full object-cover pointer-events-none" />
             {status === 'idle' && (
               <div className="absolute inset-0 flex items-center justify-center text-slate-400 text-sm text-center px-4">
                 {error || '카메라를 시작하세요'}
@@ -195,8 +198,9 @@ export default function RecordMeasure({ member, onBack }) {
           )}
 
           <p className="text-[11px] text-slate-500 leading-relaxed">
-            ※ 녹화 버튼은 화면 위에 있어 스크롤 없이 바로 누를 수 있습니다. 후면 카메라로
-            녹화되며, 정지하면 바로 재생·다운로드할 수 있습니다.
+            ※ 화면 비율(세로 3:4 / 정사각 1:1)을 골라 녹화할 수 있습니다. 카메라는 좌우 여백 없이
+            화면을 꽉 채워 보이며(가장자리는 약간 잘릴 수 있음), 후면 메인 카메라로 녹화됩니다.
+            녹화 버튼은 화면 위에 있어 스크롤 없이 바로 누를 수 있고, 정지하면 즉시 재생·저장됩니다.
           </p>
         </>
       ) : (

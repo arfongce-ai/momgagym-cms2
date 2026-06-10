@@ -6,7 +6,6 @@ import Login from './pages/Login';
 import Home from './pages/Home';
 import Members from './pages/Members';
 import Trainers from './pages/Trainers';
-import Revenue from './pages/Revenue';
 import Schedule from './pages/Schedule';
 import Settings from './pages/Settings';
 import AiMeasureHub from './ai-measure/AiMeasureHub';
@@ -52,7 +51,6 @@ function AppRoutes() {
                 <Route path="/members"  element={<Members />} />
                 <Route path="/schedule" element={<Schedule />} />
                 <Route path="/trainers" element={<RequireAuth adminOnly><Trainers /></RequireAuth>} />
-                <Route path="/revenue"  element={<RequireAuth adminOnly><Revenue /></RequireAuth>} />
                 <Route path="/settings" element={<Settings darkMode={darkMode} setDarkMode={setDarkMode} />} />
                 <Route path="/ai"       element={<AiMeasureHub />} />
                 <Route path="/report"   element={<Report />} />

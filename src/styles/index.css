@@ -66,16 +66,6 @@
     max-height: 52dvh;
     border-radius: 1rem;
   }
-
-  /* 풀스크린 카메라 스테이지 — 화면 전체를 덮고 모든 컨트롤을 영상 위에 오버레이.
-     스크롤 없이 한 화면에서 측정→확인이 끝난다. */
-  .cam-stage {
-    position: fixed;
-    inset: 0;
-    z-index: 60;
-    background: #000;
-    overflow: hidden;
-  }
 }
 
 /* 측정 카메라가 떠 있는 동안 페이지 스크롤/여백 제거(꽉 차게) */

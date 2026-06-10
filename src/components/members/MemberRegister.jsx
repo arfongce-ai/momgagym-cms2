@@ -116,7 +116,7 @@ function useSignatureCanvas(canvasRef) {
   const clear=useCallback(()=>{paths.current=[];redraw();},[redraw]);
   const isEmpty=()=>paths.current.every(p=>p.length===0);
   const getDataUrl=()=>canvasRef.current?.toDataURL('image/png');
-  return{start,move,end,clear,isEmpty,getDataUrl,resize};
+  return{start,move,end,clear,isEmpty,getDataUrl};
 }
 
 const INP = "w-full bg-slate-800 border border-slate-700 text-slate-100 rounded-xl px-3 py-2.5 text-sm placeholder-slate-500 focus:outline-none focus:border-amber-500";
@@ -131,7 +131,7 @@ export default function MemberRegister({ trainers=[], onSuccess, onCancel }) {
   const today = new Date().toISOString().slice(0,10);
 
   const [form, setForm] = useState({
-    name:'', phone:'', phone2:'', birthDate:'',
+    name:'', phone:'', birthDate:'',
     joinDate:today, lastPaymentDate:today,
     memo:'',
     // 2개 담당 트레이너 슬롯
@@ -139,17 +139,8 @@ export default function MemberRegister({ trainers=[], onSuccess, onCancel }) {
   });
 
   const canvasRef = useRef(null);
-  const { start, move, end, clear, isEmpty, getDataUrl, resize } = useSignatureCanvas(canvasRef);
+  const { start, move, end, clear, isEmpty, getDataUrl } = useSignatureCanvas(canvasRef);
   const pf = f => e => setForm(prev => ({ ...prev, [f]: e.target.value }));
-
-  // 서명 단계 진입 시 캔버스 크기를 실제 표시 크기에 맞춰 재설정
-  // (조건부 렌더링이라 캔버스가 이때 처음 나타나므로 반드시 다시 측정해야 정확히 그려짐)
-  useEffect(() => {
-    if (step === 'sign') {
-      const id = requestAnimationFrame(() => resize());
-      return () => cancelAnimationFrame(id);
-    }
-  }, [step, resize]);
 
   // 이미 선택된 트레이너 ID 목록
   const usedTrainerIds = form.trainerSlots.map(s => s.trainerId).filter(Boolean);
@@ -185,7 +176,7 @@ export default function MemberRegister({ trainers=[], onSuccess, onCancel }) {
       )];
 
       await store.addMember({
-        name:form.name, phone:form.phone, phone2:form.phone2, birthDate:form.birthDate,
+        name:form.name, phone:form.phone, birthDate:form.birthDate,
         joinDate:form.joinDate, lastPaymentDate:form.lastPaymentDate,
         lastAttendedDate:null, memo:form.memo,
         classTypes, trainerSessions,
@@ -227,7 +218,6 @@ export default function MemberRegister({ trainers=[], onSuccess, onCancel }) {
                 <div><label className={LBL}>이름 *</label><input required value={form.name} onChange={pf('name')} placeholder="홍길동" className={INP}/></div>
                 <div><label className={LBL}>연락처 *</label><input required value={form.phone} onChange={pf('phone')} placeholder="010-0000-0000" inputMode="tel" className={INP}/></div>
               </div>
-              <div><label className={LBL}>연락처 2 (보호자·비상)</label><input value={form.phone2} onChange={pf('phone2')} placeholder="010-0000-0000 (선택)" inputMode="tel" className={INP}/></div>
 
               {/* 날짜들 */}
               <div><label className={LBL}>생년월일</label><input type="date" value={form.birthDate} onChange={pf('birthDate')} className={INP}/></div>
@@ -264,8 +254,8 @@ export default function MemberRegister({ trainers=[], onSuccess, onCancel }) {
 
           {/* ─ STEP 2: 약관 ─────────────────────────── */}
           {step==='terms'&&(
-            <div className="p-5 flex flex-col" style={{minHeight:'60vh'}}>
-              <div className="flex-1 overflow-y-auto bg-slate-800 border border-slate-700 rounded-xl p-4 text-sm text-slate-300 leading-7 whitespace-pre-line mb-4" style={{minHeight:'45vh'}}>{TERMS}</div>
+            <div className="p-5 space-y-4">
+              <div className="h-72 overflow-y-auto bg-slate-800 border border-slate-700 rounded-xl p-4 text-sm text-slate-300 leading-7 whitespace-pre-line">{TERMS}</div>
               <div className="flex gap-2">
                 <button onClick={()=>setStep('form')} className="py-2.5 px-4 rounded-xl border border-slate-700 text-slate-300 hover:text-white text-sm font-semibold transition-colors">← 이전</button>
                 <button onClick={()=>setStep('sign')} className="flex-1 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold py-2.5 rounded-xl text-sm transition-colors">동의하고 서명 ✍️</button>
@@ -275,15 +265,15 @@ export default function MemberRegister({ trainers=[], onSuccess, onCancel }) {
 
           {/* ─ STEP 3: 서명 ─────────────────────────── */}
           {step==='sign'&&(
-            <div className="p-5 flex flex-col" style={{minHeight:'60vh'}}>
-              <p className="text-sm text-slate-400 mb-3">아래 영역에 직접 서명해 주세요.</p>
-              <div className="relative rounded-2xl overflow-hidden border-2 border-dashed border-slate-600 bg-slate-800 flex-1 mb-4" style={{minHeight:'40vh'}}>
+            <div className="p-5 space-y-4">
+              <p className="text-sm text-slate-400">아래 영역에 직접 서명해 주세요.</p>
+              <div className="relative rounded-2xl overflow-hidden border-2 border-dashed border-slate-600 bg-slate-800" style={{height:'200px'}}>
                 <canvas ref={canvasRef} className="absolute inset-0 w-full h-full cursor-crosshair" style={{touchAction:'none'}}
                   onMouseDown={start} onMouseMove={move} onMouseUp={end} onMouseLeave={end}
                   onTouchStart={start} onTouchMove={move} onTouchEnd={end}/>
                 <span className="absolute bottom-2 left-1/2 -translate-x-1/2 text-xs text-slate-600 pointer-events-none">서명란</span>
               </div>
-              {error&&<p className="text-red-400 text-xs bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2 mb-3">{error}</p>}
+              {error&&<p className="text-red-400 text-xs bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">{error}</p>}
               <div className="flex gap-2">
                 <button onClick={()=>setStep('terms')} className="py-2.5 px-4 rounded-xl border border-slate-700 text-slate-300 hover:text-white text-sm font-semibold transition-colors">← 이전</button>
                 <button onClick={clear} className="py-2.5 px-4 rounded-xl border border-slate-700 text-slate-300 hover:text-white text-sm font-semibold transition-colors">지우기</button>
