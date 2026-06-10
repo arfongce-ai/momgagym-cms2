@@ -68,7 +68,7 @@ export function computeSettlement(payments, records, trainers, settings, inPerio
   const acc = {};
   trainers.forEach(t=>{ acc[t.id] = {
     trainer:t, net:0, eduCenterNet:0, eduExtNet:0,
-    newSales:0, reSales:0, normalSales:0, blogCount:0, studyCount:0,
+    newSales:0, reSales:0, normalSales:0, blogCount:0, instaCount:0, studyCount:0,
   };});
 
   payments.filter(p=>!p.isUnpaid && !p.isRefunded && inPeriod(p.paidAt)).forEach(p=>{
@@ -90,6 +90,7 @@ export function computeSettlement(payments, records, trainers, settings, inPerio
   (records||[]).filter(r=>inPeriod(r.date)).forEach(r=>{
     if (!acc[r.trainerId]) return;
     if (r.channel==='blog')  acc[r.trainerId].blogCount++;
+    if (r.channel==='insta') acc[r.trainerId].instaCount++;
     if (r.channel==='study') acc[r.trainerId].studyCount++;
   });
 
@@ -99,16 +100,117 @@ export function computeSettlement(payments, records, trainers, settings, inPerio
     r.auto = !(settings.trainerSplitRates?.[r.trainer.id] != null && settings.trainerSplitRates?.[r.trainer.id] !== '');
     r.settle = r.net * (rate/100);
     r.eduSettle = r.eduCenterNet*(settings.eduCenterRate/100) + r.eduExtNet*(settings.eduExternalRate/100);
-    const blogInc = r.blogCount * settings.promoPerPost;
-    const newInc  = Math.floor(r.newSales / settings.incentivePer) * settings.incentiveAmount;
-    const reInc   = Math.floor(r.reSales  / settings.reEnrollPer)  * settings.reEnrollAmount;
-    r.promoIncentive = blogInc;
+    // SNS 인센티브
+    //  · 블로그: 1회차부터 전부 지급(상한 없음)
+    //  · 인스타: 최대 8회까지 지급
+    const instaMax  = settings.snsInstaMax ?? 8;
+    const blogInc   = r.blogCount * settings.promoPerPost;
+    const instaInc  = Math.min(r.instaCount, instaMax) * settings.promoPerPost;
+    const newInc    = Math.floor(r.newSales / settings.incentivePer) * settings.incentiveAmount;
+    const reInc     = Math.floor(r.reSales  / settings.reEnrollPer)  * settings.reEnrollAmount;
+    r.blogIncentive  = blogInc;
+    r.instaIncentive = instaInc;
+    r.promoIncentive = blogInc + instaInc;
     r.salesIncentive = newInc + reInc;
-    r.incentive = blogInc + newInc + reInc;
+    r.incentive = r.promoIncentive + r.salesIncentive;
     r.payout = r.settle + r.eduSettle + r.incentive;
   });
 
   return Object.values(acc);
+}
+
+// ── 회당 단가 × 월 수업횟수 기반 정산 (실제 시트 방식) ──────────────
+export function computeSessionSettlement({ trainers, members, schedules, payments, records, settings, ym, getOverride }) {
+  const inMonth = (d) => d && d.slice(0,7) === ym;
+  const memberMap = Object.fromEntries(members.map(m=>[m.id, m]));
+
+  // 회원×트레이너별 귀속 결제액 (단가 트레이너별 분리 계산용)
+  //  · 결제에 담당 트레이너(trainerIds)가 있으면 그 트레이너들에게 1/n 귀속
+  //  · trainerIds가 없는 구버전 결제는 회원의 트레이너별 등록횟수 비율로 안분
+  const memberTrainerPay = {}; // mid -> { tid: paidAmount }
+  members.forEach(m => {
+    const ts = m.trainerSessions || {};
+    const tids = Object.keys(ts);
+    const totalReg = Object.values(ts).reduce((s,v)=>s+(v.total||0),0);
+    const acc = {};
+    tids.forEach(tid => acc[tid] = 0);
+    (payments[m.id]||[]).filter(p=>!p.isUnpaid && !p.isRefunded).forEach(p=>{
+      const amt = p.amount || 0;
+      const pTids = (p.trainerIds && p.trainerIds.length) ? p.trainerIds : null;
+      if (pTids) {
+        const per = amt / pTids.length;
+        pTids.forEach(tid => { acc[tid] = (acc[tid]||0) + per; });
+      } else if (totalReg > 0) {
+        // 담당 트레이너 미지정 → 등록횟수 비율로 안분
+        tids.forEach(tid => { acc[tid] = (acc[tid]||0) + amt * ((ts[tid].total||0)/totalReg); });
+      } else if (tids.length) {
+        // 등록횟수 정보도 없으면 균등 분배
+        const per = amt / tids.length;
+        tids.forEach(tid => { acc[tid] = (acc[tid]||0) + per; });
+      }
+    });
+    memberTrainerPay[m.id] = acc;
+  });
+
+  const attended = {};
+  schedules.filter(s=>!s.isExternal && s.memberId && s.trainerId && (s.status==='attended' || s.status==='noshow') && inMonth(s.date))
+    .forEach(s=>{
+      attended[s.trainerId] = attended[s.trainerId] || {};
+      attended[s.trainerId][s.memberId] = (attended[s.trainerId][s.memberId]||0) + 1;
+    });
+
+  const trainerMembers = {};
+  members.forEach(m => Object.keys(m.trainerSessions||{}).forEach(tid=>{
+    (trainerMembers[tid] = trainerMembers[tid] || new Set()).add(m.id);
+  }));
+  Object.entries(attended).forEach(([tid, mm])=>{
+    trainerMembers[tid] = trainerMembers[tid] || new Set();
+    Object.keys(mm).forEach(mid=>trainerMembers[tid].add(mid));
+  });
+
+  return trainers.map(t => {
+    const ov = getOverride ? getOverride(t.id, ym) : null;
+    const ovUnit = ov?.unitPrices || {};
+    const ovCnt  = ov?.sessionCounts || {};
+    const mids = [...(trainerMembers[t.id] || [])];
+
+    const rows = mids.map(mid => {
+      const m = memberMap[mid];
+      const ts = (m?.trainerSessions||{})[t.id] || {};
+      // 단가 = (이 트레이너에게 귀속된 결제액) ÷ (이 트레이너의 등록횟수)
+      const trainerPaid = (memberTrainerPay[mid]||{})[t.id] || 0;
+      const trainerReg  = ts.total || 0;
+      const autoUnit = trainerReg > 0 ? Math.round(trainerPaid / trainerReg) : 0;
+      const unit = ovUnit[mid] != null ? Number(ovUnit[mid]) : autoUnit;
+      const autoCnt = (attended[t.id]||{})[mid] || 0;
+      const cnt = ovCnt[mid] != null ? Number(ovCnt[mid]) : autoCnt;
+      return {
+        memberId: mid, memberName: m?.name || '?',
+        regTotal: trainerReg, autoUnit, unit, autoCnt, cnt,
+        amount: unit * cnt,
+      };
+    }).filter(r => r.cnt>0 || r.regTotal>0);
+
+    const sessionTotal = rows.reduce((s,r)=>s+r.amount, 0);
+
+    let blogCount=0, instaCount=0;
+    (records||[]).filter(r=>r.trainerId===t.id && inMonth(r.date)).forEach(r=>{
+      if (r.channel==='blog') blogCount++;
+      if (r.channel==='insta') instaCount++;
+    });
+    const fBlog = ov?.blogCount ?? blogCount;
+    const fInsta = ov?.instaCount ?? instaCount;
+    const blogInc  = fBlog * settings.promoPerPost;
+    const instaInc = Math.min(fInsta, settings.snsInstaMax ?? 8) * settings.promoPerPost;
+    const promoIncentive = blogInc + instaInc;
+    const payout = sessionTotal + promoIncentive;
+
+    return {
+      trainer: t, rows, sessionTotal,
+      blogCount: fBlog, instaCount: fInsta,
+      blogInc, instaInc, promoIncentive, payout, hasOverride: !!ov,
+    };
+  }).filter(x => x.rows.length>0 || x.promoIncentive>0);
 }
 
 // CSV 다운로드 (Excel에서 한글 깨짐 방지 위해 UTF-8 BOM 포함)

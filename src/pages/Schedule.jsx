@@ -80,26 +80,6 @@ function DateWd({ label, value, onChange }) {
   );
 }
 
-// ── 세션 차감 (외부 일정 방어 포함) ──────────────────────
-async function deductSession(memberId, trainerId, status) {
-  if (!memberId) {
-    console.log('[세션차감] 외부 일정 — 차감 건너뜀');
-    return;
-  }
-  const member = store.getMembers().find(m=>m.id===memberId);
-  if (!member) { console.warn('[세션차감] 회원 없음:', memberId); return; }
-  const ts = JSON.parse(JSON.stringify(member.trainerSessions||{}));
-  if (ts[trainerId]) {
-    ts[trainerId].remaining = Math.max(0, ts[trainerId].remaining - 1);
-    console.log('[세션차감] 완료:', trainerId, '잔여:', ts[trainerId].remaining);
-  } else {
-    console.warn('[세션차감] 트레이너 세션 없음:', trainerId, Object.keys(ts));
-  }
-  const patch = { trainerSessions: ts };
-  if (status==='attended') patch.lastAttendedDate = fmt(new Date());
-  await store.updateMember(memberId, patch);
-}
-
 // ── 세션 복원 (예약 취소/삭제 시 +1) ──────────────────────
 async function restoreSession(memberId, trainerId) {
   if (!memberId) return;
@@ -221,7 +201,7 @@ function ScheduleDetailModal({ schedule:initS, onClose, onUpdate, onDelete }) {
                 </div>
               ))}
 
-              {/* 처리: 예약 시 차감 완료. 출석=유지, 취소/노쇼=잔여 복원 */}
+              {/* 처리: 예약 시 차감 완료. 출석/노쇼=차감 유지, 취소=잔여 복원 */}
               {!s.statusFinalized ? (
                 <div>
                   <p className="text-xs text-slate-500 uppercase tracking-widest font-semibold mb-2">
@@ -236,11 +216,12 @@ function ScheduleDetailModal({ schedule:initS, onClose, onUpdate, onDelete }) {
                       </button>
                     ))}
                   </div>
+                  <p className="text-[10px] text-slate-600 mt-2">* 노쇼는 횟수 차감 유지(정산 수업 포함) · 취소만 잔여 복원</p>
                 </div>
               ) : (
                 <div className={`text-center py-3 rounded-xl text-xs font-bold ${st.bg}`}>
                   ✓ {st.label} 처리 완료
-                  {!isExt && (s.status==='canceled'||s.status==='noshow' ? ' · 세션 복원됨' : ' · 세션 차감됨')}
+                  {!isExt && (s.status==='canceled' ? ' · 세션 복원됨' : ' · 세션 차감됨')}
                 </div>
               )}
 

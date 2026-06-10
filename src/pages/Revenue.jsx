@@ -10,7 +10,7 @@ import { store } from '../demoData';
 import { useAuth } from '../contexts/AuthContext';
 import {
   METHOD_LBL, METHOD_CLR, won, monthKey, yearKey,
-  calcNet, splitRate, autoRate, attributePayment, CARD_METHODS, downloadCSV, computeSettlement,
+  calcNet, splitRate, autoRate, attributePayment, CARD_METHODS, downloadCSV, computeSettlement, computeSessionSettlement,
 } from '../services/finance';
 
 const thisMonth = new Date().toISOString().slice(0,7);
@@ -114,12 +114,15 @@ function OverviewTab({ settings, trainers, trainerMap }) {
   // 전체 기간이면 고정비는 월 수만큼 곱하지 않고 1회분만 참고 표기
   const totalExpense = (selMonth==='all' ? 0 : fixedTotal) + monthlyExpense;
 
-  // 트레이너 정산 지급액 (선택 월 기준) — 시트의 순익 흐름과 일치시키기 위함
+  // 트레이너 정산 지급액 (선택 월 기준) — 회당단가×횟수 방식과 일치
   const settlePayout = useMemo(()=>{
     if (selMonth==='all') return 0;
-    const inPeriod = (d)=>monthKey(d)===selMonth;
-    return computeSettlement(allPayments, store.getPromos(), trainers, settings, inPeriod)
-      .reduce((s,r)=>s+r.payout, 0);
+    const grouped = {}; store.getMembers().forEach(m=>{ grouped[m.id]=store.getPayments(m.id); });
+    return computeSessionSettlement({
+      trainers, members: store.getMembers(), schedules: store.getSchedules(),
+      payments: grouped, records: store.getPromos(), settings, ym: selMonth,
+      getOverride: (tid,m)=>store.getSettleOverride(tid,m),
+    }).reduce((s,b)=>s+b.payout, 0);
   }, [allPayments, trainers, settings, selMonth]);
 
   const netProfit = totals.net - settlePayout - totalExpense;
@@ -376,111 +379,190 @@ function RefundableList({ filtered, settings, trainers, trainerMap, onChange }) 
 
 /* ─────────────────────────────── 정산 ─────────────────────────────── */
 function SettleTab({ settings, trainers, trainerMap }) {
-  const [mode, setMode] = useState('month'); // month | year
-  const [period, setPeriod] = useState(thisMonth);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [ym, setYm] = useState(thisMonth);
 
-  const setModeAndPeriod = (m) => { setMode(m); setPeriod(m==='month'?thisMonth:thisYear); };
+  const allPaymentsGrouped = useMemo(()=>{
+    const g = {}; store.getMembers().forEach(m=>{ g[m.id] = store.getPayments(m.id); }); return g;
+  }, [refreshKey]);
+  const members   = useMemo(()=>store.getMembers(), [refreshKey]);
+  const schedules = useMemo(()=>store.getSchedules(), [refreshKey]);
+  const records   = useMemo(()=>store.getPromos(), [refreshKey]);
 
-  const allPayments = useMemo(()=>store.getAllPayments(), []);
-  const records = store.getPromos(); // channel: 'blog' | 'study'
+  const blocks = useMemo(()=>computeSessionSettlement({
+    trainers, members, schedules, payments: allPaymentsGrouped, records, settings, ym,
+    getOverride: (tid, m) => store.getSettleOverride(tid, m),
+  }), [trainers, members, schedules, allPaymentsGrouped, records, settings, ym, refreshKey]);
 
-  const inPeriod = (dateStr) => mode==='month'
-    ? monthKey(dateStr)===period : yearKey(dateStr)===period;
-
-  const rows = useMemo(()=>
-    computeSettlement(allPayments, records, trainers, settings, inPeriod)
-      .filter(r=>r.net>0 || r.eduCenterNet>0 || r.eduExtNet>0 || r.incentive>0),
-    [allPayments, records, settings, trainers, period, mode]);
-
-  const periodOptions = useMemo(()=>{
-    const set = new Set(allPayments.map(p=>mode==='month'?monthKey(p.paidAt):yearKey(p.paidAt)));
-    set.add(period);
+  const monthOptions = useMemo(()=>{
+    const set = new Set();
+    store.getMembers().forEach(m=>(store.getPayments(m.id)||[]).forEach(p=>p.paidAt&&set.add(p.paidAt.slice(0,7))));
+    store.getSchedules().forEach(s=>s.date&&set.add(s.date.slice(0,7)));
+    set.add(ym);
     return [...set].sort().reverse();
-  }, [allPayments, mode, period]);
+  }, [ym, refreshKey]);
 
-  const grandPayout = rows.reduce((s,r)=>s+r.payout,0);
-  const grandSettle = rows.reduce((s,r)=>s+r.settle+r.eduSettle,0);
-  const grandInc    = rows.reduce((s,r)=>s+r.incentive,0);
+  const grandSession = blocks.reduce((s,b)=>s+b.sessionTotal,0);
+  const grandInc     = blocks.reduce((s,b)=>s+b.promoIncentive,0);
+  const grandPayout  = blocks.reduce((s,b)=>s+b.payout,0);
 
   const exportCSV = () => {
-    const header = ['트레이너','정산비율(%)','일반입금금액','정산금','신규등록매출','재등록매출',
-      '센터교육','외부활동','블로그(회)','스터디(회)','블로그인센티브','매출인센티브','총지급액'];
-    const body = rows.map(r=>[
-      r.trainer.name, r.rate, Math.round(r.net), Math.round(r.settle),
-      Math.round(r.newSales), Math.round(r.reSales),
-      Math.round(r.eduCenterNet*(settings.eduCenterRate/100)),
-      Math.round(r.eduExtNet*(settings.eduExternalRate/100)),
-      r.blogCount, r.studyCount, Math.round(r.promoIncentive),
-      Math.round(r.salesIncentive), Math.round(r.payout),
-    ]);
-    const footer = ['합계','', '','', '','', '','', '','',
-      Math.round(grandInc), '', Math.round(grandPayout)];
-    downloadCSV(`정산_${period}.csv`, [header, ...body, footer]);
+    const header = ['트레이너','회원','등록횟수','단가','월수업횟수','금액'];
+    const body = [];
+    blocks.forEach(b=>{
+      b.rows.forEach(r=>body.push([b.trainer.name, r.memberName, r.regTotal, r.unit, r.cnt, r.amount]));
+      body.push([b.trainer.name,'블로그','', '', b.blogCount, b.blogInc]);
+      body.push([b.trainer.name,'인스타','', '', b.instaCount, b.instaInc]);
+      body.push([b.trainer.name,'합계','','','', b.payout]);
+    });
+    downloadCSV(`정산_${ym}.csv`, [header, ...body]);
   };
 
   return (
     <div className="space-y-5">
       <div className="flex items-center gap-2 flex-wrap">
-        <div className="flex gap-1 bg-slate-900 border border-slate-800 rounded-xl p-1">
-          {[['month','월 정산'],['year','년 정산']].map(([k,l])=>(
-            <button key={k} onClick={()=>setModeAndPeriod(k)}
-              className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${mode===k?'bg-amber-500/20 text-amber-400':'text-slate-400 hover:text-white'}`}>{l}</button>
-          ))}
-        </div>
-        <select value={period} onChange={e=>setPeriod(e.target.value)}
-          className="bg-slate-900 border border-slate-700 text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-amber-500">
-          {periodOptions.map(p=><option key={p} value={p}>{p}</option>)}
+        <input type="month" value={ym} onChange={e=>setYm(e.target.value)}
+          className="bg-slate-900 border border-slate-700 text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-amber-500"/>
+        <select value={ym} onChange={e=>setYm(e.target.value)}
+          className="bg-slate-900 border border-slate-700 text-slate-100 rounded-lg px-2 py-2 text-sm">
+          {monthOptions.map(m=><option key={m} value={m}>{m}</option>)}
         </select>
         <span className="text-[11px] text-slate-500 ml-auto">임금지급일: 매월 {settings.paydayDay||5}일</span>
-        <button onClick={exportCSV} disabled={rows.length===0}
+        <button onClick={exportCSV} disabled={blocks.length===0}
           className="px-3 py-2 rounded-lg text-xs font-bold bg-slate-800 border border-slate-700 text-slate-200 hover:border-amber-500/40 hover:text-amber-400 transition-colors disabled:opacity-40">
           📄 정산표 내보내기
         </button>
       </div>
 
       <div className="grid grid-cols-3 gap-3">
-        <Card label="정산금 합계" value={won(grandSettle)} color="text-emerald-400"/>
+        <Card label="수업료 합계" value={won(grandSession)} color="text-emerald-400"/>
         <Card label="인센티브 합계" value={won(grandInc)} color="text-blue-400"/>
         <Card label="총 지급액" value={won(grandPayout)} color="text-amber-400"/>
       </div>
 
-      <RecordManager trainers={trainers} period={period} mode={mode}/>
+      <p className="text-[11px] text-slate-500 bg-slate-900 border border-slate-800 rounded-xl px-3 py-2">
+        단가·월 수업횟수는 결제·출석 데이터에서 자동 집계됩니다. (단가 = 결제총액 ÷ 등록횟수) · 출석과 노쇼는 수업 횟수에 포함, 취소·외부·상담은 제외됩니다. 셀을 눌러 직접 수정할 수 있어요.
+      </p>
 
-      {rows.length===0
-        ? <p className="text-slate-600 text-sm text-center py-6 bg-slate-900 border border-slate-800 rounded-2xl">해당 기간 정산 내역이 없습니다</p>
-        : rows.map(r=>(
-          <div key={r.trainer.id} className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="w-3 h-3 rounded-full" style={{background:r.trainer.color||'#94a3b8'}}/>
-                <span className="font-bold">{r.trainer.name}</span>
-                <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${r.rate===60?'bg-emerald-500/20 text-emerald-400':r.rate===50?'bg-blue-500/20 text-blue-400':'bg-slate-700 text-slate-300'}`}>
-                  {r.rate}% {r.auto?'(자동)':'(수동)'}
-                </span>
-              </div>
-              <span className="text-lg font-mono font-black text-amber-400">{won(r.payout)}</span>
-            </div>
-            <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
-              <Line l="일반 입금금액" v={won(r.net)}/>
-              <Line l={`정산금 (${r.rate}%)`} v={won(r.settle)} c="text-emerald-400"/>
-              <Line l="신규등록 매출" v={won(r.newSales)}/>
-              <Line l="재등록 매출" v={won(r.reSales)}/>
-              {(r.eduCenterNet>0||r.eduExtNet>0) && <>
-                <Line l={`센터교육(${settings.eduCenterRate}%)`} v={won(r.eduCenterNet*(settings.eduCenterRate/100))} c="text-amber-400"/>
-                <Line l={`외부활동(${settings.eduExternalRate}%)`} v={won(r.eduExtNet*(settings.eduExternalRate/100))} c="text-amber-400"/>
-              </>}
-              <Line l={`블로그 ${r.blogCount}회`} v={won(r.promoIncentive)} c="text-blue-400"/>
-              <Line l="매출 인센티브" v={won(r.salesIncentive)} c="text-blue-400"/>
-            </div>
-            {r.auto && (
-              <p className="text-[11px] text-slate-600 mt-2">
-                {r.rate===60 ? '✓ 월 매출 300만원 이상 → 60%'
-                 : r.rate===50 ? `✓ 블로그 ${r.blogCount}회·스터디 ${r.studyCount}회 → 50%`
-                 : `기본 40% (50% 조건: 블로그 ${settings.rate50MinBlog}회+스터디 ${settings.rate50MinStudy}회 / 60% 조건: 매출 ${won(settings.rate60MinSales)})`}
-              </p>
-            )}
-          </div>
+      <RecordManager trainers={trainers} period={ym} mode="month"/>
+
+      {blocks.length===0
+        ? <p className="text-slate-600 text-sm text-center py-6 bg-slate-900 border border-slate-800 rounded-2xl">해당 월 정산 내역이 없습니다</p>
+        : blocks.map(b=>(
+          <TrainerSettleCard key={b.trainer.id} block={b} ym={ym} settings={settings}
+            onSaved={()=>setRefreshKey(k=>k+1)}/>
         ))}
+    </div>
+  );
+}
+
+// 트레이너별 정산 카드 (회원 단가/횟수 직접 수정 가능)
+function TrainerSettleCard({ block: b, ym, settings, onSaved }) {
+  const [editing, setEditing] = useState(false);
+  const [unitEdits, setUnitEdits] = useState({});   // memberId -> 단가
+  const [cntEdits, setCntEdits]   = useState({});   // memberId -> 횟수
+  const [blog, setBlog] = useState(b.blogCount);
+  const [insta, setInsta] = useState(b.instaCount);
+
+  const startEdit = () => {
+    const u={}, c={};
+    b.rows.forEach(r=>{ u[r.memberId]=r.unit; c[r.memberId]=r.cnt; });
+    setUnitEdits(u); setCntEdits(c); setBlog(b.blogCount); setInsta(b.instaCount);
+    setEditing(true);
+  };
+  const save = async () => {
+    try {
+      await store.saveSettleOverride(b.trainer.id, ym, {
+        unitPrices: Object.fromEntries(Object.entries(unitEdits).map(([k,v])=>[k,Number(v)||0])),
+        sessionCounts: Object.fromEntries(Object.entries(cntEdits).map(([k,v])=>[k,Number(v)||0])),
+        blogCount: Number(blog)||0, instaCount: Number(insta)||0,
+      });
+      setEditing(false); onSaved?.();
+    } catch(e){ alert('저장에 실패했습니다.'); }
+  };
+
+  const liveTotal = editing
+    ? b.rows.reduce((s,r)=>s+(Number(unitEdits[r.memberId])||0)*(Number(cntEdits[r.memberId])||0),0)
+      + Number(blog||0)*settings.promoPerPost
+      + Math.min(Number(insta||0), settings.snsInstaMax??8)*settings.promoPerPost
+    : b.payout;
+
+  const INP = "w-20 bg-slate-900 border border-slate-600 text-slate-100 rounded px-1.5 py-1 text-xs font-mono text-right";
+
+  return (
+    <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="w-3 h-3 rounded-full" style={{background:b.trainer.color||'#94a3b8'}}/>
+          <span className="font-bold">{b.trainer.name}</span>
+          {b.hasOverride && <span className="text-[10px] bg-blue-500/20 text-blue-400 px-1.5 py-0.5 rounded font-bold">수정됨</span>}
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-lg font-mono font-black text-amber-400">{won(liveTotal)}</span>
+          {editing
+            ? <><button onClick={()=>setEditing(false)} className="text-xs text-slate-400 hover:text-white">취소</button>
+                <button onClick={save} className="text-xs bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold px-3 py-1.5 rounded-lg">저장</button></>
+            : <button onClick={startEdit} className="text-xs text-slate-400 hover:text-blue-400">수정</button>}
+        </div>
+      </div>
+
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="text-slate-500 border-b border-slate-800">
+              <th className="text-left font-semibold py-1.5">회원</th>
+              <th className="text-right font-semibold">등록</th>
+              <th className="text-right font-semibold">단가</th>
+              <th className="text-right font-semibold">월 횟수</th>
+              <th className="text-right font-semibold">금액</th>
+            </tr>
+          </thead>
+          <tbody>
+            {b.rows.map(r=>{
+              const u = editing ? (unitEdits[r.memberId] ?? r.unit) : r.unit;
+              const c = editing ? (cntEdits[r.memberId] ?? r.cnt) : r.cnt;
+              return (
+                <tr key={r.memberId} className="border-b border-slate-800/50">
+                  <td className="py-1.5 text-slate-200">{r.memberName}</td>
+                  <td className="text-right text-slate-500">{r.regTotal}회</td>
+                  <td className="text-right">
+                    {editing
+                      ? <input type="number" value={u} onChange={e=>setUnitEdits(s=>({...s,[r.memberId]:e.target.value}))} className={INP}/>
+                      : <span className="font-mono text-slate-300">{won(r.unit)}</span>}
+                  </td>
+                  <td className="text-right">
+                    {editing
+                      ? <input type="number" value={c} onChange={e=>setCntEdits(s=>({...s,[r.memberId]:e.target.value}))} className={INP}/>
+                      : <span className="font-mono text-slate-300">{r.cnt}회{r.cnt!==r.autoCnt?'*':''}</span>}
+                  </td>
+                  <td className="text-right font-mono font-bold text-emerald-400">
+                    {won((Number(u)||0)*(Number(c)||0))}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="mt-3 pt-3 border-t border-slate-800 grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
+        <div className="flex items-center justify-between">
+          <span className="text-slate-500">블로그 인센티브</span>
+          {editing
+            ? <span className="flex items-center gap-1"><input type="number" value={blog} onChange={e=>setBlog(e.target.value)} className="w-12 bg-slate-900 border border-slate-600 rounded px-1.5 py-0.5 text-xs text-right"/>회</span>
+            : <span className="font-mono font-bold text-blue-400">{b.blogCount}회 · {won(b.blogInc)}</span>}
+        </div>
+        <div className="flex items-center justify-between">
+          <span className="text-slate-500">인스타 인센티브</span>
+          {editing
+            ? <span className="flex items-center gap-1"><input type="number" value={insta} onChange={e=>setInsta(e.target.value)} className="w-12 bg-slate-900 border border-slate-600 rounded px-1.5 py-0.5 text-xs text-right"/>회</span>
+            : <span className="font-mono font-bold text-pink-400">{b.instaCount}회{b.instaCount>(settings.snsInstaMax??8)?`(지급 ${settings.snsInstaMax??8})`:''} · {won(b.instaInc)}</span>}
+        </div>
+        <div className="flex items-center justify-between col-span-2 pt-1.5 border-t border-slate-800/50">
+          <span className="text-slate-400 font-semibold">수업료 합계</span>
+          <span className="font-mono font-bold text-emerald-400">{won(editing? b.rows.reduce((s,r)=>s+(Number(unitEdits[r.memberId])||0)*(Number(cntEdits[r.memberId])||0),0) : b.sessionTotal)}</span>
+        </div>
+      </div>
     </div>
   );
 }
@@ -511,12 +593,13 @@ function RecordManager({ trainers, period, mode }) {
   const del = async (id) => { try { await store.deletePromo(id); force(n=>n+1); } catch(e){ alert('삭제 실패'); } };
 
   const tMap = Object.fromEntries(trainers.map(t=>[t.id,t.name]));
-  const CH = { blog:'블로그', study:'스터디' };
+  const CH = { blog:'블로그', insta:'인스타그램', study:'스터디' };
+  const CH_CLR = { blog:'text-blue-400', insta:'text-pink-400', study:'text-purple-400' };
 
   return (
     <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
       <div className="flex items-center justify-between mb-3">
-        <h2 className="font-bold text-sm uppercase tracking-widest text-slate-400">📣 블로그 · 스터디 기록</h2>
+        <h2 className="font-bold text-sm uppercase tracking-widest text-slate-400">📣 SNS · 스터디 기록</h2>
         <button onClick={()=>setOpen(!open)} className="text-xs text-amber-400 hover:text-amber-300 font-semibold">+ 기록 추가</button>
       </div>
       {open && (
@@ -527,7 +610,8 @@ function RecordManager({ trainers, period, mode }) {
           </select>
           <select value={form.channel} onChange={e=>setForm({...form,channel:e.target.value})}
             className="bg-slate-900 border border-slate-700 text-slate-100 rounded-lg px-2 py-2 text-sm">
-            <option value="blog">블로그</option>
+            <option value="blog">SNS-블로그</option>
+            <option value="insta">SNS-인스타그램</option>
             <option value="study">스터디</option>
           </select>
           <input type="date" value={form.date} onChange={e=>setForm({...form,date:e.target.value})}
@@ -543,14 +627,14 @@ function RecordManager({ trainers, period, mode }) {
             {list.map(p=>(
               <div key={p.id} className="flex items-center justify-between text-xs bg-slate-800/60 rounded-lg px-3 py-2">
                 <span className="text-slate-300">
-                  {tMap[p.trainerId]||'?'} · <span className={p.channel==='blog'?'text-blue-400':'text-purple-400'}>{CH[p.channel]||p.channel}</span> · {p.date}
+                  {tMap[p.trainerId]||'?'} · <span className={CH_CLR[p.channel]||'text-slate-400'}>{CH[p.channel]||p.channel}</span> · {p.date}
                   {p.note && <span className="text-slate-500"> · {p.note}</span>}
                 </span>
                 <button onClick={()=>del(p.id)} className="text-slate-600 hover:text-red-400">삭제</button>
               </div>
             ))}
           </div>}
-      <p className="text-[11px] text-slate-600 mt-2">* 블로그 1건당 1만원(상한 없음) · 50% 승급 조건: 블로그 월2회 + 스터디 월1회 이상</p>
+      <p className="text-[11px] text-slate-600 mt-2">* SNS-블로그: 1회차부터 지급(상한 없음) · SNS-인스타: 최대 8회 · 1건당 1만원 / 50% 승급: 블로그 월2회+스터디 월1회</p>
     </div>
   );
 }
@@ -756,14 +840,15 @@ function ConfigTab({ settings, trainers }) {
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-4">
         <h2 className="font-bold text-sm uppercase tracking-widest text-slate-400">인센티브 규칙 (계약서 5조)</h2>
         <div className="grid grid-cols-2 gap-3">
-          <NumField label="블로그 1건당" k="promoPerPost" suffix="원" form={form} setForm={setForm}/>
+          <NumField label="SNS 1건당" k="promoPerPost" suffix="원" form={form} setForm={setForm}/>
+          <NumField label="인스타 최대" k="snsInstaMax" suffix="회" form={form} setForm={setForm}/>
           <NumField label="신규등록 단위" k="incentivePer" suffix="원" form={form} setForm={setForm}/>
           <NumField label="신규 단위당" k="incentiveAmount" suffix="원" form={form} setForm={setForm}/>
           <NumField label="재등록 단위" k="reEnrollPer" suffix="원" form={form} setForm={setForm}/>
           <NumField label="재등록 단위당" k="reEnrollAmount" suffix="원" form={form} setForm={setForm}/>
           <NumField label="임금지급일" k="paydayDay" suffix="일" form={form} setForm={setForm}/>
         </div>
-        <p className="text-[11px] text-slate-600">* 신규상담 등록·재등록 매출 100만원당 1만원 / 블로그 1건당 1만원(상한 없음)</p>
+        <p className="text-[11px] text-slate-600">* 신규·재등록 100만원당 1만원 / SNS-블로그는 1회차부터 지급(상한 없음), SNS-인스타는 최대 8회</p>
       </div>
 
       <button onClick={save}

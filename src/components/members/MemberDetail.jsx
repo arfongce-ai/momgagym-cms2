@@ -27,6 +27,9 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
   const [addClassType,  setAddClassType]  = useState('');
   const [addCount,      setAddCount]      = useState(10);
   const [addSessDate,   setAddSessDate]   = useState(new Date().toISOString().slice(0,10));
+  // 세션 직접 조정
+  const [adjustTid,     setAdjustTid]     = useState(null);
+  const [adjustForm,    setAdjustForm]    = useState({ remaining:0, total:0 });
 
   // 수납
   const [payments,     setPayments]    = useState([]);
@@ -86,6 +89,47 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
       setAddSessDate(new Date().toISOString().slice(0,10));
       onUpdate?.();
     } catch (e) { alert('세션 등록에 실패했습니다. 네트워크 확인 후 다시 시도하세요.'); }
+  };
+
+  // ── 세션 직접 조정 / 복구 ─────────────────────────────
+  const startAdjust = (tid, s) => { setAdjustTid(tid); setAdjustForm({ remaining:s.remaining, total:s.total }); };
+  const saveAdjust = async (tid) => {
+    const remaining = Number(adjustForm.remaining), total = Number(adjustForm.total);
+    if (isNaN(remaining) || isNaN(total) || remaining<0 || total<0) { alert('0 이상의 숫자를 입력해 주세요.'); return; }
+    if (remaining > total) { alert('잔여 횟수는 총 횟수보다 클 수 없습니다.'); return; }
+    const fresh = store.getMembers().find(m=>m.id===member.id);
+    const ts = JSON.parse(JSON.stringify(fresh?.trainerSessions||{}));
+    ts[tid] = { total, remaining };
+    try { await store.updateMember(member.id, { trainerSessions:ts }); refresh(); setAdjustTid(null); onUpdate?.(); }
+    catch(e){ alert('수정에 실패했습니다. 네트워크 확인 후 다시 시도하세요.'); }
+  };
+  // 차감 복구: 잔여 +1 (총 횟수 한도 내)
+  const restoreOne = async (tid) => {
+    const fresh = store.getMembers().find(m=>m.id===member.id);
+    const ts = JSON.parse(JSON.stringify(fresh?.trainerSessions||{}));
+    if (!ts[tid]) return;
+    if (ts[tid].remaining >= ts[tid].total) { alert('잔여 횟수가 이미 총 횟수와 같습니다.'); return; }
+    ts[tid].remaining += 1;
+    try { await store.updateMember(member.id, { trainerSessions:ts }); refresh(); onUpdate?.(); }
+    catch(e){ alert('복구에 실패했습니다.'); }
+  };
+  // 1회 차감
+  const deductOne = async (tid) => {
+    const fresh = store.getMembers().find(m=>m.id===member.id);
+    const ts = JSON.parse(JSON.stringify(fresh?.trainerSessions||{}));
+    if (!ts[tid] || ts[tid].remaining<=0) { alert('잔여 횟수가 없습니다.'); return; }
+    ts[tid].remaining -= 1;
+    try { await store.updateMember(member.id, { trainerSessions:ts }); refresh(); onUpdate?.(); }
+    catch(e){ alert('차감에 실패했습니다.'); }
+  };
+  // 트레이너 세션 카드 삭제
+  const removeSession = async (tid) => {
+    if (!window.confirm(`${trainerMap[tid]?.name||tid} 세션 정보를 삭제할까요?`)) return;
+    const fresh = store.getMembers().find(m=>m.id===member.id);
+    const ts = JSON.parse(JSON.stringify(fresh?.trainerSessions||{}));
+    delete ts[tid];
+    try { await store.updateMember(member.id, { trainerSessions:ts }); refresh(); onUpdate?.(); }
+    catch(e){ alert('삭제에 실패했습니다.'); }
   };
 
   // ── 수납 등록 ─────────────────────────────────────────
@@ -265,6 +309,37 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
                       </div>
                       {s.remaining===0&&<div className="mt-2 text-center text-[10px] bg-red-500/10 border border-red-500/20 rounded-lg py-1 text-red-400 font-bold">⚠️ 세션 소진</div>}
                       {s.remaining>0&&s.remaining<=5&&<div className="mt-2 text-center text-[10px] bg-orange-500/10 border border-orange-500/20 rounded-lg py-1 text-orange-400 font-bold">⚡ 잔여 {s.remaining}회</div>}
+                      {user?.role==='admin' && (
+                        adjustTid===tid ? (
+                          <div className="mt-3 pt-3 border-t border-slate-700 space-y-2">
+                            <div className="grid grid-cols-2 gap-2">
+                              <div>
+                                <label className="text-[10px] text-slate-500">잔여</label>
+                                <input type="number" min="0" value={adjustForm.remaining}
+                                  onChange={e=>setAdjustForm(f=>({...f,remaining:e.target.value}))}
+                                  className="w-full bg-slate-900 border border-slate-600 text-slate-100 rounded-lg px-2 py-1.5 text-sm font-mono"/>
+                              </div>
+                              <div>
+                                <label className="text-[10px] text-slate-500">총 등록</label>
+                                <input type="number" min="0" value={adjustForm.total}
+                                  onChange={e=>setAdjustForm(f=>({...f,total:e.target.value}))}
+                                  className="w-full bg-slate-900 border border-slate-600 text-slate-100 rounded-lg px-2 py-1.5 text-sm font-mono"/>
+                              </div>
+                            </div>
+                            <div className="flex gap-2 justify-end">
+                              <button onClick={()=>setAdjustTid(null)} className="text-xs text-slate-400 hover:text-white px-3 py-1.5">취소</button>
+                              <button onClick={()=>saveAdjust(tid)} className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold px-4 py-1.5 rounded-lg text-xs">저장</button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="mt-3 pt-3 border-t border-slate-700 flex items-center gap-1.5 flex-wrap">
+                            <button onClick={()=>deductOne(tid)} className="px-2.5 py-1.5 rounded-lg text-xs font-bold bg-slate-700 text-slate-200 hover:bg-red-500/20 hover:text-red-400 transition-colors">−1 차감</button>
+                            <button onClick={()=>restoreOne(tid)} className="px-2.5 py-1.5 rounded-lg text-xs font-bold bg-slate-700 text-slate-200 hover:bg-emerald-500/20 hover:text-emerald-400 transition-colors">+1 복구</button>
+                            <button onClick={()=>startAdjust(tid, s)} className="px-2.5 py-1.5 rounded-lg text-xs font-bold bg-slate-700 text-slate-200 hover:bg-blue-500/20 hover:text-blue-400 transition-colors">직접 수정</button>
+                            <button onClick={()=>removeSession(tid)} className="ml-auto px-2.5 py-1.5 rounded-lg text-xs font-bold text-slate-500 hover:text-red-400 transition-colors">삭제</button>
+                          </div>
+                        )
+                      )}
                     </div>
                   );
                 })

@@ -94,7 +94,8 @@ const INITIAL_SETTINGS = {
   rate50MinBlog: 2,         // 50%: 블로그 월 2회 이상
   rate50MinStudy: 1,        // 50%: 스터디 월 1회 이상
   // 인센티브 규칙 (계약서 5조)
-  promoPerPost: 10000,        // 블로그 1건당 (상한 없음)
+  promoPerPost: 10000,        // SNS 1건당 (블로그/인스타 공통)
+  snsInstaMax: 8,             // 인스타그램: 최대 8회까지 인정
   incentivePer: 1000000,      // 신규상담 등록 매출 기준 단위
   incentiveAmount: 10000,     // 단위당 인센티브
   reEnrollPer: 1000000,       // 재등록 매출 기준 단위
@@ -107,7 +108,7 @@ const INITIAL_SETTINGS = {
 
 const cache = {
   members:[], trainers:[], schedules:[], notices:[], payments:{}, body:{}, ai:{},
-  settings:{...INITIAL_SETTINGS}, expenses:[], promos:[],
+  settings:{...INITIAL_SETTINGS}, expenses:[], promos:[], settleOverrides:[],
 };
 
 async function loadCollection(name) {
@@ -146,7 +147,7 @@ async function seedIfEmpty() {
 export async function initStore() {
   try {
     await seedIfEmpty();
-    const [members, trainers, schedules, notices, payments, body, ai, settings, expenses, promos] = await Promise.all([
+    const [members, trainers, schedules, notices, payments, body, ai, settings, expenses, promos, settleOverrides] = await Promise.all([
       loadCollection('members'),
       loadCollection('trainers'),
       loadCollection('schedules'),
@@ -157,12 +158,14 @@ export async function initStore() {
       loadCollection('settings'),
       loadCollection('expenses'),
       loadCollection('promos'),
+      loadCollection('settleOverrides'),
     ]);
     cache.members=members; cache.trainers=trainers; cache.schedules=schedules;
     cache.notices=notices; cache.payments=payments; cache.body=body; cache.ai=ai;
     cache.settings = settings.find(s=>s.id==='config') || {...INITIAL_SETTINGS};
     cache.expenses = expenses;
     cache.promos   = promos;
+    cache.settleOverrides = settleOverrides;
     console.log('[FitCMS] Firebase 로딩 완료');
   } catch (e) {
     console.error('[FitCMS] Firebase 로딩 실패:', e);
@@ -374,9 +377,11 @@ export const store = {
     if (!sched.isExternal && sched.memberId) {
       const member = cache.members.find(m=>m.id===sched.memberId);
       if (member) {
-        if (status === 'attended') {
+        if (status === 'attended' || status === 'noshow') {
+          // 계약서 2조: 노쇼도 출석과 동일하게 횟수 차감 유지(복원 안 함)
           updatedMember = { ...member, lastAttendedDate: new Date().toISOString().slice(0,10) };
-        } else if ((status === 'canceled' || status === 'noshow') && sched.sessionDeducted) {
+        } else if (status === 'canceled' && sched.sessionDeducted) {
+          // 취소만 세션 복원
           const ts = JSON.parse(JSON.stringify(member.trainerSessions||{}));
           if (ts[sched.trainerId]) {
             const cap = ts[sched.trainerId].total ?? Infinity;
@@ -449,6 +454,22 @@ export const store = {
       (cache.payments[m.id]||[]).forEach(p => rows.push({ ...p, memberId:m.id, memberName:m.name }));
     });
     return rows;
+  },
+
+  // 정산 수정값(단가/횟수 override) — 문서 id = `${trainerId}_${ym}`
+  // { id, trainerId, ym, unitPrices:{memberId:단가}, sessionCounts:{memberId:횟수}, blogCount, instaCount }
+  getSettleOverride: (trainerId, ym) =>
+    cache.settleOverrides.find(o => o.id === `${trainerId}_${ym}`) || null,
+  saveSettleOverride: async (trainerId, ym, data) => {
+    const id = `${trainerId}_${ym}`;
+    const prev = cache.settleOverrides;
+    const existing = cache.settleOverrides.find(o => o.id === id);
+    const merged = { ...(existing||{}), ...data, id, trainerId, ym };
+    cache.settleOverrides = existing
+      ? cache.settleOverrides.map(o => o.id===id ? merged : o)
+      : [...cache.settleOverrides, merged];
+    try { await fbSet('settleOverrides', id, merged); return merged; }
+    catch(e){ cache.settleOverrides = prev; throw e; }
   },
 };
 
