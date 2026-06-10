@@ -175,7 +175,7 @@ export default function MemberRegister({ trainers=[], onSuccess, onCancel }) {
         form.trainerSlots.map(s => s.classType).filter(Boolean)
       )];
 
-      await store.addMember({
+      store.addMember({
         name:form.name, phone:form.phone, birthDate:form.birthDate,
         joinDate:form.joinDate, lastPaymentDate:form.lastPaymentDate,
         lastAttendedDate:null, memo:form.memo,

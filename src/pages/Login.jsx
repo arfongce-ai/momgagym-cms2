@@ -8,6 +8,11 @@ export default function Login() {
   const [error, setError]       = useState('');
   const [loading, setLoading]   = useState(false);
 
+  const fill = role => {
+    setEmail(role==='admin'?'admin@fitcms.demo':'trainer@fitcms.demo');
+    setPassword(role==='admin'?'admin1234':'trainer1234');
+    setError('');
+  };
   const handleSubmit = async e => {
     e.preventDefault(); setError(''); setLoading(true);
     try { await login(email, password); }
@@ -28,11 +33,14 @@ export default function Login() {
           <h1 className="text-2xl font-black text-white tracking-tight">몸가짐운동센터</h1>
           <p className="text-slate-400 text-sm mt-1 font-semibold">관리 시스템</p>
         </div>
-        <p className="text-center text-slate-500 text-xs mb-4">관리자·트레이너 모두 이곳에서 이메일로 로그인합니다</p>
+        <div className="flex gap-2 mb-4">
+          <button onClick={()=>fill('admin')} className="flex-1 py-2 text-xs rounded-xl border border-amber-500/30 text-amber-400 hover:bg-amber-500/10 transition-colors">관리자 데모</button>
+          <button onClick={()=>fill('trainer')} className="flex-1 py-2 text-xs rounded-xl border border-slate-700 text-slate-400 hover:bg-slate-800 transition-colors">트레이너 데모</button>
+        </div>
         <form onSubmit={handleSubmit} className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4">
           <div>
             <label className="block text-xs font-semibold text-slate-400 uppercase tracking-widest mb-1.5">이메일</label>
-            <input type="email" required value={email} onChange={e=>setEmail(e.target.value)} placeholder="이메일 주소"
+            <input type="email" required value={email} onChange={e=>setEmail(e.target.value)} placeholder="admin@fitcms.demo"
               className="w-full bg-slate-800 border border-slate-700 text-slate-100 rounded-xl px-3 py-2.5 text-sm placeholder-slate-500 focus:outline-none focus:border-amber-500"/>
           </div>
           <div>
@@ -46,7 +54,7 @@ export default function Login() {
             {loading ? '로그인 중…' : '로그인'}
           </button>
         </form>
-        <p className="text-center text-slate-600 text-xs mt-4">몸가짐운동센터 · 관리 시스템</p>
+        <p className="text-center text-slate-600 text-xs mt-4">Demo Mode — 브라우저 로컬 저장</p>
       </div>
     </div>
   );

@@ -146,26 +146,24 @@ export default function Trainers() {
 
   const closeForm = () => { setShowForm(false); setEditTarget(null); };
 
-  const saveTrainer = async () => {
+  const saveTrainer = () => {
     if (!form.name.trim() || !form.phone.trim()) { alert('이름과 연락처는 필수입니다.'); return; }
     // 로그인 계정을 적었다면 이메일+비번 둘 다 있어야 하고, 이메일이 겹치면 안 됨
     const email = (form.loginEmail||'').trim().toLowerCase();
     if (email || form.loginPassword) {
       if (!email || !form.loginPassword) { alert('로그인 계정을 만들려면 이메일과 비밀번호를 모두 입력하세요.'); return; }
+      const dupDemo = ['admin@fitcms.demo','trainer@fitcms.demo'].includes(email);
       const dupTrainer = trainers.some(t => t.id!==editTarget?.id && (t.loginEmail||'').trim().toLowerCase()===email);
-      if (dupTrainer) { alert('이미 사용 중인 이메일입니다. 다른 이메일을 입력하세요.'); return; }
+      if (dupDemo || dupTrainer) { alert('이미 사용 중인 이메일입니다. 다른 이메일을 입력하세요.'); return; }
     }
-    try {
-      if (editTarget) await store.updateTrainer(editTarget.id, form);
-      else await store.addTrainer(form);
-      load(); closeForm();
-    } catch (e) { alert('저장에 실패했습니다. 네트워크 확인 후 다시 시도하세요.'); }
+    if (editTarget) store.updateTrainer(editTarget.id, form);
+    else store.addTrainer(form);
+    load(); closeForm();
   };
 
-  const deleteTrainer = async id => {
+  const deleteTrainer = id => {
     if (!window.confirm('트레이너를 삭제하시겠습니까?')) return;
-    try { await store.deleteTrainer(id); load(); }
-    catch (e) { alert('삭제에 실패했습니다. 네트워크 확인 후 다시 시도하세요.'); }
+    store.deleteTrainer(id); load();
   };
 
   return (

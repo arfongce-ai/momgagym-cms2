@@ -55,20 +55,18 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
   const addTrainerCT = trainerMap[addTrainerId]?.classTypes || [];
 
   // ── 기본정보 저장 ─────────────────────────────────────
-  const saveEdit = async () => {
-    try {
-      await store.updateMember(member.id, {
-        name:editForm.name, phone:editForm.phone,
-        birthDate:editForm.birthDate||'', joinDate:editForm.joinDate||'',
-        lastPaymentDate:editForm.lastPaymentDate||'',
-        classTypes:editForm.classTypes||[], memo:editForm.memo||'',
-      });
-      refresh(); setEdit(false); onUpdate?.();
-    } catch (e) { alert('저장에 실패했습니다. 네트워크 확인 후 다시 시도하세요.'); }
+  const saveEdit = () => {
+    store.updateMember(member.id, {
+      name:editForm.name, phone:editForm.phone,
+      birthDate:editForm.birthDate||'', joinDate:editForm.joinDate||'',
+      lastPaymentDate:editForm.lastPaymentDate||'',
+      classTypes:editForm.classTypes||[], memo:editForm.memo||'',
+    });
+    refresh(); setEdit(false); onUpdate?.();
   };
 
   // ── 세션 재등록 ───────────────────────────────────────
-  const handleAddSession = async () => {
+  const handleAddSession = () => {
     if (!addTrainerId) { alert('트레이너를 선택해 주세요.'); return; }
     if (!addCount || addCount<1) { alert('세션 수를 입력해 주세요.'); return; }
     const fresh = store.getMembers().find(m=>m.id===member.id);
@@ -81,66 +79,56 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
     }
     const curCT    = fresh?.classTypes||[];
     const upCT     = addClassType&&!curCT.includes(addClassType) ? [...curCT,addClassType] : curCT;
-    try {
-      await store.updateMember(member.id, { trainerSessions:ts, classTypes:upCT, lastPaymentDate:addSessDate });
-      refresh(); setShowAddSess(false);
-      setAddTrainerId(''); setAddClassType(''); setAddCount(10);
-      setAddSessDate(new Date().toISOString().slice(0,10));
-      onUpdate?.();
-    } catch (e) { alert('세션 등록에 실패했습니다. 네트워크 확인 후 다시 시도하세요.'); }
+    store.updateMember(member.id, { trainerSessions:ts, classTypes:upCT, lastPaymentDate:addSessDate });
+    refresh(); setShowAddSess(false);
+    setAddTrainerId(''); setAddClassType(''); setAddCount(10);
+    setAddSessDate(new Date().toISOString().slice(0,10));
+    onUpdate?.();
   };
 
   // ── 수납 등록 ─────────────────────────────────────────
-  const handleAddPayment = async () => {
+  const handleAddPayment = () => {
     if (!payForm.amount) { alert('금액을 입력해 주세요.'); return; }
-    try {
-      await store.addPayment(member.id, { ...payForm, amount:Number(payForm.amount) });
-      // 결제일 자동 업데이트
-      await store.updateMember(member.id, { lastPaymentDate:payForm.paidAt });
-      refresh(); setShowAddPay(false);
-      setPayForm({ paidAt:new Date().toISOString().slice(0,10), amount:'', method:'card', isUnpaid:false, note:'' });
-      onUpdate?.();
-    } catch (e) { alert('수납 등록에 실패했습니다. 네트워크 확인 후 다시 시도하세요.'); }
+    store.addPayment(member.id, { ...payForm, amount:Number(payForm.amount) });
+    // 결제일 자동 업데이트
+    store.updateMember(member.id, { lastPaymentDate:payForm.paidAt });
+    refresh(); setShowAddPay(false);
+    setPayForm({ paidAt:new Date().toISOString().slice(0,10), amount:'', method:'card', isUnpaid:false, note:'' });
+    onUpdate?.();
   };
 
-  const handleDeletePayment = async pid => {
+  const handleDeletePayment = pid => {
     if (!window.confirm('이 수납 기록을 삭제하시겠습니까?')) return;
-    try { await store.deletePayment(member.id, pid); refresh(); }
-    catch (e) { alert('삭제에 실패했습니다. 네트워크 확인 후 다시 시도하세요.'); }
+    store.deletePayment(member.id, pid); refresh();
   };
 
   // ── 신체정보 등록 ─────────────────────────────────────
-  const handleAddBody = async () => {
+  const handleAddBody = () => {
     if (!bodyForm.weight) { alert('체중을 입력해 주세요.'); return; }
-    try {
-      await store.addBodyRecord(member.id, {
-        ...bodyForm,
-        height:    bodyForm.height    ? Number(bodyForm.height)    : null,
-        weight:    Number(bodyForm.weight),
-        systolic:  bodyForm.systolic  ? Number(bodyForm.systolic)  : null,
-        diastolic: bodyForm.diastolic ? Number(bodyForm.diastolic) : null,
-      });
-      refresh(); setShowAddBody(false);
-      setBodyForm({ recordedAt:new Date().toISOString().slice(0,10), height:'', weight:'', systolic:'', diastolic:'', note:'' });
-    } catch (e) { alert('신체정보 저장에 실패했습니다. 네트워크 확인 후 다시 시도하세요.'); }
+    store.addBodyRecord(member.id, {
+      ...bodyForm,
+      height:    bodyForm.height    ? Number(bodyForm.height)    : null,
+      weight:    Number(bodyForm.weight),
+      systolic:  bodyForm.systolic  ? Number(bodyForm.systolic)  : null,
+      diastolic: bodyForm.diastolic ? Number(bodyForm.diastolic) : null,
+    });
+    refresh(); setShowAddBody(false);
+    setBodyForm({ recordedAt:new Date().toISOString().slice(0,10), height:'', weight:'', systolic:'', diastolic:'', note:'' });
   };
 
-  const handleDeleteBody = async rid => {
+  const handleDeleteBody = rid => {
     if (!window.confirm('이 기록을 삭제하시겠습니까?')) return;
-    try { await store.deleteBodyRecord(member.id, rid); refresh(); }
-    catch (e) { alert('삭제에 실패했습니다. 네트워크 확인 후 다시 시도하세요.'); }
+    store.deleteBodyRecord(member.id, rid); refresh();
   };
 
   // ── 회원 삭제 ─────────────────────────────────────────
-  const handleDelete = async () => {
-    if (!window.confirm(`${member.name} 회원을 삭제하시겠습니까?\n관련 스케줄, 수납, 신체정보, AI 측정기록도 함께 삭제됩니다.`)) return;
-    try {
-      await store.purgeMember(member.id);   // 스케줄·수납·신체·AI·회원 원자적 삭제
-      onUpdate?.(); onClose();
-    } catch (e) {
-      console.error('[회원 삭제 실패]', e);
-      alert('삭제에 실패했습니다. 네트워크 상태를 확인한 뒤 다시 시도하세요.\n(데이터는 삭제되지 않았습니다.)');
-    }
+  const handleDelete = () => {
+    if (!window.confirm(`${member.name} 회원을 삭제하시겠습니까?\n관련 스케줄, 수납, 신체정보도 함께 삭제됩니다.`)) return;
+    store.getSchedules().filter(s=>s.memberId===member.id).forEach(s=>store.deleteSchedule(s.id));
+    store.deleteAllPayments(member.id);
+    store.deleteAllBodyRecords(member.id);
+    store.deleteMember(member.id);
+    onUpdate?.(); onClose();
   };
 
   const pfe = f => e => setEF(p=>({...p,[f]:e.target.value}));
