@@ -6,6 +6,7 @@ import { useAuth } from '../contexts/AuthContext';
 import MemberRegister from '../components/members/MemberRegister';
 import MemberDetail   from '../components/members/MemberDetail';
 import TrainerBadge   from '../components/common/TrainerBadge';
+import { downloadCSV } from '../services/finance';
 
 function getChosung(str) {
   const cs=['ㄱ','ㄲ','ㄴ','ㄷ','ㄸ','ㄹ','ㅁ','ㅂ','ㅃ','ㅅ','ㅆ','ㅇ','ㅈ','ㅉ','ㅊ','ㅋ','ㅌ','ㅍ','ㅎ'];
@@ -75,24 +76,51 @@ export default function Members() {
 
   const isExpired = m => m.lastPaymentDate && m.lastPaymentDate < oneYearAgo;
 
-  const handleZeroSessions = () => {
-    if (!window.confirm('만료 회원의 모든 잔여 세션을 0으로 처리하시겠습니까?')) return;
-    members.filter(isExpired).forEach(m => {
-      const ts = {};
-      Object.entries(m.trainerSessions||{}).forEach(([k,v]) => { ts[k] = {...v, remaining:0}; });
-      store.updateMember(m.id, { trainerSessions: ts });
+  const trainerMap = Object.fromEntries(trainers.map(t=>[t.id,t.name]));
+  const exportMembers = () => {
+    const header = ['이름','연락처','연락처2','생년월일','가입일','최근결제일','담당트레이너/잔여세션','총결제액','수업종류','메모','상태'];
+    const body = filtered.map(m=>{
+      const sessions = Object.entries(m.trainerSessions||{})
+        .map(([tid,s])=>`${trainerMap[tid]||'?'} ${s.remaining}/${s.total}`).join(' | ');
+      const totalPaid = (store.getPayments(m.id)||[])
+        .filter(p=>!p.isUnpaid && !p.isRefunded).reduce((s,p)=>s+(p.amount||0),0);
+      return [
+        m.name, m.phone||'', m.phone2||'', m.birthDate||'', m.joinDate||'', m.lastPaymentDate||'',
+        sessions, totalPaid, (m.classTypes||[]).join('/'), m.memo||'',
+        isExpired(m)?'결제만료':'정상',
+      ];
     });
-    load();
+    downloadCSV(`회원목록_${new Date().toISOString().slice(0,10)}.csv`, [header, ...body]);
+  };
+
+  const handleZeroSessions = async () => {
+    if (!window.confirm('만료 회원의 모든 잔여 세션을 0으로 처리하시겠습니까?')) return;
+    try {
+      await Promise.all(members.filter(isExpired).map(m => {
+        const ts = {};
+        Object.entries(m.trainerSessions||{}).forEach(([k,v]) => { ts[k] = {...v, remaining:0}; });
+        return store.updateMember(m.id, { trainerSessions: ts });
+      }));
+      load();
+    } catch (e) { alert('일부 회원 처리에 실패했습니다. 네트워크 확인 후 다시 시도하세요.'); load(); }
   };
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-black tracking-tight">회원 관리</h1>
-        <button onClick={() => setShowRegister(true)}
-          className="btn btn-primary btn-sm">
-          + 신규 등록
-        </button>
+        <div className="flex gap-2">
+          {user?.role==='admin' && (
+            <button onClick={exportMembers}
+              className="text-xs font-bold px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-slate-200 hover:border-amber-500/40 hover:text-amber-400 transition-colors">
+              📄 다운로드
+            </button>
+          )}
+          <button onClick={() => setShowRegister(true)}
+            className="btn btn-primary btn-sm">
+            + 신규 등록
+          </button>
+        </div>
       </div>
 
       {/* 필터 */}

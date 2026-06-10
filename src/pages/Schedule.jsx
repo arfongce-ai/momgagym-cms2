@@ -42,53 +42,55 @@ function remainOf(s, members) {
   const ts = m.trainerSessions[s.trainerId];
   return ts ? ts.remaining : null;
 }
-
 // ── 기존 스케줄 회차 자동 보정 ─────────────────────────────
 // 회원·트레이너별로 시간순 정렬 후, 등록 총횟수(total)에서 역산하여
 // sessionAtBooking / sessionTotalAtBooking 이 비어 있는 스케줄에 채워 넣는다.
 //  - 이미 값이 있거나 수동 수정(sessionManual)된 스케줄은 건드리지 않는다.
 //  - 외부/상담 일정은 제외.
 //  - 한 번 store에 기록되면 이후엔 다시 계산하지 않는다(멱등).
-function backfillSessionNumbers(members) {
+async function backfillSessionNumbers(members) {
   const all = store.getSchedules();
   // (회원,트레이너) 그룹별로 모음
   const groups = {};
   all.forEach(s => {
-    if (s.isExternal || s.isConsult || !s.memberId || !s.trainerId) return;
+    if (s.isExternal || s.isConsult || s.classType === '상담' || !s.memberId || !s.trainerId) return;
     const key = `${s.memberId}__${s.trainerId}`;
     (groups[key] ||= []).push(s);
   });
 
-  Object.entries(groups).forEach(([key, list]) => {
+  for (const [key, list] of Object.entries(groups)) {
     // 보정이 필요한 스케줄이 하나라도 있을 때만 처리
     const needs = list.some(s => s.sessionAtBooking == null && !s.sessionManual);
-    if (!needs) return;
+    if (!needs) continue;
 
     const [memberId, trainerId] = key.split('__');
     const m = (members||[]).find(x => x.id === memberId);
     const total = m?.trainerSessions?.[trainerId]?.total ?? null;
-    if (total == null) return; // 총횟수를 모르면 보정 불가
+    if (total == null) continue; // 총횟수를 모르면 보정 불가
 
     // 시간순 정렬 (날짜 → 시작시간)
     const sorted = [...list].sort((a,b) =>
       (a.date+a.startTime).localeCompare(b.date+b.startTime));
 
     // 첫 수업 = total, 그다음 -1 ... (수동 수정된 건 건너뛰되 카운터는 진행)
-    sorted.forEach((s, i) => {
+    for (let i = 0; i < sorted.length; i++) {
+      const s = sorted[i];
       const startN = total - i; // i번째(0-base) 수업의 시작 회차
       if (s.sessionAtBooking == null && !s.sessionManual) {
-        store.updateSchedule(s.id, {
-          sessionAtBooking: startN,
-          sessionTotalAtBooking: total,
-          sessionBackfilled: true,
-        });
+        try {
+          await store.updateSchedule(s.id, {
+            sessionAtBooking: startN,
+            sessionTotalAtBooking: total,
+            sessionBackfilled: true,
+          });
+        } catch (e) { console.error('[회차 보정 실패]', s.id, e); }
       }
-    });
-  });
+    }
+  }
 }
 
 // 회원이름 + 회차 표기
-//  - sessionAtBooking(예약 시점 차감 직전 잔여) = 이 수업의 시작 회차값(=그 수업 시작 시 남은 횟수)
+//  - sessionAtBooking(예약 시점 차감 직전 잔여) = 이 수업의 시작 회차값
 //  - 첫 수업(시작값 == 총횟수): "N(s)"  / 마지막 수업(시작값 == 1): "1(e)"
 //    그 외 중간 수업: 숫자만 "N"
 //    예) 10회 등록 → 10(s), 9, 8 ... 2, 1(e)
@@ -98,7 +100,7 @@ function nameWithRemain(s, members) {
   if (s.isExternal || !s.memberId) return s.memo?.slice(0,8) || '외부';
   const base = s.memberName;
   if (s.sessionAtBooking != null) {
-    const n = s.sessionAtBooking;                // 이 수업 시작 시 잔여
+    const n = s.sessionAtBooking;                  // 이 수업 시작 시 잔여
     const total = s.sessionTotalAtBooking ?? null; // 예약 당시 총 등록 횟수
     let tag = '';
     if (total != null && n === total) tag = '(s)'; // 첫 수업
@@ -140,28 +142,8 @@ function DateWd({ label, value, onChange }) {
   );
 }
 
-// ── 세션 차감 (외부 일정 방어 포함) ──────────────────────
-function deductSession(memberId, trainerId, status) {
-  if (!memberId) {
-    console.log('[세션차감] 외부 일정 — 차감 건너뜀');
-    return;
-  }
-  const member = store.getMembers().find(m=>m.id===memberId);
-  if (!member) { console.warn('[세션차감] 회원 없음:', memberId); return; }
-  const ts = JSON.parse(JSON.stringify(member.trainerSessions||{}));
-  if (ts[trainerId]) {
-    ts[trainerId].remaining = Math.max(0, ts[trainerId].remaining - 1);
-    console.log('[세션차감] 완료:', trainerId, '잔여:', ts[trainerId].remaining);
-  } else {
-    console.warn('[세션차감] 트레이너 세션 없음:', trainerId, Object.keys(ts));
-  }
-  const patch = { trainerSessions: ts };
-  if (status==='attended') patch.lastAttendedDate = fmt(new Date());
-  store.updateMember(memberId, patch);
-}
-
 // ── 세션 복원 (예약 취소/삭제 시 +1) ──────────────────────
-function restoreSession(memberId, trainerId) {
+async function restoreSession(memberId, trainerId) {
   if (!memberId) return;
   const member = store.getMembers().find(m=>m.id===memberId);
   if (!member) return;
@@ -169,7 +151,7 @@ function restoreSession(memberId, trainerId) {
   if (ts[trainerId]) {
     const cap = ts[trainerId].total ?? Infinity;
     ts[trainerId].remaining = Math.min(cap, ts[trainerId].remaining + 1);
-    store.updateMember(memberId, { trainerSessions: ts });
+    await store.updateMember(memberId, { trainerSessions: ts });
   }
 }
 
@@ -222,21 +204,16 @@ function ScheduleDetailModal({ schedule:initS, onClose, onUpdate, onDelete }) {
   const isConsult = s.isConsult || s.classType === '상담';
   const dispName = isConsult ? '💬 상담' : (isExt ? (s.memo||'외부 일정') : s.memberName);
 
-  const markStatus = status => {
+  const markStatus = async status => {
     const fresh = store.getSchedules().find(sc=>sc.id===s.id);
     if (fresh?.statusFinalized) { alert('이미 처리된 스케줄입니다.'); return; }
-    // 예약 시점에 이미 1회 차감됨. 여기서는 상태만 확정.
-    //  - 출석(attended): 그대로 유지(차감 유지) + 마지막 출석일 기록
-    //  - 취소/노쇼(canceled/noshow): 예약 차감을 복원(+1) — 정책상 되돌림
-    store.updateSchedule(s.id, { status, statusFinalized: true });
-    if (!isExt) {
-      if (status === 'attended') {
-        store.updateMember(s.memberId, { lastAttendedDate: fmt(new Date()) });
-      } else if (status === 'canceled' || status === 'noshow') {
-        restoreSession(s.memberId, s.trainerId);
-      }
+    try {
+      await store.finalizeSchedule(s.id, status);  // 상태확정+출석일/세션복원 원자적 처리
+      onUpdate();
+    } catch (e) {
+      console.error('[상태 확정 실패]', e);
+      alert('처리에 실패했습니다. 네트워크 확인 후 다시 시도하세요.');
     }
-    onUpdate();
   };
 
   const saveEdit = () => {
@@ -244,7 +221,7 @@ function ScheduleDetailModal({ schedule:initS, onClose, onUpdate, onDelete }) {
     const m = members.find(me=>me.id===form.memberId);
     // 회차 수동 수정 처리 (일반 회원 수업만)
     const sessionPatch = {};
-    if (!isExt) {
+    if (!isExt && !isConsult) {
       const raw = String(form.sessionAtBooking).trim();
       if (raw !== '') {
         const n = parseInt(raw, 10);
@@ -296,7 +273,7 @@ function ScheduleDetailModal({ schedule:initS, onClose, onUpdate, onDelete }) {
                 {l:'날짜',               v: `${s.date} (${wd}요일)`},
                 {l:'시간',               v: `${s.startTime} — ${s.endTime}`},
                 {l:'수업',               v: s.classType},
-                ...(!isExt && s.sessionAtBooking != null ? [{
+                ...(!isExt && !isConsult && s.sessionAtBooking != null ? [{
                   l:'회차',
                   v: (() => {
                     const n = s.sessionAtBooking;
@@ -313,7 +290,7 @@ function ScheduleDetailModal({ schedule:initS, onClose, onUpdate, onDelete }) {
                 </div>
               ))}
 
-              {/* 처리: 예약 시 차감 완료. 출석=유지, 취소/노쇼=잔여 복원 */}
+              {/* 처리: 예약 시 차감 완료. 출석/노쇼=차감 유지, 취소=잔여 복원 */}
               {!s.statusFinalized ? (
                 <div>
                   <p className="text-xs text-slate-500 uppercase tracking-widest font-semibold mb-2">
@@ -328,11 +305,12 @@ function ScheduleDetailModal({ schedule:initS, onClose, onUpdate, onDelete }) {
                       </button>
                     ))}
                   </div>
+                  <p className="text-[10px] text-slate-600 mt-2">* 노쇼는 횟수 차감 유지(정산 수업 포함) · 취소만 잔여 복원</p>
                 </div>
               ) : (
                 <div className={`text-center py-3 rounded-xl text-xs font-bold ${st.bg}`}>
                   ✓ {st.label} 처리 완료
-                  {!isExt && (s.status==='canceled'||s.status==='noshow' ? ' · 세션 복원됨' : ' · 세션 차감됨')}
+                  {!isExt && (s.status==='canceled' ? ' · 세션 복원됨' : ' · 세션 차감됨')}
                 </div>
               )}
 
@@ -399,7 +377,7 @@ function ScheduleDetailModal({ schedule:initS, onClose, onUpdate, onDelete }) {
                   ))}
                 </select>
               </div>
-              {!isExt && (
+              {!isExt && !isConsult && (
                 <div>
                   <label className={LBL}>
                     회차 (시작 시 잔여)
@@ -929,7 +907,9 @@ export default function Schedule() {
   const load = () => {
     const mb = store.getMembers();
     // ★ 기존 스케줄 회차 자동 보정 (멱등 — 비어 있는 것만 채움)
-    backfillSessionNumbers(mb);
+    backfillSessionNumbers(mb)
+      .then(() => setSchedules(store.getSchedules()))
+      .catch(e => console.error('[회차 보정 오류]', e));
     setSchedules(store.getSchedules());
     setMembers(mb);
     setTrainers(store.getTrainers());
@@ -1036,17 +1016,12 @@ export default function Schedule() {
         <AddModal
           members={members}
           trainers={trainers}
-          onAdd={d=>{
-            const ns = store.addSchedule(d);
-            // 요구사항: 예약 시점에 잔여 세션 자동 차감 (일반 수업만, 외부 일정 제외)
-            if (!ns.isExternal && ns.memberId) {
-              // ★ 차감 직전 잔여값 = 이 수업의 회차 번호. 총횟수와 함께 기록.
-              const mb = store.getMembers().find(m=>m.id===ns.memberId);
-              const tsObj = mb?.trainerSessions?.[ns.trainerId];
-              const atBooking = tsObj?.remaining ?? null;
-              const totalAtBooking = tsObj?.total ?? null;
-              deductSession(ns.memberId, ns.trainerId, 'scheduled');
-              store.updateSchedule(ns.id, { sessionDeducted: true, sessionAtBooking: atBooking, sessionTotalAtBooking: totalAtBooking });
+          onAdd={async d=>{
+            try {
+              await store.createScheduleWithDeduction(d);  // 예약+세션차감 원자적 처리
+            } catch(e) {
+              console.error('[예약 추가 실패]', e);
+              alert('예약 저장에 실패했습니다. 네트워크 확인 후 다시 시도하세요.');
             }
             setShowAdd(false); load();
           }}

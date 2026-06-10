@@ -5,6 +5,7 @@
 import { useState, useEffect } from 'react';
 import { store } from '../demoData';
 import { useAuth } from '../contexts/AuthContext';
+import { downloadCSV } from '../services/finance';
 
 const TRAINER_CLASS_TYPES = ['6대체력','다이어트','선수','재활','노인','외부','임산부','장애인','기저질환','컨디셔닝'];
 
@@ -146,31 +147,55 @@ export default function Trainers() {
 
   const closeForm = () => { setShowForm(false); setEditTarget(null); };
 
-  const saveTrainer = () => {
+  const saveTrainer = async () => {
     if (!form.name.trim() || !form.phone.trim()) { alert('이름과 연락처는 필수입니다.'); return; }
     // 로그인 계정을 적었다면 이메일+비번 둘 다 있어야 하고, 이메일이 겹치면 안 됨
     const email = (form.loginEmail||'').trim().toLowerCase();
     if (email || form.loginPassword) {
       if (!email || !form.loginPassword) { alert('로그인 계정을 만들려면 이메일과 비밀번호를 모두 입력하세요.'); return; }
-      const dupDemo = ['admin@fitcms.demo','trainer@fitcms.demo'].includes(email);
       const dupTrainer = trainers.some(t => t.id!==editTarget?.id && (t.loginEmail||'').trim().toLowerCase()===email);
-      if (dupDemo || dupTrainer) { alert('이미 사용 중인 이메일입니다. 다른 이메일을 입력하세요.'); return; }
+      if (dupTrainer) { alert('이미 사용 중인 이메일입니다. 다른 이메일을 입력하세요.'); return; }
     }
-    if (editTarget) store.updateTrainer(editTarget.id, form);
-    else store.addTrainer(form);
-    load(); closeForm();
+    try {
+      if (editTarget) await store.updateTrainer(editTarget.id, form);
+      else await store.addTrainer(form);
+      load(); closeForm();
+    } catch (e) { alert('저장에 실패했습니다. 네트워크 확인 후 다시 시도하세요.'); }
   };
 
-  const deleteTrainer = id => {
+  const deleteTrainer = async id => {
     if (!window.confirm('트레이너를 삭제하시겠습니까?')) return;
-    store.deleteTrainer(id); load();
+    try { await store.deleteTrainer(id); load(); }
+    catch (e) { alert('삭제에 실패했습니다. 네트워크 확인 후 다시 시도하세요.'); }
+  };
+
+  const exportTrainers = () => {
+    const members = store.getMembers();
+    const header = ['이름','연락처','생년월일','입사일','구분','담당수업','담당회원수','로그인계정','메모'];
+    const body = trainers.map(t=>{
+      const memberCount = members.filter(m=>Object.keys(m.trainerSessions||{}).includes(t.id)).length;
+      return [
+        t.name, t.phone||'', t.birthDate||'', t.hireDate||'',
+        STATUSES[t.status]||t.status, (t.classTypes||[]).join('/'),
+        memberCount, t.loginEmail||'', t.memo||'',
+      ];
+    });
+    downloadCSV(`트레이너목록_${new Date().toISOString().slice(0,10)}.csv`, [header, ...body]);
   };
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-black tracking-tight">트레이너 관리</h1>
-        <button onClick={openAdd} className="btn btn-primary btn-sm">+ 트레이너 등록</button>
+        <div className="flex gap-2">
+          {isAdmin && (
+            <button onClick={exportTrainers}
+              className="text-xs font-bold px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-slate-200 hover:border-amber-500/40 hover:text-amber-400 transition-colors">
+              📄 다운로드
+            </button>
+          )}
+          <button onClick={openAdd} className="btn btn-primary btn-sm">+ 트레이너 등록</button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">

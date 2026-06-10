@@ -8,6 +8,7 @@
 //  - onResult(landmarks, ts) 콜백으로 매 프레임 결과 전달. React state 우회(고주파).
 
 import { useRef, useCallback, useState } from 'react';
+import { openMainCameraStream } from './cameraSelect';
 
 const VISION_CDN =
   'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14';
@@ -34,44 +35,63 @@ export function usePoseEngine({ onResult } = {}) {
       const vision = await import(/* @vite-ignore */ `${VISION_CDN}`);
       const { FilesetResolver, PoseLandmarker } = vision;
       const fileset = await FilesetResolver.forVisionTasks(`${VISION_CDN}/wasm`);
-      landmarkerRef.current = await PoseLandmarker.createFromOptions(fileset, {
-        baseOptions: { modelAssetPath: MODEL_URL, delegate: 'GPU' },
+      const buildOpts = (delegate) => ({
+        baseOptions: { modelAssetPath: MODEL_URL, delegate },
         runningMode: 'VIDEO',
         numPoses: 1,
-        // MediaPipe 내장 스무딩 비활성화(외부 필터링/정확 각도 위해)
         minPoseDetectionConfidence: 0.5,
         minPosePresenceConfidence: 0.5,
         minTrackingConfidence: 0.5,
       });
-
-      // 2) 카메라 시작 (후면 우선, 해상도 fallback)
-      const constraintsList = [
-        { video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } } },
-        { video: { facingMode: 'environment', width: { ideal: 854 }, height: { ideal: 480 } } },
-        { video: { facingMode: 'user' } },
-        { video: true },
-      ];
-      let stream = null;
-      for (const c of constraintsList) {
-        try { stream = await navigator.mediaDevices.getUserMedia(c); break; }
-        catch (e) { /* 다음 제약으로 폴백 */ }
+      // GPU 우선, 실패 시 CPU 폴백(일부 기기/브라우저에서 GPU delegate 미지원)
+      try {
+        landmarkerRef.current = await PoseLandmarker.createFromOptions(fileset, buildOpts('GPU'));
+      } catch (gpuErr) {
+        landmarkerRef.current = await PoseLandmarker.createFromOptions(fileset, buildOpts('CPU'));
       }
-      if (!stream) throw new Error('카메라를 사용할 수 없습니다. 권한을 확인해 주세요.');
+
+      // 2) 카메라 시작 — 후면 "메인(광각)" 렌즈를 명시 선택해 초광각 왜곡 방지.
+      const stream = await openMainCameraStream({ audio: false });
 
       streamRef.current = stream;
-      const video = videoEl || videoRef.current;
-      if (!video) { stream.getTracks().forEach(t => t.stop()); return; }
+      // video 요소를 다시 취득(풀스크린 오버레이가 status 변경 후 렌더되는 경우 대비).
+      // 호출 시점에 null이었어도, loading 상태로 바뀌며 요소가 렌더되므로 충분히 기다린다.
+      // (1RM처럼 status!=='idle'일 때만 video가 렌더되는 화면에서 검은화면 방지)
+      let video = videoEl || videoRef.current;
+      for (let i = 0; i < 80 && !video; i++) {
+        await new Promise(r => setTimeout(r, 25)); // 최대 약 2초 대기
+        video = videoRef.current;
+      }
+      if (!video) {
+        // video 요소를 끝내 못 잡으면 조용히 idle로 빠지지 말고 오류로 알린다.
+        stream.getTracks().forEach(t => t.stop());
+        streamRef.current = null;
+        throw new Error('영상 화면을 준비하지 못했습니다. 화면을 닫고 다시 시도해 주세요.');
+      }
       video.srcObject = stream;
-      await video.play();
+      // 메타데이터(해상도)가 준비될 때까지 기다린 뒤 재생 — 캔버스 정렬·검은화면 방지
+      if (!video.videoWidth) {
+        await new Promise((res) => {
+          let done = false;
+          const finish = () => { if (!done) { done = true; res(); } };
+          video.addEventListener('loadedmetadata', finish, { once: true });
+          setTimeout(finish, 1500); // 안전장치
+        });
+      }
+      try { await video.play(); } catch (e) { /* 자동재생 정책: 무음·playsInline이라 보통 통과 */ }
 
       setStatus('ready');
       runningRef.current = true;
       setStatus('running');
 
       // 3) 프레임 루프 (requestVideoFrameCallback 우선, 없으면 rAF)
+      let lastTs = 0;
       const loop = () => {
         if (!runningRef.current || !landmarkerRef.current || !video) return;
-        const ts = performance.now();
+        let ts = performance.now();
+        // MediaPipe는 동일/역행 timestamp에서 에러 → 단조증가 보장
+        if (ts <= lastTs) ts = lastTs + 1;
+        lastTs = ts;
         try {
           const res = landmarkerRef.current.detectForVideo(video, ts);
           const lms = res?.landmarks?.[0] || null;

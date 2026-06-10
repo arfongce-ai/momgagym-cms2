@@ -9,10 +9,9 @@ export const MEASURE_MENUS = [
     id: 'posture',
     no: 1,
     title: '자세 · 체형 측정',
-    desc: '앞/옆/뒤 · 어깨·골반·중심선 기울기',
+    desc: '재설계 예정',
     icon: '🧍',
-    status: 'ready',
-    component: lazy(() => import('./menus/PostureMeasure.jsx')),
+    status: 'planned',
   },
   {
     id: 'onerm',
@@ -72,7 +71,7 @@ export const MEASURE_MENUS = [
   { id: 'record',  no: 0,  title: '일반 영상 녹화',   desc: '카메라 녹화 · 저장',           icon: '🎥', status: 'ready', component: lazy(() => import('./menus/RecordMeasure.jsx')) },
   { id: 'rom',     no: 2,  title: 'ROM 좌우 비교',    desc: '관절가동범위 · 좌우 대칭',     icon: '🔄', status: 'planned' },
   { id: 'throw',   no: 6,  title: '슬램 & 던지기',    desc: '가속도·파워·시속',             icon: '💥', status: 'planned' },
-  { id: 'lifting', no: 8,  title: '역도',             desc: '스내치·저크 · 바벨 추적',      icon: '🏋️', status: 'planned' },
+  { id: 'lifting', no: 8,  title: '역도',             desc: '스내치·저크 · 바벨 추적',      icon: '🏋️', status: 'ready', component: lazy(() => import('./menus/LiftingMeasure.jsx')) },
   { id: 'swing',   no: 9,  title: '스윙',             desc: '골프·배트 · ROM·속도',         icon: '🏌️', status: 'planned' },
   { id: 'gait',    no: 10, title: '보행 & 러닝',      desc: '옆면·뒷면 · 각도·흔들림',      icon: '🏃', status: 'planned' },
 ];

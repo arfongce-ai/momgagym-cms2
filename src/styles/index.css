@@ -56,6 +56,32 @@
   .measure-head { @apply flex items-center justify-between mb-1; }
   .measure-title { @apply text-lg font-black text-slate-100; }
   .measure-back { @apply text-slate-400 text-sm hover:text-white transition-colors; }
+
+  /* 측정 카메라 — 컨트롤·무게입력이 한 화면에 함께 보이도록 적당한 높이로 제한.
+     세로로 너무 길면 색인식·측정 버튼이 화면 밖으로 밀려 스크롤이 필요해진다.
+     aspect-ratio로 화면 너비에 비례하되, 최대 높이를 화면의 절반 정도로 묶는다. */
+  .measure-camera {
+    @apply relative w-full overflow-hidden bg-black;
+    aspect-ratio: 3 / 4;
+    max-height: 52dvh;
+    border-radius: 1rem;
+  }
+
+  /* 풀스크린 카메라 스테이지 — 화면 전체를 덮고 모든 컨트롤을 영상 위에 오버레이.
+     스크롤 없이 한 화면에서 측정→확인이 끝난다. */
+  .cam-stage {
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    background: #000;
+    overflow: hidden;
+  }
+}
+
+/* 측정 카메라가 떠 있는 동안 페이지 스크롤/여백 제거(꽉 차게) */
+.measure-fullscreen-page {
+  padding-left: 0;
+  padding-right: 0;
 }
 
 .page-fade { animation:fadeIn 0.2s ease; }

@@ -135,7 +135,7 @@ export async function createAiSession(memberId, measurements, memo = '') {
     };
 
     // 저장 (실패 시 예외 전파)
-    const saved = aiStore.addSession(memberId, session);
+    const saved = await aiStore.addSession(memberId, session);
     if (!saved) throw new Error('저장에 실패했습니다.');
 
     return { success: true, session: saved };
@@ -157,9 +157,9 @@ export function getAiSessions(memberId) {
 }
 
 // ── 삭제 ─────────────────────────────────────────────────
-export function deleteAiSession(memberId, sessionId) {
+export async function deleteAiSession(memberId, sessionId) {
   try {
-    aiStore.deleteSession(memberId, sessionId);
+    await aiStore.deleteSession(memberId, sessionId);
     return { success: true };
   } catch (err) {
     console.error('[deleteAiSession]', err);
