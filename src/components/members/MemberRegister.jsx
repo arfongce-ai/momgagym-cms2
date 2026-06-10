@@ -155,7 +155,7 @@ export default function MemberRegister({ trainers=[], onSuccess, onCancel }) {
   const today = new Date().toISOString().slice(0,10);
 
   const [form, setForm] = useState({
-    name:'', gender:'', phone:'', phone2:'', birthDate:'', address:'',
+    name:'', gender:'', phone:'', phone2:'', birthDate:'', address:'', job:'',
     joinDate:today, lastPaymentDate:today,
     memo:'',
     // 2개 담당 트레이너 슬롯
@@ -210,7 +210,7 @@ export default function MemberRegister({ trainers=[], onSuccess, onCancel }) {
 
       await store.addMember({
         name:form.name, gender:form.gender, phone:form.phone, phone2:form.phone2,
-        birthDate:form.birthDate, address:form.address,
+        birthDate:form.birthDate, address:form.address, job:form.job,
         joinDate:form.joinDate, lastPaymentDate:form.lastPaymentDate,
         lastAttendedDate:null, memo:form.memo,
         classTypes, trainerSessions,
@@ -247,35 +247,36 @@ export default function MemberRegister({ trainers=[], onSuccess, onCancel }) {
           {step==='form'&&(
             <form onSubmit={handleNext} className="p-5 space-y-4">
 
-              {/* 이름 + 성별(옆) / 연락처 */}
-              <div className="grid grid-cols-2 gap-3">
-                {/* 이름 + 성별을 한 줄에 */}
-                <div>
-                  <label className={LBL}>이름 *</label>
-                  <div className="flex gap-2">
-                    <input required value={form.name} onChange={pf('name')} placeholder="홍길동" className={INP + " flex-1"}/>
-                    {/* 성별 토글 — 이름 입력칸 바로 옆 */}
-                    <div className="flex gap-1 flex-shrink-0">
-                      {[['male','남'],['female','여']].map(([val,lbl])=>(
-                        <button type="button" key={val}
-                          onClick={()=>setForm(f=>({...f, gender: f.gender===val ? '' : val}))}
-                          className={`w-11 rounded-xl text-sm font-bold border transition-colors
-                            ${form.gender===val
-                              ? 'bg-amber-500/20 border-amber-500/40 text-amber-300'
-                              : 'border-slate-700 text-slate-400 hover:border-slate-500'}`}>
-                          {lbl}
-                        </button>
-                      ))}
-                    </div>
+              {/* 1줄: 이름 + 성별 (이름칸 넓게) */}
+              <div>
+                <label className={LBL}>이름 *</label>
+                <div className="flex gap-2">
+                  <input required value={form.name} onChange={pf('name')} placeholder="홍길동" className={INP + " flex-1"}/>
+                  <div className="flex gap-1.5 flex-shrink-0">
+                    {[['male','남'],['female','여']].map(([val,lbl])=>(
+                      <button type="button" key={val}
+                        onClick={()=>setForm(f=>({...f, gender: f.gender===val ? '' : val}))}
+                        className={`w-14 rounded-xl text-sm font-bold border transition-colors
+                          ${form.gender===val
+                            ? 'bg-amber-500/20 border-amber-500/40 text-amber-300'
+                            : 'border-slate-700 text-slate-400 hover:border-slate-500'}`}>
+                        {lbl}
+                      </button>
+                    ))}
                   </div>
                 </div>
-                <div><label className={LBL}>연락처 *</label><input required value={form.phone} onChange={pf('phone')} placeholder="010-0000-0000" inputMode="tel" className={INP}/></div>
               </div>
 
-              {/* 생년월일 + 연락처2 (같은 줄) */}
+              {/* 2줄: 연락처1 + 연락처2 */}
+              <div className="grid grid-cols-2 gap-3">
+                <div><label className={LBL}>연락처 *</label><input required value={form.phone} onChange={pf('phone')} placeholder="010-0000-0000" inputMode="tel" className={INP}/></div>
+                <div><label className={LBL}>연락처 2 (보호자·비상)</label><input value={form.phone2} onChange={pf('phone2')} placeholder="010-0000-0000 (선택)" inputMode="tel" className={INP}/></div>
+              </div>
+
+              {/* 3줄: 생년월일 + 직업(선택) */}
               <div className="grid grid-cols-2 gap-3">
                 <div><label className={LBL}>생년월일</label><input type="date" value={form.birthDate} onChange={pf('birthDate')} className={INP}/></div>
-                <div><label className={LBL}>연락처 2 (보호자·비상)</label><input value={form.phone2} onChange={pf('phone2')} placeholder="010-0000-0000 (선택)" inputMode="tel" className={INP}/></div>
+                <div><label className={LBL}>직업 (선택)</label><input value={form.job} onChange={pf('job')} placeholder="직업 (선택)" className={INP}/></div>
               </div>
 
               {/* 주소 (선택) */}
