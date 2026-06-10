@@ -10,7 +10,7 @@ import { store } from '../demoData';
 import { useAuth } from '../contexts/AuthContext';
 import {
   METHOD_LBL, METHOD_CLR, won, monthKey, yearKey,
-  calcNet, splitRate, autoRate, attributePayment, CARD_METHODS, downloadCSV, computeSettlement, computeSessionSettlement,
+  calcNet, CARD_METHODS, downloadCSV, computeSessionSettlement,
 } from '../services/finance';
 
 const thisMonth = new Date().toISOString().slice(0,7);
@@ -111,19 +111,23 @@ function OverviewTab({ settings, trainers, trainerMap }) {
   const monthlyExpense = selMonth==='all'
     ? expenses.filter(e=>e.kind==='monthly').reduce((s,e)=>s+(e.amount||0),0)
     : expenses.filter(e=>e.kind==='monthly' && e.ym===selMonth).reduce((s,e)=>s+(e.amount||0),0);
-  // 전체 기간이면 고정비는 월 수만큼 곱하지 않고 1회분만 참고 표기
-  const totalExpense = (selMonth==='all' ? 0 : fixedTotal) + monthlyExpense;
+  // 고정비: 특정 월=1회분 / 전체기간=결제가 있는 달 수만큼 합산(정산 합산과 대칭)
+  const fixedApplied = selMonth==='all' ? fixedTotal * months.length : fixedTotal;
+  const totalExpense = fixedApplied + monthlyExpense;
 
-  // 트레이너 정산 지급액 (선택 월 기준) — 회당단가×횟수 방식과 일치
+  // 트레이너 정산 지급액 — 회당단가×횟수 방식과 일치
+  //  · 특정 월: 그 달만 계산
+  //  · 전체 기간: 결제가 있는 모든 달을 각각 계산해 합산(정산은 월 단위라 단순 합이 불가)
   const settlePayout = useMemo(()=>{
-    if (selMonth==='all') return 0;
     const grouped = {}; store.getMembers().forEach(m=>{ grouped[m.id]=store.getPayments(m.id); });
-    return computeSessionSettlement({
+    const calcMonth = (ym) => computeSessionSettlement({
       trainers, members: store.getMembers(), schedules: store.getSchedules(),
-      payments: grouped, records: store.getPromos(), settings, ym: selMonth,
+      payments: grouped, records: store.getPromos(), settings, ym,
       getOverride: (tid,m)=>store.getSettleOverride(tid,m),
     }).reduce((s,b)=>s+b.payout, 0);
-  }, [allPayments, trainers, settings, selMonth]);
+    if (selMonth==='all') return months.reduce((s,ym)=>s+calcMonth(ym), 0);
+    return calcMonth(selMonth);
+  }, [allPayments, trainers, settings, selMonth, months]);
 
   const netProfit = totals.net - settlePayout - totalExpense;
 

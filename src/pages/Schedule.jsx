@@ -143,18 +143,6 @@ function DateWd({ label, value, onChange }) {
 }
 
 // ── 세션 복원 (예약 취소/삭제 시 +1) ──────────────────────
-async function restoreSession(memberId, trainerId) {
-  if (!memberId) return;
-  const member = store.getMembers().find(m=>m.id===memberId);
-  if (!member) return;
-  const ts = JSON.parse(JSON.stringify(member.trainerSessions||{}));
-  if (ts[trainerId]) {
-    const cap = ts[trainerId].total ?? Infinity;
-    ts[trainerId].remaining = Math.min(cap, ts[trainerId].remaining + 1);
-    await store.updateMember(memberId, { trainerSessions: ts });
-  }
-}
-
 // 주/일 뷰 공통 일정 행 (동일 높이·스타일)
 function CompactRow({ s, members, onClick }) {
   const isExt = s.isExternal || !s.memberId;
@@ -319,10 +307,10 @@ function ScheduleDetailModal({ schedule:initS, onClose, onUpdate, onDelete }) {
                   className="btn btn-ghost flex-1">
                   ✏️ 수정
                 </button>
-                <button onClick={()=>{if(window.confirm('예약을 삭제하시겠습니까?')){
-                  // 예약 시 차감했고 아직 확정(출석/취소) 전이면 잔여 복원
-                  if(!isExt && s.sessionDeducted && !s.statusFinalized) restoreSession(s.memberId, s.trainerId);
-                  store.deleteSchedule(s.id);onDelete();
+                <button onClick={async()=>{if(window.confirm('예약을 삭제하시겠습니까?')){
+                  // 삭제+세션복원을 한 batch로 원자 처리(둘 다 성공 또는 둘 다 실패)
+                  try { await store.deleteScheduleWithRestore(s.id); onDelete(); }
+                  catch(e){ console.error('[삭제 실패]',e); alert('삭제에 실패했습니다. 네트워크 확인 후 다시 시도하세요.'); }
                 }}}
                   className="flex-1 py-2.5 rounded-xl border border-red-500/30 text-red-400 hover:bg-red-500/10 text-sm font-semibold transition-colors">
                   🗑 삭제

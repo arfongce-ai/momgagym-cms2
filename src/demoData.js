@@ -402,6 +402,34 @@ export const store = {
     return updatedSched;
   },
 
+  // 스케줄 삭제 + (필요 시 세션 복원)을 한 batch로 — 삭제만 성공/복원만 성공하는 불일치 방지
+  //  · 예약 시 차감(sessionDeducted)했고 아직 출석/취소 확정 전(!statusFinalized)일 때만 복원
+  deleteScheduleWithRestore: async (scheduleId) => {
+    const sched = cache.schedules.find(s=>s.id===scheduleId);
+    if (!sched) throw new Error('스케줄을 찾을 수 없습니다.');
+    const batch = writeBatch(db);
+    batch.delete(doc(db,'schedules',scheduleId));
+
+    let updatedMember = null;
+    const needRestore = !sched.isExternal && sched.memberId && sched.sessionDeducted && !sched.statusFinalized;
+    if (needRestore) {
+      const member = cache.members.find(m=>m.id===sched.memberId);
+      if (member) {
+        const ts = JSON.parse(JSON.stringify(member.trainerSessions||{}));
+        if (ts[sched.trainerId]) {
+          const cap = ts[sched.trainerId].total ?? Infinity;
+          ts[sched.trainerId].remaining = Math.min(cap, ts[sched.trainerId].remaining + 1);
+        }
+        updatedMember = { ...member, trainerSessions: ts };
+        batch.set(doc(db,'members',sched.memberId), updatedMember);
+      }
+    }
+    await batch.commit();
+
+    cache.schedules = cache.schedules.filter(s=>s.id!==scheduleId);
+    if (updatedMember) cache.members=cache.members.map(m=>m.id===updatedMember.id?updatedMember:m);
+  },
+
   // ── 매출/정산 설정 ───────────────────────────────────────
   getSettings: () => ({ ...INITIAL_SETTINGS, ...cache.settings }),
   updateSettings: async (patch) => {

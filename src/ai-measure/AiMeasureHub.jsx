@@ -96,8 +96,8 @@ export default function AiMeasureHub() {
       </div>
 
       <p className="text-[11px] text-slate-500 leading-relaxed">
-        측정 항목은 단계적으로 추가됩니다. 현재 <strong className="text-slate-300">자세·체형 측정</strong>이
-        이용 가능하며, 작동 검증 후 다음 항목을 순차 적용합니다.
+        측정 항목은 단계적으로 추가됩니다. <strong className="text-slate-300">이용 가능</strong> 표시된 항목만
+        구동되며, <strong className="text-slate-300">준비 중</strong> 항목은 작동 검증 후 순차 적용됩니다.
       </p>
     </div>
   );
