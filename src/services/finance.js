@@ -12,20 +12,26 @@ export const METHOD_CLR = {
   cash_receipt:'text-teal-400', card1:'text-blue-400', card2:'text-sky-400',
   card:'text-blue-400',
 };
-// 카드성 결제수단(카드 수수료 부과 대상)
-export const CARD_METHODS = ['card', 'card1', 'card2', 'pay'];
+// 결제수단별 공제 규칙
+//  · 카드1·카드2(·구버전 카드): 부가세 + 카드수수료 공제
+//  · 페이·현금영수증: 부가세만 공제
+//  · 계좌·현금: 공제 없음
+export const CARD_METHODS = ['card', 'card1', 'card2'];          // 부가세+카드수수료
+export const VAT_ONLY_METHODS = ['pay', 'cash_receipt'];          // 부가세만
+export const NO_DEDUCT_METHODS = ['transfer', 'cash'];            // 공제 없음
 
 export const won = (n) => Math.round(n||0).toLocaleString('ko-KR') + '원';
 export const monthKey = (d) => new Date(d).toISOString().slice(0,7);
 export const yearKey  = (d) => new Date(d).toISOString().slice(0,4);
 
-// 입금금액 = 결제금액 − 카드수수료 − 부가세
-// 카드성 결제만 카드수수료 부과. 부가세는 전체 부과.
+// 입금금액 = 결제금액 − (수단별 공제)
 export function calcNet(payment, settings) {
   const amount = payment.amount || 0;
-  const isCard = CARD_METHODS.includes(payment.method);
+  const m = payment.method;
+  const isCard = CARD_METHODS.includes(m);
+  const isVatOnly = VAT_ONLY_METHODS.includes(m);
   const cardFee = isCard ? amount * (settings.cardFeeRate/100) : 0;
-  const vat     = amount * (settings.vatRate/100);
+  const vat     = (isCard || isVatOnly) ? amount * (settings.vatRate/100) : 0;
   const net     = amount - cardFee - vat;
   return { amount, cardFee, vat, net };
 }
@@ -125,9 +131,10 @@ export function computeSessionSettlement({ trainers, members, schedules, payment
   const memberMap = Object.fromEntries(members.map(m=>[m.id, m]));
 
   // 회원×트레이너별 귀속 결제액 (단가 트레이너별 분리 계산용)
+  //  · 결제수단별 공제(부가세/카드수수료) 적용한 입금금액 기준
   //  · 결제에 담당 트레이너(trainerIds)가 있으면 그 트레이너들에게 1/n 귀속
   //  · trainerIds가 없는 구버전 결제는 회원의 트레이너별 등록횟수 비율로 안분
-  const memberTrainerPay = {}; // mid -> { tid: paidAmount }
+  const memberTrainerPay = {}; // mid -> { tid: netAmount }
   members.forEach(m => {
     const ts = m.trainerSessions || {};
     const tids = Object.keys(ts);
@@ -135,7 +142,7 @@ export function computeSessionSettlement({ trainers, members, schedules, payment
     const acc = {};
     tids.forEach(tid => acc[tid] = 0);
     (payments[m.id]||[]).filter(p=>!p.isUnpaid && !p.isRefunded).forEach(p=>{
-      const amt = p.amount || 0;
+      const amt = calcNet(p, settings).net; // 카드1·2: 부가세+카드세 / 페이·현금영수증: 부가세 / 계좌·현금: 공제 없음
       const pTids = (p.trainerIds && p.trainerIds.length) ? p.trainerIds : null;
       if (pTids) {
         const per = amt / pTids.length;

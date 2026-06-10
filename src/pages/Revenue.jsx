@@ -441,7 +441,7 @@ function SettleTab({ settings, trainers, trainerMap }) {
       </div>
 
       <p className="text-[11px] text-slate-500 bg-slate-900 border border-slate-800 rounded-xl px-3 py-2">
-        단가·월 수업횟수는 결제·출석 데이터에서 자동 집계됩니다. (단가 = 결제총액 ÷ 등록횟수) · 출석과 노쇼는 수업 횟수에 포함, 취소·외부·상담은 제외됩니다. 셀을 눌러 직접 수정할 수 있어요.
+        단가·월 수업횟수는 결제·출석 데이터에서 자동 집계됩니다. 단가 = 공제 후 입금금액 ÷ 등록횟수 (카드1·2: 부가세+카드수수료 / 페이·현금영수증: 부가세 / 계좌·현금: 공제 없음) · 출석과 노쇼는 수업 횟수에 포함, 취소·외부·상담은 제외. 셀을 눌러 직접 수정할 수 있어요.
       </p>
 
       <RecordManager trainers={trainers} period={ym} mode="month"/>
@@ -792,7 +792,7 @@ function ConfigTab({ settings, trainers }) {
           <NumField label="카드 수수료" k="cardFeeRate" suffix="%" form={form} setForm={setForm}/>
           <NumField label="부가세" k="vatRate" suffix="%" form={form} setForm={setForm}/>
         </div>
-        <p className="text-[11px] text-slate-600">입금금액 = 결제금액 − 카드수수료 − 부가세 (카드성 결제: 페이·카드1·카드2)</p>
+        <p className="text-[11px] text-slate-600">공제 규칙 — 카드1·카드2: 부가세+카드수수료 / 페이·현금영수증: 부가세만 / 계좌·현금: 공제 없음</p>
       </div>
 
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-4">

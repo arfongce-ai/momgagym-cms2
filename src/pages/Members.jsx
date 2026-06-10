@@ -78,14 +78,14 @@ export default function Members() {
 
   const trainerMap = Object.fromEntries(trainers.map(t=>[t.id,t.name]));
   const exportMembers = () => {
-    const header = ['이름','연락처','생년월일','가입일','최근결제일','담당트레이너/잔여세션','총결제액','수업종류','메모','상태'];
+    const header = ['이름','연락처','연락처2','생년월일','가입일','최근결제일','담당트레이너/잔여세션','총결제액','수업종류','메모','상태'];
     const body = filtered.map(m=>{
       const sessions = Object.entries(m.trainerSessions||{})
         .map(([tid,s])=>`${trainerMap[tid]||'?'} ${s.remaining}/${s.total}`).join(' | ');
       const totalPaid = (store.getPayments(m.id)||[])
         .filter(p=>!p.isUnpaid && !p.isRefunded).reduce((s,p)=>s+(p.amount||0),0);
       return [
-        m.name, m.phone||'', m.birthDate||'', m.joinDate||'', m.lastPaymentDate||'',
+        m.name, m.phone||'', m.phone2||'', m.birthDate||'', m.joinDate||'', m.lastPaymentDate||'',
         sessions, totalPaid, (m.classTypes||[]).join('/'), m.memo||'',
         isExpired(m)?'결제만료':'정상',
       ];

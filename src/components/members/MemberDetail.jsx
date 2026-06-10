@@ -59,7 +59,7 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
   const saveEdit = async () => {
     try {
       await store.updateMember(member.id, {
-        name:editForm.name, phone:editForm.phone,
+        name:editForm.name, phone:editForm.phone, phone2:editForm.phone2||'',
         birthDate:editForm.birthDate||'', joinDate:editForm.joinDate||'',
         lastPaymentDate:editForm.lastPaymentDate||'',
         classTypes:editForm.classTypes||[], memo:editForm.memo||'',
@@ -227,6 +227,7 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
                 {[
                   {l:'이름',       v:member.name},
                   {l:'연락처',     v:member.phone},
+                  {l:'연락처 2',   v:member.phone2||'미등록'},
                   {l:'생년월일',   v:member.birthDate||'미등록'},
                   {l:'가입일',     v:member.joinDate||'미등록'},
                   {l:'최근결제일', v:member.lastPaymentDate||'미등록'},
@@ -262,6 +263,7 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
                   <div><label className={LBL}>이름</label><input value={editForm.name||''} onChange={pfe('name')} className={INP}/></div>
                   <div><label className={LBL}>연락처</label><input value={editForm.phone||''} onChange={pfe('phone')} className={INP}/></div>
                 </div>
+                <div><label className={LBL}>연락처 2 (보호자·비상)</label><input value={editForm.phone2||''} onChange={pfe('phone2')} className={INP}/></div>
                 <div><label className={LBL}>생년월일</label><input type="date" value={editForm.birthDate||''} onChange={pfe('birthDate')} className={INP}/></div>
                 <div className="grid grid-cols-2 gap-3">
                   <div><label className={LBL}>가입일</label><input type="date" value={editForm.joinDate||''} onChange={pfe('joinDate')} className={INP}/></div>

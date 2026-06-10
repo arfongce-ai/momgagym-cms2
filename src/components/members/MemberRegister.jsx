@@ -131,7 +131,7 @@ export default function MemberRegister({ trainers=[], onSuccess, onCancel }) {
   const today = new Date().toISOString().slice(0,10);
 
   const [form, setForm] = useState({
-    name:'', phone:'', birthDate:'',
+    name:'', phone:'', phone2:'', birthDate:'',
     joinDate:today, lastPaymentDate:today,
     memo:'',
     // 2개 담당 트레이너 슬롯
@@ -185,7 +185,7 @@ export default function MemberRegister({ trainers=[], onSuccess, onCancel }) {
       )];
 
       await store.addMember({
-        name:form.name, phone:form.phone, birthDate:form.birthDate,
+        name:form.name, phone:form.phone, phone2:form.phone2, birthDate:form.birthDate,
         joinDate:form.joinDate, lastPaymentDate:form.lastPaymentDate,
         lastAttendedDate:null, memo:form.memo,
         classTypes, trainerSessions,
@@ -227,6 +227,7 @@ export default function MemberRegister({ trainers=[], onSuccess, onCancel }) {
                 <div><label className={LBL}>이름 *</label><input required value={form.name} onChange={pf('name')} placeholder="홍길동" className={INP}/></div>
                 <div><label className={LBL}>연락처 *</label><input required value={form.phone} onChange={pf('phone')} placeholder="010-0000-0000" inputMode="tel" className={INP}/></div>
               </div>
+              <div><label className={LBL}>연락처 2 (보호자·비상)</label><input value={form.phone2} onChange={pf('phone2')} placeholder="010-0000-0000 (선택)" inputMode="tel" className={INP}/></div>
 
               {/* 날짜들 */}
               <div><label className={LBL}>생년월일</label><input type="date" value={form.birthDate} onChange={pf('birthDate')} className={INP}/></div>
