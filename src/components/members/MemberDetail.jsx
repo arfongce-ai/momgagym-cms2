@@ -9,12 +9,10 @@ import { useAuth } from '../../contexts/AuthContext';
 import { ClassTypeCheckbox } from './MemberRegister';
 import AiMeasureReport     from '../ai/AiMeasureReport';
 import MemberMeasureHistory from '../ai/MemberMeasureHistory';
+import { METHOD_LBL, METHOD_CLR } from '../../services/finance';
 
 const INP = "w-full bg-slate-800 border border-slate-700 text-slate-100 rounded-xl px-3 py-2.5 text-sm placeholder-slate-500 focus:outline-none focus:border-amber-500";
 const LBL = "block text-xs font-semibold text-slate-400 uppercase tracking-widest mb-1.5";
-
-const METHOD_LBL = { card:'카드', cash:'현금', transfer:'계좌이체' };
-const METHOD_CLR = { card:'text-blue-400', cash:'text-emerald-400', transfer:'text-amber-400' };
 
 export default function MemberDetail({ member:initMember, trainers, onClose, onUpdate }) {
   const { user } = useAuth();
@@ -33,7 +31,7 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
   // 수납
   const [payments,     setPayments]    = useState([]);
   const [showAddPay,   setShowAddPay]  = useState(false);
-  const [payForm,      setPayForm]     = useState({ paidAt: new Date().toISOString().slice(0,10), amount:'', method:'card', isUnpaid:false, note:'' });
+  const [payForm,      setPayForm]     = useState({ paidAt: new Date().toISOString().slice(0,10), amount:'', method:'pay', isUnpaid:false, note:'', trainerIds:[], isReEnroll:false, isNew:false, category:'normal' });
 
   // 신체정보
   const [bodyRecords,  setBodyRecords] = useState([]);
@@ -98,7 +96,7 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
       // 결제일 자동 업데이트
       await store.updateMember(member.id, { lastPaymentDate:payForm.paidAt });
       refresh(); setShowAddPay(false);
-      setPayForm({ paidAt:new Date().toISOString().slice(0,10), amount:'', method:'card', isUnpaid:false, note:'' });
+      setPayForm({ paidAt:new Date().toISOString().slice(0,10), amount:'', method:'pay', isUnpaid:false, note:'', trainerIds:[], isReEnroll:false, isNew:false, category:'normal' });
       onUpdate?.();
     } catch (e) { alert('수납 등록에 실패했습니다. 네트워크 확인 후 다시 시도하세요.'); }
   };
@@ -351,8 +349,17 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
                           </span>
                           <span className={`text-xs font-bold ${METHOD_CLR[p.method]}`}>{METHOD_LBL[p.method]}</span>
                           {p.isUnpaid&&<span className="text-[10px] bg-red-500/20 text-red-400 border border-red-500/30 px-1.5 py-0.5 rounded font-bold">미수금</span>}
+                          {p.isNew&&<span className="text-[10px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-1.5 py-0.5 rounded font-bold">신규</span>}
+                          {p.isReEnroll&&<span className="text-[10px] bg-blue-500/20 text-blue-400 border border-blue-500/30 px-1.5 py-0.5 rounded font-bold">재등록</span>}
+                          {p.category==='edu_center'&&<span className="text-[10px] bg-amber-500/20 text-amber-400 border border-amber-500/30 px-1.5 py-0.5 rounded font-bold">센터교육</span>}
+                          {p.category==='edu_external'&&<span className="text-[10px] bg-amber-500/20 text-amber-400 border border-amber-500/30 px-1.5 py-0.5 rounded font-bold">외부활동</span>}
                         </div>
                         <p className="text-slate-500 text-xs mt-0.5">{p.paidAt}</p>
+                        {p.trainerIds?.length>0 && (
+                          <p className="text-slate-400 text-xs mt-1">
+                            담당: {p.trainerIds.map(id=>trainerMap[id]?.name||'?').join(', ')}
+                          </p>
+                        )}
                         {p.note&&<p className="text-slate-400 text-xs mt-1">{p.note}</p>}
                       </div>
                       {user?.role==='admin'&&(
@@ -379,17 +386,50 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
                   </div>
                   <div>
                     <label className={LBL}>결제 수단</label>
-                    <div className="flex gap-2">
-                      {[['card','카드'],['cash','현금'],['transfer','계좌이체']].map(([v,l])=>(
+                    <div className="grid grid-cols-3 gap-2">
+                      {[['pay','페이'],['transfer','계좌'],['cash','현금'],['cash_receipt','현금영수증'],['card1','카드1'],['card2','카드2']].map(([v,l])=>(
                         <div key={v} onClick={()=>setPayForm(p=>({...p,method:v}))}
-                          className={`flex-1 py-2.5 rounded-xl text-xs font-bold border cursor-pointer text-center transition-colors select-none
+                          className={`py-2.5 rounded-xl text-xs font-bold border cursor-pointer text-center transition-colors select-none
                             ${payForm.method===v?'bg-amber-500/20 border-amber-500/40 text-amber-400':'border-slate-700 text-slate-400 hover:border-slate-500'}`}>
                           {l}
                         </div>
                       ))}
                     </div>
                   </div>
-                  <div className="flex items-center gap-3">
+                  <div>
+                    <label className={LBL}>담당 트레이너 (다중 선택 가능 · 1/n 정산)</label>
+                    <div className="flex flex-wrap gap-2">
+                      {trainers.map(t=>{
+                        const on = payForm.trainerIds.includes(t.id);
+                        return (
+                          <div key={t.id} onClick={()=>setPayForm(p=>({...p,
+                            trainerIds: on ? p.trainerIds.filter(id=>id!==t.id) : [...p.trainerIds, t.id]}))}
+                            className={`px-3 py-2 rounded-xl text-xs font-bold border cursor-pointer transition-colors select-none flex items-center gap-1.5
+                              ${on?'border-amber-500/40 bg-amber-500/10 text-amber-400':'border-slate-700 text-slate-400 hover:border-slate-500'}`}>
+                            <span className="w-2 h-2 rounded-full" style={{background:t.color||'#94a3b8'}}/>
+                            {t.name}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <div>
+                    <label className={LBL}>매출 구분</label>
+                    <div className="grid grid-cols-3 gap-2">
+                      {[['normal','일반 수업'],['edu_center','센터교육'],['edu_external','외부활동']].map(([v,l])=>(
+                        <div key={v} onClick={()=>setPayForm(p=>({...p,category:v}))}
+                          className={`py-2.5 rounded-xl text-xs font-bold border cursor-pointer text-center transition-colors select-none
+                            ${payForm.category===v?'bg-amber-500/20 border-amber-500/40 text-amber-400':'border-slate-700 text-slate-400 hover:border-slate-500'}`}>
+                          {l}
+                        </div>
+                      ))}
+                    </div>
+                    {payForm.category!=='normal' &&
+                      <p className="text-[11px] text-slate-500 mt-1.5">
+                        {payForm.category==='edu_center'?'센터 내 교육 — 트레이너 90% 지급':'외부 활동 — 트레이너 100% 지급'}
+                      </p>}
+                  </div>
+                  <div className="flex items-center gap-3 flex-wrap">
                     <div onClick={()=>setPayForm(p=>({...p,isUnpaid:!p.isUnpaid}))}
                       className={`flex items-center gap-2 px-3 py-2 rounded-xl border cursor-pointer transition-colors select-none
                         ${payForm.isUnpaid?'border-red-500/40 bg-red-500/10 text-red-400':'border-slate-700 text-slate-400 hover:border-slate-500'}`}>
@@ -397,6 +437,22 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
                         {payForm.isUnpaid&&<svg className="w-2.5 h-2.5 text-white" viewBox="0 0 10 8" fill="none"><path d="M1 4l3 3 5-6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>}
                       </span>
                       <span className="text-xs font-semibold">미수금</span>
+                    </div>
+                    <div onClick={()=>setPayForm(p=>({...p,isNew:!p.isNew, isReEnroll:false}))}
+                      className={`flex items-center gap-2 px-3 py-2 rounded-xl border cursor-pointer transition-colors select-none
+                        ${payForm.isNew?'border-emerald-500/40 bg-emerald-500/10 text-emerald-400':'border-slate-700 text-slate-400 hover:border-slate-500'}`}>
+                      <span className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 ${payForm.isNew?'bg-emerald-500 border-emerald-500':'border-slate-600 bg-slate-800'}`}>
+                        {payForm.isNew&&<svg className="w-2.5 h-2.5 text-white" viewBox="0 0 10 8" fill="none"><path d="M1 4l3 3 5-6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+                      </span>
+                      <span className="text-xs font-semibold">신규등록</span>
+                    </div>
+                    <div onClick={()=>setPayForm(p=>({...p,isReEnroll:!p.isReEnroll, isNew:false}))}
+                      className={`flex items-center gap-2 px-3 py-2 rounded-xl border cursor-pointer transition-colors select-none
+                        ${payForm.isReEnroll?'border-blue-500/40 bg-blue-500/10 text-blue-400':'border-slate-700 text-slate-400 hover:border-slate-500'}`}>
+                      <span className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 ${payForm.isReEnroll?'bg-blue-500 border-blue-500':'border-slate-600 bg-slate-800'}`}>
+                        {payForm.isReEnroll&&<svg className="w-2.5 h-2.5 text-white" viewBox="0 0 10 8" fill="none"><path d="M1 4l3 3 5-6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+                      </span>
+                      <span className="text-xs font-semibold">재등록</span>
                     </div>
                   </div>
                   <div><label className={LBL}>메모</label><input value={payForm.note} onChange={ppf('note')} placeholder="PT 10회 등록" className={INP}/></div>

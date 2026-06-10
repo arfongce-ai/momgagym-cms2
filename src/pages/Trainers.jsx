@@ -5,6 +5,7 @@
 import { useState, useEffect } from 'react';
 import { store } from '../demoData';
 import { useAuth } from '../contexts/AuthContext';
+import { downloadCSV } from '../services/finance';
 
 const TRAINER_CLASS_TYPES = ['6대체력','다이어트','선수','재활','노인','외부','임산부','장애인','기저질환','컨디셔닝'];
 
@@ -168,11 +169,33 @@ export default function Trainers() {
     catch (e) { alert('삭제에 실패했습니다. 네트워크 확인 후 다시 시도하세요.'); }
   };
 
+  const exportTrainers = () => {
+    const members = store.getMembers();
+    const header = ['이름','연락처','생년월일','입사일','구분','담당수업','담당회원수','로그인계정','메모'];
+    const body = trainers.map(t=>{
+      const memberCount = members.filter(m=>Object.keys(m.trainerSessions||{}).includes(t.id)).length;
+      return [
+        t.name, t.phone||'', t.birthDate||'', t.hireDate||'',
+        STATUSES[t.status]||t.status, (t.classTypes||[]).join('/'),
+        memberCount, t.loginEmail||'', t.memo||'',
+      ];
+    });
+    downloadCSV(`트레이너목록_${new Date().toISOString().slice(0,10)}.csv`, [header, ...body]);
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-black tracking-tight">트레이너 관리</h1>
-        <button onClick={openAdd} className="btn btn-primary btn-sm">+ 트레이너 등록</button>
+        <div className="flex gap-2">
+          {isAdmin && (
+            <button onClick={exportTrainers}
+              className="text-xs font-bold px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-slate-200 hover:border-amber-500/40 hover:text-amber-400 transition-colors">
+              📄 다운로드
+            </button>
+          )}
+          <button onClick={openAdd} className="btn btn-primary btn-sm">+ 트레이너 등록</button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">

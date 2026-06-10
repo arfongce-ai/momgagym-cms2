@@ -80,8 +80,34 @@ const INITIAL_NOTICES = [
   { id:'n2', title:'📅 휴무 안내', content:'공휴일은 센터 휴무입니다.', createdAt:new Date(Date.now()-864e5).toISOString(), isPinned:false },
 ];
 
+// 매출/정산 설정 (단일 문서). 모두 화면에서 수정 가능.
+// 계약서(프리랜서 계약서) 기준
+const INITIAL_SETTINGS = {
+  id:'config',
+  cardFeeRate: 0.4,   // 카드 수수료(%) — 2026 우대 수수료율
+  vatRate: 10,        // 부가세(%)
+  defaultSplitRate: 50, // 기본 정산 비율(%)
+  // 트레이너별 정산 비율 { trainerId: 40|50|60 } — 수동 지정(자동판정 우선이나 덮어쓰기 가능)
+  trainerSplitRates: {},
+  // 정산비율 자동판정 조건 (계약서 4조)
+  rate60MinSales: 3000000,  // 60%: 월 매출(입금금액) 300만원 이상
+  rate50MinBlog: 2,         // 50%: 블로그 월 2회 이상
+  rate50MinStudy: 1,        // 50%: 스터디 월 1회 이상
+  // 인센티브 규칙 (계약서 5조)
+  promoPerPost: 10000,        // 블로그 1건당 (상한 없음)
+  incentivePer: 1000000,      // 신규상담 등록 매출 기준 단위
+  incentiveAmount: 10000,     // 단위당 인센티브
+  reEnrollPer: 1000000,       // 재등록 매출 기준 단위
+  reEnrollAmount: 10000,      // 단위당 인센티브
+  // 교육활동 매출 비율 (계약서 8조)
+  eduCenterRate: 90,          // 센터 내 교육 90%
+  eduExternalRate: 100,       // 외부 활동 100%
+  paydayDay: 5,               // 임금지급일 (매월 5일, 참고)
+};
+
 const cache = {
   members:[], trainers:[], schedules:[], notices:[], payments:{}, body:{}, ai:{},
+  settings:{...INITIAL_SETTINGS}, expenses:[], promos:[],
 };
 
 async function loadCollection(name) {
@@ -120,7 +146,7 @@ async function seedIfEmpty() {
 export async function initStore() {
   try {
     await seedIfEmpty();
-    const [members, trainers, schedules, notices, payments, body, ai] = await Promise.all([
+    const [members, trainers, schedules, notices, payments, body, ai, settings, expenses, promos] = await Promise.all([
       loadCollection('members'),
       loadCollection('trainers'),
       loadCollection('schedules'),
@@ -128,9 +154,15 @@ export async function initStore() {
       loadGrouped('payments'),
       loadGrouped('body'),
       loadGrouped('ai'),
+      loadCollection('settings'),
+      loadCollection('expenses'),
+      loadCollection('promos'),
     ]);
     cache.members=members; cache.trainers=trainers; cache.schedules=schedules;
     cache.notices=notices; cache.payments=payments; cache.body=body; cache.ai=ai;
+    cache.settings = settings.find(s=>s.id==='config') || {...INITIAL_SETTINGS};
+    cache.expenses = expenses;
+    cache.promos   = promos;
     console.log('[FitCMS] Firebase 로딩 완료');
   } catch (e) {
     console.error('[FitCMS] Firebase 로딩 실패:', e);
@@ -246,6 +278,13 @@ export const store = {
     try { await fbSet('payments', np.id, {...np, __mid:mid}); return np; }
     catch(e){ cache.payments[mid]=prev; throw e; }
   },
+  updatePayment: async (mid,pid,patch) => {
+    const prev=cache.payments[mid];
+    cache.payments[mid]=(cache.payments[mid]||[]).map(p=>p.id===pid?{...p,...patch}:p);
+    const u=(cache.payments[mid]||[]).find(p=>p.id===pid);
+    try { if(u) await fbSet('payments', pid, {...u, __mid:mid}); return u; }
+    catch(e){ cache.payments[mid]=prev; throw e; }
+  },
   deletePayment: async (mid,pid) => {
     const prev=cache.payments[mid];
     cache.payments[mid]=(cache.payments[mid]||[]).filter(p=>p.id!==pid);
@@ -353,6 +392,63 @@ export const store = {
     cache.schedules=cache.schedules.map(s=>s.id===scheduleId?updatedSched:s);
     if (updatedMember) cache.members=cache.members.map(m=>m.id===updatedMember.id?updatedMember:m);
     return updatedSched;
+  },
+
+  // ── 매출/정산 설정 ───────────────────────────────────────
+  getSettings: () => ({ ...INITIAL_SETTINGS, ...cache.settings }),
+  updateSettings: async (patch) => {
+    const prev = cache.settings;
+    cache.settings = { ...INITIAL_SETTINGS, ...cache.settings, ...patch, id:'config' };
+    try { await fbSet('settings', 'config', cache.settings); return cache.settings; }
+    catch(e){ cache.settings = prev; throw e; }
+  },
+
+  // ── 지출(고정비/월별) ────────────────────────────────────
+  // kind: 'fixed' | 'monthly'
+  getExpenses: () => cache.expenses,
+  addExpense: async (e) => {
+    const ne = { ...e, id:'e'+Date.now() }; const prev = cache.expenses;
+    cache.expenses = [...cache.expenses, ne];
+    try { await fbSet('expenses', ne.id, ne); return ne; }
+    catch(err){ cache.expenses = prev; throw err; }
+  },
+  updateExpense: async (id, patch) => {
+    const prev = cache.expenses;
+    cache.expenses = cache.expenses.map(e=>e.id===id?{...e,...patch}:e);
+    const u = cache.expenses.find(e=>e.id===id);
+    try { if(u) await fbSet('expenses', id, u); return u; }
+    catch(err){ cache.expenses = prev; throw err; }
+  },
+  deleteExpense: async (id) => {
+    const prev = cache.expenses;
+    cache.expenses = cache.expenses.filter(e=>e.id!==id);
+    try { await fbDelete('expenses', id); }
+    catch(err){ cache.expenses = prev; throw err; }
+  },
+
+  // ── 트레이너 홍보 기록(인센티브) ─────────────────────────
+  // { trainerId, ym:'2026-06', channel:'blog'|'insta', date }
+  getPromos: () => cache.promos,
+  addPromo: async (p) => {
+    const np = { ...p, id:'pr'+Date.now() }; const prev = cache.promos;
+    cache.promos = [...cache.promos, np];
+    try { await fbSet('promos', np.id, np); return np; }
+    catch(err){ cache.promos = prev; throw err; }
+  },
+  deletePromo: async (id) => {
+    const prev = cache.promos;
+    cache.promos = cache.promos.filter(p=>p.id!==id);
+    try { await fbDelete('promos', id); }
+    catch(err){ cache.promos = prev; throw err; }
+  },
+
+  // 모든 회원 결제를 회원명 부착하여 평탄화
+  getAllPayments: () => {
+    const rows = [];
+    cache.members.forEach(m => {
+      (cache.payments[m.id]||[]).forEach(p => rows.push({ ...p, memberId:m.id, memberName:m.name }));
+    });
+    return rows;
   },
 };
 
