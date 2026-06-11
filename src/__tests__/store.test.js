@@ -269,51 +269,59 @@ describe('복합 결제수단 공제 (calcNet)', () => {
   });
 });
 
-// ── 추가: 결제월 박제 정산비율(splitRateAtPay) ───────────────────
-describe('결제월 박제 정산비율', () => {
+// ── 정산비율: B방식(매 정산월 자동판정, 결제월 박제 미적용) ─────────
+describe('정산비율 매월 자동판정(B방식)', () => {
   const settings = { cardFeeRate:0, vatRate:0, lowSplitRate:40, defaultSplitRate:40,
-    rate60MinSales:99999999, rate50MinBlog:99, rate50MinStudy:99, promoPerPost:0, snsInstaMax:8, trainerSplitRates:{} };
+    rate60MinSales:3000000, rate50MinBlog:2, rate50MinStudy:1, promoPerPost:0, snsInstaMax:8, trainerSplitRates:{} };
   const trainers = [{id:'t1',name:'A'}];
   const members = [{ id:'m1', name:'홍', trainerSessions:{ t1:{total:10,remaining:0} } }];
-  // 6월에 10회 출석(수업월=6월)
   const schedules = Array.from({length:10},(_,i)=>({id:'s'+i,isExternal:false,memberId:'m1',trainerId:'t1',status:'attended',date:'2026-06-15'}));
+  // 6월에 블로그2·스터디1 충족 → 그 달 50%
+  const recordsJun = [
+    {trainerId:'t1', channel:'blog', date:'2026-06-03'},
+    {trainerId:'t1', channel:'blog', date:'2026-06-10'},
+    {trainerId:'t1', channel:'study', date:'2026-06-12'},
+  ];
 
-  it('4월(40%) 결제분은 6월 정산에서도 40% 적용', () => {
-    const payments = { m1: [{ id:'p1', paidAt:'2026-04-02', amount:1000000, method:'cash', isUnpaid:false, isRefunded:false,
+  it('결제가 4월이어도, 6월 실적(블로그2·스터디1)이면 6월 정산은 50%', () => {
+    // 결제에 splitRateAtPay(40)가 박제돼 있어도 무시하고 그 달 자동판정 사용
+    const payments = { m1: [{ id:'p1', paidAt:'2026-04-02', amount:1000000, method:'cash',
       trainerIds:['t1'], splitRateAtPay:{ t1:40 } }] };
-    const blocks = computeSessionSettlement({ trainers, members, schedules, payments, records:[], settings, ym:'2026-06' });
-    const b = blocks.find(x=>x.trainer.id==='t1');
-    // 단가 100만/10=10만, 6월 10회 → 수업료 100만, 박제 40% → 40만
-    expect(b.sessionTotal).toBe(1000000);
-    expect(b.rows[0].rate).toBe(40);
-    expect(b.rows[0].rateFrozen).toBe(true);
-    expect(b.sessionPayout).toBe(400000);
+    const b = computeSessionSettlement({ trainers, members, schedules, payments, records:recordsJun, settings, ym:'2026-06' })[0];
+    expect(b.rows[0].rate).toBe(50);
+    expect(b.splitRate).toBe(50);
+    expect(b.sessionPayout).toBe(500000); // 100만 × 50%
   });
 
-  it('설정을 60%로 바꿔도 과거 박제(40%)는 안 바뀐다', () => {
-    const payments = { m1: [{ id:'p1', paidAt:'2026-04-02', amount:1000000, method:'cash', isUnpaid:false, isRefunded:false,
-      trainerIds:['t1'], splitRateAtPay:{ t1:40 } }] };
-    const newSettings = { ...settings, rate60MinSales:1 }; // 지금이면 60% 조건
-    const blocks = computeSessionSettlement({ trainers, members, schedules, payments, records:[], settings:newSettings, ym:'2026-06' });
-    expect(blocks[0].rows[0].rate).toBe(40); // 박제값 유지
+  it('같은 결제라도 실적 없는 달은 40%로 떨어진다(매월 재판정)', () => {
+    const payments = { m1: [{ id:'p1', paidAt:'2026-04-02', amount:1000000, method:'cash',
+      trainerIds:['t1'], splitRateAtPay:{ t1:60 } }] };
+    const b = computeSessionSettlement({ trainers, members, schedules, payments, records:[], settings, ym:'2026-06' })[0];
+    expect(b.rows[0].rate).toBe(40); // 그 달 블로그·스터디 미달
   });
 
-  it('박제값 없는 구버전 결제는 현재월 자동판정으로 폴백', () => {
-    const payments = { m1: [{ id:'p1', paidAt:'2026-04-02', amount:1000000, method:'cash', isUnpaid:false, isRefunded:false,
-      trainerIds:['t1'] }] }; // splitRateAtPay 없음
-    const blocks = computeSessionSettlement({ trainers, members, schedules, payments, records:[], settings, ym:'2026-06' });
-    expect(blocks[0].rows[0].rate).toBe(40); // 폴백=하한 40
-    expect(blocks[0].rows[0].rateFrozen).toBe(false);
+  it('한 트레이너의 모든 회원은 그 달 단일 비율로 통일된다', () => {
+    const members2 = [
+      { id:'m1', name:'A', trainerSessions:{ t1:{total:10,remaining:0} } },
+      { id:'m2', name:'B', trainerSessions:{ t1:{total:10,remaining:0} } },
+    ];
+    const sch2 = [
+      ...Array.from({length:5},(_,i)=>({id:'a'+i,isExternal:false,memberId:'m1',trainerId:'t1',status:'attended',date:'2026-06-15'})),
+      ...Array.from({length:5},(_,i)=>({id:'b'+i,isExternal:false,memberId:'m2',trainerId:'t1',status:'attended',date:'2026-06-15'})),
+    ];
+    const payments = { m1:[{id:'p1',paidAt:'2026-04-01',amount:1000000,method:'cash',trainerIds:['t1'],splitRateAtPay:{t1:40}}],
+                       m2:[{id:'p2',paidAt:'2026-05-01',amount:1000000,method:'cash',trainerIds:['t1'],splitRateAtPay:{t1:60}}] };
+    const b = computeSessionSettlement({ trainers, members:members2, schedules:sch2, payments, records:recordsJun, settings, ym:'2026-06' })[0];
+    expect(b.rows.every(r=>r.rate===50)).toBe(true); // 둘 다 6월 자동판정 50%
+    expect(b.rateMixed).toBe(false);
   });
 
-  it('서로 다른 결제월 비율은 입금액 비중으로 가중평균', () => {
-    // 4월 결제 50만(40%) + 5월 결제 50만(60%) → 가중평균 50%
-    const payments = { m1: [
-      { id:'p1', paidAt:'2026-04-02', amount:500000, method:'cash', trainerIds:['t1'], splitRateAtPay:{t1:40} },
-      { id:'p2', paidAt:'2026-05-02', amount:500000, method:'cash', trainerIds:['t1'], splitRateAtPay:{t1:60} },
-    ]};
-    const blocks = computeSessionSettlement({ trainers, members, schedules, payments, records:[], settings, ym:'2026-06' });
-    expect(blocks[0].rows[0].rate).toBe(50); // (40*50만+60*50만)/100만
+  it('수동 지정(trainerSplitRates)이 있으면 자동판정보다 우선', () => {
+    const s = { ...settings, trainerSplitRates:{ t1:60 } };
+    const payments = { m1: [{ id:'p1', paidAt:'2026-06-02', amount:1000000, method:'cash', trainerIds:['t1'] }] };
+    const b = computeSessionSettlement({ trainers, members, schedules, payments, records:[], settings:s, ym:'2026-06' })[0];
+    expect(b.rows[0].rate).toBe(60);
+    expect(b.splitMode).toBe('manual');
   });
 });
 

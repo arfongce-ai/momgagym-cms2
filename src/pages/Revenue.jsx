@@ -240,6 +240,7 @@ function RefundableList({ filtered, settings, trainers, trainerMap, onChange }) 
   const [, force] = useState(0);
   const [editId, setEditId] = useState(null);
   const [edit, setEdit] = useState(null);
+  const [query, setQuery] = useState('');
   const refresh = () => { force(n=>n+1); onChange?.(); };
 
   const METHODS = [['pay','페이'],['transfer','계좌'],['cash','현금'],['cash_receipt','현금영수증'],['card1','카드1'],['card2','카드2']];
@@ -365,11 +366,41 @@ function RefundableList({ filtered, settings, trainers, trainerMap, onChange }) 
 
   return (
     <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
-      <h2 className="font-bold text-sm uppercase tracking-widest text-slate-400 mb-3">결제 상세 내역 (관리자 수정)</h2>
-      {filtered.length===0
-        ? <p className="text-slate-600 text-sm text-center py-4">내역이 없습니다</p>
-        : <div className="space-y-2">
-            {filtered.map(p=>{
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
+        <h2 className="font-bold text-sm uppercase tracking-widest text-slate-400">결제 상세 내역 (관리자 수정)</h2>
+        <div className="relative sm:w-64">
+          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">🔍</span>
+          <input
+            value={query}
+            onChange={e=>setQuery(e.target.value)}
+            placeholder="회원명·메모·수단·트레이너 검색"
+            className="w-full bg-slate-800 border border-slate-700 rounded-xl pl-9 pr-8 py-2 text-sm text-slate-100 placeholder-slate-500 focus:border-amber-500/40 focus:outline-none"
+          />
+          {query && (
+            <button onClick={()=>setQuery('')}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 text-sm">✕</button>
+          )}
+        </div>
+      </div>
+      {(() => {
+        const q = query.trim().toLowerCase();
+        const shown = !q ? filtered : filtered.filter(p => {
+          const trNames = (p.trainerIds||[]).map(id=>trainerMap[id]?.name||'').join(' ');
+          const consult = p.consultTrainerId ? (trainerMap[p.consultTrainerId]?.name||'') : '';
+          const methodTxt = Array.isArray(p.methods)&&p.methods.length
+            ? p.methods.map(m=>METHOD_LBL[m.method]||m.method).join(' ')
+            : (METHOD_LBL[p.method]||p.method||'');
+          const hay = [p.memberName, p.note, methodTxt, trNames, consult,
+            p.isRefunded?'환불':'', p.isUnpaid?'미수금':'', p.isNew?'신규':'', p.isReEnroll?'재등록':'']
+            .join(' ').toLowerCase();
+          return hay.includes(q);
+        });
+        return shown.length===0
+          ? <p className="text-slate-600 text-sm text-center py-4">{q?'검색 결과가 없습니다':'내역이 없습니다'}</p>
+          : <>
+            {q && <p className="text-[11px] text-slate-500 mb-2">"{query}" 검색 — {shown.length}건</p>}
+            <div className="space-y-2">
+            {shown.map(p=>{
               const net = calcNet(p, settings).net;
               if (editId===p.id) {
                 return (
@@ -409,29 +440,8 @@ function RefundableList({ filtered, settings, trainers, trainerMap, onChange }) 
                         );
                       })}
                     </div>
-                    {/* 정산비율 수동 변경 — 결제 시 자동 박제된 값을 오류 발견 시 고친다 */}
-                    {edit.trainerIds.length>0 && (
-                      <div className="bg-slate-900/60 border border-violet-500/20 rounded-lg p-2 space-y-1.5">
-                        <p className="text-[11px] text-slate-400 font-semibold">정산비율(결제월 박제) — 오류 시 수동 변경</p>
-                        {edit.trainerIds.map(id=>{
-                          const cur = edit.splitRateAtPay?.[id];
-                          const setRate = (r) => setEdit(e=>({...e, splitRateAtPay:{...(e.splitRateAtPay||{}), [id]: r}}));
-                          return (
-                            <div key={id} className="flex items-center gap-2">
-                              <span className="text-xs text-slate-300 w-20 flex-shrink-0 flex items-center gap-1">
-                                <span className="w-2 h-2 rounded-full" style={{background:trainerMap[id]?.color||'#94a3b8'}}/>
-                                {trainerMap[id]?.name||'?'}
-                              </span>
-                              {[40,50,60].map(v=>(
-                                <button key={v} type="button" onClick={()=>setRate(v)}
-                                  className={`px-2.5 py-1 rounded-lg text-xs font-bold border ${Number(cur)===v?'bg-amber-500/20 border-amber-500/40 text-amber-400':'border-slate-700 text-slate-400'}`}>{v}%</button>
-                              ))}
-                              <span className="text-[10px] text-slate-500">{cur==null||cur===''?'(자동/미설정)':''}</span>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
+                    {/* 정산비율은 정산월 자동판정으로 매달 결정됩니다(결제 건별 비율 지정은 사용 안 함).
+                        특정 트레이너를 고정 비율로 두려면 설정 탭의 '트레이너별 정산비율'을 쓰세요. */}
                     <div className="flex flex-wrap gap-1.5">
                       {[['isUnpaid','미수금'],['isNew','신규'],['isReEnroll','재등록']].map(([k,l])=>(
                         <div key={k} onClick={()=>setEdit({...edit,[k]:!edit[k], ...(k==='isNew'&&!edit[k]?{isReEnroll:false}:{}), ...(k==='isReEnroll'&&!edit[k]?{isNew:false}:{})})}
@@ -507,7 +517,9 @@ function RefundableList({ filtered, settings, trainers, trainerMap, onChange }) 
                 </div>
               );
             })}
-          </div>}
+            </div>
+          </>;
+      })()}
     </div>
   );
 }
@@ -548,8 +560,8 @@ function SettleTab({ settings, trainers, trainerMap }) {
     const header = ['트레이너','회원','등록횟수','단가','월수업횟수','수업료','정산비율','실지급'];
     const body = [];
     blocks.forEach(b=>{
-      b.rows.forEach(r=>body.push([b.trainer.name, r.memberName, r.regTotal, r.unit, r.cnt, r.amount, `${r.rate}%${r.rateFrozen?'(결제월)':''}`, r.payAmount]));
-      body.push([b.trainer.name,'수업료 합계','','','', b.sessionTotal, b.rateMixed?'혼합':`${b.splitRate}%`, b.sessionPayout]);
+      b.rows.forEach(r=>body.push([b.trainer.name, r.memberName, r.regTotal, r.unit, r.cnt, r.amount, `${r.rate}%${r.rateFrozen?'(수동)':''}`, r.payAmount]));
+      body.push([b.trainer.name,'수업료 합계','','','', b.sessionTotal, `${b.splitRate}%`, b.sessionPayout]);
       body.push([b.trainer.name,'블로그','', '', b.blogCount, b.blogInc,'','']);
       body.push([b.trainer.name,'인스타','', '', b.instaCount, b.instaInc,'','']);
       body.push([b.trainer.name,'스터디','', '', b.studyCount, '','','']);
@@ -660,7 +672,7 @@ function TrainerSettleCard({ block: b, ym, settings, onSaved }) {
             : liveSplit.rate>=50 ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40'
             : 'bg-slate-700/40 text-slate-300 border-slate-600'
           }`} title={liveSplit.reason}>
-            정산 {b.rateMixed?`혼합 ${liveSplit.rate}%`:`${liveSplit.rate}%`}{liveSplit.mode==='manual'?' (수동)':liveSplit.mode==='frozen'?' (결제월)':''}
+            정산 {liveSplit.rate}%{liveSplit.mode==='manual'?' (수동)':' (자동)'}
           </span>
           {b.hasOverride && <span className="text-[10px] bg-blue-500/20 text-blue-400 px-1.5 py-0.5 rounded font-bold">수정됨</span>}
         </div>
@@ -709,7 +721,7 @@ function TrainerSettleCard({ block: b, ym, settings, onSaved }) {
                   </td>
                   <td className="text-right">
                     <span className={`font-mono text-[11px] px-1 rounded ${r.rateFrozen?'text-violet-300':'text-slate-400'}`}
-                      title={r.rateFrozen?'결제월 박제 비율':'현재월 자동판정(폴백)'}>{r.rate}%{r.rateFrozen?'🔒':''}</span>
+                      title={r.rateFrozen?'수동 지정 비율':'그 달 자동판정 비율'}>{r.rate}%{r.rateFrozen?'🔒':''}</span>
                   </td>
                   <td className="text-right font-mono font-bold text-emerald-400">
                     {won(r._pay)}
@@ -761,11 +773,11 @@ function TrainerSettleCard({ block: b, ym, settings, onSaved }) {
           <span className="font-mono font-bold text-slate-300">{won(liveSessionTotal)}</span>
         </div>
         <div className="flex items-center justify-between col-span-2">
-          <span className="text-slate-400 font-semibold">{b.rateMixed?`정산비율 결제월별 혼합(가중 ${liveSplit.rate}%) = 실지급 수업료`:`× 정산비율 ${liveSplit.rate}% = 실지급 수업료`}</span>
+          <span className="text-slate-400 font-semibold">× 정산비율 {liveSplit.rate}% = 실지급 수업료</span>
           <span className="font-mono font-bold text-emerald-400">{won(liveSessionPayout)}</span>
         </div>
         <p className="col-span-2 text-[10px] text-slate-600 leading-relaxed">
-          {b.rateMixed ? '회원별로 결제월에 고정된 비율이 다르게 적용됩니다(🔒=결제월 박제).' : liveSplit.reason}
+          {liveSplit.reason}
         </p>
         {/* 세전 → 원천징수 → 세후 */}
         <div className="flex items-center justify-between col-span-2 pt-1.5 border-t border-slate-800/50">

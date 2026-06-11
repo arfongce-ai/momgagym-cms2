@@ -282,13 +282,11 @@ export function computeSessionSettlement({ trainers, members, schedules, payment
       const unit = ovUnit[mid] != null ? Number(ovUnit[mid]) : autoUnit;
       const autoCnt = (attended[t.id]||{})[mid] || 0;
       const cnt = ovCnt[mid] != null ? Number(ovCnt[mid]) : autoCnt;
-      // 박제비율: 이 회원의 이 트레이너 결제 건 비율을 입금액 비중으로 가중평균.
-      //  · 박제값이 있으면 그 값, 없으면(구버전 결제) 현재월 자동판정으로 폴백.
-      const rateSlot = (memberTrainerRate[mid]||{})[t.id];
-      const effRate = rateSlot && rateSlot.hasFrozen && rateSlot.base > 0
-        ? Math.round(rateSlot.w / rateSlot.base)
-        : fallbackSplit.rate;
-      const rateFrozen = !!(rateSlot && rateSlot.hasFrozen && rateSlot.base > 0);
+      // B방식: 정산비율은 "그 정산월의 자동판정(블로그·스터디·매출)"으로 매달 재판정한다.
+      //  · 결제월 박제는 정산비율에 적용하지 않는다(매월 실적 반영).
+      //  · 단, 트레이너에 수동 지정(trainerSplitRates)이 있으면 그 값이 우선(determineSplitRate가 처리).
+      const effRate = fallbackSplit.rate;
+      const rateFrozen = fallbackSplit.mode === 'manual'; // 수동 지정만 '고정' 표시
       const amount = unit * cnt;                       // 수업료(비율 적용 전)
       const payAmount = Math.round(amount * effRate/100); // 실지급(비율 적용)
       return {
@@ -316,18 +314,14 @@ export function computeSessionSettlement({ trainers, members, schedules, payment
     const tax = Math.round(payout * whRate / 100);
     const payoutNet = payout - tax;
 
-    // 표시용 대표 비율: 수업료 가중평균(여러 비율이 섞이면 'mixed')
-    const distinct = [...new Set(rows.filter(r=>r.amount>0).map(r=>r.rate))];
-    const blendedRate = sessionTotal>0 ? Math.round(sessionPayout/sessionTotal*100) : fallbackSplit.rate;
-    const splitRate = distinct.length<=1 ? (distinct[0] ?? fallbackSplit.rate) : blendedRate;
-    const splitMode = rows.some(r=>r.rateFrozen) ? 'frozen' : fallbackSplit.mode;
-    const splitReason = distinct.length>1
-      ? `결제월별 비율 혼합(가중평균 ${blendedRate}%)`
-      : (rows.some(r=>r.rateFrozen) ? `결제월 박제 ${splitRate}%` : fallbackSplit.reason);
+    // 대표 비율: 그 정산월 자동판정(또는 수동지정) 단일 비율
+    const splitRate = fallbackSplit.rate;
+    const splitMode = fallbackSplit.mode;          // 'auto' | 'manual'
+    const splitReason = fallbackSplit.reason;
 
     return {
       trainer: t, rows, sessionTotal,
-      splitRate, splitMode, splitReason, rateMixed: distinct.length>1,
+      splitRate, splitMode, splitReason, rateMixed: false,
       sessionPayout,
       blogCount: fBlog, instaCount: fInsta, studyCount: fStudy,
       blogInc, instaInc,
