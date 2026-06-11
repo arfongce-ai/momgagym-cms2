@@ -560,8 +560,8 @@ function SettleTab({ settings, trainers, trainerMap }) {
     const header = ['트레이너','회원','등록횟수','단가','월수업횟수','수업료','정산비율','실지급'];
     const body = [];
     blocks.forEach(b=>{
-      b.rows.forEach(r=>body.push([b.trainer.name, r.memberName, r.regTotal, r.unit, r.cnt, r.amount, `${r.rate}%${r.rateFrozen?'(수동)':''}`, r.payAmount]));
-      body.push([b.trainer.name,'수업료 합계','','','', b.sessionTotal, `${b.splitRate}%`, b.sessionPayout]);
+      b.rows.forEach(r=>body.push([b.trainer.name, r.memberName, r.regTotal, r.unit, r.cnt, r.amount, `${r.rate}%${r.rateFrozen?'(등록월)':''}`, r.payAmount]));
+      body.push([b.trainer.name,'수업료 합계','','','', b.sessionTotal, b.rateMixed?'혼합':`${b.splitRate}%`, b.sessionPayout]);
       body.push([b.trainer.name,'블로그','', '', b.blogCount, b.blogInc,'','']);
       body.push([b.trainer.name,'인스타','', '', b.instaCount, b.instaInc,'','']);
       body.push([b.trainer.name,'스터디','', '', b.studyCount, '','','']);
@@ -672,7 +672,7 @@ function TrainerSettleCard({ block: b, ym, settings, onSaved }) {
             : liveSplit.rate>=50 ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40'
             : 'bg-slate-700/40 text-slate-300 border-slate-600'
           }`} title={liveSplit.reason}>
-            정산 {liveSplit.rate}%{liveSplit.mode==='manual'?' (수동)':' (자동)'}
+            정산 {b.rateMixed?`혼합 ${liveSplit.rate}%`:`${liveSplit.rate}%`}{liveSplit.mode==='manual'?' (수동)':liveSplit.mode==='frozen'?' (등록월)':' (자동)'}
           </span>
           {b.hasOverride && <span className="text-[10px] bg-blue-500/20 text-blue-400 px-1.5 py-0.5 rounded font-bold">수정됨</span>}
         </div>
@@ -721,7 +721,7 @@ function TrainerSettleCard({ block: b, ym, settings, onSaved }) {
                   </td>
                   <td className="text-right">
                     <span className={`font-mono text-[11px] px-1 rounded ${r.rateFrozen?'text-violet-300':'text-slate-400'}`}
-                      title={r.rateFrozen?'수동 지정 비율':'그 달 자동판정 비율'}>{r.rate}%{r.rateFrozen?'🔒':''}</span>
+                      title={r.rateFrozen?'등록월에 고정된 비율':'그 달 자동판정 비율'}>{r.rate}%{r.rateFrozen?'🔒':''}</span>
                   </td>
                   <td className="text-right font-mono font-bold text-emerald-400">
                     {won(r._pay)}
@@ -773,11 +773,11 @@ function TrainerSettleCard({ block: b, ym, settings, onSaved }) {
           <span className="font-mono font-bold text-slate-300">{won(liveSessionTotal)}</span>
         </div>
         <div className="flex items-center justify-between col-span-2">
-          <span className="text-slate-400 font-semibold">× 정산비율 {liveSplit.rate}% = 실지급 수업료</span>
+          <span className="text-slate-400 font-semibold">{b.rateMixed?`정산비율 회원별 혼합(가중 ${liveSplit.rate}%) = 실지급 수업료`:`× 정산비율 ${liveSplit.rate}% = 실지급 수업료`}</span>
           <span className="font-mono font-bold text-emerald-400">{won(liveSessionPayout)}</span>
         </div>
         <p className="col-span-2 text-[10px] text-slate-600 leading-relaxed">
-          {liveSplit.reason}
+          {b.rateMixed ? '회원마다 등록월에 정해진 비율이 고정 적용됩니다(🔒=등록월 고정).' : liveSplit.reason}
         </p>
         {/* 세전 → 원천징수 → 세후 */}
         <div className="flex items-center justify-between col-span-2 pt-1.5 border-t border-slate-800/50">
@@ -810,6 +810,7 @@ function Line({ l, v, c='text-slate-200' }) {
 function RecordManager({ trainers, period, mode }) {
   const [, force] = useState(0);
   const [open, setOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(true);
   const [form, setForm] = useState({ trainerId:trainers[0]?.id||'', channel:'blog', date:new Date().toISOString().slice(0,10), note:'' });
 
   const inPeriod = (d) => mode==='month' ? monthKey(d)===period : yearKey(d)===period;
@@ -829,9 +830,16 @@ function RecordManager({ trainers, period, mode }) {
   return (
     <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
       <div className="flex items-center justify-between mb-3">
-        <h2 className="font-bold text-sm uppercase tracking-widest text-slate-400">📣 SNS · 스터디 기록</h2>
-        <button onClick={()=>setOpen(!open)} className="text-xs text-amber-400 hover:text-amber-300 font-semibold">+ 기록 추가</button>
+        <button onClick={()=>setCollapsed(c=>!c)} className="flex items-center gap-2 group">
+          <span className={`text-slate-500 transition-transform ${collapsed?'':'rotate-90'}`}>▶</span>
+          <h2 className="font-bold text-sm uppercase tracking-widest text-slate-400 group-hover:text-slate-200">📣 SNS · 스터디 기록</h2>
+          <span className="text-[11px] text-slate-500">({list.length}건)</span>
+        </button>
+        {!collapsed && (
+          <button onClick={()=>setOpen(!open)} className="text-xs text-amber-400 hover:text-amber-300 font-semibold">+ 기록 추가</button>
+        )}
       </div>
+      {!collapsed && <>
       {open && (
         <div className="mb-3 p-3 bg-slate-800 rounded-xl grid grid-cols-2 md:grid-cols-5 gap-2 items-end">
           <select value={form.trainerId} onChange={e=>setForm({...form,trainerId:e.target.value})}
@@ -864,7 +872,8 @@ function RecordManager({ trainers, period, mode }) {
               </div>
             ))}
           </div>}
-      <p className="text-[11px] text-slate-600 mt-2">* SNS-블로그: 1회차부터 지급(상한 없음) · SNS-인스타: 최대 8회 · 1건당 1만원 / 50% 승급: 블로그 월2회+스터디 월1회</p>
+      <p className="text-[11px] text-slate-600 mt-2">* SNS-블로그: 1회차부터 지급(상한 없음) · SNS-인스타: 최대 8회 · 1건당 1만원 / 50%: 블로그2+스터디1 또는 매출300만 중 1개 · 60%: 둘 다</p>
+      </>}
     </div>
   );
 }
@@ -1027,7 +1036,7 @@ function ConfigTab({ settings, trainers }) {
 
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-4">
         <h2 className="font-bold text-sm uppercase tracking-widest text-slate-400">정산 비율 (계약서 4조)</h2>
-        <p className="text-[11px] text-slate-500">매월(1일~말일) 자동 판정 — 기본 50%, 블로그·스터디 미달 시 40%로 하향, 신규 또는 재등록 매출이 임계 이상이면 60% · 수동은 고정 비율</p>
+        <p className="text-[11px] text-slate-500">등록월의 트레이너 실적으로 비율을 판정해 그 회원 등록분에 고정 — 조건A(블로그2·스터디1)와 조건B(신규/재등록 매출 임계 이상): 둘 다 충족 60% / 하나만 50% / 모두 미달 40% · 수동은 트레이너 고정</p>
         <div className="grid grid-cols-2 gap-3">
           <NumField label="하한 비율(조건 미달)" k="lowSplitRate" suffix="%" form={form} setForm={setForm}/>
           <NumField label="60% 조건 (신규 또는 재등록 매출)" k="rate60MinSales" suffix="원" form={form} setForm={setForm}/>

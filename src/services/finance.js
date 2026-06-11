@@ -71,18 +71,26 @@ export function determineSplitRate({ settings, trainerId, monthNet, newSales=0, 
   const minBlog = Number(settings.rate50MinBlog ?? 2);
   const minStudy= Number(settings.rate50MinStudy ?? 1);
 
-  // 기본 50%에서 시작. 블로그·스터디 미달이면 40%로 하향.
+  // 두 조건을 본다.
+  //  · 조건A: 블로그 ≥2 AND 스터디 ≥1
+  //  · 조건B: 신규 또는 재등록 매출 ≥ 임계(300만)
+  // 둘 다 충족 → 60% / 하나만 → 50% / 둘 다 미달 → 40%
+  const condA = (blogCount >= minBlog && studyCount >= minStudy);
+  const condB = (newSales >= min60 || reEnrollSales >= min60);
+  const metCount = (condA?1:0) + (condB?1:0);
+
   let rate, reason;
-  if (blogCount >= minBlog && studyCount >= minStudy) {
-    rate = 50; reason = `블로그 ${blogCount}회·스터디 ${studyCount}회 충족 → 50%`;
-  } else {
-    rate = floor; reason = `블로그/스터디 미달(블로그<${minBlog} 또는 스터디<${minStudy}) → ${floor}%`;
-  }
-  // 60%: 신규매출 OR 재등록매출 중 하나라도 임계액 이상이면 상향(최우선)
-  if (newSales >= min60 || reEnrollSales >= min60) {
+  if (metCount === 2) {
     rate = 60;
-    const which = newSales >= min60 ? `신규 ${won(newSales)}` : `재등록 ${won(reEnrollSales)}`;
-    reason = `${which} ≥ ${won(min60)} → 60%`;
+    reason = `블로그·스터디 + 매출(${won(min60)} 이상) 둘 다 충족 → 60%`;
+  } else if (metCount === 1) {
+    rate = 50;
+    reason = condA
+      ? `블로그 ${blogCount}회·스터디 ${studyCount}회 충족(매출 조건 1개) → 50%`
+      : `매출 ${won(min60)} 이상 충족(조건 1개) → 50%`;
+  } else {
+    rate = floor;
+    reason = `조건 미달(블로그·스터디 / 매출 모두 미달) → ${floor}%`;
   }
   return { rate, mode: 'auto', reason, monthNet, newSales, reEnrollSales, blogCount, studyCount };
 }
@@ -282,11 +290,17 @@ export function computeSessionSettlement({ trainers, members, schedules, payment
       const unit = ovUnit[mid] != null ? Number(ovUnit[mid]) : autoUnit;
       const autoCnt = (attended[t.id]||{})[mid] || 0;
       const cnt = ovCnt[mid] != null ? Number(ovCnt[mid]) : autoCnt;
-      // B방식: 정산비율은 "그 정산월의 자동판정(블로그·스터디·매출)"으로 매달 재판정한다.
-      //  · 결제월 박제는 정산비율에 적용하지 않는다(매월 실적 반영).
-      //  · 단, 트레이너에 수동 지정(trainerSplitRates)이 있으면 그 값이 우선(determineSplitRate가 처리).
-      const effRate = fallbackSplit.rate;
-      const rateFrozen = fallbackSplit.mode === 'manual'; // 수동 지정만 '고정' 표시
+      // A방식(등록월 박제): 이 회원의 이 트레이너 결제 건에 박제된 비율(splitRateAtPay)을 사용.
+      //  · 박제 비율은 "그 회원이 등록한 달의 트레이너 실적"으로 판정돼 결제 시 고정된 값.
+      //  · 여러 결제가 섞이면 입금액 비중으로 가중평균. 박제값이 없으면(구버전) 그 달 자동판정으로 폴백.
+      //  · 트레이너 수동 지정(trainerSplitRates)이 있으면 그게 최우선(fallbackSplit.mode==='manual').
+      const rateSlot = (memberTrainerRate[mid]||{})[t.id];
+      const hasFrozen = !!(rateSlot && rateSlot.hasFrozen && rateSlot.base > 0);
+      const effRate = fallbackSplit.mode === 'manual'
+        ? fallbackSplit.rate                                   // 수동 지정 최우선
+        : (hasFrozen ? Math.round(rateSlot.w / rateSlot.base)  // 등록월 박제 비율
+                     : fallbackSplit.rate);                    // 폴백: 그 달 자동판정
+      const rateFrozen = fallbackSplit.mode !== 'manual' && hasFrozen;
       const amount = unit * cnt;                       // 수업료(비율 적용 전)
       const payAmount = Math.round(amount * effRate/100); // 실지급(비율 적용)
       return {
@@ -314,14 +328,20 @@ export function computeSessionSettlement({ trainers, members, schedules, payment
     const tax = Math.round(payout * whRate / 100);
     const payoutNet = payout - tax;
 
-    // 대표 비율: 그 정산월 자동판정(또는 수동지정) 단일 비율
-    const splitRate = fallbackSplit.rate;
-    const splitMode = fallbackSplit.mode;          // 'auto' | 'manual'
-    const splitReason = fallbackSplit.reason;
+    // 대표 비율: 회원마다 등록월 박제 비율이 다를 수 있으므로, 다르면 'mixed'(가중평균 표시)
+    const distinct = [...new Set(rows.filter(r=>r.amount>0).map(r=>r.rate))];
+    const blendedRate = sessionTotal>0 ? Math.round(sessionPayout/sessionTotal*100) : fallbackSplit.rate;
+    const splitRate = distinct.length<=1 ? (distinct[0] ?? fallbackSplit.rate) : blendedRate;
+    const splitMode = fallbackSplit.mode==='manual' ? 'manual' : (rows.some(r=>r.rateFrozen) ? 'frozen' : 'auto');
+    const splitReason = fallbackSplit.mode==='manual'
+      ? fallbackSplit.reason
+      : (distinct.length>1
+          ? `등록월별 비율 혼합(가중평균 ${blendedRate}%)`
+          : (rows.some(r=>r.rateFrozen) ? `등록월 고정 ${splitRate}%` : fallbackSplit.reason));
 
     return {
       trainer: t, rows, sessionTotal,
-      splitRate, splitMode, splitReason, rateMixed: false,
+      splitRate, splitMode, splitReason, rateMixed: distinct.length>1,
       sessionPayout,
       blogCount: fBlog, instaCount: fInsta, studyCount: fStudy,
       blogInc, instaInc,
