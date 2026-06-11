@@ -34,7 +34,7 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
   // 수납
   const [payments,     setPayments]    = useState([]);
   const [showAddPay,   setShowAddPay]  = useState(false);
-  const [payForm,      setPayForm]     = useState({ paidAt: new Date().toISOString().slice(0,10), amount:'', method:'pay', isUnpaid:false, note:'', trainerIds:[], split:[], methodList:[], isReEnroll:false, reEnrollNo:'', isNew:false, category:'normal' });
+  const [payForm,      setPayForm]     = useState({ paidAt: new Date().toISOString().slice(0,10), amount:'', method:'pay', isUnpaid:false, note:'', trainerIds:[], split:[], methodList:[], isReEnroll:false, reEnrollNo:'', isNew:false, consultTrainerId:'', category:'normal' });
 
   // 신체정보
   const [bodyRecords,  setBodyRecords] = useState([]);
@@ -295,7 +295,9 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
         : [];
       const primaryMethod = methods.length ? methods[0].method : payForm.method;
       const { methodList, ...rest } = payForm;
-      const newPayment = { ...rest, method:primaryMethod, methods, amount:Number(payForm.amount), split, reEnrollNo };
+      // 신규일 때만 상담 트레이너 저장(아니면 비움)
+      const consultTrainerId = payForm.isNew ? (payForm.consultTrainerId || '') : '';
+      const newPayment = { ...rest, method:primaryMethod, methods, amount:Number(payForm.amount), split, reEnrollNo, consultTrainerId };
 
       // ── 결제월 정산비율 박제(snapshot) ──────────────────────────
       // 이 결제가 이뤄진 달(paidAt의 YYYY-MM) 기준 비율을 계산해 결제 건에 고정한다.
@@ -328,7 +330,7 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
       // 결제일 자동 업데이트
       await store.updateMember(member.id, { lastPaymentDate:payForm.paidAt });
       refresh(); setShowAddPay(false);
-      setPayForm({ paidAt:new Date().toISOString().slice(0,10), amount:'', method:'pay', isUnpaid:false, note:'', trainerIds:[], split:[], methodList:[], isReEnroll:false, reEnrollNo:'', isNew:false, category:'normal' });
+      setPayForm({ paidAt:new Date().toISOString().slice(0,10), amount:'', method:'pay', isUnpaid:false, note:'', trainerIds:[], split:[], methodList:[], isReEnroll:false, reEnrollNo:'', isNew:false, consultTrainerId:'', category:'normal' });
       onUpdate?.();
     } catch (e) { alert('수납 등록에 실패했습니다. 네트워크 확인 후 다시 시도하세요.'); }
   };
@@ -647,7 +649,7 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
                               </span>
                             : <span className={`text-xs font-bold ${METHOD_CLR[p.method]}`}>{METHOD_LBL[p.method]}</span>}
                           {p.isUnpaid&&<span className="text-[10px] bg-red-500/20 text-red-400 border border-red-500/30 px-1.5 py-0.5 rounded font-bold">미수금</span>}
-                          {p.isNew&&<span className="text-[10px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-1.5 py-0.5 rounded font-bold">신규</span>}
+                          {p.isNew&&<span className="text-[10px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-1.5 py-0.5 rounded font-bold">신규{p.consultTrainerId?` · 상담 ${trainerMap[p.consultTrainerId]?.name||'?'}`:''}</span>}
                           {p.isReEnroll&&<span className="text-[10px] bg-blue-500/20 text-blue-400 border border-blue-500/30 px-1.5 py-0.5 rounded font-bold">재등록{p.reEnrollNo?` ${p.reEnrollNo}회차`:''}</span>}
                           {p.category==='edu_center'&&<span className="text-[10px] bg-amber-500/20 text-amber-400 border border-amber-500/30 px-1.5 py-0.5 rounded font-bold">센터교육</span>}
                           {p.category==='edu_external'&&<span className="text-[10px] bg-amber-500/20 text-amber-400 border border-amber-500/30 px-1.5 py-0.5 rounded font-bold">외부활동</span>}
@@ -876,6 +878,26 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
                       <span className="text-xs font-semibold">재등록</span>
                     </div>
                   </div>
+
+                  {/* 신규등록 — 상담 트레이너(신규 인센티브·신규매출 귀속 대상) 1명 선택 */}
+                  {payForm.isNew && (
+                    <div className="bg-emerald-500/5 border border-emerald-500/20 rounded-xl px-3 py-2.5">
+                      <label className={LBL}>상담 트레이너 (신규 인센티브 귀속)</label>
+                      <div className="flex flex-wrap gap-2">
+                        {trainers.map(t=>{
+                          const on = payForm.consultTrainerId===t.id;
+                          return (
+                            <div key={t.id} onClick={()=>setPayForm(p=>({...p, consultTrainerId: on?'':t.id}))}
+                              className={`px-3 py-2 rounded-xl text-xs font-bold border cursor-pointer select-none flex items-center gap-1.5
+                                ${on?'border-emerald-500/40 bg-emerald-500/10 text-emerald-400':'border-slate-700 text-slate-400 hover:border-slate-500'}`}>
+                              <span className="w-2 h-2 rounded-full" style={{background:t.color||'#94a3b8'}}/>{t.name}
+                            </div>
+                          );
+                        })}
+                      </div>
+                      <p className="text-[11px] text-slate-500 mt-1.5">신규 인센티브와 60% 정산비율의 '신규매출'은 이 상담 트레이너에게 귀속됩니다(담당과 별개).</p>
+                    </div>
+                  )}
 
                   {/* 재등록 회차 — 체크 시에만 표시, 자동 제안값 수정 가능 */}
                   {payForm.isReEnroll && (

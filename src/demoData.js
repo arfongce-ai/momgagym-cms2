@@ -91,16 +91,19 @@ const INITIAL_SETTINGS = {
   // 트레이너별 정산 비율 { trainerId: 40|50|60 } — 수동 지정(있으면 자동판정보다 우선)
   trainerSplitRates: {},
   // 정산비율 자동판정 조건 (계약서 4조)
-  rate60MinSales: 3000000,  // 60%: 월 매출(입금금액) 300만원 이상
+  //  · 기본 50% 시작, 미달 시 40%로 하향(블로그<2 또는 스터디<1)
+  //  · 60%: 신규매출 또는 재등록매출 중 하나라도 임계액 이상
+  rate60MinSales: 3000000,  // 60%: 신규 OR 재등록 매출 300만원 이상
   rate50MinBlog: 2,         // 50%: 블로그 월 2회 이상
   rate50MinStudy: 1,        // 50%: 스터디 월 1회 이상
   // 인센티브 규칙 (계약서 5조)
   promoPerPost: 10000,        // SNS 1건당 (블로그/인스타 공통)
   snsInstaMax: 8,             // 인스타그램: 최대 8회까지 인정
-  incentivePer: 1000000,      // 신규상담 등록 매출 기준 단위
-  incentiveAmount: 10000,     // 단위당 인센티브
-  reEnrollPer: 1000000,       // 재등록 매출 기준 단위
-  reEnrollAmount: 10000,      // 단위당 인센티브
+  // 신규/재등록 매출 인센티브: 단위 매출당 고정액 (기본 100만원당 1만원)
+  incentivePer: 1000000,      // 신규매출 단위(원)
+  incentiveAmount: 10000,     // 신규: 단위당 인센티브(원)
+  reEnrollPer: 1000000,       // 재등록매출 단위(원)
+  reEnrollAmount: 10000,      // 재등록: 단위당 인센티브(원)
   // 교육활동 매출 비율 (계약서 8조)
   eduCenterRate: 90,          // 센터 내 교육 90%
   eduExternalRate: 100,       // 외부 활동 100%

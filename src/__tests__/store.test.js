@@ -185,16 +185,24 @@ describe('매월 정산비율 자동 판정 (determineSplitRate)', () => {
     const r = determineSplitRate({ settings:S, trainerId:'t1', monthNet:1000000, blogCount:5, studyCount:0 });
     expect(r.rate).toBe(40);
   });
-  it('월매출 조건 충족이면 60%', () => {
-    const r = determineSplitRate({ settings:S, trainerId:'t1', monthNet:3000000, blogCount:0, studyCount:0 });
+  it('신규매출 300만↑이면 60%', () => {
+    const r = determineSplitRate({ settings:S, trainerId:'t1', newSales:3000000, reEnrollSales:0, blogCount:0, studyCount:0 });
     expect(r.rate).toBe(60);
   });
+  it('재등록매출만 300만↑이어도 60% (OR 조건)', () => {
+    const r = determineSplitRate({ settings:S, trainerId:'t1', newSales:0, reEnrollSales:3000000, blogCount:0, studyCount:0 });
+    expect(r.rate).toBe(60);
+  });
+  it('신규·재등록 둘 다 300만 미만이면 60% 아님', () => {
+    const r = determineSplitRate({ settings:S, trainerId:'t1', newSales:2000000, reEnrollSales:2000000, blogCount:0, studyCount:0 });
+    expect(r.rate).toBe(40);
+  });
   it('60%와 50% 동시 충족 시 더 높은 60% 우선', () => {
-    const r = determineSplitRate({ settings:S, trainerId:'t1', monthNet:5000000, blogCount:3, studyCount:2 });
+    const r = determineSplitRate({ settings:S, trainerId:'t1', newSales:5000000, reEnrollSales:0, blogCount:3, studyCount:2 });
     expect(r.rate).toBe(60);
   });
   it('수동 지정(40)이 자동판정보다 우선', () => {
-    const r = determineSplitRate({ settings:{...S, trainerSplitRates:{t1:40}}, trainerId:'t1', monthNet:9000000, blogCount:5, studyCount:5 });
+    const r = determineSplitRate({ settings:{...S, trainerSplitRates:{t1:40}}, trainerId:'t1', newSales:9000000, blogCount:5, studyCount:5 });
     expect(r.rate).toBe(40); expect(r.mode).toBe('manual');
   });
 });
@@ -332,5 +340,61 @@ describe('세전/세후 원천징수', () => {
     const b = computeSessionSettlement({ trainers, members, schedules, payments, records:[], settings, ym:'2026-06' })[0];
     expect(b.tax).toBe(50000);
     expect(b.payoutNet).toBe(450000);
+  });
+});
+
+// ── 추가: 신규/재등록 매출 인센티브(100만당 1만) + 상담/담당 귀속 ──
+describe('신규/재등록 매출 인센티브', () => {
+  const settings = { cardFeeRate:0, vatRate:0, lowSplitRate:40, defaultSplitRate:40,
+    rate60MinSales:3000000, rate50MinBlog:2, rate50MinStudy:1, promoPerPost:10000, snsInstaMax:8,
+    incentivePer:1000000, incentiveAmount:10000, reEnrollPer:1000000, reEnrollAmount:10000,
+    withholdingRate:3.3, trainerSplitRates:{} };
+  // t1=담당, t2=상담
+  const trainers=[{id:'t1',name:'담당'},{id:'t2',name:'상담'}];
+  const members=[{id:'m1',name:'홍',trainerSessions:{t1:{total:10,remaining:0}}}];
+  const schedules=Array.from({length:5},(_,i)=>({id:'s'+i,isExternal:false,memberId:'m1',trainerId:'t1',status:'attended',date:'2026-06-15'}));
+
+  it('신규매출 300만 → 인센 3만은 상담(t2)에게, 담당(t1)은 0', () => {
+    const payments={ m1:[{id:'p',paidAt:'2026-06-02',amount:3000000,method:'cash',isNew:true,trainerIds:['t1'],consultTrainerId:'t2'}] };
+    const blocks=computeSessionSettlement({trainers,members,schedules,payments,records:[],settings,ym:'2026-06'});
+    const t1=blocks.find(b=>b.trainer.id==='t1');
+    const t2=blocks.find(b=>b.trainer.id==='t2');
+    expect(t2.newInc).toBe(30000);    // 상담에게 신규 인센
+    expect(t2.rows.length===0 ? t2.newSales : t2.newSales).toBe(3000000);
+    expect(t1.newInc).toBe(0);        // 담당은 신규 인센 없음
+  });
+
+  it('신규매출 450만 → 상담 인센 4만(내림)', () => {
+    const payments={ m1:[{id:'p',paidAt:'2026-06-02',amount:4500000,method:'cash',isNew:true,trainerIds:['t1'],consultTrainerId:'t2'}] };
+    const t2=computeSessionSettlement({trainers,members,schedules,payments,records:[],settings,ym:'2026-06'}).find(b=>b.trainer.id==='t2');
+    expect(t2.newInc).toBe(40000);
+  });
+
+  it('재등록매출 300만 → 인센 3만은 담당(t1)에게, 60% 적용', () => {
+    const payments={ m1:[{id:'p',paidAt:'2026-06-02',amount:3000000,method:'cash',isReEnroll:true,trainerIds:['t1']}] };
+    const t1=computeSessionSettlement({trainers,members,schedules,payments,records:[],settings,ym:'2026-06'}).find(b=>b.trainer.id==='t1');
+    expect(t1.reInc).toBe(30000);
+    expect(t1.rows[0].rate).toBe(60);
+  });
+
+  it('신규200만(상담)+재등록200만(담당) → 각 2만, 각자 60% 아님', () => {
+    const payments={ m1:[
+      {id:'p1',paidAt:'2026-06-02',amount:2000000,method:'cash',isNew:true,trainerIds:['t1'],consultTrainerId:'t2'},
+      {id:'p2',paidAt:'2026-06-03',amount:2000000,method:'cash',isReEnroll:true,trainerIds:['t1']},
+    ]};
+    const blocks=computeSessionSettlement({trainers,members,schedules,payments,records:[],settings,ym:'2026-06'});
+    const t1=blocks.find(b=>b.trainer.id==='t1');
+    const t2=blocks.find(b=>b.trainer.id==='t2');
+    expect(t2.newInc).toBe(20000);  // 상담 신규 인센
+    expect(t1.reInc).toBe(20000);   // 담당 재등록 인센
+    expect(t1.rows[0].rate).toBe(40); // 재등록 200만 → 60% 아님
+  });
+
+  it('신규에 상담 트레이너 미지정이면 신규 인센·신규매출 귀속 없음', () => {
+    const payments={ m1:[{id:'p',paidAt:'2026-06-02',amount:3000000,method:'cash',isNew:true,trainerIds:['t1']}] };
+    const blocks=computeSessionSettlement({trainers,members,schedules,payments,records:[],settings,ym:'2026-06'});
+    const t1=blocks.find(b=>b.trainer.id==='t1');
+    expect(t1.newInc).toBe(0);
+    expect(t1.rows[0].rate).toBe(40); // 신규매출 귀속 없으니 60% 아님
   });
 });

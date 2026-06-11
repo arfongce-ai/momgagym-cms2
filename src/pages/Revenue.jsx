@@ -246,6 +246,7 @@ function RefundableList({ filtered, settings, trainers, trainerMap, onChange }) 
       trainerIds:[...(p.trainerIds||[])], split:[...(p.split||[])],
       splitRateAtPay:{...(p.splitRateAtPay||{})}, note:p.note||'',
       isUnpaid:!!p.isUnpaid, isNew:!!p.isNew, isReEnroll:!!p.isReEnroll,
+      consultTrainerId:p.consultTrainerId||'',
       category:p.category||'normal',
     });
   };
@@ -285,6 +286,7 @@ function RefundableList({ filtered, settings, trainers, trainerMap, onChange }) 
         methods: edit.methods || [],
         trainerIds:edit.trainerIds, split, splitRateAtPay, note:edit.note,
         isUnpaid:edit.isUnpaid, isNew:edit.isNew, isReEnroll:edit.isReEnroll,
+        consultTrainerId: edit.isNew ? (edit.consultTrainerId||'') : '',
         category:edit.category,
       });
       setEditId(null); refresh();
@@ -401,6 +403,22 @@ function RefundableList({ filtered, settings, trainers, trainerMap, onChange }) 
                           className={`px-2.5 py-1.5 rounded-lg text-xs font-bold border cursor-pointer ${edit[k]?'border-amber-500/40 bg-amber-500/20 text-amber-400':'border-slate-700 text-slate-400'}`}>{l}</div>
                       ))}
                     </div>
+                    {edit.isNew && (
+                      <div className="bg-emerald-500/5 border border-emerald-500/20 rounded-lg p-2">
+                        <p className="text-[11px] text-slate-400 mb-1.5">상담 트레이너 (신규 인센티브·신규매출 귀속)</p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {trainers.map(t=>{
+                            const on = edit.consultTrainerId===t.id;
+                            return (
+                              <div key={t.id} onClick={()=>setEdit({...edit, consultTrainerId:on?'':t.id})}
+                                className={`px-2.5 py-1 rounded-lg text-xs font-bold border cursor-pointer flex items-center gap-1 ${on?'border-emerald-500/40 bg-emerald-500/10 text-emerald-400':'border-slate-700 text-slate-400'}`}>
+                                <span className="w-2 h-2 rounded-full" style={{background:t.color||'#94a3b8'}}/>{t.name}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
                     <input value={edit.note} onChange={e=>setEdit({...edit,note:e.target.value})} placeholder="메모" className={SEL+" w-full"}/>
                     <div className="flex gap-2 justify-end">
                       <button onClick={()=>setEditId(null)} className="text-xs text-slate-400 hover:text-white px-3 py-1.5">취소</button>
@@ -424,7 +442,7 @@ function RefundableList({ filtered, settings, trainers, trainerMap, onChange }) 
                           </span>
                         : <span className={`text-[10px] font-bold ${METHOD_CLR[p.method]||'text-slate-300'}`}>{METHOD_LBL[p.method]||p.method}</span>}
                       {p.isUnpaid && <span className="text-[10px] bg-red-500/20 text-red-400 border border-red-500/30 px-1.5 py-0.5 rounded font-bold">미수금</span>}
-                      {p.isNew && <span className="text-[10px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-1.5 py-0.5 rounded font-bold">신규</span>}
+                      {p.isNew && <span className="text-[10px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-1.5 py-0.5 rounded font-bold">신규{p.consultTrainerId?` · 상담 ${trainerMap[p.consultTrainerId]?.name||'?'}`:''}</span>}
                       {p.isReEnroll && <span className="text-[10px] bg-blue-500/20 text-blue-400 border border-blue-500/30 px-1.5 py-0.5 rounded font-bold">재등록</span>}
                       {p.category==='edu_center' && <span className="text-[10px] bg-amber-500/20 text-amber-400 border border-amber-500/30 px-1.5 py-0.5 rounded font-bold">센터교육</span>}
                       {p.category==='edu_external' && <span className="text-[10px] bg-amber-500/20 text-amber-400 border border-amber-500/30 px-1.5 py-0.5 rounded font-bold">외부활동</span>}
@@ -691,6 +709,18 @@ function TrainerSettleCard({ block: b, ym, settings, onSaved }) {
           <span className="text-slate-500">블로그 (50% 조건)</span>
           <span className="font-mono font-bold text-blue-400">{editing?Number(blog||0):b.blogCount}회</span>
         </div>
+        <div className="flex items-center justify-between">
+          <span className="text-slate-500">신규매출 인센티브</span>
+          <span className="font-mono font-bold text-emerald-400">
+            {won(b.newSales)}{b.newInc>0?` · +${won(b.newInc)}`:''}
+          </span>
+        </div>
+        <div className="flex items-center justify-between">
+          <span className="text-slate-500">재등록매출 인센티브</span>
+          <span className="font-mono font-bold text-teal-400">
+            {won(b.reEnrollSales)}{b.reInc>0?` · +${won(b.reInc)}`:''}
+          </span>
+        </div>
         <div className="flex items-center justify-between col-span-2 pt-1.5 border-t border-slate-800/50">
           <span className="text-slate-400 font-semibold">수업료 합계</span>
           <span className="font-mono font-bold text-slate-300">{won(liveSessionTotal)}</span>
@@ -950,10 +980,10 @@ function ConfigTab({ settings, trainers }) {
 
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-4">
         <h2 className="font-bold text-sm uppercase tracking-widest text-slate-400">정산 비율 (계약서 4조)</h2>
-        <p className="text-[11px] text-slate-500">매월(1일~말일) 자동 판정 — 기본 하한 → 블로그·스터디 조건 50% → 월매출 조건 60% · 수동은 고정 비율</p>
+        <p className="text-[11px] text-slate-500">매월(1일~말일) 자동 판정 — 기본 50%, 블로그·스터디 미달 시 40%로 하향, 신규 또는 재등록 매출이 임계 이상이면 60% · 수동은 고정 비율</p>
         <div className="grid grid-cols-2 gap-3">
           <NumField label="하한 비율(조건 미달)" k="lowSplitRate" suffix="%" form={form} setForm={setForm}/>
-          <NumField label="60% 조건 (월 입금)" k="rate60MinSales" suffix="원" form={form} setForm={setForm}/>
+          <NumField label="60% 조건 (신규 또는 재등록 매출)" k="rate60MinSales" suffix="원" form={form} setForm={setForm}/>
           <NumField label="50% 조건 (블로그 월)" k="rate50MinBlog" suffix="회" form={form} setForm={setForm}/>
           <NumField label="50% 조건 (스터디 월)" k="rate50MinStudy" suffix="회" form={form} setForm={setForm}/>
         </div>
@@ -995,13 +1025,13 @@ function ConfigTab({ settings, trainers }) {
         <div className="grid grid-cols-2 gap-3">
           <NumField label="SNS 1건당" k="promoPerPost" suffix="원" form={form} setForm={setForm}/>
           <NumField label="인스타 최대" k="snsInstaMax" suffix="회" form={form} setForm={setForm}/>
-          <NumField label="신규등록 단위" k="incentivePer" suffix="원" form={form} setForm={setForm}/>
+          <NumField label="신규매출 단위" k="incentivePer" suffix="원" form={form} setForm={setForm}/>
           <NumField label="신규 단위당" k="incentiveAmount" suffix="원" form={form} setForm={setForm}/>
-          <NumField label="재등록 단위" k="reEnrollPer" suffix="원" form={form} setForm={setForm}/>
+          <NumField label="재등록매출 단위" k="reEnrollPer" suffix="원" form={form} setForm={setForm}/>
           <NumField label="재등록 단위당" k="reEnrollAmount" suffix="원" form={form} setForm={setForm}/>
           <NumField label="임금지급일" k="paydayDay" suffix="일" form={form} setForm={setForm}/>
         </div>
-        <p className="text-[11px] text-slate-600">* 신규·재등록 100만원당 1만원 / SNS-블로그는 1회차부터 지급(상한 없음), SNS-인스타는 최대 8회</p>
+        <p className="text-[11px] text-slate-600">* 신규·재등록 매출 100만원당 1만원 인센티브 / SNS-블로그는 1회차부터 지급(상한 없음), SNS-인스타는 최대 8회</p>
       </div>
 
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-4">

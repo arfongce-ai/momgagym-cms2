@@ -60,27 +60,31 @@ export function calcNet(payment, settings) {
 //  · 자동: 기본=하한(40%) → 블로그≥조건 AND 스터디≥조건 이면 50% → 월매출≥조건 이면 60%
 //  · 60%와 50% 조건을 동시에 만족하면 더 높은 60% 우선
 // 반환: { rate, mode:'manual'|'auto', reason, monthNet, blogCount, studyCount }
-export function determineSplitRate({ settings, trainerId, monthNet, blogCount, studyCount }) {
+export function determineSplitRate({ settings, trainerId, monthNet, newSales=0, reEnrollSales=0, blogCount, studyCount }) {
   const manual = settings.trainerSplitRates?.[trainerId];
   if (manual !== undefined && manual !== null && manual !== '') {
     return { rate: Number(manual), mode: 'manual', reason: '수동 지정',
              monthNet, blogCount, studyCount };
   }
-  const base   = Number(settings.lowSplitRate ?? settings.defaultSplitRate ?? 40); // 하한
-  const min60  = Number(settings.rate60MinSales ?? 3000000);
-  const minBlog= Number(settings.rate50MinBlog ?? 2);
-  const minStudy=Number(settings.rate50MinStudy ?? 1);
+  const floor   = Number(settings.lowSplitRate ?? 40);   // 하한 40%
+  const min60   = Number(settings.rate60MinSales ?? 3000000);
+  const minBlog = Number(settings.rate50MinBlog ?? 2);
+  const minStudy= Number(settings.rate50MinStudy ?? 1);
 
-  let rate = base, reason = `기본(하한) ${base}%`;
-  // 50% 조건: 블로그 AND 스터디 동시 충족
+  // 기본 50%에서 시작. 블로그·스터디 미달이면 40%로 하향.
+  let rate, reason;
   if (blogCount >= minBlog && studyCount >= minStudy) {
-    rate = 50; reason = `블로그 ${blogCount}회·스터디 ${studyCount}회 → 50%`;
+    rate = 50; reason = `블로그 ${blogCount}회·스터디 ${studyCount}회 충족 → 50%`;
+  } else {
+    rate = floor; reason = `블로그/스터디 미달(블로그<${minBlog} 또는 스터디<${minStudy}) → ${floor}%`;
   }
-  // 60% 조건: 월 매출(입금금액). 50%보다 우선(더 높은 비율).
-  if (monthNet >= min60) {
-    rate = 60; reason = `월 입금 ${won(monthNet)} ≥ ${won(min60)} → 60%`;
+  // 60%: 신규매출 OR 재등록매출 중 하나라도 임계액 이상이면 상향(최우선)
+  if (newSales >= min60 || reEnrollSales >= min60) {
+    rate = 60;
+    const which = newSales >= min60 ? `신규 ${won(newSales)}` : `재등록 ${won(reEnrollSales)}`;
+    reason = `${which} ≥ ${won(min60)} → 60%`;
   }
-  return { rate, mode: 'auto', reason, monthNet, blogCount, studyCount };
+  return { rate, mode: 'auto', reason, monthNet, newSales, reEnrollSales, blogCount, studyCount };
 }
 
 // ── 특정 월(ym)의 트레이너별 정산비율을 일괄 계산 ──────────────────
@@ -90,24 +94,35 @@ export function determineSplitRate({ settings, trainerId, monthNet, blogCount, s
 export function computeMonthRates({ trainers, members, payments, records, settings, ym }) {
   const inMonth = (d) => d && d.slice(0,7) === ym;
   const monthNet = {};   // tid -> 그 달 귀속 입금액
+  const newSales = {};   // tid -> 신규(isNew) 귀속 입금액
+  const reSales  = {};   // tid -> 재등록(isReEnroll) 귀속 입금액
+  const addTo = (bucket, tid, v) => { bucket[tid] = (bucket[tid]||0) + v; };
   members.forEach(m => {
     const ts = m.trainerSessions || {};
     const tids = Object.keys(ts);
     const totalReg = Object.values(ts).reduce((s,v)=>s+(v.total||0),0);
     (payments[m.id]||[]).filter(p=>!p.isUnpaid && !p.isRefunded && inMonth(p.paidAt)).forEach(p=>{
       const amt = calcNet(p, settings).net;
+      // 트레이너별 귀속분을 [tid, part]로 산출
+      const parts = [];
       const splitList = Array.isArray(p.split) && p.split.length ? p.split : null;
       const pTids = (p.trainerIds && p.trainerIds.length) ? p.trainerIds : null;
       if (splitList) {
         const gross = splitList.reduce((s,x)=>s+(Number(x.amount)||0),0) || (p.amount||0) || 1;
-        splitList.forEach(({trainerId, amount}) => { monthNet[trainerId] = (monthNet[trainerId]||0) + amt*((Number(amount)||0)/gross); });
+        splitList.forEach(({trainerId, amount}) => parts.push([trainerId, amt*((Number(amount)||0)/gross)]));
       } else if (pTids) {
-        const per = amt/pTids.length; pTids.forEach(tid=>{ monthNet[tid]=(monthNet[tid]||0)+per; });
+        const per = amt/pTids.length; pTids.forEach(tid=>parts.push([tid, per]));
       } else if (totalReg > 0) {
-        tids.forEach(tid=>{ monthNet[tid]=(monthNet[tid]||0)+amt*((ts[tid].total||0)/totalReg); });
+        tids.forEach(tid=>parts.push([tid, amt*((ts[tid].total||0)/totalReg)]));
       } else if (tids.length) {
-        const per = amt/tids.length; tids.forEach(tid=>{ monthNet[tid]=(monthNet[tid]||0)+per; });
+        const per = amt/tids.length; tids.forEach(tid=>parts.push([tid, per]));
       }
+      parts.forEach(([tid, part]) => {
+        addTo(monthNet, tid, part);
+        if (p.isReEnroll) addTo(reSales, tid, part); // 재등록 → 담당
+      });
+      // 신규매출 → 상담 트레이너 1명에게 전액 귀속
+      if (p.isNew && p.consultTrainerId) addTo(newSales, p.consultTrainerId, amt);
     });
   });
   const out = {};
@@ -116,7 +131,11 @@ export function computeMonthRates({ trainers, members, payments, records, settin
     (records||[]).filter(r=>r.trainerId===t.id && inMonth(r.date)).forEach(r=>{
       if (r.channel==='blog') blog++; if (r.channel==='study') study++;
     });
-    const d = determineSplitRate({ settings, trainerId:t.id, monthNet:Math.round(monthNet[t.id]||0), blogCount:blog, studyCount:study });
+    const d = determineSplitRate({ settings, trainerId:t.id,
+      monthNet:Math.round(monthNet[t.id]||0),
+      newSales:Math.round(newSales[t.id]||0),
+      reEnrollSales:Math.round(reSales[t.id]||0),
+      blogCount:blog, studyCount:study });
     out[t.id] = { rate: d.rate, reason: d.reason, mode: d.mode };
   });
   return out;
@@ -140,6 +159,8 @@ export function computeSessionSettlement({ trainers, members, schedules, payment
   //  · trainerIds가 없는 구버전 결제는 회원의 트레이너별 등록횟수 비율로 안분
   const memberTrainerPay = {}; // mid -> { tid: netAmount }  (전체기간 — 단가 계산용)
   const trainerMonthNet  = {}; // tid -> 그 달(ym) 귀속 입금금액 합계 (정산비율 판정용·폴백)
+  const trainerNewSales  = {}; // tid -> 그 달 신규(isNew) 귀속 입금액
+  const trainerReSales   = {}; // tid -> 그 달 재등록(isReEnroll) 귀속 입금액
   // 회원×트레이너별 박제비율 가중합 — 결제월 비율을 입금액 비중으로 가중평균(rateW/rateBase)
   const memberTrainerRate = {}; // mid -> { tid: { w: 가중합(rate*net), base: net합, hasFrozen } }
   const addRate = (mid, tid, part, p) => {
@@ -159,39 +180,31 @@ export function computeSessionSettlement({ trainers, members, schedules, payment
       const amt = calcNet(p, settings).net; // 카드1·2: 부가세+카드세 / 페이·현금영수증: 부가세 / 계좌·현금: 공제 없음
       const isMonth = inMonth(p.paidAt);     // 폴백 정산비율은 "그 달 결제"만 반영
       const pTids = (p.trainerIds && p.trainerIds.length) ? p.trainerIds : null;
-      // 트레이너별 분배 금액(p.split)이 있으면 그 비율대로 귀속(공제 후 net에 동일 비율 적용)
       const splitList = Array.isArray(p.split) && p.split.length ? p.split : null;
+      // 트레이너별 귀속분 [tid, part] 산출
+      const parts = [];
       if (splitList) {
         const gross = splitList.reduce((s,x)=>s+(Number(x.amount)||0),0) || (p.amount||0) || 1;
-        splitList.forEach(({trainerId, amount}) => {
-          const part = amt * ((Number(amount)||0) / gross); // 공제 후 금액을 분배비율대로
-          acc[trainerId] = (acc[trainerId]||0) + part;
-          addRate(m.id, trainerId, part, p);
-          if (isMonth) trainerMonthNet[trainerId] = (trainerMonthNet[trainerId]||0) + part;
-        });
+        splitList.forEach(({trainerId, amount}) => parts.push([trainerId, amt*((Number(amount)||0)/gross)]));
       } else if (pTids) {
-        const per = amt / pTids.length;
-        pTids.forEach(tid => {
-          acc[tid] = (acc[tid]||0) + per;
-          addRate(m.id, tid, per, p);
-          if (isMonth) trainerMonthNet[tid] = (trainerMonthNet[tid]||0) + per;
-        });
+        const per = amt/pTids.length; pTids.forEach(tid=>parts.push([tid, per]));
       } else if (totalReg > 0) {
-        // 담당 트레이너 미지정 → 등록횟수 비율로 안분
-        tids.forEach(tid => {
-          const part = amt * ((ts[tid].total||0)/totalReg);
-          acc[tid] = (acc[tid]||0) + part;
-          addRate(m.id, tid, part, p);
-          if (isMonth) trainerMonthNet[tid] = (trainerMonthNet[tid]||0) + part;
-        });
+        tids.forEach(tid=>parts.push([tid, amt*((ts[tid].total||0)/totalReg)]));
       } else if (tids.length) {
-        // 등록횟수 정보도 없으면 균등 분배
-        const per = amt / tids.length;
-        tids.forEach(tid => {
-          acc[tid] = (acc[tid]||0) + per;
-          addRate(m.id, tid, per, p);
-          if (isMonth) trainerMonthNet[tid] = (trainerMonthNet[tid]||0) + per;
-        });
+        const per = amt/tids.length; tids.forEach(tid=>parts.push([tid, per]));
+      }
+      parts.forEach(([tid, part]) => {
+        acc[tid] = (acc[tid]||0) + part;       // 단가 계산용(전체기간)
+        addRate(m.id, tid, part, p);
+        if (isMonth) {
+          trainerMonthNet[tid] = (trainerMonthNet[tid]||0) + part;
+          // 재등록매출 → 담당 트레이너에게 귀속
+          if (p.isReEnroll) trainerReSales[tid] = (trainerReSales[tid]||0) + part;
+        }
+      });
+      // 신규매출 → 상담 트레이너(consultTrainerId) 1명에게 전액 귀속(담당 아님)
+      if (isMonth && p.isNew && p.consultTrainerId) {
+        trainerNewSales[p.consultTrainerId] = (trainerNewSales[p.consultTrainerId]||0) + amt;
       }
     });
     memberTrainerPay[m.id] = acc;
@@ -233,6 +246,8 @@ export function computeSessionSettlement({ trainers, members, schedules, payment
     const fallbackSplit = determineSplitRate({
       settings, trainerId: t.id,
       monthNet: Math.round(trainerMonthNet[t.id] || 0),
+      newSales: Math.round(trainerNewSales[t.id] || 0),
+      reEnrollSales: Math.round(trainerReSales[t.id] || 0),
       blogCount: fBlog, studyCount: fStudy,
     });
 
@@ -266,7 +281,14 @@ export function computeSessionSettlement({ trainers, members, schedules, payment
     const sessionPayout = rows.reduce((s,r)=>s+r.payAmount, 0);  // 비율 적용 후 합(회원별 박제비율)
     const blogInc  = fBlog * settings.promoPerPost;
     const instaInc = Math.min(fInsta, settings.snsInstaMax ?? 8) * settings.promoPerPost;
-    const promoIncentive = blogInc + instaInc;
+    // 신규/재등록 매출 인센티브: 단위 매출당 고정액 (기본 100만원당 1만원)
+    const newSalesM = Math.round(trainerNewSales[t.id] || 0);
+    const reSalesM  = Math.round(trainerReSales[t.id] || 0);
+    const newPer = Number(settings.incentivePer ?? 1000000);
+    const rePer  = Number(settings.reEnrollPer ?? 1000000);
+    const newInc = newPer > 0 ? Math.floor(newSalesM / newPer) * Number(settings.incentiveAmount ?? 10000) : 0;
+    const reInc  = rePer  > 0 ? Math.floor(reSalesM  / rePer)  * Number(settings.reEnrollAmount ?? 10000) : 0;
+    const promoIncentive = blogInc + instaInc + newInc + reInc;
     const payout = sessionPayout + promoIncentive;   // 세전(총 지급액)
     // 세후 = 세전 − 원천징수(국세+지방세). 세율은 설정값(기본 3.3%), 매달 신고 후 수정 가능.
     const whRate = Number(settings.withholdingRate ?? 3.3);
@@ -287,7 +309,9 @@ export function computeSessionSettlement({ trainers, members, schedules, payment
       splitRate, splitMode, splitReason, rateMixed: distinct.length>1,
       sessionPayout,
       blogCount: fBlog, instaCount: fInsta, studyCount: fStudy,
-      blogInc, instaInc, promoIncentive,
+      blogInc, instaInc,
+      newSales: newSalesM, reEnrollSales: reSalesM, newInc, reInc,
+      promoIncentive,
       payout, withholdingRate: whRate, tax, payoutNet,
       hasOverride: !!ov,
     };
