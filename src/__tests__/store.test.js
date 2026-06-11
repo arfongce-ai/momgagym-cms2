@@ -91,3 +91,145 @@ describe('예약 원자성 (NEW-03)', () => {
     expect(store.getMembers().find(x => x.id === m.id).trainerSessions.t1.remaining).toBe(5);
   });
 });
+
+// ── 추가: Critical Path 검증 ─────────────────────────────────────
+describe('예약 삭제 시 세션 복원 (deleteScheduleWithRestore)', () => {
+  it('확정 전 차감 예약을 삭제하면 세션이 복원된다', async () => {
+    const m = await store.addMember({ name: 'I', trainerSessions: { t1: { total: 10, remaining: 5 } } });
+    const sch = await store.createScheduleWithDeduction({ memberId: m.id, trainerId: 't1', isExternal: false });
+    expect(store.getMembers().find(x => x.id === m.id).trainerSessions.t1.remaining).toBe(4);
+    await store.deleteScheduleWithRestore(sch.id);
+    expect(store.getSchedules().find(s => s.id === sch.id)).toBeUndefined();
+    expect(store.getMembers().find(x => x.id === m.id).trainerSessions.t1.remaining).toBe(5);
+  });
+
+  it('삭제 batch 실패 시 스케줄·세션 모두 그대로다 (rollback)', async () => {
+    const m = await store.addMember({ name: 'J', trainerSessions: { t1: { total: 10, remaining: 5 } } });
+    const sch = await store.createScheduleWithDeduction({ memberId: m.id, trainerId: 't1', isExternal: false });
+    const remainBefore = store.getMembers().find(x => x.id === m.id).trainerSessions.t1.remaining; // 4
+    setFail(true);
+    await expect(store.deleteScheduleWithRestore(sch.id)).rejects.toThrow();
+    setFail(false);
+    // 캐시는 손대지 않았어야 한다(commit 실패 전에 캐시 변경 없음)
+    expect(store.getSchedules().find(s => s.id === sch.id)).toBeTruthy();
+    expect(store.getMembers().find(x => x.id === m.id).trainerSessions.t1.remaining).toBe(remainBefore);
+  });
+
+  it('이미 출석 확정된(statusFinalized) 예약 삭제는 세션을 복원하지 않는다', async () => {
+    const m = await store.addMember({ name: 'K', trainerSessions: { t1: { total: 10, remaining: 5 } } });
+    const sch = await store.createScheduleWithDeduction({ memberId: m.id, trainerId: 't1', isExternal: false });
+    await store.finalizeSchedule(sch.id, 'attended'); // 차감 유지
+    await store.deleteScheduleWithRestore(sch.id);
+    expect(store.getMembers().find(x => x.id === m.id).trainerSessions.t1.remaining).toBe(4);
+  });
+});
+
+describe('대량 데이터 파기 — 500건 한계 청크 처리 (purgeMember)', () => {
+  it('수납 600건이 누적된 회원도 빠짐없이 파기된다', async () => {
+    const m = await store.addMember({ name: 'L' });
+    // 600건의 수납을 직접 캐시에 적재 (Firestore 모킹은 batch를 그대로 반영)
+    for (let i = 0; i < 600; i++) {
+      await store.addPayment(m.id, { amount: 1000, method: '현금' });
+    }
+    expect(store.getPayments(m.id).length).toBe(600);
+    await store.purgeMember(m.id);
+    expect(store.getMembers().find(x => x.id === m.id)).toBeUndefined();
+    expect(store.getPayments(m.id).length).toBe(0);
+  });
+
+  it('하위 데이터 삭제 실패 시 회원 문서는 보존된다(재시도 가능)', async () => {
+    const m = await store.addMember({ name: 'M' });
+    await store.addPayment(m.id, { amount: 1000, method: '현금' });
+    setFail(true);
+    await expect(store.purgeMember(m.id)).rejects.toThrow();
+    setFail(false);
+    // 회원 문서는 맨 마지막에 지우므로 남아 있어야 한다
+    expect(store.getMembers().find(x => x.id === m.id)).toBeTruthy();
+  });
+});
+
+describe('권한 분기 — 관리자 전용 라우트 가드 로직', () => {
+  // App.jsx의 RequireAuth와 동일한 판단을 순수 함수로 검증한다.
+  const canAccess = (user, adminOnly) => {
+    if (!user) return 'redirect:/login';
+    if (adminOnly && user.role !== 'admin') return 'redirect:/';
+    return 'allow';
+  };
+  it('비로그인 사용자는 로그인으로 튕긴다', () => {
+    expect(canAccess(null, true)).toBe('redirect:/login');
+  });
+  it('트레이너(staff/trainer)는 관리자 전용 페이지에서 홈으로 튕긴다', () => {
+    expect(canAccess({ role: 'trainer' }, true)).toBe('redirect:/');
+    expect(canAccess({ role: 'staff' }, true)).toBe('redirect:/');
+  });
+  it('관리자는 관리자 전용 페이지에 접근할 수 있다', () => {
+    expect(canAccess({ role: 'admin' }, true)).toBe('allow');
+  });
+});
+
+// ── 추가: 매월 정산비율 자동 판정 (계약서 4조) ───────────────────
+import { determineSplitRate } from '../services/finance.js';
+
+describe('매월 정산비율 자동 판정 (determineSplitRate)', () => {
+  const S = { defaultSplitRate:50, lowSplitRate:40, rate60MinSales:3000000, rate50MinBlog:2, rate50MinStudy:1, trainerSplitRates:{} };
+
+  it('조건 미달이면 하한 40%', () => {
+    const r = determineSplitRate({ settings:S, trainerId:'t1', monthNet:1000000, blogCount:0, studyCount:0 });
+    expect(r.rate).toBe(40); expect(r.mode).toBe('auto');
+  });
+  it('블로그2 + 스터디1 충족이면 50%', () => {
+    const r = determineSplitRate({ settings:S, trainerId:'t1', monthNet:1000000, blogCount:2, studyCount:1 });
+    expect(r.rate).toBe(50);
+  });
+  it('블로그만 충족(스터디 0)이면 50% 아님(하한 유지)', () => {
+    const r = determineSplitRate({ settings:S, trainerId:'t1', monthNet:1000000, blogCount:5, studyCount:0 });
+    expect(r.rate).toBe(40);
+  });
+  it('월매출 조건 충족이면 60%', () => {
+    const r = determineSplitRate({ settings:S, trainerId:'t1', monthNet:3000000, blogCount:0, studyCount:0 });
+    expect(r.rate).toBe(60);
+  });
+  it('60%와 50% 동시 충족 시 더 높은 60% 우선', () => {
+    const r = determineSplitRate({ settings:S, trainerId:'t1', monthNet:5000000, blogCount:3, studyCount:2 });
+    expect(r.rate).toBe(60);
+  });
+  it('수동 지정(40)이 자동판정보다 우선', () => {
+    const r = determineSplitRate({ settings:{...S, trainerSplitRates:{t1:40}}, trainerId:'t1', monthNet:9000000, blogCount:5, studyCount:5 });
+    expect(r.rate).toBe(40); expect(r.mode).toBe('manual');
+  });
+});
+
+// ── 추가: 다중 트레이너 결제 분배(split) 귀속 검증 ───────────────
+import { computeSessionSettlement } from '../services/finance.js';
+
+describe('다중 트레이너 결제 분배(split) 귀속', () => {
+  const settings = { cardFeeRate:0, vatRate:0, defaultSplitRate:50, lowSplitRate:40,
+    rate60MinSales:99999999, rate50MinBlog:99, rate50MinStudy:99, promoPerPost:10000, snsInstaMax:8, trainerSplitRates:{} };
+  const trainers = [{id:'t1',name:'A'},{id:'t2',name:'B'}];
+  const members = [{ id:'m1', name:'홍', trainerSessions:{ t1:{total:10,remaining:10}, t2:{total:10,remaining:10} } }];
+  // 같은 회원에게 t1·t2 각 10회 출석(단가 계산용 횟수)
+  const schedules = [];
+  for (let i=0;i<10;i++){ schedules.push({id:'s'+i, isExternal:false, memberId:'m1', trainerId:'t1', status:'attended', date:'2026-06-10'}); }
+  for (let i=0;i<10;i++){ schedules.push({id:'x'+i, isExternal:false, memberId:'m1', trainerId:'t2', status:'attended', date:'2026-06-10'}); }
+
+  it('split 7:3이면 단가가 비율대로 귀속된다', () => {
+    const payments = { m1: [{ id:'p1', paidAt:'2026-06-01', amount:1000000, method:'cash', isUnpaid:false, isRefunded:false,
+      trainerIds:['t1','t2'], split:[{trainerId:'t1',amount:700000},{trainerId:'t2',amount:300000}] }] };
+    const blocks = computeSessionSettlement({ trainers, members, schedules, payments, records:[], settings, ym:'2026-06' });
+    const a = blocks.find(b=>b.trainer.id==='t1');
+    const b = blocks.find(b=>b.trainer.id==='t2');
+    // 단가 = 귀속액 / 등록횟수(10). t1: 70만/10=7만, t2: 30만/10=3만
+    expect(a.rows[0].autoUnit).toBe(70000);
+    expect(b.rows[0].autoUnit).toBe(30000);
+  });
+
+  it('split 없으면 1/n 균등 귀속(구버전 호환)', () => {
+    const payments = { m1: [{ id:'p2', paidAt:'2026-06-01', amount:1000000, method:'cash', isUnpaid:false, isRefunded:false,
+      trainerIds:['t1','t2'] }] };
+    const blocks = computeSessionSettlement({ trainers, members, schedules, payments, records:[], settings, ym:'2026-06' });
+    const a = blocks.find(b=>b.trainer.id==='t1');
+    const b = blocks.find(b=>b.trainer.id==='t2');
+    expect(a.rows[0].autoUnit).toBe(50000); // 50만/10
+    expect(b.rows[0].autoUnit).toBe(50000);
+  });
+});

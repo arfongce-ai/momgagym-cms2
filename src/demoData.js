@@ -86,8 +86,9 @@ const INITIAL_SETTINGS = {
   id:'config',
   cardFeeRate: 0.4,   // 카드 수수료(%) — 2026 우대 수수료율
   vatRate: 10,        // 부가세(%)
-  defaultSplitRate: 50, // 기본 정산 비율(%)
-  // 트레이너별 정산 비율 { trainerId: 40|50|60 } — 수동 지정(자동판정 우선이나 덮어쓰기 가능)
+  defaultSplitRate: 40, // (구 호환) 기본 정산 비율 하한(%)
+  lowSplitRate: 40,     // 정산비율 하한(%) — 조건 미달 시 적용
+  // 트레이너별 정산 비율 { trainerId: 40|50|60 } — 수동 지정(있으면 자동판정보다 우선)
   trainerSplitRates: {},
   // 정산비율 자동판정 조건 (계약서 4조)
   rate60MinSales: 3000000,  // 60%: 월 매출(입금금액) 300만원 이상
@@ -131,16 +132,17 @@ async function loadGrouped(name) {
 async function seedIfEmpty() {
   const membersSnap = await getDocs(collection(db, 'members'));
   if (!membersSnap.empty) return;
-  const batch = writeBatch(db);
-  INITIAL_MEMBERS.forEach(m  => batch.set(doc(db, 'members', m.id), m));
-  INITIAL_TRAINERS.forEach(t => batch.set(doc(db, 'trainers', t.id), t));
-  INITIAL_SCHEDULES.forEach(s => batch.set(doc(db, 'schedules', s.id), s));
-  INITIAL_NOTICES.forEach(n  => batch.set(doc(db, 'notices', n.id), n));
+  // 초기 시드도 500건 한계를 넘을 수 있으므로 ops로 모아 chunk 처리한다.
+  const ops = [];
+  INITIAL_MEMBERS.forEach(m  => ops.push({ op:'set', name:'members',   id:m.id, data:m }));
+  INITIAL_TRAINERS.forEach(t => ops.push({ op:'set', name:'trainers',  id:t.id, data:t }));
+  INITIAL_SCHEDULES.forEach(s => ops.push({ op:'set', name:'schedules', id:s.id, data:s }));
+  INITIAL_NOTICES.forEach(n  => ops.push({ op:'set', name:'notices',   id:n.id, data:n }));
   Object.entries(INITIAL_PAYMENTS).forEach(([mid, list]) =>
-    list.forEach(p => batch.set(doc(db, 'payments', p.id), { ...p, __mid: mid })));
+    list.forEach(p => ops.push({ op:'set', name:'payments', id:p.id, data:{ ...p, __mid: mid } })));
   Object.entries(INITIAL_BODY).forEach(([mid, list]) =>
-    list.forEach(b => batch.set(doc(db, 'body', b.id), { ...b, __mid: mid })));
-  await batch.commit();
+    list.forEach(b => ops.push({ op:'set', name:'body', id:b.id, data:{ ...b, __mid: mid } })));
+  await fbWriteBatch(ops);
   console.log('[FitCMS] Firebase 최초 시드 완료:', DATA_VERSION);
 }
 
@@ -178,12 +180,46 @@ export async function initStore() {
 function fbSet(name, id, data) { return setDoc(doc(db, name, id), data); }
 function fbDelete(name, id)    { return deleteDoc(doc(db, name, id)); }
 
-// 여러 문서를 원자적으로 삭제 (부분 실패 방지) — [{name, id}, ...]
+// ── Firestore WriteBatch 하드 리밋 대응 ───────────────────────────
+// Firestore writeBatch는 1회 commit당 최대 500개 문서 조작만 허용한다.
+// 장기 회원의 누적 데이터(예약/수납/신체/AI)가 500건을 넘으면
+// 한 batch로는 처리할 수 없으므로 500건 미만 단위로 쪼개어(chunk) 처리한다.
+const BATCH_LIMIT = 500;
+// 여유분(450)을 두어 호출부에서 set/delete를 섞어 쓰더라도 안전하게.
+const CHUNK_SIZE  = 450;
+
+function chunk(arr, size = CHUNK_SIZE) {
+  const out = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
+}
+
+// 여러 문서를 삭제 (부분 실패 방지) — [{name, id}, ...]
+// ⚠️ 원자성 주의: Firestore batch는 500건이 한계라 그 이상은 여러 batch로 나뉜다.
+//    각 chunk는 원자적이지만 chunk 간에는 원자적이지 않다(중간 실패 시 일부만 삭제될 수 있음).
+//    → 호출부(purgeMember 등)는 "실패 시 재시도하면 멱등하게 마저 삭제된다"는 전제로 설계한다.
 async function fbDeleteBatch(items) {
   if (!items.length) return;
-  const batch = writeBatch(db);
-  items.forEach(({ name, id }) => batch.delete(doc(db, name, id)));
-  await batch.commit();
+  for (const part of chunk(items)) {
+    const batch = writeBatch(db);
+    part.forEach(({ name, id }) => batch.delete(doc(db, name, id)));
+    await batch.commit();
+  }
+}
+
+// 여러 문서를 set/delete 혼합으로 처리 — [{op:'set'|'del', name, id, data?}, ...]
+// 500건 단위로 쪼개어 commit. (set/delete를 한 흐름에서 원자 처리할 때 사용)
+async function fbWriteBatch(ops) {
+  if (!ops.length) return;
+  for (const part of chunk(ops)) {
+    const batch = writeBatch(db);
+    part.forEach(({ op, name, id, data }) => {
+      const ref = doc(db, name, id);
+      if (op === 'del') batch.delete(ref);
+      else batch.set(ref, data);
+    });
+    await batch.commit();
+  }
 }
 
 // 저장/삭제 함수는 async — Firestore 완료를 기다리고, 실패 시 캐시를 되돌린다.
@@ -319,15 +355,23 @@ export const store = {
     delete cache.body[mid];
   },
 
-  // 회원 1명의 모든 개인정보를 원자적으로 삭제 (스케줄·수납·신체·AI·회원) — CV-04/CV-06
+  // 회원 1명의 모든 개인정보를 삭제 (스케줄·수납·신체·AI·회원) — CV-04/CV-06
+  // ⚠️ 장기 회원은 누적 문서가 500건(Firestore batch 한계)을 넘을 수 있다.
+  //    fbDeleteBatch가 500건 미만으로 쪼개 여러 batch로 처리한다.
+  //    회원 문서(members)는 "맨 마지막"에 삭제한다 → 중간에 실패해도 회원이 남아 있어
+  //    같은 작업을 다시 실행하면 남은 데이터를 멱등하게 마저 지울 수 있다.
   purgeMember: async (mid) => {
-    const items = [];
-    cache.schedules.filter(s=>s.memberId===mid).forEach(s=>items.push({name:'schedules',id:s.id}));
-    (cache.payments[mid]||[]).forEach(p=>items.push({name:'payments',id:p.id}));
-    (cache.body[mid]||[]).forEach(r=>items.push({name:'body',id:r.id}));
-    (cache.ai[mid]||[]).forEach(a=>items.push({name:'ai',id:a.id}));
-    items.push({name:'members',id:mid});
-    await fbDeleteBatch(items);   // 하나라도 실패하면 전체 실패(원자적)
+    const sub = [];   // 하위 데이터(여러 chunk로 나뉠 수 있음)
+    cache.schedules.filter(s=>s.memberId===mid).forEach(s=>sub.push({name:'schedules',id:s.id}));
+    (cache.payments[mid]||[]).forEach(p=>sub.push({name:'payments',id:p.id}));
+    (cache.body[mid]||[]).forEach(r=>sub.push({name:'body',id:r.id}));
+    (cache.ai[mid]||[]).forEach(a=>sub.push({name:'ai',id:a.id}));
+
+    // 1) 하위 데이터 먼저 chunk 단위로 삭제 (실패 시 여기서 throw → 회원 문서는 손대지 않음)
+    await fbDeleteBatch(sub);
+    // 2) 모든 하위 삭제 성공 후에만 회원 문서 삭제
+    await fbDeleteBatch([{name:'members',id:mid}]);
+
     // 성공 시에만 캐시 반영
     cache.schedules=cache.schedules.filter(s=>s.memberId!==mid);
     delete cache.payments[mid];

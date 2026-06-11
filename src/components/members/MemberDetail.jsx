@@ -34,7 +34,7 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
   // 수납
   const [payments,     setPayments]    = useState([]);
   const [showAddPay,   setShowAddPay]  = useState(false);
-  const [payForm,      setPayForm]     = useState({ paidAt: new Date().toISOString().slice(0,10), amount:'', method:'pay', isUnpaid:false, note:'', trainerIds:[], isReEnroll:false, reEnrollNo:'', isNew:false, category:'normal' });
+  const [payForm,      setPayForm]     = useState({ paidAt: new Date().toISOString().slice(0,10), amount:'', method:'pay', isUnpaid:false, note:'', trainerIds:[], split:[], isReEnroll:false, reEnrollNo:'', isNew:false, category:'normal' });
 
   // 신체정보
   const [bodyRecords,  setBodyRecords] = useState([]);
@@ -63,7 +63,7 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
         phone:editForm.phone, phone2:editForm.phone2||'',
         birthDate:editForm.birthDate||'', address:editForm.address||'',
         joinDate:editForm.joinDate||'',
-        lastPaymentDate:editForm.lastPaymentDate||'',
+        // 최근결제일은 '수납 등록' 시에만 자동 갱신됨 — 기본정보 저장에서 건드리지 않는다.
         classTypes:editForm.classTypes||[], memo:editForm.memo||'',
       });
       refresh(); setEdit(false); onUpdate?.();
@@ -134,6 +134,90 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
     catch(e){ alert('삭제에 실패했습니다.'); }
   };
 
+  // ── 다중 트레이너 금액 분배(split) 유틸 ─────────────────────
+  // split = [{ trainerId, amount }] — 다중(2명 이상)일 때만 사용.
+  // 총금액을 트레이너들에게 균등(기본 5:5)으로 나누되, 나머지는 첫 트레이너에 몰아준다.
+  const evenSplit = (tids, total) => {
+    const n = tids.length;
+    if (n === 0) return [];
+    const t = Math.max(0, Math.round(Number(total) || 0));
+    const base = Math.floor(t / n);
+    return tids.map((tid, i) => ({ trainerId: tid, amount: base + (i === 0 ? t - base * n : 0) }));
+  };
+  // trainerIds 또는 총금액이 바뀔 때 split을 재구성.
+  //  · 다중이 아니면 split 비움
+  //  · 이미 있던 트레이너의 금액은 유지(가능하면), 새로 추가된 트레이너만 균등 채움
+  const rebuildSplit = (tids, total, prevSplit) => {
+    if (tids.length < 2) return [];
+    const prevMap = Object.fromEntries((prevSplit||[]).map(s => [s.trainerId, Number(s.amount)||0]));
+    const known = tids.filter(id => prevMap[id] != null);
+    // 이전 값이 전혀 없으면(처음 다중 진입) 균등 분배(5:5)
+    if (known.length === 0) return evenSplit(tids, total);
+    // 일부만 알고 있으면: 알던 합을 빼고 나머지를 새 트레이너들에 균등 배분
+    const usedSum = known.reduce((s,id)=>s+prevMap[id],0);
+    const fresh = tids.filter(id => prevMap[id] == null);
+    const rest = Math.max(0, (Number(total)||0) - usedSum);
+    const freshSplit = Object.fromEntries(evenSplit(fresh, rest).map(s=>[s.trainerId, s.amount]));
+    return tids.map(id => ({ trainerId: id, amount: prevMap[id] != null ? prevMap[id] : (freshSplit[id]||0) }));
+  };
+
+  // 트레이너 토글: 선택/해제 후 split 재구성
+  const togglePayTrainer = (tid) => setPayForm(p => {
+    const on = p.trainerIds.includes(tid);
+    const tids = on ? p.trainerIds.filter(id=>id!==tid) : [...p.trainerIds, tid];
+    return { ...p, trainerIds: tids, split: rebuildSplit(tids, p.amount, p.split) };
+  });
+  // 총금액 변경: 다중이면 split도 함께 재구성(기존 비율 유지하며 합계 맞춤)
+  const onAmountChange = (val) => setPayForm(p => {
+    const tids = p.trainerIds;
+    if (tids.length < 2) return { ...p, amount: val, split: [] };
+    const prev = p.split || [];
+    const prevSum = prev.reduce((s,x)=>s+(Number(x.amount)||0),0);
+    let next;
+    if (prevSum > 0) {
+      // 기존 비율 유지하며 새 총액에 맞춰 스케일
+      const t = Math.max(0, Math.round(Number(val)||0));
+      let acc = 0;
+      next = tids.map((id, i) => {
+        const cur = Number(prev.find(s=>s.trainerId===id)?.amount)||0;
+        const amt = i === tids.length-1 ? t - acc : Math.round(t * (cur/prevSum));
+        acc += amt; return { trainerId: id, amount: amt };
+      });
+    } else {
+      next = evenSplit(tids, val); // 기본 5:5
+    }
+    return { ...p, amount: val, split: next };
+  });
+  // 개별 트레이너 금액 직접 수정(다른 트레이너 금액은 그대로, 총액은 합으로 표시)
+  const onSplitAmount = (tid, val) => setPayForm(p => {
+    const split = p.trainerIds.map(id =>
+      ({ trainerId: id, amount: id===tid ? Math.max(0, Math.round(Number(val)||0))
+                                          : (Number(p.split.find(s=>s.trainerId===id)?.amount)||0) }));
+    const total = split.reduce((s,x)=>s+x.amount,0);
+    return { ...p, split, amount: String(total) };
+  });
+  // 비율(%) 직접 수정 → 총액 기준 금액 자동 산출
+  const onSplitRatio = (tid, pct) => setPayForm(p => {
+    const total = Math.max(0, Math.round(Number(p.amount)||0));
+    const ratio = Math.min(100, Math.max(0, Number(pct)||0));
+    const others = p.trainerIds.filter(id=>id!==tid);
+    const thisAmt = Math.round(total * ratio/100);
+    const rest = Math.max(0, total - thisAmt);
+    // 나머지는 다른 트레이너들에게 균등 배분
+    const restSplit = Object.fromEntries(evenSplit(others, rest).map(s=>[s.trainerId, s.amount]));
+    const split = p.trainerIds.map(id => ({ trainerId:id, amount: id===tid ? thisAmt : (restSplit[id]||0) }));
+    return { ...p, split };
+  });
+
+  // ── 수납 등록 폼 열기: 담당 트레이너 자동 선택 ──────────────
+  // 회원 등록 시 지정된 담당 트레이너(trainerSessions의 키)를 결제 폼에 미리 채운다.
+  //  · 2명이면 둘 다 자동 선택(자동 5:5 분배) → 결제 전 단독/다중 확인 후 조정 가능
+  //  · 1명이면 그 1명 자동 선택 → 필요 시 다중 트레이너를 추가 선택 가능
+  const openAddPay = () => {
+    const registered = Object.keys(member.trainerSessions || {});
+    setPayForm(p => ({ ...p, trainerIds: registered, split: rebuildSplit(registered, p.amount, []) }));
+    setShowAddPay(true);
+  };
   // ── 수납 등록 ─────────────────────────────────────────
   const handleAddPayment = async () => {
     if (!payForm.amount) { alert('금액을 입력해 주세요.'); return; }
@@ -141,11 +225,18 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
       // 재등록일 때만 회차 저장(숫자), 아니면 회차 비움
       const reEnrollNo = payForm.isReEnroll && payForm.reEnrollNo
         ? Number(payForm.reEnrollNo) : null;
-      await store.addPayment(member.id, { ...payForm, amount:Number(payForm.amount), reEnrollNo });
+      // 다중(2명 이상)일 때만 split 저장. 선택된 트레이너만, 금액 정수화.
+      const split = payForm.trainerIds.length >= 2
+        ? payForm.trainerIds.map(id => ({
+            trainerId: id,
+            amount: Math.max(0, Math.round(Number(payForm.split.find(x=>x.trainerId===id)?.amount)||0)),
+          }))
+        : [];
+      await store.addPayment(member.id, { ...payForm, amount:Number(payForm.amount), split, reEnrollNo });
       // 결제일 자동 업데이트
       await store.updateMember(member.id, { lastPaymentDate:payForm.paidAt });
       refresh(); setShowAddPay(false);
-      setPayForm({ paidAt:new Date().toISOString().slice(0,10), amount:'', method:'pay', isUnpaid:false, note:'', trainerIds:[], isReEnroll:false, reEnrollNo:'', isNew:false, category:'normal' });
+      setPayForm({ paidAt:new Date().toISOString().slice(0,10), amount:'', method:'pay', isUnpaid:false, note:'', trainerIds:[], split:[], isReEnroll:false, reEnrollNo:'', isNew:false, category:'normal' });
       onUpdate?.();
     } catch (e) { alert('수납 등록에 실패했습니다. 네트워크 확인 후 다시 시도하세요.'); }
   };
@@ -292,7 +383,12 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
                 <div><label className={LBL}>주소 (선택)</label><input value={editForm.address||''} onChange={pfe('address')} placeholder="주소를 입력하세요 (선택)" className={INP}/></div>
                 <div className="grid grid-cols-2 gap-3">
                   <div><label className={LBL}>가입일</label><input type="date" value={editForm.joinDate||''} onChange={pfe('joinDate')} className={INP}/></div>
-                  <div><label className={LBL}>최근결제일</label><input type="date" value={editForm.lastPaymentDate||''} onChange={pfe('lastPaymentDate')} className={INP}/></div>
+                  <div>
+                    <label className={LBL}>최근결제일</label>
+                    <div className={INP+" text-slate-400 flex items-center"}>
+                      {editForm.lastPaymentDate || '수납 등록 시 자동 입력'}
+                    </div>
+                  </div>
                 </div>
                 <ClassTypeCheckbox selected={editForm.classTypes||[]} onChange={v=>setEF(f=>({...f,classTypes:v}))}/>
                 <div><label className={LBL}>메모</label><textarea rows={2} value={editForm.memo||''} onChange={pfe('memo')} className={INP+" resize-none"}/></div>
@@ -459,7 +555,9 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
                         <p className="text-slate-500 text-xs mt-0.5">{p.paidAt}</p>
                         {p.trainerIds?.length>0 && (
                           <p className="text-slate-400 text-xs mt-1">
-                            담당: {p.trainerIds.map(id=>trainerMap[id]?.name||'?').join(', ')}
+                            담당: {Array.isArray(p.split)&&p.split.length
+                              ? p.split.map(s=>`${trainerMap[s.trainerId]?.name||'?'} ${(Number(s.amount)||0).toLocaleString()}원`).join(' · ')
+                              : p.trainerIds.map(id=>trainerMap[id]?.name||'?').join(', ')}
                           </p>
                         )}
                         {p.note&&<p className="text-slate-400 text-xs mt-1">{p.note}</p>}
@@ -475,7 +573,7 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
 
               {/* 수납 등록 폼 */}
               {!showAddPay ? (
-                <button onClick={()=>setShowAddPay(true)}
+                <button onClick={openAddPay}
                   className="w-full py-3 rounded-xl border-2 border-dashed border-slate-700 text-slate-400 hover:border-amber-500/40 hover:text-amber-400 text-sm font-semibold transition-colors">
                   + 수납 등록
                 </button>
@@ -484,7 +582,7 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
                   <p className="text-xs text-amber-400 font-bold uppercase tracking-widest">수납 등록</p>
                   <div className="grid grid-cols-2 gap-3">
                     <div><label className={LBL}>결제일</label><input type="date" value={payForm.paidAt} onChange={ppf('paidAt')} className={INP}/></div>
-                    <div><label className={LBL}>금액 (원)</label><input type="number" min="0" value={payForm.amount} onChange={ppf('amount')} placeholder="500000" className={INP+" font-mono"}/></div>
+                    <div><label className={LBL}>금액 (원)</label><input type="number" min="0" value={payForm.amount} onChange={e=>onAmountChange(e.target.value)} placeholder="500000" className={INP+" font-mono"}/></div>
                   </div>
                   <div>
                     <label className={LBL}>결제 수단</label>
@@ -499,22 +597,95 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
                     </div>
                   </div>
                   <div>
-                    <label className={LBL}>담당 트레이너 (다중 선택 가능 · 1/n 정산)</label>
-                    <div className="flex flex-wrap gap-2">
-                      {trainers.map(t=>{
-                        const on = payForm.trainerIds.includes(t.id);
-                        return (
-                          <div key={t.id} onClick={()=>setPayForm(p=>({...p,
-                            trainerIds: on ? p.trainerIds.filter(id=>id!==t.id) : [...p.trainerIds, t.id]}))}
-                            className={`px-3 py-2 rounded-xl text-xs font-bold border cursor-pointer transition-colors select-none flex items-center gap-1.5
-                              ${on?'border-amber-500/40 bg-amber-500/10 text-amber-400':'border-slate-700 text-slate-400 hover:border-slate-500'}`}>
-                            <span className="w-2 h-2 rounded-full" style={{background:t.color||'#94a3b8'}}/>
-                            {t.name}
+                    {(() => {
+                      const registered = Object.keys(member.trainerSessions || {});
+                      const sel = payForm.trainerIds;
+                      const mode = sel.length >= 2 ? '다중' : (sel.length === 1 ? '단독' : '미선택');
+                      const modeClr = sel.length >= 2
+                        ? 'bg-violet-500/20 text-violet-300 border-violet-500/40'
+                        : sel.length === 1
+                          ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                          : 'bg-red-500/20 text-red-300 border-red-500/40';
+                      return (
+                        <>
+                          <div className="flex items-center justify-between mb-1.5">
+                            <label className={LBL+" mb-0"}>담당 트레이너 · 정산</label>
+                            <span className={`px-2 py-0.5 rounded-md text-[11px] font-bold border ${modeClr}`}>
+                              {mode}{sel.length >= 2 ? ` · 1/${sel.length} 정산` : sel.length === 1 ? ' 정산' : ''}
+                            </span>
                           </div>
-                        );
-                      })}
-                    </div>
+                          <p className="text-[11px] text-slate-500 mb-2">
+                            등록된 담당 트레이너가 자동 선택됩니다. 결제 전 단독/다중 여부를 확인하고 조정하세요.
+                          </p>
+                          <div className="flex flex-wrap gap-2">
+                            {trainers.map(t=>{
+                              const on  = sel.includes(t.id);
+                              const reg = registered.includes(t.id);
+                              return (
+                                <div key={t.id} onClick={()=>togglePayTrainer(t.id)}
+                                  className={`px-3 py-2 rounded-xl text-xs font-bold border cursor-pointer transition-colors select-none flex items-center gap-1.5
+                                    ${on?'border-amber-500/40 bg-amber-500/10 text-amber-400':'border-slate-700 text-slate-400 hover:border-slate-500'}`}>
+                                  <span className="w-2 h-2 rounded-full" style={{background:t.color||'#94a3b8'}}/>
+                                  {t.name}
+                                  {reg && <span className="text-[10px] px-1 rounded bg-slate-700/70 text-slate-300">담당</span>}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </>
+                      );
+                    })()}
                   </div>
+
+                  {/* 다중(2명 이상)일 때만 — 트레이너별 금액/비율 분배 (기본 5:5) */}
+                  {payForm.trainerIds.length >= 2 && (() => {
+                    const total = payForm.trainerIds.reduce((s,id)=>
+                      s + (Number(payForm.split.find(x=>x.trainerId===id)?.amount)||0), 0);
+                    return (
+                      <div className="bg-slate-900/60 border border-violet-500/20 rounded-xl p-3 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <label className={LBL+" mb-0"}>트레이너별 분배 (기본 5:5 · 비율/금액 조정)</label>
+                          <button type="button"
+                            onClick={()=>setPayForm(p=>({...p, split: evenSplit(p.trainerIds, p.amount)}))}
+                            className="text-[11px] px-2 py-1 rounded-md border border-slate-700 text-slate-400 hover:text-violet-300 hover:border-violet-500/40">
+                            5:5 균등
+                          </button>
+                        </div>
+                        {payForm.trainerIds.map(id=>{
+                          const t = trainerMap[id];
+                          const amt = Number(payForm.split.find(x=>x.trainerId===id)?.amount)||0;
+                          const pct = total>0 ? Math.round(amt/total*100) : 0;
+                          return (
+                            <div key={id} className="flex items-center gap-2">
+                              <span className="flex items-center gap-1.5 text-xs font-bold text-slate-200 w-24 flex-shrink-0">
+                                <span className="w-2 h-2 rounded-full" style={{background:t?.color||'#94a3b8'}}/>
+                                {t?.name||'?'}
+                              </span>
+                              <div className="flex items-center gap-1">
+                                <input type="number" min="0" max="100" value={pct}
+                                  onChange={e=>onSplitRatio(id, e.target.value)}
+                                  className="w-14 bg-slate-800 border border-slate-700 text-slate-100 rounded-lg px-2 py-1.5 text-xs font-mono text-right"/>
+                                <span className="text-[11px] text-slate-500">%</span>
+                              </div>
+                              <div className="flex items-center gap-1 flex-1">
+                                <input type="number" min="0" value={amt}
+                                  onChange={e=>onSplitAmount(id, e.target.value)}
+                                  className="w-full bg-slate-800 border border-slate-700 text-slate-100 rounded-lg px-2 py-1.5 text-xs font-mono text-right"/>
+                                <span className="text-[11px] text-slate-500 flex-shrink-0">원</span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                        <div className="flex items-center justify-between pt-1 border-t border-slate-800 text-xs">
+                          <span className="text-slate-500">분배 합계</span>
+                          <span className={`font-mono font-bold ${total===(Number(payForm.amount)||0)?'text-emerald-400':'text-amber-400'}`}>
+                            {total.toLocaleString()}원
+                            {total!==(Number(payForm.amount)||0) && ` (총액 ${(Number(payForm.amount)||0).toLocaleString()}원)`}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })()}
                   <div>
                     <label className={LBL}>매출 구분</label>
                     <div className="grid grid-cols-3 gap-2">

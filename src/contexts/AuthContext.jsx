@@ -8,10 +8,16 @@ import { store } from '../demoData';
 
 const AuthContext = createContext(null);
 
-// roles/{uid} 문서에서 역할을 읽는다. 없으면 권한 없음(null).
-async function fetchRole(uid) {
+// 역할 결정: Custom Claims(token.admin) 우선 → 없으면 roles/{uid} 문서로 폴백.
+// claim 기반은 토큰 안에 서명되어 있어 위조 불가하고 문서 조회도 필요 없다.
+async function resolveRole(fbUser) {
   try {
-    const snap = await getDoc(doc(db, 'roles', uid));
+    const res = await fbUser.getIdTokenResult();
+    if (res.claims && res.claims.admin === true) return 'admin';
+  } catch (e) { console.error('[claim 조회 실패]', e); }
+  // 폴백: roles 문서
+  try {
+    const snap = await getDoc(doc(db, 'roles', fbUser.uid));
     if (snap.exists()) return snap.data().role || null;
   } catch (e) { console.error('[역할 조회 실패]', e); }
   return null;
@@ -27,7 +33,7 @@ export function AuthProvider({ children }) {
     const unsub = onAuthStateChanged(auth, async (fbUser) => {
       if (fbUser) {
         // 관리자/직원: Firebase 계정 → roles 문서로 역할 확정
-        const role = await fetchRole(fbUser.uid);
+        const role = await resolveRole(fbUser);
         setUser({
           id: fbUser.uid,
           email: fbUser.email,
@@ -54,7 +60,7 @@ export function AuthProvider({ children }) {
     // 1) Firebase 계정(관리자/직원)으로 먼저 시도
     try {
       const cred = await signInWithEmailAndPassword(auth, e, password);
-      const role = await fetchRole(cred.user.uid);
+      const role = await resolveRole(cred.user);
       const u = {
         id: cred.user.uid, email: cred.user.email,
         role: role || 'staff', name: cred.user.displayName || cred.user.email,

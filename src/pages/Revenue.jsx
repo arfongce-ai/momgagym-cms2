@@ -10,7 +10,7 @@ import { store } from '../demoData';
 import { useAuth } from '../contexts/AuthContext';
 import {
   METHOD_LBL, METHOD_CLR, won, monthKey, yearKey,
-  calcNet, CARD_METHODS, downloadCSV, computeSessionSettlement,
+  calcNet, CARD_METHODS, downloadCSV, computeSessionSettlement, determineSplitRate,
 } from '../services/finance';
 
 const thisMonth = new Date().toISOString().slice(0,7);
@@ -235,7 +235,7 @@ function RefundableList({ filtered, settings, trainers, trainerMap, onChange }) 
     setEditId(p.id);
     setEdit({
       paidAt:p.paidAt, amount:p.amount, method:p.method,
-      trainerIds:[...(p.trainerIds||[])], note:p.note||'',
+      trainerIds:[...(p.trainerIds||[])], split:[...(p.split||[])], note:p.note||'',
       isUnpaid:!!p.isUnpaid, isNew:!!p.isNew, isReEnroll:!!p.isReEnroll,
       category:p.category||'normal',
     });
@@ -244,9 +244,30 @@ function RefundableList({ filtered, settings, trainers, trainerMap, onChange }) 
   const saveEdit = async (p) => {
     if (!edit.amount) { alert('금액을 입력해 주세요.'); return; }
     try {
+      // split 정합성: 다중(2명+)이 아니면 비우고, 트레이너가 바뀌었으면 균등 재분배.
+      const total = Math.max(0, Math.round(Number(edit.amount)||0));
+      let split = [];
+      if (edit.trainerIds.length >= 2) {
+        const prev = Object.fromEntries((edit.split||[]).map(s=>[s.trainerId, Number(s.amount)||0]));
+        const sameSet = edit.split?.length===edit.trainerIds.length
+          && edit.trainerIds.every(id=>prev[id]!=null);
+        if (sameSet) {
+          // 트레이너 구성 동일 → 금액만 총액에 맞게(비율 유지) 스케일
+          const sum = edit.trainerIds.reduce((s,id)=>s+prev[id],0) || total || 1;
+          let acc=0;
+          split = edit.trainerIds.map((id,i)=>{
+            const amt = i===edit.trainerIds.length-1 ? total-acc : Math.round(total*(prev[id]/sum));
+            acc+=amt; return { trainerId:id, amount:amt };
+          });
+        } else {
+          // 구성 변경 → 균등(5:5)
+          const n=edit.trainerIds.length, base=Math.floor(total/n);
+          split = edit.trainerIds.map((id,i)=>({trainerId:id, amount: base+(i===0?total-base*n:0)}));
+        }
+      }
       await store.updatePayment(p.memberId, p.id, {
         paidAt:edit.paidAt, amount:Number(edit.amount), method:edit.method,
-        trainerIds:edit.trainerIds, note:edit.note,
+        trainerIds:edit.trainerIds, split, note:edit.note,
         isUnpaid:edit.isUnpaid, isNew:edit.isNew, isReEnroll:edit.isReEnroll,
         category:edit.category,
       });
@@ -407,6 +428,7 @@ function SettleTab({ settings, trainers, trainerMap }) {
   }, [ym, refreshKey]);
 
   const grandSession = blocks.reduce((s,b)=>s+b.sessionTotal,0);
+  const grandSessionPayout = blocks.reduce((s,b)=>s+(b.sessionPayout??b.sessionTotal),0);
   const grandInc     = blocks.reduce((s,b)=>s+b.promoIncentive,0);
   const grandPayout  = blocks.reduce((s,b)=>s+b.payout,0);
 
@@ -415,8 +437,12 @@ function SettleTab({ settings, trainers, trainerMap }) {
     const body = [];
     blocks.forEach(b=>{
       b.rows.forEach(r=>body.push([b.trainer.name, r.memberName, r.regTotal, r.unit, r.cnt, r.amount]));
+      body.push([b.trainer.name,'수업료 합계','','','', b.sessionTotal]);
+      body.push([b.trainer.name,`정산비율(${b.splitMode==='manual'?'수동':'자동'})`,'','','', `${b.splitRate}%`]);
+      body.push([b.trainer.name,'실지급 수업료','','','', b.sessionPayout]);
       body.push([b.trainer.name,'블로그','', '', b.blogCount, b.blogInc]);
       body.push([b.trainer.name,'인스타','', '', b.instaCount, b.instaInc]);
+      body.push([b.trainer.name,'스터디','', '', b.studyCount, '']);
       body.push([b.trainer.name,'합계','','','', b.payout]);
     });
     downloadCSV(`정산_${ym}.csv`, [header, ...body]);
@@ -438,8 +464,9 @@ function SettleTab({ settings, trainers, trainerMap }) {
         </button>
       </div>
 
-      <div className="grid grid-cols-3 gap-3">
-        <Card label="수업료 합계" value={won(grandSession)} color="text-emerald-400"/>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <Card label="수업료 합계" value={won(grandSession)} color="text-slate-300"/>
+        <Card label="실지급 수업료(비율적용)" value={won(grandSessionPayout)} color="text-emerald-400"/>
         <Card label="인센티브 합계" value={won(grandInc)} color="text-blue-400"/>
         <Card label="총 지급액" value={won(grandPayout)} color="text-amber-400"/>
       </div>
@@ -467,11 +494,12 @@ function TrainerSettleCard({ block: b, ym, settings, onSaved }) {
   const [cntEdits, setCntEdits]   = useState({});   // memberId -> 횟수
   const [blog, setBlog] = useState(b.blogCount);
   const [insta, setInsta] = useState(b.instaCount);
+  const [study, setStudy] = useState(b.studyCount);
 
   const startEdit = () => {
     const u={}, c={};
     b.rows.forEach(r=>{ u[r.memberId]=r.unit; c[r.memberId]=r.cnt; });
-    setUnitEdits(u); setCntEdits(c); setBlog(b.blogCount); setInsta(b.instaCount);
+    setUnitEdits(u); setCntEdits(c); setBlog(b.blogCount); setInsta(b.instaCount); setStudy(b.studyCount);
     setEditing(true);
   };
   const save = async () => {
@@ -479,14 +507,24 @@ function TrainerSettleCard({ block: b, ym, settings, onSaved }) {
       await store.saveSettleOverride(b.trainer.id, ym, {
         unitPrices: Object.fromEntries(Object.entries(unitEdits).map(([k,v])=>[k,Number(v)||0])),
         sessionCounts: Object.fromEntries(Object.entries(cntEdits).map(([k,v])=>[k,Number(v)||0])),
-        blogCount: Number(blog)||0, instaCount: Number(insta)||0,
+        blogCount: Number(blog)||0, instaCount: Number(insta)||0, studyCount: Number(study)||0,
       });
       setEditing(false); onSaved?.();
     } catch(e){ alert('저장에 실패했습니다.'); }
   };
 
-  const liveTotal = editing
+  // 편집 중에는 입력값으로 비율을 즉시 재판정해 미리보기
+  const liveSessionTotal = editing
     ? b.rows.reduce((s,r)=>s+(Number(unitEdits[r.memberId])||0)*(Number(cntEdits[r.memberId])||0),0)
+    : b.sessionTotal;
+  const liveSplit = editing
+    ? determineSplitRate({ settings, trainerId: b.trainer.id,
+        monthNet: b.rows.reduce((s,r)=>s+(Number(unitEdits[r.memberId])||0)*(Number(cntEdits[r.memberId])||0),0),
+        blogCount: Number(blog)||0, studyCount: Number(study)||0 })
+    : { rate: b.splitRate, mode: b.splitMode, reason: b.splitReason };
+  const liveSessionPayout = Math.round(liveSessionTotal * (liveSplit.rate/100));
+  const liveTotal = editing
+    ? liveSessionPayout
       + Number(blog||0)*settings.promoPerPost
       + Math.min(Number(insta||0), settings.snsInstaMax??8)*settings.promoPerPost
     : b.payout;
@@ -499,6 +537,13 @@ function TrainerSettleCard({ block: b, ym, settings, onSaved }) {
         <div className="flex items-center gap-2 flex-wrap">
           <span className="w-3 h-3 rounded-full" style={{background:b.trainer.color||'#94a3b8'}}/>
           <span className="font-bold">{b.trainer.name}</span>
+          <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold border ${
+            liveSplit.rate>=60 ? 'bg-amber-500/20 text-amber-400 border-amber-500/40'
+            : liveSplit.rate>=50 ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40'
+            : 'bg-slate-700/40 text-slate-300 border-slate-600'
+          }`} title={liveSplit.reason}>
+            정산 {liveSplit.rate}%{liveSplit.mode==='manual'?' (수동)':''}
+          </span>
           {b.hasOverride && <span className="text-[10px] bg-blue-500/20 text-blue-400 px-1.5 py-0.5 rounded font-bold">수정됨</span>}
         </div>
         <div className="flex items-center gap-2">
@@ -562,10 +607,25 @@ function TrainerSettleCard({ block: b, ym, settings, onSaved }) {
             ? <span className="flex items-center gap-1"><input type="number" value={insta} onChange={e=>setInsta(e.target.value)} className="w-12 bg-slate-900 border border-slate-600 rounded px-1.5 py-0.5 text-xs text-right"/>회</span>
             : <span className="font-mono font-bold text-pink-400">{b.instaCount}회{b.instaCount>(settings.snsInstaMax??8)?`(지급 ${settings.snsInstaMax??8})`:''} · {won(b.instaInc)}</span>}
         </div>
+        <div className="flex items-center justify-between">
+          <span className="text-slate-500">스터디 (50% 조건)</span>
+          {editing
+            ? <span className="flex items-center gap-1"><input type="number" value={study} onChange={e=>setStudy(e.target.value)} className="w-12 bg-slate-900 border border-slate-600 rounded px-1.5 py-0.5 text-xs text-right"/>회</span>
+            : <span className="font-mono font-bold text-purple-400">{b.studyCount}회</span>}
+        </div>
+        <div className="flex items-center justify-between">
+          <span className="text-slate-500">블로그 (50% 조건)</span>
+          <span className="font-mono font-bold text-blue-400">{editing?Number(blog||0):b.blogCount}회</span>
+        </div>
         <div className="flex items-center justify-between col-span-2 pt-1.5 border-t border-slate-800/50">
           <span className="text-slate-400 font-semibold">수업료 합계</span>
-          <span className="font-mono font-bold text-emerald-400">{won(editing? b.rows.reduce((s,r)=>s+(Number(unitEdits[r.memberId])||0)*(Number(cntEdits[r.memberId])||0),0) : b.sessionTotal)}</span>
+          <span className="font-mono font-bold text-slate-300">{won(liveSessionTotal)}</span>
         </div>
+        <div className="flex items-center justify-between col-span-2">
+          <span className="text-slate-400 font-semibold">× 정산비율 {liveSplit.rate}% = 실지급 수업료</span>
+          <span className="font-mono font-bold text-emerald-400">{won(liveSessionPayout)}</span>
+        </div>
+        <p className="col-span-2 text-[10px] text-slate-600 leading-relaxed">{liveSplit.reason}</p>
       </div>
     </div>
   );
@@ -801,10 +861,10 @@ function ConfigTab({ settings, trainers }) {
 
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-4">
         <h2 className="font-bold text-sm uppercase tracking-widest text-slate-400">정산 비율 (계약서 4조)</h2>
-        <p className="text-[11px] text-slate-500">자동: 조건에 따라 40→50→60% 판정 · 수동: 고정 비율 지정</p>
+        <p className="text-[11px] text-slate-500">매월(1일~말일) 자동 판정 — 기본 하한 → 블로그·스터디 조건 50% → 월매출 조건 60% · 수동은 고정 비율</p>
         <div className="grid grid-cols-2 gap-3">
-          <NumField label="기본 비율" k="defaultSplitRate" suffix="%" form={form} setForm={setForm}/>
-          <NumField label="60% 조건 (월 매출)" k="rate60MinSales" suffix="원" form={form} setForm={setForm}/>
+          <NumField label="하한 비율(조건 미달)" k="lowSplitRate" suffix="%" form={form} setForm={setForm}/>
+          <NumField label="60% 조건 (월 입금)" k="rate60MinSales" suffix="원" form={form} setForm={setForm}/>
           <NumField label="50% 조건 (블로그 월)" k="rate50MinBlog" suffix="회" form={form} setForm={setForm}/>
           <NumField label="50% 조건 (스터디 월)" k="rate50MinStudy" suffix="회" form={form} setForm={setForm}/>
         </div>

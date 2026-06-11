@@ -156,7 +156,7 @@ export default function MemberRegister({ trainers=[], onSuccess, onCancel }) {
 
   const [form, setForm] = useState({
     name:'', gender:'', phone:'', phone2:'', birthDate:'', address:'', job:'',
-    joinDate:today, lastPaymentDate:today,
+    joinDate:today, lastPaymentDate:null,
     memo:'',
     // 2개 담당 트레이너 슬롯
     trainerSlots: [{ ...EMPTY_SLOT }, { ...EMPTY_SLOT }],
@@ -211,7 +211,7 @@ export default function MemberRegister({ trainers=[], onSuccess, onCancel }) {
       await store.addMember({
         name:form.name, gender:form.gender, phone:form.phone, phone2:form.phone2,
         birthDate:form.birthDate, address:form.address, job:form.job,
-        joinDate:form.joinDate, lastPaymentDate:form.lastPaymentDate,
+        joinDate:form.joinDate, lastPaymentDate:null,
         lastAttendedDate:null, memo:form.memo,
         classTypes, trainerSessions,
         signatureUrl:getDataUrl(), isActive:true,
@@ -282,10 +282,13 @@ export default function MemberRegister({ trainers=[], onSuccess, onCancel }) {
               {/* 주소 (선택) */}
               <div><label className={LBL}>주소 (선택)</label><input value={form.address} onChange={pf('address')} placeholder="주소를 입력하세요 (선택)" className={INP}/></div>
 
-              {/* 가입일 / 최근 결제일 */}
+              {/* 가입일 (최근 결제일은 '수납 등록' 시 자동 연동되므로 여기서 입력하지 않음) */}
               <div className="grid grid-cols-2 gap-3">
                 <div><label className={LBL}>가입일</label><input type="date" value={form.joinDate} onChange={pf('joinDate')} className={INP}/></div>
-                <div><label className={LBL}>최근 결제일</label><input type="date" value={form.lastPaymentDate} onChange={pf('lastPaymentDate')} className={INP}/></div>
+                <div>
+                  <label className={LBL}>최근 결제일</label>
+                  <div className={INP+" text-slate-500 flex items-center"}>수납 등록 시 자동 입력</div>
+                </div>
               </div>
 
               {/* 트레이너 슬롯 2개 */}
