@@ -149,6 +149,45 @@ export function computeMonthRates({ trainers, members, payments, records, settin
   return out;
 }
 
+// ── 월말 정산비율 확정(재박제) 계획 생성 ────────────────────────────
+// 선택한 달(ym)에 결제가 발생한 모든 회원의 결제 건을, 그 달 "전체 실적"으로
+// 다시 판정해 splitRateAtPay를 갱신할 계획(patch 목록)을 만든다.
+//  · 그 달(ym)에 paidAt이 속한 결제만 대상 — 다른 달 결제는 건드리지 않는다.
+//  · 미수금/환불 결제도 비율 자체는 다시 박제(지급 계산에서 별도 처리되므로 비율은 보존).
+//  · 한 회원이 여러 달에 결제했어도 각 결제는 자기 결제월 비율을 유지(이 함수는 ym만 본다).
+// 반환: { patches:[{mid,pid,memberName,splitRateAtPay,prev}], rateMap, count }
+//   - patches는 비율이 실제로 바뀌는 건만 포함(변동 없으면 제외).
+export function buildRefreezePlan({ trainers, members, payments, records, settings, ym }) {
+  const inMonth = (d) => d && d.slice(0,7) === ym;
+  // 그 달 전체 결제로 트레이너별 비율 판정 (저장 시점과 동일한 함수 재사용)
+  const rateMap = computeMonthRates({ trainers, members, payments, records, settings, ym });
+
+  const memberMap = Object.fromEntries(members.map(m=>[m.id, m]));
+  const patches = [];
+  members.forEach(m => {
+    (payments[m.id]||[]).forEach(p => {
+      if (!inMonth(p.paidAt)) return;
+      // 이 결제에 관여하는 트레이너: trainerIds → 없으면 회원 담당 트레이너 전체
+      const involved = (p.trainerIds && p.trainerIds.length)
+        ? p.trainerIds
+        : Object.keys(m.trainerSessions || {});
+      if (!involved.length) return;
+      const next = {};
+      involved.forEach(tid => { if (rateMap[tid]) next[tid] = rateMap[tid].rate; });
+      const prev = p.splitRateAtPay || {};
+      // 변동 여부 판정 (involved 트레이너 비율이 하나라도 달라지면 갱신)
+      const changed = involved.some(tid => Number(prev[tid]) !== Number(next[tid]));
+      if (changed) {
+        patches.push({
+          mid: m.id, pid: p.id, memberName: memberMap[m.id]?.name || '?',
+          paidAt: p.paidAt, splitRateAtPay: next, prev,
+        });
+      }
+    });
+  });
+  return { patches, rateMap, count: patches.length };
+}
+
 // ── 회당 단가 × 월 수업횟수 기반 정산 (실제 시트 방식) ──────────────
 // 정산비율은 "결제월에 박제된 비율(splitRateAtPay)"을 회원별로 적용한다.
 export function computeSessionSettlement({ trainers, members, schedules, payments, records, settings, ym, getOverride }) {

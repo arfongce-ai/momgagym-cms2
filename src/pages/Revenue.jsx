@@ -11,6 +11,7 @@ import { useAuth } from '../contexts/AuthContext';
 import {
   METHOD_LBL, METHOD_CLR, won, monthKey, yearKey,
   calcNet, CARD_METHODS, downloadCSV, computeSessionSettlement, determineSplitRate,
+  buildRefreezePlan,
 } from '../services/finance';
 
 const thisMonth = new Date().toISOString().slice(0,7);
@@ -549,6 +550,50 @@ function SettleTab({ settings, trainers, trainerMap }) {
     return [...set].sort().reverse();
   }, [ym, refreshKey]);
 
+  // ── 이 달 정산비율 확정(재박제) ───────────────────────────────────
+  // 선택한 달(ym)에 결제가 발생한 회원들의 splitRateAtPay를, 그 달 전체 실적으로
+  // 다시 판정해 갱신한다. 다른 달 결제는 건드리지 않는다.
+  const [freezing, setFreezing] = useState(false);
+  const handleRefreeze = async () => {
+    const members2 = store.getMembers();
+    const grouped = {}; members2.forEach(m=>{ grouped[m.id] = store.getPayments(m.id); });
+    const plan = buildRefreezePlan({
+      trainers, members: members2, payments: grouped,
+      records: store.getPromos(), settings: store.getSettings(), ym,
+    });
+    if (plan.count === 0) {
+      alert(`${ym} 정산비율을 그 달 전체 실적으로 다시 계산했지만, 바뀌는 결제가 없습니다.\n(이미 최종 실적과 일치하거나, 그 달 결제가 없습니다.)`);
+      return;
+    }
+    // 변동 내역 미리보기 (최대 12건)
+    const lines = plan.patches.slice(0,12).map(pt=>{
+      const involved = Object.keys(pt.splitRateAtPay);
+      const desc = involved.map(tid=>{
+        const before = pt.prev?.[tid]; const after = pt.splitRateAtPay[tid];
+        return `${trainerMap[tid]?.name||tid} ${before??'-'}%→${after}%`;
+      }).join(', ');
+      return `· ${pt.memberName} (${pt.paidAt}): ${desc}`;
+    }).join('\n');
+    const more = plan.count > 12 ? `\n…외 ${plan.count-12}건` : '';
+    if (!window.confirm(
+      `${ym} 정산비율을 그 달 전체 실적 기준으로 확정합니다.\n`+
+      `변동되는 결제: ${plan.count}건\n\n${lines}${more}\n\n`+
+      `이 작업은 해당 결제의 정산비율을 새로 고정합니다. 진행할까요?`
+    )) return;
+    setFreezing(true);
+    try {
+      for (const pt of plan.patches) {
+        await store.updatePayment(pt.mid, pt.pid, { splitRateAtPay: pt.splitRateAtPay });
+      }
+      setRefreshKey(k=>k+1);
+      alert(`완료: ${plan.count}건의 정산비율을 ${ym} 최종 실적으로 확정했습니다.`);
+    } catch (e) {
+      alert('확정 중 오류가 발생했습니다. 네트워크 확인 후 다시 시도하세요.');
+    } finally {
+      setFreezing(false);
+    }
+  };
+
   const grandSession = blocks.reduce((s,b)=>s+b.sessionTotal,0);
   const grandSessionPayout = blocks.reduce((s,b)=>s+(b.sessionPayout??b.sessionTotal),0);
   const grandInc     = blocks.reduce((s,b)=>s+b.promoIncentive,0);
@@ -582,11 +627,18 @@ function SettleTab({ settings, trainers, trainerMap }) {
           {monthOptions.map(m=><option key={m} value={m}>{m}</option>)}
         </select>
         <span className="text-[11px] text-slate-500 ml-auto">임금지급일: 매월 {settings.paydayDay||5}일</span>
+        <button onClick={handleRefreeze} disabled={freezing}
+          className="px-3 py-2 rounded-lg text-xs font-bold bg-amber-500/10 border border-amber-500/40 text-amber-400 hover:bg-amber-500/20 transition-colors disabled:opacity-40">
+          {freezing ? '확정 중…' : '🔒 이 달 정산비율 확정'}
+        </button>
         <button onClick={exportCSV} disabled={blocks.length===0}
           className="px-3 py-2 rounded-lg text-xs font-bold bg-slate-800 border border-slate-700 text-slate-200 hover:border-amber-500/40 hover:text-amber-400 transition-colors disabled:opacity-40">
           📄 정산표 내보내기
         </button>
       </div>
+      <p className="text-[11px] text-slate-500 -mt-3">
+        🔒 “이 달 정산비율 확정”은 선택한 달에 결제가 발생한 회원들의 정산비율을, 그 달 전체 실적(블로그·스터디·매출)으로 다시 판정해 고정합니다. 보통 월말(말일 이후)에 한 번 누르며, 다른 달 결제는 바뀌지 않습니다.
+      </p>
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <Card label="수업료 합계" value={won(grandSession)} color="text-slate-300"/>

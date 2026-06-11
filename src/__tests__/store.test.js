@@ -464,3 +464,54 @@ describe('환불 처리', () => {
     expect(b.rows[0].unit).toBe(0); // 미수금이라 단가 0
   });
 });
+
+import { buildRefreezePlan } from '../services/finance.js';
+
+describe('월말 정산비율 확정 재박제 (buildRefreezePlan)', () => {
+  const S = { lowSplitRate:40, rate60MinSales:3000000, rate50MinBlog:2, rate50MinStudy:1,
+              vatRate:0, cardFeeRate:0 };
+  const trainers = [{ id:'t1', name:'김나영' }];
+
+  it('월초에 40%로 박제됐던 결제가, 그 달 전체 실적이 50%면 50%로 갱신된다', () => {
+    // 6월 결제: 박제 시점엔 실적 부족으로 40%로 고정돼 있었음
+    const members = [{ id:'m3', name:'등록회원3', trainerSessions:{ t1:{ total:10 } } }];
+    const payments = { m3:[{ id:'p1', paidAt:'2026-06-03', amount:1000000, method:'cash',
+                             trainerIds:['t1'], splitRateAtPay:{ t1:40 } }] };
+    // 그 달 전체 실적: 블로그2·스터디1 → 조건A 1개 충족 → 50%
+    const records = [
+      { trainerId:'t1', channel:'blog', date:'2026-06-10' },
+      { trainerId:'t1', channel:'blog', date:'2026-06-20' },
+      { trainerId:'t1', channel:'study', date:'2026-06-15' },
+    ];
+    const plan = buildRefreezePlan({ trainers, members, payments, records, settings:S, ym:'2026-06' });
+    expect(plan.count).toBe(1);
+    expect(plan.patches[0].splitRateAtPay.t1).toBe(50);
+    expect(plan.patches[0].prev.t1).toBe(40);
+  });
+
+  it('다른 달(5월) 결제는 6월 확정 시 절대 건드리지 않는다', () => {
+    const members = [{ id:'m2', name:'등록회원2', trainerSessions:{ t1:{ total:20 } } }];
+    const payments = { m2:[{ id:'p5', paidAt:'2026-05-10', amount:1000000, method:'cash',
+                             trainerIds:['t1'], splitRateAtPay:{ t1:40 } }] };
+    const records = [ // 6월 실적이 좋아도
+      { trainerId:'t1', channel:'blog', date:'2026-06-10' },
+      { trainerId:'t1', channel:'blog', date:'2026-06-20' },
+      { trainerId:'t1', channel:'study', date:'2026-06-15' },
+    ];
+    const plan = buildRefreezePlan({ trainers, members, payments, records, settings:S, ym:'2026-06' });
+    expect(plan.count).toBe(0); // 5월 결제는 6월 확정 대상 아님
+  });
+
+  it('이미 최종 실적과 일치하면 변동 건이 없다', () => {
+    const members = [{ id:'m1', name:'등록회원1', trainerSessions:{ t1:{ total:20 } } }];
+    const payments = { m1:[{ id:'p4', paidAt:'2026-04-05', amount:1000000, method:'cash',
+                             trainerIds:['t1'], splitRateAtPay:{ t1:50 } }] };
+    const records = [
+      { trainerId:'t1', channel:'blog', date:'2026-04-10' },
+      { trainerId:'t1', channel:'blog', date:'2026-04-20' },
+      { trainerId:'t1', channel:'study', date:'2026-04-15' },
+    ];
+    const plan = buildRefreezePlan({ trainers, members, payments, records, settings:S, ym:'2026-04' });
+    expect(plan.count).toBe(0);
+  });
+});
