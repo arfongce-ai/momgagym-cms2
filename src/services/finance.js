@@ -176,7 +176,10 @@ export function computeSessionSettlement({ trainers, members, schedules, payment
     const totalReg = Object.values(ts).reduce((s,v)=>s+(v.total||0),0);
     const acc = {};
     tids.forEach(tid => acc[tid] = 0);
-    (payments[m.id]||[]).filter(p=>!p.isUnpaid && !p.isRefunded).forEach(p=>{
+    // 환불 결제도 단가 계산에는 포함한다(이미 수업한 진행분은 트레이너 정산에 남김).
+    //  · 단가×출석횟수 모델이라, 환불해도 '출석한 회차'만큼만 자동 지급됨(미진행분은 출석 0이라 미지급).
+    //  · 미수금(isUnpaid)만 제외. 환불 결제의 매출 차감은 아래 trainerMonthNet에서 별도 처리.
+    (payments[m.id]||[]).filter(p=>!p.isUnpaid).forEach(p=>{
       const amt = calcNet(p, settings).net; // 카드1·2: 부가세+카드세 / 페이·현금영수증: 부가세 / 계좌·현금: 공제 없음
       const isMonth = inMonth(p.paidAt);     // 폴백 정산비율은 "그 달 결제"만 반영
       const pTids = (p.trainerIds && p.trainerIds.length) ? p.trainerIds : null;
@@ -194,17 +197,35 @@ export function computeSessionSettlement({ trainers, members, schedules, payment
         const per = amt/tids.length; tids.forEach(tid=>parts.push([tid, per]));
       }
       parts.forEach(([tid, part]) => {
-        acc[tid] = (acc[tid]||0) + part;       // 단가 계산용(전체기간)
-        addRate(m.id, tid, part, p);
-        if (isMonth) {
+        acc[tid] = (acc[tid]||0) + part;       // 단가 계산용(전체기간, 환불 포함)
+        if (!p.isRefunded) addRate(m.id, tid, part, p); // 비율 박제 가중치는 미환불 결제만
+        // 매출/정산비율 판정: 미환불 결제는 결제월에 +, 환불 결제는 '환불한 달'에 −(환불액)
+        if (!p.isRefunded && isMonth) {
           trainerMonthNet[tid] = (trainerMonthNet[tid]||0) + part;
-          // 재등록매출 → 담당 트레이너에게 귀속
           if (p.isReEnroll) trainerReSales[tid] = (trainerReSales[tid]||0) + part;
         }
       });
       // 신규매출 → 상담 트레이너(consultTrainerId) 1명에게 전액 귀속(담당 아님)
-      if (isMonth && p.isNew && p.consultTrainerId) {
+      if (!p.isRefunded && isMonth && p.isNew && p.consultTrainerId) {
         trainerNewSales[p.consultTrainerId] = (trainerNewSales[p.consultTrainerId]||0) + amt;
+      }
+      // 환불 결제: '환불한 달(refundedAt)'의 트레이너 매출에서 환불액을 차감(−).
+      //  · 진행분은 위 단가 모델에서 이미 트레이너에게 남으므로, 매출 차감만 환불월에 반영.
+      if (p.isRefunded && p.refundedAt && p.refundedAt.slice(0,7) === ym) {
+        const refund = Number(p.refundAmount)||0;
+        // 트레이너별 안분: split > trainerIds 1/n > 등록횟수 비율
+        const rTids = [];
+        if (splitList) {
+          const gross = splitList.reduce((s,x)=>s+(Number(x.amount)||0),0) || 1;
+          splitList.forEach(({trainerId, amount}) => rTids.push([trainerId, refund*((Number(amount)||0)/gross)]));
+        } else if (pTids) {
+          const per = refund/pTids.length; pTids.forEach(tid=>rTids.push([tid, per]));
+        } else if (totalReg > 0) {
+          tids.forEach(tid=>rTids.push([tid, refund*((ts[tid].total||0)/totalReg)]));
+        } else if (tids.length) {
+          const per = refund/tids.length; tids.forEach(tid=>rTids.push([tid, per]));
+        }
+        rTids.forEach(([tid, r]) => { trainerMonthNet[tid] = (trainerMonthNet[tid]||0) - r; });
       }
     });
     memberTrainerPay[m.id] = acc;

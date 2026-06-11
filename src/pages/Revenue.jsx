@@ -85,12 +85,17 @@ function OverviewTab({ settings, trainers, trainerMap }) {
 
   const paid   = filtered.filter(p=>!p.isUnpaid && !p.isRefunded);
   const unpaid = filtered.filter(p=>p.isUnpaid && !p.isRefunded);
+  // 이 기간(월)에 환불된 결제 — 환불액을 매출에서 차감
+  const refundedThisPeriod = filtered.filter(p=>p.isRefunded && p.refundedAt &&
+    (selMonth==='all' || p.refundedAt.slice(0,7)===selMonth));
+  const refundTotal = refundedThisPeriod.reduce((s,p)=>s+(Number(p.refundAmount)||0),0);
 
   const totals = useMemo(()=>{
     let amount=0, cardFee=0, vat=0, net=0;
     paid.forEach(p=>{ const c=calcNet(p,settings); amount+=c.amount; cardFee+=c.cardFee; vat+=c.vat; net+=c.net; });
+    net -= refundTotal;   // 환불한 달의 입금액에서 환불액 차감
     return { amount, cardFee, vat, net };
-  }, [paid, settings]);
+  }, [paid, settings, refundTotal]);
 
   const totalUnpaid = unpaid.reduce((s,p)=>s+(p.amount||0),0);
 
@@ -299,9 +304,30 @@ function RefundableList({ filtered, settings, trainers, trainerMap, onChange }) 
     catch(e){ alert('삭제에 실패했습니다.'); }
   };
 
+  // 출석 데이터로 진행분(이미 수업한 회차 × 단가) 자동 계산
+  const autoUsedAmount = (p) => {
+    const mem = store.getMembers().find(m=>m.id===p.memberId);
+    const ts = mem?.trainerSessions || {};
+    const totalReg = Object.values(ts).reduce((s,v)=>s+(v.total||0),0);
+    if (totalReg <= 0) return 0;
+    const net = calcNet(p, settings).net;
+    const unit = net / totalReg;                 // 단가 = 입금액 ÷ 등록횟수
+    // 이 회원의 출석(노쇼 포함) 회차 수 — 결제의 담당 트레이너 기준(없으면 전체)
+    const tids = (p.trainerIds && p.trainerIds.length) ? p.trainerIds : Object.keys(ts);
+    const attended = store.getSchedules().filter(s =>
+      !s.isExternal && s.memberId===p.memberId && tids.includes(s.trainerId) &&
+      (s.status==='attended' || s.status==='noshow')
+    ).length;
+    return Math.round(unit * attended);
+  };
+
   const handleRefund = async (p) => {
+    const suggested = autoUsedAmount(p);
     const usedInput = window.prompt(
-      `환불 처리 — ${p.memberName}\n총 결제액: ${won(p.amount)}\n\n진행 횟수 × 정상가(차감액)를 입력하세요 (원):`, '0');
+      `환불 처리 — ${p.memberName}\n총 결제액: ${won(p.amount)}\n\n` +
+      `진행분(이미 수업한 회차 × 단가)을 입력하세요 (원):\n` +
+      `· 출석 데이터 기준 자동 계산값: ${won(suggested)} (수정 가능)`,
+      String(suggested));
     if (usedInput===null) return;
     const usedAmount = Number(usedInput)||0;
     const vat     = p.amount*(settings.vatRate/100);
@@ -310,12 +336,21 @@ function RefundableList({ filtered, settings, trainers, trainerMap, onChange }) 
     if (!window.confirm(
       `환불 산정 (계약서 10조 기준)\n` +
       `총 결제액 ${won(p.amount)}\n− 부가세 ${won(vat)}\n− 위약금 10% ${won(penalty)}\n− 진행분 ${won(usedAmount)}\n` +
-      `= 환불액 ${won(refund)}\n\n이 결제를 환불 처리할까요?`)) return;
+      `= 환불액 ${won(refund)}\n\n` +
+      `※ 환불은 오늘 날짜(이번 달) 매출에서 차감되고, 이 회원의 잔여 세션은 0으로 정리됩니다.\n` +
+      `진행분 수업료는 트레이너 정산에 그대로 남습니다.\n\n이 결제를 환불 처리할까요?`)) return;
     try {
       await store.updatePayment(p.memberId, p.id, {
         isRefunded:true, refundAmount:refund, refundedAt:new Date().toISOString().slice(0,10),
         refundVat:vat, refundPenalty:penalty, refundUsed:usedAmount,
       });
+      // 잔여 세션 0으로 자동 정리(진행분은 이미 정산에 반영됨)
+      const mem = store.getMembers().find(m=>m.id===p.memberId);
+      if (mem?.trainerSessions) {
+        const ts = JSON.parse(JSON.stringify(mem.trainerSessions));
+        Object.keys(ts).forEach(tid => { ts[tid] = { ...ts[tid], remaining: 0 }; });
+        await store.updateMember(p.memberId, { trainerSessions: ts });
+      }
       refresh();
     } catch(e){ alert('환불 처리에 실패했습니다.'); }
   };

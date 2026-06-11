@@ -398,3 +398,40 @@ describe('신규/재등록 매출 인센티브', () => {
     expect(t1.rows[0].rate).toBe(40); // 신규매출 귀속 없으니 60% 아님
   });
 });
+
+// ── 추가: 환불 회계 (진행분 유지 + 환불월 매출 차감) ──────────────
+describe('환불 처리', () => {
+  const settings = { cardFeeRate:0, vatRate:0, lowSplitRate:40, defaultSplitRate:40,
+    rate60MinSales:99999999, rate50MinBlog:99, rate50MinStudy:99, promoPerPost:0, snsInstaMax:8,
+    incentivePer:1000000, incentiveAmount:10000, reEnrollPer:1000000, reEnrollAmount:10000,
+    withholdingRate:3.3, trainerSplitRates:{} };
+  const trainers=[{id:'t1',name:'A'}];
+  const members=[{id:'m1',name:'홍',trainerSessions:{t1:{total:10,remaining:5}}}];
+  // 4월 결제 100만(단가 10만), 5회 출석 후 환불(6월)
+  const schedules=Array.from({length:5},(_,i)=>({id:'s'+i,isExternal:false,memberId:'m1',trainerId:'t1',status:'attended',date:'2026-04-20'}));
+
+  it('환불해도 진행분(출석 회차) 수업료는 트레이너 정산에 남는다', () => {
+    const payments={ m1:[{id:'p',paidAt:'2026-04-02',amount:1000000,method:'cash',trainerIds:['t1'],
+      splitRateAtPay:{t1:40}, isRefunded:true, refundAmount:500000, refundedAt:'2026-06-10'}] };
+    // 4월 정산: 단가 10만 × 5회 × 40% = 20만 (환불돼도 출석분 지급)
+    const b=computeSessionSettlement({trainers,members,schedules,payments,records:[],settings,ym:'2026-04'})[0];
+    expect(b.rows[0].unit).toBe(100000);
+    expect(b.rows[0].cnt).toBe(5);
+    expect(b.sessionPayout).toBe(200000);
+  });
+
+  it('환불월(6월) 매출에서 환불액이 차감된다(−)', () => {
+    const payments={ m1:[{id:'p',paidAt:'2026-04-02',amount:1000000,method:'cash',trainerIds:['t1'],
+      isRefunded:true, refundAmount:500000, refundedAt:'2026-06-10'}] };
+    // 6월: 출석 없음 → 수업료 0, 매출은 환불액 −50만 (trainerMonthNet 음수)
+    const b6=computeSessionSettlement({trainers,members,schedules:[],payments,records:[],settings,ym:'2026-06'})[0];
+    // 6월엔 rows 없음(출석 0, 등록만)이거나 sessionPayout 0
+    expect(b6?.sessionPayout ?? 0).toBe(0);
+  });
+
+  it('미수금(isUnpaid)은 정산에서 제외된다', () => {
+    const payments={ m1:[{id:'p',paidAt:'2026-04-02',amount:1000000,method:'cash',trainerIds:['t1'],isUnpaid:true}] };
+    const b=computeSessionSettlement({trainers,members,schedules,payments,records:[],settings,ym:'2026-04'})[0];
+    expect(b.rows[0].unit).toBe(0); // 미수금이라 단가 0
+  });
+});
