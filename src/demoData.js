@@ -105,6 +105,9 @@ const INITIAL_SETTINGS = {
   eduCenterRate: 90,          // 센터 내 교육 90%
   eduExternalRate: 100,       // 외부 활동 100%
   paydayDay: 5,               // 임금지급일 (매월 5일, 참고)
+  // 세전/세후 — 원천징수(국세+지방세) 세율(%). 기본 3.3%.
+  //  · 실제 세액은 매달 세무신고 후 확정되므로 자동값은 추정치다. 설정에서 수정 가능.
+  withholdingRate: 3.3,
 };
 
 const cache = {

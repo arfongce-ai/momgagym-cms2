@@ -260,3 +260,77 @@ describe('복합 결제수단 공제 (calcNet)', () => {
     expect(r.net).toBe(1000000);
   });
 });
+
+// ── 추가: 결제월 박제 정산비율(splitRateAtPay) ───────────────────
+describe('결제월 박제 정산비율', () => {
+  const settings = { cardFeeRate:0, vatRate:0, lowSplitRate:40, defaultSplitRate:40,
+    rate60MinSales:99999999, rate50MinBlog:99, rate50MinStudy:99, promoPerPost:0, snsInstaMax:8, trainerSplitRates:{} };
+  const trainers = [{id:'t1',name:'A'}];
+  const members = [{ id:'m1', name:'홍', trainerSessions:{ t1:{total:10,remaining:0} } }];
+  // 6월에 10회 출석(수업월=6월)
+  const schedules = Array.from({length:10},(_,i)=>({id:'s'+i,isExternal:false,memberId:'m1',trainerId:'t1',status:'attended',date:'2026-06-15'}));
+
+  it('4월(40%) 결제분은 6월 정산에서도 40% 적용', () => {
+    const payments = { m1: [{ id:'p1', paidAt:'2026-04-02', amount:1000000, method:'cash', isUnpaid:false, isRefunded:false,
+      trainerIds:['t1'], splitRateAtPay:{ t1:40 } }] };
+    const blocks = computeSessionSettlement({ trainers, members, schedules, payments, records:[], settings, ym:'2026-06' });
+    const b = blocks.find(x=>x.trainer.id==='t1');
+    // 단가 100만/10=10만, 6월 10회 → 수업료 100만, 박제 40% → 40만
+    expect(b.sessionTotal).toBe(1000000);
+    expect(b.rows[0].rate).toBe(40);
+    expect(b.rows[0].rateFrozen).toBe(true);
+    expect(b.sessionPayout).toBe(400000);
+  });
+
+  it('설정을 60%로 바꿔도 과거 박제(40%)는 안 바뀐다', () => {
+    const payments = { m1: [{ id:'p1', paidAt:'2026-04-02', amount:1000000, method:'cash', isUnpaid:false, isRefunded:false,
+      trainerIds:['t1'], splitRateAtPay:{ t1:40 } }] };
+    const newSettings = { ...settings, rate60MinSales:1 }; // 지금이면 60% 조건
+    const blocks = computeSessionSettlement({ trainers, members, schedules, payments, records:[], settings:newSettings, ym:'2026-06' });
+    expect(blocks[0].rows[0].rate).toBe(40); // 박제값 유지
+  });
+
+  it('박제값 없는 구버전 결제는 현재월 자동판정으로 폴백', () => {
+    const payments = { m1: [{ id:'p1', paidAt:'2026-04-02', amount:1000000, method:'cash', isUnpaid:false, isRefunded:false,
+      trainerIds:['t1'] }] }; // splitRateAtPay 없음
+    const blocks = computeSessionSettlement({ trainers, members, schedules, payments, records:[], settings, ym:'2026-06' });
+    expect(blocks[0].rows[0].rate).toBe(40); // 폴백=하한 40
+    expect(blocks[0].rows[0].rateFrozen).toBe(false);
+  });
+
+  it('서로 다른 결제월 비율은 입금액 비중으로 가중평균', () => {
+    // 4월 결제 50만(40%) + 5월 결제 50만(60%) → 가중평균 50%
+    const payments = { m1: [
+      { id:'p1', paidAt:'2026-04-02', amount:500000, method:'cash', trainerIds:['t1'], splitRateAtPay:{t1:40} },
+      { id:'p2', paidAt:'2026-05-02', amount:500000, method:'cash', trainerIds:['t1'], splitRateAtPay:{t1:60} },
+    ]};
+    const blocks = computeSessionSettlement({ trainers, members, schedules, payments, records:[], settings, ym:'2026-06' });
+    expect(blocks[0].rows[0].rate).toBe(50); // (40*50만+60*50만)/100만
+  });
+});
+
+// ── 추가: 세전/세후(원천징수) 분리 ───────────────────────────────
+describe('세전/세후 원천징수', () => {
+  const base = { cardFeeRate:0, vatRate:0, lowSplitRate:50, defaultSplitRate:50,
+    rate60MinSales:99999999, rate50MinBlog:99, rate50MinStudy:99, promoPerPost:0, snsInstaMax:8, trainerSplitRates:{} };
+  const trainers=[{id:'t1',name:'A'}];
+  const members=[{id:'m1',name:'홍',trainerSessions:{t1:{total:10,remaining:0}}}];
+  const schedules=Array.from({length:10},(_,i)=>({id:'s'+i,isExternal:false,memberId:'m1',trainerId:'t1',status:'attended',date:'2026-06-15'}));
+  const payments={ m1:[{id:'p1',paidAt:'2026-06-02',amount:1000000,method:'cash',trainerIds:['t1'],splitRateAtPay:{t1:50}}] };
+
+  it('기본 3.3% 원천징수로 세후가 계산된다', () => {
+    const settings = { ...base, withholdingRate:3.3 };
+    const b = computeSessionSettlement({ trainers, members, schedules, payments, records:[], settings, ym:'2026-06' })[0];
+    // 수업료 100만 × 50% = 50만(세전), 세금 3.3% = 16,500, 세후 483,500
+    expect(b.payout).toBe(500000);
+    expect(b.tax).toBe(16500);
+    expect(b.payoutNet).toBe(483500);
+  });
+
+  it('세율을 바꾸면 세후도 바뀐다(설정 반영)', () => {
+    const settings = { ...base, withholdingRate:10 };
+    const b = computeSessionSettlement({ trainers, members, schedules, payments, records:[], settings, ym:'2026-06' })[0];
+    expect(b.tax).toBe(50000);
+    expect(b.payoutNet).toBe(450000);
+  });
+});

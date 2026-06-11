@@ -83,17 +83,72 @@ export function determineSplitRate({ settings, trainerId, monthNet, blogCount, s
   return { rate, mode: 'auto', reason, monthNet, blogCount, studyCount };
 }
 
+// ── 특정 월(ym)의 트레이너별 정산비율을 일괄 계산 ──────────────────
+// 결제 저장 시 "그 결제월의 비율"을 박제(snapshot)하기 위해 사용한다.
+//  · monthNet: 그 달 결제들의 트레이너 귀속 입금액(공제 후), promos: 그 달 블로그/스터디
+// 반환: { [trainerId]: { rate, reason } }
+export function computeMonthRates({ trainers, members, payments, records, settings, ym }) {
+  const inMonth = (d) => d && d.slice(0,7) === ym;
+  const monthNet = {};   // tid -> 그 달 귀속 입금액
+  members.forEach(m => {
+    const ts = m.trainerSessions || {};
+    const tids = Object.keys(ts);
+    const totalReg = Object.values(ts).reduce((s,v)=>s+(v.total||0),0);
+    (payments[m.id]||[]).filter(p=>!p.isUnpaid && !p.isRefunded && inMonth(p.paidAt)).forEach(p=>{
+      const amt = calcNet(p, settings).net;
+      const splitList = Array.isArray(p.split) && p.split.length ? p.split : null;
+      const pTids = (p.trainerIds && p.trainerIds.length) ? p.trainerIds : null;
+      if (splitList) {
+        const gross = splitList.reduce((s,x)=>s+(Number(x.amount)||0),0) || (p.amount||0) || 1;
+        splitList.forEach(({trainerId, amount}) => { monthNet[trainerId] = (monthNet[trainerId]||0) + amt*((Number(amount)||0)/gross); });
+      } else if (pTids) {
+        const per = amt/pTids.length; pTids.forEach(tid=>{ monthNet[tid]=(monthNet[tid]||0)+per; });
+      } else if (totalReg > 0) {
+        tids.forEach(tid=>{ monthNet[tid]=(monthNet[tid]||0)+amt*((ts[tid].total||0)/totalReg); });
+      } else if (tids.length) {
+        const per = amt/tids.length; tids.forEach(tid=>{ monthNet[tid]=(monthNet[tid]||0)+per; });
+      }
+    });
+  });
+  const out = {};
+  trainers.forEach(t => {
+    let blog=0, study=0;
+    (records||[]).filter(r=>r.trainerId===t.id && inMonth(r.date)).forEach(r=>{
+      if (r.channel==='blog') blog++; if (r.channel==='study') study++;
+    });
+    const d = determineSplitRate({ settings, trainerId:t.id, monthNet:Math.round(monthNet[t.id]||0), blogCount:blog, studyCount:study });
+    out[t.id] = { rate: d.rate, reason: d.reason, mode: d.mode };
+  });
+  return out;
+}
+
 // ── 회당 단가 × 월 수업횟수 기반 정산 (실제 시트 방식) ──────────────
+// 정산비율은 "결제월에 박제된 비율(splitRateAtPay)"을 회원별로 적용한다.
 export function computeSessionSettlement({ trainers, members, schedules, payments, records, settings, ym, getOverride }) {
   const inMonth = (d) => d && d.slice(0,7) === ym;
   const memberMap = Object.fromEntries(members.map(m=>[m.id, m]));
+
+  // 결제 건에 박제된 정산비율(splitRateAtPay[tid])을 읽는다. 없으면 null(폴백 처리).
+  const frozenRate = (p, tid) => {
+    const r = p.splitRateAtPay && p.splitRateAtPay[tid];
+    return (r === undefined || r === null || r === '') ? null : Number(r);
+  };
 
   // 회원×트레이너별 귀속 결제액 (단가 트레이너별 분리 계산용)
   //  · 결제수단별 공제(부가세/카드수수료) 적용한 입금금액 기준
   //  · 결제에 담당 트레이너(trainerIds)가 있으면 그 트레이너들에게 1/n 귀속
   //  · trainerIds가 없는 구버전 결제는 회원의 트레이너별 등록횟수 비율로 안분
   const memberTrainerPay = {}; // mid -> { tid: netAmount }  (전체기간 — 단가 계산용)
-  const trainerMonthNet  = {}; // tid -> 그 달(ym) 귀속 입금금액 합계 (정산비율 판정용)
+  const trainerMonthNet  = {}; // tid -> 그 달(ym) 귀속 입금금액 합계 (정산비율 판정용·폴백)
+  // 회원×트레이너별 박제비율 가중합 — 결제월 비율을 입금액 비중으로 가중평균(rateW/rateBase)
+  const memberTrainerRate = {}; // mid -> { tid: { w: 가중합(rate*net), base: net합, hasFrozen } }
+  const addRate = (mid, tid, part, p) => {
+    const r = frozenRate(p, tid);
+    if (!memberTrainerRate[mid]) memberTrainerRate[mid] = {};
+    if (!memberTrainerRate[mid][tid]) memberTrainerRate[mid][tid] = { w:0, base:0, hasFrozen:false };
+    const slot = memberTrainerRate[mid][tid];
+    if (r != null) { slot.w += r * part; slot.base += part; slot.hasFrozen = true; }
+  };
   members.forEach(m => {
     const ts = m.trainerSessions || {};
     const tids = Object.keys(ts);
@@ -102,7 +157,7 @@ export function computeSessionSettlement({ trainers, members, schedules, payment
     tids.forEach(tid => acc[tid] = 0);
     (payments[m.id]||[]).filter(p=>!p.isUnpaid && !p.isRefunded).forEach(p=>{
       const amt = calcNet(p, settings).net; // 카드1·2: 부가세+카드세 / 페이·현금영수증: 부가세 / 계좌·현금: 공제 없음
-      const isMonth = inMonth(p.paidAt);     // 정산비율은 "그 달 결제"만 반영
+      const isMonth = inMonth(p.paidAt);     // 폴백 정산비율은 "그 달 결제"만 반영
       const pTids = (p.trainerIds && p.trainerIds.length) ? p.trainerIds : null;
       // 트레이너별 분배 금액(p.split)이 있으면 그 비율대로 귀속(공제 후 net에 동일 비율 적용)
       const splitList = Array.isArray(p.split) && p.split.length ? p.split : null;
@@ -111,12 +166,14 @@ export function computeSessionSettlement({ trainers, members, schedules, payment
         splitList.forEach(({trainerId, amount}) => {
           const part = amt * ((Number(amount)||0) / gross); // 공제 후 금액을 분배비율대로
           acc[trainerId] = (acc[trainerId]||0) + part;
+          addRate(m.id, trainerId, part, p);
           if (isMonth) trainerMonthNet[trainerId] = (trainerMonthNet[trainerId]||0) + part;
         });
       } else if (pTids) {
         const per = amt / pTids.length;
         pTids.forEach(tid => {
           acc[tid] = (acc[tid]||0) + per;
+          addRate(m.id, tid, per, p);
           if (isMonth) trainerMonthNet[tid] = (trainerMonthNet[tid]||0) + per;
         });
       } else if (totalReg > 0) {
@@ -124,6 +181,7 @@ export function computeSessionSettlement({ trainers, members, schedules, payment
         tids.forEach(tid => {
           const part = amt * ((ts[tid].total||0)/totalReg);
           acc[tid] = (acc[tid]||0) + part;
+          addRate(m.id, tid, part, p);
           if (isMonth) trainerMonthNet[tid] = (trainerMonthNet[tid]||0) + part;
         });
       } else if (tids.length) {
@@ -131,6 +189,7 @@ export function computeSessionSettlement({ trainers, members, schedules, payment
         const per = amt / tids.length;
         tids.forEach(tid => {
           acc[tid] = (acc[tid]||0) + per;
+          addRate(m.id, tid, per, p);
           if (isMonth) trainerMonthNet[tid] = (trainerMonthNet[tid]||0) + per;
         });
       }
@@ -160,6 +219,23 @@ export function computeSessionSettlement({ trainers, members, schedules, payment
     const ovCnt  = ov?.sessionCounts || {};
     const mids = [...(trainerMembers[t.id] || [])];
 
+    // 폴백용: 그 결제월의 비율을 박제하지 못한 구버전 결제를 위해, 현재월 자동판정값을 준비
+    let blogCount=0, instaCount=0, studyCount=0;
+    (records||[]).filter(r=>r.trainerId===t.id && inMonth(r.date)).forEach(r=>{
+      if (r.channel==='blog') blogCount++;
+      if (r.channel==='insta') instaCount++;
+      if (r.channel==='study') studyCount++;
+    });
+    const ovBlog = ov?.blogCount, ovInsta = ov?.instaCount, ovStudy = ov?.studyCount;
+    const fBlog = ovBlog ?? blogCount;
+    const fInsta = ovInsta ?? instaCount;
+    const fStudy = ovStudy ?? studyCount;
+    const fallbackSplit = determineSplitRate({
+      settings, trainerId: t.id,
+      monthNet: Math.round(trainerMonthNet[t.id] || 0),
+      blogCount: fBlog, studyCount: fStudy,
+    });
+
     const rows = mids.map(mid => {
       const m = memberMap[mid];
       const ts = (m?.trainerSessions||{})[t.id] || {};
@@ -170,44 +246,50 @@ export function computeSessionSettlement({ trainers, members, schedules, payment
       const unit = ovUnit[mid] != null ? Number(ovUnit[mid]) : autoUnit;
       const autoCnt = (attended[t.id]||{})[mid] || 0;
       const cnt = ovCnt[mid] != null ? Number(ovCnt[mid]) : autoCnt;
+      // 박제비율: 이 회원의 이 트레이너 결제 건 비율을 입금액 비중으로 가중평균.
+      //  · 박제값이 있으면 그 값, 없으면(구버전 결제) 현재월 자동판정으로 폴백.
+      const rateSlot = (memberTrainerRate[mid]||{})[t.id];
+      const effRate = rateSlot && rateSlot.hasFrozen && rateSlot.base > 0
+        ? Math.round(rateSlot.w / rateSlot.base)
+        : fallbackSplit.rate;
+      const rateFrozen = !!(rateSlot && rateSlot.hasFrozen && rateSlot.base > 0);
+      const amount = unit * cnt;                       // 수업료(비율 적용 전)
+      const payAmount = Math.round(amount * effRate/100); // 실지급(비율 적용)
       return {
         memberId: mid, memberName: m?.name || '?',
         regTotal: trainerReg, autoUnit, unit, autoCnt, cnt,
-        amount: unit * cnt,
+        amount, rate: effRate, rateFrozen, payAmount,
       };
     }).filter(r => r.cnt>0 || r.regTotal>0);
 
-    const sessionTotal = rows.reduce((s,r)=>s+r.amount, 0);
-
-    let blogCount=0, instaCount=0, studyCount=0;
-    (records||[]).filter(r=>r.trainerId===t.id && inMonth(r.date)).forEach(r=>{
-      if (r.channel==='blog') blogCount++;
-      if (r.channel==='insta') instaCount++;
-      if (r.channel==='study') studyCount++;
-    });
-    const fBlog = ov?.blogCount ?? blogCount;
-    const fInsta = ov?.instaCount ?? instaCount;
-    const fStudy = ov?.studyCount ?? studyCount;
+    const sessionTotal  = rows.reduce((s,r)=>s+r.amount, 0);     // 비율 적용 전 합
+    const sessionPayout = rows.reduce((s,r)=>s+r.payAmount, 0);  // 비율 적용 후 합(회원별 박제비율)
     const blogInc  = fBlog * settings.promoPerPost;
     const instaInc = Math.min(fInsta, settings.snsInstaMax ?? 8) * settings.promoPerPost;
     const promoIncentive = blogInc + instaInc;
+    const payout = sessionPayout + promoIncentive;   // 세전(총 지급액)
+    // 세후 = 세전 − 원천징수(국세+지방세). 세율은 설정값(기본 3.3%), 매달 신고 후 수정 가능.
+    const whRate = Number(settings.withholdingRate ?? 3.3);
+    const tax = Math.round(payout * whRate / 100);
+    const payoutNet = payout - tax;
 
-    // 매월 자동 정산비율 판정 (수동 지정이 있으면 그 값 우선)
-    const split = determineSplitRate({
-      settings, trainerId: t.id,
-      monthNet: Math.round(trainerMonthNet[t.id] || 0),
-      blogCount: fBlog, studyCount: fStudy,
-    });
-    // 수업료 합계 × 정산비율 = 실지급 수업료
-    const sessionPayout = Math.round(sessionTotal * (split.rate / 100));
-    const payout = sessionPayout + promoIncentive;
+    // 표시용 대표 비율: 수업료 가중평균(여러 비율이 섞이면 'mixed')
+    const distinct = [...new Set(rows.filter(r=>r.amount>0).map(r=>r.rate))];
+    const blendedRate = sessionTotal>0 ? Math.round(sessionPayout/sessionTotal*100) : fallbackSplit.rate;
+    const splitRate = distinct.length<=1 ? (distinct[0] ?? fallbackSplit.rate) : blendedRate;
+    const splitMode = rows.some(r=>r.rateFrozen) ? 'frozen' : fallbackSplit.mode;
+    const splitReason = distinct.length>1
+      ? `결제월별 비율 혼합(가중평균 ${blendedRate}%)`
+      : (rows.some(r=>r.rateFrozen) ? `결제월 박제 ${splitRate}%` : fallbackSplit.reason);
 
     return {
       trainer: t, rows, sessionTotal,
-      splitRate: split.rate, splitMode: split.mode, splitReason: split.reason,
+      splitRate, splitMode, splitReason, rateMixed: distinct.length>1,
       sessionPayout,
       blogCount: fBlog, instaCount: fInsta, studyCount: fStudy,
-      blogInc, instaInc, promoIncentive, payout, hasOverride: !!ov,
+      blogInc, instaInc, promoIncentive,
+      payout, withholdingRate: whRate, tax, payoutNet,
+      hasOverride: !!ov,
     };
   }).filter(x => x.rows.length>0 || x.promoIncentive>0);
 }

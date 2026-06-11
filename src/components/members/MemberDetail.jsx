@@ -9,7 +9,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { ClassTypeCheckbox } from './MemberRegister';
 import AiMeasureReport     from '../ai/AiMeasureReport';
 import MemberMeasureHistory from '../ai/MemberMeasureHistory';
-import { METHOD_LBL, METHOD_CLR } from '../../services/finance';
+import { METHOD_LBL, METHOD_CLR, computeMonthRates } from '../../services/finance';
 
 const INP = "w-full bg-slate-800 border border-slate-700 text-slate-100 rounded-xl px-3 py-2.5 text-sm placeholder-slate-500 focus:outline-none focus:border-amber-500";
 const LBL = "block text-xs font-semibold text-slate-400 uppercase tracking-widest mb-1.5";
@@ -295,7 +295,36 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
         : [];
       const primaryMethod = methods.length ? methods[0].method : payForm.method;
       const { methodList, ...rest } = payForm;
-      await store.addPayment(member.id, { ...rest, method:primaryMethod, methods, amount:Number(payForm.amount), split, reEnrollNo });
+      const newPayment = { ...rest, method:primaryMethod, methods, amount:Number(payForm.amount), split, reEnrollNo };
+
+      // ── 결제월 정산비율 박제(snapshot) ──────────────────────────
+      // 이 결제가 이뤄진 달(paidAt의 YYYY-MM) 기준 비율을 계산해 결제 건에 고정한다.
+      // 이후 설정/실적이 바뀌어도 이 결제의 비율은 변하지 않는다(결제월 고정).
+      const ym = (payForm.paidAt || '').slice(0,7);
+      const involved = payForm.trainerIds.length ? payForm.trainerIds
+        : Object.keys(member.trainerSessions || {});
+      const trainersInvolved = trainers.filter(t => involved.includes(t.id));
+      // 그 달 결제 모음(이 신규 결제 포함) — 비율 판정 입력
+      const monthPayments = {};
+      store.getMembers().forEach(mm => {
+        const list = (store.getPayments(mm.id)||[]).filter(p => (p.paidAt||'').slice(0,7) === ym);
+        monthPayments[mm.id] = mm.id === member.id ? [...list, newPayment] : list;
+      });
+      const rateMap = computeMonthRates({
+        trainers: trainersInvolved.length ? trainersInvolved : trainers,
+        members: store.getMembers(),
+        payments: monthPayments,
+        records: store.getPromos(),
+        settings: store.getSettings(),
+        ym,
+      });
+      const splitRateAtPay = {};
+      (involved.length ? involved : trainers.map(t=>t.id)).forEach(tid => {
+        if (rateMap[tid]) splitRateAtPay[tid] = rateMap[tid].rate;
+      });
+      newPayment.splitRateAtPay = splitRateAtPay;
+
+      await store.addPayment(member.id, newPayment);
       // 결제일 자동 업데이트
       await store.updateMember(member.id, { lastPaymentDate:payForm.paidAt });
       refresh(); setShowAddPay(false);
