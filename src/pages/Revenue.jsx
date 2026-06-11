@@ -95,7 +95,15 @@ function OverviewTab({ settings, trainers, trainerMap }) {
   const totalUnpaid = unpaid.reduce((s,p)=>s+(p.amount||0),0);
 
   const byMethod = useMemo(()=>{
-    const acc={}; paid.forEach(p=>{acc[p.method]=(acc[p.method]||0)+(p.amount||0);}); return acc;
+    const acc={};
+    paid.forEach(p=>{
+      if (Array.isArray(p.methods) && p.methods.length) {
+        p.methods.forEach(m=>{ acc[m.method]=(acc[m.method]||0)+(Number(m.amount)||0); });
+      } else {
+        acc[p.method]=(acc[p.method]||0)+(p.amount||0);
+      }
+    });
+    return acc;
   }, [paid]);
 
   const byMonth = useMemo(()=>{
@@ -234,7 +242,7 @@ function RefundableList({ filtered, settings, trainers, trainerMap, onChange }) 
   const startEdit = (p) => {
     setEditId(p.id);
     setEdit({
-      paidAt:p.paidAt, amount:p.amount, method:p.method,
+      paidAt:p.paidAt, amount:p.amount, method:p.method, methods:[...(p.methods||[])],
       trainerIds:[...(p.trainerIds||[])], split:[...(p.split||[])], note:p.note||'',
       isUnpaid:!!p.isUnpaid, isNew:!!p.isNew, isReEnroll:!!p.isReEnroll,
       category:p.category||'normal',
@@ -267,6 +275,7 @@ function RefundableList({ filtered, settings, trainers, trainerMap, onChange }) 
       }
       await store.updatePayment(p.memberId, p.id, {
         paidAt:edit.paidAt, amount:Number(edit.amount), method:edit.method,
+        methods: edit.methods || [],
         trainerIds:edit.trainerIds, split, note:edit.note,
         isUnpaid:edit.isUnpaid, isNew:edit.isNew, isReEnroll:edit.isReEnroll,
         category:edit.category,
@@ -327,11 +336,18 @@ function RefundableList({ filtered, settings, trainers, trainerMap, onChange }) 
                       <input type="number" value={edit.amount} onChange={e=>setEdit({...edit,amount:e.target.value})} className={SEL+" font-mono"}/>
                     </div>
                     <div className="grid grid-cols-3 gap-1.5">
-                      {METHODS.map(([v,l])=>(
-                        <div key={v} onClick={()=>setEdit({...edit,method:v})}
-                          className={`py-1.5 rounded-lg text-xs font-bold border cursor-pointer text-center ${edit.method===v?'bg-amber-500/20 border-amber-500/40 text-amber-400':'border-slate-700 text-slate-400'}`}>{l}</div>
-                      ))}
+                      {METHODS.map(([v,l])=>{
+                        const isMulti = (edit.methods||[]).length>=2;
+                        const on = isMulti ? (edit.methods||[]).some(x=>x.method===v) : edit.method===v;
+                        return (
+                          <div key={v} onClick={()=>setEdit({...edit,method:v,methods:[]})}
+                            className={`py-1.5 rounded-lg text-xs font-bold border cursor-pointer text-center ${on?'bg-amber-500/20 border-amber-500/40 text-amber-400':'border-slate-700 text-slate-400'}`}>{l}</div>
+                        );
+                      })}
                     </div>
+                    {(edit.methods||[]).length>=2 && (
+                      <p className="text-[11px] text-sky-400">복합결제({edit.methods.map(x=>`${METHOD_LBL[x.method]||x.method} ${(Number(x.amount)||0).toLocaleString()}`).join(' · ')}) — 수단을 다시 누르면 단일결제로 바뀝니다.</p>
+                    )}
                     <div className="grid grid-cols-3 gap-1.5">
                       {[['normal','일반'],['edu_center','센터교육'],['edu_external','외부활동']].map(([v,l])=>(
                         <div key={v} onClick={()=>setEdit({...edit,category:v})}
@@ -368,7 +384,15 @@ function RefundableList({ filtered, settings, trainers, trainerMap, onChange }) 
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-semibold text-sm">{p.memberName}</span>
-                      <span className={`text-[10px] font-bold ${METHOD_CLR[p.method]||'text-slate-300'}`}>{METHOD_LBL[p.method]||p.method}</span>
+                      {Array.isArray(p.methods)&&p.methods.length
+                        ? <span className="text-[10px] font-bold flex flex-wrap gap-1">
+                            {p.methods.map((mm,i)=>(
+                              <span key={i} className={METHOD_CLR[mm.method]||'text-slate-300'}>
+                                {METHOD_LBL[mm.method]||mm.method} {(Number(mm.amount)||0).toLocaleString()}{i<p.methods.length-1?' ·':''}
+                              </span>
+                            ))}
+                          </span>
+                        : <span className={`text-[10px] font-bold ${METHOD_CLR[p.method]||'text-slate-300'}`}>{METHOD_LBL[p.method]||p.method}</span>}
                       {p.isUnpaid && <span className="text-[10px] bg-red-500/20 text-red-400 border border-red-500/30 px-1.5 py-0.5 rounded font-bold">미수금</span>}
                       {p.isNew && <span className="text-[10px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-1.5 py-0.5 rounded font-bold">신규</span>}
                       {p.isReEnroll && <span className="text-[10px] bg-blue-500/20 text-blue-400 border border-blue-500/30 px-1.5 py-0.5 rounded font-bold">재등록</span>}

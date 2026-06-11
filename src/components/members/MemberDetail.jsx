@@ -34,7 +34,7 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
   // 수납
   const [payments,     setPayments]    = useState([]);
   const [showAddPay,   setShowAddPay]  = useState(false);
-  const [payForm,      setPayForm]     = useState({ paidAt: new Date().toISOString().slice(0,10), amount:'', method:'pay', isUnpaid:false, note:'', trainerIds:[], split:[], isReEnroll:false, reEnrollNo:'', isNew:false, category:'normal' });
+  const [payForm,      setPayForm]     = useState({ paidAt: new Date().toISOString().slice(0,10), amount:'', method:'pay', isUnpaid:false, note:'', trainerIds:[], split:[], methodList:[], isReEnroll:false, reEnrollNo:'', isNew:false, category:'normal' });
 
   // 신체정보
   const [bodyRecords,  setBodyRecords] = useState([]);
@@ -169,8 +169,19 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
   });
   // 총금액 변경: 다중이면 split도 함께 재구성(기존 비율 유지하며 합계 맞춤)
   const onAmountChange = (val) => setPayForm(p => {
+    // 복합결제(2개 이상)면 수단별 금액도 기존 비율 유지하며 새 총액에 맞춰 스케일
+    let methodList = p.methodList || [];
+    if (methodList.length >= 2) {
+      const t = Math.max(0, Math.round(Number(val)||0));
+      const sum = methodList.reduce((s,x)=>s+(Number(x.amount)||0),0) || t || 1;
+      let acc=0;
+      methodList = methodList.map((x,i)=>{
+        const amt = i===methodList.length-1 ? t-acc : Math.round(t*((Number(x.amount)||0)/sum));
+        acc+=amt; return { method:x.method, amount:amt };
+      });
+    }
     const tids = p.trainerIds;
-    if (tids.length < 2) return { ...p, amount: val, split: [] };
+    if (tids.length < 2) return { ...p, amount: val, split: [], methodList };
     const prev = p.split || [];
     const prevSum = prev.reduce((s,x)=>s+(Number(x.amount)||0),0);
     let next;
@@ -186,7 +197,7 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
     } else {
       next = evenSplit(tids, val); // 기본 5:5
     }
-    return { ...p, amount: val, split: next };
+    return { ...p, amount: val, split: next, methodList };
   });
   // 개별 트레이너 금액 직접 수정(다른 트레이너 금액은 그대로, 총액은 합으로 표시)
   const onSplitAmount = (tid, val) => setPayForm(p => {
@@ -209,10 +220,56 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
     return { ...p, split };
   });
 
+  // ── 복합 결제수단(methodList) 유틸 ─────────────────────────
+  // methodList = [{ method, amount }] — 2개 이상이면 복합결제.
+  // 총금액(payForm.amount)을 수단들에 분배. 1개면 그 수단이 전액.
+  const evenMethods = (methods, total) => {
+    const n = methods.length;
+    if (n === 0) return [];
+    const t = Math.max(0, Math.round(Number(total)||0));
+    const base = Math.floor(t/n);
+    return methods.map((mth,i)=>({ method:mth, amount: base + (i===0 ? t-base*n : 0) }));
+  };
+  // 수단 토글: 선택/해제 후 금액 재분배(기존 금액 유지, 새 수단은 나머지 균등)
+  const toggleMethod = (mv) => setPayForm(p => {
+    const cur = (p.methodList && p.methodList.length) ? p.methodList : [{ method:p.method, amount:Number(p.amount)||0 }];
+    const has = cur.some(x=>x.method===mv);
+    let list;
+    if (has) {
+      list = cur.filter(x=>x.method!==mv);
+      if (list.length === 0) list = [{ method:mv, amount:Number(p.amount)||0 }]; // 최소 1개 유지
+    } else {
+      list = [...cur, { method:mv, amount:0 }];
+    }
+    // 1개면 전액, 2개 이상이면 기존 유지 + 새 수단에 나머지 균등
+    if (list.length === 1) {
+      list = [{ method:list[0].method, amount:Math.max(0,Math.round(Number(p.amount)||0)) }];
+    } else {
+      const total = Math.max(0,Math.round(Number(p.amount)||0));
+      const knownSum = list.filter(x=>x.amount>0).reduce((s,x)=>s+x.amount,0);
+      const fresh = list.filter(x=>!(x.amount>0));
+      if (fresh.length) {
+        const rest = Math.max(0, total-knownSum);
+        const per = Math.floor(rest/fresh.length);
+        let fi=0;
+        list = list.map(x=> x.amount>0 ? x
+          : { method:x.method, amount: per + (fi++===0 ? rest-per*fresh.length : 0) });
+      }
+    }
+    return { ...p, methodList:list, method:list[0].method };
+  });
+  // 복합결제 각 수단 금액 직접 수정 → 총액은 합으로 갱신(트레이너 분배도 따라 재계산)
+  const onMethodAmount = (mv, val) => setPayForm(p => {
+    const list = (p.methodList||[]).map(x=> x.method===mv
+      ? { method:mv, amount:Math.max(0,Math.round(Number(val)||0)) } : x);
+    const total = list.reduce((s,x)=>s+x.amount,0);
+    const split = p.trainerIds.length>=2 ? rebuildSplit(p.trainerIds, total, p.split) : [];
+    return { ...p, methodList:list, amount:String(total), method:list[0]?.method||p.method, split };
+  });
+
+
   // ── 수납 등록 폼 열기: 담당 트레이너 자동 선택 ──────────────
-  // 회원 등록 시 지정된 담당 트레이너(trainerSessions의 키)를 결제 폼에 미리 채운다.
-  //  · 2명이면 둘 다 자동 선택(자동 5:5 분배) → 결제 전 단독/다중 확인 후 조정 가능
-  //  · 1명이면 그 1명 자동 선택 → 필요 시 다중 트레이너를 추가 선택 가능
+  //  · 2명이면 둘 다 자동 선택(자동 5:5 분배) · 1명이면 그 1명 자동 선택
   const openAddPay = () => {
     const registered = Object.keys(member.trainerSessions || {});
     setPayForm(p => ({ ...p, trainerIds: registered, split: rebuildSplit(registered, p.amount, []) }));
@@ -232,11 +289,17 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
             amount: Math.max(0, Math.round(Number(payForm.split.find(x=>x.trainerId===id)?.amount)||0)),
           }))
         : [];
-      await store.addPayment(member.id, { ...payForm, amount:Number(payForm.amount), split, reEnrollNo });
+      // 복합결제(2개 이상)일 때만 methods 저장. 단일이면 method만(구조 단순 유지).
+      const methods = payForm.methodList.length >= 2
+        ? payForm.methodList.map(x=>({ method:x.method, amount:Math.max(0,Math.round(Number(x.amount)||0)) }))
+        : [];
+      const primaryMethod = methods.length ? methods[0].method : payForm.method;
+      const { methodList, ...rest } = payForm;
+      await store.addPayment(member.id, { ...rest, method:primaryMethod, methods, amount:Number(payForm.amount), split, reEnrollNo });
       // 결제일 자동 업데이트
       await store.updateMember(member.id, { lastPaymentDate:payForm.paidAt });
       refresh(); setShowAddPay(false);
-      setPayForm({ paidAt:new Date().toISOString().slice(0,10), amount:'', method:'pay', isUnpaid:false, note:'', trainerIds:[], split:[], isReEnroll:false, reEnrollNo:'', isNew:false, category:'normal' });
+      setPayForm({ paidAt:new Date().toISOString().slice(0,10), amount:'', method:'pay', isUnpaid:false, note:'', trainerIds:[], split:[], methodList:[], isReEnroll:false, reEnrollNo:'', isNew:false, category:'normal' });
       onUpdate?.();
     } catch (e) { alert('수납 등록에 실패했습니다. 네트워크 확인 후 다시 시도하세요.'); }
   };
@@ -545,7 +608,15 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
                           <span className="font-mono font-black text-base text-slate-100">
                             {p.amount.toLocaleString()}원
                           </span>
-                          <span className={`text-xs font-bold ${METHOD_CLR[p.method]}`}>{METHOD_LBL[p.method]}</span>
+                          {Array.isArray(p.methods)&&p.methods.length
+                            ? <span className="text-xs font-bold flex flex-wrap gap-1">
+                                {p.methods.map((mm,i)=>(
+                                  <span key={i} className={METHOD_CLR[mm.method]||'text-slate-300'}>
+                                    {METHOD_LBL[mm.method]||mm.method} {(Number(mm.amount)||0).toLocaleString()}{i<p.methods.length-1?' ·':''}
+                                  </span>
+                                ))}
+                              </span>
+                            : <span className={`text-xs font-bold ${METHOD_CLR[p.method]}`}>{METHOD_LBL[p.method]}</span>}
                           {p.isUnpaid&&<span className="text-[10px] bg-red-500/20 text-red-400 border border-red-500/30 px-1.5 py-0.5 rounded font-bold">미수금</span>}
                           {p.isNew&&<span className="text-[10px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-1.5 py-0.5 rounded font-bold">신규</span>}
                           {p.isReEnroll&&<span className="text-[10px] bg-blue-500/20 text-blue-400 border border-blue-500/30 px-1.5 py-0.5 rounded font-bold">재등록{p.reEnrollNo?` ${p.reEnrollNo}회차`:''}</span>}
@@ -585,16 +656,58 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
                     <div><label className={LBL}>금액 (원)</label><input type="number" min="0" value={payForm.amount} onChange={e=>onAmountChange(e.target.value)} placeholder="500000" className={INP+" font-mono"}/></div>
                   </div>
                   <div>
-                    <label className={LBL}>결제 수단</label>
-                    <div className="grid grid-cols-3 gap-2">
-                      {[['pay','페이'],['transfer','계좌'],['cash','현금'],['cash_receipt','현금영수증'],['card1','카드1'],['card2','카드2']].map(([v,l])=>(
-                        <div key={v} onClick={()=>setPayForm(p=>({...p,method:v}))}
-                          className={`py-2.5 rounded-xl text-xs font-bold border cursor-pointer text-center transition-colors select-none
-                            ${payForm.method===v?'bg-amber-500/20 border-amber-500/40 text-amber-400':'border-slate-700 text-slate-400 hover:border-slate-500'}`}>
-                          {l}
-                        </div>
-                      ))}
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className={LBL+" mb-0"}>결제 수단 (복합 선택 가능)</label>
+                      {payForm.methodList.length>=2 && (
+                        <span className="px-2 py-0.5 rounded-md text-[11px] font-bold border bg-sky-500/20 text-sky-300 border-sky-500/40">
+                          복합 {payForm.methodList.length}수단
+                        </span>
+                      )}
                     </div>
+                    <div className="grid grid-cols-3 gap-2">
+                      {[['pay','페이'],['transfer','계좌'],['cash','현금'],['cash_receipt','현금영수증'],['card1','카드1'],['card2','카드2']].map(([v,l])=>{
+                        const on = payForm.methodList.length
+                          ? payForm.methodList.some(x=>x.method===v)
+                          : payForm.method===v;
+                        return (
+                          <div key={v} onClick={()=>toggleMethod(v)}
+                            className={`py-2.5 rounded-xl text-xs font-bold border cursor-pointer text-center transition-colors select-none
+                              ${on?'bg-amber-500/20 border-amber-500/40 text-amber-400':'border-slate-700 text-slate-400 hover:border-slate-500'}`}>
+                            {l}
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {/* 복합결제(2개 이상)일 때만 — 수단별 금액 입력 */}
+                    {payForm.methodList.length>=2 && (() => {
+                      const mTotal = payForm.methodList.reduce((s,x)=>s+(Number(x.amount)||0),0);
+                      return (
+                        <div className="mt-2 bg-slate-900/60 border border-sky-500/20 rounded-xl p-3 space-y-2">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[11px] text-slate-400 font-semibold">수단별 금액 (예: 카드 80만 + 페이 20만)</span>
+                            <button type="button"
+                              onClick={()=>setPayForm(p=>({...p, methodList: evenMethods(p.methodList.map(x=>x.method), p.amount)}))}
+                              className="text-[11px] px-2 py-1 rounded-md border border-slate-700 text-slate-400 hover:text-sky-300 hover:border-sky-500/40">균등</button>
+                          </div>
+                          {payForm.methodList.map(x=>(
+                            <div key={x.method} className="flex items-center gap-2">
+                              <span className={`text-xs font-bold w-20 flex-shrink-0 ${METHOD_CLR[x.method]||'text-slate-300'}`}>{METHOD_LBL[x.method]||x.method}</span>
+                              <input type="number" min="0" value={x.amount}
+                                onChange={e=>onMethodAmount(x.method, e.target.value)}
+                                className="flex-1 bg-slate-800 border border-slate-700 text-slate-100 rounded-lg px-2 py-1.5 text-xs font-mono text-right"/>
+                              <span className="text-[11px] text-slate-500 flex-shrink-0">원</span>
+                            </div>
+                          ))}
+                          <div className="flex items-center justify-between pt-1 border-t border-slate-800 text-xs">
+                            <span className="text-slate-500">수단 합계</span>
+                            <span className={`font-mono font-bold ${mTotal===(Number(payForm.amount)||0)?'text-emerald-400':'text-amber-400'}`}>
+                              {mTotal.toLocaleString()}원
+                              {mTotal!==(Number(payForm.amount)||0) && ` (총액 ${(Number(payForm.amount)||0).toLocaleString()}원)`}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </div>
                   <div>
                     {(() => {

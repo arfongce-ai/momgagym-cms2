@@ -233,3 +233,30 @@ describe('다중 트레이너 결제 분배(split) 귀속', () => {
     expect(b.rows[0].autoUnit).toBe(50000);
   });
 });
+
+// ── 추가: 복합 결제수단(methods) 공제 검증 ───────────────────────
+import { calcNet } from '../services/finance.js';
+
+describe('복합 결제수단 공제 (calcNet)', () => {
+  const S = { cardFeeRate:1, vatRate:10 }; // 카드수수료 1%, 부가세 10%
+
+  it('단일 카드결제: 부가세+카드수수료 공제', () => {
+    const r = calcNet({ amount:1000000, method:'card1' }, S);
+    expect(r.amount).toBe(1000000);
+    expect(r.net).toBe(1000000 - 10000 - 100000); // -카드1% -부가세10%
+  });
+
+  it('복합(카드 80만 + 페이 20만): 수단별로 따로 공제', () => {
+    const r = calcNet({ methods:[{method:'card1',amount:800000},{method:'pay',amount:200000}] }, S);
+    // 카드부분: 부가세 80000 + 카드수수료 8000 / 페이부분: 부가세 20000(카드수수료 없음)
+    expect(r.amount).toBe(1000000);
+    expect(r.cardFee).toBe(8000);
+    expect(r.vat).toBe(80000 + 20000);
+    expect(r.net).toBe(1000000 - 8000 - 100000);
+  });
+
+  it('복합(계좌 50만 + 현금 50만): 공제 없음', () => {
+    const r = calcNet({ methods:[{method:'transfer',amount:500000},{method:'cash',amount:500000}] }, S);
+    expect(r.net).toBe(1000000);
+  });
+});

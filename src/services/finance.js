@@ -25,15 +25,30 @@ export const monthKey = (d) => new Date(d).toISOString().slice(0,7);
 export const yearKey  = (d) => new Date(d).toISOString().slice(0,4);
 
 // 입금금액 = 결제금액 − (수단별 공제)
-export function calcNet(payment, settings) {
-  const amount = payment.amount || 0;
-  const m = payment.method;
-  const isCard = CARD_METHODS.includes(m);
-  const isVatOnly = VAT_ONLY_METHODS.includes(m);
+//  · 단일수단: p.method 하나로 공제
+//  · 복합수단(p.methods=[{method,amount}]): 수단별 금액에 각각 공제 적용 후 합산
+//    (예: 카드 80만 + 페이 20만 → 카드부분은 부가세+카드수수료, 페이부분은 부가세만)
+function deductFor(method, amount, settings) {
+  const isCard = CARD_METHODS.includes(method);
+  const isVatOnly = VAT_ONLY_METHODS.includes(method);
   const cardFee = isCard ? amount * (settings.cardFeeRate/100) : 0;
   const vat     = (isCard || isVatOnly) ? amount * (settings.vatRate/100) : 0;
-  const net     = amount - cardFee - vat;
-  return { amount, cardFee, vat, net };
+  return { cardFee, vat };
+}
+export function calcNet(payment, settings) {
+  const methods = Array.isArray(payment.methods) && payment.methods.length ? payment.methods : null;
+  if (methods) {
+    const amount = methods.reduce((s,x)=>s+(Number(x.amount)||0),0);
+    let cardFee=0, vat=0;
+    methods.forEach(x=>{
+      const d = deductFor(x.method, Number(x.amount)||0, settings);
+      cardFee += d.cardFee; vat += d.vat;
+    });
+    return { amount, cardFee, vat, net: amount - cardFee - vat };
+  }
+  const amount = payment.amount || 0;
+  const d = deductFor(payment.method, amount, settings);
+  return { amount, cardFee:d.cardFee, vat:d.vat, net: amount - d.cardFee - d.vat };
 }
 
 // ── 트레이너별 정산은 회당단가×횟수 방식 한 가지로 일원화함.
