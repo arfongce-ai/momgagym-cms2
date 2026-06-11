@@ -7,6 +7,7 @@
 //   - 리포트 데이터는 로컬 저장 (클라우드 비디오 업로드는 2차 개발)
 
 import { aiStore } from '../demoData';
+import { todayYMD } from '../utils/dates';
 
 // ── 분석 엔진 (Demo: 규칙 기반 시뮬레이션) ─────────────────
 // 실제 배포 시 MediaPipe / Web Worker로 교체
@@ -127,7 +128,7 @@ export async function createAiSession(memberId, measurements, memo = '') {
     // AiSession 객체 병합
     const session = {
       memberId,
-      recordedAt:     new Date().toISOString().slice(0, 10),
+      recordedAt:     todayYMD(), // CV-A: 로컬 날짜
       recordedAtFull: new Date().toISOString(),
       measurements:   { ...measurements },
       analysisResult,

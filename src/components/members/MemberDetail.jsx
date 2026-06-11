@@ -5,6 +5,7 @@
 // ✅ 트레이너별 세션 개별 카드
 import { useState, useEffect } from 'react';
 import { store } from '../../demoData';
+import { todayYMD } from '../../utils/dates';
 import { useAuth } from '../../contexts/AuthContext';
 import { ClassTypeCheckbox } from './MemberRegister';
 import AiMeasureReport     from '../ai/AiMeasureReport';
@@ -26,7 +27,7 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
   const [addTrainerId,  setAddTrainerId]  = useState('');
   const [addClassType,  setAddClassType]  = useState('');
   const [addCount,      setAddCount]      = useState(10);
-  const [addSessDate,   setAddSessDate]   = useState(new Date().toISOString().slice(0,10));
+  const [addSessDate,   setAddSessDate]   = useState(todayYMD());
   // 세션 직접 조정
   const [adjustTid,     setAdjustTid]     = useState(null);
   const [adjustForm,    setAdjustForm]    = useState({ remaining:0, total:0 });
@@ -34,14 +35,14 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
   // 수납
   const [payments,     setPayments]    = useState([]);
   const [showAddPay,   setShowAddPay]  = useState(false);
-  const [payForm,      setPayForm]     = useState({ paidAt: new Date().toISOString().slice(0,10), amount:'', method:'pay', isUnpaid:false, note:'', trainerIds:[], split:[], methodList:[], isReEnroll:false, reEnrollNo:'', isNew:false, consultTrainerId:'', category:'normal' });
+  const [payForm,      setPayForm]     = useState({ paidAt: todayYMD(), amount:'', method:'pay', isUnpaid:false, note:'', trainerIds:[], split:[], methodList:[], isReEnroll:false, reEnrollNo:'', isNew:false, consultTrainerId:'', category:'normal' });
 
   // 신체정보
   const [bodyRecords,  setBodyRecords] = useState([]);
   const [showAddBody,  setShowAddBody] = useState(false);
   const [showAiModal,  setShowAiModal]  = useState(false);
   const [aiRefreshKey, setAiRefreshKey] = useState(0);
-  const [bodyForm,     setBodyForm]    = useState({ recordedAt: new Date().toISOString().slice(0,10), height:'', weight:'', systolic:'', diastolic:'', note:'' });
+  const [bodyForm,     setBodyForm]    = useState({ recordedAt: todayYMD(), height:'', weight:'', systolic:'', diastolic:'', note:'' });
 
   const refresh = () => {
     const fresh = store.getMembers().find(m => m.id === member.id);
@@ -88,7 +89,7 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
       await store.updateMember(member.id, { trainerSessions:ts, classTypes:upCT, lastPaymentDate:addSessDate });
       refresh(); setShowAddSess(false);
       setAddTrainerId(''); setAddClassType(''); setAddCount(10);
-      setAddSessDate(new Date().toISOString().slice(0,10));
+      setAddSessDate(todayYMD());
       onUpdate?.();
     } catch (e) { alert('세션 등록에 실패했습니다. 네트워크 확인 후 다시 시도하세요.'); }
   };
@@ -330,7 +331,7 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
       // 결제일 자동 업데이트
       await store.updateMember(member.id, { lastPaymentDate:payForm.paidAt });
       refresh(); setShowAddPay(false);
-      setPayForm({ paidAt:new Date().toISOString().slice(0,10), amount:'', method:'pay', isUnpaid:false, note:'', trainerIds:[], split:[], methodList:[], isReEnroll:false, reEnrollNo:'', isNew:false, consultTrainerId:'', category:'normal' });
+      setPayForm({ paidAt:todayYMD(), amount:'', method:'pay', isUnpaid:false, note:'', trainerIds:[], split:[], methodList:[], isReEnroll:false, reEnrollNo:'', isNew:false, consultTrainerId:'', category:'normal' });
       onUpdate?.();
     } catch (e) { alert('수납 등록에 실패했습니다. 네트워크 확인 후 다시 시도하세요.'); }
   };
@@ -353,7 +354,7 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
         diastolic: bodyForm.diastolic ? Number(bodyForm.diastolic) : null,
       });
       refresh(); setShowAddBody(false);
-      setBodyForm({ recordedAt:new Date().toISOString().slice(0,10), height:'', weight:'', systolic:'', diastolic:'', note:'' });
+      setBodyForm({ recordedAt:todayYMD(), height:'', weight:'', systolic:'', diastolic:'', note:'' });
     } catch (e) { alert('신체정보 저장에 실패했습니다. 네트워크 확인 후 다시 시도하세요.'); }
   };
 

@@ -3,6 +3,7 @@
 //  - 입력값을 회원 신체기록(store.addBodyRecord)에 저장
 //  - 2026 대한고혈압학회 지침 기반 분석(analyzeBody) 재사용
 import { useState } from 'react';
+import { todayYMD } from '../../utils/dates';
 import { store } from '../../demoData';
 import { analyzeBody } from '../../services/aiService';
 
@@ -32,7 +33,7 @@ export default function BodyInfoMeasure({ member, onSave, onBack }) {
     if (!member) { alert('저장하려면 먼저 회원을 선택하세요(허브 상단).'); return; }
     try {
       await store.addBodyRecord(member.id, {
-        recordedAt: new Date().toISOString().slice(0, 10),
+        recordedAt: todayYMD(),
         height:    form.height    ? Number(form.height)    : null,
         weight:    Number(form.weight),
         systolic:  form.systolic  ? Number(form.systolic)  : null,

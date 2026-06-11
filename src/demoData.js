@@ -6,13 +6,14 @@ import { db } from './firebase';
 import {
   collection, doc, getDocs, setDoc, deleteDoc, writeBatch,
 } from 'firebase/firestore';
+import { toYMD, todayYMD } from './utils/dates';
 
 const DATA_VERSION = 'v6.0';
 
 // 로그인 계정은 Firebase Authentication + roles 문서로 관리합니다.
 // (이전의 평문 비밀번호 DEMO_USERS는 보안상 제거되었습니다.)
 
-function fmt(d){ return new Date(d).toISOString().slice(0,10); }
+const fmt = toYMD; // CV-A: 로컬 시간 기준(UTC 버그 수정)
 function ago(d,n){ const r=new Date(d); r.setDate(r.getDate()-n); return r; }
 const today = new Date();
 
@@ -190,7 +191,6 @@ function fbDelete(name, id)    { return deleteDoc(doc(db, name, id)); }
 // Firestore writeBatch는 1회 commit당 최대 500개 문서 조작만 허용한다.
 // 장기 회원의 누적 데이터(예약/수납/신체/AI)가 500건을 넘으면
 // 한 batch로는 처리할 수 없으므로 500건 미만 단위로 쪼개어(chunk) 처리한다.
-const BATCH_LIMIT = 500;
 // 여유분(450)을 두어 호출부에서 set/delete를 섞어 쓰더라도 안전하게.
 const CHUNK_SIZE  = 450;
 
@@ -432,7 +432,7 @@ export const store = {
       if (member) {
         if (status === 'attended' || status === 'noshow') {
           // 계약서 2조: 노쇼도 출석과 동일하게 횟수 차감 유지(복원 안 함)
-          updatedMember = { ...member, lastAttendedDate: new Date().toISOString().slice(0,10) };
+          updatedMember = { ...member, lastAttendedDate: todayYMD() }; // CV-A: 로컬 날짜
         } else if (status === 'canceled' && sched.sessionDeducted) {
           // 취소만 세션 복원
           const ts = JSON.parse(JSON.stringify(member.trainerSessions||{}));

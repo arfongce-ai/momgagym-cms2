@@ -2,6 +2,8 @@
 import { useState, useEffect } from 'react';
 import { store } from '../demoData';
 import { useAuth } from '../contexts/AuthContext';
+import { useNavigate } from 'react-router-dom';
+import { toYMD, todayYMD, daysAgoYMD } from '../utils/dates';
 
 function fmtDate(d) {
   return new Date(d).toLocaleDateString('ko-KR',{month:'long',day:'numeric',weekday:'short'});
@@ -19,14 +21,14 @@ const WEEKDAYS   = ['일','월','화','수','목','금','토'];
 // 간이 캘린더: 이번 주 7일 미니 뷰
 function MiniCalendar({ schedules }) {
   const today = new Date();
-  const todayStr = today.toISOString().slice(0,10);
+  const todayStr = todayYMD(); // CV-A: 로컬 날짜
 
   // 이번 주 월~일
   const weekDates = Array.from({ length:7 }, (_,i) => {
     const d = new Date(today);
     const day = today.getDay();
     d.setDate(today.getDate() - ((day+6)%7) + i);
-    return d.toISOString().slice(0,10);
+    return toYMD(d); // CV-A: 로컬 날짜
   });
 
   return (
@@ -59,6 +61,7 @@ function MiniCalendar({ schedules }) {
 
 export default function Home() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [notices,   setNotices]   = useState([]);
   const [schedules, setSchedules] = useState([]);
   const [members,   setMembers]   = useState([]);
@@ -116,9 +119,9 @@ export default function Home() {
     } catch (e) { alert('공지 삭제에 실패했습니다. 네트워크 확인 후 다시 시도하세요.'); }
   };
 
-  const todayStr   = new Date().toISOString().slice(0,10);
+  const todayStr   = todayYMD(); // CV-A: 로컬 날짜
   const todaySched = schedules.filter(s => s.date === todayStr);
-  const oneYearAgo = new Date(Date.now()-365*864e5).toISOString().slice(0,10);
+  const oneYearAgo = daysAgoYMD(365);
   const lowSession  = members.filter(m => Object.values(m.trainerSessions||{}).some(s=>s.remaining<=5&&s.remaining>0)).length;
   const expiredCnt  = members.filter(m => m.lastPaymentDate && m.lastPaymentDate < oneYearAgo).length;
 
@@ -203,21 +206,24 @@ export default function Home() {
         </div>
       </div>
 
-      {/* ② 통계 카드 */}
+      {/* ② 통계 카드 — 누르면 해당 화면으로 바로 이동 (UX: 한눈에 + 한 번에) */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {[
-          { label:'전체 회원', value:members.length,    icon:'👥', color:'text-blue-400'   },
-          { label:'오늘 수업', value:todaySched.length,  icon:'📅', color:'text-amber-400'  },
-          { label:'세션 부족', value:lowSession,         icon:'⚠️', color:'text-orange-400' },
-          { label:'결제 만료', value:expiredCnt,         icon:'🔴', color:'text-red-400'    },
+          { label:'전체 회원', value:members.length,    icon:'👥', color:'text-blue-400',   to:'/members'  },
+          { label:'오늘 수업', value:todaySched.length,  icon:'📅', color:'text-amber-400',  to:'/schedule' },
+          { label:'세션 부족', value:lowSession,         icon:'⚠️', color:'text-orange-400', to:'/members'  },
+          { label:'결제 만료', value:expiredCnt,         icon:'🔴', color:'text-red-400',    to:'/members'  },
         ].map(s=>(
-          <div key={s.label} className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
+          <button key={s.label} onClick={()=>navigate(s.to)}
+            className="bg-slate-900 border border-slate-800 rounded-2xl p-4 text-left
+              active:scale-[0.97] hover:border-slate-700 transition-all">
             <div className="flex items-center justify-between mb-1">
               <span className="text-xs text-slate-500 font-semibold uppercase tracking-wide">{s.label}</span>
               <span className="text-lg">{s.icon}</span>
             </div>
             <p className={`text-3xl font-black font-mono ${s.color}`}>{s.value}</p>
-          </div>
+            <p className="text-[10px] text-slate-600 mt-1">누르면 이동 →</p>
+          </button>
         ))}
       </div>
 

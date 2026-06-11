@@ -3,6 +3,7 @@
 // ✅ 색상 선착순 자동 배정
 // ✅ 이미 사용 중인 색상 선택 불가 (복수 선택 방지)
 import { useState, useEffect } from 'react';
+import { todayYMD } from '../utils/dates';
 import { store } from '../demoData';
 import { useAuth } from '../contexts/AuthContext';
 import { downloadCSV } from '../services/finance';
@@ -180,7 +181,7 @@ export default function Trainers() {
         memberCount, t.loginEmail||'', t.memo||'',
       ];
     });
-    downloadCSV(`트레이너목록_${new Date().toISOString().slice(0,10)}.csv`, [header, ...body]);
+    downloadCSV(`트레이너목록_${todayYMD()}.csv`, [header, ...body]);
   };
 
   return (

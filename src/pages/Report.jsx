@@ -1,6 +1,7 @@
 // pages/Report.jsx
 // 측정 리포트 페이지: 회원 선택 → 실측 데이터 그래프/요약 → JPG 다운로드.
 import { useState, useMemo } from 'react';
+import { todayYMD } from '../utils/dates';
 import { store, aiStore } from '../demoData';
 import { buildFullReport } from '../services/reportService';
 import { buildReportSvg, downloadSvgAsJpg } from '../components/report/reportImage';
@@ -30,7 +31,7 @@ export default function Report() {
     setDownloading(true); setMsg(null);
     try {
       const svg = buildReportSvg(report);
-      const name = `리포트_${member.name}_${new Date().toISOString().slice(0,10)}.jpg`;
+      const name = `리포트_${member.name}_${todayYMD()}.jpg`;
       await downloadSvgAsJpg(svg, name, 2);
       setMsg('이미지가 다운로드되었습니다.');
     } catch (e) {

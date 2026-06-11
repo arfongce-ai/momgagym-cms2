@@ -2,6 +2,7 @@
 // ✅ 백업: body records 포함 + 완전한 Timestamp 직렬화
 // ✅ 파기: 스케줄+수납+신체정보 일괄 삭제
 import { useState, useEffect } from 'react';
+import { daysAgoYMD } from '../utils/dates';
 import { store, aiStore } from '../demoData';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -97,8 +98,7 @@ export default function Settings({ darkMode, setDarkMode }) {
 
   // ── 파기 대상 조회 ─────────────────────────────────────
   const loadPurgeList = () => {
-    const twoYearsAgo = new Date(Date.now() - 2 * 365 * 24 * 60 * 60 * 1000)
-      .toISOString().slice(0, 10);
+    const twoYearsAgo = daysAgoYMD(2 * 365); // CV-A: 로컬 날짜
     const list = store.getMembers().filter(m => {
       if (!m.lastAttendedDate) {
         return m.joinDate && m.joinDate <= twoYearsAgo;

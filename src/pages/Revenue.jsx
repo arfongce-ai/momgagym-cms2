@@ -10,12 +10,13 @@ import { store } from '../demoData';
 import { useAuth } from '../contexts/AuthContext';
 import {
   METHOD_LBL, METHOD_CLR, won, monthKey, yearKey,
-  calcNet, CARD_METHODS, downloadCSV, computeSessionSettlement, determineSplitRate,
+  calcNet, downloadCSV, computeSessionSettlement,
   buildRefreezePlan,
 } from '../services/finance';
+import { todayYMD, thisYM } from '../utils/dates';
 
-const thisMonth = new Date().toISOString().slice(0,7);
-const thisYear  = new Date().toISOString().slice(0,4);
+// CV-A: UTC 기준이라 매월 1일 새벽에 '지난달'로 표시되던 버그 → 로컬 기준으로 수정
+const thisMonth = thisYM();
 
 function Card({ label, value, color='text-slate-100', sub }) {
   return (
@@ -343,7 +344,7 @@ function RefundableList({ filtered, settings, trainers, trainerMap, onChange }) 
       `진행분 수업료는 트레이너 정산에 그대로 남습니다.\n\n이 결제를 환불 처리할까요?`)) return;
     try {
       await store.updatePayment(p.memberId, p.id, {
-        isRefunded:true, refundAmount:refund, refundedAt:new Date().toISOString().slice(0,10),
+        isRefunded:true, refundAmount:refund, refundedAt:todayYMD(),
         refundVat:vat, refundPenalty:penalty, refundUsed:usedAmount,
       });
       // 잔여 세션 0으로 자동 정리(진행분은 이미 정산에 반영됨)
@@ -863,14 +864,14 @@ function RecordManager({ trainers, period, mode }) {
   const [, force] = useState(0);
   const [open, setOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(true);
-  const [form, setForm] = useState({ trainerId:trainers[0]?.id||'', channel:'blog', date:new Date().toISOString().slice(0,10), note:'' });
+  const [form, setForm] = useState({ trainerId:trainers[0]?.id||'', channel:'blog', date:todayYMD(), note:'' });
 
   const inPeriod = (d) => mode==='month' ? monthKey(d)===period : yearKey(d)===period;
   const list = store.getPromos().filter(p=>inPeriod(p.date)).sort((a,b)=>b.date.localeCompare(a.date));
 
   const add = async () => {
     if (!form.trainerId) { alert('트레이너를 선택하세요.'); return; }
-    try { await store.addPromo({ ...form }); setForm(f=>({...f, note:'', date:new Date().toISOString().slice(0,10)})); force(n=>n+1); }
+    try { await store.addPromo({ ...form }); setForm(f=>({...f, note:'', date:todayYMD()})); force(n=>n+1); }
     catch(e){ alert('추가 실패'); }
   };
   const del = async (id) => { try { await store.deletePromo(id); force(n=>n+1); } catch(e){ alert('삭제 실패'); } };
@@ -935,7 +936,7 @@ function ExpenseTab() {
   const [, force] = useState(0);
   const [selMonth, setSelMonth] = useState(thisMonth);
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({ kind:'monthly', name:'', amount:'', ym:thisMonth, date:new Date().toISOString().slice(0,10), note:'' });
+  const [form, setForm] = useState({ kind:'monthly', name:'', amount:'', ym:thisMonth, date:todayYMD(), note:'' });
 
   const expenses = store.getExpenses();
   const fixed   = expenses.filter(e=>e.kind==='fixed');
@@ -957,7 +958,7 @@ function ExpenseTab() {
         ? { kind:'fixed', name:form.name, amount:Number(form.amount), note:form.note }
         : { kind:'monthly', name:form.name, amount:Number(form.amount), ym:form.ym, date:form.date, note:form.note };
       await store.addExpense(payload);
-      setForm({ kind:form.kind, name:'', amount:'', ym:selMonth, date:new Date().toISOString().slice(0,10), note:'' });
+      setForm({ kind:form.kind, name:'', amount:'', ym:selMonth, date:todayYMD(), note:'' });
       setOpen(false); force(n=>n+1);
     } catch(e){ alert('추가 실패'); }
   };

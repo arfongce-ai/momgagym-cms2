@@ -6,6 +6,7 @@
 // ✅ 요구사항5: 외부 일정 탭 (출강/교육/현장, 자유 시간, memberId=null)
 import { useState, useEffect } from 'react';
 import { store } from '../demoData';
+import { toYMD } from '../utils/dates';
 
 // ── 시간 유틸 ─────────────────────────────────────────────
 // 10분 단위 반올림 스냅
@@ -29,7 +30,7 @@ function addHour(t) {
 
 const WEEKDAYS = ['일','월','화','수','목','금','토'];
 const weekday  = d => d ? WEEKDAYS[new Date(d+'T12:00:00').getDay()] : '';
-const fmt      = d => new Date(d).toISOString().slice(0,10);
+const fmt      = toYMD; // CV-A: 로컬 시간 기준(UTC 버그 수정 — 새벽에 '오늘'이 어제로 표시되던 문제)
 const fmtKo    = d => new Date(d+'T12:00:00').toLocaleDateString('ko-KR',{month:'short',day:'numeric',weekday:'short'});
 const addD     = (d,n) => { const r=new Date(d+'T12:00:00'); r.setDate(r.getDate()+n); return fmt(r); };
 

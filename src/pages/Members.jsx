@@ -2,6 +2,7 @@
 // ✅ 요구사항1: 잔여 횟수 트레이너별 분리 배지 표시 (총합 금지)
 import { useState, useEffect, useCallback } from 'react';
 import { store } from '../demoData';
+import { todayYMD, daysAgoYMD } from '../utils/dates';
 import { useAuth } from '../contexts/AuthContext';
 import MemberRegister from '../components/members/MemberRegister';
 import MemberDetail   from '../components/members/MemberDetail';
@@ -13,36 +14,7 @@ function getChosung(str) {
   return [...str].map(c=>{const code=c.charCodeAt(0)-0xAC00;return code>=0&&code<=11171?cs[Math.floor(code/588)]:c;}).join('');
 }
 
-// ★ 요구사항1: 트레이너별 세션 분리 배지 컴포넌트
-function SessionBadges({ trainerSessions={}, trainers=[], compact=false }) {
-  const entries = Object.entries(trainerSessions);
-  if (!entries.length) return <span className="text-[10px] text-slate-600">세션없음</span>;
-
-  return (
-    <div className={`flex ${compact ? 'flex-col' : 'flex-wrap'} gap-1`}>
-      {entries.map(([tid, s]) => {
-        const t   = trainers.find(tr => tr.id === tid);
-        const pct = s.total > 0 ? (s.remaining / s.total) * 100 : 0;
-        const cls = pct > 30
-          ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/25'
-          : pct > 0
-          ? 'text-amber-400 bg-amber-500/10 border-amber-500/25'
-          : 'text-red-400 bg-red-500/10 border-red-500/25';
-        return (
-          <span key={tid}
-            className={`inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded-md border whitespace-nowrap ${cls}`}>
-            <span className="w-1.5 h-1.5 rounded-full flex-shrink-0"
-              style={{ background: t?.color || '#94a3b8' }} />
-            {compact
-              ? <>{t?.name?.slice(0,2)||'??'}: <span className="font-mono">{s.remaining}<span className="opacity-50">/{s.total}</span></span></>
-              : <><span className="opacity-80">{t?.name||'?'}</span> <span className="font-mono">{s.remaining}/{s.total}회</span></>
-            }
-          </span>
-        );
-      })}
-    </div>
-  );
-}
+// CV: 미사용 컴포넌트(SessionBadges) 제거 — 동일 기능이 행 내부에 직접 구현되어 있음
 
 export default function Members() {
   const { user } = useAuth();
@@ -62,7 +34,7 @@ export default function Members() {
   }, []);
   useEffect(() => { load(); }, [load]);
 
-  const oneYearAgo = new Date(Date.now() - 365*864e5).toISOString().slice(0,10);
+  const oneYearAgo = daysAgoYMD(365); // CV-A: 로컬 날짜
 
   const filtered = members.filter(m => {
     const cs = getChosung(m.name);
@@ -92,7 +64,7 @@ export default function Members() {
         isExpired(m)?'결제만료':'정상',
       ];
     });
-    downloadCSV(`회원목록_${new Date().toISOString().slice(0,10)}.csv`, [header, ...body]);
+    downloadCSV(`회원목록_${todayYMD()}.csv`, [header, ...body]);
   };
 
   const handleZeroSessions = async () => {

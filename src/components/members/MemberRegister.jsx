@@ -5,6 +5,7 @@
 // ✅ 생년월일 type=date
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { store } from '../../demoData';
+import { todayYMD } from '../../utils/dates';
 
 const TERMS = `1. 건강 고지 의무\n회원은 부상 및 지병을 등록 전 반드시 고지해야 하며, 미고지 사항으로 인한 사고 및 합병증에 대해 센터는 책임을 지지 않습니다.\n\n2. 예약 및 수업 운영\n당일 취소·변경 불가. 전일 영업 종료 전까지 예약·변경 가능. 당일 취소·노쇼 시 횟수 자동 차감. 지각 시 연장 불가.\n\n3. 유효 기간 및 휴회\n등록일 기준 6개월 이내 소진(경과 시 자동 소멸). 휴회는 유효 기간 내 1회(최대 30일) 가능(사전 협의).\n\n4. 환불 및 양도\n환불 산정: [총 결제액] - [위약금 10%] - [진행 횟수 × 정상가] - [카드 수수료]. 타인 양도 절대 불가.\n\n5. 책임 및 동의\n본인 부주의 사고·분실물 책임 없음. 강사 변경 가능. 홍보 활용(사진·영상은 홍보·연구용).\n\n본인은 위 약관을 숙지하였으며 이에 동의합니다.`;
 
@@ -152,7 +153,7 @@ export default function MemberRegister({ trainers=[], onSuccess, onCancel }) {
   const [step, setStep]     = useState('form');
   const [error, setError]   = useState('');
   const [loading, setLoading] = useState(false);
-  const today = new Date().toISOString().slice(0,10);
+  const today = todayYMD(); // CV-A: 로컬 날짜
 
   const [form, setForm] = useState({
     name:'', gender:'', phone:'', phone2:'', birthDate:'', address:'', job:'',

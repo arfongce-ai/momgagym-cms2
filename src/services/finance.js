@@ -1,5 +1,6 @@
 // finance.js — 매출/정산 공통 상수 및 계산 로직
 // 결제수단: 페이, 계좌, 현금, 현금영수증, 카드1, 카드2
+import { toYMD } from '../utils/dates';
 
 export const METHOD_LBL = {
   pay:'페이', transfer:'계좌', cash:'현금', cash_receipt:'현금영수증',
@@ -21,8 +22,9 @@ export const VAT_ONLY_METHODS = ['pay', 'cash_receipt'];          // 부가세�
 export const NO_DEDUCT_METHODS = ['transfer', 'cash'];            // 공제 없음
 
 export const won = (n) => Math.round(n||0).toLocaleString('ko-KR') + '원';
-export const monthKey = (d) => new Date(d).toISOString().slice(0,7);
-export const yearKey  = (d) => new Date(d).toISOString().slice(0,4);
+// CV-A: toISOString()은 UTC 기준이라 한국 새벽(00~09시)에 달/연도가 밀리는 버그 → 로컬 기준으로 수정
+export const monthKey = (d) => toYMD(d).slice(0,7);
+export const yearKey  = (d) => toYMD(d).slice(0,4);
 
 // 입금금액 = 결제금액 − (수단별 공제)
 //  · 단일수단: p.method 하나로 공제

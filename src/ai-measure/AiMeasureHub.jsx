@@ -3,6 +3,7 @@
 import { useState, Suspense } from 'react';
 import { MEASURE_MENUS } from './registry';
 import { store, aiStore } from '../demoData';
+import { todayYMD } from '../utils/dates';
 import { useAuth } from '../contexts/AuthContext';
 
 export default function AiMeasureHub() {
@@ -29,7 +30,7 @@ export default function AiMeasureHub() {
       await aiStore.addSession(member.id, {
         menu: active.id,
         menuTitle: active.title,
-        recordedAt: new Date().toISOString().slice(0, 10),
+        recordedAt: todayYMD(), // CV-A: 로컬 날짜
         recordedAtFull: new Date().toISOString(),
         data,
       });

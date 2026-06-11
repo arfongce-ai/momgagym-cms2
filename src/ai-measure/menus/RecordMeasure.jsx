@@ -2,6 +2,7 @@
 // 메뉴 0: 일반 영상 녹화 — 카메라로 녹화 후 재생·다운로드.
 // AI 분석 없이 순수 녹화. MediaRecorder API 사용.
 import { useRef, useState, useEffect, useCallback } from 'react';
+import { todayYMD } from '../../utils/dates';
 import { drawGuides } from '../core/cameraGuide';
 import { openMainCameraStream } from '../core/cameraSelect';
 
@@ -106,7 +107,7 @@ export default function RecordMeasure({ member, onBack }) {
   const mmss = `${String(Math.floor(elapsed/60)).padStart(2,'0')}:${String(elapsed%60).padStart(2,'0')}`;
   const ext = (mimeRef.current || '').includes('mp4') ? 'mp4' : 'webm';
   // 폴더 의미를 파일명 접두어로 부여(갤러리 앱이 같은 접두어끼리 묶어 보여줌)
-  const fname = `몸가짐_측정영상_${member?.name||'영상'}_${new Date().toISOString().slice(0,10).replace(/-/g,'')}.${ext}`;
+  const fname = `몸가짐_측정영상_${member?.name||'영상'}_${todayYMD().replace(/-/g,'')}.${ext}`;
 
   // 사진앱/갤러리에 저장 — Web Share(파일 공유 시트)로 "사진에 저장" 가능(S25/iPhone)
   const [shareSupported] = useState(() =>
