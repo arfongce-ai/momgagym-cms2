@@ -1,0 +1,59 @@
+rules_version = '2';
+
+// 몸가짐 CMS — Firestore 보안 규칙
+// 적용: Firebase 콘솔 → Firestore Database → 규칙(Rules) 탭에 붙여넣고 "게시".
+// 또는 CLI:  firebase deploy --only firestore:rules
+//
+// 핵심 원칙
+//  1) roles 컬렉션은 클라이언트에서 절대 write 금지(권한 탈취 차단). 읽기만 허용.
+//  2) 운영 데이터는 "로그인한 사용자"만 접근(공개 차단).
+//  3) 관리자 전용 데이터(매출/지출/정산/설정)는 roles 문서가 admin인 사용자만.
+//
+// ※ 더 강력한 방법은 Custom Claims(아래 가이드 참고). 그 경우 isAdmin()을
+//   request.auth.token.admin == true 로 바꾸면 roles 문서 조회 비용도 사라진다.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // 로그인 여부
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // roles/{uid} 문서로 관리자 판별 (Custom Claims 미사용 시)
+    function isAdmin() {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/roles/$(request.auth.uid))
+        && get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    // ── roles : 권한의 원천. 클라이언트 write 전면 금지 ──────────────
+    // 읽기는 본인 역할 확인을 위해 로그인 사용자에게 허용.
+    // 쓰기(생성/수정/삭제)는 어떤 클라이언트도 불가 →
+    //   콘솔에서 수동으로 작성하거나 Admin SDK(서버)로만 변경.
+    match /roles/{uid} {
+      allow read:  if isSignedIn();
+      allow write: if false;
+    }
+
+    // ── 일반 운영 데이터 : 로그인 사용자만 ───────────────────────────
+    match /members/{id}    { allow read, write: if isSignedIn(); }
+    match /trainers/{id}   { allow read, write: if isSignedIn(); }
+    match /schedules/{id}  { allow read, write: if isSignedIn(); }
+    match /notices/{id}    { allow read, write: if isSignedIn(); }
+    match /payments/{id}   { allow read, write: if isSignedIn(); }
+    match /body/{id}       { allow read, write: if isSignedIn(); }
+    match /ai/{id}         { allow read, write: if isSignedIn(); }
+
+    // ── 관리자 전용 데이터 : admin 만 ────────────────────────────────
+    match /expenses/{id}        { allow read, write: if isAdmin(); }
+    match /promos/{id}          { allow read, write: if isAdmin(); }
+    match /settleOverrides/{id} { allow read, write: if isAdmin(); }
+    match /settings/{id}        { allow read: if isSignedIn(); allow write: if isAdmin(); }
+
+    // 그 외 모든 경로 기본 차단
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
