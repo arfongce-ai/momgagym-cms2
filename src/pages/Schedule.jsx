@@ -892,6 +892,7 @@ export default function Schedule() {
   const [trainers,  setTrainers]  = useState([]);
   const [showAdd,   setShowAdd]   = useState(false);
   const [detail,    setDetail]    = useState(null);
+  const [query,     setQuery]     = useState('');
 
   const load = () => {
     const mb = store.getMembers();
@@ -915,7 +916,22 @@ export default function Schedule() {
     return addD(fmt(mon),i);
   });
 
-  const forDate = d => schedules.filter(s=>s.date===d).sort((a,b)=>a.startTime.localeCompare(b.startTime));
+  const trainerName = id => trainers.find(t=>t.id===id)?.name || '';
+  const matchQ = s => {
+    const q = query.trim().toLowerCase();
+    if (!q) return true;
+    const fields = [
+      nameWithRemain(s, members),
+      s.memberName || '',
+      trainerName(s.trainerId),
+      s.memo || '',
+      s.classType || '',
+    ].join(' ').toLowerCase();
+    return fields.includes(q);
+  };
+
+  const forDate = d => schedules.filter(s=>s.date===d && matchQ(s)).sort((a,b)=>a.startTime.localeCompare(b.startTime));
+  const filteredSchedules = schedules.filter(matchQ);
 
   return (
     <div className="space-y-4">
@@ -953,6 +969,62 @@ export default function Schedule() {
           className="text-xs border border-amber-500/30 text-amber-400 px-3 py-1.5 rounded-lg hover:bg-amber-500/10 transition-colors font-semibold">오늘</button>
       </div>
 
+      {/* 검색 */}
+      <div className="relative">
+        <input
+          value={query}
+          onChange={e=>setQuery(e.target.value)}
+          placeholder="회원·트레이너·메모 검색"
+          className="w-full bg-slate-900 border border-slate-800 text-slate-100 rounded-xl pl-9 pr-9 py-2.5 text-sm focus:outline-none focus:border-amber-500"
+        />
+        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">🔍</span>
+        {query && (
+          <button onClick={()=>setQuery('')}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white text-sm">✕</button>
+        )}
+      </div>
+      {query.trim() && (
+        <p className="text-xs text-slate-500">검색 결과 {filteredSchedules.length}건</p>
+      )}
+
+      {query.trim() ? (
+        /* 검색 결과 — 전체 일정에서 매칭, 날짜순 목록 */
+        (() => {
+          const results = filteredSchedules
+            .slice()
+            .sort((a,b)=> (a.date+a.startTime).localeCompare(b.date+b.startTime));
+          if (results.length === 0)
+            return <p className="text-center text-slate-600 py-12 text-sm">검색 결과가 없습니다</p>;
+          // 날짜별 그룹
+          const groups = [];
+          let cur = null;
+          for (const s of results) {
+            if (!cur || cur.date !== s.date) { cur = { date: s.date, items: [] }; groups.push(cur); }
+            cur.items.push(s);
+          }
+          return (
+            <div className="space-y-2">
+              {groups.map(g=>{
+                const isToday = g.date === todayStr;
+                return (
+                  <div key={g.date} className={`bg-slate-900 border rounded-xl overflow-hidden ${isToday?'border-amber-500/40':'border-slate-800'}`}>
+                    <button onClick={()=>{ setPivot(g.date); setView('day'); setQuery(''); }}
+                      className="w-full flex items-center gap-2 px-3 py-2 border-b border-slate-800 hover:bg-slate-800/50 transition-colors">
+                      <span className={`text-sm font-bold ${isToday?'text-amber-400':'text-slate-300'}`}>{fmtKo(g.date)}</span>
+                      {isToday && <span className="text-[10px] text-amber-400 font-bold">오늘</span>}
+                      <span className="ml-auto text-[11px] text-slate-600">{g.items.length}건</span>
+                    </button>
+                    <div className="divide-y divide-slate-800/60">
+                      {g.items.map(s=><CompactRow key={s.id} s={s} members={members} onClick={setDetail}/>)}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })()
+      ) : (
+        <>
       {view==='week'&&(
         <div className="space-y-2">
           {weekDates.map(date=>{
@@ -996,9 +1068,11 @@ export default function Schedule() {
       )}
 
       {view==='month'&&(
-        <MonthView pivotDate={pivot} schedules={schedules} onBlockClick={setDetail} todayStr={todayStr}
+        <MonthView pivotDate={pivot} schedules={filteredSchedules} onBlockClick={setDetail} todayStr={todayStr}
           members={members}
           onDayClick={(date)=>{ setPivot(date); setView('day'); }}/>
+      )}
+        </>
       )}
 
       {showAdd && (
