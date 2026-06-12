@@ -851,7 +851,7 @@ function MonthView({ pivotDate, schedules, onBlockClick, todayStr, members, onDa
   return (
     <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
       <div className="grid grid-cols-7 text-center text-xs font-bold text-slate-500 border-b border-slate-800">
-        {['월','화','수','목','금','토','일'].map(d=><div key={d} className="py-2">{d}</div>)}
+        {['일','월','화','수','목','금','토'].map((d,i)=><div key={d} className={`py-2 ${i===0?'text-red-400':i===6?'text-blue-400':''}`}>{d}</div>)}
       </div>
       <div className="grid grid-cols-7">
         {cells.map((date,i)=>{
