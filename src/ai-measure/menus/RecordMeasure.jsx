@@ -64,7 +64,11 @@ export default function RecordMeasure({ member, onBack }) {
     if (!MediaRecorder.isTypeSupported(mime)) mime = 'video/webm';
     if (!MediaRecorder.isTypeSupported(mime)) mime = '';
     mimeRef.current = mime || 'video/webm';
-    const rec = new MediaRecorder(streamRef.current, mime ? { mimeType: mime } : undefined);
+    // 비트레이트 제한 — 파일 크기를 줄여 카카오톡 전송 속도/안정성 향상.
+    // 측정용 영상은 4Mbps면 충분히 선명하며, 무제한 대비 파일이 수배 작아진다.
+    const recOpts = { videoBitsPerSecond: 4_000_000, audioBitsPerSecond: 128_000 };
+    if (mime) recOpts.mimeType = mime;
+    const rec = new MediaRecorder(streamRef.current, recOpts);
     rec.ondataavailable = e => { if (e.data.size > 0) chunksRef.current.push(e.data); };
     rec.onstop = () => {
       const type = mimeRef.current;
@@ -113,6 +117,9 @@ export default function RecordMeasure({ member, onBack }) {
   const [shareSupported] = useState(() =>
     typeof navigator !== 'undefined' && !!navigator.canShare
   );
+  // 카카오톡은 webm을 영상으로 인식하지 못해 전송이 느리거나 실패한다.
+  // mp4가 아니면 "사진앱 저장 후 갤러리에서 전송"을 안내한다.
+  const isWebm = ext === 'webm';
   const saveToGallery = async () => {
     try {
       const blob = blobRef.current;
@@ -154,7 +161,7 @@ export default function RecordMeasure({ member, onBack }) {
             </div>
           )}
 
-          <div className="measure-camera">
+          <div className="measure-camera" style={{ aspectRatio: aspect.replace('/', ' / ') }}>
             <video ref={videoRef} autoPlay playsInline muted
               className="absolute inset-0 w-full h-full object-contain" />
             <canvas ref={canvasRef}
@@ -231,6 +238,14 @@ export default function RecordMeasure({ member, onBack }) {
             선택해 카메라 롤에 바로 넣을 수 있습니다. 파일명은 <strong className="text-slate-300">몸가짐_측정영상</strong>으로
             시작해 갤러리에서 모아 보기 쉽습니다.
           </p>
+          {isWebm && (
+            <p className="text-[11px] text-amber-400/90 text-center leading-relaxed">
+              ⚠️ 이 기기는 webm 형식으로 녹화됩니다. 카카오톡으로 영상을 바로 보내면
+              느리거나 실패할 수 있으니, <strong>먼저 "사진앱에 저장"</strong>한 뒤
+              <strong> 갤러리(사진)에서 카카오톡으로 전송</strong>하세요. 갤러리에 저장될 때
+              mp4로 변환되어 전송이 빠르고 안정적입니다.
+            </p>
+          )}
         </div>
       )}
     </div>
