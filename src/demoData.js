@@ -119,6 +119,16 @@ const cache = {
   settings:{...INITIAL_SETTINGS}, expenses:[], promos:[], settleOverrides:[],
 };
 
+// 충돌 방지 ID 생성기.
+//  · Date.now()만 쓰면 같은 밀리초에 두 건이 만들어질 때(예: 결제+세션로그 동시 기록,
+//    버튼 빠른 연타) ID가 겹쳐 문서가 덮어써질 수 있다.
+//  · 밀리초 타임스탬프 + 단조 증가 카운터를 붙여 같은 ms 안에서도 항상 유일하게 만든다.
+let __idCounter = 0;
+export function uid(prefix) {
+  __idCounter = (__idCounter + 1) % 1000;
+  return `${prefix}${Date.now()}${String(__idCounter).padStart(3, '0')}`;
+}
+
 async function loadCollection(name) {
   const snap = await getDocs(collection(db, name));
   return snap.docs.map(d => d.data());
@@ -234,7 +244,7 @@ async function fbWriteBatch(ops) {
 export const store = {
   getMembers:    ()     => cache.members,
   addMember:     async m => {
-    const nm={...m,id:'m'+Date.now()}; const prev=cache.members;
+    const nm={...m,id:uid('m')}; const prev=cache.members;
     cache.members=[...cache.members,nm];
     try { await fbSet('members',nm.id,nm); return nm; }
     catch(e){ cache.members=prev; throw e; }
@@ -255,7 +265,7 @@ export const store = {
 
   getTrainers:    ()     => cache.trainers,
   addTrainer:     async t => {
-    const nt={...t,id:'t'+Date.now()}; const prev=cache.trainers;
+    const nt={...t,id:uid('t')}; const prev=cache.trainers;
     cache.trainers=[...cache.trainers,nt];
     try { await fbSet('trainers',nt.id,nt); return nt; }
     catch(e){ cache.trainers=prev; throw e; }
@@ -276,7 +286,7 @@ export const store = {
 
   getSchedules:    ()     => cache.schedules,
   addSchedule:     async s => {
-    const ns={...s,id:'s'+Date.now()}; const prev=cache.schedules;
+    const ns={...s,id:uid('s')}; const prev=cache.schedules;
     cache.schedules=[...cache.schedules,ns];
     try { await fbSet('schedules',ns.id,ns); return ns; }
     catch(e){ cache.schedules=prev; throw e; }
@@ -297,7 +307,7 @@ export const store = {
 
   getNotices: ()  => cache.notices,
   addNotice:  async n => {
-    const nn={...n,id:'n'+Date.now()}; const prev=cache.notices;
+    const nn={...n,id:uid('n')}; const prev=cache.notices;
     cache.notices=[...cache.notices,nn];
     try { await fbSet('notices',nn.id,nn); return nn; }
     catch(e){ cache.notices=prev; throw e; }
@@ -318,7 +328,7 @@ export const store = {
 
   getPayments:   (mid)    => cache.payments[mid] || [],
   addPayment:    async (mid,p) => {
-    const np={...p,id:'p'+Date.now()}; const prev=cache.payments[mid];
+    const np={...p,id:uid('p')}; const prev=cache.payments[mid];
     cache.payments[mid]=[...(cache.payments[mid]||[]), np];
     try { await fbSet('payments', np.id, {...np, __mid:mid}); return np; }
     catch(e){ cache.payments[mid]=prev; throw e; }
@@ -344,7 +354,7 @@ export const store = {
 
   getBodyRecords:   (mid)    => cache.body[mid] || [],
   addBodyRecord:    async (mid,r) => {
-    const nr={...r,id:'b'+Date.now()}; const prev=cache.body[mid];
+    const nr={...r,id:uid('b')}; const prev=cache.body[mid];
     cache.body[mid]=[...(cache.body[mid]||[]), nr];
     try { await fbSet('body', nr.id, {...nr, __mid:mid}); return nr; }
     catch(e){ cache.body[mid]=prev; throw e; }
@@ -389,7 +399,7 @@ export const store = {
   // 예약 생성 + 세션 차감 + sessionDeducted 플래그를 한 batch로 원자적 처리 — NEW-03
   // 일반 수업(회원+트레이너, 비외부)만 차감. 하나라도 실패하면 전체 실패.
   createScheduleWithDeduction: async (scheduleData) => {
-    const ns = { ...scheduleData, id: 's'+Date.now() };
+    const ns = { ...scheduleData, id: uid('s') };
     const isDeductible = !ns.isExternal && ns.memberId && ns.trainerId;
     const batch = writeBatch(db);
 
@@ -493,7 +503,7 @@ export const store = {
   // kind: 'fixed' | 'monthly'
   getExpenses: () => cache.expenses,
   addExpense: async (e) => {
-    const ne = { ...e, id:'e'+Date.now() }; const prev = cache.expenses;
+    const ne = { ...e, id:uid('e') }; const prev = cache.expenses;
     cache.expenses = [...cache.expenses, ne];
     try { await fbSet('expenses', ne.id, ne); return ne; }
     catch(err){ cache.expenses = prev; throw err; }
@@ -516,7 +526,7 @@ export const store = {
   // { trainerId, ym:'2026-06', channel:'blog'|'insta', date }
   getPromos: () => cache.promos,
   addPromo: async (p) => {
-    const np = { ...p, id:'pr'+Date.now() }; const prev = cache.promos;
+    const np = { ...p, id:uid('pr') }; const prev = cache.promos;
     cache.promos = [...cache.promos, np];
     try { await fbSet('promos', np.id, np); return np; }
     catch(err){ cache.promos = prev; throw err; }
@@ -557,7 +567,7 @@ export const store = {
 export const aiStore = {
   getSessions:   (mid)    => cache.ai[mid] || [],
   addSession:    async (mid, s) => {
-    const ns={...s, id:'ai'+Date.now()}; const prev=cache.ai[mid];
+    const ns={...s, id:uid('ai')}; const prev=cache.ai[mid];
     cache.ai[mid]=[...(cache.ai[mid]||[]), ns];
     try { await fbSet('ai', ns.id, {...ns, __mid:mid}); return ns; }
     catch(e){ cache.ai[mid]=prev; throw e; }

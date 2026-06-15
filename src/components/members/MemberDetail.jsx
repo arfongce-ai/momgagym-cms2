@@ -4,7 +4,7 @@
 // ✅ 기본정보 수정 + 세션 재등록
 // ✅ 트레이너별 세션 개별 카드
 import { useState, useEffect } from 'react';
-import { store } from '../../demoData';
+import { store, uid } from '../../demoData';
 import { todayYMD } from '../../utils/dates';
 import { useAuth } from '../../contexts/AuthContext';
 import { ClassTypeCheckbox } from './MemberRegister';
@@ -350,7 +350,7 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
         // sessionLogs는 "언제 몇 회 등록했는지"를 별도 줄로 보여주기 위한 기록일 뿐.
         const logs = JSON.parse(JSON.stringify(fresh?.sessionLogs || []));
         logs.push({
-          id: 'sl_' + Date.now(),
+          id: uid('sl_'),
           trainerId: addTid,
           count: addCnt,
           date: payForm.paidAt,
@@ -1105,7 +1105,10 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
 
           {/* ━━ 메모 탭 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
           {tab==='memo' && (
-            <MemoTab member={member} onSave={memo=>{store.updateMember(member.id,{memo});refresh();onUpdate?.();}}/>
+            <MemoTab member={member} onSave={async memo=>{
+              try { await store.updateMember(member.id,{memo}); refresh(); onUpdate?.(); }
+              catch(e){ console.error('[메모 저장 실패]',e); alert('메모 저장에 실패했습니다. 다시 시도하세요.'); }
+            }}/>
           )}
         </div>
 

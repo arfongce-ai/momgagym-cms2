@@ -205,7 +205,7 @@ function ScheduleDetailModal({ schedule:initS, onClose, onUpdate, onDelete }) {
     }
   };
 
-  const saveEdit = () => {
+  const saveEdit = async () => {
     const t = trainers.find(tr=>tr.id===form.trainerId);
     const m = members.find(me=>me.id===form.memberId);
     // 회차 수동 수정 처리 (일반 회원 수업만)
@@ -220,14 +220,19 @@ function ScheduleDetailModal({ schedule:initS, onClose, onUpdate, onDelete }) {
         }
       }
     }
-    store.updateSchedule(s.id, {
-      date:form.date, startTime:form.startTime, endTime:form.endTime,
-      classType:form.classType, trainerId:form.trainerId,
-      trainerName:t?.name||s.trainerName, trainerColor:t?.color||s.trainerColor,
-      ...(isExt ? { memo:form.memo } : { memberId:form.memberId, memberName:m?.name||s.memberName }),
-      ...sessionPatch,
-    });
-    setEdit(false); onUpdate();
+    try {
+      await store.updateSchedule(s.id, {
+        date:form.date, startTime:form.startTime, endTime:form.endTime,
+        classType:form.classType, trainerId:form.trainerId,
+        trainerName:t?.name||s.trainerName, trainerColor:t?.color||s.trainerColor,
+        ...(isExt ? { memo:form.memo } : { memberId:form.memberId, memberName:m?.name||s.memberName }),
+        ...sessionPatch,
+      });
+      setEdit(false); onUpdate();
+    } catch (e) {
+      console.error('[스케줄 수정 실패]', e);
+      alert('수정에 실패했습니다. 네트워크 확인 후 다시 시도하세요.');
+    }
   };
 
   const trainerCT = trainers.find(t=>t.id===form.trainerId)?.classTypes||[];
