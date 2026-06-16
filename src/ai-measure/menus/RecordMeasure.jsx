@@ -5,15 +5,14 @@ import { useRef, useState, useEffect, useCallback } from 'react';
 import { todayYMD } from '../../utils/dates';
 import { drawGuides } from '../core/cameraGuide';
 import { openMainCameraStream } from '../core/cameraSelect';
-import { Metronome, Stopwatch } from './TimerTool';
 
 const RECORD_FPS = 24;
-const VIDEO_BITS_PER_SECOND = 1_600_000;
+const VIDEO_BITS_PER_SECOND = 850_000;
 const AUDIO_BITS_PER_SECOND = 64_000;
 
 const OUTPUT_SIZE = {
-  '3/4': { width: 720, height: 960 },
-  '1/1': { width: 720, height: 720 },
+  '3/4': { width: 540, height: 720 },
+  '1/1': { width: 540, height: 540 },
 };
 
 function pickRecorderMime() {
@@ -387,11 +386,10 @@ export default function RecordMeasure({ member, onBack }) {
     }
   };
 
-  const toolPanel = (
-    <section className="rounded-2xl bg-black/55 border border-white/10 backdrop-blur p-3 space-y-3">
-      <div className="flex items-center justify-between gap-2">
-        <p className="text-sm font-black text-slate-100">촬영 보조 도구</p>
-        <div className="flex gap-1 rounded-xl bg-slate-900/85 p-1 shrink-0">
+  const miniToolPanel = (
+    <section className="rounded-2xl bg-black/22 border border-white/10 backdrop-blur-sm px-3 py-2 text-white shadow-lg">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <div className="flex gap-1 rounded-full bg-black/25 p-0.5">
           {[
             ['stopwatch', '초시계'],
             ['metronome', '메트로놈'],
@@ -399,14 +397,19 @@ export default function RecordMeasure({ member, onBack }) {
             <button
               key={key}
               onClick={() => setToolTab(key)}
-              className={`rounded-lg px-3 py-1.5 text-xs font-bold ${toolTab === key ? 'bg-amber-500 text-slate-950' : 'text-slate-300'}`}
+              className={`rounded-full px-3 py-1 text-[11px] font-bold ${toolTab === key ? 'bg-amber-500/90 text-slate-950' : 'text-white/70'}`}
             >
               {label}
             </button>
           ))}
         </div>
+        <span className="text-[10px] font-bold text-white/50">녹화 보조</span>
       </div>
-      {toolTab === 'stopwatch' ? <Stopwatch compact /> : <Metronome compact />}
+      {toolTab === 'stopwatch' ? (
+        <InlineStopwatch />
+      ) : (
+        <InlineMetronome />
+      )}
     </section>
   );
 
@@ -457,7 +460,7 @@ export default function RecordMeasure({ member, onBack }) {
         )}
 
         <div className="absolute bottom-0 left-0 right-0 z-10 space-y-3 px-4 pb-[max(16px,env(safe-area-inset-bottom))]">
-          {(status === 'ready' || status === 'recording') && toolPanel}
+          {(status === 'ready' || status === 'recording') && miniToolPanel}
 
           {status === 'idle' && (
             <button onClick={startCamera} className="btn btn-primary w-full">
@@ -476,7 +479,7 @@ export default function RecordMeasure({ member, onBack }) {
           )}
 
           <p className="text-center text-[11px] leading-relaxed text-white/70">
-            저장 영상은 {aspect} 비율로 꽉 차게 잘라 저장됩니다. 카카오톡 전송이 빠르도록 720px · 저용량으로 기록합니다.
+            저장 영상은 {aspect} 비율로 꽉 차게 잘라 저장됩니다. 카카오톡 전송이 빠르도록 540px · 저용량으로 기록합니다.
           </p>
         </div>
       </div>
@@ -496,31 +499,146 @@ export default function RecordMeasure({ member, onBack }) {
           <video src={videoUrl} controls playsInline className="w-full" style={{ maxHeight: '60vh' }} />
         </div>
         <div className="rounded-xl bg-slate-800 px-3 py-2 text-center text-xs text-slate-300">
-          저장 완료: {aspect} · {savedSize || '저용량'} · 카카오톡 전송용 720px 영상
+          저장 완료: {aspect} · {savedSize || '저용량'} · 카카오톡 전송용 540px 영상
         </div>
         <div className="grid grid-cols-2 gap-2">
           <button onClick={reset} className="rounded-xl border border-slate-700 text-slate-300 font-bold py-3 text-sm">
             다시 녹화
           </button>
-          {shareSupported ? (
-            <button onClick={saveToGallery} className="btn btn-primary">
-              공유/저장
-            </button>
-          ) : (
-            <a href={videoUrl} download={fname} className="btn btn-primary">
-              영상 다운로드
-            </a>
-          )}
+          <a href={videoUrl} download={fname} className="btn btn-primary">
+            영상 다운로드
+          </a>
         </div>
         {shareSupported && (
-          <a href={videoUrl} download={fname} className="block text-center text-[11px] text-slate-400 underline">
-            파일로 다운로드
-          </a>
+          <button onClick={saveToGallery} className="block w-full text-center text-[11px] text-slate-400 underline">
+            다운로드가 안 될 때만 공유/저장 열기
+          </button>
         )}
         <p className="text-[11px] text-slate-500 text-center leading-relaxed">
-          카카오톡 전송이 느리면 공유보다 먼저 파일로 다운로드한 뒤 전송해 주세요. 영상은 이전보다 작은 720px 저용량 파일로 저장됩니다.
+          카카오톡 앱이 바로 공유에서 멈추는 기기가 있어, 먼저 영상 다운로드로 저장한 뒤 파일을 선택해 전송하는 방식을 권장합니다. 영상은 540px 저용량 파일로 저장됩니다.
         </p>
       </div>
+    </div>
+  );
+}
+
+function InlineStopwatch() {
+  const [elapsed, setElapsed] = useState(0);
+  const [running, setRunning] = useState(false);
+  const startRef = useRef(0);
+  const accRef = useRef(0);
+  const rafRef = useRef(null);
+
+  const tick = useCallback(() => {
+    setElapsed(accRef.current + (performance.now() - startRef.current));
+    rafRef.current = requestAnimationFrame(tick);
+  }, []);
+
+  const toggle = () => {
+    if (running) {
+      accRef.current += performance.now() - startRef.current;
+      cancelAnimationFrame(rafRef.current);
+      setRunning(false);
+      return;
+    }
+    startRef.current = performance.now();
+    rafRef.current = requestAnimationFrame(tick);
+    setRunning(true);
+  };
+
+  const reset = () => {
+    cancelAnimationFrame(rafRef.current);
+    accRef.current = 0;
+    setElapsed(0);
+    setRunning(false);
+  };
+
+  useEffect(() => () => cancelAnimationFrame(rafRef.current), []);
+
+  const cs = Math.floor((elapsed % 1000) / 10);
+  const sec = Math.floor(elapsed / 1000) % 60;
+  const min = Math.floor(elapsed / 60000);
+  const text = `${String(min).padStart(2, '0')}:${String(sec).padStart(2, '0')}.${String(cs).padStart(2, '0')}`;
+
+  return (
+    <div className="flex items-center gap-2">
+      <div className="flex-1 rounded-xl bg-black/20 px-3 py-2 text-center font-mono text-3xl font-black tabular-nums text-amber-300">
+        {text}
+      </div>
+      <button onClick={toggle} className={`h-11 w-16 rounded-xl text-xs font-black ${running ? 'bg-white/20 text-white' : 'bg-amber-500/90 text-slate-950'}`}>
+        {running ? '정지' : '시작'}
+      </button>
+      <button onClick={reset} className="h-11 w-14 rounded-xl border border-white/15 text-xs font-bold text-white/75">
+        리셋
+      </button>
+    </div>
+  );
+}
+
+function InlineMetronome() {
+  const [bpm, setBpm] = useState(100);
+  const [playing, setPlaying] = useState(false);
+  const ctxRef = useRef(null);
+  const nextNoteRef = useRef(0);
+  const timerRef = useRef(null);
+  const beatRef = useRef(0);
+
+  const stop = useCallback(() => {
+    if (timerRef.current) clearInterval(timerRef.current);
+    timerRef.current = null;
+    setPlaying(false);
+  }, []);
+
+  const start = useCallback(() => {
+    if (!ctxRef.current) ctxRef.current = new (window.AudioContext || window.webkitAudioContext)();
+    const ctx = ctxRef.current;
+    if (ctx.state === 'suspended') ctx.resume();
+    nextNoteRef.current = ctx.currentTime + 0.05;
+    beatRef.current = 0;
+    timerRef.current = setInterval(() => {
+      const secPerBeat = 60 / bpm;
+      while (nextNoteRef.current < ctx.currentTime + 0.1) {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        const down = beatRef.current % 4 === 0;
+        osc.frequency.value = down ? 1500 : 1000;
+        gain.gain.setValueAtTime(down ? 0.45 : 0.25, nextNoteRef.current);
+        gain.gain.exponentialRampToValueAtTime(0.001, nextNoteRef.current + 0.05);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(nextNoteRef.current);
+        osc.stop(nextNoteRef.current + 0.05);
+        nextNoteRef.current += secPerBeat;
+        beatRef.current += 1;
+      }
+    }, 25);
+    setPlaying(true);
+  }, [bpm]);
+
+  useEffect(() => () => {
+    if (timerRef.current) clearInterval(timerRef.current);
+    if (ctxRef.current) {
+      try { ctxRef.current.close(); } catch (e) { /* noop */ }
+      ctxRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!playing) return;
+    stop();
+    start();
+  }, [bpm, playing, start, stop]);
+
+  return (
+    <div className="flex items-center gap-2">
+      <button onClick={() => setBpm((value) => Math.max(40, value - 5))} className="h-11 w-12 rounded-xl border border-white/15 text-sm font-black text-white/75">-5</button>
+      <div className="flex-1 rounded-xl bg-black/20 px-3 py-2 text-center font-mono text-3xl font-black text-amber-300">
+        {bpm}<span className="text-sm text-white/45"> BPM</span>
+      </div>
+      <button onClick={() => setBpm((value) => Math.min(220, value + 5))} className="h-11 w-12 rounded-xl border border-white/15 text-sm font-black text-white/75">+5</button>
+      <button onClick={playing ? stop : start} className={`h-11 w-16 rounded-xl text-xs font-black ${playing ? 'bg-white/20 text-white' : 'bg-amber-500/90 text-slate-950'}`}>
+        {playing ? '정지' : '시작'}
+      </button>
     </div>
   );
 }
