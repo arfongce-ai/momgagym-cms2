@@ -1,11 +1,20 @@
 // ai-measure/menus/RecordMeasure.jsx
-// Menu 0: general video recording with camera preview, save/share, stopwatch,
-// and metronome support during recording.
+// General video recording. Preview and saved video use the selected frame
+// ratio, with a compact bitrate for faster KakaoTalk sharing.
 import { useRef, useState, useEffect, useCallback } from 'react';
 import { todayYMD } from '../../utils/dates';
 import { drawGuides } from '../core/cameraGuide';
 import { openMainCameraStream } from '../core/cameraSelect';
 import { Metronome, Stopwatch } from './TimerTool';
+
+const RECORD_FPS = 24;
+const VIDEO_BITS_PER_SECOND = 1_600_000;
+const AUDIO_BITS_PER_SECOND = 64_000;
+
+const OUTPUT_SIZE = {
+  '3/4': { width: 720, height: 960 },
+  '1/1': { width: 720, height: 720 },
+};
 
 function pickRecorderMime() {
   if (typeof MediaRecorder === 'undefined') return '';
@@ -51,15 +60,48 @@ function waitForVideoReady(video, timeoutMs = 7000) {
   });
 }
 
+function drawCover(ctx, video, width, height) {
+  const sourceWidth = video.videoWidth;
+  const sourceHeight = video.videoHeight;
+  if (!sourceWidth || !sourceHeight) return false;
+
+  const sourceRatio = sourceWidth / sourceHeight;
+  const targetRatio = width / height;
+  let sx = 0;
+  let sy = 0;
+  let sw = sourceWidth;
+  let sh = sourceHeight;
+
+  if (sourceRatio > targetRatio) {
+    sw = sourceHeight * targetRatio;
+    sx = (sourceWidth - sw) / 2;
+  } else {
+    sh = sourceWidth / targetRatio;
+    sy = (sourceHeight - sh) / 2;
+  }
+
+  ctx.drawImage(video, sx, sy, sw, sh, 0, 0, width, height);
+  return true;
+}
+
+function formatBytes(bytes) {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '';
+  const mb = bytes / 1024 / 1024;
+  return `${mb.toFixed(mb >= 10 ? 0 : 1)}MB`;
+}
+
 export default function RecordMeasure({ member, onBack }) {
   const videoRef = useRef(null);
-  const canvasRef = useRef(null);
+  const guideCanvasRef = useRef(null);
+  const recordCanvasRef = useRef(null);
   const streamRef = useRef(null);
+  const recordStreamRef = useRef(null);
   const recorderRef = useRef(null);
   const chunksRef = useRef([]);
   const blobRef = useRef(null);
   const mimeRef = useRef('video/webm');
   const rafRef = useRef(null);
+  const composeRafRef = useRef(null);
   const startTsRef = useRef(0);
   const timerRef = useRef(null);
 
@@ -71,31 +113,34 @@ export default function RecordMeasure({ member, onBack }) {
   const [toolTab, setToolTab] = useState('stopwatch');
   const [videoReady, setVideoReady] = useState(false);
   const [cameraNote, setCameraNote] = useState('');
+  const [savedSize, setSavedSize] = useState('');
 
   const drawLoop = useCallback(() => {
-    const v = videoRef.current;
-    const c = canvasRef.current;
-    if (v && c && v.videoWidth) {
-      if (c.width !== v.videoWidth || c.height !== v.videoHeight) {
-        c.width = v.videoWidth;
-        c.height = v.videoHeight;
+    const video = videoRef.current;
+    const canvas = guideCanvasRef.current;
+    if (video && canvas && video.videoWidth) {
+      const box = canvas.getBoundingClientRect();
+      const width = Math.max(1, Math.round(box.width || 720));
+      const height = Math.max(1, Math.round(box.height || 960));
+      if (canvas.width !== width || canvas.height !== height) {
+        canvas.width = width;
+        canvas.height = height;
       }
-      const ctx = c.getContext('2d');
-      ctx.clearRect(0, 0, c.width, c.height);
-      drawGuides(ctx, c.width, c.height);
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, width, height);
+      drawGuides(ctx, width, height);
     }
     rafRef.current = requestAnimationFrame(drawLoop);
   }, []);
 
   const attachPreview = useCallback(async () => {
-    if (!videoRef.current || !streamRef.current) return;
-    if (videoRef.current.srcObject !== streamRef.current) {
-      videoRef.current.srcObject = streamRef.current;
-    }
-    videoRef.current.muted = true;
-    videoRef.current.setAttribute('playsinline', 'true');
-    videoRef.current.setAttribute('webkit-playsinline', 'true');
-    await videoRef.current.play().catch(() => {});
+    const video = videoRef.current;
+    if (!video || !streamRef.current) return;
+    if (video.srcObject !== streamRef.current) video.srcObject = streamRef.current;
+    video.muted = true;
+    video.setAttribute('playsinline', 'true');
+    video.setAttribute('webkit-playsinline', 'true');
+    await video.play().catch(() => {});
   }, []);
 
   const stopPreviewLoop = () => {
@@ -103,8 +148,18 @@ export default function RecordMeasure({ member, onBack }) {
     rafRef.current = null;
   };
 
+  const stopComposeLoop = () => {
+    if (composeRafRef.current) cancelAnimationFrame(composeRafRef.current);
+    composeRafRef.current = null;
+  };
+
+  const stopRecordStream = () => {
+    if (recordStreamRef.current) recordStreamRef.current.getTracks().forEach((track) => track.stop());
+    recordStreamRef.current = null;
+  };
+
   const stopStream = () => {
-    if (streamRef.current) streamRef.current.getTracks().forEach((t) => t.stop());
+    if (streamRef.current) streamRef.current.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
   };
 
@@ -121,7 +176,7 @@ export default function RecordMeasure({ member, onBack }) {
       await attachPreview();
       const ready = await waitForVideoReady(videoRef.current);
       setVideoReady(ready);
-      setCameraNote(ready ? '' : '카메라 영상 준비가 늦습니다. 녹화 시작을 누르면 한 번 더 준비를 확인합니다.');
+      setCameraNote(ready ? '' : '카메라 영상 준비가 늦습니다. 녹화 시작을 누르면 한 번 더 확인합니다.');
       setStatus('ready');
       rafRef.current = requestAnimationFrame(drawLoop);
     } catch (e) {
@@ -129,6 +184,47 @@ export default function RecordMeasure({ member, onBack }) {
       setCameraNote('');
       setStatus('idle');
     }
+  };
+
+  const ensureVideoReady = async () => {
+    await attachPreview();
+    let ready = await waitForVideoReady(videoRef.current, 5000);
+    if (ready) return true;
+
+    stopStream();
+    const stream = await openMainCameraStream({ audio: false, preferExactDevice: false });
+    streamRef.current = stream;
+    await attachPreview();
+    ready = await waitForVideoReady(videoRef.current, 7000);
+    return ready;
+  };
+
+  const createRecordedStream = () => {
+    const video = videoRef.current;
+    const canvas = recordCanvasRef.current || document.createElement('canvas');
+    const size = OUTPUT_SIZE[aspect] || OUTPUT_SIZE['3/4'];
+    canvas.width = size.width;
+    canvas.height = size.height;
+    recordCanvasRef.current = canvas;
+
+    const ctx = canvas.getContext('2d', { alpha: false });
+    const draw = () => {
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      drawCover(ctx, video, canvas.width, canvas.height);
+      composeRafRef.current = requestAnimationFrame(draw);
+    };
+    stopComposeLoop();
+    draw();
+
+    const canvasStream = canvas.captureStream ? canvas.captureStream(RECORD_FPS) : null;
+    if (!canvasStream) return streamRef.current;
+
+    const mixed = new MediaStream();
+    canvasStream.getVideoTracks().forEach((track) => mixed.addTrack(track));
+    streamRef.current?.getAudioTracks().forEach((track) => mixed.addTrack(track));
+    recordStreamRef.current = mixed;
+    return mixed;
   };
 
   const startRec = async () => {
@@ -140,18 +236,9 @@ export default function RecordMeasure({ member, onBack }) {
 
     try {
       setError(null);
+      setSavedSize('');
       setCameraNote('카메라 영상을 확인하는 중입니다...');
-      await attachPreview();
-      let ready = await waitForVideoReady(videoRef.current, 5000);
-      if (!ready) {
-        // Some Android browsers open an audio+video stream but do not deliver a
-        // first frame. Reopen video-only before giving up.
-        stopStream();
-        const stream = await openMainCameraStream({ audio: false, preferExactDevice: false });
-        streamRef.current = stream;
-        await attachPreview();
-        ready = await waitForVideoReady(videoRef.current, 7000);
-      }
+      const ready = await ensureVideoReady();
       setVideoReady(ready);
       if (!ready) {
         setCameraNote('');
@@ -161,19 +248,29 @@ export default function RecordMeasure({ member, onBack }) {
         return;
       }
       setCameraNote('');
+
       chunksRef.current = [];
       const mime = pickRecorderMime();
       mimeRef.current = mime || 'video/webm';
-      const rec = new MediaRecorder(streamRef.current, mime ? { mimeType: mime } : undefined);
+      const recordingStream = createRecordedStream();
+      const rec = new MediaRecorder(recordingStream, {
+        ...(mime ? { mimeType: mime } : {}),
+        videoBitsPerSecond: VIDEO_BITS_PER_SECOND,
+        audioBitsPerSecond: AUDIO_BITS_PER_SECOND,
+      });
 
-      rec.ondataavailable = (e) => {
-        if (e.data?.size > 0) chunksRef.current.push(e.data);
+      rec.ondataavailable = (event) => {
+        if (event.data?.size > 0) chunksRef.current.push(event.data);
       };
       rec.onerror = () => {
+        stopComposeLoop();
+        stopRecordStream();
         setError('녹화 중 오류가 발생했습니다. 카메라 권한과 저장 공간을 확인해 주세요.');
         setStatus('ready');
       };
       rec.onstop = () => {
+        stopComposeLoop();
+        stopRecordStream();
         if (timerRef.current) clearInterval(timerRef.current);
         timerRef.current = null;
         if (!chunksRef.current.length) {
@@ -184,6 +281,7 @@ export default function RecordMeasure({ member, onBack }) {
         const type = mimeRef.current;
         const blob = new Blob(chunksRef.current, { type });
         blobRef.current = blob;
+        setSavedSize(formatBytes(blob.size));
         const url = URL.createObjectURL(blob);
         setVideoUrl((old) => {
           if (old) URL.revokeObjectURL(old);
@@ -199,6 +297,8 @@ export default function RecordMeasure({ member, onBack }) {
       rec.start(1000);
       setStatus('recording');
     } catch (e) {
+      stopComposeLoop();
+      stopRecordStream();
       setError(e?.message || '녹화를 시작할 수 없습니다.');
     }
   };
@@ -211,6 +311,8 @@ export default function RecordMeasure({ member, onBack }) {
 
   const stopAll = useCallback(() => {
     stopPreviewLoop();
+    stopComposeLoop();
+    stopRecordStream();
     if (timerRef.current) clearInterval(timerRef.current);
     timerRef.current = null;
     if (recorderRef.current && recorderRef.current.state !== 'inactive') {
@@ -226,6 +328,7 @@ export default function RecordMeasure({ member, onBack }) {
       return null;
     });
     blobRef.current = null;
+    setSavedSize('');
     setElapsed(0);
     setVideoReady(!!videoRef.current?.videoWidth);
     setStatus(streamRef.current ? 'ready' : 'idle');
@@ -260,8 +363,8 @@ export default function RecordMeasure({ member, onBack }) {
 
   const mmss = `${String(Math.floor(elapsed / 60)).padStart(2, '0')}:${String(elapsed % 60).padStart(2, '0')}`;
   const ext = (mimeRef.current || '').includes('mp4') ? 'mp4' : 'webm';
-  const safeName = (member?.name || '영상').replace(/[\\/:*?"<>|]/g, '_');
-  const fname = `몸가짐_측정영상_${safeName}_${todayYMD().replace(/-/g, '')}.${ext}`;
+  const safeName = (member?.name || 'video').replace(/[\\/:*?"<>|]/g, '_');
+  const fname = `momgagym_record_${safeName}_${aspect.replace('/', 'x')}_${todayYMD().replace(/-/g, '')}.${ext}`;
   const shareSupported = typeof navigator !== 'undefined' && !!navigator.canShare;
 
   const saveToGallery = async () => {
@@ -285,13 +388,10 @@ export default function RecordMeasure({ member, onBack }) {
   };
 
   const toolPanel = (
-    <section className="card p-3 space-y-3">
+    <section className="rounded-2xl bg-black/55 border border-white/10 backdrop-blur p-3 space-y-3">
       <div className="flex items-center justify-between gap-2">
-        <div>
-          <p className="text-sm font-black text-slate-100">촬영 보조 도구</p>
-          <p className="text-[11px] text-slate-500">녹화 중에도 계속 사용할 수 있습니다.</p>
-        </div>
-        <div className="flex gap-1 rounded-xl bg-slate-800 p-1 shrink-0">
+        <p className="text-sm font-black text-slate-100">촬영 보조 도구</p>
+        <div className="flex gap-1 rounded-xl bg-slate-900/85 p-1 shrink-0">
           {[
             ['stopwatch', '초시계'],
             ['metronome', '메트로놈'],
@@ -299,7 +399,7 @@ export default function RecordMeasure({ member, onBack }) {
             <button
               key={key}
               onClick={() => setToolTab(key)}
-              className={`rounded-lg px-3 py-1.5 text-xs font-bold ${toolTab === key ? 'bg-amber-500 text-slate-950' : 'text-slate-400'}`}
+              className={`rounded-lg px-3 py-1.5 text-xs font-bold ${toolTab === key ? 'bg-amber-500 text-slate-950' : 'text-slate-300'}`}
             >
               {label}
             </button>
@@ -310,6 +410,79 @@ export default function RecordMeasure({ member, onBack }) {
     </section>
   );
 
+  if (status !== 'done') {
+    return (
+      <div className="fixed inset-0 z-[80] bg-black overflow-hidden">
+        <video ref={videoRef} autoPlay playsInline muted className="absolute inset-0 h-full w-full object-cover" />
+        <canvas ref={guideCanvasRef} className="absolute inset-0 h-full w-full pointer-events-none" />
+
+        <div className="absolute left-0 right-0 top-0 z-10 flex items-center justify-between px-4 pt-[max(14px,env(safe-area-inset-top))]">
+          <button onClick={onBack} className="rounded-full bg-black/55 px-3 py-2 text-sm font-bold text-white backdrop-blur">← 메뉴</button>
+          <div className="flex gap-1 rounded-xl bg-black/55 p-1 backdrop-blur">
+            {['3/4', '1/1'].map((ratio) => (
+              <button
+                key={ratio}
+                onClick={() => setAspect(ratio)}
+                disabled={status === 'recording'}
+                className={`rounded-lg px-4 py-2 text-sm font-black ${aspect === ratio ? 'bg-amber-500 text-slate-950' : 'text-slate-300'} disabled:opacity-60`}
+              >
+                {ratio === '3/4' ? '3:4' : '1:1'}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {status === 'idle' && (
+          <div className="absolute inset-0 z-10 flex items-center justify-center px-6 text-center text-sm text-slate-200">
+            <div className="rounded-2xl bg-black/70 px-5 py-4 backdrop-blur">
+              {error || cameraNote || '카메라를 시작하세요'}
+            </div>
+          </div>
+        )}
+
+        {status === 'ready' && !videoReady && (
+          <div className="absolute inset-0 z-10 flex items-center justify-center text-slate-200 text-sm text-center px-4 bg-black/25">
+            <div className="rounded-xl bg-black/75 px-4 py-3 backdrop-blur">
+              <div className="mx-auto mb-2 h-5 w-5 rounded-full border-2 border-amber-400 border-t-transparent animate-spin" />
+              <p>{cameraNote || '카메라 영상 준비 중입니다...'}</p>
+            </div>
+          </div>
+        )}
+
+        {status === 'recording' && (
+          <div className="absolute top-[max(74px,calc(env(safe-area-inset-top)+64px))] left-1/2 z-10 -translate-x-1/2 flex items-center gap-2 rounded-full bg-black/70 px-3 py-1.5 backdrop-blur">
+            <span className="h-2.5 w-2.5 rounded-full bg-red-500 animate-pulse" />
+            <span className="font-mono text-sm font-bold text-white">{mmss}</span>
+          </div>
+        )}
+
+        <div className="absolute bottom-0 left-0 right-0 z-10 space-y-3 px-4 pb-[max(16px,env(safe-area-inset-bottom))]">
+          {(status === 'ready' || status === 'recording') && toolPanel}
+
+          {status === 'idle' && (
+            <button onClick={startCamera} className="btn btn-primary w-full">
+              카메라 시작
+            </button>
+          )}
+          {status === 'ready' && (
+            <button onClick={startRec} className="w-full rounded-xl bg-red-500 py-4 text-base font-black text-white shadow-lg active:scale-95 transition-transform">
+              {videoReady ? '녹화 시작' : '준비 확인 후 녹화 시작'}
+            </button>
+          )}
+          {status === 'recording' && (
+            <button onClick={stopRec} className="w-full rounded-xl bg-white py-4 text-base font-black text-slate-950 shadow-lg active:scale-95 transition-transform">
+              녹화 정지
+            </button>
+          )}
+
+          <p className="text-center text-[11px] leading-relaxed text-white/70">
+            저장 영상은 {aspect} 비율로 꽉 차게 잘라 저장됩니다. 카카오톡 전송이 빠르도록 720px · 저용량으로 기록합니다.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -318,101 +491,36 @@ export default function RecordMeasure({ member, onBack }) {
         <span className="w-12" />
       </div>
 
-      {status !== 'done' ? (
-        <>
-          {status === 'ready' && (
-            <div className="flex gap-1 rounded-lg bg-slate-800 p-0.5 w-fit">
-              {['3/4', '1/1'].map((r) => (
-                <button
-                  key={r}
-                  onClick={() => setAspect(r)}
-                  className={`px-3 py-1 rounded text-[11px] font-bold ${aspect === r ? 'bg-amber-500 text-slate-950' : 'text-slate-400'}`}
-                >
-                  {r === '3/4' ? '3:4' : '1:1'}
-                </button>
-              ))}
-            </div>
-          )}
-
-          <div className="measure-camera" style={{ aspectRatio: aspect.replace('/', ' / ') }}>
-            <video ref={videoRef} autoPlay playsInline muted className="absolute inset-0 w-full h-full object-contain" />
-            <canvas ref={canvasRef} className="absolute inset-0 w-full h-full object-contain pointer-events-none" />
-            {status === 'idle' && (
-              <div className="absolute inset-0 flex items-center justify-center text-slate-400 text-sm text-center px-4">
-                {error || cameraNote || '카메라를 시작하세요'}
-              </div>
-            )}
-            {status === 'ready' && !videoReady && (
-              <div className="absolute inset-0 flex items-center justify-center text-slate-200 text-sm text-center px-4 bg-black/40">
-                <div className="rounded-xl bg-black/70 px-4 py-3">
-                  <div className="mx-auto mb-2 h-5 w-5 rounded-full border-2 border-amber-400 border-t-transparent animate-spin" />
-                  <p>{cameraNote || '카메라 영상 준비 중입니다...'}</p>
-                </div>
-              </div>
-            )}
-            {status === 'recording' && (
-              <div className="absolute top-3 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-black/70 rounded-full px-3 py-1">
-                <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse" />
-                <span className="text-white font-mono font-bold text-sm">{mmss}</span>
-              </div>
-            )}
-            {status === 'ready' && (
-              <div className="absolute bottom-3 left-1/2 -translate-x-1/2 w-[90%]">
-                <button onClick={startRec} className="w-full rounded-xl bg-red-500 text-white font-black py-3 text-base shadow-lg active:scale-95 transition-transform">
-                  {videoReady ? '녹화 시작' : '준비 확인 후 녹화 시작'}
-                </button>
-              </div>
-            )}
-            {status === 'recording' && (
-              <div className="absolute bottom-3 left-1/2 -translate-x-1/2 w-[90%]">
-                <button onClick={stopRec} className="w-full rounded-xl bg-white text-slate-950 font-black py-3 text-base shadow-lg active:scale-95 transition-transform">
-                  녹화 정지
-                </button>
-              </div>
-            )}
-          </div>
-
-          {status === 'idle' && (
-            <button onClick={startCamera} className="btn btn-primary w-full">
-              카메라 시작
+      <div className="space-y-4 animate-fade-in">
+        <div className="rounded-2xl overflow-hidden bg-black">
+          <video src={videoUrl} controls playsInline className="w-full" style={{ maxHeight: '60vh' }} />
+        </div>
+        <div className="rounded-xl bg-slate-800 px-3 py-2 text-center text-xs text-slate-300">
+          저장 완료: {aspect} · {savedSize || '저용량'} · 카카오톡 전송용 720px 영상
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <button onClick={reset} className="rounded-xl border border-slate-700 text-slate-300 font-bold py-3 text-sm">
+            다시 녹화
+          </button>
+          {shareSupported ? (
+            <button onClick={saveToGallery} className="btn btn-primary">
+              공유/저장
             </button>
-          )}
-
-          {toolPanel}
-
-          <p className="text-[11px] text-slate-500 leading-relaxed">
-            카메라 또는 마이크 권한이 제한된 기기에서도 먼저 영상 촬영이 되도록 자동으로 폴백합니다. 녹화를 정지하면 바로 재생하고 저장할 수 있습니다.
-          </p>
-        </>
-      ) : (
-        <div className="space-y-4 animate-fade-in">
-          <div className="rounded-2xl overflow-hidden bg-black">
-            <video src={videoUrl} controls playsInline className="w-full" style={{ maxHeight: '60vh' }} />
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            <button onClick={reset} className="rounded-xl border border-slate-700 text-slate-300 font-bold py-3 text-sm">
-              다시 녹화
-            </button>
-            {shareSupported ? (
-              <button onClick={saveToGallery} className="btn btn-primary">
-                사진앱에 저장
-              </button>
-            ) : (
-              <a href={videoUrl} download={fname} className="btn btn-primary">
-                영상 다운로드
-              </a>
-            )}
-          </div>
-          {shareSupported && (
-            <a href={videoUrl} download={fname} className="block text-center text-[11px] text-slate-400 underline">
-              또는 파일로 다운로드
+          ) : (
+            <a href={videoUrl} download={fname} className="btn btn-primary">
+              영상 다운로드
             </a>
           )}
-          <p className="text-[11px] text-slate-500 text-center leading-relaxed">
-            공유 창에서 사진 또는 갤러리를 선택하면 카메라 롤에 저장할 수 있습니다. 파일명은 몸가짐_측정영상으로 시작합니다.
-          </p>
         </div>
-      )}
+        {shareSupported && (
+          <a href={videoUrl} download={fname} className="block text-center text-[11px] text-slate-400 underline">
+            파일로 다운로드
+          </a>
+        )}
+        <p className="text-[11px] text-slate-500 text-center leading-relaxed">
+          카카오톡 전송이 느리면 공유보다 먼저 파일로 다운로드한 뒤 전송해 주세요. 영상은 이전보다 작은 720px 저용량 파일로 저장됩니다.
+        </p>
+      </div>
     </div>
   );
 }
