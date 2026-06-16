@@ -220,15 +220,18 @@ function OverviewTab({ settings, trainers, trainerMap }) {
         <div className="space-y-2 text-sm">
           <div className="flex justify-between"><span className="text-slate-400">총매출</span><span className="font-mono font-bold text-slate-200">{won(totals.amount)}</span></div>
           <div className="flex justify-between"><span className="text-slate-400">입금금액</span><span className="font-mono font-bold text-emerald-400">{won(totals.net)}</span></div>
-          {selMonth!=='all' && <div className="flex justify-between"><span className="text-slate-400">트레이너 정산</span><span className="font-mono font-bold text-red-400">- {won(settlePayout)}</span></div>}
-          {selMonth!=='all' && <div className="flex justify-between"><span className="text-slate-400">고정지출</span><span className="font-mono font-bold text-red-400">- {won(fixedTotal)}</span></div>}
+          <div className="flex justify-between"><span className="text-slate-400">트레이너 정산</span><span className="font-mono font-bold text-red-400">- {won(settlePayout)}</span></div>
+          <div className="flex justify-between">
+            <span className="text-slate-400">고정지출{selMonth==='all' && months.length>0 ? ` (${months.length}개월)` : ''}</span>
+            <span className="font-mono font-bold text-red-400">- {won(fixedApplied)}</span>
+          </div>
           <div className="flex justify-between"><span className="text-slate-400">{selMonth==='all'?'월별 지출':'당월 지출'}</span><span className="font-mono font-bold text-red-400">- {won(monthlyExpense)}</span></div>
           <div className="flex justify-between pt-2 border-t border-slate-800">
             <span className="font-bold text-amber-400">순익</span>
             <span className={`font-mono font-black text-lg ${netProfit>=0?'text-amber-400':'text-red-400'}`}>{won(netProfit)}</span>
           </div>
         </div>
-        {selMonth==='all' && <p className="text-[11px] text-slate-600 mt-2">* 전체 기간은 고정비를 월별로 곱하지 않습니다. 정확한 손익은 월을 선택하세요.</p>}
+        {selMonth==='all' && <p className="text-[11px] text-slate-600 mt-2">* 전체 기간 고정지출은 결제가 발생한 {months.length}개월분을 합산한 값입니다. 월을 선택하면 해당 월 기준으로 보여집니다.</p>}
       </div>
 
       {/* 상세 + 담당 트레이너 + 환불 */}
@@ -657,7 +660,7 @@ function SettleTab({ settings, trainers, trainerMap }) {
         단가·월 수업횟수는 결제·출석 데이터에서 자동 집계됩니다. 단가 = 공제 후 입금금액 ÷ 등록횟수 (카드1·2: 부가세+카드수수료 / 페이·현금영수증: 부가세 / 계좌·현금: 공제 없음) · 출석과 노쇼는 수업 횟수에 포함, 취소·외부·상담은 제외. 셀을 눌러 직접 수정할 수 있어요.
       </p>
 
-      <RecordManager trainers={trainers} period={ym} mode="month"/>
+      <RecordManager trainers={trainers} period={ym} mode="month" onChange={()=>setRefreshKey(k=>k+1)}/>
 
       {blocks.length===0
         ? <p className="text-slate-600 text-sm text-center py-6 bg-slate-900 border border-slate-800 rounded-2xl">해당 월 정산 내역이 없습니다</p>
@@ -860,7 +863,7 @@ function Line({ l, v, c='text-slate-200' }) {
 }
 
 /* 블로그/스터디 기록 관리 (정산 탭 내) — 계약서 4·5조 */
-function RecordManager({ trainers, period, mode }) {
+function RecordManager({ trainers, period, mode, onChange }) {
   const [, force] = useState(0);
   const [open, setOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(true);
@@ -871,10 +874,17 @@ function RecordManager({ trainers, period, mode }) {
 
   const add = async () => {
     if (!form.trainerId) { alert('트레이너를 선택하세요.'); return; }
-    try { await store.addPromo({ ...form }); setForm(f=>({...f, note:'', date:todayYMD()})); force(n=>n+1); }
+    // 정산비율 판정은 "그 기록이 속한 달"에 반영되므로, 선택한 정산월과
+    // 기록 날짜의 달이 다르면 정산에 즉시 반영되지 않음을 안내한다.
+    if (mode==='month' && monthKey(form.date) !== period) {
+      if (!window.confirm(
+        `입력한 날짜(${form.date})는 현재 보고 있는 정산월(${period})과 다른 달입니다.\n`+
+        `이 기록은 ${monthKey(form.date)} 정산에 반영됩니다. 계속할까요?`)) return;
+    }
+    try { await store.addPromo({ ...form }); setForm(f=>({...f, note:'', date:todayYMD()})); force(n=>n+1); onChange?.(); }
     catch(e){ alert('추가 실패'); }
   };
-  const del = async (id) => { try { await store.deletePromo(id); force(n=>n+1); } catch(e){ alert('삭제 실패'); } };
+  const del = async (id) => { try { await store.deletePromo(id); force(n=>n+1); onChange?.(); } catch(e){ alert('삭제 실패'); } };
 
   const tMap = Object.fromEntries(trainers.map(t=>[t.id,t.name]));
   const CH = { blog:'블로그', insta:'인스타그램', study:'스터디' };
