@@ -1,19 +1,22 @@
 // ai-measure/menus/RecordMeasure.jsx
 // General video recording. Preview and saved video use the selected frame
-// ratio, with a compact bitrate for faster KakaoTalk sharing.
+// ratio at full quality (high resolution + bitrate).
 import { useRef, useState, useEffect, useCallback } from 'react';
 import { todayYMD } from '../../utils/dates';
 import { drawGuides } from '../core/cameraGuide';
 import { openMainCameraStream } from '../core/cameraSelect';
 import { drawRecordingHud, formatStopwatch } from '../core/recordingOverlay';
 
-const RECORD_FPS = 24;
-const VIDEO_BITS_PER_SECOND = 850_000;
-const AUDIO_BITS_PER_SECOND = 64_000;
+// High-quality recording. Output is full-resolution with a high bitrate.
+// Tune per-purpose later (e.g. higher FPS for fast lifts, smaller bitrate
+// when KakaoTalk sharing matters).
+const RECORD_FPS = 30;
+const VIDEO_BITS_PER_SECOND = 12_000_000;
+const AUDIO_BITS_PER_SECOND = 128_000;
 
 const OUTPUT_SIZE = {
-  '3/4': { width: 540, height: 720 },
-  '1/1': { width: 540, height: 540 },
+  '3/4': { width: 1080, height: 1440 },
+  '1/1': { width: 1080, height: 1080 },
 };
 
 function pickRecorderMime() {
