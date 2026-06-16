@@ -5,6 +5,7 @@
 // ✅ 요구사항4: 10분 단위 스냅 + 종료시간 자동 +1hr
 // ✅ 요구사항5: 외부 일정 탭 (출강/교육/현장, 자유 시간, memberId=null)
 import { useState, useEffect } from 'react';
+import { useAuth } from '../contexts/AuthContext';
 import { store } from '../demoData';
 import { toYMD } from '../utils/dates';
 
@@ -123,6 +124,15 @@ const STATUS_MAP = {
 const SEL = "w-full bg-slate-800 border border-slate-700 text-slate-100 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-amber-500 disabled:opacity-40 disabled:cursor-not-allowed";
 const INP = "w-full bg-slate-800 border border-slate-700 text-slate-100 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-amber-500";
 const LBL = "block text-xs font-semibold text-slate-400 uppercase tracking-widest mb-1.5";
+
+const getUserTrainerId = user => (user?.role === 'trainer' ? (user.trainerId || user.id) : null);
+const memberHasTrainer = (member, trainerId) => Boolean(trainerId && member?.trainerSessions?.[trainerId]);
+const memberSearchText = member => [
+  member?.name || '',
+  member?.phone || '',
+  member?.memo || '',
+  ...(member?.classTypes || []),
+].join(' ').toLowerCase();
 
 // ── 날짜+요일 인풋 ────────────────────────────────────────
 function DateWd({ label, value, onChange }) {
@@ -396,13 +406,15 @@ function ScheduleDetailModal({ schedule:initS, onClose, onUpdate, onDelete }) {
 }
 
 // ── 예약 추가 모달 — 5가지 요구사항 통합 ─────────────────
-function AddModal({ members, trainers, onAdd, onClose }) {
+function AddModal({ members, trainers, fixedTrainerId, onAdd, onClose }) {
   const today = fmt(new Date());
+  const fixedTrainer = fixedTrainerId ? trainers.find(t=>t.id===fixedTrainerId) : null;
   // 탭: 'regular' | 'external'
   const [tab, setTab] = useState('regular');
+  const [memberQuery, setMemberQuery] = useState('');
 
   const [form, setForm] = useState({
-    memberId:'', trainerId:'', date:today,
+    memberId:'', trainerId:fixedTrainerId || '', date:today,
     startTime:'', endTime:'',
     classType:'', memo:'', externalType:'출강',
     // ★ 외부 일정 기간 모드 — 'single'(하루) | 'range'(여러 날)
@@ -417,20 +429,27 @@ function AddModal({ members, trainers, onAdd, onClose }) {
   // 탭 전환 시 폼 리셋
   const switchTab = t => {
     setTab(t);
-    setForm({ memberId:'', trainerId:'', date:today, startTime:'', endTime:'', classType:'', memo:'', externalType:'출강', extDateMode:'single', endDate:today, regularMode:'member' });
+    setMemberQuery('');
+    setForm({ memberId:'', trainerId:fixedTrainerId || '', date:today, startTime:'', endTime:'', classType:'', memo:'', externalType:'출강', extDateMode:'single', endDate:today, regularMode:'member' });
   };
 
   // ── 트레이너 먼저 선택 → 담당 회원 필터링 ─────────────────
-  const selectedTrainerObj = trainers.find(t=>t.id===form.trainerId);
+  const selectedTrainerObj = trainers.find(t=>t.id===form.trainerId) || fixedTrainer;
   // 선택된 트레이너를 담당 트레이너로 둔 회원만 표시
-  const filteredMembers = form.trainerId
-    ? members.filter(m => Object.keys(m.trainerSessions||{}).includes(form.trainerId))
+  const trainerMembers = form.trainerId
+    ? members.filter(m => memberHasTrainer(m, form.trainerId))
     : [];
+  const memberQ = memberQuery.trim().toLowerCase();
+  const filteredMembers = memberQ
+    ? trainerMembers.filter(m => memberSearchText(m).includes(memberQ))
+    : trainerMembers;
   const selectedMember   = members.find(m=>m.id===form.memberId);
   const memberClassTypes = selectedMember?.classTypes || [];
 
   // 트레이너 변경 시 회원/수업종류 리셋
   const handleTrainerChange = id => {
+    if (fixedTrainerId) return;
+    setMemberQuery('');
     setForm(p=>({...p, trainerId:id, memberId:'', classType:''}));
   };
   // 회원 변경 시 수업종류 리셋
@@ -540,7 +559,7 @@ function AddModal({ members, trainers, onAdd, onClose }) {
                 <label className={LBL}>유형</label>
                 <div className="flex gap-2">
                   {[['member','👤 회원 수업'],['consult','💬 상담 (회원 없음)']].map(([m,l])=>(
-                    <div key={m} onClick={()=>setForm(p=>({...p, regularMode:m, memberId:'', classType:''}))}
+                    <div key={m} onClick={()=>{ setMemberQuery(''); setForm(p=>({...p, regularMode:m, memberId:'', classType:''})); }}
                       className={`flex-1 py-2.5 rounded-xl text-sm font-bold border cursor-pointer text-center transition-colors select-none
                         ${form.regularMode===m
                           ? 'bg-amber-500/20 border-amber-500/40 text-amber-300'
@@ -554,7 +573,7 @@ function AddModal({ members, trainers, onAdd, onClose }) {
               {/* ① 트레이너 선택 */}
               <div>
                 <label className={LBL}>① 담당 트레이너 <span className="text-red-400">*</span></label>
-                <select value={form.trainerId} onChange={e=>handleTrainerChange(e.target.value)} className={SEL}>
+                <select value={form.trainerId} onChange={e=>handleTrainerChange(e.target.value)} disabled={!!fixedTrainerId} className={SEL}>
                   <option value="">트레이너를 먼저 선택하세요</option>
                   {trainers.map(t=>(
                     <option key={t.id} value={t.id}>{t.name}</option>
@@ -578,6 +597,13 @@ function AddModal({ members, trainers, onAdd, onClose }) {
                   )}
                   {!form.trainerId && <span className="ml-1 text-slate-600 normal-case font-normal">— 트레이너 선택 후 활성화</span>}
                 </label>
+                <input
+                  value={memberQuery}
+                  onChange={e=>setMemberQuery(e.target.value)}
+                  disabled={!form.trainerId}
+                  placeholder="회원 이름·전화번호 검색"
+                  className={INP+" mb-2"}
+                />
                 <select value={form.memberId} onChange={e=>handleMemberChange(e.target.value)}
                   disabled={!form.trainerId}
                   className={SEL}>
@@ -692,7 +718,7 @@ function AddModal({ members, trainers, onAdd, onClose }) {
               {/* 담당 트레이너 (선택사항) */}
               <div>
                 <label className={LBL}>트레이너 (선택사항)</label>
-                <select value={form.trainerId} onChange={pe('trainerId')} className={SEL}>
+                <select value={form.trainerId} onChange={pe('trainerId')} disabled={!!fixedTrainerId} className={SEL}>
                   <option value="">선택 안 함</option>
                   {trainers.map(t=>(
                     <option key={t.id} value={t.id}>{t.name}</option>
@@ -885,6 +911,7 @@ function MonthView({ pivotDate, schedules, onBlockClick, todayStr, members, onDa
 
 // ── 메인 ──────────────────────────────────────────────────
 export default function Schedule() {
+  const { user } = useAuth();
   const [view, setView]         = useState('week');
   const [pivot, setPivot]       = useState(fmt(new Date()));
   const [schedules, setSchedules] = useState([]);
@@ -908,6 +935,16 @@ export default function Schedule() {
 
   const todayStr = fmt(new Date());
   const nav = view==='day'?1:view==='week'?7:30;
+  const fixedTrainerId = getUserTrainerId(user);
+  const visibleSchedules = fixedTrainerId
+    ? schedules.filter(s => s.trainerId === fixedTrainerId)
+    : schedules;
+  const visibleMembers = fixedTrainerId
+    ? members.filter(m => memberHasTrainer(m, fixedTrainerId))
+    : members;
+  const visibleTrainers = fixedTrainerId
+    ? trainers.filter(t => t.id === fixedTrainerId)
+    : trainers;
 
   const weekDates = Array.from({length:7},(_,i)=>{
     const base=new Date(pivot+'T12:00:00');
@@ -930,8 +967,8 @@ export default function Schedule() {
     return fields.includes(q);
   };
 
-  const forDate = d => schedules.filter(s=>s.date===d && matchQ(s)).sort((a,b)=>a.startTime.localeCompare(b.startTime));
-  const filteredSchedules = schedules.filter(matchQ);
+  const forDate = d => visibleSchedules.filter(s=>s.date===d && matchQ(s)).sort((a,b)=>a.startTime.localeCompare(b.startTime));
+  const filteredSchedules = visibleSchedules.filter(matchQ);
 
   return (
     <div className="space-y-4">
@@ -974,7 +1011,7 @@ export default function Schedule() {
         <input
           value={query}
           onChange={e=>setQuery(e.target.value)}
-          placeholder="회원·트레이너·메모 검색"
+          placeholder={fixedTrainerId ? "내 회원·메모 검색" : "회원·트레이너·메모 검색"}
           className="w-full bg-slate-900 border border-slate-800 text-slate-100 rounded-xl pl-9 pr-9 py-2.5 text-sm focus:outline-none focus:border-amber-500"
         />
         <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">🔍</span>
@@ -1037,8 +1074,9 @@ export default function Schedule() {
 
       {showAdd && (
         <AddModal
-          members={members}
-          trainers={trainers}
+          members={visibleMembers}
+          trainers={visibleTrainers.length ? visibleTrainers : trainers}
+          fixedTrainerId={fixedTrainerId}
           onAdd={async d=>{
             try {
               await store.createScheduleWithDeduction(d);  // 예약+세션차감 원자적 처리

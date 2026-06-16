@@ -5,6 +5,7 @@ import { useRef, useState, useEffect, useCallback } from 'react';
 import { todayYMD } from '../../utils/dates';
 import { drawGuides } from '../core/cameraGuide';
 import { openMainCameraStream } from '../core/cameraSelect';
+import { drawRecordingHud, formatStopwatch } from '../core/recordingOverlay';
 
 const RECORD_FPS = 24;
 const VIDEO_BITS_PER_SECOND = 850_000;
@@ -103,6 +104,7 @@ export default function RecordMeasure({ member, onBack }) {
   const composeRafRef = useRef(null);
   const startTsRef = useRef(0);
   const timerRef = useRef(null);
+  const overlayStateRef = useRef({});
 
   const [status, setStatus] = useState('idle');
   const [error, setError] = useState(null);
@@ -110,6 +112,10 @@ export default function RecordMeasure({ member, onBack }) {
   const [videoUrl, setVideoUrl] = useState(null);
   const [aspect, setAspect] = useState('3/4');
   const [toolTab, setToolTab] = useState('stopwatch');
+  const [stopwatchElapsed, setStopwatchElapsed] = useState(0);
+  const [stopwatchRunning, setStopwatchRunning] = useState(false);
+  const [metronomeBpm, setMetronomeBpm] = useState(100);
+  const [metronomePlaying, setMetronomePlaying] = useState(false);
   const [videoReady, setVideoReady] = useState(false);
   const [cameraNote, setCameraNote] = useState('');
   const [savedSize, setSavedSize] = useState('');
@@ -156,6 +162,17 @@ export default function RecordMeasure({ member, onBack }) {
     if (recordStreamRef.current) recordStreamRef.current.getTracks().forEach((track) => track.stop());
     recordStreamRef.current = null;
   };
+
+  useEffect(() => {
+    overlayStateRef.current = {
+      toolTab,
+      stopwatchElapsed,
+      stopwatchRunning,
+      metronomeBpm,
+      metronomePlaying,
+      recordingElapsed: elapsed,
+    };
+  }, [toolTab, stopwatchElapsed, stopwatchRunning, metronomeBpm, metronomePlaying, elapsed]);
 
   const stopStream = () => {
     if (streamRef.current) streamRef.current.getTracks().forEach((track) => track.stop());
@@ -211,6 +228,8 @@ export default function RecordMeasure({ member, onBack }) {
       ctx.fillStyle = '#000';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       drawCover(ctx, video, canvas.width, canvas.height);
+      drawGuides(ctx, canvas.width, canvas.height);
+      drawRecordingHud(ctx, canvas.width, canvas.height, overlayStateRef.current);
       composeRafRef.current = requestAnimationFrame(draw);
     };
     stopComposeLoop();
@@ -406,9 +425,19 @@ export default function RecordMeasure({ member, onBack }) {
         <span className="text-[10px] font-bold text-white/50">녹화 보조</span>
       </div>
       {toolTab === 'stopwatch' ? (
-        <InlineStopwatch />
+        <InlineStopwatch
+          elapsed={stopwatchElapsed}
+          running={stopwatchRunning}
+          onElapsedChange={setStopwatchElapsed}
+          onRunningChange={setStopwatchRunning}
+        />
       ) : (
-        <InlineMetronome />
+        <InlineMetronome
+          bpm={metronomeBpm}
+          playing={metronomePlaying}
+          onBpmChange={setMetronomeBpm}
+          onPlayingChange={setMetronomePlaying}
+        />
       )}
     </section>
   );
@@ -522,43 +551,38 @@ export default function RecordMeasure({ member, onBack }) {
   );
 }
 
-function InlineStopwatch() {
-  const [elapsed, setElapsed] = useState(0);
-  const [running, setRunning] = useState(false);
+function InlineStopwatch({ elapsed, running, onElapsedChange, onRunningChange }) {
   const startRef = useRef(0);
   const accRef = useRef(0);
   const rafRef = useRef(null);
 
   const tick = useCallback(() => {
-    setElapsed(accRef.current + (performance.now() - startRef.current));
+    onElapsedChange(accRef.current + (performance.now() - startRef.current));
     rafRef.current = requestAnimationFrame(tick);
-  }, []);
+  }, [onElapsedChange]);
 
   const toggle = () => {
     if (running) {
       accRef.current += performance.now() - startRef.current;
       cancelAnimationFrame(rafRef.current);
-      setRunning(false);
+      onRunningChange(false);
       return;
     }
     startRef.current = performance.now();
     rafRef.current = requestAnimationFrame(tick);
-    setRunning(true);
+    onRunningChange(true);
   };
 
   const reset = () => {
     cancelAnimationFrame(rafRef.current);
     accRef.current = 0;
-    setElapsed(0);
-    setRunning(false);
+    onElapsedChange(0);
+    onRunningChange(false);
   };
 
   useEffect(() => () => cancelAnimationFrame(rafRef.current), []);
 
-  const cs = Math.floor((elapsed % 1000) / 10);
-  const sec = Math.floor(elapsed / 1000) % 60;
-  const min = Math.floor(elapsed / 60000);
-  const text = `${String(min).padStart(2, '0')}:${String(sec).padStart(2, '0')}.${String(cs).padStart(2, '0')}`;
+  const text = formatStopwatch(elapsed);
 
   return (
     <div className="flex items-center gap-2">
@@ -575,9 +599,7 @@ function InlineStopwatch() {
   );
 }
 
-function InlineMetronome() {
-  const [bpm, setBpm] = useState(100);
-  const [playing, setPlaying] = useState(false);
+function InlineMetronome({ bpm, playing, onBpmChange, onPlayingChange }) {
   const ctxRef = useRef(null);
   const nextNoteRef = useRef(0);
   const timerRef = useRef(null);
@@ -586,8 +608,8 @@ function InlineMetronome() {
   const stop = useCallback(() => {
     if (timerRef.current) clearInterval(timerRef.current);
     timerRef.current = null;
-    setPlaying(false);
-  }, []);
+    onPlayingChange(false);
+  }, [onPlayingChange]);
 
   const start = useCallback(() => {
     if (!ctxRef.current) ctxRef.current = new (window.AudioContext || window.webkitAudioContext)();
@@ -612,8 +634,8 @@ function InlineMetronome() {
         beatRef.current += 1;
       }
     }, 25);
-    setPlaying(true);
-  }, [bpm]);
+    onPlayingChange(true);
+  }, [bpm, onPlayingChange]);
 
   useEffect(() => () => {
     if (timerRef.current) clearInterval(timerRef.current);
@@ -631,11 +653,11 @@ function InlineMetronome() {
 
   return (
     <div className="flex items-center gap-2">
-      <button onClick={() => setBpm((value) => Math.max(40, value - 5))} className="h-11 w-12 rounded-xl border border-white/15 text-sm font-black text-white/75">-5</button>
+      <button onClick={() => onBpmChange(Math.max(40, bpm - 5))} className="h-11 w-12 rounded-xl border border-white/15 text-sm font-black text-white/75">-5</button>
       <div className="flex-1 rounded-xl bg-black/20 px-3 py-2 text-center font-mono text-3xl font-black text-amber-300">
         {bpm}<span className="text-sm text-white/45"> BPM</span>
       </div>
-      <button onClick={() => setBpm((value) => Math.min(220, value + 5))} className="h-11 w-12 rounded-xl border border-white/15 text-sm font-black text-white/75">+5</button>
+      <button onClick={() => onBpmChange(Math.min(220, bpm + 5))} className="h-11 w-12 rounded-xl border border-white/15 text-sm font-black text-white/75">+5</button>
       <button onClick={playing ? stop : start} className={`h-11 w-16 rounded-xl text-xs font-black ${playing ? 'bg-white/20 text-white' : 'bg-amber-500/90 text-slate-950'}`}>
         {playing ? '정지' : '시작'}
       </button>

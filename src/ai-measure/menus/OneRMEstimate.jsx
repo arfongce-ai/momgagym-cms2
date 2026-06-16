@@ -167,6 +167,7 @@ export default function OneRMEstimate({ member, onSave, onBack }) {
       <CameraStage
         videoRef={videoRef} canvasRef={canvasRef} status={status} error={error}
         onClose={closeCam} topBar={topBar} controls={controls} tappable={false}
+        recording={status === 'running'} recordingLabel="평가 중"
       >
         <div className="mx-auto max-w-md w-full bg-black/60 rounded-xl px-3 py-2 text-center">
           <p className="text-[11px] text-slate-300">인식이 잘 안 되면 [닫기] 후 무게를 직접 입력하세요.</p>

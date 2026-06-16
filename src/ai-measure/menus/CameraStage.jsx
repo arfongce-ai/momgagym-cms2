@@ -19,6 +19,7 @@ import { useEffect } from 'react';
 export default function CameraStage({
   videoRef, canvasRef, status, error,
   onTapVideo, onClose, topBar, controls, children, tappable = true,
+  recording = false, recordingLabel = '측정 중',
 }) {
   // 오버레이가 떠 있는 동안 바디 스크롤 잠금
   useEffect(() => {
@@ -33,6 +34,13 @@ export default function CameraStage({
         className="absolute inset-0 w-full h-full object-contain" />
       <canvas ref={canvasRef}
         className="absolute inset-0 w-full h-full object-contain pointer-events-none" />
+
+      {recording && status === 'running' && (
+        <div className="absolute top-[max(env(safe-area-inset-top),12px)] left-1/2 z-10 -translate-x-1/2 rounded-full bg-red-500/80 border border-white/20 px-3 py-1.5 text-xs font-black text-white shadow-lg backdrop-blur">
+          <span className="mr-1 inline-block h-2 w-2 rounded-full bg-white animate-pulse" />
+          {recordingLabel}
+        </div>
+      )}
 
       {/* 탭 입력 레이어(엔드캡 색 지정) */}
       {tappable && status === 'running' && (

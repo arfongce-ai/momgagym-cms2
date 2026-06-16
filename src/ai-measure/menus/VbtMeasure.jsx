@@ -234,6 +234,7 @@ export default function VbtMeasure({ member, onSave, onBack }) {
       <CameraStage
         videoRef={videoRef} canvasRef={canvasRef} status={status} error={error}
         onTapVideo={onTapVideo} onClose={closeCam} topBar={topBar} controls={controls}
+        recording={recording}
       >
         {result && (
           <div className="mx-auto max-w-md w-full card-accent p-3 space-y-2 animate-fade-in">
