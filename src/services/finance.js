@@ -309,10 +309,15 @@ export function computeSessionSettlement({ trainers, members, schedules, payment
       if (r.channel==='insta') instaCount++;
       if (r.channel==='study') studyCount++;
     });
-    const ovBlog = ov?.blogCount, ovInsta = ov?.instaCount, ovStudy = ov?.studyCount;
-    const fBlog = ovBlog ?? blogCount;
-    const fInsta = ovInsta ?? instaCount;
-    const fStudy = ovStudy ?? studyCount;
+    // 홍보 횟수 override: 값이 있고 0보다 클 때만 수동값으로 사용한다.
+    //  · null/undefined: 처음부터 미설정 → 실시간 집계값 사용
+    //  · 0: 과거에 자동집계값(당시 0)이 그대로 박제된 경우가 대부분 → 이후 추가한 기록을
+    //       영구히 가리는 버그를 막기 위해 '미설정'으로 간주하고 실시간 집계값 사용.
+    //       (정말 0으로 묶고 싶은 경우는 거의 없고, 실시간값도 0이면 결과는 동일)
+    const ovPromo = (v, auto) => (v == null || Number(v) === 0) ? auto : Number(v);
+    const fBlog  = ovPromo(ov?.blogCount,  blogCount);
+    const fInsta = ovPromo(ov?.instaCount, instaCount);
+    const fStudy = ovPromo(ov?.studyCount, studyCount);
     const fallbackSplit = determineSplitRate({
       settings, trainerId: t.id,
       monthNet: Math.round(trainerMonthNet[t.id] || 0),
@@ -385,6 +390,7 @@ export function computeSessionSettlement({ trainers, members, schedules, payment
       splitRate, splitMode, splitReason, rateMixed: distinct.length>1,
       sessionPayout,
       blogCount: fBlog, instaCount: fInsta, studyCount: fStudy,
+      autoBlogCount: blogCount, autoInstaCount: instaCount, autoStudyCount: studyCount,
       blogInc, instaInc,
       newSales: newSalesM, reEnrollSales: reSalesM, newInc, reInc,
       promoIncentive,

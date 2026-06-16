@@ -515,3 +515,64 @@ describe('월말 정산비율 확정 재박제 (buildRefreezePlan)', () => {
     expect(plan.count).toBe(0);
   });
 });
+
+// ── SNS/스터디 기록이 정산에 실시간 반영되는지 (override가 기록을 가리지 않는지) ──
+describe('홍보 override가 실시간 기록을 가리지 않음', () => {
+  const settings = { cardFeeRate:0, vatRate:0, lowSplitRate:40,
+    rate60MinSales:99999999, rate50MinBlog:99, rate50MinStudy:99,
+    promoPerPost:10000, snsInstaMax:8, trainerSplitRates:{} };
+  const trainers = [{ id:'t1', name:'김동규' }];
+  const members  = [{ id:'m1', name:'회원', trainerSessions:{ t1:{ total:10, remaining:10 } } }];
+  const schedules = [];
+  const payments = {};
+  const records = [
+    { trainerId:'t1', channel:'insta', date:'2026-06-13' },
+    { trainerId:'t1', channel:'study', date:'2026-06-10' },
+  ];
+
+  it('override.instaCount=0(과거 박제)여도 실시간 인스타 기록이 집계된다', () => {
+    // 과거에 저장된 잘못된 override: 인스타 0으로 고정
+    const getOverride = (tid, ym) =>
+      tid==='t1' && ym==='2026-06' ? { instaCount:0, blogCount:0, studyCount:0 } : null;
+    const b = computeSessionSettlement({ trainers, members, schedules, payments, records, settings, ym:'2026-06', getOverride })[0];
+    expect(b.instaCount).toBe(1);              // 0으로 가려지지 않고 실시간 1건 반영
+    expect(b.instaInc).toBe(10000);            // 1건 × 1만원
+    expect(b.studyCount).toBe(1);
+  });
+
+  it('override로 실제 값(예: 인스타 5)을 지정하면 그 값을 쓴다', () => {
+    const getOverride = () => ({ instaCount:5 });
+    const b = computeSessionSettlement({ trainers, members, schedules, payments, records, settings, ym:'2026-06', getOverride })[0];
+    expect(b.instaCount).toBe(5);              // 수동 지정값 우선
+  });
+});
+
+// ── 단가/횟수 override: 지정한 회원만 고정, 나머지는 실시간 자동값 ──
+describe('단가·횟수 override는 지정 회원만 적용', () => {
+  const settings = { cardFeeRate:0, vatRate:0, lowSplitRate:40,
+    rate60MinSales:99999999, rate50MinBlog:99, rate50MinStudy:99,
+    promoPerPost:10000, snsInstaMax:8, trainerSplitRates:{ t1:50 } };
+  const trainers = [{ id:'t1', name:'트레이너' }];
+  const members = [
+    { id:'m1', name:'A', trainerSessions:{ t1:{ total:10, remaining:0 } } },
+    { id:'m2', name:'B', trainerSessions:{ t1:{ total:10, remaining:0 } } },
+  ];
+  // 두 회원 모두 결제 100만(단가 10만), 출석 m1=2회 m2=4회
+  const payments = {
+    m1:[{ id:'p1', paidAt:'2026-06-01', amount:1000000, method:'cash', trainerIds:['t1'] }],
+    m2:[{ id:'p2', paidAt:'2026-06-01', amount:1000000, method:'cash', trainerIds:['t1'] }],
+  };
+  const schedules = [
+    ...Array.from({length:2},(_,i)=>({id:'a'+i,isExternal:false,memberId:'m1',trainerId:'t1',status:'attended',date:'2026-06-10'})),
+    ...Array.from({length:4},(_,i)=>({id:'b'+i,isExternal:false,memberId:'m2',trainerId:'t1',status:'attended',date:'2026-06-10'})),
+  ];
+
+  it('m1 횟수만 수동 지정하면 m2는 실시간 출석(4회)을 그대로 쓴다', () => {
+    const getOverride = () => ({ sessionCounts:{ m1:5 } }); // m1만 5회로 고정
+    const b = computeSessionSettlement({ trainers, members, schedules, payments, records:[], settings, ym:'2026-06', getOverride })[0];
+    const r1 = b.rows.find(r=>r.memberId==='m1');
+    const r2 = b.rows.find(r=>r.memberId==='m2');
+    expect(r1.cnt).toBe(5);   // 수동 지정
+    expect(r2.cnt).toBe(4);   // 실시간 출석 그대로 (가려지지 않음)
+  });
+});

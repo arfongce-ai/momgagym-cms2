@@ -684,18 +684,63 @@ function TrainerSettleCard({ block: b, ym, settings, onSaved }) {
   const startEdit = () => {
     const u={}, c={};
     b.rows.forEach(r=>{ u[r.memberId]=r.unit; c[r.memberId]=r.cnt; });
-    setUnitEdits(u); setCntEdits(c); setBlog(b.blogCount); setInsta(b.instaCount); setStudy(b.studyCount);
+    setUnitEdits(u); setCntEdits(c);
+    // 홍보 횟수는 실시간 집계(auto)값을 기준으로 보여준다.
+    // (과거 override로 고정된 값이 아니라 실제 기록 개수에서 시작 → 안 건드리면 실시간값 유지)
+    setBlog(b.autoBlogCount); setInsta(b.autoInstaCount); setStudy(b.autoStudyCount);
     setEditing(true);
   };
   const save = async () => {
     try {
-      await store.saveSettleOverride(b.trainer.id, ym, {
-        unitPrices: Object.fromEntries(Object.entries(unitEdits).map(([k,v])=>[k,Number(v)||0])),
-        sessionCounts: Object.fromEntries(Object.entries(cntEdits).map(([k,v])=>[k,Number(v)||0])),
-        blogCount: Number(blog)||0, instaCount: Number(insta)||0, studyCount: Number(study)||0,
+      // 핵심 원칙: "사용자가 자동집계값과 다르게 바꾼 항목만" override로 저장한다.
+      //  · 단가·횟수·홍보횟수 모두, 안 건드린 값은 저장에서 제외(또는 null) → 이후
+      //    출석/결제/홍보 기록이 바뀌면 정산이 실시간으로 따라간다.
+      //  · 예전에는 모든 회원의 단가·횟수를 통째로 박제해서, 한 번 "저장"하면
+      //    그 트레이너의 정산이 과거값에 고정되는 버그가 있었다.
+      const autoUnit = {}, autoCnt = {};
+      b.rows.forEach(r => { autoUnit[r.memberId] = r.autoUnit; autoCnt[r.memberId] = r.autoCnt; });
+
+      const unitPrices = {};
+      Object.entries(unitEdits).forEach(([mid, v]) => {
+        const val = Number(v) || 0;
+        if (val !== (Number(autoUnit[mid]) || 0)) unitPrices[mid] = val; // 바뀐 것만
       });
+      const sessionCounts = {};
+      Object.entries(cntEdits).forEach(([mid, v]) => {
+        const val = Number(v) || 0;
+        if (val !== (Number(autoCnt[mid]) || 0)) sessionCounts[mid] = val; // 바뀐 것만
+      });
+
+      const promoOrNull = (edited, auto) =>
+        (Number(edited)||0) === (Number(auto)||0) ? null : (Number(edited)||0);
+
+      const blogCount  = promoOrNull(blog,  b.autoBlogCount);
+      const instaCount = promoOrNull(insta, b.autoInstaCount);
+      const studyCount = promoOrNull(study, b.autoStudyCount);
+
+      // 실제로 바뀐 항목이 하나도 없으면 override 자체를 삭제(깨끗한 상태 유지 → '수정됨' 배지도 사라짐).
+      const nothingOverridden =
+        Object.keys(unitPrices).length === 0 &&
+        Object.keys(sessionCounts).length === 0 &&
+        blogCount == null && instaCount == null && studyCount == null;
+
+      if (nothingOverridden) {
+        if (b.hasOverride) await store.deleteSettleOverride(b.trainer.id, ym);
+      } else {
+        await store.saveSettleOverride(b.trainer.id, ym, {
+          unitPrices, sessionCounts, blogCount, instaCount, studyCount,
+        });
+      }
       setEditing(false); onSaved?.();
     } catch(e){ alert('저장에 실패했습니다.'); }
+  };
+
+  // 수동 수정값(override) 전체 삭제 → 단가·횟수·홍보횟수 모두 실시간 자동집계로 복원.
+  // 과거에 통째로 박제돼 정산이 옛 값에 고정된 경우를 한 번에 정리하는 용도.
+  const resetOverride = async () => {
+    if (!window.confirm(`${b.trainer.name} 트레이너의 이번 달 수동 수정값을 모두 지우고 자동 집계값으로 되돌릴까요?\n(단가·수업횟수·SNS/스터디 횟수가 실시간 데이터 기준으로 재계산됩니다.)`)) return;
+    try { await store.deleteSettleOverride(b.trainer.id, ym); setEditing(false); onSaved?.(); }
+    catch(e){ alert('복원에 실패했습니다. 네트워크 확인 후 다시 시도하세요.'); }
   };
 
   // 편집 중 미리보기: 각 회원 행의 박제비율(r.rate)을 유지하고 단가·횟수만 반영
@@ -730,7 +775,13 @@ function TrainerSettleCard({ block: b, ym, settings, onSaved }) {
           }`} title={liveSplit.reason}>
             정산 {b.rateMixed?`혼합 ${liveSplit.rate}%`:`${liveSplit.rate}%`}{liveSplit.mode==='manual'?' (수동)':liveSplit.mode==='frozen'?' (등록월)':' (자동)'}
           </span>
-          {b.hasOverride && <span className="text-[10px] bg-blue-500/20 text-blue-400 px-1.5 py-0.5 rounded font-bold">수정됨</span>}
+          {b.hasOverride && (
+            <button onClick={resetOverride}
+              className="text-[10px] bg-blue-500/20 text-blue-400 hover:bg-red-500/20 hover:text-red-400 px-1.5 py-0.5 rounded font-bold transition-colors"
+              title="수동 수정값을 지우고 자동 집계값으로 복원">
+              수정됨 ✕ 자동복원
+            </button>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <span className="text-lg font-mono font-black text-amber-400">{won(liveTotal)}</span>

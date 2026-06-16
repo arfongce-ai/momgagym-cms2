@@ -561,6 +561,13 @@ export const store = {
     try { await fbSet('settleOverrides', id, merged); return merged; }
     catch(e){ cache.settleOverrides = prev; throw e; }
   },
+  deleteSettleOverride: async (trainerId, ym) => {
+    const id = `${trainerId}_${ym}`;
+    const prev = cache.settleOverrides;
+    cache.settleOverrides = cache.settleOverrides.filter(o => o.id !== id);
+    try { await fbDelete('settleOverrides', id); }
+    catch(e){ cache.settleOverrides = prev; throw e; }
+  },
 };
 
 export const aiStore = {
