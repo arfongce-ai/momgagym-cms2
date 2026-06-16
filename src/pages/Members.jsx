@@ -145,13 +145,13 @@ export default function Members() {
               const classes = (m.classTypes||[]).length ? m.classTypes.join(', ') : '수업미지정';
               return (
                 <div key={m.id} onClick={() => setSelected(m)}
-                  className="flex items-start gap-3 px-4 py-3 hover:bg-slate-800/60 cursor-pointer transition-colors">
+                  className="flex items-center gap-3 px-4 py-3 hover:bg-slate-800/60 cursor-pointer transition-colors">
                   {/* 아바타 */}
                   <div className="w-9 h-9 rounded-full bg-slate-700 flex items-center justify-center text-sm font-bold flex-shrink-0">
                     {m.name[0]}
                   </div>
 
-                  {/* 이름·연락처·수업종류·트레이너 배지 (세로 배치 → 이름이 잘리지 않음) */}
+                  {/* 이름·연락처·수업종류 */}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className={`font-semibold text-sm ${expired ? 'text-red-400' : 'text-slate-100'}`}>
@@ -159,10 +159,11 @@ export default function Members() {
                       </span>
                     </div>
                     <p className="text-slate-500 text-xs mt-0.5 truncate">{m.phone} · {classes}</p>
-                    {/* ★ 트레이너별 세션 배지 — 이름 아래 전체 폭 사용, 트레이너명 전체 표시 */}
-                    <div className="mt-1.5">
-                      <TrainerBadge trainerSessions={m.trainerSessions} trainers={trainers} />
-                    </div>
+                  </div>
+
+                  {/* ★ 트레이너별 세션 배지 — 오른쪽 칸, 트레이너명 전체 표시(잘림 없음) */}
+                  <div className="flex-shrink-0">
+                    <TrainerBadge trainerSessions={m.trainerSessions} trainers={trainers} compact />
                   </div>
                 </div>
               );
