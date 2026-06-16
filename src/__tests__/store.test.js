@@ -515,19 +515,3 @@ describe('월말 정산비율 확정 재박제 (buildRefreezePlan)', () => {
     expect(plan.count).toBe(0);
   });
 });
-
-// ── uid() 충돌 방지 회귀 테스트 ────────────────────────────────
-import { uid } from '../demoData.js';
-
-describe('uid() 충돌 방지', () => {
-  it('같은 밀리초에 대량 생성해도 ID가 모두 유일하다', () => {
-    const ids = new Set();
-    for (let i = 0; i < 500; i++) ids.add(uid('p'));
-    expect(ids.size).toBe(500); // 중복 0건
-  });
-
-  it('접두어가 보존된다', () => {
-    expect(uid('sl_').startsWith('sl_')).toBe(true);
-    expect(uid('ai').startsWith('ai')).toBe(true);
-  });
-});

@@ -205,7 +205,7 @@ function ScheduleDetailModal({ schedule:initS, onClose, onUpdate, onDelete }) {
     }
   };
 
-  const saveEdit = async () => {
+  const saveEdit = () => {
     const t = trainers.find(tr=>tr.id===form.trainerId);
     const m = members.find(me=>me.id===form.memberId);
     // 회차 수동 수정 처리 (일반 회원 수업만)
@@ -220,19 +220,14 @@ function ScheduleDetailModal({ schedule:initS, onClose, onUpdate, onDelete }) {
         }
       }
     }
-    try {
-      await store.updateSchedule(s.id, {
-        date:form.date, startTime:form.startTime, endTime:form.endTime,
-        classType:form.classType, trainerId:form.trainerId,
-        trainerName:t?.name||s.trainerName, trainerColor:t?.color||s.trainerColor,
-        ...(isExt ? { memo:form.memo } : { memberId:form.memberId, memberName:m?.name||s.memberName }),
-        ...sessionPatch,
-      });
-      setEdit(false); onUpdate();
-    } catch (e) {
-      console.error('[스케줄 수정 실패]', e);
-      alert('수정에 실패했습니다. 네트워크 확인 후 다시 시도하세요.');
-    }
+    store.updateSchedule(s.id, {
+      date:form.date, startTime:form.startTime, endTime:form.endTime,
+      classType:form.classType, trainerId:form.trainerId,
+      trainerName:t?.name||s.trainerName, trainerColor:t?.color||s.trainerColor,
+      ...(isExt ? { memo:form.memo } : { memberId:form.memberId, memberName:m?.name||s.memberName }),
+      ...sessionPatch,
+    });
+    setEdit(false); onUpdate();
   };
 
   const trainerCT = trainers.find(t=>t.id===form.trainerId)?.classTypes||[];
@@ -856,7 +851,7 @@ function MonthView({ pivotDate, schedules, onBlockClick, todayStr, members, onDa
   return (
     <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
       <div className="grid grid-cols-7 text-center text-xs font-bold text-slate-500 border-b border-slate-800">
-        {['일','월','화','수','목','금','토'].map((d,i)=><div key={d} className={`py-2 ${i===0?'text-red-400':i===6?'text-blue-400':''}`}>{d}</div>)}
+        {['월','화','수','목','금','토','일'].map(d=><div key={d} className="py-2">{d}</div>)}
       </div>
       <div className="grid grid-cols-7">
         {cells.map((date,i)=>{
@@ -992,44 +987,6 @@ export default function Schedule() {
         <p className="text-xs text-slate-500">검색 결과 {filteredSchedules.length}건</p>
       )}
 
-      {query.trim() ? (
-        /* 검색 결과 — 전체 일정에서 매칭, 날짜순 목록 */
-        (() => {
-          const results = filteredSchedules
-            .slice()
-            .sort((a,b)=> (a.date+a.startTime).localeCompare(b.date+b.startTime));
-          if (results.length === 0)
-            return <p className="text-center text-slate-600 py-12 text-sm">검색 결과가 없습니다</p>;
-          // 날짜별 그룹
-          const groups = [];
-          let cur = null;
-          for (const s of results) {
-            if (!cur || cur.date !== s.date) { cur = { date: s.date, items: [] }; groups.push(cur); }
-            cur.items.push(s);
-          }
-          return (
-            <div className="space-y-2">
-              {groups.map(g=>{
-                const isToday = g.date === todayStr;
-                return (
-                  <div key={g.date} className={`bg-slate-900 border rounded-xl overflow-hidden ${isToday?'border-amber-500/40':'border-slate-800'}`}>
-                    <button onClick={()=>{ setPivot(g.date); setView('day'); setQuery(''); }}
-                      className="w-full flex items-center gap-2 px-3 py-2 border-b border-slate-800 hover:bg-slate-800/50 transition-colors">
-                      <span className={`text-sm font-bold ${isToday?'text-amber-400':'text-slate-300'}`}>{fmtKo(g.date)}</span>
-                      {isToday && <span className="text-[10px] text-amber-400 font-bold">오늘</span>}
-                      <span className="ml-auto text-[11px] text-slate-600">{g.items.length}건</span>
-                    </button>
-                    <div className="divide-y divide-slate-800/60">
-                      {g.items.map(s=><CompactRow key={s.id} s={s} members={members} onClick={setDetail}/>)}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          );
-        })()
-      ) : (
-        <>
       {view==='week'&&(
         <div className="space-y-2">
           {weekDates.map(date=>{
@@ -1076,8 +1033,6 @@ export default function Schedule() {
         <MonthView pivotDate={pivot} schedules={filteredSchedules} onBlockClick={setDetail} todayStr={todayStr}
           members={members}
           onDayClick={(date)=>{ setPivot(date); setView('day'); }}/>
-      )}
-        </>
       )}
 
       {showAdd && (

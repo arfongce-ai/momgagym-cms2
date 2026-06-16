@@ -4,7 +4,7 @@
 // ✅ 기본정보 수정 + 세션 재등록
 // ✅ 트레이너별 세션 개별 카드
 import { useState, useEffect } from 'react';
-import { store, uid } from '../../demoData';
+import { store } from '../../demoData';
 import { todayYMD } from '../../utils/dates';
 import { useAuth } from '../../contexts/AuthContext';
 import { ClassTypeCheckbox } from './MemberRegister';
@@ -35,7 +35,7 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
   // 수납
   const [payments,     setPayments]    = useState([]);
   const [showAddPay,   setShowAddPay]  = useState(false);
-  const [payForm,      setPayForm]     = useState({ paidAt: todayYMD(), amount:'', method:'pay', isUnpaid:false, note:'', trainerIds:[], split:[], methodList:[], isReEnroll:false, reEnrollNo:'', isNew:false, consultTrainerId:'', category:'normal', addSessionCount:'', addSessionTrainerId:'' });
+  const [payForm,      setPayForm]     = useState({ paidAt: todayYMD(), amount:'', method:'pay', isUnpaid:false, note:'', trainerIds:[], split:[], methodList:[], isReEnroll:false, reEnrollNo:'', isNew:false, consultTrainerId:'', category:'normal' });
 
   // 신체정보
   const [bodyRecords,  setBodyRecords] = useState([]);
@@ -328,40 +328,10 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
       newPayment.splitRateAtPay = splitRateAtPay;
 
       await store.addPayment(member.id, newPayment);
-
-      // ── 결제 후 회원 갱신: 결제일 + (재등록 시) 세션 자동 추가 ──
-      // handleAddSession과 동일하게 최신 trainerSessions를 읽어 병합(클로버링 방지).
-      const memberUpdate = { lastPaymentDate: payForm.paidAt };
-      const addCnt = payForm.isReEnroll ? (Number(payForm.addSessionCount) || 0) : 0;
-      const addTid = payForm.addSessionTrainerId;
-      if (addCnt > 0 && addTid) {
-        const fresh = store.getMembers().find(m => m.id === member.id);
-        const ts = JSON.parse(JSON.stringify(fresh?.trainerSessions || {}));
-        if (ts[addTid]) {
-          ts[addTid].total     += addCnt;
-          ts[addTid].remaining += addCnt;
-        } else {
-          ts[addTid] = { total: addCnt, remaining: addCnt };
-        }
-        memberUpdate.trainerSessions = ts;
-
-        // ── 패키지 이력 기록(표시 전용) ──────────────────────────
-        // 차감/잔여 로직은 trainerSessions(합산)가 그대로 담당한다.
-        // sessionLogs는 "언제 몇 회 등록했는지"를 별도 줄로 보여주기 위한 기록일 뿐.
-        const logs = JSON.parse(JSON.stringify(fresh?.sessionLogs || []));
-        logs.push({
-          id: uid('sl_'),
-          trainerId: addTid,
-          count: addCnt,
-          date: payForm.paidAt,
-          reEnrollNo: reEnrollNo || null,
-          amount: Number(payForm.amount) || 0,
-        });
-        memberUpdate.sessionLogs = logs;
-      }
-      await store.updateMember(member.id, memberUpdate);
+      // 결제일 자동 업데이트
+      await store.updateMember(member.id, { lastPaymentDate:payForm.paidAt });
       refresh(); setShowAddPay(false);
-      setPayForm({ paidAt:todayYMD(), amount:'', method:'pay', isUnpaid:false, note:'', trainerIds:[], split:[], methodList:[], isReEnroll:false, reEnrollNo:'', isNew:false, consultTrainerId:'', category:'normal', addSessionCount:'', addSessionTrainerId:'' });
+      setPayForm({ paidAt:todayYMD(), amount:'', method:'pay', isUnpaid:false, note:'', trainerIds:[], split:[], methodList:[], isReEnroll:false, reEnrollNo:'', isNew:false, consultTrainerId:'', category:'normal' });
       onUpdate?.();
     } catch (e) { alert('수납 등록에 실패했습니다. 네트워크 확인 후 다시 시도하세요.'); }
   };
@@ -555,31 +525,6 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
                         <span>사용 <strong className="text-slate-400">{s.total-s.remaining}회</strong></span>
                         <span>등록 <strong className="text-slate-400">{s.total}회</strong></span>
                       </div>
-
-                      {/* 패키지 등록 이력(표시 전용) — 재등록마다 쌓인 줄 */}
-                      {(() => {
-                        const logs = (member.sessionLogs || [])
-                          .filter(l => l.trainerId === tid)
-                          .sort((a,b) => (a.date||'').localeCompare(b.date||''));
-                        if (!logs.length) return null;
-                        return (
-                          <div className="mt-3 pt-3 border-t border-slate-700/70 space-y-1.5">
-                            <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mb-1">패키지 등록 이력</p>
-                            {logs.map(l => (
-                              <div key={l.id} className="flex items-center justify-between text-xs bg-slate-900/40 rounded-lg px-2.5 py-1.5">
-                                <div className="flex items-center gap-2">
-                                  <span className="text-slate-400 font-mono">{l.date}</span>
-                                  {l.reEnrollNo && <span className="text-[10px] bg-blue-500/20 text-blue-400 border border-blue-500/30 px-1.5 py-0.5 rounded font-bold">{l.reEnrollNo}회차</span>}
-                                </div>
-                                <div className="flex items-center gap-3">
-                                  {l.amount>0 && <span className="text-slate-500 font-mono">{l.amount.toLocaleString()}원</span>}
-                                  <span className="font-mono font-bold text-emerald-400">+{l.count}회</span>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        );
-                      })()}
                       {s.remaining===0&&<div className="mt-2 text-center text-[10px] bg-red-500/10 border border-red-500/20 rounded-lg py-1 text-red-400 font-bold">⚠️ 세션 소진</div>}
                       {s.remaining>0&&s.remaining<=5&&<div className="mt-2 text-center text-[10px] bg-orange-500/10 border border-orange-500/20 rounded-lg py-1 text-orange-400 font-bold">⚡ 잔여 {s.remaining}회</div>}
                       {user?.role==='admin' && (
@@ -923,14 +868,8 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
                       const turningOn = !p.isReEnroll;
                       // 켤 때: 기존 재등록 결제 건수 + 1을 자동 제안(첫 기입 후 자동 적용)
                       const nextNo = (payments.filter(x=>x.isReEnroll).length) + 1;
-                      // 켤 때: 세션 추가 대상 트레이너를 자동 선택(결제 담당 첫 명 → 등록된 담당 첫 명)
-                      const defaultTid = p.trainerIds[0]
-                        || Object.keys(member.trainerSessions || {})[0]
-                        || '';
                       return { ...p, isReEnroll:turningOn, isNew:false,
-                        reEnrollNo: turningOn ? (p.reEnrollNo || String(nextNo)) : '',
-                        addSessionTrainerId: turningOn ? (p.addSessionTrainerId || defaultTid) : '',
-                        addSessionCount: turningOn ? p.addSessionCount : '' };
+                        reEnrollNo: turningOn ? (p.reEnrollNo || String(nextNo)) : '' };
                     })}
                       className={`flex items-center gap-2 px-3 py-2 rounded-xl border cursor-pointer transition-colors select-none
                         ${payForm.isReEnroll?'border-blue-500/40 bg-blue-500/10 text-blue-400':'border-slate-700 text-slate-400 hover:border-slate-500'}`}>
@@ -973,47 +912,6 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
                         <span className="text-[11px] text-slate-500">
                           (자동 제안: {payments.filter(x=>x.isReEnroll).length + 1}회차 · 수정 가능)
                         </span>
-                      </div>
-
-                      {/* ★ 세션 자동 추가: 재등록 결제와 동시에 회차(잔여/총) 증가 */}
-                      <div className="mt-3 pt-3 border-t border-blue-500/15">
-                        <label className={LBL}>세션 추가 (이 결제로 등록할 회차)</label>
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <input type="number" min="0" value={payForm.addSessionCount}
-                            onChange={ppf('addSessionCount')}
-                            placeholder="예: 20"
-                            className={INP+" font-mono w-24"}/>
-                          <span className="text-sm text-blue-400 font-bold">회</span>
-                          <select value={payForm.addSessionTrainerId}
-                            onChange={ppf('addSessionTrainerId')}
-                            className={INP+" flex-1 min-w-[8rem]"}>
-                            <option value="">트레이너 선택</option>
-                            {trainers.map(t=>(
-                              <option key={t.id} value={t.id}>{t.name}</option>
-                            ))}
-                          </select>
-                        </div>
-                        {(() => {
-                          const tid = payForm.addSessionTrainerId;
-                          const cnt = Number(payForm.addSessionCount) || 0;
-                          if (!cnt) return (
-                            <p className="text-[11px] text-slate-500 mt-1.5">
-                              회차를 입력하면 결제 등록과 동시에 세션이 자동 추가됩니다. (비워두면 결제만 기록)
-                            </p>
-                          );
-                          if (!tid) return (
-                            <p className="text-[11px] text-amber-400 mt-1.5">⚠️ 세션을 추가할 트레이너를 선택해 주세요.</p>
-                          );
-                          const cur = member.trainerSessions?.[tid];
-                          const tName = trainerMap[tid]?.name || '?';
-                          const newTotal = (cur?.total || 0) + cnt;
-                          const newRemain = (cur?.remaining || 0) + cnt;
-                          return (
-                            <p className="text-[11px] text-emerald-400 mt-1.5 font-semibold">
-                              ✓ {tName}: {cur ? `${cur.remaining}/${cur.total}` : '신규'} → {newRemain}/{newTotal}회
-                            </p>
-                          );
-                        })()}
                       </div>
                     </div>
                   )}
@@ -1105,10 +1003,7 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
 
           {/* ━━ 메모 탭 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
           {tab==='memo' && (
-            <MemoTab member={member} onSave={async memo=>{
-              try { await store.updateMember(member.id,{memo}); refresh(); onUpdate?.(); }
-              catch(e){ console.error('[메모 저장 실패]',e); alert('메모 저장에 실패했습니다. 다시 시도하세요.'); }
-            }}/>
+            <MemoTab member={member} onSave={memo=>{store.updateMember(member.id,{memo});refresh();onUpdate?.();}}/>
           )}
         </div>
 

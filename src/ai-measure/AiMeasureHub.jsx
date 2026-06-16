@@ -5,7 +5,6 @@ import { MEASURE_MENUS } from './registry';
 import { store, aiStore } from '../demoData';
 import { todayYMD } from '../utils/dates';
 import { useAuth } from '../contexts/AuthContext';
-import MemberPicker from '../components/common/MemberPicker';
 
 export default function AiMeasureHub() {
   const { user } = useAuth();
@@ -66,12 +65,11 @@ export default function AiMeasureHub() {
         <label className="block text-xs font-semibold text-slate-400 uppercase tracking-widest mb-2">
           회원 선택 (저장 시 필요)
         </label>
-        <MemberPicker
-          members={members}
-          value={memberId}
-          onChange={setMemberId}
-          noneLabel="선택 안 함 (측정만)"
-        />
+        <select value={memberId} onChange={e => setMemberId(e.target.value)}
+          className="input">
+          <option value="">선택 안 함 (측정만)</option>
+          {members.map(m => <option key={m.id} value={m.id}>{m.name} ({m.phone?.slice(-4)})</option>)}
+        </select>
       </div>
 
       {/* 메뉴 그리드 */}

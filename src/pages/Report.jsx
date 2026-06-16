@@ -6,7 +6,6 @@ import { store, aiStore } from '../demoData';
 import { buildFullReport } from '../services/reportService';
 import { buildReportSvg, downloadSvgAsJpg } from '../components/report/reportImage';
 import TrendChart from '../components/report/TrendChart';
-import MemberPicker from '../components/common/MemberPicker';
 
 const COLORS = { weight:'#f59e0b', systolic:'#ef4444', diastolic:'#3b82f6', height:'#22d3ee' };
 
@@ -52,13 +51,11 @@ export default function Report() {
       {/* 회원 선택 */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
         <label className="block text-xs font-semibold text-slate-400 uppercase tracking-widest mb-2">회원 선택</label>
-        <MemberPicker
-          members={members}
-          value={memberId}
-          onChange={setMemberId}
-          allowNone={false}
-          noneLabel="선택하세요"
-        />
+        <select value={memberId} onChange={e => setMemberId(e.target.value)}
+          className="w-full bg-slate-800 border border-slate-700 text-slate-100 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-amber-500">
+          <option value="">선택하세요</option>
+          {members.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+        </select>
       </div>
 
       {report && !report.hasData && (

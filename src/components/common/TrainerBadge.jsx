@@ -51,7 +51,7 @@ export default function TrainerBadge({
               />
               {compact ? (
                 <>
-                  {trainer?.name || '??'}:{' '}
+                  {trainer?.name?.slice(0, 2) || '??'}:{' '}
                   <span className="font-mono">
                     {s.remaining}
                     <span className="opacity-50">/{s.total}</span>
