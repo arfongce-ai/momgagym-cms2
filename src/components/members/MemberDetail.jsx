@@ -14,6 +14,22 @@ import { METHOD_LBL, METHOD_CLR, computeMonthRates } from '../../services/financ
 
 const INP = "w-full bg-slate-800 border border-slate-700 text-slate-100 rounded-xl px-3 py-2.5 text-sm placeholder-slate-500 focus:outline-none focus:border-amber-500";
 const LBL = "block text-xs font-semibold text-slate-400 uppercase tracking-widest mb-1.5";
+const makePayForm = () => ({
+  paidAt: todayYMD(),
+  amount: '',
+  method: 'pay',
+  isUnpaid: false,
+  note: '',
+  trainerIds: [],
+  split: [],
+  methodList: [],
+  sessionAdds: [],
+  isReEnroll: false,
+  reEnrollNo: '',
+  isNew: false,
+  consultTrainerId: '',
+  category: 'normal',
+});
 
 export default function MemberDetail({ member:initMember, trainers, onClose, onUpdate }) {
   const { user } = useAuth();
@@ -35,7 +51,7 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
   // 수납
   const [payments,     setPayments]    = useState([]);
   const [showAddPay,   setShowAddPay]  = useState(false);
-  const [payForm,      setPayForm]     = useState({ paidAt: todayYMD(), amount:'', method:'pay', isUnpaid:false, note:'', trainerIds:[], split:[], methodList:[], isReEnroll:false, reEnrollNo:'', isNew:false, consultTrainerId:'', category:'normal' });
+  const [payForm,      setPayForm]     = useState(makePayForm);
 
   // 신체정보
   const [bodyRecords,  setBodyRecords] = useState([]);
@@ -161,12 +177,38 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
     const freshSplit = Object.fromEntries(evenSplit(fresh, rest).map(s=>[s.trainerId, s.amount]));
     return tids.map(id => ({ trainerId: id, amount: prevMap[id] != null ? prevMap[id] : (freshSplit[id]||0) }));
   };
+  const defaultClassTypeFor = (tid) => {
+    const current = member.classTypes?.[0] || '';
+    const trainerTypes = trainerMap[tid]?.classTypes || [];
+    return current && (!trainerTypes.length || trainerTypes.includes(current))
+      ? current
+      : (trainerTypes[0] || current || '');
+  };
+  const syncSessionAdds = (tids, prevAdds=[]) => tids.map(tid => {
+    const prev = prevAdds.find(x => x.trainerId === tid);
+    return {
+      trainerId: tid,
+      count: prev?.count ?? '',
+      classType: prev?.classType ?? defaultClassTypeFor(tid),
+    };
+  });
+  const updatePaySessionAdd = (tid, patch) => setPayForm(p => ({
+    ...p,
+    sessionAdds: syncSessionAdds(p.trainerIds, p.sessionAdds).map(x =>
+      x.trainerId === tid ? { ...x, ...patch } : x
+    ),
+  }));
 
   // 트레이너 토글: 선택/해제 후 split 재구성
   const togglePayTrainer = (tid) => setPayForm(p => {
     const on = p.trainerIds.includes(tid);
     const tids = on ? p.trainerIds.filter(id=>id!==tid) : [...p.trainerIds, tid];
-    return { ...p, trainerIds: tids, split: rebuildSplit(tids, p.amount, p.split) };
+    return {
+      ...p,
+      trainerIds: tids,
+      split: rebuildSplit(tids, p.amount, p.split),
+      sessionAdds: syncSessionAdds(tids, p.sessionAdds),
+    };
   });
   // 총금액 변경: 다중이면 split도 함께 재구성(기존 비율 유지하며 합계 맞춤)
   const onAmountChange = (val) => setPayForm(p => {
@@ -273,7 +315,12 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
   //  · 2명이면 둘 다 자동 선택(자동 5:5 분배) · 1명이면 그 1명 자동 선택
   const openAddPay = () => {
     const registered = Object.keys(member.trainerSessions || {});
-    setPayForm(p => ({ ...p, trainerIds: registered, split: rebuildSplit(registered, p.amount, []) }));
+    setPayForm(p => ({
+      ...p,
+      trainerIds: registered,
+      split: rebuildSplit(registered, p.amount, []),
+      sessionAdds: syncSessionAdds(registered, p.sessionAdds),
+    }));
     setShowAddPay(true);
   };
   // ── 수납 등록 ─────────────────────────────────────────
@@ -295,10 +342,17 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
         ? payForm.methodList.map(x=>({ method:x.method, amount:Math.max(0,Math.round(Number(x.amount)||0)) }))
         : [];
       const primaryMethod = methods.length ? methods[0].method : payForm.method;
-      const { methodList, ...rest } = payForm;
+      const sessionAdds = syncSessionAdds(payForm.trainerIds, payForm.sessionAdds)
+        .map(x => ({
+          trainerId: x.trainerId,
+          count: Math.max(0, Math.round(Number(x.count)||0)),
+          classType: x.classType || '',
+        }))
+        .filter(x => x.count > 0);
+      const { methodList, sessionAdds: _sessionAdds, ...rest } = payForm;
       // 신규일 때만 상담 트레이너 저장(아니면 비움)
       const consultTrainerId = payForm.isNew ? (payForm.consultTrainerId || '') : '';
-      const newPayment = { ...rest, method:primaryMethod, methods, amount:Number(payForm.amount), split, reEnrollNo, consultTrainerId };
+      const newPayment = { ...rest, method:primaryMethod, methods, amount:Number(payForm.amount), split, sessionAdds, reEnrollNo, consultTrainerId };
 
       // ── 결제월 정산비율 박제(snapshot) ──────────────────────────
       // 이 결제가 이뤄진 달(paidAt의 YYYY-MM) 기준 비율을 계산해 결제 건에 고정한다.
@@ -327,11 +381,28 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
       });
       newPayment.splitRateAtPay = splitRateAtPay;
 
-      await store.addPayment(member.id, newPayment);
-      // 결제일 자동 업데이트
-      await store.updateMember(member.id, { lastPaymentDate:payForm.paidAt });
+      const memberPatch = { lastPaymentDate:payForm.paidAt };
+      if (sessionAdds.length) {
+        const fresh = store.getMembers().find(m=>m.id===member.id);
+        const ts = JSON.parse(JSON.stringify(fresh?.trainerSessions||{}));
+        const curCT = fresh?.classTypes || [];
+        const classTypeSet = new Set(curCT);
+        sessionAdds.forEach(({ trainerId, count, classType }) => {
+          if (ts[trainerId]) {
+            ts[trainerId].total = Math.max(0, Number(ts[trainerId].total)||0) + count;
+            ts[trainerId].remaining = Math.max(0, Number(ts[trainerId].remaining)||0) + count;
+          } else {
+            ts[trainerId] = { total:count, remaining:count };
+          }
+          if (classType) classTypeSet.add(classType);
+        });
+        memberPatch.trainerSessions = ts;
+        memberPatch.classTypes = [...classTypeSet];
+      }
+      // 수납 기록과 회원 세션을 한 번에 저장해 정산 기준 데이터가 어긋나지 않게 한다.
+      await store.addPaymentWithMemberUpdate(member.id, newPayment, memberPatch);
       refresh(); setShowAddPay(false);
-      setPayForm({ paidAt:todayYMD(), amount:'', method:'pay', isUnpaid:false, note:'', trainerIds:[], split:[], methodList:[], isReEnroll:false, reEnrollNo:'', isNew:false, consultTrainerId:'', category:'normal' });
+      setPayForm(makePayForm());
       onUpdate?.();
     } catch (e) { alert('수납 등록에 실패했습니다. 네트워크 확인 후 다시 시도하세요.'); }
   };
@@ -831,6 +902,46 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
                       </div>
                     );
                   })()}
+                  {payForm.trainerIds.length > 0 && (
+                    <div className="bg-slate-900/60 border border-emerald-500/20 rounded-xl p-3 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className={LBL+" mb-0"}>세션 자동 추가</label>
+                        <span className="text-[11px] text-emerald-300 font-bold">
+                          수납 저장 시 같이 반영
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-500">
+                        입력한 회차만 총 세션과 잔여 세션에 자동 추가됩니다. 0회 또는 빈칸은 세션 변경 없이 수납만 저장됩니다.
+                      </p>
+                      <div className="space-y-2">
+                        {syncSessionAdds(payForm.trainerIds, payForm.sessionAdds).map(row => {
+                          const t = trainerMap[row.trainerId];
+                          const typeOptions = t?.classTypes?.length ? t.classTypes : (member.classTypes || []);
+                          return (
+                            <div key={row.trainerId} className="grid grid-cols-1 sm:grid-cols-[minmax(88px,1fr)_96px_minmax(110px,1.2fr)] gap-2 items-center">
+                              <span className="flex items-center gap-1.5 text-xs font-bold text-slate-200 min-w-0">
+                                <span className="w-2 h-2 rounded-full flex-shrink-0" style={{background:t?.color||'#94a3b8'}}/>
+                                <span className="truncate">{t?.name||'트레이너'}</span>
+                              </span>
+                              <div className="flex items-center gap-1">
+                                <input type="number" min="0" value={row.count}
+                                  onChange={e=>updatePaySessionAdd(row.trainerId, { count:e.target.value })}
+                                  placeholder="0"
+                                  className="w-full bg-slate-800 border border-slate-700 text-slate-100 rounded-lg px-2 py-1.5 text-xs font-mono text-right"/>
+                                <span className="text-[11px] text-slate-500 flex-shrink-0">회</span>
+                              </div>
+                              <select value={row.classType}
+                                onChange={e=>updatePaySessionAdd(row.trainerId, { classType:e.target.value })}
+                                className="w-full bg-slate-800 border border-slate-700 text-slate-100 rounded-lg px-2 py-1.5 text-xs">
+                                <option value="">수업종류</option>
+                                {typeOptions.map(ct => <option key={ct} value={ct}>{ct}</option>)}
+                              </select>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
                   <div>
                     <label className={LBL}>매출 구분</label>
                     <div className="grid grid-cols-3 gap-2">

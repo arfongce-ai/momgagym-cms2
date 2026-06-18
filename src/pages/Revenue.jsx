@@ -546,14 +546,6 @@ function SettleTab({ settings, trainers, trainerMap }) {
     getOverride: (tid, m) => store.getSettleOverride(tid, m),
   }), [trainers, members, schedules, allPaymentsGrouped, records, settings, ym, refreshKey]);
 
-  const monthOptions = useMemo(()=>{
-    const set = new Set();
-    store.getMembers().forEach(m=>(store.getPayments(m.id)||[]).forEach(p=>p.paidAt&&set.add(p.paidAt.slice(0,7))));
-    store.getSchedules().forEach(s=>s.date&&set.add(s.date.slice(0,7)));
-    set.add(ym);
-    return [...set].sort().reverse();
-  }, [ym, refreshKey]);
-
   // ── 이 달 정산비율 확정(재박제) ───────────────────────────────────
   // 선택한 달(ym)에 결제가 발생한 회원들의 splitRateAtPay를, 그 달 전체 실적으로
   // 다시 판정해 갱신한다. 다른 달 결제는 건드리지 않는다.
@@ -626,10 +618,6 @@ function SettleTab({ settings, trainers, trainerMap }) {
       <div className="flex items-center gap-2 flex-wrap">
         <input type="month" value={ym} onChange={e=>setYm(e.target.value)}
           className="bg-slate-900 border border-slate-700 text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-amber-500"/>
-        <select value={ym} onChange={e=>setYm(e.target.value)}
-          className="bg-slate-900 border border-slate-700 text-slate-100 rounded-lg px-2 py-2 text-sm">
-          {monthOptions.map(m=><option key={m} value={m}>{m}</option>)}
-        </select>
         <span className="text-[11px] text-slate-500 ml-auto">임금지급일: 매월 {settings.paydayDay||5}일</span>
         <button onClick={handleRefreeze} disabled={freezing}
           className="px-3 py-2 rounded-lg text-xs font-bold bg-amber-500/10 border border-amber-500/40 text-amber-400 hover:bg-amber-500/20 transition-colors disabled:opacity-40">

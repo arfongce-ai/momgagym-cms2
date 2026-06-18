@@ -332,6 +332,18 @@ export const store = {
     try { await fbSet('payments', np.id, {...np, __mid:mid}); return np; }
     catch(e){ cache.payments[mid]=prev; throw e; }
   },
+  addPaymentWithMemberUpdate: async (mid,p,memberPatch={}) => {
+    const np = { ...p, id:uid('p') };
+    const member = cache.members.find(m=>m.id===mid);
+    const updatedMember = member ? { ...member, ...memberPatch } : null;
+    const batch = writeBatch(db);
+    batch.set(doc(db,'payments',np.id), { ...np, __mid:mid });
+    if (updatedMember) batch.set(doc(db,'members',mid), updatedMember);
+    await batch.commit();
+    cache.payments[mid]=[...(cache.payments[mid]||[]), np];
+    if (updatedMember) cache.members=cache.members.map(m=>m.id===mid?updatedMember:m);
+    return np;
+  },
   updatePayment: async (mid,pid,patch) => {
     const prev=cache.payments[mid];
     cache.payments[mid]=(cache.payments[mid]||[]).map(p=>p.id===pid?{...p,...patch}:p);

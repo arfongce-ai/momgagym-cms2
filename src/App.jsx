@@ -11,6 +11,7 @@ import Schedule from './pages/Schedule';
 import Settings from './pages/Settings';
 import AiMeasureHub from './ai-measure/AiMeasureHub';
 import Report from './pages/Report';
+import TodayScheduleMorningAlert from './components/schedule/TodayScheduleMorningAlert';
 
 function RequireAuth({ children, adminOnly = false }) {
   const { user, loading } = useAuth();
@@ -46,6 +47,7 @@ function AppRoutes() {
       <Route path="/*" element={
         <RequireAuth>
           <AppLayout darkMode={darkMode}>
+            <TodayScheduleMorningAlert user={user} />
             <div className="page-fade">
               <Routes>
                 <Route path="/"         element={<Home />} />
