@@ -988,11 +988,25 @@ function RecordManager({ trainers, period, mode, onChange }) {
 }
 
 /* ─────────────────────────────── 지출 ─────────────────────────────── */
+// 가변 지출(매달 내지만 금액이 달라지는 항목) 분류. 연도별 비교의 기준이 된다.
+const EXPENSE_CATEGORIES = ['관리비','전기세','수도세','세금','임대료','통신비','기타'];
+// 기존 데이터(category 없음) 호환: 항목명으로 분류를 추론한다.
+function inferCategory(e) {
+  if (e.category) return e.category;
+  const n = (e.name||'') + ' ' + (e.note||'');
+  if (/전기/.test(n)) return '전기세';
+  if (/수도|관리비/.test(n)) return /수도/.test(n) ? '수도세' : '관리비';
+  if (/세무|원천|부가|세금|소득세|지방세/.test(n)) return '세금';
+  if (/임대|월세|렌트/.test(n)) return '임대료';
+  if (/인터넷|통신|폰|cctv/i.test(n)) return '통신비';
+  return '기타';
+}
+
 function ExpenseTab() {
   const [, force] = useState(0);
   const [selMonth, setSelMonth] = useState(thisMonth);
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({ kind:'monthly', name:'', amount:'', ym:thisMonth, date:todayYMD(), note:'' });
+  const [form, setForm] = useState({ kind:'monthly', category:'관리비', name:'', amount:'', ym:thisMonth, date:todayYMD(), note:'' });
 
   const expenses = store.getExpenses();
   const fixed   = expenses.filter(e=>e.kind==='fixed');
@@ -1011,14 +1025,60 @@ function ExpenseTab() {
     if (!form.name.trim() || !form.amount) { alert('항목명과 금액을 입력하세요.'); return; }
     try {
       const payload = form.kind==='fixed'
-        ? { kind:'fixed', name:form.name, amount:Number(form.amount), note:form.note }
-        : { kind:'monthly', name:form.name, amount:Number(form.amount), ym:form.ym, date:form.date, note:form.note };
+        ? { kind:'fixed', category:form.category, name:form.name, amount:Number(form.amount), note:form.note }
+        : { kind:'monthly', category:form.category, name:form.name, amount:Number(form.amount), ym:form.ym, date:form.date, note:form.note };
       await store.addExpense(payload);
-      setForm({ kind:form.kind, name:'', amount:'', ym:selMonth, date:todayYMD(), note:'' });
+      setForm({ kind:form.kind, category:form.category, name:'', amount:'', ym:selMonth, date:todayYMD(), note:'' });
       setOpen(false); force(n=>n+1);
     } catch(e){ alert('추가 실패'); }
   };
   const del = async (id) => { if(!window.confirm('삭제할까요?'))return; try{ await store.deleteExpense(id); force(n=>n+1);}catch(e){alert('삭제 실패');} };
+
+  // ── 지출 내보내기 (엑셀에서 열 수 있는 CSV) ──────────────────────────
+  const exportCSV = () => {
+    const all = store.getExpenses();
+    const header = ['종류','분류','항목명','귀속월','지출일','금액','메모'];
+    const kindLabel = (k)=> k==='fixed' ? '고정비' : '월별';
+    const body = all
+      .slice()
+      .sort((a,b)=> (b.ym||'').localeCompare(a.ym||'') || (a.category||'').localeCompare(b.category||''))
+      .map(e=>[ kindLabel(e.kind), inferCategory(e), e.name||'', e.ym||'', e.date||'', e.amount||0, e.note||'' ]);
+    downloadCSV(`지출내역_${todayYMD()}.csv`, [header, ...body]);
+  };
+
+  // ── 지출 일괄 가져오기 (엑셀에서 복사한 JSON/표 붙여넣기) ──────────────
+  const [importOpen, setImportOpen] = useState(false);
+  const [importText, setImportText] = useState('');
+  const [importing, setImporting] = useState(false);
+  // 붙여넣은 텍스트를 파싱: JSON 배열 또는 "분류[탭]항목[탭]귀속월(YYYY-MM)[탭]금액" 표 형식 모두 허용
+  const parseImport = (text) => {
+    const t = text.trim();
+    if (!t) return [];
+    if (t.startsWith('[') || t.startsWith('{')) {
+      const arr = JSON.parse(t);
+      return Array.isArray(arr) ? arr : [arr];
+    }
+    // 표 형식(탭/콤마 구분): 분류, 항목명, 귀속월, 금액 [, 메모]
+    return t.split(/\r?\n/).map(line => line.trim()).filter(Boolean).map(line => {
+      const c = line.split(/\t|,/).map(s => s.trim());
+      const [category, name, ym, amount, note] = c;
+      return { kind:'monthly', category, name, ym, amount, note };
+    }).filter(e => e.ym && e.amount);
+  };
+  const runImport = async () => {
+    let list;
+    try { list = parseImport(importText); }
+    catch (e) { alert('형식을 해석할 수 없습니다. JSON 배열이거나, 한 줄에 [분류, 항목, 귀속월(2026-01), 금액] 형태여야 합니다.'); return; }
+    if (!list.length) { alert('가져올 내역이 없습니다.'); return; }
+    if (!window.confirm(`${list.length}건을 가져옵니다. (이미 등록된 동일 내역은 자동으로 건너뜁니다.)\n진행할까요?`)) return;
+    setImporting(true);
+    try {
+      const res = await store.addExpenseBatch(list);
+      alert(`가져오기 완료\n· 추가: ${res.added}건\n· 중복 제외: ${res.skipped}건`);
+      setImportText(''); setImportOpen(false); force(n=>n+1);
+    } catch (e) { alert('가져오기 중 오류가 발생했습니다. 네트워크 확인 후 다시 시도하세요.'); }
+    finally { setImporting(false); }
+  };
 
   return (
     <div className="space-y-5">
@@ -1027,8 +1087,32 @@ function ExpenseTab() {
           className="bg-slate-900 border border-slate-700 text-slate-100 rounded-lg px-3 py-2 text-sm">
           {months.map(m=><option key={m} value={m}>{m.replace('-','년 ')}월</option>)}
         </select>
-        <button onClick={()=>setOpen(!open)} className="text-xs text-amber-400 hover:text-amber-300 font-semibold">+ 지출 추가</button>
+        <div className="flex items-center gap-3">
+          <button onClick={exportCSV} className="text-xs text-emerald-400 hover:text-emerald-300 font-semibold">📤 내보내기</button>
+          <button onClick={()=>setImportOpen(!importOpen)} className="text-xs text-blue-400 hover:text-blue-300 font-semibold">📥 일괄 가져오기</button>
+          <button onClick={()=>setOpen(!open)} className="text-xs text-amber-400 hover:text-amber-300 font-semibold">+ 지출 추가</button>
+        </div>
       </div>
+
+      {importOpen && (
+        <div className="bg-slate-900 border border-blue-500/20 rounded-2xl p-4 space-y-3">
+          <p className="text-sm font-bold text-blue-400">📥 지출 일괄 가져오기</p>
+          <p className="text-[11px] text-slate-400 leading-relaxed">
+            아래 칸에 <b className="text-slate-200">JSON 배열</b>을 붙여넣거나, 한 줄에 <b className="text-slate-200">분류 · 항목명 · 귀속월(2026-01) · 금액</b>을
+            탭이나 콤마로 구분해 붙여넣으세요. 이미 등록된 동일 내역(분류·귀속월·항목·금액이 모두 같음)은 자동으로 건너뜁니다.
+          </p>
+          <textarea value={importText} onChange={e=>setImportText(e.target.value)} rows={6}
+            placeholder={'예) 전기세, 301·302호 전기세, 2026-01, 414910\n또는 JSON: [{"category":"전기세","name":"전기세","ym":"2026-01","amount":414910}]'}
+            className="w-full bg-slate-800 border border-slate-700 text-slate-100 rounded-lg px-3 py-2 text-xs font-mono"/>
+          <div className="flex gap-2 justify-end">
+            <button onClick={()=>setImportOpen(false)} className="text-xs text-slate-400 hover:text-white px-3 py-2">취소</button>
+            <button onClick={runImport} disabled={importing}
+              className="bg-blue-500 hover:bg-blue-400 text-slate-950 font-bold px-4 py-2 rounded-lg text-sm disabled:opacity-40">
+              {importing ? '가져오는 중…' : '가져오기'}
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-3 gap-3">
         <Card label="고정비" value={won(fixedTotal)} color="text-orange-400" sub="매월 반복"/>
@@ -1045,11 +1129,21 @@ function ExpenseTab() {
             ))}
           </div>
           <div className="grid grid-cols-2 gap-2">
-            <input value={form.name} onChange={e=>setForm({...form,name:e.target.value})} placeholder="항목명 (예: 임대료)"
-              className="bg-slate-800 border border-slate-700 text-slate-100 rounded-lg px-3 py-2 text-sm"/>
-            <input type="number" value={form.amount} onChange={e=>setForm({...form,amount:e.target.value})} placeholder="금액"
-              className="bg-slate-800 border border-slate-700 text-slate-100 rounded-lg px-3 py-2 text-sm font-mono"/>
+            <div>
+              <label className="text-[11px] text-slate-500">분류</label>
+              <select value={form.category} onChange={e=>setForm({...form,category:e.target.value})}
+                className="w-full bg-slate-800 border border-slate-700 text-slate-100 rounded-lg px-3 py-2 text-sm">
+                {EXPENSE_CATEGORIES.map(c=><option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-[11px] text-slate-500">금액</label>
+              <input type="number" value={form.amount} onChange={e=>setForm({...form,amount:e.target.value})} placeholder="금액"
+                className="w-full bg-slate-800 border border-slate-700 text-slate-100 rounded-lg px-3 py-2 text-sm font-mono"/>
+            </div>
           </div>
+          <input value={form.name} onChange={e=>setForm({...form,name:e.target.value})} placeholder="항목명 (예: 301호·302호 전기세)"
+            className="w-full bg-slate-800 border border-slate-700 text-slate-100 rounded-lg px-3 py-2 text-sm"/>
           {form.kind==='monthly' && (
             <div className="grid grid-cols-2 gap-2">
               <div>
@@ -1077,6 +1171,8 @@ function ExpenseTab() {
       <ExpenseList title="🔁 고정비 (매월 반복)" items={fixed} onDelete={del}/>
       {/* 월별 지출 목록 */}
       <ExpenseList title={`📅 ${selMonth} 월별 지출`} items={monthly} onDelete={del} showDate/>
+      {/* 연도별 비교 그래프 (관리비·전기세·세금 등 가변 지출 추세) */}
+      <ExpenseYearlyCompare expenses={expenses}/>
     </div>
   );
 }
@@ -1092,6 +1188,7 @@ function ExpenseList({ title, items, onDelete, showDate }) {
               <div key={e.id} className="flex items-center gap-3 p-3 bg-slate-800/60 rounded-xl">
                 <div className="flex-1 min-w-0">
                   <span className="font-semibold text-sm">{e.name}</span>
+                  {e.category && <span className="text-[10px] ml-2 px-1.5 py-0.5 rounded bg-slate-700/60 text-slate-300">{inferCategory(e)}</span>}
                   {showDate && e.date && <span className="text-[11px] text-slate-500 ml-2">{e.date}</span>}
                   {e.note && <p className="text-xs text-slate-500 mt-0.5">{e.note}</p>}
                 </div>
@@ -1100,6 +1197,151 @@ function ExpenseList({ title, items, onDelete, showDate }) {
               </div>
             ))}
           </div>}
+    </div>
+  );
+}
+
+// 연도별 비교 그래프 — 같은 항목(전기세 등)이 해마다 어떻게 변하는지 월별 라인으로 비교
+const YEAR_COLORS = ['#f59e0b','#10b981','#3b82f6','#a855f7','#ef4444','#14b8a6','#eab308','#ec4899','#64748b'];
+function ExpenseYearlyCompare({ expenses }) {
+  const monthlyExp = useMemo(()=> (expenses||[]).filter(e=>e.kind==='monthly' && e.ym), [expenses]);
+  // 분류 목록(데이터에 존재하는 것만) + '전체'
+  const cats = useMemo(()=>{
+    const s = new Set(monthlyExp.map(inferCategory));
+    return ['전체', ...EXPENSE_CATEGORIES.filter(c=>s.has(c))];
+  }, [monthlyExp]);
+  const [cat, setCat] = useState('전체');
+
+  // year -> month(1~12) -> 합계
+  const { years, table, maxVal } = useMemo(()=>{
+    const filtered = cat==='전체' ? monthlyExp : monthlyExp.filter(e=>inferCategory(e)===cat);
+    const map = {}; // year -> [12]
+    filtered.forEach(e=>{
+      const [y,m] = e.ym.split('-').map(Number);
+      if (!y || !m) return;
+      (map[y] = map[y] || Array(12).fill(0))[m-1] += Number(e.amount)||0;
+    });
+    const years = Object.keys(map).map(Number).sort();
+    let maxVal = 0;
+    years.forEach(y=>map[y].forEach(v=>{ if(v>maxVal) maxVal=v; }));
+    return { years, table: map, maxVal: maxVal||1 };
+  }, [monthlyExp, cat]);
+
+  if (monthlyExp.length===0) {
+    return (
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
+        <h2 className="font-bold text-sm uppercase tracking-widest text-slate-400 mb-2">📊 연도별 비교</h2>
+        <p className="text-slate-600 text-sm text-center py-4">월별 지출(관리비·전기세·세금 등)을 추가하면 연도별 추세 그래프가 표시됩니다.</p>
+      </div>
+    );
+  }
+
+  // SVG 좌표
+  const W=680, H=240, padL=56, padR=16, padT=16, padB=28;
+  const plotW=W-padL-padR, plotH=H-padT-padB;
+  const x = (m)=> padL + (plotW*(m)/(11));        // m: 0~11
+  const y = (v)=> padT + plotH*(1 - v/maxVal);
+  const MONTHS = ['1','2','3','4','5','6','7','8','9','10','11','12'];
+
+  // 연도별 합계·평균(0 제외 평균)
+  const stat = (arr)=>{
+    const sum = arr.reduce((s,v)=>s+v,0);
+    const nz = arr.filter(v=>v>0);
+    return { sum, avg: nz.length ? Math.round(sum/nz.length) : 0 };
+  };
+
+  return (
+    <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-4">
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <h2 className="font-bold text-sm uppercase tracking-widest text-slate-400">📊 연도별 비교 — 월별 추세</h2>
+        <select value={cat} onChange={e=>setCat(e.target.value)}
+          className="bg-slate-800 border border-slate-700 text-slate-100 rounded-lg px-3 py-1.5 text-xs">
+          {cats.map(c=><option key={c} value={c}>{c}</option>)}
+        </select>
+      </div>
+
+      {/* 라인 차트 */}
+      <div className="overflow-x-auto">
+        <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{minWidth:560}}>
+          {/* y 그리드 4단계 */}
+          {[0,0.25,0.5,0.75,1].map((t,i)=>{
+            const gy = padT + plotH*(1-t);
+            return (
+              <g key={i}>
+                <line x1={padL} y1={gy} x2={W-padR} y2={gy} stroke="#1e293b" strokeWidth="1"/>
+                <text x={padL-6} y={gy+3} textAnchor="end" fontSize="9" fill="#64748b">
+                  {Math.round(maxVal*t/10000)}만
+                </text>
+              </g>
+            );
+          })}
+          {/* x축 월 라벨 */}
+          {MONTHS.map((m,i)=>(
+            <text key={m} x={x(i)} y={H-8} textAnchor="middle" fontSize="9" fill="#64748b">{m}</text>
+          ))}
+          {/* 연도별 라인 */}
+          {years.map((yr,idx)=>{
+            const arr = table[yr];
+            const color = YEAR_COLORS[idx % YEAR_COLORS.length];
+            // 0(미입력)은 선을 끊어 잇지 않도록 세그먼트 분리
+            const pts = arr.map((v,m)=> v>0 ? `${x(m)},${y(v)}` : null);
+            const segs = []; let cur=[];
+            pts.forEach(p=>{ if(p){cur.push(p);} else { if(cur.length)segs.push(cur); cur=[]; } });
+            if(cur.length) segs.push(cur);
+            return (
+              <g key={yr}>
+                {segs.map((sg,si)=>(
+                  <polyline key={si} points={sg.join(' ')} fill="none" stroke={color} strokeWidth="2"
+                    strokeLinejoin="round" strokeLinecap="round" opacity="0.9"/>
+                ))}
+                {arr.map((v,m)=> v>0 ? <circle key={m} cx={x(m)} cy={y(v)} r="2.5" fill={color}/> : null)}
+              </g>
+            );
+          })}
+        </svg>
+      </div>
+
+      {/* 범례 */}
+      <div className="flex flex-wrap gap-3">
+        {years.map((yr,idx)=>(
+          <span key={yr} className="flex items-center gap-1.5 text-[11px] text-slate-400">
+            <span className="w-3 h-0.5 rounded" style={{background:YEAR_COLORS[idx%YEAR_COLORS.length]}}/>
+            {yr}
+          </span>
+        ))}
+      </div>
+
+      {/* 연도별 합계·평균 요약표 */}
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="text-slate-500 border-b border-slate-800">
+              <th className="text-left font-semibold py-1.5">연도</th>
+              {MONTHS.map(m=><th key={m} className="text-right font-semibold px-1">{m}월</th>)}
+              <th className="text-right font-semibold pl-2">합계</th>
+              <th className="text-right font-semibold pl-2">평균</th>
+            </tr>
+          </thead>
+          <tbody>
+            {years.map(yr=>{
+              const arr = table[yr]; const s = stat(arr);
+              return (
+                <tr key={yr} className="border-b border-slate-800/50">
+                  <td className="py-1.5 text-slate-200 font-bold">{yr}</td>
+                  {arr.map((v,m)=>(
+                    <td key={m} className="text-right font-mono text-slate-400 px-1">
+                      {v>0 ? Math.round(v/10000) : '·'}
+                    </td>
+                  ))}
+                  <td className="text-right font-mono font-bold text-amber-400 pl-2">{Math.round(s.sum/10000)}만</td>
+                  <td className="text-right font-mono text-emerald-400 pl-2">{Math.round(s.avg/10000)}만</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <p className="text-[11px] text-slate-600">* 표 안의 월별 값은 만원 단위 반올림 · 평균은 지출이 있던 달만 계산 · 선이 끊긴 구간은 미입력 월입니다.</p>
     </div>
   );
 }

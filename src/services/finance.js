@@ -111,7 +111,7 @@ export function computeMonthRates({ trainers, members, payments, records, settin
     const ts = m.trainerSessions || {};
     const tids = Object.keys(ts);
     const totalReg = Object.values(ts).reduce((s,v)=>s+(v.total||0),0);
-    (payments[m.id]||[]).filter(p=>!p.isUnpaid && !p.isRefunded && inMonth(p.paidAt)).forEach(p=>{
+    (payments[m.id]||[]).filter(p=>!p.isUnpaid && !p.isRefunded && !p.isMonthly && inMonth(p.paidAt)).forEach(p=>{
       const amt = calcNet(p, settings).net;
       // 트레이너별 귀속분을 [tid, part]로 산출
       const parts = [];
@@ -228,7 +228,8 @@ export function computeSessionSettlement({ trainers, members, schedules, payment
     // 환불 결제도 단가 계산에는 포함한다(이미 수업한 진행분은 트레이너 정산에 남김).
     //  · 단가×출석횟수 모델이라, 환불해도 '출석한 회차'만큼만 자동 지급됨(미진행분은 출석 0이라 미지급).
     //  · 미수금(isUnpaid)만 제외. 환불 결제의 매출 차감은 아래 trainerMonthNet에서 별도 처리.
-    (payments[m.id]||[]).filter(p=>!p.isUnpaid).forEach(p=>{
+    //  · 월정액 결제(isMonthly)는 트레이너 정산에서 제외 → 센터 수익으로만 합산된다.
+    (payments[m.id]||[]).filter(p=>!p.isUnpaid && !p.isMonthly).forEach(p=>{
       const amt = calcNet(p, settings).net; // 카드1·2: 부가세+카드세 / 페이·현금영수증: 부가세 / 계좌·현금: 공제 없음
       const isMonth = inMonth(p.paidAt);     // 폴백 정산비율은 "그 달 결제"만 반영
       const pTids = (p.trainerIds && p.trainerIds.length) ? p.trainerIds : null;

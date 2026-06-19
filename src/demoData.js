@@ -411,24 +411,29 @@ export const store = {
   // 일반 수업(회원+트레이너, 비외부)만 차감. 하나라도 실패하면 전체 실패.
   createScheduleWithDeduction: async (scheduleData) => {
     const ns = { ...scheduleData, id: uid('s') };
+    // 세션 슬롯이 있는 회원·트레이너만 차감 대상.
+    //  · 월정액만 있는 회원은 trainerSessions에 해당 슬롯이 없어 자동으로 차감되지 않는다.
+    //  · 세션 수업과 월정액을 함께 보유한 회원도, 세션 슬롯이 있으면 그 수업은 정상 차감된다.
     const isDeductible = !ns.isExternal && ns.memberId && ns.trainerId;
     const batch = writeBatch(db);
 
     let updatedMember = null;
     if (isDeductible) {
       const member = cache.members.find(m=>m.id===ns.memberId);
-      if (member) {
+      if (member && member.trainerSessions?.[ns.trainerId]) {
         const ts = JSON.parse(JSON.stringify(member.trainerSessions||{}));
-        if (ts[ns.trainerId]) {
-          // ★ 회차표기: 차감 직전 잔여값 = 이 수업의 회차 번호. 총횟수와 함께 기록.
-          ns.sessionAtBooking      = ts[ns.trainerId].remaining ?? null;
-          ns.sessionTotalAtBooking = ts[ns.trainerId].total ?? null;
-          ts[ns.trainerId].remaining = Math.max(0, ts[ns.trainerId].remaining - 1);
-        }
+        // ★ 회차표기: 차감 직전 잔여값 = 이 수업의 회차 번호. 총횟수와 함께 기록.
+        ns.sessionAtBooking      = ts[ns.trainerId].remaining ?? null;
+        ns.sessionTotalAtBooking = ts[ns.trainerId].total ?? null;
+        ts[ns.trainerId].remaining = Math.max(0, ts[ns.trainerId].remaining - 1);
         updatedMember = { ...member, trainerSessions: ts };
         ns.sessionDeducted = true;
         batch.set(doc(db,'members',ns.memberId), updatedMember);
+      } else {
+        ns.sessionDeducted = false; // 세션 슬롯 없음(월정액 등) → 차감 안 함
       }
+    } else {
+      ns.sessionDeducted = false;
     }
     batch.set(doc(db,'schedules',ns.id), ns);
     await batch.commit();   // 예약+차감이 함께 성공하거나 함께 실패
@@ -518,6 +523,37 @@ export const store = {
     cache.expenses = [...cache.expenses, ne];
     try { await fbSet('expenses', ne.id, ne); return ne; }
     catch(err){ cache.expenses = prev; throw err; }
+  },
+  // 지출 일괄 등록(엑셀 가져오기). 같은 분류·귀속월·항목명·금액이면 중복으로 보고 건너뛴다.
+  addExpenseBatch: async (list) => {
+    const prev = cache.expenses;
+    const key = (e) => `${e.kind||'monthly'}|${e.category||''}|${e.ym||''}|${(e.name||'').trim()}|${Number(e.amount)||0}`;
+    const existing = new Set(cache.expenses.map(key));
+    const toAdd = [];
+    for (const raw of list) {
+      const e = {
+        kind: raw.kind || 'monthly',
+        category: raw.category || '기타',
+        name: (raw.name || '').trim(),
+        amount: Number(raw.amount) || 0,
+        ym: raw.ym || '',
+        date: raw.date || (raw.ym ? `${raw.ym}-01` : todayYMD()),
+        note: raw.note || '',
+      };
+      if (!e.amount || (e.kind === 'monthly' && !e.ym)) continue; // 금액·귀속월 필수
+      const k = key(e);
+      if (existing.has(k)) continue; // 중복 스킵
+      existing.add(k);
+      toAdd.push({ ...e, id: uid('e') });
+    }
+    if (toAdd.length === 0) return { added: 0, skipped: list.length };
+    const batch = writeBatch(db);
+    toAdd.forEach(e => batch.set(doc(db, 'expenses', e.id), e));
+    try {
+      await batch.commit();
+      cache.expenses = [...cache.expenses, ...toAdd];
+      return { added: toAdd.length, skipped: list.length - toAdd.length };
+    } catch (err) { cache.expenses = prev; throw err; }
   },
   updateExpense: async (id, patch) => {
     const prev = cache.expenses;

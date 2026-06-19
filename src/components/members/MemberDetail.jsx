@@ -5,7 +5,7 @@
 // ✅ 트레이너별 세션 개별 카드
 import { useState, useEffect } from 'react';
 import { store } from '../../demoData';
-import { todayYMD } from '../../utils/dates';
+import { todayYMD, addMonthsYMD } from '../../utils/dates';
 import { useAuth } from '../../contexts/AuthContext';
 import { ClassTypeCheckbox } from './MemberRegister';
 import AiMeasureReport     from '../ai/AiMeasureReport';
@@ -382,6 +382,12 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
       newPayment.splitRateAtPay = splitRateAtPay;
 
       const memberPatch = { lastPaymentDate:payForm.paidAt };
+      // 월정액 회원: 결제하면 다음 결제 예정일을 한 달 뒤로 갱신 (monthly 객체 갱신)
+      if (member.monthly && member.monthly.active) {
+        const curDue = member.monthly.dueDate;
+        const base = (curDue && curDue >= payForm.paidAt) ? curDue : payForm.paidAt;
+        memberPatch.monthly = { ...member.monthly, dueDate: addMonthsYMD(1, base) };
+      }
       if (sessionAdds.length) {
         const fresh = store.getMembers().find(m=>m.id===member.id);
         const ts = JSON.parse(JSON.stringify(fresh?.trainerSessions||{}));
@@ -494,6 +500,8 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
                   {l:'생년월일',   v:member.birthDate||'미등록'},
                   {l:'주소',       v:member.address||'미등록'},
                   {l:'가입일',     v:member.joinDate||'미등록'},
+                  ...(member.monthly?.active
+                    ? [{l:'월정액', v:`${(member.monthly.fee||0).toLocaleString()}원 · 다음결제 ${member.monthly.dueDate||'미등록'}`}] : []),
                   {l:'최근결제일', v:member.lastPaymentDate||'미등록'},
                   {l:'최근출석일', v:member.lastAttendedDate||'미출석'},
                   {l:'수업종류',   v:(member.classTypes||[]).length?member.classTypes.join(', '):'미등록'},

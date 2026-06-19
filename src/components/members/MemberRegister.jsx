@@ -5,7 +5,7 @@
 // ✅ 생년월일 type=date
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { store } from '../../demoData';
-import { todayYMD } from '../../utils/dates';
+import { todayYMD, addMonthsYMD } from '../../utils/dates';
 
 const TERMS = `1. 건강 고지 의무\n회원은 부상 및 지병을 등록 전 반드시 고지해야 하며, 미고지 사항으로 인한 사고 및 합병증에 대해 센터는 책임을 지지 않습니다.\n\n2. 예약 및 수업 운영\n당일 취소·변경 불가. 전일 영업 종료 전까지 예약·변경 가능. 당일 취소·노쇼 시 횟수 자동 차감. 지각 시 연장 불가.\n\n3. 유효 기간 및 휴회\n등록일 기준 6개월 이내 소진(경과 시 자동 소멸). 휴회는 유효 기간 내 1회(최대 30일) 가능(사전 협의).\n\n4. 환불 및 양도\n환불 산정: [총 결제액] - [위약금 10%] - [진행 횟수 × 정상가] - [카드 수수료]. 타인 양도 절대 불가.\n\n5. 책임 및 동의\n본인 부주의 사고·분실물 책임 없음. 강사 변경 가능. 홍보 활용(사진·영상은 홍보·연구용).\n\n본인은 위 약관을 숙지하였으며 이에 동의합니다.`;
 
@@ -159,7 +159,11 @@ export default function MemberRegister({ trainers=[], onSuccess, onCancel }) {
     name:'', gender:'', phone:'', phone2:'', birthDate:'', address:'', job:'',
     joinDate:today, lastPaymentDate:null,
     memo:'',
-    // 2개 담당 트레이너 슬롯
+    // 월정액 병행 등록 (세션 슬롯과 독립적으로 함께 보유 가능)
+    monthlyOn:false,
+    monthlyFee:'',
+    monthlyDueDate: addMonthsYMD(1, today),
+    // 2개 담당 트레이너 슬롯 (세션 수업)
     trainerSlots: [{ ...EMPTY_SLOT }, { ...EMPTY_SLOT }],
   });
 
@@ -196,7 +200,7 @@ export default function MemberRegister({ trainers=[], onSuccess, onCancel }) {
     try {
       await new Promise(r => setTimeout(r, 400));
 
-      // trainerSessions 빌드
+      // 세션 수업 trainerSessions 빌드 (항상 처리 — 월정액과 독립)
       const trainerSessions = {};
       form.trainerSlots.forEach(slot => {
         if (slot.trainerId && slot.sessionTotal > 0) {
@@ -209,10 +213,17 @@ export default function MemberRegister({ trainers=[], onSuccess, onCancel }) {
         form.trainerSlots.flatMap(s => s.classTypes || [])
       )];
 
+      // 월정액 병행 등록 (켜진 경우에만)
+      const monthly = form.monthlyOn
+        ? { active:true, fee:Number(form.monthlyFee)||0, dueDate:form.monthlyDueDate, startDate:form.joinDate }
+        : null;
+
       await store.addMember({
         name:form.name, gender:form.gender, phone:form.phone, phone2:form.phone2,
         birthDate:form.birthDate, address:form.address, job:form.job,
-        joinDate:form.joinDate, lastPaymentDate:null,
+        joinDate:form.joinDate,
+        lastPaymentDate: monthly ? form.joinDate : null,
+        monthly,
         lastAttendedDate:null, memo:form.memo,
         classTypes, trainerSessions,
         signatureUrl:getDataUrl(), isActive:true,
@@ -292,9 +303,9 @@ export default function MemberRegister({ trainers=[], onSuccess, onCancel }) {
                 </div>
               </div>
 
-              {/* 트레이너 슬롯 2개 */}
+              {/* 트레이너 슬롯 2개 (세션 수업) */}
               <div className="space-y-3">
-                <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">담당 트레이너 등록 (최대 2명)</p>
+                <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">담당 트레이너 · 세션 수업 (최대 2명)</p>
                 {form.trainerSlots.map((slot, idx) => (
                   <TrainerSlot
                     key={idx}
@@ -305,6 +316,34 @@ export default function MemberRegister({ trainers=[], onSuccess, onCancel }) {
                     onChange={patch => updateSlot(idx, patch)}
                   />
                 ))}
+                <p className="text-[11px] text-slate-500">세션이 없는 회원(월정액만)이라면 비워 두세요.</p>
+              </div>
+
+              {/* 월정액 병행 등록 (세션과 동시 보유 가능) */}
+              <div className="space-y-2.5 bg-violet-500/5 border border-violet-500/20 rounded-xl p-3">
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <span onClick={()=>setForm(f=>({...f, monthlyOn:!f.monthlyOn}))}
+                    className={`w-5 h-5 rounded flex items-center justify-center border transition-colors ${form.monthlyOn?'bg-violet-500 border-violet-500':'border-slate-600 bg-slate-800'}`}>
+                    {form.monthlyOn && <svg className="w-3 h-3 text-white" viewBox="0 0 10 8" fill="none"><path d="M1 4l3 3 5-6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+                  </span>
+                  <span className="text-sm font-bold text-violet-300" onClick={()=>setForm(f=>({...f, monthlyOn:!f.monthlyOn}))}>월정액 등록 (세션과 별개)</span>
+                </label>
+                {form.monthlyOn && (
+                  <div className="grid grid-cols-2 gap-2 pt-1">
+                    <div>
+                      <label className={LBL}>월 회비 (원)</label>
+                      <input type="number" value={form.monthlyFee} onChange={pf('monthlyFee')} placeholder="예: 100000" className={INP+" font-mono"}/>
+                    </div>
+                    <div>
+                      <label className={LBL}>다음 결제 예정일</label>
+                      <input type="date" value={form.monthlyDueDate} onChange={pf('monthlyDueDate')} className={INP}/>
+                    </div>
+                    <p className="col-span-2 text-[11px] text-slate-500">
+                      월정액은 수업 횟수가 차감되지 않고, <b className="text-slate-300">트레이너 정산에 포함되지 않습니다</b>(센터 수익으로 합산).
+                      결제 예정일 7일 전부터 “결제 만료”에 표시됩니다.
+                    </p>
+                  </div>
+                )}
               </div>
 
               {/* 메모 */}

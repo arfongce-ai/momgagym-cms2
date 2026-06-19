@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { store } from '../demoData';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { toYMD, todayYMD, daysAgoYMD } from '../utils/dates';
+import { toYMD, todayYMD, daysAgoYMD, isMemberExpired } from '../utils/dates';
 
 function fmtDate(d) {
   return new Date(d).toLocaleDateString('ko-KR',{month:'long',day:'numeric',weekday:'short'});
@@ -145,7 +145,7 @@ export default function Home() {
   }).length;
 
   // 결제 만료: 담당(또는 전체) 회원 중 마지막 결제일이 1년 이전
-  const expiredCnt = myMembers.filter(m => m.lastPaymentDate && m.lastPaymentDate < oneYearAgo).length;
+  const expiredCnt = myMembers.filter(m => isMemberExpired(m)).length;
 
   return (
     <div className="space-y-5">

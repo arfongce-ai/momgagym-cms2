@@ -2,7 +2,7 @@
 // ✅ 요구사항1: 잔여 횟수 트레이너별 분리 배지 표시 (총합 금지)
 import { useState, useEffect, useCallback } from 'react';
 import { store } from '../demoData';
-import { todayYMD, daysAgoYMD } from '../utils/dates';
+import { todayYMD, daysAgoYMD, isMemberExpired, isMonthlyActive, monthlyDueOf } from '../utils/dates';
 import { useAuth } from '../contexts/AuthContext';
 import MemberRegister from '../components/members/MemberRegister';
 import MemberDetail   from '../components/members/MemberDetail';
@@ -48,15 +48,15 @@ export default function Members() {
     if (phoneFilter && !m.phone.replace(/-/g,'').endsWith(phoneFilter.replace(/-/g,''))) return false;
     if (trainerFilter && !Object.keys(m.trainerSessions||{}).includes(trainerFilter)) return false;
     if (lowSession && !Object.values(m.trainerSessions||{}).some(s => s.remaining<=5 && s.remaining>0)) return false;
-    if (expiredFilter && (!m.lastPaymentDate || m.lastPaymentDate >= oneYearAgo)) return false;
+    if (expiredFilter && !isMemberExpired(m)) return false;
     return true;
   });
 
-  const isExpired = m => m.lastPaymentDate && m.lastPaymentDate < oneYearAgo;
+  const isExpired = m => isMemberExpired(m);
 
   const trainerMap = Object.fromEntries(trainers.map(t=>[t.id,t.name]));
   const exportMembers = () => {
-    const header = ['이름','성별','연락처','연락처2','생년월일','주소','가입일','최근결제일','담당트레이너/잔여세션','총결제액','수업종류','메모','상태'];
+    const header = ['이름','성별','연락처','연락처2','생년월일','주소','가입일','월정액','다음결제예정일','월회비','최근결제일','담당트레이너/잔여세션','총결제액','수업종류','메모','상태'];
     const body = filtered.map(m=>{
       const sessions = Object.entries(m.trainerSessions||{})
         .map(([tid,s])=>`${trainerMap[tid]||'?'} ${s.remaining}/${s.total}`).join(' | ');
@@ -65,8 +65,13 @@ export default function Members() {
       return [
         m.name, m.gender==='male'?'남':m.gender==='female'?'여':'',
         m.phone||'', m.phone2||'', m.birthDate||'', m.address||'',
-        m.joinDate||'', m.lastPaymentDate||'',
-        sessions, totalPaid, (m.classTypes||[]).join('/'), m.memo||'',
+        m.joinDate||'',
+        isMonthlyActive(m)?'월정액':'',
+        isMonthlyActive(m)?(monthlyDueOf(m)||''):'',
+        isMonthlyActive(m)?(m.monthly?.fee||''):'',
+        m.lastPaymentDate||'',
+        sessions,
+        totalPaid, (m.classTypes||[]).join('/'), m.memo||'',
         isExpired(m)?'결제만료':'정상',
       ];
     });
@@ -163,13 +168,23 @@ export default function Members() {
                       <span className={`font-semibold text-sm ${expired ? 'text-red-400' : 'text-slate-100'}`}>
                         {m.name}{expired && ' ⚠️'}
                       </span>
+                      {isMonthlyActive(m) && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-violet-500/20 text-violet-300 font-bold border border-violet-500/30">월정액</span>
+                      )}
                     </div>
                     <p className="text-slate-500 text-xs mt-0.5 truncate">{m.phone} · {classes}</p>
                   </div>
 
-                  {/* ★ 트레이너별 세션 배지 — 오른쪽 칸, 트레이너명 전체 표시(잘림 없음) */}
-                  <div className="flex-shrink-0">
-                    <TrainerBadge trainerSessions={m.trainerSessions} trainers={trainers} compact />
+                  {/* 오른쪽: 세션 잔여 배지 + (월정액이면) 다음 결제일 */}
+                  <div className="flex-shrink-0 text-right space-y-0.5">
+                    {Object.keys(m.trainerSessions||{}).length>0 && (
+                      <TrainerBadge trainerSessions={m.trainerSessions} trainers={trainers} compact />
+                    )}
+                    {isMonthlyActive(m) && (
+                      <p className={`text-[11px] font-mono ${expired?'text-red-400':'text-violet-300'}`}>
+                        월정액 결제일 {monthlyDueOf(m) || '-'}
+                      </p>
+                    )}
                   </div>
                 </div>
               );
