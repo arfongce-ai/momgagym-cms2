@@ -662,6 +662,7 @@ function SettleTab({ settings, trainers, trainerMap }) {
 
 // 트레이너별 정산 카드 (회원 단가/횟수 직접 수정 가능)
 function TrainerSettleCard({ block: b, ym, settings, onSaved }) {
+  const [collapsed, setCollapsed] = useState(true);  // 기본: 접힘(이름만)
   const [editing, setEditing] = useState(false);
   const [unitEdits, setUnitEdits] = useState({});   // memberId -> 단가
   const [cntEdits, setCntEdits]   = useState({});   // memberId -> 횟수
@@ -676,6 +677,7 @@ function TrainerSettleCard({ block: b, ym, settings, onSaved }) {
     // 홍보 횟수는 실시간 집계(auto)값을 기준으로 보여준다.
     // (과거 override로 고정된 값이 아니라 실제 기록 개수에서 시작 → 안 건드리면 실시간값 유지)
     setBlog(b.autoBlogCount); setInsta(b.autoInstaCount); setStudy(b.autoStudyCount);
+    setCollapsed(false);  // 수정하려면 펼쳐야 함
     setEditing(true);
   };
   const save = async () => {
@@ -752,10 +754,13 @@ function TrainerSettleCard({ block: b, ym, settings, onSaved }) {
 
   return (
     <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
-      <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="w-3 h-3 rounded-full" style={{background:b.trainer.color||'#94a3b8'}}/>
-          <span className="font-bold">{b.trainer.name}</span>
+      <div className={`flex items-center justify-between ${collapsed?'':'mb-3'}`}>
+        <button type="button" onClick={()=>setCollapsed(c=>!c)}
+          className="flex items-center gap-2 flex-wrap min-w-0 text-left flex-1 group"
+          title={collapsed?'펼치기':'접기'} aria-expanded={!collapsed}>
+          <span className={`text-slate-500 group-hover:text-amber-400 transition-transform text-xs flex-shrink-0 ${collapsed?'':'rotate-90'}`}>▶</span>
+          <span className="w-3 h-3 rounded-full flex-shrink-0" style={{background:b.trainer.color||'#94a3b8'}}/>
+          <span className="font-bold group-hover:text-amber-400 transition-colors">{b.trainer.name}</span>
           <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold border ${
             liveSplit.rate>=60 ? 'bg-amber-500/20 text-amber-400 border-amber-500/40'
             : liveSplit.rate>=50 ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40'
@@ -764,14 +769,14 @@ function TrainerSettleCard({ block: b, ym, settings, onSaved }) {
             정산 {b.rateMixed?`혼합 ${liveSplit.rate}%`:`${liveSplit.rate}%`}{liveSplit.mode==='manual'?' (수동)':liveSplit.mode==='frozen'?' (등록월)':' (자동)'}
           </span>
           {b.hasOverride && (
-            <button onClick={resetOverride}
-              className="text-[10px] bg-blue-500/20 text-blue-400 hover:bg-red-500/20 hover:text-red-400 px-1.5 py-0.5 rounded font-bold transition-colors"
+            <span onClick={(e)=>{e.stopPropagation();resetOverride();}}
+              className="text-[10px] bg-blue-500/20 text-blue-400 hover:bg-red-500/20 hover:text-red-400 px-1.5 py-0.5 rounded font-bold transition-colors cursor-pointer"
               title="수동 수정값을 지우고 자동 집계값으로 복원">
               수정됨 ✕ 자동복원
-            </button>
+            </span>
           )}
-        </div>
-        <div className="flex items-center gap-2">
+        </button>
+        <div className="flex items-center gap-2 flex-shrink-0">
           <span className="text-lg font-mono font-black text-amber-400">{won(liveTotal)}</span>
           {editing
             ? <><button onClick={()=>setEditing(false)} className="text-xs text-slate-400 hover:text-white">취소</button>
@@ -780,6 +785,7 @@ function TrainerSettleCard({ block: b, ym, settings, onSaved }) {
         </div>
       </div>
 
+      {!collapsed && (<>
       <div className="overflow-x-auto">
         <table className="w-full text-xs">
           <thead>
@@ -888,6 +894,7 @@ function TrainerSettleCard({ block: b, ym, settings, onSaved }) {
           <span className="font-mono font-black text-amber-400 text-base">{won(liveTotal - Math.round(liveTotal*((b.withholdingRate ?? settings.withholdingRate ?? 3.3)/100)))}</span>
         </div>
       </div>
+      </>)}
     </div>
   );
 }

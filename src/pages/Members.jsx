@@ -14,6 +14,9 @@ function getChosung(str) {
   return [...str].map(c=>{const code=c.charCodeAt(0)-0xAC00;return code>=0&&code<=11171?cs[Math.floor(code/588)]:c;}).join('');
 }
 
+// 트레이너로 로그인한 경우 본인 ID (관리자/직원은 null → 전체 노출)
+const getUserTrainerId = user => (user?.role === 'trainer' ? (user.trainerId || user.id) : null);
+
 // CV: 미사용 컴포넌트(SessionBadges) 제거 — 동일 기능이 행 내부에 직접 구현되어 있음
 
 export default function Members() {
@@ -35,8 +38,11 @@ export default function Members() {
   useEffect(() => { load(); }, [load]);
 
   const oneYearAgo = daysAgoYMD(365); // CV-A: 로컬 날짜
+  const myTrainerId = getUserTrainerId(user);
 
   const filtered = members.filter(m => {
+    // 트레이너 로그인 시: 본인 담당 회원만 노출 (관리자/직원은 전체)
+    if (myTrainerId && !Object.keys(m.trainerSessions||{}).includes(myTrainerId)) return false;
     const cs = getChosung(m.name);
     if (search && !m.name.includes(search) && !cs.includes(search.toUpperCase())) return false;
     if (phoneFilter && !m.phone.replace(/-/g,'').endsWith(phoneFilter.replace(/-/g,''))) return false;
