@@ -207,7 +207,6 @@ export function computeSessionSettlement({ trainers, members, schedules, payment
   //  · 결제에 담당 트레이너(trainerIds)가 있으면 그 트레이너들에게 1/n 귀속
   //  · trainerIds가 없는 구버전 결제는 회원의 트레이너별 등록횟수 비율로 안분
   const memberTrainerPay = {}; // mid -> { tid: netAmount }  (전체기간 — 단가 계산용)
-  const memberTrainerSessions = {}; // mid -> { tid: paidSessionCount } (신규 결제 기록 기준)
   const trainerMonthNet  = {}; // tid -> 그 달(ym) 귀속 입금금액 합계 (정산비율 판정용·폴백)
   const trainerNewSales  = {}; // tid -> 그 달 신규(isNew) 귀속 입금액
   const trainerReSales   = {}; // tid -> 그 달 재등록(isReEnroll) 귀속 입금액
@@ -225,7 +224,6 @@ export function computeSessionSettlement({ trainers, members, schedules, payment
     const tids = Object.keys(ts);
     const totalReg = Object.values(ts).reduce((s,v)=>s+(v.total||0),0);
     const acc = {};
-    const paidSessions = {};
     tids.forEach(tid => acc[tid] = 0);
     // 환불 결제도 단가 계산에는 포함한다(이미 수업한 진행분은 트레이너 정산에 남김).
     //  · 단가×출석횟수 모델이라, 환불해도 '출석한 회차'만큼만 자동 지급됨(미진행분은 출석 0이라 미지급).
@@ -235,12 +233,6 @@ export function computeSessionSettlement({ trainers, members, schedules, payment
       const isMonth = inMonth(p.paidAt);     // 폴백 정산비율은 "그 달 결제"만 반영
       const pTids = (p.trainerIds && p.trainerIds.length) ? p.trainerIds : null;
       const splitList = Array.isArray(p.split) && p.split.length ? p.split : null;
-      if (Array.isArray(p.sessionAdds)) {
-        p.sessionAdds.forEach(({ trainerId, count }) => {
-          const c = Math.max(0, Number(count)||0);
-          if (trainerId && c > 0) paidSessions[trainerId] = (paidSessions[trainerId]||0) + c;
-        });
-      }
       // 트레이너별 귀속분 [tid, part] 산출
       const parts = [];
       if (splitList) {
@@ -286,7 +278,6 @@ export function computeSessionSettlement({ trainers, members, schedules, payment
       }
     });
     memberTrainerPay[m.id] = acc;
-    memberTrainerSessions[m.id] = paidSessions;
   });
 
   const attended = {};
@@ -340,8 +331,7 @@ export function computeSessionSettlement({ trainers, members, schedules, payment
       const ts = (m?.trainerSessions||{})[t.id] || {};
       // 단가 = (이 트레이너에게 귀속된 결제액) ÷ (이 트레이너의 등록횟수)
       const trainerPaid = (memberTrainerPay[mid]||{})[t.id] || 0;
-      const paidSessionReg = (memberTrainerSessions[mid]||{})[t.id] || 0;
-      const trainerReg  = paidSessionReg > 0 ? paidSessionReg : (ts.total || 0);
+      const trainerReg  = ts.total || 0;
       const autoUnit = trainerReg > 0 ? Math.round(trainerPaid / trainerReg) : 0;
       const unit = ovUnit[mid] != null ? Number(ovUnit[mid]) : autoUnit;
       const autoCnt = (attended[t.id]||{})[mid] || 0;

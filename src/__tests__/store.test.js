@@ -576,30 +576,3 @@ describe('단가·횟수 override는 지정 회원만 적용', () => {
     expect(r2.cnt).toBe(4);   // 실시간 출석 그대로 (가려지지 않음)
   });
 });
-
-describe('수납 세션 자동 추가 기록은 정산 단가의 등록횟수 기준이 된다', () => {
-  const settings = { cardFeeRate:0, vatRate:0, lowSplitRate:40,
-    rate60MinSales:99999999, rate50MinBlog:99, rate50MinStudy:99,
-    promoPerPost:10000, snsInstaMax:8, trainerSplitRates:{ t1:50 } };
-  const trainers = [{ id:'t1', name:'트레이너' }];
-  const members = [
-    // 화면상 현재 재등록분만 10/10으로 보여도, 정산 단가는 결제 sessionAdds 합계 20회를 사용해야 한다.
-    { id:'m1', name:'재등록회원', trainerSessions:{ t1:{ total:10, remaining:10 } } },
-  ];
-  const payments = {
-    m1:[
-      { id:'p1', paidAt:'2026-05-01', amount:1000000, method:'cash', trainerIds:['t1'], sessionAdds:[{ trainerId:'t1', count:10 }] },
-      { id:'p2', paidAt:'2026-06-01', amount:1000000, method:'cash', trainerIds:['t1'], sessionAdds:[{ trainerId:'t1', count:10 }] },
-    ],
-  };
-  const schedules = [
-    { id:'s1', isExternal:false, memberId:'m1', trainerId:'t1', status:'attended', date:'2026-06-10' },
-  ];
-
-  it('현재 total이 10이어도 누적 결제 세션 20회를 기준으로 단가를 계산한다', () => {
-    const b = computeSessionSettlement({ trainers, members, schedules, payments, records:[], settings, ym:'2026-06' })[0];
-    const row = b.rows.find(r=>r.memberId==='m1');
-    expect(row.unit).toBe(100000);
-    expect(row.amount).toBe(100000);
-  });
-});

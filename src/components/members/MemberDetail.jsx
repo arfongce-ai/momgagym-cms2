@@ -30,10 +30,6 @@ const makePayForm = () => ({
   consultTrainerId: '',
   category: 'normal',
 });
-const addSessionsToSlot = (slot, count) => {
-  const remaining = Math.max(0, Number(slot?.remaining)||0) + count;
-  return { total: remaining, remaining };
-};
 
 export default function MemberDetail({ member:initMember, trainers, onClose, onUpdate }) {
   const { user } = useAuth();
@@ -55,7 +51,6 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
   // 수납
   const [payments,     setPayments]    = useState([]);
   const [showAddPay,   setShowAddPay]  = useState(false);
-  const [savingPay,    setSavingPay]   = useState(false);
   const [payForm,      setPayForm]     = useState(makePayForm);
 
   // 신체정보
@@ -98,7 +93,12 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
     if (!addCount || addCount<1) { alert('세션 수를 입력해 주세요.'); return; }
     const fresh = store.getMembers().find(m=>m.id===member.id);
     const ts    = JSON.parse(JSON.stringify(fresh?.trainerSessions||{}));
-    ts[addTrainerId] = addSessionsToSlot(ts[addTrainerId], Number(addCount));
+    if (ts[addTrainerId]) {
+      ts[addTrainerId].total     += Number(addCount);
+      ts[addTrainerId].remaining += Number(addCount);
+    } else {
+      ts[addTrainerId] = { total:Number(addCount), remaining:Number(addCount) };
+    }
     const curCT    = fresh?.classTypes||[];
     const upCT     = addClassType&&!curCT.includes(addClassType) ? [...curCT,addClassType] : curCT;
     try {
@@ -177,11 +177,19 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
     const freshSplit = Object.fromEntries(evenSplit(fresh, rest).map(s=>[s.trainerId, s.amount]));
     return tids.map(id => ({ trainerId: id, amount: prevMap[id] != null ? prevMap[id] : (freshSplit[id]||0) }));
   };
+  const defaultClassTypeFor = (tid) => {
+    const current = member.classTypes?.[0] || '';
+    const trainerTypes = trainerMap[tid]?.classTypes || [];
+    return current && (!trainerTypes.length || trainerTypes.includes(current))
+      ? current
+      : (trainerTypes[0] || current || '');
+  };
   const syncSessionAdds = (tids, prevAdds=[]) => tids.map(tid => {
     const prev = prevAdds.find(x => x.trainerId === tid);
     return {
       trainerId: tid,
       count: prev?.count ?? '',
+      classType: prev?.classType ?? defaultClassTypeFor(tid),
     };
   });
   const updatePaySessionAdd = (tid, patch) => setPayForm(p => ({
@@ -318,8 +326,6 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
   // ── 수납 등록 ─────────────────────────────────────────
   const handleAddPayment = async () => {
     if (!payForm.amount) { alert('금액을 입력해 주세요.'); return; }
-    if (savingPay) return;
-    setSavingPay(true);
     try {
       // 재등록일 때만 회차 저장(숫자), 아니면 회차 비움
       const reEnrollNo = payForm.isReEnroll && payForm.reEnrollNo
@@ -340,6 +346,7 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
         .map(x => ({
           trainerId: x.trainerId,
           count: Math.max(0, Math.round(Number(x.count)||0)),
+          classType: x.classType || '',
         }))
         .filter(x => x.count > 0);
       const { methodList, sessionAdds: _sessionAdds, ...rest } = payForm;
@@ -378,10 +385,19 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
       if (sessionAdds.length) {
         const fresh = store.getMembers().find(m=>m.id===member.id);
         const ts = JSON.parse(JSON.stringify(fresh?.trainerSessions||{}));
-        sessionAdds.forEach(({ trainerId, count }) => {
-          ts[trainerId] = addSessionsToSlot(ts[trainerId], count);
+        const curCT = fresh?.classTypes || [];
+        const classTypeSet = new Set(curCT);
+        sessionAdds.forEach(({ trainerId, count, classType }) => {
+          if (ts[trainerId]) {
+            ts[trainerId].total = Math.max(0, Number(ts[trainerId].total)||0) + count;
+            ts[trainerId].remaining = Math.max(0, Number(ts[trainerId].remaining)||0) + count;
+          } else {
+            ts[trainerId] = { total:count, remaining:count };
+          }
+          if (classType) classTypeSet.add(classType);
         });
         memberPatch.trainerSessions = ts;
+        memberPatch.classTypes = [...classTypeSet];
       }
       // 수납 기록과 회원 세션을 한 번에 저장해 정산 기준 데이터가 어긋나지 않게 한다.
       await store.addPaymentWithMemberUpdate(member.id, newPayment, memberPatch);
@@ -389,7 +405,6 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
       setPayForm(makePayForm());
       onUpdate?.();
     } catch (e) { alert('수납 등록에 실패했습니다. 네트워크 확인 후 다시 시도하세요.'); }
-    finally { setSavingPay(false); }
   };
 
   const handleDeletePayment = async pid => {
@@ -901,8 +916,9 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
                       <div className="space-y-2">
                         {syncSessionAdds(payForm.trainerIds, payForm.sessionAdds).map(row => {
                           const t = trainerMap[row.trainerId];
+                          const typeOptions = t?.classTypes?.length ? t.classTypes : (member.classTypes || []);
                           return (
-                            <div key={row.trainerId} className="grid grid-cols-1 sm:grid-cols-[minmax(88px,1fr)_112px] gap-2 items-center">
+                            <div key={row.trainerId} className="grid grid-cols-1 sm:grid-cols-[minmax(88px,1fr)_96px_minmax(110px,1.2fr)] gap-2 items-center">
                               <span className="flex items-center gap-1.5 text-xs font-bold text-slate-200 min-w-0">
                                 <span className="w-2 h-2 rounded-full flex-shrink-0" style={{background:t?.color||'#94a3b8'}}/>
                                 <span className="truncate">{t?.name||'트레이너'}</span>
@@ -914,6 +930,12 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
                                   className="w-full bg-slate-800 border border-slate-700 text-slate-100 rounded-lg px-2 py-1.5 text-xs font-mono text-right"/>
                                 <span className="text-[11px] text-slate-500 flex-shrink-0">회</span>
                               </div>
+                              <select value={row.classType}
+                                onChange={e=>updatePaySessionAdd(row.trainerId, { classType:e.target.value })}
+                                className="w-full bg-slate-800 border border-slate-700 text-slate-100 rounded-lg px-2 py-1.5 text-xs">
+                                <option value="">수업종류</option>
+                                {typeOptions.map(ct => <option key={ct} value={ct}>{ct}</option>)}
+                              </select>
                             </div>
                           );
                         })}
@@ -1007,9 +1029,7 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
                   <div><label className={LBL}>메모</label><input value={payForm.note} onChange={ppf('note')} placeholder="PT 10회 등록" className={INP}/></div>
                   <div className="flex gap-2">
                     <button onClick={()=>setShowAddPay(false)} className="py-2 px-4 rounded-xl border border-slate-700 text-slate-300 hover:text-white text-sm font-semibold transition-colors">취소</button>
-                    <button onClick={handleAddPayment} disabled={savingPay} className="flex-1 bg-amber-500 hover:bg-amber-400 disabled:bg-slate-700 disabled:text-slate-400 text-slate-950 font-bold py-2 rounded-xl text-sm transition-colors">
-                      {savingPay ? '저장 중...' : '등록'}
-                    </button>
+                    <button onClick={handleAddPayment} className="flex-1 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold py-2 rounded-xl text-sm transition-colors">등록</button>
                   </div>
                 </div>
               )}

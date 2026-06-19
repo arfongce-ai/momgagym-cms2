@@ -119,11 +119,33 @@ export default function Home() {
     } catch (e) { alert('공지 삭제에 실패했습니다. 네트워크 확인 후 다시 시도하세요.'); }
   };
 
+  // 트레이너로 로그인한 경우 본인 ID (관리자/직원은 null → 전체 집계)
+  const myTrainerId = user?.role === 'trainer' ? (user.trainerId || user.id) : null;
+
+  // 담당 회원만 추리기: 회원의 trainerSessions 키에 내 트레이너 ID가 있으면 담당
+  const myMembers = myTrainerId
+    ? members.filter(m => Object.keys(m.trainerSessions||{}).includes(myTrainerId))
+    : members;
+
   const todayStr   = todayYMD(); // CV-A: 로컬 날짜
+  // 오늘의 수업 목록(④)은 전체 그대로 유지
   const todaySched = schedules.filter(s => s.date === todayStr);
+  // 요약 카드(②)의 '오늘 수업' 숫자는 트레이너면 본인 담당만, 관리자/직원은 전체
+  const myTodayCount = myTrainerId
+    ? todaySched.filter(s => s.trainerId === myTrainerId).length
+    : todaySched.length;
   const oneYearAgo = daysAgoYMD(365);
-  const lowSession  = members.filter(m => Object.values(m.trainerSessions||{}).some(s=>s.remaining<=5&&s.remaining>0)).length;
-  const expiredCnt  = members.filter(m => m.lastPaymentDate && m.lastPaymentDate < oneYearAgo).length;
+
+  // 세션 부족: 트레이너는 본인 슬롯(내 trainerId)의 잔여만, 관리자/직원은 모든 슬롯 중 하나라도
+  const lowSession = myMembers.filter(m => {
+    const slots = myTrainerId
+      ? [m.trainerSessions?.[myTrainerId]].filter(Boolean)
+      : Object.values(m.trainerSessions||{});
+    return slots.some(s => s.remaining<=5 && s.remaining>0);
+  }).length;
+
+  // 결제 만료: 담당(또는 전체) 회원 중 마지막 결제일이 1년 이전
+  const expiredCnt = myMembers.filter(m => m.lastPaymentDate && m.lastPaymentDate < oneYearAgo).length;
 
   return (
     <div className="space-y-5">
@@ -209,8 +231,8 @@ export default function Home() {
       {/* ② 통계 카드 — 누르면 해당 화면으로 바로 이동 (UX: 한눈에 + 한 번에) */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {[
-          { label:'전체 회원', value:members.length,    icon:'👥', color:'text-blue-400',   to:'/members'  },
-          { label:'오늘 수업', value:todaySched.length,  icon:'📅', color:'text-amber-400',  to:'/schedule' },
+          { label: myTrainerId ? '담당 회원' : '전체 회원', value:myMembers.length, icon:'👥', color:'text-blue-400',   to:'/members'  },
+          { label:'오늘 수업', value:myTodayCount,       icon:'📅', color:'text-amber-400',  to:'/schedule' },
           { label:'세션 부족', value:lowSession,         icon:'⚠️', color:'text-orange-400', to:'/members'  },
           { label:'결제 만료', value:expiredCnt,         icon:'🔴', color:'text-red-400',    to:'/members'  },
         ].map(s=>(
