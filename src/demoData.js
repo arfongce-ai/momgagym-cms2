@@ -524,6 +524,55 @@ export const store = {
     try { await fbSet('expenses', ne.id, ne); return ne; }
     catch(err){ cache.expenses = prev; throw err; }
   },
+  // 회원+결제 일괄 등록(매출관리 엑셀 가져오기).
+  // members: [{ name, phone?, monthly, trainerSessions, classTypes, lastPaymentDate, payments[] }]
+  // 같은 이름(+연락처)이 이미 있으면 건너뛴다. 회원·결제를 한 배치로 원자적 등록.
+  addMembersBatch: async (members) => {
+    const prevM = cache.members;
+    const prevP = JSON.parse(JSON.stringify(cache.payments));
+    const existKey = new Set(cache.members.map(m => `${(m.name||'').trim()}|${(m.phone||'').replace(/\D/g,'')}`));
+    const batch = writeBatch(db);
+    const addedMembers = [];
+    const addedPays = {};
+    let skipped = 0;
+    for (const M of members) {
+      const name = (M.name || '').trim();
+      if (!name) { skipped++; continue; }
+      const phoneDigits = (M.phone || '').replace(/\D/g, '');
+      if (existKey.has(`${name}|${phoneDigits}`)) { skipped++; continue; }
+      existKey.add(`${name}|${phoneDigits}`);
+      const mid = uid('m');
+      const member = {
+        id: mid, name, phone: M.phone || '', phone2: '',
+        gender: M.gender || '', birthDate: '', address: '', job: '',
+        joinDate: M.lastPaymentDate || todayYMD(),
+        lastPaymentDate: M.lastPaymentDate || null,
+        lastAttendedDate: null, memo: M.memo || '',
+        classTypes: M.classTypes || [],
+        trainerSessions: M.trainerSessions || {},
+        monthly: M.monthly || null,
+        isActive: true, createdAt: new Date().toISOString(),
+        importedFrom: 'excel',
+      };
+      batch.set(doc(db, 'members', mid), member);
+      addedMembers.push(member);
+      (M.payments || []).forEach(p => {
+        const pid = uid('p');
+        const np = { ...p, id: pid, __mid: mid };
+        batch.set(doc(db, 'payments', pid), np);
+        (addedPays[mid] = addedPays[mid] || []).push(np);
+      });
+    }
+    if (!addedMembers.length) return { added: 0, skipped };
+    try {
+      await batch.commit();
+      cache.members = [...cache.members, ...addedMembers];
+      Object.entries(addedPays).forEach(([mid, arr]) => {
+        cache.payments[mid] = [...(cache.payments[mid] || []), ...arr];
+      });
+      return { added: addedMembers.length, skipped };
+    } catch (err) { cache.members = prevM; cache.payments = prevP; throw err; }
+  },
   // 지출 일괄 등록(엑셀 가져오기). 같은 분류·귀속월·항목명·금액이면 중복으로 보고 건너뛴다.
   addExpenseBatch: async (list) => {
     const prev = cache.expenses;

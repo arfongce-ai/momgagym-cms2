@@ -6,6 +6,7 @@ import { todayYMD, daysAgoYMD, isMemberExpired, isMonthlyActive, monthlyDueOf } 
 import { useAuth } from '../contexts/AuthContext';
 import MemberRegister from '../components/members/MemberRegister';
 import MemberDetail   from '../components/members/MemberDetail';
+import MemberImport   from '../components/members/MemberImport';
 import TrainerBadge   from '../components/common/TrainerBadge';
 import { downloadCSV } from '../services/finance';
 
@@ -29,6 +30,7 @@ export default function Members() {
   const [lowSession,    setLowSession]    = useState(false);
   const [expiredFilter, setExpiredFilter] = useState(false);
   const [showRegister,  setShowRegister]  = useState(false);
+  const [showImport,    setShowImport]    = useState(false);
   const [selected,      setSelected]      = useState(null);
 
   const load = useCallback(() => {
@@ -99,6 +101,12 @@ export default function Members() {
             <button onClick={exportMembers}
               className="text-xs font-bold px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-slate-200 hover:border-amber-500/40 hover:text-amber-400 transition-colors">
               📄 다운로드
+            </button>
+          )}
+          {user?.role==='admin' && (
+            <button onClick={() => setShowImport(true)}
+              className="text-xs font-bold px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-slate-200 hover:border-blue-500/40 hover:text-blue-400 transition-colors">
+              📥 엑셀 가져오기
             </button>
           )}
           <button onClick={() => setShowRegister(true)}
@@ -197,6 +205,11 @@ export default function Members() {
         <MemberRegister trainers={trainers}
           onSuccess={() => { load(); setShowRegister(false); }}
           onCancel={() => setShowRegister(false)} />
+      )}
+      {showImport && (
+        <MemberImport
+          onClose={() => setShowImport(false)}
+          onDone={() => { load(); setShowImport(false); }} />
       )}
       {selected && (
         <MemberDetail

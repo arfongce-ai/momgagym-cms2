@@ -5,7 +5,7 @@
 //  · 정산 = 트레이너별 입금금액 × 정산비율(40/50/60%)
 //  · 인센티브 = 홍보 기록 + 개인/재등록 매출 단위
 //  · 고정비/월별 지출, 월/년 정산
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef } from 'react';
 import { store } from '../demoData';
 import { useAuth } from '../contexts/AuthContext';
 import {
@@ -14,6 +14,7 @@ import {
   buildRefreezePlan,
 } from '../services/finance';
 import { todayYMD, thisYM } from '../utils/dates';
+import { parseSheetRows, dedupeExpenses, parsePastedText } from '../utils/expenseImport';
 
 // CV-A: UTC 기준이라 매월 1일 새벽에 '지난달'로 표시되던 버그 → 로컬 기준으로 수정
 const thisMonth = thisYM();
@@ -1051,25 +1052,39 @@ function ExpenseTab() {
   const [importText, setImportText] = useState('');
   const [importing, setImporting] = useState(false);
   // 붙여넣은 텍스트를 파싱: JSON 배열 또는 "분류[탭]항목[탭]귀속월(YYYY-MM)[탭]금액" 표 형식 모두 허용
-  const parseImport = (text) => {
-    const t = text.trim();
-    if (!t) return [];
-    if (t.startsWith('[') || t.startsWith('{')) {
-      const arr = JSON.parse(t);
-      return Array.isArray(arr) ? arr : [arr];
-    }
-    // 표 형식(탭/콤마 구분): 분류, 항목명, 귀속월, 금액 [, 메모]
-    return t.split(/\r?\n/).map(line => line.trim()).filter(Boolean).map(line => {
-      const c = line.split(/\t|,/).map(s => s.trim());
-      const [category, name, ym, amount, note] = c;
-      return { kind:'monthly', category, name, ym, amount, note };
-    }).filter(e => e.ym && e.amount);
-  };
+  const parseImport = parsePastedText;
   const runImport = async () => {
     let list;
     try { list = parseImport(importText); }
     catch (e) { alert('형식을 해석할 수 없습니다. JSON 배열이거나, 한 줄에 [분류, 항목, 귀속월(2026-01), 금액] 형태여야 합니다.'); return; }
     if (!list.length) { alert('가져올 내역이 없습니다.'); return; }
+    await commitImport(list);
+  };
+
+  // ── 엑셀(.xlsx)/CSV 파일 업로드 → 자동 파싱 ──────────────────────────
+  const [dragOver, setDragOver] = useState(false);
+  const fileRef = useRef(null);
+  const handleFile = async (file) => {
+    if (!file) return;
+    setImporting(true);
+    try {
+      const buf = await file.arrayBuffer();
+      const XLSX = await import('xlsx');                      // 동적 로드(평소 번들 영향 없음)
+      const wb = XLSX.read(buf, { type:'array' });
+      let all = [];
+      wb.SheetNames.forEach(sn => {
+        const rows = XLSX.utils.sheet_to_json(wb.Sheets[sn], { header:1, raw:true, defval:null });
+        all = all.concat(parseSheetRows(rows));
+      });
+      all = dedupeExpenses(all);
+      if (!all.length) { alert('파일에서 인식할 지출 내역을 찾지 못했습니다.\n· 월×연도 표 또는 [분류·항목·귀속월·금액] 표 형식을 지원합니다.'); setImporting(false); return; }
+      await commitImport(all);
+    } catch (e) {
+      alert('파일을 읽는 중 오류가 발생했습니다. .xlsx 또는 .csv 파일인지 확인해 주세요.');
+    } finally { setImporting(false); }
+  };
+  // 공통: 확인 후 일괄 등록
+  const commitImport = async (list) => {
     if (!window.confirm(`${list.length}건을 가져옵니다. (이미 등록된 동일 내역은 자동으로 건너뜁니다.)\n진행할까요?`)) return;
     setImporting(true);
     try {
@@ -1097,6 +1112,32 @@ function ExpenseTab() {
       {importOpen && (
         <div className="bg-slate-900 border border-blue-500/20 rounded-2xl p-4 space-y-3">
           <p className="text-sm font-bold text-blue-400">📥 지출 일괄 가져오기</p>
+
+          {/* 방법 1: 엑셀/CSV 파일 업로드 */}
+          <div
+            onDragOver={e=>{e.preventDefault(); setDragOver(true);}}
+            onDragLeave={()=>setDragOver(false)}
+            onDrop={e=>{e.preventDefault(); setDragOver(false); handleFile(e.dataTransfer.files?.[0]);}}
+            onClick={()=>fileRef.current?.click()}
+            className={`cursor-pointer rounded-xl border-2 border-dashed px-4 py-6 text-center transition-colors ${
+              dragOver ? 'border-blue-400 bg-blue-500/10' : 'border-slate-700 hover:border-blue-500/50 hover:bg-slate-800/50'
+            }`}>
+            <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" className="hidden"
+              onChange={e=>{ handleFile(e.target.files?.[0]); e.target.value=''; }}/>
+            <p className="text-sm text-slate-200 font-semibold">📂 엑셀(.xlsx) 또는 CSV 파일을 끌어다 놓거나 클릭해서 선택</p>
+            <p className="text-[11px] text-slate-500 mt-1">
+              월×연도 표(센터 관리비 양식)와 [분류·항목·귀속월·금액] 표를 자동으로 인식합니다. 중복은 자동 제외됩니다.
+            </p>
+            {importing && <p className="text-[11px] text-blue-400 mt-2">파일을 읽는 중…</p>}
+          </div>
+
+          <div className="flex items-center gap-2">
+            <div className="flex-1 h-px bg-slate-800"/>
+            <span className="text-[10px] text-slate-600">또는 직접 붙여넣기</span>
+            <div className="flex-1 h-px bg-slate-800"/>
+          </div>
+
+          {/* 방법 2: 텍스트 붙여넣기 */}
           <p className="text-[11px] text-slate-400 leading-relaxed">
             아래 칸에 <b className="text-slate-200">JSON 배열</b>을 붙여넣거나, 한 줄에 <b className="text-slate-200">분류 · 항목명 · 귀속월(2026-01) · 금액</b>을
             탭이나 콤마로 구분해 붙여넣으세요. 이미 등록된 동일 내역(분류·귀속월·항목·금액이 모두 같음)은 자동으로 건너뜁니다.
