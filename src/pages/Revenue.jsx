@@ -15,6 +15,7 @@ import {
 } from '../services/finance';
 import { todayYMD, thisYM } from '../utils/dates';
 import { parseSheetRows, dedupeExpenses, parsePastedText } from '../utils/expenseImport';
+import { loadXLSX } from '../utils/loadXlsx';
 
 // CV-A: UTC 기준이라 매월 1일 새벽에 '지난달'로 표시되던 버그 → 로컬 기준으로 수정
 const thisMonth = thisYM();
@@ -1069,8 +1070,8 @@ function ExpenseTab() {
     setImporting(true);
     try {
       const buf = await file.arrayBuffer();
-      const XLSX = await import('xlsx');                      // 동적 로드(평소 번들 영향 없음)
-      const wb = XLSX.read(buf, { type:'array' });
+      const XLSX = await loadXLSX();                          // CDN 동적 로드(빌드 의존성 없음)
+      const wb = XLSX.read(buf, { type:'array', cellHTML:false, cellStyles:false });
       let all = [];
       wb.SheetNames.forEach(sn => {
         const rows = XLSX.utils.sheet_to_json(wb.Sheets[sn], { header:1, raw:true, defval:null });

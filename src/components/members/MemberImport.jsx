@@ -2,6 +2,7 @@
 import { useState, useRef, useMemo } from 'react';
 import { store } from '../../demoData';
 import { parsePaymentSheet, buildMemberImport } from '../../utils/memberImport';
+import { loadXLSX } from '../../utils/loadXlsx';
 
 const won = (n) => (n||0).toLocaleString() + '원';
 
@@ -39,7 +40,7 @@ export default function MemberImport({ onClose, onDone }) {
     setLoading(true); setParsed(null);
     try {
       const buf = await file.arrayBuffer();
-      const XLSX = await import('xlsx');
+      const XLSX = await loadXLSX();
       // 이 양식은 일부 비표준 rich-format이 있어 cellHTML:false로 읽어야 안전
       const wb = XLSX.read(buf, { type:'array', cellHTML:false, cellStyles:false });
       // '등록회원' 류 시트 우선, 없으면 첫 시트
