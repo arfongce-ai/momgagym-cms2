@@ -236,7 +236,10 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
   }, []);
 
   return (
-    <div className="relative w-full h-screen bg-slate-950 overflow-hidden flex flex-col font-sans">
+    <div
+      className="fixed inset-0 z-[80] w-screen bg-slate-950 overflow-hidden flex flex-col font-sans"
+      style={{ height: '100dvh' }}
+    >
       {(view === 'camera' || view === 'recording') && (
         <>
           <video ref={videoRef} className="absolute inset-0 w-full h-full object-cover" playsInline muted autoPlay />
