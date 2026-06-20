@@ -1,42 +1,33 @@
 // ai-measure/core/gaitGuide.js
-// 보행 & 러닝 메뉴 전용 하체 집중 가이드 + 자이로 수평/수직 가이드.
+// 보행 & 러닝 메뉴 전용 하체 집중 가이드 (v2 — 미니멀).
+// 환경(트레드밀/바닥) 구분과 지면선을 제거했다. 알고리즘이 절대 좌표에
+// 의존하지 않으므로 가이드도 '하체 정렬' 한 가지 역할만 한다.
 //
-// view: 'side' | 'back'   env: 'treadmill' | 'floor'
-// tilt: { beta, gamma } | null  (DeviceOrientation, 도 단위) — 시차 오류 방지용 수평계
+// view: 'side' | 'back'
 
-export function drawGaitGuides(ctx, w, h, { view = 'side', env = 'floor', tilt = null } = {}) {
+export function drawGaitGuides(ctx, w, h, { view = 'side' } = {}) {
   ctx.save();
 
-  // 상단 1/3 디밍 → 하체를 하단 2/3 에 프레이밍 유도
-  ctx.fillStyle = 'rgba(0,0,0,0.28)';
-  ctx.fillRect(0, 0, w, h * 0.33);
-  ctx.strokeStyle = 'rgba(255,255,255,0.18)';
-  ctx.setLineDash([5, 5]);
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(0, h * 0.33);
-  ctx.lineTo(w, h * 0.33);
-  ctx.stroke();
-
-  // 하체 타겟 박스 (골반→발목): 중앙 56% 폭, 33%~92% 높이
-  const boxX = w * 0.22;
-  const boxY = h * 0.33;
-  const boxW = w * 0.56;
-  const boxH = h * 0.59;
+  // 하체 타겟 박스 (골반→발목): 중앙 60% 폭, 28%~94% 높이.
+  // 손에 들고 패닝하는 상황을 고려해 박스를 약간 키우고 선을 가늘게.
+  const boxX = w * 0.20;
+  const boxY = h * 0.28;
+  const boxW = w * 0.60;
+  const boxH = h * 0.66;
   ctx.setLineDash([10, 8]);
-  ctx.strokeStyle = 'rgba(34,211,238,0.55)';
-  ctx.lineWidth = 2;
+  ctx.strokeStyle = 'rgba(34,211,238,0.5)';
+  ctx.lineWidth = 1.8;
   ctx.strokeRect(boxX, boxY, boxW, boxH);
 
-  // 골반/무릎/발목 기준 행
-  ctx.setLineDash([4, 6]);
-  ctx.lineWidth = 1.2;
+  // 골반/무릎/발목 기준 행 (정렬 가이드)
+  ctx.setLineDash([4, 7]);
+  ctx.lineWidth = 1;
   const rows = [
-    { f: 0.06, label: '골반(Hip)', color: 'rgba(245,158,11,0.7)' },
-    { f: 0.5, label: '무릎(Knee)', color: 'rgba(34,211,238,0.6)' },
-    { f: 0.92, label: '발목(Ankle)', color: 'rgba(52,211,153,0.75)' },
+    { f: 0.05, label: 'Hip', color: 'rgba(245,158,11,0.65)' },
+    { f: 0.5, label: 'Knee', color: 'rgba(34,211,238,0.55)' },
+    { f: 0.95, label: 'Ankle', color: 'rgba(52,211,153,0.7)' },
   ];
-  ctx.font = `${Math.round(h * 0.02)}px system-ui, sans-serif`;
+  ctx.font = `${Math.round(h * 0.018)}px system-ui, sans-serif`;
   for (const r of rows) {
     const y = boxY + boxH * r.f;
     ctx.strokeStyle = r.color;
@@ -45,81 +36,18 @@ export function drawGaitGuides(ctx, w, h, { view = 'side', env = 'floor', tilt =
     ctx.lineTo(boxX + boxW, y);
     ctx.stroke();
     ctx.fillStyle = r.color;
-    ctx.fillText(r.label, boxX + 6, y - 5);
-  }
-  ctx.setLineDash([]);
-
-  if (view === 'back') {
-    ctx.strokeStyle = 'rgba(245,158,11,0.85)';
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.moveTo(w / 2, boxY);
-    ctx.lineTo(w / 2, boxY + boxH);
-    ctx.stroke();
-    ctx.strokeStyle = 'rgba(255,255,255,0.3)';
-    const y = boxY + boxH * 0.5;
-    ctx.beginPath();
-    ctx.moveTo(w / 2 - boxW * 0.18, y);
-    ctx.lineTo(w / 2 + boxW * 0.18, y);
-    ctx.stroke();
-  } else {
-    ctx.strokeStyle = 'rgba(245,158,11,0.6)';
-    ctx.lineWidth = 1.2;
-    ctx.setLineDash([6, 8]);
-    ctx.beginPath();
-    ctx.moveTo(boxX + boxW / 2, boxY);
-    ctx.lineTo(boxX + boxW / 2, boxY + boxH);
-    ctx.stroke();
-    ctx.setLineDash([]);
+    ctx.fillText(r.label, boxX + 5, y - 4);
   }
 
-  // 지면선/벨트라인
-  const groundY = env === 'treadmill' ? boxY + boxH * 0.97 : boxY + boxH;
-  ctx.strokeStyle = 'rgba(52,211,153,0.9)';
-  ctx.lineWidth = 2;
+  // 정렬 기준선: 측면=시상면 수직선, 후면=정중선
+  ctx.setLineDash([6, 8]);
+  ctx.lineWidth = 1.2;
+  ctx.strokeStyle = view === 'back' ? 'rgba(245,158,11,0.75)' : 'rgba(245,158,11,0.5)';
+  const cx = view === 'back' ? w / 2 : boxX + boxW / 2;
   ctx.beginPath();
-  ctx.moveTo(0, groundY);
-  ctx.lineTo(w, groundY);
+  ctx.moveTo(cx, boxY);
+  ctx.lineTo(cx, boxY + boxH);
   ctx.stroke();
-  ctx.fillStyle = 'rgba(52,211,153,0.95)';
-  ctx.font = `${Math.round(h * 0.02)}px system-ui, sans-serif`;
-  ctx.fillText(env === 'treadmill' ? '벨트 라인' : '지면선', 8, groundY - 6);
 
-  // 자이로 수평계 (시차 오류 방지) — 화면 중앙 소형 버블 레벨
-  if (tilt && (tilt.beta != null || tilt.gamma != null)) {
-    drawLevel(ctx, w, h, tilt);
-  }
-
-  ctx.restore();
-}
-
-function drawLevel(ctx, w, h, tilt) {
-  const cx = w / 2;
-  const cy = h * 0.5;
-  const R = Math.min(w, h) * 0.07;
-  const gamma = Math.max(-30, Math.min(30, tilt.gamma || 0)); // 좌우 기울기
-  const beta = Math.max(-30, Math.min(30, (tilt.beta || 0) - 90)); // 전후(세로 기준 보정)
-  const offX = (gamma / 30) * R;
-  const offY = (beta / 30) * R;
-  const level = Math.abs(gamma) < 3 && Math.abs(beta) < 3;
-  const col = level ? 'rgba(52,211,153,0.95)' : 'rgba(245,158,11,0.9)';
-
-  ctx.save();
-  // 기준 원 + 십자
-  ctx.strokeStyle = 'rgba(255,255,255,0.35)';
-  ctx.lineWidth = 1.5;
-  ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.stroke();
-  ctx.beginPath();
-  ctx.moveTo(cx - R * 0.35, cy); ctx.lineTo(cx + R * 0.35, cy);
-  ctx.moveTo(cx, cy - R * 0.35); ctx.lineTo(cx, cy + R * 0.35);
-  ctx.stroke();
-  // 버블
-  ctx.fillStyle = col;
-  ctx.beginPath(); ctx.arc(cx + offX, cy + offY, R * 0.22, 0, Math.PI * 2); ctx.fill();
-  // 라벨
-  ctx.fillStyle = col;
-  ctx.font = `${Math.round(h * 0.018)}px system-ui, sans-serif`;
-  ctx.textAlign = 'center';
-  ctx.fillText(level ? '수평 OK' : '수평 맞추기', cx, cy + R + Math.round(h * 0.028));
   ctx.restore();
 }
