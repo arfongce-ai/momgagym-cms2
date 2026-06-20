@@ -34,6 +34,10 @@ export default function AiMeasureHub() {
         recordedAtFull: new Date().toISOString(),
         data,
       });
+      // 보행 분석은 전용 컬렉션(gait_reports)에도 정량 리포트를 추가 저장 → 데이터 일원화.
+      if (active.id === 'gait') {
+        await aiStore.addGaitReport({ ...data, member: { id: member.id, name: member.name } });
+      }
       alert('측정이 저장되었습니다.');
     } catch (e) {
       alert('저장에 실패했습니다. 네트워크 확인 후 다시 시도하세요.\n' + (e?.message || ''));

@@ -576,3 +576,21 @@ describe('단가·횟수 override는 지정 회원만 적용', () => {
     expect(r2.cnt).toBe(4);   // 실시간 출석 그대로 (가려지지 않음)
   });
 });
+
+describe('aiStore.addGaitReport (보행 리포트 저장)', () => {
+  it('gait_reports 컬렉션에 id·createdAt 을 부여해 저장한다', async () => {
+    const r = await aiStore.addGaitReport({
+      member: { id: 'm1', name: '홍길동' },
+      cadence: { averageSpm: 120 },
+    });
+    expect(r.id).toMatch(/^gait/);
+    expect(r.createdAt).toBeTruthy();
+    expect(mem.gait_reports[r.id].cadence.averageSpm).toBe(120);
+    expect(mem.gait_reports[r.id].member.name).toBe('홍길동');
+  });
+
+  it('저장 실패 시 에러를 전파한다', async () => {
+    setFail(true);
+    await expect(aiStore.addGaitReport({ member: { id: 'm1' } })).rejects.toThrow();
+  });
+});

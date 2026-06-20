@@ -686,4 +686,11 @@ export const aiStore = {
     await fbDeleteBatch(list.map(s=>({name:'ai',id:s.id})));
     delete cache.ai[mid];
   },
+  // 보행 분석 전용 리포트 컬렉션(gait_reports)에 정량 데이터만 저장.
+  // 영상은 기기에만 저장되고 여기엔 가벼운 JSON 메타데이터만 남는다.
+  addGaitReport: async (report) => {
+    const r = { ...report, id: uid('gait'), createdAt: new Date().toISOString() };
+    await fbSet('gait_reports', r.id, r);
+    return r;
+  },
 };
