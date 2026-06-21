@@ -44,6 +44,7 @@ service cloud.firestore {
     match /payments/{id}   { allow read, write: if isSignedIn(); }
     match /body/{id}       { allow read, write: if isSignedIn(); }
     match /ai/{id}         { allow read, write: if isSignedIn(); }
+    match /gait_reports/{id} { allow read, write: if isSignedIn(); }
 
     // ── 관리자 전용 데이터 : admin 만 ────────────────────────────────
     match /expenses/{id}        { allow read, write: if isAdmin(); }

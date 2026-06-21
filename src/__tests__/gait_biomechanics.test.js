@@ -69,10 +69,18 @@ describe('cameraAngleQuality (high-angle warning)', () => {
 function gaitLm(tt, offX = 0, k = 1) {
   const a = Array.from({ length: 33 }, () => ({ x: 0.5, y: 0.5, visibility: 0.9 }));
   const sc = (p) => ({ x: (p.x - 0.5) * k + 0.5 + offX, y: (p.y - 0.5) * k + 0.5, visibility: 0.9 });
-  a[23] = sc({ x: 0.45, y: 0.5 }); a[24] = sc({ x: 0.55, y: 0.5 });
-  const sw = 0.12 * Math.sin(tt * 2 * Math.PI * 2);
-  a[29] = sc({ x: 0.5 + sw, y: 0.8 }); a[31] = sc({ x: 0.52 + sw, y: 0.82 });
-  a[30] = sc({ x: 0.5, y: 0.78 }); a[32] = sc({ x: 0.52, y: 0.8 });
+
+  a[23] = sc({ x: 0.45, y: 0.5 }); a[24] = sc({ x: 0.55, y: 0.5 }); // 골반(Hips)
+
+  const sw = 0.12 * Math.sin(tt * 2 * Math.PI * 2); // 2Hz 진동
+
+  // 업그레이드된 알고리즘이 추적할 '발목(Ankle)' 데이터 애니메이션
+  a[27] = sc({ x: 0.5 + sw, y: 0.75 }); // 왼쪽 발목
+  a[28] = sc({ x: 0.5, y: 0.75 });      // 오른쪽 발목
+
+  a[29] = sc({ x: 0.5 + sw, y: 0.8 }); a[31] = sc({ x: 0.52 + sw, y: 0.82 }); // 왼쪽 뒤꿈치/발끝
+  a[30] = sc({ x: 0.5, y: 0.78 }); a[32] = sc({ x: 0.52, y: 0.8 }); // 오른쪽 뒤꿈치/발끝
+
   return a;
 }
 

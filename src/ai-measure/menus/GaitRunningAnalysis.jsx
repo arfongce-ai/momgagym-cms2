@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   GaitCycleTracker, jointAnglesFromPose, AngleAccumulator,
-  pelvisRelativeFeet, cameraAngleQuality
+  pelvisRelativeFeet, cameraAngleQuality, detectOrientation
 } from '../core/gaitBiomechanics';
 import { loadPoseLandmarker, detectPoseFrame, closePoseLandmarker, isPoseReady } from '../core/poseBackend';
 
@@ -95,6 +95,7 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
   const [shareMsg, setShareMsg] = useState('');
   const [poseLoaded, setPoseLoaded] = useState(false); // MediaPipe 준비 여부
   const [aspect, setAspect] = useState('3/4'); // 3/4 | 1/1
+  const [orientation, setOrientation] = useState('unknown'); // side | back | unknown
   // 컴팩트 도구 (초시계/메트로놈)
   const [toolsOpen, setToolsOpen] = useState(false);
   const [toolTab, setToolTab] = useState('stopwatch');
@@ -111,6 +112,7 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
   const composeRafRef = useRef(null);  // 캔버스 합성 루프
   const recordCanvasRef = useRef(null);
   const recordStreamRef = useRef(null);
+  const autoSavedRef = useRef(null); // 자동 저장 중복 방지 (저장한 measuredAt 기록)
 
   const videoRef = useRef(null);
   const skeletonCanvasRef = useRef(null);
@@ -152,7 +154,7 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
         videoRef.current.play();
       }
       // MediaPipe PoseLandmarker 를 CDN 런타임 로드(1회). GPU 실패 시 CPU 자동 폴백.
-      loadPoseLandmarker({ numPoses: 1 })
+      loadPoseLandmarker({ numPoses: 1, modelTier: 'full' })
         .then(() => setPoseLoaded(true))
         .catch((e) => { setPoseLoaded(false); setWarningMsg(e?.message || 'AI 분석 모듈 로드 실패'); });
       startVisionPipeline();
@@ -178,6 +180,8 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
     let lastReady = null, lastWarn = null;
     const setReadyOnce = (v) => { if (v !== lastReady) { lastReady = v; setIsReady(v); } };
     const setWarnOnce = (v) => { if (v !== lastWarn) { lastWarn = v; setWarningMsg(v); } };
+    let lastOri = null;
+    const setOrientationOnce = (v) => { if (v !== lastOri) { lastOri = v; setOrientation(v); } };
     const loop = () => {
       const video = videoRef.current;
       // 타임스탬프 단조증가 보장 (detectForVideo 는 같은 값 2회 시 예외)
@@ -200,10 +204,15 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
           trackerRef.current.push(pelvisRelativeFeet(landmarks), ts);
           angleAccRef.current.push(jointAnglesFromPose(landmarks));
         } else {
-          // 캘리브레이션: 앵글 품질 + 세이프존이 유지되면 락
+          // 방향 판별 (측면/후면) — 화면 표시 + 후면 관대 처리
+          const ori = detectOrientation(landmarks);
+          setOrientationOnce(ori.view);
+          // 캘리브레이션: 앵글 품질 + 세이프존이 유지되면 락.
+          // 후면뷰는 어깨가 넓어 high_angle 오판이 잦으므로 앵글 검사를 완화한다.
           const q = cameraAngleQuality(landmarks);
+          const angleOk = ori.view === 'back' ? true : q.ok;
           const inZone = isInSafeZone(landmarks);
-          if (q.ok && inZone) {
+          if (angleOk && inZone) {
             lostFramesRef.current = 0;
             if (armingSinceRef.current == null) armingSinceRef.current = ts;
             const held = ts - armingSinceRef.current;
@@ -215,7 +224,7 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
             if (lostFramesRef.current > 8) {
               armingSinceRef.current = null;
               setReadyOnce(false);
-              setWarnOnce(!q.ok ? '카메라를 골반 높이로 내려주세요'
+              setWarnOnce(!angleOk ? '카메라를 골반 높이로 내려주세요'
                 : '피사체를 가운데 박스 안에 맞춰주세요');
             }
           }
@@ -286,6 +295,7 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
     setSaveState('idle');
     setShareMsg('');
     setReportData(null);
+    autoSavedRef.current = null;
 
     const mimeTypes = ['video/mp4', 'video/webm;codecs=vp8', 'video/webm'];
     let selectedMime = mimeTypes.find(m => MediaRecorder.isTypeSupported(m)) || '';
@@ -369,6 +379,7 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
   // 회차 데이터 저장 (Firebase). 영상 공유와 완전히 독립적으로 실행.
   const handleSaveReport = async () => {
     if (!reportData || typeof saveToFirebase !== 'function') return;
+    autoSavedRef.current = reportData.measuredAt; // 수동 저장 시에도 중복 자동저장 방지
     setSaveState('saving');
     try {
       await saveToFirebase(reportData);
@@ -377,6 +388,28 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
       setSaveState('error');
     }
   };
+
+  // 자동 저장: 유효 측정(valid)인 리포트가 생성되면 1회 자동으로 서버 저장.
+  // - 무효 측정(누워있음/정지)은 자동 저장하지 않음 → 서버에 쓰레기 데이터 방지.
+  // - measuredAt 으로 측정당 1회만 (중복/재렌더 저장 차단).
+  // - 실패하면 saveState='error' 가 되어 수동 재시도 버튼이 노출된다.
+  useEffect(() => {
+    if (view !== 'preview' || !reportData) return;
+    if (reportData.valid !== true) return; // 무효 측정은 자동 저장 안 함
+    if (typeof saveToFirebase !== 'function') return;
+    if (autoSavedRef.current === reportData.measuredAt) return; // 이미 저장(시도)함
+    autoSavedRef.current = reportData.measuredAt;
+    (async () => {
+      setSaveState('saving');
+      try {
+        await saveToFirebase(reportData);
+        setSaveState('saved');
+      } catch (e) {
+        setSaveState('error'); // 실패 시 수동 버튼으로 재시도 가능
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view, reportData]);
 
   // 다시 찍기 등으로 preview 를 벗어날 때 blob URL 정리
   useEffect(() => {
@@ -416,6 +449,12 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
                 <p className="text-sm font-bold text-amber-400 mt-1 drop-shadow-md">
                   {poseLoaded ? '일정한 속도로 뛸 때 시작하세요' : 'AI 분석 모듈 준비 중...'}
                 </p>
+              )}
+              {/* 측면/후면 자동 판별 표시 */}
+              {poseLoaded && orientation !== 'unknown' && (
+                <span className={`inline-block mt-1 rounded-full px-2.5 py-0.5 text-[11px] font-black ${orientation === 'side' ? 'bg-emerald-500/90 text-slate-950' : 'bg-sky-500/90 text-white'}`}>
+                  {orientation === 'side' ? '◧ 측면뷰 (관절 각도 분석)' : '⬓ 후면뷰 (좌우 대칭 분석)'}
+                </span>
               )}
               {warningMsg && <p className="text-sm font-bold text-red-400 mt-1 bg-black/50 px-2 py-1 rounded">{warningMsg}</p>}
             </div>
@@ -506,15 +545,26 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
                 <button onClick={handleShareVideo} className="rounded-xl border border-slate-600 bg-slate-700 text-white font-bold py-3 text-sm">
                   📤 영상 저장·공유
                 </button>
-                <button onClick={handleSaveReport} disabled={saveState === 'saving' || saveState === 'saved'}
+                {/* 회차 기록: 유효 측정은 자동 저장. 실패/무효 시에만 수동 버튼 활성화 */}
+                <button
+                  onClick={handleSaveReport}
+                  disabled={saveState === 'saving' || saveState === 'saved' || reportData?.valid !== true}
                   className="btn btn-primary disabled:opacity-60 flex items-center justify-center gap-2">
                   {saveState === 'saving' && <span className="h-4 w-4 rounded-full border-2 border-slate-950 border-t-transparent animate-spin" />}
-                  {saveState === 'saved' ? '✓ 회차 저장됨' : saveState === 'saving' ? '저장 중...' : '💾 회차 기록 저장'}
+                  {saveState === 'saved' ? '✓ 자동 저장됨'
+                    : saveState === 'saving' ? '저장 중...'
+                    : saveState === 'error' ? '↻ 다시 저장'
+                    : reportData?.valid === true ? '💾 회차 기록'
+                    : '저장 안 됨'}
                 </button>
               </div>
               {shareMsg && <p className="text-center text-xs text-emerald-400">{shareMsg}</p>}
-              {saveState === 'error' && <p className="text-center text-xs text-red-400">저장 실패 — 네트워크 확인 후 다시 시도하세요</p>}
-              <p className="text-center text-[11px] text-slate-500">영상은 기기에, 회차 기록(정량 데이터)은 서버에 저장됩니다.</p>
+              {saveState === 'saved' && <p className="text-center text-xs text-emerald-400">측정이 서버에 자동 저장되었습니다.</p>}
+              {saveState === 'error' && <p className="text-center text-xs text-red-400">자동 저장 실패 — 위 버튼으로 다시 시도하세요</p>}
+              {reportData?.valid !== true && saveState === 'idle' && (
+                <p className="text-center text-xs text-amber-400">측정이 무효하여 저장되지 않았습니다. 다시 측정해 주세요.</p>
+              )}
+              <p className="text-center text-[11px] text-slate-500">영상은 기기에, 회차 기록(정량 데이터)은 서버에 자동 저장됩니다.</p>
             </div>
           </div>
         </div>

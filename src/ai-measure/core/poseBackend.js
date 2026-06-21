@@ -20,29 +20,41 @@ let _landmarker = null;
 const TV_VERSION = '0.10.14';
 const TV_ROOT = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${TV_VERSION}`;
 const WASM_ROOT = `${TV_ROOT}/wasm`;
-// lite 모델: 모바일 실시간에 적합(정확도/속도 균형).
-const MODEL_URL =
-  'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task';
+// 모델 등급별 URL. 정확도: lite < full < heavy, 속도(빠름): lite > full > heavy.
+// full = 정확도/속도 균형(권장). heavy = 최고 정확도(최신 고사양 폰).
+const MODEL_URLS = {
+  lite: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task',
+  full: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task',
+  heavy: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_heavy/float16/1/pose_landmarker_heavy.task',
+};
+// 기본 등급: full (lite보다 관절 위치 정확, 대부분 폰에서 실시간 가능)
+let _modelTier = 'full';
 
 async function _createWithDelegate(PoseLandmarker, FilesetResolver, numPoses, delegate) {
   const fileset = await FilesetResolver.forVisionTasks(WASM_ROOT);
+  const modelUrl = MODEL_URLS[_modelTier] || MODEL_URLS.full;
   return PoseLandmarker.createFromOptions(fileset, {
-    baseOptions: { modelAssetPath: MODEL_URL, delegate },
+    baseOptions: { modelAssetPath: modelUrl, delegate },
     runningMode: 'VIDEO',
     numPoses,
+    // 검출/추적 신뢰도 하한 — 너무 낮으면 노이즈, 너무 높으면 미검출.
+    minPoseDetectionConfidence: 0.5,
+    minPosePresenceConfidence: 0.5,
+    minTrackingConfidence: 0.5,
   });
 }
 
 /**
  * PoseLandmarker 를 VIDEO 모드로 1회 생성. 이미 만들어졌으면 캐시 반환.
  * GPU 실패 시 CPU 로 자동 폴백.
- * @param {object} opts  { numPoses=1 }
+ * @param {object} opts  { numPoses=1, modelTier='full'|'lite'|'heavy' }
  */
 export async function loadPoseLandmarker(opts = {}) {
   if (_landmarker) return _landmarker;
   if (_visionPromise) return _visionPromise;
 
-  const { numPoses = 1 } = opts;
+  const { numPoses = 1, modelTier } = opts;
+  if (modelTier && MODEL_URLS[modelTier]) _modelTier = modelTier;
   _visionPromise = (async () => {
     // ✅ 패키지 루트에서 import (vision_bundle.mjs 직접 import 금지)
     const vision = await import(/* @vite-ignore */ TV_ROOT);

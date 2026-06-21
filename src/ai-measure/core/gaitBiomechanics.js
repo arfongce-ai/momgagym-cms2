@@ -1,7 +1,24 @@
 // ai-measure/core/gaitBiomechanics.js
 
+// ───────── 현장 튜닝 설정 (한 곳에 모음) ─────────
+// 측정 데이터가 쌓이면 이 값들만 조정해 정확도를 올릴 수 있다.
+// "정상인데 무효 처리됨" → validMinAmp/validMinSteps 낮추기
+// "이상한데 통과됨" → validMinAmp/validMinSteps 높이기
+// "스텝을 너무 많이/적게 셈" → stepProminence, minStepIntervalMs 조정
+export const GAIT_TUNING = {
+  minVisibility: 0.2,       // 관절 가시성 하한 (이하면 각도 계산 제외)
+  filterMinCutoff: 1.5,     // 1-Euro 평활 강도 (낮을수록 더 부드럽게)
+  filterBeta: 0.02,         // 1-Euro 반응성 (빠른 움직임 추종)
+  minStepIntervalMs: 200,   // 스텝 간 최소 간격 (중복 카운트 방지)
+  stepProminence: 0.25,     // 봉우리로 인정할 최소 진폭 (노이즈 컷)
+  validMinAmp: 1.2,         // 유효 측정 최소 신호 진폭 (정지/누움 차단)
+  validMinSteps: 3,         // 유효 측정 최소 스텝 수
+  orientationSideRatio: 0.35, // 측면/후면 구분 비율 임계
+};
+
 export const angleAt = (a, b, c) => {
-  if (!a || !b || !c || a.visibility < 0.2 || b.visibility < 0.2 || c.visibility < 0.2) return null;
+  const v = GAIT_TUNING.minVisibility;
+  if (!a || !b || !c || a.visibility < v || b.visibility < v || c.visibility < v) return null;
   const ba = { x: a.x - b.x, y: a.y - b.y };
   const bc = { x: c.x - b.x, y: c.y - b.y };
   const dot = ba.x * bc.x + ba.y * bc.y;
@@ -91,6 +108,20 @@ export const cameraAngleQuality = (lm) => {
   return { ok: true };
 };
 
+// 촬영 방향 판별: 측면(side) vs 후면/전면(back).
+// 측면뷰는 어깨·골반이 앞뒤로 겹쳐 좌우 너비가 좁고, 후면뷰는 넓게 펼쳐진다.
+// 어깨너비 / 몸통높이 비율로 구분 (측면 ~0.1, 후면 ~0.6).
+export const detectOrientation = (lm) => {
+  if (!lm || !lm[11] || !lm[12] || !lm[23] || !lm[24]) return { view: 'unknown', ratio: 0 };
+  const dist = (a, b) => Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2);
+  const shoulderW = dist(lm[11], lm[12]);
+  const torsoH = (dist(lm[11], lm[23]) + dist(lm[12], lm[24])) / 2;
+  if (torsoH < 0.001) return { view: 'unknown', ratio: 0 };
+  const ratio = shoulderW / torsoH;
+  // 측면: 비율 작음. 후면/전면: 비율 큼.
+  return { view: ratio < GAIT_TUNING.orientationSideRatio ? 'side' : 'back', ratio };
+};
+
 export const pelvisRelativeFeet = (lm) => {
   // 발목(27,28)을 필수로 사용 — 발끝(31,32)/발뒤꿈치(29,30)는 모션블러로
   // 자주 소실되므로 선택값으로 두고, 없으면 발목 좌표로 대체해 에러를 막는다.
@@ -112,7 +143,11 @@ export const pelvisRelativeFeet = (lm) => {
 // 이산 신호의 정점이 두 샘플에 걸쳐 같은 값이 되는 경우를 위해
 // '상승 후 하강' 전환(기울기 부호 +→-)을 추적해 평탄 정점도 1회만 카운트한다.
 export class GaitCycleTracker {
-  constructor({ minStepIntervalMs = 200, minCutoff = 1.5, beta = 0.02 } = {}) {
+  constructor({
+    minStepIntervalMs = GAIT_TUNING.minStepIntervalMs,
+    minCutoff = GAIT_TUNING.filterMinCutoff,
+    beta = GAIT_TUNING.filterBeta,
+  } = {}) {
     this.steps = 0;
     this.minStepIntervalMs = minStepIntervalMs;
     this.lastStepTime = -minStepIntervalMs;
@@ -175,9 +210,9 @@ export class GaitCycleTracker {
       const slope = v - this.prevV;
       const wasRising = this.prevSlope > 0;
       const turnsDown = wasRising && slope < 0;
-      // prominence: 봉우리가 진폭 상위 절반 + 절대 진폭이 보행 수준(0.25↑)이어야 IC.
-      // 절대 하한(0.25)으로 정지/노이즈(보통 <0.1)를 스텝으로 오판하지 않게 막는다.
-      const prominent = range > 0.25 && this.prevV >= this.lo + range * 0.5;
+      // prominence: 봉우리가 진폭 상위 절반 + 절대 진폭이 보행 수준이어야 IC.
+      // 절대 하한(stepProminence)으로 정지/노이즈를 스텝으로 오판하지 않게 막는다.
+      const prominent = range > GAIT_TUNING.stepProminence && this.prevV >= this.lo + range * 0.5;
       if (turnsDown && prominent && ts - this.lastStepTime >= this.minStepIntervalMs) {
         this.steps++;
         this.lastStepTime = ts;
@@ -200,8 +235,8 @@ export class GaitCycleTracker {
 
     // 전체 신호의 절대 진폭. 실제 보행은 정규화 기준 2~4, 정지/노이즈는 보통 0.5 미만.
     const signalAmp = (this._absHi > this._absLo) ? (this._absHi - this._absLo) : 0;
-    // 유효 측정: 충분한 움직임(amp≥1.2) + 최소 스텝 수. 누워있거나 가만히 있으면 false.
-    const valid = signalAmp >= 1.2 && this.steps >= 3;
+    // 유효 측정: 충분한 움직임 + 최소 스텝 수. 누워있거나 가만히 있으면 false.
+    const valid = signalAmp >= GAIT_TUNING.validMinAmp && this.steps >= GAIT_TUNING.validMinSteps;
 
     return {
       totalSteps: this.steps,
