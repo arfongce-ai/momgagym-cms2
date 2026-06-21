@@ -28,6 +28,7 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
   const [recordingTime, setRecordingTime] = useState(0);
   const [warningMsg, setWarningMsg] = useState('');
   const [reportData, setReportData] = useState(null);
+  const [previewUrl, setPreviewUrl] = useState(''); // 녹화 영상 blob URL (state라야 비디오에 반영됨)
   const [poseLoaded, setPoseLoaded] = useState(false); // MediaPipe 준비 여부
 
   const armingSinceRef = useRef(null); // 안정 인식 시작 시각(ms)
@@ -48,9 +49,14 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
 
   useEffect(() => { viewRef.current = view; }, [view]);
 
+  // 카메라 생명주기 분리: camera 진입 시 켜고, preview 갈 때만 끔.
+  // recording 중에는 스트림을 절대 건드리지 않는다(녹화 끊김 방지).
   useEffect(() => {
-    if (view === 'camera' || view === 'recording') startCamera();
-    return () => stopCamera();
+    if (view === 'camera' && !streamRef.current) {
+      startCamera();
+    } else if (view === 'preview') {
+      stopCamera();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view]);
 
@@ -159,6 +165,12 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
     mediaRecorderRef.current.onstop = () => {
       recordedBlobRef.current = new Blob(chunksRef.current, { type: selectedMime });
 
+      // blob URL 을 즉시 생성해 state 로 넣는다(비디오 src 반영). 이전 URL 은 해제.
+      if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
+      const url = URL.createObjectURL(recordedBlobRef.current);
+      previewUrlRef.current = url;
+      setPreviewUrl(url);
+
       // 녹화 종료 시 실제 누적된 분석 데이터를 리포트로 설정 (하드코딩 아님)
       const cycleSummary = trackerRef.current.summary();
       const angleSummary = angleAccRef.current.summary();
@@ -214,18 +226,13 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
     }
   };
 
-  // preview 진입 시 blob URL 1회 생성 (매 렌더 생성 방지 → 메모리 누수 차단)
+  // 다시 찍기 등으로 preview 를 벗어날 때 blob URL 정리
   useEffect(() => {
-    if (view === 'preview' && recordedBlobRef.current) {
-      if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
-      previewUrlRef.current = URL.createObjectURL(recordedBlobRef.current);
+    if (view !== 'preview' && previewUrlRef.current) {
+      URL.revokeObjectURL(previewUrlRef.current);
+      previewUrlRef.current = null;
+      setPreviewUrl('');
     }
-    return () => {
-      if (view !== 'preview' && previewUrlRef.current) {
-        URL.revokeObjectURL(previewUrlRef.current);
-        previewUrlRef.current = null;
-      }
-    };
   }, [view]);
 
   useEffect(() => () => {
@@ -282,7 +289,7 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
       {view === 'preview' && (
         <div className="absolute inset-0 flex flex-col md:flex-row bg-slate-900">
           <div className="relative flex-1 md:flex-[2] bg-black">
-            <video src={previewUrlRef.current || ''} className="w-full h-full object-contain" controls playsInline autoPlay loop muted />
+            <video src={previewUrl || ''} className="w-full h-full object-contain" controls playsInline autoPlay loop muted />
             <div className="absolute top-4 left-4 bg-black/60 p-3 rounded-lg backdrop-blur-md">
               <p className="text-amber-400 font-bold">SPM: {reportData?.cadence}</p>
               <p className="text-white text-sm">입각기: {reportData?.stancePct}% | 유각기: {reportData?.swingPct}%</p>

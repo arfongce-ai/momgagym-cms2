@@ -1,7 +1,7 @@
 // ai-measure/core/gaitBiomechanics.js
 
 export const angleAt = (a, b, c) => {
-  if (!a || !b || !c || a.visibility < 0.3 || b.visibility < 0.3 || c.visibility < 0.3) return null;
+  if (!a || !b || !c || a.visibility < 0.2 || b.visibility < 0.2 || c.visibility < 0.2) return null;
   const ba = { x: a.x - b.x, y: a.y - b.y };
   const bc = { x: c.x - b.x, y: c.y - b.y };
   const dot = ba.x * bc.x + ba.y * bc.y;
@@ -87,20 +87,23 @@ export const cameraAngleQuality = (lm) => {
   const shoulderW = dist(lm[11], lm[12]);
   const thighL = (dist(lm[23], lm[25]) + dist(lm[24], lm[26])) / 2;
 
-  if (thighL < shoulderW * 0.8) return { ok: false, reason: 'high_angle' };
+  if (thighL < shoulderW * 0.5) return { ok: false, reason: 'high_angle' };
   return { ok: true };
 };
 
 export const pelvisRelativeFeet = (lm) => {
-  if (!lm || !lm[23] || !lm[24] || !lm[29] || !lm[31]) return null;
+  // 발목(27,28)을 필수로 사용 — 발끝(31,32)/발뒤꿈치(29,30)는 모션블러로
+  // 자주 소실되므로 선택값으로 두고, 없으면 발목 좌표로 대체해 에러를 막는다.
+  if (!lm || !lm[23] || !lm[24] || !lm[27] || !lm[28]) return null;
   const pelvisX = (lm[23].x + lm[24].x) / 2;
   const pelvisY = (lm[23].y + lm[24].y) / 2;
   const pelvisWidth = Math.max(0.01, Math.sqrt((lm[23].x - lm[24].x) ** 2 + (lm[23].y - lm[24].y) ** 2));
 
   const norm = (p) => ({ x: (p.x - pelvisX) / pelvisWidth, y: (p.y - pelvisY) / pelvisWidth });
   return {
-    leftHeel: norm(lm[29]), rightHeel: norm(lm[30]),
-    leftToe: norm(lm[31]), rightToe: norm(lm[32])
+    leftAnkle: norm(lm[27]), rightAnkle: norm(lm[28]),
+    leftHeel: lm[29] ? norm(lm[29]) : norm(lm[27]), rightHeel: lm[30] ? norm(lm[30]) : norm(lm[28]),
+    leftToe: lm[31] ? norm(lm[31]) : norm(lm[27]), rightToe: lm[32] ? norm(lm[32]) : norm(lm[28])
   };
 };
 
@@ -122,6 +125,8 @@ export class GaitCycleTracker {
     this.hi = -Infinity;
     this.prevV = null;
     this.prevSlope = 0; // 직전 기울기 부호 유지(평탄구간 0은 무시)
+    this._ankleBand = { lo: Infinity, hi: -Infinity };
+    this._toeBand = { lo: Infinity, hi: -Infinity };
   }
 
   push(relFeet, ts) {
@@ -131,7 +136,24 @@ export class GaitCycleTracker {
     this.totalFrames++;
 
     // 전후(A-P) 상대 위치. 부호 있는 값 → 보폭당 봉우리 1회.
-    const v = relFeet.leftToe.x - relFeet.rightToe.x;
+    // 발목(blur에 강함)과 발끝 중 '진폭이 큰' 신호를 자동 선택한다.
+    // 현장에선 발목이 안정적이고, 발끝이 잘 보이는 환경에선 발끝이 더 민감하다.
+    const ankleV = (relFeet.leftAnkle && relFeet.rightAnkle)
+      ? relFeet.leftAnkle.x - relFeet.rightAnkle.x : null;
+    const toeV = (relFeet.leftToe && relFeet.rightToe)
+      ? relFeet.leftToe.x - relFeet.rightToe.x : null;
+    if (this._ankleBand == null) this._ankleBand = { lo: Infinity, hi: -Infinity };
+    if (this._toeBand == null) this._toeBand = { lo: Infinity, hi: -Infinity };
+    if (ankleV != null) { this._ankleBand.lo = Math.min(this._ankleBand.lo, ankleV); this._ankleBand.hi = Math.max(this._ankleBand.hi, ankleV); }
+    if (toeV != null) { this._toeBand.lo = Math.min(this._toeBand.lo, toeV); this._toeBand.hi = Math.max(this._toeBand.hi, toeV); }
+    const ankleAmp = this._ankleBand.hi - this._ankleBand.lo;
+    const toeAmp = this._toeBand.hi - this._toeBand.lo;
+    // 더 큰 진폭(움직임이 뚜렷한) 신호 선택. 동률/초기엔 발목 우선.
+    let v;
+    if (toeV != null && toeAmp > ankleAmp * 1.2) v = toeV;
+    else if (ankleV != null) v = ankleV;
+    else if (toeV != null) v = toeV;
+    else return;
 
     // 적응형 진폭 밴드 (느린 감쇠로 패닝/줌 후에도 안정)
     this.lo = Math.min(this.lo === Infinity ? v : this.lo + (v - this.lo) * 0.002, v);
