@@ -3,21 +3,26 @@ import {
   GaitCycleTracker, jointAnglesFromPose, AngleAccumulator,
   pelvisRelativeFeet, cameraAngleQuality
 } from '../core/gaitBiomechanics';
-import { loadPoseLandmarker, detectPoseFrame, closePoseLandmarker } from '../core/poseBackend';
+import { loadPoseLandmarker, detectPoseFrame, closePoseLandmarker, isPoseReady } from '../core/poseBackend';
 
 // 캘리브레이션: 세이프존 + 인식 안정이 이만큼 유지되면 락
-const CALIB_HOLD_MS = 2000;
+const CALIB_HOLD_MS = 800; // 사람이 잡히면 거의 즉시 인식(0.8초 안정화로 깜빡임만 방지)
 // 피사체가 중앙 세이프존(상하좌우 15% 여백) 안에 있는지
 function isInSafeZone(lm) {
   if (!Array.isArray(lm)) return false;
-  let n = 0;
+  // 골반·무릎·발목 중 충분수가 세이프존 안에 있으면 OK.
+  // 발(아래쪽)이 박스 하단을 살짝 넘는 건 흔하므로, '하나라도 벗어나면 실패'가
+  // 아니라 '안에 든 개수'로 판정해 jitter·경계 걸침에 관대하게 한다.
+  let inside = 0, seen = 0;
   for (const i of [23, 24, 25, 26, 27, 28]) {
     const p = lm[i];
-    if (!p || (p.visibility != null && p.visibility < 0.4)) continue;
-    if (p.x < 0.15 || p.x > 0.85 || p.y < 0.15 || p.y > 0.85) return false;
-    n += 1;
+    if (!p || (p.visibility != null && p.visibility < 0.3)) continue;
+    seen += 1;
+    // 좌우는 여유 있게(0.1~0.9), 상단만 0.12, 하단은 거의 끝까지(0.98) 허용
+    if (p.x >= 0.10 && p.x <= 0.90 && p.y >= 0.12 && p.y <= 0.98) inside += 1;
   }
-  return n >= 4;
+  // 관절이 충분히 보이고(>=3), 그중 다수(>=3)가 존 안에 있으면 통과
+  return seen >= 3 && inside >= 3;
 }
 
 export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, onSave }) {
@@ -29,10 +34,13 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
   const [warningMsg, setWarningMsg] = useState('');
   const [reportData, setReportData] = useState(null);
   const [previewUrl, setPreviewUrl] = useState(''); // 녹화 영상 blob URL (state라야 비디오에 반영됨)
+  const [saveState, setSaveState] = useState('idle'); // idle|saving|saved|error  회차 저장 상태
+  const [shareMsg, setShareMsg] = useState('');
   const [poseLoaded, setPoseLoaded] = useState(false); // MediaPipe 준비 여부
 
   const armingSinceRef = useRef(null); // 안정 인식 시작 시각(ms)
   const lastTsRef = useRef(0);         // detectForVideo 타임스탬프 단조증가 보장
+  const lostFramesRef = useRef(0);     // 캘리브레이션 jitter 관용 카운터
 
   const videoRef = useRef(null);
   const mediaRecorderRef = useRef(null);
@@ -70,8 +78,8 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
         videoRef.current.srcObject = stream;
         videoRef.current.play();
       }
-      // MediaPipe PoseLandmarker 를 CDN 런타임 로드(1회). 실패해도 카메라/녹화는 동작.
-      loadPoseLandmarker({ numPoses: 1, delegate: 'GPU' })
+      // MediaPipe PoseLandmarker 를 CDN 런타임 로드(1회). GPU 실패 시 CPU 자동 폴백.
+      loadPoseLandmarker({ numPoses: 1 })
         .then(() => setPoseLoaded(true))
         .catch((e) => { setPoseLoaded(false); setWarningMsg(e?.message || 'AI 분석 모듈 로드 실패'); });
       startVisionPipeline();
@@ -81,12 +89,20 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
   };
 
   const stopCamera = () => {
-    if (streamRef.current) streamRef.current.getTracks().forEach(track => track.stop());
-    if (reqFrameRef.current) cancelAnimationFrame(reqFrameRef.current);
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current = null; // 중요: null 로 비워야 '다시 찍기' 시 카메라가 재시작됨
+    }
+    if (reqFrameRef.current) { cancelAnimationFrame(reqFrameRef.current); reqFrameRef.current = null; }
   };
 
   // 실제 데이터 추출 루프: MediaPipe 추론 → 캘리브레이션 + 녹화 중 누적
   const startVisionPipeline = () => {
+    if (reqFrameRef.current) cancelAnimationFrame(reqFrameRef.current); // 중복 루프 방지
+    // setState 과호출 방지용 직전값 캐시 (60fps 매프레임 setState → 발열·렌더폭주 차단)
+    let lastReady = null, lastWarn = null;
+    const setReadyOnce = (v) => { if (v !== lastReady) { lastReady = v; setIsReady(v); } };
+    const setWarnOnce = (v) => { if (v !== lastWarn) { lastWarn = v; setWarningMsg(v); } };
     const loop = () => {
       const video = videoRef.current;
       // 타임스탬프 단조증가 보장 (detectForVideo 는 같은 값 2회 시 예외)
@@ -106,27 +122,35 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
           trackerRef.current.push(pelvisRelativeFeet(landmarks), ts);
           angleAccRef.current.push(jointAnglesFromPose(landmarks));
         } else {
-          // 캘리브레이션: 앵글 품질 + 세이프존이 2초 유지되면 락
+          // 캘리브레이션: 앵글 품질 + 세이프존이 유지되면 락
           const q = cameraAngleQuality(landmarks);
           const inZone = isInSafeZone(landmarks);
           if (q.ok && inZone) {
+            lostFramesRef.current = 0;
             if (armingSinceRef.current == null) armingSinceRef.current = ts;
             const held = ts - armingSinceRef.current;
-            setIsReady(held >= CALIB_HOLD_MS);
-            setWarningMsg(held >= CALIB_HOLD_MS ? '' : '자세 안정화 중...');
+            setReadyOnce(held >= CALIB_HOLD_MS);
+            setWarnOnce(held >= CALIB_HOLD_MS ? '' : `자세 안정화 중... ${Math.min(99, Math.round(held / CALIB_HOLD_MS * 100))}%`);
           } else {
-            armingSinceRef.current = null;
-            setIsReady(false);
-            setWarningMsg(!q.ok ? '카메라를 골반 높이로 내려주세요'
-              : !inZone ? '피사체를 가운데 박스 안에 맞춰주세요' : '');
+            // jitter 관용: 조건이 잠깐(최대 8프레임≈0.13s) 빠져도 타이머 유지
+            lostFramesRef.current += 1;
+            if (lostFramesRef.current > 8) {
+              armingSinceRef.current = null;
+              setReadyOnce(false);
+              setWarnOnce(!q.ok ? '카메라를 골반 높이로 내려주세요'
+                : '피사체를 가운데 박스 안에 맞춰주세요');
+            }
           }
         }
       } else if (viewRef.current !== 'recording') {
         // 포즈 미검출 또는 백엔드 미연결
         armingSinceRef.current = null;
-        // 백엔드 자체가 아직 로드 안 됐으면 안내만, 로드됐는데 사람이 없으면 경고
-        if (!poseLoaded) { setIsReady(false); }
-        else { setIsReady(false); setWarningMsg('하체가 보이도록 화면을 잡아주세요'); }
+        lostFramesRef.current = 0;
+        setReadyOnce(false);
+        // isPoseReady() 는 모듈 전역값이라 stale 클로저 영향을 받지 않는다.
+        setWarnOnce(isPoseReady()
+          ? '사람 전신(머리~발)이 화면에 들어오게 해주세요'
+          : 'AI 분석 모듈 로딩 중...');
       }
 
       reqFrameRef.current = requestAnimationFrame(loop);
@@ -134,21 +158,18 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
     loop();
   };
 
+  // 녹화 타이머 (1초 단위 경과)
   useEffect(() => {
-    let timer;
-    if (view === 'recording') {
-      timer = setInterval(() => {
-        setRecordingTime(prev => {
-          if (prev + 1 >= 15) stopRecording();
-          return prev + 1;
-        });
-      }, 1000);
-    } else {
-      setRecordingTime(0);
-    }
+    if (view !== 'recording') { setRecordingTime(0); return undefined; }
+    const timer = setInterval(() => setRecordingTime(prev => prev + 1), 1000);
     return () => clearInterval(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view]);
+
+  // 15초 자동 종료 (메모리 오버플로우 방지) — updater 부수효과 대신 별도 effect
+  useEffect(() => {
+    if (view === 'recording' && recordingTime >= 15) stopRecording();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recordingTime, view]);
 
   const startRecording = () => {
     if (!isReady) return;
@@ -156,6 +177,10 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
     trackerRef.current = new GaitCycleTracker(); // 녹화 시작 시 파이프라인 초기화
     angleAccRef.current = new AngleAccumulator();
     armingSinceRef.current = null;
+    // 이전 측정의 저장/공유 상태 리셋 (재녹화 시 저장 버튼이 막히지 않도록)
+    setSaveState('idle');
+    setShareMsg('');
+    setReportData(null);
 
     const mimeTypes = ['video/mp4', 'video/webm;codecs=vp8', 'video/webm'];
     let selectedMime = mimeTypes.find(m => MediaRecorder.isTypeSupported(m)) || '';
@@ -205,7 +230,8 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
     }
   };
 
-  const handleShareAndSave = async () => {
+  // 영상 공유/기기 저장 (Web Share, 실패 시 다운로드 폴백). 데이터 저장과 독립.
+  const handleShareVideo = async () => {
     if (!recordedBlobRef.current) return;
     const ext = recordedBlobRef.current.type.includes('mp4') ? 'mp4' : 'webm';
     const filename = `${member?.name || '회원'}_보행분석.${ext}`;
@@ -214,15 +240,29 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
     if (navigator.canShare && navigator.canShare({ files: [file] })) {
       try {
         await navigator.share({ title: '보행 분석', files: [file] });
-        if (saveToFirebase) saveToFirebase(reportData);
-      } catch (err) { /* 공유 취소/실패 무시 */ }
+        setShareMsg('공유 완료');
+      } catch (err) {
+        if (err?.name !== 'AbortError') setShareMsg('공유 실패 — 다운로드로 저장하세요');
+      }
     } else {
       const url = URL.createObjectURL(recordedBlobRef.current);
       const a = document.createElement('a');
       a.href = url; a.download = filename;
       document.body.appendChild(a); a.click(); document.body.removeChild(a);
       setTimeout(() => URL.revokeObjectURL(url), 100);
-      if (saveToFirebase) saveToFirebase(reportData);
+      setShareMsg('기기에 저장됨');
+    }
+  };
+
+  // 회차 데이터 저장 (Firebase). 영상 공유와 완전히 독립적으로 실행.
+  const handleSaveReport = async () => {
+    if (!reportData || typeof saveToFirebase !== 'function') return;
+    setSaveState('saving');
+    try {
+      await saveToFirebase(reportData);
+      setSaveState('saved');
+    } catch (e) {
+      setSaveState('error');
     }
   };
 
@@ -258,7 +298,11 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
             <button onClick={onBack} className="measure-back">← 뒤로</button>
             <div className="text-center">
               <h1 className="measure-title">보행 & 런닝 분석</h1>
-              {view === 'camera' && <p className="text-sm font-bold text-amber-400 mt-1 drop-shadow-md">일정한 속도로 뛸 때 시작하세요</p>}
+              {view === 'camera' && (
+                <p className="text-sm font-bold text-amber-400 mt-1 drop-shadow-md">
+                  {poseLoaded ? '일정한 속도로 뛸 때 시작하세요' : 'AI 분석 모듈 준비 중...'}
+                </p>
+              )}
               {warningMsg && <p className="text-sm font-bold text-red-400 mt-1 bg-black/50 px-2 py-1 rounded">{warningMsg}</p>}
             </div>
             <div className="w-10"></div>
@@ -316,7 +360,21 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
                 <div className="flex justify-between text-white"><span className="text-slate-400">발목</span> <span>{reportData?.angles?.ankle?.rom ?? 0}°</span></div>
               </div>
             </div>
-            <button onClick={handleShareAndSave} className="btn btn-primary w-full shadow-lg shadow-amber-500/20">🚀 기기 저장 및 리포트 전송</button>
+            <div className="space-y-2">
+              <div className="grid grid-cols-2 gap-2">
+                <button onClick={handleShareVideo} className="rounded-xl border border-slate-600 bg-slate-700 text-white font-bold py-3 text-sm">
+                  📤 영상 저장·공유
+                </button>
+                <button onClick={handleSaveReport} disabled={saveState === 'saving' || saveState === 'saved'}
+                  className="btn btn-primary disabled:opacity-60 flex items-center justify-center gap-2">
+                  {saveState === 'saving' && <span className="h-4 w-4 rounded-full border-2 border-slate-950 border-t-transparent animate-spin" />}
+                  {saveState === 'saved' ? '✓ 회차 저장됨' : saveState === 'saving' ? '저장 중...' : '💾 회차 기록 저장'}
+                </button>
+              </div>
+              {shareMsg && <p className="text-center text-xs text-emerald-400">{shareMsg}</p>}
+              {saveState === 'error' && <p className="text-center text-xs text-red-400">저장 실패 — 네트워크 확인 후 다시 시도하세요</p>}
+              <p className="text-center text-[11px] text-slate-500">영상은 기기에, 회차 기록(정량 데이터)은 서버에 저장됩니다.</p>
+            </div>
           </div>
         </div>
       )}

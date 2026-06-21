@@ -6,35 +6,56 @@
 // 반환 landmark 규약은 gaitBiomechanics 가 기대하는 형태와 동일하다:
 //   Array<{ x, y, z?, visibility }>  (BlazePose 33점, x·y 는 0~1 정규화)
 // MediaPipe 결과의 result.landmarks[0] 가 바로 이 형태이므로 그대로 쓴다.
+//
+// ⚠ 중요한 함정 2가지(실측 확인):
+//  1) 동적 import 는 반드시 '패키지 루트'에서 해야 named export 가 나온다.
+//     '.../vision_bundle.mjs' 를 직접 import 하면 export 가 비어 조용히 실패한다.
+//     → 카메라는 켜지지만 detectForVideo 가 아무것도 안 돌려주는 증상.
+//  2) 버전은 핀 고정(@latest 는 깨질 수 있음). GPU delegate 실패 시 CPU 폴백.
 
 let _visionPromise = null;
 let _landmarker = null;
 
-const TASKS_VISION_CDN = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest';
-const WASM_ROOT = `${TASKS_VISION_CDN}/wasm`;
-// lite 모델: 모바일 실시간에 적합(정확도/속도 균형). 필요 시 full/heavy 로 교체.
+// 버전 핀 고정 (production 안전). 패키지 '루트'에서 import.
+const TV_VERSION = '0.10.14';
+const TV_ROOT = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${TV_VERSION}`;
+const WASM_ROOT = `${TV_ROOT}/wasm`;
+// lite 모델: 모바일 실시간에 적합(정확도/속도 균형).
 const MODEL_URL =
   'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task';
 
+async function _createWithDelegate(PoseLandmarker, FilesetResolver, numPoses, delegate) {
+  const fileset = await FilesetResolver.forVisionTasks(WASM_ROOT);
+  return PoseLandmarker.createFromOptions(fileset, {
+    baseOptions: { modelAssetPath: MODEL_URL, delegate },
+    runningMode: 'VIDEO',
+    numPoses,
+  });
+}
+
 /**
  * PoseLandmarker 를 VIDEO 모드로 1회 생성. 이미 만들어졌으면 캐시 반환.
- * @param {object} opts  { numPoses=1, delegate='GPU' }
+ * GPU 실패 시 CPU 로 자동 폴백.
+ * @param {object} opts  { numPoses=1 }
  */
 export async function loadPoseLandmarker(opts = {}) {
   if (_landmarker) return _landmarker;
   if (_visionPromise) return _visionPromise;
 
-  const { numPoses = 1, delegate = 'GPU' } = opts;
+  const { numPoses = 1 } = opts;
   _visionPromise = (async () => {
-    // ESM 동적 import (CDN). Cloudflare 정적 빌드에 포함되지 않는다.
-    const vision = await import(/* @vite-ignore */ `${TASKS_VISION_CDN}/vision_bundle.mjs`);
+    // ✅ 패키지 루트에서 import (vision_bundle.mjs 직접 import 금지)
+    const vision = await import(/* @vite-ignore */ TV_ROOT);
     const { FilesetResolver, PoseLandmarker } = vision;
-    const fileset = await FilesetResolver.forVisionTasks(WASM_ROOT);
-    _landmarker = await PoseLandmarker.createFromOptions(fileset, {
-      baseOptions: { modelAssetPath: MODEL_URL, delegate },
-      runningMode: 'VIDEO',
-      numPoses,
-    });
+    if (!FilesetResolver || !PoseLandmarker) {
+      throw new Error('MediaPipe named export 로드 실패 (CDN 경로 확인 필요)');
+    }
+    try {
+      _landmarker = await _createWithDelegate(PoseLandmarker, FilesetResolver, numPoses, 'GPU');
+    } catch (gpuErr) {
+      // 일부 모바일/브라우저는 GPU delegate 실패 → CPU 폴백
+      _landmarker = await _createWithDelegate(PoseLandmarker, FilesetResolver, numPoses, 'CPU');
+    }
     return _landmarker;
   })();
 

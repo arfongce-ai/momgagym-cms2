@@ -26,6 +26,9 @@ export default function AiMeasureHub() {
   // 측정 저장 (회원 선택 시 측정이력에 누적)
   const handleSave = async (data) => {
     if (!member) { alert('먼저 회원을 선택하세요.'); return; }
+    // 보행 분석은 컴포넌트가 자체 저장 상태 UI(저장 중/✓/실패)를 표시하므로
+    // alert 없이 에러를 그대로 throw 해 컴포넌트가 처리하게 한다.
+    const isGait = active.id === 'gait';
     try {
       await aiStore.addSession(member.id, {
         menu: active.id,
@@ -35,11 +38,13 @@ export default function AiMeasureHub() {
         data,
       });
       // 보행 분석은 전용 컬렉션(gait_reports)에도 정량 리포트를 추가 저장 → 데이터 일원화.
-      if (active.id === 'gait') {
+      if (isGait) {
         await aiStore.addGaitReport({ ...data, member: { id: member.id, name: member.name } });
+        return; // 컴포넌트가 ✓ 표시
       }
       alert('측정이 저장되었습니다.');
     } catch (e) {
+      if (isGait) throw e; // 컴포넌트 saveState='error' 로 표시되게 전파
       alert('저장에 실패했습니다. 네트워크 확인 후 다시 시도하세요.\n' + (e?.message || ''));
     }
   };
