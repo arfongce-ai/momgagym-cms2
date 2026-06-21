@@ -4,7 +4,7 @@ import {
 } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { auth, db } from '../firebase';
-import { store } from '../demoData';
+import { store, initStore } from '../demoData';
 
 const AuthContext = createContext(null);
 
@@ -26,6 +26,21 @@ async function resolveRole(fbUser) {
 export function AuthProvider({ children }) {
   const [user, setUser]       = useState(null);
   const [loading, setLoading] = useState(true);
+  const [dataReady, setDataReady] = useState(false); // 로그인 후 데이터 로딩 완료 여부
+  const [dataError, setDataError] = useState(null);
+
+  // 로그인 확정 후 1회만 Firestore 데이터를 불러온다.
+  const ensureData = async () => {
+    if (dataReady) return;
+    try {
+      await initStore();
+      setDataReady(true);
+      setDataError(null);
+    } catch (e) {
+      console.error('[FitCMS] 데이터 로딩 실패:', e);
+      setDataError(e?.code || e?.message || String(e));
+    }
+  };
 
   // Firebase 로그인 상태를 신뢰의 원천으로 사용한다.
   // (localStorage의 role을 더 이상 신뢰하지 않음 → 관리자 위장 불가)
@@ -41,17 +56,25 @@ export function AuthProvider({ children }) {
           name: fbUser.displayName || fbUser.email,
           source: 'firebase',
         });
+        await ensureData(); // 로그인 확정 후 데이터 로딩
       } else {
         // Firebase 비로그인 상태 — 트레이너(앱 자체 계정) 세션이 있으면 복원
         try {
           const s = localStorage.getItem('fitcms_trainer_session');
-          if (s) { setUser(JSON.parse(s)); setLoading(false); return; }
+          if (s) {
+            setUser(JSON.parse(s));
+            await ensureData(); // 트레이너 세션도 로그인 상태이므로 데이터 로딩
+            setLoading(false);
+            return;
+          }
         } catch {}
         setUser(null);
+        setDataReady(false); // 로그아웃 시 데이터 상태 초기화
       }
       setLoading(false);
     });
     return () => unsub();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const login = async (email, password) => {
@@ -81,6 +104,7 @@ export function AuthProvider({ children }) {
         const u = { id: t.id, email: t.loginEmail, role: 'trainer', name: t.name, trainerId: t.id, source: 'trainer' };
         localStorage.setItem('fitcms_trainer_session', JSON.stringify(u));
         setUser(u);
+        await ensureData(); // 트레이너 로그인 후 데이터 로딩
         return u;
       }
       throw new Error('이메일 또는 비밀번호가 올바르지 않습니다.');
@@ -93,6 +117,6 @@ export function AuthProvider({ children }) {
     setUser(null);
   };
 
-  return <AuthContext.Provider value={{ user, loading, login, logout }}>{children}</AuthContext.Provider>;
+  return <AuthContext.Provider value={{ user, loading, login, logout, dataReady, dataError, retryData: ensureData }}>{children}</AuthContext.Provider>;
 }
 export function useAuth() { return useContext(AuthContext); }
