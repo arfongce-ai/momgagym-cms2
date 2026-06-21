@@ -57,22 +57,29 @@ export function AuthProvider({ children }) {
         if (fbUser.isAnonymous && trainerSession) {
           // 익명 인증 + 트레이너 세션 → 화면용 사용자는 트레이너 정보로 표시
           setUser(trainerSession);
+          await ensureData();
         } else if (fbUser.isAnonymous) {
           // 익명 인증만 있고 트레이너 세션 없음 → 아직 로그인 화면 필요
           setUser(null);
+          await ensureData(); // 로그인 화면에서 트레이너 목록을 읽을 수 있도록
         } else {
-          // 정식 Firebase 계정(관리자/직원) → roles 문서로 역할 확정
+          // 정식 Firebase 계정(관리자/직원). 데이터를 먼저 로드한 뒤 역할/트레이너 연결.
+          await ensureData();
           const role = await resolveRole(fbUser);
+          const email = (fbUser.email || '').trim().toLowerCase();
+          // 이 이메일이 트레이너 목록에도 있으면 trainerId 연결(관리자 겸 트레이너).
+          const asTrainer = store.getTrainers().find(
+            t => (t.loginEmail || '').trim().toLowerCase() === email
+          );
           setUser({
             id: fbUser.uid,
             email: fbUser.email,
             role: role || 'staff',
             name: fbUser.displayName || fbUser.email,
             source: 'firebase',
+            ...(asTrainer ? { trainerId: asTrainer.id } : {}),
           });
         }
-        // Firebase 인증이 확보됐으므로 데이터 로딩 (익명도 isSignedIn 통과)
-        await ensureData();
       } else {
         // 아직 아무 인증도 없음 → 익명 인증을 자동 수행.
         // 성공하면 이 콜백이 다시 호출되어 위 분기로 들어간다.
@@ -98,10 +105,16 @@ export function AuthProvider({ children }) {
     try {
       const cred = await signInWithEmailAndPassword(auth, e, password);
       const role = await resolveRole(cred.user);
+      // 이 이메일이 트레이너 목록에도 있으면 trainerId를 연결한다.
+      // (관리자 겸 트레이너인 경우 → 관리자 비번 하나로 트레이너 기능까지 사용)
+      const asTrainer = store.getTrainers().find(
+        t => (t.loginEmail || '').trim().toLowerCase() === e
+      );
       const u = {
         id: cred.user.uid, email: cred.user.email,
         role: role || 'staff', name: cred.user.displayName || cred.user.email,
         source: 'firebase',
+        ...(asTrainer ? { trainerId: asTrainer.id } : {}),
       };
       // onAuthStateChanged가 user를 세팅하지만, 즉시 반환값도 제공
       return u;
