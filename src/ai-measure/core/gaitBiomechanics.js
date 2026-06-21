@@ -112,7 +112,7 @@ export const pelvisRelativeFeet = (lm) => {
 // 이산 신호의 정점이 두 샘플에 걸쳐 같은 값이 되는 경우를 위해
 // '상승 후 하강' 전환(기울기 부호 +→-)을 추적해 평탄 정점도 1회만 카운트한다.
 export class GaitCycleTracker {
-  constructor({ minStepIntervalMs = 200 } = {}) {
+  constructor({ minStepIntervalMs = 200, minCutoff = 1.5, beta = 0.02 } = {}) {
     this.steps = 0;
     this.minStepIntervalMs = minStepIntervalMs;
     this.lastStepTime = -minStepIntervalMs;
@@ -127,6 +127,11 @@ export class GaitCycleTracker {
     this.prevSlope = 0; // 직전 기울기 부호 유지(평탄구간 0은 무시)
     this._ankleBand = { lo: Infinity, hi: -Infinity };
     this._toeBand = { lo: Infinity, hi: -Infinity };
+    // 노이즈를 보행으로 오판하지 않도록 1-Euro 평활 적용
+    this._filt = new OneEuroFilter({ minCutoff, beta, dCutoff: 1.0 });
+    // 전체 신호의 절대 진폭(최댓값-최솟값) 추적 → 유효 측정 판정용
+    this._absLo = Infinity;
+    this._absHi = -Infinity;
   }
 
   push(relFeet, ts) {
@@ -137,7 +142,6 @@ export class GaitCycleTracker {
 
     // 전후(A-P) 상대 위치. 부호 있는 값 → 보폭당 봉우리 1회.
     // 발목(blur에 강함)과 발끝 중 '진폭이 큰' 신호를 자동 선택한다.
-    // 현장에선 발목이 안정적이고, 발끝이 잘 보이는 환경에선 발끝이 더 민감하다.
     const ankleV = (relFeet.leftAnkle && relFeet.rightAnkle)
       ? relFeet.leftAnkle.x - relFeet.rightAnkle.x : null;
     const toeV = (relFeet.leftToe && relFeet.rightToe)
@@ -149,11 +153,18 @@ export class GaitCycleTracker {
     const ankleAmp = this._ankleBand.hi - this._ankleBand.lo;
     const toeAmp = this._toeBand.hi - this._toeBand.lo;
     // 더 큰 진폭(움직임이 뚜렷한) 신호 선택. 동률/초기엔 발목 우선.
-    let v;
-    if (toeV != null && toeAmp > ankleAmp * 1.2) v = toeV;
-    else if (ankleV != null) v = ankleV;
-    else if (toeV != null) v = toeV;
+    let vRaw;
+    if (toeV != null && toeAmp > ankleAmp * 1.2) vRaw = toeV;
+    else if (ankleV != null) vRaw = ankleV;
+    else if (toeV != null) vRaw = toeV;
     else return;
+
+    // 1-Euro 평활: 검출 떨림(노이즈) 제거. 보행 같은 큰 저주파 움직임은 보존.
+    const v = this._filt.filter(vRaw, ts / 1000);
+
+    // 절대 진폭 추적 (전체 측정 구간의 흔들림 크기)
+    this._absLo = Math.min(this._absLo, v);
+    this._absHi = Math.max(this._absHi, v);
 
     // 적응형 진폭 밴드 (느린 감쇠로 패닝/줌 후에도 안정)
     this.lo = Math.min(this.lo === Infinity ? v : this.lo + (v - this.lo) * 0.002, v);
@@ -164,8 +175,9 @@ export class GaitCycleTracker {
       const slope = v - this.prevV;
       const wasRising = this.prevSlope > 0;
       const turnsDown = wasRising && slope < 0;
-      // prominence: 봉우리가 진폭의 상위 절반에 있어야 IC로 인정 (노이즈 컷)
-      const prominent = range > 0.02 && this.prevV >= this.lo + range * 0.5;
+      // prominence: 봉우리가 진폭 상위 절반 + 절대 진폭이 보행 수준(0.25↑)이어야 IC.
+      // 절대 하한(0.25)으로 정지/노이즈(보통 <0.1)를 스텝으로 오판하지 않게 막는다.
+      const prominent = range > 0.25 && this.prevV >= this.lo + range * 0.5;
       if (turnsDown && prominent && ts - this.lastStepTime >= this.minStepIntervalMs) {
         this.steps++;
         this.lastStepTime = ts;
@@ -186,11 +198,18 @@ export class GaitCycleTracker {
     if (stance < 40) stance = 40; // 생체역학적 최소/최대 안전장치
     if (stance > 70) stance = 70;
 
+    // 전체 신호의 절대 진폭. 실제 보행은 정규화 기준 2~4, 정지/노이즈는 보통 0.5 미만.
+    const signalAmp = (this._absHi > this._absLo) ? (this._absHi - this._absLo) : 0;
+    // 유효 측정: 충분한 움직임(amp≥1.2) + 최소 스텝 수. 누워있거나 가만히 있으면 false.
+    const valid = signalAmp >= 1.2 && this.steps >= 3;
+
     return {
       totalSteps: this.steps,
       stancePct: stance,
       swingPct: 100 - stance,
-      averageCadenceSpm: Math.round(spm)
+      averageCadenceSpm: Math.round(spm),
+      signalAmp: Math.round(signalAmp * 100) / 100,
+      valid,
     };
   }
 }
