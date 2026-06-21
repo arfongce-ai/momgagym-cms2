@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect } from 'react';
 import {
-  signInWithEmailAndPassword, signOut, onAuthStateChanged,
+  signInWithEmailAndPassword, signOut, onAuthStateChanged, signInAnonymously,
 } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { auth, db } from '../firebase';
@@ -43,33 +43,47 @@ export function AuthProvider({ children }) {
   };
 
   // Firebase 로그인 상태를 신뢰의 원천으로 사용한다.
-  // (localStorage의 role을 더 이상 신뢰하지 않음 → 관리자 위장 불가)
+  // 트레이너는 Firebase 계정이 없으므로, 비로그인 시 '익명 인증'을 자동 수행해
+  // isSignedIn() 규칙을 통과시킨다(데이터 읽기 가능). 화면용 역할은 그대로 유지.
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (fbUser) => {
       if (fbUser) {
-        // 관리자/직원: Firebase 계정 → roles 문서로 역할 확정
-        const role = await resolveRole(fbUser);
-        setUser({
-          id: fbUser.uid,
-          email: fbUser.email,
-          role: role || 'staff',     // roles 문서 없으면 일반 직원(관리자 화면 불가)
-          name: fbUser.displayName || fbUser.email,
-          source: 'firebase',
-        });
-        await ensureData(); // 로그인 확정 후 데이터 로딩
+        // Firebase 인증됨 (정식 계정 또는 익명). 이제 데이터 읽기 권한 있음.
+        const trainerSession = (() => {
+          try { return JSON.parse(localStorage.getItem('fitcms_trainer_session') || 'null'); }
+          catch { return null; }
+        })();
+
+        if (fbUser.isAnonymous && trainerSession) {
+          // 익명 인증 + 트레이너 세션 → 화면용 사용자는 트레이너 정보로 표시
+          setUser(trainerSession);
+        } else if (fbUser.isAnonymous) {
+          // 익명 인증만 있고 트레이너 세션 없음 → 아직 로그인 화면 필요
+          setUser(null);
+        } else {
+          // 정식 Firebase 계정(관리자/직원) → roles 문서로 역할 확정
+          const role = await resolveRole(fbUser);
+          setUser({
+            id: fbUser.uid,
+            email: fbUser.email,
+            role: role || 'staff',
+            name: fbUser.displayName || fbUser.email,
+            source: 'firebase',
+          });
+        }
+        // Firebase 인증이 확보됐으므로 데이터 로딩 (익명도 isSignedIn 통과)
+        await ensureData();
       } else {
-        // Firebase 비로그인 상태 — 트레이너(앱 자체 계정) 세션이 있으면 복원
+        // 아직 아무 인증도 없음 → 익명 인증을 자동 수행.
+        // 성공하면 이 콜백이 다시 호출되어 위 분기로 들어간다.
         try {
-          const s = localStorage.getItem('fitcms_trainer_session');
-          if (s) {
-            setUser(JSON.parse(s));
-            await ensureData(); // 트레이너 세션도 로그인 상태이므로 데이터 로딩
-            setLoading(false);
-            return;
-          }
-        } catch {}
-        setUser(null);
-        setDataReady(false); // 로그아웃 시 데이터 상태 초기화
+          await signInAnonymously(auth);
+          return; // onAuthStateChanged 재호출 대기 (loading 유지)
+        } catch (e) {
+          console.error('[익명 인증 실패]', e);
+          setDataError(e?.code || e?.message || String(e));
+          setUser(null);
+        }
       }
       setLoading(false);
     });
@@ -113,8 +127,11 @@ export function AuthProvider({ children }) {
 
   const logout = async () => {
     localStorage.removeItem('fitcms_trainer_session');
-    try { await signOut(auth); } catch {}
     setUser(null);
+    setDataReady(false);
+    // signOut 하면 onAuthStateChanged(null)가 돌고 → 익명 인증 자동 재수행 →
+    // 로그인 화면에서도 데이터(트레이너 목록 등)를 읽을 수 있다.
+    try { await signOut(auth); } catch {}
   };
 
   return <AuthContext.Provider value={{ user, loading, login, logout, dataReady, dataError, retryData: ensureData }}>{children}</AuthContext.Provider>;
