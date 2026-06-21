@@ -128,22 +128,34 @@ export function uid(prefix) {
   return `${prefix}${Date.now()}${String(__idCounter).padStart(3, '0')}`;
 }
 
-async function loadCollection(name) {
-  const snap = await getDocs(collection(db, name));
-  return snap.docs.map(d => d.data());
+async function loadCollection(name, { optional = false } = {}) {
+  try {
+    const snap = await getDocs(collection(db, name));
+    return snap.docs.map(d => d.data());
+  } catch (e) {
+    // 관리자 전용 컬렉션은 로그인/권한 전에 막힐 수 있다. 앱 전체를 죽이지 않고
+    // 빈 배열로 시작 → 로그인(관리자) 후 해당 화면에서 다시 읽는다.
+    if (optional) { console.warn(`[FitCMS] ${name} 로딩 건너뜀(권한):`, e?.code || e?.message); return []; }
+    throw e;
+  }
 }
-async function loadGrouped(name) {
-  const snap = await getDocs(collection(db, name));
-  const grouped = {};
-  snap.docs.forEach(d => {
-    const data = d.data();
-    const mid = data.__mid;
-    if (!mid) return;
-    if (!grouped[mid]) grouped[mid] = [];
-    const { __mid, ...rest } = data;
-    grouped[mid].push(rest);
-  });
-  return grouped;
+async function loadGrouped(name, { optional = false } = {}) {
+  try {
+    const snap = await getDocs(collection(db, name));
+    const grouped = {};
+    snap.docs.forEach(d => {
+      const data = d.data();
+      const mid = data.__mid;
+      if (!mid) return;
+      if (!grouped[mid]) grouped[mid] = [];
+      const { __mid, ...rest } = data;
+      grouped[mid].push(rest);
+    });
+    return grouped;
+  } catch (e) {
+    if (optional) { console.warn(`[FitCMS] ${name} 로딩 건너뜀(권한):`, e?.code || e?.message); return {}; }
+    throw e;
+  }
 }
 async function seedIfEmpty() {
   const membersSnap = await getDocs(collection(db, 'members'));
@@ -174,9 +186,9 @@ export async function initStore() {
       loadGrouped('body'),
       loadGrouped('ai'),
       loadCollection('settings'),
-      loadCollection('expenses'),
-      loadCollection('promos'),
-      loadCollection('settleOverrides'),
+      loadCollection('expenses', { optional: true }),
+      loadCollection('promos', { optional: true }),
+      loadCollection('settleOverrides', { optional: true }),
     ]);
     cache.members=members; cache.trainers=trainers; cache.schedules=schedules;
     cache.notices=notices; cache.payments=payments; cache.body=body; cache.ai=ai;
