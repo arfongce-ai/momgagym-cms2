@@ -134,7 +134,7 @@ export function AuthProvider({ children }) {
         await ensureData(); // 트레이너 로그인 후 데이터 로딩
         return u;
       }
-      throw new Error('이메일 또는 비밀번호가 올바르지 않습니다.');
+      throw new Error(`로그인 실패 [${fbErr?.code || fbErr?.message || 'unknown'}]`);
     }
   };
 
