@@ -124,17 +124,24 @@ export function AuthProvider({ children }) {
       if (!e || !password) {
         throw new Error('이메일 또는 비밀번호가 올바르지 않습니다.');
       }
-      const t = store.getTrainers().find(
-        t => (t.loginEmail || '').trim().toLowerCase() === e && t.loginPassword === password
-      );
+      // 트레이너 목록이 아직 로드 안 됐을 수 있으므로(로그인 화면=로그인 전),
+      // 조회 전에 데이터 로딩을 보장한다. ensureData의 dataReady 클로저 문제를
+      // 피하려 initStore를 직접 await (중복 호출 안전).
+      let trainers = store.getTrainers();
+      if (!trainers || trainers.length === 0) {
+        try { await initStore(); setDataReady(true); } catch (loadErr) { console.error('[trainer load]', loadErr); }
+        trainers = store.getTrainers();
+      }
+      const byEmail = (trainers || []).find(t => (t.loginEmail || '').trim().toLowerCase() === e);
+      const t = byEmail && byEmail.loginPassword === password ? byEmail : null;
       if (t) {
         const u = { id: t.id, email: t.loginEmail, role: 'trainer', name: t.name, trainerId: t.id, source: 'trainer' };
         localStorage.setItem('fitcms_trainer_session', JSON.stringify(u));
         setUser(u);
-        await ensureData(); // 트레이너 로그인 후 데이터 로딩
+        await ensureData(); // 트레이너 로그인 후 데이터 로딩 보장
         return u;
       }
-      throw new Error(`로그인 실패 [${fbErr?.code || fbErr?.message || 'unknown'}]`);
+      throw new Error('이메일 또는 비밀번호가 올바르지 않습니다.');
     }
   };
 
