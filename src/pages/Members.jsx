@@ -9,7 +9,7 @@ import MemberDetail   from '../components/members/MemberDetail';
 import MemberImport   from '../components/members/MemberImport';
 import TrainerBadge   from '../components/common/TrainerBadge';
 import { downloadCSV } from '../services/finance';
-import { sortExpiredLast, getUserTrainerId } from '../utils/memberList';
+import { sortExpiredLast, getUserTrainerId, isSessionExhausted, isMemberInactive } from '../utils/memberList';
 
 function getChosung(str) {
   const cs=['ㄱ','ㄲ','ㄴ','ㄷ','ㄸ','ㄹ','ㅁ','ㅂ','ㅃ','ㅅ','ㅆ','ㅇ','ㅈ','ㅉ','ㅊ','ㅋ','ㅌ','ㅍ','ㅎ'];
@@ -27,6 +27,7 @@ export default function Members() {
   const [trainerFilter, setTrainerFilter] = useState('');
   const [lowSession,    setLowSession]    = useState(false);
   const [expiredFilter, setExpiredFilter] = useState(false);
+  const [exhaustedFilter, setExhaustedFilter] = useState(false);
   const [showRegister,  setShowRegister]  = useState(false);
   const [showImport,    setShowImport]    = useState(false);
   const [selected,      setSelected]      = useState(null);
@@ -49,6 +50,7 @@ export default function Members() {
     if (trainerFilter && !Object.keys(m.trainerSessions||{}).includes(trainerFilter)) return false;
     if (lowSession && !Object.values(m.trainerSessions||{}).some(s => s.remaining<=5 && s.remaining>0)) return false;
     if (expiredFilter && !isMemberExpired(m)) return false;
+    if (exhaustedFilter && !isSessionExhausted(m)) return false;
     return true;
   });
 
@@ -134,6 +136,10 @@ export default function Members() {
               className={`flex-1 py-2 rounded-xl text-xs font-bold border transition-colors ${lowSession?'bg-orange-500/20 border-orange-500/40 text-orange-400':'border-slate-700 text-slate-400 hover:border-slate-500'}`}>
               세션≤5
             </button>
+            <button onClick={()=>setExhaustedFilter(!exhaustedFilter)}
+              className={`flex-1 py-2 rounded-xl text-xs font-bold border transition-colors ${exhaustedFilter?'bg-slate-500/30 border-slate-400/50 text-slate-200':'border-slate-700 text-slate-400 hover:border-slate-500'}`}>
+              세션마감
+            </button>
             <button onClick={()=>setExpiredFilter(!expiredFilter)}
               className={`flex-1 py-2 rounded-xl text-xs font-bold border transition-colors ${expiredFilter?'bg-red-500/20 border-red-500/40 text-red-400':'border-slate-700 text-slate-400 hover:border-slate-500'}`}>
               결제만료
@@ -149,7 +155,13 @@ export default function Members() {
             </button>
           </div>
         )}
-        <p className="text-slate-500 text-xs">{filtered.length}명</p>
+        <p className="text-slate-500 text-xs">
+          {filtered.length}명
+          {(() => {
+            const inactive = filtered.filter(isMemberInactive).length;
+            return inactive > 0 ? <span className="text-slate-600"> · 활성 {filtered.length - inactive} / 마감·만료 {inactive}</span> : null;
+          })()}
+        </p>
       </div>
 
       {/* 회원 목록 */}
@@ -160,44 +172,60 @@ export default function Members() {
           </div>
         ) : (
           <div className="divide-y divide-slate-800">
-            {sorted.map(m => {
-              const expired = isExpired(m);
+            {(() => {
+              const firstInactiveIdx = sorted.findIndex(isMemberInactive);
+              return sorted.map((m, idx) => {
+              const expired   = isExpired(m);
+              const exhausted = isSessionExhausted(m);
+              const inactive  = expired || exhausted;
               const classes = (m.classTypes||[]).length ? m.classTypes.join(', ') : '수업미지정';
+              const showDivider = idx === firstInactiveIdx && firstInactiveIdx > 0;
               return (
-                <div key={m.id} onClick={() => setSelected(m)}
-                  className="flex items-center gap-3 px-4 py-3 hover:bg-slate-800/60 cursor-pointer transition-colors">
-                  {/* 아바타 */}
-                  <div className="w-9 h-9 rounded-full bg-slate-700 flex items-center justify-center text-sm font-bold flex-shrink-0">
-                    {m.name[0]}
-                  </div>
+                <div key={m.id}>
+                  {showDivider && (
+                    <div className="px-4 py-1.5 bg-slate-950/40 border-y border-slate-800">
+                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">⬇ 세션 마감 · 결제 만료</span>
+                    </div>
+                  )}
+                  <div onClick={() => setSelected(m)}
+                    className={`flex items-center gap-3 px-4 py-3 hover:bg-slate-800/60 cursor-pointer transition-colors ${inactive?'opacity-60':''}`}>
+                    {/* 아바타 */}
+                    <div className="w-9 h-9 rounded-full bg-slate-700 flex items-center justify-center text-sm font-bold flex-shrink-0">
+                      {m.name[0]}
+                    </div>
 
-                  {/* 이름·연락처·수업종류 */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className={`font-semibold text-sm ${expired ? 'text-red-400' : 'text-slate-100'}`}>
-                        {m.name}{expired && ' ⚠️'}
-                      </span>
+                    {/* 이름·연락처·수업종류 */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className={`font-semibold text-sm ${expired ? 'text-red-400' : 'text-slate-100'}`}>
+                          {m.name}{expired && ' ⚠️'}
+                        </span>
+                        {isMonthlyActive(m) && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-violet-500/20 text-violet-300 font-bold border border-violet-500/30">월정액</span>
+                        )}
+                        {exhausted && !expired && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-600/40 text-slate-300 font-bold border border-slate-500/40">세션마감</span>
+                        )}
+                      </div>
+                      <p className="text-slate-500 text-xs mt-0.5 truncate">{m.phone} · {classes}</p>
+                    </div>
+
+                    {/* 오른쪽: 세션 잔여 배지 + (월정액이면) 다음 결제일 */}
+                    <div className="flex-shrink-0 text-right space-y-0.5">
+                      {Object.keys(m.trainerSessions||{}).length>0 && (
+                        <TrainerBadge trainerSessions={m.trainerSessions} trainers={trainers} compact />
+                      )}
                       {isMonthlyActive(m) && (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-violet-500/20 text-violet-300 font-bold border border-violet-500/30">월정액</span>
+                        <p className={`text-[11px] font-mono ${expired?'text-red-400':'text-violet-300'}`}>
+                          월정액 결제일 {monthlyDueOf(m) || '-'}
+                        </p>
                       )}
                     </div>
-                    <p className="text-slate-500 text-xs mt-0.5 truncate">{m.phone} · {classes}</p>
-                  </div>
-
-                  {/* 오른쪽: 세션 잔여 배지 + (월정액이면) 다음 결제일 */}
-                  <div className="flex-shrink-0 text-right space-y-0.5">
-                    {Object.keys(m.trainerSessions||{}).length>0 && (
-                      <TrainerBadge trainerSessions={m.trainerSessions} trainers={trainers} compact />
-                    )}
-                    {isMonthlyActive(m) && (
-                      <p className={`text-[11px] font-mono ${expired?'text-red-400':'text-violet-300'}`}>
-                        월정액 결제일 {monthlyDueOf(m) || '-'}
-                      </p>
-                    )}
                   </div>
                 </div>
               );
-            })}
+            });
+            })()}
           </div>
         )}
       </div>

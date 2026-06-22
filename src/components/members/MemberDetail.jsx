@@ -168,9 +168,10 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
     const fromName = trainerMap[fromTid]?.name || fromTid;
     const toName   = trainerMap[toTid]?.name   || toTid;
     const isFull   = Number(count) >= (src?.remaining ?? 0);
-    const msg = isFull
-      ? `${fromName} → ${toName}\n잔여 ${src?.remaining ?? 0}회 전체를 양도합니다. 진행할까요?`
-      : `${fromName} → ${toName}\n${count}회를 양도합니다. 진행할까요?`;
+    const head = isFull
+      ? `${fromName} → ${toName}\n잔여 ${src?.remaining ?? 0}회 전체를 양도합니다.`
+      : `${fromName} → ${toName}\n${count}회를 양도합니다.`;
+    const msg = `${head}\n\n· 양도한 횟수만큼 결제금·정산비율도 함께 이전됩니다.\n· 이미 출석·지급된 과거 정산은 그대로 유지됩니다.\n\n진행할까요?`;
     if (!window.confirm(msg)) return;
     try {
       await store.transferSessions(member.id, { fromTid, toTid, count:Number(count) });
@@ -667,11 +668,14 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
                               </div>
                             </div>
                             {transferForm.toTid && (
-                              <div className="bg-slate-700/50 rounded-lg px-3 py-2 text-[11px] text-slate-400">
-                                <span className="text-slate-300 font-semibold">{t?.name||tid}</span> →{' '}
-                                <span className="text-blue-300 font-semibold">{trainerMap[transferForm.toTid]?.name}</span>{' '}
-                                <span className="text-blue-400 font-bold">{transferForm.count||0}회</span> 이동
-                                {Number(transferForm.count) >= s.remaining && <span className="text-amber-400 font-bold ml-1">(전체 양도 → 출발 세션 제거)</span>}
+                              <div className="bg-slate-700/50 rounded-lg px-3 py-2 text-[11px] text-slate-400 space-y-1">
+                                <div>
+                                  <span className="text-slate-300 font-semibold">{t?.name||tid}</span> →{' '}
+                                  <span className="text-blue-300 font-semibold">{trainerMap[transferForm.toTid]?.name}</span>{' '}
+                                  <span className="text-blue-400 font-bold">{transferForm.count||0}회</span> 이동
+                                  {Number(transferForm.count) >= s.remaining && <span className="text-amber-400 font-bold ml-1">(전체 양도 → 출발 세션 제거)</span>}
+                                </div>
+                                <div className="text-[10px] text-slate-500">결제금·정산비율도 양도 비율만큼 함께 이전 · 과거 정산은 유지</div>
                               </div>
                             )}
                             <div className="flex gap-2 justify-end">

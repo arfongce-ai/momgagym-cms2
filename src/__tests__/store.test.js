@@ -662,3 +662,141 @@ describe('세션 양도 — 월정액 슬롯 보호', () => {
     expect(u.trainerSessions.t1).toEqual({ total: 30, remaining: 30 });
   });
 });
+
+// ── 양도 시 정산 자동정리(결제금·박제비율 이전) ─────────────────
+describe('세션 양도 → 정산 결제금/박제비율 자동정리', () => {
+  it('부분양도: 명시 결제의 split을 양도 비율만큼 t1→t2로 이동', async () => {
+    // t1 20회 등록, 100만원 결제(t1 단독 귀속, 50% 박제). 5회를 t2로 양도(f=5/20=0.25)
+    const m = await store.addMember({ name: '정산1', trainerSessions: { t1: { total: 20, remaining: 20 } } });
+    await store.addPayment(m.id, { paidAt: '2026-04-02', amount: 1000000, method: 'cash',
+      trainerIds: ['t1'], split: [{ trainerId: 't1', amount: 1000000 }], splitRateAtPay: { t1: 50 } });
+    await store.transferSessions(m.id, { fromTid: 't1', toTid: 't2', count: 5 });
+
+    const u = store.getMembers().find(x => x.id === m.id);
+    expect(u.trainerSessions.t1).toEqual({ total: 15, remaining: 15 });
+    expect(u.trainerSessions.t2).toEqual({ total: 5, remaining: 5 });
+
+    const p = store.getPayments(m.id)[0];
+    const sm = Object.fromEntries(p.split.map(s => [s.trainerId, s.amount]));
+    expect(sm.t1).toBe(750000); // 100만 × (1-0.25)
+    expect(sm.t2).toBe(250000); // 100만 × 0.25
+    expect(p.splitRateAtPay.t1).toBe(50);
+    expect(p.splitRateAtPay.t2).toBe(50); // 박제비율 복사(재판정 없음)
+    expect(p.trainerIds.sort()).toEqual(['t1', 't2']);
+  });
+
+  it('단가 보존: 양도 후 t1·t2 단가가 동일(결제금이 횟수와 함께 이동)', async () => {
+    const settings = { cardFeeRate:0, vatRate:0, lowSplitRate:40, rate60MinSales:3000000,
+      rate50MinBlog:2, rate50MinStudy:1, promoPerPost:0, snsInstaMax:8, trainerSplitRates:{}, withholdingRate:3.3 };
+    const trainers = [{ id:'t1', name:'T1' }, { id:'t2', name:'T2' }];
+    const m = await store.addMember({ name: '정산2', trainerSessions: { t1: { total: 20, remaining: 20 } } });
+    await store.addPayment(m.id, { paidAt: '2026-04-02', amount: 1000000, method: 'cash',
+      trainerIds: ['t1'], split: [{ trainerId: 't1', amount: 1000000 }], splitRateAtPay: { t1: 50 } });
+    await store.transferSessions(m.id, { fromTid: 't1', toTid: 't2', count: 5 });
+
+    const members = store.getMembers().filter(x => x.id === m.id);
+    const payments = { [m.id]: store.getPayments(m.id) };
+    // t1: 15회 출석, t2: 5회 출석 (양도 후 각자 가르침)
+    const schedules = [
+      ...Array.from({length:15},(_,i)=>({id:'a'+i,isExternal:false,memberId:m.id,trainerId:'t1',status:'attended',date:'2026-06-10'})),
+      ...Array.from({length:5}, (_,i)=>({id:'b'+i,isExternal:false,memberId:m.id,trainerId:'t2',status:'attended',date:'2026-06-10'})),
+    ];
+    const blocks = computeSessionSettlement({ trainers, members, schedules, payments, records:[], settings, ym:'2026-06' });
+    const b1 = blocks.find(b => b.trainer.id === 't1');
+    const b2 = blocks.find(b => b.trainer.id === 't2');
+    // 단가: t1 75만/15=5만, t2 25만/5=5만 → 동일
+    expect(b1.rows[0].unit).toBe(50000);
+    expect(b2.rows[0].unit).toBe(50000);
+    // 박제비율 50% 둘 다 적용
+    expect(b1.rows[0].rate).toBe(50);
+    expect(b2.rows[0].rate).toBe(50);
+  });
+
+  it('원천세 이중부과 없음: 과거 지급분은 스케줄 귀속이라 양도가 건드리지 않음', async () => {
+    const settings = { cardFeeRate:0, vatRate:0, lowSplitRate:40, rate60MinSales:3000000,
+      rate50MinBlog:2, rate50MinStudy:1, promoPerPost:0, snsInstaMax:8, trainerSplitRates:{}, withholdingRate:3.3 };
+    const trainers = [{ id:'t1', name:'T1' }, { id:'t2', name:'T2' }];
+    const m = await store.addMember({ name: '정산3', trainerSessions: { t1: { total: 20, remaining: 20 } } });
+    await store.addPayment(m.id, { paidAt: '2026-04-02', amount: 1000000, method: 'cash',
+      trainerIds: ['t1'], split: [{ trainerId: 't1', amount: 1000000 }], splitRateAtPay: { t1: 50 } });
+
+    // 5월: t1이 10회 이미 출석(과거 지급·과세됨). 5월 정산 스냅샷
+    const payments = { [m.id]: store.getPayments(m.id) };
+    const may = Array.from({length:10},(_,i)=>({id:'may'+i,isExternal:false,memberId:m.id,trainerId:'t1',status:'attended',date:'2026-05-10'}));
+    const mayBefore = computeSessionSettlement({ trainers, members:store.getMembers().filter(x=>x.id===m.id), schedules:may, payments, records:[], settings, ym:'2026-05' }).find(b=>b.trainer.id==='t1');
+    const t1MayTax = mayBefore.tax;
+
+    // 6월에 잔여 일부를 t2로 양도
+    await store.transferSessions(m.id, { fromTid: 't1', toTid: 't2', count: 5 });
+
+    // 양도 후 5월 정산을 다시 계산해도(과거 스케줄·박제 불변) t1 5월 세금이 동일
+    const payments2 = { [m.id]: store.getPayments(m.id) };
+    const mayAfter = computeSessionSettlement({ trainers, members:store.getMembers().filter(x=>x.id===m.id), schedules:may, payments:payments2, records:[], settings, ym:'2026-05' }).find(b=>b.trainer.id==='t1');
+    expect(mayAfter.tax).toBe(t1MayTax);     // 과거 원천세 불변 → 이중부과 없음
+    expect(mayAfter.rows[0].cnt).toBe(10);   // 5월 출석 10회 그대로
+  });
+
+  it('전체양도: t1 split 제거되고 t2로 전액 이전', async () => {
+    const m = await store.addMember({ name: '정산4', trainerSessions: { t1: { total: 20, remaining: 20 } } });
+    await store.addPayment(m.id, { paidAt: '2026-04-02', amount: 1000000, method: 'cash',
+      trainerIds: ['t1'], split: [{ trainerId: 't1', amount: 1000000 }], splitRateAtPay: { t1: 50 } });
+    await store.transferSessions(m.id, { fromTid: 't1', toTid: 't2', count: 20 });
+    const p = store.getPayments(m.id)[0];
+    expect(p.trainerIds).toEqual(['t2']);
+    expect(p.split).toEqual([{ trainerId: 't2', amount: 1000000 }]);
+    expect(p.splitRateAtPay.t2).toBe(50);
+    expect(p.splitRateAtPay.t1).toBeUndefined();
+  });
+
+  it('등록횟수 안분 결제(trainerIds 없음)는 결제 수정 없이 통과', async () => {
+    const m = await store.addMember({ name: '정산5', trainerSessions: { t1: { total: 20, remaining: 20 } } });
+    await store.addPayment(m.id, { paidAt: '2026-04-02', amount: 1000000, method: 'cash' }); // 트레이너 지정 없음
+    await store.transferSessions(m.id, { fromTid: 't1', toTid: 't2', count: 5 });
+    const p = store.getPayments(m.id)[0];
+    expect(p.trainerIds).toBeUndefined(); // 손대지 않음 (live total로 자동 안분됨)
+    expect(p.split).toBeUndefined();
+  });
+});
+
+// ── 요구사항: 횟수가 끝난 회원은 마지막 정산달 이후 정산에서 제외 ──
+describe('정산 표시: 세션 소진 회원 마지막 정산달 이후 제외', () => {
+  const settings = { cardFeeRate:0, vatRate:0, lowSplitRate:40, rate60MinSales:3000000,
+    rate50MinBlog:2, rate50MinStudy:1, promoPerPost:0, snsInstaMax:8, trainerSplitRates:{}, withholdingRate:3.3 };
+  const trainers = [{ id:'t1', name:'T1' }];
+  // 10회 등록, 전부 소진(remaining 0)
+  const members = [{ id:'m1', name:'소진회원', trainerSessions:{ t1:{ total:10, remaining:0 } } }];
+  const payments = { m1: [{ id:'p1', paidAt:'2026-05-02', amount:1000000, method:'cash',
+    trainerIds:['t1'], split:[{trainerId:'t1', amount:1000000}], splitRateAtPay:{ t1:50 } }] };
+
+  it('5월: 10회 출석 → 정산에 표시됨', () => {
+    const may = Array.from({length:10},(_,i)=>({id:'s'+i,isExternal:false,memberId:'m1',trainerId:'t1',status:'attended',date:'2026-05-15'}));
+    const b = computeSessionSettlement({ trainers, members, schedules:may, payments, records:[], settings, ym:'2026-05' })[0];
+    expect(b).toBeTruthy();
+    expect(b.rows.find(r=>r.memberId==='m1')).toBeTruthy();
+    expect(b.rows[0].cnt).toBe(10);
+  });
+
+  it('6월: 출석 없음 + 잔여 0 → 정산에서 제외(블록 자체가 비어 없음)', () => {
+    const blocks = computeSessionSettlement({ trainers, members, schedules:[], payments, records:[], settings, ym:'2026-06' });
+    // 6월엔 출석도 없고 잔여 0이라 행이 사라지고, 행이 없으니 블록도 제외됨
+    const b = blocks.find(x=>x.trainer.id==='t1');
+    expect(b).toBeFalsy();
+  });
+
+  it('잔여가 남은 회원은 출석 없어도 6월에 표시(진행 중)', () => {
+    const m2 = [{ id:'m2', name:'진행중', trainerSessions:{ t1:{ total:10, remaining:4 } } }];
+    const pay2 = { m2: [{ id:'p2', paidAt:'2026-05-02', amount:1000000, method:'cash',
+      trainerIds:['t1'], split:[{trainerId:'t1', amount:1000000}], splitRateAtPay:{ t1:50 } }] };
+    const b = computeSessionSettlement({ trainers, members:m2, schedules:[], payments:pay2, records:[], settings, ym:'2026-06' })[0];
+    expect(b).toBeTruthy();
+    expect(b.rows[0].cnt).toBe(0);
+    expect(b.rows[0].remaining).toBe(4);
+  });
+
+  it('수동 횟수 지정(ovCnt)이 있으면 잔여 0이어도 표시 유지', () => {
+    const getOverride = () => ({ sessionCounts: { m1: 3 } });
+    const b = computeSessionSettlement({ trainers, members, schedules:[], payments, records:[], settings, ym:'2026-06', getOverride })[0];
+    expect(b).toBeTruthy();
+    expect(b.rows[0].cnt).toBe(3);
+  });
+});

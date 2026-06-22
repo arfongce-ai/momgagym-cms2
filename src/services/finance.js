@@ -333,6 +333,7 @@ export function computeSessionSettlement({ trainers, members, schedules, payment
       // 단가 = (이 트레이너에게 귀속된 결제액) ÷ (이 트레이너의 등록횟수)
       const trainerPaid = (memberTrainerPay[mid]||{})[t.id] || 0;
       const trainerReg  = ts.total || 0;
+      const trainerRemain = ts.remaining ?? trainerReg; // 잔여 횟수(정보 없으면 등록횟수로 간주)
       const autoUnit = trainerReg > 0 ? Math.round(trainerPaid / trainerReg) : 0;
       const unit = ovUnit[mid] != null ? Number(ovUnit[mid]) : autoUnit;
       const autoCnt = (attended[t.id]||{})[mid] || 0;
@@ -352,10 +353,16 @@ export function computeSessionSettlement({ trainers, members, schedules, payment
       const payAmount = Math.round(amount * effRate/100); // 실지급(비율 적용)
       return {
         memberId: mid, memberName: m?.name || '?',
-        regTotal: trainerReg, autoUnit, unit, autoCnt, cnt,
+        regTotal: trainerReg, remaining: trainerRemain, autoUnit, unit, autoCnt, cnt,
         amount, rate: effRate, rateFrozen, payAmount,
       };
-    }).filter(r => r.cnt>0 || r.regTotal>0);
+    })
+    // 표시 기준:
+    //  · 그 달 출석(cnt>0)이 있으면 항상 표시(마지막 정산달까지 정상 노출).
+    //  · 출석이 없어도 '아직 잔여가 남은(진행 중)' 회원은 표시(예정 정산 가늠용).
+    //  · 횟수가 끝난(잔여 0) 회원은 그 달 출석이 없으면 제외 → 마지막 정산달 이후 화면에서 사라짐.
+    //  · 수동 횟수 지정(ovCnt)이 있으면 표시 유지.
+    .filter(r => r.cnt>0 || (r.regTotal>0 && r.remaining>0) || ovCnt[r.memberId] != null);
 
     const sessionTotal  = rows.reduce((s,r)=>s+r.amount, 0);     // 비율 적용 전 합
     const sessionPayout = rows.reduce((s,r)=>s+r.payAmount, 0);  // 비율 적용 후 합(회원별 박제비율)

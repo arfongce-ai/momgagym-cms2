@@ -277,13 +277,24 @@ export const store = {
   // - total/remaining 모두 count만큼 이동(소유권 이전 개념)
   // - fromTid 잔여가 0이 되고 total도 0이면(=전체 양도) 슬롯 제거
   // - 대상 슬롯이 이미 있으면 합산, 없으면 생성
+  //
+  // ▣ 정산 자동정리(결제금·박제비율 이전):
+  //   정산 단가 = (트레이너 귀속 결제금) ÷ (등록횟수 total). 양도로 total만 옮기면
+  //   출발 단가가 부풀고 대상 단가가 0이 되므로, 양도 비율 f = n / origTotal 만큼
+  //   해당 회원의 미환불 결제에서 출발 트레이너 귀속분을 대상 트레이너로 함께 옮긴다.
+  //   · 결제월에 박제된 정산비율(splitRateAtPay)은 그대로 복사(재판정 안 함).
+  //   · 과거 출석/지급은 스케줄의 trainerId로 귀속되어 양도가 건드리지 못하므로,
+  //     이미 지급·원천징수된 과거분은 불변 → 원천세 이중부과가 구조적으로 발생하지 않음.
+  //   · split/trainerIds가 없는 결제(등록횟수 비율 안분)는 live total로 자동 재계산되어
+  //     별도 수정이 필요 없다.
   transferSessions: async (memberId, { fromTid, toTid, count }) => {
     const n = Math.floor(Number(count) || 0);
     if (!fromTid || !toTid) throw new Error('양도/대상 트레이너를 선택하세요.');
     if (fromTid === toTid)  throw new Error('같은 트레이너로는 양도할 수 없습니다.');
     if (n <= 0)             throw new Error('양도할 세션 수는 1회 이상이어야 합니다.');
 
-    const prev = cache.members;
+    const prevMembers  = cache.members;
+    const prevPayments = JSON.parse(JSON.stringify(cache.payments));
     const m = cache.members.find(x => x.id === memberId);
     if (!m) throw new Error('회원을 찾을 수 없습니다.');
     const ts = JSON.parse(JSON.stringify(m.trainerSessions || {}));
@@ -291,25 +302,88 @@ export const store = {
     if (!src) throw new Error('양도할 세션이 없습니다.');
     if (src.monthly) throw new Error('월정액 세션은 양도할 수 없습니다.');
     if (n > (src.remaining ?? 0)) throw new Error('양도 수가 잔여 세션을 초과합니다.');
+    if (ts[toTid] && ts[toTid].monthly) throw new Error('월정액 슬롯으로는 양도할 수 없습니다.');
+
+    // 양도 비율 — 출발 트레이너의 양도 전 등록횟수 기준. total 정보가 없으면 전액(1).
+    const origTotal = src.total ?? 0;
+    const f = origTotal > 0 ? n / origTotal : 1;
 
     // 출발 슬롯 차감 (total도 함께 줄여 소유 세션 이동을 표현)
     src.remaining -= n;
-    src.total     = Math.max(src.remaining, (src.total ?? 0) - n);
+    src.total     = Math.max(src.remaining, origTotal - n);
     if (src.remaining <= 0 && src.total <= 0) delete ts[fromTid];
 
     // 대상 슬롯 가산
     if (ts[toTid]) {
-      if (ts[toTid].monthly) throw new Error('월정액 슬롯으로는 양도할 수 없습니다.');
       ts[toTid].total     = (ts[toTid].total     || 0) + n;
       ts[toTid].remaining = (ts[toTid].remaining || 0) + n;
     } else {
       ts[toTid] = { total: n, remaining: n };
     }
 
-    cache.members = cache.members.map(x => x.id === memberId ? { ...x, trainerSessions: ts } : x);
-    const u = cache.members.find(x => x.id === memberId);
-    try { await fbSet('members', memberId, u); return u; }
-    catch (e) { cache.members = prev; throw e; }
+    // ── 결제금 재배분: 미환불 결제의 출발 트레이너 귀속분을 f만큼 대상으로 이전 ──
+    const memberPays = cache.payments[memberId] || [];
+    const touchedPays = []; // { pid, patch }
+    memberPays.forEach(p => {
+      if (p.isUnpaid || p.isRefunded) return;           // 미수금·환불은 정산 단가에서 제외/특수처리 → 건드리지 않음
+      const tids = (p.trainerIds && p.trainerIds.length) ? p.trainerIds : null;
+      const hasSplit = Array.isArray(p.split) && p.split.length;
+      // 이 결제가 출발 트레이너에 귀속돼 있지 않으면 스킵(등록횟수 안분 결제 포함)
+      if (!tids || !tids.includes(fromTid)) return;
+
+      const amount = Number(p.amount) || 0;
+      // 현재 split(없으면 trainerIds 1/n으로 가정)에서 출발 트레이너 몫을 구한다.
+      const splitMap = {};
+      if (hasSplit) {
+        p.split.forEach(s => { splitMap[s.trainerId] = Number(s.amount) || 0; });
+      } else {
+        const per = tids.length ? Math.round(amount / tids.length) : 0;
+        tids.forEach((id, i) => { splitMap[id] = (i === tids.length - 1) ? amount - per * (tids.length - 1) : per; });
+      }
+      const fromAmt = splitMap[fromTid] || 0;
+      if (fromAmt <= 0) return;
+
+      const move = Math.round(fromAmt * f);             // 대상으로 옮길 금액
+      if (move <= 0) return;
+      splitMap[fromTid] = fromAmt - move;
+      splitMap[toTid]   = (splitMap[toTid] || 0) + move;
+
+      // 출발 몫이 0이 되면(전체 양도) split/trainerIds에서 제거
+      if ((splitMap[fromTid] || 0) <= 0) delete splitMap[fromTid];
+
+      const finalTids = [...new Set([...tids, toTid])].filter(id => splitMap[id] != null);
+      const newSplit  = finalTids.map(id => ({ trainerId: id, amount: splitMap[id] }));
+
+      // 박제 정산비율 복사: 대상에 없으면 출발 값을 그대로 가져온다(재판정 금지 → 비율·과세 변동 없음)
+      const newRate = { ...(p.splitRateAtPay || {}) };
+      if (newRate[toTid] == null && newRate[fromTid] != null) newRate[toTid] = newRate[fromTid];
+      if (splitMap[fromTid] == null) delete newRate[fromTid];
+
+      touchedPays.push({ pid: p.id, patch: { trainerIds: finalTids, split: newSplit, splitRateAtPay: newRate } });
+    });
+
+    // ── 원자적 저장: 회원 + 영향받은 결제들을 한 배치로 ──
+    const updatedMember = { ...m, trainerSessions: ts };
+    const batch = writeBatch(db);
+    batch.set(doc(db, 'members', memberId), updatedMember);
+    touchedPays.forEach(({ pid, patch }) => {
+      const cur = (cache.payments[memberId] || []).find(p => p.id === pid);
+      if (cur) batch.set(doc(db, 'payments', pid), { ...cur, ...patch, __mid: memberId });
+    });
+
+    try {
+      await batch.commit();
+      cache.members = cache.members.map(x => x.id === memberId ? updatedMember : x);
+      cache.payments[memberId] = (cache.payments[memberId] || []).map(p => {
+        const hit = touchedPays.find(tp => tp.pid === p.id);
+        return hit ? { ...p, ...hit.patch } : p;
+      });
+      return updatedMember;
+    } catch (e) {
+      cache.members = prevMembers;
+      cache.payments = prevPayments;
+      throw e;
+    }
   },
 
   getTrainers:    ()     => cache.trainers,
