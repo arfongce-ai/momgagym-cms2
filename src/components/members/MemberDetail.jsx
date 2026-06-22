@@ -47,6 +47,9 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
   // 세션 직접 조정
   const [adjustTid,     setAdjustTid]     = useState(null);
   const [adjustForm,    setAdjustForm]    = useState({ remaining:0, total:0 });
+  // 세션 양도 / 부분양도
+  const [transferTid,   setTransferTid]   = useState(null); // 양도 출발 트레이너
+  const [transferForm,  setTransferForm]  = useState({ toTid:'', count:1 });
 
   // 수납
   const [payments,     setPayments]    = useState([]);
@@ -111,7 +114,7 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
   };
 
   // ── 세션 직접 조정 / 복구 ─────────────────────────────
-  const startAdjust = (tid, s) => { setAdjustTid(tid); setAdjustForm({ remaining:s.remaining, total:s.total }); };
+  const startAdjust = (tid, s) => { setAdjustTid(tid); setAdjustForm({ remaining:s.remaining, total:s.total }); setTransferTid(null); };
   const saveAdjust = async (tid) => {
     const remaining = Number(adjustForm.remaining), total = Number(adjustForm.total);
     if (isNaN(remaining) || isNaN(total) || remaining<0 || total<0) { alert('0 이상의 숫자를 입력해 주세요.'); return; }
@@ -149,6 +152,32 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
     delete ts[tid];
     try { await store.updateMember(member.id, { trainerSessions:ts }); refresh(); onUpdate?.(); }
     catch(e){ alert('삭제에 실패했습니다.'); }
+  };
+
+  // ── 세션 양도 / 부분양도 ──────────────────────────────
+  const startTransfer = (tid, s) => {
+    setTransferTid(tid);
+    setTransferForm({ toTid:'', count: s.remaining > 0 ? 1 : 0 });
+    setAdjustTid(null); // 다른 인라인 폼 닫기
+  };
+  const saveTransfer = async (fromTid) => {
+    const { toTid, count } = transferForm;
+    if (!toTid) { alert('양도받을 트레이너를 선택하세요.'); return; }
+    const fresh = store.getMembers().find(m=>m.id===member.id);
+    const src = (fresh?.trainerSessions||{})[fromTid];
+    const fromName = trainerMap[fromTid]?.name || fromTid;
+    const toName   = trainerMap[toTid]?.name   || toTid;
+    const isFull   = Number(count) >= (src?.remaining ?? 0);
+    const msg = isFull
+      ? `${fromName} → ${toName}\n잔여 ${src?.remaining ?? 0}회 전체를 양도합니다. 진행할까요?`
+      : `${fromName} → ${toName}\n${count}회를 양도합니다. 진행할까요?`;
+    if (!window.confirm(msg)) return;
+    try {
+      await store.transferSessions(member.id, { fromTid, toTid, count:Number(count) });
+      refresh(); setTransferTid(null); onUpdate?.();
+    } catch (e) {
+      alert('양도에 실패했습니다.\n' + (e?.message || ''));
+    }
   };
 
   // ── 다중 트레이너 금액 분배(split) 유틸 ─────────────────────
@@ -607,7 +636,50 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
                       {s.remaining===0&&<div className="mt-2 text-center text-[10px] bg-red-500/10 border border-red-500/20 rounded-lg py-1 text-red-400 font-bold">⚠️ 세션 소진</div>}
                       {s.remaining>0&&s.remaining<=5&&<div className="mt-2 text-center text-[10px] bg-orange-500/10 border border-orange-500/20 rounded-lg py-1 text-orange-400 font-bold">⚡ 잔여 {s.remaining}회</div>}
                       {user?.role==='admin' && (
-                        adjustTid===tid ? (
+                        transferTid===tid ? (
+                          <div className="mt-3 pt-3 border-t border-slate-700 space-y-2">
+                            <p className="text-[10px] font-bold uppercase tracking-widest text-blue-400">
+                              세션 양도 · {t?.name||tid} → ?
+                            </p>
+                            <div>
+                              <label className="text-[10px] text-slate-500">양도받을 트레이너</label>
+                              <select value={transferForm.toTid}
+                                onChange={e=>setTransferForm(f=>({...f,toTid:e.target.value}))}
+                                className="w-full bg-slate-900 border border-slate-600 text-slate-100 rounded-lg px-2 py-1.5 text-sm">
+                                <option value="">선택하세요</option>
+                                {trainers.filter(tt=>tt.id!==tid).map(tt=>(
+                                  <option key={tt.id} value={tt.id}>
+                                    {tt.name}{member.trainerSessions?.[tt.id] ? ` (잔여${member.trainerSessions[tt.id].remaining})` : ''}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                            <div>
+                              <label className="text-[10px] text-slate-500">양도 세션 수 (최대 {s.remaining}회)</label>
+                              <div className="flex items-center gap-2">
+                                <input type="number" min="1" max={s.remaining} value={transferForm.count}
+                                  onChange={e=>setTransferForm(f=>({...f,count:e.target.value}))}
+                                  className="flex-1 bg-slate-900 border border-slate-600 text-slate-100 rounded-lg px-2 py-1.5 text-sm font-mono"/>
+                                <button type="button" onClick={()=>setTransferForm(f=>({...f,count:s.remaining}))}
+                                  className="px-2.5 py-1.5 rounded-lg text-[11px] font-bold bg-slate-700 text-slate-200 hover:bg-blue-500/20 hover:text-blue-400 transition-colors whitespace-nowrap">
+                                  전체 양도
+                                </button>
+                              </div>
+                            </div>
+                            {transferForm.toTid && (
+                              <div className="bg-slate-700/50 rounded-lg px-3 py-2 text-[11px] text-slate-400">
+                                <span className="text-slate-300 font-semibold">{t?.name||tid}</span> →{' '}
+                                <span className="text-blue-300 font-semibold">{trainerMap[transferForm.toTid]?.name}</span>{' '}
+                                <span className="text-blue-400 font-bold">{transferForm.count||0}회</span> 이동
+                                {Number(transferForm.count) >= s.remaining && <span className="text-amber-400 font-bold ml-1">(전체 양도 → 출발 세션 제거)</span>}
+                              </div>
+                            )}
+                            <div className="flex gap-2 justify-end">
+                              <button onClick={()=>setTransferTid(null)} className="text-xs text-slate-400 hover:text-white px-3 py-1.5">취소</button>
+                              <button onClick={()=>saveTransfer(tid)} className="bg-blue-500 hover:bg-blue-400 text-white font-bold px-4 py-1.5 rounded-lg text-xs">양도 실행</button>
+                            </div>
+                          </div>
+                        ) : adjustTid===tid ? (
                           <div className="mt-3 pt-3 border-t border-slate-700 space-y-2">
                             <div className="grid grid-cols-2 gap-2">
                               <div>
@@ -633,6 +705,9 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
                             <button onClick={()=>deductOne(tid)} className="px-2.5 py-1.5 rounded-lg text-xs font-bold bg-slate-700 text-slate-200 hover:bg-red-500/20 hover:text-red-400 transition-colors">−1 차감</button>
                             <button onClick={()=>restoreOne(tid)} className="px-2.5 py-1.5 rounded-lg text-xs font-bold bg-slate-700 text-slate-200 hover:bg-emerald-500/20 hover:text-emerald-400 transition-colors">+1 복구</button>
                             <button onClick={()=>startAdjust(tid, s)} className="px-2.5 py-1.5 rounded-lg text-xs font-bold bg-slate-700 text-slate-200 hover:bg-blue-500/20 hover:text-blue-400 transition-colors">직접 수정</button>
+                            {s.remaining>0 && !s.monthly && trainers.length>1 && (
+                              <button onClick={()=>startTransfer(tid, s)} className="px-2.5 py-1.5 rounded-lg text-xs font-bold bg-slate-700 text-slate-200 hover:bg-indigo-500/20 hover:text-indigo-300 transition-colors">↔ 양도</button>
+                            )}
                             <button onClick={()=>removeSession(tid)} className="ml-auto px-2.5 py-1.5 rounded-lg text-xs font-bold text-slate-500 hover:text-red-400 transition-colors">삭제</button>
                           </div>
                         )

@@ -594,3 +594,71 @@ describe('aiStore.addGaitReport (보행 리포트 저장)', () => {
     await expect(aiStore.addGaitReport({ member: { id: 'm1' } })).rejects.toThrow();
   });
 });
+
+describe('세션 양도 / 부분양도 (transferSessions)', () => {
+  it('부분 양도: t1 30회 중 5회를 t2에게 이동(예시1)', async () => {
+    const m = await store.addMember({ name: '양도1', trainerSessions: { t1: { total: 30, remaining: 30 } } });
+    await store.transferSessions(m.id, { fromTid: 't1', toTid: 't2', count: 5 });
+    const u = store.getMembers().find(x => x.id === m.id);
+    expect(u.trainerSessions.t1).toEqual({ total: 25, remaining: 25 });
+    expect(u.trainerSessions.t2).toEqual({ total: 5, remaining: 5 });
+  });
+
+  it('전체 양도: 잔여 전부 이동 시 출발 슬롯 제거(예시2)', async () => {
+    const m = await store.addMember({ name: '양도2', trainerSessions: { t1: { total: 30, remaining: 30 } } });
+    await store.transferSessions(m.id, { fromTid: 't1', toTid: 't2', count: 30 });
+    const u = store.getMembers().find(x => x.id === m.id);
+    expect(u.trainerSessions.t1).toBeUndefined();
+    expect(u.trainerSessions.t2).toEqual({ total: 30, remaining: 30 });
+  });
+
+  it('일부 사용 후 전체 양도: 잔여만 이동, 사용분은 출발에 남김', async () => {
+    // 30회 중 10회 사용(잔여 20) → 잔여 20 전체 양도
+    const m = await store.addMember({ name: '양도3', trainerSessions: { t1: { total: 30, remaining: 20 } } });
+    await store.transferSessions(m.id, { fromTid: 't1', toTid: 't2', count: 20 });
+    const u = store.getMembers().find(x => x.id === m.id);
+    // total(30) - 20 = 10, remaining 0 → total>0 이므로 슬롯 유지(사용 이력 보존)
+    expect(u.trainerSessions.t1).toEqual({ total: 10, remaining: 0 });
+    expect(u.trainerSessions.t2).toEqual({ total: 20, remaining: 20 });
+  });
+
+  it('대상 트레이너에 기존 세션이 있으면 합산한다', async () => {
+    const m = await store.addMember({ name: '양도4', trainerSessions: { t1: { total: 30, remaining: 30 }, t2: { total: 10, remaining: 4 } } });
+    await store.transferSessions(m.id, { fromTid: 't1', toTid: 't2', count: 5 });
+    const u = store.getMembers().find(x => x.id === m.id);
+    expect(u.trainerSessions.t2).toEqual({ total: 15, remaining: 9 });
+  });
+
+  it('잔여 초과 양도는 거부', async () => {
+    const m = await store.addMember({ name: '양도5', trainerSessions: { t1: { total: 30, remaining: 3 } } });
+    await expect(store.transferSessions(m.id, { fromTid: 't1', toTid: 't2', count: 5 })).rejects.toThrow();
+  });
+
+  it('같은 트레이너로 양도는 거부', async () => {
+    const m = await store.addMember({ name: '양도6', trainerSessions: { t1: { total: 30, remaining: 30 } } });
+    await expect(store.transferSessions(m.id, { fromTid: 't1', toTid: 't1', count: 5 })).rejects.toThrow();
+  });
+
+  it('저장 실패 시 롤백된다', async () => {
+    const m = await store.addMember({ name: '양도7', trainerSessions: { t1: { total: 30, remaining: 30 } } });
+    setFail(true);
+    await expect(store.transferSessions(m.id, { fromTid: 't1', toTid: 't2', count: 5 })).rejects.toThrow();
+    const u = store.getMembers().find(x => x.id === m.id);
+    expect(u.trainerSessions.t1).toEqual({ total: 30, remaining: 30 });
+    expect(u.trainerSessions.t2).toBeUndefined();
+  });
+});
+
+describe('세션 양도 — 월정액 슬롯 보호', () => {
+  it('월정액 출발 슬롯은 양도 거부', async () => {
+    const m = await store.addMember({ name: '월정1', trainerSessions: { t1: { monthly: { fee: 100000 }, total: 0, remaining: 0 } } });
+    await expect(store.transferSessions(m.id, { fromTid: 't1', toTid: 't2', count: 1 })).rejects.toThrow();
+  });
+  it('월정액 대상 슬롯으로는 양도 거부', async () => {
+    const m = await store.addMember({ name: '월정2', trainerSessions: { t1: { total: 30, remaining: 30 }, t2: { monthly: { fee: 100000 }, total: 0, remaining: 0 } } });
+    await expect(store.transferSessions(m.id, { fromTid: 't1', toTid: 't2', count: 5 })).rejects.toThrow();
+    // 롤백 확인: t1 그대로
+    const u = store.getMembers().find(x => x.id === m.id);
+    expect(u.trainerSessions.t1).toEqual({ total: 30, remaining: 30 });
+  });
+});

@@ -5,10 +5,12 @@ import { MEASURE_MENUS } from './registry';
 import { store, aiStore } from '../demoData';
 import { todayYMD } from '../utils/dates';
 import { useAuth } from '../contexts/AuthContext';
+import { scopeMembersToTrainer, sortByName } from '../utils/memberList';
 
 export default function AiMeasureHub() {
   const { user } = useAuth();
-  const [members] = useState(() => store.getMembers());
+  // 트레이너 모드: 담당 회원만 / 모든 회원은 가나다 순으로 노출.
+  const [members] = useState(() => sortByName(scopeMembersToTrainer(store.getMembers(), user)));
   const [memberId, setMemberId] = useState('');
   const [active, setActive] = useState(null); // 선택된 메뉴 객체
 

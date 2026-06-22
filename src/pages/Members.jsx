@@ -9,14 +9,12 @@ import MemberDetail   from '../components/members/MemberDetail';
 import MemberImport   from '../components/members/MemberImport';
 import TrainerBadge   from '../components/common/TrainerBadge';
 import { downloadCSV } from '../services/finance';
+import { sortExpiredLast, getUserTrainerId } from '../utils/memberList';
 
 function getChosung(str) {
   const cs=['ㄱ','ㄲ','ㄴ','ㄷ','ㄸ','ㄹ','ㅁ','ㅂ','ㅃ','ㅅ','ㅆ','ㅇ','ㅈ','ㅉ','ㅊ','ㅋ','ㅌ','ㅍ','ㅎ'];
   return [...str].map(c=>{const code=c.charCodeAt(0)-0xAC00;return code>=0&&code<=11171?cs[Math.floor(code/588)]:c;}).join('');
 }
-
-// 트레이너로 로그인한 경우 본인 ID (관리자/직원은 null → 전체 노출)
-const getUserTrainerId = user => (user?.role === 'trainer' ? (user.trainerId || user.id) : null);
 
 // CV: 미사용 컴포넌트(SessionBadges) 제거 — 동일 기능이 행 내부에 직접 구현되어 있음
 
@@ -54,12 +52,15 @@ export default function Members() {
     return true;
   });
 
+  // 가나다 순 정렬 후 결제 만료 회원은 하단으로 모음
+  const sorted = sortExpiredLast(filtered);
+
   const isExpired = m => isMemberExpired(m);
 
   const trainerMap = Object.fromEntries(trainers.map(t=>[t.id,t.name]));
   const exportMembers = () => {
     const header = ['이름','성별','연락처','연락처2','생년월일','주소','가입일','월정액','다음결제예정일','월회비','최근결제일','담당트레이너/잔여세션','총결제액','수업종류','메모','상태'];
-    const body = filtered.map(m=>{
+    const body = sorted.map(m=>{
       const sessions = Object.entries(m.trainerSessions||{})
         .map(([tid,s])=>`${trainerMap[tid]||'?'} ${s.remaining}/${s.total}`).join(' | ');
       const totalPaid = (store.getPayments(m.id)||[])
@@ -153,13 +154,13 @@ export default function Members() {
 
       {/* 회원 목록 */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
-        {filtered.length === 0 ? (
+        {sorted.length === 0 ? (
           <div className="text-center py-16 text-slate-600">
             <p className="text-4xl mb-3">👥</p><p className="text-sm">검색 결과가 없습니다</p>
           </div>
         ) : (
           <div className="divide-y divide-slate-800">
-            {filtered.map(m => {
+            {sorted.map(m => {
               const expired = isExpired(m);
               const classes = (m.classTypes||[]).length ? m.classTypes.join(', ') : '수업미지정';
               return (

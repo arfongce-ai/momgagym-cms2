@@ -273,6 +273,44 @@ export const store = {
     try { await fbDelete('members',id); }
     catch(e){ cache.members=prev; throw e; }
   },
+  // 세션 양도/부분양도: fromTid 트레이너의 잔여 세션 중 count회를 toTid 트레이너에게 넘긴다.
+  // - total/remaining 모두 count만큼 이동(소유권 이전 개념)
+  // - fromTid 잔여가 0이 되고 total도 0이면(=전체 양도) 슬롯 제거
+  // - 대상 슬롯이 이미 있으면 합산, 없으면 생성
+  transferSessions: async (memberId, { fromTid, toTid, count }) => {
+    const n = Math.floor(Number(count) || 0);
+    if (!fromTid || !toTid) throw new Error('양도/대상 트레이너를 선택하세요.');
+    if (fromTid === toTid)  throw new Error('같은 트레이너로는 양도할 수 없습니다.');
+    if (n <= 0)             throw new Error('양도할 세션 수는 1회 이상이어야 합니다.');
+
+    const prev = cache.members;
+    const m = cache.members.find(x => x.id === memberId);
+    if (!m) throw new Error('회원을 찾을 수 없습니다.');
+    const ts = JSON.parse(JSON.stringify(m.trainerSessions || {}));
+    const src = ts[fromTid];
+    if (!src) throw new Error('양도할 세션이 없습니다.');
+    if (src.monthly) throw new Error('월정액 세션은 양도할 수 없습니다.');
+    if (n > (src.remaining ?? 0)) throw new Error('양도 수가 잔여 세션을 초과합니다.');
+
+    // 출발 슬롯 차감 (total도 함께 줄여 소유 세션 이동을 표현)
+    src.remaining -= n;
+    src.total     = Math.max(src.remaining, (src.total ?? 0) - n);
+    if (src.remaining <= 0 && src.total <= 0) delete ts[fromTid];
+
+    // 대상 슬롯 가산
+    if (ts[toTid]) {
+      if (ts[toTid].monthly) throw new Error('월정액 슬롯으로는 양도할 수 없습니다.');
+      ts[toTid].total     = (ts[toTid].total     || 0) + n;
+      ts[toTid].remaining = (ts[toTid].remaining || 0) + n;
+    } else {
+      ts[toTid] = { total: n, remaining: n };
+    }
+
+    cache.members = cache.members.map(x => x.id === memberId ? { ...x, trainerSessions: ts } : x);
+    const u = cache.members.find(x => x.id === memberId);
+    try { await fbSet('members', memberId, u); return u; }
+    catch (e) { cache.members = prev; throw e; }
+  },
 
   getTrainers:    ()     => cache.trainers,
   addTrainer:     async t => {

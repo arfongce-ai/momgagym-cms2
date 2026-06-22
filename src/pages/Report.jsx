@@ -2,6 +2,8 @@
 // 측정 리포트 페이지: 회원 선택 → 실측 데이터 그래프/요약 → JPG 다운로드.
 import { useState, useMemo } from 'react';
 import { todayYMD } from '../utils/dates';
+import { useAuth } from '../contexts/AuthContext';
+import { scopeMembersToTrainer, sortByName } from '../utils/memberList';
 import { store, aiStore } from '../demoData';
 import { buildFullReport } from '../services/reportService';
 import { buildReportSvg, downloadSvgAsJpg } from '../components/report/reportImage';
@@ -10,7 +12,9 @@ import TrendChart from '../components/report/TrendChart';
 const COLORS = { weight:'#f59e0b', systolic:'#ef4444', diastolic:'#3b82f6', height:'#22d3ee' };
 
 export default function Report() {
-  const members = useMemo(() => store.getMembers(), []);
+  const { user } = useAuth();
+  // 트레이너 모드: 담당 회원만 / 모든 회원은 가나다 순으로 노출.
+  const members = useMemo(() => sortByName(scopeMembersToTrainer(store.getMembers(), user)), [user]);
   const [memberId, setMemberId] = useState('');
   const [downloading, setDownloading] = useState(false);
   const [msg, setMsg] = useState(null);

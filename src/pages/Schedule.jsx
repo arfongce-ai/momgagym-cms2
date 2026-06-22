@@ -8,6 +8,7 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { store } from '../demoData';
 import { toYMD } from '../utils/dates';
+import { sortByName } from '../utils/memberList';
 
 // ── 시간 유틸 ─────────────────────────────────────────────
 // 10분 단위 반올림 스냅
@@ -335,7 +336,7 @@ function ScheduleDetailModal({ schedule:initS, onClose, onUpdate, onDelete }) {
                 <div>
                   <label className={LBL}>회원</label>
                   <select value={form.memberId} onChange={pf('memberId')} className={SEL}>
-                    {members.map(m=><option key={m.id} value={m.id}>{m.name}</option>)}
+                    {sortByName(members).map(m=><option key={m.id} value={m.id}>{m.name}</option>)}
                   </select>
                 </div>
               )}
@@ -437,7 +438,7 @@ function AddModal({ members, trainers, fixedTrainerId, onAdd, onClose }) {
   const selectedTrainerObj = trainers.find(t=>t.id===form.trainerId) || fixedTrainer;
   // 선택된 트레이너를 담당 트레이너로 둔 회원만 표시
   const trainerMembers = form.trainerId
-    ? members.filter(m => memberHasTrainer(m, form.trainerId))
+    ? sortByName(members.filter(m => memberHasTrainer(m, form.trainerId)))
     : [];
   const memberQ = memberQuery.trim().toLowerCase();
   const filteredMembers = memberQ
