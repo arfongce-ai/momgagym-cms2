@@ -187,6 +187,14 @@ function OverviewTab({ settings, trainers, trainerMap }) {
   }, [byMonth, isYear, period]);
   const maxMonth = Math.max(1, ...chartRows.map(([,v])=>v));
 
+  // 이 기간에 해당하는 월 목록(고정비·정산 합산 기준)
+  //  · 특정 월: 그 달 1개 / 연 단위: 그 해에 결제가 있는 달 / 전체: 전 기간
+  const periodMonths = useMemo(()=>{
+    if (isMonth) return [period];
+    if (isYear)  return months.filter(m=>m.slice(0,4)===period);
+    return months;
+  }, [isMonth, isYear, period, months]);
+
   // 지출 / 순익 (시트의 총매출→입금→고정지출→순익 흐름)
   const expenses = store.getExpenses();
   const fixedTotal = expenses.filter(e=>e.kind==='fixed').reduce((s,e)=>s+(e.amount||0),0);
@@ -198,17 +206,6 @@ function OverviewTab({ settings, trainers, trainerMap }) {
   // 고정비: 특정 월=1회분 / 연·전체=해당 기간에 결제가 있던 달 수만큼 합산(정산 합산과 대칭)
   const fixedApplied = isMonth ? fixedTotal : fixedTotal * periodMonths.length;
   const totalExpense = fixedApplied + monthlyExpense;
-
-  // 트레이너 정산 지급액 — 회당단가×횟수 방식과 일치
-  //  · 특정 월: 그 달만 계산
-  //  · 전체 기간: 결제가 있는 모든 달을 각각 계산해 합산(정산은 월 단위라 단순 합이 불가)
-  // 이 기간에 해당하는 월 목록(고정비·정산 합산 기준)
-  //  · 특정 월: 그 달 1개 / 연 단위: 그 해에 결제가 있는 달 / 전체: 전 기간
-  const periodMonths = useMemo(()=>{
-    if (isMonth) return [period];
-    if (isYear)  return months.filter(m=>m.slice(0,4)===period);
-    return months;
-  }, [isMonth, isYear, period, months]);
 
   // 트레이너 정산 지급액 — 회당단가×횟수 방식과 일치
   //  · 특정 월: 그 달만 계산
