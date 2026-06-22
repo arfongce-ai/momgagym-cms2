@@ -77,7 +77,8 @@ function AppRoutes() {
                 <Route path="/members"  element={<Members />} />
                 <Route path="/schedule" element={<Schedule />} />
                 <Route path="/trainers" element={<RequireAuth adminOnly><Trainers /></RequireAuth>} />
-                <Route path="/revenue"  element={<RequireAuth adminOnly><Revenue /></RequireAuth>} />
+                <Route path="/revenue"  element={<Revenue />} />
+                {/* /revenue: 관리자=전체, 트레이너=본인 정산+SNS기록만 (컴포넌트 내부에서 분기) */}
                 <Route path="/settings" element={<Settings darkMode={darkMode} setDarkMode={setDarkMode} />} />
                 <Route path="/ai"       element={<AiMeasureHub />} />
                 <Route path="/report"   element={<Report />} />

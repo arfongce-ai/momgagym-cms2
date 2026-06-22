@@ -13,7 +13,7 @@ const NAV = [
   { path:'/ai',       label:'AI분석',   icon:'🤖' },
   { path:'/report',   label:'리포트',   icon:'📊' },
   { path:'/trainers', label:'트레이너', icon:'💪', adminOnly:true },
-  { path:'/revenue',  label:'매출관리', icon:'💰', adminOnly:true },
+  { path:'/revenue',  label:'매출관리', icon:'💰' },
   { path:'/settings', label:'설정',     icon:'⚙️' },
 ];
 // 모바일 하단 바에 항상 보이는 핵심 4개 (나머지는 "전체" 시트)

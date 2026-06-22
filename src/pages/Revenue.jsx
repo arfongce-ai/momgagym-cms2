@@ -14,6 +14,7 @@ import {
   buildRefreezePlan,
 } from '../services/finance';
 import { todayYMD, thisYM } from '../utils/dates';
+import { getUserTrainerId } from '../utils/memberList';
 import { parseSheetRows, dedupeExpenses, parsePastedText } from '../utils/expenseImport';
 import { loadXLSX } from '../utils/loadXlsx';
 
@@ -40,8 +41,22 @@ export default function Revenue() {
   const trainers = store.getTrainers();
   const trainerMap = Object.fromEntries(trainers.map(t=>[t.id,t]));
 
+  // 트레이너 모드: 본인 정산 + 본인 SNS·스터디 기록만(보기 전용). 개요·지출·설정 숨김.
   if (user?.role !== 'admin') {
-    return <p className="text-slate-500 text-center py-10">관리자만 접근할 수 있습니다.</p>;
+    const myTid = getUserTrainerId(user) || user?.trainerId || null;
+    const me = trainers.find(t => t.id === myTid);
+    if (!myTid) {
+      return <p className="text-slate-500 text-center py-10">정산 정보를 불러올 수 없습니다. 관리자에게 문의하세요.</p>;
+    }
+    return (
+      <div className="space-y-5">
+        <div>
+          <h1 className="text-2xl font-black tracking-tight">💰 내 정산</h1>
+          <p className="text-slate-500 text-sm mt-1">{me?.name||'트레이너'}님의 정산 내역 · SNS/스터디 기록</p>
+        </div>
+        <SettleTab settings={settings} trainers={trainers} trainerMap={trainerMap} scopeTid={myTid} readOnly />
+      </div>
+    );
   }
 
   return (
@@ -532,7 +547,7 @@ function RefundableList({ filtered, settings, trainers, trainerMap, onChange }) 
 }
 
 /* ─────────────────────────────── 정산 ─────────────────────────────── */
-function SettleTab({ settings, trainers, trainerMap }) {
+function SettleTab({ settings, trainers, trainerMap, scopeTid=null, readOnly=false }) {
   const [refreshKey, setRefreshKey] = useState(0);
   const [ym, setYm] = useState(thisMonth);
 
@@ -543,10 +558,16 @@ function SettleTab({ settings, trainers, trainerMap }) {
   const schedules = useMemo(()=>store.getSchedules(), [refreshKey]);
   const records   = useMemo(()=>store.getPromos(), [refreshKey]);
 
-  const blocks = useMemo(()=>computeSessionSettlement({
+  const blocksAll = useMemo(()=>computeSessionSettlement({
     trainers, members, schedules, payments: allPaymentsGrouped, records, settings, ym,
     getOverride: (tid, m) => store.getSettleOverride(tid, m),
   }), [trainers, members, schedules, allPaymentsGrouped, records, settings, ym, refreshKey]);
+
+  // 트레이너 모드: 본인 블록만 노출
+  const blocks = useMemo(
+    () => scopeTid ? blocksAll.filter(b => b.trainer.id === scopeTid) : blocksAll,
+    [blocksAll, scopeTid]
+  );
 
   // ── 이 달 정산비율 확정(재박제) ───────────────────────────────────
   // 선택한 달(ym)에 결제가 발생한 회원들의 splitRateAtPay를, 그 달 전체 실적으로
@@ -621,18 +642,22 @@ function SettleTab({ settings, trainers, trainerMap }) {
         <input type="month" value={ym} onChange={e=>setYm(e.target.value)}
           className="bg-slate-900 border border-slate-700 text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-amber-500"/>
         <span className="text-[11px] text-slate-500 ml-auto">임금지급일: 매월 {settings.paydayDay||5}일</span>
-        <button onClick={handleRefreeze} disabled={freezing}
-          className="px-3 py-2 rounded-lg text-xs font-bold bg-amber-500/10 border border-amber-500/40 text-amber-400 hover:bg-amber-500/20 transition-colors disabled:opacity-40">
-          {freezing ? '확정 중…' : '🔒 이 달 정산비율 확정'}
-        </button>
+        {!readOnly && (
+          <button onClick={handleRefreeze} disabled={freezing}
+            className="px-3 py-2 rounded-lg text-xs font-bold bg-amber-500/10 border border-amber-500/40 text-amber-400 hover:bg-amber-500/20 transition-colors disabled:opacity-40">
+            {freezing ? '확정 중…' : '🔒 이 달 정산비율 확정'}
+          </button>
+        )}
         <button onClick={exportCSV} disabled={blocks.length===0}
           className="px-3 py-2 rounded-lg text-xs font-bold bg-slate-800 border border-slate-700 text-slate-200 hover:border-amber-500/40 hover:text-amber-400 transition-colors disabled:opacity-40">
           📄 정산표 내보내기
         </button>
       </div>
-      <p className="text-[11px] text-slate-500 -mt-3">
-        🔒 “이 달 정산비율 확정”은 선택한 달에 결제가 발생한 회원들의 정산비율을, 그 달 전체 실적(블로그·스터디·매출)으로 다시 판정해 고정합니다. 보통 월말(말일 이후)에 한 번 누르며, 다른 달 결제는 바뀌지 않습니다.
-      </p>
+      {!readOnly && (
+        <p className="text-[11px] text-slate-500 -mt-3">
+          🔒 “이 달 정산비율 확정”은 선택한 달에 결제가 발생한 회원들의 정산비율을, 그 달 전체 실적(블로그·스터디·매출)으로 다시 판정해 고정합니다. 보통 월말(말일 이후)에 한 번 누르며, 다른 달 결제는 바뀌지 않습니다.
+        </p>
+      )}
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <Card label="수업료 합계" value={won(grandSession)} color="text-slate-300"/>
@@ -647,24 +672,26 @@ function SettleTab({ settings, trainers, trainerMap }) {
       </div>
 
       <p className="text-[11px] text-slate-500 bg-slate-900 border border-slate-800 rounded-xl px-3 py-2">
-        단가·월 수업횟수는 결제·출석 데이터에서 자동 집계됩니다. 단가 = 공제 후 입금금액 ÷ 등록횟수 (카드1·2: 부가세+카드수수료 / 페이·현금영수증: 부가세 / 계좌·현금: 공제 없음) · 출석과 노쇼는 수업 횟수에 포함, 취소·외부·상담은 제외. 셀을 눌러 직접 수정할 수 있어요.
+        단가·월 수업횟수는 결제·출석 데이터에서 자동 집계됩니다. 단가 = 공제 후 입금금액 ÷ 등록횟수 (카드1·2: 부가세+카드수수료 / 페이·현금영수증: 부가세 / 계좌·현금: 공제 없음) · 출석과 노쇼는 수업 횟수에 포함, 취소·외부·상담은 제외.{!readOnly && ' 셀을 눌러 직접 수정할 수 있어요.'}
       </p>
 
-      <RecordManager trainers={trainers} period={ym} mode="month" onChange={()=>setRefreshKey(k=>k+1)}/>
+      <RecordManager trainers={trainers} period={ym} mode="month" onChange={()=>setRefreshKey(k=>k+1)}
+        scopeTid={scopeTid} readOnly={readOnly}/>
 
       {blocks.length===0
         ? <p className="text-slate-600 text-sm text-center py-6 bg-slate-900 border border-slate-800 rounded-2xl">해당 월 정산 내역이 없습니다</p>
         : blocks.map(b=>(
           <TrainerSettleCard key={b.trainer.id} block={b} ym={ym} settings={settings}
+            readOnly={readOnly} defaultOpen={!!scopeTid}
             onSaved={()=>setRefreshKey(k=>k+1)}/>
         ))}
     </div>
   );
 }
 
-// 트레이너별 정산 카드 (회원 단가/횟수 직접 수정 가능)
-function TrainerSettleCard({ block: b, ym, settings, onSaved }) {
-  const [collapsed, setCollapsed] = useState(true);  // 기본: 접힘(이름만)
+// 트레이너별 정산 카드 (회원 단가/횟수 직접 수정 가능 — readOnly면 수정 숨김)
+function TrainerSettleCard({ block: b, ym, settings, onSaved, readOnly=false, defaultOpen=false }) {
+  const [collapsed, setCollapsed] = useState(!defaultOpen);  // 트레이너 본인 화면이면 펼친 채로
   const [editing, setEditing] = useState(false);
   const [unitEdits, setUnitEdits] = useState({});   // memberId -> 단가
   const [cntEdits, setCntEdits]   = useState({});   // memberId -> 횟수
@@ -770,7 +797,7 @@ function TrainerSettleCard({ block: b, ym, settings, onSaved }) {
           }`} title={liveSplit.reason}>
             정산 {b.rateMixed?`혼합 ${liveSplit.rate}%`:`${liveSplit.rate}%`}{liveSplit.mode==='manual'?' (수동)':liveSplit.mode==='frozen'?' (등록월)':' (자동)'}
           </span>
-          {b.hasOverride && (
+          {!readOnly && b.hasOverride && (
             <span onClick={(e)=>{e.stopPropagation();resetOverride();}}
               className="text-[10px] bg-blue-500/20 text-blue-400 hover:bg-red-500/20 hover:text-red-400 px-1.5 py-0.5 rounded font-bold transition-colors cursor-pointer"
               title="수동 수정값을 지우고 자동 집계값으로 복원">
@@ -780,7 +807,9 @@ function TrainerSettleCard({ block: b, ym, settings, onSaved }) {
         </button>
         <div className="flex items-center gap-2 flex-shrink-0">
           <span className="text-lg font-mono font-black text-amber-400">{won(liveTotal)}</span>
-          {editing
+          {readOnly
+            ? null
+            : editing
             ? <><button onClick={()=>setEditing(false)} className="text-xs text-slate-400 hover:text-white">취소</button>
                 <button onClick={save} className="text-xs bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold px-3 py-1.5 rounded-lg">저장</button></>
             : <button onClick={startEdit} className="text-xs text-slate-400 hover:text-blue-400">수정</button>}
@@ -917,14 +946,17 @@ function Line({ l, v, c='text-slate-200' }) {
 }
 
 /* 블로그/스터디 기록 관리 (정산 탭 내) — 계약서 4·5조 */
-function RecordManager({ trainers, period, mode, onChange }) {
+function RecordManager({ trainers, period, mode, onChange, scopeTid=null, readOnly=false }) {
   const [, force] = useState(0);
   const [open, setOpen] = useState(false);
-  const [collapsed, setCollapsed] = useState(true);
+  const [collapsed, setCollapsed] = useState(!scopeTid); // 트레이너 본인 화면이면 펼친 채로
   const [form, setForm] = useState({ trainerId:trainers[0]?.id||'', channel:'blog', date:todayYMD(), note:'' });
 
   const inPeriod = (d) => mode==='month' ? monthKey(d)===period : yearKey(d)===period;
-  const list = store.getPromos().filter(p=>inPeriod(p.date)).sort((a,b)=>b.date.localeCompare(a.date));
+  const list = store.getPromos()
+    .filter(p=>inPeriod(p.date))
+    .filter(p=>!scopeTid || p.trainerId===scopeTid) // 트레이너 모드: 본인 기록만
+    .sort((a,b)=>b.date.localeCompare(a.date));
 
   const add = async () => {
     if (!form.trainerId) { alert('트레이너를 선택하세요.'); return; }
@@ -952,12 +984,12 @@ function RecordManager({ trainers, period, mode, onChange }) {
           <h2 className="font-bold text-sm uppercase tracking-widest text-slate-400 group-hover:text-slate-200">📣 SNS · 스터디 기록</h2>
           <span className="text-[11px] text-slate-500">({list.length}건)</span>
         </button>
-        {!collapsed && (
+        {!collapsed && !readOnly && (
           <button onClick={()=>setOpen(!open)} className="text-xs text-amber-400 hover:text-amber-300 font-semibold">+ 기록 추가</button>
         )}
       </div>
       {!collapsed && <>
-      {open && (
+      {open && !readOnly && (
         <div className="mb-3 p-3 bg-slate-800 rounded-xl grid grid-cols-2 md:grid-cols-5 gap-2 items-end">
           <select value={form.trainerId} onChange={e=>setForm({...form,trainerId:e.target.value})}
             className="bg-slate-900 border border-slate-700 text-slate-100 rounded-lg px-2 py-2 text-sm">
@@ -985,11 +1017,11 @@ function RecordManager({ trainers, period, mode, onChange }) {
                   {tMap[p.trainerId]||'?'} · <span className={CH_CLR[p.channel]||'text-slate-400'}>{CH[p.channel]||p.channel}</span> · {p.date}
                   {p.note && <span className="text-slate-500"> · {p.note}</span>}
                 </span>
-                <button onClick={()=>del(p.id)} className="text-slate-600 hover:text-red-400">삭제</button>
+                {!readOnly && <button onClick={()=>del(p.id)} className="text-slate-600 hover:text-red-400">삭제</button>}
               </div>
             ))}
           </div>}
-      <p className="text-[11px] text-slate-600 mt-2">* SNS-블로그: 1회차부터 지급(상한 없음) · SNS-인스타: 최대 8회 · 1건당 1만원 / 50%: 블로그2+스터디1 또는 매출300만 중 1개 · 60%: 둘 다</p>
+      <p className="text-[11px] text-slate-600 mt-2">* SNS-블로그: 1회차부터 지급(상한 없음) · SNS-인스타: 최대 8회 · 1건당 1만원 / 60%: 블로그2+스터디1 / 50%: 신규·재등록 매출 300만 이상{readOnly && ' · 기록 입력은 관리자가 합니다'}</p>
       </>}
     </div>
   );

@@ -861,3 +861,32 @@ describe('정산 등록 컬럼: 재등록 회차/횟수 표시', () => {
     expect(b.rows[0].regTotal).toBe(60);
   });
 });
+
+// ── 트레이너 모드 매출관리: 본인 정산 블록만 노출되는지 ──
+describe('트레이너 모드 정산 스코핑', () => {
+  const settings = { cardFeeRate:0, vatRate:0, lowSplitRate:40, rate60MinSales:3000000,
+    rate50MinBlog:2, rate50MinStudy:1, promoPerPost:10000, snsInstaMax:8, trainerSplitRates:{}, withholdingRate:3.3 };
+  const trainers = [{ id:'t1', name:'T1' }, { id:'t2', name:'T2' }];
+  const members = [
+    { id:'m1', name:'회원1', trainerSessions:{ t1:{ total:10, remaining:5 } } },
+    { id:'m2', name:'회원2', trainerSessions:{ t2:{ total:10, remaining:5 } } },
+  ];
+  const schedules = [
+    { id:'s1', isExternal:false, memberId:'m1', trainerId:'t1', status:'attended', date:'2026-06-10' },
+    { id:'s2', isExternal:false, memberId:'m2', trainerId:'t2', status:'attended', date:'2026-06-10' },
+  ];
+  const payments = {
+    m1:[{ id:'p1', paidAt:'2026-06-01', amount:500000, method:'cash', trainerIds:['t1'], splitRateAtPay:{t1:50} }],
+    m2:[{ id:'p2', paidAt:'2026-06-01', amount:500000, method:'cash', trainerIds:['t2'], splitRateAtPay:{t2:50} }],
+  };
+
+  it('전체 계산 후 t1 블록만 필터하면 t1 회원만 들어있다', () => {
+    const blocksAll = computeSessionSettlement({ trainers, members, schedules, payments, records:[], settings, ym:'2026-06' });
+    const scoped = blocksAll.filter(b => b.trainer.id === 't1');
+    expect(scoped.length).toBe(1);
+    expect(scoped[0].trainer.id).toBe('t1');
+    expect(scoped[0].rows.every(r => r.memberId === 'm1')).toBe(true);
+    // 다른 트레이너(t2) 회원은 포함되지 않음
+    expect(scoped[0].rows.some(r => r.memberId === 'm2')).toBe(false);
+  });
+});
