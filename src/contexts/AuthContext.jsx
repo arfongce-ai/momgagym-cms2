@@ -2,25 +2,43 @@ import { createContext, useContext, useState, useEffect } from 'react';
 import {
   signInWithEmailAndPassword, signOut, onAuthStateChanged, signInAnonymously,
 } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 import { store, initStore } from '../demoData';
 
 const AuthContext = createContext(null);
 
 // 역할 결정: Custom Claims(token.admin) 우선 → 없으면 roles/{uid} 문서로 폴백.
-// claim 기반은 토큰 안에 서명되어 있어 위조 불가하고 문서 조회도 필요 없다.
 async function resolveRole(fbUser) {
   try {
     const res = await fbUser.getIdTokenResult();
     if (res.claims && res.claims.admin === true) return 'admin';
   } catch (e) { console.error('[claim 조회 실패]', e); }
-  // 폴백: roles 문서
   try {
     const snap = await getDoc(doc(db, 'roles', fbUser.uid));
     if (snap.exists()) return snap.data().role || null;
   } catch (e) { console.error('[역할 조회 실패]', e); }
   return null;
+}
+
+// 트레이너를 이메일로 찾는다. 캐시에 없으면 Firestore에서 직접 조회(로딩 타이밍 방어).
+async function findTrainerByEmail(email) {
+  const e = (email || '').trim().toLowerCase();
+  if (!e) return null;
+  const cached = (store.getTrainers() || []).find(
+    t => (t.loginEmail || t.email || '').trim().toLowerCase() === e
+  );
+  if (cached) return cached;
+  // 캐시에 없으면 Firestore에서 직접 (익명 인증 상태라 읽기 권한 있음)
+  try {
+    const snap = await getDocs(collection(db, 'trainers'));
+    return snap.docs
+      .map(d => ({ id: d.id, ...d.data() }))
+      .find(t => (t.loginEmail || t.email || '').trim().toLowerCase() === e) || null;
+  } catch (err) {
+    console.error('[trainer 직접 조회 실패]', err);
+    return null;
+  }
 }
 
 export function AuthProvider({ children }) {
@@ -63,14 +81,11 @@ export function AuthProvider({ children }) {
           setUser(null);
           await ensureData(); // 로그인 화면에서 트레이너 목록을 읽을 수 있도록
         } else {
-          // 정식 Firebase 계정(관리자/직원). 데이터를 먼저 로드한 뒤 역할/트레이너 연결.
+          // 정식 Firebase 계정(관리자/직원). 데이터 먼저 로드 후 역할/트레이너 연결.
           await ensureData();
           const role = await resolveRole(fbUser);
-          const email = (fbUser.email || '').trim().toLowerCase();
-          // 이 이메일이 트레이너 목록에도 있으면 trainerId 연결(관리자 겸 트레이너).
-          const asTrainer = store.getTrainers().find(
-            t => (t.loginEmail || '').trim().toLowerCase() === email
-          );
+          // 이 이메일이 트레이너에도 있으면 trainerId 연결(관리자 겸 트레이너).
+          const asTrainer = await findTrainerByEmail(fbUser.email);
           setUser({
             id: fbUser.uid,
             email: fbUser.email,
@@ -119,23 +134,23 @@ export function AuthProvider({ children }) {
       // onAuthStateChanged가 user를 세팅하지만, 즉시 반환값도 제공
       return u;
     } catch (fbErr) {
-      // 2) Firebase에 없으면 트레이너(앱 자체 계정)에서 찾기
-      //    빈 이메일/비번이면 조회하지 않음(로그인 계정 없는 트레이너 오매칭 방지)
+      // 2) Firebase 계정이 아니면 트레이너(앱 자체 loginEmail/Password)에서 찾기
       if (!e || !password) {
         throw new Error('이메일 또는 비밀번호가 올바르지 않습니다.');
       }
-      // 트레이너 목록이 아직 로드 안 됐을 수 있으므로(로그인 화면=로그인 전),
-      // 조회 전에 데이터 로딩을 보장한다. ensureData의 dataReady 클로저 문제를
-      // 피하려 initStore를 직접 await (중복 호출 안전).
-      let trainers = store.getTrainers();
-      if (!trainers || trainers.length === 0) {
-        try { await initStore(); setDataReady(true); } catch (loadErr) { console.error('[trainer load]', loadErr); }
-        trainers = store.getTrainers();
+      // 캐시에 없으면 Firestore에서 직접 조회 (로그인 화면=데이터 로딩 전일 수 있음)
+      let trainer = null;
+      try {
+        trainer = await findTrainerByEmail(e);
+      } catch (lookupErr) {
+        console.error('[trainer 조회 실패]', lookupErr);
+        throw new Error('트레이너 정보를 확인할 수 없습니다. 인터넷 연결을 확인해 주세요.');
       }
-      const byEmail = (trainers || []).find(t => (t.loginEmail || '').trim().toLowerCase() === e);
-      const t = byEmail && byEmail.loginPassword === password ? byEmail : null;
-      if (t) {
-        const u = { id: t.id, email: t.loginEmail, role: 'trainer', name: t.name, trainerId: t.id, source: 'trainer' };
+      if (trainer && trainer.loginPassword === password) {
+        const u = {
+          id: trainer.id, email: trainer.loginEmail || trainer.email,
+          role: 'trainer', name: trainer.name, trainerId: trainer.id, source: 'trainer',
+        };
         localStorage.setItem('fitcms_trainer_session', JSON.stringify(u));
         setUser(u);
         await ensureData(); // 트레이너 로그인 후 데이터 로딩 보장
