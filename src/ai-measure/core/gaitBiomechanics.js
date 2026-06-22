@@ -288,3 +288,171 @@ export class AngleAccumulator {
     };
   }
 }
+// ════════════════════════════════════════════════════════════════════════
+//  [요구사항 1] 고급 생체역학 지표 — gaitBiomechanics.js 추가분
+//  기존 파일(angleAt, OneEuroFilter, GaitCycleTracker, AngleAccumulator 등)은
+//  그대로 두고, 아래 블록을 파일 "맨 끝"에 추가하면 됩니다.
+//  - 기존 테스트/동작 불변(기존 export 미수정).
+//  - 결과는 BiomechAccumulator 에 "축적"만 하고 화면에는 반환/표시하지 않습니다.
+// ════════════════════════════════════════════════════════════════════════
+
+// 두 점 거리 (정규화 좌표)
+const _dist = (a, b) => Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2);
+
+// 가시성 가드 (GAIT_TUNING.minVisibility 재사용)
+const _vis = (p) => p && (p.visibility == null || p.visibility >= GAIT_TUNING.minVisibility);
+
+// 신장(픽셀) 추정: 어깨 중점 ~ 발목 중점 수직거리. 정규화 좌표 기준 스케일러로 사용.
+// 줌/거리 변화에 따른 절대 픽셀 편차를 흡수하기 위해 모든 공간지표를 이 값으로 정규화한다.
+const _bodyScale = (lm) => {
+  if (!lm || !lm[11] || !lm[12] || !lm[27] || !lm[28]) return null;
+  const shY = (lm[11].y + lm[12].y) / 2;
+  const ankY = (lm[27].y + lm[28].y) / 2;
+  const h = Math.abs(ankY - shY);
+  return h > 0.01 ? h : null;
+};
+
+// ───────── Kinematic ─────────
+
+// 몸통 전방 기울기(Trunk Forward Lean): 어깨중점→골반중점 벡터와 수직선의 각도(도).
+// 0°=완전 직립, 양수=전방 기울기. 어깨가 골반보다 앞(달리는 방향)으로 나갈수록 커짐.
+const trunkForwardLean = (lm) => {
+  if (!lm || !lm[11] || !lm[12] || !lm[23] || !lm[24]) return null;
+  if (!_vis(lm[11]) || !_vis(lm[12]) || !_vis(lm[23]) || !_vis(lm[24])) return null;
+  const sh = { x: (lm[11].x + lm[12].x) / 2, y: (lm[11].y + lm[12].y) / 2 };
+  const hip = { x: (lm[23].x + lm[24].x) / 2, y: (lm[23].y + lm[24].y) / 2 };
+  // 몸통 벡터 (골반→어깨). 수직(0,-1) 기준 각.
+  const vx = sh.x - hip.x;
+  const vy = sh.y - hip.y; // 위로 갈수록 음수
+  const len = Math.sqrt(vx * vx + vy * vy);
+  if (len < 1e-6) return null;
+  // 수직선과의 각도: atan2(수평성분, 수직성분)
+  const deg = Math.atan2(Math.abs(vx), Math.abs(vy)) * (180 / Math.PI);
+  return Math.round(deg * 10) / 10;
+};
+
+// 무릎 굽힘 각도(좌/우): 180°=완전 신전, 작을수록 깊게 굽힘.
+// 기존 jointAnglesFromPose 와 동일 정의(고관절-무릎-발목)지만 좌우 모두 반환.
+const kneeFlexion = (lm) => ({
+  left: angleAt(lm[23], lm[25], lm[27]),
+  right: angleAt(lm[24], lm[26], lm[28]),
+});
+
+// ───────── Symmetry ─────────
+
+// 골반 드롭(Pelvic Drop): 좌우 골반(23,24) y좌표 차이를 신장으로 정규화(%).
+// 한쪽 지지기에 반대쪽 골반이 내려가는 정도(중둔근 약화 지표). 부호: 좌-우.
+const pelvicDrop = (lm, scale) => {
+  if (!lm || !lm[23] || !lm[24]) return null;
+  if (!_vis(lm[23]) || !_vis(lm[24])) return null;
+  const s = scale || _bodyScale(lm);
+  if (!s) return null;
+  return Math.round(((lm[23].y - lm[24].y) / s) * 1000) / 10; // % (신장 대비), ×0.1 해상도
+};
+
+// 골반 중점 y (수직 진폭 계산용 raw). 누적기에서 max-min 으로 진폭을 구한다.
+const pelvisCenterY = (lm) => {
+  if (!lm || !lm[23] || !lm[24]) return null;
+  if (!_vis(lm[23]) || !_vis(lm[24])) return null;
+  return (lm[23].y + lm[24].y) / 2;
+};
+
+// ───────── Spatial ─────────
+
+// 발목 간 거리(좌우 발목 27,28). 보폭 추정의 raw — 누적기에서 max 를 신장으로 정규화.
+const ankleSpread = (lm) => {
+  if (!lm || !lm[27] || !lm[28]) return null;
+  if (!_vis(lm[27]) || !_vis(lm[28])) return null;
+  return _dist(lm[27], lm[28]);
+};
+
+// ════════════════════════════════════════════════════════════════════════
+//  BiomechAccumulator — 프레임마다 push, 끝에 summary()
+//  GaitCycleTracker / AngleAccumulator 와 같은 인터페이스(push/summary).
+//  GaitRunningAnalysis 의 녹화 루프에서 trackerRef.push 옆에 한 줄 추가해 쓴다.
+// ════════════════════════════════════════════════════════════════════════
+export class BiomechAccumulator {
+  constructor() {
+    this.trunkLean = [];
+    this.kneeL = [];
+    this.kneeR = [];
+    this.pelvicDrop = [];
+    this.pelvisY = [];        // 수직 진폭용 (min/max)
+    this.ankleSpread = [];    // 보폭용 (max)
+    this._scaleSum = 0;
+    this._scaleN = 0;
+  }
+
+  push(lm) {
+    if (!lm) return;
+    const scale = _bodyScale(lm);
+    if (scale) { this._scaleSum += scale; this._scaleN += 1; }
+
+    const tl = trunkForwardLean(lm);
+    if (tl != null) this.trunkLean.push(tl);
+
+    const kf = kneeFlexion(lm);
+    if (kf.left != null) this.kneeL.push(kf.left);
+    if (kf.right != null) this.kneeR.push(kf.right);
+
+    const pd = pelvicDrop(lm, scale);
+    if (pd != null) this.pelvicDrop.push(pd);
+
+    const py = pelvisCenterY(lm);
+    if (py != null) this.pelvisY.push(py);
+
+    const as = ankleSpread(lm);
+    if (as != null) this.ankleSpread.push(as);
+  }
+
+  summary() {
+    const stat = (arr) => {
+      if (!arr.length) return { avg: 0, max: 0, min: 0 };
+      const max = Math.max(...arr), min = Math.min(...arr);
+      const avg = arr.reduce((a, b) => a + b, 0) / arr.length;
+      return { avg: Math.round(avg * 10) / 10, max: Math.round(max * 10) / 10, min: Math.round(min * 10) / 10 };
+    };
+    const round1 = (n) => Math.round(n * 10) / 10;
+
+    const meanScale = this._scaleN ? this._scaleSum / this._scaleN : null;
+
+    // 수직 진폭(Vertical Oscillation): 골반 y 이동량(max-min)을 신장으로 정규화(%).
+    let verticalOscillation = 0;
+    if (this.pelvisY.length && meanScale) {
+      const amp = Math.max(...this.pelvisY) - Math.min(...this.pelvisY);
+      verticalOscillation = round1((amp / meanScale) * 100);
+    }
+
+    // 추정 보폭 비율(Stride to Height Ratio): 발목 최대 거리 / 신장.
+    let strideToHeight = 0;
+    if (this.ankleSpread.length && meanScale) {
+      strideToHeight = round1((Math.max(...this.ankleSpread) / meanScale) * 100) / 100; // 0~ (배수)
+    }
+
+    const kL = stat(this.kneeL);
+    const kR = stat(this.kneeR);
+    const pd = stat(this.pelvicDrop);
+
+    return {
+      // Kinematic
+      trunkLean: stat(this.trunkLean),                 // 몸통 전방 기울기(도)
+      kneeFlexion: {                                   // 무릎 굽힘(도) 좌/우
+        left: kL, right: kR,
+        // 최대 굽힘 = 측정 중 가장 작은 각(가장 깊게 굽힌 순간)
+        leftMaxFlex: kL.min, rightMaxFlex: kR.min,
+        // 착지 각도 추정 = 측정 중 가장 큰 각(가장 펴진 = 접지 직전)
+        leftStrike: kL.max, rightStrike: kR.max,
+      },
+      // Symmetry
+      pelvicDrop: pd,                                  // 골반 드롭(% 신장 대비, 부호 좌-우)
+      pelvicDropAbs: round1(Math.abs(pd.max - pd.min)),// 좌우 진폭(비대칭 크기)
+      verticalOscillation,                             // 수직 진폭 비율(%)
+      // 좌우 무릎 대칭(%): 100 = 완전 대칭
+      kneeSymmetry: (kL.avg && kR.avg)
+        ? Math.round((1 - Math.abs(kL.avg - kR.avg) / ((kL.avg + kR.avg) / 2)) * 1000) / 10
+        : 0,
+      // Spatial
+      strideToHeight,                                  // 보폭/신장 비율
+    };
+  }
+}
