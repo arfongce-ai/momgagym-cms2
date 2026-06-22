@@ -13,7 +13,7 @@ import {
   calcNet, downloadCSV, computeSessionSettlement,
   buildRefreezePlan,
 } from '../services/finance';
-import { todayYMD, thisYM } from '../utils/dates';
+import { todayYMD, thisYM, thisYear } from '../utils/dates';
 import { getUserTrainerId } from '../utils/memberList';
 import { parseSheetRows, dedupeExpenses, parsePastedText } from '../utils/expenseImport';
 import { loadXLSX } from '../utils/loadXlsx';
@@ -94,27 +94,51 @@ export default function Revenue() {
 }
 
 /* ─────────────────────────────── 개요 ─────────────────────────────── */
+// 유효한 YYYY-MM 키만 통과(잘못된 날짜로 생긴 'NaN-NaN' 등 제외)
+const isValidMonthKey = (k) => /^\d{4}-\d{2}$/.test(k);
+const isValidYearKey  = (k) => /^\d{4}$/.test(k);
+
 function OverviewTab({ settings, trainers, trainerMap }) {
   const [refreshKey, setRefreshKey] = useState(0);
   const refresh = () => setRefreshKey(k=>k+1);
   const allPayments = useMemo(()=>store.getAllPayments()
     .sort((a,b)=>new Date(b.paidAt)-new Date(a.paidAt)), [refreshKey]);
 
+  // 결제가 발생한 모든 월/연도(유효한 키만)
   const months = useMemo(()=>{
-    const set = new Set(allPayments.map(p=>monthKey(p.paidAt)));
+    const set = new Set(allPayments.map(p=>monthKey(p.paidAt)).filter(isValidMonthKey));
     return [...set].sort().reverse();
   }, [allPayments]);
 
-  const [selMonth, setSelMonth] = useState('all');
-  const filtered = useMemo(()=>(
-    selMonth==='all' ? allPayments : allPayments.filter(p=>monthKey(p.paidAt)===selMonth)
-  ), [allPayments, selMonth]);
+  const years = useMemo(()=>{
+    const set = new Set(allPayments.map(p=>yearKey(p.paidAt)).filter(isValidYearKey));
+    return [...set].sort().reverse();
+  }, [allPayments]);
+
+  // 기간 선택: 연 단위(YYYY) / 특정 월(YYYY-MM) / 전체(all)
+  //  · 기본값은 올해. 올해 데이터가 없으면 가장 최근 연도.
+  const defaultYear = years.includes(thisYear()) ? thisYear() : (years[0] || thisYear());
+  const [period, setPeriod] = useState(defaultYear);
+
+  // period 해석
+  const isAll   = period === 'all';
+  const isYear  = isValidYearKey(period);
+  const isMonth = isValidMonthKey(period);
+
+  const filtered = useMemo(()=>{
+    if (isAll)   return allPayments;
+    if (isYear)  return allPayments.filter(p=>yearKey(p.paidAt)===period);
+    return allPayments.filter(p=>monthKey(p.paidAt)===period);
+  }, [allPayments, period, isAll, isYear]);
 
   const paid   = filtered.filter(p=>!p.isUnpaid && !p.isRefunded);
   const unpaid = filtered.filter(p=>p.isUnpaid && !p.isRefunded);
-  // 이 기간(월)에 환불된 결제 — 환불액을 매출에서 차감
-  const refundedThisPeriod = filtered.filter(p=>p.isRefunded && p.refundedAt &&
-    (selMonth==='all' || p.refundedAt.slice(0,7)===selMonth));
+  // 이 기간에 환불된 결제 — 환불액을 매출에서 차감(환불일 기준)
+  const refundedThisPeriod = allPayments.filter(p=>p.isRefunded && p.refundedAt && (
+    isAll ? true
+    : isYear ? p.refundedAt.slice(0,4)===period
+    : p.refundedAt.slice(0,7)===period
+  ));
   const refundTotal = refundedThisPeriod.reduce((s,p)=>s+(Number(p.refundAmount)||0),0);
 
   const totals = useMemo(()=>{
@@ -138,26 +162,57 @@ function OverviewTab({ settings, trainers, trainerMap }) {
     return acc;
   }, [paid]);
 
+  // 월별 추이 데이터(유효한 키만). 연 단위 선택 시 해당 연도 12개월,
+  // 전체/특정월 선택 시 전체 월을 대상으로 한다.
   const byMonth = useMemo(()=>{
     const acc={}; allPayments.filter(p=>!p.isUnpaid && !p.isRefunded).forEach(p=>{
-      const k=monthKey(p.paidAt); acc[k]=(acc[k]||0)+calcNet(p,settings).net; });
+      const k=monthKey(p.paidAt);
+      if (!isValidMonthKey(k)) return;
+      acc[k]=(acc[k]||0)+calcNet(p,settings).net; });
     return Object.entries(acc).sort((a,b)=>a[0].localeCompare(b[0]));
   }, [allPayments, settings]);
-  const maxMonth = Math.max(1, ...byMonth.map(([,v])=>v));
+
+  // 차트에 보일 월 목록
+  //  · 연 단위: 그 해 1~12월을 모두 자리 채움(데이터 없으면 0)
+  //  · 그 외: 데이터가 있는 월만
+  const chartRows = useMemo(()=>{
+    if (isYear) {
+      const map = Object.fromEntries(byMonth);
+      return Array.from({length:12}, (_,i)=>{
+        const k = `${period}-${String(i+1).padStart(2,'0')}`;
+        return [k, map[k]||0];
+      });
+    }
+    return byMonth;
+  }, [byMonth, isYear, period]);
+  const maxMonth = Math.max(1, ...chartRows.map(([,v])=>v));
 
   // 지출 / 순익 (시트의 총매출→입금→고정지출→순익 흐름)
   const expenses = store.getExpenses();
   const fixedTotal = expenses.filter(e=>e.kind==='fixed').reduce((s,e)=>s+(e.amount||0),0);
-  const monthlyExpense = selMonth==='all'
-    ? expenses.filter(e=>e.kind==='monthly').reduce((s,e)=>s+(e.amount||0),0)
-    : expenses.filter(e=>e.kind==='monthly' && e.ym===selMonth).reduce((s,e)=>s+(e.amount||0),0);
-  // 고정비: 특정 월=1회분 / 전체기간=결제가 있는 달 수만큼 합산(정산 합산과 대칭)
-  const fixedApplied = selMonth==='all' ? fixedTotal * months.length : fixedTotal;
+  const monthlyExpense = isMonth
+    ? expenses.filter(e=>e.kind==='monthly' && e.ym===period).reduce((s,e)=>s+(e.amount||0),0)
+    : isYear
+    ? expenses.filter(e=>e.kind==='monthly' && (e.ym||'').slice(0,4)===period).reduce((s,e)=>s+(e.amount||0),0)
+    : expenses.filter(e=>e.kind==='monthly').reduce((s,e)=>s+(e.amount||0),0);
+  // 고정비: 특정 월=1회분 / 연·전체=해당 기간에 결제가 있던 달 수만큼 합산(정산 합산과 대칭)
+  const fixedApplied = isMonth ? fixedTotal : fixedTotal * periodMonths.length;
   const totalExpense = fixedApplied + monthlyExpense;
 
   // 트레이너 정산 지급액 — 회당단가×횟수 방식과 일치
   //  · 특정 월: 그 달만 계산
   //  · 전체 기간: 결제가 있는 모든 달을 각각 계산해 합산(정산은 월 단위라 단순 합이 불가)
+  // 이 기간에 해당하는 월 목록(고정비·정산 합산 기준)
+  //  · 특정 월: 그 달 1개 / 연 단위: 그 해에 결제가 있는 달 / 전체: 전 기간
+  const periodMonths = useMemo(()=>{
+    if (isMonth) return [period];
+    if (isYear)  return months.filter(m=>m.slice(0,4)===period);
+    return months;
+  }, [isMonth, isYear, period, months]);
+
+  // 트레이너 정산 지급액 — 회당단가×횟수 방식과 일치
+  //  · 특정 월: 그 달만 계산
+  //  · 연/전체: 해당 기간의 모든 달을 각각 계산해 합산(정산은 월 단위라 단순 합이 불가)
   const settlePayout = useMemo(()=>{
     const grouped = {}; store.getMembers().forEach(m=>{ grouped[m.id]=store.getPayments(m.id); });
     const calcMonth = (ym) => computeSessionSettlement({
@@ -165,15 +220,14 @@ function OverviewTab({ settings, trainers, trainerMap }) {
       payments: grouped, records: store.getPromos(), settings, ym,
       getOverride: (tid,m)=>store.getSettleOverride(tid,m),
     }).reduce((s,b)=>s+b.payout, 0);
-    if (selMonth==='all') return months.reduce((s,ym)=>s+calcMonth(ym), 0);
-    return calcMonth(selMonth);
-  }, [allPayments, trainers, settings, selMonth, months]);
+    return periodMonths.reduce((s,ym)=>s+calcMonth(ym), 0);
+  }, [allPayments, trainers, settings, periodMonths]);
 
   const netProfit = totals.net - settlePayout - totalExpense;
 
   return (
     <div className="space-y-5">
-      <div className="flex justify-end gap-2">
+      <div className="flex justify-end gap-2 flex-wrap">
         <button onClick={()=>{
           const header=['날짜','이름','금액','결제수단','담당트레이너','입금금액','구분','비고'];
           const body=filtered.map(p=>[
@@ -184,15 +238,25 @@ function OverviewTab({ settings, trainers, trainerMap }) {
             p.isRefunded?'환불':p.isUnpaid?'미수금':p.isNew?'신규':p.isReEnroll?'재등록':p.category==='edu_center'?'센터교육':p.category==='edu_external'?'외부활동':'일반',
             p.note||'',
           ]);
-          downloadCSV(`매출_${selMonth==='all'?'전체':selMonth}.csv`, [header, ...body]);
+          const tag = isAll ? '전체' : isYear ? `${period}년` : period;
+          downloadCSV(`매출_${tag}.csv`, [header, ...body]);
         }} disabled={filtered.length===0}
           className="px-3 py-2 rounded-lg text-xs font-bold bg-slate-800 border border-slate-700 text-slate-200 hover:border-amber-500/40 hover:text-amber-400 transition-colors disabled:opacity-40">
           📄 매출내역 내보내기
         </button>
-        <select value={selMonth} onChange={e=>setSelMonth(e.target.value)}
+        <select value={period} onChange={e=>setPeriod(e.target.value)}
           className="bg-slate-900 border border-slate-700 text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-amber-500">
+          {years.length>0 && (
+            <optgroup label="연 단위">
+              {years.map(y=><option key={y} value={y}>{y}년 전체</option>)}
+            </optgroup>
+          )}
+          {months.length>0 && (
+            <optgroup label="월 단위">
+              {months.map(m=><option key={m} value={m}>{m.replace('-','년 ')}월</option>)}
+            </optgroup>
+          )}
           <option value="all">전체 기간</option>
-          {months.map(m=><option key={m} value={m}>{m.replace('-','년 ')}월</option>)}
         </select>
       </div>
 
@@ -219,44 +283,29 @@ function OverviewTab({ settings, trainers, trainerMap }) {
             </div>}
       </div>
 
-      {/* 월별 추이 (입금금액 기준) */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
-        <h2 className="font-bold text-sm uppercase tracking-widest text-slate-400 mb-3">월별 입금금액 추이</h2>
-        {byMonth.length===0
-          ? <p className="text-slate-600 text-sm text-center py-3">데이터가 없습니다</p>
-          : <div className="space-y-2">
-              {byMonth.map(([k,v])=>(
-                <div key={k} className="flex items-center gap-3">
-                  <span className="text-xs text-slate-500 w-16 flex-shrink-0">{k}</span>
-                  <div className="flex-1 bg-slate-800 rounded-full h-5 overflow-hidden">
-                    <div className="h-full bg-amber-500/70 rounded-full" style={{width:`${(v/maxMonth)*100}%`}}/>
-                  </div>
-                  <span className="text-xs font-mono font-bold text-slate-300 w-24 text-right flex-shrink-0">{won(v)}</span>
-                </div>
-              ))}
-            </div>}
-      </div>
+      {/* 월별 추이 (입금금액 기준) — 선택한 기간만 강조, 나머지는 접기 */}
+      <MonthlyTrend rows={chartRows} maxMonth={maxMonth} period={period} isMonth={isMonth} isYear={isYear}/>
 
       {/* 순익 요약 (시트: 총매출 → 입금 → 지출 → 순익) */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
         <h2 className="font-bold text-sm uppercase tracking-widest text-slate-400 mb-3">
-          {selMonth==='all' ? '전체 손익 요약' : `${selMonth} 손익 요약`}
+          {isAll ? '전체 손익 요약' : isYear ? `${period}년 손익 요약` : `${period} 손익 요약`}
         </h2>
         <div className="space-y-2 text-sm">
           <div className="flex justify-between"><span className="text-slate-400">총매출</span><span className="font-mono font-bold text-slate-200">{won(totals.amount)}</span></div>
           <div className="flex justify-between"><span className="text-slate-400">입금금액</span><span className="font-mono font-bold text-emerald-400">{won(totals.net)}</span></div>
           <div className="flex justify-between"><span className="text-slate-400">트레이너 정산</span><span className="font-mono font-bold text-red-400">- {won(settlePayout)}</span></div>
           <div className="flex justify-between">
-            <span className="text-slate-400">고정지출{selMonth==='all' && months.length>0 ? ` (${months.length}개월)` : ''}</span>
+            <span className="text-slate-400">고정지출{!isMonth && periodMonths.length>0 ? ` (${periodMonths.length}개월)` : ''}</span>
             <span className="font-mono font-bold text-red-400">- {won(fixedApplied)}</span>
           </div>
-          <div className="flex justify-between"><span className="text-slate-400">{selMonth==='all'?'월별 지출':'당월 지출'}</span><span className="font-mono font-bold text-red-400">- {won(monthlyExpense)}</span></div>
+          <div className="flex justify-between"><span className="text-slate-400">{isMonth?'당월 지출':'월별 지출'}</span><span className="font-mono font-bold text-red-400">- {won(monthlyExpense)}</span></div>
           <div className="flex justify-between pt-2 border-t border-slate-800">
             <span className="font-bold text-amber-400">순익</span>
             <span className={`font-mono font-black text-lg ${netProfit>=0?'text-amber-400':'text-red-400'}`}>{won(netProfit)}</span>
           </div>
         </div>
-        {selMonth==='all' && <p className="text-[11px] text-slate-600 mt-2">* 전체 기간 고정지출은 결제가 발생한 {months.length}개월분을 합산한 값입니다. 월을 선택하면 해당 월 기준으로 보여집니다.</p>}
+        {!isMonth && <p className="text-[11px] text-slate-600 mt-2">* {isYear?`${period}년`:'전체 기간'} 고정지출은 결제가 발생한 {periodMonths.length}개월분을 합산한 값입니다. 특정 월을 선택하면 그 달 기준으로 보여집니다.</p>}
       </div>
 
       {/* 상세 + 담당 트레이너 + 환불 */}
@@ -265,7 +314,77 @@ function OverviewTab({ settings, trainers, trainerMap }) {
   );
 }
 
-/* 결제 상세 — 관리자 수정/삭제/환불 */
+/* 월별 입금금액 추이 — 선택 기간을 강조하고 나머지는 접었다 펼침
+ *  · 특정 월 선택: 그 달만 펼친 채로, 나머지 달은 '다른 달 보기'로 접기
+ *  · 연/전체 선택: 전체 표시(연 단위는 1~12월 자리 채움)
+ */
+function MonthlyTrend({ rows, maxMonth, period, isMonth, isYear }) {
+  const [showAll, setShowAll] = useState(false);
+  const fmtMonth = (k) => k; // YYYY-MM 그대로
+
+  const Bar = ({ k, v, highlight }) => (
+    <div className="flex items-center gap-3">
+      <span className={`text-xs w-16 flex-shrink-0 ${highlight?'text-amber-400 font-bold':'text-slate-500'}`}>{fmtMonth(k)}</span>
+      <div className="flex-1 bg-slate-800 rounded-full h-5 overflow-hidden">
+        <div className={`h-full rounded-full ${highlight?'bg-amber-400':'bg-amber-500/70'}`}
+          style={{width:`${(v/maxMonth)*100}%`}}/>
+      </div>
+      <span className={`text-xs font-mono font-bold w-24 text-right flex-shrink-0 ${highlight?'text-amber-300':'text-slate-300'}`}>{won(v)}</span>
+    </div>
+  );
+
+  if (rows.length===0) {
+    return (
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
+        <h2 className="font-bold text-sm uppercase tracking-widest text-slate-400 mb-3">월별 입금금액 추이</h2>
+        <p className="text-slate-600 text-sm text-center py-3">데이터가 없습니다</p>
+      </div>
+    );
+  }
+
+  // 특정 월 선택: 그 달만 보이고 나머지는 접기
+  if (isMonth) {
+    const sel = rows.find(([k])=>k===period);
+    const others = rows.filter(([k])=>k!==period);
+    return (
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="font-bold text-sm uppercase tracking-widest text-slate-400">월별 입금금액 추이</h2>
+          {others.length>0 && (
+            <button onClick={()=>setShowAll(s=>!s)}
+              className="text-xs text-amber-400 hover:text-amber-300 font-semibold flex items-center gap-1">
+              <span className={`transition-transform ${showAll?'rotate-90':''}`}>▶</span>
+              {showAll?'다른 달 접기':`다른 달 보기 (${others.length})`}
+            </button>
+          )}
+        </div>
+        <div className="space-y-2">
+          {sel
+            ? <Bar k={sel[0]} v={sel[1]} highlight/>
+            : <p className="text-slate-600 text-sm text-center py-2">{period}월 입금 내역이 없습니다</p>}
+          {showAll && others
+            .sort((a,b)=>b[0].localeCompare(a[0]))
+            .map(([k,v])=><Bar key={k} k={k} v={v}/>)}
+        </div>
+      </div>
+    );
+  }
+
+  // 연/전체: 전체 표시 (연 단위는 현재월 강조)
+  const curYM = thisYM();
+  return (
+    <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
+      <h2 className="font-bold text-sm uppercase tracking-widest text-slate-400 mb-3">
+        월별 입금금액 추이{isYear?` · ${period}년`:''}
+      </h2>
+      <div className="space-y-2">
+        {rows.map(([k,v])=><Bar key={k} k={k} v={v} highlight={isYear && k===curYM}/>)}
+      </div>
+    </div>
+  );
+}
+
+
 function RefundableList({ filtered, settings, trainers, trainerMap, onChange }) {
   const [, force] = useState(0);
   const [editId, setEditId] = useState(null);
