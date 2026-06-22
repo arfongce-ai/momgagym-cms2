@@ -68,23 +68,20 @@ export function determineSplitRate({ settings, trainerId, monthNet, newSales=0, 
   const minBlog = Number(settings.rate50MinBlog ?? 2);
   const minStudy= Number(settings.rate50MinStudy ?? 1);
 
-  // 두 조건을 본다.
-  //  · 조건A: 블로그 ≥2 AND 스터디 ≥1
-  //  · 조건B: 신규 또는 재등록 매출 ≥ 임계(300만)
-  // 둘 다 충족 → 60% / 하나만 → 50% / 둘 다 미달 → 40%
+  // 비율 판정 규칙:
+  //  · 조건A: 블로그 ≥2 AND 스터디 ≥1  → 충족 시 60%
+  //  · 조건B: 신규 또는 재등록 매출 ≥ 임계(300만) → (A 미충족 시) 50%
+  // 조건A 충족 → 60% / 조건A 미충족 & 조건B 충족 → 50% / 둘 다 미달 → 40%
   const condA = (blogCount >= minBlog && studyCount >= minStudy);
   const condB = (newSales >= min60 || reEnrollSales >= min60);
-  const metCount = (condA?1:0) + (condB?1:0);
 
   let autoRate, autoReason;
-  if (metCount === 2) {
+  if (condA) {
     autoRate = 60;
-    autoReason = `블로그·스터디 + 매출(${won(min60)} 이상) 둘 다 충족 → 60%`;
-  } else if (metCount === 1) {
+    autoReason = `블로그 ${blogCount}회·스터디 ${studyCount}회 충족 → 60%`;
+  } else if (condB) {
     autoRate = 50;
-    autoReason = condA
-      ? `블로그 ${blogCount}회·스터디 ${studyCount}회 충족(매출 조건 1개) → 50%`
-      : `매출 ${won(min60)} 이상 충족(조건 1개) → 50%`;
+    autoReason = `매출 ${won(min60)} 이상 충족 → 50%`;
   } else {
     autoRate = floor;
     autoReason = `조건 미달(블로그·스터디 / 매출 모두 미달) → ${floor}%`;

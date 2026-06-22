@@ -856,13 +856,13 @@ function TrainerSettleCard({ block: b, ym, settings, onSaved }) {
             : <span className="font-mono font-bold text-pink-400">{b.instaCount}회{b.instaCount>(settings.snsInstaMax??8)?`(지급 ${settings.snsInstaMax??8})`:''} · {won(b.instaInc)}</span>}
         </div>
         <div className="flex items-center justify-between">
-          <span className="text-slate-500">스터디 (50% 조건)</span>
+          <span className="text-slate-500">스터디 (60% 조건)</span>
           {editing
             ? <span className="flex items-center gap-1"><input type="number" value={study} onChange={e=>setStudy(e.target.value)} className="w-12 bg-slate-900 border border-slate-600 rounded px-1.5 py-0.5 text-xs text-right"/>회</span>
             : <span className="font-mono font-bold text-purple-400">{b.studyCount}회</span>}
         </div>
         <div className="flex items-center justify-between">
-          <span className="text-slate-500">블로그 (50% 조건)</span>
+          <span className="text-slate-500">블로그 (60% 조건)</span>
           <span className="font-mono font-bold text-blue-400">{editing?Number(blog||0):b.blogCount}회</span>
         </div>
         <div className="flex items-center justify-between">
@@ -1435,12 +1435,12 @@ function ConfigTab({ settings, trainers }) {
 
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-4">
         <h2 className="font-bold text-sm uppercase tracking-widest text-slate-400">정산 비율 (계약서 4조)</h2>
-        <p className="text-[11px] text-slate-500">등록월의 트레이너 실적으로 비율을 판정해 그 회원 등록분에 고정 — 조건A(블로그2·스터디1)와 조건B(신규/재등록 매출 임계 이상): 둘 다 충족 60% / 하나만 50% / 모두 미달 40% · 수동 지정은 기준선이며, 조건이 더 높으면 자동 상향(예: 수동 50% + 조건 충족 → 60%)</p>
+        <p className="text-[11px] text-slate-500">등록월의 트레이너 실적으로 비율을 판정해 그 회원 등록분에 고정 — 조건A(블로그2·스터디1) 충족 시 60% / 조건A 미충족이고 조건B(신규·재등록 매출 임계 이상)만 충족 시 50% / 모두 미달 40% · 수동 지정은 기준선이며, 조건이 더 높으면 자동 상향(예: 수동 50% + 조건A 충족 → 60%)</p>
         <div className="grid grid-cols-2 gap-3">
           <NumField label="하한 비율(조건 미달)" k="lowSplitRate" suffix="%" form={form} setForm={setForm}/>
-          <NumField label="60% 조건 (신규 또는 재등록 매출)" k="rate60MinSales" suffix="원" form={form} setForm={setForm}/>
-          <NumField label="50% 조건 (블로그 월)" k="rate50MinBlog" suffix="회" form={form} setForm={setForm}/>
-          <NumField label="50% 조건 (스터디 월)" k="rate50MinStudy" suffix="회" form={form} setForm={setForm}/>
+          <NumField label="50% 조건 (신규 또는 재등록 매출)" k="rate60MinSales" suffix="원" form={form} setForm={setForm}/>
+          <NumField label="60% 조건 (블로그 월)" k="rate50MinBlog" suffix="회" form={form} setForm={setForm}/>
+          <NumField label="60% 조건 (스터디 월)" k="rate50MinStudy" suffix="회" form={form} setForm={setForm}/>
         </div>
         <div className="space-y-2 pt-2 border-t border-slate-800">
           {trainers.map(t=>{

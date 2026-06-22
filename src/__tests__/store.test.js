@@ -177,44 +177,44 @@ describe('매월 정산비율 자동 판정 (determineSplitRate)', () => {
     const r = determineSplitRate({ settings:S, trainerId:'t1', monthNet:1000000, blogCount:0, studyCount:0 });
     expect(r.rate).toBe(40); expect(r.mode).toBe('auto');
   });
-  it('블로그2 + 스터디1 충족이면 50%', () => {
+  it('블로그2 + 스터디1 충족이면 60% (조건A 단독으로 60%)', () => {
     const r = determineSplitRate({ settings:S, trainerId:'t1', monthNet:1000000, blogCount:2, studyCount:1 });
-    expect(r.rate).toBe(50);
+    expect(r.rate).toBe(60);
   });
-  it('블로그만 충족(스터디 0)이면 50% 아님(하한 유지)', () => {
+  it('블로그만 충족(스터디 0)이면 조건A 미충족 → 40%', () => {
     const r = determineSplitRate({ settings:S, trainerId:'t1', monthNet:1000000, blogCount:5, studyCount:0 });
     expect(r.rate).toBe(40);
   });
-  it('매출만 충족(블로그·스터디 미달)이면 50% (조건 1개)', () => {
+  it('매출만 충족(블로그·스터디 미달)이면 50% (조건B만)', () => {
     const r = determineSplitRate({ settings:S, trainerId:'t1', newSales:3000000, reEnrollSales:0, blogCount:0, studyCount:0 });
-    expect(r.rate).toBe(50); // 조건B만 충족
+    expect(r.rate).toBe(50);
   });
-  it('블로그2·스터디1 + 매출300만(둘 다) 충족이면 60%', () => {
+  it('블로그2·스터디1 충족이면 매출과 무관하게 60%', () => {
     const r = determineSplitRate({ settings:S, trainerId:'t1', newSales:3000000, reEnrollSales:0, blogCount:2, studyCount:1 });
     expect(r.rate).toBe(60);
   });
-  it('블로그·스터디 충족하지만 매출 미달이면 50%', () => {
-    const r = determineSplitRate({ settings:S, trainerId:'t1', newSales:1000000, reEnrollSales:0, blogCount:2, studyCount:1 });
-    expect(r.rate).toBe(50);
-  });
-  it('블로그·스터디 + 재등록매출 300만(둘 다)이면 60% (매출은 신규 OR 재등록)', () => {
-    const r = determineSplitRate({ settings:S, trainerId:'t1', newSales:0, reEnrollSales:3000000, blogCount:2, studyCount:1 });
+  it('블로그2·스터디1 충족 + 매출 미달이어도 60% (스크린샷 상황)', () => {
+    const r = determineSplitRate({ settings:S, trainerId:'t1', newSales:1100000, reEnrollSales:2025600, blogCount:2, studyCount:1 });
     expect(r.rate).toBe(60);
+  });
+  it('재등록매출만 300만↑(블로그·스터디 미달)이면 50%', () => {
+    const r = determineSplitRate({ settings:S, trainerId:'t1', newSales:0, reEnrollSales:3000000, blogCount:0, studyCount:0 });
+    expect(r.rate).toBe(50);
   });
   it('수동 지정은 기준선 — 조건 미달이면 수동값 유지(40)', () => {
     const r = determineSplitRate({ settings:{...S, trainerSplitRates:{t1:40}}, trainerId:'t1', newSales:0, reEnrollSales:0, blogCount:0, studyCount:0 });
     expect(r.rate).toBe(40); expect(r.mode).toBe('manual');
   });
-  it('수동 40% + 조건 충족(자동 60%) → 60%로 상향', () => {
-    const r = determineSplitRate({ settings:{...S, trainerSplitRates:{t1:40}}, trainerId:'t1', newSales:9000000, blogCount:5, studyCount:5 });
+  it('수동 40% + 조건A 충족(자동 60%) → 60%로 상향', () => {
+    const r = determineSplitRate({ settings:{...S, trainerSplitRates:{t1:40}}, trainerId:'t1', blogCount:5, studyCount:5 });
     expect(r.rate).toBe(60); expect(r.mode).toBe('manual');
   });
-  it('수동 50% + 조건 1개 충족(자동 50%) → 50% 유지(상향 안 함)', () => {
+  it('수동 50% + 조건B만 충족(자동 50%) → 50% 유지(상향 안 함)', () => {
     const r = determineSplitRate({ settings:{...S, trainerSplitRates:{t1:50}}, trainerId:'t1', newSales:3000000, reEnrollSales:0, blogCount:0, studyCount:0 });
     expect(r.rate).toBe(50); expect(r.mode).toBe('manual');
   });
-  it('수동 50% + 조건 2개 충족(자동 60%) → 60%로 상향', () => {
-    const r = determineSplitRate({ settings:{...S, trainerSplitRates:{t1:50}}, trainerId:'t1', newSales:3000000, blogCount:2, studyCount:1 });
+  it('수동 50% + 조건A 충족(자동 60%) → 60%로 상향 (스크린샷 김나영)', () => {
+    const r = determineSplitRate({ settings:{...S, trainerSplitRates:{t1:50}}, trainerId:'t1', newSales:1100000, reEnrollSales:2025600, blogCount:2, studyCount:1 });
     expect(r.rate).toBe(60); expect(r.mode).toBe('manual');
   });
   it('수동 60% + 조건 미달 → 60% 유지(자동이 낮아도 내리지 않음)', () => {
@@ -488,12 +488,12 @@ describe('월말 정산비율 확정 재박제 (buildRefreezePlan)', () => {
               vatRate:0, cardFeeRate:0 };
   const trainers = [{ id:'t1', name:'김나영' }];
 
-  it('월초에 40%로 박제됐던 결제가, 그 달 전체 실적이 50%면 50%로 갱신된다', () => {
+  it('월초에 40%로 박제됐던 결제가, 그 달 전체 실적이 60%면 60%로 갱신된다', () => {
     // 6월 결제: 박제 시점엔 실적 부족으로 40%로 고정돼 있었음
     const members = [{ id:'m3', name:'등록회원3', trainerSessions:{ t1:{ total:10 } } }];
     const payments = { m3:[{ id:'p1', paidAt:'2026-06-03', amount:1000000, method:'cash',
                              trainerIds:['t1'], splitRateAtPay:{ t1:40 } }] };
-    // 그 달 전체 실적: 블로그2·스터디1 → 조건A 1개 충족 → 50%
+    // 그 달 전체 실적: 블로그2·스터디1 → 조건A 충족 → 60%
     const records = [
       { trainerId:'t1', channel:'blog', date:'2026-06-10' },
       { trainerId:'t1', channel:'blog', date:'2026-06-20' },
@@ -501,7 +501,7 @@ describe('월말 정산비율 확정 재박제 (buildRefreezePlan)', () => {
     ];
     const plan = buildRefreezePlan({ trainers, members, payments, records, settings:S, ym:'2026-06' });
     expect(plan.count).toBe(1);
-    expect(plan.patches[0].splitRateAtPay.t1).toBe(50);
+    expect(plan.patches[0].splitRateAtPay.t1).toBe(60);
     expect(plan.patches[0].prev.t1).toBe(40);
   });
 
@@ -521,7 +521,8 @@ describe('월말 정산비율 확정 재박제 (buildRefreezePlan)', () => {
   it('이미 최종 실적과 일치하면 변동 건이 없다', () => {
     const members = [{ id:'m1', name:'등록회원1', trainerSessions:{ t1:{ total:20 } } }];
     const payments = { m1:[{ id:'p4', paidAt:'2026-04-05', amount:1000000, method:'cash',
-                             trainerIds:['t1'], splitRateAtPay:{ t1:50 } }] };
+                             trainerIds:['t1'], splitRateAtPay:{ t1:60 } }] };
+    // 블로그2·스터디1 → 조건A 충족 → 60%, 이미 60%로 박제돼 있어 변동 없음
     const records = [
       { trainerId:'t1', channel:'blog', date:'2026-04-10' },
       { trainerId:'t1', channel:'blog', date:'2026-04-20' },
