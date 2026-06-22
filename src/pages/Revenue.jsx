@@ -600,17 +600,17 @@ function SettleTab({ settings, trainers, trainerMap }) {
   const grandNet     = blocks.reduce((s,b)=>s+(b.payoutNet??b.payout),0); // 세후
 
   const exportCSV = () => {
-    const header = ['트레이너','회원','등록횟수','단가','월수업횟수','수업료','정산비율','실지급'];
+    const header = ['트레이너','회원','등록회차','회차횟수','누적횟수','단가','월수업횟수','수업료','정산비율','실지급'];
     const body = [];
     blocks.forEach(b=>{
-      b.rows.forEach(r=>body.push([b.trainer.name, r.memberName, r.regTotal, r.unit, r.cnt, r.amount, `${r.rate}%${r.rateFrozen?'(등록월)':''}`, r.payAmount]));
-      body.push([b.trainer.name,'수업료 합계','','','', b.sessionTotal, b.rateMixed?'혼합':`${b.splitRate}%`, b.sessionPayout]);
-      body.push([b.trainer.name,'블로그','', '', b.blogCount, b.blogInc,'','']);
-      body.push([b.trainer.name,'인스타','', '', b.instaCount, b.instaInc,'','']);
-      body.push([b.trainer.name,'스터디','', '', b.studyCount, '','','']);
-      body.push([b.trainer.name,'합계(세전)','','','','','', b.payout]);
-      body.push([b.trainer.name,`원천징수(${b.withholdingRate??3.3}%)`,'','','','','', -b.tax]);
-      body.push([b.trainer.name,'세후 실지급','','','','','', b.payoutNet]);
+      b.rows.forEach(r=>body.push([b.trainer.name, r.memberName, r.regRound||'등록', r.regRoundCount??r.regTotal, r.regTotal, r.unit, r.cnt, r.amount, `${r.rate}%${r.rateFrozen?'(등록월)':''}`, r.payAmount]));
+      body.push([b.trainer.name,'수업료 합계','','','','','', b.sessionTotal, b.rateMixed?'혼합':`${b.splitRate}%`, b.sessionPayout]);
+      body.push([b.trainer.name,'블로그','','','','', b.blogCount, b.blogInc,'','']);
+      body.push([b.trainer.name,'인스타','','','','', b.instaCount, b.instaInc,'','']);
+      body.push([b.trainer.name,'스터디','','','','', b.studyCount, '','','']);
+      body.push([b.trainer.name,'합계(세전)','','','','','','','', b.payout]);
+      body.push([b.trainer.name,`원천징수(${b.withholdingRate??3.3}%)`,'','','','','','','', -b.tax]);
+      body.push([b.trainer.name,'세후 실지급','','','','','','','', b.payoutNet]);
     });
     downloadCSV(`정산_${ym}.csv`, [header, ...body]);
   };
@@ -793,7 +793,7 @@ function TrainerSettleCard({ block: b, ym, settings, onSaved }) {
           <thead>
             <tr className="text-slate-500 border-b border-slate-800">
               <th className="text-left font-semibold py-1.5">회원</th>
-              <th className="text-right font-semibold">등록</th>
+              <th className="text-right font-semibold">등록(회차)</th>
               <th className="text-right font-semibold">단가</th>
               <th className="text-right font-semibold">월 횟수</th>
               <th className="text-right font-semibold">수업료</th>
@@ -808,7 +808,13 @@ function TrainerSettleCard({ block: b, ym, settings, onSaved }) {
               return (
                 <tr key={r.memberId} className="border-b border-slate-800/50">
                   <td className="py-1.5 text-slate-200">{r.memberName}</td>
-                  <td className="text-right text-slate-500">{r.regTotal}회</td>
+                  <td className="text-right text-slate-500">
+                    {r.regRound
+                      ? <span title={`이 회차 등록 ${r.regRoundCount}회 · 누적 ${r.regTotal}회`}>
+                          <span className="text-slate-400">{r.regRound}</span> <span className="font-mono">{r.regRoundCount}회</span>
+                        </span>
+                      : <span className="font-mono">{r.regTotal}회</span>}
+                  </td>
                   <td className="text-right">
                     {editing
                       ? <input type="number" value={u} onChange={e=>setUnitEdits(s=>({...s,[r.memberId]:e.target.value}))} className={INP}/>
@@ -1429,7 +1435,7 @@ function ConfigTab({ settings, trainers }) {
 
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-4">
         <h2 className="font-bold text-sm uppercase tracking-widest text-slate-400">정산 비율 (계약서 4조)</h2>
-        <p className="text-[11px] text-slate-500">등록월의 트레이너 실적으로 비율을 판정해 그 회원 등록분에 고정 — 조건A(블로그2·스터디1)와 조건B(신규/재등록 매출 임계 이상): 둘 다 충족 60% / 하나만 50% / 모두 미달 40% · 수동은 트레이너 고정</p>
+        <p className="text-[11px] text-slate-500">등록월의 트레이너 실적으로 비율을 판정해 그 회원 등록분에 고정 — 조건A(블로그2·스터디1)와 조건B(신규/재등록 매출 임계 이상): 둘 다 충족 60% / 하나만 50% / 모두 미달 40% · 수동 지정은 기준선이며, 조건이 더 높으면 자동 상향(예: 수동 50% + 조건 충족 → 60%)</p>
         <div className="grid grid-cols-2 gap-3">
           <NumField label="하한 비율(조건 미달)" k="lowSplitRate" suffix="%" form={form} setForm={setForm}/>
           <NumField label="60% 조건 (신규 또는 재등록 매출)" k="rate60MinSales" suffix="원" form={form} setForm={setForm}/>

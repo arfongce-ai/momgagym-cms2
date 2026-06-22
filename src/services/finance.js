@@ -63,11 +63,6 @@ export function calcNet(payment, settings) {
 //  · 60%와 50% 조건을 동시에 만족하면 더 높은 60% 우선
 // 반환: { rate, mode:'manual'|'auto', reason, monthNet, blogCount, studyCount }
 export function determineSplitRate({ settings, trainerId, monthNet, newSales=0, reEnrollSales=0, blogCount, studyCount }) {
-  const manual = settings.trainerSplitRates?.[trainerId];
-  if (manual !== undefined && manual !== null && manual !== '') {
-    return { rate: Number(manual), mode: 'manual', reason: '수동 지정',
-             monthNet, blogCount, studyCount };
-  }
   const floor   = Number(settings.lowSplitRate ?? 40);   // 하한 40%
   const min60   = Number(settings.rate60MinSales ?? 3000000);
   const minBlog = Number(settings.rate50MinBlog ?? 2);
@@ -81,20 +76,37 @@ export function determineSplitRate({ settings, trainerId, monthNet, newSales=0, 
   const condB = (newSales >= min60 || reEnrollSales >= min60);
   const metCount = (condA?1:0) + (condB?1:0);
 
-  let rate, reason;
+  let autoRate, autoReason;
   if (metCount === 2) {
-    rate = 60;
-    reason = `블로그·스터디 + 매출(${won(min60)} 이상) 둘 다 충족 → 60%`;
+    autoRate = 60;
+    autoReason = `블로그·스터디 + 매출(${won(min60)} 이상) 둘 다 충족 → 60%`;
   } else if (metCount === 1) {
-    rate = 50;
-    reason = condA
+    autoRate = 50;
+    autoReason = condA
       ? `블로그 ${blogCount}회·스터디 ${studyCount}회 충족(매출 조건 1개) → 50%`
       : `매출 ${won(min60)} 이상 충족(조건 1개) → 50%`;
   } else {
-    rate = floor;
-    reason = `조건 미달(블로그·스터디 / 매출 모두 미달) → ${floor}%`;
+    autoRate = floor;
+    autoReason = `조건 미달(블로그·스터디 / 매출 모두 미달) → ${floor}%`;
   }
-  return { rate, mode: 'auto', reason, monthNet, newSales, reEnrollSales, blogCount, studyCount };
+
+  // 수동 지정이 있으면 그 값을 '기준선(floor)'으로 삼고, 조건이 더 높으면 올린다(낮추지는 않음).
+  //  · 예) 수동 50% + 조건 충족(자동 60%) → 60%로 상향
+  //  ·     수동 50% + 조건 미달(자동 40/50%) → 50% 유지
+  const manual = settings.trainerSplitRates?.[trainerId];
+  const hasManual = manual !== undefined && manual !== null && manual !== '';
+  if (hasManual) {
+    const manualRate = Number(manual);
+    if (autoRate > manualRate) {
+      // 조건이 수동값보다 높음 → 상향
+      return { rate: autoRate, mode: 'manual', reason: `수동 ${manualRate}% → 조건 충족으로 ${autoRate}% 상향 (${autoReason})`,
+               monthNet, newSales, reEnrollSales, blogCount, studyCount };
+    }
+    return { rate: manualRate, mode: 'manual', reason: `수동 지정 ${manualRate}%`,
+             monthNet, newSales, reEnrollSales, blogCount, studyCount };
+  }
+
+  return { rate: autoRate, mode: 'auto', reason: autoReason, monthNet, newSales, reEnrollSales, blogCount, studyCount };
 }
 
 // ── 특정 월(ym)의 트레이너별 정산비율을 일괄 계산 ──────────────────
@@ -195,6 +207,27 @@ export function buildRefreezePlan({ trainers, members, payments, records, settin
 export function computeSessionSettlement({ trainers, members, schedules, payments, records, settings, ym, getOverride }) {
   const inMonth = (d) => d && d.slice(0,7) === ym;
   const memberMap = Object.fromEntries(members.map(m=>[m.id, m]));
+
+  // 회원×트레이너의 '최근 등록 회차'를 결제 이력에서 찾는다.
+  //  · sessionAdds([{trainerId,count}])가 있는 결제 중, 이 트레이너에 횟수를 추가한 가장 최근 결제를 본다.
+  //  · isReEnroll이면 재등록 회차(reEnrollNo), isNew면 신규, 그 외 일반 등록.
+  //  · 표시는 "그 회차에 등록한 횟수"(전체 누적 total이 아님).
+  //  · sessionAdds 정보가 없는 구버전 결제만 있으면 null 반환 → 호출부에서 누적 total로 폴백.
+  const regRoundOf = (mid, tid) => {
+    const list = (payments[mid] || [])
+      .filter(p => !p.isRefunded && Array.isArray(p.sessionAdds)
+        && p.sessionAdds.some(sa => sa.trainerId === tid && (Number(sa.count) || 0) > 0))
+      .sort((a, b) => (a.paidAt < b.paidAt ? 1 : a.paidAt > b.paidAt ? -1 : 0)); // 최신 우선
+    if (!list.length) return null;
+    const p = list[0];
+    const sa = p.sessionAdds.find(x => x.trainerId === tid);
+    const count = Number(sa.count) || 0;
+    let label;
+    if (p.isReEnroll) label = p.reEnrollNo ? `재등록 ${p.reEnrollNo}회차` : '재등록';
+    else if (p.isNew) label = '신규';
+    else label = '등록';
+    return { label, count, isReEnroll: !!p.isReEnroll, reEnrollNo: p.reEnrollNo || null };
+  };
 
   // 결제 건에 박제된 정산비율(splitRateAtPay[tid])을 읽는다. 없으면 null(폴백 처리).
   const frozenRate = (p, tid) => {
@@ -351,10 +384,15 @@ export function computeSessionSettlement({ trainers, members, schedules, payment
       const rateFrozen = fallbackSplit.mode !== 'manual' && hasFrozen;
       const amount = unit * cnt;                       // 수업료(비율 적용 전)
       const payAmount = Math.round(amount * effRate/100); // 실지급(비율 적용)
+      const reg = regRoundOf(mid, t.id); // 최근 등록 회차 정보(없으면 null → 누적 total 폴백)
       return {
         memberId: mid, memberName: m?.name || '?',
         regTotal: trainerReg, remaining: trainerRemain, autoUnit, unit, autoCnt, cnt,
         amount, rate: effRate, rateFrozen, payAmount,
+        // 등록 회차 표시용: regRound(라벨), regRoundCount(그 회차 횟수). 정보 없으면 null.
+        regRound: reg ? reg.label : null,
+        regRoundCount: reg ? reg.count : null,
+        regReEnrollNo: reg ? reg.reEnrollNo : null,
       };
     })
     // 표시 기준:

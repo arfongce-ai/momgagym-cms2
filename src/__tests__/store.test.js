@@ -201,9 +201,25 @@ describe('매월 정산비율 자동 판정 (determineSplitRate)', () => {
     const r = determineSplitRate({ settings:S, trainerId:'t1', newSales:0, reEnrollSales:3000000, blogCount:2, studyCount:1 });
     expect(r.rate).toBe(60);
   });
-  it('수동 지정(40)이 자동판정보다 우선', () => {
-    const r = determineSplitRate({ settings:{...S, trainerSplitRates:{t1:40}}, trainerId:'t1', newSales:9000000, blogCount:5, studyCount:5 });
+  it('수동 지정은 기준선 — 조건 미달이면 수동값 유지(40)', () => {
+    const r = determineSplitRate({ settings:{...S, trainerSplitRates:{t1:40}}, trainerId:'t1', newSales:0, reEnrollSales:0, blogCount:0, studyCount:0 });
     expect(r.rate).toBe(40); expect(r.mode).toBe('manual');
+  });
+  it('수동 40% + 조건 충족(자동 60%) → 60%로 상향', () => {
+    const r = determineSplitRate({ settings:{...S, trainerSplitRates:{t1:40}}, trainerId:'t1', newSales:9000000, blogCount:5, studyCount:5 });
+    expect(r.rate).toBe(60); expect(r.mode).toBe('manual');
+  });
+  it('수동 50% + 조건 1개 충족(자동 50%) → 50% 유지(상향 안 함)', () => {
+    const r = determineSplitRate({ settings:{...S, trainerSplitRates:{t1:50}}, trainerId:'t1', newSales:3000000, reEnrollSales:0, blogCount:0, studyCount:0 });
+    expect(r.rate).toBe(50); expect(r.mode).toBe('manual');
+  });
+  it('수동 50% + 조건 2개 충족(자동 60%) → 60%로 상향', () => {
+    const r = determineSplitRate({ settings:{...S, trainerSplitRates:{t1:50}}, trainerId:'t1', newSales:3000000, blogCount:2, studyCount:1 });
+    expect(r.rate).toBe(60); expect(r.mode).toBe('manual');
+  });
+  it('수동 60% + 조건 미달 → 60% 유지(자동이 낮아도 내리지 않음)', () => {
+    const r = determineSplitRate({ settings:{...S, trainerSplitRates:{t1:60}}, trainerId:'t1', newSales:0, blogCount:0, studyCount:0 });
+    expect(r.rate).toBe(60); expect(r.mode).toBe('manual');
   });
 });
 
@@ -798,5 +814,49 @@ describe('정산 표시: 세션 소진 회원 마지막 정산달 이후 제외'
     const b = computeSessionSettlement({ trainers, members, schedules:[], payments, records:[], settings, ym:'2026-06', getOverride })[0];
     expect(b).toBeTruthy();
     expect(b.rows[0].cnt).toBe(3);
+  });
+});
+
+// ── 요구사항: 등록 컬럼을 누적 total이 아닌 '재등록 회차 + 그 회차 횟수'로 ──
+describe('정산 등록 컬럼: 재등록 회차/횟수 표시', () => {
+  const settings = { cardFeeRate:0, vatRate:0, lowSplitRate:40, rate60MinSales:3000000,
+    rate50MinBlog:2, rate50MinStudy:1, promoPerPost:0, snsInstaMax:8, trainerSplitRates:{}, withholdingRate:3.3 };
+  const trainers = [{ id:'t1', name:'T1' }];
+  // 누적 60회(초기 30 + 재등록 30)인 회원
+  const members = [{ id:'m1', name:'재등록회원', trainerSessions:{ t1:{ total:60, remaining:20 } } }];
+  const schedules = Array.from({length:5},(_,i)=>({id:'s'+i,isExternal:false,memberId:'m1',trainerId:'t1',status:'attended',date:'2026-06-10'}));
+
+  it('재등록 결제의 sessionAdds 회차/횟수를 표시(누적 아님)', () => {
+    const payments = { m1: [
+      { id:'p1', paidAt:'2026-01-02', amount:1500000, method:'cash', trainerIds:['t1'],
+        split:[{trainerId:'t1',amount:1500000}], splitRateAtPay:{t1:50}, isNew:true, sessionAdds:[{trainerId:'t1',count:30}] },
+      { id:'p2', paidAt:'2026-05-02', amount:1500000, method:'cash', trainerIds:['t1'],
+        split:[{trainerId:'t1',amount:1500000}], splitRateAtPay:{t1:50}, isReEnroll:true, reEnrollNo:2, sessionAdds:[{trainerId:'t1',count:30}] },
+    ] };
+    const b = computeSessionSettlement({ trainers, members, schedules, payments, records:[], settings, ym:'2026-06' })[0];
+    const r = b.rows[0];
+    expect(r.regRound).toBe('재등록 2회차'); // 최근 결제 기준
+    expect(r.regRoundCount).toBe(30);       // 그 회차 횟수
+    expect(r.regTotal).toBe(60);            // 누적은 별도 보존
+  });
+
+  it('신규 결제만 있으면 신규 회차로 표시', () => {
+    const payments = { m1: [
+      { id:'p1', paidAt:'2026-01-02', amount:1500000, method:'cash', trainerIds:['t1'],
+        split:[{trainerId:'t1',amount:1500000}], splitRateAtPay:{t1:50}, isNew:true, sessionAdds:[{trainerId:'t1',count:30}] },
+    ] };
+    const b = computeSessionSettlement({ trainers, members, schedules, payments, records:[], settings, ym:'2026-06' })[0];
+    expect(b.rows[0].regRound).toBe('신규');
+    expect(b.rows[0].regRoundCount).toBe(30);
+  });
+
+  it('sessionAdds 없는 구버전 결제는 회차 null → 누적 total 폴백', () => {
+    const payments = { m1: [
+      { id:'p1', paidAt:'2026-01-02', amount:1500000, method:'cash', trainerIds:['t1'],
+        split:[{trainerId:'t1',amount:1500000}], splitRateAtPay:{t1:50} },
+    ] };
+    const b = computeSessionSettlement({ trainers, members, schedules, payments, records:[], settings, ym:'2026-06' })[0];
+    expect(b.rows[0].regRound).toBeNull();
+    expect(b.rows[0].regTotal).toBe(60);
   });
 });
