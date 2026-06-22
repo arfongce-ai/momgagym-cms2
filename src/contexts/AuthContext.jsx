@@ -115,46 +115,52 @@ export function AuthProvider({ children }) {
 
   const login = async (email, password) => {
     const e = (email || '').trim().toLowerCase();
+    if (!e || !password) {
+      throw new Error('이메일 또는 비밀번호가 올바르지 않습니다.');
+    }
 
-    // 1) Firebase 계정(관리자/직원)으로 먼저 시도
+    // 1) 먼저 트레이너(앱 자체 loginEmail/Password)인지 확인.
+    //    Firebase 로그인을 먼저 시도하면 익명 세션이 흔들려 Firestore 조회가
+    //    막힐 수 있으므로, 트레이너 조회를 앞에 둔다(익명 인증 상태로 안전히 읽음).
+    let trainer = null;
+    let lookupFailed = null;
+    try {
+      trainer = await findTrainerByEmail(e);
+    } catch (lookupErr) {
+      console.error('[trainer 조회 실패]', lookupErr);
+      lookupFailed = lookupErr?.code || lookupErr?.message || 'unknown';
+    }
+    if (trainer && trainer.loginPassword === password) {
+      const u = {
+        id: trainer.id, email: trainer.loginEmail || trainer.email,
+        role: 'trainer', name: trainer.name, trainerId: trainer.id, source: 'trainer',
+      };
+      localStorage.setItem('fitcms_trainer_session', JSON.stringify(u));
+      setUser(u);
+      await ensureData(); // 트레이너 로그인 후 데이터 로딩 보장
+      return u;
+    }
+    if (trainer && trainer.loginPassword !== password) {
+      throw new Error('비밀번호가 올바르지 않습니다.');
+    }
+
+    // 2) 트레이너가 아니면 Firebase 계정(관리자/직원)으로 시도
     try {
       const cred = await signInWithEmailAndPassword(auth, e, password);
       const role = await resolveRole(cred.user);
-      // 이 이메일이 트레이너 목록에도 있으면 trainerId를 연결한다.
-      // (관리자 겸 트레이너인 경우 → 관리자 비번 하나로 트레이너 기능까지 사용)
-      const asTrainer = store.getTrainers().find(
-        t => (t.loginEmail || '').trim().toLowerCase() === e
-      );
+      // 관리자 겸 트레이너면 trainerId 연결
+      const asTrainer = await findTrainerByEmail(cred.user.email);
       const u = {
         id: cred.user.uid, email: cred.user.email,
         role: role || 'staff', name: cred.user.displayName || cred.user.email,
         source: 'firebase',
         ...(asTrainer ? { trainerId: asTrainer.id } : {}),
       };
-      // onAuthStateChanged가 user를 세팅하지만, 즉시 반환값도 제공
       return u;
     } catch (fbErr) {
-      // 2) Firebase 계정이 아니면 트레이너(앱 자체 loginEmail/Password)에서 찾기
-      if (!e || !password) {
-        throw new Error('이메일 또는 비밀번호가 올바르지 않습니다.');
-      }
-      // 캐시에 없으면 Firestore에서 직접 조회 (로그인 화면=데이터 로딩 전일 수 있음)
-      let trainer = null;
-      try {
-        trainer = await findTrainerByEmail(e);
-      } catch (lookupErr) {
-        console.error('[trainer 조회 실패]', lookupErr);
-        throw new Error('트레이너 정보를 확인할 수 없습니다. 인터넷 연결을 확인해 주세요.');
-      }
-      if (trainer && trainer.loginPassword === password) {
-        const u = {
-          id: trainer.id, email: trainer.loginEmail || trainer.email,
-          role: 'trainer', name: trainer.name, trainerId: trainer.id, source: 'trainer',
-        };
-        localStorage.setItem('fitcms_trainer_session', JSON.stringify(u));
-        setUser(u);
-        await ensureData(); // 트레이너 로그인 후 데이터 로딩 보장
-        return u;
+      // 트레이너도 아니고 Firebase 로그인도 실패
+      if (lookupFailed) {
+        throw new Error(`트레이너 조회 실패 [${lookupFailed}] — 익명 인증/권한 확인 필요`);
       }
       throw new Error('이메일 또는 비밀번호가 올바르지 않습니다.');
     }
