@@ -49,12 +49,20 @@ export default function Revenue() {
       return <p className="text-slate-500 text-center py-10">정산 정보를 불러올 수 없습니다. 관리자에게 문의하세요.</p>;
     }
     return (
-      <div className="space-y-5">
+      <div className="space-y-4">
         <div>
           <h1 className="text-2xl font-black tracking-tight">💰 내 정산</h1>
-          <p className="text-slate-500 text-sm mt-1">{me?.name||'트레이너'}님의 정산 내역 · SNS/스터디 기록</p>
+          <p className="text-slate-500 text-sm mt-1">{me?.name||'트레이너'}님 · {thisMonth} 기준</p>
         </div>
-        <SettleTab settings={settings} trainers={trainers} trainerMap={trainerMap} scopeTid={myTid} readOnly />
+        {/* 추정치 안내 — 확정 지급액이 아님을 명확히 */}
+        <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl px-4 py-3 flex items-start gap-2.5">
+          <span className="text-lg leading-none">ℹ️</span>
+          <p className="text-[13px] text-amber-200/90 leading-relaxed">
+            <span className="font-bold text-amber-300">예상 정산액(추정치)</span>입니다. 출석·SNS·매출 데이터로 자동 계산되며,
+            월말 확정·정산 검토 과정에서 <span className="font-semibold">실제 지급액과 달라질 수 있습니다.</span>
+          </p>
+        </div>
+        <SettleTab settings={settings} trainers={trainers} trainerMap={trainerMap} scopeTid={myTid} readOnly estimate />
       </div>
     );
   }
@@ -547,7 +555,7 @@ function RefundableList({ filtered, settings, trainers, trainerMap, onChange }) 
 }
 
 /* ─────────────────────────────── 정산 ─────────────────────────────── */
-function SettleTab({ settings, trainers, trainerMap, scopeTid=null, readOnly=false }) {
+function SettleTab({ settings, trainers, trainerMap, scopeTid=null, readOnly=false, estimate=false }) {
   const [refreshKey, setRefreshKey] = useState(0);
   const [ym, setYm] = useState(thisMonth);
 
@@ -659,21 +667,37 @@ function SettleTab({ settings, trainers, trainerMap, scopeTid=null, readOnly=fal
         </p>
       )}
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <Card label="수업료 합계" value={won(grandSession)} color="text-slate-300"/>
-        <Card label="실지급 수업료(비율적용)" value={won(grandSessionPayout)} color="text-emerald-400"/>
-        <Card label="인센티브 합계" value={won(grandInc)} color="text-blue-400"/>
-        <Card label="총 지급액(세전)" value={won(grandPayout)} color="text-amber-400"/>
-      </div>
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-        <Card label="세전 합계" value={won(grandPayout)} color="text-slate-300"/>
-        <Card label={`원천징수(${settings.withholdingRate??3.3}%)`} value={`- ${won(grandTax)}`} color="text-red-400"/>
-        <Card label="세후 실지급 합계" value={won(grandNet)} color="text-amber-400"/>
-      </div>
+      {estimate ? (
+        // 트레이너용 간략 요약 — 큰 실지급 숫자 1개 + 한 줄 내역
+        <div className="bg-gradient-to-br from-amber-500/15 to-amber-500/5 border border-amber-500/30 rounded-2xl p-5">
+          <p className="text-[12px] text-amber-300/80 font-bold tracking-wide">예상 세후 실지급 (추정)</p>
+          <p className="text-3xl font-black text-amber-400 mt-1 tabular-nums">{won(grandNet)}</p>
+          <div className="mt-3 pt-3 border-t border-amber-500/20 flex flex-wrap gap-x-5 gap-y-1.5 text-[12px]">
+            <span className="text-slate-400">수업료 <b className="text-emerald-400 font-mono">{won(grandSessionPayout)}</b></span>
+            <span className="text-slate-400">인센티브 <b className="text-blue-400 font-mono">{won(grandInc)}</b></span>
+            <span className="text-slate-400">세전 <b className="text-slate-200 font-mono">{won(grandPayout)}</b></span>
+            <span className="text-slate-400">원천세 <b className="text-red-400 font-mono">- {won(grandTax)}</b></span>
+          </div>
+        </div>
+      ) : (<>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <Card label="수업료 합계" value={won(grandSession)} color="text-slate-300"/>
+          <Card label="실지급 수업료(비율적용)" value={won(grandSessionPayout)} color="text-emerald-400"/>
+          <Card label="인센티브 합계" value={won(grandInc)} color="text-blue-400"/>
+          <Card label="총 지급액(세전)" value={won(grandPayout)} color="text-amber-400"/>
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+          <Card label="세전 합계" value={won(grandPayout)} color="text-slate-300"/>
+          <Card label={`원천징수(${settings.withholdingRate??3.3}%)`} value={`- ${won(grandTax)}`} color="text-red-400"/>
+          <Card label="세후 실지급 합계" value={won(grandNet)} color="text-amber-400"/>
+        </div>
+      </>)}
 
-      <p className="text-[11px] text-slate-500 bg-slate-900 border border-slate-800 rounded-xl px-3 py-2">
-        단가·월 수업횟수는 결제·출석 데이터에서 자동 집계됩니다. 단가 = 공제 후 입금금액 ÷ 등록횟수 (카드1·2: 부가세+카드수수료 / 페이·현금영수증: 부가세 / 계좌·현금: 공제 없음) · 출석과 노쇼는 수업 횟수에 포함, 취소·외부·상담은 제외.{!readOnly && ' 셀을 눌러 직접 수정할 수 있어요.'}
-      </p>
+      {!estimate && (
+        <p className="text-[11px] text-slate-500 bg-slate-900 border border-slate-800 rounded-xl px-3 py-2">
+          단가·월 수업횟수는 결제·출석 데이터에서 자동 집계됩니다. 단가 = 공제 후 입금금액 ÷ 등록횟수 (카드1·2: 부가세+카드수수료 / 페이·현금영수증: 부가세 / 계좌·현금: 공제 없음) · 출석과 노쇼는 수업 횟수에 포함, 취소·외부·상담은 제외.{!readOnly && ' 셀을 눌러 직접 수정할 수 있어요.'}
+        </p>
+      )}
 
       <RecordManager trainers={trainers} period={ym} mode="month" onChange={()=>setRefreshKey(k=>k+1)}
         scopeTid={scopeTid} readOnly={readOnly}/>
@@ -682,7 +706,7 @@ function SettleTab({ settings, trainers, trainerMap, scopeTid=null, readOnly=fal
         ? <p className="text-slate-600 text-sm text-center py-6 bg-slate-900 border border-slate-800 rounded-2xl">해당 월 정산 내역이 없습니다</p>
         : blocks.map(b=>(
           <TrainerSettleCard key={b.trainer.id} block={b} ym={ym} settings={settings}
-            readOnly={readOnly} defaultOpen={!!scopeTid}
+            readOnly={readOnly} defaultOpen={!!scopeTid} estimate={estimate}
             onSaved={()=>setRefreshKey(k=>k+1)}/>
         ))}
     </div>
@@ -690,7 +714,7 @@ function SettleTab({ settings, trainers, trainerMap, scopeTid=null, readOnly=fal
 }
 
 // 트레이너별 정산 카드 (회원 단가/횟수 직접 수정 가능 — readOnly면 수정 숨김)
-function TrainerSettleCard({ block: b, ym, settings, onSaved, readOnly=false, defaultOpen=false }) {
+function TrainerSettleCard({ block: b, ym, settings, onSaved, readOnly=false, defaultOpen=false, estimate=false }) {
   const [collapsed, setCollapsed] = useState(!defaultOpen);  // 트레이너 본인 화면이면 펼친 채로
   const [editing, setEditing] = useState(false);
   const [unitEdits, setUnitEdits] = useState({});   // memberId -> 단가
@@ -927,7 +951,7 @@ function TrainerSettleCard({ block: b, ym, settings, onSaved, readOnly=false, de
           <span className="font-mono font-bold text-red-400">- {won(Math.round(liveTotal*((b.withholdingRate ?? settings.withholdingRate ?? 3.3)/100)))}</span>
         </div>
         <div className="flex items-center justify-between col-span-2">
-          <span className="text-amber-400 font-bold">세후 실지급</span>
+          <span className="text-amber-400 font-bold">세후 실지급{estimate && <span className="text-amber-400/60 font-normal text-xs"> (추정)</span>}</span>
           <span className="font-mono font-black text-amber-400 text-base">{won(liveTotal - Math.round(liveTotal*((b.withholdingRate ?? settings.withholdingRate ?? 3.3)/100)))}</span>
         </div>
       </div>

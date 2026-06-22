@@ -46,10 +46,14 @@ service cloud.firestore {
     match /ai/{id}         { allow read, write: if isSignedIn(); }
     match /gait_reports/{id} { allow read, write: if isSignedIn(); }
 
-    // ── 관리자 전용 데이터 : admin 만 ────────────────────────────────
+    // ── 관리자 전용 데이터 ──────────────────────────────
+    // 지출: 완전 관리자 전용
     match /expenses/{id}        { allow read, write: if isAdmin(); }
-    match /promos/{id}          { allow read, write: if isAdmin(); }
-    match /settleOverrides/{id} { allow read, write: if isAdmin(); }
+    // SNS·스터디 기록 / 정산 수동수정값:
+    //   트레이너 본인 정산·기록 조회를 위해 '읽기'는 로그인 사용자 전체에 허용.
+    //   '쓰기'(추가·수정·삭제)는 관리자만 — 트레이너 화면은 보기 전용.
+    match /promos/{id}          { allow read: if isSignedIn(); allow write: if isAdmin(); }
+    match /settleOverrides/{id} { allow read: if isSignedIn(); allow write: if isAdmin(); }
     match /settings/{id}        { allow read: if isSignedIn(); allow write: if isAdmin(); }
 
     // 그 외 모든 경로 기본 차단
