@@ -2,7 +2,7 @@ import { createContext, useContext, useState, useEffect } from 'react';
 import {
   signInWithEmailAndPassword, signOut, onAuthStateChanged, signInAnonymously,
 } from 'firebase/auth';
-import { collection, doc, getDoc, getDocs } from 'firebase/firestore';
+import { doc, getDoc } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 import { store, initStore } from '../demoData';
 
@@ -21,24 +21,27 @@ async function resolveRole(fbUser) {
   return null;
 }
 
-// 트레이너를 이메일로 찾는다. 캐시에 없으면 Firestore에서 직접 조회(로딩 타이밍 방어).
+// 트레이너를 이메일로 찾는다. initStore 가 채운 캐시를 우선 사용해 추가 읽기를 없앤다.
+// 캐시가 비어 있을 때만(아주 이른 타이밍) 데이터 로딩을 1회 보장한 뒤 캐시에서 찾는다.
+// → 기존엔 매 로그인마다 trainers 컬렉션을 전수 재조회(getDocs)해 읽기를 증폭시켰다.
 async function findTrainerByEmail(email) {
   const e = (email || '').trim().toLowerCase();
   if (!e) return null;
-  const cached = (store.getTrainers() || []).find(
+  const fromCache = () => (store.getTrainers() || []).find(
     t => (t.loginEmail || t.email || '').trim().toLowerCase() === e
-  );
-  if (cached) return cached;
-  // 캐시에 없으면 Firestore에서 직접 (익명 인증 상태라 읽기 권한 있음)
+  ) || null;
+
+  let hit = fromCache();
+  if (hit) return hit;
+
+  // 캐시에 없으면 전체 데이터를 1회 보장 로드(이미 로드됐다면 모듈 가드가 막아 읽기 0건).
   try {
-    const snap = await getDocs(collection(db, 'trainers'));
-    return snap.docs
-      .map(d => ({ id: d.id, ...d.data() }))
-      .find(t => (t.loginEmail || t.email || '').trim().toLowerCase() === e) || null;
+    await initStore();
+    hit = fromCache();
   } catch (err) {
-    console.error('[trainer 직접 조회 실패]', err);
-    return null;
+    console.error('[trainer 조회용 데이터 로딩 실패]', err);
   }
+  return hit;
 }
 
 export function AuthProvider({ children }) {

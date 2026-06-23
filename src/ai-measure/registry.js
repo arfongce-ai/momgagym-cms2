@@ -52,11 +52,20 @@ export const MEASURE_MENUS = [
   {
     id: 'jump',
     no: 3,
-    title: '점프',
-    desc: '반동점프 · 높이·이륙속도·파워',
+    title: '점프 (수동)',
+    desc: '반동점프 · 체공시간 직접 입력',
     icon: '⬆️',
     status: 'ready',
     component: lazy(() => import('./menus/JumpMeasure.jsx')),
+  },
+  {
+    id: 'jump_precision',
+    no: 3.5,
+    title: '점프 정밀 측정',
+    desc: '카메라/고속영상 · 비행시간+교차검증 · 자동보정',
+    icon: '🦘',
+    status: 'ready',
+    component: lazy(() => import('./menus/JumpAnalysisHub.jsx')),
   },
   {
     id: 'body',

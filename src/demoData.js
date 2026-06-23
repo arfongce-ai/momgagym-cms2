@@ -10,6 +10,24 @@ import { toYMD, todayYMD } from './utils/dates';
 
 const DATA_VERSION = 'v6.0';
 
+// ── [진단] Firestore 읽기 계측 ───────────────────────────────────────
+// 어떤 컬렉션이 읽기를 얼마나 일으키는지 콘솔에서 눈으로 확인하기 위한 래퍼.
+// 모든 전수 조회(getDocs)는 이 함수를 통과시켜 누적 읽기 수를 집계한다.
+// 배포 후 브라우저 콘솔에서 `window.__fsReads` 로 실시간 확인 가능.
+const __readStats = { total: 0, byCollection: {}, calls: [] };
+if (typeof window !== 'undefined') window.__fsReads = __readStats;
+
+async function countedGetDocs(name, q) {
+  const snap = await getDocs(q);
+  const n = snap.size;
+  __readStats.total += n;
+  __readStats.byCollection[name] = (__readStats.byCollection[name] || 0) + n;
+  __readStats.calls.push({ name, n, at: new Date().toISOString() });
+  // 한 번에 50건 이상 읽으면 경고 (전체 재로딩 신호)
+  console.log(`[FS-READ] ${name}: ${n}건 (누적 ${__readStats.total}건)`);
+  return snap;
+}
+
 // 로그인 계정은 Firebase Authentication + roles 문서로 관리합니다.
 // (이전의 평문 비밀번호 DEMO_USERS는 보안상 제거되었습니다.)
 
@@ -130,7 +148,7 @@ export function uid(prefix) {
 
 async function loadCollection(name, { optional = false } = {}) {
   try {
-    const snap = await getDocs(collection(db, name));
+    const snap = await countedGetDocs(name, collection(db, name));
     return snap.docs.map(d => d.data());
   } catch (e) {
     // 관리자 전용 컬렉션은 로그인/권한 전에 막힐 수 있다. 앱 전체를 죽이지 않고
@@ -141,7 +159,7 @@ async function loadCollection(name, { optional = false } = {}) {
 }
 async function loadGrouped(name, { optional = false } = {}) {
   try {
-    const snap = await getDocs(collection(db, name));
+    const snap = await countedGetDocs(name, collection(db, name));
     const grouped = {};
     snap.docs.forEach(d => {
       const data = d.data();
@@ -158,8 +176,21 @@ async function loadGrouped(name, { optional = false } = {}) {
   }
 }
 async function seedIfEmpty() {
-  const membersSnap = await getDocs(collection(db, 'members'));
-  if (!membersSnap.empty) return;
+  // [읽기 절감] 시드는 '최초 1회'만 필요하다. 매 initStore 마다 members 전체를
+  // 다시 읽어 "비었나?" 확인하면 members 를 사실상 2배로 읽게 된다.
+  // → 한 번 시드(또는 비어있지 않음 확인)했으면 localStorage 플래그로 영구 스킵.
+  try {
+    if (typeof localStorage !== 'undefined' && localStorage.getItem('fitcms_seeded') === DATA_VERSION) {
+      return; // 이미 시드 확인됨 → members 읽기 0건
+    }
+  } catch (e) { /* localStorage 불가 환경은 아래로 진행 */ }
+
+  const membersSnap = await countedGetDocs('members(seed-check)', collection(db, 'members'));
+  if (!membersSnap.empty) {
+    // 이미 데이터가 있음 → 플래그만 남기고 이후엔 이 읽기조차 건너뛴다.
+    try { localStorage.setItem('fitcms_seeded', DATA_VERSION); } catch (e) { /* noop */ }
+    return;
+  }
   // 초기 시드도 500건 한계를 넘을 수 있으므로 ops로 모아 chunk 처리한다.
   const ops = [];
   INITIAL_MEMBERS.forEach(m  => ops.push({ op:'set', name:'members',   id:m.id, data:m }));
@@ -171,36 +202,48 @@ async function seedIfEmpty() {
   Object.entries(INITIAL_BODY).forEach(([mid, list]) =>
     list.forEach(b => ops.push({ op:'set', name:'body', id:b.id, data:{ ...b, __mid: mid } })));
   await fbWriteBatch(ops);
+  try { localStorage.setItem('fitcms_seeded', DATA_VERSION); } catch (e) { /* noop */ }
   console.log('[FitCMS] Firebase 최초 시드 완료:', DATA_VERSION);
 }
 
-export async function initStore() {
-  try {
-    await seedIfEmpty();
-    const [members, trainers, schedules, notices, payments, body, ai, settings, expenses, promos, settleOverrides] = await Promise.all([
-      loadCollection('members'),
-      loadCollection('trainers'),
-      loadCollection('schedules'),
-      loadCollection('notices'),
-      loadGrouped('payments'),
-      loadGrouped('body'),
-      loadGrouped('ai'),
-      loadCollection('settings'),
-      loadCollection('expenses', { optional: true }),
-      loadCollection('promos', { optional: true }),
-      loadCollection('settleOverrides', { optional: true }),
-    ]);
-    cache.members=members; cache.trainers=trainers; cache.schedules=schedules;
-    cache.notices=notices; cache.payments=payments; cache.body=body; cache.ai=ai;
-    cache.settings = settings.find(s=>s.id==='config') || {...INITIAL_SETTINGS};
-    cache.expenses = expenses;
-    cache.promos   = promos;
-    cache.settleOverrides = settleOverrides;
-    console.log('[FitCMS] Firebase 로딩 완료');
-  } catch (e) {
-    console.error('[FitCMS] Firebase 로딩 실패:', e);
-    throw e;
-  }
+// [읽기 절감] 한 페이지 세션에서 initStore 가 여러 번 호출돼도(로그인 흐름·
+// 익명 인증 재콜백·트레이너 전환 등) 전체 컬렉션을 다시 읽지 않도록 모듈 차원에서
+// 1회만 실제 로딩한다. 캐시는 모듈 싱글턴이라 한 번 채우면 유지된다.
+// 진짜로 새로고침이 필요하면 initStore({ force:true }) 로 호출한다.
+let __loadPromise = null;
+
+export async function initStore({ force = false } = {}) {
+  if (!force && __loadPromise) return __loadPromise; // 이미 로딩(중)이면 그대로 재사용
+  __loadPromise = (async () => {
+    try {
+      await seedIfEmpty();
+      const [members, trainers, schedules, notices, payments, body, ai, settings, expenses, promos, settleOverrides] = await Promise.all([
+        loadCollection('members'),
+        loadCollection('trainers'),
+        loadCollection('schedules'),
+        loadCollection('notices'),
+        loadGrouped('payments'),
+        loadGrouped('body'),
+        loadGrouped('ai'),
+        loadCollection('settings'),
+        loadCollection('expenses', { optional: true }),
+        loadCollection('promos', { optional: true }),
+        loadCollection('settleOverrides', { optional: true }),
+      ]);
+      cache.members=members; cache.trainers=trainers; cache.schedules=schedules;
+      cache.notices=notices; cache.payments=payments; cache.body=body; cache.ai=ai;
+      cache.settings = settings.find(s=>s.id==='config') || {...INITIAL_SETTINGS};
+      cache.expenses = expenses;
+      cache.promos   = promos;
+      cache.settleOverrides = settleOverrides;
+      console.log(`[FitCMS] Firebase 로딩 완료 — 이번 세션 총 읽기 ${__readStats.total}건`);
+    } catch (e) {
+      __loadPromise = null; // 실패 시 다음 호출에서 재시도 가능하도록 가드 해제
+      console.error('[FitCMS] Firebase 로딩 실패:', e);
+      throw e;
+    }
+  })();
+  return __loadPromise;
 }
 
 // Firestore 쓰기/삭제 — Promise를 그대로 반환해 호출자가 await/실패 처리할 수 있게 한다.
