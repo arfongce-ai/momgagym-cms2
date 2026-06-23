@@ -212,8 +212,57 @@ async function seedIfEmpty() {
 // 진짜로 새로고침이 필요하면 initStore({ force:true }) 로 호출한다.
 let __loadPromise = null;
 
+// ── [읽기 절감] localStorage 캐시 영속화 ──
+// 한 번 읽은 전체 데이터를 브라우저에 저장해두고, 짧은 TTL 안에는 서버를
+// 다시 읽지 않는다. 새로고침·새 탭·재방문에서 읽기가 거의 0이 된다.
+// 쓰기는 항상 서버(fbSet)로 가므로 서버가 원본이고, 캐시는 표시 가속용이다.
+const CACHE_KEY = 'fitcms_cache_v1';
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5분 — 이 안에는 서버 재조회 안 함
+
+function persistCache() {
+  try {
+    if (typeof localStorage === 'undefined') return;
+    const payload = {
+      savedAt: Date.now(),
+      version: DATA_VERSION,
+      data: {
+        members: cache.members, trainers: cache.trainers, schedules: cache.schedules,
+        notices: cache.notices, payments: cache.payments, body: cache.body, ai: cache.ai,
+        settings: cache.settings, expenses: cache.expenses, promos: cache.promos,
+        settleOverrides: cache.settleOverrides, gaitReports: cache.gaitReports,
+      },
+    };
+    localStorage.setItem(CACHE_KEY, JSON.stringify(payload));
+  } catch (e) { /* 용량초과 등 — 무시(다음 로딩이 서버에서 채움) */ }
+}
+
+function hydrateFromCache() {
+  try {
+    if (typeof localStorage === 'undefined') return null;
+    const raw = localStorage.getItem(CACHE_KEY);
+    if (!raw) return null;
+    const p = JSON.parse(raw);
+    if (p.version !== DATA_VERSION || !p.data) return null;
+    Object.assign(cache, p.data);
+    const fresh = (Date.now() - (p.savedAt || 0)) < CACHE_TTL_MS;
+    return { fresh };
+  } catch (e) { return null; }
+}
+
 export async function initStore({ force = false } = {}) {
   if (!force && __loadPromise) return __loadPromise; // 이미 로딩(중)이면 그대로 재사용
+
+  // 1) 캐시 즉시 복원 — 화면을 바로 띄우고 읽기 0건.
+  //    캐시가 충분히 신선하면(TTL 내) 서버 조회 자체를 건너뛴다.
+  if (!force) {
+    const h = hydrateFromCache();
+    if (h && h.fresh) {
+      console.log('[FitCMS] 캐시 사용 — 서버 읽기 건너뜀 (TTL 내)');
+      __loadPromise = Promise.resolve();
+      return __loadPromise;
+    }
+  }
+
   __loadPromise = (async () => {
     try {
       await seedIfEmpty();
@@ -238,6 +287,7 @@ export async function initStore({ force = false } = {}) {
       cache.promos   = promos;
       cache.settleOverrides = settleOverrides;
       cache.gaitReports = gaitReports;
+      persistCache(); // 다음 접속을 위해 캐시 저장
       console.log(`[FitCMS] Firebase 로딩 완료 — 이번 세션 총 읽기 ${__readStats.total}건`);
     } catch (e) {
       __loadPromise = null; // 실패 시 다음 호출에서 재시도 가능하도록 가드 해제
@@ -248,10 +298,24 @@ export async function initStore({ force = false } = {}) {
   return __loadPromise;
 }
 
+// 강제 새로고침(서버에서 다시 읽기) — '새로고침' 버튼 등에서 호출.
+export async function refreshStore() {
+  __loadPromise = null;
+  return initStore({ force: true });
+}
+
 // Firestore 쓰기/삭제 — Promise를 그대로 반환해 호출자가 await/실패 처리할 수 있게 한다.
 // (이전: .catch로 로그만 남겨 실패가 화면에 전달되지 않던 문제 수정)
-function fbSet(name, id, data) { return setDoc(doc(db, name, id), data); }
-function fbDelete(name, id)    { return deleteDoc(doc(db, name, id)); }
+// 쓰기 후 캐시를 localStorage 에 반영(디바운스) — TTL 내 재방문에도 최신 유지.
+let __persistTimer = null;
+function schedulePersist() {
+  if (typeof setTimeout === 'undefined') { persistCache(); return; }
+  clearTimeout(__persistTimer);
+  __persistTimer = setTimeout(persistCache, 400);
+}
+
+async function fbSet(name, id, data) { const r = await setDoc(doc(db, name, id), data); schedulePersist(); return r; }
+async function fbDelete(name, id)    { const r = await deleteDoc(doc(db, name, id)); schedulePersist(); return r; }
 
 // ── Firestore WriteBatch 하드 리밋 대응 ───────────────────────────
 // Firestore writeBatch는 1회 commit당 최대 500개 문서 조작만 허용한다.
@@ -277,6 +341,7 @@ async function fbDeleteBatch(items) {
     part.forEach(({ name, id }) => batch.delete(doc(db, name, id)));
     await batch.commit();
   }
+  schedulePersist();
 }
 
 // 여러 문서를 set/delete 혼합으로 처리 — [{op:'set'|'del', name, id, data?}, ...]
@@ -292,6 +357,7 @@ async function fbWriteBatch(ops) {
     });
     await batch.commit();
   }
+  schedulePersist();
 }
 
 // 저장/삭제 함수는 async — Firestore 완료를 기다리고, 실패 시 캐시를 되돌린다.
