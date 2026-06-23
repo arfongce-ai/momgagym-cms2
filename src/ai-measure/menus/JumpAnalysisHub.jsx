@@ -15,8 +15,8 @@ import { calcJump } from '../core/performance';
 
 export default function JumpAnalysisHub({ member, onBack, onSave, onSaveToFirebase, onMemberHeightChange }) {
   const save = onSaveToFirebase || onSave;
-  // 가장 정확한 고속영상을 기본값으로 (정면·30fps 실시간의 오차 문제 회피)
-  const [mode, setMode] = useState('upload');
+  // 요구사항 7: 실시간 → 고속영상 순서, 실시간이 기본
+  const [mode, setMode] = useState('live');
   const [view, setView] = useState('measure'); // measure | report
   const [report, setReport] = useState(null);
   const [showGuide, setShowGuide] = useState(false);
@@ -54,9 +54,9 @@ export default function JumpAnalysisHub({ member, onBack, onSave, onSaveToFireba
           {/* 모드 전환 + 도움말 버튼 */}
           <div className="absolute top-[max(8px,calc(env(safe-area-inset-top)+8px))] inset-x-0 z-[86] flex justify-center items-center gap-2 px-3 pointer-events-none">
             <div className="pointer-events-auto flex gap-1 rounded-full bg-black/55 backdrop-blur p-1 border border-white/10 shadow-lg">
-              {[['upload', '📁 고속영상'], ['live', '🔴 실시간'], ['manual', '✍️ 수동']].map(([k, label]) => (
+              {[['live', '🔴 실시간'], ['upload', '📁 고속영상']].map(([k, label]) => (
                 <button key={k} onClick={() => setMode(k)}
-                  className={`rounded-full px-3 py-1 text-xs font-black transition-colors ${
+                  className={`rounded-full px-3.5 py-1 text-xs font-black transition-colors ${
                     mode === k ? 'bg-amber-500 text-slate-950' : 'text-slate-300'}`}>
                   {label}
                 </button>
@@ -73,14 +73,12 @@ export default function JumpAnalysisHub({ member, onBack, onSave, onSaveToFireba
       )}
 
       {mode === 'live' && (
-        <JumpPrecisionAnalysis member={member} onBack={onBack} onSaveToFirebase={save} onMemberHeightChange={onMemberHeightChange} />
+        <JumpPrecisionAnalysis member={member} onBack={onBack} onSaveToFirebase={save}
+          onMemberHeightChange={onMemberHeightChange}
+          onManualComplete={handleComplete} />
       )}
       {mode === 'upload' && (
         <JumpUploadAnalysis member={member} onBack={onBack} onComplete={handleComplete} onMemberHeightChange={onMemberHeightChange} />
-      )}
-      {mode === 'manual' && (
-        <JumpManualMeasure member={member} onBack={onBack} onComplete={handleComplete}
-          onOpenGuide={() => setShowGuide(true)} />
       )}
     </div>
   );

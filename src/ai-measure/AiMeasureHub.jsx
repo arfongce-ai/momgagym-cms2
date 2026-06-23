@@ -26,9 +26,21 @@ export default function AiMeasureHub() {
     return { ...baseMember, height: heightOverrides[baseMember.id] || baseMember.height || latestHeight || null };
   })() : null;
 
-  const rememberMemberHeight = (heightCm) => {
+  const rememberMemberHeight = async (heightCm) => {
     if (!member || !heightCm) return;
     setHeightOverrides(prev => ({ ...prev, [member.id]: heightCm }));
+    // 신체정보에 키가 전혀 없을 때만 영구 저장(중복 기록 방지) → 다음부터 안 물어봄
+    try {
+      const recs = store.getBodyRecords(member.id) || [];
+      const hasHeight = recs.some(r => r.height);
+      if (!hasHeight && typeof store.addBodyRecord === 'function') {
+        await store.addBodyRecord(member.id, {
+          recordedAt: new Date().toISOString().slice(0, 10),
+          height: Number(heightCm),
+          note: '점프 측정 시 자동 입력',
+        });
+      }
+    } catch (e) { /* 저장 실패해도 세션 오버라이드로 동작 */ }
   };
 
   // 측정 저장 (회원 선택 시 측정이력에 누적)

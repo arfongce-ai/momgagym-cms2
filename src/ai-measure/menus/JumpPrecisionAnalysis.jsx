@@ -17,6 +17,7 @@ import {
 } from '../core/jumpBiomechanics';
 import { calcJump } from '../core/performance';
 import { loadPoseLandmarker, detectPoseFrame, isPoseReady } from '../core/poseBackend';
+import { lockZoom, unlockZoom } from '../../utils/viewportLock';
 
 // 캘리브레이션 안정 유지 시간(깜빡임 방지). 충분히 서 있으면 거의 즉시 락.
 const POSE_BONES = [
@@ -75,10 +76,11 @@ function drawBaseline(canvas, video, baselineFeetY) {
   ctx.setLineDash([]);
 }
 
-export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase, onSave, onMemberHeightChange }) {
+export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase, onSave, onMemberHeightChange, onManualComplete }) {
   const saveToFirebase = onSaveToFirebase || onSave;
 
   const [view, setView] = useState('camera');     // camera | preview
+  const [showManual, setShowManual] = useState(false);
   const [phase, setPhase] = useState('arming');    // arming | low_visibility | ready | air
   const [calibMsg, setCalibMsg] = useState('');
   const [reportData, setReportData] = useState(null);
@@ -118,6 +120,8 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
   }, [view, needHeight]);
 
   useEffect(() => () => stopCamera(), []);
+  // 카메라 측정 화면: 확대 잠금 (언마운트 시 복원)
+  useEffect(() => { lockZoom(); return () => unlockZoom(); }, []);
 
   const resetPipeline = () => {
     calibRef.current = new StandingCalibrator({ heightCm: heightRef.current });
@@ -376,7 +380,17 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
                 ${jumpCount >= 1 ? 'bg-emerald-500 text-slate-950 active:scale-95' : 'bg-white/20 text-white/50'}`}>
               ✓ 측정 완료 {jumpCount >= 1 ? `(${jumpCount}회)` : ''}
             </button>
+            {/* 요구사항 8: 수동 입력을 실시간 화면 안에서 바로 (점프매트/타이머 값) */}
+            <button onClick={() => setShowManual(true)}
+              className="text-white/70 text-xs underline underline-offset-2">
+              ✍️ 카메라 대신 수동 입력 (체공시간)
+            </button>
           </div>
+          {showManual && (
+            <ManualEntryModal member={member}
+              onClose={() => setShowManual(false)}
+              onSubmit={async (report) => { setShowManual(false); await (onManualComplete || onSaveToFirebase)?.(report); }} />
+          )}
         </div>
       )}
 
@@ -493,6 +507,62 @@ function Stat({ label, value }) {
     <div className="bg-slate-800 rounded-xl py-2">
       <p className="text-[10px] text-slate-500">{label}</p>
       <p className="font-mono font-bold text-slate-200 text-sm">{value}</p>
+    </div>
+  );
+}
+
+// 수동 입력 모달 — 실시간 화면 안에서 체공시간 직접 입력(점프매트/타이머).
+// 자동 측정과 동일한 리포트 페이로드를 만들어 동일 저장 흐름을 탄다.
+function ManualEntryModal({ member, onClose, onSubmit }) {
+  const [flight, setFlight] = useState('');
+  const [weight, setWeight] = useState(member?.weight ? String(member.weight) : '');
+  const [busy, setBusy] = useState(false);
+
+  const submit = async () => {
+    const ft = Number(flight);
+    if (!ft || ft <= 0 || ft > 1.5) { alert('체공 시간을 초 단위로 입력하세요. (예: 0.50)'); return; }
+    const r = calcJump(ft, weight ? Number(weight) : null);
+    if (!r) { alert('계산 실패 — 입력값을 확인하세요.'); return; }
+    setBusy(true);
+    await onSubmit?.({
+      valid: true, reason: 'ok', source: 'manual', jumps: 1,
+      flightTimeSec: ft, flightTimeMs: Math.round(ft * 1000),
+      heightCm: r.heightCm, takeoffVelocity: r.takeoffVelocity, peakPower: r.peakPower,
+      bodyWeight: weight ? Number(weight) : null,
+      crossCheck: { heightCrossCm: null, deltaPct: null, agree: null },
+      calibHeightCm: member?.height || null,
+      member: { id: member?.id || null, name: member?.name || null },
+      measuredAt: new Date().toISOString(),
+    });
+    setBusy(false);
+  };
+
+  return (
+    <div className="absolute inset-0 z-[88] bg-black/70 backdrop-blur-sm flex items-center justify-center p-6" onClick={onClose}>
+      <div className="w-full max-w-sm bg-slate-900 border border-amber-500/30 rounded-2xl p-5 space-y-4" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between">
+          <p className="text-white font-black">✍️ 수동 입력</p>
+          <button onClick={onClose} className="text-slate-400 text-sm font-bold">닫기 ✕</button>
+        </div>
+        <div>
+          <label className="block text-xs font-semibold text-slate-400 mb-1.5">체공 시간 (초)</label>
+          <input type="number" inputMode="decimal" step="0.01" value={flight}
+            onChange={e => setFlight(e.target.value)} placeholder="0.50"
+            className="w-full bg-slate-800 border border-slate-700 text-slate-100 rounded-lg px-3 py-2.5 text-base font-mono focus:outline-none focus:border-amber-500" />
+          <p className="text-[11px] text-slate-500 mt-1">점프매트·앱 타이머로 잰 발이 떠 있던 시간</p>
+        </div>
+        <div>
+          <label className="block text-xs font-semibold text-slate-400 mb-1.5">체중 (kg) <span className="text-slate-600">— 파워 계산 시</span></label>
+          <input type="number" inputMode="numeric" step="0.1" value={weight}
+            onChange={e => setWeight(e.target.value)} placeholder="70"
+            className="w-full bg-slate-800 border border-slate-700 text-slate-100 rounded-lg px-3 py-2.5 text-base font-mono focus:outline-none focus:border-amber-500" />
+        </div>
+        <button onClick={submit} disabled={busy}
+          className="w-full rounded-xl bg-amber-500 text-slate-950 font-black py-3 active:scale-95 disabled:opacity-60">
+          {busy ? '계산 중...' : '점프 분석'}
+        </button>
+        <p className="text-[11px] text-slate-500">높이 h=g·t²/8, 이륙속도 v=g·t/2, 최고파워는 Sayers(체중 입력 시) 추정값.</p>
+      </div>
     </div>
   );
 }

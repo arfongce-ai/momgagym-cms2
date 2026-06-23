@@ -5,6 +5,8 @@ import {
 } from '../core/gaitBiomechanics';
 import { loadPoseLandmarker, detectPoseFrame, closePoseLandmarker, isPoseReady } from '../core/poseBackend';
 import { shareReportWithVideo } from '../core/reportShare';
+import { drawMeasurementOverlay } from '../core/recordingOverlay';
+import { lockZoom, unlockZoom } from '../../utils/viewportLock';
 
 // 캘리브레이션: 세이프존 + 인식 안정이 이만큼 유지되면 락
 const CALIB_HOLD_MS = 800; // 사람이 잡히면 거의 즉시 인식(0.8초 안정화로 깜빡임만 방지)
@@ -28,35 +30,15 @@ function drawCover(ctx, video, width, height) {
 
 function drawMetricOverlay(ctx, reportTimeMs, tracker, width, height) {
   const summary = tracker?.summary?.() || {};
-  const pad = Math.round(width * 0.035);
-  const panelW = Math.min(Math.round(width * 0.62), 620);
-  const rowH = Math.max(42, Math.round(height * 0.035));
-  const panelH = rowH * 3 + 38;
-  const x = pad;
-  const y = height - panelH - pad;
-  const elapsed = Math.max(0, Math.floor(reportTimeMs / 1000));
-  const mm = String(Math.floor(elapsed / 60)).padStart(2, '0');
-  const ss = String(elapsed % 60).padStart(2, '0');
-
-  ctx.save();
-  ctx.fillStyle = 'rgba(15, 23, 42, 0.78)';
-  ctx.strokeStyle = 'rgba(251, 191, 36, 0.7)';
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.roundRect(x, y, panelW, panelH, 22);
-  ctx.fill();
-  ctx.stroke();
-
-  ctx.fillStyle = '#fbbf24';
-  ctx.font = `800 ${Math.round(rowH * 0.42)}px system-ui, sans-serif`;
-  ctx.fillText('GAIT LIVE METRICS', x + 22, y + 30);
-
-  ctx.fillStyle = '#f8fafc';
-  ctx.font = `900 ${Math.round(rowH * 0.52)}px system-ui, sans-serif`;
-  ctx.fillText(`${summary.averageCadenceSpm ?? '--'} SPM`, x + 22, y + 30 + rowH);
-  ctx.fillText(`${summary.stancePct ?? '--'} / ${summary.swingPct ?? '--'}%`, x + 22, y + 30 + rowH * 2);
-  ctx.fillText(`${summary.totalSteps ?? 0} steps  ${mm}:${ss}`, x + 22, y + 30 + rowH * 3);
-  ctx.restore();
+  drawMeasurementOverlay(ctx, width, height, {
+    title: 'GAIT LIVE',
+    elapsedMs: reportTimeMs,
+    metrics: [
+      { label: 'CADENCE', value: summary.averageCadenceSpm != null ? `${summary.averageCadenceSpm} SPM` : '--' },
+      { label: 'STANCE/SWING', value: (summary.stancePct != null) ? `${summary.stancePct}/${summary.swingPct}%` : '--' },
+      { label: 'STEPS', value: summary.totalSteps ?? 0 },
+    ],
+  });
 }
 // BlazePose 하반신 연결 (보행 분석 핵심 부위 중심)
 const POSE_BONES = [
@@ -464,6 +446,8 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
     if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  // 카메라 측정 화면: 확대 잠금 (언마운트 시 복원)
+  useEffect(() => { lockZoom(); return () => unlockZoom(); }, []);
 
   return (
     <div

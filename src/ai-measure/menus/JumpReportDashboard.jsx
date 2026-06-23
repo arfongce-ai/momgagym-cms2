@@ -14,7 +14,7 @@
 //    onComment(text) => void   (선택) 트레이너 코멘트 저장
 // ════════════════════════════════════════════════════════════════════════
 import React, { useState, useMemo, useRef } from 'react';
-import { shareReportWithVideo } from '../core/reportShare';
+import { captureNodeToJpgFile } from '../core/reportShare';
 import {
   RadarChart, PolarGrid, PolarAngleAxis, Radar,
   ResponsiveContainer,
@@ -102,11 +102,16 @@ export default function JumpReportDashboard({ report, onClose, onComment }) {
     if (!sheetRef.current) return;
     setExporting(true);
     try {
-      const res = await shareReportWithVideo(sheetRef.current, report?.videoBlob || null, {
-        baseName: `${memberName}_점프리포트_${dateStr}`,
-        title: '점프 분석 리포트',
-      });
-      if (res.mode === 'none') alert('공유할 항목이 없습니다.');
+      // 리포트는 JPG 로만 (영상과 분리 — 요구사항 10)
+      const file = await captureNodeToJpgFile(sheetRef.current, `${memberName}_점프리포트_${dateStr}.jpg`);
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        try { await navigator.share({ title: '점프 분석 리포트', files: [file] }); setExporting(false); return; }
+        catch (err) { if (err?.name === 'AbortError') { setExporting(false); return; } }
+      }
+      const url = URL.createObjectURL(file);
+      const a = document.createElement('a'); a.href = url; a.download = file.name;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 200);
     } catch (e) {
       alert('이미지 저장에 실패했습니다. 인터넷 연결을 확인하거나 화면 캡처로 저장해 주세요.');
     } finally {
