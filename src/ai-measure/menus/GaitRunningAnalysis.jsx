@@ -25,6 +25,39 @@ function drawCover(ctx, video, width, height) {
   ctx.drawImage(video, sx, sy, sw, sh, 0, 0, width, height);
   return true;
 }
+
+function drawMetricOverlay(ctx, reportTimeMs, tracker, width, height) {
+  const summary = tracker?.summary?.() || {};
+  const pad = Math.round(width * 0.035);
+  const panelW = Math.min(Math.round(width * 0.62), 620);
+  const rowH = Math.max(42, Math.round(height * 0.035));
+  const panelH = rowH * 3 + 38;
+  const x = pad;
+  const y = height - panelH - pad;
+  const elapsed = Math.max(0, Math.floor(reportTimeMs / 1000));
+  const mm = String(Math.floor(elapsed / 60)).padStart(2, '0');
+  const ss = String(elapsed % 60).padStart(2, '0');
+
+  ctx.save();
+  ctx.fillStyle = 'rgba(15, 23, 42, 0.78)';
+  ctx.strokeStyle = 'rgba(251, 191, 36, 0.7)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.roundRect(x, y, panelW, panelH, 22);
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.fillStyle = '#fbbf24';
+  ctx.font = `800 ${Math.round(rowH * 0.42)}px system-ui, sans-serif`;
+  ctx.fillText('GAIT LIVE METRICS', x + 22, y + 30);
+
+  ctx.fillStyle = '#f8fafc';
+  ctx.font = `900 ${Math.round(rowH * 0.52)}px system-ui, sans-serif`;
+  ctx.fillText(`${summary.averageCadenceSpm ?? '--'} SPM`, x + 22, y + 30 + rowH);
+  ctx.fillText(`${summary.stancePct ?? '--'} / ${summary.swingPct ?? '--'}%`, x + 22, y + 30 + rowH * 2);
+  ctx.fillText(`${summary.totalSteps ?? 0} steps  ${mm}:${ss}`, x + 22, y + 30 + rowH * 3);
+  ctx.restore();
+}
 // BlazePose 하반신 연결 (보행 분석 핵심 부위 중심)
 const POSE_BONES = [
   [11, 12], [11, 23], [12, 24], [23, 24], // 어깨~골반
@@ -114,6 +147,7 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
   const composeRafRef = useRef(null);  // 캔버스 합성 루프
   const recordCanvasRef = useRef(null);
   const recordStreamRef = useRef(null);
+  const recordingStartedAtRef = useRef(0);
   const autoSavedRef = useRef(null); // 자동 저장 중복 방지 (저장한 measuredAt 기록)
 
   const videoRef = useRef(null);
@@ -275,6 +309,13 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
       ctx.fillStyle = '#000';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       drawCover(ctx, video, canvas.width, canvas.height);
+      drawMetricOverlay(
+        ctx,
+        performance.now() - recordingStartedAtRef.current,
+        trackerRef.current,
+        canvas.width,
+        canvas.height
+      );
       composeRafRef.current = requestAnimationFrame(draw);
     };
     if (composeRafRef.current) cancelAnimationFrame(composeRafRef.current);
@@ -294,6 +335,7 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
     trackerRef.current = new GaitCycleTracker(); // 녹화 시작 시 파이프라인 초기화
     angleAccRef.current = new AngleAccumulator();
     armingSinceRef.current = null;
+    recordingStartedAtRef.current = performance.now();
     // 이전 측정의 저장/공유 상태 리셋 (재녹화 시 저장 버튼이 막히지 않도록)
     setSaveState('idle');
     setShareMsg('');
@@ -358,7 +400,7 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
   // 리포트(JPG) + 영상 함께 공유/기기 저장. 데이터 저장과 독립.
   const handleShareVideo = async () => {
     setShareMsg('리포트 생성 중...');
-    const node = document.getElementById('gait-report-sheet');
+    const node = document.getElementById('gait-report-sheet') || document.getElementById('gait-live-report-sheet');
     const blob = recordedBlobRef.current || null;
     if (!node && !blob) { setShareMsg('공유할 항목이 없습니다.'); return; }
     try {
@@ -516,7 +558,7 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
             </div>
             <button onClick={() => setView('camera')} className="absolute top-4 right-4 bg-white/20 text-white px-4 py-2 rounded-lg backdrop-blur-md font-bold">✕ 다시 찍기</button>
           </div>
-          <div className="flex-1 bg-slate-800 p-6 overflow-y-auto">
+          <div id="gait-live-report-sheet" className="flex-1 bg-slate-800 p-6 overflow-y-auto">
             <h2 className="text-2xl font-black text-white mb-6">측정 리포트</h2>
             <div className="grid grid-cols-2 gap-4 mb-6">
               <div className="bg-slate-700 p-4 rounded-xl">

@@ -13,7 +13,7 @@ import JumpUploadAnalysis from './JumpUploadAnalysis';
 import JumpReportDashboard from './JumpReportDashboard';
 import { calcJump } from '../core/performance';
 
-export default function JumpAnalysisHub({ member, onBack, onSave, onSaveToFirebase }) {
+export default function JumpAnalysisHub({ member, onBack, onSave, onSaveToFirebase, onMemberHeightChange }) {
   const save = onSaveToFirebase || onSave;
   // 가장 정확한 고속영상을 기본값으로 (정면·30fps 실시간의 오차 문제 회피)
   const [mode, setMode] = useState('upload');
@@ -73,10 +73,10 @@ export default function JumpAnalysisHub({ member, onBack, onSave, onSaveToFireba
       )}
 
       {mode === 'live' && (
-        <JumpPrecisionAnalysis member={member} onBack={onBack} onSaveToFirebase={save} />
+        <JumpPrecisionAnalysis member={member} onBack={onBack} onSaveToFirebase={save} onMemberHeightChange={onMemberHeightChange} />
       )}
       {mode === 'upload' && (
-        <JumpUploadAnalysis member={member} onBack={onBack} onComplete={handleComplete} />
+        <JumpUploadAnalysis member={member} onBack={onBack} onComplete={handleComplete} onMemberHeightChange={onMemberHeightChange} />
       )}
       {mode === 'manual' && (
         <JumpManualMeasure member={member} onBack={onBack} onComplete={handleComplete}
@@ -227,4 +227,3 @@ function GuideSection({ title, emoji, highlight, children }) {
     </div>
   );
 }
-

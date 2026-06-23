@@ -41,7 +41,7 @@ import { analyzeUploadedVideo, CAPTURE_PRESETS } from '../core/videoAnalyzer';
 // 프레임 신뢰도(가시성) 하한 — 이하 구간은 '주의 구간'으로 집계
 const FRAME_CONF_MIN = 0.8;
 
-export default function JumpUploadAnalysis({ member, onBack, onComplete }) {
+export default function JumpUploadAnalysis({ member, onBack, onComplete, onMemberHeightChange }) {
   const [phase, setPhase] = useState('idle'); // idle | ready | analyzing | done | error
   const [progress, setProgress] = useState(0);
   const [errorMsg, setErrorMsg] = useState('');
@@ -200,6 +200,7 @@ export default function JumpUploadAnalysis({ member, onBack, onComplete }) {
     const n = Number(heightInput);
     if (!n || n < 80 || n > 250) { setErrorMsg('키를 80~250cm로 입력하세요.'); return; }
     setHeightCm(n); setNeedHeight(false); setErrorMsg('');
+    onMemberHeightChange?.(n);
   };
 
   const pct = Math.round(progress * 100);

@@ -75,7 +75,7 @@ function drawBaseline(canvas, video, baselineFeetY) {
   ctx.setLineDash([]);
 }
 
-export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase, onSave }) {
+export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase, onSave, onMemberHeightChange }) {
   const saveToFirebase = onSaveToFirebase || onSave;
 
   const [view, setView] = useState('camera');     // camera | preview
@@ -272,6 +272,7 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
     setHeightCm(n);
     heightRef.current = n;
     setNeedHeight(false);
+    onMemberHeightChange?.(n);
     setWarning('');
   };
 

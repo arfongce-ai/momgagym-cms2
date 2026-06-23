@@ -12,6 +12,7 @@ export default function AiMeasureHub() {
   // 트레이너 모드: 담당 회원만 / 모든 회원은 가나다 순으로 노출.
   const [members] = useState(() => sortByName(scopeMembersToTrainer(store.getMembers(), user)));
   const [memberId, setMemberId] = useState('');
+  const [heightOverrides, setHeightOverrides] = useState({});
   const [active, setActive] = useState(null); // 선택된 메뉴 객체
 
   const baseMember = members.find(m => m.id === memberId);
@@ -22,8 +23,13 @@ export default function AiMeasureHub() {
     const latestHeight = withHeight.length
       ? withHeight.sort((a, b) => (a.recordedAt < b.recordedAt ? 1 : -1))[0].height
       : null;
-    return { ...baseMember, height: baseMember.height || latestHeight || null };
+    return { ...baseMember, height: heightOverrides[baseMember.id] || baseMember.height || latestHeight || null };
   })() : null;
+
+  const rememberMemberHeight = (heightCm) => {
+    if (!member || !heightCm) return;
+    setHeightOverrides(prev => ({ ...prev, [member.id]: heightCm }));
+  };
 
   // 측정 저장 (회원 선택 시 측정이력에 누적)
   const handleSave = async (data) => {
@@ -41,11 +47,11 @@ export default function AiMeasureHub() {
       });
       // 보행/점프 분석은 전용 컬렉션(gait_reports)에도 정량 리포트를 추가 저장 → 회차별 비교.
       if (isGait) {
-        await aiStore.addGaitReport({ ...data, kind: 'gait', member: { id: member.id, name: member.name } });
+        return await aiStore.addGaitReport({ ...data, kind: 'gait', member: { id: member.id, name: member.name } });
         return; // 컴포넌트가 ✓ 표시
       }
       if (active.id === 'jump' && data?.valid === true) {
-        await aiStore.addGaitReport({ ...data, kind: 'jump', member: { id: member.id, name: member.name } });
+        return await aiStore.addGaitReport({ ...data, kind: 'jump', member: { id: member.id, name: member.name } });
       }
       alert('측정이 저장되었습니다.');
     } catch (e) {
@@ -60,7 +66,7 @@ export default function AiMeasureHub() {
     return (
       <div className="max-w-md mx-auto">
         <Suspense fallback={<div className="text-center text-slate-400 py-10 text-sm">모듈 로딩 중…</div>}>
-          <Comp member={member} onSave={handleSave} onBack={() => setActive(null)} />
+          <Comp member={member} onSave={handleSave} onBack={() => setActive(null)} onMemberHeightChange={rememberMemberHeight} />
         </Suspense>
       </div>
     );

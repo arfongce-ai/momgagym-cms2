@@ -73,5 +73,5 @@ export const MEASURE_MENUS = [
   { id: 'throw',   no: 6,  title: '슬램 & 던지기',    desc: '가속도·파워·시속',             icon: '💥', status: 'planned' },
   { id: 'lifting', no: 8,  title: '역도',             desc: '스내치·저크 · 바벨 추적',      icon: '🏋️', status: 'ready', component: lazy(() => import('./menus/LiftingMeasure.jsx')) },
   { id: 'swing',   no: 9,  title: '스윙',             desc: '골프·배트 · ROM·속도',         icon: '🏌️', status: 'planned' },
-  { id: 'gait',    no: 10, title: '보행 & 러닝',      desc: '측면·후면 · 각도·케이던스·주기',  icon: '🏃', status: 'ready', component: lazy(() => import('./menus/GaitRunningAnalysis.jsx')) },
+  { id: 'gait',    no: 10, title: '보행 & 러닝',      desc: '측면·후면 · 각도·케이던스·주기',  icon: '🏃', status: 'ready', component: lazy(() => import('./menus/GaitAnalysisHub.jsx')) },
 ];
