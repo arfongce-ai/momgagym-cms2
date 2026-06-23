@@ -42,6 +42,11 @@ const statusText = (v, r) => {
   if (v >= r.warn[0] && v <= r.warn[1]) return '주의';
   return '이상';
 };
+// RSI 등급 tone → 색상(hex). reactiveJump.RSI_TUNING.grades 의 tone 과 매칭.
+const rsiToneClass = (tone) => ({
+  blue: '#60a5fa', emerald: '#34d399', green: '#4ade80',
+  amber: '#fbbf24', red: '#f87171',
+}[tone] || '#f1f5f9');
 
 // 종합 점수 (활성 + 측정된 지표만 가점)
 function computeScore(r, b) {
@@ -133,6 +138,8 @@ export default function JumpReportDashboard({ report, onClose, onComment }) {
                 {r.reason === 'cross_mismatch' ? `두 측정 방식 차이가 큽니다(${cc.deltaPct}%). 측면에서 카메라를 골반 높이로 고정하고 제자리 수직 점프로 다시 촬영하세요.`
                   : r.reason === 'no_jump' ? '점프 동작이 감지되지 않았습니다.'
                   : r.reason === 'sanity_fail' ? '측정값이 키 대비 비현실적입니다. 카메라 각도를 확인하세요.'
+                  : r.reason === 'need_more_cycles' ? '반응 점프는 연속 2회 이상 뛰어야 접지 시간을 측정할 수 있습니다. 제자리에서 빠르게 연속 점프하세요.'
+                  : r.reason === 'no_valid_contact' ? '유효한 접지 구간을 찾지 못했습니다. 착지 후 곧바로 다시 뛰어 접지 시간을 짧게 유지하세요.'
                   : '다시 측정해 주세요.'}
               </p>
             </div>
@@ -160,7 +167,50 @@ export default function JumpReportDashboard({ report, onClose, onComment }) {
               )}
             </Panel>
 
-            {/* 촬영 방향 안내 배너 */}
+            {/* ①-R 반응 탄성 지표 (RSI) — 반응 점프 모드에서만 */}
+            {r.rsi && r.rsi.valid && (
+              <Panel title="① 반응 탄성 (RSI)" subtitle="체공 ÷ 접지 · 무단위 · 핵심">
+                <div className="grid grid-cols-4 gap-2">
+                  <BigStat label="RSI" value={r.rsi.rsi} unit=""
+                    color={rsiToneClass(r.rsi.grade?.tone)} status={r.rsi.grade?.label} badge="핵심" />
+                  <BigStat label="접지 시간" value={r.rsi.contactTimeMs} unit="ms" badge="핵심" />
+                  <BigStat label="후속 체공" value={r.rsi.flightTimeMs} unit="ms" badge="핵심" />
+                  <BigStat label="평균 RSI" value={r.rsi.rsiMean} unit=""
+                    note={`${r.rsi.cycles}회 사이클`} />
+                </div>
+                <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px]">
+                  <span className="bg-slate-800/60 rounded-lg px-3 py-1.5 text-slate-400">
+                    RSI(높이) {r.rsi.rsiHeight} m/s
+                  </span>
+                  {r.rsi.cvPct != null && (
+                    <span className={`rounded-lg px-3 py-1.5 ${r.rsi.cvPct > 15 ? 'bg-amber-500/15 text-amber-300' : 'bg-slate-800/60 text-slate-400'}`}>
+                      사이클 변동 {r.rsi.cvPct}%{r.rsi.cvPct > 15 ? ' · 일관성 낮음' : ''}
+                    </span>
+                  )}
+                  {r.rsi.lowFps && (
+                    <span className="rounded-lg px-3 py-1.5 bg-red-500/15 text-red-300 font-bold">
+                      ⚠ 프레임레이트 낮음 — 접지시간 정확도 제한 (240fps 고속영상 권장)
+                    </span>
+                  )}
+                </div>
+                <p className="mt-2 text-[10px] text-slate-500 leading-relaxed">
+                  ※ RSI = 체공시간 ÷ 접지시간(드롭점프 표준, 무단위). 접지시간이 짧을수록
+                  (탄성 효율 ↑) RSI 가 높아집니다.
+                  {r.rsi.rsiBasis === 'mean'
+                    ? ' 대표값은 사이클 변동이 커서 최고값 대신 평균을 사용했습니다(과대평가 방지).'
+                    : r.rsi.rsiBasis === 'manual'
+                    ? ' 수동 입력한 체공·접지 시간으로 계산한 단일 값입니다.'
+                    : ' 대표값은 가장 반응성이 좋은 사이클(최고값) 기준입니다.'}
+                  {' '}등급 기준은 일반 참고치이며 종목·연령에 따라 편차가 큽니다
+                  (Haff &amp; Dumke, <i>Laboratory Manual for Exercise Physiology</i>).
+                </p>
+              </Panel>
+            )}
+            {r.rsi && !r.rsi.valid && (
+              <div className="rounded-lg px-3 py-2 text-[11px] font-bold bg-amber-500/15 text-amber-300">
+                RSI 측정 실패 — {r.rsi.message || '연속 2회 이상 점프해야 접지시간을 측정할 수 있습니다.'}
+              </div>
+            )}
             <div className={`rounded-lg px-3 py-2 text-[11px] font-bold flex items-center justify-between ${
               view === 'side' ? 'bg-cyan-500/15 text-cyan-300'
                 : view === 'back' ? 'bg-violet-500/15 text-violet-300'

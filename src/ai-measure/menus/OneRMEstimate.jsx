@@ -300,7 +300,7 @@ export default function OneRMEstimate({ member, onSave, onBack }) {
           <p className="text-center font-mono font-black text-5xl text-slate-100">
             {result.average}<span className="text-lg text-slate-500"> kg</span>
           </p>
-          <p className="text-center text-[10px] text-slate-500">검증된 {result.formulas.length}개 공식 평균</p>
+          <p className="text-center text-[10px] text-slate-500">검증된 {result.formulas.filter(f => f.value != null).length}개 공식 평균</p>
 
           <div className="bg-slate-800 rounded-xl p-3">
             <p className="text-[10px] text-slate-500 mb-1.5">공식별 추정 (kg)</p>
@@ -308,7 +308,9 @@ export default function OneRMEstimate({ member, onSave, onBack }) {
               {result.formulas.map(f => (
                 <div key={f.key} className="flex justify-between bg-slate-900/60 rounded px-2 py-1">
                   <span className="text-slate-500">{f.label}</span>
-                  <span className="font-mono font-bold text-slate-200">{f.value}</span>
+                  <span className="font-mono font-bold text-slate-200">
+                    {f.value != null ? f.value : <span className="text-slate-600">제외</span>}
+                  </span>
                 </div>
               ))}
             </div>

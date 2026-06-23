@@ -147,12 +147,25 @@ export async function createAiSession(memberId, measurements, memo = '') {
 }
 
 // ── 이력 조회 ─────────────────────────────────────────────
+// 동기 버전(캐시에 이미 있는 경우). 최초 진입 시에는 loadAiSessions 를 쓴다.
 export function getAiSessions(memberId) {
   try {
     return aiStore.getSessions(memberId)
       .sort((a, b) => b.recordedAtFull?.localeCompare(a.recordedAtFull || ''));
   } catch (err) {
     console.error('[getAiSessions]', err);
+    return [];
+  }
+}
+
+// [읽기 절감] 회원 측정 화면 진입 시 그 회원 세션만 지연 로딩 후 반환.
+// 이미 로딩된 회원은 추가 읽기 없이 캐시에서 즉시 반환된다.
+export async function loadAiSessions(memberId) {
+  try {
+    await aiStore.ensureSessions(memberId);
+    return getAiSessions(memberId);
+  } catch (err) {
+    console.error('[loadAiSessions]', err);
     return [];
   }
 }

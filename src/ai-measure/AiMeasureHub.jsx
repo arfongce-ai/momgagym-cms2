@@ -59,8 +59,8 @@ export default function AiMeasureHub() {
       });
       // 보행/점프 분석은 전용 컬렉션(gait_reports)에도 정량 리포트를 추가 저장 → 회차별 비교.
       if (isGait) {
+        // 컴포넌트가 자체 ✓ 표시. addGaitReport 결과를 반환해 회차 비교 데이터로 사용.
         return await aiStore.addGaitReport({ ...data, kind: 'gait', member: { id: member.id, name: member.name } });
-        return; // 컴포넌트가 ✓ 표시
       }
       if (active.id === 'jump' && data?.valid === true) {
         return await aiStore.addGaitReport({ ...data, kind: 'jump', member: { id: member.id, name: member.name } });

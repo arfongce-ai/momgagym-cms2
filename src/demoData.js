@@ -5,6 +5,7 @@
 import { db } from './firebase';
 import {
   collection, doc, getDocs, setDoc, deleteDoc, writeBatch,
+  query, where,
 } from 'firebase/firestore';
 import { toYMD, todayYMD } from './utils/dates';
 
@@ -19,7 +20,7 @@ if (typeof window !== 'undefined') window.__fsReads = __readStats;
 
 async function countedGetDocs(name, q) {
   const snap = await getDocs(q);
-  const n = snap.size;
+  const n = Number.isFinite(snap?.size) ? snap.size : (snap?.docs?.length || 0);
   __readStats.total += n;
   __readStats.byCollection[name] = (__readStats.byCollection[name] || 0) + n;
   __readStats.calls.push({ name, n, at: new Date().toISOString() });
@@ -212,82 +213,89 @@ async function seedIfEmpty() {
 // 진짜로 새로고침이 필요하면 initStore({ force:true }) 로 호출한다.
 let __loadPromise = null;
 
-// ── [읽기 절감] localStorage 캐시 영속화 ──
-// 한 번 읽은 전체 데이터를 브라우저에 저장해두고, 짧은 TTL 안에는 서버를
-// 다시 읽지 않는다. 새로고침·새 탭·재방문에서 읽기가 거의 0이 된다.
-// 쓰기는 항상 서버(fbSet)로 가므로 서버가 원본이고, 캐시는 표시 가속용이다.
-const CACHE_KEY = 'fitcms_cache_v1';
-const CACHE_TTL_MS = 5 * 60 * 1000; // 5분 — 이 안에는 서버 재조회 안 함
+// ── 새로고침 캐시(localStorage) ──────────────────────────────
+// 모듈 싱글턴 캐시는 새로고침(F5)·새 탭이면 사라져 매번 전 컬렉션을 다시 읽는다.
+// 짧은 TTL 동안 localStorage 스냅샷에서 복원하면 새로고침 직후 재접속은 읽기 0건.
+// 운영 데이터라 신선도가 중요하므로 TTL 은 짧게(5분). 본인 쓰기는 캐시에 즉시
+// 반영되고 스냅샷도 갱신되므로 본인 편집은 항상 최신. 다른 기기의 변경만 최대
+// TTL 만큼 지연될 수 있다. force 로딩 시에는 캐시를 무시하고 새로 읽는다.
+const __SNAP_KEY = 'fitcms_snap';
+const __SNAP_TTL_MS = 5 * 60 * 1000;
+const __SNAP_VER = DATA_VERSION;
 
-function persistCache() {
-  try {
-    if (typeof localStorage === 'undefined') return;
-    const payload = {
-      savedAt: Date.now(),
-      version: DATA_VERSION,
-      data: {
-        members: cache.members, trainers: cache.trainers, schedules: cache.schedules,
-        notices: cache.notices, payments: cache.payments, body: cache.body, ai: cache.ai,
-        settings: cache.settings, expenses: cache.expenses, promos: cache.promos,
-        settleOverrides: cache.settleOverrides, gaitReports: cache.gaitReports,
-      },
-    };
-    localStorage.setItem(CACHE_KEY, JSON.stringify(payload));
-  } catch (e) { /* 용량초과 등 — 무시(다음 로딩이 서버에서 채움) */ }
-}
-
-function hydrateFromCache() {
+function __readSnapshot() {
   try {
     if (typeof localStorage === 'undefined') return null;
-    const raw = localStorage.getItem(CACHE_KEY);
+    const raw = localStorage.getItem(__SNAP_KEY);
     if (!raw) return null;
-    const p = JSON.parse(raw);
-    if (p.version !== DATA_VERSION || !p.data) return null;
-    Object.assign(cache, p.data);
-    const fresh = (Date.now() - (p.savedAt || 0)) < CACHE_TTL_MS;
-    return { fresh };
+    const snap = JSON.parse(raw);
+    if (snap.ver !== __SNAP_VER) return null;
+    if (Date.now() - snap.at > __SNAP_TTL_MS) return null;
+    return snap.data;
   } catch (e) { return null; }
+}
+function __writeSnapshot(data) {
+  try {
+    if (typeof localStorage === 'undefined') return;
+    localStorage.setItem(__SNAP_KEY, JSON.stringify({ ver: __SNAP_VER, at: Date.now(), data }));
+  } catch (e) { /* 용량 초과 등은 무시 — 다음 로딩 때 Firestore 에서 읽음 */ }
+}
+// 쓰기 후 스냅샷을 최신 캐시로 갱신(본인 편집이 새로고침에도 유지되도록).
+function __refreshSnapshot() {
+  __writeSnapshot({
+    members: cache.members, trainers: cache.trainers, schedules: cache.schedules,
+    notices: cache.notices, payments: cache.payments, body: cache.body,
+    settings: cache.settings, expenses: cache.expenses,
+    promos: cache.promos, settleOverrides: cache.settleOverrides,
+  });
 }
 
 export async function initStore({ force = false } = {}) {
   if (!force && __loadPromise) return __loadPromise; // 이미 로딩(중)이면 그대로 재사용
-
-  // 1) 캐시 즉시 복원 — 화면을 바로 띄우고 읽기 0건.
-  //    캐시가 충분히 신선하면(TTL 내) 서버 조회 자체를 건너뛴다.
-  if (!force) {
-    const h = hydrateFromCache();
-    if (h && h.fresh) {
-      console.log('[FitCMS] 캐시 사용 — 서버 읽기 건너뜀 (TTL 내)');
-      __loadPromise = Promise.resolve();
-      return __loadPromise;
-    }
-  }
-
   __loadPromise = (async () => {
     try {
+      // 1) 새로고침 캐시 우선 — 신선하면 Firestore 읽기 없이 복원.
+      if (!force) {
+        const snap = __readSnapshot();
+        if (snap) {
+          cache.members=snap.members||[]; cache.trainers=snap.trainers||[];
+          cache.schedules=snap.schedules||[]; cache.notices=snap.notices||[];
+          cache.payments=snap.payments||{}; cache.body=snap.body||{};
+          cache.settings=snap.settings||{...INITIAL_SETTINGS};
+          cache.expenses=snap.expenses||[]; cache.promos=snap.promos||[];
+          cache.settleOverrides=snap.settleOverrides||[];
+          cache.ai = {}; cache.gaitReports = {};   // 측정 데이터는 항상 지연 로딩
+          console.log('[FitCMS] 새로고침 캐시에서 복원 — Firestore 읽기 0건');
+          return;
+        }
+      }
+      // 2) 캐시가 없거나 만료 → Firestore 전수 로딩(최초 1회/TTL 경과 시).
       await seedIfEmpty();
-      const [members, trainers, schedules, notices, payments, body, ai, settings, expenses, promos, settleOverrides, gaitReports] = await Promise.all([
+      // [읽기 절감 핵심] ai · gait_reports 는 회원별로만 조회되므로(측정 화면을 열 때),
+      // 앱 시작 시 전수 조회하지 않는다. 빈 캐시로 시작 → 회원 화면에서 그 회원 것만
+      // 지연 로딩(ensureSessions/ensureGaitReports)한다. 측정 데이터가 쌓일수록
+      // 시작 시 읽기가 폭증하던 문제를 차단한다.
+      const [members, trainers, schedules, notices, payments, body, settings, expenses, promos, settleOverrides] = await Promise.all([
         loadCollection('members'),
         loadCollection('trainers'),
         loadCollection('schedules'),
         loadCollection('notices'),
         loadGrouped('payments'),
         loadGrouped('body'),
-        loadGrouped('ai'),
         loadCollection('settings'),
         loadCollection('expenses', { optional: true }),
         loadCollection('promos', { optional: true }),
         loadCollection('settleOverrides', { optional: true }),
-        loadGrouped('gait_reports', { optional: true }),
       ]);
       cache.members=members; cache.trainers=trainers; cache.schedules=schedules;
-      cache.notices=notices; cache.payments=payments; cache.body=body; cache.ai=ai;
+      cache.notices=notices; cache.payments=payments; cache.body=body;
+      cache.ai = {};                 // 지연 로딩 — 회원별로 ensureSessions 시 채움
+      cache.gaitReports = {};        // 지연 로딩 — 회원별로 ensureGaitReports 시 채움
       cache.settings = settings.find(s=>s.id==='config') || {...INITIAL_SETTINGS};
       cache.expenses = expenses;
       cache.promos   = promos;
       cache.settleOverrides = settleOverrides;
-      cache.gaitReports = gaitReports;
-      persistCache(); // 다음 접속을 위해 캐시 저장
+      __refreshSnapshot();           // 새로고침 캐시에 저장
       console.log(`[FitCMS] Firebase 로딩 완료 — 이번 세션 총 읽기 ${__readStats.total}건`);
     } catch (e) {
       __loadPromise = null; // 실패 시 다음 호출에서 재시도 가능하도록 가드 해제
@@ -298,24 +306,19 @@ export async function initStore({ force = false } = {}) {
   return __loadPromise;
 }
 
-// 강제 새로고침(서버에서 다시 읽기) — '새로고침' 버튼 등에서 호출.
-export async function refreshStore() {
-  __loadPromise = null;
-  return initStore({ force: true });
-}
-
 // Firestore 쓰기/삭제 — Promise를 그대로 반환해 호출자가 await/실패 처리할 수 있게 한다.
 // (이전: .catch로 로그만 남겨 실패가 화면에 전달되지 않던 문제 수정)
-// 쓰기 후 캐시를 localStorage 에 반영(디바운스) — TTL 내 재방문에도 최신 유지.
-let __persistTimer = null;
-function schedulePersist() {
-  if (typeof setTimeout === 'undefined') { persistCache(); return; }
-  clearTimeout(__persistTimer);
-  __persistTimer = setTimeout(persistCache, 400);
+// 쓰기 후 새로고침 캐시를 갱신(디바운스) — 본인 편집이 새로고침에도 유지되도록.
+// ai/gait_reports 쓰기는 스냅샷 대상이 아니지만, 호출돼도 무해(현재 cache 만 기록).
+let __snapTimer = null;
+function __touchSnapshot() {
+  if (typeof __refreshSnapshot !== 'function') return;
+  if (__snapTimer) clearTimeout(__snapTimer);
+  __snapTimer = setTimeout(() => { try { __refreshSnapshot(); } catch (e) { /* noop */ } }, 400);
 }
 
-async function fbSet(name, id, data) { const r = await setDoc(doc(db, name, id), data); schedulePersist(); return r; }
-async function fbDelete(name, id)    { const r = await deleteDoc(doc(db, name, id)); schedulePersist(); return r; }
+function fbSet(name, id, data) { return setDoc(doc(db, name, id), data).then(r => { __touchSnapshot(); return r; }); }
+function fbDelete(name, id)    { return deleteDoc(doc(db, name, id)).then(r => { __touchSnapshot(); return r; }); }
 
 // ── Firestore WriteBatch 하드 리밋 대응 ───────────────────────────
 // Firestore writeBatch는 1회 commit당 최대 500개 문서 조작만 허용한다.
@@ -341,7 +344,7 @@ async function fbDeleteBatch(items) {
     part.forEach(({ name, id }) => batch.delete(doc(db, name, id)));
     await batch.commit();
   }
-  schedulePersist();
+  __touchSnapshot();
 }
 
 // 여러 문서를 set/delete 혼합으로 처리 — [{op:'set'|'del', name, id, data?}, ...]
@@ -357,7 +360,7 @@ async function fbWriteBatch(ops) {
     });
     await batch.commit();
   }
-  schedulePersist();
+  __touchSnapshot();
 }
 
 // 저장/삭제 함수는 async — Firestore 완료를 기다리고, 실패 시 캐시를 되돌린다.
@@ -903,10 +906,42 @@ export const store = {
 };
 
 export const aiStore = {
+  // ── 지연 로딩 추적: 이미 읽은 회원은 다시 읽지 않는다(세션 내) ──
+  _aiLoaded: new Set(),
+  _gaitLoaded: new Set(),
+
+  // 회원별 ai 세션을 필요 시점에만 읽어 캐시에 채운다(전수 조회 회피).
+  // 측정 화면 effect 에서 await 후 동기 getSessions 로 읽으면 된다.
+  ensureSessions: async (mid) => {
+    if (!mid || aiStore._aiLoaded.has(mid)) return cache.ai[mid] || [];
+    try {
+      const snap = await countedGetDocs(`ai(mid:${mid})`, query(collection(db, 'ai'), where('__mid', '==', mid)));
+      cache.ai[mid] = snap.docs.map(d => { const { __mid, ...rest } = d.data(); return rest; });
+      aiStore._aiLoaded.add(mid);
+    } catch (e) {
+      console.warn('[aiStore.ensureSessions] 로딩 실패:', e?.code || e?.message);
+      cache.ai[mid] = cache.ai[mid] || [];
+    }
+    return cache.ai[mid];
+  },
+  ensureGaitReports: async (mid) => {
+    if (!mid || aiStore._gaitLoaded.has(mid)) return cache.gaitReports[mid] || [];
+    try {
+      const snap = await countedGetDocs(`gait_reports(mid:${mid})`, query(collection(db, 'gait_reports'), where('__mid', '==', mid)));
+      cache.gaitReports[mid] = snap.docs.map(d => { const { __mid, ...rest } = d.data(); return rest; });
+      aiStore._gaitLoaded.add(mid);
+    } catch (e) {
+      console.warn('[aiStore.ensureGaitReports] 로딩 실패:', e?.code || e?.message);
+      cache.gaitReports[mid] = cache.gaitReports[mid] || [];
+    }
+    return cache.gaitReports[mid];
+  },
+
   getSessions:   (mid)    => cache.ai[mid] || [],
   addSession:    async (mid, s) => {
     const ns={...s, id:uid('ai')}; const prev=cache.ai[mid];
     cache.ai[mid]=[...(cache.ai[mid]||[]), ns];
+    aiStore._aiLoaded.add(mid);   // 이후 ensureSessions 가 덮어쓰지 않도록 로딩됨 표시
     try { await fbSet('ai', ns.id, {...ns, __mid:mid}); return ns; }
     catch(e){ cache.ai[mid]=prev; throw e; }
   },
@@ -929,7 +964,7 @@ export const aiStore = {
     const mid = report?.member?.id || null;
     const r = { ...report, id: uid('gait'), createdAt: new Date().toISOString() };
     // 캐시 즉시 반영(낙관적) — 재조회 없이도 추세에 바로 보이게
-    if (mid) cache.gaitReports[mid] = [...(cache.gaitReports[mid] || []), r];
+    if (mid) { cache.gaitReports[mid] = [...(cache.gaitReports[mid] || []), r]; aiStore._gaitLoaded.add(mid); }
     try {
       await fbSet('gait_reports', r.id, { ...r, __mid: mid });
       return r;

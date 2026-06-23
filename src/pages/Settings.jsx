@@ -39,7 +39,7 @@ export default function Settings({ darkMode, setDarkMode }) {
   const [purgeMsg,     setPurgeMsg]     = useState('');
 
   // ── JSON 백업 (수납 + 신체정보 + AI측정 포함, Firestore 캐시 기반) ──────
-  const handleBackup = () => {
+  const handleBackup = async () => {
     const mm         = String(backupMonth).padStart(2, '0');
     const datePrefix = `${backupYear}-${mm}`;
 
@@ -64,7 +64,9 @@ export default function Settings({ darkMode, setDarkMode }) {
       if (list.length) bodyRecords[m.id] = serializeDoc(list);
     });
 
-    // AI 측정 이력 (전체) — store에서 직접 읽음
+    // AI 측정 이력 (전체) — 백업 시점에만 회원별로 지연 로딩 후 읽음
+    // (평소 앱 사용 중에는 전수 조회하지 않아 읽기를 절감한다.)
+    await Promise.all(memberList.map(m => aiStore.ensureSessions(m.id)));
     const aiSessions = {};
     memberList.forEach(m => {
       const list = aiStore.getSessions(m.id);

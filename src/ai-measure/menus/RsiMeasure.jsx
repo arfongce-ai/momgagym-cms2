@@ -11,6 +11,7 @@ export default function RsiMeasure({ member, onSave, onBack }) {
   const calc = () => {
     const r = calcRSI(flight, contact);
     if (!r) { alert('체공 시간과 접지 시간을 정확히 입력하세요(초 단위).'); return; }
+    if (r.error) { alert(r.message); setResult(null); return; }
     setResult(r);
   };
 
@@ -25,11 +26,11 @@ export default function RsiMeasure({ member, onSave, onBack }) {
     });
   };
 
-  // RSI 등급 (드롭점프 일반 기준)
+  // RSI 등급 (체공/접지 비율, 무단위 — 드롭점프 일반 기준)
   const grade = result
     ? result.rsi >= 2.5 ? { label: '매우 우수', color: 'text-blue-400' }
-    : result.rsi >= 1.5 ? { label: '우수', color: 'text-emerald-400' }
-    : result.rsi >= 1.0 ? { label: '보통', color: 'text-amber-400' }
+    : result.rsi >= 2.0 ? { label: '우수', color: 'text-emerald-400' }
+    : result.rsi >= 1.5 ? { label: '보통', color: 'text-amber-400' }
     : { label: '개선 필요', color: 'text-red-400' }
     : null;
 
@@ -62,11 +63,15 @@ export default function RsiMeasure({ member, onSave, onBack }) {
             <p className="text-xs font-bold text-amber-400 uppercase tracking-widest">RSI</p>
             <p className={`text-sm font-bold ${grade.color}`}>{grade.label}</p>
           </div>
-          <p className="text-center font-mono font-black text-5xl text-slate-100">{result.rsi}<span className="text-lg text-slate-500"> m/s</span></p>
-          <div className="grid grid-cols-2 gap-2 text-center">
+          <p className="text-center font-mono font-black text-5xl text-slate-100">{result.rsi}<span className="text-lg text-slate-500"> (체공/접지)</span></p>
+          <div className="grid grid-cols-3 gap-2 text-center">
             <div className="bg-slate-800 rounded-xl py-2">
               <p className="text-[10px] text-slate-500">점프 높이</p>
               <p className="font-mono font-bold text-slate-200">{result.heightCm} cm</p>
+            </div>
+            <div className="bg-slate-800 rounded-xl py-2">
+              <p className="text-[10px] text-slate-500">RSI(높이)</p>
+              <p className="font-mono font-bold text-slate-200">{result.rsiHeight} m/s</p>
             </div>
             <div className="bg-slate-800 rounded-xl py-2">
               <p className="text-[10px] text-slate-500">이륙 속도</p>
@@ -78,8 +83,9 @@ export default function RsiMeasure({ member, onSave, onBack }) {
       )}
 
       <p className="text-[11px] text-slate-500 leading-relaxed">
-        ※ 체공/접지 시간은 점프매트·고속카메라로 측정합니다. 점프 높이는 체공시간 기반
-        추정값입니다(h = g·t²/8). 카메라 자동측정은 추후 추가됩니다.
+        ※ RSI = 체공시간 ÷ 접지시간(무단위). 체공/접지 시간은 점프매트·고속카메라로
+        측정합니다. 점프 높이는 체공시간 기반 추정값입니다(h = g·t²/8). 카메라 자동
+        측정은 점프 탭의 ‘반응 탄성 점프’ 모드에서 지원합니다.
       </p>
     </div>
   );

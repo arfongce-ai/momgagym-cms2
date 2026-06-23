@@ -26,23 +26,52 @@ export function flightToTakeoffVelocity(flightTimeSec) {
   return (G * flightTimeSec) / 2;
 }
 
+// 수동 입력 sanity 범위 — 카메라 모드(RSI_TUNING)와 동일 기준(ms→s).
+// 접지시간이 80ms 미만이면 물리적으로 불가능(프레임/입력 오류), 800ms 초과면
+// 드롭점프가 아닌 '멈춤'. 체공시간도 비현실적 값(>2s ≈ 4.9m 점프)을 막는다.
+export const RSI_INPUT_RANGE = {
+  minContactSec: 0.08,
+  maxContactSec: 0.80,
+  minFlightSec: 0.10,
+  maxFlightSec: 2.00,
+};
+
 /**
  * RSI 계산.
+ *  표준 정의는 체공/접지 비율(무단위). 높이/접지(m/s)는 보조로 함께 제공.
+ *  입력값이 물리적으로 불가능한 범위면 { error, message } 를 반환한다.
  * @param {number} flightTimeSec 체공 시간(초)
  * @param {number} contactTimeSec 접지 시간(초)
- * @returns {{ height:number, rsi:number, takeoffVelocity:number }|null}
+ * @returns {{ rsi:number, rsiHeight:number, height:number, heightCm:number, takeoffVelocity:number }
+ *          | { error:string, message:string } | null}
  */
 export function calcRSI(flightTimeSec, contactTimeSec) {
   const ft = Number(flightTimeSec), ct = Number(contactTimeSec);
   if (!ft || ft <= 0 || !ct || ct <= 0) return null;
+
+  const R = RSI_INPUT_RANGE;
+  if (ct < R.minContactSec || ct > R.maxContactSec) {
+    return {
+      error: 'contact_out_of_range',
+      message: `접지 시간이 비현실적입니다(${R.minContactSec}~${R.maxContactSec}초 범위). 단위가 초(s)가 맞는지 확인하세요.`,
+    };
+  }
+  if (ft < R.minFlightSec || ft > R.maxFlightSec) {
+    return {
+      error: 'flight_out_of_range',
+      message: `체공 시간이 비현실적입니다(${R.minFlightSec}~${R.maxFlightSec}초 범위). 단위가 초(s)가 맞는지 확인하세요.`,
+    };
+  }
+
   const height = flightToHeight(ft);
   const v = flightToTakeoffVelocity(ft);
   const r3 = (x) => Math.round(x * 1000) / 1000;
   const r2 = (x) => Math.round(x * 100) / 100;
   return {
-    height: r3(height),            // m
+    height: r3(height),                       // m
     heightCm: Math.round(height * 1000) / 10, // cm
-    rsi: r2(height / ct),          // m/s (높이 기반 RSI)
+    rsi: r2(ft / ct),              // 체공/접지 (무단위) — RSI 표준 정의
+    rsiHeight: r2(height / ct),    // 높이/접지 (m/s) — 보조 지표
     takeoffVelocity: r2(v),        // m/s
   };
 }

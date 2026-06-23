@@ -13,6 +13,7 @@ import {
   JumpBiomechAccumulator, jumpPhaseOf,
 } from '../core/jumpBiomechanics';
 import { calcJump } from '../core/performance';
+import { computeRSIFromFlights } from '../core/reactiveJump';
 import { store } from '../../demoData';
 
 // 회원 신체기록(body)에서 최신 체중·키를 가져온다. (Sayers 파워 계산에 체중 필요)
@@ -41,7 +42,7 @@ import { analyzeUploadedVideo, CAPTURE_PRESETS } from '../core/videoAnalyzer';
 // 프레임 신뢰도(가시성) 하한 — 이하 구간은 '주의 구간'으로 집계
 const FRAME_CONF_MIN = 0.8;
 
-export default function JumpUploadAnalysis({ member, onBack, onComplete, onMemberHeightChange }) {
+export default function JumpUploadAnalysis({ member, onBack, onComplete, onMemberHeightChange, jumpType = 'power' }) {
   const [phase, setPhase] = useState('idle'); // idle | ready | analyzing | done | error
   const [progress, setProgress] = useState(0);
   const [errorMsg, setErrorMsg] = useState('');
@@ -167,17 +168,34 @@ export default function JumpUploadAnalysis({ member, onBack, onComplete, onMembe
 
       const biomech = biomechAcc.summary();
 
+      // ── 반응 탄성 점프 모드: 사이클 간 접지시간으로 RSI 산출 ──
+      // 측면 뷰 강제: biomech.view 가 'side'가 아니면 코어가 무효 처리한다.
+      let rsiResult = null;
+      if (jumpType === 'reactive' && tracker) {
+        const frameIntervalMs = avgFps ? Math.round(1000 / avgFps) : null;
+        rsiResult = computeRSIFromFlights(tracker.flights, {
+          frameIntervalMs,
+          view: biomech?.view,
+        });
+      }
+
       const report = {
         ...sum,
         peakPower: power?.peakPower ?? null,
         takeoffVelocity: sum.takeoffVelocity ?? power?.takeoffVelocity ?? null,
         calibHeightCm: effHeightCm,
+        jumpType,
+        rsi: rsiResult,
         source: 'upload',
         precision,
         biomech, // 자세·기술·대칭성 상세 지표
         member: { id: member?.id || null, name: member?.name || null },
         measuredAt: new Date().toISOString(),
       };
+      if (jumpType === 'reactive') {
+        report.valid = report.valid === true && rsiResult?.valid === true;
+        if (rsiResult && rsiResult.valid !== true) report.reason = rsiResult.reason;
+      }
 
       setPhase('done');
       if (typeof onComplete === 'function') await onComplete(report);

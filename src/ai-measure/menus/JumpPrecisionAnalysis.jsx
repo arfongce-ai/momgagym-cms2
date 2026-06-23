@@ -15,7 +15,9 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   StandingCalibrator, JumpFlightTracker,
 } from '../core/jumpBiomechanics';
-import { calcJump } from '../core/performance';
+import { calcJump, calcRSI } from '../core/performance';
+import { computeRSIFromFlights, rsiGrade } from '../core/reactiveJump';
+import { OrientationVoter } from '../core/gaitBiomechanics';
 import { loadPoseLandmarker, detectPoseFrame, isPoseReady } from '../core/poseBackend';
 import { lockZoom, unlockZoom } from '../../utils/viewportLock';
 import { drawMeasurementOverlay } from '../core/recordingOverlay';
@@ -92,7 +94,7 @@ function drawBaseline(canvas, video, baselineFeetY) {
   ctx.setLineDash([]);
 }
 
-export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase, onSave, onMemberHeightChange, onManualComplete }) {
+export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase, onSave, onMemberHeightChange, onManualComplete, jumpType = 'power' }) {
   const saveToFirebase = onSaveToFirebase || onSave;
 
   const [view, setView] = useState('camera');     // camera | preview
@@ -120,6 +122,9 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
 
   const calibRef = useRef(null);     // StandingCalibrator
   const trackerRef = useRef(null);   // JumpFlightTracker
+  const frameDtRef = useRef([]);     // 측정 단계 프레임 간격(ms) 모음 — RSI fps 경고용
+  const orientRef = useRef(null);    // OrientationVoter — 반응(RSI) 모드 측면뷰 강제용
+  const prevFrameTsRef = useRef(0);  // 직전 프레임 타임스탬프(간격 계산용)
   const heightRef = useRef(heightCm);
   const autoSavedRef = useRef(null);
 
@@ -153,6 +158,8 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
   const resetPipeline = () => {
     calibRef.current = new StandingCalibrator({ heightCm: heightRef.current });
     trackerRef.current = null;
+    frameDtRef.current = [];
+    prevFrameTsRef.current = 0;
     setPhase('arming');
     setJumpCount(0);
     setReportData(null);
@@ -292,6 +299,8 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
             // 락 완료 → 트래커 생성, 측정 준비, 오버레이 녹화 시작
             trackerRef.current = new JumpFlightTracker(calib.result);
             trackerRef.current.calibHeightCm = heightRef.current;
+            // 반응(RSI) 모드: 측면뷰 강제를 위해 방향 누적기 준비
+            orientRef.current = jumpType === 'reactive' ? new OrientationVoter() : null;
             setPhaseOnce('ready');
             setMsgOnce('');
             startRecording();
@@ -305,7 +314,20 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
           }
         } else {
           // ── 측정 단계 ──
+          // 프레임 간격(ms) 수집 — RSI 접지시간 정확도(fps) 판정용
           tracker.push(landmarks, ts);
+          // 반응(RSI) 모드: 측면뷰 판정용 방향 누적
+          if (orientRef.current) orientRef.current.push(landmarks);
+          const prevTs = prevFrameTsRef.current;
+          if (prevTs > 0) {
+            const dt = ts - prevTs;
+            if (dt > 0 && dt < 200) {
+              const arr = frameDtRef.current;
+              arr.push(dt);
+              if (arr.length > 300) arr.shift();
+            }
+          }
+          prevFrameTsRef.current = ts;
           setPhaseOnce(tracker.inAir ? 'air' : 'ready');
           const c = tracker.flights.length;
           if (c !== lastCount) {
@@ -341,17 +363,38 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
     const sum = tracker.summary({ heightCm: heightRef.current });
     // performance.calcJump 로 파워(Sayers)까지 일관 산출 (체중 있으면)
     const power = calcJump(sum.flightTimeSec, member?.weight);
+
+    // ── 반응 탄성 점프 모드: 사이클 간 접지시간으로 RSI 산출 ──
+    // 측면뷰 강제: 누적된 방향이 'side'가 아니면 코어가 무효 처리한다.
+    let rsiResult = null;
+    if (jumpType === 'reactive') {
+      const dts = frameDtRef.current.slice().sort((a, b) => a - b);
+      const medDt = dts.length ? dts[Math.floor(dts.length / 2)] : null;
+      const decidedView = orientRef.current ? orientRef.current.decide() : undefined;
+      rsiResult = computeRSIFromFlights(tracker.flights, {
+        frameIntervalMs: medDt,
+        view: decidedView,
+      });
+    }
+
     const report = {
       ...sum,
       heightCm: sum.heightCm,
       takeoffVelocity: sum.takeoffVelocity,
       peakPower: power?.peakPower ?? null,
       calibHeightCm: heightRef.current,
+      jumpType,                       // 'power' | 'reactive'
+      rsi: rsiResult,                 // 반응 모드에서만 채워짐(null 가능)
       source: 'live',
       videoBlob, // 오버레이 합성 녹화본 (저장은 안 함, 화면에서 '동영상 저장'에 사용)
       member: { id: member?.id || null, name: member?.name || null },
       measuredAt: new Date().toISOString(),
     };
+    // 반응 모드는 RSI(접지시간) 측정 성공 여부까지 유효성에 반영
+    if (jumpType === 'reactive') {
+      report.valid = report.valid === true && rsiResult?.valid === true;
+      if (rsiResult && rsiResult.valid !== true) report.reason = rsiResult.reason;
+    }
     setReportData(report);
     setView('preview');
     stopCamera();
@@ -371,7 +414,10 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
 
   const handleManualSave = async () => {
     if (!reportData || reportData.valid !== true || !saveToFirebase) return;
-    await autoSave(reportData);
+    // 자동 저장과 동일하게 videoBlob 은 저장 페이로드에서 제외(Firestore 오염 방지).
+    const { videoBlob: _vb, ...dataOnly } = reportData;
+    autoSavedRef.current = reportData.measuredAt;   // 중복 저장 방지 마킹
+    await autoSave(dataOnly);
   };
 
   const retry = () => { setView('camera'); };
@@ -493,7 +539,7 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
             </button>
           </div>
           {showManual && (
-            <ManualEntryModal member={member}
+            <ManualEntryModal member={member} jumpType={jumpType}
               onClose={() => setShowManual(false)}
               onSubmit={async (report) => { setShowManual(false); await (onManualComplete || onSaveToFirebase)?.(report); }} />
           )}
@@ -622,19 +668,51 @@ function Stat({ label, value }) {
 
 // 수동 입력 모달 — 실시간 화면 안에서 체공시간 직접 입력(점프매트/타이머).
 // 자동 측정과 동일한 리포트 페이로드를 만들어 동일 저장 흐름을 탄다.
-function ManualEntryModal({ member, onClose, onSubmit }) {
+function ManualEntryModal({ member, jumpType = 'power', onClose, onSubmit }) {
+  const isReactive = jumpType === 'reactive';
   const [flight, setFlight] = useState('');
+  const [contact, setContact] = useState('');   // 반응 모드 전용(접지 시간)
   const [weight, setWeight] = useState(member?.weight ? String(member.weight) : '');
   const [busy, setBusy] = useState(false);
 
   const submit = async () => {
     const ft = Number(flight);
     if (!ft || ft <= 0 || ft > 1.5) { alert('체공 시간을 초 단위로 입력하세요. (예: 0.50)'); return; }
+
+    // ── 반응(RSI) 모드: 접지 시간이 있어야 RSI 산출 가능 ──
+    if (isReactive) {
+      const r = calcRSI(ft, Number(contact));
+      if (!r) { alert('접지 시간을 초 단위로 입력하세요. (예: 0.20)'); return; }
+      if (r.error) { alert(r.message); return; }
+      setBusy(true);
+      await onSubmit?.({
+        valid: true, reason: 'ok', source: 'manual', jumpType: 'reactive', jumps: 1,
+        flightTimeSec: ft, flightTimeMs: Math.round(ft * 1000),
+        contactTimeSec: Number(contact), contactTimeMs: Math.round(Number(contact) * 1000),
+        heightCm: r.heightCm, takeoffVelocity: r.takeoffVelocity,
+        // 수동 RSI 결과를 카메라 RSI 와 같은 형태로 담아 리포트가 동일하게 표시
+        rsi: {
+          valid: true, reason: 'ok', mode: 'reactive', method: 'flight_over_contact',
+          view: null, cycles: 1, rsi: r.rsi, rsiBasis: 'manual', rsiBest: r.rsi,
+          rsiMean: r.rsi, rsiHeight: r.rsiHeight,
+          contactTimeMs: Math.round(Number(contact) * 1000),
+          flightTimeMs: Math.round(ft * 1000), heightCm: r.heightCm,
+          cvPct: null, grade: rsiGrade(r.rsi), lowFps: false,
+          frameIntervalMs: null, framesPerContact: null, perCycle: [],
+        },
+        member: { id: member?.id || null, name: member?.name || null },
+        measuredAt: new Date().toISOString(),
+      });
+      setBusy(false);
+      return;
+    }
+
+    // ── 파워 모드: 체공시간만으로 높이/파워 ──
     const r = calcJump(ft, weight ? Number(weight) : null);
     if (!r) { alert('계산 실패 — 입력값을 확인하세요.'); return; }
     setBusy(true);
     await onSubmit?.({
-      valid: true, reason: 'ok', source: 'manual', jumps: 1,
+      valid: true, reason: 'ok', source: 'manual', jumpType: 'power', jumps: 1,
       flightTimeSec: ft, flightTimeMs: Math.round(ft * 1000),
       heightCm: r.heightCm, takeoffVelocity: r.takeoffVelocity, peakPower: r.peakPower,
       bodyWeight: weight ? Number(weight) : null,
@@ -650,7 +728,7 @@ function ManualEntryModal({ member, onClose, onSubmit }) {
     <div className="absolute inset-0 z-[88] bg-black/70 backdrop-blur-sm flex items-center justify-center p-6" onClick={onClose}>
       <div className="w-full max-w-sm bg-slate-900 border border-amber-500/30 rounded-2xl p-5 space-y-4" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between">
-          <p className="text-white font-black">✍️ 수동 입력</p>
+          <p className="text-white font-black">✍️ 수동 입력 {isReactive && <span className="text-emerald-400 text-xs">· RSI</span>}</p>
           <button onClick={onClose} className="text-slate-400 text-sm font-bold">닫기 ✕</button>
         </div>
         <div>
@@ -660,17 +738,31 @@ function ManualEntryModal({ member, onClose, onSubmit }) {
             className="w-full bg-slate-800 border border-slate-700 text-slate-100 rounded-lg px-3 py-2.5 text-base font-mono focus:outline-none focus:border-amber-500" />
           <p className="text-[11px] text-slate-500 mt-1">점프매트·앱 타이머로 잰 발이 떠 있던 시간</p>
         </div>
-        <div>
-          <label className="block text-xs font-semibold text-slate-400 mb-1.5">체중 (kg) <span className="text-slate-600">— 파워 계산 시</span></label>
-          <input type="number" inputMode="numeric" step="0.1" value={weight}
-            onChange={e => setWeight(e.target.value)} placeholder="70"
-            className="w-full bg-slate-800 border border-slate-700 text-slate-100 rounded-lg px-3 py-2.5 text-base font-mono focus:outline-none focus:border-amber-500" />
-        </div>
+        {isReactive ? (
+          <div>
+            <label className="block text-xs font-semibold text-slate-400 mb-1.5">접지 시간 (초)</label>
+            <input type="number" inputMode="decimal" step="0.01" value={contact}
+              onChange={e => setContact(e.target.value)} placeholder="0.20"
+              className="w-full bg-slate-800 border border-slate-700 text-slate-100 rounded-lg px-3 py-2.5 text-base font-mono focus:outline-none focus:border-emerald-500" />
+            <p className="text-[11px] text-slate-500 mt-1">착지 후 다시 뛰기까지 지면에 닿은 시간. RSI = 체공 ÷ 접지</p>
+          </div>
+        ) : (
+          <div>
+            <label className="block text-xs font-semibold text-slate-400 mb-1.5">체중 (kg) <span className="text-slate-600">— 파워 계산 시</span></label>
+            <input type="number" inputMode="numeric" step="0.1" value={weight}
+              onChange={e => setWeight(e.target.value)} placeholder="70"
+              className="w-full bg-slate-800 border border-slate-700 text-slate-100 rounded-lg px-3 py-2.5 text-base font-mono focus:outline-none focus:border-amber-500" />
+          </div>
+        )}
         <button onClick={submit} disabled={busy}
           className="w-full rounded-xl bg-amber-500 text-slate-950 font-black py-3 active:scale-95 disabled:opacity-60">
-          {busy ? '계산 중...' : '점프 분석'}
+          {busy ? '계산 중...' : isReactive ? 'RSI 분석' : '점프 분석'}
         </button>
-        <p className="text-[11px] text-slate-500">높이 h=g·t²/8, 이륙속도 v=g·t/2, 최고파워는 Sayers(체중 입력 시) 추정값.</p>
+        <p className="text-[11px] text-slate-500">
+          {isReactive
+            ? 'RSI = 체공 ÷ 접지(무단위). 높이 h=g·t²/8 추정값.'
+            : '높이 h=g·t²/8, 이륙속도 v=g·t/2, 최고파워는 Sayers(체중 입력 시) 추정값.'}
+        </p>
       </div>
     </div>
   );

@@ -37,10 +37,15 @@ export function estimate1RM(weight, reps) {
   }
   const formulas = RM_FORMULAS.map(f => {
     let v = f.fn(w, r);
-    if (!isFinite(v) || v <= 0) v = w; // 분모 0 등 방어
-    return { key: f.key, label: f.label, value: r1(v) };
+    // 1RM 추정치는 반드시 든 무게(w) 이상이어야 한다. 분모 0/음수 등으로
+    // 비물리적 값이 나오면(예: Brzycki 의 r≥37) 평균을 왜곡하지 않도록 제외 표시.
+    const ok = isFinite(v) && v >= w;
+    return { key: f.key, label: f.label, value: ok ? r1(v) : null, excluded: !ok };
   });
-  const avg = formulas.reduce((s, f) => s + f.value, 0) / formulas.length;
+  const used = formulas.filter(f => f.value != null);
+  const avg = used.length
+    ? used.reduce((s, f) => s + f.value, 0) / used.length
+    : w;
   const get = (k) => formulas.find(f => f.key === k)?.value;
   return {
     average: r1(avg),

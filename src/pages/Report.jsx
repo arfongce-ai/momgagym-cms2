@@ -1,6 +1,6 @@
 // pages/Report.jsx
 // 측정 리포트 페이지: 회원 선택 → 실측 데이터 그래프/요약 → JPG 다운로드.
-import { useState, useMemo, lazy, Suspense } from 'react';
+import { useState, useMemo, useEffect, lazy, Suspense } from 'react';
 import { todayYMD } from '../utils/dates';
 import { useAuth } from '../contexts/AuthContext';
 import { scopeMembersToTrainer, sortByName } from '../utils/memberList';
@@ -39,6 +39,22 @@ export default function Report() {
 
   const member = members.find(m => m.id === memberId);
 
+  // [읽기 절감] 선택된 회원의 측정 데이터(ai · gait_reports)만 지연 로딩.
+  // 로딩 완료 후 dataReady 가 바뀌면 아래 useMemo 들이 재계산된다.
+  const [dataReady, setDataReady] = useState(0);
+  useEffect(() => {
+    if (!member) return;
+    let alive = true;
+    (async () => {
+      await Promise.all([
+        aiStore.ensureSessions(member.id),
+        aiStore.ensureGaitReports(member.id),
+      ]);
+      if (alive) setDataReady(v => v + 1);
+    })();
+    return () => { alive = false; };
+  }, [member?.id]);
+
   const report = useMemo(() => {
     if (!member) return null;
     return buildFullReport({
@@ -46,20 +62,20 @@ export default function Report() {
       bodyRecords: store.getBodyRecords(member.id),
       aiSessions:  aiStore.getSessions(member.id),
     });
-  }, [member]);
+  }, [member, dataReady]);
 
   // 보행/점프 분석 회차별 추세 (gait_reports)
   const trend = useMemo(() => {
     if (!member) return null;
     return buildAnalysisTrend(aiStore.getGaitReports(member.id));
-  }, [member]);
+  }, [member, dataReady]);
 
   // 저장된 AI 측정 리포트 목록 (최신순) — 페이지별 열람용
   const savedReports = useMemo(() => {
     if (!member) return [];
     return [...(aiStore.getGaitReports(member.id) || [])]
       .sort((a, b) => String(b.createdAt || b.measuredAt).localeCompare(String(a.createdAt || a.measuredAt)));
-  }, [member]);
+  }, [member, dataReady]);
   const [viewerIdx, setViewerIdx] = useState(null); // 열람 중인 리포트 인덱스
   const [expandedMenu, setExpandedMenu] = useState(null); // 펼친 측정 메뉴
 
@@ -77,7 +93,7 @@ export default function Report() {
       map[k].sort((a, b) => String(a.recordedAt || a.recordedAtFull).localeCompare(String(b.recordedAt || b.recordedAtFull)));
     }
     return map;
-  }, [member]);
+  }, [member, dataReady]);
 
   const handleDownload = async () => {
     if (!report) return;

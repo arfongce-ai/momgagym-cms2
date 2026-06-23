@@ -4,7 +4,7 @@
 //   - 과거 대비 변화 자동 요약 (예: 골격근량 +0.2kg)
 //   - try-catch 완비
 import { useState, useEffect } from 'react';
-import { getAiSessions, deleteAiSession, calcChanges } from '../../services/aiService';
+import { getAiSessions, loadAiSessions, deleteAiSession, calcChanges } from '../../services/aiService';
 import { useAuth } from '../../contexts/AuthContext';
 
 const FIELD_LABEL = {
@@ -148,14 +148,18 @@ function SessionCard({ session, prevSession, onDelete, isAdmin }) {
 export default function MemberMeasureHistory({ member, onNewMeasure }) {
   const { user }        = useAuth();
   const [sessions, setSessions] = useState([]);
+  const [loading, setLoading] = useState(true);
   const isAdmin = user?.role === 'admin';
 
-  const load = () => {
+  const load = async () => {
+    setLoading(true);
     try {
-      setSessions(getAiSessions(member.id));
+      setSessions(await loadAiSessions(member.id));
     } catch (err) {
       console.error('[MemberMeasureHistory] 로드 오류:', err);
       setSessions([]);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -182,8 +186,15 @@ export default function MemberMeasureHistory({ member, onNewMeasure }) {
         🤖 + 새 AI 측정 시작
       </button>
 
+      {/* 로딩 중 */}
+      {loading && (
+        <div className="text-center py-10 text-slate-600">
+          <p className="text-sm">측정 이력 불러오는 중…</p>
+        </div>
+      )}
+
       {/* 이력 없음 */}
-      {sessions.length === 0 && (
+      {!loading && sessions.length === 0 && (
         <div className="text-center py-10 text-slate-600">
           <p className="text-3xl mb-2">📊</p>
           <p className="text-sm">측정 이력이 없습니다</p>
@@ -192,7 +203,7 @@ export default function MemberMeasureHistory({ member, onNewMeasure }) {
       )}
 
       {/* 카드 나열 */}
-      {sessions.map((session, idx) => (
+      {!loading && sessions.map((session, idx) => (
         <SessionCard
           key={session.id}
           session={session}
