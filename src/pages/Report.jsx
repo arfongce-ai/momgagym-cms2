@@ -5,7 +5,7 @@ import { todayYMD } from '../utils/dates';
 import { useAuth } from '../contexts/AuthContext';
 import { scopeMembersToTrainer, sortByName } from '../utils/memberList';
 import { store, aiStore } from '../demoData';
-import { buildFullReport } from '../services/reportService';
+import { buildFullReport, buildAnalysisTrend } from '../services/reportService';
 import { buildReportSvg, downloadSvgAsJpg } from '../components/report/reportImage';
 import TrendChart from '../components/report/TrendChart';
 
@@ -28,6 +28,12 @@ export default function Report() {
       bodyRecords: store.getBodyRecords(member.id),
       aiSessions:  aiStore.getSessions(member.id),
     });
+  }, [member]);
+
+  // 보행/점프 분석 회차별 추세 (gait_reports)
+  const trend = useMemo(() => {
+    if (!member) return null;
+    return buildAnalysisTrend(aiStore.getGaitReports(member.id));
   }, [member]);
 
   const handleDownload = async () => {
@@ -127,7 +133,54 @@ export default function Report() {
             </div>
           )}
 
-          {/* 텍스트 설명 */}
+          {/* 점프 회차별 추세 */}
+          {trend?.jump?.count > 0 && (
+            <div>
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">
+                점프 추세 ({trend.jump.count}회)
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {trend.jump.height.length > 1 && (
+                  <TrendChart title="점프 높이" unit="cm" points={trend.jump.height} color="#f59e0b" width={320} height={150} />
+                )}
+                {trend.jump.peakPower.length > 1 && (
+                  <TrendChart title="최대 파워" unit="W" points={trend.jump.peakPower} color="#22d3ee" width={320} height={150} />
+                )}
+                {trend.jump.footSym.length > 1 && (
+                  <TrendChart title="착지 대칭" unit="%" points={trend.jump.footSym} color="#34d399" width={320} height={150} />
+                )}
+                {trend.jump.landKnee.length > 1 && (
+                  <TrendChart title="착지 무릎각" unit="°" points={trend.jump.landKnee} color="#a78bfa" width={320} height={150} />
+                )}
+              </div>
+              {trend.jump.height.length === 1 && (
+                <p className="text-[11px] text-slate-500 mt-1">측정이 1회뿐이라 추세 그래프는 2회차부터 표시됩니다.</p>
+              )}
+            </div>
+          )}
+
+          {/* 보행 회차별 추세 */}
+          {trend?.gait?.count > 0 && (
+            <div>
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">
+                보행 추세 ({trend.gait.count}회)
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {trend.gait.cadence.length > 1 && (
+                  <TrendChart title="케이던스" unit="SPM" points={trend.gait.cadence} color="#f59e0b" width={320} height={150} />
+                )}
+                {trend.gait.pelvicDrop.length > 1 && (
+                  <TrendChart title="골반 드롭" unit="%" points={trend.gait.pelvicDrop} color="#ef4444" width={320} height={150} />
+                )}
+                {trend.gait.kneeSym.length > 1 && (
+                  <TrendChart title="무릎 대칭" unit="%" points={trend.gait.kneeSym} color="#34d399" width={320} height={150} />
+                )}
+              </div>
+              {trend.gait.cadence.length === 1 && (
+                <p className="text-[11px] text-slate-500 mt-1">측정이 1회뿐이라 추세 그래프는 2회차부터 표시됩니다.</p>
+              )}
+            </div>
+          )}
           {report.notes.length > 0 && (
             <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
               <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">분석 설명</p>

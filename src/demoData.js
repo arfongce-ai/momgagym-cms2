@@ -134,7 +134,7 @@ const INITIAL_SETTINGS = {
 
 const cache = {
   members:[], trainers:[], schedules:[], notices:[], payments:{}, body:{}, ai:{},
-  settings:{...INITIAL_SETTINGS}, expenses:[], promos:[], settleOverrides:[],
+  settings:{...INITIAL_SETTINGS}, expenses:[], promos:[], settleOverrides:[], gaitReports:{},
 };
 
 // 충돌 방지 ID 생성기 — Date.now()만 쓰면 같은 밀리초에 두 건이 생길 때
@@ -217,7 +217,7 @@ export async function initStore({ force = false } = {}) {
   __loadPromise = (async () => {
     try {
       await seedIfEmpty();
-      const [members, trainers, schedules, notices, payments, body, ai, settings, expenses, promos, settleOverrides] = await Promise.all([
+      const [members, trainers, schedules, notices, payments, body, ai, settings, expenses, promos, settleOverrides, gaitReports] = await Promise.all([
         loadCollection('members'),
         loadCollection('trainers'),
         loadCollection('schedules'),
@@ -229,6 +229,7 @@ export async function initStore({ force = false } = {}) {
         loadCollection('expenses', { optional: true }),
         loadCollection('promos', { optional: true }),
         loadCollection('settleOverrides', { optional: true }),
+        loadGrouped('gait_reports', { optional: true }),
       ]);
       cache.members=members; cache.trainers=trainers; cache.schedules=schedules;
       cache.notices=notices; cache.payments=payments; cache.body=body; cache.ai=ai;
@@ -236,6 +237,7 @@ export async function initStore({ force = false } = {}) {
       cache.expenses = expenses;
       cache.promos   = promos;
       cache.settleOverrides = settleOverrides;
+      cache.gaitReports = gaitReports;
       console.log(`[FitCMS] Firebase 로딩 완료 — 이번 세션 총 읽기 ${__readStats.total}건`);
     } catch (e) {
       __loadPromise = null; // 실패 시 다음 호출에서 재시도 가능하도록 가드 해제
@@ -853,11 +855,21 @@ export const aiStore = {
     await fbDeleteBatch(list.map(s=>({name:'ai',id:s.id})));
     delete cache.ai[mid];
   },
-  // 보행 분석 전용 리포트 컬렉션(gait_reports)에 정량 데이터만 저장.
-  // 영상은 기기에만 저장되고 여기엔 가벼운 JSON 메타데이터만 남는다.
+  // 분석 리포트 전용 컬렉션(gait_reports)에 정량 데이터를 저장 + 재조회 가능하게.
+  // 보행/점프 모두 이 컬렉션에 쌓아 회차별 비교(추세)에 쓴다.
+  // 영상 자체는 용량이 커 Firestore 에 올리지 않고, 리포트(JSON) + 캡처(JPG)만 남긴다.
+  getGaitReports: (mid) => (cache.gaitReports[mid] || []),
   addGaitReport: async (report) => {
+    const mid = report?.member?.id || null;
     const r = { ...report, id: uid('gait'), createdAt: new Date().toISOString() };
-    await fbSet('gait_reports', r.id, r);
-    return r;
+    // 캐시 즉시 반영(낙관적) — 재조회 없이도 추세에 바로 보이게
+    if (mid) cache.gaitReports[mid] = [...(cache.gaitReports[mid] || []), r];
+    try {
+      await fbSet('gait_reports', r.id, { ...r, __mid: mid });
+      return r;
+    } catch (e) {
+      if (mid) cache.gaitReports[mid] = (cache.gaitReports[mid] || []).filter(x => x.id !== r.id);
+      throw e;
+    }
   },
 };

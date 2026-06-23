@@ -10,8 +10,32 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   StandingCalibrator, JumpFlightTracker,
+  JumpBiomechAccumulator, jumpPhaseOf,
 } from '../core/jumpBiomechanics';
 import { calcJump } from '../core/performance';
+import { store } from '../../demoData';
+
+// 회원 신체기록(body)에서 최신 체중·키를 가져온다. (Sayers 파워 계산에 체중 필요)
+// member 객체에 직접 없을 수 있으므로 store.getBodyRecords 로 최신 기록을 조회한다.
+function resolveBodyMetrics(member, fallbackHeight) {
+  let weight = member?.weight != null ? Number(member.weight) : null;
+  let height = member?.height != null ? Number(member.height) : (fallbackHeight ?? null);
+  try {
+    if (member?.id && typeof store?.getBodyRecords === 'function') {
+      const recs = store.getBodyRecords(member.id) || [];
+      if (recs.length) {
+        // recordedAt 최신 기록 우선
+        const sorted = [...recs].sort((a, b) => String(b.recordedAt).localeCompare(String(a.recordedAt)));
+        for (const r of sorted) {
+          if (weight == null && r.weight != null) weight = Number(r.weight);
+          if (height == null && r.height != null) height = Number(r.height);
+          if (weight != null && height != null) break;
+        }
+      }
+    }
+  } catch (e) { /* 조회 실패 시 member/fallback 값 사용 */ }
+  return { weight: Number.isFinite(weight) ? weight : null, height: Number.isFinite(height) ? height : null };
+}
 import { analyzeUploadedVideo, CAPTURE_PRESETS } from '../core/videoAnalyzer';
 
 // 프레임 신뢰도(가시성) 하한 — 이하 구간은 '주의 구간'으로 집계
@@ -48,8 +72,18 @@ export default function JumpUploadAnalysis({ member, onBack, onComplete }) {
     if (!video) return;
     setPhase('analyzing'); setProgress(0); setErrorMsg('');
 
-    const calib = new StandingCalibrator({ heightCm });
+    // 체중·키는 회원 신체기록(body)에서 최신값을 가져온다(파워 계산용).
+    // member 에 직접 없을 수 있으므로 store 의 body 기록을 조회한다.
+    const resolved = resolveBodyMetrics(member, heightCm);
+    const effHeightCm = resolved.height ?? heightCm;
+    const effWeight = resolved.weight;
+
+    const calib = new StandingCalibrator({ heightCm: effHeightCm });
     let tracker = null;
+    const biomechAcc = new JumpBiomechAccumulator({ heightCm: effHeightCm });
+    let prevInAir = false;
+    let landFramesLeft = 0;            // 착지 직후 'land' 위상으로 볼 프레임 수
+    const LAND_WINDOW = 10;           // 착지 후 약 10프레임을 충격 흡수 구간으로
     let analyzedFrames = 0, lowConfFrames = 0;
     const lowConfTimes = []; // 주의 구간(저신뢰) realMs 목록
     const tsList = [];       // 실측 평균 fps 계산용 (realMs)
@@ -76,10 +110,20 @@ export default function JumpUploadAnalysis({ member, onBack, onComplete }) {
             calib.push(landmarks);
             if (calib.locked) {
               tracker = new JumpFlightTracker(calib.result);
-              tracker.calibHeightCm = heightCm;
+              tracker.calibHeightCm = effHeightCm;
             }
           } else if (tracker) {
             tracker.push(landmarks, tMs); // tMs = 슬로모 보정된 실제 시간축
+            // ── 위상 판정 후 생체역학 누적 ──
+            const curInAir = tracker.inAir;
+            const justTookOff = !prevInAir && curInAir;
+            const justLanded = prevInAir && !curInAir;
+            if (justLanded) landFramesLeft = LAND_WINDOW;
+            const landActive = landFramesLeft > 0;
+            const { phase: jp } = jumpPhaseOf(prevInAir, curInAir, landActive);
+            biomechAcc.push(landmarks, tMs, jp, justTookOff);
+            if (landActive && !curInAir) landFramesLeft--;
+            prevInAir = curInAir;
           }
         },
       });
@@ -91,9 +135,9 @@ export default function JumpUploadAnalysis({ member, onBack, onComplete }) {
         setPhase('error'); return;
       }
 
-      const sum = tracker ? tracker.summary({ heightCm })
+      const sum = tracker ? tracker.summary({ heightCm: effHeightCm })
         : { valid: false, reason: 'no_jump', jumps: 0 };
-      const power = calcJump(sum.flightTimeSec, member?.weight);
+      const power = calcJump(sum.flightTimeSec, effWeight);
 
       // ── 정밀도 리포트 (요구사항 3) ──
       // 실측 평균 fps: 분석한 프레임의 realMs 간격으로 역산. 컨테이너 기준.
@@ -121,12 +165,16 @@ export default function JumpUploadAnalysis({ member, onBack, onComplete }) {
         durationSec: Math.round((result.realDurationSec || 0) * 100) / 100,
       };
 
+      const biomech = biomechAcc.summary();
+
       const report = {
         ...sum,
         peakPower: power?.peakPower ?? null,
-        calibHeightCm: heightCm,
+        takeoffVelocity: sum.takeoffVelocity ?? power?.takeoffVelocity ?? null,
+        calibHeightCm: effHeightCm,
         source: 'upload',
         precision,
+        biomech, // 자세·기술·대칭성 상세 지표
         member: { id: member?.id || null, name: member?.name || null },
         measuredAt: new Date().toISOString(),
       };

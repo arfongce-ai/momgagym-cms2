@@ -39,10 +39,13 @@ export default function AiMeasureHub() {
         recordedAtFull: new Date().toISOString(),
         data,
       });
-      // 보행 분석은 전용 컬렉션(gait_reports)에도 정량 리포트를 추가 저장 → 데이터 일원화.
+      // 보행/점프 분석은 전용 컬렉션(gait_reports)에도 정량 리포트를 추가 저장 → 회차별 비교.
       if (isGait) {
-        await aiStore.addGaitReport({ ...data, member: { id: member.id, name: member.name } });
+        await aiStore.addGaitReport({ ...data, kind: 'gait', member: { id: member.id, name: member.name } });
         return; // 컴포넌트가 ✓ 표시
+      }
+      if (active.id === 'jump' && data?.valid === true) {
+        await aiStore.addGaitReport({ ...data, kind: 'jump', member: { id: member.id, name: member.name } });
       }
       alert('측정이 저장되었습니다.');
     } catch (e) {

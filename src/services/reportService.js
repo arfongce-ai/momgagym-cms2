@@ -155,3 +155,40 @@ export function buildFullReport({ member, bodyRecords, aiSessions }) {
     hasData,
   };
 }
+
+/**
+ * 분석 리포트(gait_reports) → 회차별 추세 시계열.
+ * 보행/점프를 kind 로 구분해 각각의 핵심 지표를 날짜순 series 로 만든다.
+ * @param {Array} reports aiStore.getGaitReports(mid) 결과
+ */
+export function buildAnalysisTrend(reports = []) {
+  const sorted = [...reports].sort((a, b) =>
+    String(a.createdAt || a.measuredAt).localeCompare(String(b.createdAt || b.measuredAt))
+  );
+  const dateOf = (r) => String(r.createdAt || r.measuredAt || '').slice(0, 10);
+
+  // 점프 추세
+  const jumpRows = sorted.filter(r => r.kind === 'jump' || r.heightCm != null && r.flightTimeMs != null);
+  const jump = {
+    count: jumpRows.length,
+    height:      jumpRows.map(r => ({ date: dateOf(r), value: num(r.heightCm) })).filter(p => p.value != null),
+    flightMs:    jumpRows.map(r => ({ date: dateOf(r), value: num(r.flightTimeMs) })).filter(p => p.value != null),
+    peakPower:   jumpRows.map(r => ({ date: dateOf(r), value: num(r.peakPower) })).filter(p => p.value != null),
+    footSym:     jumpRows.map(r => ({ date: dateOf(r), value: num(r.biomech?.footLandingSymmetry?.symmetryPct) })).filter(p => p.value != null),
+    landKnee:    jumpRows.map(r => ({ date: dateOf(r), value: num(r.biomech?.landingKneeAngle) })).filter(p => p.value != null),
+    latest: jumpRows.at(-1) || null,
+  };
+
+  // 보행 추세 (metrics 폴백 포함)
+  const gaitRows = sorted.filter(r => r.kind === 'gait' || (r.cadence != null || r.metrics?.cadence != null));
+  const gm = (r, k) => num(r[k] ?? r.metrics?.[k]);
+  const gait = {
+    count: gaitRows.length,
+    cadence:     gaitRows.map(r => ({ date: dateOf(r), value: gm(r, 'cadence') })).filter(p => p.value != null),
+    pelvicDrop:  gaitRows.map(r => ({ date: dateOf(r), value: num(r.pelvicDropAbs ?? r.metrics?.pelvicDropAbs) })).filter(p => p.value != null),
+    kneeSym:     gaitRows.map(r => ({ date: dateOf(r), value: num(r.kneeSymmetry ?? r.metrics?.kneeSymmetry) })).filter(p => p.value != null),
+    latest: gaitRows.at(-1) || null,
+  };
+
+  return { jump, gait };
+}

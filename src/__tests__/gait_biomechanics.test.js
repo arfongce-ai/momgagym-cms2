@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   angleAt, OneEuroFilter, Resampler, GaitCycleTracker,
   jointAnglesFromPose, AngleAccumulator, pelvisRelativeFeet, cameraAngleQuality,
+  detectOrientation, OrientationVoter,
 } from '../ai-measure/core/gaitBiomechanics.js';
 
 const rot = (p, deg) => {
@@ -126,5 +127,49 @@ describe('jointAnglesFromPose / AngleAccumulator', () => {
     const sum = acc.summary();
     expect(sum.hip.avg).toBe(160);
     expect(sum.hip.rom).toBe(20);
+  });
+});
+
+// ── 촬영 방향 감지 (후면 감지 개선) ──
+describe('detectOrientation (히스테리시스)', () => {
+  // 어깨/골반 너비와 몸통높이로 측면(좁음) vs 후면(넓음) 판정
+  const pose = ({ width, vis = 0.95 }) => {
+    const a = Array.from({ length: 33 }, () => ({ x: 0.5, y: 0.5, visibility: vis }));
+    a[11] = { x: 0.5 - width / 2, y: 0.3, visibility: vis };
+    a[12] = { x: 0.5 + width / 2, y: 0.3, visibility: vis };
+    a[23] = { x: 0.5 - width / 2, y: 0.6, visibility: vis };
+    a[24] = { x: 0.5 + width / 2, y: 0.6, visibility: vis };
+    return a;
+  };
+
+  it('넓은 어깨/골반 → 후면(back)으로 감지', () => {
+    const o = detectOrientation(pose({ width: 0.25 })); // ratio ~0.83
+    expect(o.view).toBe('back');
+  });
+
+  it('좁은 어깨/골반 → 측면(side)으로 감지', () => {
+    const o = detectOrientation(pose({ width: 0.03 })); // ratio ~0.1
+    expect(o.view).toBe('side');
+  });
+
+  it('가시성이 낮으면 unknown (오판 방지)', () => {
+    const o = detectOrientation(pose({ width: 0.25, vis: 0.2 }));
+    expect(o.view).toBe('unknown');
+  });
+
+  it('밴드 내 애매한 값은 직전 판정을 유지(떨림 방지)', () => {
+    // 경계 부근 너비 → prevView 따라감
+    const amb = pose({ width: 0.12 }); // ratio ~ 0.36 (sideMax 0.30 ~ backMin 0.42 사이)
+    const asBack = detectOrientation(amb, 'back');
+    const asSide = detectOrientation(amb, 'side');
+    expect(asBack.view).toBe('back');
+    expect(asSide.view).toBe('side');
+  });
+
+  it('OrientationVoter 다수결로 안정 판정', () => {
+    const voter = new OrientationVoter();
+    for (let i = 0; i < 5; i++) voter.push(pose({ width: 0.25 })); // back
+    voter.push(pose({ width: 0.03 })); // side 1회(노이즈)
+    expect(voter.decide()).toBe('back');
   });
 });

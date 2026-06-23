@@ -4,6 +4,7 @@ import {
   pelvisRelativeFeet, cameraAngleQuality, detectOrientation
 } from '../core/gaitBiomechanics';
 import { loadPoseLandmarker, detectPoseFrame, closePoseLandmarker, isPoseReady } from '../core/poseBackend';
+import { shareReportWithVideo } from '../core/reportShare';
 
 // 캘리브레이션: 세이프존 + 인식 안정이 이만큼 유지되면 락
 const CALIB_HOLD_MS = 800; // 사람이 잡히면 거의 즉시 인식(0.8초 안정화로 깜빡임만 방지)
@@ -96,6 +97,7 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
   const [poseLoaded, setPoseLoaded] = useState(false); // MediaPipe 준비 여부
   const [aspect, setAspect] = useState('3/4'); // 3/4 | 1/1
   const [orientation, setOrientation] = useState('unknown'); // side | back | unknown
+  const orientationRef = useRef(null); // 히스테리시스용 직전 판정
   // 컴팩트 도구 (초시계/메트로놈)
   const [toolsOpen, setToolsOpen] = useState(false);
   const [toolTab, setToolTab] = useState('stopwatch');
@@ -204,13 +206,14 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
           trackerRef.current.push(pelvisRelativeFeet(landmarks), ts);
           angleAccRef.current.push(jointAnglesFromPose(landmarks));
         } else {
-          // 방향 판별 (측면/후면) — 화면 표시 + 후면 관대 처리
-          const ori = detectOrientation(landmarks);
-          setOrientationOnce(ori.view);
+          // 방향 판별 (측면/후면) — 히스테리시스로 경계 떨림 방지.
+          // unknown 이면 직전 판정을 유지해 잠깐 인식 실패 시 깜빡임을 막는다.
+          const ori = detectOrientation(landmarks, orientationRef.current);
+          if (ori.view !== 'unknown') { orientationRef.current = ori.view; setOrientationOnce(ori.view); }
           // 캘리브레이션: 앵글 품질 + 세이프존이 유지되면 락.
           // 후면뷰는 어깨가 넓어 high_angle 오판이 잦으므로 앵글 검사를 완화한다.
           const q = cameraAngleQuality(landmarks);
-          const angleOk = ori.view === 'back' ? true : q.ok;
+          const angleOk = orientationRef.current === 'back' ? true : q.ok;
           const inZone = isInSafeZone(landmarks);
           if (angleOk && inZone) {
             lostFramesRef.current = 0;
@@ -352,27 +355,20 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
     }
   };
 
-  // 영상 공유/기기 저장 (Web Share, 실패 시 다운로드 폴백). 데이터 저장과 독립.
+  // 리포트(JPG) + 영상 함께 공유/기기 저장. 데이터 저장과 독립.
   const handleShareVideo = async () => {
-    if (!recordedBlobRef.current) return;
-    const ext = recordedBlobRef.current.type.includes('mp4') ? 'mp4' : 'webm';
-    const filename = `${member?.name || '회원'}_보행분석.${ext}`;
-    const file = new File([recordedBlobRef.current], filename, { type: recordedBlobRef.current.type });
-
-    if (navigator.canShare && navigator.canShare({ files: [file] })) {
-      try {
-        await navigator.share({ title: '보행 분석', files: [file] });
-        setShareMsg('공유 완료');
-      } catch (err) {
-        if (err?.name !== 'AbortError') setShareMsg('공유 실패 — 다운로드로 저장하세요');
-      }
-    } else {
-      const url = URL.createObjectURL(recordedBlobRef.current);
-      const a = document.createElement('a');
-      a.href = url; a.download = filename;
-      document.body.appendChild(a); a.click(); document.body.removeChild(a);
-      setTimeout(() => URL.revokeObjectURL(url), 100);
-      setShareMsg('기기에 저장됨');
+    setShareMsg('리포트 생성 중...');
+    const node = document.getElementById('gait-report-sheet');
+    const blob = recordedBlobRef.current || null;
+    if (!node && !blob) { setShareMsg('공유할 항목이 없습니다.'); return; }
+    try {
+      const res = await shareReportWithVideo(node, blob, {
+        baseName: `${member?.name || '회원'}_보행분석`,
+        title: '보행 분석 리포트',
+      });
+      setShareMsg(res.msg);
+    } catch (e) {
+      setShareMsg('공유 실패 — 다시 시도하세요');
     }
   };
 

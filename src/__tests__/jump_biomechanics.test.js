@@ -135,3 +135,120 @@ describe('JUMP_TUNING is centralized and adjustable', () => {
     expect(JUMP_TUNING).toHaveProperty('maxHeightToBodyRatio');
   });
 });
+
+// ════════════════════════════════════════════════════════════════════════
+//  JumpBiomechAccumulator — 자세/기술/대칭성 지표
+// ════════════════════════════════════════════════════════════════════════
+import { JumpBiomechAccumulator, jumpPhaseOf, JUMP_TUNING as JT } from '../ai-measure/core/jumpBiomechanics.js';
+
+// 측면뷰 가정의 전신 landmark (각도 계산 가능하도록 관절 좌표를 의미있게 배치)
+function makePose({
+  // 기본: 거의 직립(신전). bend 로 무릎/고관절 굽힘을 준다.
+  kneeBend = 0,      // 0=신전(180°), 클수록 굽힘
+  hipBend = 0,
+  lean = 0,          // 상체 전방 기울기(골반 대비 어깨 x 이동)
+  pelvisTilt = 0,    // 좌우 골반 높이차
+  vis = 0.95,
+} = {}) {
+  const a = Array.from({ length: 33 }, () => ({ x: 0.5, y: 0.5, visibility: vis }));
+  // 머리
+  a[0] = { x: 0.5, y: 0.05, visibility: vis };
+  // 어깨 (상체 기울기 = 어깨 x 이동)
+  a[11] = { x: 0.45 + lean, y: 0.25, visibility: vis };
+  a[12] = { x: 0.55 + lean, y: 0.25, visibility: vis };
+  // 골반 (좌우 높이차 = pelvisTilt)
+  a[23] = { x: 0.45, y: 0.50 + pelvisTilt, visibility: vis };
+  a[24] = { x: 0.55, y: 0.50, visibility: vis };
+  // 무릎 (고관절 아래; hipBend 로 x 오프셋 = 굽힘)
+  a[25] = { x: 0.45 + hipBend * 0.1, y: 0.70, visibility: vis };
+  a[26] = { x: 0.55 + hipBend * 0.1, y: 0.70, visibility: vis };
+  // 발목 (무릎 아래; kneeBend 로 x 오프셋 = 굽힘)
+  a[27] = { x: 0.45 - kneeBend * 0.1, y: 0.90, visibility: vis };
+  a[28] = { x: 0.55 - kneeBend * 0.1, y: 0.90, visibility: vis };
+  // 발끝
+  a[31] = { x: 0.45 - kneeBend * 0.1, y: 0.95, visibility: vis };
+  a[32] = { x: 0.55 - kneeBend * 0.1, y: 0.95, visibility: vis };
+  return a;
+}
+
+describe('JumpBiomechAccumulator', () => {
+  it('착지 무릎각: 깊게 굽힌 착지가 더 작은 각도로 잡힌다', () => {
+    const acc = new JumpBiomechAccumulator({ heightCm: 175 });
+    // 준비 자세(신전)
+    for (let i = 0; i < 5; i++) acc.push(makePose(), i * 8, 'stand');
+    // 착지: 무릎 깊게 굽힘
+    for (let i = 0; i < 8; i++) acc.push(makePose({ kneeBend: 1.0 }), 100 + i * 8, 'land');
+    const s = acc.summary();
+    expect(s.landingKneeAngle).not.toBeNull();
+    expect(s.landingKneeAngle).toBeLessThan(180); // 굽혔으므로 신전(180)보다 작음
+  });
+
+  it('신전 궤적 정렬도: 고관절·무릎이 함께 펴지는 궤적이면 정렬 점수 산출', () => {
+    const acc = new JumpBiomechAccumulator({ heightCm: 175 });
+    // 앉았다(굽힘) → 펴지는(신전) 궤적을 stand 구간에 누적
+    for (let i = 0; i < 6; i++) {
+      const bend = 1.0 - i * 0.18; // 점점 펴짐
+      acc.push(makePose({ kneeBend: bend, hipBend: bend }), i * 8, 'stand');
+    }
+    const s = acc.summary();
+    expect(s.extensionAlignment.available).toBe(true);
+    expect(s.extensionAlignment.alignmentScore).toBeGreaterThanOrEqual(0);
+    expect(s.extensionAlignment.alignmentScore).toBeLessThanOrEqual(100);
+  });
+
+  it('상체 기울기 변화: 준비 대비 착지에서 더 기울면 change 가 양수', () => {
+    const acc = new JumpBiomechAccumulator({ heightCm: 175 });
+    for (let i = 0; i < 5; i++) acc.push(makePose({ lean: 0 }), i * 8, 'stand');
+    for (let i = 0; i < 5; i++) acc.push(makePose({ lean: 0.12 }), 100 + i * 8, 'land');
+    const s = acc.summary();
+    expect(s.trunkLeanChange).not.toBeNull();
+    expect(s.trunkLeanChange).toBeGreaterThan(0);
+  });
+
+  it('착지 발끝 대칭성: 양발이 같은 위치에 착지하면 높은 대칭도', () => {
+    const acc = new JumpBiomechAccumulator({ heightCm: 175 });
+    for (let i = 0; i < 5; i++) acc.push(makePose(), i * 8, 'stand');
+    // 착지: 좌우 발이 대칭(makePose 의 27/28, 31/32 좌우 대칭)
+    for (let i = 0; i < 6; i++) acc.push(makePose(), 100 + i * 8, 'land');
+    const s = acc.summary();
+    expect(s.footLandingSymmetry.available).toBe(true);
+    expect(s.footLandingSymmetry.symmetryPct).toBeGreaterThanOrEqual(0);
+    expect(s.footLandingSymmetry.symmetryPct).toBeLessThanOrEqual(100);
+  });
+
+  it('뷰 게이팅: enabled 플래그가 측정 방향에 따라 지표를 켠다', () => {
+    const acc = new JumpBiomechAccumulator({ heightCm: 175 });
+    for (let i = 0; i < 6; i++) acc.push(makePose(), i * 8, 'stand');
+    for (let i = 0; i < 4; i++) acc.push(makePose(), 100 + i * 8, 'land');
+    const s = acc.summary();
+    expect(['side', 'back', 'unknown']).toContain(s.view);
+    expect(s.enabled).toHaveProperty('posture');
+    expect(s.enabled).toHaveProperty('pelvicDrop');
+    expect(s.enabled).toHaveProperty('footSymmetry');
+  });
+
+  it('데이터 없는 위상은 null/미가용으로 안전하게 반환', () => {
+    const acc = new JumpBiomechAccumulator({ heightCm: 175 });
+    const s = acc.summary(); // 아무것도 push 안 함
+    expect(s.landingKneeAngle).toBeNull();
+    expect(s.pelvicImbalance).toBeNull();
+    expect(s.extensionAlignment.available).toBe(false);
+    expect(s.footLandingSymmetry.available).toBe(false);
+  });
+});
+
+describe('jumpPhaseOf', () => {
+  it('이지/착지 전환을 정확히 판정', () => {
+    expect(jumpPhaseOf(false, true, false)).toEqual({ phase: 'air', justTookOff: true, justLanded: false });
+    expect(jumpPhaseOf(true, false, true)).toEqual({ phase: 'land', justTookOff: false, justLanded: true });
+    expect(jumpPhaseOf(false, false, false)).toEqual({ phase: 'stand', justTookOff: false, justLanded: false });
+  });
+});
+
+describe('JUMP_TUNING tripleExtension 상수', () => {
+  it('hip/knee/ankle 신전 임계가 노출됨', () => {
+    expect(JT.tripleExtension).toHaveProperty('hipMinDeg');
+    expect(JT.tripleExtension).toHaveProperty('kneeMinDeg');
+    expect(JT.tripleExtension).toHaveProperty('ankleMinDeg');
+  });
+});

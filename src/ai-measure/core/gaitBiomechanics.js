@@ -13,7 +13,10 @@ export const GAIT_TUNING = {
   stepProminence: 0.25,     // 봉우리로 인정할 최소 진폭 (노이즈 컷)
   validMinAmp: 1.2,         // 유효 측정 최소 신호 진폭 (정지/누움 차단)
   validMinSteps: 3,         // 유효 측정 최소 스텝 수
-  orientationSideRatio: 0.35, // 측면/후면 구분 비율 임계
+  // 측면/후면 구분 — 단일 임계는 경계에서 떨림. 히스테리시스 밴드 사용.
+  orientationSideRatio: 0.35, // 호환용(중앙값)
+  orientationSideMax: 0.30,   // 이하 → 측면 확정
+  orientationBackMin: 0.42,   // 이상 → 후면/전면 확정 (그 사이는 직전 판정 유지)
 };
 
 export const angleAt = (a, b, c) => {
@@ -109,18 +112,58 @@ export const cameraAngleQuality = (lm) => {
 };
 
 // 촬영 방향 판별: 측면(side) vs 후면/전면(back).
-// 측면뷰는 어깨·골반이 앞뒤로 겹쳐 좌우 너비가 좁고, 후면뷰는 넓게 펼쳐진다.
-// 어깨너비 / 몸통높이 비율로 구분 (측면 ~0.1, 후면 ~0.6).
-export const detectOrientation = (lm) => {
-  if (!lm || !lm[11] || !lm[12] || !lm[23] || !lm[24]) return { view: 'unknown', ratio: 0 };
+// 측면뷰는 어깨·골반이 앞뒤로 겹쳐 좌우 너비가 좁고, 후면/전면은 넓게 펼쳐진다.
+// 어깨너비 / 몸통높이 비율로 구분 (측면 ~0.1, 후면/전면 ~0.5).
+//
+// prevView(직전 판정)를 주면 히스테리시스로 경계 떨림을 막는다:
+//   ratio ≤ sideMax  → side 확정
+//   ratio ≥ backMin  → back 확정
+//   그 사이          → 직전 판정 유지 (없으면 중앙 임계로 결정)
+// 가시성이 낮은 관절이 많으면 unknown 으로 둬 오판을 막는다.
+export const detectOrientation = (lm, prevView = null) => {
+  if (!lm || !lm[11] || !lm[12] || !lm[23] || !lm[24]) return { view: 'unknown', ratio: 0, confidence: 0 };
+  // 핵심 관절 가시성 확인 (낮으면 신뢰 불가 → unknown)
+  const vis = [11, 12, 23, 24].map(i => lm[i].visibility == null ? 1 : lm[i].visibility);
+  const minVis = Math.min(...vis);
+  if (minVis < 0.5) return { view: 'unknown', ratio: 0, confidence: minVis };
+
   const dist = (a, b) => Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2);
   const shoulderW = dist(lm[11], lm[12]);
+  const hipW = dist(lm[23], lm[24]);
   const torsoH = (dist(lm[11], lm[23]) + dist(lm[12], lm[24])) / 2;
-  if (torsoH < 0.001) return { view: 'unknown', ratio: 0 };
-  const ratio = shoulderW / torsoH;
-  // 측면: 비율 작음. 후면/전면: 비율 큼.
-  return { view: ratio < GAIT_TUNING.orientationSideRatio ? 'side' : 'back', ratio };
+  if (torsoH < 0.001) return { view: 'unknown', ratio: 0, confidence: 0 };
+  // 어깨너비와 골반너비를 함께 봐서 한쪽 관절 흔들림에 덜 민감하게.
+  const ratio = ((shoulderW + hipW) / 2) / torsoH;
+
+  const T = GAIT_TUNING;
+  let view;
+  if (ratio <= T.orientationSideMax) view = 'side';
+  else if (ratio >= T.orientationBackMin) view = 'back';
+  else if (prevView === 'side' || prevView === 'back') view = prevView; // 밴드 내 → 유지
+  else view = ratio < T.orientationSideRatio ? 'side' : 'back';
+
+  // 신뢰도: 경계에서 멀수록 높음
+  const mid = (T.orientationSideMax + T.orientationBackMin) / 2;
+  const confidence = Math.min(1, Math.abs(ratio - mid) / mid);
+  return { view, ratio: Math.round(ratio * 1000) / 1000, confidence: Math.round(confidence * 100) / 100 };
 };
+
+// 여러 프레임의 방향 판정을 다수결로 누적하는 작은 헬퍼 (UI 떨림 방지).
+export class OrientationVoter {
+  constructor() { this.votes = { side: 0, back: 0, unknown: 0 }; this.last = null; }
+  push(lm) {
+    const o = detectOrientation(lm, this.last);
+    if (o.view !== 'unknown') this.last = o.view;
+    this.votes[o.view] = (this.votes[o.view] || 0) + 1;
+    return o;
+  }
+  // 누적 다수결 (side vs back). 둘 다 0이면 unknown.
+  decide() {
+    const { side, back } = this.votes;
+    if (side === 0 && back === 0) return 'unknown';
+    return side >= back ? 'side' : 'back';
+  }
+}
 
 export const pelvisRelativeFeet = (lm) => {
   // 발목(27,28)을 필수로 사용 — 발끝(31,32)/발뒤꿈치(29,30)는 모션블러로

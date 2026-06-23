@@ -18,7 +18,7 @@
 //   (3) sanity: 회원 키(cm) 기준으로 물리적으로 말이 되는 범위인지 점검.
 // ════════════════════════════════════════════════════════════════════════
 
-import { OneEuroFilter } from './gaitBiomechanics';
+import { OneEuroFilter, angleAt, detectOrientation } from './gaitBiomechanics';
 
 const G = 9.81;
 
@@ -48,6 +48,14 @@ export const JUMP_TUNING = {
   crossTolPct: 25,           // 비행시간 높이 vs 골반변위 높이 허용 불일치(%)
   // ── 물리적 sanity (회원 키 대비) ──
   maxHeightToBodyRatio: 0.85,// 점프 높이가 키의 이 비율을 넘으면 비현실적(검출 오류)
+
+  // ── Triple Extension 신전 임계(도) ── 이지 직전 세 관절이 거의 펴졌는지
+  //   고관절/무릎은 신뢰, 발목은 참고. 현장 데이터로 조정 대상.
+  tripleExtension: {
+    hipMinDeg: 160,   // 고관절 신전 임계 (작을수록 관대)
+    kneeMinDeg: 160,  // 무릎 신전 임계
+    ankleMinDeg: 140, // 발목(plantarflexion) — BlazePose 한계로 관대하게
+  },
 };
 
 // 두 발(발목)의 평균 y. 화면 좌표는 아래로 갈수록 y 증가 → 점프하면 y 감소.
@@ -262,4 +270,318 @@ export class JumpFlightTracker {
       sanityOk,
     };
   }
+}
+
+// ════════════════════════════════════════════════════════════════════════
+//  [고도화] JumpBiomechAccumulator — 프레임마다 push, 끝에 summary()
+//   보행의 BiomechAccumulator 와 같은 인터페이스(push/summary).
+//   위상(phase)별로 지표를 잡는다: 'stand'(준비) | 'air'(공중) | 'land'(착지 직후).
+//   위상은 JumpFlightTracker 가 inAir 상태로 알려주므로, 측정 루프에서
+//   tracker.inAir 를 보고 phase 를 넘겨 주면 된다(아래 buildJumpReport 참고).
+//
+//  ⚠ 신뢰 등급(리포트에 그대로 노출):
+//    'core'   = 비교적 신뢰(측면뷰 기준). 점프높이/체공/무릎각도/상체기울기/골반.
+//    'ref'    = 참고용. Triple Extension(발목 신전 BlazePose 정확도 한계).
+//    'limit'  = 제약 큼. 좌우 '체중' 분산은 카메라로 불가 → 기하학적 대칭으로 대체.
+// ════════════════════════════════════════════════════════════════════════
+
+const _v = (p) => p && (p.visibility == null || p.visibility >= JUMP_TUNING.minVisibility);
+const _dist = (a, b) => Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2);
+
+// 상체 전방 기울기(도): 어깨중점→골반중점 벡터와 수직선의 각. 0=직립.
+const _trunkLean = (lm) => {
+  if (!lm || !_v(lm[11]) || !_v(lm[12]) || !_v(lm[23]) || !_v(lm[24])) return null;
+  const sh = { x: (lm[11].x + lm[12].x) / 2, y: (lm[11].y + lm[12].y) / 2 };
+  const hip = { x: (lm[23].x + lm[24].x) / 2, y: (lm[23].y + lm[24].y) / 2 };
+  const vx = sh.x - hip.x, vy = sh.y - hip.y;
+  if (Math.sqrt(vx * vx + vy * vy) < 1e-6) return null;
+  return Math.round(Math.atan2(Math.abs(vx), Math.abs(vy)) * (180 / Math.PI) * 10) / 10;
+};
+
+// 좌우 무릎 굽힘 각도(고관절-무릎-발목). 180=완전 신전, 작을수록 깊게 굽힘.
+const _knees = (lm) => ({
+  left: angleAt(lm[23], lm[25], lm[27]),
+  right: angleAt(lm[24], lm[26], lm[28]),
+});
+
+// 좌우 발목(plantarflexion) 각도(무릎-발목-발끝). 참고용(BlazePose 발끝 정확도 낮음).
+const _ankles = (lm) => ({
+  left: angleAt(lm[25], lm[27], lm[31]),
+  right: angleAt(lm[26], lm[28], lm[32]),
+});
+
+// 좌우 고관절 각도(어깨-고관절-무릎).
+const _hips = (lm) => ({
+  left: angleAt(lm[11], lm[23], lm[25]),
+  right: angleAt(lm[12], lm[24], lm[26]),
+});
+
+// 골반 좌우 높이차(정규화 y, 부호 좌-우). 신장으로 정규화해 % 로.
+const _pelvicTilt = (lm, scale) => {
+  if (!lm || !_v(lm[23]) || !_v(lm[24]) || !scale) return null;
+  return Math.round(((lm[23].y - lm[24].y) / scale) * 1000) / 10;
+};
+
+export class JumpBiomechAccumulator {
+  constructor({ heightCm = null } = {}) {
+    this.heightCm = heightCm;
+    this.stand = { trunkLean: [], pelvicTilt: [] };
+    this.air = { trunkLean: [] };
+    this.land = { kneeL: [], kneeR: [], trunkLean: [], footL: [], footR: [] };
+    // 이지 접근(takeoff approach) 구간: 신전 '궤적'을 보기 위한 시퀀스(시간순)
+    this.approach = { hip: [], knee: [], ankle: [] };
+    this._scaleSum = 0; this._scaleN = 0;
+    // 촬영 방향 투표 (프레임마다 detectOrientation → 다수결)
+    this._viewVotes = { side: 0, back: 0, unknown: 0 };
+  }
+
+  get bodyScale() { return this._scaleN ? this._scaleSum / this._scaleN : null; }
+
+  // phase: 'stand' | 'air' | 'land'. justTookOff: 이지 직후 프레임이면 true.
+  push(lm, tMs, phase, justTookOff = false) {
+    if (!lm) return;
+    // 신장 스케일(어깨~발목 y거리)
+    if (lm[11] && lm[12] && lm[27] && lm[28]) {
+      const s = Math.abs(((lm[27].y + lm[28].y) / 2) - ((lm[11].y + lm[12].y) / 2));
+      if (s > 0.05) { this._scaleSum += s; this._scaleN++; }
+    }
+    const scale = this.bodyScale;
+
+    // 촬영 방향 투표 (준비/착지 등 안정 구간에서만 — 공중은 자세 왜곡)
+    if (phase !== 'air') {
+      const o = detectOrientation(lm);
+      this._viewVotes[o.view] = (this._viewVotes[o.view] || 0) + 1;
+    }
+
+    if (phase === 'stand') {
+      const tl = _trunkLean(lm); if (tl != null) this.stand.trunkLean.push(tl);
+      const pt = _pelvicTilt(lm, scale); if (pt != null) this.stand.pelvicTilt.push(pt);
+      // 이지 접근 시퀀스: 준비 후반(앉았다 펴는 구간)의 각도 추이를 모은다
+      const hp = _hips(lm), kn = _knees(lm), an = _ankles(lm);
+      const hipAvg = _avg2(hp.left, hp.right);
+      const kneeAvg = _avg2(kn.left, kn.right);
+      const ankAvg = _avg2(an.left, an.right);
+      if (hipAvg != null) this.approach.hip.push(hipAvg);
+      if (kneeAvg != null) this.approach.knee.push(kneeAvg);
+      if (ankAvg != null) this.approach.ankle.push(ankAvg);
+    } else if (phase === 'air') {
+      const tl = _trunkLean(lm); if (tl != null) this.air.trunkLean.push(tl);
+    } else if (phase === 'land') {
+      const kn = _knees(lm);
+      if (kn.left != null) this.land.kneeL.push(kn.left);
+      if (kn.right != null) this.land.kneeR.push(kn.right);
+      const tl = _trunkLean(lm); if (tl != null) this.land.trunkLean.push(tl);
+      // 착지 발 위치 (좌/우) — blur 대비 여러 프레임 모아 중앙값 사용
+      const fl = _footPos(lm, 27, 31);
+      const fr = _footPos(lm, 28, 32);
+      if (fl) this.land.footL.push(fl);
+      if (fr) this.land.footR.push(fr);
+    }
+  }
+
+  detectedView() {
+    const { side, back } = this._viewVotes;
+    if (side === 0 && back === 0) return 'unknown';
+    return side >= back ? 'side' : 'back';
+  }
+
+  summary() {
+    const mean = (a) => a.length ? a.reduce((s, x) => s + x, 0) / a.length : null;
+    const r1 = (n) => n == null ? null : Math.round(n * 10) / 10;
+    const minOf = (a) => a.length ? Math.min(...a) : null;
+    const maxOf = (a) => a.length ? Math.max(...a) : null;
+    const view = this.detectedView();
+    const scale = this.bodyScale;
+
+    // ── 자세 및 기술 (측면뷰 전용) ──
+    const landKneeL = minOf(this.land.kneeL);
+    const landKneeR = minOf(this.land.kneeR);
+    const landKnee = (landKneeL != null && landKneeR != null)
+      ? r1((landKneeL + landKneeR) / 2) : (r1(landKneeL) ?? r1(landKneeR));
+
+    const standLean = mean(this.stand.trunkLean);
+    const landLean = mean(this.land.trunkLean);
+    const trunkLeanChange = (standLean != null && landLean != null)
+      ? r1(Math.abs(landLean - standLean)) : null;
+
+    // 신전 궤적 정렬도 (Extension Alignment) — 절대 발목각 대신 궤적 정렬에 초점
+    const alignment = computeExtensionAlignment(
+      this.approach.hip, this.approach.knee, this.approach.ankle
+    );
+
+    // ── 대칭성 및 안정성 ──
+    // 골반 불균형(정면뷰에서 신뢰)
+    const pelvicVals = this.stand.pelvicTilt;
+    const pelvicImbalance = pelvicVals.length
+      ? r1(Math.abs((maxOf(pelvicVals) ?? 0) - (minOf(pelvicVals) ?? 0))) : null;
+
+    // 착지 발끝 대칭성 (force plate 대체) — 양쪽 뷰 모두 의미
+    const footSym = computeFootLandingSymmetry(this.land.footL, this.land.footR, scale, view);
+
+    // 뷰별 지표 활성 여부 (리포트 가이드라인 표시에 사용)
+    const enabled = {
+      view,
+      posture: view === 'side',          // 자세/기술 = 측면 전용
+      pelvicDrop: view === 'back',       // 골반 불균형 = 정면 전용
+      footSymmetry: footSym.available,   // 발끝 대칭 = 양쪽 가능
+    };
+
+    return {
+      view,
+      enabled,
+      // 자세 및 기술 (측면 전용)
+      landingKneeAngle: landKnee,
+      landingKneeLeft: r1(landKneeL),
+      landingKneeRight: r1(landKneeR),
+      trunkLeanStand: r1(standLean),
+      trunkLeanChange,
+      extensionAlignment: alignment,      // 신전 궤적 정렬도
+      // 대칭성 및 안정성
+      pelvicImbalance,                    // 정면 전용
+      footLandingSymmetry: footSym,       // 착지 발끝 대칭 (force plate 대체)
+    };
+  }
+}
+
+// 두 값 평균 (null 안전)
+const _avg2 = (a, b) => {
+  if (a == null && b == null) return null;
+  if (a == null) return b;
+  if (b == null) return a;
+  return (a + b) / 2;
+};
+
+// 측정 루프에서 위상 판정을 쉽게 하기 위한 헬퍼.
+// 직전 inAir 와 현재 inAir 를 비교해 phase 와 justTookOff/justLanded 를 만든다.
+export function jumpPhaseOf(prevInAir, curInAir, landWindowActive) {
+  const justTookOff = !prevInAir && curInAir;
+  const justLanded = prevInAir && !curInAir;
+  let phase = 'stand';
+  if (curInAir) phase = 'air';
+  else if (landWindowActive) phase = 'land'; // 착지 직후 N프레임
+  return { phase, justTookOff, justLanded };
+}
+
+// ════════════════════════════════════════════════════════════════════════
+//  [재설계] 측정 가능한 지표로 교체
+// ════════════════════════════════════════════════════════════════════════
+
+// 발 위치(발목+발끝 평균). 발끝(31/32)이 blur 로 소실되면 발목만 사용.
+const _footPos = (lm, ankleIdx, toeIdx) => {
+  const ank = lm[ankleIdx], toe = lm[toeIdx];
+  const okA = ank && (ank.visibility == null || ank.visibility >= JUMP_TUNING.minVisibility);
+  const okT = toe && (toe.visibility == null || toe.visibility >= JUMP_TUNING.minVisibility);
+  if (!okA && !okT) return null;
+  if (okA && okT) return { x: (ank.x + toe.x) / 2, y: (ank.y + toe.y) / 2 };
+  return okA ? { x: ank.x, y: ank.y } : { x: toe.x, y: toe.y };
+};
+
+// 중앙값 (blur 이상치 제거 — gait 의 median outlier rejection 과 동일 철학)
+const _median = (arr) => {
+  if (!arr.length) return null;
+  const s = [...arr].sort((a, b) => a - b);
+  const m = Math.floor(s.length / 2);
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+};
+
+/**
+ * 착지 발끝 대칭성 (Foot Landing Symmetry) — force plate 대체 지표.
+ * 착지 직후 안정된 N프레임에서 좌/우 발 위치의 중앙값을 구해,
+ * 두 발의 좌우(x)·앞뒤(y) 위치 차이를 화면 픽셀(정규화) 거리로 평가한다.
+ *  · 측면뷰: y(앞뒤) 차이가 핵심 — 한 발이 앞서 착지하는 비대칭
+ *  · 정면뷰: x(좌우) 차이가 핵심 — 좌우 착지 폭 비대칭
+ * 신장 스케일로 정규화해 % 로 환산(0%=완전 대칭).
+ *
+ * @param {Array} leftFrames  [{x,y}] 착지 구간 좌측 발 위치들
+ * @param {Array} rightFrames [{x,y}] 착지 구간 우측 발 위치들
+ * @param {number} bodyScale  신장 정규화 스케일(어깨~발목 y거리)
+ * @param {'side'|'back'} view 촬영 방향
+ */
+export function computeFootLandingSymmetry(leftFrames, rightFrames, bodyScale, view) {
+  if (!leftFrames?.length || !rightFrames?.length || !bodyScale) {
+    return { available: false };
+  }
+  const lx = _median(leftFrames.map(p => p.x));
+  const ly = _median(leftFrames.map(p => p.y));
+  const rx = _median(rightFrames.map(p => p.x));
+  const ry = _median(rightFrames.map(p => p.y));
+  if (lx == null || rx == null) return { available: false };
+
+  // 정규화 차이 (신장 대비 %)
+  const dxPct = Math.round(Math.abs(lx - rx) / bodyScale * 1000) / 10; // 좌우
+  const dyPct = Math.round(Math.abs(ly - ry) / bodyScale * 1000) / 10; // 앞뒤
+  // 뷰별 '핵심 축' 차이 — 측면=앞뒤(y), 정면=좌우(x)
+  const primaryAxis = view === 'side' ? 'anteroposterior' : 'mediolateral';
+  const primaryDiffPct = view === 'side' ? dyPct : dxPct;
+  // 대칭도 점수: 차이가 작을수록 100 에 가깝게 (10% 차이 → 0점 스케일)
+  const symmetryPct = Math.max(0, Math.round((1 - Math.min(primaryDiffPct, 10) / 10) * 1000) / 10);
+  // 어느 발이 앞/바깥인지 (참고)
+  let leadFoot = null;
+  if (view === 'side' && Math.abs(ly - ry) > 0.01) leadFoot = ly < ry ? 'left' : 'right'; // y작음=화면위=앞
+  if (view !== 'side' && Math.abs(lx - rx) > 0.01) leadFoot = 'asym';
+
+  return {
+    available: true,
+    view,
+    primaryAxis,                 // 어느 축을 핵심으로 봤는지
+    primaryDiffPct,              // 핵심 축 차이(%)
+    lateralDiffPct: dxPct,       // 좌우 차이(%)
+    anteroposteriorDiffPct: dyPct, // 앞뒤 차이(%)
+    symmetryPct,                 // 0~100 (100=완전 대칭)
+    leadFoot,                    // 'left'|'right'|'asym'|null
+  };
+}
+
+/**
+ * 신전 궤적 정렬도 (Extension Alignment) — 기존 Triple Extension 대체.
+ * 절대 발목각의 부정확성을 피하고, '이지 구간 동안 고관절·무릎이 함께
+ * 매끄럽게 펴지는가(정렬된 궤적)'에 초점을 둔다.
+ *  · 이지 직전 여러 프레임의 고관절/무릎 각도 추이를 받아,
+ *    (1) 두 관절이 함께 증가(신전)했는지 방향 일치도
+ *    (2) 최종 신전 도달도
+ *  를 결합해 0~100 정렬 점수를 낸다. 발목은 참고로만 같이 보고한다.
+ *
+ * @param {Array} hipSeq   이지 구간 고관절 각도 시퀀스(시간순)
+ * @param {Array} kneeSeq  이지 구간 무릎 각도 시퀀스(시간순)
+ * @param {Array} ankleSeq 발목(참고)
+ */
+export function computeExtensionAlignment(hipSeq, kneeSeq, ankleSeq = []) {
+  const clean = (a) => a.filter(v => v != null && !Number.isNaN(v));
+  const h = clean(hipSeq), k = clean(kneeSeq);
+  if (h.length < 2 || k.length < 2) {
+    return { available: false };
+  }
+  // (1) 방향 일치도: 인접 프레임 변화의 부호가 같은 비율(둘 다 펴지는 중인가)
+  const n = Math.min(h.length, k.length);
+  let agree = 0, total = 0;
+  for (let i = 1; i < n; i++) {
+    const dh = h[i] - h[i - 1], dk = k[i] - k[i - 1];
+    if (Math.abs(dh) < 0.3 && Math.abs(dk) < 0.3) continue; // 정지 구간 무시
+    total++;
+    if ((dh >= 0 && dk >= 0) || (dh < 0 && dk < 0)) agree++;
+  }
+  const directionConsistency = total ? agree / total : 1;
+  // (2) 최종 신전 도달도: 마지막 구간 평균이 신전 임계에 얼마나 근접
+  const tail = (a) => a.slice(-Math.max(1, Math.round(a.length * 0.3)));
+  const T = JUMP_TUNING.tripleExtension;
+  const hipReach = Math.min(1, (tail(h).reduce((s, x) => s + x, 0) / tail(h).length) / T.hipMinDeg);
+  const kneeReach = Math.min(1, (tail(k).reduce((s, x) => s + x, 0) / tail(k).length) / T.kneeMinDeg);
+  const reach = (hipReach + kneeReach) / 2;
+  // 결합 점수 (궤적 정렬 60% + 도달도 40%) — 궤적에 더 비중
+  const alignmentScore = Math.round((directionConsistency * 0.6 + reach * 0.4) * 1000) / 10;
+
+  const a = clean(ankleSeq);
+  const ankleNote = a.length
+    ? { finalDeg: Math.round((a.slice(-1)[0]) * 10) / 10, note: 'ref' }
+    : null;
+
+  return {
+    available: true,
+    alignmentScore,               // 0~100 (궤적 정렬도)
+    directionConsistency: Math.round(directionConsistency * 1000) / 10, // %
+    hipFinalDeg: Math.round((h.slice(-1)[0]) * 10) / 10,
+    kneeFinalDeg: Math.round((k.slice(-1)[0]) * 10) / 10,
+    ankle: ankleNote,             // 참고(발목 신전 도달 각, 정확도 낮음)
+    quality: alignmentScore >= 80 ? 'good' : alignmentScore >= 60 ? 'fair' : 'poor',
+  };
 }
