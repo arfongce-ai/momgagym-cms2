@@ -1,6 +1,6 @@
 // pages/Report.jsx
 // 측정 리포트 페이지: 회원 선택 → 실측 데이터 그래프/요약 → JPG 다운로드.
-import { useState, useMemo } from 'react';
+import { useState, useMemo, lazy, Suspense } from 'react';
 import { todayYMD } from '../utils/dates';
 import { useAuth } from '../contexts/AuthContext';
 import { scopeMembersToTrainer, sortByName } from '../utils/memberList';
@@ -8,8 +8,26 @@ import { store, aiStore } from '../demoData';
 import { buildFullReport, buildAnalysisTrend } from '../services/reportService';
 import { buildReportSvg, downloadSvgAsJpg } from '../components/report/reportImage';
 import TrendChart from '../components/report/TrendChart';
+import MemberPicker from '../components/common/MemberPicker';
+const JumpReportDashboard = lazy(() => import('../ai-measure/menus/JumpReportDashboard'));
+const GaitReportDashboard = lazy(() => import('../ai-measure/menus/GaitReportDashboard'));
 
 const COLORS = { weight:'#f59e0b', systolic:'#ef4444', diastolic:'#3b82f6', height:'#22d3ee' };
+
+// 세션 1건에서 회차비교용 핵심 수치/라벨을 뽑는다 (메뉴별).
+function extractSessionMetric(session) {
+  const d = session.data || {};
+  switch (session.menu) {
+    case 'onerm':   return { value: d.oneRM, unit: 'kg', label: `1RM (${d.liftLabel ?? ''} ${d.weight ?? '-'}kg×${d.reps ?? '-'})` };
+    case 'rsi':     return { value: d.rsi, unit: '', label: `RSI · 높이 ${d.heightCm ?? '-'}cm` };
+    case 'vbt':     return { value: d.meanVelocity, unit: 'm/s', label: `평균속도 (${d.zone ?? ''})` };
+    case 'jump':    return { value: d.heightCm, unit: 'cm', label: `점프높이${d.peakPower ? ` · ${d.peakPower}W` : ''}` };
+    case 'posture': return { value: d.shoulderTilt?.deg, unit: '°', label: `어깨 기울기 · 골반 ${d.hipTilt?.deg ?? '-'}°` };
+    case 'gait':    return { value: d.cadence ?? d.metrics?.cadence, unit: 'SPM', label: '케이던스' };
+    case 'body':    return { value: d.weight, unit: 'kg', label: `체중${d.systolic ? ` · ${d.systolic}/${d.diastolic}` : ''}` };
+    default:        return { value: null, unit: '', label: '측정' };
+  }
+}
 
 export default function Report() {
   const { user } = useAuth();
@@ -36,6 +54,31 @@ export default function Report() {
     return buildAnalysisTrend(aiStore.getGaitReports(member.id));
   }, [member]);
 
+  // 저장된 AI 측정 리포트 목록 (최신순) — 페이지별 열람용
+  const savedReports = useMemo(() => {
+    if (!member) return [];
+    return [...(aiStore.getGaitReports(member.id) || [])]
+      .sort((a, b) => String(b.createdAt || b.measuredAt).localeCompare(String(a.createdAt || a.measuredAt)));
+  }, [member]);
+  const [viewerIdx, setViewerIdx] = useState(null); // 열람 중인 리포트 인덱스
+  const [expandedMenu, setExpandedMenu] = useState(null); // 펼친 측정 메뉴
+
+  // 메뉴별 개별 세션 목록 (상세/회차비교용)
+  const sessionsByMenu = useMemo(() => {
+    if (!member) return {};
+    const all = aiStore.getSessions(member.id) || [];
+    const map = {};
+    for (const s of all) {
+      const k = s.menu || 'etc';
+      (map[k] = map[k] || []).push(s);
+    }
+    // 날짜 오름차순 (회차 비교는 시간순)
+    for (const k of Object.keys(map)) {
+      map[k].sort((a, b) => String(a.recordedAt || a.recordedAtFull).localeCompare(String(b.recordedAt || b.recordedAtFull)));
+    }
+    return map;
+  }, [member]);
+
   const handleDownload = async () => {
     if (!report) return;
     setDownloading(true); setMsg(null);
@@ -58,14 +101,11 @@ export default function Report() {
         <p className="text-slate-500 text-sm mt-1">실제 측정된 데이터만 리포트로 출력됩니다.</p>
       </div>
 
-      {/* 회원 선택 */}
+      {/* 회원 선택 (다른 탭과 동일한 검색형 선택기) */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
-        <label className="block text-xs font-semibold text-slate-400 uppercase tracking-widest mb-2">회원 선택</label>
-        <select value={memberId} onChange={e => setMemberId(e.target.value)}
-          className="w-full bg-slate-800 border border-slate-700 text-slate-100 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-amber-500">
-          <option value="">선택하세요</option>
-          {members.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
-        </select>
+        <label className="block text-xs font-semibold text-slate-400 uppercase tracking-widest mb-2">회원 찾기</label>
+        <MemberPicker members={members} value={memberId} onChange={setMemberId}
+          allowNone={false} placeholder="이름 / 초성 / 전화 뒤4자리" />
       </div>
 
       {report && !report.hasData && (
@@ -112,23 +152,78 @@ export default function Report() {
             </div>
           )}
 
-          {/* AI 측정 이력 (자세·1RM·RSI·VBT·점프 등) */}
+          {/* AI 측정 이력 (자세·1RM·RSI·VBT·점프 등) — 탭하면 상세 + 회차비교 */}
           {report.ai.menuSummaries?.length > 0 && (
             <div>
-              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">AI 측정 이력</p>
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">AI 측정 이력 · 탭하여 상세</p>
               <div className="space-y-2">
-                {report.ai.menuSummaries.map((m, i) => (
-                  <div key={i} className="bg-slate-900 border border-slate-800 rounded-xl px-3 py-2.5 flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-bold text-slate-200">{m.title}</p>
-                      <p className="text-[11px] text-slate-500">{m.metric}</p>
+                {report.ai.menuSummaries.map((m, i) => {
+                  const open = expandedMenu === m.menu;
+                  const sessions = sessionsByMenu[m.menu] || [];
+                  const rows = sessions.map(s => ({ s, ...extractSessionMetric(s) }));
+                  const numeric = rows.filter(r => typeof r.value === 'number' && !Number.isNaN(r.value));
+                  const points = numeric.map(r => ({ date: String(r.s.recordedAt || '').slice(0, 10), value: r.value }));
+                  const unit = numeric[0]?.unit || '';
+                  const first = numeric[0]?.value, last = numeric.at(-1)?.value;
+                  const delta = (first != null && last != null) ? Math.round((last - first) * 10) / 10 : null;
+                  return (
+                    <div key={i} className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
+                      <button onClick={() => setExpandedMenu(open ? null : m.menu)}
+                        className="w-full px-3 py-2.5 flex items-center justify-between text-left active:bg-slate-800/50">
+                        <div>
+                          <p className="text-sm font-bold text-slate-200">{m.title}</p>
+                          <p className="text-[11px] text-slate-500">{m.metric}</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <div className="text-right">
+                            <p className="text-[11px] text-slate-400">{m.count}회</p>
+                            <p className="text-[10px] text-slate-600">{m.latestDate}</p>
+                          </div>
+                          <span className={`text-amber-400 text-xs transition-transform ${open ? 'rotate-90' : ''}`}>▶</span>
+                        </div>
+                      </button>
+
+                      {open && (
+                        <div className="border-t border-slate-800 p-3 space-y-3">
+                          {/* 회차별 비교 차트 */}
+                          {points.length > 1 ? (
+                            <div>
+                              <p className="text-[11px] font-bold text-slate-400 mb-1">회차별 비교 {delta != null && (
+                                <span className={delta === 0 ? 'text-slate-500' : delta > 0 ? 'text-emerald-400' : 'text-red-400'}>
+                                  (최초 대비 {delta > 0 ? '▲' : delta < 0 ? '▼' : '–'}{Math.abs(delta)}{unit})
+                                </span>
+                              )}</p>
+                              <TrendChart title={m.title} unit={unit} points={points} color="#fbbf24" width={320} height={140} />
+                            </div>
+                          ) : (
+                            <p className="text-[11px] text-slate-500">회차 비교는 2회차부터 표시됩니다.</p>
+                          )}
+
+                          {/* 회차별 상세 목록 (최신순) */}
+                          <div className="space-y-1.5">
+                            {[...rows].reverse().map((r, j) => {
+                              const gIdx = savedReports.findIndex(sr => sr.measuredAt && sr.measuredAt === r.s.data?.measuredAt);
+                              const openable = (m.menu === 'jump' || m.menu === 'gait') && gIdx >= 0;
+                              return (
+                                <div key={j} className="flex items-center justify-between bg-slate-800/60 rounded-lg px-3 py-2">
+                                  <div>
+                                    <p className="text-xs font-bold text-slate-200">
+                                      {r.value != null ? `${r.value}${r.unit}` : '—'} <span className="text-slate-500 font-normal">{r.label}</span>
+                                    </p>
+                                    <p className="text-[10px] text-slate-500">{String(r.s.recordedAt || '').slice(0, 10)}</p>
+                                  </div>
+                                  {openable && (
+                                    <button onClick={() => setViewerIdx(gIdx)} className="text-amber-400 text-[11px] font-bold">리포트 →</button>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
                     </div>
-                    <div className="text-right">
-                      <p className="text-[11px] text-slate-400">{m.count}회</p>
-                      <p className="text-[10px] text-slate-600">{m.latestDate}</p>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}
@@ -181,6 +276,35 @@ export default function Report() {
               )}
             </div>
           )}
+
+          {/* 저장된 AI 측정 리포트 — 페이지별 열람 */}
+          {savedReports.length > 0 && (
+            <div>
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">
+                측정 리포트 ({savedReports.length}건) · 눌러서 열기
+              </p>
+              <div className="space-y-2">
+                {savedReports.map((rep, i) => {
+                  const kind = rep.kind === 'jump' ? '점프' : rep.kind === 'gait' ? '보행·러닝' : '측정';
+                  const date = String(rep.createdAt || rep.measuredAt || '').slice(0, 10);
+                  const main = rep.kind === 'jump'
+                    ? (rep.heightCm != null ? `${rep.heightCm}cm` : '무효')
+                    : (rep.cadence != null || rep.metrics?.cadence != null ? `${rep.cadence ?? rep.metrics?.cadence} SPM` : '—');
+                  return (
+                    <button key={rep.id || i} onClick={() => setViewerIdx(i)}
+                      className="w-full flex items-center justify-between bg-slate-900 border border-slate-800 rounded-xl px-4 py-3 text-left active:scale-[0.99] transition">
+                      <div>
+                        <p className="text-sm font-bold text-white">{kind} <span className="text-slate-500 font-normal">· {date}</span></p>
+                        <p className="text-[11px] text-slate-500">{rep.valid === false ? '측정 무효' : `주요 결과 ${main}`}</p>
+                      </div>
+                      <span className="text-amber-400 text-sm font-bold">열기 →</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {report.notes.length > 0 && (
             <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
               <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">분석 설명</p>
@@ -199,6 +323,29 @@ export default function Report() {
           </button>
           {msg && <p className="text-center text-xs text-slate-400">{msg}</p>}
         </>
+      )}
+
+      {/* 페이지별 리포트 뷰어 (이전/다음으로 회차 넘김) */}
+      {viewerIdx != null && savedReports[viewerIdx] && (
+        <div className="fixed inset-0 z-[90] bg-slate-950 overflow-y-auto" style={{ height: '100dvh' }}>
+          <div className="sticky top-0 z-10 flex items-center justify-between px-4 py-2.5 bg-slate-900/95 backdrop-blur border-b border-slate-800">
+            <button onClick={() => setViewerIdx(null)} className="text-slate-300 font-bold text-sm">✕ 닫기</button>
+            <span className="text-white text-xs font-bold">{viewerIdx + 1} / {savedReports.length}</span>
+            <div className="flex gap-2">
+              <button onClick={() => setViewerIdx(i => Math.min(savedReports.length - 1, i + 1))}
+                disabled={viewerIdx >= savedReports.length - 1}
+                className="text-slate-300 text-sm font-bold disabled:opacity-30">◀ 이전</button>
+              <button onClick={() => setViewerIdx(i => Math.max(0, i - 1))}
+                disabled={viewerIdx <= 0}
+                className="text-slate-300 text-sm font-bold disabled:opacity-30">다음 ▶</button>
+            </div>
+          </div>
+          <Suspense fallback={<div className="p-10 text-center text-slate-400">불러오는 중…</div>}>
+            {savedReports[viewerIdx].kind === 'jump'
+              ? <JumpReportDashboard report={savedReports[viewerIdx]} onClose={() => setViewerIdx(null)} />
+              : <GaitReportDashboard report={savedReports[viewerIdx]} onClose={() => setViewerIdx(null)} />}
+          </Suspense>
+        </div>
       )}
     </div>
   );

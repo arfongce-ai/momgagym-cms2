@@ -60,7 +60,7 @@ export const MEASURE_MENUS = [
   },
   {
     id: 'body',
-    no: 12,
+    no: 0.5,
     title: '신체 정보',
     desc: '키·몸무게·혈압 (2026 지침 분석)',
     icon: '📋',

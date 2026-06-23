@@ -18,6 +18,22 @@ import {
 import { calcJump } from '../core/performance';
 import { loadPoseLandmarker, detectPoseFrame, isPoseReady } from '../core/poseBackend';
 import { lockZoom, unlockZoom } from '../../utils/viewportLock';
+import { drawMeasurementOverlay } from '../core/recordingOverlay';
+import ReportActions from '../../components/report/ReportActions';
+
+const RECORD_FPS = 30;
+const REC_SIZE = { width: 720, height: 960 }; // 3:4 세로
+
+// 녹화 캔버스에 비디오를 꽉 채워 그린다(검은 여백 없이 크롭) — gait drawCover 와 동일.
+function drawCoverJump(ctx, video, width, height) {
+  const sw0 = video.videoWidth, sh0 = video.videoHeight;
+  if (!sw0 || !sh0) return;
+  const sr = sw0 / sh0, tr = width / height;
+  let sx = 0, sy = 0, sw = sw0, sh = sh0;
+  if (sr > tr) { sw = sh0 * tr; sx = (sw0 - sw) / 2; }
+  else { sh = sw0 / tr; sy = (sh0 - sh) / 2; }
+  ctx.drawImage(video, sx, sy, sw, sh, 0, 0, width, height);
+}
 
 // 캘리브레이션 안정 유지 시간(깜빡임 방지). 충분히 서 있으면 거의 즉시 락.
 const POSE_BONES = [
@@ -107,6 +123,17 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
   const heightRef = useRef(heightCm);
   const autoSavedRef = useRef(null);
 
+  // 오버레이 녹화 파이프라인 (보행과 동일 구조)
+  const recordCanvasRef = useRef(null);
+  const recordStreamRef = useRef(null);
+  const composeRafRef = useRef(null);
+  const mediaRecorderRef = useRef(null);
+  const chunksRef = useRef([]);
+  const recordedBlobRef = useRef(null);
+  const recStartedAtRef = useRef(0);
+  const jumpCountRef = useRef(0);
+  const bestHeightRef = useRef(null);
+
   useEffect(() => { viewRef.current = view; }, [view]);
   useEffect(() => { phaseRef.current = phase; }, [phase]);
   useEffect(() => { heightRef.current = heightCm; }, [heightCm]);
@@ -131,6 +158,9 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
     setReportData(null);
     setSaveState('idle');
     autoSavedRef.current = null;
+    jumpCountRef.current = 0;
+    bestHeightRef.current = null;
+    recordedBlobRef.current = null;
   };
 
   const startCamera = async () => {
@@ -159,7 +189,70 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
       streamRef.current = null;
     }
     if (reqFrameRef.current) { cancelAnimationFrame(reqFrameRef.current); reqFrameRef.current = null; }
+    if (composeRafRef.current) { cancelAnimationFrame(composeRafRef.current); composeRafRef.current = null; }
+    if (recordStreamRef.current) { recordStreamRef.current.getTracks().forEach(t => t.stop()); recordStreamRef.current = null; }
   };
+
+  // 오버레이(스켈레톤 없이 측정값 텍스트) 합성 녹화 스트림 — 보행과 동일 구조.
+  const createRecordedStream = () => {
+    const video = videoRef.current;
+    const canvas = recordCanvasRef.current || document.createElement('canvas');
+    canvas.width = REC_SIZE.width; canvas.height = REC_SIZE.height;
+    recordCanvasRef.current = canvas;
+    const ctx = canvas.getContext('2d', { alpha: false });
+    const draw = () => {
+      ctx.fillStyle = '#000'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+      drawCoverJump(ctx, video, canvas.width, canvas.height);
+      // 데이터 오버레이: 현재 phase, 감지된 점프 수, 최고 높이(있으면)
+      const ph = phaseRef.current;
+      const phaseLabel = ph === 'air' ? '공중' : ph === 'ready' ? '준비됨' : ph === 'low_visibility' ? '자세 확인' : '보정 중';
+      drawMeasurementOverlay(ctx, canvas.width, canvas.height, {
+        title: 'JUMP LIVE',
+        elapsedMs: performance.now() - recStartedAtRef.current,
+        metrics: [
+          { label: 'STATUS', value: phaseLabel },
+          { label: 'JUMPS', value: jumpCountRef.current },
+          { label: 'BEST', value: bestHeightRef.current != null ? `${bestHeightRef.current}cm` : '—' },
+        ],
+      });
+      composeRafRef.current = requestAnimationFrame(draw);
+    };
+    if (composeRafRef.current) cancelAnimationFrame(composeRafRef.current);
+    draw();
+    const cs = canvas.captureStream ? canvas.captureStream(RECORD_FPS) : null;
+    if (!cs) return streamRef.current;
+    const mixed = new MediaStream();
+    cs.getVideoTracks().forEach(t => mixed.addTrack(t));
+    recordStreamRef.current = mixed;
+    return mixed;
+  };
+
+  const startRecording = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') return;
+    chunksRef.current = [];
+    recStartedAtRef.current = performance.now();
+    const mimeTypes = ['video/mp4', 'video/webm;codecs=vp8', 'video/webm'];
+    const mime = mimeTypes.find(m => window.MediaRecorder && MediaRecorder.isTypeSupported(m)) || '';
+    try {
+      const stream = createRecordedStream();
+      const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+      mediaRecorderRef.current = rec;
+      rec.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
+      rec.onstop = () => {
+        if (composeRafRef.current) { cancelAnimationFrame(composeRafRef.current); composeRafRef.current = null; }
+        if (recordStreamRef.current) { recordStreamRef.current.getTracks().forEach(t => t.stop()); recordStreamRef.current = null; }
+        recordedBlobRef.current = chunksRef.current.length ? new Blob(chunksRef.current, { type: mime || 'video/webm' }) : null;
+      };
+      rec.start();
+    } catch (e) { /* 녹화 불가 환경 — 측정은 계속 */ }
+  };
+
+  const stopRecording = () => new Promise((resolve) => {
+    const rec = mediaRecorderRef.current;
+    if (!rec || rec.state !== 'recording') { resolve(); return; }
+    rec.onstop = ((orig) => function (...a) { orig?.apply(this, a); resolve(); })(rec.onstop);
+    try { rec.stop(); } catch (e) { resolve(); }
+  });
 
   const startVisionPipeline = () => {
     if (reqFrameRef.current) cancelAnimationFrame(reqFrameRef.current);
@@ -196,11 +289,12 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
           calib.push(landmarks);
           const st = calib.status();
           if (st.ready) {
-            // 락 완료 → 트래커 생성, 측정 준비
+            // 락 완료 → 트래커 생성, 측정 준비, 오버레이 녹화 시작
             trackerRef.current = new JumpFlightTracker(calib.result);
             trackerRef.current.calibHeightCm = heightRef.current;
             setPhaseOnce('ready');
             setMsgOnce('');
+            startRecording();
           } else if (st.reason === 'low_visibility') {
             // 요구사항 3: 자세 불안정 → 측정 차단 경고
             setPhaseOnce('low_visibility');
@@ -214,7 +308,14 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
           tracker.push(landmarks, ts);
           setPhaseOnce(tracker.inAir ? 'air' : 'ready');
           const c = tracker.flights.length;
-          if (c !== lastCount) { lastCount = c; setJumpCount(c); }
+          if (c !== lastCount) {
+            lastCount = c; setJumpCount(c); jumpCountRef.current = c;
+            // 오버레이용 최고 높이 갱신
+            try {
+              const s = tracker.summary({ heightCm: heightRef.current });
+              if (s?.heightCm != null) bestHeightRef.current = s.heightCm;
+            } catch (e) { /* noop */ }
+          }
         }
       } else if (viewRef.current === 'camera') {
         if (!calib?.locked) {
@@ -231,9 +332,12 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
   };
 
   // 측정 종료 → 결과 산출
-  const finishMeasure = () => {
+  const finishMeasure = async () => {
     const tracker = trackerRef.current;
     if (!tracker) { setWarning('아직 보정이 끝나지 않았습니다.'); return; }
+    // 오버레이 녹화 종료 → blob 확보
+    await stopRecording();
+    const videoBlob = recordedBlobRef.current || null;
     const sum = tracker.summary({ heightCm: heightRef.current });
     // performance.calcJump 로 파워(Sayers)까지 일관 산출 (체중 있으면)
     const power = calcJump(sum.flightTimeSec, member?.weight);
@@ -244,16 +348,18 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
       peakPower: power?.peakPower ?? null,
       calibHeightCm: heightRef.current,
       source: 'live',
+      videoBlob, // 오버레이 합성 녹화본 (저장은 안 함, 화면에서 '동영상 저장'에 사용)
       member: { id: member?.id || null, name: member?.name || null },
       measuredAt: new Date().toISOString(),
     };
     setReportData(report);
     setView('preview');
     stopCamera();
-    // 유효 측정만 자동 저장 (gait 와 동일 철학)
+    // 유효 측정만 자동 저장 (gait 와 동일 철학) — videoBlob 은 저장 페이로드에서 제외
     if (report.valid === true && saveToFirebase && autoSavedRef.current !== report.measuredAt) {
       autoSavedRef.current = report.measuredAt;
-      autoSave(report);
+      const { videoBlob: _vb, ...dataOnly } = report;
+      autoSave(dataOnly);
     }
   };
 
@@ -425,7 +531,7 @@ function JumpReport({ report, saveState, onSave, onRetry, onBack }) {
         <button onClick={onBack} className="text-slate-400 text-sm font-bold">닫기</button>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-5 space-y-4">
+      <div id="jump-live-report-sheet" className="flex-1 overflow-y-auto p-5 space-y-4">
         {report.valid !== true ? (
           <div className="bg-red-500/10 border border-red-500/40 rounded-2xl p-5 text-center space-y-2">
             <p className="text-3xl">⚠</p>
@@ -480,23 +586,26 @@ function JumpReport({ report, saveState, onSave, onRetry, onBack }) {
             </div>
           </>
         )}
+      </div>
 
-        <div className="space-y-2">
-          {report.valid === true && (
-            <button onClick={onSave}
-              disabled={saveState === 'saving' || saveState === 'saved'}
-              className="w-full rounded-xl bg-amber-500 text-slate-950 font-black py-3 disabled:opacity-60 flex items-center justify-center gap-2">
-              {saveState === 'saving' && <span className="h-4 w-4 rounded-full border-2 border-slate-950 border-t-transparent animate-spin" />}
-              {saveState === 'saved' ? '✓ 자동 저장됨' : saveState === 'saving' ? '저장 중...' : saveState === 'error' ? '↻ 다시 저장' : '💾 회차 기록'}
-            </button>
-          )}
-          <button onClick={onRetry} className="w-full rounded-xl border border-slate-700 text-slate-200 font-bold py-3">
-            다시 측정
+      {/* 액션 (캡처 영역 밖): 리포트 저장 + 동영상 저장 + 회차 기록 */}
+      <div className="p-5 pt-0 space-y-2">
+        <ReportActions reportNodeId="jump-live-report-sheet" videoBlob={report.videoBlob || null}
+          baseName={`${report.member?.name || '회원'}_점프`} onMessage={() => {}} />
+        {report.valid === true && (
+          <button onClick={onSave}
+            disabled={saveState === 'saving' || saveState === 'saved'}
+            className="w-full rounded-xl bg-slate-700 text-white font-bold py-3 disabled:opacity-60 flex items-center justify-center gap-2">
+            {saveState === 'saving' && <span className="h-4 w-4 rounded-full border-2 border-white border-t-transparent animate-spin" />}
+            {saveState === 'saved' ? '✓ 자동 저장됨' : saveState === 'saving' ? '저장 중...' : saveState === 'error' ? '↻ 다시 저장' : '💾 회차 기록 (데이터)'}
           </button>
-          {saveState === 'saved' && <p className="text-center text-xs text-emerald-400">측정이 서버에 자동 저장되었습니다.</p>}
-          {saveState === 'error' && <p className="text-center text-xs text-red-400">자동 저장 실패 — 위 버튼으로 다시 시도하세요</p>}
-          {report.valid !== true && <p className="text-center text-xs text-amber-400">무효 측정은 저장되지 않습니다.</p>}
-        </div>
+        )}
+        <button onClick={onRetry} className="w-full rounded-xl border border-slate-700 text-slate-200 font-bold py-3">
+          다시 측정
+        </button>
+        {saveState === 'saved' && <p className="text-center text-xs text-emerald-400">측정이 서버에 자동 저장되었습니다.</p>}
+        {saveState === 'error' && <p className="text-center text-xs text-red-400">자동 저장 실패 — 위 버튼으로 다시 시도하세요</p>}
+        {report.valid !== true && <p className="text-center text-xs text-amber-400">무효 측정은 저장되지 않습니다.</p>}
       </div>
     </div>
   );

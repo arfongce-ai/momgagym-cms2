@@ -4,7 +4,7 @@ import {
   pelvisRelativeFeet, cameraAngleQuality, detectOrientation
 } from '../core/gaitBiomechanics';
 import { loadPoseLandmarker, detectPoseFrame, closePoseLandmarker, isPoseReady } from '../core/poseBackend';
-import { shareReportWithVideo } from '../core/reportShare';
+import { shareReportWithVideo, captureNodeToJpgFile } from '../core/reportShare';
 import { drawMeasurementOverlay } from '../core/recordingOverlay';
 import { lockZoom, unlockZoom } from '../../utils/viewportLock';
 
@@ -380,20 +380,37 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
   };
 
   // 리포트(JPG) + 영상 함께 공유/기기 저장. 데이터 저장과 독립.
+  // 동영상만 저장/공유 (오버레이 합성된 녹화본).
   const handleShareVideo = async () => {
-    setShareMsg('리포트 생성 중...');
-    const node = document.getElementById('gait-report-sheet') || document.getElementById('gait-live-report-sheet');
     const blob = recordedBlobRef.current || null;
-    if (!node && !blob) { setShareMsg('공유할 항목이 없습니다.'); return; }
+    if (!blob) { setShareMsg('저장할 영상이 없습니다.'); return; }
+    setShareMsg('영상 준비 중...');
     try {
-      const res = await shareReportWithVideo(node, blob, {
+      const res = await shareReportWithVideo(null, blob, {
         baseName: `${member?.name || '회원'}_보행분석`,
-        title: '보행 분석 리포트',
+        title: '보행 분석 영상',
       });
       setShareMsg(res.msg);
-    } catch (e) {
-      setShareMsg('공유 실패 — 다시 시도하세요');
-    }
+    } catch (e) { setShareMsg('영상 저장 실패 — 다시 시도하세요'); }
+  };
+
+  // 리포트 화면을 A4 JPG 로 저장/공유 (영상과 독립).
+  const handleSaveReportImage = async () => {
+    const node = document.getElementById('gait-live-report-sheet');
+    if (!node) { setShareMsg('리포트 화면을 찾을 수 없습니다.'); return; }
+    setShareMsg('리포트 이미지 생성 중...');
+    try {
+      const file = await captureNodeToJpgFile(node, `${member?.name || '회원'}_보행리포트.jpg`, { bg: '#1e293b' });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        try { await navigator.share({ title: '보행 분석 리포트', files: [file] }); setShareMsg('리포트를 공유했습니다.'); return; }
+        catch (err) { if (err?.name === 'AbortError') { setShareMsg(''); return; } }
+      }
+      const url = URL.createObjectURL(file);
+      const a = document.createElement('a'); a.href = url; a.download = file.name;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 200);
+      setShareMsg('리포트를 기기에 저장했습니다.');
+    } catch (e) { setShareMsg('리포트 저장 실패 — 인터넷 연결을 확인하세요'); }
   };
 
   // 회차 데이터 저장 (Firebase). 영상 공유와 완전히 독립적으로 실행.
@@ -564,22 +581,25 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
             </div>
             <div className="space-y-2">
               <div className="grid grid-cols-2 gap-2">
-                <button onClick={handleShareVideo} className="rounded-xl border border-slate-600 bg-slate-700 text-white font-bold py-3 text-sm">
-                  📤 영상 저장·공유
+                <button onClick={handleSaveReportImage} className="rounded-xl bg-amber-500 text-slate-950 font-black py-3 text-sm active:scale-95">
+                  🖼 리포트 저장
                 </button>
-                {/* 회차 기록: 유효 측정은 자동 저장. 실패/무효 시에만 수동 버튼 활성화 */}
-                <button
-                  onClick={handleSaveReport}
-                  disabled={saveState === 'saving' || saveState === 'saved' || reportData?.valid !== true}
-                  className="btn btn-primary disabled:opacity-60 flex items-center justify-center gap-2">
-                  {saveState === 'saving' && <span className="h-4 w-4 rounded-full border-2 border-slate-950 border-t-transparent animate-spin" />}
-                  {saveState === 'saved' ? '✓ 자동 저장됨'
-                    : saveState === 'saving' ? '저장 중...'
-                    : saveState === 'error' ? '↻ 다시 저장'
-                    : reportData?.valid === true ? '💾 회차 기록'
-                    : '저장 안 됨'}
+                <button onClick={handleShareVideo} className="rounded-xl border border-slate-600 bg-slate-700 text-white font-bold py-3 text-sm active:scale-95">
+                  📹 동영상 저장
                 </button>
               </div>
+              {/* 회차 기록: 유효 측정은 자동 저장. 실패/무효 시에만 수동 버튼 활성화 */}
+              <button
+                onClick={handleSaveReport}
+                disabled={saveState === 'saving' || saveState === 'saved' || reportData?.valid !== true}
+                className="btn btn-primary w-full disabled:opacity-60 flex items-center justify-center gap-2">
+                {saveState === 'saving' && <span className="h-4 w-4 rounded-full border-2 border-slate-950 border-t-transparent animate-spin" />}
+                {saveState === 'saved' ? '✓ 자동 저장됨'
+                  : saveState === 'saving' ? '저장 중...'
+                  : saveState === 'error' ? '↻ 다시 저장'
+                  : reportData?.valid === true ? '💾 회차 기록 (데이터)'
+                  : '저장 안 됨'}
+              </button>
               {shareMsg && <p className="text-center text-xs text-emerald-400">{shareMsg}</p>}
               {saveState === 'saved' && <p className="text-center text-xs text-emerald-400">측정이 서버에 자동 저장되었습니다.</p>}
               {saveState === 'error' && <p className="text-center text-xs text-red-400">자동 저장 실패 — 위 버튼으로 다시 시도하세요</p>}

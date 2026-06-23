@@ -14,7 +14,7 @@
 //    onComment(text) => void   (선택) 트레이너 코멘트 저장
 // ════════════════════════════════════════════════════════════════════════
 import React, { useState, useMemo, useRef } from 'react';
-import { captureNodeToJpgFile } from '../core/reportShare';
+import ReportActions from '../../components/report/ReportActions';
 import {
   RadarChart, PolarGrid, PolarAngleAxis, Radar,
   ResponsiveContainer,
@@ -72,7 +72,7 @@ export default function JumpReportDashboard({ report, onClose, onComment }) {
   const score = useMemo(() => computeScore(r, b), [r, b]);
   const [comment, setComment] = useState(r?.trainerComment || '');
   const [saved, setSaved] = useState(false);
-  const [exporting, setExporting] = useState(false);
+  const [msg, setMsg] = useState('');
   const sheetRef = useRef(null);
 
   const memberName = r?.member?.name || '회원';
@@ -98,39 +98,14 @@ export default function JumpReportDashboard({ report, onClose, onComment }) {
     setTimeout(() => setSaved(false), 1800);
   };
 
-  const handleExportJpg = async () => {
-    if (!sheetRef.current) return;
-    setExporting(true);
-    try {
-      // 리포트는 JPG 로만 (영상과 분리 — 요구사항 10)
-      const file = await captureNodeToJpgFile(sheetRef.current, `${memberName}_점프리포트_${dateStr}.jpg`);
-      if (navigator.canShare && navigator.canShare({ files: [file] })) {
-        try { await navigator.share({ title: '점프 분석 리포트', files: [file] }); setExporting(false); return; }
-        catch (err) { if (err?.name === 'AbortError') { setExporting(false); return; } }
-      }
-      const url = URL.createObjectURL(file);
-      const a = document.createElement('a'); a.href = url; a.download = file.name;
-      document.body.appendChild(a); a.click(); document.body.removeChild(a);
-      setTimeout(() => URL.revokeObjectURL(url), 200);
-    } catch (e) {
-      alert('이미지 저장에 실패했습니다. 인터넷 연결을 확인하거나 화면 캡처로 저장해 주세요.');
-    } finally {
-      setExporting(false);
-    }
-  };
-
   const invalid = r.valid !== true;
 
   return (
     <div className="min-h-full w-full bg-slate-950 flex flex-col items-center p-4 font-sans gap-3">
-      {/* 액션 바 (캡처 영역 밖) */}
+      {/* 상단: 닫기만 */}
       <div className="w-full max-w-[820px] flex items-center justify-between">
         <button onClick={onClose} className="text-slate-300 font-bold text-sm">← 닫기</button>
-        <button onClick={handleExportJpg} disabled={exporting}
-          className="rounded-lg bg-amber-500 text-slate-950 font-black text-sm px-4 py-2 disabled:opacity-60 flex items-center gap-2">
-          {exporting && <span className="h-4 w-4 rounded-full border-2 border-slate-950 border-t-transparent animate-spin" />}
-          {exporting ? '준비 중...' : '📤 리포트 저장/공유'}
-        </button>
+        {msg && <span className="text-xs text-emerald-400">{msg}</span>}
       </div>
 
       {/* ── 캡처 대상 시트 (A4 비율) ── */}
@@ -303,6 +278,12 @@ export default function JumpReportDashboard({ report, onClose, onComment }) {
           </span>
           <span className="text-[10px] text-slate-600">핵심=신뢰 · 참고=정확도 한계 · 제약=영상 추정</span>
         </footer>
+      </div>
+
+      {/* 하단 고정 액션: 리포트 저장 + (영상 있으면) 동영상 저장 */}
+      <div className="w-full max-w-[820px] sticky bottom-0 pb-[max(8px,env(safe-area-inset-bottom))] pt-2 bg-slate-950">
+        <ReportActions reportNodeId="jump-report-sheet" videoBlob={report?.videoBlob || null}
+          baseName={`${memberName}_점프`} onMessage={setMsg} />
       </div>
     </div>
   );
