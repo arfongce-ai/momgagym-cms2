@@ -4,6 +4,7 @@ import {
   pelvisRelativeFeet, BiomechAccumulator,
 } from '../core/gaitBiomechanics';
 import { analyzeUploadedVideo, CAPTURE_PRESETS } from '../core/videoAnalyzer';
+import FutureVideoOverlay from './FutureVideoOverlay';
 
 /*
  * GaitUploadAnalysis — 고속 촬영 영상 업로드 → 보행 분석
@@ -153,11 +154,14 @@ export default function GaitUploadAnalysis({ member, onBack, onComplete }) {
 
       <div className="flex-1 overflow-y-auto p-5 flex flex-col items-center justify-center gap-5">
         {/* 미리보기 비디오 (분석 대상) */}
-        <video
-          ref={videoRef}
-          className="w-full max-w-md rounded-xl bg-black aspect-[3/4] object-contain"
-          playsInline muted controls={phase === 'ready' || phase === 'done'}
-        />
+        <div className="relative w-full max-w-md overflow-hidden rounded-xl bg-black aspect-[3/4]">
+          <video
+            ref={videoRef}
+            className="h-full w-full object-contain"
+            playsInline muted controls={phase === 'ready' || phase === 'done'}
+          />
+          <FutureVideoOverlay mode="UPLOAD AI" recording={phase === 'analyzing'} intensity={phase === 'analyzing' ? 0.86 : 0.5} />
+        </div>
 
         {phase === 'idle' && (
           <label className="cursor-pointer rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black px-6 py-3 transition-colors">

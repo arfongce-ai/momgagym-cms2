@@ -22,136 +22,192 @@ function roundRect(ctx, x, y, w, h, r) {
   ctx.closePath();
 }
 
-export function drawRecordingHud(ctx, width, height, state = {}) {
-  const scale = Math.max(0.75, Math.min(1.35, width / 540));
-  const pad = Math.round(16 * scale);
-  const topH = Math.round(38 * scale);
-  const topW = Math.round(132 * scale);
+function hexToRgba(hex, alpha = 1) {
+  const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex || '');
+  if (!m) return `rgba(34,211,238,${alpha})`;
+  const [r, g, b] = m.slice(1).map(v => parseInt(v, 16));
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
+function drawCornerFrame(ctx, width, height, scale, accent) {
+  const pad = 18 * scale;
+  const len = Math.min(width, height) * 0.105;
+  const corners = [
+    [pad, pad, 1, 1],
+    [width - pad, pad, -1, 1],
+    [pad, height - pad, 1, -1],
+    [width - pad, height - pad, -1, -1],
+  ];
+
+  ctx.save();
+  ctx.strokeStyle = hexToRgba(accent, 0.86);
+  ctx.lineWidth = Math.max(2, 2.4 * scale);
+  ctx.shadowColor = hexToRgba(accent, 0.46);
+  ctx.shadowBlur = 14 * scale;
+  corners.forEach(([x, y, sx, sy]) => {
+    ctx.beginPath();
+    ctx.moveTo(x, y + sy * len);
+    ctx.lineTo(x, y);
+    ctx.lineTo(x + sx * len, y);
+    ctx.stroke();
+  });
+  ctx.restore();
+}
+
+function drawVerticalBars(ctx, x, y, scale, accent, values = [0.42, 0.72, 0.55, 0.88]) {
+  const barW = 7 * scale;
+  const barH = 54 * scale;
+  const gap = 5 * scale;
+
+  ctx.save();
+  values.forEach((v, i) => {
+    const bx = x + i * (barW + gap);
+    roundRect(ctx, bx, y, barW, barH, barW / 2);
+    ctx.fillStyle = 'rgba(15,23,42,0.58)';
+    ctx.fill();
+
+    const fillH = Math.max(4 * scale, barH * Math.max(0.08, Math.min(1, v)));
+    roundRect(ctx, bx, y + barH - fillH, barW, fillH, barW / 2);
+    ctx.fillStyle = i % 2 ? hexToRgba(accent, 0.9) : 'rgba(34,211,238,0.9)';
+    ctx.shadowColor = ctx.fillStyle;
+    ctx.shadowBlur = 8 * scale;
+    ctx.fill();
+  });
+  ctx.restore();
+}
+
+export function drawFutureHud(ctx, width, height, opts = {}) {
+  const {
+    title = 'AI LIVE',
+    elapsedMs = null,
+    metrics = [],
+    accent = '#22d3ee',
+    recording = false,
+  } = opts;
+  const scale = Math.max(0.72, Math.min(1.45, width / 720));
+  const pad = 16 * scale;
+  const items = (metrics || []).filter(m => m && m.value != null && m.value !== '').slice(0, 4);
 
   ctx.save();
   ctx.textBaseline = 'middle';
 
-  roundRect(ctx, pad, pad, topW, topH, topH / 2);
-  ctx.fillStyle = 'rgba(0,0,0,0.50)';
-  ctx.fill();
-  ctx.fillStyle = '#ef4444';
-  ctx.beginPath();
-  ctx.arc(pad + 19 * scale, pad + topH / 2, 5 * scale, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = '#fff';
-  ctx.font = `700 ${14 * scale}px ui-monospace, SFMono-Regular, Menlo, monospace`;
-  ctx.fillText(formatRecordTime(state.recordingElapsed || 0), pad + 34 * scale, pad + topH / 2);
+  drawCornerFrame(ctx, width, height, scale, accent);
 
-  const panelW = width - pad * 2;
-  const panelH = Math.round(74 * scale);
-  const panelX = pad;
-  const panelY = height - pad - panelH;
-  roundRect(ctx, panelX, panelY, panelW, panelH, 18 * scale);
-  ctx.fillStyle = 'rgba(0,0,0,0.34)';
-  ctx.fill();
-  ctx.strokeStyle = 'rgba(255,255,255,0.16)';
-  ctx.lineWidth = Math.max(1, 1.2 * scale);
+  if (typeof ctx.createLinearGradient === 'function') {
+    const scan = ctx.createLinearGradient(width * 0.12, height * 0.5, width * 0.88, height * 0.5);
+    scan.addColorStop(0, 'rgba(34,211,238,0)');
+    scan.addColorStop(0.5, 'rgba(34,211,238,0.44)');
+    scan.addColorStop(1, 'rgba(245,158,11,0)');
+    ctx.strokeStyle = scan;
+  } else {
+    ctx.strokeStyle = 'rgba(34,211,238,0.44)';
+  }
+  ctx.lineWidth = Math.max(1, 1.1 * scale);
+  ctx.beginPath();
+  ctx.moveTo(width * 0.12, height * 0.5);
+  ctx.lineTo(width * 0.88, height * 0.5);
   ctx.stroke();
 
-  const isMetro = state.toolTab === 'metronome';
-  ctx.fillStyle = 'rgba(245,158,11,0.88)';
-  roundRect(ctx, panelX + 12 * scale, panelY + 14 * scale, 78 * scale, 28 * scale, 14 * scale);
+  const chipW = 128 * scale;
+  const chipH = 32 * scale;
+  roundRect(ctx, pad, pad, chipW, chipH, chipH / 2);
+  ctx.fillStyle = 'rgba(2,6,23,0.58)';
   ctx.fill();
-  ctx.fillStyle = '#111827';
-  ctx.font = `900 ${13 * scale}px system-ui, sans-serif`;
-  ctx.fillText(isMetro ? 'METRO' : 'TIME', panelX + 27 * scale, panelY + 28 * scale);
+  ctx.strokeStyle = hexToRgba(accent, 0.28);
+  ctx.stroke();
+  ctx.fillStyle = recording ? '#ef4444' : accent;
+  ctx.beginPath();
+  ctx.arc(pad + 17 * scale, pad + chipH / 2, 4.8 * scale, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#ecfeff';
+  ctx.font = `900 ${11 * scale}px system-ui, sans-serif`;
+  ctx.fillText(String(title || (recording ? 'REC ACTIVE' : 'AI LIVE')).toUpperCase(), pad + 30 * scale, pad + chipH / 2);
 
-  ctx.fillStyle = '#fbbf24';
-  ctx.font = `900 ${isMetro ? 29 * scale : 30 * scale}px ui-monospace, SFMono-Regular, Menlo, monospace`;
-  const main = isMetro
-    ? `${state.metronomeBpm || 100} BPM`
-    : formatStopwatch(state.stopwatchElapsed || 0);
-  ctx.fillText(main, panelX + 108 * scale, panelY + 30 * scale);
+  if (elapsedMs != null) {
+    const time = formatRecordTime(Math.floor(elapsedMs / 1000));
+    const timeW = 96 * scale;
+    roundRect(ctx, width - pad - timeW, pad, timeW, chipH, chipH / 2);
+    ctx.fillStyle = 'rgba(2,6,23,0.58)';
+    ctx.fill();
+    ctx.fillStyle = '#fff7ed';
+    ctx.font = `800 ${13 * scale}px ui-monospace, Menlo, monospace`;
+    ctx.textAlign = 'center';
+    ctx.fillText(time, width - pad - timeW / 2, pad + chipH / 2);
+    ctx.textAlign = 'left';
+  }
 
-  ctx.fillStyle = 'rgba(255,255,255,0.74)';
-  ctx.font = `700 ${11 * scale}px system-ui, sans-serif`;
-  const sub = isMetro
-    ? (state.metronomePlaying ? 'metronome playing' : 'metronome ready')
-    : (state.stopwatchRunning ? 'stopwatch running' : 'stopwatch ready');
-  ctx.fillText(sub, panelX + 110 * scale, panelY + 56 * scale);
+  drawVerticalBars(ctx, pad, height * 0.26, scale, accent);
+
+  const ringR = 28 * scale;
+  const ringX = width - pad - ringR;
+  const ringY = height * 0.28;
+  ctx.beginPath();
+  ctx.arc(ringX, ringY, ringR, 0, Math.PI * 2);
+  ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+  ctx.lineWidth = 6 * scale;
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(ringX, ringY, ringR, -Math.PI / 2, Math.PI * 1.32);
+  ctx.strokeStyle = hexToRgba(accent, 0.9);
+  ctx.stroke();
+  ctx.fillStyle = '#e0f2fe';
+  ctx.font = `900 ${12 * scale}px ui-monospace, Menlo, monospace`;
+  ctx.textAlign = 'center';
+  ctx.fillText('82', ringX, ringY);
+  ctx.textAlign = 'left';
+
+  if (items.length) {
+    const panelW = Math.min(width * 0.38, 232 * scale);
+    const rowH = 30 * scale;
+    const panelH = items.length * rowH + 20 * scale;
+    const panelX = pad;
+    const panelY = height - pad - panelH;
+    roundRect(ctx, panelX, panelY, panelW, panelH, 16 * scale);
+    ctx.fillStyle = 'rgba(2,6,23,0.46)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+    ctx.stroke();
+
+    items.forEach((m, i) => {
+      const y = panelY + 15 * scale + i * rowH;
+      ctx.fillStyle = 'rgba(203,213,225,0.66)';
+      ctx.font = `800 ${9 * scale}px system-ui, sans-serif`;
+      ctx.fillText(String(m.label || '').toUpperCase(), panelX + 12 * scale, y + 3 * scale);
+      ctx.fillStyle = '#f8fafc';
+      ctx.font = `900 ${16 * scale}px ui-monospace, Menlo, monospace`;
+      ctx.fillText(String(m.value), panelX + 92 * scale, y + 3 * scale);
+    });
+  }
 
   ctx.restore();
 }
 
-// ════════════════════════════════════════════════════════════════════════
-//  [공통] 측정값 텍스트 오버레이 — 모든 카메라 측정에서 재사용.
-//  스켈레톤은 그리지 않고, 실시간 측정값만 영상에 합성한다(요구사항 13).
-//  보행·점프·자세·ROM·RSI·VBT·역도·스윙 등 향후 측정도 metrics 배열만
-//  넘기면 동일한 룩으로 합성된다.
-//
-//  drawMeasurementOverlay(ctx, w, h, {
-//    title: 'GAIT LIVE',
-//    elapsedMs: 1234,
-//    metrics: [{ label:'SPM', value:168 }, { label:'STANCE', value:'62%' }, ...],
-//    accent: '#fbbf24'
-//  })
-// ════════════════════════════════════════════════════════════════════════
+export function drawRecordingHud(ctx, width, height, state = {}) {
+  drawFutureHud(ctx, width, height, {
+    title: state.toolTab === 'metronome' ? 'METRO' : 'TIMER',
+    elapsedMs: (state.recordingElapsed || 0) * 1000,
+    recording: true,
+    accent: '#f59e0b',
+    metrics: [
+      { label: 'mode', value: state.toolTab === 'metronome' ? 'BPM' : 'TIME' },
+      {
+        label: 'value',
+        value: state.toolTab === 'metronome'
+          ? `${state.metronomeBpm || 100}`
+          : formatStopwatch(state.stopwatchElapsed || 0),
+      },
+    ],
+  });
+}
+
 export function drawMeasurementOverlay(ctx, width, height, opts = {}) {
   const { title = '', elapsedMs = null, metrics = [], accent = '#fbbf24' } = opts;
-  const items = metrics.filter(m => m && m.value != null && m.value !== '');
-  if (!title && !items.length && elapsedMs == null) return;
-
-  const scale = Math.max(0.75, Math.min(1.4, width / 540));
-  const pad = Math.round(16 * scale);
-
-  ctx.save();
-  ctx.textBaseline = 'alphabetic';
-
-  // ── 상단: 녹화시간(있으면) ──
-  if (elapsedMs != null) {
-    const topH = Math.round(34 * scale), topW = Math.round(120 * scale);
-    roundRect(ctx, pad, pad, topW, topH, topH / 2);
-    ctx.fillStyle = 'rgba(0,0,0,0.50)'; ctx.fill();
-    ctx.fillStyle = '#ef4444';
-    ctx.beginPath(); ctx.arc(pad + 18 * scale, pad + topH / 2, 5 * scale, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = '#fff';
-    ctx.font = `700 ${13 * scale}px ui-monospace, Menlo, monospace`;
-    ctx.textBaseline = 'middle';
-    ctx.fillText(formatRecordTime(Math.floor(elapsedMs / 1000)), pad + 32 * scale, pad + topH / 2);
-    ctx.textBaseline = 'alphabetic';
-  }
-
-  // ── 하단: 측정값 패널 ──
-  if (title || items.length) {
-    const titleH = title ? Math.round(22 * scale) : 0;
-    const rowH = Math.round(34 * scale);
-    const cols = items.length <= 2 ? items.length || 1 : items.length <= 4 ? 2 : 3;
-    const rows = Math.ceil(items.length / cols);
-    const panelW = width - pad * 2;
-    const panelH = titleH + rows * rowH + Math.round(20 * scale);
-    const panelX = pad;
-    const panelY = height - pad - panelH;
-
-    roundRect(ctx, panelX, panelY, panelW, panelH, 18 * scale);
-    ctx.fillStyle = 'rgba(15,23,42,0.72)'; ctx.fill();
-    ctx.strokeStyle = accent.replace(')', ',0.6)').replace('rgb', 'rgba'); // best-effort
-    ctx.strokeStyle = 'rgba(255,255,255,0.14)';
-    ctx.lineWidth = Math.max(1, 1.2 * scale); ctx.stroke();
-
-    let cy = panelY + Math.round(14 * scale);
-    if (title) {
-      ctx.fillStyle = accent;
-      ctx.font = `800 ${Math.round(13 * scale)}px system-ui, sans-serif`;
-      ctx.fillText(title, panelX + Math.round(16 * scale), cy + Math.round(11 * scale));
-      cy += titleH;
-    }
-    const cellW = (panelW - Math.round(24 * scale)) / cols;
-    items.forEach((m, i) => {
-      const col = i % cols, row = Math.floor(i / cols);
-      const cx = panelX + Math.round(16 * scale) + col * cellW;
-      const yy = cy + row * rowH;
-      ctx.fillStyle = 'rgba(255,255,255,0.6)';
-      ctx.font = `700 ${Math.round(10 * scale)}px system-ui, sans-serif`;
-      ctx.fillText(String(m.label || ''), cx, yy + Math.round(11 * scale));
-      ctx.fillStyle = '#f8fafc';
-      ctx.font = `900 ${Math.round(20 * scale)}px ui-monospace, Menlo, monospace`;
-      ctx.fillText(String(m.value), cx, yy + Math.round(30 * scale));
-    });
-  }
-  ctx.restore();
+  if (!title && !metrics?.length && elapsedMs == null) return;
+  drawFutureHud(ctx, width, height, {
+    title,
+    elapsedMs,
+    metrics,
+    accent,
+    recording: elapsedMs != null,
+  });
 }

@@ -15,6 +15,7 @@ import {
 import { calcJump } from '../core/performance';
 import { computeRSIFromFlights } from '../core/reactiveJump';
 import { store } from '../../demoData';
+import FutureVideoOverlay from './FutureVideoOverlay';
 
 // 회원 신체기록(body)에서 최신 체중·키를 가져온다. (Sayers 파워 계산에 체중 필요)
 // member 객체에 직접 없을 수 있으므로 store.getBodyRecords 로 최신 기록을 조회한다.
@@ -264,8 +265,11 @@ export default function JumpUploadAnalysis({ member, onBack, onComplete, onMembe
       </div>
 
       <div className="flex-1 overflow-y-auto p-5 flex flex-col items-center justify-center gap-5">
-        <video ref={videoRef} className="w-full max-w-md rounded-xl bg-black aspect-[3/4] object-contain"
-          playsInline muted controls={phase === 'ready' || phase === 'done'} />
+        <div className="relative w-full max-w-md overflow-hidden rounded-xl bg-black aspect-[3/4]">
+          <video ref={videoRef} className="h-full w-full object-contain"
+            playsInline muted controls={phase === 'ready' || phase === 'done'} />
+          <FutureVideoOverlay mode="JUMP UPLOAD" recording={phase === 'analyzing'} intensity={phase === 'analyzing' ? 0.86 : 0.5} />
+        </div>
 
         {heightCm && (
           <p className="text-[11px] text-emerald-400">회원 키 {heightCm}cm로 자동 보정합니다</p>

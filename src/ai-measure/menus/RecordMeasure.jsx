@@ -6,6 +6,7 @@ import { todayYMD } from '../../utils/dates';
 import { drawGuides } from '../core/cameraGuide';
 import { openMainCameraStream } from '../core/cameraSelect';
 import { drawRecordingHud, formatStopwatch } from '../core/recordingOverlay';
+import FutureVideoOverlay from './FutureVideoOverlay';
 
 // High-quality recording. Output is full-resolution with a high bitrate.
 // Tune per-purpose later (e.g. higher FPS for fast lifts, smaller bitrate
@@ -450,6 +451,7 @@ export default function RecordMeasure({ member, onBack }) {
       <div className="fixed inset-0 z-[80] bg-black overflow-hidden">
         <video ref={videoRef} autoPlay playsInline muted className="absolute inset-0 h-full w-full object-cover" />
         <canvas ref={guideCanvasRef} className="absolute inset-0 h-full w-full pointer-events-none" />
+        <FutureVideoOverlay mode="VIDEO REC" recording={status === 'recording'} intensity={status === 'recording' ? 0.9 : 0.62} />
 
         <div className="absolute left-0 right-0 top-0 z-10 flex items-center justify-between px-4 pt-[max(14px,env(safe-area-inset-top))]">
           <button onClick={onBack} className="rounded-full bg-black/55 px-3 py-2 text-sm font-bold text-white backdrop-blur">← 메뉴</button>

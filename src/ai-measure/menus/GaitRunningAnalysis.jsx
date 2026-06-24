@@ -7,6 +7,7 @@ import { loadPoseLandmarker, detectPoseFrame, closePoseLandmarker, isPoseReady }
 import { shareReportWithVideo, captureNodeToJpgFile } from '../core/reportShare';
 import { drawMeasurementOverlay } from '../core/recordingOverlay';
 import { lockZoom, unlockZoom } from '../../utils/viewportLock';
+import FutureVideoOverlay from './FutureVideoOverlay';
 
 // 캘리브레이션: 세이프존 + 인식 안정이 이만큼 유지되면 락
 const CALIB_HOLD_MS = 800; // 사람이 잡히면 거의 즉시 인식(0.8초 안정화로 깜빡임만 방지)
@@ -476,11 +477,12 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
           <video ref={videoRef} className="absolute inset-0 w-full h-full object-cover" playsInline muted autoPlay />
           {/* 검출된 포즈 스켈레톤 오버레이 (인식 확인용) */}
           <canvas ref={skeletonCanvasRef} className="absolute inset-0 w-full h-full pointer-events-none" />
+          <FutureVideoOverlay mode="GAIT AI" recording={view === 'recording'} intensity={isReady ? 0.86 : 0.58} />
           {/* 세이프 존 가이드 (상하좌우 15% 여백) — 캘리브레이션 시 녹색 */}
           <div className="absolute inset-0 pointer-events-none flex items-center justify-center p-[15%]">
             <div className={`w-full h-full border-4 rounded-lg transition-colors ${isReady ? 'border-green-500/70' : 'border-white/30'}`} />
           </div>
-          <div className="absolute top-0 w-full p-4 flex justify-between items-start bg-gradient-to-b from-black/60 to-transparent">
+          <div className="absolute top-0 z-20 w-full p-4 flex justify-between items-start bg-gradient-to-b from-black/60 to-transparent">
             <button onClick={onBack} className="measure-back">← 뒤로</button>
             <div className="text-center">
               <h1 className="measure-title">보행 & 런닝 분석</h1>
@@ -516,7 +518,7 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
             bpm={bpm} onBpm={setBpm} metroPlaying={metroPlaying} onMetroPlaying={setMetroPlaying}
             swElapsed={swElapsed} swRunning={swRunning} onSwElapsed={setSwElapsed} onSwRunning={setSwRunning}
           />
-          <div className="absolute bottom-0 w-full p-6 bg-gradient-to-t from-black/80 to-transparent flex flex-col items-center gap-4">
+          <div className="absolute bottom-0 z-20 w-full p-6 bg-gradient-to-t from-black/80 to-transparent flex flex-col items-center gap-4">
             {view === 'recording' && (
               <div className="w-full max-w-md h-2 bg-slate-700 rounded-full overflow-hidden">
                 <div

@@ -23,6 +23,7 @@ import { lockZoom, unlockZoom } from '../../utils/viewportLock';
 import { drawMeasurementOverlay } from '../core/recordingOverlay';
 import ReportActions from '../../components/report/ReportActions';
 import { store } from '../../demoData';
+import FutureVideoOverlay from './FutureVideoOverlay';
 
 // 회원 신체기록에서 최신 체중을 보조 조회 (member.weight 없을 때 Sayers 파워용)
 function resolveWeight(member) {
@@ -493,9 +494,10 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
         <div className="relative w-full h-full">
           <video ref={videoRef} className="absolute inset-0 w-full h-full object-cover" playsInline muted />
           <canvas ref={skeletonCanvasRef} className="absolute inset-0 w-full h-full pointer-events-none" />
+          <FutureVideoOverlay mode="JUMP AI" recording={phase === 'air'} intensity={phase === 'ready' || phase === 'air' ? 0.9 : 0.56} />
 
           {/* 헤더 */}
-          <div className="absolute top-0 inset-x-0 flex items-center justify-between px-4 py-3 bg-gradient-to-b from-black/60 to-transparent">
+          <div className="absolute top-0 z-20 inset-x-0 flex items-center justify-between px-4 py-3 bg-gradient-to-b from-black/60 to-transparent">
             <button onClick={onBack} className="text-white font-bold text-sm">← 뒤로</button>
             <h2 className="text-white font-black text-sm">점프 정밀 측정</h2>
             <div className="w-12" />
@@ -536,7 +538,7 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
           )}
 
           {/* 하단 컨트롤 */}
-          <div className="absolute bottom-[max(24px,calc(env(safe-area-inset-bottom)+24px))] inset-x-0 flex flex-col items-center gap-3">
+          <div className="absolute bottom-[max(24px,calc(env(safe-area-inset-bottom)+24px))] z-20 inset-x-0 flex flex-col items-center gap-3">
             <p className="text-white/70 text-xs px-6 text-center">
               보정선(초록 점선)에 발을 맞추고 서세요 → 점프 → 같은 자리에 착지 → [측정 완료]
             </p>
