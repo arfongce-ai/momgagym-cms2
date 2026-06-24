@@ -126,6 +126,18 @@ describe('JumpFlightTracker — flight time based height', () => {
     // agree 여부는 데이터에 따라 다르지만, 교차검증 값이 산출되어야 한다
     expect(typeof sum.crossCheck.deltaPct === 'number').toBe(true);
   });
+
+  it('cross-check mismatch does NOT invalidate a physically valid jump', () => {
+    // 골반변위 추정이 비행시간 높이와 크게 어긋나도(원근 왜곡),
+    // 체공시간이 물리적으로 타당하면 valid 는 유지되어야 한다.
+    const tracker = new JumpFlightTracker(calib.result);
+    // riseY 를 비행시간 높이와 일부러 크게 어긋나게(거의 0) 설정 → 큰 deltaPct
+    simulateJump(tracker, { flightMs: 400, riseY: 0.002 });
+    const sum = tracker.summary({ heightCm: 180 });
+    expect(sum.crossCheck.deltaPct).toBeGreaterThan(25); // 옛 임계 초과
+    expect(sum.valid).toBe(true);          // 그래도 유효
+    expect(sum.reason).toBe('ok');
+  });
 });
 
 describe('JUMP_TUNING is centralized and adjustable', () => {

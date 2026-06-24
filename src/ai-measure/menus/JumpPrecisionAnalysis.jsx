@@ -599,8 +599,8 @@ function JumpReport({ report, saveState, onSave, onRetry, onBack }) {
             <p className="text-red-400 font-black">측정 무효</p>
             <p className="text-slate-300 text-sm">
               {report.reason === 'no_jump' ? '점프 동작이 감지되지 않았습니다.'
-                : report.reason === 'cross_mismatch' ? `두 측정 방식의 차이가 큽니다(${cc.deltaPct}%). 카메라를 골반 높이로 고정하고 제자리에서 수직으로 점프해 다시 측정하세요.`
                 : report.reason === 'sanity_fail' ? '측정값이 키 대비 비현실적입니다. 카메라 각도/위치를 확인하고 다시 측정하세요.'
+                : report.rsi?.message ? report.rsi.message
                 : '측정이 무효합니다. 다시 시도해 주세요.'}
             </p>
           </div>
@@ -621,24 +621,24 @@ function JumpReport({ report, saveState, onSave, onRetry, onBack }) {
               </div>
             </div>
 
-            {/* 교차검증 신뢰도 카드 */}
+            {/* 참고: 골반변위 추정(원근 왜곡으로 오차 큼 — 유효성에는 미반영) */}
             <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-2">
-              <p className="text-xs font-bold text-slate-300">측정 신뢰도 (교차검증)</p>
+              <p className="text-xs font-bold text-slate-300">참고값 (골반변위 추정)</p>
               <div className="grid grid-cols-2 gap-2 text-center text-sm">
                 <div className="bg-slate-800 rounded-xl py-2">
-                  <p className="text-[10px] text-slate-500">비행시간 기반</p>
+                  <p className="text-[10px] text-slate-500">비행시간 기반 (주측정)</p>
                   <p className="font-mono font-bold text-slate-100">{report.heightCm} cm</p>
                 </div>
                 <div className="bg-slate-800 rounded-xl py-2">
-                  <p className="text-[10px] text-slate-500">골반변위 기반</p>
-                  <p className="font-mono font-bold text-slate-100">
+                  <p className="text-[10px] text-slate-500">골반변위 추정 (참고)</p>
+                  <p className="font-mono font-bold text-slate-400">
                     {cc.heightCrossCm != null ? `${cc.heightCrossCm} cm` : '—'}
                   </p>
                 </div>
               </div>
-              {cc.agree != null && (
-                <p className={`text-center text-xs font-bold ${cc.agree ? 'text-emerald-400' : 'text-red-400'}`}>
-                  {cc.agree ? `✓ 두 방식 일치 (오차 ${cc.deltaPct}%)` : `✗ 불일치 (오차 ${cc.deltaPct}%)`}
+              {cc.deltaPct != null && (
+                <p className="text-center text-[11px] text-slate-500">
+                  두 방식 차이 {cc.deltaPct}% · 골반변위는 카메라 거리·각도에 따라 오차가 커 참고용입니다
                 </p>
               )}
               <p className="text-[10px] text-slate-500 text-center">

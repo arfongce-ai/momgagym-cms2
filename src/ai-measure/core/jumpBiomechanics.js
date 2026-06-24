@@ -251,12 +251,16 @@ export class JumpFlightTracker {
     let sanityOk = true;
     if (bodyCm) sanityOk = heightFlightCm <= bodyCm * JUMP_TUNING.maxHeightToBodyRatio;
 
-    // 유효 판정: 체공 범위 OK + (교차검증이 가능했다면 통과) + sanity OK
-    const valid = sanityOk && (crossOk == null || crossOk === true);
+    // 유효 판정: 체공시간(주측정) + 물리적 sanity 만으로 결정.
+    // 골반변위 교차검증은 카메라 거리/각도/원근 왜곡으로 구조적 오차가 커
+    //  (정규화 픽셀 변위에 전신 스케일을 적용 → 1:1 전이 불가),
+    //  pass/fail 게이트가 아니라 '참고 표시값'으로만 둔다.
+    //  (front-view / 픽셀스케일 높이를 신뢰하지 않는 기존 결론과 동일 철학)
+    const valid = sanityOk;
 
     return {
       valid,
-      reason: !sanityOk ? 'sanity_fail' : (crossOk === false ? 'cross_mismatch' : 'ok'),
+      reason: !sanityOk ? 'sanity_fail' : 'ok',
       jumps: this.flights.length,
       flightTimeMs: Math.round(best.flightMs),
       flightTimeSec: Math.round(t * 1000) / 1000,
