@@ -16,14 +16,19 @@ export default function AiMeasureHub() {
   const [active, setActive] = useState(null); // 선택된 메뉴 객체
 
   const baseMember = members.find(m => m.id === memberId);
-  // 회원의 최근 신체기록에서 키를 자동 연동
+  // 회원의 최근 신체기록에서 키·몸무게를 자동 연동
   const member = baseMember ? (() => {
     const records = store.getBodyRecords(baseMember.id) || [];
-    const withHeight = records.filter(r => r.height);
-    const latestHeight = withHeight.length
-      ? withHeight.sort((a, b) => (a.recordedAt < b.recordedAt ? 1 : -1))[0].height
-      : null;
-    return { ...baseMember, height: heightOverrides[baseMember.id] || baseMember.height || latestHeight || null };
+    const byRecent = [...records].sort((a, b) =>
+      String(b.recordedAt).localeCompare(String(a.recordedAt)));
+    const latestHeight = byRecent.find(r => r.height)?.height ?? null;
+    const latestWeight = byRecent.find(r => r.weight != null)?.weight ?? null;
+    return {
+      ...baseMember,
+      height: heightOverrides[baseMember.id] || baseMember.height || latestHeight || null,
+      // 점프 파워(Sayers) 계산에 쓰는 체중 자동 연동 (신체정보 → 측정)
+      weight: baseMember.weight ?? latestWeight ?? null,
+    };
   })() : null;
 
   const rememberMemberHeight = async (heightCm) => {

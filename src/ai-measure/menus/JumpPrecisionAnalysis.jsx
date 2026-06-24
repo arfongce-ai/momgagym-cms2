@@ -22,6 +22,21 @@ import { loadPoseLandmarker, detectPoseFrame, isPoseReady } from '../core/poseBa
 import { lockZoom, unlockZoom } from '../../utils/viewportLock';
 import { drawMeasurementOverlay } from '../core/recordingOverlay';
 import ReportActions from '../../components/report/ReportActions';
+import { store } from '../../demoData';
+
+// 회원 신체기록에서 최신 체중을 보조 조회 (member.weight 없을 때 Sayers 파워용)
+function resolveWeight(member) {
+  let w = member?.weight != null ? Number(member.weight) : null;
+  try {
+    if (w == null && member?.id && typeof store?.getBodyRecords === 'function') {
+      const recs = store.getBodyRecords(member.id) || [];
+      const sorted = [...recs].sort((a, b) => String(b.recordedAt).localeCompare(String(a.recordedAt)));
+      const hit = sorted.find(r => r.weight != null);
+      if (hit) w = Number(hit.weight);
+    }
+  } catch (e) { /* member 값 사용 */ }
+  return Number.isFinite(w) ? w : null;
+}
 
 const RECORD_FPS = 30;
 const REC_SIZE = { width: 720, height: 960 }; // 3:4 세로
@@ -362,7 +377,7 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
     const videoBlob = recordedBlobRef.current || null;
     const sum = tracker.summary({ heightCm: heightRef.current });
     // performance.calcJump 로 파워(Sayers)까지 일관 산출 (체중 있으면)
-    const power = calcJump(sum.flightTimeSec, member?.weight);
+    const power = calcJump(sum.flightTimeSec, resolveWeight(member));
 
     // ── 반응 탄성 점프 모드: 사이클 간 접지시간으로 RSI 산출 ──
     // 측면뷰 강제: 누적된 방향이 'side'가 아니면 코어가 무효 처리한다.
@@ -672,7 +687,10 @@ function ManualEntryModal({ member, jumpType = 'power', onClose, onSubmit }) {
   const isReactive = jumpType === 'reactive';
   const [flight, setFlight] = useState('');
   const [contact, setContact] = useState('');   // 반응 모드 전용(접지 시간)
-  const [weight, setWeight] = useState(member?.weight ? String(member.weight) : '');
+  const [weight, setWeight] = useState(() => {
+    const w = resolveWeight(member);
+    return w != null ? String(w) : '';
+  });
   const [busy, setBusy] = useState(false);
 
   const submit = async () => {

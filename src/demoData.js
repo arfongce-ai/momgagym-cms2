@@ -62,6 +62,11 @@ const INITIAL_MEMBERS = [
     joinDate:'2024-09-01', lastPaymentDate:'2024-09-01', lastAttendedDate:fmt(ago(today,11)),
     classTypes:['컨디셔닝'], memo:'대회 준비',
     trainerSessions:{ t3:{total:30,remaining:2} }, isActive:true },
+  // AI 분석 테스트 전용 가상 회원 (점프/RSI/보행 등 측정 테스트용)
+  { id:'mtest', name:'테스트회원', phone:'010-0000-1111', birthDate:'1995-01-01',
+    joinDate:fmt(today), lastPaymentDate:fmt(today), lastAttendedDate:fmt(today),
+    classTypes:['선수'], memo:'AI 분석 테스트용 (실제 회원 아님)',
+    trainerSessions:{ t1:{total:99,remaining:99} }, isActive:true },
 ];
 const INITIAL_PAYMENTS = {
   m1: [
@@ -85,6 +90,10 @@ const INITIAL_BODY = {
   m2: [
     { id:'b3', recordedAt:'2024-03-20', height:162, weight:58.0, systolic:118, diastolic:76, note:'최초' },
     { id:'b4', recordedAt:'2024-10-10', height:162, weight:55.5, systolic:115, diastolic:74, note:'재측정' },
+  ],
+  // AI 분석 테스트용 회원 — 키·몸무게 자동 연동 확인용
+  mtest: [
+    { id:'bt1', recordedAt:fmt(today), height:175, weight:70.0, systolic:120, diastolic:78, note:'AI 테스트 기준값' },
   ],
 };
 const INITIAL_SCHEDULES = [

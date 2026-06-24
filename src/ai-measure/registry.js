@@ -32,15 +32,6 @@ export const MEASURE_MENUS = [
     component: lazy(() => import('./menus/TimerTool.jsx')),
   },
   {
-    id: 'rsi',
-    no: 4,
-    title: 'RSI',
-    desc: '반응강도지수 · 체공/접지 시간',
-    icon: '⚡',
-    status: 'ready',
-    component: lazy(() => import('./menus/RsiMeasure.jsx')),
-  },
-  {
     id: 'vbt',
     no: 7,
     title: 'VBT',
@@ -52,8 +43,8 @@ export const MEASURE_MENUS = [
   {
     id: 'jump',
     no: 3,
-    title: '점프',
-    desc: '반동점프 · 카메라/고속영상/수동 · 자동 측정',
+    title: '점프 & RSI',
+    desc: '반동점프·반응탄성(RSI) · 카메라/고속영상/수동',
     icon: '🦘',
     status: 'ready',
     component: lazy(() => import('./menus/JumpAnalysisHub.jsx')),
