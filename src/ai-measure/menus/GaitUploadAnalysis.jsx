@@ -160,7 +160,17 @@ export default function GaitUploadAnalysis({ member, onBack, onComplete }) {
             className="h-full w-full object-contain"
             playsInline muted controls={phase === 'ready' || phase === 'done'}
           />
-          <FutureVideoOverlay mode="UPLOAD AI" recording={phase === 'analyzing'} intensity={phase === 'analyzing' ? 0.86 : 0.5} />
+          <FutureVideoOverlay
+            mode="GAIT UPLOAD"
+            recording={phase === 'analyzing'}
+            intensity={phase === 'analyzing' ? 0.86 : 0.5}
+            primary={phase === 'analyzing' ? 'GAIT SCAN' : 'VIDEO READY'}
+            secondary="SPM · STANCE · SWING"
+            gauges={[
+              { label: 'SPM', value: phase === 'analyzing' ? 'SCAN' : '--', percent: phase === 'analyzing' ? 70 : 20, tone: 'amber' },
+            ]}
+            ringLabel={phase === 'analyzing' ? 'AI' : 'RDY'}
+          />
         </div>
 
         {phase === 'idle' && (

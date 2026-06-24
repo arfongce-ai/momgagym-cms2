@@ -58,6 +58,11 @@ export default function GaitAnalysisHub({ member, onBack, saveToFirebase, onSave
     return saved;
   }, [save]);
 
+  const openLiveReport = useCallback((reportData) => {
+    if (reportData) setReport(reportData);
+    setView('report');
+  }, []);
+
   // 대시보드에서 측정 화면으로 복귀
   const backToMeasure = () => { setView('measure'); setReport(null); };
 
@@ -113,6 +118,7 @@ export default function GaitAnalysisHub({ member, onBack, saveToFirebase, onSave
           member={member}
           onBack={onBack}
           onSaveToFirebase={liveSave}
+          onOpenSavedReport={openLiveReport}
         />
       ) : (
         <GaitUploadAnalysis

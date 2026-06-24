@@ -268,7 +268,23 @@ export default function JumpUploadAnalysis({ member, onBack, onComplete, onMembe
         <div className="relative w-full max-w-md overflow-hidden rounded-xl bg-black aspect-[3/4]">
           <video ref={videoRef} className="h-full w-full object-contain"
             playsInline muted controls={phase === 'ready' || phase === 'done'} />
-          <FutureVideoOverlay mode="JUMP UPLOAD" recording={phase === 'analyzing'} intensity={phase === 'analyzing' ? 0.86 : 0.5} />
+          <FutureVideoOverlay
+            mode={jumpType === 'reactive' ? 'RSI UPLOAD' : 'JUMP UPLOAD'}
+            recording={phase === 'analyzing'}
+            intensity={phase === 'analyzing' ? 0.86 : 0.5}
+            primary={phase === 'analyzing' ? (jumpType === 'reactive' ? 'RSI SCAN' : 'JUMP SCAN') : 'VIDEO READY'}
+            secondary={jumpType === 'reactive' ? 'RSI · GCT · FLIGHT' : 'HEIGHT · FLIGHT'}
+            gauges={jumpType === 'reactive'
+              ? [
+                { label: 'RSI', value: phase === 'analyzing' ? 'SCAN' : '--', percent: phase === 'analyzing' ? 68 : 18, tone: 'emerald' },
+                { label: 'GCT', value: phase === 'analyzing' ? 'SCAN' : '--', percent: phase === 'analyzing' ? 56 : 18, tone: 'amber' },
+              ]
+              : [
+                { label: 'HEIGHT', value: phase === 'analyzing' ? 'SCAN' : '--', percent: phase === 'analyzing' ? 64 : 18, tone: 'amber' },
+                { label: 'FLIGHT', value: phase === 'analyzing' ? 'SCAN' : '--', percent: phase === 'analyzing' ? 72 : 18, tone: 'blue' },
+              ]}
+            ringLabel={phase === 'analyzing' ? 'AI' : 'RDY'}
+          />
         </div>
 
         {heightCm && (

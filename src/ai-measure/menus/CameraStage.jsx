@@ -21,6 +21,7 @@ export default function CameraStage({
   videoRef, canvasRef, status, error,
   onTapVideo, onClose, topBar, controls, children, tappable = true,
   recording = false, recordingLabel = '측정 중',
+  overlay = {},
 }) {
   // 오버레이가 떠 있는 동안 바디 스크롤 잠금
   useEffect(() => {
@@ -35,7 +36,17 @@ export default function CameraStage({
         className="absolute inset-0 w-full h-full object-contain" />
       <canvas ref={canvasRef}
         className="absolute inset-0 w-full h-full object-contain pointer-events-none" />
-      <FutureVideoOverlay recording={recording && status === 'running'} />
+      <FutureVideoOverlay
+        mode={overlay.mode || 'AI LIVE'}
+        recording={recording && status === 'running'}
+        intensity={overlay.intensity ?? (recording ? 0.82 : 0.55)}
+        elapsed={overlay.elapsed}
+        primary={overlay.primary}
+        secondary={overlay.secondary}
+        metrics={overlay.metrics || []}
+        gauges={overlay.gauges || []}
+        ringLabel={overlay.ringLabel}
+      />
 
       {recording && status === 'running' && (
         <div className="absolute top-[max(env(safe-area-inset-top),12px)] left-1/2 z-20 -translate-x-1/2 rounded-full bg-red-500/80 border border-white/20 px-3 py-1.5 text-xs font-black text-white shadow-lg backdrop-blur">

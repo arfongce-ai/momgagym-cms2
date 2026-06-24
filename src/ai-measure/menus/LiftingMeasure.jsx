@@ -224,6 +224,20 @@ export default function LiftingMeasure({ member, onSave, onBack }) {
         videoRef={videoRef} canvasRef={canvasRef} status={status} error={error}
         onTapVideo={onTapVideo} onClose={closeCam} topBar={topBar} controls={controls}
         recording={recording}
+        overlay={{
+          mode: 'LIFT',
+          primary: 'BAR PATH',
+          secondary: recording ? `TRACK ${activePts}/${ptCount}` : 'SET POINT',
+          metrics: [
+            { label: 'path', value: recording ? 72 : 42 },
+            { label: 'track', value: ptCount ? (activePts / ptCount) * 100 : 12 },
+          ],
+          gauges: [
+            { label: 'PATH', value: recording ? 'REC' : 'READY', percent: recording ? 82 : 42, tone: recording ? 'emerald' : 'amber' },
+            { label: 'TRACK', value: `${activePts}/${ptCount || 0}`, percent: ptCount ? (activePts / ptCount) * 100 : 12, tone: activePts > 0 ? 'blue' : 'amber' },
+          ],
+          ringLabel: activePts,
+        }}
       >
         {result && (
           <div className="mx-auto max-w-md w-full card-accent p-3 space-y-2 animate-fade-in">

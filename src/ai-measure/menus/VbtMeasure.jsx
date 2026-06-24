@@ -235,6 +235,20 @@ export default function VbtMeasure({ member, onSave, onBack }) {
         videoRef={videoRef} canvasRef={canvasRef} status={status} error={error}
         onTapVideo={onTapVideo} onClose={closeCam} topBar={topBar} controls={controls}
         recording={recording}
+        overlay={{
+          mode: 'VBT',
+          primary: result?.meanVelocity != null ? `${result.meanVelocity} m/s` : 'BAR PATH',
+          secondary: recording ? `TRACK ${activePts}/${ptCount}` : (result?.zone?.label || 'SET POINT'),
+          metrics: [
+            { label: 'speed', value: result?.meanVelocity != null ? Math.min(100, result.meanVelocity * 70) : activePts > 0 ? 55 : 18 },
+            { label: 'track', value: ptCount ? (activePts / ptCount) * 100 : 12 },
+          ],
+          gauges: [
+            { label: 'SPEED', value: result?.meanVelocity != null ? `${result.meanVelocity}m/s` : '--', percent: result?.meanVelocity != null ? Math.min(100, result.meanVelocity * 70) : 12, tone: 'emerald' },
+            { label: 'TRACK', value: `${activePts}/${ptCount || 0}`, percent: ptCount ? (activePts / ptCount) * 100 : 12, tone: activePts > 0 ? 'blue' : 'amber' },
+          ],
+          ringLabel: result?.meanVelocity ?? activePts,
+        }}
       >
         {result && (
           <div className="mx-auto max-w-md w-full card-accent p-3 space-y-2 animate-fade-in">

@@ -54,6 +54,7 @@ export default function AiMeasureHub() {
     // 보행 분석은 컴포넌트가 자체 저장 상태 UI(저장 중/✓/실패)를 표시하므로
     // alert 없이 에러를 그대로 throw 해 컴포넌트가 처리하게 한다.
     const isGait = active.id === 'gait';
+    const isJump = active.id === 'jump';
     try {
       await aiStore.addSession(member.id, {
         menu: active.id,
@@ -67,12 +68,12 @@ export default function AiMeasureHub() {
         // 컴포넌트가 자체 ✓ 표시. addGaitReport 결과를 반환해 회차 비교 데이터로 사용.
         return await aiStore.addGaitReport({ ...data, kind: 'gait', member: { id: member.id, name: member.name } });
       }
-      if (active.id === 'jump' && data?.valid === true) {
+      if (isJump && data?.valid === true) {
         return await aiStore.addGaitReport({ ...data, kind: 'jump', member: { id: member.id, name: member.name } });
       }
       alert('측정이 저장되었습니다.');
     } catch (e) {
-      if (isGait) throw e; // 컴포넌트 saveState='error' 로 표시되게 전파
+      if (isGait || isJump) throw e; // 컴포넌트 saveState='error' 로 표시되게 전파
       alert('저장에 실패했습니다. 네트워크 확인 후 다시 시도하세요.\n' + (e?.message || ''));
     }
   };

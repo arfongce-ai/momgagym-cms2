@@ -5,7 +5,7 @@ import {
 } from '../core/gaitBiomechanics';
 import { loadPoseLandmarker, detectPoseFrame, closePoseLandmarker, isPoseReady } from '../core/poseBackend';
 import { shareReportWithVideo, captureNodeToJpgFile } from '../core/reportShare';
-import { drawMeasurementOverlay } from '../core/recordingOverlay';
+import { drawMeasurementOverlay, formatRecordTime } from '../core/recordingOverlay';
 import { lockZoom, unlockZoom } from '../../utils/viewportLock';
 import FutureVideoOverlay from './FutureVideoOverlay';
 
@@ -99,7 +99,7 @@ function isInSafeZone(lm) {
   return seen >= 3 && inside >= 3;
 }
 
-export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, onSave }) {
+export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, onSave, onOpenSavedReport }) {
   const saveToFirebase = onSaveToFirebase || onSave;
 
   const [view, setView] = useState('camera');
@@ -121,6 +121,7 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
   const [swRunning, setSwRunning] = useState(false);
   const [bpm, setBpm] = useState(160);
   const [metroPlaying, setMetroPlaying] = useState(false);
+  const [liveMetrics, setLiveMetrics] = useState({ cadence: null, stancePct: null, swingPct: null, totalSteps: 0 });
 
   const armingSinceRef = useRef(null); // 안정 인식 시작 시각(ms)
   const lastTsRef = useRef(0);         // detectForVideo 타임스탬프 단조증가 보장
@@ -132,6 +133,14 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
   const recordStreamRef = useRef(null);
   const recordingStartedAtRef = useRef(0);
   const autoSavedRef = useRef(null); // 자동 저장 중복 방지 (저장한 measuredAt 기록)
+  const swBaseRef = useRef(0);
+  const swStartedAtRef = useRef(0);
+  const swRafRef = useRef(null);
+  const metroCtxRef = useRef(null);
+  const metroTimerRef = useRef(null);
+  const metroNextNoteRef = useRef(0);
+  const metroBeatRef = useRef(0);
+  const metricsLastUiRef = useRef(0);
 
   const videoRef = useRef(null);
   const skeletonCanvasRef = useRef(null);
@@ -150,6 +159,66 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
   useEffect(() => { viewRef.current = view; }, [view]);
   useEffect(() => { aspectRef.current = aspect; }, [aspect]);
   useEffect(() => { isReadyRef.current = isReady; }, [isReady]);
+
+  useEffect(() => {
+    if (!swRunning) return undefined;
+    swStartedAtRef.current = performance.now();
+    const tick = () => {
+      setSwElapsed(swBaseRef.current + (performance.now() - swStartedAtRef.current));
+      swRafRef.current = requestAnimationFrame(tick);
+    };
+    tick();
+    return () => {
+      if (swRafRef.current) cancelAnimationFrame(swRafRef.current);
+      swRafRef.current = null;
+      swBaseRef.current += performance.now() - swStartedAtRef.current;
+    };
+  }, [swRunning]);
+
+  const resetStopwatch = () => {
+    if (swRafRef.current) cancelAnimationFrame(swRafRef.current);
+    swRafRef.current = null;
+    swBaseRef.current = 0;
+    swStartedAtRef.current = performance.now();
+    setSwElapsed(0);
+    setSwRunning(false);
+  };
+
+  useEffect(() => {
+    if (metroTimerRef.current) {
+      clearInterval(metroTimerRef.current);
+      metroTimerRef.current = null;
+    }
+    if (!metroPlaying) return undefined;
+    const AudioCtor = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtor) return undefined;
+    if (!metroCtxRef.current) metroCtxRef.current = new AudioCtor();
+    const ctx = metroCtxRef.current;
+    if (ctx.state === 'suspended') ctx.resume();
+    metroNextNoteRef.current = ctx.currentTime + 0.05;
+    metroBeatRef.current = 0;
+    metroTimerRef.current = setInterval(() => {
+      const secondsPerBeat = 60 / Math.max(40, Math.min(220, bpm));
+      while (metroNextNoteRef.current < ctx.currentTime + 0.1) {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        const downBeat = metroBeatRef.current % 4 === 0;
+        osc.frequency.value = downBeat ? 1500 : 980;
+        gain.gain.setValueAtTime(downBeat ? 0.45 : 0.24, metroNextNoteRef.current);
+        gain.gain.exponentialRampToValueAtTime(0.001, metroNextNoteRef.current + 0.055);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(metroNextNoteRef.current);
+        osc.stop(metroNextNoteRef.current + 0.055);
+        metroNextNoteRef.current += secondsPerBeat;
+        metroBeatRef.current += 1;
+      }
+    }, 25);
+    return () => {
+      if (metroTimerRef.current) clearInterval(metroTimerRef.current);
+      metroTimerRef.current = null;
+    };
+  }, [metroPlaying, bpm]);
 
   // 카메라 생명주기 분리: camera 진입 시 켜고, preview 갈 때만 끔.
   // recording 중에는 스트림을 절대 건드리지 않는다(녹화 끊김 방지).
@@ -222,6 +291,17 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
           // 녹화 중: 분석 누적 (화면엔 수치 미표시)
           trackerRef.current.push(pelvisRelativeFeet(landmarks), ts);
           angleAccRef.current.push(jointAnglesFromPose(landmarks));
+          if (ts - metricsLastUiRef.current > 250) {
+            metricsLastUiRef.current = ts;
+            const s = trackerRef.current.summary();
+            setLiveMetrics({
+              cadence: s.averageCadenceSpm ?? null,
+              stancePct: s.stancePct ?? null,
+              swingPct: s.swingPct ?? null,
+              totalSteps: s.totalSteps ?? 0,
+              signalAmp: s.signalAmp ?? null,
+            });
+          }
         } else {
           // 방향 판별 (측면/후면) — 히스테리시스로 경계 떨림 방지.
           // unknown 이면 직전 판정을 유지해 잠깐 인식 실패 시 깜빡임을 막는다.
@@ -323,6 +403,7 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
     setSaveState('idle');
     setShareMsg('');
     setReportData(null);
+    setLiveMetrics({ cadence: null, stancePct: null, swingPct: null, totalSteps: 0 });
     autoSavedRef.current = null;
 
     const mimeTypes = ['video/mp4', 'video/webm;codecs=vp8', 'video/webm'];
@@ -420,8 +501,11 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
     autoSavedRef.current = reportData.measuredAt; // 수동 저장 시에도 중복 자동저장 방지
     setSaveState('saving');
     try {
-      await saveToFirebase(reportData);
+      const saved = await saveToFirebase(reportData);
+      const nextReport = saved && typeof saved === 'object' ? { ...reportData, ...saved } : reportData;
+      setReportData(nextReport);
       setSaveState('saved');
+      if (typeof onOpenSavedReport === 'function') onOpenSavedReport(nextReport);
     } catch (e) {
       setSaveState('error');
     }
@@ -460,6 +544,11 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
 
   useEffect(() => () => {
     stopCamera();
+    if (swRafRef.current) cancelAnimationFrame(swRafRef.current);
+    if (metroTimerRef.current) clearInterval(metroTimerRef.current);
+    if (metroCtxRef.current) {
+      try { metroCtxRef.current.close(); } catch (e) { /* noop */ }
+    }
     closePoseLandmarker();
     if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -477,7 +566,37 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
           <video ref={videoRef} className="absolute inset-0 w-full h-full object-cover" playsInline muted autoPlay />
           {/* 검출된 포즈 스켈레톤 오버레이 (인식 확인용) */}
           <canvas ref={skeletonCanvasRef} className="absolute inset-0 w-full h-full pointer-events-none" />
-          <FutureVideoOverlay mode="GAIT AI" recording={view === 'recording'} intensity={isReady ? 0.86 : 0.58} />
+          <FutureVideoOverlay
+            mode="GAIT AI"
+            recording={view === 'recording'}
+            intensity={view === 'recording' ? Math.min(1, 0.38 + (Number(liveMetrics.cadence) || 0) / 220) : (isReady ? 0.86 : 0.58)}
+            elapsed={view === 'recording' ? formatRecordTime(recordingTime) : (toolTab === 'stopwatch' ? fmtSw(swElapsed) : `${bpm} BPM`)}
+            primary={view === 'recording'
+              ? `${liveMetrics.cadence ?? '--'} SPM`
+              : (toolTab === 'metronome' ? (metroPlaying ? 'METRONOME ON' : 'METRONOME READY') : (swRunning ? 'STOPWATCH ON' : 'STOPWATCH READY'))}
+            secondary={view === 'recording'
+              ? `STEP ${liveMetrics.totalSteps ?? 0} · ${liveMetrics.stancePct ?? '--'}/${liveMetrics.swingPct ?? '--'}`
+              : (toolTab === 'metronome' ? 'audio beat' : 'manual timer')}
+            metrics={[
+              { label: 'cadence', value: Math.min(100, ((Number(liveMetrics.cadence) || 0) / 200) * 100) },
+              { label: 'steps', value: Math.min(100, (Number(liveMetrics.totalSteps) || 0) * 12) },
+            ]}
+            gauges={view === 'recording'
+              ? [
+                { label: 'SPM', value: liveMetrics.cadence ?? '--', percent: Math.min(100, ((Number(liveMetrics.cadence) || 0) / 200) * 100), tone: 'amber' },
+                { label: 'STEP', value: liveMetrics.totalSteps ?? 0, percent: Math.min(100, (Number(liveMetrics.totalSteps) || 0) * 12), tone: 'emerald' },
+              ]
+              : toolTab === 'metronome'
+              ? [
+                { label: 'BPM', value: bpm, percent: ((bpm - 40) / 180) * 100, tone: metroPlaying ? 'emerald' : 'amber' },
+                { label: 'BEAT', value: metroPlaying ? 'ON' : 'READY', percent: metroPlaying ? 100 : 35, tone: metroPlaying ? 'emerald' : 'amber' },
+              ]
+              : [
+                { label: 'TIMER', value: fmtSw(swElapsed), percent: Math.min(100, (swElapsed / 60000) * 100), tone: swRunning ? 'emerald' : 'amber' },
+                { label: 'RUN', value: swRunning ? 'ON' : 'READY', percent: swRunning ? 100 : 35, tone: swRunning ? 'emerald' : 'amber' },
+              ]}
+            ringLabel={view === 'recording' ? (liveMetrics.totalSteps ?? 0) : (toolTab === 'metronome' ? bpm : Math.floor(swElapsed / 1000))}
+          />
           {/* 세이프 존 가이드 (상하좌우 15% 여백) — 캘리브레이션 시 녹색 */}
           <div className="absolute inset-0 pointer-events-none flex items-center justify-center p-[15%]">
             <div className={`w-full h-full border-4 rounded-lg transition-colors ${isReady ? 'border-green-500/70' : 'border-white/30'}`} />
@@ -516,7 +635,7 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
             open={toolsOpen} onToggleOpen={() => setToolsOpen(v => !v)}
             tab={toolTab} onTab={setToolTab}
             bpm={bpm} onBpm={setBpm} metroPlaying={metroPlaying} onMetroPlaying={setMetroPlaying}
-            swElapsed={swElapsed} swRunning={swRunning} onSwElapsed={setSwElapsed} onSwRunning={setSwRunning}
+            swElapsed={swElapsed} swRunning={swRunning} onSwRunning={setSwRunning} onSwReset={resetStopwatch}
           />
           <div className="absolute bottom-0 z-20 w-full p-6 bg-gradient-to-t from-black/80 to-transparent flex flex-col items-center gap-4">
             {view === 'recording' && (
@@ -604,6 +723,13 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
               </button>
               {shareMsg && <p className="text-center text-xs text-emerald-400">{shareMsg}</p>}
               {saveState === 'saved' && <p className="text-center text-xs text-emerald-400">측정이 서버에 자동 저장되었습니다.</p>}
+              {saveState === 'saved' && typeof onOpenSavedReport === 'function' && (
+                <button
+                  onClick={() => onOpenSavedReport(reportData)}
+                  className="w-full rounded-xl bg-emerald-500 text-slate-950 font-black py-3 text-sm">
+                  결과 리포트 보기
+                </button>
+              )}
               {saveState === 'error' && <p className="text-center text-xs text-red-400">자동 저장 실패 — 위 버튼으로 다시 시도하세요</p>}
               {reportData?.valid !== true && saveState === 'idle' && (
                 <p className="text-center text-xs text-amber-400">측정이 무효하여 저장되지 않았습니다. 다시 측정해 주세요.</p>
@@ -618,7 +744,7 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
 }
 
 /* ───────── 작동하는 컴팩트 도구 (좌측 하단) ───────── */
-function CompactTools({ open, onToggleOpen, tab, onTab, bpm, onBpm, metroPlaying, onMetroPlaying, swElapsed, swRunning, onSwElapsed, onSwRunning }) {
+function CompactTools({ open, onToggleOpen, tab, onTab, bpm, onBpm, metroPlaying, onMetroPlaying, swElapsed, swRunning, onSwRunning, onSwReset }) {
   return (
     <div className="absolute bottom-[max(96px,calc(env(safe-area-inset-bottom)+96px))] left-3 z-20 w-[170px]">
       {open && (
@@ -631,7 +757,7 @@ function CompactTools({ open, onToggleOpen, tab, onTab, bpm, onBpm, metroPlaying
           </div>
           {tab === 'metronome'
             ? <CompactMetronome bpm={bpm} playing={metroPlaying} onBpm={onBpm} onPlaying={onMetroPlaying} />
-            : <CompactStopwatch elapsed={swElapsed} running={swRunning} onElapsed={onSwElapsed} onRunning={onSwRunning} />}
+            : <CompactStopwatch elapsed={swElapsed} running={swRunning} onRunning={onSwRunning} onReset={onSwReset} />}
         </div>
       )}
       <button onClick={onToggleOpen} className="flex items-center gap-2 rounded-full bg-black/55 backdrop-blur border border-white/10 px-3 py-1.5 text-white shadow-lg">
@@ -648,54 +774,24 @@ function fmtSw(ms) {
   return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}.${String(cs).padStart(2, '0')}`;
 }
 
-function CompactStopwatch({ elapsed, running, onElapsed, onRunning }) {
-  const startRef = useRef(0); const accRef = useRef(0); const rafRef = useRef(null);
-  const tick = () => { onElapsed(accRef.current + (performance.now() - startRef.current)); rafRef.current = requestAnimationFrame(tick); };
-  const toggle = () => {
-    if (running) { accRef.current += performance.now() - startRef.current; cancelAnimationFrame(rafRef.current); onRunning(false); }
-    else { startRef.current = performance.now(); rafRef.current = requestAnimationFrame(tick); onRunning(true); }
-  };
-  const reset = () => { cancelAnimationFrame(rafRef.current); accRef.current = 0; onElapsed(0); onRunning(false); };
-  useEffect(() => () => cancelAnimationFrame(rafRef.current), []);
+function CompactStopwatch({ elapsed, running, onRunning, onReset }) {
+  const toggle = () => onRunning(!running);
   return (
     <div className="flex items-center gap-1">
       <div className="flex-1 rounded-lg bg-black/25 py-1.5 text-center font-mono text-base font-black tabular-nums text-amber-300">{fmtSw(elapsed)}</div>
       <button onClick={toggle} className={`h-9 w-12 rounded-lg text-[11px] font-black ${running ? 'bg-white/20 text-white' : 'bg-amber-500/90 text-slate-950'}`}>{running ? '정지' : '시작'}</button>
-      <button onClick={reset} className="h-9 w-10 rounded-lg border border-white/15 text-[11px] font-bold text-white/75">리셋</button>
+      <button onClick={onReset} className="h-9 w-10 rounded-lg border border-white/15 text-[11px] font-bold text-white/75">리셋</button>
     </div>
   );
 }
 
 function CompactMetronome({ bpm, playing, onBpm, onPlaying }) {
-  const ctxRef = useRef(null); const nextNoteRef = useRef(0); const timerRef = useRef(null); const beatRef = useRef(0);
-  const stop = () => { if (timerRef.current) clearInterval(timerRef.current); timerRef.current = null; onPlaying(false); };
-  const start = () => {
-    if (!ctxRef.current) ctxRef.current = new (window.AudioContext || window.webkitAudioContext)();
-    const ctx = ctxRef.current; if (ctx.state === 'suspended') ctx.resume();
-    nextNoteRef.current = ctx.currentTime + 0.05; beatRef.current = 0;
-    timerRef.current = setInterval(() => {
-      const spb = 60 / bpm;
-      while (nextNoteRef.current < ctx.currentTime + 0.1) {
-        const osc = ctx.createOscillator(); const g = ctx.createGain();
-        const down = beatRef.current % 4 === 0;
-        osc.frequency.value = down ? 1500 : 1000;
-        g.gain.setValueAtTime(down ? 0.45 : 0.25, nextNoteRef.current);
-        g.gain.exponentialRampToValueAtTime(0.001, nextNoteRef.current + 0.05);
-        osc.connect(g); g.connect(ctx.destination);
-        osc.start(nextNoteRef.current); osc.stop(nextNoteRef.current + 0.05);
-        nextNoteRef.current += spb; beatRef.current += 1;
-      }
-    }, 25);
-    onPlaying(true);
-  };
-  useEffect(() => () => { if (timerRef.current) clearInterval(timerRef.current); if (ctxRef.current) { try { ctxRef.current.close(); } catch (e) { /* noop */ } } }, []);
-  useEffect(() => { if (playing) { stop(); start(); } /* eslint-disable-next-line */ }, [bpm]);
   return (
     <div className="flex items-center gap-1">
-      <button onClick={() => onBpm(Math.max(40, bpm - 5))} className="h-9 w-8 rounded-lg border border-white/15 text-xs font-black text-white/75">−</button>
+      <button onClick={() => onBpm(Math.max(40, bpm - 5))} className="h-9 w-8 rounded-lg border border-white/15 text-xs font-black text-white/75">-</button>
       <div className="flex-1 rounded-lg bg-black/25 py-1.5 text-center font-mono text-lg font-black text-amber-300">{bpm}</div>
       <button onClick={() => onBpm(Math.min(220, bpm + 5))} className="h-9 w-8 rounded-lg border border-white/15 text-xs font-black text-white/75">+</button>
-      <button onClick={playing ? stop : start} className={`h-9 w-12 rounded-lg text-[11px] font-black ${playing ? 'bg-white/20 text-white' : 'bg-amber-500/90 text-slate-950'}`}>{playing ? '정지' : '시작'}</button>
+      <button onClick={() => onPlaying(!playing)} className={`h-9 w-12 rounded-lg text-[11px] font-black ${playing ? 'bg-white/20 text-white' : 'bg-amber-500/90 text-slate-950'}`}>{playing ? '정지' : '시작'}</button>
     </div>
   );
 }

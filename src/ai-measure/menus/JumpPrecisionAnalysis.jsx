@@ -110,7 +110,7 @@ function drawBaseline(canvas, video, baselineFeetY) {
   ctx.setLineDash([]);
 }
 
-export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase, onSave, onMemberHeightChange, onManualComplete, jumpType = 'power' }) {
+export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase, onSave, onMemberHeightChange, onManualComplete, onOpenSavedReport, jumpType = 'power' }) {
   const saveToFirebase = onSaveToFirebase || onSave;
 
   const [view, setView] = useState('camera');     // camera | preview
@@ -122,6 +122,8 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
   const [warning, setWarning] = useState('');
   const [saveState, setSaveState] = useState('idle'); // idle|saving|saved|error
   const [jumpCount, setJumpCount] = useState(0);
+  const [rsiCycles, setRsiCycles] = useState([]);
+  const [liveJump, setLiveJump] = useState({ flightMs: null, heightCm: null });
 
   // 키 입력 팝업 (요구사항 2 예외처리)
   const [heightCm, setHeightCm] = useState(member?.height ? Number(member.height) : null);
@@ -178,6 +180,8 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
     prevFrameTsRef.current = 0;
     setPhase('arming');
     setJumpCount(0);
+    setRsiCycles([]);
+    setLiveJump({ flightMs: null, heightCm: null });
     setReportData(null);
     setSaveState('idle');
     autoSavedRef.current = null;
@@ -352,6 +356,18 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
             try {
               const s = tracker.summary({ heightCm: heightRef.current });
               if (s?.heightCm != null) bestHeightRef.current = s.heightCm;
+              const latest = tracker.flights.at(-1);
+              if (latest?.flightMs) {
+                const jump = calcJump(latest.flightMs / 1000, null);
+                setLiveJump({
+                  flightMs: Math.round(latest.flightMs),
+                  heightCm: jump?.heightCm ?? null,
+                });
+              }
+              if (jumpType === 'reactive') {
+                const liveRsi = computeRSIFromFlights(tracker.flights, {});
+                setRsiCycles(liveRsi?.perCycle || []);
+              }
             } catch (e) { /* noop */ }
           }
         }
@@ -424,8 +440,12 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
 
   const autoSave = async (report) => {
     setSaveState('saving');
-    try { await saveToFirebase(report); setSaveState('saved'); }
-    catch (e) { setSaveState('error'); }
+    try {
+      const saved = await saveToFirebase(report);
+      setSaveState('saved');
+      return { ok: true, saved };
+    }
+    catch (e) { setSaveState('error'); return { ok: false, saved: null }; }
   };
 
   const handleManualSave = async () => {
@@ -433,7 +453,11 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
     // 자동 저장과 동일하게 videoBlob 은 저장 페이로드에서 제외(Firestore 오염 방지).
     const { videoBlob: _vb, ...dataOnly } = reportData;
     autoSavedRef.current = reportData.measuredAt;   // 중복 저장 방지 마킹
-    await autoSave(dataOnly);
+    const res = await autoSave(dataOnly);
+    if (!res?.ok) return;
+    const nextReport = res.saved && typeof res.saved === 'object' ? { ...reportData, ...res.saved } : reportData;
+    setReportData(nextReport);
+    if (typeof onOpenSavedReport === 'function') onOpenSavedReport(nextReport);
   };
 
   const retry = () => { setView('camera'); };
@@ -494,7 +518,34 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
         <div className="relative w-full h-full">
           <video ref={videoRef} className="absolute inset-0 w-full h-full object-cover" playsInline muted />
           <canvas ref={skeletonCanvasRef} className="absolute inset-0 w-full h-full pointer-events-none" />
-          <FutureVideoOverlay mode="JUMP AI" recording={phase === 'air'} intensity={phase === 'ready' || phase === 'air' ? 0.9 : 0.56} />
+          <FutureVideoOverlay
+            mode={jumpType === 'reactive' ? 'RSI LIVE' : 'JUMP AI'}
+            recording={phase === 'air'}
+            intensity={phase === 'ready' || phase === 'air' ? Math.min(1, 0.58 + jumpCount * 0.08) : 0.56}
+            elapsed={phase === 'air' ? 'AIR' : phase === 'ready' ? 'READY' : 'CAL'}
+            primary={jumpType === 'reactive'
+              ? `RSI ${rsiCycles.at(-1)?.rsi ?? '--'}`
+              : `HEIGHT ${liveJump.heightCm ?? bestHeightRef.current ?? '--'}cm`}
+            secondary={jumpType === 'reactive' && rsiCycles.length
+              ? `GCT ${rsiCycles.at(-1)?.contactMs ?? '--'}ms`
+              : `FLIGHT ${liveJump.flightMs ?? '--'}ms`}
+            metrics={[
+              { label: 'height', value: Math.min(100, (Number(liveJump.heightCm ?? bestHeightRef.current) || 0) * 2) },
+              { label: 'flight', value: Math.min(100, (Number(liveJump.flightMs) || 0) / 8) },
+              { label: 'rsi', value: Math.min(100, (Number(rsiCycles.at(-1)?.rsi) || 0) * 25) },
+              { label: 'contact', value: rsiCycles.at(-1)?.contactMs ? Math.max(8, 100 - Math.min(100, rsiCycles.at(-1).contactMs / 4)) : 18 },
+            ]}
+            gauges={jumpType === 'reactive'
+              ? [
+                { label: 'RSI', value: rsiCycles.at(-1)?.rsi ?? '--', percent: Math.min(100, (Number(rsiCycles.at(-1)?.rsi) || 0) * 25), tone: 'emerald' },
+                { label: 'GCT', value: rsiCycles.at(-1)?.contactMs ? `${rsiCycles.at(-1).contactMs}ms` : '--', percent: rsiCycles.at(-1)?.contactMs ? Math.max(8, 100 - Math.min(100, rsiCycles.at(-1).contactMs / 4)) : 18, tone: 'amber' },
+              ]
+              : [
+                { label: 'HEIGHT', value: liveJump.heightCm != null ? `${liveJump.heightCm}cm` : '--', percent: Math.min(100, (Number(liveJump.heightCm) || 0) * 2), tone: 'amber' },
+                { label: 'FLIGHT', value: liveJump.flightMs != null ? `${liveJump.flightMs}ms` : '--', percent: Math.min(100, (Number(liveJump.flightMs) || 0) / 8), tone: 'blue' },
+              ]}
+            ringLabel={jumpType === 'reactive' && rsiCycles.length ? rsiCycles.at(-1)?.rsi : (liveJump.heightCm ?? jumpCount)}
+          />
 
           {/* 헤더 */}
           <div className="absolute top-0 z-20 inset-x-0 flex items-center justify-between px-4 py-3 bg-gradient-to-b from-black/60 to-transparent">
@@ -568,6 +619,7 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
           report={reportData}
           saveState={saveState}
           onSave={handleManualSave}
+          onOpenReport={onOpenSavedReport ? () => onOpenSavedReport(reportData) : undefined}
           onRetry={retry}
           onBack={onBack}
         />
@@ -577,7 +629,7 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
 }
 
 // ── 리포트 화면 ──
-function JumpReport({ report, saveState, onSave, onRetry, onBack }) {
+function JumpReport({ report, saveState, onSave, onOpenReport, onRetry, onBack }) {
   const grade = report.valid
     ? report.heightCm >= 50 ? { label: '매우 우수', color: 'text-blue-400' }
     : report.heightCm >= 40 ? { label: '우수', color: 'text-emerald-400' }
@@ -647,6 +699,25 @@ function JumpReport({ report, saveState, onSave, onRetry, onBack }) {
                 회원 키({report.calibHeightCm}cm) 기준 자동 보정 · 감지된 점프 {report.jumps}회 중 최고값
               </p>
             </div>
+
+            {report.rsi?.valid && Array.isArray(report.rsi.perCycle) && report.rsi.perCycle.length > 0 && (
+              <div className="bg-slate-900 border border-emerald-500/25 rounded-2xl p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-bold text-emerald-300">RSI 점프별 데이터</p>
+                  <p className="text-[10px] text-slate-500">{report.rsi.perCycle.length} cycles</p>
+                </div>
+                <div className="space-y-1.5">
+                  {report.rsi.perCycle.map((c, i) => (
+                    <div key={i} className="grid grid-cols-4 gap-1 rounded-lg bg-slate-800/70 px-2 py-2 text-center">
+                      <Stat label={`#${i + 1}`} value={c.rsi} />
+                      <Stat label="접지" value={`${c.contactMs}ms`} />
+                      <Stat label="체공" value={`${c.flightMs}ms`} />
+                      <Stat label="높이" value={`${c.heightCm}cm`} />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </>
         )}
       </div>
@@ -661,6 +732,12 @@ function JumpReport({ report, saveState, onSave, onRetry, onBack }) {
             className="w-full rounded-xl bg-slate-700 text-white font-bold py-3 disabled:opacity-60 flex items-center justify-center gap-2">
             {saveState === 'saving' && <span className="h-4 w-4 rounded-full border-2 border-white border-t-transparent animate-spin" />}
             {saveState === 'saved' ? '✓ 자동 저장됨' : saveState === 'saving' ? '저장 중...' : saveState === 'error' ? '↻ 다시 저장' : '💾 회차 기록 (데이터)'}
+          </button>
+        )}
+        {saveState === 'saved' && onOpenReport && (
+          <button onClick={onOpenReport}
+            className="w-full rounded-xl bg-emerald-500 text-slate-950 font-black py-3">
+            결과 리포트 보기
           </button>
         )}
         <button onClick={onRetry} className="w-full rounded-xl border border-slate-700 text-slate-200 font-bold py-3">

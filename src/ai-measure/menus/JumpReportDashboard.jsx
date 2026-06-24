@@ -193,6 +193,25 @@ export default function JumpReportDashboard({ report, onClose, onComment }) {
                     </span>
                   )}
                 </div>
+                {Array.isArray(r.rsi.perCycle) && r.rsi.perCycle.length > 0 && (
+                  <div className="mt-3 rounded-xl bg-slate-900/55 border border-emerald-500/20 p-2.5">
+                    <div className="mb-2 flex items-center justify-between">
+                      <p className="text-[11px] font-black text-emerald-300">점프별 RSI 데이터</p>
+                      <p className="text-[10px] text-slate-500">{r.rsi.perCycle.length} cycles</p>
+                    </div>
+                    <div className="space-y-1">
+                      {r.rsi.perCycle.map((c, i) => (
+                        <div key={i} className="grid grid-cols-5 gap-1 rounded-lg bg-slate-800/70 px-2 py-1.5 text-center">
+                          <MiniCell label={`#${i + 1}`} value={c.rsi} />
+                          <MiniCell label="접지" value={`${c.contactMs}ms`} />
+                          <MiniCell label="체공" value={`${c.flightMs}ms`} />
+                          <MiniCell label="높이" value={`${c.heightCm}cm`} />
+                          <MiniCell label="RSI(높이)" value={c.rsiHeight} />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 <p className="mt-2 text-[10px] text-slate-500 leading-relaxed">
                   ※ RSI = 체공시간 ÷ 접지시간(드롭점프 표준, 무단위). 접지시간이 짧을수록
                   (탄성 효율 ↑) RSI 가 높아집니다.
@@ -400,6 +419,15 @@ function BigStat({ label, value, unit, color, status, note, badge }) {
       </p>
       {status && <p className="text-[9px] font-bold" style={{ color }}>{status}</p>}
       {note && <p className="text-[9px] text-slate-600">{note}</p>}
+    </div>
+  );
+}
+
+function MiniCell({ label, value }) {
+  return (
+    <div>
+      <p className="text-[9px] text-slate-500">{label}</p>
+      <p className="font-mono text-[11px] font-black text-slate-100">{value ?? '--'}</p>
     </div>
   );
 }

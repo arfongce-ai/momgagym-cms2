@@ -37,6 +37,10 @@ export default function JumpAnalysisHub({ member, onBack, onSave, onSaveToFireba
   }, [save]);
 
   const backToMeasure = () => { setView('measure'); setReport(null); };
+  const openLiveReport = useCallback((reportData) => {
+    if (reportData) setReport(reportData);
+    setView('report');
+  }, []);
 
   if (view === 'report' && report) {
     return (
@@ -96,6 +100,7 @@ export default function JumpAnalysisHub({ member, onBack, onSave, onSaveToFireba
         <JumpPrecisionAnalysis member={member} onBack={onBack} onSaveToFirebase={save}
           onMemberHeightChange={onMemberHeightChange}
           jumpType={jumpType}
+          onOpenSavedReport={openLiveReport}
           onManualComplete={handleComplete} />
       )}
       {mode === 'upload' && (
