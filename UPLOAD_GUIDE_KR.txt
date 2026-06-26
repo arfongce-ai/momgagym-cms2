@@ -1,0 +1,29 @@
+몸가짐 CMS 업로드 방법
+======================
+
+1. GitHub에 소스 올리기
+----------------------
+파일을 수정한 뒤 아래 파일을 더블클릭하세요.
+
+1_GITHUB_UPLOAD.bat
+
+중간에 "Write upload memo"가 나오면 간단히 메모를 쓰고 Enter를 누르면 됩니다.
+예: 회원 양도 수정
+
+이 파일은 GitHub에 올리면 안 되는 node_modules, dist, assets, outputs 폴더를 자동으로 제외합니다.
+
+
+2. Cloudflare에 배포 파일 만들기
+-------------------------------
+Cloudflare Pages에 올릴 파일이 필요할 때만 아래 파일을 더블클릭하세요.
+
+2_CLOUDFLARE_BUILD.bat
+
+완료되면 dist 폴더가 자동으로 열립니다.
+Cloudflare에는 이 dist 폴더 안의 내용을 업로드하면 됩니다.
+
+
+중요
+----
+GitHub에는 소스만 올립니다.
+Cloudflare에는 dist 빌드 결과만 올립니다.
