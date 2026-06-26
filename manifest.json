@@ -1,7 +1,7 @@
 {
   "name": "몸가짐운동센터 CMS",
   "short_name": "몸가짐",
-  "description": "몸가짐운동센터 회원·스케줄 통합 관리",
+  "description": "몸가짐운동센터 회원 및 일정 통합 관리 시스템",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0f172a",
