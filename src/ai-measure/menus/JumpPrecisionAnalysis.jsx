@@ -107,10 +107,10 @@ function drawJumpLiveOverlay(ctx, width, height, snap = {}) {
   const phase = snap.phase || 'arming';
   const accent = phase === 'air' ? '#fbbf24' : phase === 'ready' ? '#34d399' : phase === 'low_visibility' ? '#f87171' : '#22d3ee';
   const title = isRsi ? 'RSI · SIDE' : 'POWER · FRONT';
-  const main = isRsi ? (snap.latestCycle?.rsi != null ? snap.latestCycle.rsi : '--') : (snap.liveJump?.heightCm ?? snap.bestHeight ?? '--');
-  const mainUnit = isRsi ? 'RSI' : 'cm';
+  const main = isRsi ? (snap.latestCycle?.rsi != null ? snap.latestCycle.rsi : snap.liveJump?.heightCm ?? '--') : (snap.liveJump?.heightCm ?? snap.bestHeight ?? '--');
+  const mainUnit = isRsi ? (snap.latestCycle?.rsi != null ? 'RSI' : 'cm') : 'cm';
   const helper = isRsi
-    ? `${snap.jumpCount || 0}/${RSI_REQUIRED_JUMPS} jumps · GCT ${snap.latestCycle?.contactMs ? `${snap.latestCycle.contactMs}ms` : '--'}`
+    ? `${snap.jumpCount || 0}/${RSI_REQUIRED_JUMPS} jumps · GCT ${snap.latestCycle?.contactMs ? `${snap.latestCycle.contactMs}ms` : '--'} · flight ${snap.liveJump?.flightMs ? `${snap.liveJump.flightMs}ms` : '--'}`
     : `jumps ${snap.jumpCount || 0} · flight ${snap.liveJump?.flightMs ? `${snap.liveJump.flightMs}ms` : '--'}`;
 
   ctx.save();
@@ -164,7 +164,7 @@ function drawJumpLiveOverlay(ctx, width, height, snap = {}) {
       ctx.fillStyle = '#f8fafc';
       ctx.font = `900 ${15 * scale}px ui-monospace, Menlo, monospace`;
       const value = isRsi
-        ? `RSI ${r.rsi ?? '--'} · ${r.contactMs ? `${r.contactMs}ms` : '--'}`
+        ? (r.rsi != null ? `RSI ${r.rsi} · ${r.contactMs ? `${r.contactMs}ms` : '--'}` : `${r.heightCm ?? '--'}cm · ${r.flightMs ?? '--'}ms`)
         : `${r.heightCm ?? '--'}cm · ${r.flightMs}ms`;
       ctx.fillText(value, rowX + 50 * scale, y);
     });
@@ -516,20 +516,39 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
               const s = tracker.summary({ heightCm: heightRef.current });
               if (s?.heightCm != null) bestHeightRef.current = s.heightCm;
               const latest = tracker.flights.at(-1);
+              let nextLiveJump = overlayRef.current.liveJump || { flightMs: null, heightCm: null };
               if (latest?.flightMs) {
                 const jump = calcJump(latest.flightMs / 1000, null);
-                setLiveJump({
+                nextLiveJump = {
                   flightMs: Math.round(latest.flightMs),
                   heightCm: jump?.heightCm ?? null,
-                });
+                };
+                setLiveJump(nextLiveJump);
               }
+              let nextCycles = [];
+              let nextRows = [];
               if (jumpType === 'reactive') {
                 const cyclePreview = buildRsiCyclePreview(tracker.flights);
-                setRsiCycles(cyclePreview);
-                setJumpRows(flightRows(tracker.flights, cyclePreview));
+                nextCycles = cyclePreview;
+                nextRows = flightRows(tracker.flights, cyclePreview);
+                setRsiCycles(nextCycles);
+                setJumpRows(nextRows);
               } else {
-                setJumpRows(flightRows(tracker.flights, []));
+                nextRows = flightRows(tracker.flights, []);
+                setJumpRows(nextRows);
               }
+              overlayRef.current = {
+                ...overlayRef.current,
+                jumpType,
+                phase: phaseRef.current,
+                jumpCount: c,
+                liveJump: nextLiveJump,
+                rsiCycles: nextCycles,
+                latestCycle: nextCycles[nextCycles.length - 1] || null,
+                jumpRows: nextRows,
+                bestHeight: bestHeightRef.current,
+                heightCm: heightRef.current,
+              };
             } catch (e) { /* noop */ }
           }
         }
@@ -1135,8 +1154,8 @@ function JumpLiveOverlay({
 }) {
   const isRsi = jumpType === 'reactive';
   const latestCycle = rsiCycles.at(-1) || null;
-  const mainValue = isRsi ? latestCycle?.rsi ?? '--' : liveJump.heightCm ?? bestHeight ?? '--';
-  const mainUnit = isRsi ? 'RSI' : 'cm';
+  const mainValue = isRsi ? latestCycle?.rsi ?? liveJump.heightCm ?? '--' : liveJump.heightCm ?? bestHeight ?? '--';
+  const mainUnit = isRsi ? (latestCycle?.rsi != null ? 'RSI' : 'cm') : 'cm';
   const readyText = isRsi ? `측면 · 연속 ${RSI_REQUIRED_JUMPS}회` : '정면 · 1회 최대 점프';
   const statusText = phase === 'air' ? '공중'
     : phase === 'ready' ? '준비됨'
@@ -1167,7 +1186,7 @@ function JumpLiveOverlay({
             </p>
             <p className="mt-1 text-xs font-bold text-white/65">
               {isRsi
-                ? `GCT ${latestCycle?.contactMs ? `${latestCycle.contactMs}ms` : '--'} · ${jumpCount}/${RSI_REQUIRED_JUMPS}`
+                ? `GCT ${latestCycle?.contactMs ? `${latestCycle.contactMs}ms` : '--'} · flight ${liveJump.flightMs ? `${liveJump.flightMs}ms` : '--'} · ${jumpCount}/${RSI_REQUIRED_JUMPS}`
                 : `체공 ${liveJump.flightMs ? `${liveJump.flightMs}ms` : '--'} · ${jumpCount}회`}
             </p>
           </div>
@@ -1179,10 +1198,10 @@ function JumpLiveOverlay({
               <div key={row.no} className="min-w-0 flex-1 rounded-lg bg-white/10 px-2 py-1.5 text-center">
                 <p className="text-[10px] font-bold text-white/45">#{row.no}</p>
                 <p className="truncate font-mono text-base font-black text-white">
-                  {isRsi ? row.rsi ?? '대기' : `${row.heightCm ?? '--'}cm`}
+                  {isRsi ? (row.rsi != null ? row.rsi : `${row.heightCm ?? '--'}cm`) : `${row.heightCm ?? '--'}cm`}
                 </p>
                 <p className="truncate text-[10px] font-bold text-white/45">
-                  {isRsi ? (row.contactMs ? `${row.contactMs}ms` : 'next') : `${row.flightMs}ms`}
+                  {isRsi ? (row.contactMs ? `${row.contactMs}ms` : `${row.flightMs ?? '--'}ms`) : `${row.flightMs}ms`}
                 </p>
               </div>
             ))}
