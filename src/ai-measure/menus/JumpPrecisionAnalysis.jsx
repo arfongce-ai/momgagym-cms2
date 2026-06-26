@@ -875,7 +875,7 @@ function JumpReport({ report, saveState, onSave, onRetry, onBack, onOpenSavedRep
           onReportClick={() => onOpenSavedReport?.(report)}
           reportButtonLabel="📄 결과 리포트 보기"
           baseName={`${report.member?.name || '회원'}_점프`} onMessage={() => {}} />
-        {report.valid === true && (
+        {report.valid === true && saveState !== 'saved' && (
           <button onClick={onSave}
             disabled={saveState === 'saving' || saveState === 'saved'}
             className="w-full rounded-xl bg-slate-700 text-white font-bold py-3 disabled:opacity-60 flex items-center justify-center gap-2">
@@ -886,7 +886,6 @@ function JumpReport({ report, saveState, onSave, onRetry, onBack, onOpenSavedRep
         <button onClick={onRetry} className="w-full rounded-xl border border-slate-700 text-slate-200 font-bold py-3">
           다시 측정
         </button>
-        {saveState === 'saved' && <p className="text-center text-xs text-emerald-400">측정이 서버에 자동 저장되었습니다.</p>}
         {saveState === 'error' && <p className="text-center text-xs text-red-400">자동 저장 실패 — 위 버튼으로 다시 시도하세요</p>}
         {report.valid !== true && <p className="text-center text-xs text-amber-400">무효 측정은 저장되지 않습니다.</p>}
       </div>
