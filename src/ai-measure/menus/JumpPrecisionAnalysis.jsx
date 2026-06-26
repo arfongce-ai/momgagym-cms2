@@ -775,6 +775,7 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
           onSave={handleManualSave}
           onRetry={retry}
           onBack={onBack}
+          onOpenSavedReport={onOpenSavedReport}
         />
       )}
     </div>
@@ -782,7 +783,7 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
 }
 
 // ── 리포트 화면 ──
-function JumpReport({ report, saveState, onSave, onRetry, onBack }) {
+function JumpReport({ report, saveState, onSave, onRetry, onBack, onOpenSavedReport }) {
   const isRsi = report.jumpType === 'reactive';
   const biomech = report.biomech || {};
   const viewLabel = report.videoMetrics?.detectedView === 'side' ? '측면'
@@ -868,7 +869,11 @@ function JumpReport({ report, saveState, onSave, onRetry, onBack }) {
 
       {/* 액션 (캡처 영역 밖): 리포트 저장 + 동영상 저장 + 회차 기록 */}
       <div className="p-5 pt-0 space-y-2">
-        <ReportActions reportNodeId="jump-live-report-sheet" videoBlob={report.videoBlob || null}
+        <ReportActions
+          reportNodeId="jump-live-report-sheet"
+          videoBlob={report.videoBlob || null}
+          onReportClick={() => onOpenSavedReport?.(report)}
+          reportButtonLabel="📄 결과 리포트 보기"
           baseName={`${report.member?.name || '회원'}_점프`} onMessage={() => {}} />
         {report.valid === true && (
           <button onClick={onSave}

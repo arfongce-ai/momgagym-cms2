@@ -74,7 +74,10 @@ export function buildAiReport(aiSessions = []) {
   // 메뉴별 그룹
   const byMenu = {};
   for (const s of sorted) {
-    const menu = s.menuTitle || s.menu || '기타';
+    const d = s.data || {};
+    const menu = s.menu === 'jump'
+      ? (d.jumpType === 'reactive' || d.rsi ? 'RSI 반응점프' : '파워점프')
+      : (s.menuTitle || s.menu || '기타');
     if (!byMenu[menu]) byMenu[menu] = [];
     byMenu[menu].push(s);
   }
@@ -104,7 +107,11 @@ export function buildAiReport(aiSessions = []) {
       case 'onerm':   metric = `1RM ${d.oneRM ?? '-'}kg (${d.liftLabel ?? ''} ${d.weight}kg×${d.reps})`; break;
       case 'rsi':     metric = `RSI ${d.rsi ?? '-'} · 높이 ${d.heightCm ?? '-'}cm`; break;
       case 'vbt':     metric = `평균속도 ${d.meanVelocity ?? '-'}m/s (${d.zone ?? ''})`; break;
-      case 'jump':    metric = `높이 ${d.heightCm ?? '-'}cm${d.peakPower ? ` · ${d.peakPower}W` : ''}`; break;
+      case 'jump':
+        metric = d.jumpType === 'reactive' || d.rsi
+          ? `RSI ${d.rsi?.rsi ?? d.rsi ?? '-'} · 높이 ${d.heightCm ?? '-'}cm`
+          : `높이 ${d.heightCm ?? '-'}cm${d.peakPower ? ` · ${d.peakPower}W` : ''}`;
+        break;
       case 'posture': metric = `어깨 ${d.shoulderTilt?.deg ?? '-'}° · 골반 ${d.hipTilt?.deg ?? '-'}°`; break;
       case 'body':    metric = `${d.weight ?? '-'}kg${d.systolic ? ` · ${d.systolic}/${d.diastolic}` : ''}`; break;
       default:        metric = `${rows.length}회 측정`;

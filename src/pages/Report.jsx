@@ -14,6 +14,22 @@ const GaitReportDashboard = lazy(() => import('../ai-measure/menus/GaitReportDas
 
 const COLORS = { weight:'#f59e0b', systolic:'#ef4444', diastolic:'#3b82f6', height:'#22d3ee' };
 
+function isJumpRsi(data) {
+  return data?.jumpType === 'reactive' || Boolean(data?.rsi);
+}
+
+function getSavedReportMeta(rep) {
+  if (rep?.kind === 'jump') {
+    return isJumpRsi(rep)
+      ? { title: 'RSI 반응점프', badge: 'RSI', color: 'text-emerald-300', bg: 'bg-emerald-500/15' }
+      : { title: '파워점프', badge: 'POWER', color: 'text-amber-300', bg: 'bg-amber-500/15' };
+  }
+  if (rep?.kind === 'gait') {
+    return { title: '보행·러닝', badge: 'GAIT', color: 'text-sky-300', bg: 'bg-sky-500/15' };
+  }
+  return { title: '측정', badge: 'AI', color: 'text-slate-300', bg: 'bg-slate-700' };
+}
+
 // 세션 1건에서 회차비교용 핵심 수치/라벨을 뽑는다 (메뉴별).
 function extractSessionMetric(session) {
   const d = session.data || {};
@@ -21,7 +37,12 @@ function extractSessionMetric(session) {
     case 'onerm':   return { value: d.oneRM, unit: 'kg', label: `1RM (${d.liftLabel ?? ''} ${d.weight ?? '-'}kg×${d.reps ?? '-'})` };
     case 'rsi':     return { value: d.rsi, unit: '', label: `RSI · 높이 ${d.heightCm ?? '-'}cm` };
     case 'vbt':     return { value: d.meanVelocity, unit: 'm/s', label: `평균속도 (${d.zone ?? ''})` };
-    case 'jump':    return { value: d.heightCm, unit: 'cm', label: `점프높이${d.peakPower ? ` · ${d.peakPower}W` : ''}` };
+    case 'jump': {
+      if (isJumpRsi(d)) {
+        return { value: d.rsi?.rsi ?? d.rsi, unit: '', label: `RSI 반응점프 · 높이 ${d.heightCm ?? '-'}cm` };
+      }
+      return { value: d.heightCm, unit: 'cm', label: `파워점프 · ${d.peakPower ? `${d.peakPower}W` : '파워 미입력'}` };
+    }
     case 'posture': return { value: d.shoulderTilt?.deg, unit: '°', label: `어깨 기울기 · 골반 ${d.hipTilt?.deg ?? '-'}°` };
     case 'gait':    return { value: d.cadence ?? d.metrics?.cadence, unit: 'SPM', label: '케이던스' };
     case 'body':    return { value: d.weight, unit: 'kg', label: `체중${d.systolic ? ` · ${d.systolic}/${d.diastolic}` : ''}` };
@@ -301,19 +322,25 @@ export default function Report() {
               </p>
               <div className="space-y-2">
                 {savedReports.map((rep, i) => {
-                  const kind = rep.kind === 'jump' ? '점프' : rep.kind === 'gait' ? '보행·러닝' : '측정';
+                  const meta = getSavedReportMeta(rep);
                   const date = String(rep.createdAt || rep.measuredAt || '').slice(0, 10);
                   const main = rep.kind === 'jump'
-                    ? (rep.heightCm != null ? `${rep.heightCm}cm` : '무효')
-                    : (rep.cadence != null || rep.metrics?.cadence != null ? `${rep.cadence ?? rep.metrics?.cadence} SPM` : '—');
+                    ? (isJumpRsi(rep)
+                      ? `RSI ${rep.rsi?.rsi ?? '-'} / 높이 ${rep.heightCm ?? '-'}cm`
+                      : `${rep.heightCm ?? '-'}cm / ${rep.peakPower ?? '-'}W`)
+                    : (rep.cadence != null || rep.metrics?.cadence != null ? `${rep.cadence ?? rep.metrics?.cadence} SPM` : '-');
                   return (
                     <button key={rep.id || i} onClick={() => setViewerIdx(i)}
                       className="w-full flex items-center justify-between bg-slate-900 border border-slate-800 rounded-xl px-4 py-3 text-left active:scale-[0.99] transition">
                       <div>
-                        <p className="text-sm font-bold text-white">{kind} <span className="text-slate-500 font-normal">· {date}</span></p>
+                        <p className="text-sm font-bold text-white flex flex-wrap items-center gap-2">
+                          <span>{meta.title}</span>
+                          <span className={`rounded-full px-2 py-0.5 text-[9px] font-black ${meta.bg} ${meta.color}`}>{meta.badge}</span>
+                          <span className="text-slate-500 font-normal">/ {date}</span>
+                        </p>
                         <p className="text-[11px] text-slate-500">{rep.valid === false ? '측정 무효' : `주요 결과 ${main}`}</p>
                       </div>
-                      <span className="text-amber-400 text-sm font-bold">열기 →</span>
+                      <span className="text-amber-400 text-sm font-bold">열기 &gt;</span>
                     </button>
                   );
                 })}

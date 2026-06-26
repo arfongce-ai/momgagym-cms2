@@ -125,8 +125,8 @@ export default function GaitReportDashboard({ report, onComment, onClose }) {
     <div className="min-h-full w-full bg-slate-950 flex items-start justify-center p-4 font-sans">
       <div
         id="gait-report-sheet"
-        className="w-full max-w-[820px] bg-slate-900 rounded-2xl shadow-2xl ring-1 ring-slate-700/60 overflow-hidden flex flex-col"
-        style={{ aspectRatio: '1 / 1.414', minHeight: 900 }}  /* A4 비율 + 최소 높이로 차트 가독성 보장 */
+        className="report-a4-page w-full max-w-[794px] bg-slate-900 rounded-2xl shadow-2xl ring-1 ring-slate-700/60 overflow-hidden flex flex-col"
+        style={{ minHeight: 1123 }}  /* A4 page */
       >
         {/* ── 헤더 ── */}
         <header className="flex items-center justify-between px-6 pt-5 pb-3 border-b border-slate-700/60">
