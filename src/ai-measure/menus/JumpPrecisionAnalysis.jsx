@@ -14,20 +14,19 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   StandingCalibrator, JumpFlightTracker,
+  JumpBiomechAccumulator, jumpPhaseOf,
 } from '../core/jumpBiomechanics';
 import { calcJump, calcRSI } from '../core/performance';
 import { computeRSIFromFlights, rsiGrade } from '../core/reactiveJump';
 import { OrientationVoter } from '../core/gaitBiomechanics';
 import { loadPoseLandmarker, detectPoseFrame, isPoseReady } from '../core/poseBackend';
 import { lockZoom, unlockZoom } from '../../utils/viewportLock';
-import { drawMeasurementOverlay } from '../core/recordingOverlay';
 import ReportActions from '../../components/report/ReportActions';
 import { store } from '../../demoData';
-import FutureVideoOverlay from './FutureVideoOverlay';
 
 // 회원 신체기록에서 최신 체중을 보조 조회 (member.weight 없을 때 Sayers 파워용)
-function resolveWeight(member) {
-  let w = member?.weight != null ? Number(member.weight) : null;
+function resolveWeight(member, fallback = null) {
+  let w = member?.weight != null ? Number(member.weight) : fallback;
   try {
     if (w == null && member?.id && typeof store?.getBodyRecords === 'function') {
       const recs = store.getBodyRecords(member.id) || [];
@@ -41,6 +40,137 @@ function resolveWeight(member) {
 
 const RECORD_FPS = 30;
 const REC_SIZE = { width: 720, height: 960 }; // 3:4 세로
+const LAND_WINDOW = 10; // 착지 직후 생체역학 지표를 누적할 프레임 수
+const RSI_REQUIRED_JUMPS = 3;
+
+function roundRect(ctx, x, y, w, h, r) {
+  const radius = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + radius, y);
+  ctx.arcTo(x + w, y, x + w, y + h, radius);
+  ctx.arcTo(x + w, y + h, x, y + h, radius);
+  ctx.arcTo(x, y + h, x, y, radius);
+  ctx.arcTo(x, y, x + w, y, radius);
+  ctx.closePath();
+}
+
+function buildRsiCyclePreview(flights = []) {
+  const cycles = [];
+  const sorted = [...flights].sort((a, b) => a.takeoffMs - b.takeoffMs);
+  for (let i = 0; i < sorted.length - 1; i++) {
+    const contactMs = sorted[i + 1].takeoffMs - sorted[i].landingMs;
+    const flightMs = sorted[i + 1].flightMs;
+    if (!(contactMs > 0) || !(flightMs > 0)) continue;
+    const jump = calcJump(flightMs / 1000, null);
+    cycles.push({
+      contactMs: Math.round(contactMs),
+      flightMs: Math.round(flightMs),
+      heightCm: jump?.heightCm ?? null,
+      rsi: Math.round((flightMs / contactMs) * 100) / 100,
+    });
+  }
+  return cycles;
+}
+
+function flightRows(flights = [], cycles = []) {
+  return flights.slice(-5).map((f, i, arr) => {
+    const originalIndex = flights.length - arr.length + i;
+    const jump = calcJump((f.flightMs || 0) / 1000, null);
+    return {
+      no: originalIndex + 1,
+      flightMs: Math.round(f.flightMs || 0),
+      heightCm: jump?.heightCm ?? null,
+      rsi: originalIndex > 0 ? cycles[originalIndex - 1]?.rsi ?? null : null,
+      contactMs: originalIndex > 0 ? cycles[originalIndex - 1]?.contactMs ?? null : null,
+    };
+  });
+}
+
+function allFlightRows(flights = [], cycles = []) {
+  return flights.map((f, i) => {
+    const jump = calcJump((f.flightMs || 0) / 1000, null);
+    return {
+      no: i + 1,
+      takeoffMs: Math.round(f.takeoffMs || 0),
+      landingMs: Math.round(f.landingMs || 0),
+      flightMs: Math.round(f.flightMs || 0),
+      heightCm: jump?.heightCm ?? null,
+      rsi: i > 0 ? cycles[i - 1]?.rsi ?? null : null,
+      contactMs: i > 0 ? cycles[i - 1]?.contactMs ?? null : null,
+    };
+  });
+}
+
+function drawJumpLiveOverlay(ctx, width, height, snap = {}) {
+  const scale = Math.max(1.05, Math.min(1.65, width / 720));
+  const isRsi = snap.jumpType === 'reactive';
+  const phase = snap.phase || 'arming';
+  const accent = phase === 'air' ? '#fbbf24' : phase === 'ready' ? '#34d399' : phase === 'low_visibility' ? '#f87171' : '#22d3ee';
+  const title = isRsi ? 'RSI · SIDE' : 'POWER · FRONT';
+  const main = isRsi ? (snap.latestCycle?.rsi != null ? snap.latestCycle.rsi : '--') : (snap.liveJump?.heightCm ?? snap.bestHeight ?? '--');
+  const mainUnit = isRsi ? 'RSI' : 'cm';
+  const helper = isRsi
+    ? `${snap.jumpCount || 0}/${RSI_REQUIRED_JUMPS} jumps · GCT ${snap.latestCycle?.contactMs ? `${snap.latestCycle.contactMs}ms` : '--'}`
+    : `jumps ${snap.jumpCount || 0} · flight ${snap.liveJump?.flightMs ? `${snap.liveJump.flightMs}ms` : '--'}`;
+
+  ctx.save();
+  ctx.textBaseline = 'middle';
+  const pad = 16 * scale;
+  const panelH = 118 * scale;
+  const panelY = pad;
+  roundRect(ctx, pad, panelY, width - pad * 2, panelH, 18 * scale);
+  ctx.fillStyle = 'rgba(2,6,23,0.68)';
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.16)';
+  ctx.stroke();
+
+  ctx.fillStyle = accent;
+  ctx.beginPath();
+  ctx.arc(pad + 20 * scale, panelY + 27 * scale, 6 * scale, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#f8fafc';
+  ctx.font = `900 ${16 * scale}px system-ui, sans-serif`;
+  ctx.fillText(title, pad + 38 * scale, panelY + 27 * scale);
+  ctx.fillStyle = 'rgba(226,232,240,0.78)';
+  ctx.font = `800 ${12 * scale}px system-ui, sans-serif`;
+  ctx.fillText(phase === 'ready' ? 'READY' : phase === 'air' ? 'AIR' : phase === 'low_visibility' ? 'CHECK POSTURE' : 'CALIBRATING', pad + 38 * scale, panelY + 55 * scale);
+
+  ctx.textAlign = 'right';
+  ctx.fillStyle = '#f8fafc';
+  ctx.font = `900 ${52 * scale}px ui-monospace, Menlo, monospace`;
+  ctx.fillText(String(main), width - pad - 74 * scale, panelY + 48 * scale);
+  ctx.fillStyle = accent;
+  ctx.font = `900 ${18 * scale}px system-ui, sans-serif`;
+  ctx.fillText(mainUnit, width - pad - 14 * scale, panelY + 51 * scale);
+  ctx.fillStyle = 'rgba(226,232,240,0.72)';
+  ctx.font = `800 ${13 * scale}px system-ui, sans-serif`;
+  ctx.fillText(helper, width - pad - 14 * scale, panelY + 88 * scale);
+  ctx.textAlign = 'left';
+
+  const rows = (snap.jumpRows || []).slice(-3);
+  if (rows.length) {
+    const rowW = Math.min(width - pad * 2, 430 * scale);
+    const rowH = 34 * scale;
+    const rowX = pad;
+    const rowY = height - pad - rows.length * rowH - 14 * scale;
+    roundRect(ctx, rowX, rowY, rowW, rows.length * rowH + 12 * scale, 14 * scale);
+    ctx.fillStyle = 'rgba(2,6,23,0.58)';
+    ctx.fill();
+    rows.forEach((r, i) => {
+      const y = rowY + 12 * scale + i * rowH;
+      ctx.fillStyle = 'rgba(203,213,225,0.72)';
+      ctx.font = `800 ${11 * scale}px system-ui, sans-serif`;
+      ctx.fillText(`#${r.no}`, rowX + 12 * scale, y);
+      ctx.fillStyle = '#f8fafc';
+      ctx.font = `900 ${15 * scale}px ui-monospace, Menlo, monospace`;
+      const value = isRsi
+        ? `RSI ${r.rsi ?? '--'} · ${r.contactMs ? `${r.contactMs}ms` : '--'}`
+        : `${r.heightCm ?? '--'}cm · ${r.flightMs}ms`;
+      ctx.fillText(value, rowX + 50 * scale, y);
+    });
+  }
+  ctx.restore();
+}
 
 // 녹화 캔버스에 비디오를 꽉 채워 그린다(검은 여백 없이 크롭) — gait drawCover 와 동일.
 function drawCoverJump(ctx, video, width, height) {
@@ -123,12 +253,16 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
   const [saveState, setSaveState] = useState('idle'); // idle|saving|saved|error
   const [jumpCount, setJumpCount] = useState(0);
   const [rsiCycles, setRsiCycles] = useState([]);
+  const [jumpRows, setJumpRows] = useState([]);
   const [liveJump, setLiveJump] = useState({ flightMs: null, heightCm: null });
 
-  // 키 입력 팝업 (요구사항 2 예외처리)
+  // 키/체중 입력 팝업 (회원 미정 또는 신체정보 부족 시)
+  const initialWeight = resolveWeight(member);
   const [heightCm, setHeightCm] = useState(member?.height ? Number(member.height) : null);
-  const [needHeight, setNeedHeight] = useState(!member?.height);
+  const [bodyWeight, setBodyWeight] = useState(initialWeight);
+  const [needHeight, setNeedHeight] = useState(!member?.height || (!member?.id && initialWeight == null));
   const [heightInput, setHeightInput] = useState('');
+  const [weightInput, setWeightInput] = useState(initialWeight ? String(initialWeight) : '');
 
   const videoRef = useRef(null);
   const skeletonCanvasRef = useRef(null);
@@ -140,10 +274,15 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
 
   const calibRef = useRef(null);     // StandingCalibrator
   const trackerRef = useRef(null);   // JumpFlightTracker
+  const biomechAccRef = useRef(null); // JumpBiomechAccumulator
+  const prevInAirRef = useRef(false);
+  const landFramesLeftRef = useRef(0);
   const frameDtRef = useRef([]);     // 측정 단계 프레임 간격(ms) 모음 — RSI fps 경고용
   const orientRef = useRef(null);    // OrientationVoter — 반응(RSI) 모드 측면뷰 강제용
   const prevFrameTsRef = useRef(0);  // 직전 프레임 타임스탬프(간격 계산용)
   const heightRef = useRef(heightCm);
+  const weightRef = useRef(bodyWeight);
+  const overlayRef = useRef({});
   const autoSavedRef = useRef(null);
 
   // 오버레이 녹화 파이프라인 (보행과 동일 구조)
@@ -160,6 +299,20 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
   useEffect(() => { viewRef.current = view; }, [view]);
   useEffect(() => { phaseRef.current = phase; }, [phase]);
   useEffect(() => { heightRef.current = heightCm; }, [heightCm]);
+  useEffect(() => { weightRef.current = bodyWeight; }, [bodyWeight]);
+  useEffect(() => {
+    overlayRef.current = {
+      jumpType,
+      phase,
+      jumpCount,
+      liveJump,
+      rsiCycles,
+      latestCycle: rsiCycles.at(-1) || null,
+      jumpRows,
+      bestHeight: bestHeightRef.current,
+      heightCm,
+    };
+  }, [jumpType, phase, jumpCount, liveJump, rsiCycles, jumpRows, heightCm]);
 
   // 카메라 생명주기
   useEffect(() => {
@@ -176,11 +329,15 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
   const resetPipeline = () => {
     calibRef.current = new StandingCalibrator({ heightCm: heightRef.current });
     trackerRef.current = null;
+    biomechAccRef.current = new JumpBiomechAccumulator({ heightCm: heightRef.current });
+    prevInAirRef.current = false;
+    landFramesLeftRef.current = 0;
     frameDtRef.current = [];
     prevFrameTsRef.current = 0;
     setPhase('arming');
     setJumpCount(0);
     setRsiCycles([]);
+    setJumpRows([]);
     setLiveJump({ flightMs: null, heightCm: null });
     setReportData(null);
     setSaveState('idle');
@@ -230,17 +387,11 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
     const draw = () => {
       ctx.fillStyle = '#000'; ctx.fillRect(0, 0, canvas.width, canvas.height);
       drawCoverJump(ctx, video, canvas.width, canvas.height);
-      // 데이터 오버레이: 현재 phase, 감지된 점프 수, 최고 높이(있으면)
-      const ph = phaseRef.current;
-      const phaseLabel = ph === 'air' ? '공중' : ph === 'ready' ? '준비됨' : ph === 'low_visibility' ? '자세 확인' : '보정 중';
-      drawMeasurementOverlay(ctx, canvas.width, canvas.height, {
-        title: 'JUMP LIVE',
-        elapsedMs: performance.now() - recStartedAtRef.current,
-        metrics: [
-          { label: 'STATUS', value: phaseLabel },
-          { label: 'JUMPS', value: jumpCountRef.current },
-          { label: 'BEST', value: bestHeightRef.current != null ? `${bestHeightRef.current}cm` : '—' },
-        ],
+      drawJumpLiveOverlay(ctx, canvas.width, canvas.height, {
+        ...overlayRef.current,
+        phase: phaseRef.current,
+        jumpCount: jumpCountRef.current,
+        bestHeight: bestHeightRef.current,
       });
       composeRafRef.current = requestAnimationFrame(draw);
     };
@@ -336,6 +487,14 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
           // ── 측정 단계 ──
           // 프레임 간격(ms) 수집 — RSI 접지시간 정확도(fps) 판정용
           tracker.push(landmarks, ts);
+          const curInAir = tracker.inAir;
+          const prevInAir = prevInAirRef.current;
+          if (prevInAir && !curInAir) landFramesLeftRef.current = LAND_WINDOW;
+          const landActive = landFramesLeftRef.current > 0;
+          const { phase: jp, justTookOff } = jumpPhaseOf(prevInAir, curInAir, landActive);
+          biomechAccRef.current?.push(landmarks, ts, jp, justTookOff);
+          if (landActive && !curInAir) landFramesLeftRef.current--;
+          prevInAirRef.current = curInAir;
           // 반응(RSI) 모드: 측면뷰 판정용 방향 누적
           if (orientRef.current) orientRef.current.push(landmarks);
           const prevTs = prevFrameTsRef.current;
@@ -365,8 +524,11 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
                 });
               }
               if (jumpType === 'reactive') {
-                const liveRsi = computeRSIFromFlights(tracker.flights, {});
-                setRsiCycles(liveRsi?.perCycle || []);
+                const cyclePreview = buildRsiCyclePreview(tracker.flights);
+                setRsiCycles(cyclePreview);
+                setJumpRows(flightRows(tracker.flights, cyclePreview));
+              } else {
+                setJumpRows(flightRows(tracker.flights, []));
               }
             } catch (e) { /* noop */ }
           }
@@ -393,8 +555,9 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
     await stopRecording();
     const videoBlob = recordedBlobRef.current || null;
     const sum = tracker.summary({ heightCm: heightRef.current });
+    const biomech = biomechAccRef.current?.summary() || null;
     // performance.calcJump 로 파워(Sayers)까지 일관 산출 (체중 있으면)
-    const power = calcJump(sum.flightTimeSec, resolveWeight(member));
+    const power = calcJump(sum.flightTimeSec, resolveWeight(member, weightRef.current));
 
     // ── 반응 탄성 점프 모드: 사이클 간 접지시간으로 RSI 산출 ──
     // 측면뷰 강제: 누적된 방향이 'side'가 아니면 코어가 무효 처리한다.
@@ -408,17 +571,28 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
         view: decidedView,
       });
     }
+    const liveCyclePreview = buildRsiCyclePreview(tracker.flights);
+    const perJump = allFlightRows(tracker.flights, rsiResult?.perCycle || liveCyclePreview);
 
     const report = {
       ...sum,
       heightCm: sum.heightCm,
       takeoffVelocity: sum.takeoffVelocity,
       peakPower: power?.peakPower ?? null,
+      bodyWeight: resolveWeight(member, weightRef.current),
       calibHeightCm: heightRef.current,
       jumpType,                       // 'power' | 'reactive'
       rsi: rsiResult,                 // 반응 모드에서만 채워짐(null 가능)
       source: 'live',
       videoBlob, // 오버레이 합성 녹화본 (저장은 안 함, 화면에서 '동영상 저장'에 사용)
+      perJump,
+      videoMetrics: {
+        overlayRecorded: Boolean(videoBlob),
+        recordingFps: RECORD_FPS,
+        recommendedView: jumpType === 'reactive' ? 'side' : 'front',
+        detectedView: biomech?.view ?? null,
+      },
+      biomech,
       member: { id: member?.id || null, name: member?.name || null },
       measuredAt: new Date().toISOString(),
     };
@@ -457,22 +631,25 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
     if (!res?.ok) return;
     const nextReport = res.saved && typeof res.saved === 'object' ? { ...reportData, ...res.saved } : reportData;
     setReportData(nextReport);
-    if (typeof onOpenSavedReport === 'function') onOpenSavedReport(nextReport);
   };
 
   const retry = () => { setView('camera'); };
 
   const applyHeight = () => {
-    const n = Number(heightInput);
-    if (!n || n < 80 || n > 250) { setWarning('키를 80~250cm로 입력하세요.'); return; }
-    setHeightCm(n);
-    heightRef.current = n;
+    const h = Number(heightInput || heightCm);
+    const w = Number(weightInput || bodyWeight);
+    if (!h || h < 80 || h > 250) { setWarning('키를 80~250cm로 입력하세요.'); return; }
+    if (!w || w < 20 || w > 250) { setWarning('몸무게를 20~250kg으로 입력하세요.'); return; }
+    setHeightCm(h);
+    setBodyWeight(w);
+    heightRef.current = h;
+    weightRef.current = w;
     setNeedHeight(false);
-    onMemberHeightChange?.(n);
+    onMemberHeightChange?.(h);
     setWarning('');
   };
 
-  // ── 키 입력 팝업 (요구사항 2 예외) ──
+  // ── 키/몸무게 입력 팝업 (회원 미정 또는 신체정보 부족) ──
   if (needHeight) {
     return (
       <div className="fixed inset-0 z-[80] bg-slate-950 flex flex-col">
@@ -485,17 +662,31 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
           <div className="w-full max-w-sm bg-slate-900 border border-amber-500/30 rounded-2xl p-5 space-y-4">
             <div className="text-center space-y-1">
               <p className="text-3xl">📏</p>
-              <p className="text-white font-black">키 정보가 필요합니다</p>
+              <p className="text-white font-black">키와 몸무게가 필요합니다</p>
               <p className="text-slate-400 text-xs leading-relaxed">
-                {member?.name ? `${member.name} 회원의 ` : ''}키가 등록되어 있지 않습니다.
-                cm 환산(자동 보정)에 필요하니 지금 입력해 주세요.
+                {member?.name ? `${member.name} 회원의 ` : '회원 미정 상태입니다. '}
+                cm 보정과 파워 계산을 위해 지금 입력해 주세요.
               </p>
             </div>
-            <div className="flex items-center gap-2">
-              <input type="number" inputMode="numeric" value={heightInput}
-                onChange={e => setHeightInput(e.target.value)} placeholder="예: 170"
-                className="flex-1 bg-slate-800 border border-slate-700 text-slate-100 rounded-lg px-3 py-2.5 text-sm font-mono focus:outline-none focus:border-amber-500" />
-              <span className="text-slate-400 text-sm font-bold">cm</span>
+            <div className="grid grid-cols-2 gap-2">
+              <label className="block">
+                <span className="mb-1 block text-[10px] font-bold text-slate-500">키</span>
+                <div className="flex items-center gap-2">
+                  <input type="number" inputMode="numeric" value={heightInput}
+                    onChange={e => setHeightInput(e.target.value)} placeholder="170"
+                    className="min-w-0 flex-1 bg-slate-800 border border-slate-700 text-slate-100 rounded-lg px-3 py-2.5 text-sm font-mono focus:outline-none focus:border-amber-500" />
+                  <span className="text-slate-400 text-xs font-bold">cm</span>
+                </div>
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-[10px] font-bold text-slate-500">몸무게</span>
+                <div className="flex items-center gap-2">
+                  <input type="number" inputMode="decimal" value={weightInput}
+                    onChange={e => setWeightInput(e.target.value)} placeholder="70"
+                    className="min-w-0 flex-1 bg-slate-800 border border-slate-700 text-slate-100 rounded-lg px-3 py-2.5 text-sm font-mono focus:outline-none focus:border-amber-500" />
+                  <span className="text-slate-400 text-xs font-bold">kg</span>
+                </div>
+              </label>
             </div>
             <button onClick={applyHeight}
               className="w-full rounded-xl bg-amber-500 text-slate-950 font-black py-3 active:scale-95">
@@ -518,34 +709,6 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
         <div className="relative w-full h-full">
           <video ref={videoRef} className="absolute inset-0 w-full h-full object-cover" playsInline muted />
           <canvas ref={skeletonCanvasRef} className="absolute inset-0 w-full h-full pointer-events-none" />
-          <FutureVideoOverlay
-            mode={jumpType === 'reactive' ? 'RSI LIVE' : 'JUMP AI'}
-            recording={phase === 'air'}
-            intensity={phase === 'ready' || phase === 'air' ? Math.min(1, 0.58 + jumpCount * 0.08) : 0.56}
-            elapsed={phase === 'air' ? 'AIR' : phase === 'ready' ? 'READY' : 'CAL'}
-            primary={jumpType === 'reactive'
-              ? `RSI ${rsiCycles.at(-1)?.rsi ?? '--'}`
-              : `HEIGHT ${liveJump.heightCm ?? bestHeightRef.current ?? '--'}cm`}
-            secondary={jumpType === 'reactive' && rsiCycles.length
-              ? `GCT ${rsiCycles.at(-1)?.contactMs ?? '--'}ms`
-              : `FLIGHT ${liveJump.flightMs ?? '--'}ms`}
-            metrics={[
-              { label: 'height', value: Math.min(100, (Number(liveJump.heightCm ?? bestHeightRef.current) || 0) * 2) },
-              { label: 'flight', value: Math.min(100, (Number(liveJump.flightMs) || 0) / 8) },
-              { label: 'rsi', value: Math.min(100, (Number(rsiCycles.at(-1)?.rsi) || 0) * 25) },
-              { label: 'contact', value: rsiCycles.at(-1)?.contactMs ? Math.max(8, 100 - Math.min(100, rsiCycles.at(-1).contactMs / 4)) : 18 },
-            ]}
-            gauges={jumpType === 'reactive'
-              ? [
-                { label: 'RSI', value: rsiCycles.at(-1)?.rsi ?? '--', percent: Math.min(100, (Number(rsiCycles.at(-1)?.rsi) || 0) * 25), tone: 'emerald' },
-                { label: 'GCT', value: rsiCycles.at(-1)?.contactMs ? `${rsiCycles.at(-1).contactMs}ms` : '--', percent: rsiCycles.at(-1)?.contactMs ? Math.max(8, 100 - Math.min(100, rsiCycles.at(-1).contactMs / 4)) : 18, tone: 'amber' },
-              ]
-              : [
-                { label: 'HEIGHT', value: liveJump.heightCm != null ? `${liveJump.heightCm}cm` : '--', percent: Math.min(100, (Number(liveJump.heightCm) || 0) * 2), tone: 'amber' },
-                { label: 'FLIGHT', value: liveJump.flightMs != null ? `${liveJump.flightMs}ms` : '--', percent: Math.min(100, (Number(liveJump.flightMs) || 0) / 8), tone: 'blue' },
-              ]}
-            ringLabel={jumpType === 'reactive' && rsiCycles.length ? rsiCycles.at(-1)?.rsi : (liveJump.heightCm ?? jumpCount)}
-          />
 
           {/* 헤더 */}
           <div className="absolute top-0 z-20 inset-x-0 flex items-center justify-between px-4 py-3 bg-gradient-to-b from-black/60 to-transparent">
@@ -554,33 +717,18 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
             <div className="w-12" />
           </div>
 
-          {/* 요구사항 2: 자동 보정 안내 배너 */}
-          <div className="absolute top-[max(52px,calc(env(safe-area-inset-top)+52px))] inset-x-0 flex justify-center px-4">
-            <div className="rounded-full bg-black/60 backdrop-blur px-4 py-1.5 border border-white/10">
-              {phase === 'ready' || phase === 'air' ? (
-                <p className="text-xs font-bold text-emerald-300">
-                  ✓ 회원 키({heightCm}cm)로 보정 완료 — 점프하세요
-                </p>
-              ) : phase === 'low_visibility' ? (
-                <p className="text-xs font-bold text-red-300">⚠ 올바르게 서 주세요</p>
-              ) : (
-                <p className="text-xs font-bold text-cyan-200">
-                  회원 키({heightCm}cm)로 자동 보정 중...
-                </p>
-              )}
-            </div>
-          </div>
-
-          {/* 상태/가이드 */}
-          <div className="absolute top-[max(92px,calc(env(safe-area-inset-top)+92px))] left-4 bg-black/55 backdrop-blur rounded-xl px-3 py-2">
-            <p className={`text-sm font-black ${phaseColor}`}>
-              {phase === 'air' ? '🛫 공중' : phase === 'ready' ? '준비됨' : phase === 'low_visibility' ? '자세 불안정' : '보정 중'}
-            </p>
-            {calibMsg && <p className="text-white text-[11px] mt-0.5">{calibMsg}</p>}
-            {(phase === 'ready' || phase === 'air') && (
-              <p className="text-amber-300 text-[11px] mt-0.5">감지된 점프: {jumpCount}회</p>
-            )}
-          </div>
+          <JumpLiveOverlay
+            jumpType={jumpType}
+            phase={phase}
+            phaseColor={phaseColor}
+            calibMsg={calibMsg}
+            heightCm={heightCm}
+            jumpCount={jumpCount}
+            liveJump={liveJump}
+            bestHeight={bestHeightRef.current}
+            rsiCycles={rsiCycles}
+            jumpRows={jumpRows}
+          />
 
           {warning && (
             <div className="absolute top-1/2 inset-x-6 -translate-y-1/2 bg-red-500/90 text-white text-center rounded-xl px-4 py-3 font-bold text-sm">
@@ -590,16 +738,22 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
 
           {/* 하단 컨트롤 */}
           <div className="absolute bottom-[max(24px,calc(env(safe-area-inset-bottom)+24px))] z-20 inset-x-0 flex flex-col items-center gap-3">
-            <p className="text-white/70 text-xs px-6 text-center">
-              보정선(초록 점선)에 발을 맞추고 서세요 → 점프 → 같은 자리에 착지 → [측정 완료]
-            </p>
-            <button
-              onClick={finishMeasure}
-              disabled={jumpCount < 1}
-              className={`rounded-full px-8 py-4 font-black text-base shadow-lg transition
-                ${jumpCount >= 1 ? 'bg-emerald-500 text-slate-950 active:scale-95' : 'bg-white/20 text-white/50'}`}>
-              ✓ 측정 완료 {jumpCount >= 1 ? `(${jumpCount}회)` : ''}
-            </button>
+            <div className="flex w-full max-w-sm gap-2 px-4">
+              <button
+                onClick={async () => { await stopRecording(); resetPipeline(); }}
+                className="flex-1 rounded-xl bg-black/60 border border-white/15 py-3 text-sm font-black text-white backdrop-blur">
+                기준 다시 잡기
+              </button>
+              <button
+                onClick={finishMeasure}
+                disabled={jumpCount < (jumpType === 'reactive' ? RSI_REQUIRED_JUMPS : 1)}
+                className={`flex-[1.25] rounded-xl py-3 font-black text-sm shadow-lg transition
+                  ${jumpCount >= (jumpType === 'reactive' ? RSI_REQUIRED_JUMPS : 1) ? 'bg-emerald-500 text-slate-950 active:scale-95' : 'bg-white/20 text-white/50'}`}>
+                {jumpType === 'reactive'
+                  ? `측정 완료 ${jumpCount}/${RSI_REQUIRED_JUMPS}`
+                  : `측정 완료 ${jumpCount >= 1 ? `(${jumpCount}회)` : ''}`}
+              </button>
+            </div>
             {/* 요구사항 8: 수동 입력을 실시간 화면 안에서 바로 (점프매트/타이머 값) */}
             <button onClick={() => setShowManual(true)}
               className="text-white/70 text-xs underline underline-offset-2">
@@ -619,7 +773,6 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
           report={reportData}
           saveState={saveState}
           onSave={handleManualSave}
-          onOpenReport={onOpenSavedReport ? () => onOpenSavedReport(reportData) : undefined}
           onRetry={retry}
           onBack={onBack}
         />
@@ -629,7 +782,18 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
 }
 
 // ── 리포트 화면 ──
-function JumpReport({ report, saveState, onSave, onOpenReport, onRetry, onBack }) {
+function JumpReport({ report, saveState, onSave, onRetry, onBack }) {
+  const isRsi = report.jumpType === 'reactive';
+  const biomech = report.biomech || {};
+  const viewLabel = report.videoMetrics?.detectedView === 'side' ? '측면'
+    : report.videoMetrics?.detectedView === 'back' ? '정면'
+    : '미확인';
+  const recommendedView = report.videoMetrics?.recommendedView === 'side' ? '측면'
+    : report.videoMetrics?.recommendedView === 'front' ? '정면'
+    : '미지정';
+  const measuredAt = report.measuredAt
+    ? new Date(report.measuredAt).toLocaleString('ko-KR', { hour12: false })
+    : '—';
   const grade = report.valid
     ? report.heightCm >= 50 ? { label: '매우 우수', color: 'text-blue-400' }
     : report.heightCm >= 40 ? { label: '우수', color: 'text-emerald-400' }
@@ -647,6 +811,26 @@ function JumpReport({ report, saveState, onSave, onOpenReport, onRetry, onBack }
       </div>
 
       <div id="jump-live-report-sheet" className="flex-1 overflow-y-auto p-5 space-y-4">
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">Jump Report</p>
+              <p className="text-xl font-black text-white">{isRsi ? 'RSI 반응 점프' : '파워 점프'} 결과 리포트</p>
+            </div>
+            <span className="shrink-0 rounded-full bg-slate-800 px-3 py-1 text-xs font-bold text-slate-200">
+              {report.source === 'live' ? '실시간 측정' : '영상 분석'}
+            </span>
+          </div>
+          <div className="grid grid-cols-2 gap-2 text-sm">
+            <InfoRow label="회원" value={report.member?.name || '회원 미정'} />
+            <InfoRow label="측정일" value={measuredAt} />
+            <InfoRow label="권장 방향" value={recommendedView} />
+            <InfoRow label="감지 방향" value={viewLabel} />
+            <InfoRow label="기준 키" value={report.calibHeightCm ? `${report.calibHeightCm}cm` : '—'} />
+            <InfoRow label="체중" value={report.bodyWeight ? `${report.bodyWeight}kg` : '미입력'} />
+          </div>
+        </div>
+
         {report.valid !== true ? (
           <div className="bg-red-500/10 border border-red-500/40 rounded-2xl p-5 text-center space-y-2">
             <p className="text-3xl">⚠</p>
@@ -675,49 +859,9 @@ function JumpReport({ report, saveState, onSave, onOpenReport, onRetry, onBack }
               </div>
             </div>
 
-            {/* 참고: 골반변위 추정(원근 왜곡으로 오차 큼 — 유효성에는 미반영) */}
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-2">
-              <p className="text-xs font-bold text-slate-300">참고값 (골반변위 추정)</p>
-              <div className="grid grid-cols-2 gap-2 text-center text-sm">
-                <div className="bg-slate-800 rounded-xl py-2">
-                  <p className="text-[10px] text-slate-500">비행시간 기반 (주측정)</p>
-                  <p className="font-mono font-bold text-slate-100">{report.heightCm} cm</p>
-                </div>
-                <div className="bg-slate-800 rounded-xl py-2">
-                  <p className="text-[10px] text-slate-500">골반변위 추정 (참고)</p>
-                  <p className="font-mono font-bold text-slate-400">
-                    {cc.heightCrossCm != null ? `${cc.heightCrossCm} cm` : '—'}
-                  </p>
-                </div>
-              </div>
-              {cc.deltaPct != null && (
-                <p className="text-center text-[11px] text-slate-500">
-                  두 방식 차이 {cc.deltaPct}% · 골반변위는 카메라 거리·각도에 따라 오차가 커 참고용입니다
-                </p>
-              )}
-              <p className="text-[10px] text-slate-500 text-center">
-                회원 키({report.calibHeightCm}cm) 기준 자동 보정 · 감지된 점프 {report.jumps}회 중 최고값
-              </p>
-            </div>
-
-            {report.rsi?.valid && Array.isArray(report.rsi.perCycle) && report.rsi.perCycle.length > 0 && (
-              <div className="bg-slate-900 border border-emerald-500/25 rounded-2xl p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <p className="text-xs font-bold text-emerald-300">RSI 점프별 데이터</p>
-                  <p className="text-[10px] text-slate-500">{report.rsi.perCycle.length} cycles</p>
-                </div>
-                <div className="space-y-1.5">
-                  {report.rsi.perCycle.map((c, i) => (
-                    <div key={i} className="grid grid-cols-4 gap-1 rounded-lg bg-slate-800/70 px-2 py-2 text-center">
-                      <Stat label={`#${i + 1}`} value={c.rsi} />
-                      <Stat label="접지" value={`${c.contactMs}ms`} />
-                      <Stat label="체공" value={`${c.flightMs}ms`} />
-                      <Stat label="높이" value={`${c.heightCm}cm`} />
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
+            {isRsi
+              ? <RsiReportSections report={report} biomech={biomech} viewLabel={viewLabel} />
+              : <PowerReportSections report={report} biomech={biomech} viewLabel={viewLabel} crossCheck={cc} />}
           </>
         )}
       </div>
@@ -734,12 +878,6 @@ function JumpReport({ report, saveState, onSave, onOpenReport, onRetry, onBack }
             {saveState === 'saved' ? '✓ 자동 저장됨' : saveState === 'saving' ? '저장 중...' : saveState === 'error' ? '↻ 다시 저장' : '💾 회차 기록 (데이터)'}
           </button>
         )}
-        {saveState === 'saved' && onOpenReport && (
-          <button onClick={onOpenReport}
-            className="w-full rounded-xl bg-emerald-500 text-slate-950 font-black py-3">
-            결과 리포트 보기
-          </button>
-        )}
         <button onClick={onRetry} className="w-full rounded-xl border border-slate-700 text-slate-200 font-bold py-3">
           다시 측정
         </button>
@@ -751,11 +889,302 @@ function JumpReport({ report, saveState, onSave, onOpenReport, onRetry, onBack }
   );
 }
 
+function PowerReportSections({ report, biomech, viewLabel, crossCheck }) {
+  const relativePower = report.peakPower != null && report.bodyWeight
+    ? Math.round((report.peakPower / report.bodyWeight) * 10) / 10
+    : null;
+  const heightPct = report.calibHeightCm && report.heightCm
+    ? Math.round((report.heightCm / report.calibHeightCm) * 1000) / 10
+    : null;
+  const rows = Array.isArray(report.perJump) ? report.perJump : [];
+
+  return (
+    <>
+      <div className="grid grid-cols-2 gap-2">
+        <MetricCard label="상대 파워" value={relativePower != null ? `${relativePower}W/kg` : '체중 필요'} />
+        <MetricCard label="키 대비 높이" value={heightPct != null ? `${heightPct}%` : '—'} />
+        <MetricCard label="감지 점프" value={`${report.jumps || 0}회`} />
+        <MetricCard label="녹화 HUD" value={report.videoMetrics?.overlayRecorded ? '포함' : '미녹화'} />
+      </div>
+
+      <ReportPanel title="파워 점프 핵심 해석" tone="amber">
+        <div className="grid grid-cols-2 gap-2">
+          <MetricCard label="폭발력 지표" value={report.peakPower != null ? `${report.peakPower}W` : '체중 필요'} />
+          <MetricCard label="도약 속도" value={report.takeoffVelocity != null ? `${report.takeoffVelocity}m/s` : '—'} />
+          <MetricCard label="체공 시간" value={report.flightTimeMs != null ? `${report.flightTimeMs}ms` : '—'} />
+          <MetricCard label="주 측정값" value="최고 점프" />
+        </div>
+        <p className="text-[11px] leading-relaxed text-slate-400">
+          파워 점프는 한 번의 최대 수직 도약 능력을 보는 리포트입니다. 높이, 이륙속도, 최고파워, 체중 대비 파워를 함께 보고
+          정면 촬영에서는 좌우 안정성과 착지 대칭을 보조 지표로 확인합니다.
+        </p>
+      </ReportPanel>
+
+      <ReportPanel title="정면 안정성 및 착지 품질" tone="slate">
+        <div className="grid grid-cols-2 gap-2">
+          <MetricCard label="감지 방향" value={viewLabel} />
+          <MetricCard label="착지 대칭" value={biomech.footLandingSymmetry?.symmetryPct != null ? `${biomech.footLandingSymmetry.symmetryPct}%` : '—'} />
+          <MetricCard label="골반 불균형" value={biomech.pelvicImbalance != null ? `${biomech.pelvicImbalance}°` : '—'} />
+          <MetricCard label="신전 정렬도" value={biomech.extensionAlignment?.alignmentScore != null ? `${biomech.extensionAlignment.alignmentScore}점` : '—'} />
+        </div>
+        <p className="text-[11px] leading-relaxed text-slate-400">
+          파워 점프의 추천 방향은 정면입니다. 정면에서는 좌우 흔들림, 착지 발끝 대칭, 골반 기울기 변화를 더 직관적으로 확인할 수 있습니다.
+        </p>
+      </ReportPanel>
+
+      <ReportPanel title="높이 교차 확인" tone="slate">
+        <div className="grid grid-cols-2 gap-2">
+          <MetricCard label="비행시간 기반" value={`${report.heightCm}cm`} />
+          <MetricCard label="골반변위 참고" value={crossCheck.heightCrossCm != null ? `${crossCheck.heightCrossCm}cm` : '—'} />
+          <MetricCard label="차이" value={crossCheck.deltaPct != null ? `${crossCheck.deltaPct}%` : '—'} />
+          <MetricCard label="판정" value={crossCheck.agree == null ? '참고' : crossCheck.agree ? '일치' : '차이 큼'} />
+        </div>
+        <p className="text-[11px] leading-relaxed text-slate-500">
+          최종 높이는 비행시간 기반 값을 사용합니다. 골반변위 추정은 카메라 거리와 각도 영향을 많이 받아 참고값으로만 표시합니다.
+        </p>
+      </ReportPanel>
+
+      {rows.length > 0 && (
+        <ReportPanel title="회차별 파워 점프 측정값" tone="amber">
+          <div className="space-y-1.5">
+            {rows.map((row) => {
+              const jump = calcJump((row.flightMs || 0) / 1000, report.bodyWeight || null);
+              return (
+                <div key={row.no} className="grid grid-cols-5 gap-1 rounded-lg bg-slate-800/70 px-2 py-2 text-center">
+                  <Stat label={`#${row.no}`} value={`${row.heightCm ?? '—'}cm`} />
+                  <Stat label="체공" value={`${row.flightMs ?? '—'}ms`} />
+                  <Stat label="속도" value={jump?.takeoffVelocity != null ? `${jump.takeoffVelocity}` : '—'} />
+                  <Stat label="파워" value={jump?.peakPower != null ? `${jump.peakPower}W` : '—'} />
+                  <Stat label="구간" value={`${Math.round((row.takeoffMs || 0) / 1000)}-${Math.round((row.landingMs || 0) / 1000)}s`} />
+                </div>
+              );
+            })}
+          </div>
+        </ReportPanel>
+      )}
+
+      <ReportPanel title="추천 코칭 포인트" tone="amber">
+        <GuideList items={[
+          '정면 기준으로 무릎과 발끝 방향이 좌우로 크게 흔들리지 않는지 확인합니다.',
+          '최고 높이만 보지 말고 체중 대비 파워와 착지 대칭을 함께 봅니다.',
+          '다음 재측정은 같은 카메라 위치와 같은 기준 키로 진행해야 비교가 안정적입니다.',
+        ]} />
+      </ReportPanel>
+    </>
+  );
+}
+
+function RsiReportSections({ report, biomech, viewLabel }) {
+  const rsi = report.rsi || {};
+  const cycles = Array.isArray(rsi.perCycle) ? rsi.perCycle : [];
+  const rows = Array.isArray(report.perJump) ? report.perJump : [];
+  const basisText = rsi.rsiBasis === 'mean' ? '변동률 높음 · 평균값 채택' : '안정적 · 최고값 채택';
+
+  return (
+    <>
+      <div className="grid grid-cols-2 gap-2">
+        <MetricCard label="대표 RSI" value={rsi.rsi ?? '—'} />
+        <MetricCard label="등급" value={rsi.grade?.label || '—'} />
+        <MetricCard label="평균 접지" value={rsi.contactTimeMeanMs != null ? `${rsi.contactTimeMeanMs}ms` : '—'} />
+        <MetricCard label="변동률" value={rsi.cvPct != null ? `${rsi.cvPct}%` : '—'} />
+      </div>
+
+      <ReportPanel title="RSI 반응성 핵심 해석" tone="emerald">
+        <div className="grid grid-cols-2 gap-2">
+          <MetricCard label="최고 RSI" value={rsi.rsiBest ?? '—'} />
+          <MetricCard label="평균 RSI" value={rsi.rsiMean ?? '—'} />
+          <MetricCard label="대표값 기준" value={basisText} />
+          <MetricCard label="유효 사이클" value={`${cycles.length}회`} />
+          <MetricCard label="최고 접지" value={rsi.contactTimeMs != null ? `${rsi.contactTimeMs}ms` : '—'} />
+          <MetricCard label="최고 체공" value={rsi.flightTimeMs != null ? `${rsi.flightTimeMs}ms` : '—'} />
+        </div>
+        <p className="text-[11px] leading-relaxed text-slate-400">
+          RSI는 높게 뛰는 능력보다 짧게 접지하고 빠르게 다시 튀어 오르는 반응 탄성을 봅니다. 회차 간 변동률이 높으면
+          우연히 짧게 잡힌 접지시간을 피하기 위해 평균 RSI를 대표값으로 사용합니다.
+        </p>
+      </ReportPanel>
+
+      {rsi.lowFps && (
+        <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-xs font-bold leading-relaxed text-amber-300">
+          접지 시간이 짧아 프레임 오차 영향이 커질 수 있습니다. RSI는 측면에서 120fps 이상, 가능하면 240fps 슬로우 모션 촬영을 권장합니다.
+        </div>
+      )}
+
+      <ReportPanel title="연속 점프 사이클 분석" tone="emerald">
+        <div className="space-y-1.5">
+          {cycles.map((c, i) => (
+            <div key={i} className="grid grid-cols-5 gap-1 rounded-lg bg-slate-800/70 px-2 py-2 text-center">
+              <Stat label={`Cycle ${i + 1}`} value={c.rsi} />
+              <Stat label="접지" value={`${c.contactMs}ms`} />
+              <Stat label="체공" value={`${c.flightMs}ms`} />
+              <Stat label="높이" value={`${c.heightCm}cm`} />
+              <Stat label="보조" value={c.rsiHeight ?? '—'} />
+            </div>
+          ))}
+        </div>
+        <p className="text-[11px] leading-relaxed text-slate-500">
+          최소 {RSI_REQUIRED_JUMPS}회 이상 연속 점프해야 접지시간과 체공시간의 반복 패턴을 안정적으로 볼 수 있습니다.
+        </p>
+      </ReportPanel>
+
+      {rows.length > 0 && (
+        <ReportPanel title="원본 점프별 영상 측정값" tone="slate">
+          <div className="space-y-1.5">
+            {rows.map((row) => (
+              <div key={row.no} className="grid grid-cols-5 gap-1 rounded-lg bg-slate-800/70 px-2 py-2 text-center">
+                <Stat label={`#${row.no}`} value={`${row.heightCm ?? '—'}cm`} />
+                <Stat label="체공" value={`${row.flightMs ?? '—'}ms`} />
+                <Stat label="접지" value={row.contactMs != null ? `${row.contactMs}ms` : '—'} />
+                <Stat label="RSI" value={row.rsi ?? '—'} />
+                <Stat label="구간" value={`${Math.round((row.takeoffMs || 0) / 1000)}-${Math.round((row.landingMs || 0) / 1000)}s`} />
+              </div>
+            ))}
+          </div>
+        </ReportPanel>
+      )}
+
+      <ReportPanel title="측면 자세 및 접지 품질" tone="slate">
+        <div className="grid grid-cols-2 gap-2">
+          <MetricCard label="감지 방향" value={viewLabel} />
+          <MetricCard label="착지 무릎각" value={biomech.landingKneeAngle != null ? `${biomech.landingKneeAngle}°` : '—'} />
+          <MetricCard label="상체 변화" value={biomech.trunkLeanChange != null ? `${biomech.trunkLeanChange}°` : '—'} />
+          <MetricCard label="착지 대칭" value={biomech.footLandingSymmetry?.symmetryPct != null ? `${biomech.footLandingSymmetry.symmetryPct}%` : '—'} />
+        </div>
+        <p className="text-[11px] leading-relaxed text-slate-400">
+          RSI의 추천 방향은 측면입니다. 측면에서는 발이 바닥에 닿는 순간과 다시 떨어지는 순간을 더 명확히 구분할 수 있어 접지시간 신뢰도가 올라갑니다.
+        </p>
+      </ReportPanel>
+
+      <ReportPanel title="추천 코칭 포인트" tone="emerald">
+        <GuideList items={[
+          '착지 후 오래 버티지 말고 즉시 다시 튀어 오르는 리듬을 유지합니다.',
+          '높이보다 접지시간과 회차별 RSI 변동률을 먼저 확인합니다.',
+          '연속 점프 중 무릎이 과도하게 접히거나 상체가 무너지면 반응성이 떨어질 수 있습니다.',
+        ]} />
+      </ReportPanel>
+    </>
+  );
+}
+
+function ReportPanel({ title, tone = 'slate', children }) {
+  const toneClass = tone === 'emerald'
+    ? 'border-emerald-500/25'
+    : tone === 'amber'
+      ? 'border-amber-500/25'
+      : 'border-slate-800';
+  const titleClass = tone === 'emerald'
+    ? 'text-emerald-300'
+    : tone === 'amber'
+      ? 'text-amber-300'
+      : 'text-slate-300';
+  return (
+    <div className={`bg-slate-900 border ${toneClass} rounded-2xl p-4 space-y-3`}>
+      <p className={`text-xs font-bold ${titleClass}`}>{title}</p>
+      {children}
+    </div>
+  );
+}
+
+function GuideList({ items }) {
+  return (
+    <div className="space-y-2">
+      {items.map((item, i) => (
+        <div key={item} className="flex gap-2 rounded-xl bg-slate-800/70 px-3 py-2 text-xs leading-relaxed text-slate-300">
+          <span className="font-black text-slate-500">{i + 1}</span>
+          <span>{item}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function Stat({ label, value }) {
   return (
     <div className="bg-slate-800 rounded-xl py-2">
       <p className="text-[10px] text-slate-500">{label}</p>
       <p className="font-mono font-bold text-slate-200 text-sm">{value}</p>
+    </div>
+  );
+}
+
+function InfoRow({ label, value }) {
+  return (
+    <div className="rounded-xl bg-slate-800 px-3 py-2">
+      <p className="text-[10px] font-bold text-slate-500">{label}</p>
+      <p className="truncate text-sm font-bold text-slate-100">{value}</p>
+    </div>
+  );
+}
+
+function MetricCard({ label, value }) {
+  return (
+    <div className="rounded-xl bg-slate-800 px-3 py-2 text-center">
+      <p className="text-[10px] font-bold text-slate-500">{label}</p>
+      <p className="font-mono text-base font-black text-slate-100">{value}</p>
+    </div>
+  );
+}
+
+function JumpLiveOverlay({
+  jumpType, phase, phaseColor, calibMsg, heightCm, jumpCount,
+  liveJump, bestHeight, rsiCycles, jumpRows,
+}) {
+  const isRsi = jumpType === 'reactive';
+  const latestCycle = rsiCycles.at(-1) || null;
+  const mainValue = isRsi ? latestCycle?.rsi ?? '--' : liveJump.heightCm ?? bestHeight ?? '--';
+  const mainUnit = isRsi ? 'RSI' : 'cm';
+  const readyText = isRsi ? `측면 · 연속 ${RSI_REQUIRED_JUMPS}회` : '정면 · 1회 최대 점프';
+  const statusText = phase === 'air' ? '공중'
+    : phase === 'ready' ? '준비됨'
+    : phase === 'low_visibility' ? '자세 확인'
+    : '기준 잡는 중';
+
+  return (
+    <div className="pointer-events-none absolute inset-x-0 top-[max(50px,calc(env(safe-area-inset-top)+50px))] z-20 px-3">
+      <div className="mx-auto max-w-[820px] rounded-2xl border border-white/15 bg-black/76 px-4 py-3 text-white shadow-2xl backdrop-blur-md">
+        <div className="flex items-center justify-between gap-4">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <span className={`h-3 w-3 rounded-full ${
+                phase === 'air' ? 'bg-amber-400' : phase === 'ready' ? 'bg-emerald-400' : phase === 'low_visibility' ? 'bg-red-400' : 'bg-cyan-400'
+              }`} />
+              <p className="truncate text-sm font-black text-white/90">
+                {isRsi ? 'RSI 측정' : '파워 점프'} · {readyText}
+              </p>
+            </div>
+            <p className={`mt-1 truncate text-xs font-bold ${phaseColor}`}>
+              {statusText}{calibMsg ? ` · ${calibMsg}` : ` · 키 ${heightCm}cm 보정`}
+            </p>
+          </div>
+
+          <div className="shrink-0 text-right">
+            <p className="font-mono text-6xl font-black leading-none tracking-normal text-white max-[390px]:text-5xl">
+              {mainValue}<span className="ml-1 text-lg text-amber-300 max-[390px]:text-base">{mainUnit}</span>
+            </p>
+            <p className="mt-1 text-xs font-bold text-white/65">
+              {isRsi
+                ? `GCT ${latestCycle?.contactMs ? `${latestCycle.contactMs}ms` : '--'} · ${jumpCount}/${RSI_REQUIRED_JUMPS}`
+                : `체공 ${liveJump.flightMs ? `${liveJump.flightMs}ms` : '--'} · ${jumpCount}회`}
+            </p>
+          </div>
+        </div>
+
+        {jumpRows.length > 0 && (
+          <div className="mt-3 flex gap-1.5 overflow-hidden">
+            {jumpRows.slice(-4).map((row) => (
+              <div key={row.no} className="min-w-0 flex-1 rounded-lg bg-white/10 px-2 py-1.5 text-center">
+                <p className="text-[10px] font-bold text-white/45">#{row.no}</p>
+                <p className="truncate font-mono text-base font-black text-white">
+                  {isRsi ? row.rsi ?? '대기' : `${row.heightCm ?? '--'}cm`}
+                </p>
+                <p className="truncate text-[10px] font-bold text-white/45">
+                  {isRsi ? (row.contactMs ? `${row.contactMs}ms` : 'next') : `${row.flightMs}ms`}
+                </p>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

@@ -15,12 +15,11 @@ import {
 import { calcJump } from '../core/performance';
 import { computeRSIFromFlights } from '../core/reactiveJump';
 import { store } from '../../demoData';
-import FutureVideoOverlay from './FutureVideoOverlay';
 
 // 회원 신체기록(body)에서 최신 체중·키를 가져온다. (Sayers 파워 계산에 체중 필요)
 // member 객체에 직접 없을 수 있으므로 store.getBodyRecords 로 최신 기록을 조회한다.
-function resolveBodyMetrics(member, fallbackHeight) {
-  let weight = member?.weight != null ? Number(member.weight) : null;
+function resolveBodyMetrics(member, fallbackHeight, fallbackWeight = null) {
+  let weight = member?.weight != null ? Number(member.weight) : fallbackWeight;
   let height = member?.height != null ? Number(member.height) : (fallbackHeight ?? null);
   try {
     if (member?.id && typeof store?.getBodyRecords === 'function') {
@@ -50,8 +49,10 @@ export default function JumpUploadAnalysis({ member, onBack, onComplete, onMembe
   const [fileName, setFileName] = useState('');
   const [capture, setCapture] = useState('slowmo240');
   const [heightCm, setHeightCm] = useState(member?.height ? Number(member.height) : null);
-  const [needHeight, setNeedHeight] = useState(!member?.height);
+  const [bodyWeight, setBodyWeight] = useState(member?.weight ? Number(member.weight) : null);
+  const [needHeight, setNeedHeight] = useState(!member?.height || (!member?.id && !member?.weight));
   const [heightInput, setHeightInput] = useState('');
+  const [weightInput, setWeightInput] = useState(member?.weight ? String(member.weight) : '');
 
   const videoRef = useRef(null);
   const fileUrlRef = useRef(null);
@@ -76,7 +77,7 @@ export default function JumpUploadAnalysis({ member, onBack, onComplete, onMembe
 
     // 체중·키는 회원 신체기록(body)에서 최신값을 가져온다(파워 계산용).
     // member 에 직접 없을 수 있으므로 store 의 body 기록을 조회한다.
-    const resolved = resolveBodyMetrics(member, heightCm);
+    const resolved = resolveBodyMetrics(member, heightCm, bodyWeight);
     const effHeightCm = resolved.height ?? heightCm;
     const effWeight = resolved.weight;
 
@@ -206,7 +207,7 @@ export default function JumpUploadAnalysis({ member, onBack, onComplete, onMembe
     } finally {
       abortRef.current = null;
     }
-  }, [member, onComplete, capture, heightCm]);
+  }, [member, onComplete, capture, heightCm, bodyWeight]);
 
   const cancelAnalysis = () => { abortRef.current?.abort(); };
 
@@ -216,10 +217,12 @@ export default function JumpUploadAnalysis({ member, onBack, onComplete, onMembe
   }, []);
 
   const applyHeight = () => {
-    const n = Number(heightInput);
-    if (!n || n < 80 || n > 250) { setErrorMsg('키를 80~250cm로 입력하세요.'); return; }
-    setHeightCm(n); setNeedHeight(false); setErrorMsg('');
-    onMemberHeightChange?.(n);
+    const h = Number(heightInput || heightCm);
+    const w = Number(weightInput || bodyWeight);
+    if (!h || h < 80 || h > 250) { setErrorMsg('키를 80~250cm로 입력하세요.'); return; }
+    if (!w || w < 20 || w > 250) { setErrorMsg('몸무게를 20~250kg으로 입력하세요.'); return; }
+    setHeightCm(h); setBodyWeight(w); setNeedHeight(false); setErrorMsg('');
+    onMemberHeightChange?.(h);
   };
 
   const pct = Math.round(progress * 100);
@@ -237,14 +240,28 @@ export default function JumpUploadAnalysis({ member, onBack, onComplete, onMembe
           <div className="w-full max-w-sm bg-slate-900 border border-amber-500/30 rounded-2xl p-5 space-y-4">
             <div className="text-center space-y-1">
               <p className="text-3xl">📏</p>
-              <p className="text-white font-black">키 정보가 필요합니다</p>
-              <p className="text-slate-400 text-xs">cm 환산(자동 보정)에 필요합니다.</p>
+              <p className="text-white font-black">키와 몸무게가 필요합니다</p>
+              <p className="text-slate-400 text-xs">cm 환산과 파워 계산에 필요합니다.</p>
             </div>
-            <div className="flex items-center gap-2">
-              <input type="number" inputMode="numeric" value={heightInput}
-                onChange={e => setHeightInput(e.target.value)} placeholder="예: 170"
-                className="flex-1 bg-slate-800 border border-slate-700 text-slate-100 rounded-lg px-3 py-2.5 text-sm font-mono focus:outline-none focus:border-amber-500" />
-              <span className="text-slate-400 text-sm font-bold">cm</span>
+            <div className="grid grid-cols-2 gap-2">
+              <label className="block">
+                <span className="mb-1 block text-[10px] font-bold text-slate-500">키</span>
+                <div className="flex items-center gap-2">
+                  <input type="number" inputMode="numeric" value={heightInput}
+                    onChange={e => setHeightInput(e.target.value)} placeholder="170"
+                    className="min-w-0 flex-1 bg-slate-800 border border-slate-700 text-slate-100 rounded-lg px-3 py-2.5 text-sm font-mono focus:outline-none focus:border-amber-500" />
+                  <span className="text-slate-400 text-xs font-bold">cm</span>
+                </div>
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-[10px] font-bold text-slate-500">몸무게</span>
+                <div className="flex items-center gap-2">
+                  <input type="number" inputMode="decimal" value={weightInput}
+                    onChange={e => setWeightInput(e.target.value)} placeholder="70"
+                    className="min-w-0 flex-1 bg-slate-800 border border-slate-700 text-slate-100 rounded-lg px-3 py-2.5 text-sm font-mono focus:outline-none focus:border-amber-500" />
+                  <span className="text-slate-400 text-xs font-bold">kg</span>
+                </div>
+              </label>
             </div>
             <button onClick={applyHeight} className="w-full rounded-xl bg-amber-500 text-slate-950 font-black py-3 active:scale-95">
               입력하고 계속
@@ -268,23 +285,11 @@ export default function JumpUploadAnalysis({ member, onBack, onComplete, onMembe
         <div className="relative w-full max-w-md overflow-hidden rounded-xl bg-black aspect-[3/4]">
           <video ref={videoRef} className="h-full w-full object-contain"
             playsInline muted controls={phase === 'ready' || phase === 'done'} />
-          <FutureVideoOverlay
-            mode={jumpType === 'reactive' ? 'RSI UPLOAD' : 'JUMP UPLOAD'}
-            recording={phase === 'analyzing'}
-            intensity={phase === 'analyzing' ? 0.86 : 0.5}
-            primary={phase === 'analyzing' ? (jumpType === 'reactive' ? 'RSI SCAN' : 'JUMP SCAN') : 'VIDEO READY'}
-            secondary={jumpType === 'reactive' ? 'RSI · GCT · FLIGHT' : 'HEIGHT · FLIGHT'}
-            gauges={jumpType === 'reactive'
-              ? [
-                { label: 'RSI', value: phase === 'analyzing' ? 'SCAN' : '--', percent: phase === 'analyzing' ? 68 : 18, tone: 'emerald' },
-                { label: 'GCT', value: phase === 'analyzing' ? 'SCAN' : '--', percent: phase === 'analyzing' ? 56 : 18, tone: 'amber' },
-              ]
-              : [
-                { label: 'HEIGHT', value: phase === 'analyzing' ? 'SCAN' : '--', percent: phase === 'analyzing' ? 64 : 18, tone: 'amber' },
-                { label: 'FLIGHT', value: phase === 'analyzing' ? 'SCAN' : '--', percent: phase === 'analyzing' ? 72 : 18, tone: 'blue' },
-              ]}
-            ringLabel={phase === 'analyzing' ? 'AI' : 'RDY'}
-          />
+          {phase === 'analyzing' && (
+            <div className="absolute left-3 top-3 rounded-full border border-white/15 bg-black/70 px-3 py-1 text-xs font-black text-amber-300 backdrop-blur">
+              {jumpType === 'reactive' ? 'RSI 분석 중' : '파워 점프 분석 중'}
+            </div>
+          )}
         </div>
 
         {heightCm && (
@@ -303,7 +308,9 @@ export default function JumpUploadAnalysis({ member, onBack, onComplete, onMembe
         {phase === 'ready' && (
           <div className="flex flex-col items-center gap-3 w-full max-w-md">
             <p className="text-sm text-slate-300 text-center">
-              점프 전 1초 이상 똑바로 서 있는 고속촬영(120/240fps) 영상을 사용하세요. 프레임을 빠짐없이 분석합니다.
+              {jumpType === 'reactive'
+                ? 'RSI는 측면 촬영을 추천합니다. 연속 3회 이상 뛴 고속촬영(120/240fps) 영상을 사용하세요.'
+                : '파워 점프는 정면 촬영을 추천합니다. 점프 전 1초 이상 똑바로 선 고속촬영(120/240fps) 영상을 사용하세요.'}
             </p>
             <div className="w-full">
               <p className="text-[11px] font-bold text-slate-400 mb-1.5">촬영 모드</p>
@@ -318,6 +325,7 @@ export default function JumpUploadAnalysis({ member, onBack, onComplete, onMembe
               </div>
               <p className="text-[10px] text-slate-500 mt-1.5">
                 폰 슬로모로 찍었다면 해당 배속을 선택하세요. 체공시간이 실제 시간 기준으로 보정됩니다.
+                {jumpType === 'power' ? ' 정면 촬영은 점프 높이와 좌우 착지 대칭을 중심으로 분석합니다.' : ' 측면 촬영에서 접지시간과 RSI 신뢰도가 가장 높습니다.'}
               </p>
             </div>
             <button onClick={runAnalysis}

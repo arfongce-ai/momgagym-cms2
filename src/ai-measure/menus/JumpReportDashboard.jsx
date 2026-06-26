@@ -50,14 +50,19 @@ const rsiToneClass = (tone) => ({
 
 // 종합 점수 (활성 + 측정된 지표만 가점)
 function computeScore(r, b) {
-  const checks = [
-    [r.heightCm, RANGES.height],
-    [b.landingKneeAngle, RANGES.landKnee],
-    [b.trunkLeanChange, RANGES.trunkChg],
-    [b.pelvicImbalance, RANGES.pelvic],
-    [b.extensionAlignment?.alignmentScore, RANGES.alignment],
-    [b.footLandingSymmetry?.symmetryPct, RANGES.footSym],
-  ];
+  const enabled = b.enabled || {};
+  const checks = [[r.heightCm, RANGES.height]];
+  if (enabled.posture) {
+    checks.push(
+      [b.landingKneeAngle, RANGES.landKnee],
+      [b.trunkLeanChange, RANGES.trunkChg],
+      [b.extensionAlignment?.alignmentScore, RANGES.alignment],
+    );
+  }
+  if (enabled.pelvicDrop) checks.push([b.pelvicImbalance, RANGES.pelvic]);
+  if (b.footLandingSymmetry?.available) {
+    checks.push([b.footLandingSymmetry.symmetryPct, RANGES.footSym]);
+  }
   let score = 0, n = 0;
   for (const [v, rg] of checks) {
     if (v == null || Number.isNaN(v)) continue;
@@ -86,7 +91,8 @@ export default function JumpReportDashboard({ report, onClose, onComment }) {
   const align = b.extensionAlignment || {};
   const foot = b.footLandingSymmetry || {};
   const view = b.view || 'unknown';
-  const viewLabel = view === 'side' ? '측면뷰' : view === 'back' ? '정면/후면뷰' : '방향 미상';
+  const isFrontal = view === 'back';
+  const viewLabel = view === 'side' ? '측면뷰' : isFrontal ? '정면뷰' : '방향 미상';
 
   // 자세 레이더 (좌우 비교): 착지 무릎 좌/우 + 신전 정렬 관련
   const radarData = [
@@ -104,6 +110,9 @@ export default function JumpReportDashboard({ report, onClose, onComment }) {
   };
 
   const invalid = r.valid !== true;
+  const isRsi = r.jumpType === 'reactive' || Boolean(r.rsi);
+  const reportTypeLabel = isRsi ? 'RSI REACTIVE JUMP' : 'POWER JUMP';
+  const reportTypeKo = isRsi ? 'RSI 반응 점프 평가표' : '파워 점프 평가표';
 
   return (
     <div className="min-h-full w-full bg-slate-950 flex flex-col items-center p-4 font-sans gap-3">
@@ -115,16 +124,26 @@ export default function JumpReportDashboard({ report, onClose, onComment }) {
 
       {/* ── 캡처 대상 시트 (A4 비율) ── */}
       <div ref={sheetRef} id="jump-report-sheet"
-        className="w-full max-w-[820px] bg-slate-900 rounded-2xl shadow-2xl ring-1 ring-slate-700/60 overflow-hidden flex flex-col"
-        style={{ minHeight: 900 }}>
+        className="w-full bg-slate-900 rounded-2xl shadow-2xl ring-1 ring-slate-700/60 overflow-hidden flex flex-col"
+        style={{ maxWidth: 794, minHeight: 1123 }}>
 
         {/* 헤더 */}
         <header className="flex items-center justify-between px-6 pt-5 pb-3 border-b border-slate-700/60">
           <div>
-            <p className="text-[11px] font-bold tracking-[0.2em] text-amber-400/90">JUMP ANALYSIS REPORT</p>
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="text-[11px] font-bold tracking-[0.2em] text-amber-400/90">JUMP ANALYSIS REPORT</p>
+              <span className={`rounded-full border px-2 py-0.5 text-[9px] font-black tracking-wide ${
+                isRsi
+                  ? 'border-emerald-500/30 bg-emerald-500/15 text-emerald-300'
+                  : 'border-amber-500/30 bg-amber-500/15 text-amber-300'
+              }`}>
+                {reportTypeLabel}
+              </span>
+            </div>
             <h1 className="text-xl font-black text-white leading-tight">
               {memberName} <span className="text-slate-500 text-sm font-medium">· {dateStr}</span>
             </h1>
+            <p className="mt-0.5 text-[11px] font-bold text-slate-500">{reportTypeKo}</p>
           </div>
           <ScoreBadge score={score} invalid={invalid} />
         </header>
@@ -138,7 +157,7 @@ export default function JumpReportDashboard({ report, onClose, onComment }) {
                 {r.reason === 'cross_mismatch' ? `두 측정 방식 차이가 큽니다(${cc.deltaPct}%). 측면에서 카메라를 골반 높이로 고정하고 제자리 수직 점프로 다시 촬영하세요.`
                   : r.reason === 'no_jump' ? '점프 동작이 감지되지 않았습니다.'
                   : r.reason === 'sanity_fail' ? '측정값이 키 대비 비현실적입니다. 카메라 각도를 확인하세요.'
-                  : r.reason === 'need_more_cycles' ? '반응 점프는 연속 2회 이상 뛰어야 접지 시간을 측정할 수 있습니다. 제자리에서 빠르게 연속 점프하세요.'
+                  : r.reason === 'need_more_cycles' ? '반응 점프는 연속 3회 이상 뛰어야 RSI를 안정적으로 측정할 수 있습니다. 제자리에서 빠르게 연속 점프하세요.'
                   : r.reason === 'no_valid_contact' ? '유효한 접지 구간을 찾지 못했습니다. 착지 후 곧바로 다시 뛰어 접지 시간을 짧게 유지하세요.'
                   : '다시 측정해 주세요.'}
               </p>
@@ -227,16 +246,16 @@ export default function JumpReportDashboard({ report, onClose, onComment }) {
             )}
             {r.rsi && !r.rsi.valid && (
               <div className="rounded-lg px-3 py-2 text-[11px] font-bold bg-amber-500/15 text-amber-300">
-                RSI 측정 실패 — {r.rsi.message || '연속 2회 이상 점프해야 접지시간을 측정할 수 있습니다.'}
+                RSI 측정 실패 — {r.rsi.message || '연속 3회 이상 점프해야 RSI를 안정적으로 측정할 수 있습니다.'}
               </div>
             )}
             <div className={`rounded-lg px-3 py-2 text-[11px] font-bold flex items-center justify-between ${
               view === 'side' ? 'bg-cyan-500/15 text-cyan-300'
-                : view === 'back' ? 'bg-violet-500/15 text-violet-300'
+                : isFrontal ? 'bg-violet-500/15 text-violet-300'
                 : 'bg-slate-700/50 text-slate-400'}`}>
               <span>📐 {viewLabel} 촬영으로 분석됨</span>
               <span className="font-normal text-slate-400">
-                {view === 'side' ? '자세·기술 지표 활성' : view === 'back' ? '골반 불균형 지표 활성' : '방향 추정 실패'}
+                {view === 'side' ? '자세·기술 지표 활성' : isFrontal ? '높이·좌우 대칭 지표 활성' : '방향 추정 실패'}
               </span>
             </div>
 
@@ -280,10 +299,10 @@ export default function JumpReportDashboard({ report, onClose, onComment }) {
             </Panel>
 
             {/* ③ 대칭성 및 안정성 */}
-            <Panel title="③ 대칭성 및 안정성" subtitle="골반=정면뷰 · 착지대칭=양뷰">
+            <Panel title="③ 대칭성 및 안정성" subtitle="정면뷰 권장 · 착지대칭=양뷰">
               <div className="grid grid-cols-2 gap-4">
                 {/* 골반 불균형 — 정면뷰 전용 */}
-                {view === 'back' ? (
+                {isFrontal ? (
                   <GaugeRow name="골반 불균형" value={b.pelvicImbalance} range={RANGES.pelvic} max={12} badge="핵심" />
                 ) : (
                   <div className="flex flex-col justify-center">
@@ -319,7 +338,7 @@ export default function JumpReportDashboard({ report, onClose, onComment }) {
               <p className="text-[11px] font-black text-slate-300 mb-1.5">⚠ 영상 분석의 한계 (필독)</p>
               <ul className="text-[10px] text-slate-400 leading-relaxed space-y-1 list-disc pl-3.5">
                 <li><b className="text-slate-300">좌우 체중 분산은 측정하지 않습니다.</b> 카메라로는 어느 발에 몸무게가 더 실렸는지 알 수 없어, ‘착지 발끝 대칭성’(양발 착지 위치 차이)으로 대체했습니다. 정확한 하중 분산은 지면반력판(force plate)이 필요합니다.</li>
-                <li><b className="text-slate-300">자세·각도 지표는 측면(옆모습)에서만</b> 정확합니다. 정면 촬영 시 각도가 왜곡됩니다.</li>
+                <li><b className="text-slate-300">정면 촬영은 점프 높이·좌우 대칭 분석에 적합</b>합니다. 자세·각도 지표는 측면(옆모습)에서만 정확합니다.</li>
                 <li><b className="text-slate-300">발목 신전은 참고용(*)</b>입니다. BlazePose의 발끝 추정 정확도가 낮아, 신전 판정은 고관절·무릎 궤적 중심으로 봅니다.</li>
                 <li>모든 값은 <b className="text-slate-300">상대 비교·추세 관찰용</b>입니다. 같은 방식으로 반복 측정해 변화를 보는 데 의미가 있습니다.</li>
               </ul>
@@ -352,7 +371,7 @@ export default function JumpReportDashboard({ report, onClose, onComment }) {
       {/* 하단 고정 액션: 리포트 저장 + (영상 있으면) 동영상 저장 */}
       <div className="w-full max-w-[820px] sticky bottom-0 pb-[max(8px,env(safe-area-inset-bottom))] pt-2 bg-slate-950">
         <ReportActions reportNodeId="jump-report-sheet" videoBlob={report?.videoBlob || null}
-          baseName={`${memberName}_점프`} onMessage={setMsg} />
+          baseName={`${memberName}_${isRsi ? 'RSI' : '파워점프'}`} onMessage={setMsg} />
       </div>
     </div>
   );

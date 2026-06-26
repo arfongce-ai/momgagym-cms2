@@ -37,7 +37,7 @@ export const RSI_TUNING = {
   contactFrameWarnMs: 20,    // 프레임 간격이 이보다 크면 lowFps 경고
 
   // ── 유효 사이클 수 ──
-  minCycles: 2,              // 최소 2회 이상 떠야 사이클 사이 GCT 1개 이상 확보
+  minCycles: 3,              // 최소 3회 이상 떠야 GCT 2개 이상 확보(현장 권장 최소)
 
   // ── 사이클 변동(CV) 임계 ──
   // 사이클 간 RSI 변동이 이보다 크면 최고값 대신 평균을 대표값으로 쓴다(과대평가 방지).
@@ -100,7 +100,7 @@ export function computeRSIFromFlights(flights, opts = {}) {
       valid: false,
       reason: 'need_more_cycles',
       cycles: list.length,
-      message: `반응 점프는 연속 ${RSI_TUNING.minCycles}회 이상 뛰어야 접지 시간을 측정할 수 있습니다.`,
+      message: `반응 점프는 연속 ${RSI_TUNING.minCycles}회 이상 뛰어야 RSI를 안정적으로 측정할 수 있습니다.`,
     };
   }
 

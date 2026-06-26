@@ -87,7 +87,12 @@ export default function JumpAnalysisHub({ member, onBack, onSave, onSaveToFireba
             </div>
             {jumpType === 'reactive' && (
               <p className="pointer-events-none text-[10px] font-bold text-emerald-300 bg-black/55 backdrop-blur rounded-full px-3 py-0.5 border border-emerald-500/30">
-                연속 2회 이상 · 접지 짧게 · 측면 · 고속영상(240fps) 권장
+                측면 촬영 추천 · 연속 3회 이상 · 접지 짧게 · 고속영상(240fps) 권장
+              </p>
+            )}
+            {jumpType === 'power' && (
+              <p className="pointer-events-none text-[10px] font-bold text-amber-300 bg-black/55 backdrop-blur rounded-full px-3 py-0.5 border border-amber-500/30">
+                정면 촬영 추천 · 점프 높이·좌우 착지 대칭 중심 분석
               </p>
             )}
           </div>
@@ -219,20 +224,21 @@ function JumpGuide({ mode, jumpType, onClose }) {
 
         {jumpType === 'reactive' ? (
           <GuideSection title="반응 탄성 점프(RSI) 측정법" emoji="🔁" highlight>
-            제자리에서 <b className="text-white">연속 2회 이상</b> 빠르게 점프하세요(포고 점프).
+            제자리에서 <b className="text-white">연속 3회 이상</b> 빠르게 점프하세요(포고 점프).
             착지 후 <b className="text-white">지면에 닿는 시간을 최대한 짧게</b>, 곧바로 다시
             높이 뛰는 게 핵심입니다. RSI = 체공시간 ÷ 접지시간(무단위)으로,
             접지가 짧고 높이 뛸수록 값이 높습니다.
             <br /><br />
             <span className="text-amber-300">※ 접지 시간은 ‘착지 → 다시 뜀’ 사이로 측정하므로
-            <b className="text-white"> 1회 점프로는 RSI를 잴 수 없습니다.</b> 반드시 연속으로 뛰세요.
-            그리고 <b className="text-white">측면(옆)에서만</b> 정확합니다 — 정면·후면 영상은 측정하지 않습니다.</span>
+            <b className="text-white"> 1~2회만으로는 RSI 변동성을 볼 수 없습니다.</b> 최소 3회 이상 연속으로 뛰세요.
+            그리고 <b className="text-white">기본 추천은 측면 촬영</b>입니다 — 정면·후면 영상은 접지시간 신뢰도가 낮아 측정하지 않습니다.</span>
           </GuideSection>
         ) : (
           <GuideSection title="반동점프(CMJ)란?" emoji="🦘">
             선 자세에서 빠르게 살짝 앉았다가(반동) 곧바로 최대한 높이 수직으로 뛰는 점프입니다.
             팔은 자연스럽게 쓰되, 매번 같은 방식으로 뛰어야 비교가 정확합니다. 제자리에서
-            수직으로 뛰고 같은 자리에 착지하세요.
+            수직으로 뛰고 같은 자리에 착지하세요. <b className="text-white">기본 추천은 정면 촬영</b>입니다.
+            점프 높이와 좌우 착지 대칭을 중심으로 분석하고, 측면 촬영 시에는 자세 각도 지표가 추가로 활성화됩니다.
           </GuideSection>
         )}
 
@@ -250,14 +256,16 @@ function JumpGuide({ mode, jumpType, onClose }) {
 
         <GuideSection title="① 고속영상 (가장 정확 · 권장)" emoji="📁" highlight>
           갤럭시 카메라 → <b className="text-white">더보기 → 슬로우 모션</b>(슈퍼 슬로우 아님)으로
-          240fps 촬영. <b className="text-white">옆에서(측면)</b> 삼각대로 골반 높이에 고정하고
-          전신이 다 들어오게 찍으세요. 점프 전 1초 이상 똑바로 선 뒤 점프 →
+          240fps 촬영. <b className="text-white">파워 점프는 정면 촬영을 추천</b>합니다.
+          삼각대로 골반 높이에 고정하고 전신이 다 들어오게 찍으세요.
+          RSI는 <b className="text-white">측면 촬영을 추천</b>합니다. 점프 전 1초 이상 똑바로 선 뒤 점프 →
           영상을 ‘고속영상’ 탭에서 업로드하고 촬영 모드(240fps)를 고르면 끝.
         </GuideSection>
 
         <GuideSection title="② 실시간 카메라 (빠른 확인용)" emoji="🔴">
           앱에서 바로 촬영해 즉시 측정합니다. 폰 카메라가 보통 30fps라
-          <b className="text-white"> 고속영상보다 정확도가 낮습니다.</b> 반드시 <b className="text-white">측면</b>에서,
+          <b className="text-white"> 고속영상보다 정확도가 낮습니다.</b> 파워 점프는 <b className="text-white">정면</b>,
+          RSI는 <b className="text-white">측면</b>에서,
           카메라를 골반 높이로 고정하고 전신이 보이게 한 뒤, 초록 보정선에 발을 맞춰 선 다음
           점프하세요. 정확한 기록은 고속영상을 권장합니다.
         </GuideSection>
@@ -270,9 +278,8 @@ function JumpGuide({ mode, jumpType, onClose }) {
         <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3">
           <p className="text-amber-300 text-xs font-bold mb-1">💡 정확도 팁</p>
           <p className="text-slate-300 text-[11px] leading-relaxed">
-            정면 촬영은 깊이 변화 때문에 오차가 커 ‘측정 무효’가 자주 납니다.
-            <b className="text-white"> 반드시 옆(측면)에서</b>, 카메라를 고정하고 찍으세요.
-            가장 신뢰할 수 있는 방식은 <b className="text-white">측면 + 고속영상(240fps)</b>입니다.
+            파워 점프는 <b className="text-white">정면 촬영</b>을 기본으로 두고 점프 높이와 좌우 착지 대칭을 봅니다.
+            RSI처럼 접지 시간이 핵심인 측정은 <b className="text-white">측면 촬영 + 고속영상(240fps)</b>이 가장 신뢰도 높습니다.
           </p>
         </div>
       </div>
