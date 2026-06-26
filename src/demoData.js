@@ -9,7 +9,7 @@ import {
 } from 'firebase/firestore';
 import { toYMD, todayYMD } from './utils/dates';
 
-const DATA_VERSION = 'v6.0';
+const DATA_VERSION = 'v6.1';
 
 // ── [진단] Firestore 읽기 계측 ───────────────────────────────────────
 // 어떤 컬렉션이 읽기를 얼마나 일으키는지 콘솔에서 눈으로 확인하기 위한 래퍼.
@@ -323,6 +323,7 @@ let __snapTimer = null;
 function __touchSnapshot() {
   if (typeof __refreshSnapshot !== 'function') return;
   if (__snapTimer) clearTimeout(__snapTimer);
+  try { __refreshSnapshot(); } catch (e) { /* noop */ }
   __snapTimer = setTimeout(() => { try { __refreshSnapshot(); } catch (e) { /* noop */ } }, 400);
 }
 
@@ -501,10 +502,12 @@ export const store = {
         const hit = touchedPays.find(tp => tp.pid === p.id);
         return hit ? { ...p, ...hit.patch } : p;
       });
+      __touchSnapshot();
       return updatedMember;
     } catch (e) {
       cache.members = prevMembers;
       cache.payments = prevPayments;
+      __touchSnapshot();
       throw e;
     }
   },

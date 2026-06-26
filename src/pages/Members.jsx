@@ -1,7 +1,7 @@
 // Members.jsx — v5
 // ✅ 요구사항1: 잔여 횟수 트레이너별 분리 배지 표시 (총합 금지)
 import { useState, useEffect, useCallback } from 'react';
-import { store } from '../demoData';
+import { store, initStore } from '../demoData';
 import { todayYMD, daysAgoYMD, isMemberExpired, isMonthlyActive, monthlyDueOf } from '../utils/dates';
 import { useAuth } from '../contexts/AuthContext';
 import MemberRegister from '../components/members/MemberRegister';
@@ -31,6 +31,7 @@ export default function Members() {
   const [showRegister,  setShowRegister]  = useState(false);
   const [showImport,    setShowImport]    = useState(false);
   const [selected,      setSelected]      = useState(null);
+  const [refreshing,    setRefreshing]    = useState(false);
 
   const load = useCallback(() => {
     setMembers(store.getMembers());
@@ -95,11 +96,29 @@ export default function Members() {
     } catch (e) { alert('일부 회원 처리에 실패했습니다. 네트워크 확인 후 다시 시도하세요.'); load(); }
   };
 
+  const handleServerRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await initStore({ force: true });
+      load();
+    } catch (e) {
+      alert('서버 새로고침에 실패했습니다. 네트워크를 확인해 주세요.');
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-black tracking-tight">회원 관리</h1>
         <div className="flex gap-2">
+          {user?.role==='admin' && (
+            <button onClick={handleServerRefresh} disabled={refreshing}
+              className="text-xs font-bold px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-slate-200 hover:border-cyan-500/40 hover:text-cyan-300 transition-colors disabled:opacity-50">
+              {refreshing ? '새로고침 중...' : '↻ 서버 새로고침'}
+            </button>
+          )}
           {user?.role==='admin' && (
             <button onClick={exportMembers}
               className="text-xs font-bold px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-slate-200 hover:border-amber-500/40 hover:text-amber-400 transition-colors">
