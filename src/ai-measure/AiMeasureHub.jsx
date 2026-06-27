@@ -55,6 +55,7 @@ export default function AiMeasureHub() {
     // alert 없이 에러를 그대로 throw 해 컴포넌트가 처리하게 한다.
     const isGait = active.id === 'gait';
     const isJump = active.id === 'jump';
+    const isPosture = active.id === 'posture';
     try {
       await aiStore.addSession(member.id, {
         menu: active.id,
@@ -71,9 +72,12 @@ export default function AiMeasureHub() {
       if (isJump && data?.valid === true) {
         return await aiStore.addGaitReport({ ...data, kind: 'jump', member: { id: member.id, name: member.name } });
       }
+      if (isPosture) {
+        return await aiStore.addPostureReport({ ...data, kind: 'posture', member: { id: member.id, name: member.name } });
+      }
       alert('측정이 저장되었습니다.');
     } catch (e) {
-      if (isGait || isJump) throw e; // 컴포넌트 saveState='error' 로 표시되게 전파
+      if (isGait || isJump || isPosture) throw e; // 컴포넌트 saveState='error' 로 표시되게 전파
       alert('저장에 실패했습니다. 네트워크 확인 후 다시 시도하세요.\n' + (e?.message || ''));
     }
   };
@@ -81,8 +85,9 @@ export default function AiMeasureHub() {
   // 메뉴 구동 화면
   if (active && active.status === 'ready') {
     const Comp = active.component;
+    const wideMeasure = active.id === 'gait' || active.id === 'jump' || active.id === 'posture';
     return (
-      <div className="max-w-md mx-auto">
+      <div className={`${wideMeasure ? 'max-w-6xl' : 'max-w-md'} mx-auto`}>
         <Suspense fallback={<div className="text-center text-slate-400 py-10 text-sm">모듈 로딩 중…</div>}>
           <Comp member={member} onSave={handleSave} onBack={() => setActive(null)} onMemberHeightChange={rememberMemberHeight} />
         </Suspense>

@@ -144,7 +144,7 @@ const INITIAL_SETTINGS = {
 
 const cache = {
   members:[], trainers:[], schedules:[], notices:[], payments:{}, body:{}, ai:{},
-  settings:{...INITIAL_SETTINGS}, expenses:[], promos:[], settleOverrides:[], gaitReports:{},
+  settings:{...INITIAL_SETTINGS}, expenses:[], promos:[], settleOverrides:[], gaitReports:{}, postureReports:{},
 };
 
 // 충돌 방지 ID 생성기 — Date.now()만 쓰면 같은 밀리초에 두 건이 생길 때
@@ -982,6 +982,19 @@ export const aiStore = {
       return r;
     } catch (e) {
       if (mid) cache.gaitReports[mid] = (cache.gaitReports[mid] || []).filter(x => x.id !== r.id);
+      throw e;
+    }
+  },
+  getPostureReports: (mid) => (cache.postureReports[mid] || []),
+  addPostureReport: async (report) => {
+    const mid = report?.member?.id || report?.memberId || null;
+    const r = { ...report, id: uid('posture'), createdAt: new Date().toISOString() };
+    if (mid) cache.postureReports[mid] = [...(cache.postureReports[mid] || []), r];
+    try {
+      await fbSet('posture_reports', r.id, { ...r, __mid: mid });
+      return r;
+    } catch (e) {
+      if (mid) cache.postureReports[mid] = (cache.postureReports[mid] || []).filter(x => x.id !== r.id);
       throw e;
     }
   },
