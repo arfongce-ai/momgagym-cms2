@@ -70,6 +70,31 @@ export function getLandmark(landmarks, index, threshold = MIN_VISIBILITY) {
   return isVisible(point, threshold) ? point : null;
 }
 
+export function getReliableLandmarks(landmarks, threshold = 0.75) {
+  if (!Array.isArray(landmarks)) return [];
+  return landmarks.map((point, index) => {
+    if (!point || (point.visibility != null && point.visibility < threshold)) {
+      return {
+        index,
+        x: null,
+        y: null,
+        z: null,
+        visibility: point?.visibility ?? 0,
+        isValid: false,
+      };
+    }
+    return { ...point, index, isValid: true };
+  });
+}
+
+export function areLandmarksReliable(landmarks, indexes, threshold = 0.75) {
+  return indexes.every((index) => isVisible(landmarks?.[index], threshold));
+}
+
+export function isPelvisDataReliable(landmarks, threshold = 0.8) {
+  return areLandmarksReliable(landmarks, [LM.LEFT_HIP, LM.RIGHT_HIP], threshold);
+}
+
 export function midpoint(a, b) {
   if (!a || !b) return null;
   return {
@@ -102,6 +127,8 @@ export function angleDeg(a, b, c, use3d = true) {
   return round((Math.acos(cos) * 180) / Math.PI, 1);
 }
 
+export const angleAt = angleDeg;
+
 export function signedAngle2d(a, b, c) {
   if (!a || !b || !c) return null;
   const ab = { x: a.x - b.x, y: a.y - b.y };
@@ -125,10 +152,24 @@ export function estimateBodyScale(landmarks, heightCm = null) {
   };
 }
 
+export function calculatePixelToCmScale(landmarks, heightCm = null) {
+  const scale = estimateBodyScale(landmarks, heightCm);
+  return {
+    normalizedHeight: scale?.normalizedHeight ?? null,
+    cmPerNormalizedUnit: scale?.cmPerNormalizedUnit ?? null,
+    mmPerNormalizedUnit: scale?.mmPerNormalizedUnit ?? null,
+  };
+}
+
 export function normalizedDeltaToMm(delta, landmarks, heightCm = null) {
   const scale = estimateBodyScale(landmarks, heightCm);
   if (!scale?.mmPerNormalizedUnit) return null;
   return round(delta * scale.mmPerNormalizedUnit, 1);
+}
+
+export function normalizedDistanceToMm(a, b, landmarks, heightCm = null) {
+  const distance = distance2d(a, b);
+  return distance == null ? null : normalizedDeltaToMm(distance, landmarks, heightCm);
 }
 
 export function asymmetryIndex(leftValue, rightValue) {
@@ -325,6 +366,82 @@ export function calculateAsymmetryProfile(landmarks) {
   };
 }
 
+export function analyzeFrontalAlignment(landmarks, { heightCm = null } = {}) {
+  const leftShoulder = getLandmark(landmarks, LM.LEFT_SHOULDER);
+  const rightShoulder = getLandmark(landmarks, LM.RIGHT_SHOULDER);
+  const leftHip = getLandmark(landmarks, LM.LEFT_HIP);
+  const rightHip = getLandmark(landmarks, LM.RIGHT_HIP);
+  const leftAnkle = getLandmark(landmarks, LM.LEFT_ANKLE);
+  const rightAnkle = getLandmark(landmarks, LM.RIGHT_ANKLE);
+  const trunkDeviation = calculatePosturalDeviationMm(landmarks, heightCm);
+  const legAlignment = classifyLegAlignment(landmarks);
+
+  const shoulderDiffMm = leftShoulder && rightShoulder
+    ? normalizedDeltaToMm(leftShoulder.y - rightShoulder.y, landmarks, heightCm)
+    : null;
+  const pelvisDiffMm = leftHip && rightHip
+    ? normalizedDeltaToMm(leftHip.y - rightHip.y, landmarks, heightCm)
+    : null;
+  const ankleDiffMm = leftAnkle && rightAnkle
+    ? normalizedDeltaToMm(leftAnkle.y - rightAnkle.y, landmarks, heightCm)
+    : null;
+
+  const pelvisAbs = Math.abs(pelvisDiffMm ?? 0);
+  const ankleAbs = Math.abs(ankleDiffMm ?? 0);
+  const pelvisPattern = pelvisDiffMm == null
+    ? 'unknown'
+    : pelvisAbs < 5
+      ? 'within_error'
+      : ankleAbs >= pelvisAbs * 0.65
+        ? 'structural_leg_length_pattern'
+        : 'functional_lumbopelvic_pattern';
+
+  return {
+    shoulderHeightDiffMm: shoulderDiffMm,
+    shoulderHigherSide: higherSideFromY(leftShoulder, rightShoulder),
+    pelvisHeightDiffMm: pelvisDiffMm,
+    pelvisHigherSide: higherSideFromY(leftHip, rightHip),
+    ankleHeightDiffMm: ankleDiffMm,
+    pelvisPattern,
+    qAngleProxyDeg: {
+      left: angleDeg(leftHip, getLandmark(landmarks, LM.LEFT_KNEE), leftAnkle, false),
+      right: angleDeg(rightHip, getLandmark(landmarks, LM.RIGHT_KNEE), rightAnkle, false),
+    },
+    trunkShiftMm: trunkDeviation.pelvis,
+    legAlignment,
+  };
+}
+
+export function analyzeSagittalAlignment(landmarks, { heightCm = null } = {}) {
+  const ear = midpoint(getLandmark(landmarks, LM.LEFT_EAR, 0.25), getLandmark(landmarks, LM.RIGHT_EAR, 0.25)) || getLandmark(landmarks, LM.NOSE, 0.25);
+  const shoulder = midpoint(getLandmark(landmarks, LM.LEFT_SHOULDER), getLandmark(landmarks, LM.RIGHT_SHOULDER));
+  const hip = midpoint(getLandmark(landmarks, LM.LEFT_HIP), getLandmark(landmarks, LM.RIGHT_HIP));
+  const knee = midpoint(getLandmark(landmarks, LM.LEFT_KNEE), getLandmark(landmarks, LM.RIGHT_KNEE));
+  const ankle = midpoint(getLandmark(landmarks, LM.LEFT_ANKLE), getLandmark(landmarks, LM.RIGHT_ANKLE));
+  const rotations = estimate3DRotation(landmarks);
+
+  const forwardHeadMm = ear && shoulder
+    ? normalizedDeltaToMm(Math.abs(ear.x - shoulder.x), landmarks, heightCm)
+    : null;
+  const kyphosisProxyDeg = angleDeg(ear, shoulder, hip, false);
+  const kneeExtensionProxyDeg = angleDeg(hip, knee, ankle, false);
+  const anklePlumbKneeDeviationMm = ankle && knee
+    ? normalizedDeltaToMm(knee.x - ankle.x, landmarks, heightCm)
+    : null;
+  const anklePlumbHipDeviationMm = ankle && hip
+    ? normalizedDeltaToMm(hip.x - ankle.x, landmarks, heightCm)
+    : null;
+
+  return {
+    forwardHeadMm,
+    kyphosisProxyDeg,
+    pelvicPitchProxyDeg: rotations.segments?.trunkPitchDeg ?? rotations.pitchDeg,
+    kneeExtensionProxyDeg,
+    anklePlumbKneeDeviationMm,
+    anklePlumbHipDeviationMm,
+  };
+}
+
 export function calculatePosturalDeviationMm(landmarks, heightCm = null) {
   const shoulderMid = midpoint(getLandmark(landmarks, LM.LEFT_SHOULDER), getLandmark(landmarks, LM.RIGHT_SHOULDER));
   const hipMid = midpoint(getLandmark(landmarks, LM.LEFT_HIP), getLandmark(landmarks, LM.RIGHT_HIP));
@@ -463,6 +580,14 @@ export function mapScoreToBodyAge(score, actualAge, options = {}) {
   return Math.round(clamp(actualAge + delta + fineTune, minAge, maxAge));
 }
 
+export function classifyPostureAgeGroup(actualAge) {
+  if (actualAge == null || Number.isNaN(Number(actualAge))) return 'unknown';
+  const age = Number(actualAge);
+  if (age < 7) return 'under_7_screening_limited';
+  if (age < 19) return 'youth_growth';
+  return 'adult';
+}
+
 export function generatePostureComment({ score, bodyAge, actualAge, ruleFindings = [], cog = null, asymmetry = null } = {}) {
   const grade = score >= 85 ? '우수' : score >= 70 ? '양호' : score >= 55 ? '관리 필요' : '집중 관리';
   const messages = [`통합 체형 점수는 ${score}점으로 ${grade} 단계입니다.`];
@@ -483,11 +608,14 @@ export function generatePostureComment({ score, bodyAge, actualAge, ruleFindings
 }
 
 export function analyzePostureFromLandmarks(landmarks, { heightCm = null, actualAge = null } = {}) {
+  const reliability = calculateReliabilityProfile(landmarks);
   const asymmetry = calculateAsymmetryProfile(landmarks);
   const rotations = estimate3DRotation(landmarks);
   const rules = evaluatePostureRules(landmarks);
   const deviationsMm = calculatePosturalDeviationMm(landmarks, heightCm);
   const cog = calculateCenterOfGravity(landmarks);
+  const frontal = analyzeFrontalAlignment(landmarks, { heightCm });
+  const sagittal = analyzeSagittalAlignment(landmarks, { heightCm });
   const scoreResult = calculatePostureScore({
     deviationsMm,
     asi: asymmetry.averageAsi,
@@ -508,13 +636,40 @@ export function analyzePostureFromLandmarks(landmarks, { heightCm = null, actual
     score: scoreResult.score,
     scoreComponents: scoreResult.components,
     bodyAge,
+    reliability,
     asymmetry,
     rotations,
+    frontal,
+    sagittal,
     rules,
     deviationsMm,
     cog,
     summaryComment,
     status: worstStatus([rules.status, cog.status, scoreResult.score < 55 ? POSTURE_STATUS.RISK : scoreResult.score < 70 ? POSTURE_STATUS.CAUTION : POSTURE_STATUS.NORMAL]),
+  };
+}
+
+export function calculateReliabilityProfile(landmarks, threshold = 0.75) {
+  const required = [
+    LM.LEFT_SHOULDER,
+    LM.RIGHT_SHOULDER,
+    LM.LEFT_HIP,
+    LM.RIGHT_HIP,
+    LM.LEFT_KNEE,
+    LM.RIGHT_KNEE,
+    LM.LEFT_ANKLE,
+    LM.RIGHT_ANKLE,
+  ];
+  const validCount = required.filter((index) => isVisible(landmarks?.[index], threshold)).length;
+  const averageVisibility = round(meanDefined(required.map((index) => landmarks?.[index]?.visibility ?? 0)), 2);
+  return {
+    threshold,
+    requiredCount: required.length,
+    validCount,
+    averageVisibility,
+    pelvisReliable: isPelvisDataReliable(landmarks, Math.max(0.75, threshold)),
+    fullBodyReliable: validCount === required.length,
+    reliableLandmarks: getReliableLandmarks(landmarks, threshold),
   };
 }
 
@@ -528,6 +683,12 @@ function worstStatus(statuses) {
   if (statuses.includes(POSTURE_STATUS.RISK)) return POSTURE_STATUS.RISK;
   if (statuses.includes(POSTURE_STATUS.CAUTION)) return POSTURE_STATUS.CAUTION;
   return POSTURE_STATUS.NORMAL;
+}
+
+function higherSideFromY(left, right) {
+  if (!left || !right) return null;
+  if (Math.abs(left.y - right.y) < 0.002) return 'level';
+  return left.y < right.y ? 'left' : 'right';
 }
 
 function clamp(value, min, max) {

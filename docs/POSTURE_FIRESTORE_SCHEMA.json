@@ -11,6 +11,7 @@
     "createdBy": "firebaseAuthUid",
     "heightCm": 174.2,
     "actualAge": 36,
+    "ageGroup": "adult",
     "imageUrl": "https://storage.googleapis.com/.../posture/member_123/round_1_front.jpg",
     "image_urls": {
       "front": "https://storage.googleapis.com/.../posture/member_123/round_1_front.jpg",
@@ -31,6 +32,7 @@
       }
     },
     "view": "front",
+    "viewsMeasured": ["front", "right", "back", "left"],
     "rawLandmarks": [
       {
         "index": 0,
@@ -41,6 +43,18 @@
         "visibility": 0.99
       }
     ],
+    "viewLandmarks": {
+      "front": [{ "index": 0, "x": 0.5021, "y": 0.0843, "z": -0.114, "visibility": 0.99 }],
+      "right": [{ "index": 0, "x": 0.4988, "y": 0.0839, "z": -0.102, "visibility": 0.98 }],
+      "back": [{ "index": 0, "x": 0.5012, "y": 0.0861, "z": -0.09, "visibility": 0.96 }],
+      "left": [{ "index": 0, "x": 0.503, "y": 0.0848, "z": -0.11, "visibility": 0.98 }]
+    },
+    "perViewAnalysis": {
+      "front": { "score": 82, "status": "normal" },
+      "right": { "score": 79, "status": "normal" },
+      "back": { "score": 76, "status": "caution" },
+      "left": { "score": 81, "status": "normal" }
+    },
     "analysis": {
       "score": 82,
       "bodyAge": 33,
@@ -50,6 +64,14 @@
         "asymmetry": 78,
         "rules": 100,
         "cog": 84
+      },
+      "reliability": {
+        "threshold": 0.75,
+        "requiredCount": 8,
+        "validCount": 8,
+        "averageVisibility": 0.97,
+        "pelvisReliable": true,
+        "fullBodyReliable": true
       },
       "asymmetry": {
         "averageAsi": 6.8,
@@ -73,6 +95,24 @@
         "shoulder": 3.6,
         "pelvis": -4.5,
         "knee": 6.1
+      },
+      "frontal": {
+        "shoulderHeightDiffMm": -6.2,
+        "shoulderHigherSide": "left",
+        "pelvisHeightDiffMm": 12.4,
+        "pelvisHigherSide": "right",
+        "ankleHeightDiffMm": 2.1,
+        "pelvisPattern": "functional_lumbopelvic_pattern",
+        "qAngleProxyDeg": { "left": 177.8, "right": 179.2 },
+        "trunkShiftMm": -4.5
+      },
+      "sagittal": {
+        "forwardHeadMm": 31.4,
+        "kyphosisProxyDeg": 166.7,
+        "pelvicPitchProxyDeg": -2.1,
+        "kneeExtensionProxyDeg": 179.4,
+        "anklePlumbKneeDeviationMm": 8.7,
+        "anklePlumbHipDeviationMm": 14.2
       },
       "cog": {
         "available": true,
@@ -108,6 +148,10 @@
         }
       },
       "summaryComment": "통합 체형 점수는 82점으로 양호 단계입니다. 체형 나이는 실제 나이보다 3세 젊게 추정됩니다."
+    },
+    "collectionPathOptions": {
+      "primary": "posture_reports/{reportId}",
+      "nestedAlternative": "ai_analysis/{memberId}/posture/{reportId}"
     },
     "comparison": {
       "previousReportId": "member_123_round_20260401_001",

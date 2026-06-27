@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { todayYMD } from '../../utils/dates';
 import { usePoseEngine } from '../core/usePoseEngine';
 import { createSmoother } from '../core/smoothing';
-import { analyzePostureFromLandmarks } from '../core/postureMath';
+import { analyzePostureFromLandmarks, classifyPostureAgeGroup } from '../core/postureMath';
 import CameraStage from './CameraStage.jsx';
 import PostureReport from './PostureReport.jsx';
 
@@ -341,6 +341,7 @@ function buildReport({ member, bodyInfo, captures, selectedSteps }) {
     recordedAt: todayYMD(),
     heightCm: bodyInfo.heightCm,
     actualAge: bodyInfo.actualAge,
+    ageGroup: classifyPostureAgeGroup(bodyInfo.actualAge),
     view: primaryCapture?.view || 'front',
     viewsMeasured: selectedSteps.map((step) => step.key),
     imageUrl: '',

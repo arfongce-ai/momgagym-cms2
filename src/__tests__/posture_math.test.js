@@ -2,9 +2,14 @@ import { describe, expect, it } from 'vitest';
 import {
   POSE_LANDMARKS as LM,
   analyzePostureFromLandmarks,
+  analyzeFrontalAlignment,
+  analyzeSagittalAlignment,
   asymmetryIndex,
   calculateCenterOfGravity,
   calculatePostureScore,
+  classifyPostureAgeGroup,
+  getReliableLandmarks,
+  isPelvisDataReliable,
   mapScoreToBodyAge,
 } from '../ai-measure/core/postureMath';
 import { normalizeLandmarksForOverlay } from '../ai-measure/menus/PostureReport.jsx';
@@ -69,6 +74,35 @@ describe('postureMath', () => {
   it('maps high scores to younger body age and low scores to older body age', () => {
     expect(mapScoreToBodyAge(92, 40)).toBeLessThan(40);
     expect(mapScoreToBodyAge(48, 40)).toBeGreaterThan(40);
+  });
+
+  it('filters unreliable landmarks and reports pelvis reliability', () => {
+    const pose = makePose({ [LM.LEFT_HIP]: { visibility: 0.2 } });
+    const reliable = getReliableLandmarks(pose, 0.75);
+    expect(reliable[LM.LEFT_HIP].isValid).toBe(false);
+    expect(reliable[LM.LEFT_HIP].x).toBeNull();
+    expect(isPelvisDataReliable(pose)).toBe(false);
+  });
+
+  it('classifies age groups for posture screening rules', () => {
+    expect(classifyPostureAgeGroup(5)).toBe('under_7_screening_limited');
+    expect(classifyPostureAgeGroup(12)).toBe('youth_growth');
+    expect(classifyPostureAgeGroup(35)).toBe('adult');
+  });
+
+  it('returns trainer-facing frontal and sagittal posture metrics', () => {
+    const pose = makePose({
+      [LM.LEFT_HIP]: { y: 0.50 },
+      [LM.RIGHT_HIP]: { y: 0.53 },
+      [LM.LEFT_EAR]: { x: 0.50 },
+      [LM.RIGHT_EAR]: { x: 0.54 },
+      [LM.LEFT_SHOULDER]: { x: 0.42 },
+      [LM.RIGHT_SHOULDER]: { x: 0.58 },
+    });
+    const frontal = analyzeFrontalAlignment(pose, { heightCm: 175 });
+    const sagittal = analyzeSagittalAlignment(pose, { heightCm: 175 });
+    expect(Math.abs(frontal.pelvisHeightDiffMm)).toBeGreaterThan(0);
+    expect(sagittal.forwardHeadMm).toBeGreaterThan(0);
   });
 
   it('penalizes risk findings and large CoG offset in posture score', () => {

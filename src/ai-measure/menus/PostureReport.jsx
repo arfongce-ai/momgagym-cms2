@@ -142,6 +142,18 @@ export default function PostureReport({
               </div>
             </Panel>
 
+            <Panel title="뷰별 핵심 지표">
+              <div className="grid grid-cols-2 gap-2">
+                <SmallMetric label="어깨 높이" value={absValue(analysis.frontal?.shoulderHeightDiffMm)} unit="mm" status={mmStatus(analysis.frontal?.shoulderHeightDiffMm, 8, 18)} />
+                <SmallMetric label="골반 높이" value={absValue(analysis.frontal?.pelvisHeightDiffMm)} unit="mm" status={mmStatus(analysis.frontal?.pelvisHeightDiffMm, 8, 15)} />
+                <SmallMetric label="거북목 거리" value={absValue(analysis.sagittal?.forwardHeadMm)} unit="mm" status={mmStatus(analysis.sagittal?.forwardHeadMm, 25, 45)} />
+                <SmallMetric label="무릎 신전각" value={analysis.sagittal?.kneeExtensionProxyDeg ?? '-'} unit="deg" status={kneeExtensionStatus(analysis.sagittal?.kneeExtensionProxyDeg)} />
+              </div>
+              <p className="mt-3 text-xs leading-relaxed text-slate-500">
+                골반 패턴: {pelvisPatternLabel(analysis.frontal?.pelvisPattern)} · 신뢰도 {analysis.reliability?.validCount ?? 0}/{analysis.reliability?.requiredCount ?? 8}
+              </p>
+            </Panel>
+
             <Panel title="Rule-based 평가">
               <div className="space-y-2">
                 {findings.length ? findings.map((item) => (
@@ -256,6 +268,31 @@ function FindingRow({ finding }) {
       </div>
     </div>
   );
+}
+
+function absValue(value) {
+  return typeof value === 'number' && Number.isFinite(value) ? Math.abs(value) : '-';
+}
+
+function mmStatus(value, cautionMm, riskMm) {
+  const abs = Math.abs(value ?? 0);
+  if (abs >= riskMm) return 'risk';
+  if (abs >= cautionMm) return 'caution';
+  return 'normal';
+}
+
+function kneeExtensionStatus(value) {
+  if (value == null) return 'caution';
+  if (value > 185 || value < 175) return 'risk';
+  if (value > 180 || value < 177) return 'caution';
+  return 'normal';
+}
+
+function pelvisPatternLabel(pattern) {
+  if (pattern === 'structural_leg_length_pattern') return '다리 길이 차이 가능성';
+  if (pattern === 'functional_lumbopelvic_pattern') return '요방형근/중둔근 기능성 불균형 가능성';
+  if (pattern === 'within_error') return '측정 오차 범위';
+  return '판별 보류';
 }
 
 function GhostingViewer({
