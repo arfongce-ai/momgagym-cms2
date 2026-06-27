@@ -149,6 +149,7 @@ export default function PostureMeasure({ member, onSave, onBack }) {
       error={error}
       onClose={onBack}
       tappable={false}
+      showFutureOverlay={false}
       overlay={{
         mode: 'POSTURE AI',
         primary: liveAnalysis ? `${liveAnalysis.score}점` : 'POSTURE READY',
@@ -178,10 +179,37 @@ export default function PostureMeasure({ member, onSave, onBack }) {
         </button>
       }
     >
-      <div className="mx-auto max-w-md rounded-2xl border border-white/10 bg-black/55 px-4 py-3 text-center text-sm font-bold text-white backdrop-blur">
-        {guide}
+      <div className="mx-auto max-w-md space-y-2">
+        {liveAnalysis && (
+          <div className="grid grid-cols-3 gap-2">
+            <LiveMetric label="점수" value={`${liveAnalysis.score}`} tone={scoreTone(liveAnalysis.score)} />
+            <LiveMetric label="체형나이" value={liveAnalysis.bodyAge ? `${liveAnalysis.bodyAge}세` : '--'} tone="amber" />
+            <LiveMetric
+              label="CoG"
+              value={liveAnalysis.cog?.available ? `${Math.abs(liveAnalysis.cog.balanceOffsetPct ?? liveAnalysis.cog.offsetPct)}%` : '--'}
+              tone={liveAnalysis.cog?.status === 'risk' ? 'red' : liveAnalysis.cog?.status === 'caution' ? 'amber' : 'emerald'}
+            />
+          </div>
+        )}
+        <div className="rounded-2xl border border-white/10 bg-black/55 px-4 py-3 text-center text-sm font-bold text-white backdrop-blur">
+          {guide}
+        </div>
       </div>
     </CameraStage>
+  );
+}
+
+function LiveMetric({ label, value, tone = 'amber' }) {
+  const toneClass = {
+    emerald: 'text-emerald-300 border-emerald-400/30',
+    amber: 'text-amber-300 border-amber-400/30',
+    red: 'text-red-300 border-red-400/30',
+  }[tone] || 'text-amber-300 border-amber-400/30';
+  return (
+    <div className={`rounded-xl border bg-black/55 px-2 py-2 text-center backdrop-blur ${toneClass}`}>
+      <p className="text-[10px] font-bold text-white/60">{label}</p>
+      <p className="mt-0.5 text-base font-black tabular-nums">{value}</p>
+    </div>
   );
 }
 
