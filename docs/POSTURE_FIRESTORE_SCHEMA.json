@@ -1,0 +1,129 @@
+{
+  "collection": "posture_reports",
+  "documentIdExample": "member_123_round_20260627_001",
+  "schema": {
+    "memberId": "member_123",
+    "memberName": "홍길동",
+    "measurementRound": 1,
+    "pairKey": "member_123_posture_program_2026_q3",
+    "phase": "before",
+    "measuredAt": "2026-06-27T10:30:00.000+09:00",
+    "createdBy": "firebaseAuthUid",
+    "heightCm": 174.2,
+    "actualAge": 36,
+    "imageUrl": "https://storage.googleapis.com/.../posture/member_123/round_1_front.jpg",
+    "image_urls": {
+      "front": "https://storage.googleapis.com/.../posture/member_123/round_1_front.jpg",
+      "side_left": "https://storage.googleapis.com/.../posture/member_123/round_1_side_left.jpg",
+      "side_right": "https://storage.googleapis.com/.../posture/member_123/round_1_side_right.jpg",
+      "back": "https://storage.googleapis.com/.../posture/member_123/round_1_back.jpg",
+      "current": {
+        "front": "https://storage.googleapis.com/.../posture/member_123/round_1_front.jpg",
+        "side_left": "https://storage.googleapis.com/.../posture/member_123/round_1_side_left.jpg",
+        "side_right": "https://storage.googleapis.com/.../posture/member_123/round_1_side_right.jpg",
+        "back": "https://storage.googleapis.com/.../posture/member_123/round_1_back.jpg"
+      },
+      "before": {
+        "front": "https://storage.googleapis.com/.../posture/member_123/round_0_front.jpg",
+        "side_left": "https://storage.googleapis.com/.../posture/member_123/round_0_side_left.jpg",
+        "side_right": "https://storage.googleapis.com/.../posture/member_123/round_0_side_right.jpg",
+        "back": "https://storage.googleapis.com/.../posture/member_123/round_0_back.jpg"
+      }
+    },
+    "view": "front",
+    "rawLandmarks": [
+      {
+        "index": 0,
+        "name": "nose",
+        "x": 0.5021,
+        "y": 0.0843,
+        "z": -0.114,
+        "visibility": 0.99
+      }
+    ],
+    "analysis": {
+      "score": 82,
+      "bodyAge": 33,
+      "status": "normal",
+      "scoreComponents": {
+        "deviation": 86,
+        "asymmetry": 78,
+        "rules": 100,
+        "cog": 84
+      },
+      "asymmetry": {
+        "averageAsi": 6.8,
+        "jointAsi": {
+          "hip": 4.1,
+          "knee": 7.3,
+          "ankle": 9.0
+        },
+        "frontalTiltDeg": {
+          "shoulder": 1.4,
+          "pelvis": -0.8
+        }
+      },
+      "rotations": {
+        "rollDeg": 0.3,
+        "pitchDeg": -2.1,
+        "yawDeg": 3.8
+      },
+      "deviationsMm": {
+        "head": 8.2,
+        "shoulder": 3.6,
+        "pelvis": -4.5,
+        "knee": 6.1
+      },
+      "cog": {
+        "available": true,
+        "status": "caution",
+        "offsetPct": 21.4,
+        "direction": "right",
+        "cogLine": {
+          "top": { "x": 0.504, "y": 0.224, "z": -0.03 },
+          "bottom": { "x": 0.518, "y": 0.512, "z": 0.01 },
+          "xAtBos": 0.544
+        },
+        "bos": {
+          "left": { "x": 0.421, "y": 0.912, "z": 0.02 },
+          "right": { "x": 0.604, "y": 0.914, "z": 0.01 },
+          "center": { "x": 0.5125, "y": 0.913, "z": 0.015 },
+          "width": 0.183
+        }
+      },
+      "rules": {
+        "status": "normal",
+        "findings": [],
+        "kneeExtension": {
+          "left": 178.4,
+          "right": 179.1
+        },
+        "legAlignment": {
+          "key": "leg_alignment",
+          "status": "normal",
+          "label": "하지 정렬",
+          "value": 4.2,
+          "unit": "index",
+          "message": "정면 하지 정렬이 정상 범위에 가깝습니다."
+        }
+      },
+      "summaryComment": "통합 체형 점수는 82점으로 양호 단계입니다. 체형 나이는 실제 나이보다 3세 젊게 추정됩니다."
+    },
+    "comparison": {
+      "previousReportId": "member_123_round_20260401_001",
+      "previousRound": 0,
+      "previousImageUrl": "https://storage.googleapis.com/.../posture/member_123/round_0_front.jpg",
+      "image_urls": {
+        "front": "https://storage.googleapis.com/.../posture/member_123/round_0_front.jpg",
+        "side_left": "https://storage.googleapis.com/.../posture/member_123/round_0_side_left.jpg",
+        "side_right": "https://storage.googleapis.com/.../posture/member_123/round_0_side_right.jpg",
+        "back": "https://storage.googleapis.com/.../posture/member_123/round_0_back.jpg"
+      },
+      "scoreDelta": 11,
+      "bodyAgeDelta": -5
+    },
+    "trainerComment": "우측 체중 지지 편향을 줄이는 골반 안정화 운동을 우선 적용.",
+    "updatedAt": "2026-06-27T10:30:00.000+09:00"
+  },
+  "securityRuleReminder": "firestore.rules includes match /posture_reports/{id} { allow read, write: if isSignedIn(); }. For stricter production separation, add member ownership or center/team role checks."
+}
