@@ -769,9 +769,10 @@ function clamp(value, min, max) {
 //        (정규화: 사람 기준 면 라벨. VIEW_STEPS 의 left/right 와 일치하도록 보정)
 // ════════════════════════════════════════════════════════════════════════
 export const POSTURE_VIEW_TUNING = Object.freeze({
-  shoulderFrontMin: 0.16, // 어깨폭/키 비 이상 → 정면/후면 후보
+  shoulderFrontMin: 0.16, // 어깨폭/몸통높이 비 이상 → 정면/후면 후보
   shoulderSideMax: 0.10,  // 이하 → 측면 후보 (사이 구간은 약한 신뢰도)
-  faceVisFront: 0.55,     // 얼굴 가시성 이상 → 정면 가산
+  faceVisFront: 0.55,     // 코·눈 가시성 이상 → 정면 확정
+  faceVisBack: 0.30,      // 코·눈 가시성 이하 → 후면 확정 (그 사이는 어깨 부호로 보조)
 });
 
 export function detectPostureView(landmarks, tuning = POSTURE_VIEW_TUNING) {
@@ -792,7 +793,7 @@ export function detectPostureView(landmarks, tuning = POSTURE_VIEW_TUNING) {
   const shoulderW = Math.abs(rS.x - lS.x);
   const shoulderRatio = round(shoulderW / trunkH, 3);
 
-  // 얼굴 가시성 (코+양눈+양귀 평균)
+  // 얼굴 가시성 (코+양눈+양귀 평균) — 참고/표시용
   const faceIdx = [LM.NOSE, LM.LEFT_EYE, LM.RIGHT_EYE, LM.LEFT_EAR, LM.RIGHT_EAR];
   const visVals = faceIdx
     .map((i) => landmarks[i])
@@ -800,20 +801,36 @@ export function detectPostureView(landmarks, tuning = POSTURE_VIEW_TUNING) {
     .map((p) => (p.visibility == null ? 0.5 : p.visibility));
   const faceVis = visVals.length ? round(visVals.reduce((a, b) => a + b, 0) / visVals.length, 3) : 0;
 
-  const signLR = lS.x - rS.x; // 정면이면 −(좌어깨가 화면 왼쪽), 후면이면 +
+  // 정면/후면 판별의 '주 신호'는 코·눈 가시성이다.
+  //  · 정면: 코·눈이 카메라를 향해 → visibility 높음
+  //  · 후면: 뒤통수라 코·눈이 가려짐 → visibility 급락
+  // (귀는 옆머리라 후면에서도 일부 잡혀 노이즈가 되므로 정면/후면 판정에서 제외)
+  const faceCore = [LM.NOSE, LM.LEFT_EYE, LM.RIGHT_EYE]
+    .map((i) => landmarks[i])
+    .filter(Boolean)
+    .map((p) => (p.visibility == null ? 0.5 : p.visibility));
+  const coreVis = faceCore.length
+    ? round(faceCore.reduce((a, b) => a + b, 0) / faceCore.length, 3)
+    : 0;
+
+  const signLR = lS.x - rS.x; // 보조 신호: 정면이면 −, 후면이면 + (BlazePose 해부학 좌표라 신뢰도 낮음)
 
   // ── 정면/후면 (어깨 넓음) ──
   if (shoulderRatio >= tuning.shoulderFrontMin) {
-    const frontLike = signLR < 0 || faceVis >= tuning.faceVisFront;
-    const backLike = signLR > 0 && faceVis < tuning.faceVisFront;
-    // 신뢰도: 어깨폭 여유 + 얼굴 가시성 일관성
     const widthConf = clamp((shoulderRatio - tuning.shoulderFrontMin) / 0.1, 0, 1);
-    if (backLike && !frontLike) {
-      const conf = round(0.5 + 0.5 * widthConf * clamp((tuning.faceVisFront - faceVis) / 0.4, 0, 1), 3);
-      return { view: 'back', confidence: conf, shoulderRatio, faceVis };
+
+    // 1순위: 코·눈 가시성으로 확정
+    if (coreVis >= tuning.faceVisFront) {
+      const conf = round(0.55 + 0.45 * widthConf * clamp(coreVis / 0.85, 0, 1), 3);
+      return { view: 'front', confidence: conf, shoulderRatio, faceVis, coreVis };
     }
-    const conf = round(0.5 + 0.5 * widthConf * clamp(faceVis / 0.7, 0, 1), 3);
-    return { view: 'front', confidence: conf, shoulderRatio, faceVis };
+    if (coreVis <= tuning.faceVisBack) {
+      const conf = round(0.55 + 0.45 * widthConf * clamp((tuning.faceVisBack - coreVis + 0.2) / 0.4, 0, 1), 3);
+      return { view: 'back', confidence: conf, shoulderRatio, faceVis, coreVis };
+    }
+    // 2순위(애매 구간): 어깨 부호로 보조 판정 (신뢰도 낮게)
+    const view = signLR > 0 ? 'back' : 'front';
+    return { view, confidence: 0.4, shoulderRatio, faceVis, coreVis };
   }
 
   // ── 측면 (어깨 좁음) ──
@@ -830,11 +847,11 @@ export function detectPostureView(landmarks, tuning = POSTURE_VIEW_TUNING) {
       view = lz < rz ? 'left' : 'right';
     }
     const sideConf = round(0.5 + 0.5 * clamp((tuning.shoulderSideMax - shoulderRatio) / 0.08, 0, 1), 3);
-    return { view, confidence: sideConf, shoulderRatio, faceVis };
+    return { view, confidence: sideConf, shoulderRatio, faceVis, coreVis };
   }
 
   // ── 모호 구간(어깨폭 중간) ──
-  return { view: 'unknown', confidence: 0.2, shoulderRatio, faceVis };
+  return { view: 'unknown', confidence: 0.2, shoulderRatio, faceVis, coreVis };
 }
 
 // 안정 판정용 누적기: 최근 N프레임 다수결 + 목표 면 연속 일치 카운트.

@@ -7,6 +7,21 @@
 //  영상은 용량이 커 Firestore 에 올리지 않으므로, 이 공유가 영상 전달 경로다.
 // ════════════════════════════════════════════════════════════════════════
 
+// data:URL(예: canvas.toDataURL) → File. 자세 측정 면별 스냅샷 저장용.
+export function dataUrlToFile(dataUrl, filename) {
+  if (!dataUrl || typeof dataUrl !== 'string' || !dataUrl.startsWith('data:')) {
+    throw new Error('잘못된 이미지 데이터');
+  }
+  const [head, body] = dataUrl.split(',');
+  const mimeMatch = /data:([^;]+)/.exec(head);
+  const mime = mimeMatch ? mimeMatch[1] : 'image/jpeg';
+  const binary = atob(body);
+  const len = binary.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i += 1) bytes[i] = binary.charCodeAt(i);
+  return new File([bytes], filename, { type: mime });
+}
+
 let _h2cPromise = null;
 export async function loadHtml2Canvas() {
   if (typeof window === 'undefined') throw new Error('no window');

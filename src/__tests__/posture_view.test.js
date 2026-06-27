@@ -59,6 +59,15 @@ describe('detectPostureView', () => {
     expect(r.view).toBe('back');
   });
 
+  it('어깨 x부호가 정면형이어도 코·눈이 가려지면 후면으로 판별한다 (실측 회귀)', () => {
+    // BlazePose 는 뒤돌아도 해부학 좌/우 어깨를 출력 → 어깨 부호가 정면과 같을 수 있음.
+    // 이때 얼굴(코·눈) 가시성이 낮으면 반드시 후면이어야 한다.
+    const pose = frontPose(); // 어깨/엉덩이 x 는 정면 배치 그대로 둠
+    [LM.NOSE, LM.LEFT_EYE, LM.RIGHT_EYE].forEach((i) => { pose[i].visibility = 0.1; });
+    const r = detectPostureView(pose);
+    expect(r.view).toBe('back');
+  });
+
   it('어깨가 좁으면 측면으로 판별한다', () => {
     const r = detectPostureView(sidePose(0.7));
     expect(['left', 'right']).toContain(r.view);

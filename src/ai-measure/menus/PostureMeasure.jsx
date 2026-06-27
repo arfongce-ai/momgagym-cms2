@@ -6,6 +6,8 @@ import { analyzePostureFromLandmarks, classifyPostureAgeGroup, medianLandmarks, 
 import { beepTick, beepGo, beepSuccess, primeAudio } from '../core/audioCue';
 import CameraStage from './CameraStage.jsx';
 import PostureReport from './PostureReport.jsx';
+import ReportActions from '../../components/report/ReportActions';
+import { dataUrlToFile } from '../core/reportShare';
 
 const VIEW_STEPS = [
   { key: 'front', label: '정면', short: '앞' },
@@ -320,7 +322,7 @@ export default function PostureMeasure({ member, onSave, onBack }) {
     if (!report) return;
     setSaveState('saving');
     try {
-      const { localPreviewUrl, ...savePayload } = report;
+      const { localPreviewUrl, perViewSnapshots, ...savePayload } = report;
       await onSave?.(savePayload);
       setSaveState('saved');
     } catch (event) {
@@ -330,6 +332,15 @@ export default function PostureMeasure({ member, onSave, onBack }) {
   };
 
   if (report) {
+    const snapFiles = (report.perViewSnapshots || [])
+      .filter((s) => s.snapshotUrl)
+      .map((s) => {
+        try {
+          return dataUrlToFile(s.snapshotUrl, `${member?.name || '회원'}_자세_${s.label}.jpg`);
+        } catch (e) { return null; }
+      })
+      .filter(Boolean);
+
     return (
       <div className="space-y-4">
         <div className="flex items-center justify-between">
@@ -337,23 +348,37 @@ export default function PostureMeasure({ member, onSave, onBack }) {
           <h2 className="measure-title">자세·체형 측정</h2>
           <button onClick={handleRetake} className="measure-back">다시 측정</button>
         </div>
-        <PostureReport
-          report={report}
-          member={member}
-          currentLandmarks={report.rawLandmarks}
-          currentImageUrl={previewUrl}
-          heightCm={bodyInfo.heightCm}
-          actualAge={bodyInfo.actualAge}
-        />
-        <div className="sticky bottom-20 z-30 rounded-2xl border border-slate-800 bg-slate-950/95 p-3">
+
+        <div id="posture-report-sheet">
+          <PostureReport
+            report={report}
+            member={member}
+            currentLandmarks={report.rawLandmarks}
+            currentImageUrl={previewUrl}
+            heightCm={bodyInfo.heightCm}
+            actualAge={bodyInfo.actualAge}
+            perViewSnapshots={report.perViewSnapshots}
+          />
+        </div>
+
+        <div className="sticky bottom-20 z-30 space-y-2 rounded-2xl border border-slate-800 bg-slate-950/95 p-3">
+          {/* 보행/점프와 동일: 리포트 저장(A4 JPG) + 사진 저장(면별 스냅샷) */}
+          <ReportActions
+            reportNodeId="posture-report-sheet"
+            imageFiles={snapFiles}
+            imageButtonLabel={`📸 사진 저장 (${snapFiles.length}장)`}
+            baseName={`${member?.name || '회원'}_자세`}
+            reportButtonLabel="🖼 리포트 저장"
+            onMessage={() => {}}
+          />
           <button
             onClick={handleSave}
             disabled={saveState === 'saving' || saveState === 'saved'}
             className="btn btn-primary w-full disabled:opacity-60"
           >
-            {saveState === 'saving' ? '저장 중...' : saveState === 'saved' ? '저장 완료' : '회원 기록에 저장'}
+            {saveState === 'saving' ? '저장 중...' : saveState === 'saved' ? '✓ 회원 기록에 저장됨' : '💾 회원 기록에 저장'}
           </button>
-          {saveState === 'error' && <p className="mt-2 text-center text-xs text-red-400">저장 실패. 다시 시도해 주세요.</p>}
+          {saveState === 'error' && <p className="mt-1 text-center text-xs text-red-400">저장 실패. 다시 시도해 주세요.</p>}
         </div>
       </div>
     );
@@ -591,8 +616,19 @@ function buildReport({ member, bodyInfo, captures, selectedSteps }) {
       capturedAt: capture.capturedAt,
       landmarks: capture.landmarks,
       analysis: capture.analysis,
+      snapshotUrl: capture.snapshotUrl || '',
     };
   });
+
+  // 화면 표시용 면별 스냅샷(사진+스켈레톤 점검용). snapshotUrl 은 로컬 ObjectURL 이라
+  // 저장 페이로드(savePayload)에서는 제외된다(localPreviewUrl 와 동일 처리).
+  const perViewSnapshots = selectedSteps
+    .map((step) => {
+      const capture = captures[step.key];
+      if (!capture) return null;
+      return { key: step.key, label: step.label, snapshotUrl: capture.snapshotUrl || '', landmarks: capture.landmarks, analysis: capture.analysis };
+    })
+    .filter(Boolean);
 
   return {
     kind: 'posture',
@@ -614,6 +650,7 @@ function buildReport({ member, bodyInfo, captures, selectedSteps }) {
     rawLandmarks: primaryCapture?.landmarks || [],
     viewLandmarks: Object.fromEntries(Object.entries(perView).map(([key, value]) => [key, value.landmarks])),
     perViewAnalysis: Object.fromEntries(Object.entries(perView).map(([key, value]) => [key, value.analysis])),
+    perViewSnapshots, // 화면 전용 (저장 시 제외)
     analysis: primaryCapture?.analysis,
     postureScore: primaryCapture?.analysis?.score ?? null,
     bodyAge: primaryCapture?.analysis?.bodyAge ?? null,

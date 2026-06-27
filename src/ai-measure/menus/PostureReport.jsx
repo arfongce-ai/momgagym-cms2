@@ -56,6 +56,7 @@ export default function PostureReport({
   previousLandmarks,
   currentImageUrl,
   previousImageUrl,
+  perViewSnapshots,
   member,
   actualAge,
   heightCm,
@@ -174,6 +175,8 @@ export default function PostureReport({
           </div>
         </section>
 
+        <PostureSnapshotGallery snapshots={perViewSnapshots || report?.perViewSnapshots} />
+
         <section className={`rounded-lg border px-4 py-3 ${statusStyle.bg} ${statusStyle.border}`}>
           <p className={`text-sm font-bold ${statusStyle.text}`}>
             현재 상태: {POSTURE_STATUS_KO[analysis.status] || '주의'}
@@ -182,6 +185,80 @@ export default function PostureReport({
             본 리포트는 BlazePose 기반 스크리닝 자료이며, 통증 또는 신경학적 증상이 있는 경우 전문 의료진 평가가 우선입니다.
           </p>
         </section>
+      </div>
+    </div>
+  );
+}
+
+function PostureSnapshotGallery({ snapshots }) {
+  const items = Array.isArray(snapshots) ? snapshots.filter((s) => s && s.snapshotUrl) : [];
+  if (!items.length) return null;
+  return (
+    <section className="rounded-lg border border-slate-800 bg-slate-900 p-4">
+      <div className="mb-3 flex items-center justify-between">
+        <p className="text-sm font-black text-white">측정 장면 ({items.length}면)</p>
+        <p className="text-xs text-slate-500">스켈레톤 인식 상태를 확인하세요</p>
+      </div>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        {items.map((item) => (
+          <SnapshotCard key={item.key} item={item} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function SnapshotCard({ item }) {
+  const canvasRef = React.useRef(null);
+  const imgRef = React.useRef(null);
+
+  const drawOverlay = React.useCallback(() => {
+    const canvas = canvasRef.current;
+    const img = imgRef.current;
+    if (!canvas || !img || !img.naturalWidth) return;
+    canvas.width = img.naturalWidth;
+    canvas.height = img.naturalHeight;
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const lm = item.landmarks;
+    if (!Array.isArray(lm)) return;
+    const px = (p) => ({ x: p.x * canvas.width, y: p.y * canvas.height });
+    ctx.lineWidth = Math.max(2, canvas.width / 180);
+    ctx.strokeStyle = 'rgba(52,211,153,0.9)';
+    SKELETON_CONNECTIONS.forEach(([a, b]) => {
+      const pa = lm[a]; const pb = lm[b];
+      if (!pa || !pb) return;
+      if ((pa.visibility ?? 1) < 0.3 || (pb.visibility ?? 1) < 0.3) return;
+      const A = px(pa); const B = px(pb);
+      ctx.beginPath(); ctx.moveTo(A.x, A.y); ctx.lineTo(B.x, B.y); ctx.stroke();
+    });
+    ctx.fillStyle = '#fde68a';
+    const r = Math.max(2.5, canvas.width / 150);
+    lm.forEach((p) => {
+      if (!p || (p.visibility ?? 1) < 0.3) return;
+      const P = px(p);
+      ctx.beginPath(); ctx.arc(P.x, P.y, r, 0, Math.PI * 2); ctx.fill();
+    });
+  }, [item.landmarks]);
+
+  return (
+    <div className="overflow-hidden rounded-lg border border-slate-700 bg-slate-950">
+      <div className="relative aspect-[3/4] w-full bg-black">
+        <img
+          ref={imgRef}
+          src={item.snapshotUrl}
+          alt={item.label}
+          crossOrigin="anonymous"
+          className="absolute inset-0 h-full w-full object-cover"
+          onLoad={drawOverlay}
+        />
+        <canvas ref={canvasRef} className="absolute inset-0 h-full w-full object-cover" />
+      </div>
+      <div className="flex items-center justify-between px-2 py-1.5">
+        <span className="text-xs font-bold text-slate-200">{item.label}</span>
+        {item.analysis?.score != null && (
+          <span className="text-xs font-black text-amber-300">{item.analysis.score}점</span>
+        )}
       </div>
     </div>
   );
