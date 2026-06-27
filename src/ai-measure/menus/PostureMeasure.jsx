@@ -1,9 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { todayYMD } from '../../utils/dates';
 import { usePoseEngine } from '../core/usePoseEngine';
+import { createSmoother } from '../core/smoothing';
 import { analyzePostureFromLandmarks } from '../core/postureMath';
 import CameraStage from './CameraStage.jsx';
 import PostureReport from './PostureReport.jsx';
+
+const VIEW_STEPS = [
+  { key: 'front', label: '정면', short: '앞' },
+  { key: 'right', label: '우측면', short: '오른쪽' },
+  { key: 'back', label: '후면', short: '뒤' },
+  { key: 'left', label: '좌측면', short: '왼쪽' },
+];
 
 const BONES = [
   [11, 12], [11, 23], [12, 24], [23, 24],
@@ -16,16 +24,42 @@ export default function PostureMeasure({ member, onSave, onBack }) {
   const canvasRef = useRef(null);
   const latestLandmarksRef = useRef(null);
   const latestVideoRef = useRef(null);
+  const smootherRef = useRef(createSmoother(0.28));
+
+  const [selectedViews, setSelectedViews] = useState(() => ({
+    front: true,
+    right: true,
+    back: true,
+    left: true,
+  }));
+  const [activeViewKey, setActiveViewKey] = useState('front');
+  const [captures, setCaptures] = useState({});
   const [liveAnalysis, setLiveAnalysis] = useState(null);
   const [report, setReport] = useState(null);
-  const [snapshotUrl, setSnapshotUrl] = useState('');
+  const [previewUrl, setPreviewUrl] = useState('');
   const [saveState, setSaveState] = useState('idle');
   const [guide, setGuide] = useState('정면으로 서서 전신이 화면 안에 들어오게 맞춰주세요.');
+
+  const selectedSteps = useMemo(
+    () => VIEW_STEPS.filter((step) => selectedViews[step.key]),
+    [selectedViews],
+  );
+  const activeStep = selectedSteps.find((step) => step.key === activeViewKey) || selectedSteps[0] || VIEW_STEPS[0];
+  const activeIndex = Math.max(0, selectedSteps.findIndex((step) => step.key === activeStep.key));
 
   const bodyInfo = useMemo(() => ({
     heightCm: Number(member?.height || member?.heightCm) || null,
     actualAge: getAge(member?.birthDate) || Number(member?.age) || null,
   }), [member]);
+
+  useEffect(() => {
+    if (!selectedSteps.length) {
+      setSelectedViews((prev) => ({ ...prev, front: true }));
+      setActiveViewKey('front');
+      return;
+    }
+    if (!selectedViews[activeViewKey]) setActiveViewKey(selectedSteps[0].key);
+  }, [activeViewKey, selectedSteps, selectedViews]);
 
   const analyzeLandmarks = useCallback((landmarks) => {
     if (!landmarks) return null;
@@ -37,21 +71,21 @@ export default function PostureMeasure({ member, onSave, onBack }) {
 
   const handlePose = useCallback((landmarks, ts, video) => {
     latestVideoRef.current = video || latestVideoRef.current;
-    latestLandmarksRef.current = landmarks || latestLandmarksRef.current;
-    drawSkeleton(canvasRef.current, video, landmarks);
-    if (!landmarks) {
+    const smoothed = landmarks ? smootherRef.current(landmarks) : smootherRef.current(null);
+    latestLandmarksRef.current = smoothed || latestLandmarksRef.current;
+    drawSkeleton(canvasRef.current, video, smoothed);
+
+    if (!smoothed) {
       setGuide('전신이 보이도록 한 걸음 뒤로 이동해 주세요.');
       return;
     }
-    if (!isFullBodyVisible(landmarks)) {
+    if (!isFullBodyVisible(smoothed)) {
       setGuide('어깨, 골반, 무릎, 발목이 모두 보이게 화면을 맞춰주세요.');
       return;
     }
-    setGuide('자세가 인식되었습니다. 정면으로 2초간 멈춘 뒤 측정하세요.');
-    if (ts % 250 < 18) {
-      setLiveAnalysis(analyzeLandmarks(landmarks));
-    }
-  }, [analyzeLandmarks]);
+    setGuide(`${activeStep.label} 자세가 인식되었습니다. 2초간 멈춘 뒤 측정하세요.`);
+    if (ts % 250 < 18) setLiveAnalysis(analyzeLandmarks(smoothed));
+  }, [activeStep.label, analyzeLandmarks]);
 
   const { videoRef, start, stop, status, error } = usePoseEngine({ onResult: handlePose });
 
@@ -60,38 +94,80 @@ export default function PostureMeasure({ member, onSave, onBack }) {
     return () => {
       clearTimeout(timer);
       stop();
-      if (snapshotUrl) URL.revokeObjectURL(snapshotUrl);
+      Object.values(captures).forEach((capture) => {
+        if (capture?.snapshotUrl) URL.revokeObjectURL(capture.snapshotUrl);
+      });
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const toggleView = (key) => {
+    setSelectedViews((prev) => {
+      const enabledCount = Object.values(prev).filter(Boolean).length;
+      if (prev[key] && enabledCount <= 1) return prev;
+      const next = { ...prev, [key]: !prev[key] };
+      if (!next[activeViewKey]) {
+        const first = VIEW_STEPS.find((step) => next[step.key]);
+        if (first) setActiveViewKey(first.key);
+      }
+      return next;
+    });
+  };
+
   const handleCapture = () => {
     const landmarks = latestLandmarksRef.current;
     if (!landmarks || !isFullBodyVisible(landmarks)) {
-      setGuide('측정할 수 있는 전신 포즈가 아직 안정적으로 인식되지 않았습니다.');
+      setGuide('측정 가능한 전신 자세가 아직 안정적으로 인식되지 않았습니다.');
       return;
     }
-    const analysis = analyzeLandmarks(landmarks);
-    const imageUrl = captureVideoSnapshot(latestVideoRef.current);
-    if (snapshotUrl) URL.revokeObjectURL(snapshotUrl);
-    setSnapshotUrl(imageUrl);
-    setReport(buildReport({
+
+    const snapshotUrl = captureVideoSnapshot(latestVideoRef.current);
+    const nextCaptures = {
+      ...captures,
+      [activeStep.key]: {
+        view: activeStep.key,
+        label: activeStep.label,
+        landmarks,
+        analysis: analyzeLandmarks(landmarks),
+        snapshotUrl,
+        capturedAt: new Date().toISOString(),
+      },
+    };
+    if (captures[activeStep.key]?.snapshotUrl) URL.revokeObjectURL(captures[activeStep.key].snapshotUrl);
+    setCaptures(nextCaptures);
+
+    const nextStep = selectedSteps[activeIndex + 1];
+    if (nextStep) {
+      setActiveViewKey(nextStep.key);
+      smootherRef.current = createSmoother(0.28);
+      latestLandmarksRef.current = null;
+      setGuide(`${nextStep.label} 측정으로 이동합니다. 자세를 바꿔주세요.`);
+      return;
+    }
+
+    const finalReport = buildReport({
       member,
       bodyInfo,
-      landmarks,
-      analysis,
-      imageUrl,
-    }));
+      captures: nextCaptures,
+      selectedSteps,
+    });
+    setPreviewUrl(finalReport.localPreviewUrl || '');
+    setReport(finalReport);
     setSaveState('idle');
     stop();
   };
 
   const handleRetake = () => {
-    if (snapshotUrl) URL.revokeObjectURL(snapshotUrl);
-    setSnapshotUrl('');
+    Object.values(captures).forEach((capture) => {
+      if (capture?.snapshotUrl) URL.revokeObjectURL(capture.snapshotUrl);
+    });
+    setCaptures({});
+    setPreviewUrl('');
     setReport(null);
     setSaveState('idle');
+    smootherRef.current = createSmoother(0.28);
     latestLandmarksRef.current = null;
+    setActiveViewKey(selectedSteps[0]?.key || 'front');
     setTimeout(() => start(videoRef.current), 80);
   };
 
@@ -103,7 +179,8 @@ export default function PostureMeasure({ member, onSave, onBack }) {
     if (!report) return;
     setSaveState('saving');
     try {
-      await onSave?.(report);
+      const { localPreviewUrl, ...savePayload } = report;
+      await onSave?.(savePayload);
       setSaveState('saved');
     } catch (event) {
       setSaveState('error');
@@ -123,7 +200,7 @@ export default function PostureMeasure({ member, onSave, onBack }) {
           report={report}
           member={member}
           currentLandmarks={report.rawLandmarks}
-          currentImageUrl={snapshotUrl}
+          currentImageUrl={previewUrl}
           heightCm={bodyInfo.heightCm}
           actualAge={bodyInfo.actualAge}
         />
@@ -150,23 +227,36 @@ export default function PostureMeasure({ member, onSave, onBack }) {
       onClose={onBack}
       tappable={false}
       showFutureOverlay={false}
-      overlay={{
-        mode: 'POSTURE AI',
-        primary: liveAnalysis ? `${liveAnalysis.score}점` : 'POSTURE READY',
-        secondary: liveAnalysis?.bodyAge ? `체형 나이 ${liveAnalysis.bodyAge}세` : 'Body alignment scan',
-        gauges: [
-          { label: 'SCORE', value: liveAnalysis?.score ?? '--', percent: liveAnalysis?.score ?? 0, tone: scoreTone(liveAnalysis?.score) },
-          { label: 'CoG', value: liveAnalysis?.cog?.available ? `${Math.abs(liveAnalysis.cog.balanceOffsetPct ?? liveAnalysis.cog.offsetPct)}%` : '--', percent: Math.min(100, Math.abs(liveAnalysis?.cog?.balanceOffsetPct ?? liveAnalysis?.cog?.offsetPct ?? 0) * 2), tone: 'emerald' },
-        ],
-        ringLabel: liveAnalysis?.score ?? 'AI',
-      }}
       topBar={
-        <div className="text-right">
+        <div className="w-full text-right">
           <p className="text-sm font-black text-white">자세·체형 측정</p>
           <p className="text-[11px] font-bold text-amber-300">
             {member?.name || '회원 미선택'} · {bodyInfo.heightCm ? `${bodyInfo.heightCm}cm` : '키 미입력'} · {bodyInfo.actualAge ? `${bodyInfo.actualAge}세` : '나이 미입력'}
           </p>
-          {!bodyInfo.heightCm && <p className="text-[10px] text-red-300">신체정보에서 키를 입력하면 mm 편차 정확도가 올라갑니다.</p>}
+          <div className="mt-2 flex flex-wrap justify-end gap-1">
+            {VIEW_STEPS.map((step) => {
+              const selected = !!selectedViews[step.key];
+              const captured = !!captures[step.key];
+              const active = activeStep.key === step.key;
+              return (
+                <button
+                  key={step.key}
+                  type="button"
+                  onClick={() => toggleView(step.key)}
+                  className={`rounded-full border px-2.5 py-1 text-[10px] font-black ${
+                    active
+                      ? 'border-amber-300 bg-amber-400 text-slate-950'
+                      : selected
+                      ? 'border-white/25 bg-black/45 text-white'
+                      : 'border-white/10 bg-black/20 text-white/35'
+                  }`}
+                >
+                  {captured ? '✓ ' : ''}{step.short}
+                </button>
+              );
+            })}
+          </div>
+          {!bodyInfo.heightCm && <p className="mt-1 text-[10px] text-red-300">신체정보에서 키를 입력하면 mm 편차 정확도가 올라갑니다.</p>}
         </div>
       }
       controls={
@@ -175,11 +265,23 @@ export default function PostureMeasure({ member, onSave, onBack }) {
           disabled={status !== 'running' || !isFullBodyVisible(latestLandmarksRef.current)}
           className="h-20 w-20 rounded-full border-4 border-white bg-amber-500 text-xs font-black text-slate-950 shadow-lg disabled:bg-slate-600 disabled:text-slate-300"
         >
+          {activeStep.short}
+          <br />
           측정
         </button>
       }
     >
       <div className="mx-auto max-w-md space-y-2">
+        <div className="flex justify-center gap-1">
+          {selectedSteps.map((step, index) => (
+            <span
+              key={step.key}
+              className={`h-2 rounded-full transition-all ${
+                captures[step.key] ? 'w-6 bg-emerald-400' : index === activeIndex ? 'w-6 bg-amber-400' : 'w-2 bg-white/30'
+              }`}
+            />
+          ))}
+        </div>
         {liveAnalysis && (
           <div className="grid grid-cols-3 gap-2">
             <LiveMetric label="점수" value={`${liveAnalysis.score}`} tone={scoreTone(liveAnalysis.score)} />
@@ -192,7 +294,7 @@ export default function PostureMeasure({ member, onSave, onBack }) {
           </div>
         )}
         <div className="rounded-2xl border border-white/10 bg-black/55 px-4 py-3 text-center text-sm font-bold text-white backdrop-blur">
-          {guide}
+          <span className="text-amber-300">{activeStep.label}</span> · {guide}
         </div>
       </div>
     </CameraStage>
@@ -213,7 +315,20 @@ function LiveMetric({ label, value, tone = 'amber' }) {
   );
 }
 
-function buildReport({ member, bodyInfo, landmarks, analysis, imageUrl }) {
+function buildReport({ member, bodyInfo, captures, selectedSteps }) {
+  const primaryCapture = captures.front || selectedSteps.map((step) => captures[step.key]).find(Boolean);
+  const perView = {};
+  selectedSteps.forEach((step) => {
+    const capture = captures[step.key];
+    if (!capture) return;
+    perView[step.key] = {
+      label: step.label,
+      capturedAt: capture.capturedAt,
+      landmarks: capture.landmarks,
+      analysis: capture.analysis,
+    };
+  });
+
   return {
     kind: 'posture',
     member: member ? { id: member.id, name: member.name } : null,
@@ -221,20 +336,24 @@ function buildReport({ member, bodyInfo, landmarks, analysis, imageUrl }) {
     memberName: member?.name || '',
     measurementRound: 1,
     pairKey: member?.id ? `${member.id}_posture` : 'posture_unassigned',
-    phase: 'single',
+    phase: 'multi_view',
     measuredAt: new Date().toISOString(),
     recordedAt: todayYMD(),
     heightCm: bodyInfo.heightCm,
     actualAge: bodyInfo.actualAge,
-    view: 'front',
+    view: primaryCapture?.view || 'front',
+    viewsMeasured: selectedSteps.map((step) => step.key),
     imageUrl: '',
     image_urls: { front: '', side_left: '', side_right: '', back: '', current: { front: '', side_left: '', side_right: '', back: '' }, before: {} },
-    rawLandmarks: landmarks,
-    analysis,
-    postureScore: analysis.score,
-    bodyAge: analysis.bodyAge,
-    summaryComment: analysis.summaryComment,
+    rawLandmarks: primaryCapture?.landmarks || [],
+    viewLandmarks: Object.fromEntries(Object.entries(perView).map(([key, value]) => [key, value.landmarks])),
+    perViewAnalysis: Object.fromEntries(Object.entries(perView).map(([key, value]) => [key, value.analysis])),
+    analysis: primaryCapture?.analysis,
+    postureScore: primaryCapture?.analysis?.score ?? null,
+    bodyAge: primaryCapture?.analysis?.bodyAge ?? null,
+    summaryComment: primaryCapture?.analysis?.summaryComment || '',
     comparison: {},
+    localPreviewUrl: primaryCapture?.snapshotUrl || '',
   };
 }
 
@@ -252,8 +371,8 @@ function drawSkeleton(canvas, video, landmarks) {
   if (!landmarks) return;
 
   const mapper = objectContainMapper(video, width, height);
-  ctx.strokeStyle = 'rgba(52,211,153,0.95)';
-  ctx.lineWidth = 3;
+  ctx.strokeStyle = 'rgba(52,211,153,0.88)';
+  ctx.lineWidth = 2.25;
   ctx.lineCap = 'round';
   BONES.forEach(([a, b]) => {
     const pa = landmarks[a];
@@ -265,12 +384,12 @@ function drawSkeleton(canvas, video, landmarks) {
     ctx.stroke();
   });
 
-  ctx.fillStyle = 'rgba(255,255,255,0.95)';
+  ctx.fillStyle = 'rgba(255,255,255,0.88)';
   [11, 12, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32].forEach((index) => {
     const point = landmarks[index];
     if (!isVisible(point)) return;
     ctx.beginPath();
-    ctx.arc(mapper.x(point), mapper.y(point), 5, 0, Math.PI * 2);
+    ctx.arc(mapper.x(point), mapper.y(point), 3.5, 0, Math.PI * 2);
     ctx.fill();
   });
 }
