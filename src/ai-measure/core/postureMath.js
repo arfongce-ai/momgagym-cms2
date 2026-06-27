@@ -751,3 +751,118 @@ function higherSideFromY(left, right) {
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
+
+// ════════════════════════════════════════════════════════════════════════
+//  촬영 방향(면) 판별 — 자세·체형 자동 촬영용
+//  반환: { view: 'front'|'back'|'left'|'right'|'unknown', confidence, shoulderRatio, faceVis }
+//
+//  신호(모두 카메라 거리와 무관하게 정규화):
+//   1) 어깨폭/몸통높이 비(shoulderRatio):
+//        넓다(≥ frontMin) → 정면/후면(어깨가 카메라를 향해 펼쳐짐)
+//        좁다(≤ sideMax)  → 좌/우 측면(어깨가 겹쳐 보임)
+//   2) 정면 vs 후면: 환경(후면) 카메라 기준, 사람이 정면을 보면
+//        왼어깨(LM11)가 화면 오른쪽(x 큼) → (L.x - R.x) > 0
+//        뒤돌면 부호가 뒤집힌다 → (L.x - R.x) < 0
+//        + 얼굴 랜드마크(코·눈) 가시성: 정면 높음, 후면 낮음 (보조 확인)
+//   3) 좌 vs 우 측면: 카메라를 향한 쪽(코가 가리키는 x 방향)으로 판별.
+//        코가 어깨중심보다 화면 오른쪽 → 사람의 '왼쪽'이 카메라를 향함 → 좌측면
+//        (정규화: 사람 기준 면 라벨. VIEW_STEPS 의 left/right 와 일치하도록 보정)
+// ════════════════════════════════════════════════════════════════════════
+export const POSTURE_VIEW_TUNING = Object.freeze({
+  shoulderFrontMin: 0.16, // 어깨폭/키 비 이상 → 정면/후면 후보
+  shoulderSideMax: 0.10,  // 이하 → 측면 후보 (사이 구간은 약한 신뢰도)
+  faceVisFront: 0.55,     // 얼굴 가시성 이상 → 정면 가산
+});
+
+export function detectPostureView(landmarks, tuning = POSTURE_VIEW_TUNING) {
+  const empty = { view: 'unknown', confidence: 0, shoulderRatio: null, faceVis: null };
+  if (!Array.isArray(landmarks)) return empty;
+  const lS = getLandmark(landmarks, LM.LEFT_SHOULDER, 0.2);
+  const rS = getLandmark(landmarks, LM.RIGHT_SHOULDER, 0.2);
+  const lH = getLandmark(landmarks, LM.LEFT_HIP, 0.2);
+  const rH = getLandmark(landmarks, LM.RIGHT_HIP, 0.2);
+  if (!lS || !rS || !lH || !rH) return empty;
+
+  const shoulderMid = midpoint(lS, rS);
+  const hipMid = midpoint(lH, rH);
+  const trunkH = Math.abs((hipMid?.y ?? 0) - (shoulderMid?.y ?? 0));
+  if (trunkH < EPS) return empty;
+
+  // 1) 어깨폭(수평 성분) / 몸통높이
+  const shoulderW = Math.abs(rS.x - lS.x);
+  const shoulderRatio = round(shoulderW / trunkH, 3);
+
+  // 얼굴 가시성 (코+양눈+양귀 평균)
+  const faceIdx = [LM.NOSE, LM.LEFT_EYE, LM.RIGHT_EYE, LM.LEFT_EAR, LM.RIGHT_EAR];
+  const visVals = faceIdx
+    .map((i) => landmarks[i])
+    .filter(Boolean)
+    .map((p) => (p.visibility == null ? 0.5 : p.visibility));
+  const faceVis = visVals.length ? round(visVals.reduce((a, b) => a + b, 0) / visVals.length, 3) : 0;
+
+  const signLR = lS.x - rS.x; // 정면이면 −(좌어깨가 화면 왼쪽), 후면이면 +
+
+  // ── 정면/후면 (어깨 넓음) ──
+  if (shoulderRatio >= tuning.shoulderFrontMin) {
+    const frontLike = signLR < 0 || faceVis >= tuning.faceVisFront;
+    const backLike = signLR > 0 && faceVis < tuning.faceVisFront;
+    // 신뢰도: 어깨폭 여유 + 얼굴 가시성 일관성
+    const widthConf = clamp((shoulderRatio - tuning.shoulderFrontMin) / 0.1, 0, 1);
+    if (backLike && !frontLike) {
+      const conf = round(0.5 + 0.5 * widthConf * clamp((tuning.faceVisFront - faceVis) / 0.4, 0, 1), 3);
+      return { view: 'back', confidence: conf, shoulderRatio, faceVis };
+    }
+    const conf = round(0.5 + 0.5 * widthConf * clamp(faceVis / 0.7, 0, 1), 3);
+    return { view: 'front', confidence: conf, shoulderRatio, faceVis };
+  }
+
+  // ── 측면 (어깨 좁음) ──
+  if (shoulderRatio <= tuning.shoulderSideMax) {
+    const nose = getLandmark(landmarks, LM.NOSE, 0.15);
+    // 코가 어깨중심 기준 어느 쪽(화면 x)을 향하는지로 좌/우 측면 판별.
+    // 코가 화면 오른쪽(x 큼) → 사람의 왼쪽 면이 카메라 → '좌측면(left)'.
+    let view = 'unknown';
+    if (nose && shoulderMid) {
+      view = nose.x > shoulderMid.x ? 'left' : 'right';
+    } else {
+      // 코 미검출 시 어깨 z-깊이로 보조: 카메라에 가까운(z 작은) 어깨가 앞.
+      const lz = lS.z ?? 0, rz = rS.z ?? 0;
+      view = lz < rz ? 'left' : 'right';
+    }
+    const sideConf = round(0.5 + 0.5 * clamp((tuning.shoulderSideMax - shoulderRatio) / 0.08, 0, 1), 3);
+    return { view, confidence: sideConf, shoulderRatio, faceVis };
+  }
+
+  // ── 모호 구간(어깨폭 중간) ──
+  return { view: 'unknown', confidence: 0.2, shoulderRatio, faceVis };
+}
+
+// 안정 판정용 누적기: 최근 N프레임 다수결 + 목표 면 연속 일치 카운트.
+export class PostureViewVoter {
+  constructor({ window = 12 } = {}) {
+    this.window = window;
+    this.buf = [];
+  }
+  push(view) {
+    if (!view) return;
+    this.buf.push(view);
+    if (this.buf.length > this.window) this.buf.shift();
+  }
+  reset() { this.buf = []; }
+  // 현재 다수결 면과 그 비율
+  majority() {
+    if (!this.buf.length) return { view: 'unknown', ratio: 0 };
+    const counts = {};
+    this.buf.forEach((v) => { counts[v] = (counts[v] || 0) + 1; });
+    let best = 'unknown', bestN = 0;
+    Object.entries(counts).forEach(([v, n]) => { if (n > bestN) { best = v; bestN = n; } });
+    return { view: best, ratio: round(bestN / this.buf.length, 2) };
+  }
+  // 목표 면이 충분히 안정적으로(비율·표본수) 잡혔는지
+  isStable(target, { minRatio = 0.7, minFrames = 8 } = {}) {
+    if (this.buf.length < minFrames) return false;
+    const { view, ratio } = this.majority();
+    return view === target && ratio >= minRatio;
+  }
+}
+

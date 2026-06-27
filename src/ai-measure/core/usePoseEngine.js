@@ -12,10 +12,15 @@ import { openMainCameraStream } from './cameraSelect';
 
 const VISION_CDN =
   'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14';
-const MODEL_URL =
-  'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task';
+// 모델 등급별 URL. 정확도: lite < full < heavy. 발목/발 등 말단 관절은
+// full 이 lite 보다 확연히 안정적으로 잡힌다(자세·체형 측정 발목 누락 개선).
+const MODEL_URLS = {
+  lite: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task',
+  full: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task',
+  heavy: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_heavy/float16/1/pose_landmarker_heavy.task',
+};
 
-export function usePoseEngine({ onResult } = {}) {
+export function usePoseEngine({ onResult, modelTier = 'full' } = {}) {
   const videoRef = useRef(null);
   const landmarkerRef = useRef(null);
   const streamRef = useRef(null);
@@ -35,8 +40,9 @@ export function usePoseEngine({ onResult } = {}) {
       const vision = await import(/* @vite-ignore */ `${VISION_CDN}`);
       const { FilesetResolver, PoseLandmarker } = vision;
       const fileset = await FilesetResolver.forVisionTasks(`${VISION_CDN}/wasm`);
+      const modelUrl = MODEL_URLS[modelTier] || MODEL_URLS.full;
       const buildOpts = (delegate) => ({
-        baseOptions: { modelAssetPath: MODEL_URL, delegate },
+        baseOptions: { modelAssetPath: modelUrl, delegate },
         runningMode: 'VIDEO',
         numPoses: 1,
         minPoseDetectionConfidence: 0.5,
@@ -113,7 +119,7 @@ export function usePoseEngine({ onResult } = {}) {
       setStatus('error');
       stop();
     }
-  }, [onResult]);
+  }, [onResult, modelTier]);
 
   // 자원 회수: 카메라 트랙 정지 + landmarker close + 루프 중단
   const stop = useCallback(() => {
