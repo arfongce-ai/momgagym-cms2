@@ -5,6 +5,7 @@ import { useRef, useState, useEffect, useCallback } from 'react';
 import { todayYMD } from '../../utils/dates';
 import { openMainCameraStream } from '../core/cameraSelect';
 import { formatStopwatch } from '../core/recordingOverlay';
+import { nextPhase, firstPhase, phaseDurationSec } from '../core/intervalTimer';
 
 // High-quality recording. Output is full-resolution with a high bitrate.
 // Tune per-purpose later (e.g. higher FPS for fast lifts, smaller bitrate
@@ -118,6 +119,12 @@ export default function RecordMeasure({ member, onBack }) {
   const [stopwatchRunning, setStopwatchRunning] = useState(false);
   const [metronomeBpm, setMetronomeBpm] = useState(100);
   const [metronomePlaying, setMetronomePlaying] = useState(false);
+  // 인터벌 타이머 설정/진행 상태 (탭 전환해도 유지되도록 부모가 보관)
+  const intervalStateRef = useRef({
+    workSec: 30, restSec: 15, rounds: 8, prepSec: 5,
+    phase: 'idle', round: 1, endAt: 0, running: false,
+  });
+  const [intervalView, setIntervalView] = useState(0); // 리렌더 트리거용
   const [videoReady, setVideoReady] = useState(false);
   const [cameraNote, setCameraNote] = useState('');
   const [savedSize, setSavedSize] = useState('');
@@ -410,6 +417,7 @@ export default function RecordMeasure({ member, onBack }) {
         <div className="flex gap-1 rounded-full bg-black/25 p-0.5">
           {[
             ['stopwatch', '초시계'],
+            ['interval', '인터벌'],
             ['metronome', '메트로놈'],
           ].map(([key, label]) => (
             <button
@@ -430,6 +438,8 @@ export default function RecordMeasure({ member, onBack }) {
           onElapsedChange={setStopwatchElapsed}
           onRunningChange={setStopwatchRunning}
         />
+      ) : toolTab === 'interval' ? (
+        <InlineInterval stateRef={intervalStateRef} onChange={() => setIntervalView((v) => v + 1)} />
       ) : (
         <InlineMetronome
           bpm={metronomeBpm}
@@ -660,6 +670,180 @@ function InlineMetronome({ bpm, playing, onBpmChange, onPlayingChange }) {
       <button onClick={playing ? stop : start} className={`h-11 w-16 rounded-xl text-xs font-black ${playing ? 'bg-white/20 text-white' : 'bg-amber-500/90 text-slate-950'}`}>
         {playing ? '정지' : '시작'}
       </button>
+    </div>
+  );
+}
+
+// 녹화 중 미니 패널용 인터벌 타이머. 진행 상태는 부모 stateRef 에 저장되어
+// 다른 탭(초시계/메트로놈)으로 갔다 와도 카운트가 유지된다.
+function InlineInterval({ stateRef, onChange }) {
+  const rafRef = useRef(null);
+  const ctxRef = useRef(null);
+  const lastTickRef = useRef(-1);
+
+  const beep = useCallback((tone) => {
+    try {
+      if (!ctxRef.current) ctxRef.current = new (window.AudioContext || window.webkitAudioContext)();
+      const ctx = ctxRef.current;
+      if (ctx.state === 'suspended') ctx.resume();
+      const now = ctx.currentTime;
+      const blips =
+        tone === 'work' ? [[880, 0], [1320, 0.12]]
+          : tone === 'rest' ? [[660, 0]]
+            : tone === 'done' ? [[660, 0], [880, 0.15], [1180, 0.3]]
+              : [[1000, 0]];
+      for (const [freq, t] of blips) {
+        const o = ctx.createOscillator();
+        const g = ctx.createGain();
+        o.frequency.value = freq;
+        const dur = tone === 'count' ? 0.06 : 0.12;
+        g.gain.setValueAtTime(0.4, now + t);
+        g.gain.exponentialRampToValueAtTime(0.001, now + t + dur);
+        o.connect(g);
+        g.connect(ctx.destination);
+        o.start(now + t);
+        o.stop(now + t + dur);
+      }
+    } catch (e) { /* noop */ }
+  }, []);
+
+  const secFor = (s, ph) => phaseDurationSec(s, ph);
+
+  const enterPhase = useCallback((ph, rnd) => {
+    const s = stateRef.current;
+    s.phase = ph;
+    s.round = rnd;
+    s.endAt = performance.now() + secFor(s, ph) * 1000;
+    if (ph === 'work') beep('work');
+    else if (ph === 'rest') beep('rest');
+  }, [stateRef, beep]);
+
+  const finish = useCallback(() => {
+    const s = stateRef.current;
+    cancelAnimationFrame(rafRef.current);
+    s.running = false;
+    s.phase = 'done';
+    beep('done');
+    onChange();
+  }, [stateRef, beep, onChange]);
+
+  const advance = useCallback(() => {
+    const s = stateRef.current;
+    const nxt = nextPhase(s, { phase: s.phase, round: s.round });
+    if (nxt.phase === 'done') { finish(); return; }
+    enterPhase(nxt.phase, nxt.round);
+  }, [stateRef, enterPhase, finish]);
+
+  const tick = useCallback(() => {
+    const s = stateRef.current;
+    const left = s.endAt - performance.now();
+    const leftSec = Math.ceil(left / 1000);
+    if (left > 0 && leftSec <= 3 && leftSec !== lastTickRef.current) {
+      lastTickRef.current = leftSec;
+      beep('count');
+    }
+    if (left <= 0) {
+      lastTickRef.current = -1;
+      advance();
+      onChange();
+      if (s.phase !== 'done') rafRef.current = requestAnimationFrame(tick);
+      return;
+    }
+    onChange();
+    rafRef.current = requestAnimationFrame(tick);
+  }, [stateRef, beep, advance, onChange]);
+
+  // 패널이 떠 있는 동안 진행 중이면 루프를 이어붙인다(탭 복귀 시 재개).
+  useEffect(() => {
+    const s = stateRef.current;
+    if (s.running && s.phase !== 'idle' && s.phase !== 'done') {
+      rafRef.current = requestAnimationFrame(tick);
+    }
+    return () => cancelAnimationFrame(rafRef.current);
+  }, [stateRef, tick]);
+
+  useEffect(() => () => {
+    cancelAnimationFrame(rafRef.current);
+    if (ctxRef.current) { try { ctxRef.current.close(); } catch (e) { /* noop */ } }
+  }, []);
+
+  const s = stateRef.current;
+  const startPause = () => {
+    if (s.running) {
+      cancelAnimationFrame(rafRef.current);
+      s.running = false;
+      // 남은 시간 보존: endAt 을 남은 ms 로 환산해 둔다
+      s.remainAt = s.endAt - performance.now();
+      onChange();
+      return;
+    }
+    if (s.phase === 'idle' || s.phase === 'done') {
+      const f = firstPhase(s);
+      enterPhase(f.phase, f.round);
+    } else if (s.remainAt != null) {
+      s.endAt = performance.now() + s.remainAt;
+    }
+    s.running = true;
+    rafRef.current = requestAnimationFrame(tick);
+    onChange();
+  };
+  const reset = () => {
+    cancelAnimationFrame(rafRef.current);
+    s.phase = 'idle';
+    s.round = 1;
+    s.running = false;
+    lastTickRef.current = -1;
+    onChange();
+  };
+  const setField = (key, val, min, max) => {
+    s[key] = Math.max(min, Math.min(max, Number(val) || 0));
+    onChange();
+  };
+
+  const left = s.running || s.phase !== 'idle' ? Math.max(0, s.endAt - performance.now()) : 0;
+  const showSec = s.phase === 'idle' ? 0 : Math.ceil(left / 1000);
+  const mm = Math.floor(showSec / 60), ss = showSec % 60;
+  const phaseLabel = s.phase === 'prepare' ? '준비' : s.phase === 'work' ? '운동' : s.phase === 'rest' ? '휴식' : s.phase === 'done' ? '완료' : '대기';
+  const phaseColor = s.phase === 'work' ? 'text-emerald-300' : s.phase === 'rest' ? 'text-sky-300' : s.phase === 'prepare' ? 'text-amber-300' : 'text-white/70';
+  const bigTime = s.phase === 'idle' ? '--:--' : s.phase === 'done' ? '완료!' : `${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`;
+
+  if (s.phase === 'idle') {
+    return (
+      <div className="space-y-2">
+        <div className="grid grid-cols-4 gap-1">
+          {[
+            ['운동', 'workSec', 1, 599],
+            ['휴식', 'restSec', 0, 599],
+            ['회', 'rounds', 1, 99],
+            ['준비', 'prepSec', 0, 60],
+          ].map(([label, key, min, max]) => (
+            <div key={key} className="flex flex-col items-center">
+              <span className="text-[9px] text-white/50">{label}</span>
+              <input
+                type="number" value={s[key]} min={min} max={max}
+                onChange={(e) => setField(key, e.target.value, min, max)}
+                className="w-full bg-black/25 border border-white/15 text-white rounded-lg px-1 py-1 text-center text-sm font-mono"
+              />
+            </div>
+          ))}
+        </div>
+        <button onClick={startPause} className="w-full rounded-xl bg-amber-500/90 py-2 text-xs font-black text-slate-950">시작</button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-2">
+      <div className="flex-1 rounded-xl bg-black/20 px-3 py-1.5 text-center">
+        <p className={`text-[10px] font-bold ${phaseColor}`}>
+          {phaseLabel}{(s.phase === 'work' || s.phase === 'rest') && <span className="text-white/45"> · {s.round}/{s.rounds}</span>}
+        </p>
+        <p className={`font-mono text-2xl font-black tabular-nums ${phaseColor}`}>{bigTime}</p>
+      </div>
+      <button onClick={startPause} className={`h-11 w-16 rounded-xl text-xs font-black ${s.running ? 'bg-white/20 text-white' : 'bg-amber-500/90 text-slate-950'}`}>
+        {s.running ? '정지' : (s.phase === 'done' ? '시작' : '계속')}
+      </button>
+      <button onClick={reset} className="h-11 w-14 rounded-xl border border-white/15 text-xs font-bold text-white/75">리셋</button>
     </div>
   );
 }

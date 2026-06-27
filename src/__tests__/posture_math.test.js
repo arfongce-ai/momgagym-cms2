@@ -11,6 +11,7 @@ import {
   getReliableLandmarks,
   isPelvisDataReliable,
   mapScoreToBodyAge,
+  medianLandmarks,
 } from '../ai-measure/core/postureMath';
 import { normalizeLandmarksForOverlay } from '../ai-measure/menus/PostureReport.jsx';
 
@@ -166,5 +167,64 @@ describe('postureMath', () => {
     expect(analysis.bodyAge).toBeGreaterThan(0);
     expect(analysis.cog.available).toBe(true);
     expect(analysis.asymmetry.jointAsi).toHaveProperty('knee');
+  });
+});
+
+describe('medianLandmarks (capture-time jitter rejection)', () => {
+  const frame = (vals) =>
+    Array.from({ length: 33 }, (_, i) => ({
+      x: vals.x ?? 0.5,
+      y: vals.y ?? 0.5,
+      z: 0,
+      visibility: 0.9,
+      _i: i,
+    }));
+
+  it('returns null for empty input', () => {
+    expect(medianLandmarks([])).toBe(null);
+    expect(medianLandmarks(null)).toBe(null);
+  });
+
+  it('returns the single frame unchanged when only one is given', () => {
+    const f = frame({ x: 0.4 });
+    expect(medianLandmarks([f])).toBe(f);
+  });
+
+  it('takes per-coordinate median across frames', () => {
+    const frames = [frame({ x: 0.40 }), frame({ x: 0.50 }), frame({ x: 0.60 })];
+    const out = medianLandmarks(frames);
+    expect(out[LM.LEFT_HIP].x).toBeCloseTo(0.50, 5);
+  });
+
+  it('rejects a single-frame outlier (median not pulled by the spike)', () => {
+    // 4 frames near 0.50, one wild spike at 0.99 → median stays ~0.50, not the mean
+    const frames = [
+      frame({ x: 0.50 }),
+      frame({ x: 0.51 }),
+      frame({ x: 0.49 }),
+      frame({ x: 0.50 }),
+      frame({ x: 0.99 }), // 순간 오검출(튐)
+    ];
+    const out = medianLandmarks(frames);
+    expect(out[LM.LEFT_SHOULDER].x).toBeCloseTo(0.50, 2);
+    // 평균(≈0.598)과는 분명히 다름 → 이상치에 끌려가지 않음
+    expect(out[LM.LEFT_SHOULDER].x).toBeLessThan(0.6);
+  });
+
+  it('combines only frames where a landmark is present', () => {
+    const f1 = frame({ x: 0.40 });
+    const f2 = frame({ x: 0.60 });
+    const f3 = frame({ x: 0.50 });
+    f2[LM.NOSE] = null; // 한 프레임에서 코가 안 잡힘
+    const out = medianLandmarks([f1, f2, f3]);
+    // 코는 잡힌 두 프레임(0.40, 0.50)만으로 중앙값 → 0.45
+    expect(out[LM.NOSE].x).toBeCloseTo(0.45, 5);
+  });
+
+  it('produces a usable pose for analysis (no crash, valid score)', () => {
+    const frames = [makePose(), makePose(), makePose()];
+    const combined = medianLandmarks(frames);
+    const analysis = analyzePostureFromLandmarks(combined, { heightCm: 175, actualAge: 35 });
+    expect(analysis.score).toBeGreaterThan(0);
   });
 });

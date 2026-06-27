@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { todayYMD } from '../../utils/dates';
 import { usePoseEngine } from '../core/usePoseEngine';
 import { createSmoother } from '../core/smoothing';
-import { analyzePostureFromLandmarks, classifyPostureAgeGroup } from '../core/postureMath';
+import { analyzePostureFromLandmarks, classifyPostureAgeGroup, medianLandmarks } from '../core/postureMath';
 import CameraStage from './CameraStage.jsx';
 import PostureReport from './PostureReport.jsx';
 
@@ -20,11 +20,19 @@ const BONES = [
   [24, 26], [26, 28], [28, 30], [28, 32], [30, 32],
 ];
 
+// 캡처 직전 이 시간(ms) 동안 모인 프레임을 좌표별 중앙값으로 결합해 떨림 제거.
+// 시간 기반이라 카메라 fps 와 무관하게 동작한다(30fps≈15장, 60fps≈30장).
+const CAPTURE_WINDOW_MS = 500;
+const CAPTURE_MIN_FRAMES = 3;
+
 export default function PostureMeasure({ member, onSave, onBack }) {
   const canvasRef = useRef(null);
   const latestLandmarksRef = useRef(null);
   const latestVideoRef = useRef(null);
   const smootherRef = useRef(createSmoother(0.28));
+  // 캡처 직전 N프레임 버퍼: [{ landmarks, ts }] 시간순. CAPTURE_WINDOW_MS 보다
+  // 오래된 프레임은 버린다(슬라이딩 윈도우). 캡처 시 중앙값 결합에 사용.
+  const frameBufferRef = useRef([]);
 
   const [selectedViews, setSelectedViews] = useState(() => ({
     front: true,
@@ -77,12 +85,19 @@ export default function PostureMeasure({ member, onSave, onBack }) {
 
     if (!smoothed) {
       setGuide('전신이 보이도록 한 걸음 뒤로 이동해 주세요.');
+      frameBufferRef.current = [];
       return;
     }
     if (!isFullBodyVisible(smoothed)) {
       setGuide('어깨, 골반, 무릎, 발목이 모두 보이게 화면을 맞춰주세요.');
+      frameBufferRef.current = [];
       return;
     }
+    // 안정적으로 전신이 잡힌 프레임만 시간순 버퍼에 누적(슬라이딩 윈도우).
+    const buf = frameBufferRef.current;
+    buf.push({ landmarks: smoothed, ts });
+    const cutoff = ts - CAPTURE_WINDOW_MS;
+    while (buf.length && buf[0].ts < cutoff) buf.shift();
     setGuide(`${activeStep.label} 자세가 인식되었습니다. 2초간 멈춘 뒤 측정하세요.`);
     if (ts % 250 < 18) setLiveAnalysis(analyzeLandmarks(smoothed));
   }, [activeStep.label, analyzeLandmarks]);
@@ -115,11 +130,18 @@ export default function PostureMeasure({ member, onSave, onBack }) {
   };
 
   const handleCapture = () => {
-    const landmarks = latestLandmarksRef.current;
-    if (!landmarks || !isFullBodyVisible(landmarks)) {
+    const live = latestLandmarksRef.current;
+    if (!live || !isFullBodyVisible(live)) {
       setGuide('측정 가능한 전신 자세가 아직 안정적으로 인식되지 않았습니다.');
       return;
     }
+
+    // 캡처 직전 윈도우의 프레임들을 좌표별 중앙값으로 결합해 순간 떨림을 제거.
+    // 프레임이 부족하면(방금 인식 시작 등) 현재 프레임으로 폴백.
+    const buffered = frameBufferRef.current.map((f) => f.landmarks);
+    const combined =
+      buffered.length >= CAPTURE_MIN_FRAMES ? medianLandmarks(buffered) : live;
+    const landmarks = combined && isFullBodyVisible(combined) ? combined : live;
 
     const snapshotUrl = captureVideoSnapshot(latestVideoRef.current);
     const nextCaptures = {
@@ -141,6 +163,7 @@ export default function PostureMeasure({ member, onSave, onBack }) {
       setActiveViewKey(nextStep.key);
       smootherRef.current = createSmoother(0.28);
       latestLandmarksRef.current = null;
+      frameBufferRef.current = [];
       setGuide(`${nextStep.label} 측정으로 이동합니다. 자세를 바꿔주세요.`);
       return;
     }
@@ -167,6 +190,7 @@ export default function PostureMeasure({ member, onSave, onBack }) {
     setSaveState('idle');
     smootherRef.current = createSmoother(0.28);
     latestLandmarksRef.current = null;
+    frameBufferRef.current = [];
     setActiveViewKey(selectedSteps[0]?.key || 'front');
     setTimeout(() => start(videoRef.current), 80);
   };

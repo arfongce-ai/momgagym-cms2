@@ -105,6 +105,63 @@ export function midpoint(a, b) {
   };
 }
 
+function medianOf(values) {
+  const arr = values.filter((v) => typeof v === 'number' && Number.isFinite(v));
+  if (!arr.length) return null;
+  const sorted = [...arr].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
+/**
+ * 캡처 직전 N프레임의 랜드마크들을 좌표별 중앙값으로 결합해 떨림에 강한
+ * "대표 프레임"을 만든다. 점프(최고값)·보행(스텝 중앙값)과 동일한 측정 정직성
+ * 철학을 정지 자세 측정에도 적용하기 위한 순수 함수.
+ *
+ *  · x / y / z / visibility 각각을 33개 인덱스별로 중앙값(median) 처리.
+ *    평균이 아니라 중앙값을 쓰는 이유: 한두 프레임의 순간 오검출(튐)이
+ *    결과에 끌려가지 않도록(이상치 내성).
+ *  · 어떤 인덱스가 일부 프레임에서만 잡혔다면(가시성 부족), 그 인덱스는
+ *    잡힌 프레임들만 모아 중앙값을 낸다(억지로 0으로 채우지 않음).
+ *  · 단일 프레임이면 그대로 반환(결합 불필요).
+ *
+ * @param {Array<Array<{x,y,z?,visibility?}>>} frames 시간순 랜드마크 배열들
+ * @returns {Array|null} 결합된 33-랜드마크 배열, 입력이 비면 null
+ */
+export function medianLandmarks(frames) {
+  const valid = (Array.isArray(frames) ? frames : []).filter(
+    (f) => Array.isArray(f) && f.length,
+  );
+  if (!valid.length) return null;
+  if (valid.length === 1) return valid[0];
+
+  const length = valid.reduce((max, f) => Math.max(max, f.length), 0);
+  const out = [];
+  for (let i = 0; i < length; i++) {
+    const xs = [];
+    const ys = [];
+    const zs = [];
+    const vs = [];
+    for (const frame of valid) {
+      const p = frame[i];
+      if (!p) continue;
+      if (typeof p.x === 'number') xs.push(p.x);
+      if (typeof p.y === 'number') ys.push(p.y);
+      if (typeof p.z === 'number') zs.push(p.z);
+      if (typeof p.visibility === 'number') vs.push(p.visibility);
+    }
+    if (!xs.length || !ys.length) {
+      out.push(null);
+      continue;
+    }
+    const point = { x: medianOf(xs), y: medianOf(ys) };
+    if (zs.length) point.z = medianOf(zs);
+    if (vs.length) point.visibility = medianOf(vs);
+    out.push(point);
+  }
+  return out;
+}
+
 export function distance2d(a, b) {
   if (!a || !b) return null;
   return Math.hypot(a.x - b.x, a.y - b.y);
