@@ -855,6 +855,17 @@ export function detectPostureView(landmarks, tuning = POSTURE_VIEW_TUNING) {
   const shoulderW = Math.abs(rS.x - lS.x);
   const shoulderRatio = round(shoulderW / trunkH, 3);
 
+  // 1-b) 측면 강도(side strength) — 측면일수록 두 어깨의 '깊이(z) 차'가 크고,
+  //   한쪽 귀만 잘 보인다. 어깨폭이 애매(0.10~0.16)해도 이 신호로 측면을 잡는다.
+  //   ▸ 어깨 z 분리: |lS.z − rS.z| 를 몸통높이로 정규화. 측면이면 큼.
+  //   ▸ 귀 비대칭: 좌/우 귀 visibility 차가 크면 한쪽 면(측면) 가능성↑.
+  const shoulderZsep = Math.abs((lS.z ?? 0) - (rS.z ?? 0)) / (trunkH || 1);
+  const lEarV = landmarks[LM.LEFT_EAR]?.visibility ?? 0.5;
+  const rEarV = landmarks[LM.RIGHT_EAR]?.visibility ?? 0.5;
+  const earAsym = Math.abs(lEarV - rEarV);
+  // 측면 강도: z분리(주신호) + 귀비대칭(보조). 0~1로 클램프.
+  const sideStrength = clamp(shoulderZsep / 0.55, 0, 1) * 0.8 + clamp(earAsym / 0.6, 0, 1) * 0.2;
+
   // 얼굴 가시성 (코+양눈+양귀 평균) — 참고/표시용
   const faceIdx = [LM.NOSE, LM.LEFT_EYE, LM.RIGHT_EYE, LM.LEFT_EAR, LM.RIGHT_EAR];
   const visVals = faceIdx
@@ -913,6 +924,30 @@ export function detectPostureView(landmarks, tuning = POSTURE_VIEW_TUNING) {
   const facingMargin = Math.abs(frontVotes - backVotes);
   const totalVotes = frontVotes + backVotes;
 
+  // 측면 좌/우 판정 헬퍼 (코 위치 우선, 미검출 시 어깨 z-깊이)
+  const resolveSide = () => {
+    const nose = getLandmark(landmarks, LM.NOSE, 0.15);
+    if (nose && shoulderMid) {
+      // 코가 화면 오른쪽(x 큼) → 사람의 왼쪽 면이 카메라 → '좌측면(left)'
+      return nose.x > shoulderMid.x ? 'left' : 'right';
+    }
+    const lz = lS.z ?? 0, rz = rS.z ?? 0;
+    return lz < rz ? 'left' : 'right';
+  };
+
+  // ── 측면 우선 판정 ──
+  //  어깨폭이 좁거나(고전 기준), 어깨폭이 애매해도 '측면 강도'가 충분히 높으면
+  //  측면으로 확정한다. (정면/후면으로 오인하던 프로필 케이스 해결)
+  const strongSide = sideStrength >= 0.45;
+  if (shoulderRatio <= tuning.shoulderSideMax || strongSide) {
+    const view = resolveSide();
+    // 신뢰도: 어깨폭 기반 + 측면강도 중 큰 값
+    const widthSideConf = shoulderRatio <= tuning.shoulderSideMax
+      ? clamp((tuning.shoulderSideMax - shoulderRatio) / 0.08, 0, 1) : 0;
+    const sideConf = round(0.5 + 0.5 * Math.max(widthSideConf, sideStrength), 3);
+    return { view, confidence: sideConf, shoulderRatio, faceVis, sideStrength: round(sideStrength, 3) };
+  }
+
   // ── 정면/후면 (어깨 넓음) ──
   if (shoulderRatio >= tuning.shoulderFrontMin) {
     const widthConf = clamp((shoulderRatio - tuning.shoulderFrontMin) / 0.1, 0, 1);
@@ -927,24 +962,12 @@ export function detectPostureView(landmarks, tuning = POSTURE_VIEW_TUNING) {
     return { view, confidence: 0.35, shoulderRatio, faceVis, frontVotes, backVotes };
   }
 
-  // ── 측면 (어깨 좁음) ──
-  if (shoulderRatio <= tuning.shoulderSideMax) {
-    const nose = getLandmark(landmarks, LM.NOSE, 0.15);
-    // 코가 어깨중심 기준 어느 쪽(화면 x)을 향하는지로 좌/우 측면 판별.
-    // 코가 화면 오른쪽(x 큼) → 사람의 왼쪽 면이 카메라 → '좌측면(left)'.
-    let view = 'unknown';
-    if (nose && shoulderMid) {
-      view = nose.x > shoulderMid.x ? 'left' : 'right';
-    } else {
-      // 코 미검출 시 어깨 z-깊이로 보조: 카메라에 가까운(z 작은) 어깨가 앞.
-      const lz = lS.z ?? 0, rz = rS.z ?? 0;
-      view = lz < rz ? 'left' : 'right';
-    }
-    const sideConf = round(0.5 + 0.5 * clamp((tuning.shoulderSideMax - shoulderRatio) / 0.08, 0, 1), 3);
-    return { view, confidence: sideConf, shoulderRatio, faceVis };
+  // ── 모호 구간(어깨폭 중간, 측면강도도 약함) ──
+  //  애매하면 측면강도가 조금이라도 우세할 때 측면으로 기운다(측면 미인식 완화).
+  if (sideStrength >= 0.30) {
+    const view = resolveSide();
+    return { view, confidence: round(0.4 + 0.3 * sideStrength, 3), shoulderRatio, faceVis, sideStrength: round(sideStrength, 3) };
   }
-
-  // ── 모호 구간(어깨폭 중간) ──
   return { view: 'unknown', confidence: 0.2, shoulderRatio, faceVis };
 }
 

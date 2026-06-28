@@ -65,6 +65,12 @@ export default function PostureMeasure({ member, onSave, onBack }) {
   const [saveState, setSaveState] = useState('idle');
   const [actionMsg, setActionMsg] = useState('');
   const [guide, setGuide] = useState('정면으로 서서 전신이 화면 안에 들어오게 맞춰주세요.');
+  // 수동 면 고정(view lock): 켜면 자동 면 판정을 신뢰하지 않고, 사용자가 선택한
+  // 면을 그대로 사용해 '전신이 보이고 + 잠시 멈추면' 촬영한다(측면 미인식 우회).
+  const [lockView, setLockView] = useState(false);
+  const lockViewRef = useRef(false);
+  useEffect(() => { lockViewRef.current = lockView; }, [lockView]);
+  const holdStartRef = useRef(0); // 면 고정 시 '멈춤 유지' 시작 시각
 
   const selectedSteps = useMemo(
     () => VIEW_STEPS.filter((step) => selectedViews[step.key]),
@@ -110,6 +116,7 @@ export default function PostureMeasure({ member, onSave, onBack }) {
       setGuide('어깨, 골반, 무릎, 발목이 모두 보이게 화면을 맞춰주세요.');
       frameBufferRef.current = [];
       viewVoterRef.current.reset();
+      holdStartRef.current = 0; // 면 고정 hold 타이머 리셋
       return;
     }
     // 안정적으로 전신이 잡힌 프레임만 시간순 버퍼에 누적(슬라이딩 윈도우).
@@ -127,6 +134,23 @@ export default function PostureMeasure({ member, onSave, onBack }) {
       if (ts % 120 < 18) setDetectedView(det.view);
       if (autoBusyRef.current) return; // 카운트다운/캡처 중이면 가이드 유지
       const targetLabel = VIEW_STEPS.find((s) => s.key === target)?.label || target;
+
+      // ▸ 수동 면 고정(view lock): 자동 판정을 신뢰하지 않고, 선택한 면으로 강제 진행.
+      //   전신이 보이는 상태로 0.8초 멈춰 있으면 촬영(흔들림 방지용 hold-still만 검사).
+      if (lockViewRef.current) {
+        if (!holdStartRef.current) holdStartRef.current = ts;
+        const heldMs = ts - holdStartRef.current;
+        const HOLD_MS = 800;
+        if (heldMs >= HOLD_MS) {
+          setGuide(`${targetLabel} (면 고정) — 측정을 시작합니다.`);
+          holdStartRef.current = 0;
+          startAutoCountdown();
+        } else {
+          setGuide(`${targetLabel} 면 고정 — 자세를 유지하세요 (${Math.ceil((HOLD_MS - heldMs) / 100) / 10}s)`);
+        }
+        return;
+      }
+
       if (viewVoterRef.current.isStable(target, { minRatio: 0.7, minFrames: 8 })) {
         setGuide(`${targetLabel} 인식됨 — 측정을 시작합니다.`);
         startAutoCountdown();
@@ -268,7 +292,10 @@ export default function PostureMeasure({ member, onSave, onBack }) {
       // 튀어도 촬영이 거부되던 문제 방지.
       const live = latestLandmarksRef.current;
       const target = activeViewKeyRef.current;
-      const stillStable = viewVoterRef.current.isStable(target, { minRatio: 0.6, minFrames: 6 });
+      // 면 고정 시에는 자동 면 판정을 검사하지 않고, 전신이 보이는지만 확인.
+      const stillStable = lockViewRef.current
+        ? true
+        : viewVoterRef.current.isStable(target, { minRatio: 0.6, minFrames: 6 });
       if (!live || !isFullBodyVisible(live) || !stillStable) {
         setGuide('자세가 흐트러졌습니다 — 다시 맞춰주세요.');
         viewVoterRef.current.reset();
@@ -545,15 +572,28 @@ export default function PostureMeasure({ member, onSave, onBack }) {
         </div>
         {/* 측정 중에는 점수·체형나이·CoG 를 노출하지 않는다(촬영 후 결과·리포트에서만 확인). */}
         {captureMode === 'auto' && (
-          <div className="flex justify-center">
+          <div className="flex flex-col items-center gap-1.5">
             <span className={`rounded-full px-3 py-1 text-[11px] font-black ${
-              detectedView === activeStep.key
-                ? 'bg-emerald-400 text-slate-950'
-                : 'bg-black/55 text-white/80 border border-white/15'
+              lockView
+                ? 'bg-amber-400 text-slate-950'
+                : detectedView === activeStep.key
+                  ? 'bg-emerald-400 text-slate-950'
+                  : 'bg-black/55 text-white/80 border border-white/15'
             }`}>
-              인식: {VIEW_STEPS.find((s) => s.key === detectedView)?.label || '—'}
-              {detectedView === activeStep.key ? ' ✓' : ''}
+              {lockView
+                ? `면 고정: ${activeStep.label}`
+                : `인식: ${VIEW_STEPS.find((s) => s.key === detectedView)?.label || '—'}${detectedView === activeStep.key ? ' ✓' : ''}`}
             </span>
+            <button
+              type="button"
+              onClick={() => { setLockView((v) => !v); holdStartRef.current = 0; viewVoterRef.current.reset(); }}
+              className={`rounded-full px-3 py-1 text-[11px] font-bold border transition-colors ${
+                lockView
+                  ? 'bg-amber-500/25 border-amber-400/60 text-amber-200'
+                  : 'bg-black/40 border-white/20 text-white/70 hover:border-amber-400/50'
+              }`}>
+              {lockView ? '✓ 선택한 면으로 강제 촬영 중 (해제)' : '인식이 안 되면 → 선택한 면으로 강제 촬영'}
+            </button>
           </div>
         )}
         <div className="rounded-2xl border border-white/10 bg-black/55 px-4 py-3 text-center text-sm font-bold text-white backdrop-blur">

@@ -2,7 +2,7 @@
 // AI 측정 허브. 메뉴를 고르면 해당 모듈만 lazy 로드해 구동한다(필요 기능만).
 import { useState, Suspense } from 'react';
 import { MEASURE_MENUS } from './registry';
-import { store, aiStore, VIRTUAL_MID } from '../demoData';
+import { store, aiStore, makeGuestId } from '../demoData';
 import { todayYMD } from '../utils/dates';
 import { useAuth } from '../contexts/AuthContext';
 import { scopeMembersToTrainer, sortByName } from '../utils/memberList';
@@ -14,8 +14,12 @@ export default function AiMeasureHub() {
   const [memberId, setMemberId] = useState('');
   const [heightOverrides, setHeightOverrides] = useState({});
   const [active, setActive] = useState(null); // 선택된 메뉴 객체
-  // 회원 미선택 시 입력하는 '가상회원' 신체정보. 모든 측정에서 저장·출력에 사용된다.
+  // 회원 미선택 시 입력하는 '미등록회원(게스트)' 신체정보. 측정 데이터만 저장되며,
+  // 측정 묶음마다 고유 guest id 로 개인별 분리 저장된다(회원 등록은 하지 않음).
   const [virtual, setVirtual] = useState({ sex: '', birthDate: '', height: '', weight: '' });
+  // 현재 미등록회원 측정 묶음의 고유 id. 측정 진입 시 발급되어 그 한 사람의
+  // 여러 면/여러 항목이 같은 id 로 묶인다. 새 미등록회원은 새 id 를 받는다.
+  const [guestId, setGuestId] = useState(null);
 
   const baseMember = members.find(m => m.id === memberId);
   // 회원의 최근 신체기록에서 키·몸무게를 자동 연동
@@ -33,15 +37,16 @@ export default function AiMeasureHub() {
     };
   })() : null;
 
-  // 가상회원 객체: 신체정보 입력이 하나라도 있으면 구성.
-  // 모든 측정 유형에서 저장·출력되며, 회원 이력과 분리된 가상회원 버킷에 보관된다.
+  // 미등록회원(게스트) 객체: 신체정보 입력이 하나라도 있으면 구성.
+  // id 는 측정 묶음별 고유 guest id(guestId). 아직 미발급이면 null 로 두고,
+  // 저장 시점(handleSave)에 확정 발급해 '표시된 id = 저장된 id' 를 보장한다.
   const virtualMember = (() => {
     const hasAny = virtual.sex || virtual.birthDate || virtual.height || virtual.weight;
     if (!hasAny) return null;
     return {
-      id: VIRTUAL_MID,       // 가상회원 전용 센티넬 id (회원 이력과 분리 저장)
+      id: guestId, // 측정 진입(openMenu) 시 발급됨. null 이면 저장 직전 확정 발급.
       isVirtual: true,
-      name: '가상회원',
+      name: '미등록회원',
       sex: virtual.sex || null,
       gender: virtual.sex || null,
       birthDate: virtual.birthDate || null,
@@ -50,13 +55,13 @@ export default function AiMeasureHub() {
     };
   })();
 
-  // 측정에 실제로 넘겨줄 유효 회원: 실제 회원 우선, 없으면 가상회원.
+  // 측정에 실제로 넘겨줄 유효 회원: 실제 회원 우선, 없으면 미등록회원.
   const member = realMember || virtualMember;
 
   const rememberMemberHeight = async (heightCm) => {
     if (!member || !heightCm) return;
     setHeightOverrides(prev => ({ ...prev, [member.id]: heightCm }));
-    if (member.isVirtual) return; // 가상회원은 신체기록 영구 저장 생략(세션 한정)
+    if (member.isVirtual) return; // 미등록회원은 신체기록 영구 저장 생략(측정 데이터만)
     // 신체정보에 키가 전혀 없을 때만 영구 저장(중복 기록 방지) → 다음부터 안 물어봄
     try {
       const recs = store.getBodyRecords(member.id) || [];
@@ -71,19 +76,28 @@ export default function AiMeasureHub() {
     } catch (e) { /* 저장 실패해도 세션 오버라이드로 동작 */ }
   };
 
-  // 측정 저장 — 실제 회원이든 가상회원이든 '모든 측정 유형'에서 저장·출력된다.
+  // 측정 저장 — 실제 회원이든 미등록회원이든 '모든 측정 유형'에서 저장·출력된다.
   //  • 실제 회원: 회원 측정이력(ai) + 분석 리포트 컬렉션에 누적.
-  //  • 가상회원: 회원 이력과 분리된 가상 버킷(__mid=VIRTUAL_MID)에 저장. 모든 신체정보 동봉.
+  //  • 미등록회원: members 등록 없이 측정 데이터만 개별 guest id(__mid)로 분리 저장.
   const handleSave = async (data) => {
-    if (!member) { alert('회원을 선택하거나, 가상회원 신체정보를 입력해 주세요.'); return; }
+    if (!member) { alert('회원을 선택하거나, 미등록회원 신체정보를 입력해 주세요.'); return; }
     // 보행 분석은 컴포넌트가 자체 저장 상태 UI(저장 중/✓/실패)를 표시하므로
     // alert 없이 에러를 그대로 throw 해 컴포넌트가 처리하게 한다.
     const isGait = active.id === 'gait';
     const isJump = active.id === 'jump';
     const isPosture = active.id === 'posture';
 
-    // 가상회원이면 모든 저장 페이로드에 신체정보를 동봉(리포트 출력·해석에 사용).
-    const memberRef = { id: member.id, name: member.name, isVirtual: member.isVirtual === true };
+    // 측정 정직성: 미등록회원인데 guest id 가 아직 없으면 저장 직전 확정 발급
+    // (null __mid 로 저장되어 데이터가 유실/혼합되는 것을 방지). 같은 측정 묶음은
+    // 이미 발급된 id 를 그대로 사용한다.
+    let saveMid = member.id;
+    if (member.isVirtual && !saveMid) {
+      saveMid = guestId || makeGuestId();
+      setGuestId(saveMid);
+    }
+
+    // 미등록회원이면 모든 저장 페이로드에 신체정보를 동봉(리포트 출력·해석에 사용).
+    const memberRef = { id: saveMid, name: member.name, isVirtual: member.isVirtual === true };
     const virtualBody = member.isVirtual ? {
       sex: member.sex || null,
       gender: member.gender || null,
@@ -94,8 +108,8 @@ export default function AiMeasureHub() {
     } : {};
 
     try {
-      // 회원 측정이력(ai): 실제 회원과 가상회원 모두 저장(가상은 분리된 버킷).
-      await aiStore.addSession(member.id, {
+      // 측정이력(ai): 실제 회원은 회원 id, 미등록회원은 개별 guest id 로 저장.
+      await aiStore.addSession(saveMid, {
         menu: active.id,
         menuTitle: active.title,
         recordedAt: todayYMD(), // CV-A: 로컬 날짜
@@ -114,11 +128,32 @@ export default function AiMeasureHub() {
       if (isPosture) {
         return await aiStore.addPostureReport({ ...virtualBody, ...data, kind: 'posture', member: memberRef });
       }
-      alert(member.isVirtual ? '가상회원 측정이 저장되었습니다.' : '측정이 저장되었습니다.');
+      alert(member.isVirtual ? '미등록회원 측정이 저장되었습니다.' : '측정이 저장되었습니다.');
     } catch (e) {
       if (isGait || isJump || isPosture) throw e; // 컴포넌트 saveState='error' 로 표시되게 전파
       alert('저장에 실패했습니다. 네트워크 확인 후 다시 시도하세요.\n' + (e?.message || ''));
     }
+  };
+
+  // 측정 메뉴 진입. 미등록회원(실제 회원 미선택 + 신체정보 입력)이면 이 측정 묶음용
+  // 고유 guest id 를 1회 발급해, 같은 사람의 여러 면/항목이 한 id 로 묶이게 한다.
+  const openMenu = (menu) => {
+    const hasGuestInfo = !realMember && (virtual.sex || virtual.birthDate || virtual.height || virtual.weight);
+    if (hasGuestInfo) setGuestId((prev) => prev || makeGuestId());
+    setActive(menu);
+  };
+
+  // 회원 선택 변경: 실제 회원을 고르면 진행 중이던 게스트 id 는 초기화.
+  const handleSelectMember = (id) => {
+    setMemberId(id);
+    if (id) setGuestId(null);
+  };
+
+  // 미등록회원 신체정보 변경. 측정 진행 전(active 없음)이면 guest id 를 리셋해
+  // 다음 측정에서 새 사람으로 새 id 가 발급되게 한다(측정 중에는 유지).
+  const updateVirtual = (patch) => {
+    setVirtual((v) => ({ ...v, ...patch }));
+    if (!active) setGuestId(null);
   };
 
   // 메뉴 구동 화면
@@ -128,7 +163,7 @@ export default function AiMeasureHub() {
     return (
       <div className={`${wideMeasure ? 'max-w-6xl' : 'max-w-md'} mx-auto`}>
         <Suspense fallback={<div className="text-center text-slate-400 py-10 text-sm">모듈 로딩 중…</div>}>
-          <Comp member={member} onSave={handleSave} onBack={() => setActive(null)} onMemberHeightChange={rememberMemberHeight} />
+          <Comp member={member} onSave={handleSave} onBack={() => { setActive(null); if (member?.isVirtual) setGuestId(null); }} onMemberHeightChange={rememberMemberHeight} />
         </Suspense>
       </div>
     );
@@ -147,18 +182,18 @@ export default function AiMeasureHub() {
         <label className="block text-xs font-semibold text-slate-400 uppercase tracking-widest mb-2">
           회원 선택 (저장 시 필요)
         </label>
-        <select value={memberId} onChange={e => setMemberId(e.target.value)}
+        <select value={memberId} onChange={e => handleSelectMember(e.target.value)}
           className="input">
-          <option value="">선택 안 함 (가상회원으로 측정)</option>
+          <option value="">선택 안 함 (미등록회원으로 측정)</option>
           {members.map(m => <option key={m.id} value={m.id}>{m.name} ({m.phone?.slice(-4)})</option>)}
         </select>
 
-        {/* 회원 미선택 시: 가상회원 신체정보 입력. 모든 측정 유형에서 저장·출력되며
-            성별 기준·체형나이 등 측정 정확도를 높인다. */}
+        {/* 회원 미선택 시: 미등록회원 신체정보 입력. 모든 측정에서 측정 데이터가
+            개별 guest id 로 저장·출력되며, 성별 기준·체형나이 정확도를 높인다. */}
         {!realMember && (
           <div className="mt-3 border-t border-slate-800 pt-3">
             <p className="text-xs font-semibold text-amber-300/90 mb-2">
-              가상회원 신체정보 <span className="text-slate-500 font-normal">(모든 측정에서 저장·출력 — 정확도 향상)</span>
+              미등록회원 신체정보 <span className="text-slate-500 font-normal">(측정 데이터만 개인별로 저장 — 회원 등록 아님)</span>
             </p>
             <div className="grid grid-cols-2 gap-2">
               <div>
@@ -166,7 +201,7 @@ export default function AiMeasureHub() {
                 <div className="flex gap-1.5">
                   {[['male','남'],['female','여']].map(([val,lbl])=>(
                     <button type="button" key={val}
-                      onClick={()=>setVirtual(v=>({...v, sex: v.sex===val ? '' : val}))}
+                      onClick={()=>updateVirtual({ sex: virtual.sex===val ? '' : val })}
                       className={`flex-1 rounded-lg text-sm font-bold border py-1.5 transition-colors
                         ${virtual.sex===val
                           ? 'bg-amber-500/20 border-amber-500/40 text-amber-300'
@@ -179,27 +214,28 @@ export default function AiMeasureHub() {
               <div>
                 <label className="block text-[11px] text-slate-400 mb-1">생년월일</label>
                 <input type="date" value={virtual.birthDate}
-                  onChange={e=>setVirtual(v=>({...v, birthDate: e.target.value}))}
+                  onChange={e=>updateVirtual({ birthDate: e.target.value })}
                   className="input py-1.5 text-sm"/>
               </div>
               <div>
                 <label className="block text-[11px] text-slate-400 mb-1">키 (cm)</label>
                 <input type="number" inputMode="decimal" value={virtual.height}
-                  onChange={e=>setVirtual(v=>({...v, height: e.target.value}))}
+                  onChange={e=>updateVirtual({ height: e.target.value })}
                   placeholder="예: 170" className="input py-1.5 text-sm"/>
               </div>
               <div>
                 <label className="block text-[11px] text-slate-400 mb-1">몸무게 (kg)</label>
                 <input type="number" inputMode="decimal" value={virtual.weight}
-                  onChange={e=>setVirtual(v=>({...v, weight: e.target.value}))}
+                  onChange={e=>updateVirtual({ weight: e.target.value })}
                   placeholder="예: 65" className="input py-1.5 text-sm"/>
               </div>
             </div>
             {virtualMember && (
               <p className="mt-2 text-[11px] text-emerald-300/80">
-                가상회원으로 측정·저장합니다{virtualMember.sex ? ` · ${virtualMember.sex==='female'?'여':'남'}` : ''}
+                미등록회원으로 측정·저장합니다{virtualMember.sex ? ` · ${virtualMember.sex==='female'?'여':'남'}` : ''}
                 {virtualMember.height ? ` · ${virtualMember.height}cm` : ''}
                 {virtualMember.weight ? ` · ${virtualMember.weight}kg` : ''}.
+                {guestId && <span className="block text-slate-500 mt-0.5">식별 ID: {guestId}</span>}
               </p>
             )}
           </div>
@@ -212,7 +248,7 @@ export default function AiMeasureHub() {
           const ready = menu.status === 'ready';
           return (
             <button key={menu.id}
-              onClick={() => ready && setActive(menu)}
+              onClick={() => ready && openMenu(menu)}
               disabled={!ready}
               className={`text-left rounded-2xl p-4 border transition
                 ${ready

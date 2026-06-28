@@ -952,9 +952,22 @@ export const store = {
   },
 };
 
-// 가상회원(회원 미선택 측정) 전용 센티넬 id. 실제 회원 id 와 충돌하지 않는
-// 고정 문자열. 회원 이력과 분리된 버킷에 가상회원 측정을 저장·조회한다.
-export const VIRTUAL_MID = '__virtual__';
+// 가상(미등록)회원 측정 데이터의 __mid 접두사. 실제 회원 id(m...)와 구분되며,
+// 한 번의 미등록회원 측정 묶음마다 고유 guest id 를 발급해 개인별로 분리 저장한다.
+//  예: 'guest_1782648377018042'
+export const GUEST_MID_PREFIX = 'guest_';
+export const VIRTUAL_MID = '__virtual__'; // (구버전 호환용 — 신규 측정엔 개별 guest id 사용)
+
+// 미등록회원 1인의 측정 묶음용 고유 id 발급. 측정 세션 시작 시 1회 호출해
+// 여러 면/여러 항목이 같은 id 로 묶이게 한다.
+export function makeGuestId() {
+  return uid(GUEST_MID_PREFIX);
+}
+
+// __mid 가 미등록(게스트) 측정인지 판별.
+export function isGuestMid(mid) {
+  return typeof mid === 'string' && mid.startsWith(GUEST_MID_PREFIX);
+}
 
 export const aiStore = {
   // ── 지연 로딩 추적: 이미 읽은 회원은 다시 읽지 않는다(세션 내) ──

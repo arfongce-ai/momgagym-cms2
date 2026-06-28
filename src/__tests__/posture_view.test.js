@@ -89,6 +89,33 @@ describe('detectPostureView', () => {
     expect(detectPostureView(sidePose(0.28)).view).toBe('right');
   });
 
+  // [회귀] 실측 케이스: 프로필인데 어깨폭이 애매(0.10~0.16)해 정면/후면으로
+  //  오인하던 문제. 어깨 z-깊이 분리가 크면 측면으로 잡아야 한다.
+  function sideAmbiguousWidth(noseX) {
+    // 어깨폭 비율을 일부러 애매 구간에 둠(0.5 vs 0.63 → trunkH≈0.27 → ratio≈0.13)
+    const pose = Array.from({ length: 33 }, () => ({ x: 0.5, y: 0.5, z: 0, visibility: 0.9 }));
+    Object.assign(pose[LM.LEFT_SHOULDER], { x: 0.50, y: 0.30, z: -0.30 });   // 가까운 어깨
+    Object.assign(pose[LM.RIGHT_SHOULDER], { x: 0.535, y: 0.30, z: 0.30 });  // 먼 어깨(z 큼)
+    Object.assign(pose[LM.LEFT_HIP], { x: 0.50, y: 0.57 });
+    Object.assign(pose[LM.RIGHT_HIP], { x: 0.535, y: 0.57 });
+    Object.assign(pose[LM.NOSE], { x: noseX, y: 0.10, visibility: 0.9 });
+    Object.assign(pose[LM.LEFT_EAR], { visibility: 0.95 });
+    Object.assign(pose[LM.RIGHT_EAR], { visibility: 0.2 }); // 한쪽 귀만 잘 보임
+    return pose;
+  }
+
+  it('[회귀] 어깨폭 애매하지만 z-분리 큰 프로필 → 측면으로 인식', () => {
+    const r = detectPostureView(sideAmbiguousWidth(0.72));
+    expect(['left', 'right']).toContain(r.view);
+    expect(r.view).not.toBe('back');
+    expect(r.view).not.toBe('front');
+  });
+
+  it('[회귀] z-분리 큰 좌측 프로필의 좌/우 방향도 코 위치로 정확', () => {
+    expect(detectPostureView(sideAmbiguousWidth(0.72)).view).toBe('left');
+    expect(detectPostureView(sideAmbiguousWidth(0.28)).view).toBe('right');
+  });
+
   it('랜드마크가 없으면 unknown', () => {
     expect(detectPostureView(null).view).toBe('unknown');
     expect(detectPostureView([]).view).toBe('unknown');

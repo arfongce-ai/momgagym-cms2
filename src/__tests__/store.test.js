@@ -940,3 +940,50 @@ describe('가상회원 측정 저장 (모든 유형 저장·출력)', () => {
     expect(aiStore.getSessions(VIRTUAL_MID).some(x => x.id === s.id)).toBe(true);
   });
 });
+
+describe('미등록회원 개인별 분리 저장 (guest id)', () => {
+  it('makeGuestId 는 매번 고유한 guest_ 접두사 id 를 발급한다', async () => {
+    const { makeGuestId, isGuestMid } = await import('../demoData.js');
+    const a = makeGuestId();
+    const b = makeGuestId();
+    expect(a).not.toBe(b);
+    expect(isGuestMid(a)).toBe(true);
+    expect(isGuestMid(b)).toBe(true);
+    expect(isGuestMid('m123')).toBe(false);
+    expect(isGuestMid('__virtual__')).toBe(false);
+  });
+
+  it('서로 다른 미등록회원의 측정은 각자 guest id 로 격리된다', async () => {
+    const { makeGuestId } = await import('../demoData.js');
+    const g1 = makeGuestId();
+    const g2 = makeGuestId();
+    await aiStore.addSession(g1, { menu: 'posture', isVirtual: true, data: { score: 70 } });
+    await aiStore.addSession(g2, { menu: 'posture', isVirtual: true, data: { score: 85 } });
+    // 각 게스트는 자기 데이터만 보유(서로 섞이지 않음)
+    expect(aiStore.getSessions(g1).length).toBe(1);
+    expect(aiStore.getSessions(g2).length).toBe(1);
+    expect(aiStore.getSessions(g1)[0].data.score).toBe(70);
+    expect(aiStore.getSessions(g2)[0].data.score).toBe(85);
+  });
+
+  it('한 미등록회원의 여러 측정 항목은 같은 guest id 로 묶인다', async () => {
+    const { makeGuestId } = await import('../demoData.js');
+    const g = makeGuestId();
+    await aiStore.addSession(g, { menu: 'posture', isVirtual: true, data: {} });
+    await aiStore.addSession(g, { menu: 'jump', isVirtual: true, data: {} });
+    await aiStore.addSession(g, { menu: '1rm', isVirtual: true, data: {} });
+    expect(aiStore.getSessions(g).length).toBe(3);
+    expect(aiStore.getSessions(g).map(s => s.menu).sort()).toEqual(['1rm', 'jump', 'posture']);
+  });
+
+  it('미등록회원 리포트도 guest id 로 저장된다(자세·점프)', async () => {
+    const { makeGuestId } = await import('../demoData.js');
+    const g = makeGuestId();
+    const p = await aiStore.addPostureReport({ kind: 'posture', member: { id: g, name: '미등록회원', isVirtual: true }, sex: 'male' });
+    const j = await aiStore.addGaitReport({ kind: 'jump', valid: true, member: { id: g, name: '미등록회원', isVirtual: true } });
+    expect(p.id).toBeTruthy();
+    expect(j.id).toBeTruthy();
+    expect(p.member.id).toBe(g);
+    expect(j.member.id).toBe(g);
+  });
+});
