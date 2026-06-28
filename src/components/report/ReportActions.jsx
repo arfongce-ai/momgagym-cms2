@@ -39,6 +39,7 @@ export default function ReportActions({
   baseName = '측정',
   onMessage,
   onReportClick,
+  onAfterReportSave,
   reportButtonLabel = '🖼 리포트 저장',
 }) {
   const [busy, setBusy] = useState(null);
@@ -71,6 +72,10 @@ export default function ReportActions({
       }
 
       await shareOrDownload(files, '측정 리포트', onMessage);
+      // 리포트 저장(A4 JPG) 성공 후 회원 기록 자동 저장 (별도 탭 불필요)
+      if (onAfterReportSave) {
+        try { await onAfterReportSave(); } catch (e) { /* 저장 실패는 onAfterReportSave 내부에서 처리 */ }
+      }
     } catch (e) {
       onMessage?.('리포트 저장에 실패했습니다. 화면을 다시 열고 시도해주세요.');
     } finally {

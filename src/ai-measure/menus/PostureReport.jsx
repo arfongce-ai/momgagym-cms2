@@ -4,6 +4,7 @@ import {
   POSE_LANDMARKS,
   analyzePostureFromLandmarks,
 } from '../core/postureMath';
+import { buildClinicalInterpretation, CLINICAL_LEVEL } from '../core/postureClinical';
 
 const LM = POSE_LANDMARKS;
 
@@ -88,9 +89,26 @@ export default function PostureReport({
   const score = analysis.score ?? report?.postureScore ?? 0;
   const findings = analysis.rules?.findings?.length ? analysis.rules.findings : [];
 
+  // 임상 해석(부위별 진단·근육 추정·위험 Top3) — 측정값 기반, 비단정.
+  const clinical = useMemo(() => {
+    const perViewAnalysis = report?.perViewAnalysis || {};
+    // 단일 면만 있는 과거 데이터 호환: front 가 없으면 현재 분석을 front 로 사용.
+    const pv = Object.keys(perViewAnalysis).length
+      ? perViewAnalysis
+      : { front: analysis };
+    return buildClinicalInterpretation({
+      perViewAnalysis: pv,
+      bodyInfo: {
+        heightCm: heightCm ?? report?.heightCm ?? member?.heightCm,
+        actualAge: actualAge ?? report?.actualAge ?? member?.age,
+        sex: member?.sex || member?.gender || report?.sex,
+      },
+    });
+  }, [report, analysis, heightCm, actualAge, member]);
+
   return (
     <div className="min-h-full w-full bg-slate-950 p-4 text-slate-100">
-      <div className="mx-auto flex w-full max-w-[1120px] flex-col gap-4">
+      <div className="report-a4-page mx-auto flex w-full max-w-[794px] flex-col gap-4 rounded-2xl bg-slate-950 p-5 ring-1 ring-slate-800">
         <header className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-4">
           <div>
             <p className="text-xs font-bold uppercase tracking-[0.18em] text-sky-300">Posture & Alignment Assessment</p>
@@ -109,7 +127,9 @@ export default function PostureReport({
           )}
         </header>
 
-        <section className="grid gap-3 lg:grid-cols-[280px_1fr_1fr]">
+        <MetadataStrip metadata={clinical.metadata} viewsMeasured={report?.viewsMeasured} />
+
+        <section className="grid gap-3 sm:grid-cols-[240px_1fr_1fr]">
           <ScoreDial score={score} status={analysis.status} />
           <MetricPanel title="체형 나이" value={bodyAge ?? '-'} unit={bodyAge ? '세' : ''} status={analysis.status}>
             <p className="text-sm leading-relaxed text-slate-400">
@@ -123,7 +143,7 @@ export default function PostureReport({
           </MetricPanel>
         </section>
 
-        <section className="grid gap-4 lg:grid-cols-[1.3fr_0.9fr]">
+        <section className="grid gap-4 sm:grid-cols-[1.3fr_0.9fr]">
           <GhostingViewer
             currentImageUrl={currentImageUrl || report?.imageUrl || report?.image_urls?.front || report?.image_urls?.current?.front}
             previousImageUrl={previousImageUrl || report?.comparison?.previousImageUrl || report?.comparison?.image_urls?.front || report?.image_urls?.before?.front}
@@ -175,6 +195,10 @@ export default function PostureReport({
           </div>
         </section>
 
+        <RegionDiagnoses regions={clinical.regions} />
+        <RiskTop3 items={clinical.riskTop3} />
+        <MuscleBalanceMap muscleMap={clinical.muscleMap} />
+
         <PostureSnapshotGallery snapshots={perViewSnapshots || report?.perViewSnapshots} />
 
         <section className={`rounded-lg border px-4 py-3 ${statusStyle.bg} ${statusStyle.border}`}>
@@ -187,6 +211,151 @@ export default function PostureReport({
         </section>
       </div>
     </div>
+  );
+}
+
+const LEVEL_STYLE = {
+  normal: { text: 'text-emerald-300', bg: 'bg-emerald-500/10', border: 'border-emerald-500/30', ko: '정상' },
+  caution: { text: 'text-amber-300', bg: 'bg-amber-500/10', border: 'border-amber-500/30', ko: '주의' },
+  risk: { text: 'text-red-300', bg: 'bg-red-500/10', border: 'border-red-500/30', ko: '위험' },
+  insufficient: { text: 'text-slate-400', bg: 'bg-slate-800/40', border: 'border-slate-700', ko: '측정 부족' },
+};
+
+function MetadataStrip({ metadata, viewsMeasured }) {
+  if (!metadata) return null;
+  const sexKo = metadata.sex === 'M' || metadata.sex === 'male' ? '남' : metadata.sex === 'F' || metadata.sex === 'female' ? '여' : '미입력';
+  const views = Array.isArray(viewsMeasured) ? viewsMeasured.length : null;
+  const cell = (label, value) => (
+    <div className="rounded-md bg-slate-900 px-2.5 py-1.5">
+      <p className="text-[10px] font-bold text-slate-500">{label}</p>
+      <p className="text-xs font-black text-slate-200">{value}</p>
+    </div>
+  );
+  return (
+    <section className="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
+      <div className="mb-2 flex items-center justify-between">
+        <p className="text-xs font-black text-slate-300">측정 정보 · 영점 메타데이터</p>
+        {metadata.horizontalPlaneCertified ? (
+          <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-bold text-emerald-300">✓ AI 수평 평면 변환</span>
+        ) : (
+          <span className="rounded-full bg-slate-800 px-2 py-0.5 text-[10px] font-bold text-slate-400">수평 보정 정보 없음</span>
+        )}
+      </div>
+      <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-6">
+        {cell('성별', sexKo)}
+        {cell('연령', metadata.actualAge != null ? `${metadata.actualAge}세` : '미입력')}
+        {cell('신장', metadata.heightCm != null ? `${metadata.heightCm}cm` : '미입력')}
+        {cell('촬영거리', `${metadata.captureDistanceM}m`)}
+        {cell('삼각대', `${metadata.tripodHeightM}m`)}
+        {cell('카메라 틸트', metadata.cameraTiltDeg != null ? `${metadata.cameraTiltDeg}°` : '—')}
+      </div>
+      {views != null && (
+        <p className="mt-2 text-[10px] text-slate-500">측정 면 수: {views}면 (다면 측정일수록 3D 해석 신뢰도가 높아집니다)</p>
+      )}
+    </section>
+  );
+}
+
+function RegionDiagnoses({ regions }) {
+  if (!Array.isArray(regions) || !regions.length) return null;
+  return (
+    <section className="rounded-lg border border-slate-800 bg-slate-900 p-4">
+      <p className="mb-3 text-sm font-black text-white">부위별 원인 진단</p>
+      <div className="grid gap-2 sm:grid-cols-2">
+        {regions.map((r) => {
+          const st = LEVEL_STYLE[r.level] || LEVEL_STYLE.insufficient;
+          return (
+            <div key={r.key} className={`rounded-lg border p-3 ${st.bg} ${st.border}`}>
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-black text-white">{r.title}</p>
+                <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${st.text}`}>{st.ko}</span>
+              </div>
+              {r.measured.length > 0 && (
+                <div className="mt-1.5 flex flex-wrap gap-1.5">
+                  {r.measured.map((m, i) => (
+                    <span key={i} className="rounded bg-slate-950/60 px-1.5 py-0.5 text-[11px] font-bold text-slate-300">
+                      {m.label} {m.value}{m.unit}
+                    </span>
+                  ))}
+                </div>
+              )}
+              <p className="mt-2 text-xs leading-relaxed text-slate-300">{r.problem}</p>
+              {r.recommendation && (
+                <p className="mt-1.5 text-[11px] leading-relaxed text-sky-300">→ {r.recommendation}</p>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function RiskTop3({ items }) {
+  return (
+    <section className="rounded-lg border border-slate-800 bg-slate-900 p-4">
+      <p className="mb-1 text-sm font-black text-white">통증·부상 위험 예측 Top 3</p>
+      <p className="mb-3 text-[11px] text-slate-500">현재 불균형을 방치할 경우 통증 발생 가능성이 높은 순서입니다. (예측 참고용)</p>
+      {(!items || !items.length) ? (
+        <div className="rounded-md border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-200">
+          현재 측정값에서 두드러진 위험 부위가 없습니다.
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {items.map((it) => {
+            const st = LEVEL_STYLE[it.level] || LEVEL_STYLE.caution;
+            return (
+              <div key={it.key} className={`flex items-start gap-3 rounded-lg border p-2.5 ${st.bg} ${st.border}`}>
+                <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-950/60 text-sm font-black ${st.text}`}>{it.rank}</span>
+                <div>
+                  <p className="text-sm font-black text-white">{it.area} <span className={`text-[10px] font-bold ${st.text}`}>· {st.ko}</span></p>
+                  <p className="text-xs leading-relaxed text-slate-300">{it.outcome}</p>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function MuscleBalanceMap({ muscleMap }) {
+  if (!muscleMap) return null;
+  const { tight = [], weak = [], note } = muscleMap;
+  const empty = tight.length === 0 && weak.length === 0;
+  return (
+    <section className="rounded-lg border border-slate-800 bg-slate-900 p-4">
+      <div className="mb-1 flex items-center gap-2">
+        <p className="text-sm font-black text-white">근육 밸런스 맵</p>
+        <span className="rounded-full bg-slate-800 px-2 py-0.5 text-[10px] font-bold text-amber-300">추정 · 측정값 아님</span>
+      </div>
+      <p className="mb-3 text-[11px] leading-relaxed text-slate-500">{note}</p>
+      {empty ? (
+        <div className="rounded-md border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-200">
+          두드러진 자세 불균형이 없어 특이 근육 경향이 추정되지 않았습니다.
+        </div>
+      ) : (
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="rounded-lg border border-red-500/30 bg-red-500/5 p-3">
+            <p className="mb-2 text-xs font-black text-red-300">🔴 긴장·단축 (풀어주기)</p>
+            <ul className="space-y-1.5">
+              {tight.length ? tight.map((m, i) => (
+                <li key={i} className="text-xs text-slate-300"><span className="font-bold text-white">{m.name}</span> — {m.reason}</li>
+              )) : <li className="text-xs text-slate-500">해당 없음</li>}
+            </ul>
+          </div>
+          <div className="rounded-lg border border-sky-500/30 bg-sky-500/5 p-3">
+            <p className="mb-2 text-xs font-black text-sky-300">🔵 약화·이완 (강화하기)</p>
+            <ul className="space-y-1.5">
+              {weak.length ? weak.map((m, i) => (
+                <li key={i} className="text-xs text-slate-300"><span className="font-bold text-white">{m.name}</span> — {m.reason}</li>
+              )) : <li className="text-xs text-slate-500">해당 없음</li>}
+            </ul>
+          </div>
+        </div>
+      )}
+    </section>
   );
 }
 

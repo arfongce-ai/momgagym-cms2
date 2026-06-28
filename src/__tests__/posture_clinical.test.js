@@ -1,0 +1,109 @@
+import { describe, expect, it } from 'vitest';
+import {
+  buildRegionDiagnoses,
+  buildMuscleMap,
+  buildRiskTop3,
+  buildClinicalInterpretation,
+  CLINICAL_LEVEL,
+} from '../ai-measure/core/postureClinical';
+
+// 측정값이 충분히 큰(위험) 자세 패턴
+const severeperView = {
+  front: {
+    frontal: { shoulderHeightDiffMm: 24, pelvisHeightDiffMm: 16, pelvisPattern: 'functional_lumbopelvic_pattern', legAlignment: { status: 'caution', message: 'X다리 경향' } },
+    cog: { available: true, balanceOffsetPct: 40, offsetPct: 40 },
+    sagittal: {},
+  },
+  left: {
+    sagittal: { forwardHeadMm: 50, kyphosisProxyDeg: 150, kneeExtensionProxyDeg: 187 },
+  },
+};
+
+// 정상 범위
+const normalPerView = {
+  front: {
+    frontal: { shoulderHeightDiffMm: 3, pelvisHeightDiffMm: 2, pelvisPattern: 'within_error', legAlignment: { status: 'normal' } },
+    cog: { available: true, balanceOffsetPct: 2, offsetPct: 2 },
+    sagittal: {},
+  },
+  left: { sagittal: { forwardHeadMm: 10, kyphosisProxyDeg: 178, kneeExtensionProxyDeg: 178 } },
+};
+
+describe('buildRegionDiagnoses', () => {
+  it('심각한 패턴에서 4개 부위를 risk/caution 으로 진단한다', () => {
+    const regions = buildRegionDiagnoses(severeperView);
+    expect(regions).toHaveLength(4);
+    const head = regions.find((r) => r.key === 'head_neck');
+    expect(head.level).toBe(CLINICAL_LEVEL.risk); // 50mm >= 45
+    expect(head.measured[0].value).toBe(50);
+    expect(head.problem).toContain('거북목');
+  });
+
+  it('정상 패턴에서는 normal 로 판정하고 권고를 비운다', () => {
+    const regions = buildRegionDiagnoses(normalPerView);
+    const head = regions.find((r) => r.key === 'head_neck');
+    expect(head.level).toBe(CLINICAL_LEVEL.normal);
+    expect(head.recommendation).toBeNull();
+  });
+
+  it('측면 측정이 없으면 머리·목은 insufficient', () => {
+    const regions = buildRegionDiagnoses({ front: normalPerView.front });
+    const head = regions.find((r) => r.key === 'head_neck');
+    expect(head.level).toBe(CLINICAL_LEVEL.insufficient);
+    expect(head.measured).toHaveLength(0);
+  });
+});
+
+describe('buildMuscleMap', () => {
+  it('활성 부위에서 긴장/약화 근육을 추정하고 estimated=true 를 명시한다', () => {
+    const regions = buildRegionDiagnoses(severeperView);
+    const map = buildMuscleMap(regions);
+    expect(map.estimated).toBe(true);
+    expect(map.tight.length).toBeGreaterThan(0);
+    expect(map.weak.length).toBeGreaterThan(0);
+    expect(map.note).toContain('직접 측정되지 않');
+  });
+
+  it('정상 패턴에서는 근육 추정이 비어 있다', () => {
+    const regions = buildRegionDiagnoses(normalPerView);
+    const map = buildMuscleMap(regions);
+    expect(map.tight).toHaveLength(0);
+    expect(map.weak).toHaveLength(0);
+  });
+});
+
+describe('buildRiskTop3', () => {
+  it('최대 3개, 심각도 높은 순으로 정렬한다', () => {
+    const regions = buildRegionDiagnoses(severeperView);
+    const top = buildRiskTop3(regions);
+    expect(top.length).toBeLessThanOrEqual(3);
+    expect(top[0].rank).toBe(1);
+    // risk 가 caution 보다 앞서야 함
+    const levels = top.map((t) => t.level);
+    const firstCautionIdx = levels.indexOf('caution');
+    const lastRiskIdx = levels.lastIndexOf('risk');
+    if (firstCautionIdx !== -1 && lastRiskIdx !== -1) {
+      expect(lastRiskIdx).toBeLessThan(firstCautionIdx);
+    }
+  });
+
+  it('정상 패턴에서는 위험 항목이 없다', () => {
+    const regions = buildRegionDiagnoses(normalPerView);
+    expect(buildRiskTop3(regions)).toHaveLength(0);
+  });
+});
+
+describe('buildClinicalInterpretation', () => {
+  it('메타데이터/지역/근육맵/위험/면책을 모두 포함한다', () => {
+    const out = buildClinicalInterpretation({
+      perViewAnalysis: severeperView,
+      bodyInfo: { heightCm: 170, actualAge: 40, sex: 'M' },
+    });
+    expect(out.metadata.heightCm).toBe(170);
+    expect(out.metadata.captureDistanceM).toBe(2.5);
+    expect(out.regions).toHaveLength(4);
+    expect(out.muscleMap.estimated).toBe(true);
+    expect(out.riskTop3.length).toBeGreaterThan(0);
+    expect(out.disclaimers.length).toBeGreaterThan(0);
+  });
+});

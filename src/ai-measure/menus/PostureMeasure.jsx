@@ -64,6 +64,7 @@ export default function PostureMeasure({ member, onSave, onBack }) {
   const [report, setReport] = useState(null);
   const [previewUrl, setPreviewUrl] = useState('');
   const [saveState, setSaveState] = useState('idle');
+  const [actionMsg, setActionMsg] = useState('');
   const [guide, setGuide] = useState('정면으로 서서 전신이 화면 안에 들어오게 맞춰주세요.');
 
   const selectedSteps = useMemo(
@@ -316,7 +317,7 @@ export default function PostureMeasure({ member, onSave, onBack }) {
 
   const handleSave = async () => {
     if (!member) {
-      alert('저장하려면 먼저 회원을 선택해 주세요.');
+      setActionMsg('회원이 선택되지 않아 기록 저장은 건너뜁니다.');
       return;
     }
     if (!report) return;
@@ -327,7 +328,6 @@ export default function PostureMeasure({ member, onSave, onBack }) {
       setSaveState('saved');
     } catch (event) {
       setSaveState('error');
-      alert(`저장에 실패했습니다. ${event?.message || ''}`);
     }
   };
 
@@ -361,24 +361,24 @@ export default function PostureMeasure({ member, onSave, onBack }) {
           />
         </div>
 
-        <div className="sticky bottom-20 z-30 space-y-2 rounded-2xl border border-slate-800 bg-slate-950/95 p-3">
-          {/* 보행/점프와 동일: 리포트 저장(A4 JPG) + 사진 저장(면별 스냅샷) */}
+        <div className="space-y-2 rounded-2xl border border-slate-800 bg-slate-950/95 p-3">
+          {/* '리포트 저장'을 누르면 A4 JPG 저장 + 회원 기록 자동 저장 (탭 불필요) */}
           <ReportActions
             reportNodeId="posture-report-sheet"
             imageFiles={snapFiles}
             imageButtonLabel={`📸 사진 저장 (${snapFiles.length}장)`}
             baseName={`${member?.name || '회원'}_자세`}
-            reportButtonLabel="🖼 리포트 저장"
-            onMessage={() => {}}
+            reportButtonLabel={saveState === 'saved' ? '✓ 리포트 저장됨' : '🖼 리포트 저장'}
+            onAfterReportSave={handleSave}
+            onMessage={setActionMsg}
           />
-          <button
-            onClick={handleSave}
-            disabled={saveState === 'saving' || saveState === 'saved'}
-            className="btn btn-primary w-full disabled:opacity-60"
-          >
-            {saveState === 'saving' ? '저장 중...' : saveState === 'saved' ? '✓ 회원 기록에 저장됨' : '💾 회원 기록에 저장'}
-          </button>
-          {saveState === 'error' && <p className="mt-1 text-center text-xs text-red-400">저장 실패. 다시 시도해 주세요.</p>}
+          {actionMsg && <p className="text-center text-xs text-slate-400">{actionMsg}</p>}
+          {saveState === 'saved' && (
+            <p className="text-center text-xs font-bold text-emerald-400">회원 기록에 저장되었습니다.</p>
+          )}
+          {saveState === 'error' && (
+            <p className="text-center text-xs text-red-400">회원 기록 저장 실패. ‘리포트 저장’을 다시 눌러 주세요.</p>
+          )}
         </div>
       </div>
     );
