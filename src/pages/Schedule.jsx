@@ -45,51 +45,29 @@ function remainOf(s, members) {
   const ts = m.trainerSessions[s.trainerId];
   return ts ? ts.remaining : null;
 }
-// ── 기존 스케줄 회차 자동 보정 ─────────────────────────────
-// 회원·트레이너별로 시간순 정렬 후, 등록 총횟수(total)에서 역산하여
-// sessionAtBooking / sessionTotalAtBooking 이 비어 있는 스케줄에 채워 넣는다.
-//  - 이미 값이 있거나 수동 수정(sessionManual)된 스케줄은 건드리지 않는다.
-//  - 외부/상담 일정은 제외.
-//  - 한 번 store에 기록되면 이후엔 다시 계산하지 않는다(멱등).
-async function backfillSessionNumbers(members) {
+// ── 기존 스케줄 회차 표기 보정 ─────────────────────────────
+// ⚠ 과거에는 total-i 로 회차를 '역산'했으나, 이는 재등록/취소/노쇼가 섞이면
+//    실제 잔여(remaining)와 어긋나 잘못된 회차(예: 차감 안 됐는데 20→19 처럼)를
+//    만들어냈다. 측정 정직성 원칙에 따라 추정 역산을 폐기했다.
+//    회차(sessionAtBooking)는 오직 createScheduleWithDeduction 이 예약 시점에
+//    기록한 실제 차감-직전 잔여값만 신뢰한다.
+
+// 과거 backfill(total-i 역산)이 잘못 기록한 회차를 1회 정리한다.
+// sessionBackfilled=true 인 예약의 추정 회차를 비워(null) 잘못된 숫자 노출을 막는다.
+// 실제 차감으로 기록된(sessionDeducted=true) 예약은 건드리지 않는다.
+async function cleanupBackfilledSessions() {
   const all = store.getSchedules();
-  // (회원,트레이너) 그룹별로 모음
-  const groups = {};
-  all.forEach(s => {
-    if (s.isExternal || s.isConsult || s.classType === '상담' || !s.memberId || !s.trainerId) return;
-    const key = `${s.memberId}__${s.trainerId}`;
-    (groups[key] ||= []).push(s);
-  });
-
-  for (const [key, list] of Object.entries(groups)) {
-    // 보정이 필요한 스케줄이 하나라도 있을 때만 처리
-    const needs = list.some(s => s.sessionAtBooking == null && !s.sessionManual);
-    if (!needs) continue;
-
-    const [memberId, trainerId] = key.split('__');
-    const m = (members||[]).find(x => x.id === memberId);
-    const total = m?.trainerSessions?.[trainerId]?.total ?? null;
-    if (total == null) continue; // 총횟수를 모르면 보정 불가
-
-    // 시간순 정렬 (날짜 → 시작시간)
-    const sorted = [...list].sort((a,b) =>
-      (a.date+a.startTime).localeCompare(b.date+b.startTime));
-
-    // 첫 수업 = total, 그다음 -1 ... (수동 수정된 건 건너뛰되 카운터는 진행)
-    for (let i = 0; i < sorted.length; i++) {
-      const s = sorted[i];
-      const startN = total - i; // i번째(0-base) 수업의 시작 회차
-      if (s.sessionAtBooking == null && !s.sessionManual) {
-        try {
-          await store.updateSchedule(s.id, {
-            sessionAtBooking: startN,
-            sessionTotalAtBooking: total,
-            sessionBackfilled: true,
-          });
-        } catch (e) { console.error('[회차 보정 실패]', s.id, e); }
-      }
-    }
+  const wrong = all.filter(s => s.sessionBackfilled && !s.sessionDeducted);
+  for (const s of wrong) {
+    try {
+      await store.updateSchedule(s.id, {
+        sessionAtBooking: null,
+        sessionTotalAtBooking: null,
+        sessionBackfilled: false,
+      });
+    } catch (e) { console.error('[backfill 정리 실패]', s.id, e); }
   }
+  return wrong.length;
 }
 
 // 회원이름 + 회차 표기
@@ -924,10 +902,10 @@ export default function Schedule() {
 
   const load = () => {
     const mb = store.getMembers();
-    // ★ 기존 스케줄 회차 자동 보정 (멱등 — 비어 있는 것만 채움)
-    backfillSessionNumbers(mb)
+    // ★ 과거 backfill 역산이 남긴 잘못된 회차를 1회 정리(멱등 — 정리 대상 없으면 no-op)
+    cleanupBackfilledSessions()
       .then(() => setSchedules(store.getSchedules()))
-      .catch(e => console.error('[회차 보정 오류]', e));
+      .catch(e => console.error('[회차 정리 오류]', e));
     setSchedules(store.getSchedules());
     setMembers(mb);
     setTrainers(store.getTrainers());
@@ -1080,7 +1058,17 @@ export default function Schedule() {
           fixedTrainerId={fixedTrainerId}
           onAdd={async d=>{
             try {
-              await store.createScheduleWithDeduction(d);  // 예약+세션차감 원자적 처리
+              const res = await store.createScheduleWithDeduction(d);  // 예약+세션차감 원자적 처리
+              // 일반 수업인데 세션이 차감되지 않았으면 사유를 알려준다(조용한 실패 방지)
+              if (res && res._deductionSkipReason && !d.isExternal && !d.isConsult && d.memberId) {
+                const reasonMsg = {
+                  no_session_slot: '이 회원에게 선택한 트레이너의 세션 등록 내역이 없어 회차가 차감되지 않았습니다.',
+                  no_remaining: '잔여 회차가 0이라 차감할 회차가 없습니다. 세션을 재등록해 주세요.',
+                  member_not_found: '회원 정보를 찾지 못해 차감되지 않았습니다.',
+                  not_deductible: '세션 차감 대상이 아닌 예약입니다.',
+                }[res._deductionSkipReason];
+                if (reasonMsg) alert(`예약은 저장되었으나, ${reasonMsg}`);
+              }
             } catch(e) {
               console.error('[예약 추가 실패]', e);
               alert('예약 저장에 실패했습니다. 네트워크 확인 후 다시 시도하세요.');

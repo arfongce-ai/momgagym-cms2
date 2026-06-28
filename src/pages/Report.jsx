@@ -5,12 +5,13 @@ import { todayYMD } from '../utils/dates';
 import { useAuth } from '../contexts/AuthContext';
 import { scopeMembersToTrainer, sortByName } from '../utils/memberList';
 import { store, aiStore } from '../demoData';
-import { buildFullReport, buildAnalysisTrend } from '../services/reportService';
+import { buildFullReport, buildAnalysisTrend, buildPostureTrend } from '../services/reportService';
 import { buildReportSvg, downloadSvgAsJpg } from '../components/report/reportImage';
 import TrendChart from '../components/report/TrendChart';
 import MemberPicker from '../components/common/MemberPicker';
 const JumpReportDashboard = lazy(() => import('../ai-measure/menus/JumpReportDashboard'));
 const GaitReportDashboard = lazy(() => import('../ai-measure/menus/GaitReportDashboard'));
+const PostureReport = lazy(() => import('../ai-measure/menus/PostureReport'));
 
 const COLORS = { weight:'#f59e0b', systolic:'#ef4444', diastolic:'#3b82f6', height:'#22d3ee' };
 
@@ -70,6 +71,7 @@ export default function Report() {
       await Promise.all([
         aiStore.ensureSessions(member.id),
         aiStore.ensureGaitReports(member.id),
+        aiStore.ensurePostureReports(member.id),
       ]);
       if (alive) setDataReady(v => v + 1);
     })();
@@ -91,6 +93,19 @@ export default function Report() {
     return buildAnalysisTrend(aiStore.getGaitReports(member.id));
   }, [member, dataReady]);
 
+  // 자세·체형 측정 이력 추세 (posture_reports)
+  const postureTrend = useMemo(() => {
+    if (!member) return null;
+    return buildPostureTrend(aiStore.getPostureReports(member.id));
+  }, [member, dataReady]);
+
+  // 저장된 자세 리포트 목록 (최신순)
+  const savedPostureReports = useMemo(() => {
+    if (!member) return [];
+    return [...(aiStore.getPostureReports(member.id) || [])]
+      .sort((a, b) => String(b.createdAt || b.measuredAt).localeCompare(String(a.createdAt || a.measuredAt)));
+  }, [member, dataReady]);
+
   // 저장된 AI 측정 리포트 목록 (최신순) — 페이지별 열람용
   const savedReports = useMemo(() => {
     if (!member) return [];
@@ -98,6 +113,7 @@ export default function Report() {
       .sort((a, b) => String(b.createdAt || b.measuredAt).localeCompare(String(a.createdAt || a.measuredAt)));
   }, [member, dataReady]);
   const [viewerIdx, setViewerIdx] = useState(null); // 열람 중인 리포트 인덱스
+  const [postureViewerIdx, setPostureViewerIdx] = useState(null); // 자세 리포트 열람 인덱스
   const [expandedMenu, setExpandedMenu] = useState(null); // 펼친 측정 메뉴
 
   // 메뉴별 개별 세션 목록 (상세/회차비교용)
@@ -314,6 +330,61 @@ export default function Report() {
             </div>
           )}
 
+          {/* 자세·체형 회차별 추세 */}
+          {postureTrend?.count > 0 && (
+            <div>
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">
+                자세·체형 추세 ({postureTrend.count}회)
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {postureTrend.score.length > 1 && (
+                  <TrendChart title="자세 점수" unit="점" points={postureTrend.score} color="#f59e0b" width={320} height={150} />
+                )}
+                {postureTrend.forwardHead.length > 1 && (
+                  <TrendChart title="거북목(전방이동)" unit="mm" points={postureTrend.forwardHead} color="#ef4444" width={320} height={150} />
+                )}
+                {postureTrend.shoulderDiff.length > 1 && (
+                  <TrendChart title="어깨 높이차" unit="mm" points={postureTrend.shoulderDiff} color="#22d3ee" width={320} height={150} />
+                )}
+                {postureTrend.pelvisDiff.length > 1 && (
+                  <TrendChart title="골반 높이차" unit="mm" points={postureTrend.pelvisDiff} color="#a78bfa" width={320} height={150} />
+                )}
+              </div>
+              {postureTrend.score.length === 1 && (
+                <p className="text-[11px] text-slate-500 mt-1">측정이 1회뿐이라 추세 그래프는 2회차부터 표시됩니다. 거북목·어깨·골반 편차는 측정할수록 변화가 보입니다.</p>
+              )}
+            </div>
+          )}
+
+          {/* 저장된 자세 리포트 — 회차별 열람 */}
+          {savedPostureReports.length > 0 && (
+            <div>
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">
+                자세 측정 리포트 ({savedPostureReports.length}건)
+              </p>
+              <div className="space-y-2">
+                {savedPostureReports.map((rep, i) => {
+                  const date = String(rep.createdAt || rep.measuredAt || '').slice(0, 10);
+                  const sc = (rep.analysis?.score ?? rep.postureScore);
+                  const ba = (rep.analysis?.bodyAge ?? rep.bodyAge);
+                  return (
+                    <button key={rep.id || i} onClick={() => setPostureViewerIdx(i)}
+                      className="w-full flex items-center justify-between bg-slate-800/60 hover:bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 transition-colors text-left">
+                      <div>
+                        <p className="text-sm font-bold text-white">자세·체형 측정</p>
+                        <p className="text-xs text-slate-400">{date}</p>
+                      </div>
+                      <div className="text-right">
+                        {sc != null && <p className="text-sm font-black text-amber-400">{sc}점</p>}
+                        {ba != null && <p className="text-[11px] text-slate-400">체형나이 {ba}세</p>}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {/* 저장된 AI 측정 리포트 — 페이지별 열람 */}
           {savedReports.length > 0 && (
             <div>
@@ -387,6 +458,31 @@ export default function Report() {
             {savedReports[viewerIdx].kind === 'jump'
               ? <JumpReportDashboard report={savedReports[viewerIdx]} onClose={() => setViewerIdx(null)} />
               : <GaitReportDashboard report={savedReports[viewerIdx]} onClose={() => setViewerIdx(null)} />}
+          </Suspense>
+        </div>
+      )}
+      {postureViewerIdx != null && savedPostureReports[postureViewerIdx] && (
+        <div className="fixed inset-0 z-[90] bg-slate-950 overflow-y-auto" style={{ height: '100dvh' }}>
+          <div className="sticky top-0 z-10 flex items-center justify-between px-4 py-2.5 bg-slate-900/95 backdrop-blur border-b border-slate-800">
+            <button onClick={() => setPostureViewerIdx(null)} className="text-slate-300 font-bold text-sm">✕ 닫기</button>
+            <span className="text-white text-xs font-bold">{postureViewerIdx + 1} / {savedPostureReports.length}</span>
+            <div className="flex gap-2">
+              <button onClick={() => setPostureViewerIdx(i => Math.min(savedPostureReports.length - 1, i + 1))}
+                disabled={postureViewerIdx >= savedPostureReports.length - 1}
+                className="text-slate-300 text-sm font-bold disabled:opacity-30">◀ 이전</button>
+              <button onClick={() => setPostureViewerIdx(i => Math.max(0, i - 1))}
+                disabled={postureViewerIdx <= 0}
+                className="text-slate-300 text-sm font-bold disabled:opacity-30">다음 ▶</button>
+            </div>
+          </div>
+          <Suspense fallback={<div className="p-10 text-center text-slate-400">불러오는 중…</div>}>
+            <PostureReport
+              report={savedPostureReports[postureViewerIdx]}
+              member={member}
+              heightCm={savedPostureReports[postureViewerIdx]?.heightCm}
+              actualAge={savedPostureReports[postureViewerIdx]?.actualAge}
+              onClose={() => setPostureViewerIdx(null)}
+            />
           </Suspense>
         </div>
       )}

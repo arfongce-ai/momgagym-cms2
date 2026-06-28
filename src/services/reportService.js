@@ -199,3 +199,30 @@ export function buildAnalysisTrend(reports = []) {
 
   return { jump, gait };
 }
+
+// 자세·체형 측정 이력 추세 (posture_reports)
+// 자세 점수·체형나이·핵심 편차(거북목/어깨·골반 높이차)의 회차별 변화를 만든다.
+export function buildPostureTrend(reports = []) {
+  const sorted = [...reports].sort((a, b) =>
+    String(a.createdAt || a.measuredAt).localeCompare(String(b.createdAt || b.measuredAt))
+  );
+  const dateOf = (r) => String(r.createdAt || r.measuredAt || '').slice(0, 10);
+  // 저장 구조가 버전에 따라 다를 수 있어 여러 경로를 폴백으로 읽는다.
+  const an = (r) => r.analysis || r;
+  const score = (r) => num(an(r).score ?? r.postureScore);
+  const bodyAge = (r) => num(an(r).bodyAge ?? r.bodyAge);
+  const forwardHead = (r) => num(an(r).sagittal?.forwardHeadMm);
+  const shoulderDiff = (r) => { const v = an(r).frontal?.shoulderHeightDiffMm; return v == null ? null : Math.abs(num(v)); };
+  const pelvisDiff = (r) => { const v = an(r).frontal?.pelvisHeightDiffMm; return v == null ? null : Math.abs(num(v)); };
+
+  const rows = sorted.filter(r => an(r).score != null || r.postureScore != null || an(r).frontal || an(r).sagittal);
+  return {
+    count: rows.length,
+    score:        rows.map(r => ({ date: dateOf(r), value: score(r) })).filter(p => p.value != null),
+    bodyAge:      rows.map(r => ({ date: dateOf(r), value: bodyAge(r) })).filter(p => p.value != null),
+    forwardHead:  rows.map(r => ({ date: dateOf(r), value: forwardHead(r) })).filter(p => p.value != null),
+    shoulderDiff: rows.map(r => ({ date: dateOf(r), value: shoulderDiff(r) })).filter(p => p.value != null),
+    pelvisDiff:   rows.map(r => ({ date: dateOf(r), value: pelvisDiff(r) })).filter(p => p.value != null),
+    latest: rows.at(-1) || null,
+  };
+}
