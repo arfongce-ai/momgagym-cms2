@@ -156,13 +156,16 @@ export function buildRegionDiagnoses(perViewAnalysis = {}) {
   // (4) 발·다리 — 하지 정렬(O/X) + 무릎 신전각
   {
     const leg = front?.frontal?.legAlignment || front?.rules?.legAlignment || null;
-    const legType = leg?.type || (leg?.key === 'leg_alignment' ? leg?.alignmentType : null);
     const knee = side?.sagittal?.kneeExtensionProxyDeg ?? front?.sagittal?.kneeExtensionProxyDeg ?? null;
     const kneeLevel = knee == null ? LEVEL.insufficient : knee > 185 ? LEVEL.risk : knee > 180 ? LEVEL.caution : LEVEL.normal;
     const legLevel = leg?.status === 'risk' ? LEVEL.risk : leg?.status === 'caution' ? LEVEL.caution : leg ? LEVEL.normal : LEVEL.insufficient;
     const level = worst([kneeLevel, legLevel]);
     const measured = [];
     if (knee != null) measured.push({ label: '무릎 신전각', value: Math.round(knee), unit: '°' });
+    // 하지 정렬(O/X 다리) — 비정상일 때 라벨과 지수 표시
+    if (leg && leg.key && leg.key !== 'leg_alignment') {
+      measured.push({ label: leg.label || '하지 정렬', value: leg.value ?? '', unit: leg.unit === 'index' ? '' : (leg.unit || '') });
+    }
     regions.push({
       key: 'foot_leg',
       title: '발·다리',

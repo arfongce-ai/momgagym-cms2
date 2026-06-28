@@ -4,7 +4,8 @@ import {
   POSE_LANDMARKS,
   analyzePostureFromLandmarks,
 } from '../core/postureMath';
-import { buildClinicalInterpretation, CLINICAL_LEVEL } from '../core/postureClinical';
+import { buildClinicalInterpretation } from '../core/postureClinical';
+import { analyzeAxialRotation, ROTATION_DIRECTION_KO, ROTATION_LEVEL_KO } from '../core/postureRotation';
 
 const LM = POSE_LANDMARKS;
 
@@ -106,6 +107,14 @@ export default function PostureReport({
     });
   }, [report, analysis, heightCm, actualAge, member]);
 
+  // 전신 종합 회전(축 정렬) 분석 — 4면 종합
+  const axialRotation = useMemo(() => {
+    const pv = report?.perViewAnalysis && Object.keys(report.perViewAnalysis).length
+      ? report.perViewAnalysis
+      : { front: analysis };
+    return analyzeAxialRotation(pv);
+  }, [report, analysis]);
+
   return (
     <div className="min-h-full w-full bg-slate-950 p-4 text-slate-100">
       <div className="report-a4-page mx-auto flex w-full max-w-[794px] flex-col gap-4 rounded-2xl bg-slate-950 p-5 ring-1 ring-slate-800">
@@ -196,6 +205,7 @@ export default function PostureReport({
         </section>
 
         <RegionDiagnoses regions={clinical.regions} />
+        <AxialRotationSection rotation={axialRotation} />
         <RiskTop3 items={clinical.riskTop3} />
         <MuscleBalanceMap muscleMap={clinical.muscleMap} />
 
@@ -287,6 +297,80 @@ function RegionDiagnoses({ regions }) {
           );
         })}
       </div>
+    </section>
+  );
+}
+
+function AxialRotationSection({ rotation }) {
+  if (!rotation || !rotation.available) {
+    return (
+      <section className="rounded-lg border border-slate-800 bg-slate-900 p-4">
+        <p className="mb-1 text-sm font-black text-white">전신 회전(축 정렬) 분석</p>
+        <p className="text-xs text-slate-500">회전을 추정할 측정값이 부족합니다.</p>
+      </section>
+    );
+  }
+  const seg = rotation.segments || {};
+  const confPct = Math.round((rotation.confidence || 0) * 100);
+  const confColor = confPct >= 70 ? 'text-emerald-300' : confPct >= 45 ? 'text-amber-300' : 'text-red-300';
+  const levelStyle = (lv) => (lv === 'marked' ? 'text-red-300' : lv === 'mild' ? 'text-amber-300' : 'text-emerald-300');
+
+  const segRow = (label, s) => {
+    if (!s) return (
+      <div className="flex items-center justify-between rounded-md bg-slate-950/50 px-3 py-2">
+        <span className="text-xs font-bold text-slate-300">{label}</span>
+        <span className="text-xs text-slate-500">측정 부족</span>
+      </div>
+    );
+    return (
+      <div className="flex items-center justify-between rounded-md bg-slate-950/50 px-3 py-2">
+        <span className="text-xs font-bold text-slate-300">{label}</span>
+        <span className="flex items-center gap-2">
+          <span className="text-xs font-bold text-slate-200">
+            {ROTATION_DIRECTION_KO[s.direction] || s.direction}
+          </span>
+          <span className={`text-xs font-black ${levelStyle(s.level)}`}>
+            {ROTATION_LEVEL_KO[s.level] || '-'}
+          </span>
+        </span>
+      </div>
+    );
+  };
+
+  return (
+    <section className="rounded-lg border border-slate-800 bg-slate-900 p-4">
+      <div className="mb-1 flex items-center gap-2">
+        <p className="text-sm font-black text-white">전신 회전(축 정렬) 분석</p>
+        <span className="rounded-full bg-slate-800 px-2 py-0.5 text-[10px] font-bold text-amber-300">4면 종합 · 추정</span>
+      </div>
+      <p className="mb-3 text-[11px] leading-relaxed text-slate-500">
+        분절별 좌우 회전 방향과 정도(없음/경미/뚜렷)입니다. 도(°) 단정 대신 방향·단계로 표기합니다.
+        <span className={`ml-1 font-bold ${confColor}`}>신뢰도 {confPct}%</span>
+      </p>
+      <div className="grid gap-1.5 sm:grid-cols-2">
+        {segRow('머리', seg.head)}
+        {segRow('체간(어깨)', seg.trunk)}
+        {segRow('골반', seg.pelvis)}
+        {segRow('하체', seg.lower)}
+      </div>
+
+      {rotation.axialTwist && rotation.axialTwist.level !== 'none' && (
+        <div className={`mt-3 rounded-lg border px-3 py-2.5 ${rotation.axialTwist.opposing ? 'border-red-500/40 bg-red-500/10' : 'border-amber-500/30 bg-amber-500/10'}`}>
+          <p className={`text-xs font-black ${rotation.axialTwist.opposing ? 'text-red-300' : 'text-amber-300'}`}>
+            🔄 척추 축 비틀림 {ROTATION_LEVEL_KO[rotation.axialTwist.level]}
+            {rotation.axialTwist.opposing ? ' (체간·골반 반대 방향)' : ''}
+          </p>
+          <p className="mt-1 text-[11px] leading-relaxed text-slate-300">
+            {rotation.axialTwist.opposing
+              ? '체간과 골반이 서로 반대 방향으로 회전해 있어 척추 회전(비틀림) 경향이 관찰됩니다. 회전성 요통·디스크 부담을 높일 수 있어 회전 안정화 운동 평가를 권장합니다.'
+              : '체간과 골반의 회전 정도에 차이가 있습니다. 좌우 균형 회전 운동을 점검하세요.'}
+          </p>
+        </div>
+      )}
+
+      {rotation.note && (
+        <p className="mt-2 text-[11px] text-slate-500">{rotation.note}</p>
+      )}
     </section>
   );
 }

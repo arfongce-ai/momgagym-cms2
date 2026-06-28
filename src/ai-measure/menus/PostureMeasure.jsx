@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { todayYMD } from '../../utils/dates';
 import { usePoseEngine } from '../core/usePoseEngine';
 import { createSmoother } from '../core/smoothing';
-import { analyzePostureFromLandmarks, classifyPostureAgeGroup, medianLandmarks, detectPostureView, PostureViewVoter } from '../core/postureMath';
+import { analyzePostureFromLandmarks, classifyPostureAgeGroup, medianLandmarks, detectPostureView, PostureViewVoter, sanitizeBackLandmarks } from '../core/postureMath';
 import { beepTick, beepGo, beepSuccess, primeAudio } from '../core/audioCue';
 import CameraStage from './CameraStage.jsx';
 import PostureReport from './PostureReport.jsx';
@@ -11,9 +11,9 @@ import { dataUrlToFile } from '../core/reportShare';
 
 const VIEW_STEPS = [
   { key: 'front', label: '정면', short: '앞' },
-  { key: 'right', label: '우측면', short: '오른쪽' },
-  { key: 'back', label: '후면', short: '뒤' },
   { key: 'left', label: '좌측면', short: '왼쪽' },
+  { key: 'back', label: '후면', short: '뒤' },
+  { key: 'right', label: '우측면', short: '오른쪽' },
 ];
 
 const BONES = [
@@ -107,7 +107,7 @@ export default function PostureMeasure({ member, onSave, onBack }) {
     latestVideoRef.current = video || latestVideoRef.current;
     const smoothed = landmarks ? smootherRef.current(landmarks) : smootherRef.current(null);
     latestLandmarksRef.current = smoothed || latestLandmarksRef.current;
-    drawSkeleton(canvasRef.current, video, smoothed);
+    drawSkeleton(canvasRef.current, video, smoothed, activeViewKeyRef.current);
 
     if (!smoothed) {
       setGuide('전신이 보이도록 한 걸음 뒤로 이동해 주세요.');
@@ -196,7 +196,9 @@ export default function PostureMeasure({ member, onSave, onBack }) {
     const buffered = frameBufferRef.current.map((f) => f.landmarks);
     const combined =
       buffered.length >= CAPTURE_MIN_FRAMES ? medianLandmarks(buffered) : live;
-    const landmarks = combined && isFullBodyVisible(combined) ? combined : live;
+    const rawLandmarks = combined && isFullBodyVisible(combined) ? combined : live;
+    // 후면 측정: 코·눈은 추정값이라 제거하고 분석/저장 (귀만 유지)
+    const landmarks = step.key === 'back' ? sanitizeBackLandmarks(rawLandmarks) : rawLandmarks;
 
     const snapshotUrl = captureVideoSnapshot(latestVideoRef.current);
     const bi = bodyInfoRef.current;
@@ -386,8 +388,8 @@ export default function PostureMeasure({ member, onSave, onBack }) {
 
   // 측정 시작 전: 자동/수동 선택 화면
   const beginMeasure = (mode) => {
-    // 자동 모드: 4면 전부 순서대로(front→right→back→left). 수동: 현재 선택된 면 유지.
-    const order = ['front', 'right', 'back', 'left'];
+    // 자동 모드: 4면 전부 순서대로(front→left→back→right). 수동: 현재 선택된 면 유지.
+    const order = ['front', 'left', 'back', 'right'];
     let firstKey = 'front';
     if (mode === 'auto') {
       setSelectedViews({ front: true, right: true, back: true, left: true });
@@ -660,7 +662,7 @@ function buildReport({ member, bodyInfo, captures, selectedSteps }) {
   };
 }
 
-function drawSkeleton(canvas, video, landmarks) {
+function drawSkeleton(canvas, video, landmarks, viewKey) {
   if (!canvas || !video) return;
   const rect = canvas.getBoundingClientRect();
   const width = Math.max(1, Math.round(rect.width));
@@ -695,7 +697,223 @@ function drawSkeleton(canvas, video, landmarks) {
     ctx.arc(mapper.x(point), mapper.y(point), 3.5, 0, Math.PI * 2);
     ctx.fill();
   });
+
+  // ── 정면/후면: 양 발목 중점 수직 중심선 ──
+  if (viewKey === 'front' || viewKey === 'back') {
+    drawAnkleMidCenterLine(ctx, landmarks, mapper);
+  }
+  // ── 정면: 눈·코·귀 위치 + 머리 기울기(roll)/회전(yaw) ──
+  if (viewKey === 'front') {
+    drawFrontHeadAlignment(ctx, landmarks, mapper);
+  }
+  // ── 후면: 귀만 사용(코·눈은 추정값이라 제거), 양 귀로 머리 기울기 ──
+  if (viewKey === 'back') {
+    drawBackHeadAlignment(ctx, landmarks, mapper);
+  }
+
+  // ── 측면(좌/우) 전용: 관절 정렬 기준선 + 거북목 기울기선 + 발목 중심선 ──
+  if (viewKey === 'left' || viewKey === 'right') {
+    drawSideReferenceLines(ctx, landmarks, mapper, viewKey);
+  }
 }
+
+// 정면/후면 중심선: 양 발목 중점을 지나는 수직선.
+function drawAnkleMidCenterLine(ctx, lm, mapper) {
+  const la = lm[27]; const ra = lm[28];
+  if (!isVisible(la) || !isVisible(ra)) return;
+  const cx = (mapper.x(la) + mapper.x(ra)) / 2;
+  const topY = mapper.y(lm[0] || lm[11]) - 20; // 머리 위쪽
+  const botY = Math.max(mapper.y(la), mapper.y(ra)) + 14;
+  ctx.save();
+  ctx.strokeStyle = 'rgba(125,211,252,0.85)'; // sky
+  ctx.lineWidth = 1.6;
+  ctx.setLineDash([4, 6]);
+  ctx.beginPath();
+  ctx.moveTo(cx, topY);
+  ctx.lineTo(cx, botY);
+  ctx.stroke();
+  // 발목 중점 마커
+  ctx.setLineDash([]);
+  ctx.fillStyle = 'rgba(125,211,252,1)';
+  ctx.beginPath();
+  ctx.arc(cx, (mapper.y(la) + mapper.y(ra)) / 2, 4, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+// 정면 머리 정렬: 눈·코·귀 점 + 머리 좌우 기울기(roll) + 머리 회전(yaw).
+function drawFrontHeadAlignment(ctx, lm, mapper) {
+  const nose = lm[0];
+  const lEye = lm[2]; const rEye = lm[5];
+  const lEar = lm[7]; const rEar = lm[8];
+  // 얼굴 점
+  ctx.save();
+  ctx.fillStyle = 'rgba(52,211,153,0.95)';
+  [nose, lEye, rEye, lEar, rEar].forEach((p) => {
+    if (!isVisible(p)) return;
+    ctx.beginPath();
+    ctx.arc(mapper.x(p), mapper.y(p), 3, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  // 머리 기울기(roll): 양 눈(없으면 양 귀) 연결선의 수평 대비 각도
+  const pairA = (isVisible(lEye) && isVisible(rEye)) ? [lEye, rEye] : (isVisible(lEar) && isVisible(rEar) ? [lEar, rEar] : null);
+  if (pairA) {
+    const [l, r] = pairA;
+    const lx = mapper.x(l); const ly = mapper.y(l);
+    const rx = mapper.x(r); const ry = mapper.y(r);
+    ctx.strokeStyle = 'rgba(250,204,21,0.95)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([]);
+    ctx.beginPath(); ctx.moveTo(lx, ly); ctx.lineTo(rx, ry); ctx.stroke();
+    const rollDeg = Math.round(Math.atan2(ry - ly, rx - lx) * 180 / Math.PI);
+    ctx.fillStyle = 'rgba(250,204,21,1)';
+    ctx.font = 'bold 12px system-ui, sans-serif';
+    ctx.fillText(`머리 기울기 ${Math.abs(rollDeg)}°`, Math.min(lx, rx), Math.min(ly, ry) - 8);
+  }
+  // 머리 회전(yaw): 코가 양 눈/귀 중심에서 좌우로 치우친 정도
+  if (isVisible(nose) && pairA) {
+    const [l, r] = pairA;
+    const midX = (mapper.x(l) + mapper.x(r)) / 2;
+    const span = Math.abs(mapper.x(r) - mapper.x(l)) || 1;
+    const yawRatio = (mapper.x(nose) - midX) / (span / 2); // -1~1
+    const yawPct = Math.round(Math.abs(yawRatio) * 100);
+    ctx.strokeStyle = 'rgba(248,113,113,0.8)';
+    ctx.lineWidth = 1.4;
+    ctx.setLineDash([3, 4]);
+    ctx.beginPath();
+    ctx.moveTo(midX, mapper.y(nose));
+    ctx.lineTo(mapper.x(nose), mapper.y(nose));
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = 'rgba(248,113,113,1)';
+    ctx.font = 'bold 12px system-ui, sans-serif';
+    ctx.fillText(`머리 회전 ${yawPct}%`, mapper.x(nose) + 6, mapper.y(nose) + 4);
+  }
+  ctx.restore();
+}
+
+// 후면 머리 정렬: 귀만 사용(코·눈은 추정이라 제거). 양 귀로 머리 기울기만 표시.
+function drawBackHeadAlignment(ctx, lm, mapper) {
+  const lEar = lm[7]; const rEar = lm[8];
+  if (!isVisible(lEar) || !isVisible(rEar)) return;
+  ctx.save();
+  // 귀 점만
+  ctx.fillStyle = 'rgba(52,211,153,0.95)';
+  [lEar, rEar].forEach((p) => {
+    ctx.beginPath();
+    ctx.arc(mapper.x(p), mapper.y(p), 3.2, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  // 머리 기울기(양 귀 연결선)
+  const lx = mapper.x(lEar); const ly = mapper.y(lEar);
+  const rx = mapper.x(rEar); const ry = mapper.y(rEar);
+  ctx.strokeStyle = 'rgba(250,204,21,0.95)';
+  ctx.lineWidth = 2;
+  ctx.setLineDash([]);
+  ctx.beginPath(); ctx.moveTo(lx, ly); ctx.lineTo(rx, ry); ctx.stroke();
+  const rollDeg = Math.round(Math.atan2(ry - ly, rx - lx) * 180 / Math.PI);
+  ctx.fillStyle = 'rgba(250,204,21,1)';
+  ctx.font = 'bold 12px system-ui, sans-serif';
+  ctx.fillText(`머리 기울기 ${Math.abs(rollDeg)}°`, Math.min(lx, rx), Math.min(ly, ry) - 8);
+  ctx.restore();
+}
+
+// 측면 기준선: 카메라를 향한(앞쪽) 어깨·고관절·무릎·발목을 한 줄로 잇는
+// 정렬 기준선과, 발목에서 올린 수직 기준선(plumb line), 귀-어깨 거북목 각도선.
+function drawSideReferenceLines(ctx, lm, mapper, viewKey) {
+  // 측면에서는 카메라에 가까운 쪽 관절을 사용. BlazePose z 가 더 작은(가까운) 쪽.
+  const pick = (leftIdx, rightIdx) => {
+    const L = lm[leftIdx]; const R = lm[rightIdx];
+    if (isVisible(L) && isVisible(R)) {
+      return ((L.z ?? 0) <= (R.z ?? 0)) ? L : R;
+    }
+    return isVisible(L) ? L : (isVisible(R) ? R : null);
+  };
+  const ear = pick(7, 8);          // 귓구멍
+  const shoulder = pick(11, 12);   // 어깨관절
+  const hip = pick(23, 24);        // 고관절
+  const knee = pick(25, 26);       // 무릎관절
+  const ankle = pick(27, 28);      // 발목관절
+
+  const chain = [shoulder, hip, knee, ankle].filter(isVisible);
+  if (chain.length >= 2) {
+    // 정렬 기준선 (어깨→고관절→무릎→발목)
+    ctx.save();
+    ctx.strokeStyle = 'rgba(250,204,21,0.95)'; // amber
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 5]);
+    ctx.beginPath();
+    ctx.moveTo(mapper.x(chain[0]), mapper.y(chain[0]));
+    chain.slice(1).forEach((p) => ctx.lineTo(mapper.x(p), mapper.y(p)));
+    ctx.stroke();
+    ctx.restore();
+
+    // 발목(외측 복사뼈) 기준 수직 중심선
+    if (isVisible(ankle)) {
+      ctx.save();
+      ctx.strokeStyle = 'rgba(125,211,252,0.85)'; // sky
+      ctx.lineWidth = 1.6;
+      ctx.setLineDash([4, 6]);
+      const ax = mapper.x(ankle);
+      const topY = mapper.y(ear || shoulder || chain[0]) - 24;
+      const botY = mapper.y(ankle) + 12;
+      ctx.beginPath();
+      ctx.moveTo(ax, topY);
+      ctx.lineTo(ax, botY);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = 'rgba(125,211,252,1)';
+      ctx.beginPath();
+      ctx.arc(ax, mapper.y(ankle), 4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.font = 'bold 11px system-ui, sans-serif';
+      ctx.fillText('발목 중심선', ax + 6, botY - 2);
+      ctx.restore();
+    }
+
+    // 관절 강조 포인트
+    ctx.save();
+    ctx.fillStyle = 'rgba(250,204,21,1)';
+    [shoulder, hip, knee, ankle].forEach((p) => {
+      if (!isVisible(p)) return;
+      ctx.beginPath();
+      ctx.arc(mapper.x(p), mapper.y(p), 5, 0, Math.PI * 2);
+      ctx.fill();
+    });
+    ctx.restore();
+  }
+
+  // 귀-어깨 거북목 기울기선 + 각도 라벨
+  if (isVisible(ear) && isVisible(shoulder)) {
+    ctx.save();
+    ctx.strokeStyle = 'rgba(248,113,113,0.95)'; // red
+    ctx.lineWidth = 2.5;
+    ctx.setLineDash([]);
+    const ex = mapper.x(ear); const ey = mapper.y(ear);
+    const sx = mapper.x(shoulder); const sy = mapper.y(shoulder);
+    ctx.beginPath();
+    ctx.moveTo(sx, sy);
+    ctx.lineTo(ex, ey);
+    ctx.stroke();
+    // 수직선 대비 전방 기울기 각도(0=수직, 클수록 거북목)
+    const dx = ex - sx; const dy = sy - ey; // 위로 갈수록 dy>0
+    const tiltDeg = Math.round(Math.abs(Math.atan2(dx, Math.max(1, dy)) * 180 / Math.PI));
+    ctx.fillStyle = 'rgba(248,113,113,1)';
+    ctx.font = 'bold 13px system-ui, sans-serif';
+    ctx.fillText(`목 기울기 ${tiltDeg}°`, ex + 8, ey - 6);
+    // 어깨 기준 수직 참조선
+    ctx.strokeStyle = 'rgba(248,113,113,0.35)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([2, 4]);
+    ctx.beginPath();
+    ctx.moveTo(sx, sy);
+    ctx.lineTo(sx, sy - Math.abs(sy - ey) - 10);
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+// 후면 코·눈 정제는 postureMath.sanitizeBackLandmarks 사용.
 
 function objectContainMapper(video, width, height) {
   const vw = video?.videoWidth || width;

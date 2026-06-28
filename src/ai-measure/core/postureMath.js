@@ -664,6 +664,44 @@ export function generatePostureComment({ score, bodyAge, actualAge, ruleFindings
   return messages.join(' ');
 }
 
+// 머리 yaw 프록시(정면): 코가 양 눈(없으면 양 귀) 중심에서 좌우로 치우친 정도를
+// 각도로 환산. 부호 규약은 estimate3DRotation 의 어깨/골반 yaw 와 통일한다:
+//   사람이 왼쪽으로 회전 → 음수(−), 오른쪽으로 회전 → 양수(+).
+//   머리가 왼쪽으로 돌면 코는 화면 오른쪽(+x)으로 가므로, ratio(+)를 음수로 매핑.
+// 정밀 각도 아님(추정).
+export function estimateHeadYawProxy(landmarks) {
+  const nose = getLandmark(landmarks, LM.NOSE, 0.3);
+  const lEye = getLandmark(landmarks, LM.LEFT_EYE, 0.3);
+  const rEye = getLandmark(landmarks, LM.RIGHT_EYE, 0.3);
+  const lEar = getLandmark(landmarks, LM.LEFT_EAR, 0.3);
+  const rEar = getLandmark(landmarks, LM.RIGHT_EAR, 0.3);
+  const pair = (lEye && rEye) ? [lEye, rEye] : (lEar && rEar) ? [lEar, rEar] : null;
+  if (!nose || !pair) return null;
+  const [l, r] = pair;
+  const midX = (l.x + r.x) / 2;
+  const span = Math.abs(r.x - l.x);
+  if (span < EPS) return null;
+  const ratio = (nose.x - midX) / (span / 2); // 코가 오른쪽이면 +
+  // 코 오른쪽(+) = 머리 왼쪽회전 → 음수로 매핑(부호 반전). ±30° 범위(경험적).
+  return round(-clamp(ratio, -1.5, 1.5) * 30, 1);
+}
+
+// 하체 yaw 프록시(정면): 양 무릎/발의 전후 깊이차(z)로 하체 회전 추정.
+// 한쪽 무릎이 카메라에 가까우면(z 작음) 그쪽이 앞으로 → 회전. 추정값.
+export function estimateLowerYawProxy(landmarks) {
+  const lKnee = getLandmark(landmarks, LM.LEFT_KNEE, 0.3);
+  const rKnee = getLandmark(landmarks, LM.RIGHT_KNEE, 0.3);
+  const lAnkle = getLandmark(landmarks, LM.LEFT_ANKLE, 0.3);
+  const rAnkle = getLandmark(landmarks, LM.RIGHT_ANKLE, 0.3);
+  const knee = (lKnee && rKnee) ? (rKnee.z ?? 0) - (lKnee.z ?? 0) : null;
+  const ankle = (lAnkle && rAnkle) ? (rAnkle.z ?? 0) - (lAnkle.z ?? 0) : null;
+  const dz = meanDefined([knee, ankle]);
+  if (dz == null) return null;
+  // z 차이(right.z - left.z)를 각도로 매핑. pairYawDegrees 와 동일 공식이라
+  // 부호 규약도 동일: 사람 왼쪽회전(오른쪽이 앞, z작음) → 음수(−), 오른쪽회전 → 양수(+).
+  return round(clamp(dz * 120, -30, 30), 1);
+}
+
 export function analyzePostureFromLandmarks(landmarks, { heightCm = null, actualAge = null } = {}) {
   const reliability = calculateReliabilityProfile(landmarks);
   const asymmetry = calculateAsymmetryProfile(landmarks);
@@ -680,6 +718,9 @@ export function analyzePostureFromLandmarks(landmarks, { heightCm = null, actual
     cog,
   });
   const bodyAge = mapScoreToBodyAge(scoreResult.score, actualAge);
+  // 회전 종합 분석용 프록시 (정면 기준): 머리 yaw, 하체 yaw.
+  const headYawProxyDeg = estimateHeadYawProxy(landmarks);
+  const lowerYawProxyDeg = estimateLowerYawProxy(landmarks);
   const summaryComment = generatePostureComment({
     score: scoreResult.score,
     bodyAge,
@@ -696,6 +737,8 @@ export function analyzePostureFromLandmarks(landmarks, { heightCm = null, actual
     reliability,
     asymmetry,
     rotations,
+    headYawProxyDeg,
+    lowerYawProxyDeg,
     frontal,
     sagittal,
     rules,
@@ -801,36 +844,73 @@ export function detectPostureView(landmarks, tuning = POSTURE_VIEW_TUNING) {
     .map((p) => (p.visibility == null ? 0.5 : p.visibility));
   const faceVis = visVals.length ? round(visVals.reduce((a, b) => a + b, 0) / visVals.length, 3) : 0;
 
-  // 정면/후면 판별의 '주 신호'는 코·눈 가시성이다.
-  //  · 정면: 코·눈이 카메라를 향해 → visibility 높음
-  //  · 후면: 뒤통수라 코·눈이 가려짐 → visibility 급락
-  // (귀는 옆머리라 후면에서도 일부 잡혀 노이즈가 되므로 정면/후면 판정에서 제외)
-  const faceCore = [LM.NOSE, LM.LEFT_EYE, LM.RIGHT_EYE]
-    .map((i) => landmarks[i])
-    .filter(Boolean)
-    .map((p) => (p.visibility == null ? 0.5 : p.visibility));
-  const coreVis = faceCore.length
-    ? round(faceCore.reduce((a, b) => a + b, 0) / faceCore.length, 3)
-    : 0;
+  // ════════════════════════════════════════════════════════════════════
+  //  정면/후면 강건 판별 — 다중 신호 투표
+  //
+  //  ※ visibility 는 신뢰 불가: BlazePose 는 뒤통수에서도 코·눈 visibility 를
+  //    높게 출력한다(머리 위치 추정). 그래서 visibility 기반 판별은 실패한다.
+  //
+  //  핵심 신호 = '얼굴 좌우 배치'와 '어깨 좌우 배치'의 부호 비교.
+  //   BlazePose 는 어깨를 항상 해부학 좌/우로 출력 →
+  //     정면: 사람의 왼어깨가 화면 오른쪽 (signLR_shoulder = lS.x - rS.x < 0)
+  //     후면: 사람의 왼어깨가 화면 왼쪽   (signLR_shoulder > 0)
+  //   얼굴(눈/귀)도 동일 규칙이지만, 머리가 도는 방향을 '실제로' 따라가므로
+  //   정면이면 어깨와 부호 일치, 후면이면 반대가 되는 경향.
+  //   → 더 직접적으로: 정면이면 얼굴의 signLR 이 음(−), 후면이면 양(+).
+  //
+  //  보조 신호 = 코의 z-깊이(카메라 쪽이 음수). 정면이면 코가 귀보다 앞(z 작음),
+  //   후면이면 코가 귀보다 뒤(z 큼).
+  // ════════════════════════════════════════════════════════════════════
+  const lEye = landmarks[LM.LEFT_EYE];
+  const rEye = landmarks[LM.RIGHT_EYE];
+  const lEar = landmarks[LM.LEFT_EAR];
+  const rEar = landmarks[LM.RIGHT_EAR];
+  const nose = landmarks[LM.NOSE];
 
-  const signLR = lS.x - rS.x; // 보조 신호: 정면이면 −, 후면이면 + (BlazePose 해부학 좌표라 신뢰도 낮음)
+  let frontVotes = 0;
+  let backVotes = 0;
+
+  // 신호 1: 눈 좌우 부호 (정면이면 L_eye.x < R_eye.x → 음수)
+  if (lEye && rEye && Math.abs(lEye.x - rEye.x) > 0.012) {
+    if (lEye.x - rEye.x < 0) frontVotes += 2; else backVotes += 2;
+  }
+  // 신호 2: 귀 좌우 부호 (정면이면 L_ear.x < R_ear.x → 음수)
+  if (lEar && rEar && Math.abs(lEar.x - rEar.x) > 0.012) {
+    if (lEar.x - rEar.x < 0) frontVotes += 2; else backVotes += 2;
+  }
+  // 신호 3: 코 z-깊이 vs 귀 평균 z (정면이면 코가 더 앞 → z 작음)
+  if (nose && lEar && rEar) {
+    const earZ = ((lEar.z ?? 0) + (rEar.z ?? 0)) / 2;
+    const dz = (nose.z ?? 0) - earZ;
+    if (Math.abs(dz) > 0.02) {
+      if (dz < 0) frontVotes += 1; else backVotes += 1;
+    }
+  }
+  // 신호 4(약): 코 좌우가 눈 중심과 일치하는지 — 정면에서 코가 얼굴 중앙
+  // (보조라 가중치 1, 어깨 부호로 대체)
+  const signLR = lS.x - rS.x; // 정면이면 −, 후면이면 + (해부학 좌표)
+  if (Math.abs(signLR) > 0.02) {
+    if (signLR < 0) frontVotes += 1; else backVotes += 1;
+  }
+
+  const faceFacing = frontVotes === 0 && backVotes === 0
+    ? null
+    : frontVotes >= backVotes ? 'front' : 'back';
+  const facingMargin = Math.abs(frontVotes - backVotes);
+  const totalVotes = frontVotes + backVotes;
 
   // ── 정면/후면 (어깨 넓음) ──
   if (shoulderRatio >= tuning.shoulderFrontMin) {
     const widthConf = clamp((shoulderRatio - tuning.shoulderFrontMin) / 0.1, 0, 1);
-
-    // 1순위: 코·눈 가시성으로 확정
-    if (coreVis >= tuning.faceVisFront) {
-      const conf = round(0.55 + 0.45 * widthConf * clamp(coreVis / 0.85, 0, 1), 3);
-      return { view: 'front', confidence: conf, shoulderRatio, faceVis, coreVis };
+    if (faceFacing) {
+      // 투표 마진이 클수록 신뢰도 높음
+      const voteConf = totalVotes > 0 ? clamp(facingMargin / totalVotes, 0, 1) : 0;
+      const conf = round(0.5 + 0.5 * Math.max(widthConf, voteConf), 3);
+      return { view: faceFacing, confidence: conf, shoulderRatio, faceVis, frontVotes, backVotes };
     }
-    if (coreVis <= tuning.faceVisBack) {
-      const conf = round(0.55 + 0.45 * widthConf * clamp((tuning.faceVisBack - coreVis + 0.2) / 0.4, 0, 1), 3);
-      return { view: 'back', confidence: conf, shoulderRatio, faceVis, coreVis };
-    }
-    // 2순위(애매 구간): 어깨 부호로 보조 판정 (신뢰도 낮게)
+    // 신호가 전혀 없을 때만 어깨 부호로 최후 판정
     const view = signLR > 0 ? 'back' : 'front';
-    return { view, confidence: 0.4, shoulderRatio, faceVis, coreVis };
+    return { view, confidence: 0.35, shoulderRatio, faceVis, frontVotes, backVotes };
   }
 
   // ── 측면 (어깨 좁음) ──
@@ -847,11 +927,11 @@ export function detectPostureView(landmarks, tuning = POSTURE_VIEW_TUNING) {
       view = lz < rz ? 'left' : 'right';
     }
     const sideConf = round(0.5 + 0.5 * clamp((tuning.shoulderSideMax - shoulderRatio) / 0.08, 0, 1), 3);
-    return { view, confidence: sideConf, shoulderRatio, faceVis, coreVis };
+    return { view, confidence: sideConf, shoulderRatio, faceVis };
   }
 
   // ── 모호 구간(어깨폭 중간) ──
-  return { view: 'unknown', confidence: 0.2, shoulderRatio, faceVis, coreVis };
+  return { view: 'unknown', confidence: 0.2, shoulderRatio, faceVis };
 }
 
 // 안정 판정용 누적기: 최근 N프레임 다수결 + 목표 면 연속 일치 카운트.
@@ -883,3 +963,15 @@ export class PostureViewVoter {
   }
 }
 
+// 후면(back) 측정 시 코·눈 랜드마크는 BlazePose 가 뒤통수에서 '추정'한 값이라
+// 신뢰할 수 없다. 분석/저장 전에 강제로 제거(visibility 0)해 잘못된 거북목·
+// 머리회전 수치 산출을 막는다(측정 정직성). 귀(7,8)는 유지.
+export function sanitizeBackLandmarks(landmarks) {
+  if (!Array.isArray(landmarks)) return landmarks;
+  const FACE_FRONT_IDX = new Set([0, 1, 2, 3, 4, 5, 6, 9, 10]); // 코·양눈(inner/outer)·입
+  return landmarks.map((p, i) => {
+    if (!p) return p;
+    if (FACE_FRONT_IDX.has(i)) return { ...p, visibility: 0, presence: 0, _removed: true };
+    return p;
+  });
+}

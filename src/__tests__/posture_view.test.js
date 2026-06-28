@@ -3,16 +3,18 @@ import {
   POSE_LANDMARKS as LM,
   detectPostureView,
   PostureViewVoter,
+  sanitizeBackLandmarks,
 } from '../ai-measure/core/postureMath';
 
-// 정면 기준 포즈: 어깨가 넓게 펼쳐지고(좌 0.42 < 우 0.58) 얼굴 가시성 높음.
+// 정면 기준 포즈: 어깨가 넓게 펼쳐지고(좌 0.42 < 우 0.58), 얼굴 좌우부호 음(-),
+// 코가 귀보다 앞(z 작음).
 function frontPose(overrides = {}) {
   const pose = Array.from({ length: 33 }, () => ({ x: 0.5, y: 0.5, z: 0, visibility: 0.99 }));
-  Object.assign(pose[LM.NOSE], { x: 0.5, y: 0.08, visibility: 0.98 });
-  Object.assign(pose[LM.LEFT_EYE], { x: 0.47, y: 0.07, visibility: 0.95 });
-  Object.assign(pose[LM.RIGHT_EYE], { x: 0.53, y: 0.07, visibility: 0.95 });
-  Object.assign(pose[LM.LEFT_EAR], { x: 0.45, y: 0.1, visibility: 0.9 });
-  Object.assign(pose[LM.RIGHT_EAR], { x: 0.55, y: 0.1, visibility: 0.9 });
+  Object.assign(pose[LM.NOSE], { x: 0.5, y: 0.08, z: -0.12, visibility: 0.98 });
+  Object.assign(pose[LM.LEFT_EYE], { x: 0.47, y: 0.07, z: -0.05, visibility: 0.95 });
+  Object.assign(pose[LM.RIGHT_EYE], { x: 0.53, y: 0.07, z: -0.05, visibility: 0.95 });
+  Object.assign(pose[LM.LEFT_EAR], { x: 0.45, y: 0.1, z: 0.02, visibility: 0.9 });
+  Object.assign(pose[LM.RIGHT_EAR], { x: 0.55, y: 0.1, z: 0.02, visibility: 0.9 });
   Object.assign(pose[LM.LEFT_SHOULDER], { x: 0.42, y: 0.25, z: 0 });
   Object.assign(pose[LM.RIGHT_SHOULDER], { x: 0.58, y: 0.25, z: 0 });
   Object.assign(pose[LM.LEFT_HIP], { x: 0.43, y: 0.52, z: 0 });
@@ -23,16 +25,21 @@ function frontPose(overrides = {}) {
   return pose;
 }
 
-// 후면: 정면에서 좌우 어깨 x를 뒤집고(좌 0.58 > 우 0.42) 얼굴 가시성 낮춤.
+// 후면: 어깨는 BlazePose 특성상 정면과 같은 배치일 수 있지만(좌 0.42 < 우 0.58),
+// 얼굴 좌우부호가 뒤집히고(눈/귀 좌>우), 코가 귀보다 뒤(z 큼). visibility 는 높게 유지
+// (BlazePose 가 뒤통수에서도 얼굴 vis 를 높게 주는 실제 동작 반영).
 function backPose() {
   const pose = frontPose();
-  Object.assign(pose[LM.LEFT_SHOULDER], { x: 0.58 });
-  Object.assign(pose[LM.RIGHT_SHOULDER], { x: 0.42 });
-  Object.assign(pose[LM.LEFT_HIP], { x: 0.57 });
-  Object.assign(pose[LM.RIGHT_HIP], { x: 0.43 });
-  [LM.NOSE, LM.LEFT_EYE, LM.RIGHT_EYE, LM.LEFT_EAR, LM.RIGHT_EAR].forEach((i) => {
-    pose[i].visibility = 0.15;
-  });
+  // 얼굴 좌우 배치 반전
+  Object.assign(pose[LM.LEFT_EYE], { x: 0.53 });
+  Object.assign(pose[LM.RIGHT_EYE], { x: 0.47 });
+  Object.assign(pose[LM.LEFT_EAR], { x: 0.55 });
+  Object.assign(pose[LM.RIGHT_EAR], { x: 0.45 });
+  // 코가 귀보다 뒤로 (뒤통수 쪽)
+  Object.assign(pose[LM.NOSE], { x: 0.5, z: 0.12 });
+  Object.assign(pose[LM.LEFT_EAR], { z: -0.02 });
+  Object.assign(pose[LM.RIGHT_EAR], { z: -0.02 });
+  // visibility 는 일부러 높게 유지 (vis 로 속지 않는지 검증)
   return pose;
 }
 
@@ -59,13 +66,14 @@ describe('detectPostureView', () => {
     expect(r.view).toBe('back');
   });
 
-  it('어깨 x부호가 정면형이어도 코·눈이 가려지면 후면으로 판별한다 (실측 회귀)', () => {
-    // BlazePose 는 뒤돌아도 해부학 좌/우 어깨를 출력 → 어깨 부호가 정면과 같을 수 있음.
-    // 이때 얼굴(코·눈) 가시성이 낮으면 반드시 후면이어야 한다.
-    const pose = frontPose(); // 어깨/엉덩이 x 는 정면 배치 그대로 둠
-    [LM.NOSE, LM.LEFT_EYE, LM.RIGHT_EYE].forEach((i) => { pose[i].visibility = 0.1; });
+  it('visibility가 높아도(뒤통수) 좌우부호·z깊이로 후면을 판별한다 (실측 회귀)', () => {
+    // BlazePose 는 후면에서도 얼굴 visibility 를 높게 출력 → vis 로 속으면 안 됨.
+    // backPose 는 vis 0.9+ 를 유지하면서 좌우부호 반전 + 코 z 뒤쪽으로 구성됨.
+    const pose = backPose();
+    const eyeVis = (pose[LM.LEFT_EYE].visibility + pose[LM.RIGHT_EYE].visibility) / 2;
+    expect(eyeVis).toBeGreaterThan(0.8); // 가시성은 높음
     const r = detectPostureView(pose);
-    expect(r.view).toBe('back');
+    expect(r.view).toBe('back'); // 그래도 후면으로 판별
   });
 
   it('어깨가 좁으면 측면으로 판별한다', () => {
@@ -113,5 +121,26 @@ describe('PostureViewVoter', () => {
     for (let i = 0; i < 5; i++) v.push('back');
     v.reset();
     expect(v.majority().view).toBe('unknown');
+  });
+});
+
+describe('sanitizeBackLandmarks', () => {
+  it('후면에서 코·눈은 visibility 0 으로 제거하고 귀는 유지한다', () => {
+    const pose = Array.from({ length: 33 }, () => ({ x: 0.5, y: 0.5, z: 0, visibility: 0.95 }));
+    const out = sanitizeBackLandmarks(pose);
+    // 코(0), 눈(2,5) 제거
+    expect(out[LM.NOSE].visibility).toBe(0);
+    expect(out[LM.NOSE]._removed).toBe(true);
+    expect(out[LM.LEFT_EYE].visibility).toBe(0);
+    expect(out[LM.RIGHT_EYE].visibility).toBe(0);
+    // 귀(7,8)는 유지
+    expect(out[LM.LEFT_EAR].visibility).toBe(0.95);
+    expect(out[LM.RIGHT_EAR].visibility).toBe(0.95);
+    // 어깨 등 몸통은 그대로
+    expect(out[LM.LEFT_SHOULDER].visibility).toBe(0.95);
+  });
+
+  it('배열이 아니면 그대로 반환', () => {
+    expect(sanitizeBackLandmarks(null)).toBeNull();
   });
 });
