@@ -11,14 +11,14 @@ import {
 function frontPose(overrides = {}) {
   const pose = Array.from({ length: 33 }, () => ({ x: 0.5, y: 0.5, z: 0, visibility: 0.99 }));
   Object.assign(pose[LM.NOSE], { x: 0.5, y: 0.08, z: -0.12, visibility: 0.98 });
-  Object.assign(pose[LM.LEFT_EYE], { x: 0.47, y: 0.07, z: -0.05, visibility: 0.95 });
-  Object.assign(pose[LM.RIGHT_EYE], { x: 0.53, y: 0.07, z: -0.05, visibility: 0.95 });
-  Object.assign(pose[LM.LEFT_EAR], { x: 0.45, y: 0.1, z: 0.02, visibility: 0.9 });
-  Object.assign(pose[LM.RIGHT_EAR], { x: 0.55, y: 0.1, z: 0.02, visibility: 0.9 });
-  Object.assign(pose[LM.LEFT_SHOULDER], { x: 0.42, y: 0.25, z: 0 });
-  Object.assign(pose[LM.RIGHT_SHOULDER], { x: 0.58, y: 0.25, z: 0 });
-  Object.assign(pose[LM.LEFT_HIP], { x: 0.43, y: 0.52, z: 0 });
-  Object.assign(pose[LM.RIGHT_HIP], { x: 0.57, y: 0.52, z: 0 });
+  Object.assign(pose[LM.LEFT_EYE], { x: 0.53, y: 0.07, z: -0.05, visibility: 0.95 });
+  Object.assign(pose[LM.RIGHT_EYE], { x: 0.47, y: 0.07, z: -0.05, visibility: 0.95 });
+  Object.assign(pose[LM.LEFT_EAR], { x: 0.55, y: 0.1, z: 0.02, visibility: 0.9 });
+  Object.assign(pose[LM.RIGHT_EAR], { x: 0.45, y: 0.1, z: 0.02, visibility: 0.9 });
+  Object.assign(pose[LM.LEFT_SHOULDER], { x: 0.58, y: 0.25, z: 0 });
+  Object.assign(pose[LM.RIGHT_SHOULDER], { x: 0.42, y: 0.25, z: 0 });
+  Object.assign(pose[LM.LEFT_HIP], { x: 0.57, y: 0.52, z: 0 });
+  Object.assign(pose[LM.RIGHT_HIP], { x: 0.43, y: 0.52, z: 0 });
   for (const [index, value] of Object.entries(overrides)) {
     Object.assign(pose[Number(index)], value);
   }
@@ -30,16 +30,16 @@ function frontPose(overrides = {}) {
 // (BlazePose 가 뒤통수에서도 얼굴 vis 를 높게 주는 실제 동작 반영).
 function backPose() {
   const pose = frontPose();
-  // 얼굴 좌우 배치 반전
-  Object.assign(pose[LM.LEFT_EYE], { x: 0.53 });
-  Object.assign(pose[LM.RIGHT_EYE], { x: 0.47 });
-  Object.assign(pose[LM.LEFT_EAR], { x: 0.55 });
-  Object.assign(pose[LM.RIGHT_EAR], { x: 0.45 });
-  // 코가 귀보다 뒤로 (뒤통수 쪽)
-  Object.assign(pose[LM.NOSE], { x: 0.5, z: 0.12 });
-  Object.assign(pose[LM.LEFT_EAR], { z: -0.02 });
-  Object.assign(pose[LM.RIGHT_EAR], { z: -0.02 });
-  // visibility 는 일부러 높게 유지 (vis 로 속지 않는지 검증)
+  // 정면 대비 얼굴/어깨 좌우 배치 반전 (등을 보임)
+  Object.assign(pose[LM.LEFT_EYE], { x: 0.47 });
+  Object.assign(pose[LM.RIGHT_EYE], { x: 0.53 });
+  Object.assign(pose[LM.LEFT_EAR], { x: 0.45, z: -0.02 });
+  Object.assign(pose[LM.RIGHT_EAR], { x: 0.55, z: -0.02 });
+  Object.assign(pose[LM.NOSE], { x: 0.5, z: 0.12 }); // 코가 귀보다 뒤
+  Object.assign(pose[LM.LEFT_SHOULDER], { x: 0.42 });
+  Object.assign(pose[LM.RIGHT_SHOULDER], { x: 0.58 });
+  Object.assign(pose[LM.LEFT_HIP], { x: 0.43 });
+  Object.assign(pose[LM.RIGHT_HIP], { x: 0.57 });
   return pose;
 }
 
@@ -92,6 +92,21 @@ describe('detectPostureView', () => {
   it('랜드마크가 없으면 unknown', () => {
     expect(detectPostureView(null).view).toBe('unknown');
     expect(detectPostureView([]).view).toBe('unknown');
+  });
+
+  it('[회귀] 미러링 없는 후면 카메라: 정면은 해부학 LEFT가 화면 오른쪽(x 큼)이며 front', () => {
+    const pose = frontPose();
+    expect(pose[LM.LEFT_EYE].x).toBeGreaterThan(pose[LM.RIGHT_EYE].x);
+    expect(detectPostureView(pose).view).toBe('front');
+  });
+  it('[회귀] 미러링 없는 후면 카메라: 등을 보이면 좌우 반전되어 back', () => {
+    const pose = backPose();
+    expect(pose[LM.LEFT_EYE].x).toBeLessThan(pose[LM.RIGHT_EYE].x);
+    expect(detectPostureView(pose).view).toBe('back');
+  });
+  it('[회귀] 정면/후면이 서로 반대로 일관되게 판정된다', () => {
+    expect(detectPostureView(frontPose()).view).toBe('front');
+    expect(detectPostureView(backPose()).view).toBe('back');
   });
 });
 

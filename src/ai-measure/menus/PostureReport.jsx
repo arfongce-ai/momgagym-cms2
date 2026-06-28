@@ -233,7 +233,10 @@ const LEVEL_STYLE = {
 
 function MetadataStrip({ metadata, viewsMeasured }) {
   if (!metadata) return null;
-  const sexKo = metadata.sex === 'M' || metadata.sex === 'male' ? '남' : metadata.sex === 'F' || metadata.sex === 'female' ? '여' : '미입력';
+  const sexNorm = String(metadata.sex || '').trim().toLowerCase();
+  const sexKo = ['m', 'male', '남', '남성'].includes(sexNorm) ? '남'
+    : ['f', 'female', '여', '여성'].includes(sexNorm) ? '여'
+    : '미입력';
   const views = Array.isArray(viewsMeasured) ? viewsMeasured.length : null;
   const cell = (label, value) => (
     <div className="rounded-md bg-slate-900 px-2.5 py-1.5">

@@ -60,7 +60,6 @@ export default function PostureMeasure({ member, onSave, onBack }) {
   const [captures, setCaptures] = useState({});
   const capturesRef = useRef({});
   useEffect(() => { capturesRef.current = captures; }, [captures]);
-  const [liveAnalysis, setLiveAnalysis] = useState(null);
   const [report, setReport] = useState(null);
   const [previewUrl, setPreviewUrl] = useState('');
   const [saveState, setSaveState] = useState('idle');
@@ -95,14 +94,6 @@ export default function PostureMeasure({ member, onSave, onBack }) {
     if (!selectedViews[activeViewKey]) setActiveViewKey(selectedSteps[0].key);
   }, [activeViewKey, selectedSteps, selectedViews]);
 
-  const analyzeLandmarks = useCallback((landmarks) => {
-    if (!landmarks) return null;
-    return analyzePostureFromLandmarks(landmarks, {
-      heightCm: bodyInfo.heightCm,
-      actualAge: bodyInfo.actualAge,
-    });
-  }, [bodyInfo.actualAge, bodyInfo.heightCm]);
-
   const handlePose = useCallback((landmarks, ts, video) => {
     latestVideoRef.current = video || latestVideoRef.current;
     const smoothed = landmarks ? smootherRef.current(landmarks) : smootherRef.current(null);
@@ -126,7 +117,7 @@ export default function PostureMeasure({ member, onSave, onBack }) {
     buf.push({ landmarks: smoothed, ts });
     const cutoff = ts - CAPTURE_WINDOW_MS;
     while (buf.length && buf[0].ts < cutoff) buf.shift();
-    if (ts % 250 < 18) setLiveAnalysis(analyzeLandmarks(smoothed));
+    // (측정 중 점수/CoG 패널 제거 → 매 프레임 분석 계산 중단. 결과는 촬영 시 1회 산출)
 
     // ── 자동 촬영 모드: 목표 면 인식 → 안정되면 카운트다운 트리거 ──
     if (captureModeRef.current === 'auto') {
@@ -147,7 +138,7 @@ export default function PostureMeasure({ member, onSave, onBack }) {
       setGuide(`${activeStepLabelRef.current} 자세가 인식되었습니다. 2초간 멈춘 뒤 측정하세요.`);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [analyzeLandmarks]);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const { videoRef, start, stop, status, error } = usePoseEngine({ onResult: handlePose, modelTier: 'full' });
 
@@ -273,10 +264,12 @@ export default function PostureMeasure({ member, onSave, onBack }) {
       autoCountdownRef.current = null;
       setAutoCountdown(null);
       // 카운트다운 동안 자세가 흐트러졌으면 재시도(측정 정직성: 잘못된 캡처 방지)
+      // 단일 프레임 대신 '안정 다수결(voter)'로 판정 — 측면 임계 구간에서 한 프레임만
+      // 튀어도 촬영이 거부되던 문제 방지.
       const live = latestLandmarksRef.current;
-      const det = live ? detectPostureView(live) : { view: 'unknown' };
       const target = activeViewKeyRef.current;
-      if (!live || !isFullBodyVisible(live) || det.view !== target) {
+      const stillStable = viewVoterRef.current.isStable(target, { minRatio: 0.6, minFrames: 6 });
+      if (!live || !isFullBodyVisible(live) || !stillStable) {
         setGuide('자세가 흐트러졌습니다 — 다시 맞춰주세요.');
         viewVoterRef.current.reset();
         autoBusyRef.current = false;
@@ -550,17 +543,7 @@ export default function PostureMeasure({ member, onSave, onBack }) {
             />
           ))}
         </div>
-        {liveAnalysis && (
-          <div className="grid grid-cols-3 gap-2">
-            <LiveMetric label="점수" value={`${liveAnalysis.score}`} tone={scoreTone(liveAnalysis.score)} />
-            <LiveMetric label="체형나이" value={liveAnalysis.bodyAge ? `${liveAnalysis.bodyAge}세` : '--'} tone="amber" />
-            <LiveMetric
-              label="CoG"
-              value={liveAnalysis.cog?.available ? `${Math.abs(liveAnalysis.cog.balanceOffsetPct ?? liveAnalysis.cog.offsetPct)}%` : '--'}
-              tone={liveAnalysis.cog?.status === 'risk' ? 'red' : liveAnalysis.cog?.status === 'caution' ? 'amber' : 'emerald'}
-            />
-          </div>
-        )}
+        {/* 측정 중에는 점수·체형나이·CoG 를 노출하지 않는다(촬영 후 결과·리포트에서만 확인). */}
         {captureMode === 'auto' && (
           <div className="flex justify-center">
             <span className={`rounded-full px-3 py-1 text-[11px] font-black ${
@@ -644,6 +627,9 @@ function buildReport({ member, bodyInfo, captures, selectedSteps }) {
     recordedAt: todayYMD(),
     heightCm: bodyInfo.heightCm,
     actualAge: bodyInfo.actualAge,
+    sex: member?.sex || member?.gender || null,
+    birthDate: member?.birthDate || null,
+    isVirtualMember: member?.isVirtual === true,
     ageGroup: classifyPostureAgeGroup(bodyInfo.actualAge),
     view: primaryCapture?.view || 'front',
     viewsMeasured: selectedSteps.map((step) => step.key),

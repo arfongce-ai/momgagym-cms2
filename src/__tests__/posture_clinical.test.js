@@ -107,3 +107,47 @@ describe('buildClinicalInterpretation', () => {
     expect(out.disclaimers.length).toBeGreaterThan(0);
   });
 });
+
+describe('성별 기준 적용', () => {
+  const borderlinePelvis = {
+    front: {
+      frontal: { pelvisHeightDiffMm: 8.5, pelvisPattern: 'functional_lumbopelvic_pattern', shoulderHeightDiffMm: 2, legAlignment: { status: 'normal' } },
+      cog: { available: true, balanceOffsetPct: 2, offsetPct: 2 },
+      sagittal: {},
+    },
+    left: { sagittal: { forwardHeadMm: 10, kyphosisProxyDeg: 178, kneeExtensionProxyDeg: 178 } },
+  };
+  const pelvisRegion = (regions) => regions.find((r) => r.key === 'pelvis_spine');
+
+  it('골반 경계값(8.5mm): 남성=주의, 여성=정상', () => {
+    expect(pelvisRegion(buildRegionDiagnoses(borderlinePelvis, { sex: 'male' })).level).toBe(CLINICAL_LEVEL.caution);
+    expect(pelvisRegion(buildRegionDiagnoses(borderlinePelvis, { sex: 'female' })).level).toBe(CLINICAL_LEVEL.normal);
+  });
+  it('성별 미입력 시 성중립(=남성 8mm) 기준', () => {
+    expect(pelvisRegion(buildRegionDiagnoses(borderlinePelvis, {})).level).toBe(CLINICAL_LEVEL.caution);
+  });
+  it('Q각 프록시 편위 8°: 남성=주의, 여성=정상', () => {
+    const pv = {
+      front: {
+        frontal: { pelvisHeightDiffMm: 2, shoulderHeightDiffMm: 2, pelvisPattern: 'within_error', legAlignment: { status: 'normal' }, qAngleProxyDeg: { left: 172, right: 178 } },
+        cog: { available: true, balanceOffsetPct: 2, offsetPct: 2 }, sagittal: { kneeExtensionProxyDeg: 178 },
+      },
+      left: { sagittal: { forwardHeadMm: 10, kyphosisProxyDeg: 178, kneeExtensionProxyDeg: 178 } },
+    };
+    const leg = (r) => r.find((x) => x.key === 'foot_leg');
+    expect(leg(buildRegionDiagnoses(pv, { sex: 'male' })).level).toBe(CLINICAL_LEVEL.caution);
+    expect(leg(buildRegionDiagnoses(pv, { sex: 'female' })).level).toBe(CLINICAL_LEVEL.normal);
+    expect(leg(buildRegionDiagnoses(pv, { sex: 'male' })).measured.some((m) => m.label.includes('Q각'))).toBe(true);
+  });
+  it('한글 성별(여)도 정규화 적용', () => {
+    expect(pelvisRegion(buildRegionDiagnoses(borderlinePelvis, { sex: '여' })).level).toBe(CLINICAL_LEVEL.normal);
+  });
+  it('buildClinicalInterpretation: 성별 보정 플래그·디스클레이머', () => {
+    const withSex = buildClinicalInterpretation({ perViewAnalysis: borderlinePelvis, bodyInfo: { sex: 'female' } });
+    expect(withSex.metadata.genderCalibrated).toBe(true);
+    expect(withSex.disclaimers.some((d) => d.includes('여성 기준'))).toBe(true);
+    const noSex = buildClinicalInterpretation({ perViewAnalysis: borderlinePelvis, bodyInfo: {} });
+    expect(noSex.metadata.genderCalibrated).toBe(false);
+    expect(noSex.disclaimers.some((d) => d.includes('성중립') || d.includes('성별 입력'))).toBe(true);
+  });
+});

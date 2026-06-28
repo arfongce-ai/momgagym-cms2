@@ -906,3 +906,37 @@ describe('트레이너 모드 정산 스코핑', () => {
     expect(scoped[0].rows.some(r => r.memberId === 'm2')).toBe(false);
   });
 });
+
+describe('가상회원 측정 저장 (모든 유형 저장·출력)', () => {
+  it('가상회원 자세 리포트가 posture_reports 에 저장된다(__mid 동봉)', async () => {
+    const { VIRTUAL_MID } = await import('../demoData.js');
+    const r = await aiStore.addPostureReport({
+      kind: 'posture',
+      member: { id: VIRTUAL_MID, name: '가상회원', isVirtual: true },
+      sex: 'female', birthDate: '1990-01-01', heightCm: 170, weightKg: 60,
+      postureScore: 74,
+    });
+    expect(r.id).toBeTruthy();
+    expect(r.sex).toBe('female');
+    expect(r.member.isVirtual).toBe(true);
+  });
+
+  it('가상회원 점프 리포트가 gait_reports 에 저장된다', async () => {
+    const { VIRTUAL_MID } = await import('../demoData.js');
+    const r = await aiStore.addGaitReport({
+      kind: 'jump', valid: true,
+      member: { id: VIRTUAL_MID, name: '가상회원', isVirtual: true },
+      heightCm: 170,
+    });
+    expect(r.id).toBeTruthy();
+    expect(r.kind).toBe('jump');
+  });
+
+  it('가상회원 세션이 분리된 버킷(VIRTUAL_MID)에 저장된다', async () => {
+    const { VIRTUAL_MID } = await import('../demoData.js');
+    const s = await aiStore.addSession(VIRTUAL_MID, { menu: '1rm', isVirtual: true, data: { e1rm: 100 } });
+    expect(s.id).toBeTruthy();
+    // 실제 회원 버킷과 섞이지 않는다
+    expect(aiStore.getSessions(VIRTUAL_MID).some(x => x.id === s.id)).toBe(true);
+  });
+});

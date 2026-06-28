@@ -51,6 +51,42 @@ const worst = (levels) => {
   return LEVEL.insufficient;
 };
 
+// ── 성별 기준값(Gender-specific norms) ──────────────────────────────────
+//  ⚠ 측정 정직성: 성별 미입력 시 성중립(neutral) 기준 + '미보정' 명시. 추정 금지.
+//  근거(임상 표준, BlazePose 좌표로 산출 가능한 지표 한정):
+//   • 골반 좌우 높이차: 여성 골반폭이 커 동일 mm 비대칭 민감도 ↓ → 임계 소폭 완화.
+//   • Q각 프록시(고관절-무릎-발목 180° 편위): 여성 평균 Q각이 큼(통상 정상상한 남 15°/여 20°)
+//     → 남성은 좁은 편위 임계, 여성은 넓은 편위 임계.
+//   • 어깨 높이차: 성차 작아 동일 기준 유지(근거 부족 시 비보정).
+const GENDER_NORMS = {
+  pelvisDiffMm: { male: [8, 15], female: [9, 16], neutral: [8, 15] },
+  qAngleDevDeg: { male: [6, 12], female: [9, 15], neutral: [7, 13] },
+};
+
+function normalizeSex(sex) {
+  if (sex == null) return 'neutral';
+  const t = String(sex).trim().toLowerCase();
+  if (['m', 'male', '남', '남성'].includes(t)) return 'male';
+  if (['f', 'female', '여', '여성'].includes(t)) return 'female';
+  return 'neutral';
+}
+
+function genderThreshold(metric, sex) {
+  const table = GENDER_NORMS[metric];
+  if (!table) return null;
+  return table[normalizeSex(sex)] || table.neutral;
+}
+
+// Q각 프록시(고관절-무릎-발목, 직선이면 180°)에서 좌우 중 큰 편위 절대값.
+function qAngleDeviation(qProxy) {
+  if (!qProxy) return null;
+  const devs = ['left', 'right']
+    .map((side) => (qProxy[side] == null ? null : Math.abs(180 - qProxy[side])))
+    .filter((v) => v != null && Number.isFinite(v));
+  if (!devs.length) return null;
+  return Math.max(...devs);
+}
+
 // ── 1) 메타데이터(촬영/보정 조건) ──────────────────────────────────────
 export function buildMetadata(bodyInfo = {}, camera = {}) {
   return {
@@ -67,7 +103,7 @@ export function buildMetadata(bodyInfo = {}, camera = {}) {
 
 // ── 2) 부위별 원인 진단 ────────────────────────────────────────────────
 // 각 region: { key, title, level, measured[], problem, recommendation, estimated }
-export function buildRegionDiagnoses(perViewAnalysis = {}) {
+export function buildRegionDiagnoses(perViewAnalysis = {}, { sex = null } = {}) {
   const front = perViewAnalysis.front || null;
   const back = perViewAnalysis.back || null;
   const side = pick(perViewAnalysis, ['left', 'right']);
@@ -124,7 +160,8 @@ export function buildRegionDiagnoses(perViewAnalysis = {}) {
   // (3) 골반·척추 — 정면 골반 높이차 + 패턴 + CoG 좌우 편향
   {
     const pelvisDiff = front?.frontal?.pelvisHeightDiffMm ?? null;
-    const pelvisLevel = levelFromMm(pelvisDiff, 8, 15);
+    const [pelvisCaution, pelvisRisk] = genderThreshold('pelvisDiffMm', sex);
+    const pelvisLevel = levelFromMm(pelvisDiff, pelvisCaution, pelvisRisk);
     const cog = front?.cog?.available ? front.cog : null;
     const cogOffset = cog ? abs(cog.balanceOffsetPct ?? cog.offsetPct) : null;
     const cogLevel = cogOffset == null ? LEVEL.insufficient : cogOffset >= 35 ? LEVEL.risk : cogOffset >= 18 ? LEVEL.caution : LEVEL.normal;
@@ -153,19 +190,30 @@ export function buildRegionDiagnoses(perViewAnalysis = {}) {
     });
   }
 
-  // (4) 발·다리 — 하지 정렬(O/X) + 무릎 신전각
+  // (4) 발·다리 — 하지 정렬(O/X) + 무릎 신전각 + Q각 프록시(성별 기준)
   {
     const leg = front?.frontal?.legAlignment || front?.rules?.legAlignment || null;
     const knee = side?.sagittal?.kneeExtensionProxyDeg ?? front?.sagittal?.kneeExtensionProxyDeg ?? null;
     const kneeLevel = knee == null ? LEVEL.insufficient : knee > 185 ? LEVEL.risk : knee > 180 ? LEVEL.caution : LEVEL.normal;
     const legLevel = leg?.status === 'risk' ? LEVEL.risk : leg?.status === 'caution' ? LEVEL.caution : leg ? LEVEL.normal : LEVEL.insufficient;
-    const level = worst([kneeLevel, legLevel]);
+    const qDev = qAngleDeviation(front?.frontal?.qAngleProxyDeg);
+    const [qCaution, qRisk] = genderThreshold('qAngleDevDeg', sex);
+    const qLevel = levelFromDeg(qDev, qCaution, qRisk);
+    const level = worst([kneeLevel, legLevel, qLevel]);
     const measured = [];
     if (knee != null) measured.push({ label: '무릎 신전각', value: Math.round(knee), unit: '°' });
-    // 하지 정렬(O/X 다리) — 비정상일 때 라벨과 지수 표시
+    if (qDev != null) measured.push({ label: 'Q각 편위(프록시)', value: Math.round(qDev), unit: '°' });
     if (leg && leg.key && leg.key !== 'leg_alignment') {
       measured.push({ label: leg.label || '하지 정렬', value: leg.value ?? '', unit: leg.unit === 'index' ? '' : (leg.unit || '') });
     }
+    const sexLabel = normalizeSex(sex);
+    const qNote = qDev != null && qLevel !== LEVEL.normal && qLevel !== LEVEL.insufficient
+      ? (sexLabel === 'female'
+          ? ' 여성은 골반 폭 영향으로 Q각이 큰 편이나, 성별 기준에서도 주의 범위입니다.'
+          : sexLabel === 'male'
+            ? ' 남성 기준에서 Q각 편위가 주의 범위로, 무릎 외반/내반 부하 가능성이 있습니다.'
+            : ' Q각 편위가 주의 범위입니다(성별 미입력 — 성중립 기준 적용).')
+      : '';
     regions.push({
       key: 'foot_leg',
       title: '발·다리',
@@ -176,7 +224,7 @@ export function buildRegionDiagnoses(perViewAnalysis = {}) {
           ? '하지 정렬을 판정할 측정값이 부족합니다.'
           : level === LEVEL.normal
             ? '하지 정렬과 무릎 신전각이 정상 범위입니다.'
-            : `${leg?.message ? leg.message + ' ' : ''}하지 정렬 또는 무릎 과신전 경향이 관찰됩니다. 방치 시 팔자/안짱걸음과 무릎 관절 부담 증가를 유발할 수 있습니다.`,
+            : `${leg?.message ? leg.message + ' ' : ''}하지 정렬 또는 무릎 과신전 경향이 관찰됩니다. 방치 시 팔자/안짱걸음과 무릎 관절 부담 증가를 유발할 수 있습니다.${qNote}`,
       recommendation: level === LEVEL.normal || level === LEVEL.insufficient ? null : '발목·고관절 정렬 운동, 무릎 잠금 습관 교정 권장.',
       estimated: false,
     });
@@ -249,19 +297,27 @@ export function buildRiskTop3(regions = []) {
 // ── 통합 진입점 ────────────────────────────────────────────────────────
 export function buildClinicalInterpretation({ perViewAnalysis = {}, bodyInfo = {}, camera = {} } = {}) {
   const metadata = buildMetadata(bodyInfo, camera);
-  const regions = buildRegionDiagnoses(perViewAnalysis);
+  const sex = bodyInfo?.sex ?? null;
+  const regions = buildRegionDiagnoses(perViewAnalysis, { sex });
   const muscleMap = buildMuscleMap(regions);
   const riskTop3 = buildRiskTop3(regions);
+  const genderApplied = normalizeSex(sex) !== 'neutral';
+  const disclaimers = [
+    '본 리포트는 BlazePose 기반 스크리닝 자료이며 의료 진단이 아닙니다.',
+    '근육 상태 및 위험 예측은 측정된 자세 패턴에서 파생된 참고 해석입니다.',
+    '통증·신경학적 증상이 있는 경우 전문 의료진 평가가 우선입니다.',
+  ];
+  disclaimers.push(
+    genderApplied
+      ? `골반·Q각 등 일부 지표는 ${normalizeSex(sex) === 'female' ? '여성' : '남성'} 기준으로 평가했습니다.`
+      : '성별 미입력 — 골반·Q각 기준은 성중립(미보정)으로 평가했습니다. 정확도를 위해 성별 입력을 권장합니다.'
+  );
   return {
-    metadata,
+    metadata: { ...metadata, genderCalibrated: genderApplied },
     regions,
     muscleMap,
     riskTop3,
-    disclaimers: [
-      '본 리포트는 BlazePose 기반 스크리닝 자료이며 의료 진단이 아닙니다.',
-      '근육 상태 및 위험 예측은 측정된 자세 패턴에서 파생된 참고 해석입니다.',
-      '통증·신경학적 증상이 있는 경우 전문 의료진 평가가 우선입니다.',
-    ],
+    disclaimers,
   };
 }
 

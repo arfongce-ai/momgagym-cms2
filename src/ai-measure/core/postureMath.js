@@ -537,6 +537,17 @@ export function calculateCenterOfGravity(landmarks) {
     };
   }
 
+  // ── 측정 정직성 가드: 측면(발목 겹침)에서 CoG/BoS 계산 거부 ──
+  const shoulderWidthForBos = distance2d(leftShoulder, rightShoulder);
+  const bosToShoulder = shoulderWidthForBos > EPS ? bosWidth / shoulderWidthForBos : 0;
+  if (bosToShoulder < 0.35) {
+    return {
+      available: false,
+      status: POSTURE_STATUS.NORMAL,
+      message: '측면 자세에서는 무게중심(CoG)·지지기반(BoS) 균형을 계산하지 않습니다. 정면 또는 후면에서 측정해 주세요.',
+    };
+  }
+
   const cogTop = shoulderMid;
   const cogBottom = pelvisMid;
   const footY = footMid.y;
@@ -544,7 +555,15 @@ export function calculateCenterOfGravity(landmarks) {
   const slopeX = Math.abs(dy) < EPS ? 0 : (cogBottom.x - cogTop.x) / dy;
   const cogAtBosX = cogTop.x + slopeX * (footY - cogTop.y);
   const offsetRatioOfHalfBos = (cogAtBosX - footMid.x) / (bosWidth / 2);
-  const offsetPct = round(offsetRatioOfHalfBos * 100, 1);
+  const offsetPctRaw = round(offsetRatioOfHalfBos * 100, 1);
+  if (!Number.isFinite(offsetPctRaw) || Math.abs(offsetPctRaw) > 120) {
+    return {
+      available: false,
+      status: POSTURE_STATUS.NORMAL,
+      message: '무게중심 계산값이 정상 범위를 벗어나 신뢰할 수 없습니다(랜드마크 불안정). 자세·조명을 조정해 다시 측정해 주세요.',
+    };
+  }
+  const offsetPct = offsetPctRaw;
   const isWithinTolerance = Math.abs(offsetPct) <= COG_NORMAL_TOLERANCE_PCT;
   const balanceOffsetPct = isWithinTolerance ? 0 : round(offsetPct, 1);
   const absBalanceOffset = Math.abs(balanceOffsetPct);
@@ -851,15 +870,11 @@ export function detectPostureView(landmarks, tuning = POSTURE_VIEW_TUNING) {
   //    높게 출력한다(머리 위치 추정). 그래서 visibility 기반 판별은 실패한다.
   //
   //  핵심 신호 = '얼굴 좌우 배치'와 '어깨 좌우 배치'의 부호 비교.
-  //   BlazePose 는 어깨를 항상 해부학 좌/우로 출력 →
-  //     정면: 사람의 왼어깨가 화면 오른쪽 (signLR_shoulder = lS.x - rS.x < 0)
-  //     후면: 사람의 왼어깨가 화면 왼쪽   (signLR_shoulder > 0)
-  //   얼굴(눈/귀)도 동일 규칙이지만, 머리가 도는 방향을 '실제로' 따라가므로
-  //   정면이면 어깨와 부호 일치, 후면이면 반대가 되는 경향.
-  //   → 더 직접적으로: 정면이면 얼굴의 signLR 이 음(−), 후면이면 양(+).
-  //
-  //  보조 신호 = 코의 z-깊이(카메라 쪽이 음수). 정면이면 코가 귀보다 앞(z 작음),
-  //   후면이면 코가 귀보다 뒤(z 큼).
+  //   ※ 좌표계: 이 앱 카메라는 후면(environment) 렌즈를 '미러링 없이' 사용한다.
+  //     셀카(전면·미러)와 좌우가 반대 → 부호 규칙도 반대다.
+  //     정면(카메라 바라봄): 해부학 LEFT 가 화면 오른쪽(x 큼) → L.x − R.x > 0
+  //     후면(등 보임): 좌우 반전 → L.x − R.x < 0
+  //   보조 신호 = 코 z-깊이(정면이면 코가 귀보다 앞, z 작음). 좌우반전과 무관해 유지.
   // ════════════════════════════════════════════════════════════════════
   const lEye = landmarks[LM.LEFT_EYE];
   const rEye = landmarks[LM.RIGHT_EYE];
@@ -870,13 +885,13 @@ export function detectPostureView(landmarks, tuning = POSTURE_VIEW_TUNING) {
   let frontVotes = 0;
   let backVotes = 0;
 
-  // 신호 1: 눈 좌우 부호 (정면이면 L_eye.x < R_eye.x → 음수)
+  // 신호 1: 눈 좌우 부호 (미러링 없는 후면 카메라 → 정면이면 L_eye.x > R_eye.x → 양수)
   if (lEye && rEye && Math.abs(lEye.x - rEye.x) > 0.012) {
-    if (lEye.x - rEye.x < 0) frontVotes += 2; else backVotes += 2;
+    if (lEye.x - rEye.x > 0) frontVotes += 2; else backVotes += 2;
   }
-  // 신호 2: 귀 좌우 부호 (정면이면 L_ear.x < R_ear.x → 음수)
+  // 신호 2: 귀 좌우 부호 (정면이면 L_ear.x > R_ear.x → 양수)
   if (lEar && rEar && Math.abs(lEar.x - rEar.x) > 0.012) {
-    if (lEar.x - rEar.x < 0) frontVotes += 2; else backVotes += 2;
+    if (lEar.x - rEar.x > 0) frontVotes += 2; else backVotes += 2;
   }
   // 신호 3: 코 z-깊이 vs 귀 평균 z (정면이면 코가 더 앞 → z 작음)
   if (nose && lEar && rEar) {
@@ -886,11 +901,10 @@ export function detectPostureView(landmarks, tuning = POSTURE_VIEW_TUNING) {
       if (dz < 0) frontVotes += 1; else backVotes += 1;
     }
   }
-  // 신호 4(약): 코 좌우가 눈 중심과 일치하는지 — 정면에서 코가 얼굴 중앙
-  // (보조라 가중치 1, 어깨 부호로 대체)
-  const signLR = lS.x - rS.x; // 정면이면 −, 후면이면 + (해부학 좌표)
+  // 신호 4(약): 어깨 좌우 부호 (미러링 없는 후면 카메라: 정면이면 lS.x − rS.x > 0)
+  const signLR = lS.x - rS.x; // 미러링 없는 후면 카메라: 정면이면 +, 후면이면 −
   if (Math.abs(signLR) > 0.02) {
-    if (signLR < 0) frontVotes += 1; else backVotes += 1;
+    if (signLR > 0) frontVotes += 1; else backVotes += 1;
   }
 
   const faceFacing = frontVotes === 0 && backVotes === 0
@@ -908,8 +922,8 @@ export function detectPostureView(landmarks, tuning = POSTURE_VIEW_TUNING) {
       const conf = round(0.5 + 0.5 * Math.max(widthConf, voteConf), 3);
       return { view: faceFacing, confidence: conf, shoulderRatio, faceVis, frontVotes, backVotes };
     }
-    // 신호가 전혀 없을 때만 어깨 부호로 최후 판정
-    const view = signLR > 0 ? 'back' : 'front';
+    // 신호가 전혀 없을 때만 어깨 부호로 최후 판정 (정면이면 signLR > 0)
+    const view = signLR > 0 ? 'front' : 'back';
     return { view, confidence: 0.35, shoulderRatio, faceVis, frontVotes, backVotes };
   }
 

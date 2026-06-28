@@ -952,6 +952,10 @@ export const store = {
   },
 };
 
+// 가상회원(회원 미선택 측정) 전용 센티넬 id. 실제 회원 id 와 충돌하지 않는
+// 고정 문자열. 회원 이력과 분리된 버킷에 가상회원 측정을 저장·조회한다.
+export const VIRTUAL_MID = '__virtual__';
+
 export const aiStore = {
   // ── 지연 로딩 추적: 이미 읽은 회원은 다시 읽지 않는다(세션 내) ──
   _aiLoaded: new Set(),
