@@ -144,7 +144,7 @@ const INITIAL_SETTINGS = {
 
 const cache = {
   members:[], trainers:[], schedules:[], notices:[], payments:{}, body:{}, ai:{},
-  settings:{...INITIAL_SETTINGS}, expenses:[], promos:[], settleOverrides:[], gaitReports:{}, postureReports:{},
+  settings:{...INITIAL_SETTINGS}, expenses:[], promos:[], settleOverrides:[], gaitReports:{}, postureReports:{}, romReports:{},
 };
 
 // 충돌 방지 ID 생성기 — Date.now()만 쓰면 같은 밀리초에 두 건이 생길 때
@@ -273,7 +273,7 @@ export async function initStore({ force = false } = {}) {
           cache.settings=snap.settings||{...INITIAL_SETTINGS};
           cache.expenses=snap.expenses||[]; cache.promos=snap.promos||[];
           cache.settleOverrides=snap.settleOverrides||[];
-          cache.ai = {}; cache.gaitReports = {}; cache.postureReports = {};   // 측정 데이터는 항상 지연 로딩
+          cache.ai = {}; cache.gaitReports = {}; cache.postureReports = {}; cache.romReports = {};   // 측정 데이터는 항상 지연 로딩
           console.log('[FitCMS] 새로고침 캐시에서 복원 — Firestore 읽기 0건');
           return;
         }
@@ -301,6 +301,7 @@ export async function initStore({ force = false } = {}) {
       cache.ai = {};                 // 지연 로딩 — 회원별로 ensureSessions 시 채움
       cache.gaitReports = {};        // 지연 로딩 — 회원별로 ensureGaitReports 시 채움
       cache.postureReports = {};     // 지연 로딩 — 회원별로 자세 리포트 조회 시 채움
+      cache.romReports = {};         // 지연 로딩 — 회원별로 ROM 리포트 조회 시 채움
       cache.settings = settings.find(s=>s.id==='config') || {...INITIAL_SETTINGS};
       cache.expenses = expenses;
       cache.promos   = promos;
@@ -659,6 +660,10 @@ export const store = {
       const pSnap = await getDocs(query(collection(db,'posture_reports'), where('__mid','==',mid)));
       pSnap.docs.forEach(d => sub.push({name:'posture_reports',id:d.id}));
     } catch (e) { console.warn('[purgeMember] posture_reports 조회 실패:', e?.code||e?.message); }
+    try {
+      const rSnap = await getDocs(query(collection(db,'rom_reports'), where('__mid','==',mid)));
+      rSnap.docs.forEach(d => sub.push({name:'rom_reports',id:d.id}));
+    } catch (e) { console.warn('[purgeMember] rom_reports 조회 실패:', e?.code||e?.message); }
 
     // 1) 하위 데이터 먼저 chunk 단위로 삭제 (실패 시 여기서 throw → 회원 문서는 손대지 않음)
     await fbDeleteBatch(sub);
@@ -672,9 +677,11 @@ export const store = {
     delete cache.ai[mid];
     if (cache.gaitReports) delete cache.gaitReports[mid];
     if (cache.postureReports) delete cache.postureReports[mid];
+    if (cache.romReports) delete cache.romReports[mid];
     aiStore._aiLoaded.delete(mid);
     aiStore._gaitLoaded.delete(mid);
     aiStore._postureLoaded.delete(mid);
+    aiStore._romLoaded.delete(mid);
     cache.members=cache.members.filter(m=>m.id!==mid);
   },
 
@@ -974,6 +981,7 @@ export const aiStore = {
   _aiLoaded: new Set(),
   _gaitLoaded: new Set(),
   _postureLoaded: new Set(),
+  _romLoaded: new Set(),
 
   // 회원별 ai 세션을 필요 시점에만 읽어 캐시에 채운다(전수 조회 회피).
   // 측정 화면 effect 에서 await 후 동기 getSessions 로 읽으면 된다.
@@ -1060,6 +1068,35 @@ export const aiStore = {
       return r;
     } catch (e) {
       if (mid) cache.postureReports[mid] = (cache.postureReports[mid] || []).filter(x => x.id !== r.id);
+      throw e;
+    }
+  },
+  // ── ROM(관절 가동범위) 전용 컬렉션(rom_reports) ──
+  //  자세별(STANDING/SUPINE/PRONE/SEATED)·관절별·좌우 최대 가동범위와 보상/안정성을
+  //  회차별로 누적해 추세(좌우 대칭·끝범위 안정성 변화)를 비교한다.
+  //  영상은 저장하지 않고 리포트(JSON)+캡처(JPG)만 남긴다(용량 절감).
+  ensureRomReports: async (mid) => {
+    if (!mid || aiStore._romLoaded.has(mid)) return cache.romReports[mid] || [];
+    try {
+      const snap = await countedGetDocs(`rom_reports(mid:${mid})`, query(collection(db, 'rom_reports'), where('__mid', '==', mid)));
+      cache.romReports[mid] = snap.docs.map(d => { const { __mid, ...rest } = d.data(); return rest; });
+      aiStore._romLoaded.add(mid);
+    } catch (e) {
+      console.warn('[aiStore.ensureRomReports] 로딩 실패:', e?.code || e?.message);
+      cache.romReports[mid] = cache.romReports[mid] || [];
+    }
+    return cache.romReports[mid];
+  },
+  getRomReports: (mid) => (cache.romReports[mid] || []),
+  addRomReport: async (report) => {
+    const mid = report?.member?.id || report?.memberId || null;
+    const r = { ...report, id: uid('rom'), createdAt: new Date().toISOString() };
+    if (mid) { cache.romReports[mid] = [...(cache.romReports[mid] || []), r]; aiStore._romLoaded.add(mid); }
+    try {
+      await fbSet('rom_reports', r.id, { ...r, __mid: mid });
+      return r;
+    } catch (e) {
+      if (mid) cache.romReports[mid] = (cache.romReports[mid] || []).filter(x => x.id !== r.id);
       throw e;
     }
   },

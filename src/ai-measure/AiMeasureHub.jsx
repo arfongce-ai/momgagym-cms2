@@ -86,6 +86,7 @@ export default function AiMeasureHub() {
     const isGait = active.id === 'gait';
     const isJump = active.id === 'jump';
     const isPosture = active.id === 'posture';
+    const isRom = active.id === 'rom';
 
     // 측정 정직성: 미등록회원인데 guest id 가 아직 없으면 저장 직전 확정 발급
     // (null __mid 로 저장되어 데이터가 유실/혼합되는 것을 방지). 같은 측정 묶음은
@@ -128,9 +129,12 @@ export default function AiMeasureHub() {
       if (isPosture) {
         return await aiStore.addPostureReport({ ...virtualBody, ...data, kind: 'posture', member: memberRef });
       }
+      if (isRom) {
+        return await aiStore.addRomReport({ ...virtualBody, ...data, kind: 'rom', member: memberRef });
+      }
       alert(member.isVirtual ? '미등록회원 측정이 저장되었습니다.' : '측정이 저장되었습니다.');
     } catch (e) {
-      if (isGait || isJump || isPosture) throw e; // 컴포넌트 saveState='error' 로 표시되게 전파
+      if (isGait || isJump || isPosture || isRom) throw e; // 컴포넌트 saveState='error' 로 표시되게 전파
       alert('저장에 실패했습니다. 네트워크 확인 후 다시 시도하세요.\n' + (e?.message || ''));
     }
   };
@@ -159,7 +163,7 @@ export default function AiMeasureHub() {
   // 메뉴 구동 화면
   if (active && active.status === 'ready') {
     const Comp = active.component;
-    const wideMeasure = active.id === 'gait' || active.id === 'jump' || active.id === 'posture';
+    const wideMeasure = active.id === 'gait' || active.id === 'jump' || active.id === 'posture' || active.id === 'rom';
     return (
       <div className={`${wideMeasure ? 'max-w-6xl' : 'max-w-md'} mx-auto`}>
         <Suspense fallback={<div className="text-center text-slate-400 py-10 text-sm">모듈 로딩 중…</div>}>
