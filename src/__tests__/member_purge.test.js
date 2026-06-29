@@ -1,6 +1,6 @@
 // 회원 완전 삭제(purgeMember) 시 측정·분석 데이터까지 모두 제거되는지 검증.
-// 회원과 __mid 로 연결되는 6개 컬렉션이 빠짐없이 삭제 대상에 포함돼야 한다:
-//   schedules, payments, body, ai, gait_reports, posture_reports
+// 회원과 __mid 로 연결되는 7개 컬렉션이 빠짐없이 삭제 대상에 포함돼야 한다:
+//   schedules, payments, body, ai, gait_reports, posture_reports, rom_reports
 import { describe, it, expect } from 'vitest';
 
 // purgeMember 의 삭제목록 수집 로직을 추출한 순수 모델.
@@ -17,6 +17,7 @@ function collectPurgeTargets({ cache, firestore }, mid) {
   });
   (firestore.gait_reports || []).filter(d => d.__mid === mid).forEach(d => sub.push({ name: 'gait_reports', id: d.id }));
   (firestore.posture_reports || []).filter(d => d.__mid === mid).forEach(d => sub.push({ name: 'posture_reports', id: d.id }));
+  (firestore.rom_reports || []).filter(d => d.__mid === mid).forEach(d => sub.push({ name: 'rom_reports', id: d.id }));
   return sub;
 }
 
@@ -31,12 +32,13 @@ describe('회원 완전삭제 — 측정·분석 데이터 제거', () => {
     ai: [{ id: 'a1', __mid: 'm' }, { id: 'a2', __mid: 'm' }], // a2는 캐시에 없던 것(지연로딩 미적재)
     gait_reports: [{ id: 'g1', __mid: 'm' }, { id: 'g2', __mid: 'other' }],
     posture_reports: [{ id: 'po1', __mid: 'm' }],
+    rom_reports: [{ id: 'r1', __mid: 'm' }],
   };
 
-  it('6개 컬렉션 모두 삭제 대상에 포함', () => {
+  it('7개 컬렉션 모두 삭제 대상에 포함', () => {
     const targets = collectPurgeTargets({ cache, firestore }, 'm');
     const names = new Set(targets.map(t => t.name));
-    ['schedules', 'payments', 'body', 'ai', 'gait_reports', 'posture_reports'].forEach(n => {
+    ['schedules', 'payments', 'body', 'ai', 'gait_reports', 'posture_reports', 'rom_reports'].forEach(n => {
       expect(names.has(n)).toBe(true);
     });
   });

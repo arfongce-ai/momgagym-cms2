@@ -19,7 +19,7 @@ function fmt(v, unit = '°') {
 
 export default function RomReport({ report }) {
   if (!report) return null;
-  const { joint, poseMode, summary, diagnosis, member, recordedAt, captureMode, snapshotUrl, hasVideo } = report;
+  const { joint, poseMode, summary, diagnosis, member, recordedAt, captureMode, snapshotUrl, hasVideo, posture_context, integrated_assessment } = report;
   const s = summary || {};
   const stab = s.end_range_stability_score || {};
   const comp = s.compensation || {};
@@ -58,6 +58,45 @@ export default function RomReport({ report }) {
             </span>
             <p className="text-sm font-bold">{diagnosis.headline}</p>
           </div>
+        </div>
+      )}
+
+      {/* 자세·체형 연동 해석 */}
+      {integrated_assessment && (
+        <div className="mt-4 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.14em] text-sky-700">Posture x ROM</p>
+              <p className="mt-0.5 text-sm font-bold text-slate-800">자세·체형 리포트 연동 해석</p>
+            </div>
+            <div className="text-right">
+              <p className="text-[10px] font-bold text-slate-500">통합 신뢰도</p>
+              <p className="text-lg font-black text-sky-700">
+                {integrated_assessment.confidenceScore}점
+                <span className="ml-1 text-xs text-slate-500">({confidenceLabel(integrated_assessment.confidenceLevel)})</span>
+              </p>
+            </div>
+          </div>
+          {posture_context?.sourceReportId && (
+            <p className="mt-2 text-[11px] font-semibold text-slate-500">
+              연결된 자세 리포트: {posture_context.sourceReportId}
+            </p>
+          )}
+          {integrated_assessment.notes?.length > 0 && (
+            <ul className="mt-2 space-y-1">
+              {integrated_assessment.notes.map((note, i) => (
+                <li key={i} className="flex gap-2 text-xs leading-relaxed text-slate-700">
+                  <span className="mt-0.5 text-sky-600">•</span>
+                  <span>{note}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+          {integrated_assessment.recommendations?.length > 0 && (
+            <p className="mt-2 text-xs font-semibold leading-relaxed text-sky-800">
+              권장: {integrated_assessment.recommendations[0]}
+            </p>
+          )}
         </div>
       )}
 
@@ -133,6 +172,10 @@ export default function RomReport({ report }) {
       </p>
     </div>
   );
+}
+
+function confidenceLabel(level) {
+  return level === 'high' ? '높음' : level === 'medium' ? '중간' : '주의';
 }
 
 function MetricCard({ label, value, sub, tone = 'neutral' }) {

@@ -280,7 +280,7 @@ export async function initStore({ force = false } = {}) {
       }
       // 2) 캐시가 없거나 만료 → Firestore 전수 로딩(최초 1회/TTL 경과 시).
       await seedIfEmpty();
-      // [읽기 절감 핵심] ai · gait_reports 는 회원별로만 조회되므로(측정 화면을 열 때),
+      // [읽기 절감 핵심] ai · gait_reports · posture_reports · rom_reports 는 회원별로만 조회되므로(측정 화면을 열 때),
       // 앱 시작 시 전수 조회하지 않는다. 빈 캐시로 시작 → 회원 화면에서 그 회원 것만
       // 지연 로딩(ensureSessions/ensureGaitReports)한다. 측정 데이터가 쌓일수록
       // 시작 시 읽기가 폭증하던 문제를 차단한다.
@@ -1009,6 +1009,18 @@ export const aiStore = {
     }
     return cache.gaitReports[mid];
   },
+  ensureRomReports: async (mid) => {
+    if (!mid || aiStore._romLoaded.has(mid)) return cache.romReports[mid] || [];
+    try {
+      const snap = await countedGetDocs(`rom_reports(mid:${mid})`, query(collection(db, 'rom_reports'), where('__mid', '==', mid)));
+      cache.romReports[mid] = snap.docs.map(d => { const { __mid, ...rest } = d.data(); return rest; });
+      aiStore._romLoaded.add(mid);
+    } catch (e) {
+      console.warn('[aiStore.ensureRomReports] 로딩 실패:', e?.code || e?.message);
+      cache.romReports[mid] = cache.romReports[mid] || [];
+    }
+    return cache.romReports[mid];
+  },
 
   getSessions:   (mid)    => cache.ai[mid] || [],
   addSession:    async (mid, s) => {
@@ -1046,6 +1058,29 @@ export const aiStore = {
       throw e;
     }
   },
+  getRomReports: (mid) => (cache.romReports[mid] || []),
+  addRomReport: async (report) => {
+    const mid = report?.member?.id || report?.memberId || report?.basic_info?.memberId || null;
+    const createdAt = new Date();
+    const baseBasic = report?.basic_info || {};
+    const basic_info = {
+      ...baseBasic,
+      memberId: baseBasic.memberId || mid || '',
+      trainerId: baseBasic.trainerId || report?.trainerId || '',
+      createdAt: baseBasic.createdAt || createdAt,
+      linkedPostureReportId: baseBasic.linkedPostureReportId || report?.linkedPostureReportId || report?.posture_context?.sourceReportId || '',
+    };
+    const { basic_info: _basicInfo, linkedPostureReportId: _linkedPostureReportId, ...rest } = report || {};
+    const r = { ...rest, id: uid('rom'), createdAt: createdAt.toISOString(), basic_info };
+    if (mid) { cache.romReports[mid] = [...(cache.romReports[mid] || []), r]; aiStore._romLoaded.add(mid); }
+    try {
+      await fbSet('rom_reports', r.id, { ...r, __mid: mid });
+      return r;
+    } catch (e) {
+      if (mid) cache.romReports[mid] = (cache.romReports[mid] || []).filter(x => x.id !== r.id);
+      throw e;
+    }
+  },
   ensurePostureReports: async (mid) => {
     if (!mid || aiStore._postureLoaded.has(mid)) return cache.postureReports[mid] || [];
     try {
@@ -1068,35 +1103,6 @@ export const aiStore = {
       return r;
     } catch (e) {
       if (mid) cache.postureReports[mid] = (cache.postureReports[mid] || []).filter(x => x.id !== r.id);
-      throw e;
-    }
-  },
-  // ── ROM(관절 가동범위) 전용 컬렉션(rom_reports) ──
-  //  자세별(STANDING/SUPINE/PRONE/SEATED)·관절별·좌우 최대 가동범위와 보상/안정성을
-  //  회차별로 누적해 추세(좌우 대칭·끝범위 안정성 변화)를 비교한다.
-  //  영상은 저장하지 않고 리포트(JSON)+캡처(JPG)만 남긴다(용량 절감).
-  ensureRomReports: async (mid) => {
-    if (!mid || aiStore._romLoaded.has(mid)) return cache.romReports[mid] || [];
-    try {
-      const snap = await countedGetDocs(`rom_reports(mid:${mid})`, query(collection(db, 'rom_reports'), where('__mid', '==', mid)));
-      cache.romReports[mid] = snap.docs.map(d => { const { __mid, ...rest } = d.data(); return rest; });
-      aiStore._romLoaded.add(mid);
-    } catch (e) {
-      console.warn('[aiStore.ensureRomReports] 로딩 실패:', e?.code || e?.message);
-      cache.romReports[mid] = cache.romReports[mid] || [];
-    }
-    return cache.romReports[mid];
-  },
-  getRomReports: (mid) => (cache.romReports[mid] || []),
-  addRomReport: async (report) => {
-    const mid = report?.member?.id || report?.memberId || null;
-    const r = { ...report, id: uid('rom'), createdAt: new Date().toISOString() };
-    if (mid) { cache.romReports[mid] = [...(cache.romReports[mid] || []), r]; aiStore._romLoaded.add(mid); }
-    try {
-      await fbSet('rom_reports', r.id, { ...r, __mid: mid });
-      return r;
-    } catch (e) {
-      if (mid) cache.romReports[mid] = (cache.romReports[mid] || []).filter(x => x.id !== r.id);
       throw e;
     }
   },

@@ -8,8 +8,10 @@ let FAIL = false;
 const mem = {};
 vi.mock('../firebase', () => ({ db: { __mock: true }, auth: {} }));
 vi.mock('firebase/firestore', () => ({
-  collection: () => ({}),
+  collection: (_db, name) => ({ __coll: name }),
   doc: (_db, name, id) => ({ name, id }),
+  query: (coll, ...clauses) => ({ ...coll, __clauses: clauses }),
+  where: (field, op, value) => ({ field, op, value }),
   getDocs: async () => ({ empty: true, docs: [] }),
   setDoc: async (ref, data) => { if (FAIL) throw new Error('denied'); (mem[ref.name] ||= {})[ref.id] = data; },
   deleteDoc: async (ref) => { if (FAIL) throw new Error('denied'); if (mem[ref.name]) delete mem[ref.name][ref.id]; },
@@ -628,6 +630,33 @@ describe('aiStore.addGaitReport (보행 리포트 저장)', () => {
   });
 });
 
+describe('aiStore.addRomReport (ROM 리포트 저장)', () => {
+  it('rom_reports 컬렉션에 basic_info.linkedPostureReportId 를 포함해 저장한다', async () => {
+    const createdAt = new Date('2026-06-01T00:00:00.000Z');
+    const r = await aiStore.addRomReport({
+      kind: 'rom',
+      member: { id: 'm1', name: '홍길동' },
+      trainerId: 't1',
+      linkedPostureReportId: 'posture_123',
+      basic_info: { createdAt },
+      summary: { valid: true },
+    });
+    expect(r.id).toMatch(/^rom/);
+    expect(r.createdAt).toBeTruthy();
+    expect(mem.rom_reports[r.id].__mid).toBe('m1');
+    expect(mem.rom_reports[r.id].basic_info.memberId).toBe('m1');
+    expect(mem.rom_reports[r.id].basic_info.trainerId).toBe('t1');
+    expect(mem.rom_reports[r.id].basic_info.createdAt).toBe(createdAt);
+    expect(mem.rom_reports[r.id].basic_info.linkedPostureReportId).toBe('posture_123');
+    expect(mem.rom_reports[r.id].linkedPostureReportId).toBeUndefined();
+  });
+
+  it('저장 실패 시 에러를 전파한다', async () => {
+    setFail(true);
+    await expect(aiStore.addRomReport({ member: { id: 'm1' } })).rejects.toThrow();
+  });
+});
+
 describe('세션 양도 / 부분양도 (transferSessions)', () => {
   it('부분 양도: t1 30회 중 5회를 t2에게 이동(예시1)', async () => {
     const m = await store.addMember({ name: '양도1', trainerSessions: { t1: { total: 30, remaining: 30 } } });
@@ -932,6 +961,22 @@ describe('가상회원 측정 저장 (모든 유형 저장·출력)', () => {
     expect(r.kind).toBe('jump');
   });
 
+  it('가상회원 ROM 리포트가 rom_reports 에 저장된다', async () => {
+    const { VIRTUAL_MID } = await import('../demoData.js');
+    const r = await aiStore.addRomReport({
+      kind: 'rom',
+      member: { id: VIRTUAL_MID, name: '가상회원', isVirtual: true },
+      basic_info: {
+        memberId: VIRTUAL_MID,
+        trainerId: 't1',
+        linkedPostureReportId: 'posture_virtual_1',
+      },
+    });
+    expect(r.id).toBeTruthy();
+    expect(r.kind).toBe('rom');
+    expect(r.basic_info.linkedPostureReportId).toBe('posture_virtual_1');
+  });
+
   it('가상회원 세션이 분리된 버킷(VIRTUAL_MID)에 저장된다', async () => {
     const { VIRTUAL_MID } = await import('../demoData.js');
     const s = await aiStore.addSession(VIRTUAL_MID, { menu: '1rm', isVirtual: true, data: { e1rm: 100 } });
@@ -976,14 +1021,17 @@ describe('미등록회원 개인별 분리 저장 (guest id)', () => {
     expect(aiStore.getSessions(g).map(s => s.menu).sort()).toEqual(['1rm', 'jump', 'posture']);
   });
 
-  it('미등록회원 리포트도 guest id 로 저장된다(자세·점프)', async () => {
+  it('미등록회원 리포트도 guest id 로 저장된다(자세·점프·ROM)', async () => {
     const { makeGuestId } = await import('../demoData.js');
     const g = makeGuestId();
     const p = await aiStore.addPostureReport({ kind: 'posture', member: { id: g, name: '미등록회원', isVirtual: true }, sex: 'male' });
     const j = await aiStore.addGaitReport({ kind: 'jump', valid: true, member: { id: g, name: '미등록회원', isVirtual: true } });
+    const r = await aiStore.addRomReport({ kind: 'rom', member: { id: g, name: '미등록회원', isVirtual: true } });
     expect(p.id).toBeTruthy();
     expect(j.id).toBeTruthy();
+    expect(r.id).toBeTruthy();
     expect(p.member.id).toBe(g);
     expect(j.member.id).toBe(g);
+    expect(r.member.id).toBe(g);
   });
 });

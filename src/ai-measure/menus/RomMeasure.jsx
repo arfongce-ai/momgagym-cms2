@@ -328,6 +328,13 @@ export default function RomMeasure({ member, onSave, onBack }) {
       recordedAt: todayYMD(),
       measuredAt: new Date().toISOString(),
       isVirtualMember: member?.isVirtual === true,
+      linkedPostureReportId: '',
+      basic_info: {
+        memberId: member?.id || '',
+        trainerId: '',
+        createdAt: new Date(),
+        linkedPostureReportId: '',
+      },
       // test_configuration (스키마)
       joint,
       poseMode,
