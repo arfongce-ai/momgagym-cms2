@@ -65,8 +65,8 @@ describe('카카오 공유 점수 표시 (회귀)', () => {
 describe('카카오 공유 링크 (회원용)', () => {
   it('webUrl 옵션이 없으면 링크가 센터 블로그로 향한다', () => {
     const t = buildKakaoFeedTemplate(sampleSummary);
-    expect(t.link.webUrl).toBe('https://blog.naver.com/posture_gym?from=mgcms');
-    expect(t.link.mobileWebUrl).toBe('https://blog.naver.com/posture_gym?from=mgcms');
+    expect(t.link.webUrl).toContain('https://blog.naver.com/posture_gym?mg=');
+    expect(t.link.mobileWebUrl).toContain('https://blog.naver.com/posture_gym?mg=');
   });
   it('텍스트에 인스타 안내가 포함된다', () => {
     const t = buildKakaoFeedTemplate(sampleSummary);
@@ -77,7 +77,7 @@ describe('카카오 공유 링크 (회원용)', () => {
 describe('카카오 공유 링크 블로그 강제 (회원용)', () => {
   it('호출부가 앱 주소(webUrl)를 넘겨도 무시하고 블로그로 고정한다', () => {
     const t = buildKakaoFeedTemplate(sampleSummary, { webUrl: 'https://momgagym-cms2.pages.dev/report' });
-    expect(t.link.webUrl).toBe('https://blog.naver.com/posture_gym?from=mgcms');
-    expect(t.link.mobileWebUrl).toBe('https://blog.naver.com/posture_gym?from=mgcms');
+    expect(t.link.webUrl).toContain('https://blog.naver.com/posture_gym?mg=');
+    expect(t.link.mobileWebUrl).toContain('https://blog.naver.com/posture_gym?mg=');
   });
 });

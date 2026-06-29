@@ -463,16 +463,21 @@ export function extractKakaoSummary(reportOrDocument = {}, options = {}) {
 // 회원은 관리 앱/웹에 로그인 권한이 없으므로, 앱 URL 대신 센터 공개 채널(블로그)로 연결한다.
 // 회원에게 보내는 공유 메시지의 링크/버튼이 향하는 곳.
 // 회원은 관리 앱/웹에 로그인 권한이 없으므로, 앱 URL 대신 센터 공개 채널(블로그)로 연결한다.
-// 블로그 URL 뒤의 ?from=mgcms 는 카카오 링크 스크랩 캐시를 우회하기 위한 버전 쿼리다
-// (예전에 같은 도메인이 앱 주소로 캐싱되어 버튼이 앱으로 가던 문제를 회피).
-const CENTER_BLOG_URL = 'https://blog.naver.com/posture_gym?from=mgcms';
+// 블로그 베이스 URL. 실제 링크에는 공유할 때마다 매번 다른 타임스탬프 쿼리를 붙여
+// 카카오 링크 스크랩 캐시를 확실히 우회한다(같은 URL 을 카카오가 앱 주소로 캐싱하던 문제 회피).
+// 네이버는 쿼리스트링을 무시하므로 블로그는 동일하게 열린다.
+const CENTER_BLOG_BASE = 'https://blog.naver.com/posture_gym';
 const CENTER_INSTAGRAM = 'https://www.instagram.com/posture_gym_official/';
+
+function buildBlogUrl() {
+  return `${CENTER_BLOG_BASE}?mg=${Date.now()}`;
+}
 
 export function buildKakaoFeedTemplate(summaryInput = {}, options = {}) {
   const summary = summaryInput.topFindings ? summaryInput : extractKakaoSummary(summaryInput, options);
   // 회원용 링크는 항상 센터 블로그로 고정한다(회원은 관리 앱 접근 불가).
-  // 호출부(options.webUrl)가 앱 주소를 넘겨도 무시하고 블로그를 강제한다.
-  const webUrl = CENTER_BLOG_URL;
+  // 호출부(options.webUrl)가 앱 주소를 넘겨도 무시하고, 매번 새 타임스탬프로 블로그를 강제한다.
+  const webUrl = buildBlogUrl();
   const score = summary.overallScore ?? summary.score ?? 0;
   const findings = (summary.topFindings || []).slice(0, 3).map((f, i) => `${i + 1}. ${f.text}`).join('\n');
   const header = `${summary.title || '몸가짐CMS 측정 결과 요약'}`;
