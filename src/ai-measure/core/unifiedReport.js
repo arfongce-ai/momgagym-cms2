@@ -461,7 +461,11 @@ export function extractKakaoSummary(reportOrDocument = {}, options = {}) {
 
 // 회원에게 보내는 공유 메시지의 링크/버튼이 향하는 곳.
 // 회원은 관리 앱/웹에 로그인 권한이 없으므로, 앱 URL 대신 센터 공개 채널(블로그)로 연결한다.
-const CENTER_BLOG_URL = 'https://blog.naver.com/posture_gym';
+// 회원에게 보내는 공유 메시지의 링크/버튼이 향하는 곳.
+// 회원은 관리 앱/웹에 로그인 권한이 없으므로, 앱 URL 대신 센터 공개 채널(블로그)로 연결한다.
+// 블로그 URL 뒤의 ?from=mgcms 는 카카오 링크 스크랩 캐시를 우회하기 위한 버전 쿼리다
+// (예전에 같은 도메인이 앱 주소로 캐싱되어 버튼이 앱으로 가던 문제를 회피).
+const CENTER_BLOG_URL = 'https://blog.naver.com/posture_gym?from=mgcms';
 const CENTER_INSTAGRAM = 'https://www.instagram.com/posture_gym_official/';
 
 export function buildKakaoFeedTemplate(summaryInput = {}, options = {}) {
