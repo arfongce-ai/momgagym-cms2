@@ -760,6 +760,7 @@ function drawSkeleton(canvas, video, landmarks, viewKey) {
   // ── 정면/후면: 양 발목 중점 수직 중심선 ──
   if (viewKey === 'front' || viewKey === 'back') {
     drawAnkleMidCenterLine(ctx, landmarks, mapper);
+    drawFrontalImbalanceMarkers(ctx, landmarks, mapper);
   }
   // ── 정면: 눈·코·귀 위치 + 머리 기울기(roll)/회전(yaw) ──
   if (viewKey === 'front') {
@@ -773,6 +774,87 @@ function drawSkeleton(canvas, video, landmarks, viewKey) {
   // ── 측면(좌/우) 전용: 관절 정렬 기준선 + 거북목 기울기선 + 발목 중심선 ──
   if (viewKey === 'left' || viewKey === 'right') {
     drawSideReferenceLines(ctx, landmarks, mapper, viewKey);
+  }
+}
+
+// 정면/후면 좌우 불균형 마커(라이브): 어깨·골반 높이차 원, 무릎 외반/내반 화살표.
+// 측정 중에는 mm 환산 분석을 돌리지 않으므로(측정 정직성: 결과는 촬영 시 1회),
+// 화면 좌표(normalized y) 차이로만 임계 판정해 가벼운 시각 피드백을 준다.
+function drawFrontalImbalanceMarkers(ctx, lm, mapper) {
+  const drawArrowL = (fromX, fromY, toX, toY, color) => {
+    ctx.save();
+    ctx.strokeStyle = color; ctx.fillStyle = color;
+    ctx.lineWidth = 3; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(fromX, fromY); ctx.lineTo(toX, toY); ctx.stroke();
+    const ang = Math.atan2(toY - fromY, toX - fromX); const head = 10;
+    ctx.beginPath();
+    ctx.moveTo(toX, toY);
+    ctx.lineTo(toX - head * Math.cos(ang - Math.PI / 6), toY - head * Math.sin(ang - Math.PI / 6));
+    ctx.lineTo(toX - head * Math.cos(ang + Math.PI / 6), toY - head * Math.sin(ang + Math.PI / 6));
+    ctx.closePath(); ctx.fill();
+    ctx.restore();
+  };
+  const ring = (cx, cy, rad, color) => {
+    ctx.save();
+    ctx.strokeStyle = color; ctx.lineWidth = 2.6;
+    ctx.beginPath(); ctx.arc(cx, cy, rad, 0, Math.PI * 2); ctx.stroke();
+    ctx.restore();
+  };
+  const lab = (text, x, y, color) => {
+    ctx.save();
+    ctx.font = 'bold 12px system-ui, sans-serif';
+    const w = ctx.measureText(text).width;
+    ctx.fillStyle = 'rgba(0,0,0,0.6)';
+    ctx.fillRect(x - 4, y - 14, w + 8, 18);
+    ctx.fillStyle = color; ctx.fillText(text, x, y);
+    ctx.restore();
+  };
+  const ORANGE = 'rgba(251,146,60,0.95)';
+  const RED = 'rgba(248,113,113,0.95)';
+
+  // 어깨 높이차: normalized y 차이 0.012 이상이면 강조
+  const lSh = lm[11]; const rSh = lm[12];
+  if (isVisible(lSh) && isVisible(rSh)) {
+    const dy = Math.abs(lSh.y - rSh.y);
+    if (dy >= 0.012) {
+      const higher = lSh.y <= rSh.y ? lSh : rSh;
+      const hx = mapper.x(higher); const hy = mapper.y(higher);
+      ring(hx, hy, 16, ORANGE);
+      lab('어깨 높이차', hx + 18, hy - 6, ORANGE);
+    }
+  }
+  // 골반 높이차
+  const lHip = lm[23]; const rHip = lm[24];
+  if (isVisible(lHip) && isVisible(rHip)) {
+    const dy = Math.abs(lHip.y - rHip.y);
+    if (dy >= 0.012) {
+      const higher = lHip.y <= rHip.y ? lHip : rHip;
+      const hx = mapper.x(higher); const hy = mapper.y(higher);
+      ring(hx, hy, 16, ORANGE);
+      lab('골반 높이차', hx + 18, hy + 4, ORANGE);
+    }
+  }
+  // 무릎 외반(X)/내반(O): 무릎 간격 대비 발목 간격으로 추정
+  const lKnee = lm[25]; const rKnee = lm[26];
+  const la = lm[27]; const ra = lm[28];
+  if (isVisible(lKnee) && isVisible(rKnee) && isVisible(la) && isVisible(ra)) {
+    const kneeGap = Math.abs(lKnee.x - rKnee.x);
+    const ankleGap = Math.abs(la.x - ra.x) || 1e-6;
+    const ratio = kneeGap / ankleGap;
+    const LK = { x: mapper.x(lKnee), y: mapper.y(lKnee) };
+    const RK = { x: mapper.x(rKnee), y: mapper.y(rKnee) };
+    const midY = (LK.y + RK.y) / 2;
+    if (ratio < 0.55) {
+      // 무릎이 안쪽으로 모임 → 외반(X자)
+      drawArrowL(LK.x - 26, midY, LK.x, midY, RED);
+      drawArrowL(RK.x + 26, midY, RK.x, midY, RED);
+      lab('무릎 외반(X)', Math.min(LK.x, RK.x) - 26, midY - 8, RED);
+    } else if (ratio > 1.5) {
+      // 무릎이 바깥으로 벌어짐 → 내반(O자)
+      drawArrowL(LK.x, midY, LK.x - 26, midY, RED);
+      drawArrowL(RK.x, midY, RK.x + 26, midY, RED);
+      lab('무릎 내반(O)', Math.min(LK.x, RK.x) - 26, midY - 8, RED);
+    }
   }
 }
 

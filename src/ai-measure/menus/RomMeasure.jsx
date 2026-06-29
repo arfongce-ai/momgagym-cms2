@@ -190,6 +190,28 @@ export default function RomMeasure({ member, onSave, onBack }) {
     return canvasStream;
   };
 
+  // 라이브 측정 중(녹화 전) 위치(관절) 전환. 누적 각도/가이드를 리셋한다.
+  const changeJointLive = (nextJoint) => {
+    if (recording) return;
+    setJoint(nextJoint);
+    const allowed = POSE_MODES_BY_JOINT[nextJoint] || [];
+    if (!allowed.some((m) => m.key === poseMode)) {
+      setPoseMode(allowed[0]?.key || 'STANDING');
+    }
+    setLiveAngle({ left: null, right: null });
+    accRef.current = null;
+    const nm = JOINTS.find((j) => j.key === nextJoint)?.label || nextJoint;
+    setGuide(`${nm} 위치로 변경했습니다. 관절이 보이게 선 뒤 녹화를 시작하세요.`);
+  };
+
+  // 라이브 측정 중(녹화 전) 자세 모드 전환.
+  const changePoseLive = (nextPose) => {
+    if (recording) return;
+    setPoseMode(nextPose);
+    setLiveAngle({ left: null, right: null });
+    accRef.current = null;
+  };
+
   const beginRecord = () => {
     primeAudio();
     accRef.current = new RomAccumulator({ joint, poseMode });
@@ -532,6 +554,40 @@ export default function RomMeasure({ member, onSave, onBack }) {
         }
       >
         <div className="mx-auto max-w-md space-y-2">
+          {/* 측정 중 위치(관절)·자세 변경: 녹화 전에는 자유롭게 바꿀 수 있다.
+              녹화 중에는 일관성을 위해 비활성화. */}
+          <div className="flex flex-wrap justify-center gap-1">
+            {JOINTS.map((j) => (
+              <button
+                key={j.key}
+                type="button"
+                disabled={recording}
+                onClick={() => changeJointLive(j.key)}
+                className={`rounded-full border px-2.5 py-1 text-[11px] font-black transition ${
+                  joint === j.key
+                    ? 'border-amber-300 bg-amber-400 text-slate-950'
+                    : 'border-white/20 bg-black/45 text-white/80'
+                } ${recording ? 'opacity-40' : ''}`}>
+                {j.short}
+              </button>
+            ))}
+          </div>
+          <div className="flex flex-wrap justify-center gap-1">
+            {(POSE_MODES_BY_JOINT[joint] || []).map((m) => (
+              <button
+                key={m.key}
+                type="button"
+                disabled={recording}
+                onClick={() => changePoseLive(m.key)}
+                className={`rounded-full border px-2.5 py-1 text-[11px] font-bold transition ${
+                  poseMode === m.key
+                    ? 'border-emerald-300 bg-emerald-400 text-slate-950'
+                    : 'border-white/15 bg-black/40 text-white/70'
+                } ${recording ? 'opacity-40' : ''}`}>
+                {m.label}
+              </button>
+            ))}
+          </div>
           {recording && (
             <div className="grid grid-cols-2 gap-2">
               <LiveMetric label="좌측 각도" value={liveAngle.left == null ? '—' : `${liveAngle.left}°`} dim={side === 'right'} />

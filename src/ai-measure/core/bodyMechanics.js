@@ -217,8 +217,11 @@ export function jointAngleByMode(landmarks, joint, side, poseMode) {
 
   if (joint === 'HIP') {
     if (poseMode === 'STANDING') {
-      // 대퇴골(hip→knee) 벡터와 수직 중력선 사이각 = 고관절 굴곡각(서서).
-      angle = vectorToAxisAngle(hip, knee, VERTICAL_UP, false);
+      // 대퇴골(hip→knee) 벡터와 수직선 사이각. 굴곡각 정의는 '다리 내림=0°,
+      // 다리 위로 들어올림=180°'. vectorToAxisAngle 은 위쪽축 기준이라 내릴수록 180°가
+      // 되므로 (180 - 각도)로 보정해 올바른 굴곡각으로 만든다.
+      const raw = vectorToAxisAngle(hip, knee, VERTICAL_UP, false);
+      angle = raw == null ? null : round(180 - raw, 1);
       // 보상: 반대쪽 골반이 내려앉는 정도(pelvicDrop) — 양 골반 y차를 어깨너비로 정규화.
       compensatory = pelvicDrop(landmarks, side);
     } else {
@@ -231,8 +234,10 @@ export function jointAngleByMode(landmarks, joint, side, poseMode) {
     if (poseMode === 'STANDING') compensatory = pelvicDrop(landmarks, side);
   } else if (joint === 'SHOULDER') {
     if (poseMode === 'STANDING' || poseMode === 'SEATED') {
-      // 상완(shoulder→elbow)과 수직 몸통축 사이각 = 견관절 굴곡(들어올림).
-      angle = vectorToAxisAngle(shoulder, elbow, VERTICAL_UP, false);
+      // 상완(shoulder→elbow)과 수직축 사이각. 견관절 굴곡 정의는 '팔 내림=0°,
+      // 팔 위로 들어올림=180°'. 위쪽축 기준 각도를 (180 - 각도)로 보정한다.
+      const raw = vectorToAxisAngle(shoulder, elbow, VERTICAL_UP, false);
+      angle = raw == null ? null : round(180 - raw, 1);
       // 보상: 몸통 측면 기울기(체간 보상). 양 어깨-골반 라인 기울기.
       compensatory = trunkLeanCompensation(landmarks);
     } else {
