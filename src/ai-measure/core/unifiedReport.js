@@ -463,47 +463,31 @@ export function extractKakaoSummary(reportOrDocument = {}, options = {}) {
 // 회원은 관리 앱/웹에 로그인 권한이 없으므로, 앱 URL 대신 센터 공개 채널(블로그)로 연결한다.
 // 회원에게 보내는 공유 메시지의 링크/버튼이 향하는 곳.
 // 회원은 관리 앱/웹에 로그인 권한이 없으므로, 앱 URL 대신 센터 공개 채널(블로그)로 연결한다.
-// 블로그 베이스 URL. 실제 링크에는 공유할 때마다 매번 다른 타임스탬프 쿼리를 붙여
-// 카카오 링크 스크랩 캐시를 확실히 우회한다(같은 URL 을 카카오가 앱 주소로 캐싱하던 문제 회피).
-// 네이버는 쿼리스트링을 무시하므로 블로그는 동일하게 열린다.
-const CENTER_BLOG_BASE = 'https://blog.naver.com/posture_gym';
+// 회원용 공개 채널. 카카오 '버튼'은 앱 등록 도메인을 따라가 버려서 회원이 못 들어가는
+// 문제가 있었다. 그래서 버튼을 쓰지 않고, 블로그·인스타를 모두 '텍스트 안 링크'로 넣는다.
+// 텍스트 안 링크는 카카오가 그대로 표시·연결하므로 회원이 바로 들어갈 수 있다(인스타로 검증됨).
+const CENTER_BLOG_URL = 'https://blog.naver.com/posture_gym';
 const CENTER_INSTAGRAM = 'https://www.instagram.com/posture_gym_official/';
-
-function buildBlogUrl() {
-  return `${CENTER_BLOG_BASE}?mg=${Date.now()}`;
-}
 
 export function buildKakaoFeedTemplate(summaryInput = {}, options = {}) {
   const summary = summaryInput.topFindings ? summaryInput : extractKakaoSummary(summaryInput, options);
-  // 회원용 링크는 항상 센터 블로그로 고정한다(회원은 관리 앱 접근 불가).
-  // 호출부(options.webUrl)가 앱 주소를 넘겨도 무시하고, 매번 새 타임스탬프로 블로그를 강제한다.
-  const webUrl = buildBlogUrl();
   const score = summary.overallScore ?? summary.score ?? 0;
   const findings = (summary.topFindings || []).slice(0, 3).map((f, i) => `${i + 1}. ${f.text}`).join('\n');
   const header = `${summary.title || '몸가짐CMS 측정 결과 요약'}`;
   const scoreLine = `${summary.statusLabel || ''} · 종합 ${score}/100`.trim();
-  const footer = `\n📷 인스타 ${CENTER_INSTAGRAM}`;
-  const text = clampText(`${header}\n${scoreLine}\n${findings}${footer}`, 195);
+  // 블로그·인스타를 텍스트 안 링크로 넣는다(버튼 미사용).
+  const links = `\n📝 블로그 ${CENTER_BLOG_URL}\n📷 인스타 ${CENTER_INSTAGRAM}`;
+  const text = clampText(`${header}\n${scoreLine}\n${findings}${links}`, 280);
 
-  // 카카오 text 템플릿에서 buttonTitle(자동 버튼)을 쓰면 버튼 링크가 앱 등록 도메인을
-  // 따라갈 수 있다(텍스트 내 링크는 정상인데 버튼만 앱으로 가던 원인). 따라서 buttons 배열로
-  // 링크를 명시적으로 지정해 블로그를 강제한다.
+  // 버튼을 쓰지 않는다(카카오 버튼은 앱 도메인으로 가버림). link 는 카카오 정책상 필수라
+  // 블로그로 채워두되, 실제 안내는 위 텍스트 링크로 한다.
   return {
     objectType: 'text',
     text,
     link: {
-      mobileWebUrl: webUrl,
-      webUrl,
+      mobileWebUrl: CENTER_BLOG_URL,
+      webUrl: CENTER_BLOG_URL,
     },
-    buttons: [
-      {
-        title: options.buttonTitle || '몸가짐운동센터 블로그',
-        link: {
-          mobileWebUrl: webUrl,
-          webUrl,
-        },
-      },
-    ],
   };
 }
 

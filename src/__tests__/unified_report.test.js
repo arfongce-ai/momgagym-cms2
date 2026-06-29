@@ -96,9 +96,8 @@ describe('unified report utilities', () => {
     const template = buildKakaoFeedTemplate(summary, { webUrl: 'https://example.com/report' });
     expect(template.objectType).toBe('text');
     expect(template.text).toContain('몸가짐CMS 측정 결과 요약');
-    expect(template.buttons[0].title).toBe('몸가짐운동센터 블로그');
-    expect(template.buttons[0].link.webUrl).toContain('blog.naver.com/posture_gym');
-    expect(template.link.webUrl).toContain('https://blog.naver.com/posture_gym?mg=');
+    expect(template.text).toContain('blog.naver.com/posture_gym');
+    expect(template.link.webUrl).toBe('https://blog.naver.com/posture_gym');
   });
 
   it('Kakao SDK의 Share.sendDefault를 호출한다', () => {
