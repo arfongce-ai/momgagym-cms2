@@ -32,16 +32,19 @@ describe('카카오톡 공유 래퍼', () => {
     await shareSummaryToKakao(sampleSummary, { Kakao });
     expect(sendDefault).toHaveBeenCalledTimes(1);
     const sentTemplate = sendDefault.mock.calls[0][0];
-    expect(sentTemplate.objectType).toBe('feed');
-    expect(sentTemplate.itemContent.items.length).toBe(3);
-    expect(sentTemplate.content.title).toContain('몸가짐CMS');
+    expect(sentTemplate.objectType).toBe('text');
+    expect(sentTemplate.text).toContain('몸가짐CMS');
+    expect(sentTemplate.link).toBeTruthy();
   });
 
-  it('Feed 템플릿은 종합점수와 상위 3건만 담는다', () => {
+  it('text 템플릿은 종합점수와 상위 3건을 담고 링크 버튼을 가진다', () => {
     const many = { ...sampleSummary, topFindings: [1,2,3,4,5].map(n => ({ text: `소견 ${n}` })) };
     const t = buildKakaoFeedTemplate(many);
-    expect(t.itemContent.items.length).toBe(3);
-    expect(t.itemContent.titleImageText).toContain('72');
-    expect(t.buttons[0].title).toBe('앱/웹에서 자세히 보기');
+    expect(t.objectType).toBe('text');
+    expect(t.text).toContain('72');
+    // 상위 3건만 포함(4·5번 소견은 제외).
+    expect(t.text).toContain('소견 1');
+    expect(t.text).not.toContain('소견 4');
+    expect(t.buttonTitle).toBe('앱/웹에서 자세히 보기');
   });
 });

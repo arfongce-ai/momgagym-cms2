@@ -455,38 +455,21 @@ export function extractKakaoSummary(reportOrDocument = {}, options = {}) {
 export function buildKakaoFeedTemplate(summaryInput = {}, options = {}) {
   const summary = summaryInput.topFindings ? summaryInput : extractKakaoSummary(summaryInput, options);
   const webUrl = options.webUrl || summary.webUrl || (typeof window !== 'undefined' ? window.location.href : '');
-  const imageUrl = options.imageUrl || summary.imageUrl || 'https://momgagym-cms.firebaseapp.com/og-report-summary.png';
-  const description = clampText(summary.description || `${summary.statusLabel} · ${summary.score}/100`, 180);
+  const findings = (summary.topFindings || []).slice(0, 3).map((f, i) => `${i + 1}. ${f.text}`).join('\n');
+  const header = `${summary.title || '몸가짐CMS 측정 결과 요약'}`;
+  const scoreLine = `${summary.statusLabel || ''} · 종합 ${summary.score}/100`.trim();
+  const text = clampText(`${header}\n${scoreLine}\n${findings}`, 190);
 
+  // feed 템플릿은 content.imageUrl 이 필수이고, 이미지 로드 실패 시 공유가 조용히
+  // 막힌다. 측정 요약은 텍스트 중심이므로 이미지 의존이 없는 'text' 템플릿을 사용한다.
   return {
-    objectType: 'feed',
-    content: {
-      title: summary.title || '몸가짐CMS 측정 결과 요약',
-      description,
-      imageUrl,
-      link: {
-        mobileWebUrl: webUrl,
-        webUrl,
-      },
+    objectType: 'text',
+    text,
+    link: {
+      mobileWebUrl: webUrl,
+      webUrl,
     },
-    itemContent: {
-      profileText: summary.memberName || '몸가짐CMS',
-      titleImageText: `${summary.score}/100`,
-      titleImageCategoryName: summary.statusLabel,
-      items: summary.topFindings.slice(0, 3).map((finding, index) => ({
-        item: `핵심 ${index + 1}`,
-        itemOp: finding.text,
-      })),
-    },
-    buttons: [
-      {
-        title: options.buttonTitle || '앱/웹에서 자세히 보기',
-        link: {
-          mobileWebUrl: webUrl,
-          webUrl,
-        },
-      },
-    ],
+    buttonTitle: options.buttonTitle || '앱/웹에서 자세히 보기',
   };
 }
 
