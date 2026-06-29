@@ -97,7 +97,7 @@ describe('unified report utilities', () => {
     expect(template.objectType).toBe('text');
     expect(template.text).toContain('몸가짐CMS 측정 결과 요약');
     expect(template.buttonTitle).toBe('몸가짐운동센터 블로그');
-    expect(template.link.webUrl).toBe('https://blog.naver.com/posture_gym');
+    expect(template.link.webUrl).toBe('https://blog.naver.com/posture_gym?from=mgcms');
   });
 
   it('Kakao SDK의 Share.sendDefault를 호출한다', () => {
