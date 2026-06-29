@@ -7,6 +7,75 @@
 //  영상은 용량이 커 Firestore 에 올리지 않으므로, 이 공유가 영상 전달 경로다.
 // ════════════════════════════════════════════════════════════════════════
 
+// ── 카카오톡 공유 ────────────────────────────────────────────────────────
+//  측정 결과의 핵심 요약(상위 3건 + 종합점수)만 Kakao Feed 템플릿으로 공유.
+//  · JS 키는 빌드 환경변수 VITE_KAKAO_JS_KEY 에서 주입(없으면 안내만 반환).
+//  · SDK 는 index.html 에서 defer 로 로드 → window.Kakao 준비를 잠시 기다린다.
+//  · 실패 시 throw 하지 않고 { ok:false, msg } 를 돌려 UI 가 친절히 안내하게 한다.
+import { shareSummaryToKakao } from './unifiedReport';
+
+// JS 키: 우선 빌드 환경변수(VITE_KAKAO_JS_KEY)를 쓰고, 주입되지 않은 경우를 대비해
+// 동일한 공개 JS 키를 폴백으로 둔다. JS 키는 브라우저에 공개되는 키이며 SDK 도메인으로
+// 사용이 제한되므로 코드에 포함해도 안전하다(카카오 공식 권장 방식).
+const KAKAO_JS_KEY = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_KAKAO_JS_KEY)
+  || '6c65f624d2e0a9f6f8e5d42fa8eb285a';
+
+async function waitForKakao(timeoutMs = 3000) {
+  if (typeof window === 'undefined') return null;
+  if (window.Kakao) return window.Kakao;
+  const start = Date.now();
+  return new Promise((resolve) => {
+    const tick = () => {
+      if (window.Kakao) return resolve(window.Kakao);
+      if (Date.now() - start >= timeoutMs) return resolve(null);
+      setTimeout(tick, 100);
+    };
+    tick();
+  });
+}
+
+/**
+ * 측정 요약을 카카오톡으로 공유.
+ * @param {object} summaryInput  통합 summary 또는 리포트(빌더가 요약 추출)
+ * @param {object} opts          { webUrl, memberName, title, buttonTitle, imageUrl }
+ * @returns {Promise<{ok, msg}>}  실패해도 throw 하지 않음
+ */
+export async function shareMeasurementSummaryToKakao(summaryInput, opts = {}) {
+  if (!KAKAO_JS_KEY) {
+    return { ok: false, msg: '카카오 공유 키가 설정되지 않았습니다. 관리자에게 문의하세요.' };
+  }
+  const Kakao = await waitForKakao();
+  if (!Kakao) {
+    return { ok: false, msg: '카카오 SDK를 불러오지 못했습니다. 네트워크를 확인하세요.' };
+  }
+  try {
+    await shareSummaryToKakao(summaryInput, {
+      ...opts,
+      Kakao,
+      javascriptKey: KAKAO_JS_KEY,
+      webUrl: opts.webUrl || (typeof window !== 'undefined' ? window.location.href : ''),
+    });
+    return { ok: true, msg: '카카오톡 공유 창을 열었습니다.' };
+  } catch (e) {
+    return { ok: false, msg: `카카오 공유 실패: ${e?.message || '알 수 없는 오류'}` };
+  }
+}
+
+// data:URL(예: canvas.toDataURL) → File. 자세 측정 면별 스냅샷 저장용.
+export function dataUrlToFile(dataUrl, filename) {
+  if (!dataUrl || typeof dataUrl !== 'string' || !dataUrl.startsWith('data:')) {
+    throw new Error('잘못된 이미지 데이터');
+  }
+  const [head, body] = dataUrl.split(',');
+  const mimeMatch = /data:([^;]+)/.exec(head);
+  const mime = mimeMatch ? mimeMatch[1] : 'image/jpeg';
+  const binary = atob(body);
+  const len = binary.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i += 1) bytes[i] = binary.charCodeAt(i);
+  return new File([bytes], filename, { type: mime });
+}
+
 let _h2cPromise = null;
 export async function loadHtml2Canvas() {
   if (typeof window === 'undefined') throw new Error('no window');

@@ -8,6 +8,7 @@ import {
   query, where,
 } from 'firebase/firestore';
 import { toYMD, todayYMD } from './utils/dates';
+import { buildUnifiedReportDocument, inferReportType } from './ai-measure/core/unifiedReport';
 
 const DATA_VERSION = 'v6.1';
 
@@ -144,7 +145,7 @@ const INITIAL_SETTINGS = {
 
 const cache = {
   members:[], trainers:[], schedules:[], notices:[], payments:{}, body:{}, ai:{},
-  settings:{...INITIAL_SETTINGS}, expenses:[], promos:[], settleOverrides:[], gaitReports:{}, postureReports:{},
+  settings:{...INITIAL_SETTINGS}, expenses:[], promos:[], settleOverrides:[], gaitReports:{}, postureReports:{}, romReports:{},
 };
 
 // 충돌 방지 ID 생성기 — Date.now()만 쓰면 같은 밀리초에 두 건이 생길 때
@@ -273,14 +274,14 @@ export async function initStore({ force = false } = {}) {
           cache.settings=snap.settings||{...INITIAL_SETTINGS};
           cache.expenses=snap.expenses||[]; cache.promos=snap.promos||[];
           cache.settleOverrides=snap.settleOverrides||[];
-          cache.ai = {}; cache.gaitReports = {};   // 측정 데이터는 항상 지연 로딩
+          cache.ai = {}; cache.gaitReports = {}; cache.postureReports = {}; cache.romReports = {};   // 측정 데이터는 항상 지연 로딩
           console.log('[FitCMS] 새로고침 캐시에서 복원 — Firestore 읽기 0건');
           return;
         }
       }
       // 2) 캐시가 없거나 만료 → Firestore 전수 로딩(최초 1회/TTL 경과 시).
       await seedIfEmpty();
-      // [읽기 절감 핵심] ai · gait_reports 는 회원별로만 조회되므로(측정 화면을 열 때),
+      // [읽기 절감 핵심] ai · gait_reports · posture_reports · rom_reports 는 회원별로만 조회되므로(측정 화면을 열 때),
       // 앱 시작 시 전수 조회하지 않는다. 빈 캐시로 시작 → 회원 화면에서 그 회원 것만
       // 지연 로딩(ensureSessions/ensureGaitReports)한다. 측정 데이터가 쌓일수록
       // 시작 시 읽기가 폭증하던 문제를 차단한다.
@@ -300,6 +301,8 @@ export async function initStore({ force = false } = {}) {
       cache.notices=notices; cache.payments=payments; cache.body=body;
       cache.ai = {};                 // 지연 로딩 — 회원별로 ensureSessions 시 채움
       cache.gaitReports = {};        // 지연 로딩 — 회원별로 ensureGaitReports 시 채움
+      cache.postureReports = {};     // 지연 로딩 — 회원별로 자세 리포트 조회 시 채움
+      cache.romReports = {};         // 지연 로딩 — 회원별로 ROM 리포트 조회 시 채움
       cache.settings = settings.find(s=>s.id==='config') || {...INITIAL_SETTINGS};
       cache.expenses = expenses;
       cache.promos   = promos;
@@ -328,6 +331,26 @@ function __touchSnapshot() {
 }
 
 function fbSet(name, id, data) { return setDoc(doc(db, name, id), data).then(r => { __touchSnapshot(); return r; }); }
+
+// 통합 리포트 미러 — 모든 측정 저장 시 users/{mid}/reports/{reportId} 에 표준 규격으로 동시 저장.
+// 핵심 원칙(측정 정직성): 통합 저장은 best-effort 부수 작업이며, 실패해도 본래의 측정 저장은
+// 절대 회귀하지 않는다. 따라서 호출부에서 try/catch 로 감싸 실패를 삼킨다(경고만 남김).
+async function mirrorUnifiedReport(mid, report, reportType) {
+  if (!mid || !report) return null;
+  try {
+    const document = buildUnifiedReportDocument(report, {
+      userId: mid,
+      reportId: report.id,
+      reportType,
+      member: { ...(report.member || {}), id: mid },
+    });
+    await setDoc(doc(db, 'users', mid, 'reports', document.reportId), document, { merge: true });
+    return document;
+  } catch (e) {
+    console.warn('[mirrorUnifiedReport] 통합 저장 실패(무시):', e?.code || e?.message);
+    return null;
+  }
+}
 function fbDelete(name, id)    { return deleteDoc(doc(db, name, id)).then(r => { __touchSnapshot(); return r; }); }
 
 // ── Firestore WriteBatch 하드 리밋 대응 ───────────────────────────
@@ -644,6 +667,25 @@ export const store = {
     (cache.body[mid]||[]).forEach(r=>sub.push({name:'body',id:r.id}));
     (cache.ai[mid]||[]).forEach(a=>sub.push({name:'ai',id:a.id}));
 
+    // 측정 데이터(ai/gait_reports)는 지연 로딩이라 캐시가 비어 있을 수 있다.
+    // 고아 데이터 방지를 위해 Firestore 에서 __mid 로 직접 조회해 삭제 목록에 포함.
+    try {
+      const aiSnap = await getDocs(query(collection(db,'ai'), where('__mid','==',mid)));
+      aiSnap.docs.forEach(d => { if (!sub.some(x=>x.name==='ai'&&x.id===d.id)) sub.push({name:'ai',id:d.id}); });
+    } catch (e) { console.warn('[purgeMember] ai 조회 실패:', e?.code||e?.message); }
+    try {
+      const gSnap = await getDocs(query(collection(db,'gait_reports'), where('__mid','==',mid)));
+      gSnap.docs.forEach(d => sub.push({name:'gait_reports',id:d.id}));
+    } catch (e) { console.warn('[purgeMember] gait_reports 조회 실패:', e?.code||e?.message); }
+    try {
+      const pSnap = await getDocs(query(collection(db,'posture_reports'), where('__mid','==',mid)));
+      pSnap.docs.forEach(d => sub.push({name:'posture_reports',id:d.id}));
+    } catch (e) { console.warn('[purgeMember] posture_reports 조회 실패:', e?.code||e?.message); }
+    try {
+      const rSnap = await getDocs(query(collection(db,'rom_reports'), where('__mid','==',mid)));
+      rSnap.docs.forEach(d => sub.push({name:'rom_reports',id:d.id}));
+    } catch (e) { console.warn('[purgeMember] rom_reports 조회 실패:', e?.code||e?.message); }
+
     // 1) 하위 데이터 먼저 chunk 단위로 삭제 (실패 시 여기서 throw → 회원 문서는 손대지 않음)
     await fbDeleteBatch(sub);
     // 2) 모든 하위 삭제 성공 후에만 회원 문서 삭제
@@ -654,6 +696,13 @@ export const store = {
     delete cache.payments[mid];
     delete cache.body[mid];
     delete cache.ai[mid];
+    if (cache.gaitReports) delete cache.gaitReports[mid];
+    if (cache.postureReports) delete cache.postureReports[mid];
+    if (cache.romReports) delete cache.romReports[mid];
+    aiStore._aiLoaded.delete(mid);
+    aiStore._gaitLoaded.delete(mid);
+    aiStore._postureLoaded.delete(mid);
+    aiStore._romLoaded.delete(mid);
     cache.members=cache.members.filter(m=>m.id!==mid);
   },
 
@@ -668,9 +717,23 @@ export const store = {
     const batch = writeBatch(db);
 
     let updatedMember = null;
+    let deductionSkipReason = null; // 차감이 안 된 사유(진단용)
     if (isDeductible) {
       const member = cache.members.find(m=>m.id===ns.memberId);
-      if (member && member.trainerSessions?.[ns.trainerId]) {
+      if (!member) {
+        deductionSkipReason = 'member_not_found';
+        ns.sessionDeducted = false;
+      } else if (!member.trainerSessions?.[ns.trainerId]) {
+        // 이 회원-트레이너 조합에 세션 슬롯이 없음
+        deductionSkipReason = 'no_session_slot';
+        ns.sessionDeducted = false;
+      } else if ((member.trainerSessions[ns.trainerId].remaining ?? 0) <= 0) {
+        // 슬롯은 있으나 잔여 0 — 차감할 회차 없음(세션 소진)
+        deductionSkipReason = 'no_remaining';
+        ns.sessionAtBooking      = 0;
+        ns.sessionTotalAtBooking = member.trainerSessions[ns.trainerId].total ?? null;
+        ns.sessionDeducted = false;
+      } else {
         const ts = JSON.parse(JSON.stringify(member.trainerSessions||{}));
         // ★ 회차표기: 차감 직전 잔여값 = 이 수업의 회차 번호. 총횟수와 함께 기록.
         ns.sessionAtBooking      = ts[ns.trainerId].remaining ?? null;
@@ -679,11 +742,10 @@ export const store = {
         updatedMember = { ...member, trainerSessions: ts };
         ns.sessionDeducted = true;
         batch.set(doc(db,'members',ns.memberId), updatedMember);
-      } else {
-        ns.sessionDeducted = false; // 세션 슬롯 없음(월정액 등) → 차감 안 함
       }
     } else {
       ns.sessionDeducted = false;
+      if (!ns.isExternal) deductionSkipReason = 'not_deductible';
     }
     batch.set(doc(db,'schedules',ns.id), ns);
     await batch.commit();   // 예약+차감이 함께 성공하거나 함께 실패
@@ -691,7 +753,8 @@ export const store = {
     // 성공 시에만 캐시 반영
     cache.schedules=[...cache.schedules, ns];
     if (updatedMember) cache.members=cache.members.map(m=>m.id===updatedMember.id?updatedMember:m);
-    return ns;
+    // 진단 정보를 반환(호출부에서 경고 표시 가능). 일반 수업인데 차감 안 됐으면 사유 포함.
+    return { ...ns, _deductionSkipReason: deductionSkipReason };
   },
 
   // 상태 확정 + (출석 시 출석일 / 취소·노쇼 시 세션 복원)을 한 batch로 — NEW-03
@@ -917,10 +980,29 @@ export const store = {
   },
 };
 
+// 가상(미등록)회원 측정 데이터의 __mid 접두사. 실제 회원 id(m...)와 구분되며,
+// 한 번의 미등록회원 측정 묶음마다 고유 guest id 를 발급해 개인별로 분리 저장한다.
+//  예: 'guest_1782648377018042'
+export const GUEST_MID_PREFIX = 'guest_';
+export const VIRTUAL_MID = '__virtual__'; // (구버전 호환용 — 신규 측정엔 개별 guest id 사용)
+
+// 미등록회원 1인의 측정 묶음용 고유 id 발급. 측정 세션 시작 시 1회 호출해
+// 여러 면/여러 항목이 같은 id 로 묶이게 한다.
+export function makeGuestId() {
+  return uid(GUEST_MID_PREFIX);
+}
+
+// __mid 가 미등록(게스트) 측정인지 판별.
+export function isGuestMid(mid) {
+  return typeof mid === 'string' && mid.startsWith(GUEST_MID_PREFIX);
+}
+
 export const aiStore = {
   // ── 지연 로딩 추적: 이미 읽은 회원은 다시 읽지 않는다(세션 내) ──
   _aiLoaded: new Set(),
   _gaitLoaded: new Set(),
+  _postureLoaded: new Set(),
+  _romLoaded: new Set(),
 
   // 회원별 ai 세션을 필요 시점에만 읽어 캐시에 채운다(전수 조회 회피).
   // 측정 화면 effect 에서 await 후 동기 getSessions 로 읽으면 된다.
@@ -948,13 +1030,31 @@ export const aiStore = {
     }
     return cache.gaitReports[mid];
   },
+  ensureRomReports: async (mid) => {
+    if (!mid || aiStore._romLoaded.has(mid)) return cache.romReports[mid] || [];
+    try {
+      const snap = await countedGetDocs(`rom_reports(mid:${mid})`, query(collection(db, 'rom_reports'), where('__mid', '==', mid)));
+      cache.romReports[mid] = snap.docs.map(d => { const { __mid, ...rest } = d.data(); return rest; });
+      aiStore._romLoaded.add(mid);
+    } catch (e) {
+      console.warn('[aiStore.ensureRomReports] 로딩 실패:', e?.code || e?.message);
+      cache.romReports[mid] = cache.romReports[mid] || [];
+    }
+    return cache.romReports[mid];
+  },
 
   getSessions:   (mid)    => cache.ai[mid] || [],
   addSession:    async (mid, s) => {
     const ns={...s, id:uid('ai')}; const prev=cache.ai[mid];
     cache.ai[mid]=[...(cache.ai[mid]||[]), ns];
     aiStore._aiLoaded.add(mid);   // 이후 ensureSessions 가 덮어쓰지 않도록 로딩됨 표시
-    try { await fbSet('ai', ns.id, {...ns, __mid:mid}); return ns; }
+    try {
+      await fbSet('ai', ns.id, {...ns, __mid:mid});
+      // jump/vbt/1RM 등 측정 세션만 통합 리포트로 미러링(신체정보 등 비측정 세션은 제외).
+      const t = inferReportType({ ...ns, member: { id: mid } });
+      if (t !== 'general') await mirrorUnifiedReport(mid, { ...ns, member: { id: mid } }, t);
+      return ns;
+    }
     catch(e){ cache.ai[mid]=prev; throw e; }
   },
   deleteSession: async (mid, sid) => {
@@ -979,19 +1079,57 @@ export const aiStore = {
     if (mid) { cache.gaitReports[mid] = [...(cache.gaitReports[mid] || []), r]; aiStore._gaitLoaded.add(mid); }
     try {
       await fbSet('gait_reports', r.id, { ...r, __mid: mid });
+      await mirrorUnifiedReport(mid, r, undefined);
       return r;
     } catch (e) {
       if (mid) cache.gaitReports[mid] = (cache.gaitReports[mid] || []).filter(x => x.id !== r.id);
       throw e;
     }
   },
+  getRomReports: (mid) => (cache.romReports[mid] || []),
+  addRomReport: async (report) => {
+    const mid = report?.member?.id || report?.memberId || report?.basic_info?.memberId || null;
+    const createdAt = new Date();
+    const baseBasic = report?.basic_info || {};
+    const basic_info = {
+      ...baseBasic,
+      memberId: baseBasic.memberId || mid || '',
+      trainerId: baseBasic.trainerId || report?.trainerId || '',
+      createdAt: baseBasic.createdAt || createdAt,
+      linkedPostureReportId: baseBasic.linkedPostureReportId || report?.linkedPostureReportId || report?.posture_context?.sourceReportId || '',
+    };
+    const { basic_info: _basicInfo, linkedPostureReportId: _linkedPostureReportId, ...rest } = report || {};
+    const r = { ...rest, id: uid('rom'), createdAt: createdAt.toISOString(), basic_info };
+    if (mid) { cache.romReports[mid] = [...(cache.romReports[mid] || []), r]; aiStore._romLoaded.add(mid); }
+    try {
+      await fbSet('rom_reports', r.id, { ...r, __mid: mid });
+      await mirrorUnifiedReport(mid, r, 'rom');
+      return r;
+    } catch (e) {
+      if (mid) cache.romReports[mid] = (cache.romReports[mid] || []).filter(x => x.id !== r.id);
+      throw e;
+    }
+  },
+  ensurePostureReports: async (mid) => {
+    if (!mid || aiStore._postureLoaded.has(mid)) return cache.postureReports[mid] || [];
+    try {
+      const snap = await countedGetDocs(`posture_reports(mid:${mid})`, query(collection(db, 'posture_reports'), where('__mid', '==', mid)));
+      cache.postureReports[mid] = snap.docs.map(d => { const { __mid, ...rest } = d.data(); return rest; });
+      aiStore._postureLoaded.add(mid);
+    } catch (e) {
+      console.warn('[aiStore.ensurePostureReports] 로딩 실패:', e?.code || e?.message);
+      cache.postureReports[mid] = cache.postureReports[mid] || [];
+    }
+    return cache.postureReports[mid];
+  },
   getPostureReports: (mid) => (cache.postureReports[mid] || []),
   addPostureReport: async (report) => {
     const mid = report?.member?.id || report?.memberId || null;
     const r = { ...report, id: uid('posture'), createdAt: new Date().toISOString() };
-    if (mid) cache.postureReports[mid] = [...(cache.postureReports[mid] || []), r];
+    if (mid) { cache.postureReports[mid] = [...(cache.postureReports[mid] || []), r]; aiStore._postureLoaded.add(mid); }
     try {
       await fbSet('posture_reports', r.id, { ...r, __mid: mid });
+      await mirrorUnifiedReport(mid, r, 'posture');
       return r;
     } catch (e) {
       if (mid) cache.postureReports[mid] = (cache.postureReports[mid] || []).filter(x => x.id !== r.id);

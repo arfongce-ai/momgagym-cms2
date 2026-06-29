@@ -3,6 +3,9 @@ import {
   RadarChart, PolarGrid, PolarAngleAxis, Radar, Legend,
   BarChart, Bar, XAxis, YAxis, Cell, ResponsiveContainer, Tooltip,
 } from 'recharts';
+import { buildProblemFocus } from '../core/crossMeasureContext';
+import ProblemFocusPanel from './ProblemFocusPanel.jsx';
+import ReportActions from '../../components/report/ReportActions';
 
 /*
  * GaitReportDashboard — 보행/러닝 종합 리포트 (1장 대시보드)
@@ -88,7 +91,7 @@ function normalizeMetrics(report) {
   };
 }
 
-export default function GaitReportDashboard({ report, onComment, onClose }) {
+export default function GaitReportDashboard({ report, onComment, onClose, videoBlob }) {
   const m = useMemo(() => normalizeMetrics(report), [report]);
   const score = useMemo(() => computeScore(m), [m]);
   const [comment, setComment] = useState(report?.trainerComment || '');
@@ -96,6 +99,7 @@ export default function GaitReportDashboard({ report, onComment, onClose }) {
 
   const memberName = report?.member?.name || '회원';
   const dateStr = (report?.createdAt || report?.measuredAt || '').slice(0, 10) || '—';
+  const problemFocus = useMemo(() => report?.problem_focus || buildProblemFocus('gait', report), [report]);
 
   // 중단 좌측: 좌/우 무릎·골반·발목 비교 (Kinematic 레이더)
   // 무릎=BiomechAccumulator 좌우, 골반/발목=angles(좌측 기준)로 보강
@@ -122,7 +126,7 @@ export default function GaitReportDashboard({ report, onComment, onClose }) {
   };
 
   return (
-    <div className="min-h-full w-full bg-slate-950 flex items-start justify-center p-4 font-sans">
+    <div className="min-h-full w-full bg-slate-950 flex flex-col items-center justify-start p-4 font-sans">
       <div
         id="gait-report-sheet"
         className="report-a4-page w-full max-w-[794px] bg-slate-900 rounded-2xl shadow-2xl ring-1 ring-slate-700/60 overflow-hidden flex flex-col"
@@ -146,6 +150,7 @@ export default function GaitReportDashboard({ report, onComment, onClose }) {
 
         {/* ── 본문: 4분할 ── */}
         <div className="flex-1 grid grid-rows-[auto_1fr_auto] gap-3 p-4 min-h-0">
+          <ProblemFocusPanel focus={problemFocus} context={report?.cross_measure_context} />
 
           {/* ① 상단 요약 */}
           <section className="grid grid-cols-4 gap-2.5">
@@ -246,6 +251,15 @@ export default function GaitReportDashboard({ report, onComment, onClose }) {
           <span>몸가짐 CMS · AI 측정 허브</span>
           <span>색상: <span className="text-emerald-400">정상</span> · <span className="text-amber-400">주의</span> · <span className="text-red-400">이상</span></span>
         </footer>
+      </div>
+
+      {/* 결과 리포트 화면 내 저장 액션 (캡처 노드 #gait-report-sheet 바깥) */}
+      <div className="w-full max-w-[794px] mt-3">
+        <ReportActions
+          reportNodeId="gait-report-sheet"
+          videoBlob={videoBlob || report?.videoBlob || null}
+          baseName={`${memberName}_보행`}
+        />
       </div>
     </div>
   );

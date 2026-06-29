@@ -58,9 +58,11 @@ export function calcNet(payment, settings) {
 
 // ── 매월(1일~말일) 정산비율 자동 판정 (계약서 4조) ───────────────────
 // 해당 월의 "그 트레이너 귀속 입금금액 / 블로그 횟수 / 스터디 횟수"만으로 판정한다.
-//  · 수동 지정(trainerSplitRates[tid])이 있으면 그 값을 그대로 사용(자동판정 무시)
-//  · 자동: 기본=하한(40%) → 블로그≥조건 AND 스터디≥조건 이면 50% → 월매출≥조건 이면 60%
-//  · 60%와 50% 조건을 동시에 만족하면 더 높은 60% 우선
+//  · 수동 지정(trainerSplitRates[tid])이 있으면 기준선으로 삼되, 자동조건이 더 높으면 상향
+//  · 자동 규칙:
+//      - 조건A: 블로그 ≥ rate50MinBlog AND 스터디 ≥ rate50MinStudy
+//      - 조건B: 신규 또는 재등록 매출 ≥ rate60MinSales(기본 300만)
+//      - 두 조건 모두 충족 → 60% / 하나만 충족 → 50% / 둘 다 미달 → 하한(40%)
 // 반환: { rate, mode:'manual'|'auto', reason, monthNet, blogCount, studyCount }
 export function determineSplitRate({ settings, trainerId, monthNet, newSales=0, reEnrollSales=0, blogCount, studyCount }) {
   const floor   = Number(settings.lowSplitRate ?? 40);   // 하한 40%
@@ -68,32 +70,42 @@ export function determineSplitRate({ settings, trainerId, monthNet, newSales=0, 
   const minBlog = Number(settings.rate50MinBlog ?? 2);
   const minStudy= Number(settings.rate50MinStudy ?? 1);
 
-  // 비율 판정 규칙:
-  //  · 조건A: 블로그 ≥2 AND 스터디 ≥1  → 충족 시 60%
-  //  · 조건B: 신규 또는 재등록 매출 ≥ 임계(300만) → (A 미충족 시) 50%
-  // 조건A 충족 → 60% / 조건A 미충족 & 조건B 충족 → 50% / 둘 다 미달 → 40%
+  // 비율 판정 규칙 (변경):
+  //  · 조건A: 블로그 ≥ minBlog AND 스터디 ≥ minStudy
+  //  · 조건B: 신규 또는 재등록 매출 ≥ 임계(min60)
+  //  → 두 조건 모두 충족: 60% / 하나만 충족: 50% / 둘 다 미달: 하한(40%)
   const condA = (blogCount >= minBlog && studyCount >= minStudy);
   const condB = (newSales >= min60 || reEnrollSales >= min60);
+  const metCount = (condA ? 1 : 0) + (condB ? 1 : 0);
 
   let autoRate, autoReason;
-  if (condA) {
+  if (metCount === 2) {
     autoRate = 60;
-    autoReason = `블로그 ${blogCount}회·스터디 ${studyCount}회 충족 → 60%`;
-  } else if (condB) {
+    autoReason = `블로그·스터디(${blogCount}/${studyCount})와 매출 조건 모두 충족 → 60%`;
+  } else if (metCount === 1) {
     autoRate = 50;
-    autoReason = `매출 ${won(min60)} 이상 충족 → 50%`;
+    autoReason = condA
+      ? `블로그 ${blogCount}회·스터디 ${studyCount}회 충족 → 50%`
+      : `매출 ${won(min60)} 이상 충족 → 50%`;
   } else {
     autoRate = floor;
     autoReason = `조건 미달(블로그·스터디 / 매출 모두 미달) → ${floor}%`;
   }
 
   // 수동 지정이 있으면 그 값을 '기준선(floor)'으로 삼고, 조건이 더 높으면 올린다(낮추지는 않음).
-  //  · 예) 수동 50% + 조건 충족(자동 60%) → 60%로 상향
-  //  ·     수동 50% + 조건 미달(자동 40/50%) → 50% 유지
+  //  · 일반: 자동판정(autoRate)이 수동값보다 높으면 그 값으로 상향
+  //  · 특례: 수동 50% 인 트레이너는 조건A(블로그·스터디)만 충족해도 60%로 상향한다.
+  //          (일반 자동규칙은 조건A·B 둘 다여야 60%이지만, 수동 50% 한정 예외)
+  //  · 예) 수동 50% + 조건A만 충족 → 60% (특례) / 수동 50% + 조건 미달 → 50% 유지
   const manual = settings.trainerSplitRates?.[trainerId];
   const hasManual = manual !== undefined && manual !== null && manual !== '';
   if (hasManual) {
     const manualRate = Number(manual);
+    // 특례: 수동 50% + 조건A 충족 → 60%
+    if (manualRate === 50 && condA) {
+      return { rate: 60, mode: 'manual', reason: `수동 50% → 블로그·스터디(${blogCount}/${studyCount}) 충족으로 60% 상향(특례)`,
+               monthNet, newSales, reEnrollSales, blogCount, studyCount };
+    }
     if (autoRate > manualRate) {
       // 조건이 수동값보다 높음 → 상향
       return { rate: autoRate, mode: 'manual', reason: `수동 ${manualRate}% → 조건 충족으로 ${autoRate}% 상향 (${autoReason})`,

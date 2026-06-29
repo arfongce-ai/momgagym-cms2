@@ -38,12 +38,15 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
   const [editMode, setEdit] = useState(false);
   const [editForm, setEF]   = useState({ ...initMember });
 
-  // 세션 추가
+  // 세션 추가 (결제 동반)
   const [showAddSess,   setShowAddSess]   = useState(false);
   const [addTrainerId,  setAddTrainerId]  = useState('');
   const [addClassType,  setAddClassType]  = useState('');
   const [addCount,      setAddCount]      = useState(10);
   const [addSessDate,   setAddSessDate]   = useState(todayYMD());
+  const [addSessAmount, setAddSessAmount] = useState('');     // 결제 금액(재등록 시 함께 기록)
+  const [addSessMethod, setAddSessMethod] = useState('카드'); // 결제 수단
+  const [addSessNoPay,  setAddSessNoPay]  = useState(false);  // 결제 없이 세션만(증정/보정)
   // 세션 직접 조정
   const [adjustTid,     setAdjustTid]     = useState(null);
   const [adjustForm,    setAdjustForm]    = useState({ remaining:0, total:0 });
@@ -90,10 +93,16 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
     } catch (e) { alert('저장에 실패했습니다. 네트워크 확인 후 다시 시도하세요.'); }
   };
 
-  // ── 세션 재등록 ───────────────────────────────────────
+  // ── 세션 재등록 (결제 + 세션을 함께 기록) ─────────────────
   const handleAddSession = async () => {
     if (!addTrainerId) { alert('트레이너를 선택해 주세요.'); return; }
     if (!addCount || addCount<1) { alert('세션 수를 입력해 주세요.'); return; }
+    const amount = Number(addSessAmount) || 0;
+    if (!addSessNoPay && amount <= 0) {
+      alert('결제 금액을 입력해 주세요. (결제 없이 세션만 추가하려면 "결제 없이 추가"를 체크하세요)');
+      return;
+    }
+
     const fresh = store.getMembers().find(m=>m.id===member.id);
     const ts    = JSON.parse(JSON.stringify(fresh?.trainerSessions||{}));
     if (ts[addTrainerId]) {
@@ -104,11 +113,56 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
     }
     const curCT    = fresh?.classTypes||[];
     const upCT     = addClassType&&!curCT.includes(addClassType) ? [...curCT,addClassType] : curCT;
+
     try {
-      await store.updateMember(member.id, { trainerSessions:ts, classTypes:upCT, lastPaymentDate:addSessDate });
+      if (addSessNoPay) {
+        // 결제 없이 세션만 추가(증정·보정 등) — 결제 기록은 만들지 않는다.
+        await store.updateMember(member.id, { trainerSessions:ts, classTypes:upCT, lastPaymentDate:addSessDate });
+      } else {
+        // 결제 + 세션을 한 batch로 원자적 저장 (정산 기준 데이터 정합성 보장)
+        const reEnrollNo = (store.getPayments(member.id)||[]).filter(x=>x.isReEnroll).length + 1;
+        const newPayment = {
+          paidAt: addSessDate,
+          amount,
+          method: addSessMethod,
+          methods: [],
+          split: [],
+          trainerIds: [addTrainerId],
+          sessionAdds: [{ trainerId:addTrainerId, count:Number(addCount), classType:addClassType||'' }],
+          isReEnroll: true,
+          reEnrollNo,
+          isNew: false,
+          consultTrainerId: '',
+        };
+        // 결제월 정산비율 박제 (수납 화면과 동일 로직)
+        const ym = (addSessDate||'').slice(0,7);
+        const trainersInvolved = trainers.filter(t => t.id === addTrainerId);
+        const monthPayments = {};
+        store.getMembers().forEach(mm => {
+          const list = (store.getPayments(mm.id)||[]).filter(p => (p.paidAt||'').slice(0,7) === ym);
+          monthPayments[mm.id] = mm.id === member.id ? [...list, newPayment] : list;
+        });
+        const rateMap = computeMonthRates({
+          trainers: trainersInvolved.length ? trainersInvolved : trainers,
+          members: store.getMembers(),
+          payments: monthPayments,
+          records: store.getPromos(),
+          settings: store.getSettings(),
+          ym,
+        });
+        newPayment.splitRateAtPay = rateMap[addTrainerId] ? { [addTrainerId]: rateMap[addTrainerId].rate } : {};
+
+        const memberPatch = { trainerSessions:ts, classTypes:upCT, lastPaymentDate:addSessDate };
+        if (member.monthly && member.monthly.active) {
+          const curDue = member.monthly.dueDate;
+          const base = (curDue && curDue >= addSessDate) ? curDue : addSessDate;
+          memberPatch.monthly = { ...member.monthly, dueDate: addMonthsYMD(1, base) };
+        }
+        await store.addPaymentWithMemberUpdate(member.id, newPayment, memberPatch);
+      }
       refresh(); setShowAddSess(false);
       setAddTrainerId(''); setAddClassType(''); setAddCount(10);
-      setAddSessDate(todayYMD());
+      setAddSessDate(todayYMD()); setAddSessAmount(''); setAddSessMethod('카드'); setAddSessNoPay(false);
       onUpdate?.();
     } catch (e) { alert('세션 등록에 실패했습니다. 네트워크 확인 후 다시 시도하세요.'); }
   };
@@ -727,7 +781,7 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
                 </button>
               ) : (
                 <div className="bg-slate-800 border border-amber-500/20 rounded-xl p-4 space-y-3">
-                  <p className="text-xs text-amber-400 font-bold uppercase tracking-widest">세션 재등록</p>
+                  <p className="text-xs text-amber-400 font-bold uppercase tracking-widest">세션 재등록 <span className="text-slate-500 normal-case font-normal tracking-normal">· 결제와 함께 기록됩니다</span></p>
                   <div>
                     <label className={LBL}>담당 트레이너</label>
                     <div className="grid grid-cols-2 gap-1.5">
@@ -758,11 +812,39 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
                     <div><label className={LBL}>추가 세션 수</label><input type="number" min="1" max="300" value={addCount} onChange={e=>setAddCount(Number(e.target.value))} className={INP+" font-mono"}/></div>
                     <div><label className={LBL}>결제일 / 첫 수업일</label><input type="date" value={addSessDate} onChange={e=>setAddSessDate(e.target.value)} className={INP}/></div>
                   </div>
+
+                  {/* 결제 정보 (재등록 시 결제+세션 함께 기록 — 정산 정합성) */}
+                  <div className="border-t border-slate-700 pt-3 space-y-2">
+                    <label className="flex items-center gap-2 cursor-pointer select-none">
+                      <span className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 ${addSessNoPay?'bg-slate-500 border-slate-500':'border-slate-600 bg-slate-800'}`}>
+                        {addSessNoPay&&<svg className="w-2.5 h-2.5 text-white" viewBox="0 0 10 8" fill="none"><path d="M1 4l3 3 5-6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+                      </span>
+                      <input type="checkbox" className="hidden" checked={addSessNoPay} onChange={e=>setAddSessNoPay(e.target.checked)} />
+                      <span className="text-xs text-slate-400">결제 없이 세션만 추가 (증정·보정)</span>
+                    </label>
+                    {!addSessNoPay && (
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className={LBL}>결제 금액</label>
+                          <input type="number" min="0" value={addSessAmount} onChange={e=>setAddSessAmount(e.target.value)} placeholder="예: 600000" className={INP+" font-mono"}/>
+                        </div>
+                        <div>
+                          <label className={LBL}>결제 수단</label>
+                          <select value={addSessMethod} onChange={e=>setAddSessMethod(e.target.value)} className={INP}>
+                            <option value="카드">카드</option>
+                            <option value="현금">현금</option>
+                            <option value="계좌이체">계좌이체</option>
+                          </select>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                   {addTrainerId&&(
                     <div className="bg-slate-700/50 rounded-lg px-3 py-2 text-xs text-slate-400">
                       <span className="text-slate-300 font-semibold">{trainerMap[addTrainerId]?.name}</span>에게{' '}
                       <span className="text-amber-400 font-bold">{addCount}회</span> 추가 → 잔여{' '}
                       <span className="text-amber-400 font-bold">{((member.trainerSessions||{})[addTrainerId]?.remaining||0)+addCount}회</span>
+                      {!addSessNoPay && addSessAmount>0 && <span className="text-slate-400"> · 결제 <span className="text-emerald-400 font-bold">{Number(addSessAmount).toLocaleString()}원</span> 함께 기록</span>}
                     </div>
                   )}
                   <div className="flex gap-2">

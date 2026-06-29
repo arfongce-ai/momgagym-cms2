@@ -8,8 +8,10 @@ let FAIL = false;
 const mem = {};
 vi.mock('../firebase', () => ({ db: { __mock: true }, auth: {} }));
 vi.mock('firebase/firestore', () => ({
-  collection: () => ({}),
+  collection: (_db, name) => ({ __coll: name }),
   doc: (_db, name, id) => ({ name, id }),
+  query: (coll, ...clauses) => ({ ...coll, __clauses: clauses }),
+  where: (field, op, value) => ({ field, op, value }),
   getDocs: async () => ({ empty: true, docs: [] }),
   setDoc: async (ref, data) => { if (FAIL) throw new Error('denied'); (mem[ref.name] ||= {})[ref.id] = data; },
   deleteDoc: async (ref) => { if (FAIL) throw new Error('denied'); if (mem[ref.name]) delete mem[ref.name][ref.id]; },
@@ -177,9 +179,9 @@ describe('매월 정산비율 자동 판정 (determineSplitRate)', () => {
     const r = determineSplitRate({ settings:S, trainerId:'t1', monthNet:1000000, blogCount:0, studyCount:0 });
     expect(r.rate).toBe(40); expect(r.mode).toBe('auto');
   });
-  it('블로그2 + 스터디1 충족이면 60% (조건A 단독으로 60%)', () => {
+  it('블로그2+스터디1만 충족(매출 미달)이면 50% (조건A만)', () => {
     const r = determineSplitRate({ settings:S, trainerId:'t1', monthNet:1000000, blogCount:2, studyCount:1 });
-    expect(r.rate).toBe(60);
+    expect(r.rate).toBe(50);
   });
   it('블로그만 충족(스터디 0)이면 조건A 미충족 → 40%', () => {
     const r = determineSplitRate({ settings:S, trainerId:'t1', monthNet:1000000, blogCount:5, studyCount:0 });
@@ -189,32 +191,48 @@ describe('매월 정산비율 자동 판정 (determineSplitRate)', () => {
     const r = determineSplitRate({ settings:S, trainerId:'t1', newSales:3000000, reEnrollSales:0, blogCount:0, studyCount:0 });
     expect(r.rate).toBe(50);
   });
-  it('블로그2·스터디1 충족이면 매출과 무관하게 60%', () => {
+  it('조건A + 조건B 모두 충족이면 60%', () => {
     const r = determineSplitRate({ settings:S, trainerId:'t1', newSales:3000000, reEnrollSales:0, blogCount:2, studyCount:1 });
     expect(r.rate).toBe(60);
   });
-  it('블로그2·스터디1 충족 + 매출 미달이어도 60% (스크린샷 상황)', () => {
+  it('조건A 충족 + 매출 미달이면 50% (하나만 충족)', () => {
     const r = determineSplitRate({ settings:S, trainerId:'t1', newSales:1100000, reEnrollSales:2025600, blogCount:2, studyCount:1 });
-    expect(r.rate).toBe(60);
+    expect(r.rate).toBe(50);
   });
   it('재등록매출만 300만↑(블로그·스터디 미달)이면 50%', () => {
     const r = determineSplitRate({ settings:S, trainerId:'t1', newSales:0, reEnrollSales:3000000, blogCount:0, studyCount:0 });
     expect(r.rate).toBe(50);
   });
+  it('재등록매출 300만↑ + 블로그·스터디 충족이면 60% (둘 다)', () => {
+    const r = determineSplitRate({ settings:S, trainerId:'t1', newSales:0, reEnrollSales:3000000, blogCount:2, studyCount:1 });
+    expect(r.rate).toBe(60);
+  });
   it('수동 지정은 기준선 — 조건 미달이면 수동값 유지(40)', () => {
     const r = determineSplitRate({ settings:{...S, trainerSplitRates:{t1:40}}, trainerId:'t1', newSales:0, reEnrollSales:0, blogCount:0, studyCount:0 });
     expect(r.rate).toBe(40); expect(r.mode).toBe('manual');
   });
-  it('수동 40% + 조건A 충족(자동 60%) → 60%로 상향', () => {
-    const r = determineSplitRate({ settings:{...S, trainerSplitRates:{t1:40}}, trainerId:'t1', blogCount:5, studyCount:5 });
+  it('수동 40% + 두 조건 충족(자동 60%) → 60%로 상향', () => {
+    const r = determineSplitRate({ settings:{...S, trainerSplitRates:{t1:40}}, trainerId:'t1', newSales:3000000, blogCount:5, studyCount:5 });
     expect(r.rate).toBe(60); expect(r.mode).toBe('manual');
   });
   it('수동 50% + 조건B만 충족(자동 50%) → 50% 유지(상향 안 함)', () => {
     const r = determineSplitRate({ settings:{...S, trainerSplitRates:{t1:50}}, trainerId:'t1', newSales:3000000, reEnrollSales:0, blogCount:0, studyCount:0 });
     expect(r.rate).toBe(50); expect(r.mode).toBe('manual');
   });
-  it('수동 50% + 조건A 충족(자동 60%) → 60%로 상향 (스크린샷 김나영)', () => {
+  it('수동 50% + 조건A만 충족 → 60% 상향 (특례)', () => {
     const r = determineSplitRate({ settings:{...S, trainerSplitRates:{t1:50}}, trainerId:'t1', newSales:1100000, reEnrollSales:2025600, blogCount:2, studyCount:1 });
+    expect(r.rate).toBe(60); expect(r.mode).toBe('manual');
+  });
+  it('수동 50% + 조건 모두 미달 → 50% 유지 (특례 조건 안 됨)', () => {
+    const r = determineSplitRate({ settings:{...S, trainerSplitRates:{t1:50}}, trainerId:'t1', newSales:0, reEnrollSales:0, blogCount:1, studyCount:0 });
+    expect(r.rate).toBe(50); expect(r.mode).toBe('manual');
+  });
+  it('수동 40% + 조건A만 충족 → 50% (특례는 수동50% 한정, 40%엔 미적용)', () => {
+    const r = determineSplitRate({ settings:{...S, trainerSplitRates:{t1:40}}, trainerId:'t1', newSales:0, reEnrollSales:0, blogCount:2, studyCount:1 });
+    expect(r.rate).toBe(50); expect(r.mode).toBe('manual');
+  });
+  it('수동 50% + 두 조건 충족(자동 60%) → 60%로 상향', () => {
+    const r = determineSplitRate({ settings:{...S, trainerSplitRates:{t1:50}}, trainerId:'t1', newSales:3000000, reEnrollSales:0, blogCount:2, studyCount:1 });
     expect(r.rate).toBe(60); expect(r.mode).toBe('manual');
   });
   it('수동 60% + 조건 미달 → 60% 유지(자동이 낮아도 내리지 않음)', () => {
@@ -491,9 +509,9 @@ describe('월말 정산비율 확정 재박제 (buildRefreezePlan)', () => {
   it('월초에 40%로 박제됐던 결제가, 그 달 전체 실적이 60%면 60%로 갱신된다', () => {
     // 6월 결제: 박제 시점엔 실적 부족으로 40%로 고정돼 있었음
     const members = [{ id:'m3', name:'등록회원3', trainerSessions:{ t1:{ total:10 } } }];
-    const payments = { m3:[{ id:'p1', paidAt:'2026-06-03', amount:1000000, method:'cash',
+    const payments = { m3:[{ id:'p1', paidAt:'2026-06-03', amount:3000000, method:'cash', isNew:true, consultTrainerId:'t1',
                              trainerIds:['t1'], splitRateAtPay:{ t1:40 } }] };
-    // 그 달 전체 실적: 블로그2·스터디1 → 조건A 충족 → 60%
+    // 그 달 전체 실적: 블로그2·스터디1(조건A) + 매출 300만(조건B) → 두 조건 충족 → 60%
     const records = [
       { trainerId:'t1', channel:'blog', date:'2026-06-10' },
       { trainerId:'t1', channel:'blog', date:'2026-06-20' },
@@ -520,9 +538,9 @@ describe('월말 정산비율 확정 재박제 (buildRefreezePlan)', () => {
 
   it('이미 최종 실적과 일치하면 변동 건이 없다', () => {
     const members = [{ id:'m1', name:'등록회원1', trainerSessions:{ t1:{ total:20 } } }];
-    const payments = { m1:[{ id:'p4', paidAt:'2026-04-05', amount:1000000, method:'cash',
+    const payments = { m1:[{ id:'p4', paidAt:'2026-04-05', amount:3000000, method:'cash', isNew:true, consultTrainerId:'t1',
                              trainerIds:['t1'], splitRateAtPay:{ t1:60 } }] };
-    // 블로그2·스터디1 → 조건A 충족 → 60%, 이미 60%로 박제돼 있어 변동 없음
+    // 블로그2·스터디1(조건A) + 매출 300만(조건B) → 두 조건 충족 → 60%, 이미 60% 박제 → 변동 없음
     const records = [
       { trainerId:'t1', channel:'blog', date:'2026-04-10' },
       { trainerId:'t1', channel:'blog', date:'2026-04-20' },
@@ -609,6 +627,33 @@ describe('aiStore.addGaitReport (보행 리포트 저장)', () => {
   it('저장 실패 시 에러를 전파한다', async () => {
     setFail(true);
     await expect(aiStore.addGaitReport({ member: { id: 'm1' } })).rejects.toThrow();
+  });
+});
+
+describe('aiStore.addRomReport (ROM 리포트 저장)', () => {
+  it('rom_reports 컬렉션에 basic_info.linkedPostureReportId 를 포함해 저장한다', async () => {
+    const createdAt = new Date('2026-06-01T00:00:00.000Z');
+    const r = await aiStore.addRomReport({
+      kind: 'rom',
+      member: { id: 'm1', name: '홍길동' },
+      trainerId: 't1',
+      linkedPostureReportId: 'posture_123',
+      basic_info: { createdAt },
+      summary: { valid: true },
+    });
+    expect(r.id).toMatch(/^rom/);
+    expect(r.createdAt).toBeTruthy();
+    expect(mem.rom_reports[r.id].__mid).toBe('m1');
+    expect(mem.rom_reports[r.id].basic_info.memberId).toBe('m1');
+    expect(mem.rom_reports[r.id].basic_info.trainerId).toBe('t1');
+    expect(mem.rom_reports[r.id].basic_info.createdAt).toBe(createdAt);
+    expect(mem.rom_reports[r.id].basic_info.linkedPostureReportId).toBe('posture_123');
+    expect(mem.rom_reports[r.id].linkedPostureReportId).toBeUndefined();
+  });
+
+  it('저장 실패 시 에러를 전파한다', async () => {
+    setFail(true);
+    await expect(aiStore.addRomReport({ member: { id: 'm1' } })).rejects.toThrow();
   });
 });
 
@@ -888,5 +933,105 @@ describe('트레이너 모드 정산 스코핑', () => {
     expect(scoped[0].rows.every(r => r.memberId === 'm1')).toBe(true);
     // 다른 트레이너(t2) 회원은 포함되지 않음
     expect(scoped[0].rows.some(r => r.memberId === 'm2')).toBe(false);
+  });
+});
+
+describe('가상회원 측정 저장 (모든 유형 저장·출력)', () => {
+  it('가상회원 자세 리포트가 posture_reports 에 저장된다(__mid 동봉)', async () => {
+    const { VIRTUAL_MID } = await import('../demoData.js');
+    const r = await aiStore.addPostureReport({
+      kind: 'posture',
+      member: { id: VIRTUAL_MID, name: '가상회원', isVirtual: true },
+      sex: 'female', birthDate: '1990-01-01', heightCm: 170, weightKg: 60,
+      postureScore: 74,
+    });
+    expect(r.id).toBeTruthy();
+    expect(r.sex).toBe('female');
+    expect(r.member.isVirtual).toBe(true);
+  });
+
+  it('가상회원 점프 리포트가 gait_reports 에 저장된다', async () => {
+    const { VIRTUAL_MID } = await import('../demoData.js');
+    const r = await aiStore.addGaitReport({
+      kind: 'jump', valid: true,
+      member: { id: VIRTUAL_MID, name: '가상회원', isVirtual: true },
+      heightCm: 170,
+    });
+    expect(r.id).toBeTruthy();
+    expect(r.kind).toBe('jump');
+  });
+
+  it('가상회원 ROM 리포트가 rom_reports 에 저장된다', async () => {
+    const { VIRTUAL_MID } = await import('../demoData.js');
+    const r = await aiStore.addRomReport({
+      kind: 'rom',
+      member: { id: VIRTUAL_MID, name: '가상회원', isVirtual: true },
+      basic_info: {
+        memberId: VIRTUAL_MID,
+        trainerId: 't1',
+        linkedPostureReportId: 'posture_virtual_1',
+      },
+    });
+    expect(r.id).toBeTruthy();
+    expect(r.kind).toBe('rom');
+    expect(r.basic_info.linkedPostureReportId).toBe('posture_virtual_1');
+  });
+
+  it('가상회원 세션이 분리된 버킷(VIRTUAL_MID)에 저장된다', async () => {
+    const { VIRTUAL_MID } = await import('../demoData.js');
+    const s = await aiStore.addSession(VIRTUAL_MID, { menu: '1rm', isVirtual: true, data: { e1rm: 100 } });
+    expect(s.id).toBeTruthy();
+    // 실제 회원 버킷과 섞이지 않는다
+    expect(aiStore.getSessions(VIRTUAL_MID).some(x => x.id === s.id)).toBe(true);
+  });
+});
+
+describe('미등록회원 개인별 분리 저장 (guest id)', () => {
+  it('makeGuestId 는 매번 고유한 guest_ 접두사 id 를 발급한다', async () => {
+    const { makeGuestId, isGuestMid } = await import('../demoData.js');
+    const a = makeGuestId();
+    const b = makeGuestId();
+    expect(a).not.toBe(b);
+    expect(isGuestMid(a)).toBe(true);
+    expect(isGuestMid(b)).toBe(true);
+    expect(isGuestMid('m123')).toBe(false);
+    expect(isGuestMid('__virtual__')).toBe(false);
+  });
+
+  it('서로 다른 미등록회원의 측정은 각자 guest id 로 격리된다', async () => {
+    const { makeGuestId } = await import('../demoData.js');
+    const g1 = makeGuestId();
+    const g2 = makeGuestId();
+    await aiStore.addSession(g1, { menu: 'posture', isVirtual: true, data: { score: 70 } });
+    await aiStore.addSession(g2, { menu: 'posture', isVirtual: true, data: { score: 85 } });
+    // 각 게스트는 자기 데이터만 보유(서로 섞이지 않음)
+    expect(aiStore.getSessions(g1).length).toBe(1);
+    expect(aiStore.getSessions(g2).length).toBe(1);
+    expect(aiStore.getSessions(g1)[0].data.score).toBe(70);
+    expect(aiStore.getSessions(g2)[0].data.score).toBe(85);
+  });
+
+  it('한 미등록회원의 여러 측정 항목은 같은 guest id 로 묶인다', async () => {
+    const { makeGuestId } = await import('../demoData.js');
+    const g = makeGuestId();
+    await aiStore.addSession(g, { menu: 'posture', isVirtual: true, data: {} });
+    await aiStore.addSession(g, { menu: 'jump', isVirtual: true, data: {} });
+    await aiStore.addSession(g, { menu: '1rm', isVirtual: true, data: {} });
+    expect(aiStore.getSessions(g).length).toBe(3);
+    expect(aiStore.getSessions(g).map(s => s.menu).sort()).toEqual(['1rm', 'jump', 'posture']);
+  });
+
+  it('미등록회원 리포트도 guest id 로 저장된다(자세·점프·ROM)', async () => {
+    const { makeGuestId } = await import('../demoData.js');
+    const g = makeGuestId();
+    const p = await aiStore.addPostureReport({ kind: 'posture', member: { id: g, name: '미등록회원', isVirtual: true }, sex: 'male' });
+    const j = await aiStore.addGaitReport({ kind: 'jump', valid: true, member: { id: g, name: '미등록회원', isVirtual: true } });
+    const r = await aiStore.addRomReport({ kind: 'rom', member: { id: g, name: '미등록회원', isVirtual: true } });
+    expect(p.id).toBeTruthy();
+    expect(j.id).toBeTruthy();
+    expect(r.id).toBeTruthy();
+    expect(p.member.id).toBe(g);
+    expect(j.member.id).toBe(g);
+    expect(r.member.id).toBe(g);
   });
 });

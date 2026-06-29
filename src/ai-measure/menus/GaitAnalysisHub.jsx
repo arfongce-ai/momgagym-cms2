@@ -24,6 +24,7 @@ export default function GaitAnalysisHub({ member, onBack, saveToFirebase, onSave
   const [mode, setMode] = useState('live');     // live | upload
   const [view, setView] = useState('measure');  // measure | report
   const [report, setReport] = useState(null);
+  const [reportVideoBlob, setReportVideoBlob] = useState(null); // 결과 리포트 동영상 저장용(화면 전용)
 
   // 업로드 분석 완료 → 저장(단일 책임) + 대시보드 자동 이동 (요구사항 3)
   const handleComplete = useCallback(async (reportData) => {
@@ -58,13 +59,14 @@ export default function GaitAnalysisHub({ member, onBack, saveToFirebase, onSave
     return saved;
   }, [save]);
 
-  const openLiveReport = useCallback((reportData) => {
+  const openLiveReport = useCallback((reportData, videoBlob) => {
     if (reportData) setReport(reportData);
+    if (videoBlob !== undefined) setReportVideoBlob(videoBlob || null);
     setView('report');
   }, []);
 
   // 대시보드에서 측정 화면으로 복귀
-  const backToMeasure = () => { setView('measure'); setReport(null); };
+  const backToMeasure = () => { setView('measure'); setReport(null); setReportVideoBlob(null); };
 
   if (view === 'report' && report) {
     return (
@@ -76,6 +78,7 @@ export default function GaitAnalysisHub({ member, onBack, saveToFirebase, onSave
         </div>
         <GaitReportDashboard
           report={report}
+          videoBlob={reportVideoBlob}
           onComment={(onCommentSave && report.id) ? (text) => onCommentSave(report.id, text) : undefined}
           onClose={onBack}
         />

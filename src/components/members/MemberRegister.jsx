@@ -191,6 +191,8 @@ export default function MemberRegister({ trainers=[], onSuccess, onCancel }) {
   const handleNext = e => {
     e.preventDefault();
     if (!form.name.trim() || !form.phone.trim()) { setError('이름과 연락처는 필수입니다.'); return; }
+    if (!form.gender) { setError('성별을 선택해 주세요. (자세·체형 측정의 성별 기준 적용에 필요)'); return; }
+    if (!form.birthDate) { setError('생년월일을 입력해 주세요. (체형나이·연령대 기준 적용에 필요)'); return; }
     setError(''); setStep('terms');
   };
 
@@ -261,7 +263,7 @@ export default function MemberRegister({ trainers=[], onSuccess, onCancel }) {
 
               {/* 1줄: 이름 + 성별 (이름칸 넓게) */}
               <div>
-                <label className={LBL}>이름 *</label>
+                <label className={LBL}>이름 * <span className="text-amber-400/80">/ 성별 *</span></label>
                 <div className="flex gap-2">
                   <input required value={form.name} onChange={pf('name')} placeholder="홍길동" className={INP + " flex-1"}/>
                   <div className="flex gap-1.5 flex-shrink-0">
@@ -287,7 +289,7 @@ export default function MemberRegister({ trainers=[], onSuccess, onCancel }) {
 
               {/* 3줄: 생년월일 + 직업(선택) */}
               <div className="grid grid-cols-2 gap-3">
-                <div><label className={LBL}>생년월일</label><input type="date" value={form.birthDate} onChange={pf('birthDate')} className={INP}/></div>
+                <div><label className={LBL}>생년월일 *</label><input type="date" value={form.birthDate} onChange={pf('birthDate')} className={INP}/></div>
                 <div><label className={LBL}>직업 (선택)</label><input value={form.job} onChange={pf('job')} placeholder="직업 (선택)" className={INP}/></div>
               </div>
 

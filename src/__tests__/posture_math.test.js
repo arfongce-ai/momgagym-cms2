@@ -72,6 +72,24 @@ describe('postureMath', () => {
     expect(cog.status).toBe('normal');
   });
 
+  it('[회귀] 측면(발목 거의 겹침)에서는 CoG를 계산하지 않고 available:false', () => {
+    const pose = makePose({
+      [LM.LEFT_SHOULDER]: { x: 0.50 },
+      [LM.RIGHT_SHOULDER]: { x: 0.505 },
+      [LM.LEFT_ANKLE]: { x: 0.50 },
+      [LM.RIGHT_ANKLE]: { x: 0.503 },
+    });
+    const cog = calculateCenterOfGravity(pose);
+    expect(cog.available).toBe(false);
+    expect(cog.offsetPct).toBeUndefined();
+  });
+
+  it('[회귀] 정상 정면 자세에서는 CoG가 정상 계산된다(가드 오작동 없음)', () => {
+    const cog = calculateCenterOfGravity(makePose());
+    expect(cog.available).toBe(true);
+    expect(Math.abs(cog.offsetPct)).toBeLessThanOrEqual(120);
+  });
+
   it('maps high scores to younger body age and low scores to older body age', () => {
     expect(mapScoreToBodyAge(92, 40)).toBeLessThan(40);
     expect(mapScoreToBodyAge(48, 40)).toBeGreaterThan(40);

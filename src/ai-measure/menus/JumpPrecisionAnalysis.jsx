@@ -20,6 +20,7 @@ import { calcJump, calcRSI } from '../core/performance';
 import { computeRSIFromFlights, rsiGrade } from '../core/reactiveJump';
 import { OrientationVoter } from '../core/gaitBiomechanics';
 import { loadPoseLandmarker, detectPoseFrame, isPoseReady } from '../core/poseBackend';
+import { beepTick, beepGo, primeAudio } from '../core/audioCue';
 import { lockZoom, unlockZoom } from '../../utils/viewportLock';
 import ReportActions from '../../components/report/ReportActions';
 import { store } from '../../demoData';
@@ -255,6 +256,10 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
   const [rsiCycles, setRsiCycles] = useState([]);
   const [jumpRows, setJumpRows] = useState([]);
   const [liveJump, setLiveJump] = useState({ flightMs: null, heightCm: null });
+  // 측정 시작 게이트: 스켈레톤이 잡혀도 자동으로 측정을 시작하지 않고,
+  // 사용자가 '측정 시작' 버튼을 누르면 3초 카운트다운 후 측정을 개시한다.
+  const [armed, setArmed] = useState(false);       // true → 점프 트래킹/녹화 진행 중
+  const [countdown, setCountdown] = useState(null); // 3,2,1 표시값. null이면 비표시.
 
   // 키/체중 입력 팝업 (회원 미정 또는 신체정보 부족 시)
   const initialWeight = resolveWeight(member);
@@ -284,6 +289,9 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
   const weightRef = useRef(bodyWeight);
   const overlayRef = useRef({});
   const autoSavedRef = useRef(null);
+  const armedRef = useRef(false);          // 측정 개시 게이트(루프에서 참조)
+  const calibLockedRef = useRef(false);    // 캘리브레이션 잠금 완료 여부
+  const countdownTimerRef = useRef(null);  // 카운트다운 인터벌 정리용
 
   // 오버레이 녹화 파이프라인 (보행과 동일 구조)
   const recordCanvasRef = useRef(null);
@@ -298,6 +306,7 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
 
   useEffect(() => { viewRef.current = view; }, [view]);
   useEffect(() => { phaseRef.current = phase; }, [phase]);
+  useEffect(() => { armedRef.current = armed; }, [armed]);
   useEffect(() => { heightRef.current = heightCm; }, [heightCm]);
   useEffect(() => { weightRef.current = bodyWeight; }, [bodyWeight]);
   useEffect(() => {
@@ -323,6 +332,7 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
   }, [view, needHeight]);
 
   useEffect(() => () => stopCamera(), []);
+  useEffect(() => () => { if (countdownTimerRef.current) clearInterval(countdownTimerRef.current); }, []);
   // 카메라 측정 화면: 확대 잠금 (언마운트 시 복원)
   useEffect(() => { lockZoom(); return () => unlockZoom(); }, []);
 
@@ -335,6 +345,11 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
     frameDtRef.current = [];
     prevFrameTsRef.current = 0;
     setPhase('arming');
+    setArmed(false);
+    armedRef.current = false;
+    calibLockedRef.current = false;
+    setCountdown(null);
+    if (countdownTimerRef.current) { clearInterval(countdownTimerRef.current); countdownTimerRef.current = null; }
     setJumpCount(0);
     setRsiCycles([]);
     setJumpRows([]);
@@ -432,6 +447,44 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
     try { rec.stop(); } catch (e) { resolve(); }
   });
 
+  // '측정 시작' 버튼 → 3초 카운트다운(큰 숫자 + 소리) 후 측정 개시.
+  const beginCountdown = () => {
+    if (armed || countdown != null) return;            // 중복 시작 방지
+    if (!calibLockedRef.current) return;               // 기준 미확보 시 무시
+    primeAudio();                                      // 사용자 제스처에서 오디오 워밍업
+    let n = 3;
+    setCountdown(n);
+    beepTick();
+    if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
+    countdownTimerRef.current = setInterval(() => {
+      n -= 1;
+      if (n > 0) {
+        setCountdown(n);
+        beepTick();
+      } else {
+        // 0 → 측정 시작
+        clearInterval(countdownTimerRef.current);
+        countdownTimerRef.current = null;
+        setCountdown(null);
+        beepGo();
+        // 트래커/누적기 생성 + 오버레이 녹화 시작 (기존 락 시점 로직을 여기로 이동)
+        const calib = calibRef.current;
+        if (calib?.result) {
+          trackerRef.current = new JumpFlightTracker(calib.result);
+          trackerRef.current.calibHeightCm = heightRef.current;
+          orientRef.current = jumpType === 'reactive' ? new OrientationVoter() : null;
+          prevInAirRef.current = false;
+          landFramesLeftRef.current = 0;
+          frameDtRef.current = [];
+          prevFrameTsRef.current = 0;
+          startRecording();
+          setArmed(true);
+          armedRef.current = true;
+        }
+      }
+    }, 1000);
+  };
+
   const startVisionPipeline = () => {
     if (reqFrameRef.current) cancelAnimationFrame(reqFrameRef.current);
     let lastPhase = null, lastMsg = null;
@@ -467,14 +520,11 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
           calib.push(landmarks);
           const st = calib.status();
           if (st.ready) {
-            // 락 완료 → 트래커 생성, 측정 준비, 오버레이 녹화 시작
-            trackerRef.current = new JumpFlightTracker(calib.result);
-            trackerRef.current.calibHeightCm = heightRef.current;
-            // 반응(RSI) 모드: 측면뷰 강제를 위해 방향 누적기 준비
-            orientRef.current = jumpType === 'reactive' ? new OrientationVoter() : null;
+            // 락 완료 → 기준 확보. 단, 자동으로 측정을 시작하지 않는다.
+            // 사용자가 '측정 시작' 버튼 → 3초 카운트다운 후 armed 가 되면 측정 개시.
+            calibLockedRef.current = true;
             setPhaseOnce('ready');
             setMsgOnce('');
-            startRecording();
           } else if (st.reason === 'low_visibility') {
             // 요구사항 3: 자세 불안정 → 측정 차단 경고
             setPhaseOnce('low_visibility');
@@ -483,6 +533,11 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
             setPhaseOnce('arming');
             setMsgOnce(`자세 보정 중... ${Math.round(st.progress * 100)}%`);
           }
+        } else if (!armedRef.current) {
+          // ── 측정 대기 단계: 기준은 잡혔으나 아직 '측정 시작' 전 ──
+          // 스켈레톤만 계속 그리고, 점프 트래킹/녹화는 하지 않는다.
+          setPhaseOnce('ready');
+          setMsgOnce('');
         } else {
           // ── 측정 단계 ──
           // 프레임 간격(ms) 수집 — RSI 접지시간 정확도(fps) 판정용
@@ -755,29 +810,70 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
             </div>
           )}
 
+          {/* 측정 시작 3초 카운트다운 — 화면 중앙 큰 숫자 */}
+          {countdown != null && (
+            <div className="absolute inset-0 z-30 flex items-center justify-center pointer-events-none">
+              <div className="flex h-44 w-44 items-center justify-center rounded-full bg-black/55 backdrop-blur-sm ring-4 ring-amber-300/80 animate-pulse">
+                <span className="font-black text-amber-300 leading-none" style={{ fontSize: '7rem' }}>
+                  {countdown}
+                </span>
+              </div>
+            </div>
+          )}
+
           {/* 하단 컨트롤 */}
           <div className="absolute bottom-[max(24px,calc(env(safe-area-inset-bottom)+24px))] z-20 inset-x-0 flex flex-col items-center gap-3">
-            <div className="flex w-full max-w-sm gap-2 px-4">
-              <button
-                onClick={async () => { await stopRecording(); resetPipeline(); }}
-                className="flex-1 rounded-xl bg-black/60 border border-white/15 py-3 text-sm font-black text-white backdrop-blur">
-                기준 다시 잡기
-              </button>
-              <button
-                onClick={finishMeasure}
-                disabled={jumpCount < (jumpType === 'reactive' ? RSI_REQUIRED_JUMPS : 1)}
-                className={`flex-[1.25] rounded-xl py-3 font-black text-sm shadow-lg transition
-                  ${jumpCount >= (jumpType === 'reactive' ? RSI_REQUIRED_JUMPS : 1) ? 'bg-emerald-500 text-slate-950 active:scale-95' : 'bg-white/20 text-white/50'}`}>
-                {jumpType === 'reactive'
-                  ? `측정 완료 ${jumpCount}/${RSI_REQUIRED_JUMPS}`
-                  : `측정 완료 ${jumpCount >= 1 ? `(${jumpCount}회)` : ''}`}
-              </button>
-            </div>
-            {/* 요구사항 8: 수동 입력을 실시간 화면 안에서 바로 (점프매트/타이머 값) */}
-            <button onClick={() => setShowManual(true)}
-              className="text-white/70 text-xs underline underline-offset-2">
-              ✍️ 카메라 대신 수동 입력 (체공시간)
-            </button>
+            {!armed ? (
+              <>
+                {/* 측정 시작 전: 녹화버튼 형태의 측정 시작 버튼 */}
+                <button
+                  onClick={beginCountdown}
+                  disabled={phase !== 'ready' || countdown != null}
+                  className={`flex h-20 w-20 items-center justify-center rounded-full border-4 shadow-lg transition active:scale-95
+                    ${phase === 'ready' && countdown == null
+                      ? 'border-white bg-red-500'
+                      : 'border-white/40 bg-white/15'}`}>
+                  <span className="text-[11px] font-black text-white leading-tight text-center whitespace-pre-line">
+                    {countdown != null ? String(countdown) : phase === 'ready' ? '측정\n시작' : '대기'}
+                  </span>
+                </button>
+                <p className="text-white/80 text-xs font-bold text-center px-6">
+                  {phase === 'ready'
+                    ? '버튼을 누르면 3초 후 측정이 시작됩니다'
+                    : phase === 'low_visibility'
+                    ? '전신이 보이도록 똑바로 서 주세요'
+                    : '자세 인식 중...'}
+                </p>
+                <button onClick={() => setShowManual(true)}
+                  className="text-white/70 text-xs underline underline-offset-2">
+                  ✍️ 카메라 대신 수동 입력 (체공시간)
+                </button>
+              </>
+            ) : (
+              <>
+                <div className="flex w-full max-w-sm gap-2 px-4">
+                  <button
+                    onClick={async () => { await stopRecording(); resetPipeline(); }}
+                    className="flex-1 rounded-xl bg-black/60 border border-white/15 py-3 text-sm font-black text-white backdrop-blur">
+                    기준 다시 잡기
+                  </button>
+                  <button
+                    onClick={finishMeasure}
+                    disabled={jumpCount < (jumpType === 'reactive' ? RSI_REQUIRED_JUMPS : 1)}
+                    className={`flex-[1.25] rounded-xl py-3 font-black text-sm shadow-lg transition
+                      ${jumpCount >= (jumpType === 'reactive' ? RSI_REQUIRED_JUMPS : 1) ? 'bg-emerald-500 text-slate-950 active:scale-95' : 'bg-white/20 text-white/50'}`}>
+                    {jumpType === 'reactive'
+                      ? `측정 완료 ${jumpCount}/${RSI_REQUIRED_JUMPS}`
+                      : `측정 완료 ${jumpCount >= 1 ? `(${jumpCount}회)` : ''}`}
+                  </button>
+                </div>
+                {/* 요구사항 8: 수동 입력을 실시간 화면 안에서 바로 (점프매트/타이머 값) */}
+                <button onClick={() => setShowManual(true)}
+                  className="text-white/70 text-xs underline underline-offset-2">
+                  ✍️ 카메라 대신 수동 입력 (체공시간)
+                </button>
+              </>
+            )}
           </div>
           {showManual && (
             <ManualEntryModal member={member} jumpType={jumpType}

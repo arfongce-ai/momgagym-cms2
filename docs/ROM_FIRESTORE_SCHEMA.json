@@ -1,0 +1,96 @@
+{
+  "collection": "rom_reports",
+  "path": "rom_reports/{reportId}",
+  "documentShape": {
+    "id": "rom1782648377018001",
+    "kind": "rom",
+    "__mid": "member_123",
+    "member": {
+      "id": "member_123",
+      "name": "홍길동",
+      "isVirtual": false
+    },
+    "basic_info": {
+      "memberId": "member_123",
+      "trainerId": "trainer_123",
+      "createdAt": "Date | Firestore Timestamp",
+      "linkedPostureReportId": "posture_report_123"
+    },
+    "recordedAt": "2026-06-29",
+    "measuredAt": "2026-06-29T03:00:00.000Z",
+    "joint": "HIP",
+    "poseMode": "SUPINE",
+    "side": "both",
+    "viewAngle": "SIDE",
+    "captureMode": "slowmo120",
+    "summary": {
+      "valid": true,
+      "left_max_rom": 120,
+      "right_max_rom": 122,
+      "symmetry_index_score": 1.6,
+      "timeSeries": []
+    },
+    "diagnosis": {
+      "grade": "good",
+      "flags": []
+    },
+    "posture_context": {
+      "sourceReportId": "posture_report_123",
+      "measuredAt": "2026-06-28T03:00:00.000Z",
+      "score": 82,
+      "status": "normal",
+      "reliability": {
+        "validCount": 8,
+        "requiredCount": 8,
+        "pelvisReliable": true
+      },
+      "frontal": {
+        "shoulderHeightDiffMm": -6.2,
+        "pelvisHeightDiffMm": 12.4,
+        "pelvisHigherSide": "right",
+        "pelvisPattern": "functional_lumbopelvic_pattern"
+      },
+      "sagittal": {
+        "forwardHeadMm": 31.4,
+        "kneeExtensionProxyDeg": 4.2
+      },
+      "cog": {
+        "available": true,
+        "offsetPct": -4.8,
+        "status": "normal"
+      },
+      "asymmetry": {
+        "averageAsi": 7.5
+      }
+    },
+    "integrated_assessment": {
+      "confidenceScore": 86,
+      "confidenceLevel": "high",
+      "flags": ["cross_validated_asymmetry"],
+      "notes": [
+        "정적 체형 비대칭과 동적 ROM 좌우 차이가 함께 관찰되어 비대칭 소견의 신뢰도가 높아집니다."
+      ],
+      "recommendations": [
+        "같은 조건에서 자세 리포트와 ROM 리포트를 반복 측정해 추세를 비교하세요."
+      ],
+      "testInteractions": [
+        {
+          "source": "posture",
+          "target": "rom",
+          "relation": "cross_validates_asymmetry"
+        }
+      ]
+    },
+    "hasVideo": false,
+    "pairKey": "member_123_rom_HIP_SUPINE",
+    "createdAt": "2026-06-29T03:00:00.000Z"
+  },
+  "notes": [
+    "basic_info.linkedPostureReportId links this ROM result to a previously saved posture_reports/{reportId} document.",
+    "posture_context is a compact snapshot used for ROM interpretation, so later changes to posture_reports do not mutate historical ROM context.",
+    "integrated_assessment stores confidence, flags, and testInteractions for future complementary tests such as gait, jump, and balance.",
+    "snapshotUrl and previewVideoUrl are UI-only ObjectURL fields and should not be persisted.",
+    "__mid is duplicated for member-scoped Firestore queries and purgeMember cleanup."
+  ],
+  "securityRuleReminder": "firestore.rules includes match /rom_reports/{id} { allow read, write: if isSignedIn(); }."
+}

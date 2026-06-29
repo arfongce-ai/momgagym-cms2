@@ -1,5 +1,5 @@
-// 측정 데이터 지연 로딩(ensureSessions/ensureGaitReports) + 읽기 계측 회귀 테스트.
-// initStore 가 ai/gait_reports 를 전수 조회하지 않고, 회원별로만 읽는지 검증한다.
+// 측정 데이터 지연 로딩(ensureSessions/ensureGaitReports/ensureRomReports) + 읽기 계측 회귀 테스트.
+// initStore 가 ai/gait_reports/rom_reports 를 전수 조회하지 않고, 회원별로만 읽는지 검증한다.
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 let FAIL = false;
@@ -80,6 +80,22 @@ describe('측정 데이터 지연 로딩', () => {
     const got = await aiStore.ensureGaitReports(a.id);
     expect(got.length).toBe(1);
     expect(got[0].cadence).toBe(110);
+  });
+
+  it('ensureRomReports 가 회원별로 동작한다(ROM 리포트 누적)', async () => {
+    const a = await store.addMember({ name: 'R' });
+    await aiStore.addRomReport({
+      kind: 'rom',
+      joint: 'HIP',
+      poseMode: 'SUPINE',
+      member: { id: a.id, name: 'R' },
+      basic_info: { memberId: a.id, trainerId: 't1', linkedPostureReportId: 'posture1' },
+    });
+    aiStore._romLoaded.clear();
+    const got = await aiStore.ensureRomReports(a.id);
+    expect(got.length).toBe(1);
+    expect(got[0].joint).toBe('HIP');
+    expect(got[0].basic_info.linkedPostureReportId).toBe('posture1');
   });
 
   it('getSessions 는 지연 로딩 전이면 빈 배열(전수 조회 안 함)', () => {

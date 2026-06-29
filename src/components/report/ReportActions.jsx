@@ -34,12 +34,19 @@ async function shareOrDownload(files, title, onMessage) {
 export default function ReportActions({
   reportNodeId,
   videoBlob = null,
+  imageFiles = null,
+  imageButtonLabel = '📸 사진 저장',
   baseName = '측정',
   onMessage,
   onReportClick,
+  onAfterReportSave,
   reportButtonLabel = '🖼 리포트 저장',
 }) {
   const [busy, setBusy] = useState(null);
+  const hasImageFactory = typeof imageFiles === 'function';
+  const staticImageFiles = Array.isArray(imageFiles) ? imageFiles.filter(Boolean) : [];
+  const hasImages = hasImageFactory || staticImageFiles.length > 0;
+  const hasSecondary = Boolean(videoBlob) || hasImages;
 
   const saveReport = async () => {
     if (onReportClick) {
@@ -67,6 +74,10 @@ export default function ReportActions({
       }
 
       await shareOrDownload(files, '측정 리포트', onMessage);
+      // 리포트 저장(A4 JPG) 성공 후 회원 기록 자동 저장 (별도 탭 불필요)
+      if (onAfterReportSave) {
+        try { await onAfterReportSave(); } catch (e) { /* 저장 실패는 onAfterReportSave 내부에서 처리 */ }
+      }
     } catch (e) {
       onMessage?.('리포트 저장에 실패했습니다. 화면을 다시 열고 시도해주세요.');
     } finally {
@@ -89,8 +100,27 @@ export default function ReportActions({
     }
   };
 
+  const saveImages = async () => {
+    if (!hasImages) return;
+    setBusy('images');
+    onMessage?.('사진 준비 중...');
+    try {
+      const files = hasImageFactory ? await imageFiles() : staticImageFiles;
+      const list = Array.isArray(files) ? files.filter(Boolean) : [];
+      if (!list.length) {
+        onMessage?.('저장할 사진을 찾을 수 없습니다.');
+        return;
+      }
+      await shareOrDownload(list, '측정 사진', onMessage);
+    } catch (e) {
+      onMessage?.('사진 저장에 실패했습니다. 다시 시도해주세요.');
+    } finally {
+      setBusy(null);
+    }
+  };
+
   return (
-    <div className={`grid ${videoBlob ? 'grid-cols-2' : 'grid-cols-1'} gap-2`}>
+    <div className={`grid ${hasSecondary ? 'grid-cols-2' : 'grid-cols-1'} gap-2`}>
       <button
         onClick={saveReport}
         disabled={busy != null}
@@ -107,6 +137,16 @@ export default function ReportActions({
         >
           {busy === 'video' && <span className="h-4 w-4 rounded-full border-2 border-white border-t-transparent animate-spin" />}
           🎥 동영상 저장
+        </button>
+      )}
+      {!videoBlob && hasImages && (
+        <button
+          onClick={saveImages}
+          disabled={busy != null}
+          className="rounded-xl border border-slate-600 bg-slate-700 text-white font-bold py-3 text-sm active:scale-95 disabled:opacity-60 flex items-center justify-center gap-2"
+        >
+          {busy === 'images' && <span className="h-4 w-4 rounded-full border-2 border-white border-t-transparent animate-spin" />}
+          {imageButtonLabel}
         </button>
       )}
     </div>

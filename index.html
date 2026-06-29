@@ -23,6 +23,16 @@
       rel="stylesheet"
     />
     <title>몸가짐운동센터 CMS</title>
+    <!-- Kakao JS SDK — 측정 결과 요약 카카오톡 공유에 사용.
+         defer 를 빼고 onload 에서 즉시 init 하여, 앱이 공유 버튼을 누르기 전에
+         Kakao.Share 가 준비되도록 보장한다. JS 키는 브라우저에 공개되는 키이며
+         SDK 도메인(플랫폼 키 > JavaScript 키)으로 사용이 제한된다. -->
+    <script
+      src="https://t1.kakaocdn.net/kakao_js_sdk/2.7.2/kakao.min.js"
+      integrity="sha384-TiCUE00h649CAMonG018J2ujOgDKW/kVWlChEuu4jK2vxfAAD0eZxzCKakxg55G4"
+      crossorigin="anonymous"
+      onload="try{if(window.Kakao&&!window.Kakao.isInitialized()){window.Kakao.init('6c65f624d2e0a9f6f8e5d42fa8eb285a');}}catch(e){console.warn('[Kakao init]',e);}"
+    ></script>
   </head>
   <body>
     <div id="root"></div>

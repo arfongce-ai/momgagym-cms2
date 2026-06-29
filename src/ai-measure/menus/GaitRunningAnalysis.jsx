@@ -4,10 +4,9 @@ import {
   pelvisRelativeFeet, cameraAngleQuality, detectOrientation
 } from '../core/gaitBiomechanics';
 import { loadPoseLandmarker, detectPoseFrame, closePoseLandmarker, isPoseReady } from '../core/poseBackend';
-import { shareReportWithVideo, captureNodeToJpgFile } from '../core/reportShare';
+import { shareReportWithVideo } from '../core/reportShare';
 import { drawMeasurementOverlay, formatRecordTime } from '../core/recordingOverlay';
 import { lockZoom, unlockZoom } from '../../utils/viewportLock';
-import FutureVideoOverlay from './FutureVideoOverlay';
 
 // 캘리브레이션: 세이프존 + 인식 안정이 이만큼 유지되면 락
 const CALIB_HOLD_MS = 800; // 사람이 잡히면 거의 즉시 인식(0.8초 안정화로 깜빡임만 방지)
@@ -476,40 +475,8 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
     } catch (e) { setShareMsg('영상 저장 실패 — 다시 시도하세요'); }
   };
 
-  // 리포트 화면을 A4 JPG 로 저장/공유 (영상과 독립).
-  const handleSaveReportImage = async () => {
-    const node = document.getElementById('gait-live-report-sheet');
-    if (!node) { setShareMsg('리포트 화면을 찾을 수 없습니다.'); return; }
-    setShareMsg('리포트 이미지 생성 중...');
-    try {
-      const file = await captureNodeToJpgFile(node, `${member?.name || '회원'}_보행리포트.jpg`, { bg: '#1e293b' });
-      if (navigator.canShare && navigator.canShare({ files: [file] })) {
-        try { await navigator.share({ title: '보행 분석 리포트', files: [file] }); setShareMsg('리포트를 공유했습니다.'); return; }
-        catch (err) { if (err?.name === 'AbortError') { setShareMsg(''); return; } }
-      }
-      const url = URL.createObjectURL(file);
-      const a = document.createElement('a'); a.href = url; a.download = file.name;
-      document.body.appendChild(a); a.click(); document.body.removeChild(a);
-      setTimeout(() => URL.revokeObjectURL(url), 200);
-      setShareMsg('리포트를 기기에 저장했습니다.');
-    } catch (e) { setShareMsg('리포트 저장 실패 — 인터넷 연결을 확인하세요'); }
-  };
-
-  // 회차 데이터 저장 (Firebase). 영상 공유와 완전히 독립적으로 실행.
-  const handleSaveReport = async () => {
-    if (!reportData || typeof saveToFirebase !== 'function') return;
-    autoSavedRef.current = reportData.measuredAt; // 수동 저장 시에도 중복 자동저장 방지
-    setSaveState('saving');
-    try {
-      const saved = await saveToFirebase(reportData);
-      const nextReport = saved && typeof saved === 'object' ? { ...reportData, ...saved } : reportData;
-      setReportData(nextReport);
-      setSaveState('saved');
-      if (typeof onOpenSavedReport === 'function') onOpenSavedReport(nextReport);
-    } catch (e) {
-      setSaveState('error');
-    }
-  };
+  // 리포트 화면 A4 JPG 저장과 회차 데이터 수동저장은 '결과 리포트' 화면(ReportActions)과
+  // 자동 저장(useEffect)으로 일원화되어 여기서는 제거되었다.
 
   // 자동 저장: 유효 측정(valid)인 리포트가 생성되면 1회 자동으로 서버 저장.
   // - 무효 측정(누워있음/정지)은 자동 저장하지 않음 → 서버에 쓰레기 데이터 방지.
@@ -566,37 +533,7 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
           <video ref={videoRef} className="absolute inset-0 w-full h-full object-cover" playsInline muted autoPlay />
           {/* 검출된 포즈 스켈레톤 오버레이 (인식 확인용) */}
           <canvas ref={skeletonCanvasRef} className="absolute inset-0 w-full h-full pointer-events-none" />
-          <FutureVideoOverlay
-            mode="GAIT AI"
-            recording={view === 'recording'}
-            intensity={view === 'recording' ? Math.min(1, 0.38 + (Number(liveMetrics.cadence) || 0) / 220) : (isReady ? 0.86 : 0.58)}
-            elapsed={view === 'recording' ? formatRecordTime(recordingTime) : (toolTab === 'stopwatch' ? fmtSw(swElapsed) : `${bpm} BPM`)}
-            primary={view === 'recording'
-              ? `${liveMetrics.cadence ?? '--'} SPM`
-              : (toolTab === 'metronome' ? (metroPlaying ? 'METRONOME ON' : 'METRONOME READY') : (swRunning ? 'STOPWATCH ON' : 'STOPWATCH READY'))}
-            secondary={view === 'recording'
-              ? `STEP ${liveMetrics.totalSteps ?? 0} · ${liveMetrics.stancePct ?? '--'}/${liveMetrics.swingPct ?? '--'}`
-              : (toolTab === 'metronome' ? 'audio beat' : 'manual timer')}
-            metrics={[
-              { label: 'cadence', value: Math.min(100, ((Number(liveMetrics.cadence) || 0) / 200) * 100) },
-              { label: 'steps', value: Math.min(100, (Number(liveMetrics.totalSteps) || 0) * 12) },
-            ]}
-            gauges={view === 'recording'
-              ? [
-                { label: 'SPM', value: liveMetrics.cadence ?? '--', percent: Math.min(100, ((Number(liveMetrics.cadence) || 0) / 200) * 100), tone: 'amber' },
-                { label: 'STEP', value: liveMetrics.totalSteps ?? 0, percent: Math.min(100, (Number(liveMetrics.totalSteps) || 0) * 12), tone: 'emerald' },
-              ]
-              : toolTab === 'metronome'
-              ? [
-                { label: 'BPM', value: bpm, percent: ((bpm - 40) / 180) * 100, tone: metroPlaying ? 'emerald' : 'amber' },
-                { label: 'BEAT', value: metroPlaying ? 'ON' : 'READY', percent: metroPlaying ? 100 : 35, tone: metroPlaying ? 'emerald' : 'amber' },
-              ]
-              : [
-                { label: 'TIMER', value: fmtSw(swElapsed), percent: Math.min(100, (swElapsed / 60000) * 100), tone: swRunning ? 'emerald' : 'amber' },
-                { label: 'RUN', value: swRunning ? 'ON' : 'READY', percent: swRunning ? 100 : 35, tone: swRunning ? 'emerald' : 'amber' },
-              ]}
-            ringLabel={view === 'recording' ? (liveMetrics.totalSteps ?? 0) : (toolTab === 'metronome' ? bpm : Math.floor(swElapsed / 1000))}
-          />
+          {/* (장식성 HUD 오버레이 제거 — 스켈레톤 + 프레임만 남김) */}
           {/* 세이프 존 가이드 (상하좌우 15% 여백) — 캘리브레이션 시 녹색 */}
           <div className="absolute inset-0 pointer-events-none flex items-center justify-center p-[15%]">
             <div className={`w-full h-full border-4 rounded-lg transition-colors ${isReady ? 'border-green-500/70' : 'border-white/30'}`} />
@@ -701,37 +638,19 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
               </div>
             </div>
             <div className="space-y-2">
-              <div className="grid grid-cols-2 gap-2">
-                <button onClick={handleSaveReportImage} className="rounded-xl bg-amber-500 text-slate-950 font-black py-3 text-sm active:scale-95">
-                  🖼 리포트 저장
-                </button>
-                <button onClick={handleShareVideo} className="rounded-xl border border-slate-600 bg-slate-700 text-white font-bold py-3 text-sm active:scale-95">
-                  📹 동영상 저장
-                </button>
-              </div>
-              {/* 회차 기록: 유효 측정은 자동 저장. 실패/무효 시에만 수동 버튼 활성화 */}
+              {/* '리포트 저장'은 즉석 캡처 대신 '결과 리포트' 화면으로 이동한다.
+                  결과 리포트 안에서 리포트 저장(A4)·동영상 저장을 제공한다.
+                  유효 측정은 백그라운드에서 이미 자동 저장됨(useEffect) → 별도 회차기록 버튼 제거. */}
               <button
-                onClick={handleSaveReport}
-                disabled={saveState === 'saving' || saveState === 'saved' || reportData?.valid !== true}
-                className="btn btn-primary w-full disabled:opacity-60 flex items-center justify-center gap-2">
-                {saveState === 'saving' && <span className="h-4 w-4 rounded-full border-2 border-slate-950 border-t-transparent animate-spin" />}
-                {saveState === 'saved' ? '✓ 자동 저장됨'
-                  : saveState === 'saving' ? '저장 중...'
-                  : saveState === 'error' ? '↻ 다시 저장'
-                  : reportData?.valid === true ? '💾 회차 기록 (데이터)'
-                  : '저장 안 됨'}
+                onClick={() => onOpenSavedReport?.(reportData, recordedBlobRef.current || null)}
+                className="w-full rounded-xl bg-amber-500 text-slate-950 font-black py-3.5 text-sm active:scale-95">
+                📄 결과 리포트 보기
+              </button>
+              <button onClick={handleShareVideo} className="w-full rounded-xl border border-slate-600 bg-slate-700 text-white font-bold py-3 text-sm active:scale-95">
+                📹 동영상 저장
               </button>
               {shareMsg && <p className="text-center text-xs text-emerald-400">{shareMsg}</p>}
-              {saveState === 'saved' && <p className="text-center text-xs text-emerald-400">측정이 서버에 자동 저장되었습니다.</p>}
-              {saveState === 'saved' && typeof onOpenSavedReport === 'function' && (
-                <button
-                  onClick={() => onOpenSavedReport(reportData)}
-                  className="w-full rounded-xl bg-emerald-500 text-slate-950 font-black py-3 text-sm">
-                  결과 리포트 보기
-                </button>
-              )}
-              {saveState === 'error' && <p className="text-center text-xs text-red-400">자동 저장 실패 — 위 버튼으로 다시 시도하세요</p>}
-              {reportData?.valid !== true && saveState === 'idle' && (
+              {reportData?.valid !== true && (
                 <p className="text-center text-xs text-amber-400">측정이 무효하여 저장되지 않았습니다. 다시 측정해 주세요.</p>
               )}
               <p className="text-center text-[11px] text-slate-500">영상은 기기에, 회차 기록(정량 데이터)은 서버에 자동 저장됩니다.</p>

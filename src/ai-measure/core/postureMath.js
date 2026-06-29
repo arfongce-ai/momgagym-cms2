@@ -537,6 +537,17 @@ export function calculateCenterOfGravity(landmarks) {
     };
   }
 
+  // ── 측정 정직성 가드: 측면(발목 겹침)에서 CoG/BoS 계산 거부 ──
+  const shoulderWidthForBos = distance2d(leftShoulder, rightShoulder);
+  const bosToShoulder = shoulderWidthForBos > EPS ? bosWidth / shoulderWidthForBos : 0;
+  if (bosToShoulder < 0.35) {
+    return {
+      available: false,
+      status: POSTURE_STATUS.NORMAL,
+      message: '측면 자세에서는 무게중심(CoG)·지지기반(BoS) 균형을 계산하지 않습니다. 정면 또는 후면에서 측정해 주세요.',
+    };
+  }
+
   const cogTop = shoulderMid;
   const cogBottom = pelvisMid;
   const footY = footMid.y;
@@ -544,7 +555,15 @@ export function calculateCenterOfGravity(landmarks) {
   const slopeX = Math.abs(dy) < EPS ? 0 : (cogBottom.x - cogTop.x) / dy;
   const cogAtBosX = cogTop.x + slopeX * (footY - cogTop.y);
   const offsetRatioOfHalfBos = (cogAtBosX - footMid.x) / (bosWidth / 2);
-  const offsetPct = round(offsetRatioOfHalfBos * 100, 1);
+  const offsetPctRaw = round(offsetRatioOfHalfBos * 100, 1);
+  if (!Number.isFinite(offsetPctRaw) || Math.abs(offsetPctRaw) > 120) {
+    return {
+      available: false,
+      status: POSTURE_STATUS.NORMAL,
+      message: '무게중심 계산값이 정상 범위를 벗어나 신뢰할 수 없습니다(랜드마크 불안정). 자세·조명을 조정해 다시 측정해 주세요.',
+    };
+  }
+  const offsetPct = offsetPctRaw;
   const isWithinTolerance = Math.abs(offsetPct) <= COG_NORMAL_TOLERANCE_PCT;
   const balanceOffsetPct = isWithinTolerance ? 0 : round(offsetPct, 1);
   const absBalanceOffset = Math.abs(balanceOffsetPct);
@@ -664,6 +683,44 @@ export function generatePostureComment({ score, bodyAge, actualAge, ruleFindings
   return messages.join(' ');
 }
 
+// 머리 yaw 프록시(정면): 코가 양 눈(없으면 양 귀) 중심에서 좌우로 치우친 정도를
+// 각도로 환산. 부호 규약은 estimate3DRotation 의 어깨/골반 yaw 와 통일한다:
+//   사람이 왼쪽으로 회전 → 음수(−), 오른쪽으로 회전 → 양수(+).
+//   머리가 왼쪽으로 돌면 코는 화면 오른쪽(+x)으로 가므로, ratio(+)를 음수로 매핑.
+// 정밀 각도 아님(추정).
+export function estimateHeadYawProxy(landmarks) {
+  const nose = getLandmark(landmarks, LM.NOSE, 0.3);
+  const lEye = getLandmark(landmarks, LM.LEFT_EYE, 0.3);
+  const rEye = getLandmark(landmarks, LM.RIGHT_EYE, 0.3);
+  const lEar = getLandmark(landmarks, LM.LEFT_EAR, 0.3);
+  const rEar = getLandmark(landmarks, LM.RIGHT_EAR, 0.3);
+  const pair = (lEye && rEye) ? [lEye, rEye] : (lEar && rEar) ? [lEar, rEar] : null;
+  if (!nose || !pair) return null;
+  const [l, r] = pair;
+  const midX = (l.x + r.x) / 2;
+  const span = Math.abs(r.x - l.x);
+  if (span < EPS) return null;
+  const ratio = (nose.x - midX) / (span / 2); // 코가 오른쪽이면 +
+  // 코 오른쪽(+) = 머리 왼쪽회전 → 음수로 매핑(부호 반전). ±30° 범위(경험적).
+  return round(-clamp(ratio, -1.5, 1.5) * 30, 1);
+}
+
+// 하체 yaw 프록시(정면): 양 무릎/발의 전후 깊이차(z)로 하체 회전 추정.
+// 한쪽 무릎이 카메라에 가까우면(z 작음) 그쪽이 앞으로 → 회전. 추정값.
+export function estimateLowerYawProxy(landmarks) {
+  const lKnee = getLandmark(landmarks, LM.LEFT_KNEE, 0.3);
+  const rKnee = getLandmark(landmarks, LM.RIGHT_KNEE, 0.3);
+  const lAnkle = getLandmark(landmarks, LM.LEFT_ANKLE, 0.3);
+  const rAnkle = getLandmark(landmarks, LM.RIGHT_ANKLE, 0.3);
+  const knee = (lKnee && rKnee) ? (rKnee.z ?? 0) - (lKnee.z ?? 0) : null;
+  const ankle = (lAnkle && rAnkle) ? (rAnkle.z ?? 0) - (lAnkle.z ?? 0) : null;
+  const dz = meanDefined([knee, ankle]);
+  if (dz == null) return null;
+  // z 차이(right.z - left.z)를 각도로 매핑. pairYawDegrees 와 동일 공식이라
+  // 부호 규약도 동일: 사람 왼쪽회전(오른쪽이 앞, z작음) → 음수(−), 오른쪽회전 → 양수(+).
+  return round(clamp(dz * 120, -30, 30), 1);
+}
+
 export function analyzePostureFromLandmarks(landmarks, { heightCm = null, actualAge = null } = {}) {
   const reliability = calculateReliabilityProfile(landmarks);
   const asymmetry = calculateAsymmetryProfile(landmarks);
@@ -680,6 +737,9 @@ export function analyzePostureFromLandmarks(landmarks, { heightCm = null, actual
     cog,
   });
   const bodyAge = mapScoreToBodyAge(scoreResult.score, actualAge);
+  // 회전 종합 분석용 프록시 (정면 기준): 머리 yaw, 하체 yaw.
+  const headYawProxyDeg = estimateHeadYawProxy(landmarks);
+  const lowerYawProxyDeg = estimateLowerYawProxy(landmarks);
   const summaryComment = generatePostureComment({
     score: scoreResult.score,
     bodyAge,
@@ -696,6 +756,8 @@ export function analyzePostureFromLandmarks(landmarks, { heightCm = null, actual
     reliability,
     asymmetry,
     rotations,
+    headYawProxyDeg,
+    lowerYawProxyDeg,
     frontal,
     sagittal,
     rules,
@@ -750,4 +812,203 @@ function higherSideFromY(left, right) {
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
+}
+
+// ════════════════════════════════════════════════════════════════════════
+//  촬영 방향(면) 판별 — 자세·체형 자동 촬영용
+//  반환: { view: 'front'|'back'|'left'|'right'|'unknown', confidence, shoulderRatio, faceVis }
+//
+//  신호(모두 카메라 거리와 무관하게 정규화):
+//   1) 어깨폭/몸통높이 비(shoulderRatio):
+//        넓다(≥ frontMin) → 정면/후면(어깨가 카메라를 향해 펼쳐짐)
+//        좁다(≤ sideMax)  → 좌/우 측면(어깨가 겹쳐 보임)
+//   2) 정면 vs 후면: 환경(후면) 카메라 기준, 사람이 정면을 보면
+//        왼어깨(LM11)가 화면 오른쪽(x 큼) → (L.x - R.x) > 0
+//        뒤돌면 부호가 뒤집힌다 → (L.x - R.x) < 0
+//        + 얼굴 랜드마크(코·눈) 가시성: 정면 높음, 후면 낮음 (보조 확인)
+//   3) 좌 vs 우 측면: 카메라를 향한 쪽(코가 가리키는 x 방향)으로 판별.
+//        코가 어깨중심보다 화면 오른쪽 → 사람의 '왼쪽'이 카메라를 향함 → 좌측면
+//        (정규화: 사람 기준 면 라벨. VIEW_STEPS 의 left/right 와 일치하도록 보정)
+// ════════════════════════════════════════════════════════════════════════
+export const POSTURE_VIEW_TUNING = Object.freeze({
+  shoulderFrontMin: 0.16, // 어깨폭/몸통높이 비 이상 → 정면/후면 후보
+  shoulderSideMax: 0.10,  // 이하 → 측면 후보 (사이 구간은 약한 신뢰도)
+  faceVisFront: 0.55,     // 코·눈 가시성 이상 → 정면 확정
+  faceVisBack: 0.30,      // 코·눈 가시성 이하 → 후면 확정 (그 사이는 어깨 부호로 보조)
+});
+
+export function detectPostureView(landmarks, tuning = POSTURE_VIEW_TUNING) {
+  const empty = { view: 'unknown', confidence: 0, shoulderRatio: null, faceVis: null };
+  if (!Array.isArray(landmarks)) return empty;
+  const lS = getLandmark(landmarks, LM.LEFT_SHOULDER, 0.2);
+  const rS = getLandmark(landmarks, LM.RIGHT_SHOULDER, 0.2);
+  const lH = getLandmark(landmarks, LM.LEFT_HIP, 0.2);
+  const rH = getLandmark(landmarks, LM.RIGHT_HIP, 0.2);
+  if (!lS || !rS || !lH || !rH) return empty;
+
+  const shoulderMid = midpoint(lS, rS);
+  const hipMid = midpoint(lH, rH);
+  const trunkH = Math.abs((hipMid?.y ?? 0) - (shoulderMid?.y ?? 0));
+  if (trunkH < EPS) return empty;
+
+  // 1) 어깨폭(수평 성분) / 몸통높이
+  const shoulderW = Math.abs(rS.x - lS.x);
+  const shoulderRatio = round(shoulderW / trunkH, 3);
+
+  // 1-b) 측면 강도(side strength) — 측면일수록 두 어깨의 '깊이(z) 차'가 크고,
+  //   한쪽 귀만 잘 보인다. 어깨폭이 애매(0.10~0.16)해도 이 신호로 측면을 잡는다.
+  //   ▸ 어깨 z 분리: |lS.z − rS.z| 를 몸통높이로 정규화. 측면이면 큼.
+  //   ▸ 귀 비대칭: 좌/우 귀 visibility 차가 크면 한쪽 면(측면) 가능성↑.
+  const shoulderZsep = Math.abs((lS.z ?? 0) - (rS.z ?? 0)) / (trunkH || 1);
+  const lEarV = landmarks[LM.LEFT_EAR]?.visibility ?? 0.5;
+  const rEarV = landmarks[LM.RIGHT_EAR]?.visibility ?? 0.5;
+  const earAsym = Math.abs(lEarV - rEarV);
+  // 측면 강도: z분리(주신호) + 귀비대칭(보조). 0~1로 클램프.
+  const sideStrength = clamp(shoulderZsep / 0.55, 0, 1) * 0.8 + clamp(earAsym / 0.6, 0, 1) * 0.2;
+
+  // 얼굴 가시성 (코+양눈+양귀 평균) — 참고/표시용
+  const faceIdx = [LM.NOSE, LM.LEFT_EYE, LM.RIGHT_EYE, LM.LEFT_EAR, LM.RIGHT_EAR];
+  const visVals = faceIdx
+    .map((i) => landmarks[i])
+    .filter(Boolean)
+    .map((p) => (p.visibility == null ? 0.5 : p.visibility));
+  const faceVis = visVals.length ? round(visVals.reduce((a, b) => a + b, 0) / visVals.length, 3) : 0;
+
+  // ════════════════════════════════════════════════════════════════════
+  //  정면/후면 강건 판별 — 다중 신호 투표
+  //
+  //  ※ visibility 는 신뢰 불가: BlazePose 는 뒤통수에서도 코·눈 visibility 를
+  //    높게 출력한다(머리 위치 추정). 그래서 visibility 기반 판별은 실패한다.
+  //
+  //  핵심 신호 = '얼굴 좌우 배치'와 '어깨 좌우 배치'의 부호 비교.
+  //   ※ 좌표계: 이 앱 카메라는 후면(environment) 렌즈를 '미러링 없이' 사용한다.
+  //     셀카(전면·미러)와 좌우가 반대 → 부호 규칙도 반대다.
+  //     정면(카메라 바라봄): 해부학 LEFT 가 화면 오른쪽(x 큼) → L.x − R.x > 0
+  //     후면(등 보임): 좌우 반전 → L.x − R.x < 0
+  //   보조 신호 = 코 z-깊이(정면이면 코가 귀보다 앞, z 작음). 좌우반전과 무관해 유지.
+  // ════════════════════════════════════════════════════════════════════
+  const lEye = landmarks[LM.LEFT_EYE];
+  const rEye = landmarks[LM.RIGHT_EYE];
+  const lEar = landmarks[LM.LEFT_EAR];
+  const rEar = landmarks[LM.RIGHT_EAR];
+  const nose = landmarks[LM.NOSE];
+
+  let frontVotes = 0;
+  let backVotes = 0;
+
+  // 신호 1: 눈 좌우 부호 (미러링 없는 후면 카메라 → 정면이면 L_eye.x > R_eye.x → 양수)
+  if (lEye && rEye && Math.abs(lEye.x - rEye.x) > 0.012) {
+    if (lEye.x - rEye.x > 0) frontVotes += 2; else backVotes += 2;
+  }
+  // 신호 2: 귀 좌우 부호 (정면이면 L_ear.x > R_ear.x → 양수)
+  if (lEar && rEar && Math.abs(lEar.x - rEar.x) > 0.012) {
+    if (lEar.x - rEar.x > 0) frontVotes += 2; else backVotes += 2;
+  }
+  // 신호 3: 코 z-깊이 vs 귀 평균 z (정면이면 코가 더 앞 → z 작음)
+  if (nose && lEar && rEar) {
+    const earZ = ((lEar.z ?? 0) + (rEar.z ?? 0)) / 2;
+    const dz = (nose.z ?? 0) - earZ;
+    if (Math.abs(dz) > 0.02) {
+      if (dz < 0) frontVotes += 1; else backVotes += 1;
+    }
+  }
+  // 신호 4(약): 어깨 좌우 부호 (미러링 없는 후면 카메라: 정면이면 lS.x − rS.x > 0)
+  const signLR = lS.x - rS.x; // 미러링 없는 후면 카메라: 정면이면 +, 후면이면 −
+  if (Math.abs(signLR) > 0.02) {
+    if (signLR > 0) frontVotes += 1; else backVotes += 1;
+  }
+
+  const faceFacing = frontVotes === 0 && backVotes === 0
+    ? null
+    : frontVotes >= backVotes ? 'front' : 'back';
+  const facingMargin = Math.abs(frontVotes - backVotes);
+  const totalVotes = frontVotes + backVotes;
+
+  // 측면 좌/우 판정 헬퍼 (코 위치 우선, 미검출 시 어깨 z-깊이)
+  const resolveSide = () => {
+    const nose = getLandmark(landmarks, LM.NOSE, 0.15);
+    if (nose && shoulderMid) {
+      // 코가 화면 오른쪽(x 큼) → 사람의 왼쪽 면이 카메라 → '좌측면(left)'
+      return nose.x > shoulderMid.x ? 'left' : 'right';
+    }
+    const lz = lS.z ?? 0, rz = rS.z ?? 0;
+    return lz < rz ? 'left' : 'right';
+  };
+
+  // ── 측면 우선 판정 ──
+  //  어깨폭이 좁거나(고전 기준), 어깨폭이 애매해도 '측면 강도'가 충분히 높으면
+  //  측면으로 확정한다. (정면/후면으로 오인하던 프로필 케이스 해결)
+  const strongSide = sideStrength >= 0.45;
+  if (shoulderRatio <= tuning.shoulderSideMax || strongSide) {
+    const view = resolveSide();
+    // 신뢰도: 어깨폭 기반 + 측면강도 중 큰 값
+    const widthSideConf = shoulderRatio <= tuning.shoulderSideMax
+      ? clamp((tuning.shoulderSideMax - shoulderRatio) / 0.08, 0, 1) : 0;
+    const sideConf = round(0.5 + 0.5 * Math.max(widthSideConf, sideStrength), 3);
+    return { view, confidence: sideConf, shoulderRatio, faceVis, sideStrength: round(sideStrength, 3) };
+  }
+
+  // ── 정면/후면 (어깨 넓음) ──
+  if (shoulderRatio >= tuning.shoulderFrontMin) {
+    const widthConf = clamp((shoulderRatio - tuning.shoulderFrontMin) / 0.1, 0, 1);
+    if (faceFacing) {
+      // 투표 마진이 클수록 신뢰도 높음
+      const voteConf = totalVotes > 0 ? clamp(facingMargin / totalVotes, 0, 1) : 0;
+      const conf = round(0.5 + 0.5 * Math.max(widthConf, voteConf), 3);
+      return { view: faceFacing, confidence: conf, shoulderRatio, faceVis, frontVotes, backVotes };
+    }
+    // 신호가 전혀 없을 때만 어깨 부호로 최후 판정 (정면이면 signLR > 0)
+    const view = signLR > 0 ? 'front' : 'back';
+    return { view, confidence: 0.35, shoulderRatio, faceVis, frontVotes, backVotes };
+  }
+
+  // ── 모호 구간(어깨폭 중간, 측면강도도 약함) ──
+  //  애매하면 측면강도가 조금이라도 우세할 때 측면으로 기운다(측면 미인식 완화).
+  if (sideStrength >= 0.30) {
+    const view = resolveSide();
+    return { view, confidence: round(0.4 + 0.3 * sideStrength, 3), shoulderRatio, faceVis, sideStrength: round(sideStrength, 3) };
+  }
+  return { view: 'unknown', confidence: 0.2, shoulderRatio, faceVis };
+}
+
+// 안정 판정용 누적기: 최근 N프레임 다수결 + 목표 면 연속 일치 카운트.
+export class PostureViewVoter {
+  constructor({ window = 12 } = {}) {
+    this.window = window;
+    this.buf = [];
+  }
+  push(view) {
+    if (!view) return;
+    this.buf.push(view);
+    if (this.buf.length > this.window) this.buf.shift();
+  }
+  reset() { this.buf = []; }
+  // 현재 다수결 면과 그 비율
+  majority() {
+    if (!this.buf.length) return { view: 'unknown', ratio: 0 };
+    const counts = {};
+    this.buf.forEach((v) => { counts[v] = (counts[v] || 0) + 1; });
+    let best = 'unknown', bestN = 0;
+    Object.entries(counts).forEach(([v, n]) => { if (n > bestN) { best = v; bestN = n; } });
+    return { view: best, ratio: round(bestN / this.buf.length, 2) };
+  }
+  // 목표 면이 충분히 안정적으로(비율·표본수) 잡혔는지
+  isStable(target, { minRatio = 0.7, minFrames = 8 } = {}) {
+    if (this.buf.length < minFrames) return false;
+    const { view, ratio } = this.majority();
+    return view === target && ratio >= minRatio;
+  }
+}
+
+// 후면(back) 측정 시 코·눈 랜드마크는 BlazePose 가 뒤통수에서 '추정'한 값이라
+// 신뢰할 수 없다. 분석/저장 전에 강제로 제거(visibility 0)해 잘못된 거북목·
+// 머리회전 수치 산출을 막는다(측정 정직성). 귀(7,8)는 유지.
+export function sanitizeBackLandmarks(landmarks) {
+  if (!Array.isArray(landmarks)) return landmarks;
+  const FACE_FRONT_IDX = new Set([0, 1, 2, 3, 4, 5, 6, 9, 10]); // 코·양눈(inner/outer)·입
+  return landmarks.map((p, i) => {
+    if (!p) return p;
+    if (FACE_FRONT_IDX.has(i)) return { ...p, visibility: 0, presence: 0, _removed: true };
+    return p;
+  });
 }
