@@ -485,8 +485,9 @@ export function buildKakaoFeedTemplate(summaryInput = {}, options = {}) {
   const footer = `\n📷 인스타 ${CENTER_INSTAGRAM}`;
   const text = clampText(`${header}\n${scoreLine}\n${findings}${footer}`, 195);
 
-  // feed 템플릿은 content.imageUrl 이 필수이고, 이미지 로드 실패 시 공유가 조용히
-  // 막힌다. 측정 요약은 텍스트 중심이므로 이미지 의존이 없는 'text' 템플릿을 사용한다.
+  // 카카오 text 템플릿에서 buttonTitle(자동 버튼)을 쓰면 버튼 링크가 앱 등록 도메인을
+  // 따라갈 수 있다(텍스트 내 링크는 정상인데 버튼만 앱으로 가던 원인). 따라서 buttons 배열로
+  // 링크를 명시적으로 지정해 블로그를 강제한다.
   return {
     objectType: 'text',
     text,
@@ -494,7 +495,15 @@ export function buildKakaoFeedTemplate(summaryInput = {}, options = {}) {
       mobileWebUrl: webUrl,
       webUrl,
     },
-    buttonTitle: options.buttonTitle || '몸가짐운동센터 블로그',
+    buttons: [
+      {
+        title: options.buttonTitle || '몸가짐운동센터 블로그',
+        link: {
+          mobileWebUrl: webUrl,
+          webUrl,
+        },
+      },
+    ],
   };
 }
 

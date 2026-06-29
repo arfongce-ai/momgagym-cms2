@@ -45,7 +45,8 @@ describe('카카오톡 공유 래퍼', () => {
     // 상위 3건만 포함(4·5번 소견은 제외).
     expect(t.text).toContain('소견 1');
     expect(t.text).not.toContain('소견 4');
-    expect(t.buttonTitle).toBe('몸가짐운동센터 블로그');
+    expect(t.buttons[0].title).toBe('몸가짐운동센터 블로그');
+    expect(t.buttons[0].link.webUrl).toContain('blog.naver.com/posture_gym');
   });
 });
 
