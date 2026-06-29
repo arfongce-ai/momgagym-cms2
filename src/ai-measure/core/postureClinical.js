@@ -275,76 +275,16 @@ const RISK_TEMPLATE = {
   foot_leg: { area: '무릎·발목', outcome: '무릎 관절 부담 증가로 무릎 통증 가능성' },
 };
 
-// 부위별 '깊은 피드백' — 우선순위 Top3 에 상세 가이드를 붙인다.
-//  cause: 흔한 원인 / impact: 방치 시 생활 영향 / exercises: 구체 교정운동(종목·횟수·주의)
-//  selfCheck: 집에서 자가 점검 / timeline: 개선 기대 기간 안내
-//  ⚠ 측정 정직성: 운동 처방은 일반적 교정 가이드이며 통증/질환 시 전문가 우선(disclaimers에 명시).
-const RISK_GUIDE = {
-  head_neck: {
-    cause: '장시간 모니터·스마트폰 사용, 흉추 가동성 저하, 깊은목굽힘근(심부 경부 굴곡근) 약화가 흔한 원인입니다.',
-    impact: '방치하면 목·어깨 결림이 만성화되고, 긴장성 두통과 집중력 저하로 이어질 수 있습니다.',
-    exercises: [
-      { name: '친턱(Chin tuck)', dose: '10회 × 3세트 / 하루 2~3회', caution: '턱을 아래로 숙이지 말고 뒤로 평행 이동' },
-      { name: '흉추 신전(폼롤러)', dose: '8~10회 × 2세트', caution: '허리를 과도하게 젖히지 않기' },
-      { name: '벽 천사(Wall angel)', dose: '10회 × 2세트', caution: '허리·손목이 벽에서 떨어지지 않게' },
-    ],
-    selfCheck: '벽에 등·엉덩이를 붙이고 섰을 때 뒤통수가 자연히 벽에 닿는지 확인하세요(닿지 않으면 전방머리 경향).',
-    timeline: '꾸준히 4~6주면 거북목 전방 이동이 줄어드는 경우가 많습니다.',
-  },
-  shoulder_back: {
-    cause: '둥근 어깨(라운드 숄더), 흉근 단축, 견갑 안정근(중·하부 승모근, 전거근) 약화가 흔합니다.',
-    impact: '어깨 충돌·회전근개 자극으로 팔 들 때 통증, 등 상부 뭉침이 생길 수 있습니다.',
-    exercises: [
-      { name: '밴드 견갑 후인(Row)', dose: '12~15회 × 3세트', caution: '어깨를 으쓱하지 말고 견갑을 모아 당기기' },
-      { name: '가슴 신전(문틀 스트레칭)', dose: '30초 × 3회', caution: '통증 없는 범위까지만' },
-      { name: 'YTW 운동', dose: '각 10회 × 2세트', caution: '목·승모근 긴장 없이 견갑 주도' },
-    ],
-    selfCheck: '편히 선 채 손등이 앞을 향하면(손바닥이 뒤) 둥근 어깨 경향일 수 있습니다.',
-    timeline: '견갑 안정근 강화는 6~8주 지속 시 자세 유지력이 좋아집니다.',
-  },
-  pelvis_spine: {
-    cause: '골반 좌우 높이차·전방경사, 둔근·코어 약화, 한쪽 다리에 기대 서는 습관이 흔한 원인입니다.',
-    impact: '요추에 비대칭 부하가 쌓여 요통·골반 통증, 보행 시 불균형으로 이어질 수 있습니다.',
-    exercises: [
-      { name: '데드버그(코어)', dose: '8회씩 좌우 × 3세트', caution: '허리가 바닥에서 뜨지 않게 복압 유지' },
-      { name: '글루트 브리지', dose: '12~15회 × 3세트', caution: '허리가 아닌 둔근으로 들어올리기' },
-      { name: '사이드 플랭크', dose: '20~30초 × 좌우 2회', caution: '골반이 아래로 처지지 않게' },
-    ],
-    selfCheck: '거울 앞에서 양손을 골반(장골능)에 얹었을 때 좌우 높이가 다른지 확인하세요.',
-    timeline: '기능적 불균형은 4~6주, 습관성 원인이 크면 더 빨리 개선되기도 합니다.',
-  },
-  foot_leg: {
-    cause: '무릎 과신전(백니), 발목·고관절 정렬 저하, 발 아치 무너짐(과회내)이 흔한 원인입니다.',
-    impact: '무릎·발목 관절에 지속 부하가 쌓여 무릎 앞쪽 통증, 발바닥 피로로 이어질 수 있습니다.',
-    exercises: [
-      { name: '무릎 살짝 굽혀 서기(소프트 니)', dose: '평소 서있을 때 의식적으로', caution: '무릎을 끝까지 잠그지 않기' },
-      { name: '한발 균형(밸런스)', dose: '30초 × 좌우 3회', caution: '발가락으로 바닥을 가볍게 잡듯' },
-      { name: '카프레이즈·발목 강화', dose: '15회 × 3세트', caution: '천천히 내릴 때 통제' },
-    ],
-    selfCheck: '옆에서 봤을 때 무릎이 뒤로 꺾여(과신전) 있는지, 발 안쪽 아치가 주저앉는지 확인하세요.',
-    timeline: '정렬 습관 교정과 균형 운동은 4~8주 병행 시 효과적입니다.',
-  },
-};
-
 export function buildRiskTop3(regions = []) {
   const scored = regions
     .filter((r) => SEVERITY[r.level] > 0)
     .map((r) => {
       const devMax = r.measured.reduce((m, x) => Math.max(m, Math.abs(x.value || 0)), 0);
-      const guide = RISK_GUIDE[r.key] || null;
       return {
         key: r.key,
         area: RISK_TEMPLATE[r.key]?.area || r.title,
         outcome: RISK_TEMPLATE[r.key]?.outcome || '관절·근육 부담 증가 가능성',
         level: r.level,
-        // 측정값 요약(있으면) — 어느 수치 때문에 위험으로 잡혔는지 근거 표기
-        measured: Array.isArray(r.measured) ? r.measured : [],
-        // 깊은 피드백
-        cause: guide?.cause || null,
-        impact: guide?.impact || null,
-        exercises: guide?.exercises || [],
-        selfCheck: guide?.selfCheck || null,
-        timeline: guide?.timeline || null,
         score: SEVERITY[r.level] * 100 + devMax, // 단계 우선, 동급이면 편차 큰 순
       };
     })

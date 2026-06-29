@@ -2,8 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { todayYMD } from '../../utils/dates';
 import { usePoseEngine } from '../core/usePoseEngine';
 import { createSmoother } from '../core/smoothing';
-import { analyzePostureFromLandmarks, classifyPostureAgeGroup, medianLandmarks, detectPostureView, PostureViewVoter, sanitizeBackLandmarks, POSE_LANDMARKS as LM_IDX } from '../core/postureMath';
-import { buildPostureMarkers } from '../core/postureOverlay';
+import { analyzePostureFromLandmarks, classifyPostureAgeGroup, medianLandmarks, detectPostureView, PostureViewVoter, sanitizeBackLandmarks } from '../core/postureMath';
 import { beepTick, beepGo, beepSuccess, primeAudio } from '../core/audioCue';
 import CameraStage from './CameraStage.jsx';
 import PostureReport from './PostureReport.jsx';
@@ -113,7 +112,7 @@ export default function PostureMeasure({ member, onSave, onBack }) {
       viewVoterRef.current.reset();
       return;
     }
-    if (!isFullBodyVisible(smoothed, activeViewKeyRef.current)) {
+    if (!isFullBodyVisible(smoothed)) {
       setGuide('어깨, 골반, 무릎, 발목이 모두 보이게 화면을 맞춰주세요.');
       frameBufferRef.current = [];
       viewVoterRef.current.reset();
@@ -198,7 +197,7 @@ export default function PostureMeasure({ member, onSave, onBack }) {
   // 반환: true=다음 면 남음, false=마지막 면(리포트 생성됨), null=캡처 실패
   const performCapture = useCallback(() => {
     const live = latestLandmarksRef.current;
-    if (!live || !isFullBodyVisible(live, activeViewKeyRef.current)) {
+    if (!live || !isFullBodyVisible(live)) {
       setGuide('측정 가능한 전신 자세가 아직 안정적으로 인식되지 않았습니다.');
       return null;
     }
@@ -212,7 +211,7 @@ export default function PostureMeasure({ member, onSave, onBack }) {
     const buffered = frameBufferRef.current.map((f) => f.landmarks);
     const combined =
       buffered.length >= CAPTURE_MIN_FRAMES ? medianLandmarks(buffered) : live;
-    const rawLandmarks = combined && isFullBodyVisible(combined, activeViewKeyRef.current) ? combined : live;
+    const rawLandmarks = combined && isFullBodyVisible(combined) ? combined : live;
     // 후면 측정: 코·눈은 추정값이라 제거하고 분석/저장 (귀만 유지)
     const landmarks = step.key === 'back' ? sanitizeBackLandmarks(rawLandmarks) : rawLandmarks;
 
@@ -222,8 +221,6 @@ export default function PostureMeasure({ member, onSave, onBack }) {
       heightCm: bi.heightCm,
       actualAge: bi.actualAge,
     });
-    // 문제 위치를 빨간 표시로 그린 주석 JPG(스켈레톤 + 마커) 동시 생성
-    const annotatedUrl = captureAnnotatedSnapshot(latestVideoRef.current, landmarks, analysis, step.key);
     const prevCaptures = capturesRef.current;
     if (prevCaptures[step.key]?.snapshotUrl) URL.revokeObjectURL(prevCaptures[step.key].snapshotUrl);
     const nextCaptures = {
@@ -234,7 +231,6 @@ export default function PostureMeasure({ member, onSave, onBack }) {
         landmarks,
         analysis,
         snapshotUrl,
-        annotatedUrl,
         capturedAt: new Date().toISOString(),
       },
     };
@@ -300,7 +296,7 @@ export default function PostureMeasure({ member, onSave, onBack }) {
       const stillStable = lockViewRef.current
         ? true
         : viewVoterRef.current.isStable(target, { minRatio: 0.6, minFrames: 6 });
-      if (!live || !isFullBodyVisible(live, activeViewKeyRef.current) || !stillStable) {
+      if (!live || !isFullBodyVisible(live) || !stillStable) {
         setGuide('자세가 흐트러졌습니다 — 다시 맞춰주세요.');
         viewVoterRef.current.reset();
         autoBusyRef.current = false;
@@ -359,11 +355,10 @@ export default function PostureMeasure({ member, onSave, onBack }) {
 
   if (report) {
     const snapFiles = (report.perViewSnapshots || [])
-      .filter((s) => s.annotatedUrl || s.snapshotUrl)
+      .filter((s) => s.snapshotUrl)
       .map((s) => {
         try {
-          // 문제 표시가 그려진 주석 JPG 우선, 없으면 원본 스냅샷
-          return dataUrlToFile(s.annotatedUrl || s.snapshotUrl, `${member?.name || '회원'}_자세_${s.label}.jpg`);
+          return dataUrlToFile(s.snapshotUrl, `${member?.name || '회원'}_자세_${s.label}.jpg`);
         } catch (e) { return null; }
       })
       .filter(Boolean);
@@ -553,7 +548,7 @@ export default function PostureMeasure({ member, onSave, onBack }) {
         ) : (
           <button
             onClick={handleCapture}
-            disabled={status !== 'running' || !isFullBodyVisible(latestLandmarksRef.current, activeStep.key)}
+            disabled={status !== 'running' || !isFullBodyVisible(latestLandmarksRef.current)}
             className="h-20 w-20 rounded-full border-4 border-white bg-amber-500 text-xs font-black text-slate-950 shadow-lg disabled:bg-slate-600 disabled:text-slate-300"
           >
             {activeStep.short}
@@ -656,7 +651,7 @@ function buildReport({ member, bodyInfo, captures, selectedSteps }) {
     .map((step) => {
       const capture = captures[step.key];
       if (!capture) return null;
-      return { key: step.key, label: step.label, snapshotUrl: capture.snapshotUrl || '', annotatedUrl: capture.annotatedUrl || '', landmarks: capture.landmarks, analysis: capture.analysis };
+      return { key: step.key, label: step.label, snapshotUrl: capture.snapshotUrl || '', landmarks: capture.landmarks, analysis: capture.analysis };
     })
     .filter(Boolean);
 
@@ -970,104 +965,9 @@ function captureVideoSnapshot(video) {
   return canvas.toDataURL('image/jpeg', 0.82);
 }
 
-// 캡처 사진 위에 '스켈레톤 + 빨간 문제 표시'를 그려 주석 JPG(dataURL)를 만든다.
-// video: 원본 프레임, landmarks: 정규화 좌표, analysis: 분석결과, viewKey: 면.
-function captureAnnotatedSnapshot(video, landmarks, analysis, viewKey) {
-  if (!video?.videoWidth || !video?.videoHeight || !Array.isArray(landmarks)) return '';
-  const W = video.videoWidth, H = video.videoHeight;
-  const canvas = document.createElement('canvas');
-  canvas.width = W; canvas.height = H;
-  const ctx = canvas.getContext('2d');
-  ctx.drawImage(video, 0, 0, W, H);
-  const X = (nx) => nx * W, Y = (ny) => ny * H;
-
-  // 1) 스켈레톤(녹색) — 주요 연결선
-  const BONES = [
-    [LM_IDX.LEFT_SHOULDER, LM_IDX.RIGHT_SHOULDER],
-    [LM_IDX.LEFT_SHOULDER, LM_IDX.LEFT_HIP],
-    [LM_IDX.RIGHT_SHOULDER, LM_IDX.RIGHT_HIP],
-    [LM_IDX.LEFT_HIP, LM_IDX.RIGHT_HIP],
-    [LM_IDX.LEFT_SHOULDER, LM_IDX.LEFT_ELBOW], [LM_IDX.LEFT_ELBOW, LM_IDX.LEFT_WRIST],
-    [LM_IDX.RIGHT_SHOULDER, LM_IDX.RIGHT_ELBOW], [LM_IDX.RIGHT_ELBOW, LM_IDX.RIGHT_WRIST],
-    [LM_IDX.LEFT_HIP, LM_IDX.LEFT_KNEE], [LM_IDX.LEFT_KNEE, LM_IDX.LEFT_ANKLE],
-    [LM_IDX.RIGHT_HIP, LM_IDX.RIGHT_KNEE], [LM_IDX.RIGHT_KNEE, LM_IDX.RIGHT_ANKLE],
-  ];
-  ctx.lineWidth = Math.max(2, W * 0.004);
-  ctx.strokeStyle = 'rgba(34,197,94,0.9)';
-  ctx.lineCap = 'round';
-  for (const [a, b] of BONES) {
-    const pa = landmarks[a], pb = landmarks[b];
-    if (!pa || !pb || !Number.isFinite(pa.x) || !Number.isFinite(pb.x)) continue;
-    if ((pa.visibility ?? 1) < 0.25 || (pb.visibility ?? 1) < 0.25) continue;
-    ctx.beginPath(); ctx.moveTo(X(pa.x), Y(pa.y)); ctx.lineTo(X(pb.x), Y(pb.y)); ctx.stroke();
-  }
-  // 관절점
-  ctx.fillStyle = 'rgba(255,255,255,0.95)';
-  const JOINTS = [LM_IDX.LEFT_SHOULDER, LM_IDX.RIGHT_SHOULDER, LM_IDX.LEFT_HIP, LM_IDX.RIGHT_HIP,
-    LM_IDX.LEFT_KNEE, LM_IDX.RIGHT_KNEE, LM_IDX.LEFT_ANKLE, LM_IDX.RIGHT_ANKLE];
-  const jr = Math.max(3, W * 0.006);
-  for (const j of JOINTS) {
-    const p = landmarks[j];
-    if (!p || !Number.isFinite(p.x) || (p.visibility ?? 1) < 0.25) continue;
-    ctx.beginPath(); ctx.arc(X(p.x), Y(p.y), jr, 0, Math.PI * 2); ctx.fill();
-  }
-
-  // 2) 빨간 문제 표시(원/화살표) + 라벨
-  const markers = buildPostureMarkers(analysis, landmarks, viewKey);
-  const RED = '#ef4444', AMBER = '#f59e0b';
-  ctx.font = `bold ${Math.round(W * 0.028)}px sans-serif`;
-  ctx.textBaseline = 'middle';
-  for (const m of markers) {
-    const cx = X(m.x), cy = Y(m.y);
-    const color = m.severity === 'risk' ? RED : AMBER;
-    ctx.strokeStyle = color; ctx.fillStyle = color;
-    ctx.lineWidth = Math.max(3, W * 0.006);
-    if (m.type === 'circle') {
-      const r = Math.max(18, W * 0.05);
-      ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
-    } else if (m.type === 'arrow') {
-      const len = Math.max(40, W * 0.10);
-      const dx = m.dir === 'left' ? -len : m.dir === 'right' ? len : 0;
-      const dy = m.dir === 'up' ? -len : m.dir === 'down' ? len : 0;
-      const tx = cx + dx, ty = cy + dy;
-      ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(tx, ty); ctx.stroke();
-      // 화살촉
-      const ang = Math.atan2(ty - cy, tx - cx);
-      const ah = Math.max(10, W * 0.025);
-      ctx.beginPath();
-      ctx.moveTo(tx, ty);
-      ctx.lineTo(tx - ah * Math.cos(ang - 0.4), ty - ah * Math.sin(ang - 0.4));
-      ctx.moveTo(tx, ty);
-      ctx.lineTo(tx - ah * Math.cos(ang + 0.4), ty - ah * Math.sin(ang + 0.4));
-      ctx.stroke();
-    }
-    // 라벨(가독성 위해 배경 박스)
-    if (m.label) {
-      const tw = ctx.measureText(m.label).width;
-      const padX = W * 0.012, th = W * 0.04;
-      const lx = Math.min(Math.max(cx + W * 0.055, 4), W - tw - padX * 2 - 4);
-      const ly = cy + (m.labelDy ? m.labelDy * H : 0); // 라벨 세로 오프셋(겹침 방지)
-      ctx.fillStyle = 'rgba(0,0,0,0.6)';
-      ctx.fillRect(lx, ly - th / 2, tw + padX * 2, th);
-      ctx.fillStyle = color;
-      ctx.fillText(m.label, lx + padX, ly);
-    }
-  }
-
-  return canvas.toDataURL('image/jpeg', 0.85);
-}
-
-function isFullBodyVisible(landmarks, viewKey) {
+function isFullBodyVisible(landmarks) {
   if (!Array.isArray(landmarks)) return false;
-  // 측면(side)에서는 먼 쪽 어깨/골반/무릎/발목이 몸에 가려 visibility 가 낮다.
-  // 따라서 측면일 때는 각 좌/우 쌍 중 '한쪽만' 보이면 통과시킨다(가까운 쪽).
-  // 정면/후면(또는 미지정)은 양쪽 모두 요구.
-  const isSide = viewKey === 'left' || viewKey === 'right';
-  const pairs = [[11, 12], [23, 24], [25, 26], [27, 28]]; // 어깨/골반/무릎/발목
-  if (isSide) {
-    return pairs.every(([a, b]) => isVisible(landmarks[a], 0.3) || isVisible(landmarks[b], 0.3));
-  }
-  return pairs.every(([a, b]) => isVisible(landmarks[a], 0.35) && isVisible(landmarks[b], 0.35));
+  return [11, 12, 23, 24, 25, 26, 27, 28].every((index) => isVisible(landmarks[index], 0.35));
 }
 
 function isVisible(point, threshold = 0.3) {

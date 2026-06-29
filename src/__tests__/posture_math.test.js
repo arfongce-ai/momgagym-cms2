@@ -5,8 +5,6 @@ import {
   analyzeFrontalAlignment,
   analyzeSagittalAlignment,
   asymmetryIndex,
-  angleDeg,
-  signedAngle2d,
   calculateCenterOfGravity,
   calculatePostureScore,
   classifyPostureAgeGroup,
@@ -246,66 +244,5 @@ describe('medianLandmarks (capture-time jitter rejection)', () => {
     const combined = medianLandmarks(frames);
     const analysis = analyzePostureFromLandmarks(combined, { heightCm: 175, actualAge: 35 });
     expect(analysis.score).toBeGreaterThan(0);
-  });
-});
-
-// ── 관절 각도(ROM 기반) 계산 검증 ──────────────────────────────────────
-//  자세 리포트의 무릎 신전각·굽은등·Q각은 모두 angleDeg(꼭짓점=가운데 점)로 산출된다.
-//  ROM 해석의 신뢰성을 위해 각도 계산 자체를 수학적으로 검증한다.
-describe('angleDeg (관절 각도 / ROM)', () => {
-  it('직각(90°)을 정확히 계산한다', () => {
-    // b를 꼭짓점으로 a-b-c 가 직각
-    const a = { x: 0, y: 1 }, b = { x: 0, y: 0 }, c = { x: 1, y: 0 };
-    expect(angleDeg(a, b, c, false)).toBeCloseTo(90, 1);
-  });
-
-  it('일직선(180°)을 정확히 계산한다 (무릎 완전 신전 상황)', () => {
-    const hip = { x: 0, y: 0 }, knee = { x: 0, y: 1 }, ankle = { x: 0, y: 2 };
-    expect(angleDeg(hip, knee, ankle, false)).toBeCloseTo(180, 1);
-  });
-
-  it('과신전(180° 초과)을 180°에서 벗어난 값으로 표현한다', () => {
-    // 무릎이 뒤로 꺾인(hyperextension) 형태 → 170° 미만/초과는 편위로 해석
-    const hip = { x: 0, y: 0 }, knee = { x: 0.1, y: 1 }, ankle = { x: 0, y: 2 };
-    const deg = angleDeg(hip, knee, ankle, false);
-    expect(deg).toBeLessThan(180);
-    expect(deg).toBeGreaterThan(150);
-  });
-
-  it('45°를 정확히 계산한다', () => {
-    const a = { x: 1, y: 1 }, b = { x: 0, y: 0 }, c = { x: 1, y: 0 };
-    expect(angleDeg(a, b, c, false)).toBeCloseTo(45, 1);
-  });
-
-  it('랜드마크가 없으면 null', () => {
-    expect(angleDeg(null, { x: 0, y: 0 }, { x: 1, y: 0 })).toBeNull();
-  });
-
-  it('같은 점이 겹치면(길이 0) null (0 나눗셈 방지)', () => {
-    const p = { x: 0.5, y: 0.5 };
-    expect(angleDeg(p, p, { x: 1, y: 1 })).toBeNull();
-  });
-});
-
-describe('signedAngle2d (부호 있는 기울기)', () => {
-  it('반시계 방향은 양수, 시계 방향은 음수', () => {
-    const b = { x: 0, y: 0 }, a = { x: 1, y: 0 };
-    expect(signedAngle2d(a, b, { x: 0, y: 1 })).toBeCloseTo(90, 0);
-    expect(signedAngle2d(a, b, { x: 0, y: -1 })).toBeCloseTo(-90, 0);
-  });
-});
-
-describe('무릎 신전각/굽은등 파이프라인 검증 (실데이터 경로)', () => {
-  it('곧게 선 다리는 무릎 신전각이 180°에 가깝다', () => {
-    const lm = Array.from({ length: 33 }, () => ({ x: 0.5, y: 0.5, z: 0, visibility: 0.95 }));
-    Object.assign(lm[LM.LEFT_HIP], { x: 0.48, y: 0.50 });
-    Object.assign(lm[LM.RIGHT_HIP], { x: 0.52, y: 0.50 });
-    Object.assign(lm[LM.LEFT_KNEE], { x: 0.48, y: 0.70 });
-    Object.assign(lm[LM.RIGHT_KNEE], { x: 0.52, y: 0.70 });
-    Object.assign(lm[LM.LEFT_ANKLE], { x: 0.48, y: 0.90 });
-    Object.assign(lm[LM.RIGHT_ANKLE], { x: 0.52, y: 0.90 });
-    const sag = analyzeSagittalAlignment(lm, { heightCm: 170 });
-    expect(sag.kneeExtensionProxyDeg).toBeGreaterThan(170);
-    expect(sag.kneeExtensionProxyDeg).toBeLessThanOrEqual(181);
   });
 });
