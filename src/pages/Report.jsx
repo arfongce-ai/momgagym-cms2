@@ -7,13 +7,41 @@ import { scopeMembersToTrainer, sortByName } from '../utils/memberList';
 import { store, aiStore } from '../demoData';
 import { buildFullReport, buildAnalysisTrend, buildPostureTrend } from '../services/reportService';
 import { buildReportSvg, downloadSvgAsJpg } from '../components/report/reportImage';
+import { buildSummaryData, scoreToStatus } from '../ai-measure/core/unifiedReport';
 import TrendChart from '../components/report/TrendChart';
 import MemberPicker from '../components/common/MemberPicker';
 const JumpReportDashboard = lazy(() => import('../ai-measure/menus/JumpReportDashboard'));
 const GaitReportDashboard = lazy(() => import('../ai-measure/menus/GaitReportDashboard'));
 const PostureReport = lazy(() => import('../ai-measure/menus/PostureReport'));
+const RomReport = lazy(() => import('../ai-measure/menus/RomReport'));
 
 const COLORS = { weight:'#f59e0b', systolic:'#ef4444', diastolic:'#3b82f6', height:'#22d3ee' };
+const DETAIL_SESSION_MENUS = new Set(['jump', 'gait', 'posture', 'rom']);
+const REPORT_FILTERS = [
+  { key: 'all', label: '전체' },
+  { key: 'posture', label: '자세' },
+  { key: 'rom', label: 'ROM' },
+  { key: 'jump', label: '점프' },
+  { key: 'gait', label: '보행' },
+  { key: 'strength', label: '근력' },
+];
+
+const REPORT_TYPE_META = {
+  posture: { title: '자세·체형', badge: 'POSTURE', accent: 'text-emerald-300', bg: 'bg-emerald-500/15', border: 'border-emerald-500/25' },
+  rom: { title: '관절 가동범위', badge: 'ROM', accent: 'text-sky-300', bg: 'bg-sky-500/15', border: 'border-sky-500/25' },
+  jump: { title: '점프·RSI', badge: 'JUMP', accent: 'text-amber-300', bg: 'bg-amber-500/15', border: 'border-amber-500/25' },
+  gait: { title: '보행·러닝', badge: 'GAIT', accent: 'text-cyan-300', bg: 'bg-cyan-500/15', border: 'border-cyan-500/25' },
+  one_rm: { title: '최대 근력', badge: '1RM', accent: 'text-violet-300', bg: 'bg-violet-500/15', border: 'border-violet-500/25' },
+  vbt: { title: '운동 속도 근력', badge: 'VBT', accent: 'text-fuchsia-300', bg: 'bg-fuchsia-500/15', border: 'border-fuchsia-500/25' },
+  general: { title: '측정 결과', badge: 'AI', accent: 'text-slate-300', bg: 'bg-slate-700', border: 'border-slate-700' },
+};
+
+const STATUS_STYLE = {
+  normal: { text: 'text-emerald-300', bg: 'bg-emerald-500/12', border: 'border-emerald-500/30' },
+  caution: { text: 'text-amber-300', bg: 'bg-amber-500/12', border: 'border-amber-500/30' },
+  risk: { text: 'text-red-300', bg: 'bg-red-500/12', border: 'border-red-500/30' },
+  unknown: { text: 'text-slate-400', bg: 'bg-slate-700/60', border: 'border-slate-700' },
+};
 
 function isJumpRsi(data) {
   return data?.jumpType === 'reactive' || Boolean(data?.rsi);
@@ -32,6 +60,105 @@ function getSavedReportMeta(rep) {
 }
 
 // 세션 1건에서 회차비교용 핵심 수치/라벨을 뽑는다 (메뉴별).
+function getReportDate(item) {
+  return String(
+    item?.createdAt
+    || item?.measuredAt
+    || item?.recordedAtFull
+    || item?.recordedAt
+    || item?.basic_info?.createdAt
+    || ''
+  );
+}
+
+function formatDateOnly(value) {
+  return String(value || '').slice(0, 10) || '-';
+}
+
+function reportTypeFromSession(session) {
+  if (session?.menu === 'onerm') return 'one_rm';
+  if (session?.menu === 'vbt') return 'vbt';
+  if (session?.menu === 'rsi') return 'jump';
+  return session?.menu || 'general';
+}
+
+function reportFilterKey(type) {
+  if (type === 'one_rm' || type === 'vbt') return 'strength';
+  return type || 'general';
+}
+
+function getReportTypeMeta(type, report) {
+  if (type === 'jump' && isJumpRsi(report)) {
+    return { ...REPORT_TYPE_META.jump, title: 'RSI 반응 점프', badge: 'RSI', accent: 'text-emerald-300', bg: 'bg-emerald-500/15', border: 'border-emerald-500/25' };
+  }
+  return REPORT_TYPE_META[type] || REPORT_TYPE_META.general;
+}
+
+function makeUnifiedResult({ report, reportType, source, index, member, session }) {
+  const data = {
+    ...(report || {}),
+    kind: (report || {}).kind || reportType,
+    member: (report || {}).member || member,
+    measuredAt: getReportDate(report || session) || new Date().toISOString(),
+  };
+  const summary = buildSummaryData(data, { reportType });
+  const status = scoreToStatus(summary.overallScore);
+  const meta = getReportTypeMeta(reportType, data);
+  return {
+    id: `${source}:${data.id || session?.id || index}`,
+    source,
+    index,
+    session,
+    report: data,
+    reportType,
+    filterKey: reportFilterKey(reportType),
+    date: summary.measuredAt || getReportDate(data),
+    summary: {
+      ...summary,
+      status: summary.status || status.key,
+      statusLabel: summary.statusLabel || status.label,
+    },
+    meta,
+  };
+}
+
+function buildUnifiedResults({ member, savedReports, savedPostureReports, savedRomReports, sessions }) {
+  if (!member) return [];
+  const items = [];
+
+  savedPostureReports.forEach((report, index) => {
+    items.push(makeUnifiedResult({ report, reportType: 'posture', source: 'posture', index, member }));
+  });
+  savedRomReports.forEach((report, index) => {
+    items.push(makeUnifiedResult({ report, reportType: 'rom', source: 'rom', index, member }));
+  });
+  savedReports.forEach((report, index) => {
+    const reportType = report?.kind === 'jump' || report?.jumpType || report?.heightCm != null ? 'jump' : 'gait';
+    items.push(makeUnifiedResult({ report, reportType, source: 'saved-report', index, member }));
+  });
+
+  (sessions || [])
+    .filter((session) => !DETAIL_SESSION_MENUS.has(session.menu))
+    .forEach((session, index) => {
+      const reportType = reportTypeFromSession(session);
+      items.push(makeUnifiedResult({
+        report: {
+          ...(session.data || {}),
+          kind: reportType,
+          member,
+          measuredAt: session.recordedAtFull || session.recordedAt,
+        },
+        reportType,
+        source: 'session',
+        index,
+        member,
+        session,
+      }));
+    });
+
+  return items.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+}
+
 function extractSessionMetric(session) {
   const d = session.data || {};
   switch (session.menu) {
@@ -51,6 +178,56 @@ function extractSessionMetric(session) {
   }
 }
 
+function UnifiedResultCard({ item, onOpen }) {
+  const statusStyle = STATUS_STYLE[item.summary.status] || STATUS_STYLE.unknown;
+  const findings = (item.summary.topFindings || []).slice(0, 3);
+  const canOpen = item.source !== 'session' || item.session?.menu;
+  return (
+    <button
+      type="button"
+      onClick={() => canOpen && onOpen(item)}
+      className={`w-full rounded-2xl border bg-slate-900 p-4 text-left transition active:scale-[0.99] ${item.meta.border} ${canOpen ? 'hover:bg-slate-800/80' : ''}`}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className={`rounded-full px-2 py-0.5 text-[9px] font-black ${item.meta.bg} ${item.meta.accent}`}>
+              {item.meta.badge}
+            </span>
+            <span className="text-[11px] font-bold text-slate-500">{formatDateOnly(item.date)}</span>
+          </div>
+          <p className="mt-2 break-keep text-base font-black leading-tight text-white">
+            {item.summary.title || item.meta.title}
+          </p>
+          <p className="mt-1 break-keep text-[12px] font-semibold leading-tight text-slate-500">
+            {item.meta.title}
+          </p>
+        </div>
+        <div className="shrink-0 text-right">
+          <p className={`font-mono text-3xl font-black leading-none ${statusStyle.text}`}>
+            {item.summary.overallScore ?? 0}
+          </p>
+          <span className={`mt-1 inline-flex rounded-full border px-2 py-0.5 text-[10px] font-black ${statusStyle.bg} ${statusStyle.border} ${statusStyle.text}`}>
+            {item.summary.statusLabel || '확인 필요'}
+          </span>
+        </div>
+      </div>
+
+      <div className="mt-3 space-y-1.5">
+        {findings.length > 0 ? findings.map((finding, idx) => (
+          <p key={`${item.id}-finding-${idx}`} className="line-clamp-2 break-keep rounded-lg bg-slate-800/65 px-3 py-2 text-[12px] font-semibold leading-relaxed text-slate-300">
+            {finding.text}
+          </p>
+        )) : (
+          <p className="rounded-lg bg-slate-800/65 px-3 py-2 text-[12px] font-semibold text-slate-400">
+            핵심 결과를 정리 중입니다.
+          </p>
+        )}
+      </div>
+    </button>
+  );
+}
+
 export default function Report() {
   const { user } = useAuth();
   // 트레이너 모드: 담당 회원만 / 모든 회원은 가나다 순으로 노출.
@@ -58,6 +235,7 @@ export default function Report() {
   const [memberId, setMemberId] = useState('');
   const [downloading, setDownloading] = useState(false);
   const [msg, setMsg] = useState(null);
+  const [reportFilter, setReportFilter] = useState('all');
 
   const member = members.find(m => m.id === memberId);
 
@@ -72,6 +250,7 @@ export default function Report() {
         aiStore.ensureSessions(member.id),
         aiStore.ensureGaitReports(member.id),
         aiStore.ensurePostureReports(member.id),
+        aiStore.ensureRomReports(member.id),
       ]);
       if (alive) setDataReady(v => v + 1);
     })();
@@ -106,6 +285,12 @@ export default function Report() {
       .sort((a, b) => String(b.createdAt || b.measuredAt).localeCompare(String(a.createdAt || a.measuredAt)));
   }, [member, dataReady]);
 
+  const savedRomReports = useMemo(() => {
+    if (!member) return [];
+    return [...(aiStore.getRomReports(member.id) || [])]
+      .sort((a, b) => String(b.createdAt || b.measuredAt || b.basic_info?.createdAt).localeCompare(String(a.createdAt || a.measuredAt || a.basic_info?.createdAt)));
+  }, [member, dataReady]);
+
   // 저장된 AI 측정 리포트 목록 (최신순) — 페이지별 열람용
   const savedReports = useMemo(() => {
     if (!member) return [];
@@ -114,6 +299,7 @@ export default function Report() {
   }, [member, dataReady]);
   const [viewerIdx, setViewerIdx] = useState(null); // 열람 중인 리포트 인덱스
   const [postureViewerIdx, setPostureViewerIdx] = useState(null); // 자세 리포트 열람 인덱스
+  const [romViewerIdx, setRomViewerIdx] = useState(null); // ROM 리포트 열람 인덱스
   const [expandedMenu, setExpandedMenu] = useState(null); // 펼친 측정 메뉴
 
   // 메뉴별 개별 세션 목록 (상세/회차비교용)
@@ -131,6 +317,42 @@ export default function Report() {
     }
     return map;
   }, [member, dataReady]);
+
+  const unifiedResults = useMemo(() => {
+    if (!member) return [];
+    return buildUnifiedResults({
+      member,
+      savedReports,
+      savedPostureReports,
+      savedRomReports,
+      sessions: aiStore.getSessions(member.id) || [],
+    });
+  }, [member, dataReady, savedReports, savedPostureReports, savedRomReports]);
+
+  const filteredUnifiedResults = useMemo(() => {
+    if (reportFilter === 'all') return unifiedResults;
+    return unifiedResults.filter((item) => item.filterKey === reportFilter);
+  }, [reportFilter, unifiedResults]);
+
+  const openUnifiedResult = (item) => {
+    if (item.source === 'posture') {
+      setPostureViewerIdx(item.index);
+      return;
+    }
+    if (item.source === 'rom') {
+      setRomViewerIdx(item.index);
+      return;
+    }
+    if (item.source === 'saved-report') {
+      setViewerIdx(item.index);
+      return;
+    }
+    if (item.session?.menu) {
+      setExpandedMenu(item.session.menu);
+      setMsg('아래 AI 측정 이력에서 해당 결과를 확인할 수 있습니다.');
+      setTimeout(() => setMsg(null), 1800);
+    }
+  };
 
   const handleDownload = async () => {
     if (!report) return;
@@ -161,7 +383,53 @@ export default function Report() {
           allowNone={false} placeholder="이름 / 초성 / 전화 뒤4자리" />
       </div>
 
-      {report && !report.hasData && (
+      {member && unifiedResults.length > 0 && (
+        <section className="rounded-2xl border border-slate-800 bg-slate-950/40 p-3">
+          <div className="mb-3 flex items-end justify-between gap-3 px-1">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-widest text-slate-400">전체 결과</p>
+              <p className="mt-1 text-sm font-semibold text-slate-500">
+                자세·ROM·점프·보행·근력 결과를 최신순으로 정리합니다.
+              </p>
+            </div>
+            <span className="shrink-0 rounded-full bg-slate-800 px-2.5 py-1 text-[11px] font-black text-slate-300">
+              {unifiedResults.length}건
+            </span>
+          </div>
+
+          <div className="-mx-1 mb-3 flex gap-2 overflow-x-auto px-1 pb-1">
+            {REPORT_FILTERS.map((filter) => {
+              const active = reportFilter === filter.key;
+              return (
+                <button
+                  key={filter.key}
+                  type="button"
+                  onClick={() => setReportFilter(filter.key)}
+                  className={`shrink-0 rounded-full border px-3 py-1.5 text-xs font-black transition ${
+                    active
+                      ? 'border-amber-400 bg-amber-500 text-slate-950'
+                      : 'border-slate-700 bg-slate-900 text-slate-400'
+                  }`}
+                >
+                  {filter.label}
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="space-y-2">
+            {filteredUnifiedResults.length > 0 ? filteredUnifiedResults.map((item) => (
+              <UnifiedResultCard key={item.id} item={item} onOpen={openUnifiedResult} />
+            )) : (
+              <div className="rounded-2xl border border-slate-800 bg-slate-900 p-5 text-center text-sm font-semibold text-slate-500">
+                선택한 유형의 리포트가 아직 없습니다.
+              </div>
+            )}
+          </div>
+        </section>
+      )}
+
+      {report && !report.hasData && unifiedResults.length === 0 && (
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 text-center text-slate-500 text-sm">
           측정된 데이터가 없습니다.<br />신체정보나 AI 측정을 먼저 기록하세요.
         </div>
@@ -458,6 +726,25 @@ export default function Report() {
             {savedReports[viewerIdx].kind === 'jump'
               ? <JumpReportDashboard report={savedReports[viewerIdx]} onClose={() => setViewerIdx(null)} />
               : <GaitReportDashboard report={savedReports[viewerIdx]} onClose={() => setViewerIdx(null)} />}
+          </Suspense>
+        </div>
+      )}
+      {romViewerIdx != null && savedRomReports[romViewerIdx] && (
+        <div className="fixed inset-0 z-[90] bg-slate-950 overflow-y-auto" style={{ height: '100dvh' }}>
+          <div className="sticky top-0 z-10 flex items-center justify-between px-4 py-2.5 bg-slate-900/95 backdrop-blur border-b border-slate-800">
+            <button onClick={() => setRomViewerIdx(null)} className="text-slate-300 font-bold text-sm">✕ 닫기</button>
+            <span className="text-white text-xs font-bold">{romViewerIdx + 1} / {savedRomReports.length}</span>
+            <div className="flex gap-2">
+              <button onClick={() => setRomViewerIdx(i => Math.min(savedRomReports.length - 1, i + 1))}
+                disabled={romViewerIdx >= savedRomReports.length - 1}
+                className="text-slate-300 text-sm font-bold disabled:opacity-30">◀ 이전</button>
+              <button onClick={() => setRomViewerIdx(i => Math.max(0, i - 1))}
+                disabled={romViewerIdx <= 0}
+                className="text-slate-300 text-sm font-bold disabled:opacity-30">다음 ▶</button>
+            </div>
+          </div>
+          <Suspense fallback={<div className="p-10 text-center text-slate-400">불러오는 중…</div>}>
+            <RomReport report={savedRomReports[romViewerIdx]} member={member} />
           </Suspense>
         </div>
       )}

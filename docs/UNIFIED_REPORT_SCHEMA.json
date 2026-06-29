@@ -1,0 +1,118 @@
+{
+  "collectionPath": "/users/{userId}/reports/{reportId}",
+  "purpose": "영상 파일은 저장하지 않고, 측정 결과 데이터만 통합 규격으로 저장합니다.",
+  "schemaVersion": "mg-report-v1",
+  "example": {
+    "schemaVersion": "mg-report-v1",
+    "reportId": "jump_20260629_001",
+    "userId": "member_123",
+    "reportType": "jump",
+    "member": {
+      "id": "member_123",
+      "name": "김동규",
+      "isVirtual": false
+    },
+    "measuredAt": "2026-06-29T18:29:00.000+09:00",
+    "createdAt": "2026-06-29T18:30:10.000+09:00",
+    "storagePolicy": {
+      "videoStored": false,
+      "videoStoragePath": null,
+      "storesResultDataOnly": true
+    },
+    "raw": {
+      "media": {
+        "videoStored": false,
+        "hasLocalVideo": true
+      },
+      "data": {
+        "heightCm": 34.8,
+        "flightTimeMs": 533,
+        "takeoffVelocity": 2.6,
+        "peakPower": 3591,
+        "bodyWeight": 78,
+        "biomech": {
+          "view": "front",
+          "landingKneeAngle": 163.7,
+          "trunkLeanChange": 1.4,
+          "pelvicImbalance": 2.7,
+          "footLandingSymmetry": {
+            "symmetryPct": 0,
+            "lateralDiffPct": 40.4,
+            "anteroposteriorDiffPct": 2.1
+          }
+        }
+      }
+    },
+    "summary": {
+      "title": "점프·반응 탄성 평가",
+      "reportType": "jump",
+      "measuredAt": "2026-06-29T18:29:00.000+09:00",
+      "overallScore": 78,
+      "status": "caution",
+      "statusLabel": "주의",
+      "keyMetrics": [
+        {
+          "key": "jumpHeight",
+          "expertLabel": "Jump Height",
+          "label": "점프 높이",
+          "value": 34.8,
+          "displayValue": "34.8",
+          "unit": "cm",
+          "status": { "key": "caution", "label": "주의" }
+        },
+        {
+          "key": "peakPower",
+          "expertLabel": "Peak Power",
+          "label": "폭발력",
+          "value": 3591,
+          "displayValue": "3591",
+          "unit": "W",
+          "status": { "key": "unknown", "label": "확인 필요" }
+        }
+      ],
+      "topFindings": [
+        {
+          "rank": 1,
+          "status": "caution",
+          "statusLabel": "주의",
+          "text": "착지 좌우 대칭성이 낮습니다(0%)."
+        },
+        {
+          "rank": 2,
+          "status": "caution",
+          "statusLabel": "주의",
+          "text": "점프 높이 34.8cm · 주의"
+        }
+      ],
+      "recommendations": [
+        "착지 대칭, 하체 근력, 발목-무릎-골반 정렬을 함께 확인하세요."
+      ]
+    },
+    "share": {
+      "title": "몸가짐CMS 측정 결과 요약",
+      "memberName": "김동규",
+      "reportType": "jump",
+      "score": 78,
+      "status": "caution",
+      "statusLabel": "주의",
+      "topFindings": [
+        {
+          "rank": 1,
+          "status": "caution",
+          "statusLabel": "주의",
+          "text": "착지 좌우 대칭성이 낮습니다(0%)."
+        }
+      ],
+      "description": "주의 · 78/100 · 착지 좌우 대칭성이 낮습니다(0%).",
+      "webUrl": "https://momgagym-cms.firebaseapp.com/reports/jump_20260629_001",
+      "imageUrl": "https://momgagym-cms.firebaseapp.com/og-report-summary.png"
+    }
+  },
+  "notes": [
+    "raw.data에는 숫자, 텍스트, 판정, landmark 같은 결과 데이터만 저장합니다.",
+    "videoBlob, videoUrl, previewVideoUrl, recordedBlob 같은 영상 원본/URL 필드는 sanitizer가 제거합니다.",
+    "summary는 일반 회원용 용어와 100점 점수, 신호등 상태, 핵심 3가지 요약만 포함합니다.",
+    "share는 Kakao Feed 템플릿을 만들기 위한 최소 데이터입니다."
+  ]
+}
+

@@ -7,7 +7,7 @@ import { beepTick, beepGo, beepSuccess, primeAudio } from '../core/audioCue';
 import CameraStage from './CameraStage.jsx';
 import PostureReport from './PostureReport.jsx';
 import ReportActions from '../../components/report/ReportActions';
-import { dataUrlToFile } from '../core/reportShare';
+import { drawPostureSnapshotOverlay } from '../core/postureOverlay';
 
 const VIEW_STEPS = [
   { key: 'front', label: '정면', short: '앞' },
@@ -380,14 +380,9 @@ export default function PostureMeasure({ member, onSave, onBack }) {
   };
 
   if (report) {
-    const snapFiles = (report.perViewSnapshots || [])
-      .filter((s) => s.snapshotUrl)
-      .map((s) => {
-        try {
-          return dataUrlToFile(s.snapshotUrl, `${member?.name || '회원'}_자세_${s.label}.jpg`);
-        } catch (e) { return null; }
-      })
-      .filter(Boolean);
+    const snapSnapshots = (report.perViewSnapshots || []).filter((s) => s.snapshotUrl);
+    const snapCount = snapSnapshots.length;
+    const buildSnapFiles = () => buildPostureSnapshotFiles(snapSnapshots, member);
 
     return (
       <div className="space-y-4">
@@ -413,8 +408,8 @@ export default function PostureMeasure({ member, onSave, onBack }) {
           {/* '리포트 저장'을 누르면 A4 JPG 저장 + 회원 기록 자동 저장 (탭 불필요) */}
           <ReportActions
             reportNodeId="posture-report-sheet"
-            imageFiles={snapFiles}
-            imageButtonLabel={`📸 사진 저장 (${snapFiles.length}장)`}
+            imageFiles={buildSnapFiles}
+            imageButtonLabel={`📸 사진 저장 (${snapCount}장)`}
             baseName={`${member?.name || '회원'}_자세`}
             reportButtonLabel={saveState === 'saved' ? '✓ 리포트 저장됨' : '🖼 리포트 저장'}
             onAfterReportSave={handleSave}
@@ -1068,6 +1063,49 @@ function objectContainMapper(video, width, height) {
     x: (point) => ox + point.x * drawW,
     y: (point) => oy + point.y * drawH,
   };
+}
+
+function safeFilePart(value, fallback = '회원') {
+  return String(value || fallback).replace(/[\\/:*?"<>|]+/g, '_');
+}
+
+function loadImageElement(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('image load failed'));
+    img.src = src;
+  });
+}
+
+async function buildPostureSnapshotFiles(snapshots, member) {
+  const baseName = safeFilePart(member?.name, '회원');
+  const files = await Promise.all(
+    (snapshots || []).map(async (item) => {
+      try {
+        const label = safeFilePart(item.label || item.key || '측정면', '측정면');
+        return await createPostureSnapshotFile(item, `${baseName}_자세_${label}.jpg`);
+      } catch (e) {
+        return null;
+      }
+    }),
+  );
+  return files.filter(Boolean);
+}
+
+async function createPostureSnapshotFile(item, filename) {
+  const img = await loadImageElement(item.snapshotUrl);
+  const width = img.naturalWidth || img.width;
+  const height = img.naturalHeight || img.height;
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(img, 0, 0, width, height);
+  drawPostureSnapshotOverlay(ctx, item.landmarks, item.analysis, item.key, width, height);
+  const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.9));
+  if (!blob) throw new Error('snapshot export failed');
+  return new File([blob], filename, { type: 'image/jpeg' });
 }
 
 function captureVideoSnapshot(video) {

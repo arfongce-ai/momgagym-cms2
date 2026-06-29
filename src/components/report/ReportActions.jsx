@@ -43,7 +43,9 @@ export default function ReportActions({
   reportButtonLabel = '🖼 리포트 저장',
 }) {
   const [busy, setBusy] = useState(null);
-  const hasImages = Array.isArray(imageFiles) && imageFiles.length > 0;
+  const hasImageFactory = typeof imageFiles === 'function';
+  const staticImageFiles = Array.isArray(imageFiles) ? imageFiles.filter(Boolean) : [];
+  const hasImages = hasImageFactory || staticImageFiles.length > 0;
   const hasSecondary = Boolean(videoBlob) || hasImages;
 
   const saveReport = async () => {
@@ -103,7 +105,13 @@ export default function ReportActions({
     setBusy('images');
     onMessage?.('사진 준비 중...');
     try {
-      await shareOrDownload(imageFiles, '측정 사진', onMessage);
+      const files = hasImageFactory ? await imageFiles() : staticImageFiles;
+      const list = Array.isArray(files) ? files.filter(Boolean) : [];
+      if (!list.length) {
+        onMessage?.('저장할 사진을 찾을 수 없습니다.');
+        return;
+      }
+      await shareOrDownload(list, '측정 사진', onMessage);
     } catch (e) {
       onMessage?.('사진 저장에 실패했습니다. 다시 시도해주세요.');
     } finally {
