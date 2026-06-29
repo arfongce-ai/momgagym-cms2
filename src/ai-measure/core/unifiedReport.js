@@ -428,7 +428,14 @@ export function buildUnifiedReportDocument(report = {}, options = {}) {
 }
 
 export function extractKakaoSummary(reportOrDocument = {}, options = {}) {
-  const summary = reportOrDocument.summary || buildSummaryData(reportOrDocument, options);
+  // 이미 buildSummaryData 로 만들어진 summary(overallScore/topFindings 보유)가
+  // 들어오면 그대로 사용한다. 그렇지 않은 원본 리포트면 summary 를 새로 만든다.
+  // (과거엔 항상 buildSummaryData 를 다시 돌려 overallScore 가 유실되고 점수가
+  //  undefined 로 표시되는 버그가 있었다.)
+  const looksLikeSummary = reportOrDocument
+    && (reportOrDocument.overallScore != null || Array.isArray(reportOrDocument.topFindings));
+  const summary = reportOrDocument.summary
+    || (looksLikeSummary ? reportOrDocument : buildSummaryData(reportOrDocument, options));
   const member = normalizeMember(options.member || reportOrDocument.member || {});
   const topFindings = (summary.topFindings || []).slice(0, 3);
   const score = normalizeScore(summary.overallScore ?? summary.score);
@@ -455,9 +462,10 @@ export function extractKakaoSummary(reportOrDocument = {}, options = {}) {
 export function buildKakaoFeedTemplate(summaryInput = {}, options = {}) {
   const summary = summaryInput.topFindings ? summaryInput : extractKakaoSummary(summaryInput, options);
   const webUrl = options.webUrl || summary.webUrl || (typeof window !== 'undefined' ? window.location.href : '');
+  const score = summary.overallScore ?? summary.score ?? 0;
   const findings = (summary.topFindings || []).slice(0, 3).map((f, i) => `${i + 1}. ${f.text}`).join('\n');
   const header = `${summary.title || '몸가짐CMS 측정 결과 요약'}`;
-  const scoreLine = `${summary.statusLabel || ''} · 종합 ${summary.score}/100`.trim();
+  const scoreLine = `${summary.statusLabel || ''} · 종합 ${score}/100`.trim();
   const text = clampText(`${header}\n${scoreLine}\n${findings}`, 190);
 
   // feed 템플릿은 content.imageUrl 이 필수이고, 이미지 로드 실패 시 공유가 조용히
