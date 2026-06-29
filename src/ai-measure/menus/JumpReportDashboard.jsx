@@ -119,7 +119,7 @@ export default function JumpReportDashboard({ report, onClose, onComment }) {
           ) : (
             <>
               <Section title="① 성능 및 파워" subtitle="비행시간 기반 · 핵심 지표">
-                <div className="grid grid-cols-4 gap-2">
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                   <StatCard label="점프 높이" value={metric(report.heightCm)} unit="cm" range={RANGE.height} />
                   <StatCard label="체공 시간" value={metric(report.flightTimeMs)} unit="ms" />
                   <StatCard label="도약 속도" value={metric(report.takeoffVelocity)} unit="m/s" />
@@ -213,7 +213,7 @@ export default function JumpReportDashboard({ report, onClose, onComment }) {
 function ReportPage({ children }) {
   return (
     <div
-      className="report-a4-page w-full max-w-[794px] bg-slate-900 rounded-2xl shadow-2xl ring-1 ring-slate-700/70 overflow-hidden p-6 text-slate-100"
+      className="report-a4-page w-full max-w-[794px] bg-slate-900 rounded-2xl shadow-2xl ring-1 ring-slate-700/70 overflow-hidden p-5 text-slate-100 sm:p-6"
       style={{ minHeight: 1123 }}
     >
       {children}
@@ -224,20 +224,20 @@ function ReportPage({ children }) {
 function ReportHeader({ code, type, title, subtitle, score, invalid, compact = false }) {
   const color = invalid ? 'text-red-300' : score >= 80 ? 'text-emerald-300' : score >= 60 ? 'text-amber-300' : 'text-red-300';
   return (
-    <header className={`flex items-start justify-between border-b border-slate-700/70 ${compact ? 'pb-4 mb-5' : 'pb-5 mb-6'}`}>
-      <div>
+    <header className={`flex items-start justify-between gap-4 border-b border-slate-700/70 ${compact ? 'pb-4 mb-5' : 'pb-5 mb-6'}`}>
+      <div className="min-w-0">
         <div className="flex items-center gap-2">
-          <p className="text-[12px] font-black tracking-[0.22em] text-amber-400">{code}</p>
+          <p className="break-keep text-[11px] font-black tracking-[0.14em] text-amber-400 sm:text-[12px] sm:tracking-[0.22em]">{code}</p>
           <span className={`rounded-full px-2 py-0.5 text-[9px] font-black ${type === 'RSI' ? 'bg-emerald-500/15 text-emerald-300' : 'bg-amber-500/15 text-amber-300'}`}>
             {type}
           </span>
         </div>
-        <h1 className="mt-2 text-3xl font-black text-white">{title}</h1>
-        <p className="mt-1 text-sm font-bold text-slate-500">{subtitle}</p>
+        <h1 className="mt-2 break-keep text-2xl font-black leading-tight text-white sm:text-3xl">{title}</h1>
+        <p className="mt-1 break-keep text-sm font-bold leading-tight text-slate-500">{subtitle}</p>
       </div>
-      <div className="text-right">
+      <div className="shrink-0 text-right">
         <p className="text-xs font-bold text-slate-500">종합 점수</p>
-        <p className={`font-mono text-5xl font-black leading-none ${color}`}>{invalid ? '-' : score}</p>
+        <p className={`font-mono text-4xl font-black leading-none sm:text-5xl ${color}`}>{invalid ? '-' : score}</p>
       </div>
     </header>
   );
@@ -258,11 +258,13 @@ function Section({ title, subtitle, children }) {
 function StatCard({ label, value, unit, range }) {
   const numeric = Number(value);
   const st = range ? status(Number.isFinite(numeric) ? numeric : null, range) : null;
+  const valueText = String(value ?? '-');
+  const valueSize = valueText.length >= 5 ? 'text-[1.25rem]' : valueText.length >= 4 ? 'text-[1.45rem]' : 'text-[1.75rem]';
   return (
-    <div className="rounded-xl bg-slate-800 px-3 py-4 text-center">
-      <p className="text-[11px] font-bold text-slate-500">{label}</p>
-      <p className={`mt-2 font-mono text-3xl font-black ${st?.color || 'text-slate-100'}`}>{value}</p>
-      <p className="mt-1 text-xs font-bold text-slate-500">{unit}</p>
+    <div className="min-w-0 rounded-xl bg-slate-800 px-2.5 py-3 text-center">
+      <p className="min-h-[2rem] break-keep text-[10px] font-bold leading-tight text-slate-500 sm:text-[11px]">{label}</p>
+      <p className={`mt-2 break-all font-mono ${valueSize} font-black leading-none tracking-normal tabular-nums ${st?.color || 'text-slate-100'}`}>{valueText}</p>
+      <p className="mt-1 text-[11px] font-bold leading-tight text-slate-500">{unit}</p>
       {st && <p className={`mt-1 text-[10px] font-black ${st.color}`}>{st.text}</p>}
     </div>
   );
@@ -304,7 +306,7 @@ function RsiSection({ report }) {
   const rsi = report.rsi || {};
   return (
     <Section title="반응 탄성 (RSI)" subtitle="체공 ÷ 접지 · 무단위">
-      <div className="grid grid-cols-4 gap-2">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         <StatCard label="RSI" value={metric(rsi.rsi)} unit={rsi.grade?.label || ''} />
         <StatCard label="접지 시간" value={metric(rsi.contactTimeMs)} unit="ms" />
         <StatCard label="후속 체공" value={metric(rsi.flightTimeMs)} unit="ms" />
@@ -318,7 +320,7 @@ function RsiSection({ report }) {
           </div>
           <div className="space-y-1">
             {rsi.perCycle.map((cycle, index) => (
-              <div key={index} className="grid grid-cols-5 gap-1 rounded-lg bg-slate-800/70 px-2 py-2 text-center">
+              <div key={index} className="grid grid-cols-2 gap-1 rounded-lg bg-slate-800/70 px-2 py-2 text-center sm:grid-cols-5">
                 <Mini label={`#${index + 1}`} value={metric(cycle.rsi)} />
                 <Mini label="접지" value={metric(cycle.contactMs, 'ms')} />
                 <Mini label="체공" value={metric(cycle.flightMs, 'ms')} />
@@ -339,9 +341,9 @@ function RsiSection({ report }) {
 
 function Mini({ label, value }) {
   return (
-    <div>
-      <p className="text-[9px] font-bold text-slate-500">{label}</p>
-      <p className="font-mono text-xs font-black text-slate-100">{value}</p>
+    <div className="min-w-0">
+      <p className="break-keep text-[9px] font-bold leading-tight text-slate-500">{label}</p>
+      <p className="break-all font-mono text-[11px] font-black leading-tight tracking-normal text-slate-100">{value}</p>
     </div>
   );
 }

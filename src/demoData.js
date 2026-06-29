@@ -8,6 +8,7 @@ import {
   query, where,
 } from 'firebase/firestore';
 import { toYMD, todayYMD } from './utils/dates';
+import { buildUnifiedReportDocument, inferReportType } from './ai-measure/core/unifiedReport';
 
 const DATA_VERSION = 'v6.1';
 
@@ -330,6 +331,26 @@ function __touchSnapshot() {
 }
 
 function fbSet(name, id, data) { return setDoc(doc(db, name, id), data).then(r => { __touchSnapshot(); return r; }); }
+
+// 통합 리포트 미러 — 모든 측정 저장 시 users/{mid}/reports/{reportId} 에 표준 규격으로 동시 저장.
+// 핵심 원칙(측정 정직성): 통합 저장은 best-effort 부수 작업이며, 실패해도 본래의 측정 저장은
+// 절대 회귀하지 않는다. 따라서 호출부에서 try/catch 로 감싸 실패를 삼킨다(경고만 남김).
+async function mirrorUnifiedReport(mid, report, reportType) {
+  if (!mid || !report) return null;
+  try {
+    const document = buildUnifiedReportDocument(report, {
+      userId: mid,
+      reportId: report.id,
+      reportType,
+      member: { ...(report.member || {}), id: mid },
+    });
+    await setDoc(doc(db, 'users', mid, 'reports', document.reportId), document, { merge: true });
+    return document;
+  } catch (e) {
+    console.warn('[mirrorUnifiedReport] 통합 저장 실패(무시):', e?.code || e?.message);
+    return null;
+  }
+}
 function fbDelete(name, id)    { return deleteDoc(doc(db, name, id)).then(r => { __touchSnapshot(); return r; }); }
 
 // ── Firestore WriteBatch 하드 리밋 대응 ───────────────────────────
@@ -1027,7 +1048,13 @@ export const aiStore = {
     const ns={...s, id:uid('ai')}; const prev=cache.ai[mid];
     cache.ai[mid]=[...(cache.ai[mid]||[]), ns];
     aiStore._aiLoaded.add(mid);   // 이후 ensureSessions 가 덮어쓰지 않도록 로딩됨 표시
-    try { await fbSet('ai', ns.id, {...ns, __mid:mid}); return ns; }
+    try {
+      await fbSet('ai', ns.id, {...ns, __mid:mid});
+      // jump/vbt/1RM 등 측정 세션만 통합 리포트로 미러링(신체정보 등 비측정 세션은 제외).
+      const t = inferReportType({ ...ns, member: { id: mid } });
+      if (t !== 'general') await mirrorUnifiedReport(mid, { ...ns, member: { id: mid } }, t);
+      return ns;
+    }
     catch(e){ cache.ai[mid]=prev; throw e; }
   },
   deleteSession: async (mid, sid) => {
@@ -1052,6 +1079,7 @@ export const aiStore = {
     if (mid) { cache.gaitReports[mid] = [...(cache.gaitReports[mid] || []), r]; aiStore._gaitLoaded.add(mid); }
     try {
       await fbSet('gait_reports', r.id, { ...r, __mid: mid });
+      await mirrorUnifiedReport(mid, r, undefined);
       return r;
     } catch (e) {
       if (mid) cache.gaitReports[mid] = (cache.gaitReports[mid] || []).filter(x => x.id !== r.id);
@@ -1075,6 +1103,7 @@ export const aiStore = {
     if (mid) { cache.romReports[mid] = [...(cache.romReports[mid] || []), r]; aiStore._romLoaded.add(mid); }
     try {
       await fbSet('rom_reports', r.id, { ...r, __mid: mid });
+      await mirrorUnifiedReport(mid, r, 'rom');
       return r;
     } catch (e) {
       if (mid) cache.romReports[mid] = (cache.romReports[mid] || []).filter(x => x.id !== r.id);
@@ -1100,6 +1129,7 @@ export const aiStore = {
     if (mid) { cache.postureReports[mid] = [...(cache.postureReports[mid] || []), r]; aiStore._postureLoaded.add(mid); }
     try {
       await fbSet('posture_reports', r.id, { ...r, __mid: mid });
+      await mirrorUnifiedReport(mid, r, 'posture');
       return r;
     } catch (e) {
       if (mid) cache.postureReports[mid] = (cache.postureReports[mid] || []).filter(x => x.id !== r.id);

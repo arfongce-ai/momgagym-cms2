@@ -8,6 +8,8 @@ import { useAuth } from '../contexts/AuthContext';
 import { scopeMembersToTrainer, sortByName } from '../utils/memberList';
 import { buildRomPostureIntegration, pickLinkedPostureReport } from './core/romPostureIntegration';
 import { buildCrossMeasureIntegration, mergeIntegratedAssessment } from './core/crossMeasureContext';
+import { sanitizeReportPayload } from './core/unifiedReport';
+import { saveUnifiedReport } from '../services/unifiedReportStore';
 
 export default function AiMeasureHub() {
   const { user } = useAuth();
@@ -146,6 +148,20 @@ export default function AiMeasureHub() {
           };
         }
       }
+      const storableData = measurementKind ? sanitizeReportPayload(enrichedData) : enrichedData;
+      const saveUnifiedCopy = async (savedReport, reportType) => {
+        try {
+          await saveUnifiedReport({
+            userId: saveMid,
+            reportId: savedReport?.id,
+            report: savedReport,
+            reportType,
+            member: memberRef,
+          });
+        } catch (error) {
+          console.warn('[AiMeasureHub] unified report save skipped:', error?.code || error?.message);
+        }
+      };
 
       // 측정이력(ai): 실제 회원은 회원 id, 미등록회원은 개별 guest id 로 저장.
       await aiStore.addSession(saveMid, {
@@ -155,32 +171,40 @@ export default function AiMeasureHub() {
         recordedAtFull: new Date().toISOString(),
         isVirtual: member.isVirtual === true,
         ...virtualBody,
-        data: enrichedData,
+        data: storableData,
       });
       // 보행/점프 분석은 전용 컬렉션(gait_reports)에도 정량 리포트를 추가 저장 → 회차별 비교.
       if (isGait) {
-        return await aiStore.addGaitReport({ ...virtualBody, ...enrichedData, kind: 'gait', member: memberRef });
+        const saved = await aiStore.addGaitReport({ ...virtualBody, ...storableData, kind: 'gait', member: memberRef });
+        await saveUnifiedCopy(saved, 'gait');
+        return saved;
       }
-      if (isJump && enrichedData?.valid === true) {
-        return await aiStore.addGaitReport({ ...virtualBody, ...enrichedData, kind: 'jump', member: memberRef });
+      if (isJump && storableData?.valid === true) {
+        const saved = await aiStore.addGaitReport({ ...virtualBody, ...storableData, kind: 'jump', member: memberRef });
+        await saveUnifiedCopy(saved, 'jump');
+        return saved;
       }
       if (isPosture) {
-        return await aiStore.addPostureReport({ ...virtualBody, ...enrichedData, kind: 'posture', member: memberRef });
+        const saved = await aiStore.addPostureReport({ ...virtualBody, ...storableData, kind: 'posture', member: memberRef });
+        await saveUnifiedCopy(saved, 'posture');
+        return saved;
       }
       if (isRom) {
-        return await aiStore.addRomReport({
+        const saved = await aiStore.addRomReport({
           ...virtualBody,
-          ...enrichedData,
+          ...storableData,
           kind: 'rom',
           member: memberRef,
           basic_info: {
-            ...(enrichedData?.basic_info || {}),
+            ...(storableData?.basic_info || {}),
             memberId: saveMid,
             trainerId: user?.trainerId || user?.id || '',
             createdAt: new Date(),
             linkedPostureReportId,
           },
         });
+        await saveUnifiedCopy(saved, 'rom');
+        return saved;
       }
       alert(member.isVirtual ? '미등록회원 측정이 저장되었습니다.' : '측정이 저장되었습니다.');
     } catch (e) {
