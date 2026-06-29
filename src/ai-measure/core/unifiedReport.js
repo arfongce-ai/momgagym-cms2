@@ -466,8 +466,9 @@ const CENTER_INSTAGRAM = '@posture_gym_official';
 
 export function buildKakaoFeedTemplate(summaryInput = {}, options = {}) {
   const summary = summaryInput.topFindings ? summaryInput : extractKakaoSummary(summaryInput, options);
-  // 링크는 항상 센터 블로그로 고정(회원은 관리 앱에 접근 불가). options.webUrl 로 덮어쓸 수 있다.
-  const webUrl = options.webUrl || CENTER_BLOG_URL;
+  // 회원용 링크는 항상 센터 블로그로 고정한다(회원은 관리 앱 접근 불가).
+  // 호출부(options.webUrl)가 앱 주소를 넘겨도 무시하고 블로그를 강제한다.
+  const webUrl = CENTER_BLOG_URL;
   const score = summary.overallScore ?? summary.score ?? 0;
   const findings = (summary.topFindings || []).slice(0, 3).map((f, i) => `${i + 1}. ${f.text}`).join('\n');
   const header = `${summary.title || '몸가짐CMS 측정 결과 요약'}`;

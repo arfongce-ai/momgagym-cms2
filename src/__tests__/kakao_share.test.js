@@ -73,3 +73,11 @@ describe('카카오 공유 링크 (회원용)', () => {
     expect(t.text).toContain('@posture_gym_official');
   });
 });
+
+describe('카카오 공유 링크 블로그 강제 (회원용)', () => {
+  it('호출부가 앱 주소(webUrl)를 넘겨도 무시하고 블로그로 고정한다', () => {
+    const t = buildKakaoFeedTemplate(sampleSummary, { webUrl: 'https://momgagym-cms2.pages.dev/report' });
+    expect(t.link.webUrl).toBe('https://blog.naver.com/posture_gym');
+    expect(t.link.mobileWebUrl).toBe('https://blog.naver.com/posture_gym');
+  });
+});
