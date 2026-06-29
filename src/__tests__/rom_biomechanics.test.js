@@ -253,6 +253,7 @@ describe('ROM 리포트 저장 페이로드 — ObjectURL 제외 규약', () => 
       snapshotUrl: 'blob:http://x/snap',
       previewVideoUrl: 'blob:http://x/video',
       hasVideo: true,
+      linkedPostureReportId: 'posture_123',
       summary: { valid: true, left_max_rom: 120 },
       diagnosis: { grade: 'good' },
       pairKey: 'm1_rom_HIP_SUPINE',
@@ -264,5 +265,6 @@ describe('ROM 리포트 저장 페이로드 — ObjectURL 제외 규약', () => 
     expect(payload.summary.left_max_rom).toBe(120);
     expect(payload.pairKey).toBe('m1_rom_HIP_SUPINE');
     expect(payload.hasVideo).toBe(true);
+    expect(payload.linkedPostureReportId).toBe('posture_123');
   });
 });

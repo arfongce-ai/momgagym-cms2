@@ -127,7 +127,7 @@ export default function RomMeasure({ member, onSave, onBack }) {
     latestVideoRef.current = video || latestVideoRef.current;
     const smoothed = landmarks ? smootherRef.current(landmarks) : smootherRef.current(null);
     latestLandmarksRef.current = smoothed || latestLandmarksRef.current;
-    drawSkeleton(canvasRef.current, video, smoothed, side);
+    drawSkeleton(canvasRef.current, video, smoothed, side, joint, poseMode);
 
     if (!smoothed) return;
 
@@ -177,7 +177,7 @@ export default function RomMeasure({ member, onSave, onBack }) {
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       if (video && video.videoWidth) ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
       // 스켈레톤(측정 측 강조) + 좌우 각도 HUD 를 영상 위에 베이크.
-      drawSkeletonToRecord(ctx, latestLandmarksRef.current, side, canvas.width, canvas.height);
+      drawSkeletonToRecord(ctx, latestLandmarksRef.current, side, joint, poseMode, canvas.width, canvas.height);
       drawRomHud(ctx, latestLandmarksRef.current, joint, poseMode, canvas.width, canvas.height,
         (performance.now() - startTsRef.current) / 1000);
       composeRafRef.current = requestAnimationFrame(draw);
@@ -328,6 +328,13 @@ export default function RomMeasure({ member, onSave, onBack }) {
       recordedAt: todayYMD(),
       measuredAt: new Date().toISOString(),
       isVirtualMember: member?.isVirtual === true,
+      linkedPostureReportId: '',
+      basic_info: {
+        memberId: member?.id || '',
+        trainerId: '',
+        createdAt: new Date(),
+        linkedPostureReportId: '',
+      },
       // test_configuration (스키마)
       joint,
       poseMode,
@@ -640,7 +647,7 @@ function LiveMetric({ label, value, dim }) {
 }
 
 // ── 스켈레톤 드로잉 (측정 측 강조) ──
-function drawSkeleton(canvas, video, landmarks, side) {
+function drawSkeleton(canvas, video, landmarks, side, joint, poseMode) {
   if (!canvas || !video) return;
   const rect = canvas.getBoundingClientRect();
   const width = Math.max(1, Math.round(rect.width));
@@ -684,6 +691,8 @@ function drawSkeleton(canvas, video, landmarks, side) {
     ctx.arc(mapper.x(p), mapper.y(p), active ? 4.5 : 3, 0, Math.PI * 2);
     ctx.fill();
   });
+
+  drawMeasuredJointOverlay(ctx, landmarks, side, joint, poseMode, width, height, mapper);
 }
 
 function vis(p, threshold = 0.35) {
@@ -714,7 +723,7 @@ function captureVideoSnapshot(video) {
 // ── 녹화 합성용: 스켈레톤을 '캔버스 전체(가득 채움)' 좌표로 직접 그린다.
 //   record 캔버스는 영상을 edge-to-edge 로 그리므로 정규화 좌표(0~1)에
 //   width/height 만 곱하면 된다(레터박스 보정 불필요).
-function drawSkeletonToRecord(ctx, landmarks, side, width, height) {
+function drawSkeletonToRecord(ctx, landmarks, side, joint, poseMode, width, height) {
   if (!landmarks) return;
   const X = (p) => p.x * width;
   const Y = (p) => p.y * height;
@@ -744,6 +753,104 @@ function drawSkeletonToRecord(ctx, landmarks, side, width, height) {
     ctx.arc(X(p), Y(p), Math.max(3, width / 180), 0, Math.PI * 2);
     ctx.fill();
   });
+
+  drawMeasuredJointOverlay(ctx, landmarks, side, joint, poseMode, width, height, { x: X, y: Y }, true);
+}
+
+function drawMeasuredJointOverlay(ctx, landmarks, side, joint, poseMode, width, height, mapper, strong = false) {
+  if (!landmarks || !joint) return;
+  const norm = normalizePose(landmarks) || landmarks;
+  const sides = side === 'both' ? ['left', 'right'] : [side === 'right' ? 'right' : 'left'];
+  sides.forEach((targetSide) => {
+    const geometry = romOverlayGeometry(landmarks, targetSide, joint, poseMode, mapper, width, height);
+    if (!geometry) return;
+    const angle = jointAngleByMode(norm, joint, targetSide, poseMode).angle;
+    drawAngleBadge(ctx, geometry, {
+      label: `${targetSide === 'left' ? 'L' : 'R'} ${angle == null ? '--' : Math.round(angle)}°`,
+      color: targetSide === 'left' ? '#38bdf8' : '#f59e0b',
+      strong,
+    });
+  });
+}
+
+function romOverlayGeometry(landmarks, side, joint, poseMode, mapper, width, height) {
+  const S = side === 'left' ? 'LEFT' : 'RIGHT';
+  const p = (name) => {
+    const lm = landmarks?.[LM[`${S}_${name}`]];
+    return vis(lm) ? { x: mapper.x(lm), y: mapper.y(lm) } : null;
+  };
+  const hip = p('HIP');
+  const knee = p('KNEE');
+  const ankle = p('ANKLE');
+  const shoulder = p('SHOULDER');
+  const elbow = p('ELBOW');
+  const foot = p('FOOT_INDEX');
+  const refLen = Math.max(42, Math.min(width, height) * 0.16);
+  const refPoint = (v) => {
+    if (!v) return null;
+    if (poseMode === 'STANDING' || poseMode === 'SEATED') return { x: v.x, y: v.y - refLen };
+    return { x: v.x + refLen, y: v.y };
+  };
+  if (joint === 'HIP' && hip && knee) return { a: refPoint(hip), b: hip, c: knee };
+  if (joint === 'KNEE' && hip && knee && ankle) return { a: hip, b: knee, c: ankle };
+  if (joint === 'SHOULDER' && shoulder && elbow) return { a: refPoint(shoulder), b: shoulder, c: elbow };
+  if (joint === 'ANKLE' && knee && ankle && foot) return { a: knee, b: ankle, c: foot };
+  return null;
+}
+
+function drawAngleBadge(ctx, geometry, { label, color, strong }) {
+  const { a, b, c } = geometry;
+  if (!a || !b || !c) return;
+  ctx.save();
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.strokeStyle = color;
+  ctx.fillStyle = color;
+  ctx.lineWidth = strong ? 5 : 3;
+  ctx.shadowColor = 'rgba(0,0,0,0.45)';
+  ctx.shadowBlur = strong ? 10 : 5;
+  ctx.beginPath();
+  ctx.moveTo(a.x, a.y);
+  ctx.lineTo(b.x, b.y);
+  ctx.lineTo(c.x, c.y);
+  ctx.stroke();
+
+  const va = Math.atan2(a.y - b.y, a.x - b.x);
+  const vc = Math.atan2(c.y - b.y, c.x - b.x);
+  const radius = strong ? 34 : 24;
+  ctx.beginPath();
+  ctx.arc(b.x, b.y, radius, va, vc, Math.abs(vc - va) > Math.PI);
+  ctx.stroke();
+
+  const labelX = b.x + Math.cos((va + vc) / 2) * (radius + 12);
+  const labelY = b.y + Math.sin((va + vc) / 2) * (radius + 12);
+  const fs = strong ? 22 : 15;
+  ctx.font = `800 ${fs}px sans-serif`;
+  const w = ctx.measureText(label).width + 18;
+  const h = fs + 12;
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = 'rgba(15,23,42,0.84)';
+  roundRect(ctx, labelX - w / 2, labelY - h / 2, w, h, 8);
+  ctx.fill();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  ctx.fillStyle = '#fff';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(label, labelX, labelY + 1);
+  ctx.restore();
+}
+
+function roundRect(ctx, x, y, width, height, radius) {
+  const r = Math.min(radius, width / 2, height / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + width, y, x + width, y + height, r);
+  ctx.arcTo(x + width, y + height, x, y + height, r);
+  ctx.arcTo(x, y + height, x, y, r);
+  ctx.arcTo(x, y, x + width, y, r);
+  ctx.closePath();
 }
 
 // ── 녹화 합성용 HUD: 좌상단에 좌/우 현재 각도 + 경과시간을 베이크한다. ──

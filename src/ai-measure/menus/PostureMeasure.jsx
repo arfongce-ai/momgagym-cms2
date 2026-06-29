@@ -267,6 +267,32 @@ export default function PostureMeasure({ member, onSave, onBack }) {
   // 수동 측정 버튼
   const handleCapture = () => { performCapture(); };
 
+  // 자동 모드에서 면 인식이 안 될 때 사용하는 '강제 촬영' 버튼.
+  // 자동 카운트다운/인식 판정을 건너뛰고 현재 활성 면으로 즉시 촬영한다.
+  // 측정 정직성: 전신이 안정적으로 보이지 않으면 촬영을 거부하고 안내한다.
+  const handleForceCapture = () => {
+    if (autoCountdown != null) return; // 카운트다운 진행 중에는 무시
+    // 진행 중이던 자동 카운트다운/타이머 정리
+    if (autoCountdownRef.current) { clearInterval(autoCountdownRef.current); autoCountdownRef.current = null; }
+    setAutoCountdown(null);
+    autoBusyRef.current = false;
+    holdStartRef.current = 0;
+    const live = latestLandmarksRef.current;
+    if (!live || !isFullBodyVisible(live)) {
+      setGuide('전신(어깨·골반·무릎·발목)이 모두 보여야 강제 촬영할 수 있습니다.');
+      return;
+    }
+    primeAudio();
+    beepGo();
+    const more = performCapture();
+    if (more !== null) beepSuccess();
+    // 다음 면이 있으면 자동 진행이 곧바로 재트리거되지 않도록 잠깐 텀을 둔다.
+    if (more) {
+      autoBusyRef.current = true;
+      setTimeout(() => { autoBusyRef.current = false; }, 1500);
+    }
+  };
+
   // 자동 모드: 목표 면 안정 인식 → 3초 카운트다운(큰 숫자 + 소리) → 캡처 + 성공음 → 다음 면.
   const startAutoCountdown = () => {
     if (autoBusyRef.current) return;
@@ -534,17 +560,24 @@ export default function PostureMeasure({ member, onSave, onBack }) {
       }
       controls={
         captureMode === 'auto' ? (
-          <div className="flex h-20 w-20 items-center justify-center rounded-full border-4 border-amber-300/70 bg-black/55 backdrop-blur">
+          // 자동 인식이 안 될 때를 대비한 '강제 촬영' 버튼.
+          // 카운트다운 중이 아니고 전신이 보이면, 누르는 즉시 현재 면을 강제로 촬영한다.
+          <button
+            type="button"
+            onClick={handleForceCapture}
+            disabled={autoCountdown != null}
+            className="flex h-20 w-20 items-center justify-center rounded-full border-4 border-amber-300/70 bg-black/55 backdrop-blur active:scale-95 transition disabled:opacity-60"
+          >
             {autoCountdown != null ? (
               <span className="font-black text-amber-300 leading-none" style={{ fontSize: '2.6rem' }}>
                 {autoCountdown}
               </span>
             ) : (
               <span className="text-[10px] font-black text-white text-center leading-tight whitespace-pre-line">
-                {`자동\n${activeStep.short}`}
+                {`강제촬영\n${activeStep.short}`}
               </span>
             )}
-          </div>
+          </button>
         ) : (
           <button
             onClick={handleCapture}

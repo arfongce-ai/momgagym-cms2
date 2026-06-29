@@ -6,6 +6,8 @@ import { store, aiStore, makeGuestId } from '../demoData';
 import { todayYMD } from '../utils/dates';
 import { useAuth } from '../contexts/AuthContext';
 import { scopeMembersToTrainer, sortByName } from '../utils/memberList';
+import { buildRomPostureIntegration, pickLinkedPostureReport } from './core/romPostureIntegration';
+import { buildCrossMeasureIntegration, mergeIntegratedAssessment } from './core/crossMeasureContext';
 
 export default function AiMeasureHub() {
   const { user } = useAuth();
@@ -109,6 +111,42 @@ export default function AiMeasureHub() {
     } : {};
 
     try {
+      let enrichedData = data;
+      let linkedPostureReportId = data?.basic_info?.linkedPostureReportId || data?.linkedPostureReportId || '';
+      let postureReports = null;
+      if (isRom) {
+        postureReports = await aiStore.ensurePostureReports(saveMid);
+        const linkedPostureReport = pickLinkedPostureReport(postureReports, linkedPostureReportId);
+        const romPostureIntegration = buildRomPostureIntegration({ romReport: data, postureReport: linkedPostureReport });
+        linkedPostureReportId = romPostureIntegration?.posture_context?.sourceReportId || linkedPostureReportId;
+        enrichedData = romPostureIntegration ? { ...data, ...romPostureIntegration } : data;
+      }
+
+      const measurementKind = isPosture ? 'posture' : isRom ? 'rom' : isJump ? 'jump' : isGait ? 'gait' : '';
+      if (measurementKind) {
+        const [allPostureReports, romReports, gaitReports] = await Promise.all([
+          postureReports ? Promise.resolve(postureReports) : aiStore.ensurePostureReports(saveMid),
+          aiStore.ensureRomReports(saveMid),
+          aiStore.ensureGaitReports(saveMid),
+        ]);
+        const crossIntegration = buildCrossMeasureIntegration({
+          kind: measurementKind,
+          report: enrichedData,
+          postureReports: allPostureReports,
+          romReports,
+          gaitReports,
+        });
+        if (crossIntegration) {
+          enrichedData = {
+            ...enrichedData,
+            measurement_role: crossIntegration.measurement_role,
+            problem_focus: crossIntegration.problem_focus,
+            cross_measure_context: crossIntegration.cross_measure_context,
+            integrated_assessment: mergeIntegratedAssessment(enrichedData?.integrated_assessment, crossIntegration.integrated_assessment),
+          };
+        }
+      }
+
       // 측정이력(ai): 실제 회원은 회원 id, 미등록회원은 개별 guest id 로 저장.
       await aiStore.addSession(saveMid, {
         menu: active.id,
@@ -117,20 +155,32 @@ export default function AiMeasureHub() {
         recordedAtFull: new Date().toISOString(),
         isVirtual: member.isVirtual === true,
         ...virtualBody,
-        data,
+        data: enrichedData,
       });
       // 보행/점프 분석은 전용 컬렉션(gait_reports)에도 정량 리포트를 추가 저장 → 회차별 비교.
       if (isGait) {
-        return await aiStore.addGaitReport({ ...virtualBody, ...data, kind: 'gait', member: memberRef });
+        return await aiStore.addGaitReport({ ...virtualBody, ...enrichedData, kind: 'gait', member: memberRef });
       }
-      if (isJump && data?.valid === true) {
-        return await aiStore.addGaitReport({ ...virtualBody, ...data, kind: 'jump', member: memberRef });
+      if (isJump && enrichedData?.valid === true) {
+        return await aiStore.addGaitReport({ ...virtualBody, ...enrichedData, kind: 'jump', member: memberRef });
       }
       if (isPosture) {
-        return await aiStore.addPostureReport({ ...virtualBody, ...data, kind: 'posture', member: memberRef });
+        return await aiStore.addPostureReport({ ...virtualBody, ...enrichedData, kind: 'posture', member: memberRef });
       }
       if (isRom) {
-        return await aiStore.addRomReport({ ...virtualBody, ...data, kind: 'rom', member: memberRef });
+        return await aiStore.addRomReport({
+          ...virtualBody,
+          ...enrichedData,
+          kind: 'rom',
+          member: memberRef,
+          basic_info: {
+            ...(enrichedData?.basic_info || {}),
+            memberId: saveMid,
+            trainerId: user?.trainerId || user?.id || '',
+            createdAt: new Date(),
+            linkedPostureReportId,
+          },
+        });
       }
       alert(member.isVirtual ? '미등록회원 측정이 저장되었습니다.' : '측정이 저장되었습니다.');
     } catch (e) {
@@ -167,7 +217,12 @@ export default function AiMeasureHub() {
     return (
       <div className={`${wideMeasure ? 'max-w-6xl' : 'max-w-md'} mx-auto`}>
         <Suspense fallback={<div className="text-center text-slate-400 py-10 text-sm">모듈 로딩 중…</div>}>
-          <Comp member={member} onSave={handleSave} onBack={() => { setActive(null); if (member?.isVirtual) setGuestId(null); }} onMemberHeightChange={rememberMemberHeight} />
+          <Comp
+            member={member}
+            onSave={handleSave}
+            onBack={() => { setActive(null); if (member?.isVirtual) setGuestId(null); }}
+            onMemberHeightChange={rememberMemberHeight}
+          />
         </Suspense>
       </div>
     );

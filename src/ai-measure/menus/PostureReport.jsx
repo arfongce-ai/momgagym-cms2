@@ -6,6 +6,8 @@ import {
 } from '../core/postureMath';
 import { buildClinicalInterpretation } from '../core/postureClinical';
 import { analyzeAxialRotation, ROTATION_DIRECTION_KO, ROTATION_LEVEL_KO } from '../core/postureRotation';
+import { buildProblemFocus } from '../core/crossMeasureContext';
+import ProblemFocusPanel from './ProblemFocusPanel.jsx';
 
 const LM = POSE_LANDMARKS;
 
@@ -89,6 +91,7 @@ export default function PostureReport({
   const bodyAge = analysis.bodyAge ?? report?.bodyAge;
   const score = analysis.score ?? report?.postureScore ?? 0;
   const findings = analysis.rules?.findings?.length ? analysis.rules.findings : [];
+  const problemFocus = report?.problem_focus || buildProblemFocus('posture', { ...report, analysis });
 
   // 임상 해석(부위별 진단·근육 추정·위험 Top3) — 측정값 기반, 비단정.
   const clinical = useMemo(() => {
@@ -137,6 +140,7 @@ export default function PostureReport({
         </header>
 
         <MetadataStrip metadata={clinical.metadata} viewsMeasured={report?.viewsMeasured} />
+        <ProblemFocusPanel focus={problemFocus} context={report?.cross_measure_context} />
 
         <section className="grid gap-3 sm:grid-cols-[240px_1fr_1fr]">
           <ScoreDial score={score} status={analysis.status} />
@@ -464,6 +468,87 @@ function PostureSnapshotGallery({ snapshots }) {
   );
 }
 
+// 측면에서 카메라에 가까운(z가 작은) 쪽 관절 선택. 한쪽만 보이면 그쪽 사용.
+function pickNear(lm, leftIdx, rightIdx) {
+  const L = lm[leftIdx]; const R = lm[rightIdx];
+  const okL = L && (L.visibility ?? 1) >= 0.25;
+  const okR = R && (R.visibility ?? 1) >= 0.25;
+  if (okL && okR) return ((L.z ?? 0) <= (R.z ?? 0)) ? L : R;
+  return okL ? L : (okR ? R : null);
+}
+
+// 리포트 스냅샷용 문제 지점 오버레이.
+//  - 측면(left/right): 귀-어깨 목 기울기선 + 각도 라벨, 굽은등(흉추 굴곡) 빨간 원·라벨
+//  - 정면/후면: 머리 좌우 기울기 빨간 원 (편위가 있을 때)
+function drawProblemMarkers(ctx, lm, px, scale, viewKey) {
+  const label = (text, x, y, color) => {
+    ctx.save();
+    ctx.font = `bold ${Math.round(13 * scale)}px system-ui, sans-serif`;
+    const padX = 5 * scale; const padY = 3 * scale;
+    const w = ctx.measureText(text).width;
+    ctx.fillStyle = 'rgba(0,0,0,0.72)';
+    ctx.fillRect(x - padX, y - 13 * scale - padY, w + padX * 2, 17 * scale + padY * 2);
+    ctx.fillStyle = color;
+    ctx.fillText(text, x, y);
+    ctx.restore();
+  };
+  const circle = (cx, cy, rad, color) => {
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = Math.max(2, 3 * scale);
+    ctx.beginPath();
+    ctx.arc(cx, cy, rad, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  };
+
+  if (viewKey === 'left' || viewKey === 'right') {
+    const ear = pickNear(lm, 7, 8);
+    const shoulder = pickNear(lm, 11, 12);
+    const hip = pickNear(lm, 23, 24);
+    // ① 목 기울기(귀→어깨 전방 기울기) — 빨간 선 + 각도
+    if (ear && shoulder) {
+      const E = px(ear); const S = px(shoulder);
+      ctx.save();
+      ctx.strokeStyle = 'rgba(248,113,113,0.95)';
+      ctx.lineWidth = Math.max(2.5, 3.4 * scale);
+      ctx.beginPath(); ctx.moveTo(S.x, S.y); ctx.lineTo(E.x, E.y); ctx.stroke();
+      ctx.restore();
+      const dx = E.x - S.x; const dy = S.y - E.y;
+      const tiltDeg = Math.round(Math.abs(Math.atan2(dx, Math.max(1, dy)) * 180 / Math.PI));
+      label(`목 기울기 ${tiltDeg}°`, E.x + 8 * scale, E.y - 6 * scale, 'rgba(248,113,113,1)');
+    }
+    // ② 굽은등(흉추 굴곡 proxy): 귀-어깨-골반 각도. 굴곡이 클수록 편위.
+    if (ear && shoulder && hip) {
+      const a = Math.atan2(ear.y - shoulder.y, ear.x - shoulder.x);
+      const b = Math.atan2(hip.y - shoulder.y, hip.x - shoulder.x);
+      let deg = Math.abs((a - b) * 180 / Math.PI);
+      if (deg > 180) deg = 360 - deg;
+      const dev = Math.round(Math.abs(180 - deg)); // 일직선(180°) 대비 편위
+      if (dev >= 15) {
+        const S = px(shoulder);
+        const rad = Math.max(18, 26 * scale);
+        circle(S.x, S.y, rad, 'rgba(248,113,113,0.95)');
+        label(`굽은등 편위 ${dev}°`, S.x + rad + 4 * scale, S.y - 4 * scale, 'rgba(248,113,113,1)');
+      }
+    }
+  } else if (viewKey === 'front' || viewKey === 'back') {
+    // 머리 좌우 기울기(roll): 양 눈(없으면 양 귀) 연결선의 수평 대비 각도
+    const okEye = lm[2] && lm[5] && (lm[2].visibility ?? 1) >= 0.25 && (lm[5].visibility ?? 1) >= 0.25;
+    const pair = okEye ? [lm[2], lm[5]] : ((lm[7] && lm[8]) ? [lm[7], lm[8]] : null);
+    if (pair) {
+      const L = px(pair[0]); const R = px(pair[1]);
+      const rollDeg = Math.round(Math.abs(Math.atan2(R.y - L.y, R.x - L.x) * 180 / Math.PI));
+      if (rollDeg >= 4) {
+        const cx = (L.x + R.x) / 2; const cy = (L.y + R.y) / 2;
+        const rad = Math.max(16, 22 * scale);
+        circle(cx, cy, rad, 'rgba(248,113,113,0.9)');
+        label(`머리 기울기 ${rollDeg}°`, cx + rad + 4 * scale, cy - 4 * scale, 'rgba(248,113,113,1)');
+      }
+    }
+  }
+}
+
 function SnapshotCard({ item }) {
   const canvasRef = React.useRef(null);
   const imgRef = React.useRef(null);
@@ -479,6 +564,7 @@ function SnapshotCard({ item }) {
     const lm = item.landmarks;
     if (!Array.isArray(lm)) return;
     const px = (p) => ({ x: p.x * canvas.width, y: p.y * canvas.height });
+    const scale = canvas.width / 600; // 라벨/원 크기 정규화 기준
     ctx.lineWidth = Math.max(2, canvas.width / 180);
     ctx.strokeStyle = 'rgba(52,211,153,0.9)';
     SKELETON_CONNECTIONS.forEach(([a, b]) => {
@@ -495,7 +581,10 @@ function SnapshotCard({ item }) {
       const P = px(p);
       ctx.beginPath(); ctx.arc(P.x, P.y, r, 0, Math.PI * 2); ctx.fill();
     });
-  }, [item.landmarks]);
+
+    // ── 문제 지점 빨간 원 표시 + 측면 목 기울기 라벨 (라이브 화면과 동일) ──
+    drawProblemMarkers(ctx, lm, px, scale, item.key);
+  }, [item.landmarks, item.key]);
 
   return (
     <div className="overflow-hidden rounded-lg border border-slate-700 bg-slate-950">

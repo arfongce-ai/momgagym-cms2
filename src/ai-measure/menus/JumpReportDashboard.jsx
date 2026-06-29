@@ -1,5 +1,7 @@
 import { useMemo, useState } from 'react';
 import ReportActions from '../../components/report/ReportActions';
+import { buildProblemFocus } from '../core/crossMeasureContext';
+import ProblemFocusPanel from './ProblemFocusPanel.jsx';
 
 const RANGE = {
   height: { good: [40, 100], warn: [30, 100], unit: 'cm' },
@@ -75,6 +77,7 @@ export default function JumpReportDashboard({ report, onClose, onComment }) {
   const reportCode = isRsi ? 'RSI REACTIVE JUMP' : 'POWER JUMP';
   const viewLabel = biomech.view === 'side' ? '측면' : biomech.view === 'back' || biomech.view === 'front' ? '정면' : '미확인';
   const saveName = `${memberName}_${isRsi ? 'RSI' : '파워점프'}`;
+  const problemFocus = useMemo(() => report?.problem_focus || buildProblemFocus('jump', report), [report]);
 
   const saveComment = () => {
     onComment?.(comment);
@@ -108,6 +111,8 @@ export default function JumpReportDashboard({ report, onClose, onComment }) {
             score={score}
             invalid={report.valid === false}
           />
+
+          <ProblemFocusPanel focus={problemFocus} context={report.cross_measure_context} />
 
           {report.valid === false ? (
             <InvalidBlock report={report} />
