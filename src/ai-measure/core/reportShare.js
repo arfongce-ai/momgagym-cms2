@@ -35,9 +35,10 @@ async function waitForKakao(timeoutMs = 3000) {
 }
 
 /**
- * 측정 요약을 카카오톡으로 공유.
+ * 측정 요약을 카카오톡으로 공유(text 템플릿, 버튼 없음).
+ * 블로그·인스타는 빌더가 텍스트 안 링크로 고정 삽입한다(회원이 바로 접근 가능).
  * @param {object} summaryInput  통합 summary 또는 리포트(빌더가 요약 추출)
- * @param {object} opts          { webUrl, memberName, title, buttonTitle, imageUrl }
+ * @param {object} opts          { memberName, title }
  * @returns {Promise<{ok, msg}>}  실패해도 throw 하지 않음
  */
 export async function shareMeasurementSummaryToKakao(summaryInput, opts = {}) {
@@ -49,8 +50,6 @@ export async function shareMeasurementSummaryToKakao(summaryInput, opts = {}) {
     return { ok: false, msg: '카카오 SDK를 불러오지 못했습니다. 네트워크를 확인하세요.' };
   }
   try {
-    // webUrl 을 현재 페이지(관리 앱)로 강제하지 않는다 — 회원은 앱 접근 권한이 없으므로
-    // 링크 기본값(센터 블로그)이 적용되도록 opts.webUrl 이 있을 때만 전달한다.
     await shareSummaryToKakao(summaryInput, {
       ...opts,
       Kakao,
