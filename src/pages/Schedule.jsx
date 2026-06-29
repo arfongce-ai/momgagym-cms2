@@ -848,6 +848,8 @@ function Block({ s, onClick, compact=false, members }) {
 function MonthView({ pivotDate, schedules, onBlockClick, todayStr, members, onDayClick }) {
   const d=new Date(pivotDate+'T12:00:00');
   const y=d.getFullYear(), mo=d.getMonth();
+  // 달력은 일요일 시작 고정(일·월·화·수·목·금·토). JS getDay()가 일=0 이므로
+  // 헤더(일 시작)와 오프셋이 정확히 정합한다. 이 순서는 변경하지 않는다.
   const first=new Date(y,mo,1).getDay(), days=new Date(y,mo+1,0).getDate();
   const cells=Array.from({length:Math.ceil((first+days)/7)*7},(_,i)=>{
     const day=i-first+1;
@@ -856,7 +858,7 @@ function MonthView({ pivotDate, schedules, onBlockClick, todayStr, members, onDa
   return (
     <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
       <div className="grid grid-cols-7 text-center text-xs font-bold text-slate-500 border-b border-slate-800">
-        {['월','화','수','목','금','토','일'].map(d=><div key={d} className="py-2">{d}</div>)}
+        {['일','월','화','수','목','금','토'].map(d=><div key={d} className="py-2">{d}</div>)}
       </div>
       <div className="grid grid-cols-7">
         {cells.map((date,i)=>{
@@ -925,11 +927,12 @@ export default function Schedule() {
     ? trainers.filter(t => t.id === fixedTrainerId)
     : trainers;
 
+  // 주 뷰도 일요일 시작 고정(달력 전체 일관). getDay() 일=0 이므로 그만큼 빼면 그 주 일요일.
   const weekDates = Array.from({length:7},(_,i)=>{
     const base=new Date(pivot+'T12:00:00');
     const day=base.getDay();
-    const mon=new Date(base); mon.setDate(base.getDate()-((day+6)%7));
-    return addD(fmt(mon),i);
+    const sun=new Date(base); sun.setDate(base.getDate()-day);
+    return addD(fmt(sun),i);
   });
 
   const trainerName = id => trainers.find(t=>t.id===id)?.name || '';

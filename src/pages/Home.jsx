@@ -23,11 +23,11 @@ function MiniCalendar({ schedules }) {
   const today = new Date();
   const todayStr = todayYMD(); // CV-A: 로컬 날짜
 
-  // 이번 주 월~일
+  // 이번 주 일~토 (달력 전체 일요일 시작 고정과 일관). getDay() 일=0.
   const weekDates = Array.from({ length:7 }, (_,i) => {
     const d = new Date(today);
     const day = today.getDay();
-    d.setDate(today.getDate() - ((day+6)%7) + i);
+    d.setDate(today.getDate() - day + i);
     return toYMD(d); // CV-A: 로컬 날짜
   });
 

@@ -8,10 +8,7 @@ import { store, aiStore } from '../demoData';
 import { buildFullReport, buildAnalysisTrend, buildPostureTrend } from '../services/reportService';
 import { buildReportSvg, downloadSvgAsJpg } from '../components/report/reportImage';
 import { buildSummaryData, scoreToStatus } from '../ai-measure/core/unifiedReport';
-<<<<<<< HEAD
 import { shareMeasurementSummaryToKakao } from '../ai-measure/core/reportShare';
-=======
->>>>>>> 8ac92144f9e04eb437bf171347b7255ea4cbbd05
 import TrendChart from '../components/report/TrendChart';
 import MemberPicker from '../components/common/MemberPicker';
 const JumpReportDashboard = lazy(() => import('../ai-measure/menus/JumpReportDashboard'));
@@ -182,16 +179,11 @@ function extractSessionMetric(session) {
   }
 }
 
-<<<<<<< HEAD
 function UnifiedResultCard({ item, onOpen, onShare, sharing }) {
-=======
-function UnifiedResultCard({ item, onOpen }) {
->>>>>>> 8ac92144f9e04eb437bf171347b7255ea4cbbd05
   const statusStyle = STATUS_STYLE[item.summary.status] || STATUS_STYLE.unknown;
   const findings = (item.summary.topFindings || []).slice(0, 3);
   const canOpen = item.source !== 'session' || item.session?.menu;
   return (
-<<<<<<< HEAD
     <div
       className={`w-full rounded-2xl border bg-slate-900 p-4 ${item.meta.border}`}
     >
@@ -249,50 +241,6 @@ function UnifiedResultCard({ item, onOpen }) {
         {sharing ? '공유 준비 중…' : '카카오톡으로 요약 공유'}
       </button>
     </div>
-=======
-    <button
-      type="button"
-      onClick={() => canOpen && onOpen(item)}
-      className={`w-full rounded-2xl border bg-slate-900 p-4 text-left transition active:scale-[0.99] ${item.meta.border} ${canOpen ? 'hover:bg-slate-800/80' : ''}`}
-    >
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className={`rounded-full px-2 py-0.5 text-[9px] font-black ${item.meta.bg} ${item.meta.accent}`}>
-              {item.meta.badge}
-            </span>
-            <span className="text-[11px] font-bold text-slate-500">{formatDateOnly(item.date)}</span>
-          </div>
-          <p className="mt-2 break-keep text-base font-black leading-tight text-white">
-            {item.summary.title || item.meta.title}
-          </p>
-          <p className="mt-1 break-keep text-[12px] font-semibold leading-tight text-slate-500">
-            {item.meta.title}
-          </p>
-        </div>
-        <div className="shrink-0 text-right">
-          <p className={`font-mono text-3xl font-black leading-none ${statusStyle.text}`}>
-            {item.summary.overallScore ?? 0}
-          </p>
-          <span className={`mt-1 inline-flex rounded-full border px-2 py-0.5 text-[10px] font-black ${statusStyle.bg} ${statusStyle.border} ${statusStyle.text}`}>
-            {item.summary.statusLabel || '확인 필요'}
-          </span>
-        </div>
-      </div>
-
-      <div className="mt-3 space-y-1.5">
-        {findings.length > 0 ? findings.map((finding, idx) => (
-          <p key={`${item.id}-finding-${idx}`} className="line-clamp-2 break-keep rounded-lg bg-slate-800/65 px-3 py-2 text-[12px] font-semibold leading-relaxed text-slate-300">
-            {finding.text}
-          </p>
-        )) : (
-          <p className="rounded-lg bg-slate-800/65 px-3 py-2 text-[12px] font-semibold text-slate-400">
-            핵심 결과를 정리 중입니다.
-          </p>
-        )}
-      </div>
-    </button>
->>>>>>> 8ac92144f9e04eb437bf171347b7255ea4cbbd05
   );
 }
 
@@ -304,10 +252,7 @@ export default function Report() {
   const [downloading, setDownloading] = useState(false);
   const [msg, setMsg] = useState(null);
   const [reportFilter, setReportFilter] = useState('all');
-<<<<<<< HEAD
   const [sharingId, setSharingId] = useState(null);
-=======
->>>>>>> 8ac92144f9e04eb437bf171347b7255ea4cbbd05
 
   const member = members.find(m => m.id === memberId);
 
@@ -426,7 +371,6 @@ export default function Report() {
     }
   };
 
-<<<<<<< HEAD
   const shareUnifiedResult = async (item) => {
     if (!item || sharingId) return;
     setSharingId(item.id); setMsg(null);
@@ -445,8 +389,6 @@ export default function Report() {
     }
   };
 
-=======
->>>>>>> 8ac92144f9e04eb437bf171347b7255ea4cbbd05
   const handleDownload = async () => {
     if (!report) return;
     setDownloading(true); setMsg(null);
@@ -512,11 +454,7 @@ export default function Report() {
 
           <div className="space-y-2">
             {filteredUnifiedResults.length > 0 ? filteredUnifiedResults.map((item) => (
-<<<<<<< HEAD
               <UnifiedResultCard key={item.id} item={item} onOpen={openUnifiedResult} onShare={shareUnifiedResult} sharing={sharingId === item.id} />
-=======
-              <UnifiedResultCard key={item.id} item={item} onOpen={openUnifiedResult} />
->>>>>>> 8ac92144f9e04eb437bf171347b7255ea4cbbd05
             )) : (
               <div className="rounded-2xl border border-slate-800 bg-slate-900 p-5 text-center text-sm font-semibold text-slate-500">
                 선택한 유형의 리포트가 아직 없습니다.
