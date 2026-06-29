@@ -6,6 +6,8 @@ import {
 } from '../core/postureMath';
 import { buildClinicalInterpretation } from '../core/postureClinical';
 import { analyzeAxialRotation, ROTATION_DIRECTION_KO, ROTATION_LEVEL_KO } from '../core/postureRotation';
+import { buildProblemFocus } from '../core/crossMeasureContext';
+import ProblemFocusPanel from './ProblemFocusPanel.jsx';
 
 const LM = POSE_LANDMARKS;
 
@@ -89,6 +91,7 @@ export default function PostureReport({
   const bodyAge = analysis.bodyAge ?? report?.bodyAge;
   const score = analysis.score ?? report?.postureScore ?? 0;
   const findings = analysis.rules?.findings?.length ? analysis.rules.findings : [];
+  const problemFocus = report?.problem_focus || buildProblemFocus('posture', { ...report, analysis });
 
   // 임상 해석(부위별 진단·근육 추정·위험 Top3) — 측정값 기반, 비단정.
   const clinical = useMemo(() => {
@@ -137,6 +140,7 @@ export default function PostureReport({
         </header>
 
         <MetadataStrip metadata={clinical.metadata} viewsMeasured={report?.viewsMeasured} />
+        <ProblemFocusPanel focus={problemFocus} context={report?.cross_measure_context} />
 
         <section className="grid gap-3 sm:grid-cols-[240px_1fr_1fr]">
           <ScoreDial score={score} status={analysis.status} />

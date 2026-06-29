@@ -2,6 +2,8 @@
 // ROM 측정 리포트 — A4 폭. 자세별·관절별 좌우 최대 가동범위, 대칭성,
 // 끝범위 안정성, 보상 작용, AI 진단 코멘트, 각도 시계열 차트를 한 장에 담는다.
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, CartesianGrid } from 'recharts';
+import { buildProblemFocus } from '../core/crossMeasureContext';
+import ProblemFocusPanel from './ProblemFocusPanel.jsx';
 
 const JOINT_KO = { HIP: '고관절', KNEE: '슬관절', SHOULDER: '견관절', ANKLE: '족관절' };
 const POSE_KO = { STANDING: '서서(체중지지)', SUPINE: '앙와위(누워서)', PRONE: '복와위(엎드려)', SEATED: '앉아서' };
@@ -23,6 +25,7 @@ export default function RomReport({ report }) {
   const s = summary || {};
   const stab = s.end_range_stability_score || {};
   const comp = s.compensation || {};
+  const problemFocus = report.problem_focus || buildProblemFocus('rom', report);
 
   // 차트 데이터: 정제된 좌/우 각도 시계열(다운샘플 — 최대 120포인트).
   const series = (s.timeSeries || []);
@@ -60,6 +63,10 @@ export default function RomReport({ report }) {
           </div>
         </div>
       )}
+
+      <div className="mt-4">
+        <ProblemFocusPanel focus={problemFocus} context={report.cross_measure_context} variant="light" />
+      </div>
 
       {/* 자세·체형 연동 해석 */}
       {integrated_assessment && (

@@ -3,6 +3,8 @@ import {
   RadarChart, PolarGrid, PolarAngleAxis, Radar, Legend,
   BarChart, Bar, XAxis, YAxis, Cell, ResponsiveContainer, Tooltip,
 } from 'recharts';
+import { buildProblemFocus } from '../core/crossMeasureContext';
+import ProblemFocusPanel from './ProblemFocusPanel.jsx';
 
 /*
  * GaitReportDashboard — 보행/러닝 종합 리포트 (1장 대시보드)
@@ -96,6 +98,7 @@ export default function GaitReportDashboard({ report, onComment, onClose }) {
 
   const memberName = report?.member?.name || '회원';
   const dateStr = (report?.createdAt || report?.measuredAt || '').slice(0, 10) || '—';
+  const problemFocus = useMemo(() => report?.problem_focus || buildProblemFocus('gait', report), [report]);
 
   // 중단 좌측: 좌/우 무릎·골반·발목 비교 (Kinematic 레이더)
   // 무릎=BiomechAccumulator 좌우, 골반/발목=angles(좌측 기준)로 보강
@@ -146,6 +149,7 @@ export default function GaitReportDashboard({ report, onComment, onClose }) {
 
         {/* ── 본문: 4분할 ── */}
         <div className="flex-1 grid grid-rows-[auto_1fr_auto] gap-3 p-4 min-h-0">
+          <ProblemFocusPanel focus={problemFocus} context={report?.cross_measure_context} />
 
           {/* ① 상단 요약 */}
           <section className="grid grid-cols-4 gap-2.5">
