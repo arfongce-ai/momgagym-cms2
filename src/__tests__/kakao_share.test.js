@@ -48,6 +48,7 @@ describe('카카오톡 공유 래퍼', () => {
     expect(t.buttonTitle).toBe('앱/웹에서 자세히 보기');
   });
 });
+<<<<<<< HEAD
 
 describe('카카오 공유 점수 표시 (회귀)', () => {
   it('buildSummaryData 결과(overallScore)를 넘겨도 점수가 undefined 가 아니다', async () => {
@@ -61,3 +62,5 @@ describe('카카오 공유 점수 표시 (회귀)', () => {
     expect(t.text).toContain(`종합 ${summary.overallScore}/100`);
   });
 });
+=======
+>>>>>>> 2595ee22decf459b5fa71edd2e6cd1ef5e6740eb
