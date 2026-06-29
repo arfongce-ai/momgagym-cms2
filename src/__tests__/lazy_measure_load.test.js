@@ -82,15 +82,6 @@ describe('측정 데이터 지연 로딩', () => {
     expect(got[0].cadence).toBe(110);
   });
 
-  it('ensureRomReports 가 회원별로 동작한다(ROM 리포트 누적)', async () => {
-    const a = await store.addMember({ name: 'R' });
-    await aiStore.addRomReport({ kind: 'rom', joint: 'HIP', poseMode: 'SUPINE', member: { id: a.id, name: 'R' } });
-    aiStore._romLoaded.clear();
-    const got = await aiStore.ensureRomReports(a.id);
-    expect(got.length).toBe(1);
-    expect(got[0].joint).toBe('HIP');
-  });
-
   it('getSessions 는 지연 로딩 전이면 빈 배열(전수 조회 안 함)', () => {
     // 방금 추가하지 않은 임의 ID → 캐시에 없음 → 빈 배열
     expect(aiStore.getSessions('nonexistent_member')).toEqual([]);

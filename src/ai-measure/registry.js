@@ -34,8 +34,7 @@ export const MEASURE_MENUS = [
     title: 'ROM 좌우 비교',
     desc: '관절 가동범위 및 좌우 대칭',
     icon: 'ROM',
-    status: 'ready',
-    component: lazy(() => import('./menus/RomMeasure.jsx')),
+    status: 'planned',
   },
   {
     id: 'jump',
