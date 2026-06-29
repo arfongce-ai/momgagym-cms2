@@ -391,23 +391,56 @@ function AxialRotationSection({ rotation }) {
 function RiskTop3({ items }) {
   return (
     <section className="rounded-lg border border-slate-800 bg-slate-900 p-4">
-      <p className="mb-1 text-sm font-black text-white">통증·부상 위험 예측 Top 3</p>
-      <p className="mb-3 text-[11px] text-slate-500">현재 불균형을 방치할 경우 통증 발생 가능성이 높은 순서입니다. (예측 참고용)</p>
+      <p className="mb-1 text-sm font-black text-white">통증·부상 위험 예측 Top 3 · 상세 피드백</p>
+      <p className="mb-3 text-[11px] text-slate-500">현재 불균형을 방치할 경우 통증 발생 가능성이 높은 순서입니다. 각 항목에 원인·교정 운동·자가 점검을 함께 제공합니다. (예측 참고용)</p>
       {(!items || !items.length) ? (
         <div className="rounded-md border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-200">
-          현재 측정값에서 두드러진 위험 부위가 없습니다.
+          현재 측정값에서 두드러진 위험 부위가 없습니다. 좋은 정렬 상태를 유지하세요.
         </div>
       ) : (
-        <div className="space-y-2">
+        <div className="space-y-3">
           {items.map((it) => {
             const st = LEVEL_STYLE[it.level] || LEVEL_STYLE.caution;
             return (
-              <div key={it.key} className={`flex items-start gap-3 rounded-lg border p-2.5 ${st.bg} ${st.border}`}>
-                <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-950/60 text-sm font-black ${st.text}`}>{it.rank}</span>
-                <div>
+              <div key={it.key} className={`rounded-lg border p-3 ${st.bg} ${st.border}`}>
+                <div className="flex items-center gap-3">
+                  <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-950/60 text-sm font-black ${st.text}`}>{it.rank}</span>
                   <p className="text-sm font-black text-white">{it.area} <span className={`text-[10px] font-bold ${st.text}`}>· {st.ko}</span></p>
-                  <p className="text-xs leading-relaxed text-slate-300">{it.outcome}</p>
                 </div>
+
+                {/* 측정 근거 */}
+                {it.measured?.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {it.measured.map((m, i) => (
+                      <span key={i} className="rounded bg-slate-950/60 px-1.5 py-0.5 text-[11px] font-bold text-slate-300">
+                        {m.label} {m.value}{m.unit}
+                      </span>
+                    ))}
+                  </div>
+                )}
+
+                <p className="mt-2 text-xs leading-relaxed text-slate-300"><span className="font-bold text-slate-200">위험: </span>{it.outcome}</p>
+                {it.cause && <p className="mt-1 text-xs leading-relaxed text-slate-400"><span className="font-bold text-slate-300">원인: </span>{it.cause}</p>}
+                {it.impact && <p className="mt-1 text-xs leading-relaxed text-slate-400"><span className="font-bold text-slate-300">방치 시: </span>{it.impact}</p>}
+
+                {/* 교정 운동 */}
+                {it.exercises?.length > 0 && (
+                  <div className="mt-2 rounded-md border border-sky-500/20 bg-sky-500/5 p-2">
+                    <p className="text-[11px] font-bold text-sky-300">교정 운동</p>
+                    <ul className="mt-1 space-y-1">
+                      {it.exercises.map((ex, i) => (
+                        <li key={i} className="text-[11px] leading-relaxed text-slate-300">
+                          <span className="font-bold text-slate-100">{ex.name}</span>
+                          <span className="text-sky-200"> · {ex.dose}</span>
+                          {ex.caution && <span className="block text-[10px] text-slate-500">주의: {ex.caution}</span>}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {it.selfCheck && <p className="mt-2 text-[11px] leading-relaxed text-emerald-200/90"><span className="font-bold">자가 점검: </span>{it.selfCheck}</p>}
+                {it.timeline && <p className="mt-1 text-[10px] leading-relaxed text-slate-500">{it.timeline}</p>}
               </div>
             );
           })}

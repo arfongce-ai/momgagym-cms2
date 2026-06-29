@@ -1046,7 +1046,7 @@ function captureAnnotatedSnapshot(video, landmarks, analysis, viewKey) {
       const tw = ctx.measureText(m.label).width;
       const padX = W * 0.012, th = W * 0.04;
       const lx = Math.min(Math.max(cx + W * 0.055, 4), W - tw - padX * 2 - 4);
-      const ly = cy;
+      const ly = cy + (m.labelDy ? m.labelDy * H : 0); // 라벨 세로 오프셋(겹침 방지)
       ctx.fillStyle = 'rgba(0,0,0,0.6)';
       ctx.fillRect(lx, ly - th / 2, tw + padX * 2, th);
       ctx.fillStyle = color;

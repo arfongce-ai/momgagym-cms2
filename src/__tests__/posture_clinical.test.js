@@ -151,3 +151,42 @@ describe('성별 기준 적용', () => {
     expect(noSex.disclaimers.some((d) => d.includes('성중립') || d.includes('성별 입력'))).toBe(true);
   });
 });
+
+describe('Top3 상세 피드백', () => {
+  const pv = {
+    front: {
+      frontal: { pelvisHeightDiffMm: 20, shoulderHeightDiffMm: 18, pelvisPattern: 'functional_lumbopelvic_pattern', legAlignment: { status: 'normal' } },
+      cog: { available: true, balanceOffsetPct: 3, offsetPct: 3 },
+      sagittal: { kneeExtensionProxyDeg: 188 },
+    },
+    left: { sagittal: { forwardHeadMm: 55, kyphosisProxyDeg: 150, kneeExtensionProxyDeg: 188 } },
+  };
+
+  it('Top3 항목에 원인·교정운동·자가점검·기간 가이드가 포함된다', () => {
+    const out = buildClinicalInterpretation({ perViewAnalysis: pv, bodyInfo: { sex: 'female' } });
+    expect(out.riskTop3.length).toBeGreaterThan(0);
+    const top = out.riskTop3[0];
+    expect(top.cause).toBeTruthy();
+    expect(top.impact).toBeTruthy();
+    expect(Array.isArray(top.exercises)).toBe(true);
+    expect(top.exercises.length).toBeGreaterThan(0);
+    expect(top.exercises[0]).toHaveProperty('name');
+    expect(top.exercises[0]).toHaveProperty('dose');
+    expect(top.selfCheck).toBeTruthy();
+    expect(top.timeline).toBeTruthy();
+  });
+
+  it('Top3 는 측정 근거(measured)를 함께 담는다', () => {
+    const out = buildClinicalInterpretation({ perViewAnalysis: pv, bodyInfo: {} });
+    expect(Array.isArray(out.riskTop3[0].measured)).toBe(true);
+  });
+
+  it('위험 부위가 없으면 Top3 는 빈 배열(과잉 표시 금지)', () => {
+    const clean = {
+      front: { frontal: { pelvisHeightDiffMm: 2, shoulderHeightDiffMm: 2, pelvisPattern: 'within_error', legAlignment: { status: 'normal' } }, cog: { available: true, offsetPct: 1, balanceOffsetPct: 1 }, sagittal: { kneeExtensionProxyDeg: 178 } },
+      left: { sagittal: { forwardHeadMm: 10, kyphosisProxyDeg: 178, kneeExtensionProxyDeg: 178 } },
+    };
+    const out = buildClinicalInterpretation({ perViewAnalysis: clean, bodyInfo: {} });
+    expect(out.riskTop3).toHaveLength(0);
+  });
+});

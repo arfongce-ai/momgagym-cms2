@@ -87,12 +87,13 @@ export function buildPostureMarkers(analysis, landmarks, viewKey) {
 
   // ── 측면 항목 ──
   if (isSide) {
-    // 거북목(전방 머리)
+    // ── 측면 항목 ──
+    // 거북목(전방 머리) — 라벨은 머리 높이
     const fh = sagittal.forwardHeadMm;
     const fhSev = sev(fh, TH.forwardHeadMm, TH.forwardHeadMm * 2);
     if (fhSev && head) {
       markers.push({ x: head.x, y: head.y, severity: fhSev, type: 'arrow', dir: 'right',
-        label: `거북목 ${Math.abs(Math.round(fh))}mm` });
+        label: `거북목 ${Math.abs(Math.round(fh))}mm`, labelDy: 0 });
     }
     // 굽은등(귀-어깨-골반 각의 180° 편위)
     const ky = sagittal.kyphosisProxyDeg;
@@ -116,7 +117,23 @@ export function buildPostureMarkers(analysis, landmarks, viewKey) {
           label: `무릎 과신전 ${Math.round(dev)}°` });
       }
     }
-    // 목 기울기(측면): 귀-어깨 수직선 대비 기울기 — forwardHead 로 대체되므로 생략 가능
+    // 목 기울기(측면): 귀-어깨를 잇는 선이 '수직'에서 얼마나 기울었는지(앞으로 기운 각).
+    //  측면에서 머리가 앞으로 나오면 이 선이 수직에서 벗어난다. 거북목(거리, mm)과
+    //  별개로 '각도'로 직관 표시한다.
+    const earForNeck = lEar || rEar;
+    const shoulderForNeck = mid(lS, rS) || lS || rS;
+    if (earForNeck && shoulderForNeck) {
+      const dx = earForNeck.x - shoulderForNeck.x;
+      const dy = earForNeck.y - shoulderForNeck.y; // 귀가 어깨보다 위 → dy<0
+      // 수직선(위쪽) 대비 기울기 각. |dx|가 클수록(머리 전방) 각 커짐.
+      const neckTiltDeg = Math.abs(Math.atan2(dx, -dy) * 180 / Math.PI);
+      const ntSev = sev(neckTiltDeg, TH.neckTiltDeg, TH.neckTiltDeg * 2);
+      if (ntSev) {
+        // 귀 위치(머리)에 화살표로 표시. 라벨은 거북목 라벨과 겹치지 않게 위로 올림.
+        markers.push({ x: earForNeck.x, y: earForNeck.y, severity: ntSev, type: 'arrow',
+          dir: dx >= 0 ? 'right' : 'left', label: `목 기울기 ${Math.round(neckTiltDeg)}°`, labelDy: -0.045 });
+      }
+    }
   }
 
   return markers;

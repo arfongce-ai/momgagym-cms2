@@ -80,3 +80,41 @@ describe('buildPostureMarkers', () => {
     expect(buildPostureMarkers({ frontal: {}, sagittal: {} }, null, 'front')).toEqual([]);
   });
 });
+
+describe('측면 목 기울기 마커', () => {
+  function sideLandmarks({ earX = 0.55, shoulderX = 0.5 } = {}) {
+    const lm = Array.from({ length: 33 }, () => ({ x: 0.5, y: 0.5, z: 0, visibility: 0.95 }));
+    Object.assign(lm[LM.LEFT_SHOULDER], { x: shoulderX, y: 0.30 });
+    Object.assign(lm[LM.RIGHT_SHOULDER], { x: shoulderX + 0.005, y: 0.30 });
+    Object.assign(lm[LM.LEFT_EAR], { x: earX, y: 0.12 });
+    Object.assign(lm[LM.RIGHT_EAR], { x: earX + 0.005, y: 0.12 });
+    Object.assign(lm[LM.LEFT_HIP], { x: shoulderX, y: 0.55 });
+    Object.assign(lm[LM.RIGHT_HIP], { x: shoulderX + 0.005, y: 0.55 });
+    Object.assign(lm[LM.LEFT_KNEE], { x: shoulderX, y: 0.72 });
+    Object.assign(lm[LM.LEFT_ANKLE], { x: shoulderX, y: 0.90 });
+    return lm;
+  }
+
+  it('머리가 어깨보다 앞으로 크게 나오면 목 기울기 마커가 생긴다', () => {
+    // ear x=0.62, shoulder x=0.5 → 머리가 앞으로, dy≈0.18 → tilt≈34° (>12)
+    const analysis = { frontal: {}, sagittal: { forwardHeadMm: 10, kyphosisProxyDeg: 180, kneeExtensionProxyDeg: 178 } };
+    const markers = buildPostureMarkers(analysis, sideLandmarks({ earX: 0.62, shoulderX: 0.5 }), 'left');
+    const neck = markers.find((m) => m.label.includes('목 기울기'));
+    expect(neck).toBeTruthy();
+    expect(neck.type).toBe('arrow');
+    expect(neck.label).toMatch(/목 기울기 \d+°/);
+  });
+
+  it('머리가 어깨 위 거의 수직이면 목 기울기 마커 없음(정상)', () => {
+    const analysis = { frontal: {}, sagittal: { forwardHeadMm: 10, kyphosisProxyDeg: 180, kneeExtensionProxyDeg: 178 } };
+    // ear x≈shoulder x → tilt≈0
+    const markers = buildPostureMarkers(analysis, sideLandmarks({ earX: 0.503, shoulderX: 0.5 }), 'left');
+    expect(markers.find((m) => m.label.includes('목 기울기'))).toBeFalsy();
+  });
+
+  it('정면에서는 목 기울기(측면 항목) 마커가 나오지 않는다', () => {
+    const analysis = { frontal: { shoulderHeightDiffMm: 2, pelvisHeightDiffMm: 2 }, sagittal: {} };
+    const markers = buildPostureMarkers(analysis, sideLandmarks({ earX: 0.62 }), 'front');
+    expect(markers.find((m) => m.label.includes('목 기울기'))).toBeFalsy();
+  });
+});
