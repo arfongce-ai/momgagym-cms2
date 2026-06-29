@@ -18,8 +18,8 @@ const sampleSummary = {
 afterEach(() => { if (typeof globalThis.window !== 'undefined') delete globalThis.window; });
 
 describe('카카오톡 공유 래퍼', () => {
-  it('키가 없으면 throw 하지 않고 안내 메시지를 반환한다', async () => {
-    // 테스트 환경엔 VITE_KAKAO_JS_KEY 가 없으므로 ok:false 안내가 나와야 한다.
+  it('SDK가 없으면 throw 하지 않고 안내 메시지를 반환한다', async () => {
+    // 테스트(node)에는 window.Kakao 가 없으므로 ok:false 안내가 나와야 한다.
     const res = await shareMeasurementSummaryToKakao(sampleSummary);
     expect(res.ok).toBe(false);
     expect(typeof res.msg).toBe('string');

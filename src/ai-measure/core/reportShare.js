@@ -14,7 +14,11 @@
 //  · 실패 시 throw 하지 않고 { ok:false, msg } 를 돌려 UI 가 친절히 안내하게 한다.
 import { shareSummaryToKakao } from './unifiedReport';
 
-const KAKAO_JS_KEY = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_KAKAO_JS_KEY) || '';
+// JS 키: 우선 빌드 환경변수(VITE_KAKAO_JS_KEY)를 쓰고, 주입되지 않은 경우를 대비해
+// 동일한 공개 JS 키를 폴백으로 둔다. JS 키는 브라우저에 공개되는 키이며 SDK 도메인으로
+// 사용이 제한되므로 코드에 포함해도 안전하다(카카오 공식 권장 방식).
+const KAKAO_JS_KEY = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_KAKAO_JS_KEY)
+  || '6c65f624d2e0a9f6f8e5d42fa8eb285a';
 
 async function waitForKakao(timeoutMs = 3000) {
   if (typeof window === 'undefined') return null;
