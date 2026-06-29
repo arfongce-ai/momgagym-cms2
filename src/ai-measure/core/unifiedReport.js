@@ -462,7 +462,7 @@ export function extractKakaoSummary(reportOrDocument = {}, options = {}) {
 // 회원에게 보내는 공유 메시지의 링크/버튼이 향하는 곳.
 // 회원은 관리 앱/웹에 로그인 권한이 없으므로, 앱 URL 대신 센터 공개 채널(블로그)로 연결한다.
 const CENTER_BLOG_URL = 'https://blog.naver.com/posture_gym';
-const CENTER_INSTAGRAM = '@posture_gym_official';
+const CENTER_INSTAGRAM = 'https://www.instagram.com/posture_gym_official/';
 
 export function buildKakaoFeedTemplate(summaryInput = {}, options = {}) {
   const summary = summaryInput.topFindings ? summaryInput : extractKakaoSummary(summaryInput, options);
