@@ -96,7 +96,8 @@ describe('unified report utilities', () => {
     const template = buildKakaoFeedTemplate(summary, { webUrl: 'https://example.com/report' });
     expect(template.objectType).toBe('text');
     expect(template.text).toContain('몸가짐CMS 측정 결과 요약');
-    expect(template.buttonTitle).toBe('앱/웹에서 자세히 보기');
+    expect(template.buttonTitle).toBe('몸가짐운동센터 블로그');
+    expect(template.link.webUrl).toBe('https://example.com/report');
   });
 
   it('Kakao SDK의 Share.sendDefault를 호출한다', () => {

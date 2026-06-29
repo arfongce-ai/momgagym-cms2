@@ -459,14 +459,21 @@ export function extractKakaoSummary(reportOrDocument = {}, options = {}) {
   };
 }
 
+// 회원에게 보내는 공유 메시지의 링크/버튼이 향하는 곳.
+// 회원은 관리 앱/웹에 로그인 권한이 없으므로, 앱 URL 대신 센터 공개 채널(블로그)로 연결한다.
+const CENTER_BLOG_URL = 'https://blog.naver.com/posture_gym';
+const CENTER_INSTAGRAM = '@posture_gym_official';
+
 export function buildKakaoFeedTemplate(summaryInput = {}, options = {}) {
   const summary = summaryInput.topFindings ? summaryInput : extractKakaoSummary(summaryInput, options);
-  const webUrl = options.webUrl || summary.webUrl || (typeof window !== 'undefined' ? window.location.href : '');
+  // 링크는 항상 센터 블로그로 고정(회원은 관리 앱에 접근 불가). options.webUrl 로 덮어쓸 수 있다.
+  const webUrl = options.webUrl || CENTER_BLOG_URL;
   const score = summary.overallScore ?? summary.score ?? 0;
   const findings = (summary.topFindings || []).slice(0, 3).map((f, i) => `${i + 1}. ${f.text}`).join('\n');
   const header = `${summary.title || '몸가짐CMS 측정 결과 요약'}`;
   const scoreLine = `${summary.statusLabel || ''} · 종합 ${score}/100`.trim();
-  const text = clampText(`${header}\n${scoreLine}\n${findings}`, 190);
+  const footer = `\n📷 인스타 ${CENTER_INSTAGRAM}`;
+  const text = clampText(`${header}\n${scoreLine}\n${findings}${footer}`, 195);
 
   // feed 템플릿은 content.imageUrl 이 필수이고, 이미지 로드 실패 시 공유가 조용히
   // 막힌다. 측정 요약은 텍스트 중심이므로 이미지 의존이 없는 'text' 템플릿을 사용한다.
@@ -477,7 +484,7 @@ export function buildKakaoFeedTemplate(summaryInput = {}, options = {}) {
       mobileWebUrl: webUrl,
       webUrl,
     },
-    buttonTitle: options.buttonTitle || '앱/웹에서 자세히 보기',
+    buttonTitle: options.buttonTitle || '몸가짐운동센터 블로그',
   };
 }
 

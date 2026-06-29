@@ -49,11 +49,12 @@ export async function shareMeasurementSummaryToKakao(summaryInput, opts = {}) {
     return { ok: false, msg: '카카오 SDK를 불러오지 못했습니다. 네트워크를 확인하세요.' };
   }
   try {
+    // webUrl 을 현재 페이지(관리 앱)로 강제하지 않는다 — 회원은 앱 접근 권한이 없으므로
+    // 링크 기본값(센터 블로그)이 적용되도록 opts.webUrl 이 있을 때만 전달한다.
     await shareSummaryToKakao(summaryInput, {
       ...opts,
       Kakao,
       javascriptKey: KAKAO_JS_KEY,
-      webUrl: opts.webUrl || (typeof window !== 'undefined' ? window.location.href : ''),
     });
     return { ok: true, msg: '카카오톡 공유 창을 열었습니다.' };
   } catch (e) {

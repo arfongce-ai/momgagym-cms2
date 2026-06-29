@@ -45,10 +45,9 @@ describe('카카오톡 공유 래퍼', () => {
     // 상위 3건만 포함(4·5번 소견은 제외).
     expect(t.text).toContain('소견 1');
     expect(t.text).not.toContain('소견 4');
-    expect(t.buttonTitle).toBe('앱/웹에서 자세히 보기');
+    expect(t.buttonTitle).toBe('몸가짐운동센터 블로그');
   });
 });
-<<<<<<< HEAD
 
 describe('카카오 공유 점수 표시 (회귀)', () => {
   it('buildSummaryData 결과(overallScore)를 넘겨도 점수가 undefined 가 아니다', async () => {
@@ -62,5 +61,15 @@ describe('카카오 공유 점수 표시 (회귀)', () => {
     expect(t.text).toContain(`종합 ${summary.overallScore}/100`);
   });
 });
-=======
->>>>>>> 2595ee22decf459b5fa71edd2e6cd1ef5e6740eb
+
+describe('카카오 공유 링크 (회원용)', () => {
+  it('webUrl 옵션이 없으면 링크가 센터 블로그로 향한다', () => {
+    const t = buildKakaoFeedTemplate(sampleSummary);
+    expect(t.link.webUrl).toBe('https://blog.naver.com/posture_gym');
+    expect(t.link.mobileWebUrl).toBe('https://blog.naver.com/posture_gym');
+  });
+  it('텍스트에 인스타 안내가 포함된다', () => {
+    const t = buildKakaoFeedTemplate(sampleSummary);
+    expect(t.text).toContain('@posture_gym_official');
+  });
+});
