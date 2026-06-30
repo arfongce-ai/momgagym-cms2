@@ -97,7 +97,7 @@ describe('unified report utilities', () => {
     const template = buildKakaoFeedTemplate(summary, { webUrl: 'https://example.com/report' });
     expect(template.objectType).toBe('text');
     expect(template.text).toContain('몸가짐CMS 측정 결과 요약');
-    expect(template.text).toContain('몸가짐 블로그');
+    expect(template.text).toContain('몸가짐 트레이너와 상담 후 운동하세요.');
     expect(template.text).not.toContain('https://');
     expect(template.buttonTitle).toBe('블로그 보기');
     expect(template.link.webUrl).toBe(`https://example.com${MOMGAGYM_BLOG_REDIRECT_PATH}`);

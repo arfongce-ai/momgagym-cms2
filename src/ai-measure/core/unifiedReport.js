@@ -489,7 +489,7 @@ export function buildKakaoFeedTemplate(summaryInput = {}, options = {}) {
   const header = summary.title || '몸가짐CMS 측정 결과 요약';
   const scoreLine = `${summary.statusLabel || ''} · 종합 ${score}/100`.trim();
   const blogUrl = resolveBlogRedirectUrl(options.webUrl || summary.webUrl);
-  const text = clampText(`${header}\n${scoreLine}${findings ? `\n${findings}` : ''}\n몸가짐 블로그에서 자세히 확인하세요.`, 280);
+  const text = clampText(`${header}\n${scoreLine}${findings ? `\n${findings}` : ''}\n몸가짐 트레이너와 상담 후 운동하세요.`, 280);
 
   return {
     objectType: 'text',

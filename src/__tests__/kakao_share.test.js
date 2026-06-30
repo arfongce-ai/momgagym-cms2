@@ -56,7 +56,7 @@ describe('카카오 공유 링크 (회원용)', () => {
     const t = buildKakaoFeedTemplate(sampleSummary, { webUrl: 'https://momgagym-cms2.pages.dev/report' });
     expect(t.link.webUrl).toBe('https://momgagym-cms2.pages.dev/blog');
     expect(t.link.mobileWebUrl).toBe('https://momgagym-cms2.pages.dev/blog');
-    expect(t.text).toContain('몸가짐 블로그');
+    expect(t.text).toContain('몸가짐 트레이너와 상담 후 운동하세요.');
     expect(t.text).not.toContain('https://');
   });
 });
