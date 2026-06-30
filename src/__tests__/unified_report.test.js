@@ -94,10 +94,9 @@ describe('unified report utilities', () => {
 
     expect(summary.topFindings).toHaveLength(3);
     const template = buildKakaoFeedTemplate(summary, { webUrl: 'https://example.com/report' });
-    expect(template.objectType).toBe('text');
-    expect(template.text).toContain('몸가짐CMS 측정 결과 요약');
-    expect(template.text).toContain('blog.naver.com/posture_gym');
-    expect(template.link.webUrl).toBe('https://blog.naver.com/posture_gym');
+    expect(template.objectType).toBe('feed');
+    expect(template.content.title).toBe('몸가짐CMS 측정 결과 요약');
+    expect(template.buttons[0].title).toBe('앱/웹에서 자세히 보기');
   });
 
   it('Kakao SDK의 Share.sendDefault를 호출한다', () => {
@@ -115,6 +114,6 @@ describe('unified report utilities', () => {
     }, { Kakao, webUrl: 'https://example.com/report' });
 
     expect(sendDefault).toHaveBeenCalledTimes(1);
-    expect(sendDefault.mock.calls[0][0].objectType).toBe('text');
+    expect(sendDefault.mock.calls[0][0].objectType).toBe('feed');
   });
 });

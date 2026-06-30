@@ -226,12 +226,11 @@ let __loadPromise = null;
 // ── 새로고침 캐시(localStorage) ──────────────────────────────
 // 모듈 싱글턴 캐시는 새로고침(F5)·새 탭이면 사라져 매번 전 컬렉션을 다시 읽는다.
 // 짧은 TTL 동안 localStorage 스냅샷에서 복원하면 새로고침 직후 재접속은 읽기 0건.
-// 운영 데이터지만 신선도 요구가 분 단위는 아니므로 TTL 을 30분으로 둔다(읽기 대폭 절감).
-// 본인 쓰기는 캐시에 즉시 반영(__refreshSnapshot)되므로, TTL 을 늘려도 본인 편집 결과는
-// 새로고침에도 그대로 유지된다. 다른 사용자의 변경은 최대 TTL 만큼 지연될 수 있으며,
-// 즉시 최신화가 필요하면 initStore({ force:true }) 로 새로 읽는다.
-const __SNAP_TTL_MS = 30 * 60 * 1000;
+// 운영 데이터라 신선도가 중요하므로 TTL 은 짧게(5분). 본인 쓰기는 캐시에 즉시
+// 반영되고 스냅샷도 갱신되므로 본인 편집은 항상 최신. 다른 기기의 변경만 최대
+// TTL 만큼 지연될 수 있다. force 로딩 시에는 캐시를 무시하고 새로 읽는다.
 const __SNAP_KEY = 'fitcms_snap';
+const __SNAP_TTL_MS = 5 * 60 * 1000;
 const __SNAP_VER = DATA_VERSION;
 
 function __readSnapshot() {

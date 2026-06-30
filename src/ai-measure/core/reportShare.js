@@ -14,11 +14,7 @@
 //  · 실패 시 throw 하지 않고 { ok:false, msg } 를 돌려 UI 가 친절히 안내하게 한다.
 import { shareSummaryToKakao } from './unifiedReport';
 
-// JS 키: 우선 빌드 환경변수(VITE_KAKAO_JS_KEY)를 쓰고, 주입되지 않은 경우를 대비해
-// 동일한 공개 JS 키를 폴백으로 둔다. JS 키는 브라우저에 공개되는 키이며 SDK 도메인으로
-// 사용이 제한되므로 코드에 포함해도 안전하다(카카오 공식 권장 방식).
-const KAKAO_JS_KEY = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_KAKAO_JS_KEY)
-  || '6c65f624d2e0a9f6f8e5d42fa8eb285a';
+const KAKAO_JS_KEY = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_KAKAO_JS_KEY) || '';
 
 async function waitForKakao(timeoutMs = 3000) {
   if (typeof window === 'undefined') return null;
@@ -35,10 +31,9 @@ async function waitForKakao(timeoutMs = 3000) {
 }
 
 /**
- * 측정 요약을 카카오톡으로 공유(text 템플릿, 버튼 없음).
- * 블로그·인스타는 빌더가 텍스트 안 링크로 고정 삽입한다(회원이 바로 접근 가능).
+ * 측정 요약을 카카오톡으로 공유.
  * @param {object} summaryInput  통합 summary 또는 리포트(빌더가 요약 추출)
- * @param {object} opts          { memberName, title }
+ * @param {object} opts          { webUrl, memberName, title, buttonTitle, imageUrl }
  * @returns {Promise<{ok, msg}>}  실패해도 throw 하지 않음
  */
 export async function shareMeasurementSummaryToKakao(summaryInput, opts = {}) {
@@ -54,6 +49,7 @@ export async function shareMeasurementSummaryToKakao(summaryInput, opts = {}) {
       ...opts,
       Kakao,
       javascriptKey: KAKAO_JS_KEY,
+      webUrl: opts.webUrl || (typeof window !== 'undefined' ? window.location.href : ''),
     });
     return { ok: true, msg: '카카오톡 공유 창을 열었습니다.' };
   } catch (e) {

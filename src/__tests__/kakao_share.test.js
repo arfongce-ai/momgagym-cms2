@@ -18,8 +18,8 @@ const sampleSummary = {
 afterEach(() => { if (typeof globalThis.window !== 'undefined') delete globalThis.window; });
 
 describe('카카오톡 공유 래퍼', () => {
-  it('SDK가 없으면 throw 하지 않고 안내 메시지를 반환한다', async () => {
-    // 테스트(node)에는 window.Kakao 가 없으므로 ok:false 안내가 나와야 한다.
+  it('키가 없으면 throw 하지 않고 안내 메시지를 반환한다', async () => {
+    // 테스트 환경엔 VITE_KAKAO_JS_KEY 가 없으므로 ok:false 안내가 나와야 한다.
     const res = await shareMeasurementSummaryToKakao(sampleSummary);
     expect(res.ok).toBe(false);
     expect(typeof res.msg).toBe('string');
@@ -32,52 +32,16 @@ describe('카카오톡 공유 래퍼', () => {
     await shareSummaryToKakao(sampleSummary, { Kakao });
     expect(sendDefault).toHaveBeenCalledTimes(1);
     const sentTemplate = sendDefault.mock.calls[0][0];
-    expect(sentTemplate.objectType).toBe('text');
-    expect(sentTemplate.text).toContain('몸가짐CMS');
-    expect(sentTemplate.link).toBeTruthy();
+    expect(sentTemplate.objectType).toBe('feed');
+    expect(sentTemplate.itemContent.items.length).toBe(3);
+    expect(sentTemplate.content.title).toContain('몸가짐CMS');
   });
 
-  it('text 템플릿은 종합점수와 상위 3건을 담고 링크 버튼을 가진다', () => {
+  it('Feed 템플릿은 종합점수와 상위 3건만 담는다', () => {
     const many = { ...sampleSummary, topFindings: [1,2,3,4,5].map(n => ({ text: `소견 ${n}` })) };
     const t = buildKakaoFeedTemplate(many);
-    expect(t.objectType).toBe('text');
-    expect(t.text).toContain('72');
-    // 상위 3건만 포함(4·5번 소견은 제외).
-    expect(t.text).toContain('소견 1');
-    expect(t.text).not.toContain('소견 4');
-    expect(t.text).toContain('blog.naver.com/posture_gym');
-  });
-});
-
-describe('카카오 공유 점수 표시 (회귀)', () => {
-  it('buildSummaryData 결과(overallScore)를 넘겨도 점수가 undefined 가 아니다', async () => {
-    const { buildKakaoFeedTemplate, buildSummaryData } = await import('../ai-measure/core/unifiedReport');
-    // 실제 앱 흐름: Report.jsx 가 buildSummaryData 결과(summary)를 그대로 공유에 넘긴다.
-    const summary = buildSummaryData({ kind: 'jump', heightCm: 42, member: { id: 'm1' } }, { reportType: 'jump' });
-    expect(summary.overallScore).toBeGreaterThanOrEqual(0);
-    const t = buildKakaoFeedTemplate(summary);
-    expect(t.objectType).toBe('text');
-    expect(t.text).not.toContain('undefined');
-    expect(t.text).toContain(`종합 ${summary.overallScore}/100`);
-  });
-});
-
-describe('카카오 공유 링크 (회원용)', () => {
-  it('webUrl 옵션이 없으면 링크가 센터 블로그로 향한다', () => {
-    const t = buildKakaoFeedTemplate(sampleSummary);
-    expect(t.link.webUrl).toBe('https://blog.naver.com/posture_gym');
-    expect(t.link.mobileWebUrl).toBe('https://blog.naver.com/posture_gym');
-  });
-  it('텍스트에 인스타 안내가 포함된다', () => {
-    const t = buildKakaoFeedTemplate(sampleSummary);
-    expect(t.text).toContain('instagram.com/posture_gym_official');
-  });
-});
-
-describe('카카오 공유 링크 블로그 강제 (회원용)', () => {
-  it('호출부가 앱 주소(webUrl)를 넘겨도 무시하고 블로그로 고정한다', () => {
-    const t = buildKakaoFeedTemplate(sampleSummary, { webUrl: 'https://momgagym-cms2.pages.dev/report' });
-    expect(t.link.webUrl).toBe('https://blog.naver.com/posture_gym');
-    expect(t.link.mobileWebUrl).toBe('https://blog.naver.com/posture_gym');
+    expect(t.itemContent.items.length).toBe(3);
+    expect(t.itemContent.titleImageText).toContain('72');
+    expect(t.buttons[0].title).toBe('앱/웹에서 자세히 보기');
   });
 });
