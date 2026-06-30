@@ -10,204 +10,146 @@ export function formatRecordTime(sec = 0) {
   const safe = Math.max(0, Math.floor(Number(sec) || 0));
   return `${String(Math.floor(safe / 60)).padStart(2, '0')}:${String(safe % 60).padStart(2, '0')}`;
 }
+export function drawMeasurementOverlay(ctx, width, height, opts = {}) {
+  const { title = '', elapsedMs = null, metrics = [], accent = '#fbbf24' } = opts;
+  const items = (metrics || []).filter(m => m && m.value != null && m.value !== '');
+  if (!title && !items.length && elapsedMs == null) return;
 
-function roundRect(ctx, x, y, w, h, r) {
-  const radius = Math.min(r, w / 2, h / 2);
-  ctx.beginPath();
-  ctx.moveTo(x + radius, y);
-  ctx.arcTo(x + w, y, x + w, y + h, radius);
-  ctx.arcTo(x + w, y + h, x, y + h, radius);
-  ctx.arcTo(x, y + h, x, y, radius);
-  ctx.arcTo(x, y, x + w, y, radius);
-  ctx.closePath();
-}
-
-function hexToRgba(hex, alpha = 1) {
-  const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex || '');
-  if (!m) return `rgba(34,211,238,${alpha})`;
-  const [r, g, b] = m.slice(1).map(v => parseInt(v, 16));
-  return `rgba(${r},${g},${b},${alpha})`;
-}
-
-function drawCornerFrame(ctx, width, height, scale, accent) {
-  const pad = 18 * scale;
-  const len = Math.min(width, height) * 0.105;
-  const corners = [
-    [pad, pad, 1, 1],
-    [width - pad, pad, -1, 1],
-    [pad, height - pad, 1, -1],
-    [width - pad, height - pad, -1, -1],
-  ];
-
-  ctx.save();
-  ctx.strokeStyle = hexToRgba(accent, 0.86);
-  ctx.lineWidth = Math.max(2, 2.4 * scale);
-  ctx.shadowColor = hexToRgba(accent, 0.46);
-  ctx.shadowBlur = 14 * scale;
-  corners.forEach(([x, y, sx, sy]) => {
-    ctx.beginPath();
-    ctx.moveTo(x, y + sy * len);
-    ctx.lineTo(x, y);
-    ctx.lineTo(x + sx * len, y);
-    ctx.stroke();
-  });
-  ctx.restore();
-}
-
-function drawVerticalBars(ctx, x, y, scale, accent, values = [0.42, 0.72, 0.55, 0.88]) {
-  const barW = 7 * scale;
-  const barH = 54 * scale;
-  const gap = 5 * scale;
-
-  ctx.save();
-  values.forEach((v, i) => {
-    const bx = x + i * (barW + gap);
-    roundRect(ctx, bx, y, barW, barH, barW / 2);
-    ctx.fillStyle = 'rgba(15,23,42,0.58)';
-    ctx.fill();
-
-    const fillH = Math.max(4 * scale, barH * Math.max(0.08, Math.min(1, v)));
-    roundRect(ctx, bx, y + barH - fillH, barW, fillH, barW / 2);
-    ctx.fillStyle = i % 2 ? hexToRgba(accent, 0.9) : 'rgba(34,211,238,0.9)';
-    ctx.shadowColor = ctx.fillStyle;
-    ctx.shadowBlur = 8 * scale;
-    ctx.fill();
-  });
-  ctx.restore();
-}
-
-export function drawFutureHud(ctx, width, height, opts = {}) {
-  const {
-    title = 'AI LIVE',
-    elapsedMs = null,
-    metrics = [],
-    accent = '#22d3ee',
-    recording = false,
-  } = opts;
+  // 데이터-only HUD: 좌상단 제목칩 + 경과시간, 좌하단 측정값 패널. 장식 없음.
   const scale = Math.max(0.72, Math.min(1.45, width / 720));
   const pad = 16 * scale;
-  const items = (metrics || []).filter(m => m && m.value != null && m.value !== '').slice(0, 4);
-
+  const measureW = (s) => {
+    try { return ctx.measureText ? ctx.measureText(s).width : String(s).length * 8 * scale; }
+    catch (e) { return String(s).length * 8 * scale; }
+  };
   ctx.save();
-  ctx.textBaseline = 'middle';
+  ctx.textBaseline = 'top';
 
-  drawCornerFrame(ctx, width, height, scale, accent);
-
-  if (typeof ctx.createLinearGradient === 'function') {
-    const scan = ctx.createLinearGradient(width * 0.12, height * 0.5, width * 0.88, height * 0.5);
-    scan.addColorStop(0, 'rgba(34,211,238,0)');
-    scan.addColorStop(0.5, 'rgba(34,211,238,0.44)');
-    scan.addColorStop(1, 'rgba(245,158,11,0)');
-    ctx.strokeStyle = scan;
-  } else {
-    ctx.strokeStyle = 'rgba(34,211,238,0.44)';
+  // 상단: 제목 + (선택)경과시간.
+  const chipH = 30 * scale;
+  const titleStr = String(title || (elapsedMs != null ? 'REC' : 'LIVE')).toUpperCase();
+  ctx.font = `800 ${12 * scale}px system-ui, sans-serif`;
+  const titleW = measureW(titleStr) + 34 * scale;
+  ctx.fillStyle = 'rgba(0,0,0,0.5)';
+  ctx.fillRect(pad, pad, titleW, chipH);
+  if (elapsedMs != null) {
+    ctx.fillStyle = '#ef4444';
+    ctx.beginPath();
+    ctx.arc(pad + 14 * scale, pad + chipH / 2, 4.6 * scale, 0, Math.PI * 2);
+    ctx.fill();
   }
-  ctx.lineWidth = Math.max(1, 1.1 * scale);
-  ctx.beginPath();
-  ctx.moveTo(width * 0.12, height * 0.5);
-  ctx.lineTo(width * 0.88, height * 0.5);
-  ctx.stroke();
-
-  const chipW = 128 * scale;
-  const chipH = 32 * scale;
-  roundRect(ctx, pad, pad, chipW, chipH, chipH / 2);
-  ctx.fillStyle = 'rgba(2,6,23,0.58)';
-  ctx.fill();
-  ctx.strokeStyle = hexToRgba(accent, 0.28);
-  ctx.stroke();
-  ctx.fillStyle = recording ? '#ef4444' : accent;
-  ctx.beginPath();
-  ctx.arc(pad + 17 * scale, pad + chipH / 2, 4.8 * scale, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = '#ecfeff';
-  ctx.font = `900 ${11 * scale}px system-ui, sans-serif`;
-  ctx.fillText(String(title || (recording ? 'REC ACTIVE' : 'AI LIVE')).toUpperCase(), pad + 30 * scale, pad + chipH / 2);
+  ctx.fillStyle = '#f1f5f9';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(titleStr, pad + 24 * scale, pad + chipH / 2);
 
   if (elapsedMs != null) {
     const time = formatRecordTime(Math.floor(elapsedMs / 1000));
-    const timeW = 96 * scale;
-    roundRect(ctx, width - pad - timeW, pad, timeW, chipH, chipH / 2);
-    ctx.fillStyle = 'rgba(2,6,23,0.58)';
-    ctx.fill();
-    ctx.fillStyle = '#fff7ed';
     ctx.font = `800 ${13 * scale}px ui-monospace, Menlo, monospace`;
+    const tW = measureW(time) + 20 * scale;
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    ctx.fillRect(width - pad - tW, pad, tW, chipH);
+    ctx.fillStyle = '#fff7ed';
     ctx.textAlign = 'center';
-    ctx.fillText(time, width - pad - timeW / 2, pad + chipH / 2);
+    ctx.fillText(time, width - pad - tW / 2, pad + chipH / 2);
     ctx.textAlign = 'left';
   }
 
-  drawVerticalBars(ctx, pad, height * 0.26, scale, accent);
-
-  const ringR = 28 * scale;
-  const ringX = width - pad - ringR;
-  const ringY = height * 0.28;
-  ctx.beginPath();
-  ctx.arc(ringX, ringY, ringR, 0, Math.PI * 2);
-  ctx.strokeStyle = 'rgba(255,255,255,0.18)';
-  ctx.lineWidth = 6 * scale;
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.arc(ringX, ringY, ringR, -Math.PI / 2, Math.PI * 1.32);
-  ctx.strokeStyle = hexToRgba(accent, 0.9);
-  ctx.stroke();
-  ctx.fillStyle = '#e0f2fe';
-  ctx.font = `900 ${12 * scale}px ui-monospace, Menlo, monospace`;
-  ctx.textAlign = 'center';
-  ctx.fillText('82', ringX, ringY);
-  ctx.textAlign = 'left';
-
+  // 하단: 측정값 패널(라벨 + 값). 실제 데이터만.
   if (items.length) {
-    const panelW = Math.min(width * 0.38, 232 * scale);
     const rowH = 30 * scale;
-    const panelH = items.length * rowH + 20 * scale;
+    const panelW = Math.min(width * 0.6, 300 * scale);
+    const panelH = items.length * rowH + 16 * scale;
     const panelX = pad;
     const panelY = height - pad - panelH;
-    roundRect(ctx, panelX, panelY, panelW, panelH, 16 * scale);
-    ctx.fillStyle = 'rgba(2,6,23,0.46)';
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(255,255,255,0.12)';
-    ctx.stroke();
-
-    items.forEach((m, i) => {
-      const y = panelY + 15 * scale + i * rowH;
-      ctx.fillStyle = 'rgba(203,213,225,0.66)';
-      ctx.font = `800 ${9 * scale}px system-ui, sans-serif`;
-      ctx.fillText(String(m.label || '').toUpperCase(), panelX + 12 * scale, y + 3 * scale);
-      ctx.fillStyle = '#f8fafc';
-      ctx.font = `900 ${16 * scale}px ui-monospace, Menlo, monospace`;
-      ctx.fillText(String(m.value), panelX + 92 * scale, y + 3 * scale);
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    ctx.fillRect(panelX, panelY, panelW, panelH);
+    items.slice(0, 4).forEach((m, i) => {
+      const y = panelY + 8 * scale + i * rowH + rowH / 2;
+      ctx.textBaseline = 'middle';
+      ctx.font = `700 ${10 * scale}px system-ui, sans-serif`;
+      ctx.fillStyle = 'rgba(203,213,225,0.82)';
+      ctx.textAlign = 'left';
+      ctx.fillText(String(m.label || '').toUpperCase(), panelX + 12 * scale, y);
+      ctx.font = `800 ${15 * scale}px ui-monospace, Menlo, monospace`;
+      ctx.fillStyle = i === 0 ? accent : '#f8fafc';
+      ctx.textAlign = 'right';
+      ctx.fillText(String(m.value), panelX + panelW - 12 * scale, y);
+      ctx.textAlign = 'left';
     });
   }
+  ctx.restore();
+}
+
+// ════════════════════════════════════════════════════════════════════════
+//  바벨 리프팅 데이터-only HUD (장식 없음 · 측정 필수값만 영상에 번인)
+//   · drawRomHud 와 동일 철학: 반투명 박스 + 실제 측정 수치만.
+//   · 코너 프레임/스캔라인/가짜 게이지/링 등 SF 장식은 일절 그리지 않는다.
+//   · 표시 항목: 수직이동(cm) · 평균속도(m/s) · 경과시간(s). 값이 없으면 '--'.
+//   (바벨 궤적선은 이 함수가 아니라 호출부에서 실제 추적 경로를 그린다.)
+// ════════════════════════════════════════════════════════════════════════
+export function drawLiftingDataHud(ctx, width, height, data = {}) {
+  const { romCm = null, meanVelocity = null, elapsedSec = null, recording = false } = data;
+  const pad = Math.round(width * 0.03);
+  const fs = Math.max(15, Math.round(width / 30));
+  const r2 = (x) => (Number.isFinite(x) ? Math.round(x * 10) / 10 : null);
+
+  ctx.save();
+  ctx.textBaseline = 'top';
+
+  // 좌상단: REC 점 + 경과시간(녹화 중일 때만 점 표시).
+  const timeStr = Number.isFinite(elapsedSec) ? `${elapsedSec.toFixed(1)}s` : '0.0s';
+
+  const lines = [
+    { label: '수직이동', value: r2(romCm) == null ? '--' : `${r2(romCm)} cm` },
+    { label: '평균속도', value: r2(meanVelocity) == null ? '--' : `${r2(meanVelocity)} m/s` },
+    { label: '경과', value: timeStr },
+  ];
+
+  const boxW = Math.round(width * 0.5);
+  const rowH = fs + 8;
+  const boxH = pad + lines.length * rowH;
+  ctx.fillStyle = 'rgba(0,0,0,0.5)';
+  ctx.fillRect(pad, pad, boxW, boxH);
+
+  // 녹화 표시 점.
+  if (recording) {
+    ctx.fillStyle = '#ef4444';
+    ctx.beginPath();
+    ctx.arc(pad + 12, pad + 12, Math.max(4, fs * 0.28), 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  lines.forEach((ln, i) => {
+    const y = pad + 6 + i * rowH;
+    ctx.font = `600 ${Math.round(fs * 0.72)}px sans-serif`;
+    ctx.fillStyle = 'rgba(203,213,225,0.85)';
+    ctx.fillText(ln.label, pad + (recording && i === 0 ? 30 : 12), y + 2);
+    ctx.font = `800 ${fs}px ui-monospace, Menlo, monospace`;
+    ctx.fillStyle = i === 1 ? 'rgba(251,191,36,0.97)' : 'rgba(248,250,252,0.97)';
+    ctx.textAlign = 'right';
+    ctx.fillText(String(ln.value), pad + boxW - 12, y);
+    ctx.textAlign = 'left';
+  });
 
   ctx.restore();
 }
 
-export function drawRecordingHud(ctx, width, height, state = {}) {
-  drawFutureHud(ctx, width, height, {
-    title: state.toolTab === 'metronome' ? 'METRO' : 'TIMER',
-    elapsedMs: (state.recordingElapsed || 0) * 1000,
-    recording: true,
-    accent: '#f59e0b',
-    metrics: [
-      { label: 'mode', value: state.toolTab === 'metronome' ? 'BPM' : 'TIME' },
-      {
-        label: 'value',
-        value: state.toolTab === 'metronome'
-          ? `${state.metronomeBpm || 100}`
-          : formatStopwatch(state.stopwatchElapsed || 0),
-      },
-    ],
+/**
+ * 바벨 궤적선을 녹화 캔버스에 그린다(실제 추적 경로 · 장식 아님).
+ * @param {Array<{x:number,y:number}>} path 정규화(0~1) 좌표 배열
+ */
+export function drawBarPathToRecord(ctx, path, width, height) {
+  if (!Array.isArray(path) || path.length < 2) return;
+  ctx.save();
+  ctx.strokeStyle = 'rgba(34,211,238,0.95)';
+  ctx.lineWidth = Math.max(4, width / 160);
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.beginPath();
+  path.forEach((q, i) => {
+    const X = q.x * width, Y = q.y * height;
+    i === 0 ? ctx.moveTo(X, Y) : ctx.lineTo(X, Y);
   });
-}
-
-export function drawMeasurementOverlay(ctx, width, height, opts = {}) {
-  const { title = '', elapsedMs = null, metrics = [], accent = '#fbbf24' } = opts;
-  if (!title && !metrics?.length && elapsedMs == null) return;
-  drawFutureHud(ctx, width, height, {
-    title,
-    elapsedMs,
-    metrics,
-    accent,
-    recording: elapsedMs != null,
-  });
+  ctx.stroke();
+  ctx.restore();
 }

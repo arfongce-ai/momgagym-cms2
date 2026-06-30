@@ -12,6 +12,8 @@ import { createMultiTracker } from '../core/endcapTracker';
 import { assessFraming, FRAMING_PRESETS } from '../core/framingGuide';
 import { totalWeight } from '../core/plates';
 import { exerciseLabel as exerciseLabelLocal } from '../core/lifting';
+import { saveVideoToPhone, pickRecorderMime } from '../core/recordSink';
+import { drawLiftingDataHud, drawBarPathToRecord } from '../core/recordingOverlay';
 import PlateWeightInput from './PlateWeightInput';
 import FramingIntro from './FramingIntro';
 import HeightField from './HeightField';
@@ -26,6 +28,20 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
   const recordingRef = useRef(false);
   const seededRef = useRef(false);
   const framingRef = useRef({ level: 'bad', message: '' });
+
+  // ── 녹화(MediaRecorder) — 영상 위에 바벨 궤적선 + 데이터HUD를 합성해 번인.
+  //    측정 데이터는 Firestore, 영상 blob 은 트레이너 폰(saveVideoToPhone)으로 분리 저장.
+  const mediaRecorderRef = useRef(null);
+  const chunksRef = useRef([]);
+  const recordCanvasRef = useRef(null);     // 합성용 오프스크린 캔버스
+  const composeRafRef = useRef(null);        // 합성 루프
+  const recordStreamRef = useRef(null);      // 캔버스 captureStream
+  const recordStartRef = useRef(0);          // 녹화 시작 시각(ms)
+  const liveHudRef = useRef({ romCm: null, meanVelocity: null }); // 번인용 실시간 값
+  const videoBlobRef = useRef(null);
+  const [videoBlob, setVideoBlob] = useState(null);
+  const [savingVideo, setSavingVideo] = useState(false);
+  const [videoSavedMsg, setVideoSavedMsg] = useState('');
 
   const [recording, setRecording] = useState(false);
   const [seeded, setSeeded] = useState(false);
@@ -65,6 +81,18 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
       if (recordingRef.current) {
         frameStatsRef.current.total += 1;
         if (act === 0) frameStatsRef.current.lost += 1;
+        // 번인용 실시간 값: 누적 궤적 → cm/평균속도(키 보정 가능 시).
+        const live = cap.summary();
+        if (live) {
+          const H = Number(heightCm) || null;
+          const ph = phRef.current;
+          const cm = romToCm(live.romRatio, ph, H);
+          const sec = live.durationMs / 1000;
+          liveHudRef.current = {
+            romCm: cm,
+            meanVelocity: cm && sec ? Math.round((cm / 100 / sec) * 100) / 100 : null,
+          };
+        }
       }
 
       const path = cap.path();
@@ -94,7 +122,7 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
       }
       ctx.restore();
     }
-  }, [activePts]);
+  }, [activePts, heightCm]);
 
   const { videoRef, start, stop, status, error } = usePoseEngine({ onResult: handleResult });
 
@@ -106,7 +134,14 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
   useEffect(() => {
     const v = videoRef.current;
     if (v) v.addEventListener('loadedmetadata', syncCanvas);
-    return () => { if (v) v.removeEventListener('loadedmetadata', syncCanvas); stop(); };
+    return () => {
+      if (v) v.removeEventListener('loadedmetadata', syncCanvas);
+      stop();
+      stopCompose();
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+        try { mediaRecorderRef.current.stop(); } catch (e) { /* noop */ }
+      }
+    };
   }, [syncCanvas, stop]);
 
   const startCam = () => {
@@ -114,9 +149,55 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
     seededRef.current = false; setSeeded(false);
     setPtCount(0); setActivePts(0);
     capRef.current.clear();
+    setVideoBlob(null); videoBlobRef.current = null; setVideoSavedMsg('');
     start();
   };
-  const closeCam = () => { stop(); recordingRef.current = false; setRecording(false); };
+  const closeCam = () => {
+    stop();
+    recordingRef.current = false;
+    setRecording(false);
+    stopCompose();
+  };
+
+  // 합성 루프/스트림 정리.
+  const stopCompose = () => {
+    if (composeRafRef.current) { cancelAnimationFrame(composeRafRef.current); composeRafRef.current = null; }
+    if (recordStreamRef.current) { recordStreamRef.current.getTracks().forEach(t => t.stop()); recordStreamRef.current = null; }
+  };
+
+  // 녹화용 합성 스트림: 카메라 영상 + 바벨 궤적선 + 데이터HUD 를 오프스크린
+  // 캔버스에 매 프레임 그려 captureStream 으로 뽑는다(RomMeasure 와 동일 구조).
+  const createRecordedStream = () => {
+    const video = videoRef.current;
+    const vw = video?.videoWidth || 720;
+    const vh = video?.videoHeight || 1280;
+    const canvas = recordCanvasRef.current || document.createElement('canvas');
+    canvas.width = vw; canvas.height = vh;
+    recordCanvasRef.current = canvas;
+    const ctx = canvas.getContext('2d', { alpha: false });
+    const draw = () => {
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      if (video && video.videoWidth) ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      // 실제 추적 궤적선(장식 아님).
+      drawBarPathToRecord(ctx, capRef.current.path(), canvas.width, canvas.height);
+      // 데이터-only HUD: 수직이동(cm) · 평균속도 · 경과시간.
+      const elapsedSec = recordingRef.current ? (performance.now() - recordStartRef.current) / 1000 : null;
+      drawLiftingDataHud(ctx, canvas.width, canvas.height, {
+        romCm: liveHudRef.current.romCm,
+        meanVelocity: liveHudRef.current.meanVelocity,
+        elapsedSec,
+        recording: recordingRef.current,
+      });
+      composeRafRef.current = requestAnimationFrame(draw);
+    };
+    if (composeRafRef.current) cancelAnimationFrame(composeRafRef.current);
+    draw();
+    const canvasStream = canvas.captureStream ? canvas.captureStream(30) : null;
+    if (!canvasStream) return null;
+    recordStreamRef.current = canvasStream;
+    return canvasStream;
+  };
 
   const onTapVideo = (e) => {
     const v = videoRef.current;
@@ -145,12 +226,40 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
       capRef.current.reset();
       phSamplesRef.current = [];
       frameStatsRef.current = { total: 0, lost: 0 };
+      liveHudRef.current = { romCm: null, meanVelocity: null };
+      recordStartRef.current = performance.now();
       recordingRef.current = true;
       setRecording(true);
       setResult(null);
+      setVideoBlob(null); videoBlobRef.current = null; setVideoSavedMsg('');
+      // MediaRecorder 시작(지원 시). 미지원이면 측정만 진행(영상 없음).
+      try {
+        chunksRef.current = [];
+        const stream = createRecordedStream();
+        if (stream) {
+          const mime = pickRecorderMime();
+          const mr = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+          mediaRecorderRef.current = mr;
+          mr.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
+          mr.onstop = () => {
+            stopCompose();
+            const type = mr.mimeType || 'video/webm';
+            const blob = new Blob(chunksRef.current, { type });
+            videoBlobRef.current = blob;
+            setVideoBlob(blob);
+          };
+          mr.start(1000);
+        }
+      } catch (e) { mediaRecorderRef.current = null; }
     } else {
       recordingRef.current = false;
       setRecording(false);
+      // 레코더 종료 → onstop 에서 blob 확정.
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+        try { mediaRecorderRef.current.stop(); } catch (e) { stopCompose(); }
+      } else {
+        stopCompose();
+      }
       const sum = capRef.current.summary();
       if (!sum) { alert('기록된 움직임이 부족합니다. 다시 측정하세요.'); return; }
       const fs = frameStatsRef.current;
@@ -166,6 +275,25 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
       const velocity = cm && sec ? Math.round((cm / 100 / sec) * 100) / 100 : null;
       setResult({ ...sum, romCm: cm, sec: Math.round(sec * 100) / 100, velocity });
     }
+  };
+
+  // 녹화 영상을 트레이너 폰에 저장(몸가짐ai 파일명).
+  const handleSaveVideo = async () => {
+    const blob = videoBlobRef.current || videoBlob;
+    if (!blob) { alert('저장할 녹화 영상이 없습니다.'); return; }
+    setSavingVideo(true);
+    try {
+      const res = await saveVideoToPhone(blob, {
+        measure: exerciseType ? exerciseLabelLocal(exerciseType) : '역도',
+        member,
+      });
+      setVideoSavedMsg(res.saved
+        ? (res.method === 'share' ? '저장/공유 창을 열었습니다.' : '영상을 다운로드했습니다.')
+        : '저장이 취소되었습니다.');
+    } catch (e) {
+      setVideoSavedMsg('영상 저장에 실패했습니다.');
+    }
+    setSavingVideo(false);
   };
 
   const save = () => {
@@ -230,20 +358,6 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
         videoRef={videoRef} canvasRef={canvasRef} status={status} error={error}
         onTapVideo={onTapVideo} onClose={closeCam} topBar={topBar} controls={controls}
         recording={recording}
-        overlay={{
-          mode: 'LIFT',
-          primary: 'BAR PATH',
-          secondary: recording ? `TRACK ${activePts}/${ptCount}` : 'SET POINT',
-          metrics: [
-            { label: 'path', value: recording ? 72 : 42 },
-            { label: 'track', value: ptCount ? (activePts / ptCount) * 100 : 12 },
-          ],
-          gauges: [
-            { label: 'PATH', value: recording ? 'REC' : 'READY', percent: recording ? 82 : 42, tone: recording ? 'emerald' : 'amber' },
-            { label: 'TRACK', value: `${activePts}/${ptCount || 0}`, percent: ptCount ? (activePts / ptCount) * 100 : 12, tone: activePts > 0 ? 'blue' : 'amber' },
-          ],
-          ringLabel: activePts,
-        }}
       >
         {result && (
           <div className="mx-auto max-w-md w-full card-accent p-3 space-y-2 animate-fade-in">
@@ -263,6 +377,13 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
               </div>
             </div>
             {onSave && <button onClick={save} className="btn btn-primary w-full">이 측정 저장</button>}
+            {videoBlob && (
+              <button onClick={handleSaveVideo} disabled={savingVideo}
+                className="w-full rounded-xl bg-slate-700 text-white font-bold py-2.5 text-sm active:scale-95 disabled:opacity-60">
+                {savingVideo ? '저장 중…' : '🎥 녹화 영상 폰에 저장'}
+              </button>
+            )}
+            {videoSavedMsg && <p className="text-center text-[11px] text-emerald-400">{videoSavedMsg}</p>}
           </div>
         )}
       </CameraStage>

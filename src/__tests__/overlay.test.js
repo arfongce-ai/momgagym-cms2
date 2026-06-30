@@ -9,11 +9,13 @@ function mockCtx() {
     moveTo: vi.fn(), lineTo: vi.fn(), arcTo: vi.fn(),
     arc: vi.fn(() => { calls.arc++; }),
     fill: vi.fn(), stroke: vi.fn(),
+    fillRect: vi.fn(), strokeRect: vi.fn(), clearRect: vi.fn(),
+    measureText: vi.fn((t) => ({ width: String(t).length * 8 })),
     fillText: vi.fn((t) => { calls.fillText.push(String(t)); }),
     set fillStyle(v) {}, get fillStyle() { return ''; },
     set strokeStyle(v) {}, get strokeStyle() { return ''; },
     set font(v) {}, get font() { return ''; },
-    set lineWidth(v) {}, set textBaseline(v) {},
+    set lineWidth(v) {}, set textBaseline(v) {}, set textAlign(v) {},
     _calls: calls,
   };
 }

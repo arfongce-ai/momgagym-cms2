@@ -528,7 +528,6 @@ export default function RomMeasure({ member, onSave, onBack }) {
         error={error}
         onClose={onBack}
         tappable={false}
-        showFutureOverlay={false}
         recording={recording}
         recordingLabel={`측정 중 ${elapsed}s`}
         topBar={

@@ -4,7 +4,6 @@ import {
   pelvisRelativeFeet, BiomechAccumulator,
 } from '../core/gaitBiomechanics';
 import { analyzeUploadedVideo, CAPTURE_PRESETS } from '../core/videoAnalyzer';
-import FutureVideoOverlay from './FutureVideoOverlay';
 
 /*
  * GaitUploadAnalysis — 고속 촬영 영상 업로드 → 보행 분석
@@ -160,17 +159,11 @@ export default function GaitUploadAnalysis({ member, onBack, onComplete }) {
             className="h-full w-full object-contain"
             playsInline muted controls={phase === 'ready' || phase === 'done'}
           />
-          <FutureVideoOverlay
-            mode="GAIT UPLOAD"
-            recording={phase === 'analyzing'}
-            intensity={phase === 'analyzing' ? 0.86 : 0.5}
-            primary={phase === 'analyzing' ? 'GAIT SCAN' : 'VIDEO READY'}
-            secondary="SPM · STANCE · SWING"
-            gauges={[
-              { label: 'SPM', value: phase === 'analyzing' ? 'SCAN' : '--', percent: phase === 'analyzing' ? 70 : 20, tone: 'amber' },
-            ]}
-            ringLabel={phase === 'analyzing' ? 'AI' : 'RDY'}
-          />
+          {phase === 'analyzing' && (
+            <div className="absolute top-2 left-1/2 -translate-x-1/2 rounded-full bg-black/60 border border-white/15 px-3 py-1 text-[11px] font-bold text-amber-300 backdrop-blur">
+              분석 중…
+            </div>
+          )}
         </div>
 
         {phase === 'idle' && (
