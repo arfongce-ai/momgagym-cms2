@@ -21,14 +21,22 @@ import CameraStage from './CameraStage';
 
 const PLATE_HEX = { 빨강:'#D7263D', 파랑:'#0B61A4', 노랑:'#F2C200', 초록:'#1F9D55', 흰색:'#E8E8E8' };
 
-export default function OneRMEstimate({ member, onSave, onBack }) {
-  const [lift, setLift] = useState('squat');
+export default function OneRMEstimate({ member, onSave, onBack, exerciseType, embedded = false }) {
+  // 허브 종목(exerciseType, 예 'bench_press') → 내부 lift 키('bench') 매핑.
+  const exToLift = (ex) => (ex === 'bench_press' ? 'bench' : ex === 'squat' ? 'squat' : ex === 'deadlift' ? 'deadlift' : null);
+  const [lift, setLift] = useState(exToLift(exerciseType) || 'squat');
   const [reps, setReps] = useState(5);
   const [barKg, setBarKg] = useState(20);
   const [sidePlates, setSidePlates] = useState([]);
   const [manualWeight, setManualWeight] = useState('');
   const [useManual, setUseManual] = useState(true);   // 기본: 직접 입력
   const [result, setResult] = useState(null);
+
+  // 허브에서 종목이 바뀌면 내부 lift 도 동기화(임베드 모드).
+  useEffect(() => {
+    const mapped = exToLift(exerciseType);
+    if (embedded && mapped && mapped !== lift) { setLift(mapped); setResult(null); }
+  }, [exerciseType, embedded]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── 카메라(원판 색 인식 보조) ──
   const canvasRef = useRef(null);
@@ -139,6 +147,7 @@ export default function OneRMEstimate({ member, onSave, onBack }) {
       oneRM: result.average,
       epley: result.epley,
       brzycki: result.brzycki,
+      formulas: result.formulas,
       barKg: useManual ? null : barKg,
       sidePlates: useManual ? null : sidePlates,
       weightSource: useManual ? 'manual' : 'plate-color',
@@ -178,22 +187,26 @@ export default function OneRMEstimate({ member, onSave, onBack }) {
 
   // ───────── 입력/결과 화면 ─────────
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <button onClick={onBack} className="measure-back">← 메뉴</button>
-        <h2 className="measure-title">1RM 추정</h2>
-        <span className="w-12" />
-      </div>
+    <div className={`space-y-4 ${embedded ? 'pt-24 px-3 max-w-md mx-auto overflow-y-auto pb-8' : ''}`} style={embedded ? { height: '100dvh' } : undefined}>
+      {!embedded && (
+        <div className="flex items-center justify-between">
+          <button onClick={onBack} className="measure-back">← 메뉴</button>
+          <h2 className="measure-title">1RM 추정</h2>
+          <span className="w-12" />
+        </div>
+      )}
 
-      {/* 종목 */}
-      <div className="flex gap-1 rounded-xl bg-slate-800 p-1">
-        {LIFTS.map(l => (
-          <button key={l.key} onClick={() => { setLift(l.key); setResult(null); }}
-            className={`flex-1 rounded-lg py-1.5 text-xs font-bold ${lift === l.key ? 'bg-amber-500 text-slate-950' : 'text-slate-400'}`}>
-            {l.label}
-          </button>
-        ))}
-      </div>
+      {/* 종목 — 임베드(허브) 모드에서는 상단 허브 선택기가 담당하므로 숨김 */}
+      {!embedded && (
+        <div className="flex gap-1 rounded-xl bg-slate-800 p-1">
+          {LIFTS.map(l => (
+            <button key={l.key} onClick={() => { setLift(l.key); setResult(null); }}
+              className={`flex-1 rounded-lg py-1.5 text-xs font-bold ${lift === l.key ? 'bg-amber-500 text-slate-950' : 'text-slate-400'}`}>
+              {l.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* 무게 입력 방식 토글 */}
       <div className="flex gap-1 rounded-lg bg-slate-800 p-0.5 w-fit text-[11px]">

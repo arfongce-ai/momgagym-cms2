@@ -237,7 +237,7 @@ export default function AiMeasureHub() {
   // 메뉴 구동 화면
   if (active && active.status === 'ready') {
     const Comp = active.component;
-    const wideMeasure = active.id === 'gait' || active.id === 'jump' || active.id === 'posture' || active.id === 'rom';
+    const wideMeasure = active.id === 'gait' || active.id === 'jump' || active.id === 'posture' || active.id === 'rom' || active.id === 'lifting';
     return (
       <div className={`${wideMeasure ? 'max-w-6xl' : 'max-w-md'} mx-auto`}>
         <Suspense fallback={<div className="text-center text-slate-400 py-10 text-sm">모듈 로딩 중…</div>}>

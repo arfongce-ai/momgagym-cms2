@@ -291,14 +291,15 @@ const METRIC_DEFINITIONS = Object.freeze({
     { key: 'asymmetry', paths: ['summary.symmetry_index_score', 'symmetry_index_score', 'leftRightDiffDeg'], unit: '%', range: { good: [0, 10], warn: [0, 18] } },
   ],
   one_rm: [
-    { key: 'oneRM', paths: ['estimatedOneRM', 'oneRM', 'summary.oneRM'], unit: 'kg' },
-    { key: 'meanVelocity', paths: ['meanVelocity', 'vbt.meanVelocity'], unit: 'm/s' },
+    { key: 'oneRM', paths: ['metrics.oneRM', 'estimatedOneRM', 'oneRM', 'summary.oneRM'], unit: 'kg' },
+    { key: 'meanVelocity', paths: ['metrics.meanVelocity', 'meanVelocity', 'vbt.meanVelocity'], unit: 'm/s' },
     { key: 'velocityLoss', paths: ['velocityLoss', 'vbt.velocityLoss'], unit: '%', range: { good: [0, 15], warn: [0, 30] } },
   ],
   vbt: [
-    { key: 'meanVelocity', paths: ['meanVelocity', 'vbt.meanVelocity'], unit: 'm/s' },
-    { key: 'peakVelocity', paths: ['peakVelocity', 'vbt.peakVelocity'], unit: 'm/s' },
-    { key: 'peakPower', paths: ['peakPower', 'vbt.peakPower'], unit: 'W' },
+    { key: 'meanVelocity', paths: ['metrics.meanVelocity', 'meanVelocity', 'vbt.meanVelocity'], unit: 'm/s' },
+    { key: 'peakVelocity', paths: ['metrics.peakVelocity', 'peakVelocity', 'vbt.peakVelocity'], unit: 'm/s' },
+    { key: 'peakPower', paths: ['metrics.peakPower', 'metrics.meanPower', 'peakPower', 'vbt.peakPower'], unit: 'W' },
+    { key: 'rom', paths: ['metrics.rangeOfMotion'], unit: 'cm' },
     { key: 'velocityLoss', paths: ['velocityLoss', 'vbt.velocityLoss'], unit: '%', range: { good: [0, 15], warn: [0, 30] } },
   ],
 });
@@ -360,7 +361,13 @@ export function inferReportType(report = {}) {
   if (kind.includes('posture')) return 'posture';
   if (kind.includes('rom')) return 'rom';
   if (kind.includes('gait') || kind.includes('running')) return 'gait';
-  if (kind.includes('jump') || report.jumpType || report.heightCm != null || report.rsi) return 'jump';
+  if (kind.includes('jump') || report.jumpType || report.rsi) return 'jump';
+  // 통합 바벨 리프팅 페이로드(type:'lifting' + mode) — 모드로 세부 분류.
+  if (report.type === 'lifting' || report.mode === 'lifting' || report.mode === 'vbt' || report.mode === 'onerm') {
+    if (report.mode === 'onerm' || report.metrics?.oneRM != null) return 'one_rm';
+    return 'vbt'; // 역도·VBT 모두 속도 기반 평가로 묶어 표시
+  }
+  if (kind.includes('jump') || report.heightCm != null) return 'jump';
   if (kind.includes('1rm') || report.estimatedOneRM != null || report.oneRM != null) return 'one_rm';
   if (kind.includes('vbt') || report.vbt || report.meanVelocity != null) return 'vbt';
   if (report.analysis?.frontal || report.analysis?.sagittal) return 'posture';

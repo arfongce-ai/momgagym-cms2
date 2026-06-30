@@ -11,12 +11,13 @@ import { personHeightRatio, romToCm } from '../core/barbell';
 import { createMultiTracker } from '../core/endcapTracker';
 import { assessFraming, FRAMING_PRESETS } from '../core/framingGuide';
 import { totalWeight } from '../core/plates';
+import { exerciseLabel as exerciseLabelLocal } from '../core/lifting';
 import PlateWeightInput from './PlateWeightInput';
 import FramingIntro from './FramingIntro';
 import HeightField from './HeightField';
 import CameraStage from './CameraStage';
 
-export default function LiftingMeasure({ member, onSave, onBack }) {
+export default function LiftingMeasure({ member, onSave, onBack, exerciseType, embedded = false }) {
   const canvasRef = useRef(null);
   const capRef = useRef(createMultiTracker());
   const phRef = useRef(null);
@@ -170,8 +171,13 @@ export default function LiftingMeasure({ member, onSave, onBack }) {
   const save = () => {
     if (!result) return;
     const weight = totalWeight(plate.sidePlates, plate.barKg).total;
+    const stats = frameStatsRef.current;
+    const lostRatio = stats.total > 0 ? stats.lost / stats.total : null;
     onSave?.({
       type: 'lifting',
+      exerciseType: exerciseType || null,
+      source: 'live',          // 실시간 카메라 — peakVelocity 미산출(허브 게이트)
+      lostRatio,               // 추적 손실률 → confidenceScore 산정에 사용
       romRatio: result.romRatio,
       romCm: result.romCm,
       durationSec: result.sec,
@@ -265,10 +271,10 @@ export default function LiftingMeasure({ member, onSave, onBack }) {
 
   // ───────── 준비 화면(카메라 꺼짐) ─────────
   return (
-    <div className="space-y-4">
+    <div className={`space-y-4 ${embedded ? 'pt-24 px-3 max-w-md mx-auto overflow-y-auto' : ''}`} style={embedded ? { height: '100dvh' } : undefined}>
       <div className="flex items-center justify-between">
         <button onClick={onBack} className="measure-back">← 메뉴</button>
-        <h2 className="measure-title">역도 · 바벨 추적</h2>
+        <h2 className="measure-title">역도 · {exerciseType ? exerciseLabelLocal(exerciseType) : '바벨 추적'}</h2>
         <span className="w-12" />
       </div>
 

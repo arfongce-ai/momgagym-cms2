@@ -10,6 +10,7 @@ import { personHeightRatio, romToCm } from '../core/barbell';
 import { createMultiTracker } from '../core/endcapTracker';
 import { calcVBT, VBT_ZONES } from '../core/performance';
 import { totalWeight } from '../core/plates';
+import { exerciseLabel as exerciseLabelLocal } from '../core/lifting';
 import { assessFraming, FRAMING_PRESETS } from '../core/framingGuide';
 import PlateWeightInput from './PlateWeightInput';
 import FramingIntro from './FramingIntro';
@@ -24,7 +25,7 @@ const ZONE_COLOR = {
   red:    'text-red-400',
 };
 
-export default function VbtMeasure({ member, onSave, onBack }) {
+export default function VbtMeasure({ member, onSave, onBack, exerciseType, embedded = false }) {
   const canvasRef = useRef(null);
   const capRef = useRef(createMultiTracker());
   const phRef = useRef(null);
@@ -181,10 +182,16 @@ export default function VbtMeasure({ member, onSave, onBack }) {
   const save = () => {
     if (!result) return;
     const weight = totalWeight(plate.sidePlates, plate.barKg).total;
+    const fs = frameStatsRef.current;
+    const lostRatio = fs.total > 0 ? fs.lost / fs.total : null;
     onSave?.({
       type: 'vbt',
+      exerciseType: exerciseType || null,
+      source: 'live',          // 실시간 — peakVelocity 미산출(허브 게이트)
+      lostRatio,
       distance: result.distanceM,
       time: result.timeSec,
+      romCm: result.romCm ?? null,
       meanVelocity: result.meanVelocity,
       zone: result.zone?.label,
       heightCm: Number(heightCm) || null,
@@ -276,10 +283,10 @@ export default function VbtMeasure({ member, onSave, onBack }) {
 
   // ───────── 준비 화면(카메라 꺼짐) ─────────
   return (
-    <div className="space-y-4">
+    <div className={`space-y-4 ${embedded ? 'pt-24 px-3 max-w-md mx-auto overflow-y-auto' : ''}`} style={embedded ? { height: '100dvh' } : undefined}>
       <div className="flex items-center justify-between">
         <button onClick={onBack} className="measure-back">← 메뉴</button>
-        <h2 className="measure-title">VBT · 속도기반</h2>
+        <h2 className="measure-title">VBT · {exerciseType ? exerciseLabelLocal(exerciseType) : '속도기반'}</h2>
         <span className="w-12" />
       </div>
 
