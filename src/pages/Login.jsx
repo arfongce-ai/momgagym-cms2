@@ -7,6 +7,7 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [error, setError]       = useState('');
   const [loading, setLoading]   = useState(false);
+  const [channelOpen, setChannelOpen] = useState(false);
 
   const handleSubmit = async e => {
     e.preventDefault(); setError(''); setLoading(true);
@@ -46,8 +47,47 @@ export default function Login() {
             {loading ? '로그인 중…' : '로그인'}
           </button>
         </form>
+        <button type="button" onClick={() => setChannelOpen(true)}
+          className="mt-4 w-full rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm font-bold text-amber-300 transition-colors hover:bg-amber-500/15 hover:text-amber-200">
+          공식 채널 안내
+        </button>
         <p className="text-center text-slate-600 text-xs mt-4">몸가짐운동센터 · 관리 시스템</p>
       </div>
+
+      {channelOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 px-4 py-6 backdrop-blur-sm"
+          role="dialog" aria-modal="true" aria-labelledby="official-channel-title"
+          onMouseDown={(e) => { if (e.target === e.currentTarget) setChannelOpen(false); }}>
+          <div className="w-full max-w-sm rounded-2xl border border-slate-700 bg-slate-900 p-5 shadow-2xl shadow-black/40">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-[11px] font-bold uppercase tracking-widest text-amber-400">Official Channel</p>
+                <h2 id="official-channel-title" className="mt-1 text-lg font-black text-white">몸가짐 공식 채널</h2>
+              </div>
+              <button type="button" onClick={() => setChannelOpen(false)}
+                className="rounded-lg border border-slate-700 px-2 py-1 text-xs font-bold text-slate-400 hover:border-slate-500 hover:text-white"
+                aria-label="팝업 닫기">
+                닫기
+              </button>
+            </div>
+            <p className="mt-4 text-sm leading-6 text-slate-300">
+              항상 몸가짐 운동센터를 아껴주셔서 감사합니다.
+            </p>
+            <div className="mt-5 space-y-2">
+              <a href="https://blog.naver.com/posture_gym" target="_blank" rel="noreferrer"
+                className="block rounded-xl border border-slate-700 bg-slate-800 px-4 py-3 transition-colors hover:border-amber-500/50 hover:bg-slate-800/80">
+                <span className="block text-sm font-black text-amber-300">공식블로그</span>
+                <span className="mt-1 block break-all text-xs text-slate-400">https://blog.naver.com/posture_gym</span>
+              </a>
+              <a href="https://www.instagram.com/posture_gym_official/" target="_blank" rel="noreferrer"
+                className="block rounded-xl border border-slate-700 bg-slate-800 px-4 py-3 transition-colors hover:border-amber-500/50 hover:bg-slate-800/80">
+                <span className="block text-sm font-black text-amber-300">공식 인스타그램</span>
+                <span className="mt-1 block break-all text-xs text-slate-400">https://www.instagram.com/posture_gym_official/</span>
+              </a>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
