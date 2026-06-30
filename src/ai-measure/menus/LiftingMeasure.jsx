@@ -392,7 +392,7 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
 
   // ───────── 준비 화면(카메라 꺼짐) ─────────
   return (
-    <div className={`space-y-4 ${embedded ? 'pt-36 px-3 max-w-md mx-auto overflow-y-auto pb-8' : ''}`} style={embedded ? { height: '100dvh' } : undefined}>
+    <div className={`space-y-4 ${embedded ? 'pt-44 px-3 max-w-md mx-auto overflow-y-auto pb-8' : ''}`} style={embedded ? { height: '100dvh' } : undefined}>
       {/* 임베드(허브) 모드에서는 상단 허브 오버레이가 뒤로가기·종목을 담당하므로 자체 헤더 숨김 */}
       {!embedded && (
         <div className="flex items-center justify-between">

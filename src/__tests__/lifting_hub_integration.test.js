@@ -58,4 +58,19 @@ describe('바벨 리프팅 통합 페이로드 · inferReportType 분류', () =>
     const metrics = extractKeyMetrics(p, 'one_rm');
     expect(metrics.find(m => m.key === 'oneRM')).toBeTruthy();
   });
+
+  it('addSession 래퍼({menu,data}) 구조에서도 올바른 타입으로 미러링된다', () => {
+    // AiMeasureHub는 측정 페이로드를 { menu, data: payload } 로 감싸 저장한다.
+    // inferReportType 이 data 를 언랩해 분류해야 통합 리포트에 미러링된다.
+    const vbtSession = { menu: 'lifting', data: buildLiftingPayload({ mode: 'vbt', exerciseType: 'squat', source: 'live', metrics: { meanVelocity: 0.6 } }) };
+    expect(inferReportType(vbtSession)).toBe('vbt');
+    const onermSession = { menu: 'lifting', data: buildLiftingPayload({ mode: 'onerm', exerciseType: 'bench_press', source: 'manual', metrics: { oneRM: 100 } }) };
+    expect(inferReportType(onermSession)).toBe('one_rm');
+    const liftSession = { menu: 'lifting', data: buildLiftingPayload({ mode: 'lifting', exerciseType: 'snatch', source: 'upload', metrics: { meanVelocity: 1.5 } }) };
+    expect(inferReportType(liftSession)).toBe('vbt');
+  });
+
+  it('신체정보 등 비측정 세션은 general(미러링 제외)로 유지된다', () => {
+    expect(inferReportType({ menu: 'body', data: { height: 170, weight: 70 } })).toBe('general');
+  });
 });

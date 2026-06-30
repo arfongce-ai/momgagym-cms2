@@ -388,7 +388,7 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
 
   // ───────── 준비 화면(카메라 꺼짐) ─────────
   return (
-    <div className={`space-y-4 ${embedded ? 'pt-36 px-3 max-w-md mx-auto overflow-y-auto pb-8' : ''}`} style={embedded ? { height: '100dvh' } : undefined}>
+    <div className={`space-y-4 ${embedded ? 'pt-44 px-3 max-w-md mx-auto overflow-y-auto pb-8' : ''}`} style={embedded ? { height: '100dvh' } : undefined}>
       {!embedded && (
         <div className="flex items-center justify-between">
           <button onClick={onBack} className="measure-back">← 메뉴</button>

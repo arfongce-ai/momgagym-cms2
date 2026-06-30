@@ -215,7 +215,7 @@ export default function LiftingUploadAnalysis({
   const exLabel = exerciseType ? exerciseLabel(exerciseType) : '';
 
   return (
-    <div className="absolute inset-0 bg-slate-950 flex flex-col" style={{ paddingTop: 'max(132px, calc(env(safe-area-inset-top) + 132px))' }}>
+    <div className="absolute inset-0 bg-slate-950 flex flex-col" style={{ paddingTop: 'max(176px, calc(env(safe-area-inset-top) + 176px))' }}>
       <div className="flex-1 overflow-y-auto px-5 pb-6 flex flex-col items-center gap-4">
         {/* 미리보기/탭 영역 */}
         <div className="relative w-full max-w-md overflow-hidden rounded-xl bg-black aspect-[3/4]"

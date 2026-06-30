@@ -358,21 +358,27 @@ export function toLaymanMetric(metricKey, value, options = {}) {
 }
 
 export function inferReportType(report = {}) {
-  const kind = String(report.kind || report.menu || report.reportType || '').toLowerCase();
+  // addSession 은 측정 페이로드를 { menu, data: payload } 로 감싸 저장한다.
+  // 미러링 시 이 래퍼가 와도 페이로드 필드를 인식하도록 data 를 먼저 펼친 뒤
+  // 최상위(menu/kind 등)로 덮어쓴다.
+  const r = (report && typeof report.data === 'object' && report.data)
+    ? { ...report.data, ...report }
+    : report;
+  const kind = String(r.kind || r.menu || r.reportType || '').toLowerCase();
   if (kind.includes('posture')) return 'posture';
   if (kind.includes('rom')) return 'rom';
   if (kind.includes('gait') || kind.includes('running')) return 'gait';
-  if (kind.includes('jump') || report.jumpType || report.rsi) return 'jump';
+  if (kind.includes('jump') || r.jumpType || r.rsi) return 'jump';
   // 통합 바벨 리프팅 페이로드(type:'lifting' + mode) — 모드로 세부 분류.
-  if (report.type === 'lifting' || report.mode === 'lifting' || report.mode === 'vbt' || report.mode === 'onerm') {
-    if (report.mode === 'onerm' || report.metrics?.oneRM != null) return 'one_rm';
+  if (r.type === 'lifting' || r.mode === 'lifting' || r.mode === 'vbt' || r.mode === 'onerm') {
+    if (r.mode === 'onerm' || r.metrics?.oneRM != null) return 'one_rm';
     return 'vbt'; // 역도·VBT 모두 속도 기반 평가로 묶어 표시
   }
-  if (kind.includes('jump') || report.heightCm != null) return 'jump';
-  if (kind.includes('1rm') || report.estimatedOneRM != null || report.oneRM != null) return 'one_rm';
-  if (kind.includes('vbt') || report.vbt || report.meanVelocity != null) return 'vbt';
-  if (report.analysis?.frontal || report.analysis?.sagittal) return 'posture';
-  if (report.summary?.max_angle || report.diagnosis) return 'rom';
+  if (kind.includes('jump') || r.heightCm != null) return 'jump';
+  if (kind.includes('1rm') || r.estimatedOneRM != null || r.oneRM != null) return 'one_rm';
+  if (kind.includes('vbt') || r.vbt || r.meanVelocity != null) return 'vbt';
+  if (r.analysis?.frontal || r.analysis?.sagittal) return 'posture';
+  if (r.summary?.max_angle || r.diagnosis) return 'rom';
   return 'general';
 }
 
