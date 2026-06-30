@@ -339,6 +339,10 @@ export function buildLiftingInterpretation(report = {}) {
   if (Number.isFinite(rom) && rom > 0) {
     lines.push({ label: '가동범위', text: `바벨 수직 이동 ${rom}cm.` });
   }
+  const reps = Number(meta.reps);
+  if (Number.isFinite(reps) && reps > 0) {
+    lines.push({ label: '반복', text: `자동 카운트 ${reps}회.` });
+  }
   if (meta.zone && !lines.some(l => l.label === '구간')) {
     lines.push({ label: '구간', text: `${meta.zone} 구간.` });
   }

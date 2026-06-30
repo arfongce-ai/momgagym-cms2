@@ -46,6 +46,18 @@ describe('1RM 리포트 해석 — 무게/강도/도전차수', () => {
 });
 
 describe('VBT/역도 리포트 해석 — 속도/구간/가동범위', () => {
+  it('자동 카운트된 반복을 해석에 표시', () => {
+    const p = buildLiftingPayload({
+      mode: 'vbt', exerciseType: 'squat', source: 'upload',
+      metrics: { meanVelocity: 0.7, rangeOfMotion: 55, confidenceScore: 0.85 },
+      metadata: { reps: 5, isCalibrated: true },
+    });
+    const r = buildLiftingInterpretation(p);
+    const line = r.lines.find(l => l.label === '반복');
+    expect(line).toBeTruthy();
+    expect(line.text).toContain('5회');
+  });
+
   it('평균속도에서 트레이닝 구간을 설명', () => {
     const p = buildLiftingPayload({
       mode: 'vbt', exerciseType: 'squat', source: 'upload',

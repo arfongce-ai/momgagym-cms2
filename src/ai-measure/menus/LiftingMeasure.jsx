@@ -14,6 +14,7 @@ import { totalWeight } from '../core/plates';
 import { exerciseLabel as exerciseLabelLocal } from '../core/lifting';
 import { saveVideoToPhone, pickRecorderMime } from '../core/recordSink';
 import { drawLiftingDataHud, drawBarPathToRecord } from '../core/recordingOverlay';
+import { createRepCounter } from '../core/repCounter';
 import PlateWeightInput from './PlateWeightInput';
 import FramingIntro from './FramingIntro';
 import HeightField from './HeightField';
@@ -38,6 +39,8 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
   const recordStreamRef = useRef(null);      // 캔버스 captureStream
   const recordStartRef = useRef(0);          // 녹화 시작 시각(ms)
   const liveHudRef = useRef({ romCm: null, meanVelocity: null }); // 번인용 실시간 값
+  const repCounterRef = useRef(createRepCounter());
+  const [liveReps, setLiveReps] = useState(0);
   const videoBlobRef = useRef(null);
   const [videoBlob, setVideoBlob] = useState(null);
   const [savingVideo, setSavingVideo] = useState(false);
@@ -75,7 +78,13 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
     const cap = capRef.current;
     if (cap.isSeeded()) {
       const p = cap.update(video);
-      if (p && recordingRef.current) cap.push(p, ts);
+      if (p && recordingRef.current) {
+        cap.push(p, ts);
+        // 바벨 수직 위치로 렙 자동 카운트.
+        const reps = repCounterRef.current.push(p.y);
+        const shown = repCounterRef.current.countWithPending();
+        setLiveReps(prev => (prev !== shown ? shown : prev));
+      }
       const act = cap.activeCount();
       if (act !== activePts) setActivePts(act);
       if (recordingRef.current) {
@@ -227,6 +236,8 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
       phSamplesRef.current = [];
       frameStatsRef.current = { total: 0, lost: 0 };
       liveHudRef.current = { romCm: null, meanVelocity: null };
+      repCounterRef.current.reset();
+      setLiveReps(0);
       recordStartRef.current = performance.now();
       recordingRef.current = true;
       setRecording(true);
@@ -273,7 +284,8 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
       const cm = romToCm(sum.romRatio, phMed, H);
       const sec = sum.durationMs / 1000;
       const velocity = cm && sec ? Math.round((cm / 100 / sec) * 100) / 100 : null;
-      setResult({ ...sum, romCm: cm, sec: Math.round(sec * 100) / 100, velocity });
+      const reps = repCounterRef.current.countWithPending();
+      setResult({ ...sum, romCm: cm, sec: Math.round(sec * 100) / 100, velocity, reps });
     }
   };
 
@@ -310,6 +322,7 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
       romCm: result.romCm,
       durationSec: result.sec,
       meanVelocity: result.velocity,
+      reps: result.reps ?? null,
       heightCm: Number(heightCm) || null,
       weight: weight || null,
       barKg: plate.barKg,
@@ -321,6 +334,12 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
   if (status !== 'idle') {
     const topBar = (
       <>
+        {recording && (
+          <div className="self-center rounded-2xl bg-black/70 backdrop-blur px-5 py-2 border border-amber-500/40">
+            <p className="text-center text-[10px] text-amber-300 font-bold tracking-widest">반복</p>
+            <p className="text-center font-mono font-black text-4xl text-white leading-none">{liveReps}<span className="text-base text-slate-400"> 회</span></p>
+          </div>
+        )}
         <div className="flex items-center gap-1.5 flex-wrap justify-end">
           <span className="bg-black/65 rounded-full px-2.5 py-1 text-[10px] text-cyan-300 font-bold">
             {ptCount === 0
@@ -361,7 +380,7 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
       >
         {result && (
           <div className="mx-auto max-w-md w-full card-accent p-3 space-y-2 animate-fade-in">
-            <p className="text-[11px] font-bold text-amber-400 uppercase tracking-widest">바벨 추적 결과</p>
+            <p className="text-[11px] font-bold text-amber-400 uppercase tracking-widest">바벨 추적 결과 {result.reps ? `· ${result.reps}회` : ''}</p>
             <div className="grid grid-cols-3 gap-2 text-center">
               <div className="bg-slate-800 rounded-xl py-2">
                 <p className="text-[10px] text-slate-500">수직 이동</p>
@@ -402,18 +421,30 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
         </div>
       )}
 
-      <HeightField value={heightCm} onChange={setHeightCm} member={member}
-        hint="cm·속도 환산에 사용" />
+      {/* 키는 허브 선등록·회원정보에서 확보되므로 임베드 모드에선 숨김(중복 제거) */}
+      {!embedded && (
+        <HeightField value={heightCm} onChange={setHeightCm} member={member}
+          hint="cm·속도 환산에 사용" />
+      )}
 
+      {/* 카메라 시작을 최상단으로(요구사항: 카메라 우선) */}
       <FramingIntro preset={FRAMING_PRESETS.lifting} onStart={startCam} startLabel="📷 카메라 시작 (전체화면)" />
-
-      <PlateWeightInput value={plate} onChange={setPlate} getVideo={null} />
 
       <p className="text-[11px] text-slate-500 leading-relaxed">
         ※ 카메라를 켜면 전체 화면으로 전환됩니다. 바벨 끝·원판 등 잘 보이는 곳을 2~3군데 눌러
         추적점을 지정하면, 한 점이 가려지거나 튀어도 나머지 점으로 보완해 오차를 줄입니다.
-        옆에서 전신이 보이게 촬영하면 cm·속도 정확도가 올라갑니다.
+        반복은 바벨 움직임으로 자동 카운트됩니다.
       </p>
+
+      {/* 원판 무게(기록용) — 접이식 */}
+      <details className="rounded-xl bg-slate-900/60 border border-slate-700">
+        <summary className="cursor-pointer px-4 py-3 text-sm font-bold text-slate-300 select-none">
+          원판 무게 설정 (기록용) · 선택
+        </summary>
+        <div className="px-3 pb-3">
+          <PlateWeightInput value={plate} onChange={setPlate} getVideo={null} />
+        </div>
+      </details>
     </div>
   );
 }

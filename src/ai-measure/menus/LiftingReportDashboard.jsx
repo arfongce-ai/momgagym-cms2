@@ -46,6 +46,7 @@ export default function LiftingReportDashboard({ report, onClose }) {
     tiles.push({ label: '평균속도', value: fmt(m.meanVelocity, ' m/s'), accent: true });
     tiles.push({ label: '최고속도', value: m.peakVelocity != null ? fmt(m.peakVelocity, ' m/s') : '고속영상 필요' });
     tiles.push({ label: '가동범위', value: fmt(m.rangeOfMotion, ' cm') });
+    if (meta.reps != null) tiles.push({ label: '반복', value: fmt(meta.reps, '회') });
     if (m.meanPower != null || m.peakPower != null) tiles.push({ label: '파워(근사)', value: fmt(m.meanPower ?? m.peakPower, ' W') });
   }
 

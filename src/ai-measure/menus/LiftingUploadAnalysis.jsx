@@ -20,6 +20,7 @@ import {
   computeBarVelocities, estimateMeanPower, vbtConfidence,
   buildLiftingPayload, exerciseLabel,
 } from '../core/lifting';
+import { countRepsFromSeries } from '../core/repCounter';
 
 export default function LiftingUploadAnalysis({
   member, onBack, onComplete, mode = 'lifting', exerciseType,
@@ -166,6 +167,9 @@ export default function LiftingUploadAnalysis({
         zone = vbt?.zone?.label || null;
       }
 
+      // 렙 자동 카운트(추적 경로의 수직 위치 왕복).
+      const reps = countRepsFromSeries(rawPath, { withPending: true });
+
       const report = buildLiftingPayload({
         mode,
         exerciseType,
@@ -183,6 +187,7 @@ export default function LiftingUploadAnalysis({
           isCalibrated: !!heightCm,
           heightCm,
           zone,
+          reps,
           confidenceReasons: conf.reasons,
           lostRatio: lostRatio != null ? Math.round(lostRatio * 100) / 100 : null,
         },

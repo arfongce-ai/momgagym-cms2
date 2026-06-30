@@ -13,6 +13,7 @@ import { totalWeight } from '../core/plates';
 import { exerciseLabel as exerciseLabelLocal } from '../core/lifting';
 import { saveVideoToPhone, pickRecorderMime } from '../core/recordSink';
 import { drawLiftingDataHud, drawBarPathToRecord } from '../core/recordingOverlay';
+import { createRepCounter } from '../core/repCounter';
 import { assessFraming, FRAMING_PRESETS } from '../core/framingGuide';
 import PlateWeightInput from './PlateWeightInput';
 import FramingIntro from './FramingIntro';
@@ -45,6 +46,8 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
   const recordStreamRef = useRef(null);
   const recordStartRef = useRef(0);
   const liveHudRef = useRef({ romCm: null, meanVelocity: null });
+  const repCounterRef = useRef(createRepCounter());
+  const [liveReps, setLiveReps] = useState(0);
   const videoBlobRef = useRef(null);
   const [videoBlob, setVideoBlob] = useState(null);
   const [savingVideo, setSavingVideo] = useState(false);
@@ -82,7 +85,12 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
     const cap = capRef.current;
     if (cap.isSeeded()) {
       const p = cap.update(video);
-      if (p && recordingRef.current) cap.push(p, ts);
+      if (p && recordingRef.current) {
+        cap.push(p, ts);
+        repCounterRef.current.push(p.y);
+        const shown = repCounterRef.current.countWithPending();
+        setLiveReps(prev => (prev !== shown ? shown : prev));
+      }
       const act = cap.activeCount();
       if (act !== activePts) setActivePts(act);
       if (recordingRef.current) {
@@ -240,6 +248,8 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
       phSamplesRef.current = [];
       frameStatsRef.current = { total: 0, lost: 0 };
       liveHudRef.current = { romCm: null, meanVelocity: null };
+      repCounterRef.current.reset();
+      setLiveReps(0);
       recordStartRef.current = performance.now();
       recordingRef.current = true;
       setRecording(true);
@@ -287,7 +297,8 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
       const timeSec = sum.durationMs / 1000;
       const vbt = calcVBT(distanceM, timeSec);
       if (!vbt) { alert('측정값이 부족합니다. 다시 시도하세요.'); return; }
-      setResult({ ...vbt, distanceM: Math.round(distanceM * 1000) / 1000, timeSec: Math.round(timeSec * 100) / 100, romCm: cm });
+      const reps = repCounterRef.current.countWithPending();
+      setResult({ ...vbt, distanceM: Math.round(distanceM * 1000) / 1000, timeSec: Math.round(timeSec * 100) / 100, romCm: cm, reps });
     }
   };
 
@@ -305,6 +316,7 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
       time: result.timeSec,
       romCm: result.romCm ?? null,
       meanVelocity: result.meanVelocity,
+      reps: result.reps ?? null,
       zone: result.zone?.label,
       heightCm: Number(heightCm) || null,
       weight: weight || null,
@@ -317,6 +329,12 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
   if (status !== 'idle') {
     const topBar = (
       <>
+        {recording && (
+          <div className="self-center rounded-2xl bg-black/70 backdrop-blur px-5 py-2 border border-amber-500/40">
+            <p className="text-center text-[10px] text-amber-300 font-bold tracking-widest">반복</p>
+            <p className="text-center font-mono font-black text-4xl text-white leading-none">{liveReps}<span className="text-base text-slate-400"> 회</span></p>
+          </div>
+        )}
         <div className="flex items-center gap-1.5 flex-wrap justify-end">
           <span className="bg-black/65 rounded-full px-2.5 py-1 text-[10px] text-cyan-300 font-bold">
             {ptCount === 0
@@ -397,12 +415,21 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
         </div>
       )}
 
-      <HeightField value={heightCm} onChange={setHeightCm} member={member}
-        hint="거리·속도 환산에 사용" />
+      {!embedded && (
+        <HeightField value={heightCm} onChange={setHeightCm} member={member}
+          hint="거리·속도 환산에 사용" />
+      )}
 
       <FramingIntro preset={FRAMING_PRESETS.vbt} onStart={startCam} startLabel="📷 카메라 시작 (전체화면)" />
 
-      <PlateWeightInput value={plate} onChange={setPlate} getVideo={null} />
+      <details className="rounded-xl bg-slate-900/60 border border-slate-700">
+        <summary className="cursor-pointer px-4 py-3 text-sm font-bold text-slate-300 select-none">
+          원판 무게 설정 (기록용) · 선택
+        </summary>
+        <div className="px-3 pb-3">
+          <PlateWeightInput value={plate} onChange={setPlate} getVideo={null} />
+        </div>
+      </details>
 
       <div className="bg-slate-800 rounded-xl p-3 space-y-1">
         <p className="text-[10px] text-slate-500 mb-1">속도 구간별 훈련 목적 (참고)</p>

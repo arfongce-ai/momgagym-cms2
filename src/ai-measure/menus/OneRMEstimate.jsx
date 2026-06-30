@@ -20,6 +20,8 @@ import {
 import { usePoseEngine } from '../core/usePoseEngine';
 import { assessFraming, FRAMING_PRESETS } from '../core/framingGuide';
 import { drawGuides } from '../core/cameraGuide';
+import { createMultiTracker } from '../core/endcapTracker';
+import { createRepCounter } from '../core/repCounter';
 import FramingIntro from './FramingIntro';
 import CameraStage from './CameraStage';
 
@@ -51,7 +53,7 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
     if (embedded && mapped && mapped !== lift) { setLift(mapped); setResult(null); }
   }, [exerciseType, embedded]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── 카메라(원판 색 인식 보조) ──
+  // ── 카메라(원판 색 인식 + 바벨 추적 렙 카운팅) ──
   const canvasRef = useRef(null);
   const roiRef = useRef({ x: 0.30, y: 0.30, w: 0.40, h: 0.45 }); // 화면 중앙 박스
   const [detected, setDetected] = useState([]);
@@ -59,6 +61,13 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
   const [framing, setFraming] = useState({ level: 'bad', message: '카메라 준비 중…' });
   const liftRef = useRef(lift);
   liftRef.current = lift;
+  // 바벨 추적(렙 자동 카운팅)
+  const capRef = useRef(createMultiTracker());
+  const repCounterRef = useRef(createRepCounter());
+  const countingRef = useRef(false);
+  const [counting, setCounting] = useState(false);
+  const [liveReps, setLiveReps] = useState(0);
+  const [seedPts, setSeedPts] = useState(0);
 
   const computedWeight = weightMode === 'manual'
     ? (Number(manualWeight) || 0)
@@ -92,7 +101,59 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
     ctx.font = 'bold 14px sans-serif';
     ctx.fillText('원판을 이 박스 안에', r.x * cw + 6, r.y * ch - 8);
     ctx.restore();
+
+    // 바벨 추적(렙 자동 카운팅) — 추적점이 지정돼 있으면 궤적·렙 갱신.
+    const cap = capRef.current;
+    if (cap.isSeeded()) {
+      const p = cap.update(video);
+      if (p) {
+        // 추적점 표시.
+        ctx.save();
+        ctx.fillStyle = 'rgba(34,211,238,0.95)';
+        ctx.beginPath();
+        ctx.arc(p.x * cw, p.y * ch, Math.max(6, cw / 110), 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+        if (countingRef.current) {
+          repCounterRef.current.push(p.y);
+          const shown = repCounterRef.current.countWithPending();
+          setLiveReps(prev => (prev !== shown ? shown : prev));
+        }
+      }
+    }
   }, []);
+
+  // 영상 탭 → 바벨 끝/원판 색 학습(엔드캡 시드).
+  const onTapVideo = (e) => {
+    const v = videoRef.current;
+    if (!v || !v.videoWidth) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const clientX = (e.touches?.[0]?.clientX ?? e.clientX) - rect.left;
+    const clientY = (e.touches?.[0]?.clientY ?? e.clientY) - rect.top;
+    const vAR = v.videoWidth / v.videoHeight, bAR = rect.width / rect.height;
+    let drawW = rect.width, drawH = rect.height, offX = 0, offY = 0;
+    if (vAR > bAR) { drawH = rect.width / vAR; offY = (rect.height - drawH) / 2; }
+    else { drawW = rect.height * vAR; offX = (rect.width - drawW) / 2; }
+    const nx = (clientX - offX) / drawW, ny = (clientY - offY) / drawH;
+    if (nx < 0 || nx > 1 || ny < 0 || ny > 1) return;
+    if (capRef.current.seed(v, nx, ny)) setSeedPts(capRef.current.pointCount());
+  };
+
+  // 렙 카운팅 시작/정지.
+  const toggleCounting = () => {
+    if (!capRef.current.isSeeded()) { alert('먼저 바벨 끝이나 원판을 눌러 추적점을 지정하세요.'); return; }
+    if (!counting) {
+      repCounterRef.current.reset();
+      setLiveReps(0);
+      countingRef.current = true;
+      setCounting(true);
+    } else {
+      countingRef.current = false;
+      setCounting(false);
+      const r = repCounterRef.current.countWithPending();
+      if (r > 0) setReps(r); // 자동 카운트 결과를 반복 횟수에 반영
+    }
+  };
 
   const { videoRef, start, stop, status, error } = usePoseEngine({ onResult: handleResult });
 
@@ -104,18 +165,21 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
   useEffect(() => {
     const v = videoRef.current;
     if (v) v.addEventListener('loadedmetadata', syncCanvas);
-    return () => { if (v) v.removeEventListener('loadedmetadata', syncCanvas); stop(); };
+    return () => { if (v) v.removeEventListener('loadedmetadata', syncCanvas); stop(); countingRef.current = false; };
   }, [syncCanvas, stop]);
 
   const openCam = () => {
-    setWeightMode('plate');
     setDetected([]);
-    // video 요소가 풀스크린으로 렌더된 뒤 카메라 연결(검은 화면 방지)
+    capRef.current.clear();
+    repCounterRef.current.reset();
+    countingRef.current = false; setCounting(false);
+    setLiveReps(0); setSeedPts(0);
     start();
   };
   // 카메라를 닫으면, 인식된 원판이 없을 때는 직접 입력으로 자연스럽게 되돌린다.
   const closeCam = () => {
     stop();
+    countingRef.current = false; setCounting(false);
     if (detected.length === 0 && sidePlates.length === 0) setWeightMode('dial');
   };
 
@@ -182,12 +246,20 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
     });
   };
 
-  // ───────── 풀스크린 카메라(원판 색 인식) ─────────
+  // ───────── 풀스크린 카메라(원판 색 인식 + 바벨 추적 렙 카운팅) ─────────
   if (status !== 'idle') {
     const topBar = (
       <>
+        {counting && (
+          <div className="self-center rounded-2xl bg-black/70 backdrop-blur px-5 py-2 border border-amber-500/40">
+            <p className="text-center text-[10px] text-amber-300 font-bold tracking-widest">반복 자동 카운트</p>
+            <p className="text-center font-mono font-black text-4xl text-white leading-none">{liveReps}<span className="text-base text-slate-400"> 회</span></p>
+          </div>
+        )}
         <span className="bg-black/65 rounded-full px-2.5 py-1 text-[10px] text-cyan-300 font-bold">
-          원판을 박스 안에 두고 [색 인식]
+          {seedPts === 0
+            ? '바벨 끝·원판을 눌러 추적점 지정 (반복 자동 카운트)'
+            : counting ? '세트 수행 중 — 끝나면 [카운트 정지]' : `추적점 ${seedPts}개 · [카운트 시작] 또는 원판 색 인식`}
         </span>
         <span className={`rounded-full px-3 py-1 text-[11px] font-bold ${framing.level === 'good' ? 'bg-emerald-500/85 text-slate-950' : framing.level === 'warn' ? 'bg-amber-500/85 text-slate-950' : 'bg-red-500/85 text-white'}`}>
           {framing.level === 'good' ? '✓ ' : '⚠ '}{framing.message}
@@ -195,20 +267,44 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
       </>
     );
     const controls = (
-      <button onClick={scanColors}
-        className="px-6 h-14 rounded-full text-base font-black bg-amber-500 text-slate-950 active:scale-95 shadow-lg">
-        🎨 원판 색 인식
-      </button>
+      <div className="flex items-center gap-2">
+        <button onClick={toggleCounting}
+          className={`px-5 h-14 rounded-full text-sm font-black active:scale-95 shadow-lg ${counting ? 'bg-red-500 text-white' : seedPts > 0 ? 'bg-amber-500 text-slate-950' : 'bg-slate-600 text-slate-200'}`}>
+          {counting ? '■ 카운트 정지' : '● 카운트 시작'}
+        </button>
+        <button onClick={scanColors}
+          className="px-4 h-14 rounded-full text-sm font-black bg-slate-700 text-white active:scale-95 shadow-lg">
+          🎨 색 인식
+        </button>
+      </div>
     );
     return (
       <CameraStage
         videoRef={videoRef} canvasRef={canvasRef} status={status} error={error}
-        onClose={closeCam} topBar={topBar} controls={controls} tappable={false}
-        recording={status === 'running'} recordingLabel="평가 중"
+        onTapVideo={onTapVideo} onClose={closeCam} topBar={topBar} controls={controls}
+        recording={counting} recordingLabel="카운트 중"
       >
-        <div className="mx-auto max-w-md w-full bg-black/60 rounded-xl px-3 py-2 text-center">
-          <p className="text-[11px] text-slate-300">인식이 잘 안 되면 [닫기] 후 무게를 직접 입력하세요.</p>
-        </div>
+        {/* 무게 다이얼 반투명 오버레이 — 녹화(카운트) 버튼 바로 위. 촬영 전 무게 조정 */}
+        {!counting && (
+          <div className="mx-auto max-w-md w-full rounded-2xl bg-black/55 backdrop-blur border border-white/10 p-3">
+            <p className="text-center text-[10px] text-amber-300 font-bold tracking-widest mb-2">든 무게 (0.5kg 단위)</p>
+            <div className="flex items-center justify-center gap-2">
+              <button onClick={() => setDialWeight(w => stepWeight(w, -10))}
+                className="w-11 h-11 rounded-xl bg-white/10 text-slate-100 font-black text-xs active:scale-90">−5</button>
+              <button onClick={() => setDialWeight(w => stepWeight(w, -1))}
+                className="w-11 h-11 rounded-xl bg-white/10 text-slate-100 font-black active:scale-90">−</button>
+              <div className="min-w-[90px] text-center">
+                <p className="font-mono font-black text-3xl text-white leading-none">{snapWeight(dialWeight)}</p>
+                <p className="text-[9px] text-slate-400">kg</p>
+              </div>
+              <button onClick={() => setDialWeight(w => stepWeight(w, +1))}
+                className="w-11 h-11 rounded-xl bg-amber-500 text-slate-950 font-black active:scale-90">+</button>
+              <button onClick={() => setDialWeight(w => stepWeight(w, +10))}
+                className="w-11 h-11 rounded-xl bg-amber-500 text-slate-950 font-black text-xs active:scale-90">+5</button>
+            </div>
+            <p className="text-center text-[10px] text-slate-400 mt-2">바벨 끝을 누른 뒤 [카운트 시작] → 세트 수행 → 정지하면 반복이 자동 입력됩니다.</p>
+          </div>
+        )}
       </CameraStage>
     );
   }
@@ -362,6 +458,10 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
           const tone = c.level === 'high' ? 'text-emerald-400' : c.level === 'medium' ? 'text-amber-400' : 'text-red-400';
           return <p className={`mt-1.5 text-[11px] font-bold ${tone}`}>● {c.note}</p>;
         })()}
+        <button onClick={openCam}
+          className="mt-2 w-full rounded-xl bg-slate-700 text-white font-bold py-2.5 text-sm active:scale-95">
+          📷 카메라로 반복 자동 측정
+        </button>
       </div>
 
       <button onClick={calc} className="btn btn-primary w-full">1RM 계산</button>

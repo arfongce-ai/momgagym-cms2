@@ -127,6 +127,7 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
         weight: raw?.weight ?? null,
         isCalibrated: !!raw?.heightCm,
         heightCm: raw?.heightCm ?? null,
+        reps: raw?.reps ?? null,
         barKg: raw?.barKg ?? null,
         sidePlates: raw?.sidePlates ?? null,
         confidenceReasons: conf.reasons,
@@ -163,6 +164,7 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
         weight: raw?.weight ?? null,
         isCalibrated: !!raw?.heightCm,
         heightCm: raw?.heightCm ?? null,
+        reps: raw?.reps ?? null,
         zone: raw?.zone ?? null,
         distanceM: raw?.distance ?? null,
         timeSec: raw?.time ?? null,
@@ -283,16 +285,20 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
             </button>
           ))}
         </div>
-        {/* 종목 선택 + 도움말 */}
-        <div className="flex items-center gap-2">
-          <div className="pointer-events-auto flex gap-1 rounded-full bg-black/55 backdrop-blur p-1 border border-white/10 shadow-lg">
-            {modeExercises.map(e => (
-              <button key={e.key} onClick={() => setExerciseType(e.key)}
-                className={`rounded-full px-3 py-1 text-[11px] font-black transition-colors ${
-                  exerciseType === e.key ? 'bg-emerald-500 text-slate-950' : 'text-slate-300'}`}>
-                {e.label}
-              </button>
-            ))}
+        {/* 종목 선택 + 도움말 — 종목 수가 많으면(VBT 5종) 글자·여백을 줄여 한 줄 유지 */}
+        <div className="flex items-center gap-1.5 w-full max-w-[100vw] px-1">
+          <div className="pointer-events-auto flex gap-0.5 rounded-full bg-black/55 backdrop-blur p-1 border border-white/10 shadow-lg min-w-0 flex-1 justify-center">
+            {modeExercises.map(e => {
+              const many = modeExercises.length >= 5;
+              return (
+                <button key={e.key} onClick={() => setExerciseType(e.key)}
+                  className={`shrink-0 whitespace-nowrap rounded-full font-black transition-colors ${
+                    many ? 'px-2 py-1 text-[10px]' : 'px-3 py-1 text-[11px]'} ${
+                    exerciseType === e.key ? 'bg-emerald-500 text-slate-950' : 'text-slate-300'}`}>
+                  {e.label}
+                </button>
+              );
+            })}
           </div>
           <button onClick={() => setShowGuide(true)}
             className="pointer-events-auto h-8 w-8 shrink-0 rounded-full bg-black/55 backdrop-blur border border-white/10 text-white font-black shadow-lg">
