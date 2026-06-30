@@ -1,6 +1,6 @@
 export const MOMGAGYM_BLOG_URL = 'https://blog.naver.com/posture_gym';
 export const MOMGAGYM_PUBLIC_URL = 'https://momgagym-cms2.pages.dev';
-export const MOMGAGYM_BLOG_REDIRECT_PATH = '/blog';
+export const MOMGAGYM_CHANNEL_POPUP_PATH = '/login?official=1';
 
 const STATUS = Object.freeze({
   normal: {
@@ -472,11 +472,11 @@ function originFromUrl(url) {
   catch (e) { return ''; }
 }
 
-export function resolveBlogRedirectUrl(sourceUrl = '') {
+export function resolveChannelPopupUrl(sourceUrl = '') {
   const origin = originFromUrl(sourceUrl)
     || (typeof window !== 'undefined' ? window.location?.origin : '')
     || MOMGAGYM_PUBLIC_URL;
-  return `${origin}${MOMGAGYM_BLOG_REDIRECT_PATH}`;
+  return `${origin}${MOMGAGYM_CHANNEL_POPUP_PATH}`;
 }
 
 export function buildKakaoFeedTemplate(summaryInput = {}, options = {}) {
@@ -488,7 +488,7 @@ export function buildKakaoFeedTemplate(summaryInput = {}, options = {}) {
     .join('\n');
   const header = summary.title || '몸가짐CMS 측정 결과 요약';
   const scoreLine = `${summary.statusLabel || ''} · 종합 ${score}/100`.trim();
-  const blogUrl = resolveBlogRedirectUrl(options.webUrl || summary.webUrl);
+  const blogUrl = resolveChannelPopupUrl(options.webUrl || summary.webUrl);
   const text = clampText(`${header}\n${scoreLine}${findings ? `\n${findings}` : ''}\n몸가짐 트레이너와 상담 후 운동하세요.`, 280);
 
   return {

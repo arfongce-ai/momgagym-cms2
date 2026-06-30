@@ -4,7 +4,7 @@
 //   · Text 템플릿 → 종합점수 + 상위 3건 + 블로그 버튼 링크
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { shareMeasurementSummaryToKakao } from '../ai-measure/core/reportShare';
-import { shareSummaryToKakao, buildKakaoFeedTemplate, MOMGAGYM_BLOG_REDIRECT_PATH } from '../ai-measure/core/unifiedReport';
+import { shareSummaryToKakao, buildKakaoFeedTemplate, MOMGAGYM_CHANNEL_POPUP_PATH } from '../ai-measure/core/unifiedReport';
 
 const sampleSummary = {
   title: '몸가짐CMS 측정 결과 요약',
@@ -36,7 +36,7 @@ describe('카카오톡 공유 래퍼', () => {
     expect(sentTemplate.text).toContain('몸가짐CMS');
     expect(sentTemplate.text).not.toContain('https://');
     expect(sentTemplate.buttonTitle).toBe('블로그 보기');
-    expect(sentTemplate.link.webUrl.endsWith(MOMGAGYM_BLOG_REDIRECT_PATH)).toBe(true);
+    expect(sentTemplate.link.webUrl.endsWith(MOMGAGYM_CHANNEL_POPUP_PATH)).toBe(true);
   });
 
   it('Text 템플릿은 종합점수와 상위 3건만 담는다', () => {
@@ -52,10 +52,10 @@ describe('카카오톡 공유 래퍼', () => {
 });
 
 describe('카카오 공유 링크 (회원용)', () => {
-  it('호출부 앱 주소 기준 /blog 리다이렉트 링크로 고정한다', () => {
+  it('호출부 앱 주소 기준 공식 채널 팝업 링크로 고정한다', () => {
     const t = buildKakaoFeedTemplate(sampleSummary, { webUrl: 'https://momgagym-cms2.pages.dev/report' });
-    expect(t.link.webUrl).toBe('https://momgagym-cms2.pages.dev/blog');
-    expect(t.link.mobileWebUrl).toBe('https://momgagym-cms2.pages.dev/blog');
+    expect(t.link.webUrl).toBe('https://momgagym-cms2.pages.dev/login?official=1');
+    expect(t.link.mobileWebUrl).toBe('https://momgagym-cms2.pages.dev/login?official=1');
     expect(t.text).toContain('몸가짐 트레이너와 상담 후 운동하세요.');
     expect(t.text).not.toContain('https://');
   });

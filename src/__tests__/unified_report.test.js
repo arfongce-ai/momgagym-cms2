@@ -5,7 +5,7 @@ import {
   buildUnifiedReportDocument,
   extractKakaoSummary,
   getLaymanTerm,
-  MOMGAGYM_BLOG_REDIRECT_PATH,
+  MOMGAGYM_CHANNEL_POPUP_PATH,
   sanitizeReportPayload,
   shareSummaryToKakao,
   toLaymanMetric,
@@ -100,7 +100,7 @@ describe('unified report utilities', () => {
     expect(template.text).toContain('몸가짐 트레이너와 상담 후 운동하세요.');
     expect(template.text).not.toContain('https://');
     expect(template.buttonTitle).toBe('블로그 보기');
-    expect(template.link.webUrl).toBe(`https://example.com${MOMGAGYM_BLOG_REDIRECT_PATH}`);
+    expect(template.link.webUrl).toBe(`https://example.com${MOMGAGYM_CHANNEL_POPUP_PATH}`);
     expect(template.buttons).toBeUndefined();
   });
 

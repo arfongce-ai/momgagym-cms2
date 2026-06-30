@@ -7,7 +7,7 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [error, setError]       = useState('');
   const [loading, setLoading]   = useState(false);
-  const [channelOpen, setChannelOpen] = useState(false);
+  const [channelOpen, setChannelOpen] = useState(true);
 
   const handleSubmit = async e => {
     e.preventDefault(); setError(''); setLoading(true);
