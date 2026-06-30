@@ -1,10 +1,10 @@
 // 카카오톡 공유 래퍼 회귀 테스트 (Vitest, node 환경 — window 를 직접 stub)
 //   · 키 미설정 → 안내 메시지(throw 안 함)
 //   · 정상 경로 → Kakao.Share.sendDefault 호출
-//   · Feed 템플릿 → 종합점수 + 상위 3건만
+//   · Text 템플릿 → 종합점수 + 상위 3건 + 공개 채널 링크
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { shareMeasurementSummaryToKakao } from '../ai-measure/core/reportShare';
-import { shareSummaryToKakao, buildKakaoFeedTemplate } from '../ai-measure/core/unifiedReport';
+import { shareSummaryToKakao, buildKakaoFeedTemplate, MOMGAGYM_BLOG_URL } from '../ai-measure/core/unifiedReport';
 
 const sampleSummary = {
   title: '몸가짐CMS 측정 결과 요약',
@@ -32,16 +32,30 @@ describe('카카오톡 공유 래퍼', () => {
     await shareSummaryToKakao(sampleSummary, { Kakao });
     expect(sendDefault).toHaveBeenCalledTimes(1);
     const sentTemplate = sendDefault.mock.calls[0][0];
-    expect(sentTemplate.objectType).toBe('feed');
-    expect(sentTemplate.itemContent.items.length).toBe(3);
-    expect(sentTemplate.content.title).toContain('몸가짐CMS');
+    expect(sentTemplate.objectType).toBe('text');
+    expect(sentTemplate.text).toContain('몸가짐CMS');
+    expect(sentTemplate.text).toContain(MOMGAGYM_BLOG_URL);
+    expect(sentTemplate.link.webUrl).toBe(MOMGAGYM_BLOG_URL);
   });
 
-  it('Feed 템플릿은 종합점수와 상위 3건만 담는다', () => {
+  it('Text 템플릿은 종합점수와 상위 3건만 담는다', () => {
     const many = { ...sampleSummary, topFindings: [1,2,3,4,5].map(n => ({ text: `소견 ${n}` })) };
     const t = buildKakaoFeedTemplate(many);
-    expect(t.itemContent.items.length).toBe(3);
-    expect(t.itemContent.titleImageText).toContain('72');
-    expect(t.buttons[0].title).toBe('앱/웹에서 자세히 보기');
+    expect(t.objectType).toBe('text');
+    expect(t.text).toContain('72');
+    expect(t.text).toContain('소견 1');
+    expect(t.text).toContain('소견 3');
+    expect(t.text).not.toContain('소견 4');
+    expect(t.buttons).toBeUndefined();
+  });
+});
+
+describe('카카오 공유 링크 (회원용)', () => {
+  it('호출부가 앱 주소(webUrl)를 넘겨도 무시하고 블로그로 고정한다', () => {
+    const t = buildKakaoFeedTemplate(sampleSummary, { webUrl: 'https://momgagym-cms2.pages.dev/report' });
+    expect(t.link.webUrl).toBe(MOMGAGYM_BLOG_URL);
+    expect(t.link.mobileWebUrl).toBe(MOMGAGYM_BLOG_URL);
+    expect(t.text).toContain(MOMGAGYM_BLOG_URL);
+    expect(t.text).toContain('instagram.com/posture_gym_official');
   });
 });

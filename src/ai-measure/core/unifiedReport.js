@@ -1,3 +1,6 @@
+export const MOMGAGYM_BLOG_URL = 'https://blog.naver.com/posture_gym';
+const CENTER_INSTAGRAM_URL = 'https://www.instagram.com/posture_gym_official/';
+
 const STATUS = Object.freeze({
   normal: {
     key: 'normal',
@@ -428,7 +431,10 @@ export function buildUnifiedReportDocument(report = {}, options = {}) {
 }
 
 export function extractKakaoSummary(reportOrDocument = {}, options = {}) {
-  const summary = reportOrDocument.summary || buildSummaryData(reportOrDocument, options);
+  const looksLikeSummary = reportOrDocument
+    && (reportOrDocument.overallScore != null || Array.isArray(reportOrDocument.topFindings));
+  const summary = reportOrDocument.summary
+    || (looksLikeSummary ? reportOrDocument : buildSummaryData(reportOrDocument, options));
   const member = normalizeMember(options.member || reportOrDocument.member || {});
   const topFindings = (summary.topFindings || []).slice(0, 3);
   const score = normalizeScore(summary.overallScore ?? summary.score);
@@ -454,39 +460,23 @@ export function extractKakaoSummary(reportOrDocument = {}, options = {}) {
 
 export function buildKakaoFeedTemplate(summaryInput = {}, options = {}) {
   const summary = summaryInput.topFindings ? summaryInput : extractKakaoSummary(summaryInput, options);
-  const webUrl = options.webUrl || summary.webUrl || (typeof window !== 'undefined' ? window.location.href : '');
-  const imageUrl = options.imageUrl || summary.imageUrl || 'https://momgagym-cms.firebaseapp.com/og-report-summary.png';
-  const description = clampText(summary.description || `${summary.statusLabel} · ${summary.score}/100`, 180);
+  const score = summary.overallScore ?? summary.score ?? 0;
+  const findings = (summary.topFindings || [])
+    .slice(0, 3)
+    .map((finding, index) => `${index + 1}. ${finding.text}`)
+    .join('\n');
+  const header = summary.title || '몸가짐CMS 측정 결과 요약';
+  const scoreLine = `${summary.statusLabel || ''} · 종합 ${score}/100`.trim();
+  const links = `블로그 ${MOMGAGYM_BLOG_URL}\n인스타 ${CENTER_INSTAGRAM_URL}`;
+  const text = clampText(`${header}\n${scoreLine}\n${links}${findings ? `\n${findings}` : ''}`, 280);
 
   return {
-    objectType: 'feed',
-    content: {
-      title: summary.title || '몸가짐CMS 측정 결과 요약',
-      description,
-      imageUrl,
-      link: {
-        mobileWebUrl: webUrl,
-        webUrl,
-      },
+    objectType: 'text',
+    text,
+    link: {
+      mobileWebUrl: MOMGAGYM_BLOG_URL,
+      webUrl: MOMGAGYM_BLOG_URL,
     },
-    itemContent: {
-      profileText: summary.memberName || '몸가짐CMS',
-      titleImageText: `${summary.score}/100`,
-      titleImageCategoryName: summary.statusLabel,
-      items: summary.topFindings.slice(0, 3).map((finding, index) => ({
-        item: `핵심 ${index + 1}`,
-        itemOp: finding.text,
-      })),
-    },
-    buttons: [
-      {
-        title: options.buttonTitle || '앱/웹에서 자세히 보기',
-        link: {
-          mobileWebUrl: webUrl,
-          webUrl,
-        },
-      },
-    ],
   };
 }
 
