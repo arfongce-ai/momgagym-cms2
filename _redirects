@@ -1,1 +1,3 @@
+/blog https://blog.naver.com/posture_gym 302
+/blog/* https://blog.naver.com/posture_gym 302
 /* /index.html 200

@@ -1,5 +1,6 @@
 export const MOMGAGYM_BLOG_URL = 'https://blog.naver.com/posture_gym';
-const CENTER_INSTAGRAM_URL = 'https://www.instagram.com/posture_gym_official/';
+export const MOMGAGYM_PUBLIC_URL = 'https://momgagym-cms2.pages.dev';
+export const MOMGAGYM_BLOG_REDIRECT_PATH = '/blog';
 
 const STATUS = Object.freeze({
   normal: {
@@ -465,6 +466,19 @@ export function extractKakaoSummary(reportOrDocument = {}, options = {}) {
   };
 }
 
+function originFromUrl(url) {
+  if (!url) return '';
+  try { return new URL(url).origin; }
+  catch (e) { return ''; }
+}
+
+export function resolveBlogRedirectUrl(sourceUrl = '') {
+  const origin = originFromUrl(sourceUrl)
+    || (typeof window !== 'undefined' ? window.location?.origin : '')
+    || MOMGAGYM_PUBLIC_URL;
+  return `${origin}${MOMGAGYM_BLOG_REDIRECT_PATH}`;
+}
+
 export function buildKakaoFeedTemplate(summaryInput = {}, options = {}) {
   const summary = summaryInput.topFindings ? summaryInput : extractKakaoSummary(summaryInput, options);
   const score = summary.overallScore ?? summary.score ?? 0;
@@ -474,15 +488,16 @@ export function buildKakaoFeedTemplate(summaryInput = {}, options = {}) {
     .join('\n');
   const header = summary.title || '몸가짐CMS 측정 결과 요약';
   const scoreLine = `${summary.statusLabel || ''} · 종합 ${score}/100`.trim();
-  const links = `블로그 ${MOMGAGYM_BLOG_URL}\n인스타 ${CENTER_INSTAGRAM_URL}`;
-  const text = clampText(`${header}\n${scoreLine}\n${links}${findings ? `\n${findings}` : ''}`, 280);
+  const blogUrl = resolveBlogRedirectUrl(options.webUrl || summary.webUrl);
+  const text = clampText(`${header}\n${scoreLine}${findings ? `\n${findings}` : ''}\n몸가짐 블로그에서 자세히 확인하세요.`, 280);
 
   return {
     objectType: 'text',
     text,
+    buttonTitle: '블로그 보기',
     link: {
-      mobileWebUrl: MOMGAGYM_BLOG_URL,
-      webUrl: MOMGAGYM_BLOG_URL,
+      mobileWebUrl: blogUrl,
+      webUrl: blogUrl,
     },
   };
 }

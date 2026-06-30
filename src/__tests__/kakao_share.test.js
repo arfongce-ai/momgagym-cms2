@@ -1,10 +1,10 @@
 // 카카오톡 공유 래퍼 회귀 테스트 (Vitest, node 환경 — window 를 직접 stub)
 //   · 키 미설정 → 안내 메시지(throw 안 함)
 //   · 정상 경로 → Kakao.Share.sendDefault 호출
-//   · Text 템플릿 → 종합점수 + 상위 3건 + 공개 채널 링크
+//   · Text 템플릿 → 종합점수 + 상위 3건 + 블로그 버튼 링크
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { shareMeasurementSummaryToKakao } from '../ai-measure/core/reportShare';
-import { shareSummaryToKakao, buildKakaoFeedTemplate, MOMGAGYM_BLOG_URL } from '../ai-measure/core/unifiedReport';
+import { shareSummaryToKakao, buildKakaoFeedTemplate, MOMGAGYM_BLOG_REDIRECT_PATH } from '../ai-measure/core/unifiedReport';
 
 const sampleSummary = {
   title: '몸가짐CMS 측정 결과 요약',
@@ -34,8 +34,9 @@ describe('카카오톡 공유 래퍼', () => {
     const sentTemplate = sendDefault.mock.calls[0][0];
     expect(sentTemplate.objectType).toBe('text');
     expect(sentTemplate.text).toContain('몸가짐CMS');
-    expect(sentTemplate.text).toContain(MOMGAGYM_BLOG_URL);
-    expect(sentTemplate.link.webUrl).toBe(MOMGAGYM_BLOG_URL);
+    expect(sentTemplate.text).not.toContain('https://');
+    expect(sentTemplate.buttonTitle).toBe('블로그 보기');
+    expect(sentTemplate.link.webUrl.endsWith(MOMGAGYM_BLOG_REDIRECT_PATH)).toBe(true);
   });
 
   it('Text 템플릿은 종합점수와 상위 3건만 담는다', () => {
@@ -51,11 +52,11 @@ describe('카카오톡 공유 래퍼', () => {
 });
 
 describe('카카오 공유 링크 (회원용)', () => {
-  it('호출부가 앱 주소(webUrl)를 넘겨도 무시하고 블로그로 고정한다', () => {
+  it('호출부 앱 주소 기준 /blog 리다이렉트 링크로 고정한다', () => {
     const t = buildKakaoFeedTemplate(sampleSummary, { webUrl: 'https://momgagym-cms2.pages.dev/report' });
-    expect(t.link.webUrl).toBe(MOMGAGYM_BLOG_URL);
-    expect(t.link.mobileWebUrl).toBe(MOMGAGYM_BLOG_URL);
-    expect(t.text).toContain(MOMGAGYM_BLOG_URL);
-    expect(t.text).toContain('instagram.com/posture_gym_official');
+    expect(t.link.webUrl).toBe('https://momgagym-cms2.pages.dev/blog');
+    expect(t.link.mobileWebUrl).toBe('https://momgagym-cms2.pages.dev/blog');
+    expect(t.text).toContain('몸가짐 블로그');
+    expect(t.text).not.toContain('https://');
   });
 });

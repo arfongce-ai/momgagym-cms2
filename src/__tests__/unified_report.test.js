@@ -5,7 +5,7 @@ import {
   buildUnifiedReportDocument,
   extractKakaoSummary,
   getLaymanTerm,
-  MOMGAGYM_BLOG_URL,
+  MOMGAGYM_BLOG_REDIRECT_PATH,
   sanitizeReportPayload,
   shareSummaryToKakao,
   toLaymanMetric,
@@ -97,8 +97,10 @@ describe('unified report utilities', () => {
     const template = buildKakaoFeedTemplate(summary, { webUrl: 'https://example.com/report' });
     expect(template.objectType).toBe('text');
     expect(template.text).toContain('몸가짐CMS 측정 결과 요약');
-    expect(template.text).toContain(MOMGAGYM_BLOG_URL);
-    expect(template.link.webUrl).toBe(MOMGAGYM_BLOG_URL);
+    expect(template.text).toContain('몸가짐 블로그');
+    expect(template.text).not.toContain('https://');
+    expect(template.buttonTitle).toBe('블로그 보기');
+    expect(template.link.webUrl).toBe(`https://example.com${MOMGAGYM_BLOG_REDIRECT_PATH}`);
     expect(template.buttons).toBeUndefined();
   });
 
