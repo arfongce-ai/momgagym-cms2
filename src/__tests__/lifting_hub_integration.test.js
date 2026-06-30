@@ -36,8 +36,9 @@ describe('바벨 리프팅 통합 페이로드 · inferReportType 분류', () =>
   });
 
   it('mode=lifting(역도) → vbt 계열로 묶임', () => {
-    const p = buildLiftingPayload({ mode: 'lifting', exerciseType: 'weightlifting', source: 'live', metrics: { meanVelocity: 1.2 } });
+    const p = buildLiftingPayload({ mode: 'lifting', exerciseType: 'snatch', source: 'live', metrics: { meanVelocity: 1.2 } });
     expect(inferReportType(p)).toBe('vbt');
+    expect(p.exerciseType).toBe('snatch');
   });
 
   it('새 metrics.* 경로에서 핵심 수치를 추출한다', () => {

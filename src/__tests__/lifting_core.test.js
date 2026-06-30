@@ -10,7 +10,10 @@ describe('lifting · exerciseType 표준화', () => {
   it('표준 종목 키만 유효', () => {
     expect(isValidExerciseType('squat')).toBe(true);
     expect(isValidExerciseType('bench_press')).toBe(true);
-    expect(isValidExerciseType('weightlifting')).toBe(true);
+    expect(isValidExerciseType('snatch')).toBe(true);
+    expect(isValidExerciseType('clean')).toBe(true);
+    expect(isValidExerciseType('clean_jerk')).toBe(true);
+    expect(isValidExerciseType('weightlifting')).toBe(true); // 레거시 별칭 호환
     expect(isValidExerciseType('bench')).toBe(false);     // 내부 lift 키는 비표준
     expect(isValidExerciseType('unknown')).toBe(false);
   });
@@ -18,21 +21,29 @@ describe('lifting · exerciseType 표준화', () => {
   it('라벨 매핑', () => {
     expect(exerciseLabel('squat')).toBe('스쿼트');
     expect(exerciseLabel('bench_press')).toBe('벤치프레스');
+    expect(exerciseLabel('snatch')).toBe('스내치');
+    expect(exerciseLabel('clean_jerk')).toBe('클린&저크');
+    expect(exerciseLabel('weightlifting')).toBe('클린'); // 레거시 → 대표 종목
     expect(exerciseLabel('nope')).toBe('nope'); // 폴백
   });
 
-  it('1RM 모드는 3대 운동만, 역도는 weightlifting 포함', () => {
+  it('모드별 종목 구성(역도=올림픽, 1RM=파워3종, VBT=혼합)', () => {
     const onerm = exercisesForMode('onerm').map(e => e.key);
     expect(onerm).toEqual(['squat', 'deadlift', 'bench_press']);
-    expect(onerm).not.toContain('weightlifting'); // 역도는 1RM 추정 대상 아님
+    expect(onerm).not.toContain('snatch'); // 올림픽 리프트는 1RM 추정 대상 아님
+
     const lifting = exercisesForMode('lifting').map(e => e.key);
-    expect(lifting).toContain('weightlifting');
+    expect(lifting).toEqual(['snatch', 'clean_jerk', 'clean']);
+
+    const vbt = exercisesForMode('vbt').map(e => e.key);
+    expect(vbt).toEqual(['squat', 'deadlift', 'bench_press', 'snatch', 'clean']);
   });
 
   it('내부 lift 키 ↔ 표준 exerciseType 양방향 매핑', () => {
     expect(exerciseToLift1rm('bench_press')).toBe('bench');
     expect(exerciseToLift1rm('squat')).toBe('squat');
-    expect(exerciseToLift1rm('weightlifting')).toBeNull(); // 1RM 없음
+    expect(exerciseToLift1rm('snatch')).toBeNull(); // 1RM 없음
+    expect(exerciseToLift1rm('clean')).toBeNull();
     expect(lift1rmToExercise('bench')).toBe('bench_press');
     expect(lift1rmToExercise('deadlift')).toBe('deadlift');
   });
@@ -149,8 +160,15 @@ describe('lifting · 통합 저장 페이로드', () => {
     expect(typeof p.recordedAt).toBe('string');
   });
 
-  it('비표준 exerciseType은 weightlifting으로 안전 폴백', () => {
-    const p = buildLiftingPayload({ mode: 'lifting', exerciseType: 'garbage', source: 'live' });
-    expect(p.exerciseType).toBe('weightlifting');
+  it('비표준 exerciseType은 모드별 안전 종목으로 폴백', () => {
+    const p1 = buildLiftingPayload({ mode: 'lifting', exerciseType: 'garbage', source: 'live' });
+    expect(p1.exerciseType).toBe('clean'); // 역도 모드 → 올림픽 리프트 기본
+    const p2 = buildLiftingPayload({ mode: 'vbt', exerciseType: 'garbage', source: 'live' });
+    expect(p2.exerciseType).toBe('squat'); // 그 외 → squat
+  });
+
+  it('레거시 weightlifting 키는 clean으로 정규화 저장', () => {
+    const p = buildLiftingPayload({ mode: 'lifting', exerciseType: 'weightlifting', source: 'live' });
+    expect(p.exerciseType).toBe('clean');
   });
 });

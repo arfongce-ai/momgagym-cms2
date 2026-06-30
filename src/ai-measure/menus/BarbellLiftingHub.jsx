@@ -18,6 +18,8 @@ import React, { useState, useCallback, useMemo } from 'react';
 import LiftingMeasure from './LiftingMeasure';
 import VbtMeasure from './VbtMeasure';
 import OneRMEstimate from './OneRMEstimate';
+import LiftingUploadAnalysis from './LiftingUploadAnalysis';
+import LiftingReportDashboard from './LiftingReportDashboard';
 import {
   exercisesForMode, exerciseLabel, lift1rmToExercise,
   vbtConfidence, estimateMeanPower, buildLiftingPayload,
@@ -33,8 +35,43 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
   const save = onSaveToFirebase || onSave;
   const [mode, setMode] = useState('lifting');
   // 공통 종목 — 모드 전환 시 해당 모드에서 유효하면 유지, 아니면 첫 항목으로.
-  const [exerciseType, setExerciseType] = useState('squat');
+  // 기본 모드가 역도(lifting)이므로 초기 종목도 역도 첫 종목(스내치).
+  const [exerciseType, setExerciseType] = useState(() => exercisesForMode('lifting')[0]?.key || 'snatch');
   const [showGuide, setShowGuide] = useState(false);
+  // 측정 방식 — 역도/VBT만. 'live'(실시간 추적) | 'upload'(고속영상 슬로모 분석).
+  const [captureMode, setCaptureMode] = useState('live');
+  // 측정 완료 후 표시할 리포트.
+  const [report, setReport] = useState(null);
+
+  // ── 회원 신체정보 연동(요구사항 4) ──
+  //  키·몸무게는 회원 신체정보에서 자동 연동. 미등록(키 없음)이면 점프&RSI 처럼
+  //  첫 화면에서 키·몸무게를 먼저 받고, 이후 카메라/측정으로 진입한다.
+  const [bodyHeight, setBodyHeight] = useState(member?.height ? Number(member.height) : null);
+  const [bodyWeight, setBodyWeight] = useState(member?.weight ? Number(member.weight) : null);
+  // 등록 회원이고 키가 있으면 게이트 통과. 미등록이거나 키 없으면 선등록 화면.
+  const [needBody, setNeedBody] = useState(!member?.height);
+  const [heightInput, setHeightInput] = useState(member?.height ? String(member.height) : '');
+  const [weightInput, setWeightInput] = useState(member?.weight ? String(member.weight) : '');
+  const [bodyError, setBodyError] = useState('');
+
+  // 각 측정 모듈에 내려줄, 신체정보가 보강된 member 객체.
+  const memberWithBody = useMemo(() => ({
+    ...(member || {}),
+    height: bodyHeight ?? member?.height ?? null,
+    weight: bodyWeight ?? member?.weight ?? null,
+  }), [member, bodyHeight, bodyWeight]);
+
+  const applyBody = useCallback(() => {
+    const h = Number(heightInput);
+    const w = weightInput ? Number(weightInput) : null;
+    if (!h || h < 100 || h > 230) { setBodyError('키를 100~230cm 범위로 입력하세요.'); return; }
+    if (w != null && (w < 25 || w > 250)) { setBodyError('몸무게를 25~250kg 범위로 입력하세요.'); return; }
+    setBodyHeight(h);
+    setBodyWeight(w);
+    setBodyError('');
+    onMemberHeightChange?.(h);
+    setNeedBody(false);
+  }, [heightInput, weightInput, onMemberHeightChange]);
 
   const modeExercises = useMemo(() => exercisesForMode(mode), [mode]);
 
@@ -42,7 +79,25 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
     setMode(next);
     const valid = exercisesForMode(next).some(e => e.key === exerciseType);
     if (!valid) setExerciseType(exercisesForMode(next)[0]?.key || 'squat');
+    // 1RM은 고속영상 분석 대상이 아니므로 진입 시 실시간으로.
+    if (next === 'onerm') setCaptureMode('live');
   }, [exerciseType]);
+
+  // 저장 + 리포트 표시 공통 헬퍼. payload 를 저장하고, 그 결과를 리포트로 띄운다.
+  const saveAndReport = useCallback(async (payload) => {
+    let saved = payload;
+    try {
+      const res = await save?.(payload);
+      if (res && typeof res === 'object') saved = { ...payload, ...res };
+    } catch (e) { /* 저장 실패해도 리포트는 표시 */ }
+    setReport(saved);
+    return saved;
+  }, [save]);
+
+  // 고속영상 분석은 이미 완성된 표준 페이로드를 넘겨주므로 그대로 저장+리포트.
+  const handleUploadComplete = useCallback(async (rep) => {
+    return saveAndReport(rep);
+  }, [saveAndReport]);
 
   // ── 저장 래퍼: 각 모듈의 raw 페이로드 → 표준 페이로드로 변환 후 상위 저장 ──
   const handleSaveLifting = useCallback(async (raw) => {
@@ -78,8 +133,8 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
       },
       extra: { romRatio: raw?.romRatio ?? null, durationSec: raw?.durationSec ?? null },
     });
-    return save?.(payload);
-  }, [exerciseType, save]);
+    return saveAndReport(payload);
+  }, [exerciseType, saveAndReport]);
 
   const handleSaveVbt = useCallback(async (raw) => {
     // VbtMeasure raw: { type:'vbt', distance, time, meanVelocity, zone,
@@ -116,38 +171,103 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
         confidenceReasons: conf.reasons,
       },
     });
-    return save?.(payload);
-  }, [exerciseType, save]);
+    return saveAndReport(payload);
+  }, [exerciseType, saveAndReport]);
 
   const handleSaveOneRm = useCallback(async (raw) => {
     // OneRMEstimate raw: { lift, liftLabel, weight, reps, oneRM, epley, brzycki,
-    //                      barKg, sidePlates, weightSource }
+    //   formulas, barKg, sidePlates, weightSource, attemptNo, attempts, bestOneRM }
     // 1RM은 내부 lift('bench')를 표준 exerciseType('bench_press')로 매핑해 저장.
     const exType = lift1rmToExercise(raw?.lift) || exerciseType;
+    const r = Number(raw?.reps) || 0;
+    // 반복수 기반 신뢰도(근거): 1~6 높음, 7~10 보통, 그 이상 낮음.
+    const conf = r >= 1 && r <= 6 ? 0.9 : r <= 10 ? 0.75 : 0.55;
     const payload = buildLiftingPayload({
       mode: 'onerm',
       exerciseType: exType,
       source: 'manual',  // 1RM은 무게·반복 입력 기반(영상 보조). 항상 manual 산출.
       metrics: {
         oneRM: raw?.oneRM ?? null,
-        confidenceScore: raw?.reps >= 1 && raw?.reps <= 10 ? 0.9 : 0.6, // 1~10회 고신뢰
+        confidenceScore: conf,
       },
       metadata: {
         weight: raw?.weight ?? null,
-        isCalibrated: raw?.weightSource === 'manual', // 직접 입력이 가장 확실
+        isCalibrated: raw?.weightSource === 'manual' || raw?.weightSource === 'dial',
         reps: raw?.reps ?? null,
         weightSource: raw?.weightSource ?? null,
         barKg: raw?.barKg ?? null,
         sidePlates: raw?.sidePlates ?? null,
+        attemptNo: raw?.attemptNo ?? null,        // 이번이 몇 차 도전인지
+        bestOneRM: raw?.bestOneRM ?? null,        // 누적 최고 1RM
+        bestAttemptNo: raw?.bestAttemptNo ?? null,
       },
       extra: {
         epley: raw?.epley ?? null,
         brzycki: raw?.brzycki ?? null,
         formulas: raw?.formulas ?? null,
+        attempts: raw?.attempts ?? null,          // 전체 도전 기록(리포트용)
       },
     });
-    return save?.(payload);
-  }, [exerciseType, save]);
+    return saveAndReport(payload);
+  }, [exerciseType, saveAndReport]);
+
+  // ── 신체정보 선등록 게이트(미등록·키 없음) — 점프&RSI 패턴 ──
+  if (needBody) {
+    return (
+      <div className="fixed inset-0 z-[80] bg-slate-950 flex flex-col" style={{ height: '100dvh' }}>
+        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800">
+          <button onClick={onBack} className="text-slate-300 font-bold text-sm">← 뒤로</button>
+          <h2 className="text-white font-black">바벨 리프팅</h2>
+          <div className="w-12" />
+        </div>
+        <div className="flex-1 flex items-center justify-center p-6">
+          <div className="w-full max-w-sm bg-slate-900 border border-amber-500/30 rounded-2xl p-5 space-y-4">
+            <div className="text-center space-y-1">
+              <p className="text-3xl">📏</p>
+              <p className="text-white font-black">키와 몸무게를 입력하세요</p>
+              <p className="text-slate-400 text-xs">바벨 cm 환산·속도·파워 계산에 사용됩니다. 입력 후 바로 측정으로 들어갑니다.</p>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <label className="block">
+                <span className="mb-1 block text-[10px] font-bold text-slate-500">키</span>
+                <div className="flex items-center gap-2">
+                  <input type="number" inputMode="numeric" value={heightInput}
+                    onChange={e => setHeightInput(e.target.value)} placeholder="170"
+                    className="min-w-0 flex-1 bg-slate-800 border border-slate-700 text-slate-100 rounded-lg px-3 py-2.5 text-sm font-mono focus:outline-none focus:border-amber-500" />
+                  <span className="text-slate-400 text-xs font-bold">cm</span>
+                </div>
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-[10px] font-bold text-slate-500">몸무게(선택)</span>
+                <div className="flex items-center gap-2">
+                  <input type="number" inputMode="decimal" value={weightInput}
+                    onChange={e => setWeightInput(e.target.value)} placeholder="70"
+                    className="min-w-0 flex-1 bg-slate-800 border border-slate-700 text-slate-100 rounded-lg px-3 py-2.5 text-sm font-mono focus:outline-none focus:border-amber-500" />
+                  <span className="text-slate-400 text-xs font-bold">kg</span>
+                </div>
+              </label>
+            </div>
+            <button onClick={applyBody} className="w-full rounded-xl bg-amber-500 text-slate-950 font-black py-3 active:scale-95">
+              입력하고 측정 시작
+            </button>
+            {bodyError && <p className="text-center text-xs text-red-400">{bodyError}</p>}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── 측정 완료 리포트 ──
+  if (report) {
+    return (
+      <div className="fixed inset-0 z-[80] bg-slate-950 overflow-y-auto" style={{ height: '100dvh' }}>
+        <LiftingReportDashboard report={report} onClose={onBack} />
+        <div className="sticky bottom-0 z-10 flex justify-center p-3 bg-slate-900/90 backdrop-blur border-t border-slate-800">
+          <button onClick={() => setReport(null)} className="rounded-lg bg-slate-700 text-white font-bold text-sm px-6 py-2">← 다시 측정</button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 z-[80] bg-slate-950" style={{ height: '100dvh' }}>
@@ -179,6 +299,18 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
             ⓘ
           </button>
         </div>
+        {/* 측정 방식 — 역도/VBT만(실시간 추적 / 고속영상 슬로모 분석) */}
+        {mode !== 'onerm' && (
+          <div className="pointer-events-auto flex gap-1 rounded-full bg-black/55 backdrop-blur p-1 border border-white/10 shadow-lg">
+            {[['live', '🔴 실시간'], ['upload', '📁 고속영상']].map(([k, label]) => (
+              <button key={k} onClick={() => setCaptureMode(k)}
+                className={`rounded-full px-3 py-1 text-[11px] font-black transition-colors ${
+                  captureMode === k ? 'bg-amber-500 text-slate-950' : 'text-slate-300'}`}>
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
         <p className="pointer-events-none text-[10px] font-bold text-amber-300 bg-black/55 backdrop-blur rounded-full px-3 py-0.5 border border-amber-500/30">
           {mode === 'onerm'
             ? '무게·반복 입력 기반 추정 · 1~10회에서 가장 정확'
@@ -190,19 +322,23 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
 
       {showGuide && <LiftingGuide mode={mode} onClose={() => setShowGuide(false)} />}
 
-      {/* ── 측정 모드 본체(검증된 기존 모듈 재사용) ── */}
-      {mode === 'lifting' && (
-        <LiftingMeasure member={member} onBack={onBack} onSave={handleSaveLifting}
+      {/* ── 측정 모드 본체 ── */}
+      {mode === 'lifting' && captureMode === 'live' && (
+        <LiftingMeasure member={memberWithBody} onBack={onBack} onSave={handleSaveLifting}
           onMemberHeightChange={onMemberHeightChange}
           exerciseType={exerciseType} embedded />
       )}
-      {mode === 'vbt' && (
-        <VbtMeasure member={member} onBack={onBack} onSave={handleSaveVbt}
+      {mode === 'vbt' && captureMode === 'live' && (
+        <VbtMeasure member={memberWithBody} onBack={onBack} onSave={handleSaveVbt}
           onMemberHeightChange={onMemberHeightChange}
           exerciseType={exerciseType} embedded />
+      )}
+      {mode !== 'onerm' && captureMode === 'upload' && (
+        <LiftingUploadAnalysis member={memberWithBody} onBack={onBack}
+          onComplete={handleUploadComplete} mode={mode} exerciseType={exerciseType} />
       )}
       {mode === 'onerm' && (
-        <OneRMEstimate member={member} onBack={onBack} onSave={handleSaveOneRm}
+        <OneRMEstimate member={memberWithBody} onBack={onBack} onSave={handleSaveOneRm}
           exerciseType={exerciseType} embedded />
       )}
     </div>

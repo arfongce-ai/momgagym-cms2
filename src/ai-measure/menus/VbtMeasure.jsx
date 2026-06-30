@@ -388,12 +388,14 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
 
   // ───────── 준비 화면(카메라 꺼짐) ─────────
   return (
-    <div className={`space-y-4 ${embedded ? 'pt-24 px-3 max-w-md mx-auto overflow-y-auto' : ''}`} style={embedded ? { height: '100dvh' } : undefined}>
-      <div className="flex items-center justify-between">
-        <button onClick={onBack} className="measure-back">← 메뉴</button>
-        <h2 className="measure-title">VBT · {exerciseType ? exerciseLabelLocal(exerciseType) : '속도기반'}</h2>
-        <span className="w-12" />
-      </div>
+    <div className={`space-y-4 ${embedded ? 'pt-36 px-3 max-w-md mx-auto overflow-y-auto pb-8' : ''}`} style={embedded ? { height: '100dvh' } : undefined}>
+      {!embedded && (
+        <div className="flex items-center justify-between">
+          <button onClick={onBack} className="measure-back">← 메뉴</button>
+          <h2 className="measure-title">VBT · {exerciseType ? exerciseLabelLocal(exerciseType) : '속도기반'}</h2>
+          <span className="w-12" />
+        </div>
+      )}
 
       <HeightField value={heightCm} onChange={setHeightCm} member={member}
         hint="거리·속도 환산에 사용" />

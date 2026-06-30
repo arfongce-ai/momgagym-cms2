@@ -7,12 +7,16 @@
 //      · 인식이 안 되면 그냥 직접 입력으로 진행(폴백).
 //  - 1RM = Epley·Brzycki 등 검증된 공식 평균.
 import { useRef, useState, useEffect, useCallback } from 'react';
-import { estimate1RM, LIFTS, REP_PRESETS } from '../core/strength';
+import { estimate1RM, LIFTS } from '../core/strength';
 import {
   IWF_PLATES, BAR_WEIGHTS, detectPlatesFromVideo,
   suggestSidePlates, totalWeight,
 } from '../core/plates';
 import { repTargets } from '../core/strength';
+import {
+  snapWeight, stepWeight, clampReps, repEstimateConfidence,
+  appendAttempt, summarizeAttempts, WEIGHT_STEP_KG,
+} from '../core/lifting';
 import { usePoseEngine } from '../core/usePoseEngine';
 import { assessFraming, FRAMING_PRESETS } from '../core/framingGuide';
 import { drawGuides } from '../core/cameraGuide';
@@ -20,6 +24,13 @@ import FramingIntro from './FramingIntro';
 import CameraStage from './CameraStage';
 
 const PLATE_HEX = { 빨강:'#D7263D', 파랑:'#0B61A4', 노랑:'#F2C200', 초록:'#1F9D55', 흰색:'#E8E8E8' };
+
+// 무게 입력 방식. 다이얼이 기본(0.5kg 단위·빠르고 정확).
+const WEIGHT_MODES = [
+  ['dial', '🎚 다이얼'],
+  ['manual', '⌨ 직접 입력'],
+  ['plate', '🎨 원판 인식'],
+];
 
 export default function OneRMEstimate({ member, onSave, onBack, exerciseType, embedded = false }) {
   // 허브 종목(exerciseType, 예 'bench_press') → 내부 lift 키('bench') 매핑.
@@ -29,8 +40,10 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
   const [barKg, setBarKg] = useState(20);
   const [sidePlates, setSidePlates] = useState([]);
   const [manualWeight, setManualWeight] = useState('');
-  const [useManual, setUseManual] = useState(true);   // 기본: 직접 입력
+  const [dialWeight, setDialWeight] = useState(60);          // 다이얼 무게(0.5kg 단위)
+  const [weightMode, setWeightMode] = useState('dial');       // 'dial' | 'manual' | 'plate'
   const [result, setResult] = useState(null);
+  const [attempts, setAttempts] = useState([]);              // 도전 차수 누적
 
   // 허브에서 종목이 바뀌면 내부 lift 도 동기화(임베드 모드).
   useEffect(() => {
@@ -47,9 +60,11 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
   const liftRef = useRef(lift);
   liftRef.current = lift;
 
-  const computedWeight = useManual
-    ? Number(manualWeight) || 0
-    : totalWeight(sidePlates, barKg).total;
+  const computedWeight = weightMode === 'manual'
+    ? (Number(manualWeight) || 0)
+    : weightMode === 'plate'
+      ? totalWeight(sidePlates, barKg).total
+      : dialWeight;
 
   const handleResult = useCallback((lms, ts, video) => {
     const canvas = canvasRef.current;
@@ -93,7 +108,7 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
   }, [syncCanvas, stop]);
 
   const openCam = () => {
-    setUseManual(false);
+    setWeightMode('plate');
     setDetected([]);
     // video 요소가 풀스크린으로 렌더된 뒤 카메라 연결(검은 화면 방지)
     start();
@@ -101,7 +116,7 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
   // 카메라를 닫으면, 인식된 원판이 없을 때는 직접 입력으로 자연스럽게 되돌린다.
   const closeCam = () => {
     stop();
-    if (detected.length === 0 && sidePlates.length === 0) setUseManual(true);
+    if (detected.length === 0 && sidePlates.length === 0) setWeightMode('dial');
   };
 
   // 색 자동인식(보조) — 현재 프레임 ROI 색 집계 → 후보 채움
@@ -116,7 +131,7 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
   };
 
   const addPlate = (p) => {
-    setUseManual(false);
+    setWeightMode('plate');
     setSidePlates(prev => {
       const i = prev.findIndex(x => x.kg === p.kg);
       if (i >= 0) { const n = [...prev]; n[i] = { ...n[i], count: n[i].count + 1 }; return n; }
@@ -130,27 +145,40 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
   };
 
   const calc = () => {
-    const w = computedWeight, r = Number(reps);
-    if (!w || w <= 0) { alert('무게가 0보다 커야 합니다. 무게를 직접 입력하거나 원판을 구성하세요.'); return; }
-    if (!r || r <= 0) { alert('반복 횟수를 입력하세요.'); return; }
-    if (r > 12) { alert('반복 횟수가 12회를 넘으면 추정 오차가 큽니다. 12회 이하로 입력하세요.'); return; }
-    setResult({ ...estimate1RM(w, r), usedWeight: w });
+    const w = computedWeight, r = clampReps(reps);
+    if (!w || w <= 0) { alert('무게가 0보다 커야 합니다. 무게를 설정하거나 원판을 구성하세요.'); return; }
+    // 반복 제한 없음(카운터). 고반복은 차단하지 않고 신뢰도로 안내(정직성).
+    setResult({ ...estimate1RM(w, r), usedWeight: w, usedReps: r });
   };
 
   const save = () => {
     if (!result) return;
+    // 도전 차수 누적(같은 세션 1·2·3차…). 저장 시 현재 결과를 한 차수로 기록.
+    const nextAttempts = appendAttempt(attempts, {
+      weight: result.usedWeight,
+      reps: result.usedReps ?? Number(reps),
+      oneRM: result.average,
+      success: true,
+    });
+    setAttempts(nextAttempts);
+    const summary = summarizeAttempts(nextAttempts);
     onSave?.({
       lift,
       liftLabel: LIFTS.find(l => l.key === lift)?.label,
       weight: result.usedWeight,
-      reps: Number(reps),
+      reps: result.usedReps ?? Number(reps),
       oneRM: result.average,
       epley: result.epley,
       brzycki: result.brzycki,
       formulas: result.formulas,
-      barKg: useManual ? null : barKg,
-      sidePlates: useManual ? null : sidePlates,
-      weightSource: useManual ? 'manual' : 'plate-color',
+      barKg: weightMode === 'plate' ? barKg : null,
+      sidePlates: weightMode === 'plate' ? sidePlates : null,
+      weightSource: weightMode === 'manual' ? 'manual'
+        : weightMode === 'dial' ? 'dial' : 'plate-color',
+      attemptNo: summary.count,           // 이번이 몇 차 도전인지
+      attempts: nextAttempts,             // 전체 도전 기록
+      bestOneRM: summary.bestOneRM,       // 누적 최고 1RM
+      bestAttemptNo: summary.bestAttemptNo,
     });
   };
 
@@ -187,7 +215,7 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
 
   // ───────── 입력/결과 화면 ─────────
   return (
-    <div className={`space-y-4 ${embedded ? 'pt-24 px-3 max-w-md mx-auto overflow-y-auto pb-8' : ''}`} style={embedded ? { height: '100dvh' } : undefined}>
+    <div className={`space-y-4 ${embedded ? 'pt-36 px-3 max-w-md mx-auto overflow-y-auto pb-8' : ''}`} style={embedded ? { height: '100dvh' } : undefined}>
       {!embedded && (
         <div className="flex items-center justify-between">
           <button onClick={onBack} className="measure-back">← 메뉴</button>
@@ -208,32 +236,52 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
         </div>
       )}
 
-      {/* 무게 입력 방식 토글 */}
-      <div className="flex gap-1 rounded-lg bg-slate-800 p-0.5 w-fit text-[11px]">
-        <button onClick={() => setUseManual(true)}
-          className={`px-3 py-1 rounded font-bold ${useManual ? 'bg-amber-500 text-slate-950' : 'text-slate-400'}`}>
-          무게 직접 입력
-        </button>
-        <button onClick={() => setUseManual(false)}
-          className={`px-3 py-1 rounded font-bold ${!useManual ? 'bg-amber-500 text-slate-950' : 'text-slate-400'}`}>
-          원판 색 인식(보조)
-        </button>
+      {/* 무게 입력 방식 토글 (다이얼 기본) */}
+      <div className="flex gap-1 rounded-lg bg-slate-800 p-0.5 w-full text-[11px]">
+        {WEIGHT_MODES.map(([k, label]) => (
+          <button key={k} onClick={() => setWeightMode(k)}
+            className={`flex-1 px-2 py-1.5 rounded font-bold ${weightMode === k ? 'bg-amber-500 text-slate-950' : 'text-slate-400'}`}>
+            {label}
+          </button>
+        ))}
       </div>
 
-      {useManual ? (
-        /* ── 직접 입력(기본) ── */
+      {weightMode === 'dial' ? (
+        /* ── 무게 다이얼(기본 · 0.5kg 단위) ── */
+        <div className="card-accent p-4">
+          <label className="block text-xs font-semibold text-slate-400 uppercase tracking-widest mb-3 text-center">든 무게 (0.5kg 단위)</label>
+          <div className="flex items-center justify-center gap-3">
+            <button onClick={() => setDialWeight(w => stepWeight(w, -10))}
+              className="w-12 h-12 rounded-xl bg-slate-700 text-slate-200 font-black text-sm active:scale-90">−5</button>
+            <button onClick={() => setDialWeight(w => stepWeight(w, -1))}
+              className="w-12 h-12 rounded-xl bg-slate-700 text-slate-200 font-black active:scale-90">−</button>
+            <div className="min-w-[110px] text-center">
+              <p className="font-mono font-black text-4xl text-slate-100 leading-none">{snapWeight(dialWeight)}</p>
+              <p className="text-[10px] text-slate-500 mt-1">kg</p>
+            </div>
+            <button onClick={() => setDialWeight(w => stepWeight(w, +1))}
+              className="w-12 h-12 rounded-xl bg-amber-500 text-slate-950 font-black active:scale-90">+</button>
+            <button onClick={() => setDialWeight(w => stepWeight(w, +10))}
+              className="w-12 h-12 rounded-xl bg-amber-500 text-slate-950 font-black text-sm active:scale-90">+5</button>
+          </div>
+          <input type="range" min="0" max="300" step={WEIGHT_STEP_KG} value={snapWeight(dialWeight)}
+            onChange={e => setDialWeight(snapWeight(e.target.value))}
+            className="w-full mt-4 accent-amber-500" />
+        </div>
+      ) : weightMode === 'manual' ? (
+        /* ── 직접 입력 ── */
         <div>
           <label className="block text-xs font-semibold text-slate-400 uppercase tracking-widest mb-1.5">든 무게 (kg)</label>
-          <input type="number" step="2.5" value={manualWeight} onChange={e => setManualWeight(e.target.value)}
+          <input type="number" step="0.5" value={manualWeight} onChange={e => setManualWeight(e.target.value)}
             placeholder="80" className="input-mono" />
         </div>
       ) : (
-        /* ── 원판 색 인식(보조) + 수동 확인 ── */
+        /* ── 원판 색·크기 인식(보조) + 수동 확인 ── */
         <div className="space-y-3">
           <FramingIntro
             preset={FRAMING_PRESETS[lift] || FRAMING_PRESETS.squat}
             onStart={openCam}
-            startLabel="📷 카메라로 원판 색 인식 (전체화면)"
+            startLabel="📷 카메라로 원판 인식 (전체화면)"
           />
 
           {detected.length > 0 && (
@@ -289,26 +337,62 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
         </div>
       )}
 
-      {/* 반복 횟수 */}
+      {/* 반복 횟수 — 카운터(제한 없음). 고반복은 차단 않고 신뢰도로 안내 */}
       <div>
         <label className="block text-xs font-semibold text-slate-400 uppercase tracking-widest mb-1.5">반복 횟수</label>
-        <div className="flex items-center gap-2">
-          {REP_PRESETS.map(r => (
+        <div className="flex items-center gap-3">
+          <button onClick={() => setReps(r => clampReps(Number(r) - 1))}
+            className="w-12 h-12 rounded-xl bg-slate-700 text-slate-200 font-black text-xl active:scale-90">−</button>
+          <div className="flex-1 text-center">
+            <p className="font-mono font-black text-3xl text-slate-100 leading-none">{clampReps(reps)}<span className="text-base text-slate-500"> 회</span></p>
+          </div>
+          <button onClick={() => setReps(r => clampReps(Number(r) + 1))}
+            className="w-12 h-12 rounded-xl bg-amber-500 text-slate-950 font-black text-xl active:scale-90">+</button>
+        </div>
+        <div className="mt-2 flex items-center gap-1.5">
+          {[1, 3, 5, 8, 10].map(r => (
             <button key={r} onClick={() => setReps(r)}
-              className={`px-4 py-2 rounded-lg text-sm font-bold ${Number(reps) === r ? 'bg-amber-500 text-slate-950' : 'bg-slate-800 text-slate-400'}`}>
+              className={`flex-1 py-1 rounded-lg text-[11px] font-bold ${clampReps(reps) === r ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40' : 'bg-slate-800 text-slate-500'}`}>
               {r}회
             </button>
           ))}
-          <input type="number" value={reps} onChange={e => setReps(e.target.value)} className="input-mono flex-1" placeholder="직접" />
         </div>
+        {(() => {
+          const c = repEstimateConfidence(reps);
+          const tone = c.level === 'high' ? 'text-emerald-400' : c.level === 'medium' ? 'text-amber-400' : 'text-red-400';
+          return <p className={`mt-1.5 text-[11px] font-bold ${tone}`}>● {c.note}</p>;
+        })()}
       </div>
 
       <button onClick={calc} className="btn btn-primary w-full">1RM 계산</button>
 
+      {/* 도전 차수 누적 기록 */}
+      {attempts.length > 0 && (
+        <div className="bg-slate-800 rounded-xl p-3">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-[10px] text-slate-500 uppercase tracking-widest">도전 기록 ({attempts.length}차)</p>
+            <button onClick={() => setAttempts([])} className="text-[10px] text-slate-500 underline">초기화</button>
+          </div>
+          <div className="space-y-1">
+            {attempts.map(a => {
+              const best = summarizeAttempts(attempts).bestAttemptNo === a.attemptNo;
+              return (
+                <div key={a.attemptNo} className={`flex items-center justify-between text-[11px] rounded px-2 py-1 ${best ? 'bg-amber-500/15 border border-amber-500/30' : 'bg-slate-900/60'}`}>
+                  <span className="text-slate-400 font-bold">{a.attemptNo}차</span>
+                  <span className="text-slate-300">{a.weight}kg × {a.reps}회</span>
+                  <span className={`font-mono font-bold ${best ? 'text-amber-300' : 'text-slate-300'}`}>{a.oneRM}kg{best ? ' ★' : ''}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {result && (
         <div className="card-accent p-4 space-y-3 animate-fade-in">
           <p className="text-xs font-bold text-amber-400 uppercase tracking-widest">
-            추정 1RM · {computedWeight}kg × {reps}회
+            추정 1RM · {result.usedWeight}kg × {result.usedReps ?? reps}회
+            {attempts.length > 0 && <span className="text-slate-500"> · 저장 시 {attempts.length + 1}차</span>}
           </p>
           <p className="text-center font-mono font-black text-5xl text-slate-100">
             {result.average}<span className="text-lg text-slate-500"> kg</span>
@@ -345,8 +429,10 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
       )}
 
       <p className="text-[11px] text-slate-500 leading-relaxed">
-        ※ 무게는 직접 입력이 가장 확실합니다. 원판 색 인식은 보조 기능으로, 조명·각도·겹침에 따라
-        틀릴 수 있으니 항상 장수를 직접 확인·수정한 뒤 계산하세요. 추정식은 1~10회에서 가장 정확합니다.
+        ※ 무게는 다이얼(0.5kg) 또는 직접 입력이 가장 확실합니다. 원판 인식은 보조 기능으로,
+        IWF 표준은 색=무게(빨강25·파랑20·노랑15·초록10·흰5kg)입니다. 같은 색의 큰/작은 원판
+        (예: 빨강 25kg vs 2.5kg)은 지름이 다르므로, 인식 후 장수를 반드시 직접 확인·수정하세요.
+        추정식은 1~10회에서 가장 정확하며, 그 이상은 참고용입니다.
       </p>
     </div>
   );
