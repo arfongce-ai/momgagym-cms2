@@ -1,6 +1,6 @@
 // pages/Report.jsx
 // 측정 리포트 페이지: 회원 선택 → 실측 데이터 그래프/요약 → JPG 다운로드.
-import { useState, useMemo, useEffect, lazy, Suspense } from 'react';
+import { useState, useMemo, useEffect, useRef, lazy, Suspense } from 'react';
 import { todayYMD } from '../utils/dates';
 import { useAuth } from '../contexts/AuthContext';
 import { scopeMembersToTrainer, sortByName } from '../utils/memberList';
@@ -8,7 +8,7 @@ import { store, aiStore } from '../demoData';
 import { buildFullReport, buildAnalysisTrend, buildPostureTrend } from '../services/reportService';
 import { buildReportSvg, downloadSvgAsJpg } from '../components/report/reportImage';
 import { buildSummaryData, scoreToStatus } from '../ai-measure/core/unifiedReport';
-import { shareMeasurementSummaryToKakao } from '../ai-measure/core/reportShare';
+import { captureNodeToJpgFile, shareMeasurementSummaryToKakao } from '../ai-measure/core/reportShare';
 import TrendChart from '../components/report/TrendChart';
 import MemberPicker from '../components/common/MemberPicker';
 const JumpReportDashboard = lazy(() => import('../ai-measure/menus/JumpReportDashboard'));
@@ -160,6 +160,157 @@ function buildUnifiedResults({ member, savedReports, savedPostureReports, savedR
   return items.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
 }
 
+const REPORT_CAPTURE_PAGE_SELECTOR = '.report-a4-page';
+
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function nextFrame() {
+  return new Promise(resolve => {
+    if (typeof requestAnimationFrame === 'function') {
+      requestAnimationFrame(() => resolve());
+      return;
+    }
+    setTimeout(resolve, 16);
+  });
+}
+
+async function waitForShareCapture(ref, timeoutMs = 2600) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    await nextFrame();
+    const root = ref.current?.querySelector('[data-share-report-ready="true"]');
+    const page = root?.querySelector(REPORT_CAPTURE_PAGE_SELECTOR);
+    if (page && page.getBoundingClientRect().width > 0 && page.getBoundingClientRect().height > 0) {
+      await nextFrame();
+      return root;
+    }
+  }
+  return ref.current?.querySelector('[data-share-report-ready="true"]') || null;
+}
+
+async function waitForImages(root, timeoutMs = 1200) {
+  const images = Array.from(root?.querySelectorAll?.('img') || []).filter(img => !img.complete);
+  if (!images.length) {
+    await nextFrame();
+    return;
+  }
+  await Promise.race([
+    Promise.all(images.map(img => new Promise(resolve => {
+      img.addEventListener('load', resolve, { once: true });
+      img.addEventListener('error', resolve, { once: true });
+    }))),
+    sleep(timeoutMs),
+  ]);
+}
+
+function canCaptureUnifiedResult(item) {
+  return item?.source === 'saved-report' || item?.source === 'posture' || item?.source === 'rom';
+}
+
+function safeFileSegment(value, fallback = 'report') {
+  return String(value || fallback)
+    .trim()
+    .replace(/[\\/:*?"<>|]/g, '_')
+    .replace(/\s+/g, '_')
+    .slice(0, 60) || fallback;
+}
+
+function buildShareFileBaseName(item, member) {
+  const rawDate = formatDateOnly(item?.date);
+  const date = rawDate && rawDate !== '-' ? rawDate.replace(/-/g, '') : todayYMD().replace(/-/g, '');
+  return [
+    safeFileSegment(member?.name || item?.report?.member?.name, '회원'),
+    safeFileSegment(item?.meta?.badge || item?.reportType, '리포트'),
+    date,
+  ].join('_');
+}
+
+function downloadFile(file) {
+  const url = URL.createObjectURL(file);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = file.name;
+  document.body.appendChild(anchor);
+  anchor.click();
+  document.body.removeChild(anchor);
+  setTimeout(() => URL.revokeObjectURL(url), 300);
+}
+
+async function shareReportFilesOrDownload(files, { title, text } = {}) {
+  const list = (Array.isArray(files) ? files : [files]).filter(Boolean);
+  if (!list.length) return { ok: false, mode: 'none', msg: '공유할 리포트 이미지가 없습니다.' };
+
+  if (typeof navigator !== 'undefined' && navigator.share) {
+    try {
+      const shareFiles = !navigator.canShare
+        ? list
+        : navigator.canShare({ files: list })
+          ? list
+          : list.length > 1 && navigator.canShare({ files: [list[0]] })
+            ? [list[0]]
+            : null;
+      if (shareFiles) {
+        await navigator.share({ title, text, files: shareFiles });
+        return {
+          ok: true,
+          mode: 'share',
+          msg: shareFiles.length === list.length ? '리포트 이미지를 공유했습니다.' : '리포트 첫 페이지 이미지를 공유했습니다.',
+        };
+      }
+    } catch (err) {
+      if (err?.name === 'AbortError') return { ok: false, mode: 'cancel', msg: '' };
+    }
+  }
+
+  list.forEach((file, index) => setTimeout(() => downloadFile(file), index * 250));
+  return {
+    ok: true,
+    mode: 'download',
+    msg: '이 기기에서는 이미지 공유가 제한되어 리포트 JPG를 저장했습니다.',
+  };
+}
+
+function ShareCaptureReport({ item, member }) {
+  if (!item) return null;
+  const report = item.report || {};
+  const reportMember = member || report.member;
+
+  if (item.source === 'saved-report') {
+    return (
+      <div data-share-report-ready="true" className="w-full bg-slate-950">
+        {report.kind === 'jump'
+          ? <JumpReportDashboard report={report} />
+          : <GaitReportDashboard report={report} />}
+      </div>
+    );
+  }
+
+  if (item.source === 'posture') {
+    return (
+      <div data-share-report-ready="true" className="w-full bg-slate-950">
+        <PostureReport
+          report={report}
+          member={reportMember}
+          heightCm={report?.heightCm}
+          actualAge={report?.actualAge}
+        />
+      </div>
+    );
+  }
+
+  if (item.source === 'rom') {
+    return (
+      <div data-share-report-ready="true" className="w-full bg-slate-950">
+        <RomReport report={{ ...report, member: report.member || reportMember }} />
+      </div>
+    );
+  }
+
+  return null;
+}
+
 function extractSessionMetric(session) {
   const d = session.data || {};
   switch (session.menu) {
@@ -231,14 +382,14 @@ function UnifiedResultCard({ item, onOpen, onShare, sharing }) {
         </div>
       </button>
 
-      {/* 카카오톡 공유 — 핵심 3건 + 종합점수만 전송 */}
+      {/* 카카오톡 공유: 리포트 화면이 있으면 이미지 파일 공유, 없으면 요약 공유 */}
       <button
         type="button"
         onClick={(e) => { e.stopPropagation(); onShare?.(item); }}
         disabled={sharing}
         className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-xl bg-[#FEE500] py-2.5 text-[13px] font-black text-[#191600] transition active:scale-[0.99] disabled:opacity-60"
       >
-        {sharing ? '공유 준비 중…' : '카카오톡으로 요약 공유'}
+        {sharing ? '리포트 생성 중…' : '카카오톡으로 리포트 공유'}
       </button>
     </div>
   );
@@ -253,6 +404,8 @@ export default function Report() {
   const [msg, setMsg] = useState(null);
   const [reportFilter, setReportFilter] = useState('all');
   const [sharingId, setSharingId] = useState(null);
+  const [shareCaptureItem, setShareCaptureItem] = useState(null);
+  const shareCaptureRef = useRef(null);
 
   const member = members.find(m => m.id === memberId);
 
@@ -371,10 +524,53 @@ export default function Report() {
     }
   };
 
+  const captureUnifiedResultFiles = async (item) => {
+    if (!canCaptureUnifiedResult(item)) return [];
+    setShareCaptureItem(item);
+    try {
+      await nextFrame();
+      const root = await waitForShareCapture(shareCaptureRef);
+      if (!root) return [];
+      await waitForImages(root);
+      await sleep(80);
+
+      const pages = Array.from(root.querySelectorAll(REPORT_CAPTURE_PAGE_SELECTOR));
+      const targets = pages.length ? pages : [root];
+      const baseName = buildShareFileBaseName(item, member);
+      const files = [];
+
+      for (let i = 0; i < targets.length; i += 1) {
+        const suffix = targets.length > 1 ? `_A4_${i + 1}` : '_A4';
+        files.push(await captureNodeToJpgFile(targets[i], `${baseName}${suffix}.jpg`, { bg: '#0f172a' }));
+      }
+
+      return files;
+    } finally {
+      setShareCaptureItem(null);
+    }
+  };
+
   const shareUnifiedResult = async (item) => {
     if (!item || sharingId) return;
     setSharingId(item.id); setMsg(null);
     try {
+      if (canCaptureUnifiedResult(item)) {
+        try {
+          setMsg('리포트 이미지를 만드는 중입니다...');
+          const files = await captureUnifiedResultFiles(item);
+          if (files.length) {
+            const res = await shareReportFilesOrDownload(files, {
+              title: `${member?.name || '회원'} 결과 리포트`,
+              text: '몸가짐운동센터 측정 결과 리포트입니다.',
+            });
+            setMsg(res.msg);
+            return;
+          }
+        } catch (captureError) {
+          console.warn('[Report] result image share fallback:', captureError);
+        }
+      }
+
       const res = await shareMeasurementSummaryToKakao(item.summary, {
         memberName: member?.name || '',
         reportType: item.reportType,
@@ -740,6 +936,20 @@ export default function Report() {
           </button>
           {msg && <p className="text-center text-xs text-slate-400">{msg}</p>}
         </>
+      )}
+
+      {shareCaptureItem && (
+        <div
+          aria-hidden="true"
+          className="fixed top-0 w-[860px] max-w-none overflow-visible bg-slate-950 pointer-events-none"
+          style={{ left: '-10000px' }}
+        >
+          <div ref={shareCaptureRef} className="w-[860px] bg-slate-950">
+            <Suspense fallback={<div className="min-h-[1123px] w-[794px] bg-slate-900" />}>
+              <ShareCaptureReport item={shareCaptureItem} member={member} />
+            </Suspense>
+          </div>
+        </div>
       )}
 
       {/* 페이지별 리포트 뷰어 (이전/다음으로 회차 넘김) */}
