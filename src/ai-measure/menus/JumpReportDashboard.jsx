@@ -1,5 +1,11 @@
 import { useMemo, useState } from 'react';
 import ReportActions from '../../components/report/ReportActions';
+import {
+  UnifiedEmptyState,
+  UnifiedReportHeader,
+  UnifiedReportPage,
+  UnifiedReportSection,
+} from '../../components/report/UnifiedReportPrimitives';
 import { buildProblemFocus } from '../core/crossMeasureContext';
 import ProblemFocusPanel from './ProblemFocusPanel.jsx';
 
@@ -86,12 +92,7 @@ export default function JumpReportDashboard({ report, onClose, onComment }) {
   };
 
   if (!report) {
-    return (
-      <div className="min-h-full bg-slate-950 p-5 text-slate-200">
-        <button onClick={onClose} className="mb-4 text-sm font-bold text-slate-400">닫기</button>
-        <p>리포트 데이터가 없습니다.</p>
-      </div>
-    );
+    return <UnifiedEmptyState onClose={onClose}>리포트 데이터가 없습니다.</UnifiedEmptyState>;
   }
 
   return (
@@ -212,46 +213,31 @@ export default function JumpReportDashboard({ report, onClose, onComment }) {
 
 function ReportPage({ children }) {
   return (
-    <div
-      className="report-a4-page w-full max-w-[794px] bg-slate-900 rounded-2xl shadow-2xl ring-1 ring-slate-700/70 overflow-hidden p-5 text-slate-100 sm:p-6"
-      style={{ minHeight: 1123 }}
-    >
+    <UnifiedReportPage className="overflow-hidden">
       {children}
-    </div>
+    </UnifiedReportPage>
   );
 }
 
 function ReportHeader({ code, type, title, subtitle, score, invalid, compact = false }) {
-  const color = invalid ? 'text-red-300' : score >= 80 ? 'text-emerald-300' : score >= 60 ? 'text-amber-300' : 'text-red-300';
   return (
-    <header className={`flex items-start justify-between gap-4 border-b border-slate-700/70 ${compact ? 'pb-4 mb-5' : 'pb-5 mb-6'}`}>
-      <div className="min-w-0">
-        <div className="flex items-center gap-2">
-          <p className="break-keep text-[11px] font-black tracking-[0.14em] text-amber-400 sm:text-[12px] sm:tracking-[0.22em]">{code}</p>
-          <span className={`rounded-full px-2 py-0.5 text-[9px] font-black ${type === 'RSI' ? 'bg-emerald-500/15 text-emerald-300' : 'bg-amber-500/15 text-amber-300'}`}>
-            {type}
-          </span>
-        </div>
-        <h1 className="mt-2 break-keep text-2xl font-black leading-tight text-white sm:text-3xl">{title}</h1>
-        <p className="mt-1 break-keep text-sm font-bold leading-tight text-slate-500">{subtitle}</p>
-      </div>
-      <div className="shrink-0 text-right">
-        <p className="text-xs font-bold text-slate-500">종합 점수</p>
-        <p className={`font-mono text-4xl font-black leading-none sm:text-5xl ${color}`}>{invalid ? '-' : score}</p>
-      </div>
-    </header>
+    <UnifiedReportHeader
+      eyebrow={code}
+      badge={type}
+      title={title}
+      subtitle={subtitle}
+      score={invalid ? null : score}
+      status={invalid ? 'risk' : undefined}
+      compact={compact}
+    />
   );
 }
 
 function Section({ title, subtitle, children }) {
   return (
-    <section className="mb-5 rounded-xl border border-slate-700/70 bg-slate-800/35 p-4">
-      <div className="mb-3 flex items-baseline justify-between gap-3">
-        <h2 className="text-base font-black text-white">{title}</h2>
-        {subtitle && <span className="text-[11px] font-bold text-slate-500">{subtitle}</span>}
-      </div>
+    <UnifiedReportSection title={title} subtitle={subtitle} className="mb-5">
       {children}
-    </section>
+    </UnifiedReportSection>
   );
 }
 

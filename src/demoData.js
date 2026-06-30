@@ -956,8 +956,8 @@ export const store = {
     return rows;
   },
 
-  // 정산 수정값(단가/횟수 override) — 문서 id = `${trainerId}_${ym}`
-  // { id, trainerId, ym, unitPrices:{memberId:단가}, sessionCounts:{memberId:횟수}, blogCount, instaCount }
+  // 정산 수정값(단가/횟수/정산비율 override) — 문서 id = `${trainerId}_${ym}`
+  // { id, trainerId, ym, unitPrices:{memberId:단가}, sessionCounts:{memberId:횟수}, splitRates:{memberId:비율}, blogCount, instaCount }
   getSettleOverride: (trainerId, ym) =>
     cache.settleOverrides.find(o => o.id === `${trainerId}_${ym}`) || null,
   saveSettleOverride: async (trainerId, ym, data) => {

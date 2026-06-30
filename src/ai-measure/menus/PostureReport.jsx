@@ -8,6 +8,11 @@ import { buildClinicalInterpretation } from '../core/postureClinical';
 import { analyzeAxialRotation, ROTATION_DIRECTION_KO, ROTATION_LEVEL_KO } from '../core/postureRotation';
 import { buildProblemFocus } from '../core/crossMeasureContext';
 import ProblemFocusPanel from './ProblemFocusPanel.jsx';
+import {
+  UnifiedEmptyState,
+  UnifiedReportHeader,
+  UnifiedReportPage,
+} from '../../components/report/UnifiedReportPrimitives';
 
 const LM = POSE_LANDMARKS;
 
@@ -79,9 +84,7 @@ export default function PostureReport({
 
   if (!analysis) {
     return (
-      <div className="w-full rounded-lg border border-slate-700 bg-slate-900 p-6 text-center text-sm text-slate-400">
-        분석 가능한 BlazePose 랜드마크가 없습니다.
-      </div>
+      <UnifiedEmptyState onClose={onClose}>분석 가능한 BlazePose 랜드마크가 없습니다.</UnifiedEmptyState>
     );
   }
 
@@ -120,24 +123,16 @@ export default function PostureReport({
 
   return (
     <div className="min-h-full w-full bg-slate-950 p-4 text-slate-100">
-      <div className="report-a4-page mx-auto flex w-full max-w-[794px] flex-col gap-4 rounded-2xl bg-slate-950 p-5 ring-1 ring-slate-800">
-        <header className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-4">
-          <div>
-            <p className="text-xs font-bold uppercase tracking-[0.18em] text-sky-300">Posture & Alignment Assessment</p>
-            <h1 className="mt-1 text-2xl font-black text-white">
-              {memberName} <span className="text-base font-semibold text-slate-500">{measuredAt}</span>
-            </h1>
-          </div>
-          {onClose && (
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-md border border-slate-700 px-3 py-2 text-sm font-bold text-slate-300 hover:border-slate-500 hover:text-white"
-            >
-              닫기
-            </button>
-          )}
-        </header>
+      <UnifiedReportPage className="mx-auto flex flex-col gap-4">
+        <UnifiedReportHeader
+          eyebrow="POSTURE & ALIGNMENT REPORT"
+          badge="POSTURE"
+          title={memberName}
+          subtitle={measuredAt}
+          score={score}
+          onClose={onClose}
+          compact
+        />
 
         <MetadataStrip metadata={clinical.metadata} viewsMeasured={report?.viewsMeasured} />
         <ProblemFocusPanel focus={problemFocus} context={report?.cross_measure_context} />
@@ -223,7 +218,7 @@ export default function PostureReport({
             본 리포트는 BlazePose 기반 스크리닝 자료이며, 통증 또는 신경학적 증상이 있는 경우 전문 의료진 평가가 우선입니다.
           </p>
         </section>
-      </div>
+      </UnifiedReportPage>
     </div>
   );
 }

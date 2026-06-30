@@ -8,8 +8,8 @@ const trainers = [{ id: 't1', name: '트레이너1', color: '#f00' }];
 const settings = { withholdingRate: 3.3, promoPerPost: 10000, snsInstaMax: 8, lowSplitRate: 40, rate60MinSales: 3000000, rate50MinBlog: 2, rate50MinStudy: 1, trainerSplitRates: {} };
 const records = [];
 
-function settle(members, payments, schedules) {
-  const blocks = computeSessionSettlement({ trainers, members, schedules, payments, records, settings, ym: YM, getOverride: () => null });
+function settle(members, payments, schedules, override = null) {
+  const blocks = computeSessionSettlement({ trainers, members, schedules, payments, records, settings, ym: YM, getOverride: () => override });
   const b = blocks.find(x => x.trainer.id === 't1');
   return { block: b, row: b?.rows?.find(r => r.memberId === 'm1') };
 }
@@ -51,6 +51,19 @@ describe('박제비율(splitRateAtPay)이 정산에 반영', () => {
     ] };
     const { row } = settle(members, payments, attendedSched(2));
     expect(row.rate).toBe(56); // 가중평균
+  });
+
+  it('정산 수정값 splitRates가 박제비율보다 우선 적용된다', () => {
+    const members = [{ id: 'm1', name: '회원', isActive: true, trainerSessions: { t1: { total: 10, remaining: 6 } } }];
+    const payments = { m1: [{ id: 'p1', amount: 500000, method: '현금', paidAt: '2026-06-01', trainerIds: ['t1'], splitRateAtPay: { t1: 50 } }] };
+    const { block, row } = settle(members, payments, attendedSched(4), { splitRates: { m1: 43 } });
+
+    expect(row.baseRate).toBe(50);
+    expect(row.rate).toBe(43);
+    expect(row.rateManual).toBe(true);
+    expect(row.rateFrozen).toBe(false);
+    expect(row.payAmount).toBe(86000); // 200,000 * 43%
+    expect(block.splitMode).toBe('manual');
   });
 });
 

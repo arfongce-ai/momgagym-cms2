@@ -6,6 +6,7 @@ import {
 import { buildProblemFocus } from '../core/crossMeasureContext';
 import ProblemFocusPanel from './ProblemFocusPanel.jsx';
 import ReportActions from '../../components/report/ReportActions';
+import { UnifiedReportHeader, UnifiedReportPage } from '../../components/report/UnifiedReportPrimitives';
 
 /*
  * GaitReportDashboard — 보행/러닝 종합 리포트 (1장 대시보드)
@@ -127,26 +128,20 @@ export default function GaitReportDashboard({ report, onComment, onClose, videoB
 
   return (
     <div className="min-h-full w-full bg-slate-950 flex flex-col items-center justify-start p-4 font-sans">
-      <div
+      <UnifiedReportPage
         id="gait-report-sheet"
-        className="report-a4-page w-full max-w-[794px] bg-slate-900 rounded-2xl shadow-2xl ring-1 ring-slate-700/60 overflow-hidden flex flex-col"
-        style={{ minHeight: 1123 }}  /* A4 page */
+        className="overflow-hidden flex flex-col"
       >
         {/* ── 헤더 ── */}
-        <header className="flex items-center justify-between px-6 pt-5 pb-3 border-b border-slate-700/60">
-          <div>
-            <p className="text-[11px] font-bold tracking-[0.2em] text-amber-400/90">GAIT &amp; RUNNING REPORT</p>
-            <h1 className="text-xl font-black text-white leading-tight">
-              {memberName} <span className="text-slate-500 text-sm font-medium">· {dateStr}</span>
-            </h1>
-          </div>
-          {onClose && (
-            <button onClick={onClose}
-              className="text-slate-400 hover:text-white text-sm font-bold rounded-lg px-3 py-1.5 bg-slate-800/80">
-              닫기
-            </button>
-          )}
-        </header>
+        <UnifiedReportHeader
+          eyebrow="GAIT & RUNNING REPORT"
+          badge="GAIT"
+          title={memberName}
+          subtitle={dateStr}
+          score={score}
+          onClose={onClose}
+          compact
+        />
 
         {/* ── 본문: 4분할 ── */}
         <div className="flex-1 grid grid-rows-[auto_1fr_auto] gap-3 p-4 min-h-0">
@@ -251,7 +246,7 @@ export default function GaitReportDashboard({ report, onComment, onClose, videoB
           <span>몸가짐 CMS · AI 측정 허브</span>
           <span>색상: <span className="text-emerald-400">정상</span> · <span className="text-amber-400">주의</span> · <span className="text-red-400">이상</span></span>
         </footer>
-      </div>
+      </UnifiedReportPage>
 
       {/* 결과 리포트 화면 내 저장 액션 (캡처 노드 #gait-report-sheet 바깥) */}
       <div className="w-full max-w-[794px] mt-3">

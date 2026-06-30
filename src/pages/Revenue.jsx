@@ -748,7 +748,7 @@ function SettleTab({ settings, trainers, trainerMap, scopeTid=null, readOnly=fal
     const header = ['트레이너','회원','등록회차','회차횟수','누적횟수','단가','월수업횟수','수업료','정산비율','실지급'];
     const body = [];
     blocks.forEach(b=>{
-      b.rows.forEach(r=>body.push([b.trainer.name, r.memberName, r.regRound||'등록', r.regRoundCount??r.regTotal, r.regTotal, r.unit, r.cnt, r.amount, `${r.rate}%${r.rateFrozen?'(등록월)':''}`, r.payAmount]));
+      b.rows.forEach(r=>body.push([b.trainer.name, r.memberName, r.regRound||'등록', r.regRoundCount??r.regTotal, r.regTotal, r.unit, r.cnt, r.amount, `${r.rate}%${r.rateManual?'(수정)':r.rateFrozen?'(등록월)':''}`, r.payAmount]));
       body.push([b.trainer.name,'수업료 합계','','','','','', b.sessionTotal, b.rateMixed?'혼합':`${b.splitRate}%`, b.sessionPayout]);
       body.push([b.trainer.name,'블로그','','','','', b.blogCount, b.blogInc,'','']);
       body.push([b.trainer.name,'인스타','','','','', b.instaCount, b.instaInc,'','']);
@@ -811,7 +811,7 @@ function SettleTab({ settings, trainers, trainerMap, scopeTid=null, readOnly=fal
 
       {!estimate && (
         <p className="text-[11px] text-slate-500 bg-slate-900 border border-slate-800 rounded-xl px-3 py-2">
-          단가·월 수업횟수는 결제·출석 데이터에서 자동 집계됩니다. 단가 = 공제 후 입금금액 ÷ 등록횟수 (카드1·2: 부가세+카드수수료 / 페이·현금영수증: 부가세 / 계좌·현금: 공제 없음) · 출석과 노쇼는 수업 횟수에 포함, 취소·외부·상담은 제외.{!readOnly && ' 셀을 눌러 직접 수정할 수 있어요.'}
+          단가·월 수업횟수·정산비율은 결제·출석 데이터에서 자동 집계됩니다. 단가 = 공제 후 입금금액 ÷ 등록횟수 (카드1·2: 부가세+카드수수료 / 페이·현금영수증: 부가세 / 계좌·현금: 공제 없음) · 출석과 노쇼는 수업 횟수에 포함, 취소·외부·상담은 제외.{!readOnly && ' 셀을 눌러 직접 수정할 수 있어요.'}
         </p>
       )}
 
@@ -835,14 +835,15 @@ function TrainerSettleCard({ block: b, ym, settings, onSaved, readOnly=false, de
   const [editing, setEditing] = useState(false);
   const [unitEdits, setUnitEdits] = useState({});   // memberId -> 단가
   const [cntEdits, setCntEdits]   = useState({});   // memberId -> 횟수
+  const [rateEdits, setRateEdits] = useState({});   // memberId -> 정산비율
   const [blog, setBlog] = useState(b.blogCount);
   const [insta, setInsta] = useState(b.instaCount);
   const [study, setStudy] = useState(b.studyCount);
 
   const startEdit = () => {
-    const u={}, c={};
-    b.rows.forEach(r=>{ u[r.memberId]=r.unit; c[r.memberId]=r.cnt; });
-    setUnitEdits(u); setCntEdits(c);
+    const u={}, c={}, rates={};
+    b.rows.forEach(r=>{ u[r.memberId]=r.unit; c[r.memberId]=r.cnt; rates[r.memberId]=r.rate; });
+    setUnitEdits(u); setCntEdits(c); setRateEdits(rates);
     // 홍보 횟수는 실시간 집계(auto)값을 기준으로 보여준다.
     // (과거 override로 고정된 값이 아니라 실제 기록 개수에서 시작 → 안 건드리면 실시간값 유지)
     setBlog(b.autoBlogCount); setInsta(b.autoInstaCount); setStudy(b.autoStudyCount);
@@ -852,12 +853,16 @@ function TrainerSettleCard({ block: b, ym, settings, onSaved, readOnly=false, de
   const save = async () => {
     try {
       // 핵심 원칙: "사용자가 자동집계값과 다르게 바꾼 항목만" override로 저장한다.
-      //  · 단가·횟수·홍보횟수 모두, 안 건드린 값은 저장에서 제외(또는 null) → 이후
+      //  · 단가·횟수·정산비율·홍보횟수 모두, 안 건드린 값은 저장에서 제외(또는 null) → 이후
       //    출석/결제/홍보 기록이 바뀌면 정산이 실시간으로 따라간다.
       //  · 예전에는 모든 회원의 단가·횟수를 통째로 박제해서, 한 번 "저장"하면
       //    그 트레이너의 정산이 과거값에 고정되는 버그가 있었다.
-      const autoUnit = {}, autoCnt = {};
-      b.rows.forEach(r => { autoUnit[r.memberId] = r.autoUnit; autoCnt[r.memberId] = r.autoCnt; });
+      const autoUnit = {}, autoCnt = {}, baseRate = {};
+      b.rows.forEach(r => {
+        autoUnit[r.memberId] = r.autoUnit;
+        autoCnt[r.memberId] = r.autoCnt;
+        baseRate[r.memberId] = r.baseRate ?? r.rate;
+      });
 
       const unitPrices = {};
       Object.entries(unitEdits).forEach(([mid, v]) => {
@@ -868,6 +873,16 @@ function TrainerSettleCard({ block: b, ym, settings, onSaved, readOnly=false, de
       Object.entries(cntEdits).forEach(([mid, v]) => {
         const val = Number(v) || 0;
         if (val !== (Number(autoCnt[mid]) || 0)) sessionCounts[mid] = val; // 바뀐 것만
+      });
+      const clampRate = (v) => {
+        if (v === '' || v === null || v === undefined) return null;
+        const n = Number(v);
+        return Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : null;
+      };
+      const splitRates = {};
+      Object.entries(rateEdits).forEach(([mid, v]) => {
+        const val = clampRate(v);
+        if (val != null && val !== (Number(baseRate[mid]) || 0)) splitRates[mid] = val; // 바뀐 것만
       });
 
       const promoOrNull = (edited, auto) =>
@@ -881,45 +896,66 @@ function TrainerSettleCard({ block: b, ym, settings, onSaved, readOnly=false, de
       const nothingOverridden =
         Object.keys(unitPrices).length === 0 &&
         Object.keys(sessionCounts).length === 0 &&
+        Object.keys(splitRates).length === 0 &&
         blogCount == null && instaCount == null && studyCount == null;
 
       if (nothingOverridden) {
         if (b.hasOverride) await store.deleteSettleOverride(b.trainer.id, ym);
       } else {
         await store.saveSettleOverride(b.trainer.id, ym, {
-          unitPrices, sessionCounts, blogCount, instaCount, studyCount,
+          unitPrices, sessionCounts, splitRates, blogCount, instaCount, studyCount,
         });
       }
       setEditing(false); onSaved?.();
     } catch(e){ alert('저장에 실패했습니다.'); }
   };
 
-  // 수동 수정값(override) 전체 삭제 → 단가·횟수·홍보횟수 모두 실시간 자동집계로 복원.
+  // 수동 수정값(override) 전체 삭제 → 단가·횟수·정산비율·홍보횟수 모두 실시간 자동집계로 복원.
   // 과거에 통째로 박제돼 정산이 옛 값에 고정된 경우를 한 번에 정리하는 용도.
   const resetOverride = async () => {
-    if (!window.confirm(`${b.trainer.name} 트레이너의 이번 달 수동 수정값을 모두 지우고 자동 집계값으로 되돌릴까요?\n(단가·수업횟수·SNS/스터디 횟수가 실시간 데이터 기준으로 재계산됩니다.)`)) return;
+    if (!window.confirm(`${b.trainer.name} 트레이너의 이번 달 수동 수정값을 모두 지우고 자동 집계값으로 되돌릴까요?\n(단가·수업횟수·정산비율·SNS/스터디 횟수가 실시간 데이터 기준으로 재계산됩니다.)`)) return;
     try { await store.deleteSettleOverride(b.trainer.id, ym); setEditing(false); onSaved?.(); }
     catch(e){ alert('복원에 실패했습니다. 네트워크 확인 후 다시 시도하세요.'); }
   };
 
-  // 편집 중 미리보기: 각 회원 행의 박제비율(r.rate)을 유지하고 단가·횟수만 반영
+  // 편집 중 미리보기: 단가·횟수·정산비율 변경을 즉시 실지급액에 반영
+  const toLiveRate = (value, fallback) => {
+    if (value === '' || value === null || value === undefined) return fallback;
+    const n = Number(value);
+    return Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : fallback;
+  };
   const liveRows = b.rows.map(r => {
     const u = editing ? (Number(unitEdits[r.memberId])||0) : r.unit;
     const c = editing ? (Number(cntEdits[r.memberId])||0) : r.cnt;
+    const rate = editing ? toLiveRate(rateEdits[r.memberId], r.rate) : r.rate;
+    const baseRate = r.baseRate ?? r.rate;
     const amount = u*c;
-    return { ...r, _u:u, _c:c, _amount:amount, _pay: Math.round(amount * (r.rate/100)) };
+    return {
+      ...r,
+      _u:u, _c:c, _rate:rate, _amount:amount,
+      _rateManual: editing ? rate !== baseRate : r.rateManual,
+      _pay: Math.round(amount * (rate/100)),
+    };
   });
   const liveSessionTotal  = liveRows.reduce((s,r)=>s+r._amount,0);
   const liveSessionPayout = liveRows.reduce((s,r)=>s+r._pay,0);
   const liveBlendedRate   = liveSessionTotal>0 ? Math.round(liveSessionPayout/liveSessionTotal*100) : b.splitRate;
+  const liveDistinctRates = [...new Set(liveRows.filter(r=>r._amount>0).map(r=>r._rate))];
+  const liveRateMixed = liveDistinctRates.length > 1;
+  const liveHasManualRate = liveRows.some(r=>r._rateManual);
   const liveTotal = editing
     ? liveSessionPayout
       + Number(blog||0)*settings.promoPerPost
       + Math.min(Number(insta||0), settings.snsInstaMax??8)*settings.promoPerPost
     : b.payout;
-  const liveSplit = { rate: editing ? liveBlendedRate : b.splitRate, mode: b.splitMode, reason: b.splitReason };
+  const liveSplit = {
+    rate: editing ? (liveRateMixed ? liveBlendedRate : (liveDistinctRates[0] ?? b.splitRate)) : b.splitRate,
+    mode: liveHasManualRate ? 'manual' : b.splitMode,
+    reason: liveHasManualRate && editing ? '정산 비율 수동 수정값이 반영된 미리보기입니다.' : b.splitReason,
+  };
 
   const INP = "w-20 bg-slate-900 border border-slate-600 text-slate-100 rounded px-1.5 py-1 text-xs font-mono text-right";
+  const RATE_INP = "w-14 bg-slate-900 border border-amber-500/40 text-amber-200 rounded px-1.5 py-1 text-xs font-mono text-right";
 
   return (
     <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
@@ -935,7 +971,7 @@ function TrainerSettleCard({ block: b, ym, settings, onSaved, readOnly=false, de
             : liveSplit.rate>=50 ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40'
             : 'bg-slate-700/40 text-slate-300 border-slate-600'
           }`} title={liveSplit.reason}>
-            정산 {b.rateMixed?`혼합 ${liveSplit.rate}%`:`${liveSplit.rate}%`}{liveSplit.mode==='manual'?' (수동)':liveSplit.mode==='frozen'?' (등록월)':' (자동)'}
+            정산 {liveRateMixed?`혼합 ${liveSplit.rate}%`:`${liveSplit.rate}%`}{liveSplit.mode==='manual'?' (수동)':liveSplit.mode==='frozen'?' (등록월)':' (자동)'}
           </span>
           {!readOnly && b.hasOverride && (
             <span onClick={(e)=>{e.stopPropagation();resetOverride();}}
@@ -974,6 +1010,13 @@ function TrainerSettleCard({ block: b, ym, settings, onSaved, readOnly=false, de
             {liveRows.map(r=>{
               const u = editing ? (unitEdits[r.memberId] ?? r.unit) : r.unit;
               const c = editing ? (cntEdits[r.memberId] ?? r.cnt) : r.cnt;
+              const rateValue = editing ? (rateEdits[r.memberId] ?? r.rate) : r.rate;
+              const rateChanged = r._rateManual;
+              const rateTitle = r.rateManual
+                ? `수동 수정된 정산비율 · 자동값 ${r.baseRate ?? r.rate}%`
+                : r.rateFrozen
+                ? '등록월에 고정된 비율'
+                : '그 달 자동판정 비율';
               return (
                 <tr key={r.memberId} className="border-b border-slate-800/50">
                   <td className="py-1.5 text-slate-200">{r.memberName}</td>
@@ -998,8 +1041,21 @@ function TrainerSettleCard({ block: b, ym, settings, onSaved, readOnly=false, de
                     {won(r._amount)}
                   </td>
                   <td className="text-right">
-                    <span className={`font-mono text-[11px] px-1 rounded ${r.rateFrozen?'text-violet-300':'text-slate-400'}`}
-                      title={r.rateFrozen?'등록월에 고정된 비율':'그 달 자동판정 비율'}>{r.rate}%{r.rateFrozen?'🔒':''}</span>
+                    {editing
+                      ? <span className="inline-flex items-center justify-end gap-1">
+                          <input type="number" min="0" max="100" step="1" value={rateValue}
+                            onChange={e=>setRateEdits(s=>({...s,[r.memberId]:e.target.value}))}
+                            className={RATE_INP} title="정산 비율 직접 수정"/>
+                          <span className="text-[11px] text-slate-500">%</span>
+                          {rateChanged && <span className="text-[10px] text-amber-300 font-bold">수정</span>}
+                        </span>
+                      : <span className={`font-mono text-[11px] px-1 rounded ${
+                          r.rateManual ? 'bg-amber-500/10 text-amber-300 border border-amber-500/30'
+                          : r.rateFrozen ? 'text-violet-300'
+                          : 'text-slate-400'
+                        }`} title={rateTitle}>
+                          {r.rate}%{r.rateManual?' 수정':r.rateFrozen?'🔒':''}
+                        </span>}
                   </td>
                   <td className="text-right font-mono font-bold text-emerald-400">
                     {won(r._pay)}
@@ -1051,11 +1107,11 @@ function TrainerSettleCard({ block: b, ym, settings, onSaved, readOnly=false, de
           <span className="font-mono font-bold text-slate-300">{won(liveSessionTotal)}</span>
         </div>
         <div className="flex items-center justify-between col-span-2">
-          <span className="text-slate-400 font-semibold">{b.rateMixed?`정산비율 회원별 혼합(가중 ${liveSplit.rate}%) = 실지급 수업료`:`× 정산비율 ${liveSplit.rate}% = 실지급 수업료`}</span>
+          <span className="text-slate-400 font-semibold">{liveRateMixed?`정산비율 회원별 혼합(가중 ${liveSplit.rate}%) = 실지급 수업료`:`× 정산비율 ${liveSplit.rate}% = 실지급 수업료`}</span>
           <span className="font-mono font-bold text-emerald-400">{won(liveSessionPayout)}</span>
         </div>
         <p className="col-span-2 text-[10px] text-slate-600 leading-relaxed">
-          {b.rateMixed ? '회원마다 등록월에 정해진 비율이 고정 적용됩니다(🔒=등록월 고정).' : liveSplit.reason}
+          {liveRateMixed ? (liveHasManualRate ? liveSplit.reason : '회원마다 등록월에 정해진 비율이 고정 적용됩니다(🔒=등록월 고정).') : liveSplit.reason}
         </p>
         {/* 세전 → 원천징수 → 세후 */}
         <div className="flex items-center justify-between col-span-2 pt-1.5 border-t border-slate-800/50">

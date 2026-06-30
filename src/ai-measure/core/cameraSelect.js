@@ -12,9 +12,83 @@ function score(label = '') {
 }
 
 function assertMediaDevices() {
-  if (!navigator?.mediaDevices?.getUserMedia) {
+  if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
     throw new Error('이 브라우저에서는 카메라 API를 사용할 수 없습니다.');
   }
+}
+
+function supportsValue(capabilities, key, value) {
+  return Array.isArray(capabilities?.[key]) && capabilities[key].includes(value);
+}
+
+function supportsPointFocus(capabilities) {
+  const supported = typeof navigator !== 'undefined'
+    ? navigator.mediaDevices?.getSupportedConstraints?.() || {}
+    : {};
+  return Boolean(supported.pointsOfInterest || capabilities?.pointsOfInterest);
+}
+
+function normalizePoint(point) {
+  const x = Number(point?.x);
+  const y = Number(point?.y);
+  return {
+    x: Math.max(0, Math.min(1, Number.isFinite(x) ? x : 0.5)),
+    y: Math.max(0, Math.min(1, Number.isFinite(y) ? y : 0.5)),
+  };
+}
+
+async function applyVideoTrackConstraints(track, constraints) {
+  try {
+    await track.applyConstraints(constraints);
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+async function applyAdvancedConstraints(track, advanced) {
+  let applied = false;
+  for (const constraint of advanced) {
+    applied = await applyVideoTrackConstraints(track, { advanced: [constraint] }) || applied;
+  }
+  return applied;
+}
+
+export async function improveCameraFocus(stream, point = { x: 0.5, y: 0.5 }) {
+  const track = stream?.getVideoTracks?.()[0];
+  if (!track?.applyConstraints) return false;
+
+  const capabilities = track.getCapabilities?.() || {};
+  const focusMode = supportsValue(capabilities, 'focusMode', 'continuous')
+    ? 'continuous'
+    : supportsValue(capabilities, 'focusMode', 'single-shot')
+      ? 'single-shot'
+      : null;
+  const advanced = [];
+
+  if (focusMode) advanced.push({ focusMode });
+  if (supportsValue(capabilities, 'exposureMode', 'continuous')) advanced.push({ exposureMode: 'continuous' });
+  if (supportsValue(capabilities, 'whiteBalanceMode', 'continuous')) advanced.push({ whiteBalanceMode: 'continuous' });
+  if (supportsPointFocus(capabilities)) advanced.push({ pointsOfInterest: [normalizePoint(point)] });
+
+  if (!advanced.length) return false;
+  return applyAdvancedConstraints(track, advanced);
+}
+
+export async function refocusCameraStream(stream, point = { x: 0.5, y: 0.5 }) {
+  const track = stream?.getVideoTracks?.()[0];
+  if (!track?.applyConstraints) return false;
+
+  const capabilities = track.getCapabilities?.() || {};
+  const advanced = [];
+  if (supportsValue(capabilities, 'focusMode', 'single-shot')) advanced.push({ focusMode: 'single-shot' });
+  if (supportsPointFocus(capabilities)) advanced.push({ pointsOfInterest: [normalizePoint(point)] });
+
+  if (advanced.length && await applyAdvancedConstraints(track, advanced)) {
+    await improveCameraFocus(stream, point);
+    return true;
+  }
+  return improveCameraFocus(stream, point);
 }
 
 /** Estimate the rear main camera deviceId after permission is available. */
@@ -72,7 +146,9 @@ export async function openMainCameraStream({ audio = false, preferExactDevice = 
   for (const wantsAudio of audioChoices) {
     for (const video of videoChoices) {
       try {
-        return await navigator.mediaDevices.getUserMedia({ video, audio: wantsAudio });
+        const stream = await navigator.mediaDevices.getUserMedia({ video, audio: wantsAudio });
+        await improveCameraFocus(stream);
+        return stream;
       } catch (e) {
         lastError = e;
       }

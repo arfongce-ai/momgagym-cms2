@@ -343,6 +343,13 @@ export function computeSessionSettlement({ trainers, members, schedules, payment
     const ov = getOverride ? getOverride(t.id, ym) : null;
     const ovUnit = ov?.unitPrices || {};
     const ovCnt  = ov?.sessionCounts || {};
+    const ovRate = ov?.splitRates || ov?.rates || {};
+    const manualRateOf = (mid) => {
+      const raw = ovRate[mid];
+      if (raw === undefined || raw === null || raw === '') return null;
+      const n = Number(raw);
+      return Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : null;
+    };
     const mids = [...(trainerMembers[t.id] || [])];
 
     // 폴백용: 그 결제월의 비율을 박제하지 못한 구버전 결제를 위해, 현재월 자동판정값을 준비
@@ -386,18 +393,21 @@ export function computeSessionSettlement({ trainers, members, schedules, payment
       //  · 트레이너 수동 지정(trainerSplitRates)이 있으면 그게 최우선(fallbackSplit.mode==='manual').
       const rateSlot = (memberTrainerRate[mid]||{})[t.id];
       const hasFrozen = !!(rateSlot && rateSlot.hasFrozen && rateSlot.base > 0);
-      const effRate = fallbackSplit.mode === 'manual'
+      const baseRate = fallbackSplit.mode === 'manual'
         ? fallbackSplit.rate                                   // 수동 지정 최우선
         : (hasFrozen ? Math.round(rateSlot.w / rateSlot.base)  // 등록월 박제 비율
                      : fallbackSplit.rate);                    // 폴백: 그 달 자동판정
-      const rateFrozen = fallbackSplit.mode !== 'manual' && hasFrozen;
+      const manualRate = manualRateOf(mid);
+      const rateManual = manualRate != null;
+      const effRate = rateManual ? manualRate : baseRate;
+      const rateFrozen = !rateManual && fallbackSplit.mode !== 'manual' && hasFrozen;
       const amount = unit * cnt;                       // 수업료(비율 적용 전)
       const payAmount = Math.round(amount * effRate/100); // 실지급(비율 적용)
       const reg = regRoundOf(mid, t.id); // 최근 등록 회차 정보(없으면 null → 누적 total 폴백)
       return {
         memberId: mid, memberName: m?.name || '?',
         regTotal: trainerReg, remaining: trainerRemain, autoUnit, unit, autoCnt, cnt,
-        amount, rate: effRate, rateFrozen, payAmount,
+        amount, rate: effRate, baseRate, rateManual, rateFrozen, payAmount,
         // 등록 회차 표시용: regRound(라벨), regRoundCount(그 회차 횟수). 정보 없으면 null.
         regRound: reg ? reg.label : null,
         regRoundCount: reg ? reg.count : null,
@@ -409,7 +419,7 @@ export function computeSessionSettlement({ trainers, members, schedules, payment
     //  · 출석이 없어도 '아직 잔여가 남은(진행 중)' 회원은 표시(예정 정산 가늠용).
     //  · 횟수가 끝난(잔여 0) 회원은 그 달 출석이 없으면 제외 → 마지막 정산달 이후 화면에서 사라짐.
     //  · 수동 횟수 지정(ovCnt)이 있으면 표시 유지.
-    .filter(r => r.cnt>0 || (r.regTotal>0 && r.remaining>0) || ovCnt[r.memberId] != null);
+    .filter(r => r.cnt>0 || (r.regTotal>0 && r.remaining>0) || ovCnt[r.memberId] != null || ovRate[r.memberId] != null);
 
     const sessionTotal  = rows.reduce((s,r)=>s+r.amount, 0);     // 비율 적용 전 합
     const sessionPayout = rows.reduce((s,r)=>s+r.payAmount, 0);  // 비율 적용 후 합(회원별 박제비율)
@@ -433,8 +443,11 @@ export function computeSessionSettlement({ trainers, members, schedules, payment
     const distinct = [...new Set(rows.filter(r=>r.amount>0).map(r=>r.rate))];
     const blendedRate = sessionTotal>0 ? Math.round(sessionPayout/sessionTotal*100) : fallbackSplit.rate;
     const splitRate = distinct.length<=1 ? (distinct[0] ?? fallbackSplit.rate) : blendedRate;
-    const splitMode = fallbackSplit.mode==='manual' ? 'manual' : (rows.some(r=>r.rateFrozen) ? 'frozen' : 'auto');
-    const splitReason = fallbackSplit.mode==='manual'
+    const hasManualRate = rows.some(r=>r.rateManual);
+    const splitMode = hasManualRate || fallbackSplit.mode==='manual' ? 'manual' : (rows.some(r=>r.rateFrozen) ? 'frozen' : 'auto');
+    const splitReason = hasManualRate
+      ? (distinct.length>1 ? `회원별 수동 정산비율 혼합(가중평균 ${blendedRate}%)` : `수동 정산비율 ${splitRate}%`)
+      : fallbackSplit.mode==='manual'
       ? fallbackSplit.reason
       : (distinct.length>1
           ? `등록월별 비율 혼합(가중평균 ${blendedRate}%)`

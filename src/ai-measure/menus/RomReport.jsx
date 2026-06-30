@@ -4,23 +4,35 @@
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, CartesianGrid } from 'recharts';
 import { buildProblemFocus } from '../core/crossMeasureContext';
 import ProblemFocusPanel from './ProblemFocusPanel.jsx';
+import {
+  UnifiedEmptyState,
+  UnifiedReportHeader,
+  UnifiedReportPage,
+} from '../../components/report/UnifiedReportPrimitives';
 
 const JOINT_KO = { HIP: '고관절', KNEE: '슬관절', SHOULDER: '견관절', ANKLE: '족관절' };
 const POSE_KO = { STANDING: '서서(체중지지)', SUPINE: '앙와위(누워서)', PRONE: '복와위(엎드려)', SEATED: '앉아서' };
 const GRADE_KO = { good: '양호', attention: '관리 필요', focus: '집중 관리', insufficient: '측정 보완' };
 const GRADE_TONE = {
-  good: 'text-emerald-600 bg-emerald-50 border-emerald-200',
-  attention: 'text-amber-600 bg-amber-50 border-amber-200',
-  focus: 'text-red-600 bg-red-50 border-red-200',
-  insufficient: 'text-slate-600 bg-slate-50 border-slate-200',
+  good: 'text-emerald-200 bg-emerald-500/10 border-emerald-500/30',
+  attention: 'text-amber-200 bg-amber-500/10 border-amber-500/30',
+  focus: 'text-red-200 bg-red-500/10 border-red-500/30',
+  insufficient: 'text-slate-300 bg-slate-800/60 border-slate-700',
 };
 
 function fmt(v, unit = '°') {
   return v == null ? '—' : `${v}${unit}`;
 }
 
+function gradeScore(grade) {
+  if (grade === 'good') return 90;
+  if (grade === 'attention') return 65;
+  if (grade === 'focus') return 35;
+  return null;
+}
+
 export default function RomReport({ report }) {
-  if (!report) return null;
+  if (!report) return <UnifiedEmptyState>리포트 데이터가 없습니다.</UnifiedEmptyState>;
   const { joint, poseMode, summary, diagnosis, member, recordedAt, captureMode, snapshotUrl, hasVideo, posture_context, integrated_assessment } = report;
   const s = summary || {};
   const stab = s.end_range_stability_score || {};
@@ -35,22 +47,16 @@ export default function RomReport({ report }) {
     .map((d, i) => ({ t: i, 좌: d.left_angle, 우: d.right_angle }));
 
   return (
-    <div className="mx-auto bg-white text-slate-900" style={{ width: '794px', maxWidth: '100%', padding: '28px' }}>
-      {/* 헤더 */}
-      <div className="flex items-start justify-between border-b-2 border-slate-900 pb-3">
-        <div>
-          <h1 className="text-2xl font-black tracking-tight">ROM 관절 가동범위 리포트</h1>
-          <p className="mt-1 text-sm text-slate-500">
-            {JOINT_KO[joint] || joint} · {POSE_KO[poseMode] || poseMode}
-            {captureMode && captureMode !== 'live' ? ` · ${captureMode === 'slowmo240' ? '슬로모 240fps' : captureMode === 'slowmo120' ? '슬로모 120fps' : '업로드'}` : ' · 라이브 녹화'}
-            {hasVideo ? ' · 🎥 영상 포함' : ''}
-          </p>
-        </div>
-        <div className="text-right text-sm">
-          <p className="font-bold">{member?.name || '회원 미선택'}</p>
-          <p className="text-slate-500">{recordedAt}</p>
-        </div>
-      </div>
+    <div className="min-h-full w-full bg-slate-950 p-4 text-slate-100">
+      <UnifiedReportPage className="mx-auto">
+        <UnifiedReportHeader
+          eyebrow="ROM RANGE OF MOTION REPORT"
+          badge="ROM"
+          title="ROM 관절 가동범위 리포트"
+          subtitle={`${member?.name || '회원 미선택'} · ${recordedAt || '-'} · ${JOINT_KO[joint] || joint} · ${POSE_KO[poseMode] || poseMode}${captureMode && captureMode !== 'live' ? ` · ${captureMode === 'slowmo240' ? '슬로모 240fps' : captureMode === 'slowmo120' ? '슬로모 120fps' : '업로드'}` : ' · 라이브 녹화'}${hasVideo ? ' · 영상 포함' : ''}`}
+          score={gradeScore(diagnosis?.grade)}
+          compact
+        />
 
       {/* 종합 등급 + 헤드라인 */}
       {diagnosis && (
@@ -65,20 +71,20 @@ export default function RomReport({ report }) {
       )}
 
       <div className="mt-4">
-        <ProblemFocusPanel focus={problemFocus} context={report.cross_measure_context} variant="light" />
+        <ProblemFocusPanel focus={problemFocus} context={report.cross_measure_context} />
       </div>
 
       {/* 자세·체형 연동 해석 */}
       {integrated_assessment && (
-        <div className="mt-4 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3">
+        <div className="mt-4 rounded-xl border border-sky-500/30 bg-sky-500/10 px-4 py-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
-              <p className="text-xs font-black uppercase tracking-[0.14em] text-sky-700">Posture x ROM</p>
-              <p className="mt-0.5 text-sm font-bold text-slate-800">자세·체형 리포트 연동 해석</p>
+              <p className="text-xs font-black uppercase tracking-[0.14em] text-sky-300">Posture x ROM</p>
+              <p className="mt-0.5 text-sm font-bold text-slate-100">자세·체형 리포트 연동 해석</p>
             </div>
             <div className="text-right">
               <p className="text-[10px] font-bold text-slate-500">통합 신뢰도</p>
-              <p className="text-lg font-black text-sky-700">
+              <p className="text-lg font-black text-sky-300">
                 {integrated_assessment.confidenceScore}점
                 <span className="ml-1 text-xs text-slate-500">({confidenceLabel(integrated_assessment.confidenceLevel)})</span>
               </p>
@@ -92,15 +98,15 @@ export default function RomReport({ report }) {
           {integrated_assessment.notes?.length > 0 && (
             <ul className="mt-2 space-y-1">
               {integrated_assessment.notes.map((note, i) => (
-                <li key={i} className="flex gap-2 text-xs leading-relaxed text-slate-700">
-                  <span className="mt-0.5 text-sky-600">•</span>
+                <li key={i} className="flex gap-2 text-xs leading-relaxed text-slate-300">
+                  <span className="mt-0.5 text-sky-300">•</span>
                   <span>{note}</span>
                 </li>
               ))}
             </ul>
           )}
           {integrated_assessment.recommendations?.length > 0 && (
-            <p className="mt-2 text-xs font-semibold leading-relaxed text-sky-800">
+            <p className="mt-2 text-xs font-semibold leading-relaxed text-sky-200">
               권장: {integrated_assessment.recommendations[0]}
             </p>
           )}
@@ -133,11 +139,11 @@ export default function RomReport({ report }) {
       {/* 각도 시계열 차트 */}
       {chartData.length >= 3 && (
         <div className="mt-5">
-          <p className="mb-1 text-sm font-bold text-slate-700">좌/우 가동 각도 시계열 (정제·스무딩)</p>
+          <p className="mb-1 text-sm font-bold text-slate-300">좌/우 가동 각도 시계열 (정제·스무딩)</p>
           <div style={{ width: '100%', height: 220 }}>
             <ResponsiveContainer>
               <LineChart data={chartData} margin={{ top: 6, right: 12, bottom: 4, left: -16 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
                 <XAxis dataKey="t" tick={{ fontSize: 10 }} stroke="#94a3b8" />
                 <YAxis tick={{ fontSize: 10 }} stroke="#94a3b8" />
                 <Tooltip />
@@ -153,18 +159,18 @@ export default function RomReport({ report }) {
       {/* 스냅샷 (있으면) */}
       {snapshotUrl && (
         <div className="mt-4">
-          <p className="mb-1 text-sm font-bold text-slate-700">끝범위 캡처</p>
-          <img src={snapshotUrl} alt="ROM 캡처" className="rounded-lg border border-slate-200" style={{ maxHeight: 240 }} />
+          <p className="mb-1 text-sm font-bold text-slate-300">끝범위 캡처</p>
+          <img src={snapshotUrl} alt="ROM 캡처" className="rounded-lg border border-slate-700" style={{ maxHeight: 240 }} />
         </div>
       )}
 
       {/* AI 진단 상세 */}
       {diagnosis?.details?.length > 0 && (
         <div className="mt-5">
-          <p className="mb-2 text-sm font-bold text-slate-700">AI 자동 진단</p>
+          <p className="mb-2 text-sm font-bold text-slate-300">AI 자동 진단</p>
           <ul className="space-y-1.5">
             {diagnosis.details.map((d, i) => (
-              <li key={i} className="flex gap-2 text-sm text-slate-700">
+              <li key={i} className="flex gap-2 text-sm text-slate-300">
                 <span className="mt-0.5 text-amber-500">▸</span>
                 <span>{d}</span>
               </li>
@@ -173,10 +179,11 @@ export default function RomReport({ report }) {
         </div>
       )}
 
-      <p className="mt-6 border-t border-slate-200 pt-2 text-[11px] leading-relaxed text-slate-400">
+      <p className="mt-6 border-t border-slate-700 pt-2 text-[11px] leading-relaxed text-slate-400">
         ※ 본 수치는 BlazePose 추정 좌표 기반 참고용입니다. 정상치는 평균 성인 임상 가동범위표를 기준으로 하며,
         개인 차·측정 환경에 따라 달라질 수 있습니다. 진단·치료 목적의 의료 판단을 대체하지 않습니다.
       </p>
+      </UnifiedReportPage>
     </div>
   );
 }
@@ -187,13 +194,14 @@ function confidenceLabel(level) {
 
 function MetricCard({ label, value, sub, tone = 'neutral' }) {
   const toneCls =
-    tone === 'warn' ? 'border-amber-200 bg-amber-50' :
-    tone === 'ok' ? 'border-emerald-200 bg-emerald-50' :
-    'border-slate-200 bg-slate-50';
+    tone === 'warn' ? 'border-amber-500/30 bg-amber-500/10' :
+    tone === 'ok' ? 'border-emerald-500/30 bg-emerald-500/10' :
+    'border-slate-700 bg-slate-800/70';
+  const valueCls = tone === 'warn' ? 'text-amber-200' : tone === 'ok' ? 'text-emerald-200' : 'text-slate-100';
   return (
     <div className={`rounded-xl border p-3 ${toneCls}`}>
       <p className="text-[11px] font-semibold text-slate-500">{label}</p>
-      <p className="mt-1 text-xl font-black tabular-nums text-slate-900">{value}</p>
+      <p className={`mt-1 text-xl font-black tabular-nums ${valueCls}`}>{value}</p>
       {sub && <p className="mt-0.5 text-[10px] text-slate-400">{sub}</p>}
     </div>
   );

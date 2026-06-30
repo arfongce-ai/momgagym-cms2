@@ -3,7 +3,7 @@
 // ratio at full quality (high resolution + bitrate).
 import { useRef, useState, useEffect, useCallback } from 'react';
 import { todayYMD } from '../../utils/dates';
-import { openMainCameraStream } from '../core/cameraSelect';
+import { openMainCameraStream, refocusCameraStream } from '../core/cameraSelect';
 import { formatStopwatch } from '../core/recordingOverlay';
 import { nextPhase, firstPhase, phaseDurationSec } from '../core/intervalTimer';
 
@@ -13,6 +13,7 @@ import { nextPhase, firstPhase, phaseDurationSec } from '../core/intervalTimer';
 const RECORD_FPS = 30;
 const VIDEO_BITS_PER_SECOND = 12_000_000;
 const AUDIO_BITS_PER_SECOND = 128_000;
+const MAX_RECORD_SECONDS = 30;
 
 const OUTPUT_SIZE = {
   '3/4': { width: 1080, height: 1440 },
@@ -93,6 +94,31 @@ function formatBytes(bytes) {
   return `${mb.toFixed(mb >= 10 ? 0 : 1)}MB`;
 }
 
+function recordingExtension(mime = '') {
+  return mime.includes('mp4') ? 'mp4' : 'webm';
+}
+
+function recordingFileName(member, aspect, mime) {
+  const safeName = (member?.name || 'video').replace(/[\\/:*?"<>|]/g, '_');
+  return `momgagym_record_${safeName}_${aspect.replace('/', 'x')}_${todayYMD().replace(/-/g, '')}.${recordingExtension(mime)}`;
+}
+
+function triggerDownload(url, fileName) {
+  if (!url || typeof document === 'undefined') return false;
+  try {
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    a.rel = 'noopener';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
 export default function RecordMeasure({ member, onBack }) {
   const videoRef = useRef(null);
   const guideCanvasRef = useRef(null);
@@ -107,6 +133,8 @@ export default function RecordMeasure({ member, onBack }) {
   const composeRafRef = useRef(null);
   const startTsRef = useRef(0);
   const timerRef = useRef(null);
+  const autoStopTimerRef = useRef(null);
+  const focusTimerRef = useRef(null);
   const overlayStateRef = useRef({});
 
   const [status, setStatus] = useState('idle');
@@ -128,6 +156,8 @@ export default function RecordMeasure({ member, onBack }) {
   const [videoReady, setVideoReady] = useState(false);
   const [cameraNote, setCameraNote] = useState('');
   const [savedSize, setSavedSize] = useState('');
+  const [autoSaveState, setAutoSaveState] = useState('idle');
+  const [focusPoint, setFocusPoint] = useState(null);
 
   const drawLoop = useCallback(() => {
     const video = videoRef.current;
@@ -171,6 +201,19 @@ export default function RecordMeasure({ member, onBack }) {
     recordStreamRef.current = null;
   };
 
+  const clearRecordTimers = () => {
+    if (timerRef.current) clearInterval(timerRef.current);
+    timerRef.current = null;
+    if (autoStopTimerRef.current) clearTimeout(autoStopTimerRef.current);
+    autoStopTimerRef.current = null;
+  };
+
+  const stopRecorder = () => {
+    if (recorderRef.current && recorderRef.current.state !== 'inactive') {
+      recorderRef.current.stop();
+    }
+  };
+
   useEffect(() => {
     overlayStateRef.current = {
       toolTab,
@@ -185,6 +228,22 @@ export default function RecordMeasure({ member, onBack }) {
   const stopStream = () => {
     if (streamRef.current) streamRef.current.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
+    if (videoRef.current) videoRef.current.srcObject = null;
+  };
+
+  const handlePreviewFocus = (event) => {
+    if (!streamRef.current || status === 'done') return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+
+    const point = {
+      x: Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)),
+      y: Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height)),
+    };
+    setFocusPoint({ x: point.x * 100, y: point.y * 100 });
+    if (focusTimerRef.current) clearTimeout(focusTimerRef.current);
+    focusTimerRef.current = setTimeout(() => setFocusPoint(null), 700);
+    refocusCameraStream(streamRef.current, point).catch(() => {});
   };
 
   const startCamera = async () => {
@@ -195,7 +254,7 @@ export default function RecordMeasure({ member, onBack }) {
     try {
       stopPreviewLoop();
       stopStream();
-      const stream = await openMainCameraStream({ audio: true, preferExactDevice: false });
+      const stream = await openMainCameraStream({ audio: true, preferExactDevice: true });
       streamRef.current = stream;
       await attachPreview();
       const ready = await waitForVideoReady(videoRef.current);
@@ -216,7 +275,7 @@ export default function RecordMeasure({ member, onBack }) {
     if (ready) return true;
 
     stopStream();
-    const stream = await openMainCameraStream({ audio: false, preferExactDevice: false });
+    const stream = await openMainCameraStream({ audio: false, preferExactDevice: true });
     streamRef.current = stream;
     await attachPreview();
     ready = await waitForVideoReady(videoRef.current, 7000);
@@ -261,6 +320,7 @@ export default function RecordMeasure({ member, onBack }) {
     try {
       setError(null);
       setSavedSize('');
+      setAutoSaveState('idle');
       setCameraNote('카메라 영상을 확인하는 중입니다...');
       const ready = await ensureVideoReady();
       setVideoReady(ready);
@@ -289,35 +349,54 @@ export default function RecordMeasure({ member, onBack }) {
       rec.onerror = () => {
         stopComposeLoop();
         stopRecordStream();
+        stopStream();
+        clearRecordTimers();
         setError('녹화 중 오류가 발생했습니다. 카메라 권한과 저장 공간을 확인해 주세요.');
-        setStatus('ready');
+        setVideoReady(false);
+        setStatus('idle');
       };
       rec.onstop = () => {
         stopComposeLoop();
         stopRecordStream();
-        if (timerRef.current) clearInterval(timerRef.current);
-        timerRef.current = null;
+        stopStream();
+        setVideoReady(false);
+        clearRecordTimers();
         if (!chunksRef.current.length) {
           setError('녹화된 영상 데이터가 없습니다. 다시 촬영해 주세요.');
-          setStatus('ready');
+          setStatus('idle');
           return;
         }
         const type = mimeRef.current;
         const blob = new Blob(chunksRef.current, { type });
         blobRef.current = blob;
         setSavedSize(formatBytes(blob.size));
+        setElapsed((current) => Math.min(
+          MAX_RECORD_SECONDS,
+          Math.max(current || 0, Math.ceil((Date.now() - startTsRef.current) / 1000))
+        ));
         const url = URL.createObjectURL(blob);
+        const fileName = recordingFileName(member, aspect, type);
         setVideoUrl((old) => {
           if (old) URL.revokeObjectURL(old);
           return url;
         });
         setStatus('done');
+        setAutoSaveState('saving');
+        requestAnimationFrame(() => {
+          setAutoSaveState(triggerDownload(url, fileName) ? 'attempted' : 'blocked');
+        });
       };
 
       recorderRef.current = rec;
       startTsRef.current = Date.now();
       setElapsed(0);
-      timerRef.current = setInterval(() => setElapsed(Math.floor((Date.now() - startTsRef.current) / 1000)), 250);
+      clearRecordTimers();
+      timerRef.current = setInterval(() => {
+        const nextElapsed = Math.min(MAX_RECORD_SECONDS, Math.floor((Date.now() - startTsRef.current) / 1000));
+        setElapsed(nextElapsed);
+        if (nextElapsed >= MAX_RECORD_SECONDS) stopRecorder();
+      }, 250);
+      autoStopTimerRef.current = setTimeout(stopRecorder, MAX_RECORD_SECONDS * 1000);
       rec.start(1000);
       setStatus('recording');
     } catch (e) {
@@ -328,22 +407,23 @@ export default function RecordMeasure({ member, onBack }) {
   };
 
   const stopRec = () => {
-    if (recorderRef.current && recorderRef.current.state !== 'inactive') recorderRef.current.stop();
-    if (timerRef.current) clearInterval(timerRef.current);
-    timerRef.current = null;
+    stopRecorder();
+    clearRecordTimers();
   };
 
   const stopAll = useCallback(() => {
     stopPreviewLoop();
     stopComposeLoop();
     stopRecordStream();
-    if (timerRef.current) clearInterval(timerRef.current);
-    timerRef.current = null;
+    clearRecordTimers();
+    if (focusTimerRef.current) clearTimeout(focusTimerRef.current);
+    focusTimerRef.current = null;
     if (recorderRef.current && recorderRef.current.state !== 'inactive') {
       try { recorderRef.current.stop(); } catch (e) { /* noop */ }
     }
     stopStream();
     setVideoReady(false);
+    setFocusPoint(null);
   }, []);
 
   const reset = () => {
@@ -353,6 +433,7 @@ export default function RecordMeasure({ member, onBack }) {
     });
     blobRef.current = null;
     setSavedSize('');
+    setAutoSaveState('idle');
     setElapsed(0);
     setVideoReady(!!videoRef.current?.videoWidth);
     setStatus(streamRef.current ? 'ready' : 'idle');
@@ -385,10 +466,10 @@ export default function RecordMeasure({ member, onBack }) {
     if (videoUrl) URL.revokeObjectURL(videoUrl);
   }, [stopAll, videoUrl]);
 
-  const mmss = `${String(Math.floor(elapsed / 60)).padStart(2, '0')}:${String(elapsed % 60).padStart(2, '0')}`;
-  const ext = (mimeRef.current || '').includes('mp4') ? 'mp4' : 'webm';
-  const safeName = (member?.name || 'video').replace(/[\\/:*?"<>|]/g, '_');
-  const fname = `momgagym_record_${safeName}_${aspect.replace('/', 'x')}_${todayYMD().replace(/-/g, '')}.${ext}`;
+  const displayElapsed = Math.min(MAX_RECORD_SECONDS, elapsed);
+  const mmss = `${String(Math.floor(displayElapsed / 60)).padStart(2, '0')}:${String(displayElapsed % 60).padStart(2, '0')}`;
+  const maxTimeLabel = `00:${String(MAX_RECORD_SECONDS).padStart(2, '0')}`;
+  const fname = recordingFileName(member, aspect, mimeRef.current || '');
   const shareSupported = typeof navigator !== 'undefined' && !!navigator.canShare;
 
   const saveToGallery = async () => {
@@ -399,16 +480,17 @@ export default function RecordMeasure({ member, onBack }) {
       if (navigator.canShare && navigator.canShare({ files: [file] })) {
         await navigator.share({ files: [file], title: fname });
       } else {
-        const a = document.createElement('a');
-        a.href = videoUrl;
-        a.download = fname;
-        a.click();
+        triggerDownload(videoUrl, fname);
       }
     } catch (e) {
       if (e?.name !== 'AbortError') {
         alert('공유 창을 열 수 없습니다. 영상 다운로드로 저장해 주세요.');
       }
     }
+  };
+
+  const retryAutoSave = () => {
+    setAutoSaveState(triggerDownload(videoUrl, fname) ? 'attempted' : 'blocked');
   };
 
   const miniToolPanel = (
@@ -454,8 +536,21 @@ export default function RecordMeasure({ member, onBack }) {
   if (status !== 'done') {
     return (
         <div className="fixed inset-0 z-[80] bg-black overflow-hidden">
-        <video ref={videoRef} autoPlay playsInline muted className="absolute inset-0 h-full w-full object-cover" />
+        <video
+          ref={videoRef}
+          autoPlay
+          playsInline
+          muted
+          onPointerDown={handlePreviewFocus}
+          className="absolute inset-0 h-full w-full object-cover touch-manipulation"
+        />
         <canvas ref={guideCanvasRef} className="absolute inset-0 h-full w-full pointer-events-none" />
+        {focusPoint && (
+          <div
+            className="pointer-events-none absolute z-10 h-16 w-16 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-amber-300/90 shadow-[0_0_22px_rgba(251,191,36,0.65)]"
+            style={{ left: `${focusPoint.x}%`, top: `${focusPoint.y}%` }}
+          />
+        )}
 
         <div className="absolute left-0 right-0 top-0 z-10 flex items-center justify-between px-4 pt-[max(14px,env(safe-area-inset-top))]">
           <button onClick={onBack} className="rounded-full bg-black/55 px-3 py-2 text-sm font-bold text-white backdrop-blur">← 메뉴</button>
@@ -494,6 +589,7 @@ export default function RecordMeasure({ member, onBack }) {
           <div className="absolute top-[max(74px,calc(env(safe-area-inset-top)+64px))] left-1/2 z-10 -translate-x-1/2 flex items-center gap-2 rounded-full bg-black/70 px-3 py-1.5 backdrop-blur">
             <span className="h-2.5 w-2.5 rounded-full bg-red-500 animate-pulse" />
             <span className="font-mono text-sm font-bold text-white">{mmss}</span>
+            <span className="font-mono text-xs font-bold text-white/55">/ {maxTimeLabel}</span>
           </div>
         )}
 
@@ -517,7 +613,7 @@ export default function RecordMeasure({ member, onBack }) {
           )}
 
           <p className="text-center text-[11px] leading-relaxed text-white/70">
-            저장 영상은 {aspect} 비율로 꽉 차게 잘라 저장됩니다. 카카오톡 전송이 빠르도록 540px · 저용량으로 기록합니다.
+            저장 영상은 {aspect} 비율로 꽉 차게 잘라 저장됩니다. 화면을 탭하면 초점을 다시 잡고, 녹화는 최대 {MAX_RECORD_SECONDS}초까지 자동 저장됩니다.
           </p>
         </div>
       </div>
@@ -537,23 +633,30 @@ export default function RecordMeasure({ member, onBack }) {
           <video src={videoUrl} controls playsInline className="w-full" style={{ maxHeight: '60vh' }} />
         </div>
         <div className="rounded-xl bg-slate-800 px-3 py-2 text-center text-xs text-slate-300">
-          저장 완료: {aspect} · {savedSize || '저용량'} · 카카오톡 전송용 540px 영상
+          저장 완료: {aspect} · {savedSize || '파일 크기 확인 중'} · 최대 {MAX_RECORD_SECONDS}초 영상
+        </div>
+        <div className="rounded-xl bg-amber-500/10 border border-amber-400/25 px-3 py-2 text-center text-xs text-amber-100">
+          {autoSaveState === 'saving'
+            ? '자동 저장 중입니다...'
+            : autoSaveState === 'blocked'
+              ? '브라우저가 자동 저장을 막았습니다. 아래 버튼으로 다시 저장해 주세요.'
+              : '자동 저장을 시도했습니다. 휴대폰 다운로드 폴더를 확인해 주세요.'}
         </div>
         <div className="grid grid-cols-2 gap-2">
           <button onClick={reset} className="rounded-xl border border-slate-700 text-slate-300 font-bold py-3 text-sm">
             다시 녹화
           </button>
-          <a href={videoUrl} download={fname} className="btn btn-primary">
-            영상 다운로드
-          </a>
+          <button onClick={retryAutoSave} className="btn btn-primary">
+            자동 저장 다시 시도
+          </button>
         </div>
         {shareSupported && (
           <button onClick={saveToGallery} className="block w-full text-center text-[11px] text-slate-400 underline">
-            다운로드가 안 될 때만 공유/저장 열기
+            휴대폰 저장/공유 열기
           </button>
         )}
         <p className="text-[11px] text-slate-500 text-center leading-relaxed">
-          카카오톡 앱이 바로 공유에서 멈추는 기기가 있어, 먼저 영상 다운로드로 저장한 뒤 파일을 선택해 전송하는 방식을 권장합니다. 영상은 540px 저용량 파일로 저장됩니다.
+          녹화가 끝나면 카메라가 꺼집니다. 일부 모바일 브라우저는 보안 정책 때문에 자동 저장을 다운로드 확인 화면으로 전환할 수 있습니다.
         </p>
       </div>
     </div>
