@@ -1,3 +1,5 @@
+export const MOMGAGYM_BLOG_URL = 'https://blog.naver.com/posture_gym';
+
 const STATUS = Object.freeze({
   normal: {
     key: 'normal',
@@ -454,20 +456,15 @@ export function extractKakaoSummary(reportOrDocument = {}, options = {}) {
     statusLabel: status.label,
     topFindings,
     description,
-    webUrl: options.webUrl || '',
+    webUrl: options.webUrl || MOMGAGYM_BLOG_URL,
     imageUrl: options.imageUrl || '',
   };
 }
 
-// 회원에게 보내는 공유 메시지의 링크/버튼이 향하는 곳.
-// 회원은 관리 앱/웹에 로그인 권한이 없으므로, 앱 URL 대신 센터 공개 채널(블로그)로 연결한다.
-// 회원에게 보내는 공유 메시지의 링크/버튼이 향하는 곳.
-// 회원은 관리 앱/웹에 로그인 권한이 없으므로, 앱 URL 대신 센터 공개 채널(블로그)로 연결한다.
 // 회원용 공개 채널. 카카오 '버튼'은 앱 등록 도메인을 따라가 버려서 회원이 못 들어가는
 // 문제가 있었다. 그래서 버튼을 쓰지 않고, 블로그·인스타를 모두 '텍스트 안 링크'로 넣는다.
 // 텍스트 안 링크는 카카오가 그대로 표시·연결하므로 회원이 바로 들어갈 수 있다(인스타로 검증됨).
-const CENTER_BLOG_URL = 'https://blog.naver.com/posture_gym';
-const CENTER_INSTAGRAM = 'https://www.instagram.com/posture_gym_official/';
+const CENTER_INSTAGRAM_URL = 'https://www.instagram.com/posture_gym_official/';
 
 export function buildKakaoFeedTemplate(summaryInput = {}, options = {}) {
   const summary = summaryInput.topFindings ? summaryInput : extractKakaoSummary(summaryInput, options);
@@ -476,7 +473,7 @@ export function buildKakaoFeedTemplate(summaryInput = {}, options = {}) {
   const header = `${summary.title || '몸가짐CMS 측정 결과 요약'}`;
   const scoreLine = `${summary.statusLabel || ''} · 종합 ${score}/100`.trim();
   // 블로그·인스타를 텍스트 안 링크로 넣는다(버튼 미사용).
-  const links = `\n📝 블로그 ${CENTER_BLOG_URL}\n📷 인스타 ${CENTER_INSTAGRAM}`;
+  const links = `\n📝 블로그 ${MOMGAGYM_BLOG_URL}\n📷 인스타 ${CENTER_INSTAGRAM_URL}`;
   const text = clampText(`${header}\n${scoreLine}\n${findings}${links}`, 280);
 
   // 버튼을 쓰지 않는다(카카오 버튼은 앱 도메인으로 가버림). link 는 카카오 정책상 필수라
@@ -485,8 +482,8 @@ export function buildKakaoFeedTemplate(summaryInput = {}, options = {}) {
     objectType: 'text',
     text,
     link: {
-      mobileWebUrl: CENTER_BLOG_URL,
-      webUrl: CENTER_BLOG_URL,
+      mobileWebUrl: MOMGAGYM_BLOG_URL,
+      webUrl: MOMGAGYM_BLOG_URL,
     },
   };
 }

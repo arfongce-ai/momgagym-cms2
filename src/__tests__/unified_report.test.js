@@ -5,6 +5,7 @@ import {
   buildUnifiedReportDocument,
   extractKakaoSummary,
   getLaymanTerm,
+  MOMGAGYM_BLOG_URL,
   sanitizeReportPayload,
   shareSummaryToKakao,
   toLaymanMetric,
@@ -96,8 +97,10 @@ describe('unified report utilities', () => {
     const template = buildKakaoFeedTemplate(summary, { webUrl: 'https://example.com/report' });
     expect(template.objectType).toBe('text');
     expect(template.text).toContain('몸가짐CMS 측정 결과 요약');
-    expect(template.text).toContain('blog.naver.com/posture_gym');
-    expect(template.link.webUrl).toBe('https://blog.naver.com/posture_gym');
+    expect(template.text).toContain(MOMGAGYM_BLOG_URL);
+    expect(template.link.webUrl).toBe(MOMGAGYM_BLOG_URL);
+    expect(template.link.mobileWebUrl).toBe(MOMGAGYM_BLOG_URL);
+    expect(template.buttons).toBeUndefined();
   });
 
   it('Kakao SDK의 Share.sendDefault를 호출한다', () => {
