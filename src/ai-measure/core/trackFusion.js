@@ -14,7 +14,11 @@
 //
 //  융합 규칙(측정 정직성 · 근거기반):
 //   - color 신호가 살아있으면(활성 추적점 ≥1) 그 값을 위치의 정답으로 그대로
-//     쓴다(사용자가 직접 지정했으므로 임의로 덮어쓰지 않음).
+//     쓴다(사용자가 직접 지정했으므로 임의로 덮어쓰지 않음) — 단, skeleton과
+//     plate 두 독립 신호가 서로는 합의(가까움)하는데 color 만 거기서 크게
+//     벗어나 있으면 그 프레임은 드리프트로 보고 skeleton+plate 합의로
+//     대체한다(색 추적은 시간이 지나며 바닥·배경 등으로 서서히 "걸어가
+//     버릴" 수 있음 — 계속 자신 있게 틀린 값을 내놓지 않는다).
 //   - 대신 다른 신호와의 거리(agreement)를 기록해 "서로 다른 방법이 같은
 //     곳을 가리키는지" 교차검증 지표로 남긴다 — 점프 모듈의 cross-validation
 //     이 게이트가 아니라 advisory(참고) 인 것과 동일한 설계.
@@ -24,6 +28,8 @@
 // ════════════════════════════════════════════════════════════════════════
 
 const DEFAULT_AGREE_TOL = 0.09; // 화면비율(0~1) — 이 안이면 "같은 곳을 가리킨다"
+const CONSENSUS_TOL = 0.07;     // skeleton/plate 두 독립 신호가 이 안이면 "서로 합의"로 본다
+const COLOR_OUTLIER_TOL = 0.15; // color 가 그 합의 지점에서 이만큼 멀면 드리프트로 간주(거부)
 
 /**
  * 한 프레임의 추적 후보들을 융합.
@@ -38,6 +44,7 @@ const DEFAULT_AGREE_TOL = 0.09; // 화면비율(0~1) — 이 안이면 "같은 �
  *   source:'color'|'fused_fallback'|'skeleton'|'plate'|'none',
  *   agreement:number|null,     // 0~1, primary 와 나머지 후보들의 일치 비율
  *   usedFallback:boolean,
+ *   colorRejected?:boolean,    // true면 color 신호가 이 프레임에서 드리프트로 판단돼 거부됨
  * }}
  */
 export function fuseTrackingCandidates(input = {}, opts = {}) {
@@ -66,6 +73,26 @@ export function fuseTrackingCandidates(input = {}, opts = {}) {
   }
 
   if (primary.src === 'color') {
+    // 드리프트 방지 안전망(측정 정직성): 색 추적이 시간이 지나며 바닥/배경 등
+    // 엉뚱한 곳으로 서서히 옮겨갈 수 있다(엔드캡 색과 비슷한 얼룩·조명 반사 등).
+    // skeleton(관절)과 plate(원판색) 두 "독립적인" 신호가 서로는 합의하는데
+    // color 만 그 지점에서 크게 벗어나 있다면, color 를 그 프레임만 신뢰하지
+    // 않고 skeleton+plate 합의 지점으로 대체한다(정직성 — 계속 자신 있게
+    // 틀린 값을 내놓지 않는다). skeleton·plate 중 하나라도 없으면(교차검증
+    // 불가) 기존처럼 color 를 그대로 신뢰한다.
+    const skeletonC = candidates.find(c => c.src === 'skeleton');
+    const plateC = candidates.find(c => c.src === 'plate');
+    if (skeletonC && plateC) {
+      const spDist = Math.hypot(skeletonC.pt.x - plateC.pt.x, skeletonC.pt.y - plateC.pt.y);
+      if (spDist <= CONSENSUS_TOL) {
+        const midX = (skeletonC.pt.x + plateC.pt.x) / 2;
+        const midY = (skeletonC.pt.y + plateC.pt.y) / 2;
+        const colorDist = Math.hypot(primary.pt.x - midX, primary.pt.y - midY);
+        if (colorDist > COLOR_OUTLIER_TOL) {
+          return { point: { x: midX, y: midY }, source: 'fused_fallback', agreement, usedFallback: true, colorRejected: true };
+        }
+      }
+    }
     return { point: primary.pt, source: 'color', agreement, usedFallback: false };
   }
 

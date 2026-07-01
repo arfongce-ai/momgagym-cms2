@@ -16,6 +16,8 @@ const SEARCH_RADIUS = 0.18;   // 검색창 반경(화면비율) — 직전 위�
 const SEED_RADIUS = 0.035;    // seed 평균색 샘플 반경 (넓힘: 탭이 살짝 빗나가도 색 학습 성공)
 const COLOR_TOL = 105;        // 색 거리 허용치 — 작을수록 엄격 (완화: 조명/반사 대응)
 const RELAXED_COLOR_TOL = 138;// 엄격 매칭 실패 시 2차 탐색 허용치
+const ANCHOR_TOL = 168;       // 원래 탭한 색(고정 기준)과의 절대 허용치 — target 이 서서히 적응해도
+                               // 이 범위 밖(예: 바닥/배경으로 드리프트)이면 무조건 거부(드리프트 방지)
 const SAMPLE_STEP = 2;        // 픽셀 샘플 간격(속도/정확도 균형)
 const EMA_ALPHA = 0.4;        // 위치 평활
 const MIN_MATCH = 3;          // 이보다 매칭 픽셀 적으면 "못 찾음"(가려짐)으로 보고 유지 (완화: 작은 점도 감지)
@@ -64,9 +66,11 @@ function blendTargetColor(prev, next, alpha = TARGET_ADAPT_ALPHA) {
 
 /**
  * 한 점의 색 매칭 추적. HSV 거리 기반(조명에 강함) + 속도 예측(pred) 중심 검색.
- * @param pos 직전 위치, @param target 학습색, @param pred 예측 위치(없으면 pos)
+ * @param pos 직전 위치, @param target 학습색(서서히 적응), @param pred 예측 위치(없으면 pos)
+ * @param anchor 원래 탭한 색(고정) — target 이 드리프트해도 이 기준에서 크게 벗어난
+ *   매칭은 거부한다(측정 정직성: 바닥/배경 등 엉뚱한 곳으로 "걸어가 버리는" 것 방지).
  */
-function trackOne(ctx, w, h, pos, target, pred) {
+function trackOne(ctx, w, h, pos, target, pred, anchor) {
   const center = pred || pos;
   const cx = center.x * w, cy = center.y * h;
   const rad = SEARCH_RADIUS * Math.min(w, h);
@@ -77,6 +81,8 @@ function trackOne(ctx, w, h, pos, target, pred) {
   if (x1 <= x0 || y1 <= y0) return null;
   const bw = x1 - x0, bh = y1 - y0;
   const { data } = ctx.getImageData(x0, y0, bw, bh);
+  const anchorRef = anchor || target;
+  const ANCHOR_LIMIT = ANCHOR_TOL / 255;
   const collect = (tolPx, minMatch) => {
     let sumX = 0, sumY = 0, sumWt = 0, n = 0;
     const TOL = tolPx / 255; // HSV 거리 스케일에 맞춘 허용치
@@ -86,6 +92,8 @@ function trackOne(ctx, w, h, pos, target, pred) {
         const c = toHsv(data[idx], data[idx + 1], data[idx + 2]);
         const dist = hsvDist(c, target);
         if (dist > TOL) continue;
+        // 원래 탭한 색과 너무 다르면(드리프트) 아무리 target 과 가까워도 거부.
+        if (hsvDist(c, anchorRef) > ANCHOR_LIMIT) continue;
 
         const absX = x0 + xx;
         const absY = y0 + yy;
@@ -177,7 +185,7 @@ export function createMultiTracker() {
       c.drawImage(video, 0, 0, w, h);
       const col = sampleColor(c, w, h, nx, ny, SEED_RADIUS);
       if (!col) return false;
-      points.push({ target: col, pos: { x: nx, y: ny }, prev: null, ema: { x: nx, y: ny }, alive: true });
+      points.push({ target: col, origColor: col, pos: { x: nx, y: ny }, prev: null, ema: { x: nx, y: ny }, alive: true });
       return true;
     },
 
@@ -197,7 +205,7 @@ export function createMultiTracker() {
         const pred = p.prev
           ? { x: p.pos.x + (p.pos.x - p.prev.x), y: p.pos.y + (p.pos.y - p.prev.y) }
           : p.pos;
-        const r = trackOne(c, w, h, p.pos, p.target, pred);
+        const r = trackOne(c, w, h, p.pos, p.target, pred, p.origColor);
         if (r) {
           p.prev = p.pos;
           p.pos = r;
@@ -278,6 +286,7 @@ export function createMultiTracker() {
  */
 export function createEndcapTracker() {
   let target = null;       // 학습한 색 {r,g,b}
+  let origColor = null;    // 원래 탭한 색(고정 기준 — 드리프트 방지 앵커)
   let pos = null;          // 현재 위치(정규화) {x,y}
   let ema = null;          // 평활 위치
   // ROM 기록
@@ -302,6 +311,7 @@ export function createEndcapTracker() {
       const col = sampleColor(c, w, h, nx, ny, SEED_RADIUS);
       if (!col) return false;
       target = col;
+      origColor = col;
       pos = { x: nx, y: ny };
       ema = { x: nx, y: ny };
       return true;
@@ -316,7 +326,7 @@ export function createEndcapTracker() {
       if (!w || !h) return ema;
       const c = ensureCanvas(w, h);
       c.drawImage(video, 0, 0, w, h);
-      const r = trackOne(c, w, h, pos, target);
+      const r = trackOne(c, w, h, pos, target, null, origColor);
       if (r) {
         pos = r;
         target = blendTargetColor(target, sampleColor(c, w, h, r.x, r.y, SEED_RADIUS * 0.8));
@@ -350,7 +360,7 @@ export function createEndcapTracker() {
     },
     clear() {
       // 완전 초기화(색까지)
-      target = null; pos = null; ema = null;
+      target = null; origColor = null; pos = null; ema = null;
       samples.length = 0; minY = Infinity; maxY = -Infinity;
     },
 

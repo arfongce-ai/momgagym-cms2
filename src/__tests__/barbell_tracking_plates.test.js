@@ -15,6 +15,30 @@ describe('barbell tracking robustness', () => {
     expect(trackerSource).toContain('spatialWt');
     expect(trackerSource).toContain('blendTargetColor');
   });
+
+  it('anchors color tracking to the original tapped color so it cannot drift onto the floor/background', () => {
+    // 실제 촬영 영상에서 관찰된 버그: target 색이 매 프레임 서서히 적응(blendTargetColor)
+    // 하기만 하고 원래 탭한 색으로 되돌아갈 기준이 없으면, 몇 프레임 만에 바닥/배경의
+    // 비슷한 색으로 "걸어가 버려" 궤적선이 바벨과 완전히 동떨어진 곳에 그려진다.
+    // origColor(고정 앵커) + ANCHOR_TOL 하드 상한으로 이 무한 드리프트를 막는다.
+    expect(trackerSource).toContain('ANCHOR_TOL');
+    expect(trackerSource).toContain('origColor');
+    expect(trackerSource).toMatch(/anchorRef/);
+  });
+
+  it('applies multi-signal fusion (color/skeleton/plate) + COG cross-validation to VBT, matching lifting mode', () => {
+    // VBT는 1렙 단위 속도 측정이라 추적 손실에 더 민감하므로, 역도 모드와 동일한
+    // 다중 신호 융합·COG 교차검증이 반드시 적용돼야 한다(측정 정직성·신뢰성 일관화).
+    for (const src of [liftingSource, vbtSource]) {
+      expect(src).toContain('fuseTrackingCandidates');
+      expect(src).toContain('summarizeCrossValidation');
+      expect(src).toContain('estimateBodyCOG');
+      expect(src).toContain('barCogHorizontalGap');
+      expect(src).toContain('createPlateBlobTracker');
+      expect(src).toContain('crossValidation: result.crossValidation');
+      expect(src).toContain('cogGap: result.cogGap');
+    }
+  });
 });
 
 describe('plate color detection robustness', () => {

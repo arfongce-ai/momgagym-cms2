@@ -137,6 +137,30 @@ export default function LiftingReportDashboard({ report, onClose }) {
                 </div>
               </div>
             )}
+            {(report.cogGap?.available || report.crossValidation?.totalFrames > 0) && (
+              <div className="mt-2 grid grid-cols-2 gap-2 text-[11px]">
+                {report.cogGap?.available && (
+                  <div className="rounded-lg bg-fuchsia-500/10 border border-fuchsia-500/30 p-2">
+                    <p className="text-fuchsia-300">바-무게중심 이격</p>
+                    <p className="font-mono font-bold text-fuchsia-100">
+                      {report.cogGap.medianCm != null ? `${report.cogGap.medianCm}cm` : fmt(report.cogGap.medianRatio)}
+                      {report.cogGap.maxCm != null && <span className="text-[9px] text-fuchsia-300/70"> · 최대 {report.cogGap.maxCm}cm</span>}
+                    </p>
+                  </div>
+                )}
+                {report.crossValidation?.totalFrames > 0 && (
+                  <div className="rounded-lg bg-cyan-500/10 border border-cyan-500/30 p-2">
+                    <p className="text-cyan-300">교차검증(신호 일치)</p>
+                    <p className="font-mono font-bold text-cyan-100">
+                      {report.crossValidation.avgAgreement != null ? `${Math.round(report.crossValidation.avgAgreement * 100)}%` : '—'}
+                      {report.crossValidation.assistRatio > 0 && (
+                        <span className="text-[9px] text-cyan-300/70"> · 보완 {Math.round(report.crossValidation.assistRatio * 100)}%</span>
+                      )}
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
           </UnifiedReportSection>
 
           {/* 주의(정직성) */}
