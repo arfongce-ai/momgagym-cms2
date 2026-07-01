@@ -26,11 +26,12 @@ describe('바벨 리프팅 통합 탭 · registry', () => {
     }
   });
 
-  it('통합 탭 안에 1RM 상단 탭, 자동 카메라 진입, 수동등록 버튼을 함께 유지한다', () => {
+  it('통합 탭 안에 1RM 상단 탭과 자동 카메라 진입을 유지하고 수동등록 버튼은 제거한다', () => {
     expect(hubSource).toContain("['onerm',   '💪 1RM']");
     expect(hubSource).toContain('setOneRmCameraStartSignal(v => v + 1)');
     expect(hubSource).toContain('autoStartSignal={oneRmCameraStartSignal}');
-    expect(hubSource).toContain('✍️ 수동등록');
+    expect(hubSource).not.toContain('✍️ 수동등록');
+    expect(hubSource).not.toContain('openManualRegistration');
   });
 });
 

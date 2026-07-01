@@ -3,10 +3,10 @@
 //  바벨 리프팅 통합 탭 — 세 측정을 한 메뉴에서 유기적으로.
 //   mode='lifting' → LiftingMeasure   (역도 · 바벨 엔드캡 궤적 추적)
 //   mode='vbt'     → VbtMeasure       (속도 기반 트레이닝)
-//   mode='onerm'   → OneRMEstimate    (3대 운동 카메라 · 수동등록 · 1RM 추정)
+//   mode='onerm'   → OneRMEstimate    (3대 운동 카메라 · 1RM 추정)
 //
 //  설계(측정 정직성 · 근거기반):
-//   - 상단에 [역도/VBT/1RM] 모드 선택기, 3대 운동 줄에 [수동등록] 진입 버튼을 둠.
+//   - 상단에 [역도/VBT/1RM] 모드 선택기를 두고, 1RM은 3대 운동 카메라로 바로 진입.
 //   - 저장은 Hub 가 단일 책임으로 처리: 각 모듈의 onSave 페이로드를 표준
 //     exerciseType + source + metrics 규약(buildLiftingPayload)으로 변환.
 //   - peakVelocity 는 lifting.js 의 게이트로 고속영상에서만 채워진다.
@@ -104,13 +104,6 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
   const selectExercise = useCallback((nextExercise) => {
     setExerciseType(nextExercise);
   }, []);
-
-  const openManualRegistration = useCallback(() => {
-    setMode('onerm');
-    setCaptureMode('live');
-    const valid = STRENGTH_EXERCISES.some(e => e.key === exerciseType);
-    if (!valid) setExerciseType('squat');
-  }, [exerciseType]);
 
   // 저장 + 리포트 표시 공통 헬퍼. payload 를 저장하고, 그 결과를 리포트로 띄운다.
   const saveAndReport = useCallback(async (payload) => {
@@ -314,7 +307,7 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
             </button>
           ))}
         </div>
-        {/* 종목 선택 + 도움말. 수동등록은 3대 운동 줄 옆에서 진입한다. */}
+        {/* 종목 선택 + 도움말 */}
         <div className="flex items-center gap-1.5 w-full max-w-[100vw] px-1">
           {mode === 'lifting' ? (
             <div className="pointer-events-auto flex gap-0.5 rounded-full bg-black/55 backdrop-blur p-1 border border-white/10 shadow-lg min-w-0 flex-1 justify-center">
@@ -335,11 +328,6 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
                   {e.label}
                 </button>
               ))}
-              <button onClick={openManualRegistration}
-                className={`shrink-0 whitespace-nowrap rounded-full px-2.5 py-1 text-[10px] font-black transition-colors ${
-                mode === 'onerm' ? 'bg-amber-500 text-slate-950' : 'text-slate-300'}`}>
-                ✍️ 수동등록
-              </button>
               {mode === 'vbt' && vbtExtraExercises.map(e => (
                 <button key={e.key} onClick={() => selectExercise(e.key)}
                   className={`shrink-0 whitespace-nowrap rounded-full px-2.5 py-1 text-[10px] font-black transition-colors ${
@@ -368,7 +356,7 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
         )}
         <p className="pointer-events-none text-[10px] font-bold text-amber-300 bg-black/55 backdrop-blur rounded-full px-3 py-0.5 border border-amber-500/30">
           {mode === 'onerm'
-            ? '1RM 실시간 카메라 · 스쿼트/데드리프트/벤치프레스 · 수동등록 가능'
+            ? '1RM 실시간 카메라 · 스쿼트/데드리프트/벤치프레스'
             : mode === 'vbt'
               ? '측면 촬영 권장 · 1렙씩 · 고속영상(120/240fps)이면 최고속도까지 산출'
               : '역도 카메라 즉시 연결 · 바벨 끝/원판 2~3점 지정 · 신장 기준 cm 환산'}
@@ -415,7 +403,7 @@ function LiftingGuide({ mode, onClose }) {
         </div>
 
         <div className="grid grid-cols-3 gap-2">
-          {[['lifting', '🏋️ 역도', '카메라 즉시 연결'], ['vbt', '⚡ VBT', '속도 기반 존 판정'], ['onerm', '💪 1RM', '카메라·수동등록']].map(([k, t, d]) => (
+          {[['lifting', '🏋️ 역도', '카메라 즉시 연결'], ['vbt', '⚡ VBT', '속도 기반 존 판정'], ['onerm', '💪 1RM', '실시간 카메라']].map(([k, t, d]) => (
             <div key={k} className={`rounded-xl p-2.5 border ${mode === k ? 'bg-amber-500/10 border-amber-500/40' : 'bg-slate-800/60 border-slate-700'}`}>
               <p className="text-white font-bold text-[11px] mb-0.5">{t}</p>
               <p className="text-slate-300 text-[10px] leading-snug">{d}</p>
