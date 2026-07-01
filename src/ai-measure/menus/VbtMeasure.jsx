@@ -38,6 +38,7 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
   const framingRef = useRef({ level: 'bad', message: '' });
   const consumedAutoStartRef = useRef(0);
   const roiRef = useRef({ x: 0.05, y: 0.34, w: 0.26, h: 0.46 });
+  const countdownTimerRef = useRef(null);
 
   // ── 녹화(MediaRecorder) — 영상 위 궤적선 + 데이터HUD 번인. 영상은 트레이너 폰 저장.
   const mediaRecorderRef = useRef(null);
@@ -55,6 +56,8 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
   const [videoSavedMsg, setVideoSavedMsg] = useState('');
 
   const [recording, setRecording] = useState(false);
+  const [countdown, setCountdown] = useState(null);
+  const [seedHintSignal, setSeedHintSignal] = useState(0);
   const [seeded, setSeeded] = useState(false);
   const [ptCount, setPtCount] = useState(0);
   const [activePts, setActivePts] = useState(0);
@@ -153,6 +156,31 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
 
   const { videoRef, start, stop, status, error } = usePoseEngine({ onResult: handleResult });
 
+  const clearCountdown = useCallback(() => {
+    if (countdownTimerRef.current) {
+      clearInterval(countdownTimerRef.current);
+      countdownTimerRef.current = null;
+    }
+    setCountdown(null);
+  }, []);
+
+  const runStartCountdown = useCallback((onDone) => {
+    if (countdownTimerRef.current) return;
+    let next = 3;
+    setCountdown(next);
+    countdownTimerRef.current = setInterval(() => {
+      next -= 1;
+      if (next <= 0) {
+        clearInterval(countdownTimerRef.current);
+        countdownTimerRef.current = null;
+        setCountdown(null);
+        onDone?.();
+      } else {
+        setCountdown(next);
+      }
+    }, 1000);
+  }, []);
+
   const syncCanvas = useCallback(() => {
     const v = videoRef.current, c = canvasRef.current;
     if (v && c && v.videoWidth) { c.width = v.videoWidth; c.height = v.videoHeight; }
@@ -163,13 +191,14 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
     if (v) v.addEventListener('loadedmetadata', syncCanvas);
     return () => {
       if (v) v.removeEventListener('loadedmetadata', syncCanvas);
+      clearCountdown();
       stop();
       stopCompose();
       if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
         try { mediaRecorderRef.current.stop(); } catch (e) { /* noop */ }
       }
     };
-  }, [syncCanvas, stop]);
+  }, [clearCountdown, syncCanvas, stop]);
 
   const startCam = useCallback(() => {
     setResult(null);
@@ -179,7 +208,7 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
     setVideoBlob(null); videoBlobRef.current = null; setVideoSavedMsg('');
     start();
   }, [start]);
-  const closeCam = () => { stop(); recordingRef.current = false; setRecording(false); stopCompose(); };
+  const closeCam = () => { clearCountdown(); stop(); recordingRef.current = false; setRecording(false); stopCompose(); };
 
   const stopCompose = () => {
     if (composeRafRef.current) { cancelAnimationFrame(composeRafRef.current); composeRafRef.current = null; }
@@ -278,37 +307,40 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
   };
 
   const toggleRecord = () => {
-    if (!seededRef.current) { alert('먼저 화면에서 바벨 끝이나 원판을 눌러 추적점을 1개 이상 지정하세요.'); return; }
+    if (!seededRef.current) { setSeedHintSignal(v => v + 1); return; }
+    if (countdown != null) return;
     if (!recording) {
-      capRef.current.reset();
-      phSamplesRef.current = [];
-      frameStatsRef.current = { total: 0, lost: 0 };
-      liveHudRef.current = { romCm: null, meanVelocity: null };
-      repCounterRef.current.reset();
-      setLiveReps(0);
-      recordStartRef.current = performance.now();
-      recordingRef.current = true;
-      setRecording(true);
-      setResult(null);
-      setVideoBlob(null); videoBlobRef.current = null; setVideoSavedMsg('');
-      try {
-        chunksRef.current = [];
-        const stream = createRecordedStream();
-        if (stream) {
-          const mime = pickRecorderMime();
-          const mr = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
-          mediaRecorderRef.current = mr;
-          mr.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
-          mr.onstop = () => {
-            stopCompose();
-            const type = mr.mimeType || 'video/webm';
-            const blob = new Blob(chunksRef.current, { type });
-            videoBlobRef.current = blob;
-            setVideoBlob(blob);
-          };
-          mr.start(1000);
-        }
-      } catch (e) { mediaRecorderRef.current = null; }
+      runStartCountdown(() => {
+        capRef.current.reset();
+        phSamplesRef.current = [];
+        frameStatsRef.current = { total: 0, lost: 0 };
+        liveHudRef.current = { romCm: null, meanVelocity: null };
+        repCounterRef.current.reset();
+        setLiveReps(0);
+        recordStartRef.current = performance.now();
+        recordingRef.current = true;
+        setRecording(true);
+        setResult(null);
+        setVideoBlob(null); videoBlobRef.current = null; setVideoSavedMsg('');
+        try {
+          chunksRef.current = [];
+          const stream = createRecordedStream();
+          if (stream) {
+            const mime = pickRecorderMime();
+            const mr = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+            mediaRecorderRef.current = mr;
+            mr.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
+            mr.onstop = () => {
+              stopCompose();
+              const type = mr.mimeType || 'video/webm';
+              const blob = new Blob(chunksRef.current, { type });
+              videoBlobRef.current = blob;
+              setVideoBlob(blob);
+            };
+            mr.start(1000);
+          }
+        } catch (e) { mediaRecorderRef.current = null; }
+      });
     } else {
       recordingRef.current = false;
       setRecording(false);
@@ -367,9 +399,8 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
     const topBar = (
       <>
         {recording && (
-          <div className="self-center rounded-2xl bg-black/70 backdrop-blur px-5 py-2 border border-amber-500/40">
-            <p className="text-center text-[10px] text-amber-300 font-bold tracking-widest">반복</p>
-            <p className="text-center font-mono font-black text-4xl text-white leading-none">{liveReps}<span className="text-base text-slate-400"> 회</span></p>
+          <div className="self-center rounded-full bg-black/70 backdrop-blur px-3 py-1.5 border border-amber-500/40">
+            <p className="text-center font-mono font-black text-lg text-white leading-none"><span className="text-[10px] text-amber-300 mr-1">반복</span>{liveReps}<span className="text-xs text-slate-400">회</span></p>
           </div>
         )}
         <div className="flex items-center gap-1.5 flex-wrap justify-end">
@@ -400,8 +431,9 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
     const controls = (
       <div className="flex items-center gap-2">
         <button onClick={toggleRecord}
-          className={`px-5 h-12 rounded-full text-sm font-black active:scale-95 shadow-lg ${recording ? 'bg-red-500 text-white' : seeded ? 'bg-amber-500 text-slate-950' : 'bg-slate-600 text-slate-200'}`}>
-          {recording ? '■ 측정 종료' : '● 측정 시작'}
+          disabled={countdown != null}
+          className={`px-5 h-12 rounded-full text-sm font-black active:scale-95 shadow-lg disabled:opacity-60 ${recording ? 'bg-red-500 text-white' : seeded ? 'bg-amber-500 text-slate-950' : 'bg-slate-600 text-slate-200'}`}>
+          {recording ? '■ 측정 종료' : countdown != null ? '시작 대기' : '● 측정 시작'}
         </button>
         <button onClick={scanPlateColors}
           className="px-3.5 h-12 rounded-full text-xs font-black bg-slate-700 text-white active:scale-95 shadow-lg">
@@ -414,7 +446,8 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
       <CameraStage
         videoRef={videoRef} canvasRef={canvasRef} status={status} error={error}
         onTapVideo={onTapVideo} onClose={closeCam} topBar={topBar} controls={controls}
-        recording={recording}
+        recording={recording} tappable={countdown == null}
+        seedHint={ptCount === 0 && !recording} hintSignal={seedHintSignal} countdown={countdown}
       >
         {!recording && (
           <div className="mx-auto max-w-xs w-full rounded-xl bg-black/55 backdrop-blur border border-white/10 p-2">

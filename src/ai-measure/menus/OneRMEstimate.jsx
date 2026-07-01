@@ -65,7 +65,10 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
   const repCounterRef = useRef(createRepCounter());
   const countingRef = useRef(false);
   const consumedAutoStartRef = useRef(0);
+  const countdownTimerRef = useRef(null);
   const [counting, setCounting] = useState(false);
+  const [countdown, setCountdown] = useState(null);
+  const [seedHintSignal, setSeedHintSignal] = useState(0);
   const [liveReps, setLiveReps] = useState(0);
   const [seedPts, setSeedPts] = useState(0);
 
@@ -74,6 +77,31 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
     : weightMode === 'plate'
       ? totalWeight(sidePlates, barKg).total
       : dialWeight;
+
+  const clearCountdown = useCallback(() => {
+    if (countdownTimerRef.current) {
+      clearInterval(countdownTimerRef.current);
+      countdownTimerRef.current = null;
+    }
+    setCountdown(null);
+  }, []);
+
+  const runStartCountdown = useCallback((onDone) => {
+    if (countdownTimerRef.current) return;
+    let next = 3;
+    setCountdown(next);
+    countdownTimerRef.current = setInterval(() => {
+      next -= 1;
+      if (next <= 0) {
+        clearInterval(countdownTimerRef.current);
+        countdownTimerRef.current = null;
+        setCountdown(null);
+        onDone?.();
+      } else {
+        setCountdown(next);
+      }
+    }, 1000);
+  }, []);
 
   const handleResult = useCallback((lms, ts, video) => {
     const canvas = canvasRef.current;
@@ -140,12 +168,15 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
 
   // 렙 카운팅 시작/정지.
   const toggleCounting = () => {
-    if (!capRef.current.isSeeded()) { alert('먼저 바벨 끝이나 원판을 눌러 추적점을 지정하세요.'); return; }
+    if (!capRef.current.isSeeded()) { setSeedHintSignal(v => v + 1); return; }
+    if (countdown != null) return;
     if (!counting) {
-      repCounterRef.current.reset();
-      setLiveReps(0);
-      countingRef.current = true;
-      setCounting(true);
+      runStartCountdown(() => {
+        repCounterRef.current.reset();
+        setLiveReps(0);
+        countingRef.current = true;
+        setCounting(true);
+      });
     } else {
       countingRef.current = false;
       setCounting(false);
@@ -164,8 +195,8 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
   useEffect(() => {
     const v = videoRef.current;
     if (v) v.addEventListener('loadedmetadata', syncCanvas);
-    return () => { if (v) v.removeEventListener('loadedmetadata', syncCanvas); stop(); countingRef.current = false; };
-  }, [syncCanvas, stop]);
+    return () => { if (v) v.removeEventListener('loadedmetadata', syncCanvas); clearCountdown(); stop(); countingRef.current = false; };
+  }, [clearCountdown, syncCanvas, stop]);
 
   const openCam = useCallback(() => {
     setDetected([]);
@@ -184,6 +215,7 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
 
   // 카메라를 닫으면, 인식된 원판이 없을 때는 직접 입력으로 자연스럽게 되돌린다.
   const closeCam = () => {
+    clearCountdown();
     stop();
     countingRef.current = false; setCounting(false);
     if (detected.length === 0 && sidePlates.length === 0) setWeightMode('dial');
@@ -259,9 +291,8 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
     const topBar = (
       <>
         {counting && (
-          <div className="self-center rounded-2xl bg-black/70 backdrop-blur px-5 py-2 border border-amber-500/40">
-            <p className="text-center text-[10px] text-amber-300 font-bold tracking-widest">반복 자동 카운트</p>
-            <p className="text-center font-mono font-black text-4xl text-white leading-none">{liveReps}<span className="text-base text-slate-400"> 회</span></p>
+          <div className="self-center rounded-full bg-black/70 backdrop-blur px-3 py-1.5 border border-amber-500/40">
+            <p className="text-center font-mono font-black text-lg text-white leading-none"><span className="text-[10px] text-amber-300 mr-1">반복</span>{liveReps}<span className="text-xs text-slate-400">회</span></p>
           </div>
         )}
         <span className="bg-black/65 rounded-full px-2.5 py-1 text-[10px] text-cyan-300 font-bold">
@@ -277,8 +308,9 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
     const controls = (
       <div className="flex items-center gap-2">
         <button onClick={toggleCounting}
-          className={`px-5 h-12 rounded-full text-sm font-black active:scale-95 shadow-lg ${counting ? 'bg-red-500 text-white' : seedPts > 0 ? 'bg-amber-500 text-slate-950' : 'bg-slate-600 text-slate-200'}`}>
-          {counting ? '■ 카운트 정지' : '● 카운트 시작'}
+          disabled={countdown != null}
+          className={`px-5 h-12 rounded-full text-sm font-black active:scale-95 shadow-lg disabled:opacity-60 ${counting ? 'bg-red-500 text-white' : seedPts > 0 ? 'bg-amber-500 text-slate-950' : 'bg-slate-600 text-slate-200'}`}>
+          {counting ? '■ 카운트 정지' : countdown != null ? '시작 대기' : '● 카운트 시작'}
         </button>
         <button onClick={scanColors}
           className="px-3.5 h-12 rounded-full text-xs font-black bg-slate-700 text-white active:scale-95 shadow-lg">
@@ -290,7 +322,8 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
       <CameraStage
         videoRef={videoRef} canvasRef={canvasRef} status={status} error={error}
         onTapVideo={onTapVideo} onClose={closeCam} topBar={topBar} controls={controls}
-        recording={counting} recordingLabel="카운트 중"
+        recording={counting} recordingLabel="카운트 중" tappable={countdown == null}
+        seedHint={seedPts === 0 && !counting} hintSignal={seedHintSignal} countdown={countdown}
       >
         {/* 무게 다이얼 반투명 오버레이 — 녹화(카운트) 버튼 바로 위. 촬영 전 무게 조정 */}
         {!counting && (

@@ -14,19 +14,32 @@
 //   controls            : 하단 컨트롤 영역(JSX)
 //   children            : 결과/추가 패널(하단 시트, 선택)
 //   tappable            : true면 영상 탭 입력 레이어 활성
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 
 export default function CameraStage({
   videoRef, canvasRef, status, error,
   onTapVideo, onClose, topBar, controls, children, tappable = true,
   recording = false, recordingLabel = '측정 중',
+  seedHint = false, hintSignal = 0, countdown = null,
 }) {
+  const [showSeedHint, setShowSeedHint] = useState(false);
+
   // 오버레이가 떠 있는 동안 바디 스크롤 잠금
   useEffect(() => {
     const prev = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     return () => { document.body.style.overflow = prev; };
   }, []);
+
+  useEffect(() => {
+    if (!seedHint || status !== 'running') {
+      setShowSeedHint(false);
+      return undefined;
+    }
+    setShowSeedHint(true);
+    const timer = setTimeout(() => setShowSeedHint(false), 3200);
+    return () => clearTimeout(timer);
+  }, [seedHint, hintSignal, status]);
 
   return (
     <div className="cam-stage">
@@ -36,7 +49,7 @@ export default function CameraStage({
         className="absolute inset-0 w-full h-full object-contain pointer-events-none" />
 
       {recording && status === 'running' && (
-        <div className="absolute top-[max(env(safe-area-inset-top),12px)] left-1/2 z-20 -translate-x-1/2 rounded-full bg-red-500/80 border border-white/20 px-3 py-1.5 text-xs font-black text-white shadow-lg backdrop-blur">
+        <div className="absolute top-[max(env(safe-area-inset-top),12px)] left-1/2 z-30 -translate-x-1/2 rounded-full bg-red-500/80 border border-white/20 px-3 py-1.5 text-xs font-black text-white shadow-lg backdrop-blur">
           <span className="mr-1 inline-block h-2 w-2 rounded-full bg-white animate-pulse" />
           {recordingLabel}
         </div>
@@ -65,14 +78,29 @@ export default function CameraStage({
         </div>
       )}
 
+      {showSeedHint && status === 'running' && countdown == null && (
+        <div className="pointer-events-none absolute left-1/2 top-[34%] z-30 w-[min(88vw,360px)] -translate-x-1/2 rounded-2xl border border-amber-400/45 bg-black/70 px-4 py-3 text-center shadow-xl backdrop-blur animate-fade-in">
+          <p className="text-sm font-black text-amber-300">바벨 끝/원판 추적점을 먼저 1개 이상 눌러주세요</p>
+          <p className="mt-1 text-[11px] font-bold text-slate-300">2~3개 지정하면 가려져도 더 안정적입니다.</p>
+        </div>
+      )}
+
+      {countdown != null && (
+        <div className="pointer-events-none absolute inset-0 z-40 flex items-center justify-center bg-black/15">
+          <div className="flex h-36 w-36 items-center justify-center rounded-full border-4 border-amber-300/80 bg-black/65 shadow-2xl backdrop-blur">
+            <span className="font-mono text-6xl font-black text-white">{countdown}</span>
+          </div>
+        </div>
+      )}
+
       {/* 상단 닫기 + 가이드 */}
-      <div className="absolute top-0 left-0 right-0 z-20 pt-[max(env(safe-area-inset-top),12px)] px-3 pb-2 bg-gradient-to-b from-black/70 to-transparent">
+      <div className="absolute top-0 left-0 right-0 z-20 pt-[max(env(safe-area-inset-top),10px)] px-3 pb-8 bg-gradient-to-b from-black/55 via-black/25 to-transparent">
         <div className="flex items-start justify-between gap-2">
           <button onClick={onClose}
             className="shrink-0 rounded-full bg-black/55 border border-white/25 text-white text-xs font-bold px-3 py-1.5 active:scale-95">
             ✕ 닫기
           </button>
-          <div className="flex-1 min-w-0 flex flex-col items-end gap-1">{topBar}</div>
+          <div className="flex-1 min-w-0 flex flex-col items-end gap-1.5 pr-0.5">{topBar}</div>
         </div>
       </div>
 
