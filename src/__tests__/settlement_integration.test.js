@@ -142,6 +142,38 @@ describe('박제비율(splitRateAtPay)이 정산에 반영', () => {
     expect(row.payAmount).toBe(86000); // 200,000 * 43%
     expect(block.splitMode).toBe('manual');
   });
+
+  it('saved settlement overrides recompute the trainer payout total', () => {
+    const members = [
+      { id: 'm1', name: 'A', isActive: true, trainerSessions: { t1: { total: 10, remaining: 5 } } },
+      { id: 'm2', name: 'B', isActive: true, trainerSessions: { t1: { total: 10, remaining: 6 } } },
+    ];
+    const payments = {
+      m1: [{ id: 'p1', amount: 1000000, method: 'cash', paidAt: '2026-06-01', trainerIds: ['t1'], splitRateAtPay: { t1: 60 } }],
+      m2: [{ id: 'p2', amount: 1000000, method: 'cash', paidAt: '2026-06-01', trainerIds: ['t1'], splitRateAtPay: { t1: 60 } }],
+    };
+    const schedules = [
+      ...Array.from({ length: 5 }, (_, i) => ({ id: `a${i}`, memberId: 'm1', trainerId: 't1', date: '2026-06-10', status: 'attended', isExternal: false })),
+      ...Array.from({ length: 4 }, (_, i) => ({ id: `b${i}`, memberId: 'm2', trainerId: 't1', date: '2026-06-10', status: 'attended', isExternal: false })),
+    ];
+    const before = computeSessionSettlement({ trainers, members, schedules, payments, records, settings, ym: YM })[0];
+    expect(before.payout).toBe(540000);
+
+    const override = {
+      id: 't1_2026-06',
+      trainerId: 't1',
+      ym: YM,
+      sessionCounts: { m1: 2 },
+      splitRates: { m2: 50 },
+    };
+    const after = computeSessionSettlement({
+      trainers, members, schedules, payments, records, settings, ym: YM,
+      getOverride: () => override,
+    })[0];
+    expect(after.rows.find(r => r.memberId === 'm1')).toMatchObject({ cnt: 2, payAmount: 120000 });
+    expect(after.rows.find(r => r.memberId === 'm2')).toMatchObject({ rate: 50, payAmount: 200000 });
+    expect(after.payout).toBe(320000);
+  });
 });
 
 describe('환불/미수금/월정액 처리', () => {

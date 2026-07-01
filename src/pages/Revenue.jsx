@@ -690,6 +690,7 @@ function RefundableList({ filtered, settings, trainers, trainerMap, onChange }) 
 function SettleTab({ settings, trainers, trainerMap, scopeTid=null, readOnly=false, estimate=false }) {
   const [refreshKey, setRefreshKey] = useState(0);
   const [ym, setYm] = useState(thisMonth);
+  const [savedOverrides, setSavedOverrides] = useState({});
 
   const allPaymentsGrouped = useMemo(()=>{
     const g = {}; store.getMembers().forEach(m=>{ g[m.id] = store.getPayments(m.id); }); return g;
@@ -700,8 +701,18 @@ function SettleTab({ settings, trainers, trainerMap, scopeTid=null, readOnly=fal
 
   const blocksAll = useMemo(()=>computeSessionSettlement({
     trainers, members, schedules, payments: allPaymentsGrouped, records, settings, ym,
-    getOverride: (tid, m) => store.getSettleOverride(tid, m),
-  }), [trainers, members, schedules, allPaymentsGrouped, records, settings, ym, refreshKey]);
+    getOverride: (tid, m) => {
+      const key = `${tid}_${m}`;
+      return Object.prototype.hasOwnProperty.call(savedOverrides, key)
+        ? savedOverrides[key]
+        : store.getSettleOverride(tid, m);
+    },
+  }), [trainers, members, schedules, allPaymentsGrouped, records, settings, ym, refreshKey, savedOverrides]);
+
+  const handleSettleOverrideSaved = (trainerId, month, override) => {
+    setSavedOverrides(prev => ({ ...prev, [`${trainerId}_${month}`]: override || null }));
+    setRefreshKey(k=>k+1);
+  };
 
   // 트레이너 모드: 본인 블록만 노출
   const blocks = useMemo(
@@ -847,7 +858,7 @@ function SettleTab({ settings, trainers, trainerMap, scopeTid=null, readOnly=fal
         : blocks.map(b=>(
           <TrainerSettleCard key={b.trainer.id} block={b} ym={ym} settings={settings}
             readOnly={readOnly} defaultOpen={!!scopeTid} estimate={estimate}
-            onSaved={()=>setRefreshKey(k=>k+1)}/>
+            onSaved={(override)=>handleSettleOverrideSaved(b.trainer.id, ym, override)}/>
         ))}
     </div>
   );
@@ -941,12 +952,13 @@ function TrainerSettleCard({ block: b, ym, settings, onSaved, readOnly=false, de
 
       if (nothingOverridden) {
         if (b.hasOverride) await store.deleteSettleOverride(b.trainer.id, ym);
+        setEditing(false); onSaved?.(null);
       } else {
-        await store.saveSettleOverride(b.trainer.id, ym, {
+        const saved = await store.saveSettleOverride(b.trainer.id, ym, {
           unitPrices, sessionCounts, splitRates, blogCount, instaCount, studyCount,
         });
+        setEditing(false); onSaved?.(saved);
       }
-      setEditing(false); onSaved?.();
     } catch(e){ alert('저장에 실패했습니다.'); }
   };
 
@@ -954,7 +966,7 @@ function TrainerSettleCard({ block: b, ym, settings, onSaved, readOnly=false, de
   // 과거에 통째로 박제돼 정산이 옛 값에 고정된 경우를 한 번에 정리하는 용도.
   const resetOverride = async () => {
     if (!window.confirm(`${b.trainer.name} 트레이너의 이번 달 수동 수정값을 모두 지우고 자동 집계값으로 되돌릴까요?\n(단가·수업횟수·정산비율·SNS/스터디 횟수가 실시간 데이터 기준으로 재계산됩니다.)`)) return;
-    try { await store.deleteSettleOverride(b.trainer.id, ym); setEditing(false); onSaved?.(); }
+    try { await store.deleteSettleOverride(b.trainer.id, ym); setEditing(false); onSaved?.(null); }
     catch(e){ alert('복원에 실패했습니다. 네트워크 확인 후 다시 시도하세요.'); }
   };
 
