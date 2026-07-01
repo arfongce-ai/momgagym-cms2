@@ -19,7 +19,6 @@ import {
 } from '../core/lifting';
 import { usePoseEngine } from '../core/usePoseEngine';
 import { assessFraming, FRAMING_PRESETS } from '../core/framingGuide';
-import { drawGuides } from '../core/cameraGuide';
 import { createMultiTracker } from '../core/endcapTracker';
 import { createRepCounter } from '../core/repCounter';
 import FramingIntro from './FramingIntro';
@@ -82,7 +81,6 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
     const cw = canvas.width, ch = canvas.height;
     const ctx = canvas.getContext('2d');
     ctx.clearRect(0, 0, cw, ch);
-    drawGuides(ctx, cw, ch, {});
 
     const want = (FRAMING_PRESETS[liftRef.current] || FRAMING_PRESETS.squat).want;
     const fr = assessFraming(lms, { want });
@@ -294,23 +292,22 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
       >
         {/* 무게 다이얼 반투명 오버레이 — 녹화(카운트) 버튼 바로 위. 촬영 전 무게 조정 */}
         {!counting && (
-          <div className="mx-auto max-w-md w-full rounded-2xl bg-black/55 backdrop-blur border border-white/10 p-3">
-            <p className="text-center text-[10px] text-amber-300 font-bold tracking-widest mb-2">든 무게 (0.5kg 단위)</p>
-            <div className="flex items-center justify-center gap-2">
+          <div className="mx-auto max-w-xs w-full rounded-xl bg-black/55 backdrop-blur border border-white/10 p-2">
+            <p className="text-center text-[9px] text-amber-300 font-bold tracking-widest mb-1.5">든 무게</p>
+            <div className="flex items-center justify-center gap-1.5">
               <button onClick={() => setDialWeight(w => stepWeight(w, -10))}
-                className="w-11 h-11 rounded-xl bg-white/10 text-slate-100 font-black text-xs active:scale-90">−5</button>
+                className="w-9 h-9 rounded-lg bg-white/10 text-slate-100 font-black text-[11px] active:scale-90">−5</button>
               <button onClick={() => setDialWeight(w => stepWeight(w, -1))}
-                className="w-11 h-11 rounded-xl bg-white/10 text-slate-100 font-black active:scale-90">−</button>
-              <div className="min-w-[90px] text-center">
-                <p className="font-mono font-black text-3xl text-white leading-none">{snapWeight(dialWeight)}</p>
-                <p className="text-[9px] text-slate-400">kg</p>
+                className="w-9 h-9 rounded-lg bg-white/10 text-slate-100 font-black active:scale-90">−</button>
+              <div className="min-w-[72px] text-center">
+                <p className="font-mono font-black text-2xl text-white leading-none">{snapWeight(dialWeight)}</p>
+                <p className="text-[8px] text-slate-400">kg</p>
               </div>
               <button onClick={() => setDialWeight(w => stepWeight(w, +1))}
-                className="w-11 h-11 rounded-xl bg-amber-500 text-slate-950 font-black active:scale-90">+</button>
+                className="w-9 h-9 rounded-lg bg-amber-500 text-slate-950 font-black active:scale-90">+</button>
               <button onClick={() => setDialWeight(w => stepWeight(w, +10))}
-                className="w-11 h-11 rounded-xl bg-amber-500 text-slate-950 font-black text-xs active:scale-90">+5</button>
+                className="w-9 h-9 rounded-lg bg-amber-500 text-slate-950 font-black text-[11px] active:scale-90">+5</button>
             </div>
-            <p className="text-center text-[10px] text-slate-400 mt-2">바벨 끝을 누른 뒤 [카운트 시작] → 세트 수행 → 정지하면 반복이 자동 입력됩니다.</p>
           </div>
         )}
       </CameraStage>

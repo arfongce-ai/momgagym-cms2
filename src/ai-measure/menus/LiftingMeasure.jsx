@@ -6,12 +6,11 @@
 //  - 옆에서 촬영 권장. cm 환산은 회원 키 기준(근사).
 import { useRef, useState, useEffect, useCallback } from 'react';
 import { usePoseEngine } from '../core/usePoseEngine';
-import { drawGuides } from '../core/cameraGuide';
 import { personHeightRatio, romToCm } from '../core/barbell';
 import { createMultiTracker } from '../core/endcapTracker';
 import { assessFraming, FRAMING_PRESETS } from '../core/framingGuide';
-import { totalWeight } from '../core/plates';
-import { exerciseLabel as exerciseLabelLocal } from '../core/lifting';
+import { detectPlatesFromVideo, suggestSidePlates, totalWeight } from '../core/plates';
+import { exerciseLabel as exerciseLabelLocal, snapWeight, stepWeight } from '../core/lifting';
 import { saveVideoToPhone, pickRecorderMime } from '../core/recordSink';
 import { drawLiftingDataHud, drawBarPathToRecord } from '../core/recordingOverlay';
 import { createRepCounter } from '../core/repCounter';
@@ -30,6 +29,7 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
   const seededRef = useRef(false);
   const framingRef = useRef({ level: 'bad', message: '' });
   const consumedAutoStartRef = useRef(0);
+  const roiRef = useRef({ x: 0.05, y: 0.34, w: 0.26, h: 0.46 });
 
   // ── 녹화(MediaRecorder) — 영상 위에 바벨 궤적선 + 데이터HUD를 합성해 번인.
   //    측정 데이터는 Firestore, 영상 blob 은 트레이너 폰(saveVideoToPhone)으로 분리 저장.
@@ -54,6 +54,9 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
   const [result, setResult] = useState(null);
   const [heightCm, setHeightCm] = useState(member?.height || '');
   const [plate, setPlate] = useState({ barKg: 20, sidePlates: [] });
+  const [dialWeight, setDialWeight] = useState(20);
+  const [weightSource, setWeightSource] = useState('dial');
+  const [detected, setDetected] = useState([]);
   const [framing, setFraming] = useState({ level: 'bad', message: '카메라 준비 중…' });
 
   const handleResult = useCallback((lms, ts, video) => {
@@ -62,7 +65,6 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
     const cw = canvas.width, ch = canvas.height;
     const ctx = canvas.getContext('2d');
     ctx.clearRect(0, 0, cw, ch);
-    drawGuides(ctx, cw, ch, {});
 
     const ph = personHeightRatio(lms);
     if (ph) {
@@ -75,6 +77,17 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
       framingRef.current = fr;
       setFraming({ level: fr.level, message: fr.message });
     }
+
+    const r = roiRef.current;
+    ctx.save();
+    ctx.strokeStyle = 'rgba(245,158,11,0.95)';
+    ctx.lineWidth = 3; ctx.setLineDash([8, 6]);
+    ctx.strokeRect(r.x * cw, r.y * ch, r.w * cw, r.h * ch);
+    ctx.setLineDash([]);
+    ctx.fillStyle = 'rgba(245,158,11,0.95)';
+    ctx.font = 'bold 14px sans-serif';
+    ctx.fillText('원판 색 인식', r.x * cw + 6, r.y * ch - 8);
+    ctx.restore();
 
     const cap = capRef.current;
     if (cap.isSeeded()) {
@@ -168,6 +181,22 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
     setRecording(false);
     stopCompose();
   };
+
+  const applyPlateWeight = useCallback((next, source = 'plate-manual') => {
+    const normalized = { barKg: next?.barKg ?? 20, sidePlates: next?.sidePlates ?? [] };
+    setPlate(normalized);
+    setDialWeight(totalWeight(normalized.sidePlates, normalized.barKg).total);
+    setWeightSource(source);
+  }, []);
+
+  const scanPlateColors = useCallback(() => {
+    const v = videoRef.current;
+    if (!v || !v.videoWidth) { alert('카메라가 아직 준비되지 않았습니다.'); return; }
+    const { dominant } = detectPlatesFromVideo(v, roiRef.current);
+    if (!dominant.length) { alert('원판 색을 찾지 못했습니다. 원판이 박스 안에 잘 보이게 한 뒤 다시 시도하세요.'); return; }
+    setDetected(dominant);
+    applyPlateWeight({ ...plate, sidePlates: suggestSidePlates(dominant) }, 'plate-color');
+  }, [applyPlateWeight, plate, videoRef]);
 
   useEffect(() => {
     if (!autoStartSignal || consumedAutoStartRef.current === autoStartSignal) return;
@@ -317,7 +346,7 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
 
   const save = () => {
     if (!result) return;
-    const weight = totalWeight(plate.sidePlates, plate.barKg).total;
+    const weight = snapWeight(dialWeight) || totalWeight(plate.sidePlates, plate.barKg).total;
     const stats = frameStatsRef.current;
     const lostRatio = stats.total > 0 ? stats.lost / stats.total : null;
     onSave?.({
@@ -334,6 +363,7 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
       weight: weight || null,
       barKg: plate.barKg,
       sidePlates: plate.sidePlates,
+      weightSource,
     });
   };
 
@@ -350,10 +380,10 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
         <div className="flex items-center gap-1.5 flex-wrap justify-end">
           <span className="bg-black/65 rounded-full px-2.5 py-1 text-[10px] text-cyan-300 font-bold">
             {ptCount === 0
-              ? '바벨 끝·원판을 눌러 추적점 지정 (최대 3개)'
+              ? '바벨 끝·원판을 눌러 추적점 지정 또는 색 인식'
               : recording
                 ? `추적점 ${activePts}/${ptCount} 인식 중`
-                : `추적점 ${ptCount}개 · 더 누르거나 측정 시작`}
+                : `추적점 ${ptCount}개 · 색 인식 또는 측정 시작`}
           </span>
           {ptCount > 0 && (
             <span className={`rounded-full px-2 py-1 text-[10px] font-bold ${activePts >= 2 ? 'bg-emerald-500/85 text-slate-950' : activePts === 1 ? 'bg-amber-500/85 text-slate-950' : 'bg-red-500/85 text-white'}`}>
@@ -373,10 +403,16 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
     );
 
     const controls = (
-      <button onClick={toggleRecord}
-        className={`px-6 h-14 rounded-full text-base font-black active:scale-95 shadow-lg ${recording ? 'bg-red-500 text-white' : seeded ? 'bg-amber-500 text-slate-950' : 'bg-slate-600 text-slate-200'}`}>
-        {recording ? '■ 측정 종료' : '● 측정 시작'}
-      </button>
+      <div className="flex items-center gap-2">
+        <button onClick={toggleRecord}
+          className={`px-5 h-12 rounded-full text-sm font-black active:scale-95 shadow-lg ${recording ? 'bg-red-500 text-white' : seeded ? 'bg-amber-500 text-slate-950' : 'bg-slate-600 text-slate-200'}`}>
+          {recording ? '■ 측정 종료' : '● 측정 시작'}
+        </button>
+        <button onClick={scanPlateColors}
+          className="px-3.5 h-12 rounded-full text-xs font-black bg-slate-700 text-white active:scale-95 shadow-lg">
+          🎨 색 인식
+        </button>
+      </div>
     );
 
     return (
@@ -385,6 +421,28 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
         onTapVideo={onTapVideo} onClose={closeCam} topBar={topBar} controls={controls}
         recording={recording}
       >
+        {!recording && (
+          <div className="mx-auto max-w-xs w-full rounded-xl bg-black/55 backdrop-blur border border-white/10 p-2">
+            <div className="flex items-center justify-center gap-1.5">
+              <button onClick={() => { setDialWeight(w => stepWeight(w, -10)); setWeightSource('dial'); }}
+                className="w-9 h-9 rounded-lg bg-white/10 text-slate-100 font-black text-[11px] active:scale-90">−5</button>
+              <button onClick={() => { setDialWeight(w => stepWeight(w, -1)); setWeightSource('dial'); }}
+                className="w-9 h-9 rounded-lg bg-white/10 text-slate-100 font-black active:scale-90">−</button>
+              <div className="min-w-[72px] text-center">
+                <p className="font-mono font-black text-2xl text-white leading-none">{snapWeight(dialWeight)}</p>
+                <p className="text-[8px] text-slate-400">kg</p>
+              </div>
+              <button onClick={() => { setDialWeight(w => stepWeight(w, +1)); setWeightSource('dial'); }}
+                className="w-9 h-9 rounded-lg bg-amber-500 text-slate-950 font-black active:scale-90">+</button>
+              <button onClick={() => { setDialWeight(w => stepWeight(w, +10)); setWeightSource('dial'); }}
+                className="w-9 h-9 rounded-lg bg-amber-500 text-slate-950 font-black text-[11px] active:scale-90">+5</button>
+            </div>
+            <div className="mt-1.5 flex items-center justify-center gap-2 text-[9px] text-slate-400">
+              <span>{weightSource === 'plate-color' ? '원판 색 인식 반영' : '수동 무게'}</span>
+              {detected.length > 0 && <span className="text-cyan-300">{detected.map(d => d.label).join(', ')}</span>}
+            </div>
+          </div>
+        )}
         {result && (
           <div className="mx-auto max-w-md w-full card-accent p-3 space-y-2 animate-fade-in">
             <p className="text-[11px] font-bold text-amber-400 uppercase tracking-widest">바벨 추적 결과 {result.reps ? `· ${result.reps}회` : ''}</p>
@@ -449,7 +507,7 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
           원판 무게 설정 (기록용) · 선택
         </summary>
         <div className="px-3 pb-3">
-          <PlateWeightInput value={plate} onChange={setPlate} getVideo={null} />
+          <PlateWeightInput value={plate} onChange={next => applyPlateWeight(next, 'plate-manual')} getVideo={null} />
         </div>
       </details>
     </div>
