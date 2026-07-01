@@ -205,3 +205,90 @@ export function totalWeight(sidePlates, barKg) {
     breakdown: sidePlates.filter(p => p.count > 0),
   };
 }
+
+const PLATE_SEARCH_RADIUS = 0.22;
+const PLATE_SAMPLE_STEP = 3;
+const PLATE_MIN_MATCH = 8;
+const PLATE_EMA_ALPHA = 0.4;
+
+export function createPlateBlobTracker() {
+  let tag = null;
+  let pos = null;
+  let ema = null;
+  let cv = null;
+  let ctx = null;
+
+  const ensureCanvas = (w, h) => {
+    if (!cv) {
+      cv = document.createElement('canvas');
+      ctx = cv.getContext('2d', { willReadFrequently: true });
+    }
+    if (cv.width !== w || cv.height !== h) {
+      cv.width = w;
+      cv.height = h;
+    }
+    return ctx;
+  };
+
+  return {
+    seed(tagIn, nx, ny) {
+      if (!tagIn || !TAG_TO_LABEL[tagIn]) return false;
+      tag = tagIn;
+      pos = { x: nx, y: ny };
+      ema = { x: nx, y: ny };
+      return true;
+    },
+    isSeeded() { return !!tag; },
+    tag() { return tag; },
+    update(video) {
+      if (!tag || !pos) return null;
+      const w = video.videoWidth;
+      const h = video.videoHeight;
+      if (!w || !h) return ema;
+      const canvasCtx = ensureCanvas(w, h);
+      canvasCtx.drawImage(video, 0, 0, w, h);
+
+      const cx = pos.x * w;
+      const cy = pos.y * h;
+      const rad = PLATE_SEARCH_RADIUS * Math.min(w, h);
+      const x0 = Math.max(0, Math.floor(cx - rad));
+      const y0 = Math.max(0, Math.floor(cy - rad));
+      const x1 = Math.min(w, Math.ceil(cx + rad));
+      const y1 = Math.min(h, Math.ceil(cy + rad));
+      if (x1 <= x0 || y1 <= y0) return ema;
+
+      const bw = x1 - x0;
+      const bh = y1 - y0;
+      const { data } = canvasCtx.getImageData(x0, y0, bw, bh);
+      let sumX = 0;
+      let sumY = 0;
+      let n = 0;
+
+      for (let yy = 0; yy < bh; yy += PLATE_SAMPLE_STEP) {
+        for (let xx = 0; xx < bw; xx += PLATE_SAMPLE_STEP) {
+          const idx = (yy * bw + xx) * 4;
+          const found = classifyPixel(data[idx], data[idx + 1], data[idx + 2]);
+          if (found !== tag) continue;
+          sumX += x0 + xx;
+          sumY += y0 + yy;
+          n++;
+        }
+      }
+      if (n < PLATE_MIN_MATCH) return ema;
+
+      const nx = sumX / n / w;
+      const ny = sumY / n / h;
+      pos = { x: nx, y: ny };
+      ema = ema
+        ? { x: ema.x + (nx - ema.x) * PLATE_EMA_ALPHA, y: ema.y + (ny - ema.y) * PLATE_EMA_ALPHA }
+        : { x: nx, y: ny };
+      return ema;
+    },
+    current() { return ema; },
+    clear() {
+      tag = null;
+      pos = null;
+      ema = null;
+    },
+  };
+}
