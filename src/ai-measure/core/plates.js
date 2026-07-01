@@ -205,3 +205,77 @@ export function totalWeight(sidePlates, barKg) {
     breakdown: sidePlates.filter(p => p.count > 0),
   };
 }
+
+// ───────── 원판 색 연속 추적(블롭) — 요구사항 2: 플레이트 색깔로도 추적 ─────────
+// detectPlatesFromVideo() 는 ROI 안 색을 "한 번" 집계해 무게를 추정하는 용도지만,
+// 여기서는 그 결과(dominant tag)를 시드로 매 프레임 같은 색 태그의 픽셀 무게중심을
+// 따라가는 "연속 추적기"를 만든다. classifyPixel() 이 IWF 색상별 hue 범위로 분류하는
+// 방식이라, endcapTracker 의 단순 RGB/HSV 최근접 매칭보다 원판처럼 넓고 채도 높은
+// 면적에는 더 안정적이다(조명 변화에 덜 민감). 엔드캡 색 추적·손목 스켈레톤 추적과
+// 함께 trackFusion.js 에서 융합해 신뢰성을 높인다.
+const PLATE_SEARCH_RADIUS = 0.22;  // 검색창 반경(화면비율)
+const PLATE_SAMPLE_STEP = 3;
+const PLATE_MIN_MATCH = 8;         // 이보다 매칭 픽셀 적으면 "못 찾음"
+const PLATE_EMA_ALPHA = 0.4;
+
+export function createPlateBlobTracker() {
+  let tag = null;      // IWF 색 태그('red'|'blue'|'yellow'|'green'|'white')
+  let pos = null;       // 최근 위치(정규화)
+  let ema = null;       // 평활 위치
+  let cv = null, ctx = null;
+  const ensureCanvas = (w, h) => {
+    if (!cv) { cv = document.createElement('canvas'); ctx = cv.getContext('2d', { willReadFrequently: true }); }
+    if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
+    return ctx;
+  };
+
+  return {
+    /** 원판 색 인식 결과(detectPlatesFromVideo)로 추적 시작. */
+    seed(tagIn, nx, ny) {
+      if (!tagIn || !TAG_TO_LABEL[tagIn]) return false;
+      tag = tagIn;
+      pos = { x: nx, y: ny };
+      ema = { x: nx, y: ny };
+      return true;
+    },
+    isSeeded() { return !!tag; },
+    tag() { return tag; },
+
+    update(video) {
+      if (!tag || !pos) return null;
+      const w = video.videoWidth, h = video.videoHeight;
+      if (!w || !h) return ema;
+      const c = ensureCanvas(w, h);
+      c.drawImage(video, 0, 0, w, h);
+
+      const cx = pos.x * w, cy = pos.y * h;
+      const rad = PLATE_SEARCH_RADIUS * Math.min(w, h);
+      const x0 = Math.max(0, Math.floor(cx - rad)), y0 = Math.max(0, Math.floor(cy - rad));
+      const x1 = Math.min(w, Math.ceil(cx + rad)), y1 = Math.min(h, Math.ceil(cy + rad));
+      if (x1 <= x0 || y1 <= y0) return ema;
+      const bw = x1 - x0, bh = y1 - y0;
+      const { data } = c.getImageData(x0, y0, bw, bh);
+
+      let sumX = 0, sumY = 0, n = 0;
+      for (let yy = 0; yy < bh; yy += PLATE_SAMPLE_STEP) {
+        for (let xx = 0; xx < bw; xx += PLATE_SAMPLE_STEP) {
+          const idx = (yy * bw + xx) * 4;
+          const t = classifyPixel(data[idx], data[idx + 1], data[idx + 2]);
+          if (t !== tag) continue;
+          sumX += (x0 + xx); sumY += (y0 + yy); n++;
+        }
+      }
+      if (n < PLATE_MIN_MATCH) return ema; // 못 찾음(가려짐 등) → 직전 위치 유지
+
+      const nx = sumX / n / w, ny = sumY / n / h;
+      pos = { x: nx, y: ny };
+      ema = ema
+        ? { x: ema.x + (nx - ema.x) * PLATE_EMA_ALPHA, y: ema.y + (ny - ema.y) * PLATE_EMA_ALPHA }
+        : { x: nx, y: ny };
+      return ema;
+    },
+
+    current() { return ema; },
+    clear() { tag = null; pos = null; ema = null; },
+  };
+}
