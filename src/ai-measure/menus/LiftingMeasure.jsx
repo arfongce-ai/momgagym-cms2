@@ -20,7 +20,7 @@ import FramingIntro from './FramingIntro';
 import HeightField from './HeightField';
 import CameraStage from './CameraStage';
 
-export default function LiftingMeasure({ member, onSave, onBack, exerciseType, embedded = false }) {
+export default function LiftingMeasure({ member, onSave, onBack, exerciseType, embedded = false, autoStartSignal = 0 }) {
   const canvasRef = useRef(null);
   const capRef = useRef(createMultiTracker());
   const phRef = useRef(null);
@@ -29,6 +29,7 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
   const recordingRef = useRef(false);
   const seededRef = useRef(false);
   const framingRef = useRef({ level: 'bad', message: '' });
+  const consumedAutoStartRef = useRef(0);
 
   // ── 녹화(MediaRecorder) — 영상 위에 바벨 궤적선 + 데이터HUD를 합성해 번인.
   //    측정 데이터는 Firestore, 영상 blob 은 트레이너 폰(saveVideoToPhone)으로 분리 저장.
@@ -153,20 +154,26 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
     };
   }, [syncCanvas, stop]);
 
-  const startCam = () => {
+  const startCam = useCallback(() => {
     setResult(null);
     seededRef.current = false; setSeeded(false);
     setPtCount(0); setActivePts(0);
     capRef.current.clear();
     setVideoBlob(null); videoBlobRef.current = null; setVideoSavedMsg('');
     start();
-  };
+  }, [start]);
   const closeCam = () => {
     stop();
     recordingRef.current = false;
     setRecording(false);
     stopCompose();
   };
+
+  useEffect(() => {
+    if (!autoStartSignal || consumedAutoStartRef.current === autoStartSignal) return;
+    consumedAutoStartRef.current = autoStartSignal;
+    if (status === 'idle') startCam();
+  }, [autoStartSignal, startCam, status]);
 
   // 합성 루프/스트림 정리.
   const stopCompose = () => {

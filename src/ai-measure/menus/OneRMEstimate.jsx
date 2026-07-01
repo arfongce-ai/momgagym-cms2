@@ -315,7 +315,7 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
       {!embedded && (
         <div className="flex items-center justify-between">
           <button onClick={onBack} className="measure-back">← 메뉴</button>
-          <h2 className="measure-title">1RM 추정</h2>
+          <h2 className="measure-title">1RM 수동등록</h2>
           <span className="w-12" />
         </div>
       )}

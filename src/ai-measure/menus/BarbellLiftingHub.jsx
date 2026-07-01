@@ -3,10 +3,10 @@
 //  바벨 리프팅 통합 탭 — 세 측정을 한 메뉴에서 유기적으로.
 //   mode='lifting' → LiftingMeasure   (역도 · 바벨 엔드캡 궤적 추적)
 //   mode='vbt'     → VbtMeasure       (속도 기반 트레이닝)
-//   mode='onerm'   → OneRMEstimate    (1RM 추정 · Velocity-Load 대시보드)
+//   mode='onerm'   → OneRMEstimate    (3대 운동 수동등록 · 1RM 추정)
 //
 //  설계(측정 정직성 · 근거기반):
-//   - 상단에 [역도/VBT/1RM] 모드 선택기 + 공통 [종목] 선택기를 오버레이로 둠.
+//   - 상단에 [역도/VBT] 모드 선택기, 3대 운동 줄에 [수동등록] 진입 버튼을 둠.
 //   - 저장은 Hub 가 단일 책임으로 처리: 각 모듈의 onSave 페이로드를 표준
 //     exerciseType + source + metrics 규약(buildLiftingPayload)으로 변환.
 //   - peakVelocity 는 lifting.js 의 게이트로 고속영상에서만 채워진다.
@@ -21,15 +21,15 @@ import OneRMEstimate from './OneRMEstimate';
 import LiftingUploadAnalysis from './LiftingUploadAnalysis';
 import LiftingReportDashboard from './LiftingReportDashboard';
 import {
-  exercisesForMode, exerciseLabel, lift1rmToExercise,
+  exercisesForMode, lift1rmToExercise,
   vbtConfidence, estimateMeanPower, buildLiftingPayload,
 } from '../core/lifting';
 
 const MODES = [
   ['lifting', '🏋️ 역도'],
   ['vbt',     '⚡ VBT'],
-  ['onerm',   '💪 1RM'],
 ];
+const STRENGTH_EXERCISES = exercisesForMode('onerm');
 
 export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFirebase, onMemberHeightChange }) {
   const save = onSaveToFirebase || onSave;
@@ -38,6 +38,7 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
   // 기본 모드가 역도(lifting)이므로 초기 종목도 역도 첫 종목(스내치).
   const [exerciseType, setExerciseType] = useState(() => exercisesForMode('lifting')[0]?.key || 'snatch');
   const [showGuide, setShowGuide] = useState(false);
+  const [cameraStartSignal, setCameraStartSignal] = useState(1);
   // 측정 방식 — 역도/VBT만. 'live'(실시간 추적) | 'upload'(고속영상 슬로모 분석).
   const [captureMode, setCaptureMode] = useState('live');
   // 측정 완료 후 표시할 리포트.
@@ -73,14 +74,36 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
     setNeedBody(false);
   }, [heightInput, weightInput, onMemberHeightChange]);
 
-  const modeExercises = useMemo(() => exercisesForMode(mode), [mode]);
+  const modeExercises = useMemo(() => {
+    if (mode === 'onerm') return STRENGTH_EXERCISES;
+    return exercisesForMode(mode);
+  }, [mode]);
+
+  const vbtExtraExercises = useMemo(() => (
+    exercisesForMode('vbt').filter(e => !STRENGTH_EXERCISES.some(s => s.key === e.key))
+  ), []);
 
   const switchMode = useCallback((next) => {
     setMode(next);
     const valid = exercisesForMode(next).some(e => e.key === exerciseType);
     if (!valid) setExerciseType(exercisesForMode(next)[0]?.key || 'squat');
+    if (next === 'lifting') {
+      setCaptureMode('live');
+      setCameraStartSignal(v => v + 1);
+    }
     // 1RM은 고속영상 분석 대상이 아니므로 진입 시 실시간으로.
     if (next === 'onerm') setCaptureMode('live');
+  }, [exerciseType]);
+
+  const selectExercise = useCallback((nextExercise) => {
+    setExerciseType(nextExercise);
+  }, []);
+
+  const openManualRegistration = useCallback(() => {
+    setMode('onerm');
+    setCaptureMode('live');
+    const valid = STRENGTH_EXERCISES.some(e => e.key === exerciseType);
+    if (!valid) setExerciseType('squat');
   }, [exerciseType]);
 
   // 저장 + 리포트 표시 공통 헬퍼. payload 를 저장하고, 그 결과를 리포트로 띄운다.
@@ -285,21 +308,41 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
             </button>
           ))}
         </div>
-        {/* 종목 선택 + 도움말 — 종목 수가 많으면(VBT 5종) 글자·여백을 줄여 한 줄 유지 */}
+        {/* 종목 선택 + 도움말. 수동등록은 3대 운동 줄 옆에서 진입한다. */}
         <div className="flex items-center gap-1.5 w-full max-w-[100vw] px-1">
-          <div className="pointer-events-auto flex gap-0.5 rounded-full bg-black/55 backdrop-blur p-1 border border-white/10 shadow-lg min-w-0 flex-1 justify-center">
-            {modeExercises.map(e => {
-              const many = modeExercises.length >= 5;
-              return (
-                <button key={e.key} onClick={() => setExerciseType(e.key)}
-                  className={`shrink-0 whitespace-nowrap rounded-full font-black transition-colors ${
-                    many ? 'px-2 py-1 text-[10px]' : 'px-3 py-1 text-[11px]'} ${
+          {mode === 'lifting' ? (
+            <div className="pointer-events-auto flex gap-0.5 rounded-full bg-black/55 backdrop-blur p-1 border border-white/10 shadow-lg min-w-0 flex-1 justify-center">
+              {modeExercises.map(e => (
+                  <button key={e.key} onClick={() => selectExercise(e.key)}
+                    className={`shrink-0 whitespace-nowrap rounded-full px-3 py-1 text-[11px] font-black transition-colors ${
                     exerciseType === e.key ? 'bg-emerald-500 text-slate-950' : 'text-slate-300'}`}>
+                    {e.label}
+                  </button>
+              ))}
+            </div>
+          ) : (
+            <div className="pointer-events-auto flex max-w-[calc(100vw-4rem)] gap-0.5 overflow-x-auto rounded-full bg-black/55 backdrop-blur p-1 border border-white/10 shadow-lg min-w-0 flex-1">
+              {STRENGTH_EXERCISES.map(e => (
+                <button key={e.key} onClick={() => selectExercise(e.key)}
+                  className={`shrink-0 whitespace-nowrap rounded-full px-2.5 py-1 text-[10px] font-black transition-colors ${
+                  exerciseType === e.key ? 'bg-emerald-500 text-slate-950' : 'text-slate-300'}`}>
                   {e.label}
                 </button>
-              );
-            })}
-          </div>
+              ))}
+              <button onClick={openManualRegistration}
+                className={`shrink-0 whitespace-nowrap rounded-full px-2.5 py-1 text-[10px] font-black transition-colors ${
+                mode === 'onerm' ? 'bg-amber-500 text-slate-950' : 'text-slate-300'}`}>
+                ✍️ 수동등록
+              </button>
+              {mode === 'vbt' && vbtExtraExercises.map(e => (
+                <button key={e.key} onClick={() => selectExercise(e.key)}
+                  className={`shrink-0 whitespace-nowrap rounded-full px-2.5 py-1 text-[10px] font-black transition-colors ${
+                  exerciseType === e.key ? 'bg-emerald-500 text-slate-950' : 'text-slate-300'}`}>
+                  {e.label}
+                </button>
+              ))}
+            </div>
+          )}
           <button onClick={() => setShowGuide(true)}
             className="pointer-events-auto h-8 w-8 shrink-0 rounded-full bg-black/55 backdrop-blur border border-white/10 text-white font-black shadow-lg">
             ⓘ
@@ -319,10 +362,10 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
         )}
         <p className="pointer-events-none text-[10px] font-bold text-amber-300 bg-black/55 backdrop-blur rounded-full px-3 py-0.5 border border-amber-500/30">
           {mode === 'onerm'
-            ? '무게·반복 입력 기반 추정 · 1~10회에서 가장 정확'
+            ? '수동등록 · 무게·반복 입력 기반 1RM 추정 · 1~10회에서 가장 정확'
             : mode === 'vbt'
               ? '측면 촬영 권장 · 1렙씩 · 고속영상(120/240fps)이면 최고속도까지 산출'
-              : '측면 촬영 권장 · 바벨 끝/원판 2~3점 지정 · 신장 기준 cm 환산'}
+              : '역도 카메라 즉시 연결 · 바벨 끝/원판 2~3점 지정 · 신장 기준 cm 환산'}
         </p>
       </div>
 
@@ -332,7 +375,7 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
       {mode === 'lifting' && captureMode === 'live' && (
         <LiftingMeasure member={memberWithBody} onBack={onBack} onSave={handleSaveLifting}
           onMemberHeightChange={onMemberHeightChange}
-          exerciseType={exerciseType} embedded />
+          exerciseType={exerciseType} embedded autoStartSignal={cameraStartSignal} />
       )}
       {mode === 'vbt' && captureMode === 'live' && (
         <VbtMeasure member={memberWithBody} onBack={onBack} onSave={handleSaveVbt}
@@ -366,7 +409,7 @@ function LiftingGuide({ mode, onClose }) {
         </div>
 
         <div className="grid grid-cols-3 gap-2">
-          {[['lifting', '🏋️ 역도', '바벨 끝 궤적·수직 변위'], ['vbt', '⚡ VBT', '속도 기반 존 판정'], ['onerm', '💪 1RM', '무게·반복 → 최대근력']].map(([k, t, d]) => (
+          {[['lifting', '🏋️ 역도', '카메라 즉시 연결'], ['vbt', '⚡ VBT', '속도 기반 존 판정'], ['onerm', '✍️ 수동등록', '무게·반복 → 최대근력']].map(([k, t, d]) => (
             <div key={k} className={`rounded-xl p-2.5 border ${mode === k ? 'bg-amber-500/10 border-amber-500/40' : 'bg-slate-800/60 border-slate-700'}`}>
               <p className="text-white font-bold text-[11px] mb-0.5">{t}</p>
               <p className="text-slate-300 text-[10px] leading-snug">{d}</p>
