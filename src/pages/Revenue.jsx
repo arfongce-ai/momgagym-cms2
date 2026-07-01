@@ -1007,10 +1007,11 @@ function TrainerSettleCard({ block: b, ym, settings, onSaved, readOnly=false, de
   const liveDistinctRates = [...new Set(liveRows.filter(r=>r._amount>0).map(r=>r._rate))];
   const liveRateMixed = liveDistinctRates.length > 1;
   const liveHasManualRate = liveRows.some(r=>r._rateManual);
+  const liveBlogInc = Number(blog||0)*settings.promoPerPost;
+  const liveInstaInc = Math.min(Number(insta||0), settings.snsInstaMax??8)*settings.promoPerPost;
+  const liveSalesInc = Number(b.newInc||0) + Number(b.reInc||0);
   const liveTotal = editing
-    ? liveSessionPayout
-      + Number(blog||0)*settings.promoPerPost
-      + Math.min(Number(insta||0), settings.snsInstaMax??8)*settings.promoPerPost
+    ? liveSessionPayout + liveBlogInc + liveInstaInc + liveSalesInc
     : b.payout;
   const liveSplit = {
     rate: editing ? (liveRateMixed ? liveBlendedRate : (liveDistinctRates[0] ?? b.splitRate)) : b.splitRate,

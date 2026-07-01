@@ -45,6 +45,8 @@ describe('settlement edit save UI refresh', () => {
     expect(revenueSource).toContain('onSaved?.(saved)');
     expect(revenueSource).toContain('onSaved?.(null)');
     expect(revenueSource).toContain('row?.unitManual || row?.cntManual || row?.rateManual');
+    expect(revenueSource).toContain('const liveSalesInc = Number(b.newInc||0) + Number(b.reInc||0)');
+    expect(revenueSource).toContain('liveSessionPayout + liveBlogInc + liveInstaInc + liveSalesInc');
   });
 });
 
