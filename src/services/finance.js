@@ -416,36 +416,27 @@ export function computeSessionSettlement({ trainers, members, schedules, payment
 
   const attended = {};
   const attendedLots = {};
-  // ── 회차 자동 보정 ──
-  //  sessionAtBooking(예약 시점 잔여=회차번호)이 기록된 수업은 그대로 그 회차 lot에
-  //  귀속시킨다. 그런데 재등록 전에 잡혔거나 구버전이라 이 값이 없는 수업들은
-  //  '__aggregate__'로 뭉뚱그려져 정산 화면에서 회차별로 안 갈라진다.
-  //  → 같은 달·같은 회원-트레이너의 '값 없는' 출석들을 날짜순으로 모아, 현재 잔여값에
-  //     그 달 출석수를 더한 지점부터 하루씩 역산해 회차번호를 추정한다.
-  //     (그 달 초 잔여 ≈ 현재 remaining + 이번 달 출석수. 출석할수록 잔여가 1씩 줄었다는
-  //      가정 — 소진 순서를 복원해 각 수업을 올바른 회차 lot에 넣는다.)
-  //  기록된 값이 있으면 항상 그 값을 우선(추정으로 덮어쓰지 않음 → 정직성).
-  const monthAttends = {}; // tid -> mid -> [{ s, at:number|null }] (날짜 오름차순)
+  const monthAttends = {};
   schedules.filter(s=>!s.isExternal && s.memberId && s.trainerId && (s.status==='attended' || s.status==='noshow') && inMonth(s.date))
     .sort((a,b)=>(a.date<b.date?-1:a.date>b.date?1:0))
     .forEach(s=>{
+      const rawAt = s.sessionAtBooking;
+      const bookingAt = rawAt !== undefined && rawAt !== null && rawAt !== '' ? Number(rawAt) : null;
+      const at = Number.isFinite(bookingAt) ? bookingAt : null;
       (monthAttends[s.trainerId] = monthAttends[s.trainerId] || {});
-      (monthAttends[s.trainerId][s.memberId] = monthAttends[s.trainerId][s.memberId] || [])
-        .push({ s, at: (s.sessionAtBooking != null && s.sessionAtBooking !== '') ? Number(s.sessionAtBooking) : null });
+      (monthAttends[s.trainerId][s.memberId] = monthAttends[s.trainerId][s.memberId] || []).push({ s, at });
     });
 
   Object.entries(monthAttends).forEach(([tid, byMember])=>{
     Object.entries(byMember).forEach(([mid, list])=>{
       const member = memberMap[mid];
       const remainingNow = Number(member?.trainerSessions?.[tid]?.remaining);
-      // 이 달 초 잔여 추정치 = 현재 잔여 + 이번 달 출석수. (역산 시작점)
       let inferAt = Number.isFinite(remainingNow) ? remainingNow + list.length : null;
       list.forEach(({ s, at })=>{
-        // 값 없는 수업엔 추정 회차번호를 부여(있으면 그 값 우선).
         const effAt = at != null ? at : (inferAt != null ? inferAt : null);
-        // 다음 값 없는 수업을 위해 추정치를 1 줄인다(출석할수록 잔여 감소).
-        if (at != null) inferAt = at - 1; else if (inferAt != null) inferAt -= 1;
-        // effAt로 lot 판정. 못 찾으면 __aggregate__ 폴백(구버전 안전망).
+        if (at != null) inferAt = at - 1;
+        else if (inferAt != null) inferAt -= 1;
+
         const lot = lotForRemaining(mid, tid, effAt);
         const key = lot?.id || '__aggregate__';
         attended[tid] = attended[tid] || {};
