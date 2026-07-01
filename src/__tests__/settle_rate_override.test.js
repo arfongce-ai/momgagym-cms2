@@ -44,6 +44,7 @@ describe('settlement edit save UI refresh', () => {
     expect(revenueSource).toContain('handleSettleOverrideSaved');
     expect(revenueSource).toContain('onSaved?.(saved)');
     expect(revenueSource).toContain('onSaved?.(null)');
+    expect(revenueSource).toContain('row?.unitManual || row?.cntManual || row?.rateManual');
   });
 });
 

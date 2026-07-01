@@ -555,6 +555,7 @@ export function computeSessionSettlement({ trainers, members, schedules, payment
       return {
         memberId: mid, memberName: m?.name || '?',
         regTotal: trainerReg, remaining: trainerRemain, autoUnit, unit, autoCnt, cnt,
+        unitManual, cntManual,
         amount, rate: effRate, baseRate, autoRate, rateManual, rateFrozen, payAmount,
         // 등록 회차 표시용: 현재 정산에 실제 적용된 회차를 우선 표시한다.
         regRound: settlementBreakdown.length > 1 ? '회차별'

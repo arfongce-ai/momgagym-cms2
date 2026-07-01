@@ -170,7 +170,7 @@ describe('박제비율(splitRateAtPay)이 정산에 반영', () => {
       trainers, members, schedules, payments, records, settings, ym: YM,
       getOverride: () => override,
     })[0];
-    expect(after.rows.find(r => r.memberId === 'm1')).toMatchObject({ cnt: 2, payAmount: 120000 });
+    expect(after.rows.find(r => r.memberId === 'm1')).toMatchObject({ cnt: 2, cntManual: true, payAmount: 120000 });
     expect(after.rows.find(r => r.memberId === 'm2')).toMatchObject({ rate: 50, payAmount: 200000 });
     expect(after.payout).toBe(320000);
   });

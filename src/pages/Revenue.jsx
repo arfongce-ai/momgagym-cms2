@@ -32,7 +32,9 @@ function Card({ label, value, color='text-slate-100', sub }) {
 }
 
 const settlementPartsOf = (row) =>
-  Array.isArray(row?.settlementBreakdown)
+  (row?.unitManual || row?.cntManual || row?.rateManual)
+    ? []
+    : Array.isArray(row?.settlementBreakdown)
     ? row.settlementBreakdown.filter(x => (Number(x.count)||0) > 0)
     : [];
 
