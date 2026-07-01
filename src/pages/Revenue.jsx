@@ -860,6 +860,7 @@ function TrainerSettleCard({ block: b, ym, settings, onSaved, readOnly=false, de
   const [unitEdits, setUnitEdits] = useState({});   // memberId -> 단가
   const [cntEdits, setCntEdits]   = useState({});   // memberId -> 횟수
   const [rateEdits, setRateEdits] = useState({});   // memberId -> 정산비율
+  const [rateSeed, setRateSeed] = useState({});     // startEdit 시점의 표시 비율(변경 판정 기준)
   const [blog, setBlog] = useState(b.blogCount);
   const [insta, setInsta] = useState(b.instaCount);
   const [study, setStudy] = useState(b.studyCount);
@@ -868,6 +869,7 @@ function TrainerSettleCard({ block: b, ym, settings, onSaved, readOnly=false, de
     const u={}, c={}, rates={};
     b.rows.forEach(r=>{ u[r.memberId]=r.unit; c[r.memberId]=r.cnt; rates[r.memberId]=r.rate; });
     setUnitEdits(u); setCntEdits(c); setRateEdits(rates);
+    setRateSeed({ ...rates });   // 편집 시작 시점의 표시값 스냅샷(무엇을 바꿨는지 판정용)
     // 홍보 횟수는 실시간 집계(auto)값을 기준으로 보여준다.
     // (과거 override로 고정된 값이 아니라 실제 기록 개수에서 시작 → 안 건드리면 실시간값 유지)
     setBlog(b.autoBlogCount); setInsta(b.autoInstaCount); setStudy(b.autoStudyCount);
@@ -910,8 +912,17 @@ function TrainerSettleCard({ block: b, ym, settings, onSaved, readOnly=false, de
       const splitRates = {};
       Object.entries(rateEdits).forEach(([mid, v]) => {
         const val = clampRate(v);
-        // 자동값과 다르면 override로 저장(자동값과 같으면 저장 불필요 → 실시간 추종).
-        if (val != null && val !== (Number(autoRate[mid]) || 0)) splitRates[mid] = val; // 바뀐 것만
+        if (val == null) return;
+        const seed = Number(rateSeed[mid]);          // 편집 시작 시 표시값
+        const auto = Number(autoRate[mid]) || 0;      // override 없을 때 자동값
+        const differsFromAuto = val !== auto;         // 자동값과 다름(=override 필요)
+        const seedDiffersAuto = Number.isFinite(seed) && seed !== auto; // 시작값이 이미 override였음
+        // 저장 규칙(수정 후 값이 사라지던 버그의 근본 수정):
+        //  · 최종값이 자동값과 다르면 무조건 override 저장 → 화면에 그대로 남는다.
+        //  · 최종값이 자동값과 같아도, 시작값이 override였다면(사용자가 자동으로 되돌린 경우가
+        //    아니라 원래 수동값을 유지) 보존한다. 단 자동값과 같으면 굳이 저장할 필요 없음.
+        if (differsFromAuto) splitRates[mid] = val;
+        else if (seedDiffersAuto && Number(v) === seed) splitRates[mid] = val; // 기존 수동값 유지
       });
 
       const promoOrNull = (edited, auto) =>
