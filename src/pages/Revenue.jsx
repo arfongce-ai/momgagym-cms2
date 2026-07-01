@@ -925,6 +925,15 @@ function TrainerSettleCard({ block: b, ym, settings, onSaved, readOnly=false, de
     return Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : fallback;
   };
   const liveRows = b.rows.map(r => {
+    if (!editing) {
+      return {
+        ...r,
+        _u:r.unit, _c:r.cnt, _rate:r.rate,
+        _amount:r.amount,
+        _rateManual:r.rateManual,
+        _pay:r.payAmount,
+      };
+    }
     const u = editing ? (Number(unitEdits[r.memberId])||0) : r.unit;
     const c = editing ? (Number(cntEdits[r.memberId])||0) : r.cnt;
     const rate = editing ? toLiveRate(rateEdits[r.memberId], r.rate) : r.rate;

@@ -244,6 +244,23 @@ export function computeSessionSettlement({ trainers, members, schedules, payment
     return (r === undefined || r === null || r === '') ? null : Number(r);
   };
 
+  const paymentParts = (p, ts, tids, totalReg, amt) => {
+    const pTids = (p.trainerIds && p.trainerIds.length) ? p.trainerIds : null;
+    const splitList = Array.isArray(p.split) && p.split.length ? p.split : null;
+    const parts = [];
+    if (splitList) {
+      const gross = splitList.reduce((s,x)=>s+(Number(x.amount)||0),0) || (p.amount||0) || 1;
+      splitList.forEach(({trainerId, amount}) => parts.push([trainerId, amt*((Number(amount)||0)/gross)]));
+    } else if (pTids) {
+      const per = amt/pTids.length; pTids.forEach(tid=>parts.push([tid, per]));
+    } else if (totalReg > 0) {
+      tids.forEach(tid=>parts.push([tid, amt*((ts[tid].total||0)/totalReg)]));
+    } else if (tids.length) {
+      const per = amt/tids.length; tids.forEach(tid=>parts.push([tid, per]));
+    }
+    return parts;
+  };
+
   // 회원×트레이너별 귀속 결제액 (단가 트레이너별 분리 계산용)
   //  · 결제수단별 공제(부가세/카드수수료) 적용한 입금금액 기준
   //  · 결제에 담당 트레이너(trainerIds)가 있으면 그 트레이너들에게 1/n 귀속
@@ -252,6 +269,7 @@ export function computeSessionSettlement({ trainers, members, schedules, payment
   const trainerMonthNet  = {}; // tid -> 그 달(ym) 귀속 입금금액 합계 (정산비율 판정용·폴백)
   const trainerNewSales  = {}; // tid -> 그 달 신규(isNew) 귀속 입금액
   const trainerReSales   = {}; // tid -> 그 달 재등록(isReEnroll) 귀속 입금액
+  const memberTrainerLots = {}; // mid -> { tid: [registration lots] }
   // 회원×트레이너별 박제비율 가중합 — 결제월 비율을 입금액 비중으로 가중평균(rateW/rateBase)
   const memberTrainerRate = {}; // mid -> { tid: { w: 가중합(rate*net), base: net합, hasFrozen } }
   const addRate = (mid, tid, part, p) => {
@@ -267,6 +285,8 @@ export function computeSessionSettlement({ trainers, members, schedules, payment
     const totalReg = Object.values(ts).reduce((s,v)=>s+(v.total||0),0);
     const acc = {};
     tids.forEach(tid => acc[tid] = 0);
+    const explicitLots = {};
+    const legacyLots = {};
     // 환불 결제도 단가 계산에는 포함한다(이미 수업한 진행분은 트레이너 정산에 남김).
     //  · 단가×출석횟수 모델이라, 환불해도 '출석한 회차'만큼만 자동 지급됨(미진행분은 출석 0이라 미지급).
     //  · 미수금(isUnpaid)만 제외. 환불 결제의 매출 차감은 아래 trainerMonthNet에서 별도 처리.
@@ -274,23 +294,45 @@ export function computeSessionSettlement({ trainers, members, schedules, payment
     (payments[m.id]||[]).filter(p=>!p.isUnpaid && !p.isMonthly).forEach(p=>{
       const amt = calcNet(p, settings).net; // 카드1·2: 부가세+카드세 / 페이·현금영수증: 부가세 / 계좌·현금: 공제 없음
       const isMonth = inMonth(p.paidAt);     // 폴백 정산비율은 "그 달 결제"만 반영
-      const pTids = (p.trainerIds && p.trainerIds.length) ? p.trainerIds : null;
       const splitList = Array.isArray(p.split) && p.split.length ? p.split : null;
       // 트레이너별 귀속분 [tid, part] 산출
-      const parts = [];
-      if (splitList) {
-        const gross = splitList.reduce((s,x)=>s+(Number(x.amount)||0),0) || (p.amount||0) || 1;
-        splitList.forEach(({trainerId, amount}) => parts.push([trainerId, amt*((Number(amount)||0)/gross)]));
-      } else if (pTids) {
-        const per = amt/pTids.length; pTids.forEach(tid=>parts.push([tid, per]));
-      } else if (totalReg > 0) {
-        tids.forEach(tid=>parts.push([tid, amt*((ts[tid].total||0)/totalReg)]));
-      } else if (tids.length) {
-        const per = amt/tids.length; tids.forEach(tid=>parts.push([tid, per]));
-      }
+      const parts = paymentParts(p, ts, tids, totalReg, amt);
       parts.forEach(([tid, part]) => {
         acc[tid] = (acc[tid]||0) + part;       // 단가 계산용(전체기간, 환불 포함)
         if (!p.isRefunded) addRate(m.id, tid, part, p); // 비율 박제 가중치는 미환불 결제만
+        const additions = Array.isArray(p.sessionAdds)
+          ? p.sessionAdds
+              .map((sa, idx) => ({ ...sa, idx, count:Number(sa.count)||0 }))
+              .filter(sa => sa.trainerId === tid && sa.count > 0)
+          : [];
+        if (additions.length) {
+          const addTotal = additions.reduce((s,sa)=>s+sa.count,0) || 1;
+          additions.forEach(sa => {
+            const paid = part * (sa.count / addTotal);
+            const r = frozenRate(p, tid);
+            (explicitLots[tid] = explicitLots[tid] || []).push({
+              id: `${p.id || p.paidAt || 'payment'}:${tid}:${sa.idx}`,
+              paymentId: p.id || null,
+              paidAt: p.paidAt || '',
+              order: sa.idx,
+              count: sa.count,
+              paid,
+              unit: sa.count > 0 ? paid / sa.count : 0,
+              rate: r,
+              hasFrozen: r != null,
+              label: p.isReEnroll ? (p.reEnrollNo ? `재등록 ${p.reEnrollNo}회차` : '재등록')
+                : p.isNew ? '신규' : '등록',
+              reEnrollNo: p.reEnrollNo || null,
+            });
+          });
+        } else {
+          const r = frozenRate(p, tid);
+          const slot = legacyLots[tid] || { paid:0, rateW:0, rateBase:0, hasFrozen:false, paidAt:p.paidAt || '' };
+          slot.paid += part;
+          if (r != null) { slot.rateW += r * part; slot.rateBase += part; slot.hasFrozen = true; }
+          if (!slot.paidAt || (p.paidAt && p.paidAt < slot.paidAt)) slot.paidAt = p.paidAt;
+          legacyLots[tid] = slot;
+        }
         // 매출/정산비율 판정: 미환불 결제는 결제월에 +, 환불 결제는 '환불한 달'에 −(환불액)
         if (!p.isRefunded && isMonth) {
           trainerMonthNet[tid] = (trainerMonthNet[tid]||0) + part;
@@ -310,7 +352,8 @@ export function computeSessionSettlement({ trainers, members, schedules, payment
         if (splitList) {
           const gross = splitList.reduce((s,x)=>s+(Number(x.amount)||0),0) || 1;
           splitList.forEach(({trainerId, amount}) => rTids.push([trainerId, refund*((Number(amount)||0)/gross)]));
-        } else if (pTids) {
+        } else if (p.trainerIds && p.trainerIds.length) {
+          const pTids = p.trainerIds;
           const per = refund/pTids.length; pTids.forEach(tid=>rTids.push([tid, per]));
         } else if (totalReg > 0) {
           tids.forEach(tid=>rTids.push([tid, refund*((ts[tid].total||0)/totalReg)]));
@@ -321,13 +364,67 @@ export function computeSessionSettlement({ trainers, members, schedules, payment
       }
     });
     memberTrainerPay[m.id] = acc;
+    memberTrainerLots[m.id] = {};
+    tids.forEach(tid => {
+      const trainerReg = Number(ts[tid]?.total) || 0;
+      const explicit = (explicitLots[tid] || [])
+        .sort((a,b) => (a.paidAt || '').localeCompare(b.paidAt || '') || (a.order||0) - (b.order||0));
+      const explicitCount = explicit.reduce((s,l)=>s+(Number(l.count)||0),0);
+      const legacy = legacyLots[tid];
+      const legacyCount = Math.max(0, trainerReg - explicitCount);
+      const lots = [];
+      if (legacyCount > 0 || (legacy?.paid || 0) > 0) {
+        const paid = legacy?.paid || 0;
+        const rate = legacy?.rateBase > 0 ? Math.round(legacy.rateW / legacy.rateBase) : null;
+        lots.push({
+          id: `legacy:${m.id}:${tid}`,
+          paymentId: null,
+          paidAt: legacy?.paidAt || '',
+          order: -1,
+          count: legacyCount,
+          paid,
+          unit: legacyCount > 0 ? paid / legacyCount : 0,
+          rate,
+          hasFrozen: !!legacy?.hasFrozen,
+          label: null,
+          reEnrollNo: null,
+          legacy:true,
+        });
+      }
+      memberTrainerLots[m.id][tid] = [...lots, ...explicit].filter(l => (Number(l.count)||0) > 0 || (Number(l.paid)||0) > 0);
+    });
   });
 
+  const lotForRemaining = (mid, tid, remainingBefore) => {
+    const n = Number(remainingBefore);
+    if (!Number.isFinite(n) || n <= 0) return null;
+    const lots = memberTrainerLots[mid]?.[tid] || [];
+    let start = 1;
+    for (let i = lots.length - 1; i >= 0; i--) {
+      const lot = lots[i];
+      const count = Number(lot.count) || 0;
+      const end = start + count - 1;
+      if (n >= start && n <= end) return lot;
+      start = end + 1;
+    }
+    return null;
+  };
+
+  const nextLotFor = (mid, tid, remaining) => lotForRemaining(mid, tid, remaining)
+    || (memberTrainerLots[mid]?.[tid] || []).find(l => (Number(l.count)||0) > 0)
+    || null;
+
   const attended = {};
+  const attendedLots = {};
   schedules.filter(s=>!s.isExternal && s.memberId && s.trainerId && (s.status==='attended' || s.status==='noshow') && inMonth(s.date))
     .forEach(s=>{
       attended[s.trainerId] = attended[s.trainerId] || {};
       attended[s.trainerId][s.memberId] = (attended[s.trainerId][s.memberId]||0) + 1;
+      const lot = lotForRemaining(s.memberId, s.trainerId, s.sessionAtBooking);
+      const key = lot?.id || '__aggregate__';
+      attendedLots[s.trainerId] = attendedLots[s.trainerId] || {};
+      attendedLots[s.trainerId][s.memberId] = attendedLots[s.trainerId][s.memberId] || {};
+      attendedLots[s.trainerId][s.memberId][key] = (attendedLots[s.trainerId][s.memberId][key]||0) + 1;
     });
 
   const trainerMembers = {};
@@ -383,10 +480,10 @@ export function computeSessionSettlement({ trainers, members, schedules, payment
       const trainerPaid = (memberTrainerPay[mid]||{})[t.id] || 0;
       const trainerReg  = ts.total || 0;
       const trainerRemain = ts.remaining ?? trainerReg; // 잔여 횟수(정보 없으면 등록횟수로 간주)
-      const autoUnit = trainerReg > 0 ? Math.round(trainerPaid / trainerReg) : 0;
-      const unit = ovUnit[mid] != null ? Number(ovUnit[mid]) : autoUnit;
       const autoCnt = (attended[t.id]||{})[mid] || 0;
-      const cnt = ovCnt[mid] != null ? Number(ovCnt[mid]) : autoCnt;
+      const aggregateUnit = trainerReg > 0 ? trainerPaid / trainerReg : 0;
+      const lotMap = Object.fromEntries((memberTrainerLots[mid]?.[t.id] || []).map(l => [l.id, l]));
+      const lotCounts = attendedLots[t.id]?.[mid] || {};
       // A방식(등록월 박제): 이 회원의 이 트레이너 결제 건에 박제된 비율(splitRateAtPay)을 사용.
       //  · 박제 비율은 "그 회원이 등록한 달의 트레이너 실적"으로 판정돼 결제 시 고정된 값.
       //  · 여러 결제가 섞이면 입금액 비중으로 가중평균. 박제값이 없으면(구버전) 그 달 자동판정으로 폴백.
@@ -397,21 +494,52 @@ export function computeSessionSettlement({ trainers, members, schedules, payment
         ? fallbackSplit.rate                                   // 수동 지정 최우선
         : (hasFrozen ? Math.round(rateSlot.w / rateSlot.base)  // 등록월 박제 비율
                      : fallbackSplit.rate);                    // 폴백: 그 달 자동판정
+      let autoAmount = 0;
+      let autoPayAmount = 0;
+      Object.entries(lotCounts).forEach(([lotId, count]) => {
+        const c = Number(count) || 0;
+        const lot = lotMap[lotId];
+        const lotUnit = lot ? Number(lot.unit)||0 : aggregateUnit;
+        const lotRate = fallbackSplit.mode === 'manual'
+          ? fallbackSplit.rate
+          : (lot?.rate != null ? Number(lot.rate) : baseRate);
+        const partAmount = lotUnit * c;
+        autoAmount += partAmount;
+        autoPayAmount += Math.round(partAmount * lotRate / 100);
+      });
+      const previewLot = nextLotFor(mid, t.id, trainerRemain);
+      const previewUnit = previewLot ? Number(previewLot.unit)||0 : aggregateUnit;
+      const autoUnit = autoCnt > 0 ? (autoAmount / autoCnt) : previewUnit;
+      const unitManual = ovUnit[mid] != null;
+      const cntManual = ovCnt[mid] != null;
+      const unit = unitManual ? Number(ovUnit[mid]) : autoUnit;
+      const cnt = cntManual ? Number(ovCnt[mid]) : autoCnt;
       const manualRate = manualRateOf(mid);
       const rateManual = manualRate != null;
-      const effRate = rateManual ? manualRate : baseRate;
-      const rateFrozen = !rateManual && fallbackSplit.mode !== 'manual' && hasFrozen;
-      const amount = unit * cnt;                       // 수업료(비율 적용 전)
-      const payAmount = Math.round(amount * effRate/100); // 실지급(비율 적용)
+      const autoRate = autoAmount > 0
+        ? Math.round(autoPayAmount / autoAmount * 100)
+        : (previewLot?.rate != null ? Number(previewLot.rate) : baseRate);
+      const effRate = rateManual ? manualRate : autoRate;
+      const rateFrozen = !rateManual && fallbackSplit.mode !== 'manual'
+        && (autoCnt > 0
+          ? Object.keys(lotCounts).some(id => lotMap[id]?.hasFrozen) || hasFrozen
+          : !!previewLot?.hasFrozen || hasFrozen);
+      const amount = (!unitManual && !cntManual) ? autoAmount : unit * cnt; // 수업료(비율 적용 전)
+      const payAmount = rateManual || unitManual || cntManual
+        ? Math.round(amount * effRate/100)
+        : autoPayAmount; // 자동 계산은 회차별 단가·비율 합산값을 그대로 사용
       const reg = regRoundOf(mid, t.id); // 최근 등록 회차 정보(없으면 null → 누적 total 폴백)
+      const activeReg = autoCnt > 0
+        ? Object.keys(lotCounts).map(id => lotMap[id]).find(Boolean)
+        : previewLot;
       return {
         memberId: mid, memberName: m?.name || '?',
         regTotal: trainerReg, remaining: trainerRemain, autoUnit, unit, autoCnt, cnt,
         amount, rate: effRate, baseRate, rateManual, rateFrozen, payAmount,
-        // 등록 회차 표시용: regRound(라벨), regRoundCount(그 회차 횟수). 정보 없으면 null.
-        regRound: reg ? reg.label : null,
-        regRoundCount: reg ? reg.count : null,
-        regReEnrollNo: reg ? reg.reEnrollNo : null,
+        // 등록 회차 표시용: 현재 정산에 실제 적용된 회차를 우선 표시한다.
+        regRound: activeReg?.label || (reg ? reg.label : null),
+        regRoundCount: activeReg?.count || (reg ? reg.count : null),
+        regReEnrollNo: activeReg?.reEnrollNo || (reg ? reg.reEnrollNo : null),
       };
     })
     // 표시 기준:

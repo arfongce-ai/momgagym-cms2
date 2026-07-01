@@ -31,6 +31,54 @@ describe('단가 계산: 귀속결제액 ÷ 등록횟수', () => {
     expect(row.rate).toBe(50);
     expect(row.payAmount).toBe(81000); // 162000 * 50%
   });
+
+  it('재등록 단가가 달라도 전회차 잔여분은 전회차 단가로 정산', () => {
+    const members = [{ id: 'm1', name: '회원', isActive: true, trainerSessions: { t1: { total: 20, remaining: 14 } } }];
+    const payments = { m1: [
+      {
+        id: 'p1', amount: 224750, method: '현금', paidAt: '2026-05-01',
+        trainerIds: ['t1'], sessionAdds: [{ trainerId: 't1', count: 10 }],
+        splitRateAtPay: { t1: 50 },
+      },
+      {
+        id: 'p2', amount: 2240000, method: '현금', paidAt: '2026-06-01',
+        trainerIds: ['t1'], sessionAdds: [{ trainerId: 't1', count: 10 }],
+        isReEnroll: true, reEnrollNo: 1, splitRateAtPay: { t1: 50 },
+      },
+    ] };
+    const schedules = [
+      { id: 's1', memberId: 'm1', memberName: '회원', trainerId: 't1', date: '2026-06-10', status: 'attended', isExternal: false, sessionAtBooking: 15 },
+      { id: 's2', memberId: 'm1', memberName: '회원', trainerId: 't1', date: '2026-06-11', status: 'attended', isExternal: false, sessionAtBooking: 14 },
+    ];
+    const { row } = settle(members, payments, schedules);
+    expect(row.autoUnit).toBe(22475);
+    expect(row.amount).toBe(44950);
+    expect(row.payAmount).toBe(22475); // 44,950 * 50%
+  });
+
+  it('전회차를 소진한 뒤 재등록 회차는 재등록 단가로 정산', () => {
+    const members = [{ id: 'm1', name: '회원', isActive: true, trainerSessions: { t1: { total: 20, remaining: 8 } } }];
+    const payments = { m1: [
+      {
+        id: 'p1', amount: 224750, method: '현금', paidAt: '2026-05-01',
+        trainerIds: ['t1'], sessionAdds: [{ trainerId: 't1', count: 10 }],
+        splitRateAtPay: { t1: 50 },
+      },
+      {
+        id: 'p2', amount: 2240000, method: '현금', paidAt: '2026-06-01',
+        trainerIds: ['t1'], sessionAdds: [{ trainerId: 't1', count: 10 }],
+        isReEnroll: true, reEnrollNo: 1, splitRateAtPay: { t1: 50 },
+      },
+    ] };
+    const schedules = [
+      { id: 's1', memberId: 'm1', memberName: '회원', trainerId: 't1', date: '2026-06-10', status: 'attended', isExternal: false, sessionAtBooking: 10 },
+      { id: 's2', memberId: 'm1', memberName: '회원', trainerId: 't1', date: '2026-06-11', status: 'attended', isExternal: false, sessionAtBooking: 9 },
+    ];
+    const { row } = settle(members, payments, schedules);
+    expect(row.autoUnit).toBe(224000);
+    expect(row.amount).toBe(448000);
+    expect(row.payAmount).toBe(224000); // 448,000 * 50%
+  });
 });
 
 describe('박제비율(splitRateAtPay)이 정산에 반영', () => {
