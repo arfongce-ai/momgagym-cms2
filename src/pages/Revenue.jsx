@@ -881,11 +881,15 @@ function TrainerSettleCard({ block: b, ym, settings, onSaved, readOnly=false, de
       //    출석/결제/홍보 기록이 바뀌면 정산이 실시간으로 따라간다.
       //  · 예전에는 모든 회원의 단가·횟수를 통째로 박제해서, 한 번 "저장"하면
       //    그 트레이너의 정산이 과거값에 고정되는 버그가 있었다.
-      const autoUnit = {}, autoCnt = {}, baseRate = {};
+      const autoUnit = {}, autoCnt = {}, autoRate = {};
       b.rows.forEach(r => {
         autoUnit[r.memberId] = r.autoUnit;
         autoCnt[r.memberId] = r.autoCnt;
-        baseRate[r.memberId] = r.baseRate ?? r.rate;
+        // 자동 정산비율(override 없을 때 시스템이 산출·표시하는 값). 저장 판정의 기준.
+        //  ⚠ baseRate(등록월 박제 기준값)와 다를 수 있어 예전엔 baseRate로 비교해
+        //     "수정 후 닫으면 값이 사라지는" 버그가 있었다. 표시값과 저장 판정 기준을
+        //     autoRate로 일치시켜 사용자가 바꾼 값이 항상 남고 화면에 보이게 한다.
+        autoRate[r.memberId] = r.autoRate ?? r.baseRate ?? r.rate;
       });
 
       const unitPrices = {};
@@ -906,7 +910,8 @@ function TrainerSettleCard({ block: b, ym, settings, onSaved, readOnly=false, de
       const splitRates = {};
       Object.entries(rateEdits).forEach(([mid, v]) => {
         const val = clampRate(v);
-        if (val != null && val !== (Number(baseRate[mid]) || 0)) splitRates[mid] = val; // 바뀐 것만
+        // 자동값과 다르면 override로 저장(자동값과 같으면 저장 불필요 → 실시간 추종).
+        if (val != null && val !== (Number(autoRate[mid]) || 0)) splitRates[mid] = val; // 바뀐 것만
       });
 
       const promoOrNull = (edited, auto) =>
@@ -961,12 +966,13 @@ function TrainerSettleCard({ block: b, ym, settings, onSaved, readOnly=false, de
     const u = editing ? (Number(unitEdits[r.memberId])||0) : r.unit;
     const c = editing ? (Number(cntEdits[r.memberId])||0) : r.cnt;
     const rate = editing ? toLiveRate(rateEdits[r.memberId], r.rate) : r.rate;
-    const baseRate = r.baseRate ?? r.rate;
+    // 미리보기의 '수정' 판정도 저장과 동일하게 자동값(autoRate) 기준으로 맞춘다.
+    const autoRate = r.autoRate ?? r.baseRate ?? r.rate;
     const amount = u*c;
     return {
       ...r,
       _u:u, _c:c, _rate:rate, _amount:amount,
-      _rateManual: editing ? rate !== baseRate : r.rateManual,
+      _rateManual: editing ? rate !== autoRate : r.rateManual,
       _pay: Math.round(amount * (rate/100)),
     };
   });

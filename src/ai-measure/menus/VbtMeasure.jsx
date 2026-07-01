@@ -29,7 +29,7 @@ const ZONE_COLOR = {
   red:    'text-red-400',
 };
 
-export default function VbtMeasure({ member, onSave, onBack, exerciseType, embedded = false, autoStartSignal = 0, topOffset = 0 }) {
+export default function VbtMeasure({ member, onSave, onBack, exerciseType, embedded = false, autoStartSignal = 0 }) {
   const canvasRef = useRef(null);
   const capRef = useRef(createMultiTracker());
   const phRef = useRef(null);
@@ -495,7 +495,6 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
         onTapVideo={onTapVideo} onClose={closeCam} topBar={topBar} controls={controls}
         recording={recording} tappable={countdown == null}
         seedHint={ptCount === 0 && !recording} hintSignal={seedHintSignal} countdown={countdown}
-        topOffset={topOffset}
       >
         {!recording && (
           <div className="mx-auto max-w-xs w-full rounded-xl bg-black/55 backdrop-blur border border-white/10 p-2">

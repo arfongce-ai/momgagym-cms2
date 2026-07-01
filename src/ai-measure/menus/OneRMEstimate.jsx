@@ -37,7 +37,7 @@ const WEIGHT_MODES = [
 
 const MAX_RECORDING_MS = 60000;
 
-export default function OneRMEstimate({ member, onSave, onBack, exerciseType, embedded = false, autoStartSignal = 0, topOffset = 0 }) {
+export default function OneRMEstimate({ member, onSave, onBack, exerciseType, embedded = false, autoStartSignal = 0 }) {
   // 허브 종목(exerciseType, 예 'bench_press') → 내부 lift 키('bench') 매핑.
   const exToLift = (ex) => (ex === 'bench_press' ? 'bench' : ex === 'squat' ? 'squat' : ex === 'deadlift' ? 'deadlift' : null);
   const [lift, setLift] = useState(exToLift(exerciseType) || 'squat');
@@ -465,7 +465,6 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
         onTapVideo={onTapVideo} onClose={closeCam} topBar={topBar} controls={controls}
         recording={counting} recordingLabel="카운트 중" tappable={countdown == null}
         seedHint={seedPts === 0 && !counting} hintSignal={seedHintSignal} countdown={countdown}
-        topOffset={topOffset}
       >
         {/* 무게 다이얼 반투명 오버레이 — 녹화(카운트) 버튼 바로 위. 촬영 전 무게 조정 */}
         {!counting && (

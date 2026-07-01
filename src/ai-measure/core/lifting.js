@@ -360,16 +360,10 @@ export function buildLiftingInterpretation(report = {}) {
  *   - 추적점 손실률(lostRatio)          −0.40 * lostRatio
  *   - 추진시간 비현실(너무 짧/긺)       −0.20
  *   - 실시간(저fps) 소스                 −0.15  (peakVelocity 미산출 반영)
- *   - 다중 신호 교차검증 불일치         −0.10  (색·스켈레톤·원판색 추적이
- *     서로 다른 곳을 가리킴 — trackFusion.js 참고, avgAgreement<0.4)
- *   - 대체(스켈레톤/원판색) 추적 과다   −0.10  (색 추적 소실이 잦았음,
- *     assistRatio>0.3 — 위치 자체는 유지했지만 정밀도가 사용자 지정 색
- *     추적보다 낮은 구간이 많았다는 뜻)
  *  honesty: 점수가 낮으면 호출부가 경고/거부할 수 있게 reasons 도 함께 반환.
  *
  * @param {{ isCalibrated?:boolean, lostRatio?:number, durationSec?:number,
- *           source?:string, romCm?:number,
- *           crossValidation?: { avgAgreement?:number|null, assistRatio?:number|null } }} ctx
+ *           source?:string, romCm?:number }} ctx
  * @returns {{ score:number, reasons:string[] }}
  */
 export function vbtConfidence(ctx = {}) {
@@ -394,18 +388,6 @@ export function vbtConfidence(ctx = {}) {
   const rom = Number(ctx.romCm);
   if (Number.isFinite(rom) && rom > 0 && rom < 5) {
     score -= 0.20; reasons.push('rom_too_small');
-  }
-
-  const cv = ctx.crossValidation;
-  if (cv) {
-    const agree = Number(cv.avgAgreement);
-    if (Number.isFinite(agree) && agree < 0.4) {
-      score -= 0.10; reasons.push('low_track_agreement');
-    }
-    const assist = Number(cv.assistRatio);
-    if (Number.isFinite(assist) && assist > 0.3) {
-      score -= 0.10; reasons.push('high_fallback_tracking');
-    }
   }
 
   score = Math.max(0, Math.min(1, Math.round(score * 100) / 100));
