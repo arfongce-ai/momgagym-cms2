@@ -40,6 +40,7 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
   const [exerciseType, setExerciseType] = useState(() => exercisesForMode('lifting')[0]?.key || 'snatch');
   const [showGuide, setShowGuide] = useState(false);
   const [cameraStartSignal, setCameraStartSignal] = useState(1);
+  const [vbtCameraStartSignal, setVbtCameraStartSignal] = useState(0);
   const [oneRmCameraStartSignal, setOneRmCameraStartSignal] = useState(0);
   // 측정 방식 — 역도/VBT만. 'live'(실시간 추적) | 'upload'(고속영상 슬로모 분석).
   const [captureMode, setCaptureMode] = useState('live');
@@ -94,7 +95,11 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
       setCaptureMode('live');
       setCameraStartSignal(v => v + 1);
     }
-    // 1RM 상단 탭은 역도처럼 전체화면 카메라로 바로 진입한다.
+    // 상단 탭 선택 시 실시간 카메라로 바로 진입한다.
+    if (next === 'vbt') {
+      setCaptureMode('live');
+      setVbtCameraStartSignal(v => v + 1);
+    }
     if (next === 'onerm') {
       setCaptureMode('live');
       setOneRmCameraStartSignal(v => v + 1);
@@ -188,6 +193,7 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
         heightCm: raw?.heightCm ?? null,
         reps: raw?.reps ?? null,
         zone: raw?.zone ?? null,
+        weightSource: raw?.weightSource ?? null,
         distanceM: raw?.distance ?? null,
         timeSec: raw?.time ?? null,
         barKg: raw?.barKg ?? null,
@@ -374,7 +380,7 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
       {mode === 'vbt' && captureMode === 'live' && (
         <VbtMeasure member={memberWithBody} onBack={onBack} onSave={handleSaveVbt}
           onMemberHeightChange={onMemberHeightChange}
-          exerciseType={exerciseType} embedded />
+          exerciseType={exerciseType} embedded autoStartSignal={vbtCameraStartSignal} />
       )}
       {mode !== 'onerm' && captureMode === 'upload' && (
         <LiftingUploadAnalysis member={memberWithBody} onBack={onBack}

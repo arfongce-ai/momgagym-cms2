@@ -195,9 +195,11 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
     if (!v || !v.videoWidth) { alert('카메라가 아직 준비되지 않았습니다.'); return; }
     const { dominant } = detectPlatesFromVideo(v, roiRef.current);
     if (!dominant.length) { alert('원판 색을 찾지 못했습니다. 원판이 박스 안에 잘 보이게 한 뒤 다시 시도하세요.'); return; }
+    const nextSidePlates = suggestSidePlates(dominant);
     setDetected(dominant);
-    setSidePlates(suggestSidePlates(dominant));
-    stop(); // 인식했으면 카메라 닫고 아래에서 장수 확인·수정
+    setSidePlates(nextSidePlates);
+    setWeightMode('plate');
+    setDialWeight(totalWeight(nextSidePlates, barKg).total);
   };
 
   const addPlate = (p) => {
@@ -264,8 +266,8 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
         )}
         <span className="bg-black/65 rounded-full px-2.5 py-1 text-[10px] text-cyan-300 font-bold">
           {seedPts === 0
-            ? '바벨 끝·원판을 눌러 추적점 지정 (반복 자동 카운트)'
-            : counting ? '세트 수행 중 — 끝나면 [카운트 정지]' : `추적점 ${seedPts}개 · [카운트 시작] 또는 원판 색 인식`}
+            ? '바벨 끝·원판을 눌러 추적점 지정 또는 색 인식'
+            : counting ? '세트 수행 중 — 끝나면 카운트 정지' : `추적점 ${seedPts}개 · 색 인식 또는 카운트 시작`}
         </span>
         <span className={`rounded-full px-3 py-1 text-[11px] font-bold ${framing.level === 'good' ? 'bg-emerald-500/85 text-slate-950' : framing.level === 'warn' ? 'bg-amber-500/85 text-slate-950' : 'bg-red-500/85 text-white'}`}>
           {framing.level === 'good' ? '✓ ' : '⚠ '}{framing.message}
@@ -275,11 +277,11 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
     const controls = (
       <div className="flex items-center gap-2">
         <button onClick={toggleCounting}
-          className={`px-5 h-14 rounded-full text-sm font-black active:scale-95 shadow-lg ${counting ? 'bg-red-500 text-white' : seedPts > 0 ? 'bg-amber-500 text-slate-950' : 'bg-slate-600 text-slate-200'}`}>
+          className={`px-5 h-12 rounded-full text-sm font-black active:scale-95 shadow-lg ${counting ? 'bg-red-500 text-white' : seedPts > 0 ? 'bg-amber-500 text-slate-950' : 'bg-slate-600 text-slate-200'}`}>
           {counting ? '■ 카운트 정지' : '● 카운트 시작'}
         </button>
         <button onClick={scanColors}
-          className="px-4 h-14 rounded-full text-sm font-black bg-slate-700 text-white active:scale-95 shadow-lg">
+          className="px-3.5 h-12 rounded-full text-xs font-black bg-slate-700 text-white active:scale-95 shadow-lg">
           🎨 색 인식
         </button>
       </div>
@@ -293,20 +295,23 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
         {/* 무게 다이얼 반투명 오버레이 — 녹화(카운트) 버튼 바로 위. 촬영 전 무게 조정 */}
         {!counting && (
           <div className="mx-auto max-w-xs w-full rounded-xl bg-black/55 backdrop-blur border border-white/10 p-2">
-            <p className="text-center text-[9px] text-amber-300 font-bold tracking-widest mb-1.5">든 무게</p>
             <div className="flex items-center justify-center gap-1.5">
-              <button onClick={() => setDialWeight(w => stepWeight(w, -10))}
+              <button onClick={() => { setDialWeight(w => stepWeight(w, -10)); setWeightMode('dial'); }}
                 className="w-9 h-9 rounded-lg bg-white/10 text-slate-100 font-black text-[11px] active:scale-90">−5</button>
-              <button onClick={() => setDialWeight(w => stepWeight(w, -1))}
+              <button onClick={() => { setDialWeight(w => stepWeight(w, -1)); setWeightMode('dial'); }}
                 className="w-9 h-9 rounded-lg bg-white/10 text-slate-100 font-black active:scale-90">−</button>
               <div className="min-w-[72px] text-center">
                 <p className="font-mono font-black text-2xl text-white leading-none">{snapWeight(dialWeight)}</p>
                 <p className="text-[8px] text-slate-400">kg</p>
               </div>
-              <button onClick={() => setDialWeight(w => stepWeight(w, +1))}
+              <button onClick={() => { setDialWeight(w => stepWeight(w, +1)); setWeightMode('dial'); }}
                 className="w-9 h-9 rounded-lg bg-amber-500 text-slate-950 font-black active:scale-90">+</button>
-              <button onClick={() => setDialWeight(w => stepWeight(w, +10))}
+              <button onClick={() => { setDialWeight(w => stepWeight(w, +10)); setWeightMode('dial'); }}
                 className="w-9 h-9 rounded-lg bg-amber-500 text-slate-950 font-black text-[11px] active:scale-90">+5</button>
+            </div>
+            <div className="mt-1.5 flex items-center justify-center gap-2 text-[9px] text-slate-400">
+              <span>{weightMode === 'plate' ? '원판 색 인식 반영' : '수동 무게'}</span>
+              {detected.length > 0 && <span className="text-cyan-300">{detected.map(d => d.label).join(', ')}</span>}
             </div>
           </div>
         )}

@@ -5,6 +5,7 @@ import { inferReportType, extractKeyMetrics } from '../ai-measure/core/unifiedRe
 import { buildLiftingPayload } from '../ai-measure/core/lifting';
 
 const hubSource = readFileSync(new URL('../ai-measure/menus/BarbellLiftingHub.jsx', import.meta.url), 'utf8');
+const reportSource = readFileSync(new URL('../ai-measure/menus/LiftingReportDashboard.jsx', import.meta.url), 'utf8');
 
 describe('바벨 리프팅 통합 탭 · registry', () => {
   it('lifting 통합 탭이 단일 ready 메뉴로 등록된다', () => {
@@ -26,12 +27,19 @@ describe('바벨 리프팅 통합 탭 · registry', () => {
     }
   });
 
-  it('통합 탭 안에 1RM 상단 탭과 자동 카메라 진입을 유지하고 수동등록 버튼은 제거한다', () => {
+  it('통합 탭 안에 VBT·1RM 상단 탭과 자동 카메라 진입을 유지하고 수동등록 버튼은 제거한다', () => {
     expect(hubSource).toContain("['onerm',   '💪 1RM']");
+    expect(hubSource).toContain('setVbtCameraStartSignal(v => v + 1)');
+    expect(hubSource).toContain('autoStartSignal={vbtCameraStartSignal}');
     expect(hubSource).toContain('setOneRmCameraStartSignal(v => v + 1)');
     expect(hubSource).toContain('autoStartSignal={oneRmCameraStartSignal}');
     expect(hubSource).not.toContain('✍️ 수동등록');
     expect(hubSource).not.toContain('openManualRegistration');
+  });
+
+  it('VBT 속도 구간별 훈련 목적은 결과 리포트에서 보여준다', () => {
+    expect(reportSource).toContain('속도 구간별 훈련 목적');
+    expect(reportSource).toContain('VBT_ZONE_PURPOSE');
   });
 });
 

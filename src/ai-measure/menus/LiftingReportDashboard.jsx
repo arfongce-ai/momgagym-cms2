@@ -14,7 +14,7 @@ import ReportActions from '../../components/report/ReportActions';
 import {
   UnifiedEmptyState, UnifiedReportHeader, UnifiedReportPage, UnifiedReportSection,
 } from '../../components/report/UnifiedReportPrimitives';
-import { buildLiftingInterpretation, exerciseLabel } from '../core/lifting';
+import { buildLiftingInterpretation, exerciseLabel, VBT_ZONE_PURPOSE, vbtZonePurpose } from '../core/lifting';
 
 function fmt(v, unit = '') {
   return v == null || Number.isNaN(Number(v)) ? '—' : `${v}${unit}`;
@@ -34,6 +34,7 @@ export default function LiftingReportDashboard({ report, onClose }) {
   const conf = Number(m.confidenceScore);
   const confPct = Number.isFinite(conf) ? Math.round(conf * 100) : null;
   const precision = report.precision || {};
+  const measuredZone = mode === 'vbt' ? vbtZonePurpose(m.meanVelocity) : null;
 
   // 핵심 수치 타일(모드별).
   const tiles = [];
@@ -90,6 +91,26 @@ export default function LiftingReportDashboard({ report, onClose }) {
                     <span className="text-[12px] text-slate-200 leading-snug">{ln.text}</span>
                   </div>
                 ))}
+              </div>
+            </UnifiedReportSection>
+          )}
+
+          {mode === 'vbt' && (
+            <UnifiedReportSection title="속도 구간별 훈련 목적" subtitle="평균속도 기준">
+              <div className="space-y-1.5">
+                {VBT_ZONE_PURPOSE.map((z, i) => {
+                  const active = measuredZone && measuredZone.label === z.label;
+                  const range = `${z.min}${z.max === Infinity ? '+' : `~${z.max}`} m/s`;
+                  return (
+                    <div key={i} className={`rounded-xl border p-2.5 ${active ? 'bg-amber-500/10 border-amber-500/40' : 'bg-slate-800/45 border-slate-700'}`}>
+                      <div className="flex items-center justify-between gap-2">
+                        <span className={`text-[11px] font-black ${active ? 'text-amber-300' : 'text-slate-200'}`}>{z.label}</span>
+                        <span className="font-mono text-[10px] text-slate-400">{range}</span>
+                      </div>
+                      <p className="mt-1 text-[11px] leading-snug text-slate-300">{z.purpose}</p>
+                    </div>
+                  );
+                })}
               </div>
             </UnifiedReportSection>
           )}
