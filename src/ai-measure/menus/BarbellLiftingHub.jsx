@@ -14,7 +14,7 @@
 //     (점프/보행/자세/ROM 과 동일) — 통합 리포트·카카오 공유·이력에 자연 합류.
 //   - JumpAnalysisHub 패턴을 그대로 따른다(검증된 구조 재사용).
 // ════════════════════════════════════════════════════════════════════════
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useRef, useLayoutEffect } from 'react';
 import LiftingMeasure from './LiftingMeasure';
 import VbtMeasure from './VbtMeasure';
 import OneRMEstimate from './OneRMEstimate';
@@ -46,6 +46,24 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
   const [captureMode, setCaptureMode] = useState('live');
   // 측정 완료 후 표시할 리포트.
   const [report, setReport] = useState(null);
+
+  // ── 오버레이 겹침 수정 ──
+  //  상단 모드/종목/촬영방식 선택 바의 실제 렌더 높이를 측정해 자식 카메라
+  //  스테이지에 topOffset 으로 내려주면, CameraStage 의 ✕닫기·안내칩 줄이 그
+  //  아래로 밀려 겹치지 않는다.
+  const hubBarRef = useRef(null);
+  const [hubBarHeight, setHubBarHeight] = useState(0);
+  useLayoutEffect(() => {
+    const el = hubBarRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return undefined;
+    const ro = new ResizeObserver((entries) => {
+      const h = entries[0]?.contentRect?.height;
+      if (typeof h === 'number') setHubBarHeight(Math.ceil(h));
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [mode, showGuide]);
+  const camTopOffset = hubBarHeight ? hubBarHeight + 6 : 0;
 
   // ── 회원 신체정보 연동(요구사항 4) ──
   //  키·몸무게는 회원 신체정보에서 자동 연동. 미등록(키 없음)이면 점프&RSI 처럼
@@ -137,6 +155,7 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
       durationSec: raw?.durationSec,
       source,
       romCm: raw?.romCm,
+      crossValidation: raw?.crossValidation || null,   // 다중 신호 교차검증 → 신뢰도 반영
     });
     const payload = buildLiftingPayload({
       mode: 'lifting',
@@ -159,7 +178,12 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
         sidePlates: raw?.sidePlates ?? null,
         confidenceReasons: conf.reasons,
       },
-      extra: { romRatio: raw?.romRatio ?? null, durationSec: raw?.durationSec ?? null },
+      extra: {
+        romRatio: raw?.romRatio ?? null,
+        durationSec: raw?.durationSec ?? null,
+        crossValidation: raw?.crossValidation ?? null,   // 교차검증 요약 보존
+        cogGap: raw?.cogGap ?? null,                       // 바-COG 이격(측면시)
+      },
     });
     return saveAndReport(payload, { videoBlob: raw?.videoBlob ?? null });
   }, [exerciseType, saveAndReport]);
@@ -302,7 +326,7 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
   return (
     <div className="fixed inset-0 z-[80] bg-slate-950" style={{ height: '100dvh' }}>
       {/* ── 상단 모드·종목 선택기(오버레이) ── */}
-      <div className="absolute top-[max(8px,calc(env(safe-area-inset-top)+8px))] inset-x-0 z-[86] flex flex-col items-center gap-1.5 px-3 pointer-events-none">
+      <div ref={hubBarRef} className="absolute top-[max(8px,calc(env(safe-area-inset-top)+8px))] inset-x-0 z-[86] flex flex-col items-center gap-1.5 px-3 pointer-events-none">
         {/* 모드 선택 */}
         <div className="pointer-events-auto flex gap-1 rounded-full bg-black/55 backdrop-blur p-1 border border-white/10 shadow-lg">
           {MODES.map(([k, label]) => (
@@ -375,12 +399,12 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
       {mode === 'lifting' && captureMode === 'live' && (
         <LiftingMeasure member={memberWithBody} onBack={onBack} onSave={handleSaveLifting}
           onMemberHeightChange={onMemberHeightChange}
-          exerciseType={exerciseType} embedded autoStartSignal={cameraStartSignal} />
+          exerciseType={exerciseType} embedded autoStartSignal={cameraStartSignal} topOffset={camTopOffset} />
       )}
       {mode === 'vbt' && captureMode === 'live' && (
         <VbtMeasure member={memberWithBody} onBack={onBack} onSave={handleSaveVbt}
           onMemberHeightChange={onMemberHeightChange}
-          exerciseType={exerciseType} embedded autoStartSignal={vbtCameraStartSignal} />
+          exerciseType={exerciseType} embedded autoStartSignal={vbtCameraStartSignal} topOffset={camTopOffset} />
       )}
       {mode !== 'onerm' && captureMode === 'upload' && (
         <LiftingUploadAnalysis member={memberWithBody} onBack={onBack}
@@ -388,7 +412,7 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
       )}
       {mode === 'onerm' && (
         <OneRMEstimate member={memberWithBody} onBack={onBack} onSave={handleSaveOneRm}
-          exerciseType={exerciseType} embedded autoStartSignal={oneRmCameraStartSignal} />
+          exerciseType={exerciseType} embedded autoStartSignal={oneRmCameraStartSignal} topOffset={camTopOffset} />
       )}
     </div>
   );

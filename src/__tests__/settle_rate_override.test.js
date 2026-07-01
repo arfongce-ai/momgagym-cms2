@@ -1,5 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { computeSessionSettlement } from '../services/finance.js';
+
+const revenueSource = readFileSync(new URL('../pages/Revenue.jsx', import.meta.url), 'utf8');
 
 // ── 정산 카드 저장 로직(TrainerSettleCard.save)의 rate override 판정 재현 ──
 // 버그: 표시값(r.rate)과 다른 baseRate로 비교해 "수정 후 닫으면 값이 사라지던" 문제.
@@ -32,6 +35,18 @@ describe('정산 rate override 저장 판정', () => {
   it('자동값과 같은 값으로 두면 override를 만들지 않는다(실시간 추종)', () => {
     const rows = [{ memberId:'m1', rate:60, autoRate:60, baseRate:50 }];
     expect(buildSplitRates(rows, { m1: 60 })).toEqual({});
+  });
+});
+
+describe('settlement edit save UI refresh', () => {
+  it('feeds the saved override back into settlement recomputation immediately', () => {
+    expect(revenueSource).toContain('savedOverrides');
+    expect(revenueSource).toContain('handleSettleOverrideSaved');
+    expect(revenueSource).toContain('onSaved?.(saved)');
+    expect(revenueSource).toContain('onSaved?.(null)');
+    expect(revenueSource).toContain('row?.unitManual || row?.cntManual || row?.rateManual');
+    expect(revenueSource).toContain('const liveSalesInc = Number(b.newInc||0) + Number(b.reInc||0)');
+    expect(revenueSource).toContain('liveSessionPayout + liveBlogInc + liveInstaInc + liveSalesInc');
   });
 });
 

@@ -14,6 +14,9 @@
 //   controls            : 하단 컨트롤 영역(JSX)
 //   children            : 결과/추가 패널(하단 시트, 선택)
 //   tappable            : true면 영상 탭 입력 레이어 활성
+//   topOffset           : 상위(허브)가 화면 상단에 겹쳐 그리는 오버레이(모드/종목
+//                         선택 바)의 실측 높이(px). 그만큼 이 스테이지의 상단
+//                         요소들을 아래로 밀어 오버레이 겹침을 방지한다.
 import { useEffect, useState } from 'react';
 
 export default function CameraStage({
@@ -21,8 +24,13 @@ export default function CameraStage({
   onTapVideo, onClose, topBar, controls, children, tappable = true,
   recording = false, recordingLabel = '측정 중',
   seedHint = false, hintSignal = 0, countdown = null,
+  topOffset = 0,
 }) {
   const [showSeedHint, setShowSeedHint] = useState(false);
+  const off = Math.max(0, topOffset);
+  const topPad = `calc(env(safe-area-inset-top) + ${10 + off}px)`;
+  const recTop = `calc(max(env(safe-area-inset-top), 12px) + ${off}px)`;
+  const seedHintTop = `calc(${off}px + 34%)`;
 
   // 오버레이가 떠 있는 동안 바디 스크롤 잠금
   useEffect(() => {
@@ -49,7 +57,7 @@ export default function CameraStage({
         className="absolute inset-0 w-full h-full object-contain pointer-events-none" />
 
       {recording && status === 'running' && (
-        <div className="absolute top-[max(env(safe-area-inset-top),12px)] left-1/2 z-30 -translate-x-1/2 rounded-full bg-red-500/80 border border-white/20 px-3 py-1.5 text-xs font-black text-white shadow-lg backdrop-blur">
+        <div className="absolute left-1/2 z-30 -translate-x-1/2 rounded-full bg-red-500/80 border border-white/20 px-3 py-1.5 text-xs font-black text-white shadow-lg backdrop-blur" style={{ top: recTop }}>
           <span className="mr-1 inline-block h-2 w-2 rounded-full bg-white animate-pulse" />
           {recordingLabel}
         </div>
@@ -79,7 +87,7 @@ export default function CameraStage({
       )}
 
       {showSeedHint && status === 'running' && countdown == null && (
-        <div className="pointer-events-none absolute left-1/2 top-[34%] z-30 w-[min(88vw,360px)] -translate-x-1/2 rounded-2xl border border-amber-400/45 bg-black/70 px-4 py-3 text-center shadow-xl backdrop-blur animate-fade-in">
+        <div className="pointer-events-none absolute left-1/2 z-30 w-[min(88vw,360px)] -translate-x-1/2 rounded-2xl border border-amber-400/45 bg-black/70 px-4 py-3 text-center shadow-xl backdrop-blur animate-fade-in" style={{ top: seedHintTop }}>
           <p className="text-sm font-black text-amber-300">바벨 끝/원판 추적점을 먼저 1개 이상 눌러주세요</p>
           <p className="mt-1 text-[11px] font-bold text-slate-300">2~3개 지정하면 가려져도 더 안정적입니다.</p>
         </div>
@@ -94,7 +102,7 @@ export default function CameraStage({
       )}
 
       {/* 상단 닫기 + 가이드 */}
-      <div className="absolute top-0 left-0 right-0 z-20 pt-[max(env(safe-area-inset-top),10px)] px-3 pb-8 bg-gradient-to-b from-black/55 via-black/25 to-transparent">
+      <div className="absolute top-0 left-0 right-0 z-20 px-3 pb-8 bg-gradient-to-b from-black/55 via-black/25 to-transparent" style={{ paddingTop: topPad }}>
         <div className="flex items-start justify-between gap-2">
           <button onClick={onClose}
             className="shrink-0 rounded-full bg-black/55 border border-white/25 text-white text-xs font-bold px-3 py-1.5 active:scale-95">
