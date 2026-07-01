@@ -19,6 +19,8 @@ import FramingIntro from './FramingIntro';
 import HeightField from './HeightField';
 import CameraStage from './CameraStage';
 
+const MAX_RECORDING_MS = 60000;
+
 const ZONE_COLOR = {
   blue:   'text-blue-400',
   green:  'text-emerald-400',
@@ -39,6 +41,7 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
   const consumedAutoStartRef = useRef(0);
   const roiRef = useRef({ x: 0.05, y: 0.34, w: 0.26, h: 0.46 });
   const countdownTimerRef = useRef(null);
+  const maxRecordTimerRef = useRef(null);
 
   // ── 녹화(MediaRecorder) — 영상 위 궤적선 + 데이터HUD 번인. 영상은 트레이너 폰 저장.
   const mediaRecorderRef = useRef(null);
@@ -164,6 +167,13 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
     setCountdown(null);
   }, []);
 
+  const clearMaxRecordTimer = useCallback(() => {
+    if (maxRecordTimerRef.current) {
+      clearTimeout(maxRecordTimerRef.current);
+      maxRecordTimerRef.current = null;
+    }
+  }, []);
+
   const runStartCountdown = useCallback((onDone) => {
     if (countdownTimerRef.current) return;
     let next = 3;
@@ -192,13 +202,14 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
     return () => {
       if (v) v.removeEventListener('loadedmetadata', syncCanvas);
       clearCountdown();
+      clearMaxRecordTimer();
       stop();
       stopCompose();
       if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
         try { mediaRecorderRef.current.stop(); } catch (e) { /* noop */ }
       }
     };
-  }, [clearCountdown, syncCanvas, stop]);
+  }, [clearCountdown, clearMaxRecordTimer, syncCanvas, stop]);
 
   const startCam = useCallback(() => {
     setResult(null);
@@ -208,7 +219,7 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
     setVideoBlob(null); videoBlobRef.current = null; setVideoSavedMsg('');
     start();
   }, [start]);
-  const closeCam = () => { clearCountdown(); stop(); recordingRef.current = false; setRecording(false); stopCompose(); };
+  const closeCam = () => { clearCountdown(); clearMaxRecordTimer(); stop(); recordingRef.current = false; setRecording(false); stopCompose(); };
 
   const stopCompose = () => {
     if (composeRafRef.current) { cancelAnimationFrame(composeRafRef.current); composeRafRef.current = null; }
@@ -306,6 +317,37 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
     }
   };
 
+  const finishRecord = (autoLimited = false) => {
+    if (!recordingRef.current) return;
+    clearMaxRecordTimer();
+    recordingRef.current = false;
+    setRecording(false);
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+      try { mediaRecorderRef.current.stop(); } catch (e) { stopCompose(); }
+    } else {
+      stopCompose();
+    }
+    const sum = capRef.current.summary();
+    if (!sum) { alert('기록된 움직임이 부족합니다. 다시 측정하세요.'); return; }
+    const fs = frameStatsRef.current;
+    const lostRatio = fs.total ? fs.lost / fs.total : 1;
+    if (lostRatio > 0.4) {
+      alert('추적이 자주 끊겼습니다(인식 ' + Math.round((1 - lostRatio) * 100) + '%). 끝이 보이는 지점을 2~3곳 눌러 다시 측정하면 정확합니다.');
+    }
+    const H = Number(heightCm) || null;
+    const phs = phSamplesRef.current.filter(Boolean).sort((a, b) => a - b);
+    const phMed = phs.length ? phs[Math.floor(phs.length / 2)] : phRef.current;
+    const cm = romToCm(sum.romRatio, phMed, H);
+    if (!cm) { alert('키(cm)를 입력하고 전신이 보이게 측정하세요.'); return; }
+    const distanceM = cm / 100;
+    const timeSec = sum.durationMs / 1000;
+    const vbt = calcVBT(distanceM, timeSec);
+    if (!vbt) { alert('측정값이 부족합니다. 다시 시도하세요.'); return; }
+    const reps = repCounterRef.current.countWithPending();
+    setResult({ ...vbt, distanceM: Math.round(distanceM * 1000) / 1000, timeSec: Math.round(timeSec * 100) / 100, romCm: cm, reps });
+    if (autoLimited) setVideoSavedMsg('최대 60초 녹화가 완료되었습니다.');
+  };
+
   const toggleRecord = () => {
     if (!seededRef.current) { setSeedHintSignal(v => v + 1); return; }
     if (countdown != null) return;
@@ -340,8 +382,11 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
             mr.start(1000);
           }
         } catch (e) { mediaRecorderRef.current = null; }
+        clearMaxRecordTimer();
+        maxRecordTimerRef.current = setTimeout(() => finishRecord(true), MAX_RECORDING_MS);
       });
     } else {
+      clearMaxRecordTimer();
       recordingRef.current = false;
       setRecording(false);
       if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
@@ -391,6 +436,7 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
       barKg: plate.barKg,
       sidePlates: plate.sidePlates,
       weightSource,
+      videoBlob: videoBlobRef.current || videoBlob || null,
     });
   };
 

@@ -111,13 +111,13 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
   }, []);
 
   // 저장 + 리포트 표시 공통 헬퍼. payload 를 저장하고, 그 결과를 리포트로 띄운다.
-  const saveAndReport = useCallback(async (payload) => {
+  const saveAndReport = useCallback(async (payload, reportExtras = {}) => {
     let saved = payload;
     try {
       const res = await save?.(payload);
       if (res && typeof res === 'object') saved = { ...payload, ...res };
     } catch (e) { /* 저장 실패해도 리포트는 표시 */ }
-    setReport(saved);
+    setReport({ ...saved, ...reportExtras });
     return saved;
   }, [save]);
 
@@ -161,7 +161,7 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
       },
       extra: { romRatio: raw?.romRatio ?? null, durationSec: raw?.durationSec ?? null },
     });
-    return saveAndReport(payload);
+    return saveAndReport(payload, { videoBlob: raw?.videoBlob ?? null });
   }, [exerciseType, saveAndReport]);
 
   const handleSaveVbt = useCallback(async (raw) => {
@@ -201,7 +201,7 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
         confidenceReasons: conf.reasons,
       },
     });
-    return saveAndReport(payload);
+    return saveAndReport(payload, { videoBlob: raw?.videoBlob ?? null });
   }, [exerciseType, saveAndReport]);
 
   const handleSaveOneRm = useCallback(async (raw) => {
@@ -238,7 +238,7 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
         attempts: raw?.attempts ?? null,          // 전체 도전 기록(리포트용)
       },
     });
-    return saveAndReport(payload);
+    return saveAndReport(payload, { videoBlob: raw?.videoBlob ?? null });
   }, [exerciseType, saveAndReport]);
 
   // ── 신체정보 선등록 게이트(미등록·키 없음) — 점프&RSI 패턴 ──

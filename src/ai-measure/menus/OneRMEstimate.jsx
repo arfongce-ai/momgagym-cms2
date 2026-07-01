@@ -21,6 +21,8 @@ import { usePoseEngine } from '../core/usePoseEngine';
 import { assessFraming, FRAMING_PRESETS } from '../core/framingGuide';
 import { createMultiTracker } from '../core/endcapTracker';
 import { createRepCounter } from '../core/repCounter';
+import { saveVideoToPhone, pickRecorderMime } from '../core/recordSink';
+import { drawMeasurementOverlay, drawBarPathToRecord } from '../core/recordingOverlay';
 import FramingIntro from './FramingIntro';
 import CameraStage from './CameraStage';
 
@@ -32,6 +34,8 @@ const WEIGHT_MODES = [
   ['manual', '⌨ 직접 입력'],
   ['plate', '🎨 원판 인식'],
 ];
+
+const MAX_RECORDING_MS = 60000;
 
 export default function OneRMEstimate({ member, onSave, onBack, exerciseType, embedded = false, autoStartSignal = 0 }) {
   // 허브 종목(exerciseType, 예 'bench_press') → 내부 lift 키('bench') 매핑.
@@ -66,11 +70,22 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
   const countingRef = useRef(false);
   const consumedAutoStartRef = useRef(0);
   const countdownTimerRef = useRef(null);
+  const maxRecordTimerRef = useRef(null);
+  const mediaRecorderRef = useRef(null);
+  const chunksRef = useRef([]);
+  const recordCanvasRef = useRef(null);
+  const composeRafRef = useRef(null);
+  const recordStreamRef = useRef(null);
+  const recordStartRef = useRef(0);
+  const videoBlobRef = useRef(null);
   const [counting, setCounting] = useState(false);
   const [countdown, setCountdown] = useState(null);
   const [seedHintSignal, setSeedHintSignal] = useState(0);
   const [liveReps, setLiveReps] = useState(0);
   const [seedPts, setSeedPts] = useState(0);
+  const [videoBlob, setVideoBlob] = useState(null);
+  const [savingVideo, setSavingVideo] = useState(false);
+  const [videoSavedMsg, setVideoSavedMsg] = useState('');
 
   const computedWeight = weightMode === 'manual'
     ? (Number(manualWeight) || 0)
@@ -84,6 +99,13 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
       countdownTimerRef.current = null;
     }
     setCountdown(null);
+  }, []);
+
+  const clearMaxRecordTimer = useCallback(() => {
+    if (maxRecordTimerRef.current) {
+      clearTimeout(maxRecordTimerRef.current);
+      maxRecordTimerRef.current = null;
+    }
   }, []);
 
   const runStartCountdown = useCallback((onDone) => {
@@ -142,6 +164,7 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
         ctx.fill();
         ctx.restore();
         if (countingRef.current) {
+          cap.push(p, ts);
           repCounterRef.current.push(p.y);
           const shown = repCounterRef.current.countWithPending();
           setLiveReps(prev => (prev !== shown ? shown : prev));
@@ -172,20 +195,101 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
     if (countdown != null) return;
     if (!counting) {
       runStartCountdown(() => {
+        capRef.current.reset();
         repCounterRef.current.reset();
         setLiveReps(0);
+        setVideoBlob(null); videoBlobRef.current = null; setVideoSavedMsg('');
+        recordStartRef.current = performance.now();
         countingRef.current = true;
         setCounting(true);
+        try {
+          chunksRef.current = [];
+          const stream = createRecordedStream();
+          if (stream) {
+            const mime = pickRecorderMime();
+            const mr = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+            mediaRecorderRef.current = mr;
+            mr.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
+            mr.onstop = () => {
+              stopCompose();
+              const type = mr.mimeType || 'video/webm';
+              const blob = new Blob(chunksRef.current, { type });
+              videoBlobRef.current = blob;
+              setVideoBlob(blob);
+            };
+            mr.start(1000);
+          }
+        } catch (e) { mediaRecorderRef.current = null; }
+        clearMaxRecordTimer();
+        maxRecordTimerRef.current = setTimeout(() => finishCounting(true), MAX_RECORDING_MS);
       });
     } else {
+      clearMaxRecordTimer();
       countingRef.current = false;
       setCounting(false);
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+        try { mediaRecorderRef.current.stop(); } catch (e) { stopCompose(); }
+      } else {
+        stopCompose();
+      }
       const r = repCounterRef.current.countWithPending();
       if (r > 0) setReps(r); // 자동 카운트 결과를 반복 횟수에 반영
     }
   };
 
   const { videoRef, start, stop, status, error } = usePoseEngine({ onResult: handleResult });
+
+  const stopCompose = () => {
+    if (composeRafRef.current) { cancelAnimationFrame(composeRafRef.current); composeRafRef.current = null; }
+    if (recordStreamRef.current) { recordStreamRef.current.getTracks().forEach(t => t.stop()); recordStreamRef.current = null; }
+  };
+
+  const createRecordedStream = () => {
+    const video = videoRef.current;
+    const vw = video?.videoWidth || 720;
+    const vh = video?.videoHeight || 1280;
+    const canvas = recordCanvasRef.current || document.createElement('canvas');
+    canvas.width = vw; canvas.height = vh;
+    recordCanvasRef.current = canvas;
+    const ctx = canvas.getContext('2d', { alpha: false });
+    const draw = () => {
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      if (video && video.videoWidth) ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      drawBarPathToRecord(ctx, capRef.current.path(), canvas.width, canvas.height);
+      drawMeasurementOverlay(ctx, canvas.width, canvas.height, {
+        title: '1RM',
+        elapsedMs: countingRef.current ? performance.now() - recordStartRef.current : null,
+        accent: '#f59e0b',
+        metrics: [
+          { label: 'weight', value: `${snapWeight(computedWeight)} kg` },
+          { label: 'reps', value: `${repCounterRef.current.countWithPending()} reps` },
+        ],
+      });
+      composeRafRef.current = requestAnimationFrame(draw);
+    };
+    if (composeRafRef.current) cancelAnimationFrame(composeRafRef.current);
+    draw();
+    const canvasStream = canvas.captureStream ? canvas.captureStream(30) : null;
+    if (!canvasStream) return null;
+    recordStreamRef.current = canvasStream;
+    return canvasStream;
+  };
+
+  const finishCounting = (autoLimited = false) => {
+    if (!countingRef.current) return;
+    clearMaxRecordTimer();
+    countingRef.current = false;
+    setCounting(false);
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+      try { mediaRecorderRef.current.stop(); } catch (e) { stopCompose(); }
+    } else {
+      stopCompose();
+    }
+    const r = repCounterRef.current.countWithPending();
+    if (r > 0) setReps(r);
+    if (autoLimited) setVideoSavedMsg('최대 60초 녹화가 완료되었습니다.');
+  };
 
   const syncCanvas = useCallback(() => {
     const v = videoRef.current, c = canvasRef.current;
@@ -195,8 +299,18 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
   useEffect(() => {
     const v = videoRef.current;
     if (v) v.addEventListener('loadedmetadata', syncCanvas);
-    return () => { if (v) v.removeEventListener('loadedmetadata', syncCanvas); clearCountdown(); stop(); countingRef.current = false; };
-  }, [clearCountdown, syncCanvas, stop]);
+    return () => {
+      if (v) v.removeEventListener('loadedmetadata', syncCanvas);
+      clearCountdown();
+      clearMaxRecordTimer();
+      stop();
+      countingRef.current = false;
+      stopCompose();
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+        try { mediaRecorderRef.current.stop(); } catch (e) { /* noop */ }
+      }
+    };
+  }, [clearCountdown, clearMaxRecordTimer, syncCanvas, stop]);
 
   const openCam = useCallback(() => {
     setDetected([]);
@@ -204,6 +318,7 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
     repCounterRef.current.reset();
     countingRef.current = false; setCounting(false);
     setLiveReps(0); setSeedPts(0);
+    setVideoBlob(null); videoBlobRef.current = null; setVideoSavedMsg('');
     start();
   }, [start]);
 
@@ -216,8 +331,14 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
   // 카메라를 닫으면, 인식된 원판이 없을 때는 직접 입력으로 자연스럽게 되돌린다.
   const closeCam = () => {
     clearCountdown();
+    clearMaxRecordTimer();
     stop();
     countingRef.current = false; setCounting(false);
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+      try { mediaRecorderRef.current.stop(); } catch (e) { stopCompose(); }
+    } else {
+      stopCompose();
+    }
     if (detected.length === 0 && sidePlates.length === 0) setWeightMode('dial');
   };
 
@@ -232,6 +353,24 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
     setSidePlates(nextSidePlates);
     setWeightMode('plate');
     setDialWeight(totalWeight(nextSidePlates, barKg).total);
+  };
+
+  const handleSaveVideo = async () => {
+    const blob = videoBlobRef.current || videoBlob;
+    if (!blob) { alert('저장할 녹화 영상이 없습니다.'); return; }
+    setSavingVideo(true);
+    try {
+      const res = await saveVideoToPhone(blob, {
+        measure: `1RM_${LIFTS.find(l => l.key === lift)?.label || lift}`,
+        member,
+      });
+      setVideoSavedMsg(res.saved
+        ? (res.method === 'share' ? '저장/공유 창을 열었습니다.' : '영상이 다운로드되었습니다.')
+        : '저장이 취소되었습니다.');
+    } catch (e) {
+      setVideoSavedMsg('영상 저장에 실패했습니다.');
+    }
+    setSavingVideo(false);
   };
 
   const addPlate = (p) => {
@@ -283,6 +422,7 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
       attempts: nextAttempts,             // 전체 도전 기록
       bestOneRM: summary.bestOneRM,       // 누적 최고 1RM
       bestAttemptNo: summary.bestAttemptNo,
+      videoBlob: videoBlobRef.current || videoBlob || null,
     });
   };
 
@@ -346,6 +486,15 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
               <span>{weightMode === 'plate' ? '원판 색 인식 반영' : '수동 무게'}</span>
               {detected.length > 0 && <span className="text-cyan-300">{detected.map(d => d.label).join(', ')}</span>}
             </div>
+          </div>
+        )}
+        {videoBlob && !counting && (
+          <div className="mx-auto max-w-xs w-full space-y-1">
+            <button onClick={handleSaveVideo} disabled={savingVideo}
+              className="w-full rounded-xl bg-slate-700 text-white font-bold py-2.5 text-sm active:scale-95 disabled:opacity-60">
+              {savingVideo ? '저장 중...' : '녹화 영상 폴더에 저장'}
+            </button>
+            {videoSavedMsg && <p className="text-center text-[11px] text-emerald-400">{videoSavedMsg}</p>}
           </div>
         )}
       </CameraStage>
@@ -507,6 +656,14 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
         </button>
       </div>
 
+      {videoBlob && (
+        <button onClick={handleSaveVideo} disabled={savingVideo}
+          className="w-full rounded-xl bg-slate-700 text-white font-bold py-2.5 text-sm active:scale-95 disabled:opacity-60">
+          {savingVideo ? '저장 중...' : '녹화 영상 폴더에 저장'}
+        </button>
+      )}
+      {videoSavedMsg && <p className="text-center text-[11px] text-emerald-400">{videoSavedMsg}</p>}
+
       <button onClick={calc} className="btn btn-primary w-full">1RM 계산</button>
 
       {/* 도전 차수 누적 기록 */}
@@ -568,6 +725,13 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
             </div>
           </div>
           {onSave && <button onClick={save} className="btn btn-primary w-full">이 측정 저장</button>}
+          {videoBlob && (
+            <button onClick={handleSaveVideo} disabled={savingVideo}
+              className="w-full rounded-xl bg-slate-700 text-white font-bold py-2.5 text-sm active:scale-95 disabled:opacity-60">
+              {savingVideo ? '저장 중...' : '녹화 영상 폴더에 저장'}
+            </button>
+          )}
+          {videoSavedMsg && <p className="text-center text-[11px] text-emerald-400">{videoSavedMsg}</p>}
         </div>
       )}
 

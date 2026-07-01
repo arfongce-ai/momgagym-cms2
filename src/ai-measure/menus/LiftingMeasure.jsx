@@ -19,6 +19,8 @@ import FramingIntro from './FramingIntro';
 import HeightField from './HeightField';
 import CameraStage from './CameraStage';
 
+const MAX_RECORDING_MS = 60000;
+
 export default function LiftingMeasure({ member, onSave, onBack, exerciseType, embedded = false, autoStartSignal = 0 }) {
   const canvasRef = useRef(null);
   const capRef = useRef(createMultiTracker());
@@ -31,6 +33,7 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
   const consumedAutoStartRef = useRef(0);
   const roiRef = useRef({ x: 0.05, y: 0.34, w: 0.26, h: 0.46 });
   const countdownTimerRef = useRef(null);
+  const maxRecordTimerRef = useRef(null);
 
   // ── 녹화(MediaRecorder) — 영상 위에 바벨 궤적선 + 데이터HUD를 합성해 번인.
   //    측정 데이터는 Firestore, 영상 blob 은 트레이너 폰(saveVideoToPhone)으로 분리 저장.
@@ -160,6 +163,13 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
     setCountdown(null);
   }, []);
 
+  const clearMaxRecordTimer = useCallback(() => {
+    if (maxRecordTimerRef.current) {
+      clearTimeout(maxRecordTimerRef.current);
+      maxRecordTimerRef.current = null;
+    }
+  }, []);
+
   const runStartCountdown = useCallback((onDone) => {
     if (countdownTimerRef.current) return;
     let next = 3;
@@ -188,13 +198,14 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
     return () => {
       if (v) v.removeEventListener('loadedmetadata', syncCanvas);
       clearCountdown();
+      clearMaxRecordTimer();
       stop();
       stopCompose();
       if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
         try { mediaRecorderRef.current.stop(); } catch (e) { /* noop */ }
       }
     };
-  }, [clearCountdown, syncCanvas, stop]);
+  }, [clearCountdown, clearMaxRecordTimer, syncCanvas, stop]);
 
   const startCam = useCallback(() => {
     setResult(null);
@@ -206,6 +217,7 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
   }, [start]);
   const closeCam = () => {
     clearCountdown();
+    clearMaxRecordTimer();
     stop();
     recordingRef.current = false;
     setRecording(false);
@@ -295,6 +307,34 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
     }
   };
 
+  const finishRecord = (autoLimited = false) => {
+    if (!recordingRef.current) return;
+    clearMaxRecordTimer();
+    recordingRef.current = false;
+    setRecording(false);
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+      try { mediaRecorderRef.current.stop(); } catch (e) { stopCompose(); }
+    } else {
+      stopCompose();
+    }
+    const sum = capRef.current.summary();
+    if (!sum) { alert('기록된 움직임이 부족합니다. 다시 측정하세요.'); return; }
+    const fs = frameStatsRef.current;
+    const lostRatio = fs.total ? fs.lost / fs.total : 1;
+    if (lostRatio > 0.4) {
+      alert('추적이 자주 끊겼습니다(인식 ' + Math.round((1 - lostRatio) * 100) + '%). 끝이 보이는 지점을 2~3곳 눌러 다시 측정하면 정확합니다.');
+    }
+    const H = Number(heightCm) || null;
+    const phs = phSamplesRef.current.filter(Boolean).sort((a, b) => a - b);
+    const phMed = phs.length ? phs[Math.floor(phs.length / 2)] : phRef.current;
+    const cm = romToCm(sum.romRatio, phMed, H);
+    const sec = sum.durationMs / 1000;
+    const velocity = cm && sec ? Math.round((cm / 100 / sec) * 100) / 100 : null;
+    const reps = repCounterRef.current.countWithPending();
+    setResult({ ...sum, romCm: cm, sec: Math.round(sec * 100) / 100, velocity, reps });
+    if (autoLimited) setVideoSavedMsg('최대 60초 녹화가 완료되었습니다.');
+  };
+
   const toggleRecord = () => {
     if (!seededRef.current) { setSeedHintSignal(v => v + 1); return; }
     if (countdown != null) return;
@@ -330,8 +370,11 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
             mr.start(1000);
           }
         } catch (e) { mediaRecorderRef.current = null; }
+        clearMaxRecordTimer();
+        maxRecordTimerRef.current = setTimeout(() => finishRecord(true), MAX_RECORDING_MS);
       });
     } else {
+      clearMaxRecordTimer();
       recordingRef.current = false;
       setRecording(false);
       // 레코더 종료 → onstop 에서 blob 확정.
@@ -397,6 +440,7 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
       barKg: plate.barKg,
       sidePlates: plate.sidePlates,
       weightSource,
+      videoBlob: videoBlobRef.current || videoBlob || null,
     });
   };
 
