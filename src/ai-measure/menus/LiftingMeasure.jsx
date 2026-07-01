@@ -6,13 +6,13 @@
 //  - 옆에서 촬영 권장. cm 환산은 회원 키 기준(근사).
 import { useRef, useState, useEffect, useCallback } from 'react';
 import { usePoseEngine } from '../core/usePoseEngine';
-import { personHeightRatio, romToCm } from '../core/barbell';
+import { personHeightRatio, romToCm, barbellPoint, fuseBarbellPoint, estimateSideCog } from '../core/barbell';
 import { createMultiTracker } from '../core/endcapTracker';
 import { assessFraming, FRAMING_PRESETS } from '../core/framingGuide';
 import { detectPlatesFromVideo, suggestSidePlates, totalWeight } from '../core/plates';
 import { exerciseLabel as exerciseLabelLocal, snapWeight, stepWeight } from '../core/lifting';
 import { saveVideoToPhone, pickRecorderMime } from '../core/recordSink';
-import { drawLiftingDataHud, drawBarPathToRecord } from '../core/recordingOverlay';
+import { drawLiftingDataHud, drawBarPathToRecord, drawCogOverlay } from '../core/recordingOverlay';
 import { createRepCounter } from '../core/repCounter';
 import PlateWeightInput from './PlateWeightInput';
 import FramingIntro from './FramingIntro';
@@ -21,12 +21,13 @@ import CameraStage from './CameraStage';
 
 const MAX_RECORDING_MS = 60000;
 
-export default function LiftingMeasure({ member, onSave, onBack, exerciseType, embedded = false, autoStartSignal = 0 }) {
+export default function LiftingMeasure({ member, onSave, onBack, exerciseType, embedded = false, autoStartSignal = 0, onCameraActiveChange }) {
   const canvasRef = useRef(null);
   const capRef = useRef(createMultiTracker());
   const phRef = useRef(null);
   const phSamplesRef = useRef([]);
   const frameStatsRef = useRef({ total: 0, lost: 0 });
+  const cogRef = useRef(null);
   const recordingRef = useRef(false);
   const seededRef = useRef(false);
   const framingRef = useRef({ level: 'bad', message: '' });
@@ -83,6 +84,10 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
       framingRef.current = fr;
       setFraming({ level: fr.level, message: fr.message });
     }
+    const poseBar = barbellPoint(lms);
+    const cog = estimateSideCog(lms);
+    cogRef.current = cog;
+    drawCogOverlay(ctx, cw, ch, cog);
 
     const r = roiRef.current;
     ctx.save();
@@ -97,7 +102,9 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
 
     const cap = capRef.current;
     if (cap.isSeeded()) {
-      const p = cap.update(video);
+      const tracked = cap.update(video);
+      const act = cap.activeCount();
+      const p = fuseBarbellPoint(act > 0 ? tracked : null, poseBar);
       if (p && recordingRef.current) {
         cap.push(p, ts);
         // 바벨 수직 위치로 렙 자동 카운트.
@@ -105,11 +112,10 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
         const shown = repCounterRef.current.countWithPending();
         setLiveReps(prev => (prev !== shown ? shown : prev));
       }
-      const act = cap.activeCount();
       if (act !== activePts) setActivePts(act);
       if (recordingRef.current) {
         frameStatsRef.current.total += 1;
-        if (act === 0) frameStatsRef.current.lost += 1;
+        if (act === 0 && !poseBar) frameStatsRef.current.lost += 1;
         // 번인용 실시간 값: 누적 궤적 → cm/평균속도(키 보정 가능 시).
         const live = cap.summary();
         if (live) {
@@ -154,6 +160,11 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
   }, [activePts, heightCm]);
 
   const { videoRef, start, stop, status, error } = usePoseEngine({ onResult: handleResult });
+
+  useEffect(() => {
+    onCameraActiveChange?.(status !== 'idle');
+    return () => onCameraActiveChange?.(false);
+  }, [onCameraActiveChange, status]);
 
   const clearCountdown = useCallback(() => {
     if (countdownTimerRef.current) {
@@ -269,6 +280,7 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
       if (video && video.videoWidth) ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
       // 실제 추적 궤적선(장식 아님).
       drawBarPathToRecord(ctx, capRef.current.path(), canvas.width, canvas.height);
+      drawCogOverlay(ctx, canvas.width, canvas.height, cogRef.current, { strong: true });
       // 데이터-only HUD: 수직이동(cm) · 평균속도 · 경과시간.
       const elapsedSec = recordingRef.current ? (performance.now() - recordStartRef.current) / 1000 : null;
       drawLiftingDataHud(ctx, canvas.width, canvas.height, {

@@ -6,7 +6,7 @@
 //  - 수직 변위(ROM): 한 세트 동안의 y 최저점~최고점 폭
 //  - 화면비율 → cm 변환은 사람 키 스케일 사용(geometry.offsetToCm 와 동일 원리)
 
-import { LM } from './geometry';
+import { LM, midpoint, isVisible } from './geometry';
 
 /** 양 손목 중점(정규화 0~1). 손목이 안 보이면 null. */
 export function barbellPoint(lms) {
@@ -17,6 +17,88 @@ export function barbellPoint(lms) {
   if (vis(lw)) return { x: lw.x, y: lw.y };
   if (vis(rw)) return { x: rw.x, y: rw.y };
   return null;
+}
+
+export function fuseBarbellPoint(visualPoint, posePoint, { maxDistance = 0.22, visualWeight = 0.78 } = {}) {
+  if (visualPoint && posePoint) {
+    const d = Math.hypot(visualPoint.x - posePoint.x, visualPoint.y - posePoint.y);
+    if (d <= maxDistance) {
+      const w = visualWeight;
+      return {
+        x: visualPoint.x * w + posePoint.x * (1 - w),
+        y: visualPoint.y * w + posePoint.y * (1 - w),
+        source: 'fused',
+      };
+    }
+    return { ...visualPoint, source: 'visual' };
+  }
+  if (visualPoint) return { ...visualPoint, source: 'visual' };
+  if (posePoint) return { ...posePoint, source: 'pose' };
+  return null;
+}
+
+function avgVisible(points, threshold = 0.35) {
+  const valid = points.filter(p => isVisible(p, threshold));
+  if (!valid.length) return null;
+  return {
+    x: valid.reduce((s, p) => s + p.x, 0) / valid.length,
+    y: valid.reduce((s, p) => s + p.y, 0) / valid.length,
+    z: valid.reduce((s, p) => s + (p.z ?? 0), 0) / valid.length,
+    visibility: valid.reduce((s, p) => s + (p.visibility ?? 1), 0) / valid.length,
+  };
+}
+
+function weightedPoint(parts) {
+  const valid = parts.filter(p => p?.point && Number.isFinite(p.weight) && p.weight > 0);
+  const total = valid.reduce((s, p) => s + p.weight, 0);
+  if (!total) return null;
+  return {
+    x: valid.reduce((s, p) => s + p.point.x * p.weight, 0) / total,
+    y: valid.reduce((s, p) => s + p.point.y * p.weight, 0) / total,
+  };
+}
+
+export function estimateSideCog(lms) {
+  if (!Array.isArray(lms)) return null;
+  const lSh = lms[LM.LEFT_SHOULDER], rSh = lms[LM.RIGHT_SHOULDER];
+  const lHp = lms[LM.LEFT_HIP], rHp = lms[LM.RIGHT_HIP];
+  const lKn = lms[LM.LEFT_KNEE], rKn = lms[LM.RIGHT_KNEE];
+  const lAn = lms[LM.LEFT_ANKLE], rAn = lms[LM.RIGHT_ANKLE];
+  const lEl = lms[LM.LEFT_ELBOW], rEl = lms[LM.RIGHT_ELBOW];
+  const lWr = lms[LM.LEFT_WRIST], rWr = lms[LM.RIGHT_WRIST];
+
+  const shoulderMid = midpoint(lSh, rSh);
+  const hipMid = midpoint(lHp, rHp);
+  const kneeMid = midpoint(lKn, rKn);
+  const ankleMid = midpoint(lAn, rAn);
+  const head = avgVisible([lms[LM.NOSE], lms[LM.LEFT_EAR], lms[LM.RIGHT_EAR]], 0.25);
+  const trunk = midpoint(shoulderMid, hipMid);
+  const thigh = midpoint(hipMid, kneeMid);
+  const shank = midpoint(kneeMid, ankleMid);
+  const arms = avgVisible([lEl, rEl, lWr, rWr], 0.25);
+  const shoulderGap = (isVisible(lSh, 0.25) && isVisible(rSh, 0.25)) ? Math.abs(lSh.x - rSh.x) : null;
+  const hipGap = (isVisible(lHp, 0.25) && isVisible(rHp, 0.25)) ? Math.abs(lHp.x - rHp.x) : null;
+  const sideScore = Math.max(
+    shoulderGap == null ? 0 : Math.max(0, 1 - shoulderGap / 0.18),
+    hipGap == null ? 0 : Math.max(0, 1 - hipGap / 0.16),
+  );
+  const point = weightedPoint([
+    { point: head, weight: 0.08 },
+    { point: trunk, weight: 0.50 },
+    { point: thigh, weight: 0.24 },
+    { point: shank, weight: 0.12 },
+    { point: arms, weight: 0.06 },
+  ]);
+  if (!point) return null;
+  const support = avgVisible([lAn, rAn, lms[LM.LEFT_HEEL], lms[LM.RIGHT_HEEL], lms[LM.LEFT_FOOT], lms[LM.RIGHT_FOOT]], 0.25);
+  const confidenceParts = [head, trunk, thigh, shank, support].filter(Boolean).length;
+  return {
+    ...point,
+    supportX: support?.x ?? ankleMid?.x ?? null,
+    sideScore: Math.round(sideScore * 100) / 100,
+    confidence: Math.round(Math.min(1, (confidenceParts / 5) * 0.75 + sideScore * 0.25) * 100) / 100,
+    sideView: sideScore >= 0.35,
+  };
 }
 
 // 추적 안정화 상수 (민감도 낮춤)

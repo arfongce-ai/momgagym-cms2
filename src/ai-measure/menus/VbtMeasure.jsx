@@ -5,13 +5,13 @@
 //  - 측정 시작 → 한 렙 동작 → 종료 시: 수직 이동거리(키 환산 m) ÷ 시간 = 평균속도.
 import { useRef, useState, useEffect, useCallback } from 'react';
 import { usePoseEngine } from '../core/usePoseEngine';
-import { personHeightRatio, romToCm } from '../core/barbell';
+import { personHeightRatio, romToCm, barbellPoint, fuseBarbellPoint, estimateSideCog } from '../core/barbell';
 import { createMultiTracker } from '../core/endcapTracker';
 import { calcVBT } from '../core/performance';
 import { detectPlatesFromVideo, suggestSidePlates, totalWeight } from '../core/plates';
 import { exerciseLabel as exerciseLabelLocal, snapWeight, stepWeight } from '../core/lifting';
 import { saveVideoToPhone, pickRecorderMime } from '../core/recordSink';
-import { drawLiftingDataHud, drawBarPathToRecord } from '../core/recordingOverlay';
+import { drawLiftingDataHud, drawBarPathToRecord, drawCogOverlay } from '../core/recordingOverlay';
 import { createRepCounter } from '../core/repCounter';
 import { assessFraming, FRAMING_PRESETS } from '../core/framingGuide';
 import PlateWeightInput from './PlateWeightInput';
@@ -29,12 +29,13 @@ const ZONE_COLOR = {
   red:    'text-red-400',
 };
 
-export default function VbtMeasure({ member, onSave, onBack, exerciseType, embedded = false, autoStartSignal = 0 }) {
+export default function VbtMeasure({ member, onSave, onBack, exerciseType, embedded = false, autoStartSignal = 0, onCameraActiveChange }) {
   const canvasRef = useRef(null);
   const capRef = useRef(createMultiTracker());
   const phRef = useRef(null);
   const phSamplesRef = useRef([]);
   const frameStatsRef = useRef({ total: 0, lost: 0 });
+  const cogRef = useRef(null);
   const recordingRef = useRef(false);
   const seededRef = useRef(false);
   const framingRef = useRef({ level: 'bad', message: '' });
@@ -90,6 +91,10 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
       framingRef.current = fr;
       setFraming({ level: fr.level, message: fr.message });
     }
+    const poseBar = barbellPoint(lms);
+    const cog = estimateSideCog(lms);
+    cogRef.current = cog;
+    drawCogOverlay(ctx, cw, ch, cog);
 
     const r = roiRef.current;
     ctx.save();
@@ -104,18 +109,19 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
 
     const cap = capRef.current;
     if (cap.isSeeded()) {
-      const p = cap.update(video);
+      const tracked = cap.update(video);
+      const act = cap.activeCount();
+      const p = fuseBarbellPoint(act > 0 ? tracked : null, poseBar);
       if (p && recordingRef.current) {
         cap.push(p, ts);
         repCounterRef.current.push(p.y);
         const shown = repCounterRef.current.countWithPending();
         setLiveReps(prev => (prev !== shown ? shown : prev));
       }
-      const act = cap.activeCount();
       if (act !== activePts) setActivePts(act);
       if (recordingRef.current) {
         frameStatsRef.current.total += 1;
-        if (act === 0) frameStatsRef.current.lost += 1;
+        if (act === 0 && !poseBar) frameStatsRef.current.lost += 1;
         const live = cap.summary();
         if (live) {
           const H = Number(heightCm) || null;
@@ -158,6 +164,11 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
   }, [activePts, heightCm]);
 
   const { videoRef, start, stop, status, error } = usePoseEngine({ onResult: handleResult });
+
+  useEffect(() => {
+    onCameraActiveChange?.(status !== 'idle');
+    return () => onCameraActiveChange?.(false);
+  }, [onCameraActiveChange, status]);
 
   const clearCountdown = useCallback(() => {
     if (countdownTimerRef.current) {
@@ -239,6 +250,7 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       if (video && video.videoWidth) ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
       drawBarPathToRecord(ctx, capRef.current.path(), canvas.width, canvas.height);
+      drawCogOverlay(ctx, canvas.width, canvas.height, cogRef.current, { strong: true });
       const elapsedSec = recordingRef.current ? (performance.now() - recordStartRef.current) / 1000 : null;
       drawLiftingDataHud(ctx, canvas.width, canvas.height, {
         romCm: liveHudRef.current.romCm,
