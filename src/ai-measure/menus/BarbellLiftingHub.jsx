@@ -3,10 +3,10 @@
 //  바벨 리프팅 통합 탭 — 세 측정을 한 메뉴에서 유기적으로.
 //   mode='lifting' → LiftingMeasure   (역도 · 바벨 엔드캡 궤적 추적)
 //   mode='vbt'     → VbtMeasure       (속도 기반 트레이닝)
-//   mode='onerm'   → OneRMEstimate    (3대 운동 수동등록 · 1RM 추정)
+//   mode='onerm'   → OneRMEstimate    (3대 운동 카메라 · 수동등록 · 1RM 추정)
 //
 //  설계(측정 정직성 · 근거기반):
-//   - 상단에 [역도/VBT] 모드 선택기, 3대 운동 줄에 [수동등록] 진입 버튼을 둠.
+//   - 상단에 [역도/VBT/1RM] 모드 선택기, 3대 운동 줄에 [수동등록] 진입 버튼을 둠.
 //   - 저장은 Hub 가 단일 책임으로 처리: 각 모듈의 onSave 페이로드를 표준
 //     exerciseType + source + metrics 규약(buildLiftingPayload)으로 변환.
 //   - peakVelocity 는 lifting.js 의 게이트로 고속영상에서만 채워진다.
@@ -28,6 +28,7 @@ import {
 const MODES = [
   ['lifting', '🏋️ 역도'],
   ['vbt',     '⚡ VBT'],
+  ['onerm',   '💪 1RM'],
 ];
 const STRENGTH_EXERCISES = exercisesForMode('onerm');
 
@@ -39,6 +40,7 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
   const [exerciseType, setExerciseType] = useState(() => exercisesForMode('lifting')[0]?.key || 'snatch');
   const [showGuide, setShowGuide] = useState(false);
   const [cameraStartSignal, setCameraStartSignal] = useState(1);
+  const [oneRmCameraStartSignal, setOneRmCameraStartSignal] = useState(0);
   // 측정 방식 — 역도/VBT만. 'live'(실시간 추적) | 'upload'(고속영상 슬로모 분석).
   const [captureMode, setCaptureMode] = useState('live');
   // 측정 완료 후 표시할 리포트.
@@ -85,14 +87,18 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
 
   const switchMode = useCallback((next) => {
     setMode(next);
-    const valid = exercisesForMode(next).some(e => e.key === exerciseType);
-    if (!valid) setExerciseType(exercisesForMode(next)[0]?.key || 'squat');
+    const nextExercises = next === 'onerm' ? STRENGTH_EXERCISES : exercisesForMode(next);
+    const valid = nextExercises.some(e => e.key === exerciseType);
+    if (!valid) setExerciseType(nextExercises[0]?.key || 'squat');
     if (next === 'lifting') {
       setCaptureMode('live');
       setCameraStartSignal(v => v + 1);
     }
-    // 1RM은 고속영상 분석 대상이 아니므로 진입 시 실시간으로.
-    if (next === 'onerm') setCaptureMode('live');
+    // 1RM 상단 탭은 역도처럼 전체화면 카메라로 바로 진입한다.
+    if (next === 'onerm') {
+      setCaptureMode('live');
+      setOneRmCameraStartSignal(v => v + 1);
+    }
   }, [exerciseType]);
 
   const selectExercise = useCallback((nextExercise) => {
@@ -362,7 +368,7 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
         )}
         <p className="pointer-events-none text-[10px] font-bold text-amber-300 bg-black/55 backdrop-blur rounded-full px-3 py-0.5 border border-amber-500/30">
           {mode === 'onerm'
-            ? '수동등록 · 무게·반복 입력 기반 1RM 추정 · 1~10회에서 가장 정확'
+            ? '1RM 실시간 카메라 · 스쿼트/데드리프트/벤치프레스 · 수동등록 가능'
             : mode === 'vbt'
               ? '측면 촬영 권장 · 1렙씩 · 고속영상(120/240fps)이면 최고속도까지 산출'
               : '역도 카메라 즉시 연결 · 바벨 끝/원판 2~3점 지정 · 신장 기준 cm 환산'}
@@ -388,7 +394,7 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
       )}
       {mode === 'onerm' && (
         <OneRMEstimate member={memberWithBody} onBack={onBack} onSave={handleSaveOneRm}
-          exerciseType={exerciseType} embedded />
+          exerciseType={exerciseType} embedded autoStartSignal={oneRmCameraStartSignal} />
       )}
     </div>
   );
@@ -409,7 +415,7 @@ function LiftingGuide({ mode, onClose }) {
         </div>
 
         <div className="grid grid-cols-3 gap-2">
-          {[['lifting', '🏋️ 역도', '카메라 즉시 연결'], ['vbt', '⚡ VBT', '속도 기반 존 판정'], ['onerm', '✍️ 수동등록', '무게·반복 → 최대근력']].map(([k, t, d]) => (
+          {[['lifting', '🏋️ 역도', '카메라 즉시 연결'], ['vbt', '⚡ VBT', '속도 기반 존 판정'], ['onerm', '💪 1RM', '카메라·수동등록']].map(([k, t, d]) => (
             <div key={k} className={`rounded-xl p-2.5 border ${mode === k ? 'bg-amber-500/10 border-amber-500/40' : 'bg-slate-800/60 border-slate-700'}`}>
               <p className="text-white font-bold text-[11px] mb-0.5">{t}</p>
               <p className="text-slate-300 text-[10px] leading-snug">{d}</p>

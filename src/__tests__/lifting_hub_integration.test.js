@@ -1,7 +1,10 @@
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { MEASURE_MENUS } from '../ai-measure/registry';
 import { inferReportType, extractKeyMetrics } from '../ai-measure/core/unifiedReport';
 import { buildLiftingPayload } from '../ai-measure/core/lifting';
+
+const hubSource = readFileSync(new URL('../ai-measure/menus/BarbellLiftingHub.jsx', import.meta.url), 'utf8');
 
 describe('바벨 리프팅 통합 탭 · registry', () => {
   it('lifting 통합 탭이 단일 ready 메뉴로 등록된다', () => {
@@ -21,6 +24,13 @@ describe('바벨 리프팅 통합 탭 · registry', () => {
     for (const id of ['posture', 'rom', 'jump', 'gait']) {
       expect(MEASURE_MENUS.find(m => m.id === id)?.status).toBe('ready');
     }
+  });
+
+  it('통합 탭 안에 1RM 상단 탭, 자동 카메라 진입, 수동등록 버튼을 함께 유지한다', () => {
+    expect(hubSource).toContain("['onerm',   '💪 1RM']");
+    expect(hubSource).toContain('setOneRmCameraStartSignal(v => v + 1)');
+    expect(hubSource).toContain('autoStartSignal={oneRmCameraStartSignal}');
+    expect(hubSource).toContain('✍️ 수동등록');
   });
 });
 

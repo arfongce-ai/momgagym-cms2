@@ -34,7 +34,7 @@ const WEIGHT_MODES = [
   ['plate', '🎨 원판 인식'],
 ];
 
-export default function OneRMEstimate({ member, onSave, onBack, exerciseType, embedded = false }) {
+export default function OneRMEstimate({ member, onSave, onBack, exerciseType, embedded = false, autoStartSignal = 0 }) {
   // 허브 종목(exerciseType, 예 'bench_press') → 내부 lift 키('bench') 매핑.
   const exToLift = (ex) => (ex === 'bench_press' ? 'bench' : ex === 'squat' ? 'squat' : ex === 'deadlift' ? 'deadlift' : null);
   const [lift, setLift] = useState(exToLift(exerciseType) || 'squat');
@@ -65,6 +65,7 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
   const capRef = useRef(createMultiTracker());
   const repCounterRef = useRef(createRepCounter());
   const countingRef = useRef(false);
+  const consumedAutoStartRef = useRef(0);
   const [counting, setCounting] = useState(false);
   const [liveReps, setLiveReps] = useState(0);
   const [seedPts, setSeedPts] = useState(0);
@@ -168,14 +169,21 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
     return () => { if (v) v.removeEventListener('loadedmetadata', syncCanvas); stop(); countingRef.current = false; };
   }, [syncCanvas, stop]);
 
-  const openCam = () => {
+  const openCam = useCallback(() => {
     setDetected([]);
     capRef.current.clear();
     repCounterRef.current.reset();
     countingRef.current = false; setCounting(false);
     setLiveReps(0); setSeedPts(0);
     start();
-  };
+  }, [start]);
+
+  useEffect(() => {
+    if (!autoStartSignal || consumedAutoStartRef.current === autoStartSignal) return;
+    consumedAutoStartRef.current = autoStartSignal;
+    if (status === 'idle') openCam();
+  }, [autoStartSignal, openCam, status]);
+
   // 카메라를 닫으면, 인식된 원판이 없을 때는 직접 입력으로 자연스럽게 되돌린다.
   const closeCam = () => {
     stop();
