@@ -42,7 +42,6 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
   const [cameraStartSignal, setCameraStartSignal] = useState(1);
   const [vbtCameraStartSignal, setVbtCameraStartSignal] = useState(0);
   const [oneRmCameraStartSignal, setOneRmCameraStartSignal] = useState(0);
-  const [cameraOverlayActive, setCameraOverlayActive] = useState(false);
   // 측정 방식 — 역도/VBT만. 'live'(실시간 추적) | 'upload'(고속영상 슬로모 분석).
   const [captureMode, setCaptureMode] = useState('live');
   // 측정 완료 후 표시할 리포트.
@@ -88,7 +87,6 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
   ), []);
 
   const switchMode = useCallback((next) => {
-    setCameraOverlayActive(false);
     setMode(next);
     const nextExercises = next === 'onerm' ? STRENGTH_EXERCISES : exercisesForMode(next);
     const valid = nextExercises.some(e => e.key === exerciseType);
@@ -109,7 +107,6 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
   }, [exerciseType]);
 
   const selectExercise = useCallback((nextExercise) => {
-    setCameraOverlayActive(false);
     setExerciseType(nextExercise);
   }, []);
 
@@ -305,7 +302,7 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
   return (
     <div className="fixed inset-0 z-[80] bg-slate-950" style={{ height: '100dvh' }}>
       {/* ── 상단 모드·종목 선택기(오버레이) ── */}
-      {!cameraOverlayActive && <div className="absolute top-[max(8px,calc(env(safe-area-inset-top)+8px))] inset-x-0 z-[86] flex flex-col items-center gap-1.5 px-3 pointer-events-none">
+      <div className="absolute top-[max(8px,calc(env(safe-area-inset-top)+8px))] inset-x-0 z-[86] flex flex-col items-center gap-1.5 px-3 pointer-events-none">
         {/* 모드 선택 */}
         <div className="pointer-events-auto flex gap-1 rounded-full bg-black/55 backdrop-blur p-1 border border-white/10 shadow-lg">
           {MODES.map(([k, label]) => (
@@ -370,7 +367,7 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
               ? '측면 촬영 권장 · 1렙씩 · 고속영상(120/240fps)이면 최고속도까지 산출'
               : '역도 카메라 즉시 연결 · 바벨 끝/원판 2~3점 지정 · 신장 기준 cm 환산'}
         </p>
-      </div>}
+      </div>
 
       {showGuide && <LiftingGuide mode={mode} onClose={() => setShowGuide(false)} />}
 
@@ -378,14 +375,12 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
       {mode === 'lifting' && captureMode === 'live' && (
         <LiftingMeasure member={memberWithBody} onBack={onBack} onSave={handleSaveLifting}
           onMemberHeightChange={onMemberHeightChange}
-          exerciseType={exerciseType} embedded autoStartSignal={cameraStartSignal}
-          onCameraActiveChange={setCameraOverlayActive} />
+          exerciseType={exerciseType} embedded autoStartSignal={cameraStartSignal} />
       )}
       {mode === 'vbt' && captureMode === 'live' && (
         <VbtMeasure member={memberWithBody} onBack={onBack} onSave={handleSaveVbt}
           onMemberHeightChange={onMemberHeightChange}
-          exerciseType={exerciseType} embedded autoStartSignal={vbtCameraStartSignal}
-          onCameraActiveChange={setCameraOverlayActive} />
+          exerciseType={exerciseType} embedded autoStartSignal={vbtCameraStartSignal} />
       )}
       {mode !== 'onerm' && captureMode === 'upload' && (
         <LiftingUploadAnalysis member={memberWithBody} onBack={onBack}
@@ -393,8 +388,7 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
       )}
       {mode === 'onerm' && (
         <OneRMEstimate member={memberWithBody} onBack={onBack} onSave={handleSaveOneRm}
-          exerciseType={exerciseType} embedded autoStartSignal={oneRmCameraStartSignal}
-          onCameraActiveChange={setCameraOverlayActive} />
+          exerciseType={exerciseType} embedded autoStartSignal={oneRmCameraStartSignal} />
       )}
     </div>
   );

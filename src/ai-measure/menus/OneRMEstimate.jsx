@@ -17,13 +17,12 @@ import {
   snapWeight, stepWeight, clampReps, repEstimateConfidence,
   appendAttempt, summarizeAttempts, WEIGHT_STEP_KG,
 } from '../core/lifting';
-import { barbellPoint, fuseBarbellPoint, estimateSideCog } from '../core/barbell';
 import { usePoseEngine } from '../core/usePoseEngine';
 import { assessFraming, FRAMING_PRESETS } from '../core/framingGuide';
 import { createMultiTracker } from '../core/endcapTracker';
 import { createRepCounter } from '../core/repCounter';
 import { saveVideoToPhone, pickRecorderMime } from '../core/recordSink';
-import { drawMeasurementOverlay, drawBarPathToRecord, drawCogOverlay } from '../core/recordingOverlay';
+import { drawMeasurementOverlay, drawBarPathToRecord } from '../core/recordingOverlay';
 import FramingIntro from './FramingIntro';
 import CameraStage from './CameraStage';
 
@@ -38,7 +37,7 @@ const WEIGHT_MODES = [
 
 const MAX_RECORDING_MS = 60000;
 
-export default function OneRMEstimate({ member, onSave, onBack, exerciseType, embedded = false, autoStartSignal = 0, onCameraActiveChange }) {
+export default function OneRMEstimate({ member, onSave, onBack, exerciseType, embedded = false, autoStartSignal = 0 }) {
   // 허브 종목(exerciseType, 예 'bench_press') → 내부 lift 키('bench') 매핑.
   const exToLift = (ex) => (ex === 'bench_press' ? 'bench' : ex === 'squat' ? 'squat' : ex === 'deadlift' ? 'deadlift' : null);
   const [lift, setLift] = useState(exToLift(exerciseType) || 'squat');
@@ -68,7 +67,6 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
   // 바벨 추적(렙 자동 카운팅)
   const capRef = useRef(createMultiTracker());
   const repCounterRef = useRef(createRepCounter());
-  const cogRef = useRef(null);
   const countingRef = useRef(false);
   const consumedAutoStartRef = useRef(0);
   const countdownTimerRef = useRef(null);
@@ -140,10 +138,6 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
       framingRef.current = fr;
       setFraming({ level: fr.level, message: fr.message });
     }
-    const poseBar = barbellPoint(lms);
-    const cog = estimateSideCog(lms);
-    cogRef.current = cog;
-    drawCogOverlay(ctx, cw, ch, cog);
 
     // 원판 색 인식 ROI 박스 표시
     const r = roiRef.current;
@@ -160,9 +154,7 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
     // 바벨 추적(렙 자동 카운팅) — 추적점이 지정돼 있으면 궤적·렙 갱신.
     const cap = capRef.current;
     if (cap.isSeeded()) {
-      const tracked = cap.update(video);
-      const act = cap.activeCount();
-      const p = fuseBarbellPoint(act > 0 ? tracked : null, poseBar);
+      const p = cap.update(video);
       if (p) {
         // 추적점 표시.
         ctx.save();
@@ -247,11 +239,6 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
 
   const { videoRef, start, stop, status, error } = usePoseEngine({ onResult: handleResult });
 
-  useEffect(() => {
-    onCameraActiveChange?.(status !== 'idle');
-    return () => onCameraActiveChange?.(false);
-  }, [onCameraActiveChange, status]);
-
   const stopCompose = () => {
     if (composeRafRef.current) { cancelAnimationFrame(composeRafRef.current); composeRafRef.current = null; }
     if (recordStreamRef.current) { recordStreamRef.current.getTracks().forEach(t => t.stop()); recordStreamRef.current = null; }
@@ -270,7 +257,6 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       if (video && video.videoWidth) ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
       drawBarPathToRecord(ctx, capRef.current.path(), canvas.width, canvas.height);
-      drawCogOverlay(ctx, canvas.width, canvas.height, cogRef.current, { strong: true });
       drawMeasurementOverlay(ctx, canvas.width, canvas.height, {
         title: '1RM',
         elapsedMs: countingRef.current ? performance.now() - recordStartRef.current : null,
