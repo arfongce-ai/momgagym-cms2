@@ -82,6 +82,46 @@ export function classifyPixel(r, g, b) {
 
 const TAG_TO_KG = { red: 25, blue: 20, yellow: 15, green: 10, white: 5, chrome: 0 };
 const TAG_TO_LABEL = { red: '빨강', blue: '파랑', yellow: '노랑', green: '초록', white: '흰색', chrome: '크롬' };
+const MIN_VALID_RATIO = 0.035;
+const MIN_DOMINANT_RATIO = 0.045;
+
+function clampRoi(roi) {
+  const x = Math.max(0, Math.min(1, Number(roi?.x) || 0));
+  const y = Math.max(0, Math.min(1, Number(roi?.y) || 0));
+  const w = Math.max(0.04, Math.min(1 - x, Number(roi?.w) || 0.2));
+  const h = Math.max(0.04, Math.min(1 - y, Number(roi?.h) || 0.2));
+  return { x, y, w, h };
+}
+
+function expandRoi(roi, padX = 0.06, padY = 0.08) {
+  const cx = roi.x + roi.w / 2;
+  const cy = roi.y + roi.h / 2;
+  const w = Math.min(0.98, roi.w + padX * 2);
+  const h = Math.min(0.86, roi.h + padY * 2);
+  return clampRoi({ x: cx - w / 2, y: cy - h / 2, w, h });
+}
+
+function uniqueRois(rois) {
+  const seen = new Set();
+  return rois.map(clampRoi).filter((r) => {
+    const key = [r.x, r.y, r.w, r.h].map(v => Math.round(v * 100)).join(':');
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function candidateRois(roi) {
+  const base = clampRoi(roi || { x: 0.05, y: 0.25, w: 0.9, h: 0.55 });
+  return uniqueRois([
+    base,
+    expandRoi(base),
+    expandRoi(base, 0.11, 0.12),
+    { x: 0.02, y: 0.24, w: 0.36, h: 0.56 },
+    { x: 0.62, y: 0.24, w: 0.36, h: 0.56 },
+    { x: 0.20, y: 0.22, w: 0.60, h: 0.58 },
+  ]);
+}
 
 /**
  * 영상 프레임의 관심영역(ROI)에서 색을 집계해 "편측 원판 구성"을 추정.
@@ -93,43 +133,54 @@ export function detectPlatesFromVideo(video, roi) {
   const vw = video.videoWidth, vh = video.videoHeight;
   if (!vw || !vh) return { counts: {}, dominant: [] };
 
-  const sx = Math.max(0, Math.floor(roi.x * vw));
-  const sy = Math.max(0, Math.floor(roi.y * vh));
-  const sw = Math.min(vw - sx, Math.floor(roi.w * vw));
-  const sh = Math.min(vh - sy, Math.floor(roi.h * vh));
-  if (sw <= 0 || sh <= 0) return { counts: {}, dominant: [] };
+  const analyze = (box) => {
+    const r = clampRoi(box);
+    const sx = Math.max(0, Math.floor(r.x * vw));
+    const sy = Math.max(0, Math.floor(r.y * vh));
+    const sw = Math.min(vw - sx, Math.floor(r.w * vw));
+    const sh = Math.min(vh - sy, Math.floor(r.h * vh));
+    if (sw <= 0 || sh <= 0) return { counts: {}, dominant: [], roi: r, score: 0, validRatio: 0 };
 
-  // 다운스케일 샘플링 캔버스
-  const TARGET = 64;
-  const cv = document.createElement('canvas');
-  cv.width = TARGET; cv.height = TARGET;
-  const ctx = cv.getContext('2d', { willReadFrequently: true });
-  ctx.drawImage(video, sx, sy, sw, sh, 0, 0, TARGET, TARGET);
-  const { data } = ctx.getImageData(0, 0, TARGET, TARGET);
+    const TARGET = 72;
+    const cv = document.createElement('canvas');
+    cv.width = TARGET; cv.height = TARGET;
+    const ctx = cv.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(video, sx, sy, sw, sh, 0, 0, TARGET, TARGET);
+    const { data } = ctx.getImageData(0, 0, TARGET, TARGET);
 
-  const counts = {};
-  let total = 0;
-  const totalPixels = (data.length / 4);
-  for (let i = 0; i < data.length; i += 4) {
-    const tag = classifyPixel(data[i], data[i + 1], data[i + 2]);
-    if (!tag) continue;
-    counts[tag] = (counts[tag] || 0) + 1;
-    total++;
-  }
-  // ROI 안에 유효 색 픽셀이 너무 적으면(거의 검은/빈 화면) 인식 실패로 본다.
-  if (total < totalPixels * 0.15) return { counts: {}, dominant: [] };
-  const dominant = Object.entries(counts)
-    .filter(([tag]) => tag !== 'chrome')         // 크롬은 무게 0 → 후보에서 제외
-    .map(([tag, n]) => ({
-      tag,
-      label: TAG_TO_LABEL[tag],
-      kg: TAG_TO_KG[tag],
-      ratio: total ? Math.round((n / total) * 100) / 100 : 0,
-    }))
-    .filter(d => d.ratio >= 0.06)                // 잡음 컷(6% 미만 색은 무시)
-    .sort((a, b) => b.ratio - a.ratio);
+    const counts = {};
+    let total = 0;
+    const totalPixels = data.length / 4;
+    for (let i = 0; i < data.length; i += 4) {
+      const tag = classifyPixel(data[i], data[i + 1], data[i + 2]);
+      if (!tag) continue;
+      counts[tag] = (counts[tag] || 0) + 1;
+      total++;
+    }
 
-  return { counts, dominant };
+    const validRatio = total / totalPixels;
+    const dominant = Object.entries(counts)
+      .filter(([tag]) => tag !== 'chrome')
+      .map(([tag, n]) => ({
+        tag,
+        label: TAG_TO_LABEL[tag],
+        kg: TAG_TO_KG[tag],
+        ratio: total ? Math.round((n / total) * 100) / 100 : 0,
+      }))
+      .filter(d => d.ratio >= MIN_DOMINANT_RATIO)
+      .sort((a, b) => b.ratio - a.ratio);
+
+    const top = dominant[0]?.ratio || 0;
+    const score = dominant.length ? validRatio * 0.65 + top * 0.35 : 0;
+    if (validRatio < MIN_VALID_RATIO) return { counts: {}, dominant: [], roi: r, score: 0, validRatio };
+    return { counts, dominant, roi: r, score, validRatio };
+  };
+
+  const best = candidateRois(roi)
+    .map(analyze)
+    .sort((a, b) => b.score - a.score)[0];
+
+  return best?.dominant?.length ? best : { counts: {}, dominant: [] };
 }
 
 /**

@@ -234,8 +234,9 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
   const scanPlateColors = useCallback(() => {
     const v = videoRef.current;
     if (!v || !v.videoWidth) { alert('카메라가 아직 준비되지 않았습니다.'); return; }
-    const { dominant } = detectPlatesFromVideo(v, roiRef.current);
+    const { dominant, roi: detectedRoi } = detectPlatesFromVideo(v, roiRef.current);
     if (!dominant.length) { alert('원판 색을 찾지 못했습니다. 원판이 박스 안에 잘 보이게 한 뒤 다시 시도하세요.'); return; }
+    if (detectedRoi) roiRef.current = detectedRoi;
     setDetected(dominant);
     applyPlateWeight({ ...plate, sidePlates: suggestSidePlates(dominant) }, 'plate-color');
   }, [applyPlateWeight, plate, videoRef]);
