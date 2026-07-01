@@ -31,6 +31,22 @@ function Card({ label, value, color='text-slate-100', sub }) {
   );
 }
 
+const settlementPartsOf = (row) =>
+  Array.isArray(row?.settlementBreakdown)
+    ? row.settlementBreakdown.filter(x => (Number(x.count)||0) > 0)
+    : [];
+
+const settlementDetailText = (row) => {
+  const parts = settlementPartsOf(row);
+  if (!parts.length) return row?.regRound || '등록';
+  return parts.map(x => `${x.label} ${x.count}회 × ${won(x.unit)}`).join(' / ');
+};
+
+const settlementUnitText = (row) => {
+  const parts = settlementPartsOf(row);
+  return parts.length ? parts.map(x => won(x.unit)).join(' / ') : row?.unit;
+};
+
 const TABS = [['overview','개요'],['settle','정산'],['expense','지출'],['config','설정']];
 
 export default function Revenue() {
@@ -748,7 +764,15 @@ function SettleTab({ settings, trainers, trainerMap, scopeTid=null, readOnly=fal
     const header = ['트레이너','회원','등록회차','회차횟수','누적횟수','단가','월수업횟수','수업료','정산비율','실지급'];
     const body = [];
     blocks.forEach(b=>{
-      b.rows.forEach(r=>body.push([b.trainer.name, r.memberName, r.regRound||'등록', r.regRoundCount??r.regTotal, r.regTotal, r.unit, r.cnt, r.amount, `${r.rate}%${r.rateManual?'(수정)':r.rateFrozen?'(등록월)':''}`, r.payAmount]));
+      b.rows.forEach(r=>body.push([
+        b.trainer.name, r.memberName,
+        settlementDetailText(r),
+        r.regRoundCount??r.regTotal, r.regTotal,
+        settlementUnitText(r),
+        r.cnt, r.amount,
+        `${r.rate}%${r.rateManual?'(수정)':r.rateFrozen?'(등록월)':''}`,
+        r.payAmount,
+      ]));
       body.push([b.trainer.name,'수업료 합계','','','','','', b.sessionTotal, b.rateMixed?'혼합':`${b.splitRate}%`, b.sessionPayout]);
       body.push([b.trainer.name,'블로그','','','','', b.blogCount, b.blogInc,'','']);
       body.push([b.trainer.name,'인스타','','','','', b.instaCount, b.instaInc,'','']);
@@ -1026,11 +1050,25 @@ function TrainerSettleCard({ block: b, ym, settings, onSaved, readOnly=false, de
                 : r.rateFrozen
                 ? '등록월에 고정된 비율'
                 : '그 달 자동판정 비율';
+              const breakdown = !editing ? settlementPartsOf(r) : [];
+              const showBreakdown = breakdown.length > 0;
               return (
                 <tr key={r.memberId} className="border-b border-slate-800/50">
                   <td className="py-1.5 text-slate-200">{r.memberName}</td>
                   <td className="text-right text-slate-500">
-                    {r.regRound
+                    {showBreakdown
+                      ? <div className="space-y-0.5">
+                          {breakdown.map((part, idx) => (
+                            <div key={`${part.id || part.label}-${idx}`} className="whitespace-nowrap">
+                              <span className={part.label?.startsWith('재등록') ? 'text-blue-300 font-bold' : 'text-slate-300'}>
+                                {part.label}
+                              </span>{' '}
+                              <span className="font-mono">{part.count}회</span>
+                            </div>
+                          ))}
+                          {breakdown.length > 1 && <div className="text-[10px] text-slate-600">합계 {r.cnt}회</div>}
+                        </div>
+                      : r.regRound
                       ? <span title={`이 회차 등록 ${r.regRoundCount}회 · 누적 ${r.regTotal}회`}>
                           <span className="text-slate-400">{r.regRound}</span> <span className="font-mono">{r.regRoundCount}회</span>
                         </span>
@@ -1039,15 +1077,29 @@ function TrainerSettleCard({ block: b, ym, settings, onSaved, readOnly=false, de
                   <td className="text-right">
                     {editing
                       ? <input type="number" value={u} onChange={e=>setUnitEdits(s=>({...s,[r.memberId]:e.target.value}))} className={INP}/>
+                      : showBreakdown
+                      ? <div className="space-y-0.5 font-mono text-slate-300">
+                          {breakdown.map((part, idx) => <div key={`${part.id || part.label}-unit-${idx}`}>{won(part.unit)}</div>)}
+                        </div>
                       : <span className="font-mono text-slate-300">{won(r.unit)}</span>}
                   </td>
                   <td className="text-right">
                     {editing
                       ? <input type="number" value={c} onChange={e=>setCntEdits(s=>({...s,[r.memberId]:e.target.value}))} className={INP}/>
+                      : showBreakdown
+                      ? <div className="space-y-0.5 font-mono text-slate-300">
+                          {breakdown.map((part, idx) => <div key={`${part.id || part.label}-cnt-${idx}`}>{part.count}회</div>)}
+                          {breakdown.length > 1 && <div className="text-[10px] text-slate-600">합계 {r.cnt}회</div>}
+                        </div>
                       : <span className="font-mono text-slate-300">{r.cnt}회{r.cnt!==r.autoCnt?'*':''}</span>}
                   </td>
                   <td className="text-right font-mono text-slate-400">
-                    {won(r._amount)}
+                    {showBreakdown
+                      ? <div className="space-y-0.5">
+                          {breakdown.map((part, idx) => <div key={`${part.id || part.label}-amount-${idx}`}>{won(part.amount)}</div>)}
+                          {breakdown.length > 1 && <div className="text-[10px] text-slate-600">합계 {won(r._amount)}</div>}
+                        </div>
+                      : won(r._amount)}
                   </td>
                   <td className="text-right">
                     {editing
@@ -1058,6 +1110,14 @@ function TrainerSettleCard({ block: b, ym, settings, onSaved, readOnly=false, de
                           <span className="text-[11px] text-slate-500">%</span>
                           {rateChanged && <span className="text-[10px] text-amber-300 font-bold">수정</span>}
                         </span>
+                      : showBreakdown
+                      ? <div className="space-y-0.5 font-mono text-slate-400">
+                          {breakdown.map((part, idx) => (
+                            <div key={`${part.id || part.label}-rate-${idx}`} title={part.hasFrozen ? '등록월에 고정된 비율' : rateTitle}>
+                              {part.rate}%{part.hasFrozen?'🔒':''}
+                            </div>
+                          ))}
+                        </div>
                       : <span className={`font-mono text-[11px] px-1 rounded ${
                           r.rateManual ? 'bg-amber-500/10 text-amber-300 border border-amber-500/30'
                           : r.rateFrozen ? 'text-violet-300'
@@ -1067,7 +1127,12 @@ function TrainerSettleCard({ block: b, ym, settings, onSaved, readOnly=false, de
                         </span>}
                   </td>
                   <td className="text-right font-mono font-bold text-emerald-400">
-                    {won(r._pay)}
+                    {showBreakdown
+                      ? <div className="space-y-0.5">
+                          {breakdown.map((part, idx) => <div key={`${part.id || part.label}-pay-${idx}`}>{won(part.payAmount)}</div>)}
+                          {breakdown.length > 1 && <div className="text-[10px] text-emerald-500/80">합계 {won(r._pay)}</div>}
+                        </div>
+                      : won(r._pay)}
                   </td>
                 </tr>
               );

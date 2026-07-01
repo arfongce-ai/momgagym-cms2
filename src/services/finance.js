@@ -496,6 +496,7 @@ export function computeSessionSettlement({ trainers, members, schedules, payment
                      : fallbackSplit.rate);                    // 폴백: 그 달 자동판정
       let autoAmount = 0;
       let autoPayAmount = 0;
+      const settlementBreakdown = [];
       Object.entries(lotCounts).forEach(([lotId, count]) => {
         const c = Number(count) || 0;
         const lot = lotMap[lotId];
@@ -505,8 +506,27 @@ export function computeSessionSettlement({ trainers, members, schedules, payment
           : (lot?.rate != null ? Number(lot.rate) : baseRate);
         const partAmount = lotUnit * c;
         autoAmount += partAmount;
-        autoPayAmount += Math.round(partAmount * lotRate / 100);
+        const partPayAmount = Math.round(partAmount * lotRate / 100);
+        autoPayAmount += partPayAmount;
+        settlementBreakdown.push({
+          id: lotId,
+          label: lot ? (lot.label || '기존 등록') : '회차 미확인',
+          count: c,
+          regCount: lot?.count ?? null,
+          unit: lotUnit,
+          amount: partAmount,
+          rate: lotRate,
+          payAmount: partPayAmount,
+          reEnrollNo: lot?.reEnrollNo || null,
+          hasFrozen: !!lot?.hasFrozen,
+          legacy: !!lot?.legacy,
+        });
       });
+      if (settlementBreakdown.length > 1) {
+        settlementBreakdown.forEach(part => {
+          if (part.label === '등록' || part.label === '기존 등록') part.label = '전회차';
+        });
+      }
       const previewLot = nextLotFor(mid, t.id, trainerRemain);
       const previewUnit = previewLot ? Number(previewLot.unit)||0 : aggregateUnit;
       const autoUnit = autoCnt > 0 ? (autoAmount / autoCnt) : previewUnit;
@@ -537,9 +557,12 @@ export function computeSessionSettlement({ trainers, members, schedules, payment
         regTotal: trainerReg, remaining: trainerRemain, autoUnit, unit, autoCnt, cnt,
         amount, rate: effRate, baseRate, rateManual, rateFrozen, payAmount,
         // 등록 회차 표시용: 현재 정산에 실제 적용된 회차를 우선 표시한다.
-        regRound: activeReg?.label || (reg ? reg.label : null),
-        regRoundCount: activeReg?.count || (reg ? reg.count : null),
+        regRound: settlementBreakdown.length > 1 ? '회차별'
+          : activeReg?.label || (reg ? reg.label : null),
+        regRoundCount: settlementBreakdown.length > 1 ? autoCnt
+          : activeReg?.count || (reg ? reg.count : null),
         regReEnrollNo: activeReg?.reEnrollNo || (reg ? reg.reEnrollNo : null),
+        settlementBreakdown,
       };
     })
     // 표시 기준:

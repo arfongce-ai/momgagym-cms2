@@ -79,6 +79,35 @@ describe('단가 계산: 귀속결제액 ÷ 등록횟수', () => {
     expect(row.amount).toBe(448000);
     expect(row.payAmount).toBe(224000); // 448,000 * 50%
   });
+
+  it('한 달에 전회차와 재등록 회차가 섞이면 회차별 상세를 함께 내려준다', () => {
+    const members = [{ id: 'm1', name: '회원', isActive: true, trainerSessions: { t1: { total: 20, remaining: 8 } } }];
+    const payments = { m1: [
+      {
+        id: 'p1', amount: 224750, method: '현금', paidAt: '2026-05-01',
+        trainerIds: ['t1'], sessionAdds: [{ trainerId: 't1', count: 10 }],
+        splitRateAtPay: { t1: 50 },
+      },
+      {
+        id: 'p2', amount: 2240000, method: '현금', paidAt: '2026-06-01',
+        trainerIds: ['t1'], sessionAdds: [{ trainerId: 't1', count: 10 }],
+        isReEnroll: true, reEnrollNo: 1, splitRateAtPay: { t1: 50 },
+      },
+    ] };
+    const schedules = [
+      { id: 's1', memberId: 'm1', memberName: '회원', trainerId: 't1', date: '2026-06-10', status: 'attended', isExternal: false, sessionAtBooking: 11 },
+      { id: 's2', memberId: 'm1', memberName: '회원', trainerId: 't1', date: '2026-06-11', status: 'attended', isExternal: false, sessionAtBooking: 10 },
+    ];
+    const { row } = settle(members, payments, schedules);
+    expect(row.regRound).toBe('회차별');
+    expect(row.amount).toBe(246475);
+    expect(row.payAmount).toBe(123238);
+    expect(row.settlementBreakdown.map(x => [x.label, x.count, Math.round(x.unit), Math.round(x.amount), x.payAmount]))
+      .toEqual([
+        ['전회차', 1, 22475, 22475, 11238],
+        ['재등록 1회차', 1, 224000, 224000, 112000],
+      ]);
+  });
 });
 
 describe('박제비율(splitRateAtPay)이 정산에 반영', () => {
