@@ -665,17 +665,20 @@ export const store = {
   freezeMemberRate: async (patches = []) => {
     if (!patches.length) return 0;
     const prevPayments = JSON.parse(JSON.stringify(cache.payments));
-    const batch = writeBatch(db);
-    patches.forEach(({ mid, pid, splitRateAtPay }) => {
-      const cur = (cache.payments[mid] || []).find(p => p.id === pid);
-      if (cur) batch.set(doc(db, 'payments', pid), { ...cur, splitRateAtPay, __mid: mid });
-    });
     try {
-      await batch.commit();
-      patches.forEach(({ mid, pid, splitRateAtPay }) => {
-        cache.payments[mid] = (cache.payments[mid] || []).map(p =>
-          p.id === pid ? { ...p, splitRateAtPay } : p);
-      });
+      for (let i = 0; i < patches.length; i += 400) {
+        const chunk = patches.slice(i, i + 400);
+        const batch = writeBatch(db);
+        chunk.forEach(({ mid, pid, splitRateAtPay }) => {
+          const cur = (cache.payments[mid] || []).find(p => p.id === pid);
+          if (cur) batch.set(doc(db, 'payments', pid), { ...cur, splitRateAtPay, __mid: mid });
+        });
+        await batch.commit();
+        chunk.forEach(({ mid, pid, splitRateAtPay }) => {
+          cache.payments[mid] = (cache.payments[mid] || []).map(p =>
+            p.id === pid ? { ...p, splitRateAtPay } : p);
+        });
+      }
       __touchSnapshot();
       return patches.length;
     } catch (e) {
