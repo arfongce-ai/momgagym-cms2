@@ -120,3 +120,92 @@ describe('planConsumedIndexBackfill — 과거 데이터 회차 인덱스 소급
     expect(byId.b2).toBe(3);
   });
 });
+
+describe('한도현 실제 시나리오 — sessionAtBooking 리셋값 + 회차정리', () => {
+  const settings2 = {
+    withholdingRate: 3.3, promoPerPost: 10000, snsInstaMax: 8,
+    lowSplitRate: 40, rate60MinSales: 3000000, rate50MinBlog: 2, rate50MinStudy: 1, trainerSplitRates: {},
+  };
+  const sc = (id, date, at) => ({ id, memberId: 'm1', trainerId: 't1', date, status: 'attended',
+    isExternal: false, ...(at != null ? { sessionAtBooking: at } : {}) });
+  // 8회차 10세션(remaining 10..1) → 9회차 10세션(remaining 리셋 10,9). sessionAtBooking 겹침.
+  const eight = [
+    sc('e10', '2026-02-06', 10), sc('e9', '2026-02-13', 9), sc('e8', '2026-02-20', 8),
+    sc('e7', '2026-03-06', 7), sc('e6', '2026-03-13', 6), sc('e5', '2026-03-20', 5),
+    sc('e4', '2026-04-11', 4), sc('e3', '2026-05-01', 3), sc('e2', '2026-05-08', 2), sc('e1', '2026-05-15', 1),
+  ];
+  const nine = [sc('n10', '2026-05-29', 10), sc('n9', '2026-06-05', 9)];
+  const schedules = [...eight, ...nine];
+  const members = [{ id: 'm1', name: '한도현', isActive: true, trainerSessions: { t1: { total: 20, remaining: 8 } } }];
+  const payments = { m1: [
+    { id: 'p8', paidAt: '2026-02-06', amount: 600000, method: 'transfer', trainerIds: ['t1'],
+      isReEnroll: true, reEnrollNo: 8, splitRateAtPay: { t1: 50 }, sessionAdds: [{ trainerId: 't1', count: 10 }] },
+    { id: 'p9', paidAt: '2026-05-20', amount: 500000, method: 'transfer', trainerIds: ['t1'],
+      isReEnroll: true, reEnrollNo: 9, splitRateAtPay: { t1: 40 }, sessionAdds: [{ trainerId: 't1', count: 10 }] },
+  ] };
+
+  it('회차정리(backfill) 후 5월이 8회차 3회(50%) + 9회차 1회(40%)로 갈린다', () => {
+    const patches = planConsumedIndexBackfill({ members, schedules });
+    const map = Object.fromEntries(patches.map(p => [p.id, p.consumedIndexAtBooking]));
+    const fixed = schedules.map(s => map[s.id] != null ? { ...s, consumedIndexAtBooking: map[s.id] } : s);
+    const b = computeSessionSettlement({ trainers, members, schedules: fixed, payments,
+      records: [], settings: settings2, ym: '2026-05', getOverride: () => null });
+    const r = b[0].rows.find(x => x.memberId === 'm1');
+    expect(r.autoCnt).toBe(4);
+    const eightPart = r.settlementBreakdown.find(x => x.reEnrollNo === 8);
+    const ninePart = r.settlementBreakdown.find(x => x.reEnrollNo === 9);
+    expect(eightPart.count).toBe(3);
+    expect(eightPart.rate).toBe(50);
+    expect(ninePart.count).toBe(1);
+    expect(ninePart.rate).toBe(40);
+  });
+});
+
+describe('sessionStartDate — 결제일과 세션 소진 순서 분리', () => {
+  const settings3 = {
+    withholdingRate: 3.3, promoPerPost: 10000, snsInstaMax: 8,
+    lowSplitRate: 40, rate60MinSales: 3000000, rate50MinBlog: 2, rate50MinStudy: 1, trainerSplitRates: {},
+  };
+  const s3 = (id, date) => ({ id, memberId: 'm1', trainerId: 't1', date, status: 'attended', isExternal: false });
+  const schedules = [
+    s3('e10', '2026-02-06'), s3('e9', '2026-02-13'), s3('e8', '2026-02-20'), s3('e7', '2026-03-06'),
+    s3('e6', '2026-03-13'), s3('e5', '2026-03-20'), s3('e4', '2026-04-11'),
+    s3('e3', '2026-05-01'), s3('e2', '2026-05-08'), s3('e1', '2026-05-15'),
+    s3('n10', '2026-05-29'), s3('n9', '2026-06-05'),
+  ];
+  const members = [{ id: 'm1', name: '한도현', isActive: true, trainerSessions: { t1: { total: 20, remaining: 8 } } }];
+  // 9회차 결제일은 6/5(매출 6월)지만 세션 시작은 5/20
+  const payments = { m1: [
+    { id: 'p8', paidAt: '2026-02-06', amount: 600000, method: 'transfer', trainerIds: ['t1'],
+      isReEnroll: true, reEnrollNo: 8, splitRateAtPay: { t1: 50 }, sessionAdds: [{ trainerId: 't1', count: 10 }] },
+    { id: 'p9', paidAt: '2026-06-05', sessionStartDate: '2026-05-20', amount: 600000, method: 'transfer',
+      trainerIds: ['t1'], isReEnroll: true, reEnrollNo: 9, splitRateAtPay: { t1: 40 },
+      sessionAdds: [{ trainerId: 't1', count: 10 }] },
+  ] };
+
+  it('5월: 8회차 3회(50%) + 9회차 1회(40%)로 갈린다 (결제 6월이어도)', () => {
+    const patches = planConsumedIndexBackfill({ members, schedules });
+    const map = Object.fromEntries(patches.map(p => [p.id, p.consumedIndexAtBooking]));
+    const fixed = schedules.map(s => map[s.id] != null ? { ...s, consumedIndexAtBooking: map[s.id] } : s);
+    const b = computeSessionSettlement({ trainers, members, schedules: fixed, payments,
+      records: [], settings: settings3, ym: '2026-05', getOverride: () => null });
+    const r = b[0].rows.find(x => x.memberId === 'm1');
+    expect(r.settlementBreakdown.find(x => x.reEnrollNo === 8)?.count).toBe(3);
+    expect(r.settlementBreakdown.find(x => x.reEnrollNo === 8)?.rate).toBe(50);
+    expect(r.settlementBreakdown.find(x => x.reEnrollNo === 9)?.count).toBe(1);
+    expect(r.settlementBreakdown.find(x => x.reEnrollNo === 9)?.rate).toBe(40);
+  });
+
+  it('sessionStartDate 없어도 8회차가 10회로 차면 11번째 소진은 9회차', () => {
+    const p2 = { m1: payments.m1.map(p => { const { sessionStartDate, ...rest } = p; return rest; }) };
+    const patches = planConsumedIndexBackfill({ members, schedules });
+    const map = Object.fromEntries(patches.map(p => [p.id, p.consumedIndexAtBooking]));
+    const fixed = schedules.map(s => map[s.id] != null ? { ...s, consumedIndexAtBooking: map[s.id] } : s);
+    const b = computeSessionSettlement({ trainers, members, schedules: fixed, payments: p2,
+      records: [], settings: settings3, ym: '2026-05', getOverride: () => null });
+    const r = b[0].rows.find(x => x.memberId === 'm1');
+    // 8회차는 10회로 가득 → 11번째(5/29, idx10)는 9회차로 넘어감. sessionStartDate 유무와 무관.
+    expect(r.settlementBreakdown.find(x => x.reEnrollNo === 8)?.count).toBe(3);
+    expect(r.settlementBreakdown.find(x => x.reEnrollNo === 9)?.count).toBe(1);
+  });
+});

@@ -16,6 +16,7 @@ const INP = "w-full bg-slate-800 border border-slate-700 text-slate-100 rounded-
 const LBL = "block text-xs font-semibold text-slate-400 uppercase tracking-widest mb-1.5";
 const makePayForm = () => ({
   paidAt: todayYMD(),
+  sessionStartDate: '',
   amount: '',
   method: 'pay',
   isUnpaid: false,
@@ -437,6 +438,7 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
       // 신규일 때만 상담 트레이너 저장(아니면 비움)
       const consultTrainerId = payForm.isNew ? (payForm.consultTrainerId || '') : '';
       const newPayment = { ...rest, method:primaryMethod, methods, amount:Number(payForm.amount), split, sessionAdds, reEnrollNo, consultTrainerId };
+      if (!newPayment.sessionStartDate) delete newPayment.sessionStartDate; // 빈 값은 저장 안 함(결제일 기준)
 
       // ── 결제월 정산비율 박제(snapshot) ──────────────────────────
       // 이 결제가 이뤄진 달(paidAt의 YYYY-MM) 기준 비율을 계산해 결제 건에 고정한다.
@@ -501,6 +503,24 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
     if (!window.confirm('이 수납 기록을 삭제하시겠습니까?')) return;
     try { await store.deletePayment(member.id, pid); refresh(); }
     catch (e) { alert('삭제에 실패했습니다. 네트워크 확인 후 다시 시도하세요.'); }
+  };
+
+  // 기존 재등록 결제의 '세션 시작일' 지정/변경 — 매출(결제일)은 그대로, 회차 소진 순서만 조정.
+  const handleSetSessionStart = async (p) => {
+    const cur = p.sessionStartDate || '';
+    const input = window.prompt(
+      `이 회차 세션이 실제로 소진되기 시작한 날짜를 YYYY-MM-DD 로 입력하세요.\n` +
+      `(결제일 ${p.paidAt} 과 다를 때만. 매출은 결제일 기준 그대로 유지되고, 회차 소진 순서만 이 날짜로 바뀝니다.)\n` +
+      `비우면 결제일 기준으로 되돌립니다.`, cur);
+    if (input === null) return; // 취소
+    const val = input.trim();
+    if (val && !/^\d{4}-\d{2}-\d{2}$/.test(val)) { alert('날짜 형식이 올바르지 않습니다. 예: 2026-05-20'); return; }
+    try {
+      await store.updatePayment(member.id, p.id, { sessionStartDate: val || null });
+      refresh();
+      alert(val ? `세션 시작일을 ${val} 로 지정했습니다. 정산에서 회차가 이 날짜 기준으로 갈립니다.`
+                : '세션 시작일을 지웠습니다(결제일 기준으로 복원).');
+    } catch (e) { alert('저장에 실패했습니다. 네트워크 확인 후 다시 시도하세요.'); }
   };
 
   // ── 신체정보 등록 ─────────────────────────────────────
@@ -896,6 +916,20 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
                           {p.category==='edu_external'&&<span className="text-[10px] bg-amber-500/20 text-amber-400 border border-amber-500/30 px-1.5 py-0.5 rounded font-bold">외부활동</span>}
                         </div>
                         <p className="text-slate-500 text-xs mt-0.5">{p.paidAt}</p>
+                        {p.isReEnroll && (
+                          <p className="text-[11px] mt-0.5">
+                            <span className="text-slate-500">세션 시작일: </span>
+                            <span className={p.sessionStartDate ? 'text-blue-300 font-semibold' : 'text-slate-500'}>
+                              {p.sessionStartDate || '결제일과 동일'}
+                            </span>
+                            {user?.role==='admin' && (
+                              <button onClick={()=>handleSetSessionStart(p)}
+                                className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-300 hover:bg-blue-500/30 font-bold">
+                                수정
+                              </button>
+                            )}
+                          </p>
+                        )}
                         {p.trainerIds?.length>0 && (
                           <p className="text-slate-400 text-xs mt-1">
                             담당: {Array.isArray(p.split)&&p.split.length
@@ -1192,6 +1226,14 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
                         <span className="text-[11px] text-slate-500">
                           (자동 제안: {payments.filter(x=>x.isReEnroll).length + 1}회차 · 수정 가능)
                         </span>
+                      </div>
+                      <div className="mt-3">
+                        <label className={LBL}>세션 시작일 <span className="text-slate-500 normal-case font-normal tracking-normal">· 선택 · 결제일과 다를 때만</span></label>
+                        <input type="date" value={payForm.sessionStartDate} onChange={ppf('sessionStartDate')} className={INP}/>
+                        <p className="text-[11px] text-slate-500 mt-1.5">
+                          결제는 늦게 했지만 수업은 먼저 시작한 경우, 이 회차 세션이 실제 소진되기 시작한 날짜를 넣으세요.
+                          비워두면 결제일 기준으로 회차가 정해집니다. (매출은 항상 결제일 기준 — 이 날짜는 회차 소진 순서에만 반영)
+                        </p>
                       </div>
                     </div>
                   )}

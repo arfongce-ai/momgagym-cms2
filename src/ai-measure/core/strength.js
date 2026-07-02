@@ -22,57 +22,6 @@ export const RM_FORMULAS = [
 
 const r1 = (x) => Math.round(x * 10) / 10;
 
-function summarizeFormulaStats(formulas, average) {
-  const values = (Array.isArray(formulas) ? formulas : [])
-    .map(f => Number(f.value))
-    .filter(v => Number.isFinite(v));
-  const n = values.length;
-  const avg = Number(average);
-  if (!n || !Number.isFinite(avg)) {
-    return {
-      count: 0,
-      min: null,
-      max: null,
-      spreadKg: null,
-      spreadPct: null,
-      sdKg: null,
-      cvPct: null,
-      confidenceInterval: { low: null, high: null },
-      confidenceLevel: 'unknown',
-    };
-  }
-
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  const spread = max - min;
-  const variance = values.reduce((sum, v) => sum + ((v - avg) ** 2), 0) / n;
-  const sd = Math.sqrt(variance);
-  const sem = n > 1 ? sd / Math.sqrt(n) : 0;
-  const margin = n > 1 ? 1.96 * sem : 0;
-  const spreadPct = avg > 0 ? (spread / avg) * 100 : null;
-  const cvPct = avg > 0 ? (sd / avg) * 100 : null;
-  const confidenceLevel = spreadPct == null
-    ? 'unknown'
-    : spreadPct <= 5 ? 'high'
-      : spreadPct <= 10 ? 'medium'
-        : 'low';
-
-  return {
-    count: n,
-    min: r1(min),
-    max: r1(max),
-    spreadKg: r1(spread),
-    spreadPct: spreadPct == null ? null : r1(spreadPct),
-    sdKg: r1(sd),
-    cvPct: cvPct == null ? null : r1(cvPct),
-    confidenceInterval: {
-      low: r1(Math.max(0, avg - margin)),
-      high: r1(avg + margin),
-    },
-    confidenceLevel,
-  };
-}
-
 /**
  * 1RM 추정. 든 무게(weight)와 반복횟수(reps)로 최대 1회 무게를 추정.
  * 검증된 여러 공식을 동시에 계산하고 평균(대표값)을 낸다.
@@ -84,18 +33,7 @@ export function estimate1RM(weight, reps) {
   const w = Number(weight), r = Number(reps);
   if (r === 1) {
     const formulas = RM_FORMULAS.map(f => ({ key: f.key, label: f.label, value: w }));
-    const average = r1(w);
-    const stats = summarizeFormulaStats(formulas, average);
-    return {
-      average,
-      formulas,
-      epley: r1(w),
-      brzycki: r1(w),
-      stats,
-      confidenceInterval: stats.confidenceInterval,
-      formulaSpreadKg: stats.spreadKg,
-      formulaSpreadPct: stats.spreadPct,
-    };
+    return { average: r1(w), formulas, epley: r1(w), brzycki: r1(w) };
   }
   const formulas = RM_FORMULAS.map(f => {
     let v = f.fn(w, r);
@@ -109,17 +47,11 @@ export function estimate1RM(weight, reps) {
     ? used.reduce((s, f) => s + f.value, 0) / used.length
     : w;
   const get = (k) => formulas.find(f => f.key === k)?.value;
-  const average = r1(avg);
-  const stats = summarizeFormulaStats(formulas, average);
   return {
-    average,
+    average: r1(avg),
     formulas,
     epley: get('epley'),
     brzycki: get('brzycki'),
-    stats,
-    confidenceInterval: stats.confidenceInterval,
-    formulaSpreadKg: stats.spreadKg,
-    formulaSpreadPct: stats.spreadPct,
   };
 }
 

@@ -35,33 +35,19 @@ export default function LiftingReportDashboard({ report, onClose }) {
   const confPct = Number.isFinite(conf) ? Math.round(conf * 100) : null;
   const precision = report.precision || {};
   const measuredZone = mode === 'vbt' ? vbtZonePurpose(m.meanVelocity) : null;
-  const estimateStats = meta.estimateStats || {};
-  const estimateRange = meta.confidenceInterval || estimateStats.confidenceInterval || null;
 
   // 핵심 수치 타일(모드별).
   const tiles = [];
-  if (report.outlierWarning?.isOutlier) {
-    tiles.push({ label: '측정값 확인', value: '확인 필요' });
-  }
   if (mode === 'onerm') {
     tiles.push({ label: '추정 1RM', value: fmt(m.oneRM, 'kg'), accent: true });
     tiles.push({ label: '입력', value: `${fmt(meta.weight, 'kg')}×${fmt(meta.reps, '회')}` });
     if (meta.attemptNo) tiles.push({ label: '도전 차수', value: `${meta.attemptNo}차` });
     if (meta.bestOneRM) tiles.push({ label: '세션 최고', value: fmt(meta.bestOneRM, 'kg') });
-    if (estimateStats.spreadKg != null) tiles.push({ label: '공식 편차', value: `${estimateStats.spreadKg}kg` });
-    if (estimateRange?.low != null) tiles.push({ label: '참고 범위', value: `${estimateRange.low}~${estimateRange.high}kg` });
   } else {
     tiles.push({ label: '평균속도', value: fmt(m.meanVelocity, ' m/s'), accent: true });
     tiles.push({ label: '최고속도', value: m.peakVelocity != null ? fmt(m.peakVelocity, ' m/s') : '고속영상 필요' });
     tiles.push({ label: '가동범위', value: fmt(m.rangeOfMotion, ' cm') });
     if (meta.reps != null) tiles.push({ label: '반복', value: fmt(meta.reps, '회') });
-    if (m.velocityLoss != null) tiles.push({ label: '속도저하', value: fmt(m.velocityLoss, '%') });
-    if (meta.loadVelocityPoint?.loadKg != null && meta.loadVelocityPoint?.meanVelocity != null) {
-      tiles.push({
-        label: '프로필 기준점',
-        value: `${meta.loadVelocityPoint.loadKg}kg / ${meta.loadVelocityPoint.meanVelocity}m/s`,
-      });
-    }
     if (m.meanPower != null || m.peakPower != null) tiles.push({ label: '파워(근사)', value: fmt(m.meanPower ?? m.peakPower, ' W') });
   }
 

@@ -303,8 +303,6 @@ export function buildLiftingInterpretation(report = {}) {
   if (mode === 'onerm') {
     const oneRM = Number(m.oneRM);
     const w = Number(meta.weight), reps = Number(meta.reps);
-    const estimateStats = meta.estimateStats || {};
-    const estimateRange = meta.confidenceInterval || estimateStats.confidenceInterval || null;
     headline = oneRM ? `${exLabel} 추정 1RM ${oneRM}kg` : `${exLabel} 1RM 측정`;
     if (oneRM && w) {
       const pct = Math.round((w / oneRM) * 100);
@@ -312,13 +310,6 @@ export function buildLiftingInterpretation(report = {}) {
     }
     if (oneRM) {
       lines.push({ label: '훈련 무게(참고)', text: `근비대 75~80%(${Math.round(oneRM * 0.77 / 2.5) * 2.5}kg), 근력 85~90%(${Math.round(oneRM * 0.87 / 2.5) * 2.5}kg) 부근.` });
-    }
-    if (estimateRange?.low != null && estimateRange?.high != null) {
-      lines.push({ label: '추정 범위', text: `공식 간 분산 기준 참고 범위 ${estimateRange.low}~${estimateRange.high}kg.` });
-    }
-    if (estimateStats.spreadKg != null) {
-      lines.push({ label: '공식 편차', text: `유효 공식 ${estimateStats.count || '?'}개, 최소~최대 차이 ${estimateStats.spreadKg}kg${estimateStats.spreadPct != null ? `(${estimateStats.spreadPct}%)` : ''}.` });
-      if (Number(estimateStats.spreadPct) > 10) cautions.push('공식별 추정 차이가 큽니다. 1~6회 반복 또는 VBT 프로필로 재확인하세요.');
     }
     if (meta.attemptNo) {
       const best = meta.bestOneRM;
@@ -348,17 +339,6 @@ export function buildLiftingInterpretation(report = {}) {
   if (Number.isFinite(rom) && rom > 0) {
     lines.push({ label: '가동범위', text: `바벨 수직 이동 ${rom}cm.` });
   }
-  const velocityLoss = Number(m.velocityLoss);
-  if (Number.isFinite(velocityLoss)) {
-    lines.push({ label: '속도저하', text: `반복 중 평균속도 저하 ${velocityLoss}%. 피로 누적 판단에 사용하세요.` });
-  }
-  const lvPoint = meta.loadVelocityPoint;
-  if (lvPoint?.loadKg != null && lvPoint?.meanVelocity != null) {
-    lines.push({
-      label: '프로필 기준점',
-      text: `${lvPoint.loadKg}kg에서 ${lvPoint.meanVelocity}m/s — 같은 종목 기록이 쌓이면 개인 load-velocity 1RM 보조 추정에 사용됩니다.`,
-    });
-  }
   const reps = Number(meta.reps);
   if (Number.isFinite(reps) && reps > 0) {
     lines.push({ label: '반복', text: `자동 카운트 ${reps}회.` });
@@ -386,59 +366,6 @@ export function buildLiftingInterpretation(report = {}) {
  *           source?:string, romCm?:number }} ctx
  * @returns {{ score:number, reasons:string[] }}
  */
-export function median(values) {
-  const nums = (Array.isArray(values) ? values : [])
-    .map(Number)
-    .filter(Number.isFinite)
-    .sort((a, b) => a - b);
-  if (!nums.length) return null;
-  const mid = Math.floor(nums.length / 2);
-  return nums.length % 2 ? nums[mid] : (nums[mid - 1] + nums[mid]) / 2;
-}
-
-function comparableExercise(a, b) {
-  if (!a || !b) return false;
-  const modeA = a.mode || a.type;
-  const modeB = b.mode || b.type;
-  if (modeA !== modeB) return false;
-  return normalizeExerciseType(a.exerciseType) === normalizeExerciseType(b.exerciseType);
-}
-
-function valueFromReport(report, field) {
-  return Number(report?.metrics?.[field] ?? report?.[field]);
-}
-
-export function detectMeasurementOutlier(current = {}, previous = null) {
-  if (!previous || !comparableExercise(current, previous)) {
-    return { isOutlier: false };
-  }
-
-  const mode = current.mode || current.type;
-  const isOneRm = mode === 'onerm' || current.metrics?.oneRM != null || current.oneRM != null;
-  const field = isOneRm ? 'oneRM' : 'meanVelocity';
-  const now = valueFromReport(current, field);
-  const before = valueFromReport(previous, field);
-
-  if (!Number.isFinite(now) || !Number.isFinite(before) || before <= 0) {
-    return { isOutlier: false };
-  }
-
-  const ratio = now / before;
-  const tooHigh = isOneRm ? ratio >= 1.45 : ratio >= 2;
-  const tooLow = isOneRm ? ratio <= 0.6 : ratio <= 0.5;
-  if (!tooHigh && !tooLow) return { isOutlier: false };
-
-  const label = isOneRm ? '1RM' : '평균속도';
-  return {
-    isOutlier: true,
-    field,
-    current: Math.round(now * 100) / 100,
-    previous: Math.round(before * 100) / 100,
-    ratio: Math.round(ratio * 100) / 100,
-    message: `${label}가 직전 같은 종목 기록 대비 크게 달라졌습니다. 장비 보정, 촬영 각도, 무게 입력을 확인하세요.`,
-  };
-}
-
 export function vbtConfidence(ctx = {}) {
   const reasons = [];
   let score = 1.0;
@@ -512,7 +439,6 @@ export function buildLiftingPayload({ mode, exerciseType, source, metrics = {}, 
       meanPower: metrics.meanPower ?? null,
       rangeOfMotion: metrics.rangeOfMotion ?? null, // cm
       oneRM: metrics.oneRM ?? null,
-      velocityLoss: metrics.velocityLoss ?? null,
       confidenceScore: metrics.confidenceScore ?? null,
       peakReason: metrics.peakReason ?? null,
     },

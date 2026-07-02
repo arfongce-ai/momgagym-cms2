@@ -80,15 +80,6 @@ export function classifyPixel(r, g, b) {
   return null;
 }
 
-export const PLATE_CALIBRATION_DIAMETER_CM = 45;
-export const PLATE_CALIBRATION_TAGS = new Set(['red', 'blue', 'yellow', 'green']);
-
-export function plateCmPerRatio(plateRatio) {
-  const ratio = Number(plateRatio);
-  if (!Number.isFinite(ratio) || ratio <= 0) return null;
-  return PLATE_CALIBRATION_DIAMETER_CM / ratio;
-}
-
 const TAG_TO_KG = { red: 25, blue: 20, yellow: 15, green: 10, white: 5, chrome: 0 };
 const TAG_TO_LABEL = { red: '빨강', blue: '파랑', yellow: '노랑', green: '초록', white: '흰색', chrome: '크롬' };
 const MIN_VALID_RATIO = 0.035;

@@ -14,20 +14,13 @@
 import React, { useState, useRef, useCallback } from 'react';
 import { analyzeUploadedVideo, CAPTURE_PRESETS } from '../core/videoAnalyzer';
 import { createMultiTracker } from '../core/endcapTracker';
-import { personHeightRatio } from '../core/barbell';
+import { personHeightRatio, romToCm } from '../core/barbell';
 import { calcVBT } from '../core/performance';
 import {
   computeBarVelocities, estimateMeanPower, vbtConfidence,
   buildLiftingPayload, exerciseLabel,
 } from '../core/lifting';
 import { countRepsFromSeries } from '../core/repCounter';
-import {
-  CALIBRATION_PRESETS, buildReferenceScale, ratioToCm,
-  resolveDistanceScale, serializeDistanceScale,
-} from '../core/calibration';
-import { buildRepVelocityMetrics } from '../core/repVelocity';
-import { buildLoadVelocityPoint } from '../core/loadVelocityProfile';
-import { plateCmPerRatio, PLATE_CALIBRATION_TAGS } from '../core/plates';
 
 export default function LiftingUploadAnalysis({
   member, onBack, onComplete, mode = 'lifting', exerciseType,
@@ -38,14 +31,9 @@ export default function LiftingUploadAnalysis({
   const [fileName, setFileName] = useState('');
   const [capture, setCapture] = useState('slowmo240');
   const [seedCount, setSeedCount] = useState(0);
-  const [referenceLengthCm, setReferenceLengthCm] = useState(CALIBRATION_PRESETS[0].lengthCm);
-  const [referenceScale, setReferenceScale] = useState(null);
-  const [calibrating, setCalibrating] = useState(false);
-  const [calibrationPointCount, setCalibrationPointCount] = useState(0);
 
   const videoRef = useRef(null);
   const trackerRef = useRef(createMultiTracker());
-  const calibrationPointsRef = useRef([]);
   const abortRef = useRef(null);
   const heightCm = member?.height ? Number(member.height) : null;
   const weightKg = member?.weight ? Number(member.weight) : null;
@@ -57,10 +45,6 @@ export default function LiftingUploadAnalysis({
     setErrorMsg('');
     trackerRef.current = createMultiTracker();
     setSeedCount(0);
-    calibrationPointsRef.current = [];
-    setCalibrationPointCount(0);
-    setCalibrating(false);
-    setReferenceScale(null);
     const v = videoRef.current;
     if (v) {
       v.src = URL.createObjectURL(f);
@@ -73,24 +57,6 @@ export default function LiftingUploadAnalysis({
   };
 
   // 영상 첫 프레임에서 바벨 끝/원판 탭 → 색 학습(seed).
-  const addCalibrationPoint = useCallback((point) => {
-    const next = [...calibrationPointsRef.current, point].slice(-2);
-    calibrationPointsRef.current = next;
-    setCalibrationPointCount(next.length);
-    if (next.length < 2) return;
-
-    const scale = buildReferenceScale(next, referenceLengthCm);
-    if (!scale) {
-      setErrorMsg('거리 보정 기준 길이를 다시 확인해 주세요.');
-      calibrationPointsRef.current = [];
-      setCalibrationPointCount(0);
-      return;
-    }
-    setReferenceScale(scale);
-    setCalibrating(false);
-    setErrorMsg('');
-  }, [referenceLengthCm]);
-
   const onTapVideo = (e) => {
     const v = videoRef.current;
     if (!v || !v.videoWidth || phase !== 'seeding') return;
@@ -105,10 +71,6 @@ export default function LiftingUploadAnalysis({
     const nx = (clientX - offX) / drawW;
     const ny = (clientY - offY) / drawH;
     if (nx < 0 || nx > 1 || ny < 0 || ny > 1) return;
-    if (calibrating) {
-      addCalibrationPoint({ x: nx, y: ny });
-      return;
-    }
     const ok = trackerRef.current.seed(v, nx, ny);
     if (ok) setSeedCount(trackerRef.current.pointCount());
   };
@@ -163,8 +125,7 @@ export default function LiftingUploadAnalysis({
       // 신장 기준 cm 환산(중앙값 인체비율).
       const phs = phSamples.filter(Boolean).sort((a, b) => a - b);
       const phMed = phs.length ? phs[Math.floor(phs.length / 2)] : null;
-      const scale = resolveDistanceScale({ referenceScale, personHeightRatio: phMed, heightCm });
-      const romCm = ratioToCm(sum.romRatio, scale.cmPerRatio);
+      const romCm = romToCm(sum.romRatio, phMed, heightCm);
 
       // 실측 평균 fps(슬로모 보정 후 실제 시간축).
       let avgFps = null, fpsJitter = null;
@@ -180,7 +141,7 @@ export default function LiftingUploadAnalysis({
       }
 
       // 속도 계산용 시계열(cm·실시간 ms). ratio→cm 환산 후 computeBarVelocities.
-      const cmPerRatio = scale.cmPerRatio;
+      const cmPerRatio = (phMed && heightCm) ? (heightCm / phMed) : null;
       let velo = { meanVelocity: null, peakVelocity: null, peakReason: 'no_data', romCm, durationSec: sum.durationMs / 1000 };
       if (cmPerRatio && rawPath.length >= 2) {
         const series = rawPath.map(s => ({ yCm: s.y * cmPerRatio, ts: s.ts }));
@@ -195,7 +156,7 @@ export default function LiftingUploadAnalysis({
 
       const lostRatio = analyzedFrames ? lostFrames / analyzedFrames : null;
       const conf = vbtConfidence({
-        isCalibrated: scale.isCalibrated, lostRatio,
+        isCalibrated: !!heightCm, lostRatio,
         durationSec: velo.durationSec, source: 'upload', romCm: velo.romCm,
       });
 
@@ -208,19 +169,6 @@ export default function LiftingUploadAnalysis({
 
       // 렙 자동 카운트(추적 경로의 수직 위치 왕복).
       const reps = countRepsFromSeries(rawPath, { withPending: true });
-      const repVelocity = buildRepVelocityMetrics(rawPath, {
-        cmPerRatio,
-        source: 'upload',
-        fps: avgFps || undefined,
-      });
-      const loadVelocityPoint = buildLoadVelocityPoint({
-        exerciseType,
-        weight: weightKg,
-        meanVelocity: repVelocity.summary.averageMeanVelocity ?? velo.meanVelocity,
-        repVelocity,
-        reps: repVelocity.summary.repCount || reps,
-        source: 'upload',
-      });
 
       const report = buildLiftingPayload({
         mode,
@@ -232,19 +180,14 @@ export default function LiftingUploadAnalysis({
           peakReason: velo.peakReason,
           rangeOfMotion: velo.romCm,
           meanPower: estimateMeanPower(weightKg, velo.meanVelocity),
-          velocityLoss: repVelocity.summary.velocityLossPct,
           confidenceScore: conf.score,
         },
         metadata: {
           weight: weightKg,
-          isCalibrated: scale.isCalibrated,
+          isCalibrated: !!heightCm,
           heightCm,
-          calibration: serializeDistanceScale(scale),
-          calibrationSource: scale.source,
           zone,
-          reps: repVelocity.summary.repCount || reps,
-          repVelocity,
-          loadVelocityPoint,
+          reps,
           confidenceReasons: conf.reasons,
           lostRatio: lostRatio != null ? Math.round(lostRatio * 100) / 100 : null,
         },
@@ -258,8 +201,6 @@ export default function LiftingUploadAnalysis({
             measuredAvgFps: avgFps,
             fpsJitterPct: fpsJitter,
             durationSec: Math.round((result.realDurationSec || 0) * 100) / 100,
-            calibration: serializeDistanceScale(scale),
-            calibrationSource: scale.source,
           },
           valid: !!sum,
         },
@@ -271,7 +212,7 @@ export default function LiftingUploadAnalysis({
       setErrorMsg('분석 중 오류가 발생했습니다: ' + (err?.message || err));
       setPhase('error');
     }
-  }, [member, onComplete, capture, heightCm, weightKg, mode, exerciseType, referenceScale]);
+  }, [member, onComplete, capture, heightCm, weightKg, mode, exerciseType]);
 
   const cancel = () => { abortRef.current?.abort(); };
 
@@ -289,11 +230,6 @@ export default function LiftingUploadAnalysis({
           {phase === 'seeding' && (
             <div className="absolute inset-x-0 top-2 mx-auto w-fit rounded-full bg-amber-500/90 px-3 py-1 text-[11px] font-black text-slate-950">
               바벨 끝/원판을 눌러 추적점 지정 ({seedCount}/3)
-            </div>
-          )}
-          {phase === 'seeding' && (calibrating || referenceScale) && (
-            <div className="absolute inset-x-0 top-10 mx-auto w-fit rounded-full bg-cyan-400/90 px-3 py-1 text-[11px] font-black text-slate-950">
-              {calibrating ? `거리 보정 ${calibrationPointCount}/2` : '기준물 보정 완료'}
             </div>
           )}
           {phase === 'analyzing' && (
@@ -332,29 +268,6 @@ export default function LiftingUploadAnalysis({
                   <option key={k} value={k}>{p.label}</option>
                 ))}
               </select>
-            </div>
-            <div className="rounded-xl bg-slate-900/70 border border-slate-700 p-3 space-y-2">
-              <div className="flex items-center justify-between gap-2">
-                <label className="text-[11px] font-bold text-slate-400">기준 길이(cm)</label>
-                <input
-                  type="number"
-                  min="5"
-                  max="300"
-                  step="0.5"
-                  value={referenceLengthCm}
-                  onChange={e => setReferenceLengthCm(Number(e.target.value) || 0)}
-                  className="w-20 rounded-lg bg-slate-800 border border-slate-700 px-2 py-1.5 text-center text-sm font-mono text-white"
-                />
-              </div>
-              <button
-                onClick={() => {
-                  calibrationPointsRef.current = [];
-                  setCalibrationPointCount(0);
-                  setCalibrating(v => !v);
-                }}
-                className={`w-full rounded-lg py-2 text-xs font-black ${calibrating ? 'bg-cyan-400 text-slate-950' : referenceScale ? 'bg-emerald-500 text-slate-950' : 'bg-slate-700 text-white'}`}>
-                {calibrating ? '영상에서 기준물 양끝 2점 터치' : referenceScale ? '기준물 보정 다시 하기' : '기준물 거리 보정'}
-              </button>
             </div>
             <button onClick={startAnalyze} disabled={seedCount < 1}
               className="w-full rounded-xl bg-amber-500 text-slate-950 font-black py-3 active:scale-95 disabled:opacity-50">

@@ -3,7 +3,6 @@ import {
   buildKakaoFeedTemplate,
   buildSummaryData,
   buildUnifiedReportDocument,
-  extractKeyMetrics,
   extractKakaoSummary,
   getLaymanTerm,
   MOMGAGYM_CHANNEL_POPUP_PATH,
@@ -75,16 +74,6 @@ describe('unified report utilities', () => {
     expect(summary.status).toBe('unknown');
     expect(summary.statusLabel).toBe('확인 필요');
     expect(summary.keyMetrics[0].label).toBe('최대 근력');
-  });
-
-  it('1RM 공식 편차를 통합 핵심 지표로 추출한다', () => {
-    const metrics = extractKeyMetrics({
-      mode: 'onerm',
-      metrics: { oneRM: 120 },
-      metadata: { estimateStats: { spreadKg: 6.5 } },
-    }, 'one_rm');
-
-    expect(metrics.some(metric => metric.key === 'formulaSpread' && metric.displayValue === '6.5')).toBe(true);
   });
 
   it('카카오 공유용 핵심 3개 요약과 Feed 템플릿을 만든다', () => {
