@@ -84,6 +84,37 @@ export function createBarbellTracker() {
 }
 
 /**
+ * 개선 4: 사람이 확인하는 보정 단계 — 기록된 궤적 샘플 중 일부 구간만 골라
+ * ROM·시간을 다시 계산한다. 트레이너가 결과 화면에서 구간 슬라이더로
+ * "이 부분은 드리프트/잡음이니 빼자"고 직접 트리밍할 수 있게 하는 근거함수.
+ * @param {Array<{x:number,y:number,ts:number}>} samples 원본 궤적 샘플(시간순)
+ * @param {number} tStartMs 포함할 시작 시각(ms, samples와 같은 축)
+ * @param {number} tEndMs   포함할 끝 시각(ms)
+ * @returns {{romRatio:number, durationMs:number, samples:number}|null}
+ */
+export function trimPathToRange(samples, tStartMs, tEndMs) {
+  const list = (Array.isArray(samples) ? samples : []).filter(s => s && s.ts >= tStartMs && s.ts <= tEndMs);
+  if (list.length < 2) return null;
+  let minY = Infinity, maxY = -Infinity;
+  list.forEach(s => { if (s.y < minY) minY = s.y; if (s.y > maxY) maxY = s.y; });
+  return {
+    romRatio: Math.round((maxY - minY) * 1000) / 1000,
+    durationMs: Math.round(list[list.length - 1].ts - list[0].ts),
+    samples: list.length,
+  };
+}
+
+/**
+ * 화면비율 변위 → cm, 직접 스케일(cm/비율) 사용 버전.
+ * 원판 지름 기준 보정(plates.js plateCmPerRatio) 등 사람 키가 아닌 다른
+ * 물리적 기준으로 스케일을 구했을 때 사용 — romToCm과 결과 형식은 동일.
+ */
+export function romToCmScaled(romRatio, cmPerRatio) {
+  if (!romRatio || !cmPerRatio) return null;
+  return Math.round(romRatio * cmPerRatio * 10) / 10;
+}
+
+/**
  * 화면비율 변위 → cm. personHeightRatio(머리~발목 y폭)와 실제 키로 스케일.
  */
 export function romToCm(romRatio, personHeightRatio, heightCm) {

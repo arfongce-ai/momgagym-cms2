@@ -22,7 +22,7 @@ import LiftingUploadAnalysis from './LiftingUploadAnalysis';
 import LiftingReportDashboard from './LiftingReportDashboard';
 import {
   exercisesForMode, lift1rmToExercise,
-  vbtConfidence, estimateMeanPower, buildLiftingPayload,
+  vbtConfidence, estimateMeanPower, buildLiftingPayload, detectMeasurementOutlier,
 } from '../core/lifting';
 
 const MODES = [
@@ -46,6 +46,9 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
   const [captureMode, setCaptureMode] = useState('live');
   // 측정 완료 후 표시할 리포트.
   const [report, setReport] = useState(null);
+  // 개선 6: 같은 세션 내 직전 측정(모드+종목별) — 이상치 감지용. Firestore
+  // 이력 조회 없이도 방금 전 값과 비교해 추적 오류 가능성을 바로 알려준다.
+  const sessionHistoryRef = useRef({});
 
   // ── 오버레이 겹침 수정 ──
   //  상단 모드/종목/촬영방식 선택 바의 실제 렌더 높이를 측정해 자식 카메라
@@ -135,7 +138,18 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
       const res = await save?.(payload);
       if (res && typeof res === 'object') saved = { ...payload, ...res };
     } catch (e) { /* 저장 실패해도 리포트는 표시 */ }
-    setReport({ ...saved, ...reportExtras });
+
+    // 개선 6: 같은 세션 내 직전(같은 모드+종목) 측정과 비교해 이상치 경고.
+    const histKey = `${payload.mode}:${payload.exerciseType}`;
+    const current = {
+      mode: payload.mode, exerciseType: payload.exerciseType,
+      meanVelocity: payload.metrics?.meanVelocity ?? null,
+      oneRM: payload.metrics?.oneRM ?? null,
+    };
+    const outlier = detectMeasurementOutlier(current, sessionHistoryRef.current[histKey]);
+    sessionHistoryRef.current[histKey] = current;
+
+    setReport({ ...saved, ...reportExtras, outlierWarning: outlier.isOutlier ? outlier.message : null });
     return saved;
   }, [save]);
 
@@ -183,6 +197,8 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
         durationSec: raw?.durationSec ?? null,
         crossValidation: raw?.crossValidation ?? null,   // 교차검증 요약 보존
         cogGap: raw?.cogGap ?? null,                       // 바-COG 이격(측면시)
+        calibrationSource: raw?.calibrationSource ?? null, // 개선 1: 'plate' | 'height'
+        trimmed: raw?.trimmed ?? false,                    // 개선 4: 사람이 구간 보정했는지
       },
     });
     return saveAndReport(payload, { videoBlob: raw?.videoBlob ?? null });
@@ -228,6 +244,8 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
       extra: {
         crossValidation: raw?.crossValidation ?? null,   // 교차검증 요약 보존(역도와 동일)
         cogGap: raw?.cogGap ?? null,                       // 바-COG 이격(측면시)
+        calibrationSource: raw?.calibrationSource ?? null, // 개선 1: 'plate' | 'height'
+        trimmed: raw?.trimmed ?? false,                    // 개선 4: 사람이 구간 보정했는지
       },
     });
     return saveAndReport(payload, { videoBlob: raw?.videoBlob ?? null });

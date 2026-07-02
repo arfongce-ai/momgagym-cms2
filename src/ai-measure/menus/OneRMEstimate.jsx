@@ -401,7 +401,7 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
     const nextAttempts = appendAttempt(attempts, {
       weight: result.usedWeight,
       reps: result.usedReps ?? Number(reps),
-      oneRM: result.average,
+      oneRM: result.robustAverage ?? result.average,
       success: true,
     });
     setAttempts(nextAttempts);
@@ -411,7 +411,8 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
       liftLabel: LIFTS.find(l => l.key === lift)?.label,
       weight: result.usedWeight,
       reps: result.usedReps ?? Number(reps),
-      oneRM: result.average,
+      oneRM: result.robustAverage ?? result.average,  // 개선 7: 이상치 완화 평균(근거기반)
+      simpleAverage: result.average,                   // 참고용 단순 평균(비교 가능하게 보존)
       epley: result.epley,
       brzycki: result.brzycki,
       formulas: result.formulas,
@@ -697,16 +698,21 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
             {attempts.length > 0 && <span className="text-slate-500"> · 저장 시 {attempts.length + 1}차</span>}
           </p>
           <p className="text-center font-mono font-black text-5xl text-slate-100">
-            {result.average}<span className="text-lg text-slate-500"> kg</span>
+            {result.robustAverage ?? result.average}<span className="text-lg text-slate-500"> kg</span>
           </p>
-          <p className="text-center text-[10px] text-slate-500">검증된 {result.formulas.filter(f => f.value != null).length}개 공식 평균</p>
+          <p className="text-center text-[10px] text-slate-500">
+            검증된 {result.formulas.filter(f => f.value != null).length}개 공식 · 이상치 완화 가중평균
+            {result.average !== result.robustAverage && (
+              <span className="text-slate-600"> (단순평균 {result.average}kg)</span>
+            )}
+          </p>
 
           <div className="bg-slate-800 rounded-xl p-3">
-            <p className="text-[10px] text-slate-500 mb-1.5">공식별 추정 (kg)</p>
+            <p className="text-[10px] text-slate-500 mb-1.5">공식별 추정 (kg) · 이번 반복수 기준 가중치</p>
             <div className="grid grid-cols-2 gap-1.5 text-center text-[11px]">
               {result.formulas.map(f => (
                 <div key={f.key} className="flex justify-between bg-slate-900/60 rounded px-2 py-1">
-                  <span className="text-slate-500">{f.label}</span>
+                  <span className="text-slate-500">{f.label}{f.weight != null && f.weight < 0.7 && <span className="text-amber-500/70"> ↓</span>}</span>
                   <span className="font-mono font-bold text-slate-200">
                     {f.value != null ? f.value : <span className="text-slate-600">제외</span>}
                   </span>
@@ -718,7 +724,7 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
           <div className="bg-slate-800 rounded-xl p-3">
             <p className="text-[10px] text-slate-500 mb-1.5">반복별 목표 무게 (참고 · 회원별 실제값은 측정으로 확정)</p>
             <div className="grid grid-cols-2 gap-1 text-center text-[11px]">
-              {repTargets(result.average).map(t => (
+              {repTargets(result.robustAverage ?? result.average).map(t => (
                 <div key={t.reps}>
                   <p className="text-slate-500">{t.reps}회 ({t.pct}%)</p>
                   <p className="font-mono font-bold text-amber-400">{t.weight} kg</p>

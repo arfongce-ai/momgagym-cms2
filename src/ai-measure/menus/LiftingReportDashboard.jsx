@@ -72,6 +72,24 @@ export default function LiftingReportDashboard({ report, onClose }) {
             subtitle={interp.headline}
             measuredAt={report.recordedAt}
           />
+          {report.outlierWarning && (
+            <div className="mb-2 flex gap-2 rounded-xl bg-red-500/10 border border-red-500/30 p-3">
+              <span className="text-red-400">⚠</span>
+              <p className="text-[12px] text-red-200 leading-snug">{report.outlierWarning}</p>
+            </div>
+          )}
+          {report.calibrationSource && (
+            <p className="-mt-2 mb-2 text-center">
+              <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${report.calibrationSource === 'plate' ? 'bg-emerald-500/20 text-emerald-300' : 'bg-slate-700 text-slate-400'}`}>
+                {report.calibrationSource === 'plate' ? '⦿ 원판 지름 기준 보정(정밀)' : '키 기준 보정(근사)'}
+              </span>
+              {report.trimmed && (
+                <span className="ml-1.5 text-[9px] font-bold px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300">
+                  ✂ 구간 보정됨
+                </span>
+              )}
+            </p>
+          )}
 
           {/* 핵심 수치 */}
           <UnifiedReportSection title="핵심 수치">

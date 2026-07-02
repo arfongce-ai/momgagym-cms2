@@ -144,6 +144,32 @@ function median(arr) {
 }
 
 /**
+ * 다음 프레임 위치 예측(개선 5) — 등속(1차) 대신 등가속도(2차) 외삽.
+ *  - v1 = pos - prev (최근 속도), v0 = prev - prev2 (직전 속도)
+ *  - a = v1 - v0 (가속도) → pred = pos + v1 + 0.5*a
+ *  - prev2 가 없으면(궤적 시작 직후) 등속(v1)만 사용 — 기존 동작과 동일.
+ *  - 역도 인상/용상의 급가속 전환 구간에서 등속 예측은 검색창을 자주
+ *    벗어나므로, 가속도까지 반영하면 그 구간의 추적 성공률이 올라간다.
+ *  - 폭주 방지: 외삽 변위가 SEARCH_RADIUS 를 넘지 않도록 클램프한다
+ *    (엉뚱하게 먼 곳을 예측 중심으로 잡아 추적을 완전히 잃지 않도록).
+ */
+export function predictNextPos(pos, prev, prev2) {
+  if (!prev) return pos;
+  const v1x = pos.x - prev.x, v1y = pos.y - prev.y;
+  let ax = 0, ay = 0;
+  if (prev2) {
+    const v0x = prev.x - prev2.x, v0y = prev.y - prev2.y;
+    ax = v1x - v0x; ay = v1y - v0y;
+  }
+  let dx = v1x + 0.5 * ax;
+  let dy = v1y + 0.5 * ay;
+  const mag = Math.hypot(dx, dy);
+  const cap = SEARCH_RADIUS * 0.85; // 검색창 반경을 넘지 않게 제한
+  if (mag > cap && mag > 0) { const k = cap / mag; dx *= k; dy *= k; }
+  return { x: pos.x + dx, y: pos.y + dy };
+}
+
+/**
  * 다중점 추적기 — 최대 3점을 동시에 추적하고, 튄 점을 걸러 중앙값으로 합친다.
  * 오류 최소화 원리:
  *  - 각 점을 따로 색 매칭 추적.
@@ -185,7 +211,7 @@ export function createMultiTracker() {
       c.drawImage(video, 0, 0, w, h);
       const col = sampleColor(c, w, h, nx, ny, SEED_RADIUS);
       if (!col) return false;
-      points.push({ target: col, origColor: col, pos: { x: nx, y: ny }, prev: null, ema: { x: nx, y: ny }, alive: true });
+      points.push({ target: col, origColor: col, pos: { x: nx, y: ny }, prev: null, prev2: null, ema: { x: nx, y: ny }, alive: true });
       return true;
     },
 
@@ -202,11 +228,10 @@ export function createMultiTracker() {
 
       // 1) 각 점 추적 (직전 속도로 검색창 중심을 미리 이동 → 빠른 움직임 대응)
       const found = points.map(p => {
-        const pred = p.prev
-          ? { x: p.pos.x + (p.pos.x - p.prev.x), y: p.pos.y + (p.pos.y - p.prev.y) }
-          : p.pos;
+        const pred = predictNextPos(p.pos, p.prev, p.prev2);
         const r = trackOne(c, w, h, p.pos, p.target, pred, p.origColor);
         if (r) {
+          p.prev2 = p.prev;
           p.prev = p.pos;
           p.pos = r;
           p.target = blendTargetColor(p.target, sampleColor(c, w, h, r.x, r.y, SEED_RADIUS * 0.8));

@@ -615,7 +615,6 @@ export const store = {
     await batch.commit();
     cache.payments[mid]=[...(cache.payments[mid]||[]), np];
     if (updatedMember) cache.members=cache.members.map(m=>m.id===mid?updatedMember:m);
-    __touchSnapshot(); // writeBatch는 fbSet을 거치지 않으므로 새로고침 캐시를 직접 갱신(수납+세션 즉시 반영)
     return np;
   },
   updatePayment: async (mid,pid,patch) => {

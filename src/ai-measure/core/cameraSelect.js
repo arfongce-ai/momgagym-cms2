@@ -91,6 +91,57 @@ export async function refocusCameraStream(stream, point = { x: 0.5, y: 0.5 }) {
   return improveCameraFocus(stream, point);
 }
 
+/**
+ * 촬영 시작 시 노출·초점·화이트밸런스를 "지금 값"으로 고정한다(개선 3).
+ *  - improveCameraFocus()는 반대로 continuous(자동)로 맞춰 프레이밍 단계에서
+ *    보기 좋게 하는 용도. 반면 기록(측정) 중에는 자동 노출/화밸이 계속
+ *    바뀌면 색 추적기의 학습색과 실제 픽셀 색이 어긋나 드리프트의 한
+ *    원인이 된다 — 그래서 기록 시작 순간 값을 고정(manual)해 흔들림을 줄인다.
+ *  - 기기/브라우저가 manual 모드를 지원하지 않으면(iOS Safari 등 다수)
+ *    조용히 실패하고 false 를 반환 — 이 경우 화면에 "고정 미지원" 안내로
+ *    수동 팁(밝기 잠금)을 보여줄 수 있다.
+ * @returns {Promise<{exposure:boolean, focus:boolean, whiteBalance:boolean}>}
+ */
+export async function lockCameraCapture(stream) {
+  const track = stream?.getVideoTracks?.()[0];
+  const none = { exposure: false, focus: false, whiteBalance: false };
+  if (!track?.applyConstraints || !track.getCapabilities) return none;
+
+  const capabilities = track.getCapabilities() || {};
+  const settings = track.getSettings?.() || {};
+  const advanced = [];
+  const result = { ...none };
+
+  if (supportsValue(capabilities, 'exposureMode', 'manual')) {
+    const c = { exposureMode: 'manual' };
+    if (Number.isFinite(settings.exposureTime)) c.exposureTime = settings.exposureTime;
+    advanced.push(c);
+    result.exposure = true;
+  }
+  if (supportsValue(capabilities, 'focusMode', 'manual')) {
+    const c = { focusMode: 'manual' };
+    if (Number.isFinite(settings.focusDistance)) c.focusDistance = settings.focusDistance;
+    advanced.push(c);
+    result.focus = true;
+  }
+  if (supportsValue(capabilities, 'whiteBalanceMode', 'manual')) {
+    const c = { whiteBalanceMode: 'manual' };
+    if (Number.isFinite(settings.colorTemperature)) c.colorTemperature = settings.colorTemperature;
+    advanced.push(c);
+    result.whiteBalance = true;
+  }
+
+  if (!advanced.length) return none;
+  const applied = await applyAdvancedConstraints(track, advanced);
+  if (!applied) return none;
+  return result;
+}
+
+/** 세트 종료 후 다시 자동(continuous)으로 되돌린다(다음 프레이밍을 편하게). */
+export async function unlockCameraCapture(stream) {
+  return improveCameraFocus(stream);
+}
+
 /** Estimate the rear main camera deviceId after permission is available. */
 export async function findMainBackCameraId() {
   assertMediaDevices();

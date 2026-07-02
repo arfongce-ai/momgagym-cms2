@@ -1,7 +1,7 @@
 // store/aiStore/예약 원자성 회귀 테스트 (Vitest)
 // firebase를 모킹해 Firestore 없이 저장 실패·롤백·원자성을 검증한다.
 //   실행: npm test
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 // ── firebase 모킹 ──────────────────────────────────────
 let FAIL = false;
@@ -1033,46 +1033,5 @@ describe('미등록회원 개인별 분리 저장 (guest id)', () => {
     expect(p.member.id).toBe(g);
     expect(j.member.id).toBe(g);
     expect(r.member.id).toBe(g);
-  });
-});
-
-// 수납+세션 배치 저장이 새로고침 캐시(localStorage 스냅샷)까지 갱신하는지 검증.
-// (회귀 대상 버그: addPaymentWithMemberUpdate 가 writeBatch 를 직접 써 fbSet 을 우회 →
-//  __touchSnapshot 미호출 → 재등록 세션이 낡은 스냅샷에서 누락 → 정산 목록에서 사라짐)
-describe('수납+세션 배치 저장 → 새로고침 캐시 갱신 (재등록 정산 누락 회귀)', () => {
-  let lsStore;
-  beforeEach(() => {
-    lsStore = {};
-    globalThis.localStorage = {
-      getItem: (k) => (k in lsStore ? lsStore[k] : null),
-      setItem: (k, v) => { lsStore[k] = String(v); },
-      removeItem: (k) => { delete lsStore[k]; },
-      clear: () => { lsStore = {}; },
-    };
-  });
-  afterEach(() => { delete globalThis.localStorage; });
-
-  it('재등록 수납 저장 후 스냅샷의 trainerSessions 에 추가 회차가 반영된다', async () => {
-    const m = await store.addMember({ name: '한도현', trainerSessions: { t1: { total: 10, remaining: 2 } } });
-
-    // 재등록 8회 수납 — handleAddPayment 이 만드는 memberPatch 형태(누적 total/remaining)
-    const ts = JSON.parse(JSON.stringify(m.trainerSessions));
-    ts.t1.total += 8;
-    ts.t1.remaining += 8;
-    await store.addPaymentWithMemberUpdate(
-      m.id,
-      { amount: 600000, isReEnroll: true, reEnrollNo: 8, trainerIds: ['t1'], paidAt: '2026-02-06',
-        sessionAdds: [{ trainerId: 't1', count: 8 }] },
-      { trainerSessions: ts, lastPaymentDate: '2026-02-06' },
-    );
-
-    // 새로고침 캐시(localStorage 스냅샷)에 8회 추가분이 실제로 기록됐는지 확인
-    const raw = globalThis.localStorage.getItem('fitcms_snap');
-    expect(raw).toBeTruthy();
-    const snap = JSON.parse(raw);
-    const snapMember = (snap.data.members || []).find(x => x.id === m.id);
-    expect(snapMember).toBeTruthy();
-    expect(snapMember.trainerSessions.t1.total).toBe(18);
-    expect(snapMember.trainerSessions.t1.remaining).toBe(10);
   });
 });

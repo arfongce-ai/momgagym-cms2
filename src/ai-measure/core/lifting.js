@@ -13,6 +13,15 @@
 //      exerciseType 을 실어 일관성·읽기효율을 유지(점프/보행/자세/ROM과 동일).
 // ════════════════════════════════════════════════════════════════════════
 
+/** 배열의 중앙값(빈 배열은 null). 여러 측정 모듈이 공유하는 작은 통계 유틸. */
+export function median(arr) {
+  const list = Array.isArray(arr) ? arr.filter(v => Number.isFinite(v)) : [];
+  if (!list.length) return null;
+  const s = [...list].sort((a, b) => a - b);
+  const m = Math.floor(s.length / 2);
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+}
+
 /**
  * 운동 종목 표준 레지스트리.
  *  - key:   Firestore 저장·집계용 표준 값(영문 snake). 절대 변경 금지(과거 데이터 호환).
@@ -404,6 +413,43 @@ export function vbtConfidence(ctx = {}) {
 
   score = Math.max(0, Math.min(1, Math.round(score * 100) / 100));
   return { score, reasons };
+}
+
+/**
+ * 개선 6: 같은 세션 내 직전 측정 대비 이상치 감지.
+ *  Firestore 이력 조회 없이도(연결 미확정 환경 등) 당장 도움이 되도록,
+ *  같은 트레이너 세션에서 방금 전 같은 종목·모드로 잰 값과 비교한다.
+ *  값이 극단적으로 벗어나면(추적 오류 가능성) 저장은 막지 않되 경고만 남긴다
+ *  (측정 정직성 — 게이트가 아니라 advisory, cross-validation과 동일 철학).
+ * @param {{mode:string, exerciseType:string, meanVelocity?:number, oneRM?:number}} current
+ * @param {{mode:string, exerciseType:string, meanVelocity?:number, oneRM?:number}|null} previous
+ * @param {{ratioTol?:number}} [opts] ratioTol: 이 배율 이상/이하로 벗어나면 이상치(기본 2배)
+ * @returns {{isOutlier:boolean, message:string|null, field:string|null, deltaRatio:number|null}}
+ */
+export function detectMeasurementOutlier(current = {}, previous, opts = {}) {
+  const none = { isOutlier: false, message: null, field: null, deltaRatio: null };
+  if (!previous) return none;
+  if (previous.mode !== current.mode || previous.exerciseType !== current.exerciseType) return none;
+  const ratioTol = opts.ratioTol ?? 2.0;
+
+  const field = current.mode === 'onerm' ? 'oneRM' : 'meanVelocity';
+  const label = current.mode === 'onerm' ? '추정 1RM' : '평균속도';
+  const cur = Number(current[field]);
+  const prev = Number(previous[field]);
+  if (!Number.isFinite(cur) || !Number.isFinite(prev) || cur <= 0 || prev <= 0) return none;
+
+  const ratio = cur / prev;
+  const deltaRatio = Math.round(ratio * 100) / 100;
+  if (ratio >= ratioTol || ratio <= 1 / ratioTol) {
+    const dir = ratio > 1 ? '높습니다' : '낮습니다';
+    return {
+      isOutlier: true,
+      field,
+      deltaRatio,
+      message: `이번 ${label}가 방금 전 같은 종목 측정보다 ${deltaRatio}배 ${dir}. 추적 오류일 수 있으니 확인해 주세요.`,
+    };
+  }
+  return none;
 }
 
 /**
