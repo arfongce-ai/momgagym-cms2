@@ -535,36 +535,23 @@ export function computeSessionSettlement({ trainers, members, schedules, payment
   Object.entries(allConsumed).forEach(([tid, byMember]) => {
     Object.entries(byMember).forEach(([mid, list]) => {
       const lots = memberTrainerLots[mid]?.[tid] || [];
+      // ── 회차 매핑(단일 기준: 날짜순 + 잔여 앵커) ──────────────────────
+      // 소진은 항상 시간순이다. 그 회원·트레이너의 출석/노쇼 수업 전체를 날짜순 정렬하면
+      // 그 순서가 곧 누적 소진 인덱스다. lot 경계(세션 시작일 반영)에 이 인덱스를 대응시켜
+      // 회차를 가른다. 스케줄에 박힌 consumedIndexAtBooking/sessionAtBooking 은 등록분마다
+      // 리셋되거나 세션 시작일 변경을 반영 못 해 어긋나므로 신뢰하지 않는다(마이그레이션 불필요).
+      //  · 앵커: 일부 초기 회차가 스케줄 없이 차감됐을 수 있으므로, "이미 소진한 총수"
+      //    (= total − remaining)를 기준으로 리스트의 마지막이 그 −1 인덱스가 되게 맞춘다.
+      //    스케줄이 모두 존재하면 base=0 이라 순수 날짜순과 동일하다.
       const member = memberMap[mid];
       const totalReg = Number(member?.trainerSessions?.[tid]?.total);
       const remainingNow = Number(member?.trainerSessions?.[tid]?.remaining);
-      // 스탬프(consumedIndexAtBooking)도 sessionAtBooking(글로벌 잔여)도 없는 수업 수만큼
-      // 잔여 기준 역산이 필요 → 그 수업들만 따로 날짜순 인덱스를 매긴다.
       const consumedSoFar = (Number.isFinite(totalReg) && Number.isFinite(remainingNow))
         ? Math.max(0, totalReg - remainingNow) : list.length;
-      const needInfer = list.filter(s => {
-        const st = s.consumedIndexAtBooking, ab = s.sessionAtBooking;
-        const hasStamp = st !== undefined && st !== null && st !== '';
-        const hasAb = ab !== undefined && ab !== null && ab !== '' && Number(ab) > 0;
-        return !hasStamp && !hasAb;
-      });
-      const inferBase = consumedSoFar - needInfer.length;
-      let inferSeq = 0;
-      list.forEach((s) => {
-        const st = s.consumedIndexAtBooking, ab = s.sessionAtBooking;
-        const hasStamp = st !== undefined && st !== null && st !== '';
-        const hasAb = ab !== undefined && ab !== null && ab !== '' && Number(ab) > 0;
-        let consumedIndex;
-        if (hasStamp) {
-          consumedIndex = Number(st);                              // (A) 예약 시 기록값 최우선
-        } else if (hasAb && Number.isFinite(totalReg)) {
-          consumedIndex = totalReg - Number(ab);                   // (B) 글로벌 잔여 → 인덱스
-        } else {
-          consumedIndex = inferBase + inferSeq;                    // (C) 잔여 기준 날짜순 역산
-          inferSeq += 1;
-        }
-        if (!inMonth(s.date)) return;                              // 인덱스는 전체 기준, 집계는 이번 달만
-        const lot = lotForConsumedIndex(lots, consumedIndex);
+      const base = Math.max(0, consumedSoFar - list.length); // 리스트 첫 수업의 누적 인덱스
+      list.forEach((s, seqIdx) => {
+        if (!inMonth(s.date)) return;            // 인덱스는 전체 순서 기준, 집계는 이번 달만
+        const lot = lotForConsumedIndex(lots, base + seqIdx);
         const key = lot?.id || '__aggregate__';
         attended[tid] = attended[tid] || {};
         attended[tid][mid] = (attended[tid][mid] || 0) + 1;
