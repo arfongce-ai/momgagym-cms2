@@ -5,11 +5,14 @@
 //  - 측정 시작 → 한 렙 동작 → 종료 시: 수직 이동거리(키 환산 m) ÷ 시간 = 평균속도.
 import { useRef, useState, useEffect, useCallback } from 'react';
 import { usePoseEngine } from '../core/usePoseEngine';
-import { personHeightRatio, romToCm } from '../core/barbell';
+import { personHeightRatio, romToCm, barbellPoint, createBarbellTracker } from '../core/barbell';
 import { createMultiTracker } from '../core/endcapTracker';
 import { calcVBT } from '../core/performance';
-import { detectPlatesFromVideo, suggestSidePlates, totalWeight } from '../core/plates';
+import { detectPlatesFromVideo, suggestSidePlates, totalWeight, createPlateBlobTracker } from '../core/plates';
 import { exerciseLabel as exerciseLabelLocal, snapWeight, stepWeight } from '../core/lifting';
+import { fuseTrackingCandidates, summarizeCrossValidation } from '../core/trackFusion';
+import { estimateBodyCOG, barCogHorizontalGap } from '../core/bodyCog';
+import { offsetToCm } from '../core/geometry';
 import { saveVideoToPhone, pickRecorderMime } from '../core/recordSink';
 import { drawLiftingDataHud, drawBarPathToRecord } from '../core/recordingOverlay';
 import { createRepCounter } from '../core/repCounter';
@@ -32,6 +35,16 @@ const ZONE_COLOR = {
 export default function VbtMeasure({ member, onSave, onBack, exerciseType, embedded = false, autoStartSignal = 0, topOffset = 0 }) {
   const canvasRef = useRef(null);
   const capRef = useRef(createMultiTracker());
+  // ── 다중 신호 융합(LiftingMeasure와 동일 구조 — 측정 정직성/신뢰성 일관화) ──
+  //  capRef          = 사용자가 탭한 색(엔드캡/원판) 추적(UI 점 개수/신뢰도 표시 겸용)
+  //  plateTrackerRef = 원판 색 블롭 연속 추적(색 인식 후 자동 시드)
+  //  fusedRef        = color/skeleton/plate 세 신호를 매 프레임 융합한 최종 궤적
+  //                    (ROM·시간·속도는 전부 이 융합 궤적에서 산출 → 가려져도 안 끊김)
+  const plateTrackerRef = useRef(createPlateBlobTracker());
+  const fusedRef = useRef(createBarbellTracker());
+  const crossValFramesRef = useRef([]);     // 세트 동안 프레임별 융합 소스/일치도 로그
+  const cogRef = useRef({ available: false, point: null });   // 최신 COG(측면 촬영시만)
+  const barCogGapSamplesRef = useRef([]);   // 세트 동안 바-COG 수평 이격(cm) 샘플
   const phRef = useRef(null);
   const phSamplesRef = useRef([]);
   const frameStatsRef = useRef({ total: 0, lost: 0 });
@@ -71,6 +84,7 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
   const [weightSource, setWeightSource] = useState('dial');
   const [detected, setDetected] = useState([]);
   const [framing, setFraming] = useState({ level: 'bad', message: '카메라 준비 중…' });
+  const [cogActive, setCogActive] = useState(false);   // 측면 인식으로 COG 산출 중인지(칩)
 
   const handleResult = useCallback((lms, ts, video) => {
     const canvas = canvasRef.current;
@@ -91,6 +105,11 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
       setFraming({ level: fr.level, message: fr.message });
     }
 
+    // ── 전신 무게중심(COG) 자동 인식 — 측면 촬영일 때만 ──
+    const cog = estimateBodyCOG(lms, fr.orientation);
+    cogRef.current = cog;
+    setCogActive(prev => (prev !== cog.available ? cog.available : prev));
+
     const r = roiRef.current;
     ctx.save();
     ctx.strokeStyle = 'rgba(245,158,11,0.95)';
@@ -102,24 +121,52 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
     ctx.fillText('원판 색 인식', r.x * cw + 6, r.y * ch - 8);
     ctx.restore();
 
+    // COG 마커(측면 인식시에만 그려짐 — 정면/불명확하면 자동으로 사라짐).
+    if (cog.available && cog.point) {
+      ctx.save();
+      ctx.fillStyle = 'rgba(217,70,239,0.9)';
+      ctx.beginPath(); ctx.arc(cog.point.x * cw, cog.point.y * ch, 9, 0, Math.PI * 2); ctx.fill();
+      ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+      ctx.beginPath(); ctx.arc(cog.point.x * cw, cog.point.y * ch, 9, 0, Math.PI * 2); ctx.stroke();
+      ctx.fillStyle = 'rgba(217,70,239,0.95)';
+      ctx.font = 'bold 11px sans-serif';
+      ctx.fillText('COG', cog.point.x * cw + 12, cog.point.y * ch + 4);
+      ctx.restore();
+    }
+
     const cap = capRef.current;
+    const skeletonPoint = barbellPoint(lms);
+    const plateColorPoint = plateTrackerRef.current.isSeeded() ? plateTrackerRef.current.update(video) : null;
+
     if (cap.isSeeded()) {
       const p = cap.update(video);
-      if (p && recordingRef.current) {
-        cap.push(p, ts);
-        repCounterRef.current.push(p.y);
+      const colorActive = cap.activeCount();
+      // 세 신호(색/스켈레톤/원판색) 융합 — 한 신호가 가려져도 궤적이 끊기지 않는다.
+      const fused = fuseTrackingCandidates({ colorPoint: p, colorActive, skeletonPoint, plateColorPoint });
+
+      if (fused.point && recordingRef.current) {
+        fusedRef.current.push(fused.point, ts);
+        crossValFramesRef.current.push({ source: fused.source, agreement: fused.agreement, usedFallback: fused.usedFallback });
+        // 바-COG 수평 이격(측면 인식시에만) — 정직성: COG 없으면 샘플을 남기지 않는다.
+        if (cog.available && cog.point) {
+          const gapRatio = barCogHorizontalGap(fused.point, cog.point);
+          const gapCm = offsetToCm(gapRatio, phRef.current, Number(heightCm) || null);
+          barCogGapSamplesRef.current.push({ gapRatio, gapCm });
+        }
+        repCounterRef.current.push(fused.point.y);
         const shown = repCounterRef.current.countWithPending();
         setLiveReps(prev => (prev !== shown ? shown : prev));
       }
-      const act = cap.activeCount();
-      if (act !== activePts) setActivePts(act);
+      if (colorActive !== activePts) setActivePts(colorActive);
       if (recordingRef.current) {
         frameStatsRef.current.total += 1;
-        if (act === 0) frameStatsRef.current.lost += 1;
-        const live = cap.summary();
+        if (colorActive === 0) frameStatsRef.current.lost += 1;
+        // 번인용 실시간 값: 융합 궤적 → cm/평균속도(키 보정 가능 시).
+        const live = fusedRef.current.summary();
         if (live) {
           const H = Number(heightCm) || null;
-          const cm = romToCm(live.romRatio, phRef.current, H);
+          const ph = phRef.current;
+          const cm = romToCm(live.romRatio, ph, H);
           const sec = live.durationMs / 1000;
           liveHudRef.current = {
             romCm: cm,
@@ -128,7 +175,7 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
         }
       }
 
-      const path = cap.path();
+      const path = fusedRef.current.path();
       ctx.save();
       ctx.strokeStyle = 'rgba(34,211,238,0.95)';
       ctx.lineWidth = 6;
@@ -147,11 +194,22 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
         ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(255,255,255,0.8)';
         ctx.beginPath(); ctx.arc(pt.ema.x * cw, pt.ema.y * ch, 11, 0, Math.PI * 2); ctx.stroke();
       });
-      if (p) {
-        ctx.fillStyle = '#f59e0b';
-        ctx.beginPath(); ctx.arc(p.x * cw, p.y * ch, 16, 0, Math.PI * 2); ctx.fill();
-        ctx.lineWidth = 3; ctx.strokeStyle = '#fff';
-        ctx.beginPath(); ctx.arc(p.x * cw, p.y * ch, 16, 0, Math.PI * 2); ctx.stroke();
+      if (fused.point) {
+        // 색 추적 살아있으면 주황. 스켈레톤/원판색으로 대체된 프레임은 붉은 테두리로
+        // 방식이 바뀌었음을 드러낸다(측정 정직성 — 정밀도 다른 방법을 똑같이 보이면 안 됨).
+        ctx.fillStyle = fused.usedFallback ? '#fb923c' : '#f59e0b';
+        ctx.beginPath(); ctx.arc(fused.point.x * cw, fused.point.y * ch, 16, 0, Math.PI * 2); ctx.fill();
+        ctx.lineWidth = 3; ctx.strokeStyle = fused.usedFallback ? '#ef4444' : '#fff';
+        ctx.beginPath(); ctx.arc(fused.point.x * cw, fused.point.y * ch, 16, 0, Math.PI * 2); ctx.stroke();
+        if (cog.available && cog.point && recordingRef.current) {
+          ctx.setLineDash([5, 5]);
+          ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(217,70,239,0.6)';
+          ctx.beginPath();
+          ctx.moveTo(fused.point.x * cw, fused.point.y * ch);
+          ctx.lineTo(cog.point.x * cw, fused.point.y * ch);
+          ctx.stroke();
+          ctx.setLineDash([]);
+        }
       }
       ctx.restore();
     }
@@ -216,6 +274,11 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
     seededRef.current = false; setSeeded(false);
     setPtCount(0); setActivePts(0);
     capRef.current.clear();
+    plateTrackerRef.current.clear();
+    fusedRef.current.reset();
+    crossValFramesRef.current = [];
+    barCogGapSamplesRef.current = [];
+    cogRef.current = { available: false, point: null };
     setVideoBlob(null); videoBlobRef.current = null; setVideoSavedMsg('');
     start();
   }, [start]);
@@ -238,7 +301,7 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
       ctx.fillStyle = '#000';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       if (video && video.videoWidth) ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-      drawBarPathToRecord(ctx, capRef.current.path(), canvas.width, canvas.height);
+      drawBarPathToRecord(ctx, fusedRef.current.path(), canvas.width, canvas.height);
       const elapsedSec = recordingRef.current ? (performance.now() - recordStartRef.current) / 1000 : null;
       drawLiftingDataHud(ctx, canvas.width, canvas.height, {
         romCm: liveHudRef.current.romCm,
@@ -289,6 +352,11 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
     if (detectedRoi) roiRef.current = detectedRoi;
     setDetected(dominant);
     applyPlateWeight({ ...plate, sidePlates: suggestSidePlates(dominant) }, 'plate-color');
+    // 원판 색을 인식하면 그 색을 매 프레임 계속 추적하는 블롭 트래커도 시드
+    // — 색/스켈레톤 추적과 융합되는 3번째 신호가 된다(LiftingMeasure와 동일).
+    const top = dominant[0];
+    const roi = detectedRoi || roiRef.current;
+    if (top?.tag) plateTrackerRef.current.seed(top.tag, roi.x + roi.w / 2, roi.y + roi.h / 2);
   }, [applyPlateWeight, plate, videoRef]);
 
   useEffect(() => {
@@ -318,6 +386,47 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
     }
   };
 
+  // 세트 종료 시 융합 궤적·교차검증·COG 이격을 한 번에 계산하는 공통 헬퍼(LiftingMeasure와 동일 패턴).
+  const computeResult = useCallback(() => {
+    const sum = fusedRef.current.summary();
+    if (!sum) return null;
+    const fs = frameStatsRef.current;
+    const lostRatio = fs.total ? fs.lost / fs.total : 1;
+    const H = Number(heightCm) || null;
+    const phs = phSamplesRef.current.filter(Boolean).sort((a, b) => a - b);
+    const phMed = phs.length ? phs[Math.floor(phs.length / 2)] : phRef.current;
+    const cm = romToCm(sum.romRatio, phMed, H);
+    if (!cm) return { error: 'no_height' };
+    const distanceM = cm / 100;
+    const timeSec = sum.durationMs / 1000;
+    const vbt = calcVBT(distanceM, timeSec);
+    if (!vbt) return null;
+    const reps = repCounterRef.current.countWithPending();
+    const crossValidation = summarizeCrossValidation(crossValFramesRef.current);
+    const gaps = barCogGapSamplesRef.current;
+    let cogGap = null;
+    if (gaps.length) {
+      const cmVals = gaps.map(g => g.gapCm).filter(v => Number.isFinite(v)).sort((a, b) => a - b);
+      const ratioVals = gaps.map(g => g.gapRatio).filter(v => Number.isFinite(v)).sort((a, b) => a - b);
+      const medCm = cmVals.length ? cmVals[Math.floor(cmVals.length / 2)] : null;
+      const medRatio = ratioVals.length ? ratioVals[Math.floor(ratioVals.length / 2)] : null;
+      const maxCm = cmVals.length ? cmVals[cmVals.length - 1] : null;
+      cogGap = {
+        available: cogRef.current?.available === true,
+        medianCm: medCm != null ? Math.round(medCm * 10) / 10 : null,
+        maxCm: maxCm != null ? Math.round(maxCm * 10) / 10 : null,
+        medianRatio: medRatio != null ? Math.round(medRatio * 1000) / 1000 : null,
+        samples: gaps.length,
+      };
+    }
+    return {
+      ...vbt,
+      distanceM: Math.round(distanceM * 1000) / 1000,
+      timeSec: Math.round(timeSec * 100) / 100,
+      romCm: cm, reps, lostRatio, crossValidation, cogGap,
+    };
+  }, [heightCm]);
+
   const finishRecord = (autoLimited = false) => {
     if (!recordingRef.current) return;
     clearMaxRecordTimer();
@@ -328,24 +437,13 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
     } else {
       stopCompose();
     }
-    const sum = capRef.current.summary();
-    if (!sum) { alert('기록된 움직임이 부족합니다. 다시 측정하세요.'); return; }
-    const fs = frameStatsRef.current;
-    const lostRatio = fs.total ? fs.lost / fs.total : 1;
-    if (lostRatio > 0.4) {
-      alert('추적이 자주 끊겼습니다(인식 ' + Math.round((1 - lostRatio) * 100) + '%). 끝이 보이는 지점을 2~3곳 눌러 다시 측정하면 정확합니다.');
+    const res = computeResult();
+    if (!res) { alert('기록된 움직임이 부족합니다. 다시 측정하세요.'); return; }
+    if (res.error === 'no_height') { alert('키(cm)를 입력하고 전신이 보이게 측정하세요.'); return; }
+    if (res.lostRatio > 0.4) {
+      alert('추적이 자주 끊겼습니다(인식 ' + Math.round((1 - res.lostRatio) * 100) + '%). 끝이 보이는 지점을 2~3곳 눌러 다시 측정하면 정확합니다.');
     }
-    const H = Number(heightCm) || null;
-    const phs = phSamplesRef.current.filter(Boolean).sort((a, b) => a - b);
-    const phMed = phs.length ? phs[Math.floor(phs.length / 2)] : phRef.current;
-    const cm = romToCm(sum.romRatio, phMed, H);
-    if (!cm) { alert('키(cm)를 입력하고 전신이 보이게 측정하세요.'); return; }
-    const distanceM = cm / 100;
-    const timeSec = sum.durationMs / 1000;
-    const vbt = calcVBT(distanceM, timeSec);
-    if (!vbt) { alert('측정값이 부족합니다. 다시 시도하세요.'); return; }
-    const reps = repCounterRef.current.countWithPending();
-    setResult({ ...vbt, distanceM: Math.round(distanceM * 1000) / 1000, timeSec: Math.round(timeSec * 100) / 100, romCm: cm, reps });
+    setResult(res);
     if (autoLimited) setVideoSavedMsg('최대 60초 녹화가 완료되었습니다.');
   };
 
@@ -355,6 +453,9 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
     if (!recording) {
       runStartCountdown(() => {
         capRef.current.reset();
+        fusedRef.current.reset();
+        crossValFramesRef.current = [];
+        barCogGapSamplesRef.current = [];
         phSamplesRef.current = [];
         frameStatsRef.current = { total: 0, lost: 0 };
         liveHudRef.current = { romCm: null, meanVelocity: null };
@@ -395,37 +496,24 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
       } else {
         stopCompose();
       }
-      const sum = capRef.current.summary();
-      if (!sum) { alert('기록된 움직임이 부족합니다. 다시 측정하세요.'); return; }
-      const fs = frameStatsRef.current;
-      const lostRatio = fs.total ? fs.lost / fs.total : 1;
-      if (lostRatio > 0.4) {
-        alert('추적이 자주 끊겼습니다(인식 ' + Math.round((1 - lostRatio) * 100) + '%). 더 잘 보이는 지점을 2~3곳 눌러 다시 측정하면 정확합니다.');
+      const res = computeResult();
+      if (!res) { alert('기록된 움직임이 부족합니다. 다시 측정하세요.'); return; }
+      if (res.error === 'no_height') { alert('키(cm)를 입력·적용한 뒤, 사람 전신이 보이게 측정하세요.'); return; }
+      if (res.lostRatio > 0.4) {
+        alert('추적이 자주 끊겼습니다(인식 ' + Math.round((1 - res.lostRatio) * 100) + '%). 더 잘 보이는 지점을 2~3곳 눌러 다시 측정하면 정확합니다.');
       }
-      const H = Number(heightCm) || null;
-      const phs = phSamplesRef.current.filter(Boolean).sort((a, b) => a - b);
-      const phMed = phs.length ? phs[Math.floor(phs.length / 2)] : phRef.current;
-      const cm = romToCm(sum.romRatio, phMed, H);
-      if (!cm) { alert('키(cm)를 입력·적용한 뒤, 사람 전신이 보이게 측정하세요.'); return; }
-      const distanceM = cm / 100;
-      const timeSec = sum.durationMs / 1000;
-      const vbt = calcVBT(distanceM, timeSec);
-      if (!vbt) { alert('측정값이 부족합니다. 다시 시도하세요.'); return; }
-      const reps = repCounterRef.current.countWithPending();
-      setResult({ ...vbt, distanceM: Math.round(distanceM * 1000) / 1000, timeSec: Math.round(timeSec * 100) / 100, romCm: cm, reps });
+      setResult(res);
     }
   };
 
   const save = () => {
     if (!result) return;
     const weight = snapWeight(dialWeight) || totalWeight(plate.sidePlates, plate.barKg).total;
-    const fs = frameStatsRef.current;
-    const lostRatio = fs.total > 0 ? fs.lost / fs.total : null;
     onSave?.({
       type: 'vbt',
       exerciseType: exerciseType || null,
       source: 'live',          // 실시간 — peakVelocity 미산출(허브 게이트)
-      lostRatio,
+      lostRatio: result.lostRatio ?? null,
       distance: result.distanceM,
       time: result.timeSec,
       romCm: result.romCm ?? null,
@@ -437,6 +525,8 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
       barKg: plate.barKg,
       sidePlates: plate.sidePlates,
       weightSource,
+      crossValidation: result.crossValidation ?? null,  // 다중 신호 교차검증 요약
+      cogGap: result.cogGap ?? null,                     // 바-COG 수평 이격(측면시)
       videoBlob: videoBlobRef.current || videoBlob || null,
     });
   };
@@ -467,6 +557,11 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
         <span className={`rounded-full px-3 py-1 text-[11px] font-bold ${framing.level === 'good' ? 'bg-emerald-500/85 text-slate-950' : framing.level === 'warn' ? 'bg-amber-500/85 text-slate-950' : 'bg-red-500/85 text-white'}`}>
           {framing.level === 'good' ? '✓ ' : '⚠ '}{framing.message}
         </span>
+        {cogActive && (
+          <span className="rounded-full px-2.5 py-1 text-[10px] font-bold bg-fuchsia-500/85 text-white">
+            ⦿ 무게중심(COG) 자동 인식 중
+          </span>
+        )}
         {!heightCm && (
           <span className="rounded-full px-2.5 py-1 text-[10px] font-bold bg-amber-500/85 text-slate-950">
             키 미입력 — 속도 계산엔 키 필요
@@ -536,6 +631,30 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
                 <p className="font-mono font-bold text-slate-100 text-sm">{result.timeSec}s</p>
               </div>
             </div>
+            {(result.cogGap?.available || result.crossValidation?.totalFrames) && (
+              <div className="grid grid-cols-2 gap-2 text-center">
+                {result.cogGap?.available && (
+                  <div className="bg-fuchsia-500/10 border border-fuchsia-500/30 rounded-xl py-2">
+                    <p className="text-[10px] text-fuchsia-300">바-무게중심 이격</p>
+                    <p className="font-mono font-bold text-fuchsia-100 text-sm">
+                      {result.cogGap.medianCm != null ? `${result.cogGap.medianCm}cm` : `${result.cogGap.medianRatio}`}
+                      {result.cogGap.maxCm != null && <span className="text-[9px] text-fuchsia-300/70"> · 최대 {result.cogGap.maxCm}cm</span>}
+                    </p>
+                  </div>
+                )}
+                {result.crossValidation?.totalFrames > 0 && (
+                  <div className="bg-cyan-500/10 border border-cyan-500/30 rounded-xl py-2">
+                    <p className="text-[10px] text-cyan-300">교차검증(신호 일치)</p>
+                    <p className="font-mono font-bold text-cyan-100 text-sm">
+                      {result.crossValidation.avgAgreement != null ? `${Math.round(result.crossValidation.avgAgreement * 100)}%` : '-'}
+                      {result.crossValidation.assistRatio > 0 && (
+                        <span className="text-[9px] text-cyan-300/70"> · 보완 {Math.round(result.crossValidation.assistRatio * 100)}%</span>
+                      )}
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
             {onSave && <button onClick={save} className="btn btn-primary w-full">이 측정 저장</button>}
             {videoBlob && (
               <button onClick={handleSaveVideo} disabled={savingVideo}

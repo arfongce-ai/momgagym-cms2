@@ -385,6 +385,18 @@ export function vbtConfidence(ctx = {}) {
 
   if (ctx.source === 'live') { score -= 0.15; reasons.push('live_low_fps'); }
 
+  const agreement = Number(ctx.crossValidation?.avgAgreement);
+  if (Number.isFinite(agreement) && agreement < 0.35) {
+    score -= 0.15;
+    reasons.push('low_track_agreement');
+  }
+
+  const assistRatio = Number(ctx.crossValidation?.assistRatio);
+  if (Number.isFinite(assistRatio) && assistRatio > 0.5) {
+    score -= 0.15;
+    reasons.push('high_fallback_tracking');
+  }
+
   const rom = Number(ctx.romCm);
   if (Number.isFinite(rom) && rom > 0 && rom < 5) {
     score -= 0.20; reasons.push('rom_too_small');

@@ -23,7 +23,6 @@ import RomReport from './RomReport.jsx';
 import ReportActions from '../../components/report/ReportActions';
 import { dataUrlToFile } from '../core/reportShare';
 
-// 최대 녹화 시간(안전 자동 종료). 요청: 최대 60초까지 녹화 가능.
 const MAX_RECORD_MS = 60000;
 
 const JOINTS = [
@@ -95,9 +94,9 @@ export default function RomMeasure({ member, onSave, onBack }) {
   const chunksRef = useRef([]);
   const recordedBlobRef = useRef(null);
   const recordCanvasRef = useRef(null);     // 합성용 오프스크린 캔버스
-  const composeRafRef = useRef(null);        // 합성 루프(rAF)
-  const composeIntervalRef = useRef(null);   // 합성 루프 폴백(setInterval) — rAF 스로틀 대비
-  const maxRecordTimerRef = useRef(null);    // 최대 녹화(60초) 안전 타이머
+  const composeRafRef = useRef(null);        // 합성 루프
+  const composeIntervalRef = useRef(null);
+  const maxRecordTimerRef = useRef(null);
   const recordStreamRef = useRef(null);      // 캔버스 captureStream
   const previewUrlRef = useRef(null);        // blob URL (해제 관리)
   const [previewUrl, setPreviewUrl] = useState(''); // 리포트 영상 미리보기 src
@@ -188,14 +187,11 @@ export default function RomMeasure({ member, onSave, onBack }) {
       drawRomHud(ctx, latestLandmarksRef.current, joint, poseMode, canvas.width, canvas.height,
         (performance.now() - startTsRef.current) / 1000);
     };
-    // rAF 로 매 프레임 그리되, 모바일에서 rAF 가 스로틀/정지돼 captureStream 이
-    // 몇 초 만에 얼어붙어 영상이 짧게 잘리는 문제를 막기 위해 setInterval 폴백을
-    // 함께 돌린다(둘 다 같은 draw 호출 — 항상 최소 프레임 공급 보장).
     const rafLoop = () => { draw(); composeRafRef.current = requestAnimationFrame(rafLoop); };
     if (composeRafRef.current) cancelAnimationFrame(composeRafRef.current);
     rafLoop();
     if (composeIntervalRef.current) clearInterval(composeIntervalRef.current);
-    composeIntervalRef.current = setInterval(draw, 66); // ~15fps 폴백(백그라운드에서도 프레임 유지)
+    composeIntervalRef.current = setInterval(draw, 66);
     const canvasStream = canvas.captureStream ? canvas.captureStream(30) : null;
     if (!canvasStream) return null;
     recordStreamRef.current = canvasStream;
@@ -257,14 +253,13 @@ export default function RomMeasure({ member, onSave, onBack }) {
           setVideoBlob(blob);
           finalizeReport(url);
         };
-        mr.start(); // 타임슬라이스 없이 시작(보행 모듈과 동일 — 모바일 조기 정지 방지)
+        mr.start();
       }
     } catch (e) { mediaRecorderRef.current = null; }
 
     recordingRef.current = true;
     setRecording(true);
     setElapsed(0);
-    // 최대 60초 안전 자동 종료(요청). 그 전에 사용자가 종료하면 타이머는 해제된다.
     if (maxRecordTimerRef.current) clearTimeout(maxRecordTimerRef.current);
     maxRecordTimerRef.current = setTimeout(() => {
       if (recordingRef.current) finishRecord();

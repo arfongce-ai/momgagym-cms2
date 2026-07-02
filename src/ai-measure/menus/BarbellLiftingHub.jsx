@@ -198,6 +198,7 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
       durationSec: raw?.time,
       source,
       romCm: raw?.romCm,
+      crossValidation: raw?.crossValidation || null,   // 다중 신호 교차검증 → 신뢰도 반영(역도와 동일)
     });
     const payload = buildLiftingPayload({
       mode: 'vbt',
@@ -223,6 +224,10 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
         barKg: raw?.barKg ?? null,
         sidePlates: raw?.sidePlates ?? null,
         confidenceReasons: conf.reasons,
+      },
+      extra: {
+        crossValidation: raw?.crossValidation ?? null,   // 교차검증 요약 보존(역도와 동일)
+        cogGap: raw?.cogGap ?? null,                       // 바-COG 이격(측면시)
       },
     });
     return saveAndReport(payload, { videoBlob: raw?.videoBlob ?? null });
