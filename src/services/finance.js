@@ -641,6 +641,40 @@ export function computeSessionSettlement({ trainers, members, schedules, payment
   }).filter(x => x.rows.length>0 || x.promoIncentive>0);
 }
 
+// ── 수동 정산비율을 결제 건에 영구 박제(방향 A) ──────────────────────
+// 특정 회원×트레이너의 정산비율을 "소진 끝까지" 고정하려면, 그 트레이너의 세션을
+// 공급하는 결제 건들의 splitRateAtPay[tid] 를 직접 rate 로 바꿔야 한다.
+// 그래야 그 등록분을 소진하는 모든 달이 같은 비율을 따라간다(월 오버라이드와 달리 소진 전체 유지).
+//
+//  · 대상: 이 회원의 결제 중 (a) 미환불이고 (b) 이 트레이너에게 귀속된 결제.
+//    - trainerIds 에 tid 가 포함되거나(명시 담당), trainerIds 가 비어 있고 회원이 그 트레이너
+//      세션을 보유한 경우(등록횟수 안분 결제) 모두 포함한다.
+//  · 이미 같은 값이면 patch 에서 제외(불필요한 쓰기 방지).
+//  · 반환: { patches:[{ mid, pid, splitRateAtPay, prev }], count }
+//    splitRateAtPay 는 기존 값을 보존한 채 tid 키만 갱신한 새 객체다.
+export function planRateFreeze({ member, payments, trainerId, rate }) {
+  const r = Number(rate);
+  const tid = trainerId;
+  const patches = [];
+  if (!member || !tid || !Number.isFinite(r)) return { patches, count: 0 };
+  const hasTrainerSession = !!(member.trainerSessions && member.trainerSessions[tid]);
+  (payments || []).forEach(p => {
+    if (p.isRefunded) return; // 환불 결제는 지급 계산에서 특수 처리 → 비율 재박제 대상 아님
+    const pTids = Array.isArray(p.trainerIds) ? p.trainerIds : [];
+    const belongs = pTids.length ? pTids.includes(tid) : hasTrainerSession;
+    if (!belongs) return;
+    const prev = p.splitRateAtPay || {};
+    if (Number(prev[tid]) === r) return; // 이미 같은 값 → 스킵
+    patches.push({
+      mid: member.id,
+      pid: p.id,
+      splitRateAtPay: { ...prev, [tid]: r },
+      prev,
+    });
+  });
+  return { patches, count: patches.length };
+}
+
 // CSV 다운로드 (Excel에서 한글 깨짐 방지 위해 UTF-8 BOM 포함)
 export function downloadCSV(filename, rows) {
   const esc = (v) => {

@@ -631,6 +631,32 @@ export const store = {
     try { await fbDelete('payments', pid); }
     catch(e){ cache.payments[mid]=prev; throw e; }
   },
+  // 방향 A: 수동 정산비율을 결제 건에 영구 박제 — planRateFreeze 가 만든 patch 목록을
+  // 한 배치로 적용한다(splitRateAtPay 갱신). 소진 끝까지 그 비율이 유지된다.
+  //  · patches: [{ mid, pid, splitRateAtPay, prev }] (finance.planRateFreeze 결과)
+  //  · 원자적 저장 — 하나라도 실패하면 캐시를 롤백한다.
+  freezeMemberRate: async (patches = []) => {
+    if (!patches.length) return 0;
+    const prevPayments = JSON.parse(JSON.stringify(cache.payments));
+    const batch = writeBatch(db);
+    patches.forEach(({ mid, pid, splitRateAtPay }) => {
+      const cur = (cache.payments[mid] || []).find(p => p.id === pid);
+      if (cur) batch.set(doc(db, 'payments', pid), { ...cur, splitRateAtPay, __mid: mid });
+    });
+    try {
+      await batch.commit();
+      patches.forEach(({ mid, pid, splitRateAtPay }) => {
+        cache.payments[mid] = (cache.payments[mid] || []).map(p =>
+          p.id === pid ? { ...p, splitRateAtPay } : p);
+      });
+      __touchSnapshot();
+      return patches.length;
+    } catch (e) {
+      cache.payments = prevPayments;
+      __touchSnapshot();
+      throw e;
+    }
+  },
   deleteAllPayments: async (mid) => {
     const list=cache.payments[mid]||[];
     await fbDeleteBatch(list.map(p=>({name:'payments',id:p.id})));

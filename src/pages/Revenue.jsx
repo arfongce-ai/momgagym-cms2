@@ -11,7 +11,7 @@ import { useAuth } from '../contexts/AuthContext';
 import {
   METHOD_LBL, METHOD_CLR, won, monthKey, yearKey,
   calcNet, downloadCSV, computeSessionSettlement,
-  buildRefreezePlan,
+  buildRefreezePlan, planRateFreeze,
 } from '../services/finance';
 import { todayYMD, thisYM, thisYear } from '../utils/dates';
 import { getUserTrainerId } from '../utils/memberList';
@@ -889,6 +889,30 @@ function TrainerSettleCard({ block: b, ym, settings, onSaved, readOnly=false, de
     setCollapsed(false);  // 수정하려면 펼쳐야 함
     setEditing(true);
   };
+  // 방향 A: 이 회원의 정산비율을 결제 건에 영구 박제 → 소진 끝까지(모든 달) 그 비율 유지.
+  //  · 편집 중 입력한 비율(rateEdits)을 사용. 그 회원의 이 트레이너 결제들의 splitRateAtPay 를 갱신.
+  //  · 월 오버라이드(그 달만)와 달리, 등록분을 소진하는 3·4·5월에도 자동으로 같은 비율이 적용된다.
+  const freezeRate = async (r) => {
+    const raw = rateEdits[r.memberId];
+    const rate = Number(raw === undefined || raw === '' ? r.rate : raw);
+    if (!Number.isFinite(rate)) { alert('먼저 정산비율을 입력해 주세요.'); return; }
+    const member = store.getMembers().find(m => m.id === r.memberId);
+    const payments = store.getPayments(r.memberId);
+    const { patches, count } = planRateFreeze({ member, payments, trainerId: b.trainer.id, rate });
+    if (!count) { alert(`이미 ${rate}%로 고정되어 있어 변경할 내용이 없습니다.`); return; }
+    if (!window.confirm(
+      `${r.memberName} 회원의 정산비율을 ${rate}%로 "결제 건에 고정"할까요?\n` +
+      `이 등록분을 소진하는 모든 달(이번 달 이후 포함)에 ${rate}%가 계속 적용됩니다.\n` +
+      `(대상 결제 ${count}건)`)) return;
+    try {
+      await store.freezeMemberRate(patches);
+      // 이 달의 임시 수동 오버라이드는 더 이상 필요 없음 → 있으면 정리(중복 표시 방지).
+      alert(`${rate}%로 고정했습니다. 3·4·5월 등 소진 달에도 자동 반영됩니다.`);
+      setEditing(false);
+      onSaved?.(store.getSettleOverride(b.trainer.id, ym));
+    } catch (e) { alert('비율 고정에 실패했습니다. 네트워크 확인 후 다시 시도하세요.'); }
+  };
+
   const save = async () => {
     try {
       // 핵심 원칙: "사용자가 자동집계값과 다르게 바꾼 항목만" override로 저장한다.
@@ -1141,6 +1165,11 @@ function TrainerSettleCard({ block: b, ym, settings, onSaved, readOnly=false, de
                             className={RATE_INP} title="정산 비율 직접 수정"/>
                           <span className="text-[11px] text-slate-500">%</span>
                           {rateChanged && <span className="text-[10px] text-amber-300 font-bold">수정</span>}
+                          <button type="button" onClick={()=>freezeRate(r)}
+                            className="text-[10px] px-1 py-0.5 rounded bg-violet-500/20 text-violet-300 hover:bg-violet-500/40 font-bold"
+                            title="이 비율을 결제 건에 고정 → 소진 끝까지(다음 달들 포함) 계속 적용">
+                            🔒 고정
+                          </button>
                         </span>
                       : showBreakdown
                       ? <div className="space-y-0.5 font-mono text-slate-400">
