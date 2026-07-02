@@ -211,6 +211,53 @@ export function buildRefreezePlan({ trainers, members, payments, records, settin
   return { patches, rateMap, count: patches.length };
 }
 
+// ── 전체 기간 일괄 재박제 계획 ──────────────────────────────────────
+// 모든 결제를 "각자의 결제월(paidAt YYYY-MM) 조건%"로 한 번에 박제한다.
+//  · 결제월별로 그 달 전체 실적으로 비율 판정(computeMonthRates) → 그 달 결제들에 적용.
+//  · 비율은 결제월 기준(세션 시작월과 무관). 소진 순서만 세션 시작일을 따른다.
+//  · 이미 같은 값이면 제외(불필요한 쓰기 방지).
+//  · 미래 자동운영에선 결제 시 자동 박제 + 월말 확정으로 충분하지만,
+//    시스템 도입 이전의 과거 결제들을 소급 정리할 때 쓴다.
+// 반환: { patches:[{mid,pid,memberName,paidAt,splitRateAtPay,prev}], count, months }
+export function buildRefreezeAllPlan({ trainers, members, payments, records, settings }) {
+  // 결제월 수집
+  const monthsSet = new Set();
+  members.forEach(m => (payments[m.id] || []).forEach(p => {
+    const ym = (p.paidAt || '').slice(0, 7);
+    if (ym) monthsSet.add(ym);
+  }));
+  const months = [...monthsSet].sort();
+  // 달마다 비율맵 산출
+  const rateByMonth = {};
+  months.forEach(ym => {
+    rateByMonth[ym] = computeMonthRates({ trainers, members, payments, records, settings, ym });
+  });
+  const memberMap = Object.fromEntries(members.map(m => [m.id, m]));
+  const patches = [];
+  members.forEach(m => {
+    (payments[m.id] || []).forEach(p => {
+      const ym = (p.paidAt || '').slice(0, 7);
+      const rateMap = rateByMonth[ym];
+      if (!rateMap) return;
+      const involved = (p.trainerIds && p.trainerIds.length)
+        ? p.trainerIds
+        : Object.keys(m.trainerSessions || {});
+      if (!involved.length) return;
+      const next = {};
+      involved.forEach(tid => { if (rateMap[tid]) next[tid] = rateMap[tid].rate; });
+      const prev = p.splitRateAtPay || {};
+      const changed = involved.some(tid => Number(prev[tid]) !== Number(next[tid]));
+      if (changed) {
+        patches.push({
+          mid: m.id, pid: p.id, memberName: memberMap[m.id]?.name || '?',
+          paidAt: p.paidAt, splitRateAtPay: next, prev,
+        });
+      }
+    });
+  });
+  return { patches, count: patches.length, months };
+}
+
 // ── 회당 단가 × 월 수업횟수 기반 정산 (실제 시트 방식) ──────────────
 // 정산비율은 "결제월에 박제된 비율(splitRateAtPay)"을 회원별로 적용한다.
 // ── 등록분(lot) 재구성 — 예약·정산이 동일 로직을 공유 ───────────────────
