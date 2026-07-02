@@ -11,7 +11,7 @@ import { useAuth } from '../contexts/AuthContext';
 import {
   METHOD_LBL, METHOD_CLR, won, monthKey, yearKey,
   calcNet, downloadCSV, computeSessionSettlement,
-  buildRefreezePlan, planRateFreeze, planConsumedIndexBackfill,
+  buildRefreezePlan, buildRefreezeAllPlan, planRateFreeze, planConsumedIndexBackfill,
 } from '../services/finance';
 import { todayYMD, thisYM, thisYear } from '../utils/dates';
 import { getUserTrainerId } from '../utils/memberList';
@@ -795,7 +795,36 @@ function SettleTab({ settings, trainers, trainerMap, scopeTid=null, readOnly=fal
     }
   };
 
-  const grandSession = blocks.reduce((s,b)=>s+b.sessionTotal,0);
+  // ── 전체 기간 비율 일괄 박제(과거 데이터 소급 정리) ─────────────────
+  // 모든 결제를 각자의 결제월 조건%로 한 번에 박제. 시스템 도입 이전 과거 결제 정리용.
+  const [refreezingAll, setRefreezingAll] = useState(false);
+  const handleRefreezeAll = async () => {
+    const plan = buildRefreezeAllPlan({
+      trainers: store.getTrainers(), members: store.getMembers(),
+      payments: Object.fromEntries(store.getMembers().map(m => [m.id, store.getPayments(m.id)])),
+      records: store.getPromos ? store.getPromos() : [], settings: store.getSettings(),
+    });
+    if (!plan.count) {
+      alert('모든 결제가 이미 각자의 결제월 조건 비율로 박제되어 있습니다. 바뀌는 건이 없습니다.');
+      return;
+    }
+    if (!window.confirm(
+      `모든 결제의 정산비율을 각자의 결제월 조건(블로그·스터디·매출)으로 다시 판정해 일괄 박제합니다.\n` +
+      `대상 결제: ${plan.count}건 (기간: ${plan.months[0]} ~ ${plan.months[plan.months.length-1]})\n\n` +
+      `각 회차는 그 등록(결제)달 조건 비율이 소진 끝까지 유지됩니다. 진행할까요?`)) return;
+    setRefreezingAll(true);
+    try {
+      const n = await store.freezeMemberRate(plan.patches);
+      setRefreshKey(k => k + 1);
+      alert(`완료: ${n}건의 결제 비율을 각 결제월 조건으로 박제했습니다.`);
+    } catch (e) {
+      alert('일괄 박제 중 오류가 발생했습니다. 네트워크 확인 후 다시 시도하세요.');
+    } finally {
+      setRefreezingAll(false);
+    }
+  };
+
+
   const grandSessionPayout = blocks.reduce((s,b)=>s+(b.sessionPayout??b.sessionTotal),0);
   const grandInc     = blocks.reduce((s,b)=>s+b.promoIncentive,0);
   const grandPayout  = blocks.reduce((s,b)=>s+b.payout,0);            // 세전
@@ -843,6 +872,13 @@ function SettleTab({ settings, trainers, trainerMap, scopeTid=null, readOnly=fal
             className="px-3 py-2 rounded-lg text-xs font-bold bg-violet-500/10 border border-violet-500/40 text-violet-300 hover:bg-violet-500/20 transition-colors disabled:opacity-40"
             title="과거 수업의 재등록 회차 매핑을 날짜순으로 정리 — 회차별 정산이 정확히 갈리게 함">
             {backfilling ? '정리 중…' : '🔧 회차 정리'}
+          </button>
+        )}
+        {!readOnly && (
+          <button onClick={handleRefreezeAll} disabled={refreezingAll}
+            className="px-3 py-2 rounded-lg text-xs font-bold bg-emerald-500/10 border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/20 transition-colors disabled:opacity-40"
+            title="모든 결제를 각자의 결제월 조건 비율로 일괄 박제 — 과거 데이터 소급 정리용">
+            {refreezingAll ? '박제 중…' : '⚖️ 전체 비율 박제'}
           </button>
         )}
         <button onClick={exportCSV} disabled={blocks.length===0}
