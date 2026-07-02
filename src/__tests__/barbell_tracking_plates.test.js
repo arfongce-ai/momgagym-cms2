@@ -35,8 +35,8 @@ describe('barbell tracking robustness', () => {
       expect(src).toContain('estimateBodyCOG');
       expect(src).toContain('barCogHorizontalGap');
       expect(src).toContain('createPlateBlobTracker');
-      expect(src).toContain('crossValidation: displayResult.crossValidation');
-      expect(src).toContain('cogGap: displayResult.cogGap');
+      expect(src).toContain('crossValidation: result.crossValidation');
+      expect(src).toContain('cogGap: result.cogGap');
     }
   });
 });

@@ -3,16 +3,13 @@
 //  - [재설계] 카메라를 켜면 화면 전체를 덮는 풀스크린 오버레이로 전환.
 //  - 화면에서 엔드캡을 한 번 누르면 그 색을 학습해 따라간다.
 //  - 측정 시작 → 한 렙 동작 → 종료 시: 수직 이동거리(키 환산 m) ÷ 시간 = 평균속도.
-import { useRef, useState, useEffect, useCallback, useMemo } from 'react';
+import { useRef, useState, useEffect, useCallback } from 'react';
 import { usePoseEngine } from '../core/usePoseEngine';
-import { personHeightRatio, romToCm, romToCmScaled, trimPathToRange, barbellPoint, createBarbellTracker } from '../core/barbell';
+import { personHeightRatio, romToCm, barbellPoint, createBarbellTracker } from '../core/barbell';
 import { createMultiTracker } from '../core/endcapTracker';
 import { calcVBT } from '../core/performance';
-import {
-  detectPlatesFromVideo, suggestSidePlates, totalWeight, createPlateBlobTracker,
-  plateCmPerRatio, PLATE_CALIBRATION_TAGS,
-} from '../core/plates';
-import { exerciseLabel as exerciseLabelLocal, snapWeight, stepWeight, median } from '../core/lifting';
+import { detectPlatesFromVideo, suggestSidePlates, totalWeight, createPlateBlobTracker } from '../core/plates';
+import { exerciseLabel as exerciseLabelLocal, snapWeight, stepWeight } from '../core/lifting';
 import { fuseTrackingCandidates, summarizeCrossValidation } from '../core/trackFusion';
 import { estimateBodyCOG, barCogHorizontalGap } from '../core/bodyCog';
 import { offsetToCm } from '../core/geometry';
@@ -24,7 +21,6 @@ import PlateWeightInput from './PlateWeightInput';
 import FramingIntro from './FramingIntro';
 import HeightField from './HeightField';
 import CameraStage from './CameraStage';
-import RomTrimSlider from './RomTrimSlider';
 
 const MAX_RECORDING_MS = 60000;
 
@@ -47,7 +43,6 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
   const plateTrackerRef = useRef(createPlateBlobTracker());
   const fusedRef = useRef(createBarbellTracker());
   const crossValFramesRef = useRef([]);     // 세트 동안 프레임별 융합 소스/일치도 로그
-  const plateDiamSamplesRef = useRef([]);   // 개선 1: 원판 지름(세로, 비율) 샘플 — cm 보정용
   const cogRef = useRef({ available: false, point: null });   // 최신 COG(측면 촬영시만)
   const barCogGapSamplesRef = useRef([]);   // 세트 동안 바-COG 수평 이격(cm) 샘플
   const phRef = useRef(null);
@@ -83,8 +78,6 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
   const [ptCount, setPtCount] = useState(0);
   const [activePts, setActivePts] = useState(0);
   const [result, setResult] = useState(null);
-  const [trimStart, setTrimStart] = useState(0);   // 개선 4: 결과 확인 구간 보정(%)
-  const [trimEnd, setTrimEnd] = useState(100);
   const [heightCm, setHeightCm] = useState(member?.height || '');
   const [plate, setPlate] = useState({ barKg: 20, sidePlates: [] });
   const [dialWeight, setDialWeight] = useState(20);
@@ -92,7 +85,6 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
   const [detected, setDetected] = useState([]);
   const [framing, setFraming] = useState({ level: 'bad', message: '카메라 준비 중…' });
   const [cogActive, setCogActive] = useState(false);   // 측면 인식으로 COG 산출 중인지(칩)
-  const [exposureLock, setExposureLock] = useState(null); // 개선 3: 노출 고정 결과
 
   const handleResult = useCallback((lms, ts, video) => {
     const canvas = canvasRef.current;
@@ -145,10 +137,6 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
     const cap = capRef.current;
     const skeletonPoint = barbellPoint(lms);
     const plateColorPoint = plateTrackerRef.current.isSeeded() ? plateTrackerRef.current.update(video) : null;
-    if (recordingRef.current && plateColorPoint && PLATE_CALIBRATION_TAGS.has(plateTrackerRef.current.tag())) {
-      const diam = plateTrackerRef.current.lastDiameter();
-      if (diam && !diam.clipped && diam.yRatio > 0) plateDiamSamplesRef.current.push(diam.yRatio);
-    }
 
     if (cap.isSeeded()) {
       const p = cap.update(video);
@@ -227,7 +215,7 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
     }
   }, [activePts, heightCm]);
 
-  const { videoRef, start, stop, status, error, lockCapture, unlockCapture } = usePoseEngine({ onResult: handleResult });
+  const { videoRef, start, stop, status, error } = usePoseEngine({ onResult: handleResult });
 
   const clearCountdown = useCallback(() => {
     if (countdownTimerRef.current) {
@@ -290,9 +278,7 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
     fusedRef.current.reset();
     crossValFramesRef.current = [];
     barCogGapSamplesRef.current = [];
-    plateDiamSamplesRef.current = [];
     cogRef.current = { available: false, point: null };
-    setExposureLock(null);
     setVideoBlob(null); videoBlobRef.current = null; setVideoSavedMsg('');
     start();
   }, [start]);
@@ -409,23 +395,13 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
     const H = Number(heightCm) || null;
     const phs = phSamplesRef.current.filter(Boolean).sort((a, b) => a - b);
     const phMed = phs.length ? phs[Math.floor(phs.length / 2)] : phRef.current;
-    // 개선 1: 원판 지름 기준 스케일 우선(원근 오차가 더 적음), 없으면 키 기준 폴백.
-    const plateDiamMed = median(plateDiamSamplesRef.current);
-    const plateScale = plateCmPerRatio(plateDiamMed);
-    let cm, calibrationSource, cmPerRatio;
-    if (plateScale) { cm = romToCmScaled(sum.romRatio, plateScale); calibrationSource = 'plate'; cmPerRatio = plateScale; }
-    else {
-      cm = romToCm(sum.romRatio, phMed, H);
-      calibrationSource = cm != null ? 'height' : null;
-      cmPerRatio = (phMed && H) ? H / phMed : null;
-    }
+    const cm = romToCm(sum.romRatio, phMed, H);
     if (!cm) return { error: 'no_height' };
     const distanceM = cm / 100;
     const timeSec = sum.durationMs / 1000;
     const vbt = calcVBT(distanceM, timeSec);
     if (!vbt) return null;
     const reps = repCounterRef.current.countWithPending();
-    const path = fusedRef.current.path().map(p => ({ x: p.x, y: p.y, ts: p.ts })); // 개선 4: 트리밍용 스냅샷
     const crossValidation = summarizeCrossValidation(crossValFramesRef.current);
     const gaps = barCogGapSamplesRef.current;
     let cogGap = null;
@@ -447,41 +423,15 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
       ...vbt,
       distanceM: Math.round(distanceM * 1000) / 1000,
       timeSec: Math.round(timeSec * 100) / 100,
-      romCm: cm, calibrationSource, cmPerRatio, path, reps, lostRatio, crossValidation, cogGap,
+      romCm: cm, reps, lostRatio, crossValidation, cogGap,
     };
   }, [heightCm]);
-
-  // 개선 4: 트리밍 슬라이더 선택 구간으로 다시 계산한 "지금 보이는" 결과.
-  const displayResult = useMemo(() => {
-    if (!result) return null;
-    if (trimStart <= 0 && trimEnd >= 100) return result;
-    const path = result.path || [];
-    if (path.length < 2) return result;
-    const t0 = path[0].ts, t1 = path[path.length - 1].ts;
-    const span = t1 - t0;
-    const tStart = t0 + span * (trimStart / 100);
-    const tEnd = t0 + span * (trimEnd / 100);
-    const trimmed = trimPathToRange(path, tStart, tEnd);
-    if (!trimmed) return result;
-    const timeSec = trimmed.durationMs / 1000;
-    const cm = result.cmPerRatio ? romToCmScaled(trimmed.romRatio, result.cmPerRatio) : null;
-    if (!cm) return result;
-    const vbt = calcVBT(cm / 100, timeSec);
-    if (!vbt) return result;
-    return {
-      ...result, ...vbt,
-      distanceM: Math.round((cm / 100) * 1000) / 1000,
-      timeSec: Math.round(timeSec * 100) / 100,
-      romCm: cm, trimmedSamples: trimmed.samples,
-    };
-  }, [result, trimStart, trimEnd]);
 
   const finishRecord = (autoLimited = false) => {
     if (!recordingRef.current) return;
     clearMaxRecordTimer();
     recordingRef.current = false;
     setRecording(false);
-    unlockCapture().catch(() => {});
     if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
       try { mediaRecorderRef.current.stop(); } catch (e) { stopCompose(); }
     } else {
@@ -494,7 +444,6 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
       alert('추적이 자주 끊겼습니다(인식 ' + Math.round((1 - res.lostRatio) * 100) + '%). 끝이 보이는 지점을 2~3곳 눌러 다시 측정하면 정확합니다.');
     }
     setResult(res);
-    setTrimStart(0); setTrimEnd(100);
     if (autoLimited) setVideoSavedMsg('최대 60초 녹화가 완료되었습니다.');
   };
 
@@ -507,7 +456,6 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
         fusedRef.current.reset();
         crossValFramesRef.current = [];
         barCogGapSamplesRef.current = [];
-        plateDiamSamplesRef.current = [];
         phSamplesRef.current = [];
         frameStatsRef.current = { total: 0, lost: 0 };
         liveHudRef.current = { romCm: null, meanVelocity: null };
@@ -518,7 +466,6 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
         setRecording(true);
         setResult(null);
         setVideoBlob(null); videoBlobRef.current = null; setVideoSavedMsg('');
-        lockCapture().then(setExposureLock).catch(() => setExposureLock(null));
         try {
           chunksRef.current = [];
           const stream = createRecordedStream();
@@ -544,7 +491,6 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
       clearMaxRecordTimer();
       recordingRef.current = false;
       setRecording(false);
-      unlockCapture().catch(() => {});
       if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
         try { mediaRecorderRef.current.stop(); } catch (e) { stopCompose(); }
       } else {
@@ -557,33 +503,30 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
         alert('추적이 자주 끊겼습니다(인식 ' + Math.round((1 - res.lostRatio) * 100) + '%). 더 잘 보이는 지점을 2~3곳 눌러 다시 측정하면 정확합니다.');
       }
       setResult(res);
-      setTrimStart(0); setTrimEnd(100);
     }
   };
 
   const save = () => {
-    if (!displayResult) return;
+    if (!result) return;
     const weight = snapWeight(dialWeight) || totalWeight(plate.sidePlates, plate.barKg).total;
     onSave?.({
       type: 'vbt',
       exerciseType: exerciseType || null,
       source: 'live',          // 실시간 — peakVelocity 미산출(허브 게이트)
-      lostRatio: displayResult.lostRatio ?? null,
-      distance: displayResult.distanceM,
-      time: displayResult.timeSec,
-      romCm: displayResult.romCm ?? null,
-      calibrationSource: displayResult.calibrationSource ?? null,  // 개선 1: 'plate'(원판 지름) | 'height'(키)
-      trimmed: trimStart > 0 || trimEnd < 100,  // 개선 4: 사람이 구간을 보정했는지
-      meanVelocity: displayResult.meanVelocity,
-      reps: displayResult.reps ?? null,
-      zone: displayResult.zone?.label,
+      lostRatio: result.lostRatio ?? null,
+      distance: result.distanceM,
+      time: result.timeSec,
+      romCm: result.romCm ?? null,
+      meanVelocity: result.meanVelocity,
+      reps: result.reps ?? null,
+      zone: result.zone?.label,
       heightCm: Number(heightCm) || null,
       weight: weight || null,
       barKg: plate.barKg,
       sidePlates: plate.sidePlates,
       weightSource,
-      crossValidation: displayResult.crossValidation ?? null,  // 다중 신호 교차검증 요약
-      cogGap: displayResult.cogGap ?? null,                     // 바-COG 수평 이격(측면시)
+      crossValidation: result.crossValidation ?? null,  // 다중 신호 교차검증 요약
+      cogGap: result.cogGap ?? null,                     // 바-COG 수평 이격(측면시)
       videoBlob: videoBlobRef.current || videoBlob || null,
     });
   };
@@ -617,11 +560,6 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
         {cogActive && (
           <span className="rounded-full px-2.5 py-1 text-[10px] font-bold bg-fuchsia-500/85 text-white">
             ⦿ 무게중심(COG) 자동 인식 중
-          </span>
-        )}
-        {recording && exposureLock && (exposureLock.exposure || exposureLock.focus) && (
-          <span className="rounded-full px-2.5 py-1 text-[10px] font-bold bg-cyan-500/85 text-slate-950">
-            🔒 노출·초점 고정됨
           </span>
         )}
         {!heightCm && (
@@ -680,33 +618,19 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
           <div className="mx-auto max-w-md w-full card-accent p-3 space-y-2 animate-fade-in">
             <div className="flex items-baseline justify-between">
               <p className="text-[11px] font-bold text-amber-400 uppercase tracking-widest">평균 속도</p>
-              {displayResult.zone && <p className={`text-xs font-bold ${ZONE_COLOR[displayResult.zone.color]}`}>{displayResult.zone.label}</p>}
+              {result.zone && <p className={`text-xs font-bold ${ZONE_COLOR[result.zone.color]}`}>{result.zone.label}</p>}
             </div>
-            {displayResult.calibrationSource && (
-              <p className="text-center">
-                <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${displayResult.calibrationSource === 'plate' ? 'bg-emerald-500/20 text-emerald-300' : 'bg-slate-700 text-slate-400'}`}>
-                  {displayResult.calibrationSource === 'plate' ? '⦿ 원판 지름 기준(정밀)' : '키 기준(근사)'}
-                </span>
-              </p>
-            )}
-            <p className="text-center font-mono font-black text-4xl text-slate-100">{displayResult.meanVelocity}<span className="text-base text-slate-500"> m/s</span></p>
+            <p className="text-center font-mono font-black text-4xl text-slate-100">{result.meanVelocity}<span className="text-base text-slate-500"> m/s</span></p>
             <div className="grid grid-cols-2 gap-2 text-center">
               <div className="bg-slate-800 rounded-xl py-2">
                 <p className="text-[10px] text-slate-500">이동 거리</p>
-                <p className="font-mono font-bold text-slate-100 text-sm">{displayResult.romCm}cm</p>
+                <p className="font-mono font-bold text-slate-100 text-sm">{result.romCm}cm</p>
               </div>
               <div className="bg-slate-800 rounded-xl py-2">
                 <p className="text-[10px] text-slate-500">추진 시간</p>
-                <p className="font-mono font-bold text-slate-100 text-sm">{displayResult.timeSec}s</p>
+                <p className="font-mono font-bold text-slate-100 text-sm">{result.timeSec}s</p>
               </div>
             </div>
-            {result.path && result.path.length >= 6 && (
-              <RomTrimSlider
-                startPct={trimStart} endPct={trimEnd}
-                sampleCount={displayResult.trimmedSamples}
-                onChange={(s, e) => { setTrimStart(s); setTrimEnd(e); }}
-              />
-            )}
             {(result.cogGap?.available || result.crossValidation?.totalFrames) && (
               <div className="grid grid-cols-2 gap-2 text-center">
                 {result.cogGap?.available && (

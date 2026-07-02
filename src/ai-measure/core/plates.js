@@ -85,26 +85,6 @@ const TAG_TO_LABEL = { red: '빨강', blue: '파랑', yellow: '노랑', green: '
 const MIN_VALID_RATIO = 0.035;
 const MIN_DOMINANT_RATIO = 0.045;
 
-// ───────── 원판 지름 기준 스케일 보정(개선 1) ─────────
-// IWF 국제규격 범퍼 플레이트(10·15·20·25kg)는 무게와 무관하게 지름이 전부
-// 450mm(45cm)로 동일 — 바로 그 바벨과 같은 평면(깊이)에 있는 물리적 기준자다.
-// 회원 키(사람 몸 평면)로 환산하는 것보다 원근 오차가 훨씬 적어 더 정확하다.
-// 5kg(흰색)/2.5kg/1.25kg(크롬)은 브랜드마다 지름이 달라 보정 기준으로 쓰지 않는다.
-export const PLATE_CALIBRATION_DIAMETER_CM = 45;
-export const PLATE_CALIBRATION_TAGS = new Set(['red', 'blue', 'yellow', 'green']);
-
-/**
- * 원판 세로(수직) 지름 비율(0~1)로부터 "비율당 cm" 스케일을 구한다.
- * ROM·속도가 모두 수직(y) 이동 기준이므로 세로 지름을 기준으로 삼는다
- * (카메라가 살짝 기울어져 있어도 실제로 측정에 쓰이는 축과 일치).
- * @param {number|null} diameterYRatio 화면 세로 기준 정규화 지름(0~1)
- * @returns {number|null} cm / 비율(1.0) — romToCmScaled 등에서 사용
- */
-export function plateCmPerRatio(diameterYRatio) {
-  if (!diameterYRatio || diameterYRatio <= 0) return null;
-  return PLATE_CALIBRATION_DIAMETER_CM / diameterYRatio;
-}
-
 function clampRoi(roi) {
   const x = Math.max(0, Math.min(1, Number(roi?.x) || 0));
   const y = Math.max(0, Math.min(1, Number(roi?.y) || 0));
@@ -237,7 +217,6 @@ export function createPlateBlobTracker() {
   let ema = null;
   let cv = null;
   let ctx = null;
-  let lastDiam = null; // { yRatio, xRatio, clipped } — 가장 최근 update()의 지름 추정
 
   const ensureCanvas = (w, h) => {
     if (!cv) {
@@ -257,7 +236,6 @@ export function createPlateBlobTracker() {
       tag = tagIn;
       pos = { x: nx, y: ny };
       ema = { x: nx, y: ny };
-      lastDiam = null;
       return true;
     },
     isSeeded() { return !!tag; },
@@ -285,8 +263,6 @@ export function createPlateBlobTracker() {
       let sumX = 0;
       let sumY = 0;
       let n = 0;
-      let minXX = Infinity, maxXX = -Infinity, minYY = Infinity, maxYY = -Infinity;
-      let touchedEdge = false;
 
       for (let yy = 0; yy < bh; yy += PLATE_SAMPLE_STEP) {
         for (let xx = 0; xx < bw; xx += PLATE_SAMPLE_STEP) {
@@ -296,14 +272,6 @@ export function createPlateBlobTracker() {
           sumX += x0 + xx;
           sumY += y0 + yy;
           n++;
-          if (xx < minXX) minXX = xx;
-          if (xx > maxXX) maxXX = xx;
-          if (yy < minYY) minYY = yy;
-          if (yy > maxYY) maxYY = yy;
-          // 매칭 픽셀이 검색창 가장자리에 닿으면 원판이 검색창 밖으로 잘려나간
-          // 것 — 그 프레임의 지름 추정은 과소평가되므로 신뢰하지 않는다.
-          if (xx <= PLATE_SAMPLE_STEP || xx >= bw - 1 - PLATE_SAMPLE_STEP
-            || yy <= PLATE_SAMPLE_STEP || yy >= bh - 1 - PLATE_SAMPLE_STEP) touchedEdge = true;
         }
       }
       if (n < PLATE_MIN_MATCH) return ema;
@@ -314,21 +282,13 @@ export function createPlateBlobTracker() {
       ema = ema
         ? { x: ema.x + (nx - ema.x) * PLATE_EMA_ALPHA, y: ema.y + (ny - ema.y) * PLATE_EMA_ALPHA }
         : { x: nx, y: ny };
-      lastDiam = {
-        yRatio: (maxYY - minYY) / h,
-        xRatio: (maxXX - minXX) / w,
-        clipped: touchedEdge,
-      };
       return ema;
     },
     current() { return ema; },
-    /** 가장 최근 update() 프레임의 원판 지름 추정(정규화). 시드 전/매칭 실패 시 null. */
-    lastDiameter() { return lastDiam; },
     clear() {
       tag = null;
       pos = null;
       ema = null;
-      lastDiam = null;
     },
   };
 }

@@ -8,7 +8,7 @@
 //  - onResult(landmarks, ts) 콜백으로 매 프레임 결과 전달. React state 우회(고주파).
 
 import { useRef, useCallback, useState } from 'react';
-import { openMainCameraStream, lockCameraCapture, unlockCameraCapture } from './cameraSelect';
+import { openMainCameraStream } from './cameraSelect';
 
 const VISION_CDN =
   'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14';
@@ -137,15 +137,5 @@ export function usePoseEngine({ onResult, modelTier = 'full' } = {}) {
     setStatus('idle');
   }, []);
 
-  // 개선 3: 기록(측정) 시작 직전 노출·초점·화밸을 고정 — 색 추적 안정화.
-  const lockCapture = useCallback(async () => {
-    if (!streamRef.current) return { exposure: false, focus: false, whiteBalance: false };
-    return lockCameraCapture(streamRef.current);
-  }, []);
-  const unlockCapture = useCallback(async () => {
-    if (!streamRef.current) return false;
-    return unlockCameraCapture(streamRef.current);
-  }, []);
-
-  return { videoRef, start, stop, status, error, lockCapture, unlockCapture };
+  return { videoRef, start, stop, status, error };
 }

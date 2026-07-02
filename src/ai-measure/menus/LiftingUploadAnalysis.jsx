@@ -14,16 +14,13 @@
 import React, { useState, useRef, useCallback } from 'react';
 import { analyzeUploadedVideo, CAPTURE_PRESETS } from '../core/videoAnalyzer';
 import { createMultiTracker } from '../core/endcapTracker';
-import { personHeightRatio, romToCm, romToCmScaled } from '../core/barbell';
+import { personHeightRatio, romToCm } from '../core/barbell';
 import { calcVBT } from '../core/performance';
 import {
   computeBarVelocities, estimateMeanPower, vbtConfidence,
-  buildLiftingPayload, exerciseLabel, median,
+  buildLiftingPayload, exerciseLabel,
 } from '../core/lifting';
 import { countRepsFromSeries } from '../core/repCounter';
-import {
-  classifyPixel, createPlateBlobTracker, plateCmPerRatio, PLATE_CALIBRATION_TAGS,
-} from '../core/plates';
 
 export default function LiftingUploadAnalysis({
   member, onBack, onComplete, mode = 'lifting', exerciseType,
@@ -37,7 +34,6 @@ export default function LiftingUploadAnalysis({
 
   const videoRef = useRef(null);
   const trackerRef = useRef(createMultiTracker());
-  const plateTrackerRef = useRef(createPlateBlobTracker()); // 개선 1: 원판 지름 보정 전용(위치엔 안 씀)
   const abortRef = useRef(null);
   const heightCm = member?.height ? Number(member.height) : null;
   const weightKg = member?.weight ? Number(member.weight) : null;
@@ -48,7 +44,6 @@ export default function LiftingUploadAnalysis({
     setFileName(f.name);
     setErrorMsg('');
     trackerRef.current = createMultiTracker();
-    plateTrackerRef.current.clear();
     setSeedCount(0);
     const v = videoRef.current;
     if (v) {
@@ -78,21 +73,6 @@ export default function LiftingUploadAnalysis({
     if (nx < 0 || nx > 1 || ny < 0 || ny > 1) return;
     const ok = trackerRef.current.seed(v, nx, ny);
     if (ok) setSeedCount(trackerRef.current.pointCount());
-    // 개선 1: 탭한 지점이 IWF 대형 원판 색(빨강/파랑/노랑/초록)이면, 그 색을
-    // 별도로도 계속 추적해 지름(px) 기반 cm 보정을 시도한다(키 기반보다 정밀).
-    if (ok && !plateTrackerRef.current.isSeeded()) {
-      const cv = document.createElement('canvas');
-      cv.width = v.videoWidth; cv.height = v.videoHeight;
-      const cctx = cv.getContext('2d', { willReadFrequently: true });
-      cctx.drawImage(v, 0, 0, cv.width, cv.height);
-      const px = Math.round(nx * cv.width), py = Math.round(ny * cv.height);
-      const r = 4;
-      const { data } = cctx.getImageData(Math.max(0, px - r), Math.max(0, py - r), r * 2, r * 2);
-      let R = 0, G = 0, B = 0, n = 0;
-      for (let i = 0; i < data.length; i += 4) { R += data[i]; G += data[i + 1]; B += data[i + 2]; n++; }
-      const tag = n ? classifyPixel(R / n, G / n, B / n) : null;
-      if (tag && PLATE_CALIBRATION_TAGS.has(tag)) plateTrackerRef.current.seed(tag, nx, ny);
-    }
   };
 
   const startAnalyze = useCallback(async () => {
@@ -107,7 +87,6 @@ export default function LiftingUploadAnalysis({
     const tracker = trackerRef.current;
     tracker.reset();
     const phSamples = [];
-    const plateDiamSamples = []; // 개선 1: 원판 지름(세로, 비율) 샘플
     const barSamples = [];   // { yCm 임시 보류 → 후처리 } 대신 ratio+tMs 누적
     const rawPath = [];      // { y(ratio), ts(ms 실시간축) }
     let analyzedFrames = 0, lostFrames = 0;
@@ -116,7 +95,6 @@ export default function LiftingUploadAnalysis({
     const abort = new AbortController();
     abortRef.current = abort;
     const preset = CAPTURE_PRESETS[capture] || CAPTURE_PRESETS.normal;
-    const plateTracker = plateTrackerRef.current;
 
     try {
       const result = await analyzeUploadedVideo({
@@ -133,12 +111,6 @@ export default function LiftingUploadAnalysis({
           const p = tracker.update(video);
           if (p) { tracker.push(p, tMs); rawPath.push({ y: p.y, ts: tMs }); }
           else lostFrames++;
-          // 개선 1: 원판 지름 추적(시드됐을 때만) — 위치가 아니라 지름(px)만 사용.
-          if (plateTracker.isSeeded()) {
-            plateTracker.update(video);
-            const diam = plateTracker.lastDiameter();
-            if (diam && !diam.clipped && diam.yRatio > 0) plateDiamSamples.push(diam.yRatio);
-          }
         },
       });
 
@@ -150,14 +122,10 @@ export default function LiftingUploadAnalysis({
         setPhase('error'); return;
       }
 
-      // 신장 기준 cm 환산(중앙값 인체비율) — 원판 지름 보정이 없을 때의 폴백.
+      // 신장 기준 cm 환산(중앙값 인체비율).
       const phs = phSamples.filter(Boolean).sort((a, b) => a - b);
       const phMed = phs.length ? phs[Math.floor(phs.length / 2)] : null;
-      // 개선 1: 원판 지름 기준 스케일 우선.
-      const plateDiamMed = median(plateDiamSamples);
-      const plateScale = plateCmPerRatio(plateDiamMed);
-      const calibrationSource = plateScale ? 'plate' : (heightCm ? 'height' : null);
-      const romCm = plateScale ? romToCmScaled(sum.romRatio, plateScale) : romToCm(sum.romRatio, phMed, heightCm);
+      const romCm = romToCm(sum.romRatio, phMed, heightCm);
 
       // 실측 평균 fps(슬로모 보정 후 실제 시간축).
       let avgFps = null, fpsJitter = null;
@@ -173,7 +141,7 @@ export default function LiftingUploadAnalysis({
       }
 
       // 속도 계산용 시계열(cm·실시간 ms). ratio→cm 환산 후 computeBarVelocities.
-      const cmPerRatio = plateScale || ((phMed && heightCm) ? (heightCm / phMed) : null);
+      const cmPerRatio = (phMed && heightCm) ? (heightCm / phMed) : null;
       let velo = { meanVelocity: null, peakVelocity: null, peakReason: 'no_data', romCm, durationSec: sum.durationMs / 1000 };
       if (cmPerRatio && rawPath.length >= 2) {
         const series = rawPath.map(s => ({ yCm: s.y * cmPerRatio, ts: s.ts }));
@@ -225,7 +193,6 @@ export default function LiftingUploadAnalysis({
         },
         extra: {
           durationSec: velo.durationSec,
-          calibrationSource,  // 개선 1: 'plate'(원판 지름) | 'height'(키) | null
           precision: {
             analyzedFrames,
             lostFrames,

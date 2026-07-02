@@ -44,7 +44,7 @@ describe('바벨 리프팅 통합 탭 · registry', () => {
 
   it('녹화 영상 Blob은 Firebase 저장 payload가 아니라 리포트 보조 데이터로만 전달된다', () => {
     expect(hubSource).toContain('save?.(payload)');
-    expect(hubSource).toContain('setReport({ ...saved, ...reportExtras, outlierWarning:');
+    expect(hubSource).toContain('setReport({ ...saved, ...reportExtras })');
     expect(hubSource).toContain('return saveAndReport(payload, { videoBlob: raw?.videoBlob ?? null });');
     expect(reportSource).toContain('videoBlob={report.videoBlob || null}');
   });

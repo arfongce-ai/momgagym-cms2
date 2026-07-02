@@ -6,57 +6,47 @@ import { vbtConfidence } from '../ai-measure/core/lifting.js';
 import { createPlateBlobTracker } from '../ai-measure/core/plates.js';
 import { LM } from '../ai-measure/core/geometry.js';
 
-// ── 다중 신호 융합(요구사항 2, 개선 2: 원판 신호 승격) ──
+// ── 다중 신호 융합(요구사항 2) ──
 describe('trackFusion — 색/스켈레톤/원판색 신호 융합', () => {
-  it('원판(plate) 신호가 있으면 원판 좌표를 대표값으로 쓴다(1순위 승격)', () => {
+  it('색 추적이 살아있으면 색 좌표를 그대로 대표값으로 쓴다', () => {
     const out = fuseTrackingCandidates({
       colorPoint: { x: 0.5, y: 0.4 }, colorActive: 2,
       skeletonPoint: { x: 0.52, y: 0.41 }, plateColorPoint: { x: 0.49, y: 0.39 },
-    });
-    expect(out.source).toBe('plate');
-    expect(out.point).toEqual({ x: 0.49, y: 0.39 });
-    expect(out.usedFallback).toBe(false);
-  });
-
-  it('원판 신호가 없으면 color가 1순위(기존 동작 유지)', () => {
-    const out = fuseTrackingCandidates({
-      colorPoint: { x: 0.5, y: 0.4 }, colorActive: 2,
-      skeletonPoint: { x: 0.52, y: 0.41 }, plateColorPoint: null,
     });
     expect(out.source).toBe('color');
     expect(out.point).toEqual({ x: 0.5, y: 0.4 });
     expect(out.usedFallback).toBe(false);
   });
 
-  it('color·skeleton이 서로 합의하는데 plate만 크게 벗어나면(드리프트) 거부하고 합의 지점을 쓴다', () => {
-    // 원판 블롭 추적이 다른 색 물체 등으로 걸어가 버린 시나리오.
+  it('skeleton·plate가 서로 합의하는데 color만 크게 벗어나면(드리프트) 거부하고 합의 지점을 쓴다', () => {
+    // 색 추적이 바닥/배경 등 엉뚱한 곳으로 걸어가 버린 시나리오.
     const out = fuseTrackingCandidates({
-      colorPoint: { x: 0.5, y: 0.4 }, colorActive: 1,
-      skeletonPoint: { x: 0.51, y: 0.41 }, plateColorPoint: { x: 0.1, y: 0.9 },
+      colorPoint: { x: 0.1, y: 0.9 }, colorActive: 1,
+      skeletonPoint: { x: 0.5, y: 0.4 }, plateColorPoint: { x: 0.51, y: 0.41 },
     });
     expect(out.source).toBe('fused_fallback');
     expect(out.usedFallback).toBe(true);
-    expect(out.plateRejected).toBe(true);
+    expect(out.colorRejected).toBe(true);
     expect(out.point.x).toBeCloseTo(0.505, 5);
     expect(out.point.y).toBeCloseTo(0.405, 5);
   });
 
-  it('color·skeleton이 서로도 합의하지 않으면(교차검증 불가) plate를 그대로 신뢰한다', () => {
+  it('skeleton·plate가 서로도 합의하지 않으면(교차검증 불가) color를 그대로 신뢰한다', () => {
     const out = fuseTrackingCandidates({
-      colorPoint: { x: 0.9, y: 0.1 }, colorActive: 1,
-      skeletonPoint: { x: 0.5, y: 0.4 }, plateColorPoint: { x: 0.1, y: 0.9 },
+      colorPoint: { x: 0.1, y: 0.9 }, colorActive: 1,
+      skeletonPoint: { x: 0.5, y: 0.4 }, plateColorPoint: { x: 0.9, y: 0.1 },
     });
-    expect(out.source).toBe('plate');
-    expect(out.plateRejected).toBeUndefined();
+    expect(out.source).toBe('color');
+    expect(out.colorRejected).toBeUndefined();
   });
 
-  it('plate가 합의 지점에서 크게 벗어나지 않으면(정상 범위) 그대로 신뢰한다', () => {
+  it('color가 합의 지점에서 크게 벗어나지 않으면(정상 범위) 그대로 신뢰한다', () => {
     const out = fuseTrackingCandidates({
-      colorPoint: { x: 0.5, y: 0.4 }, colorActive: 1,
-      skeletonPoint: { x: 0.5, y: 0.4 }, plateColorPoint: { x: 0.52, y: 0.4 },
+      colorPoint: { x: 0.52, y: 0.4 }, colorActive: 1,
+      skeletonPoint: { x: 0.5, y: 0.4 }, plateColorPoint: { x: 0.5, y: 0.4 },
     });
-    expect(out.source).toBe('plate');
-    expect(out.plateRejected).toBeUndefined();
+    expect(out.source).toBe('color');
+    expect(out.colorRejected).toBeUndefined();
   });
 
   it('세 신호가 가까우면 일치도(agreement)가 1', () => {
@@ -75,24 +65,16 @@ describe('trackFusion — 색/스켈레톤/원판색 신호 융합', () => {
     expect(out.agreement).toBe(0);
   });
 
-  it('원판·색 신호가 모두 없으면 skeleton으로 대체(fallback)한다', () => {
-    const out = fuseTrackingCandidates({
-      colorPoint: null, colorActive: 0,
-      skeletonPoint: { x: 0.6, y: 0.5 }, plateColorPoint: null,
-    });
-    expect(out.usedFallback).toBe(true);
-    expect(out.source).toBe('skeleton');
-    expect(out.point).toEqual({ x: 0.6, y: 0.5 });
-  });
-
-  it('색이 없어도 원판이 있으면 원판을 직접 신뢰한다(더 이상 skeleton과 블렌딩하지 않음)', () => {
+  it('색 추적이 소실되면 남은 신호의 가중평균으로 대체(fallback)한다', () => {
     const out = fuseTrackingCandidates({
       colorPoint: null, colorActive: 0,
       skeletonPoint: { x: 0.6, y: 0.5 }, plateColorPoint: { x: 0.4, y: 0.5 },
     });
-    expect(out.usedFallback).toBe(false);
-    expect(out.source).toBe('plate');
-    expect(out.point).toEqual({ x: 0.4, y: 0.5 });
+    expect(out.usedFallback).toBe(true);
+    expect(out.source).toBe('fused_fallback');
+    expect(out.point.y).toBeCloseTo(0.5, 5);
+    // plate weight(0.65) > skeleton(0.45) → plate 쪽으로 치우침
+    expect(out.point.x).toBeLessThan(0.5);
   });
 
   it('후보가 하나도 없으면 point=null, source=none', () => {
