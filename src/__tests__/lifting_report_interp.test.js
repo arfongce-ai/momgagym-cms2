@@ -58,6 +58,23 @@ describe('VBT/역도 리포트 해석 — 속도/구간/가동범위', () => {
     expect(line.text).toContain('5회');
   });
 
+  it('load-velocity 프로필 기준점을 해석에 표시', () => {
+    const p = buildLiftingPayload({
+      mode: 'vbt', exerciseType: 'squat', source: 'upload',
+      metrics: { meanVelocity: 0.62, rangeOfMotion: 48, confidenceScore: 0.85 },
+      metadata: {
+        reps: 3,
+        isCalibrated: true,
+        loadVelocityPoint: { exerciseType: 'squat', loadKg: 100, meanVelocity: 0.62 },
+      },
+    });
+    const r = buildLiftingInterpretation(p);
+    const text = r.lines.map(l => `${l.label}:${l.text}`).join('|');
+    expect(text).toContain('프로필 기준점');
+    expect(text).toContain('100kg');
+    expect(text).toContain('0.62m/s');
+  });
+
   it('평균속도에서 트레이닝 구간을 설명', () => {
     const p = buildLiftingPayload({
       mode: 'vbt', exerciseType: 'squat', source: 'upload',

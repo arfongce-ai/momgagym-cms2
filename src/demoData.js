@@ -631,33 +631,6 @@ export const store = {
     try { await fbDelete('payments', pid); }
     catch(e){ cache.payments[mid]=prev; throw e; }
   },
-  // 과거 스케줄에 consumedIndexAtBooking 소급 부여(회차 매핑 마이그레이션).
-  //  · patches: [{ id, consumedIndexAtBooking }] (finance.planConsumedIndexBackfill 결과)
-  //  · Firestore 배치 한도(500) 고려해 나눠 커밋. 실패 시 캐시 롤백.
-  backfillConsumedIndex: async (patches = []) => {
-    if (!patches.length) return 0;
-    const prev = JSON.parse(JSON.stringify(cache.schedules));
-    try {
-      for (let i = 0; i < patches.length; i += 400) {
-        const chunk = patches.slice(i, i + 400);
-        const batch = writeBatch(db);
-        chunk.forEach(({ id, consumedIndexAtBooking }) => {
-          const cur = cache.schedules.find(s => s.id === id);
-          if (cur) batch.set(doc(db, 'schedules', id), { ...cur, consumedIndexAtBooking });
-        });
-        await batch.commit();
-        chunk.forEach(({ id, consumedIndexAtBooking }) => {
-          cache.schedules = cache.schedules.map(s => s.id === id ? { ...s, consumedIndexAtBooking } : s);
-        });
-      }
-      __touchSnapshot();
-      return patches.length;
-    } catch (e) {
-      cache.schedules = prev;
-      __touchSnapshot();
-      throw e;
-    }
-  },
   // 방향 A: 수동 정산비율을 결제 건에 영구 박제 — planRateFreeze 가 만든 patch 목록을
   // 한 배치로 적용한다(splitRateAtPay 갱신). 소진 끝까지 그 비율이 유지된다.
   //  · patches: [{ mid, pid, splitRateAtPay, prev }] (finance.planRateFreeze 결과)
@@ -792,14 +765,6 @@ export const store = {
         // ★ 회차표기: 차감 직전 잔여값 = 이 수업의 회차 번호. 총횟수와 함께 기록.
         ns.sessionAtBooking      = ts[ns.trainerId].remaining ?? null;
         ns.sessionTotalAtBooking = ts[ns.trainerId].total ?? null;
-        // ★ 누적 소진 인덱스(0-기반) = (누적 등록 총횟수) − (차감 직전 잔여).
-        //   등록분마다 리셋되는 잔여번호와 달리 전 등록분에 걸쳐 단조 증가 → 회차 매핑이 겹치지 않는다.
-        {
-          const totalEver = Number(ts[ns.trainerId].total);
-          const remainBefore = Number(ts[ns.trainerId].remaining);
-          ns.consumedIndexAtBooking = (Number.isFinite(totalEver) && Number.isFinite(remainBefore))
-            ? Math.max(0, totalEver - remainBefore) : null;
-        }
         ts[ns.trainerId].remaining = Math.max(0, ts[ns.trainerId].remaining - 1);
         updatedMember = { ...member, trainerSessions: ts };
         ns.sessionDeducted = true;

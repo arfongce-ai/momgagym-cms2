@@ -8,7 +8,7 @@
 //  - onResult(landmarks, ts) 콜백으로 매 프레임 결과 전달. React state 우회(고주파).
 
 import { useRef, useCallback, useState } from 'react';
-import { openMainCameraStream } from './cameraSelect';
+import { openMainCameraStream, lockCameraCapture, unlockCameraCapture } from './cameraSelect';
 
 const VISION_CDN =
   'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14';
@@ -137,5 +137,8 @@ export function usePoseEngine({ onResult, modelTier = 'full' } = {}) {
     setStatus('idle');
   }, []);
 
-  return { videoRef, start, stop, status, error };
+  const lockCapture = useCallback((point) => lockCameraCapture(streamRef.current, point), []);
+  const unlockCapture = useCallback(() => unlockCameraCapture(streamRef.current), []);
+
+  return { videoRef, start, stop, status, error, lockCapture, unlockCapture };
 }

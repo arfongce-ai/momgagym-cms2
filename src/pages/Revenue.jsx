@@ -11,7 +11,7 @@ import { useAuth } from '../contexts/AuthContext';
 import {
   METHOD_LBL, METHOD_CLR, won, monthKey, yearKey,
   calcNet, downloadCSV, computeSessionSettlement,
-  buildRefreezePlan, planRateFreeze, planConsumedIndexBackfill,
+  buildRefreezePlan, planRateFreeze,
 } from '../services/finance';
 import { todayYMD, thisYM, thisYear } from '../utils/dates';
 import { getUserTrainerId } from '../utils/memberList';
@@ -766,35 +766,6 @@ function SettleTab({ settings, trainers, trainerMap, scopeTid=null, readOnly=fal
     }
   };
 
-  // ── 회차 인덱스 소급 정리(마이그레이션) ────────────────────────────
-  // 과거 수업들의 회차 매핑을 누적 소진 인덱스로 다시 계산해 스케줄에 박는다.
-  // (재등록 8회차·9회차가 정산에서 안 갈리던 문제의 과거 데이터 보정)
-  const [backfilling, setBackfilling] = useState(false);
-  const handleBackfillRounds = async () => {
-    const patches = planConsumedIndexBackfill({
-      members: store.getMembers(), schedules: store.getSchedules(),
-    });
-    if (!patches.length) {
-      alert('회차 인덱스가 이미 모두 정리되어 있습니다. 바뀌는 수업이 없습니다.');
-      return;
-    }
-    if (!window.confirm(
-      `과거 수업들의 재등록 회차 매핑을 다시 계산해 정리합니다.\n` +
-      `대상 수업: ${patches.length}건\n\n` +
-      `이 작업은 각 수업이 몇 회차 등록분인지를 날짜순(소진순)으로 바로잡아, 회차별 정산이\n` +
-      `정확히 갈리게 합니다. 결제·잔여 횟수는 바뀌지 않습니다. 진행할까요?`)) return;
-    setBackfilling(true);
-    try {
-      const n = await store.backfillConsumedIndex(patches);
-      setRefreshKey(k => k + 1);
-      alert(`완료: ${n}건의 수업 회차 인덱스를 정리했습니다.\n이제 회차별 정산이 정확히 갈립니다.`);
-    } catch (e) {
-      alert('정리 중 오류가 발생했습니다. 네트워크 확인 후 다시 시도하세요.');
-    } finally {
-      setBackfilling(false);
-    }
-  };
-
   const grandSession = blocks.reduce((s,b)=>s+b.sessionTotal,0);
   const grandSessionPayout = blocks.reduce((s,b)=>s+(b.sessionPayout??b.sessionTotal),0);
   const grandInc     = blocks.reduce((s,b)=>s+b.promoIncentive,0);
@@ -836,13 +807,6 @@ function SettleTab({ settings, trainers, trainerMap, scopeTid=null, readOnly=fal
           <button onClick={handleRefreeze} disabled={freezing}
             className="px-3 py-2 rounded-lg text-xs font-bold bg-amber-500/10 border border-amber-500/40 text-amber-400 hover:bg-amber-500/20 transition-colors disabled:opacity-40">
             {freezing ? '확정 중…' : '🔒 이 달 정산비율 확정'}
-          </button>
-        )}
-        {!readOnly && (
-          <button onClick={handleBackfillRounds} disabled={backfilling}
-            className="px-3 py-2 rounded-lg text-xs font-bold bg-violet-500/10 border border-violet-500/40 text-violet-300 hover:bg-violet-500/20 transition-colors disabled:opacity-40"
-            title="과거 수업의 재등록 회차 매핑을 날짜순으로 정리 — 회차별 정산이 정확히 갈리게 함">
-            {backfilling ? '정리 중…' : '🔧 회차 정리'}
           </button>
         )}
         <button onClick={exportCSV} disabled={blocks.length===0}

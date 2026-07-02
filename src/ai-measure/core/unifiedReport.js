@@ -100,6 +100,12 @@ export const REPORT_TERM_MAP = Object.freeze({
     description: '한 번 들 수 있을 것으로 추정되는 최대 중량입니다.',
     category: 'strength',
   },
+  formulaSpread: {
+    expert: 'Formula Spread',
+    label: '1RM 공식 편차',
+    description: '1RM 공식별 추정값의 최소~최대 차이입니다.',
+    category: 'strength',
+  },
   jumpHeight: {
     expert: 'Jump Height',
     label: '점프 높이',
@@ -293,15 +299,16 @@ const METRIC_DEFINITIONS = Object.freeze({
   ],
   one_rm: [
     { key: 'oneRM', paths: ['metrics.oneRM', 'estimatedOneRM', 'oneRM', 'summary.oneRM'], unit: 'kg' },
+    { key: 'formulaSpread', paths: ['metadata.formulaSpreadKg', 'metadata.estimateStats.spreadKg', 'formulaSpreadKg'], unit: 'kg' },
     { key: 'meanVelocity', paths: ['metrics.meanVelocity', 'meanVelocity', 'vbt.meanVelocity'], unit: 'm/s' },
-    { key: 'velocityLoss', paths: ['velocityLoss', 'vbt.velocityLoss'], unit: '%', range: { good: [0, 15], warn: [0, 30] } },
+    { key: 'velocityLoss', paths: ['metrics.velocityLoss', 'velocityLoss', 'vbt.velocityLoss'], unit: '%', range: { good: [0, 15], warn: [0, 30] } },
   ],
   vbt: [
     { key: 'meanVelocity', paths: ['metrics.meanVelocity', 'meanVelocity', 'vbt.meanVelocity'], unit: 'm/s' },
     { key: 'peakVelocity', paths: ['metrics.peakVelocity', 'peakVelocity', 'vbt.peakVelocity'], unit: 'm/s' },
     { key: 'peakPower', paths: ['metrics.peakPower', 'metrics.meanPower', 'peakPower', 'vbt.peakPower'], unit: 'W' },
     { key: 'rom', paths: ['metrics.rangeOfMotion'], unit: 'cm' },
-    { key: 'velocityLoss', paths: ['velocityLoss', 'vbt.velocityLoss'], unit: '%', range: { good: [0, 15], warn: [0, 30] } },
+    { key: 'velocityLoss', paths: ['metrics.velocityLoss', 'velocityLoss', 'vbt.velocityLoss'], unit: '%', range: { good: [0, 15], warn: [0, 30] } },
   ],
 });
 

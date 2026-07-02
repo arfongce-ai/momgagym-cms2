@@ -91,6 +91,26 @@ export async function refocusCameraStream(stream, point = { x: 0.5, y: 0.5 }) {
   return improveCameraFocus(stream, point);
 }
 
+export async function lockCameraCapture(stream, point = { x: 0.5, y: 0.5 }) {
+  const track = stream?.getVideoTracks?.()[0];
+  if (!track?.applyConstraints) return false;
+
+  const capabilities = track.getCapabilities?.() || {};
+  const advanced = [];
+  if (supportsValue(capabilities, 'focusMode', 'manual')) advanced.push({ focusMode: 'manual' });
+  else if (supportsValue(capabilities, 'focusMode', 'single-shot')) advanced.push({ focusMode: 'single-shot' });
+  if (supportsValue(capabilities, 'exposureMode', 'manual')) advanced.push({ exposureMode: 'manual' });
+  if (supportsValue(capabilities, 'whiteBalanceMode', 'manual')) advanced.push({ whiteBalanceMode: 'manual' });
+  if (supportsPointFocus(capabilities)) advanced.push({ pointsOfInterest: [normalizePoint(point)] });
+
+  if (!advanced.length) return false;
+  return applyAdvancedConstraints(track, advanced);
+}
+
+export async function unlockCameraCapture(stream) {
+  return improveCameraFocus(stream);
+}
+
 /** Estimate the rear main camera deviceId after permission is available. */
 export async function findMainBackCameraId() {
   assertMediaDevices();

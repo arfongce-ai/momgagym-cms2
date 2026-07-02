@@ -415,6 +415,10 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
       epley: result.epley,
       brzycki: result.brzycki,
       formulas: result.formulas,
+      estimateStats: result.stats,
+      confidenceInterval: result.confidenceInterval,
+      formulaSpreadKg: result.formulaSpreadKg,
+      formulaSpreadPct: result.formulaSpreadPct,
       barKg: weightMode === 'plate' ? barKg : null,
       sidePlates: weightMode === 'plate' ? sidePlates : null,
       weightSource: weightMode === 'manual' ? 'manual'
@@ -700,6 +704,24 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
             {result.average}<span className="text-lg text-slate-500"> kg</span>
           </p>
           <p className="text-center text-[10px] text-slate-500">검증된 {result.formulas.filter(f => f.value != null).length}개 공식 평균</p>
+          {result.stats && (
+            <div className="grid grid-cols-3 gap-2 text-center">
+              <div className="rounded-xl bg-slate-800 p-2">
+                <p className="text-[10px] text-slate-500">공식 편차</p>
+                <p className="font-mono font-bold text-slate-100">{result.stats.spreadKg ?? '—'}kg</p>
+              </div>
+              <div className="rounded-xl bg-slate-800 p-2">
+                <p className="text-[10px] text-slate-500">편차율</p>
+                <p className="font-mono font-bold text-slate-100">{result.stats.spreadPct != null ? `${result.stats.spreadPct}%` : '—'}</p>
+              </div>
+              <div className="rounded-xl bg-slate-800 p-2">
+                <p className="text-[10px] text-slate-500">참고 범위</p>
+                <p className="font-mono font-bold text-slate-100">
+                  {result.confidenceInterval?.low != null ? `${result.confidenceInterval.low}~${result.confidenceInterval.high}` : '—'}
+                </p>
+              </div>
+            </div>
+          )}
 
           <div className="bg-slate-800 rounded-xl p-3">
             <p className="text-[10px] text-slate-500 mb-1.5">공식별 추정 (kg)</p>

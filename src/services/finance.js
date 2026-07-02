@@ -213,97 +213,6 @@ export function buildRefreezePlan({ trainers, members, payments, records, settin
 
 // ── 회당 단가 × 월 수업횟수 기반 정산 (실제 시트 방식) ──────────────
 // 정산비율은 "결제월에 박제된 비율(splitRateAtPay)"을 회원별로 적용한다.
-// ── 등록분(lot) 재구성 — 예약·정산이 동일 로직을 공유 ───────────────────
-// 한 회원의 특정 트레이너 결제들에서 "재등록 회차별 등록분(lot)"을 만든다.
-//  · sessionAdds 가 있는 결제는 회차별 lot 으로 분해(라벨·비율·단가·회차번호 포함).
-//  · sessionAdds 가 없는 구버전 결제는 legacy lot 하나로 뭉친다.
-//  · 정렬: 결제일(paidAt) 오름차순 → 같은 날이면 order. 즉 "먼저 등록한 회차가 앞".
-//    소진은 앞 lot부터(먼저 등록분 먼저 소진). 이게 등록/소진의 시간 순서와 일치한다.
-// 반환: [{ id, paymentId, paidAt, count, rate, reEnrollNo, label, ... }]
-export function buildTrainerLots({ payments = [], trainerId, settings, trainerRegTotal }) {
-  const tid = trainerId;
-  const frozenRate = (p) => {
-    const r = p.splitRateAtPay && p.splitRateAtPay[tid];
-    return (r === undefined || r === null || r === '') ? null : Number(r);
-  };
-  const explicit = [];
-  let legacyPaid = 0, legacyRateW = 0, legacyRateBase = 0, legacyHasFrozen = false, legacyPaidAt = '';
-  (payments || []).filter(p => !p.isUnpaid && !p.isMonthly).forEach(p => {
-    const net = settings ? calcNet(p, settings).net : (Number(p.amount) || 0);
-    // 이 결제에서 이 트레이너 귀속분(간단화: trainerIds 1/n, 없으면 전액)
-    const pTids = Array.isArray(p.trainerIds) && p.trainerIds.length ? p.trainerIds : null;
-    const part = pTids ? (pTids.includes(tid) ? net / pTids.length : 0) : net;
-    if (pTids && !pTids.includes(tid)) return;
-    const adds = Array.isArray(p.sessionAdds)
-      ? p.sessionAdds.map((sa, idx) => ({ ...sa, idx, count: Number(sa.count) || 0 }))
-          .filter(sa => sa.trainerId === tid && sa.count > 0)
-      : [];
-    if (adds.length) {
-      const addTotal = adds.reduce((s, sa) => s + sa.count, 0) || 1;
-      adds.forEach(sa => {
-        const paid = part * (sa.count / addTotal);
-        const r = frozenRate(p);
-        explicit.push({
-          id: `${p.id || p.paidAt || 'payment'}:${tid}:${sa.idx}`,
-          paymentId: p.id || null,
-          paidAt: p.paidAt || '',
-          order: sa.idx,
-          count: sa.count,
-          paid,
-          unit: sa.count > 0 ? paid / sa.count : 0,
-          rate: r,
-          hasFrozen: r != null,
-          label: p.isReEnroll ? (p.reEnrollNo ? `재등록 ${p.reEnrollNo}회차` : '재등록')
-            : p.isNew ? '신규' : '등록',
-          reEnrollNo: p.reEnrollNo || null,
-        });
-      });
-    } else {
-      const r = frozenRate(p);
-      legacyPaid += part;
-      if (r != null) { legacyRateW += r * part; legacyRateBase += part; legacyHasFrozen = true; }
-      if (!legacyPaidAt || (p.paidAt && p.paidAt < legacyPaidAt)) legacyPaidAt = p.paidAt || '';
-    }
-  });
-  explicit.sort((a, b) => (a.paidAt || '').localeCompare(b.paidAt || '') || (a.order || 0) - (b.order || 0));
-  const explicitCount = explicit.reduce((s, l) => s + (Number(l.count) || 0), 0);
-  const lots = [];
-  const legacyCount = Math.max(0, (Number(trainerRegTotal) || 0) - explicitCount);
-  if (legacyCount > 0 || legacyPaid > 0) {
-    lots.push({
-      id: `legacy:${tid}`,
-      paymentId: null,
-      paidAt: legacyPaidAt || '',
-      order: -1,
-      count: legacyCount,
-      paid: legacyPaid,
-      unit: legacyCount > 0 ? legacyPaid / legacyCount : 0,
-      rate: legacyRateBase > 0 ? Math.round(legacyRateW / legacyRateBase) : null,
-      hasFrozen: legacyHasFrozen,
-      label: null,
-      reEnrollNo: null,
-      legacy: true,
-    });
-  }
-  return [...lots, ...explicit].filter(l => (Number(l.count) || 0) > 0 || (Number(l.paid) || 0) > 0);
-}
-
-// 누적 소진 인덱스(0-기반) → 어느 lot 소속인지.
-//  · consumedIndex 0 = 가장 먼저 소진되는 수업(맨 앞 lot의 첫 회).
-//  · lot 들을 앞에서부터 count 만큼 배정. 등록분이 비연속으로 추가돼도(8회차 소진 후 9회차 등록)
-//    소진 순서(시간순)만 알면 정확히 매핑된다 — 잔여번호 리셋 문제의 근본 해결.
-export function lotForConsumedIndex(lots, consumedIndex) {
-  const n = Number(consumedIndex);
-  if (!Array.isArray(lots) || !Number.isFinite(n) || n < 0) return null;
-  let start = 0;
-  for (const lot of lots) {
-    const count = Number(lot.count) || 0;
-    if (n >= start && n < start + count) return lot;
-    start += count;
-  }
-  return null;
-}
-
 export function computeSessionSettlement({ trainers, members, schedules, payments, records, settings, ym, getOverride }) {
   const inMonth = (d) => d && d.slice(0,7) === ym;
   const memberMap = Object.fromEntries(members.map(m=>[m.id, m]));
@@ -507,65 +416,34 @@ export function computeSessionSettlement({ trainers, members, schedules, payment
 
   const attended = {};
   const attendedLots = {};
-
-  // 회차별 lot 매핑 — 근본 수정:
-  //  · 기존엔 sessionAtBooking(그 시점 잔여)으로 회차를 역산했는데, 등록분마다 잔여가 10→1로
-  //    리셋되어 8회차·9회차 번호가 겹치면 뭉개졌다. sessionAtBooking 은 더 이상 신뢰하지 않는다.
-  //  · 새 방식(둘 중 하나):
-  //     (A) 예약 시 스탬프된 consumedIndexAtBooking(0-기반 누적 소진 인덱스)이 있으면 그대로 사용.
-  //     (B) 없으면(구버전 데이터) 회원의 현재 잔여(remaining)를 기준점으로, 그 회원·트레이너의
-  //         "출석/노쇼 수업 전체"를 날짜순 정렬해 누적 소진 인덱스를 역산한다.
-  //         전체 등록 = totalReg, 앞으로 소진될 잔여 = remaining →
-  //         이미 소진된 수 = totalReg − remaining. 날짜순 마지막 수업의 인덱스 = (totalReg − remaining − 1),
-  //         거기서 위로 갈수록 −1. (소진은 시간순이므로 등록분 비연속 추가도 정확히 갈린다.)
-  const allConsumed = {}; // tid -> mid -> [schedule...] (전월 포함 전체, 날짜순)
-  schedules
-    .filter(s => !s.isExternal && s.memberId && s.trainerId && (s.status === 'attended' || s.status === 'noshow'))
-    .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : (String(a.id) < String(b.id) ? -1 : 1)))
-    .forEach(s => {
-      (allConsumed[s.trainerId] = allConsumed[s.trainerId] || {});
-      (allConsumed[s.trainerId][s.memberId] = allConsumed[s.trainerId][s.memberId] || []).push(s);
+  const monthAttends = {};
+  schedules.filter(s=>!s.isExternal && s.memberId && s.trainerId && (s.status==='attended' || s.status==='noshow') && inMonth(s.date))
+    .sort((a,b)=>(a.date<b.date?-1:a.date>b.date?1:0))
+    .forEach(s=>{
+      const rawAt = s.sessionAtBooking;
+      const bookingAt = rawAt !== undefined && rawAt !== null && rawAt !== '' ? Number(rawAt) : null;
+      const at = Number.isFinite(bookingAt) ? bookingAt : null;
+      (monthAttends[s.trainerId] = monthAttends[s.trainerId] || {});
+      (monthAttends[s.trainerId][s.memberId] = monthAttends[s.trainerId][s.memberId] || []).push({ s, at });
     });
 
-  Object.entries(allConsumed).forEach(([tid, byMember]) => {
-    Object.entries(byMember).forEach(([mid, list]) => {
-      const lots = memberTrainerLots[mid]?.[tid] || [];
+  Object.entries(monthAttends).forEach(([tid, byMember])=>{
+    Object.entries(byMember).forEach(([mid, list])=>{
       const member = memberMap[mid];
-      const totalReg = Number(member?.trainerSessions?.[tid]?.total);
       const remainingNow = Number(member?.trainerSessions?.[tid]?.remaining);
-      // 스탬프(consumedIndexAtBooking)도 sessionAtBooking(글로벌 잔여)도 없는 수업 수만큼
-      // 잔여 기준 역산이 필요 → 그 수업들만 따로 날짜순 인덱스를 매긴다.
-      const consumedSoFar = (Number.isFinite(totalReg) && Number.isFinite(remainingNow))
-        ? Math.max(0, totalReg - remainingNow) : list.length;
-      const needInfer = list.filter(s => {
-        const st = s.consumedIndexAtBooking, ab = s.sessionAtBooking;
-        const hasStamp = st !== undefined && st !== null && st !== '';
-        const hasAb = ab !== undefined && ab !== null && ab !== '' && Number(ab) > 0;
-        return !hasStamp && !hasAb;
-      });
-      const inferBase = consumedSoFar - needInfer.length;
-      let inferSeq = 0;
-      list.forEach((s) => {
-        const st = s.consumedIndexAtBooking, ab = s.sessionAtBooking;
-        const hasStamp = st !== undefined && st !== null && st !== '';
-        const hasAb = ab !== undefined && ab !== null && ab !== '' && Number(ab) > 0;
-        let consumedIndex;
-        if (hasStamp) {
-          consumedIndex = Number(st);                              // (A) 예약 시 기록값 최우선
-        } else if (hasAb && Number.isFinite(totalReg)) {
-          consumedIndex = totalReg - Number(ab);                   // (B) 글로벌 잔여 → 인덱스
-        } else {
-          consumedIndex = inferBase + inferSeq;                    // (C) 잔여 기준 날짜순 역산
-          inferSeq += 1;
-        }
-        if (!inMonth(s.date)) return;                              // 인덱스는 전체 기준, 집계는 이번 달만
-        const lot = lotForConsumedIndex(lots, consumedIndex);
+      let inferAt = Number.isFinite(remainingNow) ? remainingNow + list.length : null;
+      list.forEach(({ s, at })=>{
+        const effAt = at != null ? at : (inferAt != null ? inferAt : null);
+        if (at != null) inferAt = at - 1;
+        else if (inferAt != null) inferAt -= 1;
+
+        const lot = lotForRemaining(mid, tid, effAt);
         const key = lot?.id || '__aggregate__';
         attended[tid] = attended[tid] || {};
-        attended[tid][mid] = (attended[tid][mid] || 0) + 1;
+        attended[tid][mid] = (attended[tid][mid]||0) + 1;
         attendedLots[tid] = attendedLots[tid] || {};
         attendedLots[tid][mid] = attendedLots[tid][mid] || {};
-        attendedLots[tid][mid][key] = (attendedLots[tid][mid][key] || 0) + 1;
+        attendedLots[tid][mid][key] = (attendedLots[tid][mid][key]||0) + 1;
       });
     });
   });
@@ -798,42 +676,6 @@ export function planRateFreeze({ member, payments, trainerId, rate }) {
 }
 
 // CSV 다운로드 (Excel에서 한글 깨짐 방지 위해 UTF-8 BOM 포함)
-// ── 과거 스케줄 회차 인덱스 소급 부여(마이그레이션) ─────────────────────
-// 기존 수업들은 consumedIndexAtBooking 이 없고 sessionAtBooking 이 등록분마다 리셋된
-// 잘못된 값일 수 있다. 회원·트레이너별로 출석/노쇼 수업을 날짜순 정렬해, 현재 잔여를
-// 기준점으로 0-기반 누적 소진 인덱스를 다시 매긴다(먼저 한 수업이 먼저 소진).
-//  · 반환: [{ id, consumedIndexAtBooking }]  — 값이 바뀌는 수업만.
-//  · 전제: 소진이 시간순(정상 운영). "잔여 남은 채 다음 회차 미리 등록"이 섞여도
-//    시간순 소진이면 결과는 동일하다(누적 인덱스는 순서만 본다).
-export function planConsumedIndexBackfill({ members, schedules }) {
-  const byMT = {}; // `${mid}::${tid}` -> [schedule...]
-  schedules
-    .filter(s => !s.isExternal && s.memberId && s.trainerId && (s.status === 'attended' || s.status === 'noshow'))
-    .forEach(s => {
-      const k = `${s.memberId}::${s.trainerId}`;
-      (byMT[k] = byMT[k] || []).push(s);
-    });
-  const memberMap = Object.fromEntries((members || []).map(m => [m.id, m]));
-  const patches = [];
-  Object.entries(byMT).forEach(([k, list]) => {
-    const [mid, tid] = k.split('::');
-    list.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : (String(a.id) < String(b.id) ? -1 : 1)));
-    const ts = memberMap[mid]?.trainerSessions?.[tid] || {};
-    const totalReg = Number(ts.total);
-    const remainingNow = Number(ts.remaining);
-    const consumedSoFar = (Number.isFinite(totalReg) && Number.isFinite(remainingNow))
-      ? Math.max(0, totalReg - remainingNow) : list.length;
-    const base = consumedSoFar - list.length; // 첫(가장 이른) 수업의 누적 인덱스
-    list.forEach((s, i) => {
-      const idx = Math.max(0, base + i);
-      if (Number(s.consumedIndexAtBooking) !== idx) {
-        patches.push({ id: s.id, consumedIndexAtBooking: idx });
-      }
-    });
-  });
-  return patches;
-}
-
 export function downloadCSV(filename, rows) {
   const esc = (v) => {
     const s = String(v ?? '');
