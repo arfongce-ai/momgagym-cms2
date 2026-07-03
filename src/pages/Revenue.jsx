@@ -825,6 +825,7 @@ function SettleTab({ settings, trainers, trainerMap, scopeTid=null, readOnly=fal
   };
 
 
+  const grandSession = blocks.reduce((s,b)=>s+b.sessionTotal,0);
   const grandSessionPayout = blocks.reduce((s,b)=>s+(b.sessionPayout??b.sessionTotal),0);
   const grandInc     = blocks.reduce((s,b)=>s+b.promoIncentive,0);
   const grandPayout  = blocks.reduce((s,b)=>s+b.payout,0);            // 세전
