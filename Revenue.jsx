@@ -825,6 +825,7 @@ function SettleTab({ settings, trainers, trainerMap, scopeTid=null, readOnly=fal
   };
 
 
+  const grandSession = blocks.reduce((s,b)=>s+b.sessionTotal,0);
   const grandSessionPayout = blocks.reduce((s,b)=>s+(b.sessionPayout??b.sessionTotal),0);
   const grandInc     = blocks.reduce((s,b)=>s+b.promoIncentive,0);
   const grandPayout  = blocks.reduce((s,b)=>s+b.payout,0);            // 세전
@@ -983,6 +984,34 @@ function TrainerSettleCard({ block: b, ym, settings, onSaved, readOnly=false, de
       setEditing(false);
       onSaved?.(store.getSettleOverride(b.trainer.id, ym));
     } catch (e) { alert('비율 고정에 실패했습니다. 네트워크 확인 후 다시 시도하세요.'); }
+  };
+
+  // 회차별 비율 고정 — 보기 모드에서 특정 회차(part)만 비율을 지정해 그 결제 건에 박제.
+  //  · part.id 형식: `${paymentId}:${tid}:${idx}` → paymentId 를 뽑아 그 결제 하나만 갱신.
+  //  · 그 회차 등록분을 소진하는 모든 달에 이 비율이 유지된다(다른 회차는 안 건드림).
+  const freezeLotRate = async (memberId, part) => {
+    const tid = b.trainer.id;
+    const cur = part.rate;
+    const input = window.prompt(
+      `[${part.label || '이 회차'}]의 정산비율을 %로 입력하세요.\n` +
+      `이 회차 등록분을 소진하는 모든 달에 이 비율이 적용됩니다. (예: 40 또는 50)`, String(cur ?? ''));
+    if (input === null) return;
+    const n = Number(input.trim());
+    if (!Number.isFinite(n) || n < 0 || n > 100) { alert('0~100 사이 숫자를 입력하세요.'); return; }
+    // lotId 에서 결제 id 추출 (형식: paymentId:tid:idx)
+    const pid = String(part.id || '').split(':')[0];
+    if (!pid || part.legacy) { alert('이 회차는 결제 건과 직접 연결돼 있지 않아 회차 단위 고정을 지원하지 않습니다.'); return; }
+    const payments = store.getPayments(memberId);
+    const p = payments.find(x => x.id === pid);
+    if (!p) { alert('해당 결제를 찾을 수 없습니다.'); return; }
+    if (Number(p.splitRateAtPay?.[tid]) === n) { alert(`이미 ${n}%로 고정되어 있습니다.`); return; }
+    const next = { ...(p.splitRateAtPay || {}), [tid]: n };
+    if (!window.confirm(`[${part.label}] 비율을 ${n}%로 고정할까요?\n소진하는 모든 달에 적용됩니다.`)) return;
+    try {
+      await store.updatePayment(memberId, pid, { splitRateAtPay: next });
+      onSaved?.(store.getSettleOverride(b.trainer.id, ym));
+      alert(`[${part.label}] 비율을 ${n}%로 고정했습니다.`);
+    } catch (e) { alert('저장에 실패했습니다. 네트워크 확인 후 다시 시도하세요.'); }
   };
 
   const save = async () => {
@@ -1246,8 +1275,17 @@ function TrainerSettleCard({ block: b, ym, settings, onSaved, readOnly=false, de
                       : showBreakdown
                       ? <div className="space-y-0.5 font-mono text-slate-400">
                           {breakdown.map((part, idx) => (
-                            <div key={`${part.id || part.label}-rate-${idx}`} title={part.hasFrozen ? '등록월에 고정된 비율' : rateTitle}>
-                              {part.rate}%{part.hasFrozen?'🔒':''}
+                            <div key={`${part.id || part.label}-rate-${idx}`}
+                              className="flex items-center justify-end gap-1"
+                              title={part.hasFrozen ? '등록월에 고정된 비율' : rateTitle}>
+                              <span>{part.rate}%{part.hasFrozen?'🔒':''}</span>
+                              {!readOnly && !part.legacy && (
+                                <button type="button" onClick={()=>freezeLotRate(r.memberId, part)}
+                                  className="text-[9px] px-1 py-0.5 rounded bg-violet-500/15 text-violet-300 hover:bg-violet-500/40 font-bold"
+                                  title="이 회차 비율을 고정 → 소진 끝까지 유지">
+                                  고정
+                                </button>
+                              )}
                             </div>
                           ))}
                         </div>
