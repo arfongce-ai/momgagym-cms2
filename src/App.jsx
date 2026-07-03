@@ -11,6 +11,7 @@ import Schedule from './pages/Schedule';
 import Settings from './pages/Settings';
 import AiMeasureHub from './ai-measure/AiMeasureHub';
 import Report from './pages/Report';
+import AdminLockGate from './components/common/AdminLockGate';
 import TodayScheduleMorningAlert from './components/schedule/TodayScheduleMorningAlert';
 
 function RequireAuth({ children, adminOnly = false }) {
@@ -76,9 +77,9 @@ function AppRoutes() {
                 <Route path="/"         element={<Home />} />
                 <Route path="/members"  element={<Members />} />
                 <Route path="/schedule" element={<Schedule />} />
-                <Route path="/trainers" element={<RequireAuth adminOnly><Trainers /></RequireAuth>} />
-                <Route path="/revenue"  element={<Revenue />} />
-                {/* /revenue: 관리자=전체, 트레이너=본인 정산+SNS기록만 (컴포넌트 내부에서 분기) */}
+                <Route path="/trainers" element={<RequireAuth adminOnly><AdminLockGate title="트레이너 관리 잠금" adminOnly><Trainers /></AdminLockGate></RequireAuth>} />
+                <Route path="/revenue"  element={<AdminLockGate title="매출관리 잠금"><Revenue /></AdminLockGate>} />
+                {/* /revenue: 관리자=이중잠금 후 전체, 트레이너=본인 정산 조회(게이트 통과) */}
                 <Route path="/settings" element={<Settings darkMode={darkMode} setDarkMode={setDarkMode} />} />
                 <Route path="/ai"       element={<AiMeasureHub />} />
                 <Route path="/report"   element={<Report />} />
