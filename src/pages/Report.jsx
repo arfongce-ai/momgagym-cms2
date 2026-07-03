@@ -9,12 +9,15 @@ import { buildFullReport, buildAnalysisTrend, buildPostureTrend } from '../servi
 import { buildReportSvg, downloadSvgAsJpg } from '../components/report/reportImage';
 import { buildSummaryData, scoreToStatus } from '../ai-measure/core/unifiedReport';
 import { captureNodeToJpgFile, shareMeasurementSummaryToKakao } from '../ai-measure/core/reportShare';
+import { canCaptureUnifiedResult, isLiftingShapedSession } from '../components/report/sessionShare';
+import SessionShareReport from '../components/report/SessionShareReport';
 import TrendChart from '../components/report/TrendChart';
 import MemberPicker from '../components/common/MemberPicker';
 const JumpReportDashboard = lazy(() => import('../ai-measure/menus/JumpReportDashboard'));
 const GaitReportDashboard = lazy(() => import('../ai-measure/menus/GaitReportDashboard'));
 const PostureReport = lazy(() => import('../ai-measure/menus/PostureReport'));
 const RomReport = lazy(() => import('../ai-measure/menus/RomReport'));
+const LiftingReportDashboard = lazy(() => import('../ai-measure/menus/LiftingReportDashboard'));
 
 const COLORS = { weight:'#f59e0b', systolic:'#ef4444', diastolic:'#3b82f6', height:'#22d3ee' };
 const DETAIL_SESSION_MENUS = new Set(['jump', 'gait', 'posture', 'rom']);
@@ -205,10 +208,6 @@ async function waitForImages(root, timeoutMs = 1200) {
   ]);
 }
 
-function canCaptureUnifiedResult(item) {
-  return item?.source === 'saved-report' || item?.source === 'posture' || item?.source === 'rom';
-}
-
 function safeFileSegment(value, fallback = 'report') {
   return String(value || fallback)
     .trim()
@@ -304,6 +303,19 @@ function ShareCaptureReport({ item, member }) {
     return (
       <div data-share-report-ready="true" className="w-full bg-slate-950">
         <RomReport report={{ ...report, member: report.member || reportMember }} />
+      </div>
+    );
+  }
+
+  // 세션(측정이력) 항목: 전용 리포트 화면이 없어도 A4 리포트로 그려 캡처한다.
+  //  · 바벨 리프팅(역도/VBT/1RM) 페이로드는 전용 대시보드로 렌더(측정 직후와 동일 화면).
+  //  · 그 외(신체정보·레거시 세션 등)는 통합 요약 기반 A4 리포트로 렌더.
+  if (item.source === 'session') {
+    return (
+      <div data-share-report-ready="true" className="w-full bg-slate-950">
+        {isLiftingShapedSession(report)
+          ? <LiftingReportDashboard report={report} />
+          : <SessionShareReport item={item} member={reportMember} />}
       </div>
     );
   }
