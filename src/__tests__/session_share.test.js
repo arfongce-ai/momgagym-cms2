@@ -68,3 +68,22 @@ describe('extractSessionDetailTiles (메뉴별 상세 타일)', () => {
     expect(extractSessionDetailTiles('onerm', { oneRM: null })).toEqual([]);
   });
 });
+
+describe('reportTypeFromSession (통합 결과 카드 타입 분류)', () => {
+  it('바벨 리프팅 허브 세션은 mode 로 one_rm/vbt 로 세분류된다', async () => {
+    const { reportTypeFromSession } = await import('../pages/Report.jsx');
+    expect(reportTypeFromSession({ menu: 'lifting', data: { mode: 'onerm' } })).toBe('one_rm');
+    expect(reportTypeFromSession({ menu: 'lifting', data: { metrics: { oneRM: 120 } } })).toBe('one_rm');
+    expect(reportTypeFromSession({ menu: 'lifting', data: { mode: 'vbt' } })).toBe('vbt');
+    expect(reportTypeFromSession({ menu: 'lifting', data: { mode: 'lifting' } })).toBe('vbt');
+  });
+
+  it('레거시 메뉴 매핑 유지: onerm/vbt/rsi/기타', async () => {
+    const { reportTypeFromSession } = await import('../pages/Report.jsx');
+    expect(reportTypeFromSession({ menu: 'onerm' })).toBe('one_rm');
+    expect(reportTypeFromSession({ menu: 'vbt' })).toBe('vbt');
+    expect(reportTypeFromSession({ menu: 'rsi' })).toBe('jump');
+    expect(reportTypeFromSession({ menu: 'body' })).toBe('body');
+    expect(reportTypeFromSession({})).toBe('general');
+  });
+});

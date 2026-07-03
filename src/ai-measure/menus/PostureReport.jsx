@@ -82,22 +82,12 @@ export default function PostureReport({
     });
   }, [actualAge, currentPose, heightCm, member?.age, member?.heightCm, report]);
 
-  if (!analysis) {
-    return (
-      <UnifiedEmptyState onClose={onClose}>분석 가능한 BlazePose 랜드마크가 없습니다.</UnifiedEmptyState>
-    );
-  }
-
-  const statusStyle = STATUS_STYLE[analysis.status] || STATUS_STYLE.caution;
-  const memberName = member?.name || report?.memberName || '회원';
-  const measuredAt = (report?.measuredAt || report?.createdAt || new Date().toISOString()).slice(0, 10);
-  const bodyAge = analysis.bodyAge ?? report?.bodyAge;
-  const score = analysis.score ?? report?.postureScore ?? 0;
-  const findings = analysis.rules?.findings?.length ? analysis.rules.findings : [];
-  const problemFocus = report?.problem_focus || buildProblemFocus('posture', { ...report, analysis });
-
   // 임상 해석(부위별 진단·근육 추정·위험 Top3) — 측정값 기반, 비단정.
+  // [훅 규칙] 아래 두 useMemo 는 반드시 조기 return(분석 불가) 이전에 호출해야 한다.
+  //  landmarks 가 나중에 도착해 분석 불가 → 가능으로 바뀔 때 훅 순서가 달라지면
+  //  React 가 'Rendered more hooks' 오류로 리포트 화면 전체가 죽는다.
   const clinical = useMemo(() => {
+    if (!analysis) return null;
     const perViewAnalysis = report?.perViewAnalysis || {};
     // 단일 면만 있는 과거 데이터 호환: front 가 없으면 현재 분석을 front 로 사용.
     const pv = Object.keys(perViewAnalysis).length
@@ -115,11 +105,26 @@ export default function PostureReport({
 
   // 전신 종합 회전(축 정렬) 분석 — 4면 종합
   const axialRotation = useMemo(() => {
+    if (!analysis) return null;
     const pv = report?.perViewAnalysis && Object.keys(report.perViewAnalysis).length
       ? report.perViewAnalysis
       : { front: analysis };
     return analyzeAxialRotation(pv);
   }, [report, analysis]);
+
+  if (!analysis) {
+    return (
+      <UnifiedEmptyState onClose={onClose}>분석 가능한 BlazePose 랜드마크가 없습니다.</UnifiedEmptyState>
+    );
+  }
+
+  const statusStyle = STATUS_STYLE[analysis.status] || STATUS_STYLE.caution;
+  const memberName = member?.name || report?.memberName || '회원';
+  const measuredAt = (report?.measuredAt || report?.createdAt || new Date().toISOString()).slice(0, 10);
+  const bodyAge = analysis.bodyAge ?? report?.bodyAge;
+  const score = analysis.score ?? report?.postureScore ?? 0;
+  const findings = analysis.rules?.findings?.length ? analysis.rules.findings : [];
+  const problemFocus = report?.problem_focus || buildProblemFocus('posture', { ...report, analysis });
 
   return (
     <div className="min-h-full w-full bg-slate-950 p-4 text-slate-100">

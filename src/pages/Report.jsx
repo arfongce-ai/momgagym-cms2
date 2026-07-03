@@ -79,10 +79,17 @@ function formatDateOnly(value) {
   return String(value || '').slice(0, 10) || '-';
 }
 
-function reportTypeFromSession(session) {
+export function reportTypeFromSession(session) {
   if (session?.menu === 'onerm') return 'one_rm';
   if (session?.menu === 'vbt') return 'vbt';
   if (session?.menu === 'rsi') return 'jump';
+  // 통합 바벨 리프팅 허브 세션: data.mode 로 세부 분류 (unifiedReport.inferReportType 과 동일 규칙).
+  //  'lifting' 그대로 두면 REPORT_TYPE_META/reportTitle 에 매칭되지 않아 일반 'AI' 카드로 떨어진다.
+  if (session?.menu === 'lifting') {
+    const mode = session?.data?.mode;
+    if (mode === 'onerm' || session?.data?.metrics?.oneRM != null) return 'one_rm';
+    return 'vbt'; // 역도·VBT 모두 속도 기반 평가로 표시
+  }
   return session?.menu || 'general';
 }
 
@@ -326,7 +333,15 @@ function ShareCaptureReport({ item, member }) {
 function extractSessionMetric(session) {
   const d = session.data || {};
   switch (session.menu) {
-    case 'onerm':   return { value: d.oneRM, unit: 'kg', label: `1RM (${d.liftLabel ?? ''} ${d.weight ?? '-'}kg×${d.reps ?? '-'})` };
+    case 'onerm':   return { value: d.oneRM, unit: 'kg', label: `1RM (${d.liftLabel ?? ''} ${d.weight ?? '-'}kg×${d.reps ?? '-'}회)` };
+    case 'lifting': {
+      // 통합 바벨 리프팅 허브 페이로드(mode + metrics)
+      const m = d.metrics || {};
+      if (d.mode === 'onerm' || m.oneRM != null) {
+        return { value: m.oneRM, unit: 'kg', label: `1RM 추정 (${d.metadata?.weight ?? '-'}kg×${d.metadata?.reps ?? '-'}회)` };
+      }
+      return { value: m.meanVelocity, unit: 'm/s', label: d.mode === 'lifting' ? '역도 평균속도' : 'VBT 평균속도' };
+    }
     case 'rsi':     return { value: d.rsi, unit: '', label: `RSI · 높이 ${d.heightCm ?? '-'}cm` };
     case 'vbt':     return { value: d.meanVelocity, unit: 'm/s', label: `평균속도 (${d.zone ?? ''})` };
     case 'jump': {
