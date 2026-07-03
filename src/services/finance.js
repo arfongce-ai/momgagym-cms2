@@ -196,7 +196,14 @@ export function buildRefreezePlan({ trainers, members, payments, records, settin
         : Object.keys(m.trainerSessions || {});
       if (!involved.length) return;
       const next = {};
-      involved.forEach(tid => { if (rateMap[tid]) next[tid] = rateMap[tid].rate; });
+      involved.forEach(tid => {
+        // 수동 고정(🔒)된 트레이너 비율은 자동 재판정에서 제외 → 기존 값 유지.
+        if (p.rateManualFrozen && p.rateManualFrozen[tid]) {
+          if (p.splitRateAtPay && p.splitRateAtPay[tid] != null) next[tid] = Number(p.splitRateAtPay[tid]);
+        } else if (rateMap[tid]) {
+          next[tid] = rateMap[tid].rate;
+        }
+      });
       const prev = p.splitRateAtPay || {};
       // 변동 여부 판정 (involved 트레이너 비율이 하나라도 달라지면 갱신)
       const changed = involved.some(tid => Number(prev[tid]) !== Number(next[tid]));
@@ -244,7 +251,13 @@ export function buildRefreezeAllPlan({ trainers, members, payments, records, set
         : Object.keys(m.trainerSessions || {});
       if (!involved.length) return;
       const next = {};
-      involved.forEach(tid => { if (rateMap[tid]) next[tid] = rateMap[tid].rate; });
+      involved.forEach(tid => {
+        if (p.rateManualFrozen && p.rateManualFrozen[tid]) {
+          if (p.splitRateAtPay && p.splitRateAtPay[tid] != null) next[tid] = Number(p.splitRateAtPay[tid]);
+        } else if (rateMap[tid]) {
+          next[tid] = rateMap[tid].rate;
+        }
+      });
       const prev = p.splitRateAtPay || {};
       const changed = involved.some(tid => Number(prev[tid]) !== Number(next[tid]));
       if (changed) {
