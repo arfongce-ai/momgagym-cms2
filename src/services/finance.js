@@ -570,9 +570,18 @@ export function computeSessionSettlement({ trainers, members, schedules, payment
   //         전체 등록 = totalReg, 앞으로 소진될 잔여 = remaining →
   //         이미 소진된 수 = totalReg − remaining. 날짜순 마지막 수업의 인덱스 = (totalReg − remaining − 1),
   //         거기서 위로 갈수록 −1. (소진은 시간순이므로 등록분 비연속 추가도 정확히 갈린다.)
-  const allConsumed = {}; // tid -> mid -> [schedule...] (전월 포함 전체, 날짜순)
+  // 회차 매핑용 소진 리스트: 출석·노쇼 + "세션이 차감된 예정 수업"(sessionDeducted).
+  //  · 예약 시점에 세션이 차감되므로(sessionDeducted:true), 아직 출석 전이어도 그 등록분의
+  //    한 회를 이미 점유한 것이다. 세션 차감수와 회차 매핑수를 일치시켜야 완전성 판단이 맞다.
+  //    (정민준: 7월 예약 2건이 미출석이지만 세션 차감됨 → 이걸 빼면 매핑이 밀려 회차가 뭉쳤음)
+  //  · 이 리스트는 "어느 회차 소진인지"에만 쓰인다. 정산 금액(실지급)은 아래에서 출석·노쇼만
+  //    집계하므로, 미출석 예정분은 회차 매핑에는 반영돼도 돈으로는 잡히지 않는다.
+  const isConsumedForLot = (s) =>
+    s.status === 'attended' || s.status === 'noshow' ||
+    (s.status === 'scheduled' && s.sessionDeducted);
+  const allConsumed = {}; // tid -> mid -> [schedule...] (전월·이후월 포함 전체, 날짜순)
   schedules
-    .filter(s => !s.isExternal && s.memberId && s.trainerId && (s.status === 'attended' || s.status === 'noshow'))
+    .filter(s => !s.isExternal && s.memberId && s.trainerId && isConsumedForLot(s))
     .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : (String(a.id) < String(b.id) ? -1 : 1)))
     .forEach(s => {
       (allConsumed[s.trainerId] = allConsumed[s.trainerId] || {});
@@ -582,24 +591,31 @@ export function computeSessionSettlement({ trainers, members, schedules, payment
   Object.entries(allConsumed).forEach(([tid, byMember]) => {
     Object.entries(byMember).forEach(([mid, list]) => {
       const lots = memberTrainerLots[mid]?.[tid] || [];
-      // ── 회차 매핑(단일 기준: 날짜순 + 잔여 앵커) ──────────────────────
-      // 소진은 항상 시간순이다. 그 회원·트레이너의 출석/노쇼 수업 전체를 날짜순 정렬하면
-      // 그 순서가 곧 누적 소진 인덱스다. lot 경계(세션 시작일 반영)에 이 인덱스를 대응시켜
-      // 회차를 가른다. 스케줄에 박힌 consumedIndexAtBooking/sessionAtBooking 은 등록분마다
-      // 리셋되거나 세션 시작일 변경을 반영 못 해 어긋나므로 신뢰하지 않는다(마이그레이션 불필요).
-      //  · 앵커: 일부 초기 회차가 스케줄 없이 차감됐을 수 있으므로, "이미 소진한 총수"
-      //    (= total − remaining)를 기준으로 리스트의 마지막이 그 −1 인덱스가 되게 맞춘다.
-      //    스케줄이 모두 존재하면 base=0 이라 순수 날짜순과 동일하다.
+      // ── 회차 매핑 ────────────────────────────────────────────────────
+      // 소진은 항상 시간순이다. 출석/노쇼 수업 "전체"(전월 포함)를 날짜순 정렬한 순서가
+      // 누적 소진 인덱스이며, lot 경계(세션 시작일 반영)에 대응시켜 회차를 가른다.
+      // 스케줄에 박힌 consumedIndexAtBooking/sessionAtBooking 은 리셋·미반영으로 어긋나므로 무시.
+      //
+      // 앵커(리스트 첫 수업의 누적 인덱스) — 스케줄 완전성으로 판단:
+      //  · list(전월·당월·이후월 포함 전체 소진 스케줄) 개수 >= 실제 소진수(total−remaining):
+      //    모든 소진이 스케줄에 있음(완전) → base=0 순수 날짜순. 스케줄 순서가 진실이다.
+      //    (정민준: 6월6개+7월2개=8, 사용8과 일치 → 완전 → 정확히 갈림)
+      //  · list 개수 < 소진수: 과거 일부 소진이 스케줄 없이 잔여만 차감됨(시스템 도입 전 등) →
+      //    잔여 기준으로 뒤에서 앵커(base = 소진수 − list 개수).
       const member = memberMap[mid];
       const totalReg = Number(member?.trainerSessions?.[tid]?.total);
       const remainingNow = Number(member?.trainerSessions?.[tid]?.remaining);
       const consumedSoFar = (Number.isFinite(totalReg) && Number.isFinite(remainingNow))
         ? Math.max(0, totalReg - remainingNow) : list.length;
-      const base = Math.max(0, consumedSoFar - list.length); // 리스트 첫 수업의 누적 인덱스
+      const base = list.length >= consumedSoFar ? 0 : Math.max(0, consumedSoFar - list.length);
       list.forEach((s, seqIdx) => {
         if (!inMonth(s.date)) return;            // 인덱스는 전체 순서 기준, 집계는 이번 달만
+        // 미출석 예정분(sessionDeducted)은 회차 인덱스 진행에만 기여하고, 실제 카운트·금액에는
+        // 넣지 않는다(아직 안 한 수업이 정산 금액에 잡히면 안 됨). 출석·노쇼만 집계.
+        const counts = s.status === 'attended' || s.status === 'noshow';
         const lot = lotForConsumedIndex(lots, base + seqIdx);
         const key = lot?.id || '__aggregate__';
+        if (!counts) return;
         attended[tid] = attended[tid] || {};
         attended[tid][mid] = (attended[tid][mid] || 0) + 1;
         attendedLots[tid] = attendedLots[tid] || {};
