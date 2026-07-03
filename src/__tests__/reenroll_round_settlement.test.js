@@ -70,7 +70,9 @@ describe('reenroll round settlement', () => {
   });
 
   it('sums mixed previous and current registration rounds by lot', () => {
-    const row = build(12, [12, 11, 10, 9, 8]);
+    // 신규 lot(10) 마지막 2개 + 재등록2 lot(10) 처음 3개가 6월에 소진.
+    // 5개가 누적 인덱스 8~12 → 13개 소진 → remaining = 20-13 = 7.
+    const row = build(7, [12, 11, 10, 9, 8]);
     const parts = row.settlementBreakdown;
 
     expect(row.autoCnt).toBe(5);

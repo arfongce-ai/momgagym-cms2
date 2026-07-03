@@ -81,7 +81,8 @@ describe('단가 계산: 귀속결제액 ÷ 등록횟수', () => {
   });
 
   it('한 달에 전회차와 재등록 회차가 섞이면 회차별 상세를 함께 내려준다', () => {
-    const members = [{ id: 'm1', name: '회원', isActive: true, trainerSessions: { t1: { total: 20, remaining: 8 } } }];
+    // 2개 수업이 누적 인덱스 9,10 (전회차 10번째 + 재등록1 첫번째) → 11개 소진 → remaining 9.
+    const members = [{ id: 'm1', name: '회원', isActive: true, trainerSessions: { t1: { total: 20, remaining: 9 } } }];
     const payments = { m1: [
       {
         id: 'p1', amount: 224750, method: '현금', paidAt: '2026-05-01',

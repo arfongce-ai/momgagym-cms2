@@ -209,3 +209,122 @@ describe('sessionStartDate — 결제일과 세션 소진 순서 분리', () => 
     expect(r.settlementBreakdown.find(x => x.reEnrollNo === 9)?.count).toBe(1);
   });
 });
+
+describe('정민준 케이스 — 1회짜리 회차 연속 + 잔여 불일치', () => {
+  const st = {
+    withholdingRate:3.3, promoPerPost:10000, snsInstaMax:8,
+    lowSplitRate:40, rate60MinSales:3000000, rate50MinBlog:2, rate50MinStudy:1, trainerSplitRates:{},
+  };
+  const tr = [{ id:'t1', name:'박병준', color:'#f00' }];
+  const pays = { m1:[
+    { id:'p3', paidAt:'2026-06-13', amount:90000, method:'transfer', trainerIds:['t1'],
+      isReEnroll:true, reEnrollNo:3, splitRateAtPay:{t1:60}, sessionAdds:[{trainerId:'t1',count:1}] },
+    { id:'p4', paidAt:'2026-06-21', amount:90000, method:'transfer', trainerIds:['t1'],
+      isReEnroll:true, reEnrollNo:4, splitRateAtPay:{t1:60}, sessionAdds:[{trainerId:'t1',count:1}] },
+    { id:'p5', paidAt:'2026-06-21', sessionStartDate:'2026-06-22', amount:800000, method:'transfer',
+      trainerIds:['t1'], isReEnroll:true, reEnrollNo:5, splitRateAtPay:{t1:60},
+      sessionAdds:[{trainerId:'t1',count:10}] },
+  ]};
+  const s = (id,date)=>({id,memberId:'m1',trainerId:'t1',date,status:'attended',isExternal:false});
+  // 실제: 등록12·사용8·잔여4. 6월 6개 + 7월 2개 = 8개(사용8과 일치 → 완전).
+  const schedules = [ s('a1','2026-06-13'), s('a2','2026-06-21'), s('a3','2026-06-22'),
+    s('a4','2026-06-24'), s('a5','2026-06-29'), s('a6','2026-06-30'),
+    s('a7','2026-07-03'), s('a8','2026-07-04') ];
+
+  // 스케줄이 완전하면(사용수와 일치) 잔여값과 무관하게 정확히 갈린다.
+  // (실제 사용8·잔여4. 잔여가 6으로 어긋나 저장돼도 완전하면 스케줄 순서가 진실)
+  [4, 6].forEach(rem => {
+    it(`remaining=${rem} 이어도 6월이 3회차1 + 4회차1 + 5회차4로 갈린다`, () => {
+      const members = [{ id:'m1', name:'정민준', isActive:true,
+        trainerSessions:{ t1:{ total:12, remaining:rem } } }];
+      const b = computeSessionSettlement({ trainers: tr, members, schedules, payments: pays,
+        records:[], settings: st, ym:'2026-06', getOverride:()=>null });
+      const r = b[0].rows.find(x=>x.memberId==='m1');
+      expect(r.settlementBreakdown.find(x=>x.reEnrollNo===3)?.count).toBe(1);
+      expect(r.settlementBreakdown.find(x=>x.reEnrollNo===4)?.count).toBe(1);
+      expect(r.settlementBreakdown.find(x=>x.reEnrollNo===5)?.count).toBe(4);
+      expect(r.settlementBreakdown.every(x=>x.rate===60)).toBe(true);
+    });
+  });
+});
+
+describe('예정+세션차감 수업 — 회차 매핑 포함, 금액 제외', () => {
+  const st = {
+    withholdingRate:3.3, promoPerPost:10000, snsInstaMax:8,
+    lowSplitRate:40, rate60MinSales:3000000, rate50MinBlog:2, rate50MinStudy:1, trainerSplitRates:{},
+  };
+  const tr = [{ id:'t1', name:'박병준', color:'#f00' }];
+  const pays = { m1:[
+    { id:'p3', paidAt:'2026-06-13', amount:90000, method:'transfer', trainerIds:['t1'],
+      isReEnroll:true, reEnrollNo:3, splitRateAtPay:{t1:60}, sessionAdds:[{trainerId:'t1',count:1}] },
+    { id:'p4', paidAt:'2026-06-21', amount:90000, method:'transfer', trainerIds:['t1'],
+      isReEnroll:true, reEnrollNo:4, splitRateAtPay:{t1:60}, sessionAdds:[{trainerId:'t1',count:1}] },
+    { id:'p5', paidAt:'2026-06-21', sessionStartDate:'2026-06-22', amount:800000, method:'transfer',
+      trainerIds:['t1'], isReEnroll:true, reEnrollNo:5, splitRateAtPay:{t1:60},
+      sessionAdds:[{trainerId:'t1',count:10}] },
+  ]};
+  const att = (id,date)=>({id,memberId:'m1',trainerId:'t1',date,status:'attended',sessionDeducted:true,isExternal:false});
+  const sch = (id,date)=>({id,memberId:'m1',trainerId:'t1',date,status:'scheduled',sessionDeducted:true,isExternal:false});
+  // 6월 6개 출석 + 7월 2개 예정(세션차감). 사용8·잔여4.
+  const schedules = [
+    att('a1','2026-06-13'), att('a2','2026-06-21'), att('a3','2026-06-22'),
+    att('a4','2026-06-24'), att('a5','2026-06-29'), att('a6','2026-06-30'),
+    sch('a7','2026-07-03'), sch('a8','2026-07-04'),
+  ];
+  const members = [{ id:'m1', name:'정민준', isActive:true,
+    trainerSessions:{ t1:{ total:12, remaining:4 } } }];
+
+  it('6월: 예정차감분 덕에 회차가 3회차1+4회차1+5회차4로 갈린다', () => {
+    const b = computeSessionSettlement({ trainers: tr, members, schedules, payments: pays,
+      records:[], settings: st, ym:'2026-06', getOverride:()=>null });
+    const r = b[0].rows.find(x=>x.memberId==='m1');
+    expect(r.autoCnt).toBe(6);
+    expect(r.settlementBreakdown.find(x=>x.reEnrollNo===3)?.count).toBe(1);
+    expect(r.settlementBreakdown.find(x=>x.reEnrollNo===4)?.count).toBe(1);
+    expect(r.settlementBreakdown.find(x=>x.reEnrollNo===5)?.count).toBe(4);
+  });
+
+  it('7월: 예정만이므로 정산 금액에 안 잡힌다(autoCnt 0)', () => {
+    const b = computeSessionSettlement({ trainers: tr, members, schedules, payments: pays,
+      records:[], settings: st, ym:'2026-07', getOverride:()=>null });
+    const r = b[0].rows.find(x=>x.memberId==='m1');
+    expect(r?.autoCnt ?? 0).toBe(0);
+  });
+});
+
+describe('취소 수업 — 세션 복원 + 회차 매핑 제외', () => {
+  const st = {
+    withholdingRate:3.3, promoPerPost:10000, snsInstaMax:8,
+    lowSplitRate:40, rate60MinSales:3000000, rate50MinBlog:2, rate50MinStudy:1, trainerSplitRates:{},
+  };
+  const tr = [{ id:'t1', name:'박병준', color:'#f00' }];
+  const pays = { m1:[
+    { id:'p3', paidAt:'2026-06-13', amount:90000, method:'transfer', trainerIds:['t1'],
+      isReEnroll:true, reEnrollNo:3, splitRateAtPay:{t1:60}, sessionAdds:[{trainerId:'t1',count:1}] },
+    { id:'p4', paidAt:'2026-06-21', amount:90000, method:'transfer', trainerIds:['t1'],
+      isReEnroll:true, reEnrollNo:4, splitRateAtPay:{t1:60}, sessionAdds:[{trainerId:'t1',count:1}] },
+    { id:'p5', paidAt:'2026-06-21', sessionStartDate:'2026-06-22', amount:800000, method:'transfer',
+      trainerIds:['t1'], isReEnroll:true, reEnrollNo:5, splitRateAtPay:{t1:60},
+      sessionAdds:[{trainerId:'t1',count:10}] },
+  ]};
+  const att = (id,date)=>({id,memberId:'m1',trainerId:'t1',date,status:'attended',sessionDeducted:true,isExternal:false});
+  const cancel = (id,date)=>({id,memberId:'m1',trainerId:'t1',date,status:'canceled',sessionDeducted:true,isExternal:false});
+  // 7월 2개 취소 → 세션 복원(잔여 6). 6월 6개 출석.
+  const schedules = [
+    att('a1','2026-06-13'), att('a2','2026-06-21'), att('a3','2026-06-22'),
+    att('a4','2026-06-24'), att('a5','2026-06-29'), att('a6','2026-06-30'),
+    cancel('a7','2026-07-03'), cancel('a8','2026-07-04'),
+  ];
+  const members = [{ id:'m1', name:'정민준', isActive:true,
+    trainerSessions:{ t1:{ total:12, remaining:6 } } }];
+
+  it('취소분은 회차 매핑에서 빠지고 6월이 정확히 갈린다', () => {
+    const b = computeSessionSettlement({ trainers: tr, members, schedules, payments: pays,
+      records:[], settings: st, ym:'2026-06', getOverride:()=>null });
+    const r = b[0].rows.find(x=>x.memberId==='m1');
+    expect(r.autoCnt).toBe(6);
+    expect(r.settlementBreakdown.find(x=>x.reEnrollNo===3)?.count).toBe(1);
+    expect(r.settlementBreakdown.find(x=>x.reEnrollNo===4)?.count).toBe(1);
+    expect(r.settlementBreakdown.find(x=>x.reEnrollNo===5)?.count).toBe(4);
+  });
+});
