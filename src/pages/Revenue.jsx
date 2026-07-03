@@ -863,12 +863,6 @@ function SettleTab({ settings, trainers, trainerMap, scopeTid=null, readOnly=fal
           className="bg-slate-900 border border-slate-700 text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-amber-500"/>
         <span className="text-[11px] text-slate-500 ml-auto">임금지급일: 매월 {settings.paydayDay||5}일</span>
         {!readOnly && (
-          <button onClick={handleRefreeze} disabled={freezing}
-            className="px-3 py-2 rounded-lg text-xs font-bold bg-amber-500/10 border border-amber-500/40 text-amber-400 hover:bg-amber-500/20 transition-colors disabled:opacity-40">
-            {freezing ? '확정 중…' : '🔒 이 달 정산비율 확정'}
-          </button>
-        )}
-        {!readOnly && (
           <button onClick={handleBackfillRounds} disabled={backfilling}
             className="px-3 py-2 rounded-lg text-xs font-bold bg-violet-500/10 border border-violet-500/40 text-violet-300 hover:bg-violet-500/20 transition-colors disabled:opacity-40"
             title="과거 수업의 재등록 회차 매핑을 날짜순으로 정리 — 회차별 정산이 정확히 갈리게 함">
@@ -887,11 +881,6 @@ function SettleTab({ settings, trainers, trainerMap, scopeTid=null, readOnly=fal
           📄 정산표 내보내기
         </button>
       </div>
-      {!readOnly && (
-        <p className="text-[11px] text-slate-500 -mt-3">
-          🔒 “이 달 정산비율 확정”은 선택한 달에 결제가 발생한 회원들의 정산비율을, 그 달 전체 실적(블로그·스터디·매출)으로 다시 판정해 고정합니다. 보통 월말(말일 이후)에 한 번 누르며, 다른 달 결제는 바뀌지 않습니다.
-        </p>
-      )}
 
       {estimate ? (
         // 트레이너용 간략 요약 — 큰 실지급 숫자 1개 + 한 줄 내역
@@ -1006,11 +995,13 @@ function TrainerSettleCard({ block: b, ym, settings, onSaved, readOnly=false, de
     if (!p) { alert('해당 결제를 찾을 수 없습니다.'); return; }
     if (Number(p.splitRateAtPay?.[tid]) === n) { alert(`이미 ${n}%로 고정되어 있습니다.`); return; }
     const next = { ...(p.splitRateAtPay || {}), [tid]: n };
-    if (!window.confirm(`[${part.label}] 비율을 ${n}%로 고정할까요?\n소진하는 모든 달에 적용됩니다.`)) return;
+    // 수동 고정 표시 — '⚖️ 전체 비율 박제'(자동 재판정)가 이 값을 덮지 않도록 보호.
+    const manualFlag = { ...(p.rateManualFrozen || {}), [tid]: true };
+    if (!window.confirm(`[${part.label}] 비율을 ${n}%로 고정할까요?\n소진하는 모든 달에 적용됩니다.\n(이후 '전체 비율 박제'를 눌러도 이 값은 유지됩니다.)`)) return;
     try {
-      await store.updatePayment(memberId, pid, { splitRateAtPay: next });
+      await store.updatePayment(memberId, pid, { splitRateAtPay: next, rateManualFrozen: manualFlag });
       onSaved?.(store.getSettleOverride(b.trainer.id, ym));
-      alert(`[${part.label}] 비율을 ${n}%로 고정했습니다.`);
+      alert(`[${part.label}] 비율을 ${n}%로 고정했습니다. 자동 확정에도 유지됩니다.`);
     } catch (e) { alert('저장에 실패했습니다. 네트워크 확인 후 다시 시도하세요.'); }
   };
 
