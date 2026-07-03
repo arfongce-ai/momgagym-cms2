@@ -11,7 +11,7 @@ import { useAuth } from '../contexts/AuthContext';
 import {
   METHOD_LBL, METHOD_CLR, won, monthKey, yearKey,
   calcNet, downloadCSV, computeSessionSettlement,
-  buildRefreezePlan, planRateFreeze, planConsumedIndexBackfill,
+  buildRefreezePlan, buildRefreezeAllPlan, planRateFreeze, planConsumedIndexBackfill,
 } from '../services/finance';
 import { todayYMD, thisYM, thisYear } from '../utils/dates';
 import { getUserTrainerId } from '../utils/memberList';
@@ -795,7 +795,36 @@ function SettleTab({ settings, trainers, trainerMap, scopeTid=null, readOnly=fal
     }
   };
 
-  const grandSession = blocks.reduce((s,b)=>s+b.sessionTotal,0);
+  // ── 전체 기간 비율 일괄 박제(과거 데이터 소급 정리) ─────────────────
+  // 모든 결제를 각자의 결제월 조건%로 한 번에 박제. 시스템 도입 이전 과거 결제 정리용.
+  const [refreezingAll, setRefreezingAll] = useState(false);
+  const handleRefreezeAll = async () => {
+    const plan = buildRefreezeAllPlan({
+      trainers: store.getTrainers(), members: store.getMembers(),
+      payments: Object.fromEntries(store.getMembers().map(m => [m.id, store.getPayments(m.id)])),
+      records: store.getPromos ? store.getPromos() : [], settings: store.getSettings(),
+    });
+    if (!plan.count) {
+      alert('모든 결제가 이미 각자의 결제월 조건 비율로 박제되어 있습니다. 바뀌는 건이 없습니다.');
+      return;
+    }
+    if (!window.confirm(
+      `모든 결제의 정산비율을 각자의 결제월 조건(블로그·스터디·매출)으로 다시 판정해 일괄 박제합니다.\n` +
+      `대상 결제: ${plan.count}건 (기간: ${plan.months[0]} ~ ${plan.months[plan.months.length-1]})\n\n` +
+      `각 회차는 그 등록(결제)달 조건 비율이 소진 끝까지 유지됩니다. 진행할까요?`)) return;
+    setRefreezingAll(true);
+    try {
+      const n = await store.freezeMemberRate(plan.patches);
+      setRefreshKey(k => k + 1);
+      alert(`완료: ${n}건의 결제 비율을 각 결제월 조건으로 박제했습니다.`);
+    } catch (e) {
+      alert('일괄 박제 중 오류가 발생했습니다. 네트워크 확인 후 다시 시도하세요.');
+    } finally {
+      setRefreezingAll(false);
+    }
+  };
+
+
   const grandSessionPayout = blocks.reduce((s,b)=>s+(b.sessionPayout??b.sessionTotal),0);
   const grandInc     = blocks.reduce((s,b)=>s+b.promoIncentive,0);
   const grandPayout  = blocks.reduce((s,b)=>s+b.payout,0);            // 세전
@@ -843,6 +872,13 @@ function SettleTab({ settings, trainers, trainerMap, scopeTid=null, readOnly=fal
             className="px-3 py-2 rounded-lg text-xs font-bold bg-violet-500/10 border border-violet-500/40 text-violet-300 hover:bg-violet-500/20 transition-colors disabled:opacity-40"
             title="과거 수업의 재등록 회차 매핑을 날짜순으로 정리 — 회차별 정산이 정확히 갈리게 함">
             {backfilling ? '정리 중…' : '🔧 회차 정리'}
+          </button>
+        )}
+        {!readOnly && (
+          <button onClick={handleRefreezeAll} disabled={refreezingAll}
+            className="px-3 py-2 rounded-lg text-xs font-bold bg-emerald-500/10 border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/20 transition-colors disabled:opacity-40"
+            title="모든 결제를 각자의 결제월 조건 비율로 일괄 박제 — 과거 데이터 소급 정리용">
+            {refreezingAll ? '박제 중…' : '⚖️ 전체 비율 박제'}
           </button>
         )}
         <button onClick={exportCSV} disabled={blocks.length===0}
@@ -947,6 +983,34 @@ function TrainerSettleCard({ block: b, ym, settings, onSaved, readOnly=false, de
       setEditing(false);
       onSaved?.(store.getSettleOverride(b.trainer.id, ym));
     } catch (e) { alert('비율 고정에 실패했습니다. 네트워크 확인 후 다시 시도하세요.'); }
+  };
+
+  // 회차별 비율 고정 — 보기 모드에서 특정 회차(part)만 비율을 지정해 그 결제 건에 박제.
+  //  · part.id 형식: `${paymentId}:${tid}:${idx}` → paymentId 를 뽑아 그 결제 하나만 갱신.
+  //  · 그 회차 등록분을 소진하는 모든 달에 이 비율이 유지된다(다른 회차는 안 건드림).
+  const freezeLotRate = async (memberId, part) => {
+    const tid = b.trainer.id;
+    const cur = part.rate;
+    const input = window.prompt(
+      `[${part.label || '이 회차'}]의 정산비율을 %로 입력하세요.\n` +
+      `이 회차 등록분을 소진하는 모든 달에 이 비율이 적용됩니다. (예: 40 또는 50)`, String(cur ?? ''));
+    if (input === null) return;
+    const n = Number(input.trim());
+    if (!Number.isFinite(n) || n < 0 || n > 100) { alert('0~100 사이 숫자를 입력하세요.'); return; }
+    // lotId 에서 결제 id 추출 (형식: paymentId:tid:idx)
+    const pid = String(part.id || '').split(':')[0];
+    if (!pid || part.legacy) { alert('이 회차는 결제 건과 직접 연결돼 있지 않아 회차 단위 고정을 지원하지 않습니다.'); return; }
+    const payments = store.getPayments(memberId);
+    const p = payments.find(x => x.id === pid);
+    if (!p) { alert('해당 결제를 찾을 수 없습니다.'); return; }
+    if (Number(p.splitRateAtPay?.[tid]) === n) { alert(`이미 ${n}%로 고정되어 있습니다.`); return; }
+    const next = { ...(p.splitRateAtPay || {}), [tid]: n };
+    if (!window.confirm(`[${part.label}] 비율을 ${n}%로 고정할까요?\n소진하는 모든 달에 적용됩니다.`)) return;
+    try {
+      await store.updatePayment(memberId, pid, { splitRateAtPay: next });
+      onSaved?.(store.getSettleOverride(b.trainer.id, ym));
+      alert(`[${part.label}] 비율을 ${n}%로 고정했습니다.`);
+    } catch (e) { alert('저장에 실패했습니다. 네트워크 확인 후 다시 시도하세요.'); }
   };
 
   const save = async () => {
@@ -1210,8 +1274,17 @@ function TrainerSettleCard({ block: b, ym, settings, onSaved, readOnly=false, de
                       : showBreakdown
                       ? <div className="space-y-0.5 font-mono text-slate-400">
                           {breakdown.map((part, idx) => (
-                            <div key={`${part.id || part.label}-rate-${idx}`} title={part.hasFrozen ? '등록월에 고정된 비율' : rateTitle}>
-                              {part.rate}%{part.hasFrozen?'🔒':''}
+                            <div key={`${part.id || part.label}-rate-${idx}`}
+                              className="flex items-center justify-end gap-1"
+                              title={part.hasFrozen ? '등록월에 고정된 비율' : rateTitle}>
+                              <span>{part.rate}%{part.hasFrozen?'🔒':''}</span>
+                              {!readOnly && !part.legacy && (
+                                <button type="button" onClick={()=>freezeLotRate(r.memberId, part)}
+                                  className="text-[9px] px-1 py-0.5 rounded bg-violet-500/15 text-violet-300 hover:bg-violet-500/40 font-bold"
+                                  title="이 회차 비율을 고정 → 소진 끝까지 유지">
+                                  고정
+                                </button>
+                              )}
                             </div>
                           ))}
                         </div>
