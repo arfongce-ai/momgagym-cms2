@@ -20,6 +20,7 @@ import VbtMeasure from './VbtMeasure';
 import OneRMEstimate from './OneRMEstimate';
 import LiftingUploadAnalysis from './LiftingUploadAnalysis';
 import LiftingReportDashboard from './LiftingReportDashboard';
+import { useHardwareBack } from '../core/useHardwareBack';
 import {
   exercisesForMode, lift1rmToExercise,
   vbtConfidence, estimateMeanPower, buildLiftingPayload,
@@ -46,6 +47,8 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
   const [captureMode, setCaptureMode] = useState('live');
   // 측정 완료 후 표시할 리포트.
   const [report, setReport] = useState(null);
+  // [항목 2] 폰 뒤로가기: 리포트 화면이면 측정 화면으로 한 단계만 복귀.
+  useHardwareBack(!!report, () => setReport(null));
 
   // ── 오버레이 겹침 수정 ──
   //  상단 모드/종목/촬영방식 선택 바의 실제 렌더 높이를 측정해 자식 카메라

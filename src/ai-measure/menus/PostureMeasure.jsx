@@ -8,6 +8,7 @@ import CameraStage from './CameraStage.jsx';
 import PostureReport from './PostureReport.jsx';
 import ReportActions from '../../components/report/ReportActions';
 import { drawPostureSnapshotOverlay } from '../core/postureOverlay';
+import { useHardwareBack } from '../core/useHardwareBack';
 
 const VIEW_STEPS = [
   { key: 'front', label: '정면', short: '앞' },
@@ -151,7 +152,13 @@ export default function PostureMeasure({ member, onSave, onBack }) {
         return;
       }
 
-      if (viewVoterRef.current.isStable(target, { minRatio: 0.7, minFrames: 8 })) {
+      // [항목 3] 측면(left/right)은 판정이 더 자주 흔들리므로 안정 요건을 살짝 완화해
+      // '측면 인식이 잘 안 되어 촬영이 안 넘어가는' 문제를 줄인다.
+      const isSideTarget = target === 'left' || target === 'right';
+      const stableOpts = isSideTarget
+        ? { minRatio: 0.6, minFrames: 7 }
+        : { minRatio: 0.7, minFrames: 8 };
+      if (viewVoterRef.current.isStable(target, stableOpts)) {
         setGuide(`${targetLabel} 인식됨 — 측정을 시작합니다.`);
         startAutoCountdown();
       } else {
@@ -362,6 +369,32 @@ export default function PostureMeasure({ member, onSave, onBack }) {
     activeViewKeyRef.current = first;
     setTimeout(() => start(videoRef.current), 80);
   };
+
+  // ── [항목 2] 폰 뒤로가기 연동 ──
+  // 하위 화면에서 폰 뒤로가기 = '한 단계'만 뒤로.
+  //  결과(report) → 촬영 방식 선택 / 측정 중(started) → 촬영 방식 선택 / 선택 화면 → (허브가 처리)
+  const inSubView = !!report || started;
+  const goBackOneStep = () => {
+    // 공통 정리(카메라·타이머·URL) — 촬영 방식 선택 화면으로 복귀
+    Object.values(capturesRef.current).forEach((capture) => {
+      if (capture?.snapshotUrl) URL.revokeObjectURL(capture.snapshotUrl);
+    });
+    setCaptures({});
+    capturesRef.current = {};
+    setPreviewUrl('');
+    setReport(null);
+    setSaveState('idle');
+    smootherRef.current = createSmoother(0.28);
+    latestLandmarksRef.current = null;
+    frameBufferRef.current = [];
+    viewVoterRef.current.reset();
+    setDetectedView('unknown');
+    setAutoCountdown(null);
+    autoBusyRef.current = false;
+    if (autoCountdownRef.current) { clearInterval(autoCountdownRef.current); autoCountdownRef.current = null; }
+    setStarted(false); // started=false 가 되면 useEffect cleanup 이 카메라를 stop() 한다.
+  };
+  useHardwareBack(inSubView, goBackOneStep);
 
   const handleSave = async () => {
     if (!member) {

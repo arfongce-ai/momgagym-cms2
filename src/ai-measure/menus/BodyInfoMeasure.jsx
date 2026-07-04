@@ -13,10 +13,25 @@ const TIER_STYLE = {
   bad:  'text-red-400',
 };
 
-export default function BodyInfoMeasure({ member, onSave, onBack }) {
-  const [form, setForm] = useState({ height: '', weight: '', systolic: '', diastolic: '' });
+export default function BodyInfoMeasure({ member, onSave, onBack, onGuestBodyInfoChange }) {
+  const isVirtual = member?.isVirtual === true;
+  // 회원(실제/미등록)의 기존 키·몸무게를 초기값으로 채워, 다른 탭과의 연동 상태를
+  // 눈으로 확인하고 이어서 보정할 수 있게 한다.
+  const [form, setForm] = useState({
+    height: member?.height != null ? String(member.height) : '',
+    weight: member?.weight != null ? String(member.weight) : '',
+    systolic: '',
+    diastolic: '',
+  });
   const [result, setResult] = useState(null);
-  const pf = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }));
+  const pf = (k) => (e) => {
+    const val = e.target.value;
+    setForm(f => ({ ...f, [k]: val }));
+    // [항목 1] 미등록회원이면 키·몸무게 입력 즉시 허브 신체정보에 반영 → 다른 측정 탭 연동.
+    if (isVirtual && (k === 'height' || k === 'weight')) {
+      onGuestBodyInfoChange?.({ [k]: val });
+    }
+  };
 
   const analyze = () => {
     if (!form.weight) { alert('몸무게는 필수입니다.'); return; }
@@ -31,6 +46,20 @@ export default function BodyInfoMeasure({ member, onSave, onBack }) {
 
   const save = async () => {
     if (!member) { alert('저장하려면 먼저 회원을 선택하세요(허브 상단).'); return; }
+    const payload = {
+      height: form.height ? Number(form.height) : null,
+      weight: Number(form.weight),
+      systolic: form.systolic ? Number(form.systolic) : null,
+      diastolic: form.diastolic ? Number(form.diastolic) : null,
+    };
+    if (isVirtual) {
+      // [항목 1] 미등록회원: 영구 신체기록(store)에 남기지 않고, 허브 신체정보에 반영해
+      // 이번 측정 묶음의 다른 탭들이 같은 키/체중을 쓰도록 연동한다.
+      onGuestBodyInfoChange?.({ height: form.height, weight: form.weight });
+      onSave?.(payload); // 측정 이력(ai)에 신체정보 기록 누적
+      alert('미등록회원 신체정보가 이번 측정에 반영되었습니다. (다른 측정 탭과 연동)');
+      return;
+    }
     try {
       await store.addBodyRecord(member.id, {
         recordedAt: todayYMD(),
@@ -42,12 +71,7 @@ export default function BodyInfoMeasure({ member, onSave, onBack }) {
       });
     } catch (e) { alert('신체정보 저장에 실패했습니다. 네트워크 확인 후 다시 시도하세요.'); return; }
     // 허브의 onSave 도 호출(측정 이력 누적용)
-    onSave?.({
-      height: form.height ? Number(form.height) : null,
-      weight: Number(form.weight),
-      systolic: form.systolic ? Number(form.systolic) : null,
-      diastolic: form.diastolic ? Number(form.diastolic) : null,
-    });
+    onSave?.(payload);
     alert('신체정보가 저장되었습니다. (회원 신체기록 + 리포트에 반영)');
   };
 

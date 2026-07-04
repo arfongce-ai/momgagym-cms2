@@ -1,6 +1,6 @@
 // ai-measure/menus/RomReport.jsx
 // ROM 측정 리포트 — A4 폭. 자세별·관절별 좌우 최대 가동범위, 대칭성,
-// 끝범위 안정성, 보상 작용, AI 진단 코멘트, 각도 시계열 차트를 한 장에 담는다.
+// 보상 작용, AI 진단 코멘트, 각도 시계열 차트를 한 장에 담는다. (끝범위 측정은 제외 — 항목 5)
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, CartesianGrid } from 'recharts';
 import { buildProblemFocus } from '../core/crossMeasureContext';
 import ProblemFocusPanel from './ProblemFocusPanel.jsx';
@@ -35,7 +35,7 @@ export default function RomReport({ report }) {
   if (!report) return <UnifiedEmptyState>리포트 데이터가 없습니다.</UnifiedEmptyState>;
   const { joint, poseMode, summary, diagnosis, member, recordedAt, captureMode, snapshotUrl, hasVideo, posture_context, integrated_assessment } = report;
   const s = summary || {};
-  const stab = s.end_range_stability_score || {};
+  // [항목 5] end-range 지표는 불확실하여 리포트에서 사용하지 않는다.
   const comp = s.compensation || {};
   const problemFocus = report.problem_focus || buildProblemFocus('rom', report);
 
@@ -123,8 +123,7 @@ export default function RomReport({ report }) {
           sub="차이(작을수록 대칭)"
           tone={s.symmetry_index_score != null && s.symmetry_index_score >= 15 ? 'warn' : 'ok'}
         />
-        <MetricCard label="좌 끝범위 안정성" value={stab.left == null ? '—' : `${stab.left}점`} sub="잔떨림 제어" />
-        <MetricCard label="우 끝범위 안정성" value={stab.right == null ? '—' : `${stab.right}점`} sub="잔떨림 제어" />
+        {/* [항목 5] 끝범위(end-range) 측정은 불확실하여 리포트에서 제외한다. */}
         <MetricCard
           label="보상 작용"
           value={
@@ -159,7 +158,7 @@ export default function RomReport({ report }) {
       {/* 스냅샷 (있으면) */}
       {snapshotUrl && (
         <div className="mt-4">
-          <p className="mb-1 text-sm font-bold text-slate-300">끝범위 캡처</p>
+          <p className="mb-1 text-sm font-bold text-slate-300">측정 캡처</p>
           <img src={snapshotUrl} alt="ROM 캡처" className="rounded-lg border border-slate-700" style={{ maxHeight: 240 }} />
         </div>
       )}

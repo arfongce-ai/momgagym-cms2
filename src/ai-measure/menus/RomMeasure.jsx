@@ -22,6 +22,8 @@ import CameraStage from './CameraStage.jsx';
 import RomReport from './RomReport.jsx';
 import ReportActions from '../../components/report/ReportActions';
 import { dataUrlToFile } from '../core/reportShare';
+import { useHardwareBack } from '../core/useHardwareBack';
+import RomGoniometer from './RomGoniometer.jsx';
 
 const MAX_RECORD_MS = 60000;
 
@@ -72,7 +74,7 @@ export default function RomMeasure({ member, onSave, onBack }) {
   const [joint, setJoint] = useState('HIP');
   const [poseMode, setPoseMode] = useState('STANDING');
   const [side, setSide] = useState('both');
-  const [mode, setMode] = useState('select'); // select | live | upload
+  const [mode, setMode] = useState('select'); // select | live | upload | manual
 
   // 라이브
   const canvasRef = useRef(null);
@@ -125,6 +127,25 @@ export default function RomMeasure({ member, onSave, onBack }) {
   }, [joint, poseMode]);
 
   const jointName = JOINTS.find((j) => j.key === joint)?.label || joint;
+
+  // ── [항목 2] 폰 뒤로가기 연동 ──
+  // 하위 화면(결과/라이브/업로드/각도기)에서 폰 뒤로가기 = '한 단계'만 뒤로.
+  //  결과 → 설정 / 라이브·업로드·각도기 → 설정 / 설정 → (허브가 처리)
+  const inSubView = !!report || mode !== 'select';
+  const goBackOneStep = () => {
+    if (report) { resetAll(); return; }
+    if (mode !== 'select') {
+      // 라이브 녹화 중이었으면 상태도 함께 정리(카메라 정지는 mode 이펙트 cleanup 이 처리)
+      recordingRef.current = false;
+      setRecording(false);
+      setElapsed(0);
+      accRef.current = null;
+      setMode('select');
+      return;
+    }
+    onBack?.();
+  };
+  useHardwareBack(inSubView, goBackOneStep);
 
   // ── 라이브 프레임 콜백 ──
   const handlePose = useCallback((landmarks, ts, video) => {
@@ -264,7 +285,7 @@ export default function RomMeasure({ member, onSave, onBack }) {
     maxRecordTimerRef.current = setTimeout(() => {
       if (recordingRef.current) finishRecord();
     }, MAX_RECORD_MS);
-    setGuide('동작을 한 번 천천히 끝까지 — 끝범위에서 1초 멈춘 뒤 돌아오세요.');
+    setGuide('동작을 한 번 천천히 최대 지점까지 수행한 뒤 돌아오세요.');
     beepGo();
   };
 
@@ -476,6 +497,17 @@ export default function RomMeasure({ member, onSave, onBack }) {
     );
   }
 
+  // ════════════════ 전자 각도기(수동) 화면 ════════════════
+  if (mode === 'manual') {
+    return (
+      <RomGoniometer
+        member={member}
+        jointName={jointName}
+        onBack={() => setMode('select')}
+      />
+    );
+  }
+
   // ════════════════ 업로드 화면 ════════════════
   if (mode === 'upload') {
     return (
@@ -684,11 +716,16 @@ export default function RomMeasure({ member, onSave, onBack }) {
           <p className="text-base font-black text-white">고속 영상 업로드</p>
           <p className="mt-0.5 text-xs font-bold text-slate-400">120/240fps 슬로모 영상으로 정밀 분석(시간 지표 자동 보정).</p>
         </button>
+        <button onClick={() => setMode('manual')}
+          className="w-full rounded-xl border border-sky-600/50 bg-sky-500/10 px-4 py-4 text-left active:scale-[0.99] transition">
+          <p className="text-base font-black text-sky-200">전자 각도기 (수동)</p>
+          <p className="mt-0.5 text-xs font-bold text-sky-300/80">자동 인식이 어려운 부위·자세를 사진 위 세 점 탭으로 직접 측정.</p>
+        </button>
         <p className="text-[11px] text-slate-500 leading-relaxed">
           ※ {POSE_LABEL[poseMode]} 자세에서는{' '}
           {poseMode === 'STANDING'
             ? '체중지지 상태의 기능적 가동성과 골반 보상 작용을 함께 평가합니다.'
-            : '지면 지지로 보상을 통제한 순수 구조적 가동범위와 끝범위 안정성을 평가합니다.'}
+            : '지면 지지로 보상을 통제한 순수 구조적 가동범위를 평가합니다.'}
         </p>
       </div>
     </div>

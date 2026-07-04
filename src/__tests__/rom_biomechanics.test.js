@@ -226,16 +226,18 @@ describe('romClinical — AI 진단 엔진', () => {
     expect(['attention', 'focus']).toContain(dx.grade);
   });
 
-  it('양측 제한 + 끝범위 불안정이면 focus 등급', () => {
+  it('양측 가동범위 제한이면 focus 등급 (끝범위 측정은 진단에서 제외)', () => {
     const summary = {
       valid: true,
       left_max_rom: 70, right_max_rom: 72,
       symmetry_index_score: 2.8,
-      end_range_stability_score: { left: 40, right: 45 },
       compensation: { left: 2, right: 2 },
     };
     const dx = generateRomDiagnosis(summary, { joint: 'HIP', poseMode: 'SUPINE' });
     expect(dx.grade).toBe('focus');
+    // 끝범위 관련 플래그/문구는 더 이상 생성되지 않는다(항목 5).
+    expect(dx.flags).not.toContain('end_range_instability');
+    expect(dx.details.join(' ')).not.toMatch(/끝범위|잔떨림/);
   });
 });
 

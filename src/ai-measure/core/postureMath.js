@@ -832,7 +832,7 @@ function clamp(value, min, max) {
 // ════════════════════════════════════════════════════════════════════════
 export const POSTURE_VIEW_TUNING = Object.freeze({
   shoulderFrontMin: 0.16, // 어깨폭/몸통높이 비 이상 → 정면/후면 후보
-  shoulderSideMax: 0.10,  // 이하 → 측면 후보 (사이 구간은 약한 신뢰도)
+  shoulderSideMax: 0.12,  // 이하 → 측면 후보 (사이 구간은 약한 신뢰도)
   faceVisFront: 0.55,     // 코·눈 가시성 이상 → 정면 확정
   faceVisBack: 0.30,      // 코·눈 가시성 이하 → 후면 확정 (그 사이는 어깨 부호로 보조)
 });
@@ -856,15 +856,28 @@ export function detectPostureView(landmarks, tuning = POSTURE_VIEW_TUNING) {
   const shoulderRatio = round(shoulderW / trunkH, 3);
 
   // 1-b) 측면 강도(side strength) — 측면일수록 두 어깨의 '깊이(z) 차'가 크고,
-  //   한쪽 귀만 잘 보인다. 어깨폭이 애매(0.10~0.16)해도 이 신호로 측면을 잡는다.
+  //   한쪽 귀만 잘 보이며, 코가 (좁은) 어깨 중심에서 옆으로 크게 벗어난다.
+  //   어깨폭이 애매(0.10~0.16)해도 이 신호들로 측면을 잡는다.
   //   ▸ 어깨 z 분리: |lS.z − rS.z| 를 몸통높이로 정규화. 측면이면 큼.
   //   ▸ 귀 비대칭: 좌/우 귀 visibility 차가 크면 한쪽 면(측면) 가능성↑.
+  //   ▸ 코 수평 이탈(주신호·z 무관): 측면이면 코가 어깨중심에서 옆으로 멀어진다.
+  //     z 좌표(단안 깊이)는 노이즈가 커서, 이 2D 신호를 함께 써 측면 인식률을 높인다.
   const shoulderZsep = Math.abs((lS.z ?? 0) - (rS.z ?? 0)) / (trunkH || 1);
   const lEarV = landmarks[LM.LEFT_EAR]?.visibility ?? 0.5;
   const rEarV = landmarks[LM.RIGHT_EAR]?.visibility ?? 0.5;
   const earAsym = Math.abs(lEarV - rEarV);
-  // 측면 강도: z분리(주신호) + 귀비대칭(보조). 0~1로 클램프.
-  const sideStrength = clamp(shoulderZsep / 0.55, 0, 1) * 0.8 + clamp(earAsym / 0.6, 0, 1) * 0.2;
+  // 코 수평 이탈: 어깨중심 대비 코의 x 편차를 몸통높이로 정규화(거리 무관).
+  const noseLm = landmarks[LM.NOSE];
+  const noseOffset = (noseLm && (noseLm.visibility == null || noseLm.visibility > 0.3))
+    ? Math.abs((noseLm.x ?? shoulderMid.x) - shoulderMid.x) / (trunkH || 1)
+    : 0;
+  // 측면 강도: z분리 + 코 수평이탈(둘 다 주신호) + 귀비대칭(보조). 0~1로 클램프.
+  const sideStrength = clamp(
+    clamp(shoulderZsep / 0.55, 0, 1) * 0.5
+    + clamp(noseOffset / 0.28, 0, 1) * 0.35
+    + clamp(earAsym / 0.6, 0, 1) * 0.15,
+    0, 1,
+  );
 
   // 얼굴 가시성 (코+양눈+양귀 평균) — 참고/표시용
   const faceIdx = [LM.NOSE, LM.LEFT_EYE, LM.RIGHT_EYE, LM.LEFT_EAR, LM.RIGHT_EAR];
@@ -938,7 +951,7 @@ export function detectPostureView(landmarks, tuning = POSTURE_VIEW_TUNING) {
   // ── 측면 우선 판정 ──
   //  어깨폭이 좁거나(고전 기준), 어깨폭이 애매해도 '측면 강도'가 충분히 높으면
   //  측면으로 확정한다. (정면/후면으로 오인하던 프로필 케이스 해결)
-  const strongSide = sideStrength >= 0.45;
+  const strongSide = sideStrength >= 0.40;
   if (shoulderRatio <= tuning.shoulderSideMax || strongSide) {
     const view = resolveSide();
     // 신뢰도: 어깨폭 기반 + 측면강도 중 큰 값
@@ -964,7 +977,7 @@ export function detectPostureView(landmarks, tuning = POSTURE_VIEW_TUNING) {
 
   // ── 모호 구간(어깨폭 중간, 측면강도도 약함) ──
   //  애매하면 측면강도가 조금이라도 우세할 때 측면으로 기운다(측면 미인식 완화).
-  if (sideStrength >= 0.30) {
+  if (sideStrength >= 0.24) {
     const view = resolveSide();
     return { view, confidence: round(0.4 + 0.3 * sideStrength, 3), shoulderRatio, faceVis, sideStrength: round(sideStrength, 3) };
   }

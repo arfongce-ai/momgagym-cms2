@@ -31,7 +31,6 @@ export function generateRomDiagnosis(summary, { joint, poseMode } = {}) {
   const L = summary?.left_max_rom;
   const R = summary?.right_max_rom;
   const sym = summary?.symmetry_index_score;
-  const stab = summary?.end_range_stability_score || {};
   const comp = summary?.compensation || {};
 
   // ── 측정 정직성 가드: 데이터 자체가 빈약하면 진단을 보류 ──
@@ -76,17 +75,8 @@ export function generateRomDiagnosis(summary, { joint, poseMode } = {}) {
     }
   }
 
-  // ── 3) 끝범위 안정성(등척성 잔떨림) — SUPINE/PRONE 에서 특히 의미 ──
-  const stabVals = [stab.left, stab.right].filter((v) => v != null);
-  if (stabVals.length) {
-    const minStab = Math.min(...stabVals);
-    if (minStab < 55) {
-      details.push(`동작 끝범위에서 잔떨림이 큽니다(안정성 ${minStab}점) — 신경근 조절·종말 제어 훈련이 필요합니다.`);
-      flags.push('end_range_instability');
-    } else if (minStab >= 80) {
-      details.push(`끝범위 안정성 우수(${minStab}점) — 종말 위치 제어가 견고합니다.`);
-    }
-  }
+  // ── 3) [항목 5] 끝범위(end-range) 안정성 — 측정이 불확실하여 진단에서 제외한다.
+  //    (2D 추정 좌표의 종말 잔떨림은 신뢰도가 낮아, 그럴듯한 오진을 만들 수 있음)
 
   // ── 4) 보상 작용 (STANDING 의 골반 불균형 / 체간 기울기) ──
   if (poseMode === 'STANDING') {
@@ -112,8 +102,7 @@ export function generateRomDiagnosis(summary, { joint, poseMode } = {}) {
     grade = 'attention';
   }
   if (
-    (flags.includes('left_restricted') && flags.includes('right_restricted')) ||
-    flags.includes('end_range_instability')
+    flags.includes('left_restricted') && flags.includes('right_restricted')
   ) {
     grade = 'focus';
   }

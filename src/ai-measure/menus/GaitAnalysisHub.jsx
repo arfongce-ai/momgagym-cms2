@@ -1,4 +1,5 @@
 import React, { useState, useCallback } from 'react';
+import { useHardwareBack } from '../core/useHardwareBack';
 import GaitRunningAnalysis from './GaitRunningAnalysis';
 import GaitUploadAnalysis from './GaitUploadAnalysis';
 import GaitReportDashboard from './GaitReportDashboard';
@@ -67,6 +68,8 @@ export default function GaitAnalysisHub({ member, onBack, saveToFirebase, onSave
 
   // 대시보드에서 측정 화면으로 복귀
   const backToMeasure = () => { setView('measure'); setReport(null); setReportVideoBlob(null); };
+  // [항목 2] 폰 뒤로가기: 리포트 화면이면 측정 화면으로 한 단계만 복귀.
+  useHardwareBack(view === 'report' && !!report, backToMeasure);
 
   if (view === 'report' && report) {
     return (

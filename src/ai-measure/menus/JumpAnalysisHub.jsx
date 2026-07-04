@@ -12,6 +12,7 @@ import JumpPrecisionAnalysis from './JumpPrecisionAnalysis';
 import JumpUploadAnalysis from './JumpUploadAnalysis';
 import JumpReportDashboard from './JumpReportDashboard';
 import { calcJump } from '../core/performance';
+import { useHardwareBack } from '../core/useHardwareBack';
 
 export default function JumpAnalysisHub({ member, onBack, onSave, onSaveToFirebase, onMemberHeightChange }) {
   const save = onSaveToFirebase || onSave;
@@ -37,6 +38,8 @@ export default function JumpAnalysisHub({ member, onBack, onSave, onSaveToFireba
   }, [save]);
 
   const backToMeasure = () => { setView('measure'); setReport(null); };
+  // [항목 2] 폰 뒤로가기: 리포트 화면이면 측정 화면으로 한 단계만 복귀.
+  useHardwareBack(view === 'report' && !!report, backToMeasure);
   const openLiveReport = useCallback((reportData) => {
     if (reportData) setReport(reportData);
     setView('report');

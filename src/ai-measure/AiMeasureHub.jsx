@@ -10,6 +10,7 @@ import { buildRomPostureIntegration, pickLinkedPostureReport } from './core/romP
 import { buildCrossMeasureIntegration, mergeIntegratedAssessment } from './core/crossMeasureContext';
 import { sanitizeReportPayload } from './core/unifiedReport';
 import { saveUnifiedReport } from '../services/unifiedReportStore';
+import { useHardwareBack } from './core/useHardwareBack';
 
 export default function AiMeasureHub() {
   const { user } = useAuth();
@@ -213,6 +214,28 @@ export default function AiMeasureHub() {
     }
   };
 
+  // ── 폰(브라우저) 뒤로가기 연동 ──
+  // 측정 메뉴가 열려 있으면(active) 폰 뒤로가기 = 허브(메뉴 목록)로 복귀.
+  // (하위 모듈의 더 깊은 화면은 각 모듈이 자체적으로 useHardwareBack 을 쓴다.)
+  useHardwareBack(!!active, () => { setActive(null); if (member?.isVirtual) setGuestId(null); });
+
+  // ── [항목 1] 신체 정보 탭 ↔ 각 측정 탭 연동(미등록회원) ──
+  // '신체 정보' 탭에서 입력한 키·몸무게(및 성별·생년월일)를 허브의 미등록회원
+  // 신체정보(virtual)에 반영한다. 그러면 자세·ROM·점프·리프팅 등 다른 측정 탭이
+  // 같은 미등록회원의 키/체중/성별을 그대로 사용해 계산·리포트에 연동된다.
+  //  (실제 회원은 store 신체기록으로 이미 연동되므로 이 경로를 쓰지 않는다.)
+  const applyGuestBodyInfo = (patch) => {
+    if (!patch) return;
+    const next = {};
+    if (patch.height != null && patch.height !== '') next.height = String(patch.height);
+    if (patch.weight != null && patch.weight !== '') next.weight = String(patch.weight);
+    if (patch.sex) next.sex = patch.sex;
+    if (patch.birthDate) next.birthDate = patch.birthDate;
+    if (Object.keys(next).length === 0) return;
+    setVirtual((v) => ({ ...v, ...next }));
+    // 측정 진행 중이 아니면 guest id 는 다음 측정에서 새로 발급되도록 둔다.
+  };
+
   // 측정 메뉴 진입. 미등록회원(실제 회원 미선택 + 신체정보 입력)이면 이 측정 묶음용
   // 고유 guest id 를 1회 발급해, 같은 사람의 여러 면/항목이 한 id 로 묶이게 한다.
   const openMenu = (menu) => {
@@ -234,6 +257,12 @@ export default function AiMeasureHub() {
     if (!active) setGuestId(null);
   };
 
+  // 측정 메뉴 → 허브(메뉴 목록)로 복귀. '← 뒤로' 버튼과 폰 뒤로가기 공통 경로.
+  const closeActiveMenu = () => {
+    setActive(null);
+    if (member?.isVirtual) setGuestId(null);
+  };
+
   // 메뉴 구동 화면
   if (active && active.status === 'ready') {
     const Comp = active.component;
@@ -244,8 +273,9 @@ export default function AiMeasureHub() {
           <Comp
             member={member}
             onSave={handleSave}
-            onBack={() => { setActive(null); if (member?.isVirtual) setGuestId(null); }}
+            onBack={closeActiveMenu}
             onMemberHeightChange={rememberMemberHeight}
+            onGuestBodyInfoChange={member?.isVirtual ? applyGuestBodyInfo : undefined}
           />
         </Suspense>
       </div>
