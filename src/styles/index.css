@@ -137,28 +137,20 @@ canvas { touch-action:none; }
 .modal-box::-webkit-scrollbar, .modal-body::-webkit-scrollbar { width: 8px; }
 .modal-box::-webkit-scrollbar-thumb, .modal-body::-webkit-scrollbar-thumb { background:#475569; border-radius:4px; }
 
-/* ── AI 측정·분석: 화면 자동 회전 방지(세로 고정) ──
-   네이티브 orientation.lock 이 불가한 모바일 브라우저에서, 기기가 가로로
-   돌아가면 앱 전체를 반대로 90° 회전시켜 세로처럼 보이게 하는 폴백.
-   (useLockPortrait 훅이 <html> 에 .ai-portrait-lock 을 붙였을 때만 적용) */
-html.ai-portrait-lock body {
-  transform: rotate(-90deg);
-  transform-origin: left top;
-  /* 가로/세로를 맞바꾼 크기로 캔버스를 잡고, 회전 후 원위치로 평행이동 */
-  width: 100vh;
-  height: 100vw;
+/* ── AI 측정·분석: 세로 안내 오버레이 ──
+   (자동 회전 잠금이 불가한 브라우저에서 가로가 되면 useLockPortrait 가
+   안내 오버레이를 띄운다. 과거 body 회전 폴백은 일부 기기 블랙아웃 문제로 제거) */
+.ai-rotate-hint {
   position: fixed;
-  top: 100vw;
-  left: 0;
-  overflow-x: hidden;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
-}
-/* dvh 지원 환경에서 더 정확히(주소창 접힘 대응) */
-@supports (height: 100dvh) {
-  html.ai-portrait-lock body {
-    width: 100dvh;
-    height: 100dvw;
-    top: 100dvw;
-  }
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  background: #0f172a;
+  color: #e2e8f0;
+  text-align: center;
+  padding: 24px;
 }

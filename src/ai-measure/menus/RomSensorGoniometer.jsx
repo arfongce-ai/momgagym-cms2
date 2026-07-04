@@ -228,7 +228,7 @@ export default function RomSensorGoniometer({ jointName, jointKey, side = 'both'
     lastShownRef.current = null;
   };
 
-  // 현재 측 확정 → 진동 알림 → 다음 측 또는 완료
+  // 현재 측 확정 → 진동 알림 → 다음 측 또는 '움직임 기록' 단계로
   const captureSide = () => {
     if (zero == null || maxRef.current <= 0) return;
     hapticFeedback([60, 40, 60]);
@@ -244,9 +244,63 @@ export default function RomSensorGoniometer({ jointName, jointKey, side = 'both'
       resetSide();
       return;
     }
-    setPhase('done');
-    onComplete?.(nextResults, { movement: effMovement, jointKey, jointName });
+    // [항목 3] 측정완료 후 '움직임 기록' 화면으로 (자동저장은 확인 버튼에서)
+    setPhase('record');
   };
+
+  // [항목 3·4] 움직임 기록 확인 → 자동 저장(onComplete). 저장되면 상위(RomMeasure)가
+  // ROM 결과 리포트로 전환되어 기록을 바로 확인할 수 있다(항목 4).
+  const confirmAndSave = () => {
+    hapticFeedback([40]);
+    onComplete?.(results, { movement: effMovement, jointKey, jointName });
+  };
+
+  // ════════════════ [항목 3] 움직임 기록 화면 (측정완료 후) ════════════════
+  if (phase === 'record') {
+    const L = results.left?.angle;
+    const R = results.right?.angle;
+    return (
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <button onClick={() => setPhase('measure')} className="measure-back">← 다시 측정</button>
+          <h2 className="measure-title">움직임 기록</h2>
+          <span className="w-12" />
+        </div>
+
+        {/* 측정 결과 요약 */}
+        <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-center">
+          <p className="text-[11px] font-bold uppercase tracking-widest text-emerald-300/80">측정완료 · 최대 가동각</p>
+          <div className="mt-1 flex items-center justify-center gap-6">
+            {L != null && <div><p className="text-[11px] text-slate-400">좌측</p><p className="text-3xl font-black tabular-nums text-emerald-200">{L}°</p></div>}
+            {R != null && <div><p className="text-[11px] text-slate-400">우측</p><p className="text-3xl font-black tabular-nums text-emerald-200">{R}°</p></div>}
+          </div>
+        </div>
+
+        {/* 움직임 라벨 기록 */}
+        <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4 space-y-2">
+          <p className="text-xs font-black text-slate-300">측정한 움직임을 기록하세요</p>
+          <select value={movement} onChange={(e) => setMovement(e.target.value)}
+            className="w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2.5 text-sm font-bold text-slate-100">
+            <option value="">움직임 선택</option>
+            {MOVEMENT_PRESETS.map((m) => <option key={m} value={m}>{m}</option>)}
+            <option value="__custom">직접 입력…</option>
+          </select>
+          {movement === '__custom' && (
+            <input type="text" value={movementCustom} onChange={(e) => setMovementCustom(e.target.value)}
+              placeholder="예: 어깨 굴곡, 발목 외번, 목 좌측 회전"
+              className="w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2.5 text-sm text-slate-100" />
+          )}
+          <p className="text-[11px] text-slate-500">움직임을 적어두면 같은 동작끼리 회차별로 비교됩니다. (선택 사항)</p>
+        </div>
+
+        {/* [항목 3] 확인 → 자동 저장 */}
+        <button onClick={confirmAndSave}
+          className="w-full rounded-xl bg-amber-500 px-4 py-4 text-base font-black text-slate-950 active:scale-[0.99]">
+          확인 · 저장
+        </button>
+      </div>
+    );
+  }
 
   // ════════════════ 권한/안내 화면 ════════════════
   if (phase === 'permission') {
@@ -259,23 +313,6 @@ export default function RomSensorGoniometer({ jointName, jointKey, side = 'both'
         </div>
         <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4 space-y-3">
           <p className="text-sm font-bold text-slate-200">폰을 관절 부위에 밀착해 기울기로 측정합니다</p>
-
-          {/* [수기 기록] 움직임 라벨 — 회차 비교가 같은 동작끼리 묶이도록 */}
-          <div className="rounded-xl border border-slate-700 bg-slate-800/60 p-3 space-y-2">
-            <p className="text-xs font-black text-slate-300">측정 움직임 기록</p>
-            <select value={movement} onChange={(e) => setMovement(e.target.value)}
-              className="w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-sm font-bold text-slate-100">
-              <option value="">움직임 선택(선택 사항)</option>
-              {MOVEMENT_PRESETS.map((m) => <option key={m} value={m}>{m}</option>)}
-              <option value="__custom">직접 입력…</option>
-            </select>
-            {movement === '__custom' && (
-              <input type="text" value={movementCustom} onChange={(e) => setMovementCustom(e.target.value)}
-                placeholder="예: 어깨 굴곡, 발목 외번, 목 좌측 회전"
-                className="w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-sm text-slate-100" />
-            )}
-            <p className="text-[11px] text-slate-500">움직임을 적어두면 같은 동작끼리 회차별로 비교됩니다.</p>
-          </div>
 
           <ol className="space-y-1.5 text-[12px] leading-relaxed text-slate-400 list-decimal list-inside">
             <li>화면이 바깥을 향하게 폰을 측정 부위(팔·다리)에 평평하게 밀착합니다.</li>
@@ -354,7 +391,7 @@ export default function RomSensorGoniometer({ jointName, jointKey, side = 'both'
       {zeroMsg && <p className="text-xs font-bold text-amber-300">{zeroMsg}</p>}
       <button onClick={captureSide} disabled={zero == null || maxDeg <= 0}
         className="w-full rounded-xl bg-amber-500 px-4 py-4 text-base font-black text-slate-950 disabled:bg-slate-700 disabled:text-slate-400 active:scale-[0.99]">
-        {SIDE_KO[currentSide]} 측정 완료 {sideIdx + 1 < sidesToMeasure.length ? '→ 다음 측' : '→ 결과'}
+        {sideIdx + 1 < sidesToMeasure.length ? `${SIDE_KO[currentSide]} 완료 → ${SIDE_KO[sidesToMeasure[sideIdx + 1]]} 측정` : '측정완료'}
       </button>
 
       <p className="text-[11px] leading-relaxed text-slate-500">

@@ -354,6 +354,22 @@ export default function RomMeasure({ member, onSave, onBack }) {
     };
     setReport(r);
     setSaveState('idle');
+    return r;
+  };
+
+  // 리포트 payload 를 직접 저장(자동 저장용). report state 를 기다리지 않고
+  // 방금 만든 리포트를 바로 Firestore 로 넘긴다.
+  const persistReport = async (r) => {
+    if (!member) { setActionMsg('회원이 선택되지 않아 기록 저장은 건너뜁니다.'); return; }
+    if (!r) return;
+    setSaveState('saving');
+    try {
+      const { snapshotUrl: _snap, previewVideoUrl: _pv, ...payload } = r;
+      await onSave?.(payload);
+      setSaveState('saved');
+    } catch (e) {
+      setSaveState('error');
+    }
   };
 
   // ── 센서 각도기 측정 완료 → 기존 ROM 리포트/저장 파이프라인에 합류 ──
@@ -393,7 +409,7 @@ export default function RomMeasure({ member, onSave, onBack }) {
     const pairKey = memberId
       ? `${memberId}_rom_${joint}_${poseMode}${movementSlug}`
       : `rom_${joint}_${poseMode}${movementSlug}`;
-    buildAndSetReport(summary, 'sensor', '', '', {
+    const r = buildAndSetReport(summary, 'sensor', '', '', {
       measureType: 'sensor_goniometer',
       movement,
       sensor_records: sensorRecords,
@@ -412,6 +428,9 @@ export default function RomMeasure({ member, onSave, onBack }) {
         confidenceScore: 1.0,
       },
     });
+    // [항목 3] 확인 즉시 데이터 자동 저장(회원 측정이력·ROM리포트·신체기록 요약).
+    // 저장 후 리포트 화면이 떠 '기록 확인'이 가능하다(항목 4).
+    persistReport(r);
   };
 
   const handleSave = async () => {

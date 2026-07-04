@@ -325,7 +325,7 @@ describe('[기록 보관] 센서 ROM 측정 저장 정책', () => {
     expect(sensor).toMatch(/MOVEMENT_PRESETS/);
     expect(sensor).toMatch(/움직임 선택/);
     expect(sensor).toMatch(/jointName/);
-    expect(sensor).toMatch(/onComplete\?\.\(nextResults, \{ movement/);
+    expect(sensor).toMatch(/onComplete\?\.\(results, \{ movement/);
   });
 
   it('회차 비교 pairKey 에 관절·자세·움직임이 반영된다(같은 동작끼리 비교)', () => {
@@ -475,8 +475,9 @@ describe('[고니오메타 개편] 명칭/움직임/영상 각도', () => {
   it('[2] 고니오메타에서 "ROM에서 선택한 관절" 표시를 제거했다', () => {
     expect(sensor).not.toMatch(/ROM 설정에서 선택한 관절/);
     expect(sensor).not.toMatch(/관절: \{jointName/);
-    // 움직임 라벨은 유지
-    expect(sensor).toMatch(/측정 움직임 기록/);
+    // 움직임 기록은 측정완료 후(record 단계)에 존재
+    expect(sensor).toMatch(/측정한 움직임을 기록하세요/);
+    expect(sensor).toMatch(/phase === 'record'/);
   });
 
   it('[3] 움직임 프리셋에 eversion/inversion 등 전신 움직임이 추가되었다', () => {
@@ -532,20 +533,79 @@ describe('[화면 회전 방지] AI 측정 세로 고정', () => {
     expect(hook).toMatch(/orientation.*unlock|so\.unlock/);
   });
 
-  it('네이티브 불가 시 CSS 폴백(가로 감지 → 클래스)으로 처리한다', () => {
+  it('네이티브 불가 시 가로 감지 → 안내 오버레이(블랙아웃 유발하던 body 회전 제거)', () => {
     expect(hook).toMatch(/matchMedia\('\(orientation: landscape\)'\)/);
-    expect(hook).toMatch(/ai-portrait-lock/);
-    expect(css).toMatch(/html\.ai-portrait-lock body/);
-    expect(css).toMatch(/rotate\(-90deg\)/);
+    expect(hook).toMatch(/setIsBlocked/);
+    // 과거 블랙아웃 원인이던 body 회전 폴백은 완전히 제거되어야 한다
+    expect(hook).not.toMatch(/rotate\(-90deg\)/);
+    expect(css).not.toMatch(/ai-portrait-lock/);
+    expect(css).toMatch(/ai-rotate-hint/);
+    expect(hub).toMatch(/RotateHint/);
   });
 
-  it('언마운트 시 잠금·클래스를 모두 해제한다', () => {
-    expect(hook).toMatch(/classList\.remove\(LOCK_CLASS\)/);
+  it('언마운트 시 잠금 해제·오버레이 해제', () => {
+    expect(hook).toMatch(/setIsBlocked\(false\)/);
     expect(hook).toMatch(/return \(\) => \{/);
   });
 
   it('전역 매니페스트는 any 로 두어 관리 화면은 회전 허용(측정만 세로)', () => {
     const mani = read('../../manifest.json');
     expect(mani).toMatch(/"orientation": "any"/);
+  });
+});
+
+// ── [고니오메타 흐름 수정] 측정완료 → 움직임 기록 → 확인 자동저장 → 기록 확인 ──
+describe('[고니오메타 흐름] 측정완료·자동저장', () => {
+  const sensor = read('../ai-measure/menus/RomSensorGoniometer.jsx');
+  const rom = read('../ai-measure/menus/RomMeasure.jsx');
+
+  it('[2] 완료 버튼이 "측정완료"로 바뀌었다(마지막 측)', () => {
+    expect(sensor).toMatch(/'측정완료'/);
+    expect(sensor).not.toMatch(/측정 완료 \{sideIdx \+ 1 < sidesToMeasure\.length \? '→ 다음 측'/);
+  });
+
+  it('[3] 측정완료 후 움직임 기록 단계로 가고, 확인 버튼이 저장을 트리거한다', () => {
+    expect(sensor).toMatch(/setPhase\('record'\)/);
+    expect(sensor).toMatch(/confirmAndSave/);
+    expect(sensor).toMatch(/확인 · 저장/);
+  });
+
+  it('[3] 확인 시 데이터가 자동 저장된다(리포트 저장 버튼 없이 persistReport 호출)', () => {
+    expect(rom).toMatch(/const persistReport = async/);
+    expect(rom).toMatch(/persistReport\(r\)/);
+    // buildAndSetReport 가 리포트 객체를 반환해 즉시 저장에 사용
+    expect(rom).toMatch(/return r;/);
+  });
+
+  it('[4] 저장 후 결과 리포트가 떠 기록을 확인할 수 있다(report 렌더가 mode보다 우선)', () => {
+    const idxReport = rom.indexOf("if (report) {");
+    const idxSensor = rom.indexOf("if (mode === 'sensor')");
+    expect(idxReport).toBeGreaterThan(-1);
+    expect(idxSensor).toBeGreaterThan(idxReport); // report 화면이 먼저
+  });
+});
+
+// ── [블랙아웃 수정] 회전 폴백을 오버레이로 교체 ──
+describe('[회전 블랙아웃 수정] 안내 오버레이', () => {
+  const hook = read('../ai-measure/core/useLockPortrait.js');
+  const css = read('../styles/index.css');
+  const hub = read('../ai-measure/AiMeasureHub.jsx');
+
+  it('블랙아웃 원인이던 body 회전 폴백이 완전히 제거되었다', () => {
+    expect(hook).not.toMatch(/rotate\(-90deg\)/);
+    expect(hook).not.toMatch(/classList/); // body 클래스 토글 제거
+    expect(css).not.toMatch(/transform: rotate/);
+    expect(css).not.toMatch(/ai-portrait-lock/);
+  });
+
+  it('가로 감지 시 안내 오버레이(RotateHint)를 띄운다', () => {
+    expect(hook).toMatch(/return isBlocked/);
+    expect(hub).toMatch(/isPortraitBlocked/);
+    expect(hub).toMatch(/RotateHint/);
+    expect(css).toMatch(/\.ai-rotate-hint/);
+  });
+
+  it('네이티브 잠금은 유지(가능 환경)', () => {
+    expect(hook).toMatch(/orientation\.lock\('portrait'\)/);
   });
 });

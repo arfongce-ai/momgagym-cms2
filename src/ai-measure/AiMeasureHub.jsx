@@ -230,8 +230,9 @@ export default function AiMeasureHub() {
   };
 
   // ── AI 측정·분석 사용 중 화면 자동 회전 방지(세로 고정) ──
-  //  허브가 떠 있는 동안(측정 모든 화면 포함) 세로 고정. 벗어나면 자동 해제.
-  useLockPortrait(true);
+  //  네이티브 잠금이 되면 그대로 세로 고정. 안 되는 브라우저에서 가로가 되면
+  //  isPortraitBlocked=true → 아래에서 "세로로 돌려주세요" 안내를 덮는다.
+  const isPortraitBlocked = useLockPortrait(true);
 
   // ── 폰(브라우저) 뒤로가기 연동 ──
   // 측정 메뉴가 열려 있으면(active) 폰 뒤로가기 = 허브(메뉴 목록)로 복귀.
@@ -288,6 +289,7 @@ export default function AiMeasureHub() {
     const wideMeasure = active.id === 'gait' || active.id === 'jump' || active.id === 'posture' || active.id === 'rom' || active.id === 'lifting';
     return (
       <div className={`${wideMeasure ? 'max-w-6xl' : 'max-w-md'} mx-auto`}>
+        {isPortraitBlocked && <RotateHint />}
         <Suspense fallback={<div className="text-center text-slate-400 py-10 text-sm">모듈 로딩 중…</div>}>
           <Comp
             member={member}
@@ -304,6 +306,7 @@ export default function AiMeasureHub() {
   // 허브(메뉴 목록)
   return (
     <div className="space-y-5">
+      {isPortraitBlocked && <RotateHint />}
       <div>
         <h1 className="text-2xl font-black tracking-tight">AI 측정 · 분석</h1>
         <p className="text-slate-500 text-sm mt-1">측정 항목을 선택하세요. 항목별로 필요한 기능만 구동됩니다.</p>
@@ -402,6 +405,22 @@ export default function AiMeasureHub() {
         측정 항목은 단계적으로 추가됩니다. <strong className="text-slate-300">이용 가능</strong> 표시된 항목만
         구동되며, <strong className="text-slate-300">준비 중</strong> 항목은 작동 검증 후 순차 적용됩니다.
       </p>
+    </div>
+  );
+}
+
+// 가로 회전 시 세로로 돌려달라는 안내(자동 회전 잠금이 불가한 브라우저 폴백).
+function RotateHint() {
+  return (
+    <div className="ai-rotate-hint">
+      <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        <rect x="7" y="2" width="10" height="20" rx="2" />
+        <path d="M11 18h2" />
+        <path d="M3 9l2-2 2 2" />
+        <path d="M5 7v3a4 4 0 0 0 4 4" />
+      </svg>
+      <p className="text-base font-black text-white">세로로 돌려주세요</p>
+      <p className="text-sm text-slate-400">AI 측정·분석은 세로 화면에서 사용하세요.<br />기기를 세로로 돌리면 자동으로 계속됩니다.</p>
     </div>
   );
 }
