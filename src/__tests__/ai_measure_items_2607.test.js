@@ -262,3 +262,101 @@ describe('[항목 4-센서] RomMeasure 배선 + Firestore 스키마', () => {
     expect(romReport).toMatch(/센서 각도기/);
   });
 });
+
+// ── [항목 4-센서 보완] 예민도 완화 — 평활·표시 스텝·0점 평균 캘리브레이션 ──
+import { smoothAngle, roundToStep, meanDeg } from '../ai-measure/core/sensorTilt';
+
+describe('[항목 4-센서 보완] 예민도 완화 수학', () => {
+  it('smoothAngle — EMA 로 급변을 완충한다', () => {
+    expect(smoothAngle(null, 10)).toBe(10);           // 첫 표본은 그대로
+    expect(smoothAngle(10, 20, 0.3)).toBeCloseTo(13, 5); // 10 + 0.3×10
+    expect(smoothAngle(10, null)).toBe(10);           // 무효 표본은 유지
+  });
+
+  it('roundToStep — 표시값을 0.5° 스텝으로 반올림해 잔떨림 숫자를 제거', () => {
+    expect(roundToStep(41.24, 0.5)).toBeCloseTo(41.0, 5);
+    expect(roundToStep(41.26, 0.5)).toBeCloseTo(41.5, 5);
+    expect(roundToStep(null, 0.5)).toBeNull();
+  });
+
+  it('meanDeg — 0점 캘리브레이션용 평균(무효 표본 제외)', () => {
+    expect(meanDeg([10, 10.4, 9.6, null, 10])).toBeCloseTo(10, 5);
+    expect(meanDeg([])).toBeNull();
+  });
+
+  it('트래커 기본값이 둔감화되어 있다(중력 EMA 0.08 + 각도 EMA)', () => {
+    const src = read('../ai-measure/core/sensorTilt.js');
+    expect(src).toMatch(/gravityAlpha = 0\.08/);
+    expect(src).toMatch(/angleAlpha = 0\.3/);
+    expect(src).toMatch(/smoothAngle\(smoothed, unwrapped/);
+  });
+
+  it('0점은 단일 표본이 아닌 수집 평균으로 잡고, 흔들리면 재시도를 요구한다', () => {
+    const src = read('../ai-measure/menus/RomSensorGoniometer.jsx');
+    expect(src).toMatch(/ZERO_SAMPLE_MS/);
+    expect(src).toMatch(/ZERO_MAX_WOBBLE/);
+    expect(src).toMatch(/meanDeg\(samples\)/);
+  });
+
+  it('표시각은 스로틀·데드밴드·스텝 반올림을 거치고, 최대각은 3표본 중앙값으로 갱신', () => {
+    const src = read('../ai-measure/menus/RomSensorGoniometer.jsx');
+    expect(src).toMatch(/UI_UPDATE_MS/);
+    expect(src).toMatch(/UI_DEADBAND/);
+    expect(src).toMatch(/roundToStep\(shown, DISPLAY_STEP\)/);
+    expect(src).toMatch(/med3/);
+    expect(src).toMatch(/SETTLE_AFTER_ZERO_MS/);
+  });
+});
+
+// ── [기록 보관] 센서 ROM 저장 정책 — 수기 라벨·회차 pairKey·신체기록 요약 ──
+describe('[기록 보관] 센서 ROM 측정 저장 정책', () => {
+  const rom = read('../ai-measure/menus/RomMeasure.jsx');
+  const sensor = read('../ai-measure/menus/RomSensorGoniometer.jsx');
+  const hub = read('../ai-measure/AiMeasureHub.jsx');
+  const store = read('../demoData.js');
+  const romReport = read('../ai-measure/menus/RomReport.jsx');
+
+  it('센서 화면에서 관절·움직임을 수기 라벨링할 수 있다', () => {
+    expect(sensor).toMatch(/MOVEMENT_PRESETS/);
+    expect(sensor).toMatch(/움직임 선택/);
+    expect(sensor).toMatch(/jointName/);
+    expect(sensor).toMatch(/onComplete\?\.\(nextResults, \{ movement/);
+  });
+
+  it('회차 비교 pairKey 에 관절·자세·움직임이 반영된다(같은 동작끼리 비교)', () => {
+    expect(rom).toMatch(/movementSlug/);
+    expect(rom).toMatch(/rom_\$\{joint\}_\$\{poseMode\}\$\{movementSlug\}/);
+  });
+
+  it('센서 리포트는 카메라와 같은 kind:"rom" 스키마로 저장된다(한 추세선에 섞임)', () => {
+    // buildAndSetReport 는 kind:'rom' 고정 → 허브 isRom 경로(addRomReport)로 저장
+    expect(rom).toMatch(/kind: 'rom'/);
+    expect(rom).toMatch(/measureType: 'sensor_goniometer'/);
+    // captureMode='sensor' 여도 허브는 active.id==='rom' 으로 분기하므로 동일 컬렉션
+    expect(hub).toMatch(/const isRom = active\.id === 'rom'/);
+  });
+
+  it('저장 성공 후 실회원이면 신체기록에 ROM 요약을 남긴다(미등록회원 제외)', () => {
+    expect(hub).toMatch(/!member\.isVirtual && data\?\.romBodySummary/);
+    expect(hub).toMatch(/store\.addRomSummaryToBody/);
+    expect(store).toMatch(/addRomSummaryToBody:/);
+    expect(store).toMatch(/recordType: 'rom_summary'/);
+  });
+
+  it('신체기록 ROM 요약은 키/몸무게 칸을 비운다(측정 정직성)', () => {
+    // rom_summary 레코드에서 height/weight 는 null
+    const idx = store.indexOf("recordType: 'rom_summary'");
+    const chunk = store.slice(idx, idx + 400);
+    expect(chunk).toMatch(/height: null/);
+    expect(chunk).toMatch(/weight: null/);
+    expect(chunk).toMatch(/romSummary:/);
+  });
+
+  it('신체기록 요약 저장 실패는 리포트 저장을 막지 않는다(부가 기록)', () => {
+    expect(hub).toMatch(/ROM 신체기록 요약 저장 생략/);
+  });
+
+  it('리포트 제목줄에 움직임 라벨이 표시된다', () => {
+    expect(romReport).toMatch(/report\.movement/);
+  });
+});

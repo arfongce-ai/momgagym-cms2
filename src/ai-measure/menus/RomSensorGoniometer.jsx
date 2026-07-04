@@ -17,22 +17,37 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   createTiltTracker, requestSensorPermission, isSensorSupported,
-  applyZero, isStill, hapticFeedback,
+  applyZero, isStill, hapticFeedback, roundToStep, meanDeg,
 } from '../core/sensorTilt';
 
 const OFF_PLANE_WARN = 0.45; // |gx|/|g| 이 비율 이상이면 측정면 이탈 경고
+const ZERO_SAMPLE_MS = 700;   // 0점 캘리브레이션 표본 수집 시간
+const ZERO_MAX_WOBBLE = 5;    // 0점 수집 중 허용 흔들림(°) — 초과 시 재시도 요구
+const UI_UPDATE_MS = 90;      // 표시 갱신 최소 간격(스로틀)
+const UI_DEADBAND = 0.25;     // 표시 데드밴드(°) — 이하 변화는 갱신 안 함
+const DISPLAY_STEP = 0.5;     // 표시 스텝(°)
+const SETTLE_AFTER_ZERO_MS = 300; // 0점 직후 최대각 갱신 유예(평활 정착 시간)
 
 const SIDE_KO = { left: '좌측', right: '우측' };
 
-export default function RomSensorGoniometer({ jointName, side = 'both', onBack, onComplete }) {
+export default function RomSensorGoniometer({ jointName, jointKey, side = 'both', onBack, onComplete }) {
   // 진행할 측 순서: both → 좌, 우 / 단측 → 해당 측만
   const sidesToMeasure = side === 'both' ? ['left', 'right'] : [side];
+
+  // [수기 기록] 어느 관절·어떤 움직임을 쟀는지 트레이너가 직접 라벨링.
+  //  jointKey 는 ROM 설정에서 고른 관절(대분류). movement 는 세부 동작(굴곡 등).
+  const MOVEMENT_PRESETS = ['굴곡(Flexion)', '신전(Extension)', '외전(Abduction)', '내전(Adduction)', '회전(Rotation)', '측굴(Lateral flexion)'];
+  const [movement, setMovement] = useState('');
+  const [movementCustom, setMovementCustom] = useState('');
+  const effMovement = movement === '__custom' ? movementCustom.trim() : movement;
 
   const [phase, setPhase] = useState('permission'); // permission | measure | done
   const [permErr, setPermErr] = useState('');
   const [sideIdx, setSideIdx] = useState(0);
-  const [zero, setZero] = useState(null);          // 0점(언랩각 기준)
-  const [liveDeg, setLiveDeg] = useState(null);    // 표시각(0점 반영)
+  const [zero, setZero] = useState(null);          // 0점(평활 언랩각 기준)
+  const [zeroing, setZeroing] = useState(false);   // 0점 표본 수집 중
+  const [zeroMsg, setZeroMsg] = useState('');      // 0점 안내/재시도 메시지
+  const [liveDeg, setLiveDeg] = useState(null);    // 표시각(0점 반영, 스텝 반올림)
   const [maxDeg, setMaxDeg] = useState(0);         // 이번 측 최대 |가동각|
   const [offPlane, setOffPlane] = useState(0);
   const [still, setStill] = useState(false);
@@ -41,39 +56,102 @@ export default function RomSensorGoniometer({ jointName, side = 'both', onBack, 
   const trackerRef = useRef(null);
   const zeroRef = useRef(null);
   const maxRef = useRef(0);
-  const recentRef = useRef([]); // 정지 판정용 최근 표시각
+  const recentRef = useRef([]);      // 정지 판정용 최근 표시각
+  const lastSmoothedRef = useRef(null); // 최신 평활각(0점 전)
+  const lastUiAtRef = useRef(0);     // 표시 스로틀 타임스탬프
+  const lastShownRef = useRef(null); // 데드밴드 비교용 직전 표시값
+  const recent3Ref = useRef([]);     // 최대각 스파이크 방지용 최근 3표본
+  const zeroBufRef = useRef(null);   // 0점 수집 버퍼 { samples: [], t0 }
+  const zeroTimerRef = useRef(null); // 0점 수집 안전 타이머
+  const zeroDoneAtRef = useRef(0);   // 0점 확정 시각(정착 유예용)
 
   const currentSide = sidesToMeasure[sideIdx];
 
-  // 센서 샘플 수신 → 0점 반영 표시각, 최대각, 정지 판정 갱신
+  // 0점 확정: 수집 버퍼 평균. 흔들림이 크면 확정하지 않고 재시도 요구(정직성).
+  const finishZeroing = () => {
+    if (zeroTimerRef.current) { clearTimeout(zeroTimerRef.current); zeroTimerRef.current = null; }
+    const buf = zeroBufRef.current;
+    zeroBufRef.current = null;
+    setZeroing(false);
+    const samples = buf?.samples || [];
+    if (samples.length < 5) {
+      setZeroMsg('센서 표본이 부족합니다 — 잠시 후 다시 0점을 잡아주세요.');
+      return;
+    }
+    const lo = Math.min(...samples);
+    const hi = Math.max(...samples);
+    if (hi - lo > ZERO_MAX_WOBBLE) {
+      setZeroMsg(`기기가 흔들려 0점을 잡지 못했습니다(±${((hi - lo) / 2).toFixed(1)}°) — 부위에 밀착 고정 후 다시 시도해 주세요.`);
+      return;
+    }
+    const z = meanDeg(samples);
+    zeroRef.current = z;
+    setZero(z);
+    zeroDoneAtRef.current = Date.now();
+    maxRef.current = 0;
+    setMaxDeg(0);
+    recentRef.current = [];
+    recent3Ref.current = [];
+    lastShownRef.current = null;
+    setZeroMsg('');
+    hapticFeedback([30]);
+  };
+
+  // 센서 샘플 수신 → 0점 수집 / 표시각(스로틀·데드밴드) / 최대각(중앙값) 갱신
   const handleSample = ({ angleDeg, offPlane: off }) => {
     setOffPlane(off ?? 0);
     if (angleDeg == null) { setLiveDeg(null); return; }
-    const shown = zeroRef.current == null ? null : applyZero(angleDeg, zeroRef.current);
-    // 0점 전에는 각을 확정하지 않되, 0점 버튼이 참조할 원시각은 ref 로 보관
-    lastRawRef.current = angleDeg;
-    if (shown == null) { setLiveDeg(null); return; }
-    const rounded = Math.round(shown * 10) / 10;
-    setLiveDeg(rounded);
-    // 측정면 이탈 중에는 최대각을 갱신하지 않는다(오염 방지 — 측정 정직성)
-    if ((off ?? 0) < OFF_PLANE_WARN && Math.abs(rounded) > maxRef.current) {
-      maxRef.current = Math.round(Math.abs(rounded) * 10) / 10;
+    lastSmoothedRef.current = angleDeg;
+
+    // ── 0점 표본 수집 중이면 버퍼에 쌓고 시간이 차면 확정 ──
+    const zb = zeroBufRef.current;
+    if (zb) {
+      zb.samples.push(angleDeg);
+      if (Date.now() - zb.t0 >= ZERO_SAMPLE_MS) finishZeroing();
+      return; // 수집 중에는 표시각·최대각 갱신 중단(수집 안내 표시)
+    }
+
+    if (zeroRef.current == null) { setLiveDeg(null); return; }
+    const shown = applyZero(angleDeg, zeroRef.current);
+
+    // ── 최대각: 최근 3표본 중앙값으로 순간 스파이크 제거, 0점 직후 유예 ──
+    const buf3 = recent3Ref.current;
+    buf3.push(shown);
+    if (buf3.length > 3) buf3.shift();
+    const med3 = [...buf3].sort((a, b) => a - b)[Math.floor(buf3.length / 2)];
+    const settled = Date.now() - zeroDoneAtRef.current > SETTLE_AFTER_ZERO_MS;
+    if (settled && (off ?? 0) < OFF_PLANE_WARN && buf3.length === 3 && Math.abs(med3) > maxRef.current) {
+      maxRef.current = Math.round(Math.abs(med3) * 10) / 10;
       setMaxDeg(maxRef.current);
     }
-    const buf = recentRef.current;
-    buf.push(rounded);
-    if (buf.length > 12) buf.shift();
-    setStill(isStill(buf));
-  };
-  const lastRawRef = useRef(null);
 
-  // 측정 화면 진입 시 트래커 시작, 이탈 시 정지
+    // ── 표시각: 스로틀 + 데드밴드 + 0.5° 스텝 (예민한 잔떨림 숫자 제거) ──
+    const now = Date.now();
+    if (now - lastUiAtRef.current < UI_UPDATE_MS) return;
+    const stepped = roundToStep(shown, DISPLAY_STEP);
+    if (lastShownRef.current != null && Math.abs(shown - lastShownRef.current) < UI_DEADBAND) return;
+    lastUiAtRef.current = now;
+    lastShownRef.current = shown;
+    setLiveDeg(stepped);
+
+    const sbuf = recentRef.current;
+    sbuf.push(shown);
+    if (sbuf.length > 12) sbuf.shift();
+    setStill(isStill(sbuf, { maxRange: 2.0 }));
+  };
+
+  // 측정 화면 진입 시 트래커 시작, 이탈 시 정지(+0점 수집 타이머 정리)
   useEffect(() => {
     if (phase !== 'measure') return undefined;
     const tracker = createTiltTracker({ onSample: handleSample });
     trackerRef.current = tracker;
     tracker.start();
-    return () => { tracker.stop(); trackerRef.current = null; };
+    return () => {
+      tracker.stop();
+      trackerRef.current = null;
+      if (zeroTimerRef.current) { clearTimeout(zeroTimerRef.current); zeroTimerRef.current = null; }
+      zeroBufRef.current = null;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase]);
 
@@ -93,23 +171,38 @@ export default function RomSensorGoniometer({ jointName, side = 'both', onBack, 
     setPhase('measure');
   };
 
+  // 0점 잡기: 즉시 확정하지 않고 ZERO_SAMPLE_MS 동안 표본을 모아 평균으로 확정.
+  // (단일 표본 0점은 손떨림 노이즈가 그대로 박혀 예민해지는 원인이었음)
   const calibrateZero = () => {
-    if (lastRawRef.current == null) return;
-    zeroRef.current = lastRawRef.current;
-    setZero(lastRawRef.current);
-    maxRef.current = 0;
-    setMaxDeg(0);
-    recentRef.current = [];
-    hapticFeedback([30]);
+    if (zeroing) return;
+    if (lastSmoothedRef.current == null) {
+      setZeroMsg('센서 신호 수신 대기 중입니다 — 잠시 후 다시 시도해 주세요.');
+      return;
+    }
+    setZeroMsg('');
+    setZeroing(true);
+    zeroBufRef.current = { samples: [], t0: Date.now() };
+    // 표본이 끊겨도(폰이 완전 정지 등) 시간이 지나면 확정 시도
+    if (zeroTimerRef.current) clearTimeout(zeroTimerRef.current);
+    zeroTimerRef.current = setTimeout(() => {
+      zeroTimerRef.current = null;
+      if (zeroBufRef.current) finishZeroing();
+    }, ZERO_SAMPLE_MS + 250);
   };
 
   const resetSide = () => {
+    if (zeroTimerRef.current) { clearTimeout(zeroTimerRef.current); zeroTimerRef.current = null; }
     zeroRef.current = null;
     setZero(null);
+    setZeroing(false);
+    setZeroMsg('');
+    zeroBufRef.current = null;
     setLiveDeg(null);
     maxRef.current = 0;
     setMaxDeg(0);
     recentRef.current = [];
+    recent3Ref.current = [];
+    lastShownRef.current = null;
   };
 
   // 현재 측 확정 → 진동 알림 → 다음 측 또는 완료
@@ -129,7 +222,7 @@ export default function RomSensorGoniometer({ jointName, side = 'both', onBack, 
       return;
     }
     setPhase('done');
-    onComplete?.(nextResults);
+    onComplete?.(nextResults, { movement: effMovement, jointKey, jointName });
   };
 
   // ════════════════ 권한/안내 화면 ════════════════
@@ -143,9 +236,31 @@ export default function RomSensorGoniometer({ jointName, side = 'both', onBack, 
         </div>
         <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4 space-y-3">
           <p className="text-sm font-bold text-slate-200">폰을 관절 부위에 밀착해 기울기로 측정합니다</p>
+
+          {/* [수기 기록] 관절·움직임 라벨 — 회차 비교가 같은 동작끼리 묶이도록 */}
+          <div className="rounded-xl border border-slate-700 bg-slate-800/60 p-3 space-y-2">
+            <p className="text-xs font-black text-slate-300">측정 부위·움직임 기록</p>
+            <div className="flex items-center gap-2">
+              <span className="rounded-lg bg-slate-700 px-2.5 py-1 text-xs font-bold text-slate-200">관절: {jointName || '미지정'}</span>
+              <span className="text-[11px] text-slate-500">(ROM 설정에서 선택한 관절)</span>
+            </div>
+            <select value={movement} onChange={(e) => setMovement(e.target.value)}
+              className="w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-sm font-bold text-slate-100">
+              <option value="">움직임 선택(선택 사항)</option>
+              {MOVEMENT_PRESETS.map((m) => <option key={m} value={m}>{m}</option>)}
+              <option value="__custom">직접 입력…</option>
+            </select>
+            {movement === '__custom' && (
+              <input type="text" value={movementCustom} onChange={(e) => setMovementCustom(e.target.value)}
+                placeholder="예: 어깨 굴곡, 목 좌측 회전"
+                className="w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-sm text-slate-100" />
+            )}
+            <p className="text-[11px] text-slate-500">움직임을 적어두면 같은 관절·동작끼리 회차별로 비교됩니다.</p>
+          </div>
+
           <ol className="space-y-1.5 text-[12px] leading-relaxed text-slate-400 list-decimal list-inside">
             <li>화면이 바깥을 향하게 폰을 측정 부위(팔·다리)에 평평하게 밀착합니다.</li>
-            <li>시작 자세에서 <span className="font-black text-amber-300">0점</span>을 누른 뒤, 동작을 끝까지 수행합니다.</li>
+            <li>시작 자세에서 <span className="font-black text-amber-300">0점</span>을 누르고 0.7초간 그대로 유지하면 평균값으로 0점이 잡힙니다.</li>
             <li>최대 가동각이 자동 기록되며, <span className="font-black text-amber-300">측정 완료</span> 시 진동으로 알립니다.</li>
           </ol>
           <button onClick={activate}
@@ -190,10 +305,10 @@ export default function RomSensorGoniometer({ jointName, side = 'both', onBack, 
         offPlaneWarn ? 'border-red-500/40 bg-red-500/10' : 'border-amber-500/30 bg-slate-900'
       }`}>
         <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">
-          {SIDE_KO[currentSide]} · 현재 각도 {zero == null && '(0점을 먼저 잡아주세요)'}
+          {SIDE_KO[currentSide]} · 현재 각도 {zeroing ? '(0점 측정 중 — 그대로 유지)' : zero == null ? '(0점을 먼저 잡아주세요)' : ''}
         </p>
         <p className="mt-1 font-black tabular-nums text-amber-300" style={{ fontSize: '4.5rem', lineHeight: 1.1 }}>
-          {liveDeg == null ? '—' : `${liveDeg}°`}
+          {zeroing ? '···' : liveDeg == null ? '—' : `${liveDeg}°`}
         </p>
         <div className="mt-2 flex items-center justify-center gap-4 text-sm">
           <span className="text-slate-400">최대 가동각 <b className="text-emerald-300 tabular-nums">{maxDeg > 0 ? `${maxDeg}°` : '—'}</b></span>
@@ -208,15 +323,16 @@ export default function RomSensorGoniometer({ jointName, side = 'both', onBack, 
 
       {/* 조작 버튼 */}
       <div className="grid grid-cols-2 gap-2">
-        <button onClick={calibrateZero}
-          className="rounded-xl border border-sky-500/50 bg-sky-500/15 px-4 py-3.5 text-sm font-black text-sky-200 active:scale-[0.99]">
-          {zero == null ? '0점 잡기 (시작 자세)' : '0점 다시 잡기'}
+        <button onClick={calibrateZero} disabled={zeroing}
+          className="rounded-xl border border-sky-500/50 bg-sky-500/15 px-4 py-3.5 text-sm font-black text-sky-200 active:scale-[0.99] disabled:opacity-60">
+          {zeroing ? '0점 측정 중…' : zero == null ? '0점 잡기 (자세 유지 0.7초)' : '0점 다시 잡기'}
         </button>
         <button onClick={resetSide}
           className="rounded-xl border border-slate-700 bg-slate-800 px-4 py-3.5 text-sm font-black text-slate-300 active:scale-[0.99]">
           이 측 다시 측정
         </button>
       </div>
+      {zeroMsg && <p className="text-xs font-bold text-amber-300">{zeroMsg}</p>}
       <button onClick={captureSide} disabled={zero == null || maxDeg <= 0}
         className="w-full rounded-xl bg-amber-500 px-4 py-4 text-base font-black text-slate-950 disabled:bg-slate-700 disabled:text-slate-400 active:scale-[0.99]">
         {SIDE_KO[currentSide]} 측정 완료 {sideIdx + 1 < sidesToMeasure.length ? '→ 다음 측' : '→ 결과'}

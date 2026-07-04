@@ -53,7 +53,7 @@ export default function RomReport({ report }) {
           eyebrow="ROM RANGE OF MOTION REPORT"
           badge="ROM"
           title="ROM 관절 가동범위 리포트"
-          subtitle={`${member?.name || '회원 미선택'} · ${recordedAt || '-'} · ${JOINT_KO[joint] || joint} · ${POSE_KO[poseMode] || poseMode}${captureMode === 'sensor' ? ' · 센서 각도기' : captureMode && captureMode !== 'live' ? ` · ${captureMode === 'slowmo240' ? '슬로모 240fps' : captureMode === 'slowmo120' ? '슬로모 120fps' : '업로드'}` : ' · 라이브 녹화'}${hasVideo ? ' · 영상 포함' : ''}`}
+          subtitle={`${member?.name || '회원 미선택'} · ${recordedAt || '-'} · ${JOINT_KO[joint] || joint}${report.movement ? ` · ${report.movement}` : ''} · ${POSE_KO[poseMode] || poseMode}${captureMode === 'sensor' ? ' · 센서 각도기' : captureMode && captureMode !== 'live' ? ` · ${captureMode === 'slowmo240' ? '슬로모 240fps' : captureMode === 'slowmo120' ? '슬로모 120fps' : '업로드'}` : ' · 라이브 녹화'}${hasVideo ? ' · 영상 포함' : ''}`}
           score={gradeScore(diagnosis?.grade)}
           compact
         />

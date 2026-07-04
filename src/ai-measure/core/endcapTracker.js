@@ -24,6 +24,29 @@ const MIN_MATCH = 3;          // 이보다 매칭 픽셀 적으면 "못 찾음"(
 const TARGET_ADAPT_ALPHA = 0.08; // 조명 변화에 맞춰 학습색을 아주 천천히 보정
 
 /** 영상에서 정규화 좌표 둘레의 평균색 샘플 (RGB + HSV) */
+export function predictNextPos(pos, prev, prev2) {
+  if (!pos || !prev) return pos;
+  const vx1 = Number(pos.x) - Number(prev.x);
+  const vy1 = Number(pos.y) - Number(prev.y);
+  let dx = vx1;
+  let dy = vy1;
+  if (prev2) {
+    const vx0 = Number(prev.x) - Number(prev2.x);
+    const vy0 = Number(prev.y) - Number(prev2.y);
+    dx = vx1 + (vx1 - vx0) * 0.5;
+    dy = vy1 + (vy1 - vy0) * 0.5;
+  }
+  if (![dx, dy].every(Number.isFinite)) return pos;
+  const maxStep = SEARCH_RADIUS * 0.85;
+  const step = Math.hypot(dx, dy);
+  if (step > maxStep && step > 0) {
+    const scale = maxStep / step;
+    dx *= scale;
+    dy *= scale;
+  }
+  return { x: Number(pos.x) + dx, y: Number(pos.y) + dy };
+}
+
 function sampleColor(ctx, w, h, nx, ny, rNorm) {
   const cx = Math.round(nx * w), cy = Math.round(ny * h);
   const r = Math.max(2, Math.round(rNorm * Math.min(w, h)));

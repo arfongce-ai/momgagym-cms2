@@ -706,6 +706,39 @@ export const store = {
     try { await fbDelete('body', rid); }
     catch(e){ cache.body[mid]=prev; throw e; }
   },
+  // ROM 측정 요약을 회원 신체기록(body)에 남긴다(실회원만). 신체기록 타임라인에
+  // '최신 ROM 상태'가 함께 보이도록 하기 위한 것. 기존 body 스키마를 그대로 쓰되
+  // recordType='rom_summary' 로 구분하고, 키/몸무게 칸은 비운다(측정 정직성).
+  //  summary: { joint, poseMode, movement, left, right, symmetry, unit, confidenceScore, measureType, reportId }
+  addRomSummaryToBody: async (mid, summary) => {
+    if (!mid || !summary) return null;
+    const nr = {
+      id: uid('b'),
+      recordType: 'rom_summary',
+      recordedAt: summary.recordedAt || new Date().toISOString().slice(0, 10),
+      height: null,
+      weight: null,
+      systolic: null,
+      diastolic: null,
+      romSummary: {
+        joint: summary.joint || '',
+        poseMode: summary.poseMode || '',
+        movement: summary.movement || '',
+        left: summary.left ?? null,
+        right: summary.right ?? null,
+        symmetry: summary.symmetry ?? null,
+        unit: summary.unit || 'deg',
+        measureType: summary.measureType || '',
+        confidenceScore: summary.confidenceScore ?? null,
+        reportId: summary.reportId || '',
+      },
+      note: summary.note || 'AI ROM 측정 요약',
+    };
+    const prev = cache.body[mid];
+    cache.body[mid] = [...(cache.body[mid] || []), nr];
+    try { await fbSet('body', nr.id, { ...nr, __mid: mid }); return nr; }
+    catch (e) { cache.body[mid] = prev; throw e; }
+  },
   deleteAllBodyRecords: async (mid) => {
     const list=cache.body[mid]||[];
     await fbDeleteBatch(list.map(r=>({name:'body',id:r.id})));

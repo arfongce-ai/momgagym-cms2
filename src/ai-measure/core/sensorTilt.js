@@ -108,19 +108,44 @@ export async function requestSensorPermission() {
   }
 }
 
+// 각도 EMA(2차 평활): 언랩각에 적용해 손떨림을 걷어낸다. prev 가 없으면 next.
+export function smoothAngle(prev, next, alpha = 0.3) {
+  if (next == null) return prev ?? null;
+  if (prev == null) return next;
+  return prev + alpha * (next - prev);
+}
+
+// 표시 스텝 반올림(예: 0.5° 단위) — 미세 잔떨림이 숫자로 보이지 않게.
+export function roundToStep(v, step = 0.5) {
+  if (v == null || !Number.isFinite(v)) return null;
+  return Math.round(v / step) * step;
+}
+
+// 평균(0점 캘리브레이션용). 언랩각은 연속값이라 단순 산술평균이 안전하다.
+export function meanDeg(arr) {
+  if (!Array.isArray(arr) || arr.length === 0) return null;
+  let sum = 0, n = 0;
+  for (const v of arr) { if (v != null && Number.isFinite(v)) { sum += v; n += 1; } }
+  return n ? sum / n : null;
+}
+
 // ── 실시간 트래커 ────────────────────────────────────────────────────────
-//  start() 후 onSample({ angleDeg(언랩·0점 전), offPlane, source }) 콜백.
-//  0점/최대각 관리는 UI(컴포넌트) 책임 — 코어는 연속각만 책임진다.
-export function createTiltTracker({ onSample, gravityAlpha = 0.15 } = {}) {
+//  start() 후 onSample({ angleDeg(평활·언랩, 0점 전), rawDeg(비평활 언랩),
+//  offPlane, source }) 콜백. 0점/최대각 관리는 UI(컴포넌트) 책임.
+//  · gravityAlpha: 중력벡터 EMA(1차 평활). 낮을수록 둔감·안정.
+//  · angleAlpha:   각도 EMA(2차 평활). 손떨림 제거용.
+export function createTiltTracker({ onSample, gravityAlpha = 0.08, angleAlpha = 0.3 } = {}) {
   let g = null;              // EMA 중력벡터 {x,y,z}
-  let unwrapped = null;      // 언랩 누적각
+  let unwrapped = null;      // 언랩 누적각(비평활)
+  let smoothed = null;       // 언랩 누적각(평활)
   let motionSeen = false;    // devicemotion 수신 여부(폴백 판단)
   let running = false;
 
   const emit = (rawDeg, offPlane, source) => {
-    if (rawDeg == null) { onSample?.({ angleDeg: null, offPlane, source }); return; }
+    if (rawDeg == null) { onSample?.({ angleDeg: null, rawDeg: null, offPlane, source }); return; }
     unwrapped = unwrapDeg(unwrapped, rawDeg);
-    onSample?.({ angleDeg: unwrapped, offPlane, source });
+    smoothed = smoothAngle(smoothed, unwrapped, angleAlpha);
+    onSample?.({ angleDeg: smoothed, rawDeg: unwrapped, offPlane, source });
   };
 
   const onMotion = (e) => {
@@ -146,7 +171,7 @@ export function createTiltTracker({ onSample, gravityAlpha = 0.15 } = {}) {
     start() {
       if (running || typeof window === 'undefined') return;
       running = true;
-      g = null; unwrapped = null; motionSeen = false;
+      g = null; unwrapped = null; smoothed = null; motionSeen = false;
       window.addEventListener('devicemotion', onMotion);
       window.addEventListener('deviceorientation', onOrientation);
     },

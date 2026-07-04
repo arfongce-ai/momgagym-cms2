@@ -418,13 +418,15 @@ export default function RomMeasure({ member, onSave, onBack }) {
   //  · 좌우 비대칭: 카메라 측정과 동일한 symmetryIndex 공식으로 자동 산출.
   //  · Firestore: 기존 rom 리포트 스키마에 measureType/sensor_records/
   //    confidenceScore 를 추가해 통합 저장(허브 handleSave → addRomReport).
-  const handleSensorComplete = (results) => {
+  const handleSensorComplete = (results, meta = {}) => {
     const L = results?.left?.angle ?? null;
     const R = results?.right?.angle ?? null;
+    const movement = meta.movement || '';
     const summary = {
       valid: L != null || R != null,
       joint,
       poseMode,
+      movement, // 수기 기록한 세부 움직임
       left_max_rom: L,
       right_max_rom: R,
       symmetry_index_score: symmetryIndex(L, R),
@@ -437,15 +439,35 @@ export default function RomMeasure({ member, onSave, onBack }) {
         memberId,
         measureType: 'sensor_goniometer',
         jointName: joint.toLowerCase(),
+        movement,
         side: s,
         angle: results[s].angle,
         recordedAt: results[s].recordedAt,
         confidenceScore: 1.0, // 센서(하드웨어) 기울기 — 카메라 추정 대비 고신뢰 표시
       }));
+    // 회차 비교 키: 같은 관절·자세·움직임끼리 묶는다(수기 움직임 라벨 반영).
+    const movementSlug = movement ? `_${movement.replace(/\s+/g, '').slice(0, 24)}` : '';
+    const pairKey = memberId
+      ? `${memberId}_rom_${joint}_${poseMode}${movementSlug}`
+      : `rom_${joint}_${poseMode}${movementSlug}`;
     buildAndSetReport(summary, 'sensor', '', '', {
       measureType: 'sensor_goniometer',
+      movement,
       sensor_records: sensorRecords,
       confidenceScore: 1.0,
+      pairKey,
+      // 허브가 저장 성공 후 회원 신체기록에 ROM 요약을 남기도록 하는 힌트
+      romBodySummary: {
+        joint,
+        poseMode,
+        movement,
+        left: L,
+        right: R,
+        symmetry: summary.symmetry_index_score,
+        unit: 'deg',
+        measureType: 'sensor_goniometer',
+        confidenceScore: 1.0,
+      },
     });
   };
 
@@ -540,6 +562,7 @@ export default function RomMeasure({ member, onSave, onBack }) {
     return (
       <RomSensorGoniometer
         jointName={jointName}
+        jointKey={joint}
         side={side}
         onBack={() => setMode('select')}
         onComplete={handleSensorComplete}

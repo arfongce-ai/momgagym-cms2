@@ -91,6 +91,32 @@ export function romToCm(romRatio, personHeightRatio, heightCm) {
   return Math.round((romRatio / personHeightRatio) * heightCm * 10) / 10;
 }
 
+export function romToCmScaled(romRatio, cmPerRatio) {
+  const ratio = Number(romRatio);
+  const scale = Number(cmPerRatio);
+  if (!Number.isFinite(ratio) || ratio <= 0 || !Number.isFinite(scale) || scale <= 0) return null;
+  return Math.round(ratio * scale * 10) / 10;
+}
+
+export function trimPathToRange(samples, startMs, endMs) {
+  const start = Number(startMs);
+  const end = Number(endMs);
+  if (!Array.isArray(samples) || !Number.isFinite(start) || !Number.isFinite(end) || end < start) return null;
+  const picked = samples.filter((s) => {
+    const ts = Number(s?.ts);
+    return Number.isFinite(ts) && ts >= start && ts <= end;
+  });
+  if (picked.length < 2) return null;
+  const ys = picked.map(s => Number(s.y)).filter(Number.isFinite);
+  if (ys.length < 2) return null;
+  return {
+    samples: picked.length,
+    durationMs: Math.round(Number(picked[picked.length - 1].ts) - Number(picked[0].ts)),
+    romRatio: Math.max(...ys) - Math.min(...ys),
+    path: picked,
+  };
+}
+
 /** 사람 화면상 신장(머리~발목 y폭, 0~1) */
 export function personHeightRatio(lms) {
   if (!lms) return null;

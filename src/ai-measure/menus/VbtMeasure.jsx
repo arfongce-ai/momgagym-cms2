@@ -5,18 +5,25 @@
 //  - 측정 시작 → 한 렙 동작 → 종료 시: 수직 이동거리(키 환산 m) ÷ 시간 = 평균속도.
 import { useRef, useState, useEffect, useCallback } from 'react';
 import { usePoseEngine } from '../core/usePoseEngine';
-import { personHeightRatio, romToCm, barbellPoint, createBarbellTracker } from '../core/barbell';
+import { personHeightRatio, barbellPoint, createBarbellTracker } from '../core/barbell';
 import { createMultiTracker } from '../core/endcapTracker';
 import { calcVBT } from '../core/performance';
-import { detectPlatesFromVideo, suggestSidePlates, totalWeight, createPlateBlobTracker } from '../core/plates';
+import {
+  detectPlatesFromVideo, suggestSidePlates, totalWeight, createPlateBlobTracker,
+  plateCmPerRatio, PLATE_CALIBRATION_TAGS,
+} from '../core/plates';
 import { exerciseLabel as exerciseLabelLocal, snapWeight, stepWeight } from '../core/lifting';
 import { fuseTrackingCandidates, summarizeCrossValidation } from '../core/trackFusion';
 import { estimateBodyCOG, barCogHorizontalGap } from '../core/bodyCog';
-import { offsetToCm } from '../core/geometry';
 import { saveVideoToPhone, pickRecorderMime } from '../core/recordSink';
 import { drawLiftingDataHud, drawBarPathToRecord } from '../core/recordingOverlay';
 import { createRepCounter } from '../core/repCounter';
 import { assessFraming, FRAMING_PRESETS } from '../core/framingGuide';
+import {
+  CALIBRATION_PRESETS, buildReferenceScale, ratioToCm,
+  resolveDistanceScale, serializeDistanceScale,
+} from '../core/calibration';
+import { buildRepVelocityMetrics } from '../core/repVelocity';
 import PlateWeightInput from './PlateWeightInput';
 import FramingIntro from './FramingIntro';
 import HeightField from './HeightField';
@@ -53,6 +60,7 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
   const framingRef = useRef({ level: 'bad', message: '' });
   const consumedAutoStartRef = useRef(0);
   const roiRef = useRef({ x: 0.05, y: 0.34, w: 0.26, h: 0.46 });
+  const calibrationPointsRef = useRef([]);
   const countdownTimerRef = useRef(null);
   const maxRecordTimerRef = useRef(null);
 
@@ -85,6 +93,11 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
   const [detected, setDetected] = useState([]);
   const [framing, setFraming] = useState({ level: 'bad', message: '카메라 준비 중…' });
   const [cogActive, setCogActive] = useState(false);   // 측면 인식으로 COG 산출 중인지(칩)
+  const [, setExposureLock] = useState(false);
+  const [referenceLengthCm, setReferenceLengthCm] = useState(CALIBRATION_PRESETS[0].lengthCm);
+  const [referenceScale, setReferenceScale] = useState(null);
+  const [calibrating, setCalibrating] = useState(false);
+  const [calibrationPointCount, setCalibrationPointCount] = useState(0);
 
   const handleResult = useCallback((lms, ts, video) => {
     const canvas = canvasRef.current;
@@ -150,7 +163,12 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
         // 바-COG 수평 이격(측면 인식시에만) — 정직성: COG 없으면 샘플을 남기지 않는다.
         if (cog.available && cog.point) {
           const gapRatio = barCogHorizontalGap(fused.point, cog.point);
-          const gapCm = offsetToCm(gapRatio, phRef.current, Number(heightCm) || null);
+          const scale = resolveDistanceScale({
+            referenceScale,
+            personHeightRatio: phRef.current,
+            heightCm: Number(heightCm) || null,
+          });
+          const gapCm = ratioToCm(gapRatio, scale.cmPerRatio);
           barCogGapSamplesRef.current.push({ gapRatio, gapCm });
         }
         repCounterRef.current.push(fused.point.y);
@@ -166,7 +184,8 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
         if (live) {
           const H = Number(heightCm) || null;
           const ph = phRef.current;
-          const cm = romToCm(live.romRatio, ph, H);
+          const scale = resolveDistanceScale({ referenceScale, personHeightRatio: ph, heightCm: H });
+          const cm = ratioToCm(live.romRatio, scale.cmPerRatio);
           const sec = live.durationMs / 1000;
           liveHudRef.current = {
             romCm: cm,
@@ -213,9 +232,9 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
       }
       ctx.restore();
     }
-  }, [activePts, heightCm]);
+  }, [activePts, heightCm, referenceScale]);
 
-  const { videoRef, start, stop, status, error } = usePoseEngine({ onResult: handleResult });
+  const { videoRef, start, stop, status, error, lockCapture, unlockCapture } = usePoseEngine({ onResult: handleResult });
 
   const clearCountdown = useCallback(() => {
     if (countdownTimerRef.current) {
@@ -261,13 +280,14 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
       if (v) v.removeEventListener('loadedmetadata', syncCanvas);
       clearCountdown();
       clearMaxRecordTimer();
+      unlockCapture();
       stop();
       stopCompose();
       if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
         try { mediaRecorderRef.current.stop(); } catch (e) { /* noop */ }
       }
     };
-  }, [clearCountdown, clearMaxRecordTimer, syncCanvas, stop]);
+  }, [clearCountdown, clearMaxRecordTimer, syncCanvas, stop, unlockCapture]);
 
   const startCam = useCallback(() => {
     setResult(null);
@@ -278,11 +298,14 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
     fusedRef.current.reset();
     crossValFramesRef.current = [];
     barCogGapSamplesRef.current = [];
+    calibrationPointsRef.current = [];
+    setCalibrationPointCount(0);
+    setCalibrating(false);
     cogRef.current = { available: false, point: null };
     setVideoBlob(null); videoBlobRef.current = null; setVideoSavedMsg('');
     start();
   }, [start]);
-  const closeCam = () => { clearCountdown(); clearMaxRecordTimer(); stop(); recordingRef.current = false; setRecording(false); stopCompose(); };
+  const closeCam = () => { clearCountdown(); clearMaxRecordTimer(); unlockCapture(); setExposureLock(false); stop(); recordingRef.current = false; setRecording(false); stopCompose(); };
 
   const stopCompose = () => {
     if (composeRafRef.current) { cancelAnimationFrame(composeRafRef.current); composeRafRef.current = null; }
@@ -365,6 +388,23 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
     if (status === 'idle') startCam();
   }, [autoStartSignal, startCam, status]);
 
+  const addCalibrationPoint = useCallback((point) => {
+    const next = [...calibrationPointsRef.current, point].slice(-2);
+    calibrationPointsRef.current = next;
+    setCalibrationPointCount(next.length);
+    if (next.length < 2) return;
+
+    const scale = buildReferenceScale(next, referenceLengthCm);
+    if (!scale) {
+      alert('거리 보정 기준 길이를 다시 확인해 주세요.');
+      calibrationPointsRef.current = [];
+      setCalibrationPointCount(0);
+      return;
+    }
+    setReferenceScale(scale);
+    setCalibrating(false);
+  }, [referenceLengthCm]);
+
   const onTapVideo = (e) => {
     const v = videoRef.current;
     if (!v || !v.videoWidth || status !== 'running') return;
@@ -379,6 +419,10 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
     const nx = (clientX - offX) / drawW;
     const ny = (clientY - offY) / drawH;
     if (nx < 0 || nx > 1 || ny < 0 || ny > 1) return;
+    if (calibrating) {
+      addCalibrationPoint({ x: nx, y: ny });
+      return;
+    }
     const ok = capRef.current.seed(v, nx, ny);
     if (ok) {
       seededRef.current = true; setSeeded(true);
@@ -395,13 +439,18 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
     const H = Number(heightCm) || null;
     const phs = phSamplesRef.current.filter(Boolean).sort((a, b) => a - b);
     const phMed = phs.length ? phs[Math.floor(phs.length / 2)] : phRef.current;
-    const cm = romToCm(sum.romRatio, phMed, H);
+    const scale = resolveDistanceScale({ referenceScale, personHeightRatio: phMed, heightCm: H });
+    const cm = ratioToCm(sum.romRatio, scale.cmPerRatio);
     if (!cm) return { error: 'no_height' };
     const distanceM = cm / 100;
     const timeSec = sum.durationMs / 1000;
     const vbt = calcVBT(distanceM, timeSec);
     if (!vbt) return null;
-    const reps = repCounterRef.current.countWithPending();
+    const repVelocity = buildRepVelocityMetrics(fusedRef.current.path(), {
+      cmPerRatio: scale.cmPerRatio,
+      source: 'live',
+    });
+    const reps = repVelocity.summary.repCount || repCounterRef.current.countWithPending();
     const crossValidation = summarizeCrossValidation(crossValFramesRef.current);
     const gaps = barCogGapSamplesRef.current;
     let cogGap = null;
@@ -423,14 +472,25 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
       ...vbt,
       distanceM: Math.round(distanceM * 1000) / 1000,
       timeSec: Math.round(timeSec * 100) / 100,
-      romCm: cm, reps, lostRatio, crossValidation, cogGap,
+      romCm: cm,
+      reps,
+      repVelocity,
+      velocityLoss: repVelocity.summary.velocityLossPct,
+      calibration: serializeDistanceScale(scale),
+      calibrationSource: scale.source,
+      isCalibrated: scale.isCalibrated,
+      lostRatio,
+      crossValidation,
+      cogGap,
     };
-  }, [heightCm]);
+  }, [heightCm, referenceScale]);
 
   const finishRecord = (autoLimited = false) => {
     if (!recordingRef.current) return;
     clearMaxRecordTimer();
     recordingRef.current = false;
+    unlockCapture();
+    setExposureLock(false);
     setRecording(false);
     if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
       try { mediaRecorderRef.current.stop(); } catch (e) { stopCompose(); }
@@ -463,6 +523,7 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
         setLiveReps(0);
         recordStartRef.current = performance.now();
         recordingRef.current = true;
+        lockCapture().then(setExposureLock).catch(() => setExposureLock(false));
         setRecording(true);
         setResult(null);
         setVideoBlob(null); videoBlobRef.current = null; setVideoSavedMsg('');
@@ -490,6 +551,8 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
     } else {
       clearMaxRecordTimer();
       recordingRef.current = false;
+      unlockCapture();
+      setExposureLock(false);
       setRecording(false);
       if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
         try { mediaRecorderRef.current.stop(); } catch (e) { stopCompose(); }
@@ -519,8 +582,13 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
       romCm: result.romCm ?? null,
       meanVelocity: result.meanVelocity,
       reps: result.reps ?? null,
+      repVelocity: result.repVelocity ?? null,
+      velocityLoss: result.velocityLoss ?? null,
       zone: result.zone?.label,
       heightCm: Number(heightCm) || null,
+      isCalibrated: result.isCalibrated === true,
+      calibration: result.calibration ?? null,
+      calibrationSource: result.calibrationSource ?? result.calibration?.source ?? null,
       weight: weight || null,
       barKg: plate.barKg,
       sidePlates: plate.sidePlates,
@@ -567,6 +635,9 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
             키 미입력 — 속도 계산엔 키 필요
           </span>
         )}
+        <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${referenceScale ? 'bg-emerald-500/85 text-slate-950' : 'bg-slate-700/90 text-slate-200'}`}>
+          {calibrating ? `거리 보정 ${calibrationPointCount}/2` : referenceScale ? '기준물 보정' : '키 보정'}
+        </span>
       </>
     );
 
@@ -580,6 +651,16 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
         <button onClick={scanPlateColors}
           className="px-3.5 h-12 rounded-full text-xs font-black bg-slate-700 text-white active:scale-95 shadow-lg">
           🎨 색 인식
+        </button>
+        <button
+          onClick={() => {
+            calibrationPointsRef.current = [];
+            setCalibrationPointCount(0);
+            setCalibrating(v => !v);
+          }}
+          disabled={recording || countdown != null}
+          className={`px-3.5 h-12 rounded-full text-xs font-black active:scale-95 shadow-lg disabled:opacity-50 ${calibrating ? 'bg-cyan-400 text-slate-950' : 'bg-slate-700 text-white'}`}>
+          {calibrating ? '보정점 찍기' : '거리 보정'}
         </button>
       </div>
     );
@@ -612,6 +693,19 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
               <span>{weightSource === 'plate-color' ? '원판 색 인식 반영' : '수동 무게'}</span>
               {detected.length > 0 && <span className="text-cyan-300">{detected.map(d => d.label).join(', ')}</span>}
             </div>
+            <div className="mt-2 flex items-center justify-center gap-2 text-[10px] text-slate-300">
+              <span>기준 길이</span>
+              <input
+                type="number"
+                min="5"
+                max="300"
+                step="0.5"
+                value={referenceLengthCm}
+                onChange={e => setReferenceLengthCm(Number(e.target.value) || 0)}
+                className="w-16 rounded bg-black/35 border border-white/10 px-2 py-1 text-center font-mono text-white"
+              />
+              <span>cm</span>
+            </div>
           </div>
         )}
         {result && (
@@ -631,6 +725,22 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
                 <p className="font-mono font-bold text-slate-100 text-sm">{result.timeSec}s</p>
               </div>
             </div>
+            {result.repVelocity?.summary?.repCount > 0 && (
+              <div className="grid grid-cols-3 gap-2 text-center">
+                <div className="bg-emerald-500/10 border border-emerald-500/25 rounded-xl py-2">
+                  <p className="text-[10px] text-emerald-300">반복</p>
+                  <p className="font-mono font-bold text-emerald-100 text-sm">{result.repVelocity.summary.repCount}</p>
+                </div>
+                <div className="bg-emerald-500/10 border border-emerald-500/25 rounded-xl py-2">
+                  <p className="text-[10px] text-emerald-300">최고 평균속도</p>
+                  <p className="font-mono font-bold text-emerald-100 text-sm">{result.repVelocity.summary.bestMeanVelocity ?? '-'}m/s</p>
+                </div>
+                <div className="bg-emerald-500/10 border border-emerald-500/25 rounded-xl py-2">
+                  <p className="text-[10px] text-emerald-300">속도저하</p>
+                  <p className="font-mono font-bold text-emerald-100 text-sm">{result.velocityLoss != null ? `${result.velocityLoss}%` : '-'}</p>
+                </div>
+              </div>
+            )}
             {(result.cogGap?.available || result.crossValidation?.totalFrames) && (
               <div className="grid grid-cols-2 gap-2 text-center">
                 {result.cogGap?.available && (

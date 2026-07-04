@@ -23,8 +23,9 @@ import LiftingReportDashboard from './LiftingReportDashboard';
 import { useHardwareBack } from '../core/useHardwareBack';
 import {
   exercisesForMode, lift1rmToExercise,
-  vbtConfidence, estimateMeanPower, buildLiftingPayload,
+  vbtConfidence, estimateMeanPower, buildLiftingPayload, detectMeasurementOutlier,
 } from '../core/lifting';
+import { buildLoadVelocityPoint } from '../core/loadVelocityProfile';
 
 const MODES = [
   ['lifting', '🏋️ 역도'],
@@ -49,6 +50,7 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
   const [report, setReport] = useState(null);
   // [항목 2] 폰 뒤로가기: 리포트 화면이면 측정 화면으로 한 단계만 복귀.
   useHardwareBack(!!report, () => setReport(null));
+  const sessionHistoryRef = useRef(null);
 
   // ── 오버레이 겹침 수정 ──
   //  상단 모드/종목/촬영방식 선택 바의 실제 렌더 높이를 측정해 자식 카메라
@@ -133,11 +135,15 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
 
   // 저장 + 리포트 표시 공통 헬퍼. payload 를 저장하고, 그 결과를 리포트로 띄운다.
   const saveAndReport = useCallback(async (payload, reportExtras = {}) => {
-    let saved = payload;
+    const outlierWarning = detectMeasurementOutlier(payload, sessionHistoryRef.current);
+    const nextPayload = outlierWarning.isOutlier ? { ...payload, outlierWarning } : payload;
+    let saved = nextPayload;
     try {
+      const payload = nextPayload;
       const res = await save?.(payload);
       if (res && typeof res === 'object') saved = { ...payload, ...res };
     } catch (e) { /* 저장 실패해도 리포트는 표시 */ }
+    sessionHistoryRef.current = saved;
     setReport({ ...saved, ...reportExtras });
     return saved;
   }, [save]);
@@ -152,8 +158,16 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
     // LiftingMeasure raw: { type:'lifting', romRatio, romCm, durationSec,
     //                       meanVelocity, heightCm, weight, barKg, sidePlates, source? }
     const source = raw?.source || 'live';
+    const loadVelocityPoint = buildLoadVelocityPoint({
+      exerciseType,
+      weight: raw?.weight,
+      meanVelocity: raw?.repVelocity?.summary?.averageMeanVelocity ?? raw?.meanVelocity,
+      repVelocity: raw?.repVelocity,
+      reps: raw?.reps,
+      source,
+    });
     const conf = vbtConfidence({
-      isCalibrated: !!raw?.heightCm,
+      isCalibrated: raw?.isCalibrated === true || !!raw?.heightCm,
       lostRatio: raw?.lostRatio,
       durationSec: raw?.durationSec,
       source,
@@ -171,12 +185,17 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
         rangeOfMotion: raw?.romCm ?? null,
         meanPower: estimateMeanPower(raw?.weight, raw?.meanVelocity),
         confidenceScore: conf.score,
+        velocityLoss: raw?.velocityLoss ?? raw?.repVelocity?.summary?.velocityLossPct ?? null,
       },
       metadata: {
         weight: raw?.weight ?? null,
-        isCalibrated: !!raw?.heightCm,
+        isCalibrated: raw?.isCalibrated === true || !!raw?.heightCm,
         heightCm: raw?.heightCm ?? null,
+        calibration: raw?.calibration ?? null,
+        calibrationSource: raw?.calibrationSource ?? raw?.calibration?.source ?? null,
         reps: raw?.reps ?? null,
+        repVelocity: raw?.repVelocity ?? null,
+        loadVelocityPoint,
         barKg: raw?.barKg ?? null,
         sidePlates: raw?.sidePlates ?? null,
         confidenceReasons: conf.reasons,
@@ -195,8 +214,16 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
     // VbtMeasure raw: { type:'vbt', distance, time, meanVelocity, zone,
     //                   heightCm, weight, barKg, sidePlates, source? }
     const source = raw?.source || 'live';
+    const loadVelocityPoint = buildLoadVelocityPoint({
+      exerciseType,
+      weight: raw?.weight,
+      meanVelocity: raw?.repVelocity?.summary?.averageMeanVelocity ?? raw?.meanVelocity,
+      repVelocity: raw?.repVelocity,
+      reps: raw?.reps,
+      source,
+    });
     const conf = vbtConfidence({
-      isCalibrated: !!raw?.heightCm,
+      isCalibrated: raw?.isCalibrated === true || !!raw?.heightCm,
       lostRatio: raw?.lostRatio,
       durationSec: raw?.time,
       source,
@@ -213,13 +240,18 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
         peakReason: raw?.peakReason ?? (source === 'upload' ? 'ok' : 'live_fps_too_low'),
         rangeOfMotion: raw?.romCm ?? null,
         meanPower: estimateMeanPower(raw?.weight, raw?.meanVelocity),
+        velocityLoss: raw?.velocityLoss ?? raw?.repVelocity?.summary?.velocityLossPct ?? null,
         confidenceScore: conf.score,
       },
       metadata: {
         weight: raw?.weight ?? null,
-        isCalibrated: !!raw?.heightCm,
+        isCalibrated: raw?.isCalibrated === true || !!raw?.heightCm,
         heightCm: raw?.heightCm ?? null,
+        calibration: raw?.calibration ?? null,
+        calibrationSource: raw?.calibrationSource ?? raw?.calibration?.source ?? null,
         reps: raw?.reps ?? null,
+        repVelocity: raw?.repVelocity ?? null,
+        loadVelocityPoint,
         zone: raw?.zone ?? null,
         weightSource: raw?.weightSource ?? null,
         distanceM: raw?.distance ?? null,
@@ -238,12 +270,15 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
 
   const handleSaveOneRm = useCallback(async (raw) => {
     // OneRMEstimate raw: { lift, liftLabel, weight, reps, oneRM, epley, brzycki,
-    //   formulas, barKg, sidePlates, weightSource, attemptNo, attempts, bestOneRM }
+    //   formulas, estimateStats, barKg, sidePlates, weightSource, attemptNo, attempts, bestOneRM }
     // 1RM은 내부 lift('bench')를 표준 exerciseType('bench_press')로 매핑해 저장.
     const exType = lift1rmToExercise(raw?.lift) || exerciseType;
     const r = Number(raw?.reps) || 0;
     // 반복수 기반 신뢰도(근거): 1~6 높음, 7~10 보통, 그 이상 낮음.
-    const conf = r >= 1 && r <= 6 ? 0.9 : r <= 10 ? 0.75 : 0.55;
+    const spreadPct = Number(raw?.formulaSpreadPct ?? raw?.estimateStats?.spreadPct);
+    let conf = r >= 1 && r <= 6 ? 0.9 : r <= 10 ? 0.75 : 0.55;
+    if (Number.isFinite(spreadPct) && spreadPct > 10) conf -= spreadPct > 15 ? 0.20 : 0.10;
+    conf = Math.max(0.35, Math.round(conf * 100) / 100);
     const payload = buildLiftingPayload({
       mode: 'onerm',
       exerciseType: exType,
@@ -257,6 +292,10 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
         isCalibrated: raw?.weightSource === 'manual' || raw?.weightSource === 'dial',
         reps: raw?.reps ?? null,
         weightSource: raw?.weightSource ?? null,
+        estimateStats: raw?.estimateStats ?? null,
+        confidenceInterval: raw?.confidenceInterval ?? null,
+        formulaSpreadKg: raw?.formulaSpreadKg ?? null,
+        formulaSpreadPct: raw?.formulaSpreadPct ?? null,
         barKg: raw?.barKg ?? null,
         sidePlates: raw?.sidePlates ?? null,
         attemptNo: raw?.attemptNo ?? null,        // 이번이 몇 차 도전인지

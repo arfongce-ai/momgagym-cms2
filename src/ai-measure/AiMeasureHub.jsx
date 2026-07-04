@@ -205,6 +205,20 @@ export default function AiMeasureHub() {
           },
         });
         await saveUnifiedCopy(saved, 'rom');
+        // 회원 신체기록에 최신 ROM 요약 남기기(실회원만). 미등록회원은 프로필이
+        // 없으므로 생략. 실패해도 리포트 저장 자체는 성공으로 둔다(부가 기록).
+        if (!member.isVirtual && data?.romBodySummary && typeof store.addRomSummaryToBody === 'function') {
+          try {
+            await store.addRomSummaryToBody(saveMid, {
+              ...data.romBodySummary,
+              recordedAt: todayYMD(),
+              reportId: saved?.id || '',
+              note: `AI ROM 측정 요약${data.romBodySummary.movement ? ` · ${data.romBodySummary.movement}` : ''}`,
+            });
+          } catch (bErr) {
+            console.warn('[AiMeasureHub] ROM 신체기록 요약 저장 생략:', bErr?.code || bErr?.message);
+          }
+        }
         return saved;
       }
       alert(member.isVirtual ? '미등록회원 측정이 저장되었습니다.' : '측정이 저장되었습니다.');
