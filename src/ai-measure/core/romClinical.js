@@ -96,9 +96,32 @@ export function generateRomDiagnosis(summary, { joint, poseMode } = {}) {
     details.push(`${poseName} 측정이라 보상 작용을 지면 지지로 통제한 '순수 구조적 가동범위'에 가깝습니다.`);
   }
 
+  // ── 4-b) [보상 프로파일] 시작 자세 기준선 대비 다축 보상 (전 자세모드 공통) ──
+  //  · 체간 기울기: 동작 중 몸통이 기준선에서 기울며 가동범위를 보태는 패턴.
+  //  · 회전(비틀기): 측정면을 벗어나 몸통을 돌리는 패턴 — 각도 자체의 신뢰도를
+  //    떨어뜨리므로(측정면 이탈) 임계 초과 시 재측정 권고까지 붙인다.
+  const profile = summary?.compensation_profile || null;
+  if (profile) {
+    const leanDev = profile.lean_max_dev_deg;
+    if (leanDev != null && leanDev >= 8) {
+      const severe = leanDev >= 15;
+      details.push(`동작 중 체간이 시작 자세 대비 최대 ${leanDev}° 기울었습니다 — ${severe ? '기울기 보상이 커 가동범위가 과대평가되었을 가능성이 높습니다.' : '체간 고정(코어 안정화) 후 재측정하면 순수 관절 가동범위에 가까워집니다.'}`);
+      flags.push(severe ? 'trunk_lean_severe' : 'trunk_lean_compensation');
+    }
+    const rot = profile.rotation_max_pct;
+    if (rot != null && rot >= 12) {
+      const severe = rot >= 25;
+      details.push(`몸통 회전(비틀기) 보상이 감지되었습니다(측정면 이탈 ${rot}%) — ${severe ? '측정면을 크게 벗어나 각도 신뢰도가 낮습니다. 몸통을 고정하고 재측정을 권장합니다.' : '동작 중 몸통이 살짝 돌아갑니다. 회전을 억제하면 좌우 비교가 더 정확해집니다.'}`);
+      flags.push(severe ? 'trunk_rotation_severe' : 'trunk_rotation_compensation');
+    }
+  }
+
   // ── 종합 등급 ──
   let grade = 'good';
-  if (flags.includes('left_restricted') || flags.includes('right_restricted') || flags.includes('asymmetry')) {
+  if (
+    flags.includes('left_restricted') || flags.includes('right_restricted') || flags.includes('asymmetry')
+    || flags.includes('trunk_lean_severe') || flags.includes('trunk_rotation_severe')
+  ) {
     grade = 'attention';
   }
   if (

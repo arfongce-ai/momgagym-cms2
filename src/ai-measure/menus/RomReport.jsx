@@ -74,7 +74,7 @@ export default function RomReport({ report }) {
       {report.measureType === 'sensor_goniometer' && (
         <div className="mt-3 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-2.5">
           <p className="text-xs font-bold text-emerald-200">
-            📐 센서(기울기) 측정 — 폰 밀착 전자 각도기 · 하드웨어 측정값 (신뢰도 {report.confidenceScore ?? 1.0})
+            📐 고니오메타 — 폰 밀착 기울기 센서 · 하드웨어 측정값 (신뢰도 {report.confidenceScore ?? 1.0})
           </p>
           <p className="mt-0.5 text-[11px] text-emerald-300/70">
             0점(시작 자세) 대비 최대 이동각. 골반·체간 보상 작용은 센서로 판별하지 않습니다.
@@ -147,6 +147,9 @@ export default function RomReport({ report }) {
         />
       </div>
 
+      {/* [보상 프로파일] 3축 보상 패턴 — 숫자 + 방향 시각화 (카메라 측정 전용) */}
+      <CompensationProfilePanel profile={s.compensation_profile} poseMode={poseMode} />
+
       {/* 각도 시계열 차트 */}
       {chartData.length >= 3 && (
         <div className="mt-5">
@@ -201,6 +204,82 @@ export default function RomReport({ report }) {
 
 function confidenceLabel(level) {
   return level === 'high' ? '높음' : level === 'medium' ? '중간' : '주의';
+}
+
+// ── [보상 프로파일] 3축 보상 패턴 패널 — 숫자 + 방향 시각화 ──
+//  · 체간 기울기: 사람 축(막대)이 실제 이탈 각도만큼 기울어져 방향을 보여준다.
+//  · 회전(비틀기): 회전 아이콘 + 측정면 이탈 %.
+//  · 골반 하강: STANDING 전용, 하강 방향 화살표 + %.
+//  값이 null 인 축은 '기준선 부족'으로 표시(측정 정직성 — 추측한 값을 그리지 않음).
+function CompensationProfilePanel({ profile, poseMode }) {
+  if (!profile) return null; // 센서 측정 등 프로파일 없는 리포트는 패널 생략
+  const lean = profile.lean_max_dev_deg;
+  const leanSigned = profile.lean_dev_signed_deg;
+  const rot = profile.rotation_max_pct;
+  const pelvic = profile.pelvic_drop_pct;
+
+  const toneOf = (v, warn, severe) =>
+    v == null ? 'text-slate-500' : v >= severe ? 'text-red-300' : v >= warn ? 'text-amber-300' : 'text-emerald-300';
+  const badgeOf = (v, warn, severe) =>
+    v == null ? '기준선 부족' : v >= severe ? '큼' : v >= warn ? '주의' : '양호';
+
+  // 기울기 방향 시각화: 몸통 막대를 부호 방향으로 기울여 그린다(표시각은 ±30° 캡).
+  const tiltDeg = leanSigned == null ? 0 : Math.max(-30, Math.min(30, leanSigned));
+
+  return (
+    <div className="mt-4 rounded-xl border border-slate-800 bg-slate-900/70 p-3">
+      <p className="mb-2 text-sm font-bold text-slate-300">보상 패턴 (시작 자세 기준)</p>
+      <div className="grid grid-cols-3 gap-2">
+        {/* 축 1: 체간 기울기 */}
+        <div className="rounded-lg bg-slate-800/70 p-2.5 text-center">
+          <svg viewBox="0 0 40 40" className="mx-auto h-9 w-9">
+            <line x1="20" y1="36" x2="20" y2="30" stroke="#475569" strokeWidth="2" />
+            <g transform={`rotate(${tiltDeg} 20 30)`}>
+              <line x1="20" y1="30" x2="20" y2="8" stroke={lean != null && lean >= 8 ? '#fbbf24' : '#34d399'} strokeWidth="3" strokeLinecap="round" />
+              <circle cx="20" cy="6" r="3.5" fill={lean != null && lean >= 8 ? '#fbbf24' : '#34d399'} />
+            </g>
+          </svg>
+          <p className={`mt-1 text-lg font-black tabular-nums ${toneOf(lean, 8, 15)}`}>{lean == null ? '—' : `${lean}°`}</p>
+          <p className="text-[10px] font-bold text-slate-400">체간 기울기 · {badgeOf(lean, 8, 15)}</p>
+        </div>
+        {/* 축 2: 회전(비틀기) */}
+        <div className="rounded-lg bg-slate-800/70 p-2.5 text-center">
+          <svg viewBox="0 0 40 40" className="mx-auto h-9 w-9">
+            <path d="M 10 20 A 10 10 0 1 1 20 30" fill="none"
+              stroke={rot != null && rot >= 12 ? '#fbbf24' : '#34d399'} strokeWidth="3" strokeLinecap="round" />
+            <path d="M 16 30 L 22 30 L 19 35 Z" fill={rot != null && rot >= 12 ? '#fbbf24' : '#34d399'} />
+          </svg>
+          <p className={`mt-1 text-lg font-black tabular-nums ${toneOf(rot, 12, 25)}`}>{rot == null ? '—' : `${rot}%`}</p>
+          <p className="text-[10px] font-bold text-slate-400">회전·비틀기 · {badgeOf(rot, 12, 25)}</p>
+        </div>
+        {/* 축 3: 골반 하강 (STANDING 전용) */}
+        <div className="rounded-lg bg-slate-800/70 p-2.5 text-center">
+          {poseMode === 'STANDING' ? (
+            <>
+              <svg viewBox="0 0 40 40" className="mx-auto h-9 w-9">
+                <line x1="8" y1="18" x2="32" y2={pelvic != null && Math.abs(pelvic) >= 8 ? 24 : 19}
+                  stroke={pelvic != null && Math.abs(pelvic) >= 8 ? '#fbbf24' : '#34d399'} strokeWidth="3" strokeLinecap="round" />
+                <circle cx="8" cy="18" r="3" fill="#94a3b8" />
+                <circle cx="32" cy={pelvic != null && Math.abs(pelvic) >= 8 ? 24 : 19} r="3" fill="#94a3b8" />
+              </svg>
+              <p className={`mt-1 text-lg font-black tabular-nums ${toneOf(pelvic == null ? null : Math.abs(pelvic), 8, 15)}`}>
+                {pelvic == null ? '—' : `${pelvic}%`}
+              </p>
+              <p className="text-[10px] font-bold text-slate-400">골반 하강 · {badgeOf(pelvic == null ? null : Math.abs(pelvic), 8, 15)}</p>
+            </>
+          ) : (
+            <div className="flex h-full flex-col items-center justify-center py-2">
+              <p className="text-lg font-black text-slate-600">—</p>
+              <p className="text-[10px] font-bold text-slate-500">골반 하강 · 선 자세 전용</p>
+            </div>
+          )}
+        </div>
+      </div>
+      <p className="mt-2 text-[10px] leading-relaxed text-slate-500">
+        기울기=몸통이 시작 자세에서 기운 최대 각도 · 회전=측정면 이탈(몸통높이 대비 %, 단안 카메라 특성상 각도 아님) · 임계 초과 시 AI 진단에 재측정 권고가 표시됩니다.
+      </p>
+    </div>
+  );
 }
 
 function MetricCard({ label, value, sub, tone = 'neutral' }) {

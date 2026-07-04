@@ -138,11 +138,16 @@ describe('[항목 4] ROM 전자 각도기(수동)', () => {
     expect(angleAt(null, { x: 0, y: 0 }, { x: 100, y: 0 })).toBeNull();
   });
 
-  it('RomMeasure 설정 화면에서 전자 각도기 모드로 진입할 수 있다(배선)', () => {
-    const src = read('../ai-measure/menus/RomMeasure.jsx');
-    expect(src).toMatch(/setMode\('manual'\)/);
-    expect(src).toMatch(/RomGoniometer/);
-    expect(src).toMatch(/전자 각도기/);
+  it('사진 각도기(3점 탭)는 영상 캡처 후 기능으로 연결된다(항목 4-3)', () => {
+    const rom = read('../ai-measure/menus/RomMeasure.jsx');
+    const video = read('../ai-measure/menus/RomVideoAngle.jsx');
+    // RomMeasure 는 영상 업로드 모드를 RomVideoAngle 로 위임
+    expect(rom).toMatch(/RomVideoAngle/);
+    expect(rom).toMatch(/setMode\('upload'\)/);
+    // RomVideoAngle 은 캡처 프레임을 RomGoniometer(사진 각도기)에 넘긴다
+    expect(video).toMatch(/RomGoniometer/);
+    expect(video).toMatch(/initialImageUrl=\{captureUrl\}/);
+    expect(video).toMatch(/전자 각도기|각도 측정|사진 각도기|angleAt|onUseAngle/);
   });
 });
 
@@ -358,5 +363,155 @@ describe('[기록 보관] 센서 ROM 측정 저장 정책', () => {
 
   it('리포트 제목줄에 움직임 라벨이 표시된다', () => {
     expect(romReport).toMatch(/report\.movement/);
+  });
+});
+
+// ── [보상 프로파일] 카메라 ROM 다축 보상(기울기·회전·골반하강) ──
+import { RomAccumulator, torsoSeparationSignal, LM as BM_LM } from '../ai-measure/core/bodyMechanics';
+
+// 측면 뷰 합성 프레임: 어깨/골반이 겹친 중립 자세에서 시작해
+// leanDeg 만큼 체간을 기울이고 sepRatio 만큼 어깨를 수평 분리(비틀기)시킨다.
+function sideFrame({ leanDeg = 0, sepRatio = 0 } = {}) {
+  const pose = Array.from({ length: 33 }, () => ({ x: 0.5, y: 0.5, z: 0, visibility: 0.9 }));
+  const hipY = 0.60, trunkH = 0.30;
+  const leanRad = (leanDeg * Math.PI) / 180;
+  const sx = 0.5 + Math.sin(leanRad) * trunkH;    // 기울면 어깨중점이 x 로 이동
+  const sy = hipY - Math.cos(leanRad) * trunkH;
+  const half = (sepRatio * trunkH) / 2;           // 비틀면 어깨가 수평 분리
+  Object.assign(pose[BM_LM.LEFT_SHOULDER],  { x: sx - half, y: sy });
+  Object.assign(pose[BM_LM.RIGHT_SHOULDER], { x: sx + half, y: sy });
+  Object.assign(pose[BM_LM.LEFT_HIP],  { x: 0.5, y: hipY });
+  Object.assign(pose[BM_LM.RIGHT_HIP], { x: 0.5, y: hipY });
+  Object.assign(pose[BM_LM.LEFT_KNEE],  { x: 0.5, y: 0.78 });
+  Object.assign(pose[BM_LM.RIGHT_KNEE], { x: 0.5, y: 0.78 });
+  Object.assign(pose[BM_LM.LEFT_ANKLE],  { x: 0.5, y: 0.95 });
+  Object.assign(pose[BM_LM.RIGHT_ANKLE], { x: 0.5, y: 0.95 });
+  return pose;
+}
+
+describe('[보상 프로파일] 다축 보상 측정', () => {
+  it('torsoSeparationSignal — 어깨 수평 분리를 몸통높이 비율로 산출', () => {
+    const neutral = torsoSeparationSignal(sideFrame({ sepRatio: 0 }));
+    const twisted = torsoSeparationSignal(sideFrame({ sepRatio: 0.3 }));
+    expect(neutral.shoulderSep).toBeCloseTo(0, 2);
+    expect(twisted.shoulderSep).toBeCloseTo(0.3, 1);
+  });
+
+  it('중립 유지 동작이면 기울기·회전 보상이 0 에 가깝다', () => {
+    const acc = new RomAccumulator({ joint: 'HIP', poseMode: 'STANDING' });
+    for (let i = 0; i < 20; i += 1) acc.push(sideFrame(), i * 33);
+    const p = acc.summary().compensation_profile;
+    expect(p.lean_max_dev_deg).toBeLessThan(2);
+    expect(p.rotation_max_pct).toBeLessThan(3);
+  });
+
+  it('동작 중 체간이 기울면 기준선 대비 이탈각으로 잡는다', () => {
+    const acc = new RomAccumulator({ joint: 'HIP', poseMode: 'STANDING' });
+    for (let i = 0; i < 10; i += 1) acc.push(sideFrame({ leanDeg: 2 }), i * 33);   // 기준선 ≈ 2°
+    for (let i = 10; i < 20; i += 1) acc.push(sideFrame({ leanDeg: 20 }), i * 33); // 최대 20°
+    const p = acc.summary().compensation_profile;
+    expect(p.lean_max_dev_deg).toBeGreaterThan(14); // ≈ 18° 이탈
+    expect(p.lean_dev_signed_deg).toBeGreaterThan(0); // 방향 부호 보존
+  });
+
+  it('동작 중 몸통을 비틀면 회전 % 로 잡되, 분리 감소(정렬 개선)는 보상으로 치지 않는다', () => {
+    const acc = new RomAccumulator({ joint: 'HIP', poseMode: 'STANDING' });
+    for (let i = 0; i < 10; i += 1) acc.push(sideFrame({ sepRatio: 0.05 }), i * 33);
+    for (let i = 10; i < 20; i += 1) acc.push(sideFrame({ sepRatio: 0.35 }), i * 33);
+    const p = acc.summary().compensation_profile;
+    expect(p.rotation_max_pct).toBeGreaterThan(20); // ≈ +30%p
+
+    const acc2 = new RomAccumulator({ joint: 'HIP', poseMode: 'STANDING' });
+    for (let i = 0; i < 10; i += 1) acc2.push(sideFrame({ sepRatio: 0.3 }), i * 33);
+    for (let i = 10; i < 20; i += 1) acc2.push(sideFrame({ sepRatio: 0.05 }), i * 33); // 정렬 개선
+    expect(acc2.summary().compensation_profile.rotation_max_pct).toBe(0);
+  });
+
+  it('기준선 표본이 부족하면 해당 축은 null (측정 정직성)', () => {
+    const acc = new RomAccumulator({ joint: 'HIP', poseMode: 'STANDING' });
+    for (let i = 0; i < 3; i += 1) acc.push(sideFrame(), i * 33);
+    const p = acc.summary().compensation_profile;
+    expect(p.lean_max_dev_deg).toBeNull();
+    expect(p.rotation_max_pct).toBeNull();
+  });
+
+  it('AI 진단: 기울기·회전 임계 초과 시 경고 문구·플래그, 심하면 등급 attention', () => {
+    const summary = {
+      valid: true,
+      left_max_rom: 120, right_max_rom: 121, symmetry_index_score: 0.8,
+      compensation: {},
+      compensation_profile: { lean_max_dev_deg: 18, lean_dev_signed_deg: 18, rotation_max_pct: 28, pelvic_drop_pct: null },
+    };
+    const dx = generateRomDiagnosis(summary, { joint: 'HIP', poseMode: 'SUPINE' });
+    expect(dx.flags).toContain('trunk_lean_severe');
+    expect(dx.flags).toContain('trunk_rotation_severe');
+    expect(dx.details.join(' ')).toMatch(/재측정/);
+    expect(dx.grade).toBe('attention');
+  });
+
+  it('리포트가 3축 프로파일을 숫자+방향 시각화로 표시한다(배선)', () => {
+    const src = read('../ai-measure/menus/RomReport.jsx');
+    expect(src).toMatch(/CompensationProfilePanel/);
+    expect(src).toMatch(/lean_max_dev_deg/);
+    expect(src).toMatch(/rotation_max_pct/);
+    expect(src).toMatch(/rotate\(\$\{tiltDeg\}/); // 기울기 방향 시각화
+  });
+});
+
+// ── [고니오메타 수정] 명칭·움직임·영상 각도 확인 개편 ──
+describe('[고니오메타 개편] 명칭/움직임/영상 각도', () => {
+  const sensor = read('../ai-measure/menus/RomSensorGoniometer.jsx');
+  const rom = read('../ai-measure/menus/RomMeasure.jsx');
+  const video = read('../ai-measure/menus/RomVideoAngle.jsx');
+  const gonio = read('../ai-measure/menus/RomGoniometer.jsx');
+
+  it('[1] 센서 측정 명칭이 "고니오메타"로 변경되었다', () => {
+    expect(sensor).toMatch(/고니오메타/);
+    expect(rom).toMatch(/고니오메타/);
+    // 선택 화면 버튼에서 옛 명칭이 사라짐
+    expect(rom).not.toMatch(/센서 측정 \(전자 각도기\)/);
+  });
+
+  it('[2] 고니오메타에서 "ROM에서 선택한 관절" 표시를 제거했다', () => {
+    expect(sensor).not.toMatch(/ROM 설정에서 선택한 관절/);
+    expect(sensor).not.toMatch(/관절: \{jointName/);
+    // 움직임 라벨은 유지
+    expect(sensor).toMatch(/측정 움직임 기록/);
+  });
+
+  it('[3] 움직임 프리셋에 eversion/inversion 등 전신 움직임이 추가되었다', () => {
+    expect(sensor).toMatch(/Eversion/);
+    expect(sensor).toMatch(/Inversion/);
+    expect(sensor).toMatch(/Dorsiflexion/);
+    expect(sensor).toMatch(/Plantarflexion/);
+    expect(sensor).toMatch(/Pronation/);
+    expect(sensor).toMatch(/Supination/);
+    expect(sensor).toMatch(/Circumduction/);
+  });
+
+  it('[4] 영상 업로드는 특정 관절 자동 ROM 이 아니라 수행 각도 확인이다', () => {
+    expect(video).toMatch(/특정 관절 자동 ROM 측정이 아닙니다|특정 관절 측정이 아/);
+    expect(video).toMatch(/수행 각도/);
+    // 자동 분석(analyzeUploadedVideo) 을 더 이상 호출하지 않는다
+    expect(rom).not.toMatch(/analyzeUploadedVideo/);
+  });
+
+  it('[4-1] 영상 재생 속도 조절 기능이 있다', () => {
+    expect(video).toMatch(/const SPEEDS = \[/);
+    expect(video).toMatch(/playbackRate = speed/);
+    expect(video).toMatch(/재생 속도/);
+  });
+
+  it('[4-2] 영상 프레임 캡처 기능이 있다', () => {
+    expect(video).toMatch(/captureFrame/);
+    expect(video).toMatch(/이 장면 캡처/);
+    expect(video).toMatch(/toDataURL/);
+  });
+
+  it('[4-3] 캡처 프레임에서 사진 각도기(3점 탭)로 각도를 잰다', () => {
+    expect(video).toMatch(/initialImageUrl=\{captureUrl\}/);
+    expect(video).toMatch(/onUseAngle=\{handleAngle\}/);
+    // RomGoniometer 는 초기 이미지가 있으면 곧바로 주석 단계로 시작
+    expect(gonio).toMatch(/initialImageUrl \? 'annotate' : 'capture'/);
   });
 });

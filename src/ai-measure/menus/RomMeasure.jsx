@@ -16,15 +16,14 @@ import { usePoseEngine } from '../core/usePoseEngine';
 import { createSmoother } from '../core/smoothing';
 import { RomAccumulator, jointAngleByMode, normalizePose, LM, symmetryIndex } from '../core/bodyMechanics';
 import { generateRomDiagnosis } from '../core/romClinical';
-import { analyzeUploadedVideo, CAPTURE_PRESETS } from '../core/videoAnalyzer';
 import { beepGo, beepSuccess, primeAudio } from '../core/audioCue';
 import CameraStage from './CameraStage.jsx';
 import RomReport from './RomReport.jsx';
 import ReportActions from '../../components/report/ReportActions';
 import { dataUrlToFile } from '../core/reportShare';
 import { useHardwareBack } from '../core/useHardwareBack';
-import RomGoniometer from './RomGoniometer.jsx';
 import RomSensorGoniometer from './RomSensorGoniometer.jsx';
+import RomVideoAngle from './RomVideoAngle.jsx';
 
 const MAX_RECORD_MS = 60000;
 
@@ -104,15 +103,6 @@ export default function RomMeasure({ member, onSave, onBack }) {
   const previewUrlRef = useRef(null);        // blob URL (해제 관리)
   const [previewUrl, setPreviewUrl] = useState(''); // 리포트 영상 미리보기 src
   const [videoBlob, setVideoBlob] = useState(null); // ReportActions 영상 저장용
-
-  // 업로드
-  const [phase, setPhase] = useState('idle'); // idle | ready | analyzing | error
-  const [progress, setProgress] = useState(0);
-  const [capture, setCapture] = useState('slowmo120');
-  const [fileName, setFileName] = useState('');
-  const uploadVideoRef = useRef(null);
-  const fileUrlRef = useRef(null);
-  const abortRef = useRef(null);
 
   // 결과
   const [report, setReport] = useState(null);
@@ -329,53 +319,6 @@ export default function RomMeasure({ member, onSave, onBack }) {
   };
 
   // ── 업로드 ──
-  const handleFile = (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (!file.type.startsWith('video/')) { setErrorMsg('영상 파일을 선택해 주세요.'); return; }
-    setErrorMsg('');
-    setFileName(file.name);
-    if (fileUrlRef.current) URL.revokeObjectURL(fileUrlRef.current);
-    const url = URL.createObjectURL(file);
-    fileUrlRef.current = url;
-    const v = uploadVideoRef.current;
-    if (v) { v.src = url; v.onloadedmetadata = () => setPhase('ready'); }
-  };
-
-  const runUpload = useCallback(async () => {
-    const video = uploadVideoRef.current;
-    if (!video) return;
-    setPhase('analyzing');
-    setProgress(0);
-    setErrorMsg('');
-    const acc = new RomAccumulator({ joint, poseMode });
-    const abort = new AbortController();
-    abortRef.current = abort;
-    const preset = CAPTURE_PRESETS[capture] || CAPTURE_PRESETS.normal;
-    try {
-      const result = await analyzeUploadedVideo({
-        video,
-        signal: abort.signal,
-        targetFps: preset.targetFps,
-        playbackRate: preset.playbackRate,
-        onProgress: setProgress,
-        onFrame: ({ landmarks, tMs }) => acc.push(landmarks, tMs),
-      });
-      if (result.aborted) { setPhase('ready'); return; }
-      const summary = acc.summary();
-      if (!summary.valid) {
-        setPhase('error');
-        setErrorMsg('영상에서 관절을 안정적으로 추적하지 못했습니다. 측면/정면 각도와 조명을 확인해 주세요.');
-        return;
-      }
-      buildAndSetReport(summary, capture, '');
-    } catch (err) {
-      setPhase('error');
-      setErrorMsg(err?.message || '분석 중 오류가 발생했습니다.');
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [joint, poseMode, capture]);
-
   const buildAndSetReport = (summary, captureMode, snap, videoUrl = '', extra = {}) => {
     const diagnosis = generateRomDiagnosis(summary, { joint, poseMode });
     const r = {
@@ -490,9 +433,6 @@ export default function RomMeasure({ member, onSave, onBack }) {
     setSaveState('idle');
     setActionMsg('');
     setErrorMsg('');
-    setPhase('idle');
-    setProgress(0);
-    setFileName('');
     accRef.current = null;
     recordingRef.current = false;
     setRecording(false);
@@ -557,7 +497,7 @@ export default function RomMeasure({ member, onSave, onBack }) {
     );
   }
 
-  // ════════════════ 센서 측정(전자 각도기) 화면 ════════════════
+  // ════════════════ 고니오메타(폰 밀착 센서) 화면 ════════════════
   if (mode === 'sensor') {
     return (
       <RomSensorGoniometer
@@ -570,70 +510,15 @@ export default function RomMeasure({ member, onSave, onBack }) {
     );
   }
 
-  // ════════════════ 사진 각도기(수동 3점 탭) 화면 ════════════════
-  if (mode === 'manual') {
-    return (
-      <RomGoniometer
-        member={member}
-        jointName={jointName}
-        onBack={() => setMode('select')}
-      />
-    );
-  }
-
-  // ════════════════ 업로드 화면 ════════════════
+  // ════════════════ [항목 4] 영상 업로드 — 스포츠 수행 각도 확인 ════════════════
+  //  특정 관절 자동 ROM 이 아니라, 수행 영상에서 원하는 장면의 각도를 직접 측정.
+  //  [4-1] 속도조절 · [4-2] 캡처 · [4-3] 캡처 프레임에서 사진 각도기(3점 탭).
   if (mode === 'upload') {
     return (
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <button onClick={() => setMode('select')} className="measure-back">← 뒤로</button>
-          <h2 className="measure-title">ROM · 영상 업로드</h2>
-          <span className="w-12" />
-        </div>
-
-        <ConfigSummary jointName={jointName} poseMode={poseMode} side={side} />
-
-        <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4 space-y-3">
-          <p className="text-xs font-bold text-slate-400">촬영 속도 (시간 지표 보정용)</p>
-          <div className="flex flex-wrap gap-2">
-            {Object.entries(CAPTURE_PRESETS).map(([key, p]) => (
-              <button key={key} type="button" onClick={() => setCapture(key)}
-                className={`rounded-full border px-3 py-1.5 text-xs font-black ${
-                  capture === key ? 'border-amber-400 bg-amber-400 text-slate-950' : 'border-slate-700 bg-slate-800 text-slate-400'
-                }`}>
-                {p.label}
-              </button>
-            ))}
-          </div>
-
-          <label className="block">
-            <span className="text-xs font-bold text-slate-400">영상 파일 선택</span>
-            <input type="file" accept="video/*" onChange={handleFile}
-              className="mt-1 block w-full text-sm text-slate-300 file:mr-3 file:rounded-lg file:border-0 file:bg-amber-500 file:px-3 file:py-1.5 file:text-sm file:font-bold file:text-slate-950" />
-          </label>
-          {fileName && <p className="text-xs text-slate-400">선택됨: {fileName}</p>}
-
-          <video ref={uploadVideoRef} className="hidden" playsInline muted />
-
-          {phase === 'analyzing' && (
-            <div className="space-y-1">
-              <div className="h-2 w-full overflow-hidden rounded-full bg-slate-800">
-                <div className="h-full bg-amber-400 transition-all" style={{ width: `${Math.round(progress * 100)}%` }} />
-              </div>
-              <p className="text-center text-xs text-slate-400">분석 중… {Math.round(progress * 100)}%</p>
-            </div>
-          )}
-
-          {errorMsg && <p className="text-xs text-red-400">{errorMsg}</p>}
-
-          <button
-            onClick={runUpload}
-            disabled={phase !== 'ready' && phase !== 'error'}
-            className="w-full rounded-xl bg-amber-500 px-4 py-3 text-sm font-black text-slate-950 disabled:bg-slate-700 disabled:text-slate-400">
-            분석 시작
-          </button>
-        </div>
-      </div>
+      <RomVideoAngle
+        member={member}
+        onBack={() => setMode('select')}
+      />
     );
   }
 
@@ -786,18 +671,13 @@ export default function RomMeasure({ member, onSave, onBack }) {
         </button>
         <button onClick={() => setMode('upload')}
           className="w-full rounded-xl border border-slate-700 bg-slate-800 px-4 py-4 text-left active:scale-[0.99] transition">
-          <p className="text-base font-black text-white">고속 영상 업로드 <span className="text-[10px] font-bold text-slate-500 align-middle">카메라 분석</span></p>
-          <p className="mt-0.5 text-xs font-bold text-slate-400">120/240fps 슬로모 영상으로 정밀 분석(시간 지표 자동 보정).</p>
+          <p className="text-base font-black text-white">영상 업로드 <span className="text-[10px] font-bold text-slate-500 align-middle">수행 각도 확인</span></p>
+          <p className="mt-0.5 text-xs font-bold text-slate-400">스포츠 수행 영상 → 속도 조절·프레임 캡처 후, 그 장면에서 각도 직접 측정.</p>
         </button>
         <button onClick={() => setMode('sensor')}
           className="w-full rounded-xl border border-emerald-500/50 bg-emerald-500/10 px-4 py-4 text-left active:scale-[0.99] transition">
-          <p className="text-base font-black text-emerald-200">센서 측정 (전자 각도기) <span className="text-[10px] font-bold text-emerald-400/70 align-middle">카메라 불필요</span></p>
+          <p className="text-base font-black text-emerald-200">고니오메타 <span className="text-[10px] font-bold text-emerald-400/70 align-middle">카메라 불필요 · 폰 밀착 센서</span></p>
           <p className="mt-0.5 text-xs font-bold text-emerald-300/80">폰을 관절 부위에 밀착 → 기울기 센서로 가동각 측정 · 좌우 비대칭 자동 산출.</p>
-        </button>
-        <button onClick={() => setMode('manual')}
-          className="w-full rounded-xl border border-sky-600/50 bg-sky-500/10 px-4 py-4 text-left active:scale-[0.99] transition">
-          <p className="text-base font-black text-sky-200">사진 각도기 (3점 탭)</p>
-          <p className="mt-0.5 text-xs font-bold text-sky-300/80">사진 위 세 점을 탭해 임의 부위 각도를 직접 측정.</p>
         </button>
         <p className="text-[11px] text-slate-500 leading-relaxed">
           ※ {POSE_LABEL[poseMode]} 자세에서는{' '}
@@ -811,15 +691,6 @@ export default function RomMeasure({ member, onSave, onBack }) {
 }
 
 const POSE_LABEL = { STANDING: '서서', SUPINE: '누워서', PRONE: '엎드려', SEATED: '앉아서' };
-
-function ConfigSummary({ jointName, poseMode, side }) {
-  return (
-    <div className="rounded-xl border border-slate-800 bg-slate-900/70 px-4 py-2.5 text-xs text-slate-300">
-      <span className="font-black text-amber-300">{jointName}</span> · {POSE_LABEL[poseMode]} ·{' '}
-      {side === 'both' ? '양쪽' : side === 'left' ? '좌측' : '우측'}
-    </div>
-  );
-}
 
 function LiveMetric({ label, value, dim }) {
   return (

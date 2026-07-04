@@ -34,9 +34,32 @@ export default function RomSensorGoniometer({ jointName, jointKey, side = 'both'
   // 진행할 측 순서: both → 좌, 우 / 단측 → 해당 측만
   const sidesToMeasure = side === 'both' ? ['left', 'right'] : [side];
 
-  // [수기 기록] 어느 관절·어떤 움직임을 쟀는지 트레이너가 직접 라벨링.
-  //  jointKey 는 ROM 설정에서 고른 관절(대분류). movement 는 세부 동작(굴곡 등).
-  const MOVEMENT_PRESETS = ['굴곡(Flexion)', '신전(Extension)', '외전(Abduction)', '내전(Adduction)', '회전(Rotation)', '측굴(Lateral flexion)'];
+  // [수기 기록] 어느 움직임을 쟀는지 트레이너가 직접 라벨링(신체 움직임 최대 적용).
+  const MOVEMENT_PRESETS = [
+    '굴곡 (Flexion)',
+    '신전 (Extension)',
+    '과신전 (Hyperextension)',
+    '외전 (Abduction)',
+    '내전 (Adduction)',
+    '내회전 (Internal rotation)',
+    '외회전 (External rotation)',
+    '회내 (Pronation)',
+    '회외 (Supination)',
+    '배측굴곡 (Dorsiflexion)',
+    '족저굴곡 (Plantarflexion)',
+    '외번 (Eversion)',
+    '내번 (Inversion)',
+    '측굴 (Lateral flexion)',
+    '회전 (Rotation)',
+    '올림 (Elevation)',
+    '내림 (Depression)',
+    '전인 (Protraction)',
+    '후인 (Retraction)',
+    '휘돌림 (Circumduction)',
+    '요측편위 (Radial deviation)',
+    '척측편위 (Ulnar deviation)',
+    '대립 (Opposition)',
+  ];
   const [movement, setMovement] = useState('');
   const [movementCustom, setMovementCustom] = useState('');
   const effMovement = movement === '__custom' ? movementCustom.trim() : movement;
@@ -231,19 +254,15 @@ export default function RomSensorGoniometer({ jointName, jointKey, side = 'both'
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <button onClick={onBack} className="measure-back">← 뒤로</button>
-          <h2 className="measure-title">센서 측정 (전자 각도기)</h2>
+          <h2 className="measure-title">고니오메타</h2>
           <span className="w-12" />
         </div>
         <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4 space-y-3">
           <p className="text-sm font-bold text-slate-200">폰을 관절 부위에 밀착해 기울기로 측정합니다</p>
 
-          {/* [수기 기록] 관절·움직임 라벨 — 회차 비교가 같은 동작끼리 묶이도록 */}
+          {/* [수기 기록] 움직임 라벨 — 회차 비교가 같은 동작끼리 묶이도록 */}
           <div className="rounded-xl border border-slate-700 bg-slate-800/60 p-3 space-y-2">
-            <p className="text-xs font-black text-slate-300">측정 부위·움직임 기록</p>
-            <div className="flex items-center gap-2">
-              <span className="rounded-lg bg-slate-700 px-2.5 py-1 text-xs font-bold text-slate-200">관절: {jointName || '미지정'}</span>
-              <span className="text-[11px] text-slate-500">(ROM 설정에서 선택한 관절)</span>
-            </div>
+            <p className="text-xs font-black text-slate-300">측정 움직임 기록</p>
             <select value={movement} onChange={(e) => setMovement(e.target.value)}
               className="w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-sm font-bold text-slate-100">
               <option value="">움직임 선택(선택 사항)</option>
@@ -252,10 +271,10 @@ export default function RomSensorGoniometer({ jointName, jointKey, side = 'both'
             </select>
             {movement === '__custom' && (
               <input type="text" value={movementCustom} onChange={(e) => setMovementCustom(e.target.value)}
-                placeholder="예: 어깨 굴곡, 목 좌측 회전"
+                placeholder="예: 어깨 굴곡, 발목 외번, 목 좌측 회전"
                 className="w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-sm text-slate-100" />
             )}
-            <p className="text-[11px] text-slate-500">움직임을 적어두면 같은 관절·동작끼리 회차별로 비교됩니다.</p>
+            <p className="text-[11px] text-slate-500">움직임을 적어두면 같은 동작끼리 회차별로 비교됩니다.</p>
           </div>
 
           <ol className="space-y-1.5 text-[12px] leading-relaxed text-slate-400 list-decimal list-inside">
@@ -283,7 +302,7 @@ export default function RomSensorGoniometer({ jointName, jointKey, side = 'both'
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <button onClick={onBack} className="measure-back">← 뒤로</button>
-        <h2 className="measure-title">센서 측정 · {jointName || '관절'}</h2>
+        <h2 className="measure-title">고니오메타 · {jointName || '측정'}</h2>
         <span className="w-12" />
       </div>
 

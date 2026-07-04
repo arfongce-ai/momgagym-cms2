@@ -279,6 +279,27 @@ export function trunkLeanCompensation(landmarks) {
   return round((Math.atan2(dx, dy) * 180) / Math.PI, 1);
 }
 
+// ── [보상 프로파일] 몸통 회전(비틀기) 신호 ──
+//  측면 촬영에서 몸통이 측정면을 유지하면 양 어깨(양 골반)가 화면상 거의 겹친다.
+//  동작 중 몸통을 돌리는(비트는) 보상이 나오면 겹쳐 있던 두 점이 수평(x)으로
+//  벌어진다. 이 x-분리를 몸통높이로 정규화해 회전 보상 신호로 쓴다.
+//  · z-깊이(단안 추정, 노이즈 큼)를 쓰지 않는 2D 신호라 안정적.
+//  · 단안으로 정확한 회전각(도)은 알 수 없으므로 '비율'로만 보고한다(측정 정직성).
+export function torsoSeparationSignal(landmarks) {
+  const ls = getLandmark(landmarks, LM.LEFT_SHOULDER, 0.3);
+  const rs = getLandmark(landmarks, LM.RIGHT_SHOULDER, 0.3);
+  const lh = getLandmark(landmarks, LM.LEFT_HIP, 0.3);
+  const rh = getLandmark(landmarks, LM.RIGHT_HIP, 0.3);
+  const sMid = midpoint(ls, rs);
+  const hMid = midpoint(lh, rh);
+  if (!sMid || !hMid) return null;
+  const trunkH = Math.hypot(sMid.x - hMid.x, sMid.y - hMid.y);
+  if (trunkH < EPS) return null;
+  const shoulderSep = (ls && rs) ? Math.abs(ls.x - rs.x) / trunkH : null;
+  const hipSep = (lh && rh) ? Math.abs(lh.x - rh.x) / trunkH : null;
+  return { shoulderSep, hipSep };
+}
+
 // ────────────────────────────────────────────────────────────────────────
 //  시계열 누적기 — 비동기 프레임이 들어올 때마다 push, 끝나면 summary().
 //  좌/우 각도, 보상값, 타임스탬프를 시간순으로 쌓고, 스무딩 후 대표값을 낸다.
@@ -296,12 +317,18 @@ export class RomAccumulator {
     const norm = normalizePose(landmarks) || landmarks; // 정규화 실패 시 원본
     const L = jointAngleByMode(norm, this.joint, 'left', this.poseMode);
     const R = jointAngleByMode(norm, this.joint, 'right', this.poseMode);
+    // [보상 프로파일] 모든 자세모드에서 체간 기울기·몸통 회전 신호를 함께 수집.
+    const lean = trunkLeanCompensation(norm);
+    const sep = torsoSeparationSignal(norm);
     this.samples.push({
       t: tMs,
       left: L.angle,
       right: R.angle,
       compL: L.compensatory,
       compR: R.compensatory,
+      lean,
+      shoulderSep: sep?.shoulderSep ?? null,
+      hipSep: sep?.hipSep ?? null,
     });
   }
 
@@ -348,6 +375,54 @@ export class RomAccumulator {
     const compL = median(this.samples.map((s) => s.compL));
     const compR = median(this.samples.map((s) => s.compR));
 
+    // ── [보상 프로파일] 3축: 체간 기울기(도) · 회전/비틀기(%) · 골반 하강(%) ──
+    //  기준선 = 녹화 초반(중립 자세로 가정) 표본의 중앙값. 이탈 = 기준선 대비
+    //  최대 편차. 기준선 표본이 부족하면 해당 축은 null (측정 정직성 — 추측 금지).
+    const BASELINE_N = 8;
+    const MIN_BASELINE = 5;
+    const baselineOf = (arr) => {
+      const head = arr.filter((v) => v != null).slice(0, BASELINE_N);
+      return head.length >= MIN_BASELINE ? median(head) : null;
+    };
+    const maxDevInfo = (arr, base) => {
+      if (base == null) return { dev: null, signed: null };
+      let dev = 0, signed = null;
+      for (const v of arr) {
+        if (v == null) continue;
+        const d = v - base;
+        if (Math.abs(d) > dev) { dev = Math.abs(d); signed = d; }
+      }
+      return { dev, signed };
+    };
+    const leans = this.samples.map((s) => s.lean);
+    const shSeps = this.samples.map((s) => s.shoulderSep);
+    const hipSeps = this.samples.map((s) => s.hipSep);
+    const leanBase = baselineOf(leans);
+    const shBase = baselineOf(shSeps);
+    const hipBase = baselineOf(hipSeps);
+    const leanDev = maxDevInfo(leans, leanBase);
+    const shDev = maxDevInfo(shSeps, shBase);
+    const hipDev = maxDevInfo(hipSeps, hipBase);
+    // 회전(비틀기): 분리 '증가'만 보상(측정면 이탈)으로 본다(감소는 정렬 개선).
+    const rotShoulderPct = shDev.signed != null && shDev.signed > 0 ? round(shDev.signed * 100, 1) : (shBase != null ? 0 : null);
+    const rotHipPct = hipDev.signed != null && hipDev.signed > 0 ? round(hipDev.signed * 100, 1) : (hipBase != null ? 0 : null);
+    const rotationMaxPct = (rotShoulderPct == null && rotHipPct == null)
+      ? null
+      : Math.max(rotShoulderPct ?? 0, rotHipPct ?? 0);
+    const compensation_profile = {
+      // 축 1: 체간 기울기 — 기준선 대비 최대 이탈(도, 부호=이탈 방향)
+      lean_baseline_deg: leanBase != null ? round(leanBase, 1) : null,
+      lean_max_dev_deg: leanDev.dev != null && leanBase != null ? round(leanDev.dev, 1) : null,
+      lean_dev_signed_deg: leanDev.signed != null ? round(leanDev.signed, 1) : null,
+      // 축 2: 회전/비틀기 — 어깨·골반 x-분리 증가량(몸통높이 대비 %)
+      rotation_shoulder_pct: rotShoulderPct,
+      rotation_hip_pct: rotHipPct,
+      rotation_max_pct: rotationMaxPct,
+      // 축 3: 골반 하강 — 기존 STANDING 전용 보상값(%)을 그대로 노출
+      pelvic_drop_pct: this.poseMode === 'STANDING' ? (compL ?? compR ?? null) : null,
+      baseline_samples: Math.min(BASELINE_N, this.samples.length),
+    };
+
     return {
       joint: this.joint,
       poseMode: this.poseMode,
@@ -361,6 +436,7 @@ export class RomAccumulator {
         right: endRangeStability(smR, 'right'),
       },
       compensation: { left: compL, right: compR },
+      compensation_profile,
       // 정제된 시계열(저장·차트용). 슬로모 보정된 t(ms) 포함.
       timeSeries: this.samples.map((s, i) => ({
         timestamp: round(s.t, 0),

@@ -32,15 +32,16 @@ export function angleAt(a, b, c) {
 const POINT_LABELS = ['① 끝점 A', '② 관절(꼭짓점)', '③ 끝점 B'];
 const POINT_COLORS = ['#38bdf8', '#f59e0b', '#34d399'];
 
-export default function RomGoniometer({ member, jointName, onBack, onUseAngle }) {
+export default function RomGoniometer({ member, jointName, onBack, onUseAngle, initialImageUrl = '', title = '사진 각도기', allowRetake = true }) {
   const videoRef = useRef(null);
   const streamRef = useRef(null);
   const canvasRef = useRef(null);
   const imgRef = useRef(null);           // 로드된 이미지(HTMLImageElement)
   const wrapRef = useRef(null);          // 좌표 변환 기준 컨테이너
 
-  const [stage, setStage] = useState('capture'); // capture | annotate
-  const [imgUrl, setImgUrl] = useState('');
+  // initialImageUrl 이 주어지면(영상 캡처 프레임 등) 곧바로 주석(각도) 단계로 시작.
+  const [stage, setStage] = useState(initialImageUrl ? 'annotate' : 'capture'); // capture | annotate
+  const [imgUrl, setImgUrl] = useState(initialImageUrl || '');
   const [cameraOn, setCameraOn] = useState(false);
   const [cameraErr, setCameraErr] = useState('');
   const [points, setPoints] = useState([]); // [{x,y}] 픽셀(표시 좌표계)
@@ -227,8 +228,8 @@ export default function RomGoniometer({ member, jointName, onBack, onUseAngle })
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <button onClick={onBack} className="measure-back">← 뒤로</button>
-        <h2 className="measure-title">전자 각도기</h2>
-        <button onClick={retake} className="measure-back">다시 촬영</button>
+        <h2 className="measure-title">{title}</h2>
+        {allowRetake ? <button onClick={retake} className="measure-back">다시 촬영</button> : <span className="w-12" />}
       </div>
 
       <div className="rounded-2xl border border-slate-800 bg-slate-900 p-3 space-y-3">
