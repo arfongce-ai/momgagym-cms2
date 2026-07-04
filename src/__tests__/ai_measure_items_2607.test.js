@@ -515,3 +515,37 @@ describe('[고니오메타 개편] 명칭/움직임/영상 각도', () => {
     expect(gonio).toMatch(/initialImageUrl \? 'annotate' : 'capture'/);
   });
 });
+
+// ── [화면 회전 방지] AI 측정 사용 중 세로 고정 ──
+describe('[화면 회전 방지] AI 측정 세로 고정', () => {
+  const hub = read('../ai-measure/AiMeasureHub.jsx');
+  const hook = read('../ai-measure/core/useLockPortrait.js');
+  const css = read('../styles/index.css');
+
+  it('허브가 useLockPortrait 로 세로 고정을 활성화한다', () => {
+    expect(hub).toMatch(/import \{ useLockPortrait \}/);
+    expect(hub).toMatch(/useLockPortrait\(true\)/);
+  });
+
+  it('네이티브 잠금(screen.orientation.lock)을 우선 시도한다', () => {
+    expect(hook).toMatch(/orientation\.lock\('portrait'\)/);
+    expect(hook).toMatch(/orientation.*unlock|so\.unlock/);
+  });
+
+  it('네이티브 불가 시 CSS 폴백(가로 감지 → 클래스)으로 처리한다', () => {
+    expect(hook).toMatch(/matchMedia\('\(orientation: landscape\)'\)/);
+    expect(hook).toMatch(/ai-portrait-lock/);
+    expect(css).toMatch(/html\.ai-portrait-lock body/);
+    expect(css).toMatch(/rotate\(-90deg\)/);
+  });
+
+  it('언마운트 시 잠금·클래스를 모두 해제한다', () => {
+    expect(hook).toMatch(/classList\.remove\(LOCK_CLASS\)/);
+    expect(hook).toMatch(/return \(\) => \{/);
+  });
+
+  it('전역 매니페스트는 any 로 두어 관리 화면은 회전 허용(측정만 세로)', () => {
+    const mani = read('../../manifest.json');
+    expect(mani).toMatch(/"orientation": "any"/);
+  });
+});

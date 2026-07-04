@@ -11,6 +11,7 @@ import { buildCrossMeasureIntegration, mergeIntegratedAssessment } from './core/
 import { sanitizeReportPayload } from './core/unifiedReport';
 import { saveUnifiedReport } from '../services/unifiedReportStore';
 import { useHardwareBack } from './core/useHardwareBack';
+import { useLockPortrait } from './core/useLockPortrait';
 
 export default function AiMeasureHub() {
   const { user } = useAuth();
@@ -227,6 +228,10 @@ export default function AiMeasureHub() {
       alert('저장에 실패했습니다. 네트워크 확인 후 다시 시도하세요.\n' + (e?.message || ''));
     }
   };
+
+  // ── AI 측정·분석 사용 중 화면 자동 회전 방지(세로 고정) ──
+  //  허브가 떠 있는 동안(측정 모든 화면 포함) 세로 고정. 벗어나면 자동 해제.
+  useLockPortrait(true);
 
   // ── 폰(브라우저) 뒤로가기 연동 ──
   // 측정 메뉴가 열려 있으면(active) 폰 뒤로가기 = 허브(메뉴 목록)로 복귀.

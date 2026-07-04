@@ -136,3 +136,29 @@ canvas { touch-action:none; }
 }
 .modal-box::-webkit-scrollbar, .modal-body::-webkit-scrollbar { width: 8px; }
 .modal-box::-webkit-scrollbar-thumb, .modal-body::-webkit-scrollbar-thumb { background:#475569; border-radius:4px; }
+
+/* ── AI 측정·분석: 화면 자동 회전 방지(세로 고정) ──
+   네이티브 orientation.lock 이 불가한 모바일 브라우저에서, 기기가 가로로
+   돌아가면 앱 전체를 반대로 90° 회전시켜 세로처럼 보이게 하는 폴백.
+   (useLockPortrait 훅이 <html> 에 .ai-portrait-lock 을 붙였을 때만 적용) */
+html.ai-portrait-lock body {
+  transform: rotate(-90deg);
+  transform-origin: left top;
+  /* 가로/세로를 맞바꾼 크기로 캔버스를 잡고, 회전 후 원위치로 평행이동 */
+  width: 100vh;
+  height: 100vw;
+  position: fixed;
+  top: 100vw;
+  left: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+/* dvh 지원 환경에서 더 정확히(주소창 접힘 대응) */
+@supports (height: 100dvh) {
+  html.ai-portrait-lock body {
+    width: 100dvh;
+    height: 100dvw;
+    top: 100dvw;
+  }
+}
