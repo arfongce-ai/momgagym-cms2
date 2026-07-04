@@ -53,7 +53,7 @@ export default function RomReport({ report }) {
           eyebrow="ROM RANGE OF MOTION REPORT"
           badge="ROM"
           title="ROM 관절 가동범위 리포트"
-          subtitle={`${member?.name || '회원 미선택'} · ${recordedAt || '-'} · ${JOINT_KO[joint] || joint} · ${POSE_KO[poseMode] || poseMode}${captureMode && captureMode !== 'live' ? ` · ${captureMode === 'slowmo240' ? '슬로모 240fps' : captureMode === 'slowmo120' ? '슬로모 120fps' : '업로드'}` : ' · 라이브 녹화'}${hasVideo ? ' · 영상 포함' : ''}`}
+          subtitle={`${member?.name || '회원 미선택'} · ${recordedAt || '-'} · ${JOINT_KO[joint] || joint} · ${POSE_KO[poseMode] || poseMode}${captureMode === 'sensor' ? ' · 센서 각도기' : captureMode && captureMode !== 'live' ? ` · ${captureMode === 'slowmo240' ? '슬로모 240fps' : captureMode === 'slowmo120' ? '슬로모 120fps' : '업로드'}` : ' · 라이브 녹화'}${hasVideo ? ' · 영상 포함' : ''}`}
           score={gradeScore(diagnosis?.grade)}
           compact
         />
@@ -67,6 +67,18 @@ export default function RomReport({ report }) {
             </span>
             <p className="text-sm font-bold">{diagnosis.headline}</p>
           </div>
+        </div>
+      )}
+
+      {/* 센서 측정 출처 표시 — 카메라 추정치와 구분(측정 정직성) */}
+      {report.measureType === 'sensor_goniometer' && (
+        <div className="mt-3 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-2.5">
+          <p className="text-xs font-bold text-emerald-200">
+            📐 센서(기울기) 측정 — 폰 밀착 전자 각도기 · 하드웨어 측정값 (신뢰도 {report.confidenceScore ?? 1.0})
+          </p>
+          <p className="mt-0.5 text-[11px] text-emerald-300/70">
+            0점(시작 자세) 대비 최대 이동각. 골반·체간 보상 작용은 센서로 판별하지 않습니다.
+          </p>
         </div>
       )}
 

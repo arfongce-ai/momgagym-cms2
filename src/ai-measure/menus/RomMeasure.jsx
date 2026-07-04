@@ -14,7 +14,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { todayYMD } from '../../utils/dates';
 import { usePoseEngine } from '../core/usePoseEngine';
 import { createSmoother } from '../core/smoothing';
-import { RomAccumulator, jointAngleByMode, normalizePose, LM } from '../core/bodyMechanics';
+import { RomAccumulator, jointAngleByMode, normalizePose, LM, symmetryIndex } from '../core/bodyMechanics';
 import { generateRomDiagnosis } from '../core/romClinical';
 import { analyzeUploadedVideo, CAPTURE_PRESETS } from '../core/videoAnalyzer';
 import { beepGo, beepSuccess, primeAudio } from '../core/audioCue';
@@ -24,6 +24,7 @@ import ReportActions from '../../components/report/ReportActions';
 import { dataUrlToFile } from '../core/reportShare';
 import { useHardwareBack } from '../core/useHardwareBack';
 import RomGoniometer from './RomGoniometer.jsx';
+import RomSensorGoniometer from './RomSensorGoniometer.jsx';
 
 const MAX_RECORD_MS = 60000;
 
@@ -74,7 +75,7 @@ export default function RomMeasure({ member, onSave, onBack }) {
   const [joint, setJoint] = useState('HIP');
   const [poseMode, setPoseMode] = useState('STANDING');
   const [side, setSide] = useState('both');
-  const [mode, setMode] = useState('select'); // select | live | upload | manual
+  const [mode, setMode] = useState('select'); // select | live | upload | manual(사진) | sensor(센서)
 
   // 라이브
   const canvasRef = useRef(null);
@@ -375,7 +376,7 @@ export default function RomMeasure({ member, onSave, onBack }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [joint, poseMode, capture]);
 
-  const buildAndSetReport = (summary, captureMode, snap, videoUrl = '') => {
+  const buildAndSetReport = (summary, captureMode, snap, videoUrl = '', extra = {}) => {
     const diagnosis = generateRomDiagnosis(summary, { joint, poseMode });
     const r = {
       kind: 'rom',
@@ -406,9 +407,46 @@ export default function RomMeasure({ member, onSave, onBack }) {
       hasVideo: !!videoUrl,
       // 회차별 비교용 키
       pairKey: member?.id ? `${member.id}_rom_${joint}_${poseMode}` : `rom_${joint}_${poseMode}`,
+      ...extra,
     };
     setReport(r);
     setSaveState('idle');
+  };
+
+  // ── 센서 각도기 측정 완료 → 기존 ROM 리포트/저장 파이프라인에 합류 ──
+  //  results = { left?: {side, angle, recordedAt}, right?: {...} }
+  //  · 좌우 비대칭: 카메라 측정과 동일한 symmetryIndex 공식으로 자동 산출.
+  //  · Firestore: 기존 rom 리포트 스키마에 measureType/sensor_records/
+  //    confidenceScore 를 추가해 통합 저장(허브 handleSave → addRomReport).
+  const handleSensorComplete = (results) => {
+    const L = results?.left?.angle ?? null;
+    const R = results?.right?.angle ?? null;
+    const summary = {
+      valid: L != null || R != null,
+      joint,
+      poseMode,
+      left_max_rom: L,
+      right_max_rom: R,
+      symmetry_index_score: symmetryIndex(L, R),
+      compensation: {}, // 센서 측정은 골반/체간 보상 추정 불가(카메라 전용) — 비워둠(정직성)
+    };
+    const memberId = member?.id || '';
+    const sensorRecords = ['left', 'right']
+      .filter((s) => results?.[s])
+      .map((s) => ({
+        memberId,
+        measureType: 'sensor_goniometer',
+        jointName: joint.toLowerCase(),
+        side: s,
+        angle: results[s].angle,
+        recordedAt: results[s].recordedAt,
+        confidenceScore: 1.0, // 센서(하드웨어) 기울기 — 카메라 추정 대비 고신뢰 표시
+      }));
+    buildAndSetReport(summary, 'sensor', '', '', {
+      measureType: 'sensor_goniometer',
+      sensor_records: sensorRecords,
+      confidenceScore: 1.0,
+    });
   };
 
   const handleSave = async () => {
@@ -497,7 +535,19 @@ export default function RomMeasure({ member, onSave, onBack }) {
     );
   }
 
-  // ════════════════ 전자 각도기(수동) 화면 ════════════════
+  // ════════════════ 센서 측정(전자 각도기) 화면 ════════════════
+  if (mode === 'sensor') {
+    return (
+      <RomSensorGoniometer
+        jointName={jointName}
+        side={side}
+        onBack={() => setMode('select')}
+        onComplete={handleSensorComplete}
+      />
+    );
+  }
+
+  // ════════════════ 사진 각도기(수동 3점 탭) 화면 ════════════════
   if (mode === 'manual') {
     return (
       <RomGoniometer
@@ -708,18 +758,23 @@ export default function RomMeasure({ member, onSave, onBack }) {
         <p className="text-sm font-bold text-slate-200">측정 방식을 선택하세요</p>
         <button onClick={() => setMode('live')}
           className="w-full rounded-xl bg-amber-500 px-4 py-4 text-left active:scale-[0.99] transition">
-          <p className="text-base font-black text-slate-950">라이브 측정 (권장)</p>
+          <p className="text-base font-black text-slate-950">라이브 측정 (권장) <span className="text-[10px] font-bold text-slate-900/60 align-middle">카메라 분석</span></p>
           <p className="mt-0.5 text-xs font-bold text-slate-900/80">카메라 앞에서 동작을 한 번 천천히 수행 → 최대 가동범위 자동 산출.</p>
         </button>
         <button onClick={() => setMode('upload')}
           className="w-full rounded-xl border border-slate-700 bg-slate-800 px-4 py-4 text-left active:scale-[0.99] transition">
-          <p className="text-base font-black text-white">고속 영상 업로드</p>
+          <p className="text-base font-black text-white">고속 영상 업로드 <span className="text-[10px] font-bold text-slate-500 align-middle">카메라 분석</span></p>
           <p className="mt-0.5 text-xs font-bold text-slate-400">120/240fps 슬로모 영상으로 정밀 분석(시간 지표 자동 보정).</p>
+        </button>
+        <button onClick={() => setMode('sensor')}
+          className="w-full rounded-xl border border-emerald-500/50 bg-emerald-500/10 px-4 py-4 text-left active:scale-[0.99] transition">
+          <p className="text-base font-black text-emerald-200">센서 측정 (전자 각도기) <span className="text-[10px] font-bold text-emerald-400/70 align-middle">카메라 불필요</span></p>
+          <p className="mt-0.5 text-xs font-bold text-emerald-300/80">폰을 관절 부위에 밀착 → 기울기 센서로 가동각 측정 · 좌우 비대칭 자동 산출.</p>
         </button>
         <button onClick={() => setMode('manual')}
           className="w-full rounded-xl border border-sky-600/50 bg-sky-500/10 px-4 py-4 text-left active:scale-[0.99] transition">
-          <p className="text-base font-black text-sky-200">전자 각도기 (수동)</p>
-          <p className="mt-0.5 text-xs font-bold text-sky-300/80">자동 인식이 어려운 부위·자세를 사진 위 세 점 탭으로 직접 측정.</p>
+          <p className="text-base font-black text-sky-200">사진 각도기 (3점 탭)</p>
+          <p className="mt-0.5 text-xs font-bold text-sky-300/80">사진 위 세 점을 탭해 임의 부위 각도를 직접 측정.</p>
         </button>
         <p className="text-[11px] text-slate-500 leading-relaxed">
           ※ {POSE_LABEL[poseMode]} 자세에서는{' '}
