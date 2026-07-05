@@ -22,6 +22,27 @@ describe('findDuplicateSchedules — 회차 중복(same_lot, 재등록 안전)',
     expect(groups[0].items[0].date).toBe('2026-07-04');
   });
 
+  it('★재등록 인덱스 충돌: 누적인덱스는 같아도 회차번호가 다르면 중복 아님', () => {
+    // 실제 사례(서지율/김동규): 회차2·누적11 과 회차10·누적11 은 서로 다른 수업인데
+    // 런타임 공식(total−remaining) 특성상 누적인덱스가 겹칠 수 있다. 회차번호가
+    // 다르므로 중복으로 잡으면 안 된다.
+    const schedules = [
+      { ...base, id:'a', trainerId:'t1', trainerName:'김동규', date:'2026-06-29', startTime:'09:30', sessionAtBooking:2,  sessionTotalAtBooking:10, consumedIndexAtBooking:11 },
+      { ...base, id:'b', trainerId:'t1', trainerName:'김동규', date:'2026-07-03', startTime:'09:30', sessionAtBooking:10, sessionTotalAtBooking:20, consumedIndexAtBooking:11 },
+    ];
+    expect(findDuplicateSchedules(schedules).filter(g=>g.type==='same_lot')).toHaveLength(0);
+  });
+
+  it('진짜 중복은 누적인덱스와 회차번호가 모두 같다 → 잡는다', () => {
+    const schedules = [
+      { ...base, id:'a', date:'2026-07-04', startTime:'10:00', sessionAtBooking:10, sessionTotalAtBooking:10, consumedIndexAtBooking:0 },
+      { ...base, id:'b', date:'2026-07-06', startTime:'11:00', sessionAtBooking:10, sessionTotalAtBooking:10, consumedIndexAtBooking:0 },
+    ];
+    const lots = findDuplicateSchedules(schedules).filter(g=>g.type==='same_lot');
+    expect(lots).toHaveLength(1);
+    expect(lots[0].items).toHaveLength(2);
+  });
+
   it('★재등록으로 회차번호(sessionAtBooking)만 같고 누적인덱스가 다르면 중복 아님', () => {
     // 첫 등록분 6회차(잔여6, 누적인덱스4)와 재등록분 6회차(잔여6, 누적인덱스14)는
     // sessionAtBooking 은 둘 다 6 이지만 서로 다른 수업 → 중복으로 잡으면 안 된다.
@@ -79,11 +100,11 @@ describe('findDuplicateSchedules — 같은 시간 이중 예약(same_slot, 트�
 
   it('★1회원 2트레이너: 각 트레이너별 회차 중복은 트레이너별로 따로 잡는다', () => {
     const schedules = [
-      // t1 의 누적0 이 2건(중복) — t1 그룹
-      { ...base, id:'a', trainerId:'t1', trainerName:'박병준', date:'2026-07-01', startTime:'10:00', consumedIndexAtBooking:0 },
-      { ...base, id:'b', trainerId:'t1', trainerName:'박병준', date:'2026-07-03', startTime:'11:00', consumedIndexAtBooking:0 },
-      // t2 의 누적0 은 1건(정상) — 위 t1 중복과 섞이지 않아야 함
-      { ...base, id:'c', trainerId:'t2', trainerName:'황지영', date:'2026-07-02', startTime:'10:00', consumedIndexAtBooking:0 },
+      // t1 의 (누적0·회차10) 이 2건(중복) — t1 그룹
+      { ...base, id:'a', trainerId:'t1', trainerName:'박병준', date:'2026-07-01', startTime:'10:00', sessionAtBooking:10, sessionTotalAtBooking:10, consumedIndexAtBooking:0 },
+      { ...base, id:'b', trainerId:'t1', trainerName:'박병준', date:'2026-07-03', startTime:'11:00', sessionAtBooking:10, sessionTotalAtBooking:10, consumedIndexAtBooking:0 },
+      // t2 의 (누적0·회차10) 은 1건(정상) — 위 t1 중복과 섞이지 않아야 함
+      { ...base, id:'c', trainerId:'t2', trainerName:'황지영', date:'2026-07-02', startTime:'10:00', sessionAtBooking:10, sessionTotalAtBooking:10, consumedIndexAtBooking:0 },
     ];
     const lots = findDuplicateSchedules(schedules).filter(g=>g.type==='same_lot');
     expect(lots).toHaveLength(1);

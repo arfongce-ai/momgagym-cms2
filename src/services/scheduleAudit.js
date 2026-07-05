@@ -36,11 +36,17 @@ function isMemberSession(s) {
 }
 
 // 그룹 키 헬퍼
-//  · 회차 중복 판정은 재등록에 안전한 consumedIndexAtBooking 을 쓴다.
+//  · 회차 중복 판정: consumedIndexAtBooking(누적 소진) + sessionAtBooking(그 등록분
+//    회차번호)을 함께 본다.
+//    - consumedIndexAtBooking 은 재등록에 안전하려는 값이지만, 런타임 공식
+//      (total − remaining)이 재등록으로 total 이 커지면 이전 등록분의 값과 겹칠 수
+//      있다(예: 회차2·누적11 vs 회차10·누적11 — 서로 다른 수업인데 인덱스 충돌).
+//    - 진짜 중복(동시 예약 유령 항목)은 회차번호(sessionAtBooking)까지 완전히 같다.
+//      재등록으로 인덱스만 겹친 경우는 회차번호가 다르므로 이 조합으로 구분된다.
 //  · 같은 시간 이중예약 판정에는 trainerId 를 포함한다 — 한 회원이 같은 시간에
 //    서로 다른 트레이너 수업을 받는 건 정상이므로(트레이너 다르면 OK), 같은
 //    트레이너·같은 시간에 2건 잡힌 경우만 이중예약으로 본다.
-const lotKey = (s) => `${s.memberId}__${s.trainerId}__ci${s.consumedIndexAtBooking}`;
+const lotKey = (s) => `${s.memberId}__${s.trainerId}__ci${s.consumedIndexAtBooking}__lot${s.sessionAtBooking}`;
 const slotKey = (s) => `${s.memberId}__${s.trainerId}__${s.date}__${s.startTime}`;
 
 // 중복 그룹을 찾는다. 반환: [{ type, memberId, memberName, label, items: [...schedules] }]
@@ -54,7 +60,8 @@ export function findDuplicateSchedules(schedules = []) {
   const byLot = new Map();
   for (const s of sessions) {
     // 구버전(consumedIndexAtBooking 없음)은 재등록 겹침을 구분할 수 없어 제외.
-    if (s.consumedIndexAtBooking == null || !s.sessionDeducted) continue;
+    // 회차번호(sessionAtBooking)도 있어야 재등록 인덱스 충돌과 진짜 중복을 가른다.
+    if (s.consumedIndexAtBooking == null || s.sessionAtBooking == null || !s.sessionDeducted) continue;
     const k = lotKey(s);
     if (!byLot.has(k)) byLot.set(k, []);
     byLot.get(k).push(s);
