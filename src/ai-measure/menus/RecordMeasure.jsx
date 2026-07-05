@@ -121,6 +121,7 @@ function triggerDownload(url, fileName) {
 
 export default function RecordMeasure({ member, onBack }) {
   const videoRef = useRef(null);
+  const frameRef = useRef(null);
   const guideCanvasRef = useRef(null);
   const recordCanvasRef = useRef(null);
   const streamRef = useRef(null);
@@ -233,8 +234,15 @@ export default function RecordMeasure({ member, onBack }) {
 
   const handlePreviewFocus = (event) => {
     if (!streamRef.current || status === 'done') return;
-    const rect = event.currentTarget.getBoundingClientRect();
+    const frame = frameRef.current;
+    const rect = frame ? frame.getBoundingClientRect() : event.currentTarget.getBoundingClientRect();
     if (!rect.width || !rect.height) return;
+
+    // 비율 프레임 바깥(검은 여백)을 탭하면 무시한다.
+    if (
+      event.clientX < rect.left || event.clientX > rect.right ||
+      event.clientY < rect.top || event.clientY > rect.bottom
+    ) return;
 
     const point = {
       x: Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)),
@@ -443,6 +451,15 @@ export default function RecordMeasure({ member, onBack }) {
     });
   };
 
+  // 화면 진입 시 '카메라 시작' 탭 없이 곧바로 카메라를 켠다.
+  const autoStartedRef = useRef(false);
+  useEffect(() => {
+    if (autoStartedRef.current) return;
+    autoStartedRef.current = true;
+    startCamera();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   useEffect(() => {
     if (status === 'ready' || status === 'recording') attachPreview();
   }, [status, attachPreview]);
@@ -534,23 +551,36 @@ export default function RecordMeasure({ member, onBack }) {
   );
 
   if (status !== 'done') {
+    // 이미지2(1:1)·이미지3(3:4)처럼, 프리뷰를 선택한 비율 프레임 안에
+    // 실제 저장 비율 그대로(위·아래 검은 여백 포함) 보여준다.
+    const frameRatio = aspect === '1/1' ? '1 / 1' : '3 / 4';
     return (
         <div className="fixed inset-0 z-[80] bg-black overflow-hidden">
-        <video
-          ref={videoRef}
-          autoPlay
-          playsInline
-          muted
+        <div
+          className="absolute inset-0 flex items-center justify-center"
           onPointerDown={handlePreviewFocus}
-          className="absolute inset-0 h-full w-full object-cover touch-manipulation"
-        />
-        <canvas ref={guideCanvasRef} className="absolute inset-0 h-full w-full pointer-events-none" />
-        {focusPoint && (
+        >
           <div
-            className="pointer-events-none absolute z-10 h-16 w-16 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-amber-300/90 shadow-[0_0_22px_rgba(251,191,36,0.65)]"
-            style={{ left: `${focusPoint.x}%`, top: `${focusPoint.y}%` }}
-          />
-        )}
+            ref={frameRef}
+            className="relative w-full overflow-hidden touch-manipulation"
+            style={{ aspectRatio: frameRatio, maxHeight: '100%' }}
+          >
+            <video
+              ref={videoRef}
+              autoPlay
+              playsInline
+              muted
+              className="absolute inset-0 h-full w-full object-cover"
+            />
+            <canvas ref={guideCanvasRef} className="absolute inset-0 h-full w-full pointer-events-none" />
+            {focusPoint && (
+              <div
+                className="pointer-events-none absolute z-10 h-16 w-16 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-amber-300/90 shadow-[0_0_22px_rgba(251,191,36,0.65)]"
+                style={{ left: `${focusPoint.x}%`, top: `${focusPoint.y}%` }}
+              />
+            )}
+          </div>
+        </div>
 
         <div className="absolute left-0 right-0 top-0 z-10 flex items-center justify-between px-4 pt-[max(14px,env(safe-area-inset-top))]">
           <button onClick={onBack} className="rounded-full bg-black/55 px-3 py-2 text-sm font-bold text-white backdrop-blur">← 메뉴</button>
@@ -571,7 +601,17 @@ export default function RecordMeasure({ member, onBack }) {
         {status === 'idle' && (
           <div className="absolute inset-0 z-10 flex items-center justify-center px-6 text-center text-sm text-slate-200">
             <div className="rounded-2xl bg-black/70 px-5 py-4 backdrop-blur">
-              {error || cameraNote || '카메라를 시작하세요'}
+              {error ? (
+                <div className="space-y-3">
+                  <p>{error}</p>
+                  <button onClick={startCamera} className="btn btn-primary w-full">다시 시도</button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-3">
+                  <span className="h-5 w-5 rounded-full border-2 border-amber-400 border-t-transparent animate-spin" />
+                  <span>{cameraNote || '카메라 연결 중입니다...'}</span>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -596,11 +636,6 @@ export default function RecordMeasure({ member, onBack }) {
         <div className="absolute bottom-0 left-0 right-0 z-10 space-y-3 px-4 pb-[max(16px,env(safe-area-inset-bottom))]">
           {(status === 'ready' || status === 'recording') && miniToolPanel}
 
-          {status === 'idle' && (
-            <button onClick={startCamera} className="btn btn-primary w-full">
-              카메라 시작
-            </button>
-          )}
           {status === 'ready' && (
             <button onClick={startRec} className="w-full rounded-xl bg-red-500 py-4 text-base font-black text-white shadow-lg active:scale-95 transition-transform">
               {videoReady ? '녹화 시작' : '준비 확인 후 녹화 시작'}
