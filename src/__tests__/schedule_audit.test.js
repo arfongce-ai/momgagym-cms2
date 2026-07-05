@@ -57,16 +57,38 @@ describe('findDuplicateSchedules — 회차 중복(same_lot, 재등록 안전)',
   });
 });
 
-describe('findDuplicateSchedules — 같은 시간 이중 예약(same_slot)', () => {
-  it('같은 회원·날짜·시작시간이 2건이면 잡는다(회차 무관)', () => {
+describe('findDuplicateSchedules — 같은 시간 이중 예약(same_slot, 트레이너 구분)', () => {
+  it('같은 회원·같은 트레이너·날짜·시작시간이 2건이면 잡는다(회차 무관)', () => {
     const schedules = [
-      { ...base, id:'a', date:'2026-07-04', startTime:'10:00', sessionAtBooking:10, sessionTotalAtBooking:10 },
-      { ...base, id:'b', date:'2026-07-04', startTime:'10:00', sessionAtBooking:9,  sessionTotalAtBooking:10 },
+      { ...base, id:'a', trainerId:'t1', date:'2026-07-04', startTime:'10:00', sessionAtBooking:10, sessionTotalAtBooking:10 },
+      { ...base, id:'b', trainerId:'t1', date:'2026-07-04', startTime:'10:00', sessionAtBooking:9,  sessionTotalAtBooking:10 },
     ];
     const groups = findDuplicateSchedules(schedules);
     const slot = groups.find(g=>g.type==='same_slot');
     expect(slot).toBeTruthy();
     expect(slot.items).toHaveLength(2);
+  });
+
+  it('★같은 시간이라도 트레이너가 다르면 정상(1회원 2트레이너) — 이중예약 아님', () => {
+    const schedules = [
+      { ...base, id:'a', trainerId:'t1', trainerName:'박병준', date:'2026-07-04', startTime:'10:00', consumedIndexAtBooking:0 },
+      { ...base, id:'b', trainerId:'t2', trainerName:'황지영', date:'2026-07-04', startTime:'10:00', consumedIndexAtBooking:0 },
+    ];
+    expect(findDuplicateSchedules(schedules).filter(g=>g.type==='same_slot')).toHaveLength(0);
+  });
+
+  it('★1회원 2트레이너: 각 트레이너별 회차 중복은 트레이너별로 따로 잡는다', () => {
+    const schedules = [
+      // t1 의 누적0 이 2건(중복) — t1 그룹
+      { ...base, id:'a', trainerId:'t1', trainerName:'박병준', date:'2026-07-01', startTime:'10:00', consumedIndexAtBooking:0 },
+      { ...base, id:'b', trainerId:'t1', trainerName:'박병준', date:'2026-07-03', startTime:'11:00', consumedIndexAtBooking:0 },
+      // t2 의 누적0 은 1건(정상) — 위 t1 중복과 섞이지 않아야 함
+      { ...base, id:'c', trainerId:'t2', trainerName:'황지영', date:'2026-07-02', startTime:'10:00', consumedIndexAtBooking:0 },
+    ];
+    const lots = findDuplicateSchedules(schedules).filter(g=>g.type==='same_lot');
+    expect(lots).toHaveLength(1);
+    expect(lots[0].items.every(s=>s.trainerId==='t1')).toBe(true);
+    expect(lots[0].items).toHaveLength(2);
   });
 });
 

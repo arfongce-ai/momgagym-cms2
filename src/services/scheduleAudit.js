@@ -22,8 +22,9 @@
 //                   '차감됨' 표시된 예약이 2건 이상. → 회차 중복(유령 항목 의심).
 //                   consumedIndexAtBooking 이 없는 구버전 예약은 이 규칙에서 제외
 //                   (잘못 겹칠 수 있어 추측하지 않음 — 측정 정직성).
-//   2) same_slot  — 같은 회원·날짜·시작시간에 예약이 2건 이상(회차 무관).
-//                   → 같은 시간 이중 예약(중복 등록 의심).
+//   2) same_slot  — 같은 회원·트레이너·날짜·시작시간에 예약이 2건 이상.
+//                   → 같은 트레이너와 같은 시간 이중 예약(중복 등록 의심).
+//                   서로 다른 트레이너의 같은 시간 수업은 정상으로 허용(오탐 방지).
 //
 //  판단 재료만 제공하고, 삭제·수정 같은 되돌릴 수 없는 처리는 하지 않는다
 //  (운영자가 화면에서 직접 확인 후 처리). 데이터 정직성 원칙.
@@ -36,8 +37,11 @@ function isMemberSession(s) {
 
 // 그룹 키 헬퍼
 //  · 회차 중복 판정은 재등록에 안전한 consumedIndexAtBooking 을 쓴다.
+//  · 같은 시간 이중예약 판정에는 trainerId 를 포함한다 — 한 회원이 같은 시간에
+//    서로 다른 트레이너 수업을 받는 건 정상이므로(트레이너 다르면 OK), 같은
+//    트레이너·같은 시간에 2건 잡힌 경우만 이중예약으로 본다.
 const lotKey = (s) => `${s.memberId}__${s.trainerId}__ci${s.consumedIndexAtBooking}`;
-const slotKey = (s) => `${s.memberId}__${s.date}__${s.startTime}`;
+const slotKey = (s) => `${s.memberId}__${s.trainerId}__${s.date}__${s.startTime}`;
 
 // 중복 그룹을 찾는다. 반환: [{ type, memberId, memberName, label, items: [...schedules] }]
 export function findDuplicateSchedules(schedules = []) {
@@ -87,8 +91,8 @@ export function findDuplicateSchedules(schedules = []) {
         type: 'same_slot',
         memberId: first.memberId,
         memberName: first.memberName || '',
-        label: `${first.memberName || '회원'} · ${first.date} ${first.startTime} 같은 시간 ${items.length}건`,
-        reason: '같은 회원이 같은 날짜·시간에 여러 번 예약되어 있습니다. 이중 예약일 수 있습니다.',
+        label: `${first.memberName || '회원'} · ${first.date} ${first.startTime} · ${first.trainerName || '트레이너'} ${items.length}건`,
+        reason: '같은 회원이 같은 트레이너·같은 날짜·시간에 여러 번 예약되어 있습니다. 이중 예약일 수 있습니다. (트레이너가 다른 같은 시간 수업은 정상으로 제외됩니다.)',
         items: sortByDate(items),
       });
     }
