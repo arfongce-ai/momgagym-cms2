@@ -1187,6 +1187,7 @@ function ScheduleAuditModal({ groups, summary, onOpenItem, onClose }) {
                           <p className="text-[11px] text-slate-500">
                             {s.trainerName || ''}
                             {s.sessionAtBooking != null && ` · 회차 ${s.sessionAtBooking}`}
+                            {s.consumedIndexAtBooking != null && ` · 누적 ${s.consumedIndexAtBooking + 1}번째`}
                             {s.sessionDeducted ? ' · 차감됨' : ' · 미차감'}
                           </p>
                         </div>

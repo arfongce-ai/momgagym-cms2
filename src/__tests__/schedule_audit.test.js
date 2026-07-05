@@ -8,33 +8,50 @@ const base = {
   status: 'scheduled', classType: '트레이닝',
 };
 
-describe('findDuplicateSchedules — 회차 중복(same_lot)', () => {
-  it('같은 회원·트레이너·회차가 2건 차감됐으면 회차 중복으로 잡는다', () => {
+describe('findDuplicateSchedules — 회차 중복(same_lot, 재등록 안전)', () => {
+  it('같은 회원·트레이너·누적소진인덱스가 2건 차감됐으면 회차 중복으로 잡는다', () => {
     const schedules = [
-      { ...base, id:'a', date:'2026-07-04', startTime:'10:00', sessionAtBooking:10, sessionTotalAtBooking:10 },
-      { ...base, id:'b', date:'2026-07-06', startTime:'11:00', sessionAtBooking:10, sessionTotalAtBooking:10 },
+      { ...base, id:'a', date:'2026-07-04', startTime:'10:00', sessionAtBooking:10, sessionTotalAtBooking:10, consumedIndexAtBooking:0 },
+      { ...base, id:'b', date:'2026-07-06', startTime:'11:00', sessionAtBooking:10, sessionTotalAtBooking:10, consumedIndexAtBooking:0 },
     ];
     const groups = findDuplicateSchedules(schedules);
     expect(groups).toHaveLength(1);
     expect(groups[0].type).toBe('same_lot');
     expect(groups[0].items).toHaveLength(2);
     expect(groups[0].label).toMatch(/10\(s\)/);
-    // 날짜순 정렬
     expect(groups[0].items[0].date).toBe('2026-07-04');
   });
 
-  it('회차가 다르면 중복이 아니다', () => {
+  it('★재등록으로 회차번호(sessionAtBooking)만 같고 누적인덱스가 다르면 중복 아님', () => {
+    // 첫 등록분 6회차(잔여6, 누적인덱스4)와 재등록분 6회차(잔여6, 누적인덱스14)는
+    // sessionAtBooking 은 둘 다 6 이지만 서로 다른 수업 → 중복으로 잡으면 안 된다.
     const schedules = [
-      { ...base, id:'a', date:'2026-07-04', startTime:'10:00', sessionAtBooking:10, sessionTotalAtBooking:10 },
-      { ...base, id:'b', date:'2026-07-06', startTime:'11:00', sessionAtBooking:9,  sessionTotalAtBooking:10 },
+      { ...base, id:'a', date:'2026-05-01', startTime:'10:00', sessionAtBooking:6, sessionTotalAtBooking:10, consumedIndexAtBooking:4 },
+      { ...base, id:'b', date:'2026-07-01', startTime:'10:00', sessionAtBooking:6, sessionTotalAtBooking:20, consumedIndexAtBooking:14 },
+    ];
+    expect(findDuplicateSchedules(schedules).filter(g=>g.type==='same_lot')).toHaveLength(0);
+  });
+
+  it('누적인덱스가 다르면 중복이 아니다', () => {
+    const schedules = [
+      { ...base, id:'a', date:'2026-07-04', startTime:'10:00', consumedIndexAtBooking:0 },
+      { ...base, id:'b', date:'2026-07-06', startTime:'11:00', consumedIndexAtBooking:1 },
     ];
     expect(findDuplicateSchedules(schedules)).toHaveLength(0);
   });
 
+  it('consumedIndexAtBooking 이 없는 구버전 예약은 회차중복 판정에서 제외(추측 안 함)', () => {
+    const schedules = [
+      { ...base, id:'a', date:'2026-07-04', startTime:'10:00', sessionAtBooking:10, sessionTotalAtBooking:10 },
+      { ...base, id:'b', date:'2026-07-06', startTime:'11:00', sessionAtBooking:10, sessionTotalAtBooking:10 },
+    ];
+    expect(findDuplicateSchedules(schedules).filter(g=>g.type==='same_lot')).toHaveLength(0);
+  });
+
   it('미차감(sessionDeducted=false)은 회차 중복 판정에서 제외', () => {
     const schedules = [
-      { ...base, id:'a', date:'2026-07-04', startTime:'10:00', sessionAtBooking:10, sessionTotalAtBooking:10, sessionDeducted:true },
-      { ...base, id:'b', date:'2026-07-06', startTime:'11:00', sessionAtBooking:10, sessionTotalAtBooking:10, sessionDeducted:false },
+      { ...base, id:'a', date:'2026-07-04', startTime:'10:00', consumedIndexAtBooking:0, sessionDeducted:true },
+      { ...base, id:'b', date:'2026-07-06', startTime:'11:00', consumedIndexAtBooking:0, sessionDeducted:false },
     ];
     expect(findDuplicateSchedules(schedules).filter(g=>g.type==='same_lot')).toHaveLength(0);
   });
@@ -74,8 +91,8 @@ describe('findDuplicateSchedules — 제외 대상', () => {
 describe('summarizeDuplicates', () => {
   it('그룹/항목 수와 이슈 여부를 요약한다', () => {
     const schedules = [
-      { ...base, id:'a', date:'2026-07-04', startTime:'10:00', sessionAtBooking:10, sessionTotalAtBooking:10 },
-      { ...base, id:'b', date:'2026-07-06', startTime:'11:00', sessionAtBooking:10, sessionTotalAtBooking:10 },
+      { ...base, id:'a', date:'2026-07-04', startTime:'10:00', sessionAtBooking:10, sessionTotalAtBooking:10, consumedIndexAtBooking:0 },
+      { ...base, id:'b', date:'2026-07-06', startTime:'11:00', sessionAtBooking:10, sessionTotalAtBooking:10, consumedIndexAtBooking:0 },
     ];
     const s = summarizeDuplicates(findDuplicateSchedules(schedules));
     expect(s.hasIssues).toBe(true);
