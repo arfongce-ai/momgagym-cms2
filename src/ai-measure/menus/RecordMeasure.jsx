@@ -405,7 +405,10 @@ export default function RecordMeasure({ member, onBack }) {
         if (nextElapsed >= MAX_RECORD_SECONDS) stopRecorder();
       }, 250);
       autoStopTimerRef.current = setTimeout(stopRecorder, MAX_RECORD_SECONDS * 1000);
-      rec.start(1000);
+      // 타임슬라이스로 청크를 나눠 받으면(특히 mp4) Blob 이어붙이기 과정에서
+      // 실제 녹화 시간보다 재생 가능한 길이가 짧아지는 문제가 생긴다.
+      // stop() 시 한 번에 완전한 Blob을 받도록 타임슬라이스 없이 시작한다.
+      rec.start();
       setStatus('recording');
     } catch (e) {
       stopComposeLoop();
@@ -678,13 +681,15 @@ export default function RecordMeasure({ member, onBack }) {
               ? '브라우저가 자동 저장을 막았습니다. 아래 버튼으로 다시 저장해 주세요.'
               : '자동 저장을 시도했습니다. 휴대폰 다운로드 폴더를 확인해 주세요.'}
         </div>
-        <div className="grid grid-cols-2 gap-2">
+        <div className={`grid ${autoSaveState === 'blocked' ? 'grid-cols-2' : 'grid-cols-1'} gap-2`}>
           <button onClick={reset} className="rounded-xl border border-slate-700 text-slate-300 font-bold py-3 text-sm">
             다시 녹화
           </button>
-          <button onClick={retryAutoSave} className="btn btn-primary">
-            자동 저장 다시 시도
-          </button>
+          {autoSaveState === 'blocked' && (
+            <button onClick={retryAutoSave} className="btn btn-primary">
+              자동 저장 다시 시도
+            </button>
+          )}
         </div>
         {shareSupported && (
           <button onClick={saveToGallery} className="block w-full text-center text-[11px] text-slate-400 underline">

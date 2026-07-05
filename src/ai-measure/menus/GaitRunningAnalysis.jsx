@@ -441,7 +441,10 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
       setView('preview');
     };
 
-    mediaRecorderRef.current.start(1000);
+    // 타임슬라이스로 청크를 나눠 받으면(특히 mp4) Blob 이어붙이기 과정에서
+    // 실제 녹화 시간보다 재생 가능한 길이가 짧아지는 문제가 생긴다.
+    // stop() 시 한 번에 완전한 Blob을 받도록 타임슬라이스 없이 시작한다.
+    mediaRecorderRef.current.start();
     setView('recording');
   };
 
