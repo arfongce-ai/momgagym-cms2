@@ -391,6 +391,7 @@ function AddModal({ members, trainers, fixedTrainerId, onAdd, onClose }) {
   // 탭: 'regular' | 'external'
   const [tab, setTab] = useState('regular');
   const [memberQuery, setMemberQuery] = useState('');
+  const [submitting, setSubmitting] = useState(false); // 중복 제출(더블탭) 방지
 
   const [form, setForm] = useState({
     memberId:'', trainerId:fixedTrainerId || '', date:today,
@@ -457,13 +458,23 @@ function AddModal({ members, trainers, fixedTrainerId, onAdd, onClose }) {
   const rangeValid = !isRange || (form.endDate && form.endDate >= form.date);
   const canSubmitExternal = form.date && form.startTime && form.endTime && form.externalType && rangeValid;
 
-  const handleAdd = () => {
+  const handleAdd = async () => {
+    if (submitting) return; // 중복 제출 방지(더블탭·연타로 인한 이중 예약/이중 차감 차단)
+    setSubmitting(true);
+    try {
+      await runAdd();
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const runAdd = async () => {
     if (tab === 'regular') {
       if (!canSubmitRegular) return;
       const t = trainers.find(tr=>tr.id===form.trainerId);
       if (isConsult) {
         // ★ 상담: 회원 없음, 세션 차감 없음 (isExternal=true로 차감 방어)
-        onAdd({
+        await onAdd({
           memberId:null, memberName:null,
           trainerId:form.trainerId, trainerName:t?.name||'',
           trainerColor:t?.color||'#94a3b8',
@@ -473,7 +484,7 @@ function AddModal({ members, trainers, fixedTrainerId, onAdd, onClose }) {
         });
       } else {
         const m = members.find(me=>me.id===form.memberId);
-        onAdd({
+        await onAdd({
           memberId:form.memberId, memberName:m?.name||'',
           trainerId:form.trainerId, trainerName:t?.name||'',
           trainerColor:t?.color||'#94a3b8',
@@ -493,8 +504,10 @@ function AddModal({ members, trainers, fixedTrainerId, onAdd, onClose }) {
       } else {
         dates.push(form.date);
       }
-      dates.forEach(d => {
-        onAdd({
+      // 순차 생성(await) — 동시 생성으로 인한 캐시 경쟁을 피한다.
+      for (const d of dates) {
+        // eslint-disable-next-line no-await-in-loop
+        await onAdd({
           // ★ memberId = null, sessionDeducted = true (영구 차감 방지)
           memberId:null, memberName:null,
           trainerId:form.trainerId||null, trainerName:t?.name||'외부',
@@ -503,7 +516,7 @@ function AddModal({ members, trainers, fixedTrainerId, onAdd, onClose }) {
           classType:form.externalType, memo:form.memo,
           status:'scheduled', sessionDeducted:true, isExternal:true,
         });
-      });
+      }
     }
   };
 
@@ -787,14 +800,16 @@ function AddModal({ members, trainers, fixedTrainerId, onAdd, onClose }) {
             취소
           </button>
           <button onClick={handleAdd}
-            disabled={tab==='regular' ? !canSubmitRegular : !canSubmitExternal}
+            disabled={submitting || (tab==='regular' ? !canSubmitRegular : !canSubmitExternal)}
             className={`flex-1 font-bold py-2.5 rounded-xl text-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed
               ${tab==='external'
                 ? 'bg-purple-600 hover:bg-purple-500 text-white'
                 : 'bg-amber-500 hover:bg-amber-400 text-slate-950'}`}>
-            {tab==='regular'
-              ? (isConsult ? '상담 등록' : '수업 예약')
-              : (isRange ? '기간 일정 등록' : '외부 일정 등록')}
+            {submitting
+              ? '처리 중…'
+              : tab==='regular'
+                ? (isConsult ? '상담 등록' : '수업 예약')
+                : (isRange ? '기간 일정 등록' : '외부 일정 등록')}
           </button>
         </div>
       </div>

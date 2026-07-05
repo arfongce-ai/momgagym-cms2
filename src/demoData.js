@@ -799,7 +799,24 @@ export const store = {
 
   // 예약 생성 + 세션 차감 + sessionDeducted 플래그를 한 batch로 원자적 처리 — NEW-03
   // 일반 수업(회원+트레이너, 비외부)만 차감. 하나라도 실패하면 전체 실패.
+  //
+  //  ★ 동시 예약 경쟁 방지: 두 예약이 거의 동시에 들어오면 둘 다 캐시의 같은
+  //  잔여값(예: 10)을 읽어, 둘 다 sessionAtBooking=10(첫 수업)으로 찍히고 차감은
+  //  한 번만 반영되는 문제가 있었다(스케줄엔 10(s)가 두 번, 세션은 1회만 사용).
+  //  → 차감 로직을 직렬화(이전 차감이 끝난 뒤 다음 차감이 캐시를 읽도록)한다.
   createScheduleWithDeduction: async (scheduleData) => {
+    const run = () => store._doCreateScheduleWithDeduction(scheduleData);
+    // 직전 차감이 끝난 뒤 실행(성공/실패 무관하게 이어서). 체인으로 순차 보장.
+    const prev = store._deductionChain || Promise.resolve();
+    const next = prev.then(run, run);
+    // 체인에는 에러가 전파되지 않도록 감싸서 저장(다음 호출이 막히지 않게)
+    store._deductionChain = next.then(() => undefined, () => undefined);
+    return next;
+  },
+
+  _deductionChain: null,
+
+  _doCreateScheduleWithDeduction: async (scheduleData) => {
     const ns = { ...scheduleData, id: uid('s') };
     // 세션 슬롯이 있는 회원·트레이너만 차감 대상.
     //  · 월정액만 있는 회원은 trainerSessions에 해당 슬롯이 없어 자동으로 차감되지 않는다.
