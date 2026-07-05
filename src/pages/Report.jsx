@@ -617,7 +617,7 @@ export default function Report() {
     setDownloading(true); setMsg(null);
     try {
       const svg = buildReportSvg(report);
-      const name = `리포트_${member.name}_${todayYMD()}.jpg`;
+      const name = `몸가짐_리포트_${member.name}_${todayYMD()}.jpg`;
       await downloadSvgAsJpg(svg, name, 2);
       setMsg('이미지가 다운로드되었습니다.');
     } catch (e) {

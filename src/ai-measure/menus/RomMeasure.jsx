@@ -466,7 +466,7 @@ export default function RomMeasure({ member, onSave, onBack }) {
   if (report) {
     let snapFile = null;
     if (report.snapshotUrl) {
-      try { snapFile = dataUrlToFile(report.snapshotUrl, `${member?.name || '회원'}_ROM_${joint}.jpg`); } catch (e) { snapFile = null; }
+      try { snapFile = dataUrlToFile(report.snapshotUrl, `몸가짐_${member?.name || '회원'}_ROM_${joint}.jpg`); } catch (e) { snapFile = null; }
     }
     return (
       <div className="space-y-4">

@@ -1116,7 +1116,7 @@ async function buildPostureSnapshotFiles(snapshots, member) {
     (snapshots || []).map(async (item) => {
       try {
         const label = safeFilePart(item.label || item.key || '측정면', '측정면');
-        return await createPostureSnapshotFile(item, `${baseName}_자세_${label}.jpg`);
+        return await createPostureSnapshotFile(item, `몸가짐_${baseName}_자세_${label}.jpg`);
       } catch (e) {
         return null;
       }

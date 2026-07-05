@@ -100,7 +100,7 @@ function recordingExtension(mime = '') {
 
 function recordingFileName(member, aspect, mime) {
   const safeName = (member?.name || 'video').replace(/[\\/:*?"<>|]/g, '_');
-  return `momgagym_record_${safeName}_${aspect.replace('/', 'x')}_${todayYMD().replace(/-/g, '')}.${recordingExtension(mime)}`;
+  return `몸가짐_${safeName}_${aspect.replace('/', 'x')}_${todayYMD().replace(/-/g, '')}.${recordingExtension(mime)}`;
 }
 
 function triggerDownload(url, fileName) {
@@ -557,7 +557,8 @@ export default function RecordMeasure({ member, onBack }) {
     return (
         <div className="fixed inset-0 z-[80] bg-black overflow-hidden">
         <div
-          className="absolute inset-0 flex items-center justify-center"
+          className="absolute inset-0 flex flex-col items-center"
+          style={{ paddingTop: 'max(64px, calc(env(safe-area-inset-top) + 56px))' }}
           onPointerDown={handlePreviewFocus}
         >
           <div

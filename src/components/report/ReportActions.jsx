@@ -69,7 +69,7 @@ export default function ReportActions({
 
       for (let i = 0; i < targets.length; i += 1) {
         const suffix = targets.length > 1 ? `_A4_${i + 1}` : '_A4';
-        const file = await captureNodeToJpgFile(targets[i], `${baseName}${suffix}.jpg`, { bg: '#0f172a' });
+        const file = await captureNodeToJpgFile(targets[i], `몸가짐_${baseName}${suffix}.jpg`, { bg: '#0f172a' });
         files.push(file);
       }
 
@@ -91,7 +91,7 @@ export default function ReportActions({
     onMessage?.('동영상 준비 중...');
     try {
       const ext = videoBlob.type.includes('mp4') ? 'mp4' : 'webm';
-      const file = new File([videoBlob], `${baseName}_동영상.${ext}`, { type: videoBlob.type });
+      const file = new File([videoBlob], `몸가짐_${baseName}_동영상.${ext}`, { type: videoBlob.type });
       await shareOrDownload(file, '측정 동영상', onMessage);
     } catch (e) {
       onMessage?.('동영상 저장에 실패했습니다. 다시 시도해주세요.');

@@ -4,7 +4,7 @@
 //   · 측정 데이터(JSON)는 Firestore 에, 녹화 영상은 폰에 분리 저장하는 정책.
 //   · Web Share(navigator.share) 가 가능하면 갤러리/파일앱 저장 시트를 띄우고,
 //     아니면 a[download] 로 직접 내려받는다(RecordMeasure 패턴 표준화).
-//   · 파일명은 사람이 폴더에서 모아 보기 쉽게 'momgagym_ai' 접두 + 종목 + 회원 + 날짜.
+//   · 파일명은 사람이 폴더에서 모아 보기 쉽게 '몸가짐_AI' 접두 + 종목 + 회원 + 날짜.
 //     (실제 OS 폴더 생성은 브라우저 권한 밖이라, 식별 가능한 접두로 '몸가짐 AI'
 //      묶음을 만든다. 저장 위치는 사용자가 공유 시트에서 폴더를 고른다.)
 // ════════════════════════════════════════════════════════════════════════
@@ -40,13 +40,13 @@ export function extForBlob(blob) {
 
 /**
  * 측정 영상 표준 파일명 생성.
- *  예) momgagym_ai_벤치프레스_홍길동_20260630_142035.webm
+ *  예) 몸가짐_AI_벤치프레스_홍길동_20260630_142035.webm
  * @param {{ measure?:string, member?:object, ext?:string, at?:Date }} opts
  */
 export function buildVideoFileName({ measure, member, ext = 'webm', at = new Date() } = {}) {
   const who = safeSeg(member?.name || (member?.isVirtual ? '미등록회원' : 'guest'));
   const what = safeSeg(measure || 'measure');
-  return `momgagym_ai_${what}_${who}_${ymd(at)}_${hms(at)}.${ext}`;
+  return `몸가짐_AI_${what}_${who}_${ymd(at)}_${hms(at)}.${ext}`;
 }
 
 /**

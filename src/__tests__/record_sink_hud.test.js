@@ -18,16 +18,16 @@ function mockCtx() {
 }
 
 describe('recordSink · 몸가짐ai 영상 파일명', () => {
-  it('momgagym_ai_{종목}_{회원}_{날짜}_{시각}.{확장자} 형식', () => {
+  it('몸가짐_AI_{종목}_{회원}_{날짜}_{시각}.{확장자} 형식', () => {
     const at = new Date(2026, 5, 30, 14, 20, 35); // 2026-06-30 14:20:35
     const name = buildVideoFileName({ measure: '벤치프레스', member: { name: '홍길동' }, ext: 'webm', at });
-    expect(name).toBe('momgagym_ai_벤치프레스_홍길동_20260630_142035.webm');
+    expect(name).toBe('몸가짐_AI_벤치프레스_홍길동_20260630_142035.webm');
   });
 
   it('회원명/종목의 공백·금지문자를 안전치환', () => {
     const at = new Date(2026, 0, 2, 9, 5, 7);
     const name = buildVideoFileName({ measure: 'VBT 속도', member: { name: '김 동규/트레이너' }, ext: 'mp4', at });
-    expect(name).toContain('momgagym_ai_');
+    expect(name).toContain('몸가짐_AI_');
     expect(name).not.toMatch(/[\\/:*?"<>|\s]/); // 금지문자 없음
     expect(name.endsWith('.mp4')).toBe(true);
   });

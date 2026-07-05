@@ -116,13 +116,13 @@ export async function shareReportWithVideo(reportNode, videoBlob, { baseName = '
   // 1) 리포트 JPG
   if (reportNode) {
     try {
-      files.push(await captureNodeToJpgFile(reportNode, `${baseName}_리포트.jpg`));
+      files.push(await captureNodeToJpgFile(reportNode, `몸가짐_${baseName}_리포트.jpg`));
     } catch (e) { /* 캡처 실패해도 영상은 시도 */ }
   }
   // 2) 영상
   if (videoBlob) {
     const ext = videoBlob.type.includes('mp4') ? 'mp4' : 'webm';
-    files.push(new File([videoBlob], `${baseName}_영상.${ext}`, { type: videoBlob.type }));
+    files.push(new File([videoBlob], `몸가짐_${baseName}_영상.${ext}`, { type: videoBlob.type }));
   }
   if (!files.length) return { ok: false, mode: 'none', msg: '공유할 항목이 없습니다.' };
 
