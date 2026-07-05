@@ -3,6 +3,7 @@ import { useHardwareBack } from '../core/useHardwareBack';
 import GaitRunningAnalysis from './GaitRunningAnalysis';
 import GaitUploadAnalysis from './GaitUploadAnalysis';
 import GaitReportDashboard from './GaitReportDashboard';
+import MeasureRecordConfirm from '../components/MeasureRecordConfirm.jsx';
 
 /*
  * GaitAnalysisHub — 보행/러닝 분석 진입점
@@ -23,37 +24,45 @@ export default function GaitAnalysisHub({ member, onBack, saveToFirebase, onSave
   const save = saveToFirebase || onSaveToFirebase || onSave;
 
   const [mode, setMode] = useState('live');     // live | upload
-  const [view, setView] = useState('measure');  // measure | report
+  const [view, setView] = useState('measure');  // measure | record | report
   const [report, setReport] = useState(null);
+  const [pending, setPending] = useState(null); // 측정완료~확인 사이 데이터
+  const [pendingVideo, setPendingVideo] = useState(null);
+  const [saveState, setSaveState] = useState('idle');
   const [reportVideoBlob, setReportVideoBlob] = useState(null); // 결과 리포트 동영상 저장용(화면 전용)
 
-  // 업로드 분석 완료 → 저장(단일 책임) + 대시보드 자동 이동 (요구사항 3)
-  const handleComplete = useCallback(async (reportData) => {
-    let saved = reportData;
-    if (reportData.valid === true && typeof save === 'function') {
+  // 확인 시 실제 저장(유효 측정만) → 리포트 확인
+  const persist = useCallback(async (reportData, record = {}, videoBlob) => {
+    const withRecord = { ...reportData, note: record.note || reportData.note || '' };
+    let saved = withRecord;
+    setSaveState('saving');
+    if (withRecord.valid === true && typeof save === 'function') {
       try {
-        const res = await save(reportData);
-        if (res && typeof res === 'object') saved = { ...reportData, ...res };
-      } catch (e) {
-        // 저장 실패해도 분석 결과는 보여준다(코멘트 저장만 비활성)
-      }
-    }
+        const res = await save(withRecord);
+        if (res && typeof res === 'object') saved = { ...withRecord, ...res };
+        setSaveState('saved');
+      } catch (e) { setSaveState('error'); }
+    } else { setSaveState('saved'); }
     setReport(saved);
+    if (videoBlob !== undefined) setReportVideoBlob(videoBlob || null);
     setView('report');
   }, [save]);
 
-  // 라이브 모드 저장 콜백 래퍼: 저장 후 저장본(서버가 부여한 id 포함)을 잡아둬
-  // 대시보드 코멘트가 정확한 문서를 갱신하게 한다.
+  // 업로드 분석 완료 → 기록·확인 단계 (즉시 저장하지 않음)
+  const handleComplete = useCallback((reportData) => {
+    setPending(reportData); setPendingVideo(undefined); setSaveState('idle'); setView('record');
+  }, []);
+
+  // 라이브 저장 래퍼: 라이브 컴포넌트가 측정 중 저장(id 확보)에 사용 — 그대로 유지.
   const liveSave = useCallback(async (reportData) => {
     let saved = reportData;
     if (typeof save === 'function') {
       try {
         const res = await save(reportData);
-        // addGaitReport 가 저장본을 반환하면(id 포함) 그것을 사용
         if (res && typeof res === 'object') saved = { ...reportData, ...res };
       } catch (e) {
-        setReport(reportData); // 저장 실패해도 리포트는 볼 수 있게
-        throw e;               // 라이브 컴포넌트가 error 상태 표시하도록 전파
+        setReport(reportData);
+        throw e;
       }
     }
     setReport(saved);
@@ -61,15 +70,42 @@ export default function GaitAnalysisHub({ member, onBack, saveToFirebase, onSave
   }, [save]);
 
   const openLiveReport = useCallback((reportData, videoBlob) => {
-    if (reportData) setReport(reportData);
-    if (videoBlob !== undefined) setReportVideoBlob(videoBlob || null);
-    setView('report');
+    // 통일 흐름: 측정완료 → 기록·확인 → (라이브는 이미 저장됨) → 리포트
+    setPending(reportData); setPendingVideo(videoBlob || null); setSaveState('idle'); setView('record');
   }, []);
 
+  const confirmRecord = useCallback((record) => {
+    if (pending) persist(pending, record, pendingVideo);
+  }, [pending, pendingVideo, persist]);
+
   // 대시보드에서 측정 화면으로 복귀
-  const backToMeasure = () => { setView('measure'); setReport(null); setReportVideoBlob(null); };
-  // [항목 2] 폰 뒤로가기: 리포트 화면이면 측정 화면으로 한 단계만 복귀.
-  useHardwareBack(view === 'report' && !!report, backToMeasure);
+  const backToMeasure = () => { setView('measure'); setReport(null); setReportVideoBlob(null); setPending(null); setSaveState('idle'); };
+  // [항목 2] 폰 뒤로가기: 리포트/기록 화면이면 측정 화면으로 한 단계만 복귀.
+  useHardwareBack((view === 'report' && !!report) || view === 'record', backToMeasure);
+
+  if (view === 'record' && pending) {
+    const g = pending.metrics || pending;
+    const rows = [];
+    if (g.cadence != null) rows.push({ label: '케이던스', value: `${g.cadence}spm` });
+    if (g.speed != null) rows.push({ label: '속도', value: `${g.speed}` });
+    if (g.symmetry != null) rows.push({ label: '대칭성', value: `${g.symmetry}%` });
+    return (
+      <div className="fixed inset-0 z-[80] bg-slate-950 overflow-y-auto" style={{ height: '100dvh' }}>
+        <div className="max-w-md mx-auto p-4">
+          <MeasureRecordConfirm
+            title="보행·러닝"
+            summaryRows={rows}
+            noteMode
+            onConfirm={confirmRecord}
+            onBack={backToMeasure}
+            saving={saveState === 'saving'}
+            saved={saveState === 'saved'}
+            error={saveState === 'error'}
+          />
+        </div>
+      </div>
+    );
+  }
 
   if (view === 'report' && report) {
     return (

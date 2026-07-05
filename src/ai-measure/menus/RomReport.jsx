@@ -126,26 +126,33 @@ export default function RomReport({ report }) {
       )}
 
       {/* 핵심 수치 카드 */}
-      <div className="mt-4 grid grid-cols-3 gap-3">
-        <MetricCard label="좌측 최대 가동범위" value={fmt(s.left_max_rom)} sub="left max ROM" />
-        <MetricCard label="우측 최대 가동범위" value={fmt(s.right_max_rom)} sub="right max ROM" />
-        <MetricCard
-          label="좌우 대칭성"
-          value={s.symmetry_index_score == null ? '—' : `${s.symmetry_index_score}%`}
-          sub="차이(작을수록 대칭)"
-          tone={s.symmetry_index_score != null && s.symmetry_index_score >= 15 ? 'warn' : 'ok'}
-        />
-        {/* [항목 5] 끝범위(end-range) 측정은 불확실하여 리포트에서 제외한다. */}
-        <MetricCard
-          label="보상 작용"
-          value={
-            (comp.left == null && comp.right == null)
-              ? '—'
-              : `${comp.left ?? '—'} / ${comp.right ?? '—'}`
-          }
-          sub={poseMode === 'STANDING' ? (joint === 'SHOULDER' ? '체간기울기(°)' : '골반불균형(%)') : '지면지지로 통제'}
-        />
-      </div>
+      {(report.measureType === 'sensor_goniometer' || (s.right_max_rom == null && s.max_rom != null)) ? (
+        // 단일 측정(고니오메타): 좌/우 구분 없이 가동범위 한 장.
+        <div className="mt-4 grid grid-cols-2 gap-3">
+          <MetricCard label="가동범위" value={fmt(s.max_rom ?? s.left_max_rom)} sub="max ROM" />
+          <MetricCard
+            label="보상 작용"
+            value={(comp.left == null && comp.right == null) ? '—' : `${comp.left ?? '—'} / ${comp.right ?? '—'}`}
+            sub={poseMode === 'STANDING' ? (joint === 'SHOULDER' ? '체간기울기(°)' : '골반불균형(%)') : '지면지지로 통제'}
+          />
+        </div>
+      ) : (
+        <div className="mt-4 grid grid-cols-3 gap-3">
+          <MetricCard label="좌측 최대 가동범위" value={fmt(s.left_max_rom)} sub="left max ROM" />
+          <MetricCard label="우측 최대 가동범위" value={fmt(s.right_max_rom)} sub="right max ROM" />
+          <MetricCard
+            label="좌우 대칭성"
+            value={s.symmetry_index_score == null ? '—' : `${s.symmetry_index_score}%`}
+            sub="차이(작을수록 대칭)"
+            tone={s.symmetry_index_score != null && s.symmetry_index_score >= 15 ? 'warn' : 'ok'}
+          />
+          <MetricCard
+            label="보상 작용"
+            value={(comp.left == null && comp.right == null) ? '—' : `${comp.left ?? '—'} / ${comp.right ?? '—'}`}
+            sub={poseMode === 'STANDING' ? (joint === 'SHOULDER' ? '체간기울기(°)' : '골반불균형(%)') : '지면지지로 통제'}
+          />
+        </div>
+      )}
 
       {/* [보상 프로파일] 3축 보상 패턴 — 숫자 + 방향 시각화 (카메라 측정 전용) */}
       <CompensationProfilePanel profile={s.compensation_profile} poseMode={poseMode} />

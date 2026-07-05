@@ -20,6 +20,7 @@ import VbtMeasure from './VbtMeasure';
 import OneRMEstimate from './OneRMEstimate';
 import LiftingUploadAnalysis from './LiftingUploadAnalysis';
 import LiftingReportDashboard from './LiftingReportDashboard';
+import MeasureRecordConfirm from '../components/MeasureRecordConfirm.jsx';
 import { useHardwareBack } from '../core/useHardwareBack';
 import {
   exercisesForMode, lift1rmToExercise,
@@ -48,8 +49,12 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
   const [captureMode, setCaptureMode] = useState('live');
   // 측정 완료 후 표시할 리포트.
   const [report, setReport] = useState(null);
-  // [항목 2] 폰 뒤로가기: 리포트 화면이면 측정 화면으로 한 단계만 복귀.
-  useHardwareBack(!!report, () => setReport(null));
+  // 통일 흐름: measure → record(기록·확인) → report
+  const [view, setView] = useState('measure'); // measure | record | report
+  const [pending, setPending] = useState(null);
+  const [saveState, setSaveState] = useState('idle');
+  // [항목 2] 폰 뒤로가기: 리포트/기록 화면이면 측정 화면으로 한 단계만 복귀.
+  useHardwareBack(!!report || view === 'record', () => { setReport(null); setPending(null); setView('measure'); });
   const sessionHistoryRef = useRef(null);
 
   // ── 오버레이 겹침 수정 ──
@@ -133,20 +138,31 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
     setExerciseType(nextExercise);
   }, []);
 
-  // 저장 + 리포트 표시 공통 헬퍼. payload 를 저장하고, 그 결과를 리포트로 띄운다.
-  const saveAndReport = useCallback(async (payload, reportExtras = {}) => {
-    const outlierWarning = detectMeasurementOutlier(payload, sessionHistoryRef.current);
-    const nextPayload = outlierWarning.isOutlier ? { ...payload, outlierWarning } : payload;
+  // 측정완료 → 기록·확인 단계로 스테이징(즉시 저장하지 않음). 확인 시 실제 저장.
+  const saveAndReport = useCallback((payload, reportExtras = {}) => {
+    setPending({ payload, reportExtras });
+    setSaveState('idle');
+    setView('record');
+    return payload;
+  }, []);
+
+  // 확인 시 실제 저장 + 리포트
+  const persist = useCallback(async (record = {}) => {
+    if (!pending) return;
+    const base = record.note ? { ...pending.payload, note: record.note } : pending.payload;
+    const outlierWarning = detectMeasurementOutlier(base, sessionHistoryRef.current);
+    const nextPayload = outlierWarning.isOutlier ? { ...base, outlierWarning } : base;
     let saved = nextPayload;
+    setSaveState('saving');
     try {
-      const payload = nextPayload;
-      const res = await save?.(payload);
-      if (res && typeof res === 'object') saved = { ...payload, ...res };
-    } catch (e) { /* 저장 실패해도 리포트는 표시 */ }
+      const res = await save?.(nextPayload);
+      if (res && typeof res === 'object') saved = { ...nextPayload, ...res };
+      setSaveState('saved');
+    } catch (e) { setSaveState('error'); }
     sessionHistoryRef.current = saved;
-    setReport({ ...saved, ...reportExtras });
-    return saved;
-  }, [save]);
+    setReport({ ...saved, ...pending.reportExtras });
+    setView('report');
+  }, [pending, save]);
 
   // 고속영상 분석은 이미 완성된 표준 페이로드를 넘겨주므로 그대로 저장+리포트.
   const handleUploadComplete = useCallback(async (rep) => {
@@ -358,13 +374,39 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
     );
   }
 
+  // ── 측정완료 → 기록·확인 단계 ──
+  if (view === 'record' && pending) {
+    const p = pending.payload || {};
+    const rows = [];
+    if (p.oneRM != null) rows.push({ label: '1RM(추정)', value: `${p.oneRM}kg` });
+    if (p.meanVelocity != null) rows.push({ label: '평균속도', value: `${p.meanVelocity}m/s` });
+    if (p.romCm != null) rows.push({ label: 'ROM', value: `${p.romCm}cm` });
+    if (p.barKg != null) rows.push({ label: '중량', value: `${p.barKg}kg` });
+    return (
+      <div className="fixed inset-0 z-[80] bg-slate-950 overflow-y-auto" style={{ height: '100dvh' }}>
+        <div className="max-w-md mx-auto p-4">
+          <MeasureRecordConfirm
+            title="바벨 리프팅"
+            summaryRows={rows}
+            noteMode
+            onConfirm={persist}
+            onBack={() => { setPending(null); setView('measure'); }}
+            saving={saveState === 'saving'}
+            saved={saveState === 'saved'}
+            error={saveState === 'error'}
+          />
+        </div>
+      </div>
+    );
+  }
+
   // ── 측정 완료 리포트 ──
   if (report) {
     return (
       <div className="fixed inset-0 z-[80] bg-slate-950 overflow-y-auto" style={{ height: '100dvh' }}>
         <LiftingReportDashboard report={report} onClose={onBack} />
         <div className="sticky bottom-0 z-10 flex justify-center p-3 bg-slate-900/90 backdrop-blur border-t border-slate-800">
-          <button onClick={() => setReport(null)} className="rounded-lg bg-slate-700 text-white font-bold text-sm px-6 py-2">← 다시 측정</button>
+          <button onClick={() => { setReport(null); setPending(null); setView('measure'); }} className="rounded-lg bg-slate-700 text-white font-bold text-sm px-6 py-2">← 다시 측정</button>
         </div>
       </div>
     );

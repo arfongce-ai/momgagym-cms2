@@ -24,6 +24,8 @@ export default function BodyInfoMeasure({ member, onSave, onBack, onGuestBodyInf
     diastolic: '',
   });
   const [result, setResult] = useState(null);
+  const [saveState, setSaveState] = useState('idle'); // idle | saving | saved | error
+  const [saveMsg, setSaveMsg] = useState('');
   const pf = (k) => (e) => {
     const val = e.target.value;
     setForm(f => ({ ...f, [k]: val }));
@@ -45,19 +47,21 @@ export default function BodyInfoMeasure({ member, onSave, onBack, onGuestBodyInf
   };
 
   const save = async () => {
-    if (!member) { alert('저장하려면 먼저 회원을 선택하세요(허브 상단).'); return; }
+    if (!member) { setSaveMsg('저장하려면 먼저 회원을 선택하세요(허브 상단).'); return; }
     const payload = {
       height: form.height ? Number(form.height) : null,
       weight: Number(form.weight),
       systolic: form.systolic ? Number(form.systolic) : null,
       diastolic: form.diastolic ? Number(form.diastolic) : null,
     };
+    setSaveState('saving');
     if (isVirtual) {
       // [항목 1] 미등록회원: 영구 신체기록(store)에 남기지 않고, 허브 신체정보에 반영해
       // 이번 측정 묶음의 다른 탭들이 같은 키/체중을 쓰도록 연동한다.
       onGuestBodyInfoChange?.({ height: form.height, weight: form.weight });
       onSave?.(payload); // 측정 이력(ai)에 신체정보 기록 누적
-      alert('미등록회원 신체정보가 이번 측정에 반영되었습니다. (다른 측정 탭과 연동)');
+      setSaveState('saved');
+      setSaveMsg('미등록회원 신체정보가 이번 측정에 반영되었습니다. (다른 측정 탭과 연동)');
       return;
     }
     try {
@@ -69,10 +73,11 @@ export default function BodyInfoMeasure({ member, onSave, onBack, onGuestBodyInf
         diastolic: form.diastolic ? Number(form.diastolic) : null,
         note: 'AI 측정 입력',
       });
-    } catch (e) { alert('신체정보 저장에 실패했습니다. 네트워크 확인 후 다시 시도하세요.'); return; }
+    } catch (e) { setSaveState('error'); setSaveMsg('신체정보 저장에 실패했습니다. 네트워크 확인 후 다시 시도하세요.'); return; }
     // 허브의 onSave 도 호출(측정 이력 누적용)
     onSave?.(payload);
-    alert('신체정보가 저장되었습니다. (회원 신체기록 + 리포트에 반영)');
+    setSaveState('saved');
+    setSaveMsg('신체정보가 저장되었습니다. (회원 신체기록 + 리포트에 반영)');
   };
 
   const INP = 'w-full bg-slate-800 border border-slate-700 text-slate-100 rounded-xl px-3 py-2.5 text-sm font-mono focus:outline-none focus:border-amber-500';
@@ -113,7 +118,10 @@ export default function BodyInfoMeasure({ member, onSave, onBack, onGuestBodyInf
           <div className="bg-slate-800/50 rounded-xl px-3 py-2.5">
             <p className="text-[11px] text-slate-300 leading-relaxed">{result.summary}</p>
           </div>
-          <button onClick={save} className="btn btn-primary w-full">회원 기록에 저장</button>
+          <button onClick={save} disabled={saveState === 'saving'} className="btn btn-primary w-full disabled:opacity-60">
+            {saveState === 'saving' ? '저장 중…' : saveState === 'saved' ? '✓ 저장됨' : '확인 · 저장'}
+          </button>
+          {saveMsg && <p className={`text-center text-xs font-bold ${saveState === 'error' ? 'text-red-400' : 'text-emerald-400'}`}>{saveMsg}</p>}
         </div>
       )}
 

@@ -724,6 +724,7 @@ export const store = {
         joint: summary.joint || '',
         poseMode: summary.poseMode || '',
         movement: summary.movement || '',
+        angle: summary.angle ?? null,      // 단일 가동각(센서 고니오메타)
         left: summary.left ?? null,
         right: summary.right ?? null,
         symmetry: summary.symmetry ?? null,

@@ -28,11 +28,9 @@ const UI_DEADBAND = 0.25;     // 표시 데드밴드(°) — 이하 변화는 �
 const DISPLAY_STEP = 0.5;     // 표시 스텝(°)
 const SETTLE_AFTER_ZERO_MS = 300; // 0점 직후 최대각 갱신 유예(평활 정착 시간)
 
-const SIDE_KO = { left: '좌측', right: '우측' };
 
-export default function RomSensorGoniometer({ jointName, jointKey, side = 'both', onBack, onComplete }) {
-  // 진행할 측 순서: both → 좌, 우 / 단측 → 해당 측만
-  const sidesToMeasure = side === 'both' ? ['left', 'right'] : [side];
+export default function RomSensorGoniometer({ jointName, jointKey, onBack, onComplete }) {
+  // 좌/우 구분 없이 한 번 측정하고 '측정완료'로 끝낸다(단일 측정).
 
   // [수기 기록] 어느 움직임을 쟀는지 트레이너가 직접 라벨링(신체 움직임 최대 적용).
   const MOVEMENT_PRESETS = [
@@ -64,17 +62,16 @@ export default function RomSensorGoniometer({ jointName, jointKey, side = 'both'
   const [movementCustom, setMovementCustom] = useState('');
   const effMovement = movement === '__custom' ? movementCustom.trim() : movement;
 
-  const [phase, setPhase] = useState('permission'); // permission | measure | done
+  const [phase, setPhase] = useState('permission'); // permission | measure | record
   const [permErr, setPermErr] = useState('');
-  const [sideIdx, setSideIdx] = useState(0);
   const [zero, setZero] = useState(null);          // 0점(평활 언랩각 기준)
   const [zeroing, setZeroing] = useState(false);   // 0점 표본 수집 중
   const [zeroMsg, setZeroMsg] = useState('');      // 0점 안내/재시도 메시지
   const [liveDeg, setLiveDeg] = useState(null);    // 표시각(0점 반영, 스텝 반올림)
-  const [maxDeg, setMaxDeg] = useState(0);         // 이번 측 최대 |가동각|
+  const [maxDeg, setMaxDeg] = useState(0);         // 최대 |가동각|
   const [offPlane, setOffPlane] = useState(0);
   const [still, setStill] = useState(false);
-  const [results, setResults] = useState({});      // { left: {...}, right: {...} }
+  const [measuredAngle, setMeasuredAngle] = useState(null); // 확정된 측정각
 
   const trackerRef = useRef(null);
   const zeroRef = useRef(null);
@@ -87,8 +84,6 @@ export default function RomSensorGoniometer({ jointName, jointKey, side = 'both'
   const zeroBufRef = useRef(null);   // 0점 수집 버퍼 { samples: [], t0 }
   const zeroTimerRef = useRef(null); // 0점 수집 안전 타이머
   const zeroDoneAtRef = useRef(0);   // 0점 확정 시각(정착 유예용)
-
-  const currentSide = sidesToMeasure[sideIdx];
 
   // 0점 확정: 수집 버퍼 평균. 흔들림이 크면 확정하지 않고 재시도 요구(정직성).
   const finishZeroing = () => {
@@ -228,37 +223,25 @@ export default function RomSensorGoniometer({ jointName, jointKey, side = 'both'
     lastShownRef.current = null;
   };
 
-  // 현재 측 확정 → 진동 알림 → 다음 측 또는 '움직임 기록' 단계로
-  const captureSide = () => {
+  // 측정완료(촬영완료) → 진동 알림 → '움직임 기록' 단계로
+  const finishMeasurement = () => {
     if (zero == null || maxRef.current <= 0) return;
     hapticFeedback([60, 40, 60]);
-    const rec = {
-      side: currentSide,
-      angle: maxRef.current,
-      recordedAt: new Date().toISOString(),
-    };
-    const nextResults = { ...results, [currentSide]: rec };
-    setResults(nextResults);
-    if (sideIdx + 1 < sidesToMeasure.length) {
-      setSideIdx(sideIdx + 1);
-      resetSide();
-      return;
-    }
-    // [항목 3] 측정완료 후 '움직임 기록' 화면으로 (자동저장은 확인 버튼에서)
+    setMeasuredAngle(maxRef.current);
+    // 측정완료 후 '움직임 기록' 화면으로 (자동저장은 확인 버튼에서)
     setPhase('record');
   };
 
-  // [항목 3·4] 움직임 기록 확인 → 자동 저장(onComplete). 저장되면 상위(RomMeasure)가
-  // ROM 결과 리포트로 전환되어 기록을 바로 확인할 수 있다(항목 4).
+  // 움직임 기록 확인 → 자동 저장(onComplete). 저장되면 상위(RomMeasure)가
+  // ROM 결과 리포트로 전환되어 기록을 바로 확인할 수 있다.
   const confirmAndSave = () => {
     hapticFeedback([40]);
-    onComplete?.(results, { movement: effMovement, jointKey, jointName });
+    const rec = { angle: measuredAngle, recordedAt: new Date().toISOString() };
+    onComplete?.({ single: rec }, { movement: effMovement, jointKey, jointName });
   };
 
-  // ════════════════ [항목 3] 움직임 기록 화면 (측정완료 후) ════════════════
+  // ════════════════ 움직임 기록 화면 (측정완료 후) ════════════════
   if (phase === 'record') {
-    const L = results.left?.angle;
-    const R = results.right?.angle;
     return (
       <div className="space-y-4">
         <div className="flex items-center justify-between">
@@ -270,9 +253,8 @@ export default function RomSensorGoniometer({ jointName, jointKey, side = 'both'
         {/* 측정 결과 요약 */}
         <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-center">
           <p className="text-[11px] font-bold uppercase tracking-widest text-emerald-300/80">측정완료 · 최대 가동각</p>
-          <div className="mt-1 flex items-center justify-center gap-6">
-            {L != null && <div><p className="text-[11px] text-slate-400">좌측</p><p className="text-3xl font-black tabular-nums text-emerald-200">{L}°</p></div>}
-            {R != null && <div><p className="text-[11px] text-slate-400">우측</p><p className="text-3xl font-black tabular-nums text-emerald-200">{R}°</p></div>}
+          <div className="mt-1 flex items-center justify-center">
+            <div><p className="text-[11px] text-slate-400">가동각</p><p className="text-4xl font-black tabular-nums text-emerald-200">{measuredAngle != null ? `${measuredAngle}°` : '—'}</p></div>
           </div>
         </div>
 
@@ -343,25 +325,12 @@ export default function RomSensorGoniometer({ jointName, jointKey, side = 'both'
         <span className="w-12" />
       </div>
 
-      {/* 측 진행 표시 */}
-      <div className="flex justify-center gap-2">
-        {sidesToMeasure.map((s, i) => (
-          <span key={s} className={`rounded-full px-3 py-1 text-[11px] font-black border ${
-            results[s] ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300'
-            : i === sideIdx ? 'bg-amber-500/20 border-amber-500/50 text-amber-300'
-            : 'border-slate-700 text-slate-500'
-          }`}>
-            {SIDE_KO[s]} {results[s] ? `✓ ${results[s].angle}°` : i === sideIdx ? '측정 중' : '대기'}
-          </span>
-        ))}
-      </div>
-
       {/* 실시간 각도 — 크게 표시 */}
       <div className={`rounded-2xl border p-5 text-center ${
         offPlaneWarn ? 'border-red-500/40 bg-red-500/10' : 'border-amber-500/30 bg-slate-900'
       }`}>
         <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">
-          {SIDE_KO[currentSide]} · 현재 각도 {zeroing ? '(0점 측정 중 — 그대로 유지)' : zero == null ? '(0점을 먼저 잡아주세요)' : ''}
+          현재 각도 {zeroing ? '(0점 측정 중 — 그대로 유지)' : zero == null ? '(0점을 먼저 잡아주세요)' : ''}
         </p>
         <p className="mt-1 font-black tabular-nums text-amber-300" style={{ fontSize: '4.5rem', lineHeight: 1.1 }}>
           {zeroing ? '···' : liveDeg == null ? '—' : `${liveDeg}°`}
@@ -385,13 +354,13 @@ export default function RomSensorGoniometer({ jointName, jointKey, side = 'both'
         </button>
         <button onClick={resetSide}
           className="rounded-xl border border-slate-700 bg-slate-800 px-4 py-3.5 text-sm font-black text-slate-300 active:scale-[0.99]">
-          이 측 다시 측정
+          다시 측정
         </button>
       </div>
       {zeroMsg && <p className="text-xs font-bold text-amber-300">{zeroMsg}</p>}
-      <button onClick={captureSide} disabled={zero == null || maxDeg <= 0}
+      <button onClick={finishMeasurement} disabled={zero == null || maxDeg <= 0}
         className="w-full rounded-xl bg-amber-500 px-4 py-4 text-base font-black text-slate-950 disabled:bg-slate-700 disabled:text-slate-400 active:scale-[0.99]">
-        {sideIdx + 1 < sidesToMeasure.length ? `${SIDE_KO[currentSide]} 완료 → ${SIDE_KO[sidesToMeasure[sideIdx + 1]]} 측정` : '측정완료'}
+        촬영완료
       </button>
 
       <p className="text-[11px] leading-relaxed text-slate-500">

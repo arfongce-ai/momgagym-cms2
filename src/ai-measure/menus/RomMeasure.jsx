@@ -378,32 +378,31 @@ export default function RomMeasure({ member, onSave, onBack }) {
   //  · Firestore: 기존 rom 리포트 스키마에 measureType/sensor_records/
   //    confidenceScore 를 추가해 통합 저장(허브 handleSave → addRomReport).
   const handleSensorComplete = (results, meta = {}) => {
-    const L = results?.left?.angle ?? null;
-    const R = results?.right?.angle ?? null;
+    // 좌/우 구분 없이 단일 측정. { single: { angle, recordedAt } }
+    const A = results?.single?.angle ?? null;
+    const recordedAtIso = results?.single?.recordedAt || new Date().toISOString();
     const movement = meta.movement || '';
     const summary = {
-      valid: L != null || R != null,
+      valid: A != null,
       joint,
       poseMode,
       movement, // 수기 기록한 세부 움직임
-      left_max_rom: L,
-      right_max_rom: R,
-      symmetry_index_score: symmetryIndex(L, R),
+      max_rom: A,             // 단일 가동각
+      left_max_rom: A,        // 리포트/차트 호환(단일값을 대표값으로)
+      right_max_rom: null,
+      symmetry_index_score: null, // 단일 측정이라 좌우 비대칭 없음
       compensation: {}, // 센서 측정은 골반/체간 보상 추정 불가(카메라 전용) — 비워둠(정직성)
     };
     const memberId = member?.id || '';
-    const sensorRecords = ['left', 'right']
-      .filter((s) => results?.[s])
-      .map((s) => ({
-        memberId,
-        measureType: 'sensor_goniometer',
-        jointName: joint.toLowerCase(),
-        movement,
-        side: s,
-        angle: results[s].angle,
-        recordedAt: results[s].recordedAt,
-        confidenceScore: 1.0, // 센서(하드웨어) 기울기 — 카메라 추정 대비 고신뢰 표시
-      }));
+    const sensorRecords = A == null ? [] : [{
+      memberId,
+      measureType: 'sensor_goniometer',
+      jointName: joint.toLowerCase(),
+      movement,
+      angle: A,
+      recordedAt: recordedAtIso,
+      confidenceScore: 1.0, // 센서(하드웨어) 기울기 — 카메라 추정 대비 고신뢰 표시
+    }];
     // 회차 비교 키: 같은 관절·자세·움직임끼리 묶는다(수기 움직임 라벨 반영).
     const movementSlug = movement ? `_${movement.replace(/\s+/g, '').slice(0, 24)}` : '';
     const pairKey = memberId
@@ -420,16 +419,14 @@ export default function RomMeasure({ member, onSave, onBack }) {
         joint,
         poseMode,
         movement,
-        left: L,
-        right: R,
-        symmetry: summary.symmetry_index_score,
+        angle: A,
         unit: 'deg',
         measureType: 'sensor_goniometer',
         confidenceScore: 1.0,
       },
     });
-    // [항목 3] 확인 즉시 데이터 자동 저장(회원 측정이력·ROM리포트·신체기록 요약).
-    // 저장 후 리포트 화면이 떠 '기록 확인'이 가능하다(항목 4).
+    // 확인 즉시 데이터 자동 저장(회원 측정이력·ROM리포트·신체기록 요약).
+    // 저장 후 리포트 화면이 떠 '기록 확인'이 가능하다.
     persistReport(r);
   };
 
@@ -522,7 +519,6 @@ export default function RomMeasure({ member, onSave, onBack }) {
       <RomSensorGoniometer
         jointName={jointName}
         jointKey={joint}
-        side={side}
         onBack={() => setMode('select')}
         onComplete={handleSensorComplete}
       />

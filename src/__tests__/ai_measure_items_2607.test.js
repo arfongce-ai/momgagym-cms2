@@ -251,8 +251,9 @@ describe('[항목 4-센서] RomMeasure 배선 + Firestore 스키마', () => {
     expect(rom).toMatch(/sensor_records/);
   });
 
-  it('좌우 비대칭은 카메라 측정과 동일한 symmetryIndex 로 자동 산출한다', () => {
-    expect(rom).toMatch(/symmetry_index_score: symmetryIndex\(L, R\)/);
+  it('단일 측정이므로 좌우 비대칭은 산출하지 않는다(측정 정직성)', () => {
+    expect(rom).toMatch(/symmetry_index_score: null/);
+    expect(rom).toMatch(/max_rom: A/);
   });
 
   it('센서 UI: 0점 조절 · 실시간 큰 각도 표시 · 진동 알림 · 측정면 이탈 경고', () => {
@@ -325,7 +326,7 @@ describe('[기록 보관] 센서 ROM 측정 저장 정책', () => {
     expect(sensor).toMatch(/MOVEMENT_PRESETS/);
     expect(sensor).toMatch(/움직임 선택/);
     expect(sensor).toMatch(/jointName/);
-    expect(sensor).toMatch(/onComplete\?\.\(results, \{ movement/);
+    expect(sensor).toMatch(/onComplete\?\.\(\{ single: rec \}, \{ movement/);
   });
 
   it('회차 비교 pairKey 에 관절·자세·움직임이 반영된다(같은 동작끼리 비교)', () => {
@@ -559,9 +560,10 @@ describe('[고니오메타 흐름] 측정완료·자동저장', () => {
   const sensor = read('../ai-measure/menus/RomSensorGoniometer.jsx');
   const rom = read('../ai-measure/menus/RomMeasure.jsx');
 
-  it('[2] 완료 버튼이 "측정완료"로 바뀌었다(마지막 측)', () => {
-    expect(sensor).toMatch(/'측정완료'/);
-    expect(sensor).not.toMatch(/측정 완료 \{sideIdx \+ 1 < sidesToMeasure\.length \? '→ 다음 측'/);
+  it('[2] 완료 버튼이 좌/우 없이 "촬영완료"로 끝난다', () => {
+    expect(sensor).toMatch(/촬영완료/);
+    expect(sensor).not.toMatch(/SIDE_KO/);
+    expect(sensor).not.toMatch(/sidesToMeasure/);
   });
 
   it('[3] 측정완료 후 움직임 기록 단계로 가고, 확인 버튼이 저장을 트리거한다', () => {
@@ -607,5 +609,47 @@ describe('[회전 블랙아웃 수정] 안내 오버레이', () => {
 
   it('네이티브 잠금은 유지(가능 환경)', () => {
     expect(hook).toMatch(/orientation\.lock\('portrait'\)/);
+  });
+});
+
+// ── [통일 흐름] 모든 측정: 측정 → 측정완료 → 기록 → 확인·저장 → 기록 확인 ──
+describe('[통일 흐름] 공용 기록·확인 단계', () => {
+  const confirm = read('../ai-measure/components/MeasureRecordConfirm.jsx');
+  const jump = read('../ai-measure/menus/JumpAnalysisHub.jsx');
+  const gait = read('../ai-measure/menus/GaitAnalysisHub.jsx');
+  const barbell = read('../ai-measure/menus/BarbellLiftingHub.jsx');
+  const rom = read('../ai-measure/menus/RomSensorGoniometer.jsx');
+  const body = read('../ai-measure/menus/BodyInfoMeasure.jsx');
+
+  it('공용 MeasureRecordConfirm 컴포넌트가 확인·저장 단계를 제공한다', () => {
+    expect(confirm).toMatch(/export default function MeasureRecordConfirm/);
+    expect(confirm).toMatch(/movementMode/);
+    expect(confirm).toMatch(/noteMode/);
+    expect(confirm).toMatch(/onConfirm/);
+    expect(confirm).toMatch(/확인 · 저장|기록 확인/);
+  });
+
+  it('점프·보행·바벨 허브가 record 단계를 거쳐 저장한다(즉시 저장 아님)', () => {
+    [jump, gait, barbell].forEach((src) => {
+      expect(src).toMatch(/MeasureRecordConfirm/);
+      expect(src).toMatch(/view === 'record'|setView\('record'\)/);
+    });
+  });
+
+  it('점프·보행·바벨: 확인 시 실제 저장(persist)이 실행된다', () => {
+    expect(jump).toMatch(/const persist = useCallback/);
+    expect(gait).toMatch(/const persist = useCallback/);
+    expect(barbell).toMatch(/const persist = useCallback/);
+  });
+
+  it('ROM 고니오메타는 이미 측정완료 후 움직임 기록·확인 단계를 갖는다', () => {
+    expect(rom).toMatch(/phase === 'record'/);
+    expect(rom).toMatch(/confirmAndSave/);
+  });
+
+  it('신체정보는 분석(측정완료) 후 확인·저장하며 alert 대신 인라인 상태를 쓴다', () => {
+    expect(body).toMatch(/확인 · 저장/);
+    expect(body).not.toMatch(/alert\('신체정보가 저장/);
+    expect(body).toMatch(/saveState/);
   });
 });

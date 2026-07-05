@@ -43,8 +43,10 @@ describe('바벨 리프팅 통합 탭 · registry', () => {
   });
 
   it('녹화 영상 Blob은 Firebase 저장 payload가 아니라 리포트 보조 데이터로만 전달된다', () => {
-    expect(hubSource).toContain('save?.(payload)');
-    expect(hubSource).toContain('setReport({ ...saved, ...reportExtras })');
+    // 확인·저장 단계 도입 후: 실제 저장은 persist 에서 nextPayload(=payload+note)로 수행,
+    // videoBlob 은 reportExtras 로만 리포트에 전달(저장 payload 에 미포함)
+    expect(hubSource).toContain('save?.(nextPayload)');
+    expect(hubSource).toContain('setReport({ ...saved, ...pending.reportExtras })');
     expect(hubSource).toContain('return saveAndReport(payload, { videoBlob: raw?.videoBlob ?? null });');
     expect(reportSource).toContain('videoBlob={report.videoBlob || null}');
   });

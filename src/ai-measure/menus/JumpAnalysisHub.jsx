@@ -13,6 +13,7 @@ import JumpUploadAnalysis from './JumpUploadAnalysis';
 import JumpReportDashboard from './JumpReportDashboard';
 import { calcJump } from '../core/performance';
 import { useHardwareBack } from '../core/useHardwareBack';
+import MeasureRecordConfirm from '../components/MeasureRecordConfirm.jsx';
 
 export default function JumpAnalysisHub({ member, onBack, onSave, onSaveToFirebase, onMemberHeightChange }) {
   const save = onSaveToFirebase || onSave;
@@ -20,30 +21,72 @@ export default function JumpAnalysisHub({ member, onBack, onSave, onSaveToFireba
   const [mode, setMode] = useState('live');
   // 점프 유형: 'power'(A 단일 파워점프) | 'reactive'(B 반응 탄성점프 · RSI)
   const [jumpType, setJumpType] = useState('power');
-  const [view, setView] = useState('measure'); // measure | report
+  const [view, setView] = useState('measure'); // measure | record | report
   const [report, setReport] = useState(null);
+  const [pending, setPending] = useState(null);   // 측정완료~확인 사이의 리포트 데이터
+  const [saveState, setSaveState] = useState('idle'); // idle | saving | saved | error
   const [showGuide, setShowGuide] = useState(false);
 
-  // 측정 완료(업로드/수동) → 저장(유효 측정만) + 리포트
-  const handleComplete = useCallback(async (reportData) => {
-    let saved = reportData;
-    if (reportData.valid === true && typeof save === 'function') {
+  // 실제 저장(확인 시). 유효 측정만 서버 저장하고, 결과는 항상 리포트로 확인.
+  const persist = useCallback(async (reportData, record = {}) => {
+    const withRecord = { ...reportData, note: record.note || reportData.note || '' };
+    let saved = withRecord;
+    setSaveState('saving');
+    if (withRecord.valid === true && typeof save === 'function') {
       try {
-        const res = await save(reportData);
-        if (res && typeof res === 'object') saved = { ...reportData, ...res };
-      } catch (e) { /* 저장 실패해도 리포트는 표시 */ }
-    }
+        const res = await save(withRecord);
+        if (res && typeof res === 'object') saved = { ...withRecord, ...res };
+        setSaveState('saved');
+      } catch (e) { setSaveState('error'); }
+    } else { setSaveState('saved'); }
     setReport(saved);
     setView('report');
   }, [save]);
 
-  const backToMeasure = () => { setView('measure'); setReport(null); };
-  // [항목 2] 폰 뒤로가기: 리포트 화면이면 측정 화면으로 한 단계만 복귀.
-  useHardwareBack(view === 'report' && !!report, backToMeasure);
-  const openLiveReport = useCallback((reportData) => {
-    if (reportData) setReport(reportData);
-    setView('report');
+  // 측정 완료(업로드/수동) → 기록·확인 단계로 (즉시 저장하지 않음)
+  const handleComplete = useCallback((reportData) => {
+    setPending(reportData);
+    setSaveState('idle');
+    setView('record');
   }, []);
+
+  const confirmRecord = useCallback((record) => {
+    if (pending) persist(pending, record);
+  }, [pending, persist]);
+
+  const backToMeasure = () => { setView('measure'); setReport(null); setPending(null); setSaveState('idle'); };
+  // [항목 2] 폰 뒤로가기: 리포트/기록 화면이면 측정 화면으로 한 단계만 복귀.
+  useHardwareBack((view === 'report' && !!report) || view === 'record', backToMeasure);
+  const openLiveReport = useCallback((reportData) => {
+    // 라이브도 통일 흐름: 측정완료 → 기록·확인 → 저장 → 리포트
+    setPending(reportData);
+    setSaveState('idle');
+    setView('record');
+  }, []);
+
+  if (view === 'record' && pending) {
+    const j = pending.metrics || pending;
+    const rows = [];
+    if (j.jumpHeight != null) rows.push({ label: '점프 높이', value: `${j.jumpHeight}cm` });
+    if (j.rsi != null) rows.push({ label: 'RSI', value: j.rsi });
+    if (j.flightTime != null) rows.push({ label: '체공시간', value: `${j.flightTime}ms` });
+    return (
+      <div className="fixed inset-0 z-[80] bg-slate-950 overflow-y-auto" style={{ height: '100dvh' }}>
+        <div className="max-w-md mx-auto p-4">
+          <MeasureRecordConfirm
+            title="수직 점프"
+            summaryRows={rows}
+            noteMode
+            onConfirm={confirmRecord}
+            onBack={backToMeasure}
+            saving={saveState === 'saving'}
+            saved={saveState === 'saved'}
+            error={saveState === 'error'}
+          />
+        </div>
+      </div>
+    );
+  }
 
   if (view === 'report' && report) {
     return (
