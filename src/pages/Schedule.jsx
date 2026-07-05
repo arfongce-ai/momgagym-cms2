@@ -9,6 +9,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { store } from '../demoData';
 import { toYMD } from '../utils/dates';
 import { sortByName } from '../utils/memberList';
+import { findDuplicateSchedules, summarizeDuplicates } from '../services/scheduleAudit';
 
 // ── 시간 유틸 ─────────────────────────────────────────────
 // 10분 단위 반올림 스냅
@@ -916,6 +917,7 @@ export default function Schedule() {
   const [showAdd,   setShowAdd]   = useState(false);
   const [detail,    setDetail]    = useState(null);
   const [query,     setQuery]     = useState('');
+  const [showAudit, setShowAudit] = useState(false); // 중복 점검 모달
 
   const load = () => {
     const mb = store.getMembers();
@@ -967,6 +969,10 @@ export default function Schedule() {
   const forDate = d => visibleSchedules.filter(s=>s.date===d && matchQ(s)).sort((a,b)=>a.startTime.localeCompare(b.startTime));
   const filteredSchedules = visibleSchedules.filter(matchQ);
 
+  // 중복 점검: 트레이너 계정이면 본인 담당분만, 관리자면 전체 대상.
+  const duplicateGroups = findDuplicateSchedules(visibleSchedules);
+  const auditSummary = summarizeDuplicates(duplicateGroups);
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-2">
@@ -980,6 +986,16 @@ export default function Schedule() {
               </button>
             ))}
           </div>
+          <button onClick={()=>setShowAudit(true)}
+            className={`relative btn btn-sm ${auditSummary.hasIssues ? 'bg-red-500/20 text-red-300 border border-red-500/40' : 'bg-slate-800 text-slate-400 border border-slate-700'}`}
+            title="중복 예약 점검">
+            점검
+            {auditSummary.hasIssues && (
+              <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-black flex items-center justify-center">
+                {auditSummary.groupCount}
+              </span>
+            )}
+          </button>
           <button onClick={()=>setShowAdd(true)}
             className="btn btn-primary btn-sm">
             + 예약
@@ -1105,6 +1121,99 @@ export default function Schedule() {
           onDelete={()=>{load(); setDetail(null);}}
         />
       )}
+
+      {showAudit && (
+        <ScheduleAuditModal
+          groups={duplicateGroups}
+          summary={auditSummary}
+          onOpenItem={(s)=>{ setShowAudit(false); setDetail(s); }}
+          onClose={()=>setShowAudit(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+// ── 중복 예약 점검 모달 ──────────────────────────────────
+//  탐지 결과만 보여주고, 실제 삭제·수정은 항목을 눌러 상세 모달에서 처리한다
+//  (되돌릴 수 없는 처리는 운영자 확인을 거치도록 — 데이터 정직성).
+function ScheduleAuditModal({ groups, summary, onOpenItem, onClose }) {
+  const STATUS_KO = { scheduled:'예정', attended:'출석', canceled:'취소', noshow:'노쇼' };
+  return (
+    <div className="modal-overlay">
+      <div className="modal-box modal-box-large">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800 flex-shrink-0">
+          <h2 className="font-black text-white">예약 점검 · 중복 감지</h2>
+          <button onClick={onClose} className="text-slate-400 hover:text-white text-xl leading-none">×</button>
+        </div>
+
+        <div className="modal-body p-4 space-y-3">
+          {!summary.hasIssues ? (
+            <div className="text-center py-12">
+              <p className="text-4xl mb-2">✓</p>
+              <p className="text-emerald-400 font-bold">중복으로 의심되는 예약이 없습니다.</p>
+              <p className="text-slate-500 text-xs mt-1">같은 회차 중복·같은 시간 이중 예약을 자동 점검합니다.</p>
+            </div>
+          ) : (
+            <>
+              <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-2.5">
+                <p className="text-sm font-bold text-amber-200">
+                  의심 그룹 {summary.groupCount}건 · 관련 예약 {summary.itemCount}건
+                </p>
+                <p className="text-[11px] text-amber-300/70 mt-0.5">
+                  항목을 눌러 상세에서 확인 후, 잘못된 예약을 삭제하거나 회차를 직접 수정하세요.
+                </p>
+              </div>
+
+              {groups.map((g, gi) => (
+                <div key={gi} className="rounded-xl border border-slate-800 bg-slate-900 overflow-hidden">
+                  <div className={`px-3 py-2 ${g.type==='same_lot' ? 'bg-red-500/10' : 'bg-slate-800/60'}`}>
+                    <div className="flex items-center gap-2">
+                      <span className={`rounded px-1.5 py-0.5 text-[10px] font-black ${g.type==='same_lot' ? 'bg-red-500/30 text-red-200' : 'bg-slate-600/50 text-slate-300'}`}>
+                        {g.type==='same_lot' ? '회차 중복' : '같은 시간'}
+                      </span>
+                      <p className="text-sm font-bold text-slate-200">{g.label}</p>
+                    </div>
+                    <p className="text-[11px] text-slate-400 mt-1">{g.reason}</p>
+                  </div>
+                  <div className="divide-y divide-slate-800">
+                    {g.items.map((s) => (
+                      <button key={s.id} onClick={()=>onOpenItem(s)}
+                        className="w-full flex items-center justify-between px-3 py-2.5 text-left hover:bg-slate-800/50 transition-colors">
+                        <div>
+                          <p className="text-sm font-semibold text-slate-200">
+                            {s.date} {s.startTime} · {s.classType || '수업'}
+                          </p>
+                          <p className="text-[11px] text-slate-500">
+                            {s.trainerName || ''}
+                            {s.sessionAtBooking != null && ` · 회차 ${s.sessionAtBooking}`}
+                            {s.sessionDeducted ? ' · 차감됨' : ' · 미차감'}
+                          </p>
+                        </div>
+                        <span className="text-[11px] font-bold text-slate-400 flex-shrink-0">
+                          {STATUS_KO[s.status] || s.status} ›
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+
+              <div className="rounded-xl border border-slate-800 bg-slate-950/60 px-3 py-2.5">
+                <p className="text-[11px] leading-relaxed text-slate-400">
+                  <b className="text-slate-300">정리 팁</b> — 같은 회차가 두 번 차감된 유령 항목이면,
+                  실제 수업이 아닌 쪽을 상세에서 삭제하세요. 삭제 후 회원 세션 잔여가 잘못 올라갔는지
+                  확인하고, 맞지 않으면 세션 탭에서 «−1 차감»으로 보정하면 됩니다.
+                </p>
+              </div>
+            </>
+          )}
+        </div>
+
+        <div className="flex-shrink-0 p-3 border-t border-slate-800">
+          <button onClick={onClose} className="w-full font-bold py-2.5 rounded-xl text-sm bg-slate-700 hover:bg-slate-600 text-white transition-colors">닫기</button>
+        </div>
+      </div>
     </div>
   );
 }
