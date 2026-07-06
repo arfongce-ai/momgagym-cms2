@@ -15,6 +15,7 @@ import {
   UnifiedEmptyState, UnifiedReportHeader, UnifiedReportPage, UnifiedReportSection,
 } from '../../components/report/UnifiedReportPrimitives';
 import { buildLiftingInterpretation, exerciseLabel, VBT_ZONE_PURPOSE, vbtZonePurpose } from '../core/lifting';
+import { generateLiftingDiagnosis, GRADE_LABEL } from '../core/barbellClinical';
 
 function fmt(v, unit = '') {
   return v == null || Number.isNaN(Number(v)) ? '—' : `${v}${unit}`;
@@ -24,6 +25,7 @@ const MODE_TITLE = { lifting: '역도 궤적 분석', vbt: 'VBT 속도 분석', 
 
 export default function LiftingReportDashboard({ report, onClose }) {
   const interp = useMemo(() => buildLiftingInterpretation(report || {}), [report]);
+  const diag = useMemo(() => generateLiftingDiagnosis(report || {}, {}), [report]);
 
   if (!report) return <UnifiedEmptyState onClose={onClose} />;
 
@@ -52,7 +54,11 @@ export default function LiftingReportDashboard({ report, onClose }) {
     if (estimateRange?.low != null) tiles.push({ label: '참고 범위', value: `${estimateRange.low}~${estimateRange.high}kg` });
   } else {
     tiles.push({ label: '평균속도', value: fmt(m.meanVelocity, ' m/s'), accent: true });
-    tiles.push({ label: '최고속도', value: m.peakVelocity != null ? fmt(m.peakVelocity, ' m/s') : '고속영상 필요' });
+    tiles.push({ label: m.peakReason === 'sg_ok' ? '최고속도(평활)' : '최고속도', value: m.peakVelocity != null ? fmt(m.peakVelocity, ' m/s') : '샘플/고속영상 필요' });
+    if (report.barPath?.maxDriftCm != null || meta.barPath?.maxDriftCm != null) {
+      const bp = report.barPath || meta.barPath;
+      tiles.push({ label: '바 수평 이탈', value: fmt(bp.maxDriftCm, ' cm') });
+    }
     tiles.push({ label: '가동범위', value: fmt(m.rangeOfMotion, ' cm') });
     if (meta.reps != null) tiles.push({ label: '반복', value: fmt(meta.reps, '회') });
     if (m.velocityLoss != null) tiles.push({ label: '속도저하', value: fmt(m.velocityLoss, '%') });
@@ -98,6 +104,18 @@ export default function LiftingReportDashboard({ report, onClose }) {
               ))}
             </div>
           </UnifiedReportSection>
+
+          {/* AI 자동 평가 */}
+          {diag && diag.grade !== 'insufficient' && (
+            <UnifiedReportSection title="AI 자동 평가" subtitle={GRADE_LABEL[diag.grade]}>
+              <div className="rounded-xl bg-slate-800/50 p-3 space-y-1.5">
+                <p className="text-[12px] font-black text-slate-100">{diag.headline}</p>
+                {diag.details.map((d, i) => (
+                  <p key={i} className="text-[11px] text-slate-300 leading-snug">· {d}</p>
+                ))}
+              </div>
+            </UnifiedReportSection>
+          )}
 
           {/* 목적별 해석 */}
           {interp.lines.length > 0 && (

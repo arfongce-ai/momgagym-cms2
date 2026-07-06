@@ -341,12 +341,28 @@ export function buildLiftingInterpretation(report = {}) {
     lines.push({ label: '구간', text: zone ? `${zone.label} 구간 — ${zone.purpose}` : `평균속도 ${mv}m/s.` });
   }
   if (Number.isFinite(pv) && pv > 0) {
-    lines.push({ label: '최고속도', text: `순간 최고 ${pv}m/s (고속영상 실측).` });
+    lines.push({
+      label: '최고속도',
+      text: m.peakReason === 'sg_ok'
+        ? `평활 최고 ${pv}m/s (실시간 추정 — 고속영상 실측보다 보수적).`
+        : `순간 최고 ${pv}m/s (고속영상 실측).`,
+    });
   } else if (m.peakReason === 'live_fps_too_low') {
-    cautions.push('실시간(30fps)에서는 최고속도를 산출하지 않습니다. 고속영상으로 측정하면 표시됩니다.');
+    cautions.push('실시간(30fps)에서는 순간 최고속도를 실측하지 않습니다. 고속영상으로 측정하면 표시됩니다.');
+  } else if (m.peakReason === 'insufficient_samples') {
+    cautions.push('상승 구간 샘플이 부족해 최고속도 추정을 보류했습니다(정직성 게이트).');
   }
   if (Number.isFinite(rom) && rom > 0) {
     lines.push({ label: '가동범위', text: `바벨 수직 이동 ${rom}cm.` });
+  }
+  const barPath = report.barPath || meta.barPath || null;
+  const drift = Number(barPath?.maxDriftCm);
+  if (Number.isFinite(drift)) {
+    const eff = Number(barPath?.avgEfficiency);
+    lines.push({
+      label: '바 궤적',
+      text: `수평 이탈 최대 ${drift}cm${Number.isFinite(eff) ? ` · 경로 효율 ${Math.round(eff * 100)}%` : ''} — ${drift <= 4 ? '수직에 가까운 효율적 궤적' : drift <= 8 ? '양호(더 수직 유지 권장)' : '궤적 교정 필요'}.`,
+    });
   }
   const velocityLoss = Number(m.velocityLoss);
   if (Number.isFinite(velocityLoss)) {
