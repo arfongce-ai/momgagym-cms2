@@ -96,3 +96,4 @@ describe('일반 영상 녹화 — 용량(화질 프리셋)', () => {
     expect(src).toContain('localStorage.setItem(QUALITY_STORAGE_KEY');
   });
 });
+
