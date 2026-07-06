@@ -1,3 +1,1 @@
-/blog /login?official=1 302
-/blog/* /login?official=1 302
 /* /index.html 200
