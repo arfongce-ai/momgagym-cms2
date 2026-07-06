@@ -23,22 +23,14 @@ import {
   resolveDistanceScale, serializeDistanceScale,
 } from '../core/calibration';
 import { BarbellAccumulator } from '../core/barbellBiomechanics';
-import { generateLiftingDiagnosis, GRADE_LABEL } from '../core/barbellClinical';
 import PlateWeightInput from './PlateWeightInput';
 import FramingIntro from './FramingIntro';
 import HeightField from './HeightField';
 import CameraStage from './CameraStage';
 import VelocityGaugeHud from './VelocityGaugeHud';
+import LiftingResultSheet from './LiftingResultSheet';
 
 const MAX_RECORDING_MS = 60000;
-
-const ZONE_COLOR = {
-  blue:   'text-blue-400',
-  green:  'text-emerald-400',
-  yellow: 'text-amber-400',
-  orange: 'text-orange-400',
-  red:    'text-red-400',
-};
 
 export default function VbtMeasure({ member, onSave, onBack, exerciseType, embedded = false, autoStartSignal = 0, topOffset = 0 }) {
   const canvasRef = useRef(null);
@@ -650,12 +642,15 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
       <div className="flex items-center gap-2">
         <button onClick={toggleRecord}
           disabled={countdown != null}
-          className={`px-5 h-12 rounded-full text-sm font-black active:scale-95 shadow-lg disabled:opacity-60 ${recording ? 'bg-red-500 text-white' : seeded ? 'bg-amber-500 text-slate-950' : 'bg-slate-600 text-slate-200'}`}>
+          className={`px-6 h-14 rounded-2xl text-base font-black active:scale-95 shadow-xl disabled:opacity-60 transition-transform ${
+            recording ? 'bg-gradient-to-r from-rose-500 to-red-500 text-white shadow-red-500/30'
+            : seeded ? 'bg-gradient-to-r from-amber-400 to-orange-500 text-slate-950 shadow-amber-500/30'
+            : 'bg-white/10 border border-white/15 text-slate-300'}`}>
           {recording ? '■ 측정 종료' : countdown != null ? '시작 대기' : '● 측정 시작'}
         </button>
         <button onClick={scanPlateColors}
-          className="px-3.5 h-12 rounded-full text-xs font-black bg-slate-700 text-white active:scale-95 shadow-lg">
-          🎨 색 인식
+          className="h-14 px-3 rounded-2xl text-[11px] font-black bg-white/[0.08] border border-white/15 text-white active:scale-95 backdrop-blur">
+          🎨<span className="block text-[9px] mt-0.5">색 인식</span>
         </button>
         <button
           onClick={() => {
@@ -664,8 +659,8 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
             setCalibrating(v => !v);
           }}
           disabled={recording || countdown != null}
-          className={`px-3.5 h-12 rounded-full text-xs font-black active:scale-95 shadow-lg disabled:opacity-50 ${calibrating ? 'bg-cyan-400 text-slate-950' : 'bg-slate-700 text-white'}`}>
-          {calibrating ? '보정점 찍기' : '거리 보정'}
+          className={`h-14 px-3 rounded-2xl text-[11px] font-black active:scale-95 disabled:opacity-50 backdrop-blur ${calibrating ? 'bg-cyan-400 text-slate-950' : 'bg-white/[0.08] border border-white/15 text-white'}`}>
+          📐<span className="block text-[9px] mt-0.5">{calibrating ? '보정점' : '거리 보정'}</span>
         </button>
       </div>
     );
@@ -678,6 +673,22 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
         seedHint={ptCount === 0 && !recording} hintSignal={seedHintSignal} countdown={countdown}
         topOffset={topOffset}
       >
+        {recording && liveHud?.repList?.length > 0 && (
+          <div className="mx-auto max-w-sm w-full overflow-x-auto pointer-events-none">
+            <div className="flex gap-1.5 justify-end min-w-max px-1">
+              {liveHud.repList.map((r, i) => {
+                const latest = i === liveHud.repList.length - 1;
+                return (
+                  <span key={r.repNo}
+                    className={`rounded-xl px-2 py-1 font-mono text-[11px] font-black backdrop-blur ${
+                      latest ? 'bg-cyan-400/90 text-slate-950 shadow-lg shadow-cyan-400/30' : 'bg-black/50 text-slate-200 border border-white/10'}`}>
+                    {r.repNo}<span className="opacity-60 text-[9px]">회</span> {r.meanVelocity ?? '–'}
+                  </span>
+                );
+              })}
+            </div>
+          </div>
+        )}
         {recording && (
           <VelocityGaugeHud
             avg={liveHud?.lastRepVelocity ?? null}
@@ -724,110 +735,12 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
           </div>
         )}
         {result && (
-          <div className="mx-auto max-w-md w-full card-accent p-3 space-y-2 animate-fade-in">
-            <div className="flex items-baseline justify-between">
-              <p className="text-[11px] font-bold text-amber-400 uppercase tracking-widest">평균 속도</p>
-              {result.zone && <p className={`text-xs font-bold ${ZONE_COLOR[result.zone.color]}`}>{result.zone.label}</p>}
-            </div>
-            <p className="text-center font-mono font-black text-4xl text-slate-100">{result.meanVelocity}<span className="text-base text-slate-500"> m/s</span></p>
-            <div className="grid grid-cols-2 gap-2 text-center">
-              <div className="bg-slate-800 rounded-xl py-2">
-                <p className="text-[10px] text-slate-500">이동 거리</p>
-                <p className="font-mono font-bold text-slate-100 text-sm">{result.romCm}cm</p>
-              </div>
-              <div className="bg-slate-800 rounded-xl py-2">
-                <p className="text-[10px] text-slate-500">추진 시간</p>
-                <p className="font-mono font-bold text-slate-100 text-sm">{result.timeSec}s</p>
-              </div>
-            </div>
-            {result.repVelocity?.summary?.repCount > 0 && (
-              <div className="grid grid-cols-3 gap-2 text-center">
-                <div className="bg-emerald-500/10 border border-emerald-500/25 rounded-xl py-2">
-                  <p className="text-[10px] text-emerald-300">반복</p>
-                  <p className="font-mono font-bold text-emerald-100 text-sm">{result.repVelocity.summary.repCount}</p>
-                </div>
-                <div className="bg-emerald-500/10 border border-emerald-500/25 rounded-xl py-2">
-                  <p className="text-[10px] text-emerald-300">최고 평균속도</p>
-                  <p className="font-mono font-bold text-emerald-100 text-sm">{result.repVelocity.summary.bestMeanVelocity ?? '-'}m/s</p>
-                </div>
-                <div className="bg-emerald-500/10 border border-emerald-500/25 rounded-xl py-2">
-                  <p className="text-[10px] text-emerald-300">속도저하</p>
-                  <p className="font-mono font-bold text-emerald-100 text-sm">{result.velocityLoss != null ? `${result.velocityLoss}%` : '-'}</p>
-                </div>
-              </div>
-            )}
-            {(result.peakVelocity != null || result.barPath?.maxDriftCm != null) && (
-              <div className="grid grid-cols-2 gap-2 text-center">
-                <div className="bg-cyan-500/10 border border-cyan-500/25 rounded-xl py-2">
-                  <p className="text-[10px] text-cyan-300">평활 최고속도(실시간)</p>
-                  <p className="font-mono font-bold text-cyan-100 text-sm">{result.peakVelocity != null ? `${result.peakVelocity}m/s` : '샘플 부족'}</p>
-                </div>
-                <div className="bg-amber-500/10 border border-amber-500/25 rounded-xl py-2">
-                  <p className="text-[10px] text-amber-300">바 수평 이탈</p>
-                  <p className="font-mono font-bold text-amber-100 text-sm">
-                    {result.barPath?.maxDriftCm != null ? `${result.barPath.maxDriftCm}cm` : '-'}
-                    {result.barPath?.avgEfficiency != null && <span className="text-[9px] text-amber-300/70"> · 효율 {Math.round(result.barPath.avgEfficiency * 100)}%</span>}
-                  </p>
-                </div>
-              </div>
-            )}
-            {result.repVelocity?.reps?.length > 1 && (
-              <div className="bg-slate-800/70 rounded-xl p-2">
-                <p className="text-[10px] text-slate-400 mb-1">렙별 평균속도(m/s)</p>
-                <div className="flex flex-wrap gap-1.5">
-                  {result.repVelocity.reps.map(r => (
-                    <span key={r.repNo} className="rounded-lg bg-slate-700/80 px-2 py-1 font-mono text-[11px] text-slate-100">
-                      {r.repNo}회 {r.meanVelocity != null ? r.meanVelocity : '-'}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-            {(() => {
-              const diag = generateLiftingDiagnosis(result, { mode: 'vbt', exerciseType });
-              return (
-                <div className="bg-slate-900/80 border border-slate-700 rounded-xl p-2.5 space-y-1">
-                  <p className="text-[10px] font-bold text-amber-400">AI 평가 · {GRADE_LABEL[diag.grade]}</p>
-                  <p className="text-[11px] font-bold text-slate-100">{diag.headline}</p>
-                  {diag.details.slice(0, 3).map((d, i) => (
-                    <p key={i} className="text-[10px] text-slate-400 leading-relaxed">· {d}</p>
-                  ))}
-                </div>
-              );
-            })()}
-            {(result.cogGap?.available || result.crossValidation?.totalFrames) && (
-              <div className="grid grid-cols-2 gap-2 text-center">
-                {result.cogGap?.available && (
-                  <div className="bg-fuchsia-500/10 border border-fuchsia-500/30 rounded-xl py-2">
-                    <p className="text-[10px] text-fuchsia-300">바-무게중심 이격</p>
-                    <p className="font-mono font-bold text-fuchsia-100 text-sm">
-                      {result.cogGap.medianCm != null ? `${result.cogGap.medianCm}cm` : `${result.cogGap.medianRatio}`}
-                      {result.cogGap.maxCm != null && <span className="text-[9px] text-fuchsia-300/70"> · 최대 {result.cogGap.maxCm}cm</span>}
-                    </p>
-                  </div>
-                )}
-                {result.crossValidation?.totalFrames > 0 && (
-                  <div className="bg-cyan-500/10 border border-cyan-500/30 rounded-xl py-2">
-                    <p className="text-[10px] text-cyan-300">교차검증(신호 일치)</p>
-                    <p className="font-mono font-bold text-cyan-100 text-sm">
-                      {result.crossValidation.avgAgreement != null ? `${Math.round(result.crossValidation.avgAgreement * 100)}%` : '-'}
-                      {result.crossValidation.assistRatio > 0 && (
-                        <span className="text-[9px] text-cyan-300/70"> · 보완 {Math.round(result.crossValidation.assistRatio * 100)}%</span>
-                      )}
-                    </p>
-                  </div>
-                )}
-              </div>
-            )}
-            {onSave && <button onClick={save} className="btn btn-primary w-full">이 측정 저장</button>}
-            {videoBlob && (
-              <button onClick={handleSaveVideo} disabled={savingVideo}
-                className="w-full rounded-xl bg-slate-700 text-white font-bold py-2.5 text-sm active:scale-95 disabled:opacity-60">
-                {savingVideo ? '저장 중…' : '🎥 녹화 영상 폰에 저장'}
-              </button>
-            )}
-            {videoSavedMsg && <p className="text-center text-[11px] text-emerald-400">{videoSavedMsg}</p>}
-          </div>
+          <LiftingResultSheet
+            mode="vbt" exerciseType={exerciseType} result={result} zone={result.zone}
+            onSave={onSave ? save : null}
+            videoBlob={videoBlob} onSaveVideo={handleSaveVideo}
+            savingVideo={savingVideo} videoSavedMsg={videoSavedMsg}
+          />
         )}
       </CameraStage>
     );

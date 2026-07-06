@@ -511,6 +511,22 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
         seedHint={seedPts === 0 && !counting} hintSignal={seedHintSignal} countdown={countdown}
         topOffset={topOffset}
       >
+        {counting && liveHud?.repList?.length > 0 && (
+          <div className="mx-auto max-w-sm w-full overflow-x-auto pointer-events-none">
+            <div className="flex gap-1.5 justify-end min-w-max px-1">
+              {liveHud.repList.map((r, i) => {
+                const latest = i === liveHud.repList.length - 1;
+                return (
+                  <span key={r.repNo}
+                    className={`rounded-xl px-2 py-1 font-mono text-[11px] font-black backdrop-blur ${
+                      latest ? 'bg-cyan-400/90 text-slate-950 shadow-lg shadow-cyan-400/30' : 'bg-black/50 text-slate-200 border border-white/10'}`}>
+                    {r.repNo}<span className="opacity-60 text-[9px]">회</span> {r.meanVelocity ?? '–'}
+                  </span>
+                );
+              })}
+            </div>
+          </div>
+        )}
         {counting && (
           <VelocityGaugeHud
             avg={liveHud?.lastRepVelocity ?? null}
@@ -719,7 +735,10 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
       )}
       {videoSavedMsg && <p className="text-center text-[11px] text-emerald-400">{videoSavedMsg}</p>}
 
-      <button onClick={calc} className="btn btn-primary w-full">1RM 계산</button>
+      <button onClick={calc}
+        className="w-full h-14 rounded-2xl bg-gradient-to-r from-amber-400 to-orange-500 text-slate-950 font-black text-base active:scale-[0.98] shadow-xl shadow-amber-500/25">
+        1RM 계산 →
+      </button>
 
       {/* 도전 차수 누적 기록 */}
       {attempts.length > 0 && (
@@ -744,14 +763,20 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
       )}
 
       {result && (
-        <div className="card-accent p-4 space-y-3 animate-fade-in">
-          <p className="text-xs font-bold text-amber-400 uppercase tracking-widest">
-            추정 1RM · {result.usedWeight}kg × {result.usedReps ?? reps}회
-            {attempts.length > 0 && <span className="text-slate-500"> · 저장 시 {attempts.length + 1}차</span>}
-          </p>
-          <p className="text-center font-mono font-black text-5xl text-slate-100">
-            {result.average}<span className="text-lg text-slate-500"> kg</span>
-          </p>
+        <div className="rounded-3xl bg-slate-950/80 border border-amber-400/30 p-4 space-y-3 animate-fade-in shadow-2xl">
+          <div className="flex items-center justify-between">
+            <p className="text-[10px] font-black text-amber-400 tracking-widest">
+              추정 1RM · {result.usedWeight}kg × {result.usedReps ?? reps}회
+            </p>
+            {attempts.length > 0 && <span className="rounded-full bg-white/[0.07] border border-white/10 px-2.5 py-0.5 text-[9px] font-black text-slate-300">저장 시 {attempts.length + 1}차</span>}
+          </div>
+          <div className="relative mx-auto w-44 h-44">
+            <div className="absolute inset-0 rounded-full bg-gradient-to-br from-amber-400 via-orange-500 to-rose-500 opacity-90" />
+            <div className="absolute inset-[7px] rounded-full bg-slate-950 flex flex-col items-center justify-center">
+              <p className="font-mono font-black text-slate-50 leading-none" style={{ fontSize: 46 }}>{result.average}</p>
+              <p className="text-xs font-black text-slate-500 mt-1">kg</p>
+            </div>
+          </div>
           <p className="text-center text-[10px] text-slate-500">검증된 {result.formulas.filter(f => f.value != null).length}개 공식 평균</p>
           {result.stats && (
             <div className="grid grid-cols-3 gap-2 text-center">
@@ -815,7 +840,12 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
               ))}
             </div>
           </div>
-          {onSave && <button onClick={save} className="btn btn-primary w-full">이 측정 저장</button>}
+          {onSave && (
+            <button onClick={save}
+              className="w-full h-12 rounded-2xl bg-gradient-to-r from-amber-400 to-orange-500 text-slate-950 font-black text-[15px] active:scale-[0.98] shadow-lg shadow-amber-500/25">
+              이 측정 저장 →
+            </button>
+          )}
           {videoBlob && (
             <button onClick={handleSaveVideo} disabled={savingVideo}
               className="w-full rounded-xl bg-slate-700 text-white font-bold py-2.5 text-sm active:scale-95 disabled:opacity-60">

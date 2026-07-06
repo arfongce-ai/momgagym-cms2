@@ -247,8 +247,14 @@ export class BarbellAccumulator {
     const best = means.length ? Math.max(...means) : null;
     const lastMean = last ? last.meanRatioPerSec : null;
     const romRatio = this.samples.length >= 2 ? this.maxY - this.minY : null;
+    // 실시간 렙 스트립용 — 최근 10렙의 번호·평균속도(확정 렙만, 계산 재사용).
+    const repList = this.repsRaw.slice(-10).map(r => ({
+      repNo: r.repNo,
+      meanVelocity: r2(ratioPerSecToMs(r.meanRatioPerSec, cmPerRatio)),
+    }));
     return {
       reps,
+      repList,
       phase: this.dir === 1 ? 'down' : this.dir === -1 ? 'up' : 'rest',
       romCm: cmPerRatio && romRatio != null ? r1(romRatio * cmPerRatio) : null,
       lastRepVelocity: r2(ratioPerSecToMs(lastMean, cmPerRatio)),
