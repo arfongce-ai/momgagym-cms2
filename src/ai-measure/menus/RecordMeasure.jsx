@@ -2,7 +2,7 @@
 // General video recording. Preview and saved video use the selected frame
 // ratio at full quality (high resolution + bitrate).
 import { useRef, useState, useEffect, useCallback } from 'react';
-import { todayYMD } from '../../utils/dates';
+import { buildRecordingFileName } from '../../utils/recordingName';
 import { openMainCameraStream, refocusCameraStream } from '../core/cameraSelect';
 import { formatStopwatch } from '../core/recordingOverlay';
 import { nextPhase, firstPhase, phaseDurationSec } from '../core/intervalTimer';
@@ -94,15 +94,6 @@ function formatBytes(bytes) {
   return `${mb.toFixed(mb >= 10 ? 0 : 1)}MB`;
 }
 
-function recordingExtension(mime = '') {
-  return mime.includes('mp4') ? 'mp4' : 'webm';
-}
-
-function recordingFileName(member, aspect, mime) {
-  const safeName = (member?.name || 'video').replace(/[\\/:*?"<>|]/g, '_');
-  return `몸가짐_${safeName}_${aspect.replace('/', 'x')}_${todayYMD().replace(/-/g, '')}.${recordingExtension(mime)}`;
-}
-
 function triggerDownload(url, fileName) {
   if (!url || typeof document === 'undefined') return false;
   try {
@@ -119,7 +110,7 @@ function triggerDownload(url, fileName) {
   }
 }
 
-export default function RecordMeasure({ member, onBack }) {
+export default function RecordMeasure({ member: _member, onBack }) {
   const videoRef = useRef(null);
   const frameRef = useRef(null);
   const guideCanvasRef = useRef(null);
@@ -157,6 +148,7 @@ export default function RecordMeasure({ member, onBack }) {
   const [videoReady, setVideoReady] = useState(false);
   const [cameraNote, setCameraNote] = useState('');
   const [savedSize, setSavedSize] = useState('');
+  const [savedFileName, setSavedFileName] = useState(''); // 촬영별 고유 파일명(카톡 전송용)
   const [autoSaveState, setAutoSaveState] = useState('idle');
   const [focusPoint, setFocusPoint] = useState(null);
 
@@ -328,6 +320,7 @@ export default function RecordMeasure({ member, onBack }) {
     try {
       setError(null);
       setSavedSize('');
+      setSavedFileName('');
       setAutoSaveState('idle');
       setCameraNote('카메라 영상을 확인하는 중입니다...');
       const ready = await ensureVideoReady();
@@ -366,8 +359,10 @@ export default function RecordMeasure({ member, onBack }) {
       rec.onstop = () => {
         stopComposeLoop();
         stopRecordStream();
-        stopStream();
-        setVideoReady(false);
+        // 카메라(미리보기 스트림)는 끄지 않고 유지한다 — '다시 녹화'가
+        // getUserMedia 재연결 없이 즉시 이어지도록(연속 촬영 로딩 제거).
+        // 스트림 해제는 화면 이탈(stopAll/언마운트)에서만 수행한다.
+        stopPreviewLoop();
         clearRecordTimers();
         if (!chunksRef.current.length) {
           setError('녹화된 영상 데이터가 없습니다. 다시 촬영해 주세요.');
@@ -383,7 +378,9 @@ export default function RecordMeasure({ member, onBack }) {
           Math.max(current || 0, Math.ceil((Date.now() - startTsRef.current) / 1000))
         ));
         const url = URL.createObjectURL(blob);
-        const fileName = recordingFileName(member, aspect, type);
+        // 녹화 종료 시각 기준 고유 이름(몸가짐YYMMDDHHmm) — 같은 분이면 초 추가.
+        const fileName = buildRecordingFileName(type);
+        setSavedFileName(fileName);
         setVideoUrl((old) => {
           if (old) URL.revokeObjectURL(old);
           return url;
@@ -444,6 +441,7 @@ export default function RecordMeasure({ member, onBack }) {
     });
     blobRef.current = null;
     setSavedSize('');
+    setSavedFileName('');
     setAutoSaveState('idle');
     setElapsed(0);
     setVideoReady(!!videoRef.current?.videoWidth);
@@ -489,7 +487,7 @@ export default function RecordMeasure({ member, onBack }) {
   const displayElapsed = Math.min(MAX_RECORD_SECONDS, elapsed);
   const mmss = `${String(Math.floor(displayElapsed / 60)).padStart(2, '0')}:${String(displayElapsed % 60).padStart(2, '0')}`;
   const maxTimeLabel = `00:${String(MAX_RECORD_SECONDS).padStart(2, '0')}`;
-  const fname = recordingFileName(member, aspect, mimeRef.current || '');
+  const fname = savedFileName; // onstop 에서 고정 — 자동저장·재시도·공유가 같은 이름 사용
   const shareSupported = typeof navigator !== 'undefined' && !!navigator.canShare;
 
   const saveToGallery = async () => {
@@ -672,7 +670,8 @@ export default function RecordMeasure({ member, onBack }) {
           <video src={videoUrl} controls playsInline className="w-full" style={{ maxHeight: '60vh' }} />
         </div>
         <div className="rounded-xl bg-slate-800 px-3 py-2 text-center text-xs text-slate-300">
-          저장 완료: {aspect} · {savedSize || '파일 크기 확인 중'} · 최대 {MAX_RECORD_SECONDS}초 영상
+          <span className="font-mono font-bold text-slate-100">{savedFileName}</span>
+          <span className="text-slate-500"> · {aspect} · {savedSize || '크기 확인 중'}</span>
         </div>
         <div className="rounded-xl bg-amber-500/10 border border-amber-400/25 px-3 py-2 text-center text-xs text-amber-100">
           {autoSaveState === 'saving'
@@ -682,8 +681,9 @@ export default function RecordMeasure({ member, onBack }) {
               : '자동 저장을 시도했습니다. 휴대폰 다운로드 폴더를 확인해 주세요.'}
         </div>
         <div className={`grid ${autoSaveState === 'blocked' ? 'grid-cols-2' : 'grid-cols-1'} gap-2`}>
-          <button onClick={reset} className="rounded-xl border border-slate-700 text-slate-300 font-bold py-3 text-sm">
-            다시 녹화
+          <button onClick={reset}
+            className="rounded-2xl bg-gradient-to-r from-amber-400 to-orange-500 text-slate-950 font-black py-3 text-sm active:scale-[0.98] shadow-lg shadow-amber-500/25">
+            ● 다시 녹화 (즉시)
           </button>
           {autoSaveState === 'blocked' && (
             <button onClick={retryAutoSave} className="btn btn-primary">
@@ -697,7 +697,7 @@ export default function RecordMeasure({ member, onBack }) {
           </button>
         )}
         <p className="text-[11px] text-slate-500 text-center leading-relaxed">
-          녹화가 끝나면 카메라가 꺼집니다. 일부 모바일 브라우저는 보안 정책 때문에 자동 저장을 다운로드 확인 화면으로 전환할 수 있습니다.
+          카메라는 켜진 채 유지됩니다 — '다시 녹화'를 누르면 재연결 없이 바로 촬영이 이어집니다. 파일명은 촬영마다 시각으로 달라져 카톡 전송 시 겹치지 않습니다.
         </p>
       </div>
     </div>
