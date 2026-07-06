@@ -230,8 +230,24 @@ let __loadPromise = null;
 // 반영되고 스냅샷도 갱신되므로 본인 편집은 항상 최신. 다른 기기의 변경만 최대
 // TTL 만큼 지연될 수 있다. force 로딩 시에는 캐시를 무시하고 새로 읽는다.
 const __SNAP_KEY = 'fitcms_snap';
-const __SNAP_TTL_MS = 5 * 60 * 1000;
 const __SNAP_VER = DATA_VERSION;
+
+// ── 델타 동기화(변경분만 읽기) 설정 ──────────────────────────
+//  구조: 모든 쓰기가 updatedAt(ms)을 문서에 남기고 meta/versions 문서에
+//  "컬렉션별 마지막 쓰기 시각"을 갱신한다. 앱을 열면
+//   ① localStorage 스냅샷 복원(읽기 0)
+//   ② meta 컬렉션 1건 읽기 → 어떤 컬렉션이 바뀌었는지 확인
+//   ③ 바뀐 컬렉션만 where(updatedAt > 마지막 동기화 시각) 델타 조회
+//  변경이 없으면 앱 오픈 1회당 Firestore 읽기 = 단 1건.
+//  삭제는 deletions 톰스톤(어느 컬렉션의 어떤 id가 지워졌나)으로 전파한다.
+//  안전망: 주 1회(FULL TTL) 전체 재검증 + 기기 시계 오차는 MARGIN 으로 흡수
+//  (id 기준 병합이라 중복 조회는 무해).
+const __SYNC_COLLECTIONS = ['members','trainers','schedules','notices','payments','body','settings','expenses','promos','settleOverrides'];
+const __GROUPED = new Set(['payments','body']);
+const __DELTA_MARGIN_MS = 10 * 60 * 1000;
+const __FULL_SYNC_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+let __syncedAt = {};      // 컬렉션별 마지막 동기화 시각(ms)
+let __fullSyncAt = 0;     // 마지막 전체 로딩 시각(ms)
 
 function __readSnapshot() {
   try {
@@ -240,14 +256,16 @@ function __readSnapshot() {
     if (!raw) return null;
     const snap = JSON.parse(raw);
     if (snap.ver !== __SNAP_VER) return null;
-    if (Date.now() - snap.at > __SNAP_TTL_MS) return null;
-    return snap.data;
+    return snap; // { ver, at, data, syncedAt, fullSyncAt }
   } catch (e) { return null; }
 }
 function __writeSnapshot(data) {
   try {
     if (typeof localStorage === 'undefined') return;
-    localStorage.setItem(__SNAP_KEY, JSON.stringify({ ver: __SNAP_VER, at: Date.now(), data }));
+    localStorage.setItem(__SNAP_KEY, JSON.stringify({
+      ver: __SNAP_VER, at: Date.now(), data,
+      syncedAt: __syncedAt, fullSyncAt: __fullSyncAt,
+    }));
   } catch (e) { /* 용량 초과 등은 무시 — 다음 로딩 때 Firestore 에서 읽음 */ }
 }
 // 쓰기 후 스냅샷을 최신 캐시로 갱신(본인 편집이 새로고침에도 유지되도록).
@@ -260,26 +278,95 @@ function __refreshSnapshot() {
   });
 }
 
+// ── 델타 병합 헬퍼 ─────────────────────────────────────────
+function __upsertList(list, docData) {
+  const i = list.findIndex(x => x.id === docData.id);
+  if (i >= 0) list[i] = docData; else list.push(docData);
+}
+function __applyDeltaDoc(col, docData) {
+  if (__GROUPED.has(col)) {
+    const { __mid, ...rest } = docData;
+    if (!__mid) return;
+    if (!cache[col][__mid]) cache[col][__mid] = [];
+    __upsertList(cache[col][__mid], rest);
+    return;
+  }
+  if (col === 'settings') { if (docData.id === 'config') cache.settings = docData; return; }
+  __upsertList(cache[col], docData);
+}
+function __applyDeletion(col, id) {
+  if (__GROUPED.has(col)) {
+    Object.keys(cache[col] || {}).forEach(mid => {
+      cache[col][mid] = (cache[col][mid] || []).filter(x => x.id !== id);
+    });
+    return;
+  }
+  if (col === 'settings') return;
+  if (Array.isArray(cache[col])) cache[col] = cache[col].filter(x => x.id !== id);
+}
+
+// 변경분만 동기화 — meta 1건 읽고, 바뀐 컬렉션만 updatedAt 범위 조회.
+async function __deltaSync() {
+  const metaSnap = await countedGetDocs('meta', collection(db, 'meta'));
+  const versions = metaSnap.docs.find(d => d.id === 'versions')?.data() || null;
+  if (!versions) {
+    console.log('[FitCMS] 델타: 신규 변경 기록 없음 — 추가 읽기 0건');
+    return;
+  }
+  let pulled = 0;
+  for (const col of __SYNC_COLLECTIONS) {
+    const since = __syncedAt[col] || 0;
+    if (!(Number(versions[col]) > since)) continue; // 이 컬렉션은 그대로
+    try {
+      const q = query(collection(db, col), where('updatedAt', '>', since - __DELTA_MARGIN_MS));
+      const snap = await countedGetDocs(`${col}(delta)`, q);
+      snap.docs.forEach(d => __applyDeltaDoc(col, d.data()));
+      pulled += snap.docs.length;
+      __syncedAt[col] = Date.now();
+    } catch (e) {
+      // 트레이너 계정은 expenses 등 관리자 전용 컬렉션 접근이 거부된다 — 건너뜀.
+      console.warn(`[FitCMS] ${col} 델타 건너뜀:`, e?.code || e?.message);
+    }
+  }
+  const delSince = __syncedAt.deletions || 0;
+  if (Number(versions.deletions) > delSince) {
+    const q = query(collection(db, 'deletions'), where('at', '>', delSince - __DELTA_MARGIN_MS));
+    const snap = await countedGetDocs('deletions(delta)', q);
+    snap.docs.forEach(d => { const t = d.data(); __applyDeletion(t.col, t.id); });
+    pulled += snap.docs.length;
+    __syncedAt.deletions = Date.now();
+  }
+  __refreshSnapshot();
+  console.log(`[FitCMS] 델타 동기화 완료 — 변경 ${pulled}건 반영, 이번 세션 총 읽기 ${__readStats.total}건`);
+}
+
 export async function initStore({ force = false } = {}) {
   if (!force && __loadPromise) return __loadPromise; // 이미 로딩(중)이면 그대로 재사용
   __loadPromise = (async () => {
     try {
-      // 1) 새로고침 캐시 우선 — 신선하면 Firestore 읽기 없이 복원.
+      // 1) 스냅샷 복원(읽기 0) → 델타 동기화(변경분만).
       if (!force) {
         const snap = __readSnapshot();
-        if (snap) {
-          cache.members=snap.members||[]; cache.trainers=snap.trainers||[];
-          cache.schedules=snap.schedules||[]; cache.notices=snap.notices||[];
-          cache.payments=snap.payments||{}; cache.body=snap.body||{};
-          cache.settings=snap.settings||{...INITIAL_SETTINGS};
-          cache.expenses=snap.expenses||[]; cache.promos=snap.promos||[];
-          cache.settleOverrides=snap.settleOverrides||[];
+        if (snap?.data) {
+          const d = snap.data;
+          cache.members=d.members||[]; cache.trainers=d.trainers||[];
+          cache.schedules=d.schedules||[]; cache.notices=d.notices||[];
+          cache.payments=d.payments||{}; cache.body=d.body||{};
+          cache.settings=d.settings||{...INITIAL_SETTINGS};
+          cache.expenses=d.expenses||[]; cache.promos=d.promos||[];
+          cache.settleOverrides=d.settleOverrides||[];
           cache.ai = {}; cache.gaitReports = {}; cache.postureReports = {}; cache.romReports = {};   // 측정 데이터는 항상 지연 로딩
-          console.log('[FitCMS] 새로고침 캐시에서 복원 — Firestore 읽기 0건');
-          return;
+          __syncedAt = snap.syncedAt || {};
+          __fullSyncAt = snap.fullSyncAt || 0;
+          if (Date.now() - __fullSyncAt <= __FULL_SYNC_TTL_MS && Object.keys(__syncedAt).length) {
+            console.log('[FitCMS] 스냅샷 복원 — 변경분만 확인합니다.');
+            await __deltaSync();
+            return;
+          }
+          console.log('[FitCMS] 스냅샷 복원 — 주기 전체 재검증을 수행합니다.');
         }
       }
-      // 2) 캐시가 없거나 만료 → Firestore 전수 로딩(최초 1회/TTL 경과 시).
+      // 2) 캐시가 없거나 강제/주기 재검증 → Firestore 전수 로딩.
       await seedIfEmpty();
       // [읽기 절감 핵심] ai · gait_reports · posture_reports · rom_reports 는 회원별로만 조회되므로(측정 화면을 열 때),
       // 앱 시작 시 전수 조회하지 않는다. 빈 캐시로 시작 → 회원 화면에서 그 회원 것만
@@ -307,7 +394,11 @@ export async function initStore({ force = false } = {}) {
       cache.expenses = expenses;
       cache.promos   = promos;
       cache.settleOverrides = settleOverrides;
-      __refreshSnapshot();           // 새로고침 캐시에 저장
+      const now = Date.now();
+      __SYNC_COLLECTIONS.forEach(c => { __syncedAt[c] = now; });
+      __syncedAt.deletions = now;
+      __fullSyncAt = now;
+      __refreshSnapshot();           // 새로고침 캐시에 저장(동기화 메타 포함)
       console.log(`[FitCMS] Firebase 로딩 완료 — 이번 세션 총 읽기 ${__readStats.total}건`);
     } catch (e) {
       __loadPromise = null; // 실패 시 다음 호출에서 재시도 가능하도록 가드 해제
@@ -330,7 +421,23 @@ function __touchSnapshot() {
   __snapTimer = setTimeout(() => { try { __refreshSnapshot(); } catch (e) { /* noop */ } }, 400);
 }
 
-function fbSet(name, id, data) { return setDoc(doc(db, name, id), data).then(r => { __touchSnapshot(); return r; }); }
+// meta/versions: 컬렉션별 마지막 쓰기 시각. 델타 동기화의 '변경 여부 1건 조회' 대상.
+function __bumpMeta(names) {
+  const stamp = {};
+  names.forEach(n => { stamp[n] = Date.now(); });
+  // best-effort — 실패해도 본 저장은 유지(다음 전체 동기화가 안전망).
+  return setDoc(doc(db, 'meta', 'versions'), stamp, { merge: true })
+    .catch(e => console.warn('[FitCMS] meta 갱신 실패(무시):', e?.code || e?.message));
+}
+
+function fbSet(name, id, data) {
+  const stamped = { ...data, updatedAt: Date.now() }; // 델타 조회 기준 시각
+  return setDoc(doc(db, name, id), stamped).then(r => {
+    __bumpMeta([name]);
+    __touchSnapshot();
+    return r;
+  });
+}
 
 // 통합 리포트 미러 — 모든 측정 저장 시 users/{mid}/reports/{reportId} 에 표준 규격으로 동시 저장.
 // 핵심 원칙(측정 정직성): 통합 저장은 best-effort 부수 작업이며, 실패해도 본래의 측정 저장은
@@ -351,7 +458,16 @@ async function mirrorUnifiedReport(mid, report, reportType) {
     return null;
   }
 }
-function fbDelete(name, id)    { return deleteDoc(doc(db, name, id)).then(r => { __touchSnapshot(); return r; }); }
+function fbDelete(name, id) {
+  return deleteDoc(doc(db, name, id)).then(r => {
+    // 톰스톤: 다른 기기의 델타 동기화가 이 삭제를 알 수 있게 한다.
+    setDoc(doc(db, 'deletions', `${name}_${id}_${Date.now()}`), { col: name, id, at: Date.now() })
+      .catch(e => console.warn('[FitCMS] 삭제 톰스톤 실패(무시):', e?.code || e?.message));
+    __bumpMeta([name, 'deletions']);
+    __touchSnapshot();
+    return r;
+  });
+}
 
 // ── Firestore WriteBatch 하드 리밋 대응 ───────────────────────────
 // Firestore writeBatch는 1회 commit당 최대 500개 문서 조작만 허용한다.
@@ -372,11 +488,16 @@ function chunk(arr, size = CHUNK_SIZE) {
 //    → 호출부(purgeMember 등)는 "실패 시 재시도하면 멱등하게 마저 삭제된다"는 전제로 설계한다.
 async function fbDeleteBatch(items) {
   if (!items.length) return;
-  for (const part of chunk(items)) {
+  const now = Date.now();
+  for (const part of chunk(items, Math.floor(CHUNK_SIZE / 2))) { // 톰스톤 포함이라 절반 단위
     const batch = writeBatch(db);
-    part.forEach(({ name, id }) => batch.delete(doc(db, name, id)));
+    part.forEach(({ name, id }, i) => {
+      batch.delete(doc(db, name, id));
+      batch.set(doc(db, 'deletions', `${name}_${id}_${now + i}`), { col: name, id, at: now });
+    });
     await batch.commit();
   }
+  __bumpMeta([...new Set(items.map(it => it.name)), 'deletions']);
   __touchSnapshot();
 }
 
@@ -384,15 +505,23 @@ async function fbDeleteBatch(items) {
 // 500건 단위로 쪼개어 commit. (set/delete를 한 흐름에서 원자 처리할 때 사용)
 async function fbWriteBatch(ops) {
   if (!ops.length) return;
-  for (const part of chunk(ops)) {
+  const now = Date.now();
+  for (const part of chunk(ops, Math.floor(CHUNK_SIZE / 2))) { // 톰스톤 여유 포함
     const batch = writeBatch(db);
-    part.forEach(({ op, name, id, data }) => {
+    part.forEach(({ op, name, id, data }, i) => {
       const ref = doc(db, name, id);
-      if (op === 'del') batch.delete(ref);
-      else batch.set(ref, data);
+      if (op === 'del') {
+        batch.delete(ref);
+        batch.set(doc(db, 'deletions', `${name}_${id}_${now + i}`), { col: name, id, at: now });
+      } else {
+        batch.set(ref, { ...data, updatedAt: now });
+      }
     });
     await batch.commit();
   }
+  const touched = [...new Set(ops.map(o => o.name))];
+  if (ops.some(o => o.op === 'del')) touched.push('deletions');
+  __bumpMeta(touched);
   __touchSnapshot();
 }
 
