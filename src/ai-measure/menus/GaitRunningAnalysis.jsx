@@ -3,6 +3,7 @@ import {
   GaitCycleTracker, jointAnglesFromPose, AngleAccumulator,
   pelvisRelativeFeet, cameraAngleQuality, detectOrientation
 } from '../core/gaitBiomechanics';
+import { boostedGain } from '../core/audioCue';
 import { loadPoseLandmarker, detectPoseFrame, closePoseLandmarker, isPoseReady } from '../core/poseBackend';
 import { shareReportWithVideo } from '../core/reportShare';
 import { drawMeasurementOverlay, formatRecordTime } from '../core/recordingOverlay';
@@ -203,7 +204,7 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
         const gain = ctx.createGain();
         const downBeat = metroBeatRef.current % 4 === 0;
         osc.frequency.value = downBeat ? 1500 : 980;
-        gain.gain.setValueAtTime(downBeat ? 0.45 : 0.24, metroNextNoteRef.current);
+        gain.gain.setValueAtTime(boostedGain(downBeat ? 0.45 : 0.24), metroNextNoteRef.current);
         gain.gain.exponentialRampToValueAtTime(0.001, metroNextNoteRef.current + 0.055);
         osc.connect(gain);
         gain.connect(ctx.destination);

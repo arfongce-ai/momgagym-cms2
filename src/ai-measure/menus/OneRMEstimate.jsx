@@ -21,6 +21,7 @@ import { usePoseEngine } from '../core/usePoseEngine';
 import { assessFraming, FRAMING_PRESETS } from '../core/framingGuide';
 import { personHeightRatio, barbellPoint } from '../core/barbell';
 import { BarbellAccumulator, estimateOneRmFromMeanVelocity } from '../core/barbellBiomechanics';
+import { beepRep } from '../core/audioCue';
 import { saveVideoToPhone, pickRecorderMime } from '../core/recordSink';
 import { drawMeasurementOverlay } from '../core/recordingOverlay';
 import FramingIntro from './FramingIntro';
@@ -76,6 +77,7 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
   const [liveHud, setLiveHud] = useState(null); // 실시간 렙 속도 게이지
   const countingRef = useRef(false);
   const consumedAutoStartRef = useRef(0);
+  const camOpenedOnceRef = useRef(false); // 최초 카메라 오픈 여부(첫 진입 로더용)
   const countdownTimerRef = useRef(null);
   const maxRecordTimerRef = useRef(null);
   const mediaRecorderRef = useRef(null);
@@ -156,7 +158,7 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
     accRef.current.push(bar, ts);
     const cmPerRatio = heightRef.current && phRef.current ? heightRef.current / phRef.current : null;
     const lv = accRef.current.live(cmPerRatio);
-    setLiveReps(prev => (prev !== lv.reps ? lv.reps : prev));
+    setLiveReps(prev => { if (lv.reps > prev) beepRep(); return prev !== lv.reps ? lv.reps : prev; });
     setLiveHud(prev => {
       if (prev && prev.reps === lv.reps && prev.lastRepVelocity === lv.lastRepVelocity
         && prev.velocityLossPct === lv.velocityLossPct) return prev;
@@ -312,6 +314,7 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
     countingRef.current = false; setCounting(false);
     setLiveReps(0);
     setVideoBlob(null); videoBlobRef.current = null; setVideoSavedMsg('');
+    camOpenedOnceRef.current = true;
     start();
   }, [start]);
 
@@ -518,6 +521,18 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
           </div>
         )}
       </CameraStage>
+    );
+  }
+
+  // ───────── 첫 진입(허브 내부): 준비 화면 대신 카메라 로더 ─────────
+  //  autoStart effect 가 마운트 직후 카메라를 켠다. 카메라를 한 번 닫은 뒤
+  //  (반복 입력/결과 확인) 되돌아오는 화면은 그대로 보여준다.
+  if (embedded && !camOpenedOnceRef.current) {
+    return (
+      <div className="fixed inset-0 z-[70] bg-slate-950 flex flex-col items-center justify-center gap-3">
+        <div className="w-10 h-10 rounded-full border-2 border-amber-400/40 border-t-amber-400 animate-spin" />
+        <p className="text-sm font-bold text-slate-300">카메라를 켜는 중…</p>
+      </div>
     );
   }
 

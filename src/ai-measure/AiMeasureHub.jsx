@@ -2,6 +2,7 @@
 // AI 측정 허브. 메뉴를 고르면 해당 모듈만 lazy 로드해 구동한다(필요 기능만).
 import { useState, Suspense } from 'react';
 import { MEASURE_MENUS } from './registry';
+import SoundVolumeControl from './menus/SoundVolumeControl';
 import { store, aiStore, makeGuestId } from '../demoData';
 import { todayYMD } from '../utils/dates';
 import { useAuth } from '../contexts/AuthContext';
@@ -375,6 +376,12 @@ export default function AiMeasureHub() {
             )}
           </div>
         )}
+      </div>
+
+      {/* 측정 사운드 볼륨 — 카운트다운·렙·메트로놈·인터벌·타이머 공통 */}
+      <div className="rounded-2xl bg-slate-900 border border-white/10 p-3">
+        <p className="text-[11px] font-bold text-slate-400 mb-2">🔊 측정 사운드 볼륨 (모든 측정 공통)</p>
+        <SoundVolumeControl compact />
       </div>
 
       {/* 메뉴 그리드 */}

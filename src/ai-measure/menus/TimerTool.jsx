@@ -3,6 +3,8 @@
 // so recording screens can use them without changing menus.
 import { useRef, useState, useEffect, useCallback } from 'react';
 import { nextPhase, firstPhase, phaseDurationSec, totalDurationSec } from '../core/intervalTimer';
+import { boostedGain } from '../core/audioCue';
+import SoundVolumeControl from './SoundVolumeControl';
 
 export function Stopwatch({ compact = false }) {
   const [elapsed, setElapsed] = useState(0);
@@ -107,7 +109,7 @@ export function Metronome({ compact = false }) {
         const gain = ctx.createGain();
         const isDownBeat = beatRef.current % 4 === 0;
         osc.frequency.value = isDownBeat ? 1500 : 1000;
-        gain.gain.setValueAtTime(isDownBeat ? 0.5 : 0.3, nextNoteRef.current);
+        gain.gain.setValueAtTime(boostedGain(isDownBeat ? 0.5 : 0.3), nextNoteRef.current);
         gain.gain.exponentialRampToValueAtTime(0.001, nextNoteRef.current + 0.05);
         osc.connect(gain);
         gain.connect(ctx.destination);
@@ -181,7 +183,7 @@ export function Countdown({ compact = false }) {
         const o = ctx.createOscillator();
         const g = ctx.createGain();
         o.frequency.value = 880;
-        g.gain.setValueAtTime(0.4, now + i * 0.4);
+        g.gain.setValueAtTime(boostedGain(0.4), now + i * 0.4);
         g.gain.exponentialRampToValueAtTime(0.001, now + i * 0.4 + 0.3);
         o.connect(g);
         g.connect(ctx.destination);
@@ -306,7 +308,7 @@ export function IntervalTimer({ compact = false }) {
         const g = ctx.createGain();
         o.frequency.value = freq;
         const dur = tone === 'count' ? 0.06 : 0.12;
-        g.gain.setValueAtTime(0.4, now + t);
+        g.gain.setValueAtTime(boostedGain(0.4), now + t);
         g.gain.exponentialRampToValueAtTime(0.001, now + t + dur);
         o.connect(g);
         g.connect(ctx.destination);
@@ -490,6 +492,7 @@ export default function TimerTool({ onBack }) {
         <h2 className="measure-title">초시계 · 타이머 · 메트로놈</h2>
         <span className="w-12" />
       </div>
+      <SoundVolumeControl />
       <div className="flex gap-1 rounded-xl bg-slate-800 p-1">
         {[
           ['stopwatch', '초시계'],

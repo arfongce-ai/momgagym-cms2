@@ -3,6 +3,7 @@
 // ratio at full quality (high resolution + bitrate).
 import { useRef, useState, useEffect, useCallback } from 'react';
 import { buildRecordingFileName } from '../../utils/recordingName';
+import { boostedGain } from '../core/audioCue';
 import { openMainCameraStream, refocusCameraStream } from '../core/cameraSelect';
 import { formatStopwatch } from '../core/recordingOverlay';
 import { nextPhase, firstPhase, phaseDurationSec } from '../core/intervalTimer';
@@ -811,7 +812,7 @@ function InlineMetronome({ bpm, playing, onBpmChange, onPlayingChange }) {
         const gain = ctx.createGain();
         const down = beatRef.current % 4 === 0;
         osc.frequency.value = down ? 1500 : 1000;
-        gain.gain.setValueAtTime(down ? 0.45 : 0.25, nextNoteRef.current);
+        gain.gain.setValueAtTime(boostedGain(down ? 0.45 : 0.25), nextNoteRef.current);
         gain.gain.exponentialRampToValueAtTime(0.001, nextNoteRef.current + 0.05);
         osc.connect(gain);
         gain.connect(ctx.destination);
@@ -875,7 +876,7 @@ function InlineInterval({ stateRef, onChange }) {
         const g = ctx.createGain();
         o.frequency.value = freq;
         const dur = tone === 'count' ? 0.06 : 0.12;
-        g.gain.setValueAtTime(0.4, now + t);
+        g.gain.setValueAtTime(boostedGain(0.4), now + t);
         g.gain.exponentialRampToValueAtTime(0.001, now + t + dur);
         o.connect(g);
         g.connect(ctx.destination);

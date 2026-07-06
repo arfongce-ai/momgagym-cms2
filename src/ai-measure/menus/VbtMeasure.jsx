@@ -19,6 +19,7 @@ import {
   CALIBRATION_PRESETS, buildReferenceScale, ratioToCm,
   resolveDistanceScale, serializeDistanceScale,
 } from '../core/calibration';
+import { beepRep } from '../core/audioCue';
 import { BarbellAccumulator } from '../core/barbellBiomechanics';
 import PlateWeightInput from './PlateWeightInput';
 import FramingIntro from './FramingIntro';
@@ -41,6 +42,7 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
   const recordingRef = useRef(false);
   const framingRef = useRef({ level: 'bad', message: '' });
   const consumedAutoStartRef = useRef(0);
+  const camOpenedOnceRef = useRef(false); // 최초 카메라 오픈 여부(첫 진입 로더용)
   const roiRef = useRef({ x: 0.06, y: 0.42, w: 0.30, h: 0.40 });
   const calibrationPointsRef = useRef([]);
   const countdownTimerRef = useRef(null);
@@ -113,7 +115,7 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
       const H = Number(heightCm) || null;
       const scale = resolveDistanceScale({ referenceScale, personHeightRatio: phRef.current, heightCm: H });
       const lv = fusedRef.current.live(scale.cmPerRatio);
-      setLiveReps(prev => (prev !== lv.reps ? lv.reps : prev));
+      setLiveReps(prev => { if (lv.reps > prev) beepRep(); return prev !== lv.reps ? lv.reps : prev; });
       setLiveHud(prev => {
         if (prev && prev.reps === lv.reps && prev.lastRepVelocity === lv.lastRepVelocity
           && prev.velocityLossPct === lv.velocityLossPct && prev.phase === lv.phase) return prev;
@@ -188,9 +190,14 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
     setCalibrationPointCount(0);
     setCalibrating(false);
     setVideoBlob(null); videoBlobRef.current = null; setVideoSavedMsg('');
+    camOpenedOnceRef.current = true;
     start();
   }, [start]);
-  const closeCam = () => { clearCountdown(); clearMaxRecordTimer(); unlockCapture(); setExposureLock(false); stop(); recordingRef.current = false; setRecording(false); stopCompose(); };
+  const closeCam = () => {
+    clearCountdown(); clearMaxRecordTimer(); unlockCapture(); setExposureLock(false);
+    stop(); recordingRef.current = false; setRecording(false); stopCompose();
+    if (embedded) onBack?.(); // 허브 내부에선 준비 화면 대신 상위 메뉴로 복귀
+  };
 
   const stopCompose = () => {
     if (composeRafRef.current) { cancelAnimationFrame(composeRafRef.current); composeRafRef.current = null; }
@@ -583,7 +590,19 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
     );
   }
 
-  // ───────── 준비 화면(카메라 꺼짐) ─────────
+  // ───────── 카메라 자동 진입(허브 내부): 준비 화면을 거치지 않는다 ─────────
+  //  autoStart effect 가 마운트 직후 카메라를 켠다. 최초 오픈 전까지만 로더를
+  //  보여 깜빡임을 없앤다(닫은 뒤 idle 상태에서 로더에 갇히지 않도록).
+  if (embedded && !camOpenedOnceRef.current) {
+    return (
+      <div className="fixed inset-0 z-[70] bg-slate-950 flex flex-col items-center justify-center gap-3">
+        <div className="w-10 h-10 rounded-full border-2 border-amber-400/40 border-t-amber-400 animate-spin" />
+        <p className="text-sm font-bold text-slate-300">카메라를 켜는 중…</p>
+      </div>
+    );
+  }
+
+  // ───────── 준비 화면(카메라 꺼짐) · 독립 실행 시에만 ─────────
   return (
     <div className={`space-y-4 ${embedded ? 'pt-44 px-3 max-w-md mx-auto overflow-y-auto pb-8' : ''}`} style={embedded ? { height: '100dvh' } : undefined}>
       {!embedded && (

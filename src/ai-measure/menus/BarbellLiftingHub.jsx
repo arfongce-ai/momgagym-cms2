@@ -39,7 +39,7 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
   // 공통 종목 — 모드 전환 시 해당 모드에서 유효하면 유지, 아니면 첫 항목으로.
   const [exerciseType, setExerciseType] = useState(() => exercisesForMode('vbt')[0]?.key || 'squat');
   const [showGuide, setShowGuide] = useState(false);
-  const [vbtCameraStartSignal, setVbtCameraStartSignal] = useState(0);
+  const [vbtCameraStartSignal, setVbtCameraStartSignal] = useState(1); // 마운트 즉시 카메라
   const [oneRmCameraStartSignal, setOneRmCameraStartSignal] = useState(0);
   // 측정 방식 — 역도/VBT만. 'live'(실시간 추적) | 'upload'(고속영상 슬로모 분석).
   const [captureMode, setCaptureMode] = useState('live');

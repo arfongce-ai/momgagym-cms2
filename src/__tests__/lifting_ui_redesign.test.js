@@ -71,3 +71,30 @@ describe('엔진 live() — 실시간 렙 스트립 데이터', () => {
     expect(s.repCount).toBe(2);
   });
 });
+
+describe('VBT/1RM — 진입 시 카메라 즉시 오픈(준비 화면 스킵)', () => {
+  const read2 = (p) => require('node:fs').readFileSync(require('node:path').resolve(__dirname, '..', p), 'utf-8');
+  const hub = read2('ai-measure/menus/BarbellLiftingHub.jsx');
+  const vbt = read2('ai-measure/menus/VbtMeasure.jsx');
+  const onerm = read2('ai-measure/menus/OneRMEstimate.jsx');
+
+  it('허브는 마운트 즉시 VBT 카메라 시작 신호를 발화(초기값 1)', () => {
+    expect(hub).toContain('setVbtCameraStartSignal] = useState(1)');
+  });
+
+  it('embedded 최초 진입 시 준비 화면 대신 카메라 로더를 렌더', () => {
+    expect(vbt).toContain('embedded && !camOpenedOnceRef.current');
+    expect(vbt).toContain('카메라를 켜는 중');
+    expect(onerm).toContain('embedded && !camOpenedOnceRef.current');
+    expect(onerm).toContain('카메라를 켜는 중');
+  });
+
+  it('첫 카메라 오픈 시 camOpenedOnceRef 를 세워 로더 트랩을 방지', () => {
+    expect(vbt).toContain('camOpenedOnceRef.current = true');
+    expect(onerm).toContain('camOpenedOnceRef.current = true');
+  });
+
+  it('VBT는 embedded에서 카메라를 닫으면 상위 메뉴로 복귀', () => {
+    expect(vbt).toContain('if (embedded) onBack?.()');
+  });
+});
