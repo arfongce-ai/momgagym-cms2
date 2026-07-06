@@ -87,9 +87,9 @@ export default function CameraStage({
       )}
 
       {showSeedHint && status === 'running' && countdown == null && (
-        <div className="pointer-events-none absolute left-1/2 z-30 w-[min(88vw,360px)] -translate-x-1/2 rounded-2xl border border-amber-400/45 bg-black/70 px-4 py-3 text-center shadow-xl backdrop-blur animate-fade-in" style={{ top: seedHintTop }}>
-          <p className="text-sm font-black text-amber-300">바벨 끝/원판 추적점을 먼저 1개 이상 눌러주세요</p>
-          <p className="mt-1 text-[11px] font-bold text-slate-300">2~3개 지정하면 가려져도 더 안정적입니다.</p>
+        <div className="pointer-events-none absolute left-1/2 z-30 w-[min(88vw,360px)] max-w-[calc(100vw-24px)] -translate-x-1/2 rounded-2xl border border-amber-400/45 bg-black/70 px-4 py-3 text-center shadow-xl backdrop-blur animate-fade-in break-keep" style={{ top: seedHintTop }}>
+          <p className="text-sm font-black text-amber-300 break-keep">바벨 끝·원판 추적점을 먼저 1개 이상 눌러주세요</p>
+          <p className="mt-1 text-[11px] font-bold text-slate-300 break-keep">2~3개 지정하면 가려져도 더 안정적입니다.</p>
         </div>
       )}
 
@@ -108,7 +108,7 @@ export default function CameraStage({
             className="shrink-0 rounded-full bg-black/55 border border-white/25 text-white text-xs font-bold px-3 py-1.5 active:scale-95">
             ✕ 닫기
           </button>
-          <div className="flex-1 min-w-0 flex flex-col items-end gap-1.5 pr-0.5">{topBar}</div>
+          <div className="flex-1 min-w-0 flex flex-col items-end gap-1.5 pr-0.5 text-right break-keep">{topBar}</div>
         </div>
       </div>
 

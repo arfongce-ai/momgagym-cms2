@@ -58,7 +58,7 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
 
   // ── 카메라(원판 색 인식 + 바벨 추적 렙 카운팅) ──
   const canvasRef = useRef(null);
-  const roiRef = useRef({ x: 0.30, y: 0.30, w: 0.40, h: 0.45 }); // 화면 중앙 박스
+  const roiRef = useRef({ x: 0.30, y: 0.42, w: 0.40, h: 0.40 }); // 화면 중앙·원판 높이 박스
   const [detected, setDetected] = useState([]);
   const framingRef = useRef({ level: 'bad', message: '' });
   const [framing, setFraming] = useState({ level: 'bad', message: '카메라 준비 중…' });
@@ -148,7 +148,7 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
     ctx.setLineDash([]);
     ctx.fillStyle = 'rgba(245,158,11,0.95)';
     ctx.font = 'bold 14px sans-serif';
-    ctx.fillText('원판을 이 박스 안에', r.x * cw + 6, r.y * ch - 8);
+    ctx.fillText('원판 색 인식', r.x * cw + 6, r.y * ch - 8);
     ctx.restore();
 
     // 바벨 추적(렙 자동 카운팅) — 추적점이 지정돼 있으면 궤적·렙 갱신.

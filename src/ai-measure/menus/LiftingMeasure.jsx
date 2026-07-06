@@ -51,7 +51,7 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
   const seededRef = useRef(false);
   const framingRef = useRef({ level: 'bad', message: '' });
   const consumedAutoStartRef = useRef(0);
-  const roiRef = useRef({ x: 0.05, y: 0.34, w: 0.26, h: 0.46 });
+  const roiRef = useRef({ x: 0.06, y: 0.42, w: 0.30, h: 0.40 });
   const calibrationPointsRef = useRef([]);
   const countdownTimerRef = useRef(null);
   const maxRecordTimerRef = useRef(null);

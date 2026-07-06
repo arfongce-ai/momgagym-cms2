@@ -4,6 +4,8 @@ import { store } from '../demoData';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { toYMD, todayYMD, daysAgoYMD, isMemberExpired } from '../utils/dates';
+import { won, METHOD_LBL } from '../services/finance';
+import { summarizeDailySettlement } from '../utils/dailySettlement';
 
 function fmtDate(d) {
   return new Date(d).toLocaleDateString('ko-KR',{month:'long',day:'numeric',weekday:'short'});
@@ -55,6 +57,82 @@ function MiniCalendar({ schedules }) {
           );
         })}
       </div>
+    </div>
+  );
+}
+
+// 전날 정산내역(관리자 전용)
+//  · 오늘의 수업을 홈에서 바로 보여주듯, 전날 입금·등록 현황을 한눈에.
+//  · 집계·분류는 순수 함수 summarizeDailySettlement(=정산 로직과 동일 규칙)에 위임.
+const KIND_CLR = {
+  new: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30',
+  re:  'bg-sky-500/20 text-sky-400 border-sky-500/30',
+  etc: 'bg-slate-600/40 text-slate-300 border-slate-600/40',
+};
+
+function YesterdaySettlement({ members }) {
+  const s = summarizeDailySettlement(members, (mid) => store.getPayments(mid), daysAgoYMD(1));
+  const dateLbl = new Date(s.ymd + 'T12:00:00').toLocaleDateString('ko-KR', { month: 'long', day: 'numeric', weekday: 'short' });
+
+  return (
+    <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="font-bold text-sm uppercase tracking-widest text-slate-400">💰 전날 정산내역</h2>
+        <span className="text-[11px] text-slate-500 font-semibold">{dateLbl}</span>
+      </div>
+
+      {s.count === 0 ? (
+        <p className="text-slate-600 text-sm text-center py-4">전날 입금·등록 내역이 없습니다</p>
+      ) : (
+        <>
+          {/* 요약 3분할: 신규 / 재등록 / 입금액 합계 */}
+          <div className="grid grid-cols-3 gap-2 mb-3">
+            <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-3">
+              <p className="text-[10px] text-emerald-400 font-bold uppercase tracking-wide">신규등록</p>
+              <p className="text-2xl font-black font-mono text-emerald-400 mt-0.5">{s.newCnt}<span className="text-xs text-slate-500 ml-0.5">건</span></p>
+              <p className="text-[11px] text-slate-400 font-semibold mt-0.5">{won(s.newAmt)}</p>
+            </div>
+            <div className="bg-sky-500/10 border border-sky-500/20 rounded-xl p-3">
+              <p className="text-[10px] text-sky-400 font-bold uppercase tracking-wide">재등록</p>
+              <p className="text-2xl font-black font-mono text-sky-400 mt-0.5">{s.reCnt}<span className="text-xs text-slate-500 ml-0.5">건</span></p>
+              <p className="text-[11px] text-slate-400 font-semibold mt-0.5">{won(s.reAmt)}</p>
+            </div>
+            <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-3">
+              <p className="text-[10px] text-amber-400 font-bold uppercase tracking-wide">입금액</p>
+              <p className="text-2xl font-black font-mono text-amber-400 mt-0.5 tabular-nums leading-tight">{s.total.toLocaleString('ko-KR')}</p>
+              <p className="text-[11px] text-slate-400 font-semibold mt-0.5">총 {s.count}건</p>
+            </div>
+          </div>
+
+          {/* 결제수단별 합계(있는 것만) */}
+          {Object.keys(s.methodAmt).length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mb-3">
+              {Object.entries(s.methodAmt).sort((a, b) => b[1] - a[1]).map(([mk, amt]) => (
+                <span key={mk} className="text-[10px] bg-slate-800/70 border border-slate-700 text-slate-300 px-2 py-1 rounded-lg font-semibold">
+                  {METHOD_LBL[mk] || mk} {amt.toLocaleString('ko-KR')}
+                </span>
+              ))}
+            </div>
+          )}
+
+          {/* 건별 상세 */}
+          <div className="space-y-2">
+            {s.rows.map(r => (
+              <div key={r.id} className="flex items-center gap-3 p-3 bg-slate-800/60 rounded-xl">
+                <span className={`text-[10px] font-black px-2 py-1 rounded-lg border flex-shrink-0 ${KIND_CLR[r.kind]}`}>{r.label}</span>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="font-semibold text-sm truncate">{r.name}</span>
+                    <span className="text-slate-500 text-xs flex-shrink-0">· {METHOD_LBL[r.method] || r.method}</span>
+                  </div>
+                  {r.note && <p className="text-[11px] text-slate-500 mt-0.5 truncate">{r.note}</p>}
+                </div>
+                <span className="text-sm font-black font-mono text-slate-200 flex-shrink-0 tabular-nums">{r.amount.toLocaleString('ko-KR')}</span>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -248,6 +326,9 @@ export default function Home() {
           </button>
         ))}
       </div>
+
+      {/* ②-b 전날 정산내역 — 관리자 전용 (오늘 스케줄처럼 홈에서 바로 확인) */}
+      {user?.role==='admin' && <YesterdaySettlement members={members}/>}
 
       {/* ③ 간이 캘린더 요약 뷰 (원본 spec 요구) */}
       <MiniCalendar schedules={schedules}/>
