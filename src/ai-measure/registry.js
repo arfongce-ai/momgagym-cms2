@@ -50,7 +50,7 @@ export const MEASURE_MENUS = [
     id: 'lifting',
     no: 5,
     title: '바벨 리프팅',
-    desc: '역도 궤적 · VBT 속도 · 1RM 추정 (통합)',
+    desc: 'VBT 속도 · 1RM 추정 · 고속영상 분석',
     icon: 'BAR',
     status: 'ready',
     component: lazy(() => import('./menus/BarbellLiftingHub.jsx')),

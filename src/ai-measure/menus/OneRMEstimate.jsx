@@ -19,11 +19,10 @@ import {
 } from '../core/lifting';
 import { usePoseEngine } from '../core/usePoseEngine';
 import { assessFraming, FRAMING_PRESETS } from '../core/framingGuide';
-import { createMultiTracker } from '../core/endcapTracker';
-import { personHeightRatio } from '../core/barbell';
+import { personHeightRatio, barbellPoint } from '../core/barbell';
 import { BarbellAccumulator, estimateOneRmFromMeanVelocity } from '../core/barbellBiomechanics';
 import { saveVideoToPhone, pickRecorderMime } from '../core/recordSink';
-import { drawMeasurementOverlay, drawBarPathToRecord } from '../core/recordingOverlay';
+import { drawMeasurementOverlay } from '../core/recordingOverlay';
 import FramingIntro from './FramingIntro';
 import CameraStage from './CameraStage';
 import VelocityGaugeHud from './VelocityGaugeHud';
@@ -70,7 +69,6 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
   const liftRef = useRef(lift);
   liftRef.current = lift;
   // 바벨 추적(실시간 렙 카운팅 + 세트 평균속도 — 생체역학 엔진)
-  const capRef = useRef(createMultiTracker());
   const accRef = useRef(new BarbellAccumulator());
   const phRef = useRef(null);                 // 사람 화면상 신장(cm 환산 스케일)
   const heightRef = useRef(Number(member?.height) || null);
@@ -89,9 +87,7 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
   const videoBlobRef = useRef(null);
   const [counting, setCounting] = useState(false);
   const [countdown, setCountdown] = useState(null);
-  const [seedHintSignal, setSeedHintSignal] = useState(0);
   const [liveReps, setLiveReps] = useState(0);
-  const [seedPts, setSeedPts] = useState(0);
   const [videoBlob, setVideoBlob] = useState(null);
   const [savingVideo, setSavingVideo] = useState(false);
   const [videoSavedMsg, setVideoSavedMsg] = useState('');
@@ -134,12 +130,13 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
     }, 1000);
   }, []);
 
-  const handleResult = useCallback((lms, ts, video) => {
+  const handleResult = useCallback((lms, ts, _video) => {
+    // 오버레이/추적선 없음(RSI 방식) — 캔버스는 비워 둔다.
     const canvas = canvasRef.current;
-    if (!canvas || !video) return;
-    const cw = canvas.width, ch = canvas.height;
-    const ctx = canvas.getContext('2d');
-    ctx.clearRect(0, 0, cw, ch);
+    if (canvas) {
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    }
 
     const want = (FRAMING_PRESETS[liftRef.current] || FRAMING_PRESETS.squat).want;
     const fr = assessFraming(lms, { want });
@@ -148,74 +145,30 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
       setFraming({ level: fr.level, message: fr.message });
     }
 
-    // 원판 색 인식 ROI 박스 표시
-    const r = roiRef.current;
-    ctx.save();
-    ctx.strokeStyle = 'rgba(245,158,11,0.95)';
-    ctx.lineWidth = 3; ctx.setLineDash([8, 6]);
-    ctx.strokeRect(r.x * cw, r.y * ch, r.w * cw, r.h * ch);
-    ctx.setLineDash([]);
-    ctx.fillStyle = 'rgba(245,158,11,0.95)';
-    ctx.font = 'bold 14px sans-serif';
-    ctx.fillText('원판 색 인식', r.x * cw + 6, r.y * ch - 8);
-    ctx.restore();
-
-    // 사람 신장 스케일(속도 cm 환산) — 프레임마다 갱신.
+    // 사람 신장 스케일(속도 cm 환산).
     const ph = personHeightRatio(lms);
     if (ph) phRef.current = ph;
 
-    // 바벨 추적(실시간 렙 카운팅) — 추적점이 지정돼 있으면 궤적·렙 갱신.
-    const cap = capRef.current;
-    if (cap.isSeeded()) {
-      const p = cap.update(video);
-      if (p) {
-        // 추적점 표시.
-        ctx.save();
-        ctx.fillStyle = 'rgba(34,211,238,0.95)';
-        ctx.beginPath();
-        ctx.arc(p.x * cw, p.y * ch, Math.max(6, cw / 110), 0, Math.PI * 2);
-        ctx.fill();
-        ctx.restore();
-        if (countingRef.current) {
-          cap.push(p, ts);
-          accRef.current.push(p, ts);
-          const cmPerRatio = heightRef.current && phRef.current
-            ? heightRef.current / phRef.current : null;
-          const lv = accRef.current.live(cmPerRatio);
-          setLiveReps(prev => (prev !== lv.reps ? lv.reps : prev));
-          setLiveHud(prev => {
-            if (prev && prev.reps === lv.reps && prev.lastRepVelocity === lv.lastRepVelocity
-              && prev.velocityLossPct === lv.velocityLossPct) return prev;
-            return lv;
-          });
-        }
-      }
-    }
+    // 바 위치 = 양 손목 중점(스켈레톤). 별도 추적점 지정 없이 반복을 자동 인식.
+    if (!countingRef.current) return;
+    const bar = barbellPoint(lms);
+    if (!bar) return;
+    accRef.current.push(bar, ts);
+    const cmPerRatio = heightRef.current && phRef.current ? heightRef.current / phRef.current : null;
+    const lv = accRef.current.live(cmPerRatio);
+    setLiveReps(prev => (prev !== lv.reps ? lv.reps : prev));
+    setLiveHud(prev => {
+      if (prev && prev.reps === lv.reps && prev.lastRepVelocity === lv.lastRepVelocity
+        && prev.velocityLossPct === lv.velocityLossPct) return prev;
+      return lv;
+    });
   }, []);
-
-  // 영상 탭 → 바벨 끝/원판 색 학습(엔드캡 시드).
-  const onTapVideo = (e) => {
-    const v = videoRef.current;
-    if (!v || !v.videoWidth) return;
-    const rect = e.currentTarget.getBoundingClientRect();
-    const clientX = (e.touches?.[0]?.clientX ?? e.clientX) - rect.left;
-    const clientY = (e.touches?.[0]?.clientY ?? e.clientY) - rect.top;
-    const vAR = v.videoWidth / v.videoHeight, bAR = rect.width / rect.height;
-    let drawW = rect.width, drawH = rect.height, offX = 0, offY = 0;
-    if (vAR > bAR) { drawH = rect.width / vAR; offY = (rect.height - drawH) / 2; }
-    else { drawW = rect.height * vAR; offX = (rect.width - drawW) / 2; }
-    const nx = (clientX - offX) / drawW, ny = (clientY - offY) / drawH;
-    if (nx < 0 || nx > 1 || ny < 0 || ny > 1) return;
-    if (capRef.current.seed(v, nx, ny)) setSeedPts(capRef.current.pointCount());
-  };
 
   // 렙 카운팅 시작/정지.
   const toggleCounting = () => {
-    if (!capRef.current.isSeeded()) { setSeedHintSignal(v => v + 1); return; }
     if (countdown != null) return;
     if (!counting) {
       runStartCountdown(() => {
-        capRef.current.reset();
         accRef.current.reset();
         setLiveReps(0);
         setLiveHud(null);
@@ -280,7 +233,6 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
       ctx.fillStyle = '#000';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       if (video && video.videoWidth) ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-      drawBarPathToRecord(ctx, capRef.current.path(), canvas.width, canvas.height);
       drawMeasurementOverlay(ctx, canvas.width, canvas.height, {
         title: '1RM',
         elapsedMs: countingRef.current ? performance.now() - recordStartRef.current : null,
@@ -355,11 +307,10 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
 
   const openCam = useCallback(() => {
     setDetected([]);
-    capRef.current.clear();
     accRef.current.reset();
     setVelocityCheck(null);
     countingRef.current = false; setCounting(false);
-    setLiveReps(0); setSeedPts(0);
+    setLiveReps(0);
     setVideoBlob(null); videoBlobRef.current = null; setVideoSavedMsg('');
     start();
   }, [start]);
@@ -481,9 +432,7 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
       <>
 
         <span className="bg-black/65 rounded-full px-2.5 py-1 text-[10px] text-cyan-300 font-bold">
-          {seedPts === 0
-            ? '바벨 끝·원판을 눌러 추적점 지정 또는 색 인식'
-            : counting ? '세트 수행 중 — 끝나면 카운트 정지' : `추적점 ${seedPts}개 · 색 인식 또는 카운트 시작`}
+          {counting ? '세트 수행 중 — 반복 자동 인식 · 끝나면 정지' : '옆에서 촬영 · 카운트 시작을 누르고 세트 수행'}
         </span>
         <span className={`rounded-full px-3 py-1 text-[11px] font-bold ${framing.level === 'good' ? 'bg-emerald-500/85 text-slate-950' : framing.level === 'warn' ? 'bg-amber-500/85 text-slate-950' : 'bg-red-500/85 text-white'}`}>
           {framing.level === 'good' ? '✓ ' : '⚠ '}{framing.message}
@@ -494,7 +443,7 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
       <div className="flex items-center gap-2">
         <button onClick={toggleCounting}
           disabled={countdown != null}
-          className={`px-5 h-12 rounded-full text-sm font-black active:scale-95 shadow-lg disabled:opacity-60 ${counting ? 'bg-red-500 text-white' : seedPts > 0 ? 'bg-amber-500 text-slate-950' : 'bg-slate-600 text-slate-200'}`}>
+          className={`px-5 h-12 rounded-full text-sm font-black active:scale-95 shadow-lg disabled:opacity-60 ${counting ? 'bg-red-500 text-white' : 'bg-amber-500 text-slate-950'}`}>
           {counting ? '■ 카운트 정지' : countdown != null ? '시작 대기' : '● 카운트 시작'}
         </button>
         <button onClick={scanColors}
@@ -506,9 +455,9 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
     return (
       <CameraStage
         videoRef={videoRef} canvasRef={canvasRef} status={status} error={error}
-        onTapVideo={onTapVideo} onClose={closeCam} topBar={topBar} controls={controls}
+        onClose={closeCam} topBar={topBar} controls={controls}
         recording={counting} recordingLabel="카운트 중" tappable={countdown == null}
-        seedHint={seedPts === 0 && !counting} hintSignal={seedHintSignal} countdown={countdown}
+        countdown={countdown}
         topOffset={topOffset}
       >
         {counting && liveHud?.repList?.length > 0 && (

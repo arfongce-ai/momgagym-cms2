@@ -1,12 +1,12 @@
 // ai-measure/menus/BarbellLiftingHub.jsx
 // ════════════════════════════════════════════════════════════════════════
 //  바벨 리프팅 통합 탭 — 세 측정을 한 메뉴에서 유기적으로.
-//   mode='lifting' → LiftingMeasure   (역도 · 바벨 엔드캡 궤적 추적)
-//   mode='vbt'     → VbtMeasure       (속도 기반 트레이닝)
+//   mode='vbt'     → VbtMeasure       (속도 기반 트레이닝 · 관절 인식 자동 반복)
 //   mode='onerm'   → OneRMEstimate    (3대 운동 카메라 · 1RM 추정)
+//   ※ 역도(궤적) 실시간 모드는 폐지 — 올림픽 리프트는 VBT(실시간/고속영상)로 측정.
 //
 //  설계(측정 정직성 · 근거기반):
-//   - 상단에 [역도/VBT/1RM] 모드 선택기를 두고, 1RM은 3대 운동 카메라로 바로 진입.
+//   - 상단에 [VBT/1RM] 모드 선택기를 두고, 1RM은 3대 운동 카메라로 바로 진입.
 //   - 저장은 Hub 가 단일 책임으로 처리: 각 모듈의 onSave 페이로드를 표준
 //     exerciseType + source + metrics 규약(buildLiftingPayload)으로 변환.
 //   - peakVelocity 는 lifting.js 의 게이트로 고속영상에서만 채워진다.
@@ -15,7 +15,6 @@
 //   - JumpAnalysisHub 패턴을 그대로 따른다(검증된 구조 재사용).
 // ════════════════════════════════════════════════════════════════════════
 import React, { useState, useCallback, useMemo, useRef, useLayoutEffect } from 'react';
-import LiftingMeasure from './LiftingMeasure';
 import VbtMeasure from './VbtMeasure';
 import OneRMEstimate from './OneRMEstimate';
 import LiftingUploadAnalysis from './LiftingUploadAnalysis';
@@ -29,52 +28,31 @@ import {
 import { buildLoadVelocityPoint } from '../core/loadVelocityProfile';
 
 const MODES = [
-  ['lifting', '🏋️ 역도'],
   ['vbt',     '⚡ VBT'],
   ['onerm',   '💪 1RM'],
 ];
-
-// 랜딩 카드 메타 — 모드별 색·설명(UX 재설계: 탭 → 대형 카드 선택).
-const MODE_META = {
-  lifting: {
-    icon: '🏋️', title: '역도 궤적', accent: 'from-rose-500 to-orange-500',
-    ring: 'ring-rose-400/60', desc: '스내치·클린&저크 바 경로 실시간 분석 — 수평 이탈·경로 효율·속도',
-  },
-  vbt: {
-    icon: '⚡', title: 'VBT 속도', accent: 'from-cyan-400 to-sky-500',
-    ring: 'ring-cyan-400/60', desc: '렙별 평균속도 게이지 · 속도저하(%)로 세트 종료 시점 판단',
-  },
-  onerm: {
-    icon: '💪', title: '1RM 추정', accent: 'from-amber-400 to-orange-500',
-    ring: 'ring-amber-400/60', desc: '무게×반복 공식 7종 평균 + 카메라 속도 교차검증',
-  },
-};
 const STRENGTH_EXERCISES = exercisesForMode('onerm');
 
 export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFirebase, onMemberHeightChange }) {
   const save = onSaveToFirebase || onSave;
-  const [mode, setMode] = useState('lifting');
+  const [mode, setMode] = useState('vbt');
   // 공통 종목 — 모드 전환 시 해당 모드에서 유효하면 유지, 아니면 첫 항목으로.
-  // 기본 모드가 역도(lifting)이므로 초기 종목도 역도 첫 종목(스내치).
-  const [exerciseType, setExerciseType] = useState(() => exercisesForMode('lifting')[0]?.key || 'snatch');
+  const [exerciseType, setExerciseType] = useState(() => exercisesForMode('vbt')[0]?.key || 'squat');
   const [showGuide, setShowGuide] = useState(false);
-  const [cameraStartSignal, setCameraStartSignal] = useState(1);
   const [vbtCameraStartSignal, setVbtCameraStartSignal] = useState(0);
   const [oneRmCameraStartSignal, setOneRmCameraStartSignal] = useState(0);
   // 측정 방식 — 역도/VBT만. 'live'(실시간 추적) | 'upload'(고속영상 슬로모 분석).
   const [captureMode, setCaptureMode] = useState('live');
   // 측정 완료 후 표시할 리포트.
   const [report, setReport] = useState(null);
-  // 통일 흐름(UX 재설계): landing(모드 선택) → measure → record(기록·확인) → report
-  const [view, setView] = useState('landing'); // landing | measure | record | report
+  // 흐름: measure(탭 선택+측정) → record(기록·확인) → report
+  const [view, setView] = useState('measure'); // measure | record | report
   const [pending, setPending] = useState(null);
   const [saveState, setSaveState] = useState('idle');
-  // [항목 2] 폰 뒤로가기: report/record → measure, measure → landing 한 단계씩 복귀.
-  useHardwareBack(!!report || view === 'record' || view === 'measure', () => {
-    if (report || view === 'record') { setReport(null); setPending(null); setView('measure'); return; }
-    setView('landing');
+  // 폰 뒤로가기: report/record 면 측정 화면으로 한 단계만 복귀.
+  useHardwareBack(!!report || view === 'record', () => {
+    setReport(null); setPending(null); setView('measure');
   });
-  const backToLanding = useCallback(() => setView('landing'), []);
   const sessionHistoryRef = useRef(null);
 
   // ── 오버레이 겹침 수정 ──
@@ -130,29 +108,11 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
     return exercisesForMode(mode);
   }, [mode]);
 
-  const vbtExtraExercises = useMemo(() => (
-    exercisesForMode('vbt').filter(e => !STRENGTH_EXERCISES.some(s => s.key === e.key))
-  ), []);
-
-  // 랜딩용 — 카메라 신호 없이 모드·종목 유효성만 갱신.
-  const switchModeQuiet = useCallback((next) => {
-    setMode(next);
-    const nextExercises = next === 'onerm' ? STRENGTH_EXERCISES : exercisesForMode(next);
-    if (!nextExercises.some(e => e.key === exerciseType)) {
-      setExerciseType(nextExercises[0]?.key || 'squat');
-    }
-    if (next === 'onerm') setCaptureMode('live');
-  }, [exerciseType]);
-
   const switchMode = useCallback((next) => {
     setMode(next);
     const nextExercises = next === 'onerm' ? STRENGTH_EXERCISES : exercisesForMode(next);
     const valid = nextExercises.some(e => e.key === exerciseType);
     if (!valid) setExerciseType(nextExercises[0]?.key || 'squat');
-    if (next === 'lifting') {
-      setCaptureMode('live');
-      setCameraStartSignal(v => v + 1);
-    }
     // 상단 탭 선택 시 실시간 카메라로 바로 진입한다.
     if (next === 'vbt') {
       setCaptureMode('live');
@@ -163,16 +123,6 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
       setOneRmCameraStartSignal(v => v + 1);
     }
   }, [exerciseType]);
-
-  // 랜딩 → 측정 진입. 실시간이면 해당 모드 카메라 자동 시작 신호 발화.
-  const startFromLanding = useCallback(() => {
-    if (captureMode === 'live' || mode === 'onerm') {
-      if (mode === 'lifting') setCameraStartSignal(v => v + 1);
-      if (mode === 'vbt') setVbtCameraStartSignal(v => v + 1);
-      if (mode === 'onerm') setOneRmCameraStartSignal(v => v + 1);
-    }
-    setView('measure');
-  }, [mode, captureMode]);
 
   const selectExercise = useCallback((nextExercise) => {
     setExerciseType(nextExercise);
@@ -210,64 +160,6 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
   }, [saveAndReport]);
 
   // ── 저장 래퍼: 각 모듈의 raw 페이로드 → 표준 페이로드로 변환 후 상위 저장 ──
-  const handleSaveLifting = useCallback(async (raw) => {
-    // LiftingMeasure raw: { type:'lifting', romRatio, romCm, durationSec,
-    //                       meanVelocity, heightCm, weight, barKg, sidePlates, source? }
-    const source = raw?.source || 'live';
-    const loadVelocityPoint = buildLoadVelocityPoint({
-      exerciseType,
-      weight: raw?.weight,
-      meanVelocity: raw?.repVelocity?.summary?.averageMeanVelocity ?? raw?.meanVelocity,
-      repVelocity: raw?.repVelocity,
-      reps: raw?.reps,
-      source,
-    });
-    const conf = vbtConfidence({
-      isCalibrated: raw?.isCalibrated === true || !!raw?.heightCm,
-      lostRatio: raw?.lostRatio,
-      durationSec: raw?.durationSec,
-      source,
-      romCm: raw?.romCm,
-      crossValidation: raw?.crossValidation || null,   // 다중 신호 교차검증 → 신뢰도 반영
-    });
-    const payload = buildLiftingPayload({
-      mode: 'lifting',
-      exerciseType,
-      source,
-      metrics: {
-        meanVelocity: raw?.meanVelocity ?? null,
-        peakVelocity: raw?.peakVelocity ?? null,       // 고속영상 모듈만 채움
-        peakReason: raw?.peakReason ?? (source === 'upload' ? 'ok' : 'live_fps_too_low'),
-        rangeOfMotion: raw?.romCm ?? null,
-        meanPower: estimateMeanPower(raw?.weight, raw?.meanVelocity),
-        confidenceScore: conf.score,
-        velocityLoss: raw?.velocityLoss ?? raw?.repVelocity?.summary?.velocityLossPct ?? null,
-      },
-      metadata: {
-        weight: raw?.weight ?? null,
-        isCalibrated: raw?.isCalibrated === true || !!raw?.heightCm,
-        heightCm: raw?.heightCm ?? null,
-        calibration: raw?.calibration ?? null,
-        calibrationSource: raw?.calibrationSource ?? raw?.calibration?.source ?? null,
-        reps: raw?.reps ?? null,
-        repVelocity: raw?.repVelocity ?? null,
-        loadVelocityPoint,
-        barKg: raw?.barKg ?? null,
-        sidePlates: raw?.sidePlates ?? null,
-        confidenceReasons: conf.reasons,
-      },
-      extra: {
-        romRatio: raw?.romRatio ?? null,
-        durationSec: raw?.durationSec ?? null,
-        crossValidation: raw?.crossValidation ?? null,   // 교차검증 요약 보존
-        cogGap: raw?.cogGap ?? null,                       // 바-COG 이격(측면시)
-        barPath: raw?.barPath ?? null,                     // 궤적 드리프트/효율(엔진)
-        consistencyCvPct: raw?.consistencyCvPct ?? null,   // 렙 일관성(CV%)
-      },
-    });
-    return saveAndReport(payload, { videoBlob: raw?.videoBlob ?? null });
-  }, [exerciseType, saveAndReport]);
-
   const handleSaveVbt = useCallback(async (raw) => {
     // VbtMeasure raw: { type:'vbt', distance, time, meanVelocity, zone,
     //                   heightCm, weight, barKg, sidePlates, source? }
@@ -459,105 +351,6 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
     );
   }
 
-  // ── 랜딩(모드 선택) — UX 재설계: 카메라 진입 전 대형 카드로 측정을 고른다 ──
-  if (view === 'landing') {
-    const meta = MODE_META[mode];
-    return (
-      <div className="fixed inset-0 z-[80] bg-slate-950 overflow-y-auto" style={{ height: '100dvh' }}>
-        {/* 배경 그라디언트 오브 */}
-        <div className="pointer-events-none absolute -top-24 -right-16 w-72 h-72 rounded-full bg-cyan-500/10 blur-3xl" />
-        <div className="pointer-events-none absolute top-1/3 -left-20 w-80 h-80 rounded-full bg-amber-500/10 blur-3xl" />
-
-        <div className="relative max-w-md mx-auto px-4 pb-10" style={{ paddingTop: 'max(env(safe-area-inset-top), 16px)' }}>
-          {/* 헤더 */}
-          <div className="flex items-center justify-between pt-2">
-            <button onClick={onBack}
-              className="rounded-full bg-white/[0.07] border border-white/10 text-white text-xs font-bold px-3.5 py-2 active:scale-95">✕ 닫기</button>
-            <div className="text-right">
-              <p className="text-[10px] font-bold text-slate-500 tracking-widest">BARBELL LAB</p>
-              <p className="text-sm font-black text-slate-100">{member?.name ? `${member.name} 회원` : '바벨 리프팅'}</p>
-            </div>
-          </div>
-
-          <h2 className="mt-6 text-2xl font-black text-slate-50 leading-tight">무엇을<br/>측정할까요?</h2>
-          <p className="mt-1 text-[11px] text-slate-500 font-bold">실시간 렙 분절 · 속도 게이지 · AI 자동 평가</p>
-
-          {/* 모드 카드 */}
-          <div className="mt-5 space-y-2.5">
-            {MODES.map(([k]) => {
-              const mm = MODE_META[k];
-              const active = mode === k;
-              return (
-                <button key={k} onClick={() => switchModeQuiet(k)}
-                  className={`w-full text-left rounded-3xl p-4 flex items-center gap-3.5 transition-all active:scale-[0.98] ${
-                    active ? `bg-white/[0.07] ring-2 ${mm.ring} shadow-xl` : 'bg-white/[0.03] border border-white/[0.07]'}`}>
-                  <span className={`shrink-0 w-12 h-12 rounded-2xl bg-gradient-to-br ${mm.accent} flex items-center justify-center text-2xl shadow-lg`}>{mm.icon}</span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-[15px] font-black text-slate-50">{mm.title}</span>
-                    <span className="block text-[10.5px] text-slate-400 leading-snug mt-0.5 break-keep">{mm.desc}</span>
-                  </span>
-                  <span className={`shrink-0 text-lg font-black ${active ? 'text-white' : 'text-slate-600'}`}>›</span>
-                </button>
-              );
-            })}
-          </div>
-
-          {/* 설정 패널 — 선택 모드의 종목/방식 */}
-          <div className="mt-5 rounded-3xl bg-white/[0.04] border border-white/[0.08] p-4 space-y-3.5">
-            <div>
-              <p className="text-[10px] font-black text-slate-500 tracking-widest mb-2">종목</p>
-              <div className="flex flex-wrap gap-1.5">
-                {modeExercises.map(e => (
-                  <button key={e.key} onClick={() => selectExercise(e.key)}
-                    className={`rounded-2xl px-3.5 py-2 text-xs font-black transition-colors active:scale-95 ${
-                      exerciseType === e.key
-                        ? `bg-gradient-to-r ${meta.accent} text-slate-950 shadow-lg`
-                        : 'bg-white/[0.06] border border-white/10 text-slate-300'}`}>
-                    {e.label}
-                  </button>
-                ))}
-                {mode === 'vbt' && vbtExtraExercises.map(e => (
-                  <button key={e.key} onClick={() => selectExercise(e.key)}
-                    className={`rounded-2xl px-3.5 py-2 text-xs font-black transition-colors active:scale-95 ${
-                      exerciseType === e.key
-                        ? `bg-gradient-to-r ${meta.accent} text-slate-950 shadow-lg`
-                        : 'bg-white/[0.06] border border-white/10 text-slate-300'}`}>
-                    {e.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {mode !== 'onerm' && (
-              <div>
-                <p className="text-[10px] font-black text-slate-500 tracking-widest mb-2">측정 방식</p>
-                <div className="grid grid-cols-2 gap-1.5">
-                  {[['live', '🔴 실시간 추적', '카메라 앞에서 바로'], ['upload', '📁 고속영상', '120/240fps 최고속도 실측']].map(([k, label, sub]) => (
-                    <button key={k} onClick={() => setCaptureMode(k)}
-                      className={`rounded-2xl px-3 py-2.5 text-left transition-colors active:scale-95 ${
-                        captureMode === k ? 'bg-white/[0.1] ring-2 ring-white/30' : 'bg-white/[0.04] border border-white/10'}`}>
-                      <span className="block text-xs font-black text-slate-100">{label}</span>
-                      <span className="block text-[9px] text-slate-500 mt-0.5">{sub}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <button onClick={startFromLanding}
-              className={`w-full h-14 rounded-2xl bg-gradient-to-r ${meta.accent} text-slate-950 font-black text-base active:scale-[0.98] shadow-xl`}>
-              {mode === 'onerm' ? '1RM 측정 시작 →' : captureMode === 'upload' ? '영상 불러오기 →' : '카메라 열고 측정 시작 →'}
-            </button>
-          </div>
-
-          <button onClick={() => setShowGuide(true)}
-            className="mt-3 w-full text-center text-[11px] font-bold text-slate-500 py-2">ⓘ 측정 방법 안내</button>
-        </div>
-        {showGuide && <LiftingGuide mode={mode} onClose={() => setShowGuide(false)} />}
-      </div>
-    );
-  }
-
   return (
     <div className="fixed inset-0 z-[80] bg-slate-950" style={{ height: '100dvh' }}>
       {/* ── 상단 모드·종목 선택기(오버레이) ── */}
@@ -574,34 +367,15 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
         </div>
         {/* 종목 선택 + 도움말 */}
         <div className="flex items-center gap-1.5 w-full max-w-[100vw] px-1">
-          {mode === 'lifting' ? (
-            <div className="pointer-events-auto flex gap-0.5 rounded-full bg-black/55 backdrop-blur p-1 border border-white/10 shadow-lg min-w-0 flex-1 justify-center">
-              {modeExercises.map(e => (
-                  <button key={e.key} onClick={() => selectExercise(e.key)}
-                    className={`shrink-0 whitespace-nowrap rounded-full px-3 py-1 text-[11px] font-black transition-colors ${
-                    exerciseType === e.key ? 'bg-emerald-500 text-slate-950' : 'text-slate-300'}`}>
-                    {e.label}
-                  </button>
-              ))}
-            </div>
-          ) : (
-            <div className="pointer-events-auto flex max-w-[calc(100vw-4rem)] gap-0.5 overflow-x-auto rounded-full bg-black/55 backdrop-blur p-1 border border-white/10 shadow-lg min-w-0 flex-1">
-              {STRENGTH_EXERCISES.map(e => (
-                <button key={e.key} onClick={() => selectExercise(e.key)}
-                  className={`shrink-0 whitespace-nowrap rounded-full px-2.5 py-1 text-[10px] font-black transition-colors ${
-                  exerciseType === e.key ? 'bg-emerald-500 text-slate-950' : 'text-slate-300'}`}>
-                  {e.label}
-                </button>
-              ))}
-              {mode === 'vbt' && vbtExtraExercises.map(e => (
-                <button key={e.key} onClick={() => selectExercise(e.key)}
-                  className={`shrink-0 whitespace-nowrap rounded-full px-2.5 py-1 text-[10px] font-black transition-colors ${
-                  exerciseType === e.key ? 'bg-emerald-500 text-slate-950' : 'text-slate-300'}`}>
-                  {e.label}
-                </button>
-              ))}
-            </div>
-          )}
+          <div className="pointer-events-auto flex max-w-[calc(100vw-4rem)] gap-0.5 overflow-x-auto rounded-full bg-black/55 backdrop-blur p-1 border border-white/10 shadow-lg min-w-0 flex-1">
+            {modeExercises.map(e => (
+              <button key={e.key} onClick={() => selectExercise(e.key)}
+                className={`shrink-0 whitespace-nowrap rounded-full px-2.5 py-1 text-[10px] font-black transition-colors ${
+                exerciseType === e.key ? 'bg-emerald-500 text-slate-950' : 'text-slate-300'}`}>
+                {e.label}
+              </button>
+            ))}
+          </div>
           <button onClick={() => setShowGuide(true)}
             className="pointer-events-auto h-8 w-8 shrink-0 rounded-full bg-black/55 backdrop-blur border border-white/10 text-white font-black shadow-lg">
             ⓘ
@@ -621,32 +395,25 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
         )}
         <p className="pointer-events-none text-[10px] font-bold text-amber-300 bg-black/55 backdrop-blur rounded-full px-3 py-0.5 border border-amber-500/30">
           {mode === 'onerm'
-            ? '1RM 실시간 카메라 · 스쿼트/데드리프트/벤치프레스'
-            : mode === 'vbt'
-              ? '측면 촬영 권장 · 1렙씩 · 고속영상(120/240fps)이면 최고속도까지 산출'
-              : '역도 카메라 즉시 연결 · 바벨 끝/원판 2~3점 지정 · 신장 기준 cm 환산'}
+            ? '1RM 실시간 카메라 · 반복 자동 인식 · 스쿼트/데드리프트/벤치프레스'
+            : '측면 촬영 권장 · 반복 자동 인식 · 고속영상(120/240fps)이면 최고속도까지 산출'}
         </p>
       </div>
 
       {showGuide && <LiftingGuide mode={mode} onClose={() => setShowGuide(false)} />}
 
       {/* ── 측정 모드 본체 ── */}
-      {mode === 'lifting' && captureMode === 'live' && (
-        <LiftingMeasure member={memberWithBody} onBack={backToLanding} onSave={handleSaveLifting}
-          onMemberHeightChange={onMemberHeightChange}
-          exerciseType={exerciseType} embedded autoStartSignal={cameraStartSignal} topOffset={camTopOffset} />
-      )}
       {mode === 'vbt' && captureMode === 'live' && (
-        <VbtMeasure member={memberWithBody} onBack={backToLanding} onSave={handleSaveVbt}
+        <VbtMeasure member={memberWithBody} onBack={onBack} onSave={handleSaveVbt}
           onMemberHeightChange={onMemberHeightChange}
           exerciseType={exerciseType} embedded autoStartSignal={vbtCameraStartSignal} topOffset={camTopOffset} />
       )}
       {mode !== 'onerm' && captureMode === 'upload' && (
-        <LiftingUploadAnalysis member={memberWithBody} onBack={backToLanding}
+        <LiftingUploadAnalysis member={memberWithBody} onBack={onBack}
           onComplete={handleUploadComplete} mode={mode} exerciseType={exerciseType} />
       )}
       {mode === 'onerm' && (
-        <OneRMEstimate member={memberWithBody} onBack={backToLanding} onSave={handleSaveOneRm}
+        <OneRMEstimate member={memberWithBody} onBack={onBack} onSave={handleSaveOneRm}
           exerciseType={exerciseType} embedded autoStartSignal={oneRmCameraStartSignal} topOffset={camTopOffset} />
       )}
     </div>
@@ -668,7 +435,7 @@ function LiftingGuide({ mode, onClose }) {
         </div>
 
         <div className="grid grid-cols-3 gap-2">
-          {[['lifting', '🏋️ 역도', '카메라 즉시 연결'], ['vbt', '⚡ VBT', '속도 기반 존 판정'], ['onerm', '💪 1RM', '실시간 카메라']].map(([k, t, d]) => (
+          {[['vbt', '⚡ VBT', '속도 기반 존 판정'], ['onerm', '💪 1RM', '실시간 카메라']].map(([k, t, d]) => (
             <div key={k} className={`rounded-xl p-2.5 border ${mode === k ? 'bg-amber-500/10 border-amber-500/40' : 'bg-slate-800/60 border-slate-700'}`}>
               <p className="text-white font-bold text-[11px] mb-0.5">{t}</p>
               <p className="text-slate-300 text-[10px] leading-snug">{d}</p>
@@ -685,10 +452,10 @@ function LiftingGuide({ mode, onClose }) {
           </GuideSection>
         ) : (
           <>
-            <GuideSection title="바벨 추적 촬영" emoji="📹" highlight>
-              <b className="text-white">옆에서 전신이 보이게</b> 삼각대로 고정 촬영하세요. 카메라를 켜면
-              전체 화면으로 전환되고, <b className="text-white">바벨 끝·원판 등 잘 보이는 곳을 2~3군데
-              눌러</b> 추적점을 지정합니다. 한 점이 가려지거나 튀어도 나머지 점이 보완해 오차를 줄입니다.
+            <GuideSection title="자동 반복 인식 촬영" emoji="📹" highlight>
+              <b className="text-white">옆에서 전신이 보이게</b> 삼각대로 고정 촬영하세요.
+              추적점 지정 없이 <b className="text-white">측정 시작만 누르면 반복이 자동 인식</b>됩니다
+              (관절 인식 기반 — 손이 바를 잡고 있으면 됩니다).
               키를 입력하면 화면비율→cm 환산과 속도 정확도가 올라갑니다(신장 기준 정규화).
             </GuideSection>
             <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-3">

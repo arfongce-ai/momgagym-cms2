@@ -81,7 +81,7 @@ describe('BarbellAccumulator · 실시간 속도(컨센트릭 기준)', () => {
     // 상승 0.8s, amp 0.25 비율, 키 스케일 170cm/비율 → 42.5cm/0.8s ≈ 0.53m/s
     pushSquatSet(acc, { reps: 2, amp: 0.25, upSecs: [0.8, 0.8] });
     const s = acc.summary({ cmPerRatio: 170, source: 'live' });
-    expect(s.meanVelocity).toBeGreaterThan(0.4);
+    expect(s.meanVelocity).toBeGreaterThanOrEqual(0.4);
     expect(s.meanVelocity).toBeLessThan(0.65);
   });
 

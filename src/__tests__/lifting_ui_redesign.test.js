@@ -12,23 +12,22 @@ import { BarbellAccumulator } from '../ai-measure/core/barbellBiomechanics';
 
 const read = (p) => fs.readFileSync(path.resolve(__dirname, '..', p), 'utf-8');
 
-describe('허브 랜딩(모드 선택) 재설계', () => {
+describe('허브 — VBT/1RM 2모드(역도 제거)', () => {
   const hub = read('ai-measure/menus/BarbellLiftingHub.jsx');
 
-  it('초기 화면이 랜딩이다', () => {
-    expect(hub).toContain("useState('landing')");
-    expect(hub).toContain("view === 'landing'");
+  it('기본 모드는 VBT, 초기 화면은 측정', () => {
+    expect(hub).toContain("useState('vbt')");
+    expect(hub).toContain("useState('measure')");
   });
 
-  it('모드 카드 메타(3종)와 시작 핸들러가 있다', () => {
-    expect(hub).toContain('MODE_META');
-    expect(hub).toContain('startFromLanding');
-    expect(hub).toContain('무엇을');
+  it("모드 목록에 'lifting'(역도)이 없다", () => {
+    expect(hub).not.toContain("['lifting'");
+    expect(hub).not.toContain('MODE_META');
+    expect(hub).not.toContain("if (view === 'landing')");
   });
 
-  it('측정 화면 뒤로가기는 랜딩으로 복귀한다', () => {
-    expect(hub).toContain('backToLanding');
-    expect(hub).toContain('onBack={backToLanding}');
+  it('LiftingMeasure(역도 실시간 추적)를 렌더하지 않는다', () => {
+    expect(hub).not.toContain('<LiftingMeasure');
   });
 });
 

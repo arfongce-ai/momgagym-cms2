@@ -37,9 +37,9 @@ export const EXERCISE_TYPES = [
   { key: 'deadlift',      label: '데드리프트', modes: ['vbt', 'onerm'], lift1rm: 'deadlift' },
   { key: 'bench_press',   label: '벤치프레스', modes: ['vbt', 'onerm'], lift1rm: 'bench' },
   // 올림픽 리프트 — 궤적/속도 평가용(1RM 추정 제외).
-  { key: 'snatch',        label: '스내치',      modes: ['lifting', 'vbt'], lift1rm: null },
-  { key: 'clean_jerk',    label: '클린&저크',   modes: ['lifting'],        lift1rm: null },
-  { key: 'clean',         label: '클린',        modes: ['lifting', 'vbt'], lift1rm: null },
+  { key: 'snatch',        label: '스내치',      modes: ['vbt'], lift1rm: null },
+  { key: 'clean_jerk',    label: '클린&저크',   modes: ['vbt'], lift1rm: null },
+  { key: 'clean',         label: '클린',        modes: ['vbt'], lift1rm: null },
 ];
 
 const EXERCISE_KEYS = EXERCISE_TYPES.map(e => e.key);
@@ -512,7 +512,7 @@ export function buildLiftingPayload({ mode, exerciseType, source, metrics = {}, 
   // 표준 키로 정규화(레거시 별칭 흡수). 유효하지 않으면 모드별 안전 기본값.
   let exType = normalizeExerciseType(exerciseType);
   if (!EXERCISE_KEYS.includes(exType)) {
-    exType = mode === 'lifting' ? 'clean' : 'squat';
+    exType = 'squat';
   }
   return {
     type: 'lifting',          // 통합 측정 유형(점프=jump 처럼 하나로 묶음)

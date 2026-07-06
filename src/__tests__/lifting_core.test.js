@@ -27,16 +27,17 @@ describe('lifting · exerciseType 표준화', () => {
     expect(exerciseLabel('nope')).toBe('nope'); // 폴백
   });
 
-  it('모드별 종목 구성(역도=올림픽, 1RM=파워3종, VBT=혼합)', () => {
+  it('모드별 종목 구성(1RM=파워3종, VBT=파워+올림픽 · 역도 모드 제거)', () => {
     const onerm = exercisesForMode('onerm').map(e => e.key);
     expect(onerm).toEqual(['squat', 'deadlift', 'bench_press']);
     expect(onerm).not.toContain('snatch'); // 올림픽 리프트는 1RM 추정 대상 아님
 
-    const lifting = exercisesForMode('lifting').map(e => e.key);
-    expect(lifting).toEqual(['snatch', 'clean_jerk', 'clean']);
+    // 역도(lifting) 모드는 폐지 — 해당 모드 종목은 없다.
+    expect(exercisesForMode('lifting')).toEqual([]);
 
+    // 올림픽 리프트는 VBT(속도)로 흡수(고속영상 분석 포함).
     const vbt = exercisesForMode('vbt').map(e => e.key);
-    expect(vbt).toEqual(['squat', 'deadlift', 'bench_press', 'snatch', 'clean']);
+    expect(vbt).toEqual(['squat', 'deadlift', 'bench_press', 'snatch', 'clean_jerk', 'clean']);
   });
 
   it('내부 lift 키 ↔ 표준 exerciseType 양방향 매핑', () => {
@@ -161,14 +162,14 @@ describe('lifting · 통합 저장 페이로드', () => {
   });
 
   it('비표준 exerciseType은 모드별 안전 종목으로 폴백', () => {
-    const p1 = buildLiftingPayload({ mode: 'lifting', exerciseType: 'garbage', source: 'live' });
-    expect(p1.exerciseType).toBe('clean'); // 역도 모드 → 올림픽 리프트 기본
-    const p2 = buildLiftingPayload({ mode: 'vbt', exerciseType: 'garbage', source: 'live' });
-    expect(p2.exerciseType).toBe('squat'); // 그 외 → squat
+    const p1 = buildLiftingPayload({ mode: 'vbt', exerciseType: 'garbage', source: 'live' });
+    expect(p1.exerciseType).toBe('squat'); // 비표준 → squat 폴백
+    const p2 = buildLiftingPayload({ mode: 'onerm', exerciseType: 'garbage', source: 'live' });
+    expect(p2.exerciseType).toBe('squat');
   });
 
   it('레거시 weightlifting 키는 clean으로 정규화 저장', () => {
-    const p = buildLiftingPayload({ mode: 'lifting', exerciseType: 'weightlifting', source: 'live' });
+    const p = buildLiftingPayload({ mode: 'vbt', exerciseType: 'weightlifting', source: 'live' });
     expect(p.exerciseType).toBe('clean');
   });
 });

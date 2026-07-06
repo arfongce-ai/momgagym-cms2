@@ -1,22 +1,19 @@
 // ai-measure/menus/VbtMeasure.jsx
-// 메뉴 7: VBT (속도 기반 트레이닝) — 바벨 엔드캡(봉 끝) 탭 추적으로 자동 측정.
+// 메뉴 7: VBT (속도 기반 트레이닝) — 관절 인식(양 손목 중점) 기반 자동 반복·속도 측정.
 //  - [재설계] 카메라를 켜면 화면 전체를 덮는 풀스크린 오버레이로 전환.
 //  - 화면에서 엔드캡을 한 번 누르면 그 색을 학습해 따라간다.
 //  - 측정 시작 → 한 렙 동작 → 종료 시: 수직 이동거리(키 환산 m) ÷ 시간 = 평균속도.
 import { useRef, useState, useEffect, useCallback } from 'react';
 import { usePoseEngine } from '../core/usePoseEngine';
 import { personHeightRatio, barbellPoint } from '../core/barbell';
-import { createMultiTracker } from '../core/endcapTracker';
 import { velocityZone } from '../core/performance';
 import {
-  detectPlatesFromVideo, suggestSidePlates, totalWeight, createPlateBlobTracker,
+  detectPlatesFromVideo, suggestSidePlates, totalWeight,
   plateCmPerRatio, PLATE_CALIBRATION_TAGS,
 } from '../core/plates';
 import { exerciseLabel as exerciseLabelLocal, snapWeight, stepWeight } from '../core/lifting';
-import { fuseTrackingCandidates, summarizeCrossValidation } from '../core/trackFusion';
-import { estimateBodyCOG, barCogHorizontalGap } from '../core/bodyCog';
 import { saveVideoToPhone, pickRecorderMime } from '../core/recordSink';
-import { drawLiftingDataHud, drawBarPathToRecord } from '../core/recordingOverlay';
+import { drawLiftingDataHud } from '../core/recordingOverlay';
 import { assessFraming, FRAMING_PRESETS } from '../core/framingGuide';
 import {
   CALIBRATION_PRESETS, buildReferenceScale, ratioToCm,
@@ -34,22 +31,14 @@ const MAX_RECORDING_MS = 60000;
 
 export default function VbtMeasure({ member, onSave, onBack, exerciseType, embedded = false, autoStartSignal = 0, topOffset = 0 }) {
   const canvasRef = useRef(null);
-  const capRef = useRef(createMultiTracker());
   // ── 다중 신호 융합(LiftingMeasure와 동일 구조 — 측정 정직성/신뢰성 일관화) ──
-  //  capRef          = 사용자가 탭한 색(엔드캡/원판) 추적(UI 점 개수/신뢰도 표시 겸용)
-  //  plateTrackerRef = 원판 색 블롭 연속 추적(색 인식 후 자동 시드)
   //  fusedRef        = color/skeleton/plate 세 신호를 매 프레임 융합한 최종 궤적
   //                    (ROM·시간·속도는 전부 이 융합 궤적에서 산출 → 가려져도 안 끊김)
-  const plateTrackerRef = useRef(createPlateBlobTracker());
   const fusedRef = useRef(new BarbellAccumulator()); // 실시간 렙 분절·속도·궤적 엔진
-  const crossValFramesRef = useRef([]);     // 세트 동안 프레임별 융합 소스/일치도 로그
-  const cogRef = useRef({ available: false, point: null });   // 최신 COG(측면 촬영시만)
-  const barCogGapSamplesRef = useRef([]);   // 세트 동안 바-COG 수평 이격(cm) 샘플
   const phRef = useRef(null);
   const phSamplesRef = useRef([]);
   const frameStatsRef = useRef({ total: 0, lost: 0 });
   const recordingRef = useRef(false);
-  const seededRef = useRef(false);
   const framingRef = useRef({ level: 'bad', message: '' });
   const consumedAutoStartRef = useRef(0);
   const roiRef = useRef({ x: 0.06, y: 0.42, w: 0.30, h: 0.40 });
@@ -74,10 +63,6 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
 
   const [recording, setRecording] = useState(false);
   const [countdown, setCountdown] = useState(null);
-  const [seedHintSignal, setSeedHintSignal] = useState(0);
-  const [seeded, setSeeded] = useState(false);
-  const [ptCount, setPtCount] = useState(0);
-  const [activePts, setActivePts] = useState(0);
   const [result, setResult] = useState(null);
   const [heightCm, setHeightCm] = useState(member?.height || '');
   const [plate, setPlate] = useState({ barKg: 20, sidePlates: [] });
@@ -85,19 +70,19 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
   const [weightSource, setWeightSource] = useState('dial');
   const [detected, setDetected] = useState([]);
   const [framing, setFraming] = useState({ level: 'bad', message: '카메라 준비 중…' });
-  const [cogActive, setCogActive] = useState(false);   // 측면 인식으로 COG 산출 중인지(칩)
   const [, setExposureLock] = useState(false);
   const [referenceLengthCm, setReferenceLengthCm] = useState(CALIBRATION_PRESETS[0].lengthCm);
   const [referenceScale, setReferenceScale] = useState(null);
   const [calibrating, setCalibrating] = useState(false);
   const [calibrationPointCount, setCalibrationPointCount] = useState(0);
 
-  const handleResult = useCallback((lms, ts, video) => {
+  const handleResult = useCallback((lms, ts, _video) => {
+    // 오버레이/추적선 없음(RSI 방식) — 캔버스는 비워 둔다.
     const canvas = canvasRef.current;
-    if (!canvas || !video) return;
-    const cw = canvas.width, ch = canvas.height;
-    const ctx = canvas.getContext('2d');
-    ctx.clearRect(0, 0, cw, ch);
+    if (canvas) {
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    }
 
     const ph = personHeightRatio(lms);
     if (ph) {
@@ -111,119 +96,35 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
       setFraming({ level: fr.level, message: fr.message });
     }
 
-    // ── 전신 무게중심(COG) 자동 인식 — 측면 촬영일 때만 ──
-    const cog = estimateBodyCOG(lms, fr.orientation);
-    cogRef.current = cog;
-    setCogActive(prev => (prev !== cog.available ? cog.available : prev));
-
-    const r = roiRef.current;
-    ctx.save();
-    ctx.strokeStyle = 'rgba(245,158,11,0.95)';
-    ctx.lineWidth = 3; ctx.setLineDash([8, 6]);
-    ctx.strokeRect(r.x * cw, r.y * ch, r.w * cw, r.h * ch);
-    ctx.setLineDash([]);
-    ctx.fillStyle = 'rgba(245,158,11,0.95)';
-    ctx.font = 'bold 14px sans-serif';
-    ctx.fillText('원판 색 인식', r.x * cw + 6, r.y * ch - 8);
-    ctx.restore();
-
-    // COG 마커(측면 인식시에만 그려짐 — 정면/불명확하면 자동으로 사라짐).
-    if (cog.available && cog.point) {
-      ctx.save();
-      ctx.fillStyle = 'rgba(217,70,239,0.9)';
-      ctx.beginPath(); ctx.arc(cog.point.x * cw, cog.point.y * ch, 9, 0, Math.PI * 2); ctx.fill();
-      ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(255,255,255,0.85)';
-      ctx.beginPath(); ctx.arc(cog.point.x * cw, cog.point.y * ch, 9, 0, Math.PI * 2); ctx.stroke();
-      ctx.fillStyle = 'rgba(217,70,239,0.95)';
-      ctx.font = 'bold 11px sans-serif';
-      ctx.fillText('COG', cog.point.x * cw + 12, cog.point.y * ch + 4);
-      ctx.restore();
-    }
-
-    const cap = capRef.current;
-    const skeletonPoint = barbellPoint(lms);
-    const plateColorPoint = plateTrackerRef.current.isSeeded() ? plateTrackerRef.current.update(video) : null;
-
-    if (cap.isSeeded()) {
-      const p = cap.update(video);
-      const colorActive = cap.activeCount();
-      // 세 신호(색/스켈레톤/원판색) 융합 — 한 신호가 가려져도 궤적이 끊기지 않는다.
-      const fused = fuseTrackingCandidates({ colorPoint: p, colorActive, skeletonPoint, plateColorPoint });
-
-      if (fused.point && recordingRef.current) {
-        fusedRef.current.push(fused.point, ts);
-        crossValFramesRef.current.push({ source: fused.source, agreement: fused.agreement, usedFallback: fused.usedFallback });
-        // 바-COG 수평 이격(측면 인식시에만) — 정직성: COG 없으면 샘플을 남기지 않는다.
-        if (cog.available && cog.point) {
-          const gapRatio = barCogHorizontalGap(fused.point, cog.point);
-          const scale = resolveDistanceScale({
-            referenceScale,
-            personHeightRatio: phRef.current,
-            heightCm: Number(heightCm) || null,
-          });
-          const gapCm = ratioToCm(gapRatio, scale.cmPerRatio);
-          barCogGapSamplesRef.current.push({ gapRatio, gapCm });
-        }
-      }
-      if (colorActive !== activePts) setActivePts(colorActive);
+    // 바 위치 = 양 손목 중점(스켈레톤). 별도 추적점 지정 없이 자동으로 잡는다.
+    const bar = barbellPoint(lms);
+    if (!bar) {
       if (recordingRef.current) {
         frameStatsRef.current.total += 1;
-        if (colorActive === 0) frameStatsRef.current.lost += 1;
-        // 실시간 생체역학: 렙 카운트 + 렙 속도/저하 — 엔진이 프레임마다 갱신.
-        const H = Number(heightCm) || null;
-        const scale = resolveDistanceScale({ referenceScale, personHeightRatio: phRef.current, heightCm: H });
-        const lv = fusedRef.current.live(scale.cmPerRatio);
-        setLiveReps(prev => (prev !== lv.reps ? lv.reps : prev));
-        setLiveHud(prev => {
-          if (prev && prev.reps === lv.reps && prev.lastRepVelocity === lv.lastRepVelocity
-            && prev.velocityLossPct === lv.velocityLossPct && prev.phase === lv.phase) return prev;
-          return lv;
-        });
-        liveHudRef.current = {
-          romCm: lv.romCm,
-          meanVelocity: lv.lastRepVelocity ?? lv.bestRepVelocity ?? null,
-        };
+        frameStatsRef.current.lost += 1;
       }
-
-      const path = fusedRef.current.path();
-      ctx.save();
-      ctx.strokeStyle = 'rgba(34,211,238,0.95)';
-      ctx.lineWidth = 6;
-      ctx.lineCap = 'round';
-      ctx.lineJoin = 'round';
-      ctx.beginPath();
-      path.forEach((q, i) => {
-        const X = q.x * cw, Y = q.y * ch;
-        i === 0 ? ctx.moveTo(X, Y) : ctx.lineTo(X, Y);
-      });
-      ctx.stroke();
-      cap.points().forEach(pt => {
-        if (!pt.ema) return;
-        ctx.fillStyle = pt.alive ? 'rgba(16,185,129,0.95)' : 'rgba(148,163,184,0.6)';
-        ctx.beginPath(); ctx.arc(pt.ema.x * cw, pt.ema.y * ch, 11, 0, Math.PI * 2); ctx.fill();
-        ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(255,255,255,0.8)';
-        ctx.beginPath(); ctx.arc(pt.ema.x * cw, pt.ema.y * ch, 11, 0, Math.PI * 2); ctx.stroke();
-      });
-      if (fused.point) {
-        // 색 추적 살아있으면 주황. 스켈레톤/원판색으로 대체된 프레임은 붉은 테두리로
-        // 방식이 바뀌었음을 드러낸다(측정 정직성 — 정밀도 다른 방법을 똑같이 보이면 안 됨).
-        ctx.fillStyle = fused.usedFallback ? '#fb923c' : '#f59e0b';
-        ctx.beginPath(); ctx.arc(fused.point.x * cw, fused.point.y * ch, 16, 0, Math.PI * 2); ctx.fill();
-        ctx.lineWidth = 3; ctx.strokeStyle = fused.usedFallback ? '#ef4444' : '#fff';
-        ctx.beginPath(); ctx.arc(fused.point.x * cw, fused.point.y * ch, 16, 0, Math.PI * 2); ctx.stroke();
-        if (cog.available && cog.point && recordingRef.current) {
-          ctx.setLineDash([5, 5]);
-          ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(217,70,239,0.6)';
-          ctx.beginPath();
-          ctx.moveTo(fused.point.x * cw, fused.point.y * ch);
-          ctx.lineTo(cog.point.x * cw, fused.point.y * ch);
-          ctx.stroke();
-          ctx.setLineDash([]);
-        }
-      }
-      ctx.restore();
+      return;
     }
-  }, [activePts, heightCm, referenceScale]);
+
+    if (recordingRef.current) {
+      fusedRef.current.push(bar, ts);
+      frameStatsRef.current.total += 1;
+      // 실시간 렙 카운트 + 렙 속도/저하 — 엔진이 프레임마다 갱신.
+      const H = Number(heightCm) || null;
+      const scale = resolveDistanceScale({ referenceScale, personHeightRatio: phRef.current, heightCm: H });
+      const lv = fusedRef.current.live(scale.cmPerRatio);
+      setLiveReps(prev => (prev !== lv.reps ? lv.reps : prev));
+      setLiveHud(prev => {
+        if (prev && prev.reps === lv.reps && prev.lastRepVelocity === lv.lastRepVelocity
+          && prev.velocityLossPct === lv.velocityLossPct && prev.phase === lv.phase) return prev;
+        return lv;
+      });
+      liveHudRef.current = {
+        romCm: lv.romCm,
+        meanVelocity: lv.lastRepVelocity ?? lv.bestRepVelocity ?? null,
+      };
+    }
+  }, [heightCm, referenceScale]);
 
   const { videoRef, start, stop, status, error, lockCapture, unlockCapture } = usePoseEngine({ onResult: handleResult });
 
@@ -282,17 +183,10 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
 
   const startCam = useCallback(() => {
     setResult(null);
-    seededRef.current = false; setSeeded(false);
-    setPtCount(0); setActivePts(0);
-    capRef.current.clear();
-    plateTrackerRef.current.clear();
     fusedRef.current.reset();
-    crossValFramesRef.current = [];
-    barCogGapSamplesRef.current = [];
     calibrationPointsRef.current = [];
     setCalibrationPointCount(0);
     setCalibrating(false);
-    cogRef.current = { available: false, point: null };
     setVideoBlob(null); videoBlobRef.current = null; setVideoSavedMsg('');
     start();
   }, [start]);
@@ -315,7 +209,6 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
       ctx.fillStyle = '#000';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       if (video && video.videoWidth) ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-      drawBarPathToRecord(ctx, fusedRef.current.path(), canvas.width, canvas.height);
       const elapsedSec = recordingRef.current ? (performance.now() - recordStartRef.current) / 1000 : null;
       drawLiftingDataHud(ctx, canvas.width, canvas.height, {
         romCm: liveHudRef.current.romCm,
@@ -366,11 +259,6 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
     if (detectedRoi) roiRef.current = detectedRoi;
     setDetected(dominant);
     applyPlateWeight({ ...plate, sidePlates: suggestSidePlates(dominant) }, 'plate-color');
-    // 원판 색을 인식하면 그 색을 매 프레임 계속 추적하는 블롭 트래커도 시드
-    // — 색/스켈레톤 추적과 융합되는 3번째 신호가 된다(LiftingMeasure와 동일).
-    const top = dominant[0];
-    const roi = detectedRoi || roiRef.current;
-    if (top?.tag) plateTrackerRef.current.seed(top.tag, roi.x + roi.w / 2, roi.y + roi.h / 2);
   }, [applyPlateWeight, plate, videoRef]);
 
   useEffect(() => {
@@ -412,12 +300,6 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
     if (nx < 0 || nx > 1 || ny < 0 || ny > 1) return;
     if (calibrating) {
       addCalibrationPoint({ x: nx, y: ny });
-      return;
-    }
-    const ok = capRef.current.seed(v, nx, ny);
-    if (ok) {
-      seededRef.current = true; setSeeded(true);
-      setPtCount(capRef.current.pointCount());
     }
   };
 
@@ -440,23 +322,6 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
     if (!meanVelocity) return null;
     const repVelocity = sum.repVelocityCompat;
     const reps = sum.repCount;
-    const crossValidation = summarizeCrossValidation(crossValFramesRef.current);
-    const gaps = barCogGapSamplesRef.current;
-    let cogGap = null;
-    if (gaps.length) {
-      const cmVals = gaps.map(g => g.gapCm).filter(v => Number.isFinite(v)).sort((a, b) => a - b);
-      const ratioVals = gaps.map(g => g.gapRatio).filter(v => Number.isFinite(v)).sort((a, b) => a - b);
-      const medCm = cmVals.length ? cmVals[Math.floor(cmVals.length / 2)] : null;
-      const medRatio = ratioVals.length ? ratioVals[Math.floor(ratioVals.length / 2)] : null;
-      const maxCm = cmVals.length ? cmVals[cmVals.length - 1] : null;
-      cogGap = {
-        available: cogRef.current?.available === true,
-        medianCm: medCm != null ? Math.round(medCm * 10) / 10 : null,
-        maxCm: maxCm != null ? Math.round(maxCm * 10) / 10 : null,
-        medianRatio: medRatio != null ? Math.round(medRatio * 1000) / 1000 : null,
-        samples: gaps.length,
-      };
-    }
     return {
       meanVelocity,
       zone: velocityZone(meanVelocity),
@@ -474,8 +339,6 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
       calibrationSource: scale.source,
       isCalibrated: scale.isCalibrated,
       lostRatio,
-      crossValidation,
-      cogGap,
     };
   }, [heightCm, referenceScale]);
 
@@ -495,21 +358,17 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
     if (!res) { alert('기록된 움직임이 부족합니다. 다시 측정하세요.'); return; }
     if (res.error === 'no_height') { alert('키(cm)를 입력하고 전신이 보이게 측정하세요.'); return; }
     if (res.lostRatio > 0.4) {
-      alert('추적이 자주 끊겼습니다(인식 ' + Math.round((1 - res.lostRatio) * 100) + '%). 끝이 보이는 지점을 2~3곳 눌러 다시 측정하면 정확합니다.');
+      alert('관절 인식이 자주 끊겼습니다(인식 ' + Math.round((1 - res.lostRatio) * 100) + '%). 전신·양팔이 화면에 들어오게 다시 측정해 주세요.');
     }
     setResult(res);
     if (autoLimited) setVideoSavedMsg('최대 60초 녹화가 완료되었습니다.');
   };
 
   const toggleRecord = () => {
-    if (!seededRef.current) { setSeedHintSignal(v => v + 1); return; }
     if (countdown != null) return;
     if (!recording) {
       runStartCountdown(() => {
-        capRef.current.reset();
         fusedRef.current.reset();
-        crossValFramesRef.current = [];
-        barCogGapSamplesRef.current = [];
         phSamplesRef.current = [];
         frameStatsRef.current = { total: 0, lost: 0 };
         liveHudRef.current = { romCm: null, meanVelocity: null };
@@ -560,7 +419,7 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
       if (!res) { alert('기록된 움직임이 부족합니다. 다시 측정하세요.'); return; }
       if (res.error === 'no_height') { alert('키(cm)를 입력·적용한 뒤, 사람 전신이 보이게 측정하세요.'); return; }
       if (res.lostRatio > 0.4) {
-        alert('추적이 자주 끊겼습니다(인식 ' + Math.round((1 - res.lostRatio) * 100) + '%). 더 잘 보이는 지점을 2~3곳 눌러 다시 측정하면 정확합니다.');
+        alert('관절 인식이 자주 끊겼습니다(인식 ' + Math.round((1 - res.lostRatio) * 100) + '%). 전신·양팔이 화면에 들어오게 다시 측정해 주세요.');
       }
       setResult(res);
     }
@@ -594,8 +453,6 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
       barKg: plate.barKg,
       sidePlates: plate.sidePlates,
       weightSource,
-      crossValidation: result.crossValidation ?? null,  // 다중 신호 교차검증 요약
-      cogGap: result.cogGap ?? null,                     // 바-COG 수평 이격(측면시)
       videoBlob: videoBlobRef.current || videoBlob || null,
     });
   };
@@ -605,28 +462,9 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
     const topBar = (
       <>
 
-        <div className="flex items-center gap-1.5 flex-wrap justify-end">
-          <span className="bg-black/65 rounded-full px-2.5 py-1 text-[10px] text-cyan-300 font-bold">
-            {ptCount === 0
-              ? '바벨 끝·원판을 눌러 추적점 지정 또는 색 인식'
-              : recording
-                ? `추적점 ${activePts}/${ptCount} 인식 중`
-                : `추적점 ${ptCount}개 · 색 인식 또는 측정 시작`}
-          </span>
-          {ptCount > 0 && (
-            <span className={`rounded-full px-2 py-1 text-[10px] font-bold ${activePts >= 2 ? 'bg-emerald-500/85 text-slate-950' : activePts === 1 ? 'bg-amber-500/85 text-slate-950' : 'bg-red-500/85 text-white'}`}>
-              신뢰도 {activePts >= 2 ? '높음' : activePts === 1 ? '보통' : '낮음'}
-            </span>
-          )}
-        </div>
         <span className={`rounded-full px-3 py-1 text-[11px] font-bold ${framing.level === 'good' ? 'bg-emerald-500/85 text-slate-950' : framing.level === 'warn' ? 'bg-amber-500/85 text-slate-950' : 'bg-red-500/85 text-white'}`}>
           {framing.level === 'good' ? '✓ ' : '⚠ '}{framing.message}
         </span>
-        {cogActive && (
-          <span className="rounded-full px-2.5 py-1 text-[10px] font-bold bg-fuchsia-500/85 text-white">
-            ⦿ 무게중심(COG) 자동 인식 중
-          </span>
-        )}
         {!heightCm && (
           <span className="rounded-full px-2.5 py-1 text-[10px] font-bold bg-amber-500/85 text-slate-950">
             키 미입력 — 속도 계산엔 키 필요
@@ -644,8 +482,7 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
           disabled={countdown != null}
           className={`px-6 h-14 rounded-2xl text-base font-black active:scale-95 shadow-xl disabled:opacity-60 transition-transform ${
             recording ? 'bg-gradient-to-r from-rose-500 to-red-500 text-white shadow-red-500/30'
-            : seeded ? 'bg-gradient-to-r from-amber-400 to-orange-500 text-slate-950 shadow-amber-500/30'
-            : 'bg-white/10 border border-white/15 text-slate-300'}`}>
+            : 'bg-gradient-to-r from-amber-400 to-orange-500 text-slate-950 shadow-amber-500/30'}`}>
           {recording ? '■ 측정 종료' : countdown != null ? '시작 대기' : '● 측정 시작'}
         </button>
         <button onClick={scanPlateColors}
@@ -670,7 +507,7 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
         videoRef={videoRef} canvasRef={canvasRef} status={status} error={error}
         onTapVideo={onTapVideo} onClose={closeCam} topBar={topBar} controls={controls}
         recording={recording} tappable={countdown == null}
-        seedHint={ptCount === 0 && !recording} hintSignal={seedHintSignal} countdown={countdown}
+        countdown={countdown}
         topOffset={topOffset}
       >
         {recording && liveHud?.repList?.length > 0 && (

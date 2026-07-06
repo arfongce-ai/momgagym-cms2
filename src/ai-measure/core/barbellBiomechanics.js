@@ -40,14 +40,15 @@ import { OneEuroFilter } from './gaitBiomechanics';
 // "피크가 너무 자주 거부됨"   → peakMinSamples 낮추기(정확도와 트레이드오프)
 export const BARBELL_TUNING = {
   // 위치 평활(1-Euro) — 반전점을 뭉개지 않는 선에서 떨림 제거.
-  filterMinCutoff: 2.5,
-  filterBeta: 0.05,
-  extremeEps: 0.003,       // 극점 갱신 최소 개선폭 — 필터 점근 수렴이 정지
+  //  스켈레톤(손목 중점) 입력은 엔드캡 추적보다 지터가 크므로 조금 더 평활.
+  filterMinCutoff: 1.8,
+  filterBeta: 0.04,
+  extremeEps: 0.004,       // 극점 갱신 최소 개선폭 — 필터 점근 수렴이 정지
                            // 구간을 렙 시간에 포함시키는 것을 차단(속도 정확도)
 
   // ── 렙 분절(히스테리시스) ──
-  minTravelRatio: 0.045,   // 방향 반전으로 인정할 최소 되돌림(화면비)
-  minRepRomRatio: 0.05,    // 렙으로 인정할 최소 수직 변위(화면비)
+  minTravelRatio: 0.05,    // 방향 반전으로 인정할 최소 되돌림(화면비)
+  minRepRomRatio: 0.06,    // 렙으로 인정할 최소 수직 변위(화면비) — 손목 지터 컷
   minRepDurationSec: 0.2,  // 이보다 짧은 상승은 노이즈로 간주(무효)
   maxRepDurationSec: 15,   // 이보다 길면 렙이 아니라 정지/드리프트로 간주
 
