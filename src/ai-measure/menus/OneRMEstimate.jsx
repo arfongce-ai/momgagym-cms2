@@ -20,11 +20,13 @@ import {
 import { usePoseEngine } from '../core/usePoseEngine';
 import { assessFraming, FRAMING_PRESETS } from '../core/framingGuide';
 import { createMultiTracker } from '../core/endcapTracker';
-import { createRepCounter } from '../core/repCounter';
+import { personHeightRatio } from '../core/barbell';
+import { BarbellAccumulator, estimateOneRmFromMeanVelocity } from '../core/barbellBiomechanics';
 import { saveVideoToPhone, pickRecorderMime } from '../core/recordSink';
 import { drawMeasurementOverlay, drawBarPathToRecord } from '../core/recordingOverlay';
 import FramingIntro from './FramingIntro';
 import CameraStage from './CameraStage';
+import VelocityGaugeHud from './VelocityGaugeHud';
 
 const PLATE_HEX = { 빨강:'#D7263D', 파랑:'#0B61A4', 노랑:'#F2C200', 초록:'#1F9D55', 흰색:'#E8E8E8' };
 
@@ -49,6 +51,9 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
   const [weightMode, setWeightMode] = useState('dial');       // 'dial' | 'manual' | 'plate'
   const [result, setResult] = useState(null);
   const [attempts, setAttempts] = useState([]);              // 도전 차수 누적
+  // 카메라 세트에서 측정된 평균속도 기반 교차검증(속도→%1RM 근거 테이블).
+  const [velocityCheck, setVelocityCheck] = useState(null);
+  const liftToEx = (l) => (l === 'bench' ? 'bench_press' : l);
 
   // 허브에서 종목이 바뀌면 내부 lift 도 동기화(임베드 모드).
   useEffect(() => {
@@ -64,9 +69,13 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
   const [framing, setFraming] = useState({ level: 'bad', message: '카메라 준비 중…' });
   const liftRef = useRef(lift);
   liftRef.current = lift;
-  // 바벨 추적(렙 자동 카운팅)
+  // 바벨 추적(실시간 렙 카운팅 + 세트 평균속도 — 생체역학 엔진)
   const capRef = useRef(createMultiTracker());
-  const repCounterRef = useRef(createRepCounter());
+  const accRef = useRef(new BarbellAccumulator());
+  const phRef = useRef(null);                 // 사람 화면상 신장(cm 환산 스케일)
+  const heightRef = useRef(Number(member?.height) || null);
+  heightRef.current = Number(member?.height) || null;
+  const [liveHud, setLiveHud] = useState(null); // 실시간 렙 속도 게이지
   const countingRef = useRef(false);
   const consumedAutoStartRef = useRef(0);
   const countdownTimerRef = useRef(null);
@@ -151,7 +160,11 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
     ctx.fillText('원판 색 인식', r.x * cw + 6, r.y * ch - 8);
     ctx.restore();
 
-    // 바벨 추적(렙 자동 카운팅) — 추적점이 지정돼 있으면 궤적·렙 갱신.
+    // 사람 신장 스케일(속도 cm 환산) — 프레임마다 갱신.
+    const ph = personHeightRatio(lms);
+    if (ph) phRef.current = ph;
+
+    // 바벨 추적(실시간 렙 카운팅) — 추적점이 지정돼 있으면 궤적·렙 갱신.
     const cap = capRef.current;
     if (cap.isSeeded()) {
       const p = cap.update(video);
@@ -165,9 +178,16 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
         ctx.restore();
         if (countingRef.current) {
           cap.push(p, ts);
-          repCounterRef.current.push(p.y);
-          const shown = repCounterRef.current.countWithPending();
-          setLiveReps(prev => (prev !== shown ? shown : prev));
+          accRef.current.push(p, ts);
+          const cmPerRatio = heightRef.current && phRef.current
+            ? heightRef.current / phRef.current : null;
+          const lv = accRef.current.live(cmPerRatio);
+          setLiveReps(prev => (prev !== lv.reps ? lv.reps : prev));
+          setLiveHud(prev => {
+            if (prev && prev.reps === lv.reps && prev.lastRepVelocity === lv.lastRepVelocity
+              && prev.velocityLossPct === lv.velocityLossPct) return prev;
+            return lv;
+          });
         }
       }
     }
@@ -196,8 +216,10 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
     if (!counting) {
       runStartCountdown(() => {
         capRef.current.reset();
-        repCounterRef.current.reset();
+        accRef.current.reset();
         setLiveReps(0);
+        setLiveHud(null);
+        setVelocityCheck(null);
         setVideoBlob(null); videoBlobRef.current = null; setVideoSavedMsg('');
         recordStartRef.current = performance.now();
         countingRef.current = true;
@@ -235,8 +257,7 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
       } else {
         stopCompose();
       }
-      const r = repCounterRef.current.countWithPending();
-      if (r > 0) setReps(r); // 자동 카운트 결과를 반복 횟수에 반영
+      applyEngineResult(); // 자동 카운트 + 속도 기반 교차검증 반영
     }
   };
 
@@ -266,7 +287,7 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
         accent: '#f59e0b',
         metrics: [
           { label: 'weight', value: `${snapWeight(computedWeight)} kg` },
-          { label: 'reps', value: `${repCounterRef.current.countWithPending()} reps` },
+          { label: 'reps', value: `${accRef.current.live().reps} reps` },
         ],
       });
       composeRafRef.current = requestAnimationFrame(draw);
@@ -279,6 +300,24 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
     return canvasStream;
   };
 
+
+  // 세트 종료 공통: 엔진 요약 → 반복 반영 + 속도 기반 1RM 교차검증(정직성 게이트 포함).
+  const applyEngineResult = () => {
+    const heightNum = Number(member?.height) || null;
+    const cmPerRatio = heightNum && phRef.current ? heightNum / phRef.current : null;
+    const sum = accRef.current.summary({ cmPerRatio, source: 'live' });
+    if (!sum || sum.valid === false) return;
+    if (sum.repCount > 0) setReps(sum.repCount);
+    const vc = estimateOneRmFromMeanVelocity({
+      exerciseType: liftToEx(liftRef.current),
+      loadKg: computedWeight,
+      meanVelocity: sum.meanVelocity,
+    });
+    setVelocityCheck(vc.oneRm != null
+      ? { ...vc, meanVelocity: sum.meanVelocity, repCount: sum.repCount }
+      : null); // 범위 밖/스케일 없음이면 표시하지 않음(그럴듯한 가짜값 금지)
+  };
+
   const finishCounting = (autoLimited = false) => {
     if (!countingRef.current) return;
     clearMaxRecordTimer();
@@ -289,8 +328,7 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
     } else {
       stopCompose();
     }
-    const r = repCounterRef.current.countWithPending();
-    if (r > 0) setReps(r);
+    applyEngineResult();
     if (autoLimited) setVideoSavedMsg('최대 60초 녹화가 완료되었습니다.');
   };
 
@@ -318,7 +356,8 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
   const openCam = useCallback(() => {
     setDetected([]);
     capRef.current.clear();
-    repCounterRef.current.reset();
+    accRef.current.reset();
+    setVelocityCheck(null);
     countingRef.current = false; setCounting(false);
     setLiveReps(0); setSeedPts(0);
     setVideoBlob(null); videoBlobRef.current = null; setVideoSavedMsg('');
@@ -430,6 +469,8 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
       attempts: nextAttempts,             // 전체 도전 기록
       bestOneRM: summary.bestOneRM,       // 누적 최고 1RM
       bestAttemptNo: summary.bestAttemptNo,
+      velocityCheck: velocityCheck ?? null,             // 속도 기반 e1RM 교차검증
+      measuredMeanVelocity: velocityCheck?.meanVelocity ?? null,
       videoBlob: videoBlobRef.current || videoBlob || null,
     });
   };
@@ -438,11 +479,7 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
   if (status !== 'idle') {
     const topBar = (
       <>
-        {counting && (
-          <div className="self-center rounded-full bg-black/70 backdrop-blur px-3 py-1.5 border border-amber-500/40">
-            <p className="text-center font-mono font-black text-lg text-white leading-none"><span className="text-[10px] text-amber-300 mr-1">반복</span>{liveReps}<span className="text-xs text-slate-400">회</span></p>
-          </div>
-        )}
+
         <span className="bg-black/65 rounded-full px-2.5 py-1 text-[10px] text-cyan-300 font-bold">
           {seedPts === 0
             ? '바벨 끝·원판을 눌러 추적점 지정 또는 색 인식'
@@ -474,6 +511,15 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
         seedHint={seedPts === 0 && !counting} hintSignal={seedHintSignal} countdown={countdown}
         topOffset={topOffset}
       >
+        {counting && (
+          <VelocityGaugeHud
+            avg={liveHud?.lastRepVelocity ?? null}
+            reps={liveReps}
+            best={liveHud?.bestRepVelocity ?? null}
+            romCm={liveHud?.romCm ?? null}
+            lossPct={liveHud?.velocityLossPct ?? null}
+          />
+        )}
         {/* 무게 다이얼 반투명 오버레이 — 녹화(카운트) 버튼 바로 위. 촬영 전 무게 조정 */}
         {!counting && (
           <div className="mx-auto max-w-xs w-full rounded-xl bg-black/55 backdrop-blur border border-white/10 p-2">
@@ -725,6 +771,24 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
               </div>
             </div>
           )}
+
+          {velocityCheck?.oneRm != null && (() => {
+            const diffPct = result.average > 0
+              ? Math.round(Math.abs(velocityCheck.oneRm - result.average) / result.average * 100) : null;
+            const agree = diffPct != null && diffPct <= 10;
+            return (
+              <div className={`rounded-xl p-3 border ${agree ? 'bg-emerald-500/10 border-emerald-500/30' : 'bg-amber-500/10 border-amber-500/30'}`}>
+                <p className={`text-[10px] mb-1 font-bold ${agree ? 'text-emerald-300' : 'text-amber-300'}`}>
+                  속도 기반 교차검증 (평균속도 {velocityCheck.meanVelocity}m/s · {velocityCheck.repCount}회 추적)
+                </p>
+                <p className="text-[11px] text-slate-200">
+                  속도→%1RM 근거 테이블 추정 <span className="font-mono font-bold">{velocityCheck.oneRm}kg</span>
+                  {diffPct != null && <span className={agree ? 'text-emerald-300' : 'text-amber-300'}> · 공식 평균과 {diffPct}% {agree ? '일치' : '차이 — 무게 입력·추적 확인'}</span>}
+                </p>
+                <p className="text-[9px] text-slate-500 mt-0.5">신뢰도 {velocityCheck.confidence === 'medium' ? '보통' : '낮음(데드리프트는 연구 편차 큼)'} · 참고용</p>
+              </div>
+            );
+          })()}
 
           <div className="bg-slate-800 rounded-xl p-3">
             <p className="text-[10px] text-slate-500 mb-1.5">공식별 추정 (kg)</p>

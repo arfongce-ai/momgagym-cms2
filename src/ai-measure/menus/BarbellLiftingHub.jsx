@@ -221,6 +221,8 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
         durationSec: raw?.durationSec ?? null,
         crossValidation: raw?.crossValidation ?? null,   // 교차검증 요약 보존
         cogGap: raw?.cogGap ?? null,                       // 바-COG 이격(측면시)
+        barPath: raw?.barPath ?? null,                     // 궤적 드리프트/효율(엔진)
+        consistencyCvPct: raw?.consistencyCvPct ?? null,   // 렙 일관성(CV%)
       },
     });
     return saveAndReport(payload, { videoBlob: raw?.videoBlob ?? null });
@@ -279,6 +281,8 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
       extra: {
         crossValidation: raw?.crossValidation ?? null,   // 교차검증 요약 보존(역도와 동일)
         cogGap: raw?.cogGap ?? null,                       // 바-COG 이격(측면시)
+        barPath: raw?.barPath ?? null,                     // 궤적 드리프트/효율(엔진)
+        consistencyCvPct: raw?.consistencyCvPct ?? null,   // 렙 일관성(CV%)
       },
     });
     return saveAndReport(payload, { videoBlob: raw?.videoBlob ?? null });
@@ -317,6 +321,8 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
         attemptNo: raw?.attemptNo ?? null,        // 이번이 몇 차 도전인지
         bestOneRM: raw?.bestOneRM ?? null,        // 누적 최고 1RM
         bestAttemptNo: raw?.bestAttemptNo ?? null,
+        velocityCheck: raw?.velocityCheck ?? null,          // 속도 기반 e1RM 교차검증
+        measuredMeanVelocity: raw?.measuredMeanVelocity ?? null,
       },
       extra: {
         epley: raw?.epley ?? null,

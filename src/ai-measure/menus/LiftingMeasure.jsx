@@ -6,7 +6,7 @@
 //  - 옆에서 촬영 권장. cm 환산은 회원 키 기준(근사).
 import { useRef, useState, useEffect, useCallback } from 'react';
 import { usePoseEngine } from '../core/usePoseEngine';
-import { personHeightRatio, barbellPoint, createBarbellTracker } from '../core/barbell';
+import { personHeightRatio, barbellPoint } from '../core/barbell';
 import { createMultiTracker } from '../core/endcapTracker';
 import { assessFraming, FRAMING_PRESETS } from '../core/framingGuide';
 import {
@@ -18,16 +18,17 @@ import { fuseTrackingCandidates, summarizeCrossValidation } from '../core/trackF
 import { estimateBodyCOG, barCogHorizontalGap } from '../core/bodyCog';
 import { saveVideoToPhone, pickRecorderMime } from '../core/recordSink';
 import { drawLiftingDataHud, drawBarPathToRecord } from '../core/recordingOverlay';
-import { createRepCounter } from '../core/repCounter';
 import {
   CALIBRATION_PRESETS, buildReferenceScale, ratioToCm,
   resolveDistanceScale, serializeDistanceScale,
 } from '../core/calibration';
-import { buildRepVelocityMetrics } from '../core/repVelocity';
+import { BarbellAccumulator } from '../core/barbellBiomechanics';
+import { generateLiftingDiagnosis, GRADE_LABEL } from '../core/barbellClinical';
 import PlateWeightInput from './PlateWeightInput';
 import FramingIntro from './FramingIntro';
 import HeightField from './HeightField';
 import CameraStage from './CameraStage';
+import VelocityGaugeHud from './VelocityGaugeHud';
 
 const MAX_RECORDING_MS = 60000;
 
@@ -37,10 +38,11 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
   // ── 다중 신호 융합 ──
   //  capRef       = 사용자가 탭한 색(엔드캡/원판) 추적(UI 점 개수/신뢰도 표시 겸용)
   //  plateTrackerRef = 원판 색 블롭 연속 추적(색 인식 후 자동 시드)
-  //  fusedRef     = color/skeleton/plate 세 신호를 매 프레임 융합한 최종 궤적
-  //                 (ROM·반복·속도는 전부 이 융합 궤적에서 산출 → 가려져도 안 끊김)
+  //  fusedRef     = color/skeleton/plate 세 신호를 매 프레임 융합해 실시간
+  //                 생체역학 엔진(BarbellAccumulator)에 넣는다. 렙 분절·속도·
+  //                 궤적(드리프트/효율)이 매 프레임 실시간으로 산출된다.
   const plateTrackerRef = useRef(createPlateBlobTracker());
-  const fusedRef = useRef(createBarbellTracker());
+  const fusedRef = useRef(new BarbellAccumulator());
   const crossValFramesRef = useRef([]);     // 세트 동안 프레임별 융합 소스/일치도 로그
   const cogRef = useRef({ available: false, point: null });   // 최신 COG(측면 촬영시만)
   const barCogGapSamplesRef = useRef([]);   // 세트 동안 바-COG 수평 이격(cm) 샘플
@@ -65,8 +67,8 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
   const recordStreamRef = useRef(null);      // 캔버스 captureStream
   const recordStartRef = useRef(0);          // 녹화 시작 시각(ms)
   const liveHudRef = useRef({ romCm: null, meanVelocity: null }); // 번인용 실시간 값
-  const repCounterRef = useRef(createRepCounter());
   const [liveReps, setLiveReps] = useState(0);
+  const [liveHud, setLiveHud] = useState(null); // 실시간 렙/속도/저하 HUD
   const videoBlobRef = useRef(null);
   const [videoBlob, setVideoBlob] = useState(null);
   const [savingVideo, setSavingVideo] = useState(false);
@@ -164,28 +166,25 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
           const gapCm = ratioToCm(gapRatio, scale.cmPerRatio);
           barCogGapSamplesRef.current.push({ gapRatio, gapCm });
         }
-        // 바벨 수직 위치로 렙 자동 카운트(융합 위치 기준 — 더 안정적).
-        repCounterRef.current.push(fused.point.y);
-        const shown = repCounterRef.current.countWithPending();
-        setLiveReps(prev => (prev !== shown ? shown : prev));
       }
       if (colorActive !== activePts) setActivePts(colorActive);
       if (recordingRef.current) {
         frameStatsRef.current.total += 1;
         if (colorActive === 0) frameStatsRef.current.lost += 1;
-        // 번인용 실시간 값: 융합 궤적 → cm/평균속도(키 보정 가능 시).
-        const live = fusedRef.current.summary();
-        if (live) {
-          const H = Number(heightCm) || null;
-          const ph = phRef.current;
-          const scale = resolveDistanceScale({ referenceScale, personHeightRatio: ph, heightCm: H });
-          const cm = ratioToCm(live.romRatio, scale.cmPerRatio);
-          const sec = live.durationMs / 1000;
-          liveHudRef.current = {
-            romCm: cm,
-            meanVelocity: cm && sec ? Math.round((cm / 100 / sec) * 100) / 100 : null,
-          };
-        }
+        // 실시간 생체역학: 렙 카운트 + 렙 속도/저하 — 엔진이 프레임마다 갱신.
+        const H = Number(heightCm) || null;
+        const scale = resolveDistanceScale({ referenceScale, personHeightRatio: phRef.current, heightCm: H });
+        const lv = fusedRef.current.live(scale.cmPerRatio);
+        setLiveReps(prev => (prev !== lv.reps ? lv.reps : prev));
+        setLiveHud(prev => {
+          if (prev && prev.reps === lv.reps && prev.lastRepVelocity === lv.lastRepVelocity
+            && prev.velocityLossPct === lv.velocityLossPct && prev.phase === lv.phase) return prev;
+          return lv;
+        });
+        liveHudRef.current = {
+          romCm: lv.romCm,
+          meanVelocity: lv.lastRepVelocity ?? lv.bestRepVelocity ?? null,
+        };
       }
 
       const path = fusedRef.current.path();
@@ -421,24 +420,21 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
     }
   };
 
-  // 세트 종료 시 융합 궤적·교차검증·COG 이격을 한 번에 계산하는 공통 헬퍼.
+  // 세트 종료 시 실시간 엔진 요약·교차검증·COG 이격을 한 번에 계산하는 공통 헬퍼.
   const computeResult = useCallback(() => {
-    const sum = fusedRef.current.summary();
-    if (!sum) return null;
     const fs = frameStatsRef.current;
     const lostRatio = fs.total ? fs.lost / fs.total : 1;
     const H = Number(heightCm) || null;
     const phs = phSamplesRef.current.filter(Boolean).sort((a, b) => a - b);
     const phMed = phs.length ? phs[Math.floor(phs.length / 2)] : phRef.current;
     const scale = resolveDistanceScale({ referenceScale, personHeightRatio: phMed, heightCm: H });
-    const cm = ratioToCm(sum.romRatio, scale.cmPerRatio);
-    const sec = sum.durationMs / 1000;
-    const velocity = cm && sec ? Math.round((cm / 100 / sec) * 100) / 100 : null;
-    const repVelocity = buildRepVelocityMetrics(fusedRef.current.path(), {
-      cmPerRatio: scale.cmPerRatio,
-      source: 'live',
-    });
-    const reps = repVelocity.summary.repCount || repCounterRef.current.countWithPending();
+    const sum = fusedRef.current.summary({ cmPerRatio: scale.cmPerRatio, source: 'live' });
+    if (!sum || sum.valid === false) return null; // 정직성: 부족하면 결과 자체를 내지 않음
+    const cm = sum.romCm;
+    const sec = sum.durationSec;
+    const velocity = sum.meanVelocity;
+    const repVelocity = sum.repVelocityCompat;
+    const reps = sum.repCount;
     const crossVal = summarizeCrossValidation(crossValFramesRef.current);
     const gaps = barCogGapSamplesRef.current;
     let cogGap = null;
@@ -457,13 +453,19 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
       };
     }
     return {
-      ...sum,
+      romRatio: sum.romRatio,
+      samples: sum.samples,
+      durationMs: sum.durationMs,
       romCm: cm,
-      sec: Math.round(sec * 100) / 100,
+      sec,
       velocity,
       reps,
       repVelocity,
       velocityLoss: repVelocity.summary.velocityLossPct,
+      peakVelocity: sum.peakVelocity,          // 실시간 평활 추정(엔진 산출)
+      peakReason: sum.peakReason,              // 'sg_ok' | 'insufficient_samples' | 'no_calibration'
+      barPath: sum.barPath,                    // { maxDriftCm, avgEfficiency }
+      consistencyCvPct: sum.consistencyCvPct,
       calibration: serializeDistanceScale(scale),
       calibrationSource: scale.source,
       isCalibrated: scale.isCalibrated,
@@ -506,8 +508,8 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
         phSamplesRef.current = [];
         frameStatsRef.current = { total: 0, lost: 0 };
         liveHudRef.current = { romCm: null, meanVelocity: null };
-        repCounterRef.current.reset();
         setLiveReps(0);
+        setLiveHud(null);
         recordStartRef.current = performance.now();
         recordingRef.current = true;
         lockCapture().then(setExposureLock).catch(() => setExposureLock(false));
@@ -585,12 +587,16 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
     onSave?.({
       type: 'lifting',
       exerciseType: exerciseType || null,
-      source: 'live',          // 실시간 카메라 — peakVelocity 미산출(허브 게이트)
+      source: 'live',
       lostRatio: result.lostRatio ?? null,   // 추적 손실률 → confidenceScore 산정에 사용
       romRatio: result.romRatio,
       romCm: result.romCm,
       durationSec: result.sec,
       meanVelocity: result.velocity,
+      peakVelocity: result.peakVelocity ?? null,   // 실시간 평활 추정(sg_ok일 때만 값 존재)
+      peakReason: result.peakReason ?? null,
+      barPath: result.barPath ?? null,             // 궤적 드리프트/효율(역도 평가 근거)
+      consistencyCvPct: result.consistencyCvPct ?? null,
       reps: result.reps ?? null,
       repVelocity: result.repVelocity ?? null,
       velocityLoss: result.velocityLoss ?? null,
@@ -612,11 +618,7 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
   if (status !== 'idle') {
     const topBar = (
       <>
-        {recording && (
-          <div className="self-center rounded-full bg-black/70 backdrop-blur px-3 py-1.5 border border-amber-500/40">
-            <p className="text-center font-mono font-black text-lg text-white leading-none"><span className="text-[10px] text-amber-300 mr-1">반복</span>{liveReps}<span className="text-xs text-slate-400">회</span></p>
-          </div>
-        )}
+
         <div className="flex items-center gap-1.5 flex-wrap justify-end">
           <span className="bg-black/65 rounded-full px-2.5 py-1 text-[10px] text-cyan-300 font-bold">
             {ptCount === 0
@@ -682,6 +684,15 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
         seedHint={ptCount === 0 && !recording} hintSignal={seedHintSignal} countdown={countdown}
         topOffset={topOffset}
       >
+        {recording && (
+          <VelocityGaugeHud
+            avg={liveHud?.lastRepVelocity ?? null}
+            reps={liveReps}
+            best={liveHud?.bestRepVelocity ?? null}
+            romCm={liveHud?.romCm ?? null}
+            lossPct={liveHud?.velocityLossPct ?? null}
+          />
+        )}
         {!recording && (
           <div className="mx-auto max-w-xs w-full rounded-xl bg-black/55 backdrop-blur border border-white/10 p-2">
             <div className="flex items-center justify-center gap-1.5">
@@ -750,6 +761,45 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
                 </div>
               </div>
             )}
+            {(result.peakVelocity != null || result.barPath?.maxDriftCm != null) && (
+              <div className="grid grid-cols-2 gap-2 text-center">
+                <div className="bg-cyan-500/10 border border-cyan-500/25 rounded-xl py-2">
+                  <p className="text-[10px] text-cyan-300">평활 최고속도(실시간)</p>
+                  <p className="font-mono font-bold text-cyan-100 text-sm">{result.peakVelocity != null ? `${result.peakVelocity}m/s` : '샘플 부족'}</p>
+                </div>
+                <div className="bg-amber-500/10 border border-amber-500/25 rounded-xl py-2">
+                  <p className="text-[10px] text-amber-300">바 수평 이탈</p>
+                  <p className="font-mono font-bold text-amber-100 text-sm">
+                    {result.barPath?.maxDriftCm != null ? `${result.barPath.maxDriftCm}cm` : '-'}
+                    {result.barPath?.avgEfficiency != null && <span className="text-[9px] text-amber-300/70"> · 효율 {Math.round(result.barPath.avgEfficiency * 100)}%</span>}
+                  </p>
+                </div>
+              </div>
+            )}
+            {result.repVelocity?.reps?.length > 1 && (
+              <div className="bg-slate-800/70 rounded-xl p-2">
+                <p className="text-[10px] text-slate-400 mb-1">렙별 평균속도(m/s)</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {result.repVelocity.reps.map(r => (
+                    <span key={r.repNo} className="rounded-lg bg-slate-700/80 px-2 py-1 font-mono text-[11px] text-slate-100">
+                      {r.repNo}회 {r.meanVelocity != null ? r.meanVelocity : '-'}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+            {(() => {
+              const diag = generateLiftingDiagnosis({ ...result, meanVelocity: result.velocity }, { mode: 'lifting', exerciseType });
+              return (
+                <div className="bg-slate-900/80 border border-slate-700 rounded-xl p-2.5 space-y-1">
+                  <p className="text-[10px] font-bold text-amber-400">AI 평가 · {GRADE_LABEL[diag.grade]}</p>
+                  <p className="text-[11px] font-bold text-slate-100">{diag.headline}</p>
+                  {diag.details.slice(0, 3).map((d, i) => (
+                    <p key={i} className="text-[10px] text-slate-400 leading-relaxed">· {d}</p>
+                  ))}
+                </div>
+              );
+            })()}
             {(result.cogGap?.available || result.crossValidation?.totalFrames) && (
               <div className="grid grid-cols-2 gap-2 text-center">
                 {result.cogGap?.available && (
