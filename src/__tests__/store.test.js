@@ -1067,6 +1067,8 @@ describe('수납+세션 배치 저장 → 새로고침 캐시 갱신 (재등록 
     );
 
     // 새로고침 캐시(localStorage 스냅샷)에 8회 추가분이 실제로 기록됐는지 확인
+    // (스냅샷은 캐시 갱신 후 기록을 보장하기 위해 0ms 매크로태스크로 지연 기록됨)
+    await new Promise(r => setTimeout(r, 5));
     const raw = globalThis.localStorage.getItem('fitcms_snap');
     expect(raw).toBeTruthy();
     const snap = JSON.parse(raw);

@@ -316,7 +316,7 @@ async function __deltaSync() {
   let pulled = 0;
   for (const col of __SYNC_COLLECTIONS) {
     const since = __syncedAt[col] || 0;
-    if (!(Number(versions[col]) > since)) continue; // 이 컬렉션은 그대로
+    if (!(Number(versions[col]) >= since)) continue; // 이 컬렉션은 그대로(같은 ms 경계 포함)
     try {
       const q = query(collection(db, col), where('updatedAt', '>', since - __DELTA_MARGIN_MS));
       const snap = await countedGetDocs(`${col}(delta)`, q);
@@ -329,7 +329,7 @@ async function __deltaSync() {
     }
   }
   const delSince = __syncedAt.deletions || 0;
-  if (Number(versions.deletions) > delSince) {
+  if (Number(versions.deletions) >= delSince) {
     const q = query(collection(db, 'deletions'), where('at', '>', delSince - __DELTA_MARGIN_MS));
     const snap = await countedGetDocs('deletions(delta)', q);
     snap.docs.forEach(d => { const t = d.data(); __applyDeletion(t.col, t.id); });
@@ -417,7 +417,10 @@ let __snapTimer = null;
 function __touchSnapshot() {
   if (typeof __refreshSnapshot !== 'function') return;
   if (__snapTimer) clearTimeout(__snapTimer);
-  try { __refreshSnapshot(); } catch (e) { /* noop */ }
+  // 즉시 기록하지 않고 매크로태스크(0ms)로 미룬다 — 원자 배치 흐름은
+  // 'await batch.commit() → 캐시 갱신' 순서라, 즉시 기록하면 갱신 전
+  // 캐시가 스냅샷에 담겨 "새로고침하면 사라지는" 창이 생긴다.
+  setTimeout(() => { try { __refreshSnapshot(); } catch (e) { /* noop */ } }, 0);
   __snapTimer = setTimeout(() => { try { __refreshSnapshot(); } catch (e) { /* noop */ } }, 400);
 }
 
@@ -523,6 +526,34 @@ async function fbWriteBatch(ops) {
   if (ops.some(o => o.op === 'del')) touched.push('deletions');
   __bumpMeta(touched);
   __touchSnapshot();
+}
+
+// ── 원자 배치 헬퍼(델타 계약 준수) ──────────────────────────
+// '읽고-조합해-원자 커밋' 흐름(예약+차감, 상태확정+세션복원 등)은 fbSet 을 쓸 수
+// 없어 raw writeBatch 를 직접 써 왔다. 그 결과 updatedAt 도장·meta 갱신·스냅샷
+// 갱신이 빠져 "저장은 됐는데 새로고침하면 사라지는" 버그가 생긴다(델타 동기화가
+// 변경을 인지하지 못함). 모든 원자 배치는 반드시 이 헬퍼를 쓴다.
+function createStampedBatch() {
+  const batch = writeBatch(db);
+  const touched = new Set();
+  const now = Date.now();
+  let tombSeq = 0;
+  return {
+    set(name, id, data) {
+      touched.add(name);
+      batch.set(doc(db, name, id), { ...data, updatedAt: Date.now() });
+    },
+    delete(name, id) {
+      touched.add(name); touched.add('deletions');
+      batch.delete(doc(db, name, id));
+      batch.set(doc(db, 'deletions', `${name}_${id}_${now + (tombSeq++)}`), { col: name, id, at: now });
+    },
+    async commit() {
+      await batch.commit();
+      __bumpMeta([...touched]);
+      __touchSnapshot();
+    },
+  };
 }
 
 // 저장/삭제 함수는 async — Firestore 완료를 기다리고, 실패 시 캐시를 되돌린다.
@@ -640,11 +671,11 @@ export const store = {
 
     // ── 원자적 저장: 회원 + 영향받은 결제들을 한 배치로 ──
     const updatedMember = { ...m, trainerSessions: ts };
-    const batch = writeBatch(db);
-    batch.set(doc(db, 'members', memberId), updatedMember);
+    const batch = createStampedBatch();
+    batch.set('members', memberId, updatedMember);
     touchedPays.forEach(({ pid, patch }) => {
       const cur = (cache.payments[memberId] || []).find(p => p.id === pid);
-      if (cur) batch.set(doc(db, 'payments', pid), { ...cur, ...patch, __mid: memberId });
+      if (cur) batch.set('payments', pid, { ...cur, ...patch, __mid: memberId });
     });
 
     try {
@@ -738,9 +769,9 @@ export const store = {
     const np = { ...p, id:uid('p') };
     const member = cache.members.find(m=>m.id===mid);
     const updatedMember = member ? { ...member, ...memberPatch } : null;
-    const batch = writeBatch(db);
-    batch.set(doc(db,'payments',np.id), { ...np, __mid:mid });
-    if (updatedMember) batch.set(doc(db,'members',mid), updatedMember);
+    const batch = createStampedBatch();
+    batch.set('payments', np.id, { ...np, __mid:mid });
+    if (updatedMember) batch.set('members', mid, updatedMember);
     await batch.commit();
     cache.payments[mid]=[...(cache.payments[mid]||[]), np];
     if (updatedMember) cache.members=cache.members.map(m=>m.id===mid?updatedMember:m);
@@ -769,10 +800,10 @@ export const store = {
     try {
       for (let i = 0; i < patches.length; i += 400) {
         const chunk = patches.slice(i, i + 400);
-        const batch = writeBatch(db);
+        const batch = createStampedBatch();
         chunk.forEach(({ id, consumedIndexAtBooking }) => {
           const cur = cache.schedules.find(s => s.id === id);
-          if (cur) batch.set(doc(db, 'schedules', id), { ...cur, consumedIndexAtBooking });
+          if (cur) batch.set('schedules', id, { ...cur, consumedIndexAtBooking });
         });
         await batch.commit();
         chunk.forEach(({ id, consumedIndexAtBooking }) => {
@@ -797,10 +828,10 @@ export const store = {
     try {
       for (let i = 0; i < patches.length; i += 400) {
         const chunk = patches.slice(i, i + 400);
-        const batch = writeBatch(db);
+        const batch = createStampedBatch();
         chunk.forEach(({ mid, pid, splitRateAtPay }) => {
           const cur = (cache.payments[mid] || []).find(p => p.id === pid);
-          if (cur) batch.set(doc(db, 'payments', pid), { ...cur, splitRateAtPay, __mid: mid });
+          if (cur) batch.set('payments', pid, { ...cur, splitRateAtPay, __mid: mid });
         });
         await batch.commit();
         chunk.forEach(({ mid, pid, splitRateAtPay }) => {
@@ -951,7 +982,7 @@ export const store = {
     //  · 월정액만 있는 회원은 trainerSessions에 해당 슬롯이 없어 자동으로 차감되지 않는다.
     //  · 세션 수업과 월정액을 함께 보유한 회원도, 세션 슬롯이 있으면 그 수업은 정상 차감된다.
     const isDeductible = !ns.isExternal && ns.memberId && ns.trainerId;
-    const batch = writeBatch(db);
+    const batch = createStampedBatch();
 
     let updatedMember = null;
     let deductionSkipReason = null; // 차감이 안 된 사유(진단용)
@@ -986,13 +1017,13 @@ export const store = {
         ts[ns.trainerId].remaining = Math.max(0, ts[ns.trainerId].remaining - 1);
         updatedMember = { ...member, trainerSessions: ts };
         ns.sessionDeducted = true;
-        batch.set(doc(db,'members',ns.memberId), updatedMember);
+        batch.set('members', ns.memberId, updatedMember);
       }
     } else {
       ns.sessionDeducted = false;
       if (!ns.isExternal) deductionSkipReason = 'not_deductible';
     }
-    batch.set(doc(db,'schedules',ns.id), ns);
+    batch.set('schedules', ns.id, ns);
     await batch.commit();   // 예약+차감이 함께 성공하거나 함께 실패
 
     // 성공 시에만 캐시 반영
@@ -1006,9 +1037,9 @@ export const store = {
   finalizeSchedule: async (scheduleId, status) => {
     const sched = cache.schedules.find(s=>s.id===scheduleId);
     if (!sched) throw new Error('스케줄을 찾을 수 없습니다.');
-    const batch = writeBatch(db);
+    const batch = createStampedBatch();
     const updatedSched = { ...sched, status, statusFinalized: true };
-    batch.set(doc(db,'schedules',scheduleId), updatedSched);
+    batch.set('schedules', scheduleId, updatedSched);
 
     let updatedMember = null;
     if (!sched.isExternal && sched.memberId) {
@@ -1026,7 +1057,7 @@ export const store = {
           }
           updatedMember = { ...member, trainerSessions: ts };
         }
-        if (updatedMember) batch.set(doc(db,'members',sched.memberId), updatedMember);
+        if (updatedMember) batch.set('members', sched.memberId, updatedMember);
       }
     }
     await batch.commit();
@@ -1041,8 +1072,8 @@ export const store = {
   deleteScheduleWithRestore: async (scheduleId) => {
     const sched = cache.schedules.find(s=>s.id===scheduleId);
     if (!sched) throw new Error('스케줄을 찾을 수 없습니다.');
-    const batch = writeBatch(db);
-    batch.delete(doc(db,'schedules',scheduleId));
+    const batch = createStampedBatch();
+    batch.delete('schedules', scheduleId);
 
     let updatedMember = null;
     const needRestore = !sched.isExternal && sched.memberId && sched.sessionDeducted && !sched.statusFinalized;
@@ -1055,7 +1086,7 @@ export const store = {
           ts[sched.trainerId].remaining = Math.min(cap, ts[sched.trainerId].remaining + 1);
         }
         updatedMember = { ...member, trainerSessions: ts };
-        batch.set(doc(db,'members',sched.memberId), updatedMember);
+        batch.set('members', sched.memberId, updatedMember);
       }
     }
     await batch.commit();
@@ -1089,7 +1120,7 @@ export const store = {
     const prevM = cache.members;
     const prevP = JSON.parse(JSON.stringify(cache.payments));
     const existKey = new Set(cache.members.map(m => `${(m.name||'').trim()}|${(m.phone||'').replace(/\D/g,'')}`));
-    const batch = writeBatch(db);
+    const batch = createStampedBatch();
     const addedMembers = [];
     const addedPays = {};
     let skipped = 0;
@@ -1112,12 +1143,12 @@ export const store = {
         isActive: true, createdAt: new Date().toISOString(),
         importedFrom: 'excel',
       };
-      batch.set(doc(db, 'members', mid), member);
+      batch.set('members', mid, member);
       addedMembers.push(member);
       (M.payments || []).forEach(p => {
         const pid = uid('p');
         const np = { ...p, id: pid, __mid: mid };
-        batch.set(doc(db, 'payments', pid), np);
+        batch.set('payments', pid, np);
         (addedPays[mid] = addedPays[mid] || []).push(np);
       });
     }
@@ -1154,8 +1185,8 @@ export const store = {
       toAdd.push({ ...e, id: uid('e') });
     }
     if (toAdd.length === 0) return { added: 0, skipped: list.length };
-    const batch = writeBatch(db);
-    toAdd.forEach(e => batch.set(doc(db, 'expenses', e.id), e));
+    const batch = createStampedBatch();
+    toAdd.forEach(e => batch.set('expenses', e.id, e));
     try {
       await batch.commit();
       cache.expenses = [...cache.expenses, ...toAdd];

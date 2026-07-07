@@ -9,6 +9,9 @@
 // ════════════════════════════════════════════════════════════════════════
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+// 스냅샷 기록은 매크로태스크(0ms)로 지연된다 — 캐시 갱신 후 기록 보장.
+const flushSnapshot = () => new Promise(r => setTimeout(r, 5));
+
 // ── 가짜 localStorage (스냅샷 저장/복원 경로 활성화) ──
 const lsBack = {};
 globalThis.localStorage = {
@@ -134,5 +137,56 @@ describe('델타 동기화 — 재접속은 변경분만 읽는다', () => {
     const tombs = Object.values(fsData.deletions || {});
     expect(tombs.some(x => x.col === 'members' && x.id === victim.id)).toBe(true);
     expect(Number(fsData.meta.versions.deletions)).toBeGreaterThan(0);
+  });
+});
+
+describe('원자 배치 경로(예약+차감 등)도 델타 계약을 지킨다 — 새로고침 소실 버그 회귀 방지', () => {
+  it('createScheduleWithDeduction(외부 일정 포함)이 updatedAt·meta·스냅샷을 남긴다', async () => {
+    const now = Date.now();
+    seedBase(now);
+    const mod = await import('../demoData.js');
+    await mod.initStore();
+
+    // 외부 일정 등록(수업 예약 모달의 실제 경로)
+    const ext = await mod.store.createScheduleWithDeduction({
+      memberId: null, memberName: null,
+      trainerId: 't1', trainerName: '김민준', trainerColor: '#a855f7',
+      date: '2026-07-07', startTime: '10:00', endTime: '12:00',
+      classType: '교육', memo: '트레이너 교육 세미나',
+      status: 'scheduled', sessionDeducted: true, isExternal: true,
+    });
+
+    // ① Firestore 문서에 updatedAt 도장
+    const saved = fsData.schedules[ext.id];
+    expect(Number(saved.updatedAt)).toBeGreaterThan(0);
+    // ② meta/versions.schedules 갱신 → 다른 기기 델타가 인지
+    expect(Number(fsData.meta?.versions?.schedules)).toBeGreaterThan(0);
+    // ③ 로컬 스냅샷 갱신 → 같은 기기 새로고침에도 유지(0ms 지연 기록)
+    await flushSnapshot();
+    const snap = JSON.parse(lsBack.fitcms_snap);
+    expect(snap.data.schedules.some(s => s.id === ext.id)).toBe(true);
+
+    // ④ 새로고침 시뮬레이션: 스냅샷 복원 후에도 외부 일정이 살아있다
+    vi.resetModules();
+    const mod2 = await import('../demoData.js');
+    await mod2.initStore();
+    const found = mod2.store.getSchedules().find(s => s.id === ext.id);
+    expect(found).toBeTruthy();
+    expect(found.isExternal).toBe(true);
+    expect(found.classType).toBe('교육');
+  });
+
+  it('finalizeSchedule(상태 확정) 원자 배치도 새로고침 후 유지된다', async () => {
+    const now = Date.now();
+    seedBase(now);
+    const mod = await import('../demoData.js');
+    await mod.initStore();
+    await mod.store.finalizeSchedule('s1', 'attended');
+    await flushSnapshot();
+
+    vi.resetModules();
+    const mod2 = await import('../demoData.js');
+    await mod2.initStore();
+    expect(mod2.store.getSchedules().find(s => s.id === 's1').status).toBe('attended');
   });
 });
