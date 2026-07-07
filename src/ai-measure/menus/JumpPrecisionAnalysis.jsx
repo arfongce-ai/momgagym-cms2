@@ -24,6 +24,8 @@ import { beepTick, beepGo, primeAudio } from '../core/audioCue';
 import { lockZoom, unlockZoom } from '../../utils/viewportLock';
 import ReportActions from '../../components/report/ReportActions';
 import { store } from '../../demoData';
+import { isSkeletonEnabled } from '../core/skeletonPref';
+import SkeletonToggleChip from './SkeletonToggleChip';
 
 // 회원 신체기록에서 최신 체중을 보조 조회 (member.weight 없을 때 Sayers 파워용)
 function resolveWeight(member, fallback = null) {
@@ -199,6 +201,7 @@ function drawSkeleton(canvas, video, landmarks, phase) {
   const ctx = canvas.getContext('2d');
   ctx.clearRect(0, 0, cw, ch);
   if (!landmarks) return;
+  if (!isSkeletonEnabled()) return; // OFF: 스켈레톤 미표시(기준선은 별도 draw 로 유지)
   const vw = video.videoWidth, vh = video.videoHeight;
   if (!vw || !vh) return;
   const scale = Math.max(cw / vw, ch / vh);
@@ -788,7 +791,7 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
           <div className="absolute top-0 z-20 inset-x-0 flex items-center justify-between px-4 py-3 bg-gradient-to-b from-black/60 to-transparent">
             <button onClick={onBack} className="text-white font-bold text-sm">← 뒤로</button>
             <h2 className="text-white font-black text-sm">점프 정밀 측정</h2>
-            <div className="w-12" />
+            <SkeletonToggleChip />
           </div>
 
           <JumpLiveOverlay

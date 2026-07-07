@@ -87,7 +87,10 @@ describe('모든 측정 사운드가 부스트를 경유하는지(정적 배선)
     }
   });
 
-  it('AI측정 홈에 공통 볼륨 컨트롤이 있다', () => {
-    expect(read('ai-measure/AiMeasureHub.jsx')).toContain('<SoundVolumeControl');
+  it('[2607-3] AI측정 홈의 볼륨 카드는 제거되고, 초시계 탭에서 계속 조절한다', () => {
+    // 홈(허브)에서는 볼륨 카드 제거 — 미등록회원 신체정보 아래 불필요 UI 정리
+    expect(read('ai-measure/AiMeasureHub.jsx')).not.toContain('<SoundVolumeControl');
+    // 볼륨 조절 경로 자체는 유지: 초시계·메트로놈 탭
+    expect(read('ai-measure/menus/TimerTool.jsx')).toContain('<SoundVolumeControl');
   });
 });

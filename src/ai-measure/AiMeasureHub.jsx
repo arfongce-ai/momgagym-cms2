@@ -2,7 +2,6 @@
 // AI 측정 허브. 메뉴를 고르면 해당 모듈만 lazy 로드해 구동한다(필요 기능만).
 import { useState, Suspense } from 'react';
 import { MEASURE_MENUS } from './registry';
-import SoundVolumeControl from './menus/SoundVolumeControl';
 import { store, aiStore, makeGuestId } from '../demoData';
 import { todayYMD } from '../utils/dates';
 import { useAuth } from '../contexts/AuthContext';
@@ -27,6 +26,9 @@ export default function AiMeasureHub() {
   // 현재 미등록회원 측정 묶음의 고유 id. 측정 진입 시 발급되어 그 한 사람의
   // 여러 면/여러 항목이 같은 id 로 묶인다. 새 미등록회원은 새 id 를 받는다.
   const [guestId, setGuestId] = useState(null);
+  // [2607-2] 미등록회원 신체정보 접기/펴기 — 기본은 접힘(홈 화면 간소화).
+  // 입력값이 있으면 접힌 상태에서도 헤더에 요약이 남아 상태를 알 수 있다.
+  const [guestOpen, setGuestOpen] = useState(false);
 
   const baseMember = members.find(m => m.id === memberId);
   // 회원의 최근 신체기록에서 키·몸무게를 자동 연동
@@ -328,10 +330,31 @@ export default function AiMeasureHub() {
             개별 guest id 로 저장·출력되며, 성별 기준·체형나이 정확도를 높인다. */}
         {!realMember && (
           <div className="mt-3 border-t border-slate-800 pt-3">
-            <p className="text-xs font-semibold text-amber-300/90 mb-2">
-              미등록회원 신체정보 <span className="text-slate-500 font-normal">(측정 데이터만 개인별로 저장 — 회원 등록 아님)</span>
-            </p>
-            <div className="grid grid-cols-2 gap-2">
+            {/* [2607-2] 접기/펴기 헤더 — 탭하면 입력 영역이 열리고 닫힌다 */}
+            <button type="button" onClick={() => setGuestOpen((v) => !v)}
+              className="w-full flex items-center justify-between gap-2 text-left"
+              aria-expanded={guestOpen}>
+              <p className="text-xs font-semibold text-amber-300/90">
+                <span className={`inline-block mr-1 transition-transform ${guestOpen ? 'rotate-90' : ''}`}>▸</span>
+                미등록회원 신체정보
+                <span className="text-slate-500 font-normal"> (측정 데이터만 개인별로 저장 — 회원 등록 아님)</span>
+              </p>
+              <span className="shrink-0 rounded-full border border-slate-700 px-2 py-0.5 text-[10px] font-bold text-slate-400">
+                {guestOpen ? '접기' : virtualMember ? '입력됨 · 펴기' : '펴기'}
+              </span>
+            </button>
+
+            {/* 접힌 상태에서도 입력 요약은 유지(측정에 그대로 사용됨을 표시) */}
+            {!guestOpen && virtualMember && (
+              <p className="mt-2 text-[11px] text-emerald-300/80">
+                미등록회원으로 측정·저장합니다{virtualMember.sex ? ` · ${virtualMember.sex==='female'?'여':'남'}` : ''}
+                {virtualMember.height ? ` · ${virtualMember.height}cm` : ''}
+                {virtualMember.weight ? ` · ${virtualMember.weight}kg` : ''}.
+              </p>
+            )}
+
+            {guestOpen && (<>
+            <div className="grid grid-cols-2 gap-2 mt-2">
               <div>
                 <label className="block text-[11px] text-slate-400 mb-1">성별</label>
                 <div className="flex gap-1.5">
@@ -374,15 +397,13 @@ export default function AiMeasureHub() {
                 {guestId && <span className="block text-slate-500 mt-0.5">식별 ID: {guestId}</span>}
               </p>
             )}
+            </>)}
           </div>
         )}
       </div>
 
-      {/* 측정 사운드 볼륨 — 카운트다운·렙·메트로놈·인터벌·타이머 공통 */}
-      <div className="rounded-2xl bg-slate-900 border border-white/10 p-3">
-        <p className="text-[11px] font-bold text-slate-400 mb-2">🔊 측정 사운드 볼륨 (모든 측정 공통)</p>
-        <SoundVolumeControl compact />
-      </div>
+      {/* [2607-3] 측정 사운드 볼륨 카드는 홈에서 제거 —
+          볼륨 조절은 '초시계·메트로놈' 탭(SoundVolumeControl)에서 계속 가능 */}
 
       {/* 메뉴 그리드 */}
       <div className="grid grid-cols-2 gap-3">

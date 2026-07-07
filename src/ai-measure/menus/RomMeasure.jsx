@@ -24,6 +24,7 @@ import { dataUrlToFile } from '../core/reportShare';
 import { useHardwareBack } from '../core/useHardwareBack';
 import RomSensorGoniometer from './RomSensorGoniometer.jsx';
 import RomVideoAngle from './RomVideoAngle.jsx';
+import { isSkeletonEnabled } from '../core/skeletonPref';
 
 const MAX_RECORD_MS = 60000;
 
@@ -547,6 +548,7 @@ export default function RomMeasure({ member, onSave, onBack }) {
         error={error}
         onClose={onBack}
         tappable={false}
+        showSkeletonToggle
         recording={recording}
         recordingLabel={`측정 중 ${elapsed}s`}
         topBar={
@@ -726,6 +728,7 @@ function drawSkeleton(canvas, video, landmarks, side, joint, poseMode) {
   const ctx = canvas.getContext('2d');
   ctx.clearRect(0, 0, width, height);
   if (!landmarks) return;
+  if (!isSkeletonEnabled()) return; // OFF: 캔버스만 비우고 오버레이 미표시(추적은 계속)
   const mapper = objectContainMapper(video, width, height);
 
   // 측정 측 관절 인덱스(강조용)
@@ -795,6 +798,7 @@ function captureVideoSnapshot(video) {
 //   width/height 만 곱하면 된다(레터박스 보정 불필요).
 function drawSkeletonToRecord(ctx, landmarks, side, joint, poseMode, width, height) {
   if (!landmarks) return;
+  if (!isSkeletonEnabled()) return; // OFF: 녹화 영상도 스켈레톤 없이 원본+HUD만
   const X = (p) => p.x * width;
   const Y = (p) => p.y * height;
   const leftIdx = new Set([11, 13, 15, 23, 25, 27, 29, 31]);

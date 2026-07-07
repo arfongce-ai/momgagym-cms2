@@ -17,7 +17,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   createTiltTracker, requestSensorPermission, isSensorSupported,
-  applyZero, isStill, hapticFeedback, roundToStep, meanDeg,
+  applyZero, isStill, hapticFeedback, roundToStep, meanDeg, createHoldDetector,
 } from '../core/sensorTilt';
 
 const OFF_PLANE_WARN = 0.45; // |gx|/|g| 이 비율 이상이면 측정면 이탈 경고
@@ -27,6 +27,13 @@ const UI_UPDATE_MS = 90;      // 표시 갱신 최소 간격(스로틀)
 const UI_DEADBAND = 0.25;     // 표시 데드밴드(°) — 이하 변화는 갱신 안 함
 const DISPLAY_STEP = 0.5;     // 표시 스텝(°)
 const SETTLE_AFTER_ZERO_MS = 300; // 0점 직후 최대각 갱신 유예(평활 정착 시간)
+
+// ── [항목 5] 자동 측정(끝범위 유지 감지) 설정 ──
+//  끝 자세에서 각도 변화 없이 AUTO_HOLD_MS 유지되면 자동 확정.
+//  민감도 낮춤 = AUTO_BAND 를 넓게 잡아 잔떨림으로 타이머가 리셋되지 않게 함.
+const AUTO_HOLD_MS = 800;   // 끝범위 유지 시간(0.8초)
+const AUTO_BAND = 2.5;      // 유지 허용 변동폭(°) — 넓을수록 민감도 낮음
+const AUTO_MIN_DEG = 5;     // 이 각도 미만(≈시작자세)에서는 자동 확정 안 함
 
 
 export default function RomSensorGoniometer({ jointName, jointKey, onBack, onComplete }) {
@@ -62,6 +69,8 @@ export default function RomSensorGoniometer({ jointName, jointKey, onBack, onCom
   const [movementCustom, setMovementCustom] = useState('');
   const effMovement = movement === '__custom' ? movementCustom.trim() : movement;
 
+  useEffect(() => { autoModeRef.current = autoMode; }, [autoMode]);
+
   const [phase, setPhase] = useState('permission'); // permission | measure | record
   const [permErr, setPermErr] = useState('');
   const [zero, setZero] = useState(null);          // 0점(평활 언랩각 기준)
@@ -72,7 +81,12 @@ export default function RomSensorGoniometer({ jointName, jointKey, onBack, onCom
   const [offPlane, setOffPlane] = useState(0);
   const [still, setStill] = useState(false);
   const [measuredAngle, setMeasuredAngle] = useState(null); // 확정된 측정각
+  const [autoMode, setAutoMode] = useState(true);  // [항목 5] 자동 측정 on/off (기본 on)
+  const [holdPct, setHoldPct] = useState(0);       // 자동 확정 진행률(0~1) — 링 표시
 
+  const holdRef = useRef(null);     // 끝범위 유지 감지기
+  const autoModeRef = useRef(true); // 콜백 안에서 최신 자동모드 참조
+  const autoFinishRef = useRef(null); // 자동 확정 트리거(최신 finishMeasurement 참조)
   const trackerRef = useRef(null);
   const zeroRef = useRef(null);
   const maxRef = useRef(0);
@@ -111,6 +125,8 @@ export default function RomSensorGoniometer({ jointName, jointKey, onBack, onCom
     recentRef.current = [];
     recent3Ref.current = [];
     lastShownRef.current = null;
+    if (holdRef.current) holdRef.current.reset(); // 자동 유지 감지 초기화
+    setHoldPct(0);
     setZeroMsg('');
     hapticFeedback([30]);
   };
@@ -138,9 +154,28 @@ export default function RomSensorGoniometer({ jointName, jointKey, onBack, onCom
     if (buf3.length > 3) buf3.shift();
     const med3 = [...buf3].sort((a, b) => a - b)[Math.floor(buf3.length / 2)];
     const settled = Date.now() - zeroDoneAtRef.current > SETTLE_AFTER_ZERO_MS;
-    if (settled && (off ?? 0) < OFF_PLANE_WARN && buf3.length === 3 && Math.abs(med3) > maxRef.current) {
+    const inPlane = (off ?? 0) < OFF_PLANE_WARN;
+    if (settled && inPlane && buf3.length === 3 && Math.abs(med3) > maxRef.current) {
       maxRef.current = Math.round(Math.abs(med3) * 10) / 10;
       setMaxDeg(maxRef.current);
+    }
+
+    // ── [항목 5] 자동 측정: 끝범위에서 각도 변화 없이 0.8초 유지 시 자동 확정 ──
+    //  민감도 낮춤(AUTO_BAND 넓음) → 잔떨림으로 타이머가 리셋되지 않는다.
+    //  측정면 이탈 중이거나 표본 정착 전에는 유지 판정을 하지 않는다(정직성).
+    if (autoModeRef.current && holdRef.current) {
+      if (settled && inPlane && buf3.length === 3) {
+        const r = holdRef.current.push(med3, Date.now());
+        setHoldPct(Math.min(1, r.heldMs / AUTO_HOLD_MS));
+        if (r.fired) {
+          setHoldPct(1);
+          autoFinishRef.current?.();
+        }
+      } else {
+        // 이탈/미정착 구간은 유지 창을 끊는다(끝범위 아닌데 확정되는 것 방지)
+        holdRef.current.push(null, Date.now());
+        setHoldPct(0);
+      }
     }
 
     // ── 표시각: 스로틀 + 데드밴드 + 0.5° 스텝 (예민한 잔떨림 숫자 제거) ──
@@ -161,6 +196,9 @@ export default function RomSensorGoniometer({ jointName, jointKey, onBack, onCom
   // 측정 화면 진입 시 트래커 시작, 이탈 시 정지(+0점 수집 타이머 정리)
   useEffect(() => {
     if (phase !== 'measure') return undefined;
+    // 자동 유지 감지기 준비(측정 진입마다 새로) — 민감도 낮춤(AUTO_BAND 넓음)
+    holdRef.current = createHoldDetector({ band: AUTO_BAND, holdMs: AUTO_HOLD_MS, minAbsDeg: AUTO_MIN_DEG });
+    setHoldPct(0);
     const tracker = createTiltTracker({ onSample: handleSample });
     trackerRef.current = tracker;
     tracker.start();
@@ -221,16 +259,21 @@ export default function RomSensorGoniometer({ jointName, jointKey, onBack, onCom
     recentRef.current = [];
     recent3Ref.current = [];
     lastShownRef.current = null;
+    if (holdRef.current) holdRef.current.reset();
+    setHoldPct(0);
   };
 
-  // 측정완료(촬영완료) → 진동 알림 → '움직임 기록' 단계로
-  const finishMeasurement = () => {
+  // 측정완료(촬영완료) → 진동 알림 → '움직임 기록' 단계로.
+  //  auto=true 면 자동 측정(끝범위 유지)으로 확정된 경우 — 진동 패턴을 다르게 준다.
+  const finishMeasurement = (auto = false) => {
     if (zero == null || maxRef.current <= 0) return;
-    hapticFeedback([60, 40, 60]);
+    hapticFeedback(auto ? [40, 30, 40, 30, 60] : [60, 40, 60]);
     setMeasuredAngle(maxRef.current);
     // 측정완료 후 '움직임 기록' 화면으로 (자동저장은 확인 버튼에서)
     setPhase('record');
   };
+  // 최신 finishMeasurement 를 콜백에서 부를 수 있게 ref 에 보관(자동 확정용).
+  useEffect(() => { autoFinishRef.current = () => finishMeasurement(true); });
 
   // 움직임 기록 확인 → 자동 저장(onComplete). 저장되면 상위(RomMeasure)가
   // ROM 결과 리포트로 전환되어 기록을 바로 확인할 수 있다.
@@ -299,7 +342,7 @@ export default function RomSensorGoniometer({ jointName, jointKey, onBack, onCom
           <ol className="space-y-1.5 text-[12px] leading-relaxed text-slate-400 list-decimal list-inside">
             <li>화면이 바깥을 향하게 폰을 측정 부위(팔·다리)에 평평하게 밀착합니다.</li>
             <li>시작 자세에서 <span className="font-black text-amber-300">0점</span>을 누르고 0.7초간 그대로 유지하면 평균값으로 0점이 잡힙니다.</li>
-            <li>최대 가동각이 자동 기록되며, <span className="font-black text-amber-300">측정 완료</span> 시 진동으로 알립니다.</li>
+            <li>끝범위에서 각도 변화 없이 <span className="font-black text-amber-300">0.8초 유지</span>하면 <span className="font-black text-amber-300">자동 측정</span>됩니다. (수동 완료도 가능)</li>
           </ol>
           <button onClick={activate}
             className="w-full rounded-xl bg-amber-500 px-4 py-4 text-base font-black text-slate-950 active:scale-[0.99] transition">
@@ -325,6 +368,21 @@ export default function RomSensorGoniometer({ jointName, jointKey, onBack, onCom
         <span className="w-12" />
       </div>
 
+      {/* [항목 5] 자동/수동 측정 토글 */}
+      <div className="flex items-center justify-between rounded-xl border border-slate-800 bg-slate-900 px-3 py-2">
+        <div>
+          <p className="text-xs font-black text-slate-200">자동 측정</p>
+          <p className="text-[10px] text-slate-500">끝범위에서 각도 변화 없이 0.8초 유지하면 자동 확정</p>
+        </div>
+        <button type="button" onClick={() => setAutoMode((v) => !v)}
+          aria-pressed={autoMode}
+          className={`relative h-7 w-12 shrink-0 rounded-full border transition-colors ${
+            autoMode ? 'border-emerald-400/60 bg-emerald-500/30' : 'border-slate-600 bg-slate-700'
+          }`}>
+          <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-all ${autoMode ? 'left-6' : 'left-0.5'}`} />
+        </button>
+      </div>
+
       {/* 실시간 각도 — 크게 표시 */}
       <div className={`rounded-2xl border p-5 text-center ${
         offPlaneWarn ? 'border-red-500/40 bg-red-500/10' : 'border-amber-500/30 bg-slate-900'
@@ -339,6 +397,20 @@ export default function RomSensorGoniometer({ jointName, jointKey, onBack, onCom
           <span className="text-slate-400">최대 가동각 <b className="text-emerald-300 tabular-nums">{maxDeg > 0 ? `${maxDeg}°` : '—'}</b></span>
           {still && zero != null && <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-[11px] font-bold text-emerald-300">멈춤 감지</span>}
         </div>
+
+        {/* 자동 확정 진행 바 — 끝범위 유지 시간이 차오른다 */}
+        {autoMode && zero != null && !offPlaneWarn && (
+          <div className="mt-3">
+            <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-800">
+              <div className="h-full rounded-full bg-emerald-400 transition-[width] duration-100"
+                style={{ width: `${Math.round(holdPct * 100)}%` }} />
+            </div>
+            <p className="mt-1 text-[10px] font-bold text-emerald-300/80">
+              {holdPct >= 1 ? '자동 확정!' : holdPct > 0 ? '끝범위 유지 중… 그대로 멈춰주세요' : '끝 자세에서 잠시 멈추면 자동 측정됩니다'}
+            </p>
+          </div>
+        )}
+
         {offPlaneWarn && (
           <p className="mt-2 text-xs font-bold text-red-300">
             ⚠ 폰이 측정면에서 비틀렸습니다 — 부위에 평평하게 다시 밀착해 주세요 (이 동안 최대각은 갱신되지 않음)
@@ -358,9 +430,9 @@ export default function RomSensorGoniometer({ jointName, jointKey, onBack, onCom
         </button>
       </div>
       {zeroMsg && <p className="text-xs font-bold text-amber-300">{zeroMsg}</p>}
-      <button onClick={finishMeasurement} disabled={zero == null || maxDeg <= 0}
+      <button onClick={() => finishMeasurement(false)} disabled={zero == null || maxDeg <= 0}
         className="w-full rounded-xl bg-amber-500 px-4 py-4 text-base font-black text-slate-950 disabled:bg-slate-700 disabled:text-slate-400 active:scale-[0.99]">
-        촬영완료
+        {autoMode ? '지금 바로 측정완료 (수동)' : '촬영완료'}
       </button>
 
       <p className="text-[11px] leading-relaxed text-slate-500">

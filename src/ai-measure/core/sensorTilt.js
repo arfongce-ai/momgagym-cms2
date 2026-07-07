@@ -121,6 +121,52 @@ export function roundToStep(v, step = 0.5) {
   return Math.round(v / step) * step;
 }
 
+// ── 자동 측정(끝범위 유지 감지) ─────────────────────────────────────────
+//  끝범위에서 "각도 변화 없이 holdMs 동안 유지"되면 자동으로 확정하기 위한
+//  안정 감지기. 민감도를 낮춘다 = 허용 변동폭(band)을 넓게 잡아 잔떨림으로
+//  타이머가 리셋되지 않게 한다(끝자세에서 손이 미세하게 흔들려도 유지로 인정).
+//
+//  createHoldDetector({ band, holdMs, minAbsDeg })
+//   · push(deg, nowMs) 를 매 표본마다 호출. band(°) 를 벗어나면 창을 리셋한다.
+//   · 창 안에서 (now - windowStart) >= holdMs 이고 |중앙값| >= minAbsDeg 이면
+//     { fired:true, angle } 을 반환(한 번만). 그 외에는 { fired:false, ... }.
+//   · reset() 으로 상태 초기화(0점 재설정·다시측정 시).
+export function createHoldDetector({ band = 2.5, holdMs = 800, minAbsDeg = 5 } = {}) {
+  let anchor = null;     // 현재 유지 창의 기준각
+  let startMs = 0;       // 유지 시작 시각
+  let firedOnce = false; // 중복 발화 방지
+  let lastDeg = null;
+
+  return {
+    push(deg, nowMs) {
+      if (deg == null || !Number.isFinite(deg)) {
+        anchor = null; startMs = 0;
+        return { fired: false, heldMs: 0, angle: null };
+      }
+      lastDeg = deg;
+      if (anchor == null || Math.abs(deg - anchor) > band) {
+        // 창 밖으로 벗어남 → 새 창 시작(민감도 낮춤: band 가 넓어 잔떨림엔 안 걸림)
+        anchor = deg;
+        startMs = nowMs;
+        return { fired: false, heldMs: 0, angle: deg };
+      }
+      // 창 안에서 유지 중 — 기준각을 완만히 따라가 드리프트 흡수
+      anchor = anchor + 0.15 * (deg - anchor);
+      const heldMs = nowMs - startMs;
+      if (!firedOnce && heldMs >= holdMs && Math.abs(deg) >= minAbsDeg) {
+        firedOnce = true;
+        return { fired: true, heldMs, angle: deg };
+      }
+      return { fired: false, heldMs, angle: deg };
+    },
+    heldMs(nowMs) { return anchor == null ? 0 : Math.max(0, nowMs - startMs); },
+    hasFired() { return firedOnce; },
+    reset() { anchor = null; startMs = 0; firedOnce = false; lastDeg = null; },
+    // 자동 발화 후에도 사용자가 계속 움직이면 다시 무장할 수 있게 한다.
+    rearm() { firedOnce = false; anchor = lastDeg; },
+  };
+}
+
 // 평균(0점 캘리브레이션용). 언랩각은 연속값이라 단순 산술평균이 안전하다.
 export function meanDeg(arr) {
   if (!Array.isArray(arr) || arr.length === 0) return null;

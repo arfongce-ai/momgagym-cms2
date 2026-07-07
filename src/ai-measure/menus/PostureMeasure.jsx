@@ -9,6 +9,7 @@ import PostureReport from './PostureReport.jsx';
 import ReportActions from '../../components/report/ReportActions';
 import { drawPostureSnapshotOverlay } from '../core/postureOverlay';
 import { useHardwareBack } from '../core/useHardwareBack';
+import { isSkeletonEnabled } from '../core/skeletonPref';
 
 const VIEW_STEPS = [
   { key: 'front', label: '정면', short: '앞' },
@@ -553,6 +554,7 @@ export default function PostureMeasure({ member, onSave, onBack }) {
       error={error}
       onClose={onBack}
       tappable={false}
+      showSkeletonToggle
       topBar={
         <div className="w-full text-right">
           <p className="text-sm font-black text-white">자세·체형 측정</p>
@@ -760,6 +762,7 @@ function drawSkeleton(canvas, video, landmarks, viewKey) {
   const ctx = canvas.getContext('2d');
   ctx.clearRect(0, 0, width, height);
   if (!landmarks) return;
+  if (!isSkeletonEnabled()) return; // OFF: 오버레이 미표시(자세 분석 계산은 계속)
 
   const mapper = objectContainMapper(video, width, height);
   ctx.strokeStyle = 'rgba(52,211,153,0.88)';

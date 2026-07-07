@@ -18,13 +18,14 @@
 //                         선택 바)의 실측 높이(px). 그만큼 이 스테이지의 상단
 //                         요소들을 아래로 밀어 오버레이 겹침을 방지한다.
 import { useEffect, useState } from 'react';
+import SkeletonToggleChip from './SkeletonToggleChip';
 
 export default function CameraStage({
   videoRef, canvasRef, status, error,
   onTapVideo, onClose, topBar, controls, children, tappable = true,
   recording = false, recordingLabel = '측정 중',
   seedHint = false, hintSignal = 0, countdown = null,
-  topOffset = 0,
+  topOffset = 0, showSkeletonToggle = false,
 }) {
   const [showSeedHint, setShowSeedHint] = useState(false);
   const off = Math.max(0, topOffset);
@@ -104,10 +105,13 @@ export default function CameraStage({
       {/* 상단 닫기 + 가이드 */}
       <div className="absolute top-0 left-0 right-0 z-20 px-3 pb-8 bg-gradient-to-b from-black/55 via-black/25 to-transparent" style={{ paddingTop: topPad }}>
         <div className="flex items-start justify-between gap-2">
-          <button onClick={onClose}
-            className="shrink-0 rounded-full bg-black/55 border border-white/25 text-white text-xs font-bold px-3 py-1.5 active:scale-95">
-            ✕ 닫기
-          </button>
+          <div className="flex shrink-0 flex-col items-start gap-1.5">
+            <button onClick={onClose}
+              className="rounded-full bg-black/55 border border-white/25 text-white text-xs font-bold px-3 py-1.5 active:scale-95">
+              ✕ 닫기
+            </button>
+            {showSkeletonToggle && <SkeletonToggleChip />}
+          </div>
           <div className="flex-1 min-w-0 flex flex-col items-end gap-1.5 pr-0.5 text-right break-keep">{topBar}</div>
         </div>
       </div>

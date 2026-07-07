@@ -8,6 +8,8 @@ import { loadPoseLandmarker, detectPoseFrame, closePoseLandmarker, isPoseReady }
 import { shareReportWithVideo } from '../core/reportShare';
 import { drawMeasurementOverlay, formatRecordTime } from '../core/recordingOverlay';
 import { lockZoom, unlockZoom } from '../../utils/viewportLock';
+import { isSkeletonEnabled } from '../core/skeletonPref';
+import SkeletonToggleChip from './SkeletonToggleChip';
 
 // 캘리브레이션: 세이프존 + 인식 안정이 이만큼 유지되면 락
 const CALIB_HOLD_MS = 800; // 사람이 잡히면 거의 즉시 인식(0.8초 안정화로 깜빡임만 방지)
@@ -55,6 +57,7 @@ function drawSkeleton(canvas, video, landmarks, locked) {
   const ctx = canvas.getContext('2d');
   ctx.clearRect(0, 0, cw, ch);
   if (!landmarks) return;
+  if (!isSkeletonEnabled()) return; // OFF: 스켈레톤 미표시(추적·분석은 계속)
   const vw = video.videoWidth, vh = video.videoHeight;
   if (!vw || !vh) return;
   // object-cover: 비디오를 캔버스에 꽉 채우며 크롭. 정규화 좌표를 화면 픽셀로 변환.
@@ -543,7 +546,10 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
             <div className={`w-full h-full border-4 rounded-lg transition-colors ${isReady ? 'border-green-500/70' : 'border-white/30'}`} />
           </div>
           <div className="absolute top-0 z-20 w-full p-4 flex justify-between items-start bg-gradient-to-b from-black/60 to-transparent">
-            <button onClick={onBack} className="measure-back">← 뒤로</button>
+            <div className="flex flex-col items-start gap-1.5">
+              <button onClick={onBack} className="measure-back">← 뒤로</button>
+              <SkeletonToggleChip />
+            </div>
             <div className="text-center">
               <h1 className="measure-title">보행 & 런닝 분석</h1>
               {view === 'camera' && (
