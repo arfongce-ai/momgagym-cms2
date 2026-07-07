@@ -102,6 +102,43 @@ describe('BarbellAccumulator · 실시간 속도(컨센트릭 기준)', () => {
     expect(s.peakVelocity).toBeNull();
     expect(s.peakReason).toBe('no_calibration');
   });
+
+  // [2607-3] VBT 렙별 HUD — RSI 점프별 기록처럼 렙마다 속도가 남는다.
+  it('live().repList 가 렙마다 번호·평균속도·ROM·저하율을 제공한다', () => {
+    const acc = new BarbellAccumulator();
+    pushSquatSet(acc, { reps: 3, amp: 0.25, upSecs: [0.6, 0.8, 1.2] }); // 점점 감속
+    const lv = acc.live(170);
+    expect(Array.isArray(lv.repList)).toBe(true);
+    // live()는 확정된 렙만 카드로 보여준다(마지막 렙은 상승 종료 대기로 pending 가능).
+    expect(lv.repList.length).toBeGreaterThanOrEqual(2);
+    // 렙 번호는 1부터 오름차순
+    expect(lv.repList.map(r => r.repNo)).toEqual(
+      lv.repList.map((_, i) => i + 1),
+    );
+    // 각 렙 평균속도(m/s)·ROM 이 물리적으로 유효한 양수
+    lv.repList.forEach((r) => {
+      expect(r.meanVelocity).toBeGreaterThan(0);
+      expect(r.meanVelocity).toBeLessThan(3);
+      expect(r.romCm).toBeGreaterThan(0);
+    });
+    // 감속했으므로 뒤 렙일수록 저하율이 커진다(피로 지표)
+    const first = lv.repList[0];
+    const last = lv.repList[lv.repList.length - 1];
+    expect(last.meanVelocity).toBeLessThanOrEqual(first.meanVelocity);
+    expect(last.lossPct).toBeGreaterThanOrEqual(0);
+  });
+
+  it('스케일 없으면 repList 속도는 null(가짜값 금지), 번호는 유지', () => {
+    const acc = new BarbellAccumulator();
+    pushSquatSet(acc, { reps: 3 });
+    const lv = acc.live(null);
+    expect(lv.repList.length).toBeGreaterThanOrEqual(1);
+    lv.repList.forEach((r, i) => {
+      expect(r.meanVelocity).toBeNull();
+      expect(r.romCm).toBeNull();
+      expect(r.repNo).toBe(i + 1);
+    });
+  });
 });
 
 describe('실시간 평활 피크속도(정직성 게이트)', () => {

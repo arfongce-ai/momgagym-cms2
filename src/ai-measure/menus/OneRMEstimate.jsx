@@ -49,6 +49,9 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
   const [manualWeight, setManualWeight] = useState('');
   const [dialWeight, setDialWeight] = useState(60);          // 다이얼 무게(0.5kg 단위)
   const [weightMode, setWeightMode] = useState('dial');       // 'dial' | 'manual' | 'plate'
+  // 사용자가 다이얼/직접입력으로 무게를 직접 정했는지 여부. true 면 색 인식이
+  // 확인 없이 덮어쓰지 않는다(수동 40kg 이 자동 70kg 로 바뀌던 문제 방지).
+  const [weightUserSet, setWeightUserSet] = useState(false);
   const [result, setResult] = useState(null);
   const [attempts, setAttempts] = useState([]);              // 도전 차수 누적
   // 카메라 세트에서 측정된 평균속도 기반 교차검증(속도→%1RM 근거 테이블).
@@ -94,11 +97,24 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
   const [savingVideo, setSavingVideo] = useState(false);
   const [videoSavedMsg, setVideoSavedMsg] = useState('');
 
+  // 최종 사용 무게 = '화면 다이얼에 보이는 값'을 단일 진실로 삼는다.
+  //  (원판 색 인식·직접입력 모두 dialWeight 를 갱신하므로, 다이얼 = 저장/HUD 값.
+  //   이렇게 하면 "다이얼엔 40인데 녹화엔 70" 같은 표시-저장 불일치가 사라진다.)
   const computedWeight = weightMode === 'manual'
-    ? (Number(manualWeight) || 0)
-    : weightMode === 'plate'
-      ? totalWeight(sidePlates, barKg).total
-      : dialWeight;
+    ? (Number(manualWeight) || snapWeight(dialWeight))
+    : snapWeight(dialWeight);
+
+  // 다이얼 조작 = 사용자가 무게를 직접 정함(색 인식이 조용히 덮어쓰지 않도록 표식).
+  const bumpDial = (deltaSteps) => {
+    setDialWeight((w) => stepWeight(w, deltaSteps));
+    setWeightMode('dial');
+    setWeightUserSet(true);
+  };
+  const setDialAbsolute = (kg) => {
+    setDialWeight(snapWeight(kg));
+    setWeightMode('dial');
+    setWeightUserSet(true);
+  };
 
   const clearCountdown = useCallback(() => {
     if (countdownTimerRef.current) {
@@ -345,11 +361,23 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
     const { dominant, roi: detectedRoi } = detectPlatesFromVideo(v, roiRef.current);
     if (!dominant.length) { alert('원판 색을 찾지 못했습니다. 원판이 박스 안에 잘 보이게 한 뒤 다시 시도하세요.'); return; }
     const nextSidePlates = suggestSidePlates(dominant);
+    const scannedTotal = totalWeight(nextSidePlates, barKg).total;
+    // 사용자가 이미 무게를 직접 설정했고, 인식 결과가 다르면 함부로 덮어쓰지 않는다.
+    //  (수동 40kg 이 색 인식으로 조용히 70kg 로 바뀌던 문제 방지 — 정직성/신뢰)
+    if (weightUserSet && Math.abs(scannedTotal - snapWeight(dialWeight)) >= 0.5) {
+      const ok = window.confirm(
+        `현재 설정한 무게는 ${snapWeight(dialWeight)}kg 입니다.\n`
+        + `색 인식 결과(${scannedTotal}kg)로 바꿀까요?\n\n`
+        + `취소하면 설정한 무게(${snapWeight(dialWeight)}kg)를 그대로 사용합니다.`
+      );
+      if (!ok) { setDetected(dominant); return; } // 감지 라벨만 참고 표시, 무게는 유지
+    }
     if (detectedRoi) roiRef.current = detectedRoi;
     setDetected(dominant);
     setSidePlates(nextSidePlates);
     setWeightMode('plate');
-    setDialWeight(totalWeight(nextSidePlates, barKg).total);
+    setDialWeight(scannedTotal);
+    setWeightUserSet(false); // 색 인식 채택 → 자동값 상태로 전환
   };
 
   const handleSaveVideo = async () => {
@@ -492,17 +520,17 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
         {!counting && (
           <div className="mx-auto max-w-xs w-full rounded-xl bg-black/55 backdrop-blur border border-white/10 p-2">
             <div className="flex items-center justify-center gap-1.5">
-              <button onClick={() => { setDialWeight(w => stepWeight(w, -10)); setWeightMode('dial'); }}
+              <button onClick={() => { bumpDial(-10); }}
                 className="w-9 h-9 rounded-lg bg-white/10 text-slate-100 font-black text-[11px] active:scale-90">−5</button>
-              <button onClick={() => { setDialWeight(w => stepWeight(w, -1)); setWeightMode('dial'); }}
+              <button onClick={() => { bumpDial(-1); }}
                 className="w-9 h-9 rounded-lg bg-white/10 text-slate-100 font-black active:scale-90">−</button>
               <div className="min-w-[72px] text-center">
                 <p className="font-mono font-black text-2xl text-white leading-none">{snapWeight(dialWeight)}</p>
                 <p className="text-[8px] text-slate-400">kg</p>
               </div>
-              <button onClick={() => { setDialWeight(w => stepWeight(w, +1)); setWeightMode('dial'); }}
+              <button onClick={() => { bumpDial(+1); }}
                 className="w-9 h-9 rounded-lg bg-amber-500 text-slate-950 font-black active:scale-90">+</button>
-              <button onClick={() => { setDialWeight(w => stepWeight(w, +10)); setWeightMode('dial'); }}
+              <button onClick={() => { bumpDial(+10); }}
                 className="w-9 h-9 rounded-lg bg-amber-500 text-slate-950 font-black text-[11px] active:scale-90">+5</button>
             </div>
             <div className="mt-1.5 flex items-center justify-center gap-2 text-[9px] text-slate-400">
@@ -574,28 +602,28 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
         <div className="card-accent p-4">
           <label className="block text-xs font-semibold text-slate-400 uppercase tracking-widest mb-3 text-center">든 무게 (0.5kg 단위)</label>
           <div className="flex items-center justify-center gap-3">
-            <button onClick={() => setDialWeight(w => stepWeight(w, -10))}
+            <button onClick={() => bumpDial(-10)}
               className="w-12 h-12 rounded-xl bg-slate-700 text-slate-200 font-black text-sm active:scale-90">−5</button>
-            <button onClick={() => setDialWeight(w => stepWeight(w, -1))}
+            <button onClick={() => bumpDial(-1)}
               className="w-12 h-12 rounded-xl bg-slate-700 text-slate-200 font-black active:scale-90">−</button>
             <div className="min-w-[110px] text-center">
               <p className="font-mono font-black text-4xl text-slate-100 leading-none">{snapWeight(dialWeight)}</p>
               <p className="text-[10px] text-slate-500 mt-1">kg</p>
             </div>
-            <button onClick={() => setDialWeight(w => stepWeight(w, +1))}
+            <button onClick={() => bumpDial(+1)}
               className="w-12 h-12 rounded-xl bg-amber-500 text-slate-950 font-black active:scale-90">+</button>
-            <button onClick={() => setDialWeight(w => stepWeight(w, +10))}
+            <button onClick={() => bumpDial(+10)}
               className="w-12 h-12 rounded-xl bg-amber-500 text-slate-950 font-black text-sm active:scale-90">+5</button>
           </div>
           <input type="range" min="0" max="300" step={WEIGHT_STEP_KG} value={snapWeight(dialWeight)}
-            onChange={e => setDialWeight(snapWeight(e.target.value))}
+            onChange={e => setDialAbsolute(e.target.value)}
             className="w-full mt-4 accent-amber-500" />
         </div>
       ) : weightMode === 'manual' ? (
         /* ── 직접 입력 ── */
         <div>
           <label className="block text-xs font-semibold text-slate-400 uppercase tracking-widest mb-1.5">든 무게 (kg)</label>
-          <input type="number" step="0.5" value={manualWeight} onChange={e => setManualWeight(e.target.value)}
+          <input type="number" step="0.5" value={manualWeight} onChange={e => { setManualWeight(e.target.value); setWeightUserSet(true); }}
             placeholder="80" className="input-mono" />
         </div>
       ) : (

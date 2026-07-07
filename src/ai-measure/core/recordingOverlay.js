@@ -88,7 +88,7 @@ export function drawMeasurementOverlay(ctx, width, height, opts = {}) {
 //   (바벨 궤적선은 이 함수가 아니라 호출부에서 실제 추적 경로를 그린다.)
 // ════════════════════════════════════════════════════════════════════════
 export function drawLiftingDataHud(ctx, width, height, data = {}) {
-  const { romCm = null, meanVelocity = null, elapsedSec = null, recording = false } = data;
+  const { romCm = null, meanVelocity = null, elapsedSec = null, recording = false, repList = null } = data;
   const pad = Math.round(width * 0.03);
   const fs = Math.max(15, Math.round(width / 30));
   const r2 = (x) => (Number.isFinite(x) ? Math.round(x * 10) / 10 : null);
@@ -131,7 +131,51 @@ export function drawLiftingDataHud(ctx, width, height, data = {}) {
     ctx.textAlign = 'left';
   });
 
+  // ── 렙별 속도 카드(하단) — RSI 점프별 기록처럼 녹화 영상에도 렙마다 남긴다. ──
+  if (Array.isArray(repList) && repList.length > 0) {
+    const cards = repList.slice(-6); // 최근 6렙(가로 폭 고려)
+    const cardFs = Math.max(13, Math.round(width / 36));
+    const gap = Math.round(width * 0.012);
+    const cardW = Math.round((width - pad * 2 - gap * (cards.length - 1)) / Math.max(6, cards.length));
+    const cardH = Math.round(cardFs * 3.1);
+    const y0 = height - pad - cardH;
+    cards.forEach((r, i) => {
+      const x0 = pad + i * (cardW + gap);
+      const latest = i === cards.length - 1;
+      ctx.fillStyle = latest ? 'rgba(34,211,238,0.92)' : 'rgba(0,0,0,0.5)';
+      roundRectPath(ctx, x0, y0, cardW, cardH, Math.round(cardFs * 0.35));
+      ctx.fill();
+      const textMain = latest ? 'rgba(2,6,23,0.95)' : 'rgba(248,250,252,0.97)';
+      const textSub = latest ? 'rgba(2,6,23,0.6)' : 'rgba(203,213,225,0.7)';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      ctx.font = `700 ${Math.round(cardFs * 0.66)}px sans-serif`;
+      ctx.fillStyle = textSub;
+      ctx.fillText(`#${r.repNo}`, x0 + cardW / 2, y0 + Math.round(cardH * 0.10));
+      ctx.font = `800 ${cardFs}px ui-monospace, Menlo, monospace`;
+      ctx.fillStyle = textMain;
+      ctx.fillText(r.meanVelocity != null ? String(r.meanVelocity) : '–', x0 + cardW / 2, y0 + Math.round(cardH * 0.34));
+      ctx.font = `700 ${Math.round(cardFs * 0.6)}px sans-serif`;
+      ctx.fillStyle = textSub;
+      const sub = (r.lossPct != null && r.lossPct > 0) ? `-${r.lossPct}%` : (r.romCm != null ? `${r.romCm}cm` : 'm/s');
+      ctx.fillText(sub, x0 + cardW / 2, y0 + Math.round(cardH * 0.66));
+    });
+    ctx.textAlign = 'left';
+  }
+
   ctx.restore();
+}
+
+// 둥근 사각형 경로(HUD 카드용).
+function roundRectPath(ctx, x, y, w, h, r) {
+  const rr = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + rr, y);
+  ctx.arcTo(x + w, y, x + w, y + h, rr);
+  ctx.arcTo(x + w, y + h, x, y + h, rr);
+  ctx.arcTo(x, y + h, x, y, rr);
+  ctx.arcTo(x, y, x + w, y, rr);
+  ctx.closePath();
 }
 
 /**

@@ -124,6 +124,7 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
       liveHudRef.current = {
         romCm: lv.romCm,
         meanVelocity: lv.lastRepVelocity ?? lv.bestRepVelocity ?? null,
+        repList: lv.repList || null,
       };
     }
   }, [heightCm, referenceScale]);
@@ -220,6 +221,7 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
       drawLiftingDataHud(ctx, canvas.width, canvas.height, {
         romCm: liveHudRef.current.romCm,
         meanVelocity: liveHudRef.current.meanVelocity,
+        repList: liveHudRef.current.repList,
         elapsedSec,
         recording: recordingRef.current,
       });
@@ -378,7 +380,7 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
         fusedRef.current.reset();
         phSamplesRef.current = [];
         frameStatsRef.current = { total: 0, lost: 0 };
-        liveHudRef.current = { romCm: null, meanVelocity: null };
+        liveHudRef.current = { romCm: null, meanVelocity: null, repList: null };
         setLiveReps(0);
         setLiveHud(null);
         recordStartRef.current = performance.now();
@@ -517,17 +519,24 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
         countdown={countdown}
         topOffset={topOffset}
       >
+        {/* 렙별 기록 카드 — RSI 점프별 HUD 처럼 렙마다 속도가 카드로 남는다.
+            (m/s 평균속도 + ROM/저하율. 최신 렙은 시안 강조.) */}
         {recording && liveHud?.repList?.length > 0 && (
           <div className="mx-auto max-w-sm w-full overflow-x-auto pointer-events-none">
             <div className="flex gap-1.5 justify-end min-w-max px-1">
               {liveHud.repList.map((r, i) => {
                 const latest = i === liveHud.repList.length - 1;
                 return (
-                  <span key={r.repNo}
-                    className={`rounded-xl px-2 py-1 font-mono text-[11px] font-black backdrop-blur ${
-                      latest ? 'bg-cyan-400/90 text-slate-950 shadow-lg shadow-cyan-400/30' : 'bg-black/50 text-slate-200 border border-white/10'}`}>
-                    {r.repNo}<span className="opacity-60 text-[9px]">회</span> {r.meanVelocity ?? '–'}
-                  </span>
+                  <div key={r.repNo}
+                    className={`min-w-[54px] rounded-lg px-2 py-1.5 text-center backdrop-blur ${
+                      latest ? 'bg-cyan-400/90 text-slate-950 shadow-lg shadow-cyan-400/30'
+                             : 'bg-white/10 text-white border border-white/10'}`}>
+                    <p className={`text-[10px] font-bold ${latest ? 'text-slate-900/70' : 'text-white/45'}`}>#{r.repNo}</p>
+                    <p className="truncate font-mono text-base font-black leading-none">{r.meanVelocity ?? '–'}<span className="text-[9px] font-bold opacity-60"> m/s</span></p>
+                    <p className={`truncate text-[10px] font-bold ${latest ? 'text-slate-900/70' : 'text-white/45'}`}>
+                      {r.lossPct != null && r.lossPct > 0 ? `-${r.lossPct}%` : (r.romCm != null ? `${r.romCm}cm` : '–')}
+                    </p>
+                  </div>
                 );
               })}
             </div>

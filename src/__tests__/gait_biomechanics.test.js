@@ -110,6 +110,30 @@ describe('GaitCycleTracker v3 (IC detection, field-grade)', () => {
     expect(s.averageCadenceSpm).toBeGreaterThan(90);
     expect(s.averageCadenceSpm).toBeLessThan(150);
   });
+
+  // 실제 보행(양발 교대) 스텝 수 검증 — 좌/우 발을 각각 세어 절반 누락되지 않음.
+  // 1 stride/sec 를 4초 → 2 steps/sec × 4s = 8 스텝, 케이던스 ≈ 120 spm.
+  it('counts BOTH feet in alternating gait (no ~half undercount)', () => {
+    const g = new GaitCycleTracker({ minStepIntervalMs: 200, minCutoff: 1.5, beta: 0.02 });
+    let ts = 0;
+    const altLm = (tt) => {
+      const a = Array.from({ length: 33 }, () => ({ x: 0.5, y: 0.5, visibility: 0.9 }));
+      a[23] = { x: 0.45, y: 0.5, visibility: 0.9 }; a[24] = { x: 0.55, y: 0.5, visibility: 0.9 };
+      const L = 0.12 * Math.sin(tt * 2 * Math.PI * 1);          // 왼발
+      const R = 0.12 * Math.sin(tt * 2 * Math.PI * 1 + Math.PI); // 오른발(180° 위상차)
+      a[27] = { x: 0.5 + L, y: 0.75, visibility: 0.9 }; a[28] = { x: 0.5 + R, y: 0.75, visibility: 0.9 };
+      a[31] = { x: 0.52 + L, y: 0.82, visibility: 0.9 }; a[32] = { x: 0.52 + R, y: 0.82, visibility: 0.9 };
+      a[29] = { x: 0.5 + L, y: 0.8, visibility: 0.9 }; a[30] = { x: 0.5 + R, y: 0.8, visibility: 0.9 };
+      return a;
+    };
+    for (let i = 0; i < 240; i++) { ts += 1000 / 60; g.push(pelvisRelativeFeet(altLm(i / 60)), ts); }
+    const s = g.summary();
+    // 8 스텝 근처(양발 모두 카운트). 한쪽만 세던 옛 로직이면 ~4 로 절반이 됨.
+    expect(s.totalSteps).toBeGreaterThanOrEqual(7);
+    expect(s.totalSteps).toBeLessThanOrEqual(9);
+    expect(s.averageCadenceSpm).toBeGreaterThan(100);
+    expect(s.averageCadenceSpm).toBeLessThan(140);
+  });
 });
 
 describe('jointAnglesFromPose / AngleAccumulator', () => {

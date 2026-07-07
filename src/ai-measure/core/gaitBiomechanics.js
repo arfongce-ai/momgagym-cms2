@@ -193,6 +193,8 @@ export class GaitCycleTracker {
   } = {}) {
     this.steps = 0;
     this.minStepIntervalMs = minStepIntervalMs;
+    this.minCutoff = minCutoff;
+    this.beta = beta;
     this.lastStepTime = -minStepIntervalMs;
     this.firstTime = null;
     this.lastTime = null;
@@ -205,11 +207,52 @@ export class GaitCycleTracker {
     this.prevSlope = 0; // 직전 기울기 부호 유지(평탄구간 0은 무시)
     this._ankleBand = { lo: Infinity, hi: -Infinity };
     this._toeBand = { lo: Infinity, hi: -Infinity };
-    // 노이즈를 보행으로 오판하지 않도록 1-Euro 평활 적용
+    // 노이즈를 보행으로 오판하지 않도록 1-Euro 평활 적용(차분 신호 — stance/유효판정용)
     this._filt = new OneEuroFilter({ minCutoff, beta, dCutoff: 1.0 });
     // 전체 신호의 절대 진폭(최댓값-최솟값) 추적 → 유효 측정 판정용
     this._absLo = Infinity;
     this._absHi = -Infinity;
+    // ── 스텝 카운트: 발별 독립 봉우리 감지 ──
+    //  차분(L−R) 신호의 봉우리만 세면 '보폭(stride)'만 잡혀 실제 스텝의 절반이 된다.
+    //  대신 각 발의 골반상대 전후위치에서 '전방 최대(봉우리)'를 발마다 세면
+    //  한 스텝당 1회로 좌우 스텝이 모두 잡혀 실제 스텝 수와 일치한다.
+    this._foot = {
+      left: this._makeFootPeak(),
+      right: this._makeFootPeak(),
+    };
+  }
+
+  _makeFootPeak() {
+    return {
+      filt: new OneEuroFilter({ minCutoff: this.minCutoff, beta: this.beta, dCutoff: 1.0 }),
+      lo: Infinity, hi: -Infinity, prevV: null, prevSlope: 0, lastStepTime: -this.minStepIntervalMs,
+    };
+  }
+
+  // 한 발의 전후 신호를 받아 '전방 봉우리(초기 접지 IC)'를 1회씩 카운트.
+  // 스텝 = 그 발이 가장 앞으로 나갔다가 접지하는 순간(전방 봉우리) 1회.
+  // 골(뒤로 빠지는 지점)은 같은 발의 '몸이 지나가는' 국면이라 스텝이 아니다.
+  _pushFoot(foot, x, ts) {
+    if (x == null || !Number.isFinite(x)) return;
+    const v = foot.filt.filter(x, ts / 1000);
+    foot.lo = Math.min(foot.lo === Infinity ? v : foot.lo + (v - foot.lo) * 0.002, v);
+    foot.hi = Math.max(foot.hi === -Infinity ? v : foot.hi - (foot.hi - v) * 0.002, v);
+    const range = foot.hi - foot.lo;
+    if (foot.prevV !== null) {
+      const slope = v - foot.prevV;
+      const wasRising = foot.prevSlope > 0;
+      const turnsDown = wasRising && slope < 0; // 전방 봉우리(초기 접지)
+      const enough = range > GAIT_TUNING.stepProminence;
+      // 봉우리가 진폭 상위 절반에 있을 때만 스텝으로 인정(노이즈 컷).
+      const nearHi = foot.prevV >= foot.lo + range * 0.5;
+      const spaced = ts - foot.lastStepTime >= this.minStepIntervalMs;
+      if (enough && spaced && turnsDown && nearHi) {
+        this.steps++;
+        foot.lastStepTime = ts;
+      }
+      if (slope !== 0) foot.prevSlope = slope;
+    }
+    foot.prevV = v;
   }
 
   push(relFeet, ts) {
@@ -232,9 +275,10 @@ export class GaitCycleTracker {
     const toeAmp = this._toeBand.hi - this._toeBand.lo;
     // 더 큰 진폭(움직임이 뚜렷한) 신호 선택. 동률/초기엔 발목 우선.
     let vRaw;
-    if (toeV != null && toeAmp > ankleAmp * 1.2) vRaw = toeV;
+    let useToe = false;
+    if (toeV != null && toeAmp > ankleAmp * 1.2) { vRaw = toeV; useToe = true; }
     else if (ankleV != null) vRaw = ankleV;
-    else if (toeV != null) vRaw = toeV;
+    else if (toeV != null) { vRaw = toeV; useToe = true; }
     else return;
 
     // 1-Euro 평활: 검출 떨림(노이즈) 제거. 보행 같은 큰 저주파 움직임은 보존.
@@ -247,21 +291,17 @@ export class GaitCycleTracker {
     // 적응형 진폭 밴드 (느린 감쇠로 패닝/줌 후에도 안정)
     this.lo = Math.min(this.lo === Infinity ? v : this.lo + (v - this.lo) * 0.002, v);
     this.hi = Math.max(this.hi === -Infinity ? v : this.hi - (this.hi - v) * 0.002, v);
-    const range = this.hi - this.lo;
+
+    // ── 스텝 카운트: 각 발의 골반상대 전후 위치로 발별 봉우리를 센다 ──
+    //  (차분 신호 대신 발별로 세어 좌/우 스텝을 모두 포착 → 실제 스텝 수와 일치)
+    const lx = useToe ? relFeet.leftToe?.x : relFeet.leftAnkle?.x;
+    const rx = useToe ? relFeet.rightToe?.x : relFeet.rightAnkle?.x;
+    this._pushFoot(this._foot.left, lx, ts);
+    this._pushFoot(this._foot.right, rx, ts);
+    // 전체 최소 간격 갱신(발 무관 마지막 스텝 시각) — cadence 안정화 참고용
+    if (this.steps > 0) this.lastStepTime = ts;
 
     if (this.prevV !== null) {
-      const slope = v - this.prevV;
-      const wasRising = this.prevSlope > 0;
-      const turnsDown = wasRising && slope < 0;
-      // prominence: 봉우리가 진폭 상위 절반 + 절대 진폭이 보행 수준이어야 IC.
-      // 절대 하한(stepProminence)으로 정지/노이즈를 스텝으로 오판하지 않게 막는다.
-      const prominent = range > GAIT_TUNING.stepProminence && this.prevV >= this.lo + range * 0.5;
-      if (turnsDown && prominent && ts - this.lastStepTime >= this.minStepIntervalMs) {
-        this.steps++;
-        this.lastStepTime = ts;
-      }
-      if (slope !== 0) this.prevSlope = slope; // 평탄(0)은 직전 부호 유지
-
       // 동적 Stance/Swing: 발이 몸쪽으로/접지로 향하면(전후 위치 절대값 감소) stance
       if (Math.abs(v) < Math.abs(this.prevV)) this.stanceFrames++;
     }

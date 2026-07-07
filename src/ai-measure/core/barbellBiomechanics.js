@@ -248,10 +248,17 @@ export class BarbellAccumulator {
     const best = means.length ? Math.max(...means) : null;
     const lastMean = last ? last.meanRatioPerSec : null;
     const romRatio = this.samples.length >= 2 ? this.maxY - this.minY : null;
-    // 실시간 렙 스트립용 — 최근 10렙의 번호·평균속도(확정 렙만, 계산 재사용).
+    // 실시간 렙 스트립(HUD 카드)용 — 최근 10렙의 번호·평균속도·ROM·저하율.
+    //  RSI 점프별 카드처럼 렙마다 기록이 남도록 카드에 필요한 값을 함께 제공.
     const repList = this.repsRaw.slice(-10).map(r => ({
       repNo: r.repNo,
       meanVelocity: r2(ratioPerSecToMs(r.meanRatioPerSec, cmPerRatio)),
+      peakVelocity: r2(ratioPerSecToMs(r.peakRatioPerSec, cmPerRatio)),
+      romCm: cmPerRatio && r.romRatio != null ? r1(r.romRatio * cmPerRatio) : null,
+      // 그 렙의 최고속도 대비 저하율(%) — best 는 전체 최고 평균속도.
+      lossPct: best && best > 0 && r.meanRatioPerSec != null
+        ? r1(((best - r.meanRatioPerSec) / best) * 100)
+        : null,
     }));
     return {
       reps,
