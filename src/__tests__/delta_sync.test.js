@@ -73,7 +73,7 @@ beforeEach(() => {
   for (const k of Object.keys(fsData)) delete fsData[k];
   for (const k of Object.keys(lsBack)) delete lsBack[k];
   readLog.length = 0;
-  lsBack.fitcms_seeded = 'v6.1'; // 시드 확인 스킵(읽기 절감 플래그)
+  lsBack.fitcms_seeded = 'v6.2'; // 시드 확인 스킵(읽기 절감 플래그)
   vi.resetModules();
 });
 
@@ -188,5 +188,17 @@ describe('원자 배치 경로(예약+차감 등)도 델타 계약을 지킨다 
     const mod2 = await import('../demoData.js');
     await mod2.initStore();
     expect(mod2.store.getSchedules().find(s => s.id === 's1').status).toBe('attended');
+  });
+});
+
+describe('가드 — 델타 계약 우회 금지(정적 검증)', () => {
+  it('raw writeBatch(db)는 래퍼 3곳(fbDeleteBatch/fbWriteBatch/createStampedBatch) 내부에만 존재한다', () => {
+    const fs = require('node:fs');
+    const path = require('node:path');
+    const src = fs.readFileSync(path.resolve(__dirname, '..', 'demoData.js'), 'utf-8');
+    const count = (src.match(/writeBatch\(db\)/g) || []).length;
+    // 래퍼 3곳 외에 raw 배치가 늘어나면 "저장은 되는데 새로고침하면 사라지는"
+    // 버그가 재발한다 — 새 원자 저장은 반드시 createStampedBatch 를 쓸 것.
+    expect(count).toBe(3);
   });
 });

@@ -10,7 +10,11 @@ import {
 import { toYMD, todayYMD } from './utils/dates';
 import { buildUnifiedReportDocument, inferReportType } from './ai-measure/core/unifiedReport';
 
-const DATA_VERSION = 'v6.1';
+// v6.2: 델타 동기화 도입 직후, 원자 배치(예약+차감 등)가 updatedAt 도장 없이
+//        저장되던 기간이 있었다. 그 문서들은 델타 조회에 영원히 걸리지 않으므로
+//        버전을 올려 모든 기기의 스냅샷을 무효화 → 배포 후 첫 실행에서 1회
+//        전체 재로딩으로 최신 상태를 다시 기준선으로 잡는다(즉시 복구).
+const DATA_VERSION = 'v6.2';
 
 // ── [진단] Firestore 읽기 계측 ───────────────────────────────────────
 // 어떤 컬렉션이 읽기를 얼마나 일으키는지 콘솔에서 눈으로 확인하기 위한 래퍼.
@@ -360,10 +364,17 @@ export async function initStore({ force = false } = {}) {
           __fullSyncAt = snap.fullSyncAt || 0;
           if (Date.now() - __fullSyncAt <= __FULL_SYNC_TTL_MS && Object.keys(__syncedAt).length) {
             console.log('[FitCMS] 스냅샷 복원 — 변경분만 확인합니다.');
-            await __deltaSync();
-            return;
+            try {
+              await __deltaSync();
+              return;
+            } catch (e) {
+              // 규칙 미게시·일시 오류 등으로 델타가 실패해도 앱이 죽지 않고
+              // 전체 로딩으로 폴백한다(아래로 진행).
+              console.warn('[FitCMS] 델타 동기화 실패 → 전체 로딩 폴백:', e?.code || e?.message);
+            }
+          } else {
+            console.log('[FitCMS] 스냅샷 복원 — 주기 전체 재검증을 수행합니다.');
           }
-          console.log('[FitCMS] 스냅샷 복원 — 주기 전체 재검증을 수행합니다.');
         }
       }
       // 2) 캐시가 없거나 강제/주기 재검증 → Firestore 전수 로딩.
