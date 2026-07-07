@@ -554,7 +554,6 @@ export default function PostureMeasure({ member, onSave, onBack }) {
       error={error}
       onClose={onBack}
       tappable={false}
-      showSkeletonToggle
       topBar={
         <div className="w-full text-right">
           <p className="text-sm font-black text-white">자세·체형 측정</p>

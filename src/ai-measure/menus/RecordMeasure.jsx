@@ -7,6 +7,79 @@ import { boostedGain } from '../core/audioCue';
 import { openMainCameraStream, refocusCameraStream } from '../core/cameraSelect';
 import { formatStopwatch } from '../core/recordingOverlay';
 import { nextPhase, firstPhase, phaseDurationSec } from '../core/intervalTimer';
+import { loadPoseLandmarker, detectPoseFrame, closePoseLandmarker, isPoseReady } from '../core/poseBackend';
+import { isSkeletonEnabled, subscribeSkeleton, useSkeletonOverlay } from '../core/skeletonPref';
+import SkeletonToggleChip from './SkeletonToggleChip';
+
+// 스켈레톤 뼈대(어깨~골반~사지) — 전신 스틱 피규어.
+const SKELETON_BONES = [
+  [11, 12], [11, 23], [12, 24], [23, 24],
+  [11, 13], [13, 15], [12, 14], [14, 16],
+  [23, 25], [25, 27], [27, 29], [27, 31], [29, 31],
+  [24, 26], [26, 28], [28, 30], [28, 32], [30, 32],
+];
+const SKELETON_JOINTS = [11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28];
+
+function skelVisible(p, threshold = 0.35) {
+  return !!p && Number.isFinite(p.x) && (p.visibility == null || p.visibility >= threshold);
+}
+
+// 미리보기(object-cover)용: 정규화 좌표 → 화면 픽셀(크롭 보정).
+function drawSkeletonCover(canvas, video, landmarks) {
+  if (!canvas || !video) return;
+  const cw = canvas.clientWidth || canvas.width;
+  const ch = canvas.clientHeight || canvas.height;
+  if (canvas.width !== cw || canvas.height !== ch) { canvas.width = cw; canvas.height = ch; }
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, cw, ch);
+  if (!landmarks) return;
+  const vw = video.videoWidth, vh = video.videoHeight;
+  if (!vw || !vh) return;
+  const scale = Math.max(cw / vw, ch / vh);
+  const dw = vw * scale, dh = vh * scale;
+  const ox = (cw - dw) / 2, oy = (ch - dh) / 2;
+  const px = (p) => ox + p.x * dw;
+  const py = (p) => oy + p.y * dh;
+  drawSkeletonPaths(ctx, landmarks, px, py, Math.max(2.5, cw / 200), Math.max(3, cw / 150));
+}
+
+// 녹화 합성 캔버스용: drawCover 와 동일한 크롭으로 좌표를 맞춰 스켈레톤을 굽는다.
+function drawSkeletonToRecordCover(ctx, video, landmarks, width, height) {
+  if (!landmarks || !video) return;
+  const vw = video.videoWidth, vh = video.videoHeight;
+  if (!vw || !vh) return;
+  const sourceRatio = vw / vh;
+  const targetRatio = width / height;
+  let sx = 0, sy = 0, sw = vw, sh = vh;
+  if (sourceRatio > targetRatio) { sw = vh * targetRatio; sx = (vw - sw) / 2; }
+  else { sh = vw / targetRatio; sy = (vh - sh) / 2; }
+  // 정규화 좌표(0~1) → 원본 픽셀 → 크롭 오프셋 제거 → 출력 캔버스 픽셀
+  const px = (p) => ((p.x * vw) - sx) / sw * width;
+  const py = (p) => ((p.y * vh) - sy) / sh * height;
+  drawSkeletonPaths(ctx, landmarks, px, py, Math.max(2.5, width / 220), Math.max(3, width / 170));
+}
+
+function drawSkeletonPaths(ctx, landmarks, px, py, lineW, dotR) {
+  ctx.strokeStyle = 'rgba(52,211,153,0.9)';
+  ctx.lineWidth = lineW;
+  ctx.lineCap = 'round';
+  for (const [a, b] of SKELETON_BONES) {
+    const pa = landmarks[a], pb = landmarks[b];
+    if (!skelVisible(pa) || !skelVisible(pb)) continue;
+    ctx.beginPath();
+    ctx.moveTo(px(pa), py(pa));
+    ctx.lineTo(px(pb), py(pb));
+    ctx.stroke();
+  }
+  ctx.fillStyle = 'rgba(251,191,36,0.95)';
+  for (const i of SKELETON_JOINTS) {
+    const p = landmarks[i];
+    if (!skelVisible(p)) continue;
+    ctx.beginPath();
+    ctx.arc(px(p), py(p), dotR, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
 
 const RECORD_FPS = 30;
 const MAX_RECORD_SECONDS = 30;
@@ -144,6 +217,13 @@ export default function RecordMeasure({ member: _member, onBack }) {
   const autoStopTimerRef = useRef(null);
   const focusTimerRef = useRef(null);
   const overlayStateRef = useRef({});
+  // ── 스켈레톤 오버레이(선택) — 일반 녹화에 포즈 스켈레톤을 겹쳐 저장 ──
+  const latestLandmarksRef = useRef(null); // 최신 검출 랜드마크(미리보기·녹화 공용)
+  const poseDetectTsRef = useRef(0);       // detectPoseFrame 타임스탬프 단조 증가용
+  const skeletonOnRef = useRef(isSkeletonEnabled()); // 콜백 안 최신 on/off
+  const poseLoadingRef = useRef(false);    // 로더 중복 호출 방지
+  const [poseReady, setPoseReady] = useState(false); // 모델 준비 여부(UI 안내)
+  const [skeletonOn] = useSkeletonOverlay();          // 렌더 조건용 반응형 on/off
 
   const [status, setStatus] = useState('idle');
   const [error, setError] = useState(null);
@@ -156,6 +236,32 @@ export default function RecordMeasure({ member: _member, onBack }) {
     try { localStorage.setItem(QUALITY_STORAGE_KEY, q); } catch { /* noop */ }
   };
   const [toolTab, setToolTab] = useState('stopwatch');
+
+  // 스켈레톤 모델 로드(1회). 켜질 때 lazy 로 불러온다 — 끄면 로드 안 함.
+  const ensurePoseModel = useCallback(() => {
+    if (poseLoadingRef.current || isPoseReady()) { if (isPoseReady()) setPoseReady(true); return; }
+    poseLoadingRef.current = true;
+    loadPoseLandmarker({ numPoses: 1, modelTier: 'full' })
+      .then(() => setPoseReady(true))
+      .catch(() => setPoseReady(false))
+      .finally(() => { poseLoadingRef.current = false; });
+  }, []);
+
+  // 스켈레톤 on/off 전역 설정 구독. 켜질 때 모델을 준비하고, 꺼지면
+  // 미리보기 오버레이를 즉시 지운다(다음 draw 프레임에서 비워짐).
+  useEffect(() => {
+    skeletonOnRef.current = isSkeletonEnabled();
+    if (skeletonOnRef.current) ensurePoseModel();
+    const off = subscribeSkeleton((on) => {
+      skeletonOnRef.current = on;
+      if (on) ensurePoseModel();
+      else latestLandmarksRef.current = null;
+    });
+    return off;
+  }, [ensurePoseModel]);
+
+  // 언마운트 시 모델 해제(자원 정리)
+  useEffect(() => () => { closePoseLandmarker(); }, []);
   const [stopwatchElapsed, setStopwatchElapsed] = useState(0);
   const [stopwatchRunning, setStopwatchRunning] = useState(false);
   const [metronomeBpm, setMetronomeBpm] = useState(100);
@@ -177,15 +283,30 @@ export default function RecordMeasure({ member: _member, onBack }) {
     const video = videoRef.current;
     const canvas = guideCanvasRef.current;
     if (video && canvas && video.videoWidth) {
-      const box = canvas.getBoundingClientRect();
-      const width = Math.max(1, Math.round(box.width || 720));
-      const height = Math.max(1, Math.round(box.height || 960));
-      if (canvas.width !== width || canvas.height !== height) {
-        canvas.width = width;
-        canvas.height = height;
+      if (skeletonOnRef.current && isPoseReady()) {
+        // 미리보기에 스켈레톤 표시 — detectPoseFrame 은 단조 증가 타임스탬프 필요
+        let landmarks = null;
+        try {
+          const ts = Math.max(poseDetectTsRef.current + 1, Math.round(performance.now()));
+          poseDetectTsRef.current = ts;
+          const res = detectPoseFrame(video, ts);
+          landmarks = res?.landmarks || null;
+        } catch (e) { landmarks = null; }
+        latestLandmarksRef.current = landmarks || latestLandmarksRef.current;
+        drawSkeletonCover(canvas, video, latestLandmarksRef.current);
+      } else {
+        // 스켈레톤 OFF: 오버레이 캔버스를 비운다.
+        const box = canvas.getBoundingClientRect();
+        const width = Math.max(1, Math.round(box.width || 720));
+        const height = Math.max(1, Math.round(box.height || 960));
+        if (canvas.width !== width || canvas.height !== height) {
+          canvas.width = width;
+          canvas.height = height;
+        }
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, width, height);
+        latestLandmarksRef.current = null;
       }
-      const ctx = canvas.getContext('2d');
-      ctx.clearRect(0, 0, width, height);
     }
     rafRef.current = requestAnimationFrame(drawLoop);
   }, []);
@@ -317,6 +438,10 @@ export default function RecordMeasure({ member: _member, onBack }) {
       ctx.fillStyle = '#000';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       drawCover(ctx, video, canvas.width, canvas.height);
+      // 스켈레톤 ON 이면 녹화 영상에도 굽는다(미리보기 loop 가 최신 랜드마크 갱신).
+      if (skeletonOnRef.current && latestLandmarksRef.current) {
+        drawSkeletonToRecordCover(ctx, video, latestLandmarksRef.current, canvas.width, canvas.height);
+      }
       composeRafRef.current = requestAnimationFrame(draw);
     };
     stopComposeLoop();
@@ -633,6 +758,16 @@ export default function RecordMeasure({ member: _member, onBack }) {
               </button>
             ))}
           </div>
+        </div>
+
+        {/* [항목 6] 스켈레톤 ON/OFF — 일반 녹화 영상에 포즈 스켈레톤을 겹쳐 저장 */}
+        <div className="absolute left-4 top-[max(60px,calc(env(safe-area-inset-top)+50px))] z-10 flex items-center gap-2">
+          <SkeletonToggleChip />
+          {skeletonOn && !poseReady && (
+            <span className="rounded-full bg-black/60 px-2 py-1 text-[10px] font-bold text-amber-300 backdrop-blur">
+              스켈레톤 모델 준비 중…
+            </span>
+          )}
         </div>
 
         {status === 'idle' && (

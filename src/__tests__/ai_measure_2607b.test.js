@@ -114,8 +114,23 @@ describe('[2607-6] 스켈레톤 오버레이 전역 토글', () => {
     expect(cam).toMatch(/<SkeletonToggleChip/);
   });
 
-  it('자세·ROM 카메라가 토글을 노출한다', () => {
-    expect(read('ai-measure/menus/PostureMeasure.jsx')).toMatch(/showSkeletonToggle/);
+  it('일반 영상 녹화(RecordMeasure)에 스켈레톤 토글이 들어간다', () => {
+    const rec = read('ai-measure/menus/RecordMeasure.jsx');
+    expect(rec).toMatch(/<SkeletonToggleChip/);
+    // 포즈 검출·미리보기·녹화 합성에 스켈레톤을 굽는 경로
+    expect(rec).toMatch(/detectPoseFrame/);
+    expect(rec).toMatch(/drawSkeletonCover/);
+    expect(rec).toMatch(/drawSkeletonToRecordCover/);
+    // ON 일 때만 굽고, 모델은 lazy 로드
+    expect(rec).toMatch(/skeletonOnRef\.current/);
+    expect(rec).toMatch(/loadPoseLandmarker/);
+  });
+
+  it('자세·체형 측정에는 더 이상 스켈레톤 토글이 없다(녹화로 이동)', () => {
+    expect(read('ai-measure/menus/PostureMeasure.jsx')).not.toMatch(/showSkeletonToggle/);
+  });
+
+  it('ROM 카메라는 토글을 노출한다', () => {
     expect(read('ai-measure/menus/RomMeasure.jsx')).toMatch(/showSkeletonToggle/);
   });
 
