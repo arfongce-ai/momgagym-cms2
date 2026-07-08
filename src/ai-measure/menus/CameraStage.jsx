@@ -25,7 +25,7 @@ export default function CameraStage({
   onTapVideo, onClose, topBar, controls, children, tappable = true,
   recording = false, recordingLabel = '측정 중',
   seedHint = false, hintSignal = 0, countdown = null,
-  topOffset = 0, showSkeletonToggle = false,
+  topOffset = 0, showSkeletonToggle = false, aspectFrame = null,
 }) {
   const [showSeedHint, setShowSeedHint] = useState(false);
   const off = Math.max(0, topOffset);
@@ -56,6 +56,18 @@ export default function CameraStage({
         className="absolute inset-0 w-full h-full object-contain" />
       <canvas ref={canvasRef}
         className="absolute inset-0 w-full h-full object-contain pointer-events-none" />
+
+      {/* 녹화 비율 크롭 가이드(인스타 3:4/1:1) — 실제 저장 프레임 영역을 밝게 표시 */}
+      {aspectFrame && status === 'running' && (
+        <div className="pointer-events-none absolute inset-0 z-[15] flex items-center justify-center p-2">
+          <div className="relative border-2 border-amber-400/50 rounded-sm"
+            style={{ aspectRatio: aspectFrame.replace('/', ' / '), height: '96%', maxWidth: '96%' }}>
+            <span className="absolute top-1 right-1 rounded bg-black/55 px-1.5 py-0.5 text-[9px] font-black text-amber-300">
+              {aspectFrame === '1/1' ? '1:1' : '3:4'} 저장
+            </span>
+          </div>
+        </div>
+      )}
 
       {recording && status === 'running' && (
         <div className="absolute left-1/2 z-30 -translate-x-1/2 rounded-full bg-red-500/80 border border-white/20 px-3 py-1.5 text-xs font-black text-white shadow-lg backdrop-blur" style={{ top: recTop }}>

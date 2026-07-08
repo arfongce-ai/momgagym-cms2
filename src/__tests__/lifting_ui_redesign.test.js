@@ -41,7 +41,7 @@ describe('측정 화면 — 결과 시트/렙 스트립 배선', () => {
       expect(src).toContain('liveHud?.repList?.length');
     });
     it(`${file} → 게이지 HUD 유지`, () => {
-      expect(src).toContain('<VelocityGaugeHud');
+      expect(src).toContain('<GaugeHud');
     });
   }
   it('1RM 화면도 렙 스트립을 렌더한다', () => {

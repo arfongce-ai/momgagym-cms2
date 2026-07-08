@@ -1,7 +1,7 @@
 // daily_settlement.test.js — 홈 "전날 정산내역" 집계 로직 회귀 보호
 //  · 신규/재등록/일반 분류, 미수금·환불 제외, 입금액 합계·결제수단 집계를 검증.
 import { describe, it, expect } from 'vitest';
-import { summarizeDailySettlement } from '../utils/dailySettlement';
+import { summarizeDailySettlement, yesterdayPopupSeenKey, settlementOneLine } from '../utils/dailySettlement';
 
 const YMD = '2026-07-05';
 
@@ -72,5 +72,37 @@ describe('summarizeDailySettlement — 전날 정산 요약', () => {
     expect(empty.count).toBe(0);
     expect(empty.total).toBe(0);
     expect(empty.rows).toEqual([]);
+  });
+});
+
+describe('yesterdayPopupSeenKey — 홈 팝업 하루 한 번 키', () => {
+  it('계정·날짜별로 고유한 키를 만든다', () => {
+    expect(yesterdayPopupSeenKey('u1', '2026-07-08')).toBe('fitcms_yesterday_settle_seen_u1_2026-07-08');
+    expect(yesterdayPopupSeenKey('u1', '2026-07-08')).not.toBe(yesterdayPopupSeenKey('u2', '2026-07-08'));
+    expect(yesterdayPopupSeenKey('u1', '2026-07-08')).not.toBe(yesterdayPopupSeenKey('u1', '2026-07-09'));
+  });
+
+  it('아이디·날짜가 없으면 null을 반환한다(저장 생략)', () => {
+    expect(yesterdayPopupSeenKey(null, '2026-07-08')).toBeNull();
+    expect(yesterdayPopupSeenKey('u1', '')).toBeNull();
+  });
+});
+
+describe('settlementOneLine — 홈 카드 한 줄 요약', () => {
+  const s = summarizeDailySettlement(members, getPayments, YMD);
+
+  it('신규·재등록·일반 건수와 총액을 한 줄로 정리한다', () => {
+    expect(settlementOneLine(s)).toBe('신규 1건 · 재등록 1건 · 등록 1건 · 총 1,250,000원');
+  });
+
+  it('없는 분류는 생략한다', () => {
+    const only = summarizeDailySettlement([members[0]], getPayments, YMD);
+    expect(settlementOneLine(only)).toBe('신규 1건 · 총 500,000원');
+  });
+
+  it('내역이 없으면 null을 반환한다(빈 상태 문구는 호출부 처리)', () => {
+    const empty = summarizeDailySettlement(members, getPayments, '2020-01-01');
+    expect(settlementOneLine(empty)).toBeNull();
+    expect(settlementOneLine(null)).toBeNull();
   });
 });

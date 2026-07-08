@@ -23,10 +23,11 @@ import { personHeightRatio, barbellPoint } from '../core/barbell';
 import { BarbellAccumulator, estimateOneRmFromMeanVelocity } from '../core/barbellBiomechanics';
 import { beepRep } from '../core/audioCue';
 import { saveVideoToPhone, pickRecorderMime } from '../core/recordSink';
-import { drawMeasurementOverlay } from '../core/recordingOverlay';
+import { drawGaugeHud } from '../core/recordingOverlay';
+import { DEFAULT_ASPECT, outputSize, aspectLabel, drawVideoCover } from '../core/recordAspect';
 import FramingIntro from './FramingIntro';
 import CameraStage from './CameraStage';
-import VelocityGaugeHud from './VelocityGaugeHud';
+import GaugeHud from './GaugeHud';
 
 const PLATE_HEX = { 빨강:'#D7263D', 파랑:'#0B61A4', 노랑:'#F2C200', 초록:'#1F9D55', 흰색:'#E8E8E8' };
 
@@ -91,7 +92,10 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
   const recordStartRef = useRef(0);
   const videoBlobRef = useRef(null);
   const [counting, setCounting] = useState(false);
+  const [aspect, setAspect] = useState(DEFAULT_ASPECT);
+  const aspectRef = useRef(DEFAULT_ASPECT);
   const [countdown, setCountdown] = useState(null);
+  useEffect(() => { aspectRef.current = aspect; }, [aspect]);
   const [liveReps, setLiveReps] = useState(0);
   const [videoBlob, setVideoBlob] = useState(null);
   const [savingVideo, setSavingVideo] = useState(false);
@@ -241,23 +245,24 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
 
   const createRecordedStream = () => {
     const video = videoRef.current;
-    const vw = video?.videoWidth || 720;
-    const vh = video?.videoHeight || 1280;
+    const size = outputSize(aspectRef.current); // 인스타 비율 통일
     const canvas = recordCanvasRef.current || document.createElement('canvas');
-    canvas.width = vw; canvas.height = vh;
+    canvas.width = size.width; canvas.height = size.height;
     recordCanvasRef.current = canvas;
     const ctx = canvas.getContext('2d', { alpha: false });
     const draw = () => {
       ctx.fillStyle = '#000';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
-      if (video && video.videoWidth) ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-      drawMeasurementOverlay(ctx, canvas.width, canvas.height, {
+      drawVideoCover(ctx, video, canvas.width, canvas.height);
+      // 게이지형 HUD: 무게를 중앙 게이지로, 반복을 코너 스탯으로(피사체 미가림 · 녹화 번인).
+      drawGaugeHud(ctx, canvas.width, canvas.height, {
         title: '1RM',
-        elapsedMs: countingRef.current ? performance.now() - recordStartRef.current : null,
+        recording: countingRef.current,
+        elapsedSec: countingRef.current ? (performance.now() - recordStartRef.current) / 1000 : null,
         accent: '#f59e0b',
-        metrics: [
-          { label: 'weight', value: `${snapWeight(computedWeight)} kg` },
-          { label: 'reps', value: `${accRef.current.live().reps} reps` },
+        gauge: { label: '무게', value: snapWeight(computedWeight), unit: 'kg' },
+        stats: [
+          { label: '반복', value: accRef.current.live().reps, unit: '회' },
         ],
       });
       composeRafRef.current = requestAnimationFrame(draw);
@@ -468,6 +473,14 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
         <span className={`rounded-full px-3 py-1 text-[11px] font-bold ${framing.level === 'good' ? 'bg-emerald-500/85 text-slate-950' : framing.level === 'warn' ? 'bg-amber-500/85 text-slate-950' : 'bg-red-500/85 text-white'}`}>
           {framing.level === 'good' ? '✓ ' : '⚠ '}{framing.message}
         </span>
+        <div className="pointer-events-auto flex gap-0.5 rounded-full bg-black/55 backdrop-blur p-0.5 border border-white/10">
+          {['3/4', '1/1'].map((r) => (
+            <button key={r} onClick={() => !counting && setAspect(r)} disabled={counting}
+              className={`rounded-full px-2 py-0.5 text-[10px] font-black transition-colors disabled:opacity-50 ${aspect === r ? 'bg-amber-500 text-slate-950' : 'text-slate-300'}`}>
+              {aspectLabel(r)}
+            </button>
+          ))}
+        </div>
       </>
     );
     const controls = (
@@ -490,6 +503,7 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
         recording={counting} recordingLabel="카운트 중" tappable={countdown == null}
         countdown={countdown}
         topOffset={topOffset}
+        aspectFrame={aspect}
       >
         {counting && liveHud?.repList?.length > 0 && (
           <div className="mx-auto max-w-sm w-full overflow-x-auto pointer-events-none">
@@ -508,12 +522,15 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
           </div>
         )}
         {counting && (
-          <VelocityGaugeHud
-            avg={liveHud?.lastRepVelocity ?? null}
-            reps={liveReps}
-            best={liveHud?.bestRepVelocity ?? null}
-            romCm={liveHud?.romCm ?? null}
-            lossPct={liveHud?.velocityLossPct ?? null}
+          <GaugeHud
+            label="무게"
+            value={snapWeight(computedWeight)}
+            unit="kg"
+            accent="#f59e0b"
+            stats={[
+              { label: 'REPS', value: liveReps, unit: '회' },
+              { label: 'V', value: liveHud?.lastRepVelocity ?? null, unit: 'm/s' },
+            ]}
           />
         )}
         {/* 무게 다이얼 반투명 오버레이 — 녹화(카운트) 버튼 바로 위. 촬영 전 무게 조정 */}
