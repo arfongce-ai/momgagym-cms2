@@ -649,7 +649,6 @@ export default function RomMeasure({ member, onSave, onBack }) {
   }
 
   // ════════════════ 설정/시작 화면 ════════════════
-  const allowedPoses = POSE_MODES_BY_JOINT[joint] || [];
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -658,36 +657,7 @@ export default function RomMeasure({ member, onSave, onBack }) {
         <span className="w-12" />
       </div>
 
-      {/* 관절 선택 */}
-      <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
-        <p className="mb-2 text-xs font-bold text-slate-400">측정 관절</p>
-        <div className="flex flex-wrap gap-2">
-          {JOINTS.map((j) => (
-            <button key={j.key} type="button" onClick={() => setJoint(j.key)}
-              className={`rounded-full border px-3 py-1.5 text-xs font-black ${
-                joint === j.key ? 'border-amber-400 bg-amber-400 text-slate-950' : 'border-slate-700 bg-slate-800 text-slate-400'
-              }`}>
-              {j.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* 자세 모드 — STANDING(기능적) vs SUPINE/PRONE(구조적) 의 의미를 함께 노출 */}
-      <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
-        <p className="mb-2 text-xs font-bold text-slate-400">측정 자세 (역학 기준선이 달라집니다)</p>
-        <div className="space-y-2">
-          {allowedPoses.map((m) => (
-            <button key={m.key} type="button" onClick={() => setPoseMode(m.key)}
-              className={`w-full rounded-xl border px-3 py-2.5 text-left transition ${
-                poseMode === m.key ? 'border-amber-400 bg-amber-500/15' : 'border-slate-700 bg-slate-800/60'
-              }`}>
-              <p className={`text-sm font-black ${poseMode === m.key ? 'text-amber-200' : 'text-slate-200'}`}>{m.label}</p>
-              <p className="text-[11px] text-slate-400">{m.desc}</p>
-            </button>
-          ))}
-        </div>
-      </div>
+      {/* 측정 관절·자세는 라이브 측정 화면에서 즉시 바꾼다(첫 페이지 중복 제거). */}
 
       {/* 측정 측 */}
       <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4">

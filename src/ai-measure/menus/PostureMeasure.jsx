@@ -39,7 +39,7 @@ export default function PostureMeasure({ member, onSave, onBack }) {
   // 오래된 프레임은 버린다(슬라이딩 윈도우). 캡처 시 중앙값 결합에 사용.
   const frameBufferRef = useRef([]);
   // 자동 촬영용: 현재 프레임의 방향(면) 안정 판정 누적기 + 진행 제어 ref
-  const viewVoterRef = useRef(new PostureViewVoter({ window: 12 }));
+  const viewVoterRef = useRef(new PostureViewVoter({ window: 20 }));
   const autoCountdownRef = useRef(null);   // 카운트다운 인터벌
   const autoBusyRef = useRef(false);       // 카운트다운/캡처 진행 중 재트리거 방지
   const activeViewKeyRef = useRef('front'); // 콜백에서 최신 목표 면 참조
@@ -142,7 +142,7 @@ export default function PostureMeasure({ member, onSave, onBack }) {
       if (lockViewRef.current) {
         if (!holdStartRef.current) holdStartRef.current = ts;
         const heldMs = ts - holdStartRef.current;
-        const HOLD_MS = 800;
+        const HOLD_MS = 1500; // 면 고정 유지 시간(0.8→1.5s): 촬영이 너무 빨리 시작되던 문제 완화
         if (heldMs >= HOLD_MS) {
           setGuide(`${targetLabel} (면 고정) — 측정을 시작합니다.`);
           holdStartRef.current = 0;
@@ -154,11 +154,12 @@ export default function PostureMeasure({ member, onSave, onBack }) {
       }
 
       // [항목 3] 측면(left/right)은 판정이 더 자주 흔들리므로 안정 요건을 살짝 완화해
-      // '측면 인식이 잘 안 되어 촬영이 안 넘어가는' 문제를 줄인다.
+      // '측면 인식이 잘 안 되어 촬영이 안 넘어가는' 문제를 줄이되, 촬영이 너무 빨리
+      // 시작되지 않도록 최소 프레임 수를 늘려 '멈춤 확인' 시간을 확보한다.
       const isSideTarget = target === 'left' || target === 'right';
       const stableOpts = isSideTarget
-        ? { minRatio: 0.6, minFrames: 7 }
-        : { minRatio: 0.7, minFrames: 8 };
+        ? { minRatio: 0.62, minFrames: 12 }
+        : { minRatio: 0.7, minFrames: 14 };
       if (viewVoterRef.current.isStable(target, stableOpts)) {
         setGuide(`${targetLabel} 인식됨 — 측정을 시작합니다.`);
         startAutoCountdown();
@@ -345,7 +346,7 @@ export default function PostureMeasure({ member, onSave, onBack }) {
       } else {
         autoBusyRef.current = false;
       }
-    }, 1000);
+    }, 1200); // 카운트다운 간격(1.0→1.2s): 숫자가 너무 빨리 지나가던 문제 완화
   };
 
   const handleRetake = () => {

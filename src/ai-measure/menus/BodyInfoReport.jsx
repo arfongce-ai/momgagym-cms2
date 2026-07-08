@@ -1,0 +1,129 @@
+// ai-measure/menus/BodyInfoReport.jsx
+// ════════════════════════════════════════════════════════════════════════
+//  신체 정보 A4 결과 리포트 (JPG 전송용).
+//   · 현재 측정값 + 2026 대한고혈압학회 지침 기반 등급.
+//   · 회차별 비교: 회원 신체기록(store.getBodyRecords)의 체중·혈압 추이 그래프.
+//  측정 정직성: 값이 없으면 표시하지 않고, 추이는 2회 이상 기록이 있을 때만 그린다.
+// ════════════════════════════════════════════════════════════════════════
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
+import {
+  UnifiedReportCanvas,
+  UnifiedReportPage,
+  UnifiedReportHeader,
+  UnifiedReportSection,
+} from '../../components/report/UnifiedReportPrimitives';
+
+const TIER = {
+  good: { text: 'text-emerald-300', dot: 'bg-emerald-400' },
+  warn: { text: 'text-amber-300', dot: 'bg-amber-400' },
+  bad: { text: 'text-red-300', dot: 'bg-red-400' },
+};
+
+function worstGrade(items) {
+  if (items.some(i => i.grade === 'bad')) return 'risk';
+  if (items.some(i => i.grade === 'warn')) return 'caution';
+  return 'normal';
+}
+
+export default function BodyInfoReport({ id = 'body-report-sheet', member, result, history = [], onClose }) {
+  const items = result?.items || [];
+  // 회차별 비교 시리즈(오래된→최신). 체중·수축기·이완기.
+  const series = (history || [])
+    .filter(r => r && (r.weight != null || r.systolic != null))
+    .map(r => ({
+      date: (r.recordedAt || '').slice(5) || '',
+      weight: r.weight != null ? Number(r.weight) : null,
+      systolic: r.systolic != null ? Number(r.systolic) : null,
+      diastolic: r.diastolic != null ? Number(r.diastolic) : null,
+    }));
+  const hasWeightTrend = series.filter(s => s.weight != null).length >= 2;
+  const hasBpTrend = series.filter(s => s.systolic != null).length >= 2;
+
+  return (
+    <UnifiedReportCanvas>
+      <UnifiedReportPage id={id}>
+        <UnifiedReportHeader
+          eyebrow="MOMGAGYM REPORT"
+          badge="신체 정보"
+          title="신체 정보 분석"
+          subtitle={`${member?.name || '회원'} · ${(result?.analyzedAt || '').slice(0, 10) || new Date().toISOString().slice(0, 10)}`}
+          status={worstGrade(items)}
+          onClose={onClose}
+        />
+
+        {/* 현재 측정값 · 등급 */}
+        <UnifiedReportSection title="측정값 및 평가" className="mb-4">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            {items.length === 0 && <p className="text-sm text-slate-500">측정값이 없습니다.</p>}
+            {items.map(item => {
+              const t = TIER[item.grade] || TIER.good;
+              return (
+                <div key={item.key} className="rounded-xl bg-slate-800/70 px-3 py-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-slate-400">{item.label}</span>
+                    <span className="font-mono text-sm font-black text-slate-100">
+                      {item.value}<span className="text-[10px] text-slate-500"> {item.unit}</span>
+                      <span className={`ml-2 inline-flex items-center gap-1 ${t.text}`}>
+                        <i className={`inline-block h-1.5 w-1.5 rounded-full ${t.dot}`} />{item.status || ''}
+                      </span>
+                    </span>
+                  </div>
+                  {item.description && <p className="mt-1 text-[11px] text-slate-500">{item.description}</p>}
+                </div>
+              );
+            })}
+          </div>
+          {result?.summary && (
+            <div className="mt-3 rounded-xl bg-slate-800/50 px-3 py-2.5">
+              <p className="text-[11px] leading-relaxed text-slate-300">{result.summary}</p>
+            </div>
+          )}
+        </UnifiedReportSection>
+
+        {/* 회차별 비교 */}
+        <UnifiedReportSection title="회차별 비교" subtitle={hasWeightTrend || hasBpTrend ? '이전 기록 대비 추이' : '기록이 2회 이상 쌓이면 추이가 표시됩니다'}>
+          {hasWeightTrend && (
+            <div className="mb-4">
+              <p className="mb-1 text-xs font-bold text-slate-400">체중 (kg)</p>
+              <div style={{ width: '100%', height: 160 }}>
+                <ResponsiveContainer>
+                  <LineChart data={series} margin={{ top: 8, right: 12, bottom: 4, left: -8 }}>
+                    <CartesianGrid stroke="#334155" strokeDasharray="3 3" />
+                    <XAxis dataKey="date" tick={{ fill: '#94a3b8', fontSize: 11 }} />
+                    <YAxis tick={{ fill: '#94a3b8', fontSize: 11 }} domain={['dataMin - 2', 'dataMax + 2']} />
+                    <Tooltip contentStyle={{ background: '#0f172a', border: '1px solid #334155', borderRadius: 8, color: '#e2e8f0' }} />
+                    <Line type="monotone" dataKey="weight" stroke="#38bdf8" strokeWidth={2.5} dot={{ r: 3 }} name="체중" />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          )}
+          {hasBpTrend && (
+            <div>
+              <p className="mb-1 text-xs font-bold text-slate-400">혈압 (mmHg)</p>
+              <div style={{ width: '100%', height: 160 }}>
+                <ResponsiveContainer>
+                  <LineChart data={series} margin={{ top: 8, right: 12, bottom: 4, left: -8 }}>
+                    <CartesianGrid stroke="#334155" strokeDasharray="3 3" />
+                    <XAxis dataKey="date" tick={{ fill: '#94a3b8', fontSize: 11 }} />
+                    <YAxis tick={{ fill: '#94a3b8', fontSize: 11 }} domain={[40, 'dataMax + 10']} />
+                    <Tooltip contentStyle={{ background: '#0f172a', border: '1px solid #334155', borderRadius: 8, color: '#e2e8f0' }} />
+                    <Line type="monotone" dataKey="systolic" stroke="#f87171" strokeWidth={2.5} dot={{ r: 3 }} name="수축기" />
+                    <Line type="monotone" dataKey="diastolic" stroke="#fbbf24" strokeWidth={2.5} dot={{ r: 3 }} name="이완기" />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          )}
+          {!hasWeightTrend && !hasBpTrend && (
+            <p className="text-sm text-slate-500">아직 비교할 이전 기록이 없습니다. 다음 측정부터 추이가 누적됩니다.</p>
+          )}
+        </UnifiedReportSection>
+
+        <p className="mt-4 text-[10px] leading-relaxed text-slate-600">
+          ※ 혈압 평가는 「대한고혈압학회 고혈압 진료지침 2026」 기준입니다. 본 리포트는 참고용이며 의학적 진단을 대체하지 않습니다.
+        </p>
+      </UnifiedReportPage>
+    </UnifiedReportCanvas>
+  );
+}

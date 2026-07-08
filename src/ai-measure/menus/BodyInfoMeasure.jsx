@@ -6,6 +6,8 @@ import { useState } from 'react';
 import { todayYMD } from '../../utils/dates';
 import { store } from '../../demoData';
 import { analyzeBody } from '../../services/aiService';
+import BodyInfoReport from './BodyInfoReport.jsx';
+import ReportActions from '../../components/report/ReportActions';
 
 const TIER_STYLE = {
   good: 'text-emerald-400',
@@ -26,6 +28,7 @@ export default function BodyInfoMeasure({ member, onSave, onBack, onGuestBodyInf
   const [result, setResult] = useState(null);
   const [saveState, setSaveState] = useState('idle'); // idle | saving | saved | error
   const [saveMsg, setSaveMsg] = useState('');
+  const [actionMsg, setActionMsg] = useState('');
   const pf = (k) => (e) => {
     const val = e.target.value;
     setForm(f => ({ ...f, [k]: val }));
@@ -35,7 +38,7 @@ export default function BodyInfoMeasure({ member, onSave, onBack, onGuestBodyInf
     }
   };
 
-  const analyze = () => {
+  const analyze = async () => {
     if (!form.weight) { alert('몸무게는 필수입니다.'); return; }
     const measurements = {
       height:    form.height    ? Number(form.height)    : null,
@@ -44,6 +47,9 @@ export default function BodyInfoMeasure({ member, onSave, onBack, onGuestBodyInf
       diastolic: form.diastolic ? Number(form.diastolic) : null,
     };
     setResult(analyzeBody(measurements));
+    // [항목 1] 자동 저장: 분석과 동시에 회원 신체기록에 남겨 회차별 비교(리포트 탭)에
+    //  바로 반영한다. 별도 '확인·저장' 단계 없이 저장되며, 상태 배지로 결과를 알린다.
+    await save();
   };
 
   const save = async () => {
@@ -98,7 +104,9 @@ export default function BodyInfoMeasure({ member, onSave, onBack, onGuestBodyInf
         <div><label className={LBL}>최저혈압</label><input type="number" value={form.diastolic} onChange={pf('diastolic')} placeholder="80" className={INP} /></div>
       </div>
 
-      <button onClick={analyze} className="btn btn-primary w-full">분석</button>
+      <button onClick={analyze} disabled={saveState === 'saving'} className="btn btn-primary w-full disabled:opacity-60">
+        {saveState === 'saving' ? '분석·저장 중…' : '분석 · 저장'}
+      </button>
 
       {result && (
         <div className="card-accent p-4 space-y-3 animate-fade-in">
@@ -119,10 +127,31 @@ export default function BodyInfoMeasure({ member, onSave, onBack, onGuestBodyInf
             <p className="text-[11px] text-slate-300 leading-relaxed">{result.summary}</p>
           </div>
           <button onClick={save} disabled={saveState === 'saving'} className="btn btn-primary w-full disabled:opacity-60">
-            {saveState === 'saving' ? '저장 중…' : saveState === 'saved' ? '✓ 저장됨' : '확인 · 저장'}
+            {saveState === 'saving' ? '저장 중…' : saveState === 'saved' ? '✓ 저장됨 (다시 저장)' : '확인 · 저장'}
           </button>
           {saveMsg && <p className={`text-center text-xs font-bold ${saveState === 'error' ? 'text-red-400' : 'text-emerald-400'}`}>{saveMsg}</p>}
         </div>
+      )}
+
+      {/* [항목 6] A4 카드형 결과 리포트 + JPG 전송 */}
+      {result && (
+        <>
+          <BodyInfoReport
+            id="body-report-sheet"
+            member={member}
+            result={result}
+            history={member && !isVirtual ? store.getBodyRecords(member.id) : []}
+          />
+          <div className="space-y-2 rounded-2xl border border-slate-800 bg-slate-950/95 p-3">
+            <ReportActions
+              reportNodeId="body-report-sheet"
+              baseName={`${member?.name || '회원'}_신체정보`}
+              reportButtonLabel="🖼 A4 리포트 JPG 전송"
+              onMessage={setActionMsg}
+            />
+            {actionMsg && <p className="text-center text-xs text-slate-400">{actionMsg}</p>}
+          </div>
+        </>
       )}
 
       <p className="text-[11px] text-slate-500 leading-relaxed">

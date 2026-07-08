@@ -118,10 +118,11 @@ describe('[항목 3] 자세·체형 측면 인식 개선', () => {
     expect(detectPostureView(pose).view).toBe('front');
   });
 
-  it('측면 목표는 자동촬영 안정 요건이 완화되어 있다(배선)', () => {
+  it('측면 목표는 자동촬영 안정 요건이 별도로 설정되어 있다(배선)', () => {
     const src = read('../ai-measure/menus/PostureMeasure.jsx');
     expect(src).toMatch(/isSideTarget/);
-    expect(src).toMatch(/minRatio: 0\.6, minFrames: 7/);
+    // 측면 판정 완화 + 촬영이 너무 빨리 시작되지 않도록 프레임 요건 확보
+    expect(src).toMatch(/minRatio: 0\.62, minFrames: 12/);
   });
 });
 

@@ -813,10 +813,17 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
                     ? '전신이 보이도록 똑바로 서 주세요'
                     : '자세 인식 중...'}
                 </p>
-                <button onClick={() => setShowManual(true)}
-                  className="text-white/70 text-xs underline underline-offset-2">
-                  ✍️ 카메라 대신 수동 입력 (체공시간)
-                </button>
+                <div className="flex flex-col items-center gap-2">
+                  <button onClick={() => setShowManual(true)}
+                    className="text-white/70 text-xs underline underline-offset-2">
+                    ✍️ 카메라 대신 수동 입력 (체공시간)
+                  </button>
+                  {/* 기준(서 있는 자세) 재보정 — 측정 전에도 언제든 다시 잡을 수 있게 */}
+                  <button onClick={resetPipeline}
+                    className="rounded-full bg-black/50 border border-white/15 px-3 py-1 text-[11px] font-bold text-white/80 backdrop-blur active:scale-95">
+                    ↻ 기준 다시 잡기
+                  </button>
+                </div>
               </>
             ) : (
               <>
@@ -824,7 +831,7 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
                   <button
                     onClick={async () => { await stopRecording(); resetPipeline(); }}
                     className="flex-1 rounded-xl bg-black/60 border border-white/15 py-3 text-sm font-black text-white backdrop-blur">
-                    기준 다시 잡기
+                    측정 취소
                   </button>
                   <button
                     onClick={finishMeasure}

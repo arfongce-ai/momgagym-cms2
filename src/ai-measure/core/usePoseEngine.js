@@ -26,6 +26,10 @@ export function usePoseEngine({ onResult, modelTier = 'full' } = {}) {
   const streamRef = useRef(null);
   const rafRef = useRef(null);
   const runningRef = useRef(false);
+  // 최신 onResult 를 ref 로 유지 — 루프가 start() 시점의 콜백을 붙잡아
+  //  관절/자세 변경이 스켈레톤에 반영되지 않던 문제(스테일 클로저)를 방지.
+  const onResultRef = useRef(onResult);
+  onResultRef.current = onResult;
 
   const [status, setStatus] = useState('idle'); // idle | loading | ready | running | error
   const [error, setError] = useState(null);
@@ -101,7 +105,7 @@ export function usePoseEngine({ onResult, modelTier = 'full' } = {}) {
         try {
           const res = landmarkerRef.current.detectForVideo(video, ts);
           const lms = res?.landmarks?.[0] || null;
-          onResult?.(lms, ts, video);
+          onResultRef.current?.(lms, ts, video);
         } catch (e) { /* 단일 프레임 오류는 무시하고 계속 */ }
         if ('requestVideoFrameCallback' in HTMLVideoElement.prototype) {
           video.requestVideoFrameCallback(loop);
@@ -119,7 +123,7 @@ export function usePoseEngine({ onResult, modelTier = 'full' } = {}) {
       setStatus('error');
       stop();
     }
-  }, [onResult, modelTier]);
+  }, [modelTier]);
 
   // 자원 회수: 카메라 트랙 정지 + landmarker close + 루프 중단
   const stop = useCallback(() => {
