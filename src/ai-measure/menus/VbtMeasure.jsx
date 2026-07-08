@@ -14,6 +14,7 @@ import {
 import { exerciseLabel as exerciseLabelLocal, snapWeight, stepWeight } from '../core/lifting';
 import { saveVideoToPhone, pickRecorderMime } from '../core/recordSink';
 import { drawLiftingDataHud } from '../core/recordingOverlay';
+import { DEFAULT_ASPECT, outputSize, aspectLabel, drawVideoCover } from '../core/recordAspect';
 import { assessFraming, FRAMING_PRESETS } from '../core/framingGuide';
 import {
   CALIBRATION_PRESETS, buildReferenceScale, ratioToCm,
@@ -25,7 +26,7 @@ import PlateWeightInput from './PlateWeightInput';
 import FramingIntro from './FramingIntro';
 import HeightField from './HeightField';
 import CameraStage from './CameraStage';
-import VelocityGaugeHud from './VelocityGaugeHud';
+import GaugeHud from './GaugeHud';
 import LiftingResultSheet from './LiftingResultSheet';
 
 const MAX_RECORDING_MS = 60000;
@@ -64,7 +65,10 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
   const [videoSavedMsg, setVideoSavedMsg] = useState('');
 
   const [recording, setRecording] = useState(false);
+  const [aspect, setAspect] = useState(DEFAULT_ASPECT); // 인스타 비율(3:4 기본 / 1:1)
+  const aspectRef = useRef(DEFAULT_ASPECT);
   const [countdown, setCountdown] = useState(null);
+  useEffect(() => { aspectRef.current = aspect; }, [aspect]);
   const [result, setResult] = useState(null);
   const [heightCm, setHeightCm] = useState(member?.height || '');
   const [plate, setPlate] = useState({ barKg: 20, sidePlates: [] });
@@ -207,18 +211,18 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
 
   const createRecordedStream = () => {
     const video = videoRef.current;
-    const vw = video?.videoWidth || 720;
-    const vh = video?.videoHeight || 1280;
+    const size = outputSize(aspectRef.current); // 인스타 비율 통일(3:4 / 1:1)
     const canvas = recordCanvasRef.current || document.createElement('canvas');
-    canvas.width = vw; canvas.height = vh;
+    canvas.width = size.width; canvas.height = size.height;
     recordCanvasRef.current = canvas;
     const ctx = canvas.getContext('2d', { alpha: false });
     const draw = () => {
       ctx.fillStyle = '#000';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
-      if (video && video.videoWidth) ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      drawVideoCover(ctx, video, canvas.width, canvas.height); // 검은 여백 없이 중앙 크롭
       const elapsedSec = recordingRef.current ? (performance.now() - recordStartRef.current) / 1000 : null;
       drawLiftingDataHud(ctx, canvas.width, canvas.height, {
+        title: 'VBT',
         romCm: liveHudRef.current.romCm,
         meanVelocity: liveHudRef.current.meanVelocity,
         repList: liveHudRef.current.repList,
@@ -482,6 +486,15 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
         <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${referenceScale ? 'bg-emerald-500/85 text-slate-950' : 'bg-slate-700/90 text-slate-200'}`}>
           {calibrating ? `거리 보정 ${calibrationPointCount}/2` : referenceScale ? '기준물 보정' : '키 보정'}
         </span>
+        {/* 인스타 비율 토글(3:4 / 1:1) — 녹화 중엔 잠금 */}
+        <div className="pointer-events-auto flex gap-0.5 rounded-full bg-black/55 backdrop-blur p-0.5 border border-white/10">
+          {['3/4', '1/1'].map((r) => (
+            <button key={r} onClick={() => !recording && setAspect(r)} disabled={recording}
+              className={`rounded-full px-2 py-0.5 text-[10px] font-black transition-colors disabled:opacity-50 ${aspect === r ? 'bg-amber-500 text-slate-950' : 'text-slate-300'}`}>
+              {aspectLabel(r)}
+            </button>
+          ))}
+        </div>
       </>
     );
 
@@ -518,6 +531,7 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
         recording={recording} tappable={countdown == null}
         countdown={countdown}
         topOffset={topOffset}
+        aspectFrame={aspect}
       >
         {/* 렙별 기록 카드 — RSI 점프별 HUD 처럼 렙마다 속도가 카드로 남는다.
             (m/s 평균속도 + ROM/저하율. 최신 렙은 시안 강조.) */}
@@ -543,13 +557,22 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
           </div>
         )}
         {recording && (
-          <VelocityGaugeHud
-            avg={liveHud?.lastRepVelocity ?? null}
-            reps={liveReps}
-            best={liveHud?.bestRepVelocity ?? null}
-            romCm={liveHud?.romCm ?? null}
-            lossPct={liveHud?.velocityLossPct ?? null}
-            zoneLabel={liveHud?.lastRepVelocity != null ? (velocityZone(liveHud.lastRepVelocity)?.label ?? null) : null}
+          <GaugeHud
+            label="평균속도"
+            value={liveHud?.lastRepVelocity ?? null}
+            min={0} max={1.5} unit="m/s" decimals={2}
+            accent="#22d3ee"
+            stats={[
+              { label: 'REP', value: liveReps },
+              { label: 'BEST', value: liveHud?.bestRepVelocity ?? null, unit: 'm/s' },
+              { label: 'ROM', value: liveHud?.romCm ?? null, unit: 'cm' },
+              {
+                label: 'LOSS', value: liveHud?.velocityLossPct ?? null, unit: '%',
+                tone: liveHud?.velocityLossPct == null ? 'text-white'
+                  : liveHud.velocityLossPct > 20 ? 'text-red-300'
+                  : liveHud.velocityLossPct > 10 ? 'text-amber-300' : 'text-emerald-300',
+              },
+            ]}
           />
         )}
         {!recording && (

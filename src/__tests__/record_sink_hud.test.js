@@ -5,8 +5,8 @@ import { drawLiftingDataHud, drawBarPathToRecord } from '../ai-measure/core/reco
 function mockCtx() {
   const calls = { fillText: [], strokeCalls: 0, lineTo: 0 };
   return {
-    save: vi.fn(), restore: vi.fn(), beginPath: vi.fn(),
-    moveTo: vi.fn(), lineTo: vi.fn(() => { calls.lineTo++; }),
+    save: vi.fn(), restore: vi.fn(), beginPath: vi.fn(), closePath: vi.fn(),
+    moveTo: vi.fn(), lineTo: vi.fn(() => { calls.lineTo++; }), arcTo: vi.fn(),
     arc: vi.fn(), fill: vi.fn(), stroke: vi.fn(() => { calls.strokeCalls++; }),
     fillRect: vi.fn(), measureText: vi.fn((t) => ({ width: String(t).length * 8 })),
     fillText: vi.fn((t) => { calls.fillText.push(String(t)); }),
@@ -51,16 +51,24 @@ describe('recordSink · 몸가짐ai 영상 파일명', () => {
   });
 });
 
-describe('리프팅 데이터 HUD · 측정값만 번인(장식 없음)', () => {
-  it('수직이동/평균속도/경과를 텍스트로 그린다', () => {
+describe('리프팅 데이터 HUD · 대형 시인성(측정값만 번인 · 장식 없음)', () => {
+  it('수직이동/평균속도/경과를 텍스트로 그린다(값·단위 분리 렌더)', () => {
     const ctx = mockCtx();
     drawLiftingDataHud(ctx, 720, 1280, { romCm: 42.5, meanVelocity: 0.63, elapsedSec: 1.4, recording: true });
     const txt = ctx._calls.fillText.join('|');
     expect(txt).toContain('수직이동');
-    expect(txt).toContain('42.5 cm');
+    expect(txt).toContain('42.5');
+    expect(txt).toContain('cm');
     expect(txt).toContain('평균속도');
-    expect(txt).toContain('0.6 m/s');
+    expect(txt).toContain('0.6');
+    expect(txt).toContain('m/s');
     expect(txt).toContain('1.4s');
+  });
+
+  it('제목 칩을 표시한다(기본 LIFT · VBT 전달 가능)', () => {
+    const ctx = mockCtx();
+    drawLiftingDataHud(ctx, 720, 1280, { romCm: 30, meanVelocity: 0.5, elapsedSec: 2, title: 'VBT' });
+    expect(ctx._calls.fillText.join('|')).toContain('VBT');
   });
 
   it('값이 없으면 -- 로 표시(허위값 없음)', () => {
@@ -68,6 +76,22 @@ describe('리프팅 데이터 HUD · 측정값만 번인(장식 없음)', () => 
     drawLiftingDataHud(ctx, 720, 1280, { romCm: null, meanVelocity: null, elapsedSec: null });
     const txt = ctx._calls.fillText.join('|');
     expect(txt).toContain('--');
+  });
+
+  it('렙 리스트를 하단 카드로 번인한다', () => {
+    const ctx = mockCtx();
+    drawLiftingDataHud(ctx, 720, 1280, {
+      romCm: 40, meanVelocity: 0.7, elapsedSec: 5, recording: true,
+      repList: [
+        { repNo: 1, meanVelocity: 0.72, romCm: 41 },
+        { repNo: 2, meanVelocity: 0.66, lossPct: 8 },
+      ],
+    });
+    const txt = ctx._calls.fillText.join('|');
+    expect(txt).toContain('#1');
+    expect(txt).toContain('0.72');
+    expect(txt).toContain('#2');
+    expect(txt).toContain('-8%');
   });
 });
 

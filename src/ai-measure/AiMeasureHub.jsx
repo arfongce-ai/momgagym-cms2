@@ -96,6 +96,7 @@ export default function AiMeasureHub() {
     const isJump = active.id === 'jump';
     const isPosture = active.id === 'posture';
     const isRom = active.id === 'rom';
+    const isLifting = active.id === 'lifting';
 
     // 측정 정직성: 미등록회원인데 guest id 가 아직 없으면 저장 직전 확정 발급
     // (null __mid 로 저장되어 데이터가 유실/혼합되는 것을 방지). 같은 측정 묶음은
@@ -169,7 +170,7 @@ export default function AiMeasureHub() {
       };
 
       // 측정이력(ai): 실제 회원은 회원 id, 미등록회원은 개별 guest id 로 저장.
-      await aiStore.addSession(saveMid, {
+      const savedSession = await aiStore.addSession(saveMid, {
         menu: active.id,
         menuTitle: active.title,
         recordedAt: todayYMD(), // CV-A: 로컬 날짜
@@ -224,6 +225,12 @@ export default function AiMeasureHub() {
           }
         }
         return saved;
+      }
+      // 바벨 리프팅(VBT·1RM·역도): addSession(위)이 이미 세션 저장 + 통합 리포트
+      //  미러링(inferReportType)까지 처리한다. 여기서는 저장된 세션을 그대로 돌려줘
+      //  BarbellLiftingHub 가 리포트(A4)로 전환하게 한다.
+      if (isLifting) {
+        return savedSession;
       }
       alert(member.isVirtual ? '미등록회원 측정이 저장되었습니다.' : '측정이 저장되었습니다.');
     } catch (e) {

@@ -6,10 +6,11 @@ import {
 import { boostedGain } from '../core/audioCue';
 import { loadPoseLandmarker, detectPoseFrame, closePoseLandmarker, isPoseReady } from '../core/poseBackend';
 import { shareReportWithVideo } from '../core/reportShare';
-import { drawMeasurementOverlay, formatRecordTime } from '../core/recordingOverlay';
+import { drawGaugeHud } from '../core/recordingOverlay';
 import { lockZoom, unlockZoom } from '../../utils/viewportLock';
 import { isSkeletonEnabled } from '../core/skeletonPref';
 import SkeletonToggleChip from './SkeletonToggleChip';
+import GaugeHud from './GaugeHud';
 
 // 캘리브레이션: 세이프존 + 인식 안정이 이만큼 유지되면 락
 const CALIB_HOLD_MS = 800; // 사람이 잡히면 거의 즉시 인식(0.8초 안정화로 깜빡임만 방지)
@@ -31,15 +32,19 @@ function drawCover(ctx, video, width, height) {
   return true;
 }
 
+// 대형 시인성 HUD: 케이던스(주지표)·입각/유각을 상단 좌/우 가장자리에 크게,
+// 걸음 수는 보조 한 줄로 — 피사체(중앙)를 가리지 않는다. 녹화 영상에 그대로 번인.
 function drawMetricOverlay(ctx, reportTimeMs, tracker, width, height) {
   const summary = tracker?.summary?.() || {};
-  drawMeasurementOverlay(ctx, width, height, {
-    title: 'GAIT LIVE',
-    elapsedMs: reportTimeMs,
-    metrics: [
-      { label: 'CADENCE', value: summary.averageCadenceSpm != null ? `${summary.averageCadenceSpm} SPM` : '--' },
-      { label: 'STANCE/SWING', value: (summary.stancePct != null) ? `${summary.stancePct}/${summary.swingPct}%` : '--' },
-      { label: 'STEPS', value: summary.totalSteps ?? 0 },
+  drawGaugeHud(ctx, width, height, {
+    title: 'GAIT',
+    recording: true,
+    elapsedSec: Number.isFinite(reportTimeMs) ? reportTimeMs / 1000 : null,
+    accent: '#22d3ee',
+    gauge: { label: '케이던스', value: summary.averageCadenceSpm ?? null, min: 0, max: 220, unit: 'spm' },
+    stats: [
+      { label: '입각/유각', value: summary.stancePct != null ? `${summary.stancePct}/${summary.swingPct}` : null, unit: '%' },
+      { label: '걸음 수', value: summary.totalSteps ?? 0 },
     ],
   });
 }
@@ -585,6 +590,18 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
             swElapsed={swElapsed} swRunning={swRunning} onSwRunning={setSwRunning} onSwReset={resetStopwatch}
           />
           <div className="absolute bottom-0 z-20 w-full p-6 bg-gradient-to-t from-black/80 to-transparent flex flex-col items-center gap-4">
+            {view === 'recording' && (
+              <GaugeHud
+                label="케이던스"
+                value={liveMetrics.cadence ?? null}
+                min={0} max={220} unit="spm"
+                accent="#22d3ee"
+                stats={[
+                  { label: '입각/유각', value: liveMetrics.stancePct != null ? `${liveMetrics.stancePct}/${liveMetrics.swingPct}` : null, unit: '%' },
+                  { label: '걸음', value: liveMetrics.totalSteps ?? 0 },
+                ]}
+              />
+            )}
             {view === 'recording' && (
               <div className="w-full max-w-md h-2 bg-slate-700 rounded-full overflow-hidden">
                 <div

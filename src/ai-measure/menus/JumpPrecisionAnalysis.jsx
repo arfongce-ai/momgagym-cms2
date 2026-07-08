@@ -26,6 +26,8 @@ import ReportActions from '../../components/report/ReportActions';
 import { store } from '../../demoData';
 import { isSkeletonEnabled } from '../core/skeletonPref';
 import SkeletonToggleChip from './SkeletonToggleChip';
+import { drawGaugeHud } from '../core/recordingOverlay';
+import GaugeHud from './GaugeHud';
 
 // 회원 신체기록에서 최신 체중을 보조 조회 (member.weight 없을 때 Sayers 파워용)
 function resolveWeight(member, fallback = null) {
@@ -45,17 +47,6 @@ const RECORD_FPS = 30;
 const REC_SIZE = { width: 720, height: 960 }; // 3:4 세로
 const LAND_WINDOW = 10; // 착지 직후 생체역학 지표를 누적할 프레임 수
 const RSI_REQUIRED_JUMPS = 3;
-
-function roundRect(ctx, x, y, w, h, r) {
-  const radius = Math.min(r, w / 2, h / 2);
-  ctx.beginPath();
-  ctx.moveTo(x + radius, y);
-  ctx.arcTo(x + w, y, x + w, y + h, radius);
-  ctx.arcTo(x + w, y + h, x, y + h, radius);
-  ctx.arcTo(x, y + h, x, y, radius);
-  ctx.arcTo(x, y, x + w, y, radius);
-  ctx.closePath();
-}
 
 function buildRsiCyclePreview(flights = []) {
   const cycles = [];
@@ -104,75 +95,50 @@ function allFlightRows(flights = [], cycles = []) {
   });
 }
 
+// 대형 시인성 HUD(녹화 번인): RSI/점프높이(주지표)·접지/체공을 상단 좌/우
+// 가장자리에 크게, 회차별 기록은 하단 카드 스트립으로 — 피사체(중앙) 미가림.
 function drawJumpLiveOverlay(ctx, width, height, snap = {}) {
-  const scale = Math.max(1.05, Math.min(1.65, width / 720));
   const isRsi = snap.jumpType === 'reactive';
   const phase = snap.phase || 'arming';
   const accent = phase === 'air' ? '#fbbf24' : phase === 'ready' ? '#34d399' : phase === 'low_visibility' ? '#f87171' : '#22d3ee';
-  const title = isRsi ? 'RSI · SIDE' : 'POWER · FRONT';
-  const main = isRsi ? (snap.latestCycle?.rsi != null ? snap.latestCycle.rsi : snap.liveJump?.heightCm ?? '--') : (snap.liveJump?.heightCm ?? snap.bestHeight ?? '--');
-  const mainUnit = isRsi ? (snap.latestCycle?.rsi != null ? 'RSI' : 'cm') : 'cm';
-  const helper = isRsi
-    ? `${snap.jumpCount || 0}/${RSI_REQUIRED_JUMPS} jumps · GCT ${snap.latestCycle?.contactMs ? `${snap.latestCycle.contactMs}ms` : '--'} · flight ${snap.liveJump?.flightMs ? `${snap.liveJump.flightMs}ms` : '--'}`
-    : `jumps ${snap.jumpCount || 0} · flight ${snap.liveJump?.flightMs ? `${snap.liveJump.flightMs}ms` : '--'}`;
+  const statusTxt = phase === 'ready' ? 'READY' : phase === 'air' ? 'AIR'
+    : phase === 'low_visibility' ? '자세 확인' : '준비 중';
+  const latest = snap.latestCycle || null;
 
-  ctx.save();
-  ctx.textBaseline = 'middle';
-  const pad = 16 * scale;
-  const panelH = 118 * scale;
-  const panelY = pad;
-  roundRect(ctx, pad, panelY, width - pad * 2, panelH, 18 * scale);
-  ctx.fillStyle = 'rgba(2,6,23,0.68)';
-  ctx.fill();
-  ctx.strokeStyle = 'rgba(255,255,255,0.16)';
-  ctx.stroke();
+  const rows = (snap.jumpRows || []).slice(-5);
+  const cards = rows.length
+    ? rows.map((r, i) => ({
+        top: `#${r.no}`,
+        main: isRsi
+          ? (r.rsi != null ? String(r.rsi) : (r.heightCm != null ? `${r.heightCm}` : '--'))
+          : (r.heightCm != null ? String(r.heightCm) : '--'),
+        sub: isRsi
+          ? (r.contactMs != null ? `${r.contactMs}ms` : (r.flightMs ? `${r.flightMs}ms` : ''))
+          : (r.flightMs ? `${r.flightMs}ms` : ''),
+        latest: i === rows.length - 1,
+      }))
+    : null;
 
-  ctx.fillStyle = accent;
-  ctx.beginPath();
-  ctx.arc(pad + 20 * scale, panelY + 27 * scale, 6 * scale, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = '#f8fafc';
-  ctx.font = `900 ${16 * scale}px system-ui, sans-serif`;
-  ctx.fillText(title, pad + 38 * scale, panelY + 27 * scale);
-  ctx.fillStyle = 'rgba(226,232,240,0.78)';
-  ctx.font = `800 ${12 * scale}px system-ui, sans-serif`;
-  ctx.fillText(phase === 'ready' ? 'READY' : phase === 'air' ? 'AIR' : phase === 'low_visibility' ? 'CHECK POSTURE' : 'CALIBRATING', pad + 38 * scale, panelY + 55 * scale);
+  const gauge = isRsi
+    ? { label: 'RSI', value: latest?.rsi ?? null, min: 0, max: 3, unit: '' }
+    : { label: '점프 높이', value: snap.liveJump?.heightCm ?? snap.bestHeight ?? null, min: 0, max: 80, unit: 'cm' };
+  const stats = isRsi
+    ? [
+        { label: '접지시간', value: latest?.contactMs ?? null, unit: 'ms' },
+        { label: '진행', value: `${snap.jumpCount || 0}/${RSI_REQUIRED_JUMPS}` },
+      ]
+    : [
+        { label: '체공시간', value: snap.liveJump?.flightMs ?? null, unit: 'ms' },
+        { label: '점프', value: `${snap.jumpCount || 0}`, unit: '회' },
+      ];
 
-  ctx.textAlign = 'right';
-  ctx.fillStyle = '#f8fafc';
-  ctx.font = `900 ${52 * scale}px ui-monospace, Menlo, monospace`;
-  ctx.fillText(String(main), width - pad - 74 * scale, panelY + 48 * scale);
-  ctx.fillStyle = accent;
-  ctx.font = `900 ${18 * scale}px system-ui, sans-serif`;
-  ctx.fillText(mainUnit, width - pad - 14 * scale, panelY + 51 * scale);
-  ctx.fillStyle = 'rgba(226,232,240,0.72)';
-  ctx.font = `800 ${13 * scale}px system-ui, sans-serif`;
-  ctx.fillText(helper, width - pad - 14 * scale, panelY + 88 * scale);
-  ctx.textAlign = 'left';
-
-  const rows = (snap.jumpRows || []).slice(-3);
-  if (rows.length) {
-    const rowW = Math.min(width - pad * 2, 430 * scale);
-    const rowH = 34 * scale;
-    const rowX = pad;
-    const rowY = height - pad - rows.length * rowH - 14 * scale;
-    roundRect(ctx, rowX, rowY, rowW, rows.length * rowH + 12 * scale, 14 * scale);
-    ctx.fillStyle = 'rgba(2,6,23,0.58)';
-    ctx.fill();
-    rows.forEach((r, i) => {
-      const y = rowY + 12 * scale + i * rowH;
-      ctx.fillStyle = 'rgba(203,213,225,0.72)';
-      ctx.font = `800 ${11 * scale}px system-ui, sans-serif`;
-      ctx.fillText(`#${r.no}`, rowX + 12 * scale, y);
-      ctx.fillStyle = '#f8fafc';
-      ctx.font = `900 ${15 * scale}px ui-monospace, Menlo, monospace`;
-      const value = isRsi
-        ? (r.rsi != null ? `RSI ${r.rsi} · ${r.contactMs ? `${r.contactMs}ms` : '--'}` : `${r.heightCm ?? '--'}cm · ${r.flightMs ?? '--'}ms`)
-        : `${r.heightCm ?? '--'}cm · ${r.flightMs}ms`;
-      ctx.fillText(value, rowX + 50 * scale, y);
-    });
-  }
-  ctx.restore();
+  drawGaugeHud(ctx, width, height, {
+    title: isRsi ? 'RSI · SIDE' : 'JUMP · FRONT',
+    status: statusTxt,
+    recording: true,
+    accent,
+    gauge, stats, cards,
+  });
 }
 
 // 녹화 캔버스에 비디오를 꽉 채워 그린다(검은 여백 없이 크롭) — gait drawCover 와 동일.
@@ -1253,60 +1219,38 @@ function JumpLiveOverlay({
 }) {
   const isRsi = jumpType === 'reactive';
   const latestCycle = rsiCycles.at(-1) || null;
-  const mainValue = isRsi ? latestCycle?.rsi ?? liveJump.heightCm ?? '--' : liveJump.heightCm ?? bestHeight ?? '--';
-  const mainUnit = isRsi ? (latestCycle?.rsi != null ? 'RSI' : 'cm') : 'cm';
   const readyText = isRsi ? `측면 · 연속 ${RSI_REQUIRED_JUMPS}회` : '정면 · 1회 최대 점프';
   const statusText = phase === 'air' ? '공중'
     : phase === 'ready' ? '준비됨'
     : phase === 'low_visibility' ? '자세 확인'
     : '기준 잡는 중';
+  const accent = phase === 'air' ? '#fbbf24' : phase === 'ready' ? '#34d399' : phase === 'low_visibility' ? '#f87171' : '#22d3ee';
+
+  const gauge = isRsi
+    ? { label: 'RSI', value: latestCycle?.rsi ?? null, min: 0, max: 3, unit: '', decimals: 2 }
+    : { label: '점프 높이', value: liveJump.heightCm ?? bestHeight ?? null, min: 0, max: 80, unit: 'cm' };
+  const stats = isRsi
+    ? [
+        { label: '접지', value: latestCycle?.contactMs ?? null, unit: 'ms' },
+        { label: '진행', value: `${jumpCount}/${RSI_REQUIRED_JUMPS}` },
+      ]
+    : [
+        { label: '체공', value: liveJump.flightMs ?? null, unit: 'ms' },
+        { label: '점프', value: `${jumpCount}`, unit: '회' },
+      ];
 
   return (
     <div className="pointer-events-none absolute inset-x-0 top-[max(50px,calc(env(safe-area-inset-top)+50px))] z-20 px-3">
-      <div className="mx-auto max-w-[820px] rounded-2xl border border-white/15 bg-black/76 px-4 py-3 text-white shadow-2xl backdrop-blur-md">
-        <div className="flex items-center justify-between gap-4">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <span className={`h-3 w-3 rounded-full ${
-                phase === 'air' ? 'bg-amber-400' : phase === 'ready' ? 'bg-emerald-400' : phase === 'low_visibility' ? 'bg-red-400' : 'bg-cyan-400'
-              }`} />
-              <p className="truncate text-sm font-black text-white/90">
-                {isRsi ? 'RSI 측정' : '파워 점프'} · {readyText}
-              </p>
-            </div>
-            <p className={`mt-1 truncate text-xs font-bold ${phaseColor}`}>
-              {statusText}{calibMsg ? ` · ${calibMsg}` : ` · 키 ${heightCm}cm 보정`}
-            </p>
-          </div>
-
-          <div className="shrink-0 text-right">
-            <p className="font-mono text-6xl font-black leading-none tracking-normal text-white max-[390px]:text-5xl">
-              {mainValue}<span className="ml-1 text-lg text-amber-300 max-[390px]:text-base">{mainUnit}</span>
-            </p>
-            <p className="mt-1 text-xs font-bold text-white/65">
-              {isRsi
-                ? `GCT ${latestCycle?.contactMs ? `${latestCycle.contactMs}ms` : '--'} · flight ${liveJump.flightMs ? `${liveJump.flightMs}ms` : '--'} · ${jumpCount}/${RSI_REQUIRED_JUMPS}`
-                : `체공 ${liveJump.flightMs ? `${liveJump.flightMs}ms` : '--'} · ${jumpCount}회`}
-            </p>
-          </div>
+      <div className="mx-auto max-w-[420px] rounded-2xl border border-white/12 bg-black/55 px-3 py-2 text-white shadow-xl backdrop-blur-md">
+        <div className="flex items-center gap-2">
+          <span className={`h-2.5 w-2.5 rounded-full ${
+            phase === 'air' ? 'bg-amber-400' : phase === 'ready' ? 'bg-emerald-400' : phase === 'low_visibility' ? 'bg-red-400' : 'bg-cyan-400'
+          }`} />
+          <p className="truncate text-xs font-black text-white/90">{isRsi ? 'RSI 측정' : '파워 점프'} · {readyText}</p>
+          <span className={`ml-auto text-[11px] font-bold ${phaseColor}`}>{statusText}</span>
         </div>
-
-        {jumpRows.length > 0 && (
-          <div className="mt-3 flex gap-1.5 overflow-hidden">
-            {jumpRows.slice(-4).map((row) => (
-              <div key={row.no} className="min-w-0 flex-1 rounded-lg bg-white/10 px-2 py-1.5 text-center">
-                <p className="text-[10px] font-bold text-white/45">#{row.no}</p>
-                <p className="truncate font-mono text-base font-black text-white">
-                  {isRsi ? (row.rsi != null ? row.rsi : `${row.heightCm ?? '--'}cm`) : `${row.heightCm ?? '--'}cm`}
-                </p>
-                <p className="truncate text-[10px] font-bold text-white/45">
-                  {isRsi ? (row.contactMs ? `${row.contactMs}ms` : `${row.flightMs ?? '--'}ms`) : `${row.flightMs}ms`}
-                </p>
-              </div>
-            ))}
-          </div>
-        )}
       </div>
+      <GaugeHud {...gauge} accent={accent} stats={stats} />
     </div>
   );
 }

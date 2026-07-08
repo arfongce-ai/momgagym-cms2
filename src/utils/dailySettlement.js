@@ -45,3 +45,22 @@ export function summarizeDailySettlement(members, getPayments, ymd) {
     rows: rows.sort((a, b) => b.amount - a.amount),
   };
 }
+
+// 홈 팝업 "하루 한 번" 표시용 localStorage 키(계정·날짜별).
+//  · 아침 수업 브리핑(fitcms_today_schedule_seen_*)과 동일한 규칙.
+export function yesterdayPopupSeenKey(userId, todayYmd) {
+  if (!userId || !todayYmd) return null;
+  return `fitcms_yesterday_settle_seen_${userId}_${todayYmd}`;
+}
+
+// 홈 카드용 한 줄 요약 문구(순수 함수).
+//  · 내역 없음 → null 반환(호출부에서 빈 상태 문구 처리).
+export function settlementOneLine(s) {
+  if (!s || !s.count) return null;
+  const parts = [];
+  if (s.newCnt) parts.push(`신규 ${s.newCnt}건`);
+  if (s.reCnt) parts.push(`재등록 ${s.reCnt}건`);
+  if (s.etcCnt) parts.push(`등록 ${s.etcCnt}건`);
+  parts.push(`총 ${s.total.toLocaleString('ko-KR')}원`);
+  return parts.join(' · ');
+}

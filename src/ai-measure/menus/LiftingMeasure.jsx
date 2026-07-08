@@ -18,6 +18,7 @@ import { fuseTrackingCandidates, summarizeCrossValidation } from '../core/trackF
 import { estimateBodyCOG, barCogHorizontalGap } from '../core/bodyCog';
 import { saveVideoToPhone, pickRecorderMime } from '../core/recordSink';
 import { drawLiftingDataHud, drawBarPathToRecord } from '../core/recordingOverlay';
+import { DEFAULT_ASPECT, outputSize, aspectLabel, drawVideoCover, coverMapPath } from '../core/recordAspect';
 import {
   CALIBRATION_PRESETS, buildReferenceScale, ratioToCm,
   resolveDistanceScale, serializeDistanceScale,
@@ -27,7 +28,7 @@ import PlateWeightInput from './PlateWeightInput';
 import FramingIntro from './FramingIntro';
 import HeightField from './HeightField';
 import CameraStage from './CameraStage';
-import VelocityGaugeHud from './VelocityGaugeHud';
+import GaugeHud from './GaugeHud';
 import LiftingResultSheet from './LiftingResultSheet';
 
 const MAX_RECORDING_MS = 60000;
@@ -75,7 +76,10 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
   const [videoSavedMsg, setVideoSavedMsg] = useState('');
 
   const [recording, setRecording] = useState(false);
+  const [aspect, setAspect] = useState(DEFAULT_ASPECT);
+  const aspectRef = useRef(DEFAULT_ASPECT);
   const [countdown, setCountdown] = useState(null);
+  useEffect(() => { aspectRef.current = aspect; }, [aspect]);
   const [seedHintSignal, setSeedHintSignal] = useState(0);
   const [seeded, setSeeded] = useState(false);
   const [ptCount, setPtCount] = useState(0);
@@ -184,6 +188,7 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
         liveHudRef.current = {
           romCm: lv.romCm,
           meanVelocity: lv.lastRepVelocity ?? lv.bestRepVelocity ?? null,
+          repList: lv.repList || null, // 렙별 카드 — 녹화 영상 하단에도 번인
         };
       }
 
@@ -348,23 +353,24 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
   // 캔버스에 매 프레임 그려 captureStream 으로 뽑는다(RomMeasure 와 동일 구조).
   const createRecordedStream = () => {
     const video = videoRef.current;
-    const vw = video?.videoWidth || 720;
-    const vh = video?.videoHeight || 1280;
+    const size = outputSize(aspectRef.current); // 인스타 비율 통일
     const canvas = recordCanvasRef.current || document.createElement('canvas');
-    canvas.width = vw; canvas.height = vh;
+    canvas.width = size.width; canvas.height = size.height;
     recordCanvasRef.current = canvas;
     const ctx = canvas.getContext('2d', { alpha: false });
     const draw = () => {
       ctx.fillStyle = '#000';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
-      if (video && video.videoWidth) ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-      // 실제 추적 궤적선(장식 아님).
-      drawBarPathToRecord(ctx, fusedRef.current.path(), canvas.width, canvas.height);
+      drawVideoCover(ctx, video, canvas.width, canvas.height);
+      // 실제 추적 궤적선(장식 아님) — 카메라 원본 정규화 좌표를 cover 크롭 좌표로 매핑.
+      drawBarPathToRecord(ctx, coverMapPath(fusedRef.current.path(), video, canvas.width, canvas.height), canvas.width, canvas.height);
       // 데이터-only HUD: 수직이동(cm) · 평균속도 · 경과시간.
       const elapsedSec = recordingRef.current ? (performance.now() - recordStartRef.current) / 1000 : null;
       drawLiftingDataHud(ctx, canvas.width, canvas.height, {
+        title: 'LIFT',
         romCm: liveHudRef.current.romCm,
         meanVelocity: liveHudRef.current.meanVelocity,
+        repList: liveHudRef.current.repList,
         elapsedSec,
         recording: recordingRef.current,
       });
@@ -686,6 +692,7 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
         recording={recording} tappable={countdown == null}
         seedHint={ptCount === 0 && !recording} hintSignal={seedHintSignal} countdown={countdown}
         topOffset={topOffset}
+        aspectFrame={aspect}
       >
         {recording && liveHud?.repList?.length > 0 && (
           <div className="mx-auto max-w-sm w-full overflow-x-auto pointer-events-none">
@@ -704,12 +711,22 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
           </div>
         )}
         {recording && (
-          <VelocityGaugeHud
-            avg={liveHud?.lastRepVelocity ?? null}
-            reps={liveReps}
-            best={liveHud?.bestRepVelocity ?? null}
-            romCm={liveHud?.romCm ?? null}
-            lossPct={liveHud?.velocityLossPct ?? null}
+          <GaugeHud
+            label="평균속도"
+            value={liveHud?.lastRepVelocity ?? null}
+            min={0} max={1.5} unit="m/s" decimals={2}
+            accent="#22d3ee"
+            stats={[
+              { label: 'REP', value: liveReps },
+              { label: 'BEST', value: liveHud?.bestRepVelocity ?? null, unit: 'm/s' },
+              { label: 'ROM', value: liveHud?.romCm ?? null, unit: 'cm' },
+              {
+                label: 'LOSS', value: liveHud?.velocityLossPct ?? null, unit: '%',
+                tone: liveHud?.velocityLossPct == null ? 'text-white'
+                  : liveHud.velocityLossPct > 20 ? 'text-red-300'
+                  : liveHud.velocityLossPct > 10 ? 'text-amber-300' : 'text-emerald-300',
+              },
+            ]}
           />
         )}
         {!recording && (

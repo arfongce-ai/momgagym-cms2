@@ -18,6 +18,7 @@ import { RomAccumulator, jointAngleByMode, normalizePose, LM, symmetryIndex } fr
 import { generateRomDiagnosis } from '../core/romClinical';
 import { beepGo, beepSuccess, primeAudio } from '../core/audioCue';
 import CameraStage from './CameraStage.jsx';
+import GaugeHud from './GaugeHud.jsx';
 import RomReport from './RomReport.jsx';
 import ReportActions from '../../components/report/ReportActions';
 import { dataUrlToFile } from '../core/reportShare';
@@ -25,6 +26,8 @@ import { useHardwareBack } from '../core/useHardwareBack';
 import RomSensorGoniometer from './RomSensorGoniometer.jsx';
 import RomVideoAngle from './RomVideoAngle.jsx';
 import { isSkeletonEnabled } from '../core/skeletonPref';
+import { drawGaugeHud } from '../core/recordingOverlay';
+import { DEFAULT_ASPECT, outputSize, aspectLabel, drawVideoCover, coverTransform } from '../core/recordAspect';
 
 const MAX_RECORD_MS = 60000;
 
@@ -86,6 +89,9 @@ export default function RomMeasure({ member, onSave, onBack }) {
   const recordingRef = useRef(false);
   const startTsRef = useRef(0);
   const [recording, setRecording] = useState(false);
+  const [aspect, setAspect] = useState(DEFAULT_ASPECT);
+  const aspectRef = useRef(DEFAULT_ASPECT);
+  useEffect(() => { aspectRef.current = aspect; }, [aspect]);
   const [liveAngle, setLiveAngle] = useState({ left: null, right: null });
   const [elapsed, setElapsed] = useState(0);
   const [guide, setGuide] = useState('관절이 보이게 서서, 녹화 버튼을 누른 뒤 동작을 한 번 천천히 끝까지 수행하세요.');
@@ -184,21 +190,21 @@ export default function RomMeasure({ member, onSave, onBack }) {
   // 그려 captureStream 으로 뽑는다(보행 createRecordedStream 과 동일 구조).
   const createRecordedStream = () => {
     const video = videoRef.current;
-    const vw = video?.videoWidth || 720;
-    const vh = video?.videoHeight || 1280;
+    const size = outputSize(aspectRef.current); // 인스타 비율 통일(3:4 / 1:1)
     const canvas = recordCanvasRef.current || document.createElement('canvas');
-    canvas.width = vw;
-    canvas.height = vh;
+    canvas.width = size.width;
+    canvas.height = size.height;
     recordCanvasRef.current = canvas;
     const ctx = canvas.getContext('2d', { alpha: false });
     const draw = () => {
       ctx.fillStyle = '#000';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
-      if (video && video.videoWidth) ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      drawVideoCover(ctx, video, canvas.width, canvas.height); // 검은 여백 없이 중앙 크롭
+      const cover = coverTransform(video, canvas.width, canvas.height); // 스켈레톤 좌표 정렬용
       // 스켈레톤(측정 측 강조) + 좌우 각도 HUD 를 영상 위에 베이크.
-      drawSkeletonToRecord(ctx, latestLandmarksRef.current, side, joint, poseMode, canvas.width, canvas.height);
+      drawSkeletonToRecord(ctx, latestLandmarksRef.current, side, joint, poseMode, canvas.width, canvas.height, cover);
       drawRomHud(ctx, latestLandmarksRef.current, joint, poseMode, canvas.width, canvas.height,
-        (performance.now() - startTsRef.current) / 1000);
+        (performance.now() - startTsRef.current) / 1000, side);
     };
     const rafLoop = () => { draw(); composeRafRef.current = requestAnimationFrame(rafLoop); };
     if (composeRafRef.current) cancelAnimationFrame(composeRafRef.current);
@@ -551,12 +557,21 @@ export default function RomMeasure({ member, onSave, onBack }) {
         showSkeletonToggle
         recording={recording}
         recordingLabel={`측정 중 ${elapsed}s`}
+        aspectFrame={aspect}
         topBar={
           <div className="w-full text-right">
             <p className="text-sm font-black text-white">ROM · {jointName}</p>
             <p className="text-[11px] font-bold text-amber-300">
               {member?.name || '회원 미선택'} · {POSE_LABEL[poseMode]} · {side === 'both' ? '양쪽' : side === 'left' ? '좌측' : '우측'}
             </p>
+            <div className="mt-1 flex justify-end gap-0.5">
+              {['3/4', '1/1'].map((r) => (
+                <button key={r} onClick={() => !recording && setAspect(r)} disabled={recording}
+                  className={`rounded-full px-2 py-0.5 text-[10px] font-black transition-colors disabled:opacity-50 ${aspect === r ? 'bg-amber-500 text-slate-950' : 'bg-black/45 text-slate-300'}`}>
+                  {aspectLabel(r)}
+                </button>
+              ))}
+            </div>
           </div>
         }
         controls={
@@ -608,12 +623,23 @@ export default function RomMeasure({ member, onSave, onBack }) {
               </button>
             ))}
           </div>
-          {recording && (
-            <div className="grid grid-cols-2 gap-2">
-              <LiveMetric label="좌측 각도" value={liveAngle.left == null ? '—' : `${liveAngle.left}°`} dim={side === 'right'} />
-              <LiveMetric label="우측 각도" value={liveAngle.right == null ? '—' : `${liveAngle.right}°`} dim={side === 'left'} />
-            </div>
-          )}
+          {recording && (() => {
+            const L = liveAngle.left, R = liveAngle.right;
+            const primary = side === 'left' ? L : side === 'right' ? R
+              : (L != null && R != null ? Math.max(L, R) : (L ?? R));
+            return (
+              <GaugeHud
+                label="가동범위"
+                value={primary == null ? null : Math.round(primary)}
+                min={0} max={180} unit="°"
+                accent="#38bdf8"
+                stats={[
+                  { label: '좌측', value: L == null ? null : Math.round(L), unit: '°', tone: side === 'right' ? 'text-slate-500' : 'text-white' },
+                  { label: '우측', value: R == null ? null : Math.round(R), unit: '°', tone: side === 'left' ? 'text-slate-500' : 'text-white' },
+                ]}
+              />
+            );
+          })()}
           <div className="rounded-2xl border border-white/10 bg-black/55 px-4 py-3 text-center text-sm font-bold text-white backdrop-blur">
             <span className="text-amber-300">{jointName}</span> · {guide}
           </div>
@@ -709,15 +735,6 @@ export default function RomMeasure({ member, onSave, onBack }) {
 
 const POSE_LABEL = { STANDING: '서서', SUPINE: '누워서', PRONE: '엎드려', SEATED: '앉아서' };
 
-function LiveMetric({ label, value, dim }) {
-  return (
-    <div className={`rounded-xl border bg-black/55 px-2 py-2 text-center backdrop-blur ${dim ? 'opacity-40 border-white/10' : 'border-amber-400/30'}`}>
-      <p className="text-[10px] font-bold text-white/60">{label}</p>
-      <p className="mt-0.5 text-base font-black tabular-nums text-amber-300">{value}</p>
-    </div>
-  );
-}
-
 // ── 스켈레톤 드로잉 (측정 측 강조) ──
 function drawSkeleton(canvas, video, landmarks, side, joint, poseMode) {
   if (!canvas || !video) return;
@@ -796,11 +813,11 @@ function captureVideoSnapshot(video) {
 // ── 녹화 합성용: 스켈레톤을 '캔버스 전체(가득 채움)' 좌표로 직접 그린다.
 //   record 캔버스는 영상을 edge-to-edge 로 그리므로 정규화 좌표(0~1)에
 //   width/height 만 곱하면 된다(레터박스 보정 불필요).
-function drawSkeletonToRecord(ctx, landmarks, side, joint, poseMode, width, height) {
+function drawSkeletonToRecord(ctx, landmarks, side, joint, poseMode, width, height, cover = null) {
   if (!landmarks) return;
   if (!isSkeletonEnabled()) return; // OFF: 녹화 영상도 스켈레톤 없이 원본+HUD만
-  const X = (p) => p.x * width;
-  const Y = (p) => p.y * height;
+  const X = cover?.X || ((p) => p.x * width);
+  const Y = cover?.Y || ((p) => p.y * height);
   const leftIdx = new Set([11, 13, 15, 23, 25, 27, 29, 31]);
   const rightIdx = new Set([12, 14, 16, 24, 26, 28, 30, 32]);
   ctx.lineWidth = Math.max(2, width / 280);
@@ -927,30 +944,27 @@ function roundRect(ctx, x, y, width, height, radius) {
   ctx.closePath();
 }
 
-// ── 녹화 합성용 HUD: 좌상단에 좌/우 현재 각도 + 경과시간을 베이크한다. ──
-function drawRomHud(ctx, landmarks, joint, poseMode, width, height, elapsedSec) {
+// ── 녹화 합성용 HUD: 좌/우 현재 각도를 대형 카드로, 경과시간을 칩으로 베이크. ──
+//  · 피사체(중앙)를 가리지 않도록 상단 좌/우 가장자리 배치, 수치는 크게(시인성).
+//  · 측정하지 않는 쪽은 강조 해제(라벨만 회색) — 핵심 정보 위주.
+function drawRomHud(ctx, landmarks, joint, poseMode, width, height, elapsedSec, side = 'both') {
   const norm = normalizePose(landmarks) || landmarks;
   const L = norm ? jointAngleByMode(norm, joint, 'left', poseMode).angle : null;
   const R = norm ? jointAngleByMode(norm, joint, 'right', poseMode).angle : null;
-  const pad = Math.round(width * 0.03);
-  const fs = Math.max(16, Math.round(width / 26));
-  ctx.save();
-  ctx.font = `700 ${fs}px sans-serif`;
-  ctx.textBaseline = 'top';
-  const lines = [
-    `L ${L == null ? '--' : Math.round(L)}°   R ${R == null ? '--' : Math.round(R)}°`,
-    `${Number.isFinite(elapsedSec) ? elapsedSec.toFixed(1) : '0.0'}s`,
-  ];
-  const boxW = Math.round(width * 0.46);
-  const boxH = pad + lines.length * (fs + 6);
-  ctx.fillStyle = 'rgba(0,0,0,0.5)';
-  ctx.fillRect(pad, pad, boxW, boxH);
-  ctx.fillStyle = 'rgba(251,191,36,0.95)';
-  ctx.fillText(lines[0], pad + 10, pad + 8);
-  ctx.fillStyle = 'rgba(255,255,255,0.9)';
-  ctx.font = `700 ${Math.round(fs * 0.8)}px sans-serif`;
-  ctx.fillText(lines[1], pad + 10, pad + 8 + fs + 6);
-  ctx.restore();
+  // 게이지 주값 = 측정 측(좌/우/양쪽이면 큰 각도). 각도 게이지는 0~180°.
+  const primary = side === 'left' ? L : side === 'right' ? R
+    : (L != null && R != null ? Math.max(L, R) : (L ?? R));
+  drawGaugeHud(ctx, width, height, {
+    title: 'ROM',
+    recording: true,
+    elapsedSec: Number.isFinite(elapsedSec) ? elapsedSec : 0,
+    accent: '#38bdf8',
+    gauge: { label: '가동범위', value: primary == null ? null : Math.round(primary), min: 0, max: 180, unit: '°' },
+    stats: [
+      { label: '좌측', value: L == null ? null : Math.round(L), unit: '°' },
+      { label: '우측', value: R == null ? null : Math.round(R), unit: '°' },
+    ],
+  });
 }
 
 const RECORD_BONES = [

@@ -146,7 +146,13 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
     setSaveState('saving');
     try {
       const res = await save?.(nextPayload);
-      if (res && typeof res === 'object') saved = { ...nextPayload, ...res };
+      // handleSave 는 저장된 세션({id, menu, data, ...})을 돌려준다. 리포트는 평평한
+      //  페이로드(mode/metrics) 형태를 기대하므로, 세션이면 data 를 펼쳐 병합하고
+      //  저장 id 만 취한다(리포트 식별·공유 일관성).
+      if (res && typeof res === 'object') {
+        const flat = res.data && typeof res.data === 'object' ? res.data : res;
+        saved = { ...nextPayload, ...flat, id: res.id ?? flat.id ?? nextPayload.id };
+      }
       setSaveState('saved');
     } catch (e) { setSaveState('error'); }
     sessionHistoryRef.current = saved;

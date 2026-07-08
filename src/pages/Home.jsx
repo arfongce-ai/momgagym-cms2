@@ -1,11 +1,11 @@
 // Home.jsx — v5: 공지사항 최상단 + 간이 캘린더 요약 뷰
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { store } from '../demoData';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { toYMD, todayYMD, daysAgoYMD, isMemberExpired } from '../utils/dates';
 import { won, METHOD_LBL } from '../services/finance';
-import { summarizeDailySettlement } from '../utils/dailySettlement';
+import { summarizeDailySettlement, yesterdayPopupSeenKey, settlementOneLine } from '../utils/dailySettlement';
 
 function fmtDate(d) {
   return new Date(d).toLocaleDateString('ko-KR',{month:'long',day:'numeric',weekday:'short'});
@@ -70,21 +70,17 @@ const KIND_CLR = {
   etc: 'bg-slate-600/40 text-slate-300 border-slate-600/40',
 };
 
-function YesterdaySettlement({ members }) {
-  const s = summarizeDailySettlement(members, (mid) => store.getPayments(mid), daysAgoYMD(1));
-  const dateLbl = new Date(s.ymd + 'T12:00:00').toLocaleDateString('ko-KR', { month: 'long', day: 'numeric', weekday: 'short' });
+function fmtSettleDate(ymd) {
+  return new Date(ymd + 'T12:00:00').toLocaleDateString('ko-KR', { month: 'long', day: 'numeric', weekday: 'short' });
+}
 
+// 상세 본문(요약 3분할 + 결제수단 + 건별) — 팝업에서 사용
+function SettlementDetail({ s }) {
+  if (s.count === 0) {
+    return <p className="text-slate-600 text-sm text-center py-4">전날 입금·등록 내역이 없습니다</p>;
+  }
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
-      <div className="flex items-center justify-between mb-3">
-        <h2 className="font-bold text-sm uppercase tracking-widest text-slate-400">💰 전날 정산내역</h2>
-        <span className="text-[11px] text-slate-500 font-semibold">{dateLbl}</span>
-      </div>
-
-      {s.count === 0 ? (
-        <p className="text-slate-600 text-sm text-center py-4">전날 입금·등록 내역이 없습니다</p>
-      ) : (
-        <>
+    <>
           {/* 요약 3분할: 신규 / 재등록 / 입금액 합계 */}
           <div className="grid grid-cols-3 gap-2 mb-3">
             <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-3">
@@ -131,9 +127,47 @@ function YesterdaySettlement({ members }) {
               </div>
             ))}
           </div>
-        </>
-      )}
+    </>
+  );
+}
+
+// 전날 정산 팝업(관리자 전용) — 홈 진입 시 하루 한 번 자동 표시, 카드에서 다시 열기 가능
+function YesterdaySettlementPopup({ s, onClose }) {
+  return (
+    <div className="modal-overlay z-[60]" onClick={onClose}>
+      <div className="modal-box max-w-md" onClick={e => e.stopPropagation()}>
+        <div className="px-5 py-4 border-b border-slate-800">
+          <p className="text-xs font-bold uppercase tracking-widest text-amber-400">Daily Brief</p>
+          <h2 className="text-xl font-black mt-1">💰 전날 등록·수납 정리</h2>
+          <p className="text-xs text-slate-500 mt-1">{fmtSettleDate(s.ymd)} · 오늘 하루 한 번만 표시됩니다</p>
+        </div>
+        <div className="modal-body px-5 py-4">
+          <SettlementDetail s={s} />
+        </div>
+        <div className="px-5 py-4 border-t border-slate-800">
+          <button type="button" onClick={onClose} className="btn btn-primary w-full">확인</button>
+        </div>
+      </div>
     </div>
+  );
+}
+
+// 홈 카드: 한 줄 요약 + 탭하면 팝업 재열기
+function YesterdaySettlement({ s, onOpen }) {
+  const line = settlementOneLine(s);
+  return (
+    <button type="button" onClick={onOpen}
+      className="w-full text-left bg-slate-900 border border-slate-800 rounded-2xl p-4
+        active:scale-[0.98] hover:border-slate-700 transition-all">
+      <div className="flex items-center justify-between mb-1.5">
+        <h2 className="font-bold text-sm uppercase tracking-widest text-slate-400">💰 전날 정산내역</h2>
+        <span className="text-[11px] text-slate-500 font-semibold">{fmtSettleDate(s.ymd)}</span>
+      </div>
+      {line
+        ? <p className="text-sm font-semibold text-slate-200">{line}</p>
+        : <p className="text-sm text-slate-600">전날 입금·등록 내역이 없습니다</p>}
+      <p className="text-[10px] text-slate-600 mt-1">누르면 팝업으로 자세히 보기 →</p>
+    </button>
   );
 }
 
@@ -148,6 +182,8 @@ export default function Home() {
   const [editId,    setEditId]    = useState(null);
   const [editNotice,setEditNotice]= useState({ title:'', content:'' });
 
+  const [showSettlePopup, setShowSettlePopup] = useState(false);
+
   const refreshNotices = () => setNotices(store.getNotices().sort((a,b) => b.isPinned - a.isPinned));
 
   useEffect(() => {
@@ -155,6 +191,27 @@ export default function Home() {
     setSchedules(store.getSchedules());
     setMembers(store.getMembers());
   }, []);
+
+  const isAdmin = user?.role === 'admin';
+
+  // 전날 등록·수납 요약(관리자 전용) — 팝업·카드가 같은 집계를 공유
+  const ySettle = useMemo(() => (
+    isAdmin ? summarizeDailySettlement(members, (mid) => store.getPayments(mid), daysAgoYMD(1)) : null
+  ), [isAdmin, members]);
+
+  // 관리자 홈 진입 시 전날 정리 팝업 자동 표시(계정별 하루 한 번, 닫을 때 확인 처리)
+  useEffect(() => {
+    if (!isAdmin || !user?.id) return;
+    const key = yesterdayPopupSeenKey(user.id, todayYMD());
+    try { if (key && localStorage.getItem(key) === '1') return; } catch { /* noop */ }
+    setShowSettlePopup(true);
+  }, [isAdmin, user?.id]);
+
+  const closeSettlePopup = () => {
+    const key = yesterdayPopupSeenKey(user?.id, todayYMD());
+    try { if (key) localStorage.setItem(key, '1'); } catch { /* noop */ }
+    setShowSettlePopup(false);
+  };
 
   const addNotice = async () => {
     if (!newNotice.title.trim()) return;
@@ -327,8 +384,11 @@ export default function Home() {
         ))}
       </div>
 
-      {/* ②-b 전날 정산내역 — 관리자 전용 (오늘 스케줄처럼 홈에서 바로 확인) */}
-      {user?.role==='admin' && <YesterdaySettlement members={members}/>}
+      {/* ②-b 전날 정산내역 — 관리자 전용: 홈 진입 시 팝업으로 정리 표시 + 카드로 재열기 */}
+      {isAdmin && ySettle && <YesterdaySettlement s={ySettle} onOpen={()=>setShowSettlePopup(true)}/>}
+      {isAdmin && ySettle && showSettlePopup && (
+        <YesterdaySettlementPopup s={ySettle} onClose={closeSettlePopup}/>
+      )}
 
       {/* ③ 간이 캘린더 요약 뷰 (원본 spec 요구) */}
       <MiniCalendar schedules={schedules}/>
