@@ -172,4 +172,25 @@ describe('drawGaugeHud (아크 게이지 · 코너 스탯 · 회차 카드)', ()
     drawGaugeHud(ctx, 720, 960, {});
     expect(ctx._calls.fillText.length).toBe(0);
   });
+
+  it('게이지 값이 null 이면 "null" 이 아니라 -- 를 그린다(회귀)', () => {
+    const ctx = mockCtx();
+    drawGaugeHud(ctx, 1080, 1440, {
+      title: 'JUMP', recording: true,
+      gauge: { label: '점프 높이', value: null, min: 0, max: 80, unit: 'cm' },
+    });
+    const txt = ctx._calls.fillText.join('|');
+    expect(txt).not.toContain('null');
+    expect(txt).toContain('--');
+  });
+
+  it('게이지 값이 0 이면 0 을 정상 표시한다(값 없음과 구분)', () => {
+    const ctx = mockCtx();
+    drawGaugeHud(ctx, 1080, 1440, {
+      title: 'JUMP', gauge: { label: '점프', value: 0, min: 0, max: 80, unit: 'cm' },
+    });
+    const cells = ctx._calls.fillText;
+    expect(cells).toContain('0');
+    expect(cells.join('|')).not.toContain('null');
+  });
 });

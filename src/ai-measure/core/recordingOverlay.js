@@ -389,10 +389,12 @@ export function drawGaugeHud(ctx, width, height, opts = {}) {
     const lw = Math.max(8, Math.round(gaugeR * 0.16));
     const start = Math.PI * 0.75;         // 좌하 (135°)
     const end = Math.PI * 2.25;           // 우하 (405° = 45°), 총 270°
-    const v = Number(gauge.value);
+    const gv = gauge.value;
     const min = Number.isFinite(gauge.min) ? gauge.min : 0;
     const max = Number.isFinite(gauge.max) ? gauge.max : 1;
-    const hasV = Number.isFinite(v);
+    // null/undefined/'' 는 '값 없음' → '--' (Number(null)===0 유출 방지).
+    const hasV = gv != null && gv !== '' && Number.isFinite(Number(gv));
+    const v = hasV ? Number(gv) : NaN;
     const frac = hasV && max > min ? Math.max(0, Math.min(1, (v - min) / (max - min))) : 0;
 
     // 트랙

@@ -75,3 +75,17 @@ describe('녹화 비율 통일(recordAspect)', () => {
     expect(read('ai-measure/menus/CameraStage.jsx')).toContain('aspectFrame');
   });
 });
+
+describe('게이지 값 null-safe (회귀: Number(null)===0 유출 방지)', () => {
+  it('GaugeHud 는 null/빈값을 값없음으로 처리한다', () => {
+    const src = read('ai-measure/menus/GaugeHud.jsx');
+    expect(src).toContain("value != null && value !== ''");
+    // Number(value) 를 곧바로 유한성 판정하지 않는다(널 유출 방지)
+    expect(src).not.toMatch(/const v = Number\(value\);\s*\n\s*const hasV = Number\.isFinite\(v\);/);
+  });
+
+  it('drawGaugeHud 도 동일하게 null 을 -- 로 처리한다', () => {
+    const src = read('ai-measure/core/recordingOverlay.js');
+    expect(src).toContain("gv != null && gv !== ''");
+  });
+});

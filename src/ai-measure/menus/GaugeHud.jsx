@@ -47,8 +47,10 @@ export default function GaugeHud({
   label = '', value = null, min = 0, max = 1, unit = '', decimals = null,
   accent = '#22d3ee', stats = [],
 }) {
-  const v = Number(value);
-  const hasV = Number.isFinite(v);
+  // null/undefined/'' 는 '값 없음'으로 처리 — Number(null)===0 이 유한수로 새어들어
+  //  '0' 또는 'null' 로 표시되던 버그 방지(측정 정직성: 없는 값은 '—').
+  const hasV = value != null && value !== '' && Number.isFinite(Number(value));
+  const v = hasV ? Number(value) : NaN;
   const frac = hasV && max > min ? Math.max(0, Math.min(1, (v - min) / (max - min))) : 0;
 
   const size = 176;
