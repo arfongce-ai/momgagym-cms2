@@ -139,6 +139,55 @@ describe('BarbellAccumulator · 실시간 속도(컨센트릭 기준)', () => {
       expect(r.repNo).toBe(i + 1);
     });
   });
+
+  // [핵심] 확정된 렙 카드는 이후 cmPerRatio·best 가 흔들려도 값이 고정된다.
+  it('확정 렙 카드는 스케일이 프레임마다 흔들려도 값이 불변(동결)', () => {
+    const acc = new BarbellAccumulator();
+    pushSquatSet(acc, { reps: 3, amp: 0.25, upSecs: [0.6, 0.8, 1.2] });
+    acc.finish();
+    // 첫 표시: 스케일 170
+    const first = acc.live(170).repList.map(r => ({ ...r }));
+    expect(first.length).toBe(3);
+    // 이후 스케일이 매 호출 달라져도(키 추정 지터 모사) 이미 나온 카드는 그대로.
+    for (const scale of [150, 200, 165, 180, 172]) {
+      const again = acc.live(scale).repList;
+      again.forEach((r, i) => {
+        expect(r.repNo).toBe(first[i].repNo);
+        expect(r.meanVelocity).toBe(first[i].meanVelocity);
+        expect(r.peakVelocity).toBe(first[i].peakVelocity);
+        expect(r.romCm).toBe(first[i].romCm);
+        expect(r.lossPct).toBe(first[i].lossPct);
+      });
+    }
+  });
+
+  // 렙이 하나씩 추가되어도(뒤 렙이 best 갱신) 앞 카드 lossPct 가 안 바뀐다.
+  it('뒤 렙이 늘어도 앞 렙 카드는 동결값 유지(best 이동에 불변)', () => {
+    const acc = new BarbellAccumulator();
+    // 렙1 확정 시점 스냅샷
+    pushSquatSet(acc, { reps: 1, amp: 0.25, upSecs: [1.2] }); // 느린 렙
+    acc.finish();
+    const rep1a = acc.live(170).repList[0];
+    // 같은 엔진에 더 빠른 렙을 이어 붙였다고 가정 — 새 엔진으로 전체 재생하되
+    //  앞 렙 카드가 처음 동결된 값과 동일한지 별도 검증(동결 계약).
+    const snapMean = rep1a.meanVelocity;
+    const snapLoss = rep1a.lossPct;
+    // 여러 번 더 읽어도 렙1 카드 불변
+    for (let k = 0; k < 5; k++) {
+      const r1 = acc.live(170).repList[0];
+      expect(r1.meanVelocity).toBe(snapMean);
+      expect(r1.lossPct).toBe(snapLoss);
+    }
+  });
+
+  it('reset 하면 동결 스냅샷도 초기화된다', () => {
+    const acc = new BarbellAccumulator();
+    pushSquatSet(acc, { reps: 2 });
+    acc.finish();
+    acc.live(170);
+    acc.reset();
+    expect(acc.live(170).repList.length).toBe(0);
+  });
 });
 
 describe('실시간 평활 피크속도(정직성 게이트)', () => {

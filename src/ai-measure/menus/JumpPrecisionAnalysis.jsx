@@ -18,6 +18,7 @@ import {
 } from '../core/jumpBiomechanics';
 import { calcJump, calcRSI } from '../core/performance';
 import { computeRSIFromFlights, rsiGrade } from '../core/reactiveJump';
+import { applyRepFreeze } from '../core/repFreeze';
 import { OrientationVoter } from '../core/gaitBiomechanics';
 import { loadPoseLandmarker, detectPoseFrame, isPoseReady } from '../core/poseBackend';
 import { beepTick, beepGo, primeAudio } from '../core/audioCue';
@@ -258,6 +259,11 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
   const weightRef = useRef(bodyWeight);
   const overlayRef = useRef({});
   const autoSavedRef = useRef(null);
+  // 점프별 카드 동결 — 다음 점프가 착지해 사이클이 완성된 점프의 카드값
+  //  (flightMs·heightCm·contactMs·rsi)을 no 키로 고정한다. 이후 트래커가
+  //  뒤 프레임으로 착지/이지 시점을 미세 보정해도 이미 나온 카드는 불변
+  //  (VBT 렙 카드 동결과 동일 계약 — 반복 기록은 측정되면 고정).
+  const jumpFreezeRef = useRef(new Map());
   const armedRef = useRef(false);          // 측정 개시 게이트(루프에서 참조)
   const calibLockedRef = useRef(false);    // 캘리브레이션 잠금 완료 여부
   const countdownTimerRef = useRef(null);  // 카운트다운 인터벌 정리용
@@ -322,6 +328,7 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
     setJumpCount(0);
     setRsiCycles([]);
     setJumpRows([]);
+    jumpFreezeRef.current = new Map(); // 렙/점프 카드 동결 초기화
     setLiveJump({ flightMs: null, heightCm: null });
     setReportData(null);
     setSaveState('idle');
@@ -554,11 +561,17 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
               if (jumpType === 'reactive') {
                 const cyclePreview = buildRsiCyclePreview(tracker.flights);
                 nextCycles = cyclePreview;
-                nextRows = flightRows(tracker.flights, cyclePreview);
+                nextRows = applyRepFreeze(
+                  flightRows(tracker.flights, cyclePreview),
+                  jumpFreezeRef.current, tracker.flights.length,
+                );
                 setRsiCycles(nextCycles);
                 setJumpRows(nextRows);
               } else {
-                nextRows = flightRows(tracker.flights, []);
+                nextRows = applyRepFreeze(
+                  flightRows(tracker.flights, []),
+                  jumpFreezeRef.current, tracker.flights.length,
+                );
                 setJumpRows(nextRows);
               }
               overlayRef.current = {

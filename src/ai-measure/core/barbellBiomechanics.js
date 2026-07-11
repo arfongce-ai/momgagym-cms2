@@ -126,6 +126,12 @@ export class BarbellAccumulator {
     this.extremeIdx = 0;      // 현재 진행 방향의 최대 도달 인덱스
     this.repsRaw = [];        // 확정 렙(비율 도메인)
     this._finished = false;
+    // 렙 카드 동결 스냅샷 — 렙이 확정된 뒤 처음 유효 스케일로 표시된 값을
+    //  repNo 키로 고정한다. 이후 cmPerRatio·best 가 흔들려도 이미 나온
+    //  #1·#2… 카드 값은 바뀌지 않는다(측정 정직성: 표시값 불변).
+    //  주의: summary()(최종 리포트)는 이 동결을 쓰지 않고 비율 도메인에서
+    //  일관 재계산한다 — 도중 보정 변경을 최종본에 반영하기 위함.
+    this._repFreeze = new Map();  // repNo → { meanVelocity, peakVelocity, romCm, lossPct }
   }
 
   /** 화면에 그릴 평활 궤적. */
@@ -238,6 +244,40 @@ export class BarbellAccumulator {
   }
 
   /**
+   * 확정 렙 하나의 카드 표시값을 동결·반환한다.
+   *  - 이미 동결된 렙이면 저장된 값을 그대로 돌려준다(불변).
+   *  - 아직 동결 전이면: 스케일이 유효(cmPerRatio>0)해질 때 속도·ROM 을
+   *    확정 동결한다. 스케일이 아직 없으면 번호만 유지하고 값은 null 로 두되
+   *    동결하지 않는다(스케일이 잡히는 순간 정확한 값으로 고정하기 위함).
+   *  - lossPct 도 동결 시점의 best 기준으로 함께 고정한다.
+   * @param {{repNo:number, meanRatioPerSec:number, peakRatioPerSec:number|null, romRatio:number}} r
+   * @param {number|null} cmPerRatio
+   * @param {number|null} best  현재까지 전체 최고 평균속도(비율/초)
+   */
+  _freezeRepCard(r, cmPerRatio, best) {
+    const frozen = this._repFreeze.get(r.repNo);
+    if (frozen) return frozen;
+
+    const hasScale = Number.isFinite(cmPerRatio) && cmPerRatio > 0;
+    const card = {
+      repNo: r.repNo,
+      meanVelocity: hasScale ? r2(ratioPerSecToMs(r.meanRatioPerSec, cmPerRatio)) : null,
+      peakVelocity: hasScale ? r2(ratioPerSecToMs(r.peakRatioPerSec, cmPerRatio)) : null,
+      romCm: hasScale && r.romRatio != null ? r1(r.romRatio * cmPerRatio) : null,
+      // 그 렙의 최고속도 대비 저하율(%) — best 는 전체 최고 평균속도(비율 도메인이라
+      //  스케일 무관하게 산출 가능). 동결 시점 best 기준으로 고정.
+      lossPct: best && best > 0 && r.meanRatioPerSec != null
+        ? r1(((best - r.meanRatioPerSec) / best) * 100)
+        : null,
+    };
+
+    // 스케일이 유효할 때(값이 실제로 확정됐을 때)만 동결. 스케일 없이 null 로
+    //  띄운 카드는 다음에 스케일이 잡히면 정확한 값으로 채워 그때 고정.
+    if (hasScale) this._repFreeze.set(r.repNo, card);
+    return card;
+  }
+
+  /**
    * 실시간 HUD 상태 — 매 프레임 호출해도 가벼움(확정 렙은 이미 계산돼 있음).
    * @param {number|null} cmPerRatio
    */
@@ -250,16 +290,12 @@ export class BarbellAccumulator {
     const romRatio = this.samples.length >= 2 ? this.maxY - this.minY : null;
     // 실시간 렙 스트립(HUD 카드)용 — 최근 10렙의 번호·평균속도·ROM·저하율.
     //  RSI 점프별 카드처럼 렙마다 기록이 남도록 카드에 필요한 값을 함께 제공.
-    const repList = this.repsRaw.slice(-10).map(r => ({
-      repNo: r.repNo,
-      meanVelocity: r2(ratioPerSecToMs(r.meanRatioPerSec, cmPerRatio)),
-      peakVelocity: r2(ratioPerSecToMs(r.peakRatioPerSec, cmPerRatio)),
-      romCm: cmPerRatio && r.romRatio != null ? r1(r.romRatio * cmPerRatio) : null,
-      // 그 렙의 최고속도 대비 저하율(%) — best 는 전체 최고 평균속도.
-      lossPct: best && best > 0 && r.meanRatioPerSec != null
-        ? r1(((best - r.meanRatioPerSec) / best) * 100)
-        : null,
-    }));
+    //  각 렙은 "처음 유효 스케일로 표시된 시점"의 값으로 동결한다. 이후
+    //  cmPerRatio(키/기준물 보정)나 best(뒤 렙 갱신)가 바뀌어도 이미 나온
+    //  카드 값은 불변 → #1·#2 가 매 프레임 흔들리지 않는다(측정 정직성).
+    const repList = this.repsRaw.slice(-10).map(r =>
+      this._freezeRepCard(r, cmPerRatio, best),
+    );
     return {
       reps,
       repList,
