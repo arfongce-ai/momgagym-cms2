@@ -3,7 +3,7 @@
 // so recording screens can use them without changing menus.
 import { useRef, useState, useEffect, useCallback } from 'react';
 import { nextPhase, firstPhase, phaseDurationSec, totalDurationSec } from '../core/intervalTimer';
-import { boostedGain } from '../core/audioCue';
+import { boostedGain, whistle, primeAudio } from '../core/audioCue';
 import SoundVolumeControl from './SoundVolumeControl';
 
 export function Stopwatch({ compact = false }) {
@@ -362,6 +362,7 @@ export function IntervalTimer({ compact = false }) {
     }
     if (left <= 0) {
       lastTickRef.current = -1;
+      whistle(); // [7·8] 인터벌 구간 종료(초 종료) 순간 크게 휘슬
       advance();
       // advance 가 done 이면 running=false 되어 더 진행 안 함
       if (planRef.current.phase !== 'done') rafRef.current = requestAnimationFrame(tick);
@@ -377,6 +378,7 @@ export function IntervalTimer({ compact = false }) {
       setRunning(false);
       return;
     }
+    primeAudio(); // 사용자 탭 시점에 오디오 컨텍스트 워밍업 → 이후 휘슬이 막히지 않음
     if (phase === 'idle' || phase === 'done') {
       // 새로 시작: 준비 구간(없으면 바로 work)
       const f = firstPhase({ prepSec });

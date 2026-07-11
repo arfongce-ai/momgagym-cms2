@@ -3,7 +3,7 @@
 // ratio at full quality (high resolution + bitrate).
 import { useRef, useState, useEffect, useCallback } from 'react';
 import { buildRecordingFileName } from '../../utils/recordingName';
-import { boostedGain } from '../core/audioCue';
+import { boostedGain, whistle, primeAudio } from '../core/audioCue';
 import { openMainCameraStream, refocusCameraStream } from '../core/cameraSelect';
 import { formatStopwatch } from '../core/recordingOverlay';
 import { nextPhase, firstPhase, phaseDurationSec } from '../core/intervalTimer';
@@ -1058,6 +1058,7 @@ function InlineInterval({ stateRef, onChange }) {
     }
     if (left <= 0) {
       lastTickRef.current = -1;
+      whistle(); // [7·8] 인터벌 구간 종료(초 종료) 순간 크게 휘슬
       advance();
       onChange();
       if (s.phase !== 'done') rafRef.current = requestAnimationFrame(tick);
@@ -1091,6 +1092,7 @@ function InlineInterval({ stateRef, onChange }) {
       onChange();
       return;
     }
+    primeAudio(); // 사용자 탭 시점에 오디오 컨텍스트 워밍업 → 휘슬이 막히지 않음
     if (s.phase === 'idle' || s.phase === 'done') {
       const f = firstPhase(s);
       enterPhase(f.phase, f.round);

@@ -106,6 +106,47 @@ export function beepRep() {
 }
 
 /**
+ * 인터벌 구간 종료용 '휘슬' — 심판 호루라기처럼 크고 또렷하게.
+ *  · 코치가 멀리서도 듣도록 다른 큐보다 확연히 크게(높은 기준 게인 + 부스트/볼륨은
+ *    boostedGain 이 클리핑 상한 1.0 으로 안전 관리).
+ *  · 실제 호루라기의 두 가지 특징을 합성으로 흉내낸다:
+ *     (1) 2.6~2.9kHz 고음역, (2) 빠른 트릴(주파수 미세 진동)로 '삐——릭' 질감.
+ *  · 두 번 짧게 끊어 불어(뚜-뚜) 신호가 분명하게 들리도록 한다.
+ *  · 미지원/차단 시 조용히 무시(측정·타이머는 계속 진행).
+ */
+export function whistle() {
+  const ctx = getCtx();
+  if (!ctx) return;
+  const g = boostedGain(0.55); // 다른 큐(0.14~0.2)보다 크게
+  if (g <= 0.001) return;
+  const blast = (startOffset, dur) => {
+    try {
+      const now = ctx.currentTime + startOffset;
+      const osc = ctx.createOscillator();
+      const amp = ctx.createGain();
+      const trill = ctx.createOscillator(); // 주파수를 흔들어 호루라기 트릴 생성
+      const trillAmp = ctx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(2650, now);
+      osc.frequency.linearRampToValueAtTime(2850, now + dur);
+      trill.type = 'sine';
+      trill.frequency.setValueAtTime(28, now); // 28Hz 트릴
+      trillAmp.gain.setValueAtTime(70, now);   // ±70Hz 편이
+      trill.connect(trillAmp).connect(osc.frequency);
+      amp.gain.setValueAtTime(0.0001, now);
+      amp.gain.exponentialRampToValueAtTime(g, now + 0.02);
+      amp.gain.setValueAtTime(g, now + dur - 0.04);
+      amp.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+      osc.connect(amp).connect(ctx.destination);
+      trill.start(now); osc.start(now);
+      trill.stop(now + dur + 0.02); osc.stop(now + dur + 0.02);
+    } catch (e) { /* noop */ }
+  };
+  blast(0, 0.22);     // 뚜
+  blast(0.30, 0.34);  // 뚜——(길게)
+}
+
+/**
  * 사용자 제스처(버튼 탭) 시점에 먼저 호출해 두면 이후 setTimeout 안의
  * 사운드도 막히지 않는다(컨텍스트 워밍업).
  */
