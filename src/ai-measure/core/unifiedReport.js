@@ -266,7 +266,7 @@ const MEASURED_AT_PATHS = [
   'summary.measuredAt',
 ];
 
-const METRIC_DEFINITIONS = Object.freeze({
+export const METRIC_DEFINITIONS = Object.freeze({
   jump: [
     { key: 'jumpHeight', paths: ['heightCm'], unit: 'cm', range: { good: [40, 100], warn: [30, 100] } },
     { key: 'peakPower', paths: ['peakPower'], unit: 'W' },

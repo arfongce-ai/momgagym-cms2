@@ -33,9 +33,8 @@ export function UnifiedReportPage({ id, children, className = '', minHeight = 11
 // UnifiedReportPage 안에 고정 삽입되므로 새 측정 유형을 추가해도 이 프리미티브만 쓰면 자동 적용된다.
 export function UnifiedReportFooter() {
   return (
-    <footer className="mt-8 flex flex-col items-center gap-2 border-t border-slate-800 pt-4">
+    <footer className="mt-8 flex items-center justify-center border-t border-slate-800 pt-4">
       <img src={MOMGAGYM_LOGO_DATA_URI} alt="몸가짐 운동센터" className="h-11 w-auto opacity-90" />
-      <p className="text-[10px] font-bold tracking-wide text-slate-600">MOMGAGYM FITNESS CENTER</p>
     </footer>
   );
 }

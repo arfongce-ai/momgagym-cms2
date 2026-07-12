@@ -5,7 +5,7 @@ import { todayYMD } from '../utils/dates';
 import { useAuth } from '../contexts/AuthContext';
 import { scopeMembersToTrainer, sortByName } from '../utils/memberList';
 import { store, aiStore } from '../demoData';
-import { buildFullReport, buildAnalysisTrend, buildPostureTrend, groupResultsByDate } from '../services/reportService';
+import { buildFullReport, buildAnalysisTrend, buildPostureTrend, groupResultsByDate, buildInterpretationGuide, GUIDE_STATUS_LEGEND } from '../services/reportService';
 import { buildSummaryData, scoreToStatus, defaultRecommendation } from '../ai-measure/core/unifiedReport';
 import { buildComprehensiveReport } from '../ai-measure/core/comprehensiveReport';
 import { loadAllMeasureRecords } from '../services/comprehensiveReportService';
@@ -363,6 +363,73 @@ function ComprehensiveReportSection({ member, dataReady }) {
         </>
       )}
     </section>
+  );
+}
+
+const GUIDE_STATUS_TONE = { normal: 'text-emerald-400', caution: 'text-amber-400', risk: 'text-red-400' };
+
+// 측정별 분석·평가 판독 설명서 — 회원에게 설명하고 트레이닝에 적용할 수 있도록
+// 유형별로 접었다 펴는 아코디언. 실제 측정한 유형만 보여준다(측정 정직성 — 안 한 측정은 나열하지 않음).
+function InterpretationGuideSection({ guide }) {
+  const [openType, setOpenType] = useState(null);
+  if (!guide.length) return null;
+
+  return (
+    <div>
+      <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">측정별 분석·평가 판독 설명서</p>
+
+      <div className="mb-2 flex flex-wrap gap-x-3 gap-y-1 rounded-xl border border-slate-800 bg-slate-900 px-3 py-2.5">
+        {GUIDE_STATUS_LEGEND.map((s) => (
+          <p key={s.key} className="text-[11px]">
+            <span className={`font-black ${GUIDE_STATUS_TONE[s.key] || 'text-slate-400'}`}>{s.label}</span>
+            <span className="text-slate-500"> · {s.meaning}</span>
+          </p>
+        ))}
+      </div>
+
+      <div className="space-y-2">
+        {guide.map((g) => {
+          const open = openType === g.type;
+          return (
+            <div key={g.type} className="overflow-hidden rounded-xl border border-slate-800 bg-slate-900">
+              <button
+                type="button"
+                onClick={() => setOpenType(open ? null : g.type)}
+                className="flex w-full items-center justify-between px-4 py-3 text-left"
+              >
+                <p className="text-sm font-bold text-slate-200">{g.typeLabel}</p>
+                <span className={`text-xs text-slate-500 transition-transform ${open ? 'rotate-180' : ''}`}>▼</span>
+              </button>
+              {open && (
+                <div className="space-y-3 border-t border-slate-800 p-4">
+                  <p className="text-xs leading-relaxed text-slate-300">{g.overview}</p>
+
+                  {g.metrics.length > 0 && (
+                    <div className="space-y-1.5">
+                      <p className="text-[11px] font-bold text-slate-500">핵심 지표</p>
+                      {g.metrics.map((m) => (
+                        <div key={m.key} className="rounded-lg bg-slate-800/60 px-3 py-2">
+                          <p className="text-xs font-bold text-slate-200">{m.label}</p>
+                          {m.description && <p className="mt-0.5 text-[11px] leading-relaxed text-slate-400">{m.description}</p>}
+                          {m.hint && <p className="mt-0.5 text-[10px] text-slate-500">{m.hint}</p>}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {g.trainingTip && (
+                    <div className="rounded-lg border border-amber-500/25 bg-amber-500/10 px-3 py-2.5">
+                      <p className="mb-0.5 text-[11px] font-bold text-amber-300">🏋️ 트레이닝 적용</p>
+                      <p className="text-[11px] leading-relaxed text-amber-100/90">{g.trainingTip}</p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
@@ -790,6 +857,13 @@ export default function Report() {
     [dailyGroups, selectedDate]
   );
 
+  // 측정별 분석·평가 판독 설명서 — 이 회원이 실제로 측정한 유형만 대상으로 한다.
+  const interpretationGuide = useMemo(() => {
+    const types = new Set(unifiedResults.map(r => r.reportType).filter(Boolean));
+    if (report?.body?.summary?.length > 0) types.add('body');
+    return buildInterpretationGuide([...types]);
+  }, [unifiedResults, report]);
+
   const openUnifiedResult = (item) => {
     if (item.source === 'posture') {
       setPostureViewerIdx(item.index);
@@ -1097,16 +1171,7 @@ export default function Report() {
           {/* 일간·주간·월간 종합 리포트 */}
           <ComprehensiveReportSection member={member} dataReady={dataReady} />
 
-          {report.notes.length > 0 && (
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
-              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">분석 설명</p>
-              <ul className="space-y-1.5">
-                {report.notes.map((n, i) => (
-                  <li key={i} className="text-xs text-slate-300 leading-relaxed">· {n}</li>
-                ))}
-              </ul>
-            </div>
-          )}
+          <InterpretationGuideSection guide={interpretationGuide} />
 
           {msg && <p className="text-center text-xs text-slate-400">{msg}</p>}
         </>

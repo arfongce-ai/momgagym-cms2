@@ -7,6 +7,69 @@
 //  - 회차별 누적(시계열) 데이터 생성
 //  - 키/몸무게/혈압 포함
 
+import { METRIC_DEFINITIONS, REPORT_TERM_MAP, defaultRecommendation } from '../ai-measure/core/unifiedReport';
+
+// 측정 유형별 "판독 설명서" 콘텐츠. 지표 용어/설명은 REPORT_TERM_MAP(단일 소스)을 그대로
+// 재사용하고, 여기서는 유형 단위의 개요·회원 설명 멘트만 추가로 정의한다(중복 정의 금지).
+const GUIDE_TYPE_LABEL = {
+  posture: '자세·체형', rom: 'ROM · 관절 가동범위', jump: '점프·반응 탄성', gait: '보행·러닝',
+  one_rm: '최대 근력(1RM)', vbt: '운동 속도(VBT)', body: '신체정보',
+};
+
+const GUIDE_OVERVIEW = {
+  posture: '카메라로 서 있는 자세를 분석해 어깨·골반이 한쪽으로 기울지 않았는지, 목이 앞으로 나오진 않았는지 확인하는 측정입니다. 통증이 생기기 전에 체형 불균형을 미리 찾는 것이 목적입니다.',
+  rom: '관절을 얼마나 크게, 좌우 얼마나 비슷하게 움직일 수 있는지 재는 측정입니다. 뻣뻣한 관절이나 좌우 차이가 부상으로 이어지기 전에 확인합니다.',
+  jump: '점프 높이와 착지 자세로 하체 순발력과 착지 안정성을 보는 측정입니다. 순발력 수준과 착지 시 부상 위험을 함께 확인합니다.',
+  gait: '걷거나 뛸 때 걸음이 얼마나 일정하고 좌우 다리가 비슷하게 움직이는지 보는 측정입니다. 걸음 습관과 하체 좌우 불균형을 확인합니다.',
+  one_rm: '반복 횟수와 속도로 한 번에 들 수 있는 최대 무게를 추정한 값입니다. 트레이닝 중량과 강도(%1RM)를 정하는 기준으로 씁니다.',
+  vbt: '바벨이 움직이는 속도로 그날의 컨디션과 세트 중 피로도를 보는 측정입니다. 같은 무게라도 속도가 떨어지면 세트를 조절하라는 신호입니다.',
+  body: '키·몸무게·혈압처럼 가장 기본적인 신체 상태입니다. 다른 모든 측정 결과를 해석하는 기준이 됩니다.',
+};
+
+// 등급(우수/적정/부족)이 회원에게 어떤 의미인지 — 아코디언 상단에 공통 1회 표시.
+export const GUIDE_STATUS_LEGEND = [
+  { key: 'normal', label: '우수', meaning: '지금 패턴을 유지해도 좋은 상태' },
+  { key: 'caution', label: '적정', meaning: '크게 문제는 없지만 관찰이 필요한 상태' },
+  { key: 'risk', label: '부족', meaning: '교정이나 보완 운동이 필요한 상태' },
+];
+
+function rangeHint(range, unit) {
+  const good = range?.good;
+  if (!Array.isArray(good) || good.length !== 2) return null;
+  const [lo, hi] = good;
+  if (lo == null || hi == null) return null;
+  if (hi >= 999) return `정상 범위 ${lo}${unit} 이상`;
+  return `정상 범위 ${lo}~${hi}${unit}`;
+}
+
+/**
+ * 측정 유형별 "판독 설명서" — 회원에게 설명하고 트레이닝에 적용할 수 있도록
+ * 유형 개요 + 핵심 지표 용어(재사용) + 부족할 때 무엇을 할지를 한 곳에 묶는다.
+ * @param {string[]} presentTypes 이 회원이 실제로 측정한 reportType 목록(예: ['posture','jump','body'])
+ * @returns {Array} [{type, typeLabel, overview, metrics:[{key,label,description,hint}], trainingTip}]
+ */
+export function buildInterpretationGuide(presentTypes = []) {
+  const seen = new Set();
+  return presentTypes
+    .filter((type) => GUIDE_OVERVIEW[type] && !seen.has(type) && seen.add(type))
+    .map((type) => ({
+      type,
+      typeLabel: GUIDE_TYPE_LABEL[type] || type,
+      overview: GUIDE_OVERVIEW[type],
+      metrics: (METRIC_DEFINITIONS[type] || []).map((m) => {
+        const term = REPORT_TERM_MAP[m.key] || {};
+        return {
+          key: m.key,
+          label: term.label || m.key,
+          description: term.description || '',
+          hint: rangeHint(m.range, m.unit),
+        };
+      }),
+      trainingTip: type === 'body' ? null : defaultRecommendation(type, 'risk'),
+    }));
+}
+
+
 /** 숫자로 유효한 값만 추출 (null/undefined/'' 제외) */
 function num(v) {
   if (v == null || v === '') return null;
