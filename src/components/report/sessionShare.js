@@ -21,7 +21,7 @@ export function isLiftingShapedSession(data = {}) {
 // A4 캡처 가능 여부: 전용 리포트 화면이 있거나, 세션이라도 데이터가 있으면 가능.
 export function canCaptureUnifiedResult(item) {
   if (!item) return false;
-  if (item.source === 'saved-report' || item.source === 'posture' || item.source === 'rom') return true;
+  if (item.source === 'saved-report' || item.source === 'posture' || item.source === 'rom' || item.source === 'lifting') return true;
   if (item.source !== 'session') return false;
   const data = item.report || item.session?.data;
   return Boolean(data && typeof data === 'object');

@@ -6,10 +6,11 @@ import {
 } from '../components/report/sessionShare';
 
 describe('canCaptureUnifiedResult (A4 캡처 가능 판정)', () => {
-  it('전용 리포트 소스(saved-report/posture/rom)는 항상 캡처 가능', () => {
+  it('전용 리포트 소스(saved-report/posture/rom/lifting)는 항상 캡처 가능', () => {
     expect(canCaptureUnifiedResult({ source: 'saved-report' })).toBe(true);
     expect(canCaptureUnifiedResult({ source: 'posture' })).toBe(true);
     expect(canCaptureUnifiedResult({ source: 'rom' })).toBe(true);
+    expect(canCaptureUnifiedResult({ source: 'lifting' })).toBe(true);
   });
 
   it('세션 항목도 데이터가 있으면 캡처 가능 → 모든 측정이 A4 이미지로 공유된다', () => {
@@ -85,5 +86,35 @@ describe('reportTypeFromSession (통합 결과 카드 타입 분류)', () => {
     expect(reportTypeFromSession({ menu: 'rsi' })).toBe('jump');
     expect(reportTypeFromSession({ menu: 'body' })).toBe('body');
     expect(reportTypeFromSession({})).toBe('general');
+  });
+});
+
+describe('buildUnifiedResults (바벨 리프팅 전용 저장소 없이 세션을 리포트로 편입)', () => {
+  const member = { id: 'm1', name: '테스트회원' };
+
+  it('savedLiftingSessions 의 세션을 source=lifting 항목으로 만든다', async () => {
+    const { buildUnifiedResults } = await import('../pages/Report.jsx');
+    const session = {
+      id: 's1', menu: 'lifting', recordedAt: '2026-07-01', recordedAtFull: '2026-07-01T09:00:00.000Z',
+      data: { mode: 'onerm', metrics: { oneRM: 120 } },
+    };
+    const items = buildUnifiedResults({
+      member, savedReports: [], savedPostureReports: [], savedRomReports: [],
+      savedLiftingSessions: [session], sessions: [session],
+    });
+    const liftingItem = items.find(i => i.source === 'lifting');
+    expect(liftingItem).toBeTruthy();
+    expect(liftingItem.reportType).toBe('one_rm');
+    expect(liftingItem.index).toBe(0);
+  });
+
+  it('lifting 세션은 일반 세션 폴백 목록에 중복으로 들어가지 않는다', async () => {
+    const { buildUnifiedResults } = await import('../pages/Report.jsx');
+    const session = { id: 's1', menu: 'lifting', recordedAt: '2026-07-01', data: { mode: 'vbt' } };
+    const items = buildUnifiedResults({
+      member, savedReports: [], savedPostureReports: [], savedRomReports: [],
+      savedLiftingSessions: [session], sessions: [session],
+    });
+    expect(items.filter(i => i.source === 'lifting' || i.source === 'session').length).toBe(1);
   });
 });

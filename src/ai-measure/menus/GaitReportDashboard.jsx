@@ -128,11 +128,8 @@ export default function GaitReportDashboard({ report, onComment, onClose, videoB
   };
 
   return (
-    <div className="min-h-full w-full bg-slate-950 flex flex-col items-center justify-start p-4 font-sans">
-      <UnifiedReportPage
-        id="gait-report-sheet"
-        className="overflow-hidden flex flex-col"
-      >
+    <div className="min-h-full w-full bg-slate-950 p-4 text-slate-100">
+      <UnifiedReportPage id="gait-report-sheet" className="mx-auto">
         {/* ── 헤더 ── */}
         <UnifiedReportHeader
           eyebrow="GAIT & RUNNING REPORT"
@@ -146,7 +143,7 @@ export default function GaitReportDashboard({ report, onComment, onClose, videoB
         />
 
         {/* ── 본문: 4분할 ── */}
-        <div className="flex-1 grid grid-rows-[auto_1fr_auto] gap-3 p-4 min-h-0">
+        <div className="grid gap-3">
           <ProblemFocusPanel focus={problemFocus} context={report?.cross_measure_context} />
 
           {/* ① 상단 요약 */}
@@ -165,7 +162,7 @@ export default function GaitReportDashboard({ report, onComment, onClose, videoB
           </section>
 
           {/* ②③ 중단: 좌 Kinematic / 우 Symmetry */}
-          <section className="grid grid-cols-2 gap-3 min-h-0">
+          <section className="grid h-[280px] grid-cols-2 gap-3">
             {/* ② Kinematic 레이더 */}
             <Panel title="관절 각도 비교" subtitle="좌 · 우 (Kinematic)">
               <ResponsiveContainer width="100%" height="100%">
@@ -206,7 +203,7 @@ export default function GaitReportDashboard({ report, onComment, onClose, videoB
           </section>
 
           {/* ④ 하단: Spatial + 코멘트 */}
-          <section className="grid grid-cols-[1fr_1.4fr] gap-3">
+          <section className="grid h-[180px] grid-cols-[1fr_1.4fr] gap-3">
             <Panel title="보폭 비율" subtitle="Spatial">
               <div className="flex flex-col items-center justify-center h-full py-2">
                 <div className="text-4xl font-black"
@@ -242,12 +239,6 @@ export default function GaitReportDashboard({ report, onComment, onClose, videoB
             </Panel>
           </section>
         </div>
-
-        {/* ── 푸터 ── */}
-        <footer className="px-6 py-2 border-t border-slate-700/60 flex items-center justify-between text-[10px] text-slate-500">
-          <span>몸가짐 CMS · AI 측정 허브</span>
-          <span>색상: <span className="text-emerald-400">정상</span> · <span className="text-amber-400">주의</span> · <span className="text-red-400">이상</span></span>
-        </footer>
       </UnifiedReportPage>
 
       {/* 결과 리포트 화면 내 저장 액션 (캡처 노드 #gait-report-sheet 바깥) */}

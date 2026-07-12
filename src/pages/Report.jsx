@@ -21,7 +21,7 @@ const RomReport = lazy(() => import('../ai-measure/menus/RomReport'));
 const LiftingReportDashboard = lazy(() => import('../ai-measure/menus/LiftingReportDashboard'));
 
 const COLORS = { weight:'#f59e0b', systolic:'#ef4444', diastolic:'#3b82f6', height:'#22d3ee' };
-const DETAIL_SESSION_MENUS = new Set(['jump', 'gait', 'posture', 'rom']);
+const DETAIL_SESSION_MENUS = new Set(['jump', 'gait', 'posture', 'rom', 'lifting']);
 
 const REPORT_TYPE_META = {
   posture: { title: '자세·체형', badge: 'POSTURE', accent: 'text-emerald-300', bg: 'bg-emerald-500/15', border: 'border-emerald-500/25' },
@@ -433,7 +433,7 @@ function InterpretationGuideSection({ guide }) {
   );
 }
 
-function buildUnifiedResults({ member, savedReports, savedPostureReports, savedRomReports, sessions }) {
+export function buildUnifiedResults({ member, savedReports, savedPostureReports, savedRomReports, savedLiftingSessions, sessions }) {
   if (!member) return [];
   const items = [];
 
@@ -446,6 +446,24 @@ function buildUnifiedResults({ member, savedReports, savedPostureReports, savedR
   savedReports.forEach((report, index) => {
     const reportType = report?.kind === 'jump' || report?.jumpType || report?.heightCm != null ? 'jump' : 'gait';
     items.push(makeUnifiedResult({ report, reportType, source: 'saved-report', index, member }));
+  });
+  // 바벨 리프팅: 전용 컬렉션이 없어 세션의 data를 그대로 리포트로 쓴다
+  // (BarbellLiftingHub가 측정 직후 같은 방식으로 세션 data를 펼쳐 리포트를 만든다).
+  (savedLiftingSessions || []).forEach((session, index) => {
+    const reportType = reportTypeFromSession(session);
+    items.push(makeUnifiedResult({
+      report: {
+        ...(session.data || {}),
+        kind: reportType,
+        member,
+        measuredAt: session.recordedAtFull || session.recordedAt,
+      },
+      reportType,
+      source: 'lifting',
+      index,
+      member,
+      session,
+    }));
   });
 
   (sessions || [])
@@ -486,7 +504,7 @@ function nextFrame() {
   });
 }
 
-async function waitForShareCapture(ref, timeoutMs = 2600) {
+async function waitForShareCapture(ref, timeoutMs = 4000) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     await nextFrame();
@@ -498,6 +516,30 @@ async function waitForShareCapture(ref, timeoutMs = 2600) {
     }
   }
   return ref.current?.querySelector('[data-share-report-ready="true"]') || null;
+}
+
+// 캡처(숨은 노드 렌더 → html2canvas) 전에 필요한 리포트 컴포넌트를 미리 import 해둔다.
+// 리포트 5종은 모두 lazy 로드라, 이 회원의 이 리포트를 화면에서 한 번도 안 열어봤으면
+// 캡처 시점에 처음 청크를 내려받게 되어 Suspense fallback(빈 A4 박스)만 찍힐 수 있다.
+async function preloadReportChunk(item) {
+  const report = item?.report || {};
+  try {
+    if (item?.source === 'saved-report') {
+      await (report.kind === 'jump'
+        ? import('../ai-measure/menus/JumpReportDashboard')
+        : import('../ai-measure/menus/GaitReportDashboard'));
+    } else if (item?.source === 'posture') {
+      await import('../ai-measure/menus/PostureReport');
+    } else if (item?.source === 'rom') {
+      await import('../ai-measure/menus/RomReport');
+    } else if (item?.source === 'lifting') {
+      await import('../ai-measure/menus/LiftingReportDashboard');
+    } else if (item?.source === 'session' && isLiftingShapedSession(report)) {
+      await import('../ai-measure/menus/LiftingReportDashboard');
+    }
+  } catch (e) {
+    console.warn('[Report] 리포트 청크 프리로드 실패(캡처는 계속 시도):', e?.message);
+  }
 }
 
 async function waitForImages(root, timeoutMs = 1200) {
@@ -610,6 +652,14 @@ function ShareCaptureReport({ item, member }) {
     return (
       <div data-share-report-ready="true" className="w-full bg-slate-950">
         <RomReport report={{ ...report, member: report.member || reportMember }} />
+      </div>
+    );
+  }
+
+  if (item.source === 'lifting') {
+    return (
+      <div data-share-report-ready="true" className="w-full bg-slate-950">
+        <LiftingReportDashboard report={report} member={reportMember} />
       </div>
     );
   }
@@ -792,8 +842,18 @@ export default function Report() {
     return [...(aiStore.getGaitReports(member.id) || [])]
       .sort((a, b) => String(b.createdAt || b.measuredAt).localeCompare(String(a.createdAt || a.measuredAt)));
   }, [member, dataReady]);
+
+  // 바벨 리프팅은 전용 저장 컬렉션이 없어(세션에만 기록) 세션에서 직접 골라 쓴다.
+  const savedLiftingSessions = useMemo(() => {
+    if (!member) return [];
+    return (aiStore.getSessions(member.id) || [])
+      .filter((s) => s.menu === 'lifting')
+      .sort((a, b) => String(b.recordedAtFull || b.recordedAt).localeCompare(String(a.recordedAtFull || a.recordedAt)));
+  }, [member, dataReady]);
+
   const [viewerIdx, setViewerIdx] = useState(null); // 열람 중인 리포트 인덱스
   const [postureViewerIdx, setPostureViewerIdx] = useState(null); // 자세 리포트 열람 인덱스
+  const [liftingViewerIdx, setLiftingViewerIdx] = useState(null); // 바벨 리프팅 리포트 열람 인덱스
   const [romViewerIdx, setRomViewerIdx] = useState(null); // ROM 리포트 열람 인덱스
   const [expandedMenu, setExpandedMenu] = useState(null); // 펼친 측정 메뉴
 
@@ -820,9 +880,10 @@ export default function Report() {
       savedReports,
       savedPostureReports,
       savedRomReports,
+      savedLiftingSessions,
       sessions: aiStore.getSessions(member.id) || [],
     });
-  }, [member, dataReady, savedReports, savedPostureReports, savedRomReports]);
+  }, [member, dataReady, savedReports, savedPostureReports, savedRomReports, savedLiftingSessions]);
 
   // 신체정보 원본 기록 (측정 캘린더 그룹핑 + 상단 "최근 측정" 표시에 함께 사용)
   const bodyRecords = useMemo(() => {
@@ -873,6 +934,10 @@ export default function Report() {
       setRomViewerIdx(item.index);
       return;
     }
+    if (item.source === 'lifting') {
+      setLiftingViewerIdx(item.index);
+      return;
+    }
     if (item.source === 'saved-report') {
       setViewerIdx(item.index);
       return;
@@ -886,6 +951,7 @@ export default function Report() {
 
   const captureUnifiedResultFiles = async (item) => {
     if (!canCaptureUnifiedResult(item)) return [];
+    await preloadReportChunk(item);
     setShareCaptureItem(item);
     try {
       await nextFrame();
@@ -1137,10 +1203,15 @@ export default function Report() {
                                   ? savedPostureReports.findIndex(sr => sr.measuredAt && sr.measuredAt === measuredAt) : -1;
                                 const romIdx = m.menu === 'rom' && measuredAt
                                   ? savedRomReports.findIndex(sr => sr.measuredAt && sr.measuredAt === measuredAt) : -1;
-                                const openable = gIdx >= 0 || pIdx >= 0 || romIdx >= 0;
+                                // 바벨 리프팅은 전용 컬렉션이 없어 세션 자체를 재사용하므로 id로 직접 매칭한다
+                                // (measuredAt 문자열 비교보다 정확 — 같은 세션 목록에서 그대로 찾는 것이므로).
+                                const liftIdx = m.menu === 'lifting' && r.s?.id
+                                  ? savedLiftingSessions.findIndex(sr => sr.id === r.s.id) : -1;
+                                const openable = gIdx >= 0 || pIdx >= 0 || romIdx >= 0 || liftIdx >= 0;
                                 const openDetail = () => {
                                   if (gIdx >= 0) setViewerIdx(gIdx);
                                   else if (pIdx >= 0) setPostureViewerIdx(pIdx);
+                                  else if (liftIdx >= 0) setLiftingViewerIdx(liftIdx);
                                   else if (romIdx >= 0) setRomViewerIdx(romIdx);
                                 };
                                 return (
@@ -1253,6 +1324,29 @@ export default function Report() {
               heightCm={savedPostureReports[postureViewerIdx]?.heightCm}
               actualAge={savedPostureReports[postureViewerIdx]?.actualAge}
               onClose={() => setPostureViewerIdx(null)}
+            />
+          </Suspense>
+        </div>
+      )}
+      {liftingViewerIdx != null && savedLiftingSessions[liftingViewerIdx] && (
+        <div className="fixed inset-0 z-[90] bg-slate-950 overflow-y-auto" style={{ height: '100dvh' }}>
+          <div className="sticky top-0 z-10 flex items-center justify-between px-4 py-2.5 bg-slate-900/95 backdrop-blur border-b border-slate-800">
+            <button onClick={() => setLiftingViewerIdx(null)} className="text-slate-300 font-bold text-sm">✕ 닫기</button>
+            <span className="text-white text-xs font-bold">{liftingViewerIdx + 1} / {savedLiftingSessions.length}</span>
+            <div className="flex gap-2">
+              <button onClick={() => setLiftingViewerIdx(i => Math.min(savedLiftingSessions.length - 1, i + 1))}
+                disabled={liftingViewerIdx >= savedLiftingSessions.length - 1}
+                className="text-slate-300 text-sm font-bold disabled:opacity-30">◀ 이전</button>
+              <button onClick={() => setLiftingViewerIdx(i => Math.max(0, i - 1))}
+                disabled={liftingViewerIdx <= 0}
+                className="text-slate-300 text-sm font-bold disabled:opacity-30">다음 ▶</button>
+            </div>
+          </div>
+          <Suspense fallback={<div className="p-10 text-center text-slate-400">불러오는 중…</div>}>
+            <LiftingReportDashboard
+              report={savedLiftingSessions[liftingViewerIdx]?.data || {}}
+              member={member}
+              onClose={() => setLiftingViewerIdx(null)}
             />
           </Suspense>
         </div>
