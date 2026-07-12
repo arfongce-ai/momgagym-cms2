@@ -1,12 +1,11 @@
 // pages/Report.jsx
-// 측정 리포트 페이지: 회원 선택 → 실측 데이터 그래프/요약 → JPG 다운로드.
+// 측정 리포트 페이지: 회원 선택 → 실측 데이터 그래프/요약 열람.
 import { useState, useMemo, useEffect, useRef, lazy, Suspense } from 'react';
 import { todayYMD } from '../utils/dates';
 import { useAuth } from '../contexts/AuthContext';
 import { scopeMembersToTrainer, sortByName } from '../utils/memberList';
 import { store, aiStore } from '../demoData';
 import { buildFullReport, buildAnalysisTrend, buildPostureTrend } from '../services/reportService';
-import { buildReportSvg, downloadSvgAsJpg } from '../components/report/reportImage';
 import { buildSummaryData, scoreToStatus } from '../ai-measure/core/unifiedReport';
 import { captureNodeToJpgFile, shareMeasurementSummaryToKakao } from '../ai-measure/core/reportShare';
 import { canCaptureUnifiedResult, isLiftingShapedSession } from '../components/report/sessionShare';
@@ -427,7 +426,6 @@ export default function Report() {
   // 트레이너 모드: 담당 회원만 / 모든 회원은 가나다 순으로 노출.
   const members = useMemo(() => sortByName(scopeMembersToTrainer(store.getMembers(), user)), [user]);
   const [memberId, setMemberId] = useState('');
-  const [downloading, setDownloading] = useState(false);
   const [msg, setMsg] = useState(null);
   const [reportFilter, setReportFilter] = useState('all');
   const [sharingId, setSharingId] = useState(null);
@@ -609,21 +607,6 @@ export default function Report() {
     } finally {
       setSharingId(null);
       setTimeout(() => setMsg(null), 2600);
-    }
-  };
-
-  const handleDownload = async () => {
-    if (!report) return;
-    setDownloading(true); setMsg(null);
-    try {
-      const svg = buildReportSvg(report);
-      const name = `몸가짐_리포트_${member.name}_${todayYMD()}.jpg`;
-      await downloadSvgAsJpg(svg, name, 2);
-      setMsg('이미지가 다운로드되었습니다.');
-    } catch (e) {
-      setMsg('다운로드 실패: ' + e.message);
-    } finally {
-      setDownloading(false);
     }
   };
 
@@ -956,11 +939,6 @@ export default function Report() {
             </div>
           )}
 
-          {/* JPG 다운로드 */}
-          <button onClick={handleDownload} disabled={downloading}
-            className="btn btn-primary w-full disabled:opacity-50">
-            {downloading ? '이미지 생성 중…' : '📷 리포트 JPG 다운로드'}
-          </button>
           {msg && <p className="text-center text-xs text-slate-400">{msg}</p>}
         </>
       )}
