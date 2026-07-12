@@ -5,7 +5,7 @@ import { todayYMD } from '../utils/dates';
 import { useAuth } from '../contexts/AuthContext';
 import { scopeMembersToTrainer, sortByName } from '../utils/memberList';
 import { store, aiStore } from '../demoData';
-import { buildFullReport, buildAnalysisTrend, buildPostureTrend, groupResultsByDate, buildInterpretationGuide, GUIDE_STATUS_LEGEND } from '../services/reportService';
+import { buildFullReport, buildAnalysisTrend, buildPostureTrend, groupResultsByDate, buildInterpretationGuide, GUIDE_STATUS_LEGEND, menuGroupKey } from '../services/reportService';
 import { buildSummaryData, scoreToStatus, defaultRecommendation } from '../ai-measure/core/unifiedReport';
 import { buildComprehensiveReport } from '../ai-measure/core/comprehensiveReport';
 import { loadAllMeasureRecords } from '../services/comprehensiveReportService';
@@ -680,7 +680,7 @@ function ShareCaptureReport({ item, member }) {
   return null;
 }
 
-function extractSessionMetric(session) {
+export function extractSessionMetric(session) {
   const d = session.data || {};
   switch (session.menu) {
     case 'onerm':   return { value: d.oneRM, unit: 'kg', label: `1RM (${d.liftLabel ?? ''} ${d.weight ?? '-'}kg×${d.reps ?? '-'}회)` };
@@ -700,7 +700,17 @@ function extractSessionMetric(session) {
       }
       return { value: d.heightCm, unit: 'cm', label: `파워점프 · ${d.peakPower ? `${d.peakPower}W` : '파워 미입력'}` };
     }
-    case 'posture': return { value: d.shoulderTilt?.deg, unit: '°', label: `어깨 기울기 · 골반 ${d.hipTilt?.deg ?? '-'}°` };
+    case 'posture': {
+      const shoulder = d.analysis?.frontal?.shoulderHeightDiffMm ?? d.frontal?.shoulderHeightDiffMm;
+      const pelvis = d.analysis?.frontal?.pelvisHeightDiffMm ?? d.frontal?.pelvisHeightDiffMm;
+      return { value: shoulder, unit: 'mm', label: `어깨 높이차 · 골반 ${pelvis ?? '-'}mm` };
+    }
+    case 'rom': {
+      const s = d.summary || d;
+      const angle = s.max_rom ?? s.left_max_rom ?? s.right_max_rom ?? s.max_angle ?? d.maxAngle ?? d.angle;
+      const joint = d.joint || d.basic_info?.joint || '';
+      return { value: angle, unit: '°', label: `가동범위${joint ? ` · ${joint}` : ''}` };
+    }
     case 'gait':    return { value: d.cadence ?? d.metrics?.cadence, unit: 'SPM', label: '케이던스' };
     case 'body':    return { value: d.weight, unit: 'kg', label: `체중${d.systolic ? ` · ${d.systolic}/${d.diastolic}` : ''}` };
     default:        return { value: null, unit: '', label: '측정' };
@@ -863,7 +873,7 @@ export default function Report() {
     const all = aiStore.getSessions(member.id) || [];
     const map = {};
     for (const s of all) {
-      const k = s.menu || 'etc';
+      const k = menuGroupKey(s);
       (map[k] = map[k] || []).push(s);
     }
     // 날짜 오름차순 (회차 비교는 시간순)
@@ -943,7 +953,7 @@ export default function Report() {
       return;
     }
     if (item.session?.menu) {
-      setExpandedMenu(item.session.menu);
+      setExpandedMenu(menuGroupKey(item.session));
       setMsg('아래 AI 측정 이력에서 해당 결과를 확인할 수 있습니다.');
       setTimeout(() => setMsg(null), 1800);
     }
@@ -1139,8 +1149,8 @@ export default function Report() {
               <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">AI 측정 이력 · 탭하여 상세</p>
               <div className="space-y-2">
                 {report.ai.menuSummaries.map((m, i) => {
-                  const open = expandedMenu === m.menu;
-                  const sessions = sessionsByMenu[m.menu] || [];
+                  const open = expandedMenu === m.groupKey;
+                  const sessions = sessionsByMenu[m.groupKey] || [];
                   const rows = sessions.map(s => ({ s, ...extractSessionMetric(s) }));
                   const numeric = rows.filter(r => typeof r.value === 'number' && !Number.isNaN(r.value));
                   const points = numeric.map(r => ({ date: String(r.s.recordedAt || '').slice(0, 10), value: r.value }));
@@ -1149,7 +1159,7 @@ export default function Report() {
                   const delta = (first != null && last != null) ? Math.round((last - first) * 10) / 10 : null;
                   return (
                     <div key={i} className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
-                      <button onClick={() => setExpandedMenu(open ? null : m.menu)}
+                      <button onClick={() => setExpandedMenu(open ? null : m.groupKey)}
                         className="w-full px-3 py-2.5 flex items-center justify-between text-left active:bg-slate-800/50">
                         <div>
                           <p className="text-sm font-bold text-slate-200">{m.title}</p>

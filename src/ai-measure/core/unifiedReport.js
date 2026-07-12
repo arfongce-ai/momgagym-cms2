@@ -294,7 +294,7 @@ export const METRIC_DEFINITIONS = Object.freeze({
     { key: 'verticalOscillation', paths: ['metrics.verticalOscillation', 'verticalOscillation'], unit: '%', range: { good: [4, 9], warn: [0, 13] } },
   ],
   rom: [
-    { key: 'rom', paths: ['summary.max_angle', 'summary.maxAngle', 'maxAngle', 'angle', 'rom'], unit: '도' },
+    { key: 'rom', paths: ['summary.max_rom', 'summary.left_max_rom', 'summary.right_max_rom', 'summary.max_angle', 'maxAngle', 'angle', 'rom'], unit: '도' },
     { key: 'asymmetry', paths: ['summary.symmetry_index_score', 'symmetry_index_score', 'leftRightDiffDeg'], unit: '%', range: { good: [0, 10], warn: [0, 18] } },
   ],
   one_rm: [

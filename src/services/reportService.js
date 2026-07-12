@@ -129,59 +129,97 @@ export function buildBodyReport(bodyRecords = []) {
  * AI 측정 세션 배열 → 메뉴별 그룹 + 각 측정의 핵심 수치 추출.
  * @param {Array} aiSessions
  */
+// jump(파워/RSI), lifting(VBT/1RM·역도)처럼 원본 menu 하나에 서로 다른 종류가
+// 섞여 있는 경우를 회차 목록 조회용으로 세분화하는 키. 원본 menu 자체(등급/차트
+// 판정 등 다른 로직이 참조)는 건드리지 않고, "어떤 회차들을 같이 묶어 보여줄지"만
+// 이 키로 정한다 — 그렇지 않으면 파워점프/RSI 아코디언을 각각 열어도 두 종류가
+// 섞인 같은 목록이 나온다(원본 menu 값이 둘 다 'jump'/'lifting'로 같기 때문).
+export function menuGroupKey(session) {
+  const d = session?.data || {};
+  if (session?.menu === 'jump') {
+    return (d.jumpType === 'reactive' || d.rsi) ? 'jump_rsi' : 'jump_power';
+  }
+  if (session?.menu === 'lifting') {
+    const m = d.metrics || {};
+    return (d.mode === 'onerm' || m.oneRM != null) ? 'lifting_onerm' : 'lifting_vbt';
+  }
+  return session?.menu || 'etc';
+}
+
 export function buildAiReport(aiSessions = []) {
   const sorted = [...aiSessions].sort((a, b) =>
     String(a.recordedAtFull || a.recordedAt).localeCompare(String(b.recordedAtFull || b.recordedAt))
   );
 
-  // 메뉴별 그룹
+  // 메뉴별 그룹 — groupKey 기준(파워점프/RSI, VBT/1RM·역도가 서로 섞이지 않게).
   const byMenu = {};
   for (const s of sorted) {
-    const d = s.data || {};
-    const menu = s.menu === 'jump'
-      ? (d.jumpType === 'reactive' || d.rsi ? 'RSI 반응점프' : '파워점프')
-      : (s.menuTitle || s.menu || '기타');
-    if (!byMenu[menu]) byMenu[menu] = [];
-    byMenu[menu].push(s);
+    const key = menuGroupKey(s);
+    if (!byMenu[key]) byMenu[key] = [];
+    byMenu[key].push(s);
   }
 
-  // 자세 측정(posture)은 어깨/골반/중심선 각도를 시계열로
+  // 자세 측정(posture)은 어깨/골반 높이차를 시계열로 (실제 저장 경로: analysis.frontal.*)
   const postureSeries = {};
   const postureRows = sorted.filter(s => s.menu === 'posture' && s.data);
   if (postureRows.length) {
     postureSeries.shoulder = postureRows
-      .map(s => ({ date: s.recordedAt, value: s.data.shoulderTilt?.deg }))
+      .map(s => ({ date: s.recordedAt, value: s.data.analysis?.frontal?.shoulderHeightDiffMm ?? s.data.frontal?.shoulderHeightDiffMm }))
       .filter(p => p.value != null);
     postureSeries.hip = postureRows
-      .map(s => ({ date: s.recordedAt, value: s.data.hipTilt?.deg }))
+      .map(s => ({ date: s.recordedAt, value: s.data.analysis?.frontal?.pelvisHeightDiffMm ?? s.data.frontal?.pelvisHeightDiffMm }))
       .filter(p => p.value != null);
     postureSeries.centerline = postureRows
-      .map(s => ({ date: s.recordedAt, value: s.data.centerlineDeg != null ? Math.abs(s.data.centerlineDeg) : null }))
+      .map(s => ({ date: s.recordedAt, value: s.data.analysis?.cog?.offsetPct != null ? Math.abs(s.data.analysis.cog.offsetPct) : null }))
       .filter(p => p.value != null);
   }
 
   // 메뉴별 측정 요약 (리포트 표시용) — 각 메뉴의 핵심 수치 1줄
+  const GROUP_TITLE = {
+    jump_rsi: 'RSI 반응점프', jump_power: '파워점프',
+    lifting_onerm: '1RM · 역도', lifting_vbt: 'VBT',
+  };
   const menuSummaries = [];
-  for (const [menuTitle, rows] of Object.entries(byMenu)) {
+  for (const [groupKey, rows] of Object.entries(byMenu)) {
     const latest = rows[rows.length - 1];
     const d = latest.data || {};
+    const title = GROUP_TITLE[groupKey] || latest.menuTitle || latest.menu || '기타';
     let metric = '';
     switch (latest.menu) {
       case 'onerm':   metric = `1RM ${d.oneRM ?? '-'}kg (${d.liftLabel ?? ''} ${d.weight}kg×${d.reps})`; break;
       case 'rsi':     metric = `RSI ${d.rsi ?? '-'} · 높이 ${d.heightCm ?? '-'}cm`; break;
       case 'vbt':     metric = `평균속도 ${d.meanVelocity ?? '-'}m/s (${d.zone ?? ''})`; break;
       case 'jump':
-        metric = d.jumpType === 'reactive' || d.rsi
+        metric = groupKey === 'jump_rsi'
           ? `RSI ${d.rsi?.rsi ?? d.rsi ?? '-'} · 높이 ${d.heightCm ?? '-'}cm`
           : `높이 ${d.heightCm ?? '-'}cm${d.peakPower ? ` · ${d.peakPower}W` : ''}`;
         break;
-      case 'posture': metric = `어깨 ${d.shoulderTilt?.deg ?? '-'}° · 골반 ${d.hipTilt?.deg ?? '-'}°`; break;
+      case 'lifting': {
+        const lm = d.metrics || {};
+        metric = groupKey === 'lifting_onerm'
+          ? `1RM 추정 ${lm.oneRM ?? '-'}kg`
+          : `평균속도 ${lm.meanVelocity ?? '-'}m/s`;
+        break;
+      }
+      case 'posture': {
+        const shoulder = d.analysis?.frontal?.shoulderHeightDiffMm ?? d.frontal?.shoulderHeightDiffMm;
+        const pelvis = d.analysis?.frontal?.pelvisHeightDiffMm ?? d.frontal?.pelvisHeightDiffMm;
+        metric = `어깨 높이차 ${shoulder ?? '-'}mm · 골반 ${pelvis ?? '-'}mm`;
+        break;
+      }
+      case 'rom': {
+        const s = d.summary || d;
+        const angle = s.max_rom ?? s.left_max_rom ?? s.right_max_rom ?? s.max_angle;
+        metric = `가동범위 ${angle ?? '-'}°`;
+        break;
+      }
       case 'body':    metric = `${d.weight ?? '-'}kg${d.systolic ? ` · ${d.systolic}/${d.diastolic}` : ''}`; break;
       default:        metric = `${rows.length}회 측정`;
     }
     menuSummaries.push({
-      menu: latest.menu,
-      title: menuTitle,
+      menu: latest.menu,   // 원본 menu(jump/gait/posture/rom/lifting/...) — 등급·차트 판정 등 기존 로직 호환용
+      groupKey,            // 세분화 키(jump_rsi/jump_power/lifting_onerm/lifting_vbt/...) — 회차 목록 조회용
+      title,
       count: rows.length,
       latestDate: latest.recordedAt,
       metric,
