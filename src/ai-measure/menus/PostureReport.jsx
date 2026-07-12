@@ -137,6 +137,7 @@ export default function PostureReport({
           score={score}
           onClose={onClose}
           compact
+          member={member}
         />
 
         <MetadataStrip metadata={clinical.metadata} viewsMeasured={report?.viewsMeasured} />

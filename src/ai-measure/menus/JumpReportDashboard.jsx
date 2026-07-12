@@ -71,13 +71,14 @@ function normalizeBiomech(report) {
   };
 }
 
-export default function JumpReportDashboard({ report, onClose, onComment }) {
+export default function JumpReportDashboard({ report, onClose, onComment, member }) {
   const [message, setMessage] = useState('');
   const [comment, setComment] = useState(report?.trainerComment || '');
   const biomech = useMemo(() => normalizeBiomech(report), [report]);
   const score = useMemo(() => scoreReport(report, biomech), [report, biomech]);
   const isRsi = isRsiReport(report);
-  const memberName = report?.member?.name || '가상회원';
+  const resolvedMember = member || report?.member || null;
+  const memberName = resolvedMember?.name || '가상회원';
   const date = formatDate(report?.createdAt || report?.measuredAt);
   const reportName = isRsi ? 'RSI 반응 점프 평가표' : '파워 점프 평가표';
   const reportCode = isRsi ? 'RSI REACTIVE JUMP' : 'POWER JUMP';
@@ -111,6 +112,7 @@ export default function JumpReportDashboard({ report, onClose, onComment }) {
             subtitle={`${date} · ${reportName}`}
             score={score}
             invalid={report.valid === false}
+            member={resolvedMember}
           />
 
           <ProblemFocusPanel focus={problemFocus} context={report.cross_measure_context} />
@@ -152,6 +154,7 @@ export default function JumpReportDashboard({ report, onClose, onComment }) {
             score={score}
             invalid={report.valid === false}
             compact
+            member={resolvedMember}
           />
 
           <Section title="② 자세 및 기술" subtitle={viewLabel === '측면' ? '측면뷰 · 활성' : '측면뷰 권장'}>
@@ -219,7 +222,7 @@ function ReportPage({ children }) {
   );
 }
 
-function ReportHeader({ code, type, title, subtitle, score, invalid, compact = false }) {
+function ReportHeader({ code, type, title, subtitle, score, invalid, compact = false, member }) {
   return (
     <UnifiedReportHeader
       eyebrow={code}
@@ -229,6 +232,7 @@ function ReportHeader({ code, type, title, subtitle, score, invalid, compact = f
       score={invalid ? null : score}
       status={invalid ? 'risk' : undefined}
       compact={compact}
+      member={member}
     />
   );
 }

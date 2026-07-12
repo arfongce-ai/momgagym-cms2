@@ -120,6 +120,7 @@ export default function GaitAnalysisHub({ member, onBack, saveToFirebase, onSave
           videoBlob={reportVideoBlob}
           onComment={(onCommentSave && report.id) ? (text) => onCommentSave(report.id, text) : undefined}
           onClose={onBack}
+          member={member}
         />
       </div>
     );

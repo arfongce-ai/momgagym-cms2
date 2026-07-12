@@ -92,13 +92,14 @@ function normalizeMetrics(report) {
   };
 }
 
-export default function GaitReportDashboard({ report, onComment, onClose, videoBlob }) {
+export default function GaitReportDashboard({ report, onComment, onClose, videoBlob, member }) {
   const m = useMemo(() => normalizeMetrics(report), [report]);
   const score = useMemo(() => computeScore(m), [m]);
   const [comment, setComment] = useState(report?.trainerComment || '');
   const [saved, setSaved] = useState(false);
 
-  const memberName = report?.member?.name || '회원';
+  const resolvedMember = member || report?.member || null;
+  const memberName = resolvedMember?.name || '회원';
   const dateStr = (report?.createdAt || report?.measuredAt || '').slice(0, 10) || '—';
   const problemFocus = useMemo(() => report?.problem_focus || buildProblemFocus('gait', report), [report]);
 
@@ -141,6 +142,7 @@ export default function GaitReportDashboard({ report, onComment, onClose, videoB
           score={score}
           onClose={onClose}
           compact
+          member={resolvedMember}
         />
 
         {/* ── 본문: 4분할 ── */}

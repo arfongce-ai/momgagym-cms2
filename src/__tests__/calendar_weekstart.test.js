@@ -41,4 +41,11 @@ describe('캘린더 일요일 시작 고정', () => {
     expect(first).toBe(1);
     // 따라서 1일은 일요일 시작 그리드에서 두 번째 칸(월요일 열)에 위치.
   });
+
+  it('리포트 탭 측정 캘린더도 일요일 시작 고정을 따른다', () => {
+    const src = read('pages/Report.jsx');
+    expect(src).toContain("['일','월','화','수','목','금','토']");
+    expect(src).not.toContain("['월','화','수','목','금','토','일']");
+    expect(src).not.toContain('(day+6)%7');
+  });
 });

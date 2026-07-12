@@ -349,7 +349,7 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
   if (report) {
     return (
       <div className="fixed inset-0 z-[80] bg-slate-950 overflow-y-auto" style={{ height: '100dvh' }}>
-        <LiftingReportDashboard report={report} onClose={onBack} />
+        <LiftingReportDashboard report={report} onClose={onBack} member={member} />
         <div className="sticky bottom-0 z-10 flex justify-center p-3 bg-slate-900/90 backdrop-blur border-t border-slate-800">
           <button onClick={() => { setReport(null); setPending(null); setView('landing'); }} className="rounded-2xl bg-gradient-to-r from-amber-400 to-orange-500 text-slate-950 font-black text-sm px-8 py-2.5 active:scale-95">← 다시 측정</button>
         </div>

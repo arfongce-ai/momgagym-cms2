@@ -164,6 +164,82 @@ export function buildFullReport({ member, bodyRecords, aiSessions }) {
 }
 
 /**
+ * 신체정보 기록 배열 → 가장 최근 1건의 압축 스냅샷.
+ * 다른 리포트(자세·ROM·점프·보행·근력 등)에 "자동 등록"할 때 쓰는 경량 형태.
+ * 값이 없는 항목은 아예 만들지 않는다(측정 정직성 — 0으로 위장하지 않음).
+ * @param {Array} bodyRecords store.getBodyRecords(memberId) 결과
+ * @returns {object|null} { date, height?, weight?, bmi?, systolic?, diastolic? } 또는 기록 없으면 null
+ */
+export function getLatestBodyInfoSnapshot(bodyRecords = []) {
+  if (!bodyRecords.length) return null;
+  const latest = [...bodyRecords]
+    .sort((a, b) => String(a?.recordedAt || '').localeCompare(String(b?.recordedAt || '')))
+    .at(-1);
+  if (!latest) return null;
+
+  const height = num(latest.height);
+  const weight = num(latest.weight);
+  const systolic = num(latest.systolic);
+  const diastolic = num(latest.diastolic);
+  if (height == null && weight == null && systolic == null) return null; // 실측 없으면 null(명세)
+
+  const snapshot = { date: latest.recordedAt || null };
+  if (height != null) snapshot.height = height;
+  if (weight != null) snapshot.weight = weight;
+  if (systolic != null) snapshot.systolic = systolic;
+  if (diastolic != null) snapshot.diastolic = diastolic;
+  if (height != null && weight != null && height > 0) {
+    const m = height / 100;
+    snapshot.bmi = Math.round((weight / (m * m)) * 10) / 10;
+  }
+  return snapshot;
+}
+
+/**
+ * 통합 결과(unifiedResults) + 신체정보 기록 → 날짜별 그룹.
+ * 측정 캘린더에서 "언제 측정했는지"를 보여주고, 날짜 클릭 시 그날의 결과만 추린다.
+ * @param {Array} unifiedResults  Report.jsx buildUnifiedResults() 결과 ({date, summary:{overallScore}} 형태)
+ * @param {Array} bodyRecords     store.getBodyRecords(memberId) 결과
+ * @returns {Array} [{date, items, bodyEntry, count, avgScore}, ...] 최신 날짜순
+ */
+const YMD_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+export function groupResultsByDate(unifiedResults = [], bodyRecords = []) {
+  const map = new Map();
+  const ensure = (ymd) => {
+    if (!map.has(ymd)) map.set(ymd, { date: ymd, items: [], bodyEntry: null });
+    return map.get(ymd);
+  };
+
+  unifiedResults.forEach((item) => {
+    const ymd = String(item?.date || '').slice(0, 10);
+    if (!YMD_RE.test(ymd)) return;
+    ensure(ymd).items.push(item);
+  });
+
+  // 같은 날 여러 신체정보 기록이 있으면 그날의 마지막(=가장 최신) 값을 채택한다.
+  [...bodyRecords]
+    .sort((a, b) => String(a?.recordedAt || '').localeCompare(String(b?.recordedAt || '')))
+    .forEach((rec) => {
+      const ymd = String(rec?.recordedAt || '').slice(0, 10);
+      if (!YMD_RE.test(ymd)) return;
+      ensure(ymd).bodyEntry = rec;
+    });
+
+  return [...map.values()]
+    .map((g) => {
+      const scores = g.items
+        .map((i) => i?.summary?.overallScore)
+        .filter((n) => typeof n === 'number' && Number.isFinite(n));
+      const avgScore = scores.length
+        ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length)
+        : null;
+      return { ...g, count: g.items.length + (g.bodyEntry ? 1 : 0), avgScore };
+    })
+    .sort((a, b) => b.date.localeCompare(a.date));
+}
+
+/**
  * 분석 리포트(gait_reports) → 회차별 추세 시계열.
  * 보행/점프를 kind 로 구분해 각각의 핵심 지표를 날짜순 series 로 만든다.
  * @param {Array} reports aiStore.getGaitReports(mid) 결과

@@ -5,8 +5,10 @@ import { todayYMD } from '../utils/dates';
 import { useAuth } from '../contexts/AuthContext';
 import { scopeMembersToTrainer, sortByName } from '../utils/memberList';
 import { store, aiStore } from '../demoData';
-import { buildFullReport, buildAnalysisTrend, buildPostureTrend } from '../services/reportService';
-import { buildSummaryData, scoreToStatus } from '../ai-measure/core/unifiedReport';
+import { buildFullReport, buildAnalysisTrend, buildPostureTrend, groupResultsByDate } from '../services/reportService';
+import { buildSummaryData, scoreToStatus, defaultRecommendation } from '../ai-measure/core/unifiedReport';
+import { buildComprehensiveReport } from '../ai-measure/core/comprehensiveReport';
+import { loadAllMeasureRecords } from '../services/comprehensiveReportService';
 import { captureNodeToJpgFile, shareMeasurementSummaryToKakao } from '../ai-measure/core/reportShare';
 import { canCaptureUnifiedResult, isLiftingShapedSession } from '../components/report/sessionShare';
 import SessionShareReport from '../components/report/SessionShareReport';
@@ -20,14 +22,6 @@ const LiftingReportDashboard = lazy(() => import('../ai-measure/menus/LiftingRep
 
 const COLORS = { weight:'#f59e0b', systolic:'#ef4444', diastolic:'#3b82f6', height:'#22d3ee' };
 const DETAIL_SESSION_MENUS = new Set(['jump', 'gait', 'posture', 'rom']);
-const REPORT_FILTERS = [
-  { key: 'all', label: '전체' },
-  { key: 'posture', label: '자세' },
-  { key: 'rom', label: 'ROM' },
-  { key: 'jump', label: '점프' },
-  { key: 'gait', label: '보행' },
-  { key: 'strength', label: '근력' },
-];
 
 const REPORT_TYPE_META = {
   posture: { title: '자세·체형', badge: 'POSTURE', accent: 'text-emerald-300', bg: 'bg-emerald-500/15', border: 'border-emerald-500/25' },
@@ -48,18 +42,6 @@ const STATUS_STYLE = {
 
 function isJumpRsi(data) {
   return data?.jumpType === 'reactive' || Boolean(data?.rsi);
-}
-
-function getSavedReportMeta(rep) {
-  if (rep?.kind === 'jump') {
-    return isJumpRsi(rep)
-      ? { title: 'RSI 반응점프', badge: 'RSI', color: 'text-emerald-300', bg: 'bg-emerald-500/15' }
-      : { title: '파워점프', badge: 'POWER', color: 'text-amber-300', bg: 'bg-amber-500/15' };
-  }
-  if (rep?.kind === 'gait') {
-    return { title: '보행·러닝', badge: 'GAIT', color: 'text-sky-300', bg: 'bg-sky-500/15' };
-  }
-  return { title: '측정', badge: 'AI', color: 'text-slate-300', bg: 'bg-slate-700' };
 }
 
 // 세션 1건에서 회차비교용 핵심 수치/라벨을 뽑는다 (메뉴별).
@@ -92,11 +74,6 @@ export function reportTypeFromSession(session) {
   return session?.menu || 'general';
 }
 
-function reportFilterKey(type) {
-  if (type === 'one_rm' || type === 'vbt') return 'strength';
-  return type || 'general';
-}
-
 function getReportTypeMeta(type, report) {
   if (type === 'jump' && isJumpRsi(report)) {
     return { ...REPORT_TYPE_META.jump, title: 'RSI 반응 점프', badge: 'RSI', accent: 'text-emerald-300', bg: 'bg-emerald-500/15', border: 'border-emerald-500/25' };
@@ -121,7 +98,6 @@ function makeUnifiedResult({ report, reportType, source, index, member, session 
     session,
     report: data,
     reportType,
-    filterKey: reportFilterKey(reportType),
     date: summary.measuredAt || getReportDate(data),
     summary: {
       ...summary,
@@ -130,6 +106,264 @@ function makeUnifiedResult({ report, reportType, source, index, member, session 
     },
     meta,
   };
+}
+
+const WEEKDAYS = ['일','월','화','수','목','금','토'];
+
+function scoreTone(score) {
+  if (score == null) return 'text-slate-500';
+  if (score >= 80) return 'text-emerald-400';
+  if (score >= 60) return 'text-amber-400';
+  return 'text-red-400';
+}
+
+// 캘린더는 회원 선택 화면(Schedule.jsx MonthView)과 동일한 일요일 시작 그리드를 쓴다.
+function MeasureCalendar({ pivot, onPivotChange, dailyMap, selectedDate, onSelectDate, todayStr }) {
+  const d = new Date(`${pivot}-01T12:00:00`);
+  const y = d.getFullYear(), mo = d.getMonth();
+  const first = new Date(y, mo, 1).getDay();
+  const days = new Date(y, mo + 1, 0).getDate();
+  const cells = Array.from({ length: Math.ceil((first + days) / 7) * 7 }, (_, i) => {
+    const day = i - first + 1;
+    return (day > 0 && day <= days) ? `${y}-${String(mo + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}` : null;
+  });
+
+  const shiftMonth = (delta) => {
+    const nd = new Date(y, mo + delta, 1);
+    onPivotChange(`${nd.getFullYear()}-${String(nd.getMonth() + 1).padStart(2, '0')}`);
+  };
+
+  return (
+    <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
+      <div className="flex items-center justify-between px-3 py-2.5 border-b border-slate-800">
+        <button type="button" onClick={() => shiftMonth(-1)} className="px-2 py-1 text-sm font-bold text-slate-400 active:text-white">◀</button>
+        <p className="text-sm font-black text-white">{y}년 {mo + 1}월</p>
+        <button type="button" onClick={() => shiftMonth(1)} className="px-2 py-1 text-sm font-bold text-slate-400 active:text-white">▶</button>
+      </div>
+      <div className="grid grid-cols-7 border-b border-slate-800 text-center text-[11px] font-bold text-slate-500">
+        {WEEKDAYS.map(w => <div key={w} className="py-2">{w}</div>)}
+      </div>
+      <div className="grid grid-cols-7">
+        {cells.map((date, i) => {
+          if (!date) return <div key={i} className="min-h-14 border-b border-r border-slate-800/70 opacity-20" />;
+          const g = dailyMap[date];
+          const isToday = date === todayStr;
+          const isSelected = date === selectedDate;
+          return (
+            <button
+              key={date}
+              type="button"
+              onClick={() => onSelectDate(date)}
+              className={`min-h-14 border-b border-r border-slate-800/70 p-1 text-left transition-colors ${
+                isSelected ? 'bg-amber-500/15' : isToday ? 'bg-amber-500/5' : 'hover:bg-slate-800/40'
+              }`}
+            >
+              <p className={`font-mono text-[10px] font-bold ${isToday ? 'text-amber-400' : 'text-slate-400'}`}>
+                {parseInt(date.slice(8, 10), 10)}
+              </p>
+              {g && (
+                g.avgScore != null ? (
+                  <p className={`text-[11px] font-black ${scoreTone(g.avgScore)}`}>{g.avgScore}</p>
+                ) : (
+                  <span className="mt-0.5 inline-block h-1.5 w-1.5 rounded-full bg-slate-500" />
+                )
+              )}
+              {g?.count > 1 && <p className="text-[9px] text-slate-600">{g.count}건</p>}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// AI 측정 이력 아코디언에서 메뉴별(점프/보행/자세) 다지표 회차 추세.
+// 기존에 별도 섹션(점프추세/보행추세/자세체형추세)이 보여주던 지표를 여기로 흡수해 중복을 없앤다.
+function extraMenuTrendCharts(menu, trend, postureTrend) {
+  if (menu === 'jump' && trend?.jump?.count > 0) {
+    return [
+      trend.jump.height.length > 1 && { key: 'height', title: '점프 높이', unit: 'cm', points: trend.jump.height, color: '#f59e0b' },
+      trend.jump.peakPower.length > 1 && { key: 'peakPower', title: '최대 파워', unit: 'W', points: trend.jump.peakPower, color: '#22d3ee' },
+      trend.jump.footSym.length > 1 && { key: 'footSym', title: '착지 대칭', unit: '%', points: trend.jump.footSym, color: '#34d399' },
+      trend.jump.landKnee.length > 1 && { key: 'landKnee', title: '착지 무릎각', unit: '°', points: trend.jump.landKnee, color: '#a78bfa' },
+    ].filter(Boolean);
+  }
+  if (menu === 'gait' && trend?.gait?.count > 0) {
+    return [
+      trend.gait.cadence.length > 1 && { key: 'cadence', title: '케이던스', unit: 'SPM', points: trend.gait.cadence, color: '#f59e0b' },
+      trend.gait.pelvicDrop.length > 1 && { key: 'pelvicDrop', title: '골반 드롭', unit: '%', points: trend.gait.pelvicDrop, color: '#ef4444' },
+      trend.gait.kneeSym.length > 1 && { key: 'kneeSym', title: '무릎 대칭', unit: '%', points: trend.gait.kneeSym, color: '#34d399' },
+    ].filter(Boolean);
+  }
+  if (menu === 'posture' && postureTrend?.count > 0) {
+    return [
+      postureTrend.score.length > 1 && { key: 'score', title: '자세 점수', unit: '점', points: postureTrend.score, color: '#f59e0b' },
+      postureTrend.forwardHead.length > 1 && { key: 'forwardHead', title: '거북목(전방이동)', unit: 'mm', points: postureTrend.forwardHead, color: '#ef4444' },
+      postureTrend.shoulderDiff.length > 1 && { key: 'shoulderDiff', title: '어깨 높이차', unit: 'mm', points: postureTrend.shoulderDiff, color: '#22d3ee' },
+      postureTrend.pelvisDiff.length > 1 && { key: 'pelvisDiff', title: '골반 높이차', unit: 'mm', points: postureTrend.pelvisDiff, color: '#a78bfa' },
+    ].filter(Boolean);
+  }
+  return [];
+}
+
+const COMPREHENSIVE_UNITS = [
+  { key: 'day', label: '일간' },
+  { key: 'week', label: '주간' },
+  { key: 'month', label: '월간' },
+];
+
+// 종합리포트 전용 표시 라벨. 내부 등급 체계(정상/주의/위험)는 그대로 두고
+// 이 섹션에서만 "우수/적정/부족"으로 바꿔 보여준다(측정 성과 맥락에 맞는 표현).
+const PERFORMANCE_LABEL = { normal: '우수', caution: '적정', risk: '부족', unknown: '평가 불가' };
+
+// 일간·주간·월간 종합 리포트 — 리포트 탭 안의 별도 섹션.
+// 이미 선택된 회원을 그대로 쓰고(별도 회원 선택 없음), 기존 comprehensiveReport 엔진을 그대로 재사용한다.
+function ComprehensiveReportSection({ member, dataReady }) {
+  const [unit, setUnit] = useState('week');
+  const [records, setRecords] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [periodKey, setPeriodKey] = useState(null);
+
+  useEffect(() => {
+    if (!member) { setRecords([]); return; }
+    let alive = true;
+    setLoading(true);
+    loadAllMeasureRecords(member.id)
+      .then((list) => { if (alive) setRecords(list); })
+      .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, [member?.id, dataReady]);
+
+  useEffect(() => { setPeriodKey(null); }, [unit, member?.id]);
+
+  const report = useMemo(() => buildComprehensiveReport(records, unit), [records, unit]);
+  const selected = report.periods.find(p => p.key === periodKey) || report.periods[0] || null;
+
+  // 기간별 평균 점수 변화 그래프(8-3) — 과거→최근 순으로 정렬.
+  const trendPoints = useMemo(() => (
+    [...report.periods]
+      .filter(p => p.stats.score)
+      .sort((a, b) => a.key.localeCompare(b.key))
+      .map(p => ({ date: p.key, value: p.stats.score.avg }))
+  ), [report.periods]);
+
+  if (!member) return null;
+
+  return (
+    <section className="rounded-2xl border border-slate-800 bg-slate-950/40 p-3">
+      <div className="mb-3 flex items-end justify-between gap-3 px-1">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-widest text-slate-400">종합 리포트</p>
+          <p className="mt-1 text-sm font-semibold text-slate-500">일간·주간·월간 측정을 모아 종합 평가합니다.</p>
+        </div>
+      </div>
+
+      <div className="mb-3 flex overflow-hidden rounded-xl border border-slate-700">
+        {COMPREHENSIVE_UNITS.map((u) => (
+          <button
+            key={u.key}
+            type="button"
+            onClick={() => setUnit(u.key)}
+            className={`flex-1 px-3 py-2 text-xs font-black transition-colors ${
+              unit === u.key ? 'bg-amber-500 text-slate-950' : 'bg-slate-900 text-slate-400'
+            }`}
+          >
+            {u.label}
+          </button>
+        ))}
+      </div>
+
+      {loading ? (
+        <div className="py-10 text-center text-sm text-slate-500">불러오는 중…</div>
+      ) : report.periods.length === 0 ? (
+        <div className="rounded-2xl border border-slate-800 bg-slate-900 p-5 text-center text-sm font-semibold text-slate-500">
+          집계할 측정 기록이 없습니다.
+        </div>
+      ) : (
+        <>
+          <div className="-mx-1 mb-3 flex gap-2 overflow-x-auto px-1 pb-1">
+            {report.periods.map((p) => {
+              const active = selected?.key === p.key;
+              return (
+                <button
+                  key={p.key}
+                  type="button"
+                  onClick={() => setPeriodKey(p.key)}
+                  className={`shrink-0 rounded-full border px-3 py-1.5 text-xs font-black transition ${
+                    active ? 'border-amber-400 bg-amber-500 text-slate-950' : 'border-slate-700 bg-slate-900 text-slate-400'
+                  }`}
+                >
+                  {p.label} <span className="opacity-70">{p.records.length}건</span>
+                </button>
+              );
+            })}
+          </div>
+
+          {trendPoints.length > 1 && (
+            <div className="mb-3">
+              <TrendChart title={`${COMPREHENSIVE_UNITS.find(u => u.key === unit)?.label} 평균 점수 변화`} unit="점"
+                points={trendPoints} color="#fbbf24" width={320} height={150} />
+            </div>
+          )}
+
+          {selected && (
+            <div className="space-y-2">
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl border border-slate-800 bg-slate-900 p-3">
+                <p className="text-sm font-black text-white">{selected.label}</p>
+                <p className="text-xs text-slate-400">측정 {selected.stats.total}회 · 유형 {selected.stats.typeCount}종</p>
+                {selected.stats.score && (
+                  <p className="text-xs text-slate-400">
+                    기간 평균 <span className="font-mono font-black text-amber-400">{selected.stats.score.avg}</span>/100
+                  </p>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                {selected.stats.typeStats.map((ts) => {
+                  const token = ts.score ? scoreToStatus(ts.score.avg) : null;
+                  const perfLabel = token ? (PERFORMANCE_LABEL[token.key] || token.label) : '평가 불가';
+                  // 8-2: 부족(risk) 등급일 때만 무엇을 확인/훈련할지 코멘트를 보여준다.
+                  const comment = token?.key === 'risk' ? defaultRecommendation(ts.type, 'risk') : null;
+                  return (
+                    <div key={ts.type} className="rounded-xl border border-slate-800 bg-slate-900 p-3">
+                      <div className="mb-1.5 flex items-center justify-between">
+                        <p className="text-sm font-bold text-slate-200">{ts.typeLabel}</p>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[11px] text-slate-500">{ts.count}회</span>
+                          {token && (
+                            <span className={`rounded-full border px-2 py-0.5 text-[10px] font-black ${token.bgClass} ${token.borderClass} ${token.colorClass}`}>
+                              {perfLabel}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      {ts.score ? (
+                        <p className="font-mono text-xs text-slate-400">
+                          평균 {ts.score.avg} · 최저 {ts.score.min} · 최고 {ts.score.max}
+                          {ts.score.count >= 2 && (
+                            <span className={`ml-2 font-bold ${ts.score.delta > 0 ? 'text-emerald-400' : ts.score.delta < 0 ? 'text-red-400' : 'text-slate-500'}`}>
+                              {ts.score.delta > 0 ? '▲' : ts.score.delta < 0 ? '▼' : '–'}{Math.abs(ts.score.delta)}
+                            </span>
+                          )}
+                        </p>
+                      ) : (
+                        <p className="text-xs text-slate-600">점수형 지표 없음</p>
+                      )}
+                      {comment && (
+                        <p className="mt-2 rounded-lg border border-red-500/25 bg-red-500/10 px-2.5 py-2 text-[11px] leading-relaxed text-red-200">
+                          💡 {comment}
+                        </p>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </section>
+  );
 }
 
 function buildUnifiedResults({ member, savedReports, savedPostureReports, savedRomReports, sessions }) {
@@ -286,8 +520,8 @@ function ShareCaptureReport({ item, member }) {
     return (
       <div data-share-report-ready="true" className="w-full bg-slate-950">
         {report.kind === 'jump'
-          ? <JumpReportDashboard report={report} />
-          : <GaitReportDashboard report={report} />}
+          ? <JumpReportDashboard report={report} member={reportMember} />
+          : <GaitReportDashboard report={report} member={reportMember} />}
       </div>
     );
   }
@@ -320,7 +554,7 @@ function ShareCaptureReport({ item, member }) {
     return (
       <div data-share-report-ready="true" className="w-full bg-slate-950">
         {isLiftingShapedSession(report)
-          ? <LiftingReportDashboard report={report} />
+          ? <LiftingReportDashboard report={report} member={reportMember} />
           : <SessionShareReport item={item} member={reportMember} />}
       </div>
     );
@@ -427,7 +661,6 @@ export default function Report() {
   const members = useMemo(() => sortByName(scopeMembersToTrainer(store.getMembers(), user)), [user]);
   const [memberId, setMemberId] = useState('');
   const [msg, setMsg] = useState(null);
-  const [reportFilter, setReportFilter] = useState('all');
   const [sharingId, setSharingId] = useState(null);
   const [shareCaptureItem, setShareCaptureItem] = useState(null);
   const shareCaptureRef = useRef(null);
@@ -524,10 +757,38 @@ export default function Report() {
     });
   }, [member, dataReady, savedReports, savedPostureReports, savedRomReports]);
 
-  const filteredUnifiedResults = useMemo(() => {
-    if (reportFilter === 'all') return unifiedResults;
-    return unifiedResults.filter((item) => item.filterKey === reportFilter);
-  }, [reportFilter, unifiedResults]);
+  // 신체정보 원본 기록 (측정 캘린더 그룹핑 + 상단 "최근 측정" 표시에 함께 사용)
+  const bodyRecords = useMemo(() => {
+    if (!member) return [];
+    return store.getBodyRecords(member.id) || [];
+  }, [member, dataReady]);
+
+  const latestBodyDate = useMemo(() => {
+    if (!bodyRecords.length) return null;
+    return [...bodyRecords].sort((a, b) => String(b?.recordedAt || '').localeCompare(String(a?.recordedAt || '')))[0]?.recordedAt || null;
+  }, [bodyRecords]);
+
+  // 날짜별 그룹 (측정 캘린더). "전체 결과"를 한 줄로 늘어놓는 대신 언제 측정했는지로 정리한다.
+  const dailyGroups = useMemo(() => groupResultsByDate(unifiedResults, bodyRecords), [unifiedResults, bodyRecords]);
+  const dailyMap = useMemo(() => Object.fromEntries(dailyGroups.map(g => [g.date, g])), [dailyGroups]);
+
+  const [calendarPivot, setCalendarPivot] = useState(todayYMD().slice(0, 7)); // 'YYYY-MM'
+  const [selectedDate, setSelectedDate] = useState(null);
+
+  // 회원 전환/데이터 로딩 완료 시: 캘린더는 가장 최근 측정 달로, 선택 날짜는 가장 최근 측정일로.
+  useEffect(() => {
+    setCalendarPivot(dailyGroups[0]?.date.slice(0, 7) || todayYMD().slice(0, 7));
+  }, [member?.id, dataReady]);
+
+  useEffect(() => {
+    if (!dailyGroups.length) { setSelectedDate(null); return; }
+    setSelectedDate(prev => (prev && dailyGroups.some(g => g.date === prev)) ? prev : dailyGroups[0].date);
+  }, [dailyGroups]);
+
+  const selectedGroup = useMemo(
+    () => dailyGroups.find(g => g.date === selectedDate) || null,
+    [dailyGroups, selectedDate]
+  );
 
   const openUnifiedResult = (item) => {
     if (item.source === 'posture') {
@@ -624,49 +885,103 @@ export default function Report() {
           allowNone={false} placeholder="이름 / 초성 / 전화 뒤4자리" />
       </div>
 
-      {member && unifiedResults.length > 0 && (
+      {/* 신체정보 · 최근 측정 (맨 위 고정) — 과거 회차는 아래 추이 그래프로 확인 */}
+      {member && report?.body?.summary?.length > 0 && (
+        <div>
+          <div className="mb-2 flex items-end justify-between">
+            <p className="text-xs font-bold uppercase tracking-widest text-slate-400">신체정보 · 최근 측정</p>
+            {latestBodyDate && <span className="text-[11px] text-slate-500">{formatDateOnly(latestBodyDate)}</span>}
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            {report.body.summary.map(s => (
+              <div key={s.key} className="bg-slate-900 border border-slate-800 rounded-xl p-3">
+                <p className="text-[11px] text-slate-500">{s.label}</p>
+                <p className="font-mono font-black text-lg text-slate-100">
+                  {s.latest}<span className="text-slate-500 text-[10px] font-normal"> {s.unit}</span>
+                </p>
+                {s.change != null && (
+                  <p className={`text-[11px] font-bold ${s.change > 0 ? 'text-red-400' : 'text-emerald-400'}`}>
+                    {s.change > 0 ? '▲' : '▼'} {Math.abs(s.change)}{s.unit} (최초 대비)
+                  </p>
+                )}
+              </div>
+            ))}
+          </div>
+
+          {/* 나머지 회차는 그래프로 — 신체정보는 "최근 1건" 외엔 목록으로 늘어놓지 않는다 */}
+          {report.body.fields.filter(f => report.body.series[f.key]?.length > 1).length > 0 && (
+            <div className="mt-3 space-y-3">
+              {report.body.fields
+                .filter(f => report.body.series[f.key]?.length > 1)
+                .map(f => (
+                  <TrendChart key={f.key} title={f.label} unit={f.unit}
+                    points={report.body.series[f.key]}
+                    color={COLORS[f.key] || '#f59e0b'} width={320} height={150} />
+                ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 측정 캘린더 — "전체 결과"를 일렬로 늘어놓는 대신 언제 측정했는지로 정리한다 */}
+      {member && dailyGroups.length > 0 && (
         <section className="rounded-2xl border border-slate-800 bg-slate-950/40 p-3">
           <div className="mb-3 flex items-end justify-between gap-3 px-1">
             <div>
-              <p className="text-xs font-bold uppercase tracking-widest text-slate-400">전체 결과</p>
-              <p className="mt-1 text-sm font-semibold text-slate-500">
-                자세·ROM·점프·보행·근력 결과를 최신순으로 정리합니다.
-              </p>
+              <p className="text-xs font-bold uppercase tracking-widest text-slate-400">측정 캘린더</p>
+              <p className="mt-1 text-sm font-semibold text-slate-500">날짜를 선택하면 그날 측정 결과를 볼 수 있습니다.</p>
             </div>
             <span className="shrink-0 rounded-full bg-slate-800 px-2.5 py-1 text-[11px] font-black text-slate-300">
               {unifiedResults.length}건
             </span>
           </div>
 
-          <div className="-mx-1 mb-3 flex gap-2 overflow-x-auto px-1 pb-1">
-            {REPORT_FILTERS.map((filter) => {
-              const active = reportFilter === filter.key;
-              return (
-                <button
-                  key={filter.key}
-                  type="button"
-                  onClick={() => setReportFilter(filter.key)}
-                  className={`shrink-0 rounded-full border px-3 py-1.5 text-xs font-black transition ${
-                    active
-                      ? 'border-amber-400 bg-amber-500 text-slate-950'
-                      : 'border-slate-700 bg-slate-900 text-slate-400'
-                  }`}
-                >
-                  {filter.label}
-                </button>
-              );
-            })}
-          </div>
+          <MeasureCalendar
+            pivot={calendarPivot}
+            onPivotChange={setCalendarPivot}
+            dailyMap={dailyMap}
+            selectedDate={selectedDate}
+            onSelectDate={setSelectedDate}
+            todayStr={todayYMD()}
+          />
 
-          <div className="space-y-2">
-            {filteredUnifiedResults.length > 0 ? filteredUnifiedResults.map((item) => (
-              <UnifiedResultCard key={item.id} item={item} onOpen={openUnifiedResult} onShare={shareUnifiedResult} sharing={sharingId === item.id} />
-            )) : (
-              <div className="rounded-2xl border border-slate-800 bg-slate-900 p-5 text-center text-sm font-semibold text-slate-500">
-                선택한 유형의 리포트가 아직 없습니다.
+          {selectedGroup && (
+            <div className="mt-3">
+              <div className="mb-2 flex items-end justify-between gap-3 px-1">
+                <div>
+                  <p className="text-sm font-black text-white">{formatDateOnly(selectedGroup.date)}</p>
+                  {selectedGroup.avgScore != null && (
+                    <p className="text-[12px] font-semibold text-slate-500">
+                      이날 평균 <span className={`font-black ${scoreTone(selectedGroup.avgScore)}`}>{selectedGroup.avgScore}점</span>
+                    </p>
+                  )}
+                </div>
+                <span className="shrink-0 rounded-full bg-slate-800 px-2.5 py-1 text-[11px] font-black text-slate-300">
+                  {selectedGroup.count}건
+                </span>
               </div>
-            )}
-          </div>
+
+              {selectedGroup.bodyEntry && (
+                <div className="mb-2 flex items-center justify-between rounded-xl border border-slate-800 bg-slate-900 px-3 py-2.5">
+                  <p className="text-xs font-bold text-slate-300">신체정보 기록</p>
+                  <p className="font-mono text-xs text-slate-400">
+                    {selectedGroup.bodyEntry.weight != null && `${selectedGroup.bodyEntry.weight}kg`}
+                    {selectedGroup.bodyEntry.systolic != null && ` · ${selectedGroup.bodyEntry.systolic}/${selectedGroup.bodyEntry.diastolic}`}
+                  </p>
+                </div>
+              )}
+
+              <div className="space-y-2">
+                {selectedGroup.items.length > 0 ? selectedGroup.items.map((item) => (
+                  <UnifiedResultCard key={item.id} item={item} onOpen={openUnifiedResult} onShare={shareUnifiedResult} sharing={sharingId === item.id} />
+                )) : (
+                  <div className="rounded-2xl border border-slate-800 bg-slate-900 p-5 text-center text-sm font-semibold text-slate-500">
+                    이날은 신체정보 기록만 있습니다.
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </section>
       )}
 
@@ -678,42 +993,6 @@ export default function Report() {
 
       {report && report.hasData && (
         <>
-          {/* 요약 카드 (최대값 기준) */}
-          <div>
-            <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">측정 요약 (최대값)</p>
-            <div className="grid grid-cols-2 gap-2">
-              {report.body.summary.map(s => (
-                <div key={s.key} className="bg-slate-900 border border-slate-800 rounded-xl p-3">
-                  <p className="text-[11px] text-slate-500">{s.label}</p>
-                  <p className="font-mono font-black text-lg text-slate-100">
-                    {s.max}<span className="text-slate-500 text-[10px] font-normal"> {s.unit}</span>
-                  </p>
-                  {s.change != null && (
-                    <p className={`text-[11px] font-bold ${s.change > 0 ? 'text-red-400' : 'text-emerald-400'}`}>
-                      {s.change > 0 ? '▲' : '▼'} {Math.abs(s.change)}{s.unit} (최초 대비)
-                    </p>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* 추이 그래프 (실측 시계열만) */}
-          {report.body.fields.filter(f => report.body.series[f.key]?.length > 1).length > 0 && (
-            <div>
-              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">회차별 추이</p>
-              <div className="space-y-3">
-                {report.body.fields
-                  .filter(f => report.body.series[f.key]?.length > 1)
-                  .map(f => (
-                    <TrendChart key={f.key} title={f.label} unit={f.unit}
-                      points={report.body.series[f.key]}
-                      color={COLORS[f.key] || '#f59e0b'} width={320} height={150} />
-                  ))}
-              </div>
-            </div>
-          )}
-
           {/* AI 측정 이력 (자세·1RM·RSI·VBT·점프 등) — 탭하면 상세 + 회차비교 */}
           {report.ai.menuSummaries?.length > 0 && (
             <div>
@@ -745,44 +1024,69 @@ export default function Report() {
                         </div>
                       </button>
 
-                      {open && (
-                        <div className="border-t border-slate-800 p-3 space-y-3">
-                          {/* 회차별 비교 차트 */}
-                          {points.length > 1 ? (
-                            <div>
-                              <p className="text-[11px] font-bold text-slate-400 mb-1">회차별 비교 {delta != null && (
-                                <span className={delta === 0 ? 'text-slate-500' : delta > 0 ? 'text-emerald-400' : 'text-red-400'}>
-                                  (최초 대비 {delta > 0 ? '▲' : delta < 0 ? '▼' : '–'}{Math.abs(delta)}{unit})
-                                </span>
-                              )}</p>
-                              <TrendChart title={m.title} unit={unit} points={points} color="#fbbf24" width={320} height={140} />
-                            </div>
-                          ) : (
-                            <p className="text-[11px] text-slate-500">회차 비교는 2회차부터 표시됩니다.</p>
-                          )}
-
-                          {/* 회차별 상세 목록 (최신순) */}
-                          <div className="space-y-1.5">
-                            {[...rows].reverse().map((r, j) => {
-                              const gIdx = savedReports.findIndex(sr => sr.measuredAt && sr.measuredAt === r.s.data?.measuredAt);
-                              const openable = (m.menu === 'jump' || m.menu === 'gait') && gIdx >= 0;
-                              return (
-                                <div key={j} className="flex items-center justify-between bg-slate-800/60 rounded-lg px-3 py-2">
-                                  <div>
-                                    <p className="text-xs font-bold text-slate-200">
-                                      {r.value != null ? `${r.value}${r.unit}` : '—'} <span className="text-slate-500 font-normal">{r.label}</span>
-                                    </p>
-                                    <p className="text-[10px] text-slate-500">{String(r.s.recordedAt || '').slice(0, 10)}</p>
-                                  </div>
-                                  {openable && (
-                                    <button onClick={() => setViewerIdx(gIdx)} className="text-amber-400 text-[11px] font-bold">리포트 →</button>
-                                  )}
+                      {open && (() => {
+                        // 점프·보행·자세는 여러 지표를 함께 추세로 보여준다(구 점프추세/보행추세/자세체형추세 섹션 흡수).
+                        // 그 외 메뉴는 기존처럼 핵심 지표 1개만 추세로 보여준다.
+                        const extraCharts = extraMenuTrendCharts(m.menu, trend, postureTrend);
+                        return (
+                          <div className="border-t border-slate-800 p-3 space-y-3">
+                            {/* 회차별 비교 차트 */}
+                            {extraCharts.length > 0 ? (
+                              <div>
+                                <p className="text-[11px] font-bold text-slate-400 mb-1">회차별 비교</p>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                  {extraCharts.map(c => (
+                                    <TrendChart key={c.key} title={c.title} unit={c.unit} points={c.points} color={c.color} width={320} height={140} />
+                                  ))}
                                 </div>
-                              );
-                            })}
+                              </div>
+                            ) : points.length > 1 ? (
+                              <div>
+                                <p className="text-[11px] font-bold text-slate-400 mb-1">회차별 비교 {delta != null && (
+                                  <span className={delta === 0 ? 'text-slate-500' : delta > 0 ? 'text-emerald-400' : 'text-red-400'}>
+                                    (최초 대비 {delta > 0 ? '▲' : delta < 0 ? '▼' : '–'}{Math.abs(delta)}{unit})
+                                  </span>
+                                )}</p>
+                                <TrendChart title={m.title} unit={unit} points={points} color="#fbbf24" width={320} height={140} />
+                              </div>
+                            ) : (
+                              <p className="text-[11px] text-slate-500">회차 비교는 2회차부터 표시됩니다.</p>
+                            )}
+
+                            {/* 회차별 상세 목록 (최신순) */}
+                            <div className="space-y-1.5">
+                              {[...rows].reverse().map((r, j) => {
+                                const measuredAt = r.s.data?.measuredAt;
+                                const gIdx = (m.menu === 'jump' || m.menu === 'gait') && measuredAt
+                                  ? savedReports.findIndex(sr => sr.measuredAt && sr.measuredAt === measuredAt) : -1;
+                                const pIdx = m.menu === 'posture' && measuredAt
+                                  ? savedPostureReports.findIndex(sr => sr.measuredAt && sr.measuredAt === measuredAt) : -1;
+                                const romIdx = m.menu === 'rom' && measuredAt
+                                  ? savedRomReports.findIndex(sr => sr.measuredAt && sr.measuredAt === measuredAt) : -1;
+                                const openable = gIdx >= 0 || pIdx >= 0 || romIdx >= 0;
+                                const openDetail = () => {
+                                  if (gIdx >= 0) setViewerIdx(gIdx);
+                                  else if (pIdx >= 0) setPostureViewerIdx(pIdx);
+                                  else if (romIdx >= 0) setRomViewerIdx(romIdx);
+                                };
+                                return (
+                                  <div key={j} className="flex items-center justify-between bg-slate-800/60 rounded-lg px-3 py-2">
+                                    <div>
+                                      <p className="text-xs font-bold text-slate-200">
+                                        {r.value != null ? `${r.value}${r.unit}` : '—'} <span className="text-slate-500 font-normal">{r.label}</span>
+                                      </p>
+                                      <p className="text-[10px] text-slate-500">{String(r.s.recordedAt || '').slice(0, 10)}</p>
+                                    </div>
+                                    {openable && (
+                                      <button onClick={openDetail} className="text-amber-400 text-[11px] font-bold">리포트 →</button>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
                           </div>
-                        </div>
-                      )}
+                        );
+                      })()}
                     </div>
                   );
                 })}
@@ -790,143 +1094,8 @@ export default function Report() {
             </div>
           )}
 
-          {/* 점프 회차별 추세 */}
-          {trend?.jump?.count > 0 && (
-            <div>
-              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">
-                점프 추세 ({trend.jump.count}회)
-              </p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {trend.jump.height.length > 1 && (
-                  <TrendChart title="점프 높이" unit="cm" points={trend.jump.height} color="#f59e0b" width={320} height={150} />
-                )}
-                {trend.jump.peakPower.length > 1 && (
-                  <TrendChart title="최대 파워" unit="W" points={trend.jump.peakPower} color="#22d3ee" width={320} height={150} />
-                )}
-                {trend.jump.footSym.length > 1 && (
-                  <TrendChart title="착지 대칭" unit="%" points={trend.jump.footSym} color="#34d399" width={320} height={150} />
-                )}
-                {trend.jump.landKnee.length > 1 && (
-                  <TrendChart title="착지 무릎각" unit="°" points={trend.jump.landKnee} color="#a78bfa" width={320} height={150} />
-                )}
-              </div>
-              {trend.jump.height.length === 1 && (
-                <p className="text-[11px] text-slate-500 mt-1">측정이 1회뿐이라 추세 그래프는 2회차부터 표시됩니다.</p>
-              )}
-            </div>
-          )}
-
-          {/* 보행 회차별 추세 */}
-          {trend?.gait?.count > 0 && (
-            <div>
-              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">
-                보행 추세 ({trend.gait.count}회)
-              </p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {trend.gait.cadence.length > 1 && (
-                  <TrendChart title="케이던스" unit="SPM" points={trend.gait.cadence} color="#f59e0b" width={320} height={150} />
-                )}
-                {trend.gait.pelvicDrop.length > 1 && (
-                  <TrendChart title="골반 드롭" unit="%" points={trend.gait.pelvicDrop} color="#ef4444" width={320} height={150} />
-                )}
-                {trend.gait.kneeSym.length > 1 && (
-                  <TrendChart title="무릎 대칭" unit="%" points={trend.gait.kneeSym} color="#34d399" width={320} height={150} />
-                )}
-              </div>
-              {trend.gait.cadence.length === 1 && (
-                <p className="text-[11px] text-slate-500 mt-1">측정이 1회뿐이라 추세 그래프는 2회차부터 표시됩니다.</p>
-              )}
-            </div>
-          )}
-
-          {/* 자세·체형 회차별 추세 */}
-          {postureTrend?.count > 0 && (
-            <div>
-              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">
-                자세·체형 추세 ({postureTrend.count}회)
-              </p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {postureTrend.score.length > 1 && (
-                  <TrendChart title="자세 점수" unit="점" points={postureTrend.score} color="#f59e0b" width={320} height={150} />
-                )}
-                {postureTrend.forwardHead.length > 1 && (
-                  <TrendChart title="거북목(전방이동)" unit="mm" points={postureTrend.forwardHead} color="#ef4444" width={320} height={150} />
-                )}
-                {postureTrend.shoulderDiff.length > 1 && (
-                  <TrendChart title="어깨 높이차" unit="mm" points={postureTrend.shoulderDiff} color="#22d3ee" width={320} height={150} />
-                )}
-                {postureTrend.pelvisDiff.length > 1 && (
-                  <TrendChart title="골반 높이차" unit="mm" points={postureTrend.pelvisDiff} color="#a78bfa" width={320} height={150} />
-                )}
-              </div>
-              {postureTrend.score.length === 1 && (
-                <p className="text-[11px] text-slate-500 mt-1">측정이 1회뿐이라 추세 그래프는 2회차부터 표시됩니다. 거북목·어깨·골반 편차는 측정할수록 변화가 보입니다.</p>
-              )}
-            </div>
-          )}
-
-          {/* 저장된 자세 리포트 — 회차별 열람 */}
-          {savedPostureReports.length > 0 && (
-            <div>
-              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">
-                자세 측정 리포트 ({savedPostureReports.length}건)
-              </p>
-              <div className="space-y-2">
-                {savedPostureReports.map((rep, i) => {
-                  const date = String(rep.createdAt || rep.measuredAt || '').slice(0, 10);
-                  const sc = (rep.analysis?.score ?? rep.postureScore);
-                  const ba = (rep.analysis?.bodyAge ?? rep.bodyAge);
-                  return (
-                    <button key={rep.id || i} onClick={() => setPostureViewerIdx(i)}
-                      className="w-full flex items-center justify-between bg-slate-800/60 hover:bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 transition-colors text-left">
-                      <div>
-                        <p className="text-sm font-bold text-white">자세·체형 측정</p>
-                        <p className="text-xs text-slate-400">{date}</p>
-                      </div>
-                      <div className="text-right">
-                        {sc != null && <p className="text-sm font-black text-amber-400">{sc}점</p>}
-                        {ba != null && <p className="text-[11px] text-slate-400">체형나이 {ba}세</p>}
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* 저장된 AI 측정 리포트 — 페이지별 열람 */}
-          {savedReports.length > 0 && (
-            <div>
-              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">
-                측정 리포트 ({savedReports.length}건) · 눌러서 열기
-              </p>
-              <div className="space-y-2">
-                {savedReports.map((rep, i) => {
-                  const meta = getSavedReportMeta(rep);
-                  const date = String(rep.createdAt || rep.measuredAt || '').slice(0, 10);
-                  const main = rep.kind === 'jump'
-                    ? (isJumpRsi(rep)
-                      ? `RSI ${rep.rsi?.rsi ?? '-'} / 높이 ${rep.heightCm ?? '-'}cm`
-                      : `${rep.heightCm ?? '-'}cm / ${rep.peakPower ?? '-'}W`)
-                    : (rep.cadence != null || rep.metrics?.cadence != null ? `${rep.cadence ?? rep.metrics?.cadence} SPM` : '-');
-                  return (
-                    <button key={rep.id || i} onClick={() => setViewerIdx(i)}
-                      className="w-full flex items-center justify-between bg-slate-900 border border-slate-800 rounded-xl px-4 py-3 text-left active:scale-[0.99] transition">
-                      <div>
-                        <p className="text-sm font-bold text-white flex flex-wrap items-center gap-2">
-                          <span>{meta.title}</span>
-                          <span className={`rounded-full px-2 py-0.5 text-[9px] font-black ${meta.bg} ${meta.color}`}>{meta.badge}</span>
-                          <span className="text-slate-500 font-normal">/ {date}</span>
-                        </p>
-                        <p className="text-[11px] text-slate-500">{rep.valid === false ? '측정 무효' : `주요 결과 ${main}`}</p>
-                      </div>
-                      <span className="text-amber-400 text-sm font-bold">열기 &gt;</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
+          {/* 일간·주간·월간 종합 리포트 */}
+          <ComprehensiveReportSection member={member} dataReady={dataReady} />
 
           {report.notes.length > 0 && (
             <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
@@ -974,8 +1143,8 @@ export default function Report() {
           </div>
           <Suspense fallback={<div className="p-10 text-center text-slate-400">불러오는 중…</div>}>
             {savedReports[viewerIdx].kind === 'jump'
-              ? <JumpReportDashboard report={savedReports[viewerIdx]} onClose={() => setViewerIdx(null)} />
-              : <GaitReportDashboard report={savedReports[viewerIdx]} onClose={() => setViewerIdx(null)} />}
+              ? <JumpReportDashboard report={savedReports[viewerIdx]} onClose={() => setViewerIdx(null)} member={member} />
+              : <GaitReportDashboard report={savedReports[viewerIdx]} onClose={() => setViewerIdx(null)} member={member} />}
           </Suspense>
         </div>
       )}

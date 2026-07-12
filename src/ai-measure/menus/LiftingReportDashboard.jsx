@@ -23,11 +23,13 @@ function fmt(v, unit = '') {
 
 const MODE_TITLE = { lifting: '역도 궤적 분석', vbt: 'VBT 속도 분석', onerm: '1RM 추정' };
 
-export default function LiftingReportDashboard({ report, onClose }) {
+export default function LiftingReportDashboard({ report, onClose, member }) {
   const interp = useMemo(() => buildLiftingInterpretation(report || {}), [report]);
   const diag = useMemo(() => generateLiftingDiagnosis(report || {}, {}), [report]);
 
   if (!report) return <UnifiedEmptyState onClose={onClose} />;
+
+  const resolvedMember = member || report.member || null;
 
   const mode = report.mode || 'vbt';
   const m = report.metrics || {};
@@ -91,6 +93,7 @@ export default function LiftingReportDashboard({ report, onClose }) {
             title={`${MODE_TITLE[mode] || '바벨 리프팅'} · ${exLabel}`}
             subtitle={interp.headline}
             measuredAt={report.recordedAt}
+            member={resolvedMember}
           />
 
           {/* 핵심 수치 */}

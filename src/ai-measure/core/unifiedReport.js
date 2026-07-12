@@ -664,7 +664,7 @@ function extractRecommendations(report, reportType, findings) {
   return [recommendation].filter(Boolean);
 }
 
-function defaultRecommendation(reportType, status) {
+export function defaultRecommendation(reportType, status) {
   if (status === 'normal') return '현재 패턴을 기준으로 다음 측정에서 변화 추이를 확인하세요.';
   if (reportType === 'jump') return '착지 대칭, 하체 근력, 발목-무릎-골반 정렬을 함께 확인하세요.';
   if (reportType === 'posture') return '자세 정렬과 ROM 제한이 함께 나타나는지 교차 확인하세요.';

@@ -91,7 +91,7 @@ export default function JumpAnalysisHub({ member, onBack, onSave, onSaveToFireba
   if (view === 'report' && report) {
     return (
       <div className="fixed inset-0 z-[80] bg-slate-950 overflow-y-auto" style={{ height: '100dvh' }}>
-        <JumpReportDashboard report={report} onClose={onBack} />
+        <JumpReportDashboard report={report} onClose={onBack} member={member} />
         <div className="sticky bottom-0 z-10 flex justify-center p-3 bg-slate-900/90 backdrop-blur border-t border-slate-800">
           <button onClick={backToMeasure} className="rounded-lg bg-slate-700 text-white font-bold text-sm px-6 py-2">← 다시 측정</button>
         </div>

@@ -25,6 +25,7 @@ export default function SessionShareReport({ item, member }) {
   const metrics = (summary.keyMetrics || []).slice(0, 6);
   const recommendations = (summary.recommendations || []).filter(Boolean);
   const memberName = member?.name || data?.member?.name || '회원';
+  const resolvedMember = member || data?.member || null;
   // 측정 정직성: 점수를 계산할 수 없는 측정(예: 신체정보)은 0점(위험) 링 대신
   // '확인 필요' 배지를 표시한다. 0점은 계산된 값처럼 보여 오해를 부른다.
   const hasScore = summary.status && summary.status !== 'unknown';
@@ -36,6 +37,7 @@ export default function SessionShareReport({ item, member }) {
         title={summary.title || item.meta?.title || '측정 결과'}
         subtitle={`${memberName} · ${formatDateOnly(item.date || summary.measuredAt)}`}
         score={hasScore ? (summary.overallScore ?? 0) : null}
+        member={resolvedMember}
       />
 
       {findings.length > 0 && (
