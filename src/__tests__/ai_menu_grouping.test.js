@@ -1,5 +1,23 @@
 import { describe, it, expect } from 'vitest';
-import { buildAiReport, menuGroupKey } from '../services/reportService.js';
+import { buildAiReport, menuGroupKey, plausibleVelocity } from '../services/reportService.js';
+
+describe('plausibleVelocity — 물리적으로 불가능한 속도값 방어', () => {
+  it('정상 범위(0~5m/s) 값은 그대로 통과시킨다', () => {
+    expect(plausibleVelocity(0.98)).toBe(0.98);
+    expect(plausibleVelocity(0)).toBe(0);
+    expect(plausibleVelocity(4.9)).toBe(4.9);
+  });
+
+  it('물리적으로 불가능한 값(5m/s 초과)은 null 처리한다(측정 정직성 — 틀린 값을 그대로 보여주지 않음)', () => {
+    expect(plausibleVelocity(536.33)).toBeNull();
+    expect(plausibleVelocity(-536)).toBeNull();
+  });
+
+  it('숫자가 아니거나 없는 값은 그대로 통과시킨다(다른 곳에서 처리)', () => {
+    expect(plausibleVelocity(null)).toBeNull();
+    expect(plausibleVelocity(undefined)).toBeUndefined();
+  });
+});
 
 describe('menuGroupKey — 파워점프/RSI, VBT/1RM(역도) 세분화', () => {
   it('점프는 RSI 여부에 따라 jump_rsi / jump_power 로 나뉜다', () => {
@@ -100,5 +118,38 @@ describe('extractSessionMetric — AI측정이력 회차별 상세 목록의 값
     const r = extractSessionMetric({ menu: 'rom', data: { summary: {} } });
     expect(r.value == null).toBe(true);
     expect(r.label).toBeTruthy();
+  });
+
+  it('바벨 리프팅(VBT): 물리적으로 불가능한 속도값은 null 처리한다', async () => {
+    const { extractSessionMetric } = await import('../pages/Report.jsx');
+    const bad = extractSessionMetric({ menu: 'lifting', data: { mode: 'vbt', metrics: { meanVelocity: 536.33 } } });
+    expect(bad.value).toBeNull();
+    const good = extractSessionMetric({ menu: 'lifting', data: { mode: 'vbt', metrics: { meanVelocity: 0.9 } } });
+    expect(good.value).toBe(0.9);
+  });
+});
+
+describe('findLinkedReportIndex — 세션↔전용리포트 매칭(측정이력의 "리포트 →" 링크)', () => {
+  it('linkedSessionId 가 있으면 그것으로 정확히 매칭한다(measuredAt 불일치와 무관)', async () => {
+    const { findLinkedReportIndex } = await import('../pages/Report.jsx');
+    const session = { id: 'sess-1', data: { measuredAt: '2026-07-01T09:00:00.000Z' } };
+    const list = [
+      { linkedSessionId: 'other', measuredAt: '2026-07-01T09:00:00.000Z' },
+      { linkedSessionId: 'sess-1', measuredAt: '2026-07-01T09:00:00.001Z' }, // 1ms 어긋나도 링크로 정확히 찾음
+    ];
+    expect(findLinkedReportIndex(session, list)).toBe(1);
+  });
+
+  it('linkedSessionId 가 없는 과거 데이터는 measuredAt 완전일치로 폴백한다', async () => {
+    const { findLinkedReportIndex } = await import('../pages/Report.jsx');
+    const session = { id: 'sess-2', data: { measuredAt: '2026-06-01T00:00:00.000Z' } };
+    const list = [{ measuredAt: '2026-06-01T00:00:00.000Z' }];
+    expect(findLinkedReportIndex(session, list)).toBe(0);
+  });
+
+  it('아무것도 매칭되지 않으면 -1(오픈 불가로 처리됨)', async () => {
+    const { findLinkedReportIndex } = await import('../pages/Report.jsx');
+    expect(findLinkedReportIndex({ id: 's', data: {} }, [{ measuredAt: 'x' }])).toBe(-1);
+    expect(findLinkedReportIndex(null, [])).toBe(-1);
   });
 });

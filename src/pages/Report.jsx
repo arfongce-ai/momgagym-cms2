@@ -5,10 +5,10 @@ import { todayYMD } from '../utils/dates';
 import { useAuth } from '../contexts/AuthContext';
 import { scopeMembersToTrainer, sortByName } from '../utils/memberList';
 import { store, aiStore } from '../demoData';
-import { buildFullReport, buildAnalysisTrend, buildPostureTrend, groupResultsByDate, buildInterpretationGuide, GUIDE_STATUS_LEGEND, menuGroupKey } from '../services/reportService';
+import { buildFullReport, buildAnalysisTrend, buildPostureTrend, groupResultsByDate, buildInterpretationGuide, GUIDE_STATUS_LEGEND, menuGroupKey, plausibleVelocity } from '../services/reportService';
 import { buildSummaryData, scoreToStatus, defaultRecommendation } from '../ai-measure/core/unifiedReport';
 import { buildComprehensiveReport } from '../ai-measure/core/comprehensiveReport';
-import { loadAllMeasureRecords } from '../services/comprehensiveReportService';
+import { loadAllMeasureRecords, deleteMeasureRound, deleteMeasureType } from '../services/comprehensiveReportService';
 import { captureNodeToJpgFile, shareMeasurementSummaryToKakao } from '../ai-measure/core/reportShare';
 import { canCaptureUnifiedResult, isLiftingShapedSession } from '../components/report/sessionShare';
 import SessionShareReport from '../components/report/SessionShareReport';
@@ -250,7 +250,7 @@ function ComprehensiveReportSection({ member, dataReady }) {
   if (!member) return null;
 
   return (
-    <section className="rounded-2xl border border-slate-800 bg-slate-950/40 p-3">
+    <section id="section-comprehensive" className="scroll-mt-14 rounded-2xl border border-slate-800 bg-slate-950/40 p-3">
       <div className="mb-3 flex items-end justify-between gap-3 px-1">
         <div>
           <p className="text-xs font-bold uppercase tracking-widest text-slate-400">종합 리포트</p>
@@ -375,7 +375,7 @@ function InterpretationGuideSection({ guide }) {
   if (!guide.length) return null;
 
   return (
-    <div>
+    <div id="section-guide" className="scroll-mt-14">
       <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">측정별 분석·평가 판독 설명서</p>
 
       <div className="mb-2 flex flex-wrap gap-x-3 gap-y-1 rounded-xl border border-slate-800 bg-slate-900 px-3 py-2.5">
@@ -680,6 +680,19 @@ function ShareCaptureReport({ item, member }) {
   return null;
 }
 
+// 세션 하나가 어느 전용 리포트(자세/ROM/보행·점프)에 대응하는지 찾는다.
+//  1순위: linkedSessionId — 저장 시 명시적으로 연결한 값(신규 데이터, 100% 정확)
+//  2순위: measuredAt 완전일치 — 과거 데이터 호환용 폴백(두 저장이 같은 원본 payload를
+//         공유해 대개 일치하지만, 저장 시각이 미세하게 어긋나면 실패할 수 있다).
+export function findLinkedReportIndex(session, list) {
+  if (!session?.id || !Array.isArray(list) || !list.length) return -1;
+  const byLink = list.findIndex(sr => sr.linkedSessionId && sr.linkedSessionId === session.id);
+  if (byLink >= 0) return byLink;
+  const measuredAt = session.data?.measuredAt;
+  if (!measuredAt) return -1;
+  return list.findIndex(sr => sr.measuredAt && sr.measuredAt === measuredAt);
+}
+
 export function extractSessionMetric(session) {
   const d = session.data || {};
   switch (session.menu) {
@@ -690,10 +703,10 @@ export function extractSessionMetric(session) {
       if (d.mode === 'onerm' || m.oneRM != null) {
         return { value: m.oneRM, unit: 'kg', label: `1RM 추정 (${d.metadata?.weight ?? '-'}kg×${d.metadata?.reps ?? '-'}회)` };
       }
-      return { value: m.meanVelocity, unit: 'm/s', label: d.mode === 'lifting' ? '역도 평균속도' : 'VBT 평균속도' };
+      return { value: plausibleVelocity(m.meanVelocity), unit: 'm/s', label: d.mode === 'lifting' ? '역도 평균속도' : 'VBT 평균속도' };
     }
     case 'rsi':     return { value: d.rsi, unit: '', label: `RSI · 높이 ${d.heightCm ?? '-'}cm` };
-    case 'vbt':     return { value: d.meanVelocity, unit: 'm/s', label: `평균속도 (${d.zone ?? ''})` };
+    case 'vbt':     return { value: plausibleVelocity(d.meanVelocity), unit: 'm/s', label: `평균속도 (${d.zone ?? ''})` };
     case 'jump': {
       if (isJumpRsi(d)) {
         return { value: d.rsi?.rsi ?? d.rsi, unit: '', label: `RSI 반응점프 · 높이 ${d.heightCm ?? '-'}cm` };
@@ -811,6 +824,43 @@ export default function Report() {
     })();
     return () => { alive = false; };
   }, [member?.id]);
+
+  const [deletingKey, setDeletingKey] = useState(null); // 삭제 진행 중인 항목(중복 클릭 방지 + 로딩 표시)
+
+  // 회차 하나 삭제 — 세션과 연결된 전용 리포트(있으면)를 함께 지운다.
+  const handleDeleteRound = async (session, linkedReport, label) => {
+    if (!member || deletingKey) return;
+    if (!window.confirm(`${label} 1건을 삭제할까요?\n삭제하면 되돌릴 수 없습니다.`)) return;
+    setDeletingKey(`round:${session.id}`);
+    try {
+      await deleteMeasureRound(member.id, session, linkedReport);
+      setDataReady(v => v + 1);
+      setMsg('삭제되었습니다.');
+      setTimeout(() => setMsg(null), 1500);
+    } catch (e) {
+      alert('삭제에 실패했습니다.\n' + (e?.message || ''));
+    } finally {
+      setDeletingKey(null);
+    }
+  };
+
+  // 유형 전체 삭제 — 같은 groupKey의 모든 세션 + 연결된 전용 리포트를 한 번에 지운다.
+  const handleDeleteType = async (groupKey, sessions, findLinked, label, count) => {
+    if (!member || deletingKey) return;
+    if (!window.confirm(`"${label}" 전체 ${count}건을 삭제할까요?\n삭제하면 되돌릴 수 없습니다.`)) return;
+    setDeletingKey(`type:${groupKey}`);
+    try {
+      const linkedReports = sessions.map(findLinked).filter(Boolean);
+      await deleteMeasureType(member.id, sessions, linkedReports);
+      setDataReady(v => v + 1);
+      setMsg('삭제되었습니다.');
+      setTimeout(() => setMsg(null), 1500);
+    } catch (e) {
+      alert('삭제에 실패했습니다.\n' + (e?.message || ''));
+    } finally {
+      setDeletingKey(null);
+    }
+  };
 
   const report = useMemo(() => {
     if (!member) return null;
@@ -935,6 +985,18 @@ export default function Report() {
     return buildInterpretationGuide([...types]);
   }, [unifiedResults, report]);
 
+  // 섹션 바로가기 — 실제로 렌더링되는 섹션만 대상으로 한다(측정 정직성 — 빈 섹션으로
+  // 이동하는 버튼을 보여주지 않는다). 각 조건은 해당 섹션의 렌더 조건과 정확히 맞춘다.
+  const sectionNavItems = useMemo(() => {
+    const items = [];
+    if (report?.body?.summary?.length > 0) items.push({ id: 'section-body', label: '신체정보' });
+    if (dailyGroups.length > 0) items.push({ id: 'section-calendar', label: '캘린더' });
+    if (report?.hasData && report?.ai?.menuSummaries?.length > 0) items.push({ id: 'section-history', label: 'AI측정이력' });
+    items.push({ id: 'section-comprehensive', label: '종합리포트' });
+    if (interpretationGuide.length > 0) items.push({ id: 'section-guide', label: '판독설명서' });
+    return items;
+  }, [report, dailyGroups, interpretationGuide]);
+
   const openUnifiedResult = (item) => {
     if (item.source === 'posture') {
       setPostureViewerIdx(item.index);
@@ -1035,9 +1097,25 @@ export default function Report() {
           allowNone={false} placeholder="이름 / 초성 / 전화 뒤4자리" />
       </div>
 
+      {/* 섹션 바로가기 — 페이지가 길어서(신체정보~판독설명서) 존재하는 섹션만 골라 보여준다. */}
+      {member && sectionNavItems.length > 1 && (
+        <div className="sticky top-1 z-20 -mx-1 flex gap-1.5 overflow-x-auto rounded-full border border-slate-800 bg-slate-950/95 px-2 py-1.5 backdrop-blur">
+          {sectionNavItems.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => document.getElementById(item.id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+              className="shrink-0 rounded-full px-3 py-1.5 text-[11px] font-bold text-slate-400 active:bg-slate-800 active:text-white"
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* 신체정보 · 최근 측정 (맨 위 고정) — 과거 회차는 아래 추이 그래프로 확인 */}
       {member && report?.body?.summary?.length > 0 && (
-        <div>
+        <div id="section-body" className="scroll-mt-14">
           <div className="mb-2 flex items-end justify-between">
             <p className="text-xs font-bold uppercase tracking-widest text-slate-400">신체정보 · 최근 측정</p>
             {latestBodyDate && <span className="text-[11px] text-slate-500">{formatDateOnly(latestBodyDate)}</span>}
@@ -1075,7 +1153,7 @@ export default function Report() {
 
       {/* 측정 캘린더 — "전체 결과"를 일렬로 늘어놓는 대신 언제 측정했는지로 정리한다 */}
       {member && dailyGroups.length > 0 && (
-        <section className="rounded-2xl border border-slate-800 bg-slate-950/40 p-3">
+        <section id="section-calendar" className="scroll-mt-14 rounded-2xl border border-slate-800 bg-slate-950/40 p-3">
           <div className="mb-3 flex items-end justify-between gap-3 px-1">
             <div>
               <p className="text-xs font-bold uppercase tracking-widest text-slate-400">측정 캘린더</p>
@@ -1145,7 +1223,7 @@ export default function Report() {
         <>
           {/* AI 측정 이력 (자세·1RM·RSI·VBT·점프 등) — 탭하면 상세 + 회차비교 */}
           {report.ai.menuSummaries?.length > 0 && (
-            <div>
+            <div id="section-history" className="scroll-mt-14">
               <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">AI 측정 이력 · 탭하여 상세</p>
               <div className="space-y-2">
                 {report.ai.menuSummaries.map((m, i) => {
@@ -1206,13 +1284,12 @@ export default function Report() {
                             {/* 회차별 상세 목록 (최신순) */}
                             <div className="space-y-1.5">
                               {[...rows].reverse().map((r, j) => {
-                                const measuredAt = r.s.data?.measuredAt;
-                                const gIdx = (m.menu === 'jump' || m.menu === 'gait') && measuredAt
-                                  ? savedReports.findIndex(sr => sr.measuredAt && sr.measuredAt === measuredAt) : -1;
-                                const pIdx = m.menu === 'posture' && measuredAt
-                                  ? savedPostureReports.findIndex(sr => sr.measuredAt && sr.measuredAt === measuredAt) : -1;
-                                const romIdx = m.menu === 'rom' && measuredAt
-                                  ? savedRomReports.findIndex(sr => sr.measuredAt && sr.measuredAt === measuredAt) : -1;
+                                const gIdx = (m.menu === 'jump' || m.menu === 'gait')
+                                  ? findLinkedReportIndex(r.s, savedReports) : -1;
+                                const pIdx = m.menu === 'posture'
+                                  ? findLinkedReportIndex(r.s, savedPostureReports) : -1;
+                                const romIdx = m.menu === 'rom'
+                                  ? findLinkedReportIndex(r.s, savedRomReports) : -1;
                                 // 바벨 리프팅은 전용 컬렉션이 없어 세션 자체를 재사용하므로 id로 직접 매칭한다
                                 // (measuredAt 문자열 비교보다 정확 — 같은 세션 목록에서 그대로 찾는 것이므로).
                                 const liftIdx = m.menu === 'lifting' && r.s?.id
@@ -1224,6 +1301,11 @@ export default function Report() {
                                   else if (liftIdx >= 0) setLiftingViewerIdx(liftIdx);
                                   else if (romIdx >= 0) setRomViewerIdx(romIdx);
                                 };
+                                const linkedReport = gIdx >= 0 ? { source: 'gait_reports', id: savedReports[gIdx].id }
+                                  : pIdx >= 0 ? { source: 'posture_reports', id: savedPostureReports[pIdx].id }
+                                  : romIdx >= 0 ? { source: 'rom_reports', id: savedRomReports[romIdx].id }
+                                  : null;
+                                const deleting = deletingKey === `round:${r.s.id}`;
                                 return (
                                   <div key={j} className="flex items-center justify-between bg-slate-800/60 rounded-lg px-3 py-2">
                                     <div>
@@ -1232,13 +1314,40 @@ export default function Report() {
                                       </p>
                                       <p className="text-[10px] text-slate-500">{String(r.s.recordedAt || '').slice(0, 10)}</p>
                                     </div>
-                                    {openable && (
-                                      <button onClick={openDetail} className="text-amber-400 text-[11px] font-bold">리포트 →</button>
-                                    )}
+                                    <div className="flex shrink-0 items-center gap-3">
+                                      {openable && (
+                                        <button onClick={openDetail} className="text-amber-400 text-[11px] font-bold">리포트 →</button>
+                                      )}
+                                      <button
+                                        type="button"
+                                        onClick={() => handleDeleteRound(r.s, linkedReport, m.title)}
+                                        disabled={deleting}
+                                        aria-label="이 회차 삭제"
+                                        className="text-slate-600 text-[13px] active:text-red-400 disabled:opacity-40"
+                                      >
+                                        {deleting ? '···' : '🗑'}
+                                      </button>
+                                    </div>
                                   </div>
                                 );
                               })}
                             </div>
+
+                            {/* 유형 전체 삭제 */}
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteType(m.groupKey, sessions, (s) => {
+                                const idx = findLinkedReportIndex(s, m.menu === 'posture' ? savedPostureReports : m.menu === 'rom' ? savedRomReports : (m.menu === 'jump' || m.menu === 'gait') ? savedReports : []);
+                                if (idx < 0) return null;
+                                const src = m.menu === 'posture' ? 'posture_reports' : m.menu === 'rom' ? 'rom_reports' : 'gait_reports';
+                                const list = m.menu === 'posture' ? savedPostureReports : m.menu === 'rom' ? savedRomReports : savedReports;
+                                return { source: src, id: list[idx].id };
+                              }, m.title, m.count)}
+                              disabled={deletingKey === `type:${m.groupKey}`}
+                              className="w-full rounded-lg border border-red-500/20 bg-red-500/5 py-2 text-[11px] font-bold text-red-400/80 active:bg-red-500/10 disabled:opacity-40"
+                            >
+                              {deletingKey === `type:${m.groupKey}` ? '삭제 중…' : `🗑 "${m.title}" 전체 ${m.count}건 삭제`}
+                            </button>
                           </div>
                         );
                       })()}

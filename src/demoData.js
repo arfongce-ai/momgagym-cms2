@@ -1350,6 +1350,25 @@ export const aiStore = {
     try { await fbDelete('ai', sid); }
     catch(e){ cache.ai[mid]=prev; throw e; }
   },
+  // 전용 리포트 삭제(측정별/회차별 삭제 기능) — deleteSession과 동일한 낙관적 캐시 반영 패턴.
+  deleteGaitReport: async (mid, rid) => {
+    const prev = cache.gaitReports[mid];
+    cache.gaitReports[mid] = (cache.gaitReports[mid] || []).filter(r => r.id !== rid);
+    try { await fbDelete('gait_reports', rid); }
+    catch (e) { cache.gaitReports[mid] = prev; throw e; }
+  },
+  deletePostureReport: async (mid, rid) => {
+    const prev = cache.postureReports[mid];
+    cache.postureReports[mid] = (cache.postureReports[mid] || []).filter(r => r.id !== rid);
+    try { await fbDelete('posture_reports', rid); }
+    catch (e) { cache.postureReports[mid] = prev; throw e; }
+  },
+  deleteRomReport: async (mid, rid) => {
+    const prev = cache.romReports[mid];
+    cache.romReports[mid] = (cache.romReports[mid] || []).filter(r => r.id !== rid);
+    try { await fbDelete('rom_reports', rid); }
+    catch (e) { cache.romReports[mid] = prev; throw e; }
+  },
   deleteAll:     async (mid) => {
     const list=cache.ai[mid]||[];
     await fbDeleteBatch(list.map(s=>({name:'ai',id:s.id})));

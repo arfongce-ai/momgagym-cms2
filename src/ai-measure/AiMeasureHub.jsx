@@ -180,18 +180,20 @@ export default function AiMeasureHub() {
         data: storableData,
       });
       // 보행/점프 분석은 전용 컬렉션(gait_reports)에도 정량 리포트를 추가 저장 → 회차별 비교.
+      //  linkedSessionId: 위에서 저장한 세션과 명시적으로 연결(측정이력↔전용리포트 매칭이
+      //  measuredAt 우연 일치에 기대지 않도록 — 두 저장이 별도 시각에 찍혀 어긋날 수 있다).
       if (isGait) {
-        const saved = await aiStore.addGaitReport({ ...virtualBody, ...storableData, kind: 'gait', member: memberRef });
+        const saved = await aiStore.addGaitReport({ ...virtualBody, ...storableData, kind: 'gait', member: memberRef, linkedSessionId: savedSession.id });
         await saveUnifiedCopy(saved, 'gait');
         return saved;
       }
       if (isJump && storableData?.valid === true) {
-        const saved = await aiStore.addGaitReport({ ...virtualBody, ...storableData, kind: 'jump', member: memberRef });
+        const saved = await aiStore.addGaitReport({ ...virtualBody, ...storableData, kind: 'jump', member: memberRef, linkedSessionId: savedSession.id });
         await saveUnifiedCopy(saved, 'jump');
         return saved;
       }
       if (isPosture) {
-        const saved = await aiStore.addPostureReport({ ...virtualBody, ...storableData, kind: 'posture', member: memberRef });
+        const saved = await aiStore.addPostureReport({ ...virtualBody, ...storableData, kind: 'posture', member: memberRef, linkedSessionId: savedSession.id });
         await saveUnifiedCopy(saved, 'posture');
         return saved;
       }
@@ -201,6 +203,7 @@ export default function AiMeasureHub() {
           ...storableData,
           kind: 'rom',
           member: memberRef,
+          linkedSessionId: savedSession.id,
           basic_info: {
             ...(storableData?.basic_info || {}),
             memberId: saveMid,

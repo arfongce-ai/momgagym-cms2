@@ -9,6 +9,16 @@
 
 import { METRIC_DEFINITIONS, REPORT_TERM_MAP, defaultRecommendation } from '../ai-measure/core/unifiedReport';
 
+// 바벨/신체 속도의 물리적 상한 방어 — 실제 리프팅에서 5m/s를 넘는 값은 나올 수 없으므로
+// (스내치 최고 기록급 순간속도도 2~2.5m/s 대) 계산/센서 오류로 간주해 표시에서 제외한다.
+// 계산 엔진 자체는 건드리지 않고, 표시 단계에서만 걸러낸다(측정 정직성 — 명백히 틀린
+// 값을 그대로 보여주면 회차별 비교 그래프의 스케일도 함께 무너진다).
+const PLAUSIBLE_VELOCITY_MAX_MS = 5;
+export function plausibleVelocity(v) {
+  if (typeof v !== 'number' || Number.isNaN(v)) return v;
+  return Math.abs(v) > PLAUSIBLE_VELOCITY_MAX_MS ? null : v;
+}
+
 // 측정 유형별 "판독 설명서" 콘텐츠. 지표 용어/설명은 REPORT_TERM_MAP(단일 소스)을 그대로
 // 재사용하고, 여기서는 유형 단위의 개요·회원 설명 멘트만 추가로 정의한다(중복 정의 금지).
 const GUIDE_TYPE_LABEL = {
@@ -198,7 +208,7 @@ export function buildAiReport(aiSessions = []) {
         const lm = d.metrics || {};
         metric = groupKey === 'lifting_onerm'
           ? `1RM 추정 ${lm.oneRM ?? '-'}kg`
-          : `평균속도 ${lm.meanVelocity ?? '-'}m/s`;
+          : `평균속도 ${plausibleVelocity(lm.meanVelocity) ?? '-'}m/s`;
         break;
       }
       case 'posture': {
