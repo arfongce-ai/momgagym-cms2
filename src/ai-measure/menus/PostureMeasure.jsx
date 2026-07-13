@@ -427,17 +427,15 @@ export default function PostureMeasure({ member, onSave, onBack }) {
           <button onClick={handleRetake} className="measure-back">다시 측정</button>
         </div>
 
-        <div id="posture-report-sheet">
-          <PostureReport
-            report={report}
-            member={member}
-            currentLandmarks={report.rawLandmarks}
-            currentImageUrl={previewUrl}
-            heightCm={bodyInfo.heightCm}
-            actualAge={bodyInfo.actualAge}
-            perViewSnapshots={report.perViewSnapshots}
-          />
-        </div>
+        <PostureReport
+          report={report}
+          member={member}
+          currentLandmarks={report.rawLandmarks}
+          currentImageUrl={previewUrl}
+          heightCm={bodyInfo.heightCm}
+          actualAge={bodyInfo.actualAge}
+          perViewSnapshots={report.perViewSnapshots}
+        />
 
         <div className="space-y-2 rounded-2xl border border-slate-800 bg-slate-950/95 p-3">
           {/* '리포트 저장'을 누르면 A4 JPG 저장 + 회원 기록 자동 저장 (탭 불필요) */}

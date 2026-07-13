@@ -32,7 +32,7 @@ function gradeScore(grade) {
   return null;
 }
 
-export default function RomReport({ report }) {
+export default function RomReport({ id = 'rom-report-sheet', report }) {
   if (!report) return <UnifiedEmptyState>리포트 데이터가 없습니다.</UnifiedEmptyState>;
   const { joint, poseMode, summary, diagnosis, member, recordedAt, captureMode, snapshotUrl, hasVideo, posture_context, integrated_assessment } = report;
   const s = summary || {};
@@ -49,7 +49,7 @@ export default function RomReport({ report }) {
 
   return (
     <UnifiedReportCanvas>
-      <UnifiedReportPage className="mx-auto">
+      <UnifiedReportPage className="mx-auto" id={id}>
         <UnifiedReportHeader
           eyebrow="ROM RANGE OF MOTION REPORT"
           badge="ROM"

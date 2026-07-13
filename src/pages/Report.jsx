@@ -12,6 +12,7 @@ import { loadAllMeasureRecords, deleteMeasureRound, deleteMeasureType } from '..
 import { captureNodeToJpgFile, shareMeasurementSummaryToKakao } from '../ai-measure/core/reportShare';
 import { canCaptureUnifiedResult, isLiftingShapedSession } from '../components/report/sessionShare';
 import SessionShareReport from '../components/report/SessionShareReport';
+import ReportActions from '../components/report/ReportActions';
 import TrendChart from '../components/report/TrendChart';
 import MemberPicker from '../components/common/MemberPicker';
 const JumpReportDashboard = lazy(() => import('../ai-measure/menus/JumpReportDashboard'));
@@ -1420,6 +1421,9 @@ export default function Report() {
           <Suspense fallback={<div className="p-10 text-center text-slate-400">불러오는 중…</div>}>
             <RomReport report={savedRomReports[romViewerIdx]} member={member} />
           </Suspense>
+          <div className="mx-auto w-full max-w-[794px] p-4 pt-0">
+            <ReportActions reportNodeId="rom-report-sheet" baseName={`${member?.name || '회원'}_ROM`} />
+          </div>
         </div>
       )}
       {postureViewerIdx != null && savedPostureReports[postureViewerIdx] && (
@@ -1445,6 +1449,9 @@ export default function Report() {
               onClose={() => setPostureViewerIdx(null)}
             />
           </Suspense>
+          <div className="mx-auto w-full max-w-[794px] p-4 pt-0">
+            <ReportActions reportNodeId="posture-report-sheet" baseName={`${member?.name || '회원'}_자세`} />
+          </div>
         </div>
       )}
       {liftingViewerIdx != null && savedLiftingSessions[liftingViewerIdx] && (

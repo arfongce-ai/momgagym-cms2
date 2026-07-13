@@ -61,6 +61,7 @@ const STATUS_STYLE = {
 };
 
 export default function PostureReport({
+  id = 'posture-report-sheet',
   report,
   currentLandmarks,
   previousLandmarks,
@@ -129,7 +130,7 @@ export default function PostureReport({
 
   return (
     <UnifiedReportCanvas>
-      <UnifiedReportPage className="mx-auto flex flex-col gap-4">
+      <UnifiedReportPage id={id} className="mx-auto flex flex-col gap-4">
         <UnifiedReportHeader
           eyebrow="POSTURE & ALIGNMENT REPORT"
           badge="POSTURE"

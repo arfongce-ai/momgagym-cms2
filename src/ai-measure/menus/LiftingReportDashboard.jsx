@@ -79,7 +79,7 @@ export default function LiftingReportDashboard({ report, onClose, member }) {
 
   return (
     <UnifiedReportCanvas>
-      <div className="mb-3 flex items-center justify-between">
+      <div className="mx-auto mb-3 flex w-full max-w-[794px] items-center justify-between">
         <ReportActions
           reportNodeId="lifting-report"
           baseName={`바벨리프팅_${exLabel}`}
