@@ -149,9 +149,17 @@ function OverviewTab({ settings, trainers, trainerMap }) {
     return allPayments.filter(p=>monthKey(p.paidAt)===period);
   }, [allPayments, period, isAll, isYear]);
 
-  const paid   = filtered.filter(p=>!p.isUnpaid && !p.isRefunded);
+  // 주의: 환불(isRefunded)된 결제라도 "결제된 금액" 자체는 그 결제월의 매출로
+  // 계속 잡아야 한다 — 환불은 대개 부분환불(위약금·부가세·진행분 공제 후)이라,
+  // 이 결제로 실제 받은 금액 중 상당액은 여전히 매출로 남기 때문이다.
+  // (계약서 10조: 진행분 수업료는 트레이너 정산에도 남는다 — finance.js의
+  // computeSessionSettlement와 동일한 원칙. 거기선 환불 결제도 단가 계산에
+  // 포함하고 환불액만 환불월에 차감한다.) 여기서 !p.isRefunded로 통째로
+  // 제외하면 매출은 0이 되는데 refundTotal로 환불액을 한 번 더 빼서
+  // 실제보다 훨씬 낮게(경우에 따라 음수 기여) 잡히는 이중차감 버그가 있었다.
+  const paid   = filtered.filter(p=>!p.isUnpaid);
   const unpaid = filtered.filter(p=>p.isUnpaid && !p.isRefunded);
-  // 이 기간에 환불된 결제 — 환불액을 매출에서 차감(환불일 기준)
+  // 이 기간에 환불된 결제 — 환불액을 매출에서 차감(환불일 기준. 결제월과 다를 수 있음)
   const refundedThisPeriod = allPayments.filter(p=>p.isRefunded && p.refundedAt && (
     isAll ? true
     : isYear ? p.refundedAt.slice(0,4)===period
@@ -162,7 +170,7 @@ function OverviewTab({ settings, trainers, trainerMap }) {
   const totals = useMemo(()=>{
     let amount=0, cardFee=0, vat=0, net=0;
     paid.forEach(p=>{ const c=calcNet(p,settings); amount+=c.amount; cardFee+=c.cardFee; vat+=c.vat; net+=c.net; });
-    net -= refundTotal;   // 환불한 달의 입금액에서 환불액 차감
+    net -= refundTotal;   // 환불한 달의 입금액에서 환불액만 차감(결제 전액이 아니라)
     return { amount, cardFee, vat, net };
   }, [paid, settings, refundTotal]);
 
@@ -182,11 +190,17 @@ function OverviewTab({ settings, trainers, trainerMap }) {
 
   // 월별 추이 데이터(유효한 키만). 연 단위 선택 시 해당 연도 12개월,
   // 전체/특정월 선택 시 전체 월을 대상으로 한다.
+  //  · totals와 동일 원칙: 결제월엔 전액 반영, 환불월엔 환불액만 차감.
   const byMonth = useMemo(()=>{
-    const acc={}; allPayments.filter(p=>!p.isUnpaid && !p.isRefunded).forEach(p=>{
+    const acc={};
+    allPayments.filter(p=>!p.isUnpaid).forEach(p=>{
       const k=monthKey(p.paidAt);
-      if (!isValidMonthKey(k)) return;
-      acc[k]=(acc[k]||0)+calcNet(p,settings).net; });
+      if (isValidMonthKey(k)) acc[k]=(acc[k]||0)+calcNet(p,settings).net;
+    });
+    allPayments.filter(p=>p.isRefunded && p.refundedAt).forEach(p=>{
+      const k=p.refundedAt.slice(0,7);
+      if (isValidMonthKey(k)) acc[k]=(acc[k]||0)-(Number(p.refundAmount)||0);
+    });
     return Object.entries(acc).sort((a,b)=>a[0].localeCompare(b[0]));
   }, [allPayments, settings]);
 

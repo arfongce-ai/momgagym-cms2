@@ -1465,4 +1465,13 @@ export const aiStore = {
       throw e;
     }
   },
+  // 저장된 자세 리포트 일부 필드 보정용(예: 계산식 수정 후 과거 값 재계산).
+  // updatePayment/updateNotice와 동일한 낙관적 갱신 + 실패 시 롤백 패턴.
+  updatePostureReport: async (mid, rid, patch) => {
+    const prev = cache.postureReports[mid];
+    cache.postureReports[mid] = (cache.postureReports[mid] || []).map(r => r.id === rid ? { ...r, ...patch } : r);
+    const u = (cache.postureReports[mid] || []).find(r => r.id === rid);
+    try { if (u) await fbSet('posture_reports', rid, { ...u, __mid: mid }); return u; }
+    catch (e) { cache.postureReports[mid] = prev; throw e; }
+  },
 };

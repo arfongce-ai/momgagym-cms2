@@ -16,6 +16,8 @@
 //  출력: { metadata, regions[], muscleMap, riskTop3, disclaimers }
 // ════════════════════════════════════════════════════════════════════════
 
+import { POSTURE_THRESHOLDS } from './postureMath';
+
 const abs = (v) => (v == null ? null : Math.abs(v));
 const pick = (perView, keys) => {
   // 여러 면 중 해당 지표를 가진 첫 면의 analysis 를 반환
@@ -134,9 +136,9 @@ export function buildRegionDiagnoses(perViewAnalysis = {}, { sex = null } = {}) 
     const kyph = side?.sagittal?.kyphosisProxyDeg ?? null; // 귀-어깨-골반 각(작을수록 굽음)
     // kyphosisProxyDeg 는 180에 가까울수록 곧음. 165도 미만이면 굽은 등 경향.
     const kyphDev = kyph == null ? null : 180 - kyph;
-    const kyphLevel = levelFromDeg(kyphDev, 15, 25);
+    const kyphLevel = levelFromDeg(kyphDev, ...POSTURE_THRESHOLDS.kyphosisDevDeg);
     const shDiff = front?.frontal?.shoulderHeightDiffMm ?? null;
-    const shLevel = levelFromMm(shDiff, 8, 18);
+    const shLevel = levelFromMm(shDiff, ...POSTURE_THRESHOLDS.shoulderDiffMm);
     const level = worst([kyphLevel, shLevel]);
     const measured = [];
     if (kyphDev != null) measured.push({ label: '굽은 등(흉추후만) 편차', value: Math.round(kyphDev), unit: '°' });
@@ -194,7 +196,8 @@ export function buildRegionDiagnoses(perViewAnalysis = {}, { sex = null } = {}) 
   {
     const leg = front?.frontal?.legAlignment || front?.rules?.legAlignment || null;
     const knee = side?.sagittal?.kneeExtensionProxyDeg ?? front?.sagittal?.kneeExtensionProxyDeg ?? null;
-    const kneeLevel = knee == null ? LEVEL.insufficient : knee > 185 ? LEVEL.risk : knee > 180 ? LEVEL.caution : LEVEL.normal;
+    const { cautionAbove, riskAbove } = POSTURE_THRESHOLDS.kneeExtensionDeg;
+    const kneeLevel = knee == null ? LEVEL.insufficient : knee > riskAbove ? LEVEL.risk : knee > cautionAbove ? LEVEL.caution : LEVEL.normal;
     const legLevel = leg?.status === 'risk' ? LEVEL.risk : leg?.status === 'caution' ? LEVEL.caution : leg ? LEVEL.normal : LEVEL.insufficient;
     const qDev = qAngleDeviation(front?.frontal?.qAngleProxyDeg);
     const [qCaution, qRisk] = genderThreshold('qAngleDevDeg', sex);

@@ -1122,6 +1122,33 @@ describe('스케줄 확정·삭제 동시성 — 이중 복원 방지', () => {
     expect(store.getMembers().find(x => x.id === m.id).trainerSessions.t1.remaining).toBe(5);
   });
 
+  it('updatePostureReport로 자세 리포트 필드(예: bodyAge)를 보정할 수 있다', async () => {
+    const m = await store.addMember({ name: 'O' });
+    const r = await aiStore.addPostureReport({
+      member: { id: m.id, name: 'O' }, memberId: m.id,
+      analysis: { score: 79.99, bodyAge: 59 },
+    });
+    const updated = await aiStore.updatePostureReport(m.id, r.id, {
+      analysis: { ...r.analysis, bodyAge: 30 },
+    });
+    expect(updated.analysis.bodyAge).toBe(30);
+    expect(updated.analysis.score).toBe(79.99); // 다른 필드는 그대로
+    expect(aiStore.getPostureReports(m.id).find(x => x.id === r.id).analysis.bodyAge).toBe(30);
+  });
+
+  it('updatePostureReport 저장 실패 시 캐시를 롤백한다', async () => {
+    const m = await store.addMember({ name: 'P' });
+    const r = await aiStore.addPostureReport({
+      member: { id: m.id, name: 'P' }, memberId: m.id,
+      analysis: { score: 50, bodyAge: 45 },
+    });
+    setFail(true);
+    await expect(aiStore.updatePostureReport(m.id, r.id, { analysis: { ...r.analysis, bodyAge: 20 } }))
+      .rejects.toThrow();
+    setFail(false);
+    expect(aiStore.getPostureReports(m.id).find(x => x.id === r.id).analysis.bodyAge).toBe(45);
+  });
+
   it('취소 확정과 삭제가 거의 동시에 들어와도(혼합 경쟁) 세션이 이중 복원되지 않는다', async () => {
     const m = await store.addMember({ name: 'N', trainerSessions: { t1: { total: 10, remaining: 5 } } });
     const sch = await store.createScheduleWithDeduction({ memberId: m.id, trainerId: 't1', isExternal: false });

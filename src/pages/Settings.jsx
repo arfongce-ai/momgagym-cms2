@@ -5,6 +5,7 @@ import { useState, useEffect } from 'react';
 import { daysAgoYMD } from '../utils/dates';
 import { store, aiStore } from '../demoData';
 import { useAuth } from '../contexts/AuthContext';
+import { recomputeBodyAgeIfStale } from '../ai-measure/core/postureMath';
 
 function serializeDate(v) {
   if (!v) return null;
@@ -37,6 +38,15 @@ export default function Settings({ darkMode, setDarkMode }) {
   const [purgeList,    setPurgeList]    = useState([]);
   const [purgeLoading, setPurgeLoading] = useState(false);
   const [purgeMsg,     setPurgeMsg]     = useState('');
+
+  // ── 체형나이 소급 보정(자세 리포트) ─────────────────────
+  //  postureMath.js의 계단식→불연속 버그 수정 이후, 그 전에 저장된 자세
+  //  리포트의 bodyAge는 옛 공식 값 그대로 남아있다. 점수(score)만 있으면
+  //  새 랜드마크 없이 재계산 가능하므로, 여기서 스캔→미리보기→일괄 적용한다.
+  const [bodyAgeScanList, setBodyAgeScanList] = useState(null); // null=아직 조회 안 함
+  const [bodyAgeScanning, setBodyAgeScanning] = useState(false);
+  const [bodyAgeFixing,   setBodyAgeFixing]   = useState(false);
+  const [bodyAgeMsg,      setBodyAgeMsg]      = useState('');
 
   // ── JSON 백업 (수납 + 신체정보 + AI측정 포함, Firestore 캐시 기반) ──────
   const handleBackup = async () => {
@@ -140,6 +150,70 @@ export default function Settings({ darkMode, setDarkMode }) {
     }
   };
 
+  // ── 체형나이 소급 보정: 조회(스캔) ───────────────────────
+  //  전 회원의 자세 리포트를 지연 로딩(이미 로드된 회원은 캐시 재사용,
+  //  추가 읽기 없음)하며 옛 공식 값을 찾는다. 실제 쓰기는 하지 않는다.
+  const scanBodyAges = async () => {
+    setBodyAgeScanning(true);
+    setBodyAgeMsg('');
+    const found = [];
+    try {
+      const members = store.getMembers();
+      for (const m of members) {
+        // eslint-disable-next-line no-await-in-loop
+        const reports = await aiStore.ensurePostureReports(m.id);
+        for (const r of reports) {
+          const actualAge = r.actualAge ?? r.analysis?.actualAge ?? m.age ?? null;
+          const { needsUpdate, newBodyAge } = recomputeBodyAgeIfStale(r.analysis, actualAge);
+          if (needsUpdate) {
+            found.push({
+              memberId: m.id, memberName: m.name, reportId: r.id,
+              measuredAt: (r.createdAt || r.measuredAt || '').slice(0, 10),
+              oldBodyAge: r.analysis.bodyAge, newBodyAge,
+            });
+          }
+        }
+      }
+      setBodyAgeScanList(found);
+      setBodyAgeMsg(found.length === 0 ? '보정이 필요한 리포트가 없습니다.' : '');
+    } catch (e) {
+      console.error('[체형나이 스캔 실패]', e);
+      setBodyAgeMsg('스캔 중 오류가 발생했습니다. 네트워크 확인 후 다시 시도하세요.');
+    } finally {
+      setBodyAgeScanning(false);
+    }
+  };
+
+  // ── 체형나이 소급 보정: 적용 ──────────────────────────────
+  const applyBodyAgeFixes = async () => {
+    if (!bodyAgeScanList?.length) return;
+    if (!window.confirm(`${bodyAgeScanList.length}건의 자세 리포트 체형나이를 새 계산식으로 보정합니다.\n이 작업은 되돌릴 수 없습니다.`)) return;
+    setBodyAgeFixing(true);
+    let ok = 0; const failed = [];
+    for (const item of bodyAgeScanList) {
+      try {
+        const reports = aiStore.getPostureReports(item.memberId);
+        const report = reports.find(r => r.id === item.reportId);
+        if (!report) { failed.push(item.memberName); continue; }
+        // eslint-disable-next-line no-await-in-loop
+        await aiStore.updatePostureReport(item.memberId, item.reportId, {
+          analysis: { ...report.analysis, bodyAge: item.newBodyAge },
+        });
+        ok++;
+      } catch (e) {
+        console.error('[체형나이 보정 실패]', item.memberName, item.reportId, e);
+        failed.push(item.memberName);
+      }
+    }
+    setBodyAgeFixing(false);
+    if (failed.length === 0) {
+      setBodyAgeMsg(`✅ ${ok}건 보정 완료`);
+      setBodyAgeScanList([]);
+    } else {
+      setBodyAgeMsg(`⚠️ ${ok}건 완료, ${failed.length}건 실패: ${failed.join(', ')} — 네트워크 확인 후 다시 시도하세요.`);
+    }
+  };
+
   return (
     <div className="space-y-6 max-w-lg">
       <h1 className="text-2xl font-black tracking-tight">설정</h1>
@@ -153,9 +227,9 @@ export default function Settings({ darkMode, setDarkMode }) {
             <p className="text-slate-500 text-xs">어두운 테마로 전환합니다</p>
           </div>
           <button onClick={() => setDarkMode(!darkMode)}
-            className={`w-12 h-6 rounded-full transition-colors relative ${darkMode ? 'bg-amber-500' : 'bg-slate-700'}`}>
-            <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform duration-200
-              ${darkMode ? 'translate-x-6' : 'translate-x-0.5'}`} />
+            className={`w-12 h-6 rounded-full transition-colors relative flex-shrink-0 overflow-hidden ${darkMode ? 'bg-amber-500' : 'bg-slate-700'}`}>
+            <span className={`absolute left-0.5 top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform duration-200
+              ${darkMode ? 'translate-x-6' : 'translate-x-0'}`} />
           </button>
         </div>
       </div>
@@ -234,6 +308,46 @@ export default function Settings({ darkMode, setDarkMode }) {
                 <button onClick={handlePurge} disabled={purgeLoading}
                   className="w-full bg-red-600 hover:bg-red-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-2.5 rounded-xl text-sm transition-colors">
                   {purgeLoading ? '파기 중…' : `⚠️ ${purgeList.length}명 일괄 파기`}
+                </button>
+              </>
+            )}
+          </div>
+
+          {/* 체형나이 소급 보정 */}
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
+            <h2 className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-1">
+              체형나이 재계산 (관리자)
+            </h2>
+            <p className="text-xs text-slate-500 mb-3">
+              자세 리포트의 체형나이 계산식이 수정되어(점수 경계에서 갑자기 튀던 문제),
+              이전에 저장된 리포트만 옛 값이 남아있을 수 있습니다.<br/>
+              <span className="text-slate-600">새 랜드마크 측정 없이 저장된 점수로만 재계산하며, 조회 후 목록을 확인하고 적용합니다.</span>
+            </p>
+            <button onClick={scanBodyAges} disabled={bodyAgeScanning}
+              className="btn btn-ghost w-full mb-3 disabled:opacity-50">
+              {bodyAgeScanning ? '조회 중…' : '🔍 보정 대상 조회'}
+            </button>
+            {bodyAgeMsg && (
+              <p className={`text-xs mb-3 font-semibold ${bodyAgeMsg.startsWith('✅') ? 'text-emerald-400' : 'text-slate-400'}`}>
+                {bodyAgeMsg}
+              </p>
+            )}
+            {bodyAgeScanList?.length > 0 && (
+              <>
+                <div className="bg-amber-500/5 border border-amber-500/10 rounded-xl p-3 mb-3 max-h-48 overflow-y-auto space-y-1">
+                  {bodyAgeScanList.map((item) => (
+                    <div key={item.reportId} className="flex items-center justify-between text-xs py-1 border-b border-slate-800 last:border-0 gap-2">
+                      <span className="text-amber-300 font-semibold flex-shrink-0">{item.memberName}</span>
+                      <span className="text-slate-600 text-[10px] flex-shrink-0">{item.measuredAt}</span>
+                      <span className="text-slate-400 text-[11px]">
+                        {item.oldBodyAge ?? '-'}세 → <span className="text-slate-200 font-bold">{item.newBodyAge}세</span>
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                <button onClick={applyBodyAgeFixes} disabled={bodyAgeFixing}
+                  className="w-full bg-amber-500 hover:bg-amber-400 disabled:opacity-50 disabled:cursor-not-allowed text-slate-950 font-bold py-2.5 rounded-xl text-sm transition-colors">
+                  {bodyAgeFixing ? '보정 중…' : `${bodyAgeScanList.length}건 일괄 보정`}
                 </button>
               </>
             )}

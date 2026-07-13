@@ -118,6 +118,7 @@ export default function Trainers() {
   const [editTarget, setEditTarget] = useState(null);
   const [form,       setForm]       = useState(EMPTY);
   const [showPw,     setShowPw]     = useState({}); // 트레이너별 비번 보기 토글
+  const [saving,     setSaving]     = useState(false); // 등록/수정 중복 제출 방지
 
   const load = () => setTrainers(store.getTrainers());
   useEffect(load, []);
@@ -149,6 +150,7 @@ export default function Trainers() {
   const closeForm = () => { setShowForm(false); setEditTarget(null); };
 
   const saveTrainer = async () => {
+    if (saving) return;
     if (!form.name.trim() || !form.phone.trim()) { alert('이름과 연락처는 필수입니다.'); return; }
     // 로그인 계정을 적었다면 이메일+비번 둘 다 있어야 하고, 이메일이 겹치면 안 됨
     const email = (form.loginEmail||'').trim().toLowerCase();
@@ -157,11 +159,13 @@ export default function Trainers() {
       const dupTrainer = trainers.some(t => t.id!==editTarget?.id && (t.loginEmail||'').trim().toLowerCase()===email);
       if (dupTrainer) { alert('이미 사용 중인 이메일입니다. 다른 이메일을 입력하세요.'); return; }
     }
+    setSaving(true);
     try {
       if (editTarget) await store.updateTrainer(editTarget.id, form);
       else await store.addTrainer(form);
       load(); closeForm();
     } catch (e) { alert('저장에 실패했습니다. 네트워크 확인 후 다시 시도하세요.'); }
+    finally { setSaving(false); }
   };
 
   const deleteTrainer = async id => {
@@ -311,7 +315,7 @@ export default function Trainers() {
 
             <div className="flex gap-2 px-5 py-4 border-t border-slate-800 flex-shrink-0">
               <button onClick={closeForm} className="btn btn-ghost">취소</button>
-              <button onClick={saveTrainer} className="btn btn-primary flex-1">{editTarget?'수정 완료':'등록'}</button>
+              <button onClick={saveTrainer} disabled={saving} className="btn btn-primary flex-1 disabled:opacity-50">{saving ? '저장 중…' : (editTarget?'수정 완료':'등록')}</button>
             </div>
           </div>
         </div>

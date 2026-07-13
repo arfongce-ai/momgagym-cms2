@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import {
   POSTURE_STATUS_KO,
   POSE_LANDMARKS,
+  POSTURE_THRESHOLDS,
   analyzePostureFromLandmarks,
 } from '../core/postureMath';
 import { buildClinicalInterpretation } from '../core/postureClinical';
@@ -181,9 +182,9 @@ export default function PostureReport({
 
             <Panel title="뷰별 핵심 지표">
               <div className="grid grid-cols-2 gap-2">
-                <SmallMetric label="어깨 높이" value={absValue(analysis.frontal?.shoulderHeightDiffMm)} unit="mm" status={mmStatus(analysis.frontal?.shoulderHeightDiffMm, 8, 18)} />
-                <SmallMetric label="골반 높이" value={absValue(analysis.frontal?.pelvisHeightDiffMm)} unit="mm" status={mmStatus(analysis.frontal?.pelvisHeightDiffMm, 8, 15)} />
-                <SmallMetric label="거북목 거리" value={absValue(analysis.sagittal?.forwardHeadMm)} unit="mm" status={mmStatus(analysis.sagittal?.forwardHeadMm, 25, 45)} />
+                <SmallMetric label="어깨 높이" value={absValue(analysis.frontal?.shoulderHeightDiffMm)} unit="mm" status={mmStatus(analysis.frontal?.shoulderHeightDiffMm, ...POSTURE_THRESHOLDS.shoulderDiffMm)} />
+                <SmallMetric label="골반 높이" value={absValue(analysis.frontal?.pelvisHeightDiffMm)} unit="mm" status={mmStatus(analysis.frontal?.pelvisHeightDiffMm, ...POSTURE_THRESHOLDS.pelvisDiffMmNeutral)} />
+                <SmallMetric label="거북목 거리" value={absValue(analysis.sagittal?.forwardHeadMm)} unit="mm" status={mmStatus(analysis.sagittal?.forwardHeadMm, ...POSTURE_THRESHOLDS.forwardHeadMm)} />
                 <SmallMetric label="무릎 펴짐 각도" value={analysis.sagittal?.kneeExtensionProxyDeg ?? '-'} unit="°" status={kneeExtensionStatus(analysis.sagittal?.kneeExtensionProxyDeg)} />
               </div>
               <p className="mt-3 text-xs leading-relaxed text-slate-500">
@@ -825,8 +826,13 @@ function mmStatus(value, cautionMm, riskMm) {
 
 function kneeExtensionStatus(value) {
   if (value == null) return 'caution';
-  if (value > 185 || value < 175) return 'risk';
-  if (value > 180 || value < 177) return 'caution';
+  // 과신전 방향만 판정한다 — evaluatePostureRules(점수·항목별 체크 목록)·
+  // postureClinical.js(부위별 진단)와 동일 기준으로 통일(POSTURE_THRESHOLDS).
+  // 이전엔 여기만 미달(<175/177)도 위험/주의로 잡아, 같은 리포트 화면 안에서
+  // 이 지표 카드와 "항목별 체크 결과"·점수가 서로 다른 판정을 보여줬다.
+  const { cautionAbove, riskAbove } = POSTURE_THRESHOLDS.kneeExtensionDeg;
+  if (value > riskAbove) return 'risk';
+  if (value > cautionAbove) return 'caution';
   return 'normal';
 }
 

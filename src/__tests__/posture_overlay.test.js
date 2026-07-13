@@ -38,7 +38,7 @@ describe('buildPostureMarkers', () => {
     const sh = markers.find((m) => m.label.includes('어깨'));
     expect(sh).toBeTruthy();
     expect(sh.type).toBe('circle');
-    expect(sh.severity).toBe('risk'); // 18 >= 16
+    expect(sh.severity).toBe('risk'); // 18 >= risk(18)
     // 높은 쪽(좌) 어깨 좌표 근처
     expect(sh.x).toBeCloseTo(lm[LM.LEFT_SHOULDER].x, 2);
   });
@@ -48,7 +48,7 @@ describe('buildPostureMarkers', () => {
     const markers = buildPostureMarkers(analysis, baseLandmarks(), 'front');
     const pv = markers.find((m) => m.label.includes('골반'));
     expect(pv).toBeTruthy();
-    expect(pv.severity).toBe('caution'); // 9 in [8,16)
+    expect(pv.severity).toBe('caution'); // 9 in [8,15) — neutral pelvis threshold
   });
 
   it('측면: 거북목이 크면 머리에 화살표 마커', () => {

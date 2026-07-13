@@ -184,7 +184,13 @@ export default function Home() {
 
   const [showSettlePopup, setShowSettlePopup] = useState(false);
 
-  const refreshNotices = () => setNotices(store.getNotices().sort((a,b) => b.isPinned - a.isPinned));
+  // 고정 공지 우선, 그다음 최신순(createdAt 내림차순).
+  //  · 기존엔 isPinned만 정렬해 새 공지가 배열 뒤(오래된 순)에 그대로 쌓였다.
+  const refreshNotices = () => setNotices(
+    [...store.getNotices()].sort((a, b) =>
+      (b.isPinned - a.isPinned) || String(b.createdAt || '').localeCompare(String(a.createdAt || ''))
+    )
+  );
 
   useEffect(() => {
     refreshNotices();

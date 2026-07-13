@@ -472,8 +472,14 @@ function AddModal({ members, trainers, fixedTrainerId, onAdd, onClose }) {
     ? (form.trainerId && form.date && form.startTime)
     : (form.memberId && form.trainerId && form.date && form.startTime && form.classType);
   // 외부 일정: 기간 모드면 종료 날짜가 시작 날짜 이상이어야 함
+  //  · 상한도 둔다 — 종료일 오타(연도 등)로 수백 건이 한 번에 순차 생성되는 걸 막는다.
+  const MAX_EXTERNAL_RANGE_DAYS = 180;
   const isRange = form.extDateMode === 'range';
-  const rangeValid = !isRange || (form.endDate && form.endDate >= form.date);
+  const rangeSpanDays = isRange && form.date && form.endDate
+    ? Math.round((new Date(`${form.endDate}T00:00:00`) - new Date(`${form.date}T00:00:00`)) / 86400000)
+    : 0;
+  const rangeTooLong = isRange && rangeSpanDays > MAX_EXTERNAL_RANGE_DAYS;
+  const rangeValid = !isRange || (form.endDate && form.endDate >= form.date && !rangeTooLong);
   const canSubmitExternal = form.date && form.startTime && form.endTime && form.externalType && rangeValid;
 
   const handleAdd = async () => {
@@ -760,7 +766,10 @@ function AddModal({ members, trainers, fixedTrainerId, onAdd, onClose }) {
               {isRange && (
                 <>
                   <DateWd label="종료 날짜" value={form.endDate} onChange={pf('endDate')}/>
-                  {!rangeValid && (
+                  {!rangeValid && rangeTooLong && (
+                    <p className="text-xs text-red-400 -mt-2">기간은 최대 {MAX_EXTERNAL_RANGE_DAYS}일까지 설정할 수 있습니다(현재 {rangeSpanDays + 1}일 — 종료 날짜를 확인해 주세요)</p>
+                  )}
+                  {!rangeValid && !rangeTooLong && (
                     <p className="text-xs text-red-400 -mt-2">종료 날짜는 시작 날짜와 같거나 이후여야 합니다</p>
                   )}
                   {rangeValid && (
@@ -1143,6 +1152,7 @@ export default function Schedule() {
         <ScheduleAuditModal
           groups={duplicateGroups}
           summary={auditSummary}
+          user={user}
           onOpenItem={(s)=>{ setShowAudit(false); setDetail(s); }}
           onClose={()=>setShowAudit(false)}
         />
@@ -1154,8 +1164,32 @@ export default function Schedule() {
 // ── 중복 예약 점검 모달 ──────────────────────────────────
 //  탐지 결과만 보여주고, 실제 삭제·수정은 항목을 눌러 상세 모달에서 처리한다
 //  (되돌릴 수 없는 처리는 운영자 확인을 거치도록 — 데이터 정직성).
-function ScheduleAuditModal({ groups, summary, onOpenItem, onClose }) {
+const AUDIT_CONFIRM_KEY = 'fitcms_schedule_audit_confirmed';
+
+function readAuditConfirmed() {
+  try { return JSON.parse(localStorage.getItem(AUDIT_CONFIRM_KEY) || 'null'); }
+  catch { return null; }
+}
+
+function ScheduleAuditModal({ groups, summary, user, onOpenItem, onClose }) {
   const STATUS_KO = { scheduled:'예정', attended:'출석', canceled:'취소', noshow:'노쇼' };
+  const [confirmed, setConfirmed] = useState(readAuditConfirmed);
+
+  // 자동 점검은 참고용 신호일 뿐이라, "확인했고 실제로 문제 없음"을 운영자가
+  // 직접 기록할 수 있게 한다(브라우저 로컬 기록 — 팀 공유 로그는 아님).
+  const confirmNoIssue = () => {
+    const rec = { at: Date.now(), byName: user?.name || '' };
+    try { localStorage.setItem(AUDIT_CONFIRM_KEY, JSON.stringify(rec)); } catch { /* noop */ }
+    setConfirmed(rec);
+  };
+  const fmtConfirmedAt = (ms) => {
+    try {
+      return new Date(ms).toLocaleString('ko-KR', {
+        year: 'numeric', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit',
+      });
+    } catch { return ''; }
+  };
+
   return (
     <div className="modal-overlay">
       <div className="modal-box modal-box-large">
@@ -1170,6 +1204,15 @@ function ScheduleAuditModal({ groups, summary, onOpenItem, onClose }) {
               <p className="text-4xl mb-2">✓</p>
               <p className="text-emerald-400 font-bold">중복으로 의심되는 예약이 없습니다.</p>
               <p className="text-slate-500 text-xs mt-1">같은 회차 중복·같은 시간 이중 예약을 자동 점검합니다.</p>
+              <button onClick={confirmNoIssue}
+                className="mt-5 mx-auto block rounded-xl bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 font-bold text-sm px-5 py-2.5 hover:bg-emerald-500/25 transition-colors">
+                ✓ 문제 없음 확인
+              </button>
+              {confirmed?.at && (
+                <p className="text-[11px] text-slate-500 mt-3">
+                  마지막 확인: {fmtConfirmedAt(confirmed.at)}{confirmed.byName ? ` · ${confirmed.byName}` : ''}
+                </p>
+              )}
             </div>
           ) : (
             <>

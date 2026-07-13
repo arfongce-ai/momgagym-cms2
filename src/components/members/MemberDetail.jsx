@@ -39,6 +39,12 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
   const [editMode, setEdit] = useState(false);
   const [editForm, setEF]   = useState({ ...initMember });
 
+  // 세션 추가·수납 등록·양도는 결제 기록을 새로 만들거나(addPaymentWithMemberUpdate,
+  // 매 호출마다 새 id) 세션 수를 이동시키는(transferSessions) 되돌리기 번거로운 동작이라,
+  // 더블탭/더블클릭으로 두 번 실행되면 결제가 중복 기록되거나 세션이 두 번 양도될 수 있다.
+  // 버튼 비활성화로 재진입을 막는다(Schedule.jsx의 finalizeSchedule 이중처리 방지와 동일 원리).
+  const [busy, setBusy] = useState(false);
+
   // 세션 추가 (결제 동반)
   const [showAddSess,   setShowAddSess]   = useState(false);
   const [addTrainerId,  setAddTrainerId]  = useState('');
@@ -96,6 +102,7 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
 
   // ── 세션 재등록 (결제 + 세션을 함께 기록) ─────────────────
   const handleAddSession = async () => {
+    if (busy) return;
     if (!addTrainerId) { alert('트레이너를 선택해 주세요.'); return; }
     if (!addCount || addCount<1) { alert('세션 수를 입력해 주세요.'); return; }
     const amount = Number(addSessAmount) || 0;
@@ -103,6 +110,7 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
       alert('결제 금액을 입력해 주세요. (결제 없이 세션만 추가하려면 "결제 없이 추가"를 체크하세요)');
       return;
     }
+    setBusy(true);
 
     const fresh = store.getMembers().find(m=>m.id===member.id);
     const ts    = JSON.parse(JSON.stringify(fresh?.trainerSessions||{}));
@@ -166,6 +174,7 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
       setAddSessDate(todayYMD()); setAddSessAmount(''); setAddSessMethod('카드'); setAddSessNoPay(false);
       onUpdate?.();
     } catch (e) { alert('세션 등록에 실패했습니다. 네트워크 확인 후 다시 시도하세요.'); }
+    finally { setBusy(false); }
   };
 
   // ── 세션 직접 조정 / 복구 ─────────────────────────────
@@ -216,6 +225,7 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
     setAdjustTid(null); // 다른 인라인 폼 닫기
   };
   const saveTransfer = async (fromTid) => {
+    if (busy) return;
     const { toTid, count } = transferForm;
     if (!toTid) { alert('양도받을 트레이너를 선택하세요.'); return; }
     const fresh = store.getMembers().find(m=>m.id===member.id);
@@ -228,12 +238,13 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
       : `${fromName} → ${toName}\n${count}회를 양도합니다.`;
     const msg = `${head}\n\n· 양도한 횟수만큼 결제금·정산비율도 함께 이전됩니다.\n· 이미 출석·지급된 과거 정산은 그대로 유지됩니다.\n\n진행할까요?`;
     if (!window.confirm(msg)) return;
+    setBusy(true);
     try {
       await store.transferSessions(member.id, { fromTid, toTid, count:Number(count) });
       refresh(); setTransferTid(null); onUpdate?.();
     } catch (e) {
       alert('양도에 실패했습니다.\n' + (e?.message || ''));
-    }
+    } finally { setBusy(false); }
   };
 
   // ── 다중 트레이너 금액 분배(split) 유틸 ─────────────────────
@@ -410,7 +421,9 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
   };
   // ── 수납 등록 ─────────────────────────────────────────
   const handleAddPayment = async () => {
+    if (busy) return;
     if (!payForm.amount) { alert('금액을 입력해 주세요.'); return; }
+    setBusy(true);
     try {
       // 재등록일 때만 회차 저장(숫자), 아니면 회차 비움
       const reEnrollNo = payForm.isReEnroll && payForm.reEnrollNo
@@ -497,6 +510,7 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
       setPayForm(makePayForm());
       onUpdate?.();
     } catch (e) { alert('수납 등록에 실패했습니다. 네트워크 확인 후 다시 시도하세요.'); }
+    finally { setBusy(false); }
   };
 
   const handleDeletePayment = async pid => {
@@ -754,7 +768,7 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
                             )}
                             <div className="flex gap-2 justify-end">
                               <button onClick={()=>setTransferTid(null)} className="text-xs text-slate-400 hover:text-white px-3 py-1.5">취소</button>
-                              <button onClick={()=>saveTransfer(tid)} className="bg-blue-500 hover:bg-blue-400 text-white font-bold px-4 py-1.5 rounded-lg text-xs">양도 실행</button>
+                              <button onClick={()=>saveTransfer(tid)} disabled={busy} className="bg-blue-500 hover:bg-blue-400 text-white font-bold px-4 py-1.5 rounded-lg text-xs disabled:opacity-50">양도 실행</button>
                             </div>
                           </div>
                         ) : adjustTid===tid ? (
@@ -869,7 +883,7 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
                   )}
                   <div className="flex gap-2">
                     <button onClick={()=>{setShowAddSess(false);setAddTrainerId('');}} className="py-2 px-4 rounded-xl border border-slate-700 text-slate-300 hover:text-white text-sm font-semibold transition-colors">취소</button>
-                    <button onClick={handleAddSession} className="flex-1 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold py-2 rounded-xl text-sm transition-colors">등록</button>
+                    <button onClick={handleAddSession} disabled={busy} className="flex-1 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold py-2 rounded-xl text-sm transition-colors disabled:opacity-50">등록</button>
                   </div>
                 </div>
               )}
@@ -1240,7 +1254,7 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
                   <div><label className={LBL}>메모</label><input value={payForm.note} onChange={ppf('note')} placeholder="PT 10회 등록" className={INP}/></div>
                   <div className="flex gap-2">
                     <button onClick={()=>setShowAddPay(false)} className="py-2 px-4 rounded-xl border border-slate-700 text-slate-300 hover:text-white text-sm font-semibold transition-colors">취소</button>
-                    <button onClick={handleAddPayment} className="flex-1 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold py-2 rounded-xl text-sm transition-colors">등록</button>
+                    <button onClick={handleAddPayment} disabled={busy} className="flex-1 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold py-2 rounded-xl text-sm transition-colors disabled:opacity-50">등록</button>
                   </div>
                 </div>
               )}

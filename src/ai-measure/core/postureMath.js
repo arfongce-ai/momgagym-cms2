@@ -55,6 +55,31 @@ export const POSTURE_STATUS_KO = Object.freeze({
   risk: '위험',
 });
 
+// ── 공용 판정 임계값(단일 소스) ──────────────────────────────────────
+//  ⚠ 이전엔 postureOverlay.js(사진 위 마커) · PostureReport.jsx(지표 패널) ·
+//  postureClinical.js(부위별 진단)가 같은 지표를 각자 따로 하드코딩해,
+//  같은 측정값을 두고 화면 위치마다 다른 주의/위험 판정이 나오는 문제가
+//  있었다(예: 거북목 25/45mm vs 40/80mm — postureOverlay.js는 "주의값×2"라는
+//  자체 공식을 썼는데 다른 곳과 맞지 않았다). 성별 미반영 지표는 여기 한
+//  곳에만 정의하고, 나머지 파일은 이 값을 import해서 쓴다.
+//  (성별 반영 지표(골반 높이차·Q각)는 아래가 아니라 postureClinical.js의
+//  GENDER_NORMS + genderThreshold()를 그대로 쓴다 — 성별은 이 파일이 모름.)
+export const POSTURE_THRESHOLDS = Object.freeze({
+  shoulderDiffMm: [8, 18],
+  forwardHeadMm: [25, 45],
+  kyphosisDevDeg: [15, 25],   // 귀-어깨-골반 각의 180° 편위
+  headTiltDeg: [5, 10],
+  neckTiltDeg: [12, 24],
+  // 골반 높이차의 성중립 기본값(사진 마커 등 성별 정보가 없는 곳에서 사용).
+  // 성별을 아는 곳(postureClinical.js)은 GENDER_NORMS.pelvisDiffMm을 대신 쓴다 —
+  // neutral 값은 이것과 반드시 같게 유지해야 한다.
+  pelvisDiffMmNeutral: [8, 15],
+  // 무릎 신전각(원시 각도) — 과신전 방향만 판정한다(평가에 반영되는 값과 동일 기준).
+  // BlazePose 3점각은 정의상 180°를 넘을 수 없어(acos 결과 범위), 180° 미만 값은
+  // '살짝 덜 편 자세'일 뿐 과신전과 성격이 달라 위험으로 잡지 않는다.
+  kneeExtensionDeg: Object.freeze({ cautionAbove: 180, riskAbove: 185 }),
+});
+
 export function round(value, digits = 1) {
   if (value == null || Number.isNaN(value)) return null;
   const unit = 10 ** digits;
@@ -323,9 +348,10 @@ export function evaluatePostureRules(landmarks) {
   const legAlignment = classifyLegAlignment(landmarks);
 
   const findings = [];
+  const { cautionAbove: kneeCaution, riskAbove: kneeRisk } = POSTURE_THRESHOLDS.kneeExtensionDeg;
   for (const [side, value] of [['left', leftKneeExtension], ['right', rightKneeExtension]]) {
     if (value == null) continue;
-    if (value > 185) {
+    if (value > kneeRisk) {
       findings.push({
         key: `${side}_knee_hyperextension`,
         status: POSTURE_STATUS.RISK,
@@ -334,7 +360,7 @@ export function evaluatePostureRules(landmarks) {
         unit: 'deg',
         message: '무릎 신전각이 185도를 초과하여 과신전 위험이 큽니다.',
       });
-    } else if (value > 180) {
+    } else if (value > kneeCaution) {
       findings.push({
         key: `${side}_knee_extension_caution`,
         status: POSTURE_STATUS.CAUTION,
@@ -645,15 +671,30 @@ export function calculatePostureScore({
 export function mapScoreToBodyAge(score, actualAge, options = {}) {
   if (score == null || actualAge == null) return null;
   const { minAge = 12, maxAge = 90 } = options;
+  // 이전엔 delta가 점수 구간마다 계단식으로 바뀌고 별도의 선형 fineTune이
+  // 더해지는 구조라, 점수가 구간 경계를 살짝 넘을 때(예: 79.99→80.00 —
+  // 잡음 수준의 차이) 체형나이가 4~6세씩 갑자기 뛰는 불연속이 있었다
+  // (측정 정직성 위반 — 무의미한 점수 변화가 결과를 크게 흔들면 안 됨).
+  // 각 구간 "경계에서의 원래 계산값"을 매듭점으로 구간별 선형보간해,
+  // 경계에서의 기존 보정치는 그대로 유지하면서 그 사이를 매끄럽게 잇는다.
+  const knots = [
+    [0, 26.5], [45, 13.75], [60, 6.5], [70, 0], [80, -5.5], [90, -11], [100, -12.5],
+  ];
   let delta;
-  if (score >= 90) delta = -8;
-  else if (score >= 80) delta = -4;
-  else if (score >= 70) delta = 0;
-  else if (score >= 60) delta = 5;
-  else if (score >= 45) delta = 10;
-  else delta = 16;
-  const fineTune = (70 - score) * 0.15;
-  return Math.round(clamp(actualAge + delta + fineTune, minAge, maxAge));
+  if (score <= knots[0][0]) {
+    delta = knots[0][1];
+  } else if (score >= knots[knots.length - 1][0]) {
+    delta = knots[knots.length - 1][1];
+  } else {
+    let seg = [knots[0], knots[1]];
+    for (let i = 0; i < knots.length - 1; i++) {
+      if (score >= knots[i][0] && score <= knots[i + 1][0]) { seg = [knots[i], knots[i + 1]]; break; }
+    }
+    const [lo, hi] = seg;
+    const t = (score - lo[0]) / (hi[0] - lo[0]);
+    delta = lo[1] + t * (hi[1] - lo[1]);
+  }
+  return Math.round(clamp(actualAge + delta, minAge, maxAge));
 }
 
 export function classifyPostureAgeGroup(actualAge) {
@@ -662,6 +703,23 @@ export function classifyPostureAgeGroup(actualAge) {
   if (age < 7) return 'under_7_screening_limited';
   if (age < 19) return 'youth_growth';
   return 'adult';
+}
+
+/**
+ * 저장된 리포트의 bodyAge가 예전(불연속 계단식) 공식 값인지 확인하고, 필요하면
+ * 현재 공식(구간별 선형보간)으로 재계산한 값을 반환한다. — 소급 보정 도구용.
+ * 점수(score)와 실제나이(actualAge)만 있으면 새 랜드마크 없이 재계산 가능.
+ * @param {{score?:number|null, bodyAge?:number|null}} analysis 저장된 리포트의 analysis
+ * @param {number|null} actualAge 재계산에 쓸 실제나이(리포트 저장값 우선, 없으면 회원 현재나이 등으로 폴백은 호출부 책임)
+ * @returns {{ needsUpdate:boolean, newBodyAge:number|null }}
+ */
+export function recomputeBodyAgeIfStale(analysis, actualAge) {
+  if (!analysis || analysis.score == null || actualAge == null) {
+    return { needsUpdate: false, newBodyAge: null };
+  }
+  const recomputed = mapScoreToBodyAge(analysis.score, actualAge);
+  const needsUpdate = recomputed != null && recomputed !== analysis.bodyAge;
+  return { needsUpdate, newBodyAge: recomputed };
 }
 
 export function generatePostureComment({ score, bodyAge, actualAge, ruleFindings = [], cog = null, asymmetry = null } = {}) {

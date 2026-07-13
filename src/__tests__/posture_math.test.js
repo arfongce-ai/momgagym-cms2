@@ -12,6 +12,7 @@ import {
   isPelvisDataReliable,
   mapScoreToBodyAge,
   medianLandmarks,
+  recomputeBodyAgeIfStale,
 } from '../ai-measure/core/postureMath';
 import { normalizeLandmarksForOverlay } from '../ai-measure/menus/PostureReport.jsx';
 
@@ -93,6 +94,36 @@ describe('postureMath', () => {
   it('maps high scores to younger body age and low scores to older body age', () => {
     expect(mapScoreToBodyAge(92, 40)).toBeLessThan(40);
     expect(mapScoreToBodyAge(48, 40)).toBeGreaterThan(40);
+  });
+
+  // [회귀] 이전엔 delta가 계단식 + 별도 선형 fineTune 구조라, 점수가 45/60/70/80/90
+  // 경계를 살짝(0.01점) 넘을 때마다 체형나이가 4~6세씩 튀는 불연속이 있었다.
+  // 구간별 선형보간으로 교체해 경계 부근에서 매끄럽게 이어지는지 검증한다.
+  it('점수 경계(45/60/70/80/90)를 0.01점 차이로 넘어도 체형나이가 크게 튀지 않는다', () => {
+    for (const b of [45, 60, 70, 80, 90]) {
+      const below = mapScoreToBodyAge(b - 0.01, 30);
+      const at = mapScoreToBodyAge(b, 30);
+      // 0.01점 차이의 결과이므로 반올림 오차 수준(최대 1세)만 허용 — 수정 전엔 4~6세였다.
+      expect(Math.abs(at - below)).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it('점수가 높을수록 체형나이는 단조 감소(혹은 동일)한다 — 역전 없음', () => {
+    const scores = Array.from({ length: 41 }, (_, i) => i * 2.5); // 0,2.5,...,100
+    const ages = scores.map((s) => mapScoreToBodyAge(s, 30));
+    for (let i = 1; i < ages.length; i++) {
+      expect(ages[i]).toBeLessThanOrEqual(ages[i - 1]);
+    }
+  });
+
+  it('기존 보정 기준값(0/45/60/70/80/90/100점, 실제나이 30세)은 그대로 유지된다', () => {
+    expect(mapScoreToBodyAge(0, 30)).toBe(Math.round(30 + 26.5));
+    expect(mapScoreToBodyAge(45, 30)).toBe(Math.round(30 + 13.75));
+    expect(mapScoreToBodyAge(60, 30)).toBe(Math.round(30 + 6.5));
+    expect(mapScoreToBodyAge(70, 30)).toBe(30);
+    expect(mapScoreToBodyAge(80, 30)).toBe(Math.round(30 - 5.5));
+    expect(mapScoreToBodyAge(90, 30)).toBe(Math.round(30 - 11));
+    expect(mapScoreToBodyAge(100, 30)).toBe(Math.round(30 - 12.5));
   });
 
   it('filters unreliable landmarks and reports pelvis reliability', () => {
@@ -244,5 +275,29 @@ describe('medianLandmarks (capture-time jitter rejection)', () => {
     const combined = medianLandmarks(frames);
     const analysis = analyzePostureFromLandmarks(combined, { heightCm: 175, actualAge: 35 });
     expect(analysis.score).toBeGreaterThan(0);
+  });
+});
+
+// ── 체형나이 소급 보정 도구용 순수 헬퍼 ────────────────────────────
+describe('recomputeBodyAgeIfStale — 소급 보정 대상 판정', () => {
+  it('저장된 bodyAge가 옛 공식 값이면 needsUpdate=true와 새 값을 반환한다', () => {
+    // 79.99점 실제나이 30세는 예전 공식으로 59세(계단식 불연속)가 저장돼 있었다고 가정.
+    const staleAnalysis = { score: 79.99, bodyAge: 59 };
+    const { needsUpdate, newBodyAge } = recomputeBodyAgeIfStale(staleAnalysis, 30);
+    expect(needsUpdate).toBe(true);
+    expect(newBodyAge).toBe(mapScoreToBodyAge(79.99, 30));
+    expect(newBodyAge).not.toBe(59);
+  });
+
+  it('이미 새 공식대로 저장된 값이면 needsUpdate=false다(중복 보정 방지)', () => {
+    const correctAge = mapScoreToBodyAge(79.99, 30);
+    const analysis = { score: 79.99, bodyAge: correctAge };
+    expect(recomputeBodyAgeIfStale(analysis, 30).needsUpdate).toBe(false);
+  });
+
+  it('score나 actualAge가 없으면 안전하게 needsUpdate=false를 반환한다', () => {
+    expect(recomputeBodyAgeIfStale(null, 30).needsUpdate).toBe(false);
+    expect(recomputeBodyAgeIfStale({ score: null, bodyAge: 40 }, 30).needsUpdate).toBe(false);
+    expect(recomputeBodyAgeIfStale({ score: 80, bodyAge: 40 }, null).needsUpdate).toBe(false);
   });
 });

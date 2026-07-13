@@ -7,18 +7,11 @@
 //  • 판정에 필요한 랜드마크가 없으면 그 항목은 건너뛴다.
 //  • 측면/정면 등 해당 면에서 의미 있는 항목만 표시한다.
 
-import { POSE_LANDMARKS as LM } from './postureMath';
+import { POSE_LANDMARKS as LM, POSTURE_THRESHOLDS } from './postureMath';
 
-// 임계값(측정 정직성: 너무 민감하지 않게 보수적으로)
-const TH = {
-  shoulderDiffMm: 8,    // 어깨 좌우 높이차
-  pelvisDiffMm: 8,      // 골반 좌우 높이차
-  headTiltDeg: 5,       // 머리 기울기(정면/후면)
-  neckTiltDeg: 12,      // 목 기울기(측면)
-  forwardHeadMm: 40,    // 거북목(전방머리)
-  kyphosisDeg: 10,      // 굽은등(귀-어깨-골반 각의 180° 편위)
-  kneeExtDeg: 5,        // 무릎 과신전(180° 초과)
-};
+// 임계값: postureMath.js의 POSTURE_THRESHOLDS(단일 소스)를 그대로 쓴다.
+// ⚠ 이전엔 여기 별도 TH 객체("주의값×2 = 위험값")가 있어 지표 패널·부위별
+// 진단과 다른 판정이 나왔다(예: 거북목 40/80mm vs 다른 화면 25/45mm).
 
 export const POSTURE_SKELETON_CONNECTIONS = [
   [LM.LEFT_SHOULDER, LM.RIGHT_SHOULDER],
@@ -46,8 +39,9 @@ const pt = (landmarks, idx) => {
 };
 const mid = (a, b) => (a && b ? { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 } : a || b || null);
 
-// severity: 'caution' | 'risk'
-function sev(value, caution, risk) {
+// severity: 'caution' | 'risk'. thresholds = [cautionAt, riskAt] (POSTURE_THRESHOLDS 형태).
+function sev(value, thresholds) {
+  const [caution, risk] = thresholds;
   const v = Math.abs(value ?? 0);
   if (v >= risk) return 'risk';
   if (v >= caution) return 'caution';
@@ -78,7 +72,7 @@ export function buildPostureMarkers(analysis, landmarks, viewKey) {
   if (isFrontBack) {
     // 어깨 좌우 높이차
     const sd = frontal.shoulderHeightDiffMm;
-    const sdSev = sev(sd, TH.shoulderDiffMm, TH.shoulderDiffMm * 2);
+    const sdSev = sev(sd, POSTURE_THRESHOLDS.shoulderDiffMm);
     if (sdSev && lS && rS) {
       // 높은 쪽 어깨에 원
       const higher = (lS.y <= rS.y) ? lS : rS;
@@ -87,7 +81,7 @@ export function buildPostureMarkers(analysis, landmarks, viewKey) {
     }
     // 골반 좌우 높이차
     const pd = frontal.pelvisHeightDiffMm;
-    const pdSev = sev(pd, TH.pelvisDiffMm, TH.pelvisDiffMm * 2);
+    const pdSev = sev(pd, POSTURE_THRESHOLDS.pelvisDiffMmNeutral);
     if (pdSev && lH && rH) {
       const higher = (lH.y <= rH.y) ? lH : rH;
       markers.push({ x: higher.x, y: higher.y, severity: pdSev, type: 'circle',
@@ -96,7 +90,7 @@ export function buildPostureMarkers(analysis, landmarks, viewKey) {
     // 머리 기울기(정면): 좌우 귀의 y 차이로 추정
     if (lEar && rEar && head) {
       const tiltDeg = Math.atan2((rEar.y - lEar.y), Math.abs(rEar.x - lEar.x) || 1e-6) * 180 / Math.PI;
-      const tSev = sev(tiltDeg, TH.headTiltDeg, TH.headTiltDeg * 2);
+      const tSev = sev(tiltDeg, POSTURE_THRESHOLDS.headTiltDeg);
       if (tSev) {
         markers.push({ x: head.x, y: head.y, severity: tSev, type: 'arrow',
           dir: tiltDeg > 0 ? 'right' : 'left', label: `머리 기울기 ${Math.abs(Math.round(tiltDeg))}°` });
@@ -109,7 +103,7 @@ export function buildPostureMarkers(analysis, landmarks, viewKey) {
     // ── 측면 항목 ──
     // 거북목(전방 머리) — 라벨은 머리 높이
     const fh = sagittal.forwardHeadMm;
-    const fhSev = sev(fh, TH.forwardHeadMm, TH.forwardHeadMm * 2);
+    const fhSev = sev(fh, POSTURE_THRESHOLDS.forwardHeadMm);
     if (fhSev && head) {
       markers.push({ x: head.x, y: head.y, severity: fhSev, type: 'arrow', dir: 'right',
         label: `거북목 ${Math.abs(Math.round(fh))}mm`, labelDy: 0 });
@@ -118,20 +112,20 @@ export function buildPostureMarkers(analysis, landmarks, viewKey) {
     const ky = sagittal.kyphosisProxyDeg;
     if (ky != null) {
       const dev = Math.abs(180 - ky);
-      const kSev = sev(dev, TH.kyphosisDeg, TH.kyphosisDeg * 2);
+      const kSev = sev(dev, POSTURE_THRESHOLDS.kyphosisDevDeg);
       const shoulder = mid(lS, rS);
       if (kSev && shoulder) {
         markers.push({ x: shoulder.x, y: shoulder.y, severity: kSev, type: 'circle',
           label: `굽은등 편위 ${Math.round(dev)}°` });
       }
     }
-    // 무릎 과신전
+    // 무릎 과신전 — 원시 각도 기준(다른 화면과 동일 임계: 180/185).
     const ke = sagittal.kneeExtensionProxyDeg;
-    if (ke != null && ke > 180) {
+    if (ke != null && ke > POSTURE_THRESHOLDS.kneeExtensionDeg.cautionAbove) {
       const dev = ke - 180;
-      const keSev = sev(dev, TH.kneeExtDeg, TH.kneeExtDeg * 2);
+      const keSev = ke > POSTURE_THRESHOLDS.kneeExtensionDeg.riskAbove ? 'risk' : 'caution';
       const knee = pt(landmarks, LM.LEFT_KNEE) || pt(landmarks, LM.RIGHT_KNEE);
-      if (keSev && knee) {
+      if (knee) {
         markers.push({ x: knee.x, y: knee.y, severity: keSev, type: 'circle',
           label: `무릎 과신전 ${Math.round(dev)}°` });
       }
@@ -146,7 +140,7 @@ export function buildPostureMarkers(analysis, landmarks, viewKey) {
       const dy = earForNeck.y - shoulderForNeck.y; // 귀가 어깨보다 위 → dy<0
       // 수직선(위쪽) 대비 기울기 각. |dx|가 클수록(머리 전방) 각 커짐.
       const neckTiltDeg = Math.abs(Math.atan2(dx, -dy) * 180 / Math.PI);
-      const ntSev = sev(neckTiltDeg, TH.neckTiltDeg, TH.neckTiltDeg * 2);
+      const ntSev = sev(neckTiltDeg, POSTURE_THRESHOLDS.neckTiltDeg);
       if (ntSev) {
         // 귀 위치(머리)에 화살표로 표시. 라벨은 거북목 라벨과 겹치지 않게 위로 올림.
         markers.push({ x: earForNeck.x, y: earForNeck.y, severity: ntSev, type: 'arrow',
@@ -283,4 +277,4 @@ export function drawPostureSnapshotOverlay(ctx, landmarks, analysis, viewKey, wi
   });
 }
 
-export const OVERLAY_THRESHOLDS = TH;
+export const OVERLAY_THRESHOLDS = POSTURE_THRESHOLDS;
