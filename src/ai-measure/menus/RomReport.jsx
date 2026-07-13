@@ -6,6 +6,7 @@ import { buildProblemFocus } from '../core/crossMeasureContext';
 import ProblemFocusPanel from './ProblemFocusPanel.jsx';
 import {
   UnifiedEmptyState,
+  UnifiedReportCanvas,
   UnifiedReportHeader,
   UnifiedReportPage,
 } from '../../components/report/UnifiedReportPrimitives';
@@ -47,7 +48,7 @@ export default function RomReport({ report }) {
     .map((d, i) => ({ t: i, 좌: d.left_angle, 우: d.right_angle }));
 
   return (
-    <div className="min-h-full w-full bg-slate-950 p-4 text-slate-100">
+    <UnifiedReportCanvas>
       <UnifiedReportPage className="mx-auto">
         <UnifiedReportHeader
           eyebrow="ROM RANGE OF MOTION REPORT"
@@ -206,7 +207,7 @@ export default function RomReport({ report }) {
         개인 차·측정 환경에 따라 달라질 수 있습니다. 진단·치료 목적의 의료 판단을 대체하지 않습니다.
       </p>
       </UnifiedReportPage>
-    </div>
+    </UnifiedReportCanvas>
   );
 }
 

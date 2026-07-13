@@ -12,7 +12,7 @@
 import { useMemo } from 'react';
 import ReportActions from '../../components/report/ReportActions';
 import {
-  UnifiedEmptyState, UnifiedReportHeader, UnifiedReportPage, UnifiedReportSection,
+  UnifiedEmptyState, UnifiedReportCanvas, UnifiedReportHeader, UnifiedReportPage, UnifiedReportSection,
 } from '../../components/report/UnifiedReportPrimitives';
 import { buildLiftingInterpretation, exerciseLabel, VBT_ZONE_PURPOSE, vbtZonePurpose } from '../core/lifting';
 import { generateLiftingDiagnosis, GRADE_LABEL } from '../core/barbellClinical';
@@ -78,8 +78,8 @@ export default function LiftingReportDashboard({ report, onClose, member }) {
     : confPct >= 50 ? 'text-amber-300' : 'text-red-300';
 
   return (
-    <div className="bg-slate-950 min-h-full">
-      <div className="flex items-center justify-between p-3">
+    <UnifiedReportCanvas>
+      <div className="mb-3 flex items-center justify-between">
         <ReportActions
           reportNodeId="lifting-report"
           baseName={`바벨리프팅_${exLabel}`}
@@ -87,8 +87,7 @@ export default function LiftingReportDashboard({ report, onClose, member }) {
         />
         <button onClick={onClose} className="rounded-lg bg-slate-700 text-white font-bold text-sm px-4 py-2">닫기</button>
       </div>
-      <div className="flex justify-center px-3 pb-3">
-        <UnifiedReportPage id="lifting-report">
+      <UnifiedReportPage id="lifting-report" className="mx-auto">
           <UnifiedReportHeader
             title={`${MODE_TITLE[mode] || '바벨 리프팅'} · ${exLabel}`}
             subtitle={interp.headline}
@@ -215,7 +214,6 @@ export default function LiftingReportDashboard({ report, onClose, member }) {
             ※ 카메라 한 대 추정은 전용 엔코더·포스플레이트보다 정밀하지 않으며, 동일 조건의 추세 파악에 적합합니다.
           </p>
         </UnifiedReportPage>
-      </div>
-    </div>
+    </UnifiedReportCanvas>
   );
 }

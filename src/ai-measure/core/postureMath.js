@@ -672,14 +672,14 @@ export function generatePostureComment({ score, bodyAge, actualAge, ruleFindings
     messages.push(diff <= 0 ? `체형 나이는 실제 나이보다 ${Math.abs(diff)}세 젊게 추정됩니다.` : `체형 나이는 실제 나이보다 ${diff}세 높게 추정됩니다.`);
   }
   if (asymmetry?.averageAsi != null && asymmetry.averageAsi >= 10) {
-    messages.push(`좌우 비대칭 지수 ${asymmetry.averageAsi}%로 편측 보상 패턴을 확인하세요.`);
+    messages.push(`좌우 비대칭 지수 ${asymmetry.averageAsi}%로, 몸 한쪽으로 부담이 쏠리고 있는지 확인이 필요합니다.`);
   }
   const cogOffsetForComment = Math.abs(cog?.balanceOffsetPct ?? cog?.offsetPct ?? 0);
   if (cog?.available && cogOffsetForComment >= 18) {
-    messages.push(`무게중심이 ${cogOffsetForComment}% ${cog.direction === 'right' ? '우측' : '좌측'}으로 편향되어 체중지지 균형 훈련이 권장됩니다.`);
+    messages.push(`무게중심이 ${cogOffsetForComment}% ${cog.direction === 'right' ? '우측' : '좌측'}으로 쏠려 있어, 양발에 체중을 고르게 싣는 연습이 도움이 됩니다.`);
   }
   const highRisk = ruleFindings.filter((item) => item.status === POSTURE_STATUS.RISK);
-  if (highRisk.length) messages.push(`${highRisk.map((item) => item.label).join(', ')} 항목은 우선 교정 대상으로 분류됩니다.`);
+  if (highRisk.length) messages.push(`${highRisk.map((item) => item.label).join(', ')} 항목을 가장 먼저 교정하는 것이 좋습니다.`);
   return messages.join(' ');
 }
 

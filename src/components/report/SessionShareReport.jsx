@@ -7,7 +7,7 @@
 //     사용하고, 없는 값은 그리지 않는다(측정 정직성).
 // ════════════════════════════════════════════════════════════════════════
 import {
-  MetricCard, UnifiedReportHeader, UnifiedReportPage, UnifiedReportSection,
+  MetricCard, UnifiedReportCanvas, UnifiedReportHeader, UnifiedReportPage, UnifiedReportSection,
 } from './UnifiedReportPrimitives';
 import { extractSessionDetailTiles } from './sessionShare';
 
@@ -31,7 +31,8 @@ export default function SessionShareReport({ item, member }) {
   const hasScore = summary.status && summary.status !== 'unknown';
 
   return (
-    <UnifiedReportPage id={`session-share-${item.id || 'report'}`}>
+    <UnifiedReportCanvas>
+      <UnifiedReportPage id={`session-share-${item.id || 'report'}`} className="mx-auto">
       <UnifiedReportHeader
         badge={item.meta?.badge || 'AI'}
         title={summary.title || item.meta?.title || '측정 결과'}
@@ -90,6 +91,7 @@ export default function SessionShareReport({ item, member }) {
       <p className="mt-6 border-t border-slate-800 pt-3 text-[10px] font-bold text-slate-600">
         몸가짐운동센터 · AI 측정 결과 리포트 · 같은 조건으로 반복 측정했을 때 추세 비교에 가장 의미가 있습니다.
       </p>
-    </UnifiedReportPage>
+      </UnifiedReportPage>
+    </UnifiedReportCanvas>
   );
 }

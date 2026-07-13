@@ -6,7 +6,7 @@ import {
 import { buildProblemFocus } from '../core/crossMeasureContext';
 import ProblemFocusPanel from './ProblemFocusPanel.jsx';
 import ReportActions from '../../components/report/ReportActions';
-import { UnifiedReportHeader, UnifiedReportPage } from '../../components/report/UnifiedReportPrimitives';
+import { UnifiedReportCanvas, UnifiedReportHeader, UnifiedReportPage } from '../../components/report/UnifiedReportPrimitives';
 
 /*
  * GaitReportDashboard — 보행/러닝 종합 리포트 (1장 대시보드)
@@ -128,7 +128,7 @@ export default function GaitReportDashboard({ report, onComment, onClose, videoB
   };
 
   return (
-    <div className="min-h-full w-full bg-slate-950 p-4 text-slate-100">
+    <UnifiedReportCanvas>
       <UnifiedReportPage id="gait-report-sheet" className="mx-auto">
         {/* ── 헤더 ── */}
         <UnifiedReportHeader
@@ -148,13 +148,13 @@ export default function GaitReportDashboard({ report, onComment, onClose, videoB
 
           {/* ① 상단 요약 */}
           <section className="grid grid-cols-4 gap-2.5">
-            <SummaryStat label="케이던스" value={m.cadence} unit="SPM"
+            <SummaryStat label="분당 걸음수" value={m.cadence} unit="spm"
               color={statusColor(m.cadence, RANGES.cadence)}
               note={`정상 ${RANGES.cadence.good[0]}~${RANGES.cadence.good[1]}`}
               status={statusText(m.cadence, RANGES.cadence)} />
-            <SummaryStat label="입각기 / 유각기" value={`${m.stancePct}/${m.swingPct}`} unit="%"
+            <SummaryStat label="땅 딛는 · 뜨는 비율" value={`${m.stancePct}/${m.swingPct}`} unit="%"
               color={statusColor(m.stancePct, RANGES.stance)}
-              note={`입각기 정상 ${RANGES.stance.good[0]}~${RANGES.stance.good[1]}%`}
+              note={`정상 ${RANGES.stance.good[0]}~${RANGES.stance.good[1]}%`}
               status={statusText(m.stancePct, RANGES.stance)} />
             <SummaryStat label="총 스텝" value={m.totalSteps} unit="회"
               color="#38bdf8" note="측정 구간 누적" status="" />
@@ -164,7 +164,7 @@ export default function GaitReportDashboard({ report, onComment, onClose, videoB
           {/* ②③ 중단: 좌 Kinematic / 우 Symmetry */}
           <section className="grid h-[280px] grid-cols-2 gap-3">
             {/* ② Kinematic 레이더 */}
-            <Panel title="관절 각도 비교" subtitle="좌 · 우 (Kinematic)">
+            <Panel title="관절 각도 비교" subtitle="좌 · 우 비교">
               <ResponsiveContainer width="100%" height="100%">
                 <RadarChart data={radarData} outerRadius="72%"
                   margin={{ top: 8, right: 18, bottom: 8, left: 18 }}>
@@ -182,7 +182,7 @@ export default function GaitReportDashboard({ report, onComment, onClose, videoB
             </Panel>
 
             {/* ③ Symmetry 게이지 */}
-            <Panel title="좌우 균형 지표" subtitle="Symmetry">
+            <Panel title="좌우 균형 지표" subtitle="균형 점검">
               <div className="flex flex-col justify-center gap-3 px-3 py-2 h-full">
                 {symBars.map((b) => (
                   <GaugeRow key={b.key}
@@ -204,7 +204,7 @@ export default function GaitReportDashboard({ report, onComment, onClose, videoB
 
           {/* ④ 하단: Spatial + 코멘트 */}
           <section className="grid h-[180px] grid-cols-[1fr_1.4fr] gap-3">
-            <Panel title="보폭 비율" subtitle="Spatial">
+            <Panel title="보폭 비율" subtitle="걸음 크기">
               <div className="flex flex-col items-center justify-center h-full py-2">
                 <div className="text-4xl font-black"
                   style={{ color: statusColor(m.strideToHeight, RANGES.stride) }}>
@@ -218,7 +218,7 @@ export default function GaitReportDashboard({ report, onComment, onClose, videoB
               </div>
             </Panel>
 
-            <Panel title="트레이너 코멘트" subtitle="Feedback">
+            <Panel title="트레이너 코멘트" subtitle="기록">
               <div className="flex flex-col h-full p-2.5 gap-2">
                 <textarea
                   value={comment}
@@ -249,7 +249,7 @@ export default function GaitReportDashboard({ report, onComment, onClose, videoB
           baseName={`${memberName}_보행`}
         />
       </div>
-    </div>
+    </UnifiedReportCanvas>
   );
 }
 

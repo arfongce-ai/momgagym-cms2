@@ -41,7 +41,7 @@ export default function BodyInfoReport({ id = 'body-report-sheet', member, resul
 
   return (
     <UnifiedReportCanvas>
-      <UnifiedReportPage id={id}>
+      <UnifiedReportPage id={id} className="mx-auto">
         <UnifiedReportHeader
           eyebrow="MOMGAGYM REPORT"
           badge="신체 정보"
