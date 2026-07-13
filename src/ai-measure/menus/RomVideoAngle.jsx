@@ -33,10 +33,22 @@ export default function RomVideoAngle({ member, onBack, onCollect }) {
   const [captureUrl, setCaptureUrl] = useState('');   // 각도 측정할 캡처 프레임
   const [shots, setShots] = useState([]);             // [{ url, time, angle?, movement? }]
 
+  // 언마운트 정리용 최신값 — state를 effect 의존성에 직접 넣지 않기 위한 ref.
+  const videoUrlRef = useRef('');
+  useEffect(() => { videoUrlRef.current = videoUrl; }, [videoUrl]);
+  const shotsRef = useRef([]);
+  useEffect(() => { shotsRef.current = shots; }, [shots]);
+
+  // 주의: 의존성에 videoUrl을 넣으면 새 영상을 업로드해 videoUrl이 바뀔
+  // 때마다 이 클린업이 재실행된다. 그 시점의 클로저가 잡고 있는 shots는
+  // effect가 마지막으로 설정된 시점(=이전 videoUrl로 바뀌던 순간)의 값이라,
+  // 그 사이에 캡처된 장면들의 blob URL은 한 번도 정리되지 못하고 새는
+  // 문제가 있었다(활성 이미지가 갑자기 깨지는 문제는 아니고 누수만 발생).
+  // ref로 최신값을 추적하고, 이 effect는 언마운트 시 1회만 실행한다.
   useEffect(() => () => {
-    if (videoUrl) URL.revokeObjectURL(videoUrl);
-    shots.forEach((s) => { if (s.url?.startsWith('blob:')) URL.revokeObjectURL(s.url); });
-  }, [videoUrl]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (videoUrlRef.current) URL.revokeObjectURL(videoUrlRef.current);
+    shotsRef.current.forEach((s) => { if (s.url?.startsWith('blob:')) URL.revokeObjectURL(s.url); });
+  }, []);
 
   const onFile = (e) => {
     const file = e.target.files?.[0];

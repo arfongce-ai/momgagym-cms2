@@ -6,6 +6,7 @@ import { buildProblemFocus } from '../core/crossMeasureContext';
 import ProblemFocusPanel from './ProblemFocusPanel.jsx';
 import {
   UnifiedEmptyState,
+  UnifiedReportCanvas,
   UnifiedReportHeader,
   UnifiedReportPage,
 } from '../../components/report/UnifiedReportPrimitives';
@@ -31,7 +32,7 @@ function gradeScore(grade) {
   return null;
 }
 
-export default function RomReport({ report }) {
+export default function RomReport({ id = 'rom-report-sheet', report }) {
   if (!report) return <UnifiedEmptyState>리포트 데이터가 없습니다.</UnifiedEmptyState>;
   const { joint, poseMode, summary, diagnosis, member, recordedAt, captureMode, snapshotUrl, hasVideo, posture_context, integrated_assessment } = report;
   const s = summary || {};
@@ -47,8 +48,8 @@ export default function RomReport({ report }) {
     .map((d, i) => ({ t: i, 좌: d.left_angle, 우: d.right_angle }));
 
   return (
-    <div className="min-h-full w-full bg-slate-950 p-4 text-slate-100">
-      <UnifiedReportPage className="mx-auto">
+    <UnifiedReportCanvas>
+      <UnifiedReportPage className="mx-auto" id={id}>
         <UnifiedReportHeader
           eyebrow="ROM RANGE OF MOTION REPORT"
           badge="ROM"
@@ -206,7 +207,7 @@ export default function RomReport({ report }) {
         개인 차·측정 환경에 따라 달라질 수 있습니다. 진단·치료 목적의 의료 판단을 대체하지 않습니다.
       </p>
       </UnifiedReportPage>
-    </div>
+    </UnifiedReportCanvas>
   );
 }
 

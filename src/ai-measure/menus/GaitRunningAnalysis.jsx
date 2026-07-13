@@ -5,6 +5,7 @@ import {
 } from '../core/gaitBiomechanics';
 import { boostedGain } from '../core/audioCue';
 import { loadPoseLandmarker, detectPoseFrame, closePoseLandmarker, isPoseReady } from '../core/poseBackend';
+import { openMainCameraStream, describeCameraError } from '../core/cameraSelect';
 import { shareReportWithVideo } from '../core/reportShare';
 import { drawGaugeHud } from '../core/recordingOverlay';
 import { lockZoom, unlockZoom } from '../../utils/viewportLock';
@@ -114,6 +115,8 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
   const [isReady, setIsReady] = useState(false);   // 캘리브레이션 락
   const [recordingTime, setRecordingTime] = useState(0);
   const [warningMsg, setWarningMsg] = useState('');
+  // 카메라 획득 자체가 실패했는지 — true 면 경고 옆에 '다시 시도'를 노출한다.
+  const [cameraFailed, setCameraFailed] = useState(false);
   const [reportData, setReportData] = useState(null);
   const [previewUrl, setPreviewUrl] = useState(''); // 녹화 영상 blob URL (state라야 비디오에 반영됨)
   const [saveState, setSaveState] = useState('idle'); // idle|saving|saved|error  회차 저장 상태
@@ -240,14 +243,26 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
   }, [view]);
 
   const startCamera = async () => {
+    setWarningMsg('');
+    setCameraFailed(false);
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } }
-      });
+      // 단발성 getUserMedia 대신 공통 헬퍼 사용: exact deviceId → environment
+      // 1080p → 720p → 단순 environment → 임의 카메라 순으로 재시도한다.
+      const stream = await openMainCameraStream({ audio: false });
       streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        videoRef.current.play();
+      // ref.current 를 지역 변수로 한 번만 캡처(언마운트 중 null 대비, usePoseEngine 동일).
+      const video = videoRef.current;
+      if (video) {
+        video.srcObject = stream;
+        if (!video.videoWidth) {
+          await new Promise((res) => {
+            let done = false;
+            const finish = () => { if (!done) { done = true; res(); } };
+            video.addEventListener('loadedmetadata', finish, { once: true });
+            setTimeout(finish, 1500); // 안전장치
+          });
+        }
+        try { await video.play(); } catch (e) { /* 자동재생 정책 */ }
       }
       // MediaPipe PoseLandmarker 를 CDN 런타임 로드(1회). GPU 실패 시 CPU 자동 폴백.
       loadPoseLandmarker({ numPoses: 1, modelTier: 'full' })
@@ -255,7 +270,9 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
         .catch((e) => { setPoseLoaded(false); setWarningMsg(e?.message || 'AI 분석 모듈 로드 실패'); });
       startVisionPipeline();
     } catch (err) {
-      setWarningMsg('카메라 권한을 허용해주세요.');
+      // 실제 원인에 맞는 메시지 + 재시도 버튼(cameraFailed) 노출.
+      setCameraFailed(true);
+      setWarningMsg(describeCameraError(err));
     }
   };
 
@@ -568,7 +585,16 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
                   {orientation === 'side' ? '◧ 측면뷰 (관절 각도 분석)' : '⬓ 후면뷰 (좌우 대칭 분석)'}
                 </span>
               )}
-              {warningMsg && <p className="text-sm font-bold text-red-400 mt-1 bg-black/50 px-2 py-1 rounded">{warningMsg}</p>}
+              {warningMsg && (
+                <p className="text-sm font-bold text-red-400 mt-1 bg-black/50 px-2 py-1 rounded inline-flex items-center gap-2">
+                  <span>{warningMsg}</span>
+                  {cameraFailed && (
+                    <button onClick={startCamera} className="rounded-full bg-white text-red-600 px-2 py-0.5 text-[11px] font-black active:scale-95">
+                      다시 시도
+                    </button>
+                  )}
+                </p>
+              )}
             </div>
             {/* 화면비 선택 (녹화 전에만) */}
             {view === 'camera' ? (

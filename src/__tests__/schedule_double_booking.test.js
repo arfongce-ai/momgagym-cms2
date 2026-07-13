@@ -47,3 +47,23 @@ describe('세션 차감 직렬화 — 동시 예약 경쟁 방지', () => {
     expect(sched).toMatch(/else if \(n === 1\) tag = '\(e\)'/);
   });
 });
+
+describe('스케줄 확정/삭제 직렬화 — 동시 취소·삭제 경쟁 방지', () => {
+  const store = read('../demoData.js');
+  const sched = read('../pages/Schedule.jsx');
+
+  it('finalizeSchedule과 deleteScheduleWithRestore도 같은 체인으로 직렬화된다', () => {
+    expect(store).toMatch(/finalizeSchedule: async \(scheduleId, status\) => \{\s*\n\s*const run = \(\) => store\._doFinalizeSchedule/);
+    expect(store).toMatch(/deleteScheduleWithRestore: async \(scheduleId\) => \{\s*\n\s*const run = \(\) => store\._doDeleteScheduleWithRestore/);
+  });
+
+  it('직렬화 후 재확인으로 이미 확정된 스케줄의 이중 처리를 막는다', () => {
+    expect(store).toMatch(/_doFinalizeSchedule:.*[\s\S]{0,300}if \(sched\.statusFinalized\) throw new Error\('이미 처리된 스케줄입니다\.'\)/);
+  });
+
+  it('상태/삭제 버튼에 processing 가드가 있어 더블탭으로 두 요청이 동시에 나가지 않는다', () => {
+    expect(sched).toMatch(/const \[processing, setProcessing\] = useState\(false\)/);
+    expect(sched).toMatch(/if \(processing\) return/);
+    expect(sched).toMatch(/disabled=\{processing\}/);
+  });
+});

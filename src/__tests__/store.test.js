@@ -1078,3 +1078,61 @@ describe('수납+세션 배치 저장 → 새로고침 캐시 갱신 (재등록 
     expect(snapMember.trainerSessions.t1.remaining).toBe(10);
   });
 });
+
+// ── 추가: 스케줄 확정·삭제 동시성(경쟁 조건) ─────────────────────────
+//  증상 가능성: 더블탭이나 다른 탭/기기에서 같은 스케줄을 거의 동시에
+//  취소/삭제하면, 둘 다 statusFinalized=false 스냅샷을 읽어 세션을 두 번
+//  복원할 수 있었다(createScheduleWithDeduction 이 이미 겪었던 것과 같은
+//  종류의 경쟁). _deductionChain 직렬화 + 재확인으로 막는다.
+describe('스케줄 확정·삭제 동시성 — 이중 복원 방지', () => {
+  it('같은 스케줄을 거의 동시에 두 번 취소 확정해도 세션은 1회만 복원된다', async () => {
+    const m = await store.addMember({ name: 'L', trainerSessions: { t1: { total: 10, remaining: 5 } } });
+    const sch = await store.createScheduleWithDeduction({ memberId: m.id, trainerId: 't1', isExternal: false });
+    expect(store.getMembers().find(x => x.id === m.id).trainerSessions.t1.remaining).toBe(4);
+
+    const results = await Promise.allSettled([
+      store.finalizeSchedule(sch.id, 'canceled'),
+      store.finalizeSchedule(sch.id, 'canceled'),
+    ]);
+    const fulfilled = results.filter(r => r.status === 'fulfilled');
+    const rejected = results.filter(r => r.status === 'rejected');
+    expect(fulfilled.length).toBe(1);
+    expect(rejected.length).toBe(1);
+    expect(rejected[0].reason.message).toContain('이미 처리된');
+
+    // 핵심 검증: 세션은 정확히 1회만 복원(5) — 수정 전엔 6이 될 수 있었다.
+    expect(store.getMembers().find(x => x.id === m.id).trainerSessions.t1.remaining).toBe(5);
+  });
+
+  it('같은 스케줄을 거의 동시에 두 번 삭제해도 세션은 1회만 복원된다', async () => {
+    const m = await store.addMember({ name: 'M', trainerSessions: { t1: { total: 10, remaining: 5 } } });
+    const sch = await store.createScheduleWithDeduction({ memberId: m.id, trainerId: 't1', isExternal: false });
+    expect(store.getMembers().find(x => x.id === m.id).trainerSessions.t1.remaining).toBe(4);
+
+    const results = await Promise.allSettled([
+      store.deleteScheduleWithRestore(sch.id),
+      store.deleteScheduleWithRestore(sch.id),
+    ]);
+    const fulfilled = results.filter(r => r.status === 'fulfilled');
+    const rejected = results.filter(r => r.status === 'rejected');
+    expect(fulfilled.length).toBe(1);
+    expect(rejected.length).toBe(1);
+
+    expect(store.getSchedules().find(s => s.id === sch.id)).toBeUndefined();
+    expect(store.getMembers().find(x => x.id === m.id).trainerSessions.t1.remaining).toBe(5);
+  });
+
+  it('취소 확정과 삭제가 거의 동시에 들어와도(혼합 경쟁) 세션이 이중 복원되지 않는다', async () => {
+    const m = await store.addMember({ name: 'N', trainerSessions: { t1: { total: 10, remaining: 5 } } });
+    const sch = await store.createScheduleWithDeduction({ memberId: m.id, trainerId: 't1', isExternal: false });
+    expect(store.getMembers().find(x => x.id === m.id).trainerSessions.t1.remaining).toBe(4);
+
+    await Promise.allSettled([
+      store.finalizeSchedule(sch.id, 'canceled'),
+      store.deleteScheduleWithRestore(sch.id),
+    ]);
+    // 처리 순서와 무관하게 최종 잔여는 원래 등록 횟수(5)를 절대 넘지 않아야 한다.
+    const remaining = store.getMembers().find(x => x.id === m.id).trainerSessions.t1.remaining;
+    expect(remaining).toBe(5);
+  });
+});

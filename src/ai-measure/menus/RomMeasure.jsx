@@ -483,7 +483,7 @@ export default function RomMeasure({ member, onSave, onBack }) {
           <button onClick={resetAll} className="measure-back">다시 측정</button>
         </div>
 
-        <div id="rom-report-sheet" className="overflow-x-auto">
+        <div className="overflow-x-auto">
           <RomReport report={{ ...report, snapshotUrl: report.snapshotUrl }} member={member} />
         </div>
 

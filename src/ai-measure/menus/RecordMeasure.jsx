@@ -229,6 +229,8 @@ export default function RecordMeasure({ member: _member, onBack }) {
   const [error, setError] = useState(null);
   const [elapsed, setElapsed] = useState(0);
   const [videoUrl, setVideoUrl] = useState(null);
+  const videoUrlRef = useRef(null); // 언마운트 정리용 최신값(의존성 배열에 videoUrl을 넣지 않기 위함)
+  useEffect(() => { videoUrlRef.current = videoUrl; }, [videoUrl]);
   const [aspect, setAspect] = useState('3/4');
   const [quality, setQuality] = useState(loadSavedQuality); // 'standard' | 'high'
   const selectQuality = (q) => {
@@ -627,10 +629,16 @@ export default function RecordMeasure({ member: _member, onBack }) {
     };
   }, []);
 
+  // 주의: videoUrl을 의존성에 넣으면 녹화가 끝나 videoUrl이 바뀔 때마다
+  // (매 촬영 직후) 이 클린업이 실행되어 stopAll()이 라이브 카메라 스트림을
+  // 꺼버린다 — "카메라는 켜진 채 유지됩니다 / 다시 녹화 시 재연결 없이 바로
+  // 이어집니다" 안내와 정면으로 어긋나고, 이후 재녹화·저장·공유가 전부
+  // 죽은 스트림을 붙잡고 실패한다. stopAll은 useCallback([]) 이라 참조가
+  // 안정적이므로, 이 effect는 실질적으로 언마운트 시에만 실행되어야 한다.
   useEffect(() => () => {
     stopAll();
-    if (videoUrl) URL.revokeObjectURL(videoUrl);
-  }, [stopAll, videoUrl]);
+    if (videoUrlRef.current) URL.revokeObjectURL(videoUrlRef.current);
+  }, [stopAll]);
 
   const displayElapsed = Math.min(MAX_RECORD_SECONDS, elapsed);
   const mmss = `${String(Math.floor(displayElapsed / 60)).padStart(2, '0')}:${String(displayElapsed % 60).padStart(2, '0')}`;

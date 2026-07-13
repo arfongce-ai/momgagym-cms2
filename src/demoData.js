@@ -1045,9 +1045,23 @@ export const store = {
   },
 
   // 상태 확정 + (출석 시 출석일 / 취소·노쇼 시 세션 복원)을 한 batch로 — NEW-03
+  // createScheduleWithDeduction 과 동일한 이유로 _deductionChain 에 직렬화한다:
+  // 더블탭이나 다른 탭/기기에서 같은 스케줄을 거의 동시에 확정(특히 취소)하면
+  // 둘 다 statusFinalized=false 스냅샷을 읽어 세션을 이중 복원할 수 있다.
   finalizeSchedule: async (scheduleId, status) => {
+    const run = () => store._doFinalizeSchedule(scheduleId, status);
+    const prev = store._deductionChain || Promise.resolve();
+    const next = prev.then(run, run);
+    store._deductionChain = next.then(() => undefined, () => undefined);
+    return next;
+  },
+
+  _doFinalizeSchedule: async (scheduleId, status) => {
     const sched = cache.schedules.find(s=>s.id===scheduleId);
     if (!sched) throw new Error('스케줄을 찾을 수 없습니다.');
+    // 체인에서 순서가 밀리는 동안(직전 호출 처리 중) 이미 확정됐을 수 있다 —
+    // 여기서 최신 캐시 기준으로 재확인해야 이중 복원을 실제로 막는다.
+    if (sched.statusFinalized) throw new Error('이미 처리된 스케줄입니다.');
     const batch = createStampedBatch();
     const updatedSched = { ...sched, status, statusFinalized: true };
     batch.set('schedules', scheduleId, updatedSched);
@@ -1080,7 +1094,16 @@ export const store = {
 
   // 스케줄 삭제 + (필요 시 세션 복원)을 한 batch로 — 삭제만 성공/복원만 성공하는 불일치 방지
   //  · 예약 시 차감(sessionDeducted)했고 아직 출석/취소 확정 전(!statusFinalized)일 때만 복원
+  //  · finalizeSchedule과 동일한 이유로 _deductionChain에 직렬화(동시 삭제 이중 복원 방지)
   deleteScheduleWithRestore: async (scheduleId) => {
+    const run = () => store._doDeleteScheduleWithRestore(scheduleId);
+    const prev = store._deductionChain || Promise.resolve();
+    const next = prev.then(run, run);
+    store._deductionChain = next.then(() => undefined, () => undefined);
+    return next;
+  },
+
+  _doDeleteScheduleWithRestore: async (scheduleId) => {
     const sched = cache.schedules.find(s=>s.id===scheduleId);
     if (!sched) throw new Error('스케줄을 찾을 수 없습니다.');
     const batch = createStampedBatch();

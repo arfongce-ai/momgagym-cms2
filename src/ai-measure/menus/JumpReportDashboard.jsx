@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import ReportActions from '../../components/report/ReportActions';
 import {
   UnifiedEmptyState,
+  UnifiedReportCanvas,
   UnifiedReportHeader,
   UnifiedReportPage,
   UnifiedReportSection,
@@ -97,8 +98,8 @@ export default function JumpReportDashboard({ report, onClose, onComment, member
   }
 
   return (
-    <div className="min-h-full w-full bg-slate-950 flex flex-col items-center gap-3 p-4 font-sans">
-      <div className="w-full max-w-[820px] flex items-center justify-between">
+    <UnifiedReportCanvas className="flex flex-col items-center gap-3 font-sans">
+      <div className="w-full max-w-[794px] flex items-center justify-between">
         <button onClick={onClose} className="text-slate-300 font-bold text-sm">← 닫기</button>
         {message && <span className="text-xs text-emerald-400">{message}</span>}
       </div>
@@ -207,16 +208,16 @@ export default function JumpReportDashboard({ report, onClose, onComment, member
         </ReportPage>
       </div>
 
-      <div className="w-full max-w-[820px] sticky bottom-0 bg-slate-950 pt-2 pb-[max(8px,env(safe-area-inset-bottom))]">
+      <div className="w-full max-w-[794px] sticky bottom-0 bg-slate-950 pt-2 pb-[max(8px,env(safe-area-inset-bottom))]">
         <ReportActions reportNodeId="jump-report-sheet" videoBlob={report.videoBlob || null} baseName={saveName} onMessage={setMessage} />
       </div>
-    </div>
+    </UnifiedReportCanvas>
   );
 }
 
 function ReportPage({ children }) {
   return (
-    <UnifiedReportPage className="overflow-hidden">
+    <UnifiedReportPage className="mx-auto overflow-hidden">
       {children}
     </UnifiedReportPage>
   );

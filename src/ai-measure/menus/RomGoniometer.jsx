@@ -16,6 +16,7 @@
 //   · 세 점이 다 찍히기 전에는 각도를 숫자로 만들지 않는다(빈값 유지).
 // ════════════════════════════════════════════════════════════════════════
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { openMainCameraStream, describeCameraError } from '../core/cameraSelect';
 
 // 세 점 사이각(가운데 b 가 꼭짓점). 화면 픽셀 좌표 기준 2D. (테스트용 export)
 export function angleAt(a, b, c) {
@@ -53,10 +54,7 @@ export default function RomGoniometer({ member, jointName, onBack, onUseAngle, i
   const startCamera = useCallback(async () => {
     setCameraErr('');
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
-        audio: false,
-      });
+      const stream = await openMainCameraStream({ audio: false });
       streamRef.current = stream;
       setCameraOn(true);
       if (videoRef.current) {
@@ -64,7 +62,8 @@ export default function RomGoniometer({ member, jointName, onBack, onUseAngle, i
         await videoRef.current.play().catch(() => {});
       }
     } catch (e) {
-      setCameraErr('카메라를 열 수 없습니다. 파일 업로드로 측정하거나 권한을 확인해 주세요.');
+      // 실패해도 파일 업로드로 측정을 이어갈 수 있으므로 원인만 정확히 안내.
+      setCameraErr(describeCameraError(e));
       setCameraOn(false);
     }
   }, []);

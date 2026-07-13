@@ -183,15 +183,36 @@ function ScheduleDetailModal({ schedule:initS, onClose, onUpdate, onDelete }) {
   const isConsult = s.isConsult || s.classType === '상담';
   const dispName = isConsult ? '💬 상담' : (isExt ? (s.memo||'외부 일정') : s.memberName);
 
+  const [processing, setProcessing] = useState(false);
+
   const markStatus = async status => {
+    if (processing) return;
     const fresh = store.getSchedules().find(sc=>sc.id===s.id);
     if (fresh?.statusFinalized) { alert('이미 처리된 스케줄입니다.'); return; }
+    setProcessing(true);
     try {
       await store.finalizeSchedule(s.id, status);  // 상태확정+출석일/세션복원 원자적 처리
       onUpdate();
     } catch (e) {
       console.error('[상태 확정 실패]', e);
-      alert('처리에 실패했습니다. 네트워크 확인 후 다시 시도하세요.');
+      alert(e?.message || '처리에 실패했습니다. 네트워크 확인 후 다시 시도하세요.');
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  const removeSchedule = async () => {
+    if (processing || !window.confirm('예약을 삭제하시겠습니까?')) return;
+    setProcessing(true);
+    try {
+      // 삭제+세션복원을 한 batch로 원자 처리(둘 다 성공 또는 둘 다 실패)
+      await store.deleteScheduleWithRestore(s.id);
+      onDelete();
+    } catch (e) {
+      console.error('[삭제 실패]', e);
+      alert(e?.message || '삭제에 실패했습니다. 네트워크 확인 후 다시 시도하세요.');
+    } finally {
+      setProcessing(false);
     }
   };
 
@@ -277,8 +298,8 @@ function ScheduleDetailModal({ schedule:initS, onClose, onUpdate, onDelete }) {
                   </p>
                   <div className="grid grid-cols-3 gap-2">
                     {['attended','canceled','noshow'].map(status=>(
-                      <button key={status} onClick={()=>markStatus(status)}
-                        className={`py-3 rounded-xl text-xs font-bold border transition-all active:scale-95 ${STATUS_MAP[status].bg} border-current/20 hover:opacity-80`}>
+                      <button key={status} onClick={()=>markStatus(status)} disabled={processing}
+                        className={`py-3 rounded-xl text-xs font-bold border transition-all active:scale-95 ${STATUS_MAP[status].bg} border-current/20 hover:opacity-80 disabled:opacity-50`}>
                         <div className={`w-2 h-2 rounded-full mx-auto mb-1 ${STATUS_MAP[status].dot}`}/>
                         {STATUS_MAP[status].label}
                       </button>
@@ -298,12 +319,8 @@ function ScheduleDetailModal({ schedule:initS, onClose, onUpdate, onDelete }) {
                   className="btn btn-ghost flex-1">
                   ✏️ 수정
                 </button>
-                <button onClick={async()=>{if(window.confirm('예약을 삭제하시겠습니까?')){
-                  // 삭제+세션복원을 한 batch로 원자 처리(둘 다 성공 또는 둘 다 실패)
-                  try { await store.deleteScheduleWithRestore(s.id); onDelete(); }
-                  catch(e){ console.error('[삭제 실패]',e); alert('삭제에 실패했습니다. 네트워크 확인 후 다시 시도하세요.'); }
-                }}}
-                  className="flex-1 py-2.5 rounded-xl border border-red-500/30 text-red-400 hover:bg-red-500/10 text-sm font-semibold transition-colors">
+                <button onClick={removeSchedule} disabled={processing}
+                  className="flex-1 py-2.5 rounded-xl border border-red-500/30 text-red-400 hover:bg-red-500/10 text-sm font-semibold transition-colors disabled:opacity-50">
                   🗑 삭제
                 </button>
               </div>

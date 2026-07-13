@@ -10,6 +10,7 @@ import { buildProblemFocus } from '../core/crossMeasureContext';
 import ProblemFocusPanel from './ProblemFocusPanel.jsx';
 import {
   UnifiedEmptyState,
+  UnifiedReportCanvas,
   UnifiedReportHeader,
   UnifiedReportPage,
 } from '../../components/report/UnifiedReportPrimitives';
@@ -60,6 +61,7 @@ const STATUS_STYLE = {
 };
 
 export default function PostureReport({
+  id = 'posture-report-sheet',
   report,
   currentLandmarks,
   previousLandmarks,
@@ -127,8 +129,8 @@ export default function PostureReport({
   const problemFocus = report?.problem_focus || buildProblemFocus('posture', { ...report, analysis });
 
   return (
-    <div className="min-h-full w-full bg-slate-950 p-4 text-slate-100">
-      <UnifiedReportPage className="mx-auto flex flex-col gap-4">
+    <UnifiedReportCanvas>
+      <UnifiedReportPage id={id} className="mx-auto flex flex-col gap-4">
         <UnifiedReportHeader
           eyebrow="POSTURE & ALIGNMENT REPORT"
           badge="POSTURE"
@@ -170,10 +172,10 @@ export default function PostureReport({
           <div className="flex flex-col gap-3">
             <Panel title="정렬 지표">
               <div className="grid grid-cols-2 gap-2">
-                <SmallMetric label="ASI 평균" value={analysis.asymmetry?.averageAsi ?? '-'} unit="%" status={analysis.asymmetry?.averageAsi >= 12 ? 'risk' : analysis.asymmetry?.averageAsi >= 7 ? 'caution' : 'normal'} />
-                <SmallMetric label="Roll" value={analysis.rotations?.rollDeg ?? '-'} unit="deg" status={Math.abs(analysis.rotations?.rollDeg || 0) >= 5 ? 'caution' : 'normal'} />
-                <SmallMetric label="Pitch" value={analysis.rotations?.pitchDeg ?? '-'} unit="deg" status={Math.abs(analysis.rotations?.pitchDeg || 0) >= 8 ? 'caution' : 'normal'} />
-                <SmallMetric label="Yaw" value={analysis.rotations?.yawDeg ?? '-'} unit="deg" status={Math.abs(analysis.rotations?.yawDeg || 0) >= 8 ? 'caution' : 'normal'} />
+                <SmallMetric label="좌우 비대칭" value={analysis.asymmetry?.averageAsi ?? '-'} unit="%" status={analysis.asymmetry?.averageAsi >= 12 ? 'risk' : analysis.asymmetry?.averageAsi >= 7 ? 'caution' : 'normal'} />
+                <SmallMetric label="좌우 기울기" value={analysis.rotations?.rollDeg ?? '-'} unit="°" status={Math.abs(analysis.rotations?.rollDeg || 0) >= 5 ? 'caution' : 'normal'} />
+                <SmallMetric label="앞뒤 기울기" value={analysis.rotations?.pitchDeg ?? '-'} unit="°" status={Math.abs(analysis.rotations?.pitchDeg || 0) >= 8 ? 'caution' : 'normal'} />
+                <SmallMetric label="몸통 틀어짐" value={analysis.rotations?.yawDeg ?? '-'} unit="°" status={Math.abs(analysis.rotations?.yawDeg || 0) >= 8 ? 'caution' : 'normal'} />
               </div>
             </Panel>
 
@@ -182,14 +184,14 @@ export default function PostureReport({
                 <SmallMetric label="어깨 높이" value={absValue(analysis.frontal?.shoulderHeightDiffMm)} unit="mm" status={mmStatus(analysis.frontal?.shoulderHeightDiffMm, 8, 18)} />
                 <SmallMetric label="골반 높이" value={absValue(analysis.frontal?.pelvisHeightDiffMm)} unit="mm" status={mmStatus(analysis.frontal?.pelvisHeightDiffMm, 8, 15)} />
                 <SmallMetric label="거북목 거리" value={absValue(analysis.sagittal?.forwardHeadMm)} unit="mm" status={mmStatus(analysis.sagittal?.forwardHeadMm, 25, 45)} />
-                <SmallMetric label="무릎 신전각" value={analysis.sagittal?.kneeExtensionProxyDeg ?? '-'} unit="deg" status={kneeExtensionStatus(analysis.sagittal?.kneeExtensionProxyDeg)} />
+                <SmallMetric label="무릎 펴짐 각도" value={analysis.sagittal?.kneeExtensionProxyDeg ?? '-'} unit="°" status={kneeExtensionStatus(analysis.sagittal?.kneeExtensionProxyDeg)} />
               </div>
               <p className="mt-3 text-xs leading-relaxed text-slate-500">
                 골반 패턴: {pelvisPatternLabel(analysis.frontal?.pelvisPattern)} · 신뢰도 {analysis.reliability?.validCount ?? 0}/{analysis.reliability?.requiredCount ?? 8}
               </p>
             </Panel>
 
-            <Panel title="Rule-based 평가">
+            <Panel title="항목별 체크 결과">
               <div className="space-y-2">
                 {findings.length ? findings.map((item) => (
                   <FindingRow key={item.key} finding={item} />
@@ -225,7 +227,7 @@ export default function PostureReport({
           </p>
         </section>
       </UnifiedReportPage>
-    </div>
+    </UnifiedReportCanvas>
   );
 }
 

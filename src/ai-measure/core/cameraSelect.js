@@ -178,3 +178,37 @@ export async function openMainCameraStream({ audio = false, preferExactDevice = 
   const detail = lastError?.name ? ` (${lastError.name})` : '';
   throw new Error(`카메라를 사용할 수 없습니다. 권한과 브라우저 설정을 확인해 주세요.${detail}`);
 }
+
+/**
+ * 카메라 오류를 화면에 보여줄 한국어 메시지로 분류한다.
+ * getUserMedia 실패 원인은 권한 거부 말고도 다양한데(기기가 이미 사용 중,
+ * 카메라 없음, 제약 조건 불충족 등) 전부 "권한을 허용해주세요"로 뭉뚱그리면
+ * 실제 원인과 다른 안내가 나가 사용자가 잘못된 조치(권한은 이미 줬는데 계속
+ * 설정만 들여다봄)를 하게 된다. err.name(네이티브 예외) 또는
+ * openMainCameraStream 이 메시지 끝에 붙이는 "(ErrorName)" 표기 둘 다에서
+ * 원인을 추출해 분류한다.
+ * @param {Error} err
+ * @returns {string}
+ */
+export function describeCameraError(err) {
+  const fromMessage = /\(([A-Za-z]+)\)\s*$/.exec(err?.message || '')?.[1];
+  const name = (err?.name && err.name !== 'Error') ? err.name : (fromMessage || '');
+
+  switch (name) {
+    case 'NotAllowedError':
+    case 'PermissionDeniedError':
+    case 'SecurityError':
+      return '카메라 권한을 허용해주세요.';
+    case 'NotReadableError':
+    case 'TrackStartError':
+      return '카메라를 시작할 수 없습니다. 다른 앱에서 카메라를 사용 중인지 확인한 뒤 다시 시도해 주세요.';
+    case 'NotFoundError':
+    case 'DevicesNotFoundError':
+    case 'OverconstrainedError':
+      return '사용 가능한 카메라를 찾지 못했습니다. 기기의 카메라 연결 상태를 확인해 주세요.';
+    case 'AbortError':
+      return '카메라 시작이 중단되었습니다. 다시 시도해 주세요.';
+    default:
+      return err?.message || '카메라를 시작할 수 없습니다. 잠시 후 다시 시도해 주세요.';
+  }
+}

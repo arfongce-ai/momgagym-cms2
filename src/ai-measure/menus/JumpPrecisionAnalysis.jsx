@@ -20,7 +20,8 @@ import { calcJump, calcRSI } from '../core/performance';
 import { computeRSIFromFlights, rsiGrade } from '../core/reactiveJump';
 import { applyRepFreeze } from '../core/repFreeze';
 import { OrientationVoter } from '../core/gaitBiomechanics';
-import { loadPoseLandmarker, detectPoseFrame, isPoseReady } from '../core/poseBackend';
+import { loadPoseLandmarker, detectPoseFrame, isPoseReady, closePoseLandmarker } from '../core/poseBackend';
+import { openMainCameraStream, describeCameraError } from '../core/cameraSelect';
 import { beepTick, beepGo, primeAudio } from '../core/audioCue';
 import { lockZoom, unlockZoom } from '../../utils/viewportLock';
 import ReportActions from '../../components/report/ReportActions';
@@ -221,6 +222,9 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
   const [reportData, setReportData] = useState(null);
   const [poseLoaded, setPoseLoaded] = useState(false);
   const [warning, setWarning] = useState('');
+  // 카메라 획득 자체가 실패했는지(권한/기기 사용 중 등) — true 면 경고 배너에
+  // '다시 시도' 버튼을 노출한다. 보정 미완료 등 다른 warning 문구와는 구분한다.
+  const [cameraFailed, setCameraFailed] = useState(false);
   const [saveState, setSaveState] = useState('idle'); // idle|saving|saved|error
   const [jumpCount, setJumpCount] = useState(0);
   const [rsiCycles, setRsiCycles] = useState([]);
@@ -307,6 +311,7 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
   }, [view, needHeight]);
 
   useEffect(() => () => stopCamera(), []);
+  useEffect(() => () => closePoseLandmarker(), []);
   useEffect(() => () => { if (countdownTimerRef.current) clearInterval(countdownTimerRef.current); }, []);
   // 카메라 측정 화면: 확대 잠금 (언마운트 시 복원)
   useEffect(() => { lockZoom(); return () => unlockZoom(); }, []);
@@ -339,14 +344,32 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
   };
 
   const startCamera = async () => {
+    setWarning('');
+    setCameraFailed(false);
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } },
-      });
+      // 단발성 getUserMedia 대신 공통 헬퍼 사용: exact deviceId → environment
+      // 1080p → 720p → 단순 environment → 임의 카메라 순으로 재시도해
+      // 특정 제약 조건 실패(OverconstrainedError 등)로 통째 실패하지 않는다.
+      const stream = await openMainCameraStream({ audio: false });
       streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        videoRef.current.play();
+      // ref.current 를 지역 변수로 한 번만 캡처 — await 도중 컴포넌트가
+      // 언마운트돼 videoRef.current 가 null 로 바뀌어도(예: 초기화 중 화면
+      // 이탈) 아래 play() 호출이 null 참조로 죽지 않는다(usePoseEngine 동일).
+      const video = videoRef.current;
+      if (video) {
+        video.srcObject = stream;
+        // 메타데이터(해상도)가 준비되기 전에 재생을 시작하면 videoWidth 가 0인
+        // 프레임이 한동안 이어져 포즈 인식이 "자세 인식 중..."에 멈춰 보일 수
+        // 있다 — usePoseEngine 과 동일하게 loadedmetadata 를 짧게 기다린다.
+        if (!video.videoWidth) {
+          await new Promise((res) => {
+            let done = false;
+            const finish = () => { if (!done) { done = true; res(); } };
+            video.addEventListener('loadedmetadata', finish, { once: true });
+            setTimeout(finish, 1500); // 안전장치
+          });
+        }
+        try { await video.play(); } catch (e) { /* 자동재생 정책: 무음·playsInline이라 보통 통과 */ }
       }
       loadPoseLandmarker({ numPoses: 1, modelTier: 'full' })
         .then(() => setPoseLoaded(true))
@@ -354,7 +377,12 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
       resetPipeline();
       startVisionPipeline();
     } catch (err) {
-      setWarning('카메라 권한을 허용해주세요.');
+      // 실제 원인(권한 거부/기기 사용 중/카메라 없음 등)에 맞는 메시지 +
+      // 재시도 버튼(cameraFailed)을 노출해, 일시적 실패로 화면이 영구히
+      // 멈추지 않게 한다("기준 다시 잡기"는 카메라 재획득을 하지 않으므로
+      // 별도 재시도 경로가 필요했다).
+      setCameraFailed(true);
+      setWarning(describeCameraError(err));
     }
   };
 
@@ -787,8 +815,14 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
           />
 
           {warning && (
-            <div className="absolute top-1/2 inset-x-6 -translate-y-1/2 bg-red-500/90 text-white text-center rounded-xl px-4 py-3 font-bold text-sm">
-              {warning}
+            <div className="absolute top-1/2 inset-x-6 -translate-y-1/2 bg-red-500/90 text-white text-center rounded-xl px-4 py-3 font-bold text-sm space-y-2">
+              <p>{warning}</p>
+              {cameraFailed && (
+                <button onClick={startCamera}
+                  className="mx-auto block rounded-lg bg-white text-red-600 px-4 py-1.5 text-xs font-black active:scale-95">
+                  다시 시도
+                </button>
+              )}
             </div>
           )}
 
