@@ -56,24 +56,35 @@ describe('공지사항 정렬 — 고정 우선 + 최신순', () => {
   });
 });
 
-describe('스케줄 점검 — 문제 없음 수동 확인', () => {
+describe('스케줄 점검 — 그룹별 확인(이상 있어도 검토 후 확인 가능)', () => {
   const src = read('pages/Schedule.jsx');
 
-  it('점검 결과가 깨끗할 때 "문제 없음 확인" 버튼이 있다', () => {
-    expect(src).toContain('✓ 문제 없음 확인');
-    expect(src).toContain('onClick={confirmNoIssue}');
+  it('그룹 시그니처는 유형+해당 예약 id 조합이다(수정되면 자동으로 새 상태로 다시 잡힘)', () => {
+    expect(src).toContain('function groupSignature(group) {');
+    expect(src).toMatch(/const ids = \(group\.items \|\| \[\]\)\.map\(i => i\.id\)\.sort\(\)\.join\(','\)/);
+    expect(src).toMatch(/return `\$\{group\.type\}\|\$\{ids\}`/);
   });
 
-  it('확인 기록은 시각+확인자 이름을 localStorage에 저장한다', () => {
-    expect(src).toContain("const AUDIT_CONFIRM_KEY = 'fitcms_schedule_audit_confirmed';");
-    expect(src).toMatch(/const rec = \{ at: Date\.now\(\), byName: user\?\.name \|\| '' \}/);
-    expect(src).toContain('localStorage.setItem(AUDIT_CONFIRM_KEY, JSON.stringify(rec))');
+  it('확인 버튼은 이상이 있는 그룹에도(문제없음 상태가 아니어도) 그룹별로 노출된다', () => {
+    expect(src).toContain('onClick={() => confirmGroup(g)}');
+    // 예전처럼 "문제없음일 때만" 보이는 게 아니라, 그룹 목록 자체가 groups.length===0이 아닐 때 항상 렌더된다.
+    expect(src).not.toContain('onClick={confirmNoIssue}');
   });
 
-  it('모달을 열 때 이전 확인 기록을 읽어와 "마지막 확인" 표시를 할 수 있다', () => {
-    expect(src).toContain('function readAuditConfirmed()');
-    expect(src).toContain('useState(readAuditConfirmed)');
-    expect(src).toContain('마지막 확인:');
+  it('이미 확인된 그룹은 버튼 대신 "확인됨" 표시로 바뀐다', () => {
+    expect(src).toContain('✓ 확인됨');
+  });
+
+  it('배지(점검 버튼)는 미확인 그룹만 반영한다 — 확인된 그룹은 배지에서 빠진다', () => {
+    expect(src).toContain('const unconfirmedGroups = duplicateGroups.filter(g => !confirmedGroupSigs[groupSignature(g)]);');
+    expect(src).toContain('const auditSummary = summarizeDuplicates(unconfirmedGroups);');
+  });
+
+  it('모달에는 확인된 그룹도 계속 보인다(숨기지 않고 다만 배지에서만 제외 — 데이터 정직성)', () => {
+    // 모달의 목록 렌더는 groups(원본 전체)를 그대로 순회하고, unconfirmedGroups가 아니다.
+    const modalIdx = src.indexOf('function ScheduleAuditModal');
+    const modalSrc = src.slice(modalIdx);
+    expect(modalSrc).toContain('[...groups].sort((a, b) => {');
   });
 
   it('점검 모달에 user가 전달되어 확인자 이름을 기록할 수 있다', () => {
@@ -81,10 +92,34 @@ describe('스케줄 점검 — 문제 없음 수동 확인', () => {
     const call = src.slice(callIdx, callIdx + 200);
     expect(call).toMatch(/user=\{user\}/);
   });
+});
 
-  it('버튼은 문제가 없는(hasIssues=false) 분기 안에서만 노출된다', () => {
-    const idx = src.indexOf('!summary.hasIssues');
-    const branch = src.slice(idx, src.indexOf('✓ 문제 없음 확인', idx) + 20);
-    expect(branch).not.toContain(') : (');
+describe('groupSignature 로직 재현 — 실제 동작 검증', () => {
+  function groupSignature(group) {
+    const ids = (group.items || []).map((i) => i.id).sort().join(',');
+    return `${group.type}|${ids}`;
+  }
+
+  it('같은 예약 id 조합은 항상 같은 시그니처를 낸다(순서 무관)', () => {
+    const g1 = { type: 'same_lot', items: [{ id: 'b' }, { id: 'a' }] };
+    const g2 = { type: 'same_lot', items: [{ id: 'a' }, { id: 'b' }] };
+    expect(groupSignature(g1)).toBe(groupSignature(g2));
+  });
+
+  it('예약 하나가 삭제되어 구성이 바뀌면 시그니처가 달라진다(확인 기록이 자동으로 무효화됨)', () => {
+    const before = groupSignature({ type: 'same_lot', items: [{ id: 'a' }, { id: 'b' }] });
+    const after = groupSignature({ type: 'same_lot', items: [{ id: 'a' }] });
+    expect(before).not.toBe(after);
+  });
+
+  it('확인된 시그니처 집합으로 필터링하면 해당 그룹만 미확인 목록에서 빠진다', () => {
+    const groups = [
+      { type: 'same_lot', items: [{ id: '1' }, { id: '2' }] },
+      { type: 'same_slot', items: [{ id: '3' }, { id: '4' }] },
+    ];
+    const confirmed = { [groupSignature(groups[0])]: { at: Date.now() } };
+    const unconfirmed = groups.filter((g) => !confirmed[groupSignature(g)]);
+    expect(unconfirmed).toHaveLength(1);
+    expect(unconfirmed[0].type).toBe('same_slot');
   });
 });

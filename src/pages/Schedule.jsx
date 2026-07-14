@@ -996,8 +996,13 @@ export default function Schedule() {
   const filteredSchedules = visibleSchedules.filter(matchQ);
 
   // 중복 점검: 트레이너 계정이면 본인 담당분만, 관리자면 전체 대상.
+  //  · 배지는 "미확인" 건수만 반영한다 — 이미 확인(리뷰 완료)한 그룹은 다시
+  //    알리지 않는다. 수정으로 해결된 경우는 예약 자체가 바뀌어 시그니처가
+  //    달라지므로 자동으로 새 상태로 다시 잡히거나 사라진다.
   const duplicateGroups = findDuplicateSchedules(visibleSchedules);
-  const auditSummary = summarizeDuplicates(duplicateGroups);
+  const confirmedGroupSigs = readConfirmedGroupSignatures();
+  const unconfirmedGroups = duplicateGroups.filter(g => !confirmedGroupSigs[groupSignature(g)]);
+  const auditSummary = summarizeDuplicates(unconfirmedGroups);
 
   return (
     <div className="space-y-4">
@@ -1151,7 +1156,6 @@ export default function Schedule() {
       {showAudit && (
         <ScheduleAuditModal
           groups={duplicateGroups}
-          summary={auditSummary}
           user={user}
           onOpenItem={(s)=>{ setShowAudit(false); setDetail(s); }}
           onClose={()=>setShowAudit(false)}
@@ -1164,23 +1168,38 @@ export default function Schedule() {
 // ── 중복 예약 점검 모달 ──────────────────────────────────
 //  탐지 결과만 보여주고, 실제 삭제·수정은 항목을 눌러 상세 모달에서 처리한다
 //  (되돌릴 수 없는 처리는 운영자 확인을 거치도록 — 데이터 정직성).
-const AUDIT_CONFIRM_KEY = 'fitcms_schedule_audit_confirmed';
+//
+//  확인(리뷰 완료) 처리: 그룹 전체를 한 번에 "확인 안 함/확인함"으로 두지 않고,
+//  그룹마다(해당 그룹을 이루는 예약 id 조합 = 시그니처) 개별로 기억한다.
+//   · 수정해서 해결한 경우 → 그 예약이 삭제/변경되어 시그니처 자체가 바뀌므로
+//     다음 점검에서 자동으로 "새 상태"로 다시 잡히거나 그룹이 사라진다.
+//   · 살펴봤지만 손댈 필요 없다고 판단한 경우 → 트레이너가 직접 "확인" 눌러
+//     그 시그니처를 기억해두면, 같은 조합은 다시 배지를 띄우지 않는다.
+//   · 둘 다 "몇 시 몇 분에 누가 확인했는지"는 기록하지 않고, 시그니처 존재
+//     여부만 본다(운영 로그가 아니라 반복 알림 억제용 — 팀 공유 로그는 아님).
+const AUDIT_CONFIRM_KEY = 'fitcms_schedule_audit_confirmed_groups';
 
-function readAuditConfirmed() {
-  try { return JSON.parse(localStorage.getItem(AUDIT_CONFIRM_KEY) || 'null'); }
-  catch { return null; }
+function groupSignature(group) {
+  const ids = (group.items || []).map(i => i.id).sort().join(',');
+  return `${group.type}|${ids}`;
 }
 
-function ScheduleAuditModal({ groups, summary, user, onOpenItem, onClose }) {
-  const STATUS_KO = { scheduled:'예정', attended:'출석', canceled:'취소', noshow:'노쇼' };
-  const [confirmed, setConfirmed] = useState(readAuditConfirmed);
+function readConfirmedGroupSignatures() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(AUDIT_CONFIRM_KEY) || '{}');
+    return (raw && typeof raw === 'object') ? raw : {};
+  } catch { return {}; }
+}
 
-  // 자동 점검은 참고용 신호일 뿐이라, "확인했고 실제로 문제 없음"을 운영자가
-  // 직접 기록할 수 있게 한다(브라우저 로컬 기록 — 팀 공유 로그는 아님).
-  const confirmNoIssue = () => {
-    const rec = { at: Date.now(), byName: user?.name || '' };
-    try { localStorage.setItem(AUDIT_CONFIRM_KEY, JSON.stringify(rec)); } catch { /* noop */ }
-    setConfirmed(rec);
+function ScheduleAuditModal({ groups, user, onOpenItem, onClose }) {
+  const STATUS_KO = { scheduled:'예정', attended:'출석', canceled:'취소', noshow:'노쇼' };
+  const [confirmedMap, setConfirmedMap] = useState(readConfirmedGroupSignatures);
+
+  const confirmGroup = (group) => {
+    const sig = groupSignature(group);
+    const next = { ...confirmedMap, [sig]: { at: Date.now(), byName: user?.name || '' } };
+    try { localStorage.setItem(AUDIT_CONFIRM_KEY, JSON.stringify(next)); } catch { /* noop */ }
+    setConfirmedMap(next);
   };
   const fmtConfirmedAt = (ms) => {
     try {
@@ -1189,6 +1208,8 @@ function ScheduleAuditModal({ groups, summary, user, onOpenItem, onClose }) {
       });
     } catch { return ''; }
   };
+
+  const unconfirmedCount = groups.filter(g => !confirmedMap[groupSignature(g)]).length;
 
   return (
     <div className="modal-overlay">
@@ -1199,66 +1220,87 @@ function ScheduleAuditModal({ groups, summary, user, onOpenItem, onClose }) {
         </div>
 
         <div className="modal-body p-4 space-y-3">
-          {!summary.hasIssues ? (
+          {groups.length === 0 ? (
             <div className="text-center py-12">
               <p className="text-4xl mb-2">✓</p>
               <p className="text-emerald-400 font-bold">중복으로 의심되는 예약이 없습니다.</p>
               <p className="text-slate-500 text-xs mt-1">같은 회차 중복·같은 시간 이중 예약을 자동 점검합니다.</p>
-              <button onClick={confirmNoIssue}
-                className="mt-5 mx-auto block rounded-xl bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 font-bold text-sm px-5 py-2.5 hover:bg-emerald-500/25 transition-colors">
-                ✓ 문제 없음 확인
-              </button>
-              {confirmed?.at && (
-                <p className="text-[11px] text-slate-500 mt-3">
-                  마지막 확인: {fmtConfirmedAt(confirmed.at)}{confirmed.byName ? ` · ${confirmed.byName}` : ''}
-                </p>
-              )}
+            </div>
+          ) : unconfirmedCount === 0 ? (
+            <div className="text-center py-10">
+              <p className="text-4xl mb-2">✓</p>
+              <p className="text-emerald-400 font-bold">감지된 항목을 모두 확인했습니다.</p>
+              <p className="text-slate-500 text-xs mt-1">아래에서 확인 내역을 다시 볼 수 있습니다.</p>
             </div>
           ) : (
-            <>
-              <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-2.5">
-                <p className="text-sm font-bold text-amber-200">
-                  의심 그룹 {summary.groupCount}건 · 관련 예약 {summary.itemCount}건
-                </p>
-                <p className="text-[11px] text-amber-300/70 mt-0.5">
-                  항목을 눌러 상세에서 확인 후, 잘못된 예약을 삭제하거나 회차를 직접 수정하세요.
-                </p>
-              </div>
+            <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-2.5">
+              <p className="text-sm font-bold text-amber-200">
+                확인 필요 {unconfirmedCount}건{groups.length > unconfirmedCount ? ` · 확인됨 ${groups.length - unconfirmedCount}건` : ''}
+              </p>
+              <p className="text-[11px] text-amber-300/70 mt-0.5">
+                항목을 눌러 상세에서 확인 후 삭제·수정하거나, 손댈 필요 없다고 판단되면 "확인"을 누르세요.
+              </p>
+            </div>
+          )}
 
-              {groups.map((g, gi) => (
-                <div key={gi} className="rounded-xl border border-slate-800 bg-slate-900 overflow-hidden">
-                  <div className={`px-3 py-2 ${g.type==='same_lot' ? 'bg-red-500/10' : 'bg-slate-800/60'}`}>
-                    <div className="flex items-center gap-2">
-                      <span className={`rounded px-1.5 py-0.5 text-[10px] font-black ${g.type==='same_lot' ? 'bg-red-500/30 text-red-200' : 'bg-slate-600/50 text-slate-300'}`}>
-                        {g.type==='same_lot' ? '회차 중복' : '같은 시간'}
-                      </span>
-                      <p className="text-sm font-bold text-slate-200">{g.label}</p>
-                    </div>
-                    <p className="text-[11px] text-slate-400 mt-1">{g.reason}</p>
-                  </div>
-                  <div className="divide-y divide-slate-800">
-                    {g.items.map((s) => (
-                      <button key={s.id} onClick={()=>onOpenItem(s)}
-                        className="w-full flex items-center justify-between px-3 py-2.5 text-left hover:bg-slate-800/50 transition-colors">
-                        <div>
-                          <p className="text-sm font-semibold text-slate-200">
-                            {s.date} {s.startTime} · {s.classType || '수업'}
-                          </p>
-                          <p className="text-[11px] text-slate-500">
-                            {s.trainerName || ''}
-                            {s.sessionAtBooking != null && ` · 회차 ${s.sessionAtBooking}`}
-                            {s.consumedIndexAtBooking != null && ` · 누적 ${s.consumedIndexAtBooking + 1}번째`}
-                            {s.sessionDeducted ? ' · 차감됨' : ' · 미차감'}
-                          </p>
+          {groups.length > 0 && (
+            <>
+              {/* 미확인 그룹을 먼저, 확인된 그룹은 아래로 */}
+              {[...groups].sort((a, b) => {
+                const ca = confirmedMap[groupSignature(a)] ? 1 : 0;
+                const cb = confirmedMap[groupSignature(b)] ? 1 : 0;
+                return ca - cb;
+              }).map((g) => {
+                const sig = groupSignature(g);
+                const rec = confirmedMap[sig];
+                return (
+                  <div key={sig} className={`rounded-xl border overflow-hidden ${rec ? 'border-slate-800/60 bg-slate-900/40 opacity-60' : 'border-slate-800 bg-slate-900'}`}>
+                    <div className={`px-3 py-2 ${rec ? 'bg-slate-800/30' : g.type==='same_lot' ? 'bg-red-500/10' : 'bg-slate-800/60'}`}>
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className={`rounded px-1.5 py-0.5 text-[10px] font-black flex-shrink-0 ${g.type==='same_lot' ? 'bg-red-500/30 text-red-200' : 'bg-slate-600/50 text-slate-300'}`}>
+                            {g.type==='same_lot' ? '회차 중복' : '같은 시간'}
+                          </span>
+                          <p className="text-sm font-bold text-slate-200 truncate">{g.label}</p>
                         </div>
-                        <span className="text-[11px] font-bold text-slate-400 flex-shrink-0">
-                          {STATUS_KO[s.status] || s.status} ›
-                        </span>
-                      </button>
-                    ))}
+                        {rec ? (
+                          <span className="flex-shrink-0 text-[10px] font-bold text-emerald-400 whitespace-nowrap">
+                            ✓ 확인됨{rec.byName ? ` · ${rec.byName}` : ''}
+                          </span>
+                        ) : (
+                          <button onClick={() => confirmGroup(g)}
+                            className="flex-shrink-0 rounded-lg bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 text-[11px] font-bold px-2.5 py-1 hover:bg-emerald-500/25 transition-colors">
+                            확인
+                          </button>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-slate-400 mt-1">{g.reason}</p>
+                      {rec?.at && <p className="text-[10px] text-slate-600 mt-0.5">{fmtConfirmedAt(rec.at)}</p>}
+                    </div>
+                    <div className="divide-y divide-slate-800">
+                      {g.items.map((s) => (
+                        <button key={s.id} onClick={()=>onOpenItem(s)}
+                          className="w-full flex items-center justify-between px-3 py-2.5 text-left hover:bg-slate-800/50 transition-colors">
+                          <div>
+                            <p className="text-sm font-semibold text-slate-200">
+                              {s.date} {s.startTime} · {s.classType || '수업'}
+                            </p>
+                            <p className="text-[11px] text-slate-500">
+                              {s.trainerName || ''}
+                              {s.sessionAtBooking != null && ` · 회차 ${s.sessionAtBooking}`}
+                              {s.consumedIndexAtBooking != null && ` · 누적 ${s.consumedIndexAtBooking + 1}번째`}
+                              {s.sessionDeducted ? ' · 차감됨' : ' · 미차감'}
+                            </p>
+                          </div>
+                          <span className="text-[11px] font-bold text-slate-400 flex-shrink-0">
+                            {STATUS_KO[s.status] || s.status} ›
+                          </span>
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
 
               <div className="rounded-xl border border-slate-800 bg-slate-950/60 px-3 py-2.5">
                 <p className="text-[11px] leading-relaxed text-slate-400">

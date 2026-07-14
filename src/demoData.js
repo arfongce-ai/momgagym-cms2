@@ -570,6 +570,56 @@ function createStampedBatch() {
 // 저장/삭제 함수는 async — Firestore 완료를 기다리고, 실패 시 캐시를 되돌린다.
 // UI는 await 후 성공/실패를 알 수 있다. (호출부가 await 안 해도 기존처럼 동작하되,
 //  실패 시에는 캐시가 롤백되어 다음 렌더에서 화면이 실제 상태로 복구된다.)
+
+// 같은 회원+트레이너의 회차(sessionAtBooking)는 원래 "예약을 만든 순서"대로
+// 매겨진다(createScheduleWithDeduction이 그 순간의 잔여값을 그대로 씀). 그런데
+// 화요일 수업을 월·목보다 나중에 등록하면(날짜상 그 사이인데 생성은 마지막)
+// 회차가 예약 생성 순서를 따라가 버려 날짜순으로 보면 회차가 거꾸로 튄다
+// (예: 월8·화6·목7 — 화가 목보다 나중 날짜인데 회차는 더 낮음).
+// 이 함수는 같은 회원+트레이너 예약들을 날짜순으로 봤을 때 회차가 항상
+// 내림차순이 되도록 필요한 것만 재배정한다. 표시용 보정이라 실패해도
+// 방금 만든 예약 자체의 성패에는 영향을 주지 않는다(로그만 남김).
+async function renumberSessionAtBooking(memberId, trainerId) {
+  if (!memberId || !trainerId) return;
+  const siblings = cache.schedules.filter(s =>
+    s.memberId === memberId && s.trainerId === trainerId &&
+    !s.isExternal && !s.isConsult && s.sessionAtBooking != null
+  );
+  if (siblings.length < 2) return;
+
+  const dateKey = (s) => `${s.date}T${s.startTime || '00:00'}`;
+  const sorted = [...siblings].sort((a, b) => {
+    const ka = dateKey(a), kb = dateKey(b);
+    return ka < kb ? -1 : ka > kb ? 1 : 0;
+  });
+
+  // 이미 날짜순 내림차순이면 손대지 않는다(불필요한 쓰기 방지).
+  let alreadyOrdered = true;
+  for (let i = 1; i < sorted.length; i++) {
+    if (!(sorted[i].sessionAtBooking < sorted[i - 1].sessionAtBooking)) { alreadyOrdered = false; break; }
+  }
+  if (alreadyOrdered) return;
+
+  // 가장 큰 값(가장 많이 남아있던 시점)을 가장 이른 날짜에 앵커로 두고 1씩 감소.
+  const maxVal = Math.max(...sorted.map((s) => s.sessionAtBooking));
+  const updates = [];
+  let expected = maxVal;
+  for (const s of sorted) {
+    if (s.sessionAtBooking !== expected) updates.push({ ...s, sessionAtBooking: expected });
+    expected -= 1;
+  }
+  if (!updates.length) return;
+
+  try {
+    const batch = createStampedBatch();
+    updates.forEach((u) => batch.set('schedules', u.id, u));
+    await batch.commit();
+    cache.schedules = cache.schedules.map((s) => updates.find((u) => u.id === s.id) || s);
+  } catch (e) {
+    console.error('[회차 재배정 실패]', e);
+  }
+}
+
 export const store = {
   getMembers:    ()     => cache.members,
   addMember:     async m => {
@@ -1040,6 +1090,12 @@ export const store = {
     // 성공 시에만 캐시 반영
     cache.schedules=[...cache.schedules, ns];
     if (updatedMember) cache.members=cache.members.map(m=>m.id===updatedMember.id?updatedMember:m);
+    // 방금 예약이 날짜순으로 봤을 때 기존 예약들 사이에 끼어들었다면(생성 순서 ≠
+    // 날짜 순서) 회차 표기가 역전될 수 있다 — 날짜순 내림차순으로 재정렬한다.
+    // 표시용 보정이라 실패해도 방금 만든 예약 자체는 이미 정상 저장된 상태.
+    if (ns.sessionDeducted && ns.sessionAtBooking != null) {
+      await renumberSessionAtBooking(ns.memberId, ns.trainerId);
+    }
     // 진단 정보를 반환(호출부에서 경고 표시 가능). 일반 수업인데 차감 안 됐으면 사유 포함.
     return { ...ns, _deductionSkipReason: deductionSkipReason };
   },

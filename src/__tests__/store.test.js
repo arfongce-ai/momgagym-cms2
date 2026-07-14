@@ -1163,3 +1163,74 @@ describe('스케줄 확정·삭제 동시성 — 이중 복원 방지', () => {
     expect(remaining).toBe(5);
   });
 });
+
+// ── 추가: 날짜 순서와 어긋나게 예약을 끼워넣었을 때 회차 자동 재배정 ──────
+describe('회차(sessionAtBooking) 자동 재배정 — 날짜순 삽입이 예약 생성 순서와 다를 때', () => {
+  it('월·목을 먼저 예약하고 화를 나중에 끼워넣으면 날짜순(월8·화7·목6)으로 재배정된다', async () => {
+    const m = await store.addMember({ name: 'Q', trainerSessions: { t1: { total: 10, remaining: 8 } } });
+    // 월요일(가장 이른 날짜)을 먼저 예약 — remaining 8 → sessionAtBooking=8, 이후 remaining=7
+    const mon = await store.createScheduleWithDeduction({
+      memberId: m.id, trainerId: 't1', isExternal: false, date: '2026-08-03', startTime: '09:00',
+    });
+    expect(mon.sessionAtBooking).toBe(8);
+    // 목요일(월보다 늦은 날짜)을 다음으로 예약 — remaining 7 → sessionAtBooking=7, 이후 remaining=6
+    const thu = await store.createScheduleWithDeduction({
+      memberId: m.id, trainerId: 't1', isExternal: false, date: '2026-08-06', startTime: '09:00',
+    });
+    expect(thu.sessionAtBooking).toBe(7);
+
+    // 화요일(월과 목 사이 날짜)을 마지막에 끼워넣음 — 생성 순서상 remaining 6 → 자연 계산값은 6.
+    const tue = await store.createScheduleWithDeduction({
+      memberId: m.id, trainerId: 't1', isExternal: false, date: '2026-08-04', startTime: '09:00',
+    });
+    expect(tue.sessionAtBooking).toBe(6); // 생성 직후 자연값(재배정 전)은 그대로 반환
+
+    // 재배정 후: 캐시에서 다시 읽으면 날짜순(월>화>목) 내림차순으로 정리되어 있어야 한다.
+    const all = store.getSchedules();
+    const byId = (id) => all.find((s) => s.id === id);
+    expect(byId(mon.id).sessionAtBooking).toBe(8);  // 변경 없음(가장 이른 날짜=최댓값 유지)
+    expect(byId(tue.id).sessionAtBooking).toBe(7);  // 6 → 7로 재배정
+    expect(byId(thu.id).sessionAtBooking).toBe(6);  // 7 → 6으로 재배정
+  });
+
+  it('생성 순서와 날짜 순서가 이미 일치하면(정상 케이스) 아무 것도 재배정하지 않는다', async () => {
+    const m = await store.addMember({ name: 'R', trainerSessions: { t1: { total: 10, remaining: 9 } } });
+    const mon = await store.createScheduleWithDeduction({
+      memberId: m.id, trainerId: 't1', isExternal: false, date: '2026-08-03', startTime: '09:00',
+    });
+    const tue = await store.createScheduleWithDeduction({
+      memberId: m.id, trainerId: 't1', isExternal: false, date: '2026-08-04', startTime: '09:00',
+    });
+    const thu = await store.createScheduleWithDeduction({
+      memberId: m.id, trainerId: 't1', isExternal: false, date: '2026-08-06', startTime: '09:00',
+    });
+    const all = store.getSchedules();
+    const byId = (id) => all.find((s) => s.id === id);
+    expect(byId(mon.id).sessionAtBooking).toBe(9);
+    expect(byId(tue.id).sessionAtBooking).toBe(8);
+    expect(byId(thu.id).sessionAtBooking).toBe(7);
+  });
+
+  it('외부 일정·상담(sessionAtBooking 없음)은 재배정 대상에서 제외된다', async () => {
+    const m = await store.addMember({ name: 'S', trainerSessions: { t1: { total: 5, remaining: 3 } } });
+    const mon = await store.createScheduleWithDeduction({
+      memberId: m.id, trainerId: 't1', isExternal: false, date: '2026-08-03', startTime: '09:00',
+    });
+    expect(mon.sessionAtBooking).toBe(3);
+    // 외부 일정은 sessionAtBooking이 없어 재배정 로직이 아예 건드리지 않아야 한다(에러도 없어야 함).
+    await expect(store.createScheduleWithDeduction({
+      memberId: null, trainerId: 't1', isExternal: true, date: '2026-08-04', startTime: '09:00',
+    })).resolves.toBeTruthy();
+    expect(store.getSchedules().find((s) => s.id === mon.id).sessionAtBooking).toBe(3);
+  });
+
+  it('다른 트레이너의 예약은 재배정에 섞이지 않는다', async () => {
+    const m = await store.addMember({
+      name: 'T', trainerSessions: { t1: { total: 10, remaining: 8 }, t2: { total: 10, remaining: 5 } },
+    });
+    await store.createScheduleWithDeduction({ memberId: m.id, trainerId: 't1', isExternal: false, date: '2026-08-03', startTime: '09:00' });
+    const t2sch = await store.createScheduleWithDeduction({ memberId: m.id, trainerId: 't2', isExternal: false, date: '2026-08-02', startTime: '09:00' });
+    // t2는 t1보다 이른 날짜지만 다른 트레이너라 t1의 회차와 섞여 재배정되면 안 된다.
+    expect(store.getSchedules().find((s) => s.id === t2sch.id).sessionAtBooking).toBe(5);
+  });
+});
