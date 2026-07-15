@@ -322,11 +322,14 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
   // ── 측정완료 → 기록·확인 단계 ──
   if (view === 'record' && pending) {
     const p = pending.payload || {};
+    const metrics = p.metrics || {};
+    const metadata = p.metadata || {};
     const rows = [];
-    if (p.oneRM != null) rows.push({ label: '1RM(추정)', value: `${p.oneRM}kg` });
-    if (p.meanVelocity != null) rows.push({ label: '평균속도', value: `${p.meanVelocity}m/s` });
-    if (p.romCm != null) rows.push({ label: 'ROM', value: `${p.romCm}cm` });
-    if (p.barKg != null) rows.push({ label: '중량', value: `${p.barKg}kg` });
+    if (metrics.oneRM != null) rows.push({ label: '1RM(추정)', value: `${metrics.oneRM}kg` });
+    if (metrics.meanVelocity != null) rows.push({ label: '평균속도', value: `${metrics.meanVelocity}m/s` });
+    if (metrics.rangeOfMotion != null) rows.push({ label: 'ROM', value: `${metrics.rangeOfMotion}cm` });
+    if (metadata.weight != null) rows.push({ label: '중량', value: `${metadata.weight}kg` });
+    if (metadata.reps != null) rows.push({ label: '반복', value: `${metadata.reps}회` });
     return (
       <div className="fixed inset-0 z-[80] bg-slate-950 overflow-y-auto" style={{ height: '100dvh' }}>
         <div className="max-w-md mx-auto p-4">

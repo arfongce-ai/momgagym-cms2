@@ -1,6 +1,9 @@
 import { describe, it, expect, vi } from 'vitest';
 import { buildVideoFileName, extForBlob } from '../ai-measure/core/recordSink.js';
 import { drawLiftingDataHud, drawBarPathToRecord } from '../ai-measure/core/recordingOverlay.js';
+import { readFileSync } from 'node:fs';
+
+const oneRmSource = readFileSync(new URL('../ai-measure/menus/OneRMEstimate.jsx', import.meta.url), 'utf8');
 
 function mockCtx() {
   const calls = { fillText: [], strokeCalls: 0, lineTo: 0 };
@@ -92,6 +95,15 @@ describe('리프팅 데이터 HUD · 대형 시인성(측정값만 번인 · 장
     expect(txt).toContain('0.72');
     expect(txt).toContain('#2');
     expect(txt).toContain('-8%');
+  });
+});
+
+describe('1RM 실시간 HUD · 화면/녹화 동시 표시', () => {
+  it('자동 반복수로 추정 1RM을 계산해 화면 HUD와 녹화 HUD에 연결한다', () => {
+    expect(oneRmSource).toContain('estimate1RM(snapWeight(computedWeight), live.reps).average');
+    expect(oneRmSource).toContain('estimate1RM(snapWeight(computedWeight), liveReps).average');
+    expect(oneRmSource.match(/label[:=]\s*["']추정 1RM["']/g)?.length).toBeGreaterThanOrEqual(2);
+    expect(oneRmSource).toContain("{ label: '입력 무게'");
   });
 });
 

@@ -254,15 +254,21 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
       ctx.fillStyle = '#000';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       drawVideoCover(ctx, video, canvas.width, canvas.height);
-      // 게이지형 HUD: 무게를 중앙 게이지로, 반복을 코너 스탯으로(피사체 미가림 · 녹화 번인).
+      const live = accRef.current.live();
+      const liveOneRM = live.reps > 0
+        ? estimate1RM(snapWeight(computedWeight), live.reps).average
+        : null;
+      // 실시간 추정 1RM을 중앙에 번인한다. 입력 무게·자동 반복·속도는 근거값으로 함께 남긴다.
       drawGaugeHud(ctx, canvas.width, canvas.height, {
         title: '1RM',
         recording: countingRef.current,
         elapsedSec: countingRef.current ? (performance.now() - recordStartRef.current) / 1000 : null,
         accent: '#f59e0b',
-        gauge: { label: '무게', value: snapWeight(computedWeight), unit: 'kg' },
+        gauge: { label: '추정 1RM', value: liveOneRM, unit: 'kg' },
         stats: [
-          { label: '반복', value: accRef.current.live().reps, unit: '회' },
+          { label: '입력 무게', value: snapWeight(computedWeight), unit: 'kg' },
+          { label: '반복', value: live.reps, unit: '회' },
+          { label: '평균속도', value: live.lastRepVelocity ?? null, unit: 'm/s' },
         ],
       });
       composeRafRef.current = requestAnimationFrame(draw);
@@ -464,6 +470,9 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
 
   // ───────── 풀스크린 카메라(원판 색 인식 + 바벨 추적 렙 카운팅) ─────────
   if (status !== 'idle') {
+    const liveOneRM = liveReps > 0
+      ? estimate1RM(snapWeight(computedWeight), liveReps).average
+      : null;
     const topBar = (
       <>
 
@@ -523,11 +532,12 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
         )}
         {counting && (
           <GaugeHud
-            label="무게"
-            value={snapWeight(computedWeight)}
+            label="추정 1RM"
+            value={liveOneRM}
             unit="kg"
             accent="#f59e0b"
             stats={[
+              { label: 'LOAD', value: snapWeight(computedWeight), unit: 'kg' },
               { label: 'REPS', value: liveReps, unit: '회' },
               { label: 'V', value: liveHud?.lastRepVelocity ?? null, unit: 'm/s' },
             ]}
@@ -852,7 +862,7 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
           {onSave && (
             <button onClick={save}
               className="w-full h-12 rounded-2xl bg-gradient-to-r from-amber-400 to-orange-500 text-slate-950 font-black text-[15px] active:scale-[0.98] shadow-lg shadow-amber-500/25">
-              이 측정 저장 →
+              저장하고 1RM 결과 리포트 보기 →
             </button>
           )}
           {videoBlob && (

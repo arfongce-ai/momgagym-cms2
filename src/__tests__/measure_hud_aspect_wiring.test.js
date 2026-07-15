@@ -100,7 +100,7 @@ describe('아크 게이지 = 상한 명확한 값 전용(속도·RSI), 무게·�
 
   it('무게·각도·케이던스·점프높이는 arc 미사용(상한 자의적)', () => {
     // 각 라이브 호출에 min/max 상한을 넘기지 않는다(= 아크 없음)
-    expect(read('ai-measure/menus/OneRMEstimate.jsx')).toContain('label="무게"');
+    expect(read('ai-measure/menus/OneRMEstimate.jsx')).toContain('label="추정 1RM"');
     expect(read('ai-measure/menus/OneRMEstimate.jsx')).not.toMatch(/label="무게"[\s\S]{0,80}max=\{300\}/);
     expect(read('ai-measure/menus/RomMeasure.jsx')).not.toMatch(/label="가동범위"[\s\S]{0,80}max=\{180\}/);
     expect(read('ai-measure/menus/GaitRunningAnalysis.jsx')).not.toMatch(/label="케이던스"[\s\S]{0,60}max=\{220\}/);

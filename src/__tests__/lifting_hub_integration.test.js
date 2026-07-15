@@ -50,6 +50,12 @@ describe('바벨 리프팅 통합 탭 · registry', () => {
     expect(hubSource).toContain('return saveAndReport(payload, { videoBlob: raw?.videoBlob ?? null });');
     expect(reportSource).toContain('videoBlob={report.videoBlob || null}');
   });
+
+  it('기록 확인 화면은 표준 metrics/metadata 경로에서 1RM 근거값을 읽는다', () => {
+    expect(hubSource).toContain('metrics.oneRM');
+    expect(hubSource).toContain('metadata.weight');
+    expect(hubSource).toContain('metadata.reps');
+  });
 });
 
 describe('바벨 리프팅 통합 페이로드 · inferReportType 분류', () => {
