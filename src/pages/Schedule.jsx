@@ -71,6 +71,28 @@ async function cleanupBackfilledSessions() {
   return wrong.length;
 }
 
+// 과거 회차 자동 재배정(renumberSessionAtBooking) 버그가 남긴 잘못된 표시값을
+// 1회 정리한다. 그 버그는 실제로 차감되지 않은 예약(잔여 0이라 건너뛴 예약 —
+// 항상 sessionAtBooking=0 이어야 함)까지 재배정 대상에 포함시켜, 날짜가
+// 뒤로 갈수록 회차가 0 밑으로(-1, -2 …) 떨어지는 오표시를 만들어냈다.
+// sessionDeducted!==true 인데 sessionAtBooking 이 0이 아닌 예약은 이 버그가
+// 아니면 나올 수 없는 조합이므로(정상 코드 경로는 항상 0을 기록), 원래
+// 값인 0으로 되돌린다. 트레이너가 세션 탭에서 직접 고친 값(sessionManual)은
+// 정당한 값일 수 있으므로 건드리지 않는다.
+async function cleanupCorruptedSessionRenumbering() {
+  const all = store.getSchedules();
+  const wrong = all.filter(s =>
+    s.sessionDeducted !== true && !s.sessionManual &&
+    s.sessionAtBooking != null && s.sessionAtBooking !== 0
+  );
+  for (const s of wrong) {
+    try {
+      await store.updateSchedule(s.id, { sessionAtBooking: 0 });
+    } catch (e) { console.error('[회차 재배정 오표시 정리 실패]', s.id, e); }
+  }
+  return wrong.length;
+}
+
 // 회원이름 + 회차 표기
 //  - sessionAtBooking(예약 시점 차감 직전 잔여) = 이 수업의 시작 회차값
 //  - 첫 수업(시작값 == 총횟수): "N(s)"  / 마지막 수업(시작값 == 1): "1(e)"
@@ -951,6 +973,10 @@ export default function Schedule() {
     cleanupBackfilledSessions()
       .then(() => setSchedules(store.getSchedules()))
       .catch(e => console.error('[회차 정리 오류]', e));
+    // ★ 과거 회차 자동 재배정 버그가 남긴 음수 등 오표시를 1회 정리(멱등)
+    cleanupCorruptedSessionRenumbering()
+      .then(() => setSchedules(store.getSchedules()))
+      .catch(e => console.error('[회차 재배정 정리 오류]', e));
     setSchedules(store.getSchedules());
     setMembers(mb);
     setTrainers(store.getTrainers());

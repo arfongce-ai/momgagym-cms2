@@ -579,42 +579,93 @@ function createStampedBatch() {
 // 이 함수는 같은 회원+트레이너 예약들을 날짜순으로 봤을 때 회차가 항상
 // 내림차순이 되도록 필요한 것만 재배정한다. 표시용 보정이라 실패해도
 // 방금 만든 예약 자체의 성패에는 영향을 주지 않는다(로그만 남김).
+//
+// ⚠ 회귀 방지(회차가 음수로 표시되던 버그, 2026-07): 재배정 "대상"에 실제로는
+//   차감되지 않은 예약까지 섞이면(예: 잔여 0이라 차감을 건너뛴 예약 — 항상
+//   sessionAtBooking=0 · sessionDeducted=false, 혹은 취소되어 차감이 이미
+//   복원된 예약) 대상 인원수가 진짜 차감 건수보다 많아진다. 예전 코드는
+//   maxVal에서 인원수만큼 그냥 1씩 빼며 채웠기 때문에, 그 초과분이 0 밑으로
+//   (-1, -2 …) 떨어지는 오표시를 만들어냈다.
+//   → 아래는 이를 세 가지로 막는다:
+//     1) 재배정 "대상"을 실제로 차감되어 있고(sessionDeducted===true) 취소로
+//        복원되지 않았고(status!=='canceled') 수동 고정되지 않은
+//        (sessionManual!==true — 트레이너가 세션 탭에서 수동 수정한 값은
+//        자동 보정이 덮어쓰지 않는다) 예약으로만 제한한다.
+//     2) 재등록(재등록 시 total은 누적 가산되어 항상 커짐 — session_reenroll
+//        참고)으로 총횟수(sessionTotalAtBooking)가 바뀐 예약끼리는 서로 다른
+//        "묶음(lot)"으로 보고 절대 섞어 재배정하지 않는다. 안 그러면 이전
+//        패키지의 진짜 마지막 회차(예: 1(e))가 재등록 후 패키지의 숫자로
+//        둔갑해버릴 수 있다 — 값 자체는 양수여도 사실과 다른 회차가 된다.
+//     3) 공식으로 새 숫자를 만들어 채우지 않는다. 같은 lot 안에서 그 대상들이
+//        "이미 갖고 있던 값들의 집합"을 날짜순 자리에 재배치(치환)만 한다 —
+//        존재한 적 없는 값을 만들어내지 않으므로 0 미만이나 실제보다 큰
+//        값이 나올 수 없다(측정 정직성 원칙).
+function isAutoRenumberEligible(s) {
+  return s.sessionDeducted === true && s.sessionAtBooking != null &&
+    s.status !== 'canceled' && !s.sessionManual;
+}
+
+const dateKey = (s) => `${s.date}T${s.startTime || '00:00'}`;
+
+// lot(재등록 묶음) 하나에 대해서만 재배정 — 그 lot이 갖고 있던 값들만 재사용.
+function renumberLot(lot) {
+  if (lot.length < 2) return [];
+  const byDateAsc = [...lot].sort((a, b) => {
+    const ka = dateKey(a), kb = dateKey(b);
+    return ka < kb ? -1 : ka > kb ? 1 : 0;
+  });
+  // 이미 존재하던 값들만 재사용(치환)한다 — 새 값을 계산해 만들지 않는다.
+  const valuesDesc = lot.map((s) => s.sessionAtBooking).sort((a, b) => b - a);
+
+  // 이미 날짜순=값 내림차순이면 손대지 않는다(불필요한 쓰기 방지).
+  const alreadyOrdered = byDateAsc.every((s, i) => s.sessionAtBooking === valuesDesc[i]);
+  if (alreadyOrdered) return [];
+
+  const updates = [];
+  byDateAsc.forEach((s, i) => {
+    const newVal = valuesDesc[i];
+    if (s.sessionAtBooking !== newVal) updates.push({ id: s.id, sessionAtBooking: newVal });
+  });
+  return updates;
+}
+
+// 순수 계산(부작용 없음 — 테스트 용이): 재배정이 필요한 {id, sessionAtBooking}
+// 목록만 반환한다. candidates는 한 회원+트레이너의 후보 예약 전체(외부/상담
+// 제외하고 넘기면 됨) — 자동 재배정 대상 판정과 lot 분리는 이 함수 내부에서 한다.
+export function computeSessionRenumbering(candidates = []) {
+  const eligible = candidates.filter(isAutoRenumberEligible);
+  if (eligible.length < 2) return [];
+
+  const byLot = new Map();
+  for (const s of eligible) {
+    const key = s.sessionTotalAtBooking ?? '∅';
+    if (!byLot.has(key)) byLot.set(key, []);
+    byLot.get(key).push(s);
+  }
+
+  const updates = [];
+  for (const lot of byLot.values()) updates.push(...renumberLot(lot));
+  return updates;
+}
+
 async function renumberSessionAtBooking(memberId, trainerId) {
   if (!memberId || !trainerId) return;
   const siblings = cache.schedules.filter(s =>
     s.memberId === memberId && s.trainerId === trainerId &&
-    !s.isExternal && !s.isConsult && s.sessionAtBooking != null
+    !s.isExternal && !s.isConsult
   );
-  if (siblings.length < 2) return;
-
-  const dateKey = (s) => `${s.date}T${s.startTime || '00:00'}`;
-  const sorted = [...siblings].sort((a, b) => {
-    const ka = dateKey(a), kb = dateKey(b);
-    return ka < kb ? -1 : ka > kb ? 1 : 0;
-  });
-
-  // 이미 날짜순 내림차순이면 손대지 않는다(불필요한 쓰기 방지).
-  let alreadyOrdered = true;
-  for (let i = 1; i < sorted.length; i++) {
-    if (!(sorted[i].sessionAtBooking < sorted[i - 1].sessionAtBooking)) { alreadyOrdered = false; break; }
-  }
-  if (alreadyOrdered) return;
-
-  // 가장 큰 값(가장 많이 남아있던 시점)을 가장 이른 날짜에 앵커로 두고 1씩 감소.
-  const maxVal = Math.max(...sorted.map((s) => s.sessionAtBooking));
-  const updates = [];
-  let expected = maxVal;
-  for (const s of sorted) {
-    if (s.sessionAtBooking !== expected) updates.push({ ...s, sessionAtBooking: expected });
-    expected -= 1;
-  }
+  const updates = computeSessionRenumbering(siblings);
   if (!updates.length) return;
 
   try {
     const batch = createStampedBatch();
-    updates.forEach((u) => batch.set('schedules', u.id, u));
+    const byId = new Map(siblings.map((s) => [s.id, s]));
+    updates.forEach((u) => batch.set('schedules', u.id, { ...byId.get(u.id), sessionAtBooking: u.sessionAtBooking }));
     await batch.commit();
-    cache.schedules = cache.schedules.map((s) => updates.find((u) => u.id === s.id) || s);
+    cache.schedules = cache.schedules.map((s) => {
+      const u = updates.find((x) => x.id === s.id);
+      return u ? { ...s, sessionAtBooking: u.sessionAtBooking } : s;
+    });
   } catch (e) {
     console.error('[회차 재배정 실패]', e);
   }

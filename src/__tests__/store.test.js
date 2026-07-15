@@ -1233,4 +1233,83 @@ describe('회차(sessionAtBooking) 자동 재배정 — 날짜순 삽입이 예�
     // t2는 t1보다 이른 날짜지만 다른 트레이너라 t1의 회차와 섞여 재배정되면 안 된다.
     expect(store.getSchedules().find((s) => s.id === t2sch.id).sessionAtBooking).toBe(5);
   });
+
+  // ── 회귀 방지: 회차가 음수로 표시되던 버그(회원 "지율" 사례) ──────────
+  // 잔여가 0이 된 뒤에도 트레이너가 계속 예약을 잡으면(전부 차감 안 됨,
+  // sessionAtBooking=0 고정) 그 예약들이 재배정 대상에 남아 있다가, 이후
+  // 재등록으로 새 정상 예약이 하나라도 생기면(=재배정이 다시 트리거됨)
+  // 예전 코드는 그 미차감 건들까지 재배정 사다리에 끼워 넣어 0 밑으로
+  // (-1, -2 …) 떨어뜨렸다.
+  it('잔여 소진 후 예약이 계속 잡혀도(미차감) 이후 재등록으로 재배정이 다시 트리거될 때 음수가 되지 않는다', async () => {
+    const m = await store.addMember({ name: 'U', trainerSessions: { t1: { total: 1, remaining: 1 } } });
+
+    // 마지막 1회 정상 예약(진짜 차감) — remaining 1 → 0, sessionAtBooking=1
+    const last = await store.createScheduleWithDeduction({
+      memberId: m.id, trainerId: 't1', isExternal: false, date: '2026-08-01', startTime: '09:00',
+    });
+    expect(last.sessionAtBooking).toBe(1);
+    expect(last.sessionDeducted).toBe(true);
+
+    // 잔여 0인 상태에서 트레이너가 실수로 추가 예약을 5건 더 잡음 — 전부 차감 안 됨.
+    const skipped = [];
+    for (let i = 0; i < 5; i++) {
+      const s = await store.createScheduleWithDeduction({
+        memberId: m.id, trainerId: 't1', isExternal: false,
+        date: `2026-08-0${2 + i}`, startTime: '09:00',
+      });
+      expect(s.sessionDeducted).toBe(false);
+      expect(s.sessionAtBooking).toBe(0);
+      skipped.push(s);
+    }
+
+    // 회원이 재등록(세션 추가) — remaining 0 → 3, total 1 → 4.
+    await store.updateMember(m.id, { trainerSessions: { t1: { total: 4, remaining: 3 } } });
+    // 재등록 후 새 정상 예약(진짜 차감) — 이 호출이 재배정을 다시 유발한다.
+    const newBooking = await store.createScheduleWithDeduction({
+      memberId: m.id, trainerId: 't1', isExternal: false, date: '2026-08-10', startTime: '09:00',
+    });
+    expect(newBooking.sessionDeducted).toBe(true);
+    expect(newBooking.sessionAtBooking).toBe(3);
+
+    // 회귀 확인: 차감 안 된 5건은 여전히 0이어야 한다 — 음수가 되면 안 된다.
+    const all = store.getSchedules();
+    for (const s of skipped) {
+      expect(all.find((x) => x.id === s.id).sessionAtBooking).toBe(0);
+    }
+    // 실제 차감된 두 건은 서로 다른 재등록 묶음이므로 섞이지 않고 각자 원래 값을 유지한다.
+    expect(all.find((x) => x.id === last.id).sessionAtBooking).toBe(1);
+    expect(all.find((x) => x.id === newBooking.id).sessionAtBooking).toBe(3);
+    // 전체적으로 어떤 예약도 음수 회차를 갖지 않는다.
+    expect(all.filter((s) => s.memberId === m.id).every((s) => (s.sessionAtBooking ?? 0) >= 0)).toBe(true);
+  });
+
+  it('취소된 예약은 재배정 사다리에서 빠지고, 그 자리를 재사용한 새 예약이 정상적으로 값을 받는다', async () => {
+    const m = await store.addMember({ name: 'V', trainerSessions: { t1: { total: 3, remaining: 3 } } });
+
+    const a = await store.createScheduleWithDeduction({ memberId: m.id, trainerId: 't1', isExternal: false, date: '2026-08-01', startTime: '09:00' });
+    const b = await store.createScheduleWithDeduction({ memberId: m.id, trainerId: 't1', isExternal: false, date: '2026-08-03', startTime: '09:00' });
+    const c = await store.createScheduleWithDeduction({ memberId: m.id, trainerId: 't1', isExternal: false, date: '2026-08-05', startTime: '09:00' });
+    expect([a.sessionAtBooking, b.sessionAtBooking, c.sessionAtBooking]).toEqual([3, 2, 1]);
+
+    // b를 취소 — 세션이 복원된다(remaining 0 → 1).
+    await store.finalizeSchedule(b.id, 'canceled');
+    expect(store.getMembers().find((x) => x.id === m.id).trainerSessions.t1.remaining).toBe(1);
+
+    // 복원된 자리로 새 예약(날짜상 가장 늦음) — remaining 1 → 0, sessionAtBooking=1.
+    const d = await store.createScheduleWithDeduction({ memberId: m.id, trainerId: 't1', isExternal: false, date: '2026-08-07', startTime: '09:00' });
+    expect(d.sessionAtBooking).toBe(1);
+
+    const all = store.getSchedules();
+    // 취소된 b는 재배정 대상에서 빠져 원래 값(2)을 그대로 유지한다.
+    expect(all.find((x) => x.id === b.id).sessionAtBooking).toBe(2);
+    // 유효한 a,c,d는 날짜순으로 봐도 이미 3,1,1 — a는 그대로, c/d는 취소된 b를
+    // 제외한 값 집합({3,1,1})을 재사용하므로 음수나 조작된 값 없이 안정적으로 유지된다.
+    // (취소된 b를 재배정 대상에 포함시키던 예전 코드는 d를 존재한 적 없는 0으로
+    //  덮어썼다 — 값 자체는 음수가 아니라 이 사례에서 단순 음수 검사만으로는
+    //  못 잡는다. 그래서 d의 값을 직접 확인한다.)
+    expect(all.find((x) => x.id === a.id).sessionAtBooking).toBe(3);
+    expect(all.find((x) => x.id === c.id).sessionAtBooking).toBe(1);
+    expect(all.find((x) => x.id === d.id).sessionAtBooking).toBe(1);
+    expect(all.filter((s) => s.memberId === m.id).every((s) => (s.sessionAtBooking ?? 0) >= 0)).toBe(true);
+  });
 });
