@@ -554,8 +554,12 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
           biomechAccRef.current?.push(landmarks, ts, jp, justTookOff);
           if (landActive && !curInAir) landFramesLeftRef.current--;
           prevInAirRef.current = curInAir;
-          // 반응(RSI) 모드: 측면뷰 판정용 방향 누적
-          if (orientRef.current) orientRef.current.push(landmarks);
+          // 반응(RSI) 모드: 측면뷰 판정용 방향 누적.
+          // ⚠ 공중(air) 프레임은 자세가 왜곡되어(팔 스윙, 몸통 회전 등) 방향 오판을
+          //   유발할 수 있다 — JumpBiomechAccumulator.push 의 방향 투표(354행 부근)와
+          //   동일하게 공중 프레임은 제외한다. RSI는 반응 점프 특성상 체공 비중이
+          //   커서(파워 점프 대비) 이 필터를 빼먹으면 투표가 쉽게 오염된다.
+          if (orientRef.current && jp !== 'air') orientRef.current.push(landmarks);
           const prevTs = prevFrameTsRef.current;
           if (prevTs > 0) {
             const dt = ts - prevTs;
@@ -933,12 +937,21 @@ function JumpReport({ report, saveState, onSave, onRetry, onBack, onOpenSavedRep
   const measuredAt = report.measuredAt
     ? new Date(report.measuredAt).toLocaleString('ko-KR', { hour12: false })
     : '—';
-  const grade = report.valid
-    ? report.heightCm >= 50 ? { label: '매우 우수', color: 'text-blue-400' }
-    : report.heightCm >= 40 ? { label: '우수', color: 'text-emerald-400' }
-    : report.heightCm >= 30 ? { label: '보통', color: 'text-amber-400' }
-    : { label: '개선 필요', color: 'text-red-400' }
-    : null;
+  // 등급 배지: 파워 점프는 점프 높이 기준, RSI는 반응 탄성(RSI 비율) 기준.
+  // ⚠ 회귀 방지: 예전에는 RSI 리포트에도 파워 점프용 키 임계값(50/40/30cm)을
+  //   그대로 썼다. RSI(반응 탄성)는 접지시간을 최소화하는 게 목적이라 점프
+  //   높이 자체가 낮게 나오는 게 정상인데, 그 값을 파워 점프 기준으로 채점하면
+  //   거의 모든 정상적인 RSI 측정이 "개선 필요"로 표시된다. computeRSIFromFlights
+  //   가 이미 RSI 비율 기준으로 계산해 둔 rsi.grade를 그대로 쓴다.
+  const grade = !report.valid ? null
+    : isRsi
+      ? (report.rsi?.grade
+          ? { label: report.rsi.grade.label, color: `text-${report.rsi.grade.tone}-400` }
+          : { label: '평가 불가', color: 'text-slate-400' })
+      : report.heightCm >= 50 ? { label: '매우 우수', color: 'text-blue-400' }
+      : report.heightCm >= 40 ? { label: '우수', color: 'text-emerald-400' }
+      : report.heightCm >= 30 ? { label: '보통', color: 'text-amber-400' }
+      : { label: '개선 필요', color: 'text-red-400' };
 
   const cc = report.crossCheck || {};
   return (
