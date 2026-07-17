@@ -1238,11 +1238,36 @@ export const store = {
 
   // ── 매출/정산 설정 ───────────────────────────────────────
   getSettings: () => ({ ...INITIAL_SETTINGS, ...cache.settings }),
+  // 설정 저장 — 저장 직전 서버 최신값을 다시 읽어 그 위에 patch만 얹는다.
+  //  · 배경: 설정 탭을 오래 열어둔 세션에서 저장하면, 그 사이 다른 기기/세션이
+  //    바꾼 값(예: 트레이너별 정산비율)을 옛 스냅샷으로 덮어써 되돌리는 사고가 있었다
+  //    (6월에 60%로 고정했는데 7월에 다시 50%로 보이던 문제).
+  //  · trainerSplitRateChanges: { [trainerId]: rate|null } — 실제로 사용자가 건드린
+  //    트레이너만 담아서 넘기면, 다른 트레이너의 비율은 항상 "방금 읽은 서버 최신값"을
+  //    그대로 보존한다(건드리지 않은 트레이너는 절대 덮어쓰지 않음).
+  //  · patch의 나머지 키도 호출부(설정 화면)에서 실제로 바뀐 필드만 담아 보낸다.
   updateSettings: async (patch) => {
     const prev = cache.settings;
-    cache.settings = { ...INITIAL_SETTINGS, ...cache.settings, ...patch, id:'config' };
-    try { await fbSet('settings', 'config', cache.settings); return cache.settings; }
-    catch(e){ cache.settings = prev; throw e; }
+    try {
+      let fresh = cache.settings || {};
+      try {
+        const snap = await countedGetDocs('settings(refresh)', collection(db, 'settings'));
+        const doc0 = snap.docs.find(d => d.data().id === 'config');
+        if (doc0) fresh = doc0.data();
+      } catch (e) { /* 네트워크 실패 시 로컬 캐시로 폴백 */ }
+
+      const { trainerSplitRateChanges, ...rest } = patch || {};
+      const mergedRates = { ...(fresh.trainerSplitRates || {}) };
+      if (trainerSplitRateChanges) {
+        Object.entries(trainerSplitRateChanges).forEach(([tid, v]) => {
+          if (v === null || v === undefined || v === '') delete mergedRates[tid];
+          else mergedRates[tid] = v;
+        });
+      }
+      cache.settings = { ...INITIAL_SETTINGS, ...fresh, ...rest, trainerSplitRates: mergedRates, id: 'config' };
+      await fbSet('settings', 'config', cache.settings);
+      return cache.settings;
+    } catch (e) { cache.settings = prev; throw e; }
   },
 
   // ── 지출(고정비/월별) ────────────────────────────────────

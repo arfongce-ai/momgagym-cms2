@@ -1888,7 +1888,11 @@ function NumField({ label, k, suffix, form, setForm }) {
 }
 
 function ConfigTab({ settings, trainers }) {
-  const [form, setForm] = useState({ ...settings, trainerSplitRates:{...(settings.trainerSplitRates||{})} });
+  // 마운트 시점 스냅샷(변경분 diff 기준) — 이 탭을 오래 열어둔 사이 다른 곳에서
+  // 바뀐 값(특히 트레이너별 정산비율)을 저장 시 되돌리지 않기 위해, 실제로 사용자가
+  // 건드린 필드만 골라 patch로 보낸다(전체 폼을 통째로 덮어쓰지 않음).
+  const original = useRef({ ...settings, trainerSplitRates:{...(settings.trainerSplitRates||{})} });
+  const [form, setForm] = useState(original.current);
   const [saved, setSaved] = useState(false);
 
   // 자동/수동 토글: 수동이면 비율 지정, 자동이면 키 제거
@@ -1896,8 +1900,32 @@ function ConfigTab({ settings, trainers }) {
   const clearManual = (tid) => setForm(f=>{ const n={...(f.trainerSplitRates||{})}; delete n[tid]; return {...f, trainerSplitRates:n}; });
 
   const save = async () => {
-    try { await store.updateSettings(form); setSaved(true); setTimeout(()=>setSaved(false),2000); }
-    catch(e){ alert('저장 실패'); }
+    try {
+      const base = original.current;
+      // 일반 필드는 실제로 값이 바뀐 것만 patch에 담는다.
+      const patch = {};
+      Object.keys(form).forEach(k => {
+        if (k === 'trainerSplitRates' || k === 'id') return;
+        if (form[k] !== base[k]) patch[k] = form[k];
+      });
+      // 트레이너별 정산비율은 트레이너 단위로 변경분만 골라 보낸다 — 건드리지 않은
+      // 트레이너의 비율은 store 쪽에서 서버 최신값을 그대로 보존한다.
+      const origRates = base.trainerSplitRates || {};
+      const curRates  = form.trainerSplitRates || {};
+      const allTids = new Set([...Object.keys(origRates), ...Object.keys(curRates)]);
+      const trainerSplitRateChanges = {};
+      allTids.forEach(tid => {
+        const before = origRates[tid] ?? null;
+        const after  = curRates[tid] ?? null;
+        if (before !== after) trainerSplitRateChanges[tid] = after;
+      });
+      if (Object.keys(trainerSplitRateChanges).length) patch.trainerSplitRateChanges = trainerSplitRateChanges;
+
+      const savedSettings = await store.updateSettings(patch);
+      // 다음 저장을 위한 기준선 갱신(서버 최신값 + 이번에 반영된 내 편집분)
+      original.current = { ...savedSettings, trainerSplitRates: { ...(savedSettings.trainerSplitRates||{}) } };
+      setSaved(true); setTimeout(()=>setSaved(false),2000);
+    } catch(e){ alert('저장 실패'); }
   };
 
   return (
