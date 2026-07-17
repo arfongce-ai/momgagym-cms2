@@ -20,8 +20,16 @@ const STATUS_CLR = {
 const STATUS_LBL = { scheduled:'예정', attended:'출석', canceled:'취소', noshow:'노쇼' };
 const WEEKDAYS   = ['일','월','화','수','목','금','토'];
 
-// 간이 캘린더: 이번 주 7일 미니 뷰
-function MiniCalendar({ schedules }) {
+// 요일 라벨: 선택한 날짜가 오늘이면 '오늘의 수업', 아니면 'N월 N일 (요일) 수업'
+function scheduleSectionTitle(dateStr, todayStr) {
+  if (dateStr === todayStr) return '오늘의 수업';
+  const d  = new Date(dateStr + 'T12:00:00');
+  const md = d.toLocaleDateString('ko-KR', { month:'long', day:'numeric' });
+  return `${md} (${WEEKDAYS[d.getDay()]}) 수업`;
+}
+
+// 간이 캘린더: 이번 주 7일 미니 뷰 — 요일을 누르면 그날 수업을 아래 섹션에서 볼 수 있다
+function MiniCalendar({ schedules, selectedDate, onSelectDate }) {
   const today = new Date();
   const todayStr = todayYMD(); // CV-A: 로컬 날짜
 
@@ -38,22 +46,27 @@ function MiniCalendar({ schedules }) {
       <h2 className="font-bold text-sm uppercase tracking-widest text-slate-400 mb-3">📅 이번 주</h2>
       <div className="grid grid-cols-7 gap-1">
         {weekDates.map(date => {
-          const ds      = schedules.filter(s => s.date === date);
-          const isToday = date === todayStr;
-          const dayNum  = new Date(date+'T12:00:00').getDay();
+          const ds         = schedules.filter(s => s.date === date);
+          const isToday    = date === todayStr;
+          const isSelected = date === selectedDate;
+          const dayNum     = new Date(date+'T12:00:00').getDay();
           return (
-            <div key={date} className={`rounded-xl p-1.5 text-center transition-colors
-              ${isToday ? 'bg-amber-500/20 border border-amber-500/40' : 'bg-slate-800/60'}`}>
-              <p className={`text-[10px] font-bold ${isToday ? 'text-amber-400' : 'text-slate-500'}`}>
+            <button type="button" key={date} onClick={()=>onSelectDate(date)}
+              aria-pressed={isSelected}
+              className={`rounded-xl p-1.5 text-center transition-colors active:scale-[0.95] w-full
+                ${isSelected ? 'bg-amber-500/20 border border-amber-500/40'
+                  : isToday  ? 'bg-slate-800/60 border border-amber-500/30'
+                             : 'bg-slate-800/60 border border-transparent hover:border-slate-700'}`}>
+              <p className={`text-[10px] font-bold ${isSelected ? 'text-amber-400' : 'text-slate-500'}`}>
                 {WEEKDAYS[dayNum]}
               </p>
-              <p className={`text-sm font-mono font-black ${isToday ? 'text-amber-400' : 'text-slate-300'}`}>
+              <p className={`text-sm font-mono font-black ${isSelected ? 'text-amber-400' : 'text-slate-300'}`}>
                 {parseInt(date.split('-')[2])}
               </p>
               <p className={`text-[10px] font-bold mt-0.5 ${ds.length ? 'text-amber-400' : 'text-slate-700'}`}>
                 {ds.length ? `${ds.length}건` : '·'}
               </p>
-            </div>
+            </button>
           );
         })}
       </div>
@@ -183,6 +196,8 @@ export default function Home() {
   const [editNotice,setEditNotice]= useState({ title:'', content:'' });
 
   const [showSettlePopup, setShowSettlePopup] = useState(false);
+  // 이번 주 미니 캘린더에서 누른 요일(기본값: 오늘) — '오늘의 수업' 섹션이 이 날짜를 따라간다
+  const [selectedDate, setSelectedDate] = useState(() => todayYMD());
 
   // 고정 공지 우선, 그다음 최신순(createdAt 내림차순).
   //  · 기존엔 isPinned만 정렬해 새 공지가 배열 뒤(오래된 순)에 그대로 쌓였다.
@@ -269,12 +284,14 @@ export default function Home() {
     : members;
 
   const todayStr   = todayYMD(); // CV-A: 로컬 날짜
-  // 오늘의 수업 목록(④)은 전체 그대로 유지
+  // 요약 카드(②)의 '오늘 수업' 숫자는 항상 오늘 기준 (미니 캘린더 선택과 무관)
   const todaySched = schedules.filter(s => s.date === todayStr);
-  // 요약 카드(②)의 '오늘 수업' 숫자는 트레이너면 본인 담당만, 관리자/직원은 전체
   const myTodayCount = myTrainerId
     ? todaySched.filter(s => s.trainerId === myTrainerId).length
     : todaySched.length;
+  // ④ 수업 목록 섹션: 이번 주 미니 캘린더에서 누른 날짜를 '오늘의 수업'과 동일한 형태로 보여준다
+  const selectedSched = schedules.filter(s => s.date === selectedDate);
+  const sectionTitle  = scheduleSectionTitle(selectedDate, todayStr);
   const oneYearAgo = daysAgoYMD(365);
 
   // 세션 부족: 트레이너는 본인 슬롯(내 trainerId)의 잔여만, 관리자/직원은 모든 슬롯 중 하나라도
@@ -396,17 +413,25 @@ export default function Home() {
         <YesterdaySettlementPopup s={ySettle} onClose={closeSettlePopup}/>
       )}
 
-      {/* ③ 간이 캘린더 요약 뷰 (원본 spec 요구) */}
-      <MiniCalendar schedules={schedules}/>
+      {/* ③ 간이 캘린더 요약 뷰 (원본 spec 요구) — 요일을 누르면 아래 ④ 섹션이 그 날짜로 전환 */}
+      <MiniCalendar schedules={schedules} selectedDate={selectedDate} onSelectDate={setSelectedDate}/>
 
-      {/* ④ 오늘의 수업 */}
+      {/* ④ 선택한 날짜의 수업 — 기본은 오늘, 이번 주 캘린더에서 요일을 누르면 그날 수업으로 전환 */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
-        <h2 className="font-bold text-sm uppercase tracking-widest text-slate-400 mb-3">오늘의 수업</h2>
-        {todaySched.length===0
-          ? <p className="text-slate-600 text-sm text-center py-4">오늘 예정된 수업이 없습니다</p>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="font-bold text-sm uppercase tracking-widest text-slate-400">{sectionTitle}</h2>
+          {selectedDate !== todayStr && (
+            <button type="button" onClick={()=>setSelectedDate(todayStr)}
+              className="text-xs text-amber-400 hover:text-amber-300 transition-colors font-semibold">
+              오늘로
+            </button>
+          )}
+        </div>
+        {selectedSched.length===0
+          ? <p className="text-slate-600 text-sm text-center py-4">해당 날짜에 예정된 수업이 없습니다</p>
           : (
             <div className="space-y-2">
-              {todaySched.sort((a,b)=>a.startTime.localeCompare(b.startTime)).map(s=>{
+              {selectedSched.sort((a,b)=>a.startTime.localeCompare(b.startTime)).map(s=>{
                 const isExt = s.isExternal||!s.memberId;
                 const name  = isExt?(s.memo||'외부 일정'):s.memberName;
                 return (
