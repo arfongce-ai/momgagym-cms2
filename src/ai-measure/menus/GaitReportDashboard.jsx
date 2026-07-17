@@ -6,7 +6,8 @@ import {
 import { buildProblemFocus } from '../core/crossMeasureContext';
 import ProblemFocusPanel from './ProblemFocusPanel.jsx';
 import ReportActions from '../../components/report/ReportActions';
-import { UnifiedReportCanvas, UnifiedReportHeader, UnifiedReportPage } from '../../components/report/UnifiedReportPrimitives';
+import { MetricCard, UnifiedReportCanvas, UnifiedReportHeader, UnifiedReportPage } from '../../components/report/UnifiedReportPrimitives';
+import { rangeToStatus } from '../core/unifiedReport';
 
 /*
  * GaitReportDashboard — 보행/러닝 종합 리포트 (1장 대시보드)
@@ -148,16 +149,14 @@ export default function GaitReportDashboard({ report, onComment, onClose, videoB
 
           {/* ① 상단 요약 */}
           <section className="grid grid-cols-4 gap-2.5">
-            <SummaryStat label="분당 걸음수" value={m.cadence} unit="spm"
-              color={statusColor(m.cadence, RANGES.cadence)}
-              note={`정상 ${RANGES.cadence.good[0]}~${RANGES.cadence.good[1]}`}
-              status={statusText(m.cadence, RANGES.cadence)} />
-            <SummaryStat label="땅 딛는 · 뜨는 비율" value={`${m.stancePct}/${m.swingPct}`} unit="%"
-              color={statusColor(m.stancePct, RANGES.stance)}
-              note={`정상 ${RANGES.stance.good[0]}~${RANGES.stance.good[1]}%`}
-              status={statusText(m.stancePct, RANGES.stance)} />
-            <SummaryStat label="총 스텝" value={m.totalSteps} unit="회"
-              color="#38bdf8" note="측정 구간 누적" status="" />
+            <MetricCard metric={{ key:'cadence', label:'분당 걸음수', displayValue:m.cadence, unit:'spm',
+              description:`정상 ${RANGES.cadence.good[0]}~${RANGES.cadence.good[1]}`,
+              status: rangeToStatus(m.cadence, RANGES.cadence) }} />
+            <MetricCard metric={{ key:'stance', label:'땅 딛는 · 뜨는 비율', displayValue:`${m.stancePct}/${m.swingPct}`, unit:'%',
+              description:`정상 ${RANGES.stance.good[0]}~${RANGES.stance.good[1]}%`,
+              status: rangeToStatus(m.stancePct, RANGES.stance) }} />
+            <MetricCard metric={{ key:'steps', label:'총 스텝', displayValue:m.totalSteps, unit:'회',
+              description:'측정 구간 누적' }} />
             <ScoreStat score={score} />
           </section>
 
@@ -268,21 +267,6 @@ function Panel({ title, subtitle, children }) {
         <span className="text-[9px] font-bold tracking-wider text-slate-500 uppercase">{subtitle}</span>
       </div>
       <div className="flex-1 min-h-0">{children}</div>
-    </div>
-  );
-}
-
-function SummaryStat({ label, value, unit, color, note, status }) {
-  return (
-    <div className="rounded-xl bg-slate-800/60 ring-1 ring-slate-700/50 px-3 py-2.5 flex flex-col">
-      <p className="text-[10px] text-slate-400 font-bold leading-tight">{label}</p>
-      <p className="mt-0.5 text-xl font-black tabular-nums" style={{ color }}>
-        {value}<span className="text-[11px] text-slate-400 font-bold ml-0.5">{unit}</span>
-      </p>
-      <div className="mt-auto flex items-center justify-between">
-        <span className="text-[9px] text-slate-500">{note}</span>
-        {status && <span className="text-[9px] font-black" style={{ color }}>{status}</span>}
-      </div>
     </div>
   );
 }

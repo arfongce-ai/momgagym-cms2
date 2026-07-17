@@ -5,11 +5,13 @@ import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, Ca
 import { buildProblemFocus } from '../core/crossMeasureContext';
 import ProblemFocusPanel from './ProblemFocusPanel.jsx';
 import {
+  MetricCard,
   UnifiedEmptyState,
   UnifiedReportCanvas,
   UnifiedReportHeader,
   UnifiedReportPage,
 } from '../../components/report/UnifiedReportPrimitives';
+import { scoreToStatus } from '../core/unifiedReport';
 
 const JOINT_KO = { HIP: '고관절', KNEE: '슬관절', SHOULDER: '견관절', ANKLE: '족관절' };
 const POSE_KO = { STANDING: '서서(체중지지)', SUPINE: '앙와위(누워서)', PRONE: '복와위(엎드려)', SEATED: '앉아서' };
@@ -127,32 +129,33 @@ export default function RomReport({ id = 'rom-report-sheet', report }) {
         </div>
       )}
 
-      {/* 핵심 수치 카드 */}
+      {/* 핵심 수치 카드 — 다른 리포트와 동일한 공용 MetricCard로 통일 */}
       {(report.measureType === 'sensor_goniometer' || (s.right_max_rom == null && s.max_rom != null)) ? (
         // 단일 측정(고니오메타): 좌/우 구분 없이 가동범위 한 장.
-        <div className="mt-4 grid grid-cols-2 gap-3">
-          <MetricCard label="가동범위" value={fmt(s.max_rom ?? s.left_max_rom)} sub="max ROM" />
-          <MetricCard
-            label="보상 작용"
-            value={(comp.left == null && comp.right == null) ? '—' : `${comp.left ?? '—'} / ${comp.right ?? '—'}`}
-            sub={poseMode === 'STANDING' ? (joint === 'SHOULDER' ? '체간기울기(°)' : '골반불균형(%)') : '지면지지로 통제'}
-          />
+        <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <MetricCard metric={{ key:'rom', label:'가동범위', displayValue: fmt(s.max_rom ?? s.left_max_rom), description:'max ROM' }} />
+          <MetricCard metric={{
+            key:'comp', label:'보상 작용',
+            displayValue: (comp.left == null && comp.right == null) ? '—' : `${comp.left ?? '—'} / ${comp.right ?? '—'}`,
+            description: poseMode === 'STANDING' ? (joint === 'SHOULDER' ? '체간기울기(°)' : '골반불균형(%)') : '지면지지로 통제',
+          }} />
         </div>
       ) : (
-        <div className="mt-4 grid grid-cols-3 gap-3">
-          <MetricCard label="좌측 최대 가동범위" value={fmt(s.left_max_rom)} sub="left max ROM" />
-          <MetricCard label="우측 최대 가동범위" value={fmt(s.right_max_rom)} sub="right max ROM" />
-          <MetricCard
-            label="좌우 대칭성"
-            value={s.symmetry_index_score == null ? '—' : `${s.symmetry_index_score}%`}
-            sub="차이(작을수록 대칭)"
-            tone={s.symmetry_index_score != null && s.symmetry_index_score >= 15 ? 'warn' : 'ok'}
-          />
-          <MetricCard
-            label="보상 작용"
-            value={(comp.left == null && comp.right == null) ? '—' : `${comp.left ?? '—'} / ${comp.right ?? '—'}`}
-            sub={poseMode === 'STANDING' ? (joint === 'SHOULDER' ? '체간기울기(°)' : '골반불균형(%)') : '지면지지로 통제'}
-          />
+        <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <MetricCard metric={{ key:'left', label:'좌측 최대 가동범위', displayValue: fmt(s.left_max_rom), description:'left max ROM' }} />
+          <MetricCard metric={{ key:'right', label:'우측 최대 가동범위', displayValue: fmt(s.right_max_rom), description:'right max ROM' }} />
+          <MetricCard metric={{
+            key:'symmetry', label:'좌우 대칭성',
+            displayValue: s.symmetry_index_score == null ? '—' : `${s.symmetry_index_score}%`,
+            description:'차이(작을수록 대칭)',
+            status: s.symmetry_index_score == null ? undefined
+              : scoreToStatus(s.symmetry_index_score >= 15 ? 65 : 90),
+          }} />
+          <MetricCard metric={{
+            key:'comp', label:'보상 작용',
+            displayValue: (comp.left == null && comp.right == null) ? '—' : `${comp.left ?? '—'} / ${comp.right ?? '—'}`,
+            description: poseMode === 'STANDING' ? (joint === 'SHOULDER' ? '체간기울기(°)' : '골반불균형(%)') : '지면지지로 통제',
+          }} />
         </div>
       )}
 
@@ -291,17 +294,4 @@ function CompensationProfilePanel({ profile, poseMode }) {
   );
 }
 
-function MetricCard({ label, value, sub, tone = 'neutral' }) {
-  const toneCls =
-    tone === 'warn' ? 'border-amber-500/30 bg-amber-500/10' :
-    tone === 'ok' ? 'border-emerald-500/30 bg-emerald-500/10' :
-    'border-slate-700 bg-slate-800/70';
-  const valueCls = tone === 'warn' ? 'text-amber-200' : tone === 'ok' ? 'text-emerald-200' : 'text-slate-100';
-  return (
-    <div className={`rounded-xl border p-3 ${toneCls}`}>
-      <p className="text-[11px] font-semibold text-slate-500">{label}</p>
-      <p className={`mt-1 text-xl font-black tabular-nums ${valueCls}`}>{value}</p>
-      {sub && <p className="mt-0.5 text-[10px] text-slate-400">{sub}</p>}
-    </div>
-  );
-}
+

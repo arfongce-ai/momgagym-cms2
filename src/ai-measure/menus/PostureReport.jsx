@@ -10,11 +10,23 @@ import { analyzeAxialRotation, ROTATION_DIRECTION_KO, ROTATION_LEVEL_KO } from '
 import { buildProblemFocus } from '../core/crossMeasureContext';
 import ProblemFocusPanel from './ProblemFocusPanel.jsx';
 import {
+  MetricCard,
   UnifiedEmptyState,
   UnifiedReportCanvas,
   UnifiedReportHeader,
   UnifiedReportPage,
 } from '../../components/report/UnifiedReportPrimitives';
+import { scoreToStatus } from '../core/unifiedReport';
+
+// 'risk'|'caution'|'normal' 문자열 판정을 공용 MetricCard가 쓰는 상태 토큰으로 변환.
+//  · scoreToStatus 임계값(>=80 정상/>=60 주의/그 외 위험)과 동일한 대표 점수를 사용해
+//    다른 리포트(ROM 등)와 같은 배지 색상 규칙을 공유한다.
+function statusToken(key) {
+  if (key === 'risk') return scoreToStatus(35);
+  if (key === 'caution') return scoreToStatus(65);
+  if (key === 'normal') return scoreToStatus(90);
+  return scoreToStatus(null);
+}
 
 const LM = POSE_LANDMARKS;
 
@@ -173,19 +185,27 @@ export default function PostureReport({
           <div className="flex flex-col gap-3">
             <Panel title="정렬 지표">
               <div className="grid grid-cols-2 gap-2">
-                <SmallMetric label="좌우 비대칭" value={analysis.asymmetry?.averageAsi ?? '-'} unit="%" status={analysis.asymmetry?.averageAsi >= 12 ? 'risk' : analysis.asymmetry?.averageAsi >= 7 ? 'caution' : 'normal'} />
-                <SmallMetric label="좌우 기울기" value={analysis.rotations?.rollDeg ?? '-'} unit="°" status={Math.abs(analysis.rotations?.rollDeg || 0) >= 5 ? 'caution' : 'normal'} />
-                <SmallMetric label="앞뒤 기울기" value={analysis.rotations?.pitchDeg ?? '-'} unit="°" status={Math.abs(analysis.rotations?.pitchDeg || 0) >= 8 ? 'caution' : 'normal'} />
-                <SmallMetric label="몸통 틀어짐" value={analysis.rotations?.yawDeg ?? '-'} unit="°" status={Math.abs(analysis.rotations?.yawDeg || 0) >= 8 ? 'caution' : 'normal'} />
+                <MetricCard metric={{ key:'asi', label:'좌우 비대칭', displayValue: analysis.asymmetry?.averageAsi ?? '-', unit:'%',
+                  status: statusToken(analysis.asymmetry?.averageAsi >= 12 ? 'risk' : analysis.asymmetry?.averageAsi >= 7 ? 'caution' : 'normal') }} />
+                <MetricCard metric={{ key:'roll', label:'좌우 기울기', displayValue: analysis.rotations?.rollDeg ?? '-', unit:'°',
+                  status: statusToken(Math.abs(analysis.rotations?.rollDeg || 0) >= 5 ? 'caution' : 'normal') }} />
+                <MetricCard metric={{ key:'pitch', label:'앞뒤 기울기', displayValue: analysis.rotations?.pitchDeg ?? '-', unit:'°',
+                  status: statusToken(Math.abs(analysis.rotations?.pitchDeg || 0) >= 8 ? 'caution' : 'normal') }} />
+                <MetricCard metric={{ key:'yaw', label:'몸통 틀어짐', displayValue: analysis.rotations?.yawDeg ?? '-', unit:'°',
+                  status: statusToken(Math.abs(analysis.rotations?.yawDeg || 0) >= 8 ? 'caution' : 'normal') }} />
               </div>
             </Panel>
 
             <Panel title="뷰별 핵심 지표">
               <div className="grid grid-cols-2 gap-2">
-                <SmallMetric label="어깨 높이" value={absValue(analysis.frontal?.shoulderHeightDiffMm)} unit="mm" status={mmStatus(analysis.frontal?.shoulderHeightDiffMm, ...POSTURE_THRESHOLDS.shoulderDiffMm)} />
-                <SmallMetric label="골반 높이" value={absValue(analysis.frontal?.pelvisHeightDiffMm)} unit="mm" status={mmStatus(analysis.frontal?.pelvisHeightDiffMm, ...POSTURE_THRESHOLDS.pelvisDiffMmNeutral)} />
-                <SmallMetric label="거북목 거리" value={absValue(analysis.sagittal?.forwardHeadMm)} unit="mm" status={mmStatus(analysis.sagittal?.forwardHeadMm, ...POSTURE_THRESHOLDS.forwardHeadMm)} />
-                <SmallMetric label="무릎 펴짐 각도" value={analysis.sagittal?.kneeExtensionProxyDeg ?? '-'} unit="°" status={kneeExtensionStatus(analysis.sagittal?.kneeExtensionProxyDeg)} />
+                <MetricCard metric={{ key:'shoulder', label:'어깨 높이', displayValue: absValue(analysis.frontal?.shoulderHeightDiffMm), unit:'mm',
+                  status: statusToken(mmStatus(analysis.frontal?.shoulderHeightDiffMm, ...POSTURE_THRESHOLDS.shoulderDiffMm)) }} />
+                <MetricCard metric={{ key:'pelvis', label:'골반 높이', displayValue: absValue(analysis.frontal?.pelvisHeightDiffMm), unit:'mm',
+                  status: statusToken(mmStatus(analysis.frontal?.pelvisHeightDiffMm, ...POSTURE_THRESHOLDS.pelvisDiffMmNeutral)) }} />
+                <MetricCard metric={{ key:'fhead', label:'거북목 거리', displayValue: absValue(analysis.sagittal?.forwardHeadMm), unit:'mm',
+                  status: statusToken(mmStatus(analysis.sagittal?.forwardHeadMm, ...POSTURE_THRESHOLDS.forwardHeadMm)) }} />
+                <MetricCard metric={{ key:'knee', label:'무릎 펴짐 각도', displayValue: analysis.sagittal?.kneeExtensionProxyDeg ?? '-', unit:'°',
+                  status: statusToken(kneeExtensionStatus(analysis.sagittal?.kneeExtensionProxyDeg)) }} />
               </div>
               <p className="mt-3 text-xs leading-relaxed text-slate-500">
                 골반 패턴: {pelvisPatternLabel(analysis.frontal?.pelvisPattern)} · 신뢰도 {analysis.reliability?.validCount ?? 0}/{analysis.reliability?.requiredCount ?? 8}
@@ -781,18 +801,6 @@ function Panel({ title, children }) {
       <h2 className="mb-3 text-sm font-black text-white">{title}</h2>
       {children}
     </section>
-  );
-}
-
-function SmallMetric({ label, value, unit, status }) {
-  const style = STATUS_STYLE[status] || STATUS_STYLE.caution;
-  return (
-    <div className={`rounded-md border px-3 py-2 ${style.bg} ${style.border}`}>
-      <p className="text-xs font-bold text-slate-500">{label}</p>
-      <p className={`mt-1 text-xl font-black tabular-nums ${style.text}`}>
-        {value}<span className="ml-1 text-xs text-slate-400">{unit}</span>
-      </p>
-    </div>
   );
 }
 

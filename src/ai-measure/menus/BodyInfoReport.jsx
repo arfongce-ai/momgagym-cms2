@@ -7,17 +7,20 @@
 // ════════════════════════════════════════════════════════════════════════
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import {
+  MetricCard,
   UnifiedReportCanvas,
   UnifiedReportPage,
   UnifiedReportHeader,
   UnifiedReportSection,
 } from '../../components/report/UnifiedReportPrimitives';
+import { scoreToStatus } from '../core/unifiedReport';
 
-const TIER = {
-  good: { text: 'text-emerald-300', dot: 'bg-emerald-400' },
-  warn: { text: 'text-amber-300', dot: 'bg-amber-400' },
-  bad: { text: 'text-red-300', dot: 'bg-red-400' },
-};
+// grade('good'/'warn'/'bad') -> 다른 리포트와 같은 신호등 배지 색/라벨(scoreToStatus 대표 점수 공유).
+function gradeToken(grade) {
+  if (grade === 'bad') return scoreToStatus(35);
+  if (grade === 'warn') return scoreToStatus(65);
+  return scoreToStatus(90);
+}
 
 function worstGrade(items) {
   if (items.some(i => i.grade === 'bad')) return 'risk';
@@ -53,25 +56,14 @@ export default function BodyInfoReport({ id = 'body-report-sheet', member, resul
 
         {/* 현재 측정값 · 등급 */}
         <UnifiedReportSection title="측정값 및 평가" className="mb-4">
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             {items.length === 0 && <p className="text-sm text-slate-500">측정값이 없습니다.</p>}
-            {items.map(item => {
-              const t = TIER[item.grade] || TIER.good;
-              return (
-                <div key={item.key} className="rounded-xl bg-slate-800/70 px-3 py-2.5">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-slate-400">{item.label}</span>
-                    <span className="font-mono text-sm font-black text-slate-100">
-                      {item.value}<span className="text-[10px] text-slate-500"> {item.unit}</span>
-                      <span className={`ml-2 inline-flex items-center gap-1 ${t.text}`}>
-                        <i className={`inline-block h-1.5 w-1.5 rounded-full ${t.dot}`} />{item.status || ''}
-                      </span>
-                    </span>
-                  </div>
-                  {item.description && <p className="mt-1 text-[11px] text-slate-500">{item.description}</p>}
-                </div>
-              );
-            })}
+            {items.map(item => (
+              <MetricCard key={item.key} metric={{
+                key: item.key, label: item.label, displayValue: item.value, unit: item.unit,
+                description: item.description, status: gradeToken(item.grade),
+              }} />
+            ))}
           </div>
           {result?.summary && (
             <div className="mt-3 rounded-xl bg-slate-800/50 px-3 py-2.5">

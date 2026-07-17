@@ -101,7 +101,7 @@ export default function LiftingReportDashboard({ report, onClose, member }) {
               {tiles.map((t, i) => (
                 <div key={i} className={`rounded-xl p-3 border ${t.accent ? 'bg-amber-500/10 border-amber-500/35' : 'bg-slate-800/60 border-slate-700'}`}>
                   <p className="text-[10px] text-slate-400 uppercase tracking-widest">{t.label}</p>
-                  <p className={`font-mono font-black text-xl ${t.accent ? 'text-amber-300' : 'text-slate-100'}`}>{t.value}</p>
+                  <p className={`font-mono font-black text-2xl ${t.accent ? 'text-amber-300' : 'text-slate-100'}`}>{t.value}</p>
                 </div>
               ))}
             </div>
