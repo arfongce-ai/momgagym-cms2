@@ -906,18 +906,56 @@ export const store = {
   // 환불 처리: 결제건에 환불 필드를 기록하고, 이 회원의 잔여 세션을 전부 0으로
   // 정리하는 두 쓰기를 하나의 배치로 원자 커밋한다(매출관리·회원상세 공통 사용).
   //  · refundPatch: { isRefunded, refundAmount, refundedAt, refundVat, refundPenalty, refundUsed }
+  //  · 0으로 덮어쓰기 전의 트레이너별 잔여 세션을 refundPrevSessions에 스냅샷으로 남겨
+  //    cancelRefund(환불취소)가 정확히 복구할 수 있게 한다.
   processRefund: async (mid, pid, refundPatch) => {
     const prevPayments = cache.payments[mid];
     const prevMembers  = cache.members;
     const member = cache.members.find(m => m.id === mid);
-    const updatedPayments = (cache.payments[mid]||[]).map(p => p.id===pid ? { ...p, ...refundPatch } : p);
-    const updatedPayment  = updatedPayments.find(p => p.id === pid);
-    if (!updatedPayment) return null;
     let updatedMember = member;
+    let sessionsSnapshot = null;
     if (member?.trainerSessions) {
+      sessionsSnapshot = JSON.parse(JSON.stringify(member.trainerSessions));
       const ts = JSON.parse(JSON.stringify(member.trainerSessions));
       Object.keys(ts).forEach(tid => { ts[tid] = { ...ts[tid], remaining: 0 }; });
       updatedMember = { ...member, trainerSessions: ts };
+    }
+    const fullPatch = sessionsSnapshot ? { ...refundPatch, refundPrevSessions: sessionsSnapshot } : refundPatch;
+    const updatedPayments = (cache.payments[mid]||[]).map(p => p.id===pid ? { ...p, ...fullPatch } : p);
+    const updatedPayment  = updatedPayments.find(p => p.id === pid);
+    if (!updatedPayment) return null;
+    const batch = createStampedBatch();
+    batch.set('payments', pid, { ...updatedPayment, __mid: mid });
+    if (updatedMember !== member) batch.set('members', mid, updatedMember);
+    try {
+      await batch.commit();
+      cache.payments[mid] = updatedPayments;
+      if (updatedMember !== member) cache.members = cache.members.map(m => m.id===mid ? updatedMember : m);
+      __touchSnapshot();
+      return updatedPayment;
+    } catch (e) {
+      cache.payments[mid] = prevPayments;
+      cache.members = prevMembers;
+      throw e;
+    }
+  },
+  // 환불취소: 환불 필드를 지우고, processRefund가 남겨둔 스냅샷(refundPrevSessions)으로
+  // 잔여 세션을 정확히 복구한다(스냅샷이 없는 옛 데이터는 세션은 건드리지 않고 필드만 정리).
+  cancelRefund: async (mid, pid) => {
+    const prevPayments = cache.payments[mid];
+    const prevMembers  = cache.members;
+    const payment = (cache.payments[mid]||[]).find(p => p.id === pid);
+    if (!payment) return null;
+    const member = cache.members.find(m => m.id === mid);
+    const clearedPatch = {
+      isRefunded:false, refundAmount:null, refundedAt:null,
+      refundVat:null, refundPenalty:null, refundUsed:null, refundPrevSessions:null,
+    };
+    const updatedPayments = (cache.payments[mid]||[]).map(p => p.id===pid ? { ...p, ...clearedPatch } : p);
+    const updatedPayment  = updatedPayments.find(p => p.id === pid);
+    let updatedMember = member;
+    if (member && payment.refundPrevSessions) {
+      updatedMember = { ...member, trainerSessions: payment.refundPrevSessions };
     }
     const batch = createStampedBatch();
     batch.set('payments', pid, { ...updatedPayment, __mid: mid });

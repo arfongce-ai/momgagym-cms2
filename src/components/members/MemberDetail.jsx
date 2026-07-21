@@ -527,7 +527,7 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
   // 않도록 한다. 환불 시 이 회원의 잔여 세션은 전부 0으로 정리된다.
   const handleRefundPayment = async (p) => {
     const settings = store.getSettings();
-    const suggested = autoRefundUsedAmount(p, {
+    const suggested = autoRefundUsedAmount(p, member.id, {
       members: store.getMembers(), schedules: store.getSchedules(), settings,
     });
     const usedInput = window.prompt(
@@ -553,11 +553,9 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
   };
 
   const handleCancelRefund = async (pid) => {
-    if (!window.confirm('환불 처리를 취소(되돌리기)할까요?')) return;
+    if (!window.confirm('환불 처리를 취소(되돌리기)할까요? 환불 시 0으로 정리됐던 잔여 세션도 함께 복구됩니다.')) return;
     try {
-      await store.updatePayment(member.id, pid, {
-        isRefunded: false, refundAmount: null, refundedAt: null, refundVat: null, refundPenalty: null, refundUsed: null,
-      });
+      await store.cancelRefund(member.id, pid);
       refresh(); onUpdate?.();
     } catch (e) { alert('실패했습니다.'); }
   };

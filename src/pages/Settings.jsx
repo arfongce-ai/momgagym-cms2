@@ -6,6 +6,7 @@ import { daysAgoYMD } from '../utils/dates';
 import { store, aiStore } from '../demoData';
 import { useAuth } from '../contexts/AuthContext';
 import { recomputeBodyAgeIfStale } from '../ai-measure/core/postureMath';
+import { auditMemberIntegrity, SEVERITY_LABEL, summarizeFindings } from '../services/integrityAudit';
 
 function serializeDate(v) {
   if (!v) return null;
@@ -47,6 +48,11 @@ export default function Settings({ darkMode, setDarkMode }) {
   const [bodyAgeScanning, setBodyAgeScanning] = useState(false);
   const [bodyAgeFixing,   setBodyAgeFixing]   = useState(false);
   const [bodyAgeMsg,      setBodyAgeMsg]      = useState('');
+
+  // ── 전 회원 데이터 무결성 검사(수납·세션·스케줄·환불) ─────
+  const [integrityFindings, setIntegrityFindings] = useState(null); // null=아직 조회 안 함
+  const [integrityScanning, setIntegrityScanning] = useState(false);
+  const [integrityFilter,   setIntegrityFilter]   = useState('all'); // all|error|warn|info
 
   // ── JSON 백업 (수납 + 신체정보 + AI측정 포함, Firestore 캐시 기반) ──────
   const handleBackup = async () => {
@@ -214,6 +220,27 @@ export default function Settings({ darkMode, setDarkMode }) {
     }
   };
 
+  // ── 전 회원 데이터 무결성 검사: 조회(스캔, 읽기 전용) ────────
+  //  수납(sessionAdds)·세션(total/remaining)·스케줄(출석/노쇼/차감예정)·환불
+  //  필드가 서로 어긋난 회원이 있는지 전 회원 대상으로 훑는다. 자동으로
+  //  고치지 않고 확인용 목록만 보여준다(scheduleAudit.js와 동일 원칙).
+  const scanIntegrity = async () => {
+    setIntegrityScanning(true);
+    try {
+      const members = store.getMembers();
+      const trainers = store.getTrainers();
+      const schedules = store.getSchedules();
+      const payments = Object.fromEntries(members.map(m => [m.id, store.getPayments(m.id)]));
+      const findings = auditMemberIntegrity({ members, trainers, schedules, payments });
+      setIntegrityFindings(findings);
+    } catch (e) {
+      console.error('[무결성 검사 실패]', e);
+      setIntegrityFindings([]);
+    } finally {
+      setIntegrityScanning(false);
+    }
+  };
+
   return (
     <div className="space-y-6 max-w-lg">
       <h1 className="text-2xl font-black tracking-tight">설정</h1>
@@ -351,6 +378,65 @@ export default function Settings({ darkMode, setDarkMode }) {
                 </button>
               </>
             )}
+          </div>
+
+          {/* 전 회원 데이터 무결성 검사 */}
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
+            <h2 className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-1">
+              데이터 무결성 검사 (관리자)
+            </h2>
+            <p className="text-xs text-slate-500 mb-3">
+              등록된 모든 회원을 대상으로 수납·세션·스케줄·환불 데이터가 서로<br className="hidden sm:block"/>
+              어긋난 곳이 있는지 훑어봅니다. <span className="text-slate-600">읽기 전용 — 자동으로 고치지 않고 목록만 보여줍니다.</span>
+            </p>
+            <button onClick={scanIntegrity} disabled={integrityScanning}
+              className="btn btn-ghost w-full mb-3 disabled:opacity-50">
+              {integrityScanning ? '검사 중…' : '🔍 전 회원 검사 실행'}
+            </button>
+            {integrityFindings !== null && (() => {
+              const summary = summarizeFindings(integrityFindings);
+              const filtered = integrityFindings.filter(f => integrityFilter === 'all' || f.severity === integrityFilter);
+              const chip = (key, label, clr) => (
+                <button key={key} onClick={() => setIntegrityFilter(integrityFilter === key ? 'all' : key)}
+                  className={`px-2 py-1 rounded-lg text-[11px] font-bold border transition-colors ${
+                    integrityFilter === key ? clr : 'border-slate-700 text-slate-500 hover:border-slate-500'}`}>
+                  {label} {summary[key] ?? 0}
+                </button>
+              );
+              return (
+                <>
+                  {integrityFindings.length === 0 ? (
+                    <p className="text-xs font-semibold text-emerald-400 mb-1">✅ 어긋난 데이터가 발견되지 않았습니다.</p>
+                  ) : (
+                    <>
+                      <div className="flex flex-wrap gap-1.5 mb-3">
+                        {chip('error', '오류', 'border-red-500/40 bg-red-500/10 text-red-300')}
+                        {chip('warn', '확인 필요', 'border-amber-500/40 bg-amber-500/10 text-amber-300')}
+                        {chip('info', '참고', 'border-slate-500/40 bg-slate-700/40 text-slate-300')}
+                      </div>
+                      <div className="bg-slate-950/40 border border-slate-800 rounded-xl p-3 max-h-64 overflow-y-auto space-y-1.5">
+                        {filtered.map((f, i) => (
+                          <div key={i} className="text-xs py-1.5 border-b border-slate-800 last:border-0">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                                f.severity === 'error' ? 'bg-red-500/20 text-red-400'
+                                : f.severity === 'warn' ? 'bg-amber-500/20 text-amber-400'
+                                : 'bg-slate-700/50 text-slate-400'}`}>
+                                {SEVERITY_LABEL[f.severity]}
+                              </span>
+                              <span className="text-slate-200 font-semibold">{f.memberName}</span>
+                              {f.trainerName && <span className="text-slate-500">· {f.trainerName}</span>}
+                              {f.paidAt && <span className="text-slate-600 text-[10px]">{f.paidAt}</span>}
+                            </div>
+                            <p className="text-slate-400 mt-0.5">{f.message}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </>
+              );
+            })()}
           </div>
         </>
       )}

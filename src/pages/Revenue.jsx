@@ -486,7 +486,7 @@ function RefundableList({ filtered, settings, trainers, trainerMap, onChange }) 
 
   // 출석 데이터로 진행분(이미 수업한 회차 × 단가) 자동 계산
   // — 회원상세(MemberDetail) 화면과 동일한 공식을 쓰도록 finance.js 공용 함수 사용.
-  const autoUsedAmount = (p) => autoRefundUsedAmount(p, {
+  const autoUsedAmount = (p) => autoRefundUsedAmount(p, p.memberId, {
     members: store.getMembers(), schedules: store.getSchedules(), settings,
   });
 
@@ -517,7 +517,7 @@ function RefundableList({ filtered, settings, trainers, trainerMap, onChange }) 
 
   const cancelRefund = async (p) => {
     if (!window.confirm('환불 처리를 취소(되돌리기)할까요?')) return;
-    try { await store.updatePayment(p.memberId, p.id, { isRefunded:false, refundAmount:null }); refresh(); }
+    try { await store.cancelRefund(p.memberId, p.id); refresh(); }
     catch(e){ alert('실패했습니다.'); }
   };
 

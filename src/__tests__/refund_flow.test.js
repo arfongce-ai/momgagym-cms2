@@ -37,18 +37,19 @@ describe('finance.js — 환불 산정 공용 함수', () => {
         { memberId: 'm1', trainerId: 't2', status: 'booked' }, // 아직 진행 안 함 → 제외
         { memberId: 'm1', trainerId: 't2', status: 'attended' },
       ];
-      const used = autoRefundUsedAmount(payment, { members, schedules, settings });
+      const used = autoRefundUsedAmount(payment, 'm1', { members, schedules, settings });
       expect(used).toBe(60000 * 3); // attended 2 + noshow 1 = 3회
     });
 
-    it('결제에 담당 트레이너(trainerIds)가 지정돼 있으면 그 트레이너 출석만 센다', () => {
+    it('결제에 담당 트레이너(trainerIds)가 지정돼 있으면 그 트레이너의 등록분만 분모로 쓰고, 그 트레이너 출석만 센다', () => {
       const payment = { memberId: 'm1', amount: 900000, method: 'cash', trainerIds: ['t1'] };
       const schedules = [
         { memberId: 'm1', trainerId: 't1', status: 'attended' },
         { memberId: 'm1', trainerId: 't2', status: 'attended' }, // t1 결제와 무관 → 제외
       ];
-      const used = autoRefundUsedAmount(payment, { members, schedules, settings });
-      expect(used).toBe(60000 * 1);
+      const used = autoRefundUsedAmount(payment, 'm1', { members, schedules, settings });
+      // 단가 분모는 t1 등록분(10회)만 — t2(5회)는 이 결제와 무관하므로 제외. 900000/10=90000.
+      expect(used).toBe(90000 * 1);
     });
 
     it('외부 일정(isExternal)은 출석 회차에서 제외한다', () => {
@@ -57,14 +58,65 @@ describe('finance.js — 환불 산정 공용 함수', () => {
         { memberId: 'm1', trainerId: 't1', status: 'attended', isExternal: true },
         { memberId: 'm1', trainerId: 't1', status: 'attended' },
       ];
-      const used = autoRefundUsedAmount(payment, { members, schedules, settings });
+      const used = autoRefundUsedAmount(payment, 'm1', { members, schedules, settings });
       expect(used).toBe(60000 * 1);
     });
 
     it('등록 총회차가 0이면 0을 반환한다(0으로 나누기 방지)', () => {
       const zeroMembers = [{ id: 'm2', trainerSessions: {} }];
       const payment = { memberId: 'm2', amount: 500000, method: 'cash' };
-      expect(autoRefundUsedAmount(payment, { members: zeroMembers, schedules: [], settings })).toBe(0);
+      expect(autoRefundUsedAmount(payment, 'm2', { members: zeroMembers, schedules: [], settings })).toBe(0);
+    });
+
+    // ════════════════════════════════════════════════════════════════
+    //  회귀 테스트 — 실제 프로덕션에서 발생한 버그.
+    //  회원상세(MemberDetail.jsx)의 store.getPayments(mid)로 가져온 결제
+    //  객체엔 memberId 필드가 없다(회원별로 이미 그룹핑돼 있어서 원래
+    //  없음 — memberId는 Revenue.jsx의 getAllPayments()에서만 별도로
+    //  붙는다). 예전엔 이 함수가 payment.memberId로 회원을 찾았기 때문에,
+    //  회원상세 화면에서 환불 진행분 자동계산이 항상 0원으로 나왔다
+    //  (세션 20회 중 10회를 실제 진행했는데도). memberId를 명시적 인자로
+    //  분리해 이 실수 자체가 불가능하도록 고쳤다.
+    // ════════════════════════════════════════════════════════════════
+    it('결제 객체에 memberId 필드가 없어도(회원상세 화면 상황) 명시 인자로 넘긴 memberId로 정상 계산된다', () => {
+      const payment = { amount: 1100000, method: 'transfer', trainerIds: ['t1'] }; // memberId 없음
+      const richMembers = [{
+        id: 'm1', trainerSessions: { t1: { total: 20, remaining: 10 } },
+      }];
+      const schedules = Array.from({ length: 10 }, (_, i) => (
+        { memberId: 'm1', trainerId: 't1', status: 'attended', date: `2026-06-${10 + i}` }
+      ));
+      // transfer(계좌)는 공제 없음 → net=1,100,000. 단가 = 1,100,000/20 = 55,000. ×10회.
+      const used = autoRefundUsedAmount(payment, 'm1', { members: richMembers, schedules, settings });
+      expect(used).toBe(550000);
+    });
+
+    // ════════════════════════════════════════════════════════════════
+    //  회귀 테스트 — 교차검증 중 발견된 두 번째 실제 버그.
+    //  회원이 트레이너 여러 명에게 "각각 별도로" 등록돼 있으면(예: 김나영
+    //  20회 + 박지훈 10회), 예전 코드는 단가의 분모로 "회원의 전체 트레이너
+    //  등록 합계"를 썼다. 이러면 환불하려는 결제와 무관한 트레이너의
+    //  등록분까지 분모에 섞여 단가가 실제보다 낮게 나오고, 진행분이
+    //  과소평가되어 환불액이 과다산정된다. 분모를 "이 결제의 담당
+    //  트레이너(tids)"로만 한정해 고쳤다.
+    // ════════════════════════════════════════════════════════════════
+    it('회원이 다른 트레이너에게도 별도 등록돼 있어도, 이 결제와 무관한 등록분은 단가 분모에서 제외한다', () => {
+      const mixedMembers = [{
+        id: 'm1',
+        trainerSessions: {
+          kim:  { total: 20, remaining: 10 }, // 이 결제가 해당하는 등록
+          park: { total: 10, remaining: 10 }, // 완전히 무관한 별도 등록
+        },
+      }];
+      const payment = { amount: 1100000, method: 'transfer', trainerIds: ['kim'] };
+      const schedules = Array.from({ length: 10 }, (_, i) => (
+        { memberId: 'm1', trainerId: 'kim', status: 'attended', date: `2026-06-${10 + i}` }
+      ));
+      const used = autoRefundUsedAmount(payment, 'm1', { members: mixedMembers, schedules, settings });
+      // 올바른 값: 단가 = 1,100,000 ÷ 20(김나영 등록분만) = 55,000. ×10회 = 550,000.
+      // (수정 전 버그값은 1,100,000 ÷ 30(김+박 합산) × 10 = 366,667 — 틀림)
+      expect(used).toBe(550000);
+      expect(used).not.toBe(366667);
     });
   });
 
@@ -173,6 +225,76 @@ describe('store.processRefund — 결제 환불 필드 + 잔여세션 0 정리�
   });
 });
 
+describe('store.cancelRefund — 환불취소 시 0으로 정리됐던 잔여 세션을 정확히 복구', () => {
+  // ════════════════════════════════════════════════════════════════
+  //  회귀 테스트 — 교차검증 중 발견된 세 번째 실제 문제(원본 Revenue.jsx
+  //  에도 있었음). 환불취소는 결제의 환불 표시만 지웠을 뿐, processRefund가
+  //  0으로 정리한 잔여 세션은 복구하지 않았다. 실수로 환불했다가 취소해도
+  //  회원 잔여 세션은 영영 0으로 남는 문제. processRefund가 남긴 스냅샷
+  //  (refundPrevSessions)으로 정확히 되돌리도록 고쳤다.
+  // ════════════════════════════════════════════════════════════════
+  it('환불 전 잔여 세션(여러 트레이너 포함)을 정확히 복구한다', async () => {
+    const mem = await store.addMember({
+      name: '박서준',
+      trainerSessions: { t1: { total: 10, remaining: 4 }, t2: { total: 8, remaining: 6 } },
+    });
+    const pay = await store.addPayment(mem.id, { amount: 500000, method: 'cash', paidAt: '2026-07-01' });
+
+    await store.processRefund(mem.id, pay.id, { isRefunded: true, refundAmount: 200000, refundedAt: '2026-07-21' });
+    // 환불 직후: 모든 트레이너 잔여가 0으로 정리됨.
+    let m = store.getMembers().find(x => x.id === mem.id);
+    expect(m.trainerSessions.t1.remaining).toBe(0);
+    expect(m.trainerSessions.t2.remaining).toBe(0);
+
+    await store.cancelRefund(mem.id, pay.id);
+
+    m = store.getMembers().find(x => x.id === mem.id);
+    expect(m.trainerSessions.t1.remaining).toBe(4); // 환불 전 값으로 정확히 복구
+    expect(m.trainerSessions.t2.remaining).toBe(6);
+
+    const p = store.getPayments(mem.id).find(x => x.id === pay.id);
+    expect(p.isRefunded).toBe(false);
+    expect(p.refundAmount).toBeFalsy();
+    expect(p.refundPrevSessions).toBeFalsy(); // 스냅샷도 정리됨
+  });
+
+  it('스냅샷이 없는(옛 데이터) 결제는 세션은 건드리지 않고 환불 필드만 정리한다', async () => {
+    const mem = await store.addMember({ name: '한소희', trainerSessions: { t1: { total: 5, remaining: 0 } } });
+    const pay = await store.addPayment(mem.id, {
+      amount: 300000, method: 'cash', paidAt: '2026-06-01',
+      isRefunded: true, refundAmount: 100000, refundedAt: '2026-06-10', // refundPrevSessions 없이 수기 세팅된 옛 데이터 가정
+    });
+
+    await store.cancelRefund(mem.id, pay.id);
+
+    const m = store.getMembers().find(x => x.id === mem.id);
+    expect(m.trainerSessions.t1.remaining).toBe(0); // 스냅샷 없으니 그대로
+
+    const p = store.getPayments(mem.id).find(x => x.id === pay.id);
+    expect(p.isRefunded).toBe(false);
+  });
+
+  it('배치 커밋 실패 시 결제·회원 캐시가 모두 롤백된다', async () => {
+    const mem = await store.addMember({ name: '정우성', trainerSessions: { t1: { total: 10, remaining: 3 } } });
+    const pay = await store.addPayment(mem.id, { amount: 400000, method: 'cash', paidAt: '2026-07-01' });
+    await store.processRefund(mem.id, pay.id, { isRefunded: true, refundAmount: 150000, refundedAt: '2026-07-21' });
+
+    globalThis.__refundBatchShouldFail = true;
+    await expect(store.cancelRefund(mem.id, pay.id)).rejects.toThrow();
+
+    const p = store.getPayments(mem.id).find(x => x.id === pay.id);
+    const m = store.getMembers().find(x => x.id === mem.id);
+    expect(p.isRefunded).toBe(true); // 롤백되어 환불 상태 그대로
+    expect(m.trainerSessions.t1.remaining).toBe(0); // 롤백되어 0인 채로 그대로
+  });
+
+  it('존재하지 않는 결제 id면 null을 반환한다', async () => {
+    const mem = await store.addMember({ name: '수지', trainerSessions: {} });
+    const result = await store.cancelRefund(mem.id, 'no-such-payment');
+    expect(result).toBeNull();
+  });
+});
+
 // ── 3. 소스 배선 확인 — 회원상세에 환불 UI가 실제로 연결돼 있는지 ─────
 describe('MemberDetail.jsx — 환불 UI 배선 확인(관리자 전용)', () => {
   const src = read('components/members/MemberDetail.jsx');
@@ -187,6 +309,14 @@ describe('MemberDetail.jsx — 환불 UI 배선 확인(관리자 전용)', () =>
     const end = src.indexOf('const handleCancelRefund');
     const fn = src.slice(start, end);
     expect(fn).toContain('store.processRefund(');
+  });
+
+  it('환불취소는 store.cancelRefund로 세션까지 복구한다(환불 필드만 지우지 않는다)', () => {
+    const start = src.indexOf('const handleCancelRefund = async (pid) => {');
+    const end = src.indexOf('// 기존 재등록 결제의');
+    const fn = src.slice(start, end);
+    expect(fn).toContain('store.cancelRefund(');
+    expect(fn).not.toContain('store.updatePayment(member.id, pid, {');
   });
 
   it('미수금(isUnpaid) 결제는 환불 버튼 대상에서 제외한다', () => {
@@ -206,7 +336,7 @@ describe('Revenue.jsx — 환불 계산이 finance.js 공용 함수로 통일됐
   const src = read('pages/Revenue.jsx');
 
   it('RefundableList가 finance.js의 autoRefundUsedAmount/computeRefundEstimate를 사용한다', () => {
-    expect(src).toContain('autoRefundUsedAmount(p, {');
+    expect(src).toContain('autoRefundUsedAmount(p, p.memberId, {');
     expect(src).toContain('computeRefundEstimate(p, settings, usedInput)');
   });
 
@@ -216,5 +346,12 @@ describe('Revenue.jsx — 환불 계산이 finance.js 공용 함수로 통일됐
     const fn = src.slice(start, end);
     expect(fn).toContain('store.processRefund(');
     expect(fn).not.toContain('store.updateMember(p.memberId, { trainerSessions: ts })');
+  });
+
+  it('환불취소는 store.cancelRefund로 세션까지 복구한다', () => {
+    const start = src.indexOf('const cancelRefund = async (p) => {');
+    const end = src.indexOf('const SEL =');
+    const fn = src.slice(start, end);
+    expect(fn).toContain('store.cancelRefund(');
   });
 });
