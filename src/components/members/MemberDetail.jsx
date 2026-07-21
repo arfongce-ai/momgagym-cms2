@@ -10,7 +10,10 @@ import { useAuth } from '../../contexts/AuthContext';
 import { ClassTypeCheckbox } from './MemberRegister';
 import AiMeasureReport     from '../ai/AiMeasureReport';
 import MemberMeasureHistory from '../ai/MemberMeasureHistory';
-import { METHOD_LBL, METHOD_CLR, computeMonthRates } from '../../services/finance';
+import {
+  METHOD_LBL, METHOD_CLR, computeMonthRates, won,
+  autoRefundUsedAmount, computeRefundEstimate,
+} from '../../services/finance';
 
 const INP = "w-full bg-slate-800 border border-slate-700 text-slate-100 rounded-xl px-3 py-2.5 text-sm placeholder-slate-500 focus:outline-none focus:border-amber-500";
 const LBL = "block text-xs font-semibold text-slate-400 uppercase tracking-widest mb-1.5";
@@ -519,6 +522,46 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
     catch (e) { alert('삭제에 실패했습니다. 네트워크 확인 후 다시 시도하세요.'); }
   };
 
+  // 환불 처리(관리자 전용) — 매출관리(Revenue) 화면과 동일한 계산식(finance.js 공용
+  // 함수)과 동일한 원자적 저장(store.processRefund)을 사용해 두 화면의 결과가 어긋나지
+  // 않도록 한다. 환불 시 이 회원의 잔여 세션은 전부 0으로 정리된다.
+  const handleRefundPayment = async (p) => {
+    const settings = store.getSettings();
+    const suggested = autoRefundUsedAmount(p, {
+      members: store.getMembers(), schedules: store.getSchedules(), settings,
+    });
+    const usedInput = window.prompt(
+      `환불 처리 — ${member.name}\n총 결제액: ${won(p.amount)}\n\n` +
+      `진행분(이미 수업한 회차 × 단가)을 입력하세요 (원):\n` +
+      `· 출석 데이터 기준 자동 계산값: ${won(suggested)} (수정 가능)`,
+      String(suggested));
+    if (usedInput === null) return;
+    const { vat, penalty, usedAmount, refund } = computeRefundEstimate(p, settings, usedInput);
+    if (!window.confirm(
+      `환불 산정 (계약서 10조 기준)\n` +
+      `총 결제액 ${won(p.amount)}\n− 부가세 ${won(vat)}\n− 위약금 10% ${won(penalty)}\n− 진행분 ${won(usedAmount)}\n` +
+      `= 환불액 ${won(refund)}\n\n` +
+      `※ 환불은 오늘 날짜(이번 달) 매출에서 차감되고, 이 회원의 잔여 세션은 0으로 정리됩니다.\n` +
+      `진행분 수업료는 트레이너 정산에 그대로 남습니다.\n\n이 결제를 환불 처리할까요?`)) return;
+    try {
+      await store.processRefund(member.id, p.id, {
+        isRefunded: true, refundAmount: refund, refundedAt: todayYMD(),
+        refundVat: vat, refundPenalty: penalty, refundUsed: usedAmount,
+      });
+      refresh(); onUpdate?.();
+    } catch (e) { alert('환불 처리에 실패했습니다.'); }
+  };
+
+  const handleCancelRefund = async (pid) => {
+    if (!window.confirm('환불 처리를 취소(되돌리기)할까요?')) return;
+    try {
+      await store.updatePayment(member.id, pid, {
+        isRefunded: false, refundAmount: null, refundedAt: null, refundVat: null, refundPenalty: null, refundUsed: null,
+      });
+      refresh(); onUpdate?.();
+    } catch (e) { alert('실패했습니다.'); }
+  };
+
   // 기존 재등록 결제의 '세션 시작일' 지정/변경 — 매출(결제일)은 그대로, 회차 소진 순서만 조정.
   const handleSetSessionStart = async (p) => {
     const cur = p.sessionStartDate || '';
@@ -907,11 +950,11 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
               {payments.length===0
                 ? <p className="text-slate-600 text-sm text-center py-6">수납 기록이 없습니다</p>
                 : [...payments].sort((a,b)=>b.paidAt.localeCompare(a.paidAt)).map(p=>(
-                  <div key={p.id} className={`bg-slate-800 rounded-xl p-3 border ${p.isUnpaid?'border-red-500/30':'border-slate-700'}`}>
+                  <div key={p.id} className={`bg-slate-800 rounded-xl p-3 border ${p.isRefunded?'border-orange-500/30 opacity-80':p.isUnpaid?'border-red-500/30':'border-slate-700'}`}>
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-mono font-black text-base text-slate-100">
+                          <span className={`font-mono font-black text-base ${p.isRefunded?'text-orange-300 line-through':'text-slate-100'}`}>
                             {p.amount.toLocaleString()}원
                           </span>
                           {Array.isArray(p.methods)&&p.methods.length
@@ -923,13 +966,14 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
                                 ))}
                               </span>
                             : <span className={`text-xs font-bold ${METHOD_CLR[p.method]}`}>{METHOD_LBL[p.method]}</span>}
+                          {p.isRefunded&&<span className="text-[10px] bg-orange-500/20 text-orange-400 border border-orange-500/30 px-1.5 py-0.5 rounded font-bold">환불완료</span>}
                           {p.isUnpaid&&<span className="text-[10px] bg-red-500/20 text-red-400 border border-red-500/30 px-1.5 py-0.5 rounded font-bold">미수금</span>}
                           {p.isNew&&<span className="text-[10px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-1.5 py-0.5 rounded font-bold">신규{p.consultTrainerId?` · 상담 ${trainerMap[p.consultTrainerId]?.name||'?'}`:''}</span>}
                           {p.isReEnroll&&<span className="text-[10px] bg-blue-500/20 text-blue-400 border border-blue-500/30 px-1.5 py-0.5 rounded font-bold">재등록{p.reEnrollNo?` ${p.reEnrollNo}회차`:''}</span>}
                           {p.category==='edu_center'&&<span className="text-[10px] bg-amber-500/20 text-amber-400 border border-amber-500/30 px-1.5 py-0.5 rounded font-bold">센터교육</span>}
                           {p.category==='edu_external'&&<span className="text-[10px] bg-amber-500/20 text-amber-400 border border-amber-500/30 px-1.5 py-0.5 rounded font-bold">외부활동</span>}
                         </div>
-                        <p className="text-slate-500 text-xs mt-0.5">{p.paidAt}</p>
+                        <p className="text-slate-500 text-xs mt-0.5">{p.paidAt}{p.isRefunded&&` · 환불 ${won(p.refundAmount||0)} (${p.refundedAt||'-'})`}</p>
                         {p.isReEnroll && (
                           <p className="text-[11px] mt-0.5">
                             <span className="text-slate-500">세션 시작일: </span>
@@ -954,8 +998,15 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
                         {p.note&&<p className="text-slate-400 text-xs mt-1">{p.note}</p>}
                       </div>
                       {user?.role==='admin'&&(
-                        <button onClick={()=>handleDeletePayment(p.id)}
-                          className="text-slate-600 hover:text-red-400 text-xs transition-colors flex-shrink-0">🗑</button>
+                        <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
+                          {!p.isUnpaid && (p.isRefunded
+                            ? <button onClick={()=>handleCancelRefund(p.id)}
+                                className="text-[10px] text-slate-500 hover:text-slate-300 transition-colors">환불취소</button>
+                            : <button onClick={()=>handleRefundPayment(p)}
+                                className="text-[10px] text-slate-500 hover:text-orange-400 transition-colors">환불</button>)}
+                          <button onClick={()=>handleDeletePayment(p.id)}
+                            className="text-slate-600 hover:text-red-400 text-xs transition-colors">🗑</button>
+                        </div>
                       )}
                     </div>
                   </div>

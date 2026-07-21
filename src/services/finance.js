@@ -53,6 +53,37 @@ export function calcNet(payment, settings) {
   return { amount, cardFee:d.cardFee, vat:d.vat, net: amount - d.cardFee - d.vat };
 }
 
+// ── 환불 산정(계약서 10조 기준) — 매출관리(Revenue)와 회원상세(MemberDetail)
+//    두 화면에서 동일하게 써야 하므로 여기 한 곳에만 둔다(공식 불일치 방지).
+//    환불액 = 총 결제액 − 부가세 − 위약금(10%) − 진행분(이미 수업한 회차×단가)
+
+// 진행분 자동 계산: 단가(= 입금액 ÷ 등록 총회차) × 출석(출석+노쇼) 회차.
+//  · members/schedules는 store.getMembers()/store.getSchedules() 결과를 그대로 넘기면 됨.
+export function autoRefundUsedAmount(payment, { members = [], schedules = [], settings }) {
+  const mem = members.find(m => m.id === payment.memberId);
+  const ts = mem?.trainerSessions || {};
+  const totalReg = Object.values(ts).reduce((s, v) => s + (v.total || 0), 0);
+  if (totalReg <= 0) return 0;
+  const net = calcNet(payment, settings).net;
+  const unit = net / totalReg;
+  // 이 결제의 담당 트레이너 기준(없으면 전체 트레이너)으로 출석 회차를 센다.
+  const tids = (payment.trainerIds && payment.trainerIds.length) ? payment.trainerIds : Object.keys(ts);
+  const attended = schedules.filter(s =>
+    !s.isExternal && s.memberId === payment.memberId && tids.includes(s.trainerId) &&
+    (s.status === 'attended' || s.status === 'noshow')
+  ).length;
+  return Math.round(unit * attended);
+}
+
+// 환불액 산정: { vat, penalty, usedAmount, refund }. usedAmount는 수정 가능한 진행분(원).
+export function computeRefundEstimate(payment, settings, usedAmount) {
+  const vat = (payment.amount || 0) * (settings.vatRate / 100);
+  const penalty = (payment.amount || 0) * 0.10;
+  const used = Number(usedAmount) || 0;
+  const refund = Math.max(0, (payment.amount || 0) - vat - penalty - used);
+  return { vat, penalty, usedAmount: used, refund };
+}
+
 // ── 트레이너별 정산은 회당단가×횟수 방식 한 가지로 일원화함.
 //    (옛 비율기반 정산 함수들은 제거)
 

@@ -903,6 +903,37 @@ export const store = {
     try { await fbDelete('payments', pid); }
     catch(e){ cache.payments[mid]=prev; throw e; }
   },
+  // 환불 처리: 결제건에 환불 필드를 기록하고, 이 회원의 잔여 세션을 전부 0으로
+  // 정리하는 두 쓰기를 하나의 배치로 원자 커밋한다(매출관리·회원상세 공통 사용).
+  //  · refundPatch: { isRefunded, refundAmount, refundedAt, refundVat, refundPenalty, refundUsed }
+  processRefund: async (mid, pid, refundPatch) => {
+    const prevPayments = cache.payments[mid];
+    const prevMembers  = cache.members;
+    const member = cache.members.find(m => m.id === mid);
+    const updatedPayments = (cache.payments[mid]||[]).map(p => p.id===pid ? { ...p, ...refundPatch } : p);
+    const updatedPayment  = updatedPayments.find(p => p.id === pid);
+    if (!updatedPayment) return null;
+    let updatedMember = member;
+    if (member?.trainerSessions) {
+      const ts = JSON.parse(JSON.stringify(member.trainerSessions));
+      Object.keys(ts).forEach(tid => { ts[tid] = { ...ts[tid], remaining: 0 }; });
+      updatedMember = { ...member, trainerSessions: ts };
+    }
+    const batch = createStampedBatch();
+    batch.set('payments', pid, { ...updatedPayment, __mid: mid });
+    if (updatedMember !== member) batch.set('members', mid, updatedMember);
+    try {
+      await batch.commit();
+      cache.payments[mid] = updatedPayments;
+      if (updatedMember !== member) cache.members = cache.members.map(m => m.id===mid ? updatedMember : m);
+      __touchSnapshot();
+      return updatedPayment;
+    } catch (e) {
+      cache.payments[mid] = prevPayments;
+      cache.members = prevMembers;
+      throw e;
+    }
+  },
   // 과거 스케줄에 consumedIndexAtBooking 소급 부여(회차 매핑 마이그레이션).
   //  · patches: [{ id, consumedIndexAtBooking }] (finance.planConsumedIndexBackfill 결과)
   //  · Firestore 배치 한도(500) 고려해 나눠 커밋. 실패 시 캐시 롤백.
