@@ -2,11 +2,12 @@
 // ✅ 백업: body records 포함 + 완전한 Timestamp 직렬화
 // ✅ 파기: 스케줄+수납+신체정보 일괄 삭제
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { daysAgoYMD } from '../utils/dates';
 import { store, aiStore } from '../demoData';
 import { useAuth } from '../contexts/AuthContext';
 import { recomputeBodyAgeIfStale } from '../ai-measure/core/postureMath';
-import { auditMemberIntegrity, SEVERITY_LABEL, summarizeFindings } from '../services/integrityAudit';
+import { auditMemberIntegrity, SEVERITY_LABEL, summarizeFindings, filterDismissed, TAB_FOR_FINDING_TYPE } from '../services/integrityAudit';
 
 function serializeDate(v) {
   if (!v) return null;
@@ -34,6 +35,7 @@ function serializeDoc(obj) {
 
 export default function Settings({ darkMode, setDarkMode }) {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [backupYear,   setBackupYear]   = useState(new Date().getFullYear());
   const [backupMonth,  setBackupMonth]  = useState(new Date().getMonth() + 1);
   const [purgeList,    setPurgeList]    = useState([]);
@@ -53,6 +55,7 @@ export default function Settings({ darkMode, setDarkMode }) {
   const [integrityFindings, setIntegrityFindings] = useState(null); // null=아직 조회 안 함
   const [integrityScanning, setIntegrityScanning] = useState(false);
   const [integrityFilter,   setIntegrityFilter]   = useState('all'); // all|error|warn|info
+  const [dismissingKey,     setDismissingKey]     = useState(null); // 처리 중인 finding.key(중복 클릭 방지)
 
   // ── JSON 백업 (수납 + 신체정보 + AI측정 포함, Firestore 캐시 기반) ──────
   const handleBackup = async () => {
@@ -231,14 +234,37 @@ export default function Settings({ darkMode, setDarkMode }) {
       const trainers = store.getTrainers();
       const schedules = store.getSchedules();
       const payments = Object.fromEntries(members.map(m => [m.id, store.getPayments(m.id)]));
-      const findings = auditMemberIntegrity({ members, trainers, schedules, payments });
-      setIntegrityFindings(findings);
+      const raw = auditMemberIntegrity({ members, trainers, schedules, payments });
+      // 이미 "무시(정상)" 처리된 항목은 다시 뜨지 않는다(사용자 요청: 재확인 없음).
+      const dismissedKeys = store.getIntegrityDismissals().map(d => d.id);
+      setIntegrityFindings(filterDismissed(raw, dismissedKeys));
     } catch (e) {
       console.error('[무결성 검사 실패]', e);
       setIntegrityFindings([]);
     } finally {
       setIntegrityScanning(false);
     }
+  };
+
+  // "무시(정상)" — 담당자가 이미 확인한 정상적인 상황(수동 조정 등)이면 영구히 감춘다.
+  const dismissFinding = async (finding) => {
+    if (dismissingKey) return; // 중복 클릭 방지
+    setDismissingKey(finding.key);
+    try {
+      await store.dismissIntegrityFinding(finding, { dismissedBy: user?.name || user?.email || null });
+      setIntegrityFindings(list => (list || []).filter(f => f.key !== finding.key));
+    } catch (e) {
+      console.error('[무결성 무시 처리 실패]', e);
+      alert('무시 처리에 실패했습니다. 네트워크 확인 후 다시 시도하세요.');
+    } finally {
+      setDismissingKey(null);
+    }
+  };
+
+  // "회원상세로 이동" — 그 회원의 관련 탭을 바로 열어 기존 도구(직접수정/환불 등)로 즉시 고칠 수 있게 한다.
+  const goToMemberForFinding = (finding) => {
+    const tab = TAB_FOR_FINDING_TYPE[finding.type] || 'info';
+    navigate(`/members?openMember=${finding.memberId}&tab=${tab}`);
   };
 
   return (
@@ -414,9 +440,9 @@ export default function Settings({ darkMode, setDarkMode }) {
                         {chip('warn', '확인 필요', 'border-amber-500/40 bg-amber-500/10 text-amber-300')}
                         {chip('info', '참고', 'border-slate-500/40 bg-slate-700/40 text-slate-300')}
                       </div>
-                      <div className="bg-slate-950/40 border border-slate-800 rounded-xl p-3 max-h-64 overflow-y-auto space-y-1.5">
-                        {filtered.map((f, i) => (
-                          <div key={i} className="text-xs py-1.5 border-b border-slate-800 last:border-0">
+                      <div className="bg-slate-950/40 border border-slate-800 rounded-xl p-3 max-h-80 overflow-y-auto space-y-1.5">
+                        {filtered.map((f) => (
+                          <div key={f.key} className="text-xs py-2 border-b border-slate-800 last:border-0">
                             <div className="flex items-center gap-1.5 flex-wrap">
                               <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
                                 f.severity === 'error' ? 'bg-red-500/20 text-red-400'
@@ -429,6 +455,16 @@ export default function Settings({ darkMode, setDarkMode }) {
                               {f.paidAt && <span className="text-slate-600 text-[10px]">{f.paidAt}</span>}
                             </div>
                             <p className="text-slate-400 mt-0.5">{f.message}</p>
+                            <div className="flex items-center gap-2 mt-1.5">
+                              <button onClick={() => goToMemberForFinding(f)}
+                                className="text-[11px] px-2 py-1 rounded-md border border-slate-700 text-slate-300 hover:border-amber-500/40 hover:text-amber-300 font-semibold transition-colors">
+                                회원상세로 이동 →
+                              </button>
+                              <button onClick={() => dismissFinding(f)} disabled={dismissingKey === f.key}
+                                className="text-[11px] px-2 py-1 rounded-md border border-slate-700 text-slate-500 hover:border-emerald-500/40 hover:text-emerald-300 font-semibold transition-colors disabled:opacity-50">
+                                {dismissingKey === f.key ? '처리 중…' : '무시(정상)'}
+                              </button>
+                            </div>
                           </div>
                         ))}
                       </div>

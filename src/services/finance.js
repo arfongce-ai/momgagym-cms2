@@ -84,13 +84,19 @@ export function autoRefundUsedAmount(payment, memberId, { members = [], schedule
   return Math.round(unit * attended);
 }
 
-// 환불액 산정: { vat, penalty, usedAmount, refund }. usedAmount는 수정 가능한 진행분(원).
+// 환불액 산정(약관 4항): [총 결제액] − [위약금 10%] − [진행 횟수 × 정상가] − [카드 수수료] − [부가세].
+//  · 카드 수수료·부가세는 calcNet()과 동일한 결제수단별 규칙을 그대로 재사용한다
+//    (카드1·2: 카드수수료+부가세 / 페이·현금영수증: 부가세만 / 계좌·현금: 둘 다 0원).
+//    calcNet의 net(= 결제액−카드수수료−부가세)을 그대로 출발점으로 쓰면 이 규칙이
+//    자동으로 지켜진다.
+//  · usedAmount(진행 횟수×단가)는 호출부에서 계산해 넘긴다(수정 가능한 값).
+// 반환: { cardFee, vat, penalty, usedAmount, refund }.
 export function computeRefundEstimate(payment, settings, usedAmount) {
-  const vat = (payment.amount || 0) * (settings.vatRate / 100);
+  const { cardFee, vat, net } = calcNet(payment, settings);
   const penalty = (payment.amount || 0) * 0.10;
   const used = Number(usedAmount) || 0;
-  const refund = Math.max(0, (payment.amount || 0) - vat - penalty - used);
-  return { vat, penalty, usedAmount: used, refund };
+  const refund = Math.max(0, net - penalty - used);
+  return { cardFee, vat, penalty, usedAmount: used, refund };
 }
 
 // ── 트레이너별 정산은 회당단가×횟수 방식 한 가지로 일원화함.

@@ -7,7 +7,24 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { store } from '../../demoData';
 import { todayYMD, addMonthsYMD } from '../../utils/dates';
 
-const TERMS = `1. 건강 고지 의무\n회원은 부상 및 지병을 등록 전 반드시 고지해야 하며, 미고지 사항으로 인한 사고 및 합병증에 대해 센터는 책임을 지지 않습니다.\n\n2. 예약 및 수업 운영\n당일 취소·변경 불가. 전일 영업 종료 전까지 예약·변경 가능. 당일 취소·노쇼 시 횟수 자동 차감. 지각 시 연장 불가.\n\n3. 유효 기간 및 휴회\n등록일 기준 6개월 이내 소진(경과 시 자동 소멸). 휴회는 유효 기간 내 1회(최대 30일) 가능(사전 협의).\n\n4. 환불 및 양도\n환불 산정: [총 결제액] - [위약금 10%] - [진행 횟수 × 정상가] - [카드 수수료]. 타인 양도 절대 불가.\n\n5. 책임 및 동의\n본인 부주의 사고·분실물 책임 없음. 강사 변경 가능. 홍보 활용(사진·영상은 홍보·연구용).\n\n본인은 위 약관을 숙지하였으며 이에 동의합니다.`;
+// 약관 — 문단별로 구조화(3항의 유효기간 문구를 빨간 굵은 글씨로 강조하기 위함).
+// 각 항목은 { text } 또는 { prefix, highlight, suffix }(highlight만 강조 렌더링) 형태.
+export const TERMS_SECTIONS = [
+  { text: '1. 건강 고지 의무\n회원은 부상 및 지병을 등록 전 반드시 고지해야 하며, 미고지 사항으로 인한 사고 및 합병증에 대해 센터는 책임을 지지 않습니다.' },
+  { text: '2. 예약 및 수업 운영\n당일 취소·변경 불가. 전일 영업 종료 전까지 예약·변경 가능. 당일 취소·노쇼 시 횟수 자동 차감. 지각 시 연장 불가.' },
+  {
+    prefix: '3. 유효 기간 및 휴회\n',
+    highlight: '10회 등록 시 최대 3개월, 20회 등록 시 최대 6개월 이내 소진(경과 시 자동 소멸)',
+    suffix: '. 휴회는 유효 기간 내 1회(최대 30일) 가능(사전 협의).',
+  },
+  { text: '4. 환불 및 양도\n환불 산정: [총 결제액] - [위약금 10%] - [진행 횟수 × 정상가] - [카드 수수료] - [부가세]. 타인 양도 절대 불가.' },
+  { text: '5. 책임 및 동의\n본인 부주의 사고·분실물 책임 없음. 강사 변경 가능. 홍보 활용(사진·영상은 홍보·연구용).' },
+  { text: '본인은 위 약관을 숙지하였으며 이에 동의합니다.' },
+];
+// 플레인 텍스트가 필요한 곳(백업/출력 등)을 위한 파생 문자열.
+export const TERMS = TERMS_SECTIONS
+  .map(s => (s.text != null ? s.text : `${s.prefix}${s.highlight}${s.suffix}`))
+  .join('\n\n');
 
 export const MEMBER_CLASS_TYPES = ['트레이닝','선수','재활','외부','컨디셔닝'];
 
@@ -362,7 +379,15 @@ export default function MemberRegister({ trainers=[], onSuccess, onCancel }) {
           {/* ─ STEP 2: 약관 ─────────────────────────── */}
           {step==='terms'&&(
             <div className="p-5 flex flex-col" style={{minHeight:'60vh'}}>
-              <div className="flex-1 overflow-y-auto bg-slate-800 border border-slate-700 rounded-xl p-4 text-sm text-slate-300 leading-7 whitespace-pre-line mb-4" style={{minHeight:'45vh'}}>{TERMS}</div>
+              <div className="flex-1 overflow-y-auto bg-slate-800 border border-slate-700 rounded-xl p-4 text-sm text-slate-300 leading-7 mb-4" style={{minHeight:'45vh'}}>
+                {TERMS_SECTIONS.map((s, i) => (
+                  <p key={i} className={`whitespace-pre-line ${i>0 ? 'mt-4' : ''}`}>
+                    {s.text != null
+                      ? s.text
+                      : <>{s.prefix}<strong className="text-red-400 font-extrabold">{s.highlight}</strong>{s.suffix}</>}
+                  </p>
+                ))}
+              </div>
               <div className="flex gap-2">
                 <button onClick={()=>setStep('form')} className="py-2.5 px-4 rounded-xl border border-slate-700 text-slate-300 hover:text-white text-sm font-semibold transition-colors">← 이전</button>
                 <button onClick={()=>setStep('sign')} className="flex-1 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold py-2.5 rounded-xl text-sm transition-colors">동의하고 서명 ✍️</button>

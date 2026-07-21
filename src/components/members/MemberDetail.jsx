@@ -35,9 +35,9 @@ const makePayForm = () => ({
   category: 'normal',
 });
 
-export default function MemberDetail({ member:initMember, trainers, onClose, onUpdate }) {
+export default function MemberDetail({ member:initMember, trainers, onClose, onUpdate, initialTab }) {
   const { user } = useAuth();
-  const [tab, setTab]       = useState('info');
+  const [tab, setTab]       = useState(initialTab || 'info');
   const [member, setMember] = useState(initMember);
   const [editMode, setEdit] = useState(false);
   const [editForm, setEF]   = useState({ ...initMember });
@@ -536,17 +536,17 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
       `· 출석 데이터 기준 자동 계산값: ${won(suggested)} (수정 가능)`,
       String(suggested));
     if (usedInput === null) return;
-    const { vat, penalty, usedAmount, refund } = computeRefundEstimate(p, settings, usedInput);
+    const { cardFee, vat, penalty, usedAmount, refund } = computeRefundEstimate(p, settings, usedInput);
     if (!window.confirm(
-      `환불 산정 (계약서 10조 기준)\n` +
-      `총 결제액 ${won(p.amount)}\n− 부가세 ${won(vat)}\n− 위약금 10% ${won(penalty)}\n− 진행분 ${won(usedAmount)}\n` +
+      `환불 산정 (이용약관 4항 기준)\n` +
+      `총 결제액 ${won(p.amount)}\n− 카드 수수료 ${won(cardFee)}\n− 부가세 ${won(vat)}\n− 위약금 10% ${won(penalty)}\n− 진행분 ${won(usedAmount)}\n` +
       `= 환불액 ${won(refund)}\n\n` +
       `※ 환불은 오늘 날짜(이번 달) 매출에서 차감되고, 이 회원의 잔여 세션은 0으로 정리됩니다.\n` +
       `진행분 수업료는 트레이너 정산에 그대로 남습니다.\n\n이 결제를 환불 처리할까요?`)) return;
     try {
       await store.processRefund(member.id, p.id, {
         isRefunded: true, refundAmount: refund, refundedAt: todayYMD(),
-        refundVat: vat, refundPenalty: penalty, refundUsed: usedAmount,
+        refundCardFee: cardFee, refundVat: vat, refundPenalty: penalty, refundUsed: usedAmount,
       });
       refresh(); onUpdate?.();
     } catch (e) { alert('환불 처리에 실패했습니다.'); }

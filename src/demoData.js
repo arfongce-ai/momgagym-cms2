@@ -150,6 +150,7 @@ const INITIAL_SETTINGS = {
 const cache = {
   members:[], trainers:[], schedules:[], notices:[], payments:{}, body:{}, ai:{},
   settings:{...INITIAL_SETTINGS}, expenses:[], promos:[], settleOverrides:[], gaitReports:{}, postureReports:{}, romReports:{},
+  integrityDismissals:[],
 };
 
 // 충돌 방지 ID 생성기 — Date.now()만 쓰면 같은 밀리초에 두 건이 생길 때
@@ -246,7 +247,7 @@ const __SNAP_VER = DATA_VERSION;
 //  삭제는 deletions 톰스톤(어느 컬렉션의 어떤 id가 지워졌나)으로 전파한다.
 //  안전망: 주 1회(FULL TTL) 전체 재검증 + 기기 시계 오차는 MARGIN 으로 흡수
 //  (id 기준 병합이라 중복 조회는 무해).
-const __SYNC_COLLECTIONS = ['members','trainers','schedules','notices','payments','body','settings','expenses','promos','settleOverrides'];
+const __SYNC_COLLECTIONS = ['members','trainers','schedules','notices','payments','body','settings','expenses','promos','settleOverrides','integrityDismissals'];
 const __GROUPED = new Set(['payments','body']);
 const __DELTA_MARGIN_MS = 10 * 60 * 1000;
 const __FULL_SYNC_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -279,6 +280,7 @@ function __refreshSnapshot() {
     notices: cache.notices, payments: cache.payments, body: cache.body,
     settings: cache.settings, expenses: cache.expenses,
     promos: cache.promos, settleOverrides: cache.settleOverrides,
+    integrityDismissals: cache.integrityDismissals,
   });
 }
 
@@ -359,6 +361,7 @@ export async function initStore({ force = false } = {}) {
           cache.settings=d.settings||{...INITIAL_SETTINGS};
           cache.expenses=d.expenses||[]; cache.promos=d.promos||[];
           cache.settleOverrides=d.settleOverrides||[];
+          cache.integrityDismissals=d.integrityDismissals||[];
           cache.ai = {}; cache.gaitReports = {}; cache.postureReports = {}; cache.romReports = {};   // 측정 데이터는 항상 지연 로딩
           __syncedAt = snap.syncedAt || {};
           __fullSyncAt = snap.fullSyncAt || 0;
@@ -383,7 +386,7 @@ export async function initStore({ force = false } = {}) {
       // 앱 시작 시 전수 조회하지 않는다. 빈 캐시로 시작 → 회원 화면에서 그 회원 것만
       // 지연 로딩(ensureSessions/ensureGaitReports)한다. 측정 데이터가 쌓일수록
       // 시작 시 읽기가 폭증하던 문제를 차단한다.
-      const [members, trainers, schedules, notices, payments, body, settings, expenses, promos, settleOverrides] = await Promise.all([
+      const [members, trainers, schedules, notices, payments, body, settings, expenses, promos, settleOverrides, integrityDismissals] = await Promise.all([
         loadCollection('members'),
         loadCollection('trainers'),
         loadCollection('schedules'),
@@ -394,6 +397,7 @@ export async function initStore({ force = false } = {}) {
         loadCollection('expenses', { optional: true }),
         loadCollection('promos', { optional: true }),
         loadCollection('settleOverrides', { optional: true }),
+        loadCollection('integrityDismissals', { optional: true }),
       ]);
       cache.members=members; cache.trainers=trainers; cache.schedules=schedules;
       cache.notices=notices; cache.payments=payments; cache.body=body;
@@ -405,6 +409,7 @@ export async function initStore({ force = false } = {}) {
       cache.expenses = expenses;
       cache.promos   = promos;
       cache.settleOverrides = settleOverrides;
+      cache.integrityDismissals = integrityDismissals;
       const now = Date.now();
       __SYNC_COLLECTIONS.forEach(c => { __syncedAt[c] = now; });
       __syncedAt.deletions = now;
@@ -905,7 +910,7 @@ export const store = {
   },
   // 환불 처리: 결제건에 환불 필드를 기록하고, 이 회원의 잔여 세션을 전부 0으로
   // 정리하는 두 쓰기를 하나의 배치로 원자 커밋한다(매출관리·회원상세 공통 사용).
-  //  · refundPatch: { isRefunded, refundAmount, refundedAt, refundVat, refundPenalty, refundUsed }
+  //  · refundPatch: { isRefunded, refundAmount, refundedAt, refundCardFee, refundVat, refundPenalty, refundUsed }
   //  · 0으로 덮어쓰기 전의 트레이너별 잔여 세션을 refundPrevSessions에 스냅샷으로 남겨
   //    cancelRefund(환불취소)가 정확히 복구할 수 있게 한다.
   processRefund: async (mid, pid, refundPatch) => {
@@ -949,7 +954,7 @@ export const store = {
     const member = cache.members.find(m => m.id === mid);
     const clearedPatch = {
       isRefunded:false, refundAmount:null, refundedAt:null,
-      refundVat:null, refundPenalty:null, refundUsed:null, refundPrevSessions:null,
+      refundCardFee:null, refundVat:null, refundPenalty:null, refundUsed:null, refundPrevSessions:null,
     };
     const updatedPayments = (cache.payments[mid]||[]).map(p => p.id===pid ? { ...p, ...clearedPatch } : p);
     const updatedPayment  = updatedPayments.find(p => p.id === pid);
@@ -1488,6 +1493,28 @@ export const store = {
     cache.settleOverrides = cache.settleOverrides.filter(o => o.id !== id);
     try { await fbDelete('settleOverrides', id); }
     catch(e){ cache.settleOverrides = prev; throw e; }
+  },
+
+  // 데이터 무결성 검사(integrityAudit.js) — "무시(정상)" 처리 목록.
+  //  · finding.key를 문서 id로 그대로 쓴다(같은 문제는 재스캔해도 같은 key).
+  //  · 한 번 무시하면 영구히(재무시 취소 기능 없음) 다시 뜨지 않는다 —
+  //    사용자가 명시적으로 요청한 동작(재확인 없음).
+  getIntegrityDismissals: () => cache.integrityDismissals,
+  dismissIntegrityFinding: async (finding, meta = {}) => {
+    const id = finding.key;
+    if (!id) throw new Error('finding.key가 없습니다.');
+    const doc = {
+      id, type: finding.type,
+      memberId: finding.memberId || null, memberName: finding.memberName || null,
+      trainerId: finding.trainerId || null, paymentId: finding.paymentId || null,
+      message: finding.message || '',
+      dismissedAt: new Date().toISOString(),
+      dismissedBy: meta.dismissedBy || null,
+    };
+    const prev = cache.integrityDismissals;
+    cache.integrityDismissals = [...cache.integrityDismissals.filter(d => d.id !== id), doc];
+    try { await fbSet('integrityDismissals', id, doc); return doc; }
+    catch (e) { cache.integrityDismissals = prev; throw e; }
   },
 };
 

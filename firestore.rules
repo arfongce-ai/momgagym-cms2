@@ -58,6 +58,8 @@ service cloud.firestore {
     match /promos/{id}          { allow read: if isSignedIn(); allow write: if isAdmin(); }
     match /settleOverrides/{id} { allow read: if isSignedIn(); allow write: if isAdmin(); }
     match /settings/{id}        { allow read: if isSignedIn(); allow write: if isAdmin(); }
+    // 데이터 무결성 검사(설정 > 데이터 무결성 검사) — 관리자 전용 도구이므로 완전 관리자 전용.
+    match /integrityDismissals/{id} { allow read, write: if isAdmin(); }
 
     // ── 델타 동기화 인프라 ──────────────────────────────
     // meta/versions: 컬렉션별 마지막 쓰기 시각(문서 1개). 앱이 열릴 때 이 문서

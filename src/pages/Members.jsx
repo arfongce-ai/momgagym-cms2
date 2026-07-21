@@ -1,6 +1,7 @@
 // Members.jsx — v5
 // ✅ 요구사항1: 잔여 횟수 트레이너별 분리 배지 표시 (총합 금지)
 import { useState, useEffect, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { store, initStore } from '../demoData';
 import { todayYMD, daysAgoYMD, isMemberExpired, isMonthlyActive, monthlyDueOf } from '../utils/dates';
 import { useAuth } from '../contexts/AuthContext';
@@ -31,13 +32,29 @@ export default function Members() {
   const [showRegister,  setShowRegister]  = useState(false);
   const [showImport,    setShowImport]    = useState(false);
   const [selected,      setSelected]      = useState(null);
+  const [initialTab,    setInitialTab]    = useState(null); // 무결성 검사 등 외부에서 지정한 시작 탭
   const [refreshing,    setRefreshing]    = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const load = useCallback(() => {
     setMembers(store.getMembers());
     setTrainers(store.getTrainers());
   }, []);
   useEffect(() => { load(); }, [load]);
+
+  // 다른 화면(예: 설정 > 데이터 무결성 검사)에서 "?openMember=회원id&tab=탭"으로 넘어오면
+  // 회원 목록 로딩 후 그 회원의 상세를 지정된 탭으로 바로 연다. 처리 후 쿼리는 지워
+  // 뒤로가기/새로고침 시 반복해서 다시 열리지 않게 한다.
+  useEffect(() => {
+    const openId = searchParams.get('openMember');
+    if (!openId || !members.length) return;
+    const m = members.find(x => x.id === openId);
+    if (m) {
+      setSelected(m);
+      setInitialTab(searchParams.get('tab') || 'info');
+    }
+    setSearchParams({}, { replace: true });
+  }, [members, searchParams, setSearchParams]);
 
   const oneYearAgo = daysAgoYMD(365); // CV-A: 로컬 날짜
   const myTrainerId = getUserTrainerId(user);
@@ -261,9 +278,11 @@ export default function Members() {
       )}
       {selected && (
         <MemberDetail
+          key={selected.id}
           member={members.find(m=>m.id===selected.id) || selected}
           trainers={trainers}
-          onClose={() => setSelected(null)}
+          initialTab={initialTab}
+          onClose={() => { setSelected(null); setInitialTab(null); }}
           onUpdate={() => load()} />
       )}
     </div>

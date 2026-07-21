@@ -5,7 +5,12 @@
 //  측정 화면(카메라·각도기·센서)은 세로 기준 배치라, 가로로 회전하면 레이아웃과
 //  측정 기준선이 틀어진다. 그래서 이 훅이 활성인 동안 세로를 유지한다.
 //
-//  두 갈래(브라우저 지원 편차 대응):
+//  0) PC(데스크톱) 판별: 주 입력장치가 마우스/트랙패드(pointer: fine)면 PC로 보고
+//     이 잠금을 아예 건너뛴다. PC 모니터는 물리적으로 "세로로 돌릴" 수 없으므로,
+//     이 판별 없이는 넓은 브라우저 창이 그대로 landscape로 잡혀 PC 사용자가
+//     "세로로 돌려주세요" 안내에 영영 막힌다(PC 웹캠 사용 경로 차단 버그였음).
+//
+//  두 갈래(브라우저 지원 편차 대응, 터치 기기에서만 적용):
 //   1) 네이티브 잠금: screen.orientation.lock('portrait').
 //      · 설치형 PWA(전체화면)·안드로이드 크롬 등에서 실제 회전이 잠긴다.
 //   2) 폴백(잠금 불가 시): 앱을 강제로 회전시키지 않는다. 대신 '가로 상태'를
@@ -13,9 +18,17 @@
 //      가로에서의 조작을 잠시 막는다. (과거 CSS body rotate 폴백은 일부 기기에서
 //      화면이 검게 되는 문제가 있어 제거했다.)
 //
-//  반환: isBlocked — 폴백 안내 오버레이 표시 여부(네이티브 잠금 성공 시 항상 false).
+//  반환: isBlocked — 폴백 안내 오버레이 표시 여부(네이티브 잠금 성공 시·PC에서는 항상 false).
 // ════════════════════════════════════════════════════════════════════════
 import { useEffect, useState } from 'react';
+
+// 순수 판정 로직(테스트 용이성을 위해 분리) — PC(터치 아닌 기기)는 항상 차단하지 않고,
+// 네이티브 잠금이 걸렸으면 역시 차단하지 않으며, 그 외엔 가로 여부를 그대로 따른다.
+export function shouldBlockPortrait({ isTouchPrimary, isLandscape, nativeLocked }) {
+  if (!isTouchPrimary) return false;
+  if (nativeLocked) return false;
+  return !!isLandscape;
+}
 
 export function useLockPortrait(active = true) {
   const [isBlocked, setIsBlocked] = useState(false);
@@ -23,6 +36,14 @@ export function useLockPortrait(active = true) {
   useEffect(() => {
     if (!active) { setIsBlocked(false); return undefined; }
     if (typeof window === 'undefined' || typeof document === 'undefined') return undefined;
+
+    // PC(데스크톱)에서는 모니터를 물리적으로 "세로로 돌릴" 방법이 없다. 이 판별 없이는
+    // 넓은 브라우저 창(가로 비율)이 그냥 landscape로 잡혀 PC 사용자가 "세로로
+    // 돌려주세요" 안내에 영영 막힌다 — 세로/가로 판정은 화면(폰·태블릿) 회전에만
+    // 의미가 있으므로, 주 입력장치가 마우스/트랙패드(pointer: fine)인 PC에서는
+    // 이 잠금 자체를 건너뛴다. (터치스크린 노트북도 주 포인터는 보통 마우스라 PC로 잡힘.)
+    const isTouchPrimary = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+    if (!isTouchPrimary) { setIsBlocked(false); return undefined; }
 
     let nativeLocked = false;
 
@@ -39,11 +60,10 @@ export function useLockPortrait(active = true) {
 
     // 2) 폴백: 가로 감지 시 안내 오버레이 플래그만 올린다(앱은 그대로 둔다)
     const evalOrientation = () => {
-      if (nativeLocked) { setIsBlocked(false); return; }
       const isLandscape = window.matchMedia
         ? window.matchMedia('(orientation: landscape)').matches
         : window.innerWidth > window.innerHeight;
-      setIsBlocked(isLandscape);
+      setIsBlocked(shouldBlockPortrait({ isTouchPrimary, isLandscape, nativeLocked }));
     };
     evalOrientation();
 

@@ -1,8 +1,9 @@
-// integrityAudit.js — 전 회원 대상 데이터 무결성 검사 (관리자용, 읽기 전용 스캔)
+// integrityAudit.js — 전 회원 대상 데이터 무결성 검사 (관리자용)
 // ════════════════════════════════════════════════════════════════════════
 //  목적: "등록된 모든 회원"을 대상으로 수납→세션→스케줄→환불 사이에 어긋난
-//  데이터가 있는지 찾아낸다. 판단 재료만 제공하고 자동으로 고치지 않는다
-//  (scheduleAudit.js와 동일한 원칙 — 되돌릴 수 없는 처리는 관리자가 직접).
+//  데이터가 있는지 찾아낸다. 자동으로 고치지 않고 관리자가 직접 처리한다
+//  (scheduleAudit.js와 동일 원칙) — 대신 각 항목에 "무시(정상)"로 다시 안
+//  뜨게 하거나, "회원상세로 이동"해 그 자리에서 바로 고칠 수 있게 한다.
 //
 //  검사 항목:
 //   1) session_mismatch — 트레이너별 (등록−잔여) 소진량과, 실제 스케줄상
@@ -16,11 +17,22 @@
 //      정산비율(splitRateAtPay)이 박제되지 않은 경우. 구버전 결제는 흔히
 //      있을 수 있어 severity 'info'(그 결제월 자동판정으로 폴백되어 동작은
 //      하지만, 이후 트레이너 조건이 바뀌면 등록월 실적과 다르게 계산될 수 있음).
+//
+//  각 finding은 안정적인 key를 갖는다(스캔마다 새로 계산되지만, 같은 문제는
+//  같은 key). "무시" 처리는 이 key를 store.integrityDismissals에 저장해두고,
+//  다음 스캔부터 filterDismissed로 걸러 다시 뜨지 않게 한다.
 // ════════════════════════════════════════════════════════════════════════
 
 const isDeductingSchedule = (s) =>
   !s.isExternal &&
   (s.status === 'attended' || s.status === 'noshow' || (s.status === 'scheduled' && s.sessionDeducted));
+
+// finding.type별로 "회원상세로 이동" 클릭 시 열어줄 탭.
+export const TAB_FOR_FINDING_TYPE = {
+  session_mismatch: 'sessions',
+  refund_incomplete: 'payments',
+  rate_not_frozen: 'payments',
+};
 
 // members: [...], trainers: [...], schedules: [...], payments: { [memberId]: [...] }
 export function auditMemberIntegrity({ members = [], trainers = [], schedules = [], payments = {} }) {
@@ -42,6 +54,7 @@ export function auditMemberIntegrity({ members = [], trainers = [], schedules = 
       ).length;
       if (actualDeducted !== expectedDeducted) {
         findings.push({
+          key: `session_mismatch:${m.id}:${tid}`,
           type: 'session_mismatch', severity: 'warn',
           memberId: m.id, memberName: m.name || '?',
           trainerId: tid, trainerName: trainerName(tid),
@@ -58,6 +71,7 @@ export function auditMemberIntegrity({ members = [], trainers = [], schedules = 
         if (!p.refundedAt) missing.push('환불일');
         if (missing.length) {
           findings.push({
+            key: `refund_incomplete:${m.id}:${p.id}`,
             type: 'refund_incomplete', severity: 'error',
             memberId: m.id, memberName: m.name || '?', paymentId: p.id, paidAt: p.paidAt || '',
             message: `환불 처리됐지만 누락된 값: ${missing.join(', ')}`,
@@ -70,6 +84,7 @@ export function auditMemberIntegrity({ members = [], trainers = [], schedules = 
         const missingFreeze = addedTids.filter(tid => !(p.splitRateAtPay && p.splitRateAtPay[tid] != null));
         if (missingFreeze.length) {
           findings.push({
+            key: `rate_not_frozen:${m.id}:${p.id}`,
             type: 'rate_not_frozen', severity: 'info',
             memberId: m.id, memberName: m.name || '?', paymentId: p.id, paidAt: p.paidAt || '',
             message: `정산비율이 박제되지 않음(트레이너: ${missingFreeze.map(trainerName).join(', ')}) — 결제월 자동판정으로 폴백`,
@@ -80,6 +95,12 @@ export function auditMemberIntegrity({ members = [], trainers = [], schedules = 
   });
 
   return findings;
+}
+
+// 무시 처리된(dismissedKeys) 항목은 이후 스캔 결과에서 영구히 제외한다.
+export function filterDismissed(findings = [], dismissedKeys = []) {
+  const dismissed = new Set(dismissedKeys);
+  return findings.filter(f => !dismissed.has(f.key));
 }
 
 export const SEVERITY_LABEL = { error: '오류', warn: '확인 필요', info: '참고' };

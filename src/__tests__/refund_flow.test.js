@@ -120,24 +120,41 @@ describe('finance.js — 환불 산정 공용 함수', () => {
     });
   });
 
-  describe('computeRefundEstimate — 계약서 10조 산식(총액 − 부가세 − 위약금10% − 진행분)', () => {
-    it('일반적인 부분환불 금액을 정확히 계산한다', () => {
-      const payment = { amount: 1000000 };
-      const { vat, penalty, usedAmount, refund } = computeRefundEstimate(payment, settings, 300000);
-      expect(vat).toBeCloseTo(33000);
+  describe('computeRefundEstimate — 약관 4항 산식(총액 − 위약금10% − 진행분 − 카드수수료 − 부가세)', () => {
+    it('카드 결제는 카드수수료+부가세 모두 차감된다', () => {
+      const payment = { amount: 1000000, method: 'card1' };
+      const { cardFee, vat, penalty, usedAmount, refund } = computeRefundEstimate(payment, settings, 300000);
+      expect(cardFee).toBeCloseTo(20000); // 1,000,000 × 2.0%(cardFeeRate)
+      expect(vat).toBeCloseTo(33000);     // 1,000,000 × 3.3%(vatRate)
       expect(penalty).toBe(100000);
       expect(usedAmount).toBe(300000);
+      expect(refund).toBeCloseTo(1000000 - 20000 - 33000 - 100000 - 300000);
+    });
+
+    it('페이·현금영수증은 부가세만 차감되고 카드수수료는 0원이다', () => {
+      const payment = { amount: 1000000, method: 'pay' };
+      const { cardFee, vat, refund } = computeRefundEstimate(payment, settings, 300000);
+      expect(cardFee).toBe(0);
+      expect(vat).toBeCloseTo(33000);
       expect(refund).toBeCloseTo(1000000 - 33000 - 100000 - 300000);
     });
 
+    it('계좌·현금 결제는 카드수수료·부가세 둘 다 0원이다(공제 없음)', () => {
+      const payment = { amount: 1000000, method: 'transfer' };
+      const { cardFee, vat, refund } = computeRefundEstimate(payment, settings, 300000);
+      expect(cardFee).toBe(0);
+      expect(vat).toBe(0);
+      expect(refund).toBe(1000000 - 100000 - 300000); // 위약금10%·진행분만 차감
+    });
+
     it('공제 총액이 결제액을 넘어도 환불액은 0 밑으로 내려가지 않는다', () => {
-      const payment = { amount: 100000 };
+      const payment = { amount: 100000, method: 'cash' };
       const { refund } = computeRefundEstimate(payment, settings, 90000);
       expect(refund).toBe(0);
     });
 
     it('진행분 입력이 없거나(빈 문자열) 숫자가 아니면 0으로 처리한다', () => {
-      const payment = { amount: 500000 };
+      const payment = { amount: 500000, method: 'cash' };
       const a = computeRefundEstimate(payment, settings, '');
       const b = computeRefundEstimate(payment, settings, undefined);
       expect(a.usedAmount).toBe(0);
@@ -184,7 +201,7 @@ describe('store.processRefund — 결제 환불 필드 + 잔여세션 0 정리�
 
     const updated = await store.processRefund(mem.id, pay.id, {
       isRefunded: true, refundAmount: 500000, refundedAt: '2026-07-21',
-      refundVat: 30000, refundPenalty: 90000, refundUsed: 180000,
+      refundCardFee: 30000, refundPenalty: 90000, refundUsed: 180000,
     });
 
     expect(updated.isRefunded).toBe(true);
