@@ -3,13 +3,14 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { store, initStore } from '../demoData';
-import { todayYMD, daysAgoYMD, isMemberExpired, isMonthlyActive, monthlyDueOf } from '../utils/dates';
+import { todayYMD, daysAgoYMD, isMonthlyActive, monthlyDueOf } from '../utils/dates';
+import { isMemberExpired, buildMemberSessionExpiry, summarizeMemberSessionExpiry, computeExpirySettlement } from '../services/sessionExpiry';
 import { useAuth } from '../contexts/AuthContext';
 import MemberRegister from '../components/members/MemberRegister';
 import MemberDetail   from '../components/members/MemberDetail';
 import MemberImport   from '../components/members/MemberImport';
 import TrainerBadge   from '../components/common/TrainerBadge';
-import { downloadCSV } from '../services/finance';
+import { downloadCSV, won } from '../services/finance';
 import { sortExpiredLast, getUserTrainerId, isSessionExhausted, isMemberInactive } from '../utils/memberList';
 
 function getChosung(str) {
@@ -58,6 +59,8 @@ export default function Members() {
 
   const oneYearAgo = daysAgoYMD(365); // CV-A: 로컬 날짜
   const myTrainerId = getUserTrainerId(user);
+  const settings = store.getSettings();
+  const isExpired = m => isMemberExpired(m, store.getPayments(m.id), settings);
 
   const filtered = members.filter(m => {
     // 트레이너 로그인 시: 본인 담당 회원만 노출 (관리자/직원은 전체)
@@ -67,15 +70,19 @@ export default function Members() {
     if (phoneFilter && !m.phone.replace(/-/g,'').endsWith(phoneFilter.replace(/-/g,''))) return false;
     if (trainerFilter && !Object.keys(m.trainerSessions||{}).includes(trainerFilter)) return false;
     if (lowSession && !Object.values(m.trainerSessions||{}).some(s => s.remaining<=5 && s.remaining>0)) return false;
-    if (expiredFilter && !isMemberExpired(m)) return false;
+    if (expiredFilter && !isExpired(m)) return false;
     if (exhaustedFilter && !isSessionExhausted(m)) return false;
     return true;
   });
 
   // 가나다 순 정렬 후 결제 만료 회원은 하단으로 모음
-  const sorted = sortExpiredLast(filtered);
-
-  const isExpired = m => isMemberExpired(m);
+  const sorted = sortExpiredLast(filtered, store.getPayments, settings);
+  const isInactive = m => isMemberInactive(m, store.getPayments, settings);
+  // 회원관리에 남기는 "시작일-만료일" 기록(요구사항) — 세션 등록분(lot) 중 만료·임박인
+  // 것만 배지로 보여준다(정상 상태는 표시하지 않아 목록이 번잡해지지 않게).
+  const expirySummaryOf = m => summarizeMemberSessionExpiry(
+    buildMemberSessionExpiry({ member: m, payments: store.getPayments(m.id), settings })
+  );
 
   const trainerMap = Object.fromEntries(trainers.map(t=>[t.id,t.name]));
   const exportMembers = () => {
@@ -101,16 +108,38 @@ export default function Members() {
     downloadCSV(`회원목록_${todayYMD()}.csv`, [header, ...body]);
   };
 
-  const handleZeroSessions = async () => {
-    if (!window.confirm('만료 회원의 모든 잔여 세션을 0으로 처리하시겠습니까?')) return;
+  // 만료 정산 일괄 처리(관리자 전용, 이용약관 3항) — 예전 '세션 일괄 0 처리'는 회원의
+  // 만료 여부만 보고 그 트레이너의 잔여 전체(다른 미만료 등록분까지)를 0으로 밀어버리는
+  // 버그가 있었다(등록분(lot) 도입 이전 코드). 지금은 실제로 유효기간이 지난 등록분만
+  // 정확히 골라(buildMemberSessionExpiry), 각각 "기존 %"로 정산해 트레이너 정산에 반영하고
+  // 그 등록분의 잔여만 정리한다(멀쩡한 재등록분은 건드리지 않음).
+  const handleSettleExpiredSessions = async () => {
+    const targets = [];
+    members.forEach(m => {
+      const lotsByTrainer = buildMemberSessionExpiry({ member: m, payments: store.getPayments(m.id), settings });
+      Object.values(lotsByTrainer).flat().forEach(lot => {
+        if (lot.remaining > 0 && lot.status === 'expired') targets.push({ member: m, lot });
+      });
+    });
+    if (!targets.length) { alert('만료 정산 대상 등록분이 없습니다.'); return; }
+    const totalAmount = targets.reduce((s, { lot }) => s + computeExpirySettlement(lot, settings).amount, 0);
+    const memberCount = new Set(targets.map(t => t.member.id)).size;
+    if (!window.confirm(
+      `만료된 회원 ${memberCount}명 · 등록분 ${targets.length}건을 기존 %로 일괄 정산합니다.\n` +
+      `총 정산액: ${won(totalAmount)}\n\n` +
+      `각 등록분의 잔여는 0으로 정리되고, 정산액은 해당 트레이너의 이번 달 정산에 반영됩니다.\n` +
+      `(같은 회원의 아직 만료되지 않은 다른 등록분은 그대로 유지됩니다.) 진행할까요?`
+    )) return;
     try {
-      await Promise.all(members.filter(isExpired).map(m => {
-        const ts = {};
-        Object.entries(m.trainerSessions||{}).forEach(([k,v]) => { ts[k] = {...v, remaining:0}; });
-        return store.updateMember(m.id, { trainerSessions: ts });
-      }));
+      for (const { member: m, lot } of targets) {
+        const est = computeExpirySettlement(lot, settings);
+        await store.processExpirySettlement(m.id, {
+          trainerId: lot.trainerId, lotId: lot.id, paymentId: lot.paymentId, legacy: !!lot.legacy,
+          remaining: lot.remaining, sessions: est.sessions, unit: est.unit, rate: est.rate, amount: est.amount,
+        });
+      }
       load();
-    } catch (e) { alert('일부 회원 처리에 실패했습니다. 네트워크 확인 후 다시 시도하세요.'); load(); }
+    } catch (e) { alert('일부 등록분 처리에 실패했습니다. 네트워크 확인 후 다시 시도하세요.'); load(); }
   };
 
   const handleServerRefresh = async () => {
@@ -185,16 +214,16 @@ export default function Members() {
         {expiredFilter && user?.role==='admin' && (
           <div className="flex items-center justify-between bg-red-500/10 border border-red-500/20 rounded-xl px-3 py-2">
             <span className="text-red-400 text-xs font-semibold">⚠️ {filtered.length}명 결제 만료 회원</span>
-            <button onClick={handleZeroSessions}
+            <button onClick={handleSettleExpiredSessions}
               className="text-xs bg-red-600 hover:bg-red-500 text-white font-bold px-3 py-1.5 rounded-lg transition-colors">
-              세션 일괄 0 처리
+              만료 정산 일괄 처리
             </button>
           </div>
         )}
         <p className="text-slate-500 text-xs">
           {filtered.length}명
           {(() => {
-            const inactive = filtered.filter(isMemberInactive).length;
+            const inactive = filtered.filter(isInactive).length;
             return inactive > 0 ? <span className="text-slate-600"> · 활성 {filtered.length - inactive} / 마감·만료 {inactive}</span> : null;
           })()}
         </p>
@@ -209,13 +238,15 @@ export default function Members() {
         ) : (
           <div className="divide-y divide-slate-800">
             {(() => {
-              const firstInactiveIdx = sorted.findIndex(isMemberInactive);
+              const firstInactiveIdx = sorted.findIndex(isInactive);
               return sorted.map((m, idx) => {
               const expired   = isExpired(m);
               const exhausted = isSessionExhausted(m);
               const inactive  = expired || exhausted;
               const classes = (m.classTypes||[]).length ? m.classTypes.join(', ') : '수업미지정';
               const showDivider = idx === firstInactiveIdx && firstInactiveIdx > 0;
+              // 세션 등록분(lot) 유효기간 — 만료·임박인 것만(정상은 목록을 번잡하게 하므로 생략)
+              const expirySummary = expirySummaryOf(m);
               return (
                 <div key={m.id}>
                   {showDivider && (
@@ -244,6 +275,13 @@ export default function Members() {
                         )}
                       </div>
                       <p className="text-slate-500 text-xs mt-0.5 truncate">{m.phone} · {classes}</p>
+                      {expirySummary.nearest && (
+                        <p className={`text-[11px] mt-0.5 font-semibold ${expirySummary.hasExpired ? 'text-red-400' : 'text-amber-400'}`}>
+                          {expirySummary.hasExpired ? '⚠️ 세션 유효기간 만료' : '⏳ 세션 유효기간 임박'}
+                          {' · '}{expirySummary.nearest.startDate}~{expirySummary.nearest.expiresAt}
+                          {' · '}잔여 {expirySummary.nearest.remaining}회
+                        </p>
+                      )}
                     </div>
 
                     {/* 오른쪽: 세션 잔여 배지 + (월정액이면) 다음 결제일 */}

@@ -145,6 +145,17 @@ const INITIAL_SETTINGS = {
   // 세전/세후 — 원천징수(국세+지방세) 세율(%). 기본 3.3%.
   //  · 실제 세액은 매달 세무신고 후 확정되므로 자동값은 추정치다. 설정에서 수정 가능.
   withholdingRate: 3.3,
+  // 환불 산정용 정상가(1회당, 원) — 이용약관 4항 "진행 횟수 × 정상가" 계산에 사용.
+  //  · 0(미설정)이면 finance.js가 기존처럼 실제 결제 단가(입금액÷등록회차)로 근사한다.
+  //  · 대량등록 할인 등으로 실제 결제단가가 정상가보다 낮으면, 정상가를 지정해야
+  //    진행분이 과소평가되어 환불액이 과다산정되는 걸 막을 수 있다(finance.js 참고).
+  sessionRegularPrice: 0,
+  // 세션 유효기간 (이용약관 3항: 10회 등록 시 최대 3개월, 20회 등록 시 최대 6개월)
+  //  · 10회당 며칠인지로 저장해 다른 회차(5회·15회·30회 등)에도 선형 비례 적용한다.
+  //    기본 90일(=10회당 3개월) → 20회는 180일(6개월)로 정확히 일치. sessionExpiry.js 참고.
+  expiryDaysPer10Sessions: 90,
+  // 세션 만료 며칠 전부터 담당 트레이너에게 알릴지 (기본 30일)
+  expiryWarnDays: 30,
 };
 
 const cache = {
@@ -974,6 +985,71 @@ export const store = {
     } catch (e) {
       cache.payments[mid] = prevPayments;
       cache.members = prevMembers;
+      throw e;
+    }
+  },
+  // 만료 정산 처리(이용약관 3항) — 유효기간이 지났는데 잔여가 남은 등록분(lot)을
+  // "기존 %"(그 등록분에 박제된 비율 → 트레이너 수동 지정 비율 → 정산비율 하한 순,
+  // services/sessionExpiry.js의 expirySettlementRate)로 한 번에 정산해 트레이너
+  // 정산에 반영하고, 그만큼 잔여를 정리한다. processRefund와 동일하게 관련 문서를
+  // 하나의 배치로 원자 커밋한다.
+  //  · params: { trainerId, lotId, paymentId, legacy, remaining, sessions, unit, rate, amount }
+  //    (services/sessionExpiry.js의 buildMemberSessionExpiry가 반환하는 lot +
+  //     computeExpirySettlement의 결과를 그대로 넘기면 됨 — 호출부: MemberDetail.jsx/Members.jsx)
+  //  · legacy lot(결제 건과 직접 연결 안 됨)은 member.legacyExpirySettlements[trainerId]에,
+  //    그 외(explicit) lot은 payment.expirySettlements[lotId]에 기록한다 — sessionExpiry.js의
+  //    읽기 로직(settledInfo)과 정확히 대응시켜야 한다(공식 불일치 방지).
+  //  · 이미 정산 기록이 있으면 null을 반환하고 아무것도 바꾸지 않는다(중복 지급 방지).
+  processExpirySettlement: async (mid, params) => {
+    const { trainerId, lotId, paymentId, legacy, remaining, sessions, unit, rate, amount } = params || {};
+    if (!trainerId || !(Number(amount) > 0) || !(Number(sessions) > 0)) return null;
+    const prevPayments = cache.payments[mid];
+    const prevMembers  = cache.members;
+    const member = cache.members.find(m => m.id === mid);
+    if (!member || !member.trainerSessions?.[trainerId]) return null;
+
+    const record = {
+      trainerId, sessions: Number(sessions), unit: Number(unit) || 0,
+      rate: Number(rate) || 0, amount: Number(amount), settledAt: todayYMD(),
+    };
+    const ts = JSON.parse(JSON.stringify(member.trainerSessions));
+    ts[trainerId] = {
+      ...ts[trainerId],
+      remaining: Math.max(0, (Number(ts[trainerId].remaining) || 0) - (Number(remaining) || 0)),
+    };
+
+    const batch = createStampedBatch();
+    let updatedMember, updatedPayment = null;
+
+    if (legacy) {
+      if (member.legacyExpirySettlements?.[trainerId]) return null; // 이미 정산됨
+      updatedMember = {
+        ...member, trainerSessions: ts,
+        legacyExpirySettlements: { ...(member.legacyExpirySettlements || {}), [trainerId]: record },
+      };
+      batch.set('members', mid, updatedMember);
+    } else {
+      const payment = (cache.payments[mid] || []).find(p => p.id === paymentId);
+      if (!payment) return null;
+      if (payment.expirySettlements?.[lotId]) return null; // 이미 정산됨
+      updatedPayment = {
+        ...payment,
+        expirySettlements: { ...(payment.expirySettlements || {}), [lotId]: record },
+      };
+      updatedMember = { ...member, trainerSessions: ts };
+      batch.set('payments', paymentId, { ...updatedPayment, __mid: mid });
+      batch.set('members', mid, updatedMember);
+    }
+
+    try {
+      await batch.commit();
+      cache.members = cache.members.map(m => m.id === mid ? updatedMember : m);
+      if (updatedPayment) cache.payments[mid] = (cache.payments[mid] || []).map(p => p.id === paymentId ? updatedPayment : p);
+      __touchSnapshot();
+      return { member: updatedMember, payment: updatedPayment, record };
+    } catch (e) {
+      cache.members = prevMembers;
+      cache.payments[mid] = prevPayments;
       throw e;
     }
   },

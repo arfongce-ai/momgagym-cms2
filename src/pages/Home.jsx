@@ -3,7 +3,8 @@ import { useState, useEffect, useMemo } from 'react';
 import { store } from '../demoData';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { toYMD, todayYMD, daysAgoYMD, isMemberExpired } from '../utils/dates';
+import { toYMD, todayYMD, daysAgoYMD } from '../utils/dates';
+import { isMemberExpired, buildMemberSessionExpiry, summarizeMemberSessionExpiry } from '../services/sessionExpiry';
 import { won, METHOD_LBL } from '../services/finance';
 import { summarizeDailySettlement, yesterdayPopupSeenKey, settlementOneLine } from '../utils/dailySettlement';
 
@@ -293,6 +294,7 @@ export default function Home() {
   const selectedSched = schedules.filter(s => s.date === selectedDate);
   const sectionTitle  = scheduleSectionTitle(selectedDate, todayStr);
   const oneYearAgo = daysAgoYMD(365);
+  const settings = store.getSettings();
 
   // 세션 부족: 트레이너는 본인 슬롯(내 trainerId)의 잔여만, 관리자/직원은 모든 슬롯 중 하나라도
   const lowSession = myMembers.filter(m => {
@@ -302,8 +304,21 @@ export default function Home() {
     return slots.some(s => s.remaining<=5 && s.remaining>0);
   }).length;
 
-  // 결제 만료: 담당(또는 전체) 회원 중 마지막 결제일이 1년 이전
-  const expiredCnt = myMembers.filter(m => isMemberExpired(m)).length;
+  // 세션 등록분(lot)별 유효기간 요약 — 담당(또는 전체) 회원 전원 계산해 두 카드에서 재사용.
+  const myMemberExpirySummaries = myMembers.map(m => ({
+    member: m,
+    summary: summarizeMemberSessionExpiry(
+      buildMemberSessionExpiry({ member: m, payments: store.getPayments(m.id), settings })
+    ),
+  }));
+  // 결제 만료: 월정액은 결제예정일 임박·경과, 세션제는 등록분(10회→3개월/20회→6개월)이
+  // 실제로 지났는데 잔여가 남은 경우(이용약관 3항) — services/sessionExpiry.js 공용 계산.
+  const expiredCnt = myMembers.filter(m => isMemberExpired(m, store.getPayments(m.id), settings)).length;
+  // 만료 임박(담당 트레이너 알림, 요구사항): 아직 만료는 아니지만 설정한 기간(기본 30일)
+  // 이내에 세션 유효기간이 끝나는 등록분이 있는 회원 수. 이미 '결제 만료'로 잡힌 회원은
+  // 중복 집계하지 않는다(그쪽 카드에서 이미 강조됨).
+  const expiringSoonCnt = myMemberExpirySummaries
+    .filter(({ summary }) => summary.hasWarning && !summary.hasExpired).length;
 
   return (
     <div className="space-y-5">
@@ -387,11 +402,12 @@ export default function Home() {
       </div>
 
       {/* ② 통계 카드 — 누르면 해당 화면으로 바로 이동 (UX: 한눈에 + 한 번에) */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
         {[
           { label: myTrainerId ? '담당 회원' : '전체 회원', value:myMembers.length, icon:'👥', color:'text-blue-400',   to:'/members'  },
           { label:'오늘 수업', value:myTodayCount,       icon:'📅', color:'text-amber-400',  to:'/schedule' },
           { label:'세션 부족', value:lowSession,         icon:'⚠️', color:'text-orange-400', to:'/members'  },
+          { label:'만료 임박', value:expiringSoonCnt,    icon:'⏳', color:'text-yellow-400',  to:'/members'  },
           { label:'결제 만료', value:expiredCnt,         icon:'🔴', color:'text-red-400',    to:'/members'  },
         ].map(s=>(
           <button key={s.label} onClick={()=>navigate(s.to)}
@@ -406,6 +422,36 @@ export default function Home() {
           </button>
         ))}
       </div>
+
+      {/* ②-a 세션 유효기간 임박 알림(담당 트레이너용, 이용약관 3항) — 30일 이내(설정 가능) 만료
+          예정이면서 아직 소진하지 않은 등록분이 있는 회원을 미리 보여준다. 이미 만료된 회원은
+          위 '결제 만료' 카드에서 다루므로 여기서는 제외(중복 알림 방지). */}
+      {expiringSoonCnt > 0 && (
+        <div className="bg-slate-900 border border-yellow-500/20 rounded-2xl p-4">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="font-bold text-sm uppercase tracking-widest text-yellow-400">⏳ 세션 유효기간 임박</h2>
+            <span className="text-[11px] text-slate-500 font-semibold">{settings.expiryWarnDays||30}일 이내 만료 예정</span>
+          </div>
+          <div className="space-y-2">
+            {myMemberExpirySummaries
+              .filter(({ summary }) => summary.hasWarning && !summary.hasExpired)
+              .sort((a,b) => (a.summary.nearest?.daysLeft??999) - (b.summary.nearest?.daysLeft??999))
+              .slice(0, 5)
+              .map(({ member, summary }) => (
+                <button key={member.id} type="button" onClick={()=>navigate('/members')}
+                  className="w-full flex items-center justify-between gap-3 p-2.5 bg-slate-800/60 rounded-xl text-left hover:bg-slate-800 transition-colors">
+                  <span className="font-semibold text-sm text-slate-100 truncate">{member.name}</span>
+                  <span className="text-xs text-yellow-400 font-mono flex-shrink-0">
+                    D-{summary.nearest.daysLeft} · 잔여 {summary.nearest.remaining}회 · {summary.nearest.expiresAt}까지
+                  </span>
+                </button>
+              ))}
+          </div>
+          {expiringSoonCnt > 5 && (
+            <p className="text-[11px] text-slate-500 mt-2">외 {expiringSoonCnt - 5}명 더 · 회원 관리에서 전체 확인</p>
+          )}
+        </div>
+      )}
 
       {/* ②-b 전날 정산내역 — 관리자 전용: 홈 진입 시 팝업으로 정리 표시 + 카드로 재열기 */}
       {isAdmin && ySettle && <YesterdaySettlement s={ySettle} onOpen={()=>setShowSettlePopup(true)}/>}

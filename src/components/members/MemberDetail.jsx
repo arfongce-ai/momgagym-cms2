@@ -12,8 +12,9 @@ import AiMeasureReport     from '../ai/AiMeasureReport';
 import MemberMeasureHistory from '../ai/MemberMeasureHistory';
 import {
   METHOD_LBL, METHOD_CLR, computeMonthRates, won,
-  autoRefundUsedAmount, computeRefundEstimate,
+  autoRefundUsedAmount, computeRefundEstimate, refundUnitPriceBasisLabel,
 } from '../../services/finance';
+import { buildMemberSessionExpiry, computeExpirySettlement, expirySettlementRate } from '../../services/sessionExpiry';
 
 const INP = "w-full bg-slate-800 border border-slate-700 text-slate-100 rounded-xl px-3 py-2.5 text-sm placeholder-slate-500 focus:outline-none focus:border-amber-500";
 const LBL = "block text-xs font-semibold text-slate-400 uppercase tracking-widest mb-1.5";
@@ -87,6 +88,9 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
   const trainerMap  = Object.fromEntries(trainers.map(t => [t.id, t]));
   const sessions    = Object.entries(member.trainerSessions || {});
   const addTrainerCT = trainerMap[addTrainerId]?.classTypes || [];
+  const settings = store.getSettings();
+  // 세션 등록분(lot)별 유효기간·만료 상태 — 세션 탭에서 트레이너별 카드마다 표시.
+  const memberExpiry = buildMemberSessionExpiry({ member, payments, settings });
 
   // ── 기본정보 저장 ─────────────────────────────────────
   const saveEdit = async () => {
@@ -533,7 +537,7 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
     const usedInput = window.prompt(
       `환불 처리 — ${member.name}\n총 결제액: ${won(p.amount)}\n\n` +
       `진행분(이미 수업한 회차 × 단가)을 입력하세요 (원):\n` +
-      `· 출석 데이터 기준 자동 계산값: ${won(suggested)} (수정 가능)`,
+      `· 출석 데이터 기준 자동 계산값(${refundUnitPriceBasisLabel(settings)}): ${won(suggested)} (수정 가능)`,
       String(suggested));
     if (usedInput === null) return;
     const { cardFee, vat, penalty, usedAmount, refund } = computeRefundEstimate(p, settings, usedInput);
@@ -558,6 +562,29 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
       await store.cancelRefund(member.id, pid);
       refresh(); onUpdate?.();
     } catch (e) { alert('실패했습니다.'); }
+  };
+
+  // 만료 정산 처리(관리자 전용, 이용약관 3항) — 유효기간이 지났는데 잔여가 남은
+  // 등록분(lot)을 "기존 %"로 한 번에 정산해 트레이너 정산에 반영하고, 그만큼 잔여를
+  // 정리한다. 매출관리(Revenue)와 동일한 store.processExpirySettlement를 사용한다.
+  const handleExpirySettlement = async (lot) => {
+    const est = computeExpirySettlement(lot, settings);
+    if (est.sessions <= 0 || est.amount <= 0) { alert('정산할 잔여 세션이 없습니다.'); return; }
+    const trainerName = trainerMap[lot.trainerId]?.name || lot.trainerId;
+    if (!window.confirm(
+      `만료 정산 처리 — ${member.name} · ${trainerName}\n` +
+      `${lot.label || '등록분'} (${lot.startDate || '?'}~${lot.expiresAt || '?'})\n\n` +
+      `미소진 ${est.sessions}회 × 단가 ${won(est.unit)} × 정산비율 ${est.rate}%\n= 정산액 ${won(est.amount)}\n\n` +
+      `이 정산액은 오늘 날짜(${todayYMD().slice(0,7)}월) 트레이너 정산에 반영되고, 이 등록분의 잔여는 0으로 정리됩니다.\n진행할까요?`
+    )) return;
+    try {
+      const result = await store.processExpirySettlement(member.id, {
+        trainerId: lot.trainerId, lotId: lot.id, paymentId: lot.paymentId, legacy: !!lot.legacy,
+        remaining: lot.remaining, sessions: est.sessions, unit: est.unit, rate: est.rate, amount: est.amount,
+      });
+      if (!result) { alert('이미 정산 처리된 등록분이거나 처리할 수 없습니다.'); return; }
+      refresh(); onUpdate?.();
+    } catch (e) { alert('정산 처리에 실패했습니다. 네트워크 확인 후 다시 시도하세요.'); }
   };
 
   // 기존 재등록 결제의 '세션 시작일' 지정/변경 — 매출(결제일)은 그대로, 회차 소진 순서만 조정.
@@ -765,6 +792,25 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
                       </div>
                       {s.remaining===0&&<div className="mt-2 text-center text-[10px] bg-red-500/10 border border-red-500/20 rounded-lg py-1 text-red-400 font-bold">⚠️ 세션 소진</div>}
                       {s.remaining>0&&s.remaining<=5&&<div className="mt-2 text-center text-[10px] bg-orange-500/10 border border-orange-500/20 rounded-lg py-1 text-orange-400 font-bold">⚡ 잔여 {s.remaining}회</div>}
+                      {/* 세션 등록분(lot)별 유효기간 — 임박·만료만 표시(정상은 생략, 이용약관 3항) */}
+                      {(memberExpiry[tid]||[]).filter(l => l.remaining>0 && (l.status==='warning'||l.status==='expired')).map(l => (
+                        <div key={l.id} className={`mt-2 p-2.5 rounded-lg border text-[11px] ${l.status==='expired' ? 'bg-red-500/10 border-red-500/20' : 'bg-amber-500/10 border-amber-500/20'}`}>
+                          <div className={`flex items-center justify-between font-bold ${l.status==='expired'?'text-red-400':'text-amber-400'}`}>
+                            <span>{l.status==='expired' ? '⚠️ 세션 유효기간 만료' : '⏳ 세션 유효기간 임박'}</span>
+                            <span className="font-mono">{l.startDate}~{l.expiresAt}</span>
+                          </div>
+                          <p className="text-slate-500 mt-1">
+                            {l.label||'등록분'} · 미소진 {l.remaining}회
+                            {l.status==='warning' && l.daysLeft!=null && ` · D-${l.daysLeft}`}
+                          </p>
+                          {user?.role==='admin' && l.status==='expired' && (
+                            <button onClick={()=>handleExpirySettlement(l)}
+                              className="mt-2 w-full bg-red-500/20 hover:bg-red-500/30 border border-red-500/30 text-red-300 font-bold py-1.5 rounded-lg transition-colors">
+                              만료 정산 처리 (기존 {expirySettlementRate(l, settings)}% · {won(computeExpirySettlement(l, settings).amount)})
+                            </button>
+                          )}
+                        </div>
+                      ))}
                       {user?.role==='admin' && (
                         transferTid===tid ? (
                           <div className="mt-3 pt-3 border-t border-slate-700 space-y-2">

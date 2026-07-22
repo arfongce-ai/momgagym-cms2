@@ -2,7 +2,8 @@
 //  · 한 회원이 세션과 월정액을 동시에 보유
 //  · 월정액은 세션 차감 없음 + 트레이너 정산 제외(센터 수익으로만 합산)
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { isMemberExpired, isMonthlyActive, monthlyDueOf, addMonthsYMD, addDaysYMD, todayYMD } from '../utils/dates';
+import { isMonthlyActive, monthlyDueOf, addMonthsYMD, addDaysYMD, todayYMD } from '../utils/dates';
+import { isMemberExpired } from '../services/sessionExpiry';
 
 let FAIL = false;
 const mem = {};
@@ -57,23 +58,42 @@ describe('월정액 헬퍼: isMonthlyActive / monthlyDueOf', () => {
   });
 });
 
-describe('만료 판정 (월정액 7일 경고 + 세션 병행)', () => {
+describe('만료 판정 (월정액 7일 경고 + 세션제 등록분 유효기간)', () => {
+  const settings = {}; // 기본값(expiryDaysPer10Sessions=90일) 사용
+
   it('월정액 예정일 8일 이상 남으면 정상', () => {
-    expect(isMemberExpired({ monthly:{ active:true, dueDate: addDaysYMD(10) } })).toBe(false);
+    expect(isMemberExpired({ monthly:{ active:true, dueDate: addDaysYMD(10) } }, [], settings)).toBe(false);
   });
   it('월정액 예정일 7일 이내면 만료 표시', () => {
-    expect(isMemberExpired({ monthly:{ active:true, dueDate: addDaysYMD(5) } })).toBe(true);
+    expect(isMemberExpired({ monthly:{ active:true, dueDate: addDaysYMD(5) } }, [], settings)).toBe(true);
   });
-  it('세션만 있는 회원: 1년 경과 시 만료', () => {
-    expect(isMemberExpired({ trainerSessions:{ t1:{ total:10, remaining:3 } }, lastPaymentDate:'2024-01-01' })).toBe(true);
+  it('세션제: 10회 등록 후 90일(3개월) 이내면 잔여 있어도 정상', () => {
+    const m = { id:'sm1', trainerSessions:{ t1:{ total:10, remaining:4 } } };
+    const payments = [{ id:'p1', amount:500000, method:'cash', paidAt: addDaysYMD(-60), trainerIds:['t1'],
+      sessionAdds:[{ trainerId:'t1', count:10 }] }];
+    expect(isMemberExpired(m, payments, settings)).toBe(false);
+  });
+  it('세션제: 10회 등록 후 90일(3개월)이 지났는데 잔여가 남아있으면 만료', () => {
+    const m = { id:'sm2', trainerSessions:{ t1:{ total:10, remaining:4 } } };
+    const payments = [{ id:'p2', amount:500000, method:'cash', paidAt: addDaysYMD(-120), trainerIds:['t1'],
+      sessionAdds:[{ trainerId:'t1', count:10 }] }];
+    expect(isMemberExpired(m, payments, settings)).toBe(true);
+  });
+  it('세션제: 유효기간이 지났어도 이미 다 소진했으면(잔여 0) 만료 아님', () => {
+    const m = { id:'sm3', trainerSessions:{ t1:{ total:10, remaining:0 } } };
+    const payments = [{ id:'p3', amount:500000, method:'cash', paidAt: addDaysYMD(-200), trainerIds:['t1'],
+      sessionAdds:[{ trainerId:'t1', count:10 }] }];
+    expect(isMemberExpired(m, payments, settings)).toBe(false);
   });
   it('세션+월정액 병행: 둘 중 하나만 만료여도 만료', () => {
     const m = {
-      trainerSessions:{ t1:{ total:10, remaining:3 } },
-      lastPaymentDate: addDaysYMD(-30),
+      id:'sm4',
+      trainerSessions:{ t1:{ total:10, remaining:4 } },
       monthly:{ active:true, dueDate: addDaysYMD(3) },
     };
-    expect(isMemberExpired(m)).toBe(true);
+    const payments = [{ id:'p4', amount:500000, method:'cash', paidAt: addDaysYMD(-10), trainerIds:['t1'],
+      sessionAdds:[{ trainerId:'t1', count:10 }] }];
+    expect(isMemberExpired(m, payments, settings)).toBe(true);
   });
 });
 

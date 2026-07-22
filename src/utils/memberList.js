@@ -1,6 +1,7 @@
 // utils/memberList.js
 // 회원 목록 공통 헬퍼: 트레이너 모드 필터, 가나다 정렬, 비활성(만료·세션마감) 회원 하단 정렬.
-import { isMemberExpired, isMonthlyActive } from './dates';
+import { isMonthlyActive } from './dates';
+import { isMemberExpired } from '../services/sessionExpiry';
 
 // 트레이너로 로그인한 경우 본인 ID. 관리자/직원은 null(전체 노출).
 export const getUserTrainerId = user =>
@@ -24,8 +25,10 @@ export function isSessionExhausted(m) {
 }
 
 // 비활성 회원 = 결제 만료 OR 세션 마감. (명단 하단으로 모으는 기준)
-export function isMemberInactive(m) {
-  return isMemberExpired(m) || isSessionExhausted(m);
+//  · getPayments: (memberId) => Payment[] — isMemberExpired가 등록분(lot)별 유효기간을
+//    계산하려면 결제 내역이 필요하다(store.getPayments를 그대로 넘기면 됨).
+export function isMemberInactive(m, getPayments, settings) {
+  return isMemberExpired(m, getPayments ? getPayments(m.id) : [], settings) || isSessionExhausted(m);
 }
 
 // 한글 가나다 → 영문 → 숫자 순으로 정렬(로케일 기반).
@@ -36,9 +39,9 @@ export function sortByName(members) {
 }
 
 // 가나다 정렬 후, 비활성(만료·세션마감) 회원을 하단으로 모은다(각 그룹 내부는 가나다 유지).
-export function sortExpiredLast(members) {
+export function sortExpiredLast(members, getPayments, settings) {
   const sorted = sortByName(members);
   const active = [], inactive = [];
-  for (const m of sorted) (isMemberInactive(m) ? inactive : active).push(m);
+  for (const m of sorted) (isMemberInactive(m, getPayments, settings) ? inactive : active).push(m);
   return [...active, ...inactive];
 }

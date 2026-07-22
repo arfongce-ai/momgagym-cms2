@@ -57,17 +57,30 @@ export function calcNet(payment, settings) {
 //    두 화면에서 동일하게 써야 하므로 여기 한 곳에만 둔다(공식 불일치 방지).
 //    환불액 = 총 결제액 − 부가세 − 위약금(10%) − 진행분(이미 수업한 회차×단가)
 
-// 진행분 자동 계산: 단가(= 입금액 ÷ 등록 총회차) × 출석(출석+노쇼) 회차.
+// 진행분 자동 계산: 단가 × 출석(출석+노쇼) 회차.
 //  · members/schedules는 store.getMembers()/store.getSchedules() 결과를 그대로 넘기면 됨.
 //  · memberId는 명시적으로 받는다(payment.memberId에 암묵 의존하면, 화면에 따라 그
 //    필드가 없는 결제 객체가 들어올 때 회원을 못 찾아 조용히 0원이 나오는 사고가 난다 —
 //    store.getPayments(mid)로 가져온 결제엔 memberId가 없고, store.getAllPayments()로
 //    가져온 결제에만 붙어 있다. 회원상세 화면에서 실제로 이 문제가 발생했었다).
+//  · 단가 우선순위:
+//    1) settings.sessionRegularPrice(정상가, 1회당 정가)가 지정돼 있으면 그 값을 그대로 쓴다
+//       — 약관 4항 "진행 횟수 × 정상가" 문구와 일치. 대량등록 할인 등으로 실제 결제단가가
+//       정상가보다 낮을 때, 진행분이 과소평가되어 환불액이 과다산정되는 걸 막는다.
+//    2) 미지정(0 이하)이면 기존 방식대로 실제 결제 단가(= 입금액 ÷ 등록 총회차)로 근사한다.
 export function autoRefundUsedAmount(payment, memberId, { members = [], schedules = [], settings }) {
   const mem = members.find(m => m.id === memberId);
   const ts = mem?.trainerSessions || {};
   // 이 결제의 담당 트레이너 기준(없으면 전체 트레이너)으로 출석 회차를 센다.
   const tids = (payment.trainerIds && payment.trainerIds.length) ? payment.trainerIds : Object.keys(ts);
+  const attended = schedules.filter(s =>
+    !s.isExternal && s.memberId === memberId && tids.includes(s.trainerId) &&
+    (s.status === 'attended' || s.status === 'noshow')
+  ).length;
+
+  const regularPrice = Number(settings?.sessionRegularPrice) || 0;
+  if (regularPrice > 0) return Math.round(regularPrice * attended);
+
   // 단가의 분모는 "이 결제와 관련된 트레이너"의 등록 총회차만 써야 한다.
   //  · 버그: 예전엔 회원의 전체 트레이너(Object.values(ts) 전부)를 분모로 썼는데,
   //    회원이 트레이너 여러 명에게 "각각 별도로" 등록돼 있으면(예: 김나영 20회 + 박지훈
@@ -77,11 +90,16 @@ export function autoRefundUsedAmount(payment, memberId, { members = [], schedule
   if (totalReg <= 0) return 0;
   const net = calcNet(payment, settings).net;
   const unit = net / totalReg;
-  const attended = schedules.filter(s =>
-    !s.isExternal && s.memberId === memberId && tids.includes(s.trainerId) &&
-    (s.status === 'attended' || s.status === 'noshow')
-  ).length;
   return Math.round(unit * attended);
+}
+
+// 진행분 자동계산이 어떤 단가 기준을 썼는지 설명하는 문구(환불 확인창 표시용).
+//  · Revenue.jsx·MemberDetail.jsx 두 화면에서 동일 문구를 쓰도록 여기 한 곳에만 둔다.
+export function refundUnitPriceBasisLabel(settings) {
+  const regularPrice = Number(settings?.sessionRegularPrice) || 0;
+  return regularPrice > 0
+    ? `정상가 ${won(regularPrice)}/회 적용`
+    : '실제 결제 단가 기준 · 정상가 미설정';
 }
 
 // 환불액 산정(약관 4항): [총 결제액] − [위약금 10%] − [진행 횟수 × 정상가] − [카드 수수료] − [부가세].
@@ -882,7 +900,83 @@ export function computeSessionSettlement({ trainers, members, schedules, payment
   }).filter(x => x.rows.length>0 || x.promoIncentive>0);
 }
 
-// ── 수동 정산비율을 결제 건에 영구 박제(방향 A) ──────────────────────
+// ── 만료 정산(이용약관 3항) 합산 — computeSessionSettlement와 별개 파이프라인 ─────
+//  · 배경: 유효기간이 지났는데 잔여가 남은 등록분(lot)은 sessionExpiry.js의
+//    processExpirySettlement로 "기존 %"에 따라 1회성 정산되어 결제 문서
+//    (expirySettlements[lotId]) 또는 회원 문서(legacyExpirySettlements[tid])에
+//    기록된다. 이 함수는 그 기록들을 처리된 달(settledAt) 기준으로 트레이너별
+//    합산한다. computeSessionSettlement 본체는 건드리지 않는다(회귀 위험 최소화 —
+//    이미 매우 정교하게 맞춰진 회차별 정산 로직을 만료 정산이라는 별개 개념으로
+//    오염시키지 않는다).
+//  · payments: { [memberId]: Payment[] } — computeSessionSettlement와 동일한 형태.
+//  · 반환: { [trainerId]: { total, items:[{ memberId, memberName, sessions, unit,
+//                                            rate, amount, settledAt, source }] } }
+export function sumExpirySettlementsByMonth({ members = [], payments = {}, ym }) {
+  const out = {};
+  const add = (tid, item) => {
+    if (!tid) return;
+    if (!out[tid]) out[tid] = { total: 0, items: [] };
+    out[tid].total += Number(item.amount) || 0;
+    out[tid].items.push(item);
+  };
+  members.forEach(m => {
+    Object.entries(m.legacyExpirySettlements || {}).forEach(([tid, rec]) => {
+      if (!rec || (rec.settledAt || '').slice(0, 7) !== ym) return;
+      add(tid, { memberId: m.id, memberName: m.name, source: 'legacy', ...rec });
+    });
+    (payments[m.id] || []).forEach(p => {
+      Object.entries(p.expirySettlements || {}).forEach(([lotId, rec]) => {
+        if (!rec || (rec.settledAt || '').slice(0, 7) !== ym) return;
+        add(rec.trainerId, { memberId: m.id, memberName: m.name, source: 'lot', lotId, ...rec });
+      });
+    });
+  });
+  return out;
+}
+
+// computeSessionSettlement 결과에 만료 정산 합계를 얹는 래퍼.
+//  · 트레이너의 payout/tax/payoutNet에 만료 정산액을 더해 실제 지급액과 일치시킨다
+//    (개요 탭 순이익 계산, 정산 탭 카드·CSV 내보내기 모두 이 값을 그대로 쓰므로 여기
+//    한 곳에서만 합산하면 됨 — finance.js 공식 일원화 원칙과 동일).
+//  · 그 달 세션 실적·홍보 실적이 전혀 없어(rows 없음·promoIncentive 0) 원본 함수가
+//    걸러낸 트레이너라도, 만료 정산만 있으면 별도 블록으로 만들어 누락되지 않게 한다.
+export function computeSessionSettlementWithExpiry(args) {
+  const blocks = computeSessionSettlement(args);
+  const expiryByTrainer = sumExpirySettlementsByMonth({
+    members: args.members, payments: args.payments, ym: args.ym,
+  });
+  const whFallback = Number(args.settings?.withholdingRate ?? 3.3);
+  const seen = new Set();
+  const merged = blocks.map(b => {
+    seen.add(b.trainer.id);
+    const ex = expiryByTrainer[b.trainer.id];
+    if (!ex) return { ...b, expirySettlement: { total: 0, items: [] } };
+    const payout = b.payout + ex.total;
+    const whRate = Number(b.withholdingRate ?? whFallback);
+    const tax = Math.round(payout * whRate / 100);
+    return { ...b, expirySettlement: ex, payout, tax, payoutNet: payout - tax };
+  });
+  (args.trainers || []).forEach(t => {
+    if (seen.has(t.id)) return;
+    const ex = expiryByTrainer[t.id];
+    if (!ex || !ex.total) return;
+    const whRate = whFallback;
+    const tax = Math.round(ex.total * whRate / 100);
+    merged.push({
+      trainer: t, rows: [], sessionTotal: 0,
+      splitRate: Number(args.settings?.lowSplitRate ?? 40), splitMode: 'auto',
+      splitReason: '이번 달 세션·홍보 실적 없음(만료 정산만 있음)', rateMixed: false,
+      sessionPayout: 0, blogCount: 0, instaCount: 0, studyCount: 0,
+      autoBlogCount: 0, autoInstaCount: 0, autoStudyCount: 0,
+      blogInc: 0, instaInc: 0, newSales: 0, reEnrollSales: 0, newInc: 0, reInc: 0,
+      promoIncentive: 0, payout: ex.total, withholdingRate: whRate, tax, payoutNet: ex.total - tax,
+      hasOverride: false, expirySettlement: ex,
+    });
+  });
+  return merged;
+}
+
+
 // 특정 회원×트레이너의 정산비율을 "소진 끝까지" 고정하려면, 그 트레이너의 세션을
 // 공급하는 결제 건들의 splitRateAtPay[tid] 를 직접 rate 로 바꿔야 한다.
 // 그래야 그 등록분을 소진하는 모든 달이 같은 비율을 따라간다(월 오버라이드와 달리 소진 전체 유지).

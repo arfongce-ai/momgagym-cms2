@@ -50,11 +50,10 @@ export function addMonthsYMD(n, base) {
   return toYMD(target);
 }
 
-// 회원 결제 만료 판정 (세션제 + 월정액 병행 지원)
-//  · 월정액(monthly.active 또는 구버전 membershipType==='monthly'): 다음 결제예정일이
-//    임박(기본 7일 이내)했거나 이미 지났으면 만료로 본다.
-//  · 세션제: 마지막 결제일이 1년 이전이면 만료(기존 규칙 유지).
-//  · 한 회원이 둘 다 가지면, 둘 중 하나라도 만료면 만료로 표시한다.
+// 회원 결제 만료 판정 — 월정액 여부/다음 결제예정일 helper.
+//  · 세션제 + 월정액을 종합한 실제 만료 판정(isMemberExpired)은 등록분(lot)별 유효기간이
+//    필요해 services/sessionExpiry.js로 옮겼다(finance.js의 buildTrainerLots를 재사용해야
+//    해서, dates.js에 그대로 두면 순환 참조가 생긴다 — dates.js는 저수준 날짜 유틸로 유지).
 export function isMonthlyActive(m) {
   if (!m) return false;
   if (m.monthly && m.monthly.active) return true;
@@ -62,19 +61,4 @@ export function isMonthlyActive(m) {
 }
 export function monthlyDueOf(m) {
   return (m?.monthly && m.monthly.dueDate) || m?.monthlyDueDate || null;
-}
-export function isMemberExpired(m, warnDays = 7) {
-  if (!m) return false;
-  // 월정액 만료
-  if (isMonthlyActive(m)) {
-    const due = monthlyDueOf(m);
-    if (due && due <= addDaysYMD(warnDays)) return true;
-  }
-  // 세션제 만료 (월정액만 있는 회원이면 세션 판정은 건너뜀)
-  const hasSession = Object.keys(m.trainerSessions || {})
-    .some(tid => !(m.trainerSessions[tid] && m.trainerSessions[tid].monthly));
-  if (hasSession && m.membershipType !== 'monthly') {
-    if (m.lastPaymentDate && m.lastPaymentDate < daysAgoYMD(365)) return true;
-  }
-  return false;
 }

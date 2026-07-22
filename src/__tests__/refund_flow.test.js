@@ -13,7 +13,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { readFileSync } from 'fs';
 import { join } from 'path';
-import { autoRefundUsedAmount, computeRefundEstimate } from '../services/finance';
+import { autoRefundUsedAmount, computeRefundEstimate, refundUnitPriceBasisLabel } from '../services/finance';
 
 const root = join(process.cwd(), 'src');
 const read = (p) => readFileSync(join(root, p), 'utf8');
@@ -117,6 +117,78 @@ describe('finance.js — 환불 산정 공용 함수', () => {
       // (수정 전 버그값은 1,100,000 ÷ 30(김+박 합산) × 10 = 366,667 — 틀림)
       expect(used).toBe(550000);
       expect(used).not.toBe(366667);
+    });
+
+    // ════════════════════════════════════════════════════════════════
+    //  신규 기능 — 정상가(settings.sessionRegularPrice) 우선 적용.
+    //  배경: 이용약관 4항은 "진행 횟수 × 정상가"라고 명시하는데, 지금까지는
+    //  "정상가"라는 별도 개념이 없어 실제 결제 단가(입금액÷등록회차)로
+    //  근사해왔다. 대량등록 할인이 있으면 실제 단가가 정상가보다 낮아서
+    //  진행분이 과소평가되고 환불액이 약관보다 더 많이 나가는 문제가 있었다.
+    //  설정에 정상가를 지정하면 그 값을 그대로 단가로 쓰도록 고쳤다.
+    // ════════════════════════════════════════════════════════════════
+    describe('정상가(settings.sessionRegularPrice) 설정 시', () => {
+      it('실제 결제 단가 대신 정상가를 단가로 사용한다', () => {
+        // 대량등록 할인 시나리오: 10회를 400,000원(회당 40,000원)에 할인 등록했지만
+        // 정상가는 회당 60,000원 — 진행분은 정상가 기준으로 계산돼야 한다.
+        const discountMembers = [{ id: 'm1', trainerSessions: { t1: { total: 10, remaining: 7 } } }];
+        const payment = { memberId: 'm1', amount: 400000, method: 'cash', trainerIds: ['t1'] };
+        const schedules = [
+          { memberId: 'm1', trainerId: 't1', status: 'attended' },
+          { memberId: 'm1', trainerId: 't1', status: 'attended' },
+          { memberId: 'm1', trainerId: 't1', status: 'noshow' },
+        ];
+        const withRegularPrice = { ...settings, sessionRegularPrice: 60000 };
+        const used = autoRefundUsedAmount(payment, 'm1', { members: discountMembers, schedules, settings: withRegularPrice });
+        expect(used).toBe(60000 * 3); // 180,000 — 실제 결제 단가(40,000×3=120,000)보다 커야 정상
+        expect(used).not.toBe(40000 * 3);
+      });
+
+      it('0원(미설정)이면 기존처럼 실제 결제 단가(입금액÷등록회차)를 사용한다', () => {
+        const payment = { memberId: 'm1', amount: 900000, method: 'cash', trainerIds: [] };
+        const schedules = [
+          { memberId: 'm1', trainerId: 't1', status: 'attended' },
+          { memberId: 'm1', trainerId: 't2', status: 'attended' },
+        ];
+        const zeroed = { ...settings, sessionRegularPrice: 0 };
+        const used = autoRefundUsedAmount(payment, 'm1', { members, schedules, settings: zeroed });
+        expect(used).toBe(60000 * 2); // 기존 계산과 동일: 900,000÷15=60,000 × 2회
+      });
+
+      it('등록 총회차 데이터가 없어도(totalReg=0) 정상가 × 출석 회차로 계산된다', () => {
+        const noRegMembers = [{ id: 'm3', trainerSessions: {} }];
+        const payment = { memberId: 'm3', amount: 300000, method: 'cash', trainerIds: ['t1'] };
+        const schedules = [
+          { memberId: 'm3', trainerId: 't1', status: 'attended' },
+          { memberId: 'm3', trainerId: 't1', status: 'attended' },
+        ];
+        const withRegularPrice = { ...settings, sessionRegularPrice: 50000 };
+        const used = autoRefundUsedAmount(payment, 'm3', { members: noRegMembers, schedules, settings: withRegularPrice });
+        // 정상가 경로는 totalReg(등록 총회차)를 분모로 쓰지 않으므로, 등록 데이터가
+        // 없어도(예전엔 0원 반환) 출석 회차 기준으로 정상 계산된다.
+        expect(used).toBe(50000 * 2);
+      });
+
+      it('음수·문자열 등 비정상 값은 무시하고 기존 방식으로 폴백한다', () => {
+        const payment = { memberId: 'm1', amount: 900000, method: 'cash', trainerIds: [] };
+        const schedules = [{ memberId: 'm1', trainerId: 't1', status: 'attended' }];
+        const negative = { ...settings, sessionRegularPrice: -10000 };
+        const invalid = { ...settings, sessionRegularPrice: 'abc' };
+        expect(autoRefundUsedAmount(payment, 'm1', { members, schedules, settings: negative })).toBe(60000);
+        expect(autoRefundUsedAmount(payment, 'm1', { members, schedules, settings: invalid })).toBe(60000);
+      });
+    });
+  });
+
+  describe('refundUnitPriceBasisLabel — 환불 확인창에 표시할 단가 기준 문구', () => {
+    it('정상가가 설정돼 있으면 정상가 적용 문구와 금액을 보여준다', () => {
+      expect(refundUnitPriceBasisLabel({ sessionRegularPrice: 66000 })).toBe('정상가 66,000원/회 적용');
+    });
+
+    it('정상가가 0이거나 없으면 실제 결제 단가 기준이라고 안내한다', () => {
+      expect(refundUnitPriceBasisLabel({ sessionRegularPrice: 0 })).toBe('실제 결제 단가 기준 · 정상가 미설정');
+      expect(refundUnitPriceBasisLabel({})).toBe('실제 결제 단가 기준 · 정상가 미설정');
+      expect(refundUnitPriceBasisLabel(undefined)).toBe('실제 결제 단가 기준 · 정상가 미설정');
     });
   });
 
@@ -370,5 +442,44 @@ describe('Revenue.jsx — 환불 계산이 finance.js 공용 함수로 통일됐
     const end = src.indexOf('const SEL =');
     const fn = src.slice(start, end);
     expect(fn).toContain('store.cancelRefund(');
+  });
+});
+
+describe('정상가(sessionRegularPrice) 설정 화면 배선 — 매출관리 → 설정', () => {
+  const revenueSrc = read('pages/Revenue.jsx');
+  const memberDetailSrc = read('components/members/MemberDetail.jsx');
+  const demoDataSrc = read('demoData.js');
+
+  it('demoData.js의 INITIAL_SETTINGS에 sessionRegularPrice 기본값(0)이 있다', () => {
+    const start = demoDataSrc.indexOf('const INITIAL_SETTINGS = {');
+    const end = demoDataSrc.indexOf('\n};', start);
+    const block = demoDataSrc.slice(start, end);
+    expect(block).toMatch(/sessionRegularPrice:\s*0/);
+  });
+
+  it('ConfigTab(설정 탭)에 정상가를 수정할 수 있는 NumField가 있다(k="sessionRegularPrice")', () => {
+    const start = revenueSrc.indexOf('function ConfigTab(');
+    const end = revenueSrc.indexOf('\nfunction ', start + 1);
+    const fn = revenueSrc.slice(start, end === -1 ? undefined : end);
+    expect(fn).toContain('k="sessionRegularPrice"');
+  });
+
+  it('설정 저장(save)은 다른 필드처럼 sessionRegularPrice도 변경분만 patch로 보낸다(전용 로직 불필요)', () => {
+    // ConfigTab.save()는 trainerSplitRates/id를 제외한 모든 form 키를 범용적으로 diff한다 —
+    // sessionRegularPrice가 그 예외 목록에 없어야 자동으로 patch에 포함된다.
+    // (파일에 동명의 save 함수가 TrainerSettleCard에도 있어 ConfigTab 범위로 먼저 좁힌다.)
+    const cfgStart = revenueSrc.indexOf('function ConfigTab(');
+    const cfgEnd = revenueSrc.indexOf('\nfunction ', cfgStart + 1);
+    const cfgBlock = revenueSrc.slice(cfgStart, cfgEnd === -1 ? undefined : cfgEnd);
+    const start = cfgBlock.indexOf('const save = async () => {');
+    const end = cfgBlock.indexOf('return (', start);
+    const fn = cfgBlock.slice(start, end);
+    expect(fn).toContain("if (k === 'trainerSplitRates' || k === 'id') return;");
+    expect(fn).not.toContain("k === 'sessionRegularPrice'");
+  });
+
+  it('Revenue.jsx·MemberDetail.jsx 환불 확인창이 refundUnitPriceBasisLabel로 단가 기준을 안내한다', () => {
+    expect(revenueSrc).toContain('refundUnitPriceBasisLabel(settings)');
+    expect(memberDetailSrc).toContain('refundUnitPriceBasisLabel(settings)');
   });
 });
