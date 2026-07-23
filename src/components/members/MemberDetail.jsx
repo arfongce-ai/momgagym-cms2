@@ -537,7 +537,7 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
     const usedInput = window.prompt(
       `환불 처리 — ${member.name}\n총 결제액: ${won(p.amount)}\n\n` +
       `진행분(이미 수업한 회차 × 단가)을 입력하세요 (원):\n` +
-      `· 출석 데이터 기준 자동 계산값(${refundUnitPriceBasisLabel(settings)}): ${won(suggested)} (수정 가능)`,
+      `· 출석 데이터 기준 자동 계산값(${refundUnitPriceBasisLabel()}): ${won(suggested)} (수정 가능)`,
       String(suggested));
     if (usedInput === null) return;
     const { cardFee, vat, penalty, usedAmount, refund } = computeRefundEstimate(p, settings, usedInput);

@@ -63,11 +63,10 @@ export function calcNet(payment, settings) {
 //    필드가 없는 결제 객체가 들어올 때 회원을 못 찾아 조용히 0원이 나오는 사고가 난다 —
 //    store.getPayments(mid)로 가져온 결제엔 memberId가 없고, store.getAllPayments()로
 //    가져온 결제에만 붙어 있다. 회원상세 화면에서 실제로 이 문제가 발생했었다).
-//  · 단가 우선순위:
-//    1) settings.sessionRegularPrice(정상가, 1회당 정가)가 지정돼 있으면 그 값을 그대로 쓴다
-//       — 약관 4항 "진행 횟수 × 정상가" 문구와 일치. 대량등록 할인 등으로 실제 결제단가가
-//       정상가보다 낮을 때, 진행분이 과소평가되어 환불액이 과다산정되는 걸 막는다.
-//    2) 미지정(0 이하)이면 기존 방식대로 실제 결제 단가(= 입금액 ÷ 등록 총회차)로 근사한다.
+//  · 단가 = 실제 결제 단가(= 입금액 ÷ 등록 총회차) — "결제가" 기준. 약관 4항 문구는
+//    "정상가"로 그대로 두되(계약서 표기 유지), 실제 계산은 항상 결제가로 한다(2026-07
+//    변경). 예전엔 settings.sessionRegularPrice(정상가)가 설정돼 있으면 그 값을 우선
+//    썼으나, 그 우선순위를 없애고 결제가로 일원화했다 — 관련 설정 필드도 함께 제거.
 export function autoRefundUsedAmount(payment, memberId, { members = [], schedules = [], settings }) {
   const mem = members.find(m => m.id === memberId);
   const ts = mem?.trainerSessions || {};
@@ -77,9 +76,6 @@ export function autoRefundUsedAmount(payment, memberId, { members = [], schedule
     !s.isExternal && s.memberId === memberId && tids.includes(s.trainerId) &&
     (s.status === 'attended' || s.status === 'noshow')
   ).length;
-
-  const regularPrice = Number(settings?.sessionRegularPrice) || 0;
-  if (regularPrice > 0) return Math.round(regularPrice * attended);
 
   // 단가의 분모는 "이 결제와 관련된 트레이너"의 등록 총회차만 써야 한다.
   //  · 버그: 예전엔 회원의 전체 트레이너(Object.values(ts) 전부)를 분모로 썼는데,
@@ -93,13 +89,11 @@ export function autoRefundUsedAmount(payment, memberId, { members = [], schedule
   return Math.round(unit * attended);
 }
 
-// 진행분 자동계산이 어떤 단가 기준을 썼는지 설명하는 문구(환불 확인창 표시용).
-//  · Revenue.jsx·MemberDetail.jsx 두 화면에서 동일 문구를 쓰도록 여기 한 곳에만 둔다.
-export function refundUnitPriceBasisLabel(settings) {
-  const regularPrice = Number(settings?.sessionRegularPrice) || 0;
-  return regularPrice > 0
-    ? `정상가 ${won(regularPrice)}/회 적용`
-    : '실제 결제 단가 기준 · 정상가 미설정';
+// 진행분 자동계산의 단가 기준 안내 문구(환불 확인창 표시용) — 항상 결제가(실제 결제
+// 단가) 기준이다. Revenue.jsx·MemberDetail.jsx 두 화면에서 동일 문구를 쓰도록
+// 여기 한 곳에만 둔다.
+export function refundUnitPriceBasisLabel() {
+  return '실제 결제 단가(결제가) 기준';
 }
 
 // 환불액 산정(약관 4항): [총 결제액] − [위약금 10%] − [진행 횟수 × 정상가] − [카드 수수료] − [부가세].

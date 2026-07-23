@@ -174,14 +174,12 @@ describe('종단 검증 2 — 회원관리 일괄 처리(handleSettleExpiredSess
   });
 });
 
-describe('종단 검증 3 — 정상가(환불) 파이프라인 (실제 store 사용)', () => {
-  it('정상가를 설정하면, 할인 등록된 회원의 환불 진행분이 실제 결제 단가가 아닌 정상가 기준으로 계산되고 실제로 처리된다', async () => {
-    await store.updateSettings({ sessionRegularPrice: 60000 });
+describe('종단 검증 3 — 환불 진행분(결제가) 파이프라인 (실제 store 사용)', () => {
+  it('할인 등록된 회원도 환불 진행분은 항상 실제 결제 단가(결제가) 기준으로 계산되고 실제로 처리된다', async () => {
     const settings = store.getSettings();
-    expect(settings.sessionRegularPrice).toBe(60000);
 
     const trainer = await store.addTrainer({ name: '한트레이너', color: '#a855f7' });
-    // 10회를 400,000원(회당 40,000원)에 할인 등록 — 정상가(60,000원)보다 낮음.
+    // 10회를 400,000원(회당 40,000원)에 할인 등록.
     const member = await store.addMember({ name: '오회원', trainerSessions: { [trainer.id]: { total: 10, remaining: 7 } } });
     const payment = await store.addPaymentWithMemberUpdate(
       member.id,
@@ -199,8 +197,7 @@ describe('종단 검증 3 — 정상가(환불) 파이프라인 (실제 store �
     const freshMember = store.getMembers().find(m => m.id === member.id);
     const freshSchedules = store.getSchedules();
     const suggested = autoRefundUsedAmount(payment, member.id, { members: [freshMember], schedules: freshSchedules, settings });
-    expect(suggested).toBe(60000 * 3); // 정상가 기준 180,000 — 할인단가(40,000×3=120,000) 아님
-    expect(suggested).not.toBe(40000 * 3);
+    expect(suggested).toBe(40000 * 3); // 결제가(입금액÷등록회차=40,000) 기준 120,000
 
     const result = await store.processRefund(member.id, payment.id, {
       isRefunded: true, refundedAt: todayYMD(), refundUsedAmount: suggested,

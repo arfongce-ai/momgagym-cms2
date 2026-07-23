@@ -495,7 +495,7 @@ function RefundableList({ filtered, settings, trainers, trainerMap, onChange }) 
     const usedInput = window.prompt(
       `환불 처리 — ${p.memberName}\n총 결제액: ${won(p.amount)}\n\n` +
       `진행분(이미 수업한 회차 × 단가)을 입력하세요 (원):\n` +
-      `· 출석 데이터 기준 자동 계산값(${refundUnitPriceBasisLabel(settings)}): ${won(suggested)} (수정 가능)`,
+      `· 출석 데이터 기준 자동 계산값(${refundUnitPriceBasisLabel()}): ${won(suggested)} (수정 가능)`,
       String(suggested));
     if (usedInput===null) return;
     const { cardFee, vat, penalty, usedAmount, refund } = computeRefundEstimate(p, settings, usedInput);
@@ -1938,14 +1938,6 @@ function ConfigTab({ settings, trainers }) {
           <NumField label="부가세" k="vatRate" suffix="%" form={form} setForm={setForm}/>
         </div>
         <p className="text-[11px] text-slate-600">공제 규칙 — 카드1·카드2: 부가세+카드수수료 / 페이·현금영수증: 부가세만 / 계좌·현금: 공제 없음</p>
-      </div>
-
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-4">
-        <h2 className="font-bold text-sm uppercase tracking-widest text-slate-400">환불 계산 — 정상가 (이용약관 4항)</h2>
-        <div className="grid grid-cols-2 gap-3">
-          <NumField label="1회당 정상가" k="sessionRegularPrice" suffix="원" form={form} setForm={setForm}/>
-        </div>
-        <p className="text-[11px] text-slate-600">환불 시 "진행 횟수 × 정상가" 계산에 쓰입니다. 0원(미설정)이면 실제 결제 단가(입금액÷등록회차)로 자동 근사합니다 — 대량등록 할인이 있다면 정상가를 지정해야 진행분이 과소평가되어 환불액이 과다산정되는 걸 막을 수 있습니다.</p>
       </div>
 
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-4">
