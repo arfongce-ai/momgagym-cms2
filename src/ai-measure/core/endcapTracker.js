@@ -204,12 +204,17 @@ export function createMultiTracker() {
       if (points.length >= MAX_POINTS) return false;
       const w = video.videoWidth, h = video.videoHeight;
       if (!w || !h) return false;
-      const c = ensureCanvas(w, h);
-      c.drawImage(video, 0, 0, w, h);
-      const col = sampleColor(c, w, h, nx, ny, SEED_RADIUS);
-      if (!col) return false;
-      points.push({ target: col, origColor: col, pos: { x: nx, y: ny }, prev: null, ema: { x: nx, y: ny }, alive: true });
-      return true;
+      try {
+        const c = ensureCanvas(w, h);
+        c.drawImage(video, 0, 0, w, h);
+        const col = sampleColor(c, w, h, nx, ny, SEED_RADIUS);
+        if (!col) return false;
+        points.push({ target: col, origColor: col, pos: { x: nx, y: ny }, prev: null, ema: { x: nx, y: ny }, alive: true });
+        return true;
+      } catch (e) {
+        // 캔버스 픽셀 판독 실패(드문 경우) — 탭이 조용히 씹히는 대신 "실패"로 명확히 반환.
+        return false;
+      }
     },
 
     isSeeded() { return points.length > 0; },
@@ -220,45 +225,49 @@ export function createMultiTracker() {
       if (!points.length) return null;
       const w = video.videoWidth, h = video.videoHeight;
       if (!w || !h) return this.current();
-      const c = ensureCanvas(w, h);
-      c.drawImage(video, 0, 0, w, h);
+      try {
+        const c = ensureCanvas(w, h);
+        c.drawImage(video, 0, 0, w, h);
 
-      // 1) 각 점 추적 (직전 속도로 검색창 중심을 미리 이동 → 빠른 움직임 대응)
-      const found = points.map(p => {
-        const pred = p.prev
-          ? { x: p.pos.x + (p.pos.x - p.prev.x), y: p.pos.y + (p.pos.y - p.prev.y) }
-          : p.pos;
-        const r = trackOne(c, w, h, p.pos, p.target, pred, p.origColor);
-        if (r) {
-          p.prev = p.pos;
-          p.pos = r;
-          p.target = blendTargetColor(p.target, sampleColor(c, w, h, r.x, r.y, SEED_RADIUS * 0.8));
-          p.alive = true;
-        }
-        else { p.alive = false; }
-        return p.alive ? r : null;
-      });
+        // 1) 각 점 추적 (직전 속도로 검색창 중심을 미리 이동 → 빠른 움직임 대응)
+        const found = points.map(p => {
+          const pred = p.prev
+            ? { x: p.pos.x + (p.pos.x - p.prev.x), y: p.pos.y + (p.pos.y - p.prev.y) }
+            : p.pos;
+          const r = trackOne(c, w, h, p.pos, p.target, pred, p.origColor);
+          if (r) {
+            p.prev = p.pos;
+            p.pos = r;
+            p.target = blendTargetColor(p.target, sampleColor(c, w, h, r.x, r.y, SEED_RADIUS * 0.8));
+            p.alive = true;
+          }
+          else { p.alive = false; }
+          return p.alive ? r : null;
+        });
 
-      // 2) 살아있는 점들의 y 중앙값으로 튄 점 제외
-      const aliveYs = found.filter(Boolean).map(p => p.y);
-      const medY = median(aliveYs);
-      const keep = [];
-      points.forEach((p, i) => {
-        const r = found[i];
-        if (!r) return;
-        if (medY != null && Math.abs(r.y - medY) > OUTLIER_TOL) return; // 튄 점 제외
-        // EMA 평활
-        p.ema = { x: p.ema.x + (r.x - p.ema.x) * EMA_ALPHA, y: p.ema.y + (r.y - p.ema.y) * EMA_ALPHA };
-        keep.push(p.ema);
-      });
-      lastActive = keep.length;
-      if (!keep.length) return this.current();
+        // 2) 살아있는 점들의 y 중앙값으로 튄 점 제외
+        const aliveYs = found.filter(Boolean).map(p => p.y);
+        const medY = median(aliveYs);
+        const keep = [];
+        points.forEach((p, i) => {
+          const r = found[i];
+          if (!r) return;
+          if (medY != null && Math.abs(r.y - medY) > OUTLIER_TOL) return; // 튄 점 제외
+          // EMA 평활
+          p.ema = { x: p.ema.x + (r.x - p.ema.x) * EMA_ALPHA, y: p.ema.y + (r.y - p.ema.y) * EMA_ALPHA };
+          keep.push(p.ema);
+        });
+        lastActive = keep.length;
+        if (!keep.length) return this.current();
 
-      // 3) 남은 점들의 중앙 좌표를 대표 위치로
-      const repX = median(keep.map(p => p.x));
-      const repY = median(keep.map(p => p.y));
-      this._rep = { x: repX, y: repY };
-      return this._rep;
+        // 3) 남은 점들의 중앙 좌표를 대표 위치로
+        const repX = median(keep.map(p => p.x));
+        const repY = median(keep.map(p => p.y));
+        this._rep = { x: repX, y: repY };
+        return this._rep;
+      } catch (e) {
+        return this.current(); // 프레임 판독 실패 — 직전 위치 유지(가려짐과 동일 취급)
+      }
     },
 
     push(point, ts) {

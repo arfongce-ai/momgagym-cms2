@@ -109,8 +109,10 @@ export default function LiftingUploadAnalysis({
       addCalibrationPoint({ x: nx, y: ny });
       return;
     }
+    if (trackerRef.current.pointCount() >= 3) return; // 이미 최대 추적점(3) 지정됨
     const ok = trackerRef.current.seed(v, nx, ny);
-    if (ok) setSeedCount(trackerRef.current.pointCount());
+    if (ok) { setSeedCount(trackerRef.current.pointCount()); setErrorMsg(''); }
+    else setErrorMsg('이 지점에서 추적점을 인식하지 못했습니다. 바벨 끝/원판이 더 잘 보이는 위치를 눌러보세요.');
   };
 
   const startAnalyze = useCallback(async () => {

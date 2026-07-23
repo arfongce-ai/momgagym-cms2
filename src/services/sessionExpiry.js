@@ -13,6 +13,15 @@
 //
 //  회원상세(MemberDetail)·회원목록(Members)·홈(Home)·매출관리(Revenue) 네 화면 모두
 //  이 모듈의 함수를 그대로 써야 한다(공식 불일치 방지 — finance.js와 동일 원칙).
+//
+//  연장(수동 등록): 약관 3항의 유효기간(10회 3개월/20회 6개월)이 지났거나 임박한
+//  등록분(lot)에 한해, 관리자가 건별로 "연장 등록"을 남기면 그 일수만큼 expiresAt이
+//  뒤로 밀린다. 자동 연장은 없다 — 등록하지 않으면 원래 유효기간(약관 그대로)이 그대로
+//  적용된다. 기본 제안값은 그 lot의 기본 유효기간과 동일(10회 lot→+3개월, 20회 lot→
+//  +6개월)이지만 관리자가 등록 시점에 일수를 바꿀 수 있다. 기록 위치는 만료 정산
+//  (expirySettlements/legacyExpirySettlements)과 동일한 원칙: legacy lot은
+//  member.legacyExpiryExtensions[trainerId], 그 외는 payment.expiryExtensions[lotId].
+//  lot당 1건만 허용(demoData.js의 store.registerExpiryExtension/cancelExpiryExtension 참고).
 // ════════════════════════════════════════════════════════════════════════
 import { buildTrainerLots } from './finance';
 import { addDaysYMD, todayYMD, isMonthlyActive, monthlyDueOf } from '../utils/dates';
@@ -33,6 +42,13 @@ export function expiryDaysForCount(count, settings) {
   return Math.max(0, Math.round((n / 10) * per10));
 }
 
+// 연장 등록 화면의 기본 제안 일수 — "10회 3개월+연장 3개월, 20회 6개월+연장 6개월"
+// 정책과 일치하도록, 그 lot의 기본 유효기간과 동일한 일수를 제안한다(관리자가 등록
+// 시점에 자유롭게 바꿀 수 있음 — 어디까지나 기본값).
+export function suggestedExtensionDays(lot, settings) {
+  return expiryDaysForCount(Number(lot?.count) || 0, settings);
+}
+
 // lot의 소진 시작일 — buildTrainerLots가 이미 "세션 시작일(sessionStartDate) 우선,
 // 없으면 결제일(paidAt)"로 계산해둔 orderDate를 그대로 쓴다. legacy lot은 orderDate가
 // 없으므로 paidAt으로, 그마저 없으면(결제 기록 자체가 없는 초기등록) fallback(회원
@@ -51,9 +67,12 @@ function daysBetween(fromYMD, toYMDStr) {
 
 // 회원의 트레이너별 세션 등록분(lot)에 잔여·만료 정보를 얹어 반환한다.
 // 반환: { [trainerId]: [{ ...buildTrainerLots의 lot 필드, trainerId, remaining,
-//                          startDate, expiresAt, daysLeft, status, settledInfo }] }
+//                          startDate, baseDays, extension, extensionDays,
+//                          expiresAt, daysLeft, status, settledInfo }] }
 //  · status: 'ok'(잔여 없음 or 유효기간 내) | 'warning'(N일 이내 만료 예정, 잔여 있음)
 //            | 'expired'(만료일 경과, 잔여 있음, 미정산) | 'settled'(만료 정산 처리 완료)
+//  · baseDays: 약관상 기본 유효기간(일수, 연장 제외). extension: 연장 등록 기록(없으면 null).
+//    extensionDays: 연장으로 더해진 일수(0이면 연장 없음). expiresAt = startDate + baseDays + extensionDays.
 export function buildMemberSessionExpiry({ member, payments = [], settings, today }) {
   const now = today || todayYMD();
   const ts = member?.trainerSessions || {};
@@ -75,9 +94,15 @@ export function buildMemberSessionExpiry({ member, payments = [], settings, toda
       consumedBudget -= consumedHere;
       const remaining = count - consumedHere;
       const startDate = lotStartDate(lot, member?.joinDate);
-      const expiresAt = startDate ? addDaysYMD(expiryDaysForCount(count, settings), startDate) : '';
-      const daysLeft = expiresAt ? daysBetween(now, expiresAt) : null;
       const payment = lot.legacy ? null : paymentById[lot.paymentId];
+      // 연장(수동 등록) — 기록이 있으면 그 일수만큼 기본 유효기간에 더한다. 자동 연장 없음.
+      const extension = lot.legacy
+        ? (member?.legacyExpiryExtensions?.[tid] || null)
+        : (payment?.expiryExtensions?.[lot.id] || null);
+      const baseDays = expiryDaysForCount(count, settings);
+      const extensionDays = extension ? (Number(extension.days) || 0) : 0;
+      const expiresAt = startDate ? addDaysYMD(baseDays + extensionDays, startDate) : '';
+      const daysLeft = expiresAt ? daysBetween(now, expiresAt) : null;
       const settledInfo = lot.legacy
         ? (member?.legacyExpirySettlements?.[tid] || null)
         : (payment?.expirySettlements?.[lot.id] || null);
@@ -87,7 +112,7 @@ export function buildMemberSessionExpiry({ member, payments = [], settings, toda
         else if (expiresAt < now) status = 'expired';
         else if (daysLeft != null && daysLeft <= warnDays) status = 'warning';
       }
-      return { ...lot, trainerId: tid, remaining, startDate, expiresAt, daysLeft, status, settledInfo };
+      return { ...lot, trainerId: tid, remaining, startDate, baseDays, extension, extensionDays, expiresAt, daysLeft, status, settledInfo };
     });
   });
   return result;

@@ -21,6 +21,7 @@ import LiftingUploadAnalysis from './LiftingUploadAnalysis';
 import LiftingReportDashboard from './LiftingReportDashboard';
 import MeasureRecordConfirm from '../components/MeasureRecordConfirm.jsx';
 import { useHardwareBack } from '../core/useHardwareBack';
+import { resolveBodyMetrics } from '../../services/bodyMetrics';
 import {
   exercisesForMode, lift1rmToExercise,
   vbtConfidence, estimateMeanPower, buildLiftingPayload, detectMeasurementOutlier,
@@ -74,14 +75,18 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
   const camTopOffset = hubBarHeight ? hubBarHeight + 6 : 0;
 
   // ── 회원 신체정보 연동(요구사항 4) ──
-  //  키·몸무게는 회원 신체정보에서 자동 연동. 미등록(키 없음)이면 점프&RSI 처럼
-  //  첫 화면에서 키·몸무게를 먼저 받고, 이후 카메라/측정으로 진입한다.
-  const [bodyHeight, setBodyHeight] = useState(member?.height ? Number(member.height) : null);
-  const [bodyWeight, setBodyWeight] = useState(member?.weight ? Number(member.weight) : null);
-  // 등록 회원이고 키가 있으면 게이트 통과. 미등록이거나 키 없으면 선등록 화면.
-  const [needBody, setNeedBody] = useState(!member?.height);
-  const [heightInput, setHeightInput] = useState(member?.height ? String(member.height) : '');
-  const [weightInput, setWeightInput] = useState(member?.weight ? String(member.weight) : '');
+  //  키·몸무게는 회원 신체정보에서 자동 연동한다 — member.height 직접 필드뿐 아니라
+  //  회원 신체기록(body 탭)까지 resolveBodyMetrics 로 확인한다(점프 측정과 동일 원칙).
+  //  이전에는 member.height 만 봐서, 신체기록에 키가 있어도 매번 선등록 화면이 떠
+  //  VBT/1RM/업로드 분석 화면까지 도달하지 못하는 문제가 있었다.
+  //  미등록(키 없음)이면 점프&RSI 처럼 첫 화면에서 키·몸무게를 먼저 받고, 이후
+  //  카메라/측정으로 진입한다.
+  const [initialBody] = useState(() => resolveBodyMetrics(member, null, null));
+  const [bodyHeight, setBodyHeight] = useState(initialBody.height);
+  const [bodyWeight, setBodyWeight] = useState(initialBody.weight);
+  const [needBody, setNeedBody] = useState(initialBody.height == null);
+  const [heightInput, setHeightInput] = useState(initialBody.height ? String(initialBody.height) : '');
+  const [weightInput, setWeightInput] = useState(initialBody.weight ? String(initialBody.weight) : '');
   const [bodyError, setBodyError] = useState('');
 
   // 각 측정 모듈에 내려줄, 신체정보가 보강된 member 객체.

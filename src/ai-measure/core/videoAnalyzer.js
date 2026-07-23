@@ -37,6 +37,50 @@ export const CAPTURE_PRESETS = {
   slowmo240: { label: '슬로모 240fps',       playbackRate: 8, targetFps: 90 },
 };
 
+// 일부 영상 파일(특히 편집·슬로모 앱에서 재인코딩된 MP4, 일부 Android 기기)은
+// loadedmetadata 시점에 duration 이 Infinity/NaN 으로 보고되는 잘 알려진 브라우저
+// 버그가 있다("infinite stream" 취급). 표준 우회: currentTime 을 아주 크게 seek 하면
+// 브라우저가 실제 끝까지 읽어 duration 을 재계산한다 → durationchange/timeupdate 로
+// 감지 후 0으로 되돌린다. (참고: MediaRecorder blob 뿐 아니라 file input 로 불러온
+// 일부 파일에서도 동일 증상이 보고됨 — 그래서 file input 업로드 경로에도 방어적으로 둔다.)
+export function isUsableDuration(d) {
+  return Number.isFinite(d) && d > 0;
+}
+
+export function resolveVideoDuration(video, { timeoutMs = 4000 } = {}) {
+  if (isUsableDuration(video.duration)) return Promise.resolve(video.duration);
+
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = (fn, arg) => {
+      if (settled) return;
+      settled = true;
+      video.removeEventListener('durationchange', onChange);
+      video.removeEventListener('timeupdate', onChange);
+      clearTimeout(timer);
+      fn(arg);
+    };
+    const onChange = () => {
+      if (isUsableDuration(video.duration)) {
+        const d = video.duration;
+        video.currentTime = 0;
+        finish(resolve, d);
+      }
+    };
+    video.addEventListener('durationchange', onChange);
+    video.addEventListener('timeupdate', onChange);
+    try {
+      video.currentTime = 1e101; // 브라우저가 실제 끝으로 클램프하며 duration 을 재계산
+    } catch (e) {
+      finish(reject, new Error('영상 길이를 읽을 수 없습니다. 다른 파일로 시도해 주세요.'));
+      return;
+    }
+    const timer = setTimeout(() => {
+      finish(reject, new Error('영상 길이를 읽을 수 없습니다. 다른 파일로 시도해 주세요.'));
+    }, timeoutMs);
+  });
+}
+
 /**
  * 업로드된 비디오 엘리먼트를 seek 하며 프레임마다 포즈를 추론한다.
  *
@@ -60,10 +104,7 @@ export async function analyzeUploadedVideo({
 }) {
   await loadPoseLandmarker({ numPoses: 1, modelTier });
 
-  const duration = video.duration;
-  if (!duration || !Number.isFinite(duration)) {
-    throw new Error('영상 길이를 읽을 수 없습니다. 다른 파일로 시도해 주세요.');
-  }
+  const duration = await resolveVideoDuration(video);
 
   // 처리용 다운스케일 캔버스 (원본 비율 유지하며 1280×720 박스 안에 맞춤)
   const vw = video.videoWidth || ANALYZE_MAX.width;

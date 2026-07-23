@@ -14,29 +14,7 @@ import {
 } from '../core/jumpBiomechanics';
 import { calcJump } from '../core/performance';
 import { computeRSIFromFlights } from '../core/reactiveJump';
-import { store } from '../../demoData';
-
-// 회원 신체기록(body)에서 최신 체중·키를 가져온다. (Sayers 파워 계산에 체중 필요)
-// member 객체에 직접 없을 수 있으므로 store.getBodyRecords 로 최신 기록을 조회한다.
-function resolveBodyMetrics(member, fallbackHeight, fallbackWeight = null) {
-  let weight = member?.weight != null ? Number(member.weight) : fallbackWeight;
-  let height = member?.height != null ? Number(member.height) : (fallbackHeight ?? null);
-  try {
-    if (member?.id && typeof store?.getBodyRecords === 'function') {
-      const recs = store.getBodyRecords(member.id) || [];
-      if (recs.length) {
-        // recordedAt 최신 기록 우선
-        const sorted = [...recs].sort((a, b) => String(b.recordedAt).localeCompare(String(a.recordedAt)));
-        for (const r of sorted) {
-          if (weight == null && r.weight != null) weight = Number(r.weight);
-          if (height == null && r.height != null) height = Number(r.height);
-          if (weight != null && height != null) break;
-        }
-      }
-    }
-  } catch (e) { /* 조회 실패 시 member/fallback 값 사용 */ }
-  return { weight: Number.isFinite(weight) ? weight : null, height: Number.isFinite(height) ? height : null };
-}
+import { resolveBodyMetrics } from '../../services/bodyMetrics';
 import { analyzeUploadedVideo, CAPTURE_PRESETS } from '../core/videoAnalyzer';
 
 // 프레임 신뢰도(가시성) 하한 — 이하 구간은 '주의 구간'으로 집계
@@ -48,11 +26,15 @@ export default function JumpUploadAnalysis({ member, onBack, onComplete, onMembe
   const [errorMsg, setErrorMsg] = useState('');
   const [fileName, setFileName] = useState('');
   const [capture, setCapture] = useState('slowmo240');
-  const [heightCm, setHeightCm] = useState(member?.height ? Number(member.height) : null);
-  const [bodyWeight, setBodyWeight] = useState(member?.weight ? Number(member.weight) : null);
-  const [needHeight, setNeedHeight] = useState(!member?.height || (!member?.id && !member?.weight));
+  // 초기값은 회원 신체기록(body, resolveBodyMetrics)까지 확인한다 — member.height/weight만
+  // 보면 회원 상세의 체중 기록이 있어도 매번 "키·몸무게 필요" 팝업이 떠 분석 화면(▶ 분석
+  // 시작 버튼)까지 도달하지 못하는 문제가 있었다.
+  const [initialBody] = useState(() => resolveBodyMetrics(member, null, null));
+  const [heightCm, setHeightCm] = useState(initialBody.height);
+  const [bodyWeight, setBodyWeight] = useState(initialBody.weight);
+  const [needHeight, setNeedHeight] = useState(initialBody.height == null || initialBody.weight == null);
   const [heightInput, setHeightInput] = useState('');
-  const [weightInput, setWeightInput] = useState(member?.weight ? String(member.weight) : '');
+  const [weightInput, setWeightInput] = useState(initialBody.weight ? String(initialBody.weight) : '');
 
   const videoRef = useRef(null);
   const fileUrlRef = useRef(null);

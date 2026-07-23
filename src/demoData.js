@@ -1053,6 +1053,104 @@ export const store = {
       throw e;
     }
   },
+  // 세션 유효기간 연장 수동 등록(이용약관 3항) — "10회 3개월+연장 3개월, 20회 6개월+
+  // 연장 6개월" 정책의 연장분을 자동이 아닌 관리자 건별 등록으로 반영한다. 등록하면
+  // 그 등록분(lot)의 expiresAt이 days만큼 뒤로 밀린다(services/sessionExpiry.js가
+  // 이 기록을 읽어 계산). processExpirySettlement와 동일하게 관련 문서를 하나의
+  // 배치로 원자 커밋한다.
+  //  · params: { trainerId, lotId, paymentId, legacy, days }
+  //    (services/sessionExpiry.js의 buildMemberSessionExpiry가 반환하는 lot을 그대로
+  //     넘기면 됨 — 호출부: MemberDetail.jsx)
+  //  · legacy lot(결제 건과 직접 연결 안 됨)은 member.legacyExpiryExtensions[trainerId]에,
+  //    그 외(explicit) lot은 payment.expiryExtensions[lotId]에 기록한다 —
+  //    processExpirySettlement의 legacyExpirySettlements/expirySettlements와 동일 대응.
+  //  · lot당 1건만 허용 — 이미 연장 등록이 있으면 null을 반환하고 아무것도 바꾸지 않는다
+  //    (덮어쓰려면 cancelExpiryExtension으로 먼저 취소 후 재등록).
+  registerExpiryExtension: async (mid, params) => {
+    const { trainerId, lotId, paymentId, legacy, days } = params || {};
+    const extDays = Number(days);
+    if (!trainerId || !(extDays > 0)) return null;
+    const prevPayments = cache.payments[mid];
+    const prevMembers  = cache.members;
+    const member = cache.members.find(m => m.id === mid);
+    if (!member || !member.trainerSessions?.[trainerId]) return null;
+
+    const record = { trainerId, days: extDays, appliedAt: todayYMD() };
+    const batch = createStampedBatch();
+    let updatedMember, updatedPayment = null;
+
+    if (legacy) {
+      if (member.legacyExpiryExtensions?.[trainerId]) return null; // 이미 연장 등록됨
+      updatedMember = {
+        ...member,
+        legacyExpiryExtensions: { ...(member.legacyExpiryExtensions || {}), [trainerId]: record },
+      };
+      batch.set('members', mid, updatedMember);
+    } else {
+      const payment = (cache.payments[mid] || []).find(p => p.id === paymentId);
+      if (!payment) return null;
+      if (payment.expiryExtensions?.[lotId]) return null; // 이미 연장 등록됨
+      updatedPayment = {
+        ...payment,
+        expiryExtensions: { ...(payment.expiryExtensions || {}), [lotId]: record },
+      };
+      updatedMember = member;
+      batch.set('payments', paymentId, { ...updatedPayment, __mid: mid });
+    }
+
+    try {
+      await batch.commit();
+      if (updatedMember !== member) cache.members = cache.members.map(m => m.id === mid ? updatedMember : m);
+      if (updatedPayment) cache.payments[mid] = (cache.payments[mid] || []).map(p => p.id === paymentId ? updatedPayment : p);
+      __touchSnapshot();
+      return { member: updatedMember, payment: updatedPayment, record };
+    } catch (e) {
+      cache.members = prevMembers;
+      cache.payments[mid] = prevPayments;
+      throw e;
+    }
+  },
+  // 연장 등록 취소(관리자 정정용) — registerExpiryExtension으로 남긴 기록을 지워
+  // expiresAt을 원래(연장 없는) 유효기간으로 되돌린다. 기록이 없으면 null.
+  cancelExpiryExtension: async (mid, params) => {
+    const { trainerId, lotId, paymentId, legacy } = params || {};
+    if (!trainerId) return null;
+    const prevPayments = cache.payments[mid];
+    const prevMembers  = cache.members;
+    const member = cache.members.find(m => m.id === mid);
+    if (!member) return null;
+
+    const batch = createStampedBatch();
+    let updatedMember, updatedPayment = null;
+
+    if (legacy) {
+      if (!member.legacyExpiryExtensions?.[trainerId]) return null;
+      const rest = { ...(member.legacyExpiryExtensions || {}) };
+      delete rest[trainerId];
+      updatedMember = { ...member, legacyExpiryExtensions: rest };
+      batch.set('members', mid, updatedMember);
+    } else {
+      const payment = (cache.payments[mid] || []).find(p => p.id === paymentId);
+      if (!payment || !payment.expiryExtensions?.[lotId]) return null;
+      const rest = { ...(payment.expiryExtensions || {}) };
+      delete rest[lotId];
+      updatedPayment = { ...payment, expiryExtensions: rest };
+      updatedMember = member;
+      batch.set('payments', paymentId, { ...updatedPayment, __mid: mid });
+    }
+
+    try {
+      await batch.commit();
+      if (updatedMember !== member) cache.members = cache.members.map(m => m.id === mid ? updatedMember : m);
+      if (updatedPayment) cache.payments[mid] = (cache.payments[mid] || []).map(p => p.id === paymentId ? updatedPayment : p);
+      __touchSnapshot();
+      return { member: updatedMember, payment: updatedPayment };
+    } catch (e) {
+      cache.members = prevMembers;
+      cache.payments[mid] = prevPayments;
+      throw e;
+    }
+  },
   // 과거 스케줄에 consumedIndexAtBooking 소급 부여(회차 매핑 마이그레이션).
   //  · patches: [{ id, consumedIndexAtBooking }] (finance.planConsumedIndexBackfill 결과)
   //  · Firestore 배치 한도(500) 고려해 나눠 커밋. 실패 시 캐시 롤백.

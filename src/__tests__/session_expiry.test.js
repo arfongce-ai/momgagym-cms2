@@ -9,7 +9,7 @@
 import { describe, it, expect } from 'vitest';
 import { addDaysYMD } from '../utils/dates';
 import {
-  expiryDaysForCount, buildMemberSessionExpiry, summarizeMemberSessionExpiry,
+  expiryDaysForCount, suggestedExtensionDays, buildMemberSessionExpiry, summarizeMemberSessionExpiry,
   isMemberExpired, expirySettlementRate, computeExpirySettlement,
 } from '../services/sessionExpiry';
 
@@ -116,6 +116,89 @@ describe('buildMemberSessionExpiry — 등록분(lot)별 유효기간·상태 �
     expect(lot2.remaining).toBe(10); // 전혀 소진 안 됨(2차는 아직 시작 안 함)
     expect(lot1.status).toBe('expired'); // 1/5+90일=4/5 지남, 잔여 2 있음
     expect(lot2.status).toBe('warning'); // 2/1+90일=5/2, 4/10 기준 D-22 → 경고기간(30일) 이내
+  });
+});
+
+describe('suggestedExtensionDays — 연장 등록 기본 제안 일수', () => {
+  it('10회 lot은 90일(3개월), 20회 lot은 180일(6개월) 제안 — "기본과 동일 기간" 정책', () => {
+    expect(suggestedExtensionDays({ count: 10 }, settings)).toBe(90);
+    expect(suggestedExtensionDays({ count: 20 }, settings)).toBe(180);
+  });
+  it('expiryDaysPer10Sessions 설정을 바꾸면 제안값도 비례해 바뀐다', () => {
+    expect(suggestedExtensionDays({ count: 10 }, { ...settings, expiryDaysPer10Sessions: 60 })).toBe(60);
+  });
+  it('lot이 없거나 count가 없으면 0을 제안한다', () => {
+    expect(suggestedExtensionDays(null, settings)).toBe(0);
+    expect(suggestedExtensionDays({}, settings)).toBe(0);
+  });
+});
+
+describe('buildMemberSessionExpiry — 연장(수동 등록) 반영', () => {
+  const member = {
+    id: 'm1', joinDate: '2026-01-01',
+    trainerSessions: { t1: { total: 10, remaining: 4 } },
+  };
+  const payments = [
+    { id: 'p1', paidAt: '2026-01-05', amount: 600000, method: 'cash', sessionAdds: [{ trainerId: 't1', count: 10 }] },
+  ];
+  // 연장 없음: startDate 2026-01-05 + 90일 = 2026-04-05 (기존과 동일).
+
+  it('연장 기록이 없으면 baseDays=90, extensionDays=0, extension=null, expiresAt은 기존과 동일', () => {
+    const lots = buildMemberSessionExpiry({ member, payments, settings, today: '2026-04-10' });
+    const lot = lots.t1[0];
+    expect(lot.baseDays).toBe(90);
+    expect(lot.extensionDays).toBe(0);
+    expect(lot.extension).toBeNull();
+    expect(lot.expiresAt).toBe('2026-04-05');
+    expect(lot.status).toBe('expired'); // 연장 없이는 여전히 만료 상태
+  });
+
+  it('explicit lot(payment.expiryExtensions)에 연장 기록이 있으면 그 일수만큼 expiresAt이 뒤로 밀린다', () => {
+    const extendedPayments = [{
+      ...payments[0],
+      expiryExtensions: { 'p1:t1:0': { trainerId: 't1', days: 90, appliedAt: '2026-04-01' } },
+    }];
+    const lots = buildMemberSessionExpiry({ member, payments: extendedPayments, settings, today: '2026-04-10' });
+    const lot = lots.t1[0];
+    expect(lot.baseDays).toBe(90);       // 기본 유효기간은 그대로 유지(연장과 별개로 보존)
+    expect(lot.extensionDays).toBe(90);
+    expect(lot.extension).toEqual({ trainerId: 't1', days: 90, appliedAt: '2026-04-01' });
+    expect(lot.expiresAt).toBe('2026-07-04'); // 2026-01-05 + 180일
+    expect(lot.status).toBe('ok');       // 연장 덕분에 더는 만료 상태 아님
+  });
+
+  it('연장 후에도 D-day 임박 범위면 warning으로 정확히 재계산된다', () => {
+    const extendedPayments = [{
+      ...payments[0],
+      expiryExtensions: { 'p1:t1:0': { trainerId: 't1', days: 90, appliedAt: '2026-04-01' } },
+    }];
+    // 새 만료일 2026-07-04, 경고기간(30일) 이내인 시점(6/20)에서 조회.
+    const lots = buildMemberSessionExpiry({ member, payments: extendedPayments, settings, today: '2026-06-20' });
+    expect(lots.t1[0].status).toBe('warning');
+  });
+
+  it('legacy lot(sessionAdds 없는 결제)은 member.legacyExpiryExtensions로 연장이 반영된다', () => {
+    const legacyMember = { ...member };
+    const legacyPayments = [{ id: 'p0', paidAt: '2026-01-05', amount: 600000, method: 'cash' }]; // legacy lot
+    const extendedLegacyMember = {
+      ...legacyMember,
+      legacyExpiryExtensions: { t1: { trainerId: 't1', days: 90, appliedAt: '2026-04-01' } },
+    };
+    const lots = buildMemberSessionExpiry({ member: extendedLegacyMember, payments: legacyPayments, settings, today: '2026-04-10' });
+    const lot = lots.t1[0];
+    expect(lot.legacy).toBe(true);
+    expect(lot.extensionDays).toBe(90);
+    expect(lot.expiresAt).toBe('2026-07-04');
+    expect(lot.status).toBe('ok');
+  });
+
+  it('연장분이 실제 잔여 소진에는 영향을 주지 않는다(만료 정산과 달리 remaining은 그대로)', () => {
+    const extendedPayments = [{
+      ...payments[0],
+      expiryExtensions: { 'p1:t1:0': { trainerId: 't1', days: 90, appliedAt: '2026-04-01' } },
+    }];
+    const lots = buildMemberSessionExpiry({ member, payments: extendedPayments, settings, today: '2026-04-10' });
+    expect(lots.t1[0].remaining).toBe(4); // member.trainerSessions.t1.remaining 그대로
   });
 });
 

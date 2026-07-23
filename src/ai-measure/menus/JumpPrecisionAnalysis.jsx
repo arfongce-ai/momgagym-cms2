@@ -26,6 +26,7 @@ import { beepTick, beepGo, primeAudio } from '../core/audioCue';
 import { lockZoom, unlockZoom } from '../../utils/viewportLock';
 import ReportActions from '../../components/report/ReportActions';
 import { store } from '../../demoData';
+import { resolveBodyMetrics } from '../../services/bodyMetrics';
 import { isSkeletonEnabled } from '../core/skeletonPref';
 import SkeletonToggleChip from './SkeletonToggleChip';
 import { drawGaugeHud } from '../core/recordingOverlay';
@@ -236,12 +237,19 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
   const [countdown, setCountdown] = useState(null); // 3,2,1 표시값. null이면 비표시.
 
   // 키/체중 입력 팝업 (회원 미정 또는 신체정보 부족 시)
-  const initialWeight = resolveWeight(member);
-  const [heightCm, setHeightCm] = useState(member?.height ? Number(member.height) : null);
-  const [bodyWeight, setBodyWeight] = useState(initialWeight);
-  const [needHeight, setNeedHeight] = useState(!member?.height || (!member?.id && initialWeight == null));
+  // resolveBodyMetrics 로 회원 신체기록(body)까지 확인한다 — height 를
+  // member.height 로만 보면(구버전) 체중은 기록에서 잘 채워지면서 키만
+  // 못 찾아 게이트가 계속 열려 있는 비대칭 버그가 있었다. 라이브 측정 중
+  // 잦은 리렌더에도 body 기록을 반복 조회하지 않도록 lazy init으로 1회만 계산.
+  const [initialBody] = useState(() => {
+    const b = resolveBodyMetrics(member, null, null);
+    return { height: b.height, weight: b.weight ?? resolveWeight(member) };
+  });
+  const [heightCm, setHeightCm] = useState(initialBody.height);
+  const [bodyWeight, setBodyWeight] = useState(initialBody.weight);
+  const [needHeight, setNeedHeight] = useState(initialBody.height == null || (!member?.id && initialBody.weight == null));
   const [heightInput, setHeightInput] = useState('');
-  const [weightInput, setWeightInput] = useState(initialWeight ? String(initialWeight) : '');
+  const [weightInput, setWeightInput] = useState(initialBody.weight ? String(initialBody.weight) : '');
 
   const videoRef = useRef(null);
   const skeletonCanvasRef = useRef(null);

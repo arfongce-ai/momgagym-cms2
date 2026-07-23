@@ -5,7 +5,7 @@
 // ✅ 트레이너별 세션 개별 카드
 import { useState, useEffect } from 'react';
 import { store } from '../../demoData';
-import { todayYMD, addMonthsYMD } from '../../utils/dates';
+import { todayYMD, addMonthsYMD, addDaysYMD } from '../../utils/dates';
 import { useAuth } from '../../contexts/AuthContext';
 import { ClassTypeCheckbox } from './MemberRegister';
 import AiMeasureReport     from '../ai/AiMeasureReport';
@@ -14,7 +14,7 @@ import {
   METHOD_LBL, METHOD_CLR, computeMonthRates, won,
   autoRefundUsedAmount, computeRefundEstimate, refundUnitPriceBasisLabel,
 } from '../../services/finance';
-import { buildMemberSessionExpiry, computeExpirySettlement, expirySettlementRate } from '../../services/sessionExpiry';
+import { buildMemberSessionExpiry, computeExpirySettlement, expirySettlementRate, suggestedExtensionDays } from '../../services/sessionExpiry';
 
 const INP = "w-full bg-slate-800 border border-slate-700 text-slate-100 rounded-xl px-3 py-2.5 text-sm placeholder-slate-500 focus:outline-none focus:border-amber-500";
 const LBL = "block text-xs font-semibold text-slate-400 uppercase tracking-widest mb-1.5";
@@ -587,6 +587,56 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
     } catch (e) { alert('정산 처리에 실패했습니다. 네트워크 확인 후 다시 시도하세요.'); }
   };
 
+  // 세션 유효기간 연장 수동 등록(관리자 전용, 이용약관 3항) — "10회 3개월+연장 3개월,
+  // 20회 6개월+연장 6개월" 정책의 연장분을 자동이 아닌 건별 등록으로 남긴다. 기본
+  // 제안 일수는 그 등록분의 기본 유효기간과 동일하되, 등록 시점에 일수를 바꿀 수 있다.
+  const handleRegisterExtension = async (lot) => {
+    if (busy) return;
+    const trainerName = trainerMap[lot.trainerId]?.name || lot.trainerId;
+    const suggested = suggestedExtensionDays(lot, settings);
+    const input = window.prompt(
+      `연장 등록 — ${member.name} · ${trainerName}\n${lot.label || '등록분'} (현재 만료일 ${lot.expiresAt || '?'})\n\n` +
+      `며칠 연장할까요? (기본 제안: ${suggested}일)`,
+      String(suggested)
+    );
+    if (input === null) return; // 취소
+    const days = Number(input.trim());
+    if (!(days > 0)) { alert('1일 이상의 숫자를 입력하세요.'); return; }
+    const newExpiresAt = lot.expiresAt ? addDaysYMD(days, lot.expiresAt) : '';
+    if (!window.confirm(
+      `${member.name} · ${trainerName}의 "${lot.label || '등록분'}" 유효기간을 ${days}일 연장합니다.\n` +
+      `만료일 ${lot.expiresAt || '?'} → ${newExpiresAt || '?'}\n\n진행할까요?`
+    )) return;
+    setBusy(true);
+    try {
+      const result = await store.registerExpiryExtension(member.id, {
+        trainerId: lot.trainerId, lotId: lot.id, paymentId: lot.paymentId, legacy: !!lot.legacy, days,
+      });
+      if (!result) { alert('이미 연장 등록된 등록분이거나 처리할 수 없습니다.'); return; }
+      refresh(); onUpdate?.();
+    } catch (e) { alert('연장 등록에 실패했습니다. 네트워크 확인 후 다시 시도하세요.'); }
+    finally { setBusy(false); }
+  };
+
+  // 연장 등록 취소(관리자 정정용) — 잘못 등록한 연장을 되돌려 원래 유효기간으로 복구한다.
+  const handleCancelExtension = async (lot) => {
+    if (busy) return;
+    const trainerName = trainerMap[lot.trainerId]?.name || lot.trainerId;
+    if (!window.confirm(
+      `${member.name} · ${trainerName}의 "${lot.label || '등록분'}" 연장 등록(+${lot.extension?.days ?? 0}일)을 취소할까요?\n` +
+      `취소하면 원래 유효기간(연장 전)으로 되돌아갑니다.`
+    )) return;
+    setBusy(true);
+    try {
+      const result = await store.cancelExpiryExtension(member.id, {
+        trainerId: lot.trainerId, lotId: lot.id, paymentId: lot.paymentId, legacy: !!lot.legacy,
+      });
+      if (!result) { alert('취소할 연장 등록 기록이 없습니다.'); return; }
+      refresh(); onUpdate?.();
+    } catch (e) { alert('연장 취소에 실패했습니다. 네트워크 확인 후 다시 시도하세요.'); }
+    finally { setBusy(false); }
+  };
+
   // 기존 재등록 결제의 '세션 시작일' 지정/변경 — 매출(결제일)은 그대로, 회차 소진 순서만 조정.
   const handleSetSessionStart = async (p) => {
     const cur = p.sessionStartDate || '';
@@ -803,11 +853,31 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
                             {l.label||'등록분'} · 미소진 {l.remaining}회
                             {l.status==='warning' && l.daysLeft!=null && ` · D-${l.daysLeft}`}
                           </p>
-                          {user?.role==='admin' && l.status==='expired' && (
-                            <button onClick={()=>handleExpirySettlement(l)}
-                              className="mt-2 w-full bg-red-500/20 hover:bg-red-500/30 border border-red-500/30 text-red-300 font-bold py-1.5 rounded-lg transition-colors">
-                              만료 정산 처리 (기존 {expirySettlementRate(l, settings)}% · {won(computeExpirySettlement(l, settings).amount)})
-                            </button>
+                          {l.extension && (
+                            <p className="text-emerald-400 mt-1 font-semibold">
+                              ✓ 연장 등록됨 (+{l.extension.days}일 · {l.extension.appliedAt} 등록)
+                            </p>
+                          )}
+                          {user?.role==='admin' && (
+                            <div className="mt-2 space-y-1.5">
+                              {l.status==='expired' && (
+                                <button onClick={()=>handleExpirySettlement(l)} disabled={busy}
+                                  className="w-full bg-red-500/20 hover:bg-red-500/30 border border-red-500/30 text-red-300 font-bold py-1.5 rounded-lg transition-colors disabled:opacity-50">
+                                  만료 정산 처리 (기존 {expirySettlementRate(l, settings)}% · {won(computeExpirySettlement(l, settings).amount)})
+                                </button>
+                              )}
+                              {l.extension ? (
+                                <button onClick={()=>handleCancelExtension(l)} disabled={busy}
+                                  className="w-full bg-slate-700/50 hover:bg-slate-700 border border-slate-600 text-slate-300 font-bold py-1.5 rounded-lg transition-colors disabled:opacity-50">
+                                  연장 취소
+                                </button>
+                              ) : (
+                                <button onClick={()=>handleRegisterExtension(l)} disabled={busy}
+                                  className="w-full bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/30 text-emerald-300 font-bold py-1.5 rounded-lg transition-colors disabled:opacity-50">
+                                  연장 등록 (+{suggestedExtensionDays(l, settings)}일 제안)
+                                </button>
+                              )}
+                            </div>
                           )}
                         </div>
                       ))}
