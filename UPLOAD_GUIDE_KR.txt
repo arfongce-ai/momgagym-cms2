@@ -1,0 +1,50 @@
+몸가짐 CMS 업로드 방법
+======================
+
+처음 한 번만 준비하기 (최초 1회)
+--------------------------------
+GitHub 자동 업로드가 작동하려면 PC가 GitHub 계정에 로그인돼 있어야 합니다.
+가장 쉬운 방법은 "GitHub Desktop"을 설치하고 한 번 로그인해 두는 것입니다.
+(Git 자체만 쓰는 경우, 처음 업로드 때 GitHub 로그인 창이 한 번 뜹니다.)
+
+1_GITHUB_UPLOAD.bat 을 처음 더블클릭하면,
+저장소 주소(Repository address)를 한 번 물어봅니다.
+아래처럼 본인 저장소 주소를 붙여넣고 Enter를 누르세요.
+  https://github.com/arfongce-ai/momgagym-cms2.git (이미 기본값으로 설정됨 — 그냥 Enter)
+한 번 입력하면 다음부터는 다시 묻지 않습니다.
+
+
+1. GitHub에 소스 올리기 (평소 사용)
+-----------------------------------
+파일을 수정한 뒤 아래 파일을 더블클릭하세요.
+
+  1_GITHUB_UPLOAD.bat
+
+중간에 "Write upload memo"가 나오면 간단히 메모를 쓰고 Enter를 누르면 됩니다.
+예: 자세 측정 떨림 보정 추가
+
+이 파일은 GitHub에 올리면 안 되는 node_modules, dist, assets, outputs 폴더를
+자동으로 제외합니다. 또 git 저장소 초기화와 주소 설정도 자동으로 처리합니다.
+
+
+2. Cloudflare에 배포 파일 만들기
+-------------------------------
+Cloudflare Pages에 올릴 파일이 필요할 때만 아래 파일을 더블클릭하세요.
+
+  2_CLOUDFLARE_BUILD.bat
+
+완료되면 dist 폴더가 자동으로 열립니다.
+Cloudflare에는 이 dist 폴더 안의 내용을 업로드하면 됩니다.
+(GitHub 연동 자동 배포를 쓰는 경우, 1번만 하면 Cloudflare가 알아서 배포합니다.)
+
+
+중요
+----
+GitHub에는 소스만 올립니다.
+Cloudflare에는 dist 빌드 결과만 올립니다.
+
+업로드가 실패하면 메시지를 확인하세요. 보통 원인은:
+ - GitHub 로그인이 안 돼 있음
+ - 인터넷 연결 문제
+ - 저장소에 쓰기 권한 없음
+ - 다른 곳에서 먼저 올린 변경이 있어 충돌 (이 경우 GitHub Desktop에서 Pull 먼저)

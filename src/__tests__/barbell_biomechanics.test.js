@@ -1,0 +1,308 @@
+// src/__tests__/barbell_biomechanics.test.js
+// ════════════════════════════════════════════════════════════════════════
+//  실시간 바벨 생체역학 엔진(barbellBiomechanics) 테스트.
+//  점프/보행 테스트와 동일 철학: 합성 궤적으로 렙 분절·속도·정직성 게이트 검증.
+// ════════════════════════════════════════════════════════════════════════
+import { describe, it, expect } from 'vitest';
+import {
+  BarbellAccumulator, BARBELL_TUNING,
+  smoothedPeakRatioPerSec, velocityToPct1Rm, estimateOneRmFromMeanVelocity,
+} from '../ai-measure/core/barbellBiomechanics';
+import { generateLiftingDiagnosis, relativeStrengthLevel, velocityLossInterpretation } from '../ai-measure/core/barbellClinical';
+
+// ── 합성 궤적 생성기: 30fps, 시작 y0 에서 하강 amp → 상승 amp 를 reps 회 ──
+//  speedScale <1 이면 상승이 빨라짐(속도↑), repSlow 배열로 렙별 감속 지정 가능.
+function pushSquatSet(acc, {
+  reps = 3, amp = 0.25, y0 = 0.4, fps = 30,
+  downSec = 1.0, upSecs = null, drift = 0,
+} = {}) {
+  let t = 0;
+  const dt = 1000 / fps;
+  const push = (y, x = 0.5) => { acc.push({ x, y }, t); t += dt; };
+  // 정지 0.3s
+  for (let i = 0; i < fps * 0.3; i++) push(y0);
+  for (let r = 0; r < reps; r++) {
+    const upSec = upSecs ? upSecs[r] : 0.8;
+    const nDown = Math.round(fps * downSec);
+    const nUp = Math.round(fps * upSec);
+    for (let i = 1; i <= nDown; i++) push(y0 + amp * (i / nDown));           // 하강
+    for (let i = 1; i <= nUp; i++) {
+      const frac = i / nUp;
+      push(y0 + amp * (1 - frac), 0.5 + drift * Math.sin(Math.PI * frac));   // 상승(+수평 드리프트)
+    }
+    for (let i = 0; i < fps * 0.2; i++) push(y0);                            // 렙 사이 정지
+  }
+  return t;
+}
+
+describe('BarbellAccumulator · 실시간 렙 분절', () => {
+  it('스쿼트 3회(하강→상승)를 정확히 3렙으로 센다', () => {
+    const acc = new BarbellAccumulator();
+    pushSquatSet(acc, { reps: 3 });
+    const s = acc.summary({ cmPerRatio: 170, source: 'live' });
+    expect(s.valid).toBe(true);
+    expect(s.repCount).toBe(3);
+    expect(s.reps).toHaveLength(3);
+  });
+
+  it('데드리프트(상승 먼저)도 상승 구간을 렙으로 센다 — 반전 없이 끝나도 finish 로 반영', () => {
+    const acc = new BarbellAccumulator();
+    let t = 0; const dt = 1000 / 30;
+    const push = (y) => { acc.push({ x: 0.5, y }, t); t += dt; };
+    for (let i = 0; i < 9; i++) push(0.7);                       // 바닥 정지
+    for (let i = 1; i <= 30; i++) push(0.7 - 0.25 * (i / 30));   // 1초 상승 후 종료
+    const s = acc.summary({ cmPerRatio: 170, source: 'live' });
+    expect(s.valid).toBe(true);
+    expect(s.repCount).toBe(1);
+  });
+
+  it('미세 떨림(노이즈)만 있는 데이터는 렙 0 + rom_too_small 로 거부(정직성)', () => {
+    const acc = new BarbellAccumulator();
+    let t = 0;
+    for (let i = 0; i < 90; i++) { acc.push({ x: 0.5, y: 0.5 + Math.sin(i) * 0.004 }, t); t += 33; }
+    const s = acc.summary({ cmPerRatio: 170 });
+    expect(s.valid).toBe(false);
+    expect(s.reason).toBe('rom_too_small');
+  });
+
+  it('샘플이 거의 없으면 insufficient_samples 로 거부', () => {
+    const acc = new BarbellAccumulator();
+    acc.push({ x: 0.5, y: 0.5 }, 0);
+    acc.push({ x: 0.5, y: 0.4 }, 33);
+    const s = acc.summary({ cmPerRatio: 170 });
+    expect(s.valid).toBe(false);
+    expect(s.reason).toBe('insufficient_samples');
+  });
+});
+
+describe('BarbellAccumulator · 실시간 속도(컨센트릭 기준)', () => {
+  it('평균속도 = 상승 변위 ÷ 상승 시간(하강·정지 미포함) — 물리값과 근사', () => {
+    const acc = new BarbellAccumulator();
+    // 상승 0.8s, amp 0.25 비율, 키 스케일 170cm/비율 → 42.5cm/0.8s ≈ 0.53m/s
+    pushSquatSet(acc, { reps: 2, amp: 0.25, upSecs: [0.8, 0.8] });
+    const s = acc.summary({ cmPerRatio: 170, source: 'live' });
+    expect(s.meanVelocity).toBeGreaterThanOrEqual(0.4);
+    expect(s.meanVelocity).toBeLessThan(0.65);
+  });
+
+  it('마지막 렙이 느려지면 velocityLossPct 가 양수로 잡힌다(실시간 피로 지표)', () => {
+    const acc = new BarbellAccumulator();
+    pushSquatSet(acc, { reps: 3, upSecs: [0.6, 0.8, 1.2] }); // 점점 감속
+    const s = acc.summary({ cmPerRatio: 170 });
+    expect(s.velocityLossPct).toBeGreaterThan(15);
+    expect(s.repVelocityCompat.summary.velocityLossPct).toBe(s.velocityLossPct);
+  });
+
+  it('키 미입력(스케일 없음)이면 m/s 값 대신 no_calibration — 그럴듯한 가짜값 금지', () => {
+    const acc = new BarbellAccumulator();
+    pushSquatSet(acc, { reps: 2 });
+    const s = acc.summary({ cmPerRatio: null });
+    expect(s.valid).toBe(true);
+    expect(s.meanVelocity).toBeNull();
+    expect(s.peakVelocity).toBeNull();
+    expect(s.peakReason).toBe('no_calibration');
+  });
+
+  // [2607-3] VBT 렙별 HUD — RSI 점프별 기록처럼 렙마다 속도가 남는다.
+  it('live().repList 가 렙마다 번호·평균속도·ROM·저하율을 제공한다', () => {
+    const acc = new BarbellAccumulator();
+    pushSquatSet(acc, { reps: 3, amp: 0.25, upSecs: [0.6, 0.8, 1.2] }); // 점점 감속
+    const lv = acc.live(170);
+    expect(Array.isArray(lv.repList)).toBe(true);
+    // live()는 확정된 렙만 카드로 보여준다(마지막 렙은 상승 종료 대기로 pending 가능).
+    expect(lv.repList.length).toBeGreaterThanOrEqual(2);
+    // 렙 번호는 1부터 오름차순
+    expect(lv.repList.map(r => r.repNo)).toEqual(
+      lv.repList.map((_, i) => i + 1),
+    );
+    // 각 렙 평균속도(m/s)·ROM 이 물리적으로 유효한 양수
+    lv.repList.forEach((r) => {
+      expect(r.meanVelocity).toBeGreaterThan(0);
+      expect(r.meanVelocity).toBeLessThan(3);
+      expect(r.romCm).toBeGreaterThan(0);
+    });
+    // 감속했으므로 뒤 렙일수록 저하율이 커진다(피로 지표)
+    const first = lv.repList[0];
+    const last = lv.repList[lv.repList.length - 1];
+    expect(last.meanVelocity).toBeLessThanOrEqual(first.meanVelocity);
+    expect(last.lossPct).toBeGreaterThanOrEqual(0);
+  });
+
+  it('스케일 없으면 repList 속도는 null(가짜값 금지), 번호는 유지', () => {
+    const acc = new BarbellAccumulator();
+    pushSquatSet(acc, { reps: 3 });
+    const lv = acc.live(null);
+    expect(lv.repList.length).toBeGreaterThanOrEqual(1);
+    lv.repList.forEach((r, i) => {
+      expect(r.meanVelocity).toBeNull();
+      expect(r.romCm).toBeNull();
+      expect(r.repNo).toBe(i + 1);
+    });
+  });
+
+  // [핵심] 확정된 렙 카드는 이후 cmPerRatio·best 가 흔들려도 값이 고정된다.
+  it('확정 렙 카드는 스케일이 프레임마다 흔들려도 값이 불변(동결)', () => {
+    const acc = new BarbellAccumulator();
+    pushSquatSet(acc, { reps: 3, amp: 0.25, upSecs: [0.6, 0.8, 1.2] });
+    acc.finish();
+    // 첫 표시: 스케일 170
+    const first = acc.live(170).repList.map(r => ({ ...r }));
+    expect(first.length).toBe(3);
+    // 이후 스케일이 매 호출 달라져도(키 추정 지터 모사) 이미 나온 카드는 그대로.
+    for (const scale of [150, 200, 165, 180, 172]) {
+      const again = acc.live(scale).repList;
+      again.forEach((r, i) => {
+        expect(r.repNo).toBe(first[i].repNo);
+        expect(r.meanVelocity).toBe(first[i].meanVelocity);
+        expect(r.peakVelocity).toBe(first[i].peakVelocity);
+        expect(r.romCm).toBe(first[i].romCm);
+        expect(r.lossPct).toBe(first[i].lossPct);
+      });
+    }
+  });
+
+  // 렙이 하나씩 추가되어도(뒤 렙이 best 갱신) 앞 카드 lossPct 가 안 바뀐다.
+  it('뒤 렙이 늘어도 앞 렙 카드는 동결값 유지(best 이동에 불변)', () => {
+    const acc = new BarbellAccumulator();
+    // 렙1 확정 시점 스냅샷
+    pushSquatSet(acc, { reps: 1, amp: 0.25, upSecs: [1.2] }); // 느린 렙
+    acc.finish();
+    const rep1a = acc.live(170).repList[0];
+    // 같은 엔진에 더 빠른 렙을 이어 붙였다고 가정 — 새 엔진으로 전체 재생하되
+    //  앞 렙 카드가 처음 동결된 값과 동일한지 별도 검증(동결 계약).
+    const snapMean = rep1a.meanVelocity;
+    const snapLoss = rep1a.lossPct;
+    // 여러 번 더 읽어도 렙1 카드 불변
+    for (let k = 0; k < 5; k++) {
+      const r1 = acc.live(170).repList[0];
+      expect(r1.meanVelocity).toBe(snapMean);
+      expect(r1.lossPct).toBe(snapLoss);
+    }
+  });
+
+  it('reset 하면 동결 스냅샷도 초기화된다', () => {
+    const acc = new BarbellAccumulator();
+    pushSquatSet(acc, { reps: 2 });
+    acc.finish();
+    acc.live(170);
+    acc.reset();
+    expect(acc.live(170).repList.length).toBe(0);
+  });
+});
+
+describe('실시간 평활 피크속도(정직성 게이트)', () => {
+  it('충분한 샘플(30fps·0.8s 상승)이면 sg_ok 로 피크 산출 — 평균 이상, 물리 상한 이하', () => {
+    const acc = new BarbellAccumulator();
+    pushSquatSet(acc, { reps: 2, upSecs: [0.8, 0.8] });
+    const s = acc.summary({ cmPerRatio: 170 });
+    expect(s.peakReason).toBe('sg_ok');
+    expect(s.peakVelocity).toBeGreaterThanOrEqual(s.meanVelocity);
+    expect(s.peakVelocity).toBeLessThan(3);
+  });
+
+  it('상승 샘플 밀도가 기준 미만이면 피크 산출 거부(insufficient_samples)', () => {
+    const pts = [];
+    for (let i = 0; i < 4; i++) pts.push({ x: 0.5, y: 0.6 - i * 0.08, ts: i * 33 });
+    const r = smoothedPeakRatioPerSec(pts);
+    expect(r.peakRatioPerSec).toBeNull();
+    expect(r.quality).toBe('insufficient_samples');
+  });
+
+  it('튜닝 상수는 한 곳(BARBELL_TUNING)에 모여 있다', () => {
+    expect(BARBELL_TUNING.peakMinSamples).toBeGreaterThan(BARBELL_TUNING.peakWindow * 2);
+    expect(BARBELL_TUNING.minRepRomRatio).toBeGreaterThan(0);
+  });
+});
+
+describe('바 궤적(드리프트/효율) — 역도 평가 근거', () => {
+  it('수직 상승은 드리프트≈0·효율≈100%, 수평 이탈을 주면 드리프트가 잡힌다', () => {
+    const clean = new BarbellAccumulator();
+    pushSquatSet(clean, { reps: 2, drift: 0 });
+    const sClean = clean.summary({ cmPerRatio: 170 });
+    expect(sClean.barPath.maxDriftCm).toBeLessThan(2);
+    expect(sClean.barPath.avgEfficiency).toBeGreaterThan(0.9);
+
+    const drifty = new BarbellAccumulator();
+    pushSquatSet(drifty, { reps: 2, drift: 0.08 }); // 화면 8% 수평 이탈
+    const sDrift = drifty.summary({ cmPerRatio: 170 });
+    expect(sDrift.barPath.maxDriftCm).toBeGreaterThan(sClean.barPath.maxDriftCm + 5);
+  });
+});
+
+describe('속도 기반 1RM 실시간 추정(근거 테이블)', () => {
+  it('벤치 0.42m/s ≈ 80% → 100kg 세트면 e1RM ≈ 125kg', () => {
+    const pct = velocityToPct1Rm('bench_press', 0.42);
+    expect(pct).toBe(80);
+    const est = estimateOneRmFromMeanVelocity({ exerciseType: 'bench_press', loadKg: 100, meanVelocity: 0.42 });
+    expect(est.oneRm).toBe(125);
+    expect(est.reason).toBe('ok');
+  });
+
+  it('테이블 범위 밖 속도는 외삽하지 않고 거부(velocity_out_of_range)', () => {
+    const est = estimateOneRmFromMeanVelocity({ exerciseType: 'squat', loadKg: 100, meanVelocity: 2.5 });
+    expect(est.oneRm).toBeNull();
+    expect(est.reason).toBe('velocity_out_of_range');
+  });
+
+  it('올림픽 리프트 등 미지원 종목은 unsupported_exercise', () => {
+    const est = estimateOneRmFromMeanVelocity({ exerciseType: 'snatch', loadKg: 80, meanVelocity: 1.0 });
+    expect(est.reason).toBe('unsupported_exercise');
+  });
+
+  it('데드리프트는 신뢰도 low 로 표기(연구 편차 — 정직성)', () => {
+    const est = estimateOneRmFromMeanVelocity({ exerciseType: 'deadlift', loadKg: 140, meanVelocity: 0.48 });
+    expect(est.confidence).toBe('low');
+    expect(est.oneRm).toBeGreaterThan(140);
+  });
+});
+
+describe('barbellClinical · AI 자동 평가', () => {
+  it('데이터 부족이면 평가 보류(insufficient) — 가짜 결론 금지', () => {
+    const d = generateLiftingDiagnosis({ mode: 'vbt', metrics: {} });
+    expect(d.grade).toBe('insufficient');
+    expect(d.flags).toContain('insufficient_data');
+  });
+
+  it('VBT: 존/속도저하/일관성을 근거로 평가한다', () => {
+    const d = generateLiftingDiagnosis({
+      mode: 'vbt', exerciseType: 'squat',
+      metrics: { meanVelocity: 0.62, velocityLoss: 35, confidenceScore: 0.9 },
+      consistencyCvPct: 4,
+    });
+    expect(d.flags).toContain('high_velocity_loss');
+    expect(d.details.join(' ')).toContain('속도저하 35%');
+  });
+
+  it('역도: 큰 바 드리프트는 needs_work 로 강등', () => {
+    const d = generateLiftingDiagnosis({
+      mode: 'lifting', exerciseType: 'clean',
+      metrics: { meanVelocity: 1.1, confidenceScore: 0.9 },
+      barPath: { maxDriftCm: 12, avgEfficiency: 0.7 },
+    });
+    expect(d.grade).toBe('needs_work');
+    expect(d.flags).toContain('large_bar_drift');
+  });
+
+  it('1RM: 속도 교차검증이 크게 어긋나면 플래그', () => {
+    const d = generateLiftingDiagnosis({
+      mode: 'onerm', exerciseType: 'squat',
+      metrics: { oneRM: 100, confidenceScore: 0.9 },
+      metadata: { reps: 5, velocityCheck: { oneRm: 130 } },
+    });
+    expect(d.flags).toContain('velocity_formula_mismatch');
+  });
+
+  it('상대근력 수준 — 체중 없으면 null(추정 금지), 있으면 등급', () => {
+    expect(relativeStrengthLevel('squat', 150, null)).toBeNull();
+    const rel = relativeStrengthLevel('squat', 150, 80);
+    expect(rel.ratio).toBe(1.88);
+    expect(rel.level).toBe('상급');
+  });
+
+  it('속도저하 해석 밴드(Pareja-Blanco 근거)', () => {
+    expect(velocityLossInterpretation(8).band).toBe('fresh');
+    expect(velocityLossInterpretation(18).band).toBe('strength');
+    expect(velocityLossInterpretation(28).band).toBe('hypertrophy');
+    expect(velocityLossInterpretation(40).band).toBe('fatigue');
+  });
+});

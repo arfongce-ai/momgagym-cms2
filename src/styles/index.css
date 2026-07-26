@@ -1,0 +1,156 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================================
+   몸가짐 CMS 디자인 시스템
+   다크 슬레이트 + 앰버 강조 + JetBrains Mono(숫자)
+   공통 컴포넌트 클래스로 화면 간 통일감 확보
+   ============================================================ */
+
+@layer base {
+  :root {
+    --bg:#0b1120; --surface:#0f172a; --surface-2:#1e293b;
+    --border:#1e293b; --border-2:#334155;
+    --text:#f1f5f9; --text-dim:#94a3b8; --text-mute:#64748b;
+    --accent:#f59e0b; --accent-2:#fbbf24;
+    --ok:#34d399; --warn:#fbbf24; --bad:#f87171; --info:#22d3ee;
+  }
+  html { font-family:'Pretendard', system-ui, -apple-system, 'Segoe UI', sans-serif; }
+  body { background:var(--bg); color:var(--text); min-height:100vh; }
+  * { -webkit-tap-highlight-color:transparent; box-sizing:border-box; }
+  ::-webkit-scrollbar { width:4px; height:4px; }
+  ::-webkit-scrollbar-track { background:var(--surface-2); }
+  ::-webkit-scrollbar-thumb { background:#475569; border-radius:99px; }
+  .num, .font-mono { font-family:'JetBrains Mono', monospace; font-variant-numeric:tabular-nums; }
+}
+
+@layer components {
+  .btn { @apply inline-flex items-center justify-center gap-1.5 rounded-xl font-bold text-sm py-3 px-4 transition-all active:scale-[0.97] select-none; }
+  .btn-primary { @apply bg-amber-500 text-slate-950 hover:bg-amber-400 shadow-lg shadow-amber-500/10; }
+  .btn-ghost { @apply border border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white; }
+  .btn-danger { @apply border border-red-500/30 text-red-400 hover:bg-red-500/10; }
+  .btn-sm { @apply py-2 px-3 text-xs rounded-lg; }
+
+  .card { @apply bg-slate-900 border border-slate-800 rounded-2xl; }
+  .card-accent { @apply bg-slate-900 border border-amber-500/30 rounded-2xl; }
+  .panel { @apply bg-slate-800 rounded-xl; }
+
+  .input { @apply w-full bg-slate-800 border border-slate-700 text-slate-100 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-amber-500 transition-colors; }
+  .input-mono { @apply w-full bg-slate-800 border border-slate-700 text-slate-100 rounded-xl px-3 py-2.5 text-sm font-mono focus:outline-none focus:border-amber-500 transition-colors; }
+  .label { @apply block text-xs font-semibold text-slate-400 uppercase tracking-widest mb-1.5; }
+
+  .seg { @apply flex gap-1 rounded-xl bg-slate-800 p-1; }
+  .seg-item { @apply flex-1 rounded-lg py-1.5 text-xs font-bold text-center text-slate-400 transition-colors; }
+  .seg-item-active { @apply bg-amber-500 text-slate-950; }
+
+  .badge { @apply inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold; }
+  .badge-ok { @apply text-emerald-400 bg-emerald-500/10; }
+  .badge-warn { @apply text-amber-400 bg-amber-500/10; }
+  .badge-bad { @apply text-red-400 bg-red-500/10; }
+
+  .metric-row { @apply flex items-center justify-between bg-slate-800 rounded-xl px-3 py-2.5; }
+  .metric-label { @apply text-xs text-slate-400; }
+  .metric-value { @apply font-mono font-black text-sm text-slate-100; }
+
+  .measure-head { @apply flex items-center justify-between mb-1; }
+  .measure-title { @apply text-lg font-black text-slate-100; }
+  .measure-back { @apply text-slate-400 text-sm hover:text-white transition-colors; }
+
+  /* 측정 카메라 — 컨트롤·무게입력이 한 화면에 함께 보이도록 적당한 높이로 제한.
+     세로로 너무 길면 색인식·측정 버튼이 화면 밖으로 밀려 스크롤이 필요해진다.
+     aspect-ratio로 화면 너비에 비례하되, 최대 높이를 화면의 절반 정도로 묶는다. */
+  .measure-camera {
+    @apply relative w-full overflow-hidden bg-black;
+    aspect-ratio: 3 / 4;
+    max-height: 52dvh;
+    border-radius: 1rem;
+  }
+
+  /* 풀스크린 카메라 스테이지 — 화면 전체를 덮고 모든 컨트롤을 영상 위에 오버레이.
+     스크롤 없이 한 화면에서 측정→확인이 끝난다. */
+  .cam-stage {
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    background: #000;
+    overflow: hidden;
+  }
+}
+
+/* 측정 카메라가 떠 있는 동안 페이지 스크롤/여백 제거(꽉 차게) */
+.measure-fullscreen-page {
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.page-fade { animation:fadeIn 0.2s ease; }
+.animate-fade-in { animation:fadeIn 0.2s ease forwards; }
+@keyframes fadeIn { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:translateY(0); } }
+[data-theme="light"] body, .light-mode { background:#f8fafc; color:#0f172a; }
+canvas { touch-action:none; }
+
+/* ===== 모달 공통 (모든 등록/상세 창에 적용) ===== */
+/* 바깥: 화면 전체를 덮는 어두운 배경 + 가운데 정렬 + 넘치면 배경 스크롤 */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(0,0,0,0.7);
+  backdrop-filter: blur(4px);
+  overflow-y: auto;            /* 창이 화면보다 길면 배경이 스크롤됨 */
+  -webkit-overflow-scrolling: touch;
+}
+/* 안쪽: 실제 창. 중앙 + 반응형 너비 + 화면 85% 높이 제한 + 내부 스크롤 */
+.modal-box {
+  width: 100%;
+  max-width: 680px;
+  max-height: 92vh;            /* 구형 브라우저 폴백 */
+  max-height: 92dvh;           /* 최신 모바일(주소창 대응) */
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;            /* 모서리 둥글게 유지 */
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 16px;
+  box-shadow: 0 25px 50px -12px rgba(0,0,0,0.6);
+  margin: auto;                /* 세로로도 가운데 */
+}
+/* 안쪽 본문(스크롤되는 영역) */
+.modal-body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  min-height: 0;
+  -webkit-overflow-scrolling: touch;
+}
+.modal-box-large {
+  max-width: 960px;
+  height: calc(100vh - 16px);
+  height: calc(100dvh - 16px);
+  max-height: calc(100vh - 16px);
+  max-height: calc(100dvh - 16px);
+}
+.modal-box::-webkit-scrollbar, .modal-body::-webkit-scrollbar { width: 8px; }
+.modal-box::-webkit-scrollbar-thumb, .modal-body::-webkit-scrollbar-thumb { background:#475569; border-radius:4px; }
+
+/* ── AI 측정·분석: 세로 안내 오버레이 ──
+   (자동 회전 잠금이 불가한 브라우저에서 가로가 되면 useLockPortrait 가
+   안내 오버레이를 띄운다. 과거 body 회전 폴백은 일부 기기 블랙아웃 문제로 제거) */
+.ai-rotate-hint {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  background: #0f172a;
+  color: #e2e8f0;
+  text-align: center;
+  padding: 24px;
+}

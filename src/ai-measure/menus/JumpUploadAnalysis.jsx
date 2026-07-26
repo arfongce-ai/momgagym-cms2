@@ -1,0 +1,367 @@
+// ai-measure/menus/JumpUploadAnalysis.jsx
+// ════════════════════════════════════════════════════════════════════════
+//  점프 정밀 측정 (업로드) — 고속촬영(120/240fps) 영상 분석
+//   GaitUploadAnalysis 와 동일한 엔진(analyzeUploadedVideo)·프리셋 사용.
+//   · 슬로모 배수(playbackRate)로 tMs 를 실제 시간축으로 보정 → 비행시간 정확
+//   · 캘리브레이션은 영상 앞부분의 '서 있는 프레임'에서 자동 수행
+//   · 비행시간 높이 + 골반변위 교차검증 + 키 sanity → valid
+//   · 분석 프레임 수 / 평균 fps / 저신뢰 구간 수를 정밀도 리포트로 표시
+// ════════════════════════════════════════════════════════════════════════
+import React, { useState, useRef, useCallback, useEffect } from 'react';
+import {
+  StandingCalibrator, JumpFlightTracker,
+  JumpBiomechAccumulator, jumpPhaseOf,
+} from '../core/jumpBiomechanics';
+import { calcJump } from '../core/performance';
+import { computeRSIFromFlights } from '../core/reactiveJump';
+import { store } from '../../demoData';
+
+// 회원 신체기록(body)에서 최신 체중·키를 가져온다. (Sayers 파워 계산에 체중 필요)
+// member 객체에 직접 없을 수 있으므로 store.getBodyRecords 로 최신 기록을 조회한다.
+function resolveBodyMetrics(member, fallbackHeight, fallbackWeight = null) {
+  let weight = member?.weight != null ? Number(member.weight) : fallbackWeight;
+  let height = member?.height != null ? Number(member.height) : (fallbackHeight ?? null);
+  try {
+    if (member?.id && typeof store?.getBodyRecords === 'function') {
+      const recs = store.getBodyRecords(member.id) || [];
+      if (recs.length) {
+        // recordedAt 최신 기록 우선
+        const sorted = [...recs].sort((a, b) => String(b.recordedAt).localeCompare(String(a.recordedAt)));
+        for (const r of sorted) {
+          if (weight == null && r.weight != null) weight = Number(r.weight);
+          if (height == null && r.height != null) height = Number(r.height);
+          if (weight != null && height != null) break;
+        }
+      }
+    }
+  } catch (e) { /* 조회 실패 시 member/fallback 값 사용 */ }
+  return { weight: Number.isFinite(weight) ? weight : null, height: Number.isFinite(height) ? height : null };
+}
+import { analyzeUploadedVideo, CAPTURE_PRESETS } from '../core/videoAnalyzer';
+
+// 프레임 신뢰도(가시성) 하한 — 이하 구간은 '주의 구간'으로 집계
+const FRAME_CONF_MIN = 0.8;
+
+export default function JumpUploadAnalysis({ member, onBack, onComplete, onMemberHeightChange, jumpType = 'power' }) {
+  const [phase, setPhase] = useState('idle'); // idle | ready | analyzing | done | error
+  const [progress, setProgress] = useState(0);
+  const [errorMsg, setErrorMsg] = useState('');
+  const [fileName, setFileName] = useState('');
+  const [capture, setCapture] = useState('slowmo240');
+  const [heightCm, setHeightCm] = useState(member?.height ? Number(member.height) : null);
+  const [bodyWeight, setBodyWeight] = useState(member?.weight ? Number(member.weight) : null);
+  const [needHeight, setNeedHeight] = useState(!member?.height || (!member?.id && !member?.weight));
+  const [heightInput, setHeightInput] = useState('');
+  const [weightInput, setWeightInput] = useState(member?.weight ? String(member.weight) : '');
+
+  const videoRef = useRef(null);
+  const fileUrlRef = useRef(null);
+  const abortRef = useRef(null);
+
+  const handleFile = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('video/')) { setErrorMsg('영상 파일을 선택해 주세요.'); return; }
+    setErrorMsg(''); setFileName(file.name);
+    if (fileUrlRef.current) URL.revokeObjectURL(fileUrlRef.current);
+    const url = URL.createObjectURL(file);
+    fileUrlRef.current = url;
+    const v = videoRef.current;
+    if (v) { v.src = url; v.onloadedmetadata = () => setPhase('ready'); }
+  };
+
+  const runAnalysis = useCallback(async () => {
+    const video = videoRef.current;
+    if (!video) return;
+    setPhase('analyzing'); setProgress(0); setErrorMsg('');
+
+    // 체중·키는 회원 신체기록(body)에서 최신값을 가져온다(파워 계산용).
+    // member 에 직접 없을 수 있으므로 store 의 body 기록을 조회한다.
+    const resolved = resolveBodyMetrics(member, heightCm, bodyWeight);
+    const effHeightCm = resolved.height ?? heightCm;
+    const effWeight = resolved.weight;
+
+    const calib = new StandingCalibrator({ heightCm: effHeightCm });
+    let tracker = null;
+    const biomechAcc = new JumpBiomechAccumulator({ heightCm: effHeightCm });
+    let prevInAir = false;
+    let landFramesLeft = 0;            // 착지 직후 'land' 위상으로 볼 프레임 수
+    const LAND_WINDOW = 10;           // 착지 후 약 10프레임을 충격 흡수 구간으로
+    let analyzedFrames = 0, lowConfFrames = 0;
+    const lowConfTimes = []; // 주의 구간(저신뢰) realMs 목록
+    const tsList = [];       // 실측 평균 fps 계산용 (realMs)
+
+    const abort = new AbortController();
+    abortRef.current = abort;
+    const preset = CAPTURE_PRESETS[capture] || CAPTURE_PRESETS.normal;
+
+    try {
+      const result = await analyzeUploadedVideo({
+        video, signal: abort.signal,
+        targetFps: preset.targetFps, playbackRate: preset.playbackRate,
+        onProgress: setProgress,
+        onFrame: ({ landmarks, tMs, realMs }) => {
+          analyzedFrames++;
+          tsList.push(realMs);
+          // 프레임 신뢰도: 발/골반 핵심 관절 가시성 평균
+          const key = [23, 24, 27, 28].map(i => landmarks[i]?.visibility ?? 0);
+          const conf = key.reduce((s, x) => s + x, 0) / key.length;
+          if (conf < FRAME_CONF_MIN) { lowConfFrames++; lowConfTimes.push(realMs); }
+
+          // 앞부분: 캘리브레이션. 락되면 트래커 생성 후 점프 검출.
+          if (!calib.locked) {
+            calib.push(landmarks);
+            if (calib.locked) {
+              tracker = new JumpFlightTracker(calib.result);
+              tracker.calibHeightCm = effHeightCm;
+            }
+          } else if (tracker) {
+            tracker.push(landmarks, tMs); // tMs = 슬로모 보정된 실제 시간축
+            // ── 위상 판정 후 생체역학 누적 ──
+            const curInAir = tracker.inAir;
+            const justTookOff = !prevInAir && curInAir;
+            const justLanded = prevInAir && !curInAir;
+            if (justLanded) landFramesLeft = LAND_WINDOW;
+            const landActive = landFramesLeft > 0;
+            const { phase: jp } = jumpPhaseOf(prevInAir, curInAir, landActive);
+            biomechAcc.push(landmarks, tMs, jp, justTookOff);
+            if (landActive && !curInAir) landFramesLeft--;
+            prevInAir = curInAir;
+          }
+        },
+      });
+
+      if (result.aborted) { setPhase('ready'); return; }
+
+      if (!calib.locked) {
+        setErrorMsg('영상 앞부분에서 안정적으로 서 있는 자세를 찾지 못했습니다. 점프 전 1초 이상 똑바로 서 있는 영상을 사용하세요.');
+        setPhase('error'); return;
+      }
+
+      const sum = tracker ? tracker.summary({ heightCm: effHeightCm })
+        : { valid: false, reason: 'no_jump', jumps: 0 };
+      const power = calcJump(sum.flightTimeSec, effWeight);
+
+      // ── 정밀도 리포트 (요구사항 3) ──
+      // 실측 평균 fps: 분석한 프레임의 realMs 간격으로 역산. 컨테이너 기준.
+      let avgFps = null, fpsJitter = null;
+      if (tsList.length > 2) {
+        const sorted = [...tsList].sort((a, b) => a - b);
+        const gaps = [];
+        for (let i = 1; i < sorted.length; i++) gaps.push(sorted[i] - sorted[i - 1]);
+        const meanGap = gaps.reduce((s, x) => s + x, 0) / gaps.length;
+        avgFps = meanGap > 0 ? Math.round(1000 / meanGap) : null;
+        const gStd = Math.sqrt(gaps.reduce((s, x) => s + (x - meanGap) ** 2, 0) / gaps.length);
+        fpsJitter = meanGap > 0 ? Math.round((gStd / meanGap) * 100) : null; // 변동계수(%)
+      }
+
+      const precision = {
+        analyzedFrames,
+        lowConfFrames,
+        lowConfPct: analyzedFrames ? Math.round(lowConfFrames / analyzedFrames * 1000) / 10 : 0,
+        cautionWindows: lowConfTimes.slice(0, 20), // 주의 구간 타임스탬프(ms, 상위 20)
+        captureMode: capture,
+        playbackRate: result.playbackRate,
+        samplingFps: preset.targetFps,        // 분석 샘플링 레이트(목표)
+        measuredAvgFps: avgFps,               // 실측 평균 fps(컨테이너)
+        fpsJitterPct: fpsJitter,              // fps 변동(%) — VFR 경고용
+        durationSec: Math.round((result.realDurationSec || 0) * 100) / 100,
+      };
+
+      const biomech = biomechAcc.summary();
+
+      // ── 반응 탄성 점프 모드: 사이클 간 접지시간으로 RSI 산출 ──
+      // 측면 뷰 강제: biomech.view 가 'side'가 아니면 코어가 무효 처리한다.
+      let rsiResult = null;
+      if (jumpType === 'reactive' && tracker) {
+        const frameIntervalMs = avgFps ? Math.round(1000 / avgFps) : null;
+        rsiResult = computeRSIFromFlights(tracker.flights, {
+          frameIntervalMs,
+          view: biomech?.view,
+        });
+      }
+
+      const report = {
+        ...sum,
+        peakPower: power?.peakPower ?? null,
+        takeoffVelocity: sum.takeoffVelocity ?? power?.takeoffVelocity ?? null,
+        calibHeightCm: effHeightCm,
+        jumpType,
+        rsi: rsiResult,
+        source: 'upload',
+        precision,
+        biomech, // 자세·기술·대칭성 상세 지표
+        member: { id: member?.id || null, name: member?.name || null },
+        measuredAt: new Date().toISOString(),
+      };
+      if (jumpType === 'reactive') {
+        report.valid = report.valid === true && rsiResult?.valid === true;
+        if (rsiResult && rsiResult.valid !== true) report.reason = rsiResult.reason;
+      }
+
+      setPhase('done');
+      if (typeof onComplete === 'function') await onComplete(report);
+    } catch (e) {
+      setErrorMsg(e?.message || '분석 중 오류가 발생했습니다.');
+      setPhase('error');
+    } finally {
+      abortRef.current = null;
+    }
+  }, [member, onComplete, capture, heightCm, bodyWeight]);
+
+  const cancelAnalysis = () => { abortRef.current?.abort(); };
+
+  useEffect(() => () => {
+    abortRef.current?.abort();
+    if (fileUrlRef.current) URL.revokeObjectURL(fileUrlRef.current);
+  }, []);
+
+  const applyHeight = () => {
+    const h = Number(heightInput || heightCm);
+    const w = Number(weightInput || bodyWeight);
+    if (!h || h < 80 || h > 250) { setErrorMsg('키를 80~250cm로 입력하세요.'); return; }
+    if (!w || w < 20 || w > 250) { setErrorMsg('몸무게를 20~250kg으로 입력하세요.'); return; }
+    setHeightCm(h); setBodyWeight(w); setNeedHeight(false); setErrorMsg('');
+    onMemberHeightChange?.(h);
+  };
+
+  const pct = Math.round(progress * 100);
+
+  // 키 입력 팝업 (요구사항 2)
+  if (needHeight) {
+    return (
+      <div className="absolute inset-0 bg-slate-950 flex flex-col">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800">
+          <button onClick={onBack} className="text-slate-300 font-bold text-sm">← 뒤로</button>
+          <h2 className="text-white font-black">점프 정밀 측정</h2>
+          <div className="w-12" />
+        </div>
+        <div className="flex-1 flex items-center justify-center p-6">
+          <div className="w-full max-w-sm bg-slate-900 border border-amber-500/30 rounded-2xl p-5 space-y-4">
+            <div className="text-center space-y-1">
+              <p className="text-3xl">📏</p>
+              <p className="text-white font-black">키와 몸무게가 필요합니다</p>
+              <p className="text-slate-400 text-xs">cm 환산과 파워 계산에 필요합니다.</p>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <label className="block">
+                <span className="mb-1 block text-[10px] font-bold text-slate-500">키</span>
+                <div className="flex items-center gap-2">
+                  <input type="number" inputMode="numeric" value={heightInput}
+                    onChange={e => setHeightInput(e.target.value)} placeholder="170"
+                    className="min-w-0 flex-1 bg-slate-800 border border-slate-700 text-slate-100 rounded-lg px-3 py-2.5 text-sm font-mono focus:outline-none focus:border-amber-500" />
+                  <span className="text-slate-400 text-xs font-bold">cm</span>
+                </div>
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-[10px] font-bold text-slate-500">몸무게</span>
+                <div className="flex items-center gap-2">
+                  <input type="number" inputMode="decimal" value={weightInput}
+                    onChange={e => setWeightInput(e.target.value)} placeholder="70"
+                    className="min-w-0 flex-1 bg-slate-800 border border-slate-700 text-slate-100 rounded-lg px-3 py-2.5 text-sm font-mono focus:outline-none focus:border-amber-500" />
+                  <span className="text-slate-400 text-xs font-bold">kg</span>
+                </div>
+              </label>
+            </div>
+            <button onClick={applyHeight} className="w-full rounded-xl bg-amber-500 text-slate-950 font-black py-3 active:scale-95">
+              입력하고 계속
+            </button>
+            {errorMsg && <p className="text-center text-xs text-red-400">{errorMsg}</p>}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="absolute inset-0 bg-slate-950 flex flex-col">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800">
+        <button onClick={onBack} className="text-slate-300 font-bold text-sm">← 뒤로</button>
+        <h2 className="text-white font-black">고속영상 점프 분석</h2>
+        <div className="w-12" />
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-5 flex flex-col items-center justify-center gap-5">
+        <div className="relative w-full max-w-md overflow-hidden rounded-xl bg-black aspect-[3/4]">
+          <video ref={videoRef} className="h-full w-full object-contain"
+            playsInline muted controls={phase === 'ready' || phase === 'done'} />
+          {phase === 'analyzing' && (
+            <div className="absolute left-3 top-3 rounded-full border border-white/15 bg-black/70 px-3 py-1 text-xs font-black text-amber-300 backdrop-blur">
+              {jumpType === 'reactive' ? 'RSI 분석 중' : '파워 점프 분석 중'}
+            </div>
+          )}
+        </div>
+
+        {heightCm && (
+          <p className="text-[11px] text-emerald-400">회원 키 {heightCm}cm로 자동 보정합니다</p>
+        )}
+
+        {phase === 'idle' && (
+          <label className="cursor-pointer rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black px-6 py-3 transition-colors">
+            고속촬영 영상 선택
+            <input type="file" accept="video/*" onChange={handleFile} className="hidden" />
+          </label>
+        )}
+
+        {fileName && phase !== 'idle' && <p className="text-xs text-slate-400 truncate max-w-md">📁 {fileName}</p>}
+
+        {phase === 'ready' && (
+          <div className="flex flex-col items-center gap-3 w-full max-w-md">
+            <p className="text-sm text-slate-300 text-center">
+              {jumpType === 'reactive'
+                ? 'RSI는 측면 촬영을 추천합니다. 연속 3회 이상 뛴 고속촬영(120/240fps) 영상을 사용하세요.'
+                : '파워 점프는 정면 촬영을 추천합니다. 점프 전 1초 이상 똑바로 선 고속촬영(120/240fps) 영상을 사용하세요.'}
+            </p>
+            <div className="w-full">
+              <p className="text-[11px] font-bold text-slate-400 mb-1.5">촬영 모드</p>
+              <div className="grid grid-cols-3 gap-1.5">
+                {Object.entries(CAPTURE_PRESETS).map(([k, p]) => (
+                  <button key={k} onClick={() => setCapture(k)}
+                    className={`rounded-lg px-2 py-2 text-xs font-bold transition-colors ${
+                      capture === k ? 'bg-amber-500 text-slate-950' : 'bg-slate-800 text-slate-300'}`}>
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+              <p className="text-[10px] text-slate-500 mt-1.5">
+                폰 슬로모로 찍었다면 해당 배속을 선택하세요. 체공시간이 실제 시간 기준으로 보정됩니다.
+                {jumpType === 'power' ? ' 정면 촬영은 점프 높이와 좌우 착지 대칭을 중심으로 분석합니다.' : ' 측면 촬영에서 접지시간과 RSI 신뢰도가 가장 높습니다.'}
+              </p>
+            </div>
+            <button onClick={runAnalysis}
+              className="w-full rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black py-3 transition-colors">
+              ▶ 분석 시작
+            </button>
+            <label className="text-xs text-slate-400 underline cursor-pointer">
+              다른 영상 선택
+              <input type="file" accept="video/*" onChange={handleFile} className="hidden" />
+            </label>
+          </div>
+        )}
+
+        {phase === 'analyzing' && (
+          <div className="w-full max-w-md flex flex-col items-center gap-3">
+            <div className="w-full h-3 rounded-full bg-slate-800 overflow-hidden">
+              <div className="h-full bg-amber-500 transition-all duration-150" style={{ width: `${pct}%` }} />
+            </div>
+            <p className="text-sm font-bold text-amber-400">{pct}% 분석 중…</p>
+            <p className="text-[11px] text-slate-500">모든 프레임을 순차 분석하고 있습니다</p>
+            <button onClick={cancelAnalysis} className="text-xs text-slate-400 underline">취소</button>
+          </div>
+        )}
+
+        {phase === 'done' && <p className="text-sm font-bold text-emerald-400">✓ 분석 완료 — 리포트로 이동합니다…</p>}
+
+        {(phase === 'error' || errorMsg) && (
+          <div className="flex flex-col items-center gap-2">
+            <p className="text-sm text-red-400 text-center max-w-md">{errorMsg}</p>
+            <label className="text-xs text-amber-400 underline cursor-pointer">
+              다시 시도
+              <input type="file" accept="video/*" onChange={handleFile} className="hidden" />
+            </label>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
