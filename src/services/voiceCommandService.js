@@ -1,10 +1,7 @@
 // src/services/voiceCommandService.js
 // "모미야" 이후 들린 말을 /api/voice-command로 보내 분류하고,
 // 회원 이름이 포함돼 있으면 실제 회원 목록에서 매칭한다.
-//
-// ⚠️ scopeMembersToTrainer의 정확한 위치는 실제 프로젝트의 회원 서비스 파일 경로에 맞춰
-// 한 번 확인해주세요(트레이너 계정은 자기 담당 회원만 매칭되도록 하는 기존 함수입니다).
-import { scopeMembersToTrainer } from './memberService.js';
+import { scopeMembersToTrainer } from '../utils/memberList.js';
 import { findDestination } from '../voice/commandRegistry.js';
 import { setPendingVoiceTarget } from '../voice/pendingVoiceTarget.js';
 
