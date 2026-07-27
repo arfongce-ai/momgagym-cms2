@@ -168,7 +168,11 @@ async function loadCollection(name, { optional = false } = {}) {
   } catch (e) {
     // 관리자 전용 컬렉션은 로그인/권한 전에 막힐 수 있다. 앱 전체를 죽이지 않고
     // 빈 배열로 시작 → 로그인(관리자) 후 해당 화면에서 다시 읽는다.
-    if (optional) { console.warn(`[FitCMS] ${name} 로딩 건너뜀(권한):`, e?.code || e?.message); return []; }
+    if (optional) {
+      console.warn(`[FitCMS] ${name} 로딩 건너뜀(권한):`, e?.code || e?.message);
+      __failedOptional.add(name); // 실패 기록 — syncedAt을 "성공"으로 잘못 찍지 않도록
+      return [];
+    }
     throw e;
   }
 }
@@ -186,7 +190,11 @@ async function loadGrouped(name, { optional = false } = {}) {
     });
     return grouped;
   } catch (e) {
-    if (optional) { console.warn(`[FitCMS] ${name} 로딩 건너뜀(권한):`, e?.code || e?.message); return {}; }
+    if (optional) {
+      console.warn(`[FitCMS] ${name} 로딩 건너뜀(권한):`, e?.code || e?.message);
+      __failedOptional.add(name); // 실패 기록 — syncedAt을 "성공"으로 잘못 찍지 않도록
+      return {};
+    }
     throw e;
   }
 }
@@ -252,6 +260,14 @@ const __DELTA_MARGIN_MS = 10 * 60 * 1000;
 const __FULL_SYNC_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 let __syncedAt = {};      // 컬렉션별 마지막 동기화 시각(ms)
 let __fullSyncAt = 0;     // 마지막 전체 로딩 시각(ms)
+// [버그 수정 2026-07] optional 컬렉션(expenses 등)이 전체 로딩 중 읽기 실패하면
+// loadCollection이 빈 배열로 "조용히" 넘어가는데, 그 상태를 그대로 syncedAt에
+// "지금 막 성공적으로 동기화됨"이라고 찍어버리면 실패가 성공으로 둔갑한다.
+// 그 뒤로 델타 동기화는 "이미 확인함"이라 착각해 영원히 그 컬렉션을 건너뛰고,
+// 실제 데이터가 있어도 화면엔 계속 빈 값으로 보인다("서버 새로고침"으로만 복구).
+// → 이번 로딩에서 실패한 optional 컬렉션 이름을 기록해두고, initStore가
+//   syncedAt을 찍을 때 이 목록에 있는 컬렉션은 건너뛰어 다음 기회에 재시도되게 한다.
+const __failedOptional = new Set();
 
 function __readSnapshot() {
   try {
@@ -379,6 +395,7 @@ export async function initStore({ force = false } = {}) {
       }
       // 2) 캐시가 없거나 강제/주기 재검증 → Firestore 전수 로딩.
       await seedIfEmpty();
+      __failedOptional.clear(); // 이번 전체 로딩 시도 기준으로 초기화
       // [읽기 절감 핵심] ai · gait_reports · posture_reports · rom_reports 는 회원별로만 조회되므로(측정 화면을 열 때),
       // 앱 시작 시 전수 조회하지 않는다. 빈 캐시로 시작 → 회원 화면에서 그 회원 것만
       // 지연 로딩(ensureSessions/ensureGaitReports)한다. 측정 데이터가 쌓일수록
@@ -406,7 +423,7 @@ export async function initStore({ force = false } = {}) {
       cache.promos   = promos;
       cache.settleOverrides = settleOverrides;
       const now = Date.now();
-      __SYNC_COLLECTIONS.forEach(c => { __syncedAt[c] = now; });
+      __SYNC_COLLECTIONS.forEach(c => { if (!__failedOptional.has(c)) __syncedAt[c] = now; }); // 실패한 컬렉션은 "동기화됨" 표시를 건너뛰어 다음 번에 재시도
       __syncedAt.deletions = now;
       __fullSyncAt = now;
       __refreshSnapshot();           // 새로고침 캐시에 저장(동기화 메타 포함)
