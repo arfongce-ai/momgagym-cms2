@@ -3,8 +3,10 @@ import { lazy } from 'react';
 // AI 측정 · 분석 탭 등록부.
 //  탭 순서(no)는 측정 흐름 순서를 따른다:
 //   1 신체 정보(기본) → 2 자세·체형(정적) → 3 ROM(가동성) → 4 보행·러닝(이동)
-//   → 5 점프·RSI(파워) → 6 바벨 리프팅(근력) → 7 일반 녹화 · 8 초시계(도구)
+//   → 5 점프·RSI(파워) → 6 바벨 리프팅(근력) → 7 한다리서기(SLST, 균형)
+//   → 8 일반 녹화 · 9 초시계(도구, 항상 맨 마지막 — 기존 테스트 불변식)
 //  '던지기(throw)'·'스윙(swing)' 준비 중 탭은 제거됨(2607 요청).
+//  7번은 현재 업로드 분석만 지원(라이브 카메라·오버헤드 스쿼트는 추후 추가 예정).
 export const MEASURE_MENUS = [
   {
     id: 'body',
@@ -61,8 +63,17 @@ export const MEASURE_MENUS = [
     component: lazy(() => import('./menus/BarbellLiftingHub.jsx')),
   },
   {
-    id: 'record',
+    id: 'stance',
     no: 7,
+    title: '한다리서기 (SLST)',
+    desc: '균형 능력, 좌우 비대칭 — 업로드 영상 분석',
+    icon: 'LEG',
+    status: 'ready',
+    component: lazy(() => import('./menus/StanceAnalysisHub.jsx')),
+  },
+  {
+    id: 'record',
+    no: 8,
     title: '일반 영상 녹화',
     desc: '카메라 녹화 및 저장',
     icon: 'REC',
@@ -71,7 +82,7 @@ export const MEASURE_MENUS = [
   },
   {
     id: 'timer',
-    no: 8,
+    no: 9,
     title: '초시계·메트로놈',
     desc: '초시계, 타이머, 인터벌, 메트로놈',
     icon: 'TMR',

@@ -3,6 +3,8 @@ const OUTPUT_POLICY = Object.freeze({
   rom: 'video',
   jump: 'video',
   gait: 'video',
+  stance: 'video',
+  squat: 'video',
 });
 
 const KIND_KO = Object.freeze({
@@ -10,6 +12,21 @@ const KIND_KO = Object.freeze({
   rom: 'ROM',
   jump: '점프',
   gait: '보행·러닝',
+  stance: '한다리서기',
+  squat: '오버헤드 스쿼트',
+});
+
+// squatBiomechanics.js가 반환하는 repeatedFlags를 사람이 읽을 문장으로 매핑.
+// (플래그 이름 규칙에 암묵적으로 의존하지 않도록 각 플래그를 명시적으로 나열)
+const SQUAT_FLAG_KO = Object.freeze({
+  depth_borderline: { level: 'caution', text: '스쿼트 깊이가 목표에 다소 못 미칩니다.' },
+  depth_high: { level: 'risk', text: '스쿼트 깊이가 목표에 크게 못 미칩니다.' },
+  torso_lean_borderline: { level: 'caution', text: '스쿼트 중 상체가 다소 앞으로 기울어집니다.' },
+  torso_lean_high: { level: 'risk', text: '스쿼트 중 상체가 크게 앞으로 기울어집니다.' },
+  knee_valgus_borderline: { level: 'caution', text: '스쿼트 중 무릎이 다소 안쪽으로 모입니다.' },
+  knee_valgus_high: { level: 'risk', text: '스쿼트 중 무릎이 크게 안쪽으로 모입니다.' },
+  pelvic_tilt_borderline: { level: 'caution', text: '스쿼트 중 골반이 다소 한쪽으로 기울어집니다.' },
+  pelvic_tilt_high: { level: 'risk', text: '스쿼트 중 골반이 크게 한쪽으로 기울어집니다.' },
 });
 
 export function measurementOutputMode(kind) {
@@ -66,6 +83,37 @@ export function buildProblemFocus(kind, report = {}) {
     if (m.kneeSymmetry != null && m.kneeSymmetry < 85) addIssue('caution', `무릎 움직임 좌우 대칭성이 낮습니다(${m.kneeSymmetry}%).`);
     if (m.trunkLean?.avg != null && (m.trunkLean.avg < 0 || m.trunkLean.avg > 18)) addIssue('caution', `몸통 기울기 패턴 확인이 필요합니다(${m.trunkLean.avg}도).`);
     if (!issues.length) addStrength('반복 보행/러닝 패턴에서 주요 이상 신호가 크지 않습니다.');
+  } else if (kind === 'stance') {
+    if (report.valid === false) {
+      addIssue('caution', '한다리서기 측정 데이터가 부족합니다.');
+    } else {
+      const legIssue = (leg, label) => {
+        if (!leg || leg.status === 'unknown') return;
+        if (leg.status === 'risk') addIssue('risk', `${label} 다리 한다리서기에서 위험 신호가 확인됐습니다.`);
+        else if (leg.status === 'caution') addIssue('caution', `${label} 다리 한다리서기에서 주의가 필요한 패턴이 있습니다.`);
+      };
+      legIssue(report.left, '왼쪽');
+      legIssue(report.right, '오른쪽');
+      if (report.asymmetryFlag) addIssue('caution', '좌우 균형 능력에 비대칭이 확인되어 비교가 필요합니다.');
+      if (report.left?.status === 'unknown' || report.right?.status === 'unknown') {
+        addIssue('caution', '일부 측정 신뢰도가 낮아 재측정이 필요합니다.');
+      }
+      if (!issues.length) addStrength('양쪽 다리 모두 균형 능력에 큰 위험 신호가 없습니다.');
+    }
+  } else if (kind === 'squat') {
+    if (report.valid === false) {
+      addIssue('caution', '오버헤드 딥 스쿼트 측정 데이터가 부족합니다.');
+    } else if (report.status === 'unknown') {
+      addIssue('caution', '측정 신뢰도가 낮아 재측정이 필요합니다.');
+    } else if (report.basis === 'immediate') {
+      addIssue('risk', '스쿼트 동작 중 균형 상실 또는 뒤꿈치 들림이 확인됐습니다.');
+    } else {
+      (report.repeatedFlags || []).forEach((flag) => {
+        const info = SQUAT_FLAG_KO[flag];
+        if (info) addIssue(info.level, info.text);
+      });
+      if (!issues.length) addStrength('오버헤드 딥 스쿼트 동작에서 큰 위험 신호가 없습니다.');
+    }
   }
 
   const primaryFinding = issues[0]?.text || strengths[0] || `${KIND_KO[kind] || '측정'} 결과에서 우선 확인할 문제를 정리했습니다.`;
