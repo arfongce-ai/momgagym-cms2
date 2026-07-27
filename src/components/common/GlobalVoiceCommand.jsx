@@ -58,7 +58,16 @@ export default function GlobalVoiceCommand() {
   const toggle = () => (listening ? stopListening() : startListening());
 
   return (
-    <div style={{ position: 'fixed', right: 20, bottom: 20, zIndex: 1000 }}>
+    // [버그 수정 2026-07] 데스크탑은 사이드바라 bottom:20이면 충분하지만, 모바일은
+    // AppLayout의 하단 탭바(핵심 4개 + "전체")가 화면 맨 아래를 차지하고 있어
+    // 마이크 버튼이 그 위에 겹쳐 "전체" 탭을 가렸다. 모바일 하단바 높이(~56px
+    // + 아이콘/라벨 여백 + 아이폰 하단 안전영역)만큼 더 띄우고, md 이상(데스크탑)
+    // 에서는 기존 20px 그대로 되돌린다 — AppLayout의 하단바 자체도 같은 md 기준으로
+    // 나타났다 사라지므로 같은 기준선을 맞춘 것.
+    <div
+      className="fixed right-5 bottom-[calc(88px+env(safe-area-inset-bottom))] md:bottom-5"
+      style={{ zIndex: 1000 }}
+    >
       {feedback && (
         <div
           style={{
