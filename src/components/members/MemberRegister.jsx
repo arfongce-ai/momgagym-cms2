@@ -7,7 +7,30 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { store } from '../../demoData';
 import { todayYMD, addMonthsYMD } from '../../utils/dates';
 
-const TERMS = `1. 건강 고지 의무\n회원은 부상 및 지병을 등록 전 반드시 고지해야 하며, 미고지 사항으로 인한 사고 및 합병증에 대해 센터는 책임을 지지 않습니다.\n\n2. 예약 및 수업 운영\n당일 취소·변경 불가. 전일 영업 종료 전까지 예약·변경 가능. 당일 취소·노쇼 시 횟수 자동 차감. 지각 시 연장 불가.\n\n3. 유효 기간 및 휴회\n등록일 기준 6개월 이내 소진(경과 시 자동 소멸). 휴회는 유효 기간 내 1회(최대 30일) 가능(사전 협의).\n\n4. 환불 및 양도\n환불 산정: [총 결제액] - [위약금 10%] - [진행 횟수 × 정상가] - [카드 수수료]. 타인 양도 절대 불가.\n\n5. 책임 및 동의\n본인 부주의 사고·분실물 책임 없음. 강사 변경 가능. 홍보 활용(사진·영상은 홍보·연구용).\n\n본인은 위 약관을 숙지하였으며 이에 동의합니다.`;
+// [2026-07-28 갱신] 3항: "등록일 기준 6개월 이내 소진" → 실제 운영 기준(10회/20회 등록 시
+// 소진 기한 차등)으로 변경하고, 회원이 놓치기 쉬운 핵심 조항이라 빨간 굵은 글씨로 강조한다.
+// 4항: 환불 산식에 [부가세] 항목을 추가한다. "정상가" 문구는 그대로 둔다 — 실제 계산은
+// finance.js의 computeRefundEstimate/autoRefundUsedAmount가 이미 "정상가"가 아니라 실제
+// 결제 단가(결제가) 기준으로 하도록 바뀌었지만(회원에게 불리하지 않은 방향), 계약서 표기
+// 자체는 바꾸지 않기로 확정됨(refund_flow.test.js '정상가 설정 제거 확인' 스펙 기준).
+// TERMS_SECTIONS: 항목별로 { text } 또는(강조가 필요하면) { prefix, highlight, suffix } 형태.
+export const TERMS_SECTIONS = [
+  { text: '1. 건강 고지 의무\n회원은 부상 및 지병을 등록 전 반드시 고지해야 하며, 미고지 사항으로 인한 사고 및 합병증에 대해 센터는 책임을 지지 않습니다.' },
+  { text: '2. 예약 및 수업 운영\n당일 취소·변경 불가. 전일 영업 종료 전까지 예약·변경 가능. 당일 취소·노쇼 시 횟수 자동 차감. 지각 시 연장 불가.' },
+  {
+    prefix: '3. 유효 기간 및 휴회\n',
+    highlight: '10회 등록 시 최대 3개월, 20회 등록 시 최대 6개월 이내 소진(경과 시 자동 소멸)',
+    suffix: '. 휴회는 유효 기간 내 1회(최대 30일) 가능(사전 협의).',
+  },
+  { text: '4. 환불 및 양도\n환불 산정: [총 결제액] - [위약금 10%] - [진행 횟수 × 정상가] - [카드 수수료] - [부가세]. 타인 양도 절대 불가.' },
+  { text: '5. 책임 및 동의\n본인 부주의 사고·분실물 책임 없음. 강사 변경 가능. 홍보 활용(사진·영상은 홍보·연구용).' },
+  { text: '본인은 위 약관을 숙지하였으며 이에 동의합니다.' },
+];
+
+// 파생 플레인 텍스트(서명·동의 기록 등 기존에 문자열 하나를 쓰던 곳과 호환용).
+export const TERMS = TERMS_SECTIONS
+  .map(s => (s.highlight != null ? `${s.prefix || ''}${s.highlight}${s.suffix || ''}` : s.text))
+  .join('\n\n');
 
 export const MEMBER_CLASS_TYPES = ['트레이닝','선수','재활','외부','컨디셔닝'];
 
@@ -362,7 +385,15 @@ export default function MemberRegister({ trainers=[], onSuccess, onCancel }) {
           {/* ─ STEP 2: 약관 ─────────────────────────── */}
           {step==='terms'&&(
             <div className="p-5 flex flex-col" style={{minHeight:'60vh'}}>
-              <div className="flex-1 overflow-y-auto bg-slate-800 border border-slate-700 rounded-xl p-4 text-sm text-slate-300 leading-7 whitespace-pre-line mb-4" style={{minHeight:'45vh'}}>{TERMS}</div>
+              <div className="flex-1 overflow-y-auto bg-slate-800 border border-slate-700 rounded-xl p-4 text-sm text-slate-300 leading-7 whitespace-pre-line mb-4" style={{minHeight:'45vh'}}>
+                {TERMS_SECTIONS.map((s, i) => (
+                  <p key={i} className={i>0 ? 'mt-4' : ''}>
+                    {s.highlight != null
+                      ? <>{s.prefix}<strong className="text-red-400 font-extrabold">{s.highlight}</strong>{s.suffix}</>
+                      : s.text}
+                  </p>
+                ))}
+              </div>
               <div className="flex gap-2">
                 <button onClick={()=>setStep('form')} className="py-2.5 px-4 rounded-xl border border-slate-700 text-slate-300 hover:text-white text-sm font-semibold transition-colors">← 이전</button>
                 <button onClick={()=>setStep('sign')} className="flex-1 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold py-2.5 rounded-xl text-sm transition-colors">동의하고 서명 ✍️</button>

@@ -53,6 +53,55 @@ export function calcNet(payment, settings) {
   return { amount, cardFee:d.cardFee, vat:d.vat, net: amount - d.cardFee - d.vat };
 }
 
+// ── 환불 진행분(사용액) 자동 계산 ───────────────────────────────────
+// 단가 = 이 결제의 담당 트레이너(payment.trainerIds) 등록 총회차 기준 결제가
+// (calcNet 순액 ÷ 총회차). trainerIds가 없거나 비어 있으면 회원의 전체 트레이너
+// 등록 총회차 합계를 분모로 쓴다. 출석(attended/noshow, isExternal 제외) 회차만큼
+// 곱해 진행분을 낸다. memberId는 payment.memberId가 아니라 명시 인자로 받는다
+// (회원상세 화면의 결제 객체엔 memberId 필드가 없어서 예전엔 이 때문에 진행분이
+// 항상 0으로 나오던 실제 버그가 있었다).
+// [2026-07] 정상가 우선 적용 로직 폐지 — 항상 결제가로 계산한다(settings의 레거시
+// 값은 이 함수가 아예 참조하지 않으므로 자동으로 무시됨).
+export function autoRefundUsedAmount(payment, memberId, { members = [], schedules = [], settings } = {}) {
+  const member = members.find(m => m.id === memberId);
+  if (!member) return 0;
+  const tids = Array.isArray(payment.trainerIds) && payment.trainerIds.length ? payment.trainerIds : null;
+  const ts = member.trainerSessions || {};
+  const regTotal = tids
+    ? tids.reduce((s, tid) => s + (Number(ts[tid]?.total) || 0), 0)
+    : Object.values(ts).reduce((s, x) => s + (Number(x?.total) || 0), 0);
+  if (regTotal <= 0) return 0;
+  const { net } = calcNet(payment, settings);
+  const unit = net / regTotal;
+  const attendedCount = (schedules || []).filter(s =>
+    s && s.memberId === memberId
+    && !s.isExternal
+    && (s.status === 'attended' || s.status === 'noshow')
+    && (!tids || tids.includes(s.trainerId))
+  ).length;
+  return Math.round(unit * attendedCount);
+}
+
+// 환불 확인창에 표시할 단가 기준 문구. 인자를 받지만(구버전 호출부 호환) 항상 고정
+// 문구를 반환한다 — 정상가 설정이 제거된 뒤로는 예외 없이 결제가 기준이기 때문이다.
+export function refundUnitPriceBasisLabel(_legacySettings) {
+  return '실제 결제 단가(결제가) 기준';
+}
+
+// 회원 환불 예상액 — 약관 4항 산식: [총 결제액] - [위약금 10%] - [진행 횟수 × 결제 단가]
+// - [카드 수수료] - [부가세]. 카드수수료·부가세는 calcNet과 동일한 계산을 재사용해
+// 트레이너 정산 쪽 계산과 회원 환불 계산이 서로 다른 숫자로 어긋나지 않게 한다.
+// @param payment  calcNet과 동일한 형태: {amount, method}
+// @param settings {vatRate, cardFeeRate}
+// @param usedAmount 진행분(호출부에서 autoRefundUsedAmount로 계산하거나 수동 입력). 기본 0.
+export function computeRefundEstimate(payment, settings, usedAmount = 0) {
+  const { amount, cardFee, vat } = calcNet(payment, settings);
+  const penalty = Math.round(amount * 0.10);
+  const used = Number(usedAmount) || 0;
+  const refund = Math.max(0, amount - penalty - used - cardFee - vat);
+  return { amount, cardFee, vat, penalty, usedAmount: used, refund };
+}
+
 // ── 트레이너별 정산은 회당단가×횟수 방식 한 가지로 일원화함.
 //    (옛 비율기반 정산 함수들은 제거)
 
@@ -698,13 +747,15 @@ export function computeSessionSettlement({ trainers, members, schedules, payment
       // A방식(등록월 박제): 이 회원의 이 트레이너 결제 건에 박제된 비율(splitRateAtPay)을 사용.
       //  · 박제 비율은 "그 회원이 등록한 달의 트레이너 실적"으로 판정돼 결제 시 고정된 값.
       //  · 여러 결제가 섞이면 입금액 비중으로 가중평균. 박제값이 없으면(구버전) 그 달 자동판정으로 폴백.
-      //  · 트레이너 수동 지정(trainerSplitRates)이 있으면 그게 최우선(fallbackSplit.mode==='manual').
+      //  · [2026-07-28 수정] 트레이너 수동 지정(trainerSplitRates)이 있다고 그 달 값을 무조건
+      //    쓰면 안 된다 — 그러면 등록월에 조건 충족으로 올라간 박제 비율이, 실적 없는 달엔
+      //    수동 floor로 깎여 보인다("등록월 고정"이 사실상 무의미해짐, 실사례 버그).
+      //    수동 지정도 determineSplitRate의 "하한이고 조건이 좋으면 상향" 원칙과 같은 결로,
+      //    박제값과 그 달 값(수동floor/자동판정) 중 더 높은 쪽을 쓴다.
       const rateSlot = (memberTrainerRate[mid]||{})[t.id];
       const hasFrozen = !!(rateSlot && rateSlot.hasFrozen && rateSlot.base > 0);
-      const baseRate = fallbackSplit.mode === 'manual'
-        ? fallbackSplit.rate                                   // 수동 지정 최우선
-        : (hasFrozen ? Math.round(rateSlot.w / rateSlot.base)  // 등록월 박제 비율
-                     : fallbackSplit.rate);                    // 폴백: 그 달 자동판정
+      const frozenRate = hasFrozen ? Math.round(rateSlot.w / rateSlot.base) : null;
+      const baseRate = hasFrozen ? Math.max(frozenRate, fallbackSplit.rate) : fallbackSplit.rate;
       let autoAmount = 0;
       let autoPayAmount = 0;
       const settlementBreakdown = [];
@@ -712,9 +763,9 @@ export function computeSessionSettlement({ trainers, members, schedules, payment
         const c = Number(count) || 0;
         const lot = lotMap[lotId];
         const lotUnit = lot ? Number(lot.unit)||0 : aggregateUnit;
-        const lotRate = fallbackSplit.mode === 'manual'
-          ? fallbackSplit.rate
-          : (lot?.rate != null ? Number(lot.rate) : baseRate);
+        const lotRate = lot?.rate != null
+          ? Math.max(Number(lot.rate), fallbackSplit.rate)  // 이 회차의 박제값 vs 그 달 값, 더 높은 쪽
+          : baseRate;
         const partAmount = lotUnit * c;
         autoAmount += partAmount;
         const partPayAmount = Math.round(partAmount * lotRate / 100);
@@ -751,7 +802,7 @@ export function computeSessionSettlement({ trainers, members, schedules, payment
         ? Math.round(autoPayAmount / autoAmount * 100)
         : (previewLot?.rate != null ? Number(previewLot.rate) : baseRate);
       const effRate = rateManual ? manualRate : autoRate;
-      const rateFrozen = !rateManual && fallbackSplit.mode !== 'manual'
+      const rateFrozen = !rateManual
         && (autoCnt > 0
           ? Object.keys(lotCounts).some(id => lotMap[id]?.hasFrozen) || hasFrozen
           : !!previewLot?.hasFrozen || hasFrozen);

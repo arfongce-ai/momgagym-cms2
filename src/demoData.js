@@ -920,6 +920,63 @@ export const store = {
     try { await fbDelete('payments', pid); }
     catch(e){ cache.payments[mid]=prev; throw e; }
   },
+  // 환불 처리 — 결제건에 환불 필드를 기록하고, 회원의 모든 트레이너 잔여 세션을 0으로
+  // 정리하는 걸 한 배치로 원자 커밋한다(둘 중 하나만 되는 상황 방지). 환불 전 잔여를
+  // payment.refundPrevSessions에 스냅샷으로 남겨, cancelRefund가 정확히 되돌릴 수 있게
+  // 한다. total(등록 총회차)은 정산 단가 계산의 기준값이라 건드리지 않는다.
+  processRefund: async (mid, pid, fields = {}) => {
+    const payment = (cache.payments[mid] || []).find(p => p.id === pid);
+    if (!payment) return null;
+    const member = cache.members.find(m => m.id === mid);
+    const ts = member?.trainerSessions || {};
+    const prevSessions = Object.fromEntries(Object.entries(ts).map(([tid, s]) => [tid, s?.remaining ?? 0]));
+    const zeroedTs = Object.fromEntries(Object.entries(ts).map(([tid, s]) => [tid, { ...s, remaining: 0 }]));
+    const updatedPayment = { ...payment, ...fields, refundPrevSessions: prevSessions };
+    const updatedMember = member ? { ...member, trainerSessions: zeroedTs } : null;
+    const batch = createStampedBatch();
+    batch.set('payments', pid, { ...updatedPayment, __mid: mid });
+    if (updatedMember) batch.set('members', mid, updatedMember);
+    await batch.commit(); // 실패 시 여기서 throw — 캐시는 아직 안 건드렸으므로 자동으로 이전 상태 그대로.
+    cache.payments[mid] = (cache.payments[mid] || []).map(p => p.id === pid ? updatedPayment : p);
+    if (updatedMember) cache.members = cache.members.map(m => m.id === mid ? updatedMember : m);
+    __touchSnapshot();
+    return updatedPayment;
+  },
+  // 환불취소 — 환불 필드를 지우고, processRefund가 남긴 refundPrevSessions 스냅샷으로
+  // 잔여 세션을 정확히 복구한다. 스냅샷이 없는(옛 데이터/수기 환불) 결제는 세션은
+  // 건드리지 않고 환불 필드만 정리한다(잘못 건드려 세션이 어긋나는 것을 방지).
+  cancelRefund: async (mid, pid) => {
+    const payment = (cache.payments[mid] || []).find(p => p.id === pid);
+    if (!payment) return null;
+    const member = cache.members.find(m => m.id === mid);
+    const snapshot = payment.refundPrevSessions;
+    let updatedMember = null;
+    if (member && snapshot) {
+      const ts = member.trainerSessions || {};
+      const restoredTs = Object.fromEntries(
+        Object.entries(ts).map(([tid, s]) => [tid, { ...s, remaining: snapshot[tid] ?? s.remaining }])
+      );
+      updatedMember = { ...member, trainerSessions: restoredTs };
+    }
+    const updatedPayment = {
+      ...payment,
+      isRefunded: false,
+      refundAmount: null,
+      refundedAt: null,
+      refundCardFee: null,
+      refundPenalty: null,
+      refundUsed: null,
+      refundPrevSessions: null,
+    };
+    const batch = createStampedBatch();
+    batch.set('payments', pid, { ...updatedPayment, __mid: mid });
+    if (updatedMember) batch.set('members', mid, updatedMember);
+    await batch.commit();
+    cache.payments[mid] = (cache.payments[mid] || []).map(p => p.id === pid ? updatedPayment : p);
+    if (updatedMember) cache.members = cache.members.map(m => m.id === mid ? updatedMember : m);
+    __touchSnapshot();
+    return updatedPayment;
+  },
   // 과거 스케줄에 consumedIndexAtBooking 소급 부여(회차 매핑 마이그레이션).
   //  · patches: [{ id, consumedIndexAtBooking }] (finance.planConsumedIndexBackfill 결과)
   //  · Firestore 배치 한도(500) 고려해 나눠 커밋. 실패 시 캐시 롤백.

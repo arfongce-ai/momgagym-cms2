@@ -10,7 +10,8 @@ import { useAuth } from '../../contexts/AuthContext';
 import { ClassTypeCheckbox } from './MemberRegister';
 import AiMeasureReport     from '../ai/AiMeasureReport';
 import MemberMeasureHistory from '../ai/MemberMeasureHistory';
-import { METHOD_LBL, METHOD_CLR, computeMonthRates } from '../../services/finance';
+import { METHOD_LBL, METHOD_CLR, computeMonthRates, autoRefundUsedAmount, computeRefundEstimate, refundUnitPriceBasisLabel } from '../../services/finance';
+import { evaluateCondition } from '../../ai-measure/core/conditionAssessment';
 
 const INP = "w-full bg-slate-800 border border-slate-700 text-slate-100 rounded-xl px-3 py-2.5 text-sm placeholder-slate-500 focus:outline-none focus:border-amber-500";
 const LBL = "block text-xs font-semibold text-slate-400 uppercase tracking-widest mb-1.5";
@@ -71,7 +72,7 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
   const [showAddBody,  setShowAddBody] = useState(false);
   const [showAiModal,  setShowAiModal]  = useState(false);
   const [aiRefreshKey, setAiRefreshKey] = useState(0);
-  const [bodyForm,     setBodyForm]    = useState({ recordedAt: todayYMD(), height:'', weight:'', systolic:'', diastolic:'', note:'' });
+  const [bodyForm,     setBodyForm]    = useState({ recordedAt: todayYMD(), height:'', weight:'', systolic:'', diastolic:'', note:'', fatigue:'', painNrs:'', conditionMemo:'' });
 
   const refresh = () => {
     const fresh = store.getMembers().find(m => m.id === member.id);
@@ -519,6 +520,41 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
     catch (e) { alert('삭제에 실패했습니다. 네트워크 확인 후 다시 시도하세요.'); }
   };
 
+  // 환불 처리 — finance.js 공용 함수(autoRefundUsedAmount/computeRefundEstimate)로 계산하고
+  // store.processRefund로 원자 저장한다. Revenue.jsx의 RefundableList와 동일한 계산식을
+  // 재사용해 두 화면의 환불액이 서로 어긋나는 일이 없게 한다.
+  const handleRefundPayment = async (p) => {
+    const settings = store.getSettings();
+    const suggested = autoRefundUsedAmount(p, member.id, { members: store.getMembers(), schedules: store.getSchedules(), settings });
+    const usedInput = window.prompt(
+      `환불 처리 — ${member.name}\n총 결제액: ${p.amount.toLocaleString()}원\n\n` +
+      `진행분(이미 수업한 회차 × 단가)을 입력하세요 (원):\n` +
+      `· 출석 데이터 기준 자동 계산값(${refundUnitPriceBasisLabel()}): ${suggested.toLocaleString()}원 (수정 가능)`,
+      String(suggested));
+    if (usedInput===null) return;
+    const { cardFee, vat, penalty, usedAmount, refund } = computeRefundEstimate(p, settings, usedInput);
+    if (!window.confirm(
+      `환불 산정 (계약서 4항 기준, ${refundUnitPriceBasisLabel()})\n` +
+      `총 결제액 ${p.amount.toLocaleString()}원\n− 위약금 10% ${penalty.toLocaleString()}원\n` +
+      `− 진행분 ${usedAmount.toLocaleString()}원\n− 카드수수료 ${cardFee.toLocaleString()}원\n` +
+      `− 부가세 ${vat.toLocaleString()}원\n= 환불액 ${refund.toLocaleString()}원\n\n` +
+      `※ 이 회원의 잔여 세션은 0으로 정리됩니다. 진행분 수업료는 트레이너 정산에 그대로 남습니다.\n\n` +
+      `이 결제를 환불 처리할까요?`)) return;
+    try {
+      await store.processRefund(member.id, p.id, {
+        isRefunded:true, refundAmount:refund, refundedAt:todayYMD(),
+        refundCardFee:cardFee, refundPenalty:penalty, refundUsed:usedAmount,
+      });
+      refresh();
+    } catch (e) { alert('환불 처리에 실패했습니다. 네트워크 확인 후 다시 시도하세요.'); }
+  };
+
+  const handleCancelRefund = async (pid) => {
+    if (!window.confirm('환불 처리를 취소(되돌리기)할까요?\n(정리됐던 잔여 세션도 환불 전 값으로 복구됩니다)')) return;
+    try { await store.cancelRefund(member.id, pid); refresh(); }
+    catch (e) { alert('실패했습니다. 네트워크 확인 후 다시 시도하세요.'); }
+  };
+
   // 기존 재등록 결제의 '세션 시작일' 지정/변경 — 매출(결제일)은 그대로, 회차 소진 순서만 조정.
   const handleSetSessionStart = async (p) => {
     const cur = p.sessionStartDate || '';
@@ -538,18 +574,29 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
   };
 
   // ── 신체정보 등록 ─────────────────────────────────────
+  // [모미 신규] 체중이 없어도 컨디션(피로도/통증/메모) 중 하나만 있으면 저장 가능하도록 완화.
   const handleAddBody = async () => {
-    if (!bodyForm.weight) { alert('체중을 입력해 주세요.'); return; }
+    const hasCondition = !!(bodyForm.fatigue || bodyForm.painNrs || bodyForm.conditionMemo.trim());
+    if (!bodyForm.weight && !hasCondition) { alert('체중 또는 오늘의 컨디션 중 하나는 입력해 주세요.'); return; }
+    const condition = evaluateCondition({
+      fatigue: bodyForm.fatigue,
+      painNrs: bodyForm.painNrs,
+      memo: bodyForm.conditionMemo,
+    });
     try {
       await store.addBodyRecord(member.id, {
         ...bodyForm,
         height:    bodyForm.height    ? Number(bodyForm.height)    : null,
-        weight:    Number(bodyForm.weight),
+        weight:    bodyForm.weight    ? Number(bodyForm.weight)    : null,
         systolic:  bodyForm.systolic  ? Number(bodyForm.systolic)  : null,
         diastolic: bodyForm.diastolic ? Number(bodyForm.diastolic) : null,
+        fatigue: condition.fatigue,
+        painNrs: condition.painNrs,
+        conditionMemo: condition.memo,
+        conditionStatus: condition.valid ? condition.status : null,
       });
       refresh(); setShowAddBody(false);
-      setBodyForm({ recordedAt:todayYMD(), height:'', weight:'', systolic:'', diastolic:'', note:'' });
+      setBodyForm({ recordedAt:todayYMD(), height:'', weight:'', systolic:'', diastolic:'', note:'', fatigue:'', painNrs:'', conditionMemo:'' });
     } catch (e) { alert('신체정보 저장에 실패했습니다. 네트워크 확인 후 다시 시도하세요.'); }
   };
 
@@ -924,6 +971,7 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
                               </span>
                             : <span className={`text-xs font-bold ${METHOD_CLR[p.method]}`}>{METHOD_LBL[p.method]}</span>}
                           {p.isUnpaid&&<span className="text-[10px] bg-red-500/20 text-red-400 border border-red-500/30 px-1.5 py-0.5 rounded font-bold">미수금</span>}
+                          {p.isRefunded&&<span className="text-[10px] bg-slate-600/40 text-slate-300 border border-slate-500/30 px-1.5 py-0.5 rounded font-bold">환불됨 {(p.refundAmount||0).toLocaleString()}원</span>}
                           {p.isNew&&<span className="text-[10px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-1.5 py-0.5 rounded font-bold">신규{p.consultTrainerId?` · 상담 ${trainerMap[p.consultTrainerId]?.name||'?'}`:''}</span>}
                           {p.isReEnroll&&<span className="text-[10px] bg-blue-500/20 text-blue-400 border border-blue-500/30 px-1.5 py-0.5 rounded font-bold">재등록{p.reEnrollNo?` ${p.reEnrollNo}회차`:''}</span>}
                           {p.category==='edu_center'&&<span className="text-[10px] bg-amber-500/20 text-amber-400 border border-amber-500/30 px-1.5 py-0.5 rounded font-bold">센터교육</span>}
@@ -954,8 +1002,16 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
                         {p.note&&<p className="text-slate-400 text-xs mt-1">{p.note}</p>}
                       </div>
                       {user?.role==='admin'&&(
-                        <button onClick={()=>handleDeletePayment(p.id)}
-                          className="text-slate-600 hover:text-red-400 text-xs transition-colors flex-shrink-0">🗑</button>
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          {!p.isUnpaid && (p.isRefunded
+                            ? <button onClick={()=>handleCancelRefund(p.id)}
+                                className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-300 hover:bg-slate-600 font-bold">환불취소</button>
+                            : <button onClick={()=>handleRefundPayment(p)}
+                                className="text-[10px] px-1.5 py-0.5 rounded bg-red-500/15 text-red-300 hover:bg-red-500/30 font-bold">환불</button>
+                          )}
+                          <button onClick={()=>handleDeletePayment(p.id)}
+                            className="text-slate-600 hover:text-red-400 text-xs transition-colors">🗑</button>
+                        </div>
                       )}
                     </div>
                   </div>
@@ -1275,6 +1331,21 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
                           {idx===0&&<span className="text-[10px] bg-amber-500/20 text-amber-400 px-1.5 py-0.5 rounded font-bold">최신</span>}
                           {r.note&&<span className="text-xs text-slate-500">{r.note}</span>}
                         </div>
+                        {/* [모미 신규] 컨디션 필드가 있을 때만 표시(체중만 기록한 기존 데이터는 그대로) */}
+                        {(r.fatigue!=null || r.painNrs!=null || r.conditionMemo) && (
+                          <div className="flex items-center gap-2 mb-2 flex-wrap">
+                            {r.conditionStatus && (
+                              <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
+                                r.conditionStatus==='risk' ? 'bg-red-500/20 text-red-400'
+                                : r.conditionStatus==='caution' ? 'bg-amber-500/20 text-amber-400'
+                                : 'bg-emerald-500/20 text-emerald-400'
+                              }`}>컨디션 {{normal:'정상',caution:'주의',risk:'위험'}[r.conditionStatus] || r.conditionStatus}</span>
+                            )}
+                            {r.fatigue!=null && <span className="text-xs text-slate-400">피로도 {r.fatigue}/5</span>}
+                            {r.painNrs!=null && <span className="text-xs text-slate-400">통증 {r.painNrs}/10</span>}
+                            {r.conditionMemo && <span className="text-xs text-slate-500">“{r.conditionMemo}”</span>}
+                          </div>
+                        )}
                         <div className="grid grid-cols-4 gap-2">
                           <div className="text-center bg-slate-700/50 rounded-lg p-2">
                             <p className="text-[10px] text-slate-500 mb-0.5">신장</p>
@@ -1282,7 +1353,7 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
                           </div>
                           <div className="text-center bg-slate-700/50 rounded-lg p-2">
                             <p className="text-[10px] text-slate-500 mb-0.5">체중</p>
-                            <p className="font-mono font-black text-sm text-slate-100">{r.weight}<span className="text-slate-500 text-[10px]">kg</span></p>
+                            <p className="font-mono font-black text-sm text-slate-100">{r.weight??'-'}<span className="text-slate-500 text-[10px]">kg</span></p>
                           </div>
                           <div className="text-center bg-slate-700/50 rounded-lg p-2">
                             <p className="text-[10px] text-slate-500 mb-0.5">최고혈압</p>
@@ -1317,6 +1388,12 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
                     <div><label className={LBL}>최저혈압(mmHg)</label><input type="number" step="1" value={bodyForm.diastolic} onChange={pbf('diastolic')} placeholder="80" className={INP+" font-mono"}/></div>
                   </div>
                   <div><label className={LBL}>메모</label><input value={bodyForm.note} onChange={pbf('note')} placeholder="최초 측정" className={INP}/></div>
+                  {/* [모미 신규] 오늘의 컨디션 — 트레이너가 대신 입력할 때도 같은 폼에서 처리 */}
+                  <div className="grid grid-cols-2 gap-2">
+                    <div><label className={LBL}>피로도(1~5)</label><input type="number" min="1" max="5" value={bodyForm.fatigue} onChange={pbf('fatigue')} placeholder="1~5" className={INP+" font-mono"}/></div>
+                    <div><label className={LBL}>통증 NRS(0~10)</label><input type="number" min="0" max="10" value={bodyForm.painNrs} onChange={pbf('painNrs')} placeholder="0~10" className={INP+" font-mono"}/></div>
+                  </div>
+                  <div><label className={LBL}>컨디션 메모</label><input value={bodyForm.conditionMemo} onChange={pbf('conditionMemo')} placeholder="예) 어제 스쿼트 후 무릎이 뻐근해요" maxLength={200} className={INP}/></div>
                   <div className="flex gap-2">
                     <button onClick={()=>setShowAddBody(false)} className="py-2 px-4 rounded-xl border border-slate-700 text-slate-300 hover:text-white text-sm font-semibold transition-colors">취소</button>
                     <button onClick={handleAddBody} className="flex-1 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold py-2 rounded-xl text-sm transition-colors">등록</button>

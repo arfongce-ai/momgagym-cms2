@@ -14,6 +14,7 @@ const KIND_KO = Object.freeze({
   gait: '보행·러닝',
   stance: '한다리서기',
   squat: '오버헤드 스쿼트',
+  daily: '오늘의 컨디션',
 });
 
 // squatBiomechanics.js가 반환하는 repeatedFlags를 사람이 읽을 문장으로 매핑.
@@ -113,6 +114,23 @@ export function buildProblemFocus(kind, report = {}) {
         if (info) addIssue(info.level, info.text);
       });
       if (!issues.length) addStrength('오버헤드 딥 스쿼트 동작에서 큰 위험 신호가 없습니다.');
+    }
+  } else if (kind === 'daily') {
+    // [모미 신규] 컨디션 체크인(conditionAssessment.js evaluateCondition() 결과)을 해석한다.
+    // report.valid===false: 오늘 체크인이 아직 없음. 그 외엔 painNrs/fatigue 순으로 확인해
+    // primaryFinding 우선순위가 통증 > 피로도 > 메모가 되도록 한다(issues[0] 사용).
+    if (report.valid === false) {
+      addStrength('오늘 컨디션 체크인이 아직 없습니다.');
+    } else {
+      if (report.painNrs != null) {
+        if (report.painNrs >= 7) addIssue('risk', `통증 NRS ${report.painNrs}/10로 보고되었습니다.`);
+        else if (report.painNrs >= 4) addIssue('caution', `통증 NRS ${report.painNrs}/10로 보고되었습니다.`);
+      }
+      if (report.fatigue != null && report.fatigue >= 4) {
+        addIssue('caution', `오늘 피로도가 ${report.fatigue}/5로 높게 보고되었습니다.`);
+      }
+      if (report.memo) addIssue('normal', `회원 메모: ${report.memo}`);
+      if (!issues.length) addStrength('오늘 컨디션에 특이 신호가 없습니다.');
     }
   }
 
@@ -233,6 +251,7 @@ function recommendedNextCheck(kind, severity) {
   if (kind === 'rom') return severity === 'normal' ? '점프 또는 보행 영상으로 확보된 가동범위가 기능 동작에 반영되는지 확인하세요.' : '자세·체형 사진과 보행/점프 영상에서 같은 쪽 보상 패턴이 반복되는지 확인하세요.';
   if (kind === 'jump') return severity === 'normal' ? '보행/러닝 영상으로 반복 착지와 추진 패턴을 확인하세요.' : '자세·ROM 리포트에서 착지 비대칭의 정렬/가동성 원인을 함께 확인하세요.';
   if (kind === 'gait') return severity === 'normal' ? 'ROM과 자세 사진으로 반복 패턴의 구조적 원인을 추적하세요.' : 'ROM 제한, 자세 정렬, 점프 착지를 함께 비교해 반복되는 문제 축을 확인하세요.';
+  if (kind === 'daily') return severity === 'normal' ? '내일도 같은 시간에 체크인해 변화 추이를 쌓아보세요.' : '다음 체크인에서 오늘의 신호가 이어지는지 확인하고, 반복되면 트레이너와 공유하세요.';
   return '다른 측정 탭과 함께 비교해 반복되는 문제 패턴을 확인하세요.';
 }
 

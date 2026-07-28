@@ -80,6 +80,31 @@ export const pelvisCenterY = (lm) => {
   return (lm[23].y + lm[24].y) / 2;
 };
 
+// [스쿼트 추적기 신규] 무릎(25/26)·뒤꿈치(29/30) 중점 y — StandingCalibrator의
+// 서기 기준선에 선택적으로 추가되는 값(스쿼트 깊이·뒤꿈치 들림 판정용). 기존
+// feetCenterY/pelvisCenterY와 동일한 시야각 관용 패턴을 따르되, 이 값들이
+// 안 보인다고 해서 캘리브레이션 자체가 막히면 안 되므로(SLST·점프는 이 랜드마크가
+// 필요 없다) push()/_tryLock()의 lock 조건에는 관여하지 않는다(순수 부가 정보).
+export const kneeCenterY = (lm) => {
+  if (!lm || !lm[25] || !lm[26]) return null;
+  const v = JUMP_TUNING.minVisibility;
+  const okL = lm[25].visibility == null || lm[25].visibility >= v;
+  const okR = lm[26].visibility == null || lm[26].visibility >= v;
+  if (!okL && !okR) return null;
+  if (okL && okR) return (lm[25].y + lm[26].y) / 2;
+  return okL ? lm[25].y : lm[26].y;
+};
+
+export const heelCenterY = (lm) => {
+  if (!lm || !lm[29] || !lm[30]) return null;
+  const v = JUMP_TUNING.minVisibility;
+  const okL = lm[29].visibility == null || lm[29].visibility >= v;
+  const okR = lm[30].visibility == null || lm[30].visibility >= v;
+  if (!okL && !okR) return null;
+  if (okL && okR) return (lm[29].y + lm[30].y) / 2;
+  return okL ? lm[29].y : lm[30].y;
+};
+
 // 서 있는 자세 전신 픽셀 높이(정규화): 정수리(0) ~ 발목 중점.
 // 요구사항대로 '정수리(0)와 발끝(27/28)'을 쓰되, 발끝(31/32)은 blur 로 자주
 // 소실되므로 발목(27/28)을 기준으로 둔다(없으면 발끝 보조).
@@ -105,6 +130,10 @@ export class StandingCalibrator {
     this._feetY = [];
     this._pelvisY = [];
     this._bodyPx = [];
+    // [스쿼트 추적기 신규] 무릎·뒤꿈치는 선택적 부가 정보라 별도 배열로 모으고,
+    // 아래 push()/_tryLock()의 lock 조건(안정성 판정)에는 전혀 관여하지 않는다.
+    this._kneeY = [];
+    this._heelY = [];
     this._frames = 0;
     this._visFrames = 0;
     this.locked = false;
@@ -124,6 +153,11 @@ export class StandingCalibrator {
       this._pelvisY.push(pY);
       this._bodyPx.push(bPx);
     }
+    // 무릎·뒤꿈치는 안 보여도 위 lock 판정에 영향 없이 그냥 못 모을 뿐(선택 정보).
+    const kY = kneeCenterY(lm);
+    if (kY != null) this._kneeY.push(kY);
+    const hY = heelCenterY(lm);
+    if (hY != null) this._heelY.push(hY);
     if (this._feetY.length >= JUMP_TUNING.calibMinFrames) this._tryLock();
   }
 
@@ -135,12 +169,14 @@ export class StandingCalibrator {
     };
     const visRatio = this._frames ? this._visFrames / this._frames : 0;
     const feetStd = std(this._feetY);
-    // 불안정 판정: 가시 비율 부족 OR 발 흔들림 과다
+    // 불안정 판정: 가시 비율 부족 OR 발 흔들림 과다 (무릎·뒤꿈치는 이 판정에 안 쓰임)
     const stable = visRatio >= JUMP_TUNING.calibMinVisRatio
       && feetStd <= JUMP_TUNING.calibMaxStdY;
     if (!stable) {
       // 슬라이딩 윈도우: 오래된 샘플을 버리고 계속 재시도(자세 교정 시간 부여)
       this._feetY.shift(); this._pelvisY.shift(); this._bodyPx.shift();
+      if (this._kneeY.length) this._kneeY.shift();
+      if (this._heelY.length) this._heelY.shift();
       return;
     }
     const baselineFeetY = mean(this._feetY);
@@ -148,7 +184,11 @@ export class StandingCalibrator {
     const bodyPx = mean(this._bodyPx);
     // px↔cm 스케일: 실제 키(cm) / 화면상 픽셀 높이(정규화). 키 없으면 null.
     const scaleCmPerY = this.heightCm ? this.heightCm / bodyPx : null;
-    this.result = { baselineFeetY, baselinePelvisY, bodyPx, scaleCmPerY, feetStd, visRatio };
+    // 무릎·뒤꿈치 기준선은 표본이 너무 적으면(주로 정면 풀샷이 아닌 경우) null —
+    // 스쿼트 추적기가 이미 null-safe 폴백을 갖고 있어 안전하다.
+    const baselineKneeY = this._kneeY.length >= 5 ? mean(this._kneeY) : null;
+    const baselineHeelY = this._heelY.length >= 5 ? mean(this._heelY) : null;
+    this.result = { baselineFeetY, baselinePelvisY, bodyPx, scaleCmPerY, feetStd, visRatio, baselineKneeY, baselineHeelY };
     this.locked = true;
   }
 

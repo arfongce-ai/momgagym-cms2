@@ -310,6 +310,20 @@ export const METRIC_DEFINITIONS = Object.freeze({
     { key: 'rom', paths: ['metrics.rangeOfMotion'], unit: 'cm' },
     { key: 'velocityLoss', paths: ['metrics.velocityLoss', 'velocityLoss', 'vbt.velocityLoss'], unit: '%', range: { good: [0, 15], warn: [0, 30] } },
   ],
+  // stance/squat는 이미 CMS 판정 모듈(singleLegStance.js/squatBiomechanics.js)이
+  // normal/caution/risk로 확정한 결과라, 다른 타입처럼 원시 수치에 범위(range)를
+  // 적용해 재판정하지 않는다 — status를 그대로 신뢰도로만 노출한다(status가
+  // 있으므로 range 생략 시 unknown이 아니라 status 그대로 반영되도록 아래에서
+  // status를 직접 넘긴다).
+  stance: [
+    { key: 'stanceHoldTime', paths: ['left.trials.0.holdTimeMs', 'right.trials.0.holdTimeMs'], unit: 'ms' },
+    { key: 'stanceSway', paths: ['left.trials.0.swayPathCm', 'right.trials.0.swayPathCm'], unit: 'cm' },
+  ],
+  squat: [
+    { key: 'squatDepth', paths: ['trials.0.thighInclineDeg'], unit: '도' },
+    { key: 'squatTorsoLean', paths: ['trials.0.torsoLeanDeg'], unit: '도' },
+    { key: 'squatKneeValgus', paths: ['trials.0.kneeValgusDeg'], unit: '도' },
+  ],
 });
 
 export function normalizeTermKey(term) {
@@ -375,6 +389,8 @@ export function inferReportType(report = {}) {
   if (kind.includes('posture')) return 'posture';
   if (kind.includes('rom')) return 'rom';
   if (kind.includes('gait') || kind.includes('running')) return 'gait';
+  if (kind.includes('stance')) return 'stance';
+  if (kind.includes('squat')) return 'squat';
   if (kind.includes('jump') || r.jumpType || r.rsi) return 'jump';
   // 통합 바벨 리프팅 페이로드(type:'lifting' + mode) — 모드로 세부 분류.
   if (r.type === 'lifting' || r.mode === 'lifting' || r.mode === 'vbt' || r.mode === 'onerm') {
@@ -670,6 +686,8 @@ export function defaultRecommendation(reportType, status) {
   if (reportType === 'posture') return '자세 정렬과 ROM 제한이 함께 나타나는지 교차 확인하세요.';
   if (reportType === 'rom') return '좌우 가동범위 차이가 반복되는지 같은 조건으로 재측정하세요.';
   if (reportType === 'gait') return '반복 보행에서 같은 비대칭이 유지되는지 확인하세요.';
+  if (reportType === 'stance') return '자세·ROM 리포트에서 좌우 비대칭의 정렬적 원인을 함께 확인하세요.';
+  if (reportType === 'squat') return '한다리서기·ROM 리포트와 함께 좌우 정렬·가동성 원인을 확인하세요.';
   return '핵심 지표를 다음 측정과 비교해 변화 추이를 확인하세요.';
 }
 

@@ -6,8 +6,19 @@ import { useState } from 'react';
 import { todayYMD } from '../../utils/dates';
 import { store } from '../../demoData';
 import { analyzeBody } from '../../services/aiService';
+import { evaluateCondition } from '../core/conditionAssessment';
+import { askMomiDaily } from '../../services/momiService';
 import BodyInfoReport from './BodyInfoReport.jsx';
 import ReportActions from '../../components/report/ReportActions';
+
+// [모미 신규] 오늘의 컨디션 판정 상태(normal/caution/risk) → 배지 색.
+// unifiedReport.js STATUS 와 동일한 컬러 매핑(다른 판정 모듈들과 톤 통일).
+const CONDITION_TONE = {
+  normal: 'text-emerald-400',
+  caution: 'text-amber-400',
+  risk: 'text-red-400',
+  unknown: 'text-slate-500',
+};
 
 const TIER_STYLE = {
   good: 'text-emerald-400',
@@ -24,11 +35,19 @@ export default function BodyInfoMeasure({ member, onSave, onBack, onGuestBodyInf
     weight: member?.weight != null ? String(member.weight) : '',
     systolic: '',
     diastolic: '',
+    // [모미 신규] 오늘의 컨디션 — 신체정보와 같은 화면·같은 저장 흐름에 통합.
+    fatigue: '',
+    painNrs: '',
+    memo: '',
   });
   const [result, setResult] = useState(null);
   const [saveState, setSaveState] = useState('idle'); // idle | saving | saved | error
   const [saveMsg, setSaveMsg] = useState('');
   const [actionMsg, setActionMsg] = useState('');
+  const [savedCondition, setSavedCondition] = useState(null); // 마지막 저장된 evaluateCondition() 결과
+  const [guideState, setGuideState] = useState('idle'); // idle | loading | done | error
+  const [guideText, setGuideText] = useState('');
+  const [guideMsg, setGuideMsg] = useState('');
   const pf = (k) => (e) => {
     const val = e.target.value;
     setForm(f => ({ ...f, [k]: val }));
@@ -38,15 +57,26 @@ export default function BodyInfoMeasure({ member, onSave, onBack, onGuestBodyInf
     }
   };
 
+  // [모미 신규] 컨디션만 입력한 날(체중 없음)도 저장 가능해야 하므로, "체중 필수"가
+  // 아니라 "체중 또는 컨디션 항목 중 하나는 필수"로 완화한다. 체중이 없으면 체성분/혈압
+  // 분석(analyzeBody)은 건너뛰고 컨디션만 저장한다.
+  const hasBodyInput = !!form.weight;
+  const hasConditionInput = !!(form.fatigue || form.painNrs || form.memo.trim());
+
   const analyze = async () => {
-    if (!form.weight) { alert('몸무게는 필수입니다.'); return; }
-    const measurements = {
-      height:    form.height    ? Number(form.height)    : null,
-      weight:    Number(form.weight),
-      systolic:  form.systolic  ? Number(form.systolic)  : null,
-      diastolic: form.diastolic ? Number(form.diastolic) : null,
-    };
-    setResult(analyzeBody(measurements));
+    if (!hasBodyInput && !hasConditionInput) {
+      alert('몸무게 또는 오늘의 컨디션 중 하나는 입력해 주세요.');
+      return;
+    }
+    if (hasBodyInput) {
+      const measurements = {
+        height:    form.height    ? Number(form.height)    : null,
+        weight:    Number(form.weight),
+        systolic:  form.systolic  ? Number(form.systolic)  : null,
+        diastolic: form.diastolic ? Number(form.diastolic) : null,
+      };
+      setResult(analyzeBody(measurements));
+    }
     // [항목 1] 자동 저장: 분석과 동시에 회원 신체기록에 남겨 회차별 비교(리포트 탭)에
     //  바로 반영한다. 별도 '확인·저장' 단계 없이 저장되며, 상태 배지로 결과를 알린다.
     await save();
@@ -54,11 +84,22 @@ export default function BodyInfoMeasure({ member, onSave, onBack, onGuestBodyInf
 
   const save = async () => {
     if (!member) { setSaveMsg('저장하려면 먼저 회원을 선택하세요(허브 상단).'); return; }
+    // [모미 신규] 오늘의 컨디션 판정. conditionAssessment.js — 다른 판정 모듈과 동일하게
+    // normal/caution/risk/unknown 문자열을 그대로 저장한다.
+    const condition = evaluateCondition({
+      fatigue: form.fatigue,
+      painNrs: form.painNrs,
+      memo: form.memo,
+    });
     const payload = {
       height: form.height ? Number(form.height) : null,
-      weight: Number(form.weight),
+      weight: form.weight ? Number(form.weight) : null,
       systolic: form.systolic ? Number(form.systolic) : null,
       diastolic: form.diastolic ? Number(form.diastolic) : null,
+      fatigue: condition.fatigue,
+      painNrs: condition.painNrs,
+      conditionMemo: condition.memo,
+      conditionStatus: condition.valid ? condition.status : null,
     };
     setSaveState('saving');
     if (isVirtual) {
@@ -67,23 +108,45 @@ export default function BodyInfoMeasure({ member, onSave, onBack, onGuestBodyInf
       onGuestBodyInfoChange?.({ height: form.height, weight: form.weight });
       onSave?.(payload); // 측정 이력(ai)에 신체정보 기록 누적
       setSaveState('saved');
+      setSavedCondition(condition.valid ? condition : null);
       setSaveMsg('미등록회원 신체정보가 이번 측정에 반영되었습니다. (다른 측정 탭과 연동)');
       return;
     }
     try {
       await store.addBodyRecord(member.id, {
         recordedAt: todayYMD(),
-        height:    form.height    ? Number(form.height)    : null,
-        weight:    Number(form.weight),
+        height:    form.height ? Number(form.height) : null,
+        weight:    form.weight ? Number(form.weight) : null,
         systolic:  form.systolic  ? Number(form.systolic)  : null,
         diastolic: form.diastolic ? Number(form.diastolic) : null,
+        fatigue: condition.fatigue,
+        painNrs: condition.painNrs,
+        conditionMemo: condition.memo,
+        conditionStatus: condition.valid ? condition.status : null,
         note: 'AI 측정 입력',
       });
     } catch (e) { setSaveState('error'); setSaveMsg('신체정보 저장에 실패했습니다. 네트워크 확인 후 다시 시도하세요.'); return; }
     // 허브의 onSave 도 호출(측정 이력 누적용)
     onSave?.(payload);
     setSaveState('saved');
+    setSavedCondition(condition.valid ? condition : null);
     setSaveMsg('신체정보가 저장되었습니다. (회원 신체기록 + 리포트에 반영)');
+  };
+
+  // [모미 신규] "오늘의 운동가이드" — 방금 저장한 컨디션을 바탕으로 /api/momi(kind:'daily')를
+  // 호출한다. MomiInsightPanel과 동일한 loading/error/answer 3단 상태 패턴.
+  const askDailyGuide = async () => {
+    if (!member || !savedCondition) return;
+    setGuideState('loading');
+    setGuideMsg('');
+    try {
+      const text = await askMomiDaily({ member, condition: savedCondition });
+      setGuideText(text);
+      setGuideState('done');
+    } catch (e) {
+      setGuideState('error');
+      setGuideMsg(e.message || '오늘의 가이드를 불러오는 중 문제가 생겼습니다.');
+    }
   };
 
   const INP = 'w-full bg-slate-800 border border-slate-700 text-slate-100 rounded-xl px-3 py-2.5 text-sm font-mono focus:outline-none focus:border-amber-500';
@@ -99,13 +162,33 @@ export default function BodyInfoMeasure({ member, onSave, onBack, onGuestBodyInf
 
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 grid grid-cols-2 gap-3">
         <div><label className={LBL}>키 (cm)</label><input type="number" step="0.1" value={form.height} onChange={pf('height')} placeholder="175" className={INP} /></div>
-        <div><label className={LBL}>몸무게 (kg) <span className="text-red-400">*</span></label><input type="number" step="0.1" value={form.weight} onChange={pf('weight')} placeholder="70" className={INP} /></div>
+        <div><label className={LBL}>몸무게 (kg)</label><input type="number" step="0.1" value={form.weight} onChange={pf('weight')} placeholder="70" className={INP} /></div>
         <div><label className={LBL}>최고혈압</label><input type="number" value={form.systolic} onChange={pf('systolic')} placeholder="120" className={INP} /></div>
         <div><label className={LBL}>최저혈압</label><input type="number" value={form.diastolic} onChange={pf('diastolic')} placeholder="80" className={INP} /></div>
       </div>
 
+      {/* [모미 신규] 오늘의 컨디션 — 신체정보와 같은 저장 흐름에 통합. 몸무게 없이 이것만
+          입력해도 저장할 수 있다(analyze()의 hasBodyInput/hasConditionInput 참고). */}
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
+        <p className="text-xs font-bold text-amber-400 uppercase tracking-widest">오늘의 컨디션</p>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className={LBL}>피로도 (1~5)</label>
+            <input type="number" min="1" max="5" value={form.fatigue} onChange={pf('fatigue')} placeholder="1~5" className={INP} />
+          </div>
+          <div>
+            <label className={LBL}>통증 NRS (0~10)</label>
+            <input type="number" min="0" max="10" value={form.painNrs} onChange={pf('painNrs')} placeholder="0=없음, 10=최악" className={INP} />
+          </div>
+        </div>
+        <div>
+          <label className={LBL}>한줄메모</label>
+          <input type="text" value={form.memo} onChange={pf('memo')} placeholder="예) 어제 스쿼트 후 무릎이 뻐근해요" maxLength={200} className={INP} />
+        </div>
+      </div>
+
       <button onClick={analyze} disabled={saveState === 'saving'} className="btn btn-primary w-full disabled:opacity-60">
-        {saveState === 'saving' ? '분석·저장 중…' : '분석 · 저장'}
+        {saveState === 'saving' ? '저장 중…' : hasBodyInput ? '분석 · 저장' : '컨디션 저장'}
       </button>
 
       {result && (
@@ -130,6 +213,34 @@ export default function BodyInfoMeasure({ member, onSave, onBack, onGuestBodyInf
             {saveState === 'saving' ? '저장 중…' : saveState === 'saved' ? '✓ 저장됨 (다시 저장)' : '확인 · 저장'}
           </button>
           {saveMsg && <p className={`text-center text-xs font-bold ${saveState === 'error' ? 'text-red-400' : 'text-emerald-400'}`}>{saveMsg}</p>}
+        </div>
+      )}
+
+      {/* [모미 신규] 체중 없이 컨디션만 저장한 경우 분석 카드가 없으므로, 저장 결과는
+          여기서 따로 보여준다(위 카드 안의 saveMsg는 result가 있을 때만 렌더링됨). */}
+      {!result && saveMsg && (
+        <p className={`text-center text-xs font-bold ${saveState === 'error' ? 'text-red-400' : 'text-emerald-400'}`}>{saveMsg}</p>
+      )}
+
+      {/* [모미 신규] 오늘의 운동가이드 — 방금 저장한 컨디션을 Momi(kind:'daily')에게 물어본다.
+          MomiInsightPanel(리포트 탭)과 동일한 상태 패턴을 이 화면 톤(Tailwind)에 맞춰 재구현. */}
+      {savedCondition && (
+        <div className="card-accent p-4 space-y-3 animate-fade-in">
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-bold text-amber-400 uppercase tracking-widest">오늘의 컨디션 판정</p>
+            <span className={`text-xs font-black ${CONDITION_TONE[savedCondition.status]}`}>
+              {{ normal: '정상', caution: '주의', risk: '위험' }[savedCondition.status] || '확인 필요'}
+            </span>
+          </div>
+          <button onClick={askDailyGuide} disabled={guideState === 'loading'} className="btn btn-primary w-full disabled:opacity-60">
+            {guideState === 'loading' ? '모미가 오늘의 가이드를 준비 중이에요…' : '🤖 오늘의 운동가이드 보기'}
+          </button>
+          {guideState === 'error' && <p className="text-center text-xs font-bold text-red-400">{guideMsg}</p>}
+          {guideState === 'done' && (
+            <div className="bg-slate-800/50 rounded-xl px-3 py-2.5">
+              <p className="text-[11px] text-slate-200 leading-relaxed whitespace-pre-wrap">{guideText}</p>
+            </div>
+          )}
         </div>
       )}
 

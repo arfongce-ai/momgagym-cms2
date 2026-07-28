@@ -16,6 +16,60 @@ import { loadPoseLandmarker, detectPoseFrame } from './poseBackend';
 // 분석 처리 해상도 (요구사항 3: 메모리 부하 감소)
 export const ANALYZE_MAX = { width: 1280, height: 720 };
 
+// ── video.duration Infinity/NaN 버그 우회 ───────────────────────────────
+// 일부 영상 파일(특히 슬로모/편집 앱 재인코딩본)은 loadedmetadata 시점에
+// video.duration 이 Infinity 또는 NaN 으로 보고되는 잘 알려진 브라우저 버그가
+// 있다. 표준 우회: currentTime 을 아주 크게 seek 하면 브라우저가 duration 을
+// 재계산하며 durationchange(일부 브라우저는 timeupdate 만)를 발화한다.
+export function isUsableDuration(d) {
+  return typeof d === 'number' && Number.isFinite(d) && d > 0;
+}
+
+/**
+ * video.duration 이 이미 유효하면 즉시 반환하고, Infinity/NaN 이면 seek 우회로
+ * 실제 값을 알아내 resolve 한다. 우회도 timeoutMs 안에 안 되면 reject.
+ * @param {HTMLVideoElement} video
+ * @param {object} [opts]
+ * @param {number} [opts.timeoutMs] 우회 대기 상한(기본 8초)
+ * @returns {Promise<number>}
+ */
+export function resolveVideoDuration(video, { timeoutMs = 8000 } = {}) {
+  if (isUsableDuration(video.duration)) return Promise.resolve(video.duration);
+
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    let timer = null;
+
+    const cleanup = () => {
+      video.removeEventListener('durationchange', onUpdate);
+      video.removeEventListener('timeupdate', onUpdate);
+      if (timer) clearTimeout(timer);
+    };
+
+    const onUpdate = () => {
+      if (settled || !isUsableDuration(video.duration)) return;
+      settled = true;
+      const resolved = video.duration;
+      cleanup();
+      video.currentTime = 0; // 재생 위치 정리(seek 흔적 제거)
+      resolve(resolved);
+    };
+
+    video.addEventListener('durationchange', onUpdate);
+    video.addEventListener('timeupdate', onUpdate);
+
+    // 표준 우회: 아주 큰 값으로 seek → 브라우저가 실제 duration 을 재계산.
+    video.currentTime = 1e101;
+
+    timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(new Error('영상 길이를 읽을 수 없습니다. 다른 파일로 시도해 주세요.'));
+    }, timeoutMs);
+  });
+}
+
 // 영상 길이에 맞춰 분석할 프레임 수(샘플레이트)를 정한다.
 // 너무 촘촘하면 느리고, 너무 성기면 케이던스/각도 정밀도가 떨어진다.
 // 목표 ~30fps 상당(보행 분석에 충분), 최대 프레임 상한으로 폭주 방지.
@@ -60,8 +114,10 @@ export async function analyzeUploadedVideo({
 }) {
   await loadPoseLandmarker({ numPoses: 1, modelTier });
 
-  const duration = video.duration;
-  if (!duration || !Number.isFinite(duration)) {
+  let duration;
+  try {
+    duration = await resolveVideoDuration(video);
+  } catch (e) {
     throw new Error('영상 길이를 읽을 수 없습니다. 다른 파일로 시도해 주세요.');
   }
 
