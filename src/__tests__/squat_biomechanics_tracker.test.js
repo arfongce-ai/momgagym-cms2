@@ -84,6 +84,19 @@ describe('SquatBiomechanicsTracker — 반복(rep) 감지 및 trial 변환', () 
     const s = tracker.summary();
     expect(s.trialsFound).toBe(2);
   });
+
+  it('liveDepthState()로 하강 중 실시간 깊이를 조회할 수 있다(라이브 화면용)', () => {
+    const tracker = new SquatBiomechanicsTracker(calib);
+    expect(tracker.liveDepthState()).toBeNull(); // 아직 서 있는 상태(waiting)에선 null
+    tracker.push(frame({ hipY: 0.50 }), 0);
+    expect(tracker.liveDepthState()).toBeNull();
+    tracker.push(frame({ hipY: 0.60 }), 33); // depthFrac=(0.60-0.50)/0.20=0.5, 하강 시작
+    const live = tracker.liveDepthState();
+    expect(live).not.toBeNull();
+    expect(live.depthFrac).toBeCloseTo(0.5, 1);
+    tracker.push(frame({ hipY: 0.70 }), 66); // 완전 패러렐(depthFrac=1) 도달
+    expect(tracker.liveDepthState().thighInclineDeg).toBeLessThan(5);
+  });
 });
 
 describe('evaluateSquatBiomechanics ↔ 트래커 출력 — 통합 확인', () => {

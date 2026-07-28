@@ -222,4 +222,15 @@ export class SquatBiomechanicsTracker {
       trialsFound: this.trials.length,
     };
   }
+
+  // 라이브 화면에서 "지금 이 반복이 얼마나 깊이 내려갔는지"를 표시하기 위한
+  // 조회용(상태 변경 없음) — singleLegStanceTracker.js의 elapsedHoldMs()와 동일한
+  // 원칙: 이미 누적 중인 내부 상태를 읽기만 한다.
+  liveDepthState() {
+    if (this.phase !== 'active') return null;
+    return {
+      depthFrac: Math.round(this._maxDepthFrac * 100) / 100,
+      thighInclineDeg: Math.round(this._minThighIncline * 10) / 10,
+    };
+  }
 }

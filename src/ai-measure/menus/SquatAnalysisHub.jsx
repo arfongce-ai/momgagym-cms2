@@ -1,17 +1,19 @@
 // ai-measure/menus/SquatAnalysisHub.jsx
 // ════════════════════════════════════════════════════════════════════════
 //  오버헤드 딥 스쿼트 측정 진입점.
-//   영상 분석(SquatUploadAnalysis) → evaluateSquatBiomechanics()로 종합 판정
-//   → buildProblemFocus()로 요약 → MEASURE_FLOW.md 표준 흐름
+//   영상 분석(SquatUploadAnalysis/SquatLiveAnalysis) → evaluateSquatBiomechanics()로
+//   종합 판정 → buildProblemFocus()로 요약 → MEASURE_FLOW.md 표준 흐름
 //   (기록 → 확인·저장 → 기록 확인).
 //
-//  StanceAnalysisHub.jsx와 동일한 저장 책임 분리(Hub가 단일 저장 지점)이지만,
-//  다리 좌/우 구분이 없어 좌/우 2단계 대신 단일 업로드 1단계로 끝난다
-//  (반복 2회 모두 SquatUploadAnalysis 내부의 트래커가 한 번에 잡아낸다).
-//  지금은 '업로드' 방식만 있다 — 실시간 카메라는 registry.js 주석대로 추후 추가.
+//  StanceAnalysisHub.jsx와 동일한 저장 책임 분리(Hub가 단일 저장 지점) + 동일한
+//  mode 토글 자리(실시간/업로드). 두 방식 모두 squatBiomechanicsTracker.js 하나를
+//  공유하므로 판정 결과는 방식과 무관하게 동일한 로직으로 나온다. 다리 좌/우
+//  구분이 없어 좌/우 2단계 대신 단일 측정 1단계로 끝난다(반복 2회 모두 트래커가
+//  한 번에 잡아낸다).
 // ════════════════════════════════════════════════════════════════════════
 import React, { useState, useCallback } from 'react';
 import SquatUploadAnalysis from './SquatUploadAnalysis';
+import SquatLiveAnalysis from './SquatLiveAnalysis';
 import { evaluateSquatBiomechanics } from '../core/squatBiomechanics';
 import { buildProblemFocus } from '../core/crossMeasureContext';
 import { useHardwareBack } from '../core/useHardwareBack';
@@ -27,6 +29,8 @@ export default function SquatAnalysisHub({ member, onBack, onSave, onSaveToFireb
   const [report, setReport] = useState(null);
   const [pending, setPending] = useState(null);
   const [saveState, setSaveState] = useState('idle'); // idle | saving | saved | error
+  // 요청에 따라 실시간을 기본값으로 (StanceAnalysisHub·JumpAnalysisHub와 동일한 자리에 동일한 토글 UI)
+  const [mode, setMode] = useState('live'); // live | upload
 
   const handleComplete = useCallback((summary) => {
     const evalResult = evaluateSquatBiomechanics(summary);
@@ -148,12 +152,32 @@ export default function SquatAnalysisHub({ member, onBack, onSave, onSaveToFireb
   // view === 'measure'
   return (
     <div className="fixed inset-0 z-[80] bg-slate-950" style={{ height: '100dvh' }}>
-      <SquatUploadAnalysis
-        member={member}
-        onBack={onBack}
-        onComplete={handleComplete}
-        onMemberHeightChange={onMemberHeightChange}
-      />
+      <div className="absolute top-[max(8px,calc(env(safe-area-inset-top)+8px))] inset-x-0 z-[86] flex justify-center px-3 pointer-events-none">
+        <div className="pointer-events-auto flex gap-1 rounded-full bg-black/55 backdrop-blur p-1 border border-white/10 shadow-lg">
+          {[['live', '🔴 실시간'], ['upload', '📁 영상 업로드']].map(([k, label]) => (
+            <button key={k} onClick={() => setMode(k)}
+              className={`rounded-full px-3.5 py-1 text-xs font-black transition-colors ${
+                mode === k ? 'bg-amber-500 text-slate-950' : 'text-slate-300'}`}>
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+      {mode === 'live' ? (
+        <SquatLiveAnalysis
+          member={member}
+          onBack={onBack}
+          onComplete={handleComplete}
+          onMemberHeightChange={onMemberHeightChange}
+        />
+      ) : (
+        <SquatUploadAnalysis
+          member={member}
+          onBack={onBack}
+          onComplete={handleComplete}
+          onMemberHeightChange={onMemberHeightChange}
+        />
+      )}
     </div>
   );
 }
