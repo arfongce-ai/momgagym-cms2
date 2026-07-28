@@ -1,26 +1,77 @@
 // ai-measure/menus/StanceLiveAnalysis.jsx
 // ════════════════════════════════════════════════════════════════════════
-//  한다리서기(SLST) 실시간 카메라 측정 — usePoseEngine.js(공유 훅)를 그대로
-//  사용한다. 캘리브레이션·시행 추적 로직은 업로드 모드(StanceUploadAnalysis)와
-//  완전히 동일한 singleLegStanceTracker.js를 공유 — 화면(측정 방식)만 다르고
-//  "카메라가 본 것을 숫자로 바꾸는" 두뇌는 하나다.
+//  한다리서기(SLST) 실시간 카메라 측정 — usePoseEngine.js(공유 훅) +
+//  CameraStage.jsx(공유 카메라 셸)를 자세·ROM·VBT·1RM·리프팅과 동일하게 쓴다
+//  (풀스크린 비디오+스켈레톤 오버레이, "✕ 닫기", 로딩/오류 처리는 CameraStage가
+//  전담 — 이 화면은 topBar/controls 슬롯만 채운다). 캘리브레이션·시행 추적
+//  로직은 업로드 모드(StanceUploadAnalysis)와 완전히 동일한
+//  singleLegStanceTracker.js를 공유 — 화면(측정 방식)만 다르고 "카메라가 본
+//  것을 숫자로 바꾸는" 두뇌는 하나다.
 //
 //  같은 다리로 최대 2회 시행을 연속으로 잡는다(발을 들면 자동 시작, 내리면
 //  자동 종료 후 바로 다음 시행 대기). 균형 상실은 자동 추정 + 트레이너가
 //  육안으로 보고 버튼으로 직접 표시하는 것 둘 다 지원한다.
+//  ⚠ 이 화면은 실시간 수치 판정에 집중한다 — 자세/ROM처럼 영상을 녹화해
+//  회원에게 공유하는 기능은 포함하지 않는다(스쿼트 라이브도 동일한 범위).
 // ════════════════════════════════════════════════════════════════════════
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { usePoseEngine } from '../core/usePoseEngine';
 import { StandingCalibrator, SingleLegStanceTracker } from '../core/singleLegStanceTracker';
+import CameraStage from './CameraStage.jsx';
 
 const LEG_KO = { left: '왼쪽', right: '오른쪽' };
+
+// 자세·보행 모듈과 동일한 본(bone) 목록 — 상체 코어 + 양다리.
+const BONES = [
+  [11, 12], [11, 23], [12, 24], [23, 24],
+  [23, 25], [25, 27], [27, 29], [27, 31], [29, 31],
+  [24, 26], [26, 28], [28, 30], [28, 32], [30, 32],
+];
+
+function vis(p, threshold = 0.3) {
+  return !!p && (p.visibility == null || p.visibility >= threshold);
+}
+
+// CameraStage는 비디오를 object-contain으로 그리므로(레터박스 생김), 스켈레톤도
+// 같은 보정으로 그려야 좌표가 맞는다(RomMeasure.jsx의 objectContainMapper와 동일).
+function objectContainMapper(video, width, height) {
+  const vw = video?.videoWidth || width;
+  const vh = video?.videoHeight || height;
+  const scale = Math.min(width / vw, height / vh);
+  const drawW = vw * scale, drawH = vh * scale;
+  const ox = (width - drawW) / 2, oy = (height - drawH) / 2;
+  return { x: (p) => ox + p.x * drawW, y: (p) => oy + p.y * drawH };
+}
+
+function drawSkeleton(canvas, video, landmarks, locked) {
+  if (!canvas || !video) return;
+  const cw = canvas.clientWidth, ch = canvas.clientHeight;
+  if (canvas.width !== cw || canvas.height !== ch) { canvas.width = cw; canvas.height = ch; }
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, cw, ch);
+  if (!landmarks) return;
+  const { x: X, y: Y } = objectContainMapper(video, cw, ch);
+  const col = locked ? 'rgba(52,211,153,0.95)' : 'rgba(34,211,238,0.95)';
+  ctx.strokeStyle = col; ctx.lineWidth = 3; ctx.lineCap = 'round';
+  BONES.forEach(([a, b]) => {
+    const pa = landmarks[a], pb = landmarks[b];
+    if (!vis(pa) || !vis(pb)) return;
+    ctx.beginPath(); ctx.moveTo(X(pa), Y(pa)); ctx.lineTo(X(pb), Y(pb)); ctx.stroke();
+  });
+  ctx.fillStyle = locked ? 'rgba(52,211,153,1)' : 'rgba(255,255,255,0.95)';
+  [11, 12, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32].forEach((i) => {
+    const p = landmarks[i];
+    if (!vis(p)) return;
+    ctx.beginPath(); ctx.arc(X(p), Y(p), 5, 0, Math.PI * 2); ctx.fill();
+  });
+}
 
 export default function StanceLiveAnalysis({ member, stanceLeg, onBack, onComplete, onMemberHeightChange }) {
   const [heightCm, setHeightCm] = useState(member?.height ? Number(member.height) : null);
   const [needHeight, setNeedHeight] = useState(!member?.height);
   const [heightInput, setHeightInput] = useState('');
 
-  // calibrating | low_visibility | ready | holding | trial_done | finished | error
+  // calibrating | low_visibility | ready | holding | trial_done | finished
   const [uiPhase, setUiPhase] = useState('calibrating');
   const [calibProgress, setCalibProgress] = useState(0);
   const [holdMs, setHoldMs] = useState(0);
@@ -31,15 +82,18 @@ export default function StanceLiveAnalysis({ member, stanceLeg, onBack, onComple
   const calibRef = useRef(null);
   const trackerRef = useRef(null);
   const lastTsRef = useRef(0);
+  const canvasRef = useRef(null);
   const startedRef = useRef(false);
 
   const legLabel = LEG_KO[stanceLeg] || stanceLeg;
 
-  const handleResult = useCallback((landmarks, ts) => {
+  const handleResult = useCallback((landmarks, ts, video) => {
     lastTsRef.current = ts;
-    if (!landmarks) return;
     if (!calibRef.current) calibRef.current = new StandingCalibrator({ heightCm });
     const calib = calibRef.current;
+
+    drawSkeleton(canvasRef.current, video, landmarks, calib.locked);
+    if (!landmarks) return;
 
     if (!calib.locked) {
       calib.push(landmarks);
@@ -66,7 +120,6 @@ export default function StanceLiveAnalysis({ member, stanceLeg, onBack, onComple
       setUiPhase('holding');
       setHoldMs(tracker.elapsedHoldMs(ts));
     } else if (tracker.trials.length > beforeCount) {
-      // 방금 시행 하나가 종료됨
       const t = tracker.trials[tracker.trials.length - 1];
       setLastTrialNote(t.stepOut ? '조기 종료(스텝아웃)로 기록됨' : '정상 종료로 기록됨');
       setTrialsFound(tracker.trials.length);
@@ -88,7 +141,7 @@ export default function StanceLiveAnalysis({ member, stanceLeg, onBack, onComple
   }, [needHeight]);
 
   useEffect(() => {
-    if (status === 'error' && error) { setErrorMsg(error); setUiPhase('error'); }
+    if (status === 'error' && error) setErrorMsg(error);
   }, [status, error]);
 
   const markBalanceLoss = () => trackerRef.current?.markBalanceLoss();
@@ -113,7 +166,6 @@ export default function StanceLiveAnalysis({ member, stanceLeg, onBack, onComple
     stop();
     if (!summary.trial1) {
       setErrorMsg('유효한 유지 시행이 없습니다. 발을 드는 동작이 카메라에 잘 보이는지 확인하고 다시 시도해 주세요.');
-      setUiPhase('error');
       return;
     }
     if (typeof onComplete === 'function') await onComplete(summary);
@@ -130,7 +182,7 @@ export default function StanceLiveAnalysis({ member, stanceLeg, onBack, onComple
     return (
       <div className="absolute inset-0 bg-slate-950 flex flex-col">
         <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800">
-          <button onClick={onBack} className="text-slate-300 font-bold text-sm">← 뒤로</button>
+          <button onClick={onBack} className="text-slate-300 font-bold text-sm">✕ 닫기</button>
           <h2 className="text-white font-black">한다리서기 · {legLabel} 지지</h2>
           <div className="w-12" />
         </div>
@@ -162,76 +214,53 @@ export default function StanceLiveAnalysis({ member, stanceLeg, onBack, onComple
 
   const secs = (holdMs / 1000).toFixed(1);
 
+  const topBar = (
+    <>
+      <p className="text-sm font-black text-white">{legLabel} 지지</p>
+      {uiPhase === 'calibrating' && <p className="text-xs font-bold text-amber-300">자세 보정 중… {Math.round(calibProgress * 100)}%</p>}
+      {uiPhase === 'low_visibility' && <p className="text-xs font-bold text-red-300">전신이 보이도록 서 주세요</p>}
+      {uiPhase === 'ready' && <p className="text-xs font-bold text-emerald-300">반대쪽 발을 들어 시작</p>}
+      {uiPhase === 'trial_done' && <p className="text-xs font-bold text-emerald-300">{trialsFound}차 완료 — {lastTrialNote}</p>}
+      {uiPhase === 'finished' && <p className="text-xs font-bold text-emerald-300">2회 모두 완료 — {lastTrialNote}</p>}
+      {errorMsg && <p className="text-xs font-bold text-red-300">{errorMsg}</p>}
+    </>
+  );
+
+  const controls = (
+    <>
+      {uiPhase === 'holding' && (
+        <>
+          <button onClick={markBalanceLoss}
+            className="rounded-full bg-red-500/20 border border-red-500/40 text-red-300 font-black text-xs px-4 py-2.5 active:scale-95">
+            ⚠ 균형 상실
+          </button>
+          <button onClick={stopCurrentHold}
+            className="rounded-full bg-emerald-500 text-slate-950 font-black text-xs px-4 py-2.5 active:scale-95">
+            ✓ 목표 도달, 종료
+          </button>
+        </>
+      )}
+      {uiPhase === 'trial_done' && (
+        <button onClick={finishAndSubmit}
+          className="rounded-full bg-slate-700 text-white font-bold text-xs px-4 py-2.5 active:scale-95">
+          1차만으로 측정 마치기
+        </button>
+      )}
+      {uiPhase === 'finished' && (
+        <button onClick={finishAndSubmit}
+          className="rounded-full bg-emerald-500 text-slate-950 font-black text-xs px-5 py-2.5 active:scale-95">
+          측정 완료 →
+        </button>
+      )}
+    </>
+  );
+
   return (
-    <div className="absolute inset-0 bg-slate-950 flex flex-col">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800">
-        <button onClick={onBack} className="text-slate-300 font-bold text-sm">← 뒤로</button>
-        <h2 className="text-white font-black">한다리서기 · {legLabel} 지지 (실시간)</h2>
-        <div className="w-12" />
-      </div>
-
-      <div className="flex-1 overflow-y-auto p-5 flex flex-col items-center justify-center gap-5">
-        <div className="relative w-full max-w-md overflow-hidden rounded-xl bg-black aspect-[3/4]">
-          <video ref={videoRef} className="h-full w-full object-cover" playsInline muted />
-          <div className="absolute left-3 top-3 rounded-full border border-white/15 bg-black/70 px-3 py-1 text-xs font-black backdrop-blur">
-            {uiPhase === 'calibrating' && <span className="text-amber-300">자세 보정 중… {Math.round(calibProgress * 100)}%</span>}
-            {uiPhase === 'low_visibility' && <span className="text-red-300">전신이 보이도록 서 주세요</span>}
-            {uiPhase === 'ready' && <span className="text-emerald-300">{legLabel} 발 반대쪽을 들어 시작</span>}
-            {uiPhase === 'holding' && <span className="text-amber-300">유지 중 · {secs}초</span>}
-            {uiPhase === 'trial_done' && <span className="text-emerald-300">{trialsFound}차 완료</span>}
-            {uiPhase === 'finished' && <span className="text-emerald-300">2회 모두 완료</span>}
-          </div>
-        </div>
-
-        {heightCm && <p className="text-[11px] text-emerald-400">회원 키 {heightCm}cm로 흔들림 거리를 환산합니다</p>}
-
-        {uiPhase === 'holding' && (
-          <div className="flex flex-col items-center gap-3 w-full max-w-md">
-            <p className="text-4xl font-black tabular-nums text-amber-300">{secs}초</p>
-            <div className="flex gap-2 w-full">
-              <button onClick={markBalanceLoss}
-                className="flex-1 rounded-xl bg-red-500/20 border border-red-500/40 text-red-300 font-black py-3">
-                ⚠ 균형 상실 표시
-              </button>
-              <button onClick={stopCurrentHold}
-                className="flex-1 rounded-xl bg-emerald-500 text-slate-950 font-black py-3">
-                ✓ 목표 도달, 종료
-              </button>
-            </div>
-          </div>
-        )}
-
-        {uiPhase === 'trial_done' && (
-          <div className="flex flex-col items-center gap-3 w-full max-w-md">
-            <p className="text-sm text-emerald-300 font-bold">✓ {trialsFound}차 시행 완료 — {lastTrialNote}</p>
-            <p className="text-sm text-slate-300 text-center">이어서 {legLabel} 발 반대쪽을 다시 들면 2차 시행이 자동으로 시작됩니다.</p>
-            <button onClick={finishAndSubmit}
-              className="w-full rounded-xl bg-slate-700 text-white font-bold py-3">
-              1차만으로 측정 마치기
-            </button>
-          </div>
-        )}
-
-        {uiPhase === 'finished' && (
-          <div className="flex flex-col items-center gap-3 w-full max-w-md">
-            <p className="text-sm text-emerald-300 font-bold">✓ 2회 시행 모두 완료 — {lastTrialNote}</p>
-            <button onClick={finishAndSubmit}
-              className="w-full rounded-xl bg-emerald-500 text-slate-950 font-black py-3.5">
-              측정 완료 → 다음
-            </button>
-          </div>
-        )}
-
-        {uiPhase === 'ready' && (
-          <p className="text-sm text-slate-300 text-center max-w-md">
-            {legLabel} 다리로 지지하고 반대쪽 발을 들어 버텨보세요. 발이 뜨는 순간 자동으로 측정이 시작됩니다.
-          </p>
-        )}
-
-        {(uiPhase === 'error' || errorMsg) && (
-          <p className="text-sm text-red-400 text-center max-w-md">{errorMsg}</p>
-        )}
-      </div>
-    </div>
+    <CameraStage
+      videoRef={videoRef} canvasRef={canvasRef} status={status} error={error}
+      onClose={onBack} tappable={false} showSkeletonToggle
+      topBar={topBar} controls={controls}
+      recording={uiPhase === 'holding'} recordingLabel={`유지 중 · ${secs}초`}
+    />
   );
 }

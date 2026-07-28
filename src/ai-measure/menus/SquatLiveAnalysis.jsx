@@ -1,9 +1,11 @@
 // ai-measure/menus/SquatLiveAnalysis.jsx
 // ════════════════════════════════════════════════════════════════════════
-//  오버헤드 딥 스쿼트 실시간 카메라 측정 — StanceLiveAnalysis.jsx와 동일한
-//  usePoseEngine 공유 훅 사용. 캘리브레이션·반복(rep) 추적 로직은 업로드 모드
-//  (SquatUploadAnalysis)와 완전히 동일한 squatBiomechanicsTracker.js를 공유 —
-//  화면(측정 방식)만 다르고 "카메라가 본 것을 숫자로 바꾸는" 두뇌는 하나다.
+//  오버헤드 딥 스쿼트 실시간 카메라 측정 — StanceLiveAnalysis.jsx와 동일하게
+//  usePoseEngine.js + CameraStage.jsx(공유 카메라 셸)를 쓴다(풀스크린 비디오+
+//  스켈레톤 오버레이, "✕ 닫기", 로딩/오류 처리는 CameraStage가 전담). 캘리브
+//  레이션·반복(rep) 추적 로직은 업로드 모드(SquatUploadAnalysis)와 완전히
+//  동일한 squatBiomechanicsTracker.js를 공유 — 화면(측정 방식)만 다르고
+//  "카메라가 본 것을 숫자로 바꾸는" 두뇌는 하나다.
 //
 //  SLST(유지 시간 기반)와 달리 스쿼트는 반복(내려갔다 올라오는 사이클) 기반이라
 //  실시간 피드백도 "몇 초째"가 아니라 "지금 이 반복이 얼마나 깊이 내려갔는지"를
@@ -13,13 +15,60 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { usePoseEngine } from '../core/usePoseEngine';
 import { StandingCalibrator, SquatBiomechanicsTracker } from '../core/squatBiomechanicsTracker';
+import CameraStage from './CameraStage.jsx';
+
+// 자세·보행·SLST 모듈과 동일한 본(bone) 목록 — 상체 코어 + 양다리.
+const BONES = [
+  [11, 12], [11, 23], [12, 24], [23, 24],
+  [23, 25], [25, 27], [27, 29], [27, 31], [29, 31],
+  [24, 26], [26, 28], [28, 30], [28, 32], [30, 32],
+];
+
+function vis(p, threshold = 0.3) {
+  return !!p && (p.visibility == null || p.visibility >= threshold);
+}
+
+// CameraStage는 비디오를 object-contain으로 그리므로(레터박스 생김), 스켈레톤도
+// 같은 보정으로 그려야 좌표가 맞는다(RomMeasure.jsx의 objectContainMapper와 동일,
+// StanceLiveAnalysis.jsx와도 동일한 함수).
+function objectContainMapper(video, width, height) {
+  const vw = video?.videoWidth || width;
+  const vh = video?.videoHeight || height;
+  const scale = Math.min(width / vw, height / vh);
+  const drawW = vw * scale, drawH = vh * scale;
+  const ox = (width - drawW) / 2, oy = (height - drawH) / 2;
+  return { x: (p) => ox + p.x * drawW, y: (p) => oy + p.y * drawH };
+}
+
+function drawSkeleton(canvas, video, landmarks, locked) {
+  if (!canvas || !video) return;
+  const cw = canvas.clientWidth, ch = canvas.clientHeight;
+  if (canvas.width !== cw || canvas.height !== ch) { canvas.width = cw; canvas.height = ch; }
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, cw, ch);
+  if (!landmarks) return;
+  const { x: X, y: Y } = objectContainMapper(video, cw, ch);
+  const col = locked ? 'rgba(52,211,153,0.95)' : 'rgba(34,211,238,0.95)';
+  ctx.strokeStyle = col; ctx.lineWidth = 3; ctx.lineCap = 'round';
+  BONES.forEach(([a, b]) => {
+    const pa = landmarks[a], pb = landmarks[b];
+    if (!vis(pa) || !vis(pb)) return;
+    ctx.beginPath(); ctx.moveTo(X(pa), Y(pa)); ctx.lineTo(X(pb), Y(pb)); ctx.stroke();
+  });
+  ctx.fillStyle = locked ? 'rgba(52,211,153,1)' : 'rgba(255,255,255,0.95)';
+  [11, 12, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32].forEach((i) => {
+    const p = landmarks[i];
+    if (!vis(p)) return;
+    ctx.beginPath(); ctx.arc(X(p), Y(p), 5, 0, Math.PI * 2); ctx.fill();
+  });
+}
 
 export default function SquatLiveAnalysis({ member, onBack, onComplete, onMemberHeightChange }) {
   const [heightCm, setHeightCm] = useState(member?.height ? Number(member.height) : null);
   const [needHeight, setNeedHeight] = useState(!member?.height);
   const [heightInput, setHeightInput] = useState('');
 
-  // calibrating | low_visibility | ready | active | trial_done | finished | error
+  // calibrating | low_visibility | ready | active | trial_done | finished
   const [uiPhase, setUiPhase] = useState('calibrating');
   const [calibProgress, setCalibProgress] = useState(0);
   const [depthPct, setDepthPct] = useState(0);
@@ -30,13 +79,16 @@ export default function SquatLiveAnalysis({ member, onBack, onComplete, onMember
   const calibRef = useRef(null);
   const trackerRef = useRef(null);
   const lastTsRef = useRef(0);
+  const canvasRef = useRef(null);
   const startedRef = useRef(false);
 
-  const handleResult = useCallback((landmarks, ts) => {
+  const handleResult = useCallback((landmarks, ts, video) => {
     lastTsRef.current = ts;
-    if (!landmarks) return;
     if (!calibRef.current) calibRef.current = new StandingCalibrator({ heightCm });
     const calib = calibRef.current;
+
+    drawSkeleton(canvasRef.current, video, landmarks, calib.locked);
+    if (!landmarks) return;
 
     if (!calib.locked) {
       calib.push(landmarks);
@@ -64,7 +116,6 @@ export default function SquatLiveAnalysis({ member, onBack, onComplete, onMember
       const live = tracker.liveDepthState();
       if (live) setDepthPct(Math.round(live.depthFrac * 100));
     } else if (tracker.trials.length > beforeCount) {
-      // 방금 반복 하나가 종료됨
       const t = tracker.trials[tracker.trials.length - 1];
       setLastTrialNote(t.heelLift ? '뒤꿈치 들림이 감지됐어요' : '정상 종료로 기록됨');
       setTrialsFound(tracker.trials.length);
@@ -87,7 +138,7 @@ export default function SquatLiveAnalysis({ member, onBack, onComplete, onMember
   }, [needHeight]);
 
   useEffect(() => {
-    if (status === 'error' && error) { setErrorMsg(error); setUiPhase('error'); }
+    if (status === 'error' && error) setErrorMsg(error);
   }, [status, error]);
 
   const markBalanceLoss = () => trackerRef.current?.markBalanceLoss();
@@ -100,7 +151,6 @@ export default function SquatLiveAnalysis({ member, onBack, onComplete, onMember
     stop();
     if (!summary.trial1) {
       setErrorMsg('유효한 반복(스쿼트)이 없습니다. 무릎 높이까지 충분히 앉는 동작이 카메라에 잘 보이는지 확인하고 다시 시도해 주세요.');
-      setUiPhase('error');
       return;
     }
     if (typeof onComplete === 'function') await onComplete(summary);
@@ -117,7 +167,7 @@ export default function SquatLiveAnalysis({ member, onBack, onComplete, onMember
     return (
       <div className="absolute inset-0 bg-slate-950 flex flex-col">
         <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800">
-          <button onClick={onBack} className="text-slate-300 font-bold text-sm">← 뒤로</button>
+          <button onClick={onBack} className="text-slate-300 font-bold text-sm">✕ 닫기</button>
           <h2 className="text-white font-black">오버헤드 딥 스쿼트</h2>
           <div className="w-12" />
         </div>
@@ -147,73 +197,53 @@ export default function SquatLiveAnalysis({ member, onBack, onComplete, onMember
     );
   }
 
+  const topBar = (
+    <>
+      <p className="text-sm font-black text-white">오버헤드 딥 스쿼트</p>
+      {uiPhase === 'calibrating' && <p className="text-xs font-bold text-amber-300">자세 보정 중… {Math.round(calibProgress * 100)}%</p>}
+      {uiPhase === 'low_visibility' && <p className="text-xs font-bold text-red-300">전신이 보이도록 서 주세요</p>}
+      {uiPhase === 'ready' && <p className="text-xs font-bold text-emerald-300">양팔 들고 스쿼트 시작</p>}
+      {uiPhase === 'trial_done' && <p className="text-xs font-bold text-emerald-300">{trialsFound}회차 완료 — {lastTrialNote}</p>}
+      {uiPhase === 'finished' && <p className="text-xs font-bold text-emerald-300">2회 모두 완료 — {lastTrialNote}</p>}
+      {errorMsg && <p className="text-xs font-bold text-red-300">{errorMsg}</p>}
+    </>
+  );
+
+  const controls = (
+    <>
+      {uiPhase === 'active' && (
+        <button onClick={markBalanceLoss}
+          className="rounded-full bg-red-500/20 border border-red-500/40 text-red-300 font-black text-xs px-4 py-2.5 active:scale-95">
+          ⚠ 균형 상실 표시
+        </button>
+      )}
+      {uiPhase === 'trial_done' && (
+        <button onClick={finishAndSubmit}
+          className="rounded-full bg-slate-700 text-white font-bold text-xs px-4 py-2.5 active:scale-95">
+          1회차만으로 측정 마치기
+        </button>
+      )}
+      {uiPhase === 'finished' && (
+        <button onClick={finishAndSubmit}
+          className="rounded-full bg-emerald-500 text-slate-950 font-black text-xs px-5 py-2.5 active:scale-95">
+          측정 완료 →
+        </button>
+      )}
+    </>
+  );
+
   return (
-    <div className="absolute inset-0 bg-slate-950 flex flex-col">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800">
-        <button onClick={onBack} className="text-slate-300 font-bold text-sm">← 뒤로</button>
-        <h2 className="text-white font-black">오버헤드 딥 스쿼트 (실시간)</h2>
-        <div className="w-12" />
-      </div>
-
-      <div className="flex-1 overflow-y-auto p-5 flex flex-col items-center justify-center gap-5">
-        <div className="relative w-full max-w-md overflow-hidden rounded-xl bg-black aspect-[3/4]">
-          <video ref={videoRef} className="h-full w-full object-cover" playsInline muted />
-          <div className="absolute left-3 top-3 rounded-full border border-white/15 bg-black/70 px-3 py-1 text-xs font-black backdrop-blur">
-            {uiPhase === 'calibrating' && <span className="text-amber-300">자세 보정 중… {Math.round(calibProgress * 100)}%</span>}
-            {uiPhase === 'low_visibility' && <span className="text-red-300">전신이 보이도록 서 주세요</span>}
-            {uiPhase === 'ready' && <span className="text-emerald-300">양팔 들고 스쿼트 시작</span>}
-            {uiPhase === 'active' && <span className="text-amber-300">진행 중 · 깊이 {depthPct}%</span>}
-            {uiPhase === 'trial_done' && <span className="text-emerald-300">{trialsFound}회차 완료</span>}
-            {uiPhase === 'finished' && <span className="text-emerald-300">2회 모두 완료</span>}
-          </div>
+    <CameraStage
+      videoRef={videoRef} canvasRef={canvasRef} status={status} error={error}
+      onClose={onBack} tappable={false} showSkeletonToggle
+      topBar={topBar} controls={controls}
+      recording={uiPhase === 'active'} recordingLabel={`진행 중 · 깊이 ${depthPct}%`}
+    >
+      {uiPhase === 'active' && (
+        <div className="w-full max-w-md mx-auto h-2 rounded-full bg-white/15 overflow-hidden">
+          <div className="h-full bg-amber-400 transition-all duration-150" style={{ width: `${Math.min(100, depthPct)}%` }} />
         </div>
-
-        {heightCm && <p className="text-[11px] text-emerald-400">회원 키 {heightCm}cm로 동작을 환산합니다</p>}
-
-        {uiPhase === 'active' && (
-          <div className="flex flex-col items-center gap-3 w-full max-w-md">
-            <div className="w-full h-3 rounded-full bg-slate-800 overflow-hidden">
-              <div className="h-full bg-amber-400 transition-all duration-150" style={{ width: `${Math.min(100, depthPct)}%` }} />
-            </div>
-            <p className="text-2xl font-black tabular-nums text-amber-300">깊이 {depthPct}%</p>
-            <button onClick={markBalanceLoss}
-              className="w-full rounded-xl bg-red-500/20 border border-red-500/40 text-red-300 font-black py-3">
-              ⚠ 균형 상실 표시
-            </button>
-          </div>
-        )}
-
-        {uiPhase === 'trial_done' && (
-          <div className="flex flex-col items-center gap-3 w-full max-w-md">
-            <p className="text-sm text-emerald-300 font-bold">✓ {trialsFound}회차 완료 — {lastTrialNote}</p>
-            <p className="text-sm text-slate-300 text-center">이어서 스쿼트하면 2회차가 자동으로 시작됩니다.</p>
-            <button onClick={finishAndSubmit}
-              className="w-full rounded-xl bg-slate-700 text-white font-bold py-3">
-              1회차만으로 측정 마치기
-            </button>
-          </div>
-        )}
-
-        {uiPhase === 'finished' && (
-          <div className="flex flex-col items-center gap-3 w-full max-w-md">
-            <p className="text-sm text-emerald-300 font-bold">✓ 2회 반복 모두 완료 — {lastTrialNote}</p>
-            <button onClick={finishAndSubmit}
-              className="w-full rounded-xl bg-emerald-500 text-slate-950 font-black py-3.5">
-              측정 완료 → 다음
-            </button>
-          </div>
-        )}
-
-        {uiPhase === 'ready' && (
-          <p className="text-sm text-slate-300 text-center max-w-md">
-            정면을 보고 양팔을 위로 든 채 스쿼트하세요. 내려가기 시작하는 순간 자동으로 측정이 시작됩니다.
-          </p>
-        )}
-
-        {(uiPhase === 'error' || errorMsg) && (
-          <p className="text-sm text-red-400 text-center max-w-md">{errorMsg}</p>
-        )}
-      </div>
-    </div>
+      )}
+    </CameraStage>
   );
 }
