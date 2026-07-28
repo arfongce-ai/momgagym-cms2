@@ -102,6 +102,12 @@ export class SingleLegStanceTracker {
     if (this.phase === 'holding') this._balanceLoss = true;
   }
 
+  // 라이브 화면에서 "지금 몇 초째 유지 중"을 표시하기 위한 조회용(상태 변경 없음).
+  elapsedHoldMs(nowMs) {
+    if (this.phase !== 'holding' || this._liftStartMs == null) return 0;
+    return Math.max(0, nowMs - this._liftStartMs);
+  }
+
   // 목표 시간 도달 등으로 "정상 종료"(조기 발내림이 아님을 명시적으로 기록).
   stopManually(tMs) {
     if (this.phase !== 'holding') return;

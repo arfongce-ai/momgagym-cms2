@@ -7,7 +7,7 @@ import { lazy } from 'react';
 //   → 8 오버헤드 딥 스쿼트(균형+가동성 복합) → 9 일반 녹화 · 10 초시계
 //   (도구, 항상 맨 마지막 — 기존 테스트 불변식: 정렬 후 timer가 배열 끝).
 //  '던지기(throw)'·'스윙(swing)' 준비 중 탭은 제거됨(2607 요청).
-//  7·8번은 현재 업로드 분석만 지원(라이브 카메라는 추후 추가 예정).
+//  7번(SLST)은 실시간·업로드 둘 다 지원. 8번(스쿼트)은 현재 업로드 분석만 지원(라이브 카메라는 추후 추가 예정).
 export const MEASURE_MENUS = [
   {
     id: 'body',
@@ -67,7 +67,7 @@ export const MEASURE_MENUS = [
     id: 'stance',
     no: 7,
     title: '한다리서기 (SLST)',
-    desc: '균형 능력, 좌우 비대칭 — 업로드 영상 분석',
+    desc: '균형 능력, 좌우 비대칭 — 실시간 카메라·영상 업로드',
     icon: 'LEG',
     status: 'ready',
     component: lazy(() => import('./menus/StanceAnalysisHub.jsx')),

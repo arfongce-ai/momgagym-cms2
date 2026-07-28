@@ -1,15 +1,16 @@
 // ai-measure/menus/StanceAnalysisHub.jsx
 // ════════════════════════════════════════════════════════════════════════
 //  한다리서기(SLST) 측정 진입점.
-//   1) 왼쪽 다리 지지 영상 분석 → 2) 오른쪽 다리 지지 영상 분석
+//   1) 왼쪽 다리 지지 측정 → 2) 오른쪽 다리 지지 측정
 //   → evaluateSingleLegStance()로 종합 판정 → buildProblemFocus()로 요약
 //   → MEASURE_FLOW.md 표준 흐름(기록 → 확인·저장 → 기록 확인)
 //
-//  JumpAnalysisHub.jsx 와 동일한 저장 책임 분리(Hub가 단일 저장 지점).
-//  지금은 '업로드' 방식만 있다 — 실시간 카메라 방식은 추후 같은 자리에
-//  모드 토글로 추가 예정(JumpAnalysisHub의 mode 토글과 동일한 자리).
+//  JumpAnalysisHub.jsx 와 동일한 저장 책임 분리(Hub가 단일 저장 지점) +
+//  동일한 mode 토글 자리(실시간/업로드). 두 방식 모두 singleLegStanceTracker.js
+//  하나를 공유하므로 판정 결과는 방식과 무관하게 동일한 로직으로 나온다.
 // ════════════════════════════════════════════════════════════════════════
 import React, { useState, useCallback } from 'react';
+import StanceLiveAnalysis from './StanceLiveAnalysis';
 import StanceUploadAnalysis from './StanceUploadAnalysis';
 import { evaluateSingleLegStance } from '../core/singleLegStance';
 import { buildProblemFocus } from '../core/crossMeasureContext';
@@ -21,6 +22,8 @@ const STATUS_KO = { normal: '정상', caution: '주의', risk: '위험', unknown
 export default function StanceAnalysisHub({ member, onBack, onSave, onSaveToFirebase, onMemberHeightChange }) {
   const save = onSaveToFirebase || onSave;
 
+  // 요청에 따라 실시간을 기본값으로 (JumpAnalysisHub와 동일한 자리에 동일한 토글 UI)
+  const [mode, setMode] = useState('live'); // live | upload
   const [legStep, setLegStep] = useState('left'); // left | right
   const [leftSummary, setLeftSummary] = useState(null);
   const [rightSummary, setRightSummary] = useState(null);
@@ -161,7 +164,7 @@ export default function StanceAnalysisHub({ member, onBack, onSave, onSaveToFire
   // view === 'measure' — 왼쪽 → 오른쪽 순서로 진행
   return (
     <div className="fixed inset-0 z-[80] bg-slate-950" style={{ height: '100dvh' }}>
-      <div className="absolute top-[max(8px,calc(env(safe-area-inset-top)+8px))] inset-x-0 z-[86] flex justify-center px-3 pointer-events-none">
+      <div className="absolute top-[max(8px,calc(env(safe-area-inset-top)+8px))] inset-x-0 z-[86] flex flex-col items-center gap-1.5 px-3 pointer-events-none">
         <div className="pointer-events-auto flex items-center gap-2 rounded-full bg-black/55 backdrop-blur px-3 py-1.5 border border-white/10 shadow-lg">
           <span className={`text-xs font-black ${legStep === 'left' ? 'text-amber-300' : 'text-emerald-400'}`}>
             {legStep === 'left' ? '① 왼쪽' : '✓ 왼쪽'}
@@ -171,14 +174,33 @@ export default function StanceAnalysisHub({ member, onBack, onSave, onSaveToFire
             ② 오른쪽
           </span>
         </div>
+        <div className="pointer-events-auto flex gap-1 rounded-full bg-black/55 backdrop-blur p-1 border border-white/10 shadow-lg">
+          {[['live', '🔴 실시간'], ['upload', '📁 영상 업로드']].map(([k, label]) => (
+            <button key={k} onClick={() => setMode(k)}
+              className={`rounded-full px-3.5 py-1 text-xs font-black transition-colors ${
+                mode === k ? 'bg-amber-500 text-slate-950' : 'text-slate-300'}`}>
+              {label}
+            </button>
+          ))}
+        </div>
       </div>
-      <StanceUploadAnalysis
-        member={member}
-        stanceLeg={legStep}
-        onBack={onBack}
-        onComplete={handleLegComplete}
-        onMemberHeightChange={onMemberHeightChange}
-      />
+      {mode === 'live' ? (
+        <StanceLiveAnalysis
+          member={member}
+          stanceLeg={legStep}
+          onBack={onBack}
+          onComplete={handleLegComplete}
+          onMemberHeightChange={onMemberHeightChange}
+        />
+      ) : (
+        <StanceUploadAnalysis
+          member={member}
+          stanceLeg={legStep}
+          onBack={onBack}
+          onComplete={handleLegComplete}
+          onMemberHeightChange={onMemberHeightChange}
+        />
+      )}
     </div>
   );
 }

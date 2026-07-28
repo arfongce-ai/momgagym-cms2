@@ -195,4 +195,19 @@ describe('SingleLegStanceTracker (synthetic landmark check)', () => {
     expect(report.right.status).toBe('risk');
     expect(report.right.basis).toBe('immediate');
   });
+
+  it('12) elapsedHoldMs로 유지 중 경과시간을 조회할 수 있다(라이브 화면용)', () => {
+    const calib = calibrate();
+    const tr = new SingleLegStanceTracker(calib.result, 'left');
+    let t = 0;
+    tr.push(mkLM(), t); t += 33;
+    const baseline = calib.result.baselineFeetY;
+    tr.push(mkLM({ ankRY: baseline - 0.15 }), t);
+    t += 1500;
+    tr.push(mkLM({ ankRY: baseline - 0.15 }), t);
+    expect(tr.elapsedHoldMs(t)).toBeGreaterThanOrEqual(1490);
+    expect(tr.elapsedHoldMs(t)).toBeLessThanOrEqual(1510);
+    tr.stopManually(t);
+    expect(tr.elapsedHoldMs(t + 1000)).toBe(0);
+  });
 });
