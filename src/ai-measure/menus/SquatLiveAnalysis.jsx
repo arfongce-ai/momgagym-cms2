@@ -1,11 +1,16 @@
 // ai-measure/menus/SquatLiveAnalysis.jsx
 // ════════════════════════════════════════════════════════════════════════
-//  오버헤드 딥 스쿼트 실시간 카메라 측정 — StanceLiveAnalysis.jsx와 동일하게
-//  usePoseEngine.js + CameraStage.jsx(공유 카메라 셸)를 쓴다(풀스크린 비디오+
-//  스켈레톤 오버레이, "✕ 닫기", 로딩/오류 처리는 CameraStage가 전담). 캘리브
-//  레이션·반복(rep) 추적 로직은 업로드 모드(SquatUploadAnalysis)와 완전히
-//  동일한 squatBiomechanicsTracker.js를 공유 — 화면(측정 방식)만 다르고
-//  "카메라가 본 것을 숫자로 바꾸는" 두뇌는 하나다.
+//  오버헤드 딥 스쿼트 실시간 카메라 측정 — StanceLiveAnalysis.jsx와 완전히
+//  동일한 구조(usePoseEngine + CameraStage + 녹화 파이프라인). 캘리브레이션·
+//  반복(rep) 추적 로직은 업로드 모드(SquatUploadAnalysis)와 완전히 동일한
+//  squatBiomechanicsTracker.js를 공유 — 화면(측정 방식)만 다르고 "카메라가
+//  본 것을 숫자로 바꾸는" 두뇌는 하나다.
+//
+//  [녹화 파이프라인 — ROM/보행/SLST와 동일 구조로 통일]
+//  캘리브레이션이 잠기는 순간부터(대기~2회 반복 완료까지) 화면 전체를 연속
+//  녹화한다 — 스켈레톤+GaugeHud를 캔버스에 합성 → captureStream →
+//  MediaRecorder. 측정 완료 시 blob을 summary와 함께 Hub로 넘겨, 판정
+//  리포트 화면에서 ReportActions로 영상까지 저장/공유할 수 있게 한다.
 //
 //  SLST(유지 시간 기반)와 달리 스쿼트는 반복(내려갔다 올라오는 사이클) 기반이라
 //  실시간 피드백도 "몇 초째"가 아니라 "지금 이 반복이 얼마나 깊이 내려갔는지"를
@@ -15,7 +20,12 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { usePoseEngine } from '../core/usePoseEngine';
 import { StandingCalibrator, SquatBiomechanicsTracker } from '../core/squatBiomechanicsTracker';
+import { DEFAULT_ASPECT, outputSize, drawVideoCover, coverTransform } from '../core/recordAspect';
+import { drawGaugeHud } from '../core/recordingOverlay';
 import CameraStage from './CameraStage.jsx';
+import GaugeHud from './GaugeHud.jsx';
+
+const MAX_RECORD_MS = 60000;
 
 // 자세·보행·SLST 모듈과 동일한 본(bone) 목록 — 상체 코어 + 양다리.
 const BONES = [
@@ -28,9 +38,6 @@ function vis(p, threshold = 0.3) {
   return !!p && (p.visibility == null || p.visibility >= threshold);
 }
 
-// CameraStage는 비디오를 object-contain으로 그리므로(레터박스 생김), 스켈레톤도
-// 같은 보정으로 그려야 좌표가 맞는다(RomMeasure.jsx의 objectContainMapper와 동일,
-// StanceLiveAnalysis.jsx와도 동일한 함수).
 function objectContainMapper(video, width, height) {
   const vw = video?.videoWidth || width;
   const vh = video?.videoHeight || height;
@@ -40,14 +47,12 @@ function objectContainMapper(video, width, height) {
   return { x: (p) => ox + p.x * drawW, y: (p) => oy + p.y * drawH };
 }
 
-function drawSkeleton(canvas, video, landmarks, locked) {
+function drawSkeleton(canvas, video, landmarks, locked, mapper) {
   if (!canvas || !video) return;
-  const cw = canvas.clientWidth, ch = canvas.clientHeight;
-  if (canvas.width !== cw || canvas.height !== ch) { canvas.width = cw; canvas.height = ch; }
+  const cw = canvas.clientWidth || canvas.width, ch = canvas.clientHeight || canvas.height;
   const ctx = canvas.getContext('2d');
-  ctx.clearRect(0, 0, cw, ch);
   if (!landmarks) return;
-  const { x: X, y: Y } = objectContainMapper(video, cw, ch);
+  const { x: X, y: Y } = mapper || objectContainMapper(video, cw, ch);
   const col = locked ? 'rgba(52,211,153,0.95)' : 'rgba(34,211,238,0.95)';
   ctx.strokeStyle = col; ctx.lineWidth = 3; ctx.lineCap = 'round';
   BONES.forEach(([a, b]) => {
@@ -75,6 +80,7 @@ export default function SquatLiveAnalysis({ member, onBack, onComplete, onMember
   const [trialsFound, setTrialsFound] = useState(0);
   const [lastTrialNote, setLastTrialNote] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
+  const [finishing, setFinishing] = useState(false);
 
   const calibRef = useRef(null);
   const trackerRef = useRef(null);
@@ -82,8 +88,91 @@ export default function SquatLiveAnalysis({ member, onBack, onComplete, onMember
   const canvasRef = useRef(null);
   const startedRef = useRef(false);
 
+  // ── 녹화 ──
+  const latestVideoElRef = useRef(null);
+  const latestLandmarksRef = useRef(null);
+  const recordCanvasRef = useRef(null);
+  const composeRafRef = useRef(null);
+  const composeIntervalRef = useRef(null);
+  const recordStreamRef = useRef(null);
+  const mediaRecorderRef = useRef(null);
+  const chunksRef = useRef([]);
+  const recordStartTsRef = useRef(0);
+  const maxRecordTimerRef = useRef(null);
+  const recordingStartedRef = useRef(false);
+  const pendingSummaryRef = useRef(null);
+  const depthPctRef = useRef(0);
+
+  const createRecordedStream = () => {
+    const video = latestVideoElRef.current;
+    const size = outputSize(DEFAULT_ASPECT);
+    const canvas = recordCanvasRef.current || document.createElement('canvas');
+    canvas.width = size.width; canvas.height = size.height;
+    recordCanvasRef.current = canvas;
+    const ctx = canvas.getContext('2d', { alpha: false });
+    const draw = () => {
+      if (!video) return;
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      if (!drawVideoCover(ctx, video, canvas.width, canvas.height)) return;
+      const cover = coverTransform(video, canvas.width, canvas.height);
+      drawSkeleton(canvas, video, latestLandmarksRef.current, !!calibRef.current?.locked, { x: cover.X, y: cover.Y });
+      const elapsedSec = recordingStartedRef.current ? (performance.now() - recordStartTsRef.current) / 1000 : 0;
+      drawGaugeHud(ctx, canvas.width, canvas.height, {
+        title: 'SQUAT',
+        recording: true,
+        elapsedSec,
+        accent: '#f59e0b',
+        gauge: { label: '깊이', value: depthPctRef.current, unit: '%', arc: true, min: 0, max: 100 },
+        stats: [{ label: '회차', value: trialsFound, unit: '/2' }],
+      });
+    };
+    const rafLoop = () => { draw(); composeRafRef.current = requestAnimationFrame(rafLoop); };
+    if (composeRafRef.current) cancelAnimationFrame(composeRafRef.current);
+    rafLoop();
+    if (composeIntervalRef.current) clearInterval(composeIntervalRef.current);
+    composeIntervalRef.current = setInterval(draw, 66);
+    const stream = canvas.captureStream ? canvas.captureStream(30) : null;
+    if (!stream) return null;
+    recordStreamRef.current = stream;
+    return stream;
+  };
+
+  const stopComposeLoop = () => {
+    if (composeRafRef.current) { cancelAnimationFrame(composeRafRef.current); composeRafRef.current = null; }
+    if (composeIntervalRef.current) { clearInterval(composeIntervalRef.current); composeIntervalRef.current = null; }
+    if (recordStreamRef.current) { recordStreamRef.current.getTracks().forEach(t => t.stop()); recordStreamRef.current = null; }
+  };
+
+  const beginRecording = () => {
+    if (recordingStartedRef.current) return;
+    try {
+      const mimeTypes = ['video/mp4', 'video/webm;codecs=vp8', 'video/webm'];
+      const selectedMime = mimeTypes.find(m => window.MediaRecorder?.isTypeSupported?.(m)) || '';
+      const stream = createRecordedStream();
+      if (stream) {
+        const mr = new MediaRecorder(stream, selectedMime ? { mimeType: selectedMime } : undefined);
+        mediaRecorderRef.current = mr;
+        chunksRef.current = [];
+        mr.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
+        mr.onstop = () => {
+          stopComposeLoop();
+          const type = mr.mimeType || 'video/webm';
+          const blob = new Blob(chunksRef.current, { type });
+          finishWithBlob(blob);
+        };
+        mr.start();
+        recordStartTsRef.current = performance.now();
+        recordingStartedRef.current = true;
+        maxRecordTimerRef.current = setTimeout(() => { if (recordingStartedRef.current) finishAndSubmit(); }, MAX_RECORD_MS);
+      }
+    } catch (e) { mediaRecorderRef.current = null; }
+  };
+
   const handleResult = useCallback((landmarks, ts, video) => {
     lastTsRef.current = ts;
+    latestVideoElRef.current = video || latestVideoElRef.current;
+    latestLandmarksRef.current = landmarks;
     if (!calibRef.current) calibRef.current = new StandingCalibrator({ heightCm });
     const calib = calibRef.current;
 
@@ -96,6 +185,7 @@ export default function SquatLiveAnalysis({ member, onBack, onComplete, onMember
       if (st.ready) {
         trackerRef.current = new SquatBiomechanicsTracker(calib.result);
         setUiPhase('ready');
+        beginRecording();
       } else if (st.reason === 'low_visibility') {
         setUiPhase('low_visibility');
       } else {
@@ -114,16 +204,20 @@ export default function SquatLiveAnalysis({ member, onBack, onComplete, onMember
     if (tracker.phase === 'active') {
       setUiPhase('active');
       const live = tracker.liveDepthState();
-      if (live) setDepthPct(Math.round(live.depthFrac * 100));
+      const pct = live ? Math.round(live.depthFrac * 100) : 0;
+      setDepthPct(pct);
+      depthPctRef.current = pct;
     } else if (tracker.trials.length > beforeCount) {
       const t = tracker.trials[tracker.trials.length - 1];
       setLastTrialNote(t.heelLift ? '뒤꿈치 들림이 감지됐어요' : '정상 종료로 기록됨');
       setTrialsFound(tracker.trials.length);
       setDepthPct(0);
+      depthPctRef.current = 0;
       setUiPhase(tracker.trials.length >= tracker.maxTrials ? 'finished' : 'trial_done');
     } else {
       setUiPhase('ready');
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [heightCm]);
 
   const { videoRef, start, stop, status, error } = usePoseEngine({ onResult: handleResult });
@@ -133,7 +227,14 @@ export default function SquatLiveAnalysis({ member, onBack, onComplete, onMember
       startedRef.current = true;
       start();
     }
-    return () => { stop(); };
+    return () => {
+      stop();
+      stopComposeLoop();
+      if (maxRecordTimerRef.current) { clearTimeout(maxRecordTimerRef.current); maxRecordTimerRef.current = null; }
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+        try { mediaRecorderRef.current.stop(); } catch (e) { /* noop */ }
+      }
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [needHeight]);
 
@@ -143,17 +244,38 @@ export default function SquatLiveAnalysis({ member, onBack, onComplete, onMember
 
   const markBalanceLoss = () => trackerRef.current?.markBalanceLoss();
 
+  const finishWithBlob = async (blob) => {
+    const summary = pendingSummaryRef.current;
+    if (!summary) return;
+    const previewVideoUrl = blob ? URL.createObjectURL(blob) : '';
+    if (typeof onComplete === 'function') {
+      await onComplete({ ...summary, videoBlob: blob || null, previewVideoUrl, hasVideo: !!blob });
+    }
+    setFinishing(false);
+  };
+
   const finishAndSubmit = async () => {
     const tracker = trackerRef.current;
     if (!tracker) return;
     tracker.finalize(lastTsRef.current);
     const summary = tracker.summary();
     stop();
+    if (maxRecordTimerRef.current) { clearTimeout(maxRecordTimerRef.current); maxRecordTimerRef.current = null; }
     if (!summary.trial1) {
       setErrorMsg('유효한 반복(스쿼트)이 없습니다. 무릎 높이까지 충분히 앉는 동작이 카메라에 잘 보이는지 확인하고 다시 시도해 주세요.');
+      stopComposeLoop();
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+        try { mediaRecorderRef.current.stop(); } catch (e) { /* noop */ }
+      }
       return;
     }
-    if (typeof onComplete === 'function') await onComplete(summary);
+    pendingSummaryRef.current = summary;
+    setFinishing(true);
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+      try { mediaRecorderRef.current.stop(); } catch (e) { finishWithBlob(null); }
+    } else {
+      finishWithBlob(null);
+    }
   };
 
   const applyHeight = () => {
@@ -205,6 +327,7 @@ export default function SquatLiveAnalysis({ member, onBack, onComplete, onMember
       {uiPhase === 'ready' && <p className="text-xs font-bold text-emerald-300">양팔 들고 스쿼트 시작</p>}
       {uiPhase === 'trial_done' && <p className="text-xs font-bold text-emerald-300">{trialsFound}회차 완료 — {lastTrialNote}</p>}
       {uiPhase === 'finished' && <p className="text-xs font-bold text-emerald-300">2회 모두 완료 — {lastTrialNote}</p>}
+      {finishing && <p className="text-xs font-bold text-amber-300">영상 정리 중…</p>}
       {errorMsg && <p className="text-xs font-bold text-red-300">{errorMsg}</p>}
     </>
   );
@@ -217,17 +340,23 @@ export default function SquatLiveAnalysis({ member, onBack, onComplete, onMember
           ⚠ 균형 상실 표시
         </button>
       )}
-      {uiPhase === 'trial_done' && (
+      {uiPhase === 'trial_done' && !finishing && (
         <button onClick={finishAndSubmit}
           className="rounded-full bg-slate-700 text-white font-bold text-xs px-4 py-2.5 active:scale-95">
           1회차만으로 측정 마치기
         </button>
       )}
-      {uiPhase === 'finished' && (
+      {uiPhase === 'finished' && !finishing && (
         <button onClick={finishAndSubmit}
           className="rounded-full bg-emerald-500 text-slate-950 font-black text-xs px-5 py-2.5 active:scale-95">
           측정 완료 →
         </button>
+      )}
+      {finishing && (
+        <div className="flex items-center gap-2 text-xs font-bold text-amber-300">
+          <div className="w-4 h-4 border-2 border-amber-400 border-t-transparent rounded-full animate-spin" />
+          저장 중…
+        </div>
       )}
     </>
   );
@@ -240,9 +369,8 @@ export default function SquatLiveAnalysis({ member, onBack, onComplete, onMember
       recording={uiPhase === 'active'} recordingLabel={`진행 중 · 깊이 ${depthPct}%`}
     >
       {uiPhase === 'active' && (
-        <div className="w-full max-w-md mx-auto h-2 rounded-full bg-white/15 overflow-hidden">
-          <div className="h-full bg-amber-400 transition-all duration-150" style={{ width: `${Math.min(100, depthPct)}%` }} />
-        </div>
+        <GaugeHud label="깊이" value={depthPct} unit="%" arc min={0} max={100} accent="#f59e0b"
+          stats={[{ label: '회차', value: `${trialsFound}/2` }]} />
       )}
     </CameraStage>
   );

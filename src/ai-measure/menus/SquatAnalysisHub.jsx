@@ -17,6 +17,7 @@ import SquatLiveAnalysis from './SquatLiveAnalysis';
 import { evaluateSquatBiomechanics } from '../core/squatBiomechanics';
 import { buildProblemFocus } from '../core/crossMeasureContext';
 import { useHardwareBack } from '../core/useHardwareBack';
+import { shareReportWithVideo } from '../core/reportShare';
 import MeasureRecordConfirm from '../components/MeasureRecordConfirm.jsx';
 
 const STATUS_KO = { normal: '정상', caution: '주의', risk: '위험', unknown: '확인 필요' };
@@ -41,6 +42,10 @@ export default function SquatAnalysisHub({ member, onBack, onSave, onSaveToFireb
       problemFocus: focus,
       member: { id: member?.id || null, name: member?.name || null },
       measuredAt: new Date().toISOString(),
+      // [녹화 통일] 라이브 모드에서 녹화된 영상(있으면). 업로드 모드는 새로 안 만듦.
+      videoBlob: summary?.videoBlob || null,
+      previewVideoUrl: summary?.previewVideoUrl || '',
+      hasVideo: !!summary?.videoBlob,
     };
     setPending(reportData);
     setSaveState('idle');
@@ -51,9 +56,11 @@ export default function SquatAnalysisHub({ member, onBack, onSave, onSaveToFireb
     const withRecord = { ...reportData, note: record.note || '' };
     let saved = withRecord;
     setSaveState('saving');
+    // 영상 Blob/blob-URL은 Firestore에 못 넣으므로 저장 페이로드에서 제외(ROM과 동일 패턴).
+    const { videoBlob, previewVideoUrl, ...persistable } = withRecord;
     if (withRecord.valid === true && typeof save === 'function') {
       try {
-        const res = await save(withRecord);
+        const res = await save(persistable);
         if (res && typeof res === 'object') saved = { ...withRecord, ...res };
         setSaveState('saved');
       } catch (e) { setSaveState('error'); }
@@ -70,6 +77,13 @@ export default function SquatAnalysisHub({ member, onBack, onSave, onSaveToFireb
     setView('measure'); setReport(null); setPending(null); setSaveState('idle');
   };
   useHardwareBack((view === 'report' && !!report) || view === 'record', backToMeasure);
+
+  const [videoShareMsg, setVideoShareMsg] = useState('');
+  const shareVideo = async (blob) => {
+    setVideoShareMsg('');
+    const res = await shareReportWithVideo(null, blob, { baseName: 'SQUAT', title: '오버헤드 딥 스쿼트 영상' });
+    setVideoShareMsg(res.msg || '');
+  };
 
   if (view === 'record' && pending) {
     const rows = [
@@ -139,6 +153,20 @@ export default function SquatAnalysisHub({ member, onBack, onSave, onSaveToFireb
             <div className="rounded-xl bg-slate-900 border border-slate-800 p-4 space-y-2">
               <p className="text-xs font-black text-slate-300">양호한 점</p>
               {focus.strengths.map((s, i) => <p key={i} className="text-sm text-emerald-300">• {s}</p>)}
+            </div>
+          )}
+
+          {/* [녹화 통일] 실시간 모드로 측정했으면 녹화 영상을 여기서 확인·공유 */}
+          {report.hasVideo && (
+            <div className="rounded-xl bg-slate-900 border border-slate-800 p-4 space-y-2">
+              <p className="text-xs font-black text-slate-300">측정 영상</p>
+              <video src={report.previewVideoUrl} controls playsInline
+                className="w-full rounded-lg bg-black aspect-[3/4] object-contain" />
+              <button onClick={() => shareVideo(report.videoBlob)}
+                className="w-full rounded-lg bg-slate-700 text-white font-bold text-xs py-2 active:scale-95">
+                📹 영상 저장/공유
+              </button>
+              {videoShareMsg && <p className="text-center text-xs text-emerald-400">{videoShareMsg}</p>}
             </div>
           )}
         </div>

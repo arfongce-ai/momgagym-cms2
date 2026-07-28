@@ -15,6 +15,7 @@ import StanceUploadAnalysis from './StanceUploadAnalysis';
 import { evaluateSingleLegStance } from '../core/singleLegStance';
 import { buildProblemFocus } from '../core/crossMeasureContext';
 import { useHardwareBack } from '../core/useHardwareBack';
+import { shareReportWithVideo } from '../core/reportShare';
 import MeasureRecordConfirm from '../components/MeasureRecordConfirm.jsx';
 
 const STATUS_KO = { normal: '정상', caution: '주의', risk: '위험', unknown: '확인 필요' };
@@ -43,6 +44,13 @@ export default function StanceAnalysisHub({ member, onBack, onSave, onSaveToFire
       problemFocus: focus,
       member: { id: member?.id || null, name: member?.name || null },
       measuredAt: new Date().toISOString(),
+      // [녹화 통일] 좌/우 각각 라이브 모드에서 녹화된 영상(있으면). 업로드 모드는
+      // 영상을 새로 만들지 않으므로 null — hasVideo로 화면에서 분기한다.
+      leftVideoBlob: left?.videoBlob || null,
+      rightVideoBlob: right?.videoBlob || null,
+      leftPreviewVideoUrl: left?.previewVideoUrl || '',
+      rightPreviewVideoUrl: right?.previewVideoUrl || '',
+      hasVideo: !!(left?.videoBlob || right?.videoBlob),
     };
     setPending(reportData);
     setSaveState('idle');
@@ -63,9 +71,12 @@ export default function StanceAnalysisHub({ member, onBack, onSave, onSaveToFire
     const withRecord = { ...reportData, note: record.note || '' };
     let saved = withRecord;
     setSaveState('saving');
+    // 영상 Blob/blob-URL은 Firestore에 못 넣으므로 저장 페이로드에서 제외한다
+    // (ROM과 동일한 패턴). 화면 표시용 report 상태에는 그대로 남긴다.
+    const { leftVideoBlob, rightVideoBlob, leftPreviewVideoUrl, rightPreviewVideoUrl, ...persistable } = withRecord;
     if (withRecord.valid === true && typeof save === 'function') {
       try {
-        const res = await save(withRecord);
+        const res = await save(persistable);
         if (res && typeof res === 'object') saved = { ...withRecord, ...res };
         setSaveState('saved');
       } catch (e) { setSaveState('error'); }
@@ -83,6 +94,13 @@ export default function StanceAnalysisHub({ member, onBack, onSave, onSaveToFire
     setLegStep('left'); setLeftSummary(null); setRightSummary(null);
   };
   useHardwareBack((view === 'report' && !!report) || view === 'record', backToMeasure);
+
+  const [videoShareMsg, setVideoShareMsg] = useState('');
+  const shareVideo = async (blob, label) => {
+    setVideoShareMsg('');
+    const res = await shareReportWithVideo(null, blob, { baseName: `SLST_${label}`, title: `한다리서기 ${label} 영상` });
+    setVideoShareMsg(res.msg || '');
+  };
 
   if (view === 'record' && pending) {
     const rows = [
@@ -151,6 +169,27 @@ export default function StanceAnalysisHub({ member, onBack, onSave, onSaveToFire
             <div className="rounded-xl bg-slate-900 border border-slate-800 p-4 space-y-2">
               <p className="text-xs font-black text-slate-300">양호한 점</p>
               {focus.strengths.map((s, i) => <p key={i} className="text-sm text-emerald-300">• {s}</p>)}
+            </div>
+          )}
+
+          {/* [녹화 통일] 실시간 모드로 측정했으면 좌/우 녹화 영상을 여기서 확인·공유 */}
+          {report.hasVideo && (
+            <div className="rounded-xl bg-slate-900 border border-slate-800 p-4 space-y-3">
+              <p className="text-xs font-black text-slate-300">측정 영상</p>
+              <div className="grid grid-cols-2 gap-2">
+                {[['왼쪽', report.leftPreviewVideoUrl, report.leftVideoBlob], ['오른쪽', report.rightPreviewVideoUrl, report.rightVideoBlob]]
+                  .filter(([, url]) => !!url)
+                  .map(([label, url, blob]) => (
+                    <div key={label} className="space-y-1.5">
+                      <video src={url} controls playsInline className="w-full rounded-lg bg-black aspect-[3/4] object-contain" />
+                      <button onClick={() => shareVideo(blob, label)}
+                        className="w-full rounded-lg bg-slate-700 text-white font-bold text-xs py-2 active:scale-95">
+                        📹 {label} 저장/공유
+                      </button>
+                    </div>
+                  ))}
+              </div>
+              {videoShareMsg && <p className="text-center text-xs text-emerald-400">{videoShareMsg}</p>}
             </div>
           )}
         </div>
