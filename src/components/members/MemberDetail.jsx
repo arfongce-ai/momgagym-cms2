@@ -11,6 +11,7 @@ import { ClassTypeCheckbox } from './MemberRegister';
 import AiMeasureReport     from '../ai/AiMeasureReport';
 import MemberMeasureHistory from '../ai/MemberMeasureHistory';
 import { METHOD_LBL, METHOD_CLR, computeMonthRates, autoRefundUsedAmount, computeRefundEstimate, refundUnitPriceBasisLabel } from '../../services/finance';
+import { buildMemberSessionExpiry, computeExpirySettlement, EXPIRY_STATUS_LABEL } from '../../services/sessionExpiry';
 import { evaluateCondition } from '../../ai-measure/core/conditionAssessment';
 
 const INP = "w-full bg-slate-800 border border-slate-700 text-slate-100 rounded-xl px-3 py-2.5 text-sm placeholder-slate-500 focus:outline-none focus:border-amber-500";
@@ -555,6 +556,27 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
     catch (e) { alert('실패했습니다. 네트워크 확인 후 다시 시도하세요.'); }
   };
 
+  // 만료 정산 — sessionExpiry.js가 계산한 lot(만료된 등록분)을 실제로 정산 처리한다.
+  // 정산비율은 lot에 박제된 값(hasFrozen) → 트레이너 수동 지정 → 하한(lowSplitRate)
+  // 순으로 이미 computeExpirySettlement 안에서 결정된다(회원상세는 계산하지 않고 그대로 씀).
+  const handleExpirySettlement = async (lot) => {
+    const settings = store.getSettings();
+    const est = computeExpirySettlement(lot, settings);
+    if (!window.confirm(
+      `만료 정산 — ${trainerMap[lot.trainerId]?.name || '트레이너'}\n` +
+      `미소진 ${est.sessions}회 × ${est.unit.toLocaleString()}원 × 정산비율 ${est.rate}%\n` +
+      `= 지급액 ${est.amount.toLocaleString()}원\n\n` +
+      `정산 처리하면 이 등록분의 잔여가 정리되고, 트레이너 이번 달 지급액에 반영됩니다. 진행할까요?`
+    )) return;
+    try {
+      await store.processExpirySettlement(member.id, {
+        trainerId: lot.trainerId, lotId: lot.id, paymentId: lot.paymentId, legacy: !!lot.legacy,
+        remaining: lot.remaining, sessions: est.sessions, unit: est.unit, rate: est.rate, amount: est.amount,
+      });
+      refresh();
+    } catch (e) { alert('만료 정산 처리에 실패했습니다. 네트워크 확인 후 다시 시도하세요.'); }
+  };
+
   // 기존 재등록 결제의 '세션 시작일' 지정/변경 — 매출(결제일)은 그대로, 회차 소진 순서만 조정.
   const handleSetSessionStart = async (p) => {
     const cur = p.sessionStartDate || '';
@@ -940,6 +962,33 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
           {/* ━━ 수납 탭 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
           {tab==='payments' && (
             <div className="space-y-4">
+              {/* [만료 정산 신규] 만료·임박 등록분 안내 — 관리자만 정산 처리 가능 */}
+              {(() => {
+                const lotsByTrainer = buildMemberSessionExpiry({ member, payments, settings: store.getSettings() });
+                const actionable = Object.values(lotsByTrainer).flat().filter(l => l.remaining > 0 && (l.status === 'expired' || l.status === 'warning'));
+                if (!actionable.length) return null;
+                return (
+                  <div className="space-y-2">
+                    {actionable.map(l => (
+                      <div key={l.id} className={`rounded-xl px-3 py-2.5 border flex items-center justify-between gap-2 ${l.status==='expired' ? 'bg-red-500/10 border-red-500/20' : 'bg-amber-500/10 border-amber-500/20'}`}>
+                        <div>
+                          <span className={`text-xs font-bold ${l.status==='expired' ? 'text-red-400' : 'text-amber-400'}`}>
+                            {EXPIRY_STATUS_LABEL[l.status]} · {trainerMap[l.trainerId]?.name || '?'} 잔여 {l.remaining}회
+                          </span>
+                          <p className="text-[11px] text-slate-500 mt-0.5">만료일 {l.expiresAt || '-'}</p>
+                        </div>
+                        {user?.role==='admin' && l.status==='expired' && (
+                          <button onClick={()=>handleExpirySettlement(l)}
+                            className="text-[10px] px-2 py-1 rounded bg-red-600 hover:bg-red-500 text-white font-bold flex-shrink-0">
+                            정산 처리
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
+
               {/* 미수금 경보 */}
               {payments.some(p=>p.isUnpaid)&&(
                 <div className="bg-red-500/10 border border-red-500/20 rounded-xl px-3 py-2.5 flex items-center gap-2">

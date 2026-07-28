@@ -942,6 +942,111 @@ export const store = {
     __touchSnapshot();
     return updatedPayment;
   },
+  // 만료 정산 처리 — sessionExpiry.js의 computeExpirySettlement()가 계산한 값을 받아
+  // 실제로 기록한다. explicit lot은 payment.expirySettlements[lotId], legacy lot은
+  // member.legacyExpirySettlements[trainerId]에 남기고, 그 lot의 잔여만큼만 정확히
+  // 차감한다(다른 트레이너 잔여는 건드리지 않음). 이미 정산된 lot이면 이중 지급 방지를
+  // 위해 null을 반환하고 아무것도 바꾸지 않는다.
+  processExpirySettlement: async (mid, params = {}) => {
+    const { trainerId, lotId, paymentId, legacy, sessions, unit, rate, amount } = params;
+    if (!(Number(sessions) > 0) || !(Number(amount) > 0)) return null;
+    const member = cache.members.find(m => m.id === mid);
+    if (!member) return null;
+    const ts = member.trainerSessions || {};
+    if (!ts[trainerId]) return null;
+
+    const record = { trainerId, sessions: Number(sessions), unit: Number(unit) || 0, rate: Number(rate) || 0, amount: Number(amount), settledAt: todayYMD() };
+
+    let updatedPayment = null;
+    if (legacy) {
+      if (member.legacyExpirySettlements?.[trainerId]) return null; // 이중 지급 방지
+    } else {
+      const payment = (cache.payments[mid] || []).find(p => p.id === paymentId);
+      if (!payment) return null;
+      if (payment.expirySettlements?.[lotId]) return null; // 이중 지급 방지
+      updatedPayment = { ...payment, expirySettlements: { ...(payment.expirySettlements || {}), [lotId]: record } };
+    }
+
+    const nextRemaining = Math.max(0, (Number(ts[trainerId].remaining) || 0) - Number(sessions));
+    const updatedMember = {
+      ...member,
+      trainerSessions: { ...ts, [trainerId]: { ...ts[trainerId], remaining: nextRemaining } },
+      ...(legacy ? { legacyExpirySettlements: { ...(member.legacyExpirySettlements || {}), [trainerId]: record } } : {}),
+    };
+
+    const batch = createStampedBatch();
+    batch.set('members', mid, updatedMember);
+    if (updatedPayment) batch.set('payments', paymentId, { ...updatedPayment, __mid: mid });
+    await batch.commit(); // 실패 시 여기서 throw — 캐시는 아직 안 건드렸으므로 자동으로 이전 상태 그대로.
+
+    cache.members = cache.members.map(m => m.id === mid ? updatedMember : m);
+    if (updatedPayment) cache.payments[mid] = (cache.payments[mid] || []).map(p => p.id === paymentId ? updatedPayment : p);
+    __touchSnapshot();
+    return { record };
+  },
+  // 연장 등록(수동) — 약관 3항 유효기간이 지났거나 임박한 lot에 한해, 관리자가 건별로
+  // 남기는 기록. 세션 잔여는 건드리지 않는다(정산이 아니라 유효기간만 뒤로 미는 것).
+  // lot당 1건만 허용 — 이미 등록돼 있으면 null(재등록하려면 먼저 취소해야 함).
+  registerExpiryExtension: async (mid, params = {}) => {
+    const { trainerId, lotId, paymentId, legacy, days } = params;
+    if (!(Number(days) > 0)) return null;
+    const member = cache.members.find(m => m.id === mid);
+    if (!member) return null;
+
+    const record = { days: Number(days), registeredAt: todayYMD() };
+    const batch = createStampedBatch();
+    let updatedPayment = null;
+    let updatedMember = member;
+
+    if (legacy) {
+      if (member.legacyExpiryExtensions?.[trainerId]) return null;
+      updatedMember = { ...member, legacyExpiryExtensions: { ...(member.legacyExpiryExtensions || {}), [trainerId]: record } };
+      batch.set('members', mid, updatedMember);
+    } else {
+      const payment = (cache.payments[mid] || []).find(p => p.id === paymentId);
+      if (!payment) return null;
+      if (payment.expiryExtensions?.[lotId]) return null;
+      updatedPayment = { ...payment, expiryExtensions: { ...(payment.expiryExtensions || {}), [lotId]: record } };
+      batch.set('payments', paymentId, { ...updatedPayment, __mid: mid });
+    }
+
+    await batch.commit();
+    if (legacy) cache.members = cache.members.map(m => m.id === mid ? updatedMember : m);
+    if (updatedPayment) cache.payments[mid] = (cache.payments[mid] || []).map(p => p.id === paymentId ? updatedPayment : p);
+    __touchSnapshot();
+    return { record };
+  },
+  // 연장 등록 취소 — 원래(연장 전) 유효기간으로 정확히 되돌린다. 기록이 없으면 null.
+  cancelExpiryExtension: async (mid, params = {}) => {
+    const { trainerId, lotId, paymentId, legacy } = params;
+    const member = cache.members.find(m => m.id === mid);
+    if (!member) return null;
+
+    const batch = createStampedBatch();
+    let updatedPayment = null;
+    let updatedMember = member;
+
+    if (legacy) {
+      if (!member.legacyExpiryExtensions?.[trainerId]) return null;
+      const next = { ...member.legacyExpiryExtensions };
+      delete next[trainerId];
+      updatedMember = { ...member, legacyExpiryExtensions: next };
+      batch.set('members', mid, updatedMember);
+    } else {
+      const payment = (cache.payments[mid] || []).find(p => p.id === paymentId);
+      if (!payment || !payment.expiryExtensions?.[lotId]) return null;
+      const next = { ...payment.expiryExtensions };
+      delete next[lotId];
+      updatedPayment = { ...payment, expiryExtensions: next };
+      batch.set('payments', paymentId, { ...updatedPayment, __mid: mid });
+    }
+
+    await batch.commit();
+    if (legacy) cache.members = cache.members.map(m => m.id === mid ? updatedMember : m);
+    if (updatedPayment) cache.payments[mid] = (cache.payments[mid] || []).map(p => p.id === paymentId ? updatedPayment : p);
+    __touchSnapshot();
+    return { ok: true };
+  },
   // 환불취소 — 환불 필드를 지우고, processRefund가 남긴 refundPrevSessions 스냅샷으로
   // 잔여 세션을 정확히 복구한다. 스냅샷이 없는(옛 데이터/수기 환불) 결제는 세션은
   // 건드리지 않고 환불 필드만 정리한다(잘못 건드려 세션이 어긋나는 것을 방지).

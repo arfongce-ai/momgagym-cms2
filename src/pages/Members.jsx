@@ -10,6 +10,7 @@ import MemberImport   from '../components/members/MemberImport';
 import TrainerBadge   from '../components/common/TrainerBadge';
 import { downloadCSV } from '../services/finance';
 import { sortExpiredLast, getUserTrainerId, isSessionExhausted, isMemberInactive } from '../utils/memberList';
+import { buildMemberSessionExpiry, computeExpirySettlement } from '../services/sessionExpiry';
 
 function getChosung(str) {
   const cs=['ㄱ','ㄲ','ㄴ','ㄷ','ㄸ','ㄹ','ㅁ','ㅂ','ㅃ','ㅅ','ㅆ','ㅇ','ㅈ','ㅉ','ㅊ','ㅋ','ㅌ','ㅍ','ㅎ'];
@@ -84,16 +85,32 @@ export default function Members() {
     downloadCSV(`회원목록_${todayYMD()}.csv`, [header, ...body]);
   };
 
-  const handleZeroSessions = async () => {
-    if (!window.confirm('만료 회원의 모든 잔여 세션을 0으로 처리하시겠습니까?')) return;
+  // [만료 정산 신규] 예전 일괄 0-처리 로직은 만료 회원의 "모든" 트레이너 잔여를
+  // 무조건 0으로 밀어버렸다(그 트레이너가 실제로 만료됐는지, 정산이 되는지도 안 보고).
+  // 이제는 lot 단위로 실제 만료(status==='expired')된 것만 골라 정산 처리한다 —
+  // 미만료 lot·트레이너는 그대로 둔다. expiry_settlement_e2e.test.js '종단 검증 2'와
+  // 동일한 알고리즘.
+  const handleSettleExpiredSessions = async () => {
+    if (!window.confirm('만료된 등록분을 정산 처리하시겠습니까?\n(각 등록분의 정산비율로 트레이너에게 지급되고, 그만큼 잔여가 정리됩니다)')) return;
+    const settings = store.getSettings();
+    const targets = [];
+    store.getMembers().forEach(m => {
+      const lotsByTrainer = buildMemberSessionExpiry({ member: m, payments: store.getPayments(m.id), settings });
+      Object.values(lotsByTrainer).flat().forEach(lot => {
+        if (lot.remaining > 0 && lot.status === 'expired') targets.push({ member: m, lot });
+      });
+    });
+    if (!targets.length) { alert('정산 처리할 만료 등록분이 없습니다.'); return; }
     try {
-      await Promise.all(members.filter(isExpired).map(m => {
-        const ts = {};
-        Object.entries(m.trainerSessions||{}).forEach(([k,v]) => { ts[k] = {...v, remaining:0}; });
-        return store.updateMember(m.id, { trainerSessions: ts });
-      }));
+      for (const { member: m, lot } of targets) {
+        const est = computeExpirySettlement(lot, settings);
+        await store.processExpirySettlement(m.id, {
+          trainerId: lot.trainerId, lotId: lot.id, paymentId: lot.paymentId, legacy: !!lot.legacy,
+          remaining: lot.remaining, sessions: est.sessions, unit: est.unit, rate: est.rate, amount: est.amount,
+        });
+      }
       load();
-    } catch (e) { alert('일부 회원 처리에 실패했습니다. 네트워크 확인 후 다시 시도하세요.'); load(); }
+    } catch (e) { alert('일부 등록분 처리에 실패했습니다. 네트워크 확인 후 다시 시도하세요.'); load(); }
   };
 
   const handleServerRefresh = async () => {
@@ -168,9 +185,9 @@ export default function Members() {
         {expiredFilter && user?.role==='admin' && (
           <div className="flex items-center justify-between bg-red-500/10 border border-red-500/20 rounded-xl px-3 py-2">
             <span className="text-red-400 text-xs font-semibold">⚠️ {filtered.length}명 결제 만료 회원</span>
-            <button onClick={handleZeroSessions}
+            <button onClick={handleSettleExpiredSessions}
               className="text-xs bg-red-600 hover:bg-red-500 text-white font-bold px-3 py-1.5 rounded-lg transition-colors">
-              세션 일괄 0 처리
+              만료분 정산 처리
             </button>
           </div>
         )}

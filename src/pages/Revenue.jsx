@@ -10,7 +10,7 @@ import { store } from '../demoData';
 import { useAuth } from '../contexts/AuthContext';
 import {
   METHOD_LBL, METHOD_CLR, won, monthKey, yearKey,
-  calcNet, downloadCSV, computeSessionSettlement,
+  calcNet, downloadCSV, computeSessionSettlement, computeSessionSettlementWithExpiry,
   buildRefreezePlan, buildRefreezeAllPlan, planRateFreeze, planConsumedIndexBackfill,
   autoRefundUsedAmount, computeRefundEstimate, refundUnitPriceBasisLabel,
 } from '../services/finance';
@@ -245,7 +245,7 @@ function OverviewTab({ settings, trainers, trainerMap }) {
   //  · 연/전체: 해당 기간의 모든 달을 각각 계산해 합산(정산은 월 단위라 단순 합이 불가)
   const settlePayout = useMemo(()=>{
     const grouped = {}; store.getMembers().forEach(m=>{ grouped[m.id]=store.getPayments(m.id); });
-    const calcMonth = (ym) => computeSessionSettlement({
+    const calcMonth = (ym) => computeSessionSettlementWithExpiry({
       trainers, members: store.getMembers(), schedules: store.getSchedules(),
       payments: grouped, records: store.getPromos(), settings, ym,
       getOverride: (tid,m)=>store.getSettleOverride(tid,m),
@@ -690,7 +690,7 @@ function SettleTab({ settings, trainers, trainerMap, scopeTid=null, readOnly=fal
   const schedules = useMemo(()=>store.getSchedules(), [refreshKey]);
   const records   = useMemo(()=>store.getPromos(), [refreshKey]);
 
-  const blocksAll = useMemo(()=>computeSessionSettlement({
+  const blocksAll = useMemo(()=>computeSessionSettlementWithExpiry({
     trainers, members, schedules, payments: allPaymentsGrouped, records, settings, ym,
     getOverride: (tid, m) => {
       const key = `${tid}_${m}`;
@@ -1115,8 +1115,9 @@ function TrainerSettleCard({ block: b, ym, settings, onSaved, readOnly=false, de
   const liveBlogInc = Number(blog||0)*settings.promoPerPost;
   const liveInstaInc = Math.min(Number(insta||0), settings.snsInstaMax??8)*settings.promoPerPost;
   const liveSalesInc = Number(b.newInc||0) + Number(b.reInc||0);
+  const liveExpiryTotal = Number(b.expirySettlement?.total || 0); // 만료 정산은 편집으로 바뀌지 않는 고정값 — 그대로 합산
   const liveTotal = editing
-    ? liveSessionPayout + liveBlogInc + liveInstaInc + liveSalesInc
+    ? liveSessionPayout + liveBlogInc + liveInstaInc + liveSalesInc + liveExpiryTotal
     : b.payout;
   const liveSplit = {
     rate: editing ? (liveRateMixed ? liveBlendedRate : (liveDistinctRates[0] ?? b.splitRate)) : b.splitRate,

@@ -882,6 +882,85 @@ export function computeSessionSettlement({ trainers, members, schedules, payment
   }).filter(x => x.rows.length>0 || x.promoIncentive>0);
 }
 
+// ── 만료 정산 — 트레이너 월 지급액 반영 ────────────────────────────────
+// payment.expirySettlements(lot 단위) + member.legacyExpirySettlements(레거시)를
+// 처리월(settledAt) 기준으로 트레이너별 합산한다. 정산 시점(=지급월)이 기준이라,
+// 실제 세션이 몇 년 전 등록분이었든 "그 달에 처리됐으면 그 달 지급액"이 된다.
+export function sumExpirySettlementsByMonth({ members = [], payments = {}, ym }) {
+  const result = {};
+  const memberName = (mid) => members.find((m) => m.id === mid)?.name || '';
+  const add = (trainerId, item) => {
+    if (!trainerId) return;
+    if (!result[trainerId]) result[trainerId] = { total: 0, items: [] };
+    result[trainerId].total += Number(item.amount) || 0;
+    result[trainerId].items.push(item);
+  };
+
+  Object.entries(payments || {}).forEach(([mid, list]) => {
+    (list || []).forEach((p) => {
+      Object.values(p?.expirySettlements || {}).forEach((rec) => {
+        if (!rec || !String(rec.settledAt || '').startsWith(ym)) return;
+        add(rec.trainerId, {
+          memberId: mid, memberName: memberName(mid), amount: Number(rec.amount) || 0,
+          sessions: rec.sessions, unit: rec.unit, rate: rec.rate, settledAt: rec.settledAt, source: 'lot',
+        });
+      });
+    });
+  });
+
+  (members || []).forEach((m) => {
+    Object.values(m?.legacyExpirySettlements || {}).forEach((rec) => {
+      if (!rec || !String(rec.settledAt || '').startsWith(ym)) return;
+      add(rec.trainerId, {
+        memberId: m.id, memberName: m.name || '', amount: Number(rec.amount) || 0,
+        sessions: rec.sessions, unit: rec.unit, rate: rec.rate, settledAt: rec.settledAt, source: 'legacy',
+      });
+    });
+  });
+
+  return result;
+}
+
+// computeSessionSettlement 래퍼 — 그 달 처리된 만료 정산액을 트레이너 지급액에
+// 합산한다(payout/tax/payoutNet 재계산 + expirySettlement 명세 첨부). 그 달 일반
+// 세션·홍보 실적이 전혀 없어 원본 함수가 걸러낸 트레이너도, 만료 정산만 있으면
+// 누락 없이 별도 블록으로 추가한다(트레이너 월급 누락 방지가 이 함수의 존재 이유).
+export function computeSessionSettlementWithExpiry({ trainers = [], members, schedules, payments, records, settings, ym, getOverride }) {
+  const baseBlocks = computeSessionSettlement({ trainers, members, schedules, payments, records, settings, ym, getOverride });
+  const expiryByTrainer = sumExpirySettlementsByMonth({ members, payments, ym });
+  const whRate = Number(settings?.withholdingRate ?? 3.3);
+
+  const seen = new Set();
+  const merged = baseBlocks.map((b) => {
+    seen.add(b.trainer.id);
+    const expirySettlement = expiryByTrainer[b.trainer.id] || { total: 0, items: [] };
+    const payout = b.payout + expirySettlement.total;
+    const tax = Math.round(payout * whRate / 100);
+    return { ...b, expirySettlement, payout, tax, payoutNet: payout - tax };
+  });
+
+  Object.entries(expiryByTrainer).forEach(([tid, expirySettlement]) => {
+    if (seen.has(tid) || !expirySettlement.total) return;
+    const trainer = trainers.find((t) => t.id === tid) || { id: tid, name: tid };
+    const payout = expirySettlement.total;
+    const tax = Math.round(payout * whRate / 100);
+    merged.push({
+      trainer, rows: [], sessionTotal: 0,
+      splitRate: null, splitMode: 'auto', splitReason: '만료 정산만 있음', rateMixed: false,
+      sessionPayout: 0,
+      blogCount: 0, instaCount: 0, studyCount: 0,
+      autoBlogCount: 0, autoInstaCount: 0, autoStudyCount: 0,
+      blogInc: 0, instaInc: 0, newSales: 0, reEnrollSales: 0, newInc: 0, reInc: 0,
+      promoIncentive: 0,
+      payout, withholdingRate: whRate, tax, payoutNet: payout - tax,
+      hasOverride: false,
+      expirySettlement,
+    });
+  });
+
+  return merged;
+}
+
 // ── 수동 정산비율을 결제 건에 영구 박제(방향 A) ──────────────────────
 // 특정 회원×트레이너의 정산비율을 "소진 끝까지" 고정하려면, 그 트레이너의 세션을
 // 공급하는 결제 건들의 splitRateAtPay[tid] 를 직접 rate 로 바꿔야 한다.
