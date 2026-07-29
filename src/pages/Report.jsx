@@ -1053,7 +1053,7 @@ export default function Report() {
 
       for (let i = 0; i < targets.length; i += 1) {
         const suffix = targets.length > 1 ? `_A4_${i + 1}` : '_A4';
-        files.push(await captureNodeToJpgFile(targets[i], `${baseName}${suffix}.jpg`, { bg: '#0f172a' }));
+        files.push(await captureNodeToJpgFile(targets[i], `${baseName}${suffix}.jpg`, { bg: '#0f172a', width: 794 }));
       }
 
       return files;

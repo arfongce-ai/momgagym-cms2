@@ -69,7 +69,9 @@ export default function ReportActions({
 
       for (let i = 0; i < targets.length; i += 1) {
         const suffix = targets.length > 1 ? `_A4_${i + 1}` : '_A4';
-        const file = await captureNodeToJpgFile(targets[i], `몸가짐_${baseName}${suffix}.jpg`, { bg: '#0f172a' });
+        // width: 794 — report-a4-page의 max-width(A4 폭)와 동일. 안 주면 폰 화면의
+        // 좁은 실제 렌더링 폭 그대로 캡처돼 A4 카드가 아니라 세로로 긴 이미지가 나온다.
+        const file = await captureNodeToJpgFile(targets[i], `몸가짐_${baseName}${suffix}.jpg`, { bg: '#0f172a', width: 794 });
         files.push(file);
       }
 

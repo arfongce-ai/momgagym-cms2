@@ -367,7 +367,7 @@ describe('MemberDetail.jsx — 환불 UI 배선 확인(관리자 전용)', () =>
   });
 
   it('환불 처리는 store.processRefund로 원자 저장한다', () => {
-    const start = src.indexOf('const handleRefundPayment = async (p) => {');
+    const start = src.indexOf('const confirmRefundPayment = async () => {');
     const end = src.indexOf('const handleCancelRefund');
     const fn = src.slice(start, end);
     expect(fn).toContain('store.processRefund(');
@@ -386,7 +386,7 @@ describe('MemberDetail.jsx — 환불 UI 배선 확인(관리자 전용)', () =>
   });
 
   it('환불/환불취소 버튼은 관리자(admin) 권한 블록 안에만 렌더링된다', () => {
-    const idx = src.indexOf('handleRefundPayment(p)');
+    const idx = src.indexOf('openRefundModal(p)');
     expect(idx).toBeGreaterThan(-1);
     const before = src.slice(0, idx);
     const lastAdminGuard = before.lastIndexOf("user?.role==='admin'");

@@ -73,6 +73,7 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
   const [showAddBody,  setShowAddBody] = useState(false);
   const [showAiModal,  setShowAiModal]  = useState(false);
   const [aiRefreshKey, setAiRefreshKey] = useState(0);
+  const [refundDraft,  setRefundDraft]  = useState(null); // 환불 수정 모달: {payment, amount, penalty, usedAmount, cardFee, vat} | null
   const [bodyForm,     setBodyForm]    = useState({ recordedAt: todayYMD(), height:'', weight:'', systolic:'', diastolic:'', note:'', fatigue:'', painNrs:'', conditionMemo:'' });
 
   const refresh = () => {
@@ -521,31 +522,46 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
     catch (e) { alert('삭제에 실패했습니다. 네트워크 확인 후 다시 시도하세요.'); }
   };
 
-  // 환불 처리 — finance.js 공용 함수(autoRefundUsedAmount/computeRefundEstimate)로 계산하고
-  // store.processRefund로 원자 저장한다. Revenue.jsx의 RefundableList와 동일한 계산식을
-  // 재사용해 두 화면의 환불액이 서로 어긋나는 일이 없게 한다.
-  const handleRefundPayment = async (p) => {
+  // 환불 처리 — finance.js 공용 함수(autoRefundUsedAmount/computeRefundEstimate)로 자동값을
+  // 계산해 모달에 채워두고, 위약금·진행분·카드수수료·부가세를 각각 수동으로 고칠 수 있게 한다.
+  // 환불액은 이 4개 값에서 항상 다시 계산되는 파생값이라 직접 입력 항목과 최종액이 어긋나지 않는다.
+  const openRefundModal = (p) => {
     const settings = store.getSettings();
     const suggested = autoRefundUsedAmount(p, member.id, { members: store.getMembers(), schedules: store.getSchedules(), settings });
-    const usedInput = window.prompt(
-      `환불 처리 — ${member.name}\n총 결제액: ${p.amount.toLocaleString()}원\n\n` +
-      `진행분(이미 수업한 회차 × 단가)을 입력하세요 (원):\n` +
-      `· 출석 데이터 기준 자동 계산값(${refundUnitPriceBasisLabel()}): ${suggested.toLocaleString()}원 (수정 가능)`,
-      String(suggested));
-    if (usedInput===null) return;
-    const { cardFee, vat, penalty, usedAmount, refund } = computeRefundEstimate(p, settings, usedInput);
+    const est = computeRefundEstimate(p, settings, suggested);
+    setRefundDraft({
+      payment: p,
+      amount: est.amount,
+      penalty: est.penalty,
+      usedAmount: est.usedAmount,
+      cardFee: est.cardFee,
+      vat: est.vat,
+      suggestedUsed: suggested, // 참고용 — 입력칸 아래 자동계산값 안내에 사용
+    });
+  };
+
+  const refundDraftTotal = refundDraft ? Math.max(0,
+    (Number(refundDraft.amount) || 0) - (Number(refundDraft.penalty) || 0)
+    - (Number(refundDraft.usedAmount) || 0) - (Number(refundDraft.cardFee) || 0)
+    - (Number(refundDraft.vat) || 0)
+  ) : 0;
+
+  const confirmRefundPayment = async () => {
+    if (!refundDraft) return;
+    const { payment: p, penalty, usedAmount, cardFee, vat } = refundDraft;
     if (!window.confirm(
       `환불 산정 (계약서 4항 기준, ${refundUnitPriceBasisLabel()})\n` +
-      `총 결제액 ${p.amount.toLocaleString()}원\n− 위약금 10% ${penalty.toLocaleString()}원\n` +
-      `− 진행분 ${usedAmount.toLocaleString()}원\n− 카드수수료 ${cardFee.toLocaleString()}원\n` +
-      `− 부가세 ${vat.toLocaleString()}원\n= 환불액 ${refund.toLocaleString()}원\n\n` +
+      `총 결제액 ${refundDraft.amount.toLocaleString()}원\n− 위약금 ${(Number(penalty)||0).toLocaleString()}원\n` +
+      `− 진행분 ${(Number(usedAmount)||0).toLocaleString()}원\n− 카드수수료 ${(Number(cardFee)||0).toLocaleString()}원\n` +
+      `− 부가세 ${(Number(vat)||0).toLocaleString()}원\n= 환불액 ${refundDraftTotal.toLocaleString()}원\n\n` +
       `※ 이 회원의 잔여 세션은 0으로 정리됩니다. 진행분 수업료는 트레이너 정산에 그대로 남습니다.\n\n` +
       `이 결제를 환불 처리할까요?`)) return;
     try {
       await store.processRefund(member.id, p.id, {
-        isRefunded:true, refundAmount:refund, refundedAt:todayYMD(),
-        refundCardFee:cardFee, refundPenalty:penalty, refundUsed:usedAmount,
+        isRefunded:true, refundAmount:refundDraftTotal, refundedAt:todayYMD(),
+        refundCardFee:Number(cardFee)||0, refundPenalty:Number(penalty)||0, refundUsed:Number(usedAmount)||0,
       });
+      setRefundDraft(null);
       refresh();
     } catch (e) { alert('환불 처리에 실패했습니다. 네트워크 확인 후 다시 시도하세요.'); }
   };
@@ -1055,7 +1071,7 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
                           {!p.isUnpaid && (p.isRefunded
                             ? <button onClick={()=>handleCancelRefund(p.id)}
                                 className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-300 hover:bg-slate-600 font-bold">환불취소</button>
-                            : <button onClick={()=>handleRefundPayment(p)}
+                            : <button onClick={()=>openRefundModal(p)}
                                 className="text-[10px] px-1.5 py-0.5 rounded bg-red-500/15 text-red-300 hover:bg-red-500/30 font-bold">환불</button>
                           )}
                           <button onClick={()=>handleDeletePayment(p.id)}
@@ -1477,7 +1493,73 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
             onSaved={() => { setAiRefreshKey(k => k+1); setShowAiModal(false); refresh(); }}
           />
         )}
+
+        {/* 환불 수정 모달 — 위약금·진행분·카드수수료·부가세를 각각 수동으로 고칠 수 있다.
+            환불액은 이 4개 값에서 항상 다시 계산되는 파생값(직접 입력 불가)이라 숫자가 어긋나지 않는다. */}
+        {refundDraft && (
+          <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4"
+            onClick={()=>setRefundDraft(null)}>
+            <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-md p-5 space-y-4"
+              onClick={e=>e.stopPropagation()}>
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-black text-white">환불 처리 · {member.name}</h2>
+                <button onClick={()=>setRefundDraft(null)} className="text-slate-400 hover:text-white text-xl leading-none">×</button>
+              </div>
+              <p className="text-xs text-slate-500 -mt-2">
+                총 결제액 {refundDraft.amount.toLocaleString()}원 · {refundUnitPriceBasisLabel()}
+              </p>
+
+              <RefundField label="위약금 (계약서 4항 10%)" value={refundDraft.penalty}
+                suggested={Math.round(refundDraft.amount*0.10)}
+                onChange={v=>setRefundDraft(d=>({...d, penalty:v}))}/>
+              <RefundField label="진행분 (이미 수업한 회차 × 단가)" value={refundDraft.usedAmount}
+                suggested={refundDraft.suggestedUsed}
+                onChange={v=>setRefundDraft(d=>({...d, usedAmount:v}))}/>
+              <RefundField label="카드수수료" value={refundDraft.cardFee}
+                onChange={v=>setRefundDraft(d=>({...d, cardFee:v}))}/>
+              <RefundField label="부가세" value={refundDraft.vat}
+                onChange={v=>setRefundDraft(d=>({...d, vat:v}))}/>
+
+              <div className="rounded-xl bg-slate-800 border border-slate-700 p-3 flex items-center justify-between">
+                <span className="text-sm font-bold text-slate-300">환불액</span>
+                <span className="text-xl font-black text-red-300 font-mono">{refundDraftTotal.toLocaleString()}원</span>
+              </div>
+              <p className="text-[11px] text-slate-500 leading-relaxed">
+                ※ 이 회원의 잔여 세션은 0으로 정리됩니다. 진행분 수업료는 트레이너 정산에 그대로 남습니다.
+              </p>
+
+              <div className="flex gap-2 pt-1">
+                <button onClick={()=>setRefundDraft(null)}
+                  className="py-2.5 px-4 rounded-xl border border-slate-700 text-slate-300 text-sm font-semibold hover:text-white transition-colors">취소</button>
+                <button onClick={confirmRefundPayment}
+                  className="flex-1 bg-red-500 hover:bg-red-400 text-white font-bold py-2.5 rounded-xl text-sm transition-colors">환불 확정</button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
+    </div>
+  );
+}
+
+// 환불 모달의 숫자 입력 한 줄 — 자동계산값과 다르면 "되돌리기" 링크를 보여준다.
+function RefundField({ label, value, suggested, onChange }) {
+  const changed = suggested != null && Number(suggested) !== (Number(value) || 0);
+  return (
+    <div>
+      <label className="text-xs font-bold text-slate-400 mb-1 block">{label}</label>
+      <input
+        type="number"
+        value={value}
+        onChange={e => onChange(e.target.value === '' ? 0 : Number(e.target.value))}
+        className="w-full bg-slate-800 border border-slate-700 text-slate-100 rounded-xl px-3 py-2 text-sm font-mono focus:outline-none focus:border-amber-500"
+      />
+      {changed && (
+        <button type="button" onClick={() => onChange(suggested)}
+          className="mt-1 text-[11px] text-amber-400 hover:text-amber-300">
+          자동 계산값 {Number(suggested).toLocaleString()}원으로 되돌리기
+        </button>
+      )}
     </div>
   );
 }

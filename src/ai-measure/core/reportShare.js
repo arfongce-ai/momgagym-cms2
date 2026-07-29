@@ -88,9 +88,14 @@ export async function loadHtml2Canvas() {
 }
 
 // DOM 노드 → JPG File. 실패 시 throw.
-export async function captureNodeToJpgFile(node, filename, { scale = 2, bg = '#0f172a' } = {}) {
+// width 를 주면 html2canvas의 windowWidth로 넘겨, 실제 폰 화면 너비가 좁아도
+// max-width(A4 794px 등) CSS가 캡처 시점엔 그 너비 기준으로 적용되게 한다.
+// (안 주면 지금 화면에 실제로 렌더링된 좁은 폭 그대로 캡처돼 세로로 길쭉하게 나온다.)
+export async function captureNodeToJpgFile(node, filename, { scale = 2, bg = '#0f172a', width } = {}) {
   const html2canvas = await loadHtml2Canvas();
-  const canvas = await html2canvas(node, { backgroundColor: bg, scale, useCORS: true, logging: false });
+  const opts = { backgroundColor: bg, scale, useCORS: true, logging: false };
+  if (width) opts.windowWidth = width;
+  const canvas = await html2canvas(node, opts);
   const blob = await new Promise((res) => canvas.toBlob(res, 'image/jpeg', 0.92));
   if (!blob) throw new Error('이미지 변환 실패');
   return new File([blob], filename, { type: 'image/jpeg' });
