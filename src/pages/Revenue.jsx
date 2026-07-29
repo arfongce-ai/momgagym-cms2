@@ -526,7 +526,7 @@ function RefundableList({ filtered, settings, trainers, trainerMap, onChange }) 
           <input
             value={query}
             onChange={e=>setQuery(e.target.value)}
-            placeholder="회원명·메모·수단·트레이너 검색"
+            placeholder="회원명·날짜·메모·수단·트레이너 검색"
             className="w-full bg-slate-800 border border-slate-700 rounded-xl pl-9 pr-8 py-2 text-sm text-slate-100 placeholder-slate-500 focus:border-amber-500/40 focus:outline-none"
           />
           {query && (
@@ -537,6 +537,7 @@ function RefundableList({ filtered, settings, trainers, trainerMap, onChange }) 
       </div>
       {(() => {
         const q = query.trim().toLowerCase();
+        const qDigits = q.replace(/[^0-9]/g, '');
         const shown = !q ? filtered : filtered.filter(p => {
           const trNames = (p.trainerIds||[]).map(id=>trainerMap[id]?.name||'').join(' ');
           const consult = p.consultTrainerId ? (trainerMap[p.consultTrainerId]?.name||'') : '';
@@ -546,7 +547,13 @@ function RefundableList({ filtered, settings, trainers, trainerMap, onChange }) 
           const hay = [p.memberName, p.note, methodTxt, trNames, consult,
             p.isRefunded?'환불':'', p.isUnpaid?'미수금':'', p.isNew?'신규':'', p.isReEnroll?'재등록':'']
             .join(' ').toLowerCase();
-          return hay.includes(q);
+          if (hay.includes(q)) return true;
+          // 날짜 검색: 숫자만 뽑아 비교 — "7/28", "07-28", "0728", "2026-07-28" 등 표기와 무관하게 매칭
+          if (qDigits.length >= 2) {
+            const dateDigits = (p.paidAt||'').replace(/[^0-9]/g, '');
+            if (dateDigits.includes(qDigits)) return true;
+          }
+          return false;
         });
         return shown.length===0
           ? <p className="text-slate-600 text-sm text-center py-4">{q?'검색 결과가 없습니다':'내역이 없습니다'}</p>
