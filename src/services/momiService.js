@@ -2,25 +2,37 @@
 // 리포트 화면의 "🤖 모미에게 물어보기" 버튼이 사용하는 서비스.
 // 기존 crossMeasureContext.js의 buildProblemFocus()로 요청 데이터를 만들어 /api/momi를 호출한다.
 
-import { buildProblemFocus, buildCrossMeasureIntegration } from '../ai-measure/core/crossMeasureContext.js';
+import { buildProblemFocus, buildCombinedAssessment, buildCrossMeasureIntegration } from '../ai-measure/core/crossMeasureContext.js';
 import { store, aiStore } from '../demoData';
 
 // [모미 버그 수정 — 2026-07-28] 예전엔 buildCrossMeasureIntegration(member, kind)를 위치인자로
 // 호출했는데, 실제 함수는 { kind, report, postureReports, romReports, gaitReports } 객체
 // 하나를 받는다. 위치인자로 넘기면 첫 인자(member 객체)가 구조분해되면서 kind가 항상
 // undefined가 되어 buildCrossMeasureIntegration이 매번 null을 반환했다 — 즉 자세·ROM·점프·
-// 보행 리포트의 교차 컨텍스트가 라이브에서 한 번도 채워진 적이 없었다(SLST·스쿼트는 이
-// 함수 자체가 애초에 다루지 않아 이번 수정 범위 밖 — 별도 확장이 필요하다).
+// 보행 리포트의 교차 컨텍스트가 라이브에서 한 번도 채워진 적이 없었다.
+// [추가 확장 — 다음 세션] 위 수정 당시 SLST·스쿼트·VBT는 범위 밖으로 남겨뒀었다(전용
+// 컬렉션이 없어 posture/rom/gait와 같은 방식으로 못 불러왔기 때문). stance/squat/lifting은
+// 전용 컬렉션 없이 세션 목록(aiStore.getSessions)에서 menu 필드로 걸러 쓰는 게 이 프로젝트의
+// 공식 설계이므로, 그 패턴을 그대로 따라 세 종류를 마저 채운다.
 async function loadCrossReports(memberId) {
-  if (!memberId) return { postureReports: [], romReports: [], gaitReports: [] };
-  // posture/rom/gait는 각각 지연 로딩이라, 리포트 화면에 진입할 때 그 화면 자신의 kind는
-  // 이미 로드돼 있어도 나머지 종류는 비어 있을 수 있다 — ensureXReports로 먼저 채운다.
-  const [postureReports, romReports, gaitReports] = await Promise.all([
+  if (!memberId) return { postureReports: [], romReports: [], gaitReports: [], liftingReports: [], stanceReports: [], squatReports: [] };
+  const [postureReports, romReports, gaitReports, sessions] = await Promise.all([
     aiStore.ensurePostureReports(memberId),
     aiStore.ensureRomReports(memberId),
     aiStore.ensureGaitReports(memberId),
+    aiStore.ensureSessions(memberId),
   ]);
-  return { postureReports, romReports, gaitReports };
+  const byMenu = (menu) => (sessions || [])
+    .filter((s) => s?.menu === menu && s?.data)
+    .map((s) => ({ createdAt: s.recordedAtFull || s.recordedAt, ...s.data }));
+  return {
+    postureReports,
+    romReports,
+    gaitReports,
+    liftingReports: byMenu('lifting'),
+    stanceReports: byMenu('stance'),
+    squatReports: byMenu('squat'),
+  };
 }
 
 export async function askMomi({ kind, report, member, question } = {}) {
@@ -29,9 +41,9 @@ export async function askMomi({ kind, report, member, question } = {}) {
   }
 
   const problemFocus = buildProblemFocus(kind, report);
-  const { postureReports, romReports, gaitReports } = await loadCrossReports(member.id);
+  const { postureReports, romReports, gaitReports, liftingReports, stanceReports, squatReports } = await loadCrossReports(member.id);
   const crossContext = buildCrossMeasureIntegration
-    ? buildCrossMeasureIntegration({ kind, report, postureReports, romReports, gaitReports })
+    ? buildCrossMeasureIntegration({ kind, report, postureReports, romReports, gaitReports, liftingReports, stanceReports, squatReports })
     : null;
 
   const res = await fetch('/api/momi', {
@@ -53,6 +65,37 @@ export async function askMomi({ kind, report, member, question } = {}) {
 
   const data = await res.json();
   return data.text;
+}
+
+// [모미 신규] 여러 측정을 트레이너가 직접 골라 하나로 묶어 보는 "측정 종합 분석" 화면
+// (CombinedAssessmentPanel.jsx)이 쓰는 데이터 로더. loadCrossReports와 같은 소스를 쓰되,
+// kind 하나로 좁히지 않고 종류별 최신 1건씩만 뽑아 트레이너가 선택할 수 있게 돌려준다.
+export async function loadLatestReportsByKind(memberId) {
+  if (!memberId) return {};
+  const { postureReports, romReports, gaitReports, liftingReports, stanceReports, squatReports } = await loadCrossReports(memberId);
+  const latest = (list, filter) => {
+    const f = filter ? (list || []).filter(filter) : (list || []);
+    return [...f].sort((a, b) => Date.parse(b.createdAt || b.measuredAt || 0) - Date.parse(a.createdAt || a.measuredAt || 0))[0] || null;
+  };
+  const byKind = {
+    posture: latest(postureReports),
+    rom: latest(romReports),
+    jump: latest(gaitReports, (r) => r?.kind === 'jump'),
+    gait: latest(gaitReports, (r) => r?.kind === 'gait' || r?.metrics || r?.cadence),
+    lifting: latest(liftingReports),
+    stance: latest(stanceReports),
+    squat: latest(squatReports),
+  };
+  return Object.fromEntries(Object.entries(byKind).filter(([, v]) => v));
+}
+
+// [모미 신규] 여러 측정을 트레이너가 고른 대로 결합해 종합 분석·평가를 만든다.
+// buildCombinedAssessment(1~7개 임의 조합, 대칭 결합)를 그대로 감싼 얇은 래퍼.
+export function buildMemberCombinedAssessment(byKind, selectedKinds) {
+  const items = (selectedKinds || Object.keys(byKind || {}))
+    .filter((k) => byKind?.[k])
+    .map((kind) => ({ kind, report: byKind[kind] }));
+  return buildCombinedAssessment(items);
 }
 
 // [모미 신규] 최근 N일 컨디션 추이 — body 기록(store.getBodyRecords)에서 fatigue/painNrs가

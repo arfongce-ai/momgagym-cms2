@@ -15,6 +15,7 @@ const KIND_KO = Object.freeze({
   stance: '한다리서기',
   squat: '오버헤드 스쿼트',
   daily: '오늘의 컨디션',
+  lifting: '바벨 리프팅(VBT)',
 });
 
 // squatBiomechanics.js가 반환하는 repeatedFlags를 사람이 읽을 문장으로 매핑.
@@ -152,6 +153,9 @@ export function buildCrossMeasureIntegration({
   postureReports = [],
   romReports = [],
   gaitReports = [],
+  liftingReports = [],
+  stanceReports = [],
+  squatReports = [],
 } = {}) {
   if (!kind) return null;
 
@@ -162,6 +166,9 @@ export function buildCrossMeasureIntegration({
     kind !== 'rom' && sourceOf('rom', latestReport(romReports), '관절별 제한과 좌우차를 원인 후보로 사용'),
     kind !== 'jump' && sourceOf('jump', latestReport(jumpReports), '착지 대칭성과 파워 생산을 기능 검증으로 사용'),
     kind !== 'gait' && sourceOf('gait', latestReport(runningReports), '반복 동작 패턴으로 정적 결과를 재검증'),
+    kind !== 'lifting' && sourceOf('lifting', latestReport(liftingReports), '근력·운동 속도 데이터를 기능적 배경으로 사용'),
+    kind !== 'stance' && sourceOf('stance', latestReport(stanceReports), '좌우 균형 능력을 안정성 배경으로 사용'),
+    kind !== 'squat' && sourceOf('squat', latestReport(squatReports), '동적 정렬·보상 패턴을 기능 검증으로 사용'),
   ].filter(Boolean);
 
   const problemFocus = buildProblemFocus(kind, report);
@@ -215,6 +222,58 @@ export function mergeIntegratedAssessment(primary, secondary) {
     notes: unique([...(primary.notes || []), ...(secondary.notes || [])]),
     recommendations: unique([...(primary.recommendations || []), ...(secondary.recommendations || [])]),
     testInteractions: [...(primary.testInteractions || []), ...(secondary.testInteractions || [])],
+  };
+}
+
+/**
+ * 여러 측정을 "동등하게" 묶어 하나의 통합 분석·평가를 만든다.
+ * buildCrossMeasureIntegration은 주 측정 1개 + 나머지를 참고자료로 취급하는
+ * 비대칭 구조이지만, 이 함수는 입력된 모든 항목을 같은 비중으로 다룬다 —
+ * 7종 측정 중 1개만 넣어도, 7개를 전부 넣어도 동일한 방식으로 동작한다.
+ * @param {Array<{kind:string, report:object}>} items 결합할 측정들(1~7개, 임의 조합)
+ * @returns {object|null} valid 항목이 하나도 없으면 null
+ */
+export function buildCombinedAssessment(items = []) {
+  const valid = (items || []).filter((it) => it?.kind && it?.report);
+  if (!valid.length) return null;
+
+  const perKind = valid.map(({ kind, report }) => ({
+    kind,
+    label: KIND_KO[kind] || kind,
+    focus: buildProblemFocus(kind, report),
+  }));
+
+  const severity = perKind.reduce((acc, p) => worseSeverity(acc, p.focus.severity), 'normal');
+  const severityRank = { normal: 0, caution: 1, risk: 2 };
+
+  const issues = perKind
+    .flatMap((p) => p.focus.issues.map((issue) => ({ ...issue, kind: p.kind, kindLabel: p.label, text: `[${p.label}] ${issue.text}` })))
+    .sort((a, b) => (severityRank[b.level] || 0) - (severityRank[a.level] || 0))
+    .slice(0, 10);
+
+  const strengths = unique(perKind.flatMap((p) => p.focus.strengths.map((s) => `[${p.label}] ${s}`))).slice(0, 6);
+
+  const coverageScore = Math.min(96, 55 + valid.length * 7);
+
+  const evaluationText = severity === 'risk'
+    ? `${valid.length}개 측정(${perKind.map((p) => p.label).join('·')})을 종합했을 때 우선 확인이 필요한 위험 신호가 있습니다.`
+    : severity === 'caution'
+      ? `${valid.length}개 측정(${perKind.map((p) => p.label).join('·')})을 종합했을 때 주의가 필요한 패턴이 있습니다.`
+      : `${valid.length}개 측정(${perKind.map((p) => p.label).join('·')})을 종합한 결과 큰 위험 신호는 확인되지 않았습니다.`;
+
+  return {
+    combinedKinds: valid.map((v) => v.kind),
+    generatedAt: new Date().toISOString(),
+    coverageScore,
+    coverageLevel: confidenceLevel(coverageScore),
+    severity,
+    analysis: {
+      perKind: perKind.map((p) => ({ kind: p.kind, label: p.label, severity: p.focus.severity, primaryFinding: p.focus.primaryFinding })),
+    },
+    evaluation: { severity, text: evaluationText },
+    issues,
+    strengths,
+    recommendations: unique(perKind.map((p) => p.focus.recommendedNextCheck)),
   };
 }
 

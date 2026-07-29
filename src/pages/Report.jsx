@@ -15,6 +15,7 @@ import SessionShareReport from '../components/report/SessionShareReport';
 import ReportActions from '../components/report/ReportActions';
 import TrendChart from '../components/report/TrendChart';
 import MemberPicker from '../components/common/MemberPicker';
+import CombinedAssessmentPanel from '../components/report/CombinedAssessmentPanel';
 import { consumePendingVoiceTarget } from '../voice/pendingVoiceTarget';
 const JumpReportDashboard = lazy(() => import('../ai-measure/menus/JumpReportDashboard'));
 const GaitReportDashboard = lazy(() => import('../ai-measure/menus/GaitReportDashboard'));
@@ -802,6 +803,7 @@ export default function Report() {
   // 트레이너 모드: 담당 회원만 / 모든 회원은 가나다 순으로 노출.
   const members = useMemo(() => sortByName(scopeMembersToTrainer(store.getMembers(), user)), [user]);
   const [memberId, setMemberId] = useState('');
+  const [showCombined, setShowCombined] = useState(false); // 종합 분석 패널 표시 여부(신규, 기존 상태와 독립)
 
   // [모미 신규] "모미야 OO님 리포트 열어줘" 같은 음성 명령으로 도착했으면 회원을 자동 선택한다.
   useEffect(() => {
@@ -1108,6 +1110,22 @@ export default function Report() {
         <MemberPicker members={members} value={memberId} onChange={setMemberId}
           allowNone={false} placeholder="이름 / 초성 / 전화 뒤4자리" />
       </div>
+
+      {/* 측정 종합 분석 — 여러 측정 종류를 골라 하나로 묶어 보는 진입점(신규, 독립 컴포넌트) */}
+      {member && (
+        <div>
+          {!showCombined ? (
+            <button
+              onClick={() => setShowCombined(true)}
+              className="w-full rounded-xl border border-amber-500/40 bg-amber-500/10 text-amber-300 font-bold text-sm py-2.5"
+            >
+              📊 측정 종합 분석 보기
+            </button>
+          ) : (
+            <CombinedAssessmentPanel member={member} onClose={() => setShowCombined(false)} />
+          )}
+        </div>
+      )}
 
       {/* 섹션 바로가기 — 페이지가 길어서(신체정보~판독설명서) 존재하는 섹션만 골라 보여준다. */}
       {member && sectionNavItems.length > 1 && (

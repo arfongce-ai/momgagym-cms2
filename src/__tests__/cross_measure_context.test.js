@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildCombinedAssessment,
   buildCrossMeasureIntegration,
   buildProblemFocus,
   measurementOutputMode,
@@ -111,5 +112,92 @@ describe('crossMeasureContext', () => {
     const focus = buildProblemFocus('squat', squatReport);
     expect(focus.severity).toBe('caution');
     expect(focus.issues[0].text).toContain('부족');
+  });
+
+  it('바벨 리프팅(VBT)도 다른 측정을 참고 소스로 받는다(예: VBT+점프+ROM)', () => {
+    const integration = buildCrossMeasureIntegration({
+      kind: 'lifting',
+      report: { mode: 'vbt', metrics: { meanVelocity: 0.6 } },
+      romReports: [{ id: 'rom1', createdAt: '2026-07-20', summary: { max_rom: 120 } }],
+      gaitReports: [{ id: 'jump1', kind: 'jump', createdAt: '2026-07-21', heightCm: 45 }],
+    });
+    const kinds = integration.cross_measure_context.sources.map((s) => s.kind);
+    expect(kinds).toEqual(expect.arrayContaining(['rom', 'jump']));
+  });
+
+  it('점프가 자세+러닝을 참고 소스로 받는다(예: 자세+점프+러닝)', () => {
+    const integration = buildCrossMeasureIntegration({
+      kind: 'jump',
+      report: { valid: true, heightCm: 40 },
+      postureReports: [{ id: 'p1', createdAt: '2026-07-20', analysis: { frontal: {} } }],
+      gaitReports: [{ id: 'g1', kind: 'gait', createdAt: '2026-07-21', metrics: { cadence: 170 } }],
+    });
+    const kinds = integration.cross_measure_context.sources.map((s) => s.kind);
+    expect(kinds).toEqual(expect.arrayContaining(['posture', 'gait']));
+  });
+
+  it('한다리서기·스쿼트도 서로를, 그리고 다른 측정도 참고 소스로 받는다', () => {
+    const integration = buildCrossMeasureIntegration({
+      kind: 'stance',
+      report: { valid: true, status: 'normal' },
+      squatReports: [{ id: 'sq1', createdAt: '2026-07-20', status: 'caution' }],
+      liftingReports: [{ id: 'l1', createdAt: '2026-07-19', mode: 'onerm' }],
+    });
+    const kinds = integration.cross_measure_context.sources.map((s) => s.kind);
+    expect(kinds).toEqual(expect.arrayContaining(['squat', 'lifting']));
+  });
+
+  it('새 소스를 안 넘겨도(기존 4종만) 이전과 동일하게 동작한다(회귀 방지)', () => {
+    const integration = buildCrossMeasureIntegration({
+      kind: 'posture',
+      report: { analysis: { frontal: {} } },
+      romReports: [{ id: 'r1', createdAt: '2026-07-20' }],
+    });
+    expect(integration.cross_measure_context.sources.map((s) => s.kind)).toEqual(['rom']);
+  });
+
+  it('buildCombinedAssessment: 1개 조합(최소 케이스)도 정상 동작한다', () => {
+    const combined = buildCombinedAssessment([{ kind: 'posture', report: { analysis: { frontal: {} } } }]);
+    expect(combined.combinedKinds).toEqual(['posture']);
+    expect(combined.severity).toBe('normal');
+  });
+
+  it('buildCombinedAssessment: 자세+점프+러닝 3종 조합', () => {
+    const combined = buildCombinedAssessment([
+      { kind: 'posture', report: { analysis: { frontal: {} } } },
+      { kind: 'jump', report: { valid: true, heightCm: 40 } },
+      { kind: 'gait', report: { valid: true, metrics: {} } },
+    ]);
+    expect(combined.combinedKinds).toEqual(['posture', 'jump', 'gait']);
+    expect(combined.analysis.perKind).toHaveLength(3);
+    expect(combined.evaluation.text).toContain('3개 측정');
+  });
+
+  it('buildCombinedAssessment: 하나라도 risk면 종합 severity도 risk(최악 기준)', () => {
+    const combined = buildCombinedAssessment([
+      { kind: 'posture', report: { analysis: { frontal: {} } } },
+      { kind: 'jump', report: { valid: false, reason: 'sanity_fail' } },
+    ]);
+    expect(combined.severity).toBe('risk');
+    expect(combined.issues.some((i) => i.kind === 'jump')).toBe(true);
+  });
+
+  it('buildCombinedAssessment: 7종 전부 결합해도 하드코딩 없이 동작한다(최대 케이스)', () => {
+    const combined = buildCombinedAssessment([
+      { kind: 'posture', report: { analysis: { frontal: {} } } },
+      { kind: 'rom', report: { summary: { max_rom: 100 } } },
+      { kind: 'gait', report: { valid: true, metrics: {} } },
+      { kind: 'jump', report: { valid: true, heightCm: 35 } },
+      { kind: 'stance', report: evaluateSingleLegStance({ left: { trial1: { valid: true, holdTimeMs: 25000 }, trial2: { valid: true, holdTimeMs: 24000 } } }) },
+      { kind: 'squat', report: evaluateSquatBiomechanics({ trial1: { valid: true, thighInclineDeg: 5 }, trial2: { valid: true, thighInclineDeg: 6 } }) },
+      { kind: 'lifting', report: { mode: 'vbt', metrics: { meanVelocity: 0.6 } } },
+    ]);
+    expect(combined.combinedKinds).toHaveLength(7);
+    expect(combined.coverageScore).toBeGreaterThan(90);
+  });
+
+  it('buildCombinedAssessment: 빈 배열이면 null', () => {
+    expect(buildCombinedAssessment([])).toBeNull();
+    expect(buildCombinedAssessment()).toBeNull();
   });
 });
