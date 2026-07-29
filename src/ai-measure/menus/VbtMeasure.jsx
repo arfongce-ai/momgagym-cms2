@@ -39,6 +39,7 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
   const fusedRef = useRef(new BarbellAccumulator()); // 실시간 렙 분절·속도·궤적 엔진
   const phRef = useRef(null);
   const phSamplesRef = useRef([]);
+  const phHistoryRef = useRef([]); // 최근 N프레임 원시값 — 실시간 스케일용 중앙값 평활(단일 프레임 튐 방지)
   const frameStatsRef = useRef({ total: 0, lost: 0 });
   const recordingRef = useRef(false);
   const framingRef = useRef({ level: 'bad', message: '' });
@@ -92,7 +93,15 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
 
     const ph = personHeightRatio(lms);
     if (ph) {
-      phRef.current = ph;
+      // 원시값을 그대로 스케일에 쓰면, 코·발목 랜드마크가 한 프레임만 튀어도
+      // (정면 오버헤드 동작에서 바가 머리 근처를 지날 때 흔함) cmPerRatio가
+      // 순간적으로 폭증해 ROM/속도가 비정상적으로 커 보이는 문제가 있었다.
+      // 최근 프레임들의 중앙값을 실시간 스케일 기준으로 써서 단일 프레임 튐을 흡수한다.
+      const hist = phHistoryRef.current;
+      hist.push(ph);
+      if (hist.length > 15) hist.shift();
+      const sorted = [...hist].sort((a, b) => a - b);
+      phRef.current = sorted[Math.floor(sorted.length / 2)];
       if (recordingRef.current) phSamplesRef.current.push(ph);
     }
 
@@ -383,6 +392,7 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
       runStartCountdown(() => {
         fusedRef.current.reset();
         phSamplesRef.current = [];
+        phHistoryRef.current = [];
         frameStatsRef.current = { total: 0, lost: 0 };
         liveHudRef.current = { romCm: null, meanVelocity: null, repList: null };
         setLiveReps(0);
