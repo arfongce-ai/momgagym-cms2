@@ -53,6 +53,7 @@ function drawSkeleton(canvas, video, landmarks, locked, mapper) {
   const cw = canvas.clientWidth || canvas.width, ch = canvas.clientHeight || canvas.height;
   if (canvas.width !== cw || canvas.height !== ch) { canvas.width = cw; canvas.height = ch; }
   const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, cw, ch); // 매 프레임 지우고 다시 그린다 — 안 지우면 이전 프레임 스켈레톤이 계속 쌓여 잔상(뒤엉킨 그물망)으로 남는다.
   if (!landmarks) return;
   const { x: X, y: Y } = mapper || objectContainMapper(video, cw, ch);
   const col = locked ? 'rgba(52,211,153,0.95)' : 'rgba(34,211,238,0.95)';
@@ -325,6 +326,9 @@ export default function SquatLiveAnalysis({ member, onBack, onComplete, onMember
   const topBar = (
     <>
       <p className="text-sm font-black text-white">오버헤드 딥 스쿼트</p>
+      {!['calibrating', 'low_visibility'].includes(uiPhase) && (
+        <p className="text-[11px] font-bold text-slate-300">회차 {trialsFound}/2</p>
+      )}
       {uiPhase === 'calibrating' && <p className="text-xs font-bold text-amber-300">자세 보정 중… {Math.round(calibProgress * 100)}%</p>}
       {uiPhase === 'low_visibility' && <p className="text-xs font-bold text-red-300">전신이 보이도록 서 주세요</p>}
       {uiPhase === 'ready' && <p className="text-xs font-bold text-emerald-300">양팔 들고 스쿼트 시작</p>}
@@ -369,7 +373,7 @@ export default function SquatLiveAnalysis({ member, onBack, onComplete, onMember
       videoRef={videoRef} canvasRef={canvasRef} status={status} error={error}
       onClose={onBack} tappable={false} showSkeletonToggle
       topBar={topBar} controls={controls}
-      recording={uiPhase === 'active'} recordingLabel={`진행 중 · 깊이 ${depthPct}%`}
+      recording={['ready', 'active', 'trial_done'].includes(uiPhase)} recordingLabel={uiPhase === 'active' ? `진행 중 · 깊이 ${depthPct}%` : '녹화 중'}
     >
       {uiPhase === 'active' && (
         <GaugeHud label="깊이" value={depthPct} unit="%" arc min={0} max={100} accent="#f59e0b"
