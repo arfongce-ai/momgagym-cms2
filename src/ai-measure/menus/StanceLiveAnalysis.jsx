@@ -466,7 +466,7 @@ export default function StanceLiveAnalysis({ member, stanceLeg, onBack, onComple
     </CameraStage>
     {/* 임시 디버그 표시 — 문제 확인되면 제거 예정 */}
     <div className="pointer-events-none fixed bottom-1 left-1 z-[999] rounded bg-black/80 px-2 py-1 font-mono text-[9px] text-lime-300">
-      phase={uiPhase} · status={status} · err={String(error).slice(0, 40)} · locked={String(!!calibRef.current?.locked)} · prog={Math.round(calibProgress * 100)}% · started={String(started)} · cd={String(countdown)}
+      phase={uiPhase} · trkPhase={trackerRef.current?.phase ?? '-'} · trials={trackerRef.current?.trials?.length ?? '-'} · status={status} · err={String(error).slice(0, 40)} · locked={String(!!calibRef.current?.locked)} · prog={Math.round(calibProgress * 100)}% · started={String(started)} · cd={String(countdown)}
     </div>
     </>
   );

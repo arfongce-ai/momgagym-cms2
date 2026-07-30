@@ -943,6 +943,10 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
               onClose={() => setShowManual(false)}
               onSubmit={async (report) => { setShowManual(false); await (onManualComplete || onSaveToFirebase)?.(report); }} />
           )}
+          {/* 임시 디버그 표시 — 문제 확인되면 제거 예정 */}
+          <div className="pointer-events-none fixed bottom-1 left-1 z-[999] rounded bg-black/80 px-2 py-1 font-mono text-[9px] text-lime-300">
+            rot={rotationDeg}° · phase={phase} · armed={String(armed)} · cd={String(countdown)} · msg={calibMsg}
+          </div>
         </div>
       )}
 
