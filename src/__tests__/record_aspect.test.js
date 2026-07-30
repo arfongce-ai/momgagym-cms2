@@ -60,3 +60,49 @@ describe('cover 크롭 좌표 매핑', () => {
     expect(drawVideoCover(ctx, video, 1080, 1440)).toBe(true);
   });
 });
+
+describe('cover 크롭 + 회전 보정(카메라 원본이 90/180/270도 돌아간 채로 들어오는 경우)', () => {
+  const video = { videoWidth: 1920, videoHeight: 1080 }; // 가로로 넓은 원본
+
+  it.each([90, 180, 270])('%i도 보정 시에도 중앙점(0.5,0.5)은 캔버스 중앙으로 매핑된다', (deg) => {
+    const t = coverTransform(video, 1080, 1440, deg);
+    expect(Math.round(t.X({ x: 0.5, y: 0.5 }))).toBe(540);
+    expect(Math.round(t.Y({ x: 0.5, y: 0.5 }))).toBe(720);
+  });
+
+  it('회전을 주면 중앙이 아닌 점의 매핑이 회전 없음과 달라진다(보정이 실제로 적용됨을 확인)', () => {
+    const base = coverTransform(video, 1080, 1440, 0);
+    const rotated = coverTransform(video, 1080, 1440, 90);
+    const p = { x: 0.5, y: 0 };
+    expect(Math.round(rotated.X(p))).not.toBe(Math.round(base.X(p)));
+  });
+
+  it('coverMapPath 도 회전 보정 시 경로 중앙점을 0.5로 유지한다', () => {
+    const mapped = coverMapPath([{ x: 0.5, y: 0.5 }], video, 1080, 1440, 90);
+    expect(mapped[0].x).toBeCloseTo(0.5, 5);
+    expect(mapped[0].y).toBeCloseTo(0.5, 5);
+  });
+
+  it('drawVideoCover 는 회전값이 있으면 save→rotate→restore 순으로 그린다', () => {
+    const calls = [];
+    const ctx = {
+      save: () => calls.push('save'),
+      translate: (...a) => calls.push(['translate', ...a]),
+      rotate: (...a) => calls.push(['rotate', ...a]),
+      restore: () => calls.push('restore'),
+      drawImage: (...a) => calls.push(['drawImage', ...a]),
+    };
+    expect(drawVideoCover(ctx, video, 1080, 1440, 90)).toBe(true);
+    expect(calls[0]).toBe('save');
+    expect(calls.at(-1)).toBe('restore');
+    expect(calls.some((c) => Array.isArray(c) && c[0] === 'rotate')).toBe(true);
+  });
+
+  it('drawVideoCover 는 회전값이 0이면 save/rotate 없이 기존과 동일하게 그린다(회귀 방지)', () => {
+    const calls = [];
+    const ctx = { drawImage: (...a) => calls.push(['drawImage', ...a]) };
+    expect(drawVideoCover(ctx, video, 1080, 1440, 0)).toBe(true);
+    expect(calls.length).toBe(1);
+    expect(calls[0][0]).toBe('drawImage');
+  });
+});

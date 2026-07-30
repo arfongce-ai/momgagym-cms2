@@ -15,6 +15,7 @@ import { exerciseLabel as exerciseLabelLocal, snapWeight, stepWeight } from '../
 import { saveVideoToPhone, pickRecorderMime } from '../core/recordSink';
 import { drawLiftingDataHud } from '../core/recordingOverlay';
 import { DEFAULT_ASPECT, outputSize, aspectLabel, drawVideoCover } from '../core/recordAspect';
+import { useCameraRotation } from '../core/useCameraRotation';
 import { assessFraming, FRAMING_PRESETS } from '../core/framingGuide';
 import {
   CALIBRATION_PRESETS, buildReferenceScale, ratioToCm,
@@ -143,6 +144,7 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
   }, [heightCm, referenceScale]);
 
   const { videoRef, start, stop, status, error, lockCapture, unlockCapture } = usePoseEngine({ onResult: handleResult });
+  const [rotationDeg] = useCameraRotation();
 
   const clearCountdown = useCallback(() => {
     if (countdownTimerRef.current) {
@@ -228,7 +230,7 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
     const draw = () => {
       ctx.fillStyle = '#000';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
-      drawVideoCover(ctx, video, canvas.width, canvas.height); // 검은 여백 없이 중앙 크롭
+      drawVideoCover(ctx, video, canvas.width, canvas.height, rotationDeg); // 검은 여백 없이 중앙 크롭(+회전 보정)
       const elapsedSec = recordingRef.current ? (performance.now() - recordStartRef.current) / 1000 : null;
       drawLiftingDataHud(ctx, canvas.width, canvas.height, {
         title: 'VBT',

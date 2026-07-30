@@ -36,45 +36,117 @@ export function aspectLabel(aspect) {
   return normalizeAspect(aspect) === '1/1' ? '1:1' : '3:4';
 }
 
+// 90도 단위로 정규화(그 외 값은 0으로 취급).
+function normalizeRotation(deg) {
+  const r = (((Math.round((Number(deg) || 0) / 90) * 90) % 360) + 360) % 360;
+  return r === 90 || r === 180 || r === 270 ? r : 0;
+}
+
+// 캔버스 중심 기준 오프셋(dx,dy)을 rot(90/180/270, 시계방향)만큼 회전.
+function rotateOffset(dx, dy, rot) {
+  if (rot === 90) return { x: -dy, y: dx };
+  if (rot === 180) return { x: -dx, y: -dy };
+  if (rot === 270) return { x: dy, y: -dx };
+  return { x: dx, y: dy };
+}
+
 // cover 크롭 파라미터 매퍼를 반환(스켈레톤 등 정규화 좌표 → 캔버스 픽셀 정렬용).
-export function coverTransform(video, width, height) {
+// rotationDeg: 카메라 원본 영상을 시계방향으로 이만큼 돌려야 바로 서는 경우(0/90/180/270).
+//  · useCameraRotation 이 저장한 값과 동일한 값을 넘기면, drawVideoCover 로 그려진
+//    (회전 보정된) 영상 위에 스켈레톤이 정확히 겹친다.
+export function coverTransform(video, width, height, rotationDeg = 0) {
   const sw0 = video?.videoWidth, sh0 = video?.videoHeight;
   if (!sw0 || !sh0) {
     return { X: (p) => p.x * width, Y: (p) => p.y * height };
   }
-  const sr = sw0 / sh0, tr = width / height;
+  const rot = normalizeRotation(rotationDeg);
+  if (!rot) {
+    // 회전 없음 — 기존 경로 그대로(회귀 방지).
+    const sr = sw0 / sh0, tr = width / height;
+    let sx = 0, sy = 0, sw = sw0, sh = sh0;
+    if (sr > tr) { sw = sh0 * tr; sx = (sw0 - sw) / 2; }
+    else { sh = sw0 / tr; sy = (sh0 - sh) / 2; }
+    return {
+      X: (p) => (((p.x * sw0) - sx) / sw) * width,
+      Y: (p) => (((p.y * sh0) - sy) / sh) * height,
+    };
+  }
+
+  const swapped = rot === 90 || rot === 270;
+  const tw = swapped ? height : width;
+  const th = swapped ? width : height;
+  const sr = sw0 / sh0, tr = tw / th;
   let sx = 0, sy = 0, sw = sw0, sh = sh0;
   if (sr > tr) { sw = sh0 * tr; sx = (sw0 - sw) / 2; }
   else { sh = sw0 / tr; sy = (sh0 - sh) / 2; }
-  return {
-    X: (p) => (((p.x * sw0) - sx) / sw) * width,
-    Y: (p) => (((p.y * sh0) - sy) / sh) * height,
+  const toXY = (p) => {
+    const u = ((p.x * sw0) - sx) / sw;
+    const v = ((p.y * sh0) - sy) / sh;
+    const off = rotateOffset((u - 0.5) * tw, (v - 0.5) * th, rot);
+    return { x: width / 2 + off.x, y: height / 2 + off.y };
   };
+  return { X: (p) => toXY(p).x, Y: (p) => toXY(p).y };
 }
 
 // 원본 비디오 정규화 좌표(0~1) 배열을 cover 크롭 캔버스의 정규화 좌표로 변환.
 //  · drawVideoCover 와 동일한 크롭 규칙 → 궤적선이 영상과 정확히 정렬된다.
-export function coverMapPath(path, video, width, height) {
+export function coverMapPath(path, video, width, height, rotationDeg = 0) {
   const sw0 = video?.videoWidth, sh0 = video?.videoHeight;
   if (!Array.isArray(path) || !sw0 || !sh0) return path || [];
-  const sr = sw0 / sh0, tr = width / height;
+  const rot = normalizeRotation(rotationDeg);
+  if (!rot) {
+    // 회전 없음 — 기존 경로 그대로(회귀 방지).
+    const sr = sw0 / sh0, tr = width / height;
+    let sx = 0, sy = 0, sw = sw0, sh = sh0;
+    if (sr > tr) { sw = sh0 * tr; sx = (sw0 - sw) / 2; }
+    else { sh = sw0 / tr; sy = (sh0 - sh) / 2; }
+    return path.map((p) => ({
+      x: ((p.x * sw0) - sx) / sw,
+      y: ((p.y * sh0) - sy) / sh,
+    }));
+  }
+
+  const swapped = rot === 90 || rot === 270;
+  const tw = swapped ? height : width;
+  const th = swapped ? width : height;
+  const sr = sw0 / sh0, tr = tw / th;
   let sx = 0, sy = 0, sw = sw0, sh = sh0;
   if (sr > tr) { sw = sh0 * tr; sx = (sw0 - sw) / 2; }
   else { sh = sw0 / tr; sy = (sh0 - sh) / 2; }
-  return path.map((p) => ({
-    x: ((p.x * sw0) - sx) / sw,
-    y: ((p.y * sh0) - sy) / sh,
-  }));
+  return path.map((p) => {
+    const u = ((p.x * sw0) - sx) / sw;
+    const v = ((p.y * sh0) - sy) / sh;
+    const off = rotateOffset((u - 0.5) * tw, (v - 0.5) * th, rot);
+    return { x: 0.5 + off.x / width, y: 0.5 + off.y / height };
+  });
 }
 //  · 검은 여백 없이 꽉 채운다(보행 drawCover 와 동일 규칙).
 //  · 반환: 그려졌으면 true(비디오 준비 전이면 false).
-export function drawVideoCover(ctx, video, width, height) {
+export function drawVideoCover(ctx, video, width, height, rotationDeg = 0) {
   const sw0 = video?.videoWidth, sh0 = video?.videoHeight;
   if (!sw0 || !sh0) return false;
-  const sr = sw0 / sh0, tr = width / height;
+  const rot = normalizeRotation(rotationDeg);
+  if (!rot) {
+    // 회전 없음 — 기존 경로 그대로(회귀 방지).
+    const sr = sw0 / sh0, tr = width / height;
+    let sx = 0, sy = 0, sw = sw0, sh = sh0;
+    if (sr > tr) { sw = sh0 * tr; sx = (sw0 - sw) / 2; }
+    else { sh = sw0 / tr; sy = (sh0 - sh) / 2; }
+    ctx.drawImage(video, sx, sy, sw, sh, 0, 0, width, height);
+    return true;
+  }
+
+  const swapped = rot === 90 || rot === 270;
+  const tw = swapped ? height : width;
+  const th = swapped ? width : height;
+  const sr = sw0 / sh0, tr = tw / th;
   let sx = 0, sy = 0, sw = sw0, sh = sh0;
   if (sr > tr) { sw = sh0 * tr; sx = (sw0 - sw) / 2; }
   else { sh = sw0 / tr; sy = (sh0 - sh) / 2; }
-  ctx.drawImage(video, sx, sy, sw, sh, 0, 0, width, height);
+  ctx.save();
+  ctx.translate(width / 2, height / 2);
+  ctx.rotate((rot * Math.PI) / 180);
+  ctx.drawImage(video, sx, sy, sw, sh, -tw / 2, -th / 2, tw, th);
+  ctx.restore();
   return true;
 }

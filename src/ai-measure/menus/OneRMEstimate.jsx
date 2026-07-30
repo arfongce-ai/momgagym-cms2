@@ -25,6 +25,7 @@ import { beepRep } from '../core/audioCue';
 import { saveVideoToPhone, pickRecorderMime } from '../core/recordSink';
 import { drawGaugeHud } from '../core/recordingOverlay';
 import { DEFAULT_ASPECT, outputSize, aspectLabel, drawVideoCover } from '../core/recordAspect';
+import { useCameraRotation } from '../core/useCameraRotation';
 import FramingIntro from './FramingIntro';
 import CameraStage from './CameraStage';
 import GaugeHud from './GaugeHud';
@@ -237,6 +238,7 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
   };
 
   const { videoRef, start, stop, status, error } = usePoseEngine({ onResult: handleResult });
+  const [rotationDeg] = useCameraRotation();
 
   const stopCompose = () => {
     if (composeRafRef.current) { cancelAnimationFrame(composeRafRef.current); composeRafRef.current = null; }
@@ -253,7 +255,7 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
     const draw = () => {
       ctx.fillStyle = '#000';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
-      drawVideoCover(ctx, video, canvas.width, canvas.height);
+      drawVideoCover(ctx, video, canvas.width, canvas.height, rotationDeg);
       const live = accRef.current.live();
       const liveOneRM = live.reps > 0
         ? estimate1RM(snapWeight(computedWeight), live.reps).average

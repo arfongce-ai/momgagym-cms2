@@ -19,6 +19,7 @@ import { estimateBodyCOG, barCogHorizontalGap } from '../core/bodyCog';
 import { saveVideoToPhone, pickRecorderMime } from '../core/recordSink';
 import { drawLiftingDataHud, drawBarPathToRecord } from '../core/recordingOverlay';
 import { DEFAULT_ASPECT, outputSize, aspectLabel, drawVideoCover, coverMapPath } from '../core/recordAspect';
+import { useCameraRotation } from '../core/useCameraRotation';
 import {
   CALIBRATION_PRESETS, buildReferenceScale, ratioToCm,
   resolveDistanceScale, serializeDistanceScale,
@@ -234,6 +235,7 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
   }, [activePts, heightCm, referenceScale]);
 
   const { videoRef, start, stop, status, error, lockCapture, unlockCapture } = usePoseEngine({ onResult: handleResult });
+  const [rotationDeg] = useCameraRotation();
 
   const clearCountdown = useCallback(() => {
     if (countdownTimerRef.current) {
@@ -361,9 +363,9 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
     const draw = () => {
       ctx.fillStyle = '#000';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
-      drawVideoCover(ctx, video, canvas.width, canvas.height);
+      drawVideoCover(ctx, video, canvas.width, canvas.height, rotationDeg);
       // 실제 추적 궤적선(장식 아님) — 카메라 원본 정규화 좌표를 cover 크롭 좌표로 매핑.
-      drawBarPathToRecord(ctx, coverMapPath(fusedRef.current.path(), video, canvas.width, canvas.height), canvas.width, canvas.height);
+      drawBarPathToRecord(ctx, coverMapPath(fusedRef.current.path(), video, canvas.width, canvas.height, rotationDeg), canvas.width, canvas.height);
       // 데이터-only HUD: 수직이동(cm) · 평균속도 · 경과시간.
       const elapsedSec = recordingRef.current ? (performance.now() - recordStartRef.current) / 1000 : null;
       drawLiftingDataHud(ctx, canvas.width, canvas.height, {

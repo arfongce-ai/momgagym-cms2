@@ -19,6 +19,7 @@
 //                         요소들을 아래로 밀어 오버레이 겹침을 방지한다.
 import { useEffect, useState } from 'react';
 import SkeletonToggleChip from './SkeletonToggleChip';
+import { useCameraRotation } from '../core/useCameraRotation';
 
 export default function CameraStage({
   videoRef, canvasRef, status, error,
@@ -28,6 +29,16 @@ export default function CameraStage({
   topOffset = 0, showSkeletonToggle = false, aspectFrame = null,
 }) {
   const [showSeedHint, setShowSeedHint] = useState(false);
+  const [rotationDeg, cycleRotation] = useCameraRotation();
+  const isSideways = rotationDeg === 90 || rotationDeg === 270;
+  const rotateWrapStyle = rotationDeg ? {
+    position: 'absolute',
+    top: '50%',
+    left: '50%',
+    width: isSideways ? '100vh' : '100%',
+    height: isSideways ? '100vw' : '100%',
+    transform: `translate(-50%, -50%) rotate(${rotationDeg}deg)`,
+  } : undefined;
   const off = Math.max(0, topOffset);
   const topPad = `calc(env(safe-area-inset-top) + ${10 + off}px)`;
   const recTop = `calc(max(env(safe-area-inset-top), 12px) + ${off}px)`;
@@ -52,10 +63,12 @@ export default function CameraStage({
 
   return (
     <div className="cam-stage">
-      <video ref={videoRef} autoPlay playsInline muted
-        className="absolute inset-0 w-full h-full object-contain" />
-      <canvas ref={canvasRef}
-        className="absolute inset-0 w-full h-full object-contain pointer-events-none" />
+      <div className={rotationDeg ? '' : 'absolute inset-0 w-full h-full'} style={rotateWrapStyle}>
+        <video ref={videoRef} autoPlay playsInline muted
+          className="absolute inset-0 w-full h-full object-contain" />
+        <canvas ref={canvasRef}
+          className="absolute inset-0 w-full h-full object-contain pointer-events-none" />
+      </div>
 
       {/* 녹화 비율 크롭 가이드(인스타 3:4/1:1) — 실제 저장 프레임 영역을 밝게 표시 */}
       {aspectFrame && status === 'running' && (
@@ -121,6 +134,10 @@ export default function CameraStage({
             <button onClick={onClose}
               className="rounded-full bg-black/55 border border-white/25 text-white text-xs font-bold px-3 py-1.5 active:scale-95">
               ✕ 닫기
+            </button>
+            <button onClick={cycleRotation}
+              className="rounded-full bg-black/55 border border-white/25 text-white text-xs font-bold px-3 py-1.5 active:scale-95">
+              ↻ 화면 회전{rotationDeg ? ` ${rotationDeg}°` : ''}
             </button>
             {showSkeletonToggle && <SkeletonToggleChip />}
           </div>

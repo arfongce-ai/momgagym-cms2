@@ -18,6 +18,7 @@ import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { usePoseEngine } from '../core/usePoseEngine';
 import { StandingCalibrator, SingleLegStanceTracker } from '../core/singleLegStanceTracker';
 import { DEFAULT_ASPECT, outputSize, drawVideoCover, coverTransform } from '../core/recordAspect';
+import { useCameraRotation } from '../core/useCameraRotation';
 import { drawGaugeHud } from '../core/recordingOverlay';
 import CameraStage from './CameraStage.jsx';
 import GaugeHud from './GaugeHud.jsx';
@@ -116,8 +117,8 @@ export default function StanceLiveAnalysis({ member, stanceLeg, onBack, onComple
       if (!video) return;
       ctx.fillStyle = '#000';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
-      if (!drawVideoCover(ctx, video, canvas.width, canvas.height)) return;
-      const cover = coverTransform(video, canvas.width, canvas.height);
+      if (!drawVideoCover(ctx, video, canvas.width, canvas.height, rotationDeg)) return;
+      const cover = coverTransform(video, canvas.width, canvas.height, rotationDeg);
       drawSkeleton(canvas, video, latestLandmarksRef.current, !!calibRef.current?.locked, { x: cover.X, y: cover.Y });
       const tracker = trackerRef.current;
       const elapsedSec = recordingStartedRef.current ? (performance.now() - recordStartTsRef.current) / 1000 : 0;
@@ -224,6 +225,7 @@ export default function StanceLiveAnalysis({ member, stanceLeg, onBack, onComple
   }, [heightCm, stanceLeg]);
 
   const { videoRef, start, stop, status, error } = usePoseEngine({ onResult: handleResult });
+  const [rotationDeg] = useCameraRotation();
 
   useEffect(() => {
     if (!needHeight && !startedRef.current) {

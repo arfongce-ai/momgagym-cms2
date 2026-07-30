@@ -28,6 +28,7 @@ import RomVideoAngle from './RomVideoAngle.jsx';
 import { isSkeletonEnabled } from '../core/skeletonPref';
 import { drawGaugeHud } from '../core/recordingOverlay';
 import { DEFAULT_ASPECT, outputSize, aspectLabel, drawVideoCover, coverTransform } from '../core/recordAspect';
+import { useCameraRotation } from '../core/useCameraRotation';
 
 const MAX_RECORD_MS = 60000;
 
@@ -168,6 +169,7 @@ export default function RomMeasure({ member, onSave, onBack }) {
   }, [joint, poseMode, side]);
 
   const { videoRef, start, stop, status, error } = usePoseEngine({ onResult: handlePose, modelTier: 'full' });
+  const [rotationDeg] = useCameraRotation();
 
   useEffect(() => {
     if (mode !== 'live') return undefined;
@@ -199,8 +201,8 @@ export default function RomMeasure({ member, onSave, onBack }) {
     const draw = () => {
       ctx.fillStyle = '#000';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
-      drawVideoCover(ctx, video, canvas.width, canvas.height); // 검은 여백 없이 중앙 크롭
-      const cover = coverTransform(video, canvas.width, canvas.height); // 스켈레톤 좌표 정렬용
+      drawVideoCover(ctx, video, canvas.width, canvas.height, rotationDeg); // 검은 여백 없이 중앙 크롭(+회전 보정)
+      const cover = coverTransform(video, canvas.width, canvas.height, rotationDeg); // 스켈레톤 좌표 정렬용
       // 스켈레톤(측정 측 강조) + 좌우 각도 HUD 를 영상 위에 베이크.
       drawSkeletonToRecord(ctx, latestLandmarksRef.current, side, joint, poseMode, canvas.width, canvas.height, cover);
       drawRomHud(ctx, latestLandmarksRef.current, joint, poseMode, canvas.width, canvas.height,
