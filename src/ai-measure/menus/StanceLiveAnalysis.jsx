@@ -440,6 +440,7 @@ export default function StanceLiveAnalysis({ member, stanceLeg, onBack, onComple
   );
 
   return (
+    <>
     <CameraStage
       videoRef={videoRef} canvasRef={canvasRef} status={status} error={error}
       onClose={onBack} tappable={false} showSkeletonToggle
@@ -451,5 +452,10 @@ export default function StanceLiveAnalysis({ member, stanceLeg, onBack, onComple
           stats={[{ label: '시행', value: `${trialsFound}/2` }]} />
       )}
     </CameraStage>
+    {/* 임시 디버그 표시 — 문제 확인되면 제거 예정 */}
+    <div className="pointer-events-none fixed bottom-1 left-1 z-[999] rounded bg-black/80 px-2 py-1 font-mono text-[9px] text-lime-300">
+      phase={uiPhase} · locked={String(!!calibRef.current?.locked)} · prog={Math.round(calibProgress * 100)}% · started={String(started)} · cd={String(countdown)}
+    </div>
+    </>
   );
 }
