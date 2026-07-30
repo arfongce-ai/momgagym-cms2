@@ -4,13 +4,14 @@ import {
   pelvisRelativeFeet, cameraAngleQuality, detectOrientation
 } from '../core/gaitBiomechanics';
 import { boostedGain } from '../core/audioCue';
-import { loadPoseLandmarker, detectPoseFrame, closePoseLandmarker, isPoseReady } from '../core/poseBackend';
+import { loadPoseLandmarker, detectPoseFrame, isPoseReady } from '../core/poseBackend';
 import { openMainCameraStream, describeCameraError } from '../core/cameraSelect';
 import { shareReportWithVideo } from '../core/reportShare';
 import { drawGaugeHud } from '../core/recordingOverlay';
 import { lockZoom, unlockZoom } from '../../utils/viewportLock';
 import { isSkeletonEnabled } from '../core/skeletonPref';
 import SkeletonToggleChip from './SkeletonToggleChip';
+import { useCameraRotation } from '../core/useCameraRotation';
 import GaugeHud from './GaugeHud';
 
 // 캘리브레이션: 세이프존 + 인식 안정이 이만큼 유지되면 락
@@ -22,14 +23,30 @@ const OUTPUT_SIZE = {
   '1/1': { width: 1080, height: 1080 },
 };
 // 원본 비디오를 타겟 비율에 맞춰 중앙 크롭 (검은 여백 없음)
-function drawCover(ctx, video, width, height) {
+// rotationDeg: useCameraRotation 값과 동일한 값을 넘기면 회전 보정된 화면이 그대로 녹화된다.
+function drawCover(ctx, video, width, height, rotationDeg = 0) {
   const sw0 = video.videoWidth, sh0 = video.videoHeight;
   if (!sw0 || !sh0) return false;
-  const sr = sw0 / sh0, tr = width / height;
+  const rot = (((Math.round((Number(rotationDeg) || 0) / 90) * 90) % 360) + 360) % 360;
+  if (!rot) {
+    const sr = sw0 / sh0, tr = width / height;
+    let sx = 0, sy = 0, sw = sw0, sh = sh0;
+    if (sr > tr) { sw = sh0 * tr; sx = (sw0 - sw) / 2; }
+    else { sh = sw0 / tr; sy = (sh0 - sh) / 2; }
+    ctx.drawImage(video, sx, sy, sw, sh, 0, 0, width, height);
+    return true;
+  }
+  const swapped = rot === 90 || rot === 270;
+  const tw = swapped ? height : width, th = swapped ? width : height;
+  const sr = sw0 / sh0, tr = tw / th;
   let sx = 0, sy = 0, sw = sw0, sh = sh0;
   if (sr > tr) { sw = sh0 * tr; sx = (sw0 - sw) / 2; }
   else { sh = sw0 / tr; sy = (sh0 - sh) / 2; }
-  ctx.drawImage(video, sx, sy, sw, sh, 0, 0, width, height);
+  ctx.save();
+  ctx.translate(width / 2, height / 2);
+  ctx.rotate((rot * Math.PI) / 180);
+  ctx.drawImage(video, sx, sy, sw, sh, -tw / 2, -th / 2, tw, th);
+  ctx.restore();
   return true;
 }
 
@@ -155,6 +172,7 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
 
   const videoRef = useRef(null);
   const skeletonCanvasRef = useRef(null);
+  const [rotationDeg, cycleRotation] = useCameraRotation();
   const mediaRecorderRef = useRef(null);
   const chunksRef = useRef([]);
   const streamRef = useRef(null);
@@ -396,7 +414,7 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
     const draw = () => {
       ctx.fillStyle = '#000';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
-      drawCover(ctx, video, canvas.width, canvas.height);
+      drawCover(ctx, video, canvas.width, canvas.height, rotationDeg);
       drawMetricOverlay(
         ctx,
         performance.now() - recordingStartedAtRef.current,
@@ -545,7 +563,9 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
     if (metroCtxRef.current) {
       try { metroCtxRef.current.close(); } catch (e) { /* noop */ }
     }
-    closePoseLandmarker();
+    // [2026-07-30] 포즈 모델 해제 호출 제거 — 화면 나갈 때마다 AI 모델을 부수면
+    // 다음 회원 측정 때마다 CDN에서 통째로 다시 로딩해야 해서 키오스크 진입이
+    // 느렸다. 카메라 스트림(stopCamera)은 그대로 매번 정상 종료한다.
     if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -559,9 +579,16 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
     >
       {(view === 'camera' || view === 'recording') && (
         <>
-          <video ref={videoRef} className="absolute inset-0 w-full h-full object-cover" playsInline muted autoPlay />
-          {/* 검출된 포즈 스켈레톤 오버레이 (인식 확인용) */}
-          <canvas ref={skeletonCanvasRef} className="absolute inset-0 w-full h-full pointer-events-none" />
+          <div className={rotationDeg ? '' : 'absolute inset-0 w-full h-full'} style={rotationDeg ? {
+            position: 'absolute', top: '50%', left: '50%',
+            width: (rotationDeg === 90 || rotationDeg === 270) ? '100vh' : '100%',
+            height: (rotationDeg === 90 || rotationDeg === 270) ? '100vw' : '100%',
+            transform: `translate(-50%, -50%) rotate(${rotationDeg}deg)`,
+          } : undefined}>
+            <video ref={videoRef} className="absolute inset-0 w-full h-full object-cover" playsInline muted autoPlay />
+            {/* 검출된 포즈 스켈레톤 오버레이 (인식 확인용) */}
+            <canvas ref={skeletonCanvasRef} className="absolute inset-0 w-full h-full pointer-events-none" />
+          </div>
           {/* (장식성 HUD 오버레이 제거 — 스켈레톤 + 프레임만 남김) */}
           {/* 세이프 존 가이드 (상하좌우 15% 여백) — 캘리브레이션 시 녹색 */}
           <div className="absolute inset-0 pointer-events-none flex items-center justify-center p-[15%]">
@@ -570,6 +597,10 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
           <div className="absolute top-0 z-20 w-full p-4 flex justify-between items-start bg-gradient-to-b from-black/60 to-transparent">
             <div className="flex flex-col items-start gap-1.5">
               <button onClick={onBack} className="measure-back">← 뒤로</button>
+              <button onClick={cycleRotation}
+                className="rounded-full bg-black/55 border border-white/25 text-white text-[10px] font-bold px-2.5 py-1 active:scale-95">
+                ↻ 화면 회전{rotationDeg ? ` ${rotationDeg}°` : ''}
+              </button>
               <SkeletonToggleChip />
             </div>
             <div className="text-center">

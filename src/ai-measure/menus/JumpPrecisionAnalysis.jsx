@@ -20,7 +20,7 @@ import { calcJump, calcRSI } from '../core/performance';
 import { computeRSIFromFlights, rsiGrade } from '../core/reactiveJump';
 import { applyRepFreeze } from '../core/repFreeze';
 import { OrientationVoter } from '../core/gaitBiomechanics';
-import { loadPoseLandmarker, detectPoseFrame, isPoseReady, closePoseLandmarker } from '../core/poseBackend';
+import { loadPoseLandmarker, detectPoseFrame, isPoseReady } from '../core/poseBackend';
 import { openMainCameraStream, describeCameraError } from '../core/cameraSelect';
 import { beepTick, beepGo, primeAudio } from '../core/audioCue';
 import { lockZoom, unlockZoom } from '../../utils/viewportLock';
@@ -28,6 +28,7 @@ import ReportActions from '../../components/report/ReportActions';
 import { store } from '../../demoData';
 import { isSkeletonEnabled } from '../core/skeletonPref';
 import SkeletonToggleChip from './SkeletonToggleChip';
+import { useCameraRotation } from '../core/useCameraRotation';
 import { drawGaugeHud } from '../core/recordingOverlay';
 import GaugeHud from './GaugeHud';
 
@@ -144,14 +145,30 @@ function drawJumpLiveOverlay(ctx, width, height, snap = {}) {
 }
 
 // 녹화 캔버스에 비디오를 꽉 채워 그린다(검은 여백 없이 크롭) — gait drawCover 와 동일.
-function drawCoverJump(ctx, video, width, height) {
+// rotationDeg: useCameraRotation 값과 동일한 값을 넘기면 회전 보정된 화면이 그대로 녹화된다.
+function drawCoverJump(ctx, video, width, height, rotationDeg = 0) {
   const sw0 = video.videoWidth, sh0 = video.videoHeight;
   if (!sw0 || !sh0) return;
-  const sr = sw0 / sh0, tr = width / height;
+  const rot = (((Math.round((Number(rotationDeg) || 0) / 90) * 90) % 360) + 360) % 360;
+  if (!rot) {
+    const sr = sw0 / sh0, tr = width / height;
+    let sx = 0, sy = 0, sw = sw0, sh = sh0;
+    if (sr > tr) { sw = sh0 * tr; sx = (sw0 - sw) / 2; }
+    else { sh = sw0 / tr; sy = (sh0 - sh) / 2; }
+    ctx.drawImage(video, sx, sy, sw, sh, 0, 0, width, height);
+    return;
+  }
+  const swapped = rot === 90 || rot === 270;
+  const tw = swapped ? height : width, th = swapped ? width : height;
+  const sr = sw0 / sh0, tr = tw / th;
   let sx = 0, sy = 0, sw = sw0, sh = sh0;
   if (sr > tr) { sw = sh0 * tr; sx = (sw0 - sw) / 2; }
   else { sh = sw0 / tr; sy = (sh0 - sh) / 2; }
-  ctx.drawImage(video, sx, sy, sw, sh, 0, 0, width, height);
+  ctx.save();
+  ctx.translate(width / 2, height / 2);
+  ctx.rotate((rot * Math.PI) / 180);
+  ctx.drawImage(video, sx, sy, sw, sh, -tw / 2, -th / 2, tw, th);
+  ctx.restore();
 }
 
 // 캘리브레이션 안정 유지 시간(깜빡임 방지). 충분히 서 있으면 거의 즉시 락.
@@ -247,6 +264,7 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
   const skeletonCanvasRef = useRef(null);
   const streamRef = useRef(null);
   const reqFrameRef = useRef(null);
+  const [rotationDeg, cycleRotation] = useCameraRotation();
   const lastTsRef = useRef(0);
   const viewRef = useRef('camera');
   const phaseRef = useRef('arming');
@@ -311,7 +329,9 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
   }, [view, needHeight]);
 
   useEffect(() => () => stopCamera(), []);
-  useEffect(() => () => closePoseLandmarker(), []);
+  // [2026-07-30] 포즈 모델 해제 호출 제거 — 화면 나갈 때마다 AI 모델을 부수면
+  // 다음 회원 측정 때마다 CDN에서 통째로 다시 로딩해야 해서 키오스크 진입이
+  // 느렸다. 카메라 스트림(stopCamera)은 그대로 매번 정상 종료한다.
   useEffect(() => () => { if (countdownTimerRef.current) clearInterval(countdownTimerRef.current); }, []);
   // 카메라 측정 화면: 확대 잠금 (언마운트 시 복원)
   useEffect(() => { lockZoom(); return () => unlockZoom(); }, []);
@@ -405,7 +425,7 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
     const ctx = canvas.getContext('2d', { alpha: false });
     const draw = () => {
       ctx.fillStyle = '#000'; ctx.fillRect(0, 0, canvas.width, canvas.height);
-      drawCoverJump(ctx, video, canvas.width, canvas.height);
+      drawCoverJump(ctx, video, canvas.width, canvas.height, rotationDeg);
       drawJumpLiveOverlay(ctx, canvas.width, canvas.height, {
         ...overlayRef.current,
         phase: phaseRef.current,
@@ -795,14 +815,27 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
     <div className="fixed inset-0 z-[80] bg-slate-950" style={{ height: '100dvh' }}>
       {view === 'camera' && (
         <div className="relative w-full h-full">
-          <video ref={videoRef} className="absolute inset-0 w-full h-full object-cover" playsInline muted />
-          <canvas ref={skeletonCanvasRef} className="absolute inset-0 w-full h-full pointer-events-none" />
+          <div className={rotationDeg ? '' : 'absolute inset-0 w-full h-full'} style={rotationDeg ? {
+            position: 'absolute', top: '50%', left: '50%',
+            width: (rotationDeg === 90 || rotationDeg === 270) ? '100vh' : '100%',
+            height: (rotationDeg === 90 || rotationDeg === 270) ? '100vw' : '100%',
+            transform: `translate(-50%, -50%) rotate(${rotationDeg}deg)`,
+          } : undefined}>
+            <video ref={videoRef} className="absolute inset-0 w-full h-full object-cover" playsInline muted />
+            <canvas ref={skeletonCanvasRef} className="absolute inset-0 w-full h-full pointer-events-none" />
+          </div>
 
           {/* 헤더 */}
           <div className="absolute top-0 z-20 inset-x-0 flex items-center justify-between px-4 py-3 bg-gradient-to-b from-black/60 to-transparent">
             <button onClick={onBack} className="text-white font-bold text-sm">← 뒤로</button>
             <h2 className="text-white font-black text-sm">점프 정밀 측정</h2>
-            <SkeletonToggleChip />
+            <div className="flex items-center gap-1.5">
+              <button onClick={cycleRotation}
+                className="rounded-full bg-black/55 border border-white/25 text-white text-[10px] font-bold px-2.5 py-1 active:scale-95">
+                ↻{rotationDeg ? ` ${rotationDeg}°` : ''}
+              </button>
+              <SkeletonToggleChip />
+            </div>
           </div>
 
           <JumpLiveOverlay

@@ -47,13 +47,25 @@ async function _createWithDelegate(PoseLandmarker, FilesetResolver, numPoses, de
 /**
  * PoseLandmarker 를 VIDEO 모드로 1회 생성. 이미 만들어졌으면 캐시 반환.
  * GPU 실패 시 CPU 로 자동 폴백.
+ *
+ * [2026-07-30] 키오스크 로딩 속도 개선: 예전엔 화면을 나갈 때마다
+ * closePoseLandmarker() 를 호출해서, 회원이 바뀔 때마다(=측정 화면 재진입마다)
+ * CDN에서 모델을 통째로 다시 받아와 초기화했다(로딩이 길다는 불만의 원인).
+ * 이제 화면 언마운트 시 더 이상 자동으로 닫지 않는다 — 브라우저 탭이 켜져
+ * 있는 한(하루 종일 켜두는 키오스크 PC 특성상) 모델을 계속 재사용해, 첫
+ * 로딩 이후로는 화면 진입이 즉시 된다. 카메라 스트림 자체(진짜 매번 새로
+ * 열어야 하는 것)는 이 캐시와 무관하게 화면마다 정상적으로 열고 닫는다.
  * @param {object} opts  { numPoses=1, modelTier='full'|'lite'|'heavy' }
  */
 export async function loadPoseLandmarker(opts = {}) {
+  const { numPoses = 1, modelTier } = opts;
+  // 이미 다른 등급으로 캐시돼 있으면 재사용하지 않고 새로 올린다(정확도 등급 불일치 방지).
+  if (modelTier && MODEL_URLS[modelTier] && modelTier !== _modelTier && (_landmarker || _visionPromise)) {
+    closePoseLandmarker();
+  }
   if (_landmarker) return _landmarker;
   if (_visionPromise) return _visionPromise;
 
-  const { numPoses = 1, modelTier } = opts;
   if (modelTier && MODEL_URLS[modelTier]) _modelTier = modelTier;
   _visionPromise = (async () => {
     // ✅ 패키지 루트에서 import (vision_bundle.mjs 직접 import 금지)

@@ -84,8 +84,9 @@ describe('점프·RSI 실시간 화면 — 카메라 획득 강화(이미지1 �
     expect(banner).toContain('다시 시도');
   });
 
-  it('언마운트 시 포즈 모델을 해제한다(Gait/RecordMeasure와 동일 패턴으로 통일)', () => {
-    expect(src).toContain('useEffect(() => () => closePoseLandmarker(), []);');
+  it('언마운트 시 카메라 스트림은 정상 종료하되, AI 모델은 더 이상 부수지 않는다(2026-07-30: 키오스크 재진입 로딩 속도)', () => {
+    expect(src).toContain('useEffect(() => () => stopCamera(), []);');
+    expect(src).not.toMatch(/closePoseLandmarker\(\)/);
   });
 
   it('기존 "기준 다시 잡기"·"측정 취소" 문구는 그대로 유지된다(회귀 방지, measure_fixes_batch와 중복 보호)', () => {

@@ -4,9 +4,18 @@
 //
 // 설계:
 //  - MediaPipe Tasks Vision 을 CDN(ESM)에서 동적 import → 빌드 의존성 0, 번들 비대화 방지.
-//  - 메뉴 진입 시 init(), 이탈 시 stop() 으로 카메라·워커 자원 회수.
+//  - 메뉴 진입 시 init(), 이탈 시 stop() 으로 카메라 자원은 회수.
 //  - onResult(landmarks, ts) 콜백으로 매 프레임 결과 전달. React state 우회(고주파).
-
+//
+// [2026-07-30] 키오스크 로딩 속도 개선 — PoseLandmarker(AI 모델)를 모듈 레벨
+// 캐시로 승격했다. 예전엔 화면(usePoseEngine 인스턴스)마다 landmarker를 새로
+// 만들고 stop() 에서 닫아버려서, 회원이 바뀔 때마다(=측정 화면 재진입마다)
+// CDN에서 모델을 통째로 다시 받아와 초기화했다(로딩이 길다는 불만의 원인 —
+// poseBackend.js 를 쓰는 점프/보행과 동일한 문제였다). 이제 브라우저 탭이
+// 켜져 있는 한(하루 종일 켜두는 키오스크 PC 특성상) 첫 로딩 이후로는 재사용해
+// 화면 진입이 즉시 된다. 카메라 스트림은 이 캐시와 무관하게 화면마다 정상
+// 열고 닫는다 — "AI 모델"과 "카메라 접근" 은 서로 다른 자원이라 수명주기를
+// 분리했다.
 import { useRef, useCallback, useState } from 'react';
 import { openMainCameraStream, lockCameraCapture, unlockCameraCapture } from './cameraSelect';
 
@@ -19,6 +28,62 @@ const MODEL_URLS = {
   full: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task',
   heavy: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_heavy/float16/1/pose_landmarker_heavy.task',
 };
+
+// ── 모듈 레벨 캐시 — 이 페이지(탭)를 쓰는 모든 usePoseEngine 인스턴스가 공유 ──
+let _sharedLandmarker = null;
+let _sharedLandmarkerPromise = null;
+let _sharedLandmarkerTier = null;
+
+/** 캐시된 게 있고 등급이 같으면 즉시 반환. 등급이 다르면 안전하게 갈아끼운다. */
+async function getSharedLandmarker(modelTier) {
+  if (_sharedLandmarker && _sharedLandmarkerTier !== modelTier) {
+    try { _sharedLandmarker.close(); } catch (e) { /* noop */ }
+    _sharedLandmarker = null;
+    _sharedLandmarkerPromise = null;
+  }
+  if (_sharedLandmarker) return _sharedLandmarker;
+  if (_sharedLandmarkerPromise) return _sharedLandmarkerPromise;
+
+  _sharedLandmarkerPromise = (async () => {
+    const vision = await import(/* @vite-ignore */ `${VISION_CDN}`);
+    const { FilesetResolver, PoseLandmarker } = vision;
+    const fileset = await FilesetResolver.forVisionTasks(`${VISION_CDN}/wasm`);
+    const modelUrl = MODEL_URLS[modelTier] || MODEL_URLS.full;
+    const buildOpts = (delegate) => ({
+      baseOptions: { modelAssetPath: modelUrl, delegate },
+      runningMode: 'VIDEO',
+      numPoses: 1,
+      minPoseDetectionConfidence: 0.5,
+      minPosePresenceConfidence: 0.5,
+      minTrackingConfidence: 0.5,
+    });
+    let lm;
+    try {
+      lm = await PoseLandmarker.createFromOptions(fileset, buildOpts('GPU'));
+    } catch (gpuErr) {
+      // 일부 기기/브라우저에서 GPU delegate 미지원 → CPU 폴백
+      lm = await PoseLandmarker.createFromOptions(fileset, buildOpts('CPU'));
+    }
+    _sharedLandmarker = lm;
+    _sharedLandmarkerTier = modelTier;
+    return lm;
+  })();
+
+  try {
+    return await _sharedLandmarkerPromise;
+  } catch (e) {
+    _sharedLandmarkerPromise = null;
+    throw e;
+  }
+}
+
+/** 명시적으로 완전히 닫고 싶을 때만 쓰는 탈출구(평소엔 아무도 호출할 필요 없음). */
+export function closeSharedPoseEngine() {
+  try { _sharedLandmarker?.close?.(); } catch (e) { /* noop */ }
+  _sharedLandmarker = null;
+  _sharedLandmarkerPromise = null;
+  _sharedLandmarkerTier = null;
+}
 
 export function usePoseEngine({ onResult, modelTier = 'full' } = {}) {
   const videoRef = useRef(null);
@@ -40,25 +105,8 @@ export function usePoseEngine({ onResult, modelTier = 'full' } = {}) {
       setStatus('loading');
       setError(null);
 
-      // 1) MediaPipe Tasks Vision 동적 로드 (CDN ESM)
-      const vision = await import(/* @vite-ignore */ `${VISION_CDN}`);
-      const { FilesetResolver, PoseLandmarker } = vision;
-      const fileset = await FilesetResolver.forVisionTasks(`${VISION_CDN}/wasm`);
-      const modelUrl = MODEL_URLS[modelTier] || MODEL_URLS.full;
-      const buildOpts = (delegate) => ({
-        baseOptions: { modelAssetPath: modelUrl, delegate },
-        runningMode: 'VIDEO',
-        numPoses: 1,
-        minPoseDetectionConfidence: 0.5,
-        minPosePresenceConfidence: 0.5,
-        minTrackingConfidence: 0.5,
-      });
-      // GPU 우선, 실패 시 CPU 폴백(일부 기기/브라우저에서 GPU delegate 미지원)
-      try {
-        landmarkerRef.current = await PoseLandmarker.createFromOptions(fileset, buildOpts('GPU'));
-      } catch (gpuErr) {
-        landmarkerRef.current = await PoseLandmarker.createFromOptions(fileset, buildOpts('CPU'));
-      }
+      // 1) MediaPipe 포즈 모델 — 캐시돼 있으면 즉시, 없으면 이번에 로드(이후 화면들은 재사용).
+      landmarkerRef.current = await getSharedLandmarker(modelTier);
 
       // 2) 카메라 시작 — 후면 "메인(광각)" 렌즈를 명시 선택해 초광각 왜곡 방지.
       const stream = await openMainCameraStream({ audio: false });
@@ -134,10 +182,9 @@ export function usePoseEngine({ onResult, modelTier = 'full' } = {}) {
       streamRef.current = null;
     }
     if (videoRef.current) videoRef.current.srcObject = null;
-    if (landmarkerRef.current) {
-      try { landmarkerRef.current.close(); } catch (e) { /* noop */ }
-      landmarkerRef.current = null;
-    }
+    // 이 훅 인스턴스의 참조만 놓는다 — 모듈 캐시(getSharedLandmarker)의 실제
+    // PoseLandmarker는 닫지 않는다(다음 화면에서 즉시 재사용하기 위함).
+    landmarkerRef.current = null;
     setStatus('idle');
   }, []);
 
