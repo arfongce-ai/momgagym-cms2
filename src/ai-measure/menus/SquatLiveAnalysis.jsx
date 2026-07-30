@@ -215,14 +215,14 @@ export default function SquatLiveAnalysis({ member, onBack, onComplete, onMember
   // 캘리브레이션은 이미 끝난 상태(calib.locked)에서만 호출됨 — 버튼을 눌러야
   // 비로소 트래커 생성 + 녹화 시작 + 반복(rep) 판정이 시작된다.
   // maxTrials:1 — 정면/측면 각 단계는 1회씩만 잡고 넘어간다(전체 2회 = 정면1+측면1).
+  // ROM과 동일하게(2026-07-30 변경): 버튼을 누르면 카운트다운 없이 바로 시작한다.
+  // (정면·측면 두 단계 모두 이 함수를 그대로 재사용한다.)
   const startMeasurement = () => {
-    if (countdown != null || measureStartedRef.current || !calibRef.current?.locked) return;
-    runStartCountdown(() => {
-      trackerRef.current = new SquatBiomechanicsTracker(calibRef.current.result, { maxTrials: 1 });
-      measureStartedRef.current = true;
-      setStarted(true);
-      beginRecording();
-    });
+    if (measureStartedRef.current || !calibRef.current?.locked) return;
+    trackerRef.current = new SquatBiomechanicsTracker(calibRef.current.result, { maxTrials: 1 });
+    measureStartedRef.current = true;
+    setStarted(true);
+    beginRecording();
   };
 
   // 정면 시행을 마치고 측면으로 넘어간다 — 카메라 각도가 바뀌므로 캘리브레이션을
@@ -430,9 +430,9 @@ export default function SquatLiveAnalysis({ member, onBack, onComplete, onMember
   const controls = (
     <>
       {uiPhase === 'ready' && !started && (
-        <button onClick={startMeasurement} disabled={countdown != null}
-          className="rounded-full bg-gradient-to-r from-amber-400 to-orange-500 text-slate-950 font-black text-sm px-6 py-3 active:scale-95 disabled:opacity-60">
-          {countdown != null ? '시작 대기' : '● 촬영 시작'}
+        <button onClick={startMeasurement} disabled={status !== 'running'}
+          className="h-20 w-20 rounded-full border-4 border-white bg-red-500 text-xs font-black text-white shadow-lg disabled:bg-slate-600 disabled:text-slate-300 active:scale-95">
+          녹화<br />시작
         </button>
       )}
       {uiPhase === 'active' && (

@@ -208,14 +208,13 @@ export default function StanceLiveAnalysis({ member, stanceLeg, onBack, onComple
 
   // 캘리브레이션은 이미 끝난 상태(calib.locked)에서만 호출됨 — 버튼을 눌러야
   // 비로소 트래커 생성 + 녹화 시작 + 시행 판정이 시작된다.
+  // ROM과 동일하게(2026-07-30 변경): 버튼을 누르면 카운트다운 없이 바로 시작한다.
   const startMeasurement = () => {
-    if (countdown != null || measureStartedRef.current || !calibRef.current?.locked) return;
-    runStartCountdown(() => {
-      trackerRef.current = new SingleLegStanceTracker(calibRef.current.result, stanceLeg);
-      measureStartedRef.current = true;
-      setStarted(true);
-      beginRecording();
-    });
+    if (measureStartedRef.current || !calibRef.current?.locked) return;
+    trackerRef.current = new SingleLegStanceTracker(calibRef.current.result, stanceLeg);
+    measureStartedRef.current = true;
+    setStarted(true);
+    beginRecording();
   };
 
   const handleResult = useCallback((landmarks, ts, video) => {
@@ -401,9 +400,9 @@ export default function StanceLiveAnalysis({ member, stanceLeg, onBack, onComple
   const controls = (
     <>
       {uiPhase === 'ready' && !started && (
-        <button onClick={startMeasurement} disabled={countdown != null}
-          className="rounded-full bg-gradient-to-r from-amber-400 to-orange-500 text-slate-950 font-black text-sm px-6 py-3 active:scale-95 disabled:opacity-60">
-          {countdown != null ? '시작 대기' : '● 촬영 시작'}
+        <button onClick={startMeasurement} disabled={status !== 'running'}
+          className="h-20 w-20 rounded-full border-4 border-white bg-red-500 text-xs font-black text-white shadow-lg disabled:bg-slate-600 disabled:text-slate-300 active:scale-95">
+          녹화<br />시작
         </button>
       )}
       {uiPhase === 'holding' && (
