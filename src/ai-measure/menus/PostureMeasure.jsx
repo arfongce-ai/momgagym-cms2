@@ -677,7 +677,7 @@ export default function PostureMeasure({ member, onSave, onBack }) {
     </CameraStage>
     {/* 임시 디버그 표시 — 문제 확인되면 제거 예정 */}
     <div className="pointer-events-none fixed bottom-1 left-1 z-[999] rounded bg-black/80 px-2 py-1 font-mono text-[9px] text-lime-300">
-      target={activeStep?.key} · det={debugDetRef.current?.view ?? '-'} · conf={debugDetRef.current?.confidence ?? '-'} · shR={debugDetRef.current?.shoulderRatio ?? '-'} · faceVis={debugDetRef.current?.faceVis ?? '-'}
+      target={activeStep?.key} · status={status} · err={String(error).slice(0, 40)} · det={debugDetRef.current?.view ?? '-'} · conf={debugDetRef.current?.confidence ?? '-'} · shR={debugDetRef.current?.shoulderRatio ?? '-'} · faceVis={debugDetRef.current?.faceVis ?? '-'}
     </div>
     </>
   );

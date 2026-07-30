@@ -20,7 +20,7 @@ import { calcJump, calcRSI } from '../core/performance';
 import { computeRSIFromFlights, rsiGrade } from '../core/reactiveJump';
 import { applyRepFreeze } from '../core/repFreeze';
 import { OrientationVoter } from '../core/gaitBiomechanics';
-import { loadPoseLandmarker, detectPoseFrame, isPoseReady } from '../core/poseBackend';
+import { loadPoseLandmarker, detectPoseFrame, isPoseReady, closePoseLandmarker } from '../core/poseBackend';
 import { openMainCameraStream, describeCameraError } from '../core/cameraSelect';
 import { beepTick, beepGo, primeAudio } from '../core/audioCue';
 import { lockZoom, unlockZoom } from '../../utils/viewportLock';
@@ -329,9 +329,9 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
   }, [view, needHeight]);
 
   useEffect(() => () => stopCamera(), []);
-  // [2026-07-30] 포즈 모델 해제 호출 제거 — 화면 나갈 때마다 AI 모델을 부수면
-  // 다음 회원 측정 때마다 CDN에서 통째로 다시 로딩해야 해서 키오스크 진입이
-  // 느렸다. 카메라 스트림(stopCamera)은 그대로 매번 정상 종료한다.
+  // [2026-07-30] 되돌림: 화면 간 포즈 모델 공유 캐시가 인식 실패(광범위 회귀)를
+  // 유발한 것으로 추정되어, 나갈 때마다 모델을 다시 닫는 원래 방식으로 복원.
+  useEffect(() => () => closePoseLandmarker(), []);
   useEffect(() => () => { if (countdownTimerRef.current) clearInterval(countdownTimerRef.current); }, []);
   // 카메라 측정 화면: 확대 잠금 (언마운트 시 복원)
   useEffect(() => { lockZoom(); return () => unlockZoom(); }, []);

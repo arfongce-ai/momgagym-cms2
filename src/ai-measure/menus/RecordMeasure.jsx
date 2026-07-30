@@ -7,7 +7,7 @@ import { boostedGain, whistle, primeAudio } from '../core/audioCue';
 import { openMainCameraStream, refocusCameraStream } from '../core/cameraSelect';
 import { formatStopwatch } from '../core/recordingOverlay';
 import { nextPhase, firstPhase, phaseDurationSec } from '../core/intervalTimer';
-import { loadPoseLandmarker, detectPoseFrame, isPoseReady } from '../core/poseBackend';
+import { loadPoseLandmarker, detectPoseFrame, isPoseReady, closePoseLandmarker } from '../core/poseBackend';
 import { isSkeletonEnabled, subscribeSkeleton, useSkeletonOverlay } from '../core/skeletonPref';
 import SkeletonToggleChip from './SkeletonToggleChip';
 
@@ -262,8 +262,9 @@ export default function RecordMeasure({ member: _member, onBack }) {
     return off;
   }, [ensurePoseModel]);
 
-  // [2026-07-30] 포즈 모델 해제 호출 제거 — 화면 나갈 때마다 AI 모델을 부수면
-  // 다음 진입 때마다 다시 로딩해야 해서 느렸다. 다른 측정 화면들과 동일하게 수정.
+  // [2026-07-30] 되돌림: 화면 간 포즈 모델 공유 캐시가 인식 실패(광범위 회귀)를
+  // 유발한 것으로 추정되어, 나갈 때마다 모델을 다시 닫는 원래 방식으로 복원.
+  useEffect(() => () => { closePoseLandmarker(); }, []);
   const [stopwatchElapsed, setStopwatchElapsed] = useState(0);
   const [stopwatchRunning, setStopwatchRunning] = useState(false);
   const [metronomeBpm, setMetronomeBpm] = useState(100);
