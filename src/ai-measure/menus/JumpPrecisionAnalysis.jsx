@@ -473,8 +473,11 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
 
   // '측정 시작' 버튼 → 3초 카운트다운(큰 숫자 + 소리) 후 측정 개시.
   const beginCountdown = () => {
-    if (armed || countdown != null) return;            // 중복 시작 방지
-    if (!calibLockedRef.current) return;               // 기준 미확보 시 무시
+    if (armed || countdown != null) return;             // 중복 시작 방지
+    // [2026-07-30] "기준 미확보 시 무시" 가드 제거 — 촬영 대상자가 카메라 앞이
+    // 아니라 노트북 앞에서 버튼을 누르는 경우(또는 트레이너가 미리 눌러두는
+    // 경우)를 지원한다. 카운트다운은 캘리브레이션과 무관하게 시작되고, 실제
+    // 점프 트래킹은 아래 루프가 calib.locked 를 계속 기다렸다가 시작한다.
     primeAudio();                                      // 사용자 제스처에서 오디오 워밍업
     let n = 3;
     setCountdown(n);
@@ -486,25 +489,16 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
         setCountdown(n);
         beepTick();
       } else {
-        // 0 → 측정 시작
+        // 0 → 측정 시작(armed). 트래커 생성은 실제로 캘리브레이션이 끝나는 시점에
+        // 루프에서 한다 — 버튼을 미리 눌러서 카운트다운이 캘리브레이션보다 먼저
+        // 끝나는 경우(촬영 대상자가 이제 막 자리로 이동 중인 경우)를 지원하기 위함.
         clearInterval(countdownTimerRef.current);
         countdownTimerRef.current = null;
         setCountdown(null);
         beepGo();
-        // 트래커/누적기 생성 + 오버레이 녹화 시작 (기존 락 시점 로직을 여기로 이동)
-        const calib = calibRef.current;
-        if (calib?.result) {
-          trackerRef.current = new JumpFlightTracker(calib.result);
-          trackerRef.current.calibHeightCm = heightRef.current;
-          orientRef.current = jumpType === 'reactive' ? new OrientationVoter() : null;
-          prevInAirRef.current = false;
-          landFramesLeftRef.current = 0;
-          frameDtRef.current = [];
-          prevFrameTsRef.current = 0;
-          startRecording();
-          setArmed(true);
-          armedRef.current = true;
-        }
+        startRecording();
+        setArmed(true);
+        armedRef.current = true;
       }
     }, 1000);
   };
@@ -529,7 +523,7 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
       } catch (e) { landmarks = null; }
 
       const calib = calibRef.current;
-      const tracker = trackerRef.current;
+      let tracker = trackerRef.current;
 
       // 스켈레톤 + 기준선
       try {
@@ -563,7 +557,18 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
           setPhaseOnce('ready');
           setMsgOnce('');
         } else {
-          // ── 측정 단계 ──
+          // ── 측정 단계 ── (armed=true 시점에 트래커가 아직 없으면 여기서 생성 —
+          // 카운트다운이 캘리브레이션보다 먼저 끝난 경우 대비)
+          if (!trackerRef.current) {
+            trackerRef.current = new JumpFlightTracker(calib.result);
+            trackerRef.current.calibHeightCm = heightRef.current;
+            orientRef.current = jumpType === 'reactive' ? new OrientationVoter() : null;
+            prevInAirRef.current = false;
+            landFramesLeftRef.current = 0;
+            frameDtRef.current = [];
+            prevFrameTsRef.current = 0;
+          }
+          tracker = trackerRef.current; // 위에서 방금 생성됐을 수 있으니 다시 읽는다
           // 프레임 간격(ms) 수집 — RSI 접지시간 정확도(fps) 판정용
           tracker.push(landmarks, ts);
           const curInAir = tracker.inAir;
@@ -881,21 +886,19 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
                 {/* 측정 시작 전: 녹화버튼 형태의 측정 시작 버튼 */}
                 <button
                   onClick={beginCountdown}
-                  disabled={phase !== 'ready' || countdown != null}
+                  disabled={countdown != null}
                   className={`flex h-20 w-20 items-center justify-center rounded-full border-4 shadow-lg transition active:scale-95
-                    ${phase === 'ready' && countdown == null
+                    ${countdown == null
                       ? 'border-white bg-red-500'
                       : 'border-white/40 bg-white/15'}`}>
                   <span className="text-[11px] font-black text-white leading-tight text-center whitespace-pre-line">
-                    {countdown != null ? String(countdown) : phase === 'ready' ? '측정\n시작' : '대기'}
+                    {countdown != null ? String(countdown) : '측정\n시작'}
                   </span>
                 </button>
                 <p className="text-white/80 text-xs font-bold text-center px-6">
                   {phase === 'ready'
                     ? '버튼을 누르면 3초 후 측정이 시작됩니다'
-                    : phase === 'low_visibility'
-                    ? '전신이 보이도록 똑바로 서 주세요'
-                    : '자세 인식 중...'}
+                    : '버튼을 누르면 3초 후 측정이 시작됩니다 — 그 사이에 자리에 서 주세요'}
                 </p>
                 <div className="flex flex-col items-center gap-2">
                   <button onClick={() => setShowManual(true)}

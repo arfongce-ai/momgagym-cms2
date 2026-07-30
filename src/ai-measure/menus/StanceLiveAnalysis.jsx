@@ -209,9 +209,12 @@ export default function StanceLiveAnalysis({ member, stanceLeg, onBack, onComple
   // 캘리브레이션은 이미 끝난 상태(calib.locked)에서만 호출됨 — 버튼을 눌러야
   // 비로소 트래커 생성 + 녹화 시작 + 시행 판정이 시작된다.
   // ROM과 동일하게(2026-07-30 변경): 버튼을 누르면 카운트다운 없이 바로 시작한다.
+  // [2026-07-30] 버튼이 캘리브레이션 완료를 기다리지 않고 언제든 눌리게 변경 —
+  // 촬영 대상자가 카메라 앞이 아니라 노트북 앞에서(또는 트레이너가 미리) 버튼을
+  // 누르는 경우를 지원한다. 트래커 생성은 실제로 캘리브레이션이 끝나는 시점에
+  // handleResult에서 한다.
   const startMeasurement = () => {
-    if (measureStartedRef.current || !calibRef.current?.locked) return;
-    trackerRef.current = new SingleLegStanceTracker(calibRef.current.result, stanceLeg);
+    if (measureStartedRef.current) return;
     measureStartedRef.current = true;
     setStarted(true);
     beginRecording();
@@ -231,7 +234,11 @@ export default function StanceLiveAnalysis({ member, stanceLeg, onBack, onComple
       calib.push(landmarks);
       const st = calib.status();
       if (st.ready) {
-        setUiPhase('ready'); // 캘리브레이션 완료 — "촬영 시작" 버튼을 누르면 카운트다운 후 시작
+        setUiPhase('ready'); // 캘리브레이션 완료
+        if (measureStartedRef.current && !trackerRef.current) {
+          // 버튼을 캘리브레이션보다 먼저 눌러둔 경우 — 지금 트래커 생성.
+          trackerRef.current = new SingleLegStanceTracker(calib.result, stanceLeg);
+        }
       } else if (st.reason === 'low_visibility') {
         setUiPhase('low_visibility');
       } else {
@@ -241,8 +248,12 @@ export default function StanceLiveAnalysis({ member, stanceLeg, onBack, onComple
       return;
     }
 
-    if (!measureStartedRef.current) return; // 캘리브레이션 완료, 아직 촬영 시작 버튼/카운트다운 대기 중
+    if (!measureStartedRef.current) return; // 캘리브레이션 완료, 아직 촬영 시작 버튼 대기 중
 
+    if (!trackerRef.current) {
+      // 캘리브레이션이 버튼보다 먼저 끝난 일반적인 경우 — 여기서 트래커 생성.
+      trackerRef.current = new SingleLegStanceTracker(calib.result, stanceLeg);
+    }
     const tracker = trackerRef.current;
     if (!tracker || tracker.trials.length >= tracker.maxTrials) return;
 
@@ -388,8 +399,10 @@ export default function StanceLiveAnalysis({ member, stanceLeg, onBack, onComple
       )}
       {uiPhase === 'calibrating' && <p className="text-xs font-bold text-amber-300">자세 보정 중… {Math.round(calibProgress * 100)}%</p>}
       {uiPhase === 'low_visibility' && <p className="text-xs font-bold text-red-300">전신이 보이도록 서 주세요</p>}
-      {uiPhase === 'ready' && !started && <p className="text-xs font-bold text-emerald-300">준비됐어요 — 촬영 시작을 눌러주세요</p>}
-      {uiPhase === 'ready' && started && <p className="text-xs font-bold text-emerald-300">반대쪽 발을 들어 시작</p>}
+      {!started && !['calibrating', 'low_visibility', 'trial_done', 'finished'].includes(uiPhase) && (
+        <p className="text-xs font-bold text-emerald-300">준비됐어요 — 녹화 시작을 눌러주세요</p>
+      )}
+      {started && uiPhase === 'ready' && <p className="text-xs font-bold text-emerald-300">반대쪽 발을 들어 시작</p>}
       {uiPhase === 'trial_done' && <p className="text-xs font-bold text-emerald-300">{trialsFound}차 완료 — {lastTrialNote}</p>}
       {uiPhase === 'finished' && <p className="text-xs font-bold text-emerald-300">2회 모두 완료 — {lastTrialNote}</p>}
       {finishing && <p className="text-xs font-bold text-amber-300">영상 정리 중…</p>}
@@ -399,7 +412,7 @@ export default function StanceLiveAnalysis({ member, stanceLeg, onBack, onComple
 
   const controls = (
     <>
-      {uiPhase === 'ready' && !started && (
+      {!started && !['trial_done', 'finished'].includes(uiPhase) && (
         <button onClick={startMeasurement} disabled={status !== 'running'}
           className="h-20 w-20 rounded-full border-4 border-white bg-red-500 text-xs font-black text-white shadow-lg disabled:bg-slate-600 disabled:text-slate-300 active:scale-95">
           녹화<br />시작
