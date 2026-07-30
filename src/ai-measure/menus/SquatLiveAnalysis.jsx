@@ -90,6 +90,10 @@ export default function SquatLiveAnalysis({ member, onBack, onComplete, onMember
   const lastTsRef = useRef(0);
   const canvasRef = useRef(null);
   const startedRef = useRef(false);
+  const countdownTimerRef = useRef(null);
+  const measureStartedRef = useRef(false); // 캘리브레이션 완료 후 "촬영 시작" 버튼+카운트다운을 거쳤는지
+  const [countdown, setCountdown] = useState(null);
+  const [started, setStarted] = useState(false);
 
   // ── 녹화 ──
   const latestVideoElRef = useRef(null);
@@ -172,6 +176,41 @@ export default function SquatLiveAnalysis({ member, onBack, onComplete, onMember
     } catch (e) { mediaRecorderRef.current = null; }
   };
 
+  // VBT/점프와 동일한 "버튼 → 3-2-1 → 시작" 패턴(UI 통일성).
+  const clearCountdown = useCallback(() => {
+    if (countdownTimerRef.current) { clearInterval(countdownTimerRef.current); countdownTimerRef.current = null; }
+    setCountdown(null);
+  }, []);
+
+  const runStartCountdown = useCallback((onDone) => {
+    if (countdownTimerRef.current) return;
+    let next = 3;
+    setCountdown(next);
+    countdownTimerRef.current = setInterval(() => {
+      next -= 1;
+      if (next <= 0) {
+        clearInterval(countdownTimerRef.current);
+        countdownTimerRef.current = null;
+        setCountdown(null);
+        onDone?.();
+      } else {
+        setCountdown(next);
+      }
+    }, 1000);
+  }, []);
+
+  // 캘리브레이션은 이미 끝난 상태(calib.locked)에서만 호출됨 — 버튼을 눌러야
+  // 비로소 트래커 생성 + 녹화 시작 + 반복(rep) 판정이 시작된다.
+  const startMeasurement = () => {
+    if (countdown != null || measureStartedRef.current || !calibRef.current?.locked) return;
+    runStartCountdown(() => {
+      trackerRef.current = new SquatBiomechanicsTracker(calibRef.current.result);
+      measureStartedRef.current = true;
+      setStarted(true);
+      beginRecording();
+    });
+  };
+
   const handleResult = useCallback((landmarks, ts, video) => {
     lastTsRef.current = ts;
     latestVideoElRef.current = video || latestVideoElRef.current;
@@ -186,9 +225,7 @@ export default function SquatLiveAnalysis({ member, onBack, onComplete, onMember
       calib.push(landmarks);
       const st = calib.status();
       if (st.ready) {
-        trackerRef.current = new SquatBiomechanicsTracker(calib.result);
-        setUiPhase('ready');
-        beginRecording();
+        setUiPhase('ready'); // 캘리브레이션 완료 — "촬영 시작" 버튼을 누르면 카운트다운 후 시작
       } else if (st.reason === 'low_visibility') {
         setUiPhase('low_visibility');
       } else {
@@ -197,6 +234,8 @@ export default function SquatLiveAnalysis({ member, onBack, onComplete, onMember
       }
       return;
     }
+
+    if (!measureStartedRef.current) return; // 캘리브레이션 완료, 아직 촬영 시작 버튼/카운트다운 대기 중
 
     const tracker = trackerRef.current;
     if (!tracker || tracker.trials.length >= tracker.maxTrials) return;
@@ -234,6 +273,7 @@ export default function SquatLiveAnalysis({ member, onBack, onComplete, onMember
     return () => {
       stop();
       stopComposeLoop();
+      clearCountdown();
       if (maxRecordTimerRef.current) { clearTimeout(maxRecordTimerRef.current); maxRecordTimerRef.current = null; }
       if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
         try { mediaRecorderRef.current.stop(); } catch (e) { /* noop */ }
@@ -331,7 +371,8 @@ export default function SquatLiveAnalysis({ member, onBack, onComplete, onMember
       )}
       {uiPhase === 'calibrating' && <p className="text-xs font-bold text-amber-300">자세 보정 중… {Math.round(calibProgress * 100)}%</p>}
       {uiPhase === 'low_visibility' && <p className="text-xs font-bold text-red-300">전신이 보이도록 서 주세요</p>}
-      {uiPhase === 'ready' && <p className="text-xs font-bold text-emerald-300">양팔 들고 스쿼트 시작</p>}
+      {uiPhase === 'ready' && !started && <p className="text-xs font-bold text-emerald-300">준비됐어요 — 촬영 시작을 눌러주세요</p>}
+      {uiPhase === 'ready' && started && <p className="text-xs font-bold text-emerald-300">양팔 들고 스쿼트 시작</p>}
       {uiPhase === 'trial_done' && <p className="text-xs font-bold text-emerald-300">{trialsFound}회차 완료 — {lastTrialNote}</p>}
       {uiPhase === 'finished' && <p className="text-xs font-bold text-emerald-300">2회 모두 완료 — {lastTrialNote}</p>}
       {finishing && <p className="text-xs font-bold text-amber-300">영상 정리 중…</p>}
@@ -341,6 +382,12 @@ export default function SquatLiveAnalysis({ member, onBack, onComplete, onMember
 
   const controls = (
     <>
+      {uiPhase === 'ready' && !started && (
+        <button onClick={startMeasurement} disabled={countdown != null}
+          className="rounded-full bg-gradient-to-r from-amber-400 to-orange-500 text-slate-950 font-black text-sm px-6 py-3 active:scale-95 disabled:opacity-60">
+          {countdown != null ? '시작 대기' : '● 촬영 시작'}
+        </button>
+      )}
       {uiPhase === 'active' && (
         <button onClick={markBalanceLoss}
           className="rounded-full bg-red-500/20 border border-red-500/40 text-red-300 font-black text-xs px-4 py-2.5 active:scale-95">
@@ -372,8 +419,8 @@ export default function SquatLiveAnalysis({ member, onBack, onComplete, onMember
     <CameraStage
       videoRef={videoRef} canvasRef={canvasRef} status={status} error={error}
       onClose={onBack} tappable={false} showSkeletonToggle
-      topBar={topBar} controls={controls}
-      recording={['ready', 'active', 'trial_done'].includes(uiPhase)} recordingLabel={uiPhase === 'active' ? `진행 중 · 깊이 ${depthPct}%` : '녹화 중'}
+      topBar={topBar} controls={controls} countdown={countdown}
+      recording={started} recordingLabel={uiPhase === 'active' ? `진행 중 · 깊이 ${depthPct}%` : '녹화 중'}
     >
       {uiPhase === 'active' && (
         <GaugeHud label="깊이" value={depthPct} unit="%" arc min={0} max={100} accent="#f59e0b"
