@@ -35,6 +35,25 @@
 //   · 통증·부상 위험을 단정하지 않는다. 임상 해석은 Momi/전문가 몫이며, 여기서는
 //     측정된 패턴(정상/주의/위험/확인 필요)만 노출한다.
 //   · 아래 임계값은 실측 캡처 데이터 보정 전까지의 시작 기본값이다.
+//
+//  ── 정면+측면 결합 판정(2026-07-30 추가) ──
+//   라이브 촬영은 이제 정면 1회 + 측면 1회, 총 2회로 진행한다(기존: 정면만 2회).
+//   지표마다 "어느 각도가 신뢰할 수 있는 소스인지"가 다르므로, 예전처럼 "같은
+//   지표가 두 시행 모두에서 반복돼야 확정"하는 재현성 방식을 그대로 쓸 수 없다
+//   (무릎외반은 애초에 측면 시행에서 반복될 수가 없는 지표라서, 그대로 두면
+//   정면에서 아무리 명확히 잡혀도 영원히 "미확정"에 머무는 문제가 생긴다).
+//   그래서 지표별로 확정 규칙을 분리했다:
+//    · kneeValgusDeg · pelvicTiltDeg — 정면 시행 단독으로 확정(측면은 애초에
+//      좌우 편차를 볼 수 없는 각도라 관여하지 않는다).
+//    · torsoLeanDeg — 측면 시행을 우선 소스로 단독 확정(시상면 굽힘은 측면이
+//      정확하다는 기존 주석 근거 그대로). 측면 시행이 무효면 정면 값으로
+//      대체하되(폴백), 대체 사용 여부를 torsoLeanSource 로 결과에 노출한다.
+//    · thighInclineDeg(깊이) — 정면·측면 모두 같은 공식(엉덩이-무릎 수직 접근도)을
+//      쓰므로 값이 서로 비교 가능하다. 둘 다 유효하면 기존과 같은 재현성 방식
+//      (양쪽 다 나와야 확정)을 그대로 유지하고, 한쪽만 있으면 그 값으로 단독 확정.
+//    · balanceLoss·heelLift(즉시확정) — 정면·측면 어느 쪽에서 나와도 그대로 RISK.
+//   evaluateSquatBiomechanics()는 {front, side}(신규)와 {trial1, trial2}(기존 —
+//   영상 업로드 모드처럼 정면 2회만 있는 경우) 두 입력 형태를 모두 지원한다.
 // ════════════════════════════════════════════════════════════════════════
 
 export const SQUAT_TUNING = {
@@ -139,6 +158,71 @@ function judgeTrial(trial = {}) {
 }
 
 /**
+ * 정면 1회 + 측면 1회를 지표별 권위 소스 규칙으로 결합(파일 상단 설계 노트 참고).
+ */
+function combineFrontSide(front, side) {
+  const f = judgeTrial(front);
+  const s = judgeTrial(side);
+
+  if (f.immediateFail || s.immediateFail) {
+    const failed = f.immediateFail ? f : s;
+    return { status: 'risk', confirmed: true, basis: 'immediate', immediateReasons: failed.immediateReasons, trials: [f, s] };
+  }
+
+  if (!f.valid && !s.valid) {
+    return { status: 'unknown', confirmed: false, basis: 'no_valid_trial', trials: [f, s] };
+  }
+
+  const bothValid = f.valid && s.valid;
+  let status = 'normal';
+  const confirmedFlags = [];
+  const unconfirmedFlags = [];
+
+  const takeSingle = (trial, prefix) => {
+    if (!trial?.valid) return;
+    trial.softFlags.filter((fl) => fl.startsWith(prefix)).forEach((fl) => {
+      confirmedFlags.push(fl);
+      status = worse(status, FLAG_SEVERITY[fl] || 'caution');
+    });
+  };
+
+  // 무릎외반·골반기울기 — 정면 단독(측면은 관여하지 않음).
+  takeSingle(f, 'knee_valgus_');
+  takeSingle(f, 'pelvic_tilt_');
+
+  // 상체기울기 — 측면 우선 단독, 측면 무효면 정면으로 대체.
+  const torsoLeanSource = s.valid ? 'side' : (f.valid ? 'front_fallback' : null);
+  takeSingle(torsoLeanSource === 'side' ? s : f, 'torso_lean_');
+
+  // 깊이 — 같은 공식이라 값이 비교 가능: 둘 다 있으면 재현성(양쪽 다 나와야 확정),
+  // 한쪽만 있으면 그 값으로 단독 확정.
+  if (bothValid) {
+    const fDepth = f.softFlags.filter((fl) => fl.startsWith('depth_'));
+    const sDepth = s.softFlags.filter((fl) => fl.startsWith('depth_'));
+    const repeated = fDepth.filter((fl) => sDepth.includes(fl));
+    repeated.forEach((fl) => { confirmedFlags.push(fl); status = worse(status, FLAG_SEVERITY[fl] || 'caution'); });
+    [...new Set([...fDepth, ...sDepth])].filter((fl) => !repeated.includes(fl)).forEach((fl) => unconfirmedFlags.push(fl));
+  } else {
+    takeSingle(f.valid ? f : s, 'depth_');
+  }
+
+  const missingView = bothValid ? null : (f.valid ? 'side' : 'front');
+
+  return {
+    status,
+    confirmed: true,
+    basis: bothValid ? 'front_side_combined' : 'single_view_only',
+    confirmedFlags,
+    repeatedFlags: confirmedFlags, // crossMeasureContext.js 등 기존 소비자가 쓰는 이름과 호환(같은 배열 별칭)
+    unconfirmedFlags,
+    torsoLeanSource,
+    missingView,
+    needsRetest: missingView != null && status !== 'normal',
+    trials: [f, s],
+  };
+}
+
+/**
  * 2회 시행(trial1, trial2)을 재현성 로직으로 결합.
  * - 어느 한 시행이라도 즉시확정 RISK면 → 그대로 RISK(이미 명백, 재현성 확인 불필요).
  * - 둘 다 무효면 → unknown.
@@ -177,11 +261,16 @@ function combineTrials(trial1, trial2) {
 /**
  * 오버헤드 딥 스쿼트 종합 판정.
  * @param {object} input
- * @param {object} [input.trial1]
- * @param {object} [input.trial2]
+ * @param {object} [input.front]   신규: 정면 1회 시행
+ * @param {object} [input.side]    신규: 측면 1회 시행
+ * @param {object} [input.trial1]  기존(하위 호환 — 예: 영상 업로드 모드, 정면만 2회)
+ * @param {object} [input.trial2]  기존(하위 호환)
  * @returns {object} valid:false 시 { valid:false, reason, message }
  */
 export function evaluateSquatBiomechanics(input = {}) {
+  if (input.front || input.side) {
+    return { valid: true, kind: 'squat', ...combineFrontSide(input.front, input.side) };
+  }
   if (!input.trial1 && !input.trial2) {
     return { valid: false, reason: 'no_trials', message: '오버헤드 딥 스쿼트 측정 데이터가 없습니다.' };
   }

@@ -21,7 +21,14 @@ import { shareReportWithVideo } from '../core/reportShare';
 import MeasureRecordConfirm from '../components/MeasureRecordConfirm.jsx';
 
 const STATUS_KO = { normal: '정상', caution: '주의', risk: '위험', unknown: '확인 필요' };
-const BASIS_KO = { immediate: '즉시확정', reproducibility: '재현성확정', single_trial_only: '단일 시행(재측정 권장)', no_valid_trial: '측정 무효' };
+const BASIS_KO = {
+  immediate: '즉시확정',
+  reproducibility: '재현성확정',
+  single_trial_only: '단일 시행(재측정 권장)',
+  no_valid_trial: '측정 무효',
+  front_side_combined: '정면+측면 결합',
+  single_view_only: '단일 각도(재측정 권장)',
+};
 
 export default function SquatAnalysisHub({ member, onBack, onSave, onSaveToFirebase, onMemberHeightChange }) {
   const save = onSaveToFirebase || onSave;
@@ -131,13 +138,22 @@ export default function SquatAnalysisHub({ member, onBack, onSave, onSaveToFireb
             <div className="grid grid-cols-2 gap-2">
               {report.trials.map((t, i) => (
                 <div key={i} className="rounded-xl bg-slate-900 border border-slate-800 p-3">
-                  <p className="text-[11px] text-slate-400">{i === 0 ? '1회차' : '2회차'}</p>
+                  <p className="text-[11px] text-slate-400">{i === 0 ? '정면' : '측면'}</p>
                   <p className="text-white font-black">{STATUS_KO[t.status] || '-'}</p>
                   {t.thighInclineDeg != null && (
                     <p className="text-[11px] text-slate-500 mt-1">깊이 잔여 {t.thighInclineDeg}°</p>
                   )}
                 </div>
               ))}
+            </div>
+          )}
+
+          {report.missingView && (
+            <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3">
+              <p className="text-xs font-bold text-amber-300">
+                {report.missingView === 'side' ? '측면' : '정면'} 촬영이 없어서 일부 지표는 참고용입니다.
+                {report.needsRetest && ' 재측정을 권장해요.'}
+              </p>
             </div>
           )}
 
