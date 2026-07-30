@@ -17,12 +17,26 @@
 // ════════════════════════════════════════════════════════════════════════
 import { useEffect, useState } from 'react';
 
+// 세로 고정 차단 여부를 결정하는 순수 함수 (테스트·훅 양쪽에서 공용으로 사용).
+// PC(마우스/트랙패드가 주 입력장치)는 물리적으로 회전할 수 없으므로 절대 차단하지
+// 않는다 — 넓은 창(landscape)이어도 그냥 PC의 정상 상태일 뿐이다. 터치기기에서만,
+// 그리고 네이티브 잠금이 아직 안 걸린 상태에서만 가로를 "차단 대상"으로 본다.
+export function shouldBlockPortrait({ isTouchPrimary, isLandscape, nativeLocked }) {
+  return Boolean(isTouchPrimary && isLandscape && !nativeLocked);
+}
+
 export function useLockPortrait(active = true) {
   const [isBlocked, setIsBlocked] = useState(false);
 
   useEffect(() => {
     if (!active) { setIsBlocked(false); return undefined; }
     if (typeof window === 'undefined' || typeof document === 'undefined') return undefined;
+
+    // PC(마우스/트랙패드) 판별: pointer:coarse 는 터치처럼 정밀도가 낮은 주 입력장치일
+    // 때만 참이다. 노트북 트랙패드·마우스는 pointer:fine → isTouchPrimary=false 이고,
+    // 이 경우 아래 잠금/가로감지 로직에 들어가지도 않고 즉시 차단 해제 상태로 반환한다.
+    const isTouchPrimary = window.matchMedia ? window.matchMedia('(pointer: coarse)').matches : false;
+    if (!isTouchPrimary) { setIsBlocked(false); return undefined; }
 
     let nativeLocked = false;
 
@@ -39,11 +53,10 @@ export function useLockPortrait(active = true) {
 
     // 2) 폴백: 가로 감지 시 안내 오버레이 플래그만 올린다(앱은 그대로 둔다)
     const evalOrientation = () => {
-      if (nativeLocked) { setIsBlocked(false); return; }
       const isLandscape = window.matchMedia
         ? window.matchMedia('(orientation: landscape)').matches
         : window.innerWidth > window.innerHeight;
-      setIsBlocked(isLandscape);
+      setIsBlocked(shouldBlockPortrait({ isTouchPrimary, isLandscape, nativeLocked }));
     };
     evalOrientation();
 
