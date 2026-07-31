@@ -212,3 +212,29 @@ describe('detectPostureView — 얼굴이 뚜렷할 때 측면 오판 방지(202
     expect(det.view === 'left' || det.view === 'right').toBe(true);
   });
 });
+
+describe('detectPostureView — 얼굴이 뚜렷해도 진짜 측면이면 측면 유지(2026-07-31 회귀 수정)', () => {
+  it('회원이 화면(카메라)을 계속 보며 몸만 돌려 얼굴이 또렷이 남아 있어도, 코가 어깨중심에서 크게 벗어나 있으면 정면이 아닌 측면으로 판정한다', () => {
+    // 어깨폭은 raised-arms 테스트와 동일하게 좁지만(shoulderSideMax 미만),
+    // 이번엔 코가 어깨중심에서 크게 벗어나 있고(noseOffset↑) 어깨 z분리도 커서
+    // sideStrength가 강하게 잡힌다 — 진짜 측면인데 얼굴만 잘 보이는 실제 상황.
+    const pose = frontPose({
+      [LM.LEFT_SHOULDER]: { x: 0.513, y: 0.25, z: 0.15 },
+      [LM.RIGHT_SHOULDER]: { x: 0.487, y: 0.25, z: -0.15 },
+      [LM.NOSE]: { x: 0.75 },
+    });
+    const det = detectPostureView(pose);
+    expect(det.view === 'left' || det.view === 'right').toBe(true);
+  });
+
+  it('위 회귀 테스트의 대조군: 코가 어깨중심에 그대로 남아 있는 raised-arms 케이스는 여전히 정면으로 판정한다', () => {
+    // faceClearlyFrontal 우회 자체가 사라진 게 아니라 sideStrength가 낮을 때만
+    // 여전히 살아있는지 확인 — 위 테스트와 쌍을 이루는 회귀 방지용.
+    const pose = frontPose({
+      [LM.LEFT_SHOULDER]: { x: 0.513, y: 0.25, z: 0 },
+      [LM.RIGHT_SHOULDER]: { x: 0.487, y: 0.25, z: 0 },
+    });
+    const det = detectPostureView(pose);
+    expect(det.view).toBe('front');
+  });
+});

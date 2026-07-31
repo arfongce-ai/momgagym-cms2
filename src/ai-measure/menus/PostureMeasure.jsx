@@ -503,7 +503,7 @@ export default function PostureMeasure({ member, onSave, onBack }) {
             className="w-full rounded-xl bg-amber-500 px-4 py-4 text-left active:scale-[0.99] transition">
             <p className="text-base font-black text-slate-950">자동 촬영 (권장)</p>
             <p className="mt-0.5 text-xs font-bold text-slate-900/80">
-              정면 → 오른쪽 → 후면 → 왼쪽 순서. 면이 인식되면 3초 후 자동 촬영됩니다.
+              정면 → 왼쪽 → 후면 → 오른쪽 순서. 면이 인식되면 3초 후 자동 촬영됩니다.
             </p>
           </button>
           <button
