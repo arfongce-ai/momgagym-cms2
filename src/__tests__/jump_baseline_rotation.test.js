@@ -41,7 +41,7 @@ describe('JumpPrecisionAnalysis.jsx — 캘리브 기준선이 회전 상태에�
     expect(body).toMatch(/moveTo\(0,\s*y\);\s*ctx\.lineTo\(cw,\s*y\)/);
   });
 
-  it('호출부에서 rotationDeg를 실제로 넘긴다', () => {
-    expect(src).toMatch(/drawBaseline\(skeletonCanvasRef\.current, video, calib\.result\.baselineFeetY, rotationDeg\)/);
+  it('호출부에서 rotationDegRef.current를 넘긴다(클로저 안이라 상태 대신 ref를 써야 최신값을 본다)', () => {
+    expect(src).toMatch(/drawBaseline\(skeletonCanvasRef\.current, video, calib\.result\.baselineFeetY, rotationDegRef\.current\)/);
   });
 });

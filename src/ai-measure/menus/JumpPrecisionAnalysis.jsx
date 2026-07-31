@@ -304,6 +304,14 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
   const armedRef = useRef(false);          // 측정 개시 게이트(루프에서 참조)
   const calibLockedRef = useRef(false);    // 캘리브레이션 잠금 완료 여부
   const countdownTimerRef = useRef(null);  // 카운트다운 인터벌 정리용
+  // [2026-07-31] rotationDeg를 loop()가 직접 클로저로 참조하면, loop는
+  // startVisionPipeline() 호출 시점에 딱 한 번 만들어져 계속 자기 자신을
+  // requestAnimationFrame으로 재호출하는 장수(長壽) 클로저라 그 시점 이후의
+  // rotationDeg 변경(회전 버튼 클릭 등)을 못 본다 — 화면(JSX)은 매 렌더 최신
+  // rotationDeg를 그대로 쓰므로 비디오는 항상 맞게 보이는데, loop 안의
+  // drawBaseline만 옛값을 써서 기준선이 어긋나 보였다(armedRef 등과 동일하게
+  // ref로 미러링해 loop가 항상 최신값을 읽게 한다).
+  const rotationDegRef = useRef(0);
 
   // 오버레이 녹화 파이프라인 (보행과 동일 구조)
   const recordCanvasRef = useRef(null);
@@ -319,6 +327,7 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
   useEffect(() => { viewRef.current = view; }, [view]);
   useEffect(() => { phaseRef.current = phase; }, [phase]);
   useEffect(() => { armedRef.current = armed; }, [armed]);
+  useEffect(() => { rotationDegRef.current = rotationDeg; }, [rotationDeg]);
   useEffect(() => { heightRef.current = heightCm; }, [heightCm]);
   useEffect(() => { weightRef.current = bodyWeight; }, [bodyWeight]);
   useEffect(() => {
@@ -440,7 +449,7 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
     const ctx = canvas.getContext('2d', { alpha: false });
     const draw = () => {
       ctx.fillStyle = '#000'; ctx.fillRect(0, 0, canvas.width, canvas.height);
-      drawCoverJump(ctx, video, canvas.width, canvas.height, rotationDeg);
+      drawCoverJump(ctx, video, canvas.width, canvas.height, rotationDegRef.current);
       drawJumpLiveOverlay(ctx, canvas.width, canvas.height, {
         ...overlayRef.current,
         phase: phaseRef.current,
@@ -544,7 +553,7 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
       try {
         const ph = tracker ? (tracker.inAir ? 'air' : 'ready') : 'arming';
         drawSkeleton(skeletonCanvasRef.current, video, landmarks, ph);
-        if (calib?.result) drawBaseline(skeletonCanvasRef.current, video, calib.result.baselineFeetY, rotationDeg);
+        if (calib?.result) drawBaseline(skeletonCanvasRef.current, video, calib.result.baselineFeetY, rotationDegRef.current);
       } catch (e) { /* noop */ }
 
       if (landmarks && viewRef.current === 'camera') {
