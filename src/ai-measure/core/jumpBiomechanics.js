@@ -154,12 +154,18 @@ export class StandingCalibrator {
     const fY = feetCenterY(lm);
     const pY = pelvisCenterY(lm);
     const bPx = bodyPixelHeight(lm);
-    if (fY != null && pY != null && bPx != null) {
+    // [2026-07-30] 발/골반만 있으면 기준선 확보를 진행한다. bPx(전신 픽셀
+    // 높이 → cm 환산용)는 코(0번) 랜드마크가 필요한데, 카메라가 위에서 아래로
+    // 내려다보는 각도(키오스크 거치대 등)에서는 유독 신뢰도가 낮게 나올 수
+    // 있다 — ROM 등 이 계산이 아예 없는 화면은 같은 카메라에서도 문제가 없었던
+    // 것으로 확인됨. cm 환산은 "있으면 좋은" 부가 정보(없으면 null, 이미
+    // 기존 코드가 안전하게 처리)라 잠금 자체를 막을 이유가 없다.
+    if (fY != null && pY != null) {
       this._visFrames++;
       this._feetY.push(fY);
       this._pelvisY.push(pY);
-      this._bodyPx.push(bPx);
     }
+    if (bPx != null) this._bodyPx.push(bPx);
     // 무릎·뒤꿈치는 안 보여도 위 lock 판정에 영향 없이 그냥 못 모을 뿐(선택 정보).
     const kY = kneeCenterY(lm);
     if (kY != null) this._kneeY.push(kY);
@@ -176,21 +182,24 @@ export class StandingCalibrator {
     };
     const visRatio = this._frames ? this._visFrames / this._frames : 0;
     const feetStd = std(this._feetY);
-    // 불안정 판정: 가시 비율 부족 OR 발 흔들림 과다 (무릎·뒤꿈치는 이 판정에 안 쓰임)
+    // 불안정 판정: 가시 비율 부족 OR 발 흔들림 과다 (무릎·뒤꿈치·bPx는 이 판정에 안 쓰임)
     const stable = visRatio >= JUMP_TUNING.calibMinVisRatio
       && feetStd <= JUMP_TUNING.calibMaxStdY;
     if (!stable) {
       // 슬라이딩 윈도우: 오래된 샘플을 버리고 계속 재시도(자세 교정 시간 부여)
-      this._feetY.shift(); this._pelvisY.shift(); this._bodyPx.shift();
+      this._feetY.shift(); this._pelvisY.shift();
+      if (this._bodyPx.length) this._bodyPx.shift();
       if (this._kneeY.length) this._kneeY.shift();
       if (this._heelY.length) this._heelY.shift();
       return;
     }
     const baselineFeetY = mean(this._feetY);
     const baselinePelvisY = mean(this._pelvisY);
-    const bodyPx = mean(this._bodyPx);
-    // px↔cm 스케일: 실제 키(cm) / 화면상 픽셀 높이(정규화). 키 없으면 null.
-    const scaleCmPerY = this.heightCm ? this.heightCm / bodyPx : null;
+    // bPx 표본이 하나도 없으면(코가 한 번도 신뢰 기준을 못 넘김) cm 환산 없이
+    // 잠금 — 정상적으로 발/골반 기준의 상대 측정(각도·비율)은 그대로 동작한다.
+    const bodyPx = this._bodyPx.length ? mean(this._bodyPx) : null;
+    // px↔cm 스케일: 실제 키(cm) / 화면상 픽셀 높이(정규화). 키 또는 bPx 없으면 null.
+    const scaleCmPerY = (this.heightCm && bodyPx) ? this.heightCm / bodyPx : null;
     // 무릎·뒤꿈치 기준선은 표본이 너무 적으면(주로 정면 풀샷이 아닌 경우) null —
     // 스쿼트 추적기가 이미 null-safe 폴백을 갖고 있어 안전하다.
     const baselineKneeY = this._kneeY.length >= 5 ? mean(this._kneeY) : null;

@@ -62,6 +62,19 @@ describe('StandingCalibrator', () => {
     expect(calib.locked).toBe(true);
     expect(calib.result.scaleCmPerY).toBeNull();
   });
+
+  it('[2026-07-30] 코(머리) 랜드마크만 유독 불안정해도(카메라 각도 등) 발·골반이 멀쩡하면 락된다 — cm 환산만 못 함', () => {
+    const calib = new StandingCalibrator({ heightCm: 180 });
+    for (let i = 0; i < 12; i++) {
+      const lm = makeLm({ feetY: 0.9, pelvisY: 0.6, headY: 0.1 });
+      lm[0] = { x: 0.5, y: 0.1, visibility: 0.05 }; // 코만 신뢰도 바닥
+      calib.push(lm);
+    }
+    expect(calib.locked).toBe(true);
+    expect(calib.result.baselineFeetY).toBeCloseTo(0.9, 6);
+    expect(calib.result.bodyPx).toBeNull();
+    expect(calib.result.scaleCmPerY).toBeNull();
+  });
 });
 
 // 점프 1회를 시뮬레이션: 기준선에 서 있다가 공중(발/골반 y 감소) 후 착지.

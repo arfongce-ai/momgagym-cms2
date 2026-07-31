@@ -64,7 +64,7 @@ function mid(lm, a, b) {
   return { x: (lm[a].x + lm[b].x) / 2, y: (lm[a].y + lm[b].y) / 2 };
 }
 
-function pelvicTiltDegOf(lm) {
+export function pelvicTiltDegOf(lm) {
   if (!lm || !lm[HIP_L] || !lm[HIP_R]) return null;
   const dy = lm[HIP_R].y - lm[HIP_L].y;
   const dx = lm[HIP_R].x - lm[HIP_L].x;
@@ -84,7 +84,7 @@ function torsoLeanDegOf(lm) {
 
 // FPPA 근사: hip→knee 벡터와 knee→ankle 벡터가 이루는 각(무릎 정점 기준)이
 // 180°(일직선)에서 벗어난 정도 = 무릎이 안/밖으로 쏠린 각도. 좌우 중 더 큰 값.
-function kneeValgusDegOf(lm) {
+export function kneeValgusDegOf(lm) {
   const oneLeg = (hipI, kneeI, ankI) => {
     if (!lm?.[hipI] || !lm?.[kneeI] || !lm?.[ankI]) return null;
     const v1 = { x: lm[hipI].x - lm[kneeI].x, y: lm[hipI].y - lm[kneeI].y };

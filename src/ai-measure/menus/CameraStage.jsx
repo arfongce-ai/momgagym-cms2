@@ -83,8 +83,8 @@ export default function CameraStage({
       )}
 
       {recording && status === 'running' && (
-        <div className="absolute left-1/2 z-30 -translate-x-1/2 rounded-full bg-red-500/80 border border-white/20 px-3 py-1.5 text-xs font-black text-white shadow-lg backdrop-blur" style={{ top: recTop }}>
-          <span className="mr-1 inline-block h-2 w-2 rounded-full bg-white animate-pulse" />
+        <div className="absolute left-1/2 z-30 -translate-x-1/2 rounded-full bg-red-500/90 border-2 border-white/40 px-4 py-2.5 text-base font-black text-white shadow-xl backdrop-blur" style={{ top: recTop }}>
+          <span className="mr-2 inline-block h-3.5 w-3.5 rounded-full bg-white animate-pulse" />
           {recordingLabel}
         </div>
       )}

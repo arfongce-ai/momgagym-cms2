@@ -394,9 +394,6 @@ export default function StanceLiveAnalysis({ member, stanceLeg, onBack, onComple
   const topBar = (
     <>
       <p className="text-sm font-black text-white">{legLabel} 지지</p>
-      {!['calibrating', 'low_visibility'].includes(uiPhase) && (
-        <p className="text-[11px] font-bold text-slate-300">시행 {trialsFound}/2</p>
-      )}
       {uiPhase === 'calibrating' && <p className="text-xs font-bold text-amber-300">자세 보정 중… {Math.round(calibProgress * 100)}%</p>}
       {uiPhase === 'low_visibility' && <p className="text-xs font-bold text-red-300">전신이 보이도록 서 주세요</p>}
       {!started && !['calibrating', 'low_visibility', 'trial_done', 'finished'].includes(uiPhase) && (
@@ -464,6 +461,12 @@ export default function StanceLiveAnalysis({ member, stanceLeg, onBack, onComple
           stats={[{ label: '시행', value: `${trialsFound}/2` }]} />
       )}
     </CameraStage>
+    {status === 'running' && (
+      <div className="pointer-events-none fixed top-3 right-3 z-40 rounded-2xl bg-black/70 border border-white/20 px-4 py-2 text-center backdrop-blur">
+        <div className="text-[10px] font-bold text-slate-300 tracking-wide">시행</div>
+        <div className="text-2xl font-black text-white leading-none">{trialsFound}<span className="text-sm text-slate-400">/2</span></div>
+      </div>
+    )}
     {/* 임시 디버그 표시 — 문제 확인되면 제거 예정 */}
     <div className="pointer-events-none fixed bottom-1 left-1 z-[999] rounded bg-black/80 px-2 py-1 font-mono text-[9px] text-lime-300">
       phase={uiPhase} · trkPhase={trackerRef.current?.phase ?? '-'} · trials={trackerRef.current?.trials?.length ?? '-'} · status={status} · err={String(error).slice(0, 40)} · locked={String(!!calibRef.current?.locked)} · prog={Math.round(calibProgress * 100)}% · started={String(started)} · cd={String(countdown)}

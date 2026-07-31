@@ -23,9 +23,10 @@
 // ════════════════════════════════════════════════════════════════════════
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { usePoseEngine } from '../core/usePoseEngine';
-import { StandingCalibrator, SquatBiomechanicsTracker } from '../core/squatBiomechanicsTracker';
+import { StandingCalibrator, SquatBiomechanicsTracker, pelvicTiltDegOf, kneeValgusDegOf } from '../core/squatBiomechanicsTracker';
 import { DEFAULT_ASPECT, outputSize, drawVideoCover, coverTransform } from '../core/recordAspect';
 import { useCameraRotation } from '../core/useCameraRotation';
+import { computeDisplayAngles } from '../core/squatJointAngles';
 import { drawGaugeHud } from '../core/recordingOverlay';
 import CameraStage from './CameraStage.jsx';
 import GaugeHud from './GaugeHud.jsx';
@@ -55,7 +56,91 @@ function objectContainMapper(video, width, height) {
   return { x: (p) => ox + p.x * drawW, y: (p) => oy + p.y * drawH };
 }
 
-function drawSkeleton(canvas, video, landmarks, locked, mapper) {
+function drawAngleLabel(ctx, x, y, text, color = '#fbbf24') {
+  ctx.font = 'bold 13px system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = 'rgba(0,0,0,0.85)';
+  ctx.strokeText(text, x, y);
+  ctx.fillStyle = color;
+  ctx.fillText(text, x, y);
+}
+
+function fmtDeg(v) {
+  return v == null ? '—' : `${Math.round(v)}°`;
+}
+
+// [2026-07-30 신규] 요청 스펙: 측면 5개(발목기준 CoG·어깨/고관절/무릎/발목 굽힘),
+// 정면 6개(CoG 좌우기울기·무릎외반/내반·골반기울기·팔꿈치폄 양쪽·머리-어깨).
+// 판정(정상/주의/위험)에는 아직 연결하지 않고 순수 표시만 한다.
+function drawJointAngleLabels(ctx, landmarks, view, X, Y) {
+  if (!landmarks) return;
+  ctx.save();
+  if (view === 'side') {
+    const a = computeDisplayAngles(landmarks, 'side');
+    if (!a) { ctx.restore(); return; }
+    const sho = landmarks[11] ?? landmarks[12];
+    const hip = landmarks[23] ?? landmarks[24];
+    const knee = landmarks[25] ?? landmarks[26];
+    const ank = landmarks[27] ?? landmarks[28];
+    if (vis(sho)) drawAngleLabel(ctx, X(sho) + 26, Y(sho), `어깨 ${fmtDeg(a.shoulderFlexion)}`, '#38bdf8');
+    if (vis(hip)) drawAngleLabel(ctx, X(hip) + 26, Y(hip), `고관절 ${fmtDeg(a.hipFlexion)}`, '#a78bfa');
+    if (vis(knee)) drawAngleLabel(ctx, X(knee) + 26, Y(knee), `무릎 ${fmtDeg(a.kneeFlexion)}`, '#fbbf24');
+    if (vis(ank)) drawAngleLabel(ctx, X(ank) + 26, Y(ank) - 14, `발목 ${fmtDeg(a.ankleFlexion)}`, '#34d399');
+    // 발목 기준 CoG: 발목에서 수직 기준선 + 실제 CoG까지 선으로 표시
+    if (vis(sho) && vis(hip) && vis(ank)) {
+      const cog = { x: (sho.x + hip.x) / 2, y: (sho.y + hip.y) / 2 };
+      const ax = X(ank), ay = Y(ank);
+      ctx.strokeStyle = 'rgba(255,255,255,0.55)'; ctx.setLineDash([4, 4]); ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(ax, ay - 140); ctx.stroke(); // 수직 기준선(플럼라인)
+      ctx.setLineDash([]);
+      ctx.strokeStyle = 'rgba(248,113,113,0.9)'; ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(X(cog), Y(cog)); ctx.stroke();
+      drawAngleLabel(ctx, ax - 34, ay - 70, `CoG ${fmtDeg(a.cogOverAnkle)}`, '#f87171');
+    }
+  } else {
+    const a = computeDisplayAngles(landmarks, 'front');
+    if (!a) { ctx.restore(); return; }
+    const lSho = landmarks[11], rSho = landmarks[12];
+    const lElb = landmarks[13], rElb = landmarks[14];
+    const lHip = landmarks[23], rHip = landmarks[24];
+    const lAnk = landmarks[27], rAnk = landmarks[28];
+    const nose = landmarks[0];
+    const kneeValgus = kneeValgusDegOf(landmarks);
+    const pelvicTilt = pelvicTiltDegOf(landmarks);
+    if (vis(lElb)) drawAngleLabel(ctx, X(lElb) - 30, Y(lElb), `팔꿈치 ${fmtDeg(a.elbowExtL)}`, '#38bdf8');
+    if (vis(rElb)) drawAngleLabel(ctx, X(rElb) + 30, Y(rElb), `팔꿈치 ${fmtDeg(a.elbowExtR)}`, '#38bdf8');
+    if (vis(lHip) && vis(rHip)) {
+      const hipMid = { x: (lHip.x + rHip.x) / 2, y: (lHip.y + rHip.y) / 2 };
+      drawAngleLabel(ctx, X(hipMid), Y(hipMid) + 22, `골반기울기 ${fmtDeg(pelvicTilt)}`, '#a78bfa');
+    }
+    if (kneeValgus != null) {
+      const kneeMid = landmarks[25] && landmarks[26]
+        ? { x: (landmarks[25].x + landmarks[26].x) / 2, y: (landmarks[25].y + landmarks[26].y) / 2 }
+        : (landmarks[25] ?? landmarks[26]);
+      if (vis(kneeMid)) drawAngleLabel(ctx, X(kneeMid), Y(kneeMid) + 22, `무릎정렬 ${fmtDeg(kneeValgus)}`, '#fbbf24');
+    }
+    if (vis(nose)) drawAngleLabel(ctx, X(nose), Y(nose) - 18, `머리기울기 ${fmtDeg(a.headTilt)}`, '#34d399');
+    // 정면 CoG 기울기: 발목 중점 기준 수직선 + 실제 CoG까지 선
+    if (vis(lSho) && vis(rSho) && vis(lHip) && vis(rHip) && vis(lAnk) && vis(rAnk)) {
+      const shoMid = { x: (lSho.x + rSho.x) / 2, y: (lSho.y + rSho.y) / 2 };
+      const hipMid = { x: (lHip.x + rHip.x) / 2, y: (lHip.y + rHip.y) / 2 };
+      const ankMid = { x: (lAnk.x + rAnk.x) / 2, y: (lAnk.y + rAnk.y) / 2 };
+      const cog = { x: (shoMid.x + hipMid.x) / 2, y: (shoMid.y + hipMid.y) / 2 };
+      const ax = X(ankMid), ay = Y(ankMid);
+      ctx.strokeStyle = 'rgba(255,255,255,0.55)'; ctx.setLineDash([4, 4]); ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(ax, ay - 160); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.strokeStyle = 'rgba(248,113,113,0.9)'; ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(X(cog), Y(cog)); ctx.stroke();
+      drawAngleLabel(ctx, ax + 46, ay - 80, `CoG ${fmtDeg(a.cogTilt)}`, '#f87171');
+    }
+  }
+  ctx.restore();
+}
+
+function drawSkeleton(canvas, video, landmarks, locked, mapper, view) {
   if (!canvas || !video) return;
   const cw = canvas.clientWidth || canvas.width, ch = canvas.clientHeight || canvas.height;
   if (canvas.width !== cw || canvas.height !== ch) { canvas.width = cw; canvas.height = ch; }
@@ -76,6 +161,9 @@ function drawSkeleton(canvas, video, landmarks, locked, mapper) {
     if (!vis(p)) return;
     ctx.beginPath(); ctx.arc(X(p), Y(p), 5, 0, Math.PI * 2); ctx.fill();
   });
+  // 캘리브레이션이 잠긴 뒤(실제 측정 중)에만 각도 라벨을 그려 계산 중 화면이
+  // 어수선해지지 않게 한다.
+  if (locked) drawJointAngleLabels(ctx, landmarks, view, X, Y);
 }
 
 export default function SquatLiveAnalysis({ member, onBack, onComplete, onMemberHeightChange }) {
@@ -135,7 +223,7 @@ export default function SquatLiveAnalysis({ member, onBack, onComplete, onMember
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       if (!drawVideoCover(ctx, video, canvas.width, canvas.height, rotationDeg)) return;
       const cover = coverTransform(video, canvas.width, canvas.height, rotationDeg);
-      drawSkeleton(canvas, video, latestLandmarksRef.current, !!calibRef.current?.locked, { x: cover.X, y: cover.Y });
+      drawSkeleton(canvas, video, latestLandmarksRef.current, !!calibRef.current?.locked, { x: cover.X, y: cover.Y }, viewRef.current);
       const elapsedSec = recordingStartedRef.current ? (performance.now() - recordStartTsRef.current) / 1000 : 0;
       drawGaugeHud(ctx, canvas.width, canvas.height, {
         title: 'SQUAT',
@@ -247,7 +335,7 @@ export default function SquatLiveAnalysis({ member, onBack, onComplete, onMember
     if (!calibRef.current) calibRef.current = new StandingCalibrator({ heightCm });
     const calib = calibRef.current;
 
-    drawSkeleton(canvasRef.current, video, landmarks, calib.locked);
+    drawSkeleton(canvasRef.current, video, landmarks, calib.locked, null, view);
     if (!landmarks) return;
 
     if (!calib.locked) {
@@ -420,9 +508,6 @@ export default function SquatLiveAnalysis({ member, onBack, onComplete, onMember
   const topBar = (
     <>
       <p className="text-sm font-black text-white">오버헤드 딥 스쿼트 · {view === 'front' ? '정면' : '측면'}</p>
-      {!['calibrating', 'low_visibility'].includes(uiPhase) && (
-        <p className="text-[11px] font-bold text-slate-300">회차 {totalDone}/2</p>
-      )}
       {uiPhase === 'calibrating' && <p className="text-xs font-bold text-amber-300">자세 보정 중… {Math.round(calibProgress * 100)}%</p>}
       {uiPhase === 'low_visibility' && <p className="text-xs font-bold text-red-300">전신이 보이도록 서 주세요</p>}
       {!started && !['calibrating', 'low_visibility', 'front_done', 'finished'].includes(uiPhase) && (
@@ -490,6 +575,12 @@ export default function SquatLiveAnalysis({ member, onBack, onComplete, onMember
           stats={[{ label: '회차', value: `${totalDone}/2` }]} />
       )}
     </CameraStage>
+    {status === 'running' && (
+      <div className="pointer-events-none fixed top-3 right-3 z-40 rounded-2xl bg-black/70 border border-white/20 px-4 py-2 text-center backdrop-blur">
+        <div className="text-[10px] font-bold text-slate-300 tracking-wide">회차</div>
+        <div className="text-2xl font-black text-white leading-none">{totalDone}<span className="text-sm text-slate-400">/2</span></div>
+      </div>
+    )}
     {/* 임시 디버그 표시 — 문제 확인되면 제거 예정 */}
     <div className="pointer-events-none fixed bottom-1 left-1 z-[999] rounded bg-black/80 px-2 py-1 font-mono text-[9px] text-lime-300">
       view={view} · phase={uiPhase} · trkPhase={trackerRef.current?.phase ?? '-'} · trials={trackerRef.current?.trials?.length ?? '-'} · status={status} · err={String(error).slice(0, 40)} · locked={String(!!calibRef.current?.locked)} · prog={Math.round(calibProgress * 100)}% · started={String(started)} · cd={String(countdown)}
