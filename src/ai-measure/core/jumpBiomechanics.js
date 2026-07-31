@@ -89,6 +89,19 @@ export const feetCenterY = (lm) => {
   return okL ? lm[27].y : lm[28].y; // 한쪽만 보이면 그쪽 사용 (blur 관용)
 };
 
+// [2026-07-31] 한쪽 발목(27 또는 28)만 고정으로 추적 — "이번 프레임엔 평균,
+// 다음 프레임엔 한쪽만" 식으로 계속 모드가 바뀌면(feetCenterY 특성) 평균값과
+// 단일값 사이의 미세한 차이가 프레임마다 튀어 흔들림으로 오인될 수 있다.
+// 캘리브레이션 때 더 잘 보이는 쪽을 한 번 정하고(StandingCalibrator.result.ankleSide),
+// 점프 끝까지 그 발목 하나만 일관되게 본다.
+export const singleAnkleY = (lm, side) => {
+  const idx = side === 'right' ? 28 : 27;
+  if (!lm || !lm[idx]) return null;
+  const v = JUMP_TUNING.minVisibility;
+  if (lm[idx].visibility != null && lm[idx].visibility < v) return null;
+  return lm[idx].y;
+};
+
 // 골반(23/24) 중점 y — 교차검증용 수직 변위 신호.
 export const pelvisCenterY = (lm) => {
   if (!lm || !lm[23] || !lm[24]) return null;
@@ -163,6 +176,13 @@ export class StandingCalibrator {
     this._visFrames = 0;
     this._rawFeetY = [];   // 가시성 무시 원시 발목 y — 최후 폴백용 롤링 버퍼
     this._rawPelvisY = [];
+    // [2026-07-31] 어느 쪽 발목이 더 잘 보이는지 판단해 한쪽으로 고정 추적하기
+    // 위한 좌/우 개별 집계. feetCenterY(양쪽 평균/폴백)와는 별개로 순수하게
+    // "이 프레임에서 이 발목 하나가 문턱을 넘었는가"만 센다.
+    this._visCountL = 0;
+    this._visCountR = 0;
+    this._feetYL = [];
+    this._feetYR = [];
     this._startTs = null; // 첫 push() 시각(ms) — 타임아웃 폴백 판단용
     this.locked = false;
     this.result = null;
@@ -189,6 +209,14 @@ export class StandingCalibrator {
       this._feetY.push(fY);
       this._pelvisY.push(pY);
     }
+    // 좌/우 개별 가시성 카운트 + 값(위 fY 병합 로직과 무관하게 독립적으로 집계).
+    // 캘리브레이션 중엔 두 배열 다 짧게 유지되므로(calibMinFrames 근처) 계속
+    // 쌓아도 무리 없다 — 잠금 시점의 두 배열 길이/평균으로 승자를 정한다.
+    const v = JUMP_TUNING.minVisibility;
+    const visL = lm && lm[27] && (lm[27].visibility == null || lm[27].visibility >= v);
+    const visR = lm && lm[28] && (lm[28].visibility == null || lm[28].visibility >= v);
+    if (visL) { this._visCountL++; this._feetYL.push(lm[27].y); }
+    if (visR) { this._visCountR++; this._feetYR.push(lm[28].y); }
     // 가시성 무시 원시값도 별도로 계속 모은다(최근 30개만 유지) — 정식 표본이
     // 하나도 안 쌓이는 최악의 경우에도 타임아웃 폴백이 쓸 데이터가 있도록.
     const rfY = rawFeetY(lm);
@@ -228,9 +256,25 @@ export class StandingCalibrator {
     // 스쿼트 추적기가 이미 null-safe 폴백을 갖고 있어 안전하다.
     const baselineKneeY = this._kneeY.length >= 5 ? mean(this._kneeY) : null;
     const baselineHeelY = this._heelY.length >= 5 ? mean(this._heelY) : null;
+    // [2026-07-31] "매 프레임 평균/단일 모드가 바뀌는" 흔들림을 없애기 위해,
+    // 더 잘 보인 쪽 발목 하나를 골라 그 발목만의 기준선(baselineAnkleY)을
+    // 따로 계산해둔다. JumpFlightTracker가 이후 점프 끝까지 이 발목 하나만
+    // 본다(singleAnkleY) — 캘리브레이션과 실제 추적이 같은 신호를 쓰도록.
+    // 두 쪽 다 표본이 있으면 더 많이/안정적으로 보인 쪽, 한쪽만 있으면 그쪽,
+    // 그마저 없으면(예: 원시 폴백 경로) 병합값(baselineFeetY)으로 대체한다.
+    let ankleSide = null;
+    let baselineAnkleY = baselineFeetY;
+    if (this._feetYL.length && this._feetYR.length) {
+      ankleSide = this._visCountL >= this._visCountR ? 'left' : 'right';
+      baselineAnkleY = mean(ankleSide === 'left' ? this._feetYL : this._feetYR);
+    } else if (this._feetYL.length) {
+      ankleSide = 'left'; baselineAnkleY = mean(this._feetYL);
+    } else if (this._feetYR.length) {
+      ankleSide = 'right'; baselineAnkleY = mean(this._feetYR);
+    }
     this.result = {
       baselineFeetY, baselinePelvisY, bodyPx, scaleCmPerY, feetStd: std(feetArr), visRatio,
-      baselineKneeY, baselineHeelY, basis,
+      baselineKneeY, baselineHeelY, basis, ankleSide, baselineAnkleY,
     };
     this.locked = true;
   }
@@ -306,14 +350,20 @@ export class JumpFlightTracker {
     this._pelvisPeakY = Infinity;
     this._pelvisBaseY = calib?.baselinePelvisY ?? null;
     this.flights = []; // [{ takeoffMs, landingMs, flightMs, pelvisRiseY }]
+    // [2026-07-31] 캘리브레이션이 고른 발목 한쪽(ankleSide)을 점프 끝까지
+    // 그대로 쓴다 — 평균/단일 모드가 프레임마다 바뀌던 걸 없애서, 기준선을
+    // 잡을 때와 같은 신호로 이착지를 판정한다. ankleSide가 없으면(옛 결과·
+    // 테스트 등) feetCenterY로 안전하게 폴백.
+    this.ankleSide = calib?.ankleSide ?? null;
+    this.baselineAnkleY = calib?.baselineAnkleY ?? calib?.baselineFeetY ?? null;
   }
 
   push(lm, tMs) {
     if (!this.calib) return;
-    const fYraw = feetCenterY(lm);
+    const fYraw = this.ankleSide ? singleAnkleY(lm, this.ankleSide) : feetCenterY(lm);
     if (fYraw == null) return;
     const fY = this._filtFeet.filter(fYraw, tMs / 1000);
-    const liftThreshold = this.calib.baselineFeetY - this.band; // 위로 뜨면 y 감소
+    const liftThreshold = this.baselineAnkleY - this.band; // 위로 뜨면 y 감소
 
     if (!this.inAir) {
       // 지면 → 공중 전환 (발이 기준선보다 band 이상 위로)
@@ -329,7 +379,7 @@ export class JumpFlightTracker {
       // 공중 → 지면 전환 (발이 기준선 band 안으로 복귀).
       // 이륙과 동일한 band 임계를 써서 1-Euro 평활의 상승/하강 지연을
       // 대칭으로 만든다(체공시간 편향 최소화).
-      if (fY >= this.calib.baselineFeetY - this.band) {
+      if (fY >= this.baselineAnkleY - this.band) {
         this.landingMs = tMs;
         const flightMs = this.landingMs - this.takeoffMs;
         const pelvisRiseY = (this._pelvisBaseY != null && this._pelvisPeakY < Infinity)
