@@ -26,7 +26,7 @@ describe('JumpPrecisionAnalysis.jsx — calibMsg(보정 진행률)가 화면에 
     expect(start).toBeGreaterThan(-1);
     const end = src.indexOf('\nfunction ', start + 10);
     const body = src.slice(start, end === -1 ? undefined : end);
-    expect(body).toMatch(/\{calibMsg && phase !== 'ready' && phase !== 'air' && \(/);
+    expect(body).toMatch(/\{calibMsg && phase !== 'air' && \(/);
   });
 
   it("버튼 바로 위 안내 문구가 phase==='ready'가 아닐 때 calibMsg를 보여준다(예전엔 phase와 거의 무관한 고정 문장이었음)", () => {

@@ -559,14 +559,19 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
       if (landmarks && viewRef.current === 'camera') {
         if (!calib.locked) {
           // ── 캘리브레이션 단계 ──
-          calib.push(landmarks);
+          calib.push(landmarks, ts);
           const st = calib.status();
           if (st.ready) {
             // 락 완료 → 기준 확보. 단, 자동으로 측정을 시작하지 않는다.
             // 사용자가 '측정 시작' 버튼 → 3초 카운트다운 후 armed 가 되면 측정 개시.
             calibLockedRef.current = true;
             setPhaseOnce('ready');
-            setMsgOnce('');
+            // [2026-07-31] 정상 잠금이면 문구를 비우고, 타임아웃 폴백으로
+            // 잠긴 거면(정확도가 덜 검증된 임시 기준) 알려준다 — "기준 다시
+            // 잡기"를 눌러 카메라 위치를 조정한 뒤 재시도할 수 있도록.
+            setMsgOnce(calib.result?.basis === 'timeout_fallback'
+              ? '기준을 임시로 잡았습니다(정확도 낮을 수 있음) — 카메라 위치를 조정했다면 기준 다시 잡기를 눌러보세요'
+              : '');
           } else if (st.reason === 'low_visibility') {
             // 요구사항 3: 자세 불안정 → 측정 차단 경고
             // [2026-07-31] 실제 인식률(%)을 같이 보여준다 — "발목을 못 잡는다"는
@@ -924,7 +929,7 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
                 </button>
                 <p className="text-white/80 text-xs font-bold text-center px-6">
                   {phase === 'ready'
-                    ? '버튼을 누르면 3초 후 측정이 시작됩니다'
+                    ? (calibMsg || '버튼을 누르면 3초 후 측정이 시작됩니다')
                     : (calibMsg || '자세 기준을 잡는 중입니다 — 카메라 앞에 똑바로 서 주세요')}
                 </p>
                 <div className="flex flex-col items-center gap-2">
@@ -1392,7 +1397,7 @@ function JumpLiveOverlay({
             그동안 prop으로 받기만 하고 화면엔 안 그리고 있었다 — "기준 다시
             잡기"를 눌러도 실제로는 보정이 재시작되는데(phase→arming) 진행률이
             어디에도 안 보여서 "아무 반응이 없다"로 보였다. */}
-        {calibMsg && phase !== 'ready' && phase !== 'air' && (
+        {calibMsg && phase !== 'air' && (
           <p className="mt-0.5 truncate text-[10px] font-bold text-white/70">{calibMsg}</p>
         )}
       </div>

@@ -45,6 +45,15 @@ export const JUMP_TUNING = {
   calibMinVisRatio: 0.6,     // 캘리브레이션 프레임 중 관절 가시 비율 하한
   // [2026-07-31] 0.8→0.6 완화 — minVisibility 완화와 같은 이유. 처음 자리
   // 잡는 몇 프레임의 낮은 가시성이 누적 비율을 계속 끌어내리는 것을 완화한다.
+  calibTimeoutMs: 4000,      // 이 시간 안에 정상 잠금이 안 되면 있는 표본으로 강제 잠금
+  // [2026-07-31] "발목을 못 잡는다" 리포트에 대한 최후 폴백. 카메라 환경이
+  // 정말 안 좋으면 문턱을 아무리 낮춰도 안 될 수 있다 — 그때는 "그냥 발목
+  // 위치로 기준을 잡자"는 제안대로, 안정성·가시비율 조건 없이 지금까지 모인
+  // 표본(최소 1개)의 평균으로 강제 잠금한다. 다만 완전히 무조건 즉시 잠그는
+  // 대신 먼저 정상 경로로 몇 초간 시도부터 하게 둔다 — 카메라 상태가 괜찮은
+  // 날엔 지금처럼 정확한 잠금을 그대로 쓰고, 정말 안 되는 경우에만 이 폴백이
+  // 개입해 최소한 측정 자체는 진행되게 한다(정확도보다 가용성 우선의 최후
+  // 수단이라는 걸 result.basis === 'timeout_fallback'로 남긴다).
 
   // ── 이륙/착지 검출 ──
   // 발 신호는 살짝만 평활(이륙·착지 전환을 날카롭게 유지). 과평활 시 체공이 짧게 측정됨.
@@ -129,6 +138,12 @@ export const bodyPixelHeight = (lm) => {
   return h > 0.05 ? h : null; // 너무 작으면(전신 미포함) 무효
 };
 
+// 가시성 신뢰도를 아예 무시하고 좌표만 쓰는 원시값 — feetCenterY/pelvisCenterY가
+// minVisibility 문턱을 계속 못 넘는 최악의 카메라 환경에서 폴백 잠금의 최후
+// 수단으로만 쓴다("선을 잡지 말고 그냥 발목으로 기준을 잡자"는 제안 그대로).
+const rawFeetY = (lm) => (lm && lm[27] && lm[28]) ? (lm[27].y + lm[28].y) / 2 : null;
+const rawPelvisY = (lm) => (lm && lm[23] && lm[24]) ? (lm[23].y + lm[24].y) / 2 : null;
+
 // ════════════════════════════════════════════════════════════════════════
 //  StandingCalibrator — 첫 N프레임의 '서 있는 자세'로 기준선 + 스케일 확정
 //   요구사항 1: 측정 시작 시 키(height) 데이터로 px↔cm 스케일 자동 산출
@@ -146,13 +161,19 @@ export class StandingCalibrator {
     this._heelY = [];
     this._frames = 0;
     this._visFrames = 0;
+    this._rawFeetY = [];   // 가시성 무시 원시 발목 y — 최후 폴백용 롤링 버퍼
+    this._rawPelvisY = [];
+    this._startTs = null; // 첫 push() 시각(ms) — 타임아웃 폴백 판단용
     this.locked = false;
     this.result = null;
   }
 
   // 프레임마다 호출. 충분히 안정되면 lock() 되어 result 를 채운다.
-  push(lm) {
+  // tMs: 선택. 넘기면 타임아웃 폴백(calibTimeoutMs) 판단에 쓰인다 — 안 넘기면
+  // (예: 기존 테스트 코드) 폴백 없이 기존 방식 그대로 동작한다.
+  push(lm, tMs) {
     if (this.locked) return;
+    if (tMs != null && this._startTs == null) this._startTs = tMs;
     this._frames++;
     const fY = feetCenterY(lm);
     const pY = pelvisCenterY(lm);
@@ -168,6 +189,14 @@ export class StandingCalibrator {
       this._feetY.push(fY);
       this._pelvisY.push(pY);
     }
+    // 가시성 무시 원시값도 별도로 계속 모은다(최근 30개만 유지) — 정식 표본이
+    // 하나도 안 쌓이는 최악의 경우에도 타임아웃 폴백이 쓸 데이터가 있도록.
+    const rfY = rawFeetY(lm);
+    const rpY = rawPelvisY(lm);
+    if (rfY != null && rpY != null) {
+      this._rawFeetY.push(rfY); this._rawPelvisY.push(rpY);
+      if (this._rawFeetY.length > 30) { this._rawFeetY.shift(); this._rawPelvisY.shift(); }
+    }
     if (bPx != null) this._bodyPx.push(bPx);
     // 무릎·뒤꿈치는 안 보여도 위 lock 판정에 영향 없이 그냥 못 모을 뿐(선택 정보).
     const kY = kneeCenterY(lm);
@@ -175,8 +204,38 @@ export class StandingCalibrator {
     const hY = heelCenterY(lm);
     if (hY != null) this._heelY.push(hY);
     if (this._feetY.length >= JUMP_TUNING.calibMinFrames) this._tryLock();
+    if (!this.locked && tMs != null && this._startTs != null
+      && (tMs - this._startTs) >= JUMP_TUNING.calibTimeoutMs) {
+      this._forceLock();
+    }
   }
 
+  _finalizeLock(basis, feetArr, pelvisArr) {
+    const mean = (a) => a.reduce((s, x) => s + x, 0) / a.length;
+    const visRatio = this._frames ? this._visFrames / this._frames : 0;
+    const std = (a) => {
+      const m = mean(a);
+      return Math.sqrt(a.reduce((s, x) => s + (x - m) ** 2, 0) / a.length);
+    };
+    const baselineFeetY = mean(feetArr);
+    const baselinePelvisY = mean(pelvisArr);
+    // bPx 표본이 하나도 없으면(코가 한 번도 신뢰 기준을 못 넘김) cm 환산 없이
+    // 잠금 — 정상적으로 발/골반 기준의 상대 측정(각도·비율)은 그대로 동작한다.
+    const bodyPx = this._bodyPx.length ? mean(this._bodyPx) : null;
+    // px↔cm 스케일: 실제 키(cm) / 화면상 픽셀 높이(정규화). 키 또는 bPx 없으면 null.
+    const scaleCmPerY = (this.heightCm && bodyPx) ? this.heightCm / bodyPx : null;
+    // 무릎·뒤꿈치 기준선은 표본이 너무 적으면(주로 정면 풀샷이 아닌 경우) null —
+    // 스쿼트 추적기가 이미 null-safe 폴백을 갖고 있어 안전하다.
+    const baselineKneeY = this._kneeY.length >= 5 ? mean(this._kneeY) : null;
+    const baselineHeelY = this._heelY.length >= 5 ? mean(this._heelY) : null;
+    this.result = {
+      baselineFeetY, baselinePelvisY, bodyPx, scaleCmPerY, feetStd: std(feetArr), visRatio,
+      baselineKneeY, baselineHeelY, basis,
+    };
+    this.locked = true;
+  }
+
+  // 정상 경로: 표본이 충분히 안정(흔들림 적음)+충분히 보임(가시비율)일 때만 잠금.
   _tryLock() {
     const mean = (a) => a.reduce((s, x) => s + x, 0) / a.length;
     const std = (a) => {
@@ -196,19 +255,21 @@ export class StandingCalibrator {
       if (this._heelY.length) this._heelY.shift();
       return;
     }
-    const baselineFeetY = mean(this._feetY);
-    const baselinePelvisY = mean(this._pelvisY);
-    // bPx 표본이 하나도 없으면(코가 한 번도 신뢰 기준을 못 넘김) cm 환산 없이
-    // 잠금 — 정상적으로 발/골반 기준의 상대 측정(각도·비율)은 그대로 동작한다.
-    const bodyPx = this._bodyPx.length ? mean(this._bodyPx) : null;
-    // px↔cm 스케일: 실제 키(cm) / 화면상 픽셀 높이(정규화). 키 또는 bPx 없으면 null.
-    const scaleCmPerY = (this.heightCm && bodyPx) ? this.heightCm / bodyPx : null;
-    // 무릎·뒤꿈치 기준선은 표본이 너무 적으면(주로 정면 풀샷이 아닌 경우) null —
-    // 스쿼트 추적기가 이미 null-safe 폴백을 갖고 있어 안전하다.
-    const baselineKneeY = this._kneeY.length >= 5 ? mean(this._kneeY) : null;
-    const baselineHeelY = this._heelY.length >= 5 ? mean(this._heelY) : null;
-    this.result = { baselineFeetY, baselinePelvisY, bodyPx, scaleCmPerY, feetStd, visRatio, baselineKneeY, baselineHeelY };
-    this.locked = true;
+    this._finalizeLock('normal', this._feetY, this._pelvisY);
+  }
+
+  // 폴백 경로("선을 잡지 말고 그냥 발목으로 기준을 잡자") — calibTimeoutMs
+  // 동안 정상 경로가 못 끝내면 개입한다. 안정성 검증을 거친 표본(_feetY)이
+  // 하나라도 있으면 그걸 쓰고(그래도 상대적으로 더 낫다), 그마저 하나도 없는
+  // 최악의 경우에만 가시성 무시 원시값(_rawFeetY)으로 강제 잠금한다 —
+  // 둘 다 없으면(카메라에 사람이 아예 안 잡힘) 잠그지 않고 계속 기다린다.
+  _forceLock() {
+    if (this._feetY.length >= 1) {
+      this._finalizeLock('timeout_fallback', this._feetY, this._pelvisY);
+    } else if (this._rawFeetY.length >= 1) {
+      this._finalizeLock('timeout_fallback_raw', this._rawFeetY, this._rawPelvisY);
+    }
+    // 둘 다 비어 있으면(랜드마크 자체가 안 잡힘) 아직 잠글 데이터가 없다 — 대기 유지.
   }
 
   // 진행 상태(UI 표시용). reason 으로 경고 문구를 분기한다.
