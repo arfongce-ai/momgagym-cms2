@@ -186,3 +186,29 @@ describe('sanitizeBackLandmarks', () => {
     expect(sanitizeBackLandmarks(null)).toBeNull();
   });
 });
+
+describe('detectPostureView — 얼굴이 뚜렷할 때 측면 오판 방지(2026-07-30)', () => {
+  it('양팔을 머리 뒤로 올려 어깨폭이 좁게(측면 기준 이하로) 잡혀도, 얼굴이 또렷이 보이면 정면으로 판정한다', () => {
+    // frontPose()를 베이스로 어깨폭만 좁게(shoulderSideMax=0.12 미만) 오버라이드 —
+    // "귀 뒤 손 얹기" 자세에서 어깨 랜드마크가 흔들리는 상황을 흉내낸다.
+    // 얼굴(코·양눈)은 frontPose() 그대로 또렷하게 유지된다(faceVis 높음).
+    const pose = frontPose({
+      [LM.LEFT_SHOULDER]: { x: 0.513, y: 0.25, z: 0 },
+      [LM.RIGHT_SHOULDER]: { x: 0.487, y: 0.25, z: 0 },
+    });
+    const det = detectPostureView(pose);
+    expect(det.view).toBe('front');
+  });
+
+  it('반대로 얼굴이 실제로 잘 안 보이면(진짜 측면) 어깨 신호로 측면 판정이 그대로 유지된다', () => {
+    const pose = frontPose({
+      [LM.LEFT_SHOULDER]: { x: 0.513, y: 0.25, z: 0 },
+      [LM.RIGHT_SHOULDER]: { x: 0.487, y: 0.25, z: 0 },
+      [LM.NOSE]: { x: 0.5, y: 0.08, z: -0.12, visibility: 0.1 },
+      [LM.LEFT_EYE]: { x: 0.53, y: 0.07, z: -0.05, visibility: 0.1 },
+      [LM.RIGHT_EYE]: { x: 0.47, y: 0.07, z: -0.05, visibility: 0.1 },
+    });
+    const det = detectPostureView(pose);
+    expect(det.view === 'left' || det.view === 'right').toBe(true);
+  });
+});

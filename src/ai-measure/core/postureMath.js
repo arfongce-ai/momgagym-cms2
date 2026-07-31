@@ -1006,6 +1006,18 @@ export function detectPostureView(landmarks, tuning = POSTURE_VIEW_TUNING) {
     return lz < rz ? 'left' : 'right';
   };
 
+  // ── 얼굴이 아주 뚜렷하게 보이면(faceVis 매우 높음) 어깨폭 신호를 아예 우회하고
+  //  얼굴 좌우 부호 투표(faceFacing) 결과로 바로 정면/후면을 확정한다.
+  //  진짜 옆모습이었다면 얼굴 랜드마크(코·양눈) 가시성이 이렇게 높게 나올 수 없다
+  //  (예: 양팔을 머리 뒤로 올리는 자세에서 어깨 랜드마크가 흔들려 shoulderRatio가
+  //  측면 기준으로 잘못 튀거나, frontMin에도 못 미쳐 모호 구간에 빠지는 경우를 방지).
+  const faceClearlyFrontal = faceVis >= 0.85;
+  if (faceClearlyFrontal && faceFacing) {
+    const voteConf = totalVotes > 0 ? clamp(facingMargin / totalVotes, 0, 1) : 0;
+    const conf = round(0.5 + 0.5 * voteConf, 3);
+    return { view: faceFacing, confidence: conf, shoulderRatio, faceVis, frontVotes, backVotes };
+  }
+
   // ── 측면 우선 판정 ──
   //  어깨폭이 좁거나(고전 기준), 어깨폭이 애매해도 '측면 강도'가 충분히 높으면
   //  측면으로 확정한다. (정면/후면으로 오인하던 프로필 케이스 해결)

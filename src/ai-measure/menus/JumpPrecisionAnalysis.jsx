@@ -817,7 +817,7 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
     : phase === 'low_visibility' ? 'text-red-400' : 'text-cyan-400';
 
   return (
-    <div className="fixed inset-0 z-[80] bg-slate-950" style={{ height: '100dvh' }}>
+    <div className="fixed inset-0 z-[80] bg-slate-950 overflow-hidden" style={{ height: '100dvh' }}>
       {view === 'camera' && (
         <div className="relative w-full h-full">
           <div className={rotationDeg ? '' : 'absolute inset-0 w-full h-full'} style={rotationDeg ? {
