@@ -32,6 +32,10 @@ import CameraStage from './CameraStage.jsx';
 import GaugeHud from './GaugeHud.jsx';
 
 const MAX_RECORD_MS = 60000;
+// [2026-07-31] 운영 방식 확정: 정면 2회 → 측면 2회(총 4회)로 측정한다. 뷰당 몇 회를
+// 모을지 한 곳에서만 바꾸면 되도록 상수화(트래커 생성부 2곳 + 화면 표시 여러 곳에서 공유).
+const SQUAT_LIVE_MAX_TRIALS_PER_VIEW = 2;
+const SQUAT_LIVE_TOTAL_TRIALS = SQUAT_LIVE_MAX_TRIALS_PER_VIEW * 2;
 
 // 자세·보행·SLST 모듈과 동일한 본(bone) 목록 — 상체 코어 + 양다리 + (오버헤드
 // 자세 확인용) 어깨-팔꿈치-손목. 판정 로직(squatBiomechanics.js)은 팔꿈치·손목을
@@ -171,19 +175,19 @@ export default function SquatLiveAnalysis({ member, onBack, onComplete, onMember
   const [needHeight, setNeedHeight] = useState(!member?.height);
   const [heightInput, setHeightInput] = useState('');
 
-  // calibrating | low_visibility | ready | active | front_done | finished
+  // calibrating | low_visibility | ready | active | rep_done | front_done | finished
   const [uiPhase, setUiPhase] = useState('calibrating');
-  const [view, setView] = useState('front'); // 'front' | 'side' — 오늘부터 정면 1회 + 측면 1회
+  const [view, setView] = useState('front'); // 'front' | 'side' — 2026-07-31부터 정면 2회 + 측면 2회
   const [calibProgress, setCalibProgress] = useState(0);
   const [depthPct, setDepthPct] = useState(0);
-  const [trialsFound, setTrialsFound] = useState(0); // 현재 단계(view) 트래커 안에서의 완료 수(0 또는 1)
+  const [trialsFound, setTrialsFound] = useState(0); // 현재 단계(view) 트래커 안에서의 완료 수(0~2)
   const [lastTrialNote, setLastTrialNote] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
   const [finishing, setFinishing] = useState(false);
 
   const calibRef = useRef(null);
   const trackerRef = useRef(null);
-  const frontTrialRef = useRef(null); // 정면 시행 결과 보관(측면 진행 중에도 유지)
+  const frontSummaryRef = useRef(null); // 정면 2회 결과 요약({trial1,trial2,trialsFound}, 측면 진행 중에도 유지)
   const lastTsRef = useRef(0);
   const canvasRef = useRef(null);
   const startedRef = useRef(false);
@@ -231,7 +235,7 @@ export default function SquatLiveAnalysis({ member, onBack, onComplete, onMember
         elapsedSec,
         accent: '#f59e0b',
         gauge: { label: '깊이', value: depthPctRef.current, unit: '%', arc: true, min: 0, max: 100 },
-        stats: [{ label: viewRef.current === 'front' ? '정면' : '측면', value: (viewRef.current === 'side' ? 1 : 0) + trialsFoundRef.current, unit: '/2' }],
+        stats: [{ label: viewRef.current === 'front' ? '정면' : '측면', value: (viewRef.current === 'side' ? (frontSummaryRef.current?.trialsFound || 0) : 0) + trialsFoundRef.current, unit: `/${SQUAT_LIVE_TOTAL_TRIALS}` }],
       });
     };
     const rafLoop = () => { draw(); composeRafRef.current = requestAnimationFrame(rafLoop); };
@@ -304,7 +308,7 @@ export default function SquatLiveAnalysis({ member, onBack, onComplete, onMember
   // 촬영 대상자가 카메라 앞이 아니라 노트북 앞에서(또는 트레이너가 미리) 버튼을
   // 누르는 경우를 지원한다. 트래커 생성은 실제로 캘리브레이션이 끝나는 시점에
   // handleResult에서 한다(버튼이 먼저 눌렸든 캘리브레이션이 먼저 끝났든 동일하게
-  // 처리됨). maxTrials:1 — 정면/측면 각 단계는 1회씩만 잡고 넘어간다.
+  // 처리됨). maxTrials — 정면/측면 각 단계는 SQUAT_LIVE_MAX_TRIALS_PER_VIEW회씩 잡고 넘어간다.
   const startMeasurement = () => {
     if (measureStartedRef.current) return;
     measureStartedRef.current = true;
@@ -345,7 +349,7 @@ export default function SquatLiveAnalysis({ member, onBack, onComplete, onMember
         setUiPhase('ready'); // 캘리브레이션 완료
         if (measureStartedRef.current && !trackerRef.current) {
           // 버튼을 캘리브레이션보다 먼저 눌러둔 경우 — 지금 트래커 생성.
-          trackerRef.current = new SquatBiomechanicsTracker(calib.result, { maxTrials: 1 });
+          trackerRef.current = new SquatBiomechanicsTracker(calib.result, { maxTrials: SQUAT_LIVE_MAX_TRIALS_PER_VIEW });
         }
       } else if (st.reason === 'low_visibility') {
         setUiPhase('low_visibility');
@@ -360,7 +364,7 @@ export default function SquatLiveAnalysis({ member, onBack, onComplete, onMember
 
     if (!trackerRef.current) {
       // 캘리브레이션이 버튼보다 먼저 끝난 일반적인 경우 — 여기서 트래커 생성.
-      trackerRef.current = new SquatBiomechanicsTracker(calib.result, { maxTrials: 1 });
+      trackerRef.current = new SquatBiomechanicsTracker(calib.result, { maxTrials: SQUAT_LIVE_MAX_TRIALS_PER_VIEW });
     }
     const tracker = trackerRef.current;
     if (!tracker || tracker.trials.length >= tracker.maxTrials) return;
@@ -381,11 +385,18 @@ export default function SquatLiveAnalysis({ member, onBack, onComplete, onMember
       trialsFoundRef.current = tracker.trials.length;
       setDepthPct(0);
       depthPctRef.current = 0;
-      if (view === 'front') {
-        frontTrialRef.current = t;
-        setUiPhase('front_done'); // 정면 완료 — 측면으로 넘어가는 전환 화면 표시
+      if (tracker.trials.length >= tracker.maxTrials) {
+        // 이 뷰(정면/측면)에 필요한 반복을 다 채움 — 다음 단계로.
+        if (view === 'front') {
+          frontSummaryRef.current = tracker.summary();
+          setUiPhase('front_done'); // 정면 완료 — 측면으로 넘어가는 전환 화면 표시
+        } else {
+          setUiPhase('finished'); // 측면까지 완료 — 종합 제출 가능
+        }
       } else {
-        setUiPhase('finished'); // 측면까지 완료 — 종합 제출 가능
+        // 이 뷰에 반복이 더 필요함(예: 정면 1/2 완료) — 카메라·녹화는 계속
+        // 이어지고, 같은 트래커가 다음 반복을 자동으로 이어서 잡는다.
+        setUiPhase('rep_done');
       }
     } else {
       setUiPhase('ready');
@@ -430,17 +441,19 @@ export default function SquatLiveAnalysis({ member, onBack, onComplete, onMember
   };
 
   const finishAndSubmit = async () => {
-    // view가 'side'이고 측면 트래커가 있으면 그 시행을 포함, 아니면 정면만으로 종료
-    // ("측면 생략하고 마치기" 경로 — view는 아직 'front'인 상태로 호출됨).
-    let sideTrial = null;
+    // view가 'side'이고 측면 트래커가 있으면 그 시행(1~2회, 몇 회든)을 포함,
+    // 아니면 정면만으로 종료("측면 생략하고 마치기" 경로 — view는 아직 'front'인
+    // 상태로 호출됨). tracker.summary()가 {trial1,trial2,trialsFound}를 그대로
+    // 주므로, 반복이 1회뿐이었어도(예: 도중에 마치기) 안전하게 처리된다.
+    let sideSummary = null;
     if (view === 'side' && trackerRef.current) {
       trackerRef.current.finalize(lastTsRef.current);
-      sideTrial = trackerRef.current.trials[0] || null;
+      sideSummary = trackerRef.current.summary();
     }
-    const frontTrial = frontTrialRef.current;
+    const frontSummary = frontSummaryRef.current;
     stop();
     if (maxRecordTimerRef.current) { clearTimeout(maxRecordTimerRef.current); maxRecordTimerRef.current = null; }
-    if (!frontTrial && !sideTrial) {
+    if (!frontSummary?.trial1 && !sideSummary?.trial1) {
       setErrorMsg('유효한 반복(스쿼트)이 없습니다. 무릎 높이까지 충분히 앉는 동작이 카메라에 잘 보이는지 확인하고 다시 시도해 주세요.');
       stopComposeLoop();
       if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
@@ -449,9 +462,11 @@ export default function SquatLiveAnalysis({ member, onBack, onComplete, onMember
       return;
     }
     const summary = {
-      front: frontTrial ? { valid: true, ...frontTrial } : undefined,
-      side: sideTrial ? { valid: true, ...sideTrial } : undefined,
-      trialsFound: (frontTrial ? 1 : 0) + (sideTrial ? 1 : 0),
+      front1: frontSummary?.trial1,
+      front2: frontSummary?.trial2,
+      side1: sideSummary?.trial1,
+      side2: sideSummary?.trial2,
+      trialsFound: (frontSummary?.trialsFound || 0) + (sideSummary?.trialsFound || 0),
     };
     pendingSummaryRef.current = summary;
     setFinishing(true);
@@ -503,7 +518,7 @@ export default function SquatLiveAnalysis({ member, onBack, onComplete, onMember
     );
   }
 
-  const totalDone = view === 'front' ? trialsFound : (frontTrialRef.current ? 1 : 0) + trialsFound;
+  const totalDone = view === 'front' ? trialsFound : (frontSummaryRef.current?.trialsFound || 0) + trialsFound;
 
   const topBar = (
     <>
@@ -514,6 +529,11 @@ export default function SquatLiveAnalysis({ member, onBack, onComplete, onMember
         <p className="text-xs font-bold text-emerald-300">준비됐어요 — 녹화 시작을 눌러주세요</p>
       )}
       {started && uiPhase === 'ready' && <p className="text-xs font-bold text-emerald-300">양팔 들고 스쿼트 시작</p>}
+      {uiPhase === 'rep_done' && (
+        <p className="text-xs font-bold text-emerald-300">
+          {trialsFound}회차 완료 — 같은 자세로 한 번 더 스쿼트해 주세요({trialsFound}/{SQUAT_LIVE_MAX_TRIALS_PER_VIEW})
+        </p>
+      )}
       {uiPhase === 'front_done' && <p className="text-xs font-bold text-emerald-300">정면 촬영 완료! 이제 옆으로 돌아서 주세요</p>}
       {uiPhase === 'finished' && <p className="text-xs font-bold text-emerald-300">정면·측면 모두 완료 — {lastTrialNote}</p>}
       {finishing && <p className="text-xs font-bold text-amber-300">영상 정리 중…</p>}
@@ -572,13 +592,13 @@ export default function SquatLiveAnalysis({ member, onBack, onComplete, onMember
     >
       {uiPhase === 'active' && (
         <GaugeHud label="깊이" value={depthPct} unit="%" arc min={0} max={100} accent="#f59e0b"
-          stats={[{ label: '회차', value: `${totalDone}/2` }]} />
+          stats={[{ label: '회차', value: `${totalDone}/${SQUAT_LIVE_TOTAL_TRIALS}` }]} />
       )}
     </CameraStage>
     {status === 'running' && (
       <div className="pointer-events-none fixed top-3 right-3 z-40 rounded-2xl bg-black/70 border border-white/20 px-4 py-2 text-center backdrop-blur">
         <div className="text-[10px] font-bold text-slate-300 tracking-wide">회차</div>
-        <div className="text-2xl font-black text-white leading-none">{totalDone}<span className="text-sm text-slate-400">/2</span></div>
+        <div className="text-2xl font-black text-white leading-none">{totalDone}<span className="text-sm text-slate-400">/{SQUAT_LIVE_TOTAL_TRIALS}</span></div>
       </div>
     )}
     {/* 임시 디버그 표시 — 문제 확인되면 제거 예정 */}

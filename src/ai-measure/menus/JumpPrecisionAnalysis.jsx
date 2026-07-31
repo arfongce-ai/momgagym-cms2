@@ -217,7 +217,11 @@ function drawSkeleton(canvas, video, landmarks, phase) {
 }
 
 // 캘리브 기준선을 화면에 가로선으로 표시 (사용자 피드백)
-function drawBaseline(canvas, video, baselineFeetY) {
+// rotationDeg: 90/270에서는 이 캔버스 전체가 바깥 래퍼에서 CSS로 통째로 돌아간다.
+// 스켈레톤(drawSkeleton)은 점 하나하나를 x·y 둘 다 매핑해서 그 회전에 자동으로
+// 맞지만, 이 기준선은 "버퍼 폭 전체를 가로지르는 선" 하나뿐이라 축이 안 맞았다 —
+// 90/270에서 그대로 가로로 그리면 회전 후 화면에는 세로선으로 보인다(보고된 증상).
+function drawBaseline(canvas, video, baselineFeetY, rotationDeg = 0) {
   if (!canvas || !video || baselineFeetY == null) return;
   const cw = canvas.width, ch = canvas.height;
   const vw = video.videoWidth, vh = video.videoHeight;
@@ -229,7 +233,14 @@ function drawBaseline(canvas, video, baselineFeetY) {
   const y = oy + baselineFeetY * dh;
   const ctx = canvas.getContext('2d');
   ctx.strokeStyle = 'rgba(52,211,153,0.5)'; ctx.lineWidth = 2; ctx.setLineDash([8, 6]);
-  ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(cw, y); ctx.stroke();
+  ctx.beginPath();
+  if (rotationDeg === 90 || rotationDeg === 270) {
+    // 90/270에서는 버퍼 로컬 세로선으로 그려야 회전 후 화면에서 가로로 보인다.
+    ctx.moveTo(y, 0); ctx.lineTo(y, ch);
+  } else {
+    ctx.moveTo(0, y); ctx.lineTo(cw, y);
+  }
+  ctx.stroke();
   ctx.setLineDash([]);
 }
 
@@ -533,7 +544,7 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
       try {
         const ph = tracker ? (tracker.inAir ? 'air' : 'ready') : 'arming';
         drawSkeleton(skeletonCanvasRef.current, video, landmarks, ph);
-        if (calib?.result) drawBaseline(skeletonCanvasRef.current, video, calib.result.baselineFeetY);
+        if (calib?.result) drawBaseline(skeletonCanvasRef.current, video, calib.result.baselineFeetY, rotationDeg);
       } catch (e) { /* noop */ }
 
       if (landmarks && viewRef.current === 'camera') {

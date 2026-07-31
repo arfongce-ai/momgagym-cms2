@@ -259,15 +259,100 @@ function combineTrials(trial1, trial2) {
 }
 
 /**
+ * 정면 2회 + 측면 2회 결합(2026-07-30 → 07-31 재변경: 운영 방식이 "정면 2회 →
+ * 측면 2회"로 확정됨). 뷰 내부는 combineTrials()로 먼저 재현성 확정(각 뷰의
+ * 2회가 반복돼야 그 뷰 안에서 CAUTION/RISK 확정)하고, 그 결과를
+ * combineFrontSide()와 동일한 지표별 권위 소스 규칙(무릎외반·골반기울기=정면
+ * 단독, 상체기울기=측면 우선, 깊이=양쪽 비교 가능)으로 뷰 간 결합한다 — 즉
+ * "반복돼야 확정한다"는 원칙을 뷰 내부·뷰 간 두 층 모두에 그대로 적용.
+ * trials[]는 [front1,front2,side1,side2] 순서로 반환 — trials[0]가 기존과 동일한
+ * 정면 판정값이라 unifiedReport.js 등 trials.0.* 소비자와 하위 호환된다.
+ */
+function combineFrontSideTwice(front1, front2, side1, side2) {
+  const frontCombined = combineTrials(front1, front2);
+  const sideCombined = combineTrials(side1, side2);
+  const trials = [...frontCombined.trials, ...sideCombined.trials];
+
+  if (frontCombined.basis === 'immediate' || sideCombined.basis === 'immediate') {
+    const failed = frontCombined.basis === 'immediate' ? frontCombined : sideCombined;
+    return { status: 'risk', confirmed: true, basis: 'immediate', immediateReasons: failed.immediateReasons, trials };
+  }
+
+  const frontValid = frontCombined.basis !== 'no_valid_trial';
+  const sideValid = sideCombined.basis !== 'no_valid_trial';
+
+  if (!frontValid && !sideValid) {
+    return { status: 'unknown', confirmed: false, basis: 'no_valid_trial', trials };
+  }
+
+  let status = 'normal';
+  const confirmedFlags = [];
+  const unconfirmedFlags = [];
+
+  // 이미 뷰 내부에서 반복 확정된(repeatedFlags) 항목만 승격하고, 뷰 내부에서도
+  // 확정 못 한(unconfirmedFlags) 항목은 뷰 간 결합에서도 "미확정 관찰"로만 남긴다.
+  const takeFromView = (viewResult, prefix) => {
+    (viewResult.repeatedFlags || []).filter((fl) => fl.startsWith(prefix)).forEach((fl) => {
+      confirmedFlags.push(fl);
+      status = worse(status, FLAG_SEVERITY[fl] || 'caution');
+    });
+    (viewResult.unconfirmedFlags || []).filter((fl) => fl.startsWith(prefix) && !unconfirmedFlags.includes(fl))
+      .forEach((fl) => unconfirmedFlags.push(fl));
+  };
+
+  // 무릎외반·골반기울기 — 정면 단독(측면은 관여하지 않음).
+  if (frontValid) { takeFromView(frontCombined, 'knee_valgus_'); takeFromView(frontCombined, 'pelvic_tilt_'); }
+
+  // 상체기울기 — 측면 우선 단독, 측면 무효면 정면으로 대체.
+  const torsoLeanSource = sideValid ? 'side' : (frontValid ? 'front_fallback' : null);
+  takeFromView(torsoLeanSource === 'side' ? sideCombined : frontCombined, 'torso_lean_');
+
+  // 깊이 — 양쪽 다 유효하면 뷰 간에도 반복돼야 확정, 한쪽만 유효하면 그 뷰의
+  // (이미 뷰 내부에서 재현성 확정된) 결과를 그대로 쓴다.
+  if (frontValid && sideValid) {
+    const fDepth = (frontCombined.repeatedFlags || []).filter((fl) => fl.startsWith('depth_'));
+    const sDepth = (sideCombined.repeatedFlags || []).filter((fl) => fl.startsWith('depth_'));
+    const repeated = fDepth.filter((fl) => sDepth.includes(fl));
+    repeated.forEach((fl) => { confirmedFlags.push(fl); status = worse(status, FLAG_SEVERITY[fl] || 'caution'); });
+    [...new Set([...fDepth, ...sDepth])].filter((fl) => !repeated.includes(fl) && !unconfirmedFlags.includes(fl))
+      .forEach((fl) => unconfirmedFlags.push(fl));
+  } else {
+    takeFromView(frontValid ? frontCombined : sideCombined, 'depth_');
+  }
+
+  const missingView = (frontValid && sideValid) ? null : (frontValid ? 'side' : 'front');
+
+  return {
+    status,
+    confirmed: true,
+    basis: (frontValid && sideValid) ? 'front_side_combined' : 'single_view_only',
+    confirmedFlags,
+    repeatedFlags: confirmedFlags,
+    unconfirmedFlags,
+    torsoLeanSource,
+    missingView,
+    needsRetest: missingView != null && status !== 'normal',
+    trials,
+  };
+}
+
+/**
  * 오버헤드 딥 스쿼트 종합 판정.
  * @param {object} input
- * @param {object} [input.front]   신규: 정면 1회 시행
- * @param {object} [input.side]    신규: 측면 1회 시행
+ * @param {object} [input.front1]  최신(2026-07-31): 정면 1차 시행
+ * @param {object} [input.front2]  최신: 정면 2차 시행
+ * @param {object} [input.side1]   최신: 측면 1차 시행
+ * @param {object} [input.side2]   최신: 측면 2차 시행
+ * @param {object} [input.front]   구(2026-07-30): 정면 1회 시행 — 하위 호환
+ * @param {object} [input.side]    구: 측면 1회 시행 — 하위 호환
  * @param {object} [input.trial1]  기존(하위 호환 — 예: 영상 업로드 모드, 정면만 2회)
  * @param {object} [input.trial2]  기존(하위 호환)
  * @returns {object} valid:false 시 { valid:false, reason, message }
  */
 export function evaluateSquatBiomechanics(input = {}) {
+  if (input.front1 || input.front2 || input.side1 || input.side2) {
+    return { valid: true, kind: 'squat', ...combineFrontSideTwice(input.front1, input.front2, input.side1, input.side2) };
+  }
   if (input.front || input.side) {
     return { valid: true, kind: 'squat', ...combineFrontSide(input.front, input.side) };
   }

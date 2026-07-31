@@ -25,6 +25,11 @@ import GaugeHud from './GaugeHud.jsx';
 
 const LEG_KO = { left: '왼쪽', right: '오른쪽' };
 const MAX_RECORD_MS = 60000;
+// [2026-07-31] 운영 방식 확정: 다리당 1회 지지(왼발 1회 → 오른발 1회)로 측정한다.
+// 판정(singleLegStance.js)은 원래 2회 재현성 확인용으로 설계됐지만, trial2가
+// 없을 때를 위한 "single_trial_only" 경로가 이미 있어 그대로 재사용된다 —
+// 그 경로에서는 재현성 확정 없이 단일 시행 결과를 쓰고 needsRetest만 남긴다.
+const SLST_LIVE_MAX_TRIALS = 1;
 
 // 자세·보행 모듈과 동일한 본(bone) 목록 — 상체 코어 + 양다리.
 const BONES = [
@@ -134,8 +139,8 @@ export default function StanceLiveAnalysis({ member, stanceLeg, onBack, onComple
         accent: '#22d3ee',
         gauge: tracker?.phase === 'holding'
           ? { label: '유지시간', value: (tracker.elapsedHoldMs(lastTsRef.current) / 1000).toFixed(1), unit: 's' }
-          : { label: legLabel + ' 지지', value: trialsFound, unit: '/2' },
-        stats: [{ label: '시행', value: trialsFound, unit: '/2' }],
+          : { label: legLabel + ' 지지', value: trialsFound, unit: `/${SLST_LIVE_MAX_TRIALS}` },
+        stats: [{ label: '시행', value: trialsFound, unit: `/${SLST_LIVE_MAX_TRIALS}` }],
       });
     };
     const rafLoop = () => { draw(); composeRafRef.current = requestAnimationFrame(rafLoop); };
@@ -237,7 +242,7 @@ export default function StanceLiveAnalysis({ member, stanceLeg, onBack, onComple
         setUiPhase('ready'); // 캘리브레이션 완료
         if (measureStartedRef.current && !trackerRef.current) {
           // 버튼을 캘리브레이션보다 먼저 눌러둔 경우 — 지금 트래커 생성.
-          trackerRef.current = new SingleLegStanceTracker(calib.result, stanceLeg);
+          trackerRef.current = new SingleLegStanceTracker(calib.result, stanceLeg, { maxTrials: SLST_LIVE_MAX_TRIALS });
         }
       } else if (st.reason === 'low_visibility') {
         setUiPhase('low_visibility');
@@ -252,7 +257,7 @@ export default function StanceLiveAnalysis({ member, stanceLeg, onBack, onComple
 
     if (!trackerRef.current) {
       // 캘리브레이션이 버튼보다 먼저 끝난 일반적인 경우 — 여기서 트래커 생성.
-      trackerRef.current = new SingleLegStanceTracker(calib.result, stanceLeg);
+      trackerRef.current = new SingleLegStanceTracker(calib.result, stanceLeg, { maxTrials: SLST_LIVE_MAX_TRIALS });
     }
     const tracker = trackerRef.current;
     if (!tracker || tracker.trials.length >= tracker.maxTrials) return;
@@ -401,7 +406,7 @@ export default function StanceLiveAnalysis({ member, stanceLeg, onBack, onComple
       )}
       {started && uiPhase === 'ready' && <p className="text-xs font-bold text-emerald-300">반대쪽 발을 들어 시작</p>}
       {uiPhase === 'trial_done' && <p className="text-xs font-bold text-emerald-300">{trialsFound}차 완료 — {lastTrialNote}</p>}
-      {uiPhase === 'finished' && <p className="text-xs font-bold text-emerald-300">2회 모두 완료 — {lastTrialNote}</p>}
+      {uiPhase === 'finished' && <p className="text-xs font-bold text-emerald-300">측정 완료 — {lastTrialNote}</p>}
       {finishing && <p className="text-xs font-bold text-amber-300">영상 정리 중…</p>}
       {errorMsg && <p className="text-xs font-bold text-red-300">{errorMsg}</p>}
     </>
@@ -458,13 +463,13 @@ export default function StanceLiveAnalysis({ member, stanceLeg, onBack, onComple
     >
       {uiPhase === 'holding' && (
         <GaugeHud label="유지시간" value={secs} unit="s" accent="#22d3ee"
-          stats={[{ label: '시행', value: `${trialsFound}/2` }]} />
+          stats={[{ label: '시행', value: `${trialsFound}/${SLST_LIVE_MAX_TRIALS}` }]} />
       )}
     </CameraStage>
     {status === 'running' && (
       <div className="pointer-events-none fixed top-3 right-3 z-40 rounded-2xl bg-black/70 border border-white/20 px-4 py-2 text-center backdrop-blur">
         <div className="text-[10px] font-bold text-slate-300 tracking-wide">시행</div>
-        <div className="text-2xl font-black text-white leading-none">{trialsFound}<span className="text-sm text-slate-400">/2</span></div>
+        <div className="text-2xl font-black text-white leading-none">{trialsFound}<span className="text-sm text-slate-400">/{SLST_LIVE_MAX_TRIALS}</span></div>
       </div>
     )}
     {/* 임시 디버그 표시 — 문제 확인되면 제거 예정 */}

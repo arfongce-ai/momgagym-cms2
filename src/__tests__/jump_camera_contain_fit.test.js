@@ -31,7 +31,7 @@ describe('JumpPrecisionAnalysis.jsx — 라이브 카메라가 다른 측정 화
     expect(skelBody).toMatch(/Math\.min\(cw \/ vw, ch \/ vh\)/);
     expect(skelBody).not.toMatch(/Math\.max\(cw \/ vw, ch \/ vh\)/);
 
-    const baseStart = src.indexOf('function drawBaseline(canvas, video, baselineFeetY)');
+    const baseStart = src.indexOf('function drawBaseline(canvas, video, baselineFeetY');
     const baseEnd = src.indexOf('\n}', baseStart);
     const baseBody = src.slice(baseStart, baseEnd);
     expect(baseBody).toMatch(/Math\.min\(cw \/ vw, ch \/ vh\)/);
