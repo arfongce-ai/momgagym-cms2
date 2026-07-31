@@ -922,14 +922,19 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
                 <p className="text-white/80 text-xs font-bold text-center px-6">
                   {phase === 'ready'
                     ? '버튼을 누르면 3초 후 측정이 시작됩니다'
-                    : '버튼을 누르면 3초 후 측정이 시작됩니다 — 그 사이에 자리에 서 주세요'}
+                    : (calibMsg || '자세 기준을 잡는 중입니다 — 카메라 앞에 똑바로 서 주세요')}
                 </p>
                 <div className="flex flex-col items-center gap-2">
                   <button onClick={() => setShowManual(true)}
                     className="text-white/70 text-xs underline underline-offset-2">
                     ✍️ 카메라 대신 수동 입력 (체공시간)
                   </button>
-                  {/* 기준(서 있는 자세) 재보정 — 측정 전에도 언제든 다시 잡을 수 있게 */}
+                  {/* 기준(서 있는 자세) 재보정 — 측정 전에도 언제든 다시 잡을 수 있게.
+                      [2026-07-31] 누르면 바로 위 문구가 "버튼을 누르면..."에서
+                      calibMsg(보정 진행률)로 바뀌는 게 재보정이 실제로 시작됐다는
+                      눈에 띄는 확인 신호다 — 예전엔 이 버튼 바로 옆에는 아무 변화가
+                      없고(진행률 표시는 화면 위쪽에만, 그나마도 안 그려지고 있었음)
+                      "눌러도 반응이 없다"로 보였다. */}
                   <button onClick={resetPipeline}
                     className="rounded-full bg-black/50 border border-white/15 px-3 py-1 text-[11px] font-bold text-white/80 backdrop-blur active:scale-95">
                     ↻ 기준 다시 잡기
@@ -1380,6 +1385,13 @@ function JumpLiveOverlay({
           <p className="truncate text-xs font-black text-white/90">{isRsi ? 'RSI 측정' : '파워 점프'} · {readyText}</p>
           <span className={`ml-auto text-[11px] font-bold ${phaseColor}`}>{statusText}</span>
         </div>
+        {/* [2026-07-31] calibMsg(보정 진행률 "자세 보정 중... N%"·안내 문구)를
+            그동안 prop으로 받기만 하고 화면엔 안 그리고 있었다 — "기준 다시
+            잡기"를 눌러도 실제로는 보정이 재시작되는데(phase→arming) 진행률이
+            어디에도 안 보여서 "아무 반응이 없다"로 보였다. */}
+        {calibMsg && phase !== 'ready' && phase !== 'air' && (
+          <p className="mt-0.5 truncate text-[10px] font-bold text-white/70">{calibMsg}</p>
+        )}
       </div>
       <GaugeHud {...gauge} accent={accent} stats={stats} />
     </div>
