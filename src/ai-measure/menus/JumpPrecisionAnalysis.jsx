@@ -189,7 +189,10 @@ function drawSkeleton(canvas, video, landmarks, phase) {
   if (!isSkeletonEnabled()) return; // OFF: 스켈레톤 미표시(기준선은 별도 draw 로 유지)
   const vw = video.videoWidth, vh = video.videoHeight;
   if (!vw || !vh) return;
-  const scale = Math.max(cw / vw, ch / vh);
+  // [2026-07-31] cover(Math.max, 크롭)→contain(Math.min, 여백 포함 전체 표시)로 변경.
+  // 다른 측정 화면(Squat/Posture 등)과 동일한 기준 — 키오스크처럼 화면비가 카메라와
+  // 다른 환경에서 상단/하단이 잘려 보이던 문제를 없앤다.
+  const scale = Math.min(cw / vw, ch / vh);
   const dw = vw * scale, dh = vh * scale;
   const ox = (cw - dw) / 2, oy = (ch - dh) / 2;
   const px = (p) => ox + p.x * dw;
@@ -219,7 +222,8 @@ function drawBaseline(canvas, video, baselineFeetY) {
   const cw = canvas.width, ch = canvas.height;
   const vw = video.videoWidth, vh = video.videoHeight;
   if (!vw || !vh) return;
-  const scale = Math.max(cw / vw, ch / vh);
+  // drawSkeleton과 동일한 contain 기준으로 맞춰야 기준선이 실제 영상과 어긋나지 않는다.
+  const scale = Math.min(cw / vw, ch / vh);
   const dh = vh * scale;
   const oy = (ch - dh) / 2;
   const y = oy + baselineFeetY * dh;
@@ -826,7 +830,7 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
             height: (rotationDeg === 90 || rotationDeg === 270) ? '100vw' : '100%',
             transform: `translate(-50%, -50%) rotate(${rotationDeg}deg)`,
           } : undefined}>
-            <video ref={videoRef} className="absolute inset-0 w-full h-full object-cover" playsInline muted />
+            <video ref={videoRef} className="absolute inset-0 w-full h-full object-contain" playsInline muted />
             <canvas ref={skeletonCanvasRef} className="absolute inset-0 w-full h-full pointer-events-none" />
           </div>
 
