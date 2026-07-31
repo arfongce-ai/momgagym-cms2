@@ -569,8 +569,11 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
             setMsgOnce('');
           } else if (st.reason === 'low_visibility') {
             // 요구사항 3: 자세 불안정 → 측정 차단 경고
+            // [2026-07-31] 실제 인식률(%)을 같이 보여준다 — "발목을 못 잡는다"는
+            // 리포트를 트레이너가 스스로 진단할 수 있게(예: 인식률이 계속
+            // 한 자릿수면 카메라 거리·각도·조명 조정이 필요하다는 신호).
             setPhaseOnce('low_visibility');
-            setMsgOnce('올바르게 서 주세요 — 전신이 보이도록 카메라 앞에 똑바로 서세요');
+            setMsgOnce(`발/골반 인식률 ${Math.round((st.visRatio || 0) * 100)}% — 카메라에 발까지 잘 보이게 서 주세요`);
           } else {
             setPhaseOnce('arming');
             setMsgOnce(`자세 보정 중... ${Math.round(st.progress * 100)}%`);

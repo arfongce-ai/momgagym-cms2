@@ -27,21 +27,24 @@ const G = 9.81;
 // "이상한데 통과" → 위 값 + crossTolPct 조이기
 // "이륙/착지 시점이 튐" → filterMinCutoff/Beta, liftoffBandFrac 조정
 export const JUMP_TUNING = {
-  minVisibility: 0.2,        // 관절 가시성 하한 (이하면 캘리브레이션/검출 제외)
-  // [2026-07-30] 0.3→0.2 완화. 키오스크 환경(카메라 각도·화질)에서 캘리브레이션
-  // 진행률이 오래도록 0%에서 안 움직이는 리포트가 반복됐다 — bodyPixelHeight가
-  // 요구하는 코(0번) 랜드마크 등 특정 관절의 가시성 신뢰도가 문턱(0.3)을 못
-  // 넘어 애초에 표본이 하나도 안 쌓이는 것으로 추정된다(흔들림 기준치와는 별개
-  // 문제). 위 주석("정상인데 무효 → minVisibility 낮추기")이 가리키는 바로 그
-  // 처방. 다만 트레이드오프가 있다 — 너무 낮추면 신뢰도 낮은(부정확한) 랜드마크도
-  // 캘리브레이션에 섞여 들어갈 수 있어, 실측 데이터로 재보정 전까지의 임시값이다.
+  minVisibility: 0.12,       // 관절 가시성 하한 (이하면 캘리브레이션/검출 제외)
+  // [2026-07-30] 0.3→0.2 완화, [2026-07-31] 0.2→0.12 추가 완화. 키오스크
+  // 환경(카메라 각도·화질·거리)에서 캘리브레이션이 계속 0%에 멈추거나
+  // "발목을 못 잡는다"는 리포트가 반복됐다 — 07-30 완화 이후에도 부족했다는
+  // 뜻이라 한 단계 더 낮췄다. feetCenterY(발목 27/28)는 push()가 표본을
+  // 쌓는 조건 자체라, 이 값이 문턱을 못 넘으면 진행률이 아예 0%에서
+  // 안 움직인다(low_visibility 사유로도 못 넘어가는 게 아니라 표본 자체가
+  // 안 쌓이는 쪽). 트레이드오프는 여전히 있다 — 실측 데이터로 재보정 전까지의
+  // 임시값이며, 카메라 위치·거리·조명 조정이 근본 해결책일 수 있다.
   filterMinCutoff: 1.2,      // 1-Euro 평활 강도 (낮을수록 더 부드럽게)
   filterBeta: 0.02,          // 1-Euro 반응성
 
   // ── 캘리브레이션(서 있는 자세) ──
   calibMinFrames: 8,         // 기준선 확정에 필요한 최소 안정 프레임 수
   calibMaxStdY: 0.012,       // 서 있는 동안 발 y 표준편차 상한(정규화). 넘으면 불안정
-  calibMinVisRatio: 0.8,     // 캘리브레이션 프레임 중 관절 가시 비율 하한
+  calibMinVisRatio: 0.6,     // 캘리브레이션 프레임 중 관절 가시 비율 하한
+  // [2026-07-31] 0.8→0.6 완화 — minVisibility 완화와 같은 이유. 처음 자리
+  // 잡는 몇 프레임의 낮은 가시성이 누적 비율을 계속 끌어내리는 것을 완화한다.
 
   // ── 이륙/착지 검출 ──
   // 발 신호는 살짝만 평활(이륙·착지 전환을 날카롭게 유지). 과평활 시 체공이 짧게 측정됨.
@@ -210,14 +213,14 @@ export class StandingCalibrator {
 
   // 진행 상태(UI 표시용). reason 으로 경고 문구를 분기한다.
   status() {
-    if (this.locked) return { ready: true, progress: 1, reason: 'ok' };
+    if (this.locked) return { ready: true, progress: 1, reason: 'ok', visRatio: 1 };
     const visRatio = this._frames ? this._visFrames / this._frames : 0;
     const progress = Math.min(0.99, this._feetY.length / JUMP_TUNING.calibMinFrames);
     let reason = 'arming';
     if (this._frames > JUMP_TUNING.calibMinFrames && visRatio < JUMP_TUNING.calibMinVisRatio) {
       reason = 'low_visibility'; // 관절이 잘 안 잡힘 → "올바르게 서 주세요"
     }
-    return { ready: false, progress, reason };
+    return { ready: false, progress, reason, visRatio };
   }
 }
 
