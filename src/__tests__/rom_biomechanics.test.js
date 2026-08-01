@@ -112,16 +112,20 @@ describe('bodyMechanics — 정규화/필터', () => {
 });
 
 describe('bodyMechanics — 자세모드별 기준 벡터', () => {
-  it('STANDING vs SUPINE 은 같은 굴곡 자세라도 기준선이 다르다', () => {
+  it('STANDING vs SUPINE 은 같은 굴곡 자세라도 기준선(base)이 다르고, 서로 다른 방식으로 계산된다', () => {
     // 대퇴골을 수평으로 굴곡(고관절 90도 굴곡 자세)
     const pose = makePose({ [LM.LEFT_KNEE]: { x: 0.20, y: 0.52 } });
     const standing = jointAngleByMode(normalizePose(pose), 'HIP', 'left', 'STANDING');
     const supine = jointAngleByMode(normalizePose(pose), 'HIP', 'left', 'SUPINE');
     expect(standing.base).toBe('vertical_gravity_line');
-    expect(supine.base).toBe('horizontal_bed_plane');
-    // 같은 대퇴골 벡터라도 수직 기준선(서서) vs 수평 기준선(누워서)으로 측정하므로
-    // 두 각도는 90도 차이가 나야 한다(기준선 직교).
-    expect(Math.abs(standing.angle - supine.angle)).toBeCloseTo(90, 0);
+    expect(supine.base).toBe('trunk_axis_line');
+    // STANDING은 중력 수직선, SUPINE은 몸통 축(어깨-고관절) 기준이라 서로 다른
+    // 계산이며, 이 포즈(어깨가 고관절 위에 있는 '서 있는' 배치)에서는 두 값이
+    // 우연히 비슷하게 나올 수 있다 — 이는 정상이며, 두 모드가 '같은 공식을
+    // 재사용'하고 있지 않다는 것만 확인한다(회귀 방지: 이전엔 화면 고정
+    // 수평축을 썼는데, 그 경우 180° 근처의 다른 값이 나왔었다).
+    expect(standing.angle).toBeCloseTo(90, 0);
+    expect(supine.angle).toBeCloseTo(94.2, 0);
   });
 
   it('STANDING HIP 은 보상값(pelvicDrop)을 함께 반환한다', () => {
@@ -141,6 +145,51 @@ describe('bodyMechanics — 자세모드별 기준 벡터', () => {
     const pose = makePose({ [LM.RIGHT_HIP]: { x: 0.56, y: 0.60 } });
     const drop = pelvicDrop(pose, 'left');
     expect(drop).toBeGreaterThan(0);
+  });
+});
+
+// 실측 회귀(2026-08-01): SUPINE/PRONE 고관절 각도가 화면 고정 수평축(+x)을
+// 기준으로 계산되던 시절엔, 카메라에 대해 피험자 머리가 왼쪽/오른쪽 중
+// 어느 쪽을 향하는지에 따라 같은 자세가 0°로도 180°로도 잡히고, 굴곡할수록
+// 각도가 오히려 줄어드는 경우까지 있었다("포지션 바꿔도 각도가 그대로/이상하게
+// 나온다"). 몸통 축(어깨↔고관절) 기준으로 바꾼 뒤에는 피험자가 화면의 어느
+// 방향을 보고 눕든 동일한 결과가 나와야 한다.
+describe('bodyMechanics — SUPINE 고관절 각도는 카메라/피험자 방향과 무관하다(2026-08-01 회귀)', () => {
+  // 옆에서 본 누운 자세: 어깨·고관절이 비슷한 높이(수평)로 눕고, headX 방향으로
+  // 머리가, 그 반대쪽으로 다리가 뻗는다.
+  function lyingPose(headX, kneeFlexed) {
+    const pose = Array.from({ length: 33 }, () => ({ x: 0.5, y: 0.5, z: 0, visibility: 0.99 }));
+    const footX = headX < 0.5 ? 0.8 : 0.2; // 머리 반대쪽으로 다리를 뻗는다
+    // 측면 촬영에서도 좌/우 랜드마크가 완전히 겹치진 않으므로(작은 y 오프셋),
+    // normalizePose 의 폭 기반 스케일이 0이 되지 않도록 살짝 벌려둔다.
+    Object.assign(pose[LM.LEFT_SHOULDER], { x: headX, y: 0.5 });
+    Object.assign(pose[LM.LEFT_HIP], { x: 0.5, y: 0.5 });
+    Object.assign(pose[LM.LEFT_KNEE], kneeFlexed
+      ? { x: 0.5, y: 0.24 }               // 고관절 굴곡: 무릎을 고관절 바로 위로
+      : { x: footX, y: 0.5 });            // 편 다리: 몸통과 일직선(수평)
+    Object.assign(pose[LM.RIGHT_SHOULDER], { x: headX, y: 0.53 });
+    Object.assign(pose[LM.RIGHT_HIP], { x: 0.5, y: 0.53 });
+    return pose;
+  }
+
+  it('머리가 화면 왼쪽을 향할 때: 편 다리=0°, 90도 굴곡=90°', () => {
+    const flat = jointAngleByMode(normalizePose(lyingPose(0.2, false)), 'HIP', 'left', 'SUPINE');
+    const flexed = jointAngleByMode(normalizePose(lyingPose(0.2, true)), 'HIP', 'left', 'SUPINE');
+    expect(flat.angle).toBeCloseTo(0, 0);
+    expect(flexed.angle).toBeCloseTo(90, 0);
+  });
+
+  it('머리가 화면 오른쪽을 향할 때(좌우 반전)에도 동일하게 편 다리=0°, 90도 굴곡=90°', () => {
+    const flat = jointAngleByMode(normalizePose(lyingPose(0.8, false)), 'HIP', 'left', 'SUPINE');
+    const flexed = jointAngleByMode(normalizePose(lyingPose(0.8, true)), 'HIP', 'left', 'SUPINE');
+    expect(flat.angle).toBeCloseTo(0, 0);
+    expect(flexed.angle).toBeCloseTo(90, 0);
+  });
+
+  it('[회귀] 좌우가 반전돼도 두 방향의 결과가 서로 일치한다(예전엔 0° vs 180°로 어긋났다)', () => {
+    const left = jointAngleByMode(normalizePose(lyingPose(0.2, false)), 'HIP', 'left', 'SUPINE');
+    const right = jointAngleByMode(normalizePose(lyingPose(0.8, false)), 'HIP', 'left', 'SUPINE');
+    expect(Math.abs(left.angle - right.angle)).toBeLessThan(1);
   });
 });
 

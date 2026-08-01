@@ -9,6 +9,7 @@ import { formatStopwatch } from '../core/recordingOverlay';
 import { nextPhase, firstPhase, phaseDurationSec } from '../core/intervalTimer';
 import { loadPoseLandmarker, detectPoseFrame, isPoseReady, closePoseLandmarker } from '../core/poseBackend';
 import { isSkeletonEnabled, subscribeSkeleton, useSkeletonOverlay } from '../core/skeletonPref';
+import { angleDeg } from '../core/postureMath';
 import SkeletonToggleChip from './SkeletonToggleChip';
 
 // 스켈레톤 뼈대(어깨~골반~사지) — 전신 스틱 피규어.
@@ -20,8 +21,52 @@ const SKELETON_BONES = [
 ];
 const SKELETON_JOINTS = [11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28];
 
+// 실시간 관절각 표시(참고 영상 스타일) — [끝점A, 꼭짓점(각 표시 위치), 끝점B].
+// 세 랜드마크가 모두 보일 때만 해당 각을 그린다.
+const ANGLE_JOINTS = [
+  [11, 13, 15], // 왼쪽 팔꿈치
+  [12, 14, 16], // 오른쪽 팔꿈치
+  [13, 11, 23], // 왼쪽 어깨
+  [14, 12, 24], // 오른쪽 어깨
+  [11, 23, 25], // 왼쪽 고관절
+  [12, 24, 26], // 오른쪽 고관절
+  [23, 25, 27], // 왼쪽 무릎
+  [24, 26, 28], // 오른쪽 무릎
+];
+
 function skelVisible(p, threshold = 0.35) {
   return !!p && Number.isFinite(p.x) && (p.visibility == null || p.visibility >= threshold);
+}
+
+function roundRectPath(ctx, x, y, w, h, r) {
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+// 관절각 라벨(검은 둥근 배경 + 흰 글씨 "NN°") — 꼭짓점 바로 위에 띄운다.
+function drawAngleLabel(ctx, x, y, angle, scale) {
+  const text = `${angle}°`;
+  const fontSize = Math.max(11, Math.round(13 * scale));
+  ctx.font = `800 ${fontSize}px system-ui, sans-serif`;
+  const padX = 6 * scale;
+  const padY = 4 * scale;
+  const textW = ctx.measureText(text).width;
+  const boxW = textW + padX * 2;
+  const boxH = fontSize + padY * 2;
+  const boxX = x - boxW / 2;
+  const boxY = y - boxH - 10 * scale;
+  ctx.fillStyle = 'rgba(0,0,0,0.75)';
+  ctx.beginPath();
+  roundRectPath(ctx, boxX, boxY, boxW, boxH, Math.min(6 * scale, boxH / 2));
+  ctx.fill();
+  ctx.fillStyle = '#ffffff';
+  ctx.textBaseline = 'middle';
+  ctx.textAlign = 'left';
+  ctx.fillText(text, boxX + padX, boxY + boxH / 2 + 0.5);
 }
 
 // 미리보기(object-cover)용: 정규화 좌표 → 화면 픽셀(크롭 보정).
@@ -40,7 +85,8 @@ function drawSkeletonCover(canvas, video, landmarks) {
   const ox = (cw - dw) / 2, oy = (ch - dh) / 2;
   const px = (p) => ox + p.x * dw;
   const py = (p) => oy + p.y * dh;
-  drawSkeletonPaths(ctx, landmarks, px, py, Math.max(2.5, cw / 200), Math.max(3, cw / 150));
+  const labelScale = Math.max(0.7, cw / 480);
+  drawSkeletonPaths(ctx, landmarks, px, py, Math.max(2.5, cw / 200), Math.max(3, cw / 150), labelScale);
 }
 
 // 녹화 합성 캔버스용: drawCover 와 동일한 크롭으로 좌표를 맞춰 스켈레톤을 굽는다.
@@ -56,10 +102,11 @@ function drawSkeletonToRecordCover(ctx, video, landmarks, width, height) {
   // 정규화 좌표(0~1) → 원본 픽셀 → 크롭 오프셋 제거 → 출력 캔버스 픽셀
   const px = (p) => ((p.x * vw) - sx) / sw * width;
   const py = (p) => ((p.y * vh) - sy) / sh * height;
-  drawSkeletonPaths(ctx, landmarks, px, py, Math.max(2.5, width / 220), Math.max(3, width / 170));
+  const labelScale = Math.max(0.7, width / 480);
+  drawSkeletonPaths(ctx, landmarks, px, py, Math.max(2.5, width / 220), Math.max(3, width / 170), labelScale);
 }
 
-function drawSkeletonPaths(ctx, landmarks, px, py, lineW, dotR) {
+function drawSkeletonPaths(ctx, landmarks, px, py, lineW, dotR, scale = 1) {
   ctx.strokeStyle = 'rgba(52,211,153,0.9)';
   ctx.lineWidth = lineW;
   ctx.lineCap = 'round';
@@ -78,6 +125,24 @@ function drawSkeletonPaths(ctx, landmarks, px, py, lineW, dotR) {
     ctx.beginPath();
     ctx.arc(px(p), py(p), dotR, 0, Math.PI * 2);
     ctx.fill();
+  }
+
+  // 관절각(팔꿈치·어깨·고관절·무릎) — 세 랜드마크가 모두 보이면 흰 강조 링과
+  // 각도 라벨을 함께 그린다(참고 영상 스타일).
+  ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+  ctx.lineWidth = Math.max(1.5, lineW * 0.6);
+  for (const [ia, ib, ic] of ANGLE_JOINTS) {
+    const a = landmarks[ia], b = landmarks[ib], c = landmarks[ic];
+    if (!skelVisible(a) || !skelVisible(b) || !skelVisible(c)) continue;
+    const angleRaw = angleDeg(a, b, c);
+    if (angleRaw == null) continue;
+    const angle = Math.round(angleRaw);
+    const bx = px(b);
+    const by = py(b);
+    ctx.beginPath();
+    ctx.arc(bx, by, dotR * 1.9, 0, Math.PI * 2);
+    ctx.stroke();
+    drawAngleLabel(ctx, bx, by, angle, scale);
   }
 }
 

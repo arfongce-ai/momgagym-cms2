@@ -185,8 +185,9 @@ function stdDev(values) {
 //
 //   · STANDING: 기준선 = 수직 중력선(척추 축). 체중지지 상태의 '기능적 가동성'.
 //       반대쪽 골반이 내려앉는 골반 불균형(pelvicDrop)을 보상값으로 함께 추적.
-//   · SUPINE/PRONE: 기준선 = 바닥면 절대 수평선(베드면). 보상을 통제한
-//       '순수 구조적 ROM'. 동작 끝범위의 잔떨림(등척성 안정성)을 별도로 추출.
+//   · SUPINE/PRONE: 기준선 = 피험자 본인의 몸통 축(어깨↔고관절, 화면 절대좌표가
+//       아닌 몸 기준). 카메라에 대해 어느 방향으로 눕든 결과가 같다. 보상을
+//       통제한 '순수 구조적 ROM'. 동작 끝범위의 잔떨림(등척성 안정성)을 별도로 추출.
 //
 //   joint: 'HIP' | 'KNEE' | 'SHOULDER' | 'ANKLE'
 //   side:  'left' | 'right'
@@ -206,14 +207,13 @@ export function jointAngleByMode(landmarks, joint, side, poseMode) {
   const wrist = get(`${S}_WRIST`);
   const foot = get(`${S}_FOOT_INDEX`);
 
-  // 기준 벡터: 자세에 따라 수직(중력) vs 수평(바닥)을 세팅.
+  // 기준 벡터: STANDING 계열은 수직(중력)을 기준으로 삼는다.
   // 화면 좌표계에서 y는 아래로 갈수록 커진다.
   const VERTICAL_UP = { x: 0, y: -1, z: 0 };   // 위쪽(척추 축 근사)
-  const HORIZONTAL = { x: 1, y: 0, z: 0 };     // 바닥면(베드 수평)
 
   let angle = null;
   let compensatory = null;
-  let base = poseMode === 'STANDING' ? 'vertical_gravity_line' : 'horizontal_bed_plane';
+  let base = poseMode === 'STANDING' ? 'vertical_gravity_line' : 'trunk_axis_line';
 
   if (joint === 'HIP') {
     if (poseMode === 'STANDING') {
@@ -225,8 +225,15 @@ export function jointAngleByMode(landmarks, joint, side, poseMode) {
       // 보상: 반대쪽 골반이 내려앉는 정도(pelvicDrop) — 양 골반 y차를 어깨너비로 정규화.
       compensatory = pelvicDrop(landmarks, side);
     } else {
-      // SUPINE: 대퇴골과 바닥 수평선 사이각 = 순수 고관절 굴곡(누워서).
-      angle = vectorToAxisAngle(hip, knee, HORIZONTAL, false);
+      // SUPINE/PRONE: 대퇴골과 '몸통 축(어깨→고관절)' 사이각 = 순수 고관절 굴곡/신전.
+      // 예전엔 화면 고정 수평축(HORIZONTAL, +x 방향)을 기준으로 삼았는데, 카메라에
+      // 대해 피험자 머리가 왼쪽/오른쪽 중 어느 쪽을 향하는지에 따라 같은 자세도
+      // 0°로도 180°로도 잡히고, 굴곡할수록 각도가 거꾸로 줄어드는 경우까지 있었다
+      // (2026-08-01 수정 — "포지션 바꿔도 각도가 그대로/이상하게 나온다" 회귀).
+      // 무릎각(hip-knee-ankle)과 같은 원리로, 화면 절대 좌표가 아니라 몸통 자체를
+      // 기준선으로 삼으면 카메라·피험자 방향과 무관하게 항상 같은 결과가 나온다.
+      const trunkKneeAngle = angleBetween(shoulder, hip, knee, false);
+      angle = trunkKneeAngle == null ? null : round(180 - trunkKneeAngle, 1);
     }
   } else if (joint === 'KNEE') {
     // 무릎각은 자세와 무관하게 hip-knee-ankle 내각(굴곡). 펴면 180에 가까움.
@@ -241,7 +248,10 @@ export function jointAngleByMode(landmarks, joint, side, poseMode) {
       // 보상: 몸통 측면 기울기(체간 보상). 양 어깨-골반 라인 기울기.
       compensatory = trunkLeanCompensation(landmarks);
     } else {
-      angle = vectorToAxisAngle(shoulder, elbow, HORIZONTAL, false);
+      // (현재 UI에서는 SHOULDER에 STANDING/SEATED만 노출되어 도달하지 않지만,
+      // HIP과 동일한 이유로 화면 고정축 대신 몸통 축(고관절→어깨) 기준으로 통일.)
+      const trunkElbowAngle = angleBetween(hip, shoulder, elbow, false);
+      angle = trunkElbowAngle == null ? null : round(180 - trunkElbowAngle, 1);
     }
   } else if (joint === 'ANKLE') {
     // 발목 배측굴곡 근사: 정강이(knee→ankle) 와 발(ankle→foot) 사잇각.

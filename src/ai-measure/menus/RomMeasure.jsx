@@ -849,14 +849,24 @@ function romOverlayGeometry(landmarks, side, joint, poseMode, mapper, width, hei
   const elbow = p('ELBOW');
   const foot = p('FOOT_INDEX');
   const refLen = Math.max(42, Math.min(width, height) * 0.16);
-  const refPoint = (v) => {
+  // 기준선 표시점: STANDING/SEATED는 화면상 '위쪽'(중력수직선, 실제 계산과 일치).
+  // 그 외(SUPINE/PRONE)는 몸통 축(trunkRef→v)을 v 너머로 연장한 점 — 화면 고정
+  // 방향이 아니라 실제 계산 기준선(어깨↔고관절)과 항상 일치하도록 한다
+  // (2026-08-01: 각도 계산을 몸통 축 기준으로 바꾼 것과 오버레이 표시를 통일).
+  const refPoint = (v, trunkRef) => {
     if (!v) return null;
     if (poseMode === 'STANDING' || poseMode === 'SEATED') return { x: v.x, y: v.y - refLen };
-    return { x: v.x + refLen, y: v.y };
+    if (trunkRef) {
+      const dx = v.x - trunkRef.x;
+      const dy = v.y - trunkRef.y;
+      const len = Math.hypot(dx, dy) || 1;
+      return { x: v.x + (dx / len) * refLen, y: v.y + (dy / len) * refLen };
+    }
+    return { x: v.x + refLen, y: v.y }; // 폴백(반대쪽 몸통 랜드마크 미검출 시)
   };
-  if (joint === 'HIP' && hip && knee) return { a: refPoint(hip), b: hip, c: knee };
+  if (joint === 'HIP' && hip && knee) return { a: refPoint(hip, shoulder), b: hip, c: knee };
   if (joint === 'KNEE' && hip && knee && ankle) return { a: hip, b: knee, c: ankle };
-  if (joint === 'SHOULDER' && shoulder && elbow) return { a: refPoint(shoulder), b: shoulder, c: elbow };
+  if (joint === 'SHOULDER' && shoulder && elbow) return { a: refPoint(shoulder, hip), b: shoulder, c: elbow };
   if (joint === 'ANKLE' && knee && ankle && foot) return { a: knee, b: ankle, c: foot };
   return null;
 }
