@@ -49,6 +49,11 @@ export default function SquatAnalysisHub({ member, onBack, onSave, onSaveToFireb
       problemFocus: focus,
       member: { id: member?.id || null, name: member?.name || null },
       measuredAt: new Date().toISOString(),
+      // [2026-08-03] FMS(Functional Movement Screen) 딥 스쿼트 공식 채점(3/2/1/0).
+      // 종합 판정(정상/주의/위험)과는 별개의 보조 지표라 report.status를 덮어쓰지
+      // 않고 나란히 노출한다.
+      fmsScore: summary?.fmsScore ?? null,
+      fmsReasons: summary?.fmsReasons || [],
       // [녹화 통일] 라이브 모드에서 녹화된 영상(있으면). 업로드 모드는 새로 안 만듦.
       videoBlob: summary?.videoBlob || null,
       previewVideoUrl: summary?.previewVideoUrl || '',
@@ -132,13 +137,21 @@ export default function SquatAnalysisHub({ member, onBack, onSave, onSaveToFireb
             <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-1">종합 판정</p>
             <p className="text-white font-black text-xl">{STATUS_KO[report.status] || '-'}</p>
             <p className="text-slate-300 text-sm mt-1">{focus.primaryFinding}</p>
+            {report.fmsScore != null && (
+              <p className="text-slate-400 text-xs mt-2">FMS 딥 스쿼트 {report.fmsScore}점(공식 채점 기준)</p>
+            )}
           </div>
 
           {report.trials?.length > 0 && (
             <div className="grid grid-cols-2 gap-2">
               {report.trials.map((t, i) => (
                 <div key={i} className="rounded-xl bg-slate-900 border border-slate-800 p-3">
-                  <p className="text-[11px] text-slate-400">{i === 0 ? '정면' : '측면'}</p>
+                  {/* [2026-08-03 수정] 정면 2회+측면 2회(4개 배열: [front1,front2,
+                      side1,side2])인데 i===0만 정면으로 보고 나머지를 전부 측면으로
+                      표시하던 버그 — 07-31 반복 2회 도입 때 이 표시부만 안 바뀌어서
+                      front2가 "측면"으로 잘못 나오고 있었다. 배열 중간을 경계로 삼으면
+                      2개짜리(구 combineFrontSide 경로)·4개짜리 모두 올바르게 나뉜다. */}
+                  <p className="text-[11px] text-slate-400">{i < report.trials.length / 2 ? '정면' : '측면'}</p>
                   <p className="text-white font-black">{STATUS_KO[t.status] || '-'}</p>
                   {t.thighInclineDeg != null && (
                     <p className="text-[11px] text-slate-500 mt-1">깊이 잔여 {t.thighInclineDeg}°</p>

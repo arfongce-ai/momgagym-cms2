@@ -27,10 +27,17 @@ import { StandingCalibrator, SquatBiomechanicsTracker, pelvicTiltDegOf, kneeValg
 import { DEFAULT_ASPECT, outputSize, drawVideoCover, coverTransform, rotateLandmarksNormalized } from '../core/recordAspect';
 import { useCameraRotation } from '../core/useCameraRotation';
 import { computeDisplayAngles } from '../core/squatJointAngles';
-import { colorForBone, evaluateSquatFrame, depthPctFromThighIncline, COMPENSATION_KO } from '../core/squatFms';
+import { colorForBone, evaluateSquatFrame, depthPctFromThighIncline, COMPENSATION_KO, scoreDeepSquatFms, worstOfTrials } from '../core/squatFms';
+import { evaluateSquatBiomechanics } from '../core/squatBiomechanics';
 import { drawGaugeHud } from '../core/recordingOverlay';
 import CameraStage from './CameraStage.jsx';
 import GaugeHud from './GaugeHud.jsx';
+
+// SquatAnalysisHub.jsx·StanceAnalysisHub.jsx와 동일한 상태 표기 — 이 화면의
+// '측정 완료' 직전 미리보기 배지도 리포트와 같은 어휘를 써야 한다([2026-08-03]
+// 이전엔 여기만 FMS 점수 텍스트를 따로 썼는데, 앱 전체가 쓰는 정상/주의/위험과
+// 달라 혼란스럽다는 피드백으로 통일).
+const STATUS_KO = { normal: '정상', caution: '주의', risk: '위험', unknown: '확인 필요' };
 
 const MAX_RECORD_MS = 60000;
 // [2026-07-31] 운영 방식 확정: 정면 2회 → 측면 2회(총 4회)로 측정한다. 뷰당 몇 회를
@@ -39,8 +46,9 @@ const SQUAT_LIVE_MAX_TRIALS_PER_VIEW = 2;
 const SQUAT_LIVE_TOTAL_TRIALS = SQUAT_LIVE_MAX_TRIALS_PER_VIEW * 2;
 
 // 자세·보행·SLST 모듈과 동일한 본(bone) 목록 — 상체 코어 + 양다리 + (오버헤드
-// 자세 확인용) 어깨-팔꿈치-손목. 판정 로직(squatBiomechanics.js)은 팔꿈치·손목을
-// 쓰지 않는다 — 이건 순수 시각 표시용 추가라 측정 결과에는 영향이 없다.
+// 자세 확인용) 어깨-팔꿈치-손목. [2026-08-03] 판정 로직(squatBiomechanics.js)도
+// 이제 armDropDeg를 통해 손목 좌표를 쓴다 — 순수 표시용이 아니라 실제 정상/
+// 주의/위험 판정에 반영된다(이전엔 시각 표시 전용이라고 적혀 있었으나 갱신).
 const BONES = [
   [11, 12], [11, 23], [12, 24], [23, 24],
   [23, 25], [25, 27], [27, 29], [27, 31], [29, 31],
@@ -177,6 +185,23 @@ function drawSkeleton(canvas, video, landmarks, locked, mapper, view, clearFirst
   // 캘리브레이션이 잠긴 뒤(실제 측정 중)에만 각도 라벨을 그려 계산 중 화면이
   // 어수선해지지 않게 한다.
   if (locked) drawJointAngleLabels(ctx, landmarks, view, X, Y);
+}
+
+// [2026-08-03] 정면·측면 각 뷰의 저장된 시행(trial1/trial2, 이미 armDropDeg 포함)으로
+// FMS 3/2/1/0 점수를 계산 — 'finished' 단계 화면 표시와 finishAndSubmit() 양쪽에서
+// 재사용한다(같은 데이터를 다르게 두 번 계산하지 않도록). sideSummary가 없으면(측면
+// 생략) scoreDeepSquatFms 자체가 "한쪽만 있으면 점수를 확정하지 않는다" 원칙으로
+// score:null을 돌려준다 — 여기서 따로 처리하지 않는다.
+function computeFmsResult(frontSummary, sideSummary) {
+  const frontAssess = worstOfTrials(
+    frontSummary?.trial1 ? evaluateSquatFrame(frontSummary.trial1, 'front') : null,
+    frontSummary?.trial2 ? evaluateSquatFrame(frontSummary.trial2, 'front') : null,
+  );
+  const sideAssess = worstOfTrials(
+    sideSummary?.trial1 ? evaluateSquatFrame(sideSummary.trial1, 'side') : null,
+    sideSummary?.trial2 ? evaluateSquatFrame(sideSummary.trial2, 'side') : null,
+  );
+  return scoreDeepSquatFms(frontAssess, sideAssess);
 }
 
 export default function SquatLiveAnalysis({ member, onBack, onComplete }) {
@@ -511,12 +536,15 @@ export default function SquatLiveAnalysis({ member, onBack, onComplete }) {
       }
       return;
     }
+    const fms = computeFmsResult(frontSummary, sideSummary);
     const summary = {
       front1: frontSummary?.trial1,
       front2: frontSummary?.trial2,
       side1: sideSummary?.trial1,
       side2: sideSummary?.trial2,
       trialsFound: (frontSummary?.trialsFound || 0) + (sideSummary?.trialsFound || 0),
+      fmsScore: fms.score,
+      fmsReasons: fms.reasons,
     };
     pendingSummaryRef.current = summary;
     setFinishing(true);
@@ -528,6 +556,24 @@ export default function SquatLiveAnalysis({ member, onBack, onComplete }) {
   };
 
   const totalDone = view === 'front' ? trialsFound : (frontSummaryRef.current?.trialsFound || 0) + trialsFound;
+  // uiPhase가 'finished'가 되는 시점엔 측면 트래커가 아직 finalize()/초기화되지
+  // 않은 채로 trials 2개를 들고 있다(finishAndSubmit에서 하는 것과 동일 소스) —
+  // 그 시점에만 계산해 트레이너가 "측정 완료" 누르기 전에 바로 확인한다.
+  // [2026-08-03] "종합 판정" 배지는 SquatAnalysisHub.jsx의 리포트 화면과 정확히
+  // 같은 함수(evaluateSquatBiomechanics)로 계산한다 — 라이브 미리보기와 잠시 뒤
+  // 뜨는 정식 리포트가 서로 다른 상태를 말하는 일이 없도록. FMS 점수는 보조
+  // 정보로 같은 배지 안에 작게 덧붙인다.
+  const finishedBio = uiPhase === 'finished'
+    ? evaluateSquatBiomechanics({
+        front1: frontSummaryRef.current?.trial1,
+        front2: frontSummaryRef.current?.trial2,
+        side1: trackerRef.current?.summary()?.trial1,
+        side2: trackerRef.current?.summary()?.trial2,
+      })
+    : null;
+  const finishedFms = uiPhase === 'finished'
+    ? computeFmsResult(frontSummaryRef.current, trackerRef.current?.summary())
+    : null;
 
   const topBar = (
     <>
@@ -625,6 +671,25 @@ export default function SquatLiveAnalysis({ member, onBack, onComplete }) {
         <div className="text-2xl font-black text-white leading-none">{totalDone}<span className="text-sm text-slate-400">/{SQUAT_LIVE_TOTAL_TRIALS}</span></div>
       </div>
     )}
+    {uiPhase === 'finished' && finishedBio && (() => {
+      const st = finishedBio.status;
+      const theme = st === 'risk'
+        ? { border: 'border-red-500/40', bg: 'bg-red-500/20', text: 'text-red-300' }
+        : st === 'caution'
+        ? { border: 'border-amber-500/40', bg: 'bg-amber-500/20', text: 'text-amber-300' }
+        : st === 'normal'
+        ? { border: 'border-emerald-500/40', bg: 'bg-emerald-500/20', text: 'text-emerald-300' }
+        : { border: 'border-slate-500/40', bg: 'bg-slate-500/20', text: 'text-slate-300' };
+      return (
+        <div className={`pointer-events-none fixed bottom-40 left-1/2 -translate-x-1/2 z-40 rounded-2xl border ${theme.border} ${theme.bg} px-5 py-2.5 text-center backdrop-blur`}>
+          <div className="text-[10px] font-bold text-slate-300 tracking-wide">종합 판정</div>
+          <div className={`text-sm font-black ${theme.text}`}>
+            {STATUS_KO[st] || '확인 필요'}
+            {finishedFms?.score != null && <span className="text-slate-300 font-bold"> · FMS {finishedFms.score}점</span>}
+          </div>
+        </div>
+      );
+    })()}
     </>
   );
 }

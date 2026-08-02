@@ -29,6 +29,8 @@ const SQUAT_FLAG_KO = Object.freeze({
   knee_valgus_high: { level: 'risk', text: '스쿼트 중 무릎이 크게 안쪽으로 모입니다.' },
   pelvic_tilt_borderline: { level: 'caution', text: '스쿼트 중 골반이 다소 한쪽으로 기울어집니다.' },
   pelvic_tilt_high: { level: 'risk', text: '스쿼트 중 골반이 크게 한쪽으로 기울어집니다.' },
+  arm_drop_borderline: { level: 'caution', text: '스쿼트 중 팔(막대)이 다소 앞으로 떨어집니다.' },
+  arm_drop_high: { level: 'risk', text: '스쿼트 중 팔(막대)이 크게 앞으로 떨어집니다.' },
 });
 
 export function measurementOutputMode(kind) {

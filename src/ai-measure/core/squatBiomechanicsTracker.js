@@ -58,6 +58,7 @@ const KNEE_L = 25, KNEE_R = 26;
 const ANK_L = 27, ANK_R = 28;
 const HEEL_L = 29, HEEL_R = 30;
 const SHO_L = 11, SHO_R = 12;
+const WRI_L = 15, WRI_R = 16;
 
 function mid(lm, a, b) {
   if (!lm || !lm[a] || !lm[b]) return null;
@@ -101,6 +102,28 @@ export function kneeValgusDegOf(lm) {
   return Math.max(left ?? 0, right ?? 0);
 }
 
+// [2026-08-03] 팔(어깨→손목 벡터)이 수직에서 앞으로 떨어진 각 — squatFms.js의
+// evaluateSquatFrame()이 측면 뷰에서 쓰는 armDropDeg 값을 이 함수가 만든다.
+// torsoLeanDegOf와 완전히 같은 계산 방식(기준점→끝점 벡터의 수직 편차, atan2)을
+// 그대로 따른다: 0°=손목이 어깨 바로 위(완전한 수직), 클수록 앞으로 떨어진 것.
+// 좌우 중 kneeValgusDegOf와 같은 원칙으로 더 나쁜(큰) 쪽을 쓴다 — 오버헤드
+// 스쿼트는 양팔을 함께 들지만 카메라 각도상 한쪽만 뚜렷이 보이는 경우가 있어,
+// 보이는 쪽 중 더 크게 벗어난 값을 놓치지 않기 위함이다.
+export function armDropDegOf(lm) {
+  const oneArm = (shoI, wriI) => {
+    const sho = lm?.[shoI], wri = lm?.[wriI];
+    if (!sho || !wri) return null;
+    const dx = wri.x - sho.x;
+    const dy = sho.y - wri.y; // 위로 갈수록 y가 작아지므로 부호 반전(손목이 어깨보다 위면 양수)
+    if (!dx && !dy) return 0;
+    return Math.abs((Math.atan2(dx, dy) * 180) / Math.PI);
+  };
+  const left = oneArm(SHO_L, WRI_L);
+  const right = oneArm(SHO_R, WRI_R);
+  if (left == null && right == null) return null;
+  return Math.max(left ?? 0, right ?? 0);
+}
+
 /**
  * 오버헤드 딥 스쿼트 추적기 — 한 영상 안에서 연속된 최대 maxTrials회의
  * 반복(내려갔다 올라오는 1회)을 자동으로 구분해 모은다.
@@ -126,6 +149,7 @@ export class SquatBiomechanicsTracker {
     this._maxTorsoLean = 0;
     this._maxKneeValgus = 0;
     this._maxPelvicTilt = 0;
+    this._maxArmDrop = 0;
     this._heelLift = false;
     this._balanceLoss = false;
     this._prevHip = null;
@@ -186,6 +210,8 @@ export class SquatBiomechanicsTracker {
     if (kneeValgus != null) this._maxKneeValgus = Math.max(this._maxKneeValgus, kneeValgus);
     const pelvicTilt = pelvicTiltDegOf(lm);
     if (pelvicTilt != null) this._maxPelvicTilt = Math.max(this._maxPelvicTilt, pelvicTilt);
+    const armDrop = armDropDegOf(lm);
+    if (armDrop != null) this._maxArmDrop = Math.max(this._maxArmDrop, armDrop);
 
     const baselineHeelY = this.calib.baselineHeelY;
     if (baselineHeelY != null) {
@@ -202,6 +228,7 @@ export class SquatBiomechanicsTracker {
         torsoLeanDeg: Math.round(this._maxTorsoLean * 10) / 10,
         kneeValgusDeg: Math.round(this._maxKneeValgus * 10) / 10,
         pelvicTiltDeg: Math.round(this._maxPelvicTilt * 10) / 10,
+        armDropDeg: Math.round(this._maxArmDrop * 10) / 10,
         balanceLoss: this._balanceLoss,
         heelLift: this._heelLift,
       });
@@ -245,6 +272,7 @@ export class SquatBiomechanicsTracker {
       torsoLeanDeg: Math.round(this._maxTorsoLean * 10) / 10,
       kneeValgusDeg: Math.round(this._maxKneeValgus * 10) / 10,
       pelvicTiltDeg: Math.round(this._maxPelvicTilt * 10) / 10,
+      armDropDeg: Math.round(this._maxArmDrop * 10) / 10,
       heelLift: this._heelLift,
     };
   }

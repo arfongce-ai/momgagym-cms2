@@ -17,6 +17,8 @@
 //     (singleLegStance.js 설계 노트와 동일한 "최소 랜드마크" 원칙).
 //   · kneeValgusDeg — 동적 무릎 외반(무릎이 안으로 모이는 정도). 좌우 중 더 큰 쪽.
 //   · pelvicTiltDeg — 좌우 골반 기울기/체중 쏠림(Trendelenburg 패턴과 동일 지표명).
+//   · armDropDeg — 팔(어깨-손목) 처짐: 수직 대비 팔이 앞으로 떨어진 각.
+//     [2026-08-03 추가] torsoLeanDeg와 같은 이유로 측면에서만 신뢰할 수 있다.
 //   · balanceLoss / heelLift — 즉시확정용 이진 신호(균형 상실, 뒤꿈치 들림).
 //
 //  ── 입력 계약 ──
@@ -48,6 +50,11 @@
 //    · torsoLeanDeg — 측면 시행을 우선 소스로 단독 확정(시상면 굽힘은 측면이
 //      정확하다는 기존 주석 근거 그대로). 측면 시행이 무효면 정면 값으로
 //      대체하되(폴백), 대체 사용 여부를 torsoLeanSource 로 결과에 노출한다.
+//    · armDropDeg — [2026-08-03] 측면 시행 단독으로 확정(정면은 관여하지
+//      않음). torsoLeanDeg와 달리 정면 폴백을 두지 않는다 — 팔이 앞으로
+//      떨어지는 움직임은 정면에서 근본적으로 관측할 수 없는 축이라(무릎외반과
+//      반대로, 폴백용 대체 신호 자체가 없음), 측면이 없으면 그냥 판정하지
+//      않는 편이 "못 보는 것을 본 척하지 않는다"는 이 코드베이스 원칙에 맞다.
 //    · thighInclineDeg(깊이) — 정면·측면 모두 같은 공식(엉덩이-무릎 수직 접근도)을
 //      쓰므로 값이 서로 비교 가능하다. 둘 다 유효하면 기존과 같은 재현성 방식
 //      (양쪽 다 나와야 확정)을 그대로 유지하고, 한쪽만 있으면 그 값으로 단독 확정.
@@ -72,6 +79,15 @@ export const SQUAT_TUNING = {
   // ── 골반 기울기/체중 쏠림(pelvicTiltDeg) ──
   pelvicTiltCautionDeg: 5,
   pelvicTiltRiskDeg: 10,
+
+  // ── 팔 처짐(armDropDeg) — 어깨→손목 벡터가 수직에서 앞으로 떨어진 각.
+  //    [2026-08-03 추가] squatFms.js의 라이브 오버레이가 먼저 쓰던 값인데,
+  //    이 종합 판정(정상/주의/위험)에는 연결돼 있지 않아 최종 리포트에는
+  //    팔 처짐이 전혀 반영되지 않고 있었다. squatFms.js도 이제 이 값을
+  //    그대로 가져다 쓰도록 통일해, 라이브 화면과 최종 리포트가 서로 다른
+  //    기준으로 말하지 않게 한다(파일 상단 설계 원칙과 동일).
+  armDropCautionDeg: 20,
+  armDropRiskDeg: 35,
 };
 
 const STATUS_RANK = { normal: 0, caution: 1, risk: 2, unknown: 3 };
@@ -87,6 +103,8 @@ const FLAG_SEVERITY = {
   knee_valgus_high: 'risk',
   pelvic_tilt_borderline: 'caution',
   pelvic_tilt_high: 'risk',
+  arm_drop_borderline: 'caution',
+  arm_drop_high: 'risk',
 };
 
 function worse(a, b) {
@@ -104,6 +122,7 @@ function worse(a, b) {
  * @param {number}  [trial.torsoLeanDeg]   상체 전방 기울기(deg)
  * @param {number}  [trial.kneeValgusDeg]  동적 무릎 외반각(deg)
  * @param {number}  [trial.pelvicTiltDeg]  골반 기울기/체중 쏠림(deg)
+ * @param {number}  [trial.armDropDeg]    팔(어깨-손목) 처짐각(deg) — 수직 대비
  * @returns {object}
  */
 function judgeTrial(trial = {}) {
@@ -127,6 +146,7 @@ function judgeTrial(trial = {}) {
     torsoLeanDeg: trial.torsoLeanDeg ?? null,
     kneeValgusDeg: trial.kneeValgusDeg ?? null,
     pelvicTiltDeg: trial.pelvicTiltDeg ?? null,
+    armDropDeg: trial.armDropDeg ?? null,
   };
 
   if (immediateReasons.length) {
@@ -152,6 +172,10 @@ function judgeTrial(trial = {}) {
   if (trial.pelvicTiltDeg != null) {
     if (trial.pelvicTiltDeg >= SQUAT_TUNING.pelvicTiltRiskDeg) { softFlags.push('pelvic_tilt_high'); status = worse(status, 'risk'); }
     else if (trial.pelvicTiltDeg >= SQUAT_TUNING.pelvicTiltCautionDeg) { softFlags.push('pelvic_tilt_borderline'); status = worse(status, 'caution'); }
+  }
+  if (trial.armDropDeg != null) {
+    if (trial.armDropDeg >= SQUAT_TUNING.armDropRiskDeg) { softFlags.push('arm_drop_high'); status = worse(status, 'risk'); }
+    else if (trial.armDropDeg >= SQUAT_TUNING.armDropCautionDeg) { softFlags.push('arm_drop_borderline'); status = worse(status, 'caution'); }
   }
 
   return { valid: true, status, immediateFail: false, softFlags, ...base };
@@ -189,6 +213,10 @@ function combineFrontSide(front, side) {
   // 무릎외반·골반기울기 — 정면 단독(측면은 관여하지 않음).
   takeSingle(f, 'knee_valgus_');
   takeSingle(f, 'pelvic_tilt_');
+
+  // 팔 처짐 — 측면 단독(정면은 애초에 안정적으로 볼 수 없는 각도라 관여하지
+  // 않는다 — squatFms.js의 evaluateSquatFrame과 동일한 view 제한 원칙).
+  takeSingle(s, 'arm_drop_');
 
   // 상체기울기 — 측면 우선 단독, 측면 무효면 정면으로 대체.
   const torsoLeanSource = s.valid ? 'side' : (f.valid ? 'front_fallback' : null);
@@ -302,6 +330,9 @@ function combineFrontSideTwice(front1, front2, side1, side2) {
 
   // 무릎외반·골반기울기 — 정면 단독(측면은 관여하지 않음).
   if (frontValid) { takeFromView(frontCombined, 'knee_valgus_'); takeFromView(frontCombined, 'pelvic_tilt_'); }
+
+  // 팔 처짐 — 측면 단독(정면은 관여하지 않음, 위 combineFrontSide와 동일 이유).
+  if (sideValid) { takeFromView(sideCombined, 'arm_drop_'); }
 
   // 상체기울기 — 측면 우선 단독, 측면 무효면 정면으로 대체.
   const torsoLeanSource = sideValid ? 'side' : (frontValid ? 'front_fallback' : null);

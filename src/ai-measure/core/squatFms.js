@@ -39,10 +39,12 @@ export const FMS_SEGMENT_COLORS = {
 const RANK = { normal: 0, caution: 1, risk: 2, unknown: -1 };
 
 // 팔이 수직에서 앞으로 떨어진 각 — FMS의 "팔이 앞쪽으로 떨어짐" 보상패턴.
-// 광배근/흉추 신전 제한에서 흔하다. 임상 합의 수치가 따로 없어 상체 기울기
-// 임계값에 준해 잡은 출발값이며, 실제 캡처 데이터로 보정이 필요하다.
-export const ARM_DROP_CAUTION_DEG = 20;
-export const ARM_DROP_RISK_DEG = 35;
+// 광배근/흉추 신전 제한에서 흔하다.
+// [2026-08-03] squatBiomechanics.js의 SQUAT_TUNING으로 값을 옮겼다(라이브
+// 오버레이용 임계값과 최종 정상/주의/위험 리포트용 임계값이 따로 놀지 않도록
+// — 이 파일 상단 설계 노트의 원칙 그대로). 여기 이름은 하위 호환을 위해 유지.
+export const ARM_DROP_CAUTION_DEG = SQUAT_TUNING.armDropCautionDeg;
+export const ARM_DROP_RISK_DEG = SQUAT_TUNING.armDropRiskDeg;
 
 
 /**
@@ -175,6 +177,32 @@ export function scoreDeepSquatFms(front, side, painReported = false) {
   }
   // 1점: 기준 중 하나라도 미충족.
   return { score: 1, reasons: failed.concat(heelLifted ? ['heel_lift'] : []), criteria };
+}
+
+/**
+ * 같은 뷰(정면 또는 측면) 안에서 나온 두 번의 반복(rep) 판정을 부위별로
+ * "더 나쁜 쪽"으로 합친다. squatBiomechanics.js와 같은 측정 정직성 원칙 —
+ * 두 반복 중 더 좋아 보이는 쪽을 대표값으로 고르지 않는다(한 번이라도 보상
+ * 패턴이 나왔으면 그대로 반영).
+ * @param {object|null} a evaluateSquatFrame() 결과(1차 반복) 또는 null
+ * @param {object|null} b evaluateSquatFrame() 결과(2차 반복) 또는 null
+ * @returns {object|null} 합쳐진 판정. 둘 다 없으면 null, 하나만 있으면 그대로 반환.
+ */
+export function worstOfTrials(a, b) {
+  if (!a && !b) return null;
+  if (!a) return b;
+  if (!b) return a;
+  const parts = {};
+  Object.keys(a.parts).forEach((key) => {
+    parts[key] = worseStatus(a.parts[key], b.parts[key]);
+  });
+  const compensations = [...new Set([...(a.compensations || []), ...(b.compensations || [])])];
+  return {
+    view: a.view,
+    parts,
+    compensations,
+    overall: Object.values(parts).reduce(worseStatus, 'unknown'),
+  };
 }
 
 // 보상패턴 → 화면에 띄울 한글 문구(현장 용어 기준).
