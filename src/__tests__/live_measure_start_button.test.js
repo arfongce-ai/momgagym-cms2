@@ -20,15 +20,35 @@ describe.each([
 ])('%s — 캘리브레이션과 무관하게 언제든 누를 수 있는 녹화 시작 버튼', (path, trackerName) => {
   const src = read(path);
 
-  it('startMeasurement은 캘리브레이션 완료를 요구하지 않고, 카운트다운도 없이 즉시 armed 상태로 전환한다', () => {
+  // [2026-08-02] 카운트다운 정책 변경: 예전엔 "버튼 누르면 즉시 시작"이었으나,
+  // 버튼을 누른 사람이 카메라 앞으로 이동할 시간이 필요하다는 현장 피드백으로
+  // 3-2-1 카운트다운을 되돌렸다(VBT/점프와 동일). 캘리브레이션 완료를 요구하지
+  // 않는다는 원래 취지는 그대로다 — 카운트다운이 끝나야 armed 상태가 된다.
+  it('startMeasurement은 캘리브레이션 완료를 요구하지 않지만, 3-2-1 카운트다운을 거쳐 armed 상태가 된다', () => {
     const fnStart = src.indexOf('const startMeasurement');
     const fnEnd = src.indexOf('\n  };', fnStart);
     const body = src.slice(fnStart, fnEnd);
     expect(body).not.toMatch(/calibRef\.current\?\.locked/);
-    expect(body).not.toMatch(/runStartCountdown/);
     expect(body).not.toMatch(new RegExp(`new ${trackerName}\\(`));
+    expect(body).toMatch(/runStartCountdown\(/);
     expect(body).toMatch(/measureStartedRef\.current = true;/);
     expect(body).toMatch(/beginRecording\(\);/);
+  });
+
+  it('카운트다운 중 버튼을 또 눌러도 중복 실행되지 않는다', () => {
+    const fnStart = src.indexOf('const startMeasurement');
+    const fnEnd = src.indexOf('\n  };', fnStart);
+    const body = src.slice(fnStart, fnEnd);
+    expect(body).toMatch(/if \(countdownTimerRef\.current\) return;/);
+  });
+
+  it('runStartCountdown이 정의만 되어 있지 않고 실제로 호출된다(2026-08-02 회귀)', () => {
+    // 이 화면들은 runStartCountdown 정의는 계속 갖고 있으면서 호출부만 빠져
+    // 카운트다운이 화면에 전혀 뜨지 않는 회귀가 있었다. 정의·호출 둘 다 확인한다.
+    expect(src).toMatch(/const runStartCountdown = useCallback\(/);
+    // 정의는 `= useCallback(` 형태라 아래 패턴에 걸리지 않는다 — 순수 호출부만 센다.
+    const callCount = (src.match(/(?<!= useCallback\()\brunStartCountdown\(/g) || []).length;
+    expect(callCount).toBeGreaterThanOrEqual(1);
   });
 
   it('버튼을 캘리브레이션보다 먼저 눌러둔 경우: 캘리브레이션이 막 끝나는 시점(st.ready 분기)에 트래커를 생성한다', () => {

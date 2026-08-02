@@ -30,18 +30,22 @@ function fnBodyOf(src, fnName) {
 }
 
 describe('RecordMeasure.jsx — 관절각 스무딩(ROM 민감도 완화)', () => {
-  it('공용 스무더(createSmoother)를 가져온다', () => {
-    expect(src).toMatch(/import \{ createSmoother \} from '\.\.\/core\/smoothing';/);
+  it('공용 스무더와 각도 안정화기를 함께 가져온다', () => {
+    expect(src).toMatch(/import \{ createSmoother, createAngleStabilizer \} from '\.\.\/core\/smoothing';/);
   });
 
-  it('다른 화면과 동일한 alpha(0.28)로 smootherRef를 만든다', () => {
-    expect(src).toMatch(/const smootherRef = useRef\(createSmoother\(0\.28\)\);/);
+  it('좌표 EMA 계수를 상수로 두고, 다른 화면(0.28)보다 더 세게 잡는다', () => {
+    const m = src.match(/const SKELETON_SMOOTHING_ALPHA = ([\d.]+);/);
+    expect(m).not.toBeNull();
+    expect(Number(m[1])).toBeLessThan(0.28);
+    expect(src).toMatch(/const smootherRef = useRef\(createSmoother\(SKELETON_SMOOTHING_ALPHA\)\);/);
   });
 
-  it('스켈레톤이 다시 켜질 때 스무더를 리셋한다(꺼져있던 낡은 좌표로 튐 방지)', () => {
+  it('스켈레톤이 다시 켜질 때 스무더와 각도 안정화기를 함께 리셋한다', () => {
     const onIdx = src.indexOf('const off = subscribeSkeleton');
     const onBlock = src.slice(onIdx, src.indexOf('});', onIdx));
-    expect(onBlock).toMatch(/smootherRef\.current = createSmoother\(0\.28\)/);
+    expect(onBlock).toMatch(/smootherRef\.current = createSmoother\(SKELETON_SMOOTHING_ALPHA\)/);
+    expect(onBlock).toMatch(/angleStabilizerRef\.current\.reset\(\)/);
   });
 
   it('새로 검출된 랜드마크만 스무더에 통과시켜 저장한다(검출 실패 프레임은 마지막 값 유지)', () => {
@@ -51,9 +55,9 @@ describe('RecordMeasure.jsx — 관절각 스무딩(ROM 민감도 완화)', () =
     expect(loopBody).not.toMatch(/latestLandmarksRef\.current = landmarks \|\| latestLandmarksRef\.current;/);
   });
 
-  it('미리보기·녹화 합성 모두 같은(스무딩된) latestLandmarksRef를 그린다', () => {
-    expect(src).toMatch(/drawSkeletonCover\(canvas, video, latestLandmarksRef\.current\);/);
-    expect(src).toMatch(/drawSkeletonToRecordCover\(ctx, video, latestLandmarksRef\.current, canvas\.width, canvas\.height\)/);
+  it('미리보기·녹화 합성 모두 같은(스무딩된) latestLandmarksRef와 같은 각도 안정화기를 쓴다', () => {
+    expect(src).toMatch(/drawSkeletonCover\(canvas, video, latestLandmarksRef\.current, angleStabilizerRef\.current\);/);
+    expect(src).toMatch(/drawSkeletonToRecordCover\(ctx, video, latestLandmarksRef\.current, canvas\.width, canvas\.height, angleStabilizerRef\.current\)/);
   });
 });
 
@@ -92,8 +96,8 @@ describe('RecordMeasure.jsx — 뼈대 상/하체 2색 + 시인성 halo', () => 
   });
 
   it('drawSkeletonPaths는 미리보기(Cover)와 녹화합성(ToRecordCover) 양쪽에서 공유된다(한 곳만 고치면 됨)', () => {
-    expect(src).toMatch(/drawSkeletonPaths\(ctx, landmarks, px, py, Math\.max\(2\.5, cw \/ 200\), Math\.max\(3, cw \/ 150\), labelScale\)/);
-    expect(src).toMatch(/drawSkeletonPaths\(ctx, landmarks, px, py, Math\.max\(2\.5, width \/ 220\), Math\.max\(3, width \/ 170\), labelScale\)/);
+    expect(src).toMatch(/drawSkeletonPaths\(ctx, landmarks, px, py, Math\.max\(2\.5, cw \/ 200\), Math\.max\(3, cw \/ 150\), labelScale, stabilizer\)/);
+    expect(src).toMatch(/drawSkeletonPaths\(ctx, landmarks, px, py, Math\.max\(2\.5, width \/ 220\), Math\.max\(3, width \/ 170\), labelScale, stabilizer\)/);
   });
 });
 

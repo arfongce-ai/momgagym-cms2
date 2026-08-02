@@ -10,7 +10,7 @@ import { nextPhase, firstPhase, phaseDurationSec } from '../core/intervalTimer';
 import { loadPoseLandmarker, detectPoseFrame, isPoseReady, closePoseLandmarker } from '../core/poseBackend';
 import { isSkeletonEnabled, subscribeSkeleton, useSkeletonOverlay } from '../core/skeletonPref';
 import { angleDeg } from '../core/postureMath';
-import { createSmoother } from '../core/smoothing';
+import { createSmoother, createAngleStabilizer } from '../core/smoothing';
 import SkeletonToggleChip from './SkeletonToggleChip';
 
 // 스켈레톤 뼈대(어깨~골반~사지) — 전신 스틱 피규어.
@@ -27,6 +27,11 @@ const LOWER_BONES = [
 ];
 const SKELETON_BONES = [...UPPER_BONES, ...LOWER_BONES];
 const SKELETON_JOINTS = [11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28];
+
+// 랜드마크 좌표 EMA 계수. 작을수록 부드럽고(떨림↓) 반응이 느려진다.
+// 다른 측정 화면은 0.28을 쓰지만, 일반영상녹화는 각도 숫자를 크게 띄워
+// 보여주는 화면이라 떨림이 더 눈에 띄어 조금 더 세게 잡는다.
+const SKELETON_SMOOTHING_ALPHA = 0.2;
 
 // 실시간 관절각 표시(참고 영상 스타일) — [끝점A, 꼭짓점(각 표시 위치), 끝점B].
 // 세 랜드마크가 모두 보일 때만 해당 각을 그린다.
@@ -77,7 +82,7 @@ function drawAngleLabel(ctx, x, y, angle, scale) {
 }
 
 // 미리보기(object-cover)용: 정규화 좌표 → 화면 픽셀(크롭 보정).
-function drawSkeletonCover(canvas, video, landmarks) {
+function drawSkeletonCover(canvas, video, landmarks, stabilizer = null) {
   if (!canvas || !video) return;
   const cw = canvas.clientWidth || canvas.width;
   const ch = canvas.clientHeight || canvas.height;
@@ -93,11 +98,11 @@ function drawSkeletonCover(canvas, video, landmarks) {
   const px = (p) => ox + p.x * dw;
   const py = (p) => oy + p.y * dh;
   const labelScale = Math.max(0.7, cw / 480);
-  drawSkeletonPaths(ctx, landmarks, px, py, Math.max(2.5, cw / 200), Math.max(3, cw / 150), labelScale);
+  drawSkeletonPaths(ctx, landmarks, px, py, Math.max(2.5, cw / 200), Math.max(3, cw / 150), labelScale, stabilizer);
 }
 
 // 녹화 합성 캔버스용: drawCover 와 동일한 크롭으로 좌표를 맞춰 스켈레톤을 굽는다.
-function drawSkeletonToRecordCover(ctx, video, landmarks, width, height) {
+function drawSkeletonToRecordCover(ctx, video, landmarks, width, height, stabilizer = null) {
   if (!landmarks || !video) return;
   const vw = video.videoWidth, vh = video.videoHeight;
   if (!vw || !vh) return;
@@ -110,10 +115,10 @@ function drawSkeletonToRecordCover(ctx, video, landmarks, width, height) {
   const px = (p) => ((p.x * vw) - sx) / sw * width;
   const py = (p) => ((p.y * vh) - sy) / sh * height;
   const labelScale = Math.max(0.7, width / 480);
-  drawSkeletonPaths(ctx, landmarks, px, py, Math.max(2.5, width / 220), Math.max(3, width / 170), labelScale);
+  drawSkeletonPaths(ctx, landmarks, px, py, Math.max(2.5, width / 220), Math.max(3, width / 170), labelScale, stabilizer);
 }
 
-function drawSkeletonPaths(ctx, landmarks, px, py, lineW, dotR, scale = 1) {
+function drawSkeletonPaths(ctx, landmarks, px, py, lineW, dotR, scale = 1, stabilizer = null) {
   // 시인성 개선: 뼈대·관절점 밑에 어두운 외곽선(halo)을 먼저 깔아, 배경이나 옷
   // 색이 스켈레톤 색과 비슷해도(초록 계열 바닥, 살구색 피부 등) 또렷이 보이게 한다.
   // 자막에 검은 테두리를 두르는 것과 같은 원리 — 색 자체를 진하게 하는 것보다
@@ -172,7 +177,13 @@ function drawSkeletonPaths(ctx, landmarks, px, py, lineW, dotR, scale = 1) {
     if (!skelVisible(a) || !skelVisible(b) || !skelVisible(c)) continue;
     const angleRaw = angleDeg(a, b, c);
     if (angleRaw == null) continue;
-    const angle = Math.round(angleRaw);
+    // [2026-08-02] 표시되는 숫자는 안정화기를 한 번 더 거친다 — 좌표를 EMA로
+    // 부드럽게 해도 세 점 사이 각도는 미세 떨림이 몇 도씩 증폭되어, 가만히
+    // 있어도 숫자가 매 프레임 바뀌는 "예민함"으로 보였다.
+    const angle = stabilizer
+      ? stabilizer.stabilize(`${ia}-${ib}-${ic}`, angleRaw)
+      : Math.round(angleRaw);
+    if (angle == null) continue;
     const ax = px(a), ay = py(a);
     const bx = px(b), by = py(b);
     const cx = px(c), cy = py(c);
@@ -344,7 +355,12 @@ export default function RecordMeasure({ member: _member, onBack }) {
   // 다른 측정 화면(PostureMeasure 등)과 동일하게 EMA 스무더를 거친 좌표로만
   // 각도를 계산·표시한다 — 원본 좌표를 직접 쓰면 MediaPipe 검출 노이즈가
   // 그대로 각도 숫자에 반영돼 매 프레임 몇 도씩 흔들려 보인다.
-  const smootherRef = useRef(createSmoother(0.28));
+  // [2026-08-02 2차] 좌표 스무딩만으로는 부족하다는 현장 피드백을 반영해
+  // (a) 좌표 스무딩을 조금 더 세게(0.28→0.20) 하고
+  // (b) 표시되는 각도 숫자 자체에 EMA + 데드밴드(3°)를 추가로 건다.
+  //     가만히 있으면 숫자가 고정되고, 실제로 움직이면 바로 따라간다.
+  const smootherRef = useRef(createSmoother(SKELETON_SMOOTHING_ALPHA));
+  const angleStabilizerRef = useRef(createAngleStabilizer({ alpha: 0.25, deadbandDeg: 3 }));
   const poseDetectTsRef = useRef(0);       // detectPoseFrame 타임스탬프 단조 증가용
   const skeletonOnRef = useRef(isSkeletonEnabled()); // 콜백 안 최신 on/off
   const poseLoadingRef = useRef(false);    // 로더 중복 호출 방지
@@ -384,7 +400,9 @@ export default function RecordMeasure({ member: _member, onBack }) {
       skeletonOnRef.current = on;
       if (on) {
         ensurePoseModel();
-        smootherRef.current = createSmoother(0.28); // 꺼져있던 동안의 낡은 좌표로 갑자기 당겨지는 것 방지
+        // 꺼져있던 동안의 낡은 좌표/각도로 갑자기 당겨지는 것 방지
+        smootherRef.current = createSmoother(SKELETON_SMOOTHING_ALPHA);
+        angleStabilizerRef.current.reset();
       } else {
         latestLandmarksRef.current = null;
       }
@@ -431,7 +449,7 @@ export default function RecordMeasure({ member: _member, onBack }) {
         if (landmarks) {
           latestLandmarksRef.current = smootherRef.current(landmarks);
         }
-        drawSkeletonCover(canvas, video, latestLandmarksRef.current);
+        drawSkeletonCover(canvas, video, latestLandmarksRef.current, angleStabilizerRef.current);
       } else {
         // 스켈레톤 OFF: 오버레이 캔버스를 비운다.
         const box = canvas.getBoundingClientRect();
@@ -578,7 +596,7 @@ export default function RecordMeasure({ member: _member, onBack }) {
       drawCover(ctx, video, canvas.width, canvas.height);
       // 스켈레톤 ON 이면 녹화 영상에도 굽는다(미리보기 loop 가 최신 랜드마크 갱신).
       if (skeletonOnRef.current && latestLandmarksRef.current) {
-        drawSkeletonToRecordCover(ctx, video, latestLandmarksRef.current, canvas.width, canvas.height);
+        drawSkeletonToRecordCover(ctx, video, latestLandmarksRef.current, canvas.width, canvas.height, angleStabilizerRef.current);
       }
       composeRafRef.current = requestAnimationFrame(draw);
     };

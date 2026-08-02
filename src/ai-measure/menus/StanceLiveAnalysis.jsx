@@ -53,12 +53,16 @@ function objectContainMapper(video, width, height) {
   return { x: (p) => ox + p.x * drawW, y: (p) => oy + p.y * drawH };
 }
 
-function drawSkeleton(canvas, video, landmarks, locked, mapper) {
+// clearFirst: 미리보기 캔버스는 매 프레임 지워야 잔상(뒤엉킨 그물망)이 안 남는다.
+// 반대로 녹화 합성 캔버스는 바로 앞에서 영상 프레임을 그려둔 상태라 지우면
+// 영상이 사라지고 스켈레톤만 남는다([2026-08-02] 저장 영상에 스켈레톤만
+// 나오던 버그의 원인) — 합성 루프에서는 clearFirst=false 로 호출한다.
+function drawSkeleton(canvas, video, landmarks, locked, mapper, clearFirst = true) {
   if (!canvas || !video) return;
   const cw = canvas.clientWidth || canvas.width, ch = canvas.clientHeight || canvas.height;
-  if (canvas.width !== cw || canvas.height !== ch) { canvas.width = cw; canvas.height = ch; }
+  if (clearFirst && (canvas.width !== cw || canvas.height !== ch)) { canvas.width = cw; canvas.height = ch; }
   const ctx = canvas.getContext('2d');
-  ctx.clearRect(0, 0, cw, ch); // 매 프레임 지우고 다시 그린다 — 안 지우면 이전 프레임 스켈레톤이 계속 쌓여 잔상(뒤엉킨 그물망)으로 남는다.
+  if (clearFirst) ctx.clearRect(0, 0, cw, ch);
   if (!landmarks) return;
   const { x: X, y: Y } = mapper || objectContainMapper(video, cw, ch);
   const col = locked ? 'rgba(52,211,153,0.95)' : 'rgba(34,211,238,0.95)';
@@ -125,7 +129,7 @@ export default function StanceLiveAnalysis({ member, stanceLeg, eyesClosed, onBa
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       if (!drawVideoCover(ctx, video, canvas.width, canvas.height, rotationDeg)) return;
       const cover = coverTransform(video, canvas.width, canvas.height, rotationDeg);
-      drawSkeleton(canvas, video, latestLandmarksRef.current, !!calibRef.current?.locked, { x: cover.X, y: cover.Y });
+      drawSkeleton(canvas, video, latestLandmarksRef.current, !!calibRef.current?.locked, { x: cover.X, y: cover.Y }, false);
       const tracker = trackerRef.current;
       const elapsedSec = recordingStartedRef.current ? (performance.now() - recordStartTsRef.current) / 1000 : 0;
       drawGaugeHud(ctx, canvas.width, canvas.height, {
@@ -209,16 +213,23 @@ export default function StanceLiveAnalysis({ member, stanceLeg, eyesClosed, onBa
 
   // 캘리브레이션은 이미 끝난 상태(calib.locked)에서만 호출됨 — 버튼을 눌러야
   // 비로소 트래커 생성 + 녹화 시작 + 시행 판정이 시작된다.
-  // ROM과 동일하게(2026-07-30 변경): 버튼을 누르면 카운트다운 없이 바로 시작한다.
+  // [2026-08-02] 3-2-1 카운트다운 복원. runStartCountdown 은 정의만 되어 있고
+  // 아무 데서도 호출되지 않아(2026-07-30에 "바로 시작"으로 바꾸면서 호출부만
+  // 빠짐) 화면에 카운트다운이 전혀 뜨지 않았다. 버튼을 누른 사람이 카메라
+  // 앞으로 이동할 시간이 필요하므로 VBT/점프와 동일하게 되돌린다.
   // [2026-07-30] 버튼이 캘리브레이션 완료를 기다리지 않고 언제든 눌리게 변경 —
   // 촬영 대상자가 카메라 앞이 아니라 노트북 앞에서(또는 트레이너가 미리) 버튼을
   // 누르는 경우를 지원한다. 트래커 생성은 실제로 캘리브레이션이 끝나는 시점에
   // handleResult에서 한다.
   const startMeasurement = () => {
     if (measureStartedRef.current) return;
-    measureStartedRef.current = true;
-    setStarted(true);
-    beginRecording();
+    if (countdownTimerRef.current) return; // 이미 카운트다운 중이면 중복 실행 방지
+    runStartCountdown(() => {
+      if (measureStartedRef.current) return;
+      measureStartedRef.current = true;
+      setStarted(true);
+      beginRecording();
+    });
   };
 
   const [rotationDeg] = useCameraRotation();

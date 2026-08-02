@@ -144,12 +144,16 @@ function drawJointAngleLabels(ctx, landmarks, view, X, Y) {
   ctx.restore();
 }
 
-function drawSkeleton(canvas, video, landmarks, locked, mapper, view) {
+// clearFirst: 미리보기 캔버스는 매 프레임 지워야 잔상(뒤엉킨 그물망)이 안 남는다.
+// 반대로 녹화 합성 캔버스는 바로 앞에서 영상 프레임을 그려둔 상태라 지우면
+// 영상이 사라지고 스켈레톤만 남는다([2026-08-02] 오버헤드스쿼트 저장 영상에
+// 스켈레톤만 나오던 버그의 원인) — 합성 루프에서는 clearFirst=false 로 부른다.
+function drawSkeleton(canvas, video, landmarks, locked, mapper, view, clearFirst = true) {
   if (!canvas || !video) return;
   const cw = canvas.clientWidth || canvas.width, ch = canvas.clientHeight || canvas.height;
-  if (canvas.width !== cw || canvas.height !== ch) { canvas.width = cw; canvas.height = ch; }
+  if (clearFirst && (canvas.width !== cw || canvas.height !== ch)) { canvas.width = cw; canvas.height = ch; }
   const ctx = canvas.getContext('2d');
-  ctx.clearRect(0, 0, cw, ch); // 매 프레임 지우고 다시 그린다 — 안 지우면 이전 프레임 스켈레톤이 계속 쌓여 잔상(뒤엉킨 그물망)으로 남는다.
+  if (clearFirst) ctx.clearRect(0, 0, cw, ch);
   if (!landmarks) return;
   const { x: X, y: Y } = mapper || objectContainMapper(video, cw, ch);
   const col = locked ? 'rgba(52,211,153,0.95)' : 'rgba(34,211,238,0.95)';
@@ -224,7 +228,7 @@ export default function SquatLiveAnalysis({ member, onBack, onComplete }) {
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       if (!drawVideoCover(ctx, video, canvas.width, canvas.height, rotationDeg)) return;
       const cover = coverTransform(video, canvas.width, canvas.height, rotationDeg);
-      drawSkeleton(canvas, video, latestLandmarksRef.current, !!calibRef.current?.locked, { x: cover.X, y: cover.Y }, viewRef.current);
+      drawSkeleton(canvas, video, latestLandmarksRef.current, !!calibRef.current?.locked, { x: cover.X, y: cover.Y }, viewRef.current, false);
       const elapsedSec = recordingStartedRef.current ? (performance.now() - recordStartTsRef.current) / 1000 : 0;
       drawGaugeHud(ctx, canvas.width, canvas.height, {
         title: 'SQUAT',
@@ -301,6 +305,8 @@ export default function SquatLiveAnalysis({ member, onBack, onComplete }) {
     }, 1000);
   }, []);
 
+  // [2026-08-02] 3-2-1 카운트다운 복원. SLST와 마찬가지로 runStartCountdown 이
+  // 정의만 되어 있고 호출되지 않아 화면에 카운트다운이 뜨지 않았다.
   // [2026-07-30] 버튼이 캘리브레이션 완료를 기다리지 않고 언제든 눌리게 변경 —
   // 촬영 대상자가 카메라 앞이 아니라 노트북 앞에서(또는 트레이너가 미리) 버튼을
   // 누르는 경우를 지원한다. 트래커 생성은 실제로 캘리브레이션이 끝나는 시점에
@@ -308,9 +314,13 @@ export default function SquatLiveAnalysis({ member, onBack, onComplete }) {
   // 처리됨). maxTrials — 정면/측면 각 단계는 SQUAT_LIVE_MAX_TRIALS_PER_VIEW회씩 잡고 넘어간다.
   const startMeasurement = () => {
     if (measureStartedRef.current) return;
-    measureStartedRef.current = true;
-    setStarted(true);
-    beginRecording();
+    if (countdownTimerRef.current) return; // 이미 카운트다운 중이면 중복 실행 방지
+    runStartCountdown(() => {
+      if (measureStartedRef.current) return;
+      measureStartedRef.current = true;
+      setStarted(true);
+      beginRecording();
+    });
   };
 
   // 정면 시행을 마치고 측면으로 넘어간다 — 카메라 각도가 바뀌므로 캘리브레이션을

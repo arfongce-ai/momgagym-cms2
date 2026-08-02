@@ -272,9 +272,18 @@ export class StandingCalibrator {
     } else if (this._feetYR.length) {
       ankleSide = 'right'; baselineAnkleY = mean(this._feetYR);
     }
+    // [2026-08-02] 좌/우 발목의 "자기 자신" 기준선도 따로 내보낸다.
+    // 한다리서기(SLST)는 한쪽 발목이 자기 평상시 높이보다 떴는지를 봐야 하는데,
+    // 지금까지는 양발 평균(baselineFeetY)과 비교하고 있었다. 두 발목 높이가
+    // 조금만 달라도(발을 나란히 못 두거나 카메라 각도 때문에 흔함) 그 차이가
+    // 그대로 문턱값에 더해져, 발을 들어도 검출이 안 되는 원인이 됐다.
+    // 표본이 없으면 병합값으로 안전하게 폴백한다.
+    const baselineAnkleYL = this._feetYL.length ? mean(this._feetYL) : baselineFeetY;
+    const baselineAnkleYR = this._feetYR.length ? mean(this._feetYR) : baselineFeetY;
     this.result = {
       baselineFeetY, baselinePelvisY, bodyPx, scaleCmPerY, feetStd: std(feetArr), visRatio,
       baselineKneeY, baselineHeelY, basis, ankleSide, baselineAnkleY,
+      baselineAnkleYL, baselineAnkleYR,
     };
     this.locked = true;
   }

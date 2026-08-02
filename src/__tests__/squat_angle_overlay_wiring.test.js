@@ -15,7 +15,9 @@ const src = readFileSync(
 
 describe('SquatLiveAnalysis.jsx — 관절 각도 라벨이 라이브·녹화 양쪽에 다 연결돼 있다', () => {
   it('drawSkeleton 함수 시그니처에 view 파라미터가 있다', () => {
-    expect(src).toMatch(/function drawSkeleton\(canvas, video, landmarks, locked, mapper, view\)/);
+    // [2026-08-02] 녹화 저장본에 스켈레톤만 나오던 버그 수정으로 clearFirst
+    // 파라미터가 뒤에 추가됐다 — view 파라미터는 그대로 유지되는지만 본다.
+    expect(src).toMatch(/function drawSkeleton\(canvas, video, landmarks, locked, mapper, view, clearFirst = true\)/);
   });
 
   it('locked 상태에서만(측정 중에만) 각도 라벨을 그린다', () => {
