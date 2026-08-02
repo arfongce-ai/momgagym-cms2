@@ -41,8 +41,10 @@ describe('JumpPrecisionAnalysis.jsx — rotationDeg가 loop 안에서 stale하�
     expect(src).not.toMatch(/drawBaseline\(skeletonCanvasRef\.current, video, calib\.result\.baselineFeetY, rotationDeg\)/);
   });
 
-  it('화면(JSX) 쪽 회전 래퍼·버튼·디버그 표시는 그대로 반응형 rotationDeg 상태를 쓴다(ref로 바꾸면 오히려 화면이 한 프레임 늦게 갱신될 수 있어 그대로 둬야 한다)', () => {
+  it('화면(JSX) 쪽 회전 래퍼·버튼은 그대로 반응형 rotationDeg 상태를 쓴다(ref로 바꾸면 오히려 화면이 한 프레임 늦게 갱신될 수 있어 그대로 둬야 한다)', () => {
+    // 임시 디버그 표시(rot={rotationDeg}°)는 2026-08-02 오버레이 정리 작업에서
+    // 제거됨 — 동일한 반응형 상태 사용 여부는 회전 버튼 표시로 계속 검증한다.
     expect(src).toMatch(/style=\{rotationDeg \? \{/);
-    expect(src).toMatch(/rot=\{rotationDeg\}°/);
+    expect(src).toMatch(/rotationDeg \? ` \$\{rotationDeg\}°` : ''/);
   });
 });

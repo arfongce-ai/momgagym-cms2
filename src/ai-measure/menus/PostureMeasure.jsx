@@ -40,7 +40,6 @@ export default function PostureMeasure({ member, onSave, onBack }) {
   const frameBufferRef = useRef([]);
   // 자동 촬영용: 현재 프레임의 방향(면) 안정 판정 누적기 + 진행 제어 ref
   const viewVoterRef = useRef(new PostureViewVoter({ window: 20 }));
-  const debugDetRef = useRef(null); // 임시 디버그 — detectPostureView 원본 반환값(문제 확인되면 제거 예정)
   const autoCountdownRef = useRef(null);   // 카운트다운 인터벌
   const autoBusyRef = useRef(false);       // 카운트다운/캡처 진행 중 재트리거 방지
   const activeViewKeyRef = useRef('front'); // 콜백에서 최신 목표 면 참조
@@ -134,7 +133,7 @@ export default function PostureMeasure({ member, onSave, onBack }) {
       const target = activeViewKeyRef.current;
       const det = detectPostureView(smoothed);
       viewVoterRef.current.push(det.view);
-      if (ts % 120 < 18) { setDetectedView(det.view); debugDetRef.current = det; }
+      if (ts % 120 < 18) setDetectedView(det.view);
       if (autoBusyRef.current) return; // 카운트다운/캡처 중이면 가이드 유지
       const targetLabel = VIEW_STEPS.find((s) => s.key === target)?.label || target;
 
@@ -675,10 +674,6 @@ export default function PostureMeasure({ member, onSave, onBack }) {
       )}
       </>
     </CameraStage>
-    {/* 임시 디버그 표시 — 문제 확인되면 제거 예정 */}
-    <div className="pointer-events-none fixed bottom-1 left-1 z-[999] rounded bg-black/80 px-2 py-1 font-mono text-[9px] text-lime-300">
-      target={activeStep?.key} · status={status} · err={String(error).slice(0, 40)} · det={debugDetRef.current?.view ?? '-'} · conf={debugDetRef.current?.confidence ?? '-'} · shR={debugDetRef.current?.shoulderRatio ?? '-'} · faceVis={debugDetRef.current?.faceVis ?? '-'}
-    </div>
     </>
   );
 }
