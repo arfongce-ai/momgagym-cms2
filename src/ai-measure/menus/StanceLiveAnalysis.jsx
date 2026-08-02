@@ -76,11 +76,7 @@ function drawSkeleton(canvas, video, landmarks, locked, mapper) {
   });
 }
 
-export default function StanceLiveAnalysis({ member, stanceLeg, onBack, onComplete, onMemberHeightChange }) {
-  const [heightCm, setHeightCm] = useState(member?.height ? Number(member.height) : null);
-  const [needHeight, setNeedHeight] = useState(!member?.height);
-  const [heightInput, setHeightInput] = useState('');
-
+export default function StanceLiveAnalysis({ member, stanceLeg, eyesClosed, onBack, onComplete }) {
   // calibrating | low_visibility | ready | holding | trial_done | finished
   const [uiPhase, setUiPhase] = useState('calibrating');
   const [calibProgress, setCalibProgress] = useState(0);
@@ -229,7 +225,7 @@ export default function StanceLiveAnalysis({ member, stanceLeg, onBack, onComple
     lastTsRef.current = ts;
     latestVideoElRef.current = video || latestVideoElRef.current;
     latestLandmarksRef.current = landmarks;
-    if (!calibRef.current) calibRef.current = new StandingCalibrator({ heightCm });
+    if (!calibRef.current) calibRef.current = new StandingCalibrator({});
     const calib = calibRef.current;
 
     drawSkeleton(canvasRef.current, video, landmarks, calib.locked);
@@ -277,13 +273,13 @@ export default function StanceLiveAnalysis({ member, stanceLeg, onBack, onComple
       setUiPhase('ready');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [heightCm, stanceLeg]);
+  }, [stanceLeg]);
 
   const { videoRef, start, stop, status, error } = usePoseEngine({ onResult: handleResult });
   const [rotationDeg] = useCameraRotation();
 
   useEffect(() => {
-    if (!needHeight && !startedRef.current) {
+    if (!startedRef.current) {
       startedRef.current = true;
       start();
     }
@@ -297,7 +293,7 @@ export default function StanceLiveAnalysis({ member, stanceLeg, onBack, onComple
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [needHeight]);
+  }, []);
 
   useEffect(() => {
     if (status === 'error' && error) setErrorMsg(error);
@@ -332,7 +328,7 @@ export default function StanceLiveAnalysis({ member, stanceLeg, onBack, onComple
     const calib = calibRef.current;
     if (!tracker) return;
     tracker.finalize(lastTsRef.current);
-    const summary = tracker.summary({ cmPerNormUnit: calib?.result?.scaleCmPerY ?? null });
+    const summary = tracker.summary();
     stop();
     if (maxRecordTimerRef.current) { clearTimeout(maxRecordTimerRef.current); maxRecordTimerRef.current = null; }
     if (!summary.trial1) {
@@ -353,52 +349,13 @@ export default function StanceLiveAnalysis({ member, stanceLeg, onBack, onComple
     }
   };
 
-  const applyHeight = () => {
-    const h = Number(heightInput);
-    if (!h || h < 80 || h > 250) { setErrorMsg('키를 80~250cm로 입력하세요.'); return; }
-    setHeightCm(h); setNeedHeight(false); setErrorMsg('');
-    onMemberHeightChange?.(h);
-  };
-
-  if (needHeight) {
-    return (
-      <div className="absolute inset-0 bg-slate-950 flex flex-col">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800">
-          <button onClick={onBack} className="text-slate-300 font-bold text-sm">✕ 닫기</button>
-          <h2 className="text-white font-black">한다리서기 · {legLabel} 지지</h2>
-          <div className="w-12" />
-        </div>
-        <div className="flex-1 flex items-center justify-center p-6">
-          <div className="w-full max-w-sm bg-slate-900 border border-amber-500/30 rounded-2xl p-5 space-y-4">
-            <div className="text-center space-y-1">
-              <p className="text-3xl">📏</p>
-              <p className="text-white font-black">키가 필요합니다</p>
-              <p className="text-slate-400 text-xs">흔들림 거리(cm) 환산에 사용됩니다.</p>
-            </div>
-            <label className="block">
-              <span className="mb-1 block text-[10px] font-bold text-slate-500">키</span>
-              <div className="flex items-center gap-2">
-                <input type="number" inputMode="numeric" value={heightInput}
-                  onChange={e => setHeightInput(e.target.value)} placeholder="170"
-                  className="min-w-0 flex-1 bg-slate-800 border border-slate-700 text-slate-100 rounded-lg px-3 py-2.5 text-sm font-mono focus:outline-none focus:border-amber-500" />
-                <span className="text-slate-400 text-xs font-bold">cm</span>
-              </div>
-            </label>
-            <button onClick={applyHeight} className="w-full rounded-xl bg-amber-500 text-slate-950 font-black py-3 active:scale-95">
-              입력하고 계속
-            </button>
-            {errorMsg && <p className="text-center text-xs text-red-400">{errorMsg}</p>}
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   const secs = (holdMs / 1000).toFixed(1);
 
   const topBar = (
     <>
-      <p className="text-sm font-black text-white">{legLabel} 지지</p>
+      <p className="text-sm font-black text-white">
+        {legLabel} 지지 <span className={eyesClosed ? 'text-violet-300' : 'text-cyan-300'}>· {eyesClosed ? '눈감고' : '눈뜨고'}</span>
+      </p>
       {uiPhase === 'calibrating' && <p className="text-xs font-bold text-amber-300">자세 보정 중… {Math.round(calibProgress * 100)}%</p>}
       {uiPhase === 'low_visibility' && <p className="text-xs font-bold text-red-300">전신이 보이도록 서 주세요</p>}
       {!started && !['calibrating', 'low_visibility', 'trial_done', 'finished'].includes(uiPhase) && (

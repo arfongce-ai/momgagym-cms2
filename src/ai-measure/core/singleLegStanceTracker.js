@@ -13,9 +13,11 @@
 //  ── 흐름(시행 1회당) ──
 //   1) StandingCalibrator(jumpBiomechanics.js, 재사용)로 양발 서기 기준선 확보.
 //   2) 들리는 쪽 발목이 기준선보다 liftBandFrac 이상 뜨면 → 유지(holding) 시작.
-//   3) 유지 중: 지지 다리 쪽 골반 중점의 프레임간 이동을 누적(흔들림 경로),
-//      좌우 골반 라인 기울기의 최대값(골반 기울기)을 추적. 골반 이동 속도가
-//      급격히 튀면 균형 상실로 "추정"한다(휴리스틱, 아래 한계 참고).
+//   3) 유지 중: 좌우 골반 라인 기울기의 최대값(골반 기울기)을 추적하고, 골반
+//      중점의 프레임간 이동 속도가 급격히 튀면 균형 상실로 "추정"한다(휴리스틱,
+//      아래 한계 참고). [2026-08-02] 흔들림 누적 경로(sway path) 자체는 더는
+//      추적하지 않는다 — 핵심 측정 대상은 발을 든(lift) 순간부터 다시 딛는
+//      (touch) 순간까지의 유지시간이고, 흔들림은 판정에 반영하지 않기로 함.
 //   4) 들었던 발이 기준선 근처로 다시 내려오면 → 그 시행 종료(정의상 조기
 //      종료=stepOut:true). 목표 시간 도달 등으로 stopManually()가 먼저
 //      호출되면 stepOut:false. 종료 후 다음 시행을 위해 자동으로 대기 상태로
@@ -90,7 +92,6 @@ export class SingleLegStanceTracker {
     this._filtHipX = new OneEuroFilter({ minCutoff: this.tuning.filterMinCutoff, beta: this.tuning.filterBeta, dCutoff: 1.0 });
     this._filtHipY = new OneEuroFilter({ minCutoff: this.tuning.filterMinCutoff, beta: this.tuning.filterBeta, dCutoff: 1.0 });
     this._liftStartMs = null;
-    this._swayPathNorm = 0;
     this._maxPelvicTiltDeg = 0;
     this._balanceLoss = false;
     this._prevHip = null;
@@ -126,7 +127,6 @@ export class SingleLegStanceTracker {
     if (holdTimeMs >= this.tuning.minHoldForValidMs) {
       this.trials.push({
         holdTimeMs: Math.round(holdTimeMs),
-        swayPathNorm: this._swayPathNorm,
         pelvicTiltDeg: Math.round(this._maxPelvicTiltDeg * 10) / 10,
         balanceLoss: this._balanceLoss,
         stepOut: endReason === 'foot_down',
@@ -162,7 +162,8 @@ export class SingleLegStanceTracker {
       if (this._prevHip) {
         const dt = (tMs - this._prevT) / 1000;
         const dist = Math.hypot(fx - this._prevHip.x, fy - this._prevHip.y);
-        this._swayPathNorm += dist;
+        // [2026-08-02] 흔들림 누적 경로는 더는 판정에 안 쓰므로 저장하지 않는다.
+        // 순간 이동 속도(dist/dt)만 균형 상실 추정에 계속 쓴다.
         if (dt > 0 && dist / dt >= this.tuning.balanceLossVelocityThreshold) {
           this._balanceLoss = true;
         }
@@ -182,17 +183,13 @@ export class SingleLegStanceTracker {
   /**
    * singleLegStance.js의 evaluateSingleLegStance({ left/right: { trial1, trial2 } })
    * 가 그대로 받을 수 있는 { trial1, trial2 } 형태로 변환.
-   * @param {object} opts
-   * @param {number} [opts.cmPerNormUnit] px(정규화)↔cm 환산 계수
-   *   (StandingCalibrator.result.scaleCmPerY — 키 입력이 있어야 값이 채워짐)
    */
-  summary({ cmPerNormUnit = null } = {}) {
+  summary() {
     const toTrial = (t) => {
       if (!t) return undefined;
       return {
         valid: true,
         holdTimeMs: t.holdTimeMs,
-        swayPathCm: cmPerNormUnit != null ? Math.round(t.swayPathNorm * cmPerNormUnit * 10) / 10 : null,
         pelvicTiltDeg: t.pelvicTiltDeg,
         balanceLoss: t.balanceLoss,
         stepOut: t.stepOut,

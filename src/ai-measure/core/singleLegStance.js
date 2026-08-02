@@ -16,15 +16,20 @@
 //  ── 판정 2단계 구조 ──
 //   1) 즉시확정(immediate): 균형 상실 · 스텝아웃 · 최소 유지시간 미달 — 1회만
 //      나와도 그 시행은 즉시 RISK. 이미 명백한 실패라 재현성 확인이 불필요하다.
-//   2) 재현성확정(reproducibility): 흔들림(sway) · 골반기울기(Trendelenburg) ·
-//      유지시간 경계 미달처럼 애매한 신호 — 같은 다리의 2회 시행 모두에서
-//      반복돼야 CAUTION/RISK로 확정한다. 한 번만 나오면 노이즈일 수 있어
-//      불필요한 재측정 지시를 피한다.
+//   2) 재현성확정(reproducibility): 골반기울기(Trendelenburg) · 유지시간 경계
+//      미달처럼 애매한 신호 — 같은 다리의 2회 시행 모두에서 반복돼야
+//      CAUTION/RISK로 확정한다. 한 번만 나오면 노이즈일 수 있어 불필요한
+//      재측정 지시를 피한다.
 //
 //  ⚠ 측정 한계(결과에 그대로 노출):
 //   · 좌우 비대칭은 "질환"으로 진단하지 않는다. 임상 해석은 Momi/전문가 몫이며,
 //     여기서는 측정된 패턴(정상/주의/위험/확인 필요)만 노출한다.
 //   · 아래 임계값은 실측 캡처 데이터 보정 전까지의 시작 기본값이다.
+//  [2026-08-02] 판정에서 흔들림(sway 경로 누적) 신호를 뺐다 — 발을 드는
+//  순간(lift)과 다시 딛는 순간(touch)만으로 유지시간을 확정하는 것이 핵심
+//  측정 대상이고, 흔들림은 원래도 키(cm 환산) 의존 부가 신호였다. 균형 상실
+//  (balanceLoss)은 흔들림 누적이 아니라 순간 이동 속도로 별도 판정되므로
+//  그대로 유지된다.
 // ════════════════════════════════════════════════════════════════════════
 
 export const SLST_TUNING = {
@@ -32,10 +37,6 @@ export const SLST_TUNING = {
   targetHoldMs: 30000,          // 목표 유지시간(일반 성인 기준, 참고치)
   minAcceptableHoldMs: 10000,   // 이보다 짧으면 즉시확정 실패(테스트 자체가 무의미)
   cautionHoldMs: 20000,         // 최소는 넘겼지만 목표에는 못 미친 경계 구간 기준선
-
-  // ── 흔들림(sway) 경로 길이(cm) — 유지 구간 동안 발목/무게중심 이동 누적 ──
-  swayCautionCm: 8,
-  swayRiskCm: 15,
 
   // ── 골반 기울기(Trendelenburg pattern, deg) ──
   pelvicTiltCautionDeg: 5,
@@ -55,8 +56,6 @@ const STATUS_RANK = { normal: 0, caution: 1, risk: 2, unknown: 3 };
 // (플래그 이름 규칙에 암묵적으로 의존하지 않도록 - 새 플래그 추가 시 여기 함께 추가)
 const FLAG_SEVERITY = {
   hold_time_borderline: 'caution',
-  sway_borderline: 'caution',
-  sway_high: 'risk',
   pelvic_tilt_borderline: 'caution',
   pelvic_tilt_high: 'risk',
   knee_valgus_borderline: 'caution',
@@ -74,8 +73,7 @@ function worse(a, b) {
  * @param {string}  [trial.reason]        valid=false 사유
  * @param {boolean} [trial.balanceLoss]   균형 상실(반대발 착지/손짚음) 여부 — 즉시확정 신호
  * @param {boolean} [trial.stepOut]       지지발 이동(스텝아웃) 여부 — 즉시확정 신호
- * @param {number}  trial.holdTimeMs      실제 유지 시간(ms)
- * @param {number}  [trial.swayPathCm]    유지 구간 동안 흔들림 누적 경로(cm)
+ * @param {number}  trial.holdTimeMs      실제 유지 시간(ms) — 발을 든 순간부터 다시 딛는 순간까지
  * @param {number}  [trial.pelvicTiltDeg] 최대 골반 기울기(Trendelenburg, deg)
  * @param {number}  [trial.kneeValgusDeg] 최대 동적 무릎 외반각(deg, 선택 신호)
  * @returns {object}
@@ -99,7 +97,6 @@ function judgeTrial(trial = {}) {
 
   const base = {
     holdTimeMs: trial.holdTimeMs ?? null,
-    swayPathCm: trial.swayPathCm ?? null,
     pelvicTiltDeg: trial.pelvicTiltDeg ?? null,
     kneeValgusDeg: trial.kneeValgusDeg ?? null,
   };
@@ -115,10 +112,6 @@ function judgeTrial(trial = {}) {
   if ((trial.holdTimeMs ?? 0) < SLST_TUNING.cautionHoldMs) {
     softFlags.push('hold_time_borderline');
     status = worse(status, 'caution');
-  }
-  if (trial.swayPathCm != null) {
-    if (trial.swayPathCm >= SLST_TUNING.swayRiskCm) { softFlags.push('sway_high'); status = worse(status, 'risk'); }
-    else if (trial.swayPathCm >= SLST_TUNING.swayCautionCm) { softFlags.push('sway_borderline'); status = worse(status, 'caution'); }
   }
   if (trial.pelvicTiltDeg != null) {
     if (trial.pelvicTiltDeg >= SLST_TUNING.pelvicTiltRiskDeg) { softFlags.push('pelvic_tilt_high'); status = worse(status, 'risk'); }
@@ -194,5 +187,47 @@ export function evaluateSingleLegStance(input = {}) {
     left,
     right,
     asymmetryFlag,
+  };
+}
+
+/**
+ * SLST 종합 판정 — 눈뜨고/눈감고 두 조건을 함께 평가.
+ *
+ * 눈뜨고·눈감고는 서로 다른 조건(눈감으면 정상인도 흔들림·유지시간이 짧아지는
+ * 것이 자연스럽다)이라, combineLegTrials()의 "같은 신호가 2회 다 나와야 확정"
+ * 재현성 로직으로 서로 섞어 판정하지 않는다 — 각 조건을 evaluateSingleLegStance()
+ * 로 독립적으로(조건 내부에서는 기존과 동일하게 다리당 1회 시행) 판정한 뒤,
+ * 종합 status만 더 나쁜 쪽으로 취합한다.
+ *
+ * @param {object} input
+ * @param {{left, right}} [input.open]   눈뜨고 조건의 {trial1} 좌/우 입력
+ * @param {{left, right}} [input.closed] 눈감고 조건의 {trial1} 좌/우 입력
+ * @returns {object} valid:false 시 { valid:false, reason, message }
+ */
+export function evaluateSingleLegStanceWithEyes(input = {}) {
+  const eyesOpen = evaluateSingleLegStance(input.open || {});
+  const eyesClosed = evaluateSingleLegStance(input.closed || {});
+
+  if (!eyesOpen.valid && !eyesClosed.valid) {
+    return { valid: false, reason: 'no_trials', message: '한다리서기 측정 데이터가 없습니다.' };
+  }
+
+  const status = worse(
+    eyesOpen.valid ? eyesOpen.status : 'unknown',
+    eyesClosed.valid ? eyesClosed.status : 'unknown',
+  );
+
+  return {
+    valid: true,
+    kind: 'stance',
+    status,
+    eyesOpen,
+    eyesClosed,
+    // 하위 호환: unifiedReport.js 지표 추출(left.trials.0.holdTimeMs 등)·
+    // crossMeasureContext.js·momiService.js처럼 기존 { left, right, asymmetryFlag }
+    // 형태를 그대로 읽던 화면이 계속 정상 동작하도록, 눈뜨고 조건을 대표값으로 얹는다.
+    left: eyesOpen.valid ? eyesOpen.left : null,
+    right: eyesOpen.valid ? eyesOpen.right : null,
+    asymmetryFlag: eyesOpen.valid ? eyesOpen.asymmetryFlag : false,
   };
 }

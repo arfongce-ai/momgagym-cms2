@@ -212,14 +212,12 @@ export default function SquatAnalysisHub({ member, onBack, onSave, onSaveToFireb
           member={member}
           onBack={onBack}
           onComplete={handleComplete}
-          onMemberHeightChange={onMemberHeightChange}
         />
       ) : (
         <SquatUploadAnalysis
           member={member}
           onBack={onBack}
           onComplete={handleComplete}
-          onMemberHeightChange={onMemberHeightChange}
         />
       )}
     </div>

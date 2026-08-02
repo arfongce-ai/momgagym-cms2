@@ -11,9 +11,10 @@
 import { describe, expect, it } from 'vitest';
 import { evaluateSingleLegStance } from '../ai-measure/core/singleLegStance';
 
-const normalTrial = { valid: true, holdTimeMs: 30000, swayPathCm: 3, pelvicTiltDeg: 1, kneeValgusDeg: 2 };
-const borderlineSwayTrial = { valid: true, holdTimeMs: 30000, swayPathCm: 10, pelvicTiltDeg: 1, kneeValgusDeg: 2 }; // swayCautionCm=8 이상
-const balanceLossTrial = { valid: true, holdTimeMs: 12000, balanceLoss: true, swayPathCm: 3, pelvicTiltDeg: 1 };
+const normalTrial = { valid: true, holdTimeMs: 30000, pelvicTiltDeg: 1, kneeValgusDeg: 2 };
+// pelvicTiltCautionDeg=5 이상 → 재현성 미확인(single_trial_only) 상태에서 caution 유발용.
+const borderlinePelvicTiltTrial = { valid: true, holdTimeMs: 30000, pelvicTiltDeg: 6, kneeValgusDeg: 2 };
+const balanceLossTrial = { valid: true, holdTimeMs: 12000, balanceLoss: true, pelvicTiltDeg: 1 };
 
 describe('evaluateSingleLegStance — 다리당 시행 1회(trial2 없음)', () => {
   it('양쪽 모두 정상 1회씩이면 전체 normal, single_trial_only, needsRetest=false', () => {
@@ -29,9 +30,9 @@ describe('evaluateSingleLegStance — 다리당 시행 1회(trial2 없음)', () 
     expect(result.right.basis).toBe('single_trial_only');
   });
 
-  it('단일 시행이 경계성 신호(sway borderline)면 caution + needsRetest=true(재현성 미확인이므로 재측정 권장)', () => {
+  it('단일 시행이 경계성 신호(골반 기울기 borderline)면 caution + needsRetest=true(재현성 미확인이므로 재측정 권장)', () => {
     const result = evaluateSingleLegStance({
-      left: { trial1: borderlineSwayTrial },
+      left: { trial1: borderlinePelvicTiltTrial },
       right: { trial1: normalTrial },
     });
     expect(result.left.status).toBe('caution');
@@ -61,5 +62,14 @@ describe('evaluateSingleLegStance — 다리당 시행 1회(trial2 없음)', () 
     });
     expect(withUndefined.left.basis).toBe(withoutKey.left.basis);
     expect(withUndefined.status).toBe(withoutKey.status);
+  });
+
+  it('[2026-08-02] 입력에 swayPathCm이 섞여 들어와도(옛 캐시 데이터 등) 판정에 전혀 영향을 주지 않는다', () => {
+    const withStaleSway = evaluateSingleLegStance({
+      left: { trial1: { ...normalTrial, swayPathCm: 999 } }, // 판정상 위험 수준의 흔들림값을 억지로 끼워넣어도
+      right: { trial1: normalTrial },
+    });
+    expect(withStaleSway.left.status).toBe('normal'); // 결과에 반영되지 않아야 한다.
+    expect(withStaleSway.status).toBe('normal');
   });
 });
