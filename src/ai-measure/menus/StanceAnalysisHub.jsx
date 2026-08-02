@@ -313,6 +313,13 @@ export default function StanceAnalysisHub({ member, onBack, onSave, onSaveToFire
       </div>
       {mode === 'live' ? (
         <StanceLiveAnalysis
+          // [2026-08-02] key 필수 — 없으면 왼발→오른발로 넘어갈 때 React가 같은
+          // 컴포넌트 인스턴스를 재사용한다. 그러면 이전 다리에서 true가 된
+          // recordingStartedRef 등 ref들이 그대로 남아 beginRecording()이 즉시
+          // return 하고(→ 오른발 녹화 안 됨), 앞 단계에서 stop()으로 꺼진 카메라도
+          // 다시 켜지지 않아 화면이 검게 나온다. 다리/눈 조건이 바뀌면 완전히
+          // 새 측정이므로 통째로 remount 시킨다.
+          key={`live-${eyesState}-${legStep}`}
           member={member}
           stanceLeg={legStep}
           eyesClosed={eyesState === 'closed'}
@@ -321,6 +328,7 @@ export default function StanceAnalysisHub({ member, onBack, onSave, onSaveToFire
         />
       ) : (
         <StanceUploadAnalysis
+          key={`upload-${eyesState}-${legStep}`}
           member={member}
           stanceLeg={legStep}
           eyesClosed={eyesState === 'closed'}

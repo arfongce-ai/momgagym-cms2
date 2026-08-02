@@ -233,4 +233,19 @@ export class SquatBiomechanicsTracker {
       thighInclineDeg: Math.round(this._minThighIncline * 10) / 10,
     };
   }
+
+  // [2026-08-02] 부위별 색상 오버레이(FMS 보상패턴 표시)용 조회 메서드.
+  // liveDepthState()와 같은 원칙 — 내부 누적값을 읽기만 하고 아무것도 바꾸지
+  // 않는다. 이 반복(rep) 동안의 "가장 나쁜" 값들이라 색이 시시각각 튀지 않고
+  // 한 번 붉어지면 그 반복이 끝날 때까지 유지된다(트레이너가 보기에 안정적).
+  liveMetrics() {
+    if (this.phase !== 'active') return null;
+    return {
+      thighInclineDeg: Math.round(this._minThighIncline * 10) / 10,
+      torsoLeanDeg: Math.round(this._maxTorsoLean * 10) / 10,
+      kneeValgusDeg: Math.round(this._maxKneeValgus * 10) / 10,
+      pelvicTiltDeg: Math.round(this._maxPelvicTilt * 10) / 10,
+      heelLift: this._heelLift,
+    };
+  }
 }

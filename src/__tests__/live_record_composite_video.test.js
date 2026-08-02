@@ -26,7 +26,7 @@ describe.each([
   const src = read(path);
 
   it('drawSkeleton에 clearFirst 파라미터가 있고 기본값은 true다(미리보기 잔상 방지)', () => {
-    expect(src).toMatch(/function drawSkeleton\([^)]*clearFirst = true\)/);
+    expect(src).toMatch(/function drawSkeleton\([^)]*clearFirst = true[^)]*\)/);
   });
 
   it('clearRect는 clearFirst가 true일 때만 실행된다', () => {
@@ -43,7 +43,9 @@ describe.each([
     const drawBody = src.slice(drawStart, src.indexOf('\n    };', drawStart));
     const call = drawBody.match(/drawSkeleton\([^;]*\);/);
     expect(call).not.toBeNull();
-    expect(call[0]).toMatch(/,\s*false\)/);
+    // clearFirst 인자가 false 여야 한다. 뒤에 추가 인자(fmsParts 등)가 붙을 수
+    // 있으므로 "false" 뒤가 닫는 괄호든 쉼표든 모두 허용한다.
+    expect(call[0]).toMatch(/,\s*false\s*[,)]/);
   });
 
   it('합성 순서가 지켜진다: 배경 → 영상 → 스켈레톤 (영상이 스켈레톤보다 먼저)', () => {
@@ -65,6 +67,6 @@ describe.each([
     const outsideCompose = src.slice(0, drawStart) + src.slice(drawEnd);
     const previewCalls = outsideCompose.match(/drawSkeleton\(canvasRef\.current[^;]*\);/g) || [];
     expect(previewCalls.length).toBeGreaterThan(0);
-    previewCalls.forEach((c) => expect(c).not.toMatch(/,\s*false\)/));
+    previewCalls.forEach((c) => expect(c).not.toMatch(/,\s*false\s*[,)]/));
   });
 });

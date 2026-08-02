@@ -27,6 +27,7 @@ import { StandingCalibrator, SquatBiomechanicsTracker, pelvicTiltDegOf, kneeValg
 import { DEFAULT_ASPECT, outputSize, drawVideoCover, coverTransform, rotateLandmarksNormalized } from '../core/recordAspect';
 import { useCameraRotation } from '../core/useCameraRotation';
 import { computeDisplayAngles } from '../core/squatJointAngles';
+import { colorForBone, evaluateSquatFrame, depthPctFromThighIncline, COMPENSATION_KO } from '../core/squatFms';
 import { drawGaugeHud } from '../core/recordingOverlay';
 import CameraStage from './CameraStage.jsx';
 import GaugeHud from './GaugeHud.jsx';
@@ -148,7 +149,7 @@ function drawJointAngleLabels(ctx, landmarks, view, X, Y) {
 // 반대로 녹화 합성 캔버스는 바로 앞에서 영상 프레임을 그려둔 상태라 지우면
 // 영상이 사라지고 스켈레톤만 남는다([2026-08-02] 오버헤드스쿼트 저장 영상에
 // 스켈레톤만 나오던 버그의 원인) — 합성 루프에서는 clearFirst=false 로 부른다.
-function drawSkeleton(canvas, video, landmarks, locked, mapper, view, clearFirst = true) {
+function drawSkeleton(canvas, video, landmarks, locked, mapper, view, clearFirst = true, fmsParts = null) {
   if (!canvas || !video) return;
   const cw = canvas.clientWidth || canvas.width, ch = canvas.clientHeight || canvas.height;
   if (clearFirst && (canvas.width !== cw || canvas.height !== ch)) { canvas.width = cw; canvas.height = ch; }
@@ -156,11 +157,15 @@ function drawSkeleton(canvas, video, landmarks, locked, mapper, view, clearFirst
   if (clearFirst) ctx.clearRect(0, 0, cw, ch);
   if (!landmarks) return;
   const { x: X, y: Y } = mapper || objectContainMapper(video, cw, ch);
+  // [2026-08-02] 부위별 색상 오버레이 — 요청대로 정상은 푸른색, 이상은 붉은색.
+  // fmsParts가 있으면(측정 중) 뼈대별로 그 부위의 판정 색을 쓰고, 없으면
+  // (캘리브레이션 중) 기존 단색 동작을 그대로 유지한다.
   const col = locked ? 'rgba(52,211,153,0.95)' : 'rgba(34,211,238,0.95)';
-  ctx.strokeStyle = col; ctx.lineWidth = 3; ctx.lineCap = 'round';
+  ctx.lineWidth = 3; ctx.lineCap = 'round';
   BONES.forEach(([a, b]) => {
     const pa = landmarks[a], pb = landmarks[b];
     if (!vis(pa) || !vis(pb)) return;
+    ctx.strokeStyle = fmsParts ? colorForBone(a, b, fmsParts) : col;
     ctx.beginPath(); ctx.moveTo(X(pa), Y(pa)); ctx.lineTo(X(pb), Y(pb)); ctx.stroke();
   });
   ctx.fillStyle = locked ? 'rgba(52,211,153,1)' : 'rgba(255,255,255,0.95)';
@@ -181,6 +186,8 @@ export default function SquatLiveAnalysis({ member, onBack, onComplete }) {
   const [view, setView] = useState('front'); // 'front' | 'side' — 2026-07-31부터 정면 2회 + 측면 2회
   const [calibProgress, setCalibProgress] = useState(0);
   const [depthPct, setDepthPct] = useState(0);
+  const [belowParallel, setBelowParallel] = useState(false);
+  const [fmsCompensations, setFmsCompensations] = useState([]);
   const [trialsFound, setTrialsFound] = useState(0); // 현재 단계(view) 트래커 안에서의 완료 수(0~2)
   const [lastTrialNote, setLastTrialNote] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
@@ -212,6 +219,9 @@ export default function SquatLiveAnalysis({ member, onBack, onComplete }) {
   const recordingStartedRef = useRef(false);
   const pendingSummaryRef = useRef(null);
   const depthPctRef = useRef(0);
+  const belowParallelRef = useRef(false);
+  // 부위별 판정 결과 — 그리기 루프(미리보기/녹화 합성)가 매 프레임 읽는다.
+  const fmsPartsRef = useRef(null);
   const viewRef = useRef('front');
   const trialsFoundRef = useRef(0);
 
@@ -228,14 +238,14 @@ export default function SquatLiveAnalysis({ member, onBack, onComplete }) {
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       if (!drawVideoCover(ctx, video, canvas.width, canvas.height, rotationDeg)) return;
       const cover = coverTransform(video, canvas.width, canvas.height, rotationDeg);
-      drawSkeleton(canvas, video, latestLandmarksRef.current, !!calibRef.current?.locked, { x: cover.X, y: cover.Y }, viewRef.current, false);
+      drawSkeleton(canvas, video, latestLandmarksRef.current, !!calibRef.current?.locked, { x: cover.X, y: cover.Y }, viewRef.current, false, fmsPartsRef.current);
       const elapsedSec = recordingStartedRef.current ? (performance.now() - recordStartTsRef.current) / 1000 : 0;
       drawGaugeHud(ctx, canvas.width, canvas.height, {
         title: 'SQUAT',
         recording: true,
         elapsedSec,
         accent: '#f59e0b',
-        gauge: { label: '깊이', value: depthPctRef.current, unit: '%', arc: true, min: 0, max: 100 },
+        gauge: { label: belowParallelRef.current ? '패러렐 이하 ✓' : '패러렐까지', value: depthPctRef.current, unit: '%', arc: true, min: 0, max: 100 },
         stats: [{ label: viewRef.current === 'front' ? '정면' : '측면', value: (viewRef.current === 'side' ? (frontSummaryRef.current?.trialsFound || 0) : 0) + trialsFoundRef.current, unit: `/${SQUAT_LIVE_TOTAL_TRIALS}` }],
       });
     };
@@ -352,7 +362,7 @@ export default function SquatLiveAnalysis({ member, onBack, onComplete }) {
 
     // 라이브 스켈레톤 오버레이도 CameraStage와 같은 CSS 회전 래퍼를 공유하므로
     // 원본(raw) 좌표를 그대로 쓴다(이중 회전 방지).
-    drawSkeleton(canvasRef.current, video, landmarks, calib.locked, null, view);
+    drawSkeleton(canvasRef.current, video, landmarks, calib.locked, null, view, true, fmsPartsRef.current);
     if (!landmarks) return;
 
     // [2026-08-02] 카메라 원본이 회전된 채로 들어오는 기종(키오스크) 보정 —
@@ -393,9 +403,28 @@ export default function SquatLiveAnalysis({ member, onBack, onComplete }) {
     if (tracker.phase === 'active') {
       setUiPhase('active');
       const live = tracker.liveDepthState();
-      const pct = live ? Math.round(live.depthFrac * 100) : 0;
+      // [2026-08-02] "깊이 120%"가 무슨 뜻인지 알 수 없다는 피드백 반영.
+      // 예전 값은 (엉덩이 하강거리 ÷ 선 자세의 엉덩이~무릎 간격)이라 패러렐을
+      // 넘으면 100%를 넘고 1.2에서 잘려, 깊게 앉으면 항상 120%로 고정됐다.
+      // 이제는 FMS 기준선인 "대퇴골 수평(패러렐)"까지의 진행도로 바꾼다:
+      //   0% = 선 자세, 100% = 대퇴골이 수평에 도달(패러렐).
+      // 패러렐보다 더 내려가면 thighIncline이 0에서 더 줄지 않으므로 100%에서
+      // 자연스럽게 멈추고, 그 아래로 내려갔는지는 belowParallel 배지로 알린다.
+      const pct = live ? depthPctFromThighIncline(live.thighInclineDeg) : 0;
       setDepthPct(pct);
       depthPctRef.current = pct;
+      const below = !!live && live.depthFrac >= 1;
+      setBelowParallel(below);
+      belowParallelRef.current = below;
+
+      // 부위별 색상 판정 — 현재 뷰(정면/측면)에서 볼 수 있는 지표만 채점하고
+      // 나머지는 unknown(회색)으로 남는다.
+      const metrics = tracker.liveMetrics();
+      if (metrics) {
+        const assessment = evaluateSquatFrame(metrics, view);
+        fmsPartsRef.current = assessment.parts;
+        setFmsCompensations(assessment.compensations);
+      }
     } else if (tracker.trials.length > beforeCount) {
       const t = tracker.trials[tracker.trials.length - 1];
       setLastTrialNote(t.heelLift ? '뒤꿈치 들림이 감지됐어요' : '정상 종료로 기록됨');
@@ -403,6 +432,10 @@ export default function SquatLiveAnalysis({ member, onBack, onComplete }) {
       trialsFoundRef.current = tracker.trials.length;
       setDepthPct(0);
       depthPctRef.current = 0;
+      setBelowParallel(false);
+      belowParallelRef.current = false;
+      fmsPartsRef.current = null;
+      setFmsCompensations([]);
       if (tracker.trials.length >= tracker.maxTrials) {
         // 이 뷰(정면/측면)에 필요한 반복을 다 채움 — 다음 단계로.
         if (view === 'front') {
@@ -567,10 +600,25 @@ export default function SquatLiveAnalysis({ member, onBack, onComplete }) {
       recording={recordingActive} recordingLabel={uiPhase === 'active' ? `진행 중 · 깊이 ${depthPct}%` : '녹화 중'}
     >
       {uiPhase === 'active' && (
-        <GaugeHud label="깊이" value={depthPct} unit="%" arc min={0} max={100} accent="#f59e0b"
+        <GaugeHud label="패러렐까지" value={depthPct} unit="%" arc min={0} max={100}
+          accent={belowParallel ? '#38bdf8' : '#f59e0b'}
           stats={[{ label: '회차', value: `${totalDone}/${SQUAT_LIVE_TOTAL_TRIALS}` }]} />
       )}
     </CameraStage>
+    {uiPhase === 'active' && belowParallel && (
+      <div className="pointer-events-none fixed bottom-28 left-1/2 -translate-x-1/2 z-40 rounded-full bg-sky-500/25 border border-sky-400/60 px-4 py-1.5 backdrop-blur">
+        <span className="text-sm font-black text-sky-200">✓ 대퇴골 수평 이하</span>
+      </div>
+    )}
+    {uiPhase === 'active' && fmsCompensations.length > 0 && (
+      <div className="pointer-events-none fixed bottom-40 left-1/2 -translate-x-1/2 z-40 flex flex-col items-center gap-1">
+        {fmsCompensations.map((c) => (
+          <span key={c} className="rounded-full bg-red-500/25 border border-red-400/60 px-3 py-1 text-xs font-bold text-red-200 backdrop-blur">
+            ⚠ {COMPENSATION_KO[c] || c}
+          </span>
+        ))}
+      </div>
+    )}
     {status === 'running' && (
       <div className="pointer-events-none fixed top-3 right-3 z-40 rounded-2xl bg-black/70 border border-white/20 px-4 py-2 text-center backdrop-blur">
         <div className="text-[10px] font-bold text-slate-300 tracking-wide">회차</div>
