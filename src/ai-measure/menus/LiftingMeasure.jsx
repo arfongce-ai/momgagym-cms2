@@ -18,7 +18,7 @@ import { fuseTrackingCandidates, summarizeCrossValidation } from '../core/trackF
 import { estimateBodyCOG, barCogHorizontalGap } from '../core/bodyCog';
 import { saveVideoToPhone, pickRecorderMime } from '../core/recordSink';
 import { drawLiftingDataHud, drawBarPathToRecord } from '../core/recordingOverlay';
-import { DEFAULT_ASPECT, outputSize, aspectLabel, drawVideoCover, coverMapPath } from '../core/recordAspect';
+import { DEFAULT_ASPECT, outputSize, aspectLabel, drawVideoCover, coverMapPath, rotateLandmarksNormalized } from '../core/recordAspect';
 import { useCameraRotation } from '../core/useCameraRotation';
 import {
   CALIBRATION_PRESETS, buildReferenceScale, ratioToCm,
@@ -45,6 +45,12 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
   //                 궤적(드리프트/효율)이 매 프레임 실시간으로 산출된다.
   const plateTrackerRef = useRef(createPlateBlobTracker());
   const fusedRef = useRef(new BarbellAccumulator());
+  // [2026-08-02] fusedRef.path()는 라이브 궤적 표시 + 녹화 합성(coverMapPath가
+  // 자체적으로 회전 보정) 두 곳에서 원본(raw) 좌표를 그대로 기대하므로 건드릴
+  // 수 없다. 반면 속도·렙 판정(.live()/.summary())은 y축 기준 계산이라 회전
+  // 보정이 필요하다 — 그래서 판정 전용으로 같은 시퀀스를 보정된 좌표로 다시
+  // 받는 두 번째 누적기를 둔다(둘 다 reset 지점을 함께 리셋).
+  const judgeAccRef = useRef(new BarbellAccumulator());
   const crossValFramesRef = useRef([]);     // 세트 동안 프레임별 융합 소스/일치도 로그
   const cogRef = useRef({ available: false, point: null });   // 최신 COG(측면 촬영시만)
   const barCogGapSamplesRef = useRef([]);   // 세트 동안 바-COG 수평 이격(cm) 샘플
@@ -98,6 +104,7 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
   const [referenceScale, setReferenceScale] = useState(null);
   const [calibrating, setCalibrating] = useState(false);
   const [calibrationPointCount, setCalibrationPointCount] = useState(0);
+  const [rotationDeg] = useCameraRotation();
 
   const handleResult = useCallback((lms, ts, video) => {
     const canvas = canvasRef.current;
@@ -119,9 +126,20 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
     }
 
     // ── 전신 무게중심(COG) 자동 인식 — 측면 촬영일 때만 ──
+    // (아래 마커 표시는 원본(raw) 좌표계 그대로 — video와 canvas가 CameraStage의
+    // 같은 CSS 회전 래퍼를 공유해 이중 보정하면 안 된다.)
     const cog = estimateBodyCOG(lms, fr.orientation);
     cogRef.current = cog;
     setCogActive(prev => (prev !== cog.available ? cog.available : prev));
+
+    // [2026-08-02] 카메라 원본이 회전된 채로 들어오는 기종(키오스크) 보정 —
+    // 바-COG 수평 이격(barCogHorizontalGap)은 "좌우" 축을 가정하는 판정이라
+    // 회전 보정된 좌표가 필요하다. 색상/원판색 트래킹은 픽셀 기반이라 그대로
+    // 두고(융합 로직 내부 일관성 유지), 판정에 들어가기 직전(최종 융합 지점·
+    // COG)에서만 보정한다.
+    const correctedLms = rotateLandmarksNormalized(lms, rotationDeg);
+    const correctedFr = assessFraming(correctedLms, { want: FRAMING_PRESETS.lifting.want });
+    const correctedCog = estimateBodyCOG(correctedLms, correctedFr.orientation);
 
     const r = roiRef.current;
     ctx.save();
@@ -158,11 +176,15 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
       const fused = fuseTrackingCandidates({ colorPoint: p, colorActive, skeletonPoint, plateColorPoint });
 
       if (fused.point && recordingRef.current) {
+        // fusedRef: 라이브 궤적 표시·녹화 합성용 — 원본(raw) 좌표 그대로 유지.
         fusedRef.current.push(fused.point, ts);
+        // judgeAccRef: 속도·렙 판정용 — 회전 보정된 좌표로 같은 시퀀스를 별도 누적.
+        const correctedFusedPoint = rotateLandmarksNormalized([fused.point], rotationDeg)[0];
+        judgeAccRef.current.push(correctedFusedPoint, ts);
         crossValFramesRef.current.push({ source: fused.source, agreement: fused.agreement, usedFallback: fused.usedFallback });
         // 바-COG 수평 이격(측면 인식시에만) — 정직성: COG 없으면 샘플을 남기지 않는다.
-        if (cog.available && cog.point) {
-          const gapRatio = barCogHorizontalGap(fused.point, cog.point);
+        if (correctedCog.available && correctedCog.point) {
+          const gapRatio = barCogHorizontalGap(correctedFusedPoint, correctedCog.point);
           const scale = resolveDistanceScale({
             referenceScale,
             personHeightRatio: phRef.current,
@@ -179,7 +201,7 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
         // 실시간 생체역학: 렙 카운트 + 렙 속도/저하 — 엔진이 프레임마다 갱신.
         const H = Number(heightCm) || null;
         const scale = resolveDistanceScale({ referenceScale, personHeightRatio: phRef.current, heightCm: H });
-        const lv = fusedRef.current.live(scale.cmPerRatio);
+        const lv = judgeAccRef.current.live(scale.cmPerRatio);
         setLiveReps(prev => (prev !== lv.reps ? lv.reps : prev));
         setLiveHud(prev => {
           if (prev && prev.reps === lv.reps && prev.lastRepVelocity === lv.lastRepVelocity
@@ -232,10 +254,9 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
       }
       ctx.restore();
     }
-  }, [activePts, heightCm, referenceScale]);
+  }, [activePts, heightCm, referenceScale, rotationDeg]);
 
   const { videoRef, start, stop, status, error, lockCapture, unlockCapture } = usePoseEngine({ onResult: handleResult });
-  const [rotationDeg] = useCameraRotation();
 
   const clearCountdown = useCallback(() => {
     if (countdownTimerRef.current) {
@@ -297,6 +318,7 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
     capRef.current.clear();
     plateTrackerRef.current.clear();
     fusedRef.current.reset();
+    judgeAccRef.current.reset();
     crossValFramesRef.current = [];
     barCogGapSamplesRef.current = [];
     calibrationPointsRef.current = [];
@@ -436,7 +458,7 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
     const phs = phSamplesRef.current.filter(Boolean).sort((a, b) => a - b);
     const phMed = phs.length ? phs[Math.floor(phs.length / 2)] : phRef.current;
     const scale = resolveDistanceScale({ referenceScale, personHeightRatio: phMed, heightCm: H });
-    const sum = fusedRef.current.summary({ cmPerRatio: scale.cmPerRatio, source: 'live' });
+    const sum = judgeAccRef.current.summary({ cmPerRatio: scale.cmPerRatio, source: 'live' });
     if (!sum || sum.valid === false) return null; // 정직성: 부족하면 결과 자체를 내지 않음
     const cm = sum.romCm;
     const sec = sum.durationSec;
@@ -511,6 +533,7 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
       runStartCountdown(() => {
         capRef.current.reset();
         fusedRef.current.reset();
+        judgeAccRef.current.reset();
         crossValFramesRef.current = [];
         barCogGapSamplesRef.current = [];
         phSamplesRef.current = [];

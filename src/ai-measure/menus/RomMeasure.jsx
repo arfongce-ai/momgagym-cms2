@@ -27,7 +27,7 @@ import RomSensorGoniometer from './RomSensorGoniometer.jsx';
 import RomVideoAngle from './RomVideoAngle.jsx';
 import { isSkeletonEnabled } from '../core/skeletonPref';
 import { drawGaugeHud } from '../core/recordingOverlay';
-import { DEFAULT_ASPECT, outputSize, aspectLabel, drawVideoCover, coverTransform } from '../core/recordAspect';
+import { DEFAULT_ASPECT, outputSize, aspectLabel, drawVideoCover, coverTransform, rotateLandmarksNormalized } from '../core/recordAspect';
 import { useCameraRotation } from '../core/useCameraRotation';
 
 const MAX_RECORD_MS = 60000;
@@ -146,30 +146,37 @@ export default function RomMeasure({ member, onSave, onBack }) {
   };
   useHardwareBack(inSubView, goBackOneStep);
 
+  const [rotationDeg] = useCameraRotation();
+
   // ── 라이브 프레임 콜백 ──
   const handlePose = useCallback((landmarks, ts, video) => {
     latestVideoRef.current = video || latestVideoRef.current;
     const smoothed = landmarks ? smootherRef.current(landmarks) : smootherRef.current(null);
     latestLandmarksRef.current = smoothed || latestLandmarksRef.current;
+    // 라이브 스켈레톤 오버레이는 CameraStage의 video와 같은 CSS 회전 래퍼
+    // 안에 있어 원본(raw) 좌표를 그대로 써야 한다(이중 회전 방지).
     drawSkeleton(canvasRef.current, video, smoothed, side, joint, poseMode);
 
     if (!smoothed) return;
 
+    // [2026-08-02] 카메라 원본이 회전된 채로 들어오는 기종(키오스크) 보정 —
+    // 각도 판정(accRef 누적·라이브 각도 표시)은 "위/아래" 기준 계산이 섞여
+    // 있어 회전 보정된 좌표를 써야 한다.
+    const corrected = rotateLandmarksNormalized(smoothed, rotationDeg);
     if (recordingRef.current && accRef.current) {
       const tMs = ts - startTsRef.current;
-      accRef.current.push(smoothed, tMs);
+      accRef.current.push(corrected, tMs);
       setElapsed(Math.round(tMs / 100) / 10);
       // 라이브 각도 표시(정규화 후 현재 프레임)
-      const norm = normalizePose(smoothed) || smoothed;
+      const norm = normalizePose(corrected) || corrected;
       const L = jointAngleByMode(norm, joint, 'left', poseMode).angle;
       const R = jointAngleByMode(norm, joint, 'right', poseMode).angle;
       setLiveAngle({ left: L, right: R });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [joint, poseMode, side]);
+  }, [joint, poseMode, side, rotationDeg]);
 
   const { videoRef, start, stop, status, error } = usePoseEngine({ onResult: handlePose, modelTier: 'full' });
-  const [rotationDeg] = useCameraRotation();
 
   useEffect(() => {
     if (mode !== 'live') return undefined;
@@ -304,7 +311,7 @@ export default function RomMeasure({ member, onSave, onBack }) {
       return;
     }
     beepSuccess();
-    const snap = captureVideoSnapshot(latestVideoRef.current);
+    const snap = captureVideoSnapshot(latestVideoRef.current, rotationDeg);
     setSnapshotUrl(snap);
     pendingSnapRef.current = snap;
     pendingSummaryRef.current = summary;
@@ -772,13 +779,15 @@ function objectContainMapper(video, width, height) {
   return { x: (p) => ox + p.x * drawW, y: (p) => oy + p.y * drawH };
 }
 
-function captureVideoSnapshot(video) {
+function captureVideoSnapshot(video, rotationDeg = 0) {
   if (!video?.videoWidth || !video?.videoHeight) return '';
+  const swapped = rotationDeg === 90 || rotationDeg === 270;
   const canvas = document.createElement('canvas');
-  canvas.width = video.videoWidth;
-  canvas.height = video.videoHeight;
+  // [2026-08-02] 회전 보정: 90/270에서는 저장될 사진의 가로/세로가 원본과 반대.
+  canvas.width = swapped ? video.videoHeight : video.videoWidth;
+  canvas.height = swapped ? video.videoWidth : video.videoHeight;
   const ctx = canvas.getContext('2d');
-  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+  if (!drawVideoCover(ctx, video, canvas.width, canvas.height, rotationDeg)) return '';
   return canvas.toDataURL('image/jpeg', 0.82);
 }
 

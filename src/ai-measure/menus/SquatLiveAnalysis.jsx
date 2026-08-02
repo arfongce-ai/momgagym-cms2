@@ -24,7 +24,7 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { usePoseEngine } from '../core/usePoseEngine';
 import { StandingCalibrator, SquatBiomechanicsTracker, pelvicTiltDegOf, kneeValgusDegOf } from '../core/squatBiomechanicsTracker';
-import { DEFAULT_ASPECT, outputSize, drawVideoCover, coverTransform } from '../core/recordAspect';
+import { DEFAULT_ASPECT, outputSize, drawVideoCover, coverTransform, rotateLandmarksNormalized } from '../core/recordAspect';
 import { useCameraRotation } from '../core/useCameraRotation';
 import { computeDisplayAngles } from '../core/squatJointAngles';
 import { drawGaugeHud } from '../core/recordingOverlay';
@@ -329,18 +329,29 @@ export default function SquatLiveAnalysis({ member, onBack, onComplete }) {
     setUiPhase('calibrating');
   };
 
+  const [rotationDeg] = useCameraRotation();
+
   const handleResult = useCallback((landmarks, ts, video) => {
     lastTsRef.current = ts;
     latestVideoElRef.current = video || latestVideoElRef.current;
+    // 원본(raw) 그대로 보관 — 녹화 합성 루프가 이 값을 coverTransform(rotationDeg)에
+    // 직접 넘겨 자체적으로 회전 보정하므로 여기서 미리 보정하면 이중 회전이 된다.
     latestLandmarksRef.current = landmarks;
     if (!calibRef.current) calibRef.current = new StandingCalibrator({});
     const calib = calibRef.current;
 
+    // 라이브 스켈레톤 오버레이도 CameraStage와 같은 CSS 회전 래퍼를 공유하므로
+    // 원본(raw) 좌표를 그대로 쓴다(이중 회전 방지).
     drawSkeleton(canvasRef.current, video, landmarks, calib.locked, null, view);
     if (!landmarks) return;
 
+    // [2026-08-02] 카메라 원본이 회전된 채로 들어오는 기종(키오스크) 보정 —
+    // 스쿼트 판정(기준선·체간기울기·무릎각도·골반높이)은 전부 "수직/좌우" 축을
+    // 가정하는 계산이라 회전 보정된 좌표가 필요하다.
+    const corrected = rotateLandmarksNormalized(landmarks, rotationDeg);
+
     if (!calib.locked) {
-      calib.push(landmarks);
+      calib.push(corrected);
       const st = calib.status();
       if (st.ready) {
         setUiPhase('ready'); // 캘리브레이션 완료
@@ -367,7 +378,7 @@ export default function SquatLiveAnalysis({ member, onBack, onComplete }) {
     if (!tracker || tracker.trials.length >= tracker.maxTrials) return;
 
     const beforeCount = tracker.trials.length;
-    tracker.push(landmarks, ts);
+    tracker.push(corrected, ts);
 
     if (tracker.phase === 'active') {
       setUiPhase('active');
@@ -399,10 +410,9 @@ export default function SquatLiveAnalysis({ member, onBack, onComplete }) {
       setUiPhase('ready');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view]);
+  }, [view, rotationDeg]);
 
   const { videoRef, start, stop, status, error } = usePoseEngine({ onResult: handleResult });
-  const [rotationDeg] = useCameraRotation();
 
   useEffect(() => {
     if (!startedRef.current) {

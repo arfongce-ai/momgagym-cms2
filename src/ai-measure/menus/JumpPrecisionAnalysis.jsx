@@ -29,6 +29,7 @@ import { store } from '../../demoData';
 import { isSkeletonEnabled } from '../core/skeletonPref';
 import SkeletonToggleChip from './SkeletonToggleChip';
 import { useCameraRotation } from '../core/useCameraRotation';
+import { rotateLandmarksNormalized } from '../core/recordAspect';
 import { drawGaugeHud } from '../core/recordingOverlay';
 import GaugeHud from './GaugeHud';
 
@@ -549,17 +550,24 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
       const calib = calibRef.current;
       let tracker = trackerRef.current;
 
-      // 스켈레톤 + 기준선
+      // 스켈레톤 + 기준선 — 라이브 오버레이는 CameraStage와 같은 CSS 회전
+      // 래퍼를 공유하므로 원본(raw) 좌표를 그대로 쓴다(이중 회전 방지).
       try {
         const ph = tracker ? (tracker.inAir ? 'air' : 'ready') : 'arming';
         drawSkeleton(skeletonCanvasRef.current, video, landmarks, ph);
         if (calib?.result) drawBaseline(skeletonCanvasRef.current, video, calib.result.baselineFeetY, rotationDegRef.current);
       } catch (e) { /* noop */ }
 
-      if (landmarks && viewRef.current === 'camera') {
+      // [2026-08-02] 카메라 원본이 회전된 채로 들어오는 기종(키오스크) 보정 —
+      // 점프 높이는 발/골반의 "수직" 변위를 재는 판정이라, 회전 보정 없이는
+      // 완전히 다른 축(좌우 흔들림 등)을 재게 된다. 캘리브레이션·트래킹·
+      // 생체역학 누적·방향 판별 전부 보정된 좌표를 써야 한다.
+      const corrected = landmarks ? rotateLandmarksNormalized(landmarks, rotationDegRef.current) : null;
+
+      if (corrected && viewRef.current === 'camera') {
         if (!calib.locked) {
           // ── 캘리브레이션 단계 ──
-          calib.push(landmarks, ts);
+          calib.push(corrected, ts);
           const st = calib.status();
           if (st.ready) {
             // 락 완료 → 기준 확보. 단, 자동으로 측정을 시작하지 않는다.
@@ -602,13 +610,13 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
           }
           tracker = trackerRef.current; // 위에서 방금 생성됐을 수 있으니 다시 읽는다
           // 프레임 간격(ms) 수집 — RSI 접지시간 정확도(fps) 판정용
-          tracker.push(landmarks, ts);
+          tracker.push(corrected, ts);
           const curInAir = tracker.inAir;
           const prevInAir = prevInAirRef.current;
           if (prevInAir && !curInAir) landFramesLeftRef.current = LAND_WINDOW;
           const landActive = landFramesLeftRef.current > 0;
           const { phase: jp, justTookOff } = jumpPhaseOf(prevInAir, curInAir, landActive);
-          biomechAccRef.current?.push(landmarks, ts, jp, justTookOff);
+          biomechAccRef.current?.push(corrected, ts, jp, justTookOff);
           if (landActive && !curInAir) landFramesLeftRef.current--;
           prevInAirRef.current = curInAir;
           // 반응(RSI) 모드: 측면뷰 판정용 방향 누적.
@@ -616,7 +624,7 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
           //   유발할 수 있다 — JumpBiomechAccumulator.push 의 방향 투표(354행 부근)와
           //   동일하게 공중 프레임은 제외한다. RSI는 반응 점프 특성상 체공 비중이
           //   커서(파워 점프 대비) 이 필터를 빼먹으면 투표가 쉽게 오염된다.
-          if (orientRef.current && jp !== 'air') orientRef.current.push(landmarks);
+          if (orientRef.current && jp !== 'air') orientRef.current.push(corrected);
           const prevTs = prevFrameTsRef.current;
           if (prevTs > 0) {
             const dt = ts - prevTs;

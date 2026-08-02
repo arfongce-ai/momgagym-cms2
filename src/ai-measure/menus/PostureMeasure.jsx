@@ -10,6 +10,8 @@ import ReportActions from '../../components/report/ReportActions';
 import { drawPostureSnapshotOverlay } from '../core/postureOverlay';
 import { useHardwareBack } from '../core/useHardwareBack';
 import { isSkeletonEnabled } from '../core/skeletonPref';
+import { useCameraRotation } from '../core/useCameraRotation';
+import { rotateLandmarksNormalized, drawVideoCover } from '../core/recordAspect';
 
 const VIEW_STEPS = [
   { key: 'front', label: '정면', short: '앞' },
@@ -45,6 +47,12 @@ export default function PostureMeasure({ member, onSave, onBack }) {
   const activeViewKeyRef = useRef('front'); // 콜백에서 최신 목표 면 참조
   const captureModeRef = useRef('select');  // 콜백에서 최신 모드 참조
   const activeStepLabelRef = useRef('정면'); // 수동 모드 가이드 문구용
+  // [2026-08-02] 카메라 원본이 회전된 채로 들어오는 기종(키오스크 등) 보정용.
+  // handlePose가 useCallback([]) 고정 함수라 상태 대신 ref로 최신값을 참조한다
+  // (JumpPrecisionAnalysis.jsx의 rotationDegRef와 동일 패턴).
+  const [rotationDeg] = useCameraRotation();
+  const rotationDegRef = useRef(0);
+  useEffect(() => { rotationDegRef.current = rotationDeg; }, [rotationDeg]);
 
   // 촬영 방식: 'select'(시작 전 모드 선택) → 'auto' | 'manual'
   const [captureMode, setCaptureMode] = useState('select'); // select | auto | manual
@@ -105,16 +113,22 @@ export default function PostureMeasure({ member, onSave, onBack }) {
   const handlePose = useCallback((landmarks, ts, video) => {
     latestVideoRef.current = video || latestVideoRef.current;
     const smoothed = landmarks ? smootherRef.current(landmarks) : smootherRef.current(null);
-    latestLandmarksRef.current = smoothed || latestLandmarksRef.current;
+    // 라이브 스켈레톤 오버레이(canvasRef)는 CameraStage의 video와 같은 CSS 회전
+    // 래퍼 안에 있어(video+canvas가 한 덩어리로 시각적으로 돌아감) 원본(raw)
+    // 좌표를 그대로 써야 한다 — 여기서 회전 보정하면 이중 회전이 된다.
     drawSkeleton(canvasRef.current, video, smoothed, activeViewKeyRef.current);
+    // 그 외(뷰 판정·캡처·분석)는 전부 회전 보정된 좌표를 써야 "위/아래·좌/우"를
+    // 가정하는 계산(목 기울기, 거북목 등)이 이 카메라에서도 정확하다.
+    const corrected = smoothed ? rotateLandmarksNormalized(smoothed, rotationDegRef.current) : null;
+    latestLandmarksRef.current = corrected || latestLandmarksRef.current;
 
-    if (!smoothed) {
+    if (!corrected) {
       setGuide('전신이 보이도록 한 걸음 뒤로 이동해 주세요.');
       frameBufferRef.current = [];
       viewVoterRef.current.reset();
       return;
     }
-    if (!isFullBodyVisible(smoothed)) {
+    if (!isFullBodyVisible(corrected)) {
       setGuide('어깨, 골반, 무릎, 발목이 모두 보이게 화면을 맞춰주세요.');
       frameBufferRef.current = [];
       viewVoterRef.current.reset();
@@ -123,7 +137,7 @@ export default function PostureMeasure({ member, onSave, onBack }) {
     }
     // 안정적으로 전신이 잡힌 프레임만 시간순 버퍼에 누적(슬라이딩 윈도우).
     const buf = frameBufferRef.current;
-    buf.push({ landmarks: smoothed, ts });
+    buf.push({ landmarks: corrected, ts });
     const cutoff = ts - CAPTURE_WINDOW_MS;
     while (buf.length && buf[0].ts < cutoff) buf.shift();
     // (측정 중 점수/CoG 패널 제거 → 매 프레임 분석 계산 중단. 결과는 촬영 시 1회 산출)
@@ -131,7 +145,7 @@ export default function PostureMeasure({ member, onSave, onBack }) {
     // ── 자동 촬영 모드: 목표 면 인식 → 안정되면 카운트다운 트리거 ──
     if (captureModeRef.current === 'auto') {
       const target = activeViewKeyRef.current;
-      const det = detectPostureView(smoothed);
+      const det = detectPostureView(corrected);
       viewVoterRef.current.push(det.view);
       if (ts % 120 < 18) setDetectedView(det.view);
       if (autoBusyRef.current) return; // 카운트다운/캡처 중이면 가이드 유지
@@ -224,7 +238,7 @@ export default function PostureMeasure({ member, onSave, onBack }) {
     // 후면 측정: 코·눈은 추정값이라 제거하고 분석/저장 (귀만 유지)
     const landmarks = step.key === 'back' ? sanitizeBackLandmarks(rawLandmarks) : rawLandmarks;
 
-    const snapshotUrl = captureVideoSnapshot(latestVideoRef.current);
+    const snapshotUrl = captureVideoSnapshot(latestVideoRef.current, rotationDegRef.current);
     const bi = bodyInfoRef.current;
     const analysis = analyzePostureFromLandmarks(landmarks, {
       heightCm: bi.heightCm,
@@ -1143,13 +1157,19 @@ async function createPostureSnapshotFile(item, filename) {
   return new File([blob], filename, { type: 'image/jpeg' });
 }
 
-function captureVideoSnapshot(video) {
+function captureVideoSnapshot(video, rotationDeg = 0) {
   if (!video?.videoWidth || !video?.videoHeight) return '';
+  const swapped = rotationDeg === 90 || rotationDeg === 270;
   const canvas = document.createElement('canvas');
-  canvas.width = video.videoWidth;
-  canvas.height = video.videoHeight;
+  // [2026-08-02] 회전 보정: 90/270에서는 실제 저장될 사진의 가로/세로가 원본
+  // 비디오와 반대가 된다(세로로 서 있는 사람 → 원본은 가로로 눕게 들어옴).
+  canvas.width = swapped ? video.videoHeight : video.videoWidth;
+  canvas.height = swapped ? video.videoWidth : video.videoHeight;
   const ctx = canvas.getContext('2d');
-  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+  // drawVideoCover가 recordAspect.js의 rotateLandmarksNormalized와 동일한 회전
+  // 방향 규약을 쓰므로, 이 사진 위에 (역시 회전 보정된) 랜드마크를 그대로
+  // x*width, y*height 로 겹쳐도 어긋나지 않는다.
+  if (!drawVideoCover(ctx, video, canvas.width, canvas.height, rotationDeg)) return '';
   return canvas.toDataURL('image/jpeg', 0.82);
 }
 
