@@ -54,6 +54,13 @@ export const ROM_NORMS = Object.freeze({
     STANDING:  { dorsiflexion: { normal: 20, min: 10, max: 30 } },
     SEATED:    { dorsiflexion: { normal: 20, min: 10, max: 30 } },
   },
+  // [2026-08-02 신규] 주관절(팔꿈치). 출처: 임상 가동범위 표준치(평균, 능동 굴곡
+  // 약 140~150°) — 다른 관절과 마찬가지로 절대 정답이 아닌 sanity 기준. 실제
+  // 캡처 데이터 축적 후 보정 필요.
+  ELBOW: {
+    STANDING:  { flexion: { normal: 140, min: 120, max: 155 } },
+    SEATED:    { flexion: { normal: 140, min: 120, max: 155 } },
+  },
 });
 
 export function round(value, digits = 1) {
@@ -189,7 +196,7 @@ function stdDev(values) {
 //       아닌 몸 기준). 카메라에 대해 어느 방향으로 눕든 결과가 같다. 보상을
 //       통제한 '순수 구조적 ROM'. 동작 끝범위의 잔떨림(등척성 안정성)을 별도로 추출.
 //
-//   joint: 'HIP' | 'KNEE' | 'SHOULDER' | 'ANKLE'
+//   joint: 'HIP' | 'KNEE' | 'SHOULDER' | 'ANKLE' | 'ELBOW'
 //   side:  'left' | 'right'
 //   poseMode: 'STANDING' | 'SUPINE' | 'PRONE' | 'SEATED'
 //  반환: { angle, compensatory, base } — angle=관절각, compensatory=보상값(STANDING).
@@ -256,6 +263,12 @@ export function jointAngleByMode(landmarks, joint, side, poseMode) {
   } else if (joint === 'ANKLE') {
     // 발목 배측굴곡 근사: 정강이(knee→ankle) 와 발(ankle→foot) 사잇각.
     angle = angleBetween(knee, ankle, foot, false);
+  } else if (joint === 'ELBOW') {
+    // 주관절(팔꿈치) — 무릎과 동일한 단순 경첩 관절. 상완(shoulder→elbow)과
+    // 전완(elbow→wrist) 사잇각을 그대로 쓴다(축 기준 보정 불필요). 펴면 180에
+    // 가깝고, 굽힐수록 작아진다 — KNEE와 동일한 성질이라 repMax()에서도
+    // KNEE와 같은 (180 - 최소각) 보정을 함께 적용한다.
+    angle = angleBetween(shoulder, elbow, wrist, false);
   }
 
   return { angle, compensatory, base };
@@ -343,10 +356,19 @@ export class RomAccumulator {
   }
 
   // 자세·관절 정상 범위를 벗어나는 값은 대표값 산출에서 제외(측정 정직성).
+  // [2026-08-02 버그 수정] KNEE·ELBOW는 raw 내각이 굴곡할수록 "작아지고"
+  // repMax()에서 (180 - raw)로 뒤집어 flexion 지표를 만든다. 그런데 이 필터가
+  // ROM_NORMS의 min/max(=flexion 공간 값)를 raw 값에 그대로 적용하고 있었다 —
+  // 즉 가장 깊이 굽힌(=raw가 가장 작은, 임상적으로 가장 중요한) 표본이
+  // "비정상치"로 걸러져 최대 굴곡각이 실제보다 작게 보고되는 버그였다.
+  // 두 관절은 min/max를 raw 공간으로 변환(180-x, 대소 반전)해서 필터링한다.
   _sanityRange() {
     const spec = ROM_NORMS[this.joint]?.[this.poseMode] || null;
     if (!spec) return { lo: -30, hi: 200 };
     const first = Object.values(spec)[0];
+    if (this.joint === 'KNEE' || this.joint === 'ELBOW') {
+      return { lo: Math.max(-30, 180 - first.max - 40), hi: 180 - first.min + 40 };
+    }
     return { lo: Math.max(-30, first.min - 40), hi: first.max + 40 };
   }
 
@@ -358,10 +380,10 @@ export class RomAccumulator {
     const smR = movingAverage(rawR, this.smoothWindow).filter((v) => v != null && v >= lo && v <= hi);
 
     // 굴곡 ROM 은 '최대 굴곡각'이 핵심 지표. HIP/SHOULDER 기준벡터각은 클수록 굴곡↑.
-    // KNEE 내각은 굴곡 시 작아지므로(폄=180), maxFlexion = 180 - min(내각).
+    // KNEE·ELBOW 내각은 굴곡 시 작아지므로(폄=180), maxFlexion = 180 - min(내각).
     const repMax = (arr) => {
       if (!arr.length) return null;
-      if (this.joint === 'KNEE') {
+      if (this.joint === 'KNEE' || this.joint === 'ELBOW') {
         const minInner = Math.min(...arr);
         return round(180 - minInner, 1);
       }

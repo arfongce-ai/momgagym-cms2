@@ -10,15 +10,22 @@ import { nextPhase, firstPhase, phaseDurationSec } from '../core/intervalTimer';
 import { loadPoseLandmarker, detectPoseFrame, isPoseReady, closePoseLandmarker } from '../core/poseBackend';
 import { isSkeletonEnabled, subscribeSkeleton, useSkeletonOverlay } from '../core/skeletonPref';
 import { angleDeg } from '../core/postureMath';
+import { createSmoother } from '../core/smoothing';
 import SkeletonToggleChip from './SkeletonToggleChip';
 
 // 스켈레톤 뼈대(어깨~골반~사지) — 전신 스틱 피규어.
-const SKELETON_BONES = [
-  [11, 12], [11, 23], [12, 24], [23, 24],
+// [2026-08-02] 참고 영상(Live Analysis) 스타일 반영: 상체(빨강)·하체(초록) 2색으로
+// 나눠 그린다 — 팔·어깨선~몸통(어깨-고관절)까지가 상체, 골반선 아래부터 하체.
+const UPPER_BONES = [
+  [11, 12], [11, 23], [12, 24],
   [11, 13], [13, 15], [12, 14], [14, 16],
+];
+const LOWER_BONES = [
+  [23, 24],
   [23, 25], [25, 27], [27, 29], [27, 31], [29, 31],
   [24, 26], [26, 28], [28, 30], [28, 32], [30, 32],
 ];
+const SKELETON_BONES = [...UPPER_BONES, ...LOWER_BONES];
 const SKELETON_JOINTS = [11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28];
 
 // 실시간 관절각 표시(참고 영상 스타일) — [끝점A, 꼭짓점(각 표시 위치), 끝점B].
@@ -107,9 +114,13 @@ function drawSkeletonToRecordCover(ctx, video, landmarks, width, height) {
 }
 
 function drawSkeletonPaths(ctx, landmarks, px, py, lineW, dotR, scale = 1) {
-  ctx.strokeStyle = 'rgba(52,211,153,0.9)';
-  ctx.lineWidth = lineW;
+  // 시인성 개선: 뼈대·관절점 밑에 어두운 외곽선(halo)을 먼저 깔아, 배경이나 옷
+  // 색이 스켈레톤 색과 비슷해도(초록 계열 바닥, 살구색 피부 등) 또렷이 보이게 한다.
+  // 자막에 검은 테두리를 두르는 것과 같은 원리 — 색 자체를 진하게 하는 것보다
+  // 어떤 배경에서도 일관되게 효과적이다.
   ctx.lineCap = 'round';
+  ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+  ctx.lineWidth = lineW + 3 * scale;
   for (const [a, b] of SKELETON_BONES) {
     const pa = landmarks[a], pb = landmarks[b];
     if (!skelVisible(pa) || !skelVisible(pb)) continue;
@@ -118,31 +129,76 @@ function drawSkeletonPaths(ctx, landmarks, px, py, lineW, dotR, scale = 1) {
     ctx.lineTo(px(pb), py(pb));
     ctx.stroke();
   }
-  ctx.fillStyle = 'rgba(251,191,36,0.95)';
+  // 상체(빨강)·하체(초록) 2색 — 참고 스타일(Live Analysis)처럼 어느 사슬을
+  // 보고 있는지 한눈에 구분되게 한다.
+  ctx.lineWidth = lineW;
+  const drawBoneGroup = (bones, color) => {
+    ctx.strokeStyle = color;
+    for (const [a, b] of bones) {
+      const pa = landmarks[a], pb = landmarks[b];
+      if (!skelVisible(pa) || !skelVisible(pb)) continue;
+      ctx.beginPath();
+      ctx.moveTo(px(pa), py(pa));
+      ctx.lineTo(px(pb), py(pb));
+      ctx.stroke();
+    }
+  };
+  drawBoneGroup(UPPER_BONES, 'rgba(248,113,113,0.95)');
+  drawBoneGroup(LOWER_BONES, 'rgba(52,211,153,0.95)');
+
   for (const i of SKELETON_JOINTS) {
     const p = landmarks[i];
     if (!skelVisible(p)) continue;
+    ctx.fillStyle = 'rgba(0,0,0,0.6)';
+    ctx.beginPath();
+    ctx.arc(px(p), py(p), dotR + 1.5 * scale, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#ffffff';
     ctx.beginPath();
     ctx.arc(px(p), py(p), dotR, 0, Math.PI * 2);
     ctx.fill();
   }
 
-  // 관절각(팔꿈치·어깨·고관절·무릎) — 세 랜드마크가 모두 보이면 흰 강조 링과
-  // 각도 라벨을 함께 그린다(참고 영상 스타일).
-  ctx.strokeStyle = 'rgba(255,255,255,0.9)';
-  ctx.lineWidth = Math.max(1.5, lineW * 0.6);
+  // 관절각(팔꿈치·어깨·고관절·무릎) — 참고 이미지(움직임 분석 앱) 스타일로
+  // 관절에 딱 붙은 작은 링이 아니라, 연결된 두 뼈대 길이에 비례한 "각도기"
+  // 호를 그린다. 사람이 화면에 크게/작게 잡혀도 비율이 자연스럽게 맞도록,
+  // 두 세그먼트 중 짧은 쪽 길이의 절반을 반지름으로 쓴다.
+  // [2026-08-02] 항상 꽉 찬 원이 아니라, 두 뼈대가 실제로 벌어진 만큼만
+  // 호로 그린다(각이 좁으면 호도 좁게, 거의 펴져 있으면 호가 원에 가깝게) —
+  // 참고 이미지에서 각도마다 원의 "트인 정도"가 다른 것과 같은 원리.
+  const ringLineW = Math.max(1.5, lineW * 0.6);
   for (const [ia, ib, ic] of ANGLE_JOINTS) {
     const a = landmarks[ia], b = landmarks[ib], c = landmarks[ic];
     if (!skelVisible(a) || !skelVisible(b) || !skelVisible(c)) continue;
     const angleRaw = angleDeg(a, b, c);
     if (angleRaw == null) continue;
     const angle = Math.round(angleRaw);
-    const bx = px(b);
-    const by = py(b);
+    const ax = px(a), ay = py(a);
+    const bx = px(b), by = py(b);
+    const cx = px(c), cy = py(c);
+    const segA = Math.hypot(ax - bx, ay - by);
+    const segC = Math.hypot(cx - bx, cy - by);
+    const ringR = Math.max(dotR * 3, Math.min(Math.min(segA, segC) * 0.5, dotR * 16));
+    // 화면(2D) 상에서 두 뼈대 방향 사이의 최단 호(=내각)를 구한다.
+    const angA = Math.atan2(ay - by, ax - bx);
+    const angC = Math.atan2(cy - by, cx - bx);
+    let diff = angC - angA;
+    while (diff > Math.PI) diff -= Math.PI * 2;
+    while (diff <= -Math.PI) diff += Math.PI * 2;
+    const ccw = diff < 0;
+    ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+    ctx.lineWidth = ringLineW + 2 * scale;
     ctx.beginPath();
-    ctx.arc(bx, by, dotR * 1.9, 0, Math.PI * 2);
+    ctx.arc(bx, by, ringR, angA, angC, ccw);
     ctx.stroke();
-    drawAngleLabel(ctx, bx, by, angle, scale);
+    ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+    ctx.lineWidth = ringLineW;
+    ctx.beginPath();
+    ctx.arc(bx, by, ringR, angA, angC, ccw);
+    ctx.stroke();
+    // 라벨은 관절점이 아니라 커진 호의 꼭대기를 기준으로 띄워, 큰 호일수록
+    // 라벨과 겹치지 않고 바깥에 뜬다.
+    drawAngleLabel(ctx, bx, by - ringR, angle, scale);
   }
 }
 
@@ -283,7 +339,12 @@ export default function RecordMeasure({ member: _member, onBack }) {
   const focusTimerRef = useRef(null);
   const overlayStateRef = useRef({});
   // ── 스켈레톤 오버레이(선택) — 일반 녹화에 포즈 스켈레톤을 겹쳐 저장 ──
-  const latestLandmarksRef = useRef(null); // 최신 검출 랜드마크(미리보기·녹화 공용)
+  const latestLandmarksRef = useRef(null); // 최신 검출 랜드마크(미리보기·녹화 공용, 스무딩 적용됨)
+  // [2026-08-02] 관절각 표시가 프레임마다 크게 튀는 문제(민감도 과다) 수정용.
+  // 다른 측정 화면(PostureMeasure 등)과 동일하게 EMA 스무더를 거친 좌표로만
+  // 각도를 계산·표시한다 — 원본 좌표를 직접 쓰면 MediaPipe 검출 노이즈가
+  // 그대로 각도 숫자에 반영돼 매 프레임 몇 도씩 흔들려 보인다.
+  const smootherRef = useRef(createSmoother(0.28));
   const poseDetectTsRef = useRef(0);       // detectPoseFrame 타임스탬프 단조 증가용
   const skeletonOnRef = useRef(isSkeletonEnabled()); // 콜백 안 최신 on/off
   const poseLoadingRef = useRef(false);    // 로더 중복 호출 방지
@@ -321,8 +382,12 @@ export default function RecordMeasure({ member: _member, onBack }) {
     if (skeletonOnRef.current) ensurePoseModel();
     const off = subscribeSkeleton((on) => {
       skeletonOnRef.current = on;
-      if (on) ensurePoseModel();
-      else latestLandmarksRef.current = null;
+      if (on) {
+        ensurePoseModel();
+        smootherRef.current = createSmoother(0.28); // 꺼져있던 동안의 낡은 좌표로 갑자기 당겨지는 것 방지
+      } else {
+        latestLandmarksRef.current = null;
+      }
     });
     return off;
   }, [ensurePoseModel]);
@@ -360,7 +425,12 @@ export default function RecordMeasure({ member: _member, onBack }) {
           const res = detectPoseFrame(video, ts);
           landmarks = res?.landmarks || null;
         } catch (e) { landmarks = null; }
-        latestLandmarksRef.current = landmarks || latestLandmarksRef.current;
+        // 새로 검출된 프레임만 스무더에 통과시킨다. 이번 프레임에 검출이 비면(landmarks
+        // null) 스무더를 건드리지 않고 마지막으로 표시하던 좌표를 그대로 유지한다
+        // (기존 동작과 동일) — 스무더에 null을 넣으면 내부 상태가 리셋돼버리기 때문.
+        if (landmarks) {
+          latestLandmarksRef.current = smootherRef.current(landmarks);
+        }
         drawSkeletonCover(canvas, video, latestLandmarksRef.current);
       } else {
         // 스켈레톤 OFF: 오버레이 캔버스를 비운다.

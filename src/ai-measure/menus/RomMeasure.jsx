@@ -37,6 +37,7 @@ const JOINTS = [
   { key: 'KNEE', label: '슬관절(무릎)', short: '무릎' },
   { key: 'SHOULDER', label: '견관절(어깨)', short: '어깨' },
   { key: 'ANKLE', label: '족관절(발목)', short: '발목' },
+  { key: 'ELBOW', label: '주관절(팔꿈치)', short: '팔꿈치' },
 ];
 
 // 관절별 허용 자세모드 (해부학적으로 의미 있는 조합만 노출).
@@ -58,6 +59,11 @@ const POSE_MODES_BY_JOINT = {
   ANKLE: [
     { key: 'STANDING', label: '서서', desc: '배측굴곡' },
     { key: 'SEATED', label: '앉아서', desc: '배측굴곡' },
+  ],
+  // [2026-08-02 신규] 어깨와 동일하게 눕지 않고 서서/앉아서 능동 굴곡만 본다.
+  ELBOW: [
+    { key: 'STANDING', label: '서서', desc: '팔꿈치 능동 굴곡(손을 어깨쪽으로)' },
+    { key: 'SEATED', label: '앉아서', desc: '체간 안정 상태 굴곡' },
   ],
 };
 
@@ -856,6 +862,7 @@ function romOverlayGeometry(landmarks, side, joint, poseMode, mapper, width, hei
   const ankle = p('ANKLE');
   const shoulder = p('SHOULDER');
   const elbow = p('ELBOW');
+  const wrist = p('WRIST');
   const foot = p('FOOT_INDEX');
   const refLen = Math.max(42, Math.min(width, height) * 0.16);
   // 기준선 표시점: STANDING/SEATED는 화면상 '위쪽'(중력수직선, 실제 계산과 일치).
@@ -877,6 +884,7 @@ function romOverlayGeometry(landmarks, side, joint, poseMode, mapper, width, hei
   if (joint === 'KNEE' && hip && knee && ankle) return { a: hip, b: knee, c: ankle };
   if (joint === 'SHOULDER' && shoulder && elbow) return { a: refPoint(shoulder, hip), b: shoulder, c: elbow };
   if (joint === 'ANKLE' && knee && ankle && foot) return { a: knee, b: ankle, c: foot };
+  if (joint === 'ELBOW' && shoulder && elbow && wrist) return { a: shoulder, b: elbow, c: wrist };
   return null;
 }
 
