@@ -22,6 +22,7 @@ import { applyRepFreeze } from '../core/repFreeze';
 import { OrientationVoter } from '../core/gaitBiomechanics';
 import { loadPoseLandmarker, detectPoseFrame, isPoseReady, closePoseLandmarker } from '../core/poseBackend';
 import { openMainCameraStream, describeCameraError } from '../core/cameraSelect';
+import { pickRecorderMime } from '../core/recordSink';
 import { beepTick, beepGo, primeAudio } from '../core/audioCue';
 import { lockZoom, unlockZoom } from '../../utils/viewportLock';
 import ReportActions from '../../components/report/ReportActions';
@@ -473,8 +474,9 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
     if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') return;
     chunksRef.current = [];
     recStartedAtRef.current = performance.now();
-    const mimeTypes = ['video/mp4', 'video/webm;codecs=vp8', 'video/webm'];
-    const mime = mimeTypes.find(m => window.MediaRecorder && MediaRecorder.isTypeSupported(m)) || '';
+    // [2026-08-03] 로컬 mp4-우선 배열 대신 공용 pickRecorderMime()을 쓴다 —
+    // 코덱까지 명시해야 크로미움에서 mp4가 실제로 잡힌다(recordSink.js 참고).
+    const mime = pickRecorderMime();
     try {
       const stream = createRecordedStream();
       const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
@@ -870,8 +872,12 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
             <canvas ref={skeletonCanvasRef} className="absolute inset-0 w-full h-full pointer-events-none" />
           </div>
 
-          {/* 헤더 */}
-          <div className="absolute top-0 z-20 inset-x-0 flex items-center justify-between px-4 py-3 bg-gradient-to-b from-black/60 to-transparent">
+          {/* 헤더 — [2026-08-05] safe-area-inset-top을 안 챙기고 있었다. 노치·
+              다이내믹 아일랜드가 있는 폰에서는 이 줄 전체가 시스템 상태바 밑에
+              깔려 버튼이 눌리지도, 글자가 보이지도 않았다(CameraStage 기반
+              화면들은 이미 이 처리가 돼 있음 — 여긴 자체 헤더라 빠져 있었다). */}
+          <div className="absolute top-0 z-20 inset-x-0 flex items-center justify-between px-4 pb-3 bg-gradient-to-b from-black/60 to-transparent"
+            style={{ paddingTop: 'calc(env(safe-area-inset-top) + 12px)' }}>
             <button onClick={onBack} className="text-white font-bold text-sm">← 뒤로</button>
             <h2 className="text-white font-black text-sm">점프 정밀 측정</h2>
             <div className="flex items-center gap-1.5">

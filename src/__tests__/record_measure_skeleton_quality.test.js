@@ -14,6 +14,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { join } from 'path';
+import { landmarkScreenPos } from '../ai-measure/menus/RecordMeasure.jsx';
 
 const src = readFileSync(
   join(process.cwd(), 'src/ai-measure/menus/RecordMeasure.jsx'),
@@ -95,9 +96,9 @@ describe('RecordMeasure.jsx — 뼈대 상/하체 2색 + 시인성 halo', () => 
     expect(jointColor).toBeGreaterThan(jointOutline);
   });
 
-  it('drawSkeletonPaths는 미리보기(Cover)와 녹화합성(ToRecordCover) 양쪽에서 공유된다(한 곳만 고치면 됨)', () => {
-    expect(src).toMatch(/drawSkeletonPaths\(ctx, landmarks, px, py, Math\.max\(2\.5, cw \/ 200\), Math\.max\(3, cw \/ 150\), labelScale, stabilizer\)/);
-    expect(src).toMatch(/drawSkeletonPaths\(ctx, landmarks, px, py, Math\.max\(2\.5, width \/ 220\), Math\.max\(3, width \/ 170\), labelScale, stabilizer\)/);
+  it('drawSkeletonPaths는 미리보기(Cover)와 녹화합성(ToRecordCover) 양쪽에서 공유된다(한 곳만 고치면 됨), 화면 크기도 함께 넘긴다', () => {
+    expect(src).toMatch(/drawSkeletonPaths\(ctx, landmarks, px, py, Math\.max\(2\.5, cw \/ 200\), Math\.max\(3, cw \/ 150\), labelScale, stabilizer, cw, ch\)/);
+    expect(src).toMatch(/drawSkeletonPaths\(ctx, landmarks, px, py, Math\.max\(2\.5, width \/ 220\), Math\.max\(3, width \/ 170\), labelScale, stabilizer, width, height\)/);
   });
 });
 
@@ -151,5 +152,87 @@ describe('RecordMeasure.jsx — 관절각 "각도기" 호(참고 이미지 스�
 
   it('라벨은 호의 바깥(꼭대기 방향)에 떠서 호와 겹치지 않는다', () => {
     expect(src).toMatch(/drawAngleLabel\(ctx, bx, by - ringR, angle, scale\);/);
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════
+//  [2026-08-05] 회귀 테스트 — "스켈레톤 on모드 시 화면에 안 보이는 부위는
+//  스켈레톤도 함께 보이지 않게 해줘(HUD 자연스러움)".
+//
+//  원인: skelVisible()가 MediaPipe 자체 신뢰도(.visibility)만 확인했다.
+//  이 화면은 object-cover로 카메라 원본을 잘라서 세로 화면에 꽉 채운다
+//  (px/py가 그 크롭 변환) — 카메라 원본에는 잡혀서 신뢰도가 높아도, 세로
+//  화면으로 자르면서 밖으로 밀려난 부위(옆으로 뻗은 팔 등)는 변환된 좌표가
+//  캔버스 밖으로 나간다. 신뢰도만 보면 이런 점도 "보인다"고 판단해 화면
+//  가장자리 밖에 뼈대·관절점을 그리려 시도했다(실제로는 안 보이거나, 크롭
+//  경계에 어색하게 매달려 보였다).
+//
+//  수정: landmarkScreenPos()를 새로 빼서, 신뢰도 확인 후 변환된 화면 좌표가
+//  실제 캔버스 범위(약간의 여유 포함) 안인지도 확인한다. 화면 밖이면
+//  신뢰도와 무관하게 제외 — 이제 카메라에 반쯤 걸쳐 있거나 화면 밖으로 나간
+//  부위는 뼈대가 조용히 사라진다(억지로 화면 끝에 매달리지 않음).
+// ════════════════════════════════════════════════════════════════════════
+describe('[2026-08-05 회귀] landmarkScreenPos — 화면(크롭 후) 밖 랜드마크는 신뢰도가 높아도 제외', () => {
+  const CW = 720, CH = 960;
+  const identityPx = (p) => p.x; // 테스트용: 이미 픽셀 좌표라고 가정(변환 없음)
+  const identityPy = (p) => p.y;
+
+  it('캔버스 안쪽 좌표 + 높은 신뢰도 → 정상적으로 위치를 반환', () => {
+    const p = { x: 360, y: 480, visibility: 0.9 };
+    expect(landmarkScreenPos(p, identityPx, identityPy, CW, CH)).toEqual({ x: 360, y: 480 });
+  });
+
+  it('[핵심] 신뢰도는 높지만(0.9) 변환된 좌표가 캔버스 밖 → 제외된다', () => {
+    // object-cover 크롭으로 옆으로 뻗은 팔이 화면 밖으로 밀려난 상황을 재현.
+    const p = { x: CW + 200, y: 300, visibility: 0.9 };
+    expect(landmarkScreenPos(p, identityPx, identityPy, CW, CH)).toBeNull();
+  });
+
+  it('음수 좌표(왼쪽 밖)도 마찬가지로 제외된다', () => {
+    const p = { x: -150, y: 300, visibility: 0.95 };
+    expect(landmarkScreenPos(p, identityPx, identityPy, CW, CH)).toBeNull();
+  });
+
+  it('신뢰도가 낮으면(0.1) 화면 안 좌표라도 기존처럼 제외된다(기존 동작 유지)', () => {
+    const p = { x: 360, y: 480, visibility: 0.1 };
+    expect(landmarkScreenPos(p, identityPx, identityPy, CW, CH)).toBeNull();
+  });
+
+  it('visibility 필드 자체가 없으면(구형 데이터) 좌표만으로 판단한다', () => {
+    const p = { x: 360, y: 480 };
+    expect(landmarkScreenPos(p, identityPx, identityPy, CW, CH)).toEqual({ x: 360, y: 480 });
+  });
+
+  it('경계에 살짝 걸친 좌표(약 2% 여유 이내)는 깜빡이지 않도록 포함된다', () => {
+    const marginX = CW * 0.02; // ≈14.4
+    const p = { x: CW + marginX * 0.5, y: 480, visibility: 0.9 };
+    expect(landmarkScreenPos(p, identityPx, identityPy, CW, CH)).not.toBeNull();
+  });
+
+  it('여유 범위를 확실히 벗어나면 제외된다', () => {
+    const marginX = CW * 0.02;
+    const p = { x: CW + marginX * 3, y: 480, visibility: 0.9 };
+    expect(landmarkScreenPos(p, identityPx, identityPy, CW, CH)).toBeNull();
+  });
+
+  it('랜드마크가 없거나(null) 좌표가 NaN이면 안전하게 null', () => {
+    expect(landmarkScreenPos(null, identityPx, identityPy, CW, CH)).toBeNull();
+    expect(landmarkScreenPos({ x: NaN, y: 480 }, identityPx, identityPy, CW, CH)).toBeNull();
+  });
+
+  it('drawSkeletonPaths의 posOf 캐시가 이 함수를 그대로 쓴다(로직 중복 없음)', () => {
+    const fnBody = fnBodyOf(src, 'drawSkeletonPaths');
+    expect(fnBody).toMatch(/landmarkScreenPos\(landmarks\[idx\], px, py, w, h\)/);
+  });
+
+  it('뼈대·관절점·각도 호 전부 posOf()로 화면 밖 여부를 확인한다(일부만 고치는 반쪽 수정 방지)', () => {
+    const fnBody = fnBodyOf(src, 'drawSkeletonPaths');
+    // 뼈대(halo+색상 그룹), 관절점, 각도 호 각각에서 posOf 사용을 확인.
+    const boneLoopIdx = fnBody.indexOf('for (const [a, b] of SKELETON_BONES)');
+    const jointLoopIdx = fnBody.indexOf('for (const i of SKELETON_JOINTS)');
+    const angleLoopIdx = fnBody.indexOf('for (const [ia, ib, ic] of ANGLE_JOINTS)');
+    expect(fnBody.slice(boneLoopIdx, boneLoopIdx + 150)).toMatch(/posOf\(a\), pb = posOf\(b\)/);
+    expect(fnBody.slice(jointLoopIdx, jointLoopIdx + 100)).toMatch(/posOf\(i\)/);
+    expect(fnBody.slice(angleLoopIdx, angleLoopIdx + 150)).toMatch(/posOf\(ia\), bPos = posOf\(ib\), cPos = posOf\(ic\)/);
   });
 });

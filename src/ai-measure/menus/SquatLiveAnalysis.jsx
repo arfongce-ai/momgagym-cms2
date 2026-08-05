@@ -29,6 +29,7 @@ import { useCameraRotation } from '../core/useCameraRotation';
 import { computeDisplayAngles } from '../core/squatJointAngles';
 import { colorForBone, evaluateSquatFrame, depthPctFromThighIncline, COMPENSATION_KO, scoreDeepSquatFms, worstOfTrials } from '../core/squatFms';
 import { evaluateSquatBiomechanics } from '../core/squatBiomechanics';
+import { pickRecorderMime } from '../core/recordSink';
 import { drawGaugeHud } from '../core/recordingOverlay';
 import CameraStage from './CameraStage.jsx';
 import GaugeHud from './GaugeHud.jsx';
@@ -294,8 +295,11 @@ export default function SquatLiveAnalysis({ member, onBack, onComplete }) {
   const beginRecording = () => {
     if (recordingStartedRef.current) return;
     try {
-      const mimeTypes = ['video/mp4', 'video/webm;codecs=vp8', 'video/webm'];
-      const selectedMime = mimeTypes.find(m => window.MediaRecorder?.isTypeSupported?.(m)) || '';
+      // [2026-08-03] 로컬 mp4-우선 배열 대신 공용 pickRecorderMime()을 쓴다 —
+      // 코덱까지 명시해야 크로미움에서 mp4가 실제로 잡힌다(recordSink.js 참고).
+      // 이게 카카오톡 영상 전송 오류의 원인이었다: 코드는 mp4를 우선한다고
+      // 돼 있었지만 실제로는 항상 webm으로 녹화되고 있었다.
+      const selectedMime = pickRecorderMime();
       const stream = createRecordedStream();
       if (stream) {
         const mr = new MediaRecorder(stream, selectedMime ? { mimeType: selectedMime } : undefined);
@@ -593,6 +597,11 @@ export default function SquatLiveAnalysis({ member, onBack, onComplete }) {
       {uiPhase === 'finished' && <p className="text-xs font-bold text-emerald-300">정면·측면 모두 완료 — {lastTrialNote}</p>}
       {finishing && <p className="text-xs font-bold text-amber-300">영상 정리 중…</p>}
       {errorMsg && <p className="text-xs font-bold text-red-300">{errorMsg}</p>}
+      {/* [2026-08-05] 예전엔 이 아래에 fixed top-3 right-3로 회차 배지를 따로
+          띄웠는데, CameraStage의 topBar 자체가 이미 top-right에 이 텍스트들을
+          쌓는 중이라 서로 겹쳤다. topBar 스택 안에 넣으면 같은 flex-col
+          gap-1.5가 자동으로 줄 간격을 잡아줘서 절대 겹치지 않는다. */}
+      <p className="text-xs font-bold text-slate-300">회차 {totalDone}/{SQUAT_LIVE_TOTAL_TRIALS}</p>
     </>
   );
 
@@ -645,51 +654,53 @@ export default function SquatLiveAnalysis({ member, onBack, onComplete }) {
       topBar={topBar} controls={controls} countdown={countdown}
       recording={recordingActive} recordingLabel={uiPhase === 'active' ? `진행 중 · 깊이 ${depthPct}%` : '녹화 중'}
     >
+      {/* [2026-08-05] 예전엔 보상패턴·대퇴골수평·종합판정 배지가 fixed
+          bottom-28/bottom-40 고정 픽셀 위치에 떠 있어서, GaugeHud·컨트롤
+          버튼 실제 크기와 무관하게 항상 같은 자리를 차지했다 — 보상패턴이
+          여러 개 뜨면 그 스택이 GaugeHud를 그대로 뒤덮었다. CameraStage의
+          children은 controls 위에 정상 문서 흐름(space-y-3)으로 쌓이므로,
+          여기 안에 넣으면 내용이 많아져도 서로 겹치지 않고 위로 밀려날 뿐이다. */}
       {uiPhase === 'active' && (
-        <GaugeHud label="패러렐까지" value={depthPct} unit="%" arc min={0} max={100}
-          accent={belowParallel ? '#38bdf8' : '#f59e0b'}
-          stats={[{ label: '회차', value: `${totalDone}/${SQUAT_LIVE_TOTAL_TRIALS}` }]} />
-      )}
-    </CameraStage>
-    {uiPhase === 'active' && belowParallel && (
-      <div className="pointer-events-none fixed bottom-28 left-1/2 -translate-x-1/2 z-40 rounded-full bg-sky-500/25 border border-sky-400/60 px-4 py-1.5 backdrop-blur">
-        <span className="text-sm font-black text-sky-200">✓ 대퇴골 수평 이하</span>
-      </div>
-    )}
-    {uiPhase === 'active' && fmsCompensations.length > 0 && (
-      <div className="pointer-events-none fixed bottom-40 left-1/2 -translate-x-1/2 z-40 flex flex-col items-center gap-1">
-        {fmsCompensations.map((c) => (
-          <span key={c} className="rounded-full bg-red-500/25 border border-red-400/60 px-3 py-1 text-xs font-bold text-red-200 backdrop-blur">
-            ⚠ {COMPENSATION_KO[c] || c}
-          </span>
-        ))}
-      </div>
-    )}
-    {status === 'running' && (
-      <div className="pointer-events-none fixed top-3 right-3 z-40 rounded-2xl bg-black/70 border border-white/20 px-4 py-2 text-center backdrop-blur">
-        <div className="text-[10px] font-bold text-slate-300 tracking-wide">회차</div>
-        <div className="text-2xl font-black text-white leading-none">{totalDone}<span className="text-sm text-slate-400">/{SQUAT_LIVE_TOTAL_TRIALS}</span></div>
-      </div>
-    )}
-    {uiPhase === 'finished' && finishedBio && (() => {
-      const st = finishedBio.status;
-      const theme = st === 'risk'
-        ? { border: 'border-red-500/40', bg: 'bg-red-500/20', text: 'text-red-300' }
-        : st === 'caution'
-        ? { border: 'border-amber-500/40', bg: 'bg-amber-500/20', text: 'text-amber-300' }
-        : st === 'normal'
-        ? { border: 'border-emerald-500/40', bg: 'bg-emerald-500/20', text: 'text-emerald-300' }
-        : { border: 'border-slate-500/40', bg: 'bg-slate-500/20', text: 'text-slate-300' };
-      return (
-        <div className={`pointer-events-none fixed bottom-40 left-1/2 -translate-x-1/2 z-40 rounded-2xl border ${theme.border} ${theme.bg} px-5 py-2.5 text-center backdrop-blur`}>
-          <div className="text-[10px] font-bold text-slate-300 tracking-wide">종합 판정</div>
-          <div className={`text-sm font-black ${theme.text}`}>
-            {STATUS_KO[st] || '확인 필요'}
-            {finishedFms?.score != null && <span className="text-slate-300 font-bold"> · FMS {finishedFms.score}점</span>}
-          </div>
+        <div className="flex flex-col items-center gap-2">
+          {fmsCompensations.length > 0 && (
+            <div className="flex flex-col items-center gap-1">
+              {fmsCompensations.map((c) => (
+                <span key={c} className="rounded-full bg-red-500/25 border border-red-400/60 px-3 py-1 text-xs font-bold text-red-200 backdrop-blur">
+                  ⚠ {COMPENSATION_KO[c] || c}
+                </span>
+              ))}
+            </div>
+          )}
+          {belowParallel && (
+            <div className="rounded-full bg-sky-500/25 border border-sky-400/60 px-4 py-1.5 backdrop-blur">
+              <span className="text-sm font-black text-sky-200">✓ 대퇴골 수평 이하</span>
+            </div>
+          )}
+          <GaugeHud label="패러렐까지" value={depthPct} unit="%" arc min={0} max={100}
+            accent={belowParallel ? '#38bdf8' : '#f59e0b'}
+            stats={[{ label: '회차', value: `${totalDone}/${SQUAT_LIVE_TOTAL_TRIALS}` }]} />
         </div>
-      );
-    })()}
+      )}
+      {uiPhase === 'finished' && finishedBio && (() => {
+        const st = finishedBio.status;
+        const theme = st === 'risk'
+          ? { border: 'border-red-500/40', bg: 'bg-red-500/20', text: 'text-red-300' }
+          : st === 'caution'
+          ? { border: 'border-amber-500/40', bg: 'bg-amber-500/20', text: 'text-amber-300' }
+          : st === 'normal'
+          ? { border: 'border-emerald-500/40', bg: 'bg-emerald-500/20', text: 'text-emerald-300' }
+          : { border: 'border-slate-500/40', bg: 'bg-slate-500/20', text: 'text-slate-300' };
+        return (
+          <div className={`mx-auto w-fit rounded-2xl border ${theme.border} ${theme.bg} px-5 py-2.5 text-center backdrop-blur`}>
+            <div className="text-[10px] font-bold text-slate-300 tracking-wide">종합 판정</div>
+            <div className={`text-sm font-black ${theme.text}`}>
+              {STATUS_KO[st] || '확인 필요'}
+              {finishedFms?.score != null && <span className="text-slate-300 font-bold"> · FMS {finishedFms.score}점</span>}
+            </div>
+          </div>
+        );
+      })()}
+    </CameraStage>
     </>
   );
 }

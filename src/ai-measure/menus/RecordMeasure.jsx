@@ -6,6 +6,7 @@ import { buildRecordingFileName } from '../../utils/recordingName';
 import { boostedGain, whistle, primeAudio } from '../core/audioCue';
 import { openMainCameraStream, refocusCameraStream } from '../core/cameraSelect';
 import { formatStopwatch } from '../core/recordingOverlay';
+import { pickRecorderMime } from '../core/recordSink';
 import { nextPhase, firstPhase, phaseDurationSec } from '../core/intervalTimer';
 import { loadPoseLandmarker, detectPoseFrame, isPoseReady, closePoseLandmarker } from '../core/poseBackend';
 import { isSkeletonEnabled, subscribeSkeleton, useSkeletonOverlay } from '../core/skeletonPref';
@@ -46,8 +47,18 @@ const ANGLE_JOINTS = [
   [24, 26, 28], // 오른쪽 무릎
 ];
 
-function skelVisible(p, threshold = 0.35) {
-  return !!p && Number.isFinite(p.x) && (p.visibility == null || p.visibility >= threshold);
+// [2026-08-05] 독립 함수로 뺀 이유: 순수 함수라 캔버스 없이 좌표만으로
+// 유닛테스트할 수 있다(경계값 하나 잘못 잡으면 화면 가장자리에서 스켈레톤이
+// 깜빡이거나, 반대로 밖으로 나간 부위가 계속 남아있는 미묘한 버그가 되기
+// 쉽다). MediaPipe 신뢰도(.visibility)와 변환된 화면 좌표 둘 다 확인한다.
+export function landmarkScreenPos(p, px, py, canvasW, canvasH, threshold = 0.35) {
+  if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) return null;
+  if (p.visibility != null && p.visibility < threshold) return null;
+  const x = px(p), y = py(p);
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+  const margin = Math.max(canvasW, canvasH) * 0.02;
+  if (x < -margin || x > canvasW + margin || y < -margin || y > canvasH + margin) return null;
+  return { x, y };
 }
 
 function roundRectPath(ctx, x, y, w, h, r) {
@@ -98,7 +109,7 @@ function drawSkeletonCover(canvas, video, landmarks, stabilizer = null) {
   const px = (p) => ox + p.x * dw;
   const py = (p) => oy + p.y * dh;
   const labelScale = Math.max(0.7, cw / 480);
-  drawSkeletonPaths(ctx, landmarks, px, py, Math.max(2.5, cw / 200), Math.max(3, cw / 150), labelScale, stabilizer);
+  drawSkeletonPaths(ctx, landmarks, px, py, Math.max(2.5, cw / 200), Math.max(3, cw / 150), labelScale, stabilizer, cw, ch);
 }
 
 // 녹화 합성 캔버스용: drawCover 와 동일한 크롭으로 좌표를 맞춰 스켈레톤을 굽는다.
@@ -115,10 +126,27 @@ function drawSkeletonToRecordCover(ctx, video, landmarks, width, height, stabili
   const px = (p) => ((p.x * vw) - sx) / sw * width;
   const py = (p) => ((p.y * vh) - sy) / sh * height;
   const labelScale = Math.max(0.7, width / 480);
-  drawSkeletonPaths(ctx, landmarks, px, py, Math.max(2.5, width / 220), Math.max(3, width / 170), labelScale, stabilizer);
+  drawSkeletonPaths(ctx, landmarks, px, py, Math.max(2.5, width / 220), Math.max(3, width / 170), labelScale, stabilizer, width, height);
 }
 
-function drawSkeletonPaths(ctx, landmarks, px, py, lineW, dotR, scale = 1, stabilizer = null) {
+function drawSkeletonPaths(ctx, landmarks, px, py, lineW, dotR, scale = 1, stabilizer = null, canvasW = 0, canvasH = 0) {
+  // [2026-08-05] 화면에 실제로 보이는 랜드마크만 그린다. 예전엔 MediaPipe
+  // 신뢰도(.visibility)만 확인했는데, 이 화면은 object-cover로 잘라서
+  // 보여준다(px/py가 그 크롭 변환) — 카메라 원본에는 잡혀서 신뢰도가 높아도,
+  // 세로 화면으로 자르면서 밖으로 밀려난 부위(예: 옆으로 뻗은 팔)는 변환된
+  // 좌표가 캔버스 밖으로 나간다. 이런 점은 화면엔 안 보이는데 뼈대·관절점만
+  // 떠 있어 부자연스러웠다. 좌표 변환을 한 번만 계산해 캐시하고, 캔버스
+  // 범위(약간의 여유 포함) 밖이면 신뢰도와 무관하게 제외한다.
+  const w = canvasW || ctx.canvas?.width || 0;
+  const h = canvasH || ctx.canvas?.height || 0;
+  const screenPos = new Map();
+  const posOf = (idx) => {
+    if (screenPos.has(idx)) return screenPos.get(idx);
+    const result = landmarkScreenPos(landmarks[idx], px, py, w, h);
+    screenPos.set(idx, result);
+    return result;
+  };
+
   // 시인성 개선: 뼈대·관절점 밑에 어두운 외곽선(halo)을 먼저 깔아, 배경이나 옷
   // 색이 스켈레톤 색과 비슷해도(초록 계열 바닥, 살구색 피부 등) 또렷이 보이게 한다.
   // 자막에 검은 테두리를 두르는 것과 같은 원리 — 색 자체를 진하게 하는 것보다
@@ -127,11 +155,11 @@ function drawSkeletonPaths(ctx, landmarks, px, py, lineW, dotR, scale = 1, stabi
   ctx.strokeStyle = 'rgba(0,0,0,0.6)';
   ctx.lineWidth = lineW + 3 * scale;
   for (const [a, b] of SKELETON_BONES) {
-    const pa = landmarks[a], pb = landmarks[b];
-    if (!skelVisible(pa) || !skelVisible(pb)) continue;
+    const pa = posOf(a), pb = posOf(b);
+    if (!pa || !pb) continue;
     ctx.beginPath();
-    ctx.moveTo(px(pa), py(pa));
-    ctx.lineTo(px(pb), py(pb));
+    ctx.moveTo(pa.x, pa.y);
+    ctx.lineTo(pb.x, pb.y);
     ctx.stroke();
   }
   // 상체(빨강)·하체(초록) 2색 — 참고 스타일(Live Analysis)처럼 어느 사슬을
@@ -140,11 +168,11 @@ function drawSkeletonPaths(ctx, landmarks, px, py, lineW, dotR, scale = 1, stabi
   const drawBoneGroup = (bones, color) => {
     ctx.strokeStyle = color;
     for (const [a, b] of bones) {
-      const pa = landmarks[a], pb = landmarks[b];
-      if (!skelVisible(pa) || !skelVisible(pb)) continue;
+      const pa = posOf(a), pb = posOf(b);
+      if (!pa || !pb) continue;
       ctx.beginPath();
-      ctx.moveTo(px(pa), py(pa));
-      ctx.lineTo(px(pb), py(pb));
+      ctx.moveTo(pa.x, pa.y);
+      ctx.lineTo(pb.x, pb.y);
       ctx.stroke();
     }
   };
@@ -152,15 +180,15 @@ function drawSkeletonPaths(ctx, landmarks, px, py, lineW, dotR, scale = 1, stabi
   drawBoneGroup(LOWER_BONES, 'rgba(52,211,153,0.95)');
 
   for (const i of SKELETON_JOINTS) {
-    const p = landmarks[i];
-    if (!skelVisible(p)) continue;
+    const p = posOf(i);
+    if (!p) continue;
     ctx.fillStyle = 'rgba(0,0,0,0.6)';
     ctx.beginPath();
-    ctx.arc(px(p), py(p), dotR + 1.5 * scale, 0, Math.PI * 2);
+    ctx.arc(p.x, p.y, dotR + 1.5 * scale, 0, Math.PI * 2);
     ctx.fill();
     ctx.fillStyle = '#ffffff';
     ctx.beginPath();
-    ctx.arc(px(p), py(p), dotR, 0, Math.PI * 2);
+    ctx.arc(p.x, p.y, dotR, 0, Math.PI * 2);
     ctx.fill();
   }
 
@@ -173,9 +201,9 @@ function drawSkeletonPaths(ctx, landmarks, px, py, lineW, dotR, scale = 1, stabi
   // 참고 이미지에서 각도마다 원의 "트인 정도"가 다른 것과 같은 원리.
   const ringLineW = Math.max(1.5, lineW * 0.6);
   for (const [ia, ib, ic] of ANGLE_JOINTS) {
-    const a = landmarks[ia], b = landmarks[ib], c = landmarks[ic];
-    if (!skelVisible(a) || !skelVisible(b) || !skelVisible(c)) continue;
-    const angleRaw = angleDeg(a, b, c);
+    const aPos = posOf(ia), bPos = posOf(ib), cPos = posOf(ic);
+    if (!aPos || !bPos || !cPos) continue;
+    const angleRaw = angleDeg(landmarks[ia], landmarks[ib], landmarks[ic]);
     if (angleRaw == null) continue;
     // [2026-08-02] 표시되는 숫자는 안정화기를 한 번 더 거친다 — 좌표를 EMA로
     // 부드럽게 해도 세 점 사이 각도는 미세 떨림이 몇 도씩 증폭되어, 가만히
@@ -184,9 +212,9 @@ function drawSkeletonPaths(ctx, landmarks, px, py, lineW, dotR, scale = 1, stabi
       ? stabilizer.stabilize(`${ia}-${ib}-${ic}`, angleRaw)
       : Math.round(angleRaw);
     if (angle == null) continue;
-    const ax = px(a), ay = py(a);
-    const bx = px(b), by = py(b);
-    const cx = px(c), cy = py(c);
+    const ax = aPos.x, ay = aPos.y;
+    const bx = bPos.x, by = bPos.y;
+    const cx = cPos.x, cy = cPos.y;
     const segA = Math.hypot(ax - bx, ay - by);
     const segC = Math.hypot(cx - bx, cy - by);
     const ringR = Math.max(dotR * 3, Math.min(Math.min(segA, segC) * 0.5, dotR * 16));
@@ -239,18 +267,6 @@ function loadSavedQuality() {
     const v = localStorage.getItem(QUALITY_STORAGE_KEY);
     return QUALITY_PRESETS[v] ? v : 'standard';
   } catch { return 'standard'; }
-}
-
-function pickRecorderMime() {
-  if (typeof MediaRecorder === 'undefined') return '';
-  const choices = [
-    'video/mp4;codecs=h264,aac',
-    'video/mp4',
-    'video/webm;codecs=vp9,opus',
-    'video/webm;codecs=vp8,opus',
-    'video/webm',
-  ];
-  return choices.find((type) => MediaRecorder.isTypeSupported(type)) || '';
 }
 
 function waitForVideoReady(video, timeoutMs = 7000) {
