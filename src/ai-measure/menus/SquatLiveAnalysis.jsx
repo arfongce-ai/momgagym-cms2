@@ -24,12 +24,21 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { usePoseEngine } from '../core/usePoseEngine';
 import { StandingCalibrator, SquatBiomechanicsTracker, pelvicTiltDegOf, kneeValgusDegOf } from '../core/squatBiomechanicsTracker';
-import { DEFAULT_ASPECT, outputSize, drawVideoCover, coverTransform } from '../core/recordAspect';
+import { DEFAULT_ASPECT, outputSize, drawVideoCover, coverTransform, rotateLandmarksNormalized } from '../core/recordAspect';
 import { useCameraRotation } from '../core/useCameraRotation';
 import { computeDisplayAngles } from '../core/squatJointAngles';
+import { colorForBone, evaluateSquatFrame, depthPctFromThighIncline, COMPENSATION_KO, scoreDeepSquatFms, worstOfTrials } from '../core/squatFms';
+import { evaluateSquatBiomechanics } from '../core/squatBiomechanics';
+import { pickRecorderMime } from '../core/recordSink';
 import { drawGaugeHud } from '../core/recordingOverlay';
 import CameraStage from './CameraStage.jsx';
 import GaugeHud from './GaugeHud.jsx';
+
+// SquatAnalysisHub.jsx·StanceAnalysisHub.jsx와 동일한 상태 표기 — 이 화면의
+// '측정 완료' 직전 미리보기 배지도 리포트와 같은 어휘를 써야 한다([2026-08-03]
+// 이전엔 여기만 FMS 점수 텍스트를 따로 썼는데, 앱 전체가 쓰는 정상/주의/위험과
+// 달라 혼란스럽다는 피드백으로 통일).
+const STATUS_KO = { normal: '정상', caution: '주의', risk: '위험', unknown: '확인 필요' };
 
 const MAX_RECORD_MS = 60000;
 // [2026-07-31] 운영 방식 확정: 정면 2회 → 측면 2회(총 4회)로 측정한다. 뷰당 몇 회를
@@ -38,8 +47,9 @@ const SQUAT_LIVE_MAX_TRIALS_PER_VIEW = 2;
 const SQUAT_LIVE_TOTAL_TRIALS = SQUAT_LIVE_MAX_TRIALS_PER_VIEW * 2;
 
 // 자세·보행·SLST 모듈과 동일한 본(bone) 목록 — 상체 코어 + 양다리 + (오버헤드
-// 자세 확인용) 어깨-팔꿈치-손목. 판정 로직(squatBiomechanics.js)은 팔꿈치·손목을
-// 쓰지 않는다 — 이건 순수 시각 표시용 추가라 측정 결과에는 영향이 없다.
+// 자세 확인용) 어깨-팔꿈치-손목. [2026-08-03] 판정 로직(squatBiomechanics.js)도
+// 이제 armDropDeg를 통해 손목 좌표를 쓴다 — 순수 표시용이 아니라 실제 정상/
+// 주의/위험 판정에 반영된다(이전엔 시각 표시 전용이라고 적혀 있었으나 갱신).
 const BONES = [
   [11, 12], [11, 23], [12, 24], [23, 24],
   [23, 25], [25, 27], [27, 29], [27, 31], [29, 31],
@@ -144,19 +154,27 @@ function drawJointAngleLabels(ctx, landmarks, view, X, Y) {
   ctx.restore();
 }
 
-function drawSkeleton(canvas, video, landmarks, locked, mapper, view) {
+// clearFirst: 미리보기 캔버스는 매 프레임 지워야 잔상(뒤엉킨 그물망)이 안 남는다.
+// 반대로 녹화 합성 캔버스는 바로 앞에서 영상 프레임을 그려둔 상태라 지우면
+// 영상이 사라지고 스켈레톤만 남는다([2026-08-02] 오버헤드스쿼트 저장 영상에
+// 스켈레톤만 나오던 버그의 원인) — 합성 루프에서는 clearFirst=false 로 부른다.
+function drawSkeleton(canvas, video, landmarks, locked, mapper, view, clearFirst = true, fmsParts = null) {
   if (!canvas || !video) return;
   const cw = canvas.clientWidth || canvas.width, ch = canvas.clientHeight || canvas.height;
-  if (canvas.width !== cw || canvas.height !== ch) { canvas.width = cw; canvas.height = ch; }
+  if (clearFirst && (canvas.width !== cw || canvas.height !== ch)) { canvas.width = cw; canvas.height = ch; }
   const ctx = canvas.getContext('2d');
-  ctx.clearRect(0, 0, cw, ch); // 매 프레임 지우고 다시 그린다 — 안 지우면 이전 프레임 스켈레톤이 계속 쌓여 잔상(뒤엉킨 그물망)으로 남는다.
+  if (clearFirst) ctx.clearRect(0, 0, cw, ch);
   if (!landmarks) return;
   const { x: X, y: Y } = mapper || objectContainMapper(video, cw, ch);
+  // [2026-08-02] 부위별 색상 오버레이 — 요청대로 정상은 푸른색, 이상은 붉은색.
+  // fmsParts가 있으면(측정 중) 뼈대별로 그 부위의 판정 색을 쓰고, 없으면
+  // (캘리브레이션 중) 기존 단색 동작을 그대로 유지한다.
   const col = locked ? 'rgba(52,211,153,0.95)' : 'rgba(34,211,238,0.95)';
-  ctx.strokeStyle = col; ctx.lineWidth = 3; ctx.lineCap = 'round';
+  ctx.lineWidth = 3; ctx.lineCap = 'round';
   BONES.forEach(([a, b]) => {
     const pa = landmarks[a], pb = landmarks[b];
     if (!vis(pa) || !vis(pb)) return;
+    ctx.strokeStyle = fmsParts ? colorForBone(a, b, fmsParts) : col;
     ctx.beginPath(); ctx.moveTo(X(pa), Y(pa)); ctx.lineTo(X(pb), Y(pb)); ctx.stroke();
   });
   ctx.fillStyle = locked ? 'rgba(52,211,153,1)' : 'rgba(255,255,255,0.95)';
@@ -170,16 +188,32 @@ function drawSkeleton(canvas, video, landmarks, locked, mapper, view) {
   if (locked) drawJointAngleLabels(ctx, landmarks, view, X, Y);
 }
 
-export default function SquatLiveAnalysis({ member, onBack, onComplete, onMemberHeightChange }) {
-  const [heightCm, setHeightCm] = useState(member?.height ? Number(member.height) : null);
-  const [needHeight, setNeedHeight] = useState(!member?.height);
-  const [heightInput, setHeightInput] = useState('');
+// [2026-08-03] 정면·측면 각 뷰의 저장된 시행(trial1/trial2, 이미 armDropDeg 포함)으로
+// FMS 3/2/1/0 점수를 계산 — 'finished' 단계 화면 표시와 finishAndSubmit() 양쪽에서
+// 재사용한다(같은 데이터를 다르게 두 번 계산하지 않도록). sideSummary가 없으면(측면
+// 생략) scoreDeepSquatFms 자체가 "한쪽만 있으면 점수를 확정하지 않는다" 원칙으로
+// score:null을 돌려준다 — 여기서 따로 처리하지 않는다.
+function computeFmsResult(frontSummary, sideSummary) {
+  const frontAssess = worstOfTrials(
+    frontSummary?.trial1 ? evaluateSquatFrame(frontSummary.trial1, 'front') : null,
+    frontSummary?.trial2 ? evaluateSquatFrame(frontSummary.trial2, 'front') : null,
+  );
+  const sideAssess = worstOfTrials(
+    sideSummary?.trial1 ? evaluateSquatFrame(sideSummary.trial1, 'side') : null,
+    sideSummary?.trial2 ? evaluateSquatFrame(sideSummary.trial2, 'side') : null,
+  );
+  return scoreDeepSquatFms(frontAssess, sideAssess);
+}
+
+export default function SquatLiveAnalysis({ member, onBack, onComplete }) {
 
   // calibrating | low_visibility | ready | active | rep_done | front_done | finished
   const [uiPhase, setUiPhase] = useState('calibrating');
   const [view, setView] = useState('front'); // 'front' | 'side' — 2026-07-31부터 정면 2회 + 측면 2회
   const [calibProgress, setCalibProgress] = useState(0);
   const [depthPct, setDepthPct] = useState(0);
+  const [belowParallel, setBelowParallel] = useState(false);
+  const [fmsCompensations, setFmsCompensations] = useState([]);
   const [trialsFound, setTrialsFound] = useState(0); // 현재 단계(view) 트래커 안에서의 완료 수(0~2)
   const [lastTrialNote, setLastTrialNote] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
@@ -211,6 +245,9 @@ export default function SquatLiveAnalysis({ member, onBack, onComplete, onMember
   const recordingStartedRef = useRef(false);
   const pendingSummaryRef = useRef(null);
   const depthPctRef = useRef(0);
+  const belowParallelRef = useRef(false);
+  // 부위별 판정 결과 — 그리기 루프(미리보기/녹화 합성)가 매 프레임 읽는다.
+  const fmsPartsRef = useRef(null);
   const viewRef = useRef('front');
   const trialsFoundRef = useRef(0);
 
@@ -227,14 +264,14 @@ export default function SquatLiveAnalysis({ member, onBack, onComplete, onMember
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       if (!drawVideoCover(ctx, video, canvas.width, canvas.height, rotationDeg)) return;
       const cover = coverTransform(video, canvas.width, canvas.height, rotationDeg);
-      drawSkeleton(canvas, video, latestLandmarksRef.current, !!calibRef.current?.locked, { x: cover.X, y: cover.Y }, viewRef.current);
+      drawSkeleton(canvas, video, latestLandmarksRef.current, !!calibRef.current?.locked, { x: cover.X, y: cover.Y }, viewRef.current, false, fmsPartsRef.current);
       const elapsedSec = recordingStartedRef.current ? (performance.now() - recordStartTsRef.current) / 1000 : 0;
       drawGaugeHud(ctx, canvas.width, canvas.height, {
         title: 'SQUAT',
         recording: true,
         elapsedSec,
         accent: '#f59e0b',
-        gauge: { label: '깊이', value: depthPctRef.current, unit: '%', arc: true, min: 0, max: 100 },
+        gauge: { label: belowParallelRef.current ? '패러렐 이하 ✓' : '패러렐까지', value: depthPctRef.current, unit: '%', arc: true, min: 0, max: 100 },
         stats: [{ label: viewRef.current === 'front' ? '정면' : '측면', value: (viewRef.current === 'side' ? (frontSummaryRef.current?.trialsFound || 0) : 0) + trialsFoundRef.current, unit: `/${SQUAT_LIVE_TOTAL_TRIALS}` }],
       });
     };
@@ -258,8 +295,11 @@ export default function SquatLiveAnalysis({ member, onBack, onComplete, onMember
   const beginRecording = () => {
     if (recordingStartedRef.current) return;
     try {
-      const mimeTypes = ['video/mp4', 'video/webm;codecs=vp8', 'video/webm'];
-      const selectedMime = mimeTypes.find(m => window.MediaRecorder?.isTypeSupported?.(m)) || '';
+      // [2026-08-03] 로컬 mp4-우선 배열 대신 공용 pickRecorderMime()을 쓴다 —
+      // 코덱까지 명시해야 크로미움에서 mp4가 실제로 잡힌다(recordSink.js 참고).
+      // 이게 카카오톡 영상 전송 오류의 원인이었다: 코드는 mp4를 우선한다고
+      // 돼 있었지만 실제로는 항상 webm으로 녹화되고 있었다.
+      const selectedMime = pickRecorderMime();
       const stream = createRecordedStream();
       if (stream) {
         const mr = new MediaRecorder(stream, selectedMime ? { mimeType: selectedMime } : undefined);
@@ -304,6 +344,8 @@ export default function SquatLiveAnalysis({ member, onBack, onComplete, onMember
     }, 1000);
   }, []);
 
+  // [2026-08-02] 3-2-1 카운트다운 복원. SLST와 마찬가지로 runStartCountdown 이
+  // 정의만 되어 있고 호출되지 않아 화면에 카운트다운이 뜨지 않았다.
   // [2026-07-30] 버튼이 캘리브레이션 완료를 기다리지 않고 언제든 눌리게 변경 —
   // 촬영 대상자가 카메라 앞이 아니라 노트북 앞에서(또는 트레이너가 미리) 버튼을
   // 누르는 경우를 지원한다. 트래커 생성은 실제로 캘리브레이션이 끝나는 시점에
@@ -311,9 +353,13 @@ export default function SquatLiveAnalysis({ member, onBack, onComplete, onMember
   // 처리됨). maxTrials — 정면/측면 각 단계는 SQUAT_LIVE_MAX_TRIALS_PER_VIEW회씩 잡고 넘어간다.
   const startMeasurement = () => {
     if (measureStartedRef.current) return;
-    measureStartedRef.current = true;
-    setStarted(true);
-    beginRecording();
+    if (countdownTimerRef.current) return; // 이미 카운트다운 중이면 중복 실행 방지
+    runStartCountdown(() => {
+      if (measureStartedRef.current) return;
+      measureStartedRef.current = true;
+      setStarted(true);
+      beginRecording();
+    });
   };
 
   // 정면 시행을 마치고 측면으로 넘어간다 — 카메라 각도가 바뀌므로 캘리브레이션을
@@ -332,18 +378,29 @@ export default function SquatLiveAnalysis({ member, onBack, onComplete, onMember
     setUiPhase('calibrating');
   };
 
+  const [rotationDeg] = useCameraRotation();
+
   const handleResult = useCallback((landmarks, ts, video) => {
     lastTsRef.current = ts;
     latestVideoElRef.current = video || latestVideoElRef.current;
+    // 원본(raw) 그대로 보관 — 녹화 합성 루프가 이 값을 coverTransform(rotationDeg)에
+    // 직접 넘겨 자체적으로 회전 보정하므로 여기서 미리 보정하면 이중 회전이 된다.
     latestLandmarksRef.current = landmarks;
-    if (!calibRef.current) calibRef.current = new StandingCalibrator({ heightCm });
+    if (!calibRef.current) calibRef.current = new StandingCalibrator({});
     const calib = calibRef.current;
 
-    drawSkeleton(canvasRef.current, video, landmarks, calib.locked, null, view);
+    // 라이브 스켈레톤 오버레이도 CameraStage와 같은 CSS 회전 래퍼를 공유하므로
+    // 원본(raw) 좌표를 그대로 쓴다(이중 회전 방지).
+    drawSkeleton(canvasRef.current, video, landmarks, calib.locked, null, view, true, fmsPartsRef.current);
     if (!landmarks) return;
 
+    // [2026-08-02] 카메라 원본이 회전된 채로 들어오는 기종(키오스크) 보정 —
+    // 스쿼트 판정(기준선·체간기울기·무릎각도·골반높이)은 전부 "수직/좌우" 축을
+    // 가정하는 계산이라 회전 보정된 좌표가 필요하다.
+    const corrected = rotateLandmarksNormalized(landmarks, rotationDeg);
+
     if (!calib.locked) {
-      calib.push(landmarks);
+      calib.push(corrected);
       const st = calib.status();
       if (st.ready) {
         setUiPhase('ready'); // 캘리브레이션 완료
@@ -370,14 +427,33 @@ export default function SquatLiveAnalysis({ member, onBack, onComplete, onMember
     if (!tracker || tracker.trials.length >= tracker.maxTrials) return;
 
     const beforeCount = tracker.trials.length;
-    tracker.push(landmarks, ts);
+    tracker.push(corrected, ts);
 
     if (tracker.phase === 'active') {
       setUiPhase('active');
       const live = tracker.liveDepthState();
-      const pct = live ? Math.round(live.depthFrac * 100) : 0;
+      // [2026-08-02] "깊이 120%"가 무슨 뜻인지 알 수 없다는 피드백 반영.
+      // 예전 값은 (엉덩이 하강거리 ÷ 선 자세의 엉덩이~무릎 간격)이라 패러렐을
+      // 넘으면 100%를 넘고 1.2에서 잘려, 깊게 앉으면 항상 120%로 고정됐다.
+      // 이제는 FMS 기준선인 "대퇴골 수평(패러렐)"까지의 진행도로 바꾼다:
+      //   0% = 선 자세, 100% = 대퇴골이 수평에 도달(패러렐).
+      // 패러렐보다 더 내려가면 thighIncline이 0에서 더 줄지 않으므로 100%에서
+      // 자연스럽게 멈추고, 그 아래로 내려갔는지는 belowParallel 배지로 알린다.
+      const pct = live ? depthPctFromThighIncline(live.thighInclineDeg) : 0;
       setDepthPct(pct);
       depthPctRef.current = pct;
+      const below = !!live && live.depthFrac >= 1;
+      setBelowParallel(below);
+      belowParallelRef.current = below;
+
+      // 부위별 색상 판정 — 현재 뷰(정면/측면)에서 볼 수 있는 지표만 채점하고
+      // 나머지는 unknown(회색)으로 남는다.
+      const metrics = tracker.liveMetrics();
+      if (metrics) {
+        const assessment = evaluateSquatFrame(metrics, view);
+        fmsPartsRef.current = assessment.parts;
+        setFmsCompensations(assessment.compensations);
+      }
     } else if (tracker.trials.length > beforeCount) {
       const t = tracker.trials[tracker.trials.length - 1];
       setLastTrialNote(t.heelLift ? '뒤꿈치 들림이 감지됐어요' : '정상 종료로 기록됨');
@@ -385,6 +461,10 @@ export default function SquatLiveAnalysis({ member, onBack, onComplete, onMember
       trialsFoundRef.current = tracker.trials.length;
       setDepthPct(0);
       depthPctRef.current = 0;
+      setBelowParallel(false);
+      belowParallelRef.current = false;
+      fmsPartsRef.current = null;
+      setFmsCompensations([]);
       if (tracker.trials.length >= tracker.maxTrials) {
         // 이 뷰(정면/측면)에 필요한 반복을 다 채움 — 다음 단계로.
         if (view === 'front') {
@@ -402,13 +482,12 @@ export default function SquatLiveAnalysis({ member, onBack, onComplete, onMember
       setUiPhase('ready');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [heightCm, view]);
+  }, [view, rotationDeg]);
 
   const { videoRef, start, stop, status, error } = usePoseEngine({ onResult: handleResult });
-  const [rotationDeg] = useCameraRotation();
 
   useEffect(() => {
-    if (!needHeight && !startedRef.current) {
+    if (!startedRef.current) {
       startedRef.current = true;
       start();
     }
@@ -422,7 +501,7 @@ export default function SquatLiveAnalysis({ member, onBack, onComplete, onMember
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [needHeight]);
+  }, []);
 
   useEffect(() => {
     if (status === 'error' && error) setErrorMsg(error);
@@ -461,12 +540,15 @@ export default function SquatLiveAnalysis({ member, onBack, onComplete, onMember
       }
       return;
     }
+    const fms = computeFmsResult(frontSummary, sideSummary);
     const summary = {
       front1: frontSummary?.trial1,
       front2: frontSummary?.trial2,
       side1: sideSummary?.trial1,
       side2: sideSummary?.trial2,
       trialsFound: (frontSummary?.trialsFound || 0) + (sideSummary?.trialsFound || 0),
+      fmsScore: fms.score,
+      fmsReasons: fms.reasons,
     };
     pendingSummaryRef.current = summary;
     setFinishing(true);
@@ -477,48 +559,25 @@ export default function SquatLiveAnalysis({ member, onBack, onComplete, onMember
     }
   };
 
-  const applyHeight = () => {
-    const h = Number(heightInput);
-    if (!h || h < 80 || h > 250) { setErrorMsg('키를 80~250cm로 입력하세요.'); return; }
-    setHeightCm(h); setNeedHeight(false); setErrorMsg('');
-    onMemberHeightChange?.(h);
-  };
-
-  if (needHeight) {
-    return (
-      <div className="absolute inset-0 bg-slate-950 flex flex-col">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800">
-          <button onClick={onBack} className="text-slate-300 font-bold text-sm">✕ 닫기</button>
-          <h2 className="text-white font-black">오버헤드 딥 스쿼트</h2>
-          <div className="w-12" />
-        </div>
-        <div className="flex-1 flex items-center justify-center p-6">
-          <div className="w-full max-w-sm bg-slate-900 border border-amber-500/30 rounded-2xl p-5 space-y-4">
-            <div className="text-center space-y-1">
-              <p className="text-3xl">📏</p>
-              <p className="text-white font-black">키가 필요합니다</p>
-              <p className="text-slate-400 text-xs">동작 스케일 환산에 사용됩니다.</p>
-            </div>
-            <label className="block">
-              <span className="mb-1 block text-[10px] font-bold text-slate-500">키</span>
-              <div className="flex items-center gap-2">
-                <input type="number" inputMode="numeric" value={heightInput}
-                  onChange={e => setHeightInput(e.target.value)} placeholder="170"
-                  className="min-w-0 flex-1 bg-slate-800 border border-slate-700 text-slate-100 rounded-lg px-3 py-2.5 text-sm font-mono focus:outline-none focus:border-amber-500" />
-                <span className="text-slate-400 text-xs font-bold">cm</span>
-              </div>
-            </label>
-            <button onClick={applyHeight} className="w-full rounded-xl bg-amber-500 text-slate-950 font-black py-3 active:scale-95">
-              입력하고 계속
-            </button>
-            {errorMsg && <p className="text-center text-xs text-red-400">{errorMsg}</p>}
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   const totalDone = view === 'front' ? trialsFound : (frontSummaryRef.current?.trialsFound || 0) + trialsFound;
+  // uiPhase가 'finished'가 되는 시점엔 측면 트래커가 아직 finalize()/초기화되지
+  // 않은 채로 trials 2개를 들고 있다(finishAndSubmit에서 하는 것과 동일 소스) —
+  // 그 시점에만 계산해 트레이너가 "측정 완료" 누르기 전에 바로 확인한다.
+  // [2026-08-03] "종합 판정" 배지는 SquatAnalysisHub.jsx의 리포트 화면과 정확히
+  // 같은 함수(evaluateSquatBiomechanics)로 계산한다 — 라이브 미리보기와 잠시 뒤
+  // 뜨는 정식 리포트가 서로 다른 상태를 말하는 일이 없도록. FMS 점수는 보조
+  // 정보로 같은 배지 안에 작게 덧붙인다.
+  const finishedBio = uiPhase === 'finished'
+    ? evaluateSquatBiomechanics({
+        front1: frontSummaryRef.current?.trial1,
+        front2: frontSummaryRef.current?.trial2,
+        side1: trackerRef.current?.summary()?.trial1,
+        side2: trackerRef.current?.summary()?.trial2,
+      })
+    : null;
+  const finishedFms = uiPhase === 'finished'
+    ? computeFmsResult(frontSummaryRef.current, trackerRef.current?.summary())
+    : null;
 
   const topBar = (
     <>
@@ -591,20 +650,50 @@ export default function SquatLiveAnalysis({ member, onBack, onComplete, onMember
       recording={recordingActive} recordingLabel={uiPhase === 'active' ? `진행 중 · 깊이 ${depthPct}%` : '녹화 중'}
     >
       {uiPhase === 'active' && (
-        <GaugeHud label="깊이" value={depthPct} unit="%" arc min={0} max={100} accent="#f59e0b"
+        <GaugeHud label="패러렐까지" value={depthPct} unit="%" arc min={0} max={100}
+          accent={belowParallel ? '#38bdf8' : '#f59e0b'}
           stats={[{ label: '회차', value: `${totalDone}/${SQUAT_LIVE_TOTAL_TRIALS}` }]} />
       )}
     </CameraStage>
+    {uiPhase === 'active' && belowParallel && (
+      <div className="pointer-events-none fixed bottom-28 left-1/2 -translate-x-1/2 z-40 rounded-full bg-sky-500/25 border border-sky-400/60 px-4 py-1.5 backdrop-blur">
+        <span className="text-sm font-black text-sky-200">✓ 대퇴골 수평 이하</span>
+      </div>
+    )}
+    {uiPhase === 'active' && fmsCompensations.length > 0 && (
+      <div className="pointer-events-none fixed bottom-40 left-1/2 -translate-x-1/2 z-40 flex flex-col items-center gap-1">
+        {fmsCompensations.map((c) => (
+          <span key={c} className="rounded-full bg-red-500/25 border border-red-400/60 px-3 py-1 text-xs font-bold text-red-200 backdrop-blur">
+            ⚠ {COMPENSATION_KO[c] || c}
+          </span>
+        ))}
+      </div>
+    )}
     {status === 'running' && (
       <div className="pointer-events-none fixed top-3 right-3 z-40 rounded-2xl bg-black/70 border border-white/20 px-4 py-2 text-center backdrop-blur">
         <div className="text-[10px] font-bold text-slate-300 tracking-wide">회차</div>
         <div className="text-2xl font-black text-white leading-none">{totalDone}<span className="text-sm text-slate-400">/{SQUAT_LIVE_TOTAL_TRIALS}</span></div>
       </div>
     )}
-    {/* 임시 디버그 표시 — 문제 확인되면 제거 예정 */}
-    <div className="pointer-events-none fixed bottom-1 left-1 z-[999] rounded bg-black/80 px-2 py-1 font-mono text-[9px] text-lime-300">
-      view={view} · phase={uiPhase} · trkPhase={trackerRef.current?.phase ?? '-'} · trials={trackerRef.current?.trials?.length ?? '-'} · status={status} · err={String(error).slice(0, 40)} · locked={String(!!calibRef.current?.locked)} · prog={Math.round(calibProgress * 100)}% · started={String(started)} · cd={String(countdown)}
-    </div>
+    {uiPhase === 'finished' && finishedBio && (() => {
+      const st = finishedBio.status;
+      const theme = st === 'risk'
+        ? { border: 'border-red-500/40', bg: 'bg-red-500/20', text: 'text-red-300' }
+        : st === 'caution'
+        ? { border: 'border-amber-500/40', bg: 'bg-amber-500/20', text: 'text-amber-300' }
+        : st === 'normal'
+        ? { border: 'border-emerald-500/40', bg: 'bg-emerald-500/20', text: 'text-emerald-300' }
+        : { border: 'border-slate-500/40', bg: 'bg-slate-500/20', text: 'text-slate-300' };
+      return (
+        <div className={`pointer-events-none fixed bottom-40 left-1/2 -translate-x-1/2 z-40 rounded-2xl border ${theme.border} ${theme.bg} px-5 py-2.5 text-center backdrop-blur`}>
+          <div className="text-[10px] font-bold text-slate-300 tracking-wide">종합 판정</div>
+          <div className={`text-sm font-black ${theme.text}`}>
+            {STATUS_KO[st] || '확인 필요'}
+            {finishedFms?.score != null && <span className="text-slate-300 font-bold"> · FMS {finishedFms.score}점</span>}
+          </div>
+        </div>
+      );
+    })()}
     </>
   );
 }

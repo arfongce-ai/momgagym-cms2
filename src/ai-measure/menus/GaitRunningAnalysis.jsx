@@ -7,11 +7,13 @@ import { boostedGain } from '../core/audioCue';
 import { loadPoseLandmarker, detectPoseFrame, isPoseReady, closePoseLandmarker } from '../core/poseBackend';
 import { openMainCameraStream, describeCameraError } from '../core/cameraSelect';
 import { shareReportWithVideo } from '../core/reportShare';
+import { pickRecorderMime } from '../core/recordSink';
 import { drawGaugeHud } from '../core/recordingOverlay';
 import { lockZoom, unlockZoom } from '../../utils/viewportLock';
 import { isSkeletonEnabled } from '../core/skeletonPref';
 import SkeletonToggleChip from './SkeletonToggleChip';
 import { useCameraRotation } from '../core/useCameraRotation';
+import { rotateLandmarksNormalized } from '../core/recordAspect';
 import GaugeHud from './GaugeHud';
 
 // 캘리브레이션: 세이프존 + 인식 안정이 이만큼 유지되면 락
@@ -173,6 +175,11 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
   const videoRef = useRef(null);
   const skeletonCanvasRef = useRef(null);
   const [rotationDeg, cycleRotation] = useCameraRotation();
+  // [2026-08-02] loop()가 requestAnimationFrame으로 자기 자신을 재귀호출하는
+  // 단일 클로저라, rotationDeg를 직접 참조하면 회전 버튼을 눌러도 반영 안 됨
+  // (JumpPrecisionAnalysis.jsx의 rotationDegRef와 동일 패턴).
+  const rotationDegRef = useRef(0);
+  useEffect(() => { rotationDegRef.current = rotationDeg; }, [rotationDeg]);
   const mediaRecorderRef = useRef(null);
   const chunksRef = useRef([]);
   const streamRef = useRef(null);
@@ -326,14 +333,20 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
         landmarks = res?.landmarks || null;
       } catch (e) { landmarks = null; }
 
-      // 스켈레톤 시각화 (검출 여부를 눈으로 확인 — 인식 신뢰성)
+      // 스켈레톤 시각화 (검출 여부를 눈으로 확인 — 인식 신뢰성). 라이브 오버레이는
+      // CameraStage와 같은 CSS 회전 래퍼를 공유하므로 원본(raw) 좌표를 그대로 쓴다.
       try { drawSkeleton(skeletonCanvasRef.current, video, landmarks, isReadyRef.current); } catch (e) { /* noop */ }
 
-      if (landmarks) {
+      // [2026-08-02] 카메라 원본이 회전된 채로 들어오는 기종(키오스크) 보정 —
+      // 판정(보폭·관절각·좌우뷰 판별·카메라 각도·세이프존)은 전부 회전 보정된
+      // 좌표를 써야 "위/아래·좌/우" 가정이 이 카메라에서도 정확하다.
+      const corrected = landmarks ? rotateLandmarksNormalized(landmarks, rotationDegRef.current) : null;
+
+      if (corrected) {
         if (viewRef.current === 'recording') {
           // 녹화 중: 분석 누적 (화면엔 수치 미표시)
-          trackerRef.current.push(pelvisRelativeFeet(landmarks), ts);
-          angleAccRef.current.push(jointAnglesFromPose(landmarks));
+          trackerRef.current.push(pelvisRelativeFeet(corrected), ts);
+          angleAccRef.current.push(jointAnglesFromPose(corrected));
           if (ts - metricsLastUiRef.current > 250) {
             metricsLastUiRef.current = ts;
             const s = trackerRef.current.summary();
@@ -348,13 +361,13 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
         } else {
           // 방향 판별 (측면/후면) — 히스테리시스로 경계 떨림 방지.
           // unknown 이면 직전 판정을 유지해 잠깐 인식 실패 시 깜빡임을 막는다.
-          const ori = detectOrientation(landmarks, orientationRef.current);
+          const ori = detectOrientation(corrected, orientationRef.current);
           if (ori.view !== 'unknown') { orientationRef.current = ori.view; setOrientationOnce(ori.view); }
           // 캘리브레이션: 앵글 품질 + 세이프존이 유지되면 락.
           // 후면뷰는 어깨가 넓어 high_angle 오판이 잦으므로 앵글 검사를 완화한다.
-          const q = cameraAngleQuality(landmarks);
+          const q = cameraAngleQuality(corrected);
           const angleOk = orientationRef.current === 'back' ? true : q.ok;
-          const inZone = isInSafeZone(landmarks);
+          const inZone = isInSafeZone(corrected);
           if (angleOk && inZone) {
             lostFramesRef.current = 0;
             if (armingSinceRef.current == null) armingSinceRef.current = ts;
@@ -449,8 +462,9 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
     setLiveMetrics({ cadence: null, stancePct: null, swingPct: null, totalSteps: 0 });
     autoSavedRef.current = null;
 
-    const mimeTypes = ['video/mp4', 'video/webm;codecs=vp8', 'video/webm'];
-    let selectedMime = mimeTypes.find(m => MediaRecorder.isTypeSupported(m)) || '';
+    // [2026-08-03] 로컬 mp4-우선 배열 대신 공용 pickRecorderMime()을 쓴다 —
+    // 코덱까지 명시해야 크로미움에서 mp4가 실제로 잡힌다(recordSink.js 참고).
+    let selectedMime = pickRecorderMime();
 
     const recordingStream = createRecordedStream(); // 캔버스 합성 스트림
     mediaRecorderRef.current = new MediaRecorder(recordingStream, { mimeType: selectedMime });

@@ -16,6 +16,7 @@ import { usePoseEngine } from '../core/usePoseEngine';
 import { createSmoother } from '../core/smoothing';
 import { RomAccumulator, jointAngleByMode, normalizePose, LM, symmetryIndex } from '../core/bodyMechanics';
 import { generateRomDiagnosis } from '../core/romClinical';
+import { pickRecorderMime } from '../core/recordSink';
 import { beepGo, beepSuccess, primeAudio } from '../core/audioCue';
 import CameraStage from './CameraStage.jsx';
 import GaugeHud from './GaugeHud.jsx';
@@ -27,7 +28,7 @@ import RomSensorGoniometer from './RomSensorGoniometer.jsx';
 import RomVideoAngle from './RomVideoAngle.jsx';
 import { isSkeletonEnabled } from '../core/skeletonPref';
 import { drawGaugeHud } from '../core/recordingOverlay';
-import { DEFAULT_ASPECT, outputSize, aspectLabel, drawVideoCover, coverTransform } from '../core/recordAspect';
+import { DEFAULT_ASPECT, outputSize, aspectLabel, drawVideoCover, coverTransform, rotateLandmarksNormalized } from '../core/recordAspect';
 import { useCameraRotation } from '../core/useCameraRotation';
 
 const MAX_RECORD_MS = 60000;
@@ -37,6 +38,7 @@ const JOINTS = [
   { key: 'KNEE', label: '슬관절(무릎)', short: '무릎' },
   { key: 'SHOULDER', label: '견관절(어깨)', short: '어깨' },
   { key: 'ANKLE', label: '족관절(발목)', short: '발목' },
+  { key: 'ELBOW', label: '주관절(팔꿈치)', short: '팔꿈치' },
 ];
 
 // 관절별 허용 자세모드 (해부학적으로 의미 있는 조합만 노출).
@@ -58,6 +60,11 @@ const POSE_MODES_BY_JOINT = {
   ANKLE: [
     { key: 'STANDING', label: '서서', desc: '배측굴곡' },
     { key: 'SEATED', label: '앉아서', desc: '배측굴곡' },
+  ],
+  // [2026-08-02 신규] 어깨와 동일하게 눕지 않고 서서/앉아서 능동 굴곡만 본다.
+  ELBOW: [
+    { key: 'STANDING', label: '서서', desc: '팔꿈치 능동 굴곡(손을 어깨쪽으로)' },
+    { key: 'SEATED', label: '앉아서', desc: '체간 안정 상태 굴곡' },
   ],
 };
 
@@ -146,30 +153,37 @@ export default function RomMeasure({ member, onSave, onBack }) {
   };
   useHardwareBack(inSubView, goBackOneStep);
 
+  const [rotationDeg] = useCameraRotation();
+
   // ── 라이브 프레임 콜백 ──
   const handlePose = useCallback((landmarks, ts, video) => {
     latestVideoRef.current = video || latestVideoRef.current;
     const smoothed = landmarks ? smootherRef.current(landmarks) : smootherRef.current(null);
     latestLandmarksRef.current = smoothed || latestLandmarksRef.current;
+    // 라이브 스켈레톤 오버레이는 CameraStage의 video와 같은 CSS 회전 래퍼
+    // 안에 있어 원본(raw) 좌표를 그대로 써야 한다(이중 회전 방지).
     drawSkeleton(canvasRef.current, video, smoothed, side, joint, poseMode);
 
     if (!smoothed) return;
 
+    // [2026-08-02] 카메라 원본이 회전된 채로 들어오는 기종(키오스크) 보정 —
+    // 각도 판정(accRef 누적·라이브 각도 표시)은 "위/아래" 기준 계산이 섞여
+    // 있어 회전 보정된 좌표를 써야 한다.
+    const corrected = rotateLandmarksNormalized(smoothed, rotationDeg);
     if (recordingRef.current && accRef.current) {
       const tMs = ts - startTsRef.current;
-      accRef.current.push(smoothed, tMs);
+      accRef.current.push(corrected, tMs);
       setElapsed(Math.round(tMs / 100) / 10);
       // 라이브 각도 표시(정규화 후 현재 프레임)
-      const norm = normalizePose(smoothed) || smoothed;
+      const norm = normalizePose(corrected) || corrected;
       const L = jointAngleByMode(norm, joint, 'left', poseMode).angle;
       const R = jointAngleByMode(norm, joint, 'right', poseMode).angle;
       setLiveAngle({ left: L, right: R });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [joint, poseMode, side]);
+  }, [joint, poseMode, side, rotationDeg]);
 
   const { videoRef, start, stop, status, error } = usePoseEngine({ onResult: handlePose, modelTier: 'full' });
-  const [rotationDeg] = useCameraRotation();
 
   useEffect(() => {
     if (mode !== 'live') return undefined;
@@ -253,8 +267,9 @@ export default function RomMeasure({ member, onSave, onBack }) {
 
     // MediaRecorder 시작 (지원 시). 미지원 환경이면 분석만 진행(영상 없음).
     try {
-      const mimeTypes = ['video/mp4', 'video/webm;codecs=vp8', 'video/webm'];
-      const selectedMime = mimeTypes.find((m) => MediaRecorder.isTypeSupported(m)) || '';
+      // [2026-08-03] 로컬 mp4-우선 배열 대신 공용 pickRecorderMime()을 쓴다 —
+      // 코덱까지 명시해야 크로미움에서 mp4가 실제로 잡힌다(recordSink.js 참고).
+      const selectedMime = pickRecorderMime();
       const stream = createRecordedStream();
       if (stream) {
         const mr = new MediaRecorder(stream, selectedMime ? { mimeType: selectedMime } : undefined);
@@ -304,7 +319,7 @@ export default function RomMeasure({ member, onSave, onBack }) {
       return;
     }
     beepSuccess();
-    const snap = captureVideoSnapshot(latestVideoRef.current);
+    const snap = captureVideoSnapshot(latestVideoRef.current, rotationDeg);
     setSnapshotUrl(snap);
     pendingSnapRef.current = snap;
     pendingSummaryRef.current = summary;
@@ -772,13 +787,15 @@ function objectContainMapper(video, width, height) {
   return { x: (p) => ox + p.x * drawW, y: (p) => oy + p.y * drawH };
 }
 
-function captureVideoSnapshot(video) {
+function captureVideoSnapshot(video, rotationDeg = 0) {
   if (!video?.videoWidth || !video?.videoHeight) return '';
+  const swapped = rotationDeg === 90 || rotationDeg === 270;
   const canvas = document.createElement('canvas');
-  canvas.width = video.videoWidth;
-  canvas.height = video.videoHeight;
+  // [2026-08-02] 회전 보정: 90/270에서는 저장될 사진의 가로/세로가 원본과 반대.
+  canvas.width = swapped ? video.videoHeight : video.videoWidth;
+  canvas.height = swapped ? video.videoWidth : video.videoHeight;
   const ctx = canvas.getContext('2d');
-  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+  if (!drawVideoCover(ctx, video, canvas.width, canvas.height, rotationDeg)) return '';
   return canvas.toDataURL('image/jpeg', 0.82);
 }
 
@@ -847,17 +864,29 @@ function romOverlayGeometry(landmarks, side, joint, poseMode, mapper, width, hei
   const ankle = p('ANKLE');
   const shoulder = p('SHOULDER');
   const elbow = p('ELBOW');
+  const wrist = p('WRIST');
   const foot = p('FOOT_INDEX');
   const refLen = Math.max(42, Math.min(width, height) * 0.16);
-  const refPoint = (v) => {
+  // 기준선 표시점: STANDING/SEATED는 화면상 '위쪽'(중력수직선, 실제 계산과 일치).
+  // 그 외(SUPINE/PRONE)는 몸통 축(trunkRef→v)을 v 너머로 연장한 점 — 화면 고정
+  // 방향이 아니라 실제 계산 기준선(어깨↔고관절)과 항상 일치하도록 한다
+  // (2026-08-01: 각도 계산을 몸통 축 기준으로 바꾼 것과 오버레이 표시를 통일).
+  const refPoint = (v, trunkRef) => {
     if (!v) return null;
     if (poseMode === 'STANDING' || poseMode === 'SEATED') return { x: v.x, y: v.y - refLen };
-    return { x: v.x + refLen, y: v.y };
+    if (trunkRef) {
+      const dx = v.x - trunkRef.x;
+      const dy = v.y - trunkRef.y;
+      const len = Math.hypot(dx, dy) || 1;
+      return { x: v.x + (dx / len) * refLen, y: v.y + (dy / len) * refLen };
+    }
+    return { x: v.x + refLen, y: v.y }; // 폴백(반대쪽 몸통 랜드마크 미검출 시)
   };
-  if (joint === 'HIP' && hip && knee) return { a: refPoint(hip), b: hip, c: knee };
+  if (joint === 'HIP' && hip && knee) return { a: refPoint(hip, shoulder), b: hip, c: knee };
   if (joint === 'KNEE' && hip && knee && ankle) return { a: hip, b: knee, c: ankle };
-  if (joint === 'SHOULDER' && shoulder && elbow) return { a: refPoint(shoulder), b: shoulder, c: elbow };
+  if (joint === 'SHOULDER' && shoulder && elbow) return { a: refPoint(shoulder, hip), b: shoulder, c: elbow };
   if (joint === 'ANKLE' && knee && ankle && foot) return { a: knee, b: ankle, c: foot };
+  if (joint === 'ELBOW' && shoulder && elbow && wrist) return { a: shoulder, b: elbow, c: wrist };
   return null;
 }
 

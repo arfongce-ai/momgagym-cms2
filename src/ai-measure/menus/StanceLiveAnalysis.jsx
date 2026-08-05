@@ -17,7 +17,8 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { usePoseEngine } from '../core/usePoseEngine';
 import { StandingCalibrator, SingleLegStanceTracker } from '../core/singleLegStanceTracker';
-import { DEFAULT_ASPECT, outputSize, drawVideoCover, coverTransform } from '../core/recordAspect';
+import { pickRecorderMime } from '../core/recordSink';
+import { DEFAULT_ASPECT, outputSize, drawVideoCover, coverTransform, rotateLandmarksNormalized } from '../core/recordAspect';
 import { useCameraRotation } from '../core/useCameraRotation';
 import { drawGaugeHud } from '../core/recordingOverlay';
 import CameraStage from './CameraStage.jsx';
@@ -53,12 +54,16 @@ function objectContainMapper(video, width, height) {
   return { x: (p) => ox + p.x * drawW, y: (p) => oy + p.y * drawH };
 }
 
-function drawSkeleton(canvas, video, landmarks, locked, mapper) {
+// clearFirst: 미리보기 캔버스는 매 프레임 지워야 잔상(뒤엉킨 그물망)이 안 남는다.
+// 반대로 녹화 합성 캔버스는 바로 앞에서 영상 프레임을 그려둔 상태라 지우면
+// 영상이 사라지고 스켈레톤만 남는다([2026-08-02] 저장 영상에 스켈레톤만
+// 나오던 버그의 원인) — 합성 루프에서는 clearFirst=false 로 호출한다.
+function drawSkeleton(canvas, video, landmarks, locked, mapper, clearFirst = true) {
   if (!canvas || !video) return;
   const cw = canvas.clientWidth || canvas.width, ch = canvas.clientHeight || canvas.height;
-  if (canvas.width !== cw || canvas.height !== ch) { canvas.width = cw; canvas.height = ch; }
+  if (clearFirst && (canvas.width !== cw || canvas.height !== ch)) { canvas.width = cw; canvas.height = ch; }
   const ctx = canvas.getContext('2d');
-  ctx.clearRect(0, 0, cw, ch); // 매 프레임 지우고 다시 그린다 — 안 지우면 이전 프레임 스켈레톤이 계속 쌓여 잔상(뒤엉킨 그물망)으로 남는다.
+  if (clearFirst) ctx.clearRect(0, 0, cw, ch);
   if (!landmarks) return;
   const { x: X, y: Y } = mapper || objectContainMapper(video, cw, ch);
   const col = locked ? 'rgba(52,211,153,0.95)' : 'rgba(34,211,238,0.95)';
@@ -76,11 +81,7 @@ function drawSkeleton(canvas, video, landmarks, locked, mapper) {
   });
 }
 
-export default function StanceLiveAnalysis({ member, stanceLeg, onBack, onComplete, onMemberHeightChange }) {
-  const [heightCm, setHeightCm] = useState(member?.height ? Number(member.height) : null);
-  const [needHeight, setNeedHeight] = useState(!member?.height);
-  const [heightInput, setHeightInput] = useState('');
-
+export default function StanceLiveAnalysis({ member, stanceLeg, eyesClosed, onBack, onComplete }) {
   // calibrating | low_visibility | ready | holding | trial_done | finished
   const [uiPhase, setUiPhase] = useState('calibrating');
   const [calibProgress, setCalibProgress] = useState(0);
@@ -129,7 +130,7 @@ export default function StanceLiveAnalysis({ member, stanceLeg, onBack, onComple
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       if (!drawVideoCover(ctx, video, canvas.width, canvas.height, rotationDeg)) return;
       const cover = coverTransform(video, canvas.width, canvas.height, rotationDeg);
-      drawSkeleton(canvas, video, latestLandmarksRef.current, !!calibRef.current?.locked, { x: cover.X, y: cover.Y });
+      drawSkeleton(canvas, video, latestLandmarksRef.current, !!calibRef.current?.locked, { x: cover.X, y: cover.Y }, false);
       const tracker = trackerRef.current;
       const elapsedSec = recordingStartedRef.current ? (performance.now() - recordStartTsRef.current) / 1000 : 0;
       drawGaugeHud(ctx, canvas.width, canvas.height, {
@@ -166,8 +167,9 @@ export default function StanceLiveAnalysis({ member, stanceLeg, onBack, onComple
   const beginRecording = () => {
     if (recordingStartedRef.current) return;
     try {
-      const mimeTypes = ['video/mp4', 'video/webm;codecs=vp8', 'video/webm'];
-      const selectedMime = mimeTypes.find(m => window.MediaRecorder?.isTypeSupported?.(m)) || '';
+      // [2026-08-03] 로컬 mp4-우선 배열 대신 공용 pickRecorderMime()을 쓴다 —
+      // 코덱까지 명시해야 크로미움에서 mp4가 실제로 잡힌다(recordSink.js 참고).
+      const selectedMime = pickRecorderMime();
       const stream = createRecordedStream();
       if (stream) {
         const mr = new MediaRecorder(stream, selectedMime ? { mimeType: selectedMime } : undefined);
@@ -213,30 +215,49 @@ export default function StanceLiveAnalysis({ member, stanceLeg, onBack, onComple
 
   // 캘리브레이션은 이미 끝난 상태(calib.locked)에서만 호출됨 — 버튼을 눌러야
   // 비로소 트래커 생성 + 녹화 시작 + 시행 판정이 시작된다.
-  // ROM과 동일하게(2026-07-30 변경): 버튼을 누르면 카운트다운 없이 바로 시작한다.
+  // [2026-08-02] 3-2-1 카운트다운 복원. runStartCountdown 은 정의만 되어 있고
+  // 아무 데서도 호출되지 않아(2026-07-30에 "바로 시작"으로 바꾸면서 호출부만
+  // 빠짐) 화면에 카운트다운이 전혀 뜨지 않았다. 버튼을 누른 사람이 카메라
+  // 앞으로 이동할 시간이 필요하므로 VBT/점프와 동일하게 되돌린다.
   // [2026-07-30] 버튼이 캘리브레이션 완료를 기다리지 않고 언제든 눌리게 변경 —
   // 촬영 대상자가 카메라 앞이 아니라 노트북 앞에서(또는 트레이너가 미리) 버튼을
   // 누르는 경우를 지원한다. 트래커 생성은 실제로 캘리브레이션이 끝나는 시점에
   // handleResult에서 한다.
   const startMeasurement = () => {
     if (measureStartedRef.current) return;
-    measureStartedRef.current = true;
-    setStarted(true);
-    beginRecording();
+    if (countdownTimerRef.current) return; // 이미 카운트다운 중이면 중복 실행 방지
+    runStartCountdown(() => {
+      if (measureStartedRef.current) return;
+      measureStartedRef.current = true;
+      setStarted(true);
+      beginRecording();
+    });
   };
+
+  const [rotationDeg] = useCameraRotation();
 
   const handleResult = useCallback((landmarks, ts, video) => {
     lastTsRef.current = ts;
     latestVideoElRef.current = video || latestVideoElRef.current;
+    // 원본(raw) 그대로 보관 — 녹화 합성 루프(composeLoop)가 이 값을 coverTransform(
+    // rotationDeg)에 직접 넘겨 자체적으로 회전 보정하므로 여기서 미리 보정하면
+    // 이중 회전이 된다.
     latestLandmarksRef.current = landmarks;
-    if (!calibRef.current) calibRef.current = new StandingCalibrator({ heightCm });
+    if (!calibRef.current) calibRef.current = new StandingCalibrator({});
     const calib = calibRef.current;
 
+    // 라이브 스켈레톤 오버레이도 CameraStage와 같은 CSS 회전 래퍼를 공유하므로
+    // 원본(raw) 좌표를 그대로 쓴다(이중 회전 방지).
     drawSkeleton(canvasRef.current, video, landmarks, calib.locked);
     if (!landmarks) return;
 
+    // [2026-08-02] 카메라 원본이 회전된 채로 들어오는 기종(키오스크) 보정 —
+    // SLST 판정(기준선·유지시간·균형상실·골반기울기)은 전부 "수직/좌우" 축을
+    // 가정하는 계산이라 회전 보정된 좌표가 필요하다.
+    const corrected = rotateLandmarksNormalized(landmarks, rotationDeg);
+
     if (!calib.locked) {
-      calib.push(landmarks);
+      calib.push(corrected);
       const st = calib.status();
       if (st.ready) {
         setUiPhase('ready'); // 캘리브레이션 완료
@@ -263,7 +284,7 @@ export default function StanceLiveAnalysis({ member, stanceLeg, onBack, onComple
     if (!tracker || tracker.trials.length >= tracker.maxTrials) return;
 
     const beforeCount = tracker.trials.length;
-    tracker.push(landmarks, ts);
+    tracker.push(corrected, ts);
 
     if (tracker.phase === 'holding') {
       setUiPhase('holding');
@@ -277,13 +298,12 @@ export default function StanceLiveAnalysis({ member, stanceLeg, onBack, onComple
       setUiPhase('ready');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [heightCm, stanceLeg]);
+  }, [stanceLeg, rotationDeg]);
 
   const { videoRef, start, stop, status, error } = usePoseEngine({ onResult: handleResult });
-  const [rotationDeg] = useCameraRotation();
 
   useEffect(() => {
-    if (!needHeight && !startedRef.current) {
+    if (!startedRef.current) {
       startedRef.current = true;
       start();
     }
@@ -297,7 +317,7 @@ export default function StanceLiveAnalysis({ member, stanceLeg, onBack, onComple
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [needHeight]);
+  }, []);
 
   useEffect(() => {
     if (status === 'error' && error) setErrorMsg(error);
@@ -332,7 +352,7 @@ export default function StanceLiveAnalysis({ member, stanceLeg, onBack, onComple
     const calib = calibRef.current;
     if (!tracker) return;
     tracker.finalize(lastTsRef.current);
-    const summary = tracker.summary({ cmPerNormUnit: calib?.result?.scaleCmPerY ?? null });
+    const summary = tracker.summary();
     stop();
     if (maxRecordTimerRef.current) { clearTimeout(maxRecordTimerRef.current); maxRecordTimerRef.current = null; }
     if (!summary.trial1) {
@@ -353,52 +373,13 @@ export default function StanceLiveAnalysis({ member, stanceLeg, onBack, onComple
     }
   };
 
-  const applyHeight = () => {
-    const h = Number(heightInput);
-    if (!h || h < 80 || h > 250) { setErrorMsg('키를 80~250cm로 입력하세요.'); return; }
-    setHeightCm(h); setNeedHeight(false); setErrorMsg('');
-    onMemberHeightChange?.(h);
-  };
-
-  if (needHeight) {
-    return (
-      <div className="absolute inset-0 bg-slate-950 flex flex-col">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800">
-          <button onClick={onBack} className="text-slate-300 font-bold text-sm">✕ 닫기</button>
-          <h2 className="text-white font-black">한다리서기 · {legLabel} 지지</h2>
-          <div className="w-12" />
-        </div>
-        <div className="flex-1 flex items-center justify-center p-6">
-          <div className="w-full max-w-sm bg-slate-900 border border-amber-500/30 rounded-2xl p-5 space-y-4">
-            <div className="text-center space-y-1">
-              <p className="text-3xl">📏</p>
-              <p className="text-white font-black">키가 필요합니다</p>
-              <p className="text-slate-400 text-xs">흔들림 거리(cm) 환산에 사용됩니다.</p>
-            </div>
-            <label className="block">
-              <span className="mb-1 block text-[10px] font-bold text-slate-500">키</span>
-              <div className="flex items-center gap-2">
-                <input type="number" inputMode="numeric" value={heightInput}
-                  onChange={e => setHeightInput(e.target.value)} placeholder="170"
-                  className="min-w-0 flex-1 bg-slate-800 border border-slate-700 text-slate-100 rounded-lg px-3 py-2.5 text-sm font-mono focus:outline-none focus:border-amber-500" />
-                <span className="text-slate-400 text-xs font-bold">cm</span>
-              </div>
-            </label>
-            <button onClick={applyHeight} className="w-full rounded-xl bg-amber-500 text-slate-950 font-black py-3 active:scale-95">
-              입력하고 계속
-            </button>
-            {errorMsg && <p className="text-center text-xs text-red-400">{errorMsg}</p>}
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   const secs = (holdMs / 1000).toFixed(1);
 
   const topBar = (
     <>
-      <p className="text-sm font-black text-white">{legLabel} 지지</p>
+      <p className="text-sm font-black text-white">
+        {legLabel} 지지 <span className={eyesClosed ? 'text-violet-300' : 'text-cyan-300'}>· {eyesClosed ? '눈감고' : '눈뜨고'}</span>
+      </p>
       {uiPhase === 'calibrating' && <p className="text-xs font-bold text-amber-300">자세 보정 중… {Math.round(calibProgress * 100)}%</p>}
       {uiPhase === 'low_visibility' && <p className="text-xs font-bold text-red-300">전신이 보이도록 서 주세요</p>}
       {!started && !['calibrating', 'low_visibility', 'trial_done', 'finished'].includes(uiPhase) && (
@@ -472,10 +453,6 @@ export default function StanceLiveAnalysis({ member, stanceLeg, onBack, onComple
         <div className="text-2xl font-black text-white leading-none">{trialsFound}<span className="text-sm text-slate-400">/{SLST_LIVE_MAX_TRIALS}</span></div>
       </div>
     )}
-    {/* 임시 디버그 표시 — 문제 확인되면 제거 예정 */}
-    <div className="pointer-events-none fixed bottom-1 left-1 z-[999] rounded bg-black/80 px-2 py-1 font-mono text-[9px] text-lime-300">
-      phase={uiPhase} · trkPhase={trackerRef.current?.phase ?? '-'} · trials={trackerRef.current?.trials?.length ?? '-'} · status={status} · err={String(error).slice(0, 40)} · locked={String(!!calibRef.current?.locked)} · prog={Math.round(calibProgress * 100)}% · started={String(started)} · cd={String(countdown)}
-    </div>
     </>
   );
 }
