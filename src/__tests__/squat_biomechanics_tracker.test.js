@@ -5,7 +5,7 @@ import { evaluateSquatBiomechanics } from '../ai-measure/core/squatBiomechanics.
 // 캘리브레이션 결과를 직접 구성(StandingCalibrator.push 없이 트래커 로직만 검증).
 const calib = { baselinePelvisY: 0.50, baselineKneeY: 0.70, baselineHeelY: 0.95, baselineFeetY: 0.95 };
 
-function frame({ hipY, kneeY = 0.70, shoY = 0.30, ankY = 0.90, heelY = 0.95, valgus = 0 }) {
+function frame({ hipY, kneeY = 0.70, shoY = 0.30, ankY = 0.90, heelY = 0.95, valgus = 0, armDrop = 0 }) {
   // 25 landmark 배열: 필요한 인덱스만 채움(0=nose 자리는 안 씀, torsoLean에 shoulder 필요).
   const lm = new Array(33).fill(null).map(() => ({ x: 0.5, y: 0.5, visibility: 1 }));
   lm[11] = { x: 0.45, y: shoY, visibility: 1 }; lm[12] = { x: 0.55, y: shoY, visibility: 1 }; // shoulders
@@ -13,6 +13,15 @@ function frame({ hipY, kneeY = 0.70, shoY = 0.30, ankY = 0.90, heelY = 0.95, val
   lm[25] = { x: 0.45 - valgus, y: kneeY, visibility: 1 }; lm[26] = { x: 0.55 + valgus, y: kneeY, visibility: 1 }; // knees
   lm[27] = { x: 0.45, y: ankY, visibility: 1 }; lm[28] = { x: 0.55, y: ankY, visibility: 1 }; // ankles
   lm[29] = { x: 0.45, y: heelY, visibility: 1 }; lm[30] = { x: 0.55, y: heelY, visibility: 1 }; // heels
+  // [2026-08-03] 손목: 기본값은 어깨 바로 위(armDrop=0, 팔을 곧게 든 상태) — 오버헤드
+  // 딥 스쿼트는 원래 이런 자세라, armDropDeg를 신경 안 쓰는 기존 테스트들도 이 기본값
+  // 덕분에 "팔은 정상"인 채로 다른 지표만 검증할 수 있다(값을 안 주면 항상 회색/미판정
+  // 이던 이전과 달리, 이제 armDropDeg가 실제로 판정에 들어가므로 기본값이 필요해졌다).
+  const armLen = 0.35;
+  const rad = (armDrop * Math.PI) / 180;
+  const dx = armLen * Math.sin(rad), dy = armLen * Math.cos(rad);
+  lm[15] = { x: 0.45 + dx, y: shoY - dy, visibility: 1 };
+  lm[16] = { x: 0.55 + dx, y: shoY - dy, visibility: 1 };
   return lm;
 }
 

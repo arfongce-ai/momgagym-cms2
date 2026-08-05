@@ -54,6 +54,13 @@ export const ROM_NORMS = Object.freeze({
     STANDING:  { dorsiflexion: { normal: 20, min: 10, max: 30 } },
     SEATED:    { dorsiflexion: { normal: 20, min: 10, max: 30 } },
   },
+  // [2026-08-02 신규] 주관절(팔꿈치). 출처: 임상 가동범위 표준치(평균, 능동 굴곡
+  // 약 140~150°) — 다른 관절과 마찬가지로 절대 정답이 아닌 sanity 기준. 실제
+  // 캡처 데이터 축적 후 보정 필요.
+  ELBOW: {
+    STANDING:  { flexion: { normal: 140, min: 120, max: 155 } },
+    SEATED:    { flexion: { normal: 140, min: 120, max: 155 } },
+  },
 });
 
 export function round(value, digits = 1) {
@@ -185,10 +192,11 @@ function stdDev(values) {
 //
 //   · STANDING: 기준선 = 수직 중력선(척추 축). 체중지지 상태의 '기능적 가동성'.
 //       반대쪽 골반이 내려앉는 골반 불균형(pelvicDrop)을 보상값으로 함께 추적.
-//   · SUPINE/PRONE: 기준선 = 바닥면 절대 수평선(베드면). 보상을 통제한
-//       '순수 구조적 ROM'. 동작 끝범위의 잔떨림(등척성 안정성)을 별도로 추출.
+//   · SUPINE/PRONE: 기준선 = 피험자 본인의 몸통 축(어깨↔고관절, 화면 절대좌표가
+//       아닌 몸 기준). 카메라에 대해 어느 방향으로 눕든 결과가 같다. 보상을
+//       통제한 '순수 구조적 ROM'. 동작 끝범위의 잔떨림(등척성 안정성)을 별도로 추출.
 //
-//   joint: 'HIP' | 'KNEE' | 'SHOULDER' | 'ANKLE'
+//   joint: 'HIP' | 'KNEE' | 'SHOULDER' | 'ANKLE' | 'ELBOW'
 //   side:  'left' | 'right'
 //   poseMode: 'STANDING' | 'SUPINE' | 'PRONE' | 'SEATED'
 //  반환: { angle, compensatory, base } — angle=관절각, compensatory=보상값(STANDING).
@@ -206,14 +214,13 @@ export function jointAngleByMode(landmarks, joint, side, poseMode) {
   const wrist = get(`${S}_WRIST`);
   const foot = get(`${S}_FOOT_INDEX`);
 
-  // 기준 벡터: 자세에 따라 수직(중력) vs 수평(바닥)을 세팅.
+  // 기준 벡터: STANDING 계열은 수직(중력)을 기준으로 삼는다.
   // 화면 좌표계에서 y는 아래로 갈수록 커진다.
   const VERTICAL_UP = { x: 0, y: -1, z: 0 };   // 위쪽(척추 축 근사)
-  const HORIZONTAL = { x: 1, y: 0, z: 0 };     // 바닥면(베드 수평)
 
   let angle = null;
   let compensatory = null;
-  let base = poseMode === 'STANDING' ? 'vertical_gravity_line' : 'horizontal_bed_plane';
+  let base = poseMode === 'STANDING' ? 'vertical_gravity_line' : 'trunk_axis_line';
 
   if (joint === 'HIP') {
     if (poseMode === 'STANDING') {
@@ -225,8 +232,15 @@ export function jointAngleByMode(landmarks, joint, side, poseMode) {
       // 보상: 반대쪽 골반이 내려앉는 정도(pelvicDrop) — 양 골반 y차를 어깨너비로 정규화.
       compensatory = pelvicDrop(landmarks, side);
     } else {
-      // SUPINE: 대퇴골과 바닥 수평선 사이각 = 순수 고관절 굴곡(누워서).
-      angle = vectorToAxisAngle(hip, knee, HORIZONTAL, false);
+      // SUPINE/PRONE: 대퇴골과 '몸통 축(어깨→고관절)' 사이각 = 순수 고관절 굴곡/신전.
+      // 예전엔 화면 고정 수평축(HORIZONTAL, +x 방향)을 기준으로 삼았는데, 카메라에
+      // 대해 피험자 머리가 왼쪽/오른쪽 중 어느 쪽을 향하는지에 따라 같은 자세도
+      // 0°로도 180°로도 잡히고, 굴곡할수록 각도가 거꾸로 줄어드는 경우까지 있었다
+      // (2026-08-01 수정 — "포지션 바꿔도 각도가 그대로/이상하게 나온다" 회귀).
+      // 무릎각(hip-knee-ankle)과 같은 원리로, 화면 절대 좌표가 아니라 몸통 자체를
+      // 기준선으로 삼으면 카메라·피험자 방향과 무관하게 항상 같은 결과가 나온다.
+      const trunkKneeAngle = angleBetween(shoulder, hip, knee, false);
+      angle = trunkKneeAngle == null ? null : round(180 - trunkKneeAngle, 1);
     }
   } else if (joint === 'KNEE') {
     // 무릎각은 자세와 무관하게 hip-knee-ankle 내각(굴곡). 펴면 180에 가까움.
@@ -241,11 +255,20 @@ export function jointAngleByMode(landmarks, joint, side, poseMode) {
       // 보상: 몸통 측면 기울기(체간 보상). 양 어깨-골반 라인 기울기.
       compensatory = trunkLeanCompensation(landmarks);
     } else {
-      angle = vectorToAxisAngle(shoulder, elbow, HORIZONTAL, false);
+      // (현재 UI에서는 SHOULDER에 STANDING/SEATED만 노출되어 도달하지 않지만,
+      // HIP과 동일한 이유로 화면 고정축 대신 몸통 축(고관절→어깨) 기준으로 통일.)
+      const trunkElbowAngle = angleBetween(hip, shoulder, elbow, false);
+      angle = trunkElbowAngle == null ? null : round(180 - trunkElbowAngle, 1);
     }
   } else if (joint === 'ANKLE') {
     // 발목 배측굴곡 근사: 정강이(knee→ankle) 와 발(ankle→foot) 사잇각.
     angle = angleBetween(knee, ankle, foot, false);
+  } else if (joint === 'ELBOW') {
+    // 주관절(팔꿈치) — 무릎과 동일한 단순 경첩 관절. 상완(shoulder→elbow)과
+    // 전완(elbow→wrist) 사잇각을 그대로 쓴다(축 기준 보정 불필요). 펴면 180에
+    // 가깝고, 굽힐수록 작아진다 — KNEE와 동일한 성질이라 repMax()에서도
+    // KNEE와 같은 (180 - 최소각) 보정을 함께 적용한다.
+    angle = angleBetween(shoulder, elbow, wrist, false);
   }
 
   return { angle, compensatory, base };
@@ -333,10 +356,19 @@ export class RomAccumulator {
   }
 
   // 자세·관절 정상 범위를 벗어나는 값은 대표값 산출에서 제외(측정 정직성).
+  // [2026-08-02 버그 수정] KNEE·ELBOW는 raw 내각이 굴곡할수록 "작아지고"
+  // repMax()에서 (180 - raw)로 뒤집어 flexion 지표를 만든다. 그런데 이 필터가
+  // ROM_NORMS의 min/max(=flexion 공간 값)를 raw 값에 그대로 적용하고 있었다 —
+  // 즉 가장 깊이 굽힌(=raw가 가장 작은, 임상적으로 가장 중요한) 표본이
+  // "비정상치"로 걸러져 최대 굴곡각이 실제보다 작게 보고되는 버그였다.
+  // 두 관절은 min/max를 raw 공간으로 변환(180-x, 대소 반전)해서 필터링한다.
   _sanityRange() {
     const spec = ROM_NORMS[this.joint]?.[this.poseMode] || null;
     if (!spec) return { lo: -30, hi: 200 };
     const first = Object.values(spec)[0];
+    if (this.joint === 'KNEE' || this.joint === 'ELBOW') {
+      return { lo: Math.max(-30, 180 - first.max - 40), hi: 180 - first.min + 40 };
+    }
     return { lo: Math.max(-30, first.min - 40), hi: first.max + 40 };
   }
 
@@ -348,10 +380,10 @@ export class RomAccumulator {
     const smR = movingAverage(rawR, this.smoothWindow).filter((v) => v != null && v >= lo && v <= hi);
 
     // 굴곡 ROM 은 '최대 굴곡각'이 핵심 지표. HIP/SHOULDER 기준벡터각은 클수록 굴곡↑.
-    // KNEE 내각은 굴곡 시 작아지므로(폄=180), maxFlexion = 180 - min(내각).
+    // KNEE·ELBOW 내각은 굴곡 시 작아지므로(폄=180), maxFlexion = 180 - min(내각).
     const repMax = (arr) => {
       if (!arr.length) return null;
-      if (this.joint === 'KNEE') {
+      if (this.joint === 'KNEE' || this.joint === 'ELBOW') {
         const minInner = Math.min(...arr);
         return round(180 - minInner, 1);
       }

@@ -6,7 +6,7 @@ import {
   measurementOutputMode,
   mergeIntegratedAssessment,
 } from '../ai-measure/core/crossMeasureContext';
-import { evaluateSingleLegStance } from '../ai-measure/core/singleLegStance';
+import { evaluateSingleLegStance, evaluateSingleLegStanceWithEyes } from '../ai-measure/core/singleLegStance';
 import { evaluateSquatBiomechanics } from '../ai-measure/core/squatBiomechanics';
 
 describe('crossMeasureContext', () => {
@@ -61,8 +61,8 @@ describe('crossMeasureContext', () => {
   it('한다리서기 좌우 비대칭이 있으면 문제 중심 요약에 반영된다(실제 판정 모듈 연동)', () => {
     const stanceReport = evaluateSingleLegStance({
       left: {
-        trial1: { valid: true, holdTimeMs: 30000, swayPathCm: 2 },
-        trial2: { valid: true, holdTimeMs: 30000, swayPathCm: 2 },
+        trial1: { valid: true, holdTimeMs: 30000 },
+        trial2: { valid: true, holdTimeMs: 30000 },
       },
       right: {
         trial1: { valid: true, balanceLoss: true, holdTimeMs: 4000 },
@@ -85,6 +85,24 @@ describe('crossMeasureContext', () => {
     expect(focus.severity).toBe('normal');
     expect(focus.issues.length).toBe(0);
     expect(focus.strengths.length).toBeGreaterThan(0);
+  });
+
+  it('한다리서기 눈뜨고/눈감고 조건별 리포트(evaluateSingleLegStanceWithEyes)는 조건 라벨을 붙여 이슈를 노출한다', () => {
+    const stanceReport = evaluateSingleLegStanceWithEyes({
+      open: {
+        left: { trial1: { valid: true, holdTimeMs: 30000 } },
+        right: { trial1: { valid: true, holdTimeMs: 30000 } },
+      },
+      closed: {
+        left: { trial1: { valid: true, holdTimeMs: 15000 } },
+        right: { trial1: { valid: true, balanceLoss: true, holdTimeMs: 4000 } },
+      },
+    });
+    const focus = buildProblemFocus('stance', stanceReport);
+    expect(focus.severity).toBe('risk');
+    expect(focus.issues.some((item) => item.text.includes('오른쪽') && item.text.includes('눈감고'))).toBe(true);
+    // 눈뜨고 조건은 정상이므로 눈뜨고 관련 위험/주의 이슈는 없어야 한다.
+    expect(focus.issues.some((item) => item.text.includes('눈뜨고'))).toBe(false);
   });
 
   it('스쿼트 즉시확정 실패(뒤꿈치 들림)가 위험으로 반영된다(실제 판정 모듈 연동)', () => {

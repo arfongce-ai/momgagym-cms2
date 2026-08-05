@@ -18,15 +18,12 @@ const LEG_KO = { left: '왼쪽', right: '오른쪽' };
  * @param {'left'|'right'} stanceLeg 이번에 측정할 지지(버티는) 다리
  * @param {(trialSummary: {trial1, trial2, trialsFound}) => void} onComplete
  */
-export default function StanceUploadAnalysis({ member, stanceLeg, onBack, onComplete, onMemberHeightChange }) {
+export default function StanceUploadAnalysis({ member, stanceLeg, eyesClosed, onBack, onComplete }) {
   const [phase, setPhase] = useState('idle'); // idle | ready | analyzing | done | error
   const [progress, setProgress] = useState(0);
   const [errorMsg, setErrorMsg] = useState('');
   const [fileName, setFileName] = useState('');
   const [capture, setCapture] = useState('normal');
-  const [heightCm, setHeightCm] = useState(member?.height ? Number(member.height) : null);
-  const [needHeight, setNeedHeight] = useState(!member?.height);
-  const [heightInput, setHeightInput] = useState('');
 
   const videoRef = useRef(null);
   const fileUrlRef = useRef(null);
@@ -49,7 +46,7 @@ export default function StanceUploadAnalysis({ member, stanceLeg, onBack, onComp
     if (!video) return;
     setPhase('analyzing'); setProgress(0); setErrorMsg('');
 
-    const calib = new StandingCalibrator({ heightCm });
+    const calib = new StandingCalibrator({});
     let tracker = null;
 
     const abort = new AbortController();
@@ -85,7 +82,7 @@ export default function StanceUploadAnalysis({ member, stanceLeg, onBack, onComp
       // 영상이 끝났는데 아직 유지 중이면(수동 종료를 못 봤으면) 마감 처리.
       tracker.finalize(result.durationSec * 1000);
 
-      const summary = tracker.summary({ cmPerNormUnit: calib.result.scaleCmPerY });
+      const summary = tracker.summary();
       if (!summary.trial1) {
         setErrorMsg('유효한 유지 시행을 찾지 못했습니다(발을 든 시간이 너무 짧았을 수 있어요). 다시 촬영해 주세요.');
         setPhase('error'); return;
@@ -99,7 +96,7 @@ export default function StanceUploadAnalysis({ member, stanceLeg, onBack, onComp
     } finally {
       abortRef.current = null;
     }
-  }, [heightCm, capture, stanceLeg, onComplete]);
+  }, [capture, stanceLeg, onComplete]);
 
   const cancelAnalysis = () => { abortRef.current?.abort(); };
 
@@ -108,55 +105,14 @@ export default function StanceUploadAnalysis({ member, stanceLeg, onBack, onComp
     if (fileUrlRef.current) URL.revokeObjectURL(fileUrlRef.current);
   }, []);
 
-  const applyHeight = () => {
-    const h = Number(heightInput);
-    if (!h || h < 80 || h > 250) { setErrorMsg('키를 80~250cm로 입력하세요.'); return; }
-    setHeightCm(h); setNeedHeight(false); setErrorMsg('');
-    onMemberHeightChange?.(h);
-  };
-
   const pct = Math.round(progress * 100);
   const legLabel = LEG_KO[stanceLeg] || stanceLeg;
-
-  if (needHeight) {
-    return (
-      <div className="absolute inset-0 bg-slate-950 flex flex-col">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800">
-          <button onClick={onBack} className="text-slate-300 font-bold text-sm">← 뒤로</button>
-          <h2 className="text-white font-black">한다리서기 · {legLabel} 지지</h2>
-          <div className="w-12" />
-        </div>
-        <div className="flex-1 flex items-center justify-center p-6">
-          <div className="w-full max-w-sm bg-slate-900 border border-amber-500/30 rounded-2xl p-5 space-y-4">
-            <div className="text-center space-y-1">
-              <p className="text-3xl">📏</p>
-              <p className="text-white font-black">키가 필요합니다</p>
-              <p className="text-slate-400 text-xs">흔들림 거리(cm) 환산에 사용됩니다.</p>
-            </div>
-            <label className="block">
-              <span className="mb-1 block text-[10px] font-bold text-slate-500">키</span>
-              <div className="flex items-center gap-2">
-                <input type="number" inputMode="numeric" value={heightInput}
-                  onChange={e => setHeightInput(e.target.value)} placeholder="170"
-                  className="min-w-0 flex-1 bg-slate-800 border border-slate-700 text-slate-100 rounded-lg px-3 py-2.5 text-sm font-mono focus:outline-none focus:border-amber-500" />
-                <span className="text-slate-400 text-xs font-bold">cm</span>
-              </div>
-            </label>
-            <button onClick={applyHeight} className="w-full rounded-xl bg-amber-500 text-slate-950 font-black py-3 active:scale-95">
-              입력하고 계속
-            </button>
-            {errorMsg && <p className="text-center text-xs text-red-400">{errorMsg}</p>}
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="absolute inset-0 bg-slate-950 flex flex-col">
       <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800">
         <button onClick={onBack} className="text-slate-300 font-bold text-sm">← 뒤로</button>
-        <h2 className="text-white font-black">한다리서기 · {legLabel} 지지</h2>
+        <h2 className="text-white font-black">한다리서기 · {legLabel} 지지 · {eyesClosed ? '눈감고' : '눈뜨고'}</h2>
         <div className="w-12" />
       </div>
 
@@ -171,8 +127,6 @@ export default function StanceUploadAnalysis({ member, stanceLeg, onBack, onComp
           )}
         </div>
 
-        {heightCm && <p className="text-[11px] text-emerald-400">회원 키 {heightCm}cm로 흔들림 거리를 환산합니다</p>}
-
         {phase === 'idle' && (
           <label className="cursor-pointer rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black px-6 py-3 transition-colors">
             {legLabel} 다리 지지 영상 선택
@@ -186,6 +140,7 @@ export default function StanceUploadAnalysis({ member, stanceLeg, onBack, onComp
           <div className="flex flex-col items-center gap-3 w-full max-w-md">
             <p className="text-sm text-slate-300 text-center">
               {legLabel} 다리로 지지하고 반대쪽 발을 들어 버티는 모습을 정면에서 촬영하세요.
+              {eyesClosed && <span className="text-violet-300 font-bold"> 눈을 감고 진행합니다.</span>}
               1~2회 시도가 담긴 영상이면 자동으로 각 시행을 구분합니다.
             </p>
             <div className="w-full">

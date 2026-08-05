@@ -12,10 +12,14 @@
 //
 //  ── 흐름(시행 1회당) ──
 //   1) StandingCalibrator(jumpBiomechanics.js, 재사용)로 양발 서기 기준선 확보.
-//   2) 들리는 쪽 발목이 기준선보다 liftBandFrac 이상 뜨면 → 유지(holding) 시작.
-//   3) 유지 중: 지지 다리 쪽 골반 중점의 프레임간 이동을 누적(흔들림 경로),
-//      좌우 골반 라인 기울기의 최대값(골반 기울기)을 추적. 골반 이동 속도가
-//      급격히 튀면 균형 상실로 "추정"한다(휴리스틱, 아래 한계 참고).
+//   2) 들리는 쪽 발목이 "자기 기준선"보다 liftBand(다리 길이 비례) 이상 뜨면
+//      → 유지(holding) 시작. 내려놓음 판정은 releaseBand(더 낮은 문턱)로 —
+//      히스테리시스를 둬 경계에서 유지/종료가 번갈아 튀지 않게 한다.
+//   3) 유지 중: 좌우 골반 라인 기울기의 최대값(골반 기울기)을 추적하고, 골반
+//      중점의 프레임간 이동 속도가 급격히 튀면 균형 상실로 "추정"한다(휴리스틱,
+//      아래 한계 참고). [2026-08-02] 흔들림 누적 경로(sway path) 자체는 더는
+//      추적하지 않는다 — 핵심 측정 대상은 발을 든(lift) 순간부터 다시 딛는
+//      (touch) 순간까지의 유지시간이고, 흔들림은 판정에 반영하지 않기로 함.
 //   4) 들었던 발이 기준선 근처로 다시 내려오면 → 그 시행 종료(정의상 조기
 //      종료=stepOut:true). 목표 시간 도달 등으로 stopManually()가 먼저
 //      호출되면 stepOut:false. 종료 후 다음 시행을 위해 자동으로 대기 상태로
@@ -38,7 +42,21 @@ import { StandingCalibrator } from './jumpBiomechanics';
 export { StandingCalibrator };
 
 export const SLST_TRACK_TUNING = {
-  liftBandFrac: 0.05,                 // 기준선 대비 이만큼(정규화 y) 뜨면 '들었다'로 판정
+  // [2026-08-02] "발을 들어도 초시계가 안 돈다"는 현장 피드백 반영.
+  //  기존에는 liftBandFrac(=화면 높이의 5%)이라는 고정값을 썼는데, 이 값은
+  //  사람이 화면에 얼마나 크게 잡히는지에 따라 요구되는 실제 들어올림 높이가
+  //  완전히 달라진다(전신이 작게 잡히면 20cm를 들어도 미달). 임상 SLST는
+  //  발을 바닥에서 살짝만 떼는 검사라 더 쉽게 미달됐다.
+  //  → 화면 기준이 아니라 "그 사람의 다리 길이(골반~발목)" 대비 비율로 바꾼다.
+  //    다리 길이의 6%면 다리 90cm 기준 약 5cm — 의도적으로 든 것은 잡고,
+  //    서 있을 때의 미세 흔들림은 걸러지는 수준.
+  //  ⚠ 실제 캡처 데이터로 보정이 필요한 출발 기본값이다.
+  liftBandOfLegFrac: 0.06,
+  liftBandMin: 0.012,                 // 정규화 y 최소 문턱(다리 길이 추정 실패 대비)
+  liftBandMax: 0.05,                  // 정규화 y 최대 문턱(기존 고정값이 상한 역할)
+  // 히스테리시스: 발을 내렸다고 볼 때는 문턱을 더 낮게(기준선에 가깝게) 쓴다.
+  // 올릴 때와 내릴 때 같은 문턱을 쓰면 경계에서 유지/종료가 계속 번갈아 튄다.
+  releaseBandRatio: 0.5,
   minHoldForValidMs: 500,             // 이보다 짧게 들었다 내리면 오검출로 간주(조용히 폐기)
   filterMinCutoff: 1.0,
   filterBeta: 0.01,
@@ -83,14 +101,41 @@ export class SingleLegStanceTracker {
     this.trials = []; // 완료된 시행 요약(내부 표현). 최대 maxTrials개.
     this.phase = 'waiting'; // waiting | holding
     this._lastMs = null;
+
+    // ── 들어올림 문턱값(정규화 y) ──
+    // 다리 길이(골반~발목)에 비례시켜, 사람이 화면에 크게 잡히든 작게 잡히든
+    // "실제로 몇 cm 들었는가"가 비슷하게 요구되도록 한다.
+    const legLen = (calib && calib.baselineFeetY != null && calib.baselinePelvisY != null)
+      ? Math.abs(calib.baselineFeetY - calib.baselinePelvisY)
+      : null;
+    const t = this.tuning;
+    this.liftBand = legLen && legLen > 0
+      ? Math.min(t.liftBandMax, Math.max(t.liftBandMin, legLen * t.liftBandOfLegFrac))
+      : t.liftBandMax;
+    this.releaseBand = this.liftBand * t.releaseBandRatio;
+
+    // 발목별 "자기 자신" 기준선 — 양발 평균과 비교하면 두 발목의 높이차가
+    // 그대로 문턱에 더해져 검출이 어려워진다. 예전 calib 객체(구 버전 저장본
+    // 등)에는 이 필드가 없을 수 있어 병합값으로 폴백한다.
+    this._baseL = calib?.baselineAnkleYL ?? calib?.baselineFeetY ?? null;
+    this._baseR = calib?.baselineAnkleYR ?? calib?.baselineFeetY ?? null;
+
     this._resetHold();
+  }
+
+  // 이 발목이 자기 기준선보다 얼마나 떠 있는지(정규화 y, 클수록 높이 들림).
+  // 화면 좌표는 아래로 갈수록 y가 커지므로 (기준선 - 현재값)이 들린 양이다.
+  _liftAmount(lm, side) {
+    const y = ankleY(lm, side);
+    const base = side === 'left' ? this._baseL : this._baseR;
+    if (y == null || base == null) return null;
+    return base - y;
   }
 
   _resetHold() {
     this._filtHipX = new OneEuroFilter({ minCutoff: this.tuning.filterMinCutoff, beta: this.tuning.filterBeta, dCutoff: 1.0 });
     this._filtHipY = new OneEuroFilter({ minCutoff: this.tuning.filterMinCutoff, beta: this.tuning.filterBeta, dCutoff: 1.0 });
     this._liftStartMs = null;
-    this._swayPathNorm = 0;
     this._maxPelvicTiltDeg = 0;
     this._balanceLoss = false;
     this._prevHip = null;
@@ -126,7 +171,6 @@ export class SingleLegStanceTracker {
     if (holdTimeMs >= this.tuning.minHoldForValidMs) {
       this.trials.push({
         holdTimeMs: Math.round(holdTimeMs),
-        swayPathNorm: this._swayPathNorm,
         pelvicTiltDeg: Math.round(this._maxPelvicTiltDeg * 10) / 10,
         balanceLoss: this._balanceLoss,
         stepOut: endReason === 'foot_down',
@@ -142,12 +186,14 @@ export class SingleLegStanceTracker {
     this._lastMs = tMs;
     if (this.trials.length >= this.maxTrials) return; // 이미 필요한 만큼 모음
 
-    const liftedY = ankleY(lm, this.liftedSide);
-    if (liftedY == null) return;
-    const liftThreshold = this.calib.baselineFeetY - this.tuning.liftBandFrac;
+    // 들린 양 = 그 발목 "자기 자신"의 기준선 대비 떠오른 정규화 y 거리.
+    // (양발 평균이 아니라 발목별 기준선을 쓰므로 좌우 발목 높이차가 문턱에
+    //  더해지지 않는다.)
+    const lift = this._liftAmount(lm, this.liftedSide);
+    if (lift == null) return;
 
     if (this.phase === 'waiting') {
-      if (liftedY < liftThreshold) {
+      if (lift >= this.liftBand) {
         this.phase = 'holding';
         this._liftStartMs = tMs;
       }
@@ -162,7 +208,8 @@ export class SingleLegStanceTracker {
       if (this._prevHip) {
         const dt = (tMs - this._prevT) / 1000;
         const dist = Math.hypot(fx - this._prevHip.x, fy - this._prevHip.y);
-        this._swayPathNorm += dist;
+        // [2026-08-02] 흔들림 누적 경로는 더는 판정에 안 쓰므로 저장하지 않는다.
+        // 순간 이동 속도(dist/dt)만 균형 상실 추정에 계속 쓴다.
         if (dt > 0 && dist / dt >= this.tuning.balanceLossVelocityThreshold) {
           this._balanceLoss = true;
         }
@@ -174,7 +221,9 @@ export class SingleLegStanceTracker {
     const tilt = pelvicTiltDegOf(lm);
     if (tilt != null) this._maxPelvicTiltDeg = Math.max(this._maxPelvicTiltDeg, tilt);
 
-    if (liftedY >= liftThreshold) {
+    // 히스테리시스: 내려놓음 판정은 더 낮은 문턱(releaseBand)으로 — 올릴 때와
+    // 같은 문턱을 쓰면 경계 근처에서 유지/종료가 매 프레임 번갈아 튄다.
+    if (lift < this.releaseBand) {
       this._closeHold(tMs, 'foot_down');
     }
   }
@@ -182,17 +231,13 @@ export class SingleLegStanceTracker {
   /**
    * singleLegStance.js의 evaluateSingleLegStance({ left/right: { trial1, trial2 } })
    * 가 그대로 받을 수 있는 { trial1, trial2 } 형태로 변환.
-   * @param {object} opts
-   * @param {number} [opts.cmPerNormUnit] px(정규화)↔cm 환산 계수
-   *   (StandingCalibrator.result.scaleCmPerY — 키 입력이 있어야 값이 채워짐)
    */
-  summary({ cmPerNormUnit = null } = {}) {
+  summary() {
     const toTrial = (t) => {
       if (!t) return undefined;
       return {
         valid: true,
         holdTimeMs: t.holdTimeMs,
-        swayPathCm: cmPerNormUnit != null ? Math.round(t.swayPathNorm * cmPerNormUnit * 10) / 10 : null,
         pelvicTiltDeg: t.pelvicTiltDeg,
         balanceLoss: t.balanceLoss,
         stepOut: t.stepOut,

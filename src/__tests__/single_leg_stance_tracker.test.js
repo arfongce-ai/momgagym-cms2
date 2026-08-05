@@ -62,7 +62,7 @@ describe('SingleLegStanceTracker (synthetic landmark check)', () => {
       t += 33;
     }
     tr.stopManually(t);
-    const s = tr.summary({ cmPerNormUnit: 170 });
+    const s = tr.summary();
     expect(s.trial1.valid).toBe(true);
     expect(s.trial1.stepOut).toBe(false);
     expect(s.trial1.balanceLoss).toBe(false);
@@ -75,7 +75,7 @@ describe('SingleLegStanceTracker (synthetic landmark check)', () => {
     const calib = calibrate();
     const tr = new SingleLegStanceTracker(calib.result, 'left');
     let t = pushHold(tr, 0, 700);
-    const s = tr.summary({ cmPerNormUnit: 170 });
+    const s = tr.summary();
     expect(s.trial1.valid).toBe(true);
     expect(s.trial1.stepOut).toBe(true);
   });
@@ -90,7 +90,7 @@ describe('SingleLegStanceTracker (synthetic landmark check)', () => {
     tr.push(mkLM({ ankRY: baseline - 0.15, hipLX: 0.9, hipRX: 1.0 }), t); t += 33;
     for (let i = 0; i < 10; i++) { tr.push(mkLM({ ankRY: baseline - 0.15 }), t); t += 33; }
     tr.stopManually(t);
-    const s = tr.summary({ cmPerNormUnit: 170 });
+    const s = tr.summary();
     expect(s.trial1.balanceLoss).toBe(true);
   });
 
@@ -99,7 +99,7 @@ describe('SingleLegStanceTracker (synthetic landmark check)', () => {
     const tr = new SingleLegStanceTracker(calib.result, 'left');
     let t = 0;
     for (let i = 0; i < 30; i++) { tr.push(mkLM(), t); t += 33; }
-    const s = tr.summary({ cmPerNormUnit: 170 });
+    const s = tr.summary();
     expect(s.trial1).toBeUndefined();
     expect(s.trialsFound).toBe(0);
   });
@@ -114,7 +114,7 @@ describe('SingleLegStanceTracker (synthetic landmark check)', () => {
     tr.push(mkLM({ ankRY: baseline }), t); t += 33;
     // 이어서 진짜 시행(1.5초)
     t = pushHold(tr, t, 1500);
-    const s = tr.summary({ cmPerNormUnit: 170 });
+    const s = tr.summary();
     expect(s.trialsFound).toBe(1); // 블립은 카운트 안 됨
     expect(s.trial1.holdTimeMs).toBeGreaterThan(1400);
   });
@@ -126,17 +126,20 @@ describe('SingleLegStanceTracker (synthetic landmark check)', () => {
     const baseline = calib.result.baselineFeetY;
     for (let i = 0; i < 60; i++) { tr.push(mkLM({ ankRY: baseline - 0.15 }), t); t += 33; }
     tr.finalize(t);
-    const s = tr.summary({ cmPerNormUnit: 170 });
+    const s = tr.summary();
     expect(s.trial1.valid).toBe(true);
     expect(s.trial1.stepOut).toBe(false);
   });
 
-  it('7) cmPerNormUnit 생략 시 swayPathCm은 null', () => {
+  it('7) 시행 요약에는 흔들림(sway) 관련 필드가 전혀 없다(2026-08-02 판정에서 제외)', () => {
     const calib = calibrate();
     const tr = new SingleLegStanceTracker(calib.result, 'left');
-    let t = pushHold(tr, 0, 1000);
+    let t = pushHold(tr, 0, 1000, { sway: true });
     const s = tr.summary();
-    expect(s.trial1.swayPathCm).toBeNull();
+    expect(s.trial1.swayPathCm).toBeUndefined();
+    expect(s.trial1.swayPathNorm).toBeUndefined();
+    // 유지시간·균형상실 등 나머지 필드는 그대로 채워져야 한다.
+    expect(s.trial1.holdTimeMs).toBeGreaterThan(900);
   });
 
   it('8) 한 영상 안에서 연속 2회 시행 -> trial1, trial2 둘 다 채워짐', () => {
@@ -145,7 +148,7 @@ describe('SingleLegStanceTracker (synthetic landmark check)', () => {
     let t = pushHold(tr, 0, 3000, { sway: true });     // 1차: 3초
     t += 500;                                           // 시행 사이 휴식
     t = pushHold(tr, t, 2500, { sway: true });          // 2차: 2.5초
-    const s = tr.summary({ cmPerNormUnit: 170 });
+    const s = tr.summary();
     expect(s.trialsFound).toBe(2);
     expect(s.trial1.holdTimeMs).toBeGreaterThan(2900);
     expect(s.trial2.holdTimeMs).toBeGreaterThan(2400);
@@ -160,7 +163,7 @@ describe('SingleLegStanceTracker (synthetic landmark check)', () => {
     t = pushHold(tr, t, 1000);
     t += 300;
     t = pushHold(tr, t, 1000); // 3번째 - 무시되어야 함
-    const s = tr.summary({ cmPerNormUnit: 170 });
+    const s = tr.summary();
     expect(s.trialsFound).toBe(2);
   });
 
@@ -172,7 +175,7 @@ describe('SingleLegStanceTracker (synthetic landmark check)', () => {
     let t = pushSuccessfulHold(trLeft, 0, 21000);
     t += 500;
     pushSuccessfulHold(trLeft, t, 21000);
-    const leftSummary = trLeft.summary({ cmPerNormUnit: 170 });
+    const leftSummary = trLeft.summary();
 
     const report = evaluateSingleLegStance({ left: leftSummary });
     expect(report.valid).toBe(true);
@@ -188,7 +191,7 @@ describe('SingleLegStanceTracker (synthetic landmark check)', () => {
     trRight.push(mkLM({ ankLY: baseline - 0.15, hipLX: 0.9, hipRX: 1.0 }), t); t += 33;
     for (let i = 0; i < 400; i++) { trRight.push(mkLM({ ankLY: baseline - 0.15 }), t); t += 33; }
     trRight.stopManually(t);
-    const rightSummary = trRight.summary({ cmPerNormUnit: 170 });
+    const rightSummary = trRight.summary();
 
     const report = evaluateSingleLegStance({ right: rightSummary });
     expect(report.valid).toBe(true);

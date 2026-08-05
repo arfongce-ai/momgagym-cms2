@@ -24,7 +24,7 @@ import { BarbellAccumulator, estimateOneRmFromMeanVelocity } from '../core/barbe
 import { beepRep } from '../core/audioCue';
 import { saveVideoToPhone, pickRecorderMime } from '../core/recordSink';
 import { drawGaugeHud } from '../core/recordingOverlay';
-import { DEFAULT_ASPECT, outputSize, aspectLabel, drawVideoCover } from '../core/recordAspect';
+import { DEFAULT_ASPECT, outputSize, aspectLabel, drawVideoCover, rotateLandmarksNormalized } from '../core/recordAspect';
 import { useCameraRotation } from '../core/useCameraRotation';
 import FramingIntro from './FramingIntro';
 import CameraStage from './CameraStage';
@@ -153,13 +153,24 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
     }, 1000);
   }, []);
 
-  const handleResult = useCallback((lms, ts, _video) => {
+  // [2026-08-02] 카메라 원본이 회전된 채로 들어오는 기종(키오스크) 보정용.
+  // handleResult가 useCallback([]) 고정 함수라 상태 대신 ref로 최신값을 참조한다.
+  const [rotationDeg] = useCameraRotation();
+  const rotationDegRef = useRef(0);
+  useEffect(() => { rotationDegRef.current = rotationDeg; }, [rotationDeg]);
+
+  const handleResult = useCallback((rawLms, ts, _video) => {
     // 오버레이/추적선 없음(RSI 방식) — 캔버스는 비워 둔다.
     const canvas = canvasRef.current;
     if (canvas) {
       const ctx = canvas.getContext('2d');
       ctx.clearRect(0, 0, canvas.width, canvas.height);
     }
+
+    // 바 속도(핵심 지표)는 "수직" 변위 기반이라 회전 보정 없이는 완전히
+    // 다른 축을 재게 된다. 라이브 스켈레톤 오버레이가 없어(위 주석 참고)
+    // raw/보정 분리 없이 여기서 한 번만 보정하면 된다.
+    const lms = rotateLandmarksNormalized(rawLms, rotationDegRef.current);
 
     const want = (FRAMING_PRESETS[liftRef.current] || FRAMING_PRESETS.squat).want;
     const fr = assessFraming(lms, { want });
@@ -238,7 +249,6 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
   };
 
   const { videoRef, start, stop, status, error } = usePoseEngine({ onResult: handleResult });
-  const [rotationDeg] = useCameraRotation();
 
   const stopCompose = () => {
     if (composeRafRef.current) { cancelAnimationFrame(composeRafRef.current); composeRafRef.current = null; }

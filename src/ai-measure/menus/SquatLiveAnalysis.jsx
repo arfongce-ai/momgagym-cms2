@@ -29,7 +29,10 @@ import { useCameraRotation } from '../core/useCameraRotation';
 import { computeDisplayAngles } from '../core/squatJointAngles';
 import { colorForBone, evaluateSquatFrame, depthPctFromThighIncline, COMPENSATION_KO, scoreDeepSquatFms, worstOfTrials } from '../core/squatFms';
 import { evaluateSquatBiomechanics } from '../core/squatBiomechanics';
+<<<<<<< HEAD
 import { pickRecorderMime } from '../core/recordSink';
+=======
+>>>>>>> 95d9ba96c50e9625d37d312a9237be872fd4d2a7
 import { drawGaugeHud } from '../core/recordingOverlay';
 import CameraStage from './CameraStage.jsx';
 import GaugeHud from './GaugeHud.jsx';

@@ -42,6 +42,32 @@ function normalizeRotation(deg) {
   return r === 90 || r === 180 || r === 270 ? r : 0;
 }
 
+// ── 랜드마크 좌표 자체의 회전 보정 ──
+// [2026-08-02] 원인: 카메라 원본 영상이 회전된 채로 들어오는 기종(키오스크 등)에서는
+// usePoseEngine이 그 원본 프레임에 그대로 포즈 인식을 돌리므로, 반환되는 랜드마크의
+// x/y 축이 실제 좌우/상하와 어긋난다. drawVideoCover 등은 "화면에 그릴 때"만 보정할
+// 뿐 랜드마크 자체는 그대로라, 거북목(ear.x-shoulder.x)이나 기울기(atan2로 수직 기준
+// 비교)처럼 "x=좌우, y=상하"를 가정하는 판정 계산이 축이 뒤바뀐 채로 잘못된 값을
+// 낸다(예: 정상 범위인 목 기울기가 88°로 나옴 — 90도 회전으로 수직↔수평이 뒤바뀐
+// 전형적 증상). 3점 각도(angleDeg)처럼 축에 무관한 계산은 원래도 안전하지만, 어느
+// 계산이 안전한지 모듈마다 개별 판단하는 건 누락 위험이 커서, 판정에 들어가기 전에
+// 랜드마크 좌표 자체를 항상 "똑바로 선 좌표계"로 통일해 넘긴다.
+// rotationDeg는 useCameraRotation()과 동일한 값(카메라 원본을 시계방향으로 이만큼
+// 돌려야 바로 서는 정도)이며, drawVideoCover가 캔버스를 회전시키는 것과 동일한
+// 방향 규약으로 정규화 좌표(0~1)를 변환한다.
+export function rotateLandmarksNormalized(landmarks, rotationDeg = 0) {
+  const rot = normalizeRotation(rotationDeg);
+  if (!rot || !Array.isArray(landmarks)) return landmarks;
+  return landmarks.map((p) => {
+    if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) return p;
+    let x, y;
+    if (rot === 90) { x = 1 - p.y; y = p.x; }
+    else if (rot === 180) { x = 1 - p.x; y = 1 - p.y; }
+    else { x = p.y; y = 1 - p.x; } // 270
+    return { ...p, x, y };
+  });
+}
+
 // 캔버스 중심 기준 오프셋(dx,dy)을 rot(90/180/270, 시계방향)만큼 회전.
 function rotateOffset(dx, dy, rot) {
   if (rot === 90) return { x: -dy, y: dx };

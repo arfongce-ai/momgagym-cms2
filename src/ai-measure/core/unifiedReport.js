@@ -317,7 +317,6 @@ export const METRIC_DEFINITIONS = Object.freeze({
   // status를 직접 넘긴다).
   stance: [
     { key: 'stanceHoldTime', paths: ['left.trials.0.holdTimeMs', 'right.trials.0.holdTimeMs'], unit: 'ms' },
-    { key: 'stanceSway', paths: ['left.trials.0.swayPathCm', 'right.trials.0.swayPathCm'], unit: 'cm' },
   ],
   squat: [
     { key: 'squatDepth', paths: ['trials.0.thighInclineDeg'], unit: '도' },
@@ -410,9 +409,21 @@ export function sanitizeReportPayload(value, options = {}) {
   return sanitizeValue(value, seen, options);
 }
 
+// stance(SLST)/squat(오버헤드 딥 스쿼트)는 singleLegStance.js/squatBiomechanics.js가
+// 이미 normal/caution/risk로 확정한 결과다. 그런데 extractKeyMetrics가 쓰는
+// METRIC_DEFINITIONS의 stanceHoldTime/squat* 항목은 range가 없어 rangeToStatus가
+// 전부 unknown을 반환 → computeScoreFromMetrics가 채점 가능한 지표를 하나도
+// 못 찾아 null → 실제로는 위험/주의인 리포트도 점수 0·상태 "확인 필요"로
+// 나오던 문제(2026-08-02 발견). 아래에서 이 두 타입은 raw 지표 재채점 대신
+// 이미 확정된 report.status를 점수로 직접 환산해 우선 사용한다.
+const JUDGED_STATUS_REPORT_TYPES = new Set(['stance', 'squat']);
+
 export function buildSummaryData(report = {}, options = {}) {
   const reportType = options.reportType || inferReportType(report);
-  const rawScore = firstDefinedPath(report, SCORE_PATHS) ?? computeScoreFromMetrics(report, reportType);
+  const judgedStatusScore = JUDGED_STATUS_REPORT_TYPES.has(reportType) && STATUS[report.status]
+    ? STATUS[report.status].score
+    : null;
+  const rawScore = judgedStatusScore ?? firstDefinedPath(report, SCORE_PATHS) ?? computeScoreFromMetrics(report, reportType);
   const score = rawScore == null ? 0 : normalizeScore(rawScore);
   const status = rawScore == null ? STATUS.unknown : scoreToStatus(score);
   const keyMetrics = extractKeyMetrics(report, reportType);

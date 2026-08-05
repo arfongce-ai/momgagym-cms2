@@ -14,7 +14,7 @@ import {
 import { exerciseLabel as exerciseLabelLocal, snapWeight, stepWeight } from '../core/lifting';
 import { saveVideoToPhone, pickRecorderMime } from '../core/recordSink';
 import { drawLiftingDataHud } from '../core/recordingOverlay';
-import { DEFAULT_ASPECT, outputSize, aspectLabel, drawVideoCover } from '../core/recordAspect';
+import { DEFAULT_ASPECT, outputSize, aspectLabel, drawVideoCover, rotateLandmarksNormalized } from '../core/recordAspect';
 import { useCameraRotation } from '../core/useCameraRotation';
 import { assessFraming, FRAMING_PRESETS } from '../core/framingGuide';
 import {
@@ -83,14 +83,21 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
   const [referenceScale, setReferenceScale] = useState(null);
   const [calibrating, setCalibrating] = useState(false);
   const [calibrationPointCount, setCalibrationPointCount] = useState(0);
+  const [rotationDeg] = useCameraRotation();
 
-  const handleResult = useCallback((lms, ts, _video) => {
+  const handleResult = useCallback((rawLms, ts, _video) => {
     // 오버레이/추적선 없음(RSI 방식) — 캔버스는 비워 둔다.
     const canvas = canvasRef.current;
     if (canvas) {
       const ctx = canvas.getContext('2d');
       ctx.clearRect(0, 0, canvas.width, canvas.height);
     }
+
+    // [2026-08-02] 카메라 원본이 회전된 채로 들어오는 기종(키오스크) 보정 —
+    // 바 속도(VBT의 핵심 지표)는 "수직" 변위 기반이라 회전 보정 없이는
+    // 완전히 다른 축을 재게 된다. 이 화면은 라이브 스켈레톤 오버레이가
+    // 없어(위 주석 참고) raw/보정 분리 없이 여기서 한 번만 보정하면 된다.
+    const lms = rotateLandmarksNormalized(rawLms, rotationDeg);
 
     const ph = personHeightRatio(lms);
     if (ph) {
@@ -141,10 +148,9 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
         repList: lv.repList || null,
       };
     }
-  }, [heightCm, referenceScale]);
+  }, [heightCm, referenceScale, rotationDeg]);
 
   const { videoRef, start, stop, status, error, lockCapture, unlockCapture } = usePoseEngine({ onResult: handleResult });
-  const [rotationDeg] = useCameraRotation();
 
   const clearCountdown = useCallback(() => {
     if (countdownTimerRef.current) {

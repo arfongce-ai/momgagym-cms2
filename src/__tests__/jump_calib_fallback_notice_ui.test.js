@@ -16,7 +16,9 @@ const src = readFileSync(
 
 describe('JumpPrecisionAnalysis.jsx — 타임아웃 폴백 잠금을 화면에서 알 수 있다', () => {
   it('calib.push()에 타임스탬프(ts)를 넘긴다(안 넘기면 타임아웃 폴백이 절대 발동하지 않음)', () => {
-    expect(src).toMatch(/calib\.push\(landmarks, ts\)/);
+    // 2026-08-02: 카메라 회전 보정으로 인자명이 landmarks → corrected로 바뀜(같은 값의
+    // 회전 보정된 버전). 검증 대상인 "ts가 두 번째 인자로 전달되는지"는 동일하다.
+    expect(src).toMatch(/calib\.push\(corrected, ts\)/);
   });
 
   it("st.ready일 때 basis==='timeout_fallback'이면 전용 안내 문구를 calibMsg로 세팅한다", () => {

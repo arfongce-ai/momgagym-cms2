@@ -29,6 +29,8 @@ const SQUAT_FLAG_KO = Object.freeze({
   knee_valgus_high: { level: 'risk', text: '스쿼트 중 무릎이 크게 안쪽으로 모입니다.' },
   pelvic_tilt_borderline: { level: 'caution', text: '스쿼트 중 골반이 다소 한쪽으로 기울어집니다.' },
   pelvic_tilt_high: { level: 'risk', text: '스쿼트 중 골반이 크게 한쪽으로 기울어집니다.' },
+  arm_drop_borderline: { level: 'caution', text: '스쿼트 중 팔(막대)이 다소 앞으로 떨어집니다.' },
+  arm_drop_high: { level: 'risk', text: '스쿼트 중 팔(막대)이 크게 앞으로 떨어집니다.' },
 });
 
 export function measurementOutputMode(kind) {
@@ -88,6 +90,24 @@ export function buildProblemFocus(kind, report = {}) {
   } else if (kind === 'stance') {
     if (report.valid === false) {
       addIssue('caution', '한다리서기 측정 데이터가 부족합니다.');
+    } else if (report.eyesOpen || report.eyesClosed) {
+      // 2026-08-02: 눈뜨고/눈감고 조건 분리 측정 지원 — 각 조건의 좌우 이슈를
+      // 조건 라벨을 붙여 노출한다(눈감고 흔들림 증가는 그 자체로는 정상적인
+      // 패턴이라, 두 조건을 하나로 뭉개지 않고 각각 명시해야 오독을 막는다).
+      const condIssue = (cond, condLabel) => {
+        if (!cond || cond.valid === false) return;
+        const labeled = (leg, legLabel) => {
+          if (!leg || leg.status === 'unknown') return;
+          if (leg.status === 'risk') addIssue('risk', `${legLabel} 다리(${condLabel}) 한다리서기에서 위험 신호가 확인됐습니다.`);
+          else if (leg.status === 'caution') addIssue('caution', `${legLabel} 다리(${condLabel}) 한다리서기에서 주의가 필요한 패턴이 있습니다.`);
+        };
+        labeled(cond.left, '왼쪽');
+        labeled(cond.right, '오른쪽');
+        if (cond.asymmetryFlag) addIssue('caution', `${condLabel} 조건에서 좌우 균형 능력 비대칭이 확인됐습니다.`);
+      };
+      condIssue(report.eyesOpen, '눈뜨고');
+      condIssue(report.eyesClosed, '눈감고');
+      if (!issues.length) addStrength('눈뜨고·눈감고 조건 모두 균형 능력에 큰 위험 신호가 없습니다.');
     } else {
       const legIssue = (leg, label) => {
         if (!leg || leg.status === 'unknown') return;

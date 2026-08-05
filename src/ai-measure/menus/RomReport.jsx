@@ -13,7 +13,7 @@ import {
 } from '../../components/report/UnifiedReportPrimitives';
 import { scoreToStatus } from '../core/unifiedReport';
 
-const JOINT_KO = { HIP: '고관절', KNEE: '슬관절', SHOULDER: '견관절', ANKLE: '족관절' };
+const JOINT_KO = { HIP: '고관절', KNEE: '슬관절', SHOULDER: '견관절', ANKLE: '족관절', ELBOW: '주관절' };
 const POSE_KO = { STANDING: '서서(체중지지)', SUPINE: '앙와위(누워서)', PRONE: '복와위(엎드려)', SEATED: '앉아서' };
 const GRADE_KO = { good: '양호', attention: '관리 필요', focus: '집중 관리', insufficient: '측정 보완' };
 const GRADE_TONE = {

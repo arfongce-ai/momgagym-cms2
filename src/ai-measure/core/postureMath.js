@@ -893,6 +893,9 @@ export const POSTURE_VIEW_TUNING = Object.freeze({
   shoulderSideMax: 0.12,  // 이하 → 측면 후보 (사이 구간은 약한 신뢰도)
   faceVisFront: 0.55,     // 코·눈 가시성 이상 → 정면 확정
   faceVisBack: 0.30,      // 코·눈 가시성 이하 → 후면 확정 (그 사이는 어깨 부호로 보조)
+  sideNoseOffsetOverride: 0.28, // 얼굴이 또렷해도, 코가 어깨중심에서 이만큼(=sideStrength
+                                 // 코항 포화점과 동일) 벗어나 있으면 '진짜 측면'으로 보고
+                                 // faceClearlyFrontal 우회를 걸지 않는다.
 });
 
 export function detectPostureView(landmarks, tuning = POSTURE_VIEW_TUNING) {
@@ -1008,13 +1011,18 @@ export function detectPostureView(landmarks, tuning = POSTURE_VIEW_TUNING) {
 
   // ── 얼굴이 아주 뚜렷하게 보이면(faceVis 매우 높음) 어깨폭 신호를 아예 우회하고
   //  얼굴 좌우 부호 투표(faceFacing) 결과로 바로 정면/후면을 확정한다.
-  //  단, sideStrength(코 수평이탈·어깨 z분리 등 '진짜 측면' 신호)가 이미 강하면
-  //  이 우회를 걸지 않는다 — 그렇지 않으면 얼굴을 카메라 쪽으로 유지한 채
-  //  몸만 돌린 '진짜 측면' 자세가 정면/후면으로 오판된다(2026-07-31 회귀 수정).
-  //  (원래 목적: 양팔을 머리 뒤로 올리는 자세에서 어깨 랜드마크가 흔들려
-  //  shoulderRatio가 측면 기준으로 잘못 튀는 경우 방지 — 이때는 코가 어깨중심에
-  //  그대로 남아 있어 sideStrength가 낮으므로 이 우회는 여전히 정상 동작한다).
-  const faceClearlyFrontal = faceVis >= 0.85 && sideStrength < 0.40;
+  //  단, 코가 어깨중심에서 크게 벗어나 있으면(noseOffset이 충분히 크면) 이 우회를
+  //  걸지 않는다 — 얼굴을 카메라 쪽으로 유지한 채 몸만 돌린 '진짜 측면' 자세가
+  //  정면/후면으로 오판되는 것을 막기 위함(2026-07-31 1차 수정).
+  //  ※ sideStrength(복합 점수) 대신 noseOffset 단일 신호만 본다 — shoulderZsep는
+  //  단안 z-깊이 추정이라 노이즈가 커서(주석 참고), 정면으로 서 있어도 흔들림만으로
+  //  sideStrength가 우연히 높게 나올 수 있다. 그 상태에서 이 우회까지 막히면 '흔한
+  //  정상 정면 자세'가 측면으로 오판된다 — 오늘 이 우회를 sideStrength 기준으로 처음
+  //  좁혔다가 바로 이 문제로 되짚어 noseOffset 단독 기준으로 다시 좁힌 것(2026-07-31
+  //  2차 수정). noseOffset은 z와 무관한 2D 신호라 정면 자세에서 훨씬 안정적이다.
+  //  (원래 목적은 그대로 유지: 양팔을 머리 뒤로 올리는 자세는 코가 어깨중심에 그대로
+  //  남아 noseOffset이 낮으므로 이 우회가 여전히 정상 동작해 정면으로 확정된다).
+  const faceClearlyFrontal = faceVis >= 0.85 && noseOffset < tuning.sideNoseOffsetOverride;
   if (faceClearlyFrontal && faceFacing) {
     const voteConf = totalVotes > 0 ? clamp(facingMargin / totalVotes, 0, 1) : 0;
     const conf = round(0.5 + 0.5 * voteConf, 3);
@@ -1022,9 +1030,14 @@ export function detectPostureView(landmarks, tuning = POSTURE_VIEW_TUNING) {
   }
 
   // ── 측면 우선 판정 ──
-  //  어깨폭이 좁거나(고전 기준), 어깨폭이 애매해도 '측면 강도'가 충분히 높으면
-  //  측면으로 확정한다. (정면/후면으로 오인하던 프로필 케이스 해결)
-  const strongSide = sideStrength >= 0.40;
+  //  어깨폭이 좁거나(고전 기준), 어깨폭이 애매해도(아직 frontMin 미만) '측면 강도'가
+  //  충분히 높으면 측면으로 확정한다. (정면/후면으로 오인하던 프로필 케이스 해결)
+  //  단, 어깨폭이 이미 frontMin 이상으로 뚜렷하게 넓다면(명백한 정면/후면 형태)
+  //  strongSide로 덮어쓰지 않는다 — shoulderZsep(단안 z추정, 노이즈 큼)만으로도
+  //  sideStrength가 우연히 0.40을 넘을 수 있는데, 그걸로 명백히 넓은 어깨를 측면
+  //  판정해버리면 노이즈 낀 정면 자세가 측면으로 오판된다(2026-07-31 3차 수정 —
+  //  얼굴 가시성이 낮아 위 faceClearlyFrontal 우회를 못 타는 경우에도 동일 문제 발생).
+  const strongSide = sideStrength >= 0.40 && shoulderRatio < tuning.shoulderFrontMin;
   if (shoulderRatio <= tuning.shoulderSideMax || strongSide) {
     const view = resolveSide();
     // 신뢰도: 어깨폭 기반 + 측면강도 중 큰 값

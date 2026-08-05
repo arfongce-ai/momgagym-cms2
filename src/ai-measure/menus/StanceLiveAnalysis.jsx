@@ -17,7 +17,10 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { usePoseEngine } from '../core/usePoseEngine';
 import { StandingCalibrator, SingleLegStanceTracker } from '../core/singleLegStanceTracker';
+<<<<<<< HEAD
 import { pickRecorderMime } from '../core/recordSink';
+=======
+>>>>>>> 95d9ba96c50e9625d37d312a9237be872fd4d2a7
 import { DEFAULT_ASPECT, outputSize, drawVideoCover, coverTransform, rotateLandmarksNormalized } from '../core/recordAspect';
 import { useCameraRotation } from '../core/useCameraRotation';
 import { drawGaugeHud } from '../core/recordingOverlay';

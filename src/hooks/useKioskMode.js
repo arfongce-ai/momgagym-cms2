@@ -24,6 +24,18 @@ export function useKioskMode() {
     }
   }, [kioskOn]);
 
+  // 같은 기기(브라우저)의 다른 탭/창에서 켜고 끈 경우에도 이 탭의 state를 동기화한다.
+  // (예: 키오스크 PC에서 트레이너가 임시로 두 번째 탭을 열어 설정을 바꾼 경우)
+  // storage 이벤트는 값을 "변경한" 탭 자신에게는 발생하지 않으므로 다른 탭에서만 반영된다.
+  useEffect(() => {
+    const onStorage = (e) => {
+      if (e.key !== STORAGE_KEY) return;
+      setKioskOn(e.newValue === 'on');
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
+
   const enableKiosk = useCallback(() => setKioskOn(true), []);
 
   // 관리자 재인증(reauth) 성공 후에만 호출할 것 — 이 함수 자체는 인증을 검사하지 않는다.

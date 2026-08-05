@@ -228,7 +228,7 @@ describe('detectPostureView — 얼굴이 뚜렷해도 진짜 측면이면 측�
   });
 
   it('위 회귀 테스트의 대조군: 코가 어깨중심에 그대로 남아 있는 raised-arms 케이스는 여전히 정면으로 판정한다', () => {
-    // faceClearlyFrontal 우회 자체가 사라진 게 아니라 sideStrength가 낮을 때만
+    // faceClearlyFrontal 우회 자체가 사라진 게 아니라 noseOffset이 낮을 때만
     // 여전히 살아있는지 확인 — 위 테스트와 쌍을 이루는 회귀 방지용.
     const pose = frontPose({
       [LM.LEFT_SHOULDER]: { x: 0.513, y: 0.25, z: 0 },
@@ -236,5 +236,39 @@ describe('detectPostureView — 얼굴이 뚜렷해도 진짜 측면이면 측�
     });
     const det = detectPostureView(pose);
     expect(det.view).toBe('front');
+  });
+});
+
+describe('detectPostureView — 어깨 z노이즈로 정면이 측면 오판되는 것 방지(2026-07-31 2차 회귀 수정)', () => {
+  it('어깨폭은 정상적으로 넓지만(진짜 정면) 단안 z추정 노이즈로 어깨 z분리가 크게 튀어도 정면으로 판정한다', () => {
+    // frontPose() 그대로(어깨 x는 넓게 유지, 코도 어깨중심에 그대로) — 오직 어깨 z만
+    // 노이즈처럼 크게 벌어뜨림. shoulderZsep가 커져 sideStrength는 strongSide
+    // 임계값(0.40)을 넘지만, noseOffset은 0에 가까우므로 얼굴 우회가 정상적으로
+    // 걸려 정면으로 확정돼야 한다. (1차 수정에서 sideStrength로 우회를 막았을 때
+    // 바로 이 케이스가 실제 서비스에서 '정면부터 인식 안 됨'으로 나타났던 원인.)
+    const pose = frontPose({
+      [LM.LEFT_SHOULDER]: { x: 0.58, y: 0.25, z: 0.2 },
+      [LM.RIGHT_SHOULDER]: { x: 0.42, y: 0.25, z: -0.2 },
+    });
+    const det = detectPostureView(pose);
+    expect(det.view).toBe('front');
+  });
+
+  it('같은 z노이즈 상황에서도 얼굴 가시성이 낮으면(진짜 애매한 케이스) 어깨 신호로 넘어간다', () => {
+    // 얼굴 우회 조건 자체가 faceVis>=0.85를 요구하므로, 얼굴이 잘 안 보이면
+    // 애초에 이 우회를 안 타고 기존 어깨 기반 로직으로 정상 진행되는지 확인.
+    const pose = frontPose({
+      [LM.LEFT_SHOULDER]: { x: 0.58, y: 0.25, z: 0.2 },
+      [LM.RIGHT_SHOULDER]: { x: 0.42, y: 0.25, z: -0.2 },
+      [LM.NOSE]: { visibility: 0.2 },
+      [LM.LEFT_EYE]: { visibility: 0.2 },
+      [LM.RIGHT_EYE]: { visibility: 0.2 },
+      [LM.LEFT_EAR]: { visibility: 0.2 },
+      [LM.RIGHT_EAR]: { visibility: 0.2 },
+    });
+    const det = detectPostureView(pose);
+    // 얼굴 우회 없이도 어깨폭(0.593, frontMin 이상)과 어깨부호로 정면/후면 중
+    // 하나로는 잡혀야 한다 — 측면으로 잘못 튀면 안 된다.
+    expect(['front', 'back']).toContain(det.view);
   });
 });
