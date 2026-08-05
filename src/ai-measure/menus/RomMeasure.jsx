@@ -16,6 +16,7 @@ import { usePoseEngine } from '../core/usePoseEngine';
 import { createSmoother } from '../core/smoothing';
 import { RomAccumulator, jointAngleByMode, normalizePose, LM, symmetryIndex } from '../core/bodyMechanics';
 import { generateRomDiagnosis } from '../core/romClinical';
+import { pickRecorderMime } from '../core/recordSink';
 import { beepGo, beepSuccess, primeAudio } from '../core/audioCue';
 import CameraStage from './CameraStage.jsx';
 import GaugeHud from './GaugeHud.jsx';
@@ -266,8 +267,9 @@ export default function RomMeasure({ member, onSave, onBack }) {
 
     // MediaRecorder 시작 (지원 시). 미지원 환경이면 분석만 진행(영상 없음).
     try {
-      const mimeTypes = ['video/mp4', 'video/webm;codecs=vp8', 'video/webm'];
-      const selectedMime = mimeTypes.find((m) => MediaRecorder.isTypeSupported(m)) || '';
+      // [2026-08-03] 로컬 mp4-우선 배열 대신 공용 pickRecorderMime()을 쓴다 —
+      // 코덱까지 명시해야 크로미움에서 mp4가 실제로 잡힌다(recordSink.js 참고).
+      const selectedMime = pickRecorderMime();
       const stream = createRecordedStream();
       if (stream) {
         const mr = new MediaRecorder(stream, selectedMime ? { mimeType: selectedMime } : undefined);

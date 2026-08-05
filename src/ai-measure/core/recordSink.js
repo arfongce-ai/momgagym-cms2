@@ -94,9 +94,27 @@ export async function saveVideoToPhone(blob, meta = {}) {
   }
 }
 
-/** 지원되는 녹화 MIME 우선순위에서 첫 지원값 반환(없으면 ''). */
+/**
+ * 지원되는 녹화 MIME 우선순위에서 첫 지원값 반환(없으면 '').
+ * [2026-08-03 수정] 예전엔 'video/mp4'를 코덱 없이 그냥 물어봤는데, 크로미움
+ * 계열(키오스크 Chrome 포함)에서는 이 "맨 mp4" 문자열이 실제로 mp4 인코더가
+ * 있어도 isTypeSupported에서 false로 나오는 경우가 흔하다 — 그 결과 항상
+ * webm으로 폴백돼왔다. 카카오톡 등 외부 앱에 공유했을 때 영상이 안 열리거나
+ * 전송 오류가 나는 원인이 이거였다: 코드는 mp4를 우선한다고 적혀 있는데 실제
+ * 녹화는 계속 webm으로 되고 있었던 것. 코덱까지 명시한 문자열을 먼저 물어보면
+ * 실제로 mp4 인코더가 있는 브라우저에서는 이제 정확히 잡힌다(RecordMeasure.jsx가
+ * 이미 이렇게 하고 있었고 — 이번에 그 방식을 여기 공용 함수로 통일했다).
+ */
 export function pickRecorderMime() {
   if (typeof MediaRecorder === 'undefined' || !MediaRecorder.isTypeSupported) return '';
-  const order = ['video/mp4', 'video/webm;codecs=vp8', 'video/webm'];
+  const order = [
+    'video/mp4;codecs=h264,aac',
+    'video/mp4;codecs=avc1.64003E,mp4a.40.2', // Safari가 스스로 보고하는 정확한 코덱 문자열
+    'video/mp4;codecs=avc1.42E01E,mp4a.40.2', // H.264 베이스라인 — 위 두 개가 안 먹는 엔진 대비
+    'video/mp4',
+    'video/webm;codecs=vp9,opus',
+    'video/webm;codecs=vp8,opus',
+    'video/webm',
+  ];
   return order.find(m => MediaRecorder.isTypeSupported(m)) || '';
 }
