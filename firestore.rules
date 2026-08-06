@@ -52,6 +52,8 @@ service cloud.firestore {
     // ── 관리자 전용 데이터 ──────────────────────────────
     // 지출: 완전 관리자 전용
     match /expenses/{id}        { allow read, write: if isAdmin(); }
+    // 데이터 무결성 검사 "무시" 처리 — 검사 자체가 관리자 전용 화면이라 완전 관리자 전용.
+    match /integrityDismissals/{id} { allow read, write: if isAdmin(); }
     // SNS·스터디 기록 / 정산 수동수정값:
     //   트레이너 본인 정산·기록 조회를 위해 '읽기'는 로그인 사용자 전체에 허용.
     //   '쓰기'(추가·수정·삭제)는 관리자만 — 트레이너 화면은 보기 전용.

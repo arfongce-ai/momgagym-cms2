@@ -150,6 +150,7 @@ const INITIAL_SETTINGS = {
 const cache = {
   members:[], trainers:[], schedules:[], notices:[], payments:{}, body:{}, ai:{},
   settings:{...INITIAL_SETTINGS}, expenses:[], promos:[], settleOverrides:[], gaitReports:{}, postureReports:{}, romReports:{},
+  integrityDismissals: [],
 };
 
 // 충돌 방지 ID 생성기 — Date.now()만 쓰면 같은 밀리초에 두 건이 생길 때
@@ -400,7 +401,7 @@ export async function initStore({ force = false } = {}) {
       // 앱 시작 시 전수 조회하지 않는다. 빈 캐시로 시작 → 회원 화면에서 그 회원 것만
       // 지연 로딩(ensureSessions/ensureGaitReports)한다. 측정 데이터가 쌓일수록
       // 시작 시 읽기가 폭증하던 문제를 차단한다.
-      const [members, trainers, schedules, notices, payments, body, settings, expenses, promos, settleOverrides] = await Promise.all([
+      const [members, trainers, schedules, notices, payments, body, settings, expenses, promos, settleOverrides, integrityDismissals] = await Promise.all([
         loadCollection('members'),
         loadCollection('trainers'),
         loadCollection('schedules'),
@@ -411,6 +412,7 @@ export async function initStore({ force = false } = {}) {
         loadCollection('expenses', { optional: true }),
         loadCollection('promos', { optional: true }),
         loadCollection('settleOverrides', { optional: true }),
+        loadCollection('integrityDismissals', { optional: true }), // 관리자 전용 — 일반 트레이너 로그인 시 권한 오류 나도 앱 안 죽게 optional
       ]);
       cache.members=members; cache.trainers=trainers; cache.schedules=schedules;
       cache.notices=notices; cache.payments=payments; cache.body=body;
@@ -422,6 +424,7 @@ export async function initStore({ force = false } = {}) {
       cache.expenses = expenses;
       cache.promos   = promos;
       cache.settleOverrides = settleOverrides;
+      cache.integrityDismissals = integrityDismissals;
       const now = Date.now();
       __SYNC_COLLECTIONS.forEach(c => { if (!__failedOptional.has(c)) __syncedAt[c] = now; }); // 실패한 컬렉션은 "동기화됨" 표시를 건너뛰어 다음 번에 재시도
       __syncedAt.deletions = now;
@@ -488,6 +491,14 @@ async function mirrorUnifiedReport(mid, report, reportType) {
     console.warn('[mirrorUnifiedReport] 통합 저장 실패(무시):', e?.code || e?.message);
     return null;
   }
+}
+// mirrorUnifiedReport의 짝 함수 — 전용 리포트(gait/posture/rom)·측정 세션(ai) 삭제 시
+// users/{mid}/reports/{reportId}에 남아있는 미러 사본도 함께 지운다. mirror와 동일하게
+// best-effort(실패해도 본래의 삭제는 절대 막지 않음) — 호출부에서 await 없이 fire-and-forget.
+function unmirrorUnifiedReport(mid, reportId) {
+  if (!mid || !reportId) return Promise.resolve();
+  return deleteDoc(doc(db, 'users', mid, 'reports', reportId))
+    .catch(e => console.warn('[unmirrorUnifiedReport] 통합 미러 삭제 실패(무시):', e?.code || e?.message));
 }
 function fbDelete(name, id) {
   return deleteDoc(doc(db, name, id)).then(r => {
@@ -1599,6 +1610,25 @@ export const store = {
     try { await fbDelete('settleOverrides', id); }
     catch(e){ cache.settleOverrides = prev; throw e; }
   },
+
+  // ── 데이터 무결성 검사(integrityAudit.js) — "무시(정상)" 처리 ──────────────
+  //  finding.key를 문서 id로 그대로 써서 같은 문제는 항상 같은 문서에 덮어쓴다
+  //  (재무시해도 중복 안 쌓임). addPostureReport(aiStore)와 동일한 낙관적 갱신 +
+  //  실패 시 롤백 패턴 — 화면은 즉시 반영되고, 저장 실패 시에만 되돌아간다.
+  getIntegrityDismissals: () => cache.integrityDismissals,
+  dismissIntegrityFinding: async (finding, { dismissedBy = null } = {}) => {
+    if (!finding?.key) throw new Error('finding.key가 없어 무시 처리를 할 수 없습니다.');
+    const prev = cache.integrityDismissals;
+    const record = { ...finding, id: finding.key, dismissedBy, dismissedAt: Date.now() };
+    cache.integrityDismissals = [...prev.filter(d => d.id !== finding.key), record];
+    try {
+      await fbSet('integrityDismissals', finding.key, record);
+      return record;
+    } catch (e) {
+      cache.integrityDismissals = prev;
+      throw e;
+    }
+  },
 };
 
 // 가상(미등록)회원 측정 데이터의 __mid 접두사. 실제 회원 id(m...)와 구분되며,
@@ -1681,26 +1711,26 @@ export const aiStore = {
   deleteSession: async (mid, sid) => {
     const prev=cache.ai[mid];
     cache.ai[mid]=(cache.ai[mid]||[]).filter(s=>s.id!==sid);
-    try { await fbDelete('ai', sid); }
+    try { await fbDelete('ai', sid); await unmirrorUnifiedReport(mid, sid); }
     catch(e){ cache.ai[mid]=prev; throw e; }
   },
   // 전용 리포트 삭제(측정별/회차별 삭제 기능) — deleteSession과 동일한 낙관적 캐시 반영 패턴.
   deleteGaitReport: async (mid, rid) => {
     const prev = cache.gaitReports[mid];
     cache.gaitReports[mid] = (cache.gaitReports[mid] || []).filter(r => r.id !== rid);
-    try { await fbDelete('gait_reports', rid); }
+    try { await fbDelete('gait_reports', rid); await unmirrorUnifiedReport(mid, rid); }
     catch (e) { cache.gaitReports[mid] = prev; throw e; }
   },
   deletePostureReport: async (mid, rid) => {
     const prev = cache.postureReports[mid];
     cache.postureReports[mid] = (cache.postureReports[mid] || []).filter(r => r.id !== rid);
-    try { await fbDelete('posture_reports', rid); }
+    try { await fbDelete('posture_reports', rid); await unmirrorUnifiedReport(mid, rid); }
     catch (e) { cache.postureReports[mid] = prev; throw e; }
   },
   deleteRomReport: async (mid, rid) => {
     const prev = cache.romReports[mid];
     cache.romReports[mid] = (cache.romReports[mid] || []).filter(r => r.id !== rid);
-    try { await fbDelete('rom_reports', rid); }
+    try { await fbDelete('rom_reports', rid); await unmirrorUnifiedReport(mid, rid); }
     catch (e) { cache.romReports[mid] = prev; throw e; }
   },
   deleteAll:     async (mid) => {

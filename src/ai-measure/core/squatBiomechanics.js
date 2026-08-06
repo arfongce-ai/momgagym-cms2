@@ -88,6 +88,35 @@ export const SQUAT_TUNING = {
   //    기준으로 말하지 않게 한다(파일 상단 설계 원칙과 동일).
   armDropCautionDeg: 20,
   armDropRiskDeg: 35,
+
+  // ── [2026-08-06 추가] squatJointAngles.js(라이브 표시용) 11개 각도 중
+  //    방향·크기가 명확한 5개를 판정에 연결. 나머지(관절별 굽힘 4개·귀-어깨
+  //    간격)는 squatBiomechanicsTracker.js 상단 주석 이유로 표시 전용 유지.
+  //    이 임계값들도 파일 상단 설계원칙과 동일하게 실측 데이터 보정 전
+  //    시작 기본값이다.
+
+  // CoG-발목 편차(측면) — torsoLeanDeg와 유사 개념이지만 엉덩이까지 반영해
+  // 더 민감하므로 살짝 낮게 잡음.
+  cogOverAnkleCautionDeg: 20,
+  cogOverAnkleRiskDeg: 30,
+
+  // CoG 좌우쏠림(정면) — pelvicTiltDeg(골반 라인만 봄)보다 넓은 구간의 단순
+  // 2점 평균이라 노이즈가 커 살짝 넉넉하게 잡음.
+  cogTiltCautionDeg: 6,
+  cogTiltRiskDeg: 12,
+
+  // 머리 좌우 기울기(정면)
+  headTiltCautionDeg: 8,
+  headTiltRiskDeg: 15,
+
+  // 팔꿈치 폄 부족(정면) — 180°가 완전히 폄. 판정은 "낮을수록 나쁨"(다른
+  // 지표와 방향 반대)이라 judgeTrial에서 <= 비교로 별도 처리한다.
+  elbowExtensionCautionDeg: 165, // 180°에서 15° 이상 굽으면 주의
+  elbowExtensionRiskDeg: 150,    // 180°에서 30° 이상 굽으면 위험
+
+  // 팔꿈치 좌우 비대칭(정면) — 한쪽 팔만 유독 처지는 패턴.
+  elbowAsymCautionDeg: 10,
+  elbowAsymRiskDeg: 20,
 };
 
 const STATUS_RANK = { normal: 0, caution: 1, risk: 2, unknown: 3 };
@@ -105,6 +134,16 @@ const FLAG_SEVERITY = {
   pelvic_tilt_high: 'risk',
   arm_drop_borderline: 'caution',
   arm_drop_high: 'risk',
+  cog_over_ankle_borderline: 'caution',
+  cog_over_ankle_high: 'risk',
+  cog_tilt_borderline: 'caution',
+  cog_tilt_high: 'risk',
+  head_tilt_borderline: 'caution',
+  head_tilt_high: 'risk',
+  elbow_bend_borderline: 'caution',
+  elbow_bend_high: 'risk',
+  elbow_asym_borderline: 'caution',
+  elbow_asym_high: 'risk',
 };
 
 function worse(a, b) {
@@ -123,6 +162,11 @@ function worse(a, b) {
  * @param {number}  [trial.kneeValgusDeg]  동적 무릎 외반각(deg)
  * @param {number}  [trial.pelvicTiltDeg]  골반 기울기/체중 쏠림(deg)
  * @param {number}  [trial.armDropDeg]    팔(어깨-손목) 처짐각(deg) — 수직 대비
+ * @param {number}  [trial.cogOverAnkleDeg] CoG-발목 편차각(deg, 측면) — [2026-08-06]
+ * @param {number}  [trial.cogTiltDeg]     CoG 좌우쏠림(deg, 정면) — [2026-08-06]
+ * @param {number}  [trial.headTiltDeg]    머리 좌우 기울기(deg, 정면) — [2026-08-06]
+ * @param {number}  [trial.elbowExtensionDeg] 팔꿈치 폄(deg, 정면, 낮을수록 나쁨) — [2026-08-06]
+ * @param {number}  [trial.elbowAsymDeg]   팔꿈치 좌우 비대칭(deg, 정면) — [2026-08-06]
  * @returns {object}
  */
 function judgeTrial(trial = {}) {
@@ -147,6 +191,11 @@ function judgeTrial(trial = {}) {
     kneeValgusDeg: trial.kneeValgusDeg ?? null,
     pelvicTiltDeg: trial.pelvicTiltDeg ?? null,
     armDropDeg: trial.armDropDeg ?? null,
+    cogOverAnkleDeg: trial.cogOverAnkleDeg ?? null,
+    cogTiltDeg: trial.cogTiltDeg ?? null,
+    headTiltDeg: trial.headTiltDeg ?? null,
+    elbowExtensionDeg: trial.elbowExtensionDeg ?? null,
+    elbowAsymDeg: trial.elbowAsymDeg ?? null,
   };
 
   if (immediateReasons.length) {
@@ -176,6 +225,27 @@ function judgeTrial(trial = {}) {
   if (trial.armDropDeg != null) {
     if (trial.armDropDeg >= SQUAT_TUNING.armDropRiskDeg) { softFlags.push('arm_drop_high'); status = worse(status, 'risk'); }
     else if (trial.armDropDeg >= SQUAT_TUNING.armDropCautionDeg) { softFlags.push('arm_drop_borderline'); status = worse(status, 'caution'); }
+  }
+  if (trial.cogOverAnkleDeg != null) {
+    if (trial.cogOverAnkleDeg >= SQUAT_TUNING.cogOverAnkleRiskDeg) { softFlags.push('cog_over_ankle_high'); status = worse(status, 'risk'); }
+    else if (trial.cogOverAnkleDeg >= SQUAT_TUNING.cogOverAnkleCautionDeg) { softFlags.push('cog_over_ankle_borderline'); status = worse(status, 'caution'); }
+  }
+  if (trial.cogTiltDeg != null) {
+    if (trial.cogTiltDeg >= SQUAT_TUNING.cogTiltRiskDeg) { softFlags.push('cog_tilt_high'); status = worse(status, 'risk'); }
+    else if (trial.cogTiltDeg >= SQUAT_TUNING.cogTiltCautionDeg) { softFlags.push('cog_tilt_borderline'); status = worse(status, 'caution'); }
+  }
+  if (trial.headTiltDeg != null) {
+    if (trial.headTiltDeg >= SQUAT_TUNING.headTiltRiskDeg) { softFlags.push('head_tilt_high'); status = worse(status, 'risk'); }
+    else if (trial.headTiltDeg >= SQUAT_TUNING.headTiltCautionDeg) { softFlags.push('head_tilt_borderline'); status = worse(status, 'caution'); }
+  }
+  // 팔꿈치 폄만 방향이 반대(값이 낮을수록 나쁨 = 더 굽음) — <= 비교.
+  if (trial.elbowExtensionDeg != null) {
+    if (trial.elbowExtensionDeg <= SQUAT_TUNING.elbowExtensionRiskDeg) { softFlags.push('elbow_bend_high'); status = worse(status, 'risk'); }
+    else if (trial.elbowExtensionDeg <= SQUAT_TUNING.elbowExtensionCautionDeg) { softFlags.push('elbow_bend_borderline'); status = worse(status, 'caution'); }
+  }
+  if (trial.elbowAsymDeg != null) {
+    if (trial.elbowAsymDeg >= SQUAT_TUNING.elbowAsymRiskDeg) { softFlags.push('elbow_asym_high'); status = worse(status, 'risk'); }
+    else if (trial.elbowAsymDeg >= SQUAT_TUNING.elbowAsymCautionDeg) { softFlags.push('elbow_asym_borderline'); status = worse(status, 'caution'); }
   }
 
   return { valid: true, status, immediateFail: false, softFlags, ...base };
@@ -217,6 +287,17 @@ function combineFrontSide(front, side) {
   // 팔 처짐 — 측면 단독(정면은 애초에 안정적으로 볼 수 없는 각도라 관여하지
   // 않는다 — squatFms.js의 evaluateSquatFrame과 동일한 view 제한 원칙).
   takeSingle(s, 'arm_drop_');
+
+  // CoG-발목 편차 — armDropDeg와 같은 이유로 측면 단독(앞뒤 편차는 정면에서
+  // 근본적으로 관측 불가).
+  takeSingle(s, 'cog_over_ankle_');
+
+  // CoG 좌우쏠림·머리기울기·팔꿈치폄·팔꿈치비대칭 — kneeValgus·pelvicTilt와
+  // 같은 이유로 정면 단독(좌우 편차는 측면에서 관측 불가).
+  takeSingle(f, 'cog_tilt_');
+  takeSingle(f, 'head_tilt_');
+  takeSingle(f, 'elbow_bend_');
+  takeSingle(f, 'elbow_asym_');
 
   // 상체기울기 — 측면 우선 단독, 측면 무효면 정면으로 대체.
   const torsoLeanSource = s.valid ? 'side' : (f.valid ? 'front_fallback' : null);
@@ -333,6 +414,18 @@ function combineFrontSideTwice(front1, front2, side1, side2) {
 
   // 팔 처짐 — 측면 단독(정면은 관여하지 않음, 위 combineFrontSide와 동일 이유).
   if (sideValid) { takeFromView(sideCombined, 'arm_drop_'); }
+
+  // CoG-발목 편차 — armDropDeg와 같은 이유로 측면 단독.
+  if (sideValid) { takeFromView(sideCombined, 'cog_over_ankle_'); }
+
+  // CoG 좌우쏠림·머리기울기·팔꿈치폄·팔꿈치비대칭 — 정면 단독(위
+  // combineFrontSide와 동일 이유).
+  if (frontValid) {
+    takeFromView(frontCombined, 'cog_tilt_');
+    takeFromView(frontCombined, 'head_tilt_');
+    takeFromView(frontCombined, 'elbow_bend_');
+    takeFromView(frontCombined, 'elbow_asym_');
+  }
 
   // 상체기울기 — 측면 우선 단독, 측면 무효면 정면으로 대체.
   const torsoLeanSource = sideValid ? 'side' : (frontValid ? 'front_fallback' : null);

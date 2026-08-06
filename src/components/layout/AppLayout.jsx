@@ -17,6 +17,7 @@ const NAV = [
   { path:'/schedule', label:'스케줄',   icon:'📅' },
   { path:'/ai',       label:'AI분석',   icon:'🤖' },
   { path:'/report',   label:'리포트',   icon:'📊' },
+  { path:'/summary',  label:'종합리포트', icon:'🗂️' },
   { path:'/trainers', label:'트레이너', icon:'💪', adminOnly:true },
   { path:'/revenue',  label:'매출관리', icon:'💰' },
   { path:'/settings', label:'설정',     icon:'⚙️' },

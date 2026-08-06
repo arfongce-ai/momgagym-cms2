@@ -29,10 +29,7 @@ import { useCameraRotation } from '../core/useCameraRotation';
 import { computeDisplayAngles } from '../core/squatJointAngles';
 import { colorForBone, evaluateSquatFrame, depthPctFromThighIncline, COMPENSATION_KO, scoreDeepSquatFms, worstOfTrials } from '../core/squatFms';
 import { evaluateSquatBiomechanics } from '../core/squatBiomechanics';
-<<<<<<< HEAD
 import { pickRecorderMime } from '../core/recordSink';
-=======
->>>>>>> 95d9ba96c50e9625d37d312a9237be872fd4d2a7
 import { drawGaugeHud } from '../core/recordingOverlay';
 import CameraStage from './CameraStage.jsx';
 import GaugeHud from './GaugeHud.jsx';
@@ -89,8 +86,13 @@ function fmtDeg(v) {
 }
 
 // [2026-07-30 신규] 요청 스펙: 측면 5개(발목기준 CoG·어깨/고관절/무릎/발목 굽힘),
-// 정면 6개(CoG 좌우기울기·무릎외반/내반·골반기울기·팔꿈치폄 양쪽·머리-어깨).
-// 판정(정상/주의/위험)에는 아직 연결하지 않고 순수 표시만 한다.
+// 정면 6개(CoG 좌우기울기·팔꿈치폄 양쪽·머리-어깨 간격 2개·머리기울기).
+// [2026-08-06] 이 중 CoG(측면)·CoG(정면)·머리기울기·팔꿈치폄(양쪽 min)·팔꿈치
+// 비대칭 5개는 squatBiomechanics.js 판정에 연결됐다(squatJointAngles.js 헤더
+// 주석 참고). 라벨 색은 kneeValgus·pelvicTilt 등 기존 판정 지표와 동일하게
+// 여기서는 항상 고정색으로 표시한다(라이브 화면은 값 판독용, 정상/주의/위험
+// 신호는 시행 종료 후 리포트의 종합판정·확인필요 배지로 노출 — 라벨마다
+// 실시간으로 색이 바뀌면 오히려 산만해 기존 관례를 그대로 따름).
 function drawJointAngleLabels(ctx, landmarks, view, X, Y) {
   if (!landmarks) return;
   ctx.save();
@@ -600,6 +602,11 @@ export default function SquatLiveAnalysis({ member, onBack, onComplete }) {
       {uiPhase === 'finished' && <p className="text-xs font-bold text-emerald-300">정면·측면 모두 완료 — {lastTrialNote}</p>}
       {finishing && <p className="text-xs font-bold text-amber-300">영상 정리 중…</p>}
       {errorMsg && <p className="text-xs font-bold text-red-300">{errorMsg}</p>}
+      {/* [2026-08-05] 예전엔 이 아래에 fixed top-3 right-3로 회차 배지를 따로
+          띄웠는데, CameraStage의 topBar 자체가 이미 top-right에 이 텍스트들을
+          쌓는 중이라 서로 겹쳤다. topBar 스택 안에 넣으면 같은 flex-col
+          gap-1.5가 자동으로 줄 간격을 잡아줘서 절대 겹치지 않는다. */}
+      <p className="text-xs font-bold text-slate-300">회차 {totalDone}/{SQUAT_LIVE_TOTAL_TRIALS}</p>
     </>
   );
 
@@ -652,51 +659,53 @@ export default function SquatLiveAnalysis({ member, onBack, onComplete }) {
       topBar={topBar} controls={controls} countdown={countdown}
       recording={recordingActive} recordingLabel={uiPhase === 'active' ? `진행 중 · 깊이 ${depthPct}%` : '녹화 중'}
     >
+      {/* [2026-08-05] 예전엔 보상패턴·대퇴골수평·종합판정 배지가 fixed
+          bottom-28/bottom-40 고정 픽셀 위치에 떠 있어서, GaugeHud·컨트롤
+          버튼 실제 크기와 무관하게 항상 같은 자리를 차지했다 — 보상패턴이
+          여러 개 뜨면 그 스택이 GaugeHud를 그대로 뒤덮었다. CameraStage의
+          children은 controls 위에 정상 문서 흐름(space-y-3)으로 쌓이므로,
+          여기 안에 넣으면 내용이 많아져도 서로 겹치지 않고 위로 밀려날 뿐이다. */}
       {uiPhase === 'active' && (
-        <GaugeHud label="패러렐까지" value={depthPct} unit="%" arc min={0} max={100}
-          accent={belowParallel ? '#38bdf8' : '#f59e0b'}
-          stats={[{ label: '회차', value: `${totalDone}/${SQUAT_LIVE_TOTAL_TRIALS}` }]} />
-      )}
-    </CameraStage>
-    {uiPhase === 'active' && belowParallel && (
-      <div className="pointer-events-none fixed bottom-28 left-1/2 -translate-x-1/2 z-40 rounded-full bg-sky-500/25 border border-sky-400/60 px-4 py-1.5 backdrop-blur">
-        <span className="text-sm font-black text-sky-200">✓ 대퇴골 수평 이하</span>
-      </div>
-    )}
-    {uiPhase === 'active' && fmsCompensations.length > 0 && (
-      <div className="pointer-events-none fixed bottom-40 left-1/2 -translate-x-1/2 z-40 flex flex-col items-center gap-1">
-        {fmsCompensations.map((c) => (
-          <span key={c} className="rounded-full bg-red-500/25 border border-red-400/60 px-3 py-1 text-xs font-bold text-red-200 backdrop-blur">
-            ⚠ {COMPENSATION_KO[c] || c}
-          </span>
-        ))}
-      </div>
-    )}
-    {status === 'running' && (
-      <div className="pointer-events-none fixed top-3 right-3 z-40 rounded-2xl bg-black/70 border border-white/20 px-4 py-2 text-center backdrop-blur">
-        <div className="text-[10px] font-bold text-slate-300 tracking-wide">회차</div>
-        <div className="text-2xl font-black text-white leading-none">{totalDone}<span className="text-sm text-slate-400">/{SQUAT_LIVE_TOTAL_TRIALS}</span></div>
-      </div>
-    )}
-    {uiPhase === 'finished' && finishedBio && (() => {
-      const st = finishedBio.status;
-      const theme = st === 'risk'
-        ? { border: 'border-red-500/40', bg: 'bg-red-500/20', text: 'text-red-300' }
-        : st === 'caution'
-        ? { border: 'border-amber-500/40', bg: 'bg-amber-500/20', text: 'text-amber-300' }
-        : st === 'normal'
-        ? { border: 'border-emerald-500/40', bg: 'bg-emerald-500/20', text: 'text-emerald-300' }
-        : { border: 'border-slate-500/40', bg: 'bg-slate-500/20', text: 'text-slate-300' };
-      return (
-        <div className={`pointer-events-none fixed bottom-40 left-1/2 -translate-x-1/2 z-40 rounded-2xl border ${theme.border} ${theme.bg} px-5 py-2.5 text-center backdrop-blur`}>
-          <div className="text-[10px] font-bold text-slate-300 tracking-wide">종합 판정</div>
-          <div className={`text-sm font-black ${theme.text}`}>
-            {STATUS_KO[st] || '확인 필요'}
-            {finishedFms?.score != null && <span className="text-slate-300 font-bold"> · FMS {finishedFms.score}점</span>}
-          </div>
+        <div className="flex flex-col items-center gap-2">
+          {fmsCompensations.length > 0 && (
+            <div className="flex flex-col items-center gap-1">
+              {fmsCompensations.map((c) => (
+                <span key={c} className="rounded-full bg-red-500/25 border border-red-400/60 px-3 py-1 text-xs font-bold text-red-200 backdrop-blur">
+                  ⚠ {COMPENSATION_KO[c] || c}
+                </span>
+              ))}
+            </div>
+          )}
+          {belowParallel && (
+            <div className="rounded-full bg-sky-500/25 border border-sky-400/60 px-4 py-1.5 backdrop-blur">
+              <span className="text-sm font-black text-sky-200">✓ 대퇴골 수평 이하</span>
+            </div>
+          )}
+          <GaugeHud label="패러렐까지" value={depthPct} unit="%" arc min={0} max={100}
+            accent={belowParallel ? '#38bdf8' : '#f59e0b'}
+            stats={[{ label: '회차', value: `${totalDone}/${SQUAT_LIVE_TOTAL_TRIALS}` }]} />
         </div>
-      );
-    })()}
+      )}
+      {uiPhase === 'finished' && finishedBio && (() => {
+        const st = finishedBio.status;
+        const theme = st === 'risk'
+          ? { border: 'border-red-500/40', bg: 'bg-red-500/20', text: 'text-red-300' }
+          : st === 'caution'
+          ? { border: 'border-amber-500/40', bg: 'bg-amber-500/20', text: 'text-amber-300' }
+          : st === 'normal'
+          ? { border: 'border-emerald-500/40', bg: 'bg-emerald-500/20', text: 'text-emerald-300' }
+          : { border: 'border-slate-500/40', bg: 'bg-slate-500/20', text: 'text-slate-300' };
+        return (
+          <div className={`mx-auto w-fit rounded-2xl border ${theme.border} ${theme.bg} px-5 py-2.5 text-center backdrop-blur`}>
+            <div className="text-[10px] font-bold text-slate-300 tracking-wide">종합 판정</div>
+            <div className={`text-sm font-black ${theme.text}`}>
+              {STATUS_KO[st] || '확인 필요'}
+              {finishedFms?.score != null && <span className="text-slate-300 font-bold"> · FMS {finishedFms.score}점</span>}
+            </div>
+          </div>
+        );
+      })()}
+    </CameraStage>
     </>
   );
 }

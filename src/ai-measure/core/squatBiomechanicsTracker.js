@@ -58,7 +58,9 @@ const KNEE_L = 25, KNEE_R = 26;
 const ANK_L = 27, ANK_R = 28;
 const HEEL_L = 29, HEEL_R = 30;
 const SHO_L = 11, SHO_R = 12;
+const ELB_L = 13, ELB_R = 14;
 const WRI_L = 15, WRI_R = 16;
+const EAR_L = 7, EAR_R = 8;
 
 function mid(lm, a, b) {
   if (!lm || !lm[a] || !lm[b]) return null;
@@ -124,6 +126,77 @@ export function armDropDegOf(lm) {
   return Math.max(left ?? 0, right ?? 0);
 }
 
+// [2026-08-06] squatJointAngles.js(라이브 화면 표시용)의 11개 각도 중 방향·크기가
+// 명확한 5개만 이 판정 로직에 연결한다. 나머지(어깨/고관절/무릎/발목 굽힘)는
+// 스쿼트 깊이에 따라 "정상적으로" 계속 바뀌는 각도라 시행 전체를 대표하는 단일
+// 목표값이 없다(이미 thighInclineDeg·torsoLeanDeg가 깊이·기울기를 대표값으로
+// 판정 중이라 중복/모순 신호를 피함) — 화면 표시만 유지하고 여기엔 추가하지 않는다.
+// 같은 이유로 귀-어깨 간격(정면)도 절대거리라 카메라 거리·고개 회전에 흔들려
+// 제외하고, 대신 더 안정적인 headTiltDegOf(귀-귀 각도)만 연결한다.
+
+// CoG(어깨-엉덩이 평균) 발목 수직선 대비 편차각(측면) — squatJointAngles.js의
+// cogOverAnkleDeg와 동일한 근사·부호 규칙, 절대값만 쓴다(방향 무관 크기 판정).
+export function cogOverAnkleDegOf(lm, side) {
+  const sho = lm?.[side === 'left' ? SHO_L : SHO_R];
+  const hip = lm?.[side === 'left' ? HIP_L : HIP_R];
+  const ank = lm?.[side === 'left' ? ANK_L : ANK_R];
+  if (!sho || !hip || !ank) return null;
+  const cog = { x: (sho.x + hip.x) / 2, y: (sho.y + hip.y) / 2 };
+  const dx = cog.x - ank.x, dy = cog.y - ank.y;
+  if (!dx && !dy) return 0;
+  return Math.abs((Math.atan2(dx, -dy) * 180) / Math.PI);
+}
+
+// CoG 좌우쏠림(정면) — pelvicTiltDegOf와 같은 절대값 방식(더 넓은 구간 평균이라
+// 노이즈가 커 임계값은 pelvicTilt보다 넉넉하게 잡음 — SQUAT_TUNING 주석 참고).
+export function cogTiltDegOf(lm) {
+  const shoMid = mid(lm, SHO_L, SHO_R), hipMid = mid(lm, HIP_L, HIP_R), ankMid = mid(lm, ANK_L, ANK_R);
+  if (!shoMid || !hipMid || !ankMid) return null;
+  const cog = { x: (shoMid.x + hipMid.x) / 2, y: (shoMid.y + hipMid.y) / 2 };
+  const dx = cog.x - ankMid.x, dy = cog.y - ankMid.y;
+  if (!dx && !dy) return 0;
+  return Math.abs((Math.atan2(dx, -dy) * 180) / Math.PI);
+}
+
+// 머리 좌우 기울기(정면) — 귀 중점이 어깨 중점 대비 옆으로 쏠린 각.
+// [수정] 처음엔 "귀-귀 선이 수평에서 벗어난 각"으로 짰으나 두 가지 문제가 있었다:
+//  ① 귀 위치가 반대로(오른쪽 귀 x가 더 작게) 들어오면 atan2(dy,dx)가 0° 대신
+//     180°를 반환(부호 버그 — abs()로는 못 고침, atan2 자체가 사분면을 봄).
+//  ② 애초에 "귀-귀 선 기울기"는 카메라가 살짝 돌아만 가도(고개는 그대로여도)
+//     흔들리는 값이라 안 안정적 — cogTiltDegOf와 같은 "중심선(어깨중점) 대비
+//     귀중점 편차각" 방식이 실제 좌우 쏠림을 더 잘 반영한다.
+export function headTiltDegOf(lm) {
+  const l = lm?.[EAR_L], r = lm?.[EAR_R];
+  const shoMid = mid(lm, SHO_L, SHO_R);
+  if (!l || !r || !shoMid) return null;
+  const earMid = { x: (l.x + r.x) / 2, y: (l.y + r.y) / 2 };
+  const dx = earMid.x - shoMid.x, dy = earMid.y - shoMid.y;
+  if (!dx && !dy) return 0;
+  return Math.abs((Math.atan2(dx, -dy) * 180) / Math.PI);
+}
+
+// 팔꿈치 폄(정면) — 180°=완전히 폄. FMS 오버헤드 스쿼트의 "바를 편 팔로 머리
+// 위에 유지" 기준을 수치화. minExt(더 굽은 쪽, 낮을수록 나쁨)와 asymDeg(좌우
+// 차이, 한쪽만 처지는 패턴)를 함께 반환 — 둘은 서로 다른 문제라 따로 본다.
+export function elbowExtensionOf(lm) {
+  const oneArm = (shoI, elbI, wriI) => {
+    const sho = lm?.[shoI], elb = lm?.[elbI], wri = lm?.[wriI];
+    if (!sho || !elb || !wri) return null;
+    const v1 = { x: sho.x - elb.x, y: sho.y - elb.y };
+    const v2 = { x: wri.x - elb.x, y: wri.y - elb.y };
+    const dot = v1.x * v2.x + v1.y * v2.y;
+    const mag = Math.hypot(v1.x, v1.y) * Math.hypot(v2.x, v2.y);
+    if (!mag) return null;
+    return (Math.acos(Math.min(1, Math.max(-1, dot / mag))) * 180) / Math.PI;
+  };
+  const left = oneArm(SHO_L, ELB_L, WRI_L);
+  const right = oneArm(SHO_R, ELB_R, WRI_R);
+  if (left == null && right == null) return null;
+  const minExt = Math.min(left ?? 180, right ?? 180);
+  const asymDeg = (left != null && right != null) ? Math.abs(left - right) : 0;
+  return { minExt, asymDeg };
+}
+
 /**
  * 오버헤드 딥 스쿼트 추적기 — 한 영상 안에서 연속된 최대 maxTrials회의
  * 반복(내려갔다 올라오는 1회)을 자동으로 구분해 모은다.
@@ -150,6 +223,11 @@ export class SquatBiomechanicsTracker {
     this._maxKneeValgus = 0;
     this._maxPelvicTilt = 0;
     this._maxArmDrop = 0;
+    this._maxCogOverAnkle = 0;
+    this._maxCogTilt = 0;
+    this._maxHeadTilt = 0;
+    this._minElbowExt = 180;
+    this._maxElbowAsym = 0;
     this._heelLift = false;
     this._balanceLoss = false;
     this._prevHip = null;
@@ -212,6 +290,17 @@ export class SquatBiomechanicsTracker {
     if (pelvicTilt != null) this._maxPelvicTilt = Math.max(this._maxPelvicTilt, pelvicTilt);
     const armDrop = armDropDegOf(lm);
     if (armDrop != null) this._maxArmDrop = Math.max(this._maxArmDrop, armDrop);
+    const cogOverAnkle = cogOverAnkleDegOf(lm, 'left') ?? cogOverAnkleDegOf(lm, 'right');
+    if (cogOverAnkle != null) this._maxCogOverAnkle = Math.max(this._maxCogOverAnkle, cogOverAnkle);
+    const cogTilt = cogTiltDegOf(lm);
+    if (cogTilt != null) this._maxCogTilt = Math.max(this._maxCogTilt, cogTilt);
+    const headTilt = headTiltDegOf(lm);
+    if (headTilt != null) this._maxHeadTilt = Math.max(this._maxHeadTilt, headTilt);
+    const elbowExt = elbowExtensionOf(lm);
+    if (elbowExt) {
+      this._minElbowExt = Math.min(this._minElbowExt, elbowExt.minExt);
+      this._maxElbowAsym = Math.max(this._maxElbowAsym, elbowExt.asymDeg);
+    }
 
     const baselineHeelY = this.calib.baselineHeelY;
     if (baselineHeelY != null) {
@@ -229,6 +318,11 @@ export class SquatBiomechanicsTracker {
         kneeValgusDeg: Math.round(this._maxKneeValgus * 10) / 10,
         pelvicTiltDeg: Math.round(this._maxPelvicTilt * 10) / 10,
         armDropDeg: Math.round(this._maxArmDrop * 10) / 10,
+        cogOverAnkleDeg: Math.round(this._maxCogOverAnkle * 10) / 10,
+        cogTiltDeg: Math.round(this._maxCogTilt * 10) / 10,
+        headTiltDeg: Math.round(this._maxHeadTilt * 10) / 10,
+        elbowExtensionDeg: Math.round(this._minElbowExt * 10) / 10,
+        elbowAsymDeg: Math.round(this._maxElbowAsym * 10) / 10,
         balanceLoss: this._balanceLoss,
         heelLift: this._heelLift,
       });
@@ -273,6 +367,11 @@ export class SquatBiomechanicsTracker {
       kneeValgusDeg: Math.round(this._maxKneeValgus * 10) / 10,
       pelvicTiltDeg: Math.round(this._maxPelvicTilt * 10) / 10,
       armDropDeg: Math.round(this._maxArmDrop * 10) / 10,
+      cogOverAnkleDeg: Math.round(this._maxCogOverAnkle * 10) / 10,
+      cogTiltDeg: Math.round(this._maxCogTilt * 10) / 10,
+      headTiltDeg: Math.round(this._maxHeadTilt * 10) / 10,
+      elbowExtensionDeg: Math.round(this._minElbowExt * 10) / 10,
+      elbowAsymDeg: Math.round(this._maxElbowAsym * 10) / 10,
       heelLift: this._heelLift,
     };
   }

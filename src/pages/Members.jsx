@@ -1,6 +1,7 @@
 // Members.jsx — v5
 // ✅ 요구사항1: 잔여 횟수 트레이너별 분리 배지 표시 (총합 금지)
 import { useState, useEffect, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { store, initStore } from '../demoData';
 import { todayYMD, daysAgoYMD, isMemberExpired, isMonthlyActive, monthlyDueOf } from '../utils/dates';
 import { useAuth } from '../contexts/AuthContext';
@@ -32,13 +33,27 @@ export default function Members() {
   const [showRegister,  setShowRegister]  = useState(false);
   const [showImport,    setShowImport]    = useState(false);
   const [selected,      setSelected]      = useState(null);
+  const [selectedInitialTab, setSelectedInitialTab] = useState(null);
   const [refreshing,    setRefreshing]    = useState(false);
+  const [searchParams]  = useSearchParams();
 
   const load = useCallback(() => {
     setMembers(store.getMembers());
     setTrainers(store.getTrainers());
   }, []);
   useEffect(() => { load(); }, [load]);
+
+  // ── 무결성 검사(Settings.jsx)에서 "회원상세로 이동"으로 넘어온 경우
+  //    ?openMember=<id>&tab=<tab> 을 읽어 해당 회원을 해당 탭으로 자동으로 연다.
+  useEffect(() => {
+    const openMemberId = searchParams.get('openMember');
+    if (!openMemberId || !members.length) return;
+    const m = members.find(x => x.id === openMemberId);
+    if (m) {
+      setSelected(m);
+      setSelectedInitialTab(searchParams.get('tab') || null);
+    }
+  }, [searchParams, members]);
 
   const oneYearAgo = daysAgoYMD(365); // CV-A: 로컬 날짜
   const myTrainerId = getUserTrainerId(user);
@@ -223,7 +238,7 @@ export default function Members() {
                       <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">⬇ 세션 마감 · 결제 만료</span>
                     </div>
                   )}
-                  <div onClick={() => setSelected(m)}
+                  <div onClick={() => { setSelected(m); setSelectedInitialTab(null); }}
                     className={`flex items-center gap-3 px-4 py-3 hover:bg-slate-800/60 cursor-pointer transition-colors ${inactive?'opacity-60':''}`}>
                     {/* 아바타 */}
                     <div className="w-9 h-9 rounded-full bg-slate-700 flex items-center justify-center text-sm font-bold flex-shrink-0">
@@ -280,7 +295,8 @@ export default function Members() {
         <MemberDetail
           member={members.find(m=>m.id===selected.id) || selected}
           trainers={trainers}
-          onClose={() => setSelected(null)}
+          initialTab={selectedInitialTab || undefined}
+          onClose={() => { setSelected(null); setSelectedInitialTab(null); }}
           onUpdate={() => load()} />
       )}
     </div>

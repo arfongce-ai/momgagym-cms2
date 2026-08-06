@@ -11,6 +11,7 @@ import Schedule from './pages/Schedule';
 import Settings from './pages/Settings';
 import AiMeasureHub from './ai-measure/AiMeasureHub';
 import Report from './pages/Report';
+import ComprehensiveReport from './pages/ComprehensiveReport';
 import AdminLockGate from './components/common/AdminLockGate';
 import TodayScheduleMorningAlert from './components/schedule/TodayScheduleMorningAlert';
 import { useKioskMode } from './hooks/useKioskMode';
@@ -102,6 +103,7 @@ function AppRoutes() {
                   <Route path="/settings" element={<Settings darkMode={darkMode} setDarkMode={setDarkMode} />} />
                   <Route path="/ai"       element={<AiMeasureHub />} />
                   <Route path="/report"   element={<Report />} />
+                  <Route path="/summary"  element={<ComprehensiveReport />} />
                   <Route path="*"         element={<Navigate to="/" replace />} />
                 </Routes>
               </KioskGuard>
