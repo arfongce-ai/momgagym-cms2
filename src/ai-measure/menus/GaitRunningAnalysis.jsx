@@ -608,7 +608,10 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
           <div className="absolute inset-0 pointer-events-none flex items-center justify-center p-[15%]">
             <div className={`w-full h-full border-4 rounded-lg transition-colors ${isReady ? 'border-green-500/70' : 'border-white/30'}`} />
           </div>
-          <div className="absolute top-0 z-20 w-full p-4 flex justify-between items-start bg-gradient-to-b from-black/60 to-transparent">
+          <div className="absolute top-0 z-20 w-full px-4 pb-4 flex justify-between items-start bg-gradient-to-b from-black/60 to-transparent"
+            style={{ paddingTop: 'calc(env(safe-area-inset-top) + 16px)' }}>
+            {/* [2026-08-05] safe-area-inset-top 미반영 — 노치·다이내믹 아일랜드
+                폰에서 이 줄이 시스템 상태바 밑에 깔리던 문제(Jump와 동일 수정). */}
             <div className="flex flex-col items-start gap-1.5">
               <button onClick={onBack} className="measure-back">← 뒤로</button>
               <button onClick={cycleRotation}
@@ -659,6 +662,7 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
             tab={toolTab} onTab={setToolTab}
             bpm={bpm} onBpm={setBpm} metroPlaying={metroPlaying} onMetroPlaying={setMetroPlaying}
             swElapsed={swElapsed} swRunning={swRunning} onSwRunning={setSwRunning} onSwReset={resetStopwatch}
+            liftForGauge={view === 'recording'}
           />
           <div className="absolute bottom-0 z-20 w-full p-6 bg-gradient-to-t from-black/80 to-transparent flex flex-col items-center gap-4">
             {view === 'recording' && (
@@ -760,10 +764,14 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
   );
 }
 
-/* ───────── 작동하는 컴팩트 도구 (좌측 하단) ───────── */
-function CompactTools({ open, onToggleOpen, tab, onTab, bpm, onBpm, metroPlaying, onMetroPlaying, swElapsed, swRunning, onSwRunning, onSwReset }) {
+/* ───────── 작동하는 컴팩트 도구 (좌측 하단) ─────────
+   [2026-08-05] recording=true일 때만 GaugeHud(케이던스 게이지, 약 340px)가
+   같은 하단 바에 함께 뜬다. 도구가 열려 있으면 이 패널이 그 위로 겹쳐
+   보였다 — liftForGauge로 녹화 중에는 기준 위치를 게이지 높이만큼 올린다. */
+function CompactTools({ open, onToggleOpen, tab, onTab, bpm, onBpm, metroPlaying, onMetroPlaying, swElapsed, swRunning, onSwRunning, onSwReset, liftForGauge = false }) {
+  const baseOffset = liftForGauge ? 340 : 96;
   return (
-    <div className="absolute bottom-[max(96px,calc(env(safe-area-inset-bottom)+96px))] left-3 z-20 w-[170px]">
+    <div className="absolute z-20 w-[170px]" style={{ left: 12, bottom: `max(${baseOffset}px, calc(env(safe-area-inset-bottom) + ${baseOffset}px))` }}>
       {open && (
         <div className="mb-2 rounded-2xl bg-black/55 backdrop-blur border border-white/10 p-2 text-white shadow-lg">
           <div className="mb-2 flex gap-1 rounded-full bg-black/30 p-0.5">

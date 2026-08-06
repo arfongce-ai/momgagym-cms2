@@ -17,10 +17,7 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { usePoseEngine } from '../core/usePoseEngine';
 import { StandingCalibrator, SingleLegStanceTracker } from '../core/singleLegStanceTracker';
-<<<<<<< HEAD
 import { pickRecorderMime } from '../core/recordSink';
-=======
->>>>>>> 95d9ba96c50e9625d37d312a9237be872fd4d2a7
 import { DEFAULT_ASPECT, outputSize, drawVideoCover, coverTransform, rotateLandmarksNormalized } from '../core/recordAspect';
 import { useCameraRotation } from '../core/useCameraRotation';
 import { drawGaugeHud } from '../core/recordingOverlay';
@@ -393,6 +390,11 @@ export default function StanceLiveAnalysis({ member, stanceLeg, eyesClosed, onBa
       {uiPhase === 'finished' && <p className="text-xs font-bold text-emerald-300">측정 완료 — {lastTrialNote}</p>}
       {finishing && <p className="text-xs font-bold text-amber-300">영상 정리 중…</p>}
       {errorMsg && <p className="text-xs font-bold text-red-300">{errorMsg}</p>}
+      {/* [2026-08-05] 예전엔 fixed top-3 right-3로 시행 배지를 따로 띄웠는데,
+          CameraStage의 topBar가 이미 top-right에 이 텍스트들을 쌓는 중이라
+          겹쳤다. topBar 스택 안에 넣으면 같은 flex-col gap-1.5가 줄 간격을
+          자동으로 잡아줘서 겹치지 않는다(스쿼트 화면과 동일한 수정). */}
+      <p className="text-xs font-bold text-slate-300">시행 {trialsFound}/{SLST_LIVE_MAX_TRIALS}</p>
     </>
   );
 
@@ -450,12 +452,6 @@ export default function StanceLiveAnalysis({ member, stanceLeg, eyesClosed, onBa
           stats={[{ label: '시행', value: `${trialsFound}/${SLST_LIVE_MAX_TRIALS}` }]} />
       )}
     </CameraStage>
-    {status === 'running' && (
-      <div className="pointer-events-none fixed top-3 right-3 z-40 rounded-2xl bg-black/70 border border-white/20 px-4 py-2 text-center backdrop-blur">
-        <div className="text-[10px] font-bold text-slate-300 tracking-wide">시행</div>
-        <div className="text-2xl font-black text-white leading-none">{trialsFound}<span className="text-sm text-slate-400">/{SLST_LIVE_MAX_TRIALS}</span></div>
-      </div>
-    )}
     </>
   );
 }

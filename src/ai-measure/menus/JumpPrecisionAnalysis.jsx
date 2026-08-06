@@ -872,8 +872,12 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
             <canvas ref={skeletonCanvasRef} className="absolute inset-0 w-full h-full pointer-events-none" />
           </div>
 
-          {/* 헤더 */}
-          <div className="absolute top-0 z-20 inset-x-0 flex items-center justify-between px-4 py-3 bg-gradient-to-b from-black/60 to-transparent">
+          {/* 헤더 — [2026-08-05] safe-area-inset-top을 안 챙기고 있었다. 노치·
+              다이내믹 아일랜드가 있는 폰에서는 이 줄 전체가 시스템 상태바 밑에
+              깔려 버튼이 눌리지도, 글자가 보이지도 않았다(CameraStage 기반
+              화면들은 이미 이 처리가 돼 있음 — 여긴 자체 헤더라 빠져 있었다). */}
+          <div className="absolute top-0 z-20 inset-x-0 flex items-center justify-between px-4 pb-3 bg-gradient-to-b from-black/60 to-transparent"
+            style={{ paddingTop: 'calc(env(safe-area-inset-top) + 12px)' }}>
             <button onClick={onBack} className="text-white font-bold text-sm">← 뒤로</button>
             <h2 className="text-white font-black text-sm">점프 정밀 측정</h2>
             <div className="flex items-center gap-1.5">
