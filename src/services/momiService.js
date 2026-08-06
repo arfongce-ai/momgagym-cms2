@@ -98,6 +98,48 @@ export function buildMemberCombinedAssessment(byKind, selectedKinds) {
   return buildCombinedAssessment(items);
 }
 
+// [모미 신규] "측정 종합 분석" 패널(CombinedAssessmentPanel.jsx)의 룰 기반 결과
+// (buildMemberCombinedAssessment)를 모미에게 넘겨 자연어 통합 가이드를 받는다 —
+// 자비스 로드맵 축1(트레이너 요청 기반 통합 분석)의 실제 구현.
+// buildProblemFocus를 거치지 않는다: buildCombinedAssessment의 출력이 이미
+// { severity, issues[], strengths[] } 로 problemFocus와 같은 모양이고, buildProblemFocus는
+// kind별 raw report 해석용이라 'combined'에 대응하는 분기가 없다 — 그대로 넣으면
+// 빈 결과가 나와 이미 계산된 통합 결과가 사라진다. momiPrompt.js 섹션 5-2 참고.
+export async function askMomiCombined({ member, result, question } = {}) {
+  if (!member?.id || !result) {
+    throw new Error('member와 종합 분석 결과가 필요합니다.');
+  }
+
+  const res = await fetch('/api/momi', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      kind: 'combined',
+      report: {
+        mode: 'problem_identification',
+        severity: result.severity,
+        primaryFinding: result.issues?.[0]?.text || result.strengths?.[0] || result.evaluation?.text || null,
+        issues: result.issues || [],
+        strengths: result.strengths || [],
+        evaluationText: result.evaluation?.text || null,
+        combinedKinds: result.combinedKinds || [],
+        coverageScore: result.coverageScore ?? null,
+      },
+      member: { name: member.name, category: member.category || null },
+      crossContext: null,
+      question: question || null,
+    }),
+  });
+
+  if (!res.ok) {
+    const errBody = await res.json().catch(() => ({}));
+    throw new Error(errBody.error || `모미 호출 실패 (status ${res.status})`);
+  }
+
+  const data = await res.json();
+  return data.text;
+}
+
 // [모미 신규] 최근 N일 컨디션 추이 — body 기록(store.getBodyRecords)에서 fatigue/painNrs가
 // 있는 항목만 뽑아 날짜 역순으로 최근 며칠치를 요약한다. buildCrossMeasureIntegration은
 // posture/rom/gait만 다루고 body(컨디션)는 대상에 없어 여기서 별도로 만든다.

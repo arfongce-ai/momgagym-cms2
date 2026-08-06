@@ -11,7 +11,7 @@ vi.mock('../demoData.js', () => ({
 }));
 
 import { aiStore } from '../demoData.js';
-import { askMomi, loadLatestReportsByKind, buildMemberCombinedAssessment } from '../services/momiService.js';
+import { askMomi, loadLatestReportsByKind, buildMemberCombinedAssessment, askMomiCombined } from '../services/momiService.js';
 
 function mockFetchOk(payloadCapture) {
   global.fetch = vi.fn(async (_url, opts) => {
@@ -87,6 +87,50 @@ describe('momiService — stance/squat/lifting 확장', () => {
     it('아무 측정도 없으면 null', async () => {
       const byKind = await loadLatestReportsByKind('m5');
       expect(buildMemberCombinedAssessment(byKind)).toBeNull();
+    });
+  });
+
+  // [축1 — 트레이너 요청 기반 통합 분석] CombinedAssessmentPanel의 룰 기반 결과를
+  // 모미에게 넘겨 통합 가이드를 받는 실제 호출부. buildProblemFocus를 거치지 않고
+  // result를 그대로 report로 보내는지가 핵심(momiPrompt.js 섹션 5-2 참고 — 'combined'
+  // kind는 buildProblemFocus에 대응 분기가 없어, 만약 거쳤다면 issues/strengths가
+  // 빈 배열로 날아가 모미에게 아무 정보도 전달되지 않았을 것이다).
+  describe('askMomiCombined', () => {
+    it('member 또는 result 없으면 에러', async () => {
+      await expect(askMomiCombined({ member: { id: 'm1' } })).rejects.toThrow();
+      await expect(askMomiCombined({ result: { severity: 'normal', issues: [], strengths: [] } })).rejects.toThrow();
+    });
+
+    it("kind:'combined'로, buildCombinedAssessment 결과를 그대로(재가공 없이) report에 담아 보낸다", async () => {
+      const captured = {};
+      mockFetchOk(captured);
+      const result = {
+        severity: 'caution',
+        issues: [{ level: 'caution', text: '무릎 밸거스 패턴 확인됨' }],
+        strengths: ['가동범위는 양호'],
+        evaluation: { text: '전반적으로 주의가 필요합니다.' },
+        combinedKinds: ['posture', 'squat'],
+        coverageScore: 62,
+      };
+
+      await askMomiCombined({ member: { id: 'm1', name: '홍길동' }, result });
+
+      expect(captured.body.kind).toBe('combined');
+      expect(captured.body.report.severity).toBe('caution');
+      expect(captured.body.report.issues).toEqual(result.issues);
+      expect(captured.body.report.strengths).toEqual(result.strengths);
+      expect(captured.body.report.combinedKinds).toEqual(['posture', 'squat']);
+      expect(captured.body.report.coverageScore).toBe(62);
+      expect(captured.body.report.primaryFinding).toBe('무릎 밸거스 패턴 확인됨');
+    });
+
+    it('응답 text를 그대로 반환한다', async () => {
+      mockFetchOk({});
+      const text = await askMomiCombined({
+        member: { id: 'm1', name: '홍길동' },
+        result: { severity: 'normal', issues: [], strengths: ['양호'] },
+      });
+      expect(text).toBe('모미 응답');
     });
   });
 });

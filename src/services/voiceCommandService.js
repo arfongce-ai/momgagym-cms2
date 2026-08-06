@@ -4,6 +4,7 @@
 import { scopeMembersToTrainer } from '../utils/memberList.js';
 import { findDestination } from '../voice/commandRegistry.js';
 import { setPendingVoiceTarget } from '../voice/pendingVoiceTarget.js';
+import { auth } from '../firebase.js';
 
 // 간단한 한글 이름 퍼지 매칭: 공백 제거 + 부분 일치 우선, 없으면 자모 유사도로 fallback.
 function normalize(str) {
@@ -28,9 +29,19 @@ function fuzzyFindMember(members, spokenName) {
 }
 
 export async function processVoiceCommand({ transcript, role, currentUser, allMembers, navigate }) {
+  // [보안 수정] 서버는 이제 이 role 문자열을 그대로 믿지 않고, 아래 idToken을 직접
+  // 검증해서 진짜 role을 구한다(functions/_shared/verifyFirebaseToken.js 참고).
+  // role은 과도기 호환용으로만 계속 같이 보낸다.
+  let idToken = null;
+  try { idToken = auth.currentUser ? await auth.currentUser.getIdToken() : null; }
+  catch (e) { console.warn('[voiceCommandService] ID 토큰 발급 실패:', e?.message || e); }
+
   const res = await fetch('/api/voice-command', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
+    },
     body: JSON.stringify({ transcript, role }),
   });
 

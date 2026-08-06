@@ -9,6 +9,7 @@
 // role에 따라 애초에 후보 도구 자체를 다르게 넘겨서, 트레이너 음성으로는 관리자 전용
 // 화면(트레이너 관리·매출관리)이 선택지에 아예 없다.
 import { MOMI_SYSTEM_PROMPT } from '../_shared/momiPrompt.js';
+import { resolveVerifiedRole } from '../_shared/verifyFirebaseToken.js';
 
 const MODEL = 'claude-sonnet-5';
 
@@ -49,7 +50,7 @@ export async function onRequestPost(context) {
   try {
     const { request, env } = context;
     const body = await request.json();
-    const { transcript, role } = body || {};
+    const { transcript } = body || {};
 
     if (!transcript) {
       return new Response(JSON.stringify({ error: 'transcript가 필요합니다.' }), {
@@ -58,7 +59,11 @@ export async function onRequestPost(context) {
       });
     }
 
-    const effectiveRole = role === 'admin' ? 'admin' : 'trainer';
+    // [보안 수정] 예전엔 body.role을 클라이언트가 보낸 그대로 믿었다 — 트레이너 계정에서
+    // role 값만 조작해 보내면 관리자 전용 화면(트레이너관리·매출관리)으로 음성 이동이
+    // 가능한 취약점이었다. 이제는 Authorization 헤더의 Firebase ID 토큰을 서버가 직접
+    // 서명 검증해서 role을 구한다(위조 불가 — resolveVerifiedRole 헤더 주석 참고).
+    const { role: effectiveRole } = await resolveVerifiedRole(request.headers.get('Authorization'));
     // role에 안 맞는 도구는 애초에 Claude에게 후보로도 전달하지 않는다.
     const tools = ALL_TOOLS.filter((t) => t.roles.includes(effectiveRole)).map((t) => ({
       name: t.name,

@@ -8,7 +8,7 @@
 //  Report.jsx에는 진입 버튼 하나만 추가하고, 나머지는 이 파일 안에서 독립 처리한다.
 // ════════════════════════════════════════════════════════════════════════
 import React, { useState, useEffect } from 'react';
-import { loadLatestReportsByKind, buildMemberCombinedAssessment } from '../../services/momiService';
+import { loadLatestReportsByKind, buildMemberCombinedAssessment, askMomiCombined } from '../../services/momiService';
 
 const KIND_KO = {
   posture: '자세·체형', rom: 'ROM', jump: '점프', gait: '보행·러닝',
@@ -21,6 +21,9 @@ export default function CombinedAssessmentPanel({ member, onClose }) {
   const [available, setAvailable] = useState({}); // { kind: latestReport }
   const [selected, setSelected] = useState(new Set());
   const [result, setResult] = useState(null);
+  const [momiLoading, setMomiLoading] = useState(false);
+  const [momiAnswer, setMomiAnswer] = useState(null);
+  const [momiError, setMomiError] = useState(null);
 
   useEffect(() => {
     let alive = true;
@@ -42,10 +45,27 @@ export default function CombinedAssessmentPanel({ member, onClose }) {
       return next;
     });
     setResult(null); // 선택이 바뀌면 이전 결과는 무효화(오래된 결과 오인 방지)
+    setMomiAnswer(null);
+    setMomiError(null);
   };
 
   const runAnalysis = () => {
     setResult(buildMemberCombinedAssessment(available, [...selected]));
+    setMomiAnswer(null);
+    setMomiError(null);
+  };
+
+  const askMomiGuide = async () => {
+    setMomiLoading(true);
+    setMomiError(null);
+    try {
+      const text = await askMomiCombined({ member, result });
+      setMomiAnswer(text);
+    } catch (e) {
+      setMomiError(e.message || '모미에게 물어보는 중 문제가 생겼어요.');
+    } finally {
+      setMomiLoading(false);
+    }
   };
 
   const availableKinds = Object.keys(available);
@@ -117,6 +137,22 @@ export default function CombinedAssessmentPanel({ member, onClose }) {
             <div className="space-y-1.5">
               <p className="text-xs font-black text-slate-300">양호한 점</p>
               {result.strengths.map((s, i) => <p key={i} className="text-sm text-emerald-300">• {s}</p>)}
+            </div>
+          )}
+
+          <button
+            onClick={askMomiGuide}
+            disabled={momiLoading}
+            className="w-full rounded-xl bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-200 font-bold py-2.5 text-sm transition-colors"
+          >
+            {momiLoading ? '모미가 통합 가이드 만드는 중…' : '🤖 모미에게 통합 가이드 요청'}
+          </button>
+
+          {momiError && <p className="text-sm text-red-400">{momiError}</p>}
+
+          {momiAnswer && (
+            <div className="rounded-xl bg-slate-800/50 border border-slate-700 p-3 text-sm text-slate-200 whitespace-pre-wrap leading-relaxed">
+              {momiAnswer}
             </div>
           )}
         </div>
