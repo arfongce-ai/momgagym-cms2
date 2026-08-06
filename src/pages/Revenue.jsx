@@ -258,11 +258,15 @@ function OverviewTab({ settings, trainers, trainerMap }) {
         const tid = b.trainer.id;
         if (!acc[tid]) acc[tid] = {
           trainer: b.trainer, sessionTotal:0, sessionPayout:0, promoIncentive:0, payout:0,
+          newSales:0, reEnrollSales:0, salesRefPayout:0,
         };
         acc[tid].sessionTotal   += b.sessionTotal;
         acc[tid].sessionPayout  += b.sessionPayout;
         acc[tid].promoIncentive += b.promoIncentive;
         acc[tid].payout         += b.payout;
+        acc[tid].newSales       += b.newSales;
+        acc[tid].reEnrollSales  += b.reEnrollSales;
+        acc[tid].salesRefPayout += b.salesRefPayout;
       });
     });
     // 대표 비율은 기간 합산 매출 대비 합산 실지급액 비율(가중평균) — 정산 탭의 blendedRate와 동일 공식.
@@ -273,6 +277,8 @@ function OverviewTab({ settings, trainers, trainerMap }) {
 
   // "트레이너 정산" 총액 = 트레이너별 정산 내역의 합(단일 소스 — 두 숫자가 어긋날 일이 없다)
   const settlePayout = useMemo(()=>trainerBreakdown.reduce((s,b)=>s+b.payout,0), [trainerBreakdown]);
+  // 신규+재등록 참고 합계 — 실제 지급액(settlePayout)과는 별개, 카드 하단 참고용.
+  const salesRefTotal = useMemo(()=>trainerBreakdown.reduce((s,b)=>s+b.salesRefPayout,0), [trainerBreakdown]);
 
   const netProfit = totals.net - settlePayout - totalExpense;
 
@@ -367,15 +373,22 @@ function OverviewTab({ settings, trainers, trainerMap }) {
           <h2 className="font-bold text-sm uppercase tracking-widest text-slate-400 mb-3">트레이너별 정산 내역</h2>
           <div className="space-y-2.5">
             {trainerBreakdown.map(b=>(
-              <div key={b.trainer.id} className="flex items-center justify-between gap-3 text-sm">
-                <div className="flex items-center gap-2 min-w-0">
-                  <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{background:b.trainer.color||'#94a3b8'}}/>
-                  <span className="font-bold text-slate-200 flex-shrink-0">{b.trainer.name}</span>
-                  <span className="text-[11px] text-slate-500 truncate">
-                    매출 {won(b.sessionTotal)} × {b.splitRate}%{b.promoIncentive>0 ? ` + 인센티브 ${won(b.promoIncentive)}` : ''}
-                  </span>
+              <div key={b.trainer.id}>
+                <div className="flex items-center justify-between gap-3 text-sm">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{background:b.trainer.color||'#94a3b8'}}/>
+                    <span className="font-bold text-slate-200 flex-shrink-0">{b.trainer.name}</span>
+                    <span className="text-[11px] text-slate-500 truncate">
+                      매출 {won(b.sessionTotal)} × {b.splitRate}%{b.promoIncentive>0 ? ` + 인센티브 ${won(b.promoIncentive)}` : ''}
+                    </span>
+                  </div>
+                  <span className="font-mono font-bold text-amber-400 flex-shrink-0">{won(b.payout)}</span>
                 </div>
-                <span className="font-mono font-bold text-amber-400 flex-shrink-0">{won(b.payout)}</span>
+                {(b.newSales + b.reEnrollSales) > 0 && (
+                  <div className="pl-4 text-[10px] text-slate-600 mt-0.5 truncate">
+                    참고 · 신규+재등록 {won(b.newSales + b.reEnrollSales)} × {b.splitRate}% = {won(b.salesRefPayout)} <span className="text-slate-700">(지급액 아님)</span>
+                  </div>
+                )}
               </div>
             ))}
             <div className="flex items-center justify-between text-sm pt-2 border-t border-slate-800">
@@ -384,8 +397,14 @@ function OverviewTab({ settings, trainers, trainerMap }) {
               </span>
               <span className="font-mono font-black text-amber-400">{won(settlePayout)}</span>
             </div>
+            {salesRefTotal > 0 && (
+              <div className="flex items-center justify-between text-[11px] text-slate-600">
+                <span>신규+재등록 참고 합계</span>
+                <span className="font-mono">{won(salesRefTotal)}</span>
+              </div>
+            )}
           </div>
-          <p className="text-[11px] text-slate-600 mt-3">* 매출(수업료 합계) × 정산비율(+인센티브가 있으면 가산)이 트레이너별 정산액이며, 이를 모두 더하면 위 손익 요약의 "트레이너 정산" 금액과 정확히 일치합니다.</p>
+          <p className="text-[11px] text-slate-600 mt-3">* 매출(수업료 합계) × 정산비율(+인센티브가 있으면 가산)이 트레이너별 정산액이며, 이를 모두 더하면 위 손익 요약의 "트레이너 정산" 금액과 정확히 일치합니다.<br/>* "참고" 줄은 신규+재등록 순매출(부가세·카드수수료 제외) × 정산비율이며, 위 정산액과는 별개의 확인용 숫자입니다(지급액에 가산되지 않음).</p>
         </div>
       )}
 
