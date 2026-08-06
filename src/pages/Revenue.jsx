@@ -240,18 +240,39 @@ function OverviewTab({ settings, trainers, trainerMap }) {
   const fixedApplied = isMonth ? fixedTotal : fixedTotal * periodMonths.length;
   const totalExpense = fixedApplied + monthlyExpense;
 
-  // 트레이너 정산 지급액 — 회당단가×횟수 방식과 일치
+  // 트레이너별 정산 내역 — 정산 탭과 동일한 computeSessionSettlementWithExpiry를 사용해
+  // 회당단가×횟수 방식과 일치시킨다(중복 계산 로직 없이 단일 소스).
   //  · 특정 월: 그 달만 계산
-  //  · 연/전체: 해당 기간의 모든 달을 각각 계산해 합산(정산은 월 단위라 단순 합이 불가)
-  const settlePayout = useMemo(()=>{
+  //  · 연/전체: 해당 기간의 모든 달을 각각 계산해 트레이너 id 기준으로 누적
+  //    (정산은 월 단위 소진 기준이라 기간 전체를 한 번에 계산할 수 없다)
+  const trainerBreakdown = useMemo(()=>{
     const grouped = {}; store.getMembers().forEach(m=>{ grouped[m.id]=store.getPayments(m.id); });
-    const calcMonth = (ym) => computeSessionSettlementWithExpiry({
-      trainers, members: store.getMembers(), schedules: store.getSchedules(),
-      payments: grouped, records: store.getPromos(), settings, ym,
-      getOverride: (tid,m)=>store.getSettleOverride(tid,m),
-    }).reduce((s,b)=>s+b.payout, 0);
-    return periodMonths.reduce((s,ym)=>s+calcMonth(ym), 0);
+    const acc = {};
+    periodMonths.forEach(ym=>{
+      const blocks = computeSessionSettlementWithExpiry({
+        trainers, members: store.getMembers(), schedules: store.getSchedules(),
+        payments: grouped, records: store.getPromos(), settings, ym,
+        getOverride: (tid,m)=>store.getSettleOverride(tid,m),
+      });
+      blocks.forEach(b=>{
+        const tid = b.trainer.id;
+        if (!acc[tid]) acc[tid] = {
+          trainer: b.trainer, sessionTotal:0, sessionPayout:0, promoIncentive:0, payout:0,
+        };
+        acc[tid].sessionTotal   += b.sessionTotal;
+        acc[tid].sessionPayout  += b.sessionPayout;
+        acc[tid].promoIncentive += b.promoIncentive;
+        acc[tid].payout         += b.payout;
+      });
+    });
+    // 대표 비율은 기간 합산 매출 대비 합산 실지급액 비율(가중평균) — 정산 탭의 blendedRate와 동일 공식.
+    return Object.values(acc)
+      .map(b=>({ ...b, splitRate: b.sessionTotal>0 ? Math.round(b.sessionPayout/b.sessionTotal*100) : 0 }))
+      .sort((a,b)=>b.payout-a.payout);
   }, [allPayments, trainers, settings, periodMonths]);
+
+  // "트레이너 정산" 총액 = 트레이너별 정산 내역의 합(단일 소스 — 두 숫자가 어긋날 일이 없다)
+  const settlePayout = useMemo(()=>trainerBreakdown.reduce((s,b)=>s+b.payout,0), [trainerBreakdown]);
 
   const netProfit = totals.net - settlePayout - totalExpense;
 
@@ -337,6 +358,36 @@ function OverviewTab({ settings, trainers, trainerMap }) {
         </div>
         {!isMonth && <p className="text-[11px] text-slate-600 mt-2">* {isYear?`${period}년`:'전체 기간'} 고정지출은 결제가 발생한 {periodMonths.length}개월분을 합산한 값입니다. 특정 월을 선택하면 그 달 기준으로 보여집니다.</p>}
       </div>
+
+      {/* 트레이너별 정산 내역 — 위 손익 요약의 "트레이너 정산" 금액이 어떻게 나왔는지 검증
+          (특정 월 선택 시에만 표시. 연/전체는 여러 달 정산비율이 섞여 트레이너별 대조가
+          덜 명확해지므로, 정산 탭과 동일하게 "월 단위"로만 맞춘다.) */}
+      {isMonth && trainerBreakdown.length > 0 && (
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
+          <h2 className="font-bold text-sm uppercase tracking-widest text-slate-400 mb-3">트레이너별 정산 내역</h2>
+          <div className="space-y-2.5">
+            {trainerBreakdown.map(b=>(
+              <div key={b.trainer.id} className="flex items-center justify-between gap-3 text-sm">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{background:b.trainer.color||'#94a3b8'}}/>
+                  <span className="font-bold text-slate-200 flex-shrink-0">{b.trainer.name}</span>
+                  <span className="text-[11px] text-slate-500 truncate">
+                    매출 {won(b.sessionTotal)} × {b.splitRate}%{b.promoIncentive>0 ? ` + 인센티브 ${won(b.promoIncentive)}` : ''}
+                  </span>
+                </div>
+                <span className="font-mono font-bold text-amber-400 flex-shrink-0">{won(b.payout)}</span>
+              </div>
+            ))}
+            <div className="flex items-center justify-between text-sm pt-2 border-t border-slate-800">
+              <span className="font-bold text-slate-300">
+                {trainerBreakdown.length<=4 ? trainerBreakdown.map(b=>b.trainer.name).join(' + ') : '전체'} 합계
+              </span>
+              <span className="font-mono font-black text-amber-400">{won(settlePayout)}</span>
+            </div>
+          </div>
+          <p className="text-[11px] text-slate-600 mt-3">* 매출(수업료 합계) × 정산비율(+인센티브가 있으면 가산)이 트레이너별 정산액이며, 이를 모두 더하면 위 손익 요약의 "트레이너 정산" 금액과 정확히 일치합니다.</p>
+        </div>
+      )}
 
       {/* 상세 + 담당 트레이너 + 환불 */}
       <RefundableList filtered={filtered} settings={settings} trainers={trainers} trainerMap={trainerMap} onChange={refresh}/>
