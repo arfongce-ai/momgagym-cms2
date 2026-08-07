@@ -26,6 +26,14 @@ describe('useMomiSpeech.js — 브라우저 내장 TTS 훅', () => {
     expect(src).toContain("utterance.lang = 'ko-KR';");
   });
 
+  it('unlock()은 사용자 탭 이벤트 안에서 무음 발화로 iOS 오디오를 미리 잠금 해제한다', () => {
+    const unlockStart = src.indexOf('const unlock = useCallback');
+    const unlockEnd = src.indexOf('}, []);', unlockStart);
+    const unlockBody = src.slice(unlockStart, unlockEnd);
+    expect(unlockBody).toContain('primer.volume = 0;');
+    expect(unlockBody).toContain('synth.speak(primer);');
+  });
+
   it('언마운트 시 말하던 중이면 멈춘다', () => {
     const effectStart = src.indexOf('useEffect(() => {');
     const effectEnd = src.indexOf('}, []);', effectStart);
@@ -33,8 +41,8 @@ describe('useMomiSpeech.js — 브라우저 내장 TTS 훅', () => {
     expect(effectBody).toContain('synthRef.current?.cancel();');
   });
 
-  it('supported·speak·stop을 반환한다', () => {
-    expect(src).toContain('return { supported, speak, stop };');
+  it('supported·speak·stop·unlock을 반환한다', () => {
+    expect(src).toContain('return { supported, speak, stop, unlock };');
   });
 });
 
@@ -59,5 +67,15 @@ describe('GlobalVoiceCommand.jsx — TTS 연결 확인', () => {
     const toggleEnd = src.indexOf('};', toggleStart);
     const toggleBody = src.slice(toggleStart, toggleEnd);
     expect(toggleBody).toContain('stopSpeaking();');
+  });
+
+  it('마이크를 켜는 탭 이벤트 안에서 startListening보다 먼저 오디오를 잠금 해제한다(iOS 대응)', () => {
+    const toggleStart = src.indexOf('const toggle = () => {');
+    const toggleEnd = src.indexOf('};', toggleStart);
+    const toggleBody = src.slice(toggleStart, toggleEnd);
+    expect(toggleBody).toContain('unlockSpeech();');
+    expect(toggleBody.indexOf('unlockSpeech();')).toBeLessThan(
+      toggleBody.indexOf('startListening();')
+    );
   });
 });

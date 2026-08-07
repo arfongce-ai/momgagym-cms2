@@ -37,9 +37,22 @@ export function useMomiSpeech() {
     synth.speak(utterance);
   }, []);
 
+  // iOS Safari 전용 대응: iOS는 speak()가 사용자의 탭/클릭 이벤트 안에서 처음
+  // 한 번 불려야 이후 비동기 응답(fetch 다녀온 뒤)에서의 speak()도 소리가 남 —
+  // 그렇지 않으면 에러 없이 조용히 무시된다. 마이크 버튼을 누르는 시점(실제 탭
+  // 이벤트)에 아주 짧은 무음 발화로 미리 "잠금 해제"해둔다. 이 트릭이 필요 없는
+  // 브라우저(Chrome/Windows 등)에서는 그냥 무해하게 넘어간다.
+  const unlock = useCallback(() => {
+    const synth = synthRef.current;
+    if (!synth) return;
+    const primer = new window.SpeechSynthesisUtterance(' ');
+    primer.volume = 0;
+    synth.speak(primer);
+  }, []);
+
   const stop = useCallback(() => {
     synthRef.current?.cancel();
   }, []);
 
-  return { supported, speak, stop };
+  return { supported, speak, stop, unlock };
 }

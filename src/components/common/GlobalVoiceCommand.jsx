@@ -21,7 +21,7 @@ export default function GlobalVoiceCommand() {
   const [feedback, setFeedback] = useState('');
   const [busy, setBusy] = useState(false);
 
-  const { speak, stop: stopSpeaking } = useMomiSpeech();
+  const { speak, stop: stopSpeaking, unlock: unlockSpeech } = useMomiSpeech();
 
   const handleCommand = useCallback(
     async (transcript) => {
@@ -69,6 +69,9 @@ export default function GlobalVoiceCommand() {
       // 마이크를 끄면 모미가 말하던 중이어도 같이 멈춘다.
       stopSpeaking();
     } else {
+      // iOS Safari 대응: 지금 이 탭 이벤트 안에서 미리 오디오를 잠금 해제해둬야
+      // 나중에 "모미야" 응답을 비동기로 speak()할 때 소리가 나온다.
+      unlockSpeech();
       startListening();
     }
   };
