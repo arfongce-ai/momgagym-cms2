@@ -1,0 +1,63 @@
+// 모미 응답을 브라우저 TTS(SpeechSynthesis)로 읽어주는 기능(입) 배선 확인.
+// useMomiVoice.js(귀)와 마찬가지로 이 프로젝트 vitest 환경은 'node'라 jsdom 기반
+// 실제 마운트 테스트 대신 정적 소스 패턴 테스트 관례를 따른다(momi_auto_note.test.js 참고).
+import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'fs';
+import { join } from 'path';
+
+const readSrc = (...segs) => readFileSync(join(process.cwd(), ...segs), 'utf8');
+
+describe('useMomiSpeech.js — 브라우저 내장 TTS 훅', () => {
+  const src = readSrc('src', 'hooks', 'useMomiSpeech.js');
+
+  it('window.speechSynthesis 지원 여부를 감지한다', () => {
+    expect(src).toContain('window.speechSynthesis');
+  });
+
+  it('말하기 전에 이전 발화를 취소한다(끼어들기 방지)', () => {
+    const speakStart = src.indexOf('const speak = useCallback');
+    const speakEnd = src.indexOf('}, []);', speakStart);
+    const speakBody = src.slice(speakStart, speakEnd);
+    expect(speakBody).toContain('synth.cancel();');
+    expect(speakBody.indexOf('synth.cancel();')).toBeLessThan(speakBody.indexOf('synth.speak('));
+  });
+
+  it("발화 언어를 'ko-KR'로 설정한다", () => {
+    expect(src).toContain("utterance.lang = 'ko-KR';");
+  });
+
+  it('언마운트 시 말하던 중이면 멈춘다', () => {
+    const effectStart = src.indexOf('useEffect(() => {');
+    const effectEnd = src.indexOf('}, []);', effectStart);
+    const effectBody = src.slice(effectStart, effectEnd);
+    expect(effectBody).toContain('synthRef.current?.cancel();');
+  });
+
+  it('supported·speak·stop을 반환한다', () => {
+    expect(src).toContain('return { supported, speak, stop };');
+  });
+});
+
+describe('GlobalVoiceCommand.jsx — TTS 연결 확인', () => {
+  const src = readSrc('src', 'components', 'common', 'GlobalVoiceCommand.jsx');
+
+  it('useMomiSpeech를 불러와서 쓴다', () => {
+    expect(src).toContain("from '../../hooks/useMomiSpeech'");
+    expect(src).toContain('useMomiSpeech()');
+  });
+
+  it('handleCommand 결과 메시지를 화면 표시와 동시에 speak()로 읽어준다(문구 불일치 방지)', () => {
+    const handleStart = src.indexOf('const handleCommand = useCallback(');
+    const handleEnd = src.indexOf('[role, user, allMembers, navigate, speak]');
+    const handleBody = src.slice(handleStart, handleEnd);
+    expect(handleBody).toContain('setFeedback(message);');
+    expect(handleBody).toContain('speak(message);');
+  });
+
+  it('마이크를 끄면 말하던 중인 음성도 함께 멈춘다', () => {
+    const toggleStart = src.indexOf('const toggle = () => {');
+    const toggleEnd = src.indexOf('};', toggleStart);
+    const toggleBody = src.slice(toggleStart, toggleEnd);
+    expect(toggleBody).toContain('stopSpeaking();');
+  });
+});

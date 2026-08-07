@@ -4,6 +4,7 @@
 import { useState, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMomiVoice } from '../../hooks/useMomiVoice';
+import { useMomiSpeech } from '../../hooks/useMomiSpeech';
 import { processVoiceCommand } from '../../services/voiceCommandService';
 import { useAuth } from '../../contexts/AuthContext';
 import { store } from '../../demoData';
@@ -20,10 +21,15 @@ export default function GlobalVoiceCommand() {
   const [feedback, setFeedback] = useState('');
   const [busy, setBusy] = useState(false);
 
+  const { speak, stop: stopSpeaking } = useMomiSpeech();
+
   const handleCommand = useCallback(
     async (transcript) => {
       setBusy(true);
       setFeedback('');
+      // 화면 표시(feedback)와 음성 출력(speak)이 서로 다른 문구로 갈리지 않도록
+      // 메시지를 한 곳에서만 만든다.
+      let message = '';
       try {
         const result = await processVoiceCommand({
           transcript,
@@ -33,20 +39,22 @@ export default function GlobalVoiceCommand() {
           navigate,
         });
         if (result.type === 'chat') {
-          setFeedback(result.text);
+          message = result.text;
         } else {
-          setFeedback(
-            result.matchedMember ? `${result.matchedMember.name}님으로 이동할게요.` : '이동할게요.'
-          );
+          message = result.matchedMember
+            ? `${result.matchedMember.name}님으로 이동할게요.`
+            : '이동할게요.';
         }
       } catch (e) {
-        setFeedback('죄송해요, 잘 처리하지 못했어요. 다시 말씀해주세요.');
+        message = '죄송해요, 잘 처리하지 못했어요. 다시 말씀해주세요.';
       } finally {
+        setFeedback(message);
+        speak(message);
         setBusy(false);
         setTimeout(() => setFeedback(''), 4000);
       }
     },
-    [role, user, allMembers, navigate]
+    [role, user, allMembers, navigate, speak]
   );
 
   const { supported, listening, startListening, stopListening } = useMomiVoice({
@@ -55,7 +63,15 @@ export default function GlobalVoiceCommand() {
 
   if (!supported) return null;
 
-  const toggle = () => (listening ? stopListening() : startListening());
+  const toggle = () => {
+    if (listening) {
+      stopListening();
+      // 마이크를 끄면 모미가 말하던 중이어도 같이 멈춘다.
+      stopSpeaking();
+    } else {
+      startListening();
+    }
+  };
 
   return (
     // [버그 수정 2026-07] 데스크탑은 사이드바라 bottom:20이면 충분하지만, 모바일은
