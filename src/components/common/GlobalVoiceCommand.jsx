@@ -57,8 +57,18 @@ export default function GlobalVoiceCommand() {
     [role, user, allMembers, navigate, speak]
   );
 
+  const handleWakeOnly = useCallback(() => {
+    // "모미야"까지만 듣고 명령이 안 붙어 왔을 때 — 아무 반응이 없으면 트레이너
+    // 입장에선 "불렀는데 반응이 없다"로 보이니, 들었다는 것만이라도 알려준다.
+    const message = '네, 말씀하세요.';
+    setFeedback(message);
+    speak(message);
+    setTimeout(() => setFeedback(''), 3000);
+  }, [speak]);
+
   const { supported, listening, startListening, stopListening } = useMomiVoice({
     onCommand: handleCommand,
+    onWakeOnly: handleWakeOnly,
   });
 
   if (!supported) return null;

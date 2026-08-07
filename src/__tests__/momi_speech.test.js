@@ -78,4 +78,16 @@ describe('GlobalVoiceCommand.jsx — TTS 연결 확인', () => {
       toggleBody.indexOf('startListening();')
     );
   });
+
+  it('"모미야"만 듣고 명령이 없으면(onWakeOnly) 들었다는 걸 화면 표시+음성으로 알려준다', () => {
+    const wakeOnlyStart = src.indexOf('const handleWakeOnly = useCallback(() => {');
+    const wakeOnlyEnd = src.indexOf('}, [speak]);', wakeOnlyStart);
+    const wakeOnlyBody = src.slice(wakeOnlyStart, wakeOnlyEnd);
+    expect(wakeOnlyBody).toContain('setFeedback(message);');
+    expect(wakeOnlyBody).toContain('speak(message);');
+  });
+
+  it('useMomiVoice에 onWakeOnly를 handleWakeOnly로 연결한다', () => {
+    expect(src).toContain('onWakeOnly: handleWakeOnly,');
+  });
 });

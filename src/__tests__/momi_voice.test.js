@@ -40,4 +40,16 @@ describe('useMomiVoice.js — iOS 대응 + 진단 로그', () => {
     const errorBody = src.slice(errorStart, errorEnd);
     expect(errorBody).toContain("console.warn('[모미] 인식 오류:', event.error);");
   });
+
+  it('"모미야"만 듣고 명령이 안 붙으면 onWakeOnly를 호출한다(무반응처럼 보이는 것 방지)', () => {
+    const resultStart = src.indexOf('recognition.onresult = (event) => {');
+    const resultEnd = src.indexOf('recognition.onerror', resultStart);
+    const resultBody = src.slice(resultStart, resultEnd);
+    expect(resultBody).toContain('else if (!commandText && onWakeOnly)');
+    expect(resultBody).toContain('onWakeOnly();');
+  });
+
+  it('onWakeOnly도 useEffect 의존성 배열에 포함된다', () => {
+    expect(src).toContain('}, [onCommand, onWakeOnly]);');
+  });
 });

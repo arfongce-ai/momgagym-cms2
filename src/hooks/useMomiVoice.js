@@ -27,7 +27,7 @@ function isIOS() {
   return isIPhoneOrIPad || isIPadOS13Plus;
 }
 
-export function useMomiVoice({ onCommand } = {}) {
+export function useMomiVoice({ onCommand, onWakeOnly } = {}) {
   const [listening, setListening] = useState(false);
   const [supported] = useState(() => !!getSpeechRecognition());
   const recognitionRef = useRef(null);
@@ -55,6 +55,10 @@ export function useMomiVoice({ onCommand } = {}) {
       const commandText = heard.slice(wakeIndex + WAKE_WORD.length).trim();
       if (commandText && onCommand) {
         onCommand(commandText);
+      } else if (!commandText && onWakeOnly) {
+        // "모미야"만 말하고 명령을 같이 안 붙인 경우 — 듣긴 들었다는 걸 알려준다.
+        // (이게 없으면 트레이너 입장에선 "불렀는데 반응이 없다"로 느껴짐)
+        onWakeOnly();
       }
     };
 
@@ -89,7 +93,7 @@ export function useMomiVoice({ onCommand } = {}) {
         // no-op
       }
     };
-  }, [onCommand]);
+  }, [onCommand, onWakeOnly]);
 
   const startListening = useCallback(() => {
     if (!recognitionRef.current) return;
