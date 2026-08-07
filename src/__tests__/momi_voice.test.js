@@ -41,11 +41,11 @@ describe('useMomiVoice.js — iOS 대응 + 진단 로그', () => {
     expect(errorBody).toContain("console.warn('[모미] 인식 오류:', event.error);");
   });
 
-  it('웨이크워드가 안 잡히고 들린 말이 있으면 onMismatch로 화면에도 보여준다(콘솔 접근 불가 대응)', () => {
+  it('웨이크워드가 안 잡히면(빈 소리 포함) onMismatch로 화면에도 보여준다(콘솔 접근 불가 대응)', () => {
     const resultStart = src.indexOf('recognition.onresult = (event) => {');
     const resultEnd = src.indexOf('recognition.onerror', resultStart);
     const resultBody = src.slice(resultStart, resultEnd);
-    expect(resultBody).toContain('if (heard && onMismatch) onMismatch(heard);');
+    expect(resultBody).toContain('if (onMismatch) onMismatch(heard);');
   });
 
   it('"모미야"만 듣고 명령이 안 붙으면 onWakeOnly를 호출한다(무반응처럼 보이는 것 방지)', () => {
@@ -65,5 +65,35 @@ describe('useMomiVoice.js — iOS 대응 + 진단 로그', () => {
 
   it('onWakeOnly·onMismatch·onErrorOccurred 모두 useEffect 의존성 배열에 포함된다', () => {
     expect(src).toContain('}, [onCommand, onWakeOnly, onMismatch, onErrorOccurred]);');
+  });
+
+  it('"모미야"만 부르면 다음 발화를 기다리는 대기 상태(activated)로 들어간다', () => {
+    const resultStart = src.indexOf('recognition.onresult = (event) => {');
+    const resultEnd = src.indexOf('recognition.onerror', resultStart);
+    const resultBody = src.slice(resultStart, resultEnd);
+    expect(resultBody).toContain('activatedRef.current = true;');
+    expect(resultBody).toContain('setTimeout(clearActivation, ACTIVATION_WINDOW_MS);');
+  });
+
+  it('대기 상태에서 다음 발화가 오면 "모미야" 없이도 그대로 명령으로 처리한다', () => {
+    const resultStart = src.indexOf('recognition.onresult = (event) => {');
+    const activatedCheckIdx = src.indexOf('if (activatedRef.current) {', resultStart);
+    const wakeCheckIdx = src.indexOf('const wakeIndex = heard.indexOf(WAKE_WORD);', resultStart);
+    // activated 체크가 웨이크워드 재확인보다 먼저 와야 한다(다시 "모미야" 안 붙여도 되게).
+    expect(activatedCheckIdx).toBeGreaterThan(-1);
+    expect(activatedCheckIdx).toBeLessThan(wakeCheckIdx);
+    const activatedStart = activatedCheckIdx;
+    const activatedEnd = src.indexOf('const wakeIndex', activatedStart);
+    const activatedBody = src.slice(activatedStart, activatedEnd);
+    expect(activatedBody).toContain('onCommand(heard);');
+  });
+
+  it('대기 시간이 끝나거나 마이크를 끄면 대기 상태를 초기화한다(무한정 기다리지 않음)', () => {
+    expect(src).toContain('const clearActivation = () => {');
+    expect(src).toContain('activatedRef.current = false;');
+    // stopListening과 useEffect 클린업 양쪽에서 정리돼야 한다.
+    const stopListeningStart = src.indexOf('const stopListening = useCallback(() => {');
+    const stopListeningEnd = src.indexOf('}, []);', stopListeningStart);
+    expect(src.slice(stopListeningStart, stopListeningEnd)).toContain('clearActivation();');
   });
 });

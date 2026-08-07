@@ -8,6 +8,12 @@
 import { useRef, useState, useCallback, useEffect } from 'react';
 
 const WAKE_WORD = '모미야';
+// "모미야"만 부른 뒤(onWakeOnly) 이 시간 안에 다음 발화가 오면, 그걸 "모미야"
+// 없이도 바로 명령으로 처리한다. 실사용 테스트에서 "모미야" → "네, 말씀하세요"
+// 응답 → 그 다음 명령을 따로 말하는 자연스러운 2단계 대화로 쓰길 원했는데,
+// 예전 코드는 매 발화마다 "모미야"가 다시 붙어있어야만 반응해서 이 흐름이
+// 전부 무시되고 있었다(콘솔 대신 화면에 찍은 진단 로그로 확인됨).
+const ACTIVATION_WINDOW_MS = 8000;
 
 function getSpeechRecognition() {
   if (typeof window === 'undefined') return null;
@@ -31,6 +37,17 @@ export function useMomiVoice({ onCommand, onWakeOnly, onMismatch, onErrorOccurre
   const [listening, setListening] = useState(false);
   const [supported] = useState(() => !!getSpeechRecognition());
   const recognitionRef = useRef(null);
+  // "모미야"만 듣고 다음 명령을 기다리는 중인지(2단계 대화 흐름용).
+  const activatedRef = useRef(false);
+  const activationTimerRef = useRef(null);
+
+  const clearActivation = () => {
+    activatedRef.current = false;
+    if (activationTimerRef.current) {
+      clearTimeout(activationTimerRef.current);
+      activationTimerRef.current = null;
+    }
+  };
 
   useEffect(() => {
     const SpeechRecognitionCtor = getSpeechRecognition();
@@ -50,20 +67,37 @@ export function useMomiVoice({ onCommand, onWakeOnly, onMismatch, onErrorOccurre
       // [진단용] 실제로 뭘로 인식했는지 항상 콘솔에 남긴다 — "모미야"가 다른 말로
       // 잘못 인식되고 있는 건지, 아예 안 들리고 있는 건지 구분하기 위함.
       console.log('[모미] 들린 말:', heard);
+
+      // "모미야"만 부른 직후 대기 중이면, 이번에 들린 말 전체를 곧바로 명령으로
+      // 처리한다 — 매번 "모미야"를 다시 붙일 필요 없는 자연스러운 대화 흐름.
+      if (activatedRef.current) {
+        clearActivation();
+        if (heard && onCommand) {
+          onCommand(heard);
+        } else if (onMismatch) {
+          onMismatch(heard);
+        }
+        return;
+      }
+
       const wakeIndex = heard.indexOf(WAKE_WORD);
       if (wakeIndex === -1) {
         // [진단용] 원격 디버깅(콘솔)에 접근 못 하는 상황을 위해, 웨이크워드가 안
-        // 잡혔을 때 실제로 뭘로 들렸는지 화면에도 잠깐 보여준다. 완전 무음(빈
-        // 문자열)이면 굳이 안 보여줌.
-        if (heard && onMismatch) onMismatch(heard);
+        // 잡혔을 때 실제로 뭘로 들렸는지 화면에도 잠깐 보여준다. heard가 완전
+        // 빈 문자열(최종 결과인데 내용이 없는 경우)이어도 그 자체가 진단 정보라
+        // onMismatch로 알려준다.
+        if (onMismatch) onMismatch(heard);
         return;
       }
       const commandText = heard.slice(wakeIndex + WAKE_WORD.length).trim();
       if (commandText && onCommand) {
         onCommand(commandText);
       } else if (!commandText && onWakeOnly) {
-        // "모미야"만 말하고 명령을 같이 안 붙인 경우 — 듣긴 들었다는 걸 알려준다.
-        // (이게 없으면 트레이너 입장에선 "불렀는데 반응이 없다"로 느껴짐)
+        // "모미야"만 말한 경우 — 다음 발화를 명령으로 기다린다(ACTIVATION_WINDOW_MS
+        // 동안). 그 안에 안 오면 다시 "모미야"부터 시작해야 하도록 원상복귀.
+        activatedRef.current = true;
+        if (activationTimerRef.current) clearTimeout(activationTimerRef.current);
+        activationTimerRef.current = setTimeout(clearActivation, ACTIVATION_WINDOW_MS);
         onWakeOnly();
       }
     };
@@ -95,6 +129,7 @@ export function useMomiVoice({ onCommand, onWakeOnly, onMismatch, onErrorOccurre
 
     return () => {
       recognitionRef.current = null;
+      clearActivation();
       try {
         recognition.stop();
       } catch (e) {
@@ -120,6 +155,7 @@ export function useMomiVoice({ onCommand, onWakeOnly, onMismatch, onErrorOccurre
     } catch (e) {
       // no-op
     }
+    clearActivation();
     setListening(false);
   }, []);
 

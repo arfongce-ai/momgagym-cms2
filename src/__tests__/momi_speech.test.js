@@ -95,7 +95,7 @@ describe('GlobalVoiceCommand.jsx — TTS 연결 확인', () => {
     const mismatchStart = src.indexOf('const handleMismatch = useCallback((heard) => {');
     const mismatchEnd = src.indexOf('}, []);', mismatchStart);
     const mismatchBody = src.slice(mismatchStart, mismatchEnd);
-    expect(mismatchBody).toContain('setFeedback(`[진단] 들림: "${heard}"`);');
+    expect(mismatchBody).toContain("heard ? `\"${heard}\"` : '(빈 소리만 인식됨)'");
     expect(mismatchBody).not.toContain('speak(');
   });
 

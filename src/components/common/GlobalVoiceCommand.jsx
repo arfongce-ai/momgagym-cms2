@@ -69,8 +69,10 @@ export default function GlobalVoiceCommand() {
   const handleMismatch = useCallback((heard) => {
     // [진단용] 웨이크워드가 안 잡혔을 때 실제로 뭘로 들렸는지 화면에 잠깐
     // 보여준다 — 원격 디버깅(콘솔)이 막힌 기기가 많아서 화면이 유일한 창구.
+    // heard가 빈 문자열이면(최종 결과인데 내용이 없었던 경우) 그것도 알려준다.
     // 소리 내어 읽지는 않는다(아무 말에나 계속 TTS가 끼어들면 방해가 됨).
-    setFeedback(`[진단] 들림: "${heard}"`);
+    const shown = heard ? `"${heard}"` : '(빈 소리만 인식됨)';
+    setFeedback(`[진단] 들림: ${shown}`);
     setTimeout(() => setFeedback(''), 4000);
   }, []);
 
