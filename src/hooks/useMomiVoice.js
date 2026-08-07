@@ -32,6 +32,9 @@ export function useMomiVoice({ onCommand } = {}) {
       const last = event.results[event.results.length - 1];
       if (!last || !last.isFinal) return;
       const heard = last[0].transcript.trim();
+      // [진단용] 실제로 뭘로 인식했는지 항상 콘솔에 남긴다 — "모미야"가 다른 말로
+      // 잘못 인식되고 있는 건지, 아예 안 들리고 있는 건지 구분하기 위함.
+      console.log('[모미] 들린 말:', heard);
       const wakeIndex = heard.indexOf(WAKE_WORD);
       if (wakeIndex === -1) return;
       const commandText = heard.slice(wakeIndex + WAKE_WORD.length).trim();
@@ -40,8 +43,12 @@ export function useMomiVoice({ onCommand } = {}) {
       }
     };
 
-    recognition.onerror = () => {
-      // 시끄러운 환경 등에서의 인식 오류는 조용히 무시하고 계속 듣는다.
+    recognition.onerror = (event) => {
+      // [진단용] 이전엔 전부 조용히 무시해서 마이크 권한 거부 같은 심각한 에러도
+      // 화면상 "듣고 있음" 상태로 보였다. 최소한 콘솔에는 원인을 남긴다.
+      // (not-allowed=권한 거부, no-speech=일정 시간 무음, audio-capture=마이크 없음,
+      //  network=네트워크 문제 — Chrome 인식은 온라인 필요)
+      console.warn('[모미] 인식 오류:', event.error);
     };
 
     recognition.onend = () => {
