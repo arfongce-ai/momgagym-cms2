@@ -66,9 +66,31 @@ export default function GlobalVoiceCommand() {
     setTimeout(() => setFeedback(''), 3000);
   }, [speak]);
 
+  const handleMismatch = useCallback((heard) => {
+    // [진단용] 웨이크워드가 안 잡혔을 때 실제로 뭘로 들렸는지 화면에 잠깐
+    // 보여준다 — 원격 디버깅(콘솔)이 막힌 기기가 많아서 화면이 유일한 창구.
+    // 소리 내어 읽지는 않는다(아무 말에나 계속 TTS가 끼어들면 방해가 됨).
+    setFeedback(`[진단] 들림: "${heard}"`);
+    setTimeout(() => setFeedback(''), 4000);
+  }, []);
+
+  const handleErrorOccurred = useCallback((errorCode) => {
+    // [진단용] 에러 코드를 사람이 읽을 수 있는 말로 바꿔서 화면에 보여준다.
+    const KNOWN = {
+      'not-allowed': '마이크 권한이 거부돼 있어요.',
+      'audio-capture': '마이크 장치를 못 찾았어요.',
+      network: '인터넷 연결을 확인해주세요.',
+    };
+    const readable = KNOWN[errorCode] || `오류 코드: ${errorCode}`;
+    setFeedback(`[진단] ${readable}`);
+    setTimeout(() => setFeedback(''), 4000);
+  }, []);
+
   const { supported, listening, startListening, stopListening } = useMomiVoice({
     onCommand: handleCommand,
     onWakeOnly: handleWakeOnly,
+    onMismatch: handleMismatch,
+    onErrorOccurred: handleErrorOccurred,
   });
 
   if (!supported) return null;

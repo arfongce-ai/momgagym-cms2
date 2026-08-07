@@ -27,7 +27,7 @@ function isIOS() {
   return isIPhoneOrIPad || isIPadOS13Plus;
 }
 
-export function useMomiVoice({ onCommand, onWakeOnly } = {}) {
+export function useMomiVoice({ onCommand, onWakeOnly, onMismatch, onErrorOccurred } = {}) {
   const [listening, setListening] = useState(false);
   const [supported] = useState(() => !!getSpeechRecognition());
   const recognitionRef = useRef(null);
@@ -51,7 +51,13 @@ export function useMomiVoice({ onCommand, onWakeOnly } = {}) {
       // 잘못 인식되고 있는 건지, 아예 안 들리고 있는 건지 구분하기 위함.
       console.log('[모미] 들린 말:', heard);
       const wakeIndex = heard.indexOf(WAKE_WORD);
-      if (wakeIndex === -1) return;
+      if (wakeIndex === -1) {
+        // [진단용] 원격 디버깅(콘솔)에 접근 못 하는 상황을 위해, 웨이크워드가 안
+        // 잡혔을 때 실제로 뭘로 들렸는지 화면에도 잠깐 보여준다. 완전 무음(빈
+        // 문자열)이면 굳이 안 보여줌.
+        if (heard && onMismatch) onMismatch(heard);
+        return;
+      }
       const commandText = heard.slice(wakeIndex + WAKE_WORD.length).trim();
       if (commandText && onCommand) {
         onCommand(commandText);
@@ -64,10 +70,12 @@ export function useMomiVoice({ onCommand, onWakeOnly } = {}) {
 
     recognition.onerror = (event) => {
       // [진단용] 이전엔 전부 조용히 무시해서 마이크 권한 거부 같은 심각한 에러도
-      // 화면상 "듣고 있음" 상태로 보였다. 최소한 콘솔에는 원인을 남긴다.
+      // 화면상 "듣고 있음" 상태로 보였다. 콘솔뿐 아니라 화면에도 원인을 남긴다
+      // (원격 디버깅이 안 되는 기기가 많아서 콘솔만으론 부족함).
       // (not-allowed=권한 거부, no-speech=일정 시간 무음, audio-capture=마이크 없음,
       //  network=네트워크 문제 — Chrome 인식은 온라인 필요)
       console.warn('[모미] 인식 오류:', event.error);
+      if (onErrorOccurred) onErrorOccurred(event.error);
     };
 
     recognition.onend = () => {
@@ -93,7 +101,7 @@ export function useMomiVoice({ onCommand, onWakeOnly } = {}) {
         // no-op
       }
     };
-  }, [onCommand, onWakeOnly]);
+  }, [onCommand, onWakeOnly, onMismatch, onErrorOccurred]);
 
   const startListening = useCallback(() => {
     if (!recognitionRef.current) return;

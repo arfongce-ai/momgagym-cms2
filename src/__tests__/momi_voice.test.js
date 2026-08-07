@@ -41,6 +41,13 @@ describe('useMomiVoice.js — iOS 대응 + 진단 로그', () => {
     expect(errorBody).toContain("console.warn('[모미] 인식 오류:', event.error);");
   });
 
+  it('웨이크워드가 안 잡히고 들린 말이 있으면 onMismatch로 화면에도 보여준다(콘솔 접근 불가 대응)', () => {
+    const resultStart = src.indexOf('recognition.onresult = (event) => {');
+    const resultEnd = src.indexOf('recognition.onerror', resultStart);
+    const resultBody = src.slice(resultStart, resultEnd);
+    expect(resultBody).toContain('if (heard && onMismatch) onMismatch(heard);');
+  });
+
   it('"모미야"만 듣고 명령이 안 붙으면 onWakeOnly를 호출한다(무반응처럼 보이는 것 방지)', () => {
     const resultStart = src.indexOf('recognition.onresult = (event) => {');
     const resultEnd = src.indexOf('recognition.onerror', resultStart);
@@ -49,7 +56,14 @@ describe('useMomiVoice.js — iOS 대응 + 진단 로그', () => {
     expect(resultBody).toContain('onWakeOnly();');
   });
 
-  it('onWakeOnly도 useEffect 의존성 배열에 포함된다', () => {
-    expect(src).toContain('}, [onCommand, onWakeOnly]);');
+  it('인식 오류가 나면 콘솔뿐 아니라 onErrorOccurred로 화면에도 알린다', () => {
+    const errorStart = src.indexOf('recognition.onerror = (event) => {');
+    const errorEnd = src.indexOf('};', errorStart);
+    const errorBody = src.slice(errorStart, errorEnd);
+    expect(errorBody).toContain('if (onErrorOccurred) onErrorOccurred(event.error);');
+  });
+
+  it('onWakeOnly·onMismatch·onErrorOccurred 모두 useEffect 의존성 배열에 포함된다', () => {
+    expect(src).toContain('}, [onCommand, onWakeOnly, onMismatch, onErrorOccurred]);');
   });
 });

@@ -90,4 +90,24 @@ describe('GlobalVoiceCommand.jsx — TTS 연결 확인', () => {
   it('useMomiVoice에 onWakeOnly를 handleWakeOnly로 연결한다', () => {
     expect(src).toContain('onWakeOnly: handleWakeOnly,');
   });
+
+  it('웨이크워드 불일치 시(handleMismatch) 들린 말을 화면에 보여주되 소리내어 읽지는 않는다', () => {
+    const mismatchStart = src.indexOf('const handleMismatch = useCallback((heard) => {');
+    const mismatchEnd = src.indexOf('}, []);', mismatchStart);
+    const mismatchBody = src.slice(mismatchStart, mismatchEnd);
+    expect(mismatchBody).toContain('setFeedback(`[진단] 들림: "${heard}"`);');
+    expect(mismatchBody).not.toContain('speak(');
+  });
+
+  it('인식 오류(handleErrorOccurred)를 사람이 읽을 수 있는 문구로 화면에 보여준다', () => {
+    const errorStart = src.indexOf('const handleErrorOccurred = useCallback((errorCode) => {');
+    const errorEnd = src.indexOf('}, []);', errorStart);
+    const errorBody = src.slice(errorStart, errorEnd);
+    expect(errorBody).toContain("'not-allowed': '마이크 권한이 거부돼 있어요.'");
+  });
+
+  it('useMomiVoice에 onMismatch·onErrorOccurred를 연결한다', () => {
+    expect(src).toContain('onMismatch: handleMismatch,');
+    expect(src).toContain('onErrorOccurred: handleErrorOccurred,');
+  });
 });
