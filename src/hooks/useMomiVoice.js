@@ -14,6 +14,19 @@ function getSpeechRecognition() {
   return window.SpeechRecognition || window.webkitSpeechRecognition || null;
 }
 
+// iOS Safari(아이폰·아이패드)는 continuous:true에서 세션이 응답 없이 멈추는(마이크는
+// 켜진 채 결과가 전혀 안 올라오는) 알려진 버그가 있다. iOS에서만 continuous:false로
+// 짧게 끊어 듣고, 매번 onend에서 재시작해 이어붙이는 방식으로 우회한다.
+// iPadOS 13+는 navigator.platform이 'MacIntel'로 나와 유저에이전트만으론 구분이
+// 안 되고, 터치 포인트 유무로 실제 Mac 데스크탑과 구분해야 한다.
+function isIOS() {
+  if (typeof navigator === 'undefined') return false;
+  const ua = navigator.userAgent || '';
+  const isIPhoneOrIPad = /iPad|iPhone|iPod/.test(ua);
+  const isIPadOS13Plus = navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1;
+  return isIPhoneOrIPad || isIPadOS13Plus;
+}
+
 export function useMomiVoice({ onCommand } = {}) {
   const [listening, setListening] = useState(false);
   const [supported] = useState(() => !!getSpeechRecognition());
@@ -25,7 +38,9 @@ export function useMomiVoice({ onCommand } = {}) {
 
     const recognition = new SpeechRecognitionCtor();
     recognition.lang = 'ko-KR';
-    recognition.continuous = true;
+    // [iOS 대응] 위 isIOS() 설명 참고 — iOS만 false, 그 외(Windows/Android Chrome
+    // 등 지금까지 문제없던 조합)는 기존 그대로 true 유지.
+    recognition.continuous = !isIOS();
     recognition.interimResults = false;
 
     recognition.onresult = (event) => {
@@ -52,7 +67,9 @@ export function useMomiVoice({ onCommand } = {}) {
     };
 
     recognition.onend = () => {
-      // continuous 모드라도 브라우저가 세션을 끊는 경우가 있어, 꺼진 상태가 아니면 재시작한다.
+      // continuous:true 브라우저도 가끔 세션이 끊기고, iOS는 위에서 아예
+      // continuous:false로 두기 때문에 매 발화마다 항상 여기로 온다.
+      // 두 경우 다 꺼진 상태가 아니면 즉시 재시작해서 "계속 듣는" 것처럼 이어붙인다.
       if (recognitionRef.current === recognition) {
         try {
           recognition.start();
