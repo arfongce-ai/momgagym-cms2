@@ -125,3 +125,33 @@ describe('GlobalVoiceCommand.jsx — TTS 연결 확인', () => {
     );
   });
 });
+
+// [요청 흐름 2026-08-08] "모미야"→"네, 선생님"→(명령)→명령 인지 확인→실행/응답
+// 5단계 대화 흐름 배선 확인.
+describe('GlobalVoiceCommand.jsx — "모미야→네,선생님→명령→인지확인→실행" 대화 흐름', () => {
+  const src = readSrc('src', 'components', 'common', 'GlobalVoiceCommand.jsx');
+
+  it('웨이크워드만 들으면 "네, 선생님"으로 응답한다', () => {
+    const wakeOnlyStart = src.indexOf('const handleWakeOnly = useCallback(() => {');
+    const wakeOnlyEnd = src.indexOf('}, [speak]);', wakeOnlyStart);
+    const wakeOnlyBody = src.slice(wakeOnlyStart, wakeOnlyEnd);
+    expect(wakeOnlyBody).toContain("const message = '네, 선생님.';");
+  });
+
+  it('실행 명령을 들으면 처리(API 호출)를 시작하기 전에 먼저 "확인했다"고 알려준다', () => {
+    const handleStart = src.indexOf('const handleCommand = useCallback(');
+    const processCallIdx = src.indexOf('await processVoiceCommand(', handleStart);
+    const preProcessBody = src.slice(handleStart, processCallIdx);
+    expect(preProcessBody).toContain("setFeedback('네, 확인했어요.');");
+    expect(preProcessBody).toContain("speak('네, 확인했어요.');");
+  });
+
+  it('명령 인지 확인 뒤에도 최종 처리 결과(이동/응답 메시지)를 별도로 다시 알려준다', () => {
+    const handleStart = src.indexOf('const handleCommand = useCallback(');
+    const handleEnd = src.indexOf('[role, user, allMembers, navigate, speak]');
+    const handleBody = src.slice(handleStart, handleEnd);
+    // speak(message)가 "네, 확인했어요" 이후 최소 한 번 더(최종 결과용) 나와야 한다.
+    const speakCalls = handleBody.match(/speak\(/g) || [];
+    expect(speakCalls.length).toBeGreaterThanOrEqual(2);
+  });
+});

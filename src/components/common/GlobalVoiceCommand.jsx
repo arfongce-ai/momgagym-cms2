@@ -26,7 +26,11 @@ export default function GlobalVoiceCommand() {
   const handleCommand = useCallback(
     async (transcript) => {
       setBusy(true);
-      setFeedback('');
+      // [요청 흐름 2026-08-08] "모미야"→"네, 선생님"→(명령)→명령 인지 확인→
+      // 실행/응답. 실제 처리(API 호출)로 넘어가기 전에 "들었다"는 걸 먼저
+      // 알려줘서, 트레이너가 "제대로 들리긴 한 건가" 불안하게 기다리지 않게 한다.
+      setFeedback('네, 확인했어요.');
+      speak('네, 확인했어요.');
       // 화면 표시(feedback)와 음성 출력(speak)이 서로 다른 문구로 갈리지 않도록
       // 메시지를 한 곳에서만 만든다.
       let message = '';
@@ -60,7 +64,7 @@ export default function GlobalVoiceCommand() {
   const handleWakeOnly = useCallback(() => {
     // "모미야"까지만 듣고 명령이 안 붙어 왔을 때 — 아무 반응이 없으면 트레이너
     // 입장에선 "불렀는데 반응이 없다"로 보이니, 들었다는 것만이라도 알려준다.
-    const message = '네, 말씀하세요.';
+    const message = '네, 선생님.';
     setFeedback(message);
     speak(message);
     setTimeout(() => setFeedback(''), 3000);

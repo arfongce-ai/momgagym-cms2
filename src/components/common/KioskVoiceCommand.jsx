@@ -31,7 +31,10 @@ export default function KioskVoiceCommand() {
 
   const handleCommand = useCallback(
     async (transcript) => {
-      setFeedback('');
+      // [요청 흐름 2026-08-08] "모미야"→"네, 선생님"→(명령)→명령 인지 확인→
+      // 실행/응답. GlobalVoiceCommand.jsx와 동일 패턴.
+      setFeedback('네, 확인했어요.');
+      speak('네, 확인했어요.');
       let message = '';
       try {
         const result = await processVoiceCommand({
@@ -60,7 +63,7 @@ export default function KioskVoiceCommand() {
   );
 
   const handleWakeOnly = useCallback(() => {
-    const message = '네, 말씀하세요.';
+    const message = '네, 선생님.';
     setFeedback(message);
     speak(message);
     setTimeout(() => setFeedback(''), 3000);

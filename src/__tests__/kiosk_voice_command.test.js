@@ -77,6 +77,18 @@ describe('KioskVoiceCommand.jsx — 버튼 없이 자동으로 상시 감지를 
       effectBody.indexOf("speak('상시 감지를 시작합니다.');")
     );
   });
+
+  it('"모미야→네,선생님→명령→인지확인→실행" 흐름이 GlobalVoiceCommand와 동일하다', () => {
+    const wakeOnlyStart = src.indexOf('const handleWakeOnly = useCallback(() => {');
+    const wakeOnlyEnd = src.indexOf('}, [speak]);', wakeOnlyStart);
+    expect(src.slice(wakeOnlyStart, wakeOnlyEnd)).toContain("const message = '네, 선생님.';");
+
+    const handleStart = src.indexOf('const handleCommand = useCallback(');
+    const processCallIdx = src.indexOf('await processVoiceCommand(', handleStart);
+    const preProcessBody = src.slice(handleStart, processCallIdx);
+    expect(preProcessBody).toContain("setFeedback('네, 확인했어요.');");
+    expect(preProcessBody).toContain("speak('네, 확인했어요.');");
+  });
 });
 
 describe('AppLayout.jsx — 키오스크에서 KioskVoiceCommand를 불러와서 쓴다', () => {
