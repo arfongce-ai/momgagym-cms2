@@ -4,6 +4,20 @@
 
 import { buildProblemFocus, buildCombinedAssessment, buildCrossMeasureIntegration } from '../ai-measure/core/crossMeasureContext.js';
 import { store, aiStore } from '../demoData';
+import { auth } from '../firebase.js';
+
+// [역할별 응답 범위 2026-08-08] "관리자·트레이너 접근 구분을 모미에도 적용" 요청 대응.
+// voiceCommandService.js와 동일 패턴 — 서버(functions/api/momi.js)가 이 토큰으로
+// role을 직접 검증해서, 관리자만 비즈니스 인사이트를 받을 수 있게 한다.
+async function getAuthHeader() {
+  try {
+    const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : null;
+    return idToken ? { Authorization: `Bearer ${idToken}` } : {};
+  } catch (e) {
+    console.warn('[momiService] ID 토큰 발급 실패:', e?.message || e);
+    return {};
+  }
+}
 
 // [모미 버그 수정 — 2026-07-28] 예전엔 buildCrossMeasureIntegration(member, kind)를 위치인자로
 // 호출했는데, 실제 함수는 { kind, report, postureReports, romReports, gaitReports } 객체
@@ -48,7 +62,7 @@ export async function askMomi({ kind, report, member, question } = {}) {
 
   const res = await fetch('/api/momi', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...(await getAuthHeader()) },
     body: JSON.stringify({
       kind,
       report: problemFocus || report,
@@ -112,7 +126,7 @@ export async function askMomiCombined({ member, result, question } = {}) {
 
   const res = await fetch('/api/momi', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...(await getAuthHeader()) },
     body: JSON.stringify({
       kind: 'combined',
       report: {
@@ -176,7 +190,7 @@ export async function askMomiDaily({ member, condition, question } = {}) {
 
   const res = await fetch('/api/momi', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...(await getAuthHeader()) },
     body: JSON.stringify({
       kind: 'daily',
       report: problemFocus,

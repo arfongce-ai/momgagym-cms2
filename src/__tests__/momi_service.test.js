@@ -10,12 +10,24 @@ vi.mock('../demoData.js', () => ({
   },
 }));
 
+// [역할별 응답 범위 2026-08-08] askMomi류가 Firebase ID 토큰을 Authorization 헤더로
+// 보내는지 검증하기 위한 가짜 auth. voiceCommandService.js 테스트와 달리 여기선
+// 실제로 로그인된 사용자가 있는 경우의 동작(토큰이 실제로 담기는지)까지 확인한다.
+vi.mock('../firebase.js', () => ({
+  auth: {
+    currentUser: {
+      getIdToken: vi.fn().mockResolvedValue('fake-id-token-123'),
+    },
+  },
+}));
+
 import { aiStore } from '../demoData.js';
 import { askMomi, loadLatestReportsByKind, buildMemberCombinedAssessment, askMomiCombined } from '../services/momiService.js';
 
 function mockFetchOk(payloadCapture) {
   global.fetch = vi.fn(async (_url, opts) => {
     payloadCapture.body = JSON.parse(opts.body);
+    payloadCapture.headers = opts.headers;
     return { ok: true, json: async () => ({ text: '모미 응답' }) };
   });
 }
@@ -31,6 +43,16 @@ describe('momiService — stance/squat/lifting 확장', () => {
 
   it('report/member 없으면 에러', async () => {
     await expect(askMomi({ kind: 'posture' })).rejects.toThrow();
+  });
+
+  // [역할별 응답 범위 2026-08-08] "관리자·트레이너 접근 구분을 모미에도 적용" 요청
+  // 대응. 서버(functions/api/momi.js)가 role을 검증하려면 클라이언트가 Firebase ID
+  // 토큰을 보내야 한다 — voiceCommandService.js와 동일 패턴.
+  it('Firebase ID 토큰을 Authorization 헤더로 함께 보낸다(서버 role 검증용)', async () => {
+    const captured = {};
+    mockFetchOk(captured);
+    await askMomi({ kind: 'posture', report: { analysis: { frontal: {} } }, member: { id: 'm1', name: '홍길동' } });
+    expect(captured.headers.Authorization).toBe('Bearer fake-id-token-123');
   });
 
   it('세션 목록에서 menu 필드로 stance/squat/lifting을 걸러 crossContext에 채운다', async () => {
@@ -131,6 +153,16 @@ describe('momiService — stance/squat/lifting 확장', () => {
         result: { severity: 'normal', issues: [], strengths: ['양호'] },
       });
       expect(text).toBe('모미 응답');
+    });
+
+    it('askMomiCombined도 Authorization 헤더를 함께 보낸다', async () => {
+      const captured = {};
+      mockFetchOk(captured);
+      await askMomiCombined({
+        member: { id: 'm1', name: '홍길동' },
+        result: { severity: 'normal', issues: [], strengths: ['양호'] },
+      });
+      expect(captured.headers.Authorization).toBe('Bearer fake-id-token-123');
     });
   });
 });
