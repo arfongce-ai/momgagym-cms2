@@ -68,10 +68,11 @@ export default function KioskVoiceCommand() {
 
   const handleMismatch = useCallback((heard) => {
     // 상시 감지라 트레이너·회원 사이의 일반 대화도 계속 들어온다 — 진단 표시를
-    // 버튼식보다 짧게 두어(2초) 화면에 계속 떠 있지 않게 한다.
+    // 버튼식보다 짧게 둔다. [2026-08-08] 다만 "모미야" 무반응 문의 대응으로
+    // 2초→5초로 늘렸다 — 너무 짧으면 원인 파악에 필요한 이 문구 자체를 놓친다.
     const shown = heard ? `"${heard}"` : '(빈 소리만 인식됨)';
     setFeedback(`[진단] 들림: ${shown}`);
-    setTimeout(() => setFeedback(''), 2000);
+    setTimeout(() => setFeedback(''), 5000);
   }, []);
 
   const handleErrorOccurred = useCallback((errorCode) => {
@@ -116,12 +117,14 @@ export default function KioskVoiceCommand() {
       {feedback && (
         <div
           style={{
-            padding: '6px 10px',
+            padding: '8px 12px',
             borderRadius: 8,
-            background: 'rgba(0,0,0,0.75)',
+            background: 'rgba(0,0,0,0.85)',
             color: '#fff',
-            fontSize: 12,
-            maxWidth: 220,
+            fontSize: 15,
+            fontWeight: 500,
+            maxWidth: 260,
+            boxShadow: '0 2px 10px rgba(0,0,0,0.35)',
           }}
         >
           {feedback}

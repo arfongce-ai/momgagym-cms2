@@ -98,6 +98,22 @@ describe('useMomiVoice.js — iOS 대응 + 진단 로그', () => {
   });
 });
 
+// [버그 수정 2026-08-08] "모미야"를 또박또박 말해도 폰·태블릿·키오스크 전부 무반응
+// 이라는 문의 대응. 한글은 유니코드 정규화 형태(NFC/NFD)가 갈릴 수 있어, 소스에
+// 적힌 WAKE_WORD 리터럴과 음성인식 API가 돌려주는 transcript의 내부 인코딩이
+// 달라 겉보기엔 "모미야"가 맞는데도 indexOf가 실패했을 가능성을 방어한다.
+describe('useMomiVoice.js — 웨이크워드 비교 전 유니코드(NFC) 정규화(회귀 방지)', () => {
+  const src = readSrc('src', 'hooks', 'useMomiVoice.js');
+
+  it("WAKE_WORD 리터럴을 NFC로 정규화한다", () => {
+    expect(src).toContain("const WAKE_WORD = '모미야'.normalize('NFC');");
+  });
+
+  it('인식된 transcript도 비교 전에 NFC로 정규화한다(양쪽 형태를 맞춰야 비교가 유효함)', () => {
+    expect(src).toContain("last[0].transcript.trim().normalize('NFC');");
+  });
+});
+
 // [버그 수정 2026-08-08] 마이크 끄기 버튼(stopListening)을 눌러도 recognitionRef.current가
 // 그대로 남아있어서, onend의 재시작 조건이 계속 참이 되어 recognition.start()가 곧바로
 // 다시 불렸다 — 화면(빨간 점)만 꺼지고 인식은 백그라운드에서 계속 도는 상태였음.

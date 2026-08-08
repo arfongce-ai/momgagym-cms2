@@ -71,9 +71,11 @@ export default function GlobalVoiceCommand() {
     // 보여준다 — 원격 디버깅(콘솔)이 막힌 기기가 많아서 화면이 유일한 창구.
     // heard가 빈 문자열이면(최종 결과인데 내용이 없었던 경우) 그것도 알려준다.
     // 소리 내어 읽지는 않는다(아무 말에나 계속 TTS가 끼어들면 방해가 됨).
+    // [2026-08-08] "모미야"가 계속 무반응이라는 문의 때문에 노출 시간을 늘렸다
+    // (4초→7초) — 이 문구를 놓치면 원인 파악이 안 되므로 눈에 띄는 시간을 확보.
     const shown = heard ? `"${heard}"` : '(빈 소리만 인식됨)';
     setFeedback(`[진단] 들림: ${shown}`);
-    setTimeout(() => setFeedback(''), 4000);
+    setTimeout(() => setFeedback(''), 7000);
   }, []);
 
   const handleErrorOccurred = useCallback((errorCode) => {
@@ -132,12 +134,14 @@ export default function GlobalVoiceCommand() {
         <div
           style={{
             marginBottom: 8,
-            padding: '8px 12px',
+            padding: '10px 14px',
             borderRadius: 8,
-            background: 'rgba(0,0,0,0.75)',
+            background: 'rgba(0,0,0,0.85)',
             color: '#fff',
-            fontSize: 13,
-            maxWidth: 240,
+            fontSize: 15,
+            fontWeight: 500,
+            maxWidth: 260,
+            boxShadow: '0 2px 10px rgba(0,0,0,0.35)',
           }}
         >
           {feedback}

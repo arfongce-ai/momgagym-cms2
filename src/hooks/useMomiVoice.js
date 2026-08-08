@@ -7,7 +7,14 @@
 
 import { useRef, useState, useCallback, useEffect } from 'react';
 
-const WAKE_WORD = '모미야';
+// [버그 수정 2026-08-08] "모미야"를 또박또박 말해도 전혀 반응이 없다는 문의 대응.
+// 한글은 유니코드 정규화 형태가 여러 가지라(NFC: 완성형 한 글자 vs NFD: 자모 분해형),
+// Web Speech API가 반환하는 transcript와 이 소스 파일에 적힌 리터럴 문자열이 겉보기엔
+// 똑같아 보여도 내부 인코딩이 달라 heard.indexOf(WAKE_WORD)가 계속 실패했을 가능성이
+// 있다 — 폰·태블릿·키오스크(서로 다른 기기·OS)에서 전부 똑같이 무반응이었던 게
+// 기기별 문제가 아니라 이 비교 로직 자체의 문제였음을 시사한다. 양쪽 다 NFC로
+// 정규화해서 비교하면 어느 쪽 형태로 오든 항상 같은 형태로 맞춰서 비교한다.
+const WAKE_WORD = '모미야'.normalize('NFC');
 // "모미야"만 부른 뒤(onWakeOnly) 이 시간 안에 다음 발화가 오면, 그걸 "모미야"
 // 없이도 바로 명령으로 처리한다. 실사용 테스트에서 "모미야" → "네, 말씀하세요"
 // 응답 → 그 다음 명령을 따로 말하는 자연스러운 2단계 대화로 쓰길 원했는데,
@@ -70,7 +77,7 @@ export function useMomiVoice({ onCommand, onWakeOnly, onMismatch, onErrorOccurre
     recognition.onresult = (event) => {
       const last = event.results[event.results.length - 1];
       if (!last || !last.isFinal) return;
-      const heard = last[0].transcript.trim();
+      const heard = last[0].transcript.trim().normalize('NFC');
       // [진단용] 실제로 뭘로 인식했는지 항상 콘솔에 남긴다 — "모미야"가 다른 말로
       // 잘못 인식되고 있는 건지, 아예 안 들리고 있는 건지 구분하기 위함.
       console.log('[모미] 들린 말:', heard);
