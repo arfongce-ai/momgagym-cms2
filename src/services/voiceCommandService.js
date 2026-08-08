@@ -7,6 +7,7 @@ import { scopeMembersToTrainer } from '../utils/memberList.js';
 import { findDestination } from '../voice/commandRegistry.js';
 import { setPendingVoiceTarget } from '../voice/pendingVoiceTarget.js';
 import { auth } from '../firebase.js';
+import { proposeReservation, proposeCancelReservation, proposeRescheduleReservation } from './reservationService.js';
 
 // 간단한 한글 이름 퍼지 매칭: 공백 제거 + 부분 일치 우선, 없으면 자모 유사도로 fallback.
 function normalize(str) {
@@ -90,7 +91,13 @@ export function extractMemberNameFromText(commandText, members) {
   return best;
 }
 
-export async function processVoiceCommand({ transcript, role, currentUser, allMembers, navigate }) {
+// [예약 생성 프로젝트 2026-08-08] "폰: trainerId(로그인 정보로 자동 지정) /
+// 키오스크: trainerName(말로 지정)" — 사용자가 명시적으로 확정한 구분. 어느
+// 쪽인지는 호출부(컴포넌트)가 mode로 알려준다. 기본값은 'phone' — 기존
+// GlobalVoiceCommand.jsx 호출부가 mode를 안 넘겨도 그대로 동작하게 하기 위함.
+export async function processVoiceCommand({
+  transcript, role, currentUser, allMembers, navigate, mode = 'phone',
+}) {
   // [무료 우선 2026-08-08] 규칙 기반으로 먼저 시도 — 매치되면 API 호출 자체가
   // 없어서 비용이 전혀 안 든다.
   const ruleDestId = matchRuleBasedDestination(transcript);
@@ -153,6 +160,60 @@ export async function processVoiceCommand({ transcript, role, currentUser, allMe
 
   if (data.type === 'chat') {
     return { type: 'chat', text: data.text };
+  }
+
+  // [예약 생성 프로젝트 2026-08-08] 화면 이동이 아니라 예약 제안 — 여기서는
+  // 아직 아무것도 저장하지 않는다(proposeReservation은 순수 조회). 실제 저장
+  // (confirmReservation)은 호출부(voice 컴포넌트)가 요약을 말해주고 트레이너의
+  // "네/아니요" 확인을 받은 뒤에만 별도로 호출한다.
+  // 트레이너 지정: 키오스크(mode='kiosk')는 여러 트레이너가 같이 쓰는 공용
+  // 기기라 로그인 정보를 신뢰하면 안 된다 — 반드시 말로 지정한 trainerName만
+  // 쓴다. 폰(mode='phone')은 로그인된 본인 trainerId를 우선 쓰되, 관리자처럼
+  // trainerId가 없는 계정이 다른 트레이너 이름을 명시적으로 말한 경우엔
+  // trainerName으로 자연스럽게 폴백된다(proposeReservation의 우선순위 로직).
+  if (data.type === 'reservation_propose') {
+    const trainerId = mode === 'kiosk' ? null : currentUser?.trainerId || null;
+    const propose = proposeReservation({
+      memberQuery: data.memberName || undefined,
+      trainerId: trainerId || undefined,
+      trainerName: data.trainerName || undefined,
+      date: data.date,
+      startTime: data.startTime,
+      classType: data.classType || undefined,
+    });
+    return { type: 'reservation_propose', propose };
+  }
+
+  // [예약 생성 프로젝트 3단계 2026-08-09] 취소 — 위 propose_reservation 분기와
+  // 완전히 같은 이유·같은 mode 분기(폰=trainerId/키오스크=trainerName)를 쓴다.
+  // 여기서도 아직 아무것도 지우지 않는다(proposeCancelReservation은 순수 조회).
+  if (data.type === 'reservation_cancel_propose') {
+    const trainerId = mode === 'kiosk' ? null : currentUser?.trainerId || null;
+    const propose = proposeCancelReservation({
+      memberQuery: data.memberName || undefined,
+      trainerId: trainerId || undefined,
+      trainerName: data.trainerName || undefined,
+      date: data.date,
+      startTime: data.startTime,
+    });
+    return { type: 'reservation_cancel_propose', propose };
+  }
+
+  // [예약 생성 프로젝트 4단계 2026-08-09] 변경(시간 이동) — 위 둘과 완전히 같은
+  // 이유·같은 mode 분기를 쓴다. 여기서도 아직 아무것도 바꾸지 않는다
+  // (proposeRescheduleReservation은 순수 조회).
+  if (data.type === 'reservation_reschedule_propose') {
+    const trainerId = mode === 'kiosk' ? null : currentUser?.trainerId || null;
+    const propose = proposeRescheduleReservation({
+      memberQuery: data.memberName || undefined,
+      trainerId: trainerId || undefined,
+      trainerName: data.trainerName || undefined,
+      oldDate: data.oldDate,
+      oldStartTime: data.oldStartTime,
+      newDate: data.newDate,
+      newStartTime: data.newStartTime,
+    });
+    return { type: 'reservation_reschedule_propose', propose };
   }
 
   // type === 'navigate'

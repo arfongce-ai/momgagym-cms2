@@ -8,11 +8,20 @@
 //
 // iOS 오디오 잠금 트릭(GlobalVoiceCommand의 unlockSpeech)은 여기서 안 쓴다 —
 // 키오스크는 항상 게이밍 노트북(Windows/Chrome)이라 해당 없음.
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMomiVoice } from '../../hooks/useMomiVoice';
 import { useMomiSpeech } from '../../hooks/useMomiSpeech';
 import { processVoiceCommand } from '../../services/voiceCommandService';
+import {
+  buildReservationSummary,
+  buildCancelSummary,
+  buildRescheduleSummary,
+  interpretConfirmationReply,
+  confirmReservation,
+  cancelReservation,
+  rescheduleReservation,
+} from '../../services/reservationService';
 import { useAuth } from '../../contexts/AuthContext';
 import { store } from '../../demoData';
 import { scopeMembersToTrainer, sortByName } from '../../utils/memberList';
@@ -29,6 +38,153 @@ export default function KioskVoiceCommand() {
 
   const { speak } = useMomiSpeech();
 
+  // [예약 생성 프로젝트 2단계 2026-08-08] awaitReply는 useMomiVoice()가 반환하는데,
+  // useMomiVoice()는 아래에서 handleCommand를 onCommand로 넘겨받는 쪽이라 같은 렌더
+  // 안에서 "handleCommand → runReservationConfirmFlow가 awaitReply를 직접 참조"하는
+  // 식으로는 정의 순서가 꼬인다(호출 자체는 나중이라 문제없지만, 순환 의존을 피하려고
+  // ref로 다리를 놓는 편이 더 명확함). awaitReply 자체는 useMomiVoice 내부에서
+  // deps:[]인 안정적 함수라 ref에 담아두면 항상 최신 값을 가리킨다.
+  const awaitReplyRef = useRef(null);
+
+  // [예약 생성 프로젝트 3단계 2026-08-09] 요약 말하기 → awaitReply → 확인/취소/
+  // 불명확 분기라는 뼈대는 "예약 만들기 확인"과 "예약 취소 확인"이 완전히 같다
+  // — 실제로 할 일(onConfirm)과 문구만 다르다. 그 부분만 인자로 받는 공통
+  // 함수로 뽑아서 두 흐름이 따로 벌어지지 않게 한다.
+  const runVoiceConfirmFlow = useCallback(
+    ({ summary, onConfirm, onCancelMessage }) => {
+      return new Promise((resolve) => {
+        const awaitReply = awaitReplyRef.current;
+        if (!awaitReply) {
+          // 이론상 마운트 직후가 아니면 항상 있어야 하지만, 방어적으로 처리.
+          const msg = '지금은 확인을 받을 수 없어요. 다시 말씀해주세요.';
+          setFeedback(msg);
+          speak(msg);
+          setTimeout(() => setFeedback(''), 5000);
+          resolve();
+          return;
+        }
+
+        setFeedback(summary);
+        speak(summary);
+
+        awaitReply((heard) => {
+          const decision = interpretConfirmationReply(heard);
+          if (decision === 'confirm') {
+            Promise.resolve()
+              .then(onConfirm)
+              .then((okMessage) => {
+                setFeedback(okMessage);
+                speak(okMessage);
+                setTimeout(() => setFeedback(''), 5000);
+              })
+              .catch((e) => {
+                const fail = '죄송해요, 처리 중 오류가 났어요.';
+                setFeedback(`${fail}\n[진단] ${e?.message || e}`);
+                speak(fail);
+                setTimeout(() => setFeedback(''), 8000);
+              })
+              .finally(resolve);
+          } else if (decision === 'cancel') {
+            setFeedback(onCancelMessage);
+            speak(onCancelMessage);
+            setTimeout(() => setFeedback(''), 4000);
+            resolve();
+          } else {
+            // unclear·timeout — 판단 근거가 없을 땐 진행하지 않는 쪽이 안전하다
+            // (데이터를 쓰거나 지우는 작업은 애매하면 항상 사람에게 다시 확인받는다).
+            const msg = '못 알아들어서 진행하지 않았어요. 다시 말씀해주세요.';
+            setFeedback(msg);
+            speak(msg);
+            setTimeout(() => setFeedback(''), 5000);
+            resolve();
+          }
+        }, 12000);
+      });
+    },
+    [speak]
+  );
+
+  // 안내만 하고 확인 없이 바로 끝내는 경우(대상 특정 실패 등) 공통 처리.
+  const announceAndFinish = useCallback(
+    (message, timeoutMs = 6000) => {
+      setFeedback(message);
+      speak(message);
+      setTimeout(() => setFeedback(''), timeoutMs);
+      return Promise.resolve();
+    },
+    [speak]
+  );
+
+  // [예약 생성 프로젝트 2단계 2026-08-08] propose_reservation 결과(아직 저장 안 됨)를
+  // 받으면 요약을 말해주고 확인을 기다린 뒤에만 실제로 저장한다.
+  const runReservationConfirmFlow = useCallback(
+    (propose) => {
+      const { draft, warnings } = propose;
+      // date/startTime/trainerId 중 하나라도 없으면 draft 자체가 저장 불가능한
+      // 상태라, 확인을 받는 것 자체가 의미 없다 — 바로 안내하고 끝낸다.
+      const hasBlockingIssue = !draft?.date || !draft?.startTime || !draft?.trainerId;
+      if (hasBlockingIssue) {
+        return announceAndFinish(
+          warnings?.[0] || '예약 정보가 부족해서 진행할 수 없어요. 회원·트레이너·일시를 다시 말씀해주세요.'
+        );
+      }
+      return runVoiceConfirmFlow({
+        summary: buildReservationSummary(propose),
+        onConfirm: () =>
+          confirmReservation(draft).then(
+            () => `${draft.memberName ? draft.memberName + '님 ' : ''}${draft.date} ${draft.startTime} 예약을 등록했어요.`
+          ),
+        onCancelMessage: '알겠습니다, 예약은 만들지 않을게요.',
+      });
+    },
+    [runVoiceConfirmFlow, announceAndFinish]
+  );
+
+  // [예약 생성 프로젝트 3단계 2026-08-09] propose_cancel_reservation 결과(아직
+  // 안 지워짐)를 받으면 대상을 요약해 확인받고, 확인 후에만 실제로 취소한다.
+  // 대상을 하나로 특정 못 했으면(여러 건/없음) 확인 자체를 안 받고 바로 안내한다
+  // — 되돌릴 수 없는 삭제라 애매하면 절대 진행하지 않는다.
+  const runCancelConfirmFlow = useCallback(
+    (propose) => {
+      const { schedule, warnings } = propose;
+      if (!propose.ready || !schedule) {
+        return announceAndFinish(warnings?.[0] || '취소할 예약을 찾지 못했어요.');
+      }
+      return runVoiceConfirmFlow({
+        summary: buildCancelSummary(propose),
+        onConfirm: () =>
+          cancelReservation(schedule.id).then(
+            () => `${schedule.memberName ? schedule.memberName + '님 ' : ''}${schedule.date} ${schedule.startTime} 예약을 취소했어요.`
+          ),
+        onCancelMessage: '알겠습니다, 예약은 그대로 둘게요.',
+      });
+    },
+    [runVoiceConfirmFlow, announceAndFinish]
+  );
+
+  // [예약 생성 프로젝트 4단계 2026-08-09] propose_reschedule_reservation 결과
+  // (아직 안 바뀜)를 받으면 "OO 일시 → 새 일시"를 요약해 확인받고, 확인 후에만
+  // 실제로 옮긴다. 옮길 대상 자체를 특정 못 했으면(여러 건/없음) 확인 없이 바로
+  // 안내한다. 새 시간대 충돌 경고는(있다면) 소프트 경고라 여기서 막지 않고
+  // buildRescheduleSummary가 문구에 이어 붙여 트레이너가 듣고 최종 판단한다.
+  const runRescheduleConfirmFlow = useCallback(
+    (propose) => {
+      const { schedule, newDraft, warnings } = propose;
+      if (!schedule || !newDraft) {
+        return announceAndFinish(warnings?.[0] || '옮길 예약을 찾지 못했어요.');
+      }
+      return runVoiceConfirmFlow({
+        summary: buildRescheduleSummary(propose),
+        onConfirm: () =>
+          rescheduleReservation(schedule.id, newDraft).then(
+            () => `${schedule.memberName ? schedule.memberName + '님 ' : ''}예약을 ${newDraft.date} ${newDraft.startTime}로 옮겼어요.`
+          ),
+        onCancelMessage: '알겠습니다, 예약은 그대로 둘게요.',
+      });
+    },
+    [runVoiceConfirmFlow, announceAndFinish]
+  );
+
   const handleCommand = useCallback(
     async (transcript) => {
       // [요청 흐름 2026-08-08] "모미야"→"네, 선생님"→(명령)→명령 인지 확인→
@@ -39,6 +195,7 @@ export default function KioskVoiceCommand() {
       // [진단용 2026-08-08] "키오스크에서 반응이 없다"는 문의 대응 — 실패 원인을
       // 화면에도 보여준다. GlobalVoiceCommand.jsx와 동일 패턴.
       let diagDetail = '';
+      let handledSeparately = false;
       try {
         const result = await processVoiceCommand({
           transcript,
@@ -46,8 +203,18 @@ export default function KioskVoiceCommand() {
           currentUser: user,
           allMembers,
           navigate,
+          mode: 'kiosk', // [예약 생성 프로젝트 2026-08-08] 키오스크=공용 기기, trainerName(말로 지정)만 신뢰.
         });
-        if (result.type === 'chat') {
+        if (result.type === 'reservation_propose') {
+          handledSeparately = true;
+          await runReservationConfirmFlow(result.propose);
+        } else if (result.type === 'reservation_cancel_propose') {
+          handledSeparately = true;
+          await runCancelConfirmFlow(result.propose);
+        } else if (result.type === 'reservation_reschedule_propose') {
+          handledSeparately = true;
+          await runRescheduleConfirmFlow(result.propose);
+        } else if (result.type === 'chat') {
           message = result.text;
         } else {
           message = result.matchedMember
@@ -59,12 +226,14 @@ export default function KioskVoiceCommand() {
         diagDetail = e?.message || String(e);
         console.warn('[모미] 명령 처리 실패:', diagDetail);
       } finally {
-        setFeedback(diagDetail ? `${message}\n[진단] ${diagDetail}` : message);
-        speak(message);
-        setTimeout(() => setFeedback(''), diagDetail ? 8000 : 4000);
+        if (!handledSeparately) {
+          setFeedback(diagDetail ? `${message}\n[진단] ${diagDetail}` : message);
+          speak(message);
+          setTimeout(() => setFeedback(''), diagDetail ? 8000 : 4000);
+        }
       }
     },
-    [role, user, allMembers, navigate, speak]
+    [role, user, allMembers, navigate, speak, runReservationConfirmFlow, runCancelConfirmFlow, runRescheduleConfirmFlow]
   );
 
   const handleWakeOnly = useCallback(() => {
@@ -94,12 +263,19 @@ export default function KioskVoiceCommand() {
     setTimeout(() => setFeedback(''), 4000);
   }, []);
 
-  const { supported, listening, startListening } = useMomiVoice({
+  const { supported, listening, startListening, awaitReply } = useMomiVoice({
     onCommand: handleCommand,
     onWakeOnly: handleWakeOnly,
     onMismatch: handleMismatch,
     onErrorOccurred: handleErrorOccurred,
   });
+
+  // awaitReply는 useMomiVoice() 내부에서 deps:[]로 만들어진 안정적 함수라 사실상
+  // 마운트 시 한 번만 바뀐다 — ref에 담아 runReservationConfirmFlow가 순환 의존
+  // 없이 항상 최신 값을 참조하게 한다(위 awaitReplyRef 선언부 설명 참고).
+  useEffect(() => {
+    awaitReplyRef.current = awaitReply;
+  }, [awaitReply]);
 
   // [자동 시작] 버튼 클릭을 기다리지 않고 마운트되자마자 감지를 시작한다.
   // useMomiVoice 내부의 onend 자동 재시작(shouldRestartRef)이 계속 이어붙여주므로

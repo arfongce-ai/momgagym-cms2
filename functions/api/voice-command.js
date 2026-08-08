@@ -58,6 +58,33 @@ const ALL_TOOLS = [
       startTime: { type: 'string', description: '예약 시작 시각, HH:MM(24시간제). "오후 3시"→"15:00"처럼 변환.' },
       classType: { type: 'string', description: '수업 종류가 언급됐으면 채운다(예: 재활, 트레이닝, 컨디셔닝). 없으면 생략.' },
     }, required: ['date', 'startTime'] } },
+  // [예약 생성 프로젝트 3단계 2026-08-09] propose_reservation(새로 만들기)과
+  // 정반대 방향 — 이미 있는 예약을 "취소해달라"는 요청. "몇 시로 옮겨줘" 같은
+  // 변경 요청은 아직 이 도구 범위가 아니다(취소만) — 헷갈리면 호출하지 않고
+  // 자유 발화로 넘어가도록 설명에 명시.
+  { name: 'propose_cancel_reservation', destinationId: null, roles: ['trainer', 'admin'],
+    description: '이미 있는 예약을 "취소해달라"는 요청일 때만 호출(새로 만드는 건 propose_reservation, 시간을 옮기는 건 propose_reschedule_reservation). 예: "OO님 8월 10일 10시 예약 취소해줘".',
+    input_schema: { type: 'object', properties: {
+      memberName: { type: 'string', description: '취소할 예약의 회원 이름. 언급 없으면 생략.' },
+      trainerName: { type: 'string', description: '담당 트레이너 이름이 명시적으로 언급된 경우만 채운다. 언급 없으면 생략.' },
+      date: { type: 'string', description: '취소할 예약 날짜, YYYY-MM-DD. propose_reservation과 동일하게 오늘 날짜 기준 상대 표현을 절대 날짜로 변환.' },
+      startTime: { type: 'string', description: '취소할 예약 시작 시각, HH:MM(24시간제).' },
+    }, required: ['date', 'startTime'] } },
+  // [예약 생성 프로젝트 4단계 2026-08-09] 취소와 헷갈리지 않도록 설명에 명시 —
+  // "취소"가 아니라 "시간만 바꿔달라"는 요청일 때만 호출. 기존 예약을 찾는
+  // 필드(memberName/trainerName/oldDate/oldStartTime)와 옮길 새 시간
+  // 필드(newDate/newStartTime)를 분리해서, Claude가 두 시간을 헷갈려 하나로
+  // 합치지 않도록 스키마 단계에서부터 명확히 구분한다.
+  { name: 'propose_reschedule_reservation', destinationId: null, roles: ['trainer', 'admin'],
+    description: '이미 있는 예약의 "시간을 옮겨달라/변경해달라"는 요청일 때만 호출(취소가 아니라 이동). 예: "OO님 8월 10일 10시 예약을 8월 11일 14시로 옮겨줘".',
+    input_schema: { type: 'object', properties: {
+      memberName: { type: 'string', description: '옮길 예약의 회원 이름. 언급 없으면 생략.' },
+      trainerName: { type: 'string', description: '담당 트레이너 이름이 명시적으로 언급된 경우만 채운다. 언급 없으면 생략.' },
+      oldDate: { type: 'string', description: '현재 예약된 날짜(옮기기 전), YYYY-MM-DD.' },
+      oldStartTime: { type: 'string', description: '현재 예약된 시작 시각(옮기기 전), HH:MM(24시간제).' },
+      newDate: { type: 'string', description: '옮길 새 날짜, YYYY-MM-DD. 오늘 날짜 기준 상대 표현을 절대 날짜로 변환.' },
+      newStartTime: { type: 'string', description: '옮길 새 시작 시각, HH:MM(24시간제).' },
+    }, required: ['oldDate', 'oldStartTime', 'newDate', 'newStartTime'] } },
 ];
 
 export async function onRequestPost(context) {
@@ -135,6 +162,41 @@ export async function onRequestPost(context) {
             date: toolUse.input?.date || null,
             startTime: toolUse.input?.startTime || null,
             classType: toolUse.input?.classType || null,
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      // [예약 생성 프로젝트 3단계 2026-08-09] 위와 대칭 — 여기서도 저장(삭제)은
+      // 안 한다. 클라이언트가 reservationService.proposeCancelReservation()으로
+      // 대상을 특정(회원/트레이너/일시로 좁혀서 정확히 한 건인지 확인)한 뒤,
+      // 트레이너 확인을 받고서야 실제로 취소한다.
+      if (toolUse.name === 'propose_cancel_reservation') {
+        return new Response(
+          JSON.stringify({
+            type: 'reservation_cancel_propose',
+            memberName: toolUse.input?.memberName || null,
+            trainerName: toolUse.input?.trainerName || null,
+            date: toolUse.input?.date || null,
+            startTime: toolUse.input?.startTime || null,
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      // [예약 생성 프로젝트 4단계 2026-08-09] 위 둘과 같은 이유로 여기서도
+      // 저장(변경)은 안 한다. 클라이언트가
+      // reservationService.proposeRescheduleReservation()으로 옮길 대상을
+      // 특정하고 새 시간대 충돌까지 확인한 뒤, 트레이너 확인을 받고서야 실제로
+      // 변경한다.
+      if (toolUse.name === 'propose_reschedule_reservation') {
+        return new Response(
+          JSON.stringify({
+            type: 'reservation_reschedule_propose',
+            memberName: toolUse.input?.memberName || null,
+            trainerName: toolUse.input?.trainerName || null,
+            oldDate: toolUse.input?.oldDate || null,
+            oldStartTime: toolUse.input?.oldStartTime || null,
+            newDate: toolUse.input?.newDate || null,
+            newStartTime: toolUse.input?.newStartTime || null,
           }),
           { status: 200, headers: { 'Content-Type': 'application/json' } }
         );

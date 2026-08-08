@@ -6,11 +6,20 @@
 // 뺐다 — TTS·화면 표시가 정상 동작함을 실기기 캡처로 이미 확인했고(웨이크워드
 // "모미야"가 "몸이야"로 오인식되던 게 진짜 원인이었음, useMomiVoice.js 참고),
 // 요청하신 흐름("모미야"→"네, 선생님"→...)엔 그 앞에 아무 발화가 없어야 해서다.
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMomiVoice } from '../../hooks/useMomiVoice';
 import { useMomiSpeech } from '../../hooks/useMomiSpeech';
 import { processVoiceCommand } from '../../services/voiceCommandService';
+import {
+  buildReservationSummary,
+  buildCancelSummary,
+  buildRescheduleSummary,
+  interpretConfirmationReply,
+  confirmReservation,
+  cancelReservation,
+  rescheduleReservation,
+} from '../../services/reservationService';
 import { useAuth } from '../../contexts/AuthContext';
 import { store } from '../../demoData';
 import { scopeMembersToTrainer, sortByName } from '../../utils/memberList';
@@ -28,6 +37,176 @@ export default function GlobalVoiceCommand() {
 
   const { speak, stop: stopSpeaking, unlock: unlockSpeech } = useMomiSpeech();
 
+  // [예약 생성 프로젝트 2단계 2026-08-08] KioskVoiceCommand.jsx와 동일한 이유로
+  // ref를 다리로 씀 — awaitReply는 useMomiVoice()가 반환하는데 useMomiVoice()는
+  // handleCommand를 onCommand로 받는 쪽이라 같은 렌더 안에서 직접 참조하면 순환
+  // 의존이 된다. awaitReply 자체는 deps:[]인 안정적 함수라 ref에 담아두면 항상
+  // 최신 값을 가리킨다.
+  const awaitReplyRef = useRef(null);
+  // 예약 확인 흐름이 응답을 기다리는 중에 트레이너가 마이크 버튼을 눌러 끄면,
+  // useMomiVoice 내부 cancelAwaitReply()가 awaitReply 콜백을 조용히 버려버려서
+  // (다시 호출 안 됨) 아래 runReservationConfirmFlow의 Promise가 영원히 안
+  // 끝나고, 그 결과 handleCommand의 finally도 못 돌아 busy=true가 안 풀려
+  // 마이크 버튼이 먹통이 된다. 진행 중인 확인 흐름의 resolve를 여기 담아뒀다가
+  // toggle()에서 마이크를 끌 때 직접 풀어준다.
+  const pendingConfirmResolveRef = useRef(null);
+
+  // [예약 생성 프로젝트 3단계 2026-08-09] "예약 만들기 확인"과 "예약 취소 확인"의
+  // 뼈대(요약 말하기 → awaitReply → 확인/취소/불명확 분기, busy 해제, 중도 취소
+  // 대비 pendingConfirmResolveRef)가 완전히 같아서 공통 함수로 뽑는다 — 실제로
+  // 할 일(onConfirm)과 문구만 다르다.
+  const runVoiceConfirmFlow = useCallback(
+    ({ summary, onConfirm, onCancelMessage }) => {
+      return new Promise((resolveOuter) => {
+        // resolve를 감싸서, 실제로 끝날 때 ref도 같이 비운다(중복 resolve 방지 +
+        // toggle()이 "지금 진행 중인 흐름이 있는지"를 정확히 판단할 수 있게).
+        const resolve = (...args) => {
+          pendingConfirmResolveRef.current = null;
+          resolveOuter(...args);
+        };
+        pendingConfirmResolveRef.current = resolve;
+
+        const awaitReply = awaitReplyRef.current;
+        if (!awaitReply) {
+          const msg = '지금은 확인을 받을 수 없어요. 다시 말씀해주세요.';
+          setFeedback(msg);
+          speak(msg);
+          setTimeout(() => setFeedback(''), 5000);
+          resolve();
+          return;
+        }
+
+        setFeedback(summary);
+        speak(summary);
+        // [버그 방지] busy는 버튼의 disabled를 제어한다 — "네/아니요" 대답을
+        // 기다리는 이 여러 초짜리 구간까지 계속 true로 두면 마이크 버튼
+        // 자체가 눌리지 않아서, 바로 위 pendingConfirmResolveRef를 통한
+        // 중도 취소 경로가 영원히 실행될 수 없는 죽은 코드가 돼버린다.
+        // 여기서 미리 풀어줘야 트레이너가 대답 대신 버튼으로 끌 수 있다
+        // (음성인식 자체는 awaitReply가 여전히 이 발화 하나만 가로채므로
+        // 다른 명령으로 새지 않음).
+        setBusy(false);
+
+        awaitReply((heard) => {
+          const decision = interpretConfirmationReply(heard);
+          if (decision === 'confirm') {
+            Promise.resolve()
+              .then(onConfirm)
+              .then((okMessage) => {
+                setFeedback(okMessage);
+                speak(okMessage);
+                setTimeout(() => setFeedback(''), 5000);
+              })
+              .catch((e) => {
+                const fail = '죄송해요, 처리 중 오류가 났어요.';
+                setFeedback(`${fail}\n[진단] ${e?.message || e}`);
+                speak(fail);
+                setTimeout(() => setFeedback(''), 8000);
+              })
+              .finally(resolve);
+          } else if (decision === 'cancel') {
+            setFeedback(onCancelMessage);
+            speak(onCancelMessage);
+            setTimeout(() => setFeedback(''), 4000);
+            resolve();
+          } else {
+            // unclear·timeout — 판단 근거가 없을 땐 진행하지 않는 쪽이 안전하다
+            // (데이터를 쓰거나 지우는 작업은 애매하면 항상 사람에게 다시 확인받는다).
+            const msg = '못 알아들어서 진행하지 않았어요. 다시 말씀해주세요.';
+            setFeedback(msg);
+            speak(msg);
+            setTimeout(() => setFeedback(''), 5000);
+            resolve();
+          }
+        }, 12000);
+      });
+    },
+    [speak]
+  );
+
+  // 안내만 하고 확인 없이 바로 끝내는 경우(대상 특정 실패 등) 공통 처리.
+  // busy는 handleCommand의 finally가 정리하므로 여기서 건드릴 필요 없다(빠르게
+  // resolve되므로 disabled 상태로 오래 묶여있지 않음).
+  const announceAndFinish = useCallback(
+    (message, timeoutMs = 6000) => {
+      setFeedback(message);
+      speak(message);
+      setTimeout(() => setFeedback(''), timeoutMs);
+      return Promise.resolve();
+    },
+    [speak]
+  );
+
+  // [예약 생성 프로젝트 2단계 2026-08-08] propose_reservation 결과(아직 저장 안 됨)를
+  // 받으면 요약을 말해주고 확인을 기다린 뒤에만 실제로 저장한다.
+  const runReservationConfirmFlow = useCallback(
+    (propose) => {
+      const { draft, warnings } = propose;
+      // date/startTime/trainerId 중 하나라도 없으면 draft 자체가 저장 불가능한
+      // 상태라, 확인을 받는 것 자체가 의미 없다 — 바로 안내하고 끝낸다.
+      const hasBlockingIssue = !draft?.date || !draft?.startTime || !draft?.trainerId;
+      if (hasBlockingIssue) {
+        return announceAndFinish(
+          warnings?.[0] || '예약 정보가 부족해서 진행할 수 없어요. 회원·트레이너·일시를 다시 말씀해주세요.'
+        );
+      }
+      return runVoiceConfirmFlow({
+        summary: buildReservationSummary(propose),
+        onConfirm: () =>
+          confirmReservation(draft).then(
+            () => `${draft.memberName ? draft.memberName + '님 ' : ''}${draft.date} ${draft.startTime} 예약을 등록했어요.`
+          ),
+        onCancelMessage: '알겠습니다, 예약은 만들지 않을게요.',
+      });
+    },
+    [runVoiceConfirmFlow, announceAndFinish]
+  );
+
+  // [예약 생성 프로젝트 3단계 2026-08-09] propose_cancel_reservation 결과(아직
+  // 안 지워짐)를 받으면 대상을 요약해 확인받고, 확인 후에만 실제로 취소한다.
+  // 대상을 하나로 특정 못 했으면(여러 건/없음) 확인 자체를 안 받고 바로 안내한다
+  // — 되돌릴 수 없는 삭제라 애매하면 절대 진행하지 않는다.
+  const runCancelConfirmFlow = useCallback(
+    (propose) => {
+      const { schedule, warnings } = propose;
+      if (!propose.ready || !schedule) {
+        return announceAndFinish(warnings?.[0] || '취소할 예약을 찾지 못했어요.');
+      }
+      return runVoiceConfirmFlow({
+        summary: buildCancelSummary(propose),
+        onConfirm: () =>
+          cancelReservation(schedule.id).then(
+            () => `${schedule.memberName ? schedule.memberName + '님 ' : ''}${schedule.date} ${schedule.startTime} 예약을 취소했어요.`
+          ),
+        onCancelMessage: '알겠습니다, 예약은 그대로 둘게요.',
+      });
+    },
+    [runVoiceConfirmFlow, announceAndFinish]
+  );
+
+  // [예약 생성 프로젝트 4단계 2026-08-09] propose_reschedule_reservation 결과
+  // (아직 안 바뀜)를 받으면 "OO 일시 → 새 일시"를 요약해 확인받고, 확인 후에만
+  // 실제로 옮긴다. 옮길 대상 자체를 특정 못 했으면(여러 건/없음) 확인 없이 바로
+  // 안내한다. 새 시간대 충돌 경고는(있다면) 소프트 경고라 여기서 막지 않고
+  // buildRescheduleSummary가 문구에 이어 붙여 트레이너가 듣고 최종 판단한다.
+  const runRescheduleConfirmFlow = useCallback(
+    (propose) => {
+      const { schedule, newDraft, warnings } = propose;
+      if (!schedule || !newDraft) {
+        return announceAndFinish(warnings?.[0] || '옮길 예약을 찾지 못했어요.');
+      }
+      return runVoiceConfirmFlow({
+        summary: buildRescheduleSummary(propose),
+        onConfirm: () =>
+          rescheduleReservation(schedule.id, newDraft).then(
+            () => `${schedule.memberName ? schedule.memberName + '님 ' : ''}예약을 ${newDraft.date} ${newDraft.startTime}로 옮겼어요.`
+          ),
+        onCancelMessage: '알겠습니다, 예약은 그대로 둘게요.',
+      });
+    },
+    [runVoiceConfirmFlow, announceAndFinish]
+  );
+
   const handleCommand = useCallback(
     async (transcript) => {
       setBusy(true);
@@ -43,6 +222,7 @@ export default function GlobalVoiceCommand() {
       // API 크레딧 부족 등 서버 쪽 문제)을 화면에도 보여준다. 소리로는 안 읽음
       // (기술적 문구라 대화 흐름과 안 어울림) — 사과 메시지만 자연스럽게 말한다.
       let diagDetail = '';
+      let handledSeparately = false;
       try {
         const result = await processVoiceCommand({
           transcript,
@@ -50,8 +230,18 @@ export default function GlobalVoiceCommand() {
           currentUser: user,
           allMembers,
           navigate,
+          mode: 'phone', // [예약 생성 프로젝트 2026-08-08] 폰/개인 기기 — 로그인된 본인 trainerId를 우선 신뢰.
         });
-        if (result.type === 'chat') {
+        if (result.type === 'reservation_propose') {
+          handledSeparately = true;
+          await runReservationConfirmFlow(result.propose);
+        } else if (result.type === 'reservation_cancel_propose') {
+          handledSeparately = true;
+          await runCancelConfirmFlow(result.propose);
+        } else if (result.type === 'reservation_reschedule_propose') {
+          handledSeparately = true;
+          await runRescheduleConfirmFlow(result.propose);
+        } else if (result.type === 'chat') {
           message = result.text;
         } else {
           message = result.matchedMember
@@ -63,13 +253,15 @@ export default function GlobalVoiceCommand() {
         diagDetail = e?.message || String(e);
         console.warn('[모미] 명령 처리 실패:', diagDetail);
       } finally {
-        setFeedback(diagDetail ? `${message}\n[진단] ${diagDetail}` : message);
-        speak(message);
         setBusy(false);
-        setTimeout(() => setFeedback(''), diagDetail ? 8000 : 4000);
+        if (!handledSeparately) {
+          setFeedback(diagDetail ? `${message}\n[진단] ${diagDetail}` : message);
+          speak(message);
+          setTimeout(() => setFeedback(''), diagDetail ? 8000 : 4000);
+        }
       }
     },
-    [role, user, allMembers, navigate, speak]
+    [role, user, allMembers, navigate, speak, runReservationConfirmFlow, runCancelConfirmFlow, runRescheduleConfirmFlow]
   );
 
   const handleWakeOnly = useCallback(() => {
@@ -105,17 +297,30 @@ export default function GlobalVoiceCommand() {
     setTimeout(() => setFeedback(''), 4000);
   }, []);
 
-  const { supported, listening, startListening, stopListening } = useMomiVoice({
+  const { supported, listening, startListening, stopListening, awaitReply } = useMomiVoice({
     onCommand: handleCommand,
     onWakeOnly: handleWakeOnly,
     onMismatch: handleMismatch,
     onErrorOccurred: handleErrorOccurred,
   });
 
+  // awaitReply는 useMomiVoice() 내부에서 deps:[]로 만들어진 안정적 함수라 사실상
+  // 마운트 시 한 번만 바뀐다 — ref에 담아 runReservationConfirmFlow가 순환 의존
+  // 없이 항상 최신 값을 참조하게 한다(위 awaitReplyRef 선언부 설명 참고).
+  useEffect(() => {
+    awaitReplyRef.current = awaitReply;
+  }, [awaitReply]);
+
   if (!supported) return null;
 
   const toggle = () => {
     if (listening) {
+      // 예약 확인 흐름이 응답을 기다리는 중이면, 마이크를 끄기 전에 먼저
+      // 풀어준다 — 안 그러면 busy가 안 풀려 이 버튼 자체가 먹통이 된다
+      // (위 pendingConfirmResolveRef 설명 참고).
+      if (pendingConfirmResolveRef.current) {
+        pendingConfirmResolveRef.current();
+      }
       stopListening();
       // 마이크를 끄면 모미가 말하던 중이어도 같이 멈춘다.
       stopSpeaking();
