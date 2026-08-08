@@ -38,6 +38,41 @@ describe('functions/api/momi.js — role에 따라 응답 범위가 달라진다
     expect(src).toContain("import { MOMI_SYSTEM_PROMPT } from '../_shared/momiPrompt.js';");
   });
 
+  // [Axis4 시작 2026-08-08] 트레이너-모미 양방향 소통 — history(이전 대화 턴)가
+  // 오면 Claude에 넘기는 messages 배열에 이어붙여서, 매 호출이 무상태였던 예전
+  // 구조를 벗어나 "지난 답변에 이어서 물어보기"가 가능해진다.
+  it('history 배열을 받아 role이 user/assistant인 것만 유효한 턴으로 걸러낸다', () => {
+    expect(src).toContain("const { kind, report, member, crossContext, businessContext, question, history } = body || {};");
+    const start = src.indexOf('const validHistory = Array.isArray(history)');
+    const end = src.indexOf(';', start);
+    const body = src.slice(start, end);
+    expect(body).toContain("t.role === 'user'");
+    expect(body).toContain("t.role === 'assistant'");
+    expect(body).toContain("typeof t.content === 'string'");
+  });
+
+  it('history가 있으면(후속 질문) 리포트 데이터를 다시 프롬프트에 안 담고 질문만 보낸다', () => {
+    const start = src.indexOf('let userMessageContent;');
+    const end = src.indexOf('const anthropicRes = await fetch(', start);
+    const body = src.slice(start, end);
+    expect(body).toContain('if (validHistory.length > 0) {');
+    expect(body).toContain('userMessageContent = question || \'\';');
+  });
+
+  it('history가 없으면(첫 턴) 기존처럼 리포트 데이터 전체를 프롬프트에 담는다', () => {
+    const start = src.indexOf('let userMessageContent;');
+    const end = src.indexOf('const anthropicRes = await fetch(', start);
+    const body = src.slice(start, end);
+    expect(body).toContain('아래는 회원의 측정 리포트 데이터입니다');
+  });
+
+  it('Claude에 보내는 messages 배열이 validHistory + 이번 턴 순서로 이어진다', () => {
+    const messagesStart = src.indexOf('messages: [');
+    const messagesEnd = src.indexOf('],', messagesStart);
+    const body = src.slice(messagesStart, messagesEnd);
+    expect(body.indexOf('...validHistory,')).toBeLessThan(body.indexOf('role: \'user\','));
+  });
+
   it('관리자 suffix는 비즈니스·매출 인사이트를 허용하는 문구를 담는다', () => {
     const start = src.indexOf('const ADMIN_ROLE_SUFFIX');
     const end = src.indexOf('const TRAINER_ROLE_SUFFIX', start);
@@ -50,6 +85,25 @@ describe('functions/api/momi.js — role에 따라 응답 범위가 달라진다
     const end = src.indexOf('export async function onRequestPost', start);
     const body = src.slice(start, end);
     expect(body).toContain('언급은 하지');
+  });
+
+  // [매출 데이터 연결 배선 준비 2026-08-08] businessContext가 실제로 admin일 때만
+  // 프롬프트에 태워지는지 확인 — 클라이언트가 role 상관없이 항상 같이 보내도,
+  // 서버가 검증한 role로 최종 필터링해야 한다(defense in depth).
+  it('businessContext는 effectiveRole이 admin일 때만 프롬프트에 포함한다', () => {
+    expect(src).toContain(
+      "const effectiveBusinessContext = effectiveRole === 'admin' ? businessContext || null : null;"
+    );
+    expect(src).toContain('businessContext: effectiveBusinessContext,');
+  });
+
+  it('body에서 꺼낸 원본 businessContext를 그대로 프롬프트에 넘기지 않는다(필터링된 변수를 씀)', () => {
+    const userContentStart = src.indexOf('const userContent = JSON.stringify(');
+    const userContentEnd = src.indexOf(');', userContentStart);
+    const body = src.slice(userContentStart, userContentEnd);
+    // 원본 destructure된 businessContext가 아니라 effectiveBusinessContext를 써야 한다.
+    expect(body).toContain('effectiveBusinessContext');
+    expect(body).not.toMatch(/businessContext: businessContext/);
   });
 
   it('토큰 검증 실패해도(resolveVerifiedRole이 안전하게 trainer 반환) 요청 자체는 계속 처리된다', () => {

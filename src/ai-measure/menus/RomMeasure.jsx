@@ -262,6 +262,7 @@ export default function RomMeasure({ member, onSave, onBack }) {
     chunksRef.current = [];
     recordedBlobRef.current = null;
     setVideoBlob(null);
+    setErrorMsg(''); // 새 시도 시작 — 이전 시도의 녹화 실패 메시지가 남아있지 않게 초기화.
     if (previewUrlRef.current) { URL.revokeObjectURL(previewUrlRef.current); previewUrlRef.current = null; }
     setPreviewUrl('');
 
@@ -291,7 +292,14 @@ export default function RomMeasure({ member, onSave, onBack }) {
         };
         mr.start();
       }
-    } catch (e) { mediaRecorderRef.current = null; }
+    } catch (e) {
+      mediaRecorderRef.current = null;
+      // [버그 수정 2026-08-08] 예전엔 여기서 조용히 null만 세팅해서, 녹화가 아예
+      // 시작 안 됐는데도 사용자는 그걸 알 방법이 없었다(측정은 정상 진행되고
+      // 리포트도 나오지만 영상만 소리 없이 빠짐). errorMsg는 있었는데 실제로
+      // 어디서도 set/렌더 안 되던 죽은 state였다 — 여기가 그 용도에 맞는 지점.
+      setErrorMsg('영상 녹화를 시작하지 못했어요. 측정은 계속 진행되지만 영상은 저장되지 않습니다.');
+    }
 
     recordingRef.current = true;
     setRecording(true);
@@ -532,6 +540,7 @@ export default function RomMeasure({ member, onSave, onBack }) {
           {actionMsg && <p className="text-center text-xs text-slate-400">{actionMsg}</p>}
           {saveState === 'saved' && <p className="text-center text-xs font-bold text-emerald-400">회원 기록에 저장되었습니다.</p>}
           {saveState === 'error' && <p className="text-center text-xs text-red-400">저장 실패. ‘리포트 저장’을 다시 눌러 주세요.</p>}
+          {errorMsg && <p className="text-center text-xs text-red-400">{errorMsg}</p>}
         </div>
       </div>
     );

@@ -28,6 +28,9 @@ import { useHardwareBack } from '../core/useHardwareBack';
 import { shareReportWithVideo } from '../core/reportShare';
 import MeasureRecordConfirm from '../components/MeasureRecordConfirm.jsx';
 import ProblemFocusPanel from './ProblemFocusPanel.jsx';
+import MomiAutoNote from '../../components/report/MomiAutoNote.jsx';
+import MomiInsightPanel from '../../components/report/MomiInsightPanel.jsx';
+import { aiStore } from '../../demoData';
 import ReportActions from '../../components/report/ReportActions';
 import { MetricCard, UnifiedReportCanvas, UnifiedReportHeader, UnifiedReportPage, UnifiedReportSection } from '../../components/report/UnifiedReportPrimitives';
 
@@ -338,6 +341,13 @@ export default function StanceAnalysisHub({ member, onBack, onSave, onSaveToFire
 
           <div className="grid gap-3">
             <ProblemFocusPanel focus={focus} context={report.cross_measure_context} />
+            {/* [Axis3 확장 2026-08-08] MomiAutoNote — PostureReport.jsx와 동일 패턴.
+                SLST도 리프팅처럼 전용 컬렉션 없이 세션(ai)에 저장되므로 updateSession을 쓴다. */}
+            <MomiAutoNote kind="stance" report={report} member={member || report.member}
+              onSaved={(patch) => aiStore.updateSession((member || report.member)?.id, report.id, patch)} />
+            {/* [Axis4 확장 2026-08-08] MomiAutoNote와 별개로, 필요하면 트레이너가
+                직접 물어보고 후속 질문까지 이어갈 수 있는 대화창. */}
+            <MomiInsightPanel kind="stance" report={report} member={member || report.member} />
 
             {asymmetryAny && (
               <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3">

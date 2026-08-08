@@ -4,6 +4,9 @@
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, CartesianGrid } from 'recharts';
 import { buildProblemFocus } from '../core/crossMeasureContext';
 import ProblemFocusPanel from './ProblemFocusPanel.jsx';
+import MomiAutoNote from '../../components/report/MomiAutoNote.jsx';
+import MomiInsightPanel from '../../components/report/MomiInsightPanel.jsx';
+import { aiStore } from '../../demoData';
 import {
   MetricCard,
   UnifiedEmptyState,
@@ -89,6 +92,14 @@ export default function RomReport({ id = 'rom-report-sheet', report }) {
       <div className="mt-4">
         <ProblemFocusPanel focus={problemFocus} context={report.cross_measure_context} />
       </div>
+
+      {/* [Axis3 확장 2026-08-08] MomiAutoNote — PostureReport.jsx와 동일 패턴.
+          이 파일은 member를 별도 prop이 아니라 report에서 구조분해해서 쓴다(위 39행). */}
+      <MomiAutoNote kind="rom" report={report} member={member}
+        onSaved={(patch) => aiStore.updateRomReport(member?.id, report.id, patch)} />
+      {/* [Axis4 확장 2026-08-08] MomiAutoNote와 별개로, 필요하면 트레이너가 직접
+          물어보고 후속 질문까지 이어갈 수 있는 대화창. */}
+      <MomiInsightPanel kind="rom" report={report} member={member} />
 
       {/* 자세·체형 연동 해석 */}
       {integrated_assessment && (

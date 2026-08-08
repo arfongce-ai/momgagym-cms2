@@ -20,6 +20,9 @@ import { buildProblemFocus } from '../core/crossMeasureContext';
 import { useHardwareBack } from '../core/useHardwareBack';
 import MeasureRecordConfirm from '../components/MeasureRecordConfirm.jsx';
 import ProblemFocusPanel from './ProblemFocusPanel.jsx';
+import MomiAutoNote from '../../components/report/MomiAutoNote.jsx';
+import MomiInsightPanel from '../../components/report/MomiInsightPanel.jsx';
+import { aiStore } from '../../demoData';
 import ReportActions from '../../components/report/ReportActions';
 import { MetricCard, UnifiedReportCanvas, UnifiedReportHeader, UnifiedReportPage, UnifiedReportSection } from '../../components/report/UnifiedReportPrimitives';
 
@@ -247,6 +250,13 @@ export default function SquatAnalysisHub({ member, onBack, onSave, onSaveToFireb
 
           <div className="grid gap-3">
             <ProblemFocusPanel focus={focus} context={report.cross_measure_context} />
+            {/* [Axis3 확장 2026-08-08] MomiAutoNote — PostureReport.jsx와 동일 패턴.
+                스쿼트도 세션(ai) 저장 방식이라 updateSession을 쓴다. */}
+            <MomiAutoNote kind="squat" report={report} member={member || report.member}
+              onSaved={(patch) => aiStore.updateSession((member || report.member)?.id, report.id, patch)} />
+            {/* [Axis4 확장 2026-08-08] MomiAutoNote와 별개로, 필요하면 트레이너가
+                직접 물어보고 후속 질문까지 이어갈 수 있는 대화창. */}
+            <MomiInsightPanel kind="squat" report={report} member={member || report.member} />
 
             {report.missingView && (
               <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3">

@@ -3,6 +3,7 @@
 // 기존 crossMeasureContext.js의 buildProblemFocus()로 요청 데이터를 만들어 /api/momi를 호출한다.
 
 import { buildProblemFocus, buildCombinedAssessment, buildCrossMeasureIntegration } from '../ai-measure/core/crossMeasureContext.js';
+import { buildMemberBusinessContext } from '../ai-measure/core/memberBusinessContext.js';
 import { store, aiStore } from '../demoData';
 import { auth } from '../firebase.js';
 
@@ -49,26 +50,46 @@ async function loadCrossReports(memberId) {
   };
 }
 
-export async function askMomi({ kind, report, member, question } = {}) {
+export async function askMomi({ kind, report, member, question, history } = {}) {
   if (!report || !member) {
     throw new Error('report와 member 정보가 필요합니다.');
   }
 
-  const problemFocus = buildProblemFocus(kind, report);
-  const { postureReports, romReports, gaitReports, liftingReports, stanceReports, squatReports } = await loadCrossReports(member.id);
-  const crossContext = buildCrossMeasureIntegration
-    ? buildCrossMeasureIntegration({ kind, report, postureReports, romReports, gaitReports, liftingReports, stanceReports, squatReports })
-    : null;
+  // [Axis4 시작 2026-08-08] 후속 질문(history 있음)이면 리포트 데이터를 다시
+  // 계산 안 한다 — Firestore 조회(loadCrossReports)까지 포함된 무거운 작업이라,
+  // 이미 첫 턴에서 계산해 서버로 넘긴 걸 history로 이어가면 매번 반복할 필요가
+  // 없다. report/member는 그대로 보낸다(서버 쪽 필수값 검증용, 실제로는 history가
+  // 있으면 서버가 그 내용을 안 씀 — functions/api/momi.js 참고).
+  const isFollowUp = Array.isArray(history) && history.length > 0;
+
+  let reportPayload = report;
+  let crossContext = null;
+  let businessContext = null;
+  if (!isFollowUp) {
+    const problemFocus = buildProblemFocus(kind, report);
+    reportPayload = problemFocus || report;
+    const { postureReports, romReports, gaitReports, liftingReports, stanceReports, squatReports } = await loadCrossReports(member.id);
+    crossContext = buildCrossMeasureIntegration
+      ? buildCrossMeasureIntegration({ kind, report, postureReports, romReports, gaitReports, liftingReports, stanceReports, squatReports })
+      : null;
+    // [매출 데이터 연결 배선 준비 2026-08-08] 관리자용 비즈니스 인사이트가 참고할
+    // 신호(잔여 세션·미출석 기간 등)를 항상 같이 보낸다 — role이 admin이 아니면
+    // 서버(momi.js)가 이 필드를 프롬프트에서 아예 빼므로, 트레이너 요청에도 그냥
+    // 같이 보내도 안전하다(서버가 role을 다시 검증하는 게 최종 방어선).
+    businessContext = buildMemberBusinessContext(member);
+  }
 
   const res = await fetch('/api/momi', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...(await getAuthHeader()) },
     body: JSON.stringify({
       kind,
-      report: problemFocus || report,
+      report: reportPayload,
       member: { name: member.name, category: member.category || null },
       crossContext,
+      businessContext,
       question: question || null,
+      history: isFollowUp ? history : null,
     }),
   });
 

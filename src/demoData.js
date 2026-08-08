@@ -1714,11 +1714,30 @@ export const aiStore = {
     try { await fbDelete('ai', sid); await unmirrorUnifiedReport(mid, sid); }
     catch(e){ cache.ai[mid]=prev; throw e; }
   },
+  // [Axis3 확장 2026-08-08] MomiAutoNote.jsx(자동 노트)를 VBT/스탠스/스쿼트처럼
+  // 전용 컬렉션 없이 세션(ai)에 저장되는 측정에도 연결하기 위해 추가 —
+  // updateGaitReport/updateRomReport와 동일한 낙관적 갱신 + 실패 시 롤백 패턴.
+  updateSession: async (mid, sid, patch) => {
+    const prev = cache.ai[mid];
+    cache.ai[mid] = (cache.ai[mid] || []).map(s => s.id === sid ? { ...s, ...patch } : s);
+    const u = (cache.ai[mid] || []).find(s => s.id === sid);
+    try { if (u) await fbSet('ai', sid, { ...u, __mid: mid }); return u; }
+    catch (e) { cache.ai[mid] = prev; throw e; }
+  },
   // 전용 리포트 삭제(측정별/회차별 삭제 기능) — deleteSession과 동일한 낙관적 캐시 반영 패턴.
   deleteGaitReport: async (mid, rid) => {
     const prev = cache.gaitReports[mid];
     cache.gaitReports[mid] = (cache.gaitReports[mid] || []).filter(r => r.id !== rid);
     try { await fbDelete('gait_reports', rid); await unmirrorUnifiedReport(mid, rid); }
+    catch (e) { cache.gaitReports[mid] = prev; throw e; }
+  },
+  // [Axis3 확장 2026-08-08] MomiAutoNote.jsx(자동 노트)를 gait/jump 리포트에도 연결하기
+  // 위해 추가 — updatePostureReport와 동일한 낙관적 갱신 + 실패 시 롤백 패턴.
+  updateGaitReport: async (mid, rid, patch) => {
+    const prev = cache.gaitReports[mid];
+    cache.gaitReports[mid] = (cache.gaitReports[mid] || []).map(r => r.id === rid ? { ...r, ...patch } : r);
+    const u = (cache.gaitReports[mid] || []).find(r => r.id === rid);
+    try { if (u) await fbSet('gait_reports', rid, { ...u, __mid: mid }); return u; }
     catch (e) { cache.gaitReports[mid] = prev; throw e; }
   },
   deletePostureReport: async (mid, rid) => {
@@ -1731,6 +1750,15 @@ export const aiStore = {
     const prev = cache.romReports[mid];
     cache.romReports[mid] = (cache.romReports[mid] || []).filter(r => r.id !== rid);
     try { await fbDelete('rom_reports', rid); await unmirrorUnifiedReport(mid, rid); }
+    catch (e) { cache.romReports[mid] = prev; throw e; }
+  },
+  // [Axis3 확장 2026-08-08] MomiAutoNote.jsx를 ROM 리포트에도 연결하기 위해 추가 —
+  // updatePostureReport와 동일한 낙관적 갱신 + 실패 시 롤백 패턴.
+  updateRomReport: async (mid, rid, patch) => {
+    const prev = cache.romReports[mid];
+    cache.romReports[mid] = (cache.romReports[mid] || []).map(r => r.id === rid ? { ...r, ...patch } : r);
+    const u = (cache.romReports[mid] || []).find(r => r.id === rid);
+    try { if (u) await fbSet('rom_reports', rid, { ...u, __mid: mid }); return u; }
     catch (e) { cache.romReports[mid] = prev; throw e; }
   },
   deleteAll:     async (mid) => {
