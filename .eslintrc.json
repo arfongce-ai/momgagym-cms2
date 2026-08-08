@@ -11,6 +11,8 @@
     "no-constant-condition": ["error", { "checkLoops": false }],
     "react-hooks/rules-of-hooks": "error",
     "react/jsx-no-undef": "error",
+    "react/jsx-uses-vars": "warn",
+    "react/jsx-uses-react": "warn",
     "no-unused-vars": ["warn", { "args": "none", "varsIgnorePattern": "^_" }],
     "react/jsx-key": "warn"
   }
