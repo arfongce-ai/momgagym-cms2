@@ -7,14 +7,24 @@
 
 import { useRef, useState, useCallback, useEffect } from 'react';
 
-// [버그 수정 2026-08-08] "모미야"를 또박또박 말해도 전혀 반응이 없다는 문의 대응.
-// 한글은 유니코드 정규화 형태가 여러 가지라(NFC: 완성형 한 글자 vs NFD: 자모 분해형),
-// Web Speech API가 반환하는 transcript와 이 소스 파일에 적힌 리터럴 문자열이 겉보기엔
-// 똑같아 보여도 내부 인코딩이 달라 heard.indexOf(WAKE_WORD)가 계속 실패했을 가능성이
-// 있다 — 폰·태블릿·키오스크(서로 다른 기기·OS)에서 전부 똑같이 무반응이었던 게
-// 기기별 문제가 아니라 이 비교 로직 자체의 문제였음을 시사한다. 양쪽 다 NFC로
-// 정규화해서 비교하면 어느 쪽 형태로 오든 항상 같은 형태로 맞춰서 비교한다.
-const WAKE_WORD = '모미야'.normalize('NFC');
+// [버그 수정 2026-08-08a] "모미야"를 또박또박 말해도 전혀 반응이 없다는 문의로
+// 화면 진단 로그를 확인해보니, 음성인식이 "모미야"를 "몸이야"로 알아듣고 있었다.
+// 기기 문제가 아니라 한국어 연음법칙 때문이다 — "몸이야"를 발음하면 받침 ㅁ이
+// 다음 음절 "이"로 넘어가("모미야"와) 발음이 사실상 같아진다. 인식 엔진 입장에서도
+// "몸이야"(실존하는 흔한 표현, 특히 헬스장 맥락에서 "몸"이 자주 나옴)가 "모미야"
+// (사전에 없는 이름)보다 더 그럴듯한 후보라 그쪽으로 인식하는 경향으로 보인다.
+// 그래서 "모미야"뿐 아니라 이 흔한 오인식 형태도 웨이크워드로 함께 인정한다.
+// (양쪽 다 NFC로 정규화 — 유니코드 표현 형태가 갈려도 항상 같은 형태로 비교되도록.)
+const WAKE_WORD_VARIANTS = ['모미야', '몸이야'].map((w) => w.normalize('NFC'));
+
+/** heard 안에서 웨이크워드(또는 흔한 오인식 형태)를 찾는다. 없으면 null. */
+export function matchWakeWord(heard) {
+  for (const variant of WAKE_WORD_VARIANTS) {
+    const index = heard.indexOf(variant);
+    if (index !== -1) return { index, length: variant.length };
+  }
+  return null;
+}
 // "모미야"만 부른 뒤(onWakeOnly) 이 시간 안에 다음 발화가 오면, 그걸 "모미야"
 // 없이도 바로 명령으로 처리한다. 실사용 테스트에서 "모미야" → "네, 말씀하세요"
 // 응답 → 그 다음 명령을 따로 말하는 자연스러운 2단계 대화로 쓰길 원했는데,
@@ -94,8 +104,8 @@ export function useMomiVoice({ onCommand, onWakeOnly, onMismatch, onErrorOccurre
         return;
       }
 
-      const wakeIndex = heard.indexOf(WAKE_WORD);
-      if (wakeIndex === -1) {
+      const wakeMatch = matchWakeWord(heard);
+      if (!wakeMatch) {
         // [진단용] 원격 디버깅(콘솔)에 접근 못 하는 상황을 위해, 웨이크워드가 안
         // 잡혔을 때 실제로 뭘로 들렸는지 화면에도 잠깐 보여준다. heard가 완전
         // 빈 문자열(최종 결과인데 내용이 없는 경우)이어도 그 자체가 진단 정보라
@@ -103,7 +113,7 @@ export function useMomiVoice({ onCommand, onWakeOnly, onMismatch, onErrorOccurre
         if (onMismatch) onMismatch(heard);
         return;
       }
-      const commandText = heard.slice(wakeIndex + WAKE_WORD.length).trim();
+      const commandText = heard.slice(wakeMatch.index + wakeMatch.length).trim();
       if (commandText && onCommand) {
         onCommand(commandText);
       } else if (!commandText && onWakeOnly) {

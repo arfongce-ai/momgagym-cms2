@@ -1,11 +1,13 @@
 // useMomiVoice.js(귀) 수정사항 배선 확인:
 //  1) iOS는 continuous:false로 두어 알려진 "세션 멈춤" 버그를 우회한다.
 //  2) 인식 결과·에러가 더 이상 조용히 무시되지 않고 콘솔에 남는다(진단용).
-// 다른 voice 관련 테스트와 마찬가지로 vitest 환경이 'node'라 정적 소스 패턴을 따른다
-// (momi_auto_note.test.js, momi_speech.test.js 참고).
+// 이 hook 자체(useMomiVoice)는 실제 DOM/SpeechRecognition에 의존해 다른 voice
+// 테스트처럼 정적 소스 패턴을 따르지만, 순수 함수인 matchWakeWord()는 로직이라
+// 직접 import해서 실동작으로 검증한다(맨 아래 describe 참고).
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'fs';
 import { join } from 'path';
+import { matchWakeWord } from '../hooks/useMomiVoice.js';
 
 const readSrc = (...segs) => readFileSync(join(process.cwd(), ...segs), 'utf8');
 
@@ -78,12 +80,12 @@ describe('useMomiVoice.js — iOS 대응 + 진단 로그', () => {
   it('대기 상태에서 다음 발화가 오면 "모미야" 없이도 그대로 명령으로 처리한다', () => {
     const resultStart = src.indexOf('recognition.onresult = (event) => {');
     const activatedCheckIdx = src.indexOf('if (activatedRef.current) {', resultStart);
-    const wakeCheckIdx = src.indexOf('const wakeIndex = heard.indexOf(WAKE_WORD);', resultStart);
+    const wakeCheckIdx = src.indexOf('const wakeMatch = matchWakeWord(heard);', resultStart);
     // activated 체크가 웨이크워드 재확인보다 먼저 와야 한다(다시 "모미야" 안 붙여도 되게).
     expect(activatedCheckIdx).toBeGreaterThan(-1);
     expect(activatedCheckIdx).toBeLessThan(wakeCheckIdx);
     const activatedStart = activatedCheckIdx;
-    const activatedEnd = src.indexOf('const wakeIndex', activatedStart);
+    const activatedEnd = src.indexOf('const wakeMatch', activatedStart);
     const activatedBody = src.slice(activatedStart, activatedEnd);
     expect(activatedBody).toContain('onCommand(heard);');
   });
@@ -98,19 +100,79 @@ describe('useMomiVoice.js — iOS 대응 + 진단 로그', () => {
   });
 });
 
-// [버그 수정 2026-08-08] "모미야"를 또박또박 말해도 폰·태블릿·키오스크 전부 무반응
+// [버그 수정 2026-08-08a] "모미야"를 또박또박 말해도 폰·태블릿·키오스크 전부 무반응
 // 이라는 문의 대응. 한글은 유니코드 정규화 형태(NFC/NFD)가 갈릴 수 있어, 소스에
-// 적힌 WAKE_WORD 리터럴과 음성인식 API가 돌려주는 transcript의 내부 인코딩이
+// 적힌 웨이크워드 리터럴과 음성인식 API가 돌려주는 transcript의 내부 인코딩이
 // 달라 겉보기엔 "모미야"가 맞는데도 indexOf가 실패했을 가능성을 방어한다.
 describe('useMomiVoice.js — 웨이크워드 비교 전 유니코드(NFC) 정규화(회귀 방지)', () => {
   const src = readSrc('src', 'hooks', 'useMomiVoice.js');
 
-  it("WAKE_WORD 리터럴을 NFC로 정규화한다", () => {
-    expect(src).toContain("const WAKE_WORD = '모미야'.normalize('NFC');");
+  it('웨이크워드 후보 배열을 NFC로 정규화한다', () => {
+    expect(src).toContain(
+      "const WAKE_WORD_VARIANTS = ['모미야', '몸이야'].map((w) => w.normalize('NFC'));"
+    );
   });
 
   it('인식된 transcript도 비교 전에 NFC로 정규화한다(양쪽 형태를 맞춰야 비교가 유효함)', () => {
     expect(src).toContain("last[0].transcript.trim().normalize('NFC');");
+  });
+});
+
+// [버그 수정 2026-08-08b] 실제 기기 진단 로그로 확인된 원인: 음성인식이 "모미야"를
+// "몸이야"로 알아듣고 있었다(한국어 연음법칙 때문에 발음이 사실상 같음). 이 흔한
+// 오인식 형태도 웨이크워드로 인정하도록 고쳤는지 확인한다.
+describe('useMomiVoice.js — "몸이야"(흔한 오인식)도 웨이크워드로 인정한다(회귀 방지)', () => {
+  const src = readSrc('src', 'hooks', 'useMomiVoice.js');
+
+  it("웨이크워드 후보에 '몸이야'가 포함된다", () => {
+    expect(src).toContain(
+      "const WAKE_WORD_VARIANTS = ['모미야', '몸이야'].map((w) => w.normalize('NFC'));"
+    );
+  });
+
+  it('matchWakeWord가 후보를 순서대로 훑어 첫 매치의 위치·길이를 반환한다', () => {
+    const fnStart = src.indexOf('function matchWakeWord(heard) {');
+    const fnEnd = src.indexOf('\n}', fnStart);
+    const fnBody = src.slice(fnStart, fnEnd);
+    expect(fnBody).toContain('for (const variant of WAKE_WORD_VARIANTS)');
+    expect(fnBody).toContain('heard.indexOf(variant)');
+    expect(fnBody).toContain('return { index, length: variant.length };');
+  });
+
+  it('onresult가 matchWakeWord를 통해서만 웨이크워드를 판정한다(단일 리터럴 비교로 되돌아가지 않았는지)', () => {
+    const resultStart = src.indexOf('recognition.onresult = (event) => {');
+    const resultEnd = src.indexOf('recognition.onerror', resultStart);
+    const resultBody = src.slice(resultStart, resultEnd);
+    expect(resultBody).toContain('const wakeMatch = matchWakeWord(heard);');
+    expect(resultBody).not.toContain('heard.indexOf(WAKE_WORD)');
+  });
+});
+
+// 실제 동작 검증 — 실제 신고된 진단 로그 문구("몸이야 가상 회원 리포트 열어 줘")를
+// 그대로 넣어서, 웨이크워드로 인정되고 명령 부분이 올바르게 잘리는지 직접 확인한다.
+describe('matchWakeWord() — 실동작 검증(실제 진단 로그로 재현)', () => {
+  it("'모미야'를 정확히 찾는다", () => {
+    const m = matchWakeWord('모미야');
+    expect(m).not.toBeNull();
+    expect(m.index).toBe(0);
+    expect(m.length).toBe(3);
+  });
+
+  it("실제 신고된 오인식 '몸이야'도 웨이크워드로 인정한다", () => {
+    const heard = '몸이야 가상 회원 리포트 열어 줘';
+    const m = matchWakeWord(heard);
+    expect(m).not.toBeNull();
+    const commandText = heard.slice(m.index + m.length).trim();
+    expect(commandText).toBe('가상 회원 리포트 열어 줘');
+  });
+
+  it('웨이크워드가 전혀 없으면 null을 반환한다', () => {
+    expect(matchWakeWord('안녕하세요 오늘 날씨 어때요')).toBeNull();
+  });
+
+  it("'모미야'만 단독으로 말하면 남는 명령 텍스트가 빈 문자열이다(onWakeOnly 분기 확인용)", () => {
+    const m = matchWakeWord('모미야');
+    expect('모미야'.slice(m.index + m.length).trim()).toBe('');
   });
 });
 
