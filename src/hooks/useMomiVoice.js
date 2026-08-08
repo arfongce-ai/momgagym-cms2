@@ -40,6 +40,13 @@ export function useMomiVoice({ onCommand, onWakeOnly, onMismatch, onErrorOccurre
   // "모미야"만 듣고 다음 명령을 기다리는 중인지(2단계 대화 흐름용).
   const activatedRef = useRef(false);
   const activationTimerRef = useRef(null);
+  // [버그 수정 2026-08-08] onend에서 "재시작해도 되는 상태인지"를 recognitionRef만으로
+  // 판단했더니, stopListening()을 불러도 recognitionRef.current는 그대로 남아있어서
+  // onend가 곧바로 recognition.start()를 다시 불러버렸다 — 마이크 끄기 버튼을 눌러도
+  // 화면(빨간 점)만 꺼지고 실제 인식은 백그라운드에서 계속 도는 상태였음(프라이버시 문제).
+  // 이제 "사용자가 듣기를 원하는 상태인지"를 이 ref로 따로 추적해서, 의도적으로 끈
+  // 경우(stopListening)엔 onend가 재시작하지 않도록 한다.
+  const shouldRestartRef = useRef(false);
 
   const clearActivation = () => {
     activatedRef.current = false;
@@ -115,8 +122,9 @@ export function useMomiVoice({ onCommand, onWakeOnly, onMismatch, onErrorOccurre
     recognition.onend = () => {
       // continuous:true 브라우저도 가끔 세션이 끊기고, iOS는 위에서 아예
       // continuous:false로 두기 때문에 매 발화마다 항상 여기로 온다.
-      // 두 경우 다 꺼진 상태가 아니면 즉시 재시작해서 "계속 듣는" 것처럼 이어붙인다.
-      if (recognitionRef.current === recognition) {
+      // 두 경우 다 꺼진 상태가 아니면(shouldRestartRef) 즉시 재시작해서 "계속 듣는"
+      // 것처럼 이어붙인다. stopListening()으로 의도적으로 끈 경우엔 재시작 안 함.
+      if (recognitionRef.current === recognition && shouldRestartRef.current) {
         try {
           recognition.start();
         } catch (e) {
@@ -129,6 +137,7 @@ export function useMomiVoice({ onCommand, onWakeOnly, onMismatch, onErrorOccurre
 
     return () => {
       recognitionRef.current = null;
+      shouldRestartRef.current = false;
       clearActivation();
       try {
         recognition.stop();
@@ -140,6 +149,7 @@ export function useMomiVoice({ onCommand, onWakeOnly, onMismatch, onErrorOccurre
 
   const startListening = useCallback(() => {
     if (!recognitionRef.current) return;
+    shouldRestartRef.current = true;
     try {
       recognitionRef.current.start();
       setListening(true);
@@ -150,6 +160,9 @@ export function useMomiVoice({ onCommand, onWakeOnly, onMismatch, onErrorOccurre
 
   const stopListening = useCallback(() => {
     if (!recognitionRef.current) return;
+    // [버그 수정 2026-08-08] 이걸 먼저 false로 내려놔야, stop()이 비동기로 유발하는
+    // onend가 재시작하지 않는다(위 onend 핸들러 참고).
+    shouldRestartRef.current = false;
     try {
       recognitionRef.current.stop();
     } catch (e) {

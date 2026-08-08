@@ -97,3 +97,53 @@ describe('useMomiVoice.js — iOS 대응 + 진단 로그', () => {
     expect(src.slice(stopListeningStart, stopListeningEnd)).toContain('clearActivation();');
   });
 });
+
+// [버그 수정 2026-08-08] 마이크 끄기 버튼(stopListening)을 눌러도 recognitionRef.current가
+// 그대로 남아있어서, onend의 재시작 조건이 계속 참이 되어 recognition.start()가 곧바로
+// 다시 불렸다 — 화면(빨간 점)만 꺼지고 인식은 백그라운드에서 계속 도는 상태였음.
+// shouldRestartRef로 "사용자가 듣기를 원하는 상태인지"를 따로 추적해 고쳤다.
+describe('useMomiVoice.js — 마이크 끄기 시 실제로 재시작하지 않는다(회귀 방지)', () => {
+  const src = readSrc('src', 'hooks', 'useMomiVoice.js');
+
+  it('shouldRestartRef를 선언한다', () => {
+    expect(src).toContain('const shouldRestartRef = useRef(false);');
+  });
+
+  it('onend의 재시작 조건이 recognitionRef 비교뿐 아니라 shouldRestartRef도 함께 검사한다', () => {
+    const onendStart = src.indexOf('recognition.onend = () => {');
+    const onendEnd = src.indexOf('};', onendStart);
+    const onendBody = src.slice(onendStart, onendEnd);
+    expect(onendBody).toContain(
+      'if (recognitionRef.current === recognition && shouldRestartRef.current) {'
+    );
+    // recognitionRef 비교만으로 재시작을 결정하던 예전 버그 조건이 되살아나지 않았는지.
+    expect(onendBody).not.toMatch(
+      /if \(recognitionRef\.current === recognition\) \{\s*try \{\s*recognition\.start\(\);/
+    );
+  });
+
+  it('stopListening이 recognition.stop()을 부르기 전에 shouldRestartRef를 false로 내린다', () => {
+    const start = src.indexOf('const stopListening = useCallback(() => {');
+    const end = src.indexOf('}, []);', start);
+    const body = src.slice(start, end);
+    const flagIdx = body.indexOf('shouldRestartRef.current = false;');
+    const stopIdx = body.indexOf('.stop();');
+    expect(flagIdx).toBeGreaterThan(-1);
+    expect(stopIdx).toBeGreaterThan(-1);
+    expect(flagIdx).toBeLessThan(stopIdx);
+  });
+
+  it('startListening이 shouldRestartRef를 true로 올린다', () => {
+    const start = src.indexOf('const startListening = useCallback(() => {');
+    const end = src.indexOf('}, []);', start);
+    const body = src.slice(start, end);
+    expect(body).toContain('shouldRestartRef.current = true;');
+  });
+
+  it('useEffect 클린업(언마운트)에서도 shouldRestartRef를 false로 내린다', () => {
+    const cleanupStart = src.indexOf('return () => {\n      recognitionRef.current = null;');
+    const cleanupEnd = src.indexOf('};', cleanupStart);
+    const cleanupBody = src.slice(cleanupStart, cleanupEnd);
+    expect(cleanupBody).toContain('shouldRestartRef.current = false;');
+  });
+});

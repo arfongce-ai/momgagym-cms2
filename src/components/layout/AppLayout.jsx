@@ -8,6 +8,7 @@ import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { useKioskMode } from '../../hooks/useKioskMode';
 import GlobalVoiceCommand from '../common/GlobalVoiceCommand';
+import KioskVoiceCommand from '../common/KioskVoiceCommand';
 import AdminLockGate from '../common/AdminLockGate';
 
 // 전체 메뉴 (사이드바 · 전체메뉴 시트 공용)
@@ -205,8 +206,9 @@ export default function AppLayout({ children, darkMode }) {
         </AdminLockGate>
       )}
 
-      {/* [모미 신규] "모미야" 전역 음성 명령 마이크 — 키오스크 모드에서는 숨김 */}
-      {!kioskOn && <GlobalVoiceCommand />}
+      {/* [모미 신규] "모미야" 음성 명령 — 키오스크는 버튼 없는 상시 감지, 그 외(폰·태블릿·
+          데스크탑)는 클릭식 버튼. 둘 다 useMomiVoice/처리 로직은 동일, UI만 다름. */}
+      {kioskOn ? <KioskVoiceCommand /> : <GlobalVoiceCommand />}
     </div>
   );
 }

@@ -53,3 +53,38 @@ describe('MicTest.jsx — 독립성 확인', () => {
     expect(src).toContain('recognition.interimResults = true;');
   });
 });
+
+// [버그 수정 2026-08-08] useMomiVoice.js와 동일한 재시작 버그가 이 페이지에도 별도로
+// 있었다 — "마이크 끄기"를 눌러도 onend가 재시작해버림. momi_voice.test.js의 회귀
+// 테스트와 같은 패턴.
+describe('MicTest.jsx — 마이크 끄기 시 실제로 재시작하지 않는다(회귀 방지)', () => {
+  const src = readSrc('src', 'pages', 'MicTest.jsx');
+
+  it('shouldRestartRef를 선언한다', () => {
+    expect(src).toContain('const shouldRestartRef = useRef(false);');
+  });
+
+  it('onend의 재시작 조건이 shouldRestartRef도 함께 검사한다', () => {
+    const onendStart = src.indexOf('recognition.onend = () => {');
+    const onendEnd = src.indexOf('};', onendStart);
+    const onendBody = src.slice(onendStart, onendEnd);
+    expect(onendBody).toContain(
+      'if (recognitionRef.current === recognition && shouldRestartRef.current) {'
+    );
+  });
+
+  it('마이크 끄기(toggle의 running 분기)가 stop() 전에 shouldRestartRef를 false로 내린다', () => {
+    const toggleStart = src.indexOf('const toggle = () => {');
+    const runningBranchEnd = src.indexOf('return;', toggleStart);
+    const body = src.slice(toggleStart, runningBranchEnd);
+    const flagIdx = body.indexOf('shouldRestartRef.current = false;');
+    const stopIdx = body.indexOf('.stop();');
+    expect(flagIdx).toBeGreaterThan(-1);
+    expect(stopIdx).toBeGreaterThan(-1);
+    expect(flagIdx).toBeLessThan(stopIdx);
+  });
+
+  it('마이크 시작 시 shouldRestartRef를 true로 올린다', () => {
+    expect(src).toContain('shouldRestartRef.current = true;');
+  });
+});
