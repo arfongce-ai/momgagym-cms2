@@ -65,6 +65,23 @@ describe('useMomiVoice.js — iOS 대응 + 진단 로그', () => {
     expect(errorBody).toContain('if (onErrorOccurred) onErrorOccurred(event.error);');
   });
 
+  it('no-speech(정상적인 무음 타임아웃)는 onErrorOccurred로 넘기지 않고 조용히 넘어간다', () => {
+    // [버그 수정 2026-08-08] no-speech를 다른 오류와 똑같이 화면에 "[진단] 오류
+    // 코드: no-speech"로 띄웠더니, 정상 동작(몇 초 무음 후 자동 재시작)인데도
+    // "PC에서 오류가 난다"는 오해를 만들었다. 콘솔 로그는 남기되 화면엔 안 띄운다.
+    const errorStart = src.indexOf('recognition.onerror = (event) => {');
+    const errorEnd = src.indexOf('};', errorStart);
+    const errorBody = src.slice(errorStart, errorEnd);
+    expect(errorBody).toContain("if (event.error === 'no-speech') return;");
+    expect(errorBody.indexOf("if (event.error === 'no-speech') return;")).toBeLessThan(
+      errorBody.indexOf('if (onErrorOccurred) onErrorOccurred(event.error);')
+    );
+    // console.warn 자체는 no-speech도 여전히 남겨야(콘솔 접근 가능한 경우엔 진단용).
+    expect(errorBody.indexOf("console.warn('[모미] 인식 오류:', event.error);")).toBeLessThan(
+      errorBody.indexOf("if (event.error === 'no-speech') return;")
+    );
+  });
+
   it('onWakeOnly·onMismatch·onErrorOccurred 모두 useEffect 의존성 배열에 포함된다', () => {
     expect(src).toContain('}, [onCommand, onWakeOnly, onMismatch, onErrorOccurred]);');
   });

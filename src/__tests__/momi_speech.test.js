@@ -111,18 +111,15 @@ describe('GlobalVoiceCommand.jsx — TTS 연결 확인', () => {
     expect(src).toContain('onErrorOccurred: handleErrorOccurred,');
   });
 
-  it('마이크를 켜는 순간(진단용) "듣고 있어요"를 화면+음성으로 바로 확인해준다', () => {
-    // [2026-08-08] "모미야" 이후 반응이 없다는 문의 대응 — 이 확인 문구가 안
-    // 들리면 웨이크워드 인식이 아니라 이 기기 TTS 자체 문제라는 걸 바로 알 수 있다.
+  it('마이크 켜는 토글엔 "모미야" 이전에 speak()를 부르는 진단용 확인이 없다', () => {
+    // [2026-08-08] TTS 정상 동작을 실기기 캡처로 이미 확인했고(원인은 웨이크워드
+    // 오인식이었음, momi_voice.test.js 참고), 요청하신 흐름("모미야"→"네,선생님"
+    // →...)엔 그 앞에 아무 발화가 없어야 해서 진단용 확인 문구를 뺐다.
     const toggleStart = src.indexOf('const toggle = () => {');
     const toggleEnd = src.indexOf('};', toggleStart);
     const toggleBody = src.slice(toggleStart, toggleEnd);
-    expect(toggleBody).toContain("setFeedback('듣고 있어요.');");
-    expect(toggleBody).toContain("speak('듣고 있어요.');");
-    // startListening() 이후에 나와야(마이크가 실제로 켜진 다음 확인이라는 순서 보장)
-    expect(toggleBody.indexOf('startListening();')).toBeLessThan(
-      toggleBody.indexOf("speak('듣고 있어요.');")
-    );
+    expect(toggleBody).not.toContain("speak('듣고 있어요.');");
+    expect(toggleBody).not.toContain("setFeedback('듣고 있어요.');");
   });
 });
 

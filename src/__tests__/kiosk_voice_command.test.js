@@ -18,10 +18,9 @@ describe('KioskVoiceCommand.jsx — 버튼 없이 자동으로 상시 감지를 
 
   it('마운트 시 useEffect 안에서 startListening을 자동으로 부른다(클릭 대기 없음)', () => {
     const effectStart = src.indexOf('useEffect(() => {');
-    const effectEnd = src.indexOf('}, [supported, startListening, speak]);', effectStart);
+    const effectEnd = src.indexOf('}, [supported, startListening]);', effectStart);
     const effectBody = src.slice(effectStart, effectEnd);
-    expect(effectBody).toContain('if (supported) {');
-    expect(effectBody).toContain('startListening();');
+    expect(effectBody).toContain('if (supported) startListening();');
   });
 
   it('버튼(onClick 토글)이 없다 — 표시등만 있고 클릭 핸들러가 없다', () => {
@@ -67,15 +66,15 @@ describe('KioskVoiceCommand.jsx — 버튼 없이 자동으로 상시 감지를 
     expect(src).not.toContain('unlockSpeech()');
   });
 
-  it('자동 시작 직후(진단용) "상시 감지를 시작합니다"를 화면+음성으로 확인해준다', () => {
+  it('자동 시작 useEffect엔 "모미야" 이전에 speak()를 부르는 진단용 확인이 없다', () => {
+    // [2026-08-08] TTS 정상 동작을 실기기 캡처로 이미 확인했고(원인은 웨이크워드
+    // 오인식이었음, momi_voice.test.js 참고), 요청하신 흐름엔 그 앞에 아무 발화가
+    // 없어야 해서 진단용 확인 문구를 뺐다.
     const effectStart = src.indexOf('useEffect(() => {');
-    const effectEnd = src.indexOf('}, [supported, startListening, speak]);', effectStart);
+    const effectEnd = src.indexOf('}, [supported, startListening]);', effectStart);
     const effectBody = src.slice(effectStart, effectEnd);
-    expect(effectBody).toContain("setFeedback('상시 감지를 시작합니다.');");
-    expect(effectBody).toContain("speak('상시 감지를 시작합니다.');");
-    expect(effectBody.indexOf('startListening();')).toBeLessThan(
-      effectBody.indexOf("speak('상시 감지를 시작합니다.');")
-    );
+    expect(effectBody).not.toContain("speak('상시 감지를 시작합니다.');");
+    expect(effectBody).not.toContain("setFeedback('상시 감지를 시작합니다.');");
   });
 
   it('"모미야→네,선생님→명령→인지확인→실행" 흐름이 GlobalVoiceCommand와 동일하다', () => {

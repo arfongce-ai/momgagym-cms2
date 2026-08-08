@@ -99,17 +99,13 @@ export default function KioskVoiceCommand() {
   // [자동 시작] 버튼 클릭을 기다리지 않고 마운트되자마자 감지를 시작한다.
   // useMomiVoice 내부의 onend 자동 재시작(shouldRestartRef)이 계속 이어붙여주므로
   // 이후로도 계속 "상시 감지" 상태가 유지된다.
+  // [2026-08-08] 시작 즉시 "상시 감지를 시작합니다"로 알려주던 진단용 확인은
+  // 뺐다 — TTS 정상 동작을 실기기로 이미 확인했고(웨이크워드 오인식이 진짜
+  // 원인이었음, useMomiVoice.js 참고), 요청하신 흐름엔 "모미야" 앞에 아무
+  // 발화가 없어야 해서다.
   useEffect(() => {
-    if (supported) {
-      startListening();
-      // [진단용 2026-08-08] 자동 시작이라 클릭 피드백이 없는 대신, 시작되는 순간
-      // 소리+화면으로 확인해준다 — 상시 감지가 실제로 켜졌는지, 이 기기에서
-      // TTS 소리가 나오는지를 "모미야"까지 기다리지 않고도 바로 알 수 있다.
-      setFeedback('상시 감지를 시작합니다.');
-      speak('상시 감지를 시작합니다.');
-      setTimeout(() => setFeedback(''), 2000);
-    }
-  }, [supported, startListening, speak]);
+    if (supported) startListening();
+  }, [supported, startListening]);
 
   if (!supported) return null;
 

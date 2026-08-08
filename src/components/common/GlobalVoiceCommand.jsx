@@ -1,6 +1,11 @@
 // src/components/common/GlobalVoiceCommand.jsx
 // 앱 전체(홈 포함)에서 항상 떠 있는 마이크 버튼. 기본값은 꺼짐 — 트레이너가 직접 켜야 한다.
 // 켜져 있을 때는 화면에 항상 빨간 점으로 표시해 프라이버시를 알린다.
+//
+// [2026-08-08] 마이크 켜는 즉시 "듣고 있어요"를 알려주던 진단용 확인 문구는
+// 뺐다 — TTS·화면 표시가 정상 동작함을 실기기 캡처로 이미 확인했고(웨이크워드
+// "모미야"가 "몸이야"로 오인식되던 게 진짜 원인이었음, useMomiVoice.js 참고),
+// 요청하신 흐름("모미야"→"네, 선생님"→...)엔 그 앞에 아무 발화가 없어야 해서다.
 import { useState, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMomiVoice } from '../../hooks/useMomiVoice';
@@ -113,13 +118,6 @@ export default function GlobalVoiceCommand() {
       // 나중에 "모미야" 응답을 비동기로 speak()할 때 소리가 나온다.
       unlockSpeech();
       startListening();
-      // [진단용 2026-08-08] "모미야" 후 반응이 없다는 문의 대응 — 마이크를 켜는
-      // 순간 바로 소리+화면으로 확인해준다. 여기서도 안 들리면 웨이크워드 인식
-      // 문제가 아니라 이 기기의 TTS(소리 출력) 자체 문제라는 뜻이라, "모미야"까지
-      // 말해보지 않고도 원인을 좁힐 수 있다.
-      setFeedback('듣고 있어요.');
-      speak('듣고 있어요.');
-      setTimeout(() => setFeedback(''), 2000);
     }
   };
 

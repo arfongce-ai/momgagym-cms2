@@ -133,6 +133,13 @@ export function useMomiVoice({ onCommand, onWakeOnly, onMismatch, onErrorOccurre
       // (not-allowed=권한 거부, no-speech=일정 시간 무음, audio-capture=마이크 없음,
       //  network=네트워크 문제 — Chrome 인식은 온라인 필요)
       console.warn('[모미] 인식 오류:', event.error);
+      // [버그 수정 2026-08-08] no-speech는 진짜 오류가 아니라 몇 초간 무음일 때
+      // 항상 나는 정상적인 타임아웃이다 — 상시 듣기 중엔 자주 발생하고, 뒤이어
+      // onend가 오면 shouldRestartRef가 알아서 재시작해줘서 동작엔 지장이 없다.
+      // 그런데도 화면에 "[진단] 오류 코드: no-speech"가 매번 떠서, 실제로는
+      // 정상 동작인데 "PC에서 오류가 난다"는 오해를 만들었다. 실제 조치가
+      // 필요한 오류(권한 거부·마이크 없음·네트워크)만 화면에 띄운다.
+      if (event.error === 'no-speech') return;
       if (onErrorOccurred) onErrorOccurred(event.error);
     };
 
