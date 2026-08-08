@@ -107,6 +107,13 @@ export default function GlobalVoiceCommand() {
       // 나중에 "모미야" 응답을 비동기로 speak()할 때 소리가 나온다.
       unlockSpeech();
       startListening();
+      // [진단용 2026-08-08] "모미야" 후 반응이 없다는 문의 대응 — 마이크를 켜는
+      // 순간 바로 소리+화면으로 확인해준다. 여기서도 안 들리면 웨이크워드 인식
+      // 문제가 아니라 이 기기의 TTS(소리 출력) 자체 문제라는 뜻이라, "모미야"까지
+      // 말해보지 않고도 원인을 좁힐 수 있다.
+      setFeedback('듣고 있어요.');
+      speak('듣고 있어요.');
+      setTimeout(() => setFeedback(''), 2000);
     }
   };
 

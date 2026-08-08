@@ -96,8 +96,16 @@ export default function KioskVoiceCommand() {
   // useMomiVoice 내부의 onend 자동 재시작(shouldRestartRef)이 계속 이어붙여주므로
   // 이후로도 계속 "상시 감지" 상태가 유지된다.
   useEffect(() => {
-    if (supported) startListening();
-  }, [supported, startListening]);
+    if (supported) {
+      startListening();
+      // [진단용 2026-08-08] 자동 시작이라 클릭 피드백이 없는 대신, 시작되는 순간
+      // 소리+화면으로 확인해준다 — 상시 감지가 실제로 켜졌는지, 이 기기에서
+      // TTS 소리가 나오는지를 "모미야"까지 기다리지 않고도 바로 알 수 있다.
+      setFeedback('상시 감지를 시작합니다.');
+      speak('상시 감지를 시작합니다.');
+      setTimeout(() => setFeedback(''), 2000);
+    }
+  }, [supported, startListening, speak]);
 
   if (!supported) return null;
 

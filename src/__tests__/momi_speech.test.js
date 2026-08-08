@@ -110,4 +110,18 @@ describe('GlobalVoiceCommand.jsx — TTS 연결 확인', () => {
     expect(src).toContain('onMismatch: handleMismatch,');
     expect(src).toContain('onErrorOccurred: handleErrorOccurred,');
   });
+
+  it('마이크를 켜는 순간(진단용) "듣고 있어요"를 화면+음성으로 바로 확인해준다', () => {
+    // [2026-08-08] "모미야" 이후 반응이 없다는 문의 대응 — 이 확인 문구가 안
+    // 들리면 웨이크워드 인식이 아니라 이 기기 TTS 자체 문제라는 걸 바로 알 수 있다.
+    const toggleStart = src.indexOf('const toggle = () => {');
+    const toggleEnd = src.indexOf('};', toggleStart);
+    const toggleBody = src.slice(toggleStart, toggleEnd);
+    expect(toggleBody).toContain("setFeedback('듣고 있어요.');");
+    expect(toggleBody).toContain("speak('듣고 있어요.');");
+    // startListening() 이후에 나와야(마이크가 실제로 켜진 다음 확인이라는 순서 보장)
+    expect(toggleBody.indexOf('startListening();')).toBeLessThan(
+      toggleBody.indexOf("speak('듣고 있어요.');")
+    );
+  });
 });

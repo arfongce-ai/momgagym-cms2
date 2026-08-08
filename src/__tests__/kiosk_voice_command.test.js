@@ -18,9 +18,10 @@ describe('KioskVoiceCommand.jsx — 버튼 없이 자동으로 상시 감지를 
 
   it('마운트 시 useEffect 안에서 startListening을 자동으로 부른다(클릭 대기 없음)', () => {
     const effectStart = src.indexOf('useEffect(() => {');
-    const effectEnd = src.indexOf('}, [supported, startListening]);', effectStart);
+    const effectEnd = src.indexOf('}, [supported, startListening, speak]);', effectStart);
     const effectBody = src.slice(effectStart, effectEnd);
-    expect(effectBody).toContain('if (supported) startListening();');
+    expect(effectBody).toContain('if (supported) {');
+    expect(effectBody).toContain('startListening();');
   });
 
   it('버튼(onClick 토글)이 없다 — 표시등만 있고 클릭 핸들러가 없다', () => {
@@ -64,6 +65,17 @@ describe('KioskVoiceCommand.jsx — 버튼 없이 자동으로 상시 감지를 
 
   it('unlockSpeech(iOS 전용 트릭)를 호출하지 않는다 — 키오스크는 항상 비-iOS', () => {
     expect(src).not.toContain('unlockSpeech()');
+  });
+
+  it('자동 시작 직후(진단용) "상시 감지를 시작합니다"를 화면+음성으로 확인해준다', () => {
+    const effectStart = src.indexOf('useEffect(() => {');
+    const effectEnd = src.indexOf('}, [supported, startListening, speak]);', effectStart);
+    const effectBody = src.slice(effectStart, effectEnd);
+    expect(effectBody).toContain("setFeedback('상시 감지를 시작합니다.');");
+    expect(effectBody).toContain("speak('상시 감지를 시작합니다.');");
+    expect(effectBody.indexOf('startListening();')).toBeLessThan(
+      effectBody.indexOf("speak('상시 감지를 시작합니다.');")
+    );
   });
 });
 
