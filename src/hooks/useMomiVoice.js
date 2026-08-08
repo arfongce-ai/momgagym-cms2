@@ -15,7 +15,21 @@ import { useRef, useState, useCallback, useEffect } from 'react';
 // (사전에 없는 이름)보다 더 그럴듯한 후보라 그쪽으로 인식하는 경향으로 보인다.
 // 그래서 "모미야"뿐 아니라 이 흔한 오인식 형태도 웨이크워드로 함께 인정한다.
 // (양쪽 다 NFC로 정규화 — 유니코드 표현 형태가 갈려도 항상 같은 형태로 비교되도록.)
-const WAKE_WORD_VARIANTS = ['모미야', '몸이야'].map((w) => w.normalize('NFC'));
+//
+// [2026-08-08c] 현장 배경소음(음악·운동기구 등) 대응 — 노이즈가 섞이면 인식 결과
+// 끝음절이 잘리는 경우가 흔하다("모미야"의 마지막 "야"가 소음에 묻혀 인식 결과에서
+// 빠지는 식). 그래서 끝음절이 빠진 "모미"도 인정한다.
+// "몸이"(마찬가지로 끝음절만 뺀 형태)는 일부러 안 넣었다 — 헬스장 맥락에서
+// "몸이 안 좋아요/몸이 힘들어요" 같은 일상 대화에 실제로 자주 나오는 표현이라,
+// 이걸 넣으면 트레이너·회원의 평범한 대화에도 계속 오작동(오탐)할 위험이 크다.
+// "모미"는 사전에 없는 말이라 그런 위험이 훨씬 낮다.
+//
+// [2026-08-08d] 발음이 부정확할 때 "봄이야"(봄+이야 = "it's spring")로도 인식됨을
+// 확인함. "몸이야"와 같은 구조의 문제다 — ㅂ·ㅁ은 둘 다 입술소리(양순음)라
+// 발음이 뭉개지면 서로 헷갈리기 쉽고, "봄이"도 연음되면 "보미"로 들려 결국
+// "모미야"와 사실상 같은 소리가 된다. "봄이야"는 "몸이야"보다 헬스장 대화에서
+// 나올 일이 훨씬 적어(계절 얘기 정도) 오탐 위험이 낮다고 보고 그대로 추가한다.
+const WAKE_WORD_VARIANTS = ['모미야', '몸이야', '모미', '봄이야'].map((w) => w.normalize('NFC'));
 
 /** heard 안에서 웨이크워드(또는 흔한 오인식 형태)를 찾는다. 없으면 null. */
 export function matchWakeWord(heard) {
@@ -73,6 +87,39 @@ export function useMomiVoice({ onCommand, onWakeOnly, onMismatch, onErrorOccurre
     }
   };
 
+  // [예약 생성 프로젝트 2026-08-08] "모미야" 없이 바로 "네/아니요" 같은 즉답을
+  // 받아야 하는 경우(예: 예약 제안 후 확인) — activatedRef(2단계 명령 대기)와는
+  // 성격이 다르다. activatedRef는 "다음 발화 = 명령"이고, 이건 "다음 발화 =
+  // 특정 콜백 하나에 한 번만 전달"이다. 재사용 가능하게 범용으로 만든다 —
+  // 앞으로 다른 확인·후속답변이 필요한 기능에도 같은 방식으로 쓸 수 있다.
+  const pendingReplyRef = useRef(null); // ((heard: string|null) => void) | null
+  const pendingReplyTimerRef = useRef(null);
+
+  const cancelAwaitReply = useCallback(() => {
+    if (pendingReplyTimerRef.current) {
+      clearTimeout(pendingReplyTimerRef.current);
+      pendingReplyTimerRef.current = null;
+    }
+    pendingReplyRef.current = null;
+  }, []);
+
+  // callback은 다음 발화의 heard 텍스트로 정확히 한 번 불린다. timeoutMs 안에
+  // 아무 말도 없으면 heard=null로 한 번 불린다(시간 초과). "모미야"·웨이크워드
+  // 매칭을 전부 건너뛰므로, 이걸 거는 동안은 무슨 말을 하든 이 콜백으로만 간다
+  // — 짧게, 확인이 끝나는 즉시 반드시 해제(cancelAwaitReply 또는 콜백 자체
+  // 호출로 자동 해제됨)되어야 한다.
+  const awaitReply = useCallback((callback, timeoutMs = 12000) => {
+    clearActivation(); // 기존 2단계 명령 대기 상태와 겹치지 않게 먼저 정리.
+    if (pendingReplyTimerRef.current) clearTimeout(pendingReplyTimerRef.current);
+    pendingReplyRef.current = callback;
+    pendingReplyTimerRef.current = setTimeout(() => {
+      const cb = pendingReplyRef.current;
+      pendingReplyRef.current = null;
+      pendingReplyTimerRef.current = null;
+      if (cb) cb(null);
+    }, timeoutMs);
+  }, []);
+
   useEffect(() => {
     const SpeechRecognitionCtor = getSpeechRecognition();
     if (!SpeechRecognitionCtor) return;
@@ -91,6 +138,20 @@ export function useMomiVoice({ onCommand, onWakeOnly, onMismatch, onErrorOccurre
       // [진단용] 실제로 뭘로 인식했는지 항상 콘솔에 남긴다 — "모미야"가 다른 말로
       // 잘못 인식되고 있는 건지, 아예 안 들리고 있는 건지 구분하기 위함.
       console.log('[모미] 들린 말:', heard);
+
+      // [예약 생성 프로젝트 2026-08-08] 즉답 대기 중이면(awaitReply) 웨이크워드도
+      // 2단계 명령 대기도 전부 건너뛰고 이 발화를 그 콜백 하나에만 전달한다 —
+      // 가장 먼저 검사해야 한다(활성화 상태보다도 우선).
+      if (pendingReplyRef.current) {
+        const cb = pendingReplyRef.current;
+        pendingReplyRef.current = null;
+        if (pendingReplyTimerRef.current) {
+          clearTimeout(pendingReplyTimerRef.current);
+          pendingReplyTimerRef.current = null;
+        }
+        cb(heard);
+        return;
+      }
 
       // "모미야"만 부른 직후 대기 중이면, 이번에 들린 말 전체를 곧바로 명령으로
       // 처리한다 — 매번 "모미야"를 다시 붙일 필요 없는 자연스러운 대화 흐름.
@@ -163,6 +224,7 @@ export function useMomiVoice({ onCommand, onWakeOnly, onMismatch, onErrorOccurre
       recognitionRef.current = null;
       shouldRestartRef.current = false;
       clearActivation();
+      cancelAwaitReply();
       try {
         recognition.stop();
       } catch (e) {
@@ -193,8 +255,9 @@ export function useMomiVoice({ onCommand, onWakeOnly, onMismatch, onErrorOccurre
       // no-op
     }
     clearActivation();
+    cancelAwaitReply();
     setListening(false);
-  }, []);
+  }, [cancelAwaitReply]);
 
-  return { supported, listening, startListening, stopListening };
+  return { supported, listening, startListening, stopListening, awaitReply, cancelAwaitReply };
 }

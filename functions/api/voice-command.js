@@ -44,6 +44,20 @@ const ALL_TOOLS = [
     input_schema: { type: 'object', properties: {
       memberName: { type: 'string', description: '들린 회원 이름 그대로. 언급 없으면 생략.' },
       testId: { type: 'string', enum: ['jump', 'posture', 'gait', 'rom'], description: '언급된 측정 종류. 없으면 생략.' } } } },
+  // [예약 생성 프로젝트 2026-08-08] 화면 이동이 아니라 새 예약을 만들어달라는
+  // 요청. "OO님 O월 O일 O시에 예약 잡아줘/걸어줘" 같은 요청일 때만 호출 —
+  // 이미 있는 예약을 보는 것(스케줄 화면 열기)과 혼동하지 않도록 설명에 명시.
+  // 여기서 저장까지 하지 않는다 — 이 도구는 "제안(propose)"만 만들고, 실제
+  // 저장은 트레이너 확인 후 클라이언트가 별도로 처리한다(reservationService.js).
+  { name: 'propose_reservation', destinationId: null, roles: ['trainer', 'admin'],
+    description: '이미 있는 예약을 "보는" 게 아니라(그건 go_schedule) 새 예약을 "만들어달라"는 요청일 때 호출. 예: "OO님 8월 10일 오전 10시에 예약 잡아줘/걸어줘".',
+    input_schema: { type: 'object', properties: {
+      memberName: { type: 'string', description: '예약할 회원 이름. 언급 없으면 생략(상담 등 회원 없는 예약일 수 있음).' },
+      trainerName: { type: 'string', description: '담당 트레이너 이름이 명시적으로 언급된 경우만 채운다. 언급 없으면 생략 — 추측하지 않는다.' },
+      date: { type: 'string', description: '예약 날짜, YYYY-MM-DD. 아래 [음성 명령 라우터 모드]에 적힌 오늘 날짜를 기준으로 "내일"·"다음주 화요일" 같은 상대 표현을 절대 날짜로 계산해서 채운다.' },
+      startTime: { type: 'string', description: '예약 시작 시각, HH:MM(24시간제). "오후 3시"→"15:00"처럼 변환.' },
+      classType: { type: 'string', description: '수업 종류가 언급됐으면 채운다(예: 재활, 트레이닝, 컨디셔닝). 없으면 생략.' },
+    }, required: ['date', 'startTime'] } },
 ];
 
 export async function onRequestPost(context) {
@@ -71,6 +85,12 @@ export async function onRequestPost(context) {
       input_schema: t.input_schema,
     }));
 
+    // [예약 생성 프로젝트 2026-08-08] "내일"·"다음주 화요일" 같은 상대 날짜를
+    // Claude가 절대 날짜로 바꾸려면 "오늘이 며칠인지" 알아야 한다. Cloudflare
+    // Functions 서버 시각은 UTC라 그냥 new Date()를 쓰면 한국 자정 근처에서
+    // 하루가 밀리는 오차가 생긴다 — KST(UTC+9)로 보정한 뒤 날짜만 뽑는다.
+    const todayKST = new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
+
     const anthropicRes = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
@@ -83,7 +103,7 @@ export async function onRequestPost(context) {
         max_tokens: 512,
         system:
           MOMI_SYSTEM_PROMPT +
-          '\n\n---\n\n[음성 명령 라우터 모드] 사용자가 "모미야" 다음에 한 말이 위 도구 목록 중 하나로 화면 이동을 요청하는 것이면 해당 도구를 호출하세요. 화면 이동 요청이 아니라 코칭 질문 등 자유 발화라면 도구를 호출하지 말고, 위 시스템 프롬프트의 모미 페르소나로 1~2문장 이내로 짧게 답하세요.',
+          `\n\n---\n\n[음성 명령 라우터 모드] 사용자가 "모미야" 다음에 한 말이 위 도구 목록 중 하나로 화면 이동을 요청하는 것이면 해당 도구를 호출하세요. 화면 이동 요청이 아니라 코칭 질문 등 자유 발화라면 도구를 호출하지 말고, 위 시스템 프롬프트의 모미 페르소나로 1~2문장 이내로 짧게 답하세요.\n\n오늘 날짜는 ${todayKST}(한국 시간 기준)입니다. propose_reservation을 호출할 때 "내일"·"다음주 화요일" 같은 상대적 날짜 표현은 이 기준으로 계산해서 절대 날짜(YYYY-MM-DD)로 변환하세요.`,
         tools,
         messages: [{ role: 'user', content: transcript }],
       }),
@@ -101,6 +121,24 @@ export async function onRequestPost(context) {
     const toolUse = (data.content || []).find((block) => block.type === 'tool_use');
 
     if (toolUse) {
+      // [예약 생성 프로젝트 2026-08-08] 화면 이동(navigate)이 아니라 예약 제안
+      // 응답 — destinationId가 없어서 아래 navigate 매칭 로직과 섞이면 안 되므로
+      // 먼저 분기한다. 여기서 실제 저장은 안 한다 — 클라이언트가 이 값을 받아
+      // reservationService.proposeReservation()으로 회원/트레이너 매칭·충돌
+      // 검사까지 마친 뒤 트레이너 확인을 받고서야 저장한다.
+      if (toolUse.name === 'propose_reservation') {
+        return new Response(
+          JSON.stringify({
+            type: 'reservation_propose',
+            memberName: toolUse.input?.memberName || null,
+            trainerName: toolUse.input?.trainerName || null,
+            date: toolUse.input?.date || null,
+            startTime: toolUse.input?.startTime || null,
+            classType: toolUse.input?.classType || null,
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
       const matched = ALL_TOOLS.find((t) => t.name === toolUse.name);
       // role 필터링을 우회해 도구가 호출되더라도 이중 방어.
       if (!matched || !matched.roles.includes(effectiveRole)) {

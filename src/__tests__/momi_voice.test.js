@@ -126,7 +126,7 @@ describe('useMomiVoice.js — 웨이크워드 비교 전 유니코드(NFC) 정�
 
   it('웨이크워드 후보 배열을 NFC로 정규화한다', () => {
     expect(src).toContain(
-      "const WAKE_WORD_VARIANTS = ['모미야', '몸이야'].map((w) => w.normalize('NFC'));"
+      "const WAKE_WORD_VARIANTS = ['모미야', '몸이야', '모미', '봄이야'].map((w) => w.normalize('NFC'));"
     );
   });
 
@@ -143,7 +143,7 @@ describe('useMomiVoice.js — "몸이야"(흔한 오인식)도 웨이크워드�
 
   it("웨이크워드 후보에 '몸이야'가 포함된다", () => {
     expect(src).toContain(
-      "const WAKE_WORD_VARIANTS = ['모미야', '몸이야'].map((w) => w.normalize('NFC'));"
+      "const WAKE_WORD_VARIANTS = ['모미야', '몸이야', '모미', '봄이야'].map((w) => w.normalize('NFC'));"
     );
   });
 
@@ -190,6 +190,95 @@ describe('matchWakeWord() — 실동작 검증(실제 진단 로그로 재현)',
   it("'모미야'만 단독으로 말하면 남는 명령 텍스트가 빈 문자열이다(onWakeOnly 분기 확인용)", () => {
     const m = matchWakeWord('모미야');
     expect('모미야'.slice(m.index + m.length).trim()).toBe('');
+  });
+
+  // [버그 수정 2026-08-08c] 현장 배경소음 대응 — 끝음절("야")이 소음에 묻혀 빠지는
+  // 경우가 흔해서, 끝음절 빠진 "모미"도 웨이크워드로 인정하도록 확장했다.
+  it("배경소음으로 끝음절이 빠진 '모미'도 웨이크워드로 인정한다", () => {
+    const heard = '모미 스케줄 열어 줘';
+    const m = matchWakeWord(heard);
+    expect(m).not.toBeNull();
+    const commandText = heard.slice(m.index + m.length).trim();
+    expect(commandText).toBe('스케줄 열어 줘');
+  });
+
+  it("헬스장 일상 대화 '몸이 안 좋아요'는 웨이크워드로 오인정하지 않는다(오탐 방지)", () => {
+    // "몸이"만으로는 매치하지 않아야 한다 — "몸이야"(전체)까지 들려야 매치.
+    // 안 그러면 "몸이 안 좋아요/몸이 힘들어요" 같은 흔한 대화에도 계속 반응하게 된다.
+    expect(matchWakeWord('몸이 안 좋아요')).toBeNull();
+    expect(matchWakeWord('몸이 너무 힘들어요')).toBeNull();
+  });
+
+  // [버그 수정 2026-08-08d] 발음이 부정확하면 "봄이야"(ㅂ·ㅁ 양순음 혼동 + 연음)로도
+  // 잘못 인식됨을 확인함 — "몸이야"와 같은 종류의 문제.
+  it("발음이 부정확할 때 나오는 '봄이야'도 웨이크워드로 인정한다", () => {
+    const heard = '봄이야 트레이너 관리 화면 열어 줘';
+    const m = matchWakeWord(heard);
+    expect(m).not.toBeNull();
+    const commandText = heard.slice(m.index + m.length).trim();
+    expect(commandText).toBe('트레이너 관리 화면 열어 줘');
+  });
+});
+
+// [예약 생성 프로젝트 2026-08-08] awaitReply — "모미야" 없이 바로 다음 발화를
+// 특정 콜백 하나에 전달하는 범용 즉답 대기 메커니즘. 예약 확인("네/아니요")을
+// 시작으로 만들었지만 특정 기능에 종속되지 않게 설계했다.
+describe('useMomiVoice.js — awaitReply(즉답 대기, 회귀 방지)', () => {
+  const src = readSrc('src', 'hooks', 'useMomiVoice.js');
+
+  it('pendingReplyRef를 선언한다', () => {
+    expect(src).toContain('const pendingReplyRef = useRef(null);');
+  });
+
+  it('onresult 맨 앞에서(웨이크워드·activatedRef보다 먼저) pendingReplyRef를 검사한다', () => {
+    const onresultStart = src.indexOf('recognition.onresult = (event) => {');
+    const pendingCheckIdx = src.indexOf('if (pendingReplyRef.current) {', onresultStart);
+    const activatedCheckIdx = src.indexOf('if (activatedRef.current) {', onresultStart);
+    const wakeMatchIdx = src.indexOf('const wakeMatch = matchWakeWord(heard);', onresultStart);
+    expect(pendingCheckIdx).toBeGreaterThan(onresultStart);
+    expect(pendingCheckIdx).toBeLessThan(activatedCheckIdx);
+    expect(pendingCheckIdx).toBeLessThan(wakeMatchIdx);
+  });
+
+  it('pendingReplyRef가 있으면 콜백을 heard로 정확히 한 번 부르고 즉시 비운다(중복 호출 방지)', () => {
+    const start = src.indexOf('if (pendingReplyRef.current) {');
+    const end = src.indexOf('return;', start);
+    const body = src.slice(start, end);
+    expect(body).toContain('const cb = pendingReplyRef.current;');
+    expect(body).toContain('pendingReplyRef.current = null;');
+    expect(body).toContain('cb(heard);');
+    // cb() 호출 전에 ref를 비워야(재진입 시 중복 호출 방지) — 순서 확인.
+    expect(body.indexOf('pendingReplyRef.current = null;')).toBeLessThan(body.indexOf('cb(heard);'));
+  });
+
+  it('awaitReply는 기존 2단계 명령 대기(activatedRef)를 먼저 정리한다(겹침 방지)', () => {
+    const start = src.indexOf('const awaitReply = useCallback((callback, timeoutMs = 12000) => {');
+    const end = src.indexOf('}, []);', start);
+    const body = src.slice(start, end);
+    expect(body).toContain('clearActivation();');
+  });
+
+  it('awaitReply는 타임아웃 시(응답 없음) 콜백을 null로 한 번 부른다', () => {
+    const start = src.indexOf('const awaitReply = useCallback((callback, timeoutMs = 12000) => {');
+    const end = src.indexOf('}, []);', start);
+    const body = src.slice(start, end);
+    expect(body).toContain('if (cb) cb(null);');
+  });
+
+  it('stopListening과 언마운트 둘 다 cancelAwaitReply를 호출한다(마이크 끄면 대기도 같이 정리)', () => {
+    const stopStart = src.indexOf('const stopListening = useCallback(() => {');
+    const stopEnd = src.indexOf('}, [cancelAwaitReply]);', stopStart);
+    expect(src.slice(stopStart, stopEnd)).toContain('cancelAwaitReply();');
+
+    const cleanupStart = src.indexOf('return () => {\n      recognitionRef.current = null;');
+    const cleanupEnd = src.indexOf('};', cleanupStart);
+    expect(src.slice(cleanupStart, cleanupEnd)).toContain('cancelAwaitReply();');
+  });
+
+  it('훅이 awaitReply·cancelAwaitReply를 외부에 노출한다', () => {
+    expect(src).toContain(
+      'return { supported, listening, startListening, stopListening, awaitReply, cancelAwaitReply };'
+    );
   });
 });
 
