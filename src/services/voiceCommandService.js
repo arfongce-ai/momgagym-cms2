@@ -46,7 +46,18 @@ export async function processVoiceCommand({ transcript, role, currentUser, allMe
   });
 
   if (!res.ok) {
-    throw new Error(`음성 명령 처리 실패 (status ${res.status})`);
+    // [진단용 2026-08-08] "명령 실행이 안 된다"는 문의 대응 — 예전엔 상태 코드만
+    // 담아 던져서 정작 왜 실패했는지(예: Anthropic API 크레딧 부족 등 서버 쪽
+    // 문제)는 화면에 안 보였다. 백엔드(functions/api/voice-command.js)가 실패
+    // 응답에 detail을 이미 담아 보내주므로, 그걸 읽어서 에러 메시지에 포함한다.
+    let detail = '';
+    try {
+      const body = await res.json();
+      detail = body?.detail || body?.error || '';
+    } catch (e) {
+      // 응답이 JSON이 아닌 경우(네트워크 레벨 오류 등) — 상태 코드만으로 넘어간다.
+    }
+    throw new Error(`음성 명령 처리 실패 (status ${res.status})${detail ? ` — ${detail}` : ''}`);
   }
 
   const data = await res.json();

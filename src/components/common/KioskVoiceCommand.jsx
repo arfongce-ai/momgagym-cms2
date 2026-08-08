@@ -36,6 +36,9 @@ export default function KioskVoiceCommand() {
       setFeedback('네, 확인했어요.');
       speak('네, 확인했어요.');
       let message = '';
+      // [진단용 2026-08-08] "키오스크에서 반응이 없다"는 문의 대응 — 실패 원인을
+      // 화면에도 보여준다. GlobalVoiceCommand.jsx와 동일 패턴.
+      let diagDetail = '';
       try {
         const result = await processVoiceCommand({
           transcript,
@@ -53,10 +56,12 @@ export default function KioskVoiceCommand() {
         }
       } catch (e) {
         message = '죄송해요, 잘 처리하지 못했어요. 다시 말씀해주세요.';
+        diagDetail = e?.message || String(e);
+        console.warn('[모미] 명령 처리 실패:', diagDetail);
       } finally {
-        setFeedback(message);
+        setFeedback(diagDetail ? `${message}\n[진단] ${diagDetail}` : message);
         speak(message);
-        setTimeout(() => setFeedback(''), 4000);
+        setTimeout(() => setFeedback(''), diagDetail ? 8000 : 4000);
       }
     },
     [role, user, allMembers, navigate, speak]
@@ -107,7 +112,31 @@ export default function KioskVoiceCommand() {
     if (supported) startListening();
   }, [supported, startListening]);
 
-  if (!supported) return null;
+  if (!supported) {
+    // [진단용 2026-08-08] "키오스크에서 반응이 없다"는 문의 대응 — 예전엔 미지원
+    // 브라우저면 그냥 아무것도 안 그려서(return null), 반응이 없는 게 "미지원
+    // 때문"인지 "지원은 하는데 다른 문제"인지 화면만 보고는 구분이 안 됐다.
+    // 최소한 이유는 보이게 한다.
+    return (
+      <div
+        style={{
+          position: 'fixed',
+          top: 16,
+          right: 16,
+          zIndex: 1000,
+          padding: '8px 12px',
+          borderRadius: 8,
+          background: 'rgba(0,0,0,0.85)',
+          color: '#fbbf24',
+          fontSize: 13,
+          fontWeight: 500,
+          maxWidth: 240,
+        }}
+      >
+        [진단] 이 브라우저는 음성인식(SpeechRecognition)을 지원하지 않아요.
+      </div>
+    );
+  }
 
   return (
     <div
@@ -122,7 +151,8 @@ export default function KioskVoiceCommand() {
             color: '#fff',
             fontSize: 15,
             fontWeight: 500,
-            maxWidth: 260,
+            maxWidth: 280,
+            whiteSpace: 'pre-line',
             boxShadow: '0 2px 10px rgba(0,0,0,0.35)',
           }}
         >

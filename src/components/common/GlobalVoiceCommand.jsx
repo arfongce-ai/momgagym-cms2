@@ -39,6 +39,10 @@ export default function GlobalVoiceCommand() {
       // 화면 표시(feedback)와 음성 출력(speak)이 서로 다른 문구로 갈리지 않도록
       // 메시지를 한 곳에서만 만든다.
       let message = '';
+      // [진단용 2026-08-08] "명령이 실행 안 된다"는 문의 대응 — 실패 원인(예:
+      // API 크레딧 부족 등 서버 쪽 문제)을 화면에도 보여준다. 소리로는 안 읽음
+      // (기술적 문구라 대화 흐름과 안 어울림) — 사과 메시지만 자연스럽게 말한다.
+      let diagDetail = '';
       try {
         const result = await processVoiceCommand({
           transcript,
@@ -56,11 +60,13 @@ export default function GlobalVoiceCommand() {
         }
       } catch (e) {
         message = '죄송해요, 잘 처리하지 못했어요. 다시 말씀해주세요.';
+        diagDetail = e?.message || String(e);
+        console.warn('[모미] 명령 처리 실패:', diagDetail);
       } finally {
-        setFeedback(message);
+        setFeedback(diagDetail ? `${message}\n[진단] ${diagDetail}` : message);
         speak(message);
         setBusy(false);
-        setTimeout(() => setFeedback(''), 4000);
+        setTimeout(() => setFeedback(''), diagDetail ? 8000 : 4000);
       }
     },
     [role, user, allMembers, navigate, speak]
@@ -142,7 +148,8 @@ export default function GlobalVoiceCommand() {
             color: '#fff',
             fontSize: 15,
             fontWeight: 500,
-            maxWidth: 260,
+            maxWidth: 280,
+            whiteSpace: 'pre-line',
             boxShadow: '0 2px 10px rgba(0,0,0,0.35)',
           }}
         >

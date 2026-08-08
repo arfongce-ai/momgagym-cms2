@@ -58,7 +58,10 @@ describe('GlobalVoiceCommand.jsx — TTS 연결 확인', () => {
     const handleStart = src.indexOf('const handleCommand = useCallback(');
     const handleEnd = src.indexOf('[role, user, allMembers, navigate, speak]');
     const handleBody = src.slice(handleStart, handleEnd);
-    expect(handleBody).toContain('setFeedback(message);');
+    // [2026-08-08] 실패 시 진단 상세를 덧붙이는 삼항연산자로 바뀌었지만, 성공
+    // 시(diagDetail 없을 때)엔 여전히 순수 message가 화면에 그대로 나간다.
+    expect(handleBody).toContain('setFeedback(diagDetail ? ');
+    expect(handleBody).toContain(': message);');
     expect(handleBody).toContain('speak(message);');
   });
 
@@ -150,5 +153,21 @@ describe('GlobalVoiceCommand.jsx — "모미야→네,선생님→명령→인�
     // speak(message)가 "네, 확인했어요" 이후 최소 한 번 더(최종 결과용) 나와야 한다.
     const speakCalls = handleBody.match(/speak\(/g) || [];
     expect(speakCalls.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('명령 처리가 실패하면 실패 원인(diagDetail)을 화면에도 보여준다(회귀 방지)', () => {
+    // [버그 수정 2026-08-08] "명령이 실행 안 된다"는 문의 대응 — 사과 메시지만
+    // 보여주면 진짜 원인(API 크레딧 부족 등)을 알 길이 없었다. 음성으로는 사과
+    // 문구만 자연스럽게 읽고, 화면에는 원인도 같이 보여준다.
+    const handleStart = src.indexOf('const handleCommand = useCallback(');
+    const handleEnd = src.indexOf('[role, user, allMembers, navigate, speak]');
+    const handleBody = src.slice(handleStart, handleEnd);
+    expect(handleBody).toContain('diagDetail = e?.message || String(e);');
+    expect(handleBody).toContain(
+      "setFeedback(diagDetail ? `${message}\\n[진단] ${diagDetail}` : message);"
+    );
+    // 소리로는 원인 문구 없이 사과 메시지만 자연스럽게 읽어야 한다.
+    expect(handleBody).toContain('speak(message);');
+    expect(handleBody).not.toContain('speak(diagDetail');
   });
 });

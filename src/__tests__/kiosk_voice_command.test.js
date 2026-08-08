@@ -32,7 +32,8 @@ describe('KioskVoiceCommand.jsx — 버튼 없이 자동으로 상시 감지를 
     const handleStart = src.indexOf('const handleCommand = useCallback(');
     const handleEnd = src.indexOf('[role, user, allMembers, navigate, speak]');
     const handleBody = src.slice(handleStart, handleEnd);
-    expect(handleBody).toContain('setFeedback(message);');
+    expect(handleBody).toContain('setFeedback(diagDetail ? ');
+    expect(handleBody).toContain(': message);');
     expect(handleBody).toContain('speak(message);');
   });
 
@@ -58,8 +59,9 @@ describe('KioskVoiceCommand.jsx — 버튼 없이 자동으로 상시 감지를 
     expect(mismatchBody).not.toContain('speak(');
   });
 
-  it('지원 안 하는 브라우저면 null을 반환한다(GlobalVoiceCommand와 동일한 가드)', () => {
-    expect(src).toContain('if (!supported) return null;');
+  it('지원 안 하는 브라우저면 이유를 화면에 보여준다(예전엔 그냥 null이라 원인 구분 불가)', () => {
+    expect(src).toContain('if (!supported) {');
+    expect(src).toContain('이 브라우저는 음성인식(SpeechRecognition)을 지원하지 않아요.');
   });
 
   it('unlockSpeech(iOS 전용 트릭)를 호출하지 않는다 — 키오스크는 항상 비-iOS', () => {
@@ -87,6 +89,19 @@ describe('KioskVoiceCommand.jsx — 버튼 없이 자동으로 상시 감지를 
     const preProcessBody = src.slice(handleStart, processCallIdx);
     expect(preProcessBody).toContain("setFeedback('네, 확인했어요.');");
     expect(preProcessBody).toContain("speak('네, 확인했어요.');");
+  });
+
+  it('명령 처리가 실패하면 실패 원인(diagDetail)을 화면에도 보여준다(회귀 방지)', () => {
+    // [버그 수정 2026-08-08] "키오스크에서 반응이 없다"는 문의 대응.
+    // GlobalVoiceCommand.jsx와 동일 패턴.
+    const handleStart = src.indexOf('const handleCommand = useCallback(');
+    const handleEnd = src.indexOf('[role, user, allMembers, navigate, speak]');
+    const handleBody = src.slice(handleStart, handleEnd);
+    expect(handleBody).toContain('diagDetail = e?.message || String(e);');
+    expect(handleBody).toContain(
+      "setFeedback(diagDetail ? `${message}\\n[진단] ${diagDetail}` : message);"
+    );
+    expect(handleBody).not.toContain('speak(diagDetail');
   });
 });
 
