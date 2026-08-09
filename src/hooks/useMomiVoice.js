@@ -89,6 +89,17 @@ export function useMomiVoice({ onCommand, onWakeOnly, onMismatch, onErrorOccurre
   // 이제 "사용자가 듣기를 원하는 상태인지"를 이 ref로 따로 추적해서, 의도적으로 끈
   // 경우(stopListening)엔 onend가 재시작하지 않도록 한다.
   const shouldRestartRef = useRef(false);
+  // [버그 수정 — TTS 재생 중 마이크 충돌 2026-08-09] 실사용 확인: 첫 번째
+  // 명령·응답은 정상 동작하지만, 그 이후로는 "모미야"조차 반응이 없어졌다.
+  // 원인 추정: 모미가 speak()로 답을 말하는 동안에도 인식은 계속 듣고 있어서,
+  // (1) 모미 자신의 목소리를 사용자 발화로 잘못 주워듣거나, (2) 마이크·스피커를
+  // 동시에 쓰면서 기기 오디오 장치가 충돌해 인식 세션이 죽고, 그 뒤로는
+  // 아무것도 못 알아듣는 상태가 됐을 가능성이 높다. speak()·useMomiSpeech.js는
+  // 별도 훅이라 여기서 직접 그 호출을 가로챌 수 없지만, window.speechSynthesis.speaking
+  // 은 브라우저 전역 상태라 어디서 말을 걸든 여기서 그대로 감지할 수 있다 —
+  // 그래서 각 speak() 호출부(20곳 넘음)를 일일이 손 안 대고 이 훅 하나에서
+  // "모미가 말하는 동안엔 잠깐 끄고, 끝나면 다시 켠다"를 전부 처리한다.
+  const pausedForSpeechRef = useRef(false);
 
   const clearActivation = () => {
     activatedRef.current = false;
@@ -245,7 +256,11 @@ export function useMomiVoice({ onCommand, onWakeOnly, onMismatch, onErrorOccurre
       // continuous:false로 두기 때문에 매 발화마다 항상 여기로 온다.
       // 두 경우 다 꺼진 상태가 아니면(shouldRestartRef) 즉시 재시작해서 "계속 듣는"
       // 것처럼 이어붙인다. stopListening()으로 의도적으로 끈 경우엔 재시작 안 함.
-      if (recognitionRef.current === recognition && shouldRestartRef.current) {
+      // [버그 수정 — TTS 재생 중 마이크 충돌 2026-08-09] 모미가 말하는 중이라
+      // 일부러 세션을 끈 경우(pausedForSpeechRef)에도 여기서 재시작하면 안 된다
+      // — 그러면 이 pause 자체가 무력화되고 곧바로 다시 자기 목소리를 듣게
+      // 된다. 재시작은 아래 speechSynthesis 감시 effect가 말이 끝난 뒤 직접 한다.
+      if (recognitionRef.current === recognition && shouldRestartRef.current && !pausedForSpeechRef.current) {
         try {
           recognition.start();
         } catch (e) {
@@ -261,7 +276,7 @@ export function useMomiVoice({ onCommand, onWakeOnly, onMismatch, onErrorOccurre
           // 정리가 끝나 있어 성공한다.
           console.warn('[모미] 재시작 실패, 짧게 재시도:', e?.message || e);
           setTimeout(() => {
-            if (recognitionRef.current !== recognition || !shouldRestartRef.current) return;
+            if (recognitionRef.current !== recognition || !shouldRestartRef.current || pausedForSpeechRef.current) return;
             try {
               recognition.start();
             } catch (e2) {
@@ -293,6 +308,45 @@ export function useMomiVoice({ onCommand, onWakeOnly, onMismatch, onErrorOccurre
     };
   }, [onCommand, onWakeOnly, onMismatch, onErrorOccurred, requireWakeWord]);
 
+  // [버그 수정 — TTS 재생 중 마이크 충돌 2026-08-09] 위 pausedForSpeechRef 설명
+  // 참고. window.speechSynthesis.speaking을 짧은 주기로 확인해서, 모미가 말을
+  // 시작하면 인식을 잠깐 끄고(자기 목소리를 듣지 않도록), 말이 끝나면 다시
+  // 켠다. speak()가 어느 컴포넌트·훅에서 불렸든 상관없이 이 하나의 감시
+  // 루프가 전부 처리한다(호출부 20여 곳을 일일이 손 안 대도 됨).
+  useEffect(() => {
+    if (!listening) return;
+    const synth = typeof window !== 'undefined' ? window.speechSynthesis : null;
+    if (!synth) return;
+    const timer = setInterval(() => {
+      const speaking = synth.speaking;
+      if (speaking && !pausedForSpeechRef.current) {
+        pausedForSpeechRef.current = true;
+        if (recognitionRef.current) {
+          try {
+            // abort()는 stop()과 달리 처리 중이던 오디오를 즉시 버린다 — 방금
+            // 막 들어온, Momi 자신의 목소리일 수 있는 조각이 onresult로 새어
+            // 나가지 않도록 딱 잘라 끊는 편이 안전하다.
+            recognitionRef.current.abort();
+          } catch (e) {
+            // no-op
+          }
+        }
+      } else if (!speaking && pausedForSpeechRef.current) {
+        pausedForSpeechRef.current = false;
+        if (recognitionRef.current && shouldRestartRef.current) {
+          try {
+            recognitionRef.current.start();
+          } catch (e) {
+            // 여기서 실패해도 괜찮다 — abort()가 유발한 onend가 이미 지나갔거나
+            // 곧 오는데, pausedForSpeechRef가 막 false로 바뀌었으니 그 onend
+            // 처리(또는 다음 onend)가 정상적으로 재시작을 이어받는다.
+          }
+        }
+      }
+    }, 150);
+    return () => clearInterval(timer);
+  }, [listening]);
+
   const startListening = useCallback(() => {
     if (!recognitionRef.current) return;
     shouldRestartRef.current = true;
@@ -309,6 +363,7 @@ export function useMomiVoice({ onCommand, onWakeOnly, onMismatch, onErrorOccurre
     // [버그 수정 2026-08-08] 이걸 먼저 false로 내려놔야, stop()이 비동기로 유발하는
     // onend가 재시작하지 않는다(위 onend 핸들러 참고).
     shouldRestartRef.current = false;
+    pausedForSpeechRef.current = false; // TTS 감시 루프도 재시작 시도를 멈추도록.
     try {
       recognitionRef.current.stop();
     } catch (e) {

@@ -298,7 +298,7 @@ describe('useMomiVoice.js — 마이크 끄기 시 실제로 재시작하지 않
     const onendEnd = src.indexOf('};', onendStart);
     const onendBody = src.slice(onendStart, onendEnd);
     expect(onendBody).toContain(
-      'if (recognitionRef.current === recognition && shouldRestartRef.current) {'
+      'if (recognitionRef.current === recognition && shouldRestartRef.current && !pausedForSpeechRef.current) {'
     );
     // recognitionRef 비교만으로 재시작을 결정하던 예전 버그 조건이 되살아나지 않았는지.
     expect(onendBody).not.toMatch(
@@ -356,7 +356,7 @@ describe('useMomiVoice.js — onend 재시작 실패 시 재시도(회귀 방지
   it('재시도 직전에 recognitionRef·shouldRestartRef가 여전히 유효한지 다시 확인한다(그 사이 stop()됐을 수 있으므로)', () => {
     const retryStart = onendBody.indexOf('setTimeout(() => {');
     const retryBody = onendBody.slice(retryStart);
-    expect(retryBody).toContain('if (recognitionRef.current !== recognition || !shouldRestartRef.current) return;');
+    expect(retryBody).toContain('if (recognitionRef.current !== recognition || !shouldRestartRef.current || pausedForSpeechRef.current) return;');
   });
 
   it('재시도까지 실패하면 listening 상태를 false로 내려서 화면 표시등이 거짓으로 켜져 있지 않게 한다', () => {
@@ -406,5 +406,56 @@ describe('useMomiVoice.js — requireWakeWord (웨이크워드 이중 요구 버
     const body = src.slice(start, end);
     expect(body).toContain('const soloWake = matchWakeWord(heard);');
     expect(body).toContain('activatedRef.current = true;');
+  });
+});
+
+// [버그 수정 — TTS 재생 중 마이크 충돌 2026-08-09] 실사용 확인: 첫 대화(웨이크
+// +명령)는 되는데, 그 이후로는 "모미야"조차 반응이 없어졌다. 모미가 speak()로
+// 답하는 동안 인식이 계속 듣고 있어서 자기 목소리를 주워듣거나 마이크·스피커
+// 동시 사용으로 인식 세션이 죽는 것으로 추정 — speak() 호출부를 일일이 안
+// 고치고 window.speechSynthesis.speaking(전역 상태)을 감시해서 이 훅 하나에서
+// 전부 처리한다.
+describe('useMomiVoice.js — TTS 재생 중 마이크 일시정지(회귀 방지)', () => {
+  const src = readSrc('src', 'hooks', 'useMomiVoice.js');
+
+  it('speechSynthesis.speaking을 주기적으로 감시하는 effect가 listening 중에만 동작한다', () => {
+    const idx = src.indexOf('useEffect(() => {\n    if (!listening) return;\n    const synth =');
+    expect(idx).toBeGreaterThan(-1);
+    const body = src.slice(idx, src.indexOf('}, [listening]);', idx));
+    expect(body).toContain('setInterval(');
+    expect(body).toContain('clearInterval(timer)');
+  });
+
+  it('모미가 말하기 시작하면(speaking 전이) abort()로 즉시 인식을 끊는다(stop 아님 — 자기 목소리 조각이 새어나가지 않도록)', () => {
+    const idx = src.indexOf("if (speaking && !pausedForSpeechRef.current) {");
+    expect(idx).toBeGreaterThan(-1);
+    const end = src.indexOf('} else if (!speaking', idx);
+    const body = src.slice(idx, end);
+    expect(body).toContain('pausedForSpeechRef.current = true;');
+    expect(body).toContain('recognitionRef.current.abort();');
+  });
+
+  it('말이 끝나면(speaking 해제) shouldRestartRef가 여전히 켜져 있을 때만 다시 켠다', () => {
+    const idx = src.indexOf('} else if (!speaking && pausedForSpeechRef.current) {');
+    expect(idx).toBeGreaterThan(-1);
+    const end = src.indexOf('}\n    }, 150);', idx);
+    const body = src.slice(idx, end);
+    expect(body).toContain('pausedForSpeechRef.current = false;');
+    expect(body).toContain('if (recognitionRef.current && shouldRestartRef.current) {');
+    expect(body).toContain('recognitionRef.current.start();');
+  });
+
+  it('onend는 pausedForSpeechRef가 true인 동안 재시작을 시도하지 않는다(감시 effect와 충돌 방지)', () => {
+    const onendStart = src.indexOf('recognition.onend = () => {');
+    const onendEnd = src.indexOf('};', onendStart);
+    const onendBody = src.slice(onendStart, onendEnd);
+    expect(onendBody).toContain('&& !pausedForSpeechRef.current) {');
+  });
+
+  it('stopListening()은 pausedForSpeechRef도 함께 정리한다(마이크를 끄면 감시 effect도 재시작을 시도하면 안 됨)', () => {
+    const start = src.indexOf('const stopListening = useCallback(() => {');
+    const end = src.indexOf('}, [cancelAwaitReply]);', start);
+    const body = src.slice(start, end);
+    expect(body).toContain('pausedForSpeechRef.current = false;');
   });
 });
