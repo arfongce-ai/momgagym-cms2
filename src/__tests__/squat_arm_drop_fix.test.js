@@ -311,6 +311,14 @@ describe('[2차 수정] SquatAnalysisHub.jsx — FMS 점수가 저장 리포트�
     join(process.cwd(), 'src/ai-measure/menus/SquatAnalysisHub.jsx'),
     'utf8',
   );
+  // [리포트 통합 2026-08-09] 리포트 "표시" 자체(report.fmsScore를 화면에 그리는
+  // 부분, 시행별 정면/측면 라벨링)는 SquatReportDashboard.jsx로 옮겨졌다 —
+  // handleComplete(hubSrc, 저장 직전 데이터 가공)는 여전히 SquatAnalysisHub.jsx에
+  // 있어서 그 부분만 hubSrc를 그대로 쓴다.
+  const reportSrc = readFileSync(
+    join(process.cwd(), 'src/ai-measure/menus/SquatReportDashboard.jsx'),
+    'utf8',
+  );
 
   it('handleComplete가 summary.fmsScore/fmsReasons를 reportData에 옮겨 담는다', () => {
     const idx = hubSrc.indexOf('const reportData');
@@ -320,12 +328,12 @@ describe('[2차 수정] SquatAnalysisHub.jsx — FMS 점수가 저장 리포트�
   });
 
   it('리포트 화면이 report.fmsScore를 표시한다', () => {
-    expect(hubSrc).toMatch(/report\.fmsScore/);
+    expect(reportSrc).toMatch(/report\.fmsScore/);
   });
 
   it('[덤으로 발견한 기존 버그] 정면 2회+측면 2회(4개 trials) 배열에서 앞 절반만 정면으로 표시한다', () => {
     // 이전엔 i===0만 '정면'이라 front2(index 1)가 '측면'으로 잘못 표시됐다.
-    expect(hubSrc).not.toMatch(/\{i === 0 \? '정면' : '측면'\}/);
-    expect(hubSrc).toMatch(/i < report\.trials\.length \/ 2 \? '정면' : '측면'/);
+    expect(reportSrc).not.toMatch(/\{i === 0 \? '정면' : '측면'\}/);
+    expect(reportSrc).toMatch(/i < report\.trials\.length \/ 2 \? '정면' : '측면'/);
   });
 });

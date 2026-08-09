@@ -23,6 +23,11 @@ const GaitReportDashboard = lazy(() => import('../ai-measure/menus/GaitReportDas
 const PostureReport = lazy(() => import('../ai-measure/menus/PostureReport'));
 const RomReport = lazy(() => import('../ai-measure/menus/RomReport'));
 const LiftingReportDashboard = lazy(() => import('../ai-measure/menus/LiftingReportDashboard'));
+// [리포트 통합 2026-08-09] SLST 저장된 리포트 열람 신설 — 다른 5개 측정 종류와
+// 마찬가지로 이제 이 화면에서도 볼 수 있다(StanceAnalysisHub.jsx/
+// StanceReportDashboard.jsx와 같은 컴포넌트를 재사용, 재구현 아님).
+const StanceReportDashboard = lazy(() => import('../ai-measure/menus/StanceReportDashboard'));
+const SquatReportDashboard = lazy(() => import('../ai-measure/menus/SquatReportDashboard'));
 
 const COLORS = { weight:'#f59e0b', systolic:'#ef4444', diastolic:'#3b82f6', height:'#22d3ee' };
 const DETAIL_SESSION_MENUS = new Set(['jump', 'gait', 'posture', 'rom', 'lifting']);
@@ -1003,10 +1008,30 @@ export default function Report() {
       .sort((a, b) => String(b.recordedAtFull || b.recordedAt).localeCompare(String(a.recordedAtFull || a.recordedAt)));
   }, [member, dataReady]);
 
+  // [리포트 통합 2026-08-09] SLST도 바벨 리프팅과 같은 방식(전용 컬렉션 없이
+  // 세션에만 menu:'stance'로 저장)이라 완전히 같은 패턴으로 목록을 만든다.
+  const savedStanceSessions = useMemo(() => {
+    if (!member) return [];
+    return (aiStore.getSessions(member.id) || [])
+      .filter((s) => s.menu === 'stance')
+      .sort((a, b) => String(b.recordedAtFull || b.recordedAt).localeCompare(String(a.recordedAtFull || a.recordedAt)));
+  }, [member, dataReady]);
+
+  // [리포트 통합 2026-08-09] 스쿼트도 SLST와 완전히 같은 패턴(전용 컬렉션 없이
+  // 세션에만 menu:'squat'로 저장).
+  const savedSquatSessions = useMemo(() => {
+    if (!member) return [];
+    return (aiStore.getSessions(member.id) || [])
+      .filter((s) => s.menu === 'squat')
+      .sort((a, b) => String(b.recordedAtFull || b.recordedAt).localeCompare(String(a.recordedAtFull || a.recordedAt)));
+  }, [member, dataReady]);
+
   const [viewerIdx, setViewerIdx] = useState(null); // 열람 중인 리포트 인덱스
   const [postureViewerIdx, setPostureViewerIdx] = useState(null); // 자세 리포트 열람 인덱스
   const [liftingViewerIdx, setLiftingViewerIdx] = useState(null); // 바벨 리프팅 리포트 열람 인덱스
   const [romViewerIdx, setRomViewerIdx] = useState(null); // ROM 리포트 열람 인덱스
+  const [stanceViewerIdx, setStanceViewerIdx] = useState(null); // SLST 리포트 열람 인덱스
+  const [squatViewerIdx, setSquatViewerIdx] = useState(null); // 오버헤드 딥 스쿼트 리포트 열람 인덱스
   const [expandedMenu, setExpandedMenu] = useState(null); // 펼친 측정 메뉴
 
   // [리포트 통합 2026-08-09] pendingOpenKind가 있고 해당 종류의 저장된 리포트
@@ -1056,6 +1081,20 @@ export default function Report() {
     setLiftingViewerIdx(0);
     setPendingOpenKind(null);
   }, [pendingOpenKind, savedLiftingSessions]);
+
+  useEffect(() => {
+    if (pendingOpenKind !== 'stance') return;
+    if (savedStanceSessions.length === 0) return;
+    setStanceViewerIdx(0);
+    setPendingOpenKind(null);
+  }, [pendingOpenKind, savedStanceSessions]);
+
+  useEffect(() => {
+    if (pendingOpenKind !== 'squat') return;
+    if (savedSquatSessions.length === 0) return;
+    setSquatViewerIdx(0);
+    setPendingOpenKind(null);
+  }, [pendingOpenKind, savedSquatSessions]);
 
   // 메뉴별 개별 세션 목록 (상세/회차비교용)
   const sessionsByMenu = useMemo(() => {
@@ -1632,6 +1671,57 @@ export default function Report() {
               report={savedLiftingSessions[liftingViewerIdx]?.data || {}}
               member={member}
               onClose={() => setLiftingViewerIdx(null)}
+            />
+          </Suspense>
+        </div>
+      )}
+      {/* [리포트 통합 2026-08-09] SLST — 위 lifting과 완전히 같은 패턴(전용
+          컬렉션 없이 세션에서 골라 씀). StanceReportDashboard가 onClose는 필수로
+          받지만 onRemeasure는 옵션이라(측정 화면 전용) 여기선 안 넘긴다 — 저장된
+          리포트를 다시 보는 중엔 "다시 측정" 버튼이 뜨지 않는다. */}
+      {stanceViewerIdx != null && savedStanceSessions[stanceViewerIdx] && (
+        <div className="fixed inset-0 z-[90] bg-slate-950 overflow-y-auto" style={{ height: '100dvh' }}>
+          <div className="sticky top-0 z-10 flex items-center justify-between px-4 py-2.5 bg-slate-900/95 backdrop-blur border-b border-slate-800">
+            <button onClick={() => setStanceViewerIdx(null)} className="text-slate-300 font-bold text-sm">✕ 닫기</button>
+            <span className="text-white text-xs font-bold">{stanceViewerIdx + 1} / {savedStanceSessions.length}</span>
+            <div className="flex gap-2">
+              <button onClick={() => setStanceViewerIdx(i => Math.min(savedStanceSessions.length - 1, i + 1))}
+                disabled={stanceViewerIdx >= savedStanceSessions.length - 1}
+                className="text-slate-300 text-sm font-bold disabled:opacity-30">◀ 이전</button>
+              <button onClick={() => setStanceViewerIdx(i => Math.max(0, i - 1))}
+                disabled={stanceViewerIdx <= 0}
+                className="text-slate-300 text-sm font-bold disabled:opacity-30">다음 ▶</button>
+            </div>
+          </div>
+          <Suspense fallback={<div className="p-10 text-center text-slate-400">불러오는 중…</div>}>
+            <StanceReportDashboard
+              report={savedStanceSessions[stanceViewerIdx]?.data || {}}
+              member={member}
+              onClose={() => setStanceViewerIdx(null)}
+            />
+          </Suspense>
+        </div>
+      )}
+      {/* [리포트 통합 2026-08-09] 스쿼트 — 위 SLST와 완전히 같은 패턴. */}
+      {squatViewerIdx != null && savedSquatSessions[squatViewerIdx] && (
+        <div className="fixed inset-0 z-[90] bg-slate-950 overflow-y-auto" style={{ height: '100dvh' }}>
+          <div className="sticky top-0 z-10 flex items-center justify-between px-4 py-2.5 bg-slate-900/95 backdrop-blur border-b border-slate-800">
+            <button onClick={() => setSquatViewerIdx(null)} className="text-slate-300 font-bold text-sm">✕ 닫기</button>
+            <span className="text-white text-xs font-bold">{squatViewerIdx + 1} / {savedSquatSessions.length}</span>
+            <div className="flex gap-2">
+              <button onClick={() => setSquatViewerIdx(i => Math.min(savedSquatSessions.length - 1, i + 1))}
+                disabled={squatViewerIdx >= savedSquatSessions.length - 1}
+                className="text-slate-300 text-sm font-bold disabled:opacity-30">◀ 이전</button>
+              <button onClick={() => setSquatViewerIdx(i => Math.max(0, i - 1))}
+                disabled={squatViewerIdx <= 0}
+                className="text-slate-300 text-sm font-bold disabled:opacity-30">다음 ▶</button>
+            </div>
+          </div>
+          <Suspense fallback={<div className="p-10 text-center text-slate-400">불러오는 중…</div>}>
+            <SquatReportDashboard
+              report={savedSquatSessions[squatViewerIdx]?.data || {}}
+              member={member}
+              onClose={() => setSquatViewerIdx(null)}
             />
           </Suspense>
         </div>

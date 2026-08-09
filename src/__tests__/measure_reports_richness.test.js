@@ -19,11 +19,14 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { join } from 'path';
-import { extractSquatMetrics, squatMetricStatus, computeSquatScore } from '../ai-measure/menus/SquatAnalysisHub.jsx';
-import { legMetrics, stanceMetricStatus, computeStanceScore } from '../ai-measure/menus/StanceAnalysisHub.jsx';
+import { extractSquatMetrics, squatMetricStatus, computeSquatScore } from '../ai-measure/core/squatBiomechanics.js';
+import { legMetrics, stanceMetricStatus, computeStanceScore } from '../ai-measure/core/singleLegStance.js';
 
-const squatSrc = readFileSync(join(process.cwd(), 'src/ai-measure/menus/SquatAnalysisHub.jsx'), 'utf8');
-const stanceSrc = readFileSync(join(process.cwd(), 'src/ai-measure/menus/StanceAnalysisHub.jsx'), 'utf8');
+// [리포트 통합 2026-08-09] 둘 다 결과 리포트 표시는 측정 화면(*AnalysisHub.jsx)에서
+// 재사용 가능한 *ReportDashboard.jsx로 옮겨졌다 — 아래 "[배선]" describe 블록은
+// 리포트 표시 자체를 검증하므로 새 위치를 읽는다.
+const squatSrc = readFileSync(join(process.cwd(), 'src/ai-measure/menus/SquatReportDashboard.jsx'), 'utf8');
+const stanceSrc = readFileSync(join(process.cwd(), 'src/ai-measure/menus/StanceReportDashboard.jsx'), 'utf8');
 
 describe('extractSquatMetrics — 지표별 권위 소스에서 더 나쁜 값을 대표값으로', () => {
   const trial = (over) => ({ valid: true, status: 'normal', thighInclineDeg: 5, torsoLeanDeg: 5, kneeValgusDeg: 2, pelvicTiltDeg: 2, armDropDeg: 3, ...over });
@@ -164,7 +167,7 @@ describe('computeStanceScore — 눈뜨고/눈감고 × 좌/우 4개 leg.status�
   });
 });
 
-describe('[배선] SquatAnalysisHub.jsx가 Jump/Gait와 같은 공용 리포트 체계를 쓴다', () => {
+describe('[배선] SquatReportDashboard.jsx가 Jump/Gait와 같은 공용 리포트 체계를 쓴다', () => {
   it('UnifiedReportPrimitives·ProblemFocusPanel·ReportActions를 가져와 쓴다', () => {
     expect(squatSrc).toMatch(/from '\.\.\/\.\.\/components\/report\/UnifiedReportPrimitives'/);
     expect(squatSrc).toMatch(/from '\.\/ProblemFocusPanel\.jsx'/);
@@ -191,7 +194,7 @@ describe('[배선] SquatAnalysisHub.jsx가 Jump/Gait와 같은 공용 리포트 
   });
 });
 
-describe('[배선] StanceAnalysisHub.jsx가 Jump/Gait와 같은 공용 리포트 체계를 쓴다', () => {
+describe('[배선] StanceReportDashboard.jsx가 Jump/Gait와 같은 공용 리포트 체계를 쓴다', () => {
   it('UnifiedReportPrimitives·ProblemFocusPanel·ReportActions를 가져와 쓴다', () => {
     expect(stanceSrc).toMatch(/from '\.\.\/\.\.\/components\/report\/UnifiedReportPrimitives'/);
     expect(stanceSrc).toMatch(/from '\.\/ProblemFocusPanel\.jsx'/);

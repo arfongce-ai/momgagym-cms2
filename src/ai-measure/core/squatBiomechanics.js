@@ -486,3 +486,68 @@ export function evaluateSquatBiomechanics(input = {}) {
 
   return { valid: true, kind: 'squat', ...combineTrials(input.trial1, input.trial2) };
 }
+
+// ════════════════════════════════════════════════════════════════════════
+//  [리포트 통합 2026-08-09] 아래 세 함수는 원래 SquatAnalysisHub.jsx(측정
+//  화면)에 있었다. SquatReportDashboard.jsx(저장된 리포트를 다시 보는 화면 —
+//  결과리포트 통합 프로젝트로 신설)도 똑같은 점수·상태 판정이 필요한데, 두
+//  화면 파일이 서로를 import하면 순환 참조가 생긴다. 판정 로직 자체는 이
+//  파일(core)에 두는 게 원래 맞는 자리라 여기로 옮기고, 두 화면 다 여기서
+//  가져다 쓰게 한다(재구현 아님 — 그대로 이동, singleLegStance.js와 동일 처리).
+// ════════════════════════════════════════════════════════════════════════
+
+// trials=[front1,front2,side1,side2](또는 구버전 [front,side])에서 지표별
+// 권위 소스(무릎·골반=정면, 팔=측면, 상체=torsoLeanSource, 깊이=양쪽)만 골라
+// "더 나쁜 값"을 대표값으로 삼는다(더 좋은 값을 고르지 않는다는 측정 정직성 원칙).
+export function extractSquatMetrics(report) {
+  const trials = report?.trials || [];
+  const half = Math.ceil(trials.length / 2) || 1;
+  const front = trials.slice(0, half);
+  const side = trials.slice(half);
+  const worstOf = (arr, key) => {
+    const vals = arr.map((t) => t?.[key]).filter((v) => v != null);
+    return vals.length ? Math.round(Math.max(...vals) * 10) / 10 : null;
+  };
+  return {
+    depthDeg: worstOf(trials, 'thighInclineDeg'),
+    kneeValgusDeg: worstOf(front, 'kneeValgusDeg'),
+    pelvicTiltDeg: worstOf(front, 'pelvicTiltDeg'),
+    armDropDeg: worstOf(side, 'armDropDeg'),
+    torsoLeanDeg: report?.torsoLeanSource === 'side' ? worstOf(side, 'torsoLeanDeg') : worstOf(front, 'torsoLeanDeg'),
+  };
+}
+
+// 재현성 2단계 판정을 그대로 반영 — 같은 신호가 반복돼야 확정(caution/risk)이고,
+// 한 번만 나오면 "observed"(관찰됨·미확정)로 정상과 구분해 보여준다. 일반
+// range 재계산이 아니라 evaluateSquatBiomechanics()가 이미 낸 결론을 그대로 쓴다.
+export function squatMetricStatus(report, flagPrefix) {
+  const confirmed = (report?.confirmedFlags || []).find((f) => f.startsWith(flagPrefix));
+  if (confirmed) return confirmed.endsWith('_high') ? 'risk' : 'caution';
+  const unconfirmed = (report?.unconfirmedFlags || []).some((f) => f.startsWith(flagPrefix));
+  return unconfirmed ? 'observed' : 'normal';
+}
+
+// [주의] flagPrefix 문자열은 원래 화면 쪽 METRIC_RANGES 테이블에서 읽었는데,
+// 그 테이블(라벨·단위 등 표시 전용 정보)은 SquatReportDashboard.jsx에 그대로
+// 남아있다 — 여기(core)로 그 표시용 테이블까지 끌고 오면 화면 쪽 정보가
+// 로직 파일에 섞이므로, 대신 이 다섯 개 flagPrefix만 인라인 상수로 둔다(값
+// 자체는 원래 테이블과 정확히 동일 — 이동일 뿐 변경 없음).
+const SCORE_FLAG_PREFIXES = ['depth_', 'torso_lean_', 'knee_valgus_', 'pelvic_tilt_', 'arm_drop_'];
+
+export function computeSquatScore(report, m) {
+  if (report?.valid === false) return 0;
+  const entries = [
+    [SCORE_FLAG_PREFIXES[0], m.depthDeg],
+    [SCORE_FLAG_PREFIXES[1], m.torsoLeanDeg],
+    [SCORE_FLAG_PREFIXES[2], m.kneeValgusDeg],
+    [SCORE_FLAG_PREFIXES[3], m.pelvicTiltDeg],
+    [SCORE_FLAG_PREFIXES[4], m.armDropDeg],
+  ];
+  const scores = [];
+  entries.forEach(([prefix, val]) => {
+    if (val == null) return;
+    const st = squatMetricStatus(report, prefix);
+    scores.push(st === 'normal' ? 100 : st === 'risk' ? 35 : 65);
+  });
+  return scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0;
+}

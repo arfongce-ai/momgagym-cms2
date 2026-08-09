@@ -94,8 +94,12 @@ describe('LiftingReportDashboard.jsx — MomiAutoNote 연결 확인', () => {
 // [Axis3 확장 2026-08-08 계속] SLST(StanceAnalysisHub)·스쿼트(SquatAnalysisHub)는
 // 별도 Report 컴포넌트가 아니라 측정+결과를 한 화면에서 다루는 "Hub" 패턴이라
 // view==='report' 블록 안에 있다는 점만 다르고, 나머지는 동일한 패턴.
-describe('StanceAnalysisHub.jsx — MomiAutoNote 연결 확인(SLST)', () => {
-  const src = readSrc('src', 'ai-measure', 'menus', 'StanceAnalysisHub.jsx');
+// [리포트 통합 2026-08-09] SLST의 리포트 표시(MomiAutoNote 포함)는
+// StanceReportDashboard.jsx로 뽑혀 나갔다(Report.jsx 뷰어에서도 재사용하기
+// 위함) — 이제 그 컴포넌트 자체가 "리포트 화면"이라 view==='report' 가드는
+// 없다(애초에 report가 있어야만 이 컴포넌트가 렌더됨).
+describe('StanceReportDashboard.jsx — MomiAutoNote 연결 확인(SLST)', () => {
+  const src = readSrc('src', 'ai-measure', 'menus', 'StanceReportDashboard.jsx');
 
   it("kind='stance'로 MomiAutoNote를 렌더하고, updateSession으로 저장한다", () => {
     expect(src).toContain("from '../../components/report/MomiAutoNote.jsx'");
@@ -103,16 +107,13 @@ describe('StanceAnalysisHub.jsx — MomiAutoNote 연결 확인(SLST)', () => {
     expect(src).toContain('aiStore.updateSession(');
   });
 
-  it("report 뷰(view === 'report') 블록 안에서만 렌더한다(측정 중엔 안 뜸)", () => {
-    const viewStart = src.indexOf("if (view === 'report' && report) {");
-    const autoNoteIdx = src.indexOf('<MomiAutoNote');
-    expect(viewStart).toBeGreaterThan(-1);
-    expect(autoNoteIdx).toBeGreaterThan(viewStart);
+  it('report가 없으면 아무 것도 렌더하지 않는다(측정 중엔 안 뜸)', () => {
+    expect(src).toContain('if (!report) return null;');
   });
 });
 
-describe('SquatAnalysisHub.jsx — MomiAutoNote 연결 확인', () => {
-  const src = readSrc('src', 'ai-measure', 'menus', 'SquatAnalysisHub.jsx');
+describe('SquatReportDashboard.jsx — MomiAutoNote 연결 확인', () => {
+  const src = readSrc('src', 'ai-measure', 'menus', 'SquatReportDashboard.jsx');
 
   it("kind='squat'로 MomiAutoNote를 렌더하고, updateSession으로 저장한다", () => {
     expect(src).toContain("from '../../components/report/MomiAutoNote.jsx'");
@@ -120,11 +121,8 @@ describe('SquatAnalysisHub.jsx — MomiAutoNote 연결 확인', () => {
     expect(src).toContain('aiStore.updateSession(');
   });
 
-  it("report 뷰(view === 'report') 블록 안에서만 렌더한다(측정 중엔 안 뜸)", () => {
-    const viewStart = src.indexOf("if (view === 'report' && report) {");
-    const autoNoteIdx = src.indexOf('<MomiAutoNote');
-    expect(viewStart).toBeGreaterThan(-1);
-    expect(autoNoteIdx).toBeGreaterThan(viewStart);
+  it('report가 없으면 아무 것도 렌더하지 않는다(측정 중엔 안 뜸)', () => {
+    expect(src).toContain('if (!report) return null;');
   });
 });
 
@@ -165,8 +163,8 @@ describe('MomiInsightPanel.jsx가 MomiAutoNote와 같은 7개 리포트 타입�
     { file: 'GaitReportDashboard.jsx', kind: 'gait' },
     { file: 'JumpReportDashboard.jsx', kind: 'jump' },
     { file: 'LiftingReportDashboard.jsx', kind: 'lifting' },
-    { file: 'StanceAnalysisHub.jsx', kind: 'stance' },
-    { file: 'SquatAnalysisHub.jsx', kind: 'squat' },
+    { file: 'StanceReportDashboard.jsx', kind: 'stance' },
+    { file: 'SquatReportDashboard.jsx', kind: 'squat' },
   ];
 
   for (const { file, kind } of cases) {
