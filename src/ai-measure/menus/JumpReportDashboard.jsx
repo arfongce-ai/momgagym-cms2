@@ -9,6 +9,9 @@ import {
 } from '../../components/report/UnifiedReportPrimitives';
 import { buildProblemFocus } from '../core/crossMeasureContext';
 import ProblemFocusPanel from './ProblemFocusPanel.jsx';
+import MomiAutoNote from '../../components/report/MomiAutoNote.jsx';
+import MomiInsightPanel from '../../components/report/MomiInsightPanel.jsx';
+import { aiStore } from '../../demoData';
 
 const RANGE = {
   height: { good: [40, 100], warn: [30, 100], unit: 'cm' },
@@ -117,6 +120,13 @@ export default function JumpReportDashboard({ report, onClose, onComment, member
           />
 
           <ProblemFocusPanel focus={problemFocus} context={report.cross_measure_context} />
+          {/* [Axis3 확장 2026-08-08] MomiAutoNote — PostureReport.jsx와 동일 패턴.
+              gait_reports 컬렉션을 gait와 공유하므로 updateGaitReport를 그대로 쓴다. */}
+          <MomiAutoNote kind="jump" report={report} member={resolvedMember}
+            onSaved={(patch) => aiStore.updateGaitReport(resolvedMember?.id, report.id, patch)} />
+          {/* [Axis4 확장 2026-08-08] MomiAutoNote와 별개로, 필요하면 트레이너가
+              직접 물어보고 후속 질문까지 이어갈 수 있는 대화창. */}
+          <MomiInsightPanel kind="jump" report={report} member={resolvedMember} />
 
           {report.valid === false ? (
             <InvalidBlock report={report} />

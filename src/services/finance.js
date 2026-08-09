@@ -867,6 +867,10 @@ export function computeSessionSettlement({ trainers, members, schedules, payment
           ? `등록월별 비율 혼합(가중평균 ${blendedRate}%)`
           : (rows.some(r=>r.rateFrozen) ? `등록월 고정 ${splitRate}%` : fallbackSplit.reason));
 
+    // 참고용 — 실제 지급액(payout)에는 포함되지 않는다(카드에 별도 표시용).
+    // 이번 달 신규+재등록 순매출(부가세·카드수수료 제외, newSalesM/reSalesM) × 그 달 정산비율(splitRate).
+    const salesRefPayout = Math.round((newSalesM + reSalesM) * splitRate / 100);
+
     return {
       trainer: t, rows, sessionTotal,
       splitRate, splitMode, splitReason, rateMixed: distinct.length>1,
@@ -875,7 +879,7 @@ export function computeSessionSettlement({ trainers, members, schedules, payment
       autoBlogCount: blogCount, autoInstaCount: instaCount, autoStudyCount: studyCount,
       blogInc, instaInc,
       newSales: newSalesM, reEnrollSales: reSalesM, newInc, reInc,
-      promoIncentive,
+      promoIncentive, salesRefPayout,
       payout, withholdingRate: whRate, tax, payoutNet,
       hasOverride: !!ov,
     };
@@ -951,7 +955,7 @@ export function computeSessionSettlementWithExpiry({ trainers = [], members, sch
       blogCount: 0, instaCount: 0, studyCount: 0,
       autoBlogCount: 0, autoInstaCount: 0, autoStudyCount: 0,
       blogInc: 0, instaInc: 0, newSales: 0, reEnrollSales: 0, newInc: 0, reInc: 0,
-      promoIncentive: 0,
+      promoIncentive: 0, salesRefPayout: 0,
       payout, withholdingRate: whRate, tax, payoutNet: payout - tax,
       hasOverride: false,
       expirySettlement,

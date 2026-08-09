@@ -3,6 +3,7 @@ import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { useState, useEffect } from 'react';
 import AppLayout from './components/layout/AppLayout';
 import Login from './pages/Login';
+import MicTest from './pages/MicTest';
 import Home from './pages/Home';
 import Members from './pages/Members';
 import Trainers from './pages/Trainers';
@@ -86,6 +87,9 @@ function AppRoutes() {
   return (
     <Routes>
       <Route path="/login" element={user ? <Navigate to="/" replace /> : <Login />} />
+      {/* 로그인·인증·데이터 로딩과 완전히 무관한 독립 진단 페이지. 원격 디버깅이
+          막힌 기기에서 브라우저 SpeechRecognition 동작을 직접 눈으로 확인하기 위함. */}
+      <Route path="/mic-test" element={<MicTest />} />
       <Route path="/*" element={
         <RequireAuth>
           <AppLayout darkMode={darkMode}>
@@ -102,6 +106,11 @@ function AppRoutes() {
                   <Route path="/settings" element={<Settings darkMode={darkMode} setDarkMode={setDarkMode} />} />
                   <Route path="/ai"       element={<AiMeasureHub />} />
                   <Route path="/report"   element={<Report />} />
+                  {/* [리포트 통합 2026-08-09] 종합리포트(day/week/month 트렌드)는 Report.jsx
+                      안의 ComprehensiveReportSection으로 완전히 흡수됨(이상 데이터 삭제
+                      기능까지 이관 완료) — 별도 페이지가 더 이상 필요 없다. 기존
+                      북마크/딥링크가 죽지 않도록 리다이렉트만 남긴다. */}
+                  <Route path="/summary"  element={<Navigate to="/report" replace />} />
                   <Route path="*"         element={<Navigate to="/" replace />} />
                 </Routes>
               </KioskGuard>

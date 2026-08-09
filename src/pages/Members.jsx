@@ -1,6 +1,7 @@
 // Members.jsx — v5
 // ✅ 요구사항1: 잔여 횟수 트레이너별 분리 배지 표시 (총합 금지)
 import { useState, useEffect, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { store, initStore } from '../demoData';
 import { todayYMD, daysAgoYMD, isMemberExpired, isMonthlyActive, monthlyDueOf } from '../utils/dates';
 import { useAuth } from '../contexts/AuthContext';
@@ -11,6 +12,7 @@ import TrainerBadge   from '../components/common/TrainerBadge';
 import { downloadCSV } from '../services/finance';
 import { sortExpiredLast, getUserTrainerId, isSessionExhausted, isMemberInactive } from '../utils/memberList';
 import { buildMemberSessionExpiry, computeExpirySettlement } from '../services/sessionExpiry';
+import { consumePendingVoiceTarget } from '../voice/pendingVoiceTarget';
 
 function getChosung(str) {
   const cs=['ㄱ','ㄲ','ㄴ','ㄷ','ㄸ','ㄹ','ㅁ','ㅂ','ㅃ','ㅅ','ㅆ','ㅇ','ㅈ','ㅉ','ㅊ','ㅋ','ㅌ','ㅍ','ㅎ'];
@@ -32,13 +34,44 @@ export default function Members() {
   const [showRegister,  setShowRegister]  = useState(false);
   const [showImport,    setShowImport]    = useState(false);
   const [selected,      setSelected]      = useState(null);
+  const [selectedInitialTab, setSelectedInitialTab] = useState(null);
   const [refreshing,    setRefreshing]    = useState(false);
+  const [searchParams]  = useSearchParams();
 
   const load = useCallback(() => {
     setMembers(store.getMembers());
     setTrainers(store.getTrainers());
   }, []);
   useEffect(() => { load(); }, [load]);
+
+  // ── 무결성 검사(Settings.jsx)에서 "회원상세로 이동"으로 넘어온 경우
+  //    ?openMember=<id>&tab=<tab> 을 읽어 해당 회원을 해당 탭으로 자동으로 연다.
+  useEffect(() => {
+    const openMemberId = searchParams.get('openMember');
+    if (!openMemberId || !members.length) return;
+    const m = members.find(x => x.id === openMemberId);
+    if (m) {
+      setSelected(m);
+      setSelectedInitialTab(searchParams.get('tab') || null);
+    }
+  }, [searchParams, members]);
+
+  // [음성 명령 확장 2026-08-09] "모미야, OO님 세션/수납/신체정보/측정이력/메모
+  // 보여줘" 같은 명령으로 도착했으면 해당 회원을 그 탭으로 바로 연다.
+  // AiMeasureHub.jsx/Report.jsx/Schedule.jsx는 이미 consumePendingVoiceTarget으로
+  // 이 패턴을 쓰고 있는데, 이 화면만 빠져 있어서 회원 이름을 말해도 무시되던
+  // 버그였다(회원 목록이 로딩된 뒤에야 이름 매칭이 가능하므로 members 의존).
+  useEffect(() => {
+    if (!members.length) return;
+    const pending = consumePendingVoiceTarget();
+    if (!pending?.memberName) return;
+    const m = members.find(x => x.name === pending.memberName);
+    if (m) {
+      setSelected(m);
+      setSelectedInitialTab(pending.memberTab || null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [members]);
 
   const oneYearAgo = daysAgoYMD(365); // CV-A: 로컬 날짜
   const myTrainerId = getUserTrainerId(user);
@@ -223,7 +256,7 @@ export default function Members() {
                       <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">⬇ 세션 마감 · 결제 만료</span>
                     </div>
                   )}
-                  <div onClick={() => setSelected(m)}
+                  <div onClick={() => { setSelected(m); setSelectedInitialTab(null); }}
                     className={`flex items-center gap-3 px-4 py-3 hover:bg-slate-800/60 cursor-pointer transition-colors ${inactive?'opacity-60':''}`}>
                     {/* 아바타 */}
                     <div className="w-9 h-9 rounded-full bg-slate-700 flex items-center justify-center text-sm font-bold flex-shrink-0">
@@ -280,7 +313,8 @@ export default function Members() {
         <MemberDetail
           member={members.find(m=>m.id===selected.id) || selected}
           trainers={trainers}
-          onClose={() => setSelected(null)}
+          initialTab={selectedInitialTab || undefined}
+          onClose={() => { setSelected(null); setSelectedInitialTab(null); }}
           onUpdate={() => load()} />
       )}
     </div>

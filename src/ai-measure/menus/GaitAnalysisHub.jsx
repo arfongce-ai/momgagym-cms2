@@ -20,7 +20,7 @@ import MeasureRecordConfirm from '../components/MeasureRecordConfirm.jsx';
  *   saveToFirebase  (reportData) => Promise   gait_reports 저장 (기존 함수 그대로)
  *   onCommentSave   (reportId, text) => void  (선택) 대시보드 코멘트 저장
  */
-export default function GaitAnalysisHub({ member, onBack, saveToFirebase, onSave, onSaveToFirebase, onCommentSave }) {
+export default function GaitAnalysisHub({ member, onBack, saveToFirebase, onSave, onSaveToFirebase, onCommentSave, onViewInReport }) {
   const save = saveToFirebase || onSaveToFirebase || onSave;
 
   const [mode, setMode] = useState('live');     // live | upload
@@ -122,6 +122,21 @@ export default function GaitAnalysisHub({ member, onBack, saveToFirebase, onSave
           onClose={onBack}
           member={member}
         />
+        {/* [리포트 통합 2026-08-09] PostureMeasure.jsx/RomMeasure.jsx와 동일 패턴 —
+            강제 이동 아님. 이 화면 자체가 이미 결과 리포트를 보여주고 있어서(인라인),
+            "결과리포트에서 보기"는 정확히는 "이 리포트를 전체 결과리포트 화면(다른
+            회차와 함께 넘겨보기·회원 종합 섹션까지) 안에서 다시 보기"라는 의미다.
+            미등록회원은 지원 안 함(AiMeasureHub.viewInReport가 걸러줌). */}
+        {!member?.isVirtual && typeof onViewInReport === 'function' && (
+          <div className="mx-auto w-full max-w-[794px] px-4 pb-6">
+            <button
+              onClick={onViewInReport}
+              className="w-full rounded-xl border border-amber-500/40 bg-amber-500/10 text-amber-300 font-bold text-sm py-2.5"
+            >
+              📊 결과리포트에서 보기
+            </button>
+          </div>
+        )}
       </div>
     );
   }

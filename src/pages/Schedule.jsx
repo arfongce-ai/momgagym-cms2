@@ -10,6 +10,7 @@ import { store } from '../demoData';
 import { toYMD } from '../utils/dates';
 import { sortByName } from '../utils/memberList';
 import { findDuplicateSchedules, summarizeDuplicates } from '../services/scheduleAudit';
+import { consumePendingVoiceTarget } from '../voice/pendingVoiceTarget';
 
 // ── 시간 유틸 ─────────────────────────────────────────────
 // 10분 단위 반올림 스냅
@@ -966,6 +967,18 @@ export default function Schedule() {
   const [detail,    setDetail]    = useState(null);
   const [query,     setQuery]     = useState('');
   const [showAudit, setShowAudit] = useState(false); // 중복 점검 모달
+
+  // [버그 수정 — 음성으로 회원 스케줄 조회 2026-08-09] 실사용 확인: "누구
+  // 스케줄 확인해줘"라고 하면 스케줄 화면으로는 이동하는데 그 회원으로
+  // 좁혀지지 않고 전체가 그대로 보였다 — voiceCommandService.js가 회원 이름을
+  // 추출해서 setPendingVoiceTarget으로 심어두긴 하는데, Report.jsx/AiMeasureHub.jsx와
+  // 달리 이 화면은 그걸 한 번도 소비(consume)한 적이 없었다. 이미 있는 검색창
+  // (query)에 채워 넣기만 하면 되므로 새 필터 로직을 만들지 않는다.
+  useEffect(() => {
+    const pending = consumePendingVoiceTarget();
+    if (pending?.memberName) setQuery(pending.memberName);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const load = () => {
     const mb = store.getMembers();

@@ -33,7 +33,7 @@ const MODES = [
 ];
 const STRENGTH_EXERCISES = exercisesForMode('onerm');
 
-export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFirebase, onMemberHeightChange }) {
+export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFirebase, onMemberHeightChange, onViewInReport }) {
   const save = onSaveToFirebase || onSave;
   const [mode, setMode] = useState('vbt');
   // 공통 종목 — 모드 전환 시 해당 모드에서 유효하면 유지, 아니면 첫 항목으로.
@@ -353,6 +353,17 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
     return (
       <div className="fixed inset-0 z-[80] bg-slate-950 overflow-y-auto" style={{ height: '100dvh' }}>
         <LiftingReportDashboard report={report} onClose={onBack} member={member} />
+        {/* [리포트 통합 2026-08-09] GaitAnalysisHub.jsx/JumpAnalysisHub.jsx와 동일 패턴. */}
+        {!member?.isVirtual && typeof onViewInReport === 'function' && (
+          <div className="mx-auto w-full max-w-[794px] px-4 pb-3">
+            <button
+              onClick={onViewInReport}
+              className="w-full rounded-xl border border-amber-500/40 bg-amber-500/10 text-amber-300 font-bold text-sm py-2.5"
+            >
+              📊 결과리포트에서 보기
+            </button>
+          </div>
+        )}
         <div className="sticky bottom-0 z-10 flex justify-center p-3 bg-slate-900/90 backdrop-blur border-t border-slate-800">
           <button onClick={() => { setReport(null); setPending(null); setView('landing'); }} className="rounded-2xl bg-gradient-to-r from-amber-400 to-orange-500 text-slate-950 font-black text-sm px-8 py-2.5 active:scale-95">← 다시 측정</button>
         </div>

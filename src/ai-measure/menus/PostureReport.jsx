@@ -9,6 +9,9 @@ import { buildClinicalInterpretation } from '../core/postureClinical';
 import { analyzeAxialRotation, ROTATION_DIRECTION_KO, ROTATION_LEVEL_KO } from '../core/postureRotation';
 import { buildProblemFocus } from '../core/crossMeasureContext';
 import ProblemFocusPanel from './ProblemFocusPanel.jsx';
+import MomiAutoNote from '../../components/report/MomiAutoNote.jsx';
+import MomiInsightPanel from '../../components/report/MomiInsightPanel.jsx';
+import { aiStore } from '../../demoData';
 import {
   MetricCard,
   UnifiedEmptyState,
@@ -157,6 +160,11 @@ export default function PostureReport({
 
         <MetadataStrip metadata={clinical.metadata} viewsMeasured={report?.viewsMeasured} />
         <ProblemFocusPanel focus={problemFocus} context={report?.cross_measure_context} />
+        <MomiAutoNote kind="posture" report={report} member={member}
+          onSaved={(patch) => aiStore.updatePostureReport(member.id, report.id, patch)} />
+        {/* [Axis4 확장 2026-08-08] MomiAutoNote(자동 노트)와 별개로, 필요하면
+            트레이너가 직접 물어보고 후속 질문까지 이어갈 수 있는 대화창. */}
+        <MomiInsightPanel kind="posture" report={report} member={member} />
 
         <section className="grid gap-3 sm:grid-cols-[240px_1fr_1fr]">
           <ScoreDial score={score} status={analysis.status} />

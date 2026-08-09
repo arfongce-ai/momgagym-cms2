@@ -31,6 +31,16 @@ const SQUAT_FLAG_KO = Object.freeze({
   pelvic_tilt_high: { level: 'risk', text: '스쿼트 중 골반이 크게 한쪽으로 기울어집니다.' },
   arm_drop_borderline: { level: 'caution', text: '스쿼트 중 팔(막대)이 다소 앞으로 떨어집니다.' },
   arm_drop_high: { level: 'risk', text: '스쿼트 중 팔(막대)이 크게 앞으로 떨어집니다.' },
+  cog_over_ankle_borderline: { level: 'caution', text: '스쿼트 중 무게중심이 발목 기준선에서 다소 벗어납니다.' },
+  cog_over_ankle_high: { level: 'risk', text: '스쿼트 중 무게중심이 발목 기준선에서 크게 벗어납니다.' },
+  cog_tilt_borderline: { level: 'caution', text: '스쿼트 중 무게중심이 좌우로 다소 쏠립니다.' },
+  cog_tilt_high: { level: 'risk', text: '스쿼트 중 무게중심이 좌우로 크게 쏠립니다.' },
+  head_tilt_borderline: { level: 'caution', text: '스쿼트 중 머리가 한쪽으로 다소 기울어집니다.' },
+  head_tilt_high: { level: 'risk', text: '스쿼트 중 머리가 한쪽으로 크게 기울어집니다.' },
+  elbow_bend_borderline: { level: 'caution', text: '스쿼트 중 팔꿈치가 다소 굽습니다(완전히 펴지지 않음).' },
+  elbow_bend_high: { level: 'risk', text: '스쿼트 중 팔꿈치가 크게 굽습니다(완전히 펴지지 않음).' },
+  elbow_asym_borderline: { level: 'caution', text: '스쿼트 중 양쪽 팔꿈치 펴짐 정도가 다소 다릅니다.' },
+  elbow_asym_high: { level: 'risk', text: '스쿼트 중 양쪽 팔꿈치 펴짐 정도가 크게 다릅니다.' },
 });
 
 export function measurementOutputMode(kind) {

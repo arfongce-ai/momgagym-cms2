@@ -88,6 +88,35 @@ export const SQUAT_TUNING = {
   //    기준으로 말하지 않게 한다(파일 상단 설계 원칙과 동일).
   armDropCautionDeg: 20,
   armDropRiskDeg: 35,
+
+  // ── [2026-08-06 추가] squatJointAngles.js(라이브 표시용) 11개 각도 중
+  //    방향·크기가 명확한 5개를 판정에 연결. 나머지(관절별 굽힘 4개·귀-어깨
+  //    간격)는 squatBiomechanicsTracker.js 상단 주석 이유로 표시 전용 유지.
+  //    이 임계값들도 파일 상단 설계원칙과 동일하게 실측 데이터 보정 전
+  //    시작 기본값이다.
+
+  // CoG-발목 편차(측면) — torsoLeanDeg와 유사 개념이지만 엉덩이까지 반영해
+  // 더 민감하므로 살짝 낮게 잡음.
+  cogOverAnkleCautionDeg: 20,
+  cogOverAnkleRiskDeg: 30,
+
+  // CoG 좌우쏠림(정면) — pelvicTiltDeg(골반 라인만 봄)보다 넓은 구간의 단순
+  // 2점 평균이라 노이즈가 커 살짝 넉넉하게 잡음.
+  cogTiltCautionDeg: 6,
+  cogTiltRiskDeg: 12,
+
+  // 머리 좌우 기울기(정면)
+  headTiltCautionDeg: 8,
+  headTiltRiskDeg: 15,
+
+  // 팔꿈치 폄 부족(정면) — 180°가 완전히 폄. 판정은 "낮을수록 나쁨"(다른
+  // 지표와 방향 반대)이라 judgeTrial에서 <= 비교로 별도 처리한다.
+  elbowExtensionCautionDeg: 165, // 180°에서 15° 이상 굽으면 주의
+  elbowExtensionRiskDeg: 150,    // 180°에서 30° 이상 굽으면 위험
+
+  // 팔꿈치 좌우 비대칭(정면) — 한쪽 팔만 유독 처지는 패턴.
+  elbowAsymCautionDeg: 10,
+  elbowAsymRiskDeg: 20,
 };
 
 const STATUS_RANK = { normal: 0, caution: 1, risk: 2, unknown: 3 };
@@ -105,6 +134,16 @@ const FLAG_SEVERITY = {
   pelvic_tilt_high: 'risk',
   arm_drop_borderline: 'caution',
   arm_drop_high: 'risk',
+  cog_over_ankle_borderline: 'caution',
+  cog_over_ankle_high: 'risk',
+  cog_tilt_borderline: 'caution',
+  cog_tilt_high: 'risk',
+  head_tilt_borderline: 'caution',
+  head_tilt_high: 'risk',
+  elbow_bend_borderline: 'caution',
+  elbow_bend_high: 'risk',
+  elbow_asym_borderline: 'caution',
+  elbow_asym_high: 'risk',
 };
 
 function worse(a, b) {
@@ -123,6 +162,11 @@ function worse(a, b) {
  * @param {number}  [trial.kneeValgusDeg]  동적 무릎 외반각(deg)
  * @param {number}  [trial.pelvicTiltDeg]  골반 기울기/체중 쏠림(deg)
  * @param {number}  [trial.armDropDeg]    팔(어깨-손목) 처짐각(deg) — 수직 대비
+ * @param {number}  [trial.cogOverAnkleDeg] CoG-발목 편차각(deg, 측면) — [2026-08-06]
+ * @param {number}  [trial.cogTiltDeg]     CoG 좌우쏠림(deg, 정면) — [2026-08-06]
+ * @param {number}  [trial.headTiltDeg]    머리 좌우 기울기(deg, 정면) — [2026-08-06]
+ * @param {number}  [trial.elbowExtensionDeg] 팔꿈치 폄(deg, 정면, 낮을수록 나쁨) — [2026-08-06]
+ * @param {number}  [trial.elbowAsymDeg]   팔꿈치 좌우 비대칭(deg, 정면) — [2026-08-06]
  * @returns {object}
  */
 function judgeTrial(trial = {}) {
@@ -147,6 +191,11 @@ function judgeTrial(trial = {}) {
     kneeValgusDeg: trial.kneeValgusDeg ?? null,
     pelvicTiltDeg: trial.pelvicTiltDeg ?? null,
     armDropDeg: trial.armDropDeg ?? null,
+    cogOverAnkleDeg: trial.cogOverAnkleDeg ?? null,
+    cogTiltDeg: trial.cogTiltDeg ?? null,
+    headTiltDeg: trial.headTiltDeg ?? null,
+    elbowExtensionDeg: trial.elbowExtensionDeg ?? null,
+    elbowAsymDeg: trial.elbowAsymDeg ?? null,
   };
 
   if (immediateReasons.length) {
@@ -176,6 +225,27 @@ function judgeTrial(trial = {}) {
   if (trial.armDropDeg != null) {
     if (trial.armDropDeg >= SQUAT_TUNING.armDropRiskDeg) { softFlags.push('arm_drop_high'); status = worse(status, 'risk'); }
     else if (trial.armDropDeg >= SQUAT_TUNING.armDropCautionDeg) { softFlags.push('arm_drop_borderline'); status = worse(status, 'caution'); }
+  }
+  if (trial.cogOverAnkleDeg != null) {
+    if (trial.cogOverAnkleDeg >= SQUAT_TUNING.cogOverAnkleRiskDeg) { softFlags.push('cog_over_ankle_high'); status = worse(status, 'risk'); }
+    else if (trial.cogOverAnkleDeg >= SQUAT_TUNING.cogOverAnkleCautionDeg) { softFlags.push('cog_over_ankle_borderline'); status = worse(status, 'caution'); }
+  }
+  if (trial.cogTiltDeg != null) {
+    if (trial.cogTiltDeg >= SQUAT_TUNING.cogTiltRiskDeg) { softFlags.push('cog_tilt_high'); status = worse(status, 'risk'); }
+    else if (trial.cogTiltDeg >= SQUAT_TUNING.cogTiltCautionDeg) { softFlags.push('cog_tilt_borderline'); status = worse(status, 'caution'); }
+  }
+  if (trial.headTiltDeg != null) {
+    if (trial.headTiltDeg >= SQUAT_TUNING.headTiltRiskDeg) { softFlags.push('head_tilt_high'); status = worse(status, 'risk'); }
+    else if (trial.headTiltDeg >= SQUAT_TUNING.headTiltCautionDeg) { softFlags.push('head_tilt_borderline'); status = worse(status, 'caution'); }
+  }
+  // 팔꿈치 폄만 방향이 반대(값이 낮을수록 나쁨 = 더 굽음) — <= 비교.
+  if (trial.elbowExtensionDeg != null) {
+    if (trial.elbowExtensionDeg <= SQUAT_TUNING.elbowExtensionRiskDeg) { softFlags.push('elbow_bend_high'); status = worse(status, 'risk'); }
+    else if (trial.elbowExtensionDeg <= SQUAT_TUNING.elbowExtensionCautionDeg) { softFlags.push('elbow_bend_borderline'); status = worse(status, 'caution'); }
+  }
+  if (trial.elbowAsymDeg != null) {
+    if (trial.elbowAsymDeg >= SQUAT_TUNING.elbowAsymRiskDeg) { softFlags.push('elbow_asym_high'); status = worse(status, 'risk'); }
+    else if (trial.elbowAsymDeg >= SQUAT_TUNING.elbowAsymCautionDeg) { softFlags.push('elbow_asym_borderline'); status = worse(status, 'caution'); }
   }
 
   return { valid: true, status, immediateFail: false, softFlags, ...base };
@@ -217,6 +287,17 @@ function combineFrontSide(front, side) {
   // 팔 처짐 — 측면 단독(정면은 애초에 안정적으로 볼 수 없는 각도라 관여하지
   // 않는다 — squatFms.js의 evaluateSquatFrame과 동일한 view 제한 원칙).
   takeSingle(s, 'arm_drop_');
+
+  // CoG-발목 편차 — armDropDeg와 같은 이유로 측면 단독(앞뒤 편차는 정면에서
+  // 근본적으로 관측 불가).
+  takeSingle(s, 'cog_over_ankle_');
+
+  // CoG 좌우쏠림·머리기울기·팔꿈치폄·팔꿈치비대칭 — kneeValgus·pelvicTilt와
+  // 같은 이유로 정면 단독(좌우 편차는 측면에서 관측 불가).
+  takeSingle(f, 'cog_tilt_');
+  takeSingle(f, 'head_tilt_');
+  takeSingle(f, 'elbow_bend_');
+  takeSingle(f, 'elbow_asym_');
 
   // 상체기울기 — 측면 우선 단독, 측면 무효면 정면으로 대체.
   const torsoLeanSource = s.valid ? 'side' : (f.valid ? 'front_fallback' : null);
@@ -334,6 +415,18 @@ function combineFrontSideTwice(front1, front2, side1, side2) {
   // 팔 처짐 — 측면 단독(정면은 관여하지 않음, 위 combineFrontSide와 동일 이유).
   if (sideValid) { takeFromView(sideCombined, 'arm_drop_'); }
 
+  // CoG-발목 편차 — armDropDeg와 같은 이유로 측면 단독.
+  if (sideValid) { takeFromView(sideCombined, 'cog_over_ankle_'); }
+
+  // CoG 좌우쏠림·머리기울기·팔꿈치폄·팔꿈치비대칭 — 정면 단독(위
+  // combineFrontSide와 동일 이유).
+  if (frontValid) {
+    takeFromView(frontCombined, 'cog_tilt_');
+    takeFromView(frontCombined, 'head_tilt_');
+    takeFromView(frontCombined, 'elbow_bend_');
+    takeFromView(frontCombined, 'elbow_asym_');
+  }
+
   // 상체기울기 — 측면 우선 단독, 측면 무효면 정면으로 대체.
   const torsoLeanSource = sideValid ? 'side' : (frontValid ? 'front_fallback' : null);
   takeFromView(torsoLeanSource === 'side' ? sideCombined : frontCombined, 'torso_lean_');
@@ -392,4 +485,69 @@ export function evaluateSquatBiomechanics(input = {}) {
   }
 
   return { valid: true, kind: 'squat', ...combineTrials(input.trial1, input.trial2) };
+}
+
+// ════════════════════════════════════════════════════════════════════════
+//  [리포트 통합 2026-08-09] 아래 세 함수는 원래 SquatAnalysisHub.jsx(측정
+//  화면)에 있었다. SquatReportDashboard.jsx(저장된 리포트를 다시 보는 화면 —
+//  결과리포트 통합 프로젝트로 신설)도 똑같은 점수·상태 판정이 필요한데, 두
+//  화면 파일이 서로를 import하면 순환 참조가 생긴다. 판정 로직 자체는 이
+//  파일(core)에 두는 게 원래 맞는 자리라 여기로 옮기고, 두 화면 다 여기서
+//  가져다 쓰게 한다(재구현 아님 — 그대로 이동, singleLegStance.js와 동일 처리).
+// ════════════════════════════════════════════════════════════════════════
+
+// trials=[front1,front2,side1,side2](또는 구버전 [front,side])에서 지표별
+// 권위 소스(무릎·골반=정면, 팔=측면, 상체=torsoLeanSource, 깊이=양쪽)만 골라
+// "더 나쁜 값"을 대표값으로 삼는다(더 좋은 값을 고르지 않는다는 측정 정직성 원칙).
+export function extractSquatMetrics(report) {
+  const trials = report?.trials || [];
+  const half = Math.ceil(trials.length / 2) || 1;
+  const front = trials.slice(0, half);
+  const side = trials.slice(half);
+  const worstOf = (arr, key) => {
+    const vals = arr.map((t) => t?.[key]).filter((v) => v != null);
+    return vals.length ? Math.round(Math.max(...vals) * 10) / 10 : null;
+  };
+  return {
+    depthDeg: worstOf(trials, 'thighInclineDeg'),
+    kneeValgusDeg: worstOf(front, 'kneeValgusDeg'),
+    pelvicTiltDeg: worstOf(front, 'pelvicTiltDeg'),
+    armDropDeg: worstOf(side, 'armDropDeg'),
+    torsoLeanDeg: report?.torsoLeanSource === 'side' ? worstOf(side, 'torsoLeanDeg') : worstOf(front, 'torsoLeanDeg'),
+  };
+}
+
+// 재현성 2단계 판정을 그대로 반영 — 같은 신호가 반복돼야 확정(caution/risk)이고,
+// 한 번만 나오면 "observed"(관찰됨·미확정)로 정상과 구분해 보여준다. 일반
+// range 재계산이 아니라 evaluateSquatBiomechanics()가 이미 낸 결론을 그대로 쓴다.
+export function squatMetricStatus(report, flagPrefix) {
+  const confirmed = (report?.confirmedFlags || []).find((f) => f.startsWith(flagPrefix));
+  if (confirmed) return confirmed.endsWith('_high') ? 'risk' : 'caution';
+  const unconfirmed = (report?.unconfirmedFlags || []).some((f) => f.startsWith(flagPrefix));
+  return unconfirmed ? 'observed' : 'normal';
+}
+
+// [주의] flagPrefix 문자열은 원래 화면 쪽 METRIC_RANGES 테이블에서 읽었는데,
+// 그 테이블(라벨·단위 등 표시 전용 정보)은 SquatReportDashboard.jsx에 그대로
+// 남아있다 — 여기(core)로 그 표시용 테이블까지 끌고 오면 화면 쪽 정보가
+// 로직 파일에 섞이므로, 대신 이 다섯 개 flagPrefix만 인라인 상수로 둔다(값
+// 자체는 원래 테이블과 정확히 동일 — 이동일 뿐 변경 없음).
+const SCORE_FLAG_PREFIXES = ['depth_', 'torso_lean_', 'knee_valgus_', 'pelvic_tilt_', 'arm_drop_'];
+
+export function computeSquatScore(report, m) {
+  if (report?.valid === false) return 0;
+  const entries = [
+    [SCORE_FLAG_PREFIXES[0], m.depthDeg],
+    [SCORE_FLAG_PREFIXES[1], m.torsoLeanDeg],
+    [SCORE_FLAG_PREFIXES[2], m.kneeValgusDeg],
+    [SCORE_FLAG_PREFIXES[3], m.pelvicTiltDeg],
+    [SCORE_FLAG_PREFIXES[4], m.armDropDeg],
+  ];
+  const scores = [];
+  entries.forEach(([prefix, val]) => {
+    if (val == null) return;
+    const st = squatMetricStatus(report, prefix);
+    scores.push(st === 'normal' ? 100 : st === 'risk' ? 35 : 65);
+  });
+  return scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0;
 }

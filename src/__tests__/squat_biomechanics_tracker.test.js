@@ -8,6 +8,10 @@ const calib = { baselinePelvisY: 0.50, baselineKneeY: 0.70, baselineHeelY: 0.95,
 function frame({ hipY, kneeY = 0.70, shoY = 0.30, ankY = 0.90, heelY = 0.95, valgus = 0, armDrop = 0 }) {
   // 25 landmark 배열: 필요한 인덱스만 채움(0=nose 자리는 안 씀, torsoLean에 shoulder 필요).
   const lm = new Array(33).fill(null).map(() => ({ x: 0.5, y: 0.5, visibility: 1 }));
+  lm[7] = { x: 0.47, y: shoY - 0.12, visibility: 1 }; lm[8] = { x: 0.53, y: shoY - 0.12, visibility: 1 }; // ears
+  // [2026-08-06] 귀: 기본값은 어깨 중점 바로 위·수평(고개 안 기운 상태) — 안 채우면
+  // 기본값(0.5,0.5)에 남아 새로 연결된 headTiltDeg가 다른 지표 테스트에서 엉뚱하게
+  // 위험으로 걸린다(팔꿈치 때와 동일한 이유).
   lm[11] = { x: 0.45, y: shoY, visibility: 1 }; lm[12] = { x: 0.55, y: shoY, visibility: 1 }; // shoulders
   lm[23] = { x: 0.45, y: hipY, visibility: 1 }; lm[24] = { x: 0.55, y: hipY, visibility: 1 }; // hips
   lm[25] = { x: 0.45 - valgus, y: kneeY, visibility: 1 }; lm[26] = { x: 0.55 + valgus, y: kneeY, visibility: 1 }; // knees
@@ -22,6 +26,11 @@ function frame({ hipY, kneeY = 0.70, shoY = 0.30, ankY = 0.90, heelY = 0.95, val
   const dx = armLen * Math.sin(rad), dy = armLen * Math.cos(rad);
   lm[15] = { x: 0.45 + dx, y: shoY - dy, visibility: 1 };
   lm[16] = { x: 0.55 + dx, y: shoY - dy, visibility: 1 };
+  // [2026-08-06] 팔꿈치(13/14): 어깨-손목 사이 중점에 둬 "편 팔"을 근사한다
+  // (손목과 동일한 armDrop=0 기본 가정과 일관 — 안 채우면 기본값(0.5,0.5)에
+  // 남아 elbowExtensionDeg가 다른 지표 테스트에서 엉뚱하게 위험으로 걸린다).
+  lm[13] = { x: (0.45 + lm[15].x) / 2, y: (shoY + lm[15].y) / 2, visibility: 1 };
+  lm[14] = { x: (0.55 + lm[16].x) / 2, y: (shoY + lm[16].y) / 2, visibility: 1 };
   return lm;
 }
 

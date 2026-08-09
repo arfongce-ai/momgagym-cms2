@@ -16,6 +16,9 @@ import {
 } from '../../components/report/UnifiedReportPrimitives';
 import { buildLiftingInterpretation, exerciseLabel, VBT_ZONE_PURPOSE, vbtZonePurpose } from '../core/lifting';
 import { generateLiftingDiagnosis, GRADE_LABEL } from '../core/barbellClinical';
+import MomiAutoNote from '../../components/report/MomiAutoNote.jsx';
+import MomiInsightPanel from '../../components/report/MomiInsightPanel.jsx';
+import { aiStore } from '../../demoData';
 
 function fmt(v, unit = '') {
   return v == null || Number.isNaN(Number(v)) ? '—' : `${v}${unit}`;
@@ -94,6 +97,14 @@ export default function LiftingReportDashboard({ report, onClose, member }) {
             measuredAt={report.recordedAt}
             member={resolvedMember}
           />
+
+          {/* [Axis3 확장 2026-08-08] MomiAutoNote — PostureReport.jsx와 동일 패턴.
+              VBT/1RM은 전용 컬렉션 없이 세션(ai)에 저장되므로 updateSession을 쓴다. */}
+          <MomiAutoNote kind="lifting" report={report} member={resolvedMember}
+            onSaved={(patch) => aiStore.updateSession(resolvedMember?.id, report.id, patch)} />
+          {/* [Axis4 확장 2026-08-08] MomiAutoNote와 별개로, 필요하면 트레이너가
+              직접 물어보고 후속 질문까지 이어갈 수 있는 대화창. */}
+          <MomiInsightPanel kind="lifting" report={report} member={resolvedMember} />
 
           {/* 핵심 수치 */}
           <UnifiedReportSection title="핵심 수치">

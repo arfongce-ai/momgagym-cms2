@@ -150,6 +150,7 @@ const INITIAL_SETTINGS = {
 const cache = {
   members:[], trainers:[], schedules:[], notices:[], payments:{}, body:{}, ai:{},
   settings:{...INITIAL_SETTINGS}, expenses:[], promos:[], settleOverrides:[], gaitReports:{}, postureReports:{}, romReports:{},
+  integrityDismissals: [],
 };
 
 // 충돌 방지 ID 생성기 — Date.now()만 쓰면 같은 밀리초에 두 건이 생길 때
@@ -400,7 +401,7 @@ export async function initStore({ force = false } = {}) {
       // 앱 시작 시 전수 조회하지 않는다. 빈 캐시로 시작 → 회원 화면에서 그 회원 것만
       // 지연 로딩(ensureSessions/ensureGaitReports)한다. 측정 데이터가 쌓일수록
       // 시작 시 읽기가 폭증하던 문제를 차단한다.
-      const [members, trainers, schedules, notices, payments, body, settings, expenses, promos, settleOverrides] = await Promise.all([
+      const [members, trainers, schedules, notices, payments, body, settings, expenses, promos, settleOverrides, integrityDismissals] = await Promise.all([
         loadCollection('members'),
         loadCollection('trainers'),
         loadCollection('schedules'),
@@ -411,6 +412,7 @@ export async function initStore({ force = false } = {}) {
         loadCollection('expenses', { optional: true }),
         loadCollection('promos', { optional: true }),
         loadCollection('settleOverrides', { optional: true }),
+        loadCollection('integrityDismissals', { optional: true }), // 관리자 전용 — 일반 트레이너 로그인 시 권한 오류 나도 앱 안 죽게 optional
       ]);
       cache.members=members; cache.trainers=trainers; cache.schedules=schedules;
       cache.notices=notices; cache.payments=payments; cache.body=body;
@@ -422,6 +424,7 @@ export async function initStore({ force = false } = {}) {
       cache.expenses = expenses;
       cache.promos   = promos;
       cache.settleOverrides = settleOverrides;
+      cache.integrityDismissals = integrityDismissals;
       const now = Date.now();
       __SYNC_COLLECTIONS.forEach(c => { if (!__failedOptional.has(c)) __syncedAt[c] = now; }); // 실패한 컬렉션은 "동기화됨" 표시를 건너뛰어 다음 번에 재시도
       __syncedAt.deletions = now;
@@ -488,6 +491,14 @@ async function mirrorUnifiedReport(mid, report, reportType) {
     console.warn('[mirrorUnifiedReport] 통합 저장 실패(무시):', e?.code || e?.message);
     return null;
   }
+}
+// mirrorUnifiedReport의 짝 함수 — 전용 리포트(gait/posture/rom)·측정 세션(ai) 삭제 시
+// users/{mid}/reports/{reportId}에 남아있는 미러 사본도 함께 지운다. mirror와 동일하게
+// best-effort(실패해도 본래의 삭제는 절대 막지 않음) — 호출부에서 await 없이 fire-and-forget.
+function unmirrorUnifiedReport(mid, reportId) {
+  if (!mid || !reportId) return Promise.resolve();
+  return deleteDoc(doc(db, 'users', mid, 'reports', reportId))
+    .catch(e => console.warn('[unmirrorUnifiedReport] 통합 미러 삭제 실패(무시):', e?.code || e?.message));
 }
 function fbDelete(name, id) {
   return deleteDoc(doc(db, name, id)).then(r => {
@@ -700,7 +711,10 @@ export const store = {
     const prev=cache.members;
     cache.members=cache.members.map(m=>m.id===id?{...m,...p}:m);
     const u=cache.members.find(m=>m.id===id);
-    try { if(u) await fbSet('members',id,u); }
+    // [버그 수정 2026-08-09 — updateSchedule과 동일한 패턴 전체 적용] u가 없으면
+    // 조용히 성공한 것처럼 리턴하지 않는다(아래 나머지 update* 함수들도 동일).
+    if (!u) { cache.members = prev; throw new Error('회원을 찾을 수 없습니다.'); }
+    try { await fbSet('members',id,u); }
     catch(e){ cache.members=prev; throw e; }
   },
   deleteMember:  async id => {
@@ -835,7 +849,8 @@ export const store = {
     const prev=cache.trainers;
     cache.trainers=cache.trainers.map(t=>t.id===id?{...t,...p}:t);
     const u=cache.trainers.find(t=>t.id===id);
-    try { if(u) await fbSet('trainers',id,u); }
+    if (!u) { cache.trainers = prev; throw new Error('트레이너를 찾을 수 없습니다.'); }
+    try { await fbSet('trainers',id,u); }
     catch(e){ cache.trainers=prev; throw e; }
   },
   deleteTrainer:  async id => {
@@ -856,7 +871,20 @@ export const store = {
     const prev=cache.schedules;
     cache.schedules=cache.schedules.map(s=>s.id===id?{...s,...p}:s);
     const u=cache.schedules.find(s=>s.id===id);
-    try { if(u) await fbSet('schedules',id,u); }
+    // [버그 수정 2026-08-09] u가 없으면(캐시에 해당 id가 없음 — 이미 다른 곳에서
+    // 삭제됐거나 캐시가 오래됨) 예전엔 그냥 조용히 아무것도 안 하고 성공한 것처럼
+    // 리턴했다(if(u)가 false라 fbSet 자체를 안 부르고 그대로 끝남). 호출부는
+    // "성공"으로 알고 다음 단계(예: 트레이너에게 "옮겼어요"라고 말하기)를
+    // 진행하는데 실제로는 Firestore에 아무 것도 안 바뀐 상태 — 특히 예약 시간
+    // 변경(reservationService.rescheduleReservation) 확인 흐름처럼 propose(조회)와
+    // confirm(저장) 사이에 시간차가 있으면, 그 사이 다른 기기에서 같은 예약을
+    // 지웠을 때 이 상태가 재현된다. deleteScheduleWithRestore와 같은 방식으로
+    // 명확히 실패시킨다.
+    if (!u) {
+      cache.schedules = prev;
+      throw new Error('스케줄을 찾을 수 없습니다.');
+    }
+    try { await fbSet('schedules',id,u); }
     catch(e){ cache.schedules=prev; throw e; }
   },
   deleteSchedule:  async id => {
@@ -877,7 +905,8 @@ export const store = {
     const prev=cache.notices;
     cache.notices=cache.notices.map(n=>n.id===id?{...n,...p}:n);
     const u=cache.notices.find(n=>n.id===id);
-    try { if(u) await fbSet('notices',id,u); return u; }
+    if (!u) { cache.notices = prev; throw new Error('공지를 찾을 수 없습니다.'); }
+    try { await fbSet('notices',id,u); return u; }
     catch(e){ cache.notices=prev; throw e; }
   },
   deleteNotice: async id => {
@@ -911,7 +940,8 @@ export const store = {
     const prev=cache.payments[mid];
     cache.payments[mid]=(cache.payments[mid]||[]).map(p=>p.id===pid?{...p,...patch}:p);
     const u=(cache.payments[mid]||[]).find(p=>p.id===pid);
-    try { if(u) await fbSet('payments', pid, {...u, __mid:mid}); return u; }
+    if (!u) { cache.payments[mid] = prev; throw new Error('결제 내역을 찾을 수 없습니다.'); }
+    try { await fbSet('payments', pid, {...u, __mid:mid}); return u; }
     catch(e){ cache.payments[mid]=prev; throw e; }
   },
   deletePayment: async (mid,pid) => {
@@ -1542,7 +1572,8 @@ export const store = {
     const prev = cache.expenses;
     cache.expenses = cache.expenses.map(e=>e.id===id?{...e,...patch}:e);
     const u = cache.expenses.find(e=>e.id===id);
-    try { if(u) await fbSet('expenses', id, u); return u; }
+    if (!u) { cache.expenses = prev; throw new Error('지출 내역을 찾을 수 없습니다.'); }
+    try { await fbSet('expenses', id, u); return u; }
     catch(err){ cache.expenses = prev; throw err; }
   },
   deleteExpense: async (id) => {
@@ -1598,6 +1629,25 @@ export const store = {
     cache.settleOverrides = cache.settleOverrides.filter(o => o.id !== id);
     try { await fbDelete('settleOverrides', id); }
     catch(e){ cache.settleOverrides = prev; throw e; }
+  },
+
+  // ── 데이터 무결성 검사(integrityAudit.js) — "무시(정상)" 처리 ──────────────
+  //  finding.key를 문서 id로 그대로 써서 같은 문제는 항상 같은 문서에 덮어쓴다
+  //  (재무시해도 중복 안 쌓임). addPostureReport(aiStore)와 동일한 낙관적 갱신 +
+  //  실패 시 롤백 패턴 — 화면은 즉시 반영되고, 저장 실패 시에만 되돌아간다.
+  getIntegrityDismissals: () => cache.integrityDismissals,
+  dismissIntegrityFinding: async (finding, { dismissedBy = null } = {}) => {
+    if (!finding?.key) throw new Error('finding.key가 없어 무시 처리를 할 수 없습니다.');
+    const prev = cache.integrityDismissals;
+    const record = { ...finding, id: finding.key, dismissedBy, dismissedAt: Date.now() };
+    cache.integrityDismissals = [...prev.filter(d => d.id !== finding.key), record];
+    try {
+      await fbSet('integrityDismissals', finding.key, record);
+      return record;
+    } catch (e) {
+      cache.integrityDismissals = prev;
+      throw e;
+    }
   },
 };
 
@@ -1681,26 +1731,57 @@ export const aiStore = {
   deleteSession: async (mid, sid) => {
     const prev=cache.ai[mid];
     cache.ai[mid]=(cache.ai[mid]||[]).filter(s=>s.id!==sid);
-    try { await fbDelete('ai', sid); }
+    try { await fbDelete('ai', sid); await unmirrorUnifiedReport(mid, sid); }
     catch(e){ cache.ai[mid]=prev; throw e; }
+  },
+  // [Axis3 확장 2026-08-08] MomiAutoNote.jsx(자동 노트)를 VBT/스탠스/스쿼트처럼
+  // 전용 컬렉션 없이 세션(ai)에 저장되는 측정에도 연결하기 위해 추가 —
+  // updateGaitReport/updateRomReport와 동일한 낙관적 갱신 + 실패 시 롤백 패턴.
+  updateSession: async (mid, sid, patch) => {
+    const prev = cache.ai[mid];
+    cache.ai[mid] = (cache.ai[mid] || []).map(s => s.id === sid ? { ...s, ...patch } : s);
+    const u = (cache.ai[mid] || []).find(s => s.id === sid);
+    if (!u) { cache.ai[mid] = prev; throw new Error('세션을 찾을 수 없습니다.'); }
+    try { await fbSet('ai', sid, { ...u, __mid: mid }); return u; }
+    catch (e) { cache.ai[mid] = prev; throw e; }
   },
   // 전용 리포트 삭제(측정별/회차별 삭제 기능) — deleteSession과 동일한 낙관적 캐시 반영 패턴.
   deleteGaitReport: async (mid, rid) => {
     const prev = cache.gaitReports[mid];
     cache.gaitReports[mid] = (cache.gaitReports[mid] || []).filter(r => r.id !== rid);
-    try { await fbDelete('gait_reports', rid); }
+    try { await fbDelete('gait_reports', rid); await unmirrorUnifiedReport(mid, rid); }
+    catch (e) { cache.gaitReports[mid] = prev; throw e; }
+  },
+  // [Axis3 확장 2026-08-08] MomiAutoNote.jsx(자동 노트)를 gait/jump 리포트에도 연결하기
+  // 위해 추가 — updatePostureReport와 동일한 낙관적 갱신 + 실패 시 롤백 패턴.
+  updateGaitReport: async (mid, rid, patch) => {
+    const prev = cache.gaitReports[mid];
+    cache.gaitReports[mid] = (cache.gaitReports[mid] || []).map(r => r.id === rid ? { ...r, ...patch } : r);
+    const u = (cache.gaitReports[mid] || []).find(r => r.id === rid);
+    if (!u) { cache.gaitReports[mid] = prev; throw new Error('보행 리포트를 찾을 수 없습니다.'); }
+    try { await fbSet('gait_reports', rid, { ...u, __mid: mid }); return u; }
     catch (e) { cache.gaitReports[mid] = prev; throw e; }
   },
   deletePostureReport: async (mid, rid) => {
     const prev = cache.postureReports[mid];
     cache.postureReports[mid] = (cache.postureReports[mid] || []).filter(r => r.id !== rid);
-    try { await fbDelete('posture_reports', rid); }
+    try { await fbDelete('posture_reports', rid); await unmirrorUnifiedReport(mid, rid); }
     catch (e) { cache.postureReports[mid] = prev; throw e; }
   },
   deleteRomReport: async (mid, rid) => {
     const prev = cache.romReports[mid];
     cache.romReports[mid] = (cache.romReports[mid] || []).filter(r => r.id !== rid);
-    try { await fbDelete('rom_reports', rid); }
+    try { await fbDelete('rom_reports', rid); await unmirrorUnifiedReport(mid, rid); }
+    catch (e) { cache.romReports[mid] = prev; throw e; }
+  },
+  // [Axis3 확장 2026-08-08] MomiAutoNote.jsx를 ROM 리포트에도 연결하기 위해 추가 —
+  // updatePostureReport와 동일한 낙관적 갱신 + 실패 시 롤백 패턴.
+  updateRomReport: async (mid, rid, patch) => {
+    const prev = cache.romReports[mid];
+    cache.romReports[mid] = (cache.romReports[mid] || []).map(r => r.id === rid ? { ...r, ...patch } : r);
+    const u = (cache.romReports[mid] || []).find(r => r.id === rid);
+    if (!u) { cache.romReports[mid] = prev; throw new Error('ROM 리포트를 찾을 수 없습니다.'); }
+    try { await fbSet('rom_reports', rid, { ...u, __mid: mid }); return u; }
     catch (e) { cache.romReports[mid] = prev; throw e; }
   },
   deleteAll:     async (mid) => {
@@ -1782,7 +1863,8 @@ export const aiStore = {
     const prev = cache.postureReports[mid];
     cache.postureReports[mid] = (cache.postureReports[mid] || []).map(r => r.id === rid ? { ...r, ...patch } : r);
     const u = (cache.postureReports[mid] || []).find(r => r.id === rid);
-    try { if (u) await fbSet('posture_reports', rid, { ...u, __mid: mid }); return u; }
+    if (!u) { cache.postureReports[mid] = prev; throw new Error('자세 리포트를 찾을 수 없습니다.'); }
+    try { await fbSet('posture_reports', rid, { ...u, __mid: mid }); return u; }
     catch (e) { cache.postureReports[mid] = prev; throw e; }
   },
 };

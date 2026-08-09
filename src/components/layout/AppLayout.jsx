@@ -17,8 +17,9 @@ const NAV = [
   { path:'/members',  label:'회원관리', icon:'👥' },
   { path:'/schedule', label:'스케줄',   icon:'📅' },
   { path:'/ai',       label:'AI분석',   icon:'🤖' },
+  // [리포트 통합 2026-08-09] 종합리포트는 별도 메뉴가 아니라 '리포트' 안의 한
+  // 섹션으로 흡수됐다(ComprehensiveReportSection) — 메뉴 항목을 따로 안 둔다.
   { path:'/report',   label:'리포트',   icon:'📊' },
-  { path:'/summary',  label:'종합리포트', icon:'🗂️' },
   { path:'/trainers', label:'트레이너', icon:'💪', adminOnly:true },
   { path:'/revenue',  label:'매출관리', icon:'💰' },
   { path:'/settings', label:'설정',     icon:'⚙️' },

@@ -34,9 +34,9 @@ const makePayForm = () => ({
   category: 'normal',
 });
 
-export default function MemberDetail({ member:initMember, trainers, onClose, onUpdate }) {
+export default function MemberDetail({ member:initMember, trainers, onClose, onUpdate, initialTab }) {
   const { user } = useAuth();
-  const [tab, setTab]       = useState('info');
+  const [tab, setTab]       = useState(initialTab || 'info');
   const [member, setMember] = useState(initMember);
   const [editMode, setEdit] = useState(false);
   const [editForm, setEF]   = useState({ ...initMember });
