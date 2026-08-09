@@ -341,6 +341,13 @@ export default function GlobalVoiceCommand() {
     onWakeOnly: handleWakeOnly,
     onMismatch: handleMismatch,
     onErrorOccurred: handleErrorOccurred,
+    // [버그 수정 — 웨이크워드 이중 요구 2026-08-09] 마이크 버튼을 직접 눌러서
+    // 켜는 방식이라, 그 자체가 이미 "지금부터 나한테 말하는 거야"라는 명시적
+    // 신호다 — 그 위에 "모미야"까지 요구하면 중복이다(실사용 스크린샷으로 확인:
+    // 버튼 누르고 "회원 관리 들어가 줘"라고 또렷이 말해도 "모미야"가 없어서
+    // 그냥 무시됐음). KioskVoiceCommand.jsx(항상 켜진 공용 기기)는 기본값
+    // true를 그대로 써서 웨이크워드를 계속 요구한다.
+    requireWakeWord: false,
   });
 
   // awaitReply는 useMomiVoice() 내부에서 deps:[]로 만들어진 안정적 함수라 사실상

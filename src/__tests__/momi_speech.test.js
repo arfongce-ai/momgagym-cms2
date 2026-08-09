@@ -231,3 +231,19 @@ describe('GlobalVoiceCommand.jsx — 음성 대화형(history) 배선', () => {
     expect(occurrences).toBe(4);
   });
 });
+
+// [버그 수정 — 웨이크워드 이중 요구 2026-08-09] 실사용 스크린샷 확인 —
+// 마이크 버튼을 눌러서 켰는데도 "모미야"가 없으면 명확한 명령("회원 관리
+// 들어가 줘" 등)조차 무시됐다. 버튼을 누른 행위 자체가 이미 명시적 신호라
+// 웨이크워드를 또 요구할 필요가 없다.
+describe('GlobalVoiceCommand.jsx — requireWakeWord: false (버튼으로 켰으니 웨이크워드 중복 요구 안 함)', () => {
+  const src = readSrc('src', 'components', 'common', 'GlobalVoiceCommand.jsx');
+
+  it('useMomiVoice에 requireWakeWord: false를 넘긴다', () => {
+    const start = src.indexOf('const { supported, listening, startListening, stopListening, awaitReply } = useMomiVoice({');
+    const end = src.indexOf('});', start);
+    const body = src.slice(start, end);
+    expect(start).toBeGreaterThan(-1);
+    expect(body).toContain('requireWakeWord: false,');
+  });
+});

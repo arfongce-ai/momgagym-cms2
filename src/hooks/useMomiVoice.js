@@ -64,7 +64,18 @@ function isIOS() {
   return isIPhoneOrIPad || isIPadOS13Plus;
 }
 
-export function useMomiVoice({ onCommand, onWakeOnly, onMismatch, onErrorOccurred } = {}) {
+// [버그 수정 — 웨이크워드 이중 요구 2026-08-09] 실사용 스크린샷으로 확인된 문제:
+// GlobalVoiceCommand.jsx(마이크 버튼을 직접 눌러서 켜는 방식)에서도 이 훅이
+// "모미야"를 요구해서, 버튼을 눌러 켠 뒤 "회원 관리 들어가 줘"라고 명확하게
+// 말해도 "[진단] 들림: ..."만 뜨고 아무 동작도 안 했다 — 버튼을 누른 행위
+// 자체가 이미 "지금부터 나한테 말하는 거야"라는 명시적 신호인데, 그 위에
+// "모미야"까지 요구하는 건 중복이었다. 반면 KioskVoiceCommand.jsx(항상 켜진
+// 공용 기기, 버튼 없음)는 계속 웨이크워드가 필요하다 — 안 그러면 옆에서 하는
+// 잡담까지 명령으로 오작동한다. requireWakeWord=false(GlobalVoiceCommand
+// 전용)면 들린 말 전체를 그대로 명령으로 넘긴다 — 습관적으로 "모미야"를
+// 붙여도(예: "모미야 회원 관리 열어줘") 그 뒤 키워드 매칭이 부분 문자열
+// 방식이라 그대로 잘 동작한다(깨지지 않음).
+export function useMomiVoice({ onCommand, onWakeOnly, onMismatch, onErrorOccurred, requireWakeWord = true } = {}) {
   const [listening, setListening] = useState(false);
   const [supported] = useState(() => !!getSpeechRecognition());
   const recognitionRef = useRef(null);
@@ -165,6 +176,31 @@ export function useMomiVoice({ onCommand, onWakeOnly, onMismatch, onErrorOccurre
         return;
       }
 
+      // [버그 수정 — 웨이크워드 이중 요구 2026-08-09] 위 requireWakeWord 설명 참고.
+      // 버튼으로 명시적으로 켠 경우(GlobalVoiceCommand)엔 웨이크워드 매칭 자체를
+      // 건너뛰고 들린 말 전체를 곧바로 명령으로 넘긴다. 다만 습관적으로 "모미야"
+      // 딱 한 마디만 말한 경우까지 그대로 명령으로 넘기면("모미야"라는 문장을
+      // Claude에 보내는 꼴) 어색하므로, 그 경우만 기존 2단계 흐름(다음 발화
+      // 대기)으로 자연스럽게 이어준다.
+      if (!requireWakeWord) {
+        const soloWake = matchWakeWord(heard);
+        if (soloWake && !heard.slice(soloWake.index + soloWake.length).trim()) {
+          if (onWakeOnly) {
+            activatedRef.current = true;
+            if (activationTimerRef.current) clearTimeout(activationTimerRef.current);
+            activationTimerRef.current = setTimeout(clearActivation, ACTIVATION_WINDOW_MS);
+            onWakeOnly();
+          }
+          return;
+        }
+        if (heard && onCommand) {
+          onCommand(heard);
+        } else if (onMismatch) {
+          onMismatch(heard);
+        }
+        return;
+      }
+
       const wakeMatch = matchWakeWord(heard);
       if (!wakeMatch) {
         // [진단용] 원격 디버깅(콘솔)에 접근 못 하는 상황을 위해, 웨이크워드가 안
@@ -255,7 +291,7 @@ export function useMomiVoice({ onCommand, onWakeOnly, onMismatch, onErrorOccurre
         // no-op
       }
     };
-  }, [onCommand, onWakeOnly, onMismatch, onErrorOccurred]);
+  }, [onCommand, onWakeOnly, onMismatch, onErrorOccurred, requireWakeWord]);
 
   const startListening = useCallback(() => {
     if (!recognitionRef.current) return;

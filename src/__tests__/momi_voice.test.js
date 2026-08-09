@@ -82,8 +82,8 @@ describe('useMomiVoice.js — iOS 대응 + 진단 로그', () => {
     );
   });
 
-  it('onWakeOnly·onMismatch·onErrorOccurred 모두 useEffect 의존성 배열에 포함된다', () => {
-    expect(src).toContain('}, [onCommand, onWakeOnly, onMismatch, onErrorOccurred]);');
+  it('onWakeOnly·onMismatch·onErrorOccurred·requireWakeWord 모두 useEffect 의존성 배열에 포함된다', () => {
+    expect(src).toContain('}, [onCommand, onWakeOnly, onMismatch, onErrorOccurred, requireWakeWord]);');
   });
 
   it('"모미야"만 부르면 다음 발화를 기다리는 대기 상태(activated)로 들어간다', () => {
@@ -369,5 +369,42 @@ describe('useMomiVoice.js — onend 재시작 실패 시 재시도(회귀 방지
     const retryStart = onendBody.indexOf('setTimeout(() => {');
     const retryBody = onendBody.slice(retryStart);
     expect(retryBody).toContain("onErrorOccurred('restart-failed')");
+  });
+});
+
+// [버그 수정 — 웨이크워드 이중 요구 2026-08-09] 실사용 스크린샷으로 확인된 문제:
+// GlobalVoiceCommand.jsx는 마이크 버튼을 직접 눌러서 켜는데, 그 뒤에도
+// "모미야"를 또 요구해서 "회원 관리 들어가 줘"처럼 명확한 명령도
+// "[진단] 들림: ..."만 뜨고 무시됐다. requireWakeWord=false로 이 중복 요구를
+// 없앴다 — 버튼 누른 행위 자체가 이미 "나한테 말하는 거야"라는 신호이므로.
+describe('useMomiVoice.js — requireWakeWord (웨이크워드 이중 요구 버그 수정)', () => {
+  const src = readSrc('src', 'hooks', 'useMomiVoice.js');
+
+  it('기본값은 true다(KioskVoiceCommand.jsx 등 기존 동작 보존 — 회귀 방지)', () => {
+    expect(src).toContain('requireWakeWord = true');
+  });
+
+  it('onresult 이펙트의 deps 배열에 requireWakeWord가 들어간다(stale closure 방지)', () => {
+    expect(src).toContain('}, [onCommand, onWakeOnly, onMismatch, onErrorOccurred, requireWakeWord]);');
+  });
+
+  it('requireWakeWord가 false면 웨이크워드 매칭 없이 들린 말 전체를 곧바로 명령으로 넘긴다', () => {
+    const idx = src.indexOf('if (!requireWakeWord) {');
+    expect(idx).toBeGreaterThan(-1);
+    // activatedRef(2단계 대기)/pendingReplyRef(즉답 대기) 분기보다는 뒤,
+    // 웨이크워드 매칭(matchWakeWord)보다는 앞이어야 한다 — 즉답 대기 중엔 그게
+    // 항상 우선이고, 웨이크워드 매칭 자체를 건너뛰는 게 이 분기의 목적이므로.
+    const pendingReplyIdx = src.indexOf('if (pendingReplyRef.current) {');
+    const wakeMatchIdx = src.indexOf('const wakeMatch = matchWakeWord(heard);');
+    expect(idx).toBeGreaterThan(pendingReplyIdx);
+    expect(idx).toBeLessThan(wakeMatchIdx);
+  });
+
+  it('그래도 "모미야"만 딱 말한 경우는(습관적으로) 곧바로 명령으로 넘기지 않고 기존 2단계 대기(onWakeOnly)로 자연스럽게 이어준다', () => {
+    const start = src.indexOf('if (!requireWakeWord) {');
+    const end = src.indexOf('const wakeMatch = matchWakeWord(heard);', start);
+    const body = src.slice(start, end);
+    expect(body).toContain('const soloWake = matchWakeWord(heard);');
+    expect(body).toContain('activatedRef.current = true;');
   });
 });
