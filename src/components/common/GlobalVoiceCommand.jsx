@@ -10,7 +10,7 @@ import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMomiVoice } from '../../hooks/useMomiVoice';
 import { useMomiSpeech } from '../../hooks/useMomiSpeech';
-import { processVoiceCommand } from '../../services/voiceCommandService';
+import { processVoiceCommand, buildTimerControlMessage } from '../../services/voiceCommandService';
 import {
   buildReservationSummary,
   buildCancelSummary,
@@ -271,6 +271,12 @@ export default function GlobalVoiceCommand() {
           handledSeparately = true;
           clearHistory(chatHistoryRef, lastChatAtRef);
           await runRescheduleConfirmFlow(result.propose);
+        } else if (result.type === 'timer_control') {
+          // [음성 타이머 제어 2026-08-09] 예약류와 달리 확인 절차 없이 바로
+          // 실행됐다(순수 UI 제어라 되돌릴 수 없는 부작용이 없음) — 결과만
+          // 안내한다. 도구를 조작했으니 잡담 맥락은 정리.
+          clearHistory(chatHistoryRef, lastChatAtRef);
+          message = buildTimerControlMessage(result.cmd);
         } else if (result.type === 'chat') {
           message = result.text;
           recordChatTurn(chatHistoryRef, lastChatAtRef, transcript, result.text);

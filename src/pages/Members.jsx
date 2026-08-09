@@ -56,7 +56,6 @@ export default function Members() {
     }
   }, [searchParams, members]);
 
-
   // [음성 명령 확장 2026-08-09] "모미야, OO님 세션/수납/신체정보/측정이력/메모
   // 보여줘" 같은 명령으로 도착했으면 해당 회원을 그 탭으로 바로 연다.
   // AiMeasureHub.jsx/Report.jsx/Schedule.jsx는 이미 consumePendingVoiceTarget으로

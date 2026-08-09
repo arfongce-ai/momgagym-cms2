@@ -57,10 +57,26 @@ const ALL_TOOLS = [
     description: '리포트 화면을 연다. "OO님 리포트 열어줘"·"OO님 점프 리포트 보여줘" 같은 요청.',
     input_schema: { type: 'object', properties: {
       memberName: { type: 'string', description: '들린 회원 이름 그대로. 언급 없으면 생략.' },
-
       testId: { type: 'string', enum: ['posture', 'rom', 'gait', 'jump', 'lifting', 'stance', 'squat'],
         description: '언급된 측정 종류(저장된 리포트 종류). 언급되면 도착 즉시 그 회원의 가장 최근 해당 리포트를 자동으로 연다. 없으면 생략(회원만 선택된 채로 열림).' } } } },
-
+  // [음성 타이머 제어 2026-08-09] go_ai_measure의 초시계 메뉴 이동은 화면만 열어줄 뿐
+  // 실제로 초시계·타이머·인터벌·메트로놈을 시작/정지시키지는 않는다. "타이머 30초
+  // 돌려줘"처럼 실제 작동을 요청하면 이 도구를 쓴다 — destinationId가 없어서(화면
+  // 이동이 아니라 제어 명령이라) propose_reservation과 같은 방식으로 navigate 매칭
+  // 이전에 별도 분기한다.
+  { name: 'control_timer', destinationId: null, roles: ['trainer', 'admin'],
+    description: 'AI측정 탭의 초시계·타이머·인터벌·메트로놈을 실제로 시작/정지/리셋한다(화면만 여는 게 아니라 실제 작동). "타이머 30초 돌려줘", "메트로놈 120bpm으로 켜줘", "인터벌 운동40초 휴식20초 8라운드로 시작해줘", "초시계 시작해줘/멈춰줘/리셋해줘" 같은 요청일 때 호출.',
+    input_schema: { type: 'object', properties: {
+      tool: { type: 'string', enum: ['stopwatch', 'countdown', 'interval', 'metronome'],
+        description: '조작할 도구. "초시계"→stopwatch, "타이머"/"카운트다운"→countdown, "인터벌"/"타바타"/"HIIT"/"서킷"→interval, "메트로놈"→metronome.' },
+      action: { type: 'string', enum: ['start', 'pause', 'reset', 'lap'],
+        description: '"시작해줘"/"돌려줘"/"켜줘"/"계속해줘"→start, "멈춰줘"/"정지해줘"/"일시정지"/"꺼줘"→pause, "리셋해줘"/"처음부터"→reset, 초시계에서 "랩"/"구간기록"→lap(초시계 전용, 다른 도구엔 없음).' },
+      seconds: { type: 'number', description: 'countdown을 시작할 때 설정할 총 시간(초 단위 정수). "3분"→180, "90초"→90처럼 변환. countdown이 아니거나 특정 시간 언급이 없으면 생략(생략하면 화면에 이미 설정된 시간 또는 일시정지된 남은 시간으로 시작).' },
+      workSec: { type: 'number', description: 'interval 운동 구간 길이(초). 언급 없으면 생략(기존 설정 유지).' },
+      restSec: { type: 'number', description: 'interval 휴식 구간 길이(초). 언급 없으면 생략(기존 설정 유지).' },
+      rounds: { type: 'number', description: 'interval 라운드 수. 언급 없으면 생략(기존 설정 유지).' },
+      bpm: { type: 'number', description: 'metronome 템포(40~220). 언급 없으면 생략(기존 템포 유지).' },
+    }, required: ['tool', 'action'] } },
   // [예약 생성 프로젝트 2026-08-08] 화면 이동이 아니라 새 예약을 만들어달라는
   // 요청. "OO님 O월 O일 O시에 예약 잡아줘/걸어줘" 같은 요청일 때만 호출 —
   // 이미 있는 예약을 보는 것(스케줄 화면 열기)과 혼동하지 않도록 설명에 명시.
@@ -227,6 +243,27 @@ export async function onRequestPost(context) {
             oldStartTime: toolUse.input?.oldStartTime || null,
             newDate: toolUse.input?.newDate || null,
             newStartTime: toolUse.input?.newStartTime || null,
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      // [음성 타이머 제어 2026-08-09] 화면 이동(navigate)이 아니라 초시계·타이머·
+      // 인터벌·메트로놈을 실제로 조작하는 명령 — destinationId가 없어서(제어
+      // 명령이지 화면 이동이 아니므로) navigate 매칭보다 먼저 분기한다. 저장할
+      // 데이터가 없는 순수 UI 제어(되돌릴 수 없는 부작용 없음)라 예약류와 달리
+      // 트레이너 확인 없이 바로 실행한다 — 실제 시작/정지는 클라이언트
+      // (TimerTool.jsx)가 담당한다.
+      if (toolUse.name === 'control_timer') {
+        return new Response(
+          JSON.stringify({
+            type: 'timer_control',
+            tool: toolUse.input?.tool || null,
+            action: toolUse.input?.action || null,
+            seconds: typeof toolUse.input?.seconds === 'number' ? toolUse.input.seconds : null,
+            workSec: typeof toolUse.input?.workSec === 'number' ? toolUse.input.workSec : null,
+            restSec: typeof toolUse.input?.restSec === 'number' ? toolUse.input.restSec : null,
+            rounds: typeof toolUse.input?.rounds === 'number' ? toolUse.input.rounds : null,
+            bpm: typeof toolUse.input?.bpm === 'number' ? toolUse.input.bpm : null,
           }),
           { status: 200, headers: { 'Content-Type': 'application/json' } }
         );

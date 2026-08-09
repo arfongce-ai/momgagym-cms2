@@ -8,6 +8,12 @@ import { findDestination } from '../voice/commandRegistry.js';
 import { setPendingVoiceTarget } from '../voice/pendingVoiceTarget.js';
 import { auth } from '../firebase.js';
 import { proposeReservation, proposeCancelReservation, proposeRescheduleReservation } from './reservationService.js';
+// [음성 타이머 제어 2026-08-09] publishTimerControl은 화면이 이미 열려 있으면
+// true를 돌려주며 즉시 실행한다 — 그 경우 pendingTimerCommand(1회성 저장 +
+// 화면 이동)까지 갈 필요가 없다. false면(화면이 아직 안 열림) 저장해두고 그
+// 화면으로 이동시킨다.
+import { publishTimerControl } from '../voice/timerControlBus.js';
+import { setPendingTimerCommand } from '../voice/pendingTimerCommand.js';
 
 // 간단한 한글 이름 퍼지 매칭: 공백 제거 + 부분 일치 우선, 없으면 자모 유사도로 fallback.
 function normalize(str) {
@@ -216,6 +222,34 @@ export async function processVoiceCommand({
     return { type: 'reservation_reschedule_propose', propose };
   }
 
+  // [음성 타이머 제어 2026-08-09] 화면 이동이 아니라 초시계·타이머·인터벌·
+  // 메트로놈을 실제로 시작/정지/리셋하는 명령. 예약류와 달리 되돌릴 수 없는
+  // 데이터 변경이 아닌 순수 UI 제어라 트레이너 확인 없이 바로 실행한다.
+  if (data.type === 'timer_control') {
+    const cmd = {
+      tool: data.tool || null,
+      action: data.action || null,
+      seconds: typeof data.seconds === 'number' ? data.seconds : null,
+      workSec: typeof data.workSec === 'number' ? data.workSec : null,
+      restSec: typeof data.restSec === 'number' ? data.restSec : null,
+      rounds: typeof data.rounds === 'number' ? data.rounds : null,
+      bpm: typeof data.bpm === 'number' ? data.bpm : null,
+    };
+    if (!cmd.tool || !cmd.action) {
+      return { type: 'chat', text: '어떤 도구를 어떻게 조작할지 못 알아들었어요. 다시 말씀해주세요.' };
+    }
+    // 화면(TimerTool.jsx)이 이미 열려 있으면 실시간 버스로 즉시 전달된다(true).
+    // 아직 안 열려 있으면(false) 1회성으로 저장해두고 그 화면으로 이동시킨다 —
+    // AiMeasureHub.jsx가 이미 지원하는 testId:'timer' 이동을 그대로 재사용한다.
+    const deliveredLive = publishTimerControl(cmd);
+    if (!deliveredLive) {
+      setPendingTimerCommand(cmd);
+      setPendingVoiceTarget({ testId: 'timer' });
+      if (navigate) navigate('/ai');
+    }
+    return { type: 'timer_control', cmd, deliveredLive };
+  }
+
   // type === 'navigate'
   const destination = findDestination(data.destinationId);
   if (!destination) {
@@ -256,4 +290,45 @@ export async function processVoiceCommand({
     matchedMember,
     requestedName: data.memberName || null,
   };
+}
+
+// [음성 타이머 제어 2026-08-09] GlobalVoiceCommand.jsx/KioskVoiceCommand.jsx가
+// 공통으로 쓰는 음성 안내 문구 생성기 — buildReservationSummary(reservationService.js)
+// 와 같은 이유로 여기 한 곳에만 두고 두 컴포넌트가 같이 가져다 쓴다(중복 방지).
+const TIMER_TOOL_LABEL = { stopwatch: '초시계', countdown: '타이머', interval: '인터벌', metronome: '메트로놈' };
+const TIMER_ACTION_LABEL = { start: '시작', pause: '정지', reset: '리셋', lap: '랩 기록' };
+
+export function buildTimerControlMessage(cmd) {
+  if (!cmd?.tool || !cmd?.action) return '타이머를 조작하지 못했어요.';
+  const toolLabel = TIMER_TOOL_LABEL[cmd.tool] || cmd.tool;
+  const actionLabel = TIMER_ACTION_LABEL[cmd.action] || cmd.action;
+  const extras = [];
+  if (cmd.tool === 'countdown' && cmd.action === 'start' && cmd.seconds) {
+    const m = Math.floor(cmd.seconds / 60);
+    const s = cmd.seconds % 60;
+    extras.push(m > 0 ? `${m}분${s > 0 ? ` ${s}초` : ''}` : `${s}초`);
+  }
+  if (cmd.tool === 'metronome' && cmd.action === 'start' && cmd.bpm) {
+    extras.push(`${cmd.bpm}BPM`);
+  }
+  if (cmd.tool === 'interval' && cmd.action === 'start' && (cmd.workSec || cmd.restSec || cmd.rounds)) {
+    const parts = [];
+    if (cmd.workSec) parts.push(`운동 ${cmd.workSec}초`);
+    if (cmd.restSec) parts.push(`휴식 ${cmd.restSec}초`);
+    if (cmd.rounds) parts.push(`${cmd.rounds}라운드`);
+    if (parts.length) extras.push(parts.join(' '));
+  }
+  const extraText = extras.length ? ` ${withRoParticle(extras.join(', '))}` : '';
+  return `${toolLabel}${extraText} ${actionLabel}할게요.`;
+}
+
+// 한글 받침 유무에 따라 "로"/"으로"를 골라 붙인다("2분로"가 아니라 "2분으로"가
+// 맞는 것처럼, 마지막 글자가 받침으로 끝나면 "으로"가 필요하다). 한글이 아닌
+// 문자로 끝나면(예: "120BPM") 안전하게 "로"를 붙인다.
+function withRoParticle(text) {
+  if (!text) return text;
+  const last = text[text.length - 1];
+  const code = last.charCodeAt(0) - 0xac00;
+  const hasBatchim = code >= 0 && code <= 11171 && code % 28 !== 0;
+  return `${text}${hasBatchim ? '으로' : '로'}`;
 }

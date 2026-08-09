@@ -226,9 +226,11 @@ describe('GlobalVoiceCommand.jsx — 음성 대화형(history) 배선', () => {
     expect(chatBranch).toContain('recordChatTurn(chatHistoryRef, lastChatAtRef, transcript, result.text);');
   });
 
-  it('예약 생성/취소/변경·화면 이동처럼 실제 액션이 일어나면 clearHistory로 잡담 맥락을 정리한다', () => {
+  it('예약 생성/취소/변경·타이머 제어·화면 이동처럼 실제 액션이 일어나면 clearHistory로 잡담 맥락을 정리한다', () => {
     const occurrences = (handleBody.match(/clearHistory\(chatHistoryRef, lastChatAtRef\)/g) || []).length;
-    expect(occurrences).toBe(4);
+    // reservation_propose / reservation_cancel_propose / reservation_reschedule_propose /
+    // timer_control(음성 타이머 제어 2026-08-09 신규) / navigate(else) = 5곳.
+    expect(occurrences).toBe(5);
   });
 });
 

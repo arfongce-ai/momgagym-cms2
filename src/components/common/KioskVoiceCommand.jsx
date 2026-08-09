@@ -12,7 +12,7 @@ import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMomiVoice } from '../../hooks/useMomiVoice';
 import { useMomiSpeech } from '../../hooks/useMomiSpeech';
-import { processVoiceCommand } from '../../services/voiceCommandService';
+import { processVoiceCommand, buildTimerControlMessage } from '../../services/voiceCommandService';
 import {
   buildReservationSummary,
   buildCancelSummary,
@@ -246,6 +246,11 @@ export default function KioskVoiceCommand() {
           handledSeparately = true;
           clearHistory(chatHistoryRef, lastChatAtRef);
           await runRescheduleConfirmFlow(result.propose);
+        } else if (result.type === 'timer_control') {
+          // [음성 타이머 제어 2026-08-09] GlobalVoiceCommand.jsx와 동일 — 확인
+          // 없이 바로 실행됐으니 결과만 안내한다.
+          clearHistory(chatHistoryRef, lastChatAtRef);
+          message = buildTimerControlMessage(result.cmd);
         } else if (result.type === 'chat') {
           message = result.text;
           recordChatTurn(chatHistoryRef, lastChatAtRef, transcript, result.text);

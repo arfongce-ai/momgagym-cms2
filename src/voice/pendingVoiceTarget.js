@@ -2,7 +2,9 @@
 // 음성 명령 또는 화면 이동 버튼으로 다른 페이지로 넘어갈 때 "도착하면 누구를,
 // 어떤 측정/리포트를 선택해둘지"를 sessionStorage에 1회성으로 담아 전달한다.
 // 도착한 화면이 소비(consume)하면 즉시 삭제된다.
+
 const STORAGE_KEY = 'momi_pending_voice_target';
+
 /**
  * @param {object} params
  * @param {string} [params.memberName]
@@ -39,6 +41,7 @@ export function setPendingVoiceTarget({
     // sessionStorage 접근 실패(프라이빗 모드 등)는 조용히 무시 — 화면 이동 자체는 그대로 진행
   }
 }
+
 // 도착한 화면에서 한 번만 호출한다. 호출 즉시 저장된 값을 지운다(1회성).
 export function consumePendingVoiceTarget() {
   try {
