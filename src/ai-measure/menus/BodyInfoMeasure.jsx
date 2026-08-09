@@ -26,7 +26,7 @@ const TIER_STYLE = {
   bad:  'text-red-400',
 };
 
-export default function BodyInfoMeasure({ member, onSave, onBack, onGuestBodyInfoChange }) {
+export default function BodyInfoMeasure({ member, onSave, onBack, onGuestBodyInfoChange, onViewInReport }) {
   const isVirtual = member?.isVirtual === true;
   // 회원(실제/미등록)의 기존 키·몸무게를 초기값으로 채워, 다른 탭과의 연동 상태를
   // 눈으로 확인하고 이어서 보정할 수 있게 한다.
@@ -263,6 +263,21 @@ export default function BodyInfoMeasure({ member, onSave, onBack, onGuestBodyInf
             {actionMsg && <p className="text-center text-xs text-slate-400">{actionMsg}</p>}
           </div>
         </>
+      )}
+
+      {/* [리포트 통합 2026-08-09] 다른 측정 종류와 동일 패턴이지만 여기선 딱히
+          "열어줄 뷰어"가 없다 — 신체정보는 단일 리포트가 아니라 회원의 측정
+          캘린더(Report.jsx)에 누적되는 값이고, 그 화면은 이미 가장 최근 측정일을
+          기본으로 보여준다(dailyGroups[0]). 그래서 회원 선택만 해주면 저절로
+          오늘 저장한 값이 보인다 — 별도 뷰어 오픈 로직이 필요 없다. 컨디션만
+          저장한 경우(result 없음)에도 캘린더엔 그대로 반영되므로 saveState만 본다. */}
+      {saveState === 'saved' && !isVirtual && typeof onViewInReport === 'function' && (
+        <button
+          onClick={onViewInReport}
+          className="w-full rounded-xl border border-amber-500/40 bg-amber-500/10 text-amber-300 font-bold text-sm py-2.5"
+        >
+          📊 결과리포트에서 보기
+        </button>
       )}
 
       <p className="text-[11px] text-slate-500 leading-relaxed">

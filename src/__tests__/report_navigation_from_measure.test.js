@@ -345,9 +345,44 @@ describe('AiMeasureHub.jsx — onViewInReport를 모든 측정 컴포넌트에 �
 
   it('제네릭 렌더 블록(<Comp>)에서 한 곳에만 배선한다 — 측정 종류마다 따로 안 함', () => {
     expect(src).toContain('onViewInReport={() => viewInReport(active.id)}');
-    // 이 한 줄이 gait/jump/posture/rom/lifting/stance/squat 전부를 커버한다
+    // 이 한 줄이 gait/jump/posture/rom/lifting/stance/squat/body 전부를 커버한다
     // (active.id가 종류를 결정) — 종류별 분기 코드가 여기 새로 생기지 않았는지.
     const occurrences = (src.match(/onViewInReport=\{/g) || []).length;
     expect(occurrences).toBe(1);
+  });
+});
+
+// [리포트 통합 2026-08-09] 신체정보 — 7개 중 유일하게 "열어줄 뷰어"가 필요 없는
+// 케이스. 단일 리포트가 아니라 회원의 측정 캘린더(Report.jsx)에 누적되는
+// 값이고, 그 화면이 이미 가장 최근 측정일을 기본으로 보여주므로(dailyGroups[0])
+// 회원 선택만으로 충분하다 — Report.jsx 쪽 변경이 필요 없다(버튼만 추가).
+describe('BodyInfoMeasure.jsx — "결과리포트에서 보기" 버튼(뷰어 오픈 로직 불필요)', () => {
+  const src = readSrc('src', 'ai-measure', 'menus', 'BodyInfoMeasure.jsx');
+
+  it('onViewInReport prop을 받는다', () => {
+    expect(src).toContain('onViewInReport');
+  });
+
+  it('저장 완료(saveState===\'saved\') + 등록회원일 때만 버튼이 뜬다', () => {
+    const idx = src.indexOf('📊 결과리포트에서 보기');
+    expect(idx).toBeGreaterThan(-1);
+    const guardStart = src.lastIndexOf("saveState === 'saved' && !isVirtual", idx);
+    expect(guardStart).toBeGreaterThan(-1);
+    expect(guardStart).toBeLessThan(idx);
+  });
+
+  it('전신측정(result 있음)·컨디션만 저장(result 없음) 두 경우 모두에서 뜬다(둘 다 saveState만 확인)', () => {
+    // 버튼 조건이 result가 아니라 saveState만 보는지 — 컨디션만 저장해도
+    // 캘린더엔 그대로 반영되므로 버튼이 나와야 한다.
+    const start = src.indexOf('📊 결과리포트에서 보기');
+    const guardLine = src.slice(src.lastIndexOf('{saveState', start), start);
+    expect(guardLine).not.toContain('result &&');
+  });
+
+  it('onClick은 onViewInReport를 그대로 부른다', () => {
+    const idx = src.indexOf('📊 결과리포트에서 보기');
+    const buttonStart = src.lastIndexOf('<button', idx);
+    const buttonArea = src.slice(buttonStart, idx);
+    expect(buttonArea).toContain('onClick={onViewInReport}');
   });
 });
