@@ -151,7 +151,7 @@ function AngleBar({ label, leg, metricKey, flagPrefix, cautionDeg, riskDeg }) {
   );
 }
 
-export default function StanceAnalysisHub({ member, onBack, onSave, onSaveToFirebase }) {
+export default function StanceAnalysisHub({ member, onBack, onSave, onSaveToFirebase, onViewInReport }) {
   const save = onSaveToFirebase || onSave;
 
   // 요청에 따라 실시간을 기본값으로 (JumpAnalysisHub와 동일한 자리에 동일한 토글 UI)
@@ -461,6 +461,15 @@ export default function StanceAnalysisHub({ member, onBack, onSave, onSaveToFire
         <div className="w-full max-w-[794px] mx-auto mt-3 space-y-2">
           <ReportActions reportNodeId="stance-report-sheet" baseName={`${report.member?.name || '회원'}_한다리서기`} onMessage={setVideoShareMsg} />
           {videoShareMsg && <p className="text-center text-xs text-emerald-400">{videoShareMsg}</p>}
+          {/* [리포트 통합 2026-08-09] 다른 측정 종류와 동일 패턴. */}
+          {!member?.isVirtual && typeof onViewInReport === 'function' && (
+            <button
+              onClick={onViewInReport}
+              className="w-full rounded-xl border border-amber-500/40 bg-amber-500/10 text-amber-300 font-bold text-sm py-2.5"
+            >
+              📊 결과리포트에서 보기
+            </button>
+          )}
           <button onClick={backToMeasure} className="w-full rounded-lg bg-slate-800 text-white font-bold text-sm py-2.5">← 다시 측정</button>
         </div>
       </UnifiedReportCanvas>

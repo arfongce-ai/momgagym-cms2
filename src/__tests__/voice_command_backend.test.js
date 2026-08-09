@@ -192,3 +192,35 @@ describe('voice-command.js — 기존 navigate 동작은 그대로 유지된다(
     expect(src).toContain('const tools = ALL_TOOLS.filter((t) => t.roles.includes(effectiveRole))');
   });
 });
+
+// [음성 대화형 2026-08-09] "그럼 그건 어떻게 해요?" 같은 자연스러운 후속 질문을
+// 알아듣게 하는 핵심 배선. functions/api/momi.js의 Axis4(양방향 소통)와 완전히
+// 같은 패턴을 재사용한다 — 새 메커니즘을 만들지 않았는지 이름 그대로 확인한다.
+describe('voice-command.js — 멀티턴 대화(history) 지원', () => {
+  it('요청 바디에서 history를 받는다', () => {
+    expect(src).toContain('const { transcript, history } = body || {};');
+  });
+
+  it('momi.js와 동일하게 role/content 형식이 아닌 항목은 방어적으로 걸러낸다', () => {
+    const start = src.indexOf('const validHistory = Array.isArray(history)');
+    const end = src.indexOf(';', start) + 1;
+    const body = src.slice(start, end);
+    expect(body).toContain("t.role === 'user' || t.role === 'assistant'");
+    expect(body).toContain("typeof t.content === 'string'");
+  });
+
+  it('history가 있으면 현재 발화 앞에 이어붙여서 Claude에 보낸다(대화 연속성)', () => {
+    expect(src).toContain('messages: [...validHistory, { role: \'user\', content: transcript }],');
+  });
+
+  it('history가 없어도(빈 배열) 기존처럼 단발성 발화로 정상 동작한다(회귀 방지)', () => {
+    // validHistory가 빈 배열이면 스프레드 결과가 그대로 [{role:'user',...}] 하나뿐 —
+    // 별도 분기 없이 항상 같은 코드 경로를 타는지(if history else 같은 분기가 없어야
+    // 함 — 분기가 있으면 한쪽만 테스트되고 다른 쪽은 놓칠 위험이 있음).
+    const idx = src.indexOf('messages: [...validHistory,');
+    expect(idx).toBeGreaterThan(-1);
+    // 같은 함수 안에 messages를 만드는 조건 분기가 따로 없어야 한다.
+    const bodyBefore = src.slice(0, idx);
+    expect(bodyBefore).not.toMatch(/if \(validHistory/);
+  });
+});

@@ -91,7 +91,14 @@ export async function onRequestPost(context) {
   try {
     const { request, env } = context;
     const body = await request.json();
-    const { transcript } = body || {};
+    // [음성 대화형 2026-08-09] history?: [{role, content}, ...] — 이전 음성
+    // 대화 턴(functions/api/momi.js의 Axis4와 완전히 같은 패턴 재사용).
+    // 여태 이 엔드포인트는 매 호출이 무상태(stateless)라 "그럼 그건?" 같은
+    // 자연스러운 후속 질문을 못 알아들었다 — 매번 처음 보는 사람 취급하는
+    // 셈이었다. 화면 이동·예약류는 대화 맥락이 필요 없는 단발성 액션이라
+    // history에 안 쌓지만(클라이언트 책임), 자유 질문(coaching Q&A) 답변은
+    // 여기 쌓여서 다음 질문에 이어붙는다.
+    const { transcript, history } = body || {};
 
     if (!transcript) {
       return new Response(JSON.stringify({ error: 'transcript가 필요합니다.' }), {
@@ -118,6 +125,12 @@ export async function onRequestPost(context) {
     // 하루가 밀리는 오차가 생긴다 — KST(UTC+9)로 보정한 뒤 날짜만 뽑는다.
     const todayKST = new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
+    // [음성 대화형 2026-08-09] momi.js와 동일한 방어적 필터 — 클라이언트가 보낸
+    // history를 그대로 신뢰하지 않고 형식이 맞는 턴만 통과시킨다.
+    const validHistory = Array.isArray(history)
+      ? history.filter((t) => t && (t.role === 'user' || t.role === 'assistant') && typeof t.content === 'string')
+      : [];
+
     const anthropicRes = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
@@ -132,7 +145,7 @@ export async function onRequestPost(context) {
           MOMI_SYSTEM_PROMPT +
           `\n\n---\n\n[음성 명령 라우터 모드] 사용자가 "모미야" 다음에 한 말이 위 도구 목록 중 하나로 화면 이동을 요청하는 것이면 해당 도구를 호출하세요. 화면 이동 요청이 아니라 코칭 질문 등 자유 발화라면 도구를 호출하지 말고, 위 시스템 프롬프트의 모미 페르소나로 1~2문장 이내로 짧게 답하세요.\n\n오늘 날짜는 ${todayKST}(한국 시간 기준)입니다. propose_reservation을 호출할 때 "내일"·"다음주 화요일" 같은 상대적 날짜 표현은 이 기준으로 계산해서 절대 날짜(YYYY-MM-DD)로 변환하세요.`,
         tools,
-        messages: [{ role: 'user', content: transcript }],
+        messages: [...validHistory, { role: 'user', content: transcript }],
       }),
     });
 

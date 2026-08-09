@@ -160,6 +160,44 @@ describe('스케줄 없는 id로 updateSchedule 호출 시 조용히 성공하�
   });
 });
 
+// [버그 수정 2026-08-09] updateSchedule과 완전히 같은 "if(u) await fbSet" 패턴이
+// updateMember·updateTrainer·updateNotice·updatePayment·updateExpense·
+// updateSession·updateGaitReport·updateRomReport·updatePostureReport 아홉 곳에도
+// 그대로 있었다(같은 주석으로 서로를 가리키는, 의도적으로 반복된 패턴). 특히
+// updatePostureReport/updateGaitReport/updateRomReport/updateSession은
+// MomiAutoNote.jsx가 모미 API 응답을 기다린 뒤(수 초 지연 가능) 저장할 때
+// 쓰는데, 그 사이 리포트가 지워지면 예전엔 조용히 아무것도 안 저장되고
+// 성공한 것처럼 넘어갔다. 전부 같은 방식으로 명확히 실패하도록 통일했다 —
+// 대표로 몇 개만 골라 회귀 방지 테스트를 남긴다(나머지는 완전히 동일한 코드
+// 패턴이라 중복 테스트는 생략).
+describe('없는 id로 나머지 update* 함수를 불러도 조용히 성공하지 않는다 (회귀 방지)', () => {
+  it('updateMember — 없는 회원 id는 명확히 실패한다', async () => {
+    await expect(store.updateMember('no-such-member-id', { name: '변경' })).rejects.toThrow();
+  });
+
+  it('updatePostureReport — MomiAutoNote가 쓰는 경로. 없는 리포트 id는 명확히 실패한다', async () => {
+    const { VIRTUAL_MID } = await import('../demoData.js');
+    const r = await aiStore.addPostureReport({
+      kind: 'posture', member: { id: VIRTUAL_MID, name: '가상회원', isVirtual: true }, sex: 'female',
+    });
+    // 정상 케이스: 실제로 존재하는 리포트는 그대로 갱신된다(기존 동작 유지).
+    const saved = await aiStore.updatePostureReport(VIRTUAL_MID, r.id, { momiNote: { text: '노트' } });
+    expect(saved.momiNote.text).toBe('노트');
+    // 회귀 방지: 없는 리포트 id는 조용히 성공하지 않고 명확히 실패한다.
+    await expect(
+      aiStore.updatePostureReport(VIRTUAL_MID, 'no-such-report-id', { momiNote: { text: '유실될 노트' } })
+    ).rejects.toThrow();
+  });
+
+  it('updateSession — VBT/스탠스/스쿼트가 쓰는 경로. 없는 세션 id는 명확히 실패한다', async () => {
+    const m = await store.addMember({ name: 'N' });
+    await aiStore.addSession(m.id, { menu: 'stance', data: {} });
+    await expect(
+      aiStore.updateSession(m.id, 'no-such-session-id', { momiNote: { text: '유실될 노트' } })
+    ).rejects.toThrow();
+  });
+});
+
 describe('대량 데이터 파기 — 500건 한계 청크 처리 (purgeMember)', () => {
   it('수납 600건이 누적된 회원도 빠짐없이 파기된다', async () => {
     const m = await store.addMember({ name: 'L' });

@@ -8,7 +8,8 @@ import { store, aiStore } from '../demoData';
 import { buildFullReport, buildAnalysisTrend, buildPostureTrend, groupResultsByDate, buildInterpretationGuide, GUIDE_STATUS_LEGEND, menuGroupKey, plausibleVelocity } from '../services/reportService';
 import { buildSummaryData, scoreToStatus, defaultRecommendation } from '../ai-measure/core/unifiedReport';
 import { buildComprehensiveReport } from '../ai-measure/core/comprehensiveReport';
-import { loadAllMeasureRecords, deleteMeasureRound, deleteMeasureType } from '../services/comprehensiveReportService';
+import { loadAllMeasureRecords, deleteMeasureRound, deleteMeasureType, deleteMeasureRecord } from '../services/comprehensiveReportService';
+import { findAnomalies } from '../ai-measure/core/comprehensiveReport';
 import { captureNodeToJpgFile, shareMeasurementSummaryToKakao } from '../ai-measure/core/reportShare';
 import { canCaptureUnifiedResult, isLiftingShapedSession } from '../components/report/sessionShare';
 import SessionShareReport from '../components/report/SessionShareReport';
@@ -221,11 +222,16 @@ const PERFORMANCE_LABEL = { normal: '우수', caution: '적정', risk: '부족',
 
 // 일간·주간·월간 종합 리포트 — 리포트 탭 안의 별도 섹션.
 // 이미 선택된 회원을 그대로 쓰고(별도 회원 선택 없음), 기존 comprehensiveReport 엔진을 그대로 재사용한다.
-function ComprehensiveReportSection({ member, dataReady }) {
+function ComprehensiveReportSection({ member, dataReady, onRecordsChanged }) {
   const [unit, setUnit] = useState('week');
   const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(false);
   const [periodKey, setPeriodKey] = useState(null);
+  // [리포트 통합 2026-08-09] 종전엔 독립 페이지(ComprehensiveReport.jsx, /summary)에만
+  // 있던 기능 — 이상 데이터(사유 표시) 확인 후 개별/일괄 삭제. 이 섹션이 이제
+  // 유일한 종합리포트 화면이 되면서 그 페이지의 기능을 전부 흡수한다(빠짐없이
+  // 이관 — 기능 손실 없음).
+  const [deleting, setDeleting] = useState(null); // 삭제 중인 레코드 id
 
   useEffect(() => {
     if (!member) { setRecords([]); return; }
@@ -241,6 +247,38 @@ function ComprehensiveReportSection({ member, dataReady }) {
 
   const report = useMemo(() => buildComprehensiveReport(records, unit), [records, unit]);
   const selected = report.periods.find(p => p.key === periodKey) || report.periods[0] || null;
+  // [리포트 통합 2026-08-09] 이상 데이터는 기간(unit)과 무관하게 회원의 전체
+  // 기록 기준으로 판정한다 — 독립 페이지 시절과 동일한 기준(findAnomalies는
+  // records 전체를 봄, 선택된 기간 periods가 아님).
+  const anomalies = useMemo(() => findAnomalies(records), [records]);
+
+  const handleDelete = async (record, why = '') => {
+    const label = `${record.dateYMD || '날짜없음'} · ${record.typeLabel} · ${record.sourceLabel}`;
+    const reason = why ? `\n사유: ${why}` : '';
+    if (!window.confirm(`이 기록을 삭제할까요?\n${label}${reason}\n\n삭제하면 통합 리포트 사본까지 함께 제거되며 되돌릴 수 없습니다.`)) return;
+    setDeleting(record.id);
+    try {
+      await deleteMeasureRecord(member.id, record);
+      setRecords(prev => prev.filter(r => !(r.id === record.id && r.source === record.source)));
+      onRecordsChanged?.();
+    } catch (e) {
+      alert(`삭제 실패: ${e?.message || e}`);
+    } finally { setDeleting(null); }
+  };
+
+  const handleDeleteAllAnomalies = async () => {
+    if (!anomalies.length) return;
+    if (!window.confirm(`이상 데이터 ${anomalies.length}건을 모두 삭제할까요?\n삭제하면 되돌릴 수 없습니다.`)) return;
+    for (const a of anomalies) {
+      setDeleting(a.record.id);
+      try {
+        await deleteMeasureRecord(member.id, a.record);
+        setRecords(prev => prev.filter(r => !(r.id === a.record.id && r.source === a.record.source)));
+      } catch (e) { alert(`삭제 실패(${a.record.id}): ${e?.message || e}`); break; }
+    }
+    setDeleting(null);
+    onRecordsChanged?.();
+  };
 
   // 기간별 평균 점수 변화 그래프(8-3) — 과거→최근 순으로 정렬.
   const trendPoints = useMemo(() => (
@@ -364,6 +402,39 @@ function ComprehensiveReportSection({ member, dataReady }) {
             </div>
           )}
         </>
+      )}
+
+      {/* [리포트 통합 2026-08-09] 독립 페이지(ComprehensiveReport.jsx)에서 이관 —
+          선택한 기간(unit/periodKey)과 무관하게 회원 전체 기록 기준. */}
+      {anomalies.length > 0 && (
+        <div className="mt-3 rounded-2xl bg-red-950/20 border border-red-900/50">
+          <div className="px-4 py-3 flex items-center gap-3 border-b border-red-900/40">
+            <div className="flex-1">
+              <div className="text-sm font-black text-red-300">이상 데이터 {anomalies.length}건</div>
+              <div className="text-[11px] text-red-400/70">사유를 확인하고 잘못 저장된 결과데이터·리포트를 제거하세요.</div>
+            </div>
+            <button onClick={handleDeleteAllAnomalies}
+              className="text-[11px] font-bold text-red-300 border border-red-500/40 rounded-lg px-2.5 py-1.5 active:scale-95 transition-transform">
+              일괄 삭제
+            </button>
+          </div>
+          <div className="divide-y divide-red-900/30">
+            {anomalies.map(a => (
+              <div key={`${a.record.source}_${a.record.id}`} className="px-4 py-2.5 flex items-center gap-3">
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-bold text-slate-200">{a.record.typeLabel}
+                    <span className="text-xs text-slate-500 font-normal ml-1.5">{a.record.sourceLabel} · {a.record.dateYMD || '날짜 없음'}</span>
+                  </div>
+                  <div className="text-[11px] text-red-400">{a.reasons.join(' · ')}</div>
+                </div>
+                <button onClick={() => handleDelete(a.record, a.reasons.join(', '))} disabled={deleting === a.record.id}
+                  className="text-[11px] font-bold text-red-400 border border-red-500/30 rounded-lg px-2.5 py-1.5 active:scale-95 transition-transform disabled:opacity-40">
+                  {deleting === a.record.id ? '삭제 중…' : '삭제'}
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
       )}
     </section>
   );
@@ -804,6 +875,12 @@ export default function Report() {
   const members = useMemo(() => sortByName(scopeMembersToTrainer(store.getMembers(), user)), [user]);
   const [memberId, setMemberId] = useState('');
   const [showCombined, setShowCombined] = useState(false); // 종합 분석 패널 표시 여부(신규, 기존 상태와 독립)
+  // [리포트 통합 2026-08-09] AI측정 저장 화면의 "결과리포트에서 보기" 버튼으로
+  // 도착했으면, 회원 선택 후 해당 종류의 저장된 리포트(방금 저장한 게 항상
+  // 최신=0번 인덱스) 뷰어를 자동으로 연다. savedPostureReports 등은 member+
+  // dataReady가 로딩된 뒤에야 채워지는 비동기 값이라, "무엇을 열어야 하는지"만
+  // 여기 담아두고 실제로 여는 건 아래 데이터가 준비된 시점의 별도 effect가 한다.
+  const [pendingOpenKind, setPendingOpenKind] = useState(null);
 
   // [모미 신규] "모미야 OO님 리포트 열어줘" 같은 음성 명령으로 도착했으면 회원을 자동 선택한다.
   useEffect(() => {
@@ -812,6 +889,7 @@ export default function Report() {
       const matched = members.find((m) => m.name === pending.memberName);
       if (matched) setMemberId(matched.id);
     }
+    if (pending?.openReportKind) setPendingOpenKind(pending.openReportKind);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const [msg, setMsg] = useState(null);
@@ -930,6 +1008,54 @@ export default function Report() {
   const [liftingViewerIdx, setLiftingViewerIdx] = useState(null); // 바벨 리프팅 리포트 열람 인덱스
   const [romViewerIdx, setRomViewerIdx] = useState(null); // ROM 리포트 열람 인덱스
   const [expandedMenu, setExpandedMenu] = useState(null); // 펼친 측정 메뉴
+
+  // [리포트 통합 2026-08-09] pendingOpenKind가 있고 해당 종류의 저장된 리포트
+  // 목록이 준비되면(비동기 로딩 완료) 최신(0번) 항목의 뷰어를 자동으로 연다.
+  // 한 번 처리하면 pendingOpenKind를 비워 다시 실행되지 않게 한다(예: 트레이너가
+  // 나중에 회원을 바꿔도 예전 요청이 재실행되지 않도록).
+  //  [확장 지점] 다른 측정 종류(rom/gait/jump/lifting/stance/squat)도 같은 방식
+  //  으로 이어붙이면 된다 — posture가 먼저 검증된 패턴.
+  useEffect(() => {
+    if (pendingOpenKind !== 'posture') return;
+    if (savedPostureReports.length === 0) return; // 아직 로딩 중일 수 있음 — 다음 렌더에 재시도
+    setPostureViewerIdx(0);
+    setPendingOpenKind(null);
+  }, [pendingOpenKind, savedPostureReports]);
+
+  useEffect(() => {
+    if (pendingOpenKind !== 'rom') return;
+    if (savedRomReports.length === 0) return;
+    setRomViewerIdx(0);
+    setPendingOpenKind(null);
+  }, [pendingOpenKind, savedRomReports]);
+
+  // [리포트 통합 2026-08-09] gait/jump는 같은 목록(savedReports)을 공유하고
+  // kind 필드로만 구분되므로(최신순 정렬), "그 종류 중 가장 최신" 인덱스를
+  // 찾아야 한다 — 단순히 0번이 아닐 수 있다(예: 방금 gait를 저장했어도 그
+  // 직전에 jump를 저장했으면 jump가 0번일 수 있음. 물론 방금 막 저장한
+  // 직후라면 사실상 항상 0번이지만, 안전하게 kind로 찾는다).
+  useEffect(() => {
+    if (pendingOpenKind !== 'gait') return;
+    const idx = savedReports.findIndex((r) => r.kind !== 'jump');
+    if (idx === -1) return;
+    setViewerIdx(idx);
+    setPendingOpenKind(null);
+  }, [pendingOpenKind, savedReports]);
+
+  useEffect(() => {
+    if (pendingOpenKind !== 'jump') return;
+    const idx = savedReports.findIndex((r) => r.kind === 'jump');
+    if (idx === -1) return;
+    setViewerIdx(idx);
+    setPendingOpenKind(null);
+  }, [pendingOpenKind, savedReports]);
+
+  useEffect(() => {
+    if (pendingOpenKind !== 'lifting') return;
+    if (savedLiftingSessions.length === 0) return;
+    setLiftingViewerIdx(0);
+    setPendingOpenKind(null);
+  }, [pendingOpenKind, savedLiftingSessions]);
 
   // 메뉴별 개별 세션 목록 (상세/회차비교용)
   const sessionsByMenu = useMemo(() => {
@@ -1389,7 +1515,11 @@ export default function Report() {
           )}
 
           {/* 일간·주간·월간 종합 리포트 */}
-          <ComprehensiveReportSection member={member} dataReady={dataReady} />
+          <ComprehensiveReportSection
+            member={member}
+            dataReady={dataReady}
+            onRecordsChanged={() => setDataReady((v) => v + 1)}
+          />
 
           <InterpretationGuideSection guide={interpretationGuide} />
 

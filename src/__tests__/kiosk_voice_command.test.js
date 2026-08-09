@@ -143,3 +143,38 @@ describe('AppLayout.jsx — 키오스크에서 KioskVoiceCommand를 불러와서
     expect(src).toContain("import KioskVoiceCommand from '../common/KioskVoiceCommand';");
   });
 });
+
+// [음성 대화형 2026-08-09] "그럼 그건요?" 같은 후속 질문을 알아듣게 하려면
+// processVoiceCommand에 history를 넘겨야 하고, chat 응답이 오면 다음 턴을
+// 위해 그 왕복을 기록해둬야 한다. 실제 로직은 voice/chatHistory.js(별도
+// 테스트됨) — 여기선 이 컴포넌트가 그 함수들을 올바른 시점에 부르는지만
+// 확인한다.
+describe('KioskVoiceCommand.jsx — 음성 대화형(history) 배선', () => {
+  const src = readSrc('src', 'components', 'common', 'KioskVoiceCommand.jsx');
+  const handleStart = src.indexOf('const handleCommand = useCallback(');
+  const handleEnd = src.indexOf('const handleWakeOnly = useCallback(');
+  const handleBody = src.slice(handleStart, handleEnd);
+
+  it('chatHistory.js의 세 함수를 가져와 쓴다(새로 구현하지 않음)', () => {
+    expect(src).toContain(
+      "import { getActiveHistory, recordChatTurn, clearHistory } from '../../voice/chatHistory';"
+    );
+  });
+
+  it('processVoiceCommand 호출 시 getActiveHistory로 직전 대화 맥락을 실어 보낸다', () => {
+    expect(handleBody).toContain('history: getActiveHistory(chatHistoryRef, lastChatAtRef),');
+  });
+
+  it('chat 응답을 받으면 recordChatTurn으로 왕복을 기록한다', () => {
+    const chatBranchIdx = handleBody.indexOf("result.type === 'chat'");
+    const nextBranchIdx = handleBody.indexOf('} else {', chatBranchIdx);
+    const chatBranch = handleBody.slice(chatBranchIdx, nextBranchIdx);
+    expect(chatBranch).toContain('recordChatTurn(chatHistoryRef, lastChatAtRef, transcript, result.text);');
+  });
+
+  it('예약 생성/취소/변경·화면 이동처럼 실제 액션이 일어나면 clearHistory로 잡담 맥락을 정리한다', () => {
+    const occurrences = (handleBody.match(/clearHistory\(chatHistoryRef, lastChatAtRef\)/g) || []).length;
+    // reservation_propose / reservation_cancel_propose / reservation_reschedule_propose / navigate(else) = 4곳.
+    expect(occurrences).toBe(4);
+  });
+});

@@ -96,7 +96,7 @@ export function extractMemberNameFromText(commandText, members) {
 // 쪽인지는 호출부(컴포넌트)가 mode로 알려준다. 기본값은 'phone' — 기존
 // GlobalVoiceCommand.jsx 호출부가 mode를 안 넘겨도 그대로 동작하게 하기 위함.
 export async function processVoiceCommand({
-  transcript, role, currentUser, allMembers, navigate, mode = 'phone',
+  transcript, role, currentUser, allMembers, navigate, mode = 'phone', history = [],
 }) {
   // [무료 우선 2026-08-08] 규칙 기반으로 먼저 시도 — 매치되면 API 호출 자체가
   // 없어서 비용이 전혀 안 든다.
@@ -138,7 +138,7 @@ export async function processVoiceCommand({
       'Content-Type': 'application/json',
       ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
     },
-    body: JSON.stringify({ transcript, role }),
+    body: JSON.stringify({ transcript, role, history }),
   });
 
   if (!res.ok) {

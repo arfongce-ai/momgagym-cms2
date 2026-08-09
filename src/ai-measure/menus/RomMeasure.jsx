@@ -81,7 +81,7 @@ const BONES = [
   [24, 26], [26, 28], [28, 30], [28, 32], [30, 32],
 ];
 
-export default function RomMeasure({ member, onSave, onBack }) {
+export default function RomMeasure({ member, onSave, onBack, onViewInReport }) {
   // 설정
   const [joint, setJoint] = useState('HIP');
   const [poseMode, setPoseMode] = useState('STANDING');
@@ -541,6 +541,15 @@ export default function RomMeasure({ member, onSave, onBack }) {
           {saveState === 'saved' && <p className="text-center text-xs font-bold text-emerald-400">회원 기록에 저장되었습니다.</p>}
           {saveState === 'error' && <p className="text-center text-xs text-red-400">저장 실패. ‘리포트 저장’을 다시 눌러 주세요.</p>}
           {errorMsg && <p className="text-center text-xs text-red-400">{errorMsg}</p>}
+          {/* [리포트 통합 2026-08-09] PostureMeasure.jsx와 동일 패턴 — 강제 이동 아님. */}
+          {saveState === 'saved' && !member?.isVirtual && typeof onViewInReport === 'function' && (
+            <button
+              onClick={onViewInReport}
+              className="w-full rounded-xl border border-amber-500/40 bg-amber-500/10 text-amber-300 font-bold text-sm py-2.5"
+            >
+              📊 결과리포트에서 보기
+            </button>
+          )}
         </div>
       </div>
     );

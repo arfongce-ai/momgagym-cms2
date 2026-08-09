@@ -23,6 +23,7 @@ import {
 import { useAuth } from '../../contexts/AuthContext';
 import { store } from '../../demoData';
 import { scopeMembersToTrainer, sortByName } from '../../utils/memberList';
+import { getActiveHistory, recordChatTurn, clearHistory } from '../../voice/chatHistory';
 
 export default function GlobalVoiceCommand() {
   const navigate = useNavigate();
@@ -59,6 +60,11 @@ export default function GlobalVoiceCommand() {
   // 두 번째 호출이 덮어써, 첫 번째 명령의 확인 흐름이 응답을 영영 못 받고
   // 멈춰버릴 수 있다. 한 번에 한 명령만 처리하도록 막는다.
   const isHandlingRef = useRef(false);
+
+  // [음성 대화형 2026-08-09] KioskVoiceCommand.jsx와 동일 — 실제 관리 로직은
+  // voice/chatHistory.js에 있다.
+  const chatHistoryRef = useRef([]);
+  const lastChatAtRef = useRef(null);
 
   // [예약 생성 프로젝트 3단계 2026-08-09] "예약 만들기 확인"과 "예약 취소 확인"의
   // 뼈대(요약 말하기 → awaitReply → 확인/취소/불명확 분기, busy 해제, 중도 취소
@@ -249,19 +255,28 @@ export default function GlobalVoiceCommand() {
           allMembers,
           navigate,
           mode: 'phone', // [예약 생성 프로젝트 2026-08-08] 폰/개인 기기 — 로그인된 본인 trainerId를 우선 신뢰.
+          // [음성 대화형 2026-08-09] KioskVoiceCommand.jsx와 동일 — 직전 자유
+          // 질문 왕복을 함께 보내서 후속 질문을 이어서 알아듣게 한다.
+          history: getActiveHistory(chatHistoryRef, lastChatAtRef),
         });
         if (result.type === 'reservation_propose') {
           handledSeparately = true;
+          clearHistory(chatHistoryRef, lastChatAtRef);
           await runReservationConfirmFlow(result.propose);
         } else if (result.type === 'reservation_cancel_propose') {
           handledSeparately = true;
+          clearHistory(chatHistoryRef, lastChatAtRef);
           await runCancelConfirmFlow(result.propose);
         } else if (result.type === 'reservation_reschedule_propose') {
           handledSeparately = true;
+          clearHistory(chatHistoryRef, lastChatAtRef);
           await runRescheduleConfirmFlow(result.propose);
         } else if (result.type === 'chat') {
           message = result.text;
+          recordChatTurn(chatHistoryRef, lastChatAtRef, transcript, result.text);
         } else {
+          // type === 'navigate' — 화면을 실제로 옮겼으니 잡담 맥락은 정리.
+          clearHistory(chatHistoryRef, lastChatAtRef);
           message = result.matchedMember
             ? `${result.matchedMember.name}님으로 이동할게요.`
             : '이동할게요.';

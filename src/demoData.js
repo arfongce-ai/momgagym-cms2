@@ -711,7 +711,10 @@ export const store = {
     const prev=cache.members;
     cache.members=cache.members.map(m=>m.id===id?{...m,...p}:m);
     const u=cache.members.find(m=>m.id===id);
-    try { if(u) await fbSet('members',id,u); }
+    // [버그 수정 2026-08-09 — updateSchedule과 동일한 패턴 전체 적용] u가 없으면
+    // 조용히 성공한 것처럼 리턴하지 않는다(아래 나머지 update* 함수들도 동일).
+    if (!u) { cache.members = prev; throw new Error('회원을 찾을 수 없습니다.'); }
+    try { await fbSet('members',id,u); }
     catch(e){ cache.members=prev; throw e; }
   },
   deleteMember:  async id => {
@@ -846,7 +849,8 @@ export const store = {
     const prev=cache.trainers;
     cache.trainers=cache.trainers.map(t=>t.id===id?{...t,...p}:t);
     const u=cache.trainers.find(t=>t.id===id);
-    try { if(u) await fbSet('trainers',id,u); }
+    if (!u) { cache.trainers = prev; throw new Error('트레이너를 찾을 수 없습니다.'); }
+    try { await fbSet('trainers',id,u); }
     catch(e){ cache.trainers=prev; throw e; }
   },
   deleteTrainer:  async id => {
@@ -901,7 +905,8 @@ export const store = {
     const prev=cache.notices;
     cache.notices=cache.notices.map(n=>n.id===id?{...n,...p}:n);
     const u=cache.notices.find(n=>n.id===id);
-    try { if(u) await fbSet('notices',id,u); return u; }
+    if (!u) { cache.notices = prev; throw new Error('공지를 찾을 수 없습니다.'); }
+    try { await fbSet('notices',id,u); return u; }
     catch(e){ cache.notices=prev; throw e; }
   },
   deleteNotice: async id => {
@@ -935,7 +940,8 @@ export const store = {
     const prev=cache.payments[mid];
     cache.payments[mid]=(cache.payments[mid]||[]).map(p=>p.id===pid?{...p,...patch}:p);
     const u=(cache.payments[mid]||[]).find(p=>p.id===pid);
-    try { if(u) await fbSet('payments', pid, {...u, __mid:mid}); return u; }
+    if (!u) { cache.payments[mid] = prev; throw new Error('결제 내역을 찾을 수 없습니다.'); }
+    try { await fbSet('payments', pid, {...u, __mid:mid}); return u; }
     catch(e){ cache.payments[mid]=prev; throw e; }
   },
   deletePayment: async (mid,pid) => {
@@ -1566,7 +1572,8 @@ export const store = {
     const prev = cache.expenses;
     cache.expenses = cache.expenses.map(e=>e.id===id?{...e,...patch}:e);
     const u = cache.expenses.find(e=>e.id===id);
-    try { if(u) await fbSet('expenses', id, u); return u; }
+    if (!u) { cache.expenses = prev; throw new Error('지출 내역을 찾을 수 없습니다.'); }
+    try { await fbSet('expenses', id, u); return u; }
     catch(err){ cache.expenses = prev; throw err; }
   },
   deleteExpense: async (id) => {
@@ -1734,7 +1741,8 @@ export const aiStore = {
     const prev = cache.ai[mid];
     cache.ai[mid] = (cache.ai[mid] || []).map(s => s.id === sid ? { ...s, ...patch } : s);
     const u = (cache.ai[mid] || []).find(s => s.id === sid);
-    try { if (u) await fbSet('ai', sid, { ...u, __mid: mid }); return u; }
+    if (!u) { cache.ai[mid] = prev; throw new Error('세션을 찾을 수 없습니다.'); }
+    try { await fbSet('ai', sid, { ...u, __mid: mid }); return u; }
     catch (e) { cache.ai[mid] = prev; throw e; }
   },
   // 전용 리포트 삭제(측정별/회차별 삭제 기능) — deleteSession과 동일한 낙관적 캐시 반영 패턴.
@@ -1750,7 +1758,8 @@ export const aiStore = {
     const prev = cache.gaitReports[mid];
     cache.gaitReports[mid] = (cache.gaitReports[mid] || []).map(r => r.id === rid ? { ...r, ...patch } : r);
     const u = (cache.gaitReports[mid] || []).find(r => r.id === rid);
-    try { if (u) await fbSet('gait_reports', rid, { ...u, __mid: mid }); return u; }
+    if (!u) { cache.gaitReports[mid] = prev; throw new Error('보행 리포트를 찾을 수 없습니다.'); }
+    try { await fbSet('gait_reports', rid, { ...u, __mid: mid }); return u; }
     catch (e) { cache.gaitReports[mid] = prev; throw e; }
   },
   deletePostureReport: async (mid, rid) => {
@@ -1771,7 +1780,8 @@ export const aiStore = {
     const prev = cache.romReports[mid];
     cache.romReports[mid] = (cache.romReports[mid] || []).map(r => r.id === rid ? { ...r, ...patch } : r);
     const u = (cache.romReports[mid] || []).find(r => r.id === rid);
-    try { if (u) await fbSet('rom_reports', rid, { ...u, __mid: mid }); return u; }
+    if (!u) { cache.romReports[mid] = prev; throw new Error('ROM 리포트를 찾을 수 없습니다.'); }
+    try { await fbSet('rom_reports', rid, { ...u, __mid: mid }); return u; }
     catch (e) { cache.romReports[mid] = prev; throw e; }
   },
   deleteAll:     async (mid) => {
@@ -1853,7 +1863,8 @@ export const aiStore = {
     const prev = cache.postureReports[mid];
     cache.postureReports[mid] = (cache.postureReports[mid] || []).map(r => r.id === rid ? { ...r, ...patch } : r);
     const u = (cache.postureReports[mid] || []).find(r => r.id === rid);
-    try { if (u) await fbSet('posture_reports', rid, { ...u, __mid: mid }); return u; }
+    if (!u) { cache.postureReports[mid] = prev; throw new Error('자세 리포트를 찾을 수 없습니다.'); }
+    try { await fbSet('posture_reports', rid, { ...u, __mid: mid }); return u; }
     catch (e) { cache.postureReports[mid] = prev; throw e; }
   },
 };

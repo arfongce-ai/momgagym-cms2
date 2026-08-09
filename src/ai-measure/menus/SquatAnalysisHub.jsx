@@ -141,7 +141,7 @@ function MetricBar({ metricKey, value }) {
   );
 }
 
-export default function SquatAnalysisHub({ member, onBack, onSave, onSaveToFirebase, onMemberHeightChange }) {
+export default function SquatAnalysisHub({ member, onBack, onSave, onSaveToFirebase, onMemberHeightChange, onViewInReport }) {
   const save = onSaveToFirebase || onSave;
 
   const [view, setView] = useState('measure'); // measure | record | report
@@ -341,6 +341,15 @@ export default function SquatAnalysisHub({ member, onBack, onSave, onSaveToFireb
           <ReportActions reportNodeId="squat-report-sheet" videoBlob={report.videoBlob || null}
             baseName={`${report.member?.name || '회원'}_오버헤드스쿼트`} onMessage={setVideoShareMsg} />
           {videoShareMsg && <p className="text-center text-xs text-emerald-400">{videoShareMsg}</p>}
+          {/* [리포트 통합 2026-08-09] 다른 측정 종류와 동일 패턴. */}
+          {!member?.isVirtual && typeof onViewInReport === 'function' && (
+            <button
+              onClick={onViewInReport}
+              className="w-full rounded-xl border border-amber-500/40 bg-amber-500/10 text-amber-300 font-bold text-sm py-2.5"
+            >
+              📊 결과리포트에서 보기
+            </button>
+          )}
           <button onClick={backToMeasure} className="w-full rounded-lg bg-slate-800 text-white font-bold text-sm py-2.5">← 다시 측정</button>
         </div>
       </UnifiedReportCanvas>
