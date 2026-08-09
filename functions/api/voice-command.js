@@ -57,8 +57,10 @@ const ALL_TOOLS = [
     description: '리포트 화면을 연다. "OO님 리포트 열어줘"·"OO님 점프 리포트 보여줘" 같은 요청.',
     input_schema: { type: 'object', properties: {
       memberName: { type: 'string', description: '들린 회원 이름 그대로. 언급 없으면 생략.' },
+
       testId: { type: 'string', enum: ['posture', 'rom', 'gait', 'jump', 'lifting', 'stance', 'squat'],
         description: '언급된 측정 종류(저장된 리포트 종류). 언급되면 도착 즉시 그 회원의 가장 최근 해당 리포트를 자동으로 연다. 없으면 생략(회원만 선택된 채로 열림).' } } } },
+
   // [예약 생성 프로젝트 2026-08-08] 화면 이동이 아니라 새 예약을 만들어달라는
   // 요청. "OO님 O월 O일 O시에 예약 잡아줘/걸어줘" 같은 요청일 때만 호출 —
   // 이미 있는 예약을 보는 것(스케줄 화면 열기)과 혼동하지 않도록 설명에 명시.
