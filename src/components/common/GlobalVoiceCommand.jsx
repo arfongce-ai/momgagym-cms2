@@ -51,6 +51,15 @@ export default function GlobalVoiceCommand() {
   // toggle()에서 마이크를 끌 때 직접 풀어준다.
   const pendingConfirmResolveRef = useRef(null);
 
+  // [버그 수정 — 명령 겹침 2026-08-09] KioskVoiceCommand.jsx와 같은 이유 —
+  // useMomiVoice.js의 onresult는 onCommand를 await 없이 fire-and-forget으로
+  // 부른다. 이전 "모미야, [명령]"이 아직 처리 중(특히 네트워크 응답을 기다리는
+  // 동안, awaitReply를 걸기 전)일 때 새 "모미야, [명령]"이 겹쳐 들어오면
+  // handleCommand가 두 번 동시에 돌면서 awaitReply 슬롯(훅 안에 하나뿐)을
+  // 두 번째 호출이 덮어써, 첫 번째 명령의 확인 흐름이 응답을 영영 못 받고
+  // 멈춰버릴 수 있다. 한 번에 한 명령만 처리하도록 막는다.
+  const isHandlingRef = useRef(false);
+
   // [예약 생성 프로젝트 3단계 2026-08-09] "예약 만들기 확인"과 "예약 취소 확인"의
   // 뼈대(요약 말하기 → awaitReply → 확인/취소/불명확 분기, busy 해제, 중도 취소
   // 대비 pendingConfirmResolveRef)가 완전히 같아서 공통 함수로 뽑는다 — 실제로
@@ -209,6 +218,15 @@ export default function GlobalVoiceCommand() {
 
   const handleCommand = useCallback(
     async (transcript) => {
+      if (isHandlingRef.current) {
+        // [버그 수정 — 명령 겹침 2026-08-09] 위 isHandlingRef 선언부 설명 참고.
+        // 이전 명령이 끝날 때까지 새 명령은 받지 않는다(조용히 무시하지만
+        // 원인 파악용으로 콘솔엔 남긴다). busy 등 이전 명령의 상태는 건드리지
+        // 않는다.
+        console.warn('[모미] 이전 명령이 아직 처리 중이라 이번 명령은 건너뜁니다:', transcript);
+        return;
+      }
+      isHandlingRef.current = true;
       setBusy(true);
       // [요청 흐름 2026-08-08] "모미야"→"네, 선생님"→(명령)→명령 인지 확인→
       // 실행/응답. 실제 처리(API 호출)로 넘어가기 전에 "들었다"는 걸 먼저
@@ -259,6 +277,7 @@ export default function GlobalVoiceCommand() {
           speak(message);
           setTimeout(() => setFeedback(''), diagDetail ? 8000 : 4000);
         }
+        isHandlingRef.current = false;
       }
     },
     [role, user, allMembers, navigate, speak, runReservationConfirmFlow, runCancelConfirmFlow, runRescheduleConfirmFlow]
@@ -291,10 +310,15 @@ export default function GlobalVoiceCommand() {
       'not-allowed': '마이크 권한이 거부돼 있어요.',
       'audio-capture': '마이크 장치를 못 찾았어요.',
       network: '인터넷 연결을 확인해주세요.',
+      // [버그 수정 2026-08-09] useMomiVoice.js가 재시작을 두 번(즉시+0.3초 뒤)
+      // 시도해도 둘 다 실패했을 때만 온다. 여긴 버튼이 있으니 새로고침 대신
+      // 버튼으로 끄고 다시 켜면 대부분 복구된다.
+      'restart-failed': '음성 인식이 멈췄어요. 마이크 버튼을 다시 눌러주세요.',
     };
     const readable = KNOWN[errorCode] || `오류 코드: ${errorCode}`;
     setFeedback(`[진단] ${readable}`);
-    setTimeout(() => setFeedback(''), 4000);
+    // 마이크가 실제로 죽은 경우(restart-failed)는 놓치면 안 되니 더 오래 보여준다.
+    setTimeout(() => setFeedback(''), errorCode === 'restart-failed' ? 15000 : 4000);
   }, []);
 
   const { supported, listening, startListening, stopListening, awaitReply } = useMomiVoice({

@@ -331,3 +331,43 @@ describe('useMomiVoice.js — 마이크 끄기 시 실제로 재시작하지 않
     expect(cleanupBody).toContain('shouldRestartRef.current = false;');
   });
 });
+
+// [버그 수정 2026-08-09] "명령 이후 다음 명령이 안 됩니다" 문의 대응 — onend에서
+// recognition.start()가 실패(브라우저가 세션 정리를 아직 안 끝낸 순간과 겹치는
+// 흔한 타이밍 경합)하면 예전엔 그냥 조용히 무시하고 끝났다. 그 뒤로는 아무도
+// 다시 start()를 불러주지 않아 마이크가 완전히 죽는데, 콘솔에도 화면에도 아무
+// 표시가 없어 원인 파악이 어려웠다. 특히 예약 확인 흐름(TTS가 길고 응답을 몇
+// 초씩 기다림)에서 이 경합이 훨씬 잦아진다.
+describe('useMomiVoice.js — onend 재시작 실패 시 재시도(회귀 방지)', () => {
+  const src = readSrc('src', 'hooks', 'useMomiVoice.js');
+  const onendStart = src.indexOf('recognition.onend = () => {');
+  const onendEnd = src.indexOf('\n    };', onendStart);
+  const onendBody = src.slice(onendStart, onendEnd);
+
+  it('첫 start() 실패를 예전처럼 빈 catch로 조용히 삼키지 않는다', () => {
+    expect(onendBody).not.toMatch(/catch \(e\) \{\s*\}/);
+  });
+
+  it('첫 시도가 실패하면 setTimeout으로 짧게 재시도한다', () => {
+    expect(onendBody).toContain('setTimeout(() => {');
+    expect(onendBody).toContain('}, 300);');
+  });
+
+  it('재시도 직전에 recognitionRef·shouldRestartRef가 여전히 유효한지 다시 확인한다(그 사이 stop()됐을 수 있으므로)', () => {
+    const retryStart = onendBody.indexOf('setTimeout(() => {');
+    const retryBody = onendBody.slice(retryStart);
+    expect(retryBody).toContain('if (recognitionRef.current !== recognition || !shouldRestartRef.current) return;');
+  });
+
+  it('재시도까지 실패하면 listening 상태를 false로 내려서 화면 표시등이 거짓으로 켜져 있지 않게 한다', () => {
+    const retryStart = onendBody.indexOf('setTimeout(() => {');
+    const retryBody = onendBody.slice(retryStart);
+    expect(retryBody).toContain('setListening(false);');
+  });
+
+  it('재시도까지 실패하면 onErrorOccurred로 화면에도 알린다(콘솔만으론 부족)', () => {
+    const retryStart = onendBody.indexOf('setTimeout(() => {');
+    const retryBody = onendBody.slice(retryStart);
+    expect(retryBody).toContain("onErrorOccurred('restart-failed')");
+  });
+});

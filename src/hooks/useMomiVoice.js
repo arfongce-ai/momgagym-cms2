@@ -213,7 +213,31 @@ export function useMomiVoice({ onCommand, onWakeOnly, onMismatch, onErrorOccurre
         try {
           recognition.start();
         } catch (e) {
-          // 이미 시작된 상태에서 start()를 다시 부르면 에러가 나는 브라우저가 있어 무시
+          // [버그 수정 2026-08-09] "명령 이후 다음 명령이 안 됩니다" 문의 대응.
+          // 원인: onend 직후 start()를 다시 부르면 브라우저가 세션을 아직 완전히
+          // 정리하지 못한 순간과 겹쳐 "이미 시작됨" 계열 에러를 던지는 경우가
+          // 있는데, 예전엔 이걸 그냥 무시하고 끝냈다 — 그러면 그 뒤로는 아무도
+          // 다시 start()를 불러주지 않아서 마이크가 조용히 완전히 죽는다(콘솔에도
+          // 화면에도 아무 표시가 없어서 원인 파악이 어려웠음). 특히 예약 확인
+          // 흐름처럼 TTS가 길게 끼어들고 응답을 몇 초씩 기다리는 구간에서 이
+          // 타이밍 경합이 훨씬 잦아진다(TTS 재생과 인식 세션 종료/재시작 타이밍이
+          // 겹칠 여지가 커짐). 짧게 한 번 더 재시도하면 대부분 그 사이 브라우저의
+          // 정리가 끝나 있어 성공한다.
+          console.warn('[모미] 재시작 실패, 짧게 재시도:', e?.message || e);
+          setTimeout(() => {
+            if (recognitionRef.current !== recognition || !shouldRestartRef.current) return;
+            try {
+              recognition.start();
+            } catch (e2) {
+              // 재시도까지 실패하면 진짜 문제(권한 철회·기기 분리 등)일 가능성이
+              // 높다 — 예전처럼 조용히 넘어가지 않고, listening 상태를 실제
+              // 상태(꺼짐)에 맞게 내려서 화면 표시등이 거짓으로 "듣고 있음"을
+              // 보여주지 않게 하고, 사용자가 원인을 알 수 있게 알린다.
+              console.warn('[모미] 재시작 재시도도 실패:', e2?.message || e2);
+              setListening(false);
+              if (onErrorOccurred) onErrorOccurred('restart-failed');
+            }
+          }, 300);
         }
       }
     };

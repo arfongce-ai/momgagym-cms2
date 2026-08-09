@@ -30,7 +30,7 @@ describe('KioskVoiceCommand.jsx — 버튼 없이 자동으로 상시 감지를 
 
   it('명령 처리 결과를 화면 표시와 동시에 speak()로 읽어준다(GlobalVoiceCommand와 동일 패턴)', () => {
     const handleStart = src.indexOf('const handleCommand = useCallback(');
-    const handleEnd = src.indexOf('[role, user, allMembers, navigate, speak]');
+    const handleEnd = src.indexOf('const handleWakeOnly = useCallback(');
     const handleBody = src.slice(handleStart, handleEnd);
     expect(handleBody).toContain('setFeedback(diagDetail ? ');
     expect(handleBody).toContain(': message);');
@@ -95,13 +95,44 @@ describe('KioskVoiceCommand.jsx — 버튼 없이 자동으로 상시 감지를 
     // [버그 수정 2026-08-08] "키오스크에서 반응이 없다"는 문의 대응.
     // GlobalVoiceCommand.jsx와 동일 패턴.
     const handleStart = src.indexOf('const handleCommand = useCallback(');
-    const handleEnd = src.indexOf('[role, user, allMembers, navigate, speak]');
+    const handleEnd = src.indexOf('const handleWakeOnly = useCallback(');
     const handleBody = src.slice(handleStart, handleEnd);
     expect(handleBody).toContain('diagDetail = e?.message || String(e);');
     expect(handleBody).toContain(
       "setFeedback(diagDetail ? `${message}\\n[진단] ${diagDetail}` : message);"
     );
     expect(handleBody).not.toContain('speak(diagDetail');
+  });
+});
+
+// [버그 수정 — 명령 겹침 2026-08-09] useMomiVoice.js의 onresult는 onCommand를
+// await 없이 fire-and-forget으로 부른다 — 이전 명령이 아직 처리 중(특히
+// 네트워크 응답을 기다리는 동안, awaitReply를 걸기 전)일 때 새 "모미야, [명령]"이
+// 겹쳐 들어오면 handleCommand가 두 번 동시에 돌면서 awaitReply 슬롯(훅 안에
+// 하나뿐)을 두 번째 호출이 덮어써, 첫 번째 명령의 확인 흐름이 응답을 영영 못
+// 받고 멈춰버릴 수 있었다.
+describe('KioskVoiceCommand.jsx — 명령 겹침 방지(회귀 방지)', () => {
+  const src = readSrc('src', 'components', 'common', 'KioskVoiceCommand.jsx');
+  const handleStart = src.indexOf('const handleCommand = useCallback(');
+  const handleEnd = src.indexOf('const handleWakeOnly = useCallback(');
+  const handleBody = src.slice(handleStart, handleEnd);
+
+  it('handleCommand 맨 앞에서 isHandlingRef를 확인해서 이미 처리 중이면 곧바로 반환한다', () => {
+    const guardIdx = handleBody.indexOf('if (isHandlingRef.current) {');
+    const asyncIdx = handleBody.indexOf('async (transcript) => {');
+    expect(guardIdx).toBeGreaterThan(-1);
+    // async 함수 시작 직후여야(다른 로직보다 먼저 검사) 겹침을 확실히 막는다.
+    expect(guardIdx).toBeLessThan(handleBody.indexOf('setFeedback', asyncIdx));
+  });
+
+  it('처리를 시작하기 전에 isHandlingRef를 true로 올린다', () => {
+    expect(handleBody).toContain('isHandlingRef.current = true;');
+  });
+
+  it('finally에서 항상(성공·실패·예약 확인 분기 모두) isHandlingRef를 false로 내린다', () => {
+    const finallyIdx = handleBody.lastIndexOf('} finally {');
+    const finallyBody = handleBody.slice(finallyIdx);
+    expect(finallyBody).toContain('isHandlingRef.current = false;');
   });
 });
 

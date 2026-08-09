@@ -56,7 +56,7 @@ describe('GlobalVoiceCommand.jsx — TTS 연결 확인', () => {
 
   it('handleCommand 결과 메시지를 화면 표시와 동시에 speak()로 읽어준다(문구 불일치 방지)', () => {
     const handleStart = src.indexOf('const handleCommand = useCallback(');
-    const handleEnd = src.indexOf('[role, user, allMembers, navigate, speak]');
+    const handleEnd = src.indexOf('const handleWakeOnly = useCallback(');
     const handleBody = src.slice(handleStart, handleEnd);
     // [2026-08-08] 실패 시 진단 상세를 덧붙이는 삼항연산자로 바뀌었지만, 성공
     // 시(diagDetail 없을 때)엔 여전히 순수 message가 화면에 그대로 나간다.
@@ -148,7 +148,7 @@ describe('GlobalVoiceCommand.jsx — "모미야→네,선생님→명령→인�
 
   it('명령 인지 확인 뒤에도 최종 처리 결과(이동/응답 메시지)를 별도로 다시 알려준다', () => {
     const handleStart = src.indexOf('const handleCommand = useCallback(');
-    const handleEnd = src.indexOf('[role, user, allMembers, navigate, speak]');
+    const handleEnd = src.indexOf('const handleWakeOnly = useCallback(');
     const handleBody = src.slice(handleStart, handleEnd);
     // speak(message)가 "네, 확인했어요" 이후 최소 한 번 더(최종 결과용) 나와야 한다.
     const speakCalls = handleBody.match(/speak\(/g) || [];
@@ -160,7 +160,7 @@ describe('GlobalVoiceCommand.jsx — "모미야→네,선생님→명령→인�
     // 보여주면 진짜 원인(API 크레딧 부족 등)을 알 길이 없었다. 음성으로는 사과
     // 문구만 자연스럽게 읽고, 화면에는 원인도 같이 보여준다.
     const handleStart = src.indexOf('const handleCommand = useCallback(');
-    const handleEnd = src.indexOf('[role, user, allMembers, navigate, speak]');
+    const handleEnd = src.indexOf('const handleWakeOnly = useCallback(');
     const handleBody = src.slice(handleStart, handleEnd);
     expect(handleBody).toContain('diagDetail = e?.message || String(e);');
     expect(handleBody).toContain(
@@ -169,5 +169,35 @@ describe('GlobalVoiceCommand.jsx — "모미야→네,선생님→명령→인�
     // 소리로는 원인 문구 없이 사과 메시지만 자연스럽게 읽어야 한다.
     expect(handleBody).toContain('speak(message);');
     expect(handleBody).not.toContain('speak(diagDetail');
+  });
+});
+
+// [버그 수정 — 명령 겹침 2026-08-09] KioskVoiceCommand.jsx와 동일한 이유 —
+// useMomiVoice.js의 onresult가 onCommand를 await 없이 부르기 때문에, 이전
+// 명령이 아직 처리 중일 때 새 명령이 겹치면 awaitReply 슬롯이 덮어써져 이전
+// 명령의 확인 흐름이 응답을 영영 못 받고 멈출 수 있었다.
+describe('GlobalVoiceCommand.jsx — 명령 겹침 방지(회귀 방지)', () => {
+  const src = readSrc('src', 'components', 'common', 'GlobalVoiceCommand.jsx');
+  const handleStart = src.indexOf('const handleCommand = useCallback(');
+  const handleEnd = src.indexOf('const handleWakeOnly = useCallback(');
+  const handleBody = src.slice(handleStart, handleEnd);
+
+  it('handleCommand 맨 앞에서 isHandlingRef를 확인해서 이미 처리 중이면 곧바로 반환한다(setBusy보다도 먼저)', () => {
+    const guardIdx = handleBody.indexOf('if (isHandlingRef.current) {');
+    const busyIdx = handleBody.indexOf('setBusy(true);');
+    expect(guardIdx).toBeGreaterThan(-1);
+    // 겹친 명령은 이전 명령의 busy 상태를 건드리면 안 되므로, setBusy(true)보다
+    // 먼저 검사해서 조기 반환해야 한다.
+    expect(guardIdx).toBeLessThan(busyIdx);
+  });
+
+  it('처리를 시작하기 전에 isHandlingRef를 true로 올린다', () => {
+    expect(handleBody).toContain('isHandlingRef.current = true;');
+  });
+
+  it('finally에서 항상(성공·실패·예약 확인 분기 모두) isHandlingRef를 false로 내린다', () => {
+    const finallyIdx = handleBody.lastIndexOf('} finally {');
+    const finallyBody = handleBody.slice(finallyIdx);
+    expect(finallyBody).toContain('isHandlingRef.current = false;');
   });
 });

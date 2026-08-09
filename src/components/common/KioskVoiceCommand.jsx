@@ -46,6 +46,17 @@ export default function KioskVoiceCommand() {
   // deps:[]인 안정적 함수라 ref에 담아두면 항상 최신 값을 가리킨다.
   const awaitReplyRef = useRef(null);
 
+  // [버그 수정 — 명령 겹침 2026-08-09] useMomiVoice.js의 onresult는 onCommand를
+  // await 없이 fire-and-forget으로 부른다. 그래서 이전 "모미야, [명령]"이 아직
+  // 처리 중(특히 네트워크 응답을 기다리는 동안, awaitReply를 걸기 전)일 때 새
+  // "모미야, [명령]"이 겹쳐 들어오면 handleCommand가 두 번 동시에 돌게 된다.
+  // 예약 확인 흐름은 awaitReply 슬롯이 훅 안에 딱 하나뿐이라, 두 번째 호출이
+  // awaitReply를 걸면 첫 번째 호출이 걸어둔 콜백/타이머가 조용히 덮어써져서
+  // 첫 명령의 확인 흐름이 응답을 영영 못 받고 멈춰버린다 — 예약 생성/취소/변경
+  // 처럼 실제 데이터를 바꾸는 작업 중간에 이 상태로 남으면 특히 위험하다. 한
+  // 번에 한 명령만 처리하도록 막는다.
+  const isHandlingRef = useRef(false);
+
   // [예약 생성 프로젝트 3단계 2026-08-09] 요약 말하기 → awaitReply → 확인/취소/
   // 불명확 분기라는 뼈대는 "예약 만들기 확인"과 "예약 취소 확인"이 완전히 같다
   // — 실제로 할 일(onConfirm)과 문구만 다르다. 그 부분만 인자로 받는 공통
@@ -187,6 +198,14 @@ export default function KioskVoiceCommand() {
 
   const handleCommand = useCallback(
     async (transcript) => {
+      if (isHandlingRef.current) {
+        // [버그 수정 — 명령 겹침 2026-08-09] 위 isHandlingRef 선언부 설명 참고.
+        // 이전 명령이 끝날 때까지 새 명령은 받지 않는다(조용히 무시하지만
+        // 원인 파악용으로 콘솔엔 남긴다).
+        console.warn('[모미] 이전 명령이 아직 처리 중이라 이번 명령은 건너뜁니다:', transcript);
+        return;
+      }
+      isHandlingRef.current = true;
       // [요청 흐름 2026-08-08] "모미야"→"네, 선생님"→(명령)→명령 인지 확인→
       // 실행/응답. GlobalVoiceCommand.jsx와 동일 패턴.
       setFeedback('네, 확인했어요.');
@@ -231,6 +250,7 @@ export default function KioskVoiceCommand() {
           speak(message);
           setTimeout(() => setFeedback(''), diagDetail ? 8000 : 4000);
         }
+        isHandlingRef.current = false;
       }
     },
     [role, user, allMembers, navigate, speak, runReservationConfirmFlow, runCancelConfirmFlow, runRescheduleConfirmFlow]
@@ -257,10 +277,14 @@ export default function KioskVoiceCommand() {
       'not-allowed': '마이크 권한이 거부돼 있어요.',
       'audio-capture': '마이크 장치를 못 찾았어요.',
       network: '인터넷 연결을 확인해주세요.',
+      // [버그 수정 2026-08-09] useMomiVoice.js가 재시작을 두 번(즉시+0.3초 뒤)
+      // 시도해도 둘 다 실패했을 때만 온다 — 흔치 않은 경우라 새로고침을 안내한다.
+      'restart-failed': '음성 인식이 멈췄어요. 화면을 새로고침해주세요.',
     };
     const readable = KNOWN[errorCode] || `오류 코드: ${errorCode}`;
     setFeedback(`[진단] ${readable}`);
-    setTimeout(() => setFeedback(''), 4000);
+    // 마이크가 실제로 죽은 경우(restart-failed)는 놓치면 안 되니 더 오래 보여준다.
+    setTimeout(() => setFeedback(''), errorCode === 'restart-failed' ? 15000 : 4000);
   }, []);
 
   const { supported, listening, startListening, awaitReply } = useMomiVoice({

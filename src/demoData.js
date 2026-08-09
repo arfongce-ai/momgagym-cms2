@@ -867,7 +867,20 @@ export const store = {
     const prev=cache.schedules;
     cache.schedules=cache.schedules.map(s=>s.id===id?{...s,...p}:s);
     const u=cache.schedules.find(s=>s.id===id);
-    try { if(u) await fbSet('schedules',id,u); }
+    // [버그 수정 2026-08-09] u가 없으면(캐시에 해당 id가 없음 — 이미 다른 곳에서
+    // 삭제됐거나 캐시가 오래됨) 예전엔 그냥 조용히 아무것도 안 하고 성공한 것처럼
+    // 리턴했다(if(u)가 false라 fbSet 자체를 안 부르고 그대로 끝남). 호출부는
+    // "성공"으로 알고 다음 단계(예: 트레이너에게 "옮겼어요"라고 말하기)를
+    // 진행하는데 실제로는 Firestore에 아무 것도 안 바뀐 상태 — 특히 예약 시간
+    // 변경(reservationService.rescheduleReservation) 확인 흐름처럼 propose(조회)와
+    // confirm(저장) 사이에 시간차가 있으면, 그 사이 다른 기기에서 같은 예약을
+    // 지웠을 때 이 상태가 재현된다. deleteScheduleWithRestore와 같은 방식으로
+    // 명확히 실패시킨다.
+    if (!u) {
+      cache.schedules = prev;
+      throw new Error('스케줄을 찾을 수 없습니다.');
+    }
+    try { await fbSet('schedules',id,u); }
     catch(e){ cache.schedules=prev; throw e; }
   },
   deleteSchedule:  async id => {

@@ -126,6 +126,40 @@ describe('예약 삭제 시 세션 복원 (deleteScheduleWithRestore)', () => {
   });
 });
 
+// [버그 수정 2026-08-09] "예약 시간 변경(reschedule) 확인 뒤 조용히 아무것도
+// 안 바뀜" 디버깅 중 발견. 예전 updateSchedule은 넘겨받은 id가 캐시에 없으면
+// (이미 다른 곳에서 삭제됐거나 캐시가 오래된 경우) fbSet 자체를 안 부르고
+// 조용히 "성공"으로 리턴했다 — 호출부(예: reservationService.rescheduleReservation)는
+// 저장됐다고 믿고 트레이너에게 "옮겼어요"라고 말하지만 실제로는 Firestore에
+// 아무 변화가 없었다. deleteScheduleWithRestore와 같은 방식으로 명확히
+// 실패시키도록 고쳤다.
+describe('스케줄 없는 id로 updateSchedule 호출 시 조용히 성공하지 않는다 (회귀 방지)', () => {
+  it('존재하는 스케줄은 정상적으로 갱신된다(기존 동작 유지)', async () => {
+    const m = await store.addMember({ name: 'L', trainerSessions: { t1: { total: 10, remaining: 5 } } });
+    const sch = await store.createScheduleWithDeduction({ memberId: m.id, trainerId: 't1', isExternal: false, date: '2026-08-10', startTime: '10:00' });
+    await store.updateSchedule(sch.id, { date: '2026-08-14', startTime: '09:00', endTime: '10:00' });
+    const updated = store.getSchedules().find(s => s.id === sch.id);
+    expect(updated.date).toBe('2026-08-14');
+    expect(updated.startTime).toBe('09:00');
+  });
+
+  it('캐시에 없는 id로 부르면 조용히 성공하지 않고 예외를 던진다', async () => {
+    await expect(
+      store.updateSchedule('no-such-schedule-id', { date: '2026-08-14', startTime: '09:00' })
+    ).rejects.toThrow();
+  });
+
+  it('존재하지 않는 id 호출 후에도 캐시는 그대로다(부분 오염 없음)', async () => {
+    const m = await store.addMember({ name: 'M', trainerSessions: { t1: { total: 10, remaining: 5 } } });
+    const sch = await store.createScheduleWithDeduction({ memberId: m.id, trainerId: 't1', isExternal: false });
+    const before = store.getSchedules().length;
+    await expect(store.updateSchedule('no-such-schedule-id', { date: '2026-08-14' })).rejects.toThrow();
+    expect(store.getSchedules().length).toBe(before);
+    // 진짜 존재하는 스케줄도 이 실패로 인해 건드려지지 않았어야 한다.
+    expect(store.getSchedules().find(s => s.id === sch.id)).toBeTruthy();
+  });
+});
+
 describe('대량 데이터 파기 — 500건 한계 청크 처리 (purgeMember)', () => {
   it('수납 600건이 누적된 회원도 빠짐없이 파기된다', async () => {
     const m = await store.addMember({ name: 'L' });
