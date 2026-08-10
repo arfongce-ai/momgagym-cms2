@@ -231,3 +231,57 @@ export function evaluateSingleLegStanceWithEyes(input = {}) {
     asymmetryFlag: eyesOpen.valid ? eyesOpen.asymmetryFlag : false,
   };
 }
+
+// ════════════════════════════════════════════════════════════════════════
+//  [리포트 통합 2026-08-09] 아래 세 함수는 원래 StanceAnalysisHub.jsx(측정
+//  화면)에 있었다. StanceReportDashboard.jsx(저장된 리포트를 다시 보는 화면
+//  — 결과리포트 통합 프로젝트로 신설)도 똑같은 점수·상태 판정이 필요한데,
+//  두 화면 파일이 서로를 import하면 순환 참조가 생긴다. 판정 로직 자체는
+//  이 파일(core)에 두는 게 원래 맞는 자리라 여기로 옮기고, 두 화면 다 여기서
+//  가져다 쓰게 한다(재구현 아님 — 그대로 이동).
+// ════════════════════════════════════════════════════════════════════════
+
+// leg = combineLegTrials() 결과(evaluateSingleLegStanceWithEyes의 eyesOpen.left 등).
+// 즉시확정(균형상실/스텝아웃/최소유지시간 미달)은 특정 항목이 원인이라 그 항목만
+// risk로 잡고 나머지는 판정 보류(unknown)로 남긴다 — 안 그러면 실제로 재보지도
+// 않은 지표까지 risk로 잘못 표시된다.
+export function stanceMetricStatus(leg, flagPrefix, immediateKey) {
+  if (!leg) return 'unknown';
+  if (leg.basis === 'immediate') {
+    return immediateKey && leg.immediateReasons?.includes(immediateKey) ? 'risk' : 'unknown';
+  }
+  const confirmed = (leg.repeatedFlags || []).find((f) => f.startsWith(flagPrefix));
+  if (confirmed) return confirmed.endsWith('_high') ? 'risk' : 'caution';
+  const unconfirmed = (leg.unconfirmedFlags || []).some((f) => f.startsWith(flagPrefix));
+  return unconfirmed ? 'observed' : 'normal';
+}
+
+// 같은 다리·조건의 두 시행 중 "더 나쁜 값"을 대표값으로(측정 정직성 원칙 —
+// squatBiomechanics.js·squatFms.js와 동일). 유지시간은 짧을수록, 각도는
+// 클수록 나쁘다.
+export function legMetrics(leg) {
+  const trials = (leg?.trials || []).filter((t) => t.valid);
+  const worst = (key, dir) => {
+    const vals = trials.map((t) => t[key]).filter((v) => v != null);
+    if (!vals.length) return null;
+    return Math.round((dir === 'min' ? Math.min(...vals) : Math.max(...vals)) * 10) / 10;
+  };
+  return {
+    holdMs: worst('holdTimeMs', 'min'),
+    pelvicTiltDeg: worst('pelvicTiltDeg', 'max'),
+    kneeValgusDeg: worst('kneeValgusDeg', 'max'),
+  };
+}
+
+export function computeStanceScore(report) {
+  if (report?.valid === false) return 0;
+  const scores = [];
+  [report?.eyesOpen, report?.eyesClosed].forEach((cond) => {
+    if (!cond?.valid) return;
+    [cond.left, cond.right].forEach((leg) => {
+      if (!leg || leg.status === 'unknown') return;
+      scores.push(leg.status === 'normal' ? 100 : leg.status === 'risk' ? 35 : 65);
+    });
+  });
+  return scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0;
+}

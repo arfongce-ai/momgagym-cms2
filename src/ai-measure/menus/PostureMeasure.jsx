@@ -32,7 +32,7 @@ const BONES = [
 const CAPTURE_WINDOW_MS = 500;
 const CAPTURE_MIN_FRAMES = 3;
 
-export default function PostureMeasure({ member, onSave, onBack }) {
+export default function PostureMeasure({ member, onSave, onBack, onViewInReport }) {
   const canvasRef = useRef(null);
   const latestLandmarksRef = useRef(null);
   const latestVideoRef = useRef(null);
@@ -468,6 +468,18 @@ export default function PostureMeasure({ member, onSave, onBack }) {
           )}
           {saveState === 'error' && (
             <p className="text-center text-xs text-red-400">회원 기록 저장 실패. ‘리포트 저장’을 다시 눌러 주세요.</p>
+          )}
+          {/* [리포트 통합 2026-08-09] 저장 완료 후에만 노출 — 강제 이동이 아니라
+              선택지. 미등록회원은 결과리포트 화면의 회원 목록에 없어서 지원 안 함
+              (AiMeasureHub.viewInReport가 이미 그 경우 무시하지만, 애초에 눌러도
+              소용없는 버튼을 보여주지 않는다). */}
+          {saveState === 'saved' && !member?.isVirtual && typeof onViewInReport === 'function' && (
+            <button
+              onClick={onViewInReport}
+              className="w-full rounded-xl border border-amber-500/40 bg-amber-500/10 text-amber-300 font-bold text-sm py-2.5"
+            >
+              📊 결과리포트에서 보기
+            </button>
           )}
         </div>
       </div>

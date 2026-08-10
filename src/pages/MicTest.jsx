@@ -11,6 +11,10 @@ export default function MicTest() {
   const [logs, setLogs] = useState([]);
   const [running, setRunning] = useState(false);
   const recognitionRef = useRef(null);
+  // [버그 수정 2026-08-08] useMomiVoice.js와 같은 버그: "마이크 끄기"를 눌러도
+  // recognitionRef.current가 그대로라 onend가 재시작해버렸다. 사용자가 원하는
+  // 상태를 이 ref로 따로 추적한다.
+  const shouldRestartRef = useRef(false);
 
   const addLog = (text, isErr = false) => {
     const time = new Date().toLocaleTimeString('ko-KR');
@@ -23,6 +27,7 @@ export default function MicTest() {
 
   const toggle = () => {
     if (running) {
+      shouldRestartRef.current = false;
       recognitionRef.current?.stop();
       setRunning(false);
       return;
@@ -50,7 +55,7 @@ export default function MicTest() {
     recognition.onerror = (event) => addLog(`에러: ${event.error}`, true);
     recognition.onend = () => {
       addLog('■ 세션 종료 (onend)');
-      if (recognitionRef.current === recognition) {
+      if (recognitionRef.current === recognition && shouldRestartRef.current) {
         try {
           recognition.start();
           addLog('↻ 자동 재시작함');
@@ -61,6 +66,7 @@ export default function MicTest() {
     };
 
     recognitionRef.current = recognition;
+    shouldRestartRef.current = true;
     try {
       recognition.start();
       setRunning(true);

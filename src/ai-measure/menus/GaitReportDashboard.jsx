@@ -5,6 +5,9 @@ import {
 } from 'recharts';
 import { buildProblemFocus } from '../core/crossMeasureContext';
 import ProblemFocusPanel from './ProblemFocusPanel.jsx';
+import MomiAutoNote from '../../components/report/MomiAutoNote.jsx';
+import MomiInsightPanel from '../../components/report/MomiInsightPanel.jsx';
+import { aiStore } from '../../demoData';
 import ReportActions from '../../components/report/ReportActions';
 import { MetricCard, UnifiedReportCanvas, UnifiedReportHeader, UnifiedReportPage } from '../../components/report/UnifiedReportPrimitives';
 import { rangeToStatus } from '../core/unifiedReport';
@@ -146,6 +149,13 @@ export default function GaitReportDashboard({ report, onComment, onClose, videoB
         {/* ── 본문: 4분할 ── */}
         <div className="grid gap-3">
           <ProblemFocusPanel focus={problemFocus} context={report?.cross_measure_context} />
+          {/* [Axis3 확장 2026-08-08] MomiAutoNote — PostureReport.jsx와 동일 패턴.
+              gait_reports 컬렉션을 jump와 공유하므로 updateGaitReport를 그대로 쓴다. */}
+          <MomiAutoNote kind="gait" report={report} member={resolvedMember}
+            onSaved={(patch) => aiStore.updateGaitReport(resolvedMember?.id, report.id, patch)} />
+          {/* [Axis4 확장 2026-08-08] MomiAutoNote와 별개로, 필요하면 트레이너가
+              직접 물어보고 후속 질문까지 이어갈 수 있는 대화창. */}
+          <MomiInsightPanel kind="gait" report={report} member={resolvedMember} />
 
           {/* ① 상단 요약 */}
           <section className="grid grid-cols-4 gap-2.5">

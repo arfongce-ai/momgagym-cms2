@@ -15,7 +15,7 @@ import { calcJump } from '../core/performance';
 import { useHardwareBack } from '../core/useHardwareBack';
 import MeasureRecordConfirm from '../components/MeasureRecordConfirm.jsx';
 
-export default function JumpAnalysisHub({ member, onBack, onSave, onSaveToFirebase, onMemberHeightChange }) {
+export default function JumpAnalysisHub({ member, onBack, onSave, onSaveToFirebase, onMemberHeightChange, onViewInReport }) {
   const save = onSaveToFirebase || onSave;
   // 요구사항 7: 실시간 → 고속영상 순서, 실시간이 기본
   const [mode, setMode] = useState('live');
@@ -92,6 +92,17 @@ export default function JumpAnalysisHub({ member, onBack, onSave, onSaveToFireba
     return (
       <div className="fixed inset-0 z-[80] bg-slate-950 overflow-y-auto" style={{ height: '100dvh' }}>
         <JumpReportDashboard report={report} onClose={onBack} member={member} />
+        {/* [리포트 통합 2026-08-09] GaitAnalysisHub.jsx와 동일 패턴. */}
+        {!member?.isVirtual && typeof onViewInReport === 'function' && (
+          <div className="mx-auto w-full max-w-[794px] px-4 pb-3">
+            <button
+              onClick={onViewInReport}
+              className="w-full rounded-xl border border-amber-500/40 bg-amber-500/10 text-amber-300 font-bold text-sm py-2.5"
+            >
+              📊 결과리포트에서 보기
+            </button>
+          </div>
+        )}
         <div className="sticky bottom-0 z-10 flex justify-center p-3 bg-slate-900/90 backdrop-blur border-t border-slate-800">
           <button onClick={backToMeasure} className="rounded-lg bg-slate-700 text-white font-bold text-sm px-6 py-2">← 다시 측정</button>
         </div>

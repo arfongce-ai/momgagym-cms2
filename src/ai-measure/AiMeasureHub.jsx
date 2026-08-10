@@ -1,6 +1,7 @@
 // ai-measure/AiMeasureHub.jsx
 // AI 측정 허브. 메뉴를 고르면 해당 모듈만 lazy 로드해 구동한다(필요 기능만).
 import { useState, useEffect, Suspense } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { MEASURE_MENUS } from './registry';
 import { store, aiStore, makeGuestId } from '../demoData';
 import { todayYMD } from '../utils/dates';
@@ -12,10 +13,11 @@ import { sanitizeReportPayload } from './core/unifiedReport';
 import { saveUnifiedReport } from '../services/unifiedReportStore';
 import { useHardwareBack } from './core/useHardwareBack';
 import { useLockPortrait } from './core/useLockPortrait';
-import { consumePendingVoiceTarget } from '../voice/pendingVoiceTarget';
+import { consumePendingVoiceTarget, setPendingVoiceTarget } from '../voice/pendingVoiceTarget';
 
 export default function AiMeasureHub() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   // 트레이너 모드: 담당 회원만 / 모든 회원은 가나다 순으로 노출.
   const [members] = useState(() => sortByName(scopeMembersToTrainer(store.getMembers(), user)));
   const [memberId, setMemberId] = useState('');
@@ -315,6 +317,20 @@ export default function AiMeasureHub() {
     if (member?.isVirtual) setGuestId(null);
   };
 
+  // [리포트 통합 2026-08-09] "AI 측정 후 리포트 저장은 결과리포트로 이동"
+  // 요청 대응 — 저장 직후 화면(비디오/사진 공유 등 다른 즉시 액션이 있는
+  // 곳)에서 트레이너가 명시적으로 누르는 버튼용 콜백. 강제 리다이렉트가
+  // 아니라 선택지로 두는 이유: 저장 직후 화면엔 이미 영상 저장·카카오 공유
+  // 같은 그 자리에서만 할 수 있는 액션들이 있어서, 저장되자마자 무조건
+  // 다른 페이지로 튕기면 그 흐름을 끊어버린다.
+  const viewInReport = (openReportKind) => {
+    // 결과리포트 화면의 회원 선택은 등록된 회원 목록 기준이라, 미등록회원(게스트)은
+    // 애초에 그 목록에 없다 — 매칭될 수 없으므로 여기선 등록 회원만 지원한다.
+    if (!member || member.isVirtual) return;
+    setPendingVoiceTarget({ memberName: member.name, openReportKind });
+    navigate('/report');
+  };
+
   // 메뉴 구동 화면
   if (active && active.status === 'ready') {
     const Comp = active.component;
@@ -329,6 +345,7 @@ export default function AiMeasureHub() {
             onBack={closeActiveMenu}
             onMemberHeightChange={rememberMemberHeight}
             onGuestBodyInfoChange={member?.isVirtual ? applyGuestBodyInfo : undefined}
+            onViewInReport={() => viewInReport(active.id)}
           />
         </Suspense>
       </div>

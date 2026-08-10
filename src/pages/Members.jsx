@@ -12,6 +12,7 @@ import TrainerBadge   from '../components/common/TrainerBadge';
 import { downloadCSV } from '../services/finance';
 import { sortExpiredLast, getUserTrainerId, isSessionExhausted, isMemberInactive } from '../utils/memberList';
 import { buildMemberSessionExpiry, computeExpirySettlement } from '../services/sessionExpiry';
+import { consumePendingVoiceTarget } from '../voice/pendingVoiceTarget';
 
 function getChosung(str) {
   const cs=['ㄱ','ㄲ','ㄴ','ㄷ','ㄸ','ㄹ','ㅁ','ㅂ','ㅃ','ㅅ','ㅆ','ㅇ','ㅈ','ㅉ','ㅊ','ㅋ','ㅌ','ㅍ','ㅎ'];
@@ -54,6 +55,23 @@ export default function Members() {
       setSelectedInitialTab(searchParams.get('tab') || null);
     }
   }, [searchParams, members]);
+
+  // [음성 명령 확장 2026-08-09] "모미야, OO님 세션/수납/신체정보/측정이력/메모
+  // 보여줘" 같은 명령으로 도착했으면 해당 회원을 그 탭으로 바로 연다.
+  // AiMeasureHub.jsx/Report.jsx/Schedule.jsx는 이미 consumePendingVoiceTarget으로
+  // 이 패턴을 쓰고 있는데, 이 화면만 빠져 있어서 회원 이름을 말해도 무시되던
+  // 버그였다(회원 목록이 로딩된 뒤에야 이름 매칭이 가능하므로 members 의존).
+  useEffect(() => {
+    if (!members.length) return;
+    const pending = consumePendingVoiceTarget();
+    if (!pending?.memberName) return;
+    const m = members.find(x => x.name === pending.memberName);
+    if (m) {
+      setSelected(m);
+      setSelectedInitialTab(pending.memberTab || null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [members]);
 
   const oneYearAgo = daysAgoYMD(365); // CV-A: 로컬 날짜
   const myTrainerId = getUserTrainerId(user);

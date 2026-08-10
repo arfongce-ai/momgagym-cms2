@@ -5,9 +5,10 @@
 //  · 정산 = 트레이너별 입금금액 × 정산비율(40/50/60%)
 //  · 인센티브 = 홍보 기록 + 개인/재등록 매출 단위
 //  · 고정비/월별 지출, 월/년 정산
-import { useState, useMemo, useRef } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
 import { store } from '../demoData';
 import { useAuth } from '../contexts/AuthContext';
+import { consumePendingVoiceTarget } from '../voice/pendingVoiceTarget';
 import {
   METHOD_LBL, METHOD_CLR, won, monthKey, yearKey,
   calcNet, downloadCSV, computeSessionSettlement, computeSessionSettlementWithExpiry,
@@ -55,6 +56,16 @@ const TABS = [['overview','개요'],['settle','정산'],['expense','지출'],['c
 export default function Revenue() {
   const { user } = useAuth();
   const [tab, setTab] = useState('overview');
+
+  // [음성 명령 확장 2026-08-09] "모미야, 정산 열어줘" 같은 명령으로 도착했으면
+  // 개요 탭이 아니라 요청한 탭을 바로 연다. go_revenue 도구는 서버가 admin
+  // role을 직접 검증한 뒤에만 노출되므로(voice-command.js), 여기서 role을
+  // 다시 따로 걸러낼 필요는 없다 — 훅은 항상 최상단에서 무조건 호출돼야 하므로
+  // (아래 트레이너용 조기 return보다 먼저) 이 위치에 둔다.
+  useEffect(() => {
+    const pending = consumePendingVoiceTarget();
+    if (pending?.revenueTab) setTab(pending.revenueTab);
+  }, []);
 
   const settings = store.getSettings();
   const trainers = store.getTrainers();

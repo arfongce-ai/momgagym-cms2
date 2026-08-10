@@ -5,8 +5,10 @@ import { useRef, useState, useEffect, useCallback } from 'react';
 import { nextPhase, firstPhase, phaseDurationSec, totalDurationSec } from '../core/intervalTimer';
 import { boostedGain, whistle, primeAudio } from '../core/audioCue';
 import SoundVolumeControl from './SoundVolumeControl';
+import { subscribeTimerControl } from '../../voice/timerControlBus';
+import { consumePendingTimerCommand } from '../../voice/pendingTimerCommand';
 
-export function Stopwatch({ compact = false }) {
+export function Stopwatch({ compact = false, command = null }) {
   const [elapsed, setElapsed] = useState(0);
   const [running, setRunning] = useState(false);
   const [laps, setLaps] = useState([]);
@@ -45,6 +47,19 @@ export function Stopwatch({ compact = false }) {
 
   useEffect(() => () => cancelAnimationFrame(rafRef.current), []);
 
+  // [음성 타이머 제어 2026-08-09] "초시계 시작해줘/멈춰줘/리셋해줘/랩 기록해줘"
+  // 같은 momi 명령을 실행한다. 부모(TimerTool)가 매번 새 id로 command를 내려
+  // 주므로 같은 액션이 연속으로 와도(예: start 두 번) 매번 실행된다. 버튼을
+  // 직접 누른 것과 완전히 같은 함수(startStop/reset/lap)를 그대로 호출한다.
+  useEffect(() => {
+    if (!command) return;
+    if (command.action === 'start') { if (!running) startStop(); }
+    else if (command.action === 'pause' || command.action === 'stop') { if (running) startStop(); }
+    else if (command.action === 'reset') reset();
+    else if (command.action === 'lap') lap();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [command?.id]);
+
   const fmt = (ms) => {
     const cs = Math.floor((ms % 1000) / 10);
     const s = Math.floor(ms / 1000) % 60;
@@ -81,7 +96,7 @@ export function Stopwatch({ compact = false }) {
   );
 }
 
-export function Metronome({ compact = false }) {
+export function Metronome({ compact = false, command = null }) {
   const [bpm, setBpm] = useState(100);
   const [playing, setPlaying] = useState(false);
   const ctxRef = useRef(null);
@@ -136,6 +151,24 @@ export function Metronome({ compact = false }) {
     start();
   }, [bpm, playing, start, stop]);
 
+  // [음성 타이머 제어 2026-08-09] "메트로놈 120bpm으로 켜줘/꺼줘" 같은 momi
+  // 명령. bpm·playing state만 갱신하면 바로 위 useEffect([bpm, playing, start,
+  // stop])가 실제 오디오 시작·정지·템포 전환을 알아서 처리해준다 — 슬라이더로
+  // bpm을 바꿀 때와 완전히 같은 경로라 start/stop 함수 자체는 건드릴 필요가 없다.
+  useEffect(() => {
+    if (!command) return;
+    if (command.action === 'start') {
+      if (typeof command.bpm === 'number' && command.bpm >= 40 && command.bpm <= 220) setBpm(command.bpm);
+      setPlaying(true);
+    } else if (command.action === 'pause' || command.action === 'stop') {
+      stop();
+    } else if (command.action === 'reset') {
+      stop();
+      setBpm(100);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [command?.id]);
+
   return (
     <div className={compact ? 'space-y-3' : 'space-y-4'}>
       <div className={`text-center bg-slate-900 border border-slate-800 rounded-2xl ${compact ? 'py-4' : 'py-6'}`}>
@@ -165,7 +198,7 @@ export function Metronome({ compact = false }) {
   );
 }
 
-export function Countdown({ compact = false }) {
+export function Countdown({ compact = false, command = null }) {
   const [setMin, setSetMin] = useState(1);
   const [setSec, setSetSec] = useState(0);
   const [remain, setRemain] = useState(0);
@@ -206,13 +239,28 @@ export function Countdown({ compact = false }) {
     rafRef.current = requestAnimationFrame(tick);
   }, []);
 
-  const start = () => {
-    const total = (setMin * 60 + setSec) * 1000;
-    const base = remain > 0 && !running ? remain : total;
+  // [음성 타이머 제어 2026-08-09] totalSecOverride가 오면(momi가 "OO초로 시작해줘"
+  // 처럼 특정 시간을 말한 경우) setMin/setSec state를 거치지 않고 바로 그 값으로
+  // 시작한다 — setSetMin(...)+start() 를 한 함수 안에서 연달아 부르면 React state
+  // 업데이트가 비동기라 start()가 방금 바뀐 값을 못 읽는 문제(흔한 함정)를 피하기
+  // 위함이다. 버튼 클릭(onClick={running?pause:start})은 클릭 이벤트 객체를 첫
+  // 인자로 넘기므로 typeof 체크로 자연히 걸러진다(숫자가 아니라서 기존 동작 그대로).
+  const start = (totalSecOverride) => {
+    const overrideMs = typeof totalSecOverride === 'number' && totalSecOverride > 0 ? totalSecOverride * 1000 : null;
+    const total = overrideMs != null ? overrideMs : (setMin * 60 + setSec) * 1000;
+    const base = overrideMs != null ? overrideMs : (remain > 0 && !running ? remain : total);
     if (base <= 0) return;
     endRef.current = performance.now() + base;
     rafRef.current = requestAnimationFrame(tick);
     setRunning(true);
+    if (overrideMs != null) {
+      // 화면에 표시되는 설정값도 같이 맞춰준다(다음에 '리셋' 눌렀을 때 이 값이
+      // 남아있어야 사용자가 헷갈리지 않음). remain은 항상 새로 시작(이전 일시정지
+      // 잔여시간을 무시)하도록 0으로 둔다 — 위 base 계산에서 이미 override를
+      // 우선했으므로 이 reset은 표시/후속 상태 정리용이다.
+      setSetMin(Math.floor(totalSecOverride / 60));
+      setSetSec(totalSecOverride % 60);
+    }
   };
 
   const pause = () => {
@@ -230,6 +278,21 @@ export function Countdown({ compact = false }) {
     cancelAnimationFrame(rafRef.current);
     if (alarmRef.current) { try { alarmRef.current.close(); } catch (e) { /* noop */ } }
   }, []);
+
+  // [음성 타이머 제어 2026-08-09] "타이머 90초로 돌려줘"/"계속해줘"/"멈춰줘"/
+  // "리셋해줘" 같은 momi 명령을 실행한다.
+  useEffect(() => {
+    if (!command) return;
+    if (command.action === 'start') {
+      if (typeof command.seconds === 'number' && command.seconds > 0) start(command.seconds);
+      else if (!running) start();
+    } else if (command.action === 'pause' || command.action === 'stop') {
+      if (running) pause();
+    } else if (command.action === 'reset') {
+      reset();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [command?.id]);
 
   const display = remain > 0 ? remain : (setMin * 60 + setSec) * 1000;
   const mm = Math.floor(display / 60000);
@@ -273,11 +336,18 @@ export function Countdown({ compact = false }) {
 
 // 인터벌 타이머 — "운동 N초 / 휴식 M초 × R세트"를 자동 반복하며 구간 전환 시 비프음.
 // HIIT/타바타/서킷에 사용. 준비(prepare) 구간으로 시작 카운트다운을 준다.
-export function IntervalTimer({ compact = false }) {
+export function IntervalTimer({ compact = false, command = null }) {
   const [workSec, setWorkSec] = useState(30);
   const [restSec, setRestSec] = useState(15);
   const [rounds, setRounds] = useState(8);
   const [prepSec, setPrepSec] = useState(5);
+  // [음성 타이머 제어 2026-08-09] 아래 참고 — voice 명령이 workSec 등 설정을
+  // 새로 바꾼 뒤, 그 값이 실제로 반영된 다음 렌더에서 자동으로 시작시키기 위한
+  // 신호. 숫자를 바꿀 때마다 +1 해서 "설정이 방금 실제로 바뀐 값과 같더라도"
+  // 항상 다음 렌더에서 한 번은 반드시 실행되게 한다(단순히 workSec 등을
+  // 의존성으로 쓰면, 명령으로 요청한 값이 이미 화면에 설정된 값과 우연히
+  // 같을 때 아무 것도 안 바뀌어 effect가 아예 안 돌 수 있다).
+  const [pendingStartToken, setPendingStartToken] = useState(0);
 
   // phase: 'idle' | 'prepare' | 'work' | 'rest' | 'done'
   const [phase, setPhase] = useState('idle');
@@ -406,6 +476,49 @@ export function IntervalTimer({ compact = false }) {
     if (ctxRef.current) { try { ctxRef.current.close(); } catch (e) { /* noop */ } }
   }, []);
 
+  // [음성 타이머 제어 2026-08-09] "인터벌 운동40초 휴식20초 8라운드로 시작해줘"
+  // 같은 momi 명령. startPause/enterPhase/advance/tick은 전부 workSec 등 state를
+  // 클로저로 참조하는 재귀 루프라, 이 함수들을 손대지 않고 그대로 재사용하려면
+  // "먼저 설정을 바꾸고, 그 값이 실제로 반영된 다음 렌더에서 시작"하는 2단계가
+  // 안전하다 — 같은 함수 안에서 setWorkSec(...) 직후 곧바로 startPause()를
+  // 부르면 아직 이전 렌더의 workSec을 참조해서 방금 요청한 구성이 아니라 화면에
+  // 남아있던 이전 구성으로 시작해버리는 문제(React state 업데이트가 비동기라는
+  // 흔한 함정)가 생긴다. 아래 두 effect가 그 2단계를 담당한다.
+  useEffect(() => {
+    if (!command) return;
+    if (command.action === 'start') {
+      const hasOverride = ['workSec', 'restSec', 'rounds', 'prepSec'].some((k) => typeof command[k] === 'number');
+      if (hasOverride) {
+        // 진행 중이었다면 먼저 완전히 멈추고 idle로 되돌린 뒤, 새 설정을 반영한다.
+        cancelAnimationFrame(rafRef.current);
+        setRunning(false);
+        setPhase('idle');
+        setRound(1);
+        setRemain(0);
+        lastTickRef.current = -1;
+        planRef.current = { phase: 'idle', round: 1 };
+        if (typeof command.workSec === 'number') setWorkSec(command.workSec);
+        if (typeof command.restSec === 'number') setRestSec(command.restSec);
+        if (typeof command.rounds === 'number') setRounds(command.rounds);
+        if (typeof command.prepSec === 'number') setPrepSec(command.prepSec);
+        setPendingStartToken((t) => t + 1); // 아래 effect가 다음 렌더에서 실제로 시작시킨다.
+      } else if (!running) {
+        startPause(); // 특정 구성 언급 없이 "시작해줘"/"계속해줘" — 기존 버튼과 동일 동작.
+      }
+    } else if (command.action === 'pause' || command.action === 'stop') {
+      if (running) startPause(); // startPause는 토글이라 running일 때 부르면 정지된다.
+    } else if (command.action === 'reset') {
+      reset();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [command?.id]);
+
+  useEffect(() => {
+    if (pendingStartToken === 0) return; // 최초 렌더(0)는 건너뛴다 — 마운트 시 자동 시작 방지.
+    startPause();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingStartToken]);
+
   const totalSec = totalDurationSec({ workSec, restSec, rounds, prepSec });
   const totalLabel = `${Math.floor(totalSec / 60)}분 ${totalSec % 60}초`;
 
@@ -487,6 +600,35 @@ export function IntervalTimer({ compact = false }) {
 
 export default function TimerTool({ onBack }) {
   const [tab, setTab] = useState('stopwatch');
+  // [음성 타이머 제어 2026-08-09] 화면이 이미 열려 있을 때 momi가 실시간으로
+  // 실행시킬 명령. 부모(이 컴포넌트)가 tool 탭 전환과 명령 전달을 함께 맡는다 —
+  // 4개 하위 도구는 한 번에 하나만 마운트돼 있으므로(아래 삼항연산자), 명령이
+  // 다른 탭을 가리키면 먼저 그 탭으로 전환해야 해당 도구가 명령을 받을 수 있다.
+  const [liveCommand, setLiveCommand] = useState(null);
+
+  // 이 화면이 열리기 전에 momi 명령이 왔으면(voiceCommandService.js가 화면
+  // 이동시키며 1회성으로 담아둔 값) 마운트 시 한 번 꺼내서 해당 탭으로 열고
+  // 바로 실행한다. 이미 열려있는 상태에서 온 명령은 아래 subscribeTimerControl이
+  // 실시간으로 받는다 — 구독자 유무로 voiceCommandService.js가 둘을 나눠 보내므로
+  // 서로 겹치지 않는다.
+  useEffect(() => {
+    const pending = consumePendingTimerCommand();
+    if (pending?.tool) {
+      setTab(pending.tool);
+      setLiveCommand({ ...pending, id: `pending_${Date.now()}` });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    const unsubscribe = subscribeTimerControl((cmd) => {
+      if (!cmd?.tool) return;
+      setTab(cmd.tool);
+      setLiveCommand({ ...cmd, id: `live_${Date.now()}_${Math.random()}` });
+    });
+    return unsubscribe;
+  }, []);
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -507,10 +649,10 @@ export default function TimerTool({ onBack }) {
           </button>
         ))}
       </div>
-      {tab === 'stopwatch' ? <Stopwatch />
-        : tab === 'countdown' ? <Countdown />
-          : tab === 'interval' ? <IntervalTimer />
-            : <Metronome />}
+      {tab === 'stopwatch' ? <Stopwatch command={liveCommand} />
+        : tab === 'countdown' ? <Countdown command={liveCommand} />
+          : tab === 'interval' ? <IntervalTimer command={liveCommand} />
+            : <Metronome command={liveCommand} />}
     </div>
   );
 }
