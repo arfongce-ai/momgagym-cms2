@@ -120,6 +120,53 @@ const ALL_TOOLS = [
     }, required: ['oldDate', 'oldStartTime', 'newDate', 'newStartTime'] } },
 ];
 
+// [무료 확장 2026-08-10] 트레이너관리·매출관리는 "관리자 전용이라 클라이언트가
+// 규칙 기반으로 끝내면 안 된다"는 이유로 지금까지 항상 Claude를 거쳤다(위
+// commandRegistry.js 주석·src/services/voiceCommandService.js 주석 참고). 하지만
+// 그 이유는 어디까지나 "role을 못 믿어서"였지 "문장 이해가 어려워서"가 아니었다.
+// 여기 아래 onRequestPost 안에서 role은 이미 resolveVerifiedRole()로 서버가
+// 직접 검증을 끝낸 뒤이므로, 그 검증된 role을 갖고 하는 규칙 기반 판단은
+// client-side 규칙 기반과 똑같이 안전하다 — 보안 경계(토큰 검증)는 그대로 두고,
+// 그 뒤에 "뻔한 문장을 Claude에게 또 물어보지 않는다"는 비용 최적화만 얹는 것.
+const ADMIN_NAV_VERBS = ['열어', '띄워', '보여', '가줘', '가자', '이동', '들어가'];
+const ADMIN_DESTINATION_KEYWORDS = [
+  { id: 'trainers', keywords: ['트레이너'] },
+  { id: 'revenue', keywords: ['매출'] },
+];
+// go_revenue 도구 설명(위 41~45줄)과 같은 키워드 매핑을 그대로 따른다.
+const REVENUE_TAB_KEYWORDS = [
+  { id: 'settle', keywords: ['정산'] },
+  { id: 'expense', keywords: ['지출'] },
+  { id: 'config', keywords: ['설정'] },
+  { id: 'overview', keywords: ['개요', '손익'] },
+];
+
+function normalizeForMatch(s) {
+  return (s || '').replace(/\s+/g, '').toLowerCase();
+}
+
+/**
+ * role이 이미 'admin'으로 검증된 요청에서만 호출한다(호출부 가드 참고).
+ * 확신 있게 못 찾으면 null을 반환해서, 호출부가 기존처럼 Claude 경로로 넘긴다
+ * — 즉 이 함수가 틀려도(매치 실패) 동작이 나빠지는 게 아니라 예전 그대로일 뿐이다.
+ */
+function matchAdminRuleBasedDestination(transcript) {
+  const normalized = normalizeForMatch(transcript);
+  if (!ADMIN_NAV_VERBS.some((v) => normalized.includes(normalizeForMatch(v)))) return null;
+  for (const { id, keywords } of ADMIN_DESTINATION_KEYWORDS) {
+    if (keywords.some((k) => normalized.includes(normalizeForMatch(k)))) return id;
+  }
+  return null;
+}
+
+function matchRevenueTab(transcript) {
+  const normalized = normalizeForMatch(transcript);
+  for (const { id, keywords } of REVENUE_TAB_KEYWORDS) {
+    if (keywords.some((k) => normalized.includes(normalizeForMatch(k)))) return id;
+  }
+  return null;
+}
+
 export async function onRequestPost(context) {
   try {
     const { request, env } = context;
@@ -145,6 +192,26 @@ export async function onRequestPost(context) {
     // 가능한 취약점이었다. 이제는 Authorization 헤더의 Firebase ID 토큰을 서버가 직접
     // 서명 검증해서 role을 구한다(위조 불가 — resolveVerifiedRole 헤더 주석 참고).
     const { role: effectiveRole } = await resolveVerifiedRole(request.headers.get('Authorization'));
+
+    // [무료 확장 2026-08-10] role이 진짜 admin으로 검증된 경우에만(가드) 트레이너
+    // 관리·매출관리 이동을 규칙 기반으로 먼저 시도한다 — 매치되면 Claude를 아예
+    // 안 불러서 크레딧이 없어도 동작하고, 매치 안 되면(애매한 표현·다른 요청 등)
+    // 그냥 아래로 흘러가 기존 Claude 경로를 그대로 탄다.
+    if (effectiveRole === 'admin') {
+      const adminDestId = matchAdminRuleBasedDestination(transcript);
+      if (adminDestId) {
+        const navBody = { type: 'navigate', destinationId: adminDestId };
+        if (adminDestId === 'revenue') {
+          const tab = matchRevenueTab(transcript);
+          if (tab) navBody.tab = tab;
+        }
+        return new Response(JSON.stringify(navBody), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+    }
+
     // role에 안 맞는 도구는 애초에 Claude에게 후보로도 전달하지 않는다.
     const tools = ALL_TOOLS.filter((t) => t.roles.includes(effectiveRole)).map((t) => ({
       name: t.name,

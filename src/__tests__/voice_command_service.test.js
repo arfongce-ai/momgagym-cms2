@@ -9,6 +9,8 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 import {
   matchRuleBasedDestination,
+  matchRuleBasedSubKind,
+  matchRuleBasedTimerControl,
   extractMemberNameFromText,
 } from '../services/voiceCommandService.js';
 
@@ -92,6 +94,128 @@ describe('matchRuleBasedDestination() — 무료 규칙 기반 목적지 매칭'
 
   it('코칭 질문에 목적지 키워드가 우연히 섞여도(이동 동사 없으면) 오작동 안 함', () => {
     expect(matchRuleBasedDestination('이 회원한테 어떤 운동을 추천해야 할까요')).toBeNull();
+  });
+});
+
+// [무료 확장 2026-08-10] 목적지는 정해졌는데 화면 안 세부 탭/측정 종류를 예전엔
+// 규칙 기반이 못 뽑아 항상 Claude(유료)로 넘겼다. "정해진 단어 목록 중 하나
+// 찾기"는 목적지 매칭과 원리가 같아서 무료로도 충분히 가능함을 확인한다.
+describe('matchRuleBasedSubKind() — 무료 규칙 기반 세부 탭/측정 종류 매칭(2026-08-10)', () => {
+  it('회원관리: "수납"/"결제"는 payments 탭으로 간다', () => {
+    expect(matchRuleBasedSubKind('members', '김철수님 수납 내역 보여줘')).toBe('payments');
+    expect(matchRuleBasedSubKind('members', '결제 탭 열어줘')).toBe('payments');
+  });
+
+  it('회원관리: "세션"/"잔여횟수"는 sessions 탭으로 간다', () => {
+    expect(matchRuleBasedSubKind('members', '김철수님 세션 보여줘')).toBe('sessions');
+    expect(matchRuleBasedSubKind('members', '잔여횟수 확인해줘')).toBe('sessions');
+  });
+
+  it('회원관리: "신체정보"/"체성분"은 body 탭으로 간다', () => {
+    expect(matchRuleBasedSubKind('members', '신체정보 열어줘')).toBe('body');
+    expect(matchRuleBasedSubKind('members', '체성분 보여줘')).toBe('body');
+  });
+
+  it('회원관리: "메모"는 memo 탭으로 간다', () => {
+    expect(matchRuleBasedSubKind('members', '메모 확인해줘')).toBe('memo');
+  });
+
+  it('회원관리: "기본정보"는 info 탭으로 간다', () => {
+    expect(matchRuleBasedSubKind('members', '기본정보 열어줘')).toBe('info');
+  });
+
+  it('[보안 아님, 정확도 문제] 회원관리에서 "측정이력"은 일부러 매칭하지 않는다(ai_measure 키워드와 겹쳐 오작동 위험)', () => {
+    expect(matchRuleBasedSubKind('members', '측정이력 보여줘')).toBeNull();
+  });
+
+  it('리포트: 7종 측정 종류를 키워드로 찾는다', () => {
+    expect(matchRuleBasedSubKind('report', '점프 리포트 보여줘')).toBe('jump');
+    expect(matchRuleBasedSubKind('report', '자세 리포트 열어줘')).toBe('posture');
+    expect(matchRuleBasedSubKind('report', 'ROM 리포트 보여줘')).toBe('rom');
+    expect(matchRuleBasedSubKind('report', '보행 리포트 열어줘')).toBe('gait');
+    expect(matchRuleBasedSubKind('report', '바벨 리포트 보여줘')).toBe('lifting');
+    expect(matchRuleBasedSubKind('report', '한다리서기 리포트 열어줘')).toBe('stance');
+    expect(matchRuleBasedSubKind('report', '오버헤드스쿼트 리포트 보여줘')).toBe('squat');
+  });
+
+  it('AI측정: 리포트와 같은 7종에 더해 body·record·timer도 찾는다', () => {
+    expect(matchRuleBasedSubKind('ai_measure', '신체정보 측정하게 해줘')).toBe('body');
+    expect(matchRuleBasedSubKind('ai_measure', '녹화 열어줘')).toBe('record');
+    expect(matchRuleBasedSubKind('ai_measure', '초시계 열어줘')).toBe('timer');
+    expect(matchRuleBasedSubKind('ai_measure', '점프 측정하게 해줘')).toBe('jump');
+  });
+
+  it('세부 키워드가 전혀 없으면 null(기존처럼 목적지 화면만 열림 — 회귀 아님)', () => {
+    expect(matchRuleBasedSubKind('members', '회원관리 열어줘')).toBeNull();
+    expect(matchRuleBasedSubKind('report', '리포트 열어줘')).toBeNull();
+  });
+
+  it('회원관리·리포트·AI측정이 아닌 목적지는 항상 null(적용 대상 아님)', () => {
+    expect(matchRuleBasedSubKind('home', '홈 열어줘')).toBeNull();
+    expect(matchRuleBasedSubKind('schedule', '점프 스케줄 보여줘')).toBeNull();
+  });
+
+  it('processVoiceCommand의 규칙 기반 분기가 matchRuleBasedSubKind를 실제로 호출해서 배선한다', () => {
+    const src = readSrc('src', 'services', 'voiceCommandService.js');
+    const start = src.indexOf('const ruleDestId = matchRuleBasedDestination(transcript);');
+    const end = src.indexOf('if (navigate) navigate(destination.path);', start);
+    const body = src.slice(start, end);
+    expect(body).toContain('const subKind = matchRuleBasedSubKind(ruleDestId, transcript);');
+    expect(body).toContain("testId: ruleDestId === 'ai_measure' ? subKind : null,");
+    expect(body).toContain("openReportKind: ruleDestId === 'report' ? subKind : null,");
+    expect(body).toContain("memberTab: ruleDestId === 'members' ? subKind : null,");
+  });
+});
+
+// [무료 확장 2026-08-10] 숫자 설정이 없는 단순 타이머 명령(도구+동작만)은
+// 목적지 매칭과 같은 원리의 단어 목록 문제라 무료로 가능하다.
+describe('matchRuleBasedTimerControl() — 무료 규칙 기반 단순 타이머 제어(2026-08-10)', () => {
+  it('초시계 시작/정지/리셋/랩을 전부 인식한다', () => {
+    expect(matchRuleBasedTimerControl('초시계 시작해줘')).toEqual({ tool: 'stopwatch', action: 'start' });
+    expect(matchRuleBasedTimerControl('초시계 멈춰줘')).toEqual({ tool: 'stopwatch', action: 'pause' });
+    expect(matchRuleBasedTimerControl('초시계 리셋해줘')).toEqual({ tool: 'stopwatch', action: 'reset' });
+    expect(matchRuleBasedTimerControl('초시계 랩 기록해줘')).toEqual({ tool: 'stopwatch', action: 'lap' });
+  });
+
+  it('타이머(카운트다운)·인터벌·메트로놈도 인식한다', () => {
+    expect(matchRuleBasedTimerControl('타이머 시작해줘')).toEqual({ tool: 'countdown', action: 'start' });
+    expect(matchRuleBasedTimerControl('인터벌 시작해줘')).toEqual({ tool: 'interval', action: 'start' });
+    expect(matchRuleBasedTimerControl('메트로놈 꺼줘')).toEqual({ tool: 'metronome', action: 'pause' });
+  });
+
+  it('숫자가 하나라도 섞이면 null(정확한 값 파싱은 Claude 몫으로 남김)', () => {
+    expect(matchRuleBasedTimerControl('타이머 30초로 시작해줘')).toBeNull();
+    expect(matchRuleBasedTimerControl('인터벌 운동40초 휴식20초 8라운드로 시작해줘')).toBeNull();
+    expect(matchRuleBasedTimerControl('메트로놈 120bpm으로 켜줘')).toBeNull();
+  });
+
+  it('도구는 있는데 동작이 없으면(애매함) null', () => {
+    expect(matchRuleBasedTimerControl('타이머')).toBeNull();
+    expect(matchRuleBasedTimerControl('초시계 열어줘')).toBeNull(); // "열어줘"는 화면 이동 동사지 타이머 동작이 아님
+  });
+
+  it('동작은 있는데 도구가 없으면(애매함) null', () => {
+    expect(matchRuleBasedTimerControl('시작해줘')).toBeNull();
+  });
+
+  it('랩(구간기록)은 초시계 전용 — 다른 도구에 요청하면 null(control_timer 도구 정의와 동일 규칙)', () => {
+    expect(matchRuleBasedTimerControl('타이머 랩 기록해줘')).toBeNull();
+    expect(matchRuleBasedTimerControl('인터벌 랩 기록해줘')).toBeNull();
+  });
+
+  it('아무 타이머 관련 단어가 없으면(코칭 질문 등) null', () => {
+    expect(matchRuleBasedTimerControl('이 회원한테 어떤 운동을 추천해야 할까요')).toBeNull();
+  });
+
+  it('processVoiceCommand가 매치되면 Claude 경로와 같은 publishTimerControl/setPendingTimerCommand 흐름을 재사용한다', () => {
+    const src = readSrc('src', 'services', 'voiceCommandService.js');
+    const start = src.indexOf('const ruleTimerCmd = matchRuleBasedTimerControl(transcript);');
+    const end = src.indexOf('// 규칙 기반으로 확신 있게 못 찾았으면', start);
+    const body = src.slice(start, end);
+    expect(body).toContain('const deliveredLive = publishTimerControl(cmd);');
+    expect(body).toContain('setPendingTimerCommand(cmd);');
+    expect(body).toContain("setPendingVoiceTarget({ testId: 'timer' });");
+    expect(body).toContain("return { type: 'timer_control', cmd, deliveredLive };");
   });
 });
 

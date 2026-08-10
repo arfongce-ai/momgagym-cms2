@@ -224,3 +224,73 @@ describe('voice-command.js — 멀티턴 대화(history) 지원', () => {
     expect(bodyBefore).not.toMatch(/if \(validHistory/);
   });
 });
+
+// [무료 확장 2026-08-10] 관리자 전용 화면(트레이너관리·매출관리)도 "이동 동사 +
+// 목적지 키워드"면 Claude를 안 거치고 무료로 처리한다. [보안] 이 분기가 안전한
+// 이유: role은 클라이언트 값이 아니라 resolveVerifiedRole()이 서버에서 직접
+// 검증한 값이고, 그 검증 이후에만(가드) 규칙 기반 판단이 실행된다 — 보안 경계
+// 자체는 옮기거나 낮추지 않고, "뻔한 문장을 Claude에게 또 안 물어본다"는 비용
+// 최적화만 얹은 것이다.
+describe('voice-command.js — 관리자 화면 무료 규칙 기반 이동(2026-08-10)', () => {
+  it('resolveVerifiedRole로 role을 검증한 뒤에만(그 아래에) 관리자 규칙 기반 분기가 있다(순서 회귀 방지)', () => {
+    const roleIdx = src.indexOf('const { role: effectiveRole } = await resolveVerifiedRole(');
+    const adminBranchIdx = src.indexOf("if (effectiveRole === 'admin') {");
+    const claudeCallIdx = src.indexOf("await fetch('https://api.anthropic.com/v1/messages'");
+    expect(roleIdx).toBeGreaterThan(-1);
+    expect(adminBranchIdx).toBeGreaterThan(roleIdx);
+    expect(claudeCallIdx).toBeGreaterThan(adminBranchIdx);
+  });
+
+  it('effectiveRole이 admin일 때만 관리자 규칙 기반 매칭을 시도한다(트레이너는 절대 이 분기를 안 탐)', () => {
+    const idx = src.indexOf("if (effectiveRole === 'admin') {");
+    const end = src.indexOf('\n    }\n\n    // role에 안 맞는 도구', idx);
+    const body = src.slice(idx, end);
+    expect(body).toContain('matchAdminRuleBasedDestination(transcript)');
+  });
+
+  it('매치되면 Claude를 호출하지 않고 바로 navigate 응답을 반환한다(return으로 아래 fetch에 안 도달)', () => {
+    const idx = src.indexOf("if (effectiveRole === 'admin') {");
+    const claudeCallIdx = src.indexOf("await fetch('https://api.anthropic.com/v1/messages'");
+    const body = src.slice(idx, claudeCallIdx);
+    expect(body).toContain("return new Response(JSON.stringify(navBody)");
+  });
+
+  it('트레이너관리·매출관리 키워드를 모두 인식한다', () => {
+    const start = src.indexOf('const ADMIN_DESTINATION_KEYWORDS = [');
+    const end = src.indexOf('];', start);
+    const body = src.slice(start, end);
+    expect(body).toContain("id: 'trainers'");
+    expect(body).toContain("id: 'revenue'");
+  });
+
+  it('이동 동사가 없으면 관리자 규칙 기반도 매치하지 않는다(코칭 질문 등과 혼동 방지, 목적지 매칭과 동일 원칙)', () => {
+    const fnStart = src.indexOf('function matchAdminRuleBasedDestination(transcript) {');
+    const fnEnd = src.indexOf('\n}', fnStart);
+    const body = src.slice(fnStart, fnEnd);
+    expect(body).toContain('ADMIN_NAV_VERBS.some(');
+  });
+
+  it('매출관리는 tab(개요/정산/지출/설정)까지 규칙 기반으로 뽑아서 응답에 포함한다', () => {
+    const idx = src.indexOf("if (adminDestId === 'revenue') {");
+    const end = src.indexOf('}', idx);
+    const body = src.slice(idx, end);
+    expect(body).toContain('matchRevenueTab(transcript)');
+    expect(body).toContain('navBody.tab = tab;');
+
+    const tabFnStart = src.indexOf('const REVENUE_TAB_KEYWORDS = [');
+    const tabFnEnd = src.indexOf('];', tabFnStart);
+    const tabBody = src.slice(tabFnStart, tabFnEnd);
+    expect(tabBody).toContain("id: 'settle'");
+    expect(tabBody).toContain("id: 'expense'");
+    expect(tabBody).toContain("id: 'config'");
+    expect(tabBody).toContain("id: 'overview'");
+  });
+
+  it('트레이너관리는 tab이 없다(go_trainers 도구 자체에 tab 파라미터가 없음 — 배선하지 않았는지 확인)', () => {
+    const idx = src.indexOf("const navBody = { type: 'navigate', destinationId: adminDestId };");
+    const end = src.indexOf("return new Response", idx);
+    const body = src.slice(idx, end);
+    // revenue일 때만 tab을 채우는 조건문이어야 하고, trainers는 그 분기를 안 탐.
+    expect(body).toContain("if (adminDestId === 'revenue') {");
+  });
+});

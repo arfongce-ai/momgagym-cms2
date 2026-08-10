@@ -83,6 +83,110 @@ export function matchRuleBasedDestination(commandText) {
   return null;
 }
 
+// [무료 확장 2026-08-10] 목적지(members/report/ai_measure)까지는 정해졌는데
+// 화면 "안"의 세부 탭·측정 종류는 예전엔 규칙 기반이 안 뽑고(testId 항상 null)
+// Claude로 넘겼다. 사실 이것도 "정해진 단어 목록 중 하나 찾기"라 목적지
+// 매칭과 원리가 똑같아서, 같은 방식으로 무료 처리를 넓힌다.
+const MEMBER_TAB_KEYWORDS = [
+  { id: 'payments', keywords: ['수납', '결제'] },
+  { id: 'sessions', keywords: ['세션', '잔여횟수'] },
+  { id: 'body', keywords: ['신체정보', '체성분'] },
+  { id: 'memo', keywords: ['메모'] },
+  { id: 'info', keywords: ['기본정보'] },
+  // [주의] '측정이력'/'AI측정기록'(tab='ai')은 일부러 안 넣었다 — "측정"이라는
+  // 글자가 위 DESTINATION_KEYWORDS의 ai_measure 키워드와 겹쳐서, "회원관리
+  // 측정이력 보여줘"가 회원관리가 아니라 AI측정 화면으로 잘못 갈 위험이 있다.
+  // 문장 전체 맥락을 봐야 구분되는 경우라 Claude 몫으로 남긴다.
+];
+
+// Report·AI측정 둘 다 같은 측정 종류 이름(registry.js 기준)을 쓴다. AI측정에만
+// 있는 body(신체정보)·record(녹화)·timer(초시계 등)는 저장된 결과 리포트가
+// 없는 종류라 REPORT_TESTID_KEYWORDS엔 안 넣는다(Report 화면엔 없는 선택지).
+const TESTID_KEYWORDS = [
+  { id: 'squat', keywords: ['오버헤드', '딥스쿼트'] },
+  { id: 'stance', keywords: ['한다리서기', 'slst', '균형'] },
+  { id: 'lifting', keywords: ['바벨', '리프팅'] },
+  { id: 'gait', keywords: ['보행', '런닝'] },
+  { id: 'jump', keywords: ['점프', 'rsi'] },
+  { id: 'rom', keywords: ['rom', '가동범위'] },
+  { id: 'posture', keywords: ['자세', '체형'] },
+];
+const AI_MEASURE_ONLY_TESTID_KEYWORDS = [
+  { id: 'body', keywords: ['신체정보', '체성분'] },
+  { id: 'record', keywords: ['녹화', '영상'] },
+  { id: 'timer', keywords: ['초시계', '타이머', '인터벌', '메트로놈'] },
+];
+
+/**
+ * 목적지가 정해진 뒤, 화면 안의 세부 탭/측정 종류를 키워드로 찾는다. 확신 있게
+ * 못 찾으면 null — 그러면 예전과 똑같이 목적지 화면만 열리고 세부 지정은 안 된다
+ * (동작이 나빠지는 게 아니라 기존 그대로일 뿐이라 안전한 추가다).
+ */
+export function matchRuleBasedSubKind(destinationId, commandText) {
+  const normalized = normalize(commandText);
+  const lookup =
+    destinationId === 'members'
+      ? MEMBER_TAB_KEYWORDS
+      : destinationId === 'report'
+      ? TESTID_KEYWORDS
+      : destinationId === 'ai_measure'
+      ? [...TESTID_KEYWORDS, ...AI_MEASURE_ONLY_TESTID_KEYWORDS]
+      : null;
+  if (!lookup) return null;
+  for (const { id, keywords } of lookup) {
+    if (keywords.some((k) => normalized.includes(normalize(k)))) return id;
+  }
+  return null;
+}
+
+// [무료 확장 2026-08-10] 숫자 설정이 전혀 없는 단순 타이머 명령("초시계
+// 시작해줘"/"타이머 멈춰줘"/"리셋해줘")은 도구+동작만 알아들으면 되는, 목적지
+// 매칭과 똑같은 종류의 단어 목록 문제라 무료로 가능하다. 숫자가 하나라도
+// 들리면(예: "타이머 30초로 시작해줘", "인터벌 40초 20초 8라운드로 시작해줘")
+// 정확한 파싱이 필요해 여기서 시도하지 않고 그대로 Claude 몫으로 남긴다 —
+// 잘못 뽑아서 엉뚱한 시간으로 시작시키느니 아예 시도하지 않는 게 안전하다.
+const TIMER_TOOL_KEYWORDS = [
+  { id: 'interval', keywords: ['인터벌', '타바타', 'hiit', '서킷'] },
+  { id: 'countdown', keywords: ['타이머', '카운트다운'] },
+  { id: 'stopwatch', keywords: ['초시계'] },
+  { id: 'metronome', keywords: ['메트로놈'] },
+];
+const TIMER_ACTION_KEYWORDS = [
+  { id: 'reset', keywords: ['리셋', '처음부터'] },
+  { id: 'pause', keywords: ['멈춰', '정지', '일시정지', '꺼'] },
+  { id: 'lap', keywords: ['랩', '구간기록'] },
+  { id: 'start', keywords: ['시작', '돌려', '켜', '계속'] },
+];
+
+/**
+ * 도구·동작 둘 다 확신 있게 찾았을 때만 { tool, action }을 반환한다. 숫자가
+ * 섞여 있거나 도구·동작 중 하나라도 못 찾으면 null(→ 호출부가 Claude로 넘김).
+ */
+export function matchRuleBasedTimerControl(commandText) {
+  if (/\d/.test(commandText)) return null;
+  const normalized = normalize(commandText);
+  let tool = null;
+  for (const { id, keywords } of TIMER_TOOL_KEYWORDS) {
+    if (keywords.some((k) => normalized.includes(normalize(k)))) {
+      tool = id;
+      break;
+    }
+  }
+  if (!tool) return null;
+  let action = null;
+  for (const { id, keywords } of TIMER_ACTION_KEYWORDS) {
+    if (keywords.some((k) => normalized.includes(normalize(k)))) {
+      action = id;
+      break;
+    }
+  }
+  if (!action) return null;
+  // 랩(구간기록)은 초시계 전용 — control_timer 도구 설명(functions/api/voice-command.js)과
+  // 동일 규칙. 다른 도구에 랩을 요청하면 확신 없는 걸로 보고 Claude로 넘긴다.
+  if (action === 'lap' && tool !== 'stopwatch') return null;
+  return { tool, action };
+}
+
 /** 명령 텍스트 안에 실제 등록된 회원 이름이 포함돼 있으면 가장 긴 매치를 추출한다. */
 export function extractMemberNameFromText(commandText, members) {
   if (!members || members.length === 0) return null;
@@ -113,10 +217,16 @@ export async function processVoiceCommand({
       role === 'admin' ? allMembers : scopeMembersToTrainer(allMembers, currentUser);
     const memberName = extractMemberNameFromText(transcript, scopedMembers);
     const matchedMember = memberName ? fuzzyFindMember(scopedMembers, memberName) : null;
+    // [무료 확장 2026-08-10] 세부 탭/측정 종류까지 키워드로 잡히면 같이 넘긴다
+    // (아래 Claude 경로의 navigate 분기와 완전히 같은 필드 매핑 — destination.id
+    // 별로 자기 필드만 채우고 나머지는 null인 패턴을 그대로 재사용).
+    const subKind = matchRuleBasedSubKind(ruleDestId, transcript);
 
     setPendingVoiceTarget({
       memberName: matchedMember ? matchedMember.name : null,
-      testId: null, // 규칙 기반에서는 측정 종류까진 안 뽑는다 — 필요하면 Claude 경로에서 처리됨.
+      testId: ruleDestId === 'ai_measure' ? subKind : null,
+      openReportKind: ruleDestId === 'report' ? subKind : null,
+      memberTab: ruleDestId === 'members' ? subKind : null,
     });
 
     if (navigate) navigate(destination.path);
@@ -127,6 +237,30 @@ export async function processVoiceCommand({
       matchedMember,
       requestedName: memberName,
     };
+  }
+
+  // [무료 확장 2026-08-10] 숫자 없는 단순 타이머 제어도 API 호출 없이 처리한다.
+  // 아래 Claude 경로의 timer_control 분기와 실행 로직(publishTimerControl →
+  // 실패 시 setPendingTimerCommand+화면 이동)을 그대로 재사용해서, 두 경로의
+  // 실제 동작이 갈라지지 않게 한다.
+  const ruleTimerCmd = matchRuleBasedTimerControl(transcript);
+  if (ruleTimerCmd) {
+    const cmd = {
+      tool: ruleTimerCmd.tool,
+      action: ruleTimerCmd.action,
+      seconds: null,
+      workSec: null,
+      restSec: null,
+      rounds: null,
+      bpm: null,
+    };
+    const deliveredLive = publishTimerControl(cmd);
+    if (!deliveredLive) {
+      setPendingTimerCommand(cmd);
+      setPendingVoiceTarget({ testId: 'timer' });
+      if (navigate) navigate('/ai');
+    }
+    return { type: 'timer_control', cmd, deliveredLive };
   }
 
   // 규칙 기반으로 확신 있게 못 찾았으면(자유 질문·코칭·애매한 표현·관리자 전용
