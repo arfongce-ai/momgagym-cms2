@@ -12,7 +12,6 @@ import Schedule from './pages/Schedule';
 import Settings from './pages/Settings';
 import AiMeasureHub from './ai-measure/AiMeasureHub';
 import Report from './pages/Report';
-import ComprehensiveReport from './pages/ComprehensiveReport';
 import AdminLockGate from './components/common/AdminLockGate';
 import TodayScheduleMorningAlert from './components/schedule/TodayScheduleMorningAlert';
 import { useKioskMode } from './hooks/useKioskMode';
@@ -107,7 +106,11 @@ function AppRoutes() {
                   <Route path="/settings" element={<Settings darkMode={darkMode} setDarkMode={setDarkMode} />} />
                   <Route path="/ai"       element={<AiMeasureHub />} />
                   <Route path="/report"   element={<Report />} />
-                  <Route path="/summary"  element={<ComprehensiveReport />} />
+                  {/* [리포트 통합 2026-08-09] 종합리포트(day/week/month 트렌드)는 Report.jsx
+                      안의 ComprehensiveReportSection으로 완전히 흡수됨(이상 데이터 삭제
+                      기능까지 이관 완료) — 별도 페이지가 더 이상 필요 없다. 기존
+                      북마크/딥링크가 죽지 않도록 리다이렉트만 남긴다. */}
+                  <Route path="/summary"  element={<Navigate to="/report" replace />} />
                   <Route path="*"         element={<Navigate to="/" replace />} />
                 </Routes>
               </KioskGuard>

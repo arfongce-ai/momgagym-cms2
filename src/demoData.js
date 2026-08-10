@@ -711,7 +711,10 @@ export const store = {
     const prev=cache.members;
     cache.members=cache.members.map(m=>m.id===id?{...m,...p}:m);
     const u=cache.members.find(m=>m.id===id);
-    try { if(u) await fbSet('members',id,u); }
+    // [버그 수정 2026-08-09 — updateSchedule과 동일한 패턴 전체 적용] u가 없으면
+    // 조용히 성공한 것처럼 리턴하지 않는다(아래 나머지 update* 함수들도 동일).
+    if (!u) { cache.members = prev; throw new Error('회원을 찾을 수 없습니다.'); }
+    try { await fbSet('members',id,u); }
     catch(e){ cache.members=prev; throw e; }
   },
   deleteMember:  async id => {
@@ -846,7 +849,8 @@ export const store = {
     const prev=cache.trainers;
     cache.trainers=cache.trainers.map(t=>t.id===id?{...t,...p}:t);
     const u=cache.trainers.find(t=>t.id===id);
-    try { if(u) await fbSet('trainers',id,u); }
+    if (!u) { cache.trainers = prev; throw new Error('트레이너를 찾을 수 없습니다.'); }
+    try { await fbSet('trainers',id,u); }
     catch(e){ cache.trainers=prev; throw e; }
   },
   deleteTrainer:  async id => {
@@ -867,7 +871,20 @@ export const store = {
     const prev=cache.schedules;
     cache.schedules=cache.schedules.map(s=>s.id===id?{...s,...p}:s);
     const u=cache.schedules.find(s=>s.id===id);
-    try { if(u) await fbSet('schedules',id,u); }
+    // [버그 수정 2026-08-09] u가 없으면(캐시에 해당 id가 없음 — 이미 다른 곳에서
+    // 삭제됐거나 캐시가 오래됨) 예전엔 그냥 조용히 아무것도 안 하고 성공한 것처럼
+    // 리턴했다(if(u)가 false라 fbSet 자체를 안 부르고 그대로 끝남). 호출부는
+    // "성공"으로 알고 다음 단계(예: 트레이너에게 "옮겼어요"라고 말하기)를
+    // 진행하는데 실제로는 Firestore에 아무 것도 안 바뀐 상태 — 특히 예약 시간
+    // 변경(reservationService.rescheduleReservation) 확인 흐름처럼 propose(조회)와
+    // confirm(저장) 사이에 시간차가 있으면, 그 사이 다른 기기에서 같은 예약을
+    // 지웠을 때 이 상태가 재현된다. deleteScheduleWithRestore와 같은 방식으로
+    // 명확히 실패시킨다.
+    if (!u) {
+      cache.schedules = prev;
+      throw new Error('스케줄을 찾을 수 없습니다.');
+    }
+    try { await fbSet('schedules',id,u); }
     catch(e){ cache.schedules=prev; throw e; }
   },
   deleteSchedule:  async id => {
@@ -888,7 +905,8 @@ export const store = {
     const prev=cache.notices;
     cache.notices=cache.notices.map(n=>n.id===id?{...n,...p}:n);
     const u=cache.notices.find(n=>n.id===id);
-    try { if(u) await fbSet('notices',id,u); return u; }
+    if (!u) { cache.notices = prev; throw new Error('공지를 찾을 수 없습니다.'); }
+    try { await fbSet('notices',id,u); return u; }
     catch(e){ cache.notices=prev; throw e; }
   },
   deleteNotice: async id => {
@@ -922,7 +940,8 @@ export const store = {
     const prev=cache.payments[mid];
     cache.payments[mid]=(cache.payments[mid]||[]).map(p=>p.id===pid?{...p,...patch}:p);
     const u=(cache.payments[mid]||[]).find(p=>p.id===pid);
-    try { if(u) await fbSet('payments', pid, {...u, __mid:mid}); return u; }
+    if (!u) { cache.payments[mid] = prev; throw new Error('결제 내역을 찾을 수 없습니다.'); }
+    try { await fbSet('payments', pid, {...u, __mid:mid}); return u; }
     catch(e){ cache.payments[mid]=prev; throw e; }
   },
   deletePayment: async (mid,pid) => {
@@ -1553,7 +1572,8 @@ export const store = {
     const prev = cache.expenses;
     cache.expenses = cache.expenses.map(e=>e.id===id?{...e,...patch}:e);
     const u = cache.expenses.find(e=>e.id===id);
-    try { if(u) await fbSet('expenses', id, u); return u; }
+    if (!u) { cache.expenses = prev; throw new Error('지출 내역을 찾을 수 없습니다.'); }
+    try { await fbSet('expenses', id, u); return u; }
     catch(err){ cache.expenses = prev; throw err; }
   },
   deleteExpense: async (id) => {
@@ -1714,11 +1734,32 @@ export const aiStore = {
     try { await fbDelete('ai', sid); await unmirrorUnifiedReport(mid, sid); }
     catch(e){ cache.ai[mid]=prev; throw e; }
   },
+  // [Axis3 확장 2026-08-08] MomiAutoNote.jsx(자동 노트)를 VBT/스탠스/스쿼트처럼
+  // 전용 컬렉션 없이 세션(ai)에 저장되는 측정에도 연결하기 위해 추가 —
+  // updateGaitReport/updateRomReport와 동일한 낙관적 갱신 + 실패 시 롤백 패턴.
+  updateSession: async (mid, sid, patch) => {
+    const prev = cache.ai[mid];
+    cache.ai[mid] = (cache.ai[mid] || []).map(s => s.id === sid ? { ...s, ...patch } : s);
+    const u = (cache.ai[mid] || []).find(s => s.id === sid);
+    if (!u) { cache.ai[mid] = prev; throw new Error('세션을 찾을 수 없습니다.'); }
+    try { await fbSet('ai', sid, { ...u, __mid: mid }); return u; }
+    catch (e) { cache.ai[mid] = prev; throw e; }
+  },
   // 전용 리포트 삭제(측정별/회차별 삭제 기능) — deleteSession과 동일한 낙관적 캐시 반영 패턴.
   deleteGaitReport: async (mid, rid) => {
     const prev = cache.gaitReports[mid];
     cache.gaitReports[mid] = (cache.gaitReports[mid] || []).filter(r => r.id !== rid);
     try { await fbDelete('gait_reports', rid); await unmirrorUnifiedReport(mid, rid); }
+    catch (e) { cache.gaitReports[mid] = prev; throw e; }
+  },
+  // [Axis3 확장 2026-08-08] MomiAutoNote.jsx(자동 노트)를 gait/jump 리포트에도 연결하기
+  // 위해 추가 — updatePostureReport와 동일한 낙관적 갱신 + 실패 시 롤백 패턴.
+  updateGaitReport: async (mid, rid, patch) => {
+    const prev = cache.gaitReports[mid];
+    cache.gaitReports[mid] = (cache.gaitReports[mid] || []).map(r => r.id === rid ? { ...r, ...patch } : r);
+    const u = (cache.gaitReports[mid] || []).find(r => r.id === rid);
+    if (!u) { cache.gaitReports[mid] = prev; throw new Error('보행 리포트를 찾을 수 없습니다.'); }
+    try { await fbSet('gait_reports', rid, { ...u, __mid: mid }); return u; }
     catch (e) { cache.gaitReports[mid] = prev; throw e; }
   },
   deletePostureReport: async (mid, rid) => {
@@ -1731,6 +1772,16 @@ export const aiStore = {
     const prev = cache.romReports[mid];
     cache.romReports[mid] = (cache.romReports[mid] || []).filter(r => r.id !== rid);
     try { await fbDelete('rom_reports', rid); await unmirrorUnifiedReport(mid, rid); }
+    catch (e) { cache.romReports[mid] = prev; throw e; }
+  },
+  // [Axis3 확장 2026-08-08] MomiAutoNote.jsx를 ROM 리포트에도 연결하기 위해 추가 —
+  // updatePostureReport와 동일한 낙관적 갱신 + 실패 시 롤백 패턴.
+  updateRomReport: async (mid, rid, patch) => {
+    const prev = cache.romReports[mid];
+    cache.romReports[mid] = (cache.romReports[mid] || []).map(r => r.id === rid ? { ...r, ...patch } : r);
+    const u = (cache.romReports[mid] || []).find(r => r.id === rid);
+    if (!u) { cache.romReports[mid] = prev; throw new Error('ROM 리포트를 찾을 수 없습니다.'); }
+    try { await fbSet('rom_reports', rid, { ...u, __mid: mid }); return u; }
     catch (e) { cache.romReports[mid] = prev; throw e; }
   },
   deleteAll:     async (mid) => {
@@ -1812,7 +1863,8 @@ export const aiStore = {
     const prev = cache.postureReports[mid];
     cache.postureReports[mid] = (cache.postureReports[mid] || []).map(r => r.id === rid ? { ...r, ...patch } : r);
     const u = (cache.postureReports[mid] || []).find(r => r.id === rid);
-    try { if (u) await fbSet('posture_reports', rid, { ...u, __mid: mid }); return u; }
+    if (!u) { cache.postureReports[mid] = prev; throw new Error('자세 리포트를 찾을 수 없습니다.'); }
+    try { await fbSet('posture_reports', rid, { ...u, __mid: mid }); return u; }
     catch (e) { cache.postureReports[mid] = prev; throw e; }
   },
 };
