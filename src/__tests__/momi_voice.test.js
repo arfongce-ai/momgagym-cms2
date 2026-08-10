@@ -33,7 +33,7 @@ describe('useMomiVoice.js — iOS 대응 + 진단 로그', () => {
     const resultStart = src.indexOf('recognition.onresult = (event) => {');
     const resultEnd = src.indexOf('};', resultStart);
     const resultBody = src.slice(resultStart, resultEnd);
-    expect(resultBody).toContain("console.log('[모미] 들린 말:', heard);");
+    expect(resultBody).toContain("console.log('[모미] 들림 말:', heard);".replace('들림 말', '들린 말'));
   });
 
   it('인식 오류를 더 이상 무조건 무시하지 않고 원인을 콘솔에 남긴다', () => {
@@ -369,6 +369,48 @@ describe('useMomiVoice.js — onend 재시작 실패 시 재시도(회귀 방지
     const retryStart = onendBody.indexOf('setTimeout(() => {');
     const retryBody = onendBody.slice(retryStart);
     expect(retryBody).toContain("onErrorOccurred('restart-failed')");
+  });
+});
+
+// [버그 수정 2026-08-10] "마이크가 아예 반응을 안 해요" 문의 대응 — 키오스크는
+// 사람이 계속 화면을 보고 있는 기기가 아니라서, 재시도 1번 만에 포기하고
+// "새로고침해주세요" 안내만 띄우면 아무도 못 보고 마이크가 그대로 방치된다.
+// 완전히 포기하기 전에 두 번 더(abort()로 세션을 확실히 정리한 뒤) 시도해서
+// 일시적 경합은 사람 개입 없이 저절로 풀리게 한다.
+describe('useMomiVoice.js — onend 재시작 실패 시 재시도 확대(회귀 방지, 2026-08-10)', () => {
+  const src = readSrc('src', 'hooks', 'useMomiVoice.js');
+  const onendStart = src.indexOf('recognition.onend = () => {');
+  const onendEnd = src.indexOf('\n    };', onendStart);
+  const onendBody = src.slice(onendStart, onendEnd);
+
+  it('300ms 재시도 이후에도 실패하면 곧바로 포기하지 않고 800ms 뒤 한 번 더 시도한다', () => {
+    expect(onendBody).toContain('}, 800);');
+  });
+
+  it('800ms 재시도 이후에도 실패하면 곧바로 포기하지 않고 2000ms 뒤 마지막으로 한 번 더 시도한다', () => {
+    expect(onendBody).toContain('}, 2000);');
+  });
+
+  it('800ms·2000ms 재시도 전에는 abort()로 세션 상태를 확실히 정리한 뒤 start()를 부른다', () => {
+    const count = (onendBody.match(/recognition\.abort\(\)/g) || []).length;
+    expect(count).toBeGreaterThanOrEqual(2);
+  });
+
+  it('네 번째(마지막) 시도까지 실패했을 때만 listening을 false로 내리고 restart-failed를 알린다', () => {
+    const lastAttemptIdx = onendBody.lastIndexOf('recognition.start();');
+    const afterLastAttempt = onendBody.slice(lastAttemptIdx);
+    expect(afterLastAttempt).toContain('setListening(false);');
+    expect(afterLastAttempt).toContain("onErrorOccurred('restart-failed')");
+  });
+
+  it('각 재시도 직전에도 recognitionRef·shouldRestartRef·pausedForSpeechRef 유효성을 다시 확인한다', () => {
+    const guardCount = (
+      onendBody.match(
+        /if \(recognitionRef\.current !== recognition \|\| !shouldRestartRef\.current \|\| pausedForSpeechRef\.current\) return;/g
+      ) || []
+    ).length;
+    // 300ms·800ms·2000ms 재시도 3곳 전부에 동일한 유효성 재확인이 있어야 한다.
+    expect(guardCount).toBeGreaterThanOrEqual(3);
   });
 });
 
