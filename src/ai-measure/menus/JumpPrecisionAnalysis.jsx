@@ -18,6 +18,7 @@ import {
 } from '../core/jumpBiomechanics';
 import { calcJump, calcRSI } from '../core/performance';
 import { computeRSIFromFlights, rsiGrade } from '../core/reactiveJump';
+import { requiredJumpsFor, minCyclesOverrideFor } from '../core/jumpTypes';
 import { applyRepFreeze } from '../core/repFreeze';
 import { OrientationVoter } from '../core/gaitBiomechanics';
 import { loadPoseLandmarker, detectPoseFrame, isPoseReady, closePoseLandmarker } from '../core/poseBackend';
@@ -130,7 +131,7 @@ function drawJumpLiveOverlay(ctx, width, height, snap = {}) {
   const stats = isRsi
     ? [
         { label: '접지시간', value: latest?.contactMs ?? null, unit: 'ms' },
-        { label: '진행', value: `${snap.jumpCount || 0}/${RSI_REQUIRED_JUMPS}` },
+        { label: '진행', value: `${snap.jumpCount || 0}/${snap.requiredJumps || RSI_REQUIRED_JUMPS}` },
       ]
     : [
         { label: '체공시간', value: snap.liveJump?.flightMs ?? null, unit: 'ms' },
@@ -246,8 +247,14 @@ function drawBaseline(canvas, video, baselineFeetY, rotationDeg = 0) {
   ctx.setLineDash([]);
 }
 
-export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase, onSave, onMemberHeightChange, onManualComplete, onOpenSavedReport, jumpType = 'power' }) {
+export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase, onSave, onMemberHeightChange, onManualComplete, onOpenSavedReport, jumpType = 'power', jumpSubType = 'cmj', leg = null }) {
   const saveToFirebase = onSaveToFirebase || onSave;
+  // [2026-08-10 추가] 세부 종류(CMJ/SJ/DJ/SLJ/RSI)에 따른 파생값. jumpType은
+  // 기존 그대로 'power'|'reactive' 엔진 분기용으로 계속 쓰고, 아래 두 값만
+  // 새로 추가— 안 넘기면(jumpSubType 기본값 'cmj') 전부 기존 RSI(연속) 동작과
+  // 동일한 상수(RSI_REQUIRED_JUMPS=3, override 없음)로 떨어져 회귀가 없다.
+  const requiredJumps = requiredJumpsFor(jumpSubType);
+  const minCyclesOverride = minCyclesOverrideFor(jumpSubType);
 
   const [view, setView] = useState('camera');     // camera | preview
   const [showManual, setShowManual] = useState(false);
@@ -296,6 +303,11 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
   const prevFrameTsRef = useRef(0);  // 직전 프레임 타임스탬프(간격 계산용)
   const heightRef = useRef(heightCm);
   const weightRef = useRef(bodyWeight);
+  // [2026-08-10 추가 — SLJ] rotationDegRef 등과 동일한 이유로 ref 미러링한다:
+  // resetPipeline()이 mount-effect 안 startCamera()에서도 호출되는데, 그
+  // 이펙트가 leg를 직접(클로저로) 참조하면 이후 다리를 바꿔도 옛값을 볼 수
+  // 있다 — 항상 최신값을 읽도록 ref로 감싼다.
+  const legRef = useRef(leg);
   const overlayRef = useRef({});
   const autoSavedRef = useRef(null);
   // 점프별 카드 동결 — 다음 점프가 착지해 사이클이 완성된 점프의 카드값
@@ -332,6 +344,7 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
   useEffect(() => { rotationDegRef.current = rotationDeg; }, [rotationDeg]);
   useEffect(() => { heightRef.current = heightCm; }, [heightCm]);
   useEffect(() => { weightRef.current = bodyWeight; }, [bodyWeight]);
+  useEffect(() => { legRef.current = leg; }, [leg]);
   useEffect(() => {
     overlayRef.current = {
       jumpType,
@@ -343,8 +356,9 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
       jumpRows,
       bestHeight: bestHeightRef.current,
       heightCm,
+      requiredJumps,
     };
-  }, [jumpType, phase, jumpCount, liveJump, rsiCycles, jumpRows, heightCm]);
+  }, [jumpType, phase, jumpCount, liveJump, rsiCycles, jumpRows, heightCm, requiredJumps]);
 
   // 카메라 생명주기
   useEffect(() => {
@@ -363,7 +377,7 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
   useEffect(() => { lockZoom(); return () => unlockZoom(); }, []);
 
   const resetPipeline = () => {
-    calibRef.current = new StandingCalibrator({ heightCm: heightRef.current });
+    calibRef.current = new StandingCalibrator({ heightCm: heightRef.current, forcedAnkleSide: legRef.current });
     trackerRef.current = null;
     biomechAccRef.current = new JumpBiomechAccumulator({ heightCm: heightRef.current });
     prevInAirRef.current = false;
@@ -724,6 +738,7 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
       rsiResult = computeRSIFromFlights(tracker.flights, {
         frameIntervalMs: medDt,
         view: decidedView,
+        minCycles: minCyclesOverride, // null이면(RSI 연속) 코어가 기존 RSI_TUNING.minCycles(3) 그대로 씀
       });
     }
     const liveCyclePreview = buildRsiCyclePreview(tracker.flights);
@@ -736,7 +751,9 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
       peakPower: power?.peakPower ?? null,
       bodyWeight: resolveWeight(member, weightRef.current),
       calibHeightCm: heightRef.current,
-      jumpType,                       // 'power' | 'reactive'
+      jumpType,                       // 'power' | 'reactive' (엔진 — 하위호환 유지)
+      jumpSubType,                    // 'cmj' | 'sj' | 'dj' | 'slj' | 'rsi' (세부 종류)
+      leg: jumpSubType === 'slj' ? leg : null, // SLJ만 의미 있음
       rsi: rsiResult,                 // 반응 모드에서만 채워짐(null 가능)
       source: 'live',
       videoBlob, // 오버레이 합성 녹화본 (저장은 안 함, 화면에서 '동영상 저장'에 사용)
@@ -900,6 +917,7 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
             bestHeight={bestHeightRef.current}
             rsiCycles={rsiCycles}
             jumpRows={jumpRows}
+            requiredJumps={requiredJumps}
           />
 
           {warning && (
@@ -973,11 +991,11 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
                   </button>
                   <button
                     onClick={finishMeasure}
-                    disabled={jumpCount < (jumpType === 'reactive' ? RSI_REQUIRED_JUMPS : 1)}
+                    disabled={jumpCount < requiredJumps}
                     className={`flex-[1.25] rounded-xl py-3 font-black text-sm shadow-lg transition
-                      ${jumpCount >= (jumpType === 'reactive' ? RSI_REQUIRED_JUMPS : 1) ? 'bg-emerald-500 text-slate-950 active:scale-95' : 'bg-white/20 text-white/50'}`}>
+                      ${jumpCount >= requiredJumps ? 'bg-emerald-500 text-slate-950 active:scale-95' : 'bg-white/20 text-white/50'}`}>
                     {jumpType === 'reactive'
-                      ? `측정 완료 ${jumpCount}/${RSI_REQUIRED_JUMPS}`
+                      ? `측정 완료 ${jumpCount}/${requiredJumps}`
                       : `측정 완료 ${jumpCount >= 1 ? `(${jumpCount}회)` : ''}`}
                   </button>
                 </div>
@@ -990,7 +1008,7 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
             )}
           </div>
           {showManual && (
-            <ManualEntryModal member={member} jumpType={jumpType}
+            <ManualEntryModal member={member} jumpType={jumpType} jumpSubType={jumpSubType} leg={leg}
               onClose={() => setShowManual(false)}
               onSubmit={async (report) => { setShowManual(false); await (onManualComplete || onSaveToFirebase)?.(report); }} />
           )}
@@ -1369,11 +1387,11 @@ function MetricCard({ label, value }) {
 
 function JumpLiveOverlay({
   jumpType, phase, phaseColor, calibMsg, heightCm, jumpCount,
-  liveJump, bestHeight, rsiCycles, jumpRows,
+  liveJump, bestHeight, rsiCycles, jumpRows, requiredJumps = RSI_REQUIRED_JUMPS,
 }) {
   const isRsi = jumpType === 'reactive';
   const latestCycle = rsiCycles.at(-1) || null;
-  const readyText = isRsi ? `측면 · 연속 ${RSI_REQUIRED_JUMPS}회` : '정면 · 1회 최대 점프';
+  const readyText = isRsi ? `측면 · 연속 ${requiredJumps}회` : '정면 · 1회 최대 점프';
   const statusText = phase === 'air' ? '공중'
     : phase === 'ready' ? '준비됨'
     : phase === 'low_visibility' ? '자세 확인'
@@ -1386,7 +1404,7 @@ function JumpLiveOverlay({
   const stats = isRsi
     ? [
         { label: '접지', value: latestCycle?.contactMs ?? null, unit: 'ms' },
-        { label: '진행', value: `${jumpCount}/${RSI_REQUIRED_JUMPS}` },
+        { label: '진행', value: `${jumpCount}/${requiredJumps}` },
       ]
     : [
         { label: '체공', value: liveJump.flightMs ?? null, unit: 'ms' },
@@ -1418,7 +1436,7 @@ function JumpLiveOverlay({
 
 // 수동 입력 모달 — 실시간 화면 안에서 체공시간 직접 입력(점프매트/타이머).
 // 자동 측정과 동일한 리포트 페이로드를 만들어 동일 저장 흐름을 탄다.
-function ManualEntryModal({ member, jumpType = 'power', onClose, onSubmit }) {
+function ManualEntryModal({ member, jumpType = 'power', jumpSubType = 'cmj', leg = null, onClose, onSubmit }) {
   const isReactive = jumpType === 'reactive';
   const [flight, setFlight] = useState('');
   const [contact, setContact] = useState('');   // 반응 모드 전용(접지 시간)
@@ -1439,7 +1457,7 @@ function ManualEntryModal({ member, jumpType = 'power', onClose, onSubmit }) {
       if (r.error) { alert(r.message); return; }
       setBusy(true);
       await onSubmit?.({
-        valid: true, reason: 'ok', source: 'manual', jumpType: 'reactive', jumps: 1,
+        valid: true, reason: 'ok', source: 'manual', jumpType: 'reactive', jumpSubType, jumps: 1,
         flightTimeSec: ft, flightTimeMs: Math.round(ft * 1000),
         contactTimeSec: Number(contact), contactTimeMs: Math.round(Number(contact) * 1000),
         heightCm: r.heightCm, takeoffVelocity: r.takeoffVelocity,
@@ -1465,7 +1483,8 @@ function ManualEntryModal({ member, jumpType = 'power', onClose, onSubmit }) {
     if (!r) { alert('계산 실패 — 입력값을 확인하세요.'); return; }
     setBusy(true);
     await onSubmit?.({
-      valid: true, reason: 'ok', source: 'manual', jumpType: 'power', jumps: 1,
+      valid: true, reason: 'ok', source: 'manual', jumpType: 'power', jumpSubType,
+      leg: jumpSubType === 'slj' ? leg : null, jumps: 1,
       flightTimeSec: ft, flightTimeMs: Math.round(ft * 1000),
       heightCm: r.heightCm, takeoffVelocity: r.takeoffVelocity, peakPower: r.peakPower,
       bodyWeight: weight ? Number(weight) : null,

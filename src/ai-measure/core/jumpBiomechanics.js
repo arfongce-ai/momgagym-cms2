@@ -163,8 +163,14 @@ const rawPelvisY = (lm) => (lm && lm[23] && lm[24]) ? (lm[23].y + lm[24].y) / 2 
 //   요구사항 3: 자세 불안정(가시성↓ / 흔들림↑)이면 ok=false → "올바르게 서 주세요"
 // ════════════════════════════════════════════════════════════════════════
 export class StandingCalibrator {
-  constructor({ heightCm = null } = {}) {
+  // [2026-08-10 추가 — SLJ 한발 점프] forcedAnkleSide: 'left'|'right'를 넘기면
+  // 자동(가시성 기준) 선택 대신 그 발목을 강제로 추적 기준으로 쓴다. 안 넘기면
+  // (undefined/null, 기존 모든 호출부) 아래 _finalizeLock의 자동 선택 로직이
+  // 전과 100% 동일하게 동작한다 — 새 옵션은 명시적으로 줄 때만 개입하는
+  // 순수 추가(additive) 변경이라 기존 CMJ/RSI 측정엔 영향이 없다.
+  constructor({ heightCm = null, forcedAnkleSide = null } = {}) {
     this.heightCm = heightCm && heightCm > 0 ? Number(heightCm) : null;
+    this.forcedAnkleSide = (forcedAnkleSide === 'left' || forcedAnkleSide === 'right') ? forcedAnkleSide : null;
     this._feetY = [];
     this._pelvisY = [];
     this._bodyPx = [];
@@ -264,7 +270,14 @@ export class StandingCalibrator {
     // 그마저 없으면(예: 원시 폴백 경로) 병합값(baselineFeetY)으로 대체한다.
     let ankleSide = null;
     let baselineAnkleY = baselineFeetY;
-    if (this._feetYL.length && this._feetYR.length) {
+    // [2026-08-10 추가] 강제 지정 쪽에 표본이 있으면 그 쪽을 최우선으로 쓴다.
+    // 표본이 하나도 없으면(그 다리가 화면 밖 등) 안전하게 아래 자동 선택으로
+    // 폴백한다 — 강제 지정이 측정 자체를 막지는 않는다.
+    if (this.forcedAnkleSide === 'left' && this._feetYL.length) {
+      ankleSide = 'left'; baselineAnkleY = mean(this._feetYL);
+    } else if (this.forcedAnkleSide === 'right' && this._feetYR.length) {
+      ankleSide = 'right'; baselineAnkleY = mean(this._feetYR);
+    } else if (this._feetYL.length && this._feetYR.length) {
       ankleSide = this._visCountL >= this._visCountR ? 'left' : 'right';
       baselineAnkleY = mean(ankleSide === 'left' ? this._feetYL : this._feetYR);
     } else if (this._feetYL.length) {

@@ -6,6 +6,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { scopeMembersToTrainer, sortByName } from '../utils/memberList';
 import { store, aiStore } from '../demoData';
 import { buildFullReport, buildAnalysisTrend, buildPostureTrend, groupResultsByDate, buildInterpretationGuide, GUIDE_STATUS_LEGEND, menuGroupKey, plausibleVelocity } from '../services/reportService';
+import { JUMP_SUBTYPES, resolveJumpSubType } from '../ai-measure/core/jumpTypes';
 import { buildSummaryData, scoreToStatus, defaultRecommendation } from '../ai-measure/core/unifiedReport';
 import { buildComprehensiveReport } from '../ai-measure/core/comprehensiveReport';
 import { loadAllMeasureRecords, deleteMeasureRound, deleteMeasureType, deleteMeasureRecord } from '../services/comprehensiveReportService';
@@ -787,10 +788,15 @@ export function extractSessionMetric(session) {
     case 'rsi':     return { value: d.rsi, unit: '', label: `RSI · 높이 ${d.heightCm ?? '-'}cm` };
     case 'vbt':     return { value: plausibleVelocity(d.meanVelocity), unit: 'm/s', label: `평균속도 (${d.zone ?? ''})` };
     case 'jump': {
-      if (isJumpRsi(d)) {
-        return { value: d.rsi?.rsi ?? d.rsi, unit: '', label: `RSI 반응점프 · 높이 ${d.heightCm ?? '-'}cm` };
+      // [2026-08-10] CMJ 이름 변경 + SJ/DJ/SLJ — 세부 종류별로 정확한 라벨을 쓴다.
+      // (예전엔 RSI/파워 둘로만 나눠 DJ도 "RSI 반응점프"로 뭉뚱그렸다.)
+      const subType = resolveJumpSubType(d);
+      const subMeta = JUMP_SUBTYPES[subType] || JUMP_SUBTYPES.cmj;
+      if (subMeta.engine === 'reactive') {
+        return { value: d.rsi?.rsi ?? d.rsi, unit: '', label: `${subMeta.code} · 높이 ${d.heightCm ?? '-'}cm` };
       }
-      return { value: d.heightCm, unit: 'cm', label: `파워점프 · ${d.peakPower ? `${d.peakPower}W` : '파워 미입력'}` };
+      const legSuffix = subType === 'slj' && d.leg ? ` · ${d.leg === 'left' ? '왼발' : '오른발'}` : '';
+      return { value: d.heightCm, unit: 'cm', label: `${subMeta.code} · ${d.peakPower ? `${d.peakPower}W` : '파워 미입력'}${legSuffix}` };
     }
     case 'posture': {
       const shoulder = d.analysis?.frontal?.shoulderHeightDiffMm ?? d.frontal?.shoulderHeightDiffMm;

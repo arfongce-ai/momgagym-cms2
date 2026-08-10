@@ -77,10 +77,17 @@ export function rsiGrade(rsiRatio) {
  * @param {'side'|'back'|'front'|'unknown'} [opts.view]  촬영 방향. 'side'가 아니면
  *        접지 시작/종료 판정(골반 수직 속도)이 무너지므로 RSI 측정을 거부한다.
  *        (점프 모듈의 측면뷰 강제 원칙과 동일 — 정면뷰는 교차검증 불일치가 큼.)
+ * @param {number} [opts.minCycles]  [2026-08-10 추가 — DJ 드롭점프] 최소 필요
+ *        플라이트 수를 RSI_TUNING.minCycles(3) 대신 이 값으로 대체한다. 드롭점프는
+ *        정의상 "드롭 착지 → 재도약 → 착지" 단발이라 접지구간이 원래 1개뿐이라
+ *        3회 연속을 요구할 수 없다. 안 넘기면(undefined, 기존 모든 호출부)
+ *        RSI_TUNING.minCycles 그대로 써서 기존 반응 탄성(RSI) 측정은 전혀
+ *        영향받지 않는다 — 순수 추가(additive) 옵션.
  * @returns {object} 결과(valid 플래그 포함)
  */
 export function computeRSIFromFlights(flights, opts = {}) {
   const list = Array.isArray(flights) ? flights : [];
+  const minCycles = Number(opts.minCycles) > 0 ? Number(opts.minCycles) : RSI_TUNING.minCycles;
 
   // ── 측면 뷰 강제 ──
   // view 가 주어졌고 'side'가 아니면(정면/후면/미상) 무효 처리.
@@ -95,12 +102,12 @@ export function computeRSIFromFlights(flights, opts = {}) {
     };
   }
 
-  if (list.length < RSI_TUNING.minCycles) {
+  if (list.length < minCycles) {
     return {
       valid: false,
       reason: 'need_more_cycles',
       cycles: list.length,
-      message: `반응 점프는 연속 ${RSI_TUNING.minCycles}회 이상 뛰어야 RSI를 안정적으로 측정할 수 있습니다.`,
+      message: `반응 점프는 연속 ${minCycles}회 이상 뛰어야 RSI를 안정적으로 측정할 수 있습니다.`,
     };
   }
 

@@ -892,6 +892,84 @@ describe('세션 양도 → 정산 결제금/박제비율 자동정리', () => {
   });
 });
 
+// ── [2026-08-10 신규] 회원↔회원 양도 (toMemberId) ──────────────────
+describe('세션 양도 — 회원↔회원(toMemberId)', () => {
+  it('부분양도: 회원A의 세션 일부가 회원B로 이동한다(세션 횟수만, 트레이너 다름)', async () => {
+    const a = await store.addMember({ name: '양도A1', trainerSessions: { t1: { total: 20, remaining: 20 } } });
+    const b = await store.addMember({ name: '양도B1', trainerSessions: {} });
+    await store.transferSessions(a.id, { fromTid: 't1', toTid: 't2', count: 8, toMemberId: b.id });
+    const freshA = store.getMembers().find(m => m.id === a.id);
+    const freshB = store.getMembers().find(m => m.id === b.id);
+    expect(freshA.trainerSessions.t1.remaining).toBe(12);
+    expect(freshB.trainerSessions.t2).toEqual({ total: 8, remaining: 8 });
+  });
+
+  it('트레이너 고정 회원→회원: fromTid===toTid 여도 회원이 다르면 허용된다(핵심 요구사항)', async () => {
+    const a = await store.addMember({ name: '양도A2', trainerSessions: { t1: { total: 10, remaining: 10 } } });
+    const b = await store.addMember({ name: '양도B2', trainerSessions: {} });
+    await expect(store.transferSessions(a.id, { fromTid: 't1', toTid: 't1', count: 4, toMemberId: b.id })).resolves.toBeTruthy();
+    const freshB = store.getMembers().find(m => m.id === b.id);
+    expect(freshB.trainerSessions.t1).toEqual({ total: 4, remaining: 4 });
+  });
+
+  it('같은 회원(toMemberId 없음 또는 자기 자신)이면서 fromTid===toTid면 여전히 거부(자기 자신 이전 방지 유지)', async () => {
+    const a = await store.addMember({ name: '양도A3', trainerSessions: { t1: { total: 10, remaining: 10 } } });
+    await expect(store.transferSessions(a.id, { fromTid: 't1', toTid: 't1', count: 1 })).rejects.toThrow();
+    await expect(store.transferSessions(a.id, { fromTid: 't1', toTid: 't1', count: 1, toMemberId: a.id })).rejects.toThrow();
+  });
+
+  it('대상 회원이 이미 그 트레이너 슬롯을 갖고 있으면 합산된다', async () => {
+    const a = await store.addMember({ name: '양도A4', trainerSessions: { t1: { total: 20, remaining: 20 } } });
+    const b = await store.addMember({ name: '양도B4', trainerSessions: { t1: { total: 5, remaining: 3 } } });
+    await store.transferSessions(a.id, { fromTid: 't1', toTid: 't1', count: 6, toMemberId: b.id });
+    const freshB = store.getMembers().find(m => m.id === b.id);
+    expect(freshB.trainerSessions.t1).toEqual({ total: 11, remaining: 9 });
+  });
+
+  it('존재하지 않는 회원으로는 양도할 수 없다', async () => {
+    const a = await store.addMember({ name: '양도A5', trainerSessions: { t1: { total: 10, remaining: 10 } } });
+    await expect(store.transferSessions(a.id, { fromTid: 't1', toTid: 't1', count: 1, toMemberId: 'no-such-member' })).rejects.toThrow();
+  });
+
+  it('회원↔회원 양도는 결제금/정산비율을 건드리지 않는다(원래 회원에게 그대로 유지)', async () => {
+    const a = await store.addMember({ name: '양도A6', trainerSessions: { t1: { total: 20, remaining: 20 } } });
+    const b = await store.addMember({ name: '양도B6', trainerSessions: {} });
+    await store.addPayment(a.id, { paidAt: '2026-05-01', amount: 1000000, method: 'card1', trainerIds: ['t1'] });
+    await store.transferSessions(a.id, { fromTid: 't1', toTid: 't1', count: 5, toMemberId: b.id });
+    const payA = store.getPayments(a.id)[0];
+    const payB = store.getPayments(b.id);
+    expect(payA.trainerIds).toEqual(['t1']); // A의 결제는 그대로
+    expect(payA.amount).toBe(1000000);
+    expect(payB.length).toBe(0); // B에게는 결제 기록이 생기지 않음
+  });
+
+  it('월정액 세션은 회원↔회원 양도도 거부된다', async () => {
+    const a = await store.addMember({ name: '양도A7', trainerSessions: { t1: { total: 1, remaining: 1, monthly: true } } });
+    const b = await store.addMember({ name: '양도B7', trainerSessions: {} });
+    await expect(store.transferSessions(a.id, { fromTid: 't1', toTid: 't1', count: 1, toMemberId: b.id })).rejects.toThrow();
+  });
+
+  it('대상 회원의 슬롯이 월정액이면 회원↔회원 양도도 거부된다', async () => {
+    const a = await store.addMember({ name: '양도A8', trainerSessions: { t1: { total: 10, remaining: 10 } } });
+    const b = await store.addMember({ name: '양도B8', trainerSessions: { t1: { total: 1, remaining: 1, monthly: true } } });
+    await expect(store.transferSessions(a.id, { fromTid: 't1', toTid: 't1', count: 3, toMemberId: b.id })).rejects.toThrow();
+  });
+
+  it('잔여 초과 양도는 회원↔회원도 거부된다', async () => {
+    const a = await store.addMember({ name: '양도A9', trainerSessions: { t1: { total: 10, remaining: 3 } } });
+    const b = await store.addMember({ name: '양도B9', trainerSessions: {} });
+    await expect(store.transferSessions(a.id, { fromTid: 't1', toTid: 't1', count: 5, toMemberId: b.id })).rejects.toThrow();
+  });
+
+  it('전체 양도 시 출발 회원의 슬롯이 제거된다(회원↔회원도 동일 규칙)', async () => {
+    const a = await store.addMember({ name: '양도A10', trainerSessions: { t1: { total: 6, remaining: 6 } } });
+    const b = await store.addMember({ name: '양도B10', trainerSessions: {} });
+    await store.transferSessions(a.id, { fromTid: 't1', toTid: 't2', count: 6, toMemberId: b.id });
+    const freshA = store.getMembers().find(m => m.id === a.id);
+    expect(freshA.trainerSessions.t1).toBeUndefined();
+  });
+});
+
 // ── 요구사항: 횟수가 끝난 회원은 마지막 정산달 이후 정산에서 제외 ──
 describe('정산 표시: 세션 소진 회원 마지막 정산달 이후 제외', () => {
   const settings = { cardFeeRate:0, vatRate:0, lowSplitRate:40, rate60MinSales:3000000,

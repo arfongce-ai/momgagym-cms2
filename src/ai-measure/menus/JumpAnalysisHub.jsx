@@ -14,13 +14,20 @@ import JumpReportDashboard from './JumpReportDashboard';
 import { calcJump } from '../core/performance';
 import { useHardwareBack } from '../core/useHardwareBack';
 import MeasureRecordConfirm from '../components/MeasureRecordConfirm.jsx';
+import { JUMP_SUBTYPES, JUMP_SUBTYPE_ORDER, engineOf } from '../core/jumpTypes';
 
 export default function JumpAnalysisHub({ member, onBack, onSave, onSaveToFirebase, onMemberHeightChange, onViewInReport }) {
   const save = onSaveToFirebase || onSave;
   // 요구사항 7: 실시간 → 고속영상 순서, 실시간이 기본
   const [mode, setMode] = useState('live');
-  // 점프 유형: 'power'(A 단일 파워점프) | 'reactive'(B 반응 탄성점프 · RSI)
-  const [jumpType, setJumpType] = useState('power');
+  // [2026-08-10 확장] 세부 종류(CMJ/SJ/DJ/SLJ/RSI) 선택. 기존 jumpType('power'|
+  // 'reactive')은 아래 파생값으로 그대로 계산해서 JumpPrecisionAnalysis·
+  // JumpUploadAnalysis 등 하위 컴포넌트의 기존 분기는 손대지 않는다 — 새 종류는
+  // 어차피 이 둘 중 하나의 엔진을 그대로 재사용하기 때문(jumpTypes.js 참고).
+  const [jumpSubType, setJumpSubType] = useState('cmj');
+  const jumpType = engineOf(jumpSubType); // 파생값 — 'power' | 'reactive'
+  // SLJ(한발 점프) 전용 — 테스트할 다리. 다른 종류에서는 쓰이지 않는다.
+  const [leg, setLeg] = useState('left');
   const [view, setView] = useState('measure'); // measure | record | report
   const [report, setReport] = useState(null);
   const [pending, setPending] = useState(null);   // 측정완료~확인 사이의 리포트 데이터
@@ -28,8 +35,16 @@ export default function JumpAnalysisHub({ member, onBack, onSave, onSaveToFireba
   const [showGuide, setShowGuide] = useState(false);
 
   // 실제 저장(확인 시). 유효 측정만 서버 저장하고, 결과는 항상 리포트로 확인.
+  // [2026-08-10] jumpSubType/leg는 하위 컴포넌트가 이미 report에 채워 보내지만,
+  // 혹시 누락되는 경로가 있어도 여기서 한 번 더 보정한다(안전망 — 이중 처리라도
+  // 값이 같으면 무해하고, 리포트에 세부 종류가 아예 안 남는 것보다 안전하다).
   const persist = useCallback(async (reportData, record = {}) => {
-    const withRecord = { ...reportData, note: record.note || reportData.note || '' };
+    const withRecord = {
+      ...reportData,
+      jumpSubType: reportData.jumpSubType || jumpSubType,
+      ...(jumpSubType === 'slj' ? { leg: reportData.leg || leg } : {}),
+      note: record.note || reportData.note || '',
+    };
     let saved = withRecord;
     setSaveState('saving');
     if (withRecord.valid === true && typeof save === 'function') {
@@ -41,7 +56,7 @@ export default function JumpAnalysisHub({ member, onBack, onSave, onSaveToFireba
     } else { setSaveState('saved'); }
     setReport(saved);
     setView('report');
-  }, [save]);
+  }, [save, jumpSubType, leg]);
 
   // 측정 완료(업로드/수동) → 기록·확인 단계로 (즉시 저장하지 않음)
   const handleComplete = useCallback((reportData) => {
@@ -114,18 +129,30 @@ export default function JumpAnalysisHub({ member, onBack, onSave, onSaveToFireba
     <div className="fixed inset-0 z-[80] bg-slate-950" style={{ height: '100dvh' }}>
       {view === 'measure' && (
         <>
-          {/* 점프 유형(A 파워 / B 반응탄성) + 측정 방식(실시간/고속영상) + 도움말 */}
+          {/* 점프 세부 종류(CMJ/SJ/DJ/SLJ/RSI) + 측정 방식(실시간/고속영상) + 도움말 */}
           <div className="absolute top-[max(8px,calc(env(safe-area-inset-top)+8px))] inset-x-0 z-[86] flex flex-col items-center gap-1.5 px-3 pointer-events-none">
-            {/* 점프 유형 */}
-            <div className="pointer-events-auto flex gap-1 rounded-full bg-black/55 backdrop-blur p-1 border border-white/10 shadow-lg">
-              {[['power', '⚡ 파워 점프'], ['reactive', '🔁 반응 탄성 (RSI)']].map(([k, label]) => (
-                <button key={k} onClick={() => setJumpType(k)}
-                  className={`rounded-full px-3 py-1 text-xs font-black transition-colors ${
-                    jumpType === k ? 'bg-emerald-500 text-slate-950' : 'text-slate-300'}`}>
-                  {label}
+            {/* 점프 세부 종류 — 5종, 가로 스크롤 허용(좁은 화면 대비) */}
+            <div className="pointer-events-auto flex gap-1 rounded-full bg-black/55 backdrop-blur p-1 border border-white/10 shadow-lg max-w-full overflow-x-auto">
+              {JUMP_SUBTYPE_ORDER.map((k) => (
+                <button key={k} onClick={() => setJumpSubType(k)}
+                  className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-black transition-colors whitespace-nowrap ${
+                    jumpSubType === k ? 'bg-emerald-500 text-slate-950' : 'text-slate-300'}`}>
+                  {JUMP_SUBTYPES[k].chipLabel}
                 </button>
               ))}
             </div>
+            {/* SLJ(한발 점프) 전용 — 테스트할 다리 선택 */}
+            {JUMP_SUBTYPES[jumpSubType].singleLeg && (
+              <div className="pointer-events-auto flex gap-1 rounded-full bg-black/55 backdrop-blur p-1 border border-white/10 shadow-lg">
+                {[['left', '왼발'], ['right', '오른발']].map(([k, label]) => (
+                  <button key={k} onClick={() => setLeg(k)}
+                    className={`rounded-full px-3 py-1 text-xs font-black transition-colors ${
+                      leg === k ? 'bg-indigo-500 text-white' : 'text-slate-300'}`}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+            )}
             {/* 측정 방식 + 도움말 */}
             <div className="flex items-center gap-2">
               <div className="pointer-events-auto flex gap-1 rounded-full bg-black/55 backdrop-blur p-1 border border-white/10 shadow-lg">
@@ -142,19 +169,13 @@ export default function JumpAnalysisHub({ member, onBack, onSave, onSaveToFireba
                 ⓘ
               </button>
             </div>
-            {jumpType === 'reactive' && (
-              <p className="pointer-events-none text-[10px] font-bold text-emerald-300 bg-black/55 backdrop-blur rounded-full px-3 py-0.5 border border-emerald-500/30">
-                측면 촬영 추천 · 연속 3회 이상 · 접지 짧게 · 고속영상(240fps) 권장
-              </p>
-            )}
-            {jumpType === 'power' && (
-              <p className="pointer-events-none text-[10px] font-bold text-amber-300 bg-black/55 backdrop-blur rounded-full px-3 py-0.5 border border-amber-500/30">
-                정면 촬영 추천 · 점프 높이·좌우 착지 대칭 중심 분석
-              </p>
-            )}
+            <p className={`pointer-events-none text-[10px] font-bold bg-black/55 backdrop-blur rounded-full px-3 py-0.5 border ${
+              jumpType === 'reactive' ? 'text-emerald-300 border-emerald-500/30' : 'text-amber-300 border-amber-500/30'}`}>
+              {JUMP_SUBTYPES[jumpSubType].tip}
+            </p>
           </div>
 
-          {showGuide && <JumpGuide mode={mode} jumpType={jumpType} onClose={() => setShowGuide(false)} />}
+          {showGuide && <JumpGuide mode={mode} jumpSubType={jumpSubType} onClose={() => setShowGuide(false)} />}
         </>
       )}
 
@@ -162,12 +183,17 @@ export default function JumpAnalysisHub({ member, onBack, onSave, onSaveToFireba
         <JumpPrecisionAnalysis member={member} onBack={onBack} onSaveToFirebase={save}
           onMemberHeightChange={onMemberHeightChange}
           jumpType={jumpType}
+          jumpSubType={jumpSubType}
+          leg={JUMP_SUBTYPES[jumpSubType].singleLeg ? leg : null}
           onOpenSavedReport={openLiveReport}
           onManualComplete={handleComplete} />
       )}
       {mode === 'upload' && (
         <JumpUploadAnalysis member={member} onBack={onBack} onComplete={handleComplete}
-          jumpType={jumpType} onMemberHeightChange={onMemberHeightChange} />
+          jumpType={jumpType}
+          jumpSubType={jumpSubType}
+          leg={JUMP_SUBTYPES[jumpSubType].singleLeg ? leg : null}
+          onMemberHeightChange={onMemberHeightChange} />
       )}
     </div>
   );
@@ -257,7 +283,9 @@ function JumpManualMeasure({ member, onBack, onComplete, onOpenGuide }) {
 // ════════════════════════════════════════════════════════════════════════
 //  측정 방법 안내 (가이드 시트)
 // ════════════════════════════════════════════════════════════════════════
-function JumpGuide({ mode, jumpType, onClose }) {
+function JumpGuide({ mode, jumpSubType, onClose }) {
+  const meta = JUMP_SUBTYPES[jumpSubType];
+  const isReactive = meta.engine === 'reactive';
   return (
     <div className="fixed inset-0 z-[90] bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center"
       onClick={onClose}>
@@ -268,38 +296,37 @@ function JumpGuide({ mode, jumpType, onClose }) {
           <button onClick={onClose} className="text-slate-400 font-bold text-sm">닫기 ✕</button>
         </div>
 
-        <div className="grid grid-cols-2 gap-2">
-          <div className={`rounded-xl p-3 border ${jumpType === 'power' ? 'bg-amber-500/10 border-amber-500/40' : 'bg-slate-800/60 border-slate-700'}`}>
-            <p className="text-white font-bold text-xs mb-1">⚡ 파워 점프</p>
-            <p className="text-slate-300 text-[10px] leading-relaxed">반동·스쿼트 점프 1회. <b className="text-white">최대 출력</b> 측정 — 점프 높이·체공·최고파워.</p>
-          </div>
-          <div className={`rounded-xl p-3 border ${jumpType === 'reactive' ? 'bg-emerald-500/10 border-emerald-500/40' : 'bg-slate-800/60 border-slate-700'}`}>
-            <p className="text-white font-bold text-xs mb-1">🔁 반응 탄성 (RSI)</p>
-            <p className="text-slate-300 text-[10px] leading-relaxed">드롭·연속 포고 점프. <b className="text-white">탄성 효율·속도</b> 측정 — RSI·접지시간.</p>
-          </div>
+        {/* 5종 한눈에 — 현재 선택된 종류만 강조 */}
+        <div className="grid grid-cols-5 gap-1">
+          {JUMP_SUBTYPE_ORDER.map((k) => (
+            <div key={k} className={`rounded-lg p-1.5 text-center border ${
+              k === jumpSubType ? 'bg-emerald-500/10 border-emerald-500/40' : 'bg-slate-800/60 border-slate-700'}`}>
+              <p className="text-white font-black text-[11px]">{JUMP_SUBTYPES[k].code}</p>
+            </div>
+          ))}
         </div>
 
-        {jumpType === 'reactive' ? (
-          <GuideSection title="반응 탄성 점프(RSI) 측정법" emoji="🔁" highlight>
-            제자리에서 <b className="text-white">연속 3회 이상</b> 빠르게 점프하세요(포고 점프).
-            착지 후 <b className="text-white">지면에 닿는 시간을 최대한 짧게</b>, 곧바로 다시
-            높이 뛰는 게 핵심입니다. RSI = 체공시간 ÷ 접지시간(무단위)으로,
-            접지가 짧고 높이 뛸수록 값이 높습니다.
-            <br /><br />
-            <span className="text-amber-300">※ 접지 시간은 ‘착지 → 다시 뜀’ 사이로 측정하므로
-            <b className="text-white"> 1~2회만으로는 RSI 변동성을 볼 수 없습니다.</b> 최소 3회 이상 연속으로 뛰세요.
-            그리고 <b className="text-white">기본 추천은 측면 촬영</b>입니다 — 정면·후면 영상은 접지시간 신뢰도가 낮아 측정하지 않습니다.</span>
-          </GuideSection>
-        ) : (
-          <GuideSection title="반동점프(CMJ)란?" emoji="🦘">
-            선 자세에서 빠르게 살짝 앉았다가(반동) 곧바로 최대한 높이 수직으로 뛰는 점프입니다.
-            팔은 자연스럽게 쓰되, 매번 같은 방식으로 뛰어야 비교가 정확합니다. 제자리에서
-            수직으로 뛰고 같은 자리에 착지하세요. <b className="text-white">기본 추천은 정면 촬영</b>입니다.
-            점프 높이와 좌우 착지 대칭을 중심으로 분석하고, 측면 촬영 시에는 자세 각도 지표가 추가로 활성화됩니다.
-          </GuideSection>
-        )}
+        <GuideSection title={meta.guideTitle} emoji={meta.chipLabel.split(' ')[0]} highlight={isReactive}>
+          {meta.guideBody}
+          {jumpSubType === 'rsi' && (
+            <>
+              <br /><br />
+              <span className="text-amber-300">※ 접지 시간은 ‘착지 → 다시 뜀’ 사이로 측정하므로
+              <b className="text-white"> 1~2회만으로는 RSI 변동성을 볼 수 없습니다.</b> 최소 3회 이상 연속으로 뛰세요.
+              그리고 <b className="text-white">기본 추천은 측면 촬영</b>입니다 — 정면·후면 영상은 접지시간 신뢰도가 낮아 측정하지 않습니다.</span>
+            </>
+          )}
+          {jumpSubType === 'dj' && (
+            <>
+              <br /><br />
+              <span className="text-amber-300">※ 이 앱은 카메라로 박스 높이를 측정하지 못합니다 — 접지시간·RSI만 기록되고
+              박스 높이 자체는 참고용으로만 별도 메모하세요. <b className="text-white">기본 추천은 측면 촬영</b>이며,
+              착지 순간부터 재도약까지 <b className="text-white">한 세트(2회 접지구간)</b>만 있으면 측정됩니다.</span>
+            </>
+          )}
+        </GuideSection>
 
-        {jumpType === 'reactive' && (
+        {isReactive && (
           <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-3">
             <p className="text-emerald-300 text-xs font-bold mb-1">⏱ 접지시간 정확도</p>
             <p className="text-slate-300 text-[11px] leading-relaxed">
@@ -313,16 +340,16 @@ function JumpGuide({ mode, jumpType, onClose }) {
 
         <GuideSection title="① 고속영상 (가장 정확 · 권장)" emoji="📁" highlight>
           갤럭시 카메라 → <b className="text-white">더보기 → 슬로우 모션</b>(슈퍼 슬로우 아님)으로
-          240fps 촬영. <b className="text-white">파워 점프는 정면 촬영을 추천</b>합니다.
+          240fps 촬영. <b className="text-white">{meta.code}는 {meta.view === 'side' ? '측면' : '정면'} 촬영을 추천</b>합니다.
           삼각대로 골반 높이에 고정하고 전신이 다 들어오게 찍으세요.
-          RSI는 <b className="text-white">측면 촬영을 추천</b>합니다. 점프 전 1초 이상 똑바로 선 뒤 점프 →
+          점프 전 1초 이상 똑바로 선 뒤 점프 →
           영상을 ‘고속영상’ 탭에서 업로드하고 촬영 모드(240fps)를 고르면 끝.
         </GuideSection>
 
         <GuideSection title="② 실시간 카메라 (빠른 확인용)" emoji="🔴">
           앱에서 바로 촬영해 즉시 측정합니다. 폰 카메라가 보통 30fps라
-          <b className="text-white"> 고속영상보다 정확도가 낮습니다.</b> 파워 점프는 <b className="text-white">정면</b>,
-          RSI는 <b className="text-white">측면</b>에서,
+          <b className="text-white"> 고속영상보다 정확도가 낮습니다.</b> {meta.code}는{' '}
+          <b className="text-white">{meta.view === 'side' ? '측면' : '정면'}</b>에서,
           카메라를 골반 높이로 고정하고 전신이 보이게 한 뒤, 초록 보정선에 발을 맞춰 선 다음
           점프하세요. 정확한 기록은 고속영상을 권장합니다.
         </GuideSection>
@@ -334,10 +361,7 @@ function JumpGuide({ mode, jumpType, onClose }) {
 
         <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3">
           <p className="text-amber-300 text-xs font-bold mb-1">💡 정확도 팁</p>
-          <p className="text-slate-300 text-[11px] leading-relaxed">
-            파워 점프는 <b className="text-white">정면 촬영</b>을 기본으로 두고 점프 높이와 좌우 착지 대칭을 봅니다.
-            RSI처럼 접지 시간이 핵심인 측정은 <b className="text-white">측면 촬영 + 고속영상(240fps)</b>이 가장 신뢰도 높습니다.
-          </p>
+          <p className="text-slate-300 text-[11px] leading-relaxed">{meta.tip}</p>
         </div>
       </div>
     </div>

@@ -12,6 +12,7 @@ import ProblemFocusPanel from './ProblemFocusPanel.jsx';
 import MomiAutoNote from '../../components/report/MomiAutoNote.jsx';
 import MomiInsightPanel from '../../components/report/MomiInsightPanel.jsx';
 import { aiStore } from '../../demoData';
+import { JUMP_SUBTYPES, resolveJumpSubType } from '../core/jumpTypes';
 
 const RANGE = {
   height: { good: [40, 100], warn: [30, 100], unit: 'cm' },
@@ -81,13 +82,18 @@ export default function JumpReportDashboard({ report, onClose, onComment, member
   const biomech = useMemo(() => normalizeBiomech(report), [report]);
   const score = useMemo(() => scoreReport(report, biomech), [report, biomech]);
   const isRsi = isRsiReport(report);
+  // [2026-08-10] 세부 종류(CMJ/SJ/DJ/SLJ/RSI) — isRsi는 엔진(파워/반응) 선택에만
+  // 계속 쓰고(PowerSection/RsiSection 어느 걸 렌더할지는 그대로), 화면에 보이는
+  // 이름표(reportName/reportCode/saveName)만 이 세분화된 라벨로 바꾼다.
+  const jumpSubType = resolveJumpSubType(report);
+  const subMeta = JUMP_SUBTYPES[jumpSubType];
   const resolvedMember = member || report?.member || null;
   const memberName = resolvedMember?.name || '가상회원';
   const date = formatDate(report?.createdAt || report?.measuredAt);
-  const reportName = isRsi ? 'RSI 반응 점프 평가표' : '파워 점프 평가표';
-  const reportCode = isRsi ? 'RSI REACTIVE JUMP' : 'POWER JUMP';
+  const reportName = `${subMeta.label} 평가표`;
+  const reportCode = `${subMeta.code} JUMP`;
   const viewLabel = biomech.view === 'side' ? '측면' : biomech.view === 'back' || biomech.view === 'front' ? '정면' : '미확인';
-  const saveName = `${memberName}_${isRsi ? 'RSI' : '파워점프'}`;
+  const saveName = `${memberName}_${subMeta.code}`;
   const problemFocus = useMemo(() => report?.problem_focus || buildProblemFocus('jump', report), [report]);
 
   const saveComment = () => {

@@ -735,24 +735,42 @@ export const store = {
   //   · 결제월에 박제된 정산비율(splitRateAtPay)은 그대로 복사(재판정 안 함).
   //   · 과거 출석/지급은 스케줄의 trainerId로 귀속되어 양도가 건드리지 못하므로,
   //     이미 지급·원천징수된 과거분은 불변 → 원천세 이중부과가 구조적으로 발생하지 않음.
-  //   · split/trainerIds가 없는 결제(등록횟수 비율 안분)는 live total로 자동 재계산되어
-  //     별도 수정이 필요 없다.
-  transferSessions: async (memberId, { fromTid, toTid, count }) => {
+  //
+  // ▣ [2026-08-10 확장] toMemberId — 회원↔회원 양도:
+  //   기존엔 항상 같은 회원 안에서 트레이너→트레이너로만 옮길 수 있었다(fromTid≠toTid
+  //   필수). toMemberId를 넘기면 다른 회원(신규 포함 — 호출 전에 store.addMember로
+  //   먼저 만들어 그 id를 넘기면 됨)에게 옮길 수 있고, 이때는 fromTid===toTid(트레이너
+  //   고정, 회원만 이동)도 허용한다 — "같은 트레이너로는 양도 불가" 규칙은 애초에
+  //   "옮겨봐야 제자리"라는 자기 자신 이전 방지가 목적이라, 대상 회원 자체가 다르면
+  //   트레이너가 같아도 실제로 세션이 이동하므로 막을 이유가 없다.
+  //   회원↔회원 이동은 세션 횟수(total/remaining)만 옮기고 결제금·정산비율은 옮기지
+  //   않는다(원래 회원에게 그대로 유지) — 이유: (1) 결제는 실제로 그 돈을 낸 회원
+  //   기준으로 남아야 환불·수납 내역이 왜곡되지 않고, (2) 정산 단가 재계산 로직이
+  //   "같은 회원 안에서 트레이너만 바뀌는 경우"를 전제로 설계돼 있어 회원 자체가
+  //   바뀌면 그 전제가 깨진다. 필요하면 트레이너가 매출관리에서 별도로 결제를
+  //   조정할 수 있다 — 자동으로 남의 회원 결제 내역을 옮기는 건 더 위험하다.
+  transferSessions: async (memberId, { fromTid, toTid, count, toMemberId }) => {
     const n = Math.floor(Number(count) || 0);
+    const crossMember = toMemberId != null && toMemberId !== memberId;
     if (!fromTid || !toTid) throw new Error('양도/대상 트레이너를 선택하세요.');
-    if (fromTid === toTid)  throw new Error('같은 트레이너로는 양도할 수 없습니다.');
+    if (!crossMember && fromTid === toTid) throw new Error('같은 트레이너로는 양도할 수 없습니다.');
     if (n <= 0)             throw new Error('양도할 세션 수는 1회 이상이어야 합니다.');
 
     const prevMembers  = cache.members;
     const prevPayments = JSON.parse(JSON.stringify(cache.payments));
     const m = cache.members.find(x => x.id === memberId);
     if (!m) throw new Error('회원을 찾을 수 없습니다.');
+    const mTo = crossMember ? cache.members.find(x => x.id === toMemberId) : m;
+    if (crossMember && !mTo) throw new Error('양도받을 회원을 찾을 수 없습니다.');
+
     const ts = JSON.parse(JSON.stringify(m.trainerSessions || {}));
     const src = ts[fromTid];
     if (!src) throw new Error('양도할 세션이 없습니다.');
     if (src.monthly) throw new Error('월정액 세션은 양도할 수 없습니다.');
     if (n > (src.remaining ?? 0)) throw new Error('양도 수가 잔여 세션을 초과합니다.');
-    if (ts[toTid] && ts[toTid].monthly) throw new Error('월정액 슬롯으로는 양도할 수 없습니다.');
+    // 대상 트레이너 슬롯은 대상 회원(회원 양도 시) 또는 같은 회원(트레이너 양도 시) 기준.
+    const tsTo = crossMember ? JSON.parse(JSON.stringify(mTo.trainerSessions || {})) : ts;
+    if (tsTo[toTid] && tsTo[toTid].monthly) throw new Error('월정액 슬롯으로는 양도할 수 없습니다.');
 
     // 양도 비율 — 출발 트레이너의 양도 전 등록횟수 기준. total 정보가 없으면 전액(1).
     const origTotal = src.total ?? 0;
@@ -764,14 +782,37 @@ export const store = {
     if (src.remaining <= 0 && src.total <= 0) delete ts[fromTid];
 
     // 대상 슬롯 가산
-    if (ts[toTid]) {
-      ts[toTid].total     = (ts[toTid].total     || 0) + n;
-      ts[toTid].remaining = (ts[toTid].remaining || 0) + n;
+    if (tsTo[toTid]) {
+      tsTo[toTid].total     = (tsTo[toTid].total     || 0) + n;
+      tsTo[toTid].remaining = (tsTo[toTid].remaining || 0) + n;
     } else {
-      ts[toTid] = { total: n, remaining: n };
+      tsTo[toTid] = { total: n, remaining: n };
     }
 
-    // ── 결제금 재배분: 미환불 결제의 출발 트레이너 귀속분을 f만큼 대상으로 이전 ──
+    // ── 회원↔회원 양도: 세션 횟수만 이동, 결제금/정산은 손대지 않고 바로 저장 ──
+    if (crossMember) {
+      const updatedFrom = { ...m, trainerSessions: ts };
+      const updatedTo   = { ...mTo, trainerSessions: tsTo };
+      const batch = createStampedBatch();
+      batch.set('members', memberId, updatedFrom);
+      batch.set('members', toMemberId, updatedTo);
+      try {
+        await batch.commit();
+        cache.members = cache.members.map(x => {
+          if (x.id === memberId) return updatedFrom;
+          if (x.id === toMemberId) return updatedTo;
+          return x;
+        });
+        __touchSnapshot();
+        return updatedFrom;
+      } catch (e) {
+        cache.members = prevMembers;
+        __touchSnapshot();
+        throw e;
+      }
+    }
+
+    // ── 같은 회원(트레이너→트레이너) 양도: 기존 로직 그대로 — 결제금 재배분 포함 ──
     const memberPays = cache.payments[memberId] || [];
     const touchedPays = []; // { pid, patch }
     memberPays.forEach(p => {

@@ -15,6 +15,7 @@ import {
 import { calcJump } from '../core/performance';
 import { computeRSIFromFlights } from '../core/reactiveJump';
 import { store } from '../../demoData';
+import { JUMP_SUBTYPES, minCyclesOverrideFor } from '../core/jumpTypes';
 
 // 회원 신체기록(body)에서 최신 체중·키를 가져온다. (Sayers 파워 계산에 체중 필요)
 // member 객체에 직접 없을 수 있으므로 store.getBodyRecords 로 최신 기록을 조회한다.
@@ -42,7 +43,7 @@ import { analyzeUploadedVideo, CAPTURE_PRESETS } from '../core/videoAnalyzer';
 // 프레임 신뢰도(가시성) 하한 — 이하 구간은 '주의 구간'으로 집계
 const FRAME_CONF_MIN = 0.8;
 
-export default function JumpUploadAnalysis({ member, onBack, onComplete, onMemberHeightChange, jumpType = 'power' }) {
+export default function JumpUploadAnalysis({ member, onBack, onComplete, onMemberHeightChange, jumpType = 'power', jumpSubType = 'cmj', leg = null }) {
   const [phase, setPhase] = useState('idle'); // idle | ready | analyzing | done | error
   const [progress, setProgress] = useState(0);
   const [errorMsg, setErrorMsg] = useState('');
@@ -81,7 +82,7 @@ export default function JumpUploadAnalysis({ member, onBack, onComplete, onMembe
     const effHeightCm = resolved.height ?? heightCm;
     const effWeight = resolved.weight;
 
-    const calib = new StandingCalibrator({ heightCm: effHeightCm });
+    const calib = new StandingCalibrator({ heightCm: effHeightCm, forcedAnkleSide: leg });
     let tracker = null;
     const biomechAcc = new JumpBiomechAccumulator({ heightCm: effHeightCm });
     let prevInAir = false;
@@ -178,6 +179,7 @@ export default function JumpUploadAnalysis({ member, onBack, onComplete, onMembe
         rsiResult = computeRSIFromFlights(tracker.flights, {
           frameIntervalMs,
           view: biomech?.view,
+          minCycles: minCyclesOverrideFor(jumpSubType), // null이면(RSI 연속) 기존 3회 그대로
         });
       }
 
@@ -187,6 +189,8 @@ export default function JumpUploadAnalysis({ member, onBack, onComplete, onMembe
         takeoffVelocity: sum.takeoffVelocity ?? power?.takeoffVelocity ?? null,
         calibHeightCm: effHeightCm,
         jumpType,
+        jumpSubType,
+        leg: jumpSubType === 'slj' ? leg : null,
         rsi: rsiResult,
         source: 'upload',
         precision,
@@ -207,7 +211,7 @@ export default function JumpUploadAnalysis({ member, onBack, onComplete, onMembe
     } finally {
       abortRef.current = null;
     }
-  }, [member, onComplete, capture, heightCm, bodyWeight]);
+  }, [member, onComplete, capture, heightCm, bodyWeight, jumpSubType, leg]);
 
   const cancelAnalysis = () => { abortRef.current?.abort(); };
 
@@ -287,7 +291,7 @@ export default function JumpUploadAnalysis({ member, onBack, onComplete, onMembe
             playsInline muted controls={phase === 'ready' || phase === 'done'} />
           {phase === 'analyzing' && (
             <div className="absolute left-3 top-3 rounded-full border border-white/15 bg-black/70 px-3 py-1 text-xs font-black text-amber-300 backdrop-blur">
-              {jumpType === 'reactive' ? 'RSI 분석 중' : '파워 점프 분석 중'}
+              {JUMP_SUBTYPES[jumpSubType].code} 분석 중
             </div>
           )}
         </div>
@@ -308,9 +312,7 @@ export default function JumpUploadAnalysis({ member, onBack, onComplete, onMembe
         {phase === 'ready' && (
           <div className="flex flex-col items-center gap-3 w-full max-w-md">
             <p className="text-sm text-slate-300 text-center">
-              {jumpType === 'reactive'
-                ? 'RSI는 측면 촬영을 추천합니다. 연속 3회 이상 뛴 고속촬영(120/240fps) 영상을 사용하세요.'
-                : '파워 점프는 정면 촬영을 추천합니다. 점프 전 1초 이상 똑바로 선 고속촬영(120/240fps) 영상을 사용하세요.'}
+              {JUMP_SUBTYPES[jumpSubType].code} — {JUMP_SUBTYPES[jumpSubType].tip}. 고속촬영(120/240fps) 영상을 사용하세요.
             </p>
             <div className="w-full">
               <p className="text-[11px] font-bold text-slate-400 mb-1.5">촬영 모드</p>
@@ -325,7 +327,7 @@ export default function JumpUploadAnalysis({ member, onBack, onComplete, onMembe
               </div>
               <p className="text-[10px] text-slate-500 mt-1.5">
                 폰 슬로모로 찍었다면 해당 배속을 선택하세요. 체공시간이 실제 시간 기준으로 보정됩니다.
-                {jumpType === 'power' ? ' 정면 촬영은 점프 높이와 좌우 착지 대칭을 중심으로 분석합니다.' : ' 측면 촬영에서 접지시간과 RSI 신뢰도가 가장 높습니다.'}
+                {JUMP_SUBTYPES[jumpSubType].view === 'front' ? ' 정면 촬영은 점프 높이와 좌우 착지 대칭을 중심으로 분석합니다.' : ' 측면 촬영에서 접지시간과 RSI 신뢰도가 가장 높습니다.'}
               </p>
             </div>
             <button onClick={runAnalysis}

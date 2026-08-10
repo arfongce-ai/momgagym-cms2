@@ -19,11 +19,22 @@ describe('plausibleVelocity — 물리적으로 불가능한 속도값 방어', 
   });
 });
 
-describe('menuGroupKey — 파워점프/RSI, VBT/1RM(역도) 세분화', () => {
-  it('점프는 RSI 여부에 따라 jump_rsi / jump_power 로 나뉜다', () => {
+describe('menuGroupKey — CMJ/RSI/SJ/DJ/SLJ, VBT/1RM(역도) 세분화', () => {
+  it('점프는 RSI 여부에 따라 jump_rsi / jump_power 로 나뉜다(jumpSubType 없는 과거 데이터 기준)', () => {
     expect(menuGroupKey({ menu: 'jump', data: { jumpType: 'reactive' } })).toBe('jump_rsi');
     expect(menuGroupKey({ menu: 'jump', data: { rsi: { rsi: 0.9 } } })).toBe('jump_rsi');
     expect(menuGroupKey({ menu: 'jump', data: { heightCm: 30 } })).toBe('jump_power');
+  });
+
+  it('[2026-08-10 신규] jumpSubType이 sj/dj/slj면 각각 별도 그룹으로 나뉜다(CMJ/RSI와 안 섞임)', () => {
+    expect(menuGroupKey({ menu: 'jump', data: { jumpSubType: 'sj', heightCm: 28 } })).toBe('jump_sj');
+    expect(menuGroupKey({ menu: 'jump', data: { jumpSubType: 'dj', jumpType: 'reactive', rsi: { rsi: 1.8 } } })).toBe('jump_dj');
+    expect(menuGroupKey({ menu: 'jump', data: { jumpSubType: 'slj', heightCm: 18, leg: 'left' } })).toBe('jump_slj');
+  });
+
+  it('jumpSubType이 cmj/rsi로 명시돼도 기존 jump_power/jump_rsi 그대로(새 그룹을 만들지 않음)', () => {
+    expect(menuGroupKey({ menu: 'jump', data: { jumpSubType: 'cmj', heightCm: 30 } })).toBe('jump_power');
+    expect(menuGroupKey({ menu: 'jump', data: { jumpSubType: 'rsi', jumpType: 'reactive' } })).toBe('jump_rsi');
   });
 
   it('바벨 리프팅은 1RM(역도) 여부에 따라 lifting_onerm / lifting_vbt 로 나뉜다', () => {
@@ -39,8 +50,8 @@ describe('menuGroupKey — 파워점프/RSI, VBT/1RM(역도) 세분화', () => {
   });
 });
 
-describe('buildAiReport — 파워점프/RSI, VBT/1RM 세션이 섞여 있어도 그룹이 분리된다', () => {
-  it('파워점프와 RSI 세션은 서로 다른 groupKey/byMenu 버킷으로 나뉜다(회차 목록이 섞이지 않음)', () => {
+describe('buildAiReport — CMJ/RSI/SJ/DJ/SLJ, VBT/1RM 세션이 섞여 있어도 그룹이 분리된다', () => {
+  it('CMJ(舊 파워점프)와 RSI 세션은 서로 다른 groupKey/byMenu 버킷으로 나뉜다(회차 목록이 섞이지 않음)', () => {
     const sessions = [
       { menu: 'jump', recordedAt: '2026-07-01', data: { heightCm: 30, peakPower: 2500 } },
       { menu: 'jump', recordedAt: '2026-07-02', data: { jumpType: 'reactive', rsi: { rsi: 0.6 }, heightCm: 18 } },
@@ -49,7 +60,8 @@ describe('buildAiReport — 파워점프/RSI, VBT/1RM 세션이 섞여 있어도
     const { menuSummaries, byMenu } = buildAiReport(sessions);
     const power = menuSummaries.find(m => m.groupKey === 'jump_power');
     const rsi = menuSummaries.find(m => m.groupKey === 'jump_rsi');
-    expect(power.title).toBe('파워점프');
+    // [2026-08-10 이름 변경] "파워 점프" → "CMJ (반동점프)" — 요청에 따른 라벨 변경.
+    expect(power.title).toBe('CMJ (반동점프)');
     expect(rsi.title).toBe('RSI 반응점프');
     expect(power.count).toBe(2);
     expect(rsi.count).toBe(1);
@@ -58,6 +70,34 @@ describe('buildAiReport — 파워점프/RSI, VBT/1RM 세션이 섞여 있어도
     // 등급/차트 판정 등 기존 로직 호환용 원본 menu 는 둘 다 'jump' 그대로 유지.
     expect(power.menu).toBe('jump');
     expect(rsi.menu).toBe('jump');
+  });
+
+  it('[2026-08-10 신규] SJ/DJ/SLJ 세션은 CMJ/RSI와 섞이지 않고 각자 그룹·제목을 갖는다', () => {
+    const sessions = [
+      { menu: 'jump', recordedAt: '2026-08-01', data: { jumpSubType: 'sj', heightCm: 26, peakPower: 2200 } },
+      { menu: 'jump', recordedAt: '2026-08-02', data: { jumpSubType: 'dj', jumpType: 'reactive', rsi: { rsi: 1.9 }, heightCm: 12 } },
+      { menu: 'jump', recordedAt: '2026-08-03', data: { jumpSubType: 'slj', heightCm: 16, leg: 'left' } },
+      { menu: 'jump', recordedAt: '2026-08-04', data: { heightCm: 31, peakPower: 2500 } }, // CMJ(舊 파워점프)
+    ];
+    const { menuSummaries } = buildAiReport(sessions);
+    const sj = menuSummaries.find(m => m.groupKey === 'jump_sj');
+    const dj = menuSummaries.find(m => m.groupKey === 'jump_dj');
+    const slj = menuSummaries.find(m => m.groupKey === 'jump_slj');
+    const cmj = menuSummaries.find(m => m.groupKey === 'jump_power');
+    expect(sj.title).toBe('SJ (스쿼트점프)');
+    expect(dj.title).toBe('DJ (드롭점프)');
+    expect(slj.title).toBe('SLJ (한발 점프)');
+    expect(cmj.title).toBe('CMJ (반동점프)');
+    // 4종 모두 1건씩 — 서로 안 섞였다는 뜻.
+    expect(sj.count).toBe(1);
+    expect(dj.count).toBe(1);
+    expect(slj.count).toBe(1);
+    expect(cmj.count).toBe(1);
+    // DJ는 RSI 엔진이라 metric에 RSI가, SJ/SLJ는 파워 엔진이라 높이가 나온다.
+    expect(dj.metric).toContain('RSI');
+    expect(sj.metric).toContain('높이');
+    // SLJ는 다리 정보가 있으면 metric에 함께 표기된다.
+    expect(slj.metric).toContain('왼발');
   });
 
   it('VBT와 1RM(역도) 세션도 서로 다른 groupKey 로 나뉜다', () => {

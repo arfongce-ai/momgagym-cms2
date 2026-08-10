@@ -7,7 +7,8 @@ import { useState, useEffect } from 'react';
 import { store } from '../../demoData';
 import { todayYMD, addMonthsYMD } from '../../utils/dates';
 import { useAuth } from '../../contexts/AuthContext';
-import { ClassTypeCheckbox } from './MemberRegister';
+import MemberRegister, { ClassTypeCheckbox } from './MemberRegister';
+import MemberPicker from '../common/MemberPicker';
 import AiMeasureReport     from '../ai/AiMeasureReport';
 import MemberMeasureHistory from '../ai/MemberMeasureHistory';
 import { METHOD_LBL, METHOD_CLR, computeMonthRates, autoRefundUsedAmount, computeRefundEstimate, refundUnitPriceBasisLabel } from '../../services/finance';
@@ -34,7 +35,7 @@ const makePayForm = () => ({
   category: 'normal',
 });
 
-export default function MemberDetail({ member:initMember, trainers, onClose, onUpdate, initialTab }) {
+export default function MemberDetail({ member:initMember, trainers, members=[], onClose, onUpdate, initialTab }) {
   const { user } = useAuth();
   const [tab, setTab]       = useState(initialTab || 'info');
   const [member, setMember] = useState(initMember);
@@ -61,7 +62,13 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
   const [adjustForm,    setAdjustForm]    = useState({ remaining:0, total:0 });
   // 세션 양도 / 부분양도
   const [transferTid,   setTransferTid]   = useState(null); // 양도 출발 트레이너
-  const [transferForm,  setTransferForm]  = useState({ toTid:'', count:1 });
+  // [2026-08-10 확장] destType: 'trainer'(같은 회원, 트레이너만 변경 — 기존 동작)
+  // | 'member'(다른 회원에게 양도 — 신규). toMemberId는 destType==='member'일 때만 씀.
+  const [transferForm,  setTransferForm]  = useState({ toTid:'', count:1, destType:'trainer', toMemberId:'' });
+  // 양도 대상으로 쓸 "신규 회원" 등록 모달(기존 MemberRegister 재사용 — 건강고지·
+  // 서명 등 정식 가입 절차를 그대로 거치게 해, 양도로 만든 회원도 다른 회원과
+  // 동일한 절차를 밟는다).
+  const [showTransferNewMember, setShowTransferNewMember] = useState(false);
 
   // 수납
   const [payments,     setPayments]    = useState([]);
@@ -224,26 +231,50 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
   // ── 세션 양도 / 부분양도 ──────────────────────────────
   const startTransfer = (tid, s) => {
     setTransferTid(tid);
-    setTransferForm({ toTid:'', count: s.remaining > 0 ? 1 : 0 });
+    setTransferForm({ toTid:'', count: s.remaining > 0 ? 1 : 0, destType:'trainer', toMemberId:'' });
     setAdjustTid(null); // 다른 인라인 폼 닫기
+  };
+  // destType 전환 시 toTid 기본값도 같이 맞춘다: 'member'로 바꾸면 "트레이너
+  // 고정"이 가장 흔한 케이스라 출발 트레이너를 기본 선택해 두고(그대로 둬도
+  // 되고 바꿔도 됨), 'trainer'로 돌아가면 반드시 다른 트레이너를 새로 골라야
+  // 하므로 비워서 기존 동작(사용자가 직접 선택)을 그대로 유지한다.
+  const setTransferDestType = (destType) => {
+    setTransferForm(f => ({
+      ...f,
+      destType,
+      toTid: destType === 'member' ? transferTid : '',
+      toMemberId: '',
+    }));
   };
   const saveTransfer = async (fromTid) => {
     if (busy) return;
-    const { toTid, count } = transferForm;
+    const { toTid, count, destType, toMemberId } = transferForm;
     if (!toTid) { alert('양도받을 트레이너를 선택하세요.'); return; }
+    if (destType === 'member' && !toMemberId) { alert('양도받을 회원을 선택하세요.'); return; }
     const fresh = store.getMembers().find(m=>m.id===member.id);
     const src = (fresh?.trainerSessions||{})[fromTid];
     const fromName = trainerMap[fromTid]?.name || fromTid;
     const toName   = trainerMap[toTid]?.name   || toTid;
     const isFull   = Number(count) >= (src?.remaining ?? 0);
-    const head = isFull
-      ? `${fromName} → ${toName}\n잔여 ${src?.remaining ?? 0}회 전체를 양도합니다.`
-      : `${fromName} → ${toName}\n${count}회를 양도합니다.`;
-    const msg = `${head}\n\n· 양도한 횟수만큼 결제금·정산비율도 함께 이전됩니다.\n· 이미 출석·지급된 과거 정산은 그대로 유지됩니다.\n\n진행할까요?`;
+    const toMemberName = destType === 'member' ? (members.find(m=>m.id===toMemberId)?.name || '(알 수 없음)') : null;
+    const head = destType === 'member'
+      ? (isFull
+          ? `${member.name} → ${toMemberName}\n(담당 ${fromName} → ${toName}) 잔여 ${src?.remaining ?? 0}회 전체를 양도합니다.`
+          : `${member.name} → ${toMemberName}\n(담당 ${fromName} → ${toName}) ${count}회를 양도합니다.`)
+      : (isFull
+          ? `${fromName} → ${toName}\n잔여 ${src?.remaining ?? 0}회 전체를 양도합니다.`
+          : `${fromName} → ${toName}\n${count}회를 양도합니다.`);
+    const moneyNote = destType === 'member'
+      ? '· 세션 횟수만 이동됩니다 — 결제금·정산은 원래 회원(현재 화면 회원)에게 그대로 유지됩니다.'
+      : '· 양도한 횟수만큼 결제금·정산비율도 함께 이전됩니다.\n· 이미 출석·지급된 과거 정산은 그대로 유지됩니다.';
+    const msg = `${head}\n\n${moneyNote}\n\n진행할까요?`;
     if (!window.confirm(msg)) return;
     setBusy(true);
     try {
-      await store.transferSessions(member.id, { fromTid, toTid, count:Number(count) });
+      await store.transferSessions(member.id, {
+        fromTid, toTid, count:Number(count),
+        ...(destType === 'member' ? { toMemberId } : {}),
+      });
       refresh(); setTransferTid(null); onUpdate?.();
     } catch (e) {
       alert('양도에 실패했습니다.\n' + (e?.message || ''));
@@ -815,17 +846,66 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
                             <p className="text-[10px] font-bold uppercase tracking-widest text-blue-400">
                               세션 양도 · {t?.name||tid} → ?
                             </p>
+
+                            {/* [2026-08-10 추가] 양도 대상 종류: 같은 회원(트레이너만 변경, 기존 동작)
+                                | 다른 회원(신규 기능). 회원을 바꾸면 트레이너 고정(같은 트레이너 유지)도
+                                가능해진다 — setTransferDestType이 전환 시 기본 트레이너를 알맞게 맞춰준다. */}
+                            <div className="flex gap-1 rounded-lg bg-slate-900 p-1 border border-slate-700">
+                              <button type="button" onClick={()=>setTransferDestType('trainer')}
+                                className={`flex-1 rounded-md py-1.5 text-[11px] font-bold transition-colors ${transferForm.destType==='trainer' ? 'bg-blue-500 text-white' : 'text-slate-400'}`}>
+                                같은 회원 · 트레이너 변경
+                              </button>
+                              <button type="button" onClick={()=>setTransferDestType('member')}
+                                className={`flex-1 rounded-md py-1.5 text-[11px] font-bold transition-colors ${transferForm.destType==='member' ? 'bg-indigo-500 text-white' : 'text-slate-400'}`}>
+                                다른 회원에게 양도
+                              </button>
+                            </div>
+
+                            {transferForm.destType==='member' && (
+                              <div className="space-y-2 bg-slate-900/60 rounded-lg p-2.5 border border-indigo-500/20">
+                                <div className="flex gap-1 rounded-lg bg-slate-900 p-1 border border-slate-700">
+                                  <button type="button"
+                                    onClick={()=>{ setShowTransferNewMember(false); setTransferForm(f=>({...f,toMemberId:''})); }}
+                                    className={`flex-1 rounded-md py-1 text-[11px] font-bold transition-colors ${!showTransferNewMember ? 'bg-slate-700 text-white' : 'text-slate-400'}`}>
+                                    기존 회원
+                                  </button>
+                                  <button type="button" onClick={()=>setShowTransferNewMember(true)}
+                                    className="flex-1 rounded-md py-1 text-[11px] font-bold text-slate-400 hover:text-white transition-colors">
+                                    + 신규 회원 등록
+                                  </button>
+                                </div>
+                                <div>
+                                  <label className="text-[10px] text-slate-500">양도받을 회원</label>
+                                  <MemberPicker
+                                    members={members.filter(m=>m.id!==member.id)}
+                                    value={transferForm.toMemberId}
+                                    onChange={(id)=>setTransferForm(f=>({...f,toMemberId:id||''}))}
+                                    placeholder="이름 / 초성 검색"
+                                    allowNone={false}
+                                    noneLabel="회원을 선택하세요"
+                                  />
+                                </div>
+                              </div>
+                            )}
+
                             <div>
-                              <label className="text-[10px] text-slate-500">양도받을 트레이너</label>
+                              <label className="text-[10px] text-slate-500">
+                                {transferForm.destType==='member' ? '담당 트레이너 (기본: 현재 트레이너 고정)' : '양도받을 트레이너'}
+                              </label>
                               <select value={transferForm.toTid}
                                 onChange={e=>setTransferForm(f=>({...f,toTid:e.target.value}))}
                                 className="w-full bg-slate-900 border border-slate-600 text-slate-100 rounded-lg px-2 py-1.5 text-sm">
                                 <option value="">선택하세요</option>
-                                {trainers.filter(tt=>tt.id!==tid).map(tt=>(
-                                  <option key={tt.id} value={tt.id}>
-                                    {tt.name}{member.trainerSessions?.[tt.id] ? ` (잔여${member.trainerSessions[tt.id].remaining})` : ''}
-                                  </option>
-                                ))}
+                                {(transferForm.destType==='member' ? trainers : trainers.filter(tt=>tt.id!==tid)).map(tt=>{
+                                  const destSessions = transferForm.destType==='member'
+                                    ? (members.find(m=>m.id===transferForm.toMemberId)?.trainerSessions || {})
+                                    : member.trainerSessions;
+                                  return (
+                                    <option key={tt.id} value={tt.id}>
+                                      {tt.name}{destSessions?.[tt.id] ? ` (잔여${destSessions[tt.id].remaining})` : ''}
+                                    </option>
+                                  );
+                                })}
                               </select>
                             </div>
                             <div>
@@ -840,15 +920,29 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
                                 </button>
                               </div>
                             </div>
-                            {transferForm.toTid && (
+                            {transferForm.toTid && (transferForm.destType!=='member' || transferForm.toMemberId) && (
                               <div className="bg-slate-700/50 rounded-lg px-3 py-2 text-[11px] text-slate-400 space-y-1">
                                 <div>
-                                  <span className="text-slate-300 font-semibold">{t?.name||tid}</span> →{' '}
-                                  <span className="text-blue-300 font-semibold">{trainerMap[transferForm.toTid]?.name}</span>{' '}
-                                  <span className="text-blue-400 font-bold">{transferForm.count||0}회</span> 이동
+                                  {transferForm.destType==='member' ? (
+                                    <>
+                                      <span className="text-slate-300 font-semibold">{member.name}</span> →{' '}
+                                      <span className="text-indigo-300 font-semibold">{members.find(m=>m.id===transferForm.toMemberId)?.name}</span>{' '}
+                                      <span className="text-blue-400 font-bold">{transferForm.count||0}회</span> 이동
+                                    </>
+                                  ) : (
+                                    <>
+                                      <span className="text-slate-300 font-semibold">{t?.name||tid}</span> →{' '}
+                                      <span className="text-blue-300 font-semibold">{trainerMap[transferForm.toTid]?.name}</span>{' '}
+                                      <span className="text-blue-400 font-bold">{transferForm.count||0}회</span> 이동
+                                    </>
+                                  )}
                                   {Number(transferForm.count) >= s.remaining && <span className="text-amber-400 font-bold ml-1">(전체 양도 → 출발 세션 제거)</span>}
                                 </div>
-                                <div className="text-[10px] text-slate-500">결제금·정산비율도 양도 비율만큼 함께 이전 · 과거 정산은 유지</div>
+                                <div className="text-[10px] text-slate-500">
+                                  {transferForm.destType==='member'
+                                    ? '세션 수만 이동 · 결제금·정산은 현재 회원에게 그대로 유지'
+                                    : '결제금·정산비율도 양도 비율만큼 함께 이전 · 과거 정산은 유지'}
+                                </div>
                               </div>
                             )}
                             <div className="flex gap-2 justify-end">
@@ -1536,6 +1630,20 @@ export default function MemberDetail({ member:initMember, trainers, onClose, onU
               </div>
             </div>
           </div>
+        )}
+
+        {/* [2026-08-10 추가] 세션 양도 대상 "신규 회원" 등록 — 기존 회원가입 흐름을
+            그대로 재사용(건강고지·서명 등 정식 절차를 그대로 밟게 하기 위함).
+            완료되면 방금 만든 회원을 바로 양도 대상으로 지정한다. */}
+        {showTransferNewMember && (
+          <MemberRegister
+            trainers={trainers}
+            onCancel={()=>setShowTransferNewMember(false)}
+            onSuccess={(newMember)=>{
+              setShowTransferNewMember(false);
+              if (newMember?.id) setTransferForm(f=>({ ...f, toMemberId:newMember.id }));
+            }}
+          />
         )}
       </div>
     </div>

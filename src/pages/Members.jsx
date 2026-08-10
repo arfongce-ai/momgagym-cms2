@@ -313,6 +313,7 @@ export default function Members() {
         <MemberDetail
           member={members.find(m=>m.id===selected.id) || selected}
           trainers={trainers}
+          members={members}
           initialTab={selectedInitialTab || undefined}
           onClose={() => { setSelected(null); setSelectedInitialTab(null); }}
           onUpdate={() => load()} />

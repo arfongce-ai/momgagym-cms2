@@ -176,6 +176,10 @@ export default function MemberRegister({ trainers=[], onSuccess, onCancel }) {
   const [step, setStep]     = useState('form');
   const [error, setError]   = useState('');
   const [loading, setLoading] = useState(false);
+  // [2026-08-10 추가] 등록 완료 후 만든 회원을 기억해뒀다가 onSuccess에 실어
+  // 보낸다 — 기존 호출부(Members.jsx)는 인자를 안 받으므로 그대로 무해하고,
+  // 새 호출부(양도 화면의 "신규 회원" 흐름)는 이 값으로 바로 대상 회원을 잡는다.
+  const [createdMember, setCreatedMember] = useState(null);
   const today = todayYMD(); // CV-A: 로컬 날짜
 
   const [form, setForm] = useState({
@@ -243,7 +247,7 @@ export default function MemberRegister({ trainers=[], onSuccess, onCancel }) {
         ? { active:true, fee:Number(form.monthlyFee)||0, dueDate:form.monthlyDueDate, startDate:form.joinDate }
         : null;
 
-      await store.addMember({
+      const newMember = await store.addMember({
         name:form.name, gender:form.gender, phone:form.phone, phone2:form.phone2,
         birthDate:form.birthDate, address:form.address, job:form.job,
         joinDate:form.joinDate,
@@ -254,6 +258,7 @@ export default function MemberRegister({ trainers=[], onSuccess, onCancel }) {
         signatureUrl:getDataUrl(), isActive:true,
         createdAt:new Date().toISOString(),
       });
+      setCreatedMember(newMember);
       setStep('done');
     } catch(err) { setError('오류: '+err.message); }
     finally { setLoading(false); }
@@ -432,7 +437,7 @@ export default function MemberRegister({ trainers=[], onSuccess, onCancel }) {
                   return <p key={i} className="text-xs text-slate-400">• {t?.name||'트레이너'} · {cts} · {s.sessionTotal}회</p>;
                 })}
               </div>
-              <button onClick={onSuccess} className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold py-2.5 px-8 rounded-xl text-sm transition-colors">확인</button>
+              <button onClick={() => onSuccess?.(createdMember)} className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold py-2.5 px-8 rounded-xl text-sm transition-colors">확인</button>
             </div>
           )}
         </div>

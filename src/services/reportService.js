@@ -144,9 +144,18 @@ export function buildBodyReport(bodyRecords = []) {
 // 판정 등 다른 로직이 참조)는 건드리지 않고, "어떤 회차들을 같이 묶어 보여줄지"만
 // 이 키로 정한다 — 그렇지 않으면 파워점프/RSI 아코디언을 각각 열어도 두 종류가
 // 섞인 같은 목록이 나온다(원본 menu 값이 둘 다 'jump'/'lifting'로 같기 때문).
+// [2026-08-10 확장] jumpSubType(sj/dj/slj)이 있으면 CMJ·RSI(연속)와 섞이지 않게
+// 각자 그룹을 따로 둔다 — 예를 들어 SJ 높이(반동 없음)가 CMJ 높이(반동 있음)
+// 추이 그래프에 섞이면 다른 조건의 값이 한 그래프에 겹쳐 오해를 줄 수 있다.
+// jumpSubType이 없는 과거 데이터·cmj·rsi(연속)는 기존 jump_power/jump_rsi
+// 그룹 그대로 유지한다(하위호환 — 기존 리포트 이력이 갑자기 새 그룹으로
+// 옮겨가 "회차가 사라진 것처럼" 보이는 일이 없게).
 export function menuGroupKey(session) {
   const d = session?.data || {};
   if (session?.menu === 'jump') {
+    if (d.jumpSubType === 'sj') return 'jump_sj';
+    if (d.jumpSubType === 'dj') return 'jump_dj';
+    if (d.jumpSubType === 'slj') return 'jump_slj';
     return (d.jumpType === 'reactive' || d.rsi) ? 'jump_rsi' : 'jump_power';
   }
   if (session?.menu === 'lifting') {
@@ -186,7 +195,8 @@ export function buildAiReport(aiSessions = []) {
 
   // 메뉴별 측정 요약 (리포트 표시용) — 각 메뉴의 핵심 수치 1줄
   const GROUP_TITLE = {
-    jump_rsi: 'RSI 반응점프', jump_power: '파워점프',
+    jump_rsi: 'RSI 반응점프', jump_power: 'CMJ (반동점프)',
+    jump_sj: 'SJ (스쿼트점프)', jump_dj: 'DJ (드롭점프)', jump_slj: 'SLJ (한발 점프)',
     lifting_onerm: '1RM · 역도', lifting_vbt: 'VBT',
   };
   const menuSummaries = [];
@@ -200,9 +210,9 @@ export function buildAiReport(aiSessions = []) {
       case 'rsi':     metric = `RSI ${d.rsi ?? '-'} · 높이 ${d.heightCm ?? '-'}cm`; break;
       case 'vbt':     metric = `평균속도 ${d.meanVelocity ?? '-'}m/s (${d.zone ?? ''})`; break;
       case 'jump':
-        metric = groupKey === 'jump_rsi'
+        metric = (groupKey === 'jump_rsi' || groupKey === 'jump_dj')
           ? `RSI ${d.rsi?.rsi ?? d.rsi ?? '-'} · 높이 ${d.heightCm ?? '-'}cm`
-          : `높이 ${d.heightCm ?? '-'}cm${d.peakPower ? ` · ${d.peakPower}W` : ''}`;
+          : `높이 ${d.heightCm ?? '-'}cm${d.peakPower ? ` · ${d.peakPower}W` : ''}${groupKey === 'jump_slj' && d.leg ? ` · ${d.leg === 'left' ? '왼발' : '오른발'}` : ''}`;
         break;
       case 'lifting': {
         const lm = d.metrics || {};
