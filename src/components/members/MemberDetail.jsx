@@ -265,7 +265,7 @@ export default function MemberDetail({ member:initMember, trainers, members=[], 
           ? `${fromName} → ${toName}\n잔여 ${src?.remaining ?? 0}회 전체를 양도합니다.`
           : `${fromName} → ${toName}\n${count}회를 양도합니다.`);
     const moneyNote = destType === 'member'
-      ? '· 세션 횟수만 이동됩니다 — 결제금·정산은 원래 회원(현재 화면 회원)에게 그대로 유지됩니다.'
+      ? '· 결제 기록(영수증)은 원래 회원에게 그대로 남습니다.\n· 다만 넘어가는 세션의 단가·정산비율은 그대로 이어받아, 매출관리 정산에는 정확히 반영됩니다.'
       : '· 양도한 횟수만큼 결제금·정산비율도 함께 이전됩니다.\n· 이미 출석·지급된 과거 정산은 그대로 유지됩니다.';
     const msg = `${head}\n\n${moneyNote}\n\n진행할까요?`;
     if (!window.confirm(msg)) return;
@@ -940,7 +940,7 @@ export default function MemberDetail({ member:initMember, trainers, members=[], 
                                 </div>
                                 <div className="text-[10px] text-slate-500">
                                   {transferForm.destType==='member'
-                                    ? '세션 수만 이동 · 결제금·정산은 현재 회원에게 그대로 유지'
+                                    ? '결제 기록은 원래 회원에게 유지 · 단가·정산비율은 그대로 이어받음'
                                     : '결제금·정산비율도 양도 비율만큼 함께 이전 · 과거 정산은 유지'}
                                 </div>
                               </div>

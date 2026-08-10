@@ -9,6 +9,7 @@ import {
 } from 'firebase/firestore';
 import { toYMD, todayYMD } from './utils/dates';
 import { buildUnifiedReportDocument, inferReportType } from './ai-measure/core/unifiedReport';
+import { computeTransferBasis, mergeTransferBasis } from './services/finance';
 
 // v6.2: 델타 동기화 도입 직후, 원자 배치(예약+차감 등)가 updatedAt 도장 없이
 //        저장되던 기간이 있었다. 그 문서들은 델타 조회에 영원히 걸리지 않으므로
@@ -743,12 +744,12 @@ export const store = {
   //   고정, 회원만 이동)도 허용한다 — "같은 트레이너로는 양도 불가" 규칙은 애초에
   //   "옮겨봐야 제자리"라는 자기 자신 이전 방지가 목적이라, 대상 회원 자체가 다르면
   //   트레이너가 같아도 실제로 세션이 이동하므로 막을 이유가 없다.
-  //   회원↔회원 이동은 세션 횟수(total/remaining)만 옮기고 결제금·정산비율은 옮기지
-  //   않는다(원래 회원에게 그대로 유지) — 이유: (1) 결제는 실제로 그 돈을 낸 회원
-  //   기준으로 남아야 환불·수납 내역이 왜곡되지 않고, (2) 정산 단가 재계산 로직이
-  //   "같은 회원 안에서 트레이너만 바뀌는 경우"를 전제로 설계돼 있어 회원 자체가
-  //   바뀌면 그 전제가 깨진다. 필요하면 트레이너가 매출관리에서 별도로 결제를
-  //   조정할 수 있다 — 자동으로 남의 회원 결제 내역을 옮기는 건 더 위험하다.
+  //   회원↔회원 이동은 결제 기록(영수증) 자체는 옮기지 않는다 — 실제로 그 돈을 낸
+  //   회원 기준으로 결제·환불 내역이 남아야 수납 화면이 왜곡되지 않기 때문이다.
+  //   대신 넘어가는 세션 n회가 "얼마짜리였는지"(단가·정산비율)만 스냅샷을 떠서
+  //   대상 슬롯에 실어두고(transferBasis — 아래 crossMemberBasis 계산 참고),
+  //   정산 계산(finance.js buildTrainerLots)이 이 값을 자동으로 읽어 쓴다 — 그래서
+  //   새 영수증 없이도 매출관리→정산 화면에 정확한 금액·비율이 자동으로 뜬다.
   transferSessions: async (memberId, { fromTid, toTid, count, toMemberId }) => {
     const n = Math.floor(Number(count) || 0);
     const crossMember = toMemberId != null && toMemberId !== memberId;
@@ -774,7 +775,26 @@ export const store = {
 
     // 양도 비율 — 출발 트레이너의 양도 전 등록횟수 기준. total 정보가 없으면 전액(1).
     const origTotal = src.total ?? 0;
+    const origRemaining = src.remaining ?? 0;
     const f = origTotal > 0 ? n / origTotal : 1;
+
+    // [2026-08-10 추가 — 회원↔회원 양도] 결제(영수증) 자체는 옮기지 않되, 지금
+    // 넘어가는 n회가 원래 얼마짜리였는지(단가·정산비율)는 여기서 스냅샷 떠서
+    // 대상 슬롯에 실어둔다 — buildTrainerLots가 이 값을 정산 계산에 자동으로
+    // 반영해, 매출관리→정산 화면에서 새 결제 없이도 정확한 금액/비율로 뜬다.
+    // (원래 회원 자신이 예전에 양도로 받은 세션을 다시 양도하는 경우까지
+    // src.transferBasis로 이어받아 다단계 양도도 정확히 계산된다.)
+    const crossMemberBasis = crossMember
+      ? computeTransferBasis({
+          payments: cache.payments[memberId] || [],
+          trainerId: fromTid,
+          settings: cache.settings,
+          trainerRegTotal: origTotal,
+          transferBasis: src.transferBasis || null,
+          remainingBefore: origRemaining,
+          n,
+        })
+      : null;
 
     // 출발 슬롯 차감 (total도 함께 줄여 소유 세션 이동을 표현)
     src.remaining -= n;
@@ -788,8 +808,11 @@ export const store = {
     } else {
       tsTo[toTid] = { total: n, remaining: n };
     }
+    if (crossMember) {
+      tsTo[toTid].transferBasis = mergeTransferBasis(tsTo[toTid].transferBasis || null, crossMemberBasis);
+    }
 
-    // ── 회원↔회원 양도: 세션 횟수만 이동, 결제금/정산은 손대지 않고 바로 저장 ──
+    // ── 회원↔회원 양도: 영수증(결제 기록)은 손대지 않고 세션+정산 기준만 이동 ──
     if (crossMember) {
       const updatedFrom = { ...m, trainerSessions: ts };
       const updatedTo   = { ...mTo, trainerSessions: tsTo };

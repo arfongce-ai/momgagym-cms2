@@ -330,7 +330,57 @@ export function buildRefreezeAllPlan({ trainers, members, payments, records, set
 //    "먼저 소진되는 등록분이 앞". 결제는 늦게 했지만 수업은 먼저 시작한 경우(sessionStartDate)를 반영.
 //    매출·정산비율은 여전히 결제일(paidAt) 기준 — 이 정렬은 회차 소진 순서에만 쓴다.
 // 반환: [{ id, paymentId, paidAt, orderDate, count, rate, reEnrollNo, label, ... }]
-export function buildTrainerLots({ payments = [], trainerId, settings, trainerRegTotal }) {
+// [2026-08-10 추가 — 회원↔회원 세션 양도] "레거시"(등록횟수는 있지만 결제
+// 항목별로 특정 안 된) 구간을 1~2개의 lot으로 만드는 공통 헬퍼.
+//  · transferBasis가 있으면(양도로 넘어온 세션) 그 구간만큼 별도 lot으로 쪼개서
+//    원래 회원이 쓰던 단가·정산비율을 그대로 물려준다 — "영수증을 새로 만들지
+//    않고" 정산 계산에서만 정확히 반영하는 방식(demoData.js transferSessions
+//    참고). 남는 부분(양도로 안 채워진 진짜 미상 등록분)은 기존 그대로
+//    legacyPaid/legacyCount 기준으로 계산해, 원래 있던 동작을 안 건드린다.
+//  · transferBasis 없이 부르면(기존 모든 호출부) legacy lot 1개만 생기는
+//    기존 동작과 100% 동일 — 순수 추가(additive) 헬퍼.
+function buildLegacyLots({ idPrefix, legacyCount, legacyPaid, legacyRate, legacyHasFrozen, legacyPaidAt, transferBasis }) {
+  const lots = [];
+  const tbCount = Math.max(0, Math.min(Number(transferBasis?.count) || 0, legacyCount));
+  const restCount = legacyCount - tbCount;
+  if (tbCount > 0) {
+    const unit = Number(transferBasis.unit) || 0;
+    lots.push({
+      id: `${idPrefix}:transfer`,
+      paymentId: null,
+      paidAt: transferBasis.at || '',
+      order: -1,
+      count: tbCount,
+      paid: unit * tbCount,
+      unit,
+      rate: transferBasis.rate != null ? Number(transferBasis.rate) : null,
+      hasFrozen: transferBasis.rate != null,
+      label: '양도',
+      reEnrollNo: null,
+      legacy: true,
+      transferred: true,
+    });
+  }
+  if (restCount > 0 || (legacyPaid || 0) > 0) {
+    lots.push({
+      id: `${idPrefix}:legacy`,
+      paymentId: null,
+      paidAt: legacyPaidAt || '',
+      order: -1,
+      count: restCount,
+      paid: legacyPaid || 0,
+      unit: restCount > 0 ? (legacyPaid || 0) / restCount : 0,
+      rate: legacyRate,
+      hasFrozen: !!legacyHasFrozen,
+      label: null,
+      reEnrollNo: null,
+      legacy: true,
+    });
+  }
+  return lots;
+}
+
+export function buildTrainerLots({ payments = [], trainerId, settings, trainerRegTotal, transferBasis = null }) {
   const tid = trainerId;
   const frozenRate = (p) => {
     const r = p.splitRateAtPay && p.splitRateAtPay[tid];
@@ -383,20 +433,13 @@ export function buildTrainerLots({ payments = [], trainerId, settings, trainerRe
   const lots = [];
   const legacyCount = Math.max(0, (Number(trainerRegTotal) || 0) - explicitCount);
   if (legacyCount > 0 || legacyPaid > 0) {
-    lots.push({
-      id: `legacy:${tid}`,
-      paymentId: null,
-      paidAt: legacyPaidAt || '',
-      order: -1,
-      count: legacyCount,
-      paid: legacyPaid,
-      unit: legacyCount > 0 ? legacyPaid / legacyCount : 0,
-      rate: legacyRateBase > 0 ? Math.round(legacyRateW / legacyRateBase) : null,
-      hasFrozen: legacyHasFrozen,
-      label: null,
-      reEnrollNo: null,
-      legacy: true,
-    });
+    lots.push(...buildLegacyLots({
+      idPrefix: `legacy:${tid}`,
+      legacyCount, legacyPaid,
+      legacyRate: legacyRateBase > 0 ? Math.round(legacyRateW / legacyRateBase) : null,
+      legacyHasFrozen, legacyPaidAt,
+      transferBasis,
+    }));
   }
   return [...lots, ...explicit].filter(l => (Number(l.count) || 0) > 0 || (Number(l.paid) || 0) > 0);
 }
@@ -415,6 +458,56 @@ export function lotForConsumedIndex(lots, consumedIndex) {
     start += count;
   }
   return null;
+}
+
+// [2026-08-10 추가 — 회원↔회원 세션 양도] 지금 막 양도되려는 n회(원래 회원의
+// 잔여 세션 중 "다음에 소진될" n개)가 실제로 얼마짜리였는지(단가·정산비율)를
+// 계산한다. 양도 시점에 이 값을 한 번 스냅샷 떠서 대상 회원의 세션에 실어두면,
+// 새 결제 기록 없이도 정산 화면에서 정확한 금액·비율로 자동 계산된다
+// (demoData.js transferSessions → buildLegacyLots가 소비).
+//  · remainingBefore/total로 "몇 번째로 소진될 세션들인지"(consumedIndex)를 구하고,
+//    그 구간이 걸치는 lot(들)의 unit/rate를 (세션 수로) 가중평균한다 — 여러 회차에
+//    걸쳐 있어도(예: 회차 경계에 걸린 양도) 정확히 안분된다.
+//  · transferBasis를 넘기면(원래 회원 자신도 예전에 양도로 받은 세션이면) 그 값도
+//    반영해 다단계 양도(A→B→C)도 정확하게 이어진다.
+export function computeTransferBasis({ payments, trainerId, settings, trainerRegTotal, transferBasis = null, remainingBefore, n }) {
+  const lots = buildTrainerLots({ payments, trainerId, settings, trainerRegTotal, transferBasis });
+  const total = Number(trainerRegTotal) || 0;
+  const remaining = Math.max(0, Number(remainingBefore) || 0);
+  const consumed = Math.max(0, total - remaining);
+  const count = Math.max(0, Math.min(Number(n) || 0, remaining));
+  if (count <= 0) return { unit: 0, rate: null, count: 0 };
+  let paidSum = 0, covered = 0, rateW = 0, rateBase = 0;
+  for (let i = 0; i < count; i++) {
+    const lot = lotForConsumedIndex(lots, consumed + i);
+    if (!lot) continue;
+    const u = Number(lot.unit) || 0;
+    paidSum += u;
+    covered += 1;
+    if (lot.rate != null) { rateW += Number(lot.rate) * u; rateBase += u; }
+  }
+  return {
+    unit: covered > 0 ? paidSum / covered : 0,
+    rate: rateBase > 0 ? Math.round(rateW / rateBase) : null,
+    count,
+  };
+}
+
+// [2026-08-10 추가] 대상 회원의 기존 transferBasis(있으면)에 새 양도분을
+// 가중평균으로 합친다 — 같은 회원·트레이너 슬롯에 여러 번 양도가 들어와도
+// 누적된 평균 단가·비율이 정확히 유지된다.
+export function mergeTransferBasis(existing, incoming) {
+  if (!incoming || (Number(incoming.count) || 0) <= 0) return existing || null;
+  if (!existing || !(Number(existing.count) > 0)) {
+    return { unit: incoming.unit, rate: incoming.rate, count: incoming.count, at: new Date().toISOString() };
+  }
+  const totalCount = existing.count + incoming.count;
+  const unit = ((existing.unit * existing.count) + (incoming.unit * incoming.count)) / totalCount;
+  const existingPaid = existing.unit * existing.count;
+  const incomingPaid = incoming.unit * incoming.count;
+  const rw = (existing.rate != null ? existing.rate * existingPaid : 0) + (incoming.rate != null ? incoming.rate * incomingPaid : 0);
+  const rb = (existing.rate != null ? existingPaid : 0) + (incoming.rate != null ? incomingPaid : 0);
+  return { unit, rate: rb > 0 ? Math.round(rw / rb) : null, count: totalCount, at: new Date().toISOString() };
 }
 
 export function computeSessionSettlement({ trainers, members, schedules, payments, records, settings, ym, getOverride }) {
@@ -581,22 +674,19 @@ export function computeSessionSettlement({ trainers, members, schedules, payment
       if (legacyCount > 0 || (legacy?.paid || 0) > 0) {
         const paid = legacy?.paid || 0;
         const rate = legacy?.rateBase > 0 ? Math.round(legacy.rateW / legacy.rateBase) : null;
-        lots.push({
-          id: `legacy:${m.id}:${tid}`,
-          paymentId: null,
-          paidAt: legacy?.paidAt || '',
-          order: -1,
-          count: legacyCount,
-          paid,
-          unit: legacyCount > 0 ? paid / legacyCount : 0,
-          rate,
-          hasFrozen: !!legacy?.hasFrozen,
-          label: null,
-          reEnrollNo: null,
-          legacy:true,
-        });
+        // [2026-08-10 추가] 이 회원이 이 트레이너에게서 받은 세션 중 양도로 들어온
+        // 몫이 있으면(ts[tid]?.transferBasis) legacy 구간을 "양도분" lot과 "그 외
+        // 미상 등록분" lot으로 나눠, 양도분은 원래 회원이 쓰던 단가·비율을 그대로
+        // 쓴다 — buildTrainerLots(단일 트레이너용)와 동일한 헬퍼를 재사용해 두
+        // 계산 경로가 어긋나지 않게 한다.
+        lots.push(...buildLegacyLots({
+          idPrefix: `legacy:${m.id}:${tid}`,
+          legacyCount, legacyPaid: paid, legacyRate: rate,
+          legacyHasFrozen: !!legacy?.hasFrozen, legacyPaidAt: legacy?.paidAt,
+          transferBasis: ts[tid]?.transferBasis || null,
+        }));
       }
-      memberTrainerLots[m.id][tid] = [...lots, ...explicit].filter(l => (Number(l.count)||0) > 0 || (Number(l.paid)||0) > 0);
+      memberTrainerLots[m.id][tid] = [...lots, ...explicit].filter(l => (Number(l.count) || 0) > 0 || (Number(l.paid) || 0) > 0);
     });
   });
 

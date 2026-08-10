@@ -901,7 +901,8 @@ describe('세션 양도 — 회원↔회원(toMemberId)', () => {
     const freshA = store.getMembers().find(m => m.id === a.id);
     const freshB = store.getMembers().find(m => m.id === b.id);
     expect(freshA.trainerSessions.t1.remaining).toBe(12);
-    expect(freshB.trainerSessions.t2).toEqual({ total: 8, remaining: 8 });
+    expect(freshB.trainerSessions.t2.total).toBe(8);
+    expect(freshB.trainerSessions.t2.remaining).toBe(8);
   });
 
   it('트레이너 고정 회원→회원: fromTid===toTid 여도 회원이 다르면 허용된다(핵심 요구사항)', async () => {
@@ -909,7 +910,8 @@ describe('세션 양도 — 회원↔회원(toMemberId)', () => {
     const b = await store.addMember({ name: '양도B2', trainerSessions: {} });
     await expect(store.transferSessions(a.id, { fromTid: 't1', toTid: 't1', count: 4, toMemberId: b.id })).resolves.toBeTruthy();
     const freshB = store.getMembers().find(m => m.id === b.id);
-    expect(freshB.trainerSessions.t1).toEqual({ total: 4, remaining: 4 });
+    expect(freshB.trainerSessions.t1.total).toBe(4);
+    expect(freshB.trainerSessions.t1.remaining).toBe(4);
   });
 
   it('같은 회원(toMemberId 없음 또는 자기 자신)이면서 fromTid===toTid면 여전히 거부(자기 자신 이전 방지 유지)', async () => {
@@ -923,7 +925,8 @@ describe('세션 양도 — 회원↔회원(toMemberId)', () => {
     const b = await store.addMember({ name: '양도B4', trainerSessions: { t1: { total: 5, remaining: 3 } } });
     await store.transferSessions(a.id, { fromTid: 't1', toTid: 't1', count: 6, toMemberId: b.id });
     const freshB = store.getMembers().find(m => m.id === b.id);
-    expect(freshB.trainerSessions.t1).toEqual({ total: 11, remaining: 9 });
+    expect(freshB.trainerSessions.t1.total).toBe(11);
+    expect(freshB.trainerSessions.t1.remaining).toBe(9);
   });
 
   it('존재하지 않는 회원으로는 양도할 수 없다', async () => {
@@ -967,6 +970,78 @@ describe('세션 양도 — 회원↔회원(toMemberId)', () => {
     await store.transferSessions(a.id, { fromTid: 't1', toTid: 't2', count: 6, toMemberId: b.id });
     const freshA = store.getMembers().find(m => m.id === a.id);
     expect(freshA.trainerSessions.t1).toBeUndefined();
+  });
+});
+
+// ── [2026-08-10 신규] 회원↔회원 양도 — 정산 단가·비율 이어받기(transferBasis) ──
+// 사용자 시나리오: "A회원이 A트레이너에게 50%로 정산되고 있었는데, B회원에게
+// 양도하면서 B트레이너가 담당하게 되면, 넘어간 횟수는 B트레이너 정산에도
+// 그대로 50%(+원래 단가)로 반영돼야 한다 — 영수증을 새로 만들 필요는 없다."
+describe('세션 양도 — 회원↔회원 정산 단가·비율 이어받기(transferBasis)', () => {
+  it('A의 결제(트레이너 t1, 회당 단가·정산비율 50%)에서 넘어간 세션만큼 단가·비율을 그대로 계산해 B의 슬롯에 싣는다', async () => {
+    const a = await store.addMember({ name: '정산양도A1', trainerSessions: { t1: { total: 10, remaining: 10 } } });
+    const b = await store.addMember({ name: '정산양도B1', trainerSessions: {} });
+    // A가 t1에게 100만원 결제(카드 수수료·부가세 없는 수단으로 단가를 깔끔하게), 10회 등록, 정산비율 50% 박제.
+    await store.addPayment(a.id, {
+      paidAt: '2026-06-01', amount: 1000000, method: 'cash',
+      trainerIds: ['t1'], splitRateAtPay: { t1: 50 },
+      sessionAdds: [{ trainerId: 't1', count: 10 }],
+    });
+    await store.transferSessions(a.id, { fromTid: 't1', toTid: 't2', count: 4, toMemberId: b.id });
+    const freshB = store.getMembers().find(m => m.id === b.id);
+    const basis = freshB.trainerSessions.t2.transferBasis;
+    expect(basis).toBeTruthy();
+    expect(basis.count).toBe(4);
+    expect(basis.unit).toBeCloseTo(100000, 0); // 100만원 ÷ 10회 = 회당 10만원
+    expect(basis.rate).toBe(50); // 정산비율 50%가 그대로 이어짐
+  });
+
+  it('A의 결제 기록(영수증) 자체는 전혀 건드리지 않는다(양도 후에도 A 결제 그대로)', async () => {
+    const a = await store.addMember({ name: '정산양도A2', trainerSessions: { t1: { total: 10, remaining: 10 } } });
+    const b = await store.addMember({ name: '정산양도B2', trainerSessions: {} });
+    await store.addPayment(a.id, {
+      paidAt: '2026-06-01', amount: 1000000, method: 'cash',
+      trainerIds: ['t1'], splitRateAtPay: { t1: 50 },
+      sessionAdds: [{ trainerId: 't1', count: 10 }],
+    });
+    await store.transferSessions(a.id, { fromTid: 't1', toTid: 't2', count: 4, toMemberId: b.id });
+    const payA = store.getPayments(a.id)[0];
+    const payB = store.getPayments(b.id);
+    expect(payA.amount).toBe(1000000);
+    expect(payA.trainerIds).toEqual(['t1']);
+    expect(payA.sessionAdds).toEqual([{ trainerId: 't1', count: 10 }]);
+    expect(payB.length).toBe(0); // B에게는 새 영수증이 생기지 않는다(요청사항)
+  });
+
+  it('결제가 전혀 없는 세션(단가 0원)을 양도하면 transferBasis도 단가 0으로 정직하게 기록된다(값을 지어내지 않음)', async () => {
+    const a = await store.addMember({ name: '정산양도A3', trainerSessions: { t1: { total: 10, remaining: 10 } } });
+    const b = await store.addMember({ name: '정산양도B3', trainerSessions: {} });
+    await store.transferSessions(a.id, { fromTid: 't1', toTid: 't2', count: 4, toMemberId: b.id });
+    const freshB = store.getMembers().find(m => m.id === b.id);
+    expect(freshB.trainerSessions.t2.transferBasis).toEqual({ unit: 0, rate: null, count: 4, at: expect.any(String) });
+  });
+
+  it('같은 슬롯에 두 번 양도가 들어오면 단가·비율이 세션 수 가중평균으로 누적된다', async () => {
+    const a1 = await store.addMember({ name: '정산양도A4a', trainerSessions: { t1: { total: 10, remaining: 10 } } });
+    const a2 = await store.addMember({ name: '정산양도A4b', trainerSessions: { t1: { total: 10, remaining: 10 } } });
+    const b  = await store.addMember({ name: '정산양도B4', trainerSessions: {} });
+    await store.addPayment(a1.id, { paidAt: '2026-06-01', amount: 1000000, method: 'cash', trainerIds: ['t1'], sessionAdds: [{ trainerId: 't1', count: 10 }] }); // 회당 10만원
+    await store.addPayment(a2.id, { paidAt: '2026-06-01', amount: 400000,  method: 'cash', trainerIds: ['t1'], sessionAdds: [{ trainerId: 't1', count: 10 }] }); // 회당 4만원
+    await store.transferSessions(a1.id, { fromTid: 't1', toTid: 't2', count: 5, toMemberId: b.id }); // 5회 × 10만원
+    await store.transferSessions(a2.id, { fromTid: 't1', toTid: 't2', count: 5, toMemberId: b.id }); // 5회 × 4만원
+    const freshB = store.getMembers().find(m => m.id === b.id);
+    const basis = freshB.trainerSessions.t2.transferBasis;
+    expect(basis.count).toBe(10);
+    // (5×100000 + 5×40000) / 10 = 70000
+    expect(basis.unit).toBeCloseTo(70000, 0);
+  });
+
+  it('같은 회원 안 트레이너→트레이너 양도(destType=trainer)에는 transferBasis가 안 생긴다(기존 방식 그대로 결제금 자체가 이동하므로 별도 스냅샷 불필요)', async () => {
+    const a = await store.addMember({ name: '정산양도A5', trainerSessions: { t1: { total: 10, remaining: 10 } } });
+    await store.addPayment(a.id, { paidAt: '2026-06-01', amount: 1000000, method: 'cash', trainerIds: ['t1'], sessionAdds: [{ trainerId: 't1', count: 10 }] });
+    await store.transferSessions(a.id, { fromTid: 't1', toTid: 't2', count: 4 }); // toMemberId 없음 — 기존 동작
+    const fresh = store.getMembers().find(m => m.id === a.id);
+    expect(fresh.trainerSessions.t2.transferBasis).toBeUndefined();
   });
 });
 
