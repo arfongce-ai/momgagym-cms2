@@ -159,11 +159,15 @@ const TIMER_ACTION_KEYWORDS = [
 ];
 
 /**
- * 도구·동작 둘 다 확신 있게 찾았을 때만 { tool, action }을 반환한다. 숫자가
- * 섞여 있거나 도구·동작 중 하나라도 못 찾으면 null(→ 호출부가 Claude로 넘김).
+ * 도구·동작을 확신 있게 찾으면 { tool, action }(+가능하면 seconds 또는 bpm)을
+ * 반환한다. 도구·동작 중 하나라도 못 찾으면 null(→ 호출부가 Claude로 넘김).
+ * [무료 확장 2026-08-10] countdown(초시계 아님, 타이머)·metronome은 숫자가
+ * "딱 하나의 의미"로만 쓰여서(시간 하나, 템포 하나) 그 숫자까지 규칙 기반으로
+ * 안전하게 뽑는다. interval은 운동·휴식·라운드 여러 숫자가 뒤섞여서 어느
+ * 숫자가 뭔지 문장을 "이해"해야 구분되므로 숫자가 하나라도 있으면 여전히
+ * 시도하지 않고 Claude로 넘긴다(오배정 위험이 더 크기 때문).
  */
 export function matchRuleBasedTimerControl(commandText) {
-  if (/\d/.test(commandText)) return null;
   const normalized = normalize(commandText);
   let tool = null;
   for (const { id, keywords } of TIMER_TOOL_KEYWORDS) {
@@ -184,6 +188,37 @@ export function matchRuleBasedTimerControl(commandText) {
   // 랩(구간기록)은 초시계 전용 — control_timer 도구 설명(functions/api/voice-command.js)과
   // 동일 규칙. 다른 도구에 랩을 요청하면 확신 없는 걸로 보고 Claude로 넘긴다.
   if (action === 'lap' && tool !== 'stopwatch') return null;
+
+  const hasDigit = /\d/.test(commandText);
+
+  if (tool === 'interval') {
+    // 숫자가 하나라도 있으면 운동/휴식/라운드 중 뭔지 확신할 수 없다.
+    if (hasDigit) return null;
+    return { tool, action };
+  }
+
+  if (tool === 'countdown' && action === 'start' && hasDigit) {
+    const minMatch = commandText.match(/(\d+)\s*분/);
+    const secMatch = commandText.match(/(\d+)\s*초/);
+    if (!minMatch && !secMatch) return null; // 숫자는 있는데 분/초 단위를 못 읽으면 확신 없는 걸로.
+    const min = minMatch ? parseInt(minMatch[1], 10) : 0;
+    const sec = secMatch ? parseInt(secMatch[1], 10) : 0;
+    return { tool, action, seconds: min * 60 + sec };
+  }
+
+  if (tool === 'metronome' && action === 'start' && hasDigit) {
+    const bpmMatch = commandText.match(/(\d+)/);
+    const bpm = bpmMatch ? parseInt(bpmMatch[1], 10) : null;
+    // control_timer 도구 설명의 허용 범위(40~220)와 동일 — 범위 밖이면
+    // 숫자를 엉뚱하게 읽었을 가능성이 있으니 확신 없는 걸로 보고 Claude로.
+    if (!bpm || bpm < 40 || bpm > 220) return null;
+    return { tool, action, bpm };
+  }
+
+  // 그 외 조합(stopwatch/pause/reset/lap 등, 또는 위에서 안 걸린 나머지)에
+  // 숫자가 섞이면 다른 의도일 수 있으니 안전하게 Claude로 넘긴다.
+  if (hasDigit) return null;
+
   return { tool, action };
 }
 
@@ -248,11 +283,11 @@ export async function processVoiceCommand({
     const cmd = {
       tool: ruleTimerCmd.tool,
       action: ruleTimerCmd.action,
-      seconds: null,
+      seconds: typeof ruleTimerCmd.seconds === 'number' ? ruleTimerCmd.seconds : null,
       workSec: null,
       restSec: null,
       rounds: null,
-      bpm: null,
+      bpm: typeof ruleTimerCmd.bpm === 'number' ? ruleTimerCmd.bpm : null,
     };
     const deliveredLive = publishTimerControl(cmd);
     if (!deliveredLive) {

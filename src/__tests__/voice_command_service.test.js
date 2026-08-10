@@ -183,10 +183,46 @@ describe('matchRuleBasedTimerControl() — 무료 규칙 기반 단순 타이머
     expect(matchRuleBasedTimerControl('메트로놈 꺼줘')).toEqual({ tool: 'metronome', action: 'pause' });
   });
 
-  it('숫자가 하나라도 섞이면 null(정확한 값 파싱은 Claude 몫으로 남김)', () => {
-    expect(matchRuleBasedTimerControl('타이머 30초로 시작해줘')).toBeNull();
+  it('타이머(카운트다운)에 초 단위 숫자가 있으면 seconds까지 뽑는다(2026-08-10 확장)', () => {
+    expect(matchRuleBasedTimerControl('타이머 30초로 시작해줘')).toEqual({
+      tool: 'countdown', action: 'start', seconds: 30,
+    });
+  });
+
+  it('타이머에 분 단위, 또는 분+초 조합도 뽑는다', () => {
+    expect(matchRuleBasedTimerControl('타이머 3분으로 시작해줘')).toEqual({
+      tool: 'countdown', action: 'start', seconds: 180,
+    });
+    expect(matchRuleBasedTimerControl('타이머 2분 30초로 시작해줘')).toEqual({
+      tool: 'countdown', action: 'start', seconds: 150,
+    });
+  });
+
+  it('메트로놈에 bpm 숫자가 있으면(40~220 범위 안) bpm까지 뽑는다(2026-08-10 확장)', () => {
+    expect(matchRuleBasedTimerControl('메트로놈 120bpm으로 켜줘')).toEqual({
+      tool: 'metronome', action: 'start', bpm: 120,
+    });
+    expect(matchRuleBasedTimerControl('메트로놈 90으로 시작해줘')).toEqual({
+      tool: 'metronome', action: 'start', bpm: 90,
+    });
+  });
+
+  it('메트로놈 bpm이 정상 범위(40~220) 밖이면 확신 없는 걸로 보고 null(잘못 읽었을 가능성)', () => {
+    expect(matchRuleBasedTimerControl('메트로놈 500으로 켜줘')).toBeNull();
+    expect(matchRuleBasedTimerControl('메트로놈 10으로 켜줘')).toBeNull();
+  });
+
+  it('타이머에 숫자는 있는데 분/초 단위를 못 읽으면(예: 순번) 확신 없는 걸로 null', () => {
+    expect(matchRuleBasedTimerControl('타이머 2번째로 시작해줘')).toBeNull();
+  });
+
+  it('인터벌은 숫자가 하나라도 섞이면 여전히 null(운동/휴식/라운드 중 뭔지 확신 못 함 — 회귀 방지)', () => {
     expect(matchRuleBasedTimerControl('인터벌 운동40초 휴식20초 8라운드로 시작해줘')).toBeNull();
-    expect(matchRuleBasedTimerControl('메트로놈 120bpm으로 켜줘')).toBeNull();
+    expect(matchRuleBasedTimerControl('인터벌 3라운드로 시작해줘')).toBeNull();
+  });
+
+  it('초시계(랩 포함)에 숫자가 섞이면 여전히 null(초시계엔 숫자 설정 개념이 없음)', () => {
+    expect(matchRuleBasedTimerControl('초시계 2번 시작해줘')).toBeNull();
   });
 
   it('도구는 있는데 동작이 없으면(애매함) null', () => {
@@ -216,6 +252,15 @@ describe('matchRuleBasedTimerControl() — 무료 규칙 기반 단순 타이머
     expect(body).toContain('setPendingTimerCommand(cmd);');
     expect(body).toContain("setPendingVoiceTarget({ testId: 'timer' });");
     expect(body).toContain("return { type: 'timer_control', cmd, deliveredLive };");
+  });
+
+  it('규칙 기반으로 뽑은 seconds/bpm이 그대로 cmd에 실려간다(파싱만 하고 안 쓰는 회귀 방지)', () => {
+    const src = readSrc('src', 'services', 'voiceCommandService.js');
+    const start = src.indexOf('const ruleTimerCmd = matchRuleBasedTimerControl(transcript);');
+    const end = src.indexOf('const deliveredLive = publishTimerControl(cmd);', start);
+    const body = src.slice(start, end);
+    expect(body).toContain("seconds: typeof ruleTimerCmd.seconds === 'number' ? ruleTimerCmd.seconds : null,");
+    expect(body).toContain("bpm: typeof ruleTimerCmd.bpm === 'number' ? ruleTimerCmd.bpm : null,");
   });
 });
 
