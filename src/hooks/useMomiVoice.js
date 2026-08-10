@@ -280,13 +280,50 @@ export function useMomiVoice({ onCommand, onWakeOnly, onMismatch, onErrorOccurre
             try {
               recognition.start();
             } catch (e2) {
-              // 재시도까지 실패하면 진짜 문제(권한 철회·기기 분리 등)일 가능성이
-              // 높다 — 예전처럼 조용히 넘어가지 않고, listening 상태를 실제
-              // 상태(꺼짐)에 맞게 내려서 화면 표시등이 거짓으로 "듣고 있음"을
-              // 보여주지 않게 하고, 사용자가 원인을 알 수 있게 알린다.
-              console.warn('[모미] 재시작 재시도도 실패:', e2?.message || e2);
-              setListening(false);
-              if (onErrorOccurred) onErrorOccurred('restart-failed');
+              // [버그 수정 2026-08-10] "마이크가 아예 반응을 안 해요" 문의 대응.
+              // 예전엔 재시도가 이번 1번뿐이라, 여기서도 실패하면 바로 포기하고
+              // "새로고침해주세요" 안내만 띄운 채 끝났다 — 그런데 키오스크는
+              // 사람이 화면을 계속 보고 있는 기기가 아니라서, 그 안내를 아무도
+              // 못 보고 마이크가 그대로 죽어있는 채 방치되는 경우가 실제로
+              // 생겼다. OS 오디오 장치가 잠깐 바빴던 것처럼 조금 더 기다리면
+              // 저절로 풀리는 일시적 경합도 있어서, 완전히 포기하기 전에 두
+              // 번 더 시도한다 — 이번엔 abort()로 세션 상태를 확실히 정리한
+              // 뒤 start()를 불러서, "이미 시작된 것으로 착각한 상태"처럼
+              // start()만 반복해서는 안 풀리는 경우도 같이 커버한다.
+              console.warn('[모미] 재시작 재시도도 실패, 한 번 더 시도:', e2?.message || e2);
+              setTimeout(() => {
+                if (recognitionRef.current !== recognition || !shouldRestartRef.current || pausedForSpeechRef.current) return;
+                try {
+                  recognition.abort();
+                } catch (eAbort) {
+                  // no-op — 이미 멈춰 있는 상태일 수 있다.
+                }
+                try {
+                  recognition.start();
+                } catch (e3) {
+                  console.warn('[모미] 세 번째 재시도도 실패, 마지막으로 한 번 더:', e3?.message || e3);
+                  setTimeout(() => {
+                    if (recognitionRef.current !== recognition || !shouldRestartRef.current || pausedForSpeechRef.current) return;
+                    try {
+                      recognition.abort();
+                    } catch (eAbort2) {
+                      // no-op
+                    }
+                    try {
+                      recognition.start();
+                    } catch (e4) {
+                      // 네 번 다 실패하면 그때는 진짜 문제(권한 철회·기기 분리
+                      // 등)일 가능성이 높다 — 예전처럼 조용히 넘어가지 않고,
+                      // listening 상태를 실제 상태(꺼짐)에 맞게 내려서 화면
+                      // 표시등이 거짓으로 "듣고 있음"을 보여주지 않게 하고,
+                      // 사용자가 원인을 알 수 있게 알린다.
+                      console.warn('[모미] 재시작 재시도 모두 실패:', e4?.message || e4);
+                      setListening(false);
+                      if (onErrorOccurred) onErrorOccurred('restart-failed');
+                    }
+                  }, 2000);
+                }
+              }, 800);
             }
           }, 300);
         }
