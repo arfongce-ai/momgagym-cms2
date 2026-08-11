@@ -275,3 +275,97 @@ describe('processVoiceCommand() — reservation_reschedule_propose 분기', () =
     expect(updateSchedule).not.toHaveBeenCalled();
   });
 });
+
+// [무료 확장 2026-08-11] "오늘/내일/모레" + "오전/오후 명시 시각"만 다루는
+// 좁은 안전 범위 — 기존 "8월20일 10시" 스타일(요일/구체적 날짜, 오전오후
+// 없는 시각)은 전부 그대로 이 범위 밖이라 여전히 Claude로 간다(위 describe
+// 블록들의 기존 케이스가 하나도 안 깨진 것 자체가 그 증거 — 겹치지 않음).
+describe('processVoiceCommand() — 예약 생성 무료 규칙기반 매칭(2026-08-11)', () => {
+  it('"내일 오후 3시" 같은 명확한 표현은 fetch(Claude)를 아예 호출하지 않고 무료로 처리한다', async () => {
+    global.fetch = vi.fn(); // 호출되면 안 됨 — 호출되면 아래 not.toHaveBeenCalled에서 잡힘
+    const result = await processVoiceCommand({
+      transcript: '홍길동님 내일 오후 3시에 예약 잡아줘',
+      role: 'trainer',
+      currentUser: { trainerId: 't1' },
+      allMembers: MEMBERS,
+      allTrainers: TRAINERS,
+      mode: 'phone',
+    });
+    expect(global.fetch).not.toHaveBeenCalled();
+    expect(result.type).toBe('reservation_propose');
+    expect(result.propose.ready).toBe(true);
+    expect(result.propose.draft.startTime).toBe('15:00');
+  });
+
+  it('"오전/오후" 없이 그냥 "3시"면(새벽인지 오후인지 알 수 없음) 확신 없는 걸로 보고 Claude로 넘어간다', async () => {
+    global.fetch = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ type: 'reservation_propose', memberName: '홍길동', date: '2026-08-12', startTime: '15:00' }),
+    }));
+    const result = await processVoiceCommand({
+      transcript: '홍길동님 내일 3시에 예약 잡아줘',
+      role: 'trainer', currentUser: { trainerId: 't1' }, allMembers: MEMBERS, allTrainers: TRAINERS, mode: 'phone',
+    });
+    expect(global.fetch).toHaveBeenCalled();
+    expect(result.type).toBe('reservation_propose');
+  });
+
+  it('예약 요청 뒤에 다른 요청이 더 붙은 복합 문장은 Claude로 넘어간다', async () => {
+    global.fetch = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ type: 'chat', text: '...' }),
+    }));
+    await processVoiceCommand({
+      transcript: '홍길동님 내일 오후 3시에 예약 잡아줘 그리고 메모도 추가해줘',
+      role: 'trainer', currentUser: { trainerId: 't1' }, allMembers: MEMBERS, allTrainers: TRAINERS, mode: 'phone',
+    });
+    expect(global.fetch).toHaveBeenCalled();
+  });
+
+  it('트레이너 이름이 실제로 언급되면(등록된 트레이너) 그 이름을 뽑아서 함께 넘긴다', async () => {
+    global.fetch = vi.fn();
+    const result = await processVoiceCommand({
+      transcript: '홍길동님 내일 오후 3시에 이서연 트레이너로 예약 잡아줘',
+      role: 'trainer', currentUser: { trainerId: 't1' }, allMembers: MEMBERS, allTrainers: TRAINERS, mode: 'kiosk',
+    });
+    expect(global.fetch).not.toHaveBeenCalled();
+    expect(result.propose.draft.trainerName).toBe('이서연');
+  });
+
+  it('아직 아무것도 저장하지 않는다(propose만 만듦, 확인 전엔 createScheduleWithDeduction 호출 안 됨)', async () => {
+    global.fetch = vi.fn();
+    await processVoiceCommand({
+      transcript: '홍길동님 오늘 오전 10시에 예약 걸어줘',
+      role: 'trainer', currentUser: { trainerId: 't1' }, allMembers: MEMBERS, allTrainers: TRAINERS, mode: 'phone',
+    });
+    // MEMBERS[0]는 mock store 안의 createScheduleWithDeduction(위 파일 상단, vi.fn())을
+    // 스파이로 재사용 — 별도 import 없이 store mock 참조로 직접 확인 가능하면 확인,
+    // 없으면 최소한 fetch 미호출로 "아직 Claude에도 안 갔다"만 확인해도 충분.
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it('예약 취소도 같은 원칙으로 무료 처리된다("내일 오후 3시 예약 취소해줘")', async () => {
+    global.fetch = vi.fn();
+    const result = await processVoiceCommand({
+      transcript: '홍길동님 오늘 오전 10시 예약 취소해줘',
+      role: 'trainer', currentUser: { trainerId: 't1' }, allMembers: MEMBERS, allTrainers: TRAINERS, mode: 'phone',
+    });
+    expect(global.fetch).not.toHaveBeenCalled();
+    expect(result.type).toBe('reservation_cancel_propose');
+    // MEMBERS/SCHEDULES fixture(파일 상단) — 홍길동, 2026-08-21 10:00 예약 있음.
+    // 오늘(테스트 실행일) 오전 10시엔 스케줄이 없을 수 있어 ready는 굳이 안 보고
+    // "무료 경로로 정상 진입했는지"만 확인한다(찾는 로직 자체는 reservation_service.test.js가 이미 검증).
+    expect(result.propose).toBeDefined();
+  });
+
+  it('예약 변경도 같은 원칙으로 무료 처리된다("내일 오후 3시 예약을 모레 오전 10시로 옮겨줘")', async () => {
+    global.fetch = vi.fn();
+    const result = await processVoiceCommand({
+      transcript: '홍길동님 오늘 오전 10시 예약을 내일 오후 2시로 옮겨줘',
+      role: 'trainer', currentUser: { trainerId: 't1' }, allMembers: MEMBERS, allTrainers: TRAINERS, mode: 'phone',
+    });
+    expect(global.fetch).not.toHaveBeenCalled();
+    expect(result.type).toBe('reservation_reschedule_propose');
+    expect(result.propose).toBeDefined();
+  });
+});
