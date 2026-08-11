@@ -56,12 +56,30 @@ function getSpeechRecognition() {
 // 짧게 끊어 듣고, 매번 onend에서 재시작해 이어붙이는 방식으로 우회한다.
 // iPadOS 13+는 navigator.platform이 'MacIntel'로 나와 유저에이전트만으론 구분이
 // 안 되고, 터치 포인트 유무로 실제 Mac 데스크탑과 구분해야 한다.
-function isIOS() {
+export function isIOS() {
   if (typeof navigator === 'undefined') return false;
   const ua = navigator.userAgent || '';
   const isIPhoneOrIPad = /iPad|iPhone|iPod/.test(ua);
   const isIPadOS13Plus = navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1;
   return isIPhoneOrIPad || isIPadOS13Plus;
+}
+
+// [아이폰 음성인식 진단 2026-08-11] "아이폰에서는 음성인식 안 됨" 문의 대응.
+// 애플이 iOS 홈 화면에 추가한 앱(PWA, manifest.json display:standalone)을
+// 실행하는 WKWebView 컨테이너는, 같은 기기의 일반 Safari 탭과 달리 마이크·
+// 음성인식류 웹 API 지원이 몇 년째 불완전하다(iPhone 자체가 아니라 "홈 화면
+// 아이콘으로 실행"이라는 실행 방식 자체의 애플 플랫폼 제약 — 코드로 완전히
+// 우회할 방법이 없다). SpeechRecognition 생성자 자체는 존재해서(supported
+// 검사는 통과) 버튼은 눌리는데 결과가 전혀 안 올라오는 형태로 나타나는 게
+// 특징이라, 아래에서 "지원 안 함" 여부와 별개로 이 조합 자체를 감지해서
+// 미리 알려준다 — 실기기로 직접 확인은 못 했지만, 최소한 "왜 안 되는지 전혀
+// 모른 채 조용히 막히는" 것보다는 원인 후보와 우회법(Safari 앱에서 직접 열기)
+// 을 안내하는 쪽이 안전하다.
+export function isIOSStandalone() {
+  if (!isIOS()) return false;
+  if (typeof window === 'undefined') return false;
+  return window.navigator?.standalone === true
+    || (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches);
 }
 
 // [버그 수정 — 웨이크워드 이중 요구 2026-08-09] 실사용 스크린샷으로 확인된 문제:

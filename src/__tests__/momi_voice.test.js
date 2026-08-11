@@ -4,10 +4,10 @@
 // 이 hook 자체(useMomiVoice)는 실제 DOM/SpeechRecognition에 의존해 다른 voice
 // 테스트처럼 정적 소스 패턴을 따르지만, 순수 함수인 matchWakeWord()는 로직이라
 // 직접 import해서 실동작으로 검증한다(맨 아래 describe 참고).
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi, afterEach } from 'vitest';
 import { readFileSync } from 'fs';
 import { join } from 'path';
-import { matchWakeWord } from '../hooks/useMomiVoice.js';
+import { matchWakeWord, isIOSStandalone } from '../hooks/useMomiVoice.js';
 
 const readSrc = (...segs) => readFileSync(join(process.cwd(), ...segs), 'utf8');
 
@@ -499,5 +499,66 @@ describe('useMomiVoice.js — TTS 재생 중 마이크 일시정지(회귀 방�
     const end = src.indexOf('}, [cancelAwaitReply]);', start);
     const body = src.slice(start, end);
     expect(body).toContain('pausedForSpeechRef.current = false;');
+  });
+});
+
+// [아이폰 음성인식 진단 2026-08-11] "아이폰에서 음성인식 안 됨" 문의 대응.
+// isIOSStandalone()은 navigator/window 전역에 의존하는 순수 함수라, 실제
+// jsdom 없이도 그 전역들을 흉내낸 뒤 직접 불러서 검증할 수 있다(테스트가
+// 끝나면 원래 값으로 복원 — 다른 테스트 파일에 영향 없게).
+describe('isIOSStandalone() — 아이폰 홈 화면 아이콘(standalone) 조합 감지', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('아이폰 + navigator.standalone===true 면 감지한다', () => {
+    const nav = { userAgent: 'iPhone', platform: 'iPhone', maxTouchPoints: 5, standalone: true };
+    vi.stubGlobal('navigator', nav);
+    vi.stubGlobal('window', { navigator: nav, matchMedia: undefined });
+    expect(isIOSStandalone()).toBe(true);
+  });
+
+  it('아이폰 + matchMedia(display-mode: standalone) 매치도 감지한다(navigator.standalone 없이도)', () => {
+    const nav = { userAgent: 'iPhone', platform: 'iPhone', maxTouchPoints: 5, standalone: undefined };
+    vi.stubGlobal('navigator', nav);
+    vi.stubGlobal('window', { navigator: nav, matchMedia: (q) => ({ matches: q === '(display-mode: standalone)' }) });
+    expect(isIOSStandalone()).toBe(true);
+  });
+
+  it('아이폰이라도 일반 Safari 탭(둘 다 아님)이면 false', () => {
+    const nav = { userAgent: 'iPhone', platform: 'iPhone', maxTouchPoints: 5, standalone: false };
+    vi.stubGlobal('navigator', nav);
+    vi.stubGlobal('window', { navigator: nav, matchMedia: (q) => ({ matches: false }) });
+    expect(isIOSStandalone()).toBe(false);
+  });
+
+  it('아이폰이 아니면(예: 안드로이드) standalone이어도 false — iOS 특유의 제약이라 다른 기기엔 해당 없음', () => {
+    const nav = { userAgent: 'Android', platform: 'Linux armv8l', maxTouchPoints: 5, standalone: true };
+    vi.stubGlobal('navigator', nav);
+    vi.stubGlobal('window', { navigator: nav, matchMedia: (q) => ({ matches: true }) });
+    expect(isIOSStandalone()).toBe(false);
+  });
+});
+
+describe('GlobalVoiceCommand.jsx — 미지원/아이폰 홈화면 안내(2026-08-11, 예전엔 조용히 return null)', () => {
+  const src = readSrc('src', 'components', 'common', 'GlobalVoiceCommand.jsx');
+
+  it('isIOSStandalone을 useMomiVoice.js에서 가져온다', () => {
+    expect(src).toContain("import { useMomiVoice, isIOSStandalone } from '../../hooks/useMomiVoice';");
+  });
+
+  it('미지원이어도 더 이상 조용히 사라지지 않고(return null 대신) 이유를 보여준다', () => {
+    expect(src).not.toMatch(/if \(!supported\) return null;/);
+    const idx = src.indexOf('if (!supported) {');
+    expect(idx).toBeGreaterThan(-1);
+    const body = src.slice(idx, src.indexOf('showIOSStandaloneHint'));
+    expect(body).toContain('음성인식을 지원하지 않아요');
+    expect(body).toContain('Safari 앱에서 주소를 직접 열어보세요');
+  });
+
+  it('마이크 버튼 자체는 iOS 홈화면 조합이어도 계속 보여준다(다른 iOS 조합에선 될 수도 있어서 아예 막지 않음) — 대신 작은 우회 안내를 같이 띄운다', () => {
+    expect(src).toContain('const showIOSStandaloneHint = isIOSStandalone();');
+    expect(src).toContain('showIOSStandaloneHint && (');
+    expect(src).toContain('홈 화면 아이콘 대신 Safari 앱에서 직접 열어보세요');
   });
 });

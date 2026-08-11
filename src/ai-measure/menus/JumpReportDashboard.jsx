@@ -370,6 +370,10 @@ function AsymmetrySection({ asymmetry, report }) {
 function PowerSection({ report }) {
   const relativePower = report.bodyWeight && report.peakPower ? (report.peakPower / report.bodyWeight).toFixed(1) : null;
   const heightRatio = report.calibHeightCm && report.heightCm ? ((report.heightCm / report.calibHeightCm) * 100).toFixed(1) : null;
+  // [다회차 측정 2026-08-11] report.trials는 2회 이상 측정했을 때만 존재한다
+  // (jumpBiomechanics.js combineJumpTrials — 1회만 하면 아예 안 붙임). 그래서
+  // 이 블록은 예전에 1회만 측정해 저장된 리포트에는 자연스럽게 안 보인다.
+  const trials = Array.isArray(report.trials) ? report.trials : null;
   return (
     <Section title="파워 점프 해석" subtitle="폭발적 힘 · 최고 파워">
       <div className="grid grid-cols-3 gap-2">
@@ -381,12 +385,29 @@ function PowerSection({ report }) {
         파워 점프는 최고 점프 높이, 도약 속도, 최대 파워를 중심으로 폭발적인 힘 생산 능력을 평가합니다.
         정면 촬영에서는 좌우 착지 대칭과 점프 높이 추적이 더 안정적입니다.
       </p>
+      {trials && trials.length > 1 && (
+        <div className="mt-3 rounded-xl border border-amber-500/20 bg-white dark:bg-slate-900/55 p-3">
+          <div className="mb-2 flex items-center justify-between">
+            <p className="text-xs font-black text-amber-700 dark:text-amber-300">회차별 기록 ({trials.length}회 평균)</p>
+          </div>
+          <div className={`grid gap-1 ${trials.length >= 3 ? 'grid-cols-3' : 'grid-cols-2'}`}>
+            {trials.map((t, i) => (
+              <div key={i} className="rounded-lg bg-slate-100/70 dark:bg-slate-800/70 px-2 py-2 text-center">
+                <p className="text-[10px] font-bold text-slate-500">{i + 1}차</p>
+                <p className="text-sm font-mono font-black text-slate-900 dark:text-slate-100">{metric(t.heightCm)}cm</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </Section>
   );
 }
 
 function RsiSection({ report }) {
   const rsi = report.rsi || {};
+  // [다회차 측정 2026-08-11] PowerSection과 동일 원칙 — 2회 이상일 때만.
+  const trials = Array.isArray(report.trials) ? report.trials : null;
   return (
     <Section title="반응 탄성 (RSI)" subtitle="체공 ÷ 접지 · 무단위">
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -400,6 +421,19 @@ function RsiSection({ report }) {
       {report.boxHeightCm != null && (
         <div className="mt-3">
           <SmallInfo label="박스 높이 (트레이너 입력)" value={`${report.boxHeightCm}cm`} />
+        </div>
+      )}
+      {trials && trials.length > 1 && (
+        <div className="mt-3 rounded-xl border border-amber-500/20 bg-white dark:bg-slate-900/55 p-3">
+          <p className="mb-2 text-xs font-black text-amber-700 dark:text-amber-300">회차별 기록 ({trials.length}회 평균)</p>
+          <div className={`grid gap-1 ${trials.length >= 3 ? 'grid-cols-3' : 'grid-cols-2'}`}>
+            {trials.map((t, i) => (
+              <div key={i} className="rounded-lg bg-slate-100/70 dark:bg-slate-800/70 px-2 py-2 text-center">
+                <p className="text-[10px] font-bold text-slate-500">{i + 1}차</p>
+                <p className="text-sm font-mono font-black text-slate-900 dark:text-slate-100">RSI {metric(t.rsi)}</p>
+              </div>
+            ))}
+          </div>
         </div>
       )}
       {Array.isArray(rsi.perCycle) && rsi.perCycle.length > 0 && (

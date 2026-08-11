@@ -12,6 +12,7 @@ import JumpPrecisionAnalysis from './JumpPrecisionAnalysis';
 import JumpUploadAnalysis from './JumpUploadAnalysis';
 import JumpReportDashboard from './JumpReportDashboard';
 import { calcJump } from '../core/performance';
+import { combineJumpTrials, MULTI_TRIAL_JUMP_SUBTYPES, MAX_JUMP_TRIALS } from '../core/jumpBiomechanics';
 import { useHardwareBack } from '../core/useHardwareBack';
 import MeasureRecordConfirm from '../components/MeasureRecordConfirm.jsx';
 import { JUMP_SUBTYPES, JUMP_SUBTYPE_ORDER, LEG_LABEL, engineOf } from '../core/jumpTypes';
@@ -35,7 +36,15 @@ export default function JumpAnalysisHub({ member, onBack, onSave, onSaveToFireba
   // 됨), persist()에서 report에 실어 저장한다. 순수 참고값이라 리포트
   // 점수·유효성 판정에는 전혀 관여하지 않는다.
   const [boxHeightCm, setBoxHeightCm] = useState('');
-  const [view, setView] = useState('measure'); // measure | record | report
+  // [다회차 측정 2026-08-11] CMJ·SJ·DJ·SLJ는 1차~3차까지 반복 측정 후 평균낸다
+  // (jumpBiomechanics.js combineJumpTrials 참고). trials는 "저장 전, 현재
+  // 진행 중인 회차들"만 담는 임시 배열 — 최종 저장(평균)이 끝나면 매번 비운다.
+  const [trials, setTrials] = useState([]);
+  // SLJ 전용: 이번 세션에서 먼저 끝낸 다리('left'|'right'). 아직 아무 다리도
+  // 안 끝냈으면 null — 그 상태에서 한쪽을 끝내야만 "반대쪽도?" 프롬프트가 뜬다
+  // (반대쪽까지 다 끝낸 뒤엔 더 안 물어봄).
+  const [sljFirstLegDone, setSljFirstLegDone] = useState(null);
+  const [view, setView] = useState('measure'); // measure | record | trial_done | slj_other_leg | report
   const [report, setReport] = useState(null);
   const [pending, setPending] = useState(null);   // 측정완료~확인 사이의 리포트 데이터
   const [saveState, setSaveState] = useState('idle'); // idle | saving | saved | error
@@ -45,6 +54,10 @@ export default function JumpAnalysisHub({ member, onBack, onSave, onSaveToFireba
   // [2026-08-10] jumpSubType/leg는 하위 컴포넌트가 이미 report에 채워 보내지만,
   // 혹시 누락되는 경로가 있어도 여기서 한 번 더 보정한다(안전망 — 이중 처리라도
   // 값이 같으면 무해하고, 리포트에 세부 종류가 아예 안 남는 것보다 안전하다).
+  // [다회차 측정 2026-08-11] 예전엔 이 함수가 저장 직후 곧바로 setView('report')
+  // 까지 했는데, 이제 "저장 후 다음이 report인지, trial_done/slj_other_leg
+  // 프롬프트인지"가 갈리므로 view 전환은 호출부(confirmRecord/finishTrials)로
+  // 옮기고 여기는 "저장까지만" 책임진다.
   const persist = useCallback(async (reportData, record = {}) => {
     const withRecord = {
       ...reportData,
@@ -68,8 +81,29 @@ export default function JumpAnalysisHub({ member, onBack, onSave, onSaveToFireba
       } catch (e) { setSaveState('error'); }
     } else { setSaveState('saved'); }
     setReport(saved);
-    setView('report');
+    return saved;
   }, [save, jumpSubType, leg, boxHeightCm]);
+
+  // [다회차 측정 2026-08-11] 누적된 회차(trials)를 평균 내서 최종 저장하고,
+  // 다음 화면을 결정한다 — SLJ는 "이번 세션에서 처음 끝낸 다리"라면 곧바로
+  // report로 안 가고 "반대쪽 다리도 측정할까요?" 프롬프트를 먼저 보여준다
+  // (요청하신 "왼쪽 후 오른쪽으로 안 넘어감" 문제를 여기서 해결 — 반대쪽까지
+  // 마치고 나면(sljFirstLegDone이 이미 채워져 있으면) 더 안 물어보고 바로
+  // report). 반대쪽 리포트를 열면 이미 만들어둔 findSljAsymmetry()가 방금
+  // 막 저장된 첫 다리 기록을 자동으로 찾아 비교해준다(따로 손 안 댐).
+  const finishTrials = useCallback(async (trialsArr) => {
+    const combined = combineJumpTrials(trialsArr, jumpType);
+    if (!combined) return;
+    await persist(combined, {});
+    setTrials([]);
+    setPending(null);
+    if (jumpSubType === 'slj' && sljFirstLegDone === null) {
+      setSljFirstLegDone(leg);
+      setView('slj_other_leg');
+    } else {
+      setView('report');
+    }
+  }, [persist, jumpType, jumpSubType, leg, sljFirstLegDone]);
 
   // 측정 완료(업로드/수동) → 기록·확인 단계로 (즉시 저장하지 않음)
   const handleComplete = useCallback((reportData) => {
@@ -78,13 +112,45 @@ export default function JumpAnalysisHub({ member, onBack, onSave, onSaveToFireba
     setView('record');
   }, []);
 
-  const confirmRecord = useCallback((record) => {
-    if (pending) persist(pending, record);
-  }, [pending, persist]);
+  // [다회차 측정 2026-08-11] RSI(자기 안에서 이미 여러 사이클 평균 냄)는
+  // 예전처럼 1회 확인=바로 저장. CMJ·SJ·DJ·SLJ는 이 회차를 trials에 쌓아두고,
+  // 3회 차기 전까진 저장하지 않는다(중간에 그만둬도 "여기서 마치기"로 그때까지
+  // 쌓인 회차만으로 평균 가능 — trial_done 화면 참고).
+  const confirmRecord = useCallback(async (record) => {
+    if (!pending) return;
+    const withNote = { ...pending, note: record.note || pending.note || '' };
 
-  const backToMeasure = () => { setView('measure'); setReport(null); setPending(null); setSaveState('idle'); };
+    if (!MULTI_TRIAL_JUMP_SUBTYPES.includes(jumpSubType)) {
+      await persist(withNote, record);
+      setView('report');
+      return;
+    }
+
+    const newTrials = [...trials, withNote];
+    if (newTrials.length < MAX_JUMP_TRIALS) {
+      setTrials(newTrials);
+      setPending(null);
+      setView('trial_done');
+    } else {
+      await finishTrials(newTrials);
+    }
+  }, [pending, trials, jumpSubType, persist, finishTrials]);
+
+  // [다회차 측정 2026-08-11] "여기서 마치기"(3회 다 안 채우고 지금까지 회차만
+  // 저장) 전용 — trial_done/slj_other_leg 화면 양쪽에서 쓴다.
+  const finishNow = useCallback(() => {
+    finishTrials(trials);
+  }, [finishTrials, trials]);
+
+  const backToMeasure = () => {
+    setView('measure'); setReport(null); setPending(null); setSaveState('idle');
+    setTrials([]); setSljFirstLegDone(null);
+  };
   // [항목 2] 폰 뒤로가기: 리포트/기록 화면이면 측정 화면으로 한 단계만 복귀.
-  useHardwareBack((view === 'report' && !!report) || view === 'record', backToMeasure);
+  useHardwareBack(
+    (view === 'report' && !!report) || view === 'record' || view === 'trial_done' || view === 'slj_other_leg',
+    backToMeasure
+  );
   const openLiveReport = useCallback((reportData) => {
     // 라이브도 통일 흐름: 측정완료 → 기록·확인 → 저장 → 리포트
     setPending(reportData);
@@ -115,7 +181,9 @@ export default function JumpAnalysisHub({ member, onBack, onSave, onSaveToFireba
             </div>
           )}
           <MeasureRecordConfirm
-            title="수직 점프"
+            title={MULTI_TRIAL_JUMP_SUBTYPES.includes(jumpSubType)
+              ? `수직 점프 (${trials.length + 1}/${MAX_JUMP_TRIALS}차)`
+              : '수직 점프'}
             summaryRows={rows}
             noteMode
             onConfirm={confirmRecord}
@@ -124,6 +192,62 @@ export default function JumpAnalysisHub({ member, onBack, onSave, onSaveToFireba
             saved={saveState === 'saved'}
             error={saveState === 'error'}
           />
+        </div>
+      </div>
+    );
+  }
+
+  if (view === 'trial_done') {
+    // 방금 막 확정된 회차(trials의 마지막)를 요약으로 보여준다.
+    const last = trials[trials.length - 1] || {};
+    const isReactive = jumpType === 'reactive';
+    const doneCount = trials.length;
+    const nextCount = doneCount + 1;
+    return (
+      <div className="fixed inset-0 z-[80] bg-slate-50 dark:bg-slate-950 flex flex-col items-center justify-center p-6 text-center gap-5">
+        <div>
+          <p className="text-emerald-600 dark:text-emerald-400 font-black text-sm mb-1">{doneCount}차 측정 완료</p>
+          <p className="text-4xl font-black text-slate-900 dark:text-white">
+            {isReactive ? `RSI ${last.rsi?.rsi ?? '—'}` : `${last.heightCm ?? '—'}cm`}
+          </p>
+          <p className="text-slate-500 text-sm mt-2">
+            {JUMP_SUBTYPES[jumpSubType].code}{jumpSubType === 'slj' ? ` · ${LEG_LABEL[leg]}` : ''} · 총 {MAX_JUMP_TRIALS}회 중 {doneCount}회 완료
+          </p>
+        </div>
+        <div className="w-full max-w-xs space-y-2.5">
+          <button onClick={() => setView('measure')}
+            className="w-full rounded-xl bg-amber-500 text-slate-950 font-black py-3.5 active:scale-95">
+            {nextCount}차 측정하기
+          </button>
+          <button onClick={finishNow}
+            className="w-full rounded-xl border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-bold py-3 active:scale-95">
+            여기서 마치기 ({doneCount}회 평균으로 저장)
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (view === 'slj_other_leg') {
+    const doneLeg = sljFirstLegDone;
+    const otherLeg = doneLeg === 'left' ? 'right' : 'left';
+    return (
+      <div className="fixed inset-0 z-[80] bg-slate-50 dark:bg-slate-950 flex flex-col items-center justify-center p-6 text-center gap-5">
+        <div>
+          <p className="text-emerald-600 dark:text-emerald-400 font-black text-sm mb-1">{LEG_LABEL[doneLeg]} 측정 완료</p>
+          <p className="text-4xl font-black text-slate-900 dark:text-white">{report?.heightCm ?? '—'}cm</p>
+          <p className="text-slate-500 text-sm mt-2">{report?.trials?.length || 1}회 평균</p>
+        </div>
+        <div className="w-full max-w-xs space-y-2.5">
+          <button
+            onClick={() => { setLeg(otherLeg); setView('measure'); }}
+            className="w-full rounded-xl bg-indigo-500 text-white font-black py-3.5 active:scale-95">
+            {LEG_LABEL[otherLeg]}도 측정하기
+          </button>
+          <button onClick={() => setView('report')}
+            className="w-full rounded-xl border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-bold py-3 active:scale-95">
+            여기서 마치기(한쪽만 저장)
+          </button>
         </div>
       </div>
     );
@@ -199,6 +323,14 @@ export default function JumpAnalysisHub({ member, onBack, onSave, onSaveToFireba
               jumpType === 'reactive' ? 'text-emerald-700 dark:text-emerald-300 border-emerald-500/30' : 'text-amber-700 dark:text-amber-300 border-amber-500/30'}`}>
               {JUMP_SUBTYPES[jumpSubType].tip}
             </p>
+            {/* [다회차 측정 2026-08-11] 이미 몇 회차를 쌓아둔 채 다시 측정 중이면
+                (trial_done에서 "N차 측정하기"를 눌러 여기로 돌아온 경우) 맥락을
+                잃지 않게 진행 상황을 계속 보여준다. */}
+            {MULTI_TRIAL_JUMP_SUBTYPES.includes(jumpSubType) && trials.length > 0 && (
+              <p className="pointer-events-none text-[11px] font-black bg-indigo-500/90 text-white rounded-full px-3 py-1">
+                {trials.length + 1}/{MAX_JUMP_TRIALS}차 측정 중
+              </p>
+            )}
           </div>
 
           {showGuide && <JumpGuide mode={mode} jumpSubType={jumpSubType} onClose={() => setShowGuide(false)} />}

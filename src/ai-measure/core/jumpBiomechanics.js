@@ -786,6 +786,70 @@ export function computeExtensionAlignment(hipSeq, kneeSeq, ankleSeq = []) {
 }
 
 // ════════════════════════════════════════════════════════════════════════
+//  [다회차 측정 평균 2026-08-11] CMJ·SJ·DJ·SLJ는 한 번만 뛰고 끝내는 대신
+//  1차·2차·3차로 나눠 뛴 뒤 평균을 낸다(체육학에서 흔한 방식 — 단발 점프는
+//  그날 컨디션에 따라 들쭉날쭉해서 여러 번 재 대표값을 쓴다). RSI는 제외 —
+//  RSI는 원래부터 "한 세션 안에서 연속으로 여러 번 뛰어 그 안에서 평균 내는"
+//  방식이라(rsiMean/cycles) 이미 자기 안에 반복·평균이 있다.
+//
+//  하위호환 원칙: trials가 1개뿐이면(기존처럼 한 번만 측정한 경우) 원본을
+//  그대로 돌려주고 trials 필드 자체를 안 붙인다 — 예전에 저장된 리포트,
+//  예전 리포트 화면 어디에도 새 필드가 안 보여서 100% 그대로 동작한다.
+// ════════════════════════════════════════════════════════════════════════
+
+/** CMJ·SJ·SLJ에서 이 종류가 다회차 평균 대상인지. */
+export const MULTI_TRIAL_JUMP_SUBTYPES = ['cmj', 'sj', 'dj', 'slj'];
+export const MAX_JUMP_TRIALS = 3;
+
+/**
+ * 여러 회차(trials, 시간순 배열) 측정 결과를 하나로 합친다. 대표값(heightCm
+ * 등 메인 필드)은 평균으로 덮어쓰고, 각 회차 원본은 trials 필드로 남긴다.
+ * engine('power'|'reactive')에 따라 평균 낼 필드가 다르다.
+ * @returns {object|null} trials가 비어있으면 null. 1개면 원본 그대로(하위호환).
+ */
+export function combineJumpTrials(trials, engine) {
+  if (!trials || trials.length === 0) return null;
+  if (trials.length === 1) return trials[0];
+
+  const avgNum = (getter, decimals = 1) => {
+    const vals = trials.map(getter).map(Number).filter(Number.isFinite);
+    if (!vals.length) return null;
+    const mult = 10 ** decimals;
+    return Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * mult) / mult;
+  };
+  // 회원 정보·valid 등 측정치가 아닌 필드는 가장 마지막(최신) 회차 기준으로.
+  const base = trials[trials.length - 1];
+
+  if (engine === 'reactive') {
+    return {
+      ...base,
+      heightCm: avgNum((t) => t.heightCm),
+      rsi: {
+        ...base.rsi,
+        rsi: avgNum((t) => t.rsi?.rsi, 2),
+        contactTimeMs: avgNum((t) => t.rsi?.contactTimeMs, 0),
+        flightTimeMs: avgNum((t) => t.rsi?.flightTimeMs, 0),
+      },
+      trials: trials.map((t) => ({
+        heightCm: t.heightCm, rsi: t.rsi?.rsi ?? null,
+        contactTimeMs: t.rsi?.contactTimeMs ?? null, measuredAt: t.measuredAt || null,
+      })),
+    };
+  }
+
+  return {
+    ...base,
+    heightCm: avgNum((t) => t.heightCm),
+    takeoffVelocity: avgNum((t) => t.takeoffVelocity, 2),
+    peakPower: avgNum((t) => t.peakPower, 0),
+    trials: trials.map((t) => ({
+      heightCm: t.heightCm, takeoffVelocity: t.takeoffVelocity,
+      peakPower: t.peakPower, measuredAt: t.measuredAt || null,
+    })),
+  };
+}
+
+// ════════════════════════════════════════════════════════════════════════
 //  [SLJ 좌우 비대칭 비교 2026-08-11]
 //  SLJ(한발 점프)는 한 번에 한쪽 다리만 측정해서 별도 리포트로 저장된다
 //  (jumpSubType.js singleLeg — "테스트할 다리를 먼저 선택하세요"). 좌우를

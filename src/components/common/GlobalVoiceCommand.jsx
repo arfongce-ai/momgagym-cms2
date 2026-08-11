@@ -8,7 +8,7 @@
 // 요청하신 흐름("모미야"→"네, 선생님"→...)엔 그 앞에 아무 발화가 없어야 해서다.
 import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useMomiVoice } from '../../hooks/useMomiVoice';
+import { useMomiVoice, isIOSStandalone } from '../../hooks/useMomiVoice';
 import { useMomiSpeech } from '../../hooks/useMomiSpeech';
 import { processVoiceCommand, buildTimerControlMessage } from '../../services/voiceCommandService';
 import {
@@ -472,7 +472,40 @@ export default function GlobalVoiceCommand() {
     stopListeningRef.current = stopListening;
   }, [stopListening]);
 
-  if (!supported) return null;
+  if (!supported) {
+    // [진단용 2026-08-11] "아이폰에서 음성인식이 안 된다"는 문의 대응 — 예전엔
+    // 미지원이면 그냥 아무것도 안 그려서(return null), 반응이 없는 게 "미지원
+    // 때문"인지 "지원은 하는데 다른 문제"인지 화면만 보고는 구분이 안 됐다
+    // (KioskVoiceCommand.jsx는 이미 이렇게 처리 중이었고, 여기만 빠져있었다).
+    return (
+      <div
+        className="fixed right-5 bottom-[calc(88px+env(safe-area-inset-bottom))] md:bottom-5"
+        style={{
+          zIndex: 1000,
+          padding: '8px 12px',
+          borderRadius: 8,
+          background: 'rgba(0,0,0,0.85)',
+          color: '#fbbf24',
+          fontSize: 13,
+          fontWeight: 500,
+          maxWidth: 220,
+        }}
+      >
+        [진단] 이 브라우저는 음성인식을 지원하지 않아요.{isIOSStandalone()
+          ? ' 아이폰 홈 화면 아이콘 대신 Safari 앱에서 주소를 직접 열어보세요.'
+          : ' Chrome 사용을 권장해요.'}
+      </div>
+    );
+  }
+
+  // [아이폰 음성인식 진단 2026-08-11] 여기부터는 "지원한다고는 나오는" 상태 —
+  // 그런데 홈 화면 아이콘(standalone) + 아이폰 조합은 SpeechRecognition
+  // 생성자는 존재해도(그래서 위 !supported 분기를 안 탐) 실제로는 마이크가
+  // 켜진 채 결과가 전혀 안 올라오는 애플 자체 제약이 있다(코드로 완전히
+  // 우회 불가 — useMomiVoice.js isIOSStandalone() 설명 참고). 버튼 자체는
+  // 그대로 두되(다른 iOS 조합에선 될 수도 있어서 아예 막지는 않음), 잘 안
+  // 될 때 뭘 시도해보면 되는지 작은 안내를 같이 보여준다.
+  const showIOSStandaloneHint = isIOSStandalone();
 
   const toggle = () => {
     if (listening) {
@@ -520,6 +553,23 @@ export default function GlobalVoiceCommand() {
           }}
         >
           {feedback}
+        </div>
+      )}
+      {!feedback && showIOSStandaloneHint && (
+        <div
+          style={{
+            marginBottom: 8,
+            padding: '6px 10px',
+            borderRadius: 8,
+            background: 'rgba(0,0,0,0.75)',
+            color: '#fbbf24',
+            fontSize: 11,
+            fontWeight: 500,
+            maxWidth: 200,
+            lineHeight: 1.4,
+          }}
+        >
+          음성인식이 안 되면 홈 화면 아이콘 대신 Safari 앱에서 직접 열어보세요.
         </div>
       )}
       <button
