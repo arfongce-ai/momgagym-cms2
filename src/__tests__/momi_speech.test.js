@@ -250,3 +250,40 @@ describe('GlobalVoiceCommand.jsx — requireWakeWord: false (버튼으로 켰으
     expect(body).toContain('requireWakeWord: false,');
   });
 });
+
+describe('GlobalVoiceCommand.jsx — 마이크 자동 꺼짐(2026-08-11, 사장님 요청)', () => {
+  const src = readSrc('src', 'components', 'common', 'GlobalVoiceCommand.jsx');
+
+  it('stopListeningRef가 선언되어 있다(awaitReplyRef와 동일한 순환의존 회피 패턴)', () => {
+    expect(src).toContain('const stopListeningRef = useRef(null);');
+  });
+
+  it('stopListening을 ref에 동기화하는 useEffect가 있다', () => {
+    expect(src).toMatch(/useEffect\(\(\) => \{\s*stopListeningRef\.current = stopListening;\s*\}, \[stopListening\]\);/);
+  });
+
+  it('handleCommand의 finally 블록에서 처리(확인흐름 포함)가 다 끝난 뒤 마이크를 끈다', () => {
+    const finallyIdx = src.indexOf('} finally {');
+    const finallyEnd = src.indexOf('}\n    },', finallyIdx);
+    const body = src.slice(finallyIdx, finallyEnd);
+    expect(body).toContain('stopListeningRef.current?.();');
+    // isHandlingRef 해제보다 뒤에 와야 한다는 뜻은 아니지만, 최소한 finally
+    // 블록 "안"에서 호출되어 예외가 나도 항상 실행되는지 확인.
+    expect(finallyIdx).toBeGreaterThan(-1);
+  });
+
+  it('finally 블록의 stopListeningRef 호출은 speak(message) 다음에 온다(마지막 안내 음성이 끊기지 않게)', () => {
+    const finallyIdx = src.indexOf('} finally {');
+    const speakIdx = src.indexOf('speak(message);', finallyIdx);
+    const stopIdx = src.indexOf('stopListeningRef.current?.();', finallyIdx);
+    expect(speakIdx).toBeGreaterThan(-1);
+    expect(stopIdx).toBeGreaterThan(speakIdx);
+  });
+
+  it('runVoiceConfirmFlow(예약/메모/세션조정 등 "네/아니요" 확인)는 stopListening을 직접 부르지 않는다(응답을 들어야 하므로 finally에서만 꺼짐)', () => {
+    const start = src.indexOf('const runVoiceConfirmFlow = useCallback(');
+    const end = src.indexOf('const announceAndFinish', start);
+    const body = src.slice(start, end);
+    expect(body).not.toContain('stopListening');
+  });
+});

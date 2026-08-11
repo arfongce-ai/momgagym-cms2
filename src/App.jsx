@@ -51,17 +51,22 @@ function RequireAuth({ children, adminOnly = false }) {
   return children;
 }
 
-// [모미 신규] 키오스크 모드가 켜져 있으면 /ai, /report 이외의 경로는 전부 /ai로 되돌린다.
+// [모미 신규] 키오스크 모드가 켜져 있으면 허용 경로 이외는 전부 /ai로 되돌린다.
 // AppLayout의 메뉴 숨김은 "안 보이게"만 할 뿐이라, 주소창 직접 입력으로 우회되는 걸
 // 여기서 한 번 더 막는다(메뉴 숨김 + 라우트 가드 이중 방어).
+// [2026-08-11] 홈·설정 추가 — AppLayout.jsx KIOSK_ALLOWED와 반드시 같이 맞춘다
+// (한쪽만 바꾸면 메뉴엔 보이는데 실제 진입은 막히는 식으로 어긋난다).
 function KioskGuard({ children }) {
   const { kioskOn } = useKioskMode();
   const location = useLocation();
   const allowed =
+    location.pathname === '/' ||
     location.pathname === '/ai' ||
     location.pathname.startsWith('/ai/') ||
     location.pathname === '/report' ||
-    location.pathname.startsWith('/report/');
+    location.pathname.startsWith('/report/') ||
+    location.pathname === '/settings' ||
+    location.pathname.startsWith('/settings/');
   if (kioskOn && !allowed) {
     return <Navigate to="/ai" replace />;
   }

@@ -11,6 +11,11 @@
 // 첫 턴의 "사용자 발화"는 실제 프롬프트 원문(리포트 JSON 전체)이 아니라 고정된
 // 짧은 placeholder를 쓴다 — askMomi의 기존 반환 타입(string)을 안 바꾸기 위함이고,
 // Claude 입장에선 자기 이전 답변이 history에 있는 것만으로 충분히 맥락을 잇는다.
+//
+// [라이트모드 2026-08-11] 예전엔 인라인 style={{background:'#f9fafb', ...}}로
+// 하드코딩된 밝은 색만 썼다 — 다른 컴포넌트가 전부 dark: variant로 바뀐 지금은
+// 이 패널만 다크모드에서 튀는(밝은 박스가 어두운 화면 위에 뜨는) 상태였다.
+// 나머지와 똑같이 Tailwind + dark: variant로 통일한다(동작은 그대로, 색만 정리).
 
 import { useState } from 'react';
 import { askMomi } from '../../services/momiService';
@@ -59,37 +64,19 @@ export default function MomiInsightPanel({ kind, report, member }) {
   const followUpThread = history.slice(2);
 
   return (
-    <div style={{ marginTop: 16, padding: 16, borderRadius: 12, border: '1px solid #e5e7eb' }}>
+    <div className="mt-4 p-4 rounded-xl border border-slate-200 dark:border-slate-700">
       <button
         onClick={handleAsk}
         disabled={loading || !report || !member}
-        style={{
-          padding: '10px 16px',
-          borderRadius: 8,
-          border: 'none',
-          background: '#111827',
-          color: '#fff',
-          fontWeight: 600,
-          cursor: loading ? 'default' : 'pointer',
-          opacity: loading ? 0.6 : 1,
-        }}
+        className="px-4 py-2.5 rounded-lg font-semibold text-white bg-slate-900 dark:bg-slate-700 disabled:opacity-60 disabled:cursor-default active:scale-[0.98] transition-transform"
       >
         {loading && history.length === 0 ? '모미가 분석 중이에요...' : '🤖 모미에게 물어보기'}
       </button>
 
-      {error && <p style={{ color: '#dc2626', marginTop: 12 }}>{error}</p>}
+      {error && <p className="mt-3 text-red-600 dark:text-red-400">{error}</p>}
 
       {answer && (
-        <div
-          style={{
-            marginTop: 12,
-            padding: 12,
-            borderRadius: 8,
-            background: '#f9fafb',
-            whiteSpace: 'pre-wrap',
-            lineHeight: 1.6,
-          }}
-        >
+        <div className="mt-3 p-3 rounded-lg bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 whitespace-pre-wrap leading-relaxed">
           {answer}
         </div>
       )}
@@ -97,16 +84,13 @@ export default function MomiInsightPanel({ kind, report, member }) {
       {followUpThread.map((turn, i) => (
         <div
           key={i}
-          style={{
-            marginTop: 8,
-            padding: 12,
-            borderRadius: 8,
-            background: turn.role === 'user' ? '#eef2ff' : '#f9fafb',
-            whiteSpace: 'pre-wrap',
-            lineHeight: 1.6,
-          }}
+          className={`mt-2 p-3 rounded-lg whitespace-pre-wrap leading-relaxed ${
+            turn.role === 'user'
+              ? 'bg-indigo-50 dark:bg-indigo-500/10 text-slate-800 dark:text-slate-100'
+              : 'bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100'
+          }`}
         >
-          <span style={{ fontSize: 12, fontWeight: 700, color: '#6b7280' }}>
+          <span className="text-xs font-bold text-slate-500 dark:text-slate-400">
             {turn.role === 'user' ? '나' : '모미'}
           </span>
           <div>{turn.content}</div>
@@ -114,7 +98,7 @@ export default function MomiInsightPanel({ kind, report, member }) {
       ))}
 
       {answer && (
-        <div style={{ marginTop: 12, display: 'flex', gap: 8 }}>
+        <div className="mt-3 flex gap-2">
           <input
             type="text"
             value={followUpText}
@@ -124,26 +108,12 @@ export default function MomiInsightPanel({ kind, report, member }) {
             }}
             placeholder="이어서 물어보기..."
             disabled={loading}
-            style={{
-              flex: 1,
-              padding: '8px 12px',
-              borderRadius: 8,
-              border: '1px solid #d1d5db',
-            }}
+            className="flex-1 px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:outline-none focus:border-amber-500"
           />
           <button
             onClick={handleFollowUp}
             disabled={loading || !followUpText.trim()}
-            style={{
-              padding: '8px 14px',
-              borderRadius: 8,
-              border: 'none',
-              background: '#111827',
-              color: '#fff',
-              fontWeight: 600,
-              cursor: loading ? 'default' : 'pointer',
-              opacity: loading || !followUpText.trim() ? 0.5 : 1,
-            }}
+            className="px-3.5 py-2 rounded-lg font-semibold text-white bg-slate-900 dark:bg-slate-700 disabled:opacity-50 disabled:cursor-default active:scale-[0.98] transition-transform"
           >
             보내기
           </button>

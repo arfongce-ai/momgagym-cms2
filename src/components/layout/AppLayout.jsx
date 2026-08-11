@@ -24,8 +24,9 @@ const NAV = [
   { path:'/revenue',  label:'매출관리', icon:'💰' },
   { path:'/settings', label:'설정',     icon:'⚙️' },
 ];
-// 키오스크 모드에서 유일하게 남는 메뉴
-const KIOSK_ALLOWED = ['/ai', '/report'];
+// 키오스크 모드에서 유일하게 남는 메뉴 — [2026-08-11] 홈·설정 추가(사장님 요청).
+// 나머지(회원관리/스케줄/트레이너/매출관리)는 여전히 제외.
+const KIOSK_ALLOWED = ['/', '/ai', '/report', '/settings'];
 // 모바일 하단 바에 항상 보이는 핵심 4개 (나머지는 "전체" 시트)
 const MOBILE_MAIN = ['/', '/members', '/schedule', '/ai'];
 

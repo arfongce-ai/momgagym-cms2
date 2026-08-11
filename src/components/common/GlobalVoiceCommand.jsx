@@ -55,6 +55,12 @@ export default function GlobalVoiceCommand() {
   // 의존이 된다. awaitReply 자체는 deps:[]인 안정적 함수라 ref에 담아두면 항상
   // 최신 값을 가리킨다.
   const awaitReplyRef = useRef(null);
+  // [마이크 자동 꺼짐 2026-08-11] 폰/태블릿모드는 "명령 하나 처리하면 자동으로
+  // 꺼지는" 방식으로 바뀐다 — stopListening은 useMomiVoice()가 반환하는데
+  // useMomiVoice()는 handleCommand를 onCommand로 받는 쪽이라(아래) 같은 렌더
+  // 안에서 handleCommand가 직접 참조하면 순환 의존이 된다. awaitReplyRef와
+  // 완전히 같은 이유로 ref를 다리로 쓴다.
+  const stopListeningRef = useRef(null);
   // 예약 확인 흐름이 응답을 기다리는 중에 트레이너가 마이크 버튼을 눌러 끄면,
   // useMomiVoice 내부 cancelAwaitReply()가 awaitReply 콜백을 조용히 버려버려서
   // (다시 호출 안 됨) 아래 runReservationConfirmFlow의 Promise가 영원히 안
@@ -381,6 +387,14 @@ export default function GlobalVoiceCommand() {
           setTimeout(() => setFeedback(''), diagDetail ? 8000 : 4000);
         }
         isHandlingRef.current = false;
+        // [마이크 자동 꺼짐 2026-08-11] 명령 하나(확인이 필요한 예약/메모/세션조정
+        // 등은 "네/아니요"까지 다 끝난 뒤) 처리가 끝나면 자동으로 마이크를 끈다.
+        // "모미야" 없이 버튼 눌러 켜는 방식이라 매번 다시 켜는 수고가 있지만,
+        // 트레이너가 요청한 방식 — 켜둔 채 계속 듣게 두지 않는다(프라이버시 +
+        // 의도치 않은 오작동 방지). 예약 확인처럼 awaitReply로 응답을 기다리는
+        // 구간은 이 finally보다 먼저(위에서 await로) 끝나므로 그 사이엔 마이크가
+        // 계속 켜져 있어 "네/아니요"를 정상적으로 들을 수 있다.
+        stopListeningRef.current?.();
       }
     },
     [
@@ -448,6 +462,11 @@ export default function GlobalVoiceCommand() {
   useEffect(() => {
     awaitReplyRef.current = awaitReply;
   }, [awaitReply]);
+
+  // [마이크 자동 꺼짐 2026-08-11] stopListening도 같은 이유로 ref에 담는다.
+  useEffect(() => {
+    stopListeningRef.current = stopListening;
+  }, [stopListening]);
 
   if (!supported) return null;
 

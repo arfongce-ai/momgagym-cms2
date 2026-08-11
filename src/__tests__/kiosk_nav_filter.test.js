@@ -16,15 +16,19 @@ const layoutSrc = readFileSync(
 const appSrc = readFileSync(join(process.cwd(), 'src/App.jsx'), 'utf8');
 
 describe('AppLayout.jsx — 키오스크 메뉴 화이트리스트', () => {
-  it("KIOSK_ALLOWED는 ['/ai', '/report'] 이다", () => {
-    expect(layoutSrc).toMatch(/const KIOSK_ALLOWED = \['\/ai', '\/report'\];/);
+  it("KIOSK_ALLOWED는 ['/', '/ai', '/report', '/settings'] 이다(2026-08-11 홈·설정 추가)", () => {
+    expect(layoutSrc).toMatch(/const KIOSK_ALLOWED = \['\/', '\/ai', '\/report', '\/settings'\];/);
   });
 
-  it('KIOSK_ALLOWED가 App.jsx KioskGuard의 허용 경로와 같은 두 경로를 가리킨다(불일치 방지)', () => {
+  it('KIOSK_ALLOWED가 App.jsx KioskGuard의 허용 경로와 같은 네 경로를 가리킨다(불일치 방지)', () => {
     const listed = layoutSrc.match(/const KIOSK_ALLOWED = \[(.*?)\];/)?.[1] ?? '';
-    for (const p of ["'/ai'", "'/report'"]) {
+    for (const p of ["'/'", "'/ai'", "'/report'", "'/settings'"]) {
       expect(listed).toContain(p);
-      expect(appSrc).toContain(p);
+    }
+    // App.jsx는 배열이 아니라 개별 location.pathname 비교라 문자열 형태가 다르다
+    // (예: "'/ai'" 가 아니라 "=== '/ai'") — 경로 자체만 포함 여부로 대조한다.
+    for (const p of ['/', '/ai', '/report', '/settings']) {
+      expect(appSrc).toContain(`'${p}'`);
     }
   });
 

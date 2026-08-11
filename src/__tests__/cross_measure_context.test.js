@@ -28,6 +28,56 @@ describe('crossMeasureContext', () => {
     expect(focus.issues.some((item) => item.text.includes('좌우'))).toBe(true);
   });
 
+  // [Axis3/4 확장 2026-08-11] 신체정보(BodyInfoReport.jsx MomiInsightPanel 연결용).
+  describe("buildProblemFocus('body', ...) — 신체정보", () => {
+    it('전부 good 등급이면 이슈 없이 강점 문구만 남는다', () => {
+      const focus = buildProblemFocus('body', {
+        items: [
+          { key: 'bmi', label: 'BMI', value: 22, unit: '', grade: 'good', description: '정상 체중입니다.' },
+          { key: 'bp', label: '혈압', value: 118, unit: 'mmHg', grade: 'good', description: '정상 혈압입니다.' },
+        ],
+      });
+      expect(focus.severity).toBe('normal');
+      expect(focus.issues).toEqual([]);
+      expect(focus.strengths.length).toBeGreaterThan(0);
+    });
+
+    it('warn 등급 항목은 caution 이슈로, description을 그대로 살려 담는다', () => {
+      const focus = buildProblemFocus('body', {
+        items: [{ key: 'bmi', label: 'BMI', value: 24, unit: '', grade: 'warn', description: '과체중 경계입니다.' }],
+      });
+      expect(focus.severity).toBe('caution');
+      expect(focus.issues[0].level).toBe('caution');
+      expect(focus.issues[0].text).toContain('과체중 경계입니다');
+      expect(focus.issues[0].text).toContain('BMI');
+    });
+
+    it('bad 등급 항목은 risk 이슈로 올라가고 전체 severity도 risk가 된다', () => {
+      const focus = buildProblemFocus('body', {
+        items: [
+          { key: 'bmi', label: 'BMI', value: 22, unit: '', grade: 'good', description: '정상입니다.' },
+          { key: 'bp', label: '혈압', value: 145, unit: 'mmHg', grade: 'bad', description: '고혈압입니다.' },
+        ],
+      });
+      expect(focus.severity).toBe('risk');
+      expect(focus.issues.some((i) => i.level === 'risk' && i.text.includes('고혈압입니다'))).toBe(true);
+    });
+
+    it('description이 없어도(누락) 라벨·수치로 자연스러운 문구를 만든다(에러 없음)', () => {
+      const focus = buildProblemFocus('body', {
+        items: [{ key: 'bmi', label: 'BMI', value: 27, unit: '', grade: 'bad' }],
+      });
+      expect(focus.issues[0].text).toContain('BMI');
+      expect(focus.issues[0].text).toContain('위험');
+    });
+
+    it('items가 비어있으면 강점 문구도 안 만든다(측정 자체가 없다는 뜻이라 억지로 "정상"이라 말하지 않음)', () => {
+      const focus = buildProblemFocus('body', {});
+      expect(focus.issues).toEqual([]);
+      expect(focus.strengths).toEqual([]);
+    });
+  });
+
   it('다른 탭의 최신 리포트를 신뢰도 보강 근거로 연결한다', () => {
     const integration = buildCrossMeasureIntegration({
       kind: 'jump',

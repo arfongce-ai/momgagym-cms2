@@ -16,6 +16,7 @@ const KIND_KO = Object.freeze({
   squat: '오버헤드 스쿼트',
   daily: '오늘의 컨디션',
   lifting: '바벨 리프팅(VBT)',
+  body: '신체 정보',
 });
 
 // squatBiomechanics.js가 반환하는 repeatedFlags를 사람이 읽을 문장으로 매핑.
@@ -163,6 +164,18 @@ export function buildProblemFocus(kind, report = {}) {
       if (report.memo) addIssue('normal', `회원 메모: ${report.memo}`);
       if (!issues.length) addStrength('오늘 컨디션에 특이 신호가 없습니다.');
     }
+  } else if (kind === 'body') {
+    // [Axis3/4 확장 2026-08-11] 신체정보(BodyInfoMeasure.jsx analyzeBody() 결과) —
+    // items[].grade는 'good'|'warn'|'bad' 셋뿐(BMI·혈압 등, src/services/aiService.js
+    // 참고). bad→risk, warn→caution으로 그대로 옮기고, 각 항목의 description을
+    // 그대로 활용한다(이미 사람이 읽을 문장으로 만들어져 있어 별도 가공 불필요).
+    const items = report.items || [];
+    items.forEach((item) => {
+      const label = `${item.label} ${item.value ?? ''}${item.unit || ''}`.trim();
+      if (item.grade === 'bad') addIssue('risk', item.description ? `${label} — ${item.description}` : `${label}이(가) 위험 범위입니다.`);
+      else if (item.grade === 'warn') addIssue('caution', item.description ? `${label} — ${item.description}` : `${label}이(가) 경계 범위입니다.`);
+    });
+    if (!issues.length && items.length) addStrength('체중·혈압 등 신체 정보 지표가 정상 범위입니다.');
   }
 
   const primaryFinding = issues[0]?.text || strengths[0] || `${KIND_KO[kind] || '측정'} 결과에서 우선 확인할 문제를 정리했습니다.`;

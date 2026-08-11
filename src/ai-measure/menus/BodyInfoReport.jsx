@@ -14,6 +14,14 @@ import {
   UnifiedReportSection,
 } from '../../components/report/UnifiedReportPrimitives';
 import { scoreToStatus } from '../core/unifiedReport';
+// [Axis4 확장 2026-08-11] 다른 7종 리포트(자세/ROM/점프/보행/스쿼트/리프팅/한다리서기)와
+// 동일하게 "🤖 모미에게 물어보기". MomiAutoNote(축3, 자동노트)는 여기 안 넣었다 —
+// 그건 report.id로 특정 문서에 저장해두는 방식인데, 신체정보는 개별 리포트 문서가
+// 아니라 회원 신체기록 "목록"(store.getBodyRecords) 방식이라 저장할 문서 자체가
+// 없다(다른 6종은 aiStore.updateXxxReport(id,...)로 그 리포트 하나를 바로 고침).
+// 이 부분은 데이터 구조를 새로 만들어야 하는 별도 작업이라 사장님 확인 후 진행하려고
+// 일부러 남겨뒀다.
+import MomiInsightPanel from '../../components/report/MomiInsightPanel.jsx';
 
 // grade('good'/'warn'/'bad') -> 다른 리포트와 같은 신호등 배지 색/라벨(scoreToStatus 대표 점수 공유).
 function gradeToken(grade) {
@@ -58,6 +66,11 @@ export default function BodyInfoReport({ id = 'body-report-sheet', member, resul
           status={worstGrade(items)}
           onClose={onClose}
         />
+
+        {/* [Axis4 확장 2026-08-11] 다른 7종 리포트와 동일 위치(헤더 직후) —
+            "🤖 모미에게 물어보기". report엔 result를 그대로 넘긴다(신체정보는
+            .id가 있는 개별 문서가 아니라 이 result 자체가 곧 리포트 데이터). */}
+        <MomiInsightPanel kind="body" report={result} member={member} />
 
         {/* 현재 측정값 · 등급 */}
         <UnifiedReportSection title="측정값 및 평가" className="mb-4">
