@@ -14,7 +14,7 @@ import JumpReportDashboard from './JumpReportDashboard';
 import { calcJump } from '../core/performance';
 import { useHardwareBack } from '../core/useHardwareBack';
 import MeasureRecordConfirm from '../components/MeasureRecordConfirm.jsx';
-import { JUMP_SUBTYPES, JUMP_SUBTYPE_ORDER, engineOf } from '../core/jumpTypes';
+import { JUMP_SUBTYPES, JUMP_SUBTYPE_ORDER, LEG_LABEL, engineOf } from '../core/jumpTypes';
 
 export default function JumpAnalysisHub({ member, onBack, onSave, onSaveToFirebase, onMemberHeightChange, onViewInReport }) {
   const save = onSaveToFirebase || onSave;
@@ -28,6 +28,13 @@ export default function JumpAnalysisHub({ member, onBack, onSave, onSaveToFireba
   const jumpType = engineOf(jumpSubType); // 파생값 — 'power' | 'reactive'
   // SLJ(한발 점프) 전용 — 테스트할 다리. 다른 종류에서는 쓰이지 않는다.
   const [leg, setLeg] = useState('left');
+  // [DJ 박스높이 수동입력 2026-08-11] DJ 전용 — 카메라로는 박스 높이 자체를
+  // 잴 수 없어서(위 jumpTypes.js dj.guideBody 참고) 트레이너가 직접 입력한다.
+  // leg와 동일한 패턴: measure 단계가 아니라 확인(record) 단계에서 물어보고
+  // (측정 방식 3종 모두 공통으로 거치는 지점이라 Hub 한 곳에서만 처리하면
+  // 됨), persist()에서 report에 실어 저장한다. 순수 참고값이라 리포트
+  // 점수·유효성 판정에는 전혀 관여하지 않는다.
+  const [boxHeightCm, setBoxHeightCm] = useState('');
   const [view, setView] = useState('measure'); // measure | record | report
   const [report, setReport] = useState(null);
   const [pending, setPending] = useState(null);   // 측정완료~확인 사이의 리포트 데이터
@@ -43,6 +50,12 @@ export default function JumpAnalysisHub({ member, onBack, onSave, onSaveToFireba
       ...reportData,
       jumpSubType: reportData.jumpSubType || jumpSubType,
       ...(jumpSubType === 'slj' ? { leg: reportData.leg || leg } : {}),
+      // [DJ 박스높이 2026-08-11] 숫자로 뭔가 입력됐을 때만 필드를 채운다 —
+      // 빈 문자열이면 아예 필드를 안 만들어서(undefined) "0cm로 측정했다"는
+      // 것과 "안 적었다"를 리포트에서 구분할 수 있게 한다.
+      ...(jumpSubType === 'dj' && boxHeightCm !== '' && Number(boxHeightCm) > 0
+        ? { boxHeightCm: Number(boxHeightCm) }
+        : {}),
       note: record.note || reportData.note || '',
     };
     let saved = withRecord;
@@ -56,7 +69,7 @@ export default function JumpAnalysisHub({ member, onBack, onSave, onSaveToFireba
     } else { setSaveState('saved'); }
     setReport(saved);
     setView('report');
-  }, [save, jumpSubType, leg]);
+  }, [save, jumpSubType, leg, boxHeightCm]);
 
   // 측정 완료(업로드/수동) → 기록·확인 단계로 (즉시 저장하지 않음)
   const handleComplete = useCallback((reportData) => {
@@ -87,7 +100,20 @@ export default function JumpAnalysisHub({ member, onBack, onSave, onSaveToFireba
     if (j.flightTime != null) rows.push({ label: '체공시간', value: `${j.flightTime}ms` });
     return (
       <div className="fixed inset-0 z-[80] bg-slate-950 overflow-y-auto" style={{ height: '100dvh' }}>
-        <div className="max-w-md mx-auto p-4">
+        <div className="max-w-md mx-auto p-4 space-y-3">
+          {/* [DJ 박스높이 수동입력 2026-08-11] 측정 방식(실시간/고속영상) 무관하게
+              여기 한 곳에서만 물어본다 — 3가지 방식 다 이 record 단계로 모이므로
+              (Hub 단일 저장 지점) 각 하위 컴포넌트를 안 건드려도 된다. */}
+          {jumpSubType === 'dj' && (
+            <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4 space-y-2">
+              <p className="text-xs font-black text-slate-300">
+                박스 높이 (cm) <span className="text-slate-500 font-normal normal-case">— 참고용, 카메라로는 측정 안 됨 · 선택</span>
+              </p>
+              <input type="number" inputMode="decimal" step="1" min="0" value={boxHeightCm}
+                onChange={(e) => setBoxHeightCm(e.target.value)} placeholder="예: 30"
+                className="w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2.5 text-sm font-mono text-slate-100 focus:outline-none focus:border-amber-500" />
+            </div>
+          )}
           <MeasureRecordConfirm
             title="수직 점프"
             summaryRows={rows}
@@ -144,7 +170,7 @@ export default function JumpAnalysisHub({ member, onBack, onSave, onSaveToFireba
             {/* SLJ(한발 점프) 전용 — 테스트할 다리 선택 */}
             {JUMP_SUBTYPES[jumpSubType].singleLeg && (
               <div className="pointer-events-auto flex gap-1 rounded-full bg-black/55 backdrop-blur p-1 border border-white/10 shadow-lg">
-                {[['left', '왼발'], ['right', '오른발']].map(([k, label]) => (
+                {[['left', LEG_LABEL.left], ['right', LEG_LABEL.right]].map(([k, label]) => (
                   <button key={k} onClick={() => setLeg(k)}
                     className={`rounded-full px-3 py-1 text-xs font-black transition-colors ${
                       leg === k ? 'bg-indigo-500 text-white' : 'text-slate-300'}`}>

@@ -118,6 +118,32 @@ const ALL_TOOLS = [
       newDate: { type: 'string', description: '옮길 새 날짜, YYYY-MM-DD. 오늘 날짜 기준 상대 표현을 절대 날짜로 변환.' },
       newStartTime: { type: 'string', description: '옮길 새 시작 시각, HH:MM(24시간제).' },
     }, required: ['oldDate', 'oldStartTime', 'newDate', 'newStartTime'] } },
+  // [momi 쓰기 권한 확장 2026-08-10] 여기부터 3개는 회원 데이터를 실제로 바꾸는
+  // 첫 쓰기 기능(예약 외). propose_reservation과 완전히 같은 이유로
+  // destinationId:null(화면 이동 아님) + "제안만 하고 실제 저장은 안 함" 원칙을
+  // 그대로 따른다 — 실제 저장은 프론트가 트레이너의 명시적 "네" 확인을 받은
+  // 뒤에만 src/services/memberWriteService.js의 confirmX()를 호출해서 한다.
+  { name: 'propose_add_member_memo', destinationId: null, roles: ['trainer', 'admin'],
+    description: '회원 메모에 내용을 "추가"해달라는 요청일 때 호출한다(기존 메모를 지우고 새로 쓰는 게 아니라 뒤에 이어붙이는 것). 예: "OO님 메모에 무릎 조심이라고 추가해줘". 메모를 "보여줘/확인해줘"(조회)는 이 도구가 아니라 go_members(tab:memo)를 쓴다 — 헷갈리지 않는다.',
+    input_schema: { type: 'object', properties: {
+      memberName: { type: 'string', description: '메모를 추가할 회원 이름.' },
+      memoText: { type: 'string', description: '추가할 메모 내용. 불필요한 조사·군더더기는 다듬어도 되지만 의미·수치는 절대 바꾸지 않는다.' },
+    }, required: ['memberName', 'memoText'] } },
+  { name: 'propose_adjust_session_count', destinationId: null, roles: ['trainer', 'admin'],
+    description: '회원의 세션(수업) 잔여·총 횟수를 "추가"하거나 "차감"해달라는 요청일 때 호출한다(단순 조회는 go_members(tab:sessions)). 예: "OO님 세션 2회 추가해줘", "OO님 세션 1회 차감해줘". 담당 트레이너가 명시적으로 언급되면 trainerName도 채운다(언급 없으면 생략 — 그 회원의 담당 트레이너가 1명뿐이면 서버가 자동으로 정한다).',
+    input_schema: { type: 'object', properties: {
+      memberName: { type: 'string', description: '세션을 조정할 회원 이름.' },
+      trainerName: { type: 'string', description: '담당 트레이너 이름이 명시적으로 언급된 경우만 채운다. 언급 없으면 생략.' },
+      delta: { type: 'number', description: '조정할 횟수. "추가"/"더해줘"/"늘려줘"는 양수, "차감"/"빼줘"/"줄여줘"는 음수로 채운다. 예: "2회 추가"→2, "1회 차감"→-1.' },
+    }, required: ['memberName', 'delta'] } },
+  { name: 'propose_update_member_info', destinationId: null, roles: ['trainer', 'admin'],
+    description: '회원의 전화번호 또는 비상연락처를 바꿔달라는 요청일 때 호출한다. 예: "OO님 전화번호 010-1234-5678로 바꿔줘". 이름·생년월일·주소 등 다른 정보 수정은 아직 지원 안 함(호출하지 말고 자유 발화로 답하라).',
+    input_schema: { type: 'object', properties: {
+      memberName: { type: 'string', description: '정보를 수정할 회원 이름.' },
+      field: { type: 'string', enum: ['phone', 'phone2'],
+        description: '"전화번호"/"연락처"/"휴대폰(번호)"→phone, "비상연락처"/"보호자연락처"/"연락처2"→phone2.' },
+      newValue: { type: 'string', description: '새로 바꿀 값. 전화번호는 010-1234-5678처럼 하이픈 포함 형식으로 정리해서 채운다.' },
+    }, required: ['memberName', 'field', 'newValue'] } },
 ];
 
 // [무료 확장 2026-08-10] 트레이너관리·매출관리는 "관리자 전용이라 클라이언트가
@@ -310,6 +336,45 @@ export async function onRequestPost(context) {
             oldStartTime: toolUse.input?.oldStartTime || null,
             newDate: toolUse.input?.newDate || null,
             newStartTime: toolUse.input?.newStartTime || null,
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      // [momi 쓰기 권한 확장 2026-08-10] 위 예약 3개와 완전히 같은 이유로 여기서도
+      // 저장은 안 한다 — 클라이언트가 memberWriteService.proposeAddMemberMemo()로
+      // 회원 매칭까지 마친 뒤, 트레이너 확인을 받고서야 confirmAddMemberMemo()로 저장한다.
+      if (toolUse.name === 'propose_add_member_memo') {
+        return new Response(
+          JSON.stringify({
+            type: 'memo_add_propose',
+            memberName: toolUse.input?.memberName || null,
+            memoText: toolUse.input?.memoText || null,
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      // 세션 횟수 조정 — memberWriteService.proposeAdjustSessionCount()가 회원·
+      // 트레이너 매칭과 "음수가 되지 않는지" 하드 검증까지 전부 담당한다.
+      if (toolUse.name === 'propose_adjust_session_count') {
+        return new Response(
+          JSON.stringify({
+            type: 'session_adjust_propose',
+            memberName: toolUse.input?.memberName || null,
+            trainerName: toolUse.input?.trainerName || null,
+            delta: typeof toolUse.input?.delta === 'number' ? toolUse.input.delta : null,
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      // 회원 기본정보(전화번호 등) 수정 — memberWriteService.proposeUpdateMemberInfo()가
+      // 지원 필드(phone/phone2) 검증까지 담당한다.
+      if (toolUse.name === 'propose_update_member_info') {
+        return new Response(
+          JSON.stringify({
+            type: 'member_info_update_propose',
+            memberName: toolUse.input?.memberName || null,
+            field: toolUse.input?.field || null,
+            newValue: toolUse.input?.newValue || null,
           }),
           { status: 200, headers: { 'Content-Type': 'application/json' } }
         );

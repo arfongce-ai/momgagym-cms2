@@ -20,6 +20,17 @@ import {
   cancelReservation,
   rescheduleReservation,
 } from '../../services/reservationService';
+// [momi 쓰기 권한 확장 2026-08-10] 예약류와 완전히 같은 확인 흐름(요약 말하기→
+// awaitReply→확인 후 저장)을 타는 새 쓰기 기능 3종. runVoiceConfirmFlow를
+// 그대로 재사용한다(아래).
+import {
+  buildAddMemoSummary,
+  confirmAddMemberMemo,
+  buildAdjustSessionSummary,
+  confirmAdjustSessionCount,
+  buildUpdateInfoSummary,
+  confirmUpdateMemberInfo,
+} from '../../services/memberWriteService';
 import { useAuth } from '../../contexts/AuthContext';
 import { store } from '../../demoData';
 import { scopeMembersToTrainer, sortByName } from '../../utils/memberList';
@@ -222,6 +233,65 @@ export default function GlobalVoiceCommand() {
     [runVoiceConfirmFlow, announceAndFinish]
   );
 
+  // [momi 쓰기 권한 확장 2026-08-10] memo_add_propose 결과(아직 저장 안 됨)를
+  // 받으면 요약을 말해주고 확인을 기다린 뒤에만 실제로 메모에 이어붙인다.
+  // 회원 자체를 못 찾았으면(ready:false 중에서도 member가 아예 없으면) 확인을
+  // 받는 게 무의미하니 바로 안내한다 — 예약류의 hasBlockingIssue 패턴과 동일.
+  const runMemoAddConfirmFlow = useCallback(
+    (propose) => {
+      const { member, memoText, warnings } = propose;
+      if (!member || !memoText) {
+        return announceAndFinish(warnings?.[0] || '메모를 추가할 회원이나 내용을 다시 말씀해주세요.');
+      }
+      return runVoiceConfirmFlow({
+        summary: buildAddMemoSummary(propose),
+        onConfirm: () => confirmAddMemberMemo({ member, memoText }).then(() => `${member.name}님 메모에 추가했어요.`),
+        onCancelMessage: '알겠습니다, 메모는 추가하지 않을게요.',
+      });
+    },
+    [runVoiceConfirmFlow, announceAndFinish]
+  );
+
+  // [momi 쓰기 권한 확장 2026-08-10] session_adjust_propose — 회원·트레이너를
+  // 특정 못 했거나(ready:false) 차감 후 음수가 되는 경우는 확인 자체를 안 받고
+  // 바로 안내한다(memberWriteService.proposeAdjustSessionCount가 이미 하드
+  // 검증까지 마쳤으므로 여기선 ready만 보면 됨).
+  const runSessionAdjustConfirmFlow = useCallback(
+    (propose) => {
+      const { member, trainerId, delta, warnings } = propose;
+      if (!propose.ready || !member || !trainerId || !delta) {
+        return announceAndFinish(warnings?.[0] || '세션을 조정할 회원·트레이너·횟수를 다시 말씀해주세요.');
+      }
+      return runVoiceConfirmFlow({
+        summary: buildAdjustSessionSummary(propose),
+        onConfirm: () =>
+          confirmAdjustSessionCount({ member, trainerId, delta }).then(
+            () => `${member.name}님 세션을 ${delta > 0 ? delta + '회 추가' : Math.abs(delta) + '회 차감'}했어요.`
+          ),
+        onCancelMessage: '알겠습니다, 세션은 그대로 둘게요.',
+      });
+    },
+    [runVoiceConfirmFlow, announceAndFinish]
+  );
+
+  // [momi 쓰기 권한 확장 2026-08-10] member_info_update_propose — 회원을 못
+  // 찾았거나 지원하지 않는 필드/빈 값이면 확인 없이 바로 안내한다.
+  const runMemberInfoUpdateConfirmFlow = useCallback(
+    (propose) => {
+      const { member, field, newValue, warnings } = propose;
+      if (!member || !field || !newValue) {
+        return announceAndFinish(warnings?.[0] || '수정할 회원·정보·새 값을 다시 말씀해주세요.');
+      }
+      return runVoiceConfirmFlow({
+        summary: buildUpdateInfoSummary(propose),
+        onConfirm: () =>
+          confirmUpdateMemberInfo({ member, field, newValue }).then(() => `${member.name}님 ${propose.fieldLabel}를 바꿨어요.`),
+        onCancelMessage: '알겠습니다, 정보는 그대로 둘게요.',
+      });
+    },
+    [runVoiceConfirmFlow, announceAndFinish]
+  );
+
   const handleCommand = useCallback(
     async (transcript) => {
       if (isHandlingRef.current) {
@@ -271,6 +341,18 @@ export default function GlobalVoiceCommand() {
           handledSeparately = true;
           clearHistory(chatHistoryRef, lastChatAtRef);
           await runRescheduleConfirmFlow(result.propose);
+        } else if (result.type === 'memo_add_propose') {
+          handledSeparately = true;
+          clearHistory(chatHistoryRef, lastChatAtRef);
+          await runMemoAddConfirmFlow(result.propose);
+        } else if (result.type === 'session_adjust_propose') {
+          handledSeparately = true;
+          clearHistory(chatHistoryRef, lastChatAtRef);
+          await runSessionAdjustConfirmFlow(result.propose);
+        } else if (result.type === 'member_info_update_propose') {
+          handledSeparately = true;
+          clearHistory(chatHistoryRef, lastChatAtRef);
+          await runMemberInfoUpdateConfirmFlow(result.propose);
         } else if (result.type === 'timer_control') {
           // [음성 타이머 제어 2026-08-09] 예약류와 달리 확인 절차 없이 바로
           // 실행됐다(순수 UI 제어라 되돌릴 수 없는 부작용이 없음) — 결과만
@@ -301,7 +383,11 @@ export default function GlobalVoiceCommand() {
         isHandlingRef.current = false;
       }
     },
-    [role, user, allMembers, navigate, speak, runReservationConfirmFlow, runCancelConfirmFlow, runRescheduleConfirmFlow]
+    [
+      role, user, allMembers, navigate, speak,
+      runReservationConfirmFlow, runCancelConfirmFlow, runRescheduleConfirmFlow,
+      runMemoAddConfirmFlow, runSessionAdjustConfirmFlow, runMemberInfoUpdateConfirmFlow,
+    ]
   );
 
   const handleWakeOnly = useCallback(() => {

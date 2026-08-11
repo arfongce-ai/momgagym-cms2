@@ -175,7 +175,8 @@ describe('KioskVoiceCommand.jsx — 음성 대화형(history) 배선', () => {
   it('예약 생성/취소/변경·타이머 제어·화면 이동처럼 실제 액션이 일어나면 clearHistory로 잡담 맥락을 정리한다', () => {
     const occurrences = (handleBody.match(/clearHistory\(chatHistoryRef, lastChatAtRef\)/g) || []).length;
     // reservation_propose / reservation_cancel_propose / reservation_reschedule_propose /
-    // timer_control(음성 타이머 제어 2026-08-09 신규) / navigate(else) = 5곳.
-    expect(occurrences).toBe(5);
+    // memo_add_propose / session_adjust_propose / member_info_update_propose
+    // (momi 쓰기 권한 확장 2026-08-10 신규 3곳) / timer_control / navigate(else) = 8곳.
+    expect(occurrences).toBe(8);
   });
 });

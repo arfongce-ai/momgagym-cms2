@@ -216,9 +216,37 @@ describe('matchRuleBasedTimerControl() — 무료 규칙 기반 단순 타이머
     expect(matchRuleBasedTimerControl('타이머 2번째로 시작해줘')).toBeNull();
   });
 
-  it('인터벌은 숫자가 하나라도 섞이면 여전히 null(운동/휴식/라운드 중 뭔지 확신 못 함 — 회귀 방지)', () => {
-    expect(matchRuleBasedTimerControl('인터벌 운동40초 휴식20초 8라운드로 시작해줘')).toBeNull();
-    expect(matchRuleBasedTimerControl('인터벌 3라운드로 시작해줘')).toBeNull();
+  it('인터벌은 운동/휴식/라운드 숫자가 전부 라벨과 붙어 있으면 규칙 기반으로 뽑는다(2026-08-10 추가 확장)', () => {
+    expect(matchRuleBasedTimerControl('인터벌 운동40초 휴식20초 8라운드로 시작해줘')).toEqual({
+      tool: 'interval', action: 'start', workSec: 40, restSec: 20, rounds: 8,
+    });
+    expect(matchRuleBasedTimerControl('인터벌 3라운드로 시작해줘')).toEqual({
+      tool: 'interval', action: 'start', rounds: 3,
+    });
+    expect(matchRuleBasedTimerControl('타바타 운동 40초 휴식 20초로 시작해줘')).toEqual({
+      tool: 'interval', action: 'start', workSec: 40, restSec: 20,
+    });
+    expect(matchRuleBasedTimerControl('서킷 6세트로 시작해줘')).toEqual({
+      tool: 'interval', action: 'start', rounds: 6,
+    });
+    // 운동/휴식 값이 같아도(둘 다 30초) 각자 라벨로 정확히 구분되는지(오매칭 회귀 방지)
+    expect(matchRuleBasedTimerControl('운동30초 휴식30초 10라운드로 인터벌 시작해줘')).toEqual({
+      tool: 'interval', action: 'start', workSec: 30, restSec: 30, rounds: 10,
+    });
+    // 말하는 순서가 바뀌어도(휴식을 먼저 언급) 라벨로 정확히 구분되는지
+    expect(matchRuleBasedTimerControl('인터벌 휴식20초 운동40초 8라운드로 시작해줘')).toEqual({
+      tool: 'interval', action: 'start', workSec: 40, restSec: 20, rounds: 8,
+    });
+  });
+
+  it('인터벌 숫자 중 라벨 없는 게 하나라도 섞이면(뭔지 확신 못 함) 여전히 null', () => {
+    expect(matchRuleBasedTimerControl('인터벌 운동40초 휴식20초 8라운드로 3번째 시작해줘')).toBeNull();
+    expect(matchRuleBasedTimerControl('인터벌 20초만 하고 시작해줘')).toBeNull();
+  });
+
+  it('인터벌 숫자는 start 동작일 때만 뽑는다 — pause/reset에 숫자가 섞이면 null(의도 불명)', () => {
+    expect(matchRuleBasedTimerControl('인터벌 8라운드 멈춰줘')).toBeNull();
+    expect(matchRuleBasedTimerControl('인터벌 8라운드 리셋해줘')).toBeNull();
   });
 
   it('초시계(랩 포함)에 숫자가 섞이면 여전히 null(초시계엔 숫자 설정 개념이 없음)', () => {
@@ -260,6 +288,9 @@ describe('matchRuleBasedTimerControl() — 무료 규칙 기반 단순 타이머
     const end = src.indexOf('const deliveredLive = publishTimerControl(cmd);', start);
     const body = src.slice(start, end);
     expect(body).toContain("seconds: typeof ruleTimerCmd.seconds === 'number' ? ruleTimerCmd.seconds : null,");
+    expect(body).toContain("workSec: typeof ruleTimerCmd.workSec === 'number' ? ruleTimerCmd.workSec : null,");
+    expect(body).toContain("restSec: typeof ruleTimerCmd.restSec === 'number' ? ruleTimerCmd.restSec : null,");
+    expect(body).toContain("rounds: typeof ruleTimerCmd.rounds === 'number' ? ruleTimerCmd.rounds : null,");
     expect(body).toContain("bpm: typeof ruleTimerCmd.bpm === 'number' ? ruleTimerCmd.bpm : null,");
   });
 });

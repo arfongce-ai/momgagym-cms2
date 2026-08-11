@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import ReportActions from '../../components/report/ReportActions';
 import {
   UnifiedEmptyState,
@@ -12,7 +12,10 @@ import ProblemFocusPanel from './ProblemFocusPanel.jsx';
 import MomiAutoNote from '../../components/report/MomiAutoNote.jsx';
 import MomiInsightPanel from '../../components/report/MomiInsightPanel.jsx';
 import { aiStore } from '../../demoData';
-import { JUMP_SUBTYPES, resolveJumpSubType } from '../core/jumpTypes';
+import { JUMP_SUBTYPES, LEG_LABEL, resolveJumpSubType } from '../core/jumpTypes';
+// [SLJ 좌우 비대칭 2026-08-11] 순수 계산은 core/jumpBiomechanics.js에 —
+// 여기(리포트 화면)는 aiStore에서 회원의 다른 리포트를 가져와 넘기기만 한다.
+import { findSljAsymmetry } from '../core/jumpBiomechanics';
 
 const RANGE = {
   height: { good: [40, 100], warn: [30, 100], unit: 'cm' },
@@ -21,6 +24,10 @@ const RANGE = {
   pelvis: { good: [0, 4], warn: [0, 7], unit: '%' },
   foot: { good: [85, 100], warn: [70, 100], unit: '%' },
   align: { good: [80, 100], warn: [60, 100], unit: '점' },
+  // [SLJ 좌우 비대칭 2026-08-11] LSI(Limb Symmetry Index) — 스포츠의학에서
+  // 흔히 쓰는 기준(예: ACL 재활 복귀 판정)을 그대로 따름: 90% 이상 정상,
+  // 80~90% 주의, 80% 미만 개선 필요.
+  lsi: { good: [90, 100], warn: [80, 100], unit: '%' },
 };
 
 function isRsiReport(report) {
@@ -90,11 +97,38 @@ export default function JumpReportDashboard({ report, onClose, onComment, member
   const resolvedMember = member || report?.member || null;
   const memberName = resolvedMember?.name || '가상회원';
   const date = formatDate(report?.createdAt || report?.measuredAt);
-  const reportName = `${subMeta.label} 평가표`;
+  // [SLJ 좌우 비대칭 2026-08-11] 어느 다리를 쟀는지 리포트 이름에 바로 보이게.
+  const legLabel = jumpSubType === 'slj' && report?.leg ? LEG_LABEL[report.leg] : null;
+  const reportName = `${subMeta.label} 평가표${legLabel ? ` · ${legLabel}` : ''}`;
   const reportCode = `${subMeta.code} JUMP`;
   const viewLabel = biomech.view === 'side' ? '측면' : biomech.view === 'back' || biomech.view === 'front' ? '정면' : '미확인';
   const saveName = `${memberName}_${subMeta.code}`;
   const problemFocus = useMemo(() => report?.problem_focus || buildProblemFocus('jump', report), [report]);
+
+  // [SLJ 좌우 비대칭 2026-08-11] 이 회원의 반대쪽 다리 SLJ 최신 기록을 찾아
+  // 비교한다. 가상회원(isVirtual)은 실제 저장된 회원 문서가 아니라 이력
+  // 조회가 의미 없으므로 건너뛴다. aiStore.ensureGaitReports는 회원별
+  // 지연로딩 + 캐시라 이 화면을 여러 번 여닫아도 매번 새로 안 읽는다.
+  const [asymmetry, setAsymmetry] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      if (jumpSubType !== 'slj' || !report?.leg || report?.heightCm == null
+        || !resolvedMember?.id || resolvedMember?.isVirtual) {
+        setAsymmetry(null);
+        return;
+      }
+      try {
+        const reports = await aiStore.ensureGaitReports(resolvedMember.id);
+        if (cancelled) return;
+        setAsymmetry(findSljAsymmetry({ reports, currentReport: report }));
+      } catch (e) {
+        if (!cancelled) setAsymmetry(null);
+      }
+    }
+    load();
+    return () => { cancelled = true; };
+  }, [jumpSubType, report?.id, report?.leg, report?.heightCm, resolvedMember?.id, resolvedMember?.isVirtual]);
 
   const saveComment = () => {
     onComment?.(comment);
@@ -156,6 +190,8 @@ export default function JumpReportDashboard({ report, onClose, onComment, member
                   />
                 )}
               </Section>
+
+              {jumpSubType === 'slj' && <AsymmetrySection asymmetry={asymmetry} report={report} />}
 
               {isRsi ? <RsiSection report={report} /> : <PowerSection report={report} />}
             </>
@@ -291,6 +327,46 @@ function Notice({ tone, text }) {
   return <div className={`mt-3 rounded-lg px-3 py-2 text-xs font-black ${cls}`}>{text}</div>;
 }
 
+// [SLJ 좌우 비대칭 2026-08-11] 반대쪽 다리 최신 기록과의 LSI 비교. 아직
+// 반대쪽을 안 쟀으면(asymmetry === null) 비교 대신 "반대쪽도 재면 비교가
+// 뜬다"는 안내만 보여준다 — 데이터가 없다고 섹션 자체를 숨기면 트레이너가
+// "이 기능이 있는지"조차 모를 수 있어서, 항상 보여주되 상태에 맞게 안내한다.
+function AsymmetrySection({ asymmetry, report }) {
+  const thisLeg = report?.leg;
+  const thisLabel = LEG_LABEL[thisLeg] || '이번';
+  if (!asymmetry) {
+    return (
+      <Section title="③ 좌우 비대칭 비교" subtitle="LSI · 반대쪽 다리와 비교">
+        <div className="rounded-xl bg-slate-800/60 p-4 text-center">
+          <p className="text-sm text-slate-300">
+            {LEG_LABEL[thisLeg === 'left' ? 'right' : 'left']} 기록이 아직 없어요.
+          </p>
+          <p className="mt-1 text-[11px] text-slate-500">반대쪽 다리도 SLJ로 측정하면 좌우 비대칭(LSI)이 여기 표시됩니다.</p>
+        </div>
+      </Section>
+    );
+  }
+  const st = status(asymmetry.lsiPct, RANGE.lsi);
+  const weakerLabel = LEG_LABEL[asymmetry.weakerSide];
+  return (
+    <Section title="③ 좌우 비대칭 비교" subtitle={`LSI · ${formatDate(asymmetry.otherReportDate)} 반대쪽 기록과 비교`}>
+      <div className="grid grid-cols-3 gap-2">
+        <StatCard label={LEG_LABEL.left} value={metric(asymmetry.leftValue)} unit="cm" />
+        <StatCard label={LEG_LABEL.right} value={metric(asymmetry.rightValue)} unit="cm" />
+        <StatCard label="대칭지수(LSI)" value={metric(asymmetry.lsiPct)} unit="%" range={RANGE.lsi} />
+      </div>
+      <p className="mt-3 text-[12px] leading-relaxed text-slate-400">
+        LSI(대칭지수)는 약한 쪽 ÷ 강한 쪽 × 100으로, 100%면 완전 대칭입니다. 통상 90% 이상을 정상 범위로 봅니다.
+        {' '}현재 <b className="text-slate-200">{weakerLabel}</b>이(가) 상대적으로 약합니다
+        {st.text === '개선 필요' ? ' — 편측 강화 운동을 우선 고려하세요.' : '.'}
+      </p>
+      <p className="mt-1 text-[11px] text-slate-500">
+        이번 {thisLabel} 측정({formatDate(report?.createdAt || report?.measuredAt)})과 반대쪽의 가장 최근 기록을 비교한 값입니다 — 같은 날 측정이 아닐 수 있습니다.
+      </p>
+    </Section>
+  );
+}
+
 function PowerSection({ report }) {
   const relativePower = report.bodyWeight && report.peakPower ? (report.peakPower / report.bodyWeight).toFixed(1) : null;
   const heightRatio = report.calibHeightCm && report.heightCm ? ((report.heightCm / report.calibHeightCm) * 100).toFixed(1) : null;
@@ -319,6 +395,13 @@ function RsiSection({ report }) {
         <StatCard label="후속 체공" value={metric(rsi.flightTimeMs)} unit="ms" />
         <StatCard label="평균 RSI" value={metric(rsi.rsiMean)} unit={`${rsi.cycles || 0}회`} />
       </div>
+      {/* [DJ 박스높이 2026-08-11] 트레이너가 record 단계에서 직접 입력했을
+          때만 표시(참고용 — 카메라 측정값이 아니므로 StatCard/점수엔 안 씀). */}
+      {report.boxHeightCm != null && (
+        <div className="mt-3">
+          <SmallInfo label="박스 높이 (트레이너 입력)" value={`${report.boxHeightCm}cm`} />
+        </div>
+      )}
       {Array.isArray(rsi.perCycle) && rsi.perCycle.length > 0 && (
         <div className="mt-3 rounded-xl border border-emerald-500/20 bg-slate-900/55 p-3">
           <div className="mb-2 flex items-center justify-between">

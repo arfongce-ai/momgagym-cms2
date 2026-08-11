@@ -19,6 +19,9 @@
 // ════════════════════════════════════════════════════════════════════════
 
 import { OneEuroFilter, angleAt, detectOrientation } from './gaitBiomechanics';
+// [SLJ 좌우 비대칭 2026-08-11] findSljAsymmetry가 저장된 리포트에서 세부
+// 종류를 판정하는 데 쓴다(jumpSubType 필드가 없는 과거 데이터도 안전하게 처리).
+import { resolveJumpSubType } from './jumpTypes';
 
 const G = 9.81;
 
@@ -779,5 +782,75 @@ export function computeExtensionAlignment(hipSeq, kneeSeq, ankleSeq = []) {
     kneeFinalDeg: Math.round((k.slice(-1)[0]) * 10) / 10,
     ankle: ankleNote,             // 참고(발목 신전 도달 각, 정확도 낮음)
     quality: alignmentScore >= 80 ? 'good' : alignmentScore >= 60 ? 'fair' : 'poor',
+  };
+}
+
+// ════════════════════════════════════════════════════════════════════════
+//  [SLJ 좌우 비대칭 비교 2026-08-11]
+//  SLJ(한발 점프)는 한 번에 한쪽 다리만 측정해서 별도 리포트로 저장된다
+//  (jumpSubType.js singleLeg — "테스트할 다리를 먼저 선택하세요"). 좌우를
+//  같은 세션에서 묶어 저장하지 않는 기존 구조를 그대로 두고(하위호환 —
+//  과거 저장 데이터·기존 저장 흐름 안 건드림), 리포트를 볼 때 "그 회원의
+//  반대쪽 다리 최신 기록"을 찾아 비교만 추가로 보여주는 방식으로 구현한다.
+//
+//  지표는 LSI(Limb Symmetry Index) — 스포츠의학에서 좌우 비대칭을 볼 때
+//  흔히 쓰는 방식(예: ACL 재활 복귀 기준)으로, 약한 쪽 ÷ 강한 쪽 × 100(%).
+//  100%면 완전 대칭, 낮을수록 불균형이 큼. 통상 90% 이상을 정상 범위로 본다.
+// ════════════════════════════════════════════════════════════════════════
+
+/**
+ * 두 값(왼쪽/오른쪽)의 좌우 대칭지수(LSI, %)를 계산한다. 순수 함수.
+ * @returns {{leftValue:number, rightValue:number, lsiPct:number, weakerSide:'left'|'right'}|null}
+ *   둘 중 하나라도 유효한 양수가 아니면 null(비교 불가 — 억지로 계산하지 않음).
+ */
+export function computeLegAsymmetry({ leftValue, rightValue }) {
+  const L = Number(leftValue);
+  const R = Number(rightValue);
+  if (!Number.isFinite(L) || !Number.isFinite(R) || L <= 0 || R <= 0) return null;
+  const stronger = Math.max(L, R);
+  const weaker = Math.min(L, R);
+  const lsiPct = Math.round((weaker / stronger) * 1000) / 10;
+  // 완전히 같으면(L===R) 실질적 차이가 없으므로 어느 쪽을 weaker로 표기해도
+  // 무해하다 — 관례상 left로 고정(표시 문구가 매 렌더마다 안 바뀌게).
+  const weakerSide = L <= R ? 'left' : 'right';
+  return { leftValue: L, rightValue: R, lsiPct, weakerSide };
+}
+
+/**
+ * 리포트 목록(회원의 전체 AI측정 리포트, aiStore.ensureGaitReports 반환값)에서
+ * "현재 보고 있는 SLJ 리포트"의 반대쪽 다리 중 가장 최근 유효 기록을 찾아
+ * 비대칭을 계산한다. 순수 함수(aiStore를 직접 호출하지 않음) — 호출부
+ * (JumpReportDashboard.jsx)가 이미 가져온 배열만 넘기면 되므로 테스트가
+ * 쉽고, "가져오기"와 "계산"의 책임이 분리된다.
+ *
+ * currentReport가 SLJ가 아니거나(leg 없음) heightCm이 없으면(무효 측정 등)
+ * 애초에 비교 대상이 아니므로 null. 반대쪽 다리 기록이 아예 없어도 null —
+ * 이 경우 "아직 비교 불가"일 뿐 오류가 아니다(호출부가 안내 문구로 처리).
+ */
+export function findSljAsymmetry({ reports, currentReport }) {
+  if (!currentReport?.leg || currentReport.heightCm == null) return null;
+  const oppositeLeg = currentReport.leg === 'left' ? 'right' : 'left';
+  const candidates = (reports || [])
+    .filter((r) => r
+      && r.id !== currentReport.id
+      && r.kind === 'jump'
+      && resolveJumpSubType(r) === 'slj'
+      && r.leg === oppositeLeg
+      && r.valid !== false
+      && r.heightCm != null)
+    .sort((a, b) => new Date(b.createdAt || b.measuredAt || 0) - new Date(a.createdAt || a.measuredAt || 0));
+  const other = candidates[0];
+  if (!other) return null;
+
+  const result = computeLegAsymmetry({
+    leftValue: currentReport.leg === 'left' ? currentReport.heightCm : other.heightCm,
+    rightValue: currentReport.leg === 'right' ? currentReport.heightCm : other.heightCm,
+  });
+  if (!result) return null;
+
+  return {
+    ...result,
+    otherReportDate: other.createdAt || other.measuredAt || null,
+    otherReportId: other.id || null,
   };
 }

@@ -22,6 +22,16 @@ import {
   cancelReservation,
   rescheduleReservation,
 } from '../../services/reservationService';
+// [momi 쓰기 권한 확장 2026-08-10] GlobalVoiceCommand.jsx와 동일 — 예약류와
+// 같은 확인 흐름을 타는 새 쓰기 기능 3종.
+import {
+  buildAddMemoSummary,
+  confirmAddMemberMemo,
+  buildAdjustSessionSummary,
+  confirmAdjustSessionCount,
+  buildUpdateInfoSummary,
+  confirmUpdateMemberInfo,
+} from '../../services/memberWriteService';
 import { useAuth } from '../../contexts/AuthContext';
 import { store } from '../../demoData';
 import { scopeMembersToTrainer, sortByName } from '../../utils/memberList';
@@ -203,6 +213,57 @@ export default function KioskVoiceCommand() {
     [runVoiceConfirmFlow, announceAndFinish]
   );
 
+  // [momi 쓰기 권한 확장 2026-08-10] GlobalVoiceCommand.jsx와 동일한 이유·동일한
+  // 3개 확인 흐름(메모 추가/세션 조정/기본정보 수정).
+  const runMemoAddConfirmFlow = useCallback(
+    (propose) => {
+      const { member, memoText, warnings } = propose;
+      if (!member || !memoText) {
+        return announceAndFinish(warnings?.[0] || '메모를 추가할 회원이나 내용을 다시 말씀해주세요.');
+      }
+      return runVoiceConfirmFlow({
+        summary: buildAddMemoSummary(propose),
+        onConfirm: () => confirmAddMemberMemo({ member, memoText }).then(() => `${member.name}님 메모에 추가했어요.`),
+        onCancelMessage: '알겠습니다, 메모는 추가하지 않을게요.',
+      });
+    },
+    [runVoiceConfirmFlow, announceAndFinish]
+  );
+
+  const runSessionAdjustConfirmFlow = useCallback(
+    (propose) => {
+      const { member, trainerId, delta, warnings } = propose;
+      if (!propose.ready || !member || !trainerId || !delta) {
+        return announceAndFinish(warnings?.[0] || '세션을 조정할 회원·트레이너·횟수를 다시 말씀해주세요.');
+      }
+      return runVoiceConfirmFlow({
+        summary: buildAdjustSessionSummary(propose),
+        onConfirm: () =>
+          confirmAdjustSessionCount({ member, trainerId, delta }).then(
+            () => `${member.name}님 세션을 ${delta > 0 ? delta + '회 추가' : Math.abs(delta) + '회 차감'}했어요.`
+          ),
+        onCancelMessage: '알겠습니다, 세션은 그대로 둘게요.',
+      });
+    },
+    [runVoiceConfirmFlow, announceAndFinish]
+  );
+
+  const runMemberInfoUpdateConfirmFlow = useCallback(
+    (propose) => {
+      const { member, field, newValue, warnings } = propose;
+      if (!member || !field || !newValue) {
+        return announceAndFinish(warnings?.[0] || '수정할 회원·정보·새 값을 다시 말씀해주세요.');
+      }
+      return runVoiceConfirmFlow({
+        summary: buildUpdateInfoSummary(propose),
+        onConfirm: () =>
+          confirmUpdateMemberInfo({ member, field, newValue }).then(() => `${member.name}님 ${propose.fieldLabel}를 바꿨어요.`),
+        onCancelMessage: '알겠습니다, 정보는 그대로 둘게요.',
+      });
+    },
+    [runVoiceConfirmFlow, announceAndFinish]
+  );
+
   const handleCommand = useCallback(
     async (transcript) => {
       if (isHandlingRef.current) {
@@ -246,6 +307,18 @@ export default function KioskVoiceCommand() {
           handledSeparately = true;
           clearHistory(chatHistoryRef, lastChatAtRef);
           await runRescheduleConfirmFlow(result.propose);
+        } else if (result.type === 'memo_add_propose') {
+          handledSeparately = true;
+          clearHistory(chatHistoryRef, lastChatAtRef);
+          await runMemoAddConfirmFlow(result.propose);
+        } else if (result.type === 'session_adjust_propose') {
+          handledSeparately = true;
+          clearHistory(chatHistoryRef, lastChatAtRef);
+          await runSessionAdjustConfirmFlow(result.propose);
+        } else if (result.type === 'member_info_update_propose') {
+          handledSeparately = true;
+          clearHistory(chatHistoryRef, lastChatAtRef);
+          await runMemberInfoUpdateConfirmFlow(result.propose);
         } else if (result.type === 'timer_control') {
           // [음성 타이머 제어 2026-08-09] GlobalVoiceCommand.jsx와 동일 — 확인
           // 없이 바로 실행됐으니 결과만 안내한다.
@@ -274,7 +347,11 @@ export default function KioskVoiceCommand() {
         isHandlingRef.current = false;
       }
     },
-    [role, user, allMembers, navigate, speak, runReservationConfirmFlow, runCancelConfirmFlow, runRescheduleConfirmFlow]
+    [
+      role, user, allMembers, navigate, speak,
+      runReservationConfirmFlow, runCancelConfirmFlow, runRescheduleConfirmFlow,
+      runMemoAddConfirmFlow, runSessionAdjustConfirmFlow, runMemberInfoUpdateConfirmFlow,
+    ]
   );
 
   const handleWakeOnly = useCallback(() => {

@@ -57,6 +57,12 @@ export const JUMP_SUBTYPES = {
 // 화면에 보여줄 순서(선택 칩·가이드 카드 등에서 공통으로 사용).
 export const JUMP_SUBTYPE_ORDER = ['cmj', 'sj', 'dj', 'slj', 'rsi'];
 
+// [SLJ 좌우 비대칭 2026-08-11] 다리 코드('left'|'right') → 표시 라벨.
+// JumpAnalysisHub.jsx(다리 선택 버튼)와 JumpReportDashboard.jsx(리포트 표시·
+// 비대칭 비교)가 같이 쓴다 — 라벨을 두 곳에 따로 적어두면 나중에 하나만
+// 바뀌는 사고가 나므로 한 곳에 모음.
+export const LEG_LABEL = { left: '왼발', right: '오른발' };
+
 const DEFAULT_REACTIVE_MIN_CYCLES = 3; // reactiveJump.js RSI_TUNING.minCycles 기존값과 일치시킴
 
 /**

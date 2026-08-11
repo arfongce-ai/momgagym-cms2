@@ -8,6 +8,15 @@ import { findDestination } from '../voice/commandRegistry.js';
 import { setPendingVoiceTarget } from '../voice/pendingVoiceTarget.js';
 import { auth } from '../firebase.js';
 import { proposeReservation, proposeCancelReservation, proposeRescheduleReservation } from './reservationService.js';
+// [momi 쓰기 권한 확장 2026-08-10] 예약류와 같은 propose→confirm 원칙을 따르는
+// 새 쓰기 기능 3종(메모 추가/세션 조정/기본정보 수정). confirmX()는 여기서
+// 안 부른다 — 트레이너 확인 이후 실제 저장은 UI 컴포넌트(GlobalVoiceCommand.jsx/
+// KioskVoiceCommand.jsx)의 책임이라 그쪽에서 직접 가져다 쓴다(예약류와 동일 구조).
+import {
+  proposeAddMemberMemo,
+  proposeAdjustSessionCount,
+  proposeUpdateMemberInfo,
+} from './memberWriteService.js';
 // [음성 타이머 제어 2026-08-09] publishTimerControl은 화면이 이미 열려 있으면
 // true를 돌려주며 즉시 실행한다 — 그 경우 pendingTimerCommand(1회성 저장 +
 // 화면 이동)까지 갈 필요가 없다. false면(화면이 아직 안 열림) 저장해두고 그
@@ -167,6 +176,40 @@ const TIMER_ACTION_KEYWORDS = [
  * 숫자가 뭔지 문장을 "이해"해야 구분되므로 숫자가 하나라도 있으면 여전히
  * 시도하지 않고 Claude로 넘긴다(오배정 위험이 더 크기 때문).
  */
+// [무료 확장 2026-08-10 추가분] interval은 원래 "숫자가 하나라도 있으면 무조건
+// Claude"였다 — 운동/휴식/라운드 숫자가 뒤섞이면 어느 게 뭔지 "이해"가 필요해서다.
+// 하지만 "운동40초 휴식20초 8라운드"처럼 숫자마다 라벨(운동/휴식/라운드)이 바로
+// 붙어 있으면 얘기가 다르다 — 그건 더 이상 "이해"가 아니라 countdown의 "3분"·
+// metronome의 "120bpm"과 똑같은 "라벨 옆 숫자 하나 읽기" 문제라 똑같이 안전하다.
+// 안전장치: 문장에 있는 숫자 개수와 라벨로 잡아낸 숫자 개수가 정확히 같을 때만
+// 통과시킨다 — 라벨 없는 숫자가 하나라도 섞여 있으면(개수가 안 맞으면) 여전히
+// 확신 없는 걸로 보고 Claude로 넘긴다(기존 안전 철학 그대로 유지).
+function matchIntervalNumbers(commandText) {
+  const allDigitGroups = commandText.match(/\d+/g) || [];
+  if (allDigitGroups.length === 0) return null;
+
+  // [주의] "역순"(예: "40초 운동")은 일부러 안 받는다 — "운동40초 휴식20초"처럼
+  // 두 라벨이 붙어 나오면 앞 필드의 "초"가 뒤 라벨 바로 앞자리라, 역순 패턴이
+  // "(숫자)초(다음라벨)"을 그 다음 라벨 것으로 잘못 먹어버리는(운동 값이 휴식
+  // 값으로 새는) 사고가 있었다. 라벨-먼저 순서만 받으면 이 겹침이 아예 없다.
+  const workMatch = commandText.match(/운동\s*(\d+)\s*초/);
+  const restMatch = commandText.match(/휴식\s*(\d+)\s*초/);
+  const roundMatch = commandText.match(/(\d+)\s*(?:라운드|세트)/);
+
+  const workSec = workMatch ? parseInt(workMatch[1], 10) : null;
+  const restSec = restMatch ? parseInt(restMatch[1], 10) : null;
+  const rounds = roundMatch ? parseInt(roundMatch[1], 10) : null;
+
+  const labeledCount = [workSec, restSec, rounds].filter((v) => v != null).length;
+  if (labeledCount === 0 || labeledCount !== allDigitGroups.length) return null;
+
+  const result = {};
+  if (workSec != null) result.workSec = workSec;
+  if (restSec != null) result.restSec = restSec;
+  if (rounds != null) result.rounds = rounds;
+  return result;
+}
+
 export function matchRuleBasedTimerControl(commandText) {
   const normalized = normalize(commandText);
   let tool = null;
@@ -192,9 +235,12 @@ export function matchRuleBasedTimerControl(commandText) {
   const hasDigit = /\d/.test(commandText);
 
   if (tool === 'interval') {
-    // 숫자가 하나라도 있으면 운동/휴식/라운드 중 뭔지 확신할 수 없다.
-    if (hasDigit) return null;
-    return { tool, action };
+    if (!hasDigit) return { tool, action };
+    // start가 아닌데 숫자가 섞이면(예: "인터벌 20초 멈춰줘" — 의도 불명) 여전히 Claude로.
+    if (action !== 'start') return null;
+    const numbers = matchIntervalNumbers(commandText);
+    if (!numbers) return null;
+    return { tool, action, ...numbers };
   }
 
   if (tool === 'countdown' && action === 'start' && hasDigit) {
@@ -284,9 +330,9 @@ export async function processVoiceCommand({
       tool: ruleTimerCmd.tool,
       action: ruleTimerCmd.action,
       seconds: typeof ruleTimerCmd.seconds === 'number' ? ruleTimerCmd.seconds : null,
-      workSec: null,
-      restSec: null,
-      rounds: null,
+      workSec: typeof ruleTimerCmd.workSec === 'number' ? ruleTimerCmd.workSec : null,
+      restSec: typeof ruleTimerCmd.restSec === 'number' ? ruleTimerCmd.restSec : null,
+      rounds: typeof ruleTimerCmd.rounds === 'number' ? ruleTimerCmd.rounds : null,
       bpm: typeof ruleTimerCmd.bpm === 'number' ? ruleTimerCmd.bpm : null,
     };
     const deliveredLive = publishTimerControl(cmd);
@@ -389,6 +435,41 @@ export async function processVoiceCommand({
       newStartTime: data.newStartTime,
     });
     return { type: 'reservation_reschedule_propose', propose };
+  }
+
+  // [momi 쓰기 권한 확장 2026-08-10] 회원 메모 추가 — 여기서도 아직 저장하지
+  // 않는다(proposeAddMemberMemo는 순수 조회). 실제 저장(confirmAddMemberMemo)은
+  // 호출부가 트레이너의 "네" 확인을 받은 뒤에만 별도로 호출한다.
+  if (data.type === 'memo_add_propose') {
+    const propose = proposeAddMemberMemo({
+      memberQuery: data.memberName || undefined,
+      memoText: data.memoText || undefined,
+    });
+    return { type: 'memo_add_propose', propose };
+  }
+
+  // 세션 횟수 조정 — 예약류와 완전히 같은 mode 분기(폰=trainerId/키오스크=trainerName).
+  // 이것도 순수 조회일 뿐, "음수가 되지 않는지"까지 포함한 실제 검증은
+  // proposeAdjustSessionCount 안에서 끝내고 아직 저장은 안 한다.
+  if (data.type === 'session_adjust_propose') {
+    const trainerId = mode === 'kiosk' ? null : currentUser?.trainerId || null;
+    const propose = proposeAdjustSessionCount({
+      memberQuery: data.memberName || undefined,
+      trainerId: trainerId || undefined,
+      trainerName: data.trainerName || undefined,
+      delta: data.delta,
+    });
+    return { type: 'session_adjust_propose', propose };
+  }
+
+  // 회원 기본정보(전화번호 등) 수정 — 위와 같은 이유로 아직 저장하지 않는다.
+  if (data.type === 'member_info_update_propose') {
+    const propose = proposeUpdateMemberInfo({
+      memberQuery: data.memberName || undefined,
+      field: data.field || undefined,
+      newValue: data.newValue || undefined,
+    });
+    return { type: 'member_info_update_propose', propose };
   }
 
   // [음성 타이머 제어 2026-08-09] 화면 이동이 아니라 초시계·타이머·인터벌·
