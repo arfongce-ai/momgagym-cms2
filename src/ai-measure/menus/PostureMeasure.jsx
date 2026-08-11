@@ -451,7 +451,7 @@ export default function PostureMeasure({ member, onSave, onBack, onViewInReport 
           perViewSnapshots={report.perViewSnapshots}
         />
 
-        <div className="space-y-2 rounded-2xl border border-slate-800 bg-slate-950/95 p-3">
+        <div className="space-y-2 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/95 dark:bg-slate-950/95 p-3">
           {/* '리포트 저장'을 누르면 A4 JPG 저장 + 회원 기록 자동 저장 (탭 불필요) */}
           <ReportActions
             reportNodeId="posture-report-sheet"
@@ -462,12 +462,12 @@ export default function PostureMeasure({ member, onSave, onBack, onViewInReport 
             onAfterReportSave={handleSave}
             onMessage={setActionMsg}
           />
-          {actionMsg && <p className="text-center text-xs text-slate-400">{actionMsg}</p>}
+          {actionMsg && <p className="text-center text-xs text-slate-500 dark:text-slate-400">{actionMsg}</p>}
           {saveState === 'saved' && (
-            <p className="text-center text-xs font-bold text-emerald-400">회원 기록에 저장되었습니다.</p>
+            <p className="text-center text-xs font-bold text-emerald-700 dark:text-emerald-400">회원 기록에 저장되었습니다.</p>
           )}
           {saveState === 'error' && (
-            <p className="text-center text-xs text-red-400">회원 기록 저장 실패. ‘리포트 저장’을 다시 눌러 주세요.</p>
+            <p className="text-center text-xs text-red-700 dark:text-red-400">회원 기록 저장 실패. ‘리포트 저장’을 다시 눌러 주세요.</p>
           )}
           {/* [리포트 통합 2026-08-09] 저장 완료 후에만 노출 — 강제 이동이 아니라
               선택지. 미등록회원은 결과리포트 화면의 회원 목록에 없어서 지원 안 함
@@ -476,7 +476,7 @@ export default function PostureMeasure({ member, onSave, onBack, onViewInReport 
           {saveState === 'saved' && !member?.isVirtual && typeof onViewInReport === 'function' && (
             <button
               onClick={onViewInReport}
-              className="w-full rounded-xl border border-amber-500/40 bg-amber-500/10 text-amber-300 font-bold text-sm py-2.5"
+              className="w-full rounded-xl border border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300 font-bold text-sm py-2.5"
             >
               📊 결과리포트에서 보기
             </button>
@@ -521,8 +521,8 @@ export default function PostureMeasure({ member, onSave, onBack, onViewInReport 
           <span className="w-12" />
         </div>
 
-        <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4 space-y-3">
-          <p className="text-sm font-bold text-slate-200">촬영 방식을 선택하세요</p>
+        <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 space-y-3">
+          <p className="text-sm font-bold text-slate-700 dark:text-slate-200">촬영 방식을 선택하세요</p>
           <button
             onClick={() => beginMeasure('auto')}
             className="w-full rounded-xl bg-amber-500 px-4 py-4 text-left active:scale-[0.99] transition">
@@ -533,17 +533,17 @@ export default function PostureMeasure({ member, onSave, onBack, onViewInReport 
           </button>
           <button
             onClick={() => beginMeasure('manual')}
-            className="w-full rounded-xl border border-slate-700 bg-slate-800 px-4 py-4 text-left active:scale-[0.99] transition">
+            className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-4 py-4 text-left active:scale-[0.99] transition">
             <p className="text-base font-black text-white">수동 촬영</p>
-            <p className="mt-0.5 text-xs font-bold text-slate-400">
+            <p className="mt-0.5 text-xs font-bold text-slate-500 dark:text-slate-400">
               원하는 면만 골라 직접 버튼으로 촬영합니다.
             </p>
           </button>
         </div>
 
         {/* 수동 모드용 면 선택 (자동은 4면 고정) */}
-        <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
-          <p className="mb-2 text-xs font-bold text-slate-400">수동 촬영 시 측정할 면</p>
+        <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
+          <p className="mb-2 text-xs font-bold text-slate-500 dark:text-slate-400">수동 촬영 시 측정할 면</p>
           <div className="flex flex-wrap gap-2">
             {VIEW_STEPS.map((step) => {
               const selected = !!selectedViews[step.key];
@@ -555,7 +555,7 @@ export default function PostureMeasure({ member, onSave, onBack, onViewInReport 
                   className={`rounded-full border px-3 py-1.5 text-xs font-black ${
                     selected
                       ? 'border-amber-400 bg-amber-400 text-slate-950'
-                      : 'border-slate-700 bg-slate-800 text-slate-400'
+                      : 'border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'
                   }`}
                 >
                   {selected ? '✓ ' : ''}{step.label}
@@ -583,7 +583,7 @@ export default function PostureMeasure({ member, onSave, onBack, onViewInReport 
       topBar={
         <div className="w-full text-right">
           <p className="text-sm font-black text-white">자세·체형 측정</p>
-          <p className="text-[11px] font-bold text-amber-300">
+          <p className="text-[11px] font-bold text-amber-700 dark:text-amber-300">
             {member?.name || '회원 미선택'} · {bodyInfo.heightCm ? `${bodyInfo.heightCm}cm` : '키 미입력'} · {bodyInfo.actualAge ? `${bodyInfo.actualAge}세` : '나이 미입력'}
           </p>
           <div className="mt-2 flex flex-wrap justify-end gap-1">
@@ -609,7 +609,7 @@ export default function PostureMeasure({ member, onSave, onBack, onViewInReport 
               );
             })}
           </div>
-          {!bodyInfo.heightCm && <p className="mt-1 text-[10px] text-red-300">신체정보에서 키를 입력하면 mm 편차 정확도가 올라갑니다.</p>}
+          {!bodyInfo.heightCm && <p className="mt-1 text-[10px] text-red-700 dark:text-red-300">신체정보에서 키를 입력하면 mm 편차 정확도가 올라갑니다.</p>}
         </div>
       }
       controls={
@@ -623,7 +623,7 @@ export default function PostureMeasure({ member, onSave, onBack, onViewInReport 
             className="flex h-20 w-20 items-center justify-center rounded-full border-4 border-amber-300/70 bg-black/55 backdrop-blur active:scale-95 transition disabled:opacity-60"
           >
             {autoCountdown != null ? (
-              <span className="font-black text-amber-300 leading-none" style={{ fontSize: '2.6rem' }}>
+              <span className="font-black text-amber-700 dark:text-amber-300 leading-none" style={{ fontSize: '2.6rem' }}>
                 {autoCountdown}
               </span>
             ) : (
@@ -636,7 +636,7 @@ export default function PostureMeasure({ member, onSave, onBack, onViewInReport 
           <button
             onClick={handleCapture}
             disabled={status !== 'running' || !isFullBodyVisible(latestLandmarksRef.current)}
-            className="h-20 w-20 rounded-full border-4 border-white bg-amber-500 text-xs font-black text-slate-950 shadow-lg disabled:bg-slate-600 disabled:text-slate-300"
+            className="h-20 w-20 rounded-full border-4 border-white bg-amber-500 text-xs font-black text-slate-950 shadow-lg disabled:bg-slate-300 dark:disabled:bg-slate-600 disabled:text-slate-600 dark:disabled:text-slate-300"
           >
             {activeStep.short}
             <br />
@@ -684,7 +684,7 @@ export default function PostureMeasure({ member, onSave, onBack, onViewInReport 
           </div>
         )}
         <div className="rounded-2xl border border-white/10 bg-black/55 px-4 py-3 text-center text-sm font-bold text-white backdrop-blur">
-          <span className="text-amber-300">{activeStep.label}</span> · {guide}
+          <span className="text-amber-700 dark:text-amber-300">{activeStep.label}</span> · {guide}
         </div>
       </div>
 
@@ -692,7 +692,7 @@ export default function PostureMeasure({ member, onSave, onBack, onViewInReport 
       {autoCountdown != null && (
         <div className="pointer-events-none fixed inset-0 z-40 flex items-center justify-center">
           <div className="flex h-44 w-44 items-center justify-center rounded-full bg-black/55 backdrop-blur-sm ring-4 ring-amber-300/80 animate-pulse">
-            <span className="font-black text-amber-300 leading-none" style={{ fontSize: '7rem' }}>
+            <span className="font-black text-amber-700 dark:text-amber-300 leading-none" style={{ fontSize: '7rem' }}>
               {autoCountdown}
             </span>
           </div>
@@ -706,10 +706,10 @@ export default function PostureMeasure({ member, onSave, onBack, onViewInReport 
 
 function LiveMetric({ label, value, tone = 'amber' }) {
   const toneClass = {
-    emerald: 'text-emerald-300 border-emerald-400/30',
-    amber: 'text-amber-300 border-amber-400/30',
-    red: 'text-red-300 border-red-400/30',
-  }[tone] || 'text-amber-300 border-amber-400/30';
+    emerald: 'text-emerald-700 dark:text-emerald-300 border-emerald-400/30',
+    amber: 'text-amber-700 dark:text-amber-300 border-amber-400/30',
+    red: 'text-red-700 dark:text-red-300 border-red-400/30',
+  }[tone] || 'text-amber-700 dark:text-amber-300 border-amber-400/30';
   return (
     <div className={`rounded-xl border bg-black/55 px-2 py-2 text-center backdrop-blur ${toneClass}`}>
       <p className="text-[10px] font-bold text-white/60">{label}</p>

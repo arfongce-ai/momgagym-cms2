@@ -918,7 +918,7 @@ export default function RecordMeasure({ member: _member, onBack }) {
                 key={key}
                 onClick={() => selectQuality(key)}
                 disabled={status === 'recording'}
-                className={`rounded-lg px-3 py-2 text-xs font-black ${quality === key ? 'bg-cyan-400 text-slate-950' : 'text-slate-300'} disabled:opacity-60`}
+                className={`rounded-lg px-3 py-2 text-xs font-black ${quality === key ? 'bg-cyan-400 text-slate-950' : 'text-slate-600 dark:text-slate-300'} disabled:opacity-60`}
               >
                 {qp.label}
               </button>
@@ -930,7 +930,7 @@ export default function RecordMeasure({ member: _member, onBack }) {
                 key={ratio}
                 onClick={() => setAspect(ratio)}
                 disabled={status === 'recording'}
-                className={`rounded-lg px-4 py-2 text-sm font-black ${aspect === ratio ? 'bg-amber-500 text-slate-950' : 'text-slate-300'} disabled:opacity-60`}
+                className={`rounded-lg px-4 py-2 text-sm font-black ${aspect === ratio ? 'bg-amber-500 text-slate-950' : 'text-slate-600 dark:text-slate-300'} disabled:opacity-60`}
               >
                 {ratio === '3/4' ? '3:4' : '1:1'}
               </button>
@@ -942,14 +942,14 @@ export default function RecordMeasure({ member: _member, onBack }) {
         <div className="absolute left-4 top-[max(60px,calc(env(safe-area-inset-top)+50px))] z-10 flex items-center gap-2">
           <SkeletonToggleChip />
           {skeletonOn && !poseReady && (
-            <span className="rounded-full bg-black/60 px-2 py-1 text-[10px] font-bold text-amber-300 backdrop-blur">
+            <span className="rounded-full bg-black/60 px-2 py-1 text-[10px] font-bold text-amber-700 dark:text-amber-300 backdrop-blur">
               스켈레톤 모델 준비 중…
             </span>
           )}
         </div>
 
         {status === 'idle' && (
-          <div className="absolute inset-0 z-10 flex items-center justify-center px-6 text-center text-sm text-slate-200">
+          <div className="absolute inset-0 z-10 flex items-center justify-center px-6 text-center text-sm text-slate-700 dark:text-slate-200">
             <div className="rounded-2xl bg-black/70 px-5 py-4 backdrop-blur">
               {error ? (
                 <div className="space-y-3">
@@ -967,7 +967,7 @@ export default function RecordMeasure({ member: _member, onBack }) {
         )}
 
         {status === 'ready' && !videoReady && (
-          <div className="absolute inset-0 z-10 flex items-center justify-center text-slate-200 text-sm text-center px-4 bg-black/25">
+          <div className="absolute inset-0 z-10 flex items-center justify-center text-slate-700 dark:text-slate-200 text-sm text-center px-4 bg-black/25">
             <div className="rounded-xl bg-black/75 px-4 py-3 backdrop-blur">
               <div className="mx-auto mb-2 h-5 w-5 rounded-full border-2 border-amber-400 border-t-transparent animate-spin" />
               <p>{cameraNote || '카메라 영상 준비 중입니다...'}</p>
@@ -1017,8 +1017,8 @@ export default function RecordMeasure({ member: _member, onBack }) {
         <div className="rounded-2xl overflow-hidden bg-black">
           <video src={videoUrl} controls playsInline className="w-full" style={{ maxHeight: '60vh' }} />
         </div>
-        <div className="rounded-xl bg-slate-800 px-3 py-2 text-center text-xs text-slate-300">
-          <span className="font-mono font-bold text-slate-100">{savedFileName}</span>
+        <div className="rounded-xl bg-slate-100 dark:bg-slate-800 px-3 py-2 text-center text-xs text-slate-600 dark:text-slate-300">
+          <span className="font-mono font-bold text-slate-800 dark:text-slate-100">{savedFileName}</span>
           <span className="text-slate-500"> · {aspect} · {savedSize || '크기 확인 중'}</span>
         </div>
         <div className="rounded-xl bg-amber-500/10 border border-amber-400/25 px-3 py-2 text-center text-xs text-amber-100">
@@ -1040,7 +1040,7 @@ export default function RecordMeasure({ member: _member, onBack }) {
           )}
         </div>
         {shareSupported && (
-          <button onClick={saveToGallery} className="block w-full text-center text-[11px] text-slate-400 underline">
+          <button onClick={saveToGallery} className="block w-full text-center text-[11px] text-slate-500 dark:text-slate-400 underline">
             휴대폰 저장/공유 열기
           </button>
         )}
@@ -1087,7 +1087,7 @@ function InlineStopwatch({ elapsed, running, onElapsedChange, onRunningChange })
 
   return (
     <div className="flex items-center gap-2">
-      <div className="flex-1 rounded-xl bg-black/20 px-3 py-2 text-center font-mono text-3xl font-black tabular-nums text-amber-300">
+      <div className="flex-1 rounded-xl bg-black/20 px-3 py-2 text-center font-mono text-3xl font-black tabular-nums text-amber-700 dark:text-amber-300">
         {text}
       </div>
       <button onClick={toggle} className={`h-11 w-16 rounded-xl text-xs font-black ${running ? 'bg-white/20 text-white' : 'bg-amber-500/90 text-slate-950'}`}>
@@ -1155,7 +1155,7 @@ function InlineMetronome({ bpm, playing, onBpmChange, onPlayingChange }) {
   return (
     <div className="flex items-center gap-2">
       <button onClick={() => onBpmChange(Math.max(40, bpm - 5))} className="h-11 w-12 rounded-xl border border-white/15 text-sm font-black text-white/75">-5</button>
-      <div className="flex-1 rounded-xl bg-black/20 px-3 py-2 text-center font-mono text-3xl font-black text-amber-300">
+      <div className="flex-1 rounded-xl bg-black/20 px-3 py-2 text-center font-mono text-3xl font-black text-amber-700 dark:text-amber-300">
         {bpm}<span className="text-sm text-white/45"> BPM</span>
       </div>
       <button onClick={() => onBpmChange(Math.min(220, bpm + 5))} className="h-11 w-12 rounded-xl border border-white/15 text-sm font-black text-white/75">+5</button>
@@ -1298,7 +1298,7 @@ function InlineInterval({ stateRef, onChange }) {
   const showSec = s.phase === 'idle' ? 0 : Math.ceil(left / 1000);
   const mm = Math.floor(showSec / 60), ss = showSec % 60;
   const phaseLabel = s.phase === 'prepare' ? '준비' : s.phase === 'work' ? '운동' : s.phase === 'rest' ? '휴식' : s.phase === 'done' ? '완료' : '대기';
-  const phaseColor = s.phase === 'work' ? 'text-emerald-300' : s.phase === 'rest' ? 'text-sky-300' : s.phase === 'prepare' ? 'text-amber-300' : 'text-white/70';
+  const phaseColor = s.phase === 'work' ? 'text-emerald-700 dark:text-emerald-300' : s.phase === 'rest' ? 'text-sky-700 dark:text-sky-300' : s.phase === 'prepare' ? 'text-amber-700 dark:text-amber-300' : 'text-white/70';
   const bigTime = s.phase === 'idle' ? '--:--' : s.phase === 'done' ? '완료!' : `${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`;
 
   if (s.phase === 'idle') {

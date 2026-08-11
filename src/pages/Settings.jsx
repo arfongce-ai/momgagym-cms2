@@ -268,8 +268,8 @@ export default function Settings({ darkMode, setDarkMode }) {
       <h1 className="text-2xl font-black tracking-tight">설정</h1>
 
       {/* 다크모드 */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
-        <h2 className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-3">화면 설정</h2>
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4">
+        <h2 className="text-xs font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400 mb-3">화면 설정</h2>
         <div className="flex items-center justify-between">
           <div>
             <p className="font-semibold text-sm">다크 모드</p>
@@ -286,8 +286,8 @@ export default function Settings({ darkMode, setDarkMode }) {
       {/* 저장소 안내 */}
       <div className="bg-amber-500/10 border border-amber-500/20 rounded-2xl p-4">
         <h2 className="text-xs font-bold uppercase tracking-widest text-amber-400 mb-2">저장소 안내</h2>
-        <div className="text-xs text-slate-400 space-y-1.5">
-          <p>• 데이터는 <strong className="text-slate-300">Firebase Firestore</strong>에 저장됩니다</p>
+        <div className="text-xs text-slate-600 dark:text-slate-400 space-y-1.5">
+          <p>• 데이터는 <strong className="text-slate-700 dark:text-slate-300">Firebase Firestore</strong>에 저장됩니다</p>
           <p>• 화면에 보이는 값은 빠른 조회를 위한 임시 캐시이며, 실제 저장은 Firestore에서 이뤄집니다</p>
           <p className="pt-1 border-t border-amber-500/20 text-slate-500">데이터 초기화가 필요하면 Firebase 콘솔에서 직접 컬렉션을 관리하세요. (앱에서 임의 초기화 시 운영 데이터가 손실될 수 있어 버튼을 제공하지 않습니다.)</p>
         </div>
@@ -296,8 +296,8 @@ export default function Settings({ darkMode, setDarkMode }) {
       {user?.role === 'admin' && (
         <>
           {/* JSON 백업 */}
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
-            <h2 className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-1">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4">
+            <h2 className="text-xs font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400 mb-1">
               데이터 백업 (관리자)
             </h2>
             <p className="text-xs text-slate-500 mb-3">
@@ -307,11 +307,11 @@ export default function Settings({ darkMode, setDarkMode }) {
             </p>
             <div className="flex gap-2 mb-3">
               <select value={backupYear} onChange={e => setBackupYear(Number(e.target.value))}
-                className="flex-1 bg-slate-800 border border-slate-700 text-slate-100 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-amber-500">
+                className="flex-1 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-amber-500">
                 {[2023, 2024, 2025, 2026].map(y => <option key={y} value={y}>{y}년</option>)}
               </select>
               <select value={backupMonth} onChange={e => setBackupMonth(Number(e.target.value))}
-                className="flex-1 bg-slate-800 border border-slate-700 text-slate-100 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-amber-500">
+                className="flex-1 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-amber-500">
                 {Array.from({ length: 12 }, (_, i) => i + 1).map(m => (
                   <option key={m} value={m}>{m}월</option>
                 ))}
@@ -324,12 +324,12 @@ export default function Settings({ darkMode, setDarkMode }) {
           </div>
 
           {/* 개인정보 파기 */}
-          <div className="bg-slate-900 border border-red-500/20 rounded-2xl p-4">
+          <div className="bg-white dark:bg-slate-900 border border-red-500/20 rounded-2xl p-4">
             <h2 className="text-xs font-bold uppercase tracking-widest text-red-400 mb-1">
               개인정보 파기 (관리자)
             </h2>
             <p className="text-xs text-slate-500 mb-3">
-              최근 출석일 기준 <strong className="text-slate-300">2년 이상 미방문</strong> 회원을 조회 후 영구 삭제합니다.<br/>
+              최근 출석일 기준 <strong className="text-slate-700 dark:text-slate-300">2년 이상 미방문</strong> 회원을 조회 후 영구 삭제합니다.<br/>
               <span className="text-slate-600">스케줄·수납 기록·신체정보도 함께 삭제됩니다.</span>
             </p>
             <button onClick={loadPurgeList}
@@ -337,7 +337,7 @@ export default function Settings({ darkMode, setDarkMode }) {
               🔍 파기 대상 조회
             </button>
             {purgeMsg && (
-              <p className={`text-xs mb-3 font-semibold ${purgeMsg.startsWith('✅') ? 'text-emerald-400' : 'text-slate-400'}`}>
+              <p className={`text-xs mb-3 font-semibold ${purgeMsg.startsWith('✅') ? 'text-emerald-700 dark:text-emerald-400' : 'text-slate-500 dark:text-slate-400'}`}>
                 {purgeMsg}
               </p>
             )}
@@ -345,8 +345,8 @@ export default function Settings({ darkMode, setDarkMode }) {
               <>
                 <div className="bg-red-500/5 border border-red-500/10 rounded-xl p-3 mb-3 max-h-48 overflow-y-auto space-y-1">
                   {purgeList.map(m => (
-                    <div key={m.id} className="flex items-center justify-between text-xs py-1 border-b border-slate-800 last:border-0 gap-2">
-                      <span className="text-red-400 font-semibold flex-shrink-0">{m.name}</span>
+                    <div key={m.id} className="flex items-center justify-between text-xs py-1 border-b border-slate-200 dark:border-slate-800 last:border-0 gap-2">
+                      <span className="text-red-600 dark:text-red-400 font-semibold flex-shrink-0">{m.name}</span>
                       <span className="text-slate-500 flex-shrink-0">{m.phone}</span>
                       <span className="text-slate-600 text-[10px]">
                         마지막 출석: {m.lastAttendedDate || '없음'}
@@ -363,8 +363,8 @@ export default function Settings({ darkMode, setDarkMode }) {
           </div>
 
           {/* 체형나이 소급 보정 */}
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
-            <h2 className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-1">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4">
+            <h2 className="text-xs font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400 mb-1">
               체형나이 재계산 (관리자)
             </h2>
             <p className="text-xs text-slate-500 mb-3">
@@ -377,7 +377,7 @@ export default function Settings({ darkMode, setDarkMode }) {
               {bodyAgeScanning ? '조회 중…' : '🔍 보정 대상 조회'}
             </button>
             {bodyAgeMsg && (
-              <p className={`text-xs mb-3 font-semibold ${bodyAgeMsg.startsWith('✅') ? 'text-emerald-400' : 'text-slate-400'}`}>
+              <p className={`text-xs mb-3 font-semibold ${bodyAgeMsg.startsWith('✅') ? 'text-emerald-700 dark:text-emerald-400' : 'text-slate-500 dark:text-slate-400'}`}>
                 {bodyAgeMsg}
               </p>
             )}
@@ -385,11 +385,11 @@ export default function Settings({ darkMode, setDarkMode }) {
               <>
                 <div className="bg-amber-500/5 border border-amber-500/10 rounded-xl p-3 mb-3 max-h-48 overflow-y-auto space-y-1">
                   {bodyAgeScanList.map((item) => (
-                    <div key={item.reportId} className="flex items-center justify-between text-xs py-1 border-b border-slate-800 last:border-0 gap-2">
-                      <span className="text-amber-300 font-semibold flex-shrink-0">{item.memberName}</span>
+                    <div key={item.reportId} className="flex items-center justify-between text-xs py-1 border-b border-slate-200 dark:border-slate-800 last:border-0 gap-2">
+                      <span className="text-amber-700 dark:text-amber-300 font-semibold flex-shrink-0">{item.memberName}</span>
                       <span className="text-slate-600 text-[10px] flex-shrink-0">{item.measuredAt}</span>
-                      <span className="text-slate-400 text-[11px]">
-                        {item.oldBodyAge ?? '-'}세 → <span className="text-slate-200 font-bold">{item.newBodyAge}세</span>
+                      <span className="text-slate-600 dark:text-slate-400 text-[11px]">
+                        {item.oldBodyAge ?? '-'}세 → <span className="text-slate-900 dark:text-slate-200 font-bold">{item.newBodyAge}세</span>
                       </span>
                     </div>
                   ))}
@@ -403,8 +403,8 @@ export default function Settings({ darkMode, setDarkMode }) {
           </div>
 
           {/* 데이터 무결성 검사 */}
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
-            <h2 className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-1">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4">
+            <h2 className="text-xs font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400 mb-1">
               데이터 무결성 검사 (관리자)
             </h2>
             <p className="text-xs text-slate-500 mb-3">
@@ -416,7 +416,7 @@ export default function Settings({ darkMode, setDarkMode }) {
               {integrityScanning ? '검사 중…' : '🔍 무결성 검사 실행'}
             </button>
             {integrityMsg && (
-              <p className={`text-xs mb-3 font-semibold ${integrityMsg.startsWith('이상 없음') ? 'text-emerald-400' : 'text-slate-400'}`}>
+              <p className={`text-xs mb-3 font-semibold ${integrityMsg.startsWith('이상 없음') ? 'text-emerald-700 dark:text-emerald-400' : 'text-slate-500 dark:text-slate-400'}`}>
                 {integrityMsg}
               </p>
             )}
@@ -426,22 +426,22 @@ export default function Settings({ darkMode, setDarkMode }) {
                   <div key={f.key} className={`rounded-xl p-3 border text-xs ${
                     f.severity === 'error' ? 'bg-red-500/5 border-red-500/20'
                     : f.severity === 'warn' ? 'bg-amber-500/5 border-amber-500/20'
-                    : 'bg-slate-800/50 border-slate-700'
+                    : 'bg-slate-100 dark:bg-slate-800/50 border-slate-300 dark:border-slate-700'
                   }`}>
                     <div className="flex items-center justify-between mb-1">
                       <span className={`font-bold ${
-                        f.severity === 'error' ? 'text-red-400' : f.severity === 'warn' ? 'text-amber-400' : 'text-slate-400'
+                        f.severity === 'error' ? 'text-red-600 dark:text-red-400' : f.severity === 'warn' ? 'text-amber-600 dark:text-amber-400' : 'text-slate-500 dark:text-slate-400'
                       }`}>{SEVERITY_LABEL[f.severity]}</span>
                       <span className="text-slate-500 font-semibold">{f.memberName}</span>
                     </div>
-                    <p className="text-slate-400 mb-2">{f.message}</p>
+                    <p className="text-slate-600 dark:text-slate-400 mb-2">{f.message}</p>
                     <div className="flex gap-2">
                       <button onClick={() => openMemberForFinding(f)}
-                        className="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold py-1.5 rounded-lg transition-colors">
+                        className="flex-1 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-semibold py-1.5 rounded-lg transition-colors">
                         회원상세로 이동
                       </button>
                       <button onClick={() => dismissFinding(f)}
-                        className="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-400 font-semibold py-1.5 rounded-lg transition-colors">
+                        className="flex-1 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400 font-semibold py-1.5 rounded-lg transition-colors">
                         무시(정상)
                       </button>
                     </div>

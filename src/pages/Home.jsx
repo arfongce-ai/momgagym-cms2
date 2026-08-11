@@ -12,10 +12,10 @@ function fmtDate(d) {
 }
 
 const STATUS_CLR = {
-  scheduled:'bg-slate-700 text-slate-300',
-  attended: 'bg-emerald-500/20 text-emerald-400',
-  canceled: 'bg-red-500/20 text-red-400',
-  noshow:   'bg-orange-500/20 text-orange-400',
+  scheduled:'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300',
+  attended: 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-400',
+  canceled: 'bg-red-500/20 text-red-700 dark:text-red-400',
+  noshow:   'bg-orange-500/20 text-orange-700 dark:text-orange-400',
 };
 const STATUS_LBL = { scheduled:'예정', attended:'출석', canceled:'취소', noshow:'노쇼' };
 const WEEKDAYS   = ['일','월','화','수','목','금','토'];
@@ -42,8 +42,8 @@ function MiniCalendar({ schedules, selectedDate, onSelectDate }) {
   });
 
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
-      <h2 className="font-bold text-sm uppercase tracking-widest text-slate-400 mb-3">📅 이번 주</h2>
+    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4">
+      <h2 className="font-bold text-sm uppercase tracking-widest text-slate-500 dark:text-slate-400 mb-3">📅 이번 주</h2>
       <div className="grid grid-cols-7 gap-1">
         {weekDates.map(date => {
           const ds         = schedules.filter(s => s.date === date);
@@ -55,15 +55,15 @@ function MiniCalendar({ schedules, selectedDate, onSelectDate }) {
               aria-pressed={isSelected}
               className={`rounded-xl p-1.5 text-center transition-colors active:scale-[0.95] w-full
                 ${isSelected ? 'bg-amber-500/20 border border-amber-500/40'
-                  : isToday  ? 'bg-slate-800/60 border border-amber-500/30'
-                             : 'bg-slate-800/60 border border-transparent hover:border-slate-700'}`}>
-              <p className={`text-[10px] font-bold ${isSelected ? 'text-amber-400' : 'text-slate-500'}`}>
+                  : isToday  ? 'bg-slate-100/60 dark:bg-slate-800/60 border border-amber-500/30'
+                             : 'bg-slate-100/60 dark:bg-slate-800/60 border border-transparent hover:border-slate-300 dark:hover:border-slate-700'}`}>
+              <p className={`text-[10px] font-bold ${isSelected ? 'text-amber-700 dark:text-amber-400' : 'text-slate-500'}`}>
                 {WEEKDAYS[dayNum]}
               </p>
-              <p className={`text-sm font-mono font-black ${isSelected ? 'text-amber-400' : 'text-slate-300'}`}>
+              <p className={`text-sm font-mono font-black ${isSelected ? 'text-amber-700 dark:text-amber-400' : 'text-slate-600 dark:text-slate-300'}`}>
                 {parseInt(date.split('-')[2])}
               </p>
-              <p className={`text-[10px] font-bold mt-0.5 ${ds.length ? 'text-amber-400' : 'text-slate-700'}`}>
+              <p className={`text-[10px] font-bold mt-0.5 ${ds.length ? 'text-amber-700 dark:text-amber-400' : 'text-slate-700'}`}>
                 {ds.length ? `${ds.length}건` : '·'}
               </p>
             </button>
@@ -78,9 +78,9 @@ function MiniCalendar({ schedules, selectedDate, onSelectDate }) {
 //  · 오늘의 수업을 홈에서 바로 보여주듯, 전날 입금·등록 현황을 한눈에.
 //  · 집계·분류는 순수 함수 summarizeDailySettlement(=정산 로직과 동일 규칙)에 위임.
 const KIND_CLR = {
-  new: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30',
-  re:  'bg-sky-500/20 text-sky-400 border-sky-500/30',
-  etc: 'bg-slate-600/40 text-slate-300 border-slate-600/40',
+  new: 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 border-emerald-500/30',
+  re:  'bg-sky-500/20 text-sky-700 dark:text-sky-400 border-sky-500/30',
+  etc: 'bg-slate-300/40 dark:bg-slate-600/40 text-slate-600 dark:text-slate-300 border-slate-400/40 dark:border-slate-600/40',
 };
 
 function fmtSettleDate(ymd) {
@@ -97,19 +97,19 @@ function SettlementDetail({ s }) {
           {/* 요약 3분할: 신규 / 재등록 / 입금액 합계 */}
           <div className="grid grid-cols-3 gap-2 mb-3">
             <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-3">
-              <p className="text-[10px] text-emerald-400 font-bold uppercase tracking-wide">신규등록</p>
-              <p className="text-2xl font-black font-mono text-emerald-400 mt-0.5">{s.newCnt}<span className="text-xs text-slate-500 ml-0.5">건</span></p>
-              <p className="text-[11px] text-slate-400 font-semibold mt-0.5">{won(s.newAmt)}</p>
+              <p className="text-[10px] text-emerald-700 dark:text-emerald-400 font-bold uppercase tracking-wide">신규등록</p>
+              <p className="text-2xl font-black font-mono text-emerald-700 dark:text-emerald-400 mt-0.5">{s.newCnt}<span className="text-xs text-slate-500 ml-0.5">건</span></p>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 font-semibold mt-0.5">{won(s.newAmt)}</p>
             </div>
             <div className="bg-sky-500/10 border border-sky-500/20 rounded-xl p-3">
-              <p className="text-[10px] text-sky-400 font-bold uppercase tracking-wide">재등록</p>
-              <p className="text-2xl font-black font-mono text-sky-400 mt-0.5">{s.reCnt}<span className="text-xs text-slate-500 ml-0.5">건</span></p>
-              <p className="text-[11px] text-slate-400 font-semibold mt-0.5">{won(s.reAmt)}</p>
+              <p className="text-[10px] text-sky-700 dark:text-sky-400 font-bold uppercase tracking-wide">재등록</p>
+              <p className="text-2xl font-black font-mono text-sky-700 dark:text-sky-400 mt-0.5">{s.reCnt}<span className="text-xs text-slate-500 ml-0.5">건</span></p>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 font-semibold mt-0.5">{won(s.reAmt)}</p>
             </div>
             <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-3">
-              <p className="text-[10px] text-amber-400 font-bold uppercase tracking-wide">입금액</p>
-              <p className="text-2xl font-black font-mono text-amber-400 mt-0.5 tabular-nums leading-tight">{s.total.toLocaleString('ko-KR')}</p>
-              <p className="text-[11px] text-slate-400 font-semibold mt-0.5">총 {s.count}건</p>
+              <p className="text-[10px] text-amber-700 dark:text-amber-400 font-bold uppercase tracking-wide">입금액</p>
+              <p className="text-2xl font-black font-mono text-amber-700 dark:text-amber-400 mt-0.5 tabular-nums leading-tight">{s.total.toLocaleString('ko-KR')}</p>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 font-semibold mt-0.5">총 {s.count}건</p>
             </div>
           </div>
 
@@ -117,7 +117,7 @@ function SettlementDetail({ s }) {
           {Object.keys(s.methodAmt).length > 0 && (
             <div className="flex flex-wrap gap-1.5 mb-3">
               {Object.entries(s.methodAmt).sort((a, b) => b[1] - a[1]).map(([mk, amt]) => (
-                <span key={mk} className="text-[10px] bg-slate-800/70 border border-slate-700 text-slate-300 px-2 py-1 rounded-lg font-semibold">
+                <span key={mk} className="text-[10px] bg-slate-100/70 dark:bg-slate-800/70 border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 px-2 py-1 rounded-lg font-semibold">
                   {METHOD_LBL[mk] || mk} {amt.toLocaleString('ko-KR')}
                 </span>
               ))}
@@ -127,7 +127,7 @@ function SettlementDetail({ s }) {
           {/* 건별 상세 */}
           <div className="space-y-2">
             {s.rows.map(r => (
-              <div key={r.id} className="flex items-center gap-3 p-3 bg-slate-800/60 rounded-xl">
+              <div key={r.id} className="flex items-center gap-3 p-3 bg-slate-100/60 dark:bg-slate-800/60 rounded-xl">
                 <span className={`text-[10px] font-black px-2 py-1 rounded-lg border flex-shrink-0 ${KIND_CLR[r.kind]}`}>{r.label}</span>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
@@ -136,7 +136,7 @@ function SettlementDetail({ s }) {
                   </div>
                   {r.note && <p className="text-[11px] text-slate-500 mt-0.5 truncate">{r.note}</p>}
                 </div>
-                <span className="text-sm font-black font-mono text-slate-200 flex-shrink-0 tabular-nums">{r.amount.toLocaleString('ko-KR')}</span>
+                <span className="text-sm font-black font-mono text-slate-700 dark:text-slate-200 flex-shrink-0 tabular-nums">{r.amount.toLocaleString('ko-KR')}</span>
               </div>
             ))}
           </div>
@@ -149,15 +149,15 @@ function YesterdaySettlementPopup({ s, onClose }) {
   return (
     <div className="modal-overlay z-[60]" onClick={onClose}>
       <div className="modal-box max-w-md" onClick={e => e.stopPropagation()}>
-        <div className="px-5 py-4 border-b border-slate-800">
-          <p className="text-xs font-bold uppercase tracking-widest text-amber-400">Daily Brief</p>
+        <div className="px-5 py-4 border-b border-slate-200 dark:border-slate-800">
+          <p className="text-xs font-bold uppercase tracking-widest text-amber-700 dark:text-amber-400">Daily Brief</p>
           <h2 className="text-xl font-black mt-1">💰 전날 등록·수납 정리</h2>
           <p className="text-xs text-slate-500 mt-1">{fmtSettleDate(s.ymd)} · 오늘 하루 한 번만 표시됩니다</p>
         </div>
         <div className="modal-body px-5 py-4">
           <SettlementDetail s={s} />
         </div>
-        <div className="px-5 py-4 border-t border-slate-800">
+        <div className="px-5 py-4 border-t border-slate-200 dark:border-slate-800">
           <button type="button" onClick={onClose} className="btn btn-primary w-full">확인</button>
         </div>
       </div>
@@ -170,14 +170,14 @@ function YesterdaySettlement({ s, onOpen }) {
   const line = settlementOneLine(s);
   return (
     <button type="button" onClick={onOpen}
-      className="w-full text-left bg-slate-900 border border-slate-800 rounded-2xl p-4
-        active:scale-[0.98] hover:border-slate-700 transition-all">
+      className="w-full text-left bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4
+        active:scale-[0.98] hover:border-slate-300 dark:hover:border-slate-700 transition-all">
       <div className="flex items-center justify-between mb-1.5">
-        <h2 className="font-bold text-sm uppercase tracking-widest text-slate-400">💰 전날 정산내역</h2>
+        <h2 className="font-bold text-sm uppercase tracking-widest text-slate-500 dark:text-slate-400">💰 전날 정산내역</h2>
         <span className="text-[11px] text-slate-500 font-semibold">{fmtSettleDate(s.ymd)}</span>
       </div>
       {line
-        ? <p className="text-sm font-semibold text-slate-200">{line}</p>
+        ? <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">{line}</p>
         : <p className="text-sm text-slate-600">전날 입금·등록 내역이 없습니다</p>}
       <p className="text-[10px] text-slate-600 mt-1">누르면 팝업으로 자세히 보기 →</p>
     </button>
@@ -316,26 +316,26 @@ export default function Home() {
       </div>
 
       {/* ① 공지사항 — 최상단 */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4">
         <div className="flex items-center justify-between mb-3">
-          <h2 className="font-bold text-sm uppercase tracking-widest text-slate-400">📌 공지사항</h2>
+          <h2 className="font-bold text-sm uppercase tracking-widest text-slate-500 dark:text-slate-400">📌 공지사항</h2>
           {user?.role==='admin' && (
             <button onClick={()=>setShowForm(!showForm)}
-              className="text-xs text-amber-400 hover:text-amber-300 transition-colors font-semibold">
+              className="text-xs text-amber-700 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300 transition-colors font-semibold">
               + 작성
             </button>
           )}
         </div>
         {showForm && (
-          <div className="mb-4 p-3 bg-slate-800 rounded-xl space-y-2 border border-slate-700">
+          <div className="mb-4 p-3 bg-slate-100 dark:bg-slate-800 rounded-xl space-y-2 border border-slate-300 dark:border-slate-700">
             <input value={newNotice.title} onChange={e=>setNewNotice({...newNotice,title:e.target.value})}
               placeholder="제목"
-              className="w-full bg-slate-900 border border-slate-700 text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-amber-500"/>
+              className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-amber-500"/>
             <textarea value={newNotice.content} onChange={e=>setNewNotice({...newNotice,content:e.target.value})}
               placeholder="내용" rows={3}
-              className="w-full bg-slate-900 border border-slate-700 text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-amber-500 resize-none"/>
+              className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-amber-500 resize-none"/>
             <div className="flex gap-2 justify-end">
-              <button onClick={()=>setShowForm(false)} className="text-xs text-slate-400 hover:text-white px-3 py-1.5 rounded-lg transition-colors">취소</button>
+              <button onClick={()=>setShowForm(false)} className="text-xs text-slate-500 dark:text-slate-400 hover:text-white px-3 py-1.5 rounded-lg transition-colors">취소</button>
               <button onClick={addNotice} className="btn btn-primary btn-sm">등록</button>
             </div>
           </div>
@@ -344,17 +344,17 @@ export default function Home() {
           {notices.length===0
             ? <p className="text-slate-600 text-sm text-center py-4">공지사항이 없습니다</p>
             : notices.map(n=>(
-              <div key={n.id} className={`p-3 rounded-xl ${n.isPinned?'bg-amber-500/10 border border-amber-500/20':'bg-slate-800/60'}`}>
+              <div key={n.id} className={`p-3 rounded-xl ${n.isPinned?'bg-amber-500/10 border border-amber-500/20':'bg-slate-100/60 dark:bg-slate-800/60'}`}>
                 {editId===n.id ? (
                   <div className="space-y-2">
                     <input value={editNotice.title} onChange={e=>setEditNotice({...editNotice,title:e.target.value})}
                       placeholder="제목"
-                      className="w-full bg-slate-900 border border-slate-700 text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-amber-500"/>
+                      className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-amber-500"/>
                     <textarea value={editNotice.content} onChange={e=>setEditNotice({...editNotice,content:e.target.value})}
                       placeholder="내용" rows={3}
-                      className="w-full bg-slate-900 border border-slate-700 text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-amber-500 resize-none"/>
+                      className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-amber-500 resize-none"/>
                     <div className="flex gap-2 justify-end">
-                      <button onClick={()=>setEditId(null)} className="text-xs text-slate-400 hover:text-white px-3 py-1.5 rounded-lg transition-colors">취소</button>
+                      <button onClick={()=>setEditId(null)} className="text-xs text-slate-500 dark:text-slate-400 hover:text-white px-3 py-1.5 rounded-lg transition-colors">취소</button>
                       <button onClick={saveEdit} className="btn btn-primary btn-sm">저장</button>
                     </div>
                   </div>
@@ -368,15 +368,15 @@ export default function Home() {
                       {user?.role==='admin' && (
                         <div className="flex items-center gap-1.5 flex-shrink-0">
                           <button onClick={()=>togglePin(n)} title="고정/해제"
-                            className="text-[11px] text-slate-400 hover:text-amber-400 transition-colors">{n.isPinned?'고정해제':'고정'}</button>
+                            className="text-[11px] text-slate-500 dark:text-slate-400 hover:text-amber-700 dark:hover:text-amber-400 transition-colors">{n.isPinned?'고정해제':'고정'}</button>
                           <button onClick={()=>startEdit(n)}
-                            className="text-[11px] text-slate-400 hover:text-blue-400 transition-colors">수정</button>
+                            className="text-[11px] text-slate-500 dark:text-slate-400 hover:text-blue-700 dark:hover:text-blue-400 transition-colors">수정</button>
                           <button onClick={()=>removeNotice(n)}
-                            className="text-[11px] text-slate-400 hover:text-red-400 transition-colors">삭제</button>
+                            className="text-[11px] text-slate-500 dark:text-slate-400 hover:text-red-700 dark:hover:text-red-400 transition-colors">삭제</button>
                         </div>
                       )}
                     </div>
-                    {n.content&&<p className="text-slate-400 text-xs mt-1.5 whitespace-pre-line leading-relaxed">{n.content}</p>}
+                    {n.content&&<p className="text-slate-500 dark:text-slate-400 text-xs mt-1.5 whitespace-pre-line leading-relaxed">{n.content}</p>}
                     <p className="text-slate-600 text-[10px] mt-1.5">{fmtDate(n.createdAt)}</p>
                   </>
                 )}
@@ -389,14 +389,14 @@ export default function Home() {
       {/* ② 통계 카드 — 누르면 해당 화면으로 바로 이동 (UX: 한눈에 + 한 번에) */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {[
-          { label: myTrainerId ? '담당 회원' : '전체 회원', value:myMembers.length, icon:'👥', color:'text-blue-400',   to:'/members'  },
-          { label:'오늘 수업', value:myTodayCount,       icon:'📅', color:'text-amber-400',  to:'/schedule' },
-          { label:'세션 부족', value:lowSession,         icon:'⚠️', color:'text-orange-400', to:'/members'  },
-          { label:'결제 만료', value:expiredCnt,         icon:'🔴', color:'text-red-400',    to:'/members'  },
+          { label: myTrainerId ? '담당 회원' : '전체 회원', value:myMembers.length, icon:'👥', color:'text-blue-700 dark:text-blue-400',   to:'/members'  },
+          { label:'오늘 수업', value:myTodayCount,       icon:'📅', color:'text-amber-700 dark:text-amber-400',  to:'/schedule' },
+          { label:'세션 부족', value:lowSession,         icon:'⚠️', color:'text-orange-700 dark:text-orange-400', to:'/members'  },
+          { label:'결제 만료', value:expiredCnt,         icon:'🔴', color:'text-red-700 dark:text-red-400',    to:'/members'  },
         ].map(s=>(
           <button key={s.label} onClick={()=>navigate(s.to)}
-            className="bg-slate-900 border border-slate-800 rounded-2xl p-4 text-left
-              active:scale-[0.97] hover:border-slate-700 transition-all">
+            className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 text-left
+              active:scale-[0.97] hover:border-slate-300 dark:hover:border-slate-700 transition-all">
             <div className="flex items-center justify-between mb-1">
               <span className="text-xs text-slate-500 font-semibold uppercase tracking-wide">{s.label}</span>
               <span className="text-lg">{s.icon}</span>
@@ -417,12 +417,12 @@ export default function Home() {
       <MiniCalendar schedules={schedules} selectedDate={selectedDate} onSelectDate={setSelectedDate}/>
 
       {/* ④ 선택한 날짜의 수업 — 기본은 오늘, 이번 주 캘린더에서 요일을 누르면 그날 수업으로 전환 */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4">
         <div className="flex items-center justify-between mb-3">
-          <h2 className="font-bold text-sm uppercase tracking-widest text-slate-400">{sectionTitle}</h2>
+          <h2 className="font-bold text-sm uppercase tracking-widest text-slate-500 dark:text-slate-400">{sectionTitle}</h2>
           {selectedDate !== todayStr && (
             <button type="button" onClick={()=>setSelectedDate(todayStr)}
-              className="text-xs text-amber-400 hover:text-amber-300 transition-colors font-semibold">
+              className="text-xs text-amber-700 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300 transition-colors font-semibold">
               오늘로
             </button>
           )}
@@ -435,12 +435,12 @@ export default function Home() {
                 const isExt = s.isExternal||!s.memberId;
                 const name  = isExt?(s.memo||'외부 일정'):s.memberName;
                 return (
-                  <div key={s.id} className="flex items-center gap-3 p-3 bg-slate-800/60 rounded-xl">
+                  <div key={s.id} className="flex items-center gap-3 p-3 bg-slate-100/60 dark:bg-slate-800/60 rounded-xl">
                     <div className="w-1.5 h-10 rounded-full flex-shrink-0" style={{background:s.trainerColor||'#94a3b8'}}/>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <span className="font-semibold text-sm">{name}</span>
-                        {isExt&&<span className="text-[10px] bg-purple-500/20 text-purple-400 border border-purple-500/30 px-1.5 py-0.5 rounded font-bold">외부</span>}
+                        {isExt&&<span className="text-[10px] bg-purple-500/20 text-purple-700 dark:text-purple-400 border border-purple-500/30 px-1.5 py-0.5 rounded font-bold">외부</span>}
                         <span className="text-slate-500 text-xs">· {s.trainerName}</span>
                       </div>
                       <p className="text-xs text-slate-500 mt-0.5">{s.startTime}–{s.endTime} · {s.classType}</p>

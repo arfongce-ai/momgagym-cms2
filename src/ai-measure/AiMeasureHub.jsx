@@ -338,7 +338,7 @@ export default function AiMeasureHub() {
     return (
       <div className={`${wideMeasure ? 'max-w-6xl' : 'max-w-md'} mx-auto`}>
         {isPortraitBlocked && <RotateHint />}
-        <Suspense fallback={<div className="text-center text-slate-400 py-10 text-sm">모듈 로딩 중…</div>}>
+        <Suspense fallback={<div className="text-center text-slate-500 dark:text-slate-400 py-10 text-sm">모듈 로딩 중…</div>}>
           <Comp
             member={member}
             onSave={handleSave}
@@ -363,7 +363,7 @@ export default function AiMeasureHub() {
 
       {/* 회원 선택 (선택 사항 — 저장하려면 필요) */}
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4">
-        <label className="block text-xs font-semibold text-slate-400 uppercase tracking-widest mb-2">
+        <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-2">
           회원 선택 (저장 시 필요)
         </label>
         <select value={memberId} onChange={e => handleSelectMember(e.target.value)}
@@ -402,7 +402,7 @@ export default function AiMeasureHub() {
             {guestOpen && (<>
             <div className="grid grid-cols-2 gap-2 mt-2">
               <div>
-                <label className="block text-[11px] text-slate-400 mb-1">성별</label>
+                <label className="block text-[11px] text-slate-500 dark:text-slate-400 mb-1">성별</label>
                 <div className="flex gap-1.5">
                   {[['male','남'],['female','여']].map(([val,lbl])=>(
                     <button type="button" key={val}
@@ -417,19 +417,19 @@ export default function AiMeasureHub() {
                 </div>
               </div>
               <div>
-                <label className="block text-[11px] text-slate-400 mb-1">생년월일</label>
+                <label className="block text-[11px] text-slate-500 dark:text-slate-400 mb-1">생년월일</label>
                 <input type="date" value={virtual.birthDate}
                   onChange={e=>updateVirtual({ birthDate: e.target.value })}
                   className="input py-1.5 text-sm"/>
               </div>
               <div>
-                <label className="block text-[11px] text-slate-400 mb-1">키 (cm)</label>
+                <label className="block text-[11px] text-slate-500 dark:text-slate-400 mb-1">키 (cm)</label>
                 <input type="number" inputMode="decimal" value={virtual.height}
                   onChange={e=>updateVirtual({ height: e.target.value })}
                   placeholder="예: 170" className="input py-1.5 text-sm"/>
               </div>
               <div>
-                <label className="block text-[11px] text-slate-400 mb-1">몸무게 (kg)</label>
+                <label className="block text-[11px] text-slate-500 dark:text-slate-400 mb-1">몸무게 (kg)</label>
                 <input type="number" inputMode="decimal" value={virtual.weight}
                   onChange={e=>updateVirtual({ weight: e.target.value })}
                   placeholder="예: 65" className="input py-1.5 text-sm"/>
@@ -498,7 +498,7 @@ function RotateHint() {
         <path d="M5 7v3a4 4 0 0 0 4 4" />
       </svg>
       <p className="text-base font-black text-white">세로로 돌려주세요</p>
-      <p className="text-sm text-slate-400">AI 측정·분석은 세로 화면에서 사용하세요.<br />기기를 세로로 돌리면 자동으로 계속됩니다.</p>
+      <p className="text-sm text-slate-500 dark:text-slate-400">AI 측정·분석은 세로 화면에서 사용하세요.<br />기기를 세로로 돌리면 자동으로 계속됩니다.</p>
     </div>
   );
 }

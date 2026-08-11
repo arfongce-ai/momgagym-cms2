@@ -34,20 +34,20 @@ const COLORS = { weight:'#f59e0b', systolic:'#ef4444', diastolic:'#3b82f6', heig
 const DETAIL_SESSION_MENUS = new Set(['jump', 'gait', 'posture', 'rom', 'lifting']);
 
 const REPORT_TYPE_META = {
-  posture: { title: '자세·체형', badge: 'POSTURE', accent: 'text-emerald-300', bg: 'bg-emerald-500/15', border: 'border-emerald-500/25' },
-  rom: { title: '관절 가동범위', badge: 'ROM', accent: 'text-sky-300', bg: 'bg-sky-500/15', border: 'border-sky-500/25' },
-  jump: { title: '점프·RSI', badge: 'JUMP', accent: 'text-amber-300', bg: 'bg-amber-500/15', border: 'border-amber-500/25' },
-  gait: { title: '보행·러닝', badge: 'GAIT', accent: 'text-cyan-300', bg: 'bg-cyan-500/15', border: 'border-cyan-500/25' },
-  one_rm: { title: '최대 근력', badge: '1RM', accent: 'text-violet-300', bg: 'bg-violet-500/15', border: 'border-violet-500/25' },
-  vbt: { title: '운동 속도 근력', badge: 'VBT', accent: 'text-fuchsia-300', bg: 'bg-fuchsia-500/15', border: 'border-fuchsia-500/25' },
-  general: { title: '측정 결과', badge: 'AI', accent: 'text-slate-300', bg: 'bg-slate-700', border: 'border-slate-700' },
+  posture: { title: '자세·체형', badge: 'POSTURE', accent: 'text-emerald-700 dark:text-emerald-300', bg: 'bg-emerald-500/15', border: 'border-emerald-500/25' },
+  rom: { title: '관절 가동범위', badge: 'ROM', accent: 'text-sky-700 dark:text-sky-300', bg: 'bg-sky-500/15', border: 'border-sky-500/25' },
+  jump: { title: '점프·RSI', badge: 'JUMP', accent: 'text-amber-700 dark:text-amber-300', bg: 'bg-amber-500/15', border: 'border-amber-500/25' },
+  gait: { title: '보행·러닝', badge: 'GAIT', accent: 'text-cyan-700 dark:text-cyan-300', bg: 'bg-cyan-500/15', border: 'border-cyan-500/25' },
+  one_rm: { title: '최대 근력', badge: '1RM', accent: 'text-violet-700 dark:text-violet-300', bg: 'bg-violet-500/15', border: 'border-violet-500/25' },
+  vbt: { title: '운동 속도 근력', badge: 'VBT', accent: 'text-fuchsia-700 dark:text-fuchsia-300', bg: 'bg-fuchsia-500/15', border: 'border-fuchsia-500/25' },
+  general: { title: '측정 결과', badge: 'AI', accent: 'text-slate-600 dark:text-slate-300', bg: 'bg-slate-200 dark:bg-slate-700', border: 'border-slate-300 dark:border-slate-700' },
 };
 
 const STATUS_STYLE = {
-  normal: { text: 'text-emerald-300', bg: 'bg-emerald-500/12', border: 'border-emerald-500/30' },
-  caution: { text: 'text-amber-300', bg: 'bg-amber-500/12', border: 'border-amber-500/30' },
-  risk: { text: 'text-red-300', bg: 'bg-red-500/12', border: 'border-red-500/30' },
-  unknown: { text: 'text-slate-400', bg: 'bg-slate-700/60', border: 'border-slate-700' },
+  normal: { text: 'text-emerald-700 dark:text-emerald-300', bg: 'bg-emerald-500/12', border: 'border-emerald-500/30' },
+  caution: { text: 'text-amber-700 dark:text-amber-300', bg: 'bg-amber-500/12', border: 'border-amber-500/30' },
+  risk: { text: 'text-red-700 dark:text-red-300', bg: 'bg-red-500/12', border: 'border-red-500/30' },
+  unknown: { text: 'text-slate-500 dark:text-slate-400', bg: 'bg-slate-200/60 dark:bg-slate-700/60', border: 'border-slate-300 dark:border-slate-700' },
 };
 
 function isJumpRsi(data) {
@@ -86,7 +86,7 @@ export function reportTypeFromSession(session) {
 
 function getReportTypeMeta(type, report) {
   if (type === 'jump' && isJumpRsi(report)) {
-    return { ...REPORT_TYPE_META.jump, title: 'RSI 반응 점프', badge: 'RSI', accent: 'text-emerald-300', bg: 'bg-emerald-500/15', border: 'border-emerald-500/25' };
+    return { ...REPORT_TYPE_META.jump, title: 'RSI 반응 점프', badge: 'RSI', accent: 'text-emerald-700 dark:text-emerald-300', bg: 'bg-emerald-500/15', border: 'border-emerald-500/25' };
   }
   return REPORT_TYPE_META[type] || REPORT_TYPE_META.general;
 }
@@ -122,9 +122,9 @@ const WEEKDAYS = ['일','월','화','수','목','금','토'];
 
 function scoreTone(score) {
   if (score == null) return 'text-slate-500';
-  if (score >= 80) return 'text-emerald-400';
-  if (score >= 60) return 'text-amber-400';
-  return 'text-red-400';
+  if (score >= 80) return 'text-emerald-700 dark:text-emerald-400';
+  if (score >= 60) return 'text-amber-700 dark:text-amber-400';
+  return 'text-red-700 dark:text-red-400';
 }
 
 // 캘린더는 회원 선택 화면(Schedule.jsx MonthView)과 동일한 일요일 시작 그리드를 쓴다.
@@ -144,18 +144,18 @@ function MeasureCalendar({ pivot, onPivotChange, dailyMap, selectedDate, onSelec
   };
 
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
-      <div className="flex items-center justify-between px-3 py-2.5 border-b border-slate-800">
-        <button type="button" onClick={() => shiftMonth(-1)} className="px-2 py-1 text-sm font-bold text-slate-400 active:text-white">◀</button>
+    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden">
+      <div className="flex items-center justify-between px-3 py-2.5 border-b border-slate-200 dark:border-slate-800">
+        <button type="button" onClick={() => shiftMonth(-1)} className="px-2 py-1 text-sm font-bold text-slate-500 dark:text-slate-400 active:text-white">◀</button>
         <p className="text-sm font-black text-white">{y}년 {mo + 1}월</p>
-        <button type="button" onClick={() => shiftMonth(1)} className="px-2 py-1 text-sm font-bold text-slate-400 active:text-white">▶</button>
+        <button type="button" onClick={() => shiftMonth(1)} className="px-2 py-1 text-sm font-bold text-slate-500 dark:text-slate-400 active:text-white">▶</button>
       </div>
-      <div className="grid grid-cols-7 border-b border-slate-800 text-center text-[11px] font-bold text-slate-500">
+      <div className="grid grid-cols-7 border-b border-slate-200 dark:border-slate-800 text-center text-[11px] font-bold text-slate-500">
         {WEEKDAYS.map(w => <div key={w} className="py-2">{w}</div>)}
       </div>
       <div className="grid grid-cols-7">
         {cells.map((date, i) => {
-          if (!date) return <div key={i} className="min-h-14 border-b border-r border-slate-800/70 opacity-20" />;
+          if (!date) return <div key={i} className="min-h-14 border-b border-r border-slate-200/70 dark:border-slate-800/70 opacity-20" />;
           const g = dailyMap[date];
           const isToday = date === todayStr;
           const isSelected = date === selectedDate;
@@ -164,11 +164,11 @@ function MeasureCalendar({ pivot, onPivotChange, dailyMap, selectedDate, onSelec
               key={date}
               type="button"
               onClick={() => onSelectDate(date)}
-              className={`min-h-14 border-b border-r border-slate-800/70 p-1 text-left transition-colors ${
-                isSelected ? 'bg-amber-500/15' : isToday ? 'bg-amber-500/5' : 'hover:bg-slate-800/40'
+              className={`min-h-14 border-b border-r border-slate-200/70 dark:border-slate-800/70 p-1 text-left transition-colors ${
+                isSelected ? 'bg-amber-500/15' : isToday ? 'bg-amber-500/5' : 'hover:bg-slate-100/40 dark:hover:bg-slate-800/40'
               }`}
             >
-              <p className={`font-mono text-[10px] font-bold ${isToday ? 'text-amber-400' : 'text-slate-400'}`}>
+              <p className={`font-mono text-[10px] font-bold ${isToday ? 'text-amber-700 dark:text-amber-400' : 'text-slate-500 dark:text-slate-400'}`}>
                 {parseInt(date.slice(8, 10), 10)}
               </p>
               {g && (
@@ -297,22 +297,22 @@ function ComprehensiveReportSection({ member, dataReady, onRecordsChanged }) {
   if (!member) return null;
 
   return (
-    <section id="section-comprehensive" className="scroll-mt-14 rounded-2xl border border-slate-800 bg-slate-950/40 p-3">
+    <section id="section-comprehensive" className="scroll-mt-14 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/40 dark:bg-slate-950/40 p-3">
       <div className="mb-3 flex items-end justify-between gap-3 px-1">
         <div>
-          <p className="text-xs font-bold uppercase tracking-widest text-slate-400">종합 리포트</p>
+          <p className="text-xs font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400">종합 리포트</p>
           <p className="mt-1 text-sm font-semibold text-slate-500">일간·주간·월간 측정을 모아 종합 평가합니다.</p>
         </div>
       </div>
 
-      <div className="mb-3 flex overflow-hidden rounded-xl border border-slate-700">
+      <div className="mb-3 flex overflow-hidden rounded-xl border border-slate-300 dark:border-slate-700">
         {COMPREHENSIVE_UNITS.map((u) => (
           <button
             key={u.key}
             type="button"
             onClick={() => setUnit(u.key)}
             className={`flex-1 px-3 py-2 text-xs font-black transition-colors ${
-              unit === u.key ? 'bg-amber-500 text-slate-950' : 'bg-slate-900 text-slate-400'
+              unit === u.key ? 'bg-amber-500 text-slate-950' : 'bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-400'
             }`}
           >
             {u.label}
@@ -323,7 +323,7 @@ function ComprehensiveReportSection({ member, dataReady, onRecordsChanged }) {
       {loading ? (
         <div className="py-10 text-center text-sm text-slate-500">불러오는 중…</div>
       ) : report.periods.length === 0 ? (
-        <div className="rounded-2xl border border-slate-800 bg-slate-900 p-5 text-center text-sm font-semibold text-slate-500">
+        <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 text-center text-sm font-semibold text-slate-500">
           집계할 측정 기록이 없습니다.
         </div>
       ) : (
@@ -337,7 +337,7 @@ function ComprehensiveReportSection({ member, dataReady, onRecordsChanged }) {
                   type="button"
                   onClick={() => setPeriodKey(p.key)}
                   className={`shrink-0 rounded-full border px-3 py-1.5 text-xs font-black transition ${
-                    active ? 'border-amber-400 bg-amber-500 text-slate-950' : 'border-slate-700 bg-slate-900 text-slate-400'
+                    active ? 'border-amber-400 bg-amber-500 text-slate-950' : 'border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-400'
                   }`}
                 >
                   {p.label} <span className="opacity-70">{p.records.length}건</span>
@@ -355,12 +355,12 @@ function ComprehensiveReportSection({ member, dataReady, onRecordsChanged }) {
 
           {selected && (
             <div className="space-y-2">
-              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl border border-slate-800 bg-slate-900 p-3">
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3">
                 <p className="text-sm font-black text-white">{selected.label}</p>
-                <p className="text-xs text-slate-400">측정 {selected.stats.total}회 · 유형 {selected.stats.typeCount}종</p>
+                <p className="text-xs text-slate-500 dark:text-slate-400">측정 {selected.stats.total}회 · 유형 {selected.stats.typeCount}종</p>
                 {selected.stats.score && (
-                  <p className="text-xs text-slate-400">
-                    기간 평균 <span className="font-mono font-black text-amber-400">{selected.stats.score.avg}</span>/100
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    기간 평균 <span className="font-mono font-black text-amber-700 dark:text-amber-400">{selected.stats.score.avg}</span>/100
                   </p>
                 )}
               </div>
@@ -372,9 +372,9 @@ function ComprehensiveReportSection({ member, dataReady, onRecordsChanged }) {
                   // 8-2: 부족(risk) 등급일 때만 무엇을 확인/훈련할지 코멘트를 보여준다.
                   const comment = token?.key === 'risk' ? defaultRecommendation(ts.type, 'risk') : null;
                   return (
-                    <div key={ts.type} className="rounded-xl border border-slate-800 bg-slate-900 p-3">
+                    <div key={ts.type} className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3">
                       <div className="mb-1.5 flex items-center justify-between">
-                        <p className="text-sm font-bold text-slate-200">{ts.typeLabel}</p>
+                        <p className="text-sm font-bold text-slate-700 dark:text-slate-200">{ts.typeLabel}</p>
                         <div className="flex items-center gap-2">
                           <span className="text-[11px] text-slate-500">{ts.count}회</span>
                           {token && (
@@ -385,10 +385,10 @@ function ComprehensiveReportSection({ member, dataReady, onRecordsChanged }) {
                         </div>
                       </div>
                       {ts.score ? (
-                        <p className="font-mono text-xs text-slate-400">
+                        <p className="font-mono text-xs text-slate-500 dark:text-slate-400">
                           평균 {ts.score.avg} · 최저 {ts.score.min} · 최고 {ts.score.max}
                           {ts.score.count >= 2 && (
-                            <span className={`ml-2 font-bold ${ts.score.delta > 0 ? 'text-emerald-400' : ts.score.delta < 0 ? 'text-red-400' : 'text-slate-500'}`}>
+                            <span className={`ml-2 font-bold ${ts.score.delta > 0 ? 'text-emerald-700 dark:text-emerald-400' : ts.score.delta < 0 ? 'text-red-700 dark:text-red-400' : 'text-slate-500'}`}>
                               {ts.score.delta > 0 ? '▲' : ts.score.delta < 0 ? '▼' : '–'}{Math.abs(ts.score.delta)}
                             </span>
                           )}
@@ -416,11 +416,11 @@ function ComprehensiveReportSection({ member, dataReady, onRecordsChanged }) {
         <div className="mt-3 rounded-2xl bg-red-950/20 border border-red-900/50">
           <div className="px-4 py-3 flex items-center gap-3 border-b border-red-900/40">
             <div className="flex-1">
-              <div className="text-sm font-black text-red-300">이상 데이터 {anomalies.length}건</div>
-              <div className="text-[11px] text-red-400/70">사유를 확인하고 잘못 저장된 결과데이터·리포트를 제거하세요.</div>
+              <div className="text-sm font-black text-red-700 dark:text-red-300">이상 데이터 {anomalies.length}건</div>
+              <div className="text-[11px] text-red-700 dark:text-red-400/70">사유를 확인하고 잘못 저장된 결과데이터·리포트를 제거하세요.</div>
             </div>
             <button onClick={handleDeleteAllAnomalies}
-              className="text-[11px] font-bold text-red-300 border border-red-500/40 rounded-lg px-2.5 py-1.5 active:scale-95 transition-transform">
+              className="text-[11px] font-bold text-red-700 dark:text-red-300 border border-red-500/40 rounded-lg px-2.5 py-1.5 active:scale-95 transition-transform">
               일괄 삭제
             </button>
           </div>
@@ -428,13 +428,13 @@ function ComprehensiveReportSection({ member, dataReady, onRecordsChanged }) {
             {anomalies.map(a => (
               <div key={`${a.record.source}_${a.record.id}`} className="px-4 py-2.5 flex items-center gap-3">
                 <div className="flex-1 min-w-0">
-                  <div className="text-sm font-bold text-slate-200">{a.record.typeLabel}
+                  <div className="text-sm font-bold text-slate-700 dark:text-slate-200">{a.record.typeLabel}
                     <span className="text-xs text-slate-500 font-normal ml-1.5">{a.record.sourceLabel} · {a.record.dateYMD || '날짜 없음'}</span>
                   </div>
-                  <div className="text-[11px] text-red-400">{a.reasons.join(' · ')}</div>
+                  <div className="text-[11px] text-red-700 dark:text-red-400">{a.reasons.join(' · ')}</div>
                 </div>
                 <button onClick={() => handleDelete(a.record, a.reasons.join(', '))} disabled={deleting === a.record.id}
-                  className="text-[11px] font-bold text-red-400 border border-red-500/30 rounded-lg px-2.5 py-1.5 active:scale-95 transition-transform disabled:opacity-40">
+                  className="text-[11px] font-bold text-red-700 dark:text-red-400 border border-red-500/30 rounded-lg px-2.5 py-1.5 active:scale-95 transition-transform disabled:opacity-40">
                   {deleting === a.record.id ? '삭제 중…' : '삭제'}
                 </button>
               </div>
@@ -446,7 +446,7 @@ function ComprehensiveReportSection({ member, dataReady, onRecordsChanged }) {
   );
 }
 
-const GUIDE_STATUS_TONE = { normal: 'text-emerald-400', caution: 'text-amber-400', risk: 'text-red-400' };
+const GUIDE_STATUS_TONE = { normal: 'text-emerald-700 dark:text-emerald-400', caution: 'text-amber-700 dark:text-amber-400', risk: 'text-red-700 dark:text-red-400' };
 
 // 측정별 분석·평가 판독 설명서 — 회원에게 설명하고 트레이닝에 적용할 수 있도록
 // 유형별로 접었다 펴는 아코디언. 실제 측정한 유형만 보여준다(측정 정직성 — 안 한 측정은 나열하지 않음).
@@ -456,12 +456,12 @@ function InterpretationGuideSection({ guide }) {
 
   return (
     <div id="section-guide" className="scroll-mt-14">
-      <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">측정별 분석·평가 판독 설명서</p>
+      <p className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-2">측정별 분석·평가 판독 설명서</p>
 
-      <div className="mb-2 flex flex-wrap gap-x-3 gap-y-1 rounded-xl border border-slate-800 bg-slate-900 px-3 py-2.5">
+      <div className="mb-2 flex flex-wrap gap-x-3 gap-y-1 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-2.5">
         {GUIDE_STATUS_LEGEND.map((s) => (
           <p key={s.key} className="text-[11px]">
-            <span className={`font-black ${GUIDE_STATUS_TONE[s.key] || 'text-slate-400'}`}>{s.label}</span>
+            <span className={`font-black ${GUIDE_STATUS_TONE[s.key] || 'text-slate-500 dark:text-slate-400'}`}>{s.label}</span>
             <span className="text-slate-500"> · {s.meaning}</span>
           </p>
         ))}
@@ -471,26 +471,26 @@ function InterpretationGuideSection({ guide }) {
         {guide.map((g) => {
           const open = openType === g.type;
           return (
-            <div key={g.type} className="overflow-hidden rounded-xl border border-slate-800 bg-slate-900">
+            <div key={g.type} className="overflow-hidden rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
               <button
                 type="button"
                 onClick={() => setOpenType(open ? null : g.type)}
                 className="flex w-full items-center justify-between px-4 py-3 text-left"
               >
-                <p className="text-sm font-bold text-slate-200">{g.typeLabel}</p>
+                <p className="text-sm font-bold text-slate-700 dark:text-slate-200">{g.typeLabel}</p>
                 <span className={`text-xs text-slate-500 transition-transform ${open ? 'rotate-180' : ''}`}>▼</span>
               </button>
               {open && (
-                <div className="space-y-3 border-t border-slate-800 p-4">
-                  <p className="text-xs leading-relaxed text-slate-300">{g.overview}</p>
+                <div className="space-y-3 border-t border-slate-200 dark:border-slate-800 p-4">
+                  <p className="text-xs leading-relaxed text-slate-600 dark:text-slate-300">{g.overview}</p>
 
                   {g.metrics.length > 0 && (
                     <div className="space-y-1.5">
                       <p className="text-[11px] font-bold text-slate-500">핵심 지표</p>
                       {g.metrics.map((m) => (
-                        <div key={m.key} className="rounded-lg bg-slate-800/60 px-3 py-2">
-                          <p className="text-xs font-bold text-slate-200">{m.label}</p>
-                          {m.description && <p className="mt-0.5 text-[11px] leading-relaxed text-slate-400">{m.description}</p>}
+                        <div key={m.key} className="rounded-lg bg-slate-100/60 dark:bg-slate-800/60 px-3 py-2">
+                          <p className="text-xs font-bold text-slate-700 dark:text-slate-200">{m.label}</p>
+                          {m.description && <p className="mt-0.5 text-[11px] leading-relaxed text-slate-500 dark:text-slate-400">{m.description}</p>}
                           {m.hint && <p className="mt-0.5 text-[10px] text-slate-500">{m.hint}</p>}
                         </div>
                       ))}
@@ -499,7 +499,7 @@ function InterpretationGuideSection({ guide }) {
 
                   {g.trainingTip && (
                     <div className="rounded-lg border border-amber-500/25 bg-amber-500/10 px-3 py-2.5">
-                      <p className="mb-0.5 text-[11px] font-bold text-amber-300">🏋️ 트레이닝 적용</p>
+                      <p className="mb-0.5 text-[11px] font-bold text-amber-700 dark:text-amber-300">🏋️ 트레이닝 적용</p>
                       <p className="text-[11px] leading-relaxed text-amber-100/90">{g.trainingTip}</p>
                     </div>
                   )}
@@ -707,7 +707,7 @@ function ShareCaptureReport({ item, member }) {
 
   if (item.source === 'saved-report') {
     return (
-      <div data-share-report-ready="true" className="w-full bg-slate-950">
+      <div data-share-report-ready="true" className="w-full bg-slate-50 dark:bg-slate-950">
         {report.kind === 'jump'
           ? <JumpReportDashboard report={report} member={reportMember} />
           : <GaitReportDashboard report={report} member={reportMember} />}
@@ -717,7 +717,7 @@ function ShareCaptureReport({ item, member }) {
 
   if (item.source === 'posture') {
     return (
-      <div data-share-report-ready="true" className="w-full bg-slate-950">
+      <div data-share-report-ready="true" className="w-full bg-slate-50 dark:bg-slate-950">
         <PostureReport
           report={report}
           member={reportMember}
@@ -730,7 +730,7 @@ function ShareCaptureReport({ item, member }) {
 
   if (item.source === 'rom') {
     return (
-      <div data-share-report-ready="true" className="w-full bg-slate-950">
+      <div data-share-report-ready="true" className="w-full bg-slate-50 dark:bg-slate-950">
         <RomReport report={{ ...report, member: report.member || reportMember }} />
       </div>
     );
@@ -738,7 +738,7 @@ function ShareCaptureReport({ item, member }) {
 
   if (item.source === 'lifting') {
     return (
-      <div data-share-report-ready="true" className="w-full bg-slate-950">
+      <div data-share-report-ready="true" className="w-full bg-slate-50 dark:bg-slate-950">
         <LiftingReportDashboard report={report} member={reportMember} />
       </div>
     );
@@ -749,7 +749,7 @@ function ShareCaptureReport({ item, member }) {
   //  · 그 외(신체정보·레거시 세션 등)는 통합 요약 기반 A4 리포트로 렌더.
   if (item.source === 'session') {
     return (
-      <div data-share-report-ready="true" className="w-full bg-slate-950">
+      <div data-share-report-ready="true" className="w-full bg-slate-50 dark:bg-slate-950">
         {isLiftingShapedSession(report)
           ? <LiftingReportDashboard report={report} member={reportMember} />
           : <SessionShareReport item={item} member={reportMember} />}
@@ -821,7 +821,7 @@ function UnifiedResultCard({ item, onOpen, onShare, sharing }) {
   const canOpen = item.source !== 'session' || item.session?.menu;
   return (
     <div
-      className={`w-full rounded-2xl border bg-slate-900 p-4 ${item.meta.border}`}
+      className={`w-full rounded-2xl border bg-white dark:bg-slate-900 p-4 ${item.meta.border}`}
     >
       <button
         type="button"
@@ -856,11 +856,11 @@ function UnifiedResultCard({ item, onOpen, onShare, sharing }) {
 
         <div className="mt-3 space-y-1.5">
           {findings.length > 0 ? findings.map((finding, idx) => (
-            <p key={`${item.id}-finding-${idx}`} className="line-clamp-2 break-keep rounded-lg bg-slate-800/65 px-3 py-2 text-[12px] font-semibold leading-relaxed text-slate-300">
+            <p key={`${item.id}-finding-${idx}`} className="line-clamp-2 break-keep rounded-lg bg-slate-100/65 dark:bg-slate-800/65 px-3 py-2 text-[12px] font-semibold leading-relaxed text-slate-600 dark:text-slate-300">
               {finding.text}
             </p>
           )) : (
-            <p className="rounded-lg bg-slate-800/65 px-3 py-2 text-[12px] font-semibold text-slate-400">
+            <p className="rounded-lg bg-slate-100/65 dark:bg-slate-800/65 px-3 py-2 text-[12px] font-semibold text-slate-500 dark:text-slate-400">
               핵심 결과를 정리 중입니다.
             </p>
           )}
@@ -1276,8 +1276,8 @@ export default function Report() {
       </div>
 
       {/* 회원 선택 (다른 탭과 동일한 검색형 선택기) */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
-        <label className="block text-xs font-semibold text-slate-400 uppercase tracking-widest mb-2">회원 찾기</label>
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4">
+        <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-2">회원 찾기</label>
         <MemberPicker members={members} value={memberId} onChange={setMemberId}
           allowNone={false} placeholder="이름 / 초성 / 전화 뒤4자리" />
       </div>
@@ -1288,7 +1288,7 @@ export default function Report() {
           {!showCombined ? (
             <button
               onClick={() => setShowCombined(true)}
-              className="w-full rounded-xl border border-amber-500/40 bg-amber-500/10 text-amber-300 font-bold text-sm py-2.5"
+              className="w-full rounded-xl border border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300 font-bold text-sm py-2.5"
             >
               📊 측정 종합 분석 보기
             </button>
@@ -1300,13 +1300,13 @@ export default function Report() {
 
       {/* 섹션 바로가기 — 페이지가 길어서(신체정보~판독설명서) 존재하는 섹션만 골라 보여준다. */}
       {member && sectionNavItems.length > 1 && (
-        <div className="sticky top-1 z-20 -mx-1 flex gap-1.5 overflow-x-auto rounded-full border border-slate-800 bg-slate-950/95 px-2 py-1.5 backdrop-blur">
+        <div className="sticky top-1 z-20 -mx-1 flex gap-1.5 overflow-x-auto rounded-full border border-slate-200 dark:border-slate-800 bg-slate-50/95 dark:bg-slate-950/95 px-2 py-1.5 backdrop-blur">
           {sectionNavItems.map((item) => (
             <button
               key={item.id}
               type="button"
               onClick={() => document.getElementById(item.id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
-              className="shrink-0 rounded-full px-3 py-1.5 text-[11px] font-bold text-slate-400 active:bg-slate-800 active:text-white"
+              className="shrink-0 rounded-full px-3 py-1.5 text-[11px] font-bold text-slate-500 dark:text-slate-400 active:bg-slate-100 dark:active:bg-slate-800 active:text-white"
             >
               {item.label}
             </button>
@@ -1318,18 +1318,18 @@ export default function Report() {
       {member && report?.body?.summary?.length > 0 && (
         <div id="section-body" className="scroll-mt-14">
           <div className="mb-2 flex items-end justify-between">
-            <p className="text-xs font-bold uppercase tracking-widest text-slate-400">신체정보 · 최근 측정</p>
+            <p className="text-xs font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400">신체정보 · 최근 측정</p>
             {latestBodyDate && <span className="text-[11px] text-slate-500">{formatDateOnly(latestBodyDate)}</span>}
           </div>
           <div className="grid grid-cols-2 gap-2">
             {report.body.summary.map(s => (
-              <div key={s.key} className="bg-slate-900 border border-slate-800 rounded-xl p-3">
+              <div key={s.key} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3">
                 <p className="text-[11px] text-slate-500">{s.label}</p>
-                <p className="font-mono font-black text-lg text-slate-100">
+                <p className="font-mono font-black text-lg text-slate-800 dark:text-slate-100">
                   {s.latest}<span className="text-slate-500 text-[10px] font-normal"> {s.unit}</span>
                 </p>
                 {s.change != null && (
-                  <p className={`text-[11px] font-bold ${s.change > 0 ? 'text-red-400' : 'text-emerald-400'}`}>
+                  <p className={`text-[11px] font-bold ${s.change > 0 ? 'text-red-700 dark:text-red-400' : 'text-emerald-700 dark:text-emerald-400'}`}>
                     {s.change > 0 ? '▲' : '▼'} {Math.abs(s.change)}{s.unit} (최초 대비)
                   </p>
                 )}
@@ -1354,13 +1354,13 @@ export default function Report() {
 
       {/* 측정 캘린더 — "전체 결과"를 일렬로 늘어놓는 대신 언제 측정했는지로 정리한다 */}
       {member && dailyGroups.length > 0 && (
-        <section id="section-calendar" className="scroll-mt-14 rounded-2xl border border-slate-800 bg-slate-950/40 p-3">
+        <section id="section-calendar" className="scroll-mt-14 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/40 dark:bg-slate-950/40 p-3">
           <div className="mb-3 flex items-end justify-between gap-3 px-1">
             <div>
-              <p className="text-xs font-bold uppercase tracking-widest text-slate-400">측정 캘린더</p>
+              <p className="text-xs font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400">측정 캘린더</p>
               <p className="mt-1 text-sm font-semibold text-slate-500">날짜를 선택하면 그날 측정 결과를 볼 수 있습니다.</p>
             </div>
-            <span className="shrink-0 rounded-full bg-slate-800 px-2.5 py-1 text-[11px] font-black text-slate-300">
+            <span className="shrink-0 rounded-full bg-slate-100 dark:bg-slate-800 px-2.5 py-1 text-[11px] font-black text-slate-600 dark:text-slate-300">
               {unifiedResults.length}건
             </span>
           </div>
@@ -1385,15 +1385,15 @@ export default function Report() {
                     </p>
                   )}
                 </div>
-                <span className="shrink-0 rounded-full bg-slate-800 px-2.5 py-1 text-[11px] font-black text-slate-300">
+                <span className="shrink-0 rounded-full bg-slate-100 dark:bg-slate-800 px-2.5 py-1 text-[11px] font-black text-slate-600 dark:text-slate-300">
                   {selectedGroup.count}건
                 </span>
               </div>
 
               {selectedGroup.bodyEntry && (
-                <div className="mb-2 flex items-center justify-between rounded-xl border border-slate-800 bg-slate-900 px-3 py-2.5">
-                  <p className="text-xs font-bold text-slate-300">신체정보 기록</p>
-                  <p className="font-mono text-xs text-slate-400">
+                <div className="mb-2 flex items-center justify-between rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-2.5">
+                  <p className="text-xs font-bold text-slate-600 dark:text-slate-300">신체정보 기록</p>
+                  <p className="font-mono text-xs text-slate-500 dark:text-slate-400">
                     {selectedGroup.bodyEntry.weight != null && `${selectedGroup.bodyEntry.weight}kg`}
                     {selectedGroup.bodyEntry.systolic != null && ` · ${selectedGroup.bodyEntry.systolic}/${selectedGroup.bodyEntry.diastolic}`}
                   </p>
@@ -1404,7 +1404,7 @@ export default function Report() {
                 {selectedGroup.items.length > 0 ? selectedGroup.items.map((item) => (
                   <UnifiedResultCard key={item.id} item={item} onOpen={openUnifiedResult} onShare={shareUnifiedResult} sharing={sharingId === item.id} />
                 )) : (
-                  <div className="rounded-2xl border border-slate-800 bg-slate-900 p-5 text-center text-sm font-semibold text-slate-500">
+                  <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 text-center text-sm font-semibold text-slate-500">
                     이날은 신체정보 기록만 있습니다.
                   </div>
                 )}
@@ -1415,7 +1415,7 @@ export default function Report() {
       )}
 
       {report && !report.hasData && unifiedResults.length === 0 && (
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 text-center text-slate-500 text-sm">
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 text-center text-slate-500 text-sm">
           측정된 데이터가 없습니다.<br />신체정보나 AI 측정을 먼저 기록하세요.
         </div>
       )}
@@ -1425,7 +1425,7 @@ export default function Report() {
           {/* AI 측정 이력 (자세·1RM·RSI·VBT·점프 등) — 탭하면 상세 + 회차비교 */}
           {report.ai.menuSummaries?.length > 0 && (
             <div id="section-history" className="scroll-mt-14">
-              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">AI 측정 이력 · 탭하여 상세</p>
+              <p className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-2">AI 측정 이력 · 탭하여 상세</p>
               <div className="space-y-2">
                 {report.ai.menuSummaries.map((m, i) => {
                   const open = expandedMenu === m.groupKey;
@@ -1437,19 +1437,19 @@ export default function Report() {
                   const first = numeric[0]?.value, last = numeric.at(-1)?.value;
                   const delta = (first != null && last != null) ? Math.round((last - first) * 10) / 10 : null;
                   return (
-                    <div key={i} className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
+                    <div key={i} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
                       <button onClick={() => setExpandedMenu(open ? null : m.groupKey)}
-                        className="w-full px-3 py-2.5 flex items-center justify-between text-left active:bg-slate-800/50">
+                        className="w-full px-3 py-2.5 flex items-center justify-between text-left active:bg-slate-100/50 dark:active:bg-slate-800/50">
                         <div>
-                          <p className="text-sm font-bold text-slate-200">{m.title}</p>
+                          <p className="text-sm font-bold text-slate-700 dark:text-slate-200">{m.title}</p>
                           <p className="text-[11px] text-slate-500">{m.metric}</p>
                         </div>
                         <div className="flex items-center gap-2">
                           <div className="text-right">
-                            <p className="text-[11px] text-slate-400">{m.count}회</p>
+                            <p className="text-[11px] text-slate-500 dark:text-slate-400">{m.count}회</p>
                             <p className="text-[10px] text-slate-600">{m.latestDate}</p>
                           </div>
-                          <span className={`text-amber-400 text-xs transition-transform ${open ? 'rotate-90' : ''}`}>▶</span>
+                          <span className={`text-amber-700 dark:text-amber-400 text-xs transition-transform ${open ? 'rotate-90' : ''}`}>▶</span>
                         </div>
                       </button>
 
@@ -1458,11 +1458,11 @@ export default function Report() {
                         // 그 외 메뉴는 기존처럼 핵심 지표 1개만 추세로 보여준다.
                         const extraCharts = extraMenuTrendCharts(m.menu, trend, postureTrend);
                         return (
-                          <div className="border-t border-slate-800 p-3 space-y-3">
+                          <div className="border-t border-slate-200 dark:border-slate-800 p-3 space-y-3">
                             {/* 회차별 비교 차트 */}
                             {extraCharts.length > 0 ? (
                               <div>
-                                <p className="text-[11px] font-bold text-slate-400 mb-1">회차별 비교</p>
+                                <p className="text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-1">회차별 비교</p>
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                   {extraCharts.map(c => (
                                     <TrendChart key={c.key} title={c.title} unit={c.unit} points={c.points} color={c.color} width={320} height={140} />
@@ -1471,8 +1471,8 @@ export default function Report() {
                               </div>
                             ) : points.length > 1 ? (
                               <div>
-                                <p className="text-[11px] font-bold text-slate-400 mb-1">회차별 비교 {delta != null && (
-                                  <span className={delta === 0 ? 'text-slate-500' : delta > 0 ? 'text-emerald-400' : 'text-red-400'}>
+                                <p className="text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-1">회차별 비교 {delta != null && (
+                                  <span className={delta === 0 ? 'text-slate-500' : delta > 0 ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-700 dark:text-red-400'}>
                                     (최초 대비 {delta > 0 ? '▲' : delta < 0 ? '▼' : '–'}{Math.abs(delta)}{unit})
                                   </span>
                                 )}</p>
@@ -1508,23 +1508,23 @@ export default function Report() {
                                   : null;
                                 const deleting = deletingKey === `round:${r.s.id}`;
                                 return (
-                                  <div key={j} className="flex items-center justify-between bg-slate-800/60 rounded-lg px-3 py-2">
+                                  <div key={j} className="flex items-center justify-between bg-slate-100/60 dark:bg-slate-800/60 rounded-lg px-3 py-2">
                                     <div>
-                                      <p className="text-xs font-bold text-slate-200">
+                                      <p className="text-xs font-bold text-slate-700 dark:text-slate-200">
                                         {r.value != null ? `${r.value}${r.unit}` : '—'} <span className="text-slate-500 font-normal">{r.label}</span>
                                       </p>
                                       <p className="text-[10px] text-slate-500">{String(r.s.recordedAt || '').slice(0, 10)}</p>
                                     </div>
                                     <div className="flex shrink-0 items-center gap-3">
                                       {openable && (
-                                        <button onClick={openDetail} className="text-amber-400 text-[11px] font-bold">리포트 →</button>
+                                        <button onClick={openDetail} className="text-amber-700 dark:text-amber-400 text-[11px] font-bold">리포트 →</button>
                                       )}
                                       <button
                                         type="button"
                                         onClick={() => handleDeleteRound(r.s, linkedReport, m.title)}
                                         disabled={deleting}
                                         aria-label="이 회차 삭제"
-                                        className="text-slate-600 text-[13px] active:text-red-400 disabled:opacity-40"
+                                        className="text-slate-600 text-[13px] active:text-red-700 dark:active:text-red-400 disabled:opacity-40"
                                       >
                                         {deleting ? '···' : '🗑'}
                                       </button>
@@ -1545,7 +1545,7 @@ export default function Report() {
                                 return { source: src, id: list[idx].id };
                               }, m.title, m.count)}
                               disabled={deletingKey === `type:${m.groupKey}`}
-                              className="w-full rounded-lg border border-red-500/20 bg-red-500/5 py-2 text-[11px] font-bold text-red-400/80 active:bg-red-500/10 disabled:opacity-40"
+                              className="w-full rounded-lg border border-red-500/20 bg-red-500/5 py-2 text-[11px] font-bold text-red-700 dark:text-red-400/80 active:bg-red-500/10 disabled:opacity-40"
                             >
                               {deletingKey === `type:${m.groupKey}` ? '삭제 중…' : `🗑 "${m.title}" 전체 ${m.count}건 삭제`}
                             </button>
@@ -1568,18 +1568,18 @@ export default function Report() {
 
           <InterpretationGuideSection guide={interpretationGuide} />
 
-          {msg && <p className="text-center text-xs text-slate-400">{msg}</p>}
+          {msg && <p className="text-center text-xs text-slate-500 dark:text-slate-400">{msg}</p>}
         </>
       )}
 
       {shareCaptureItem && (
         <div
           aria-hidden="true"
-          className="fixed top-0 w-[860px] max-w-none overflow-visible bg-slate-950 pointer-events-none"
+          className="fixed top-0 w-[860px] max-w-none overflow-visible bg-slate-50 dark:bg-slate-950 pointer-events-none"
           style={{ left: '-10000px' }}
         >
-          <div ref={shareCaptureRef} className="w-[860px] bg-slate-950">
-            <Suspense fallback={<div className="min-h-[1123px] w-[794px] bg-slate-900" />}>
+          <div ref={shareCaptureRef} className="w-[860px] bg-slate-50 dark:bg-slate-950">
+            <Suspense fallback={<div className="min-h-[1123px] w-[794px] bg-white dark:bg-slate-900" />}>
               <ShareCaptureReport item={shareCaptureItem} member={member} />
             </Suspense>
           </div>
@@ -1588,20 +1588,20 @@ export default function Report() {
 
       {/* 페이지별 리포트 뷰어 (이전/다음으로 회차 넘김) */}
       {viewerIdx != null && savedReports[viewerIdx] && (
-        <div className="fixed inset-0 z-[90] bg-slate-950 overflow-y-auto" style={{ height: '100dvh' }}>
-          <div className="sticky top-0 z-10 flex items-center justify-between px-4 py-2.5 bg-slate-900/95 backdrop-blur border-b border-slate-800">
-            <button onClick={() => setViewerIdx(null)} className="text-slate-300 font-bold text-sm">✕ 닫기</button>
+        <div className="fixed inset-0 z-[90] bg-slate-50 dark:bg-slate-950 overflow-y-auto" style={{ height: '100dvh' }}>
+          <div className="sticky top-0 z-10 flex items-center justify-between px-4 py-2.5 bg-white dark:bg-slate-900/95 backdrop-blur border-b border-slate-200 dark:border-slate-800">
+            <button onClick={() => setViewerIdx(null)} className="text-slate-600 dark:text-slate-300 font-bold text-sm">✕ 닫기</button>
             <span className="text-white text-xs font-bold">{viewerIdx + 1} / {savedReports.length}</span>
             <div className="flex gap-2">
               <button onClick={() => setViewerIdx(i => Math.min(savedReports.length - 1, i + 1))}
                 disabled={viewerIdx >= savedReports.length - 1}
-                className="text-slate-300 text-sm font-bold disabled:opacity-30">◀ 이전</button>
+                className="text-slate-600 dark:text-slate-300 text-sm font-bold disabled:opacity-30">◀ 이전</button>
               <button onClick={() => setViewerIdx(i => Math.max(0, i - 1))}
                 disabled={viewerIdx <= 0}
-                className="text-slate-300 text-sm font-bold disabled:opacity-30">다음 ▶</button>
+                className="text-slate-600 dark:text-slate-300 text-sm font-bold disabled:opacity-30">다음 ▶</button>
             </div>
           </div>
-          <Suspense fallback={<div className="p-10 text-center text-slate-400">불러오는 중…</div>}>
+          <Suspense fallback={<div className="p-10 text-center text-slate-500 dark:text-slate-400">불러오는 중…</div>}>
             {savedReports[viewerIdx].kind === 'jump'
               ? <JumpReportDashboard report={savedReports[viewerIdx]} onClose={() => setViewerIdx(null)} member={member} />
               : <GaitReportDashboard report={savedReports[viewerIdx]} onClose={() => setViewerIdx(null)} member={member} />}
@@ -1609,20 +1609,20 @@ export default function Report() {
         </div>
       )}
       {romViewerIdx != null && savedRomReports[romViewerIdx] && (
-        <div className="fixed inset-0 z-[90] bg-slate-950 overflow-y-auto" style={{ height: '100dvh' }}>
-          <div className="sticky top-0 z-10 flex items-center justify-between px-4 py-2.5 bg-slate-900/95 backdrop-blur border-b border-slate-800">
-            <button onClick={() => setRomViewerIdx(null)} className="text-slate-300 font-bold text-sm">✕ 닫기</button>
+        <div className="fixed inset-0 z-[90] bg-slate-50 dark:bg-slate-950 overflow-y-auto" style={{ height: '100dvh' }}>
+          <div className="sticky top-0 z-10 flex items-center justify-between px-4 py-2.5 bg-white dark:bg-slate-900/95 backdrop-blur border-b border-slate-200 dark:border-slate-800">
+            <button onClick={() => setRomViewerIdx(null)} className="text-slate-600 dark:text-slate-300 font-bold text-sm">✕ 닫기</button>
             <span className="text-white text-xs font-bold">{romViewerIdx + 1} / {savedRomReports.length}</span>
             <div className="flex gap-2">
               <button onClick={() => setRomViewerIdx(i => Math.min(savedRomReports.length - 1, i + 1))}
                 disabled={romViewerIdx >= savedRomReports.length - 1}
-                className="text-slate-300 text-sm font-bold disabled:opacity-30">◀ 이전</button>
+                className="text-slate-600 dark:text-slate-300 text-sm font-bold disabled:opacity-30">◀ 이전</button>
               <button onClick={() => setRomViewerIdx(i => Math.max(0, i - 1))}
                 disabled={romViewerIdx <= 0}
-                className="text-slate-300 text-sm font-bold disabled:opacity-30">다음 ▶</button>
+                className="text-slate-600 dark:text-slate-300 text-sm font-bold disabled:opacity-30">다음 ▶</button>
             </div>
           </div>
-          <Suspense fallback={<div className="p-10 text-center text-slate-400">불러오는 중…</div>}>
+          <Suspense fallback={<div className="p-10 text-center text-slate-500 dark:text-slate-400">불러오는 중…</div>}>
             <RomReport report={savedRomReports[romViewerIdx]} member={member} />
           </Suspense>
           <div className="mx-auto w-full max-w-[794px] p-4 pt-0">
@@ -1631,20 +1631,20 @@ export default function Report() {
         </div>
       )}
       {postureViewerIdx != null && savedPostureReports[postureViewerIdx] && (
-        <div className="fixed inset-0 z-[90] bg-slate-950 overflow-y-auto" style={{ height: '100dvh' }}>
-          <div className="sticky top-0 z-10 flex items-center justify-between px-4 py-2.5 bg-slate-900/95 backdrop-blur border-b border-slate-800">
-            <button onClick={() => setPostureViewerIdx(null)} className="text-slate-300 font-bold text-sm">✕ 닫기</button>
+        <div className="fixed inset-0 z-[90] bg-slate-50 dark:bg-slate-950 overflow-y-auto" style={{ height: '100dvh' }}>
+          <div className="sticky top-0 z-10 flex items-center justify-between px-4 py-2.5 bg-white dark:bg-slate-900/95 backdrop-blur border-b border-slate-200 dark:border-slate-800">
+            <button onClick={() => setPostureViewerIdx(null)} className="text-slate-600 dark:text-slate-300 font-bold text-sm">✕ 닫기</button>
             <span className="text-white text-xs font-bold">{postureViewerIdx + 1} / {savedPostureReports.length}</span>
             <div className="flex gap-2">
               <button onClick={() => setPostureViewerIdx(i => Math.min(savedPostureReports.length - 1, i + 1))}
                 disabled={postureViewerIdx >= savedPostureReports.length - 1}
-                className="text-slate-300 text-sm font-bold disabled:opacity-30">◀ 이전</button>
+                className="text-slate-600 dark:text-slate-300 text-sm font-bold disabled:opacity-30">◀ 이전</button>
               <button onClick={() => setPostureViewerIdx(i => Math.max(0, i - 1))}
                 disabled={postureViewerIdx <= 0}
-                className="text-slate-300 text-sm font-bold disabled:opacity-30">다음 ▶</button>
+                className="text-slate-600 dark:text-slate-300 text-sm font-bold disabled:opacity-30">다음 ▶</button>
             </div>
           </div>
-          <Suspense fallback={<div className="p-10 text-center text-slate-400">불러오는 중…</div>}>
+          <Suspense fallback={<div className="p-10 text-center text-slate-500 dark:text-slate-400">불러오는 중…</div>}>
             <PostureReport
               report={savedPostureReports[postureViewerIdx]}
               member={member}
@@ -1659,20 +1659,20 @@ export default function Report() {
         </div>
       )}
       {liftingViewerIdx != null && savedLiftingSessions[liftingViewerIdx] && (
-        <div className="fixed inset-0 z-[90] bg-slate-950 overflow-y-auto" style={{ height: '100dvh' }}>
-          <div className="sticky top-0 z-10 flex items-center justify-between px-4 py-2.5 bg-slate-900/95 backdrop-blur border-b border-slate-800">
-            <button onClick={() => setLiftingViewerIdx(null)} className="text-slate-300 font-bold text-sm">✕ 닫기</button>
+        <div className="fixed inset-0 z-[90] bg-slate-50 dark:bg-slate-950 overflow-y-auto" style={{ height: '100dvh' }}>
+          <div className="sticky top-0 z-10 flex items-center justify-between px-4 py-2.5 bg-white dark:bg-slate-900/95 backdrop-blur border-b border-slate-200 dark:border-slate-800">
+            <button onClick={() => setLiftingViewerIdx(null)} className="text-slate-600 dark:text-slate-300 font-bold text-sm">✕ 닫기</button>
             <span className="text-white text-xs font-bold">{liftingViewerIdx + 1} / {savedLiftingSessions.length}</span>
             <div className="flex gap-2">
               <button onClick={() => setLiftingViewerIdx(i => Math.min(savedLiftingSessions.length - 1, i + 1))}
                 disabled={liftingViewerIdx >= savedLiftingSessions.length - 1}
-                className="text-slate-300 text-sm font-bold disabled:opacity-30">◀ 이전</button>
+                className="text-slate-600 dark:text-slate-300 text-sm font-bold disabled:opacity-30">◀ 이전</button>
               <button onClick={() => setLiftingViewerIdx(i => Math.max(0, i - 1))}
                 disabled={liftingViewerIdx <= 0}
-                className="text-slate-300 text-sm font-bold disabled:opacity-30">다음 ▶</button>
+                className="text-slate-600 dark:text-slate-300 text-sm font-bold disabled:opacity-30">다음 ▶</button>
             </div>
           </div>
-          <Suspense fallback={<div className="p-10 text-center text-slate-400">불러오는 중…</div>}>
+          <Suspense fallback={<div className="p-10 text-center text-slate-500 dark:text-slate-400">불러오는 중…</div>}>
             <LiftingReportDashboard
               report={savedLiftingSessions[liftingViewerIdx]?.data || {}}
               member={member}
@@ -1686,20 +1686,20 @@ export default function Report() {
           받지만 onRemeasure는 옵션이라(측정 화면 전용) 여기선 안 넘긴다 — 저장된
           리포트를 다시 보는 중엔 "다시 측정" 버튼이 뜨지 않는다. */}
       {stanceViewerIdx != null && savedStanceSessions[stanceViewerIdx] && (
-        <div className="fixed inset-0 z-[90] bg-slate-950 overflow-y-auto" style={{ height: '100dvh' }}>
-          <div className="sticky top-0 z-10 flex items-center justify-between px-4 py-2.5 bg-slate-900/95 backdrop-blur border-b border-slate-800">
-            <button onClick={() => setStanceViewerIdx(null)} className="text-slate-300 font-bold text-sm">✕ 닫기</button>
+        <div className="fixed inset-0 z-[90] bg-slate-50 dark:bg-slate-950 overflow-y-auto" style={{ height: '100dvh' }}>
+          <div className="sticky top-0 z-10 flex items-center justify-between px-4 py-2.5 bg-white dark:bg-slate-900/95 backdrop-blur border-b border-slate-200 dark:border-slate-800">
+            <button onClick={() => setStanceViewerIdx(null)} className="text-slate-600 dark:text-slate-300 font-bold text-sm">✕ 닫기</button>
             <span className="text-white text-xs font-bold">{stanceViewerIdx + 1} / {savedStanceSessions.length}</span>
             <div className="flex gap-2">
               <button onClick={() => setStanceViewerIdx(i => Math.min(savedStanceSessions.length - 1, i + 1))}
                 disabled={stanceViewerIdx >= savedStanceSessions.length - 1}
-                className="text-slate-300 text-sm font-bold disabled:opacity-30">◀ 이전</button>
+                className="text-slate-600 dark:text-slate-300 text-sm font-bold disabled:opacity-30">◀ 이전</button>
               <button onClick={() => setStanceViewerIdx(i => Math.max(0, i - 1))}
                 disabled={stanceViewerIdx <= 0}
-                className="text-slate-300 text-sm font-bold disabled:opacity-30">다음 ▶</button>
+                className="text-slate-600 dark:text-slate-300 text-sm font-bold disabled:opacity-30">다음 ▶</button>
             </div>
           </div>
-          <Suspense fallback={<div className="p-10 text-center text-slate-400">불러오는 중…</div>}>
+          <Suspense fallback={<div className="p-10 text-center text-slate-500 dark:text-slate-400">불러오는 중…</div>}>
             <StanceReportDashboard
               report={savedStanceSessions[stanceViewerIdx]?.data || {}}
               member={member}
@@ -1710,20 +1710,20 @@ export default function Report() {
       )}
       {/* [리포트 통합 2026-08-09] 스쿼트 — 위 SLST와 완전히 같은 패턴. */}
       {squatViewerIdx != null && savedSquatSessions[squatViewerIdx] && (
-        <div className="fixed inset-0 z-[90] bg-slate-950 overflow-y-auto" style={{ height: '100dvh' }}>
-          <div className="sticky top-0 z-10 flex items-center justify-between px-4 py-2.5 bg-slate-900/95 backdrop-blur border-b border-slate-800">
-            <button onClick={() => setSquatViewerIdx(null)} className="text-slate-300 font-bold text-sm">✕ 닫기</button>
+        <div className="fixed inset-0 z-[90] bg-slate-50 dark:bg-slate-950 overflow-y-auto" style={{ height: '100dvh' }}>
+          <div className="sticky top-0 z-10 flex items-center justify-between px-4 py-2.5 bg-white dark:bg-slate-900/95 backdrop-blur border-b border-slate-200 dark:border-slate-800">
+            <button onClick={() => setSquatViewerIdx(null)} className="text-slate-600 dark:text-slate-300 font-bold text-sm">✕ 닫기</button>
             <span className="text-white text-xs font-bold">{squatViewerIdx + 1} / {savedSquatSessions.length}</span>
             <div className="flex gap-2">
               <button onClick={() => setSquatViewerIdx(i => Math.min(savedSquatSessions.length - 1, i + 1))}
                 disabled={squatViewerIdx >= savedSquatSessions.length - 1}
-                className="text-slate-300 text-sm font-bold disabled:opacity-30">◀ 이전</button>
+                className="text-slate-600 dark:text-slate-300 text-sm font-bold disabled:opacity-30">◀ 이전</button>
               <button onClick={() => setSquatViewerIdx(i => Math.max(0, i - 1))}
                 disabled={squatViewerIdx <= 0}
-                className="text-slate-300 text-sm font-bold disabled:opacity-30">다음 ▶</button>
+                className="text-slate-600 dark:text-slate-300 text-sm font-bold disabled:opacity-30">다음 ▶</button>
             </div>
           </div>
-          <Suspense fallback={<div className="p-10 text-center text-slate-400">불러오는 중…</div>}>
+          <Suspense fallback={<div className="p-10 text-center text-slate-500 dark:text-slate-400">불러오는 중…</div>}>
             <SquatReportDashboard
               report={savedSquatSessions[squatViewerIdx]?.data || {}}
               member={member}

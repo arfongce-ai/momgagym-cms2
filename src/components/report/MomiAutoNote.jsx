@@ -56,11 +56,11 @@ export default function MomiAutoNote({ kind, report, member, onSaved }) {
   if (!loading && !error && !note) return null; // 아직 아무 것도 할 게 없으면 자리 안 차지함
 
   return (
-    <div className="rounded-xl bg-slate-800/50 border border-slate-700 p-3 text-sm">
-      <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-1">🤖 모미 자동 노트</p>
+    <div className="rounded-xl bg-slate-100/50 dark:bg-slate-800/50 border border-slate-300 dark:border-slate-700 p-3 text-sm">
+      <p className="text-[11px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400 mb-1">🤖 모미 자동 노트</p>
       {loading && <p className="text-slate-500">모미가 확인하고 있어요…</p>}
-      {error && <p className="text-red-400 text-xs">{error}</p>}
-      {note && <p className="text-slate-200 whitespace-pre-wrap leading-relaxed">{note.text}</p>}
+      {error && <p className="text-red-700 dark:text-red-400 text-xs">{error}</p>}
+      {note && <p className="text-slate-700 dark:text-slate-200 whitespace-pre-wrap leading-relaxed">{note.text}</p>}
     </div>
   );
 }

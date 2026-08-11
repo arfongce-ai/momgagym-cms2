@@ -69,25 +69,25 @@ export function Stopwatch({ compact = false, command = null }) {
 
   return (
     <div className={compact ? 'space-y-3' : 'space-y-4'}>
-      <div className={`text-center bg-slate-900 border border-slate-800 rounded-2xl ${compact ? 'py-4' : 'py-8'}`}>
-        <p className={`font-mono font-black text-amber-400 tabular-nums ${compact ? 'text-4xl' : 'text-5xl'}`}>{fmt(elapsed)}</p>
+      <div className={`text-center bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl ${compact ? 'py-4' : 'py-8'}`}>
+        <p className={`font-mono font-black text-amber-700 dark:text-amber-400 tabular-nums ${compact ? 'text-4xl' : 'text-5xl'}`}>{fmt(elapsed)}</p>
       </div>
       <div className="grid grid-cols-3 gap-2">
-        <button onClick={reset} className="rounded-xl border border-slate-700 text-slate-300 font-bold py-3 text-sm">리셋</button>
+        <button onClick={reset} className="rounded-xl border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-bold py-3 text-sm">리셋</button>
         <button
           onClick={startStop}
           className={`rounded-xl font-bold py-3 text-sm ${running ? 'bg-red-500 text-white' : 'bg-amber-500 text-slate-950'}`}
         >
           {running ? '정지' : '시작'}
         </button>
-        <button onClick={lap} disabled={!running} className="rounded-xl border border-slate-700 text-slate-300 font-bold py-3 text-sm disabled:opacity-40">랩</button>
+        <button onClick={lap} disabled={!running} className="rounded-xl border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-bold py-3 text-sm disabled:opacity-40">랩</button>
       </div>
       {laps.length > 0 && (
-        <div className="bg-slate-900 border border-slate-800 rounded-xl divide-y divide-slate-800 max-h-40 overflow-y-auto">
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl divide-y divide-slate-200 dark:divide-slate-800 max-h-40 overflow-y-auto">
           {laps.map((l, i) => (
             <div key={i} className="flex justify-between px-3 py-2 text-sm">
               <span className="text-slate-500">랩 {laps.length - i}</span>
-              <span className="font-mono text-slate-200">{fmt(l)}</span>
+              <span className="font-mono text-slate-700 dark:text-slate-200">{fmt(l)}</span>
             </div>
           ))}
         </div>
@@ -171,15 +171,15 @@ export function Metronome({ compact = false, command = null }) {
 
   return (
     <div className={compact ? 'space-y-3' : 'space-y-4'}>
-      <div className={`text-center bg-slate-900 border border-slate-800 rounded-2xl ${compact ? 'py-4' : 'py-6'}`}>
-        <p className={`font-mono font-black text-amber-400 ${compact ? 'text-4xl' : 'text-5xl'}`}>
+      <div className={`text-center bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl ${compact ? 'py-4' : 'py-6'}`}>
+        <p className={`font-mono font-black text-amber-700 dark:text-amber-400 ${compact ? 'text-4xl' : 'text-5xl'}`}>
           {bpm}<span className="text-lg text-slate-500"> BPM</span>
         </p>
       </div>
       <input type="range" min="40" max="220" value={bpm} onChange={(e) => setBpm(Number(e.target.value))} className="w-full accent-amber-500" />
       <div className="grid grid-cols-4 gap-2">
-        <button onClick={() => setBpm((b) => Math.max(40, b - 5))} className="rounded-xl border border-slate-700 text-slate-300 font-bold py-2">-5</button>
-        <button onClick={() => setBpm((b) => Math.min(220, b + 5))} className="rounded-xl border border-slate-700 text-slate-300 font-bold py-2">+5</button>
+        <button onClick={() => setBpm((b) => Math.max(40, b - 5))} className="rounded-xl border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-bold py-2">-5</button>
+        <button onClick={() => setBpm((b) => Math.min(220, b + 5))} className="rounded-xl border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-bold py-2">+5</button>
         <button
           onClick={playing ? stop : start}
           className={`col-span-2 rounded-xl font-bold py-2 ${playing ? 'bg-red-500 text-white' : 'bg-amber-500 text-slate-950'}`}
@@ -189,7 +189,7 @@ export function Metronome({ compact = false, command = null }) {
       </div>
       <div className="flex gap-2 justify-center flex-wrap">
         {[60, 80, 100, 120, 140].map((p) => (
-          <button key={p} onClick={() => setBpm(p)} className={`px-3 py-1 rounded-lg text-xs font-bold ${bpm === p ? 'bg-amber-500 text-slate-950' : 'bg-slate-800 text-slate-400'}`}>
+          <button key={p} onClick={() => setBpm(p)} className={`px-3 py-1 rounded-lg text-xs font-bold ${bpm === p ? 'bg-amber-500 text-slate-950' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'}`}>
             {p}
           </button>
         ))}
@@ -300,32 +300,32 @@ export function Countdown({ compact = false, command = null }) {
 
   return (
     <div className={compact ? 'space-y-3' : 'space-y-4'}>
-      <div className={`text-center bg-slate-900 border border-slate-800 rounded-2xl ${compact ? 'py-4' : 'py-8'}`}>
-        <p className={`font-mono font-black tabular-nums ${compact ? 'text-5xl' : 'text-6xl'} ${remain > 0 && remain < 10000 ? 'text-red-400' : 'text-amber-400'}`}>
+      <div className={`text-center bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl ${compact ? 'py-4' : 'py-8'}`}>
+        <p className={`font-mono font-black tabular-nums ${compact ? 'text-5xl' : 'text-6xl'} ${remain > 0 && remain < 10000 ? 'text-red-700 dark:text-red-400' : 'text-amber-700 dark:text-amber-400'}`}>
           {String(mm).padStart(2, '0')}:{String(ss).padStart(2, '0')}
         </p>
       </div>
       {!running && remain === 0 && (
         <div className="flex items-center justify-center gap-3">
           <div className="flex items-center gap-1">
-            <input type="number" min="0" max="99" value={setMin} onChange={(e) => setSetMin(Math.max(0, Math.min(99, Number(e.target.value) || 0)))} className="w-16 bg-slate-800 border border-slate-700 text-slate-100 rounded-xl px-2 py-2 text-center text-lg font-mono" />
+            <input type="number" min="0" max="99" value={setMin} onChange={(e) => setSetMin(Math.max(0, Math.min(99, Number(e.target.value) || 0)))} className="w-16 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-xl px-2 py-2 text-center text-lg font-mono" />
             <span className="text-slate-500 text-sm">분</span>
           </div>
           <div className="flex items-center gap-1">
-            <input type="number" min="0" max="59" value={setSec} onChange={(e) => setSetSec(Math.max(0, Math.min(59, Number(e.target.value) || 0)))} className="w-16 bg-slate-800 border border-slate-700 text-slate-100 rounded-xl px-2 py-2 text-center text-lg font-mono" />
+            <input type="number" min="0" max="59" value={setSec} onChange={(e) => setSetSec(Math.max(0, Math.min(59, Number(e.target.value) || 0)))} className="w-16 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-xl px-2 py-2 text-center text-lg font-mono" />
             <span className="text-slate-500 text-sm">초</span>
           </div>
         </div>
       )}
       <div className="flex gap-2 justify-center flex-wrap">
         {[30, 60, 90, 180, 300].map((sec) => (
-          <button key={sec} onClick={() => { setSetMin(Math.floor(sec / 60)); setSetSec(sec % 60); setRemain(0); setRunning(false); }} className="px-3 py-1 rounded-lg text-xs font-bold bg-slate-800 text-slate-400 hover:text-white">
+          <button key={sec} onClick={() => { setSetMin(Math.floor(sec / 60)); setSetSec(sec % 60); setRemain(0); setRunning(false); }} className="px-3 py-1 rounded-lg text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:text-white">
             {sec < 60 ? `${sec}초` : `${sec / 60}분`}
           </button>
         ))}
       </div>
       <div className="grid grid-cols-3 gap-2">
-        <button onClick={reset} className="rounded-xl border border-slate-700 text-slate-300 font-bold py-3 text-sm">리셋</button>
+        <button onClick={reset} className="rounded-xl border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-bold py-3 text-sm">리셋</button>
         <button onClick={running ? pause : start} className={`col-span-2 rounded-xl font-bold py-3 text-sm ${running ? 'bg-red-500 text-white' : 'bg-amber-500 text-slate-950'}`}>
           {running ? '일시정지' : (remain > 0 ? '계속' : '시작')}
         </button>
@@ -523,8 +523,8 @@ export function IntervalTimer({ compact = false, command = null }) {
   const totalLabel = `${Math.floor(totalSec / 60)}분 ${totalSec % 60}초`;
 
   const phaseLabel = phase === 'prepare' ? '준비' : phase === 'work' ? '운동' : phase === 'rest' ? '휴식' : phase === 'done' ? '완료' : '대기';
-  const phaseColor = phase === 'work' ? 'text-emerald-400' : phase === 'rest' ? 'text-sky-400' : phase === 'prepare' ? 'text-amber-400' : phase === 'done' ? 'text-emerald-400' : 'text-slate-400';
-  const ringBg = phase === 'work' ? 'bg-emerald-500/10 border-emerald-500/40' : phase === 'rest' ? 'bg-sky-500/10 border-sky-500/40' : phase === 'prepare' ? 'bg-amber-500/10 border-amber-500/40' : 'bg-slate-900 border-slate-800';
+  const phaseColor = phase === 'work' ? 'text-emerald-700 dark:text-emerald-400' : phase === 'rest' ? 'text-sky-700 dark:text-sky-400' : phase === 'prepare' ? 'text-amber-700 dark:text-amber-400' : phase === 'done' ? 'text-emerald-700 dark:text-emerald-400' : 'text-slate-500 dark:text-slate-400';
+  const ringBg = phase === 'work' ? 'bg-emerald-500/10 border-emerald-500/40' : phase === 'rest' ? 'bg-sky-500/10 border-sky-500/40' : phase === 'prepare' ? 'bg-amber-500/10 border-amber-500/40' : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800';
 
   const showSec = Math.ceil(remain / 1000);
   const mm = Math.floor(showSec / 60);
@@ -539,7 +539,7 @@ export function IntervalTimer({ compact = false, command = null }) {
           type="number" min={min} max={max} value={value}
           onChange={(e) => setter(Math.max(min, Math.min(max, Number(e.target.value) || 0)))}
           disabled={running}
-          className="w-16 bg-slate-800 border border-slate-700 text-slate-100 rounded-xl px-2 py-2 text-center text-lg font-mono disabled:opacity-50"
+          className="w-16 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-xl px-2 py-2 text-center text-lg font-mono disabled:opacity-50"
         />
         {unit && <span className="text-slate-500 text-xs">{unit}</span>}
       </div>
@@ -575,7 +575,7 @@ export function IntervalTimer({ compact = false, command = null }) {
               <button
                 key={label}
                 onClick={() => { setWorkSec(w); setRestSec(r); setRounds(rd); }}
-                className="px-3 py-1 rounded-lg text-xs font-bold bg-slate-800 text-slate-400 hover:text-white"
+                className="px-3 py-1 rounded-lg text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:text-white"
               >
                 {label}
               </button>
@@ -586,7 +586,7 @@ export function IntervalTimer({ compact = false, command = null }) {
       )}
 
       <div className="grid grid-cols-3 gap-2">
-        <button onClick={reset} className="rounded-xl border border-slate-700 text-slate-300 font-bold py-3 text-sm">리셋</button>
+        <button onClick={reset} className="rounded-xl border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-bold py-3 text-sm">리셋</button>
         <button
           onClick={startPause}
           className={`col-span-2 rounded-xl font-bold py-3 text-sm ${running ? 'bg-red-500 text-white' : 'bg-amber-500 text-slate-950'}`}
@@ -637,14 +637,14 @@ export default function TimerTool({ onBack }) {
         <span className="w-12" />
       </div>
       <SoundVolumeControl />
-      <div className="flex gap-1 rounded-xl bg-slate-800 p-1">
+      <div className="flex gap-1 rounded-xl bg-slate-100 dark:bg-slate-800 p-1">
         {[
           ['stopwatch', '초시계'],
           ['countdown', '타이머'],
           ['interval', '인터벌'],
           ['metronome', '메트로놈'],
         ].map(([k, l]) => (
-          <button key={k} onClick={() => setTab(k)} className={`flex-1 rounded-lg py-1.5 text-xs font-bold ${tab === k ? 'bg-amber-500 text-slate-950' : 'text-slate-400'}`}>
+          <button key={k} onClick={() => setTab(k)} className={`flex-1 rounded-lg py-1.5 text-xs font-bold ${tab === k ? 'bg-amber-500 text-slate-950' : 'text-slate-500 dark:text-slate-400'}`}>
             {l}
           </button>
         ))}

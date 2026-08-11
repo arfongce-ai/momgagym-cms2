@@ -15,8 +15,8 @@ import { METHOD_LBL, METHOD_CLR, computeMonthRates, autoRefundUsedAmount, comput
 import { buildMemberSessionExpiry, computeExpirySettlement, EXPIRY_STATUS_LABEL } from '../../services/sessionExpiry';
 import { evaluateCondition } from '../../ai-measure/core/conditionAssessment';
 
-const INP = "w-full bg-slate-800 border border-slate-700 text-slate-100 rounded-xl px-3 py-2.5 text-sm placeholder-slate-500 focus:outline-none focus:border-amber-500";
-const LBL = "block text-xs font-semibold text-slate-400 uppercase tracking-widest mb-1.5";
+const INP = "w-full bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-xl px-3 py-2.5 text-sm placeholder-slate-500 focus:outline-none focus:border-amber-500";
+const LBL = "block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5";
 const makePayForm = () => ({
   paidAt: todayYMD(),
   sessionStartDate: '',
@@ -698,8 +698,8 @@ export default function MemberDetail({ member:initMember, trainers, members=[], 
       <div className="modal-box">
 
         {/* 헤더 */}
-        <div className="flex items-center gap-3 px-5 py-4 border-b border-slate-800 flex-shrink-0">
-          <div className="w-10 h-10 rounded-full bg-amber-500/20 text-amber-400 flex items-center justify-center font-bold text-lg flex-shrink-0">
+        <div className="flex items-center gap-3 px-5 py-4 border-b border-slate-200 dark:border-slate-800 flex-shrink-0">
+          <div className="w-10 h-10 rounded-full bg-amber-500/20 text-amber-700 dark:text-amber-400 flex items-center justify-center font-bold text-lg flex-shrink-0">
             {member.name[0]}
           </div>
           <div className="flex-1 min-w-0">
@@ -710,11 +710,11 @@ export default function MemberDetail({ member:initMember, trainers, members=[], 
         </div>
 
         {/* 탭 — 5개 */}
-        <div className="flex border-b border-slate-800 flex-shrink-0 overflow-x-auto">
+        <div className="flex border-b border-slate-200 dark:border-slate-800 flex-shrink-0 overflow-x-auto">
           {TABS.map(([t,l])=>(
             <button key={t} onClick={()=>setTab(t)}
               className={`flex-none px-3 py-2.5 text-[11px] font-bold uppercase tracking-wide whitespace-nowrap transition-colors
-                ${tab===t?'text-amber-400 border-b-2 border-amber-400':'text-slate-500 hover:text-slate-300'}`}>
+                ${tab===t?'text-amber-700 dark:text-amber-400 border-b-2 border-amber-400':'text-slate-500 hover:text-slate-600 dark:hover:text-slate-300'}`}>
               {l}
             </button>
           ))}
@@ -740,31 +740,31 @@ export default function MemberDetail({ member:initMember, trainers, members=[], 
                   {l:'최근출석일', v:member.lastAttendedDate||'미출석'},
                   {l:'수업종류',   v:(member.classTypes||[]).length?member.classTypes.join(', '):'미등록'},
                 ].map(row=>(
-                  <div key={row.l} className="flex items-center justify-between py-2 border-b border-slate-800">
+                  <div key={row.l} className="flex items-center justify-between py-2 border-b border-slate-200 dark:border-slate-800">
                     <span className="text-xs text-slate-500 uppercase tracking-wide font-semibold w-24 flex-shrink-0">{row.l}</span>
                     <span className="text-sm font-medium text-right break-all">{row.v}</span>
                   </div>
                 ))}
                 {member.memo&&(
-                  <div className="py-3 border-b border-slate-800">
+                  <div className="py-3 border-b border-slate-200 dark:border-slate-800">
                     <span className="text-xs text-slate-500 uppercase tracking-wide font-semibold block mb-1">메모</span>
-                    <p className="text-sm text-slate-300 whitespace-pre-line leading-relaxed">{member.memo}</p>
+                    <p className="text-sm text-slate-600 dark:text-slate-300 whitespace-pre-line leading-relaxed">{member.memo}</p>
                   </div>
                 )}
                 <div className="flex gap-2 pt-4">
                   <button onClick={()=>{setEF({...member});setEdit(true);}}
-                    className="flex-1 py-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-400 hover:bg-amber-500/20 text-sm font-semibold transition-colors">
+                    className="flex-1 py-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-700 dark:text-amber-400 hover:bg-amber-500/20 text-sm font-semibold transition-colors">
                     ✏️ 정보 수정
                   </button>
                   {user?.role==='admin'&&(
                     <button onClick={handleDelete}
-                      className="py-2.5 px-4 rounded-xl border border-red-500/30 text-red-400 hover:bg-red-500/10 text-sm font-semibold transition-colors">삭제</button>
+                      className="py-2.5 px-4 rounded-xl border border-red-500/30 text-red-700 dark:text-red-400 hover:bg-red-500/10 text-sm font-semibold transition-colors">삭제</button>
                   )}
                 </div>
               </div>
             ) : (
               <div className="space-y-3">
-                <p className="text-xs text-amber-400 font-semibold uppercase tracking-widest">✏️ 정보 수정 중</p>
+                <p className="text-xs text-amber-700 dark:text-amber-400 font-semibold uppercase tracking-widest">✏️ 정보 수정 중</p>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className={LBL}>이름</label>
@@ -775,8 +775,8 @@ export default function MemberDetail({ member:initMember, trainers, members=[], 
                           onClick={()=>setEF(f=>({...f, gender: f.gender===val ? '' : val}))}
                           className={`flex-1 py-2 rounded-xl text-sm font-bold border transition-colors
                             ${editForm.gender===val
-                              ? 'bg-amber-500/20 border-amber-500/40 text-amber-300'
-                              : 'border-slate-700 text-slate-400 hover:border-slate-500'}`}>
+                              ? 'bg-amber-500/20 border-amber-500/40 text-amber-700 dark:text-amber-300'
+                              : 'border-slate-300 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:border-slate-500'}`}>
                           {lbl}
                         </button>
                       ))}
@@ -793,7 +793,7 @@ export default function MemberDetail({ member:initMember, trainers, members=[], 
                   <div><label className={LBL}>가입일</label><input type="date" value={editForm.joinDate||''} onChange={pfe('joinDate')} className={INP}/></div>
                   <div>
                     <label className={LBL}>최근결제일</label>
-                    <div className={INP+" text-slate-400 flex items-center"}>
+                    <div className={INP+" text-slate-500 dark:text-slate-400 flex items-center"}>
                       {editForm.lastPaymentDate || '수납 등록 시 자동 입력'}
                     </div>
                   </div>
@@ -801,7 +801,7 @@ export default function MemberDetail({ member:initMember, trainers, members=[], 
                 <ClassTypeCheckbox selected={editForm.classTypes||[]} onChange={v=>setEF(f=>({...f,classTypes:v}))}/>
                 <div><label className={LBL}>메모</label><textarea rows={2} value={editForm.memo||''} onChange={pfe('memo')} className={INP+" resize-none"}/></div>
                 <div className="flex gap-2">
-                  <button onClick={()=>setEdit(false)} className="py-2.5 px-4 rounded-xl border border-slate-700 text-slate-300 hover:text-white text-sm font-semibold transition-colors">취소</button>
+                  <button onClick={()=>setEdit(false)} className="py-2.5 px-4 rounded-xl border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:text-white text-sm font-semibold transition-colors">취소</button>
                   <button onClick={saveEdit} className="flex-1 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold py-2.5 rounded-xl text-sm transition-colors">저장</button>
                 </div>
               </div>
@@ -817,9 +817,9 @@ export default function MemberDetail({ member:initMember, trainers, members=[], 
                   const t   = trainerMap[tid];
                   const pct = s.total>0?(s.remaining/s.total)*100:0;
                   const bar = pct>30?'#10b981':pct>0?'#f59e0b':'#ef4444';
-                  const txt = pct>30?'text-emerald-400':pct>0?'text-amber-400':'text-red-400';
+                  const txt = pct>30?'text-emerald-700 dark:text-emerald-400':pct>0?'text-amber-700 dark:text-amber-400':'text-red-700 dark:text-red-400';
                   return (
-                    <div key={tid} className="bg-slate-800 rounded-xl p-4 border border-slate-700">
+                    <div key={tid} className="bg-slate-100 dark:bg-slate-800 rounded-xl p-4 border border-slate-300 dark:border-slate-700">
                       <div className="flex items-center justify-between mb-3">
                         <div className="flex items-center gap-2">
                           <div className="w-3 h-3 rounded-full" style={{background:t?.color||'#94a3b8'}}/>
@@ -830,47 +830,47 @@ export default function MemberDetail({ member:initMember, trainers, members=[], 
                           <span className="text-slate-500 text-xs"> / {s.total}회</span>
                         </div>
                       </div>
-                      <div className="h-2 bg-slate-700 rounded-full overflow-hidden mb-2">
+                      <div className="h-2 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden mb-2">
                         <div className="h-full rounded-full transition-all duration-700" style={{width:`${pct}%`,background:bar}}/>
                       </div>
                       <div className="flex justify-between text-xs text-slate-500">
                         <span>잔여 <strong className={txt}>{s.remaining}회</strong></span>
-                        <span>사용 <strong className="text-slate-400">{s.total-s.remaining}회</strong></span>
-                        <span>등록 <strong className="text-slate-400">{s.total}회</strong></span>
+                        <span>사용 <strong className="text-slate-500 dark:text-slate-400">{s.total-s.remaining}회</strong></span>
+                        <span>등록 <strong className="text-slate-500 dark:text-slate-400">{s.total}회</strong></span>
                       </div>
-                      {s.remaining===0&&<div className="mt-2 text-center text-[10px] bg-red-500/10 border border-red-500/20 rounded-lg py-1 text-red-400 font-bold">⚠️ 세션 소진</div>}
-                      {s.remaining>0&&s.remaining<=5&&<div className="mt-2 text-center text-[10px] bg-orange-500/10 border border-orange-500/20 rounded-lg py-1 text-orange-400 font-bold">⚡ 잔여 {s.remaining}회</div>}
+                      {s.remaining===0&&<div className="mt-2 text-center text-[10px] bg-red-500/10 border border-red-500/20 rounded-lg py-1 text-red-700 dark:text-red-400 font-bold">⚠️ 세션 소진</div>}
+                      {s.remaining>0&&s.remaining<=5&&<div className="mt-2 text-center text-[10px] bg-orange-500/10 border border-orange-500/20 rounded-lg py-1 text-orange-700 dark:text-orange-400 font-bold">⚡ 잔여 {s.remaining}회</div>}
                       {user?.role==='admin' && (
                         transferTid===tid ? (
-                          <div className="mt-3 pt-3 border-t border-slate-700 space-y-2">
-                            <p className="text-[10px] font-bold uppercase tracking-widest text-blue-400">
+                          <div className="mt-3 pt-3 border-t border-slate-300 dark:border-slate-700 space-y-2">
+                            <p className="text-[10px] font-bold uppercase tracking-widest text-blue-700 dark:text-blue-400">
                               세션 양도 · {t?.name||tid} → ?
                             </p>
 
                             {/* [2026-08-10 추가] 양도 대상 종류: 같은 회원(트레이너만 변경, 기존 동작)
                                 | 다른 회원(신규 기능). 회원을 바꾸면 트레이너 고정(같은 트레이너 유지)도
                                 가능해진다 — setTransferDestType이 전환 시 기본 트레이너를 알맞게 맞춰준다. */}
-                            <div className="flex gap-1 rounded-lg bg-slate-900 p-1 border border-slate-700">
+                            <div className="flex gap-1 rounded-lg bg-white dark:bg-slate-900 p-1 border border-slate-300 dark:border-slate-700">
                               <button type="button" onClick={()=>setTransferDestType('trainer')}
-                                className={`flex-1 rounded-md py-1.5 text-[11px] font-bold transition-colors ${transferForm.destType==='trainer' ? 'bg-blue-500 text-white' : 'text-slate-400'}`}>
+                                className={`flex-1 rounded-md py-1.5 text-[11px] font-bold transition-colors ${transferForm.destType==='trainer' ? 'bg-blue-500 text-white' : 'text-slate-500 dark:text-slate-400'}`}>
                                 같은 회원 · 트레이너 변경
                               </button>
                               <button type="button" onClick={()=>setTransferDestType('member')}
-                                className={`flex-1 rounded-md py-1.5 text-[11px] font-bold transition-colors ${transferForm.destType==='member' ? 'bg-indigo-500 text-white' : 'text-slate-400'}`}>
+                                className={`flex-1 rounded-md py-1.5 text-[11px] font-bold transition-colors ${transferForm.destType==='member' ? 'bg-indigo-500 text-white' : 'text-slate-500 dark:text-slate-400'}`}>
                                 다른 회원에게 양도
                               </button>
                             </div>
 
                             {transferForm.destType==='member' && (
-                              <div className="space-y-2 bg-slate-900/60 rounded-lg p-2.5 border border-indigo-500/20">
-                                <div className="flex gap-1 rounded-lg bg-slate-900 p-1 border border-slate-700">
+                              <div className="space-y-2 bg-white dark:bg-slate-900/60 rounded-lg p-2.5 border border-indigo-500/20">
+                                <div className="flex gap-1 rounded-lg bg-white dark:bg-slate-900 p-1 border border-slate-300 dark:border-slate-700">
                                   <button type="button"
                                     onClick={()=>{ setShowTransferNewMember(false); setTransferForm(f=>({...f,toMemberId:''})); }}
-                                    className={`flex-1 rounded-md py-1 text-[11px] font-bold transition-colors ${!showTransferNewMember ? 'bg-slate-700 text-white' : 'text-slate-400'}`}>
+                                    className={`flex-1 rounded-md py-1 text-[11px] font-bold transition-colors ${!showTransferNewMember ? 'bg-slate-200 dark:bg-slate-700 text-white' : 'text-slate-500 dark:text-slate-400'}`}>
                                     기존 회원
                                   </button>
                                   <button type="button" onClick={()=>setShowTransferNewMember(true)}
-                                    className="flex-1 rounded-md py-1 text-[11px] font-bold text-slate-400 hover:text-white transition-colors">
+                                    className="flex-1 rounded-md py-1 text-[11px] font-bold text-slate-500 dark:text-slate-400 hover:text-white transition-colors">
                                     + 신규 회원 등록
                                   </button>
                                 </div>
@@ -894,7 +894,7 @@ export default function MemberDetail({ member:initMember, trainers, members=[], 
                               </label>
                               <select value={transferForm.toTid}
                                 onChange={e=>setTransferForm(f=>({...f,toTid:e.target.value}))}
-                                className="w-full bg-slate-900 border border-slate-600 text-slate-100 rounded-lg px-2 py-1.5 text-sm">
+                                className="w-full bg-white dark:bg-slate-900 border border-slate-400 dark:border-slate-600 text-slate-800 dark:text-slate-100 rounded-lg px-2 py-1.5 text-sm">
                                 <option value="">선택하세요</option>
                                 {(transferForm.destType==='member' ? trainers : trainers.filter(tt=>tt.id!==tid)).map(tt=>{
                                   const destSessions = transferForm.destType==='member'
@@ -913,30 +913,30 @@ export default function MemberDetail({ member:initMember, trainers, members=[], 
                               <div className="flex items-center gap-2">
                                 <input type="number" min="1" max={s.remaining} value={transferForm.count}
                                   onChange={e=>setTransferForm(f=>({...f,count:e.target.value}))}
-                                  className="flex-1 bg-slate-900 border border-slate-600 text-slate-100 rounded-lg px-2 py-1.5 text-sm font-mono"/>
+                                  className="flex-1 bg-white dark:bg-slate-900 border border-slate-400 dark:border-slate-600 text-slate-800 dark:text-slate-100 rounded-lg px-2 py-1.5 text-sm font-mono"/>
                                 <button type="button" onClick={()=>setTransferForm(f=>({...f,count:s.remaining}))}
-                                  className="px-2.5 py-1.5 rounded-lg text-[11px] font-bold bg-slate-700 text-slate-200 hover:bg-blue-500/20 hover:text-blue-400 transition-colors whitespace-nowrap">
+                                  className="px-2.5 py-1.5 rounded-lg text-[11px] font-bold bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 hover:bg-blue-500/20 hover:text-blue-700 dark:hover:text-blue-400 transition-colors whitespace-nowrap">
                                   전체 양도
                                 </button>
                               </div>
                             </div>
                             {transferForm.toTid && (transferForm.destType!=='member' || transferForm.toMemberId) && (
-                              <div className="bg-slate-700/50 rounded-lg px-3 py-2 text-[11px] text-slate-400 space-y-1">
+                              <div className="bg-slate-200/50 dark:bg-slate-700/50 rounded-lg px-3 py-2 text-[11px] text-slate-500 dark:text-slate-400 space-y-1">
                                 <div>
                                   {transferForm.destType==='member' ? (
                                     <>
-                                      <span className="text-slate-300 font-semibold">{member.name}</span> →{' '}
-                                      <span className="text-indigo-300 font-semibold">{members.find(m=>m.id===transferForm.toMemberId)?.name}</span>{' '}
-                                      <span className="text-blue-400 font-bold">{transferForm.count||0}회</span> 이동
+                                      <span className="text-slate-600 dark:text-slate-300 font-semibold">{member.name}</span> →{' '}
+                                      <span className="text-indigo-700 dark:text-indigo-300 font-semibold">{members.find(m=>m.id===transferForm.toMemberId)?.name}</span>{' '}
+                                      <span className="text-blue-700 dark:text-blue-400 font-bold">{transferForm.count||0}회</span> 이동
                                     </>
                                   ) : (
                                     <>
-                                      <span className="text-slate-300 font-semibold">{t?.name||tid}</span> →{' '}
-                                      <span className="text-blue-300 font-semibold">{trainerMap[transferForm.toTid]?.name}</span>{' '}
-                                      <span className="text-blue-400 font-bold">{transferForm.count||0}회</span> 이동
+                                      <span className="text-slate-600 dark:text-slate-300 font-semibold">{t?.name||tid}</span> →{' '}
+                                      <span className="text-blue-700 dark:text-blue-300 font-semibold">{trainerMap[transferForm.toTid]?.name}</span>{' '}
+                                      <span className="text-blue-700 dark:text-blue-400 font-bold">{transferForm.count||0}회</span> 이동
                                     </>
                                   )}
-                                  {Number(transferForm.count) >= s.remaining && <span className="text-amber-400 font-bold ml-1">(전체 양도 → 출발 세션 제거)</span>}
+                                  {Number(transferForm.count) >= s.remaining && <span className="text-amber-700 dark:text-amber-400 font-bold ml-1">(전체 양도 → 출발 세션 제거)</span>}
                                 </div>
                                 <div className="text-[10px] text-slate-500">
                                   {transferForm.destType==='member'
@@ -946,40 +946,40 @@ export default function MemberDetail({ member:initMember, trainers, members=[], 
                               </div>
                             )}
                             <div className="flex gap-2 justify-end">
-                              <button onClick={()=>setTransferTid(null)} className="text-xs text-slate-400 hover:text-white px-3 py-1.5">취소</button>
+                              <button onClick={()=>setTransferTid(null)} className="text-xs text-slate-500 dark:text-slate-400 hover:text-white px-3 py-1.5">취소</button>
                               <button onClick={()=>saveTransfer(tid)} disabled={busy} className="bg-blue-500 hover:bg-blue-400 text-white font-bold px-4 py-1.5 rounded-lg text-xs disabled:opacity-50">양도 실행</button>
                             </div>
                           </div>
                         ) : adjustTid===tid ? (
-                          <div className="mt-3 pt-3 border-t border-slate-700 space-y-2">
+                          <div className="mt-3 pt-3 border-t border-slate-300 dark:border-slate-700 space-y-2">
                             <div className="grid grid-cols-2 gap-2">
                               <div>
                                 <label className="text-[10px] text-slate-500">잔여</label>
                                 <input type="number" min="0" value={adjustForm.remaining}
                                   onChange={e=>setAdjustForm(f=>({...f,remaining:e.target.value}))}
-                                  className="w-full bg-slate-900 border border-slate-600 text-slate-100 rounded-lg px-2 py-1.5 text-sm font-mono"/>
+                                  className="w-full bg-white dark:bg-slate-900 border border-slate-400 dark:border-slate-600 text-slate-800 dark:text-slate-100 rounded-lg px-2 py-1.5 text-sm font-mono"/>
                               </div>
                               <div>
                                 <label className="text-[10px] text-slate-500">총 등록</label>
                                 <input type="number" min="0" value={adjustForm.total}
                                   onChange={e=>setAdjustForm(f=>({...f,total:e.target.value}))}
-                                  className="w-full bg-slate-900 border border-slate-600 text-slate-100 rounded-lg px-2 py-1.5 text-sm font-mono"/>
+                                  className="w-full bg-white dark:bg-slate-900 border border-slate-400 dark:border-slate-600 text-slate-800 dark:text-slate-100 rounded-lg px-2 py-1.5 text-sm font-mono"/>
                               </div>
                             </div>
                             <div className="flex gap-2 justify-end">
-                              <button onClick={()=>setAdjustTid(null)} className="text-xs text-slate-400 hover:text-white px-3 py-1.5">취소</button>
+                              <button onClick={()=>setAdjustTid(null)} className="text-xs text-slate-500 dark:text-slate-400 hover:text-white px-3 py-1.5">취소</button>
                               <button onClick={()=>saveAdjust(tid)} className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold px-4 py-1.5 rounded-lg text-xs">저장</button>
                             </div>
                           </div>
                         ) : (
-                          <div className="mt-3 pt-3 border-t border-slate-700 flex items-center gap-1.5 flex-wrap">
-                            <button onClick={()=>deductOne(tid)} className="px-2.5 py-1.5 rounded-lg text-xs font-bold bg-slate-700 text-slate-200 hover:bg-red-500/20 hover:text-red-400 transition-colors">−1 차감</button>
-                            <button onClick={()=>restoreOne(tid)} className="px-2.5 py-1.5 rounded-lg text-xs font-bold bg-slate-700 text-slate-200 hover:bg-emerald-500/20 hover:text-emerald-400 transition-colors">+1 복구</button>
-                            <button onClick={()=>startAdjust(tid, s)} className="px-2.5 py-1.5 rounded-lg text-xs font-bold bg-slate-700 text-slate-200 hover:bg-blue-500/20 hover:text-blue-400 transition-colors">직접 수정</button>
+                          <div className="mt-3 pt-3 border-t border-slate-300 dark:border-slate-700 flex items-center gap-1.5 flex-wrap">
+                            <button onClick={()=>deductOne(tid)} className="px-2.5 py-1.5 rounded-lg text-xs font-bold bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 hover:bg-red-500/20 hover:text-red-700 dark:hover:text-red-400 transition-colors">−1 차감</button>
+                            <button onClick={()=>restoreOne(tid)} className="px-2.5 py-1.5 rounded-lg text-xs font-bold bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 hover:bg-emerald-500/20 hover:text-emerald-700 dark:hover:text-emerald-400 transition-colors">+1 복구</button>
+                            <button onClick={()=>startAdjust(tid, s)} className="px-2.5 py-1.5 rounded-lg text-xs font-bold bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 hover:bg-blue-500/20 hover:text-blue-700 dark:hover:text-blue-400 transition-colors">직접 수정</button>
                             {s.remaining>0 && !s.monthly && trainers.length>1 && (
-                              <button onClick={()=>startTransfer(tid, s)} className="px-2.5 py-1.5 rounded-lg text-xs font-bold bg-slate-700 text-slate-200 hover:bg-indigo-500/20 hover:text-indigo-300 transition-colors">↔ 양도</button>
+                              <button onClick={()=>startTransfer(tid, s)} className="px-2.5 py-1.5 rounded-lg text-xs font-bold bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 hover:bg-indigo-500/20 hover:text-indigo-700 dark:hover:text-indigo-300 transition-colors">↔ 양도</button>
                             )}
-                            <button onClick={()=>removeSession(tid)} className="ml-auto px-2.5 py-1.5 rounded-lg text-xs font-bold text-slate-500 hover:text-red-400 transition-colors">삭제</button>
+                            <button onClick={()=>removeSession(tid)} className="ml-auto px-2.5 py-1.5 rounded-lg text-xs font-bold text-slate-500 hover:text-red-700 dark:hover:text-red-400 transition-colors">삭제</button>
                           </div>
                         )
                       )}
@@ -989,12 +989,12 @@ export default function MemberDetail({ member:initMember, trainers, members=[], 
               }
               {!showAddSess ? (
                 <button onClick={()=>setShowAddSess(true)}
-                  className="w-full py-3 rounded-xl border-2 border-dashed border-slate-700 text-slate-400 hover:border-amber-500/40 hover:text-amber-400 text-sm font-semibold transition-colors">
+                  className="w-full py-3 rounded-xl border-2 border-dashed border-slate-300 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:border-amber-500/40 hover:text-amber-700 dark:hover:text-amber-400 text-sm font-semibold transition-colors">
                   + 세션 재등록 / 추가
                 </button>
               ) : (
-                <div className="bg-slate-800 border border-amber-500/20 rounded-xl p-4 space-y-3">
-                  <p className="text-xs text-amber-400 font-bold uppercase tracking-widest">세션 재등록 <span className="text-slate-500 normal-case font-normal tracking-normal">· 결제와 함께 기록됩니다</span></p>
+                <div className="bg-slate-100 dark:bg-slate-800 border border-amber-500/20 rounded-xl p-4 space-y-3">
+                  <p className="text-xs text-amber-700 dark:text-amber-400 font-bold uppercase tracking-widest">세션 재등록 <span className="text-slate-500 normal-case font-normal tracking-normal">· 결제와 함께 기록됩니다</span></p>
                   <div>
                     <label className={LBL}>담당 트레이너</label>
                     <div className="grid grid-cols-2 gap-1.5">
@@ -1003,7 +1003,7 @@ export default function MemberDetail({ member:initMember, trainers, members=[], 
                         return (
                           <div key={t.id} onClick={()=>{setAddTrainerId(t.id);setAddClassType('');}}
                             className={`flex items-center gap-2 px-3 py-2.5 rounded-xl border cursor-pointer transition-colors select-none
-                              ${addTrainerId===t.id?'border-amber-500/50 bg-amber-500/10 text-amber-300':'border-slate-700 text-slate-400 hover:border-slate-500 hover:text-slate-300'}`}>
+                              ${addTrainerId===t.id?'border-amber-500/50 bg-amber-500/10 text-amber-700 dark:text-amber-300':'border-slate-300 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:border-slate-500 hover:text-slate-600 dark:hover:text-slate-300'}`}>
                             <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{background:t.color}}/>
                             <span className="text-xs font-semibold truncate">{t.name}</span>
                             {ex&&<span className="text-[10px] text-slate-500 ml-auto">잔여{ex.remaining}</span>}
@@ -1027,13 +1027,13 @@ export default function MemberDetail({ member:initMember, trainers, members=[], 
                   </div>
 
                   {/* 결제 정보 (재등록 시 결제+세션 함께 기록 — 정산 정합성) */}
-                  <div className="border-t border-slate-700 pt-3 space-y-2">
+                  <div className="border-t border-slate-300 dark:border-slate-700 pt-3 space-y-2">
                     <label className="flex items-center gap-2 cursor-pointer select-none">
-                      <span className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 ${addSessNoPay?'bg-slate-500 border-slate-500':'border-slate-600 bg-slate-800'}`}>
+                      <span className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 ${addSessNoPay?'bg-slate-500 border-slate-500':'border-slate-400 dark:border-slate-600 bg-slate-100 dark:bg-slate-800'}`}>
                         {addSessNoPay&&<svg className="w-2.5 h-2.5 text-white" viewBox="0 0 10 8" fill="none"><path d="M1 4l3 3 5-6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>}
                       </span>
                       <input type="checkbox" className="hidden" checked={addSessNoPay} onChange={e=>setAddSessNoPay(e.target.checked)} />
-                      <span className="text-xs text-slate-400">결제 없이 세션만 추가 (증정·보정)</span>
+                      <span className="text-xs text-slate-500 dark:text-slate-400">결제 없이 세션만 추가 (증정·보정)</span>
                     </label>
                     {!addSessNoPay && (
                       <div className="grid grid-cols-2 gap-3">
@@ -1053,15 +1053,15 @@ export default function MemberDetail({ member:initMember, trainers, members=[], 
                     )}
                   </div>
                   {addTrainerId&&(
-                    <div className="bg-slate-700/50 rounded-lg px-3 py-2 text-xs text-slate-400">
-                      <span className="text-slate-300 font-semibold">{trainerMap[addTrainerId]?.name}</span>에게{' '}
-                      <span className="text-amber-400 font-bold">{addCount}회</span> 추가 → 잔여{' '}
-                      <span className="text-amber-400 font-bold">{((member.trainerSessions||{})[addTrainerId]?.remaining||0)+addCount}회</span>
-                      {!addSessNoPay && addSessAmount>0 && <span className="text-slate-400"> · 결제 <span className="text-emerald-400 font-bold">{Number(addSessAmount).toLocaleString()}원</span> 함께 기록</span>}
+                    <div className="bg-slate-200/50 dark:bg-slate-700/50 rounded-lg px-3 py-2 text-xs text-slate-500 dark:text-slate-400">
+                      <span className="text-slate-600 dark:text-slate-300 font-semibold">{trainerMap[addTrainerId]?.name}</span>에게{' '}
+                      <span className="text-amber-700 dark:text-amber-400 font-bold">{addCount}회</span> 추가 → 잔여{' '}
+                      <span className="text-amber-700 dark:text-amber-400 font-bold">{((member.trainerSessions||{})[addTrainerId]?.remaining||0)+addCount}회</span>
+                      {!addSessNoPay && addSessAmount>0 && <span className="text-slate-500 dark:text-slate-400"> · 결제 <span className="text-emerald-700 dark:text-emerald-400 font-bold">{Number(addSessAmount).toLocaleString()}원</span> 함께 기록</span>}
                     </div>
                   )}
                   <div className="flex gap-2">
-                    <button onClick={()=>{setShowAddSess(false);setAddTrainerId('');}} className="py-2 px-4 rounded-xl border border-slate-700 text-slate-300 hover:text-white text-sm font-semibold transition-colors">취소</button>
+                    <button onClick={()=>{setShowAddSess(false);setAddTrainerId('');}} className="py-2 px-4 rounded-xl border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:text-white text-sm font-semibold transition-colors">취소</button>
                     <button onClick={handleAddSession} disabled={busy} className="flex-1 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold py-2 rounded-xl text-sm transition-colors disabled:opacity-50">등록</button>
                   </div>
                 </div>
@@ -1082,7 +1082,7 @@ export default function MemberDetail({ member:initMember, trainers, members=[], 
                     {actionable.map(l => (
                       <div key={l.id} className={`rounded-xl px-3 py-2.5 border flex items-center justify-between gap-2 ${l.status==='expired' ? 'bg-red-500/10 border-red-500/20' : 'bg-amber-500/10 border-amber-500/20'}`}>
                         <div>
-                          <span className={`text-xs font-bold ${l.status==='expired' ? 'text-red-400' : 'text-amber-400'}`}>
+                          <span className={`text-xs font-bold ${l.status==='expired' ? 'text-red-700 dark:text-red-400' : 'text-amber-700 dark:text-amber-400'}`}>
                             {EXPIRY_STATUS_LABEL[l.status]} · {trainerMap[l.trainerId]?.name || '?'} 잔여 {l.remaining}회
                           </span>
                           <p className="text-[11px] text-slate-500 mt-0.5">만료일 {l.expiresAt || '-'}</p>
@@ -1102,8 +1102,8 @@ export default function MemberDetail({ member:initMember, trainers, members=[], 
               {/* 미수금 경보 */}
               {payments.some(p=>p.isUnpaid)&&(
                 <div className="bg-red-500/10 border border-red-500/20 rounded-xl px-3 py-2.5 flex items-center gap-2">
-                  <span className="text-red-400 font-bold text-sm">⚠️ 미수금</span>
-                  <span className="text-red-400 text-xs">
+                  <span className="text-red-700 dark:text-red-400 font-bold text-sm">⚠️ 미수금</span>
+                  <span className="text-red-700 dark:text-red-400 text-xs">
                     {payments.filter(p=>p.isUnpaid).reduce((a,p)=>a+p.amount,0).toLocaleString()}원
                   </span>
                 </div>
@@ -1113,63 +1113,63 @@ export default function MemberDetail({ member:initMember, trainers, members=[], 
               {payments.length===0
                 ? <p className="text-slate-600 text-sm text-center py-6">수납 기록이 없습니다</p>
                 : [...payments].sort((a,b)=>b.paidAt.localeCompare(a.paidAt)).map(p=>(
-                  <div key={p.id} className={`bg-slate-800 rounded-xl p-3 border ${p.isUnpaid?'border-red-500/30':'border-slate-700'}`}>
+                  <div key={p.id} className={`bg-slate-100 dark:bg-slate-800 rounded-xl p-3 border ${p.isUnpaid?'border-red-500/30':'border-slate-300 dark:border-slate-700'}`}>
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-mono font-black text-base text-slate-100">
+                          <span className="font-mono font-black text-base text-slate-800 dark:text-slate-100">
                             {p.amount.toLocaleString()}원
                           </span>
                           {Array.isArray(p.methods)&&p.methods.length
                             ? <span className="text-xs font-bold flex flex-wrap gap-1">
                                 {p.methods.map((mm,i)=>(
-                                  <span key={i} className={METHOD_CLR[mm.method]||'text-slate-300'}>
+                                  <span key={i} className={METHOD_CLR[mm.method]||'text-slate-600 dark:text-slate-300'}>
                                     {METHOD_LBL[mm.method]||mm.method} {(Number(mm.amount)||0).toLocaleString()}{i<p.methods.length-1?' ·':''}
                                   </span>
                                 ))}
                               </span>
                             : <span className={`text-xs font-bold ${METHOD_CLR[p.method]}`}>{METHOD_LBL[p.method]}</span>}
-                          {p.isUnpaid&&<span className="text-[10px] bg-red-500/20 text-red-400 border border-red-500/30 px-1.5 py-0.5 rounded font-bold">미수금</span>}
-                          {p.isRefunded&&<span className="text-[10px] bg-slate-600/40 text-slate-300 border border-slate-500/30 px-1.5 py-0.5 rounded font-bold">환불됨 {(p.refundAmount||0).toLocaleString()}원</span>}
-                          {p.isNew&&<span className="text-[10px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-1.5 py-0.5 rounded font-bold">신규{p.consultTrainerId?` · 상담 ${trainerMap[p.consultTrainerId]?.name||'?'}`:''}</span>}
-                          {p.isReEnroll&&<span className="text-[10px] bg-blue-500/20 text-blue-400 border border-blue-500/30 px-1.5 py-0.5 rounded font-bold">재등록{p.reEnrollNo?` ${p.reEnrollNo}회차`:''}</span>}
-                          {p.category==='edu_center'&&<span className="text-[10px] bg-amber-500/20 text-amber-400 border border-amber-500/30 px-1.5 py-0.5 rounded font-bold">센터교육</span>}
-                          {p.category==='edu_external'&&<span className="text-[10px] bg-amber-500/20 text-amber-400 border border-amber-500/30 px-1.5 py-0.5 rounded font-bold">외부활동</span>}
+                          {p.isUnpaid&&<span className="text-[10px] bg-red-500/20 text-red-700 dark:text-red-400 border border-red-500/30 px-1.5 py-0.5 rounded font-bold">미수금</span>}
+                          {p.isRefunded&&<span className="text-[10px] bg-slate-300/40 dark:bg-slate-600/40 text-slate-600 dark:text-slate-300 border border-slate-500/30 px-1.5 py-0.5 rounded font-bold">환불됨 {(p.refundAmount||0).toLocaleString()}원</span>}
+                          {p.isNew&&<span className="text-[10px] bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30 px-1.5 py-0.5 rounded font-bold">신규{p.consultTrainerId?` · 상담 ${trainerMap[p.consultTrainerId]?.name||'?'}`:''}</span>}
+                          {p.isReEnroll&&<span className="text-[10px] bg-blue-500/20 text-blue-700 dark:text-blue-400 border border-blue-500/30 px-1.5 py-0.5 rounded font-bold">재등록{p.reEnrollNo?` ${p.reEnrollNo}회차`:''}</span>}
+                          {p.category==='edu_center'&&<span className="text-[10px] bg-amber-500/20 text-amber-700 dark:text-amber-400 border border-amber-500/30 px-1.5 py-0.5 rounded font-bold">센터교육</span>}
+                          {p.category==='edu_external'&&<span className="text-[10px] bg-amber-500/20 text-amber-700 dark:text-amber-400 border border-amber-500/30 px-1.5 py-0.5 rounded font-bold">외부활동</span>}
                         </div>
                         <p className="text-slate-500 text-xs mt-0.5">{p.paidAt}</p>
                         {p.isReEnroll && (
                           <p className="text-[11px] mt-0.5">
                             <span className="text-slate-500">세션 시작일: </span>
-                            <span className={p.sessionStartDate ? 'text-blue-300 font-semibold' : 'text-slate-500'}>
+                            <span className={p.sessionStartDate ? 'text-blue-700 dark:text-blue-300 font-semibold' : 'text-slate-500'}>
                               {p.sessionStartDate || '결제일과 동일'}
                             </span>
                             {user?.role==='admin' && (
                               <button onClick={()=>handleSetSessionStart(p)}
-                                className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-300 hover:bg-blue-500/30 font-bold">
+                                className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-700 dark:text-blue-300 hover:bg-blue-500/30 font-bold">
                                 수정
                               </button>
                             )}
                           </p>
                         )}
                         {p.trainerIds?.length>0 && (
-                          <p className="text-slate-400 text-xs mt-1">
+                          <p className="text-slate-500 dark:text-slate-400 text-xs mt-1">
                             담당: {Array.isArray(p.split)&&p.split.length
                               ? p.split.map(s=>`${trainerMap[s.trainerId]?.name||'?'} ${(Number(s.amount)||0).toLocaleString()}원`).join(' · ')
                               : p.trainerIds.map(id=>trainerMap[id]?.name||'?').join(', ')}
                           </p>
                         )}
-                        {p.note&&<p className="text-slate-400 text-xs mt-1">{p.note}</p>}
+                        {p.note&&<p className="text-slate-500 dark:text-slate-400 text-xs mt-1">{p.note}</p>}
                       </div>
                       {user?.role==='admin'&&(
                         <div className="flex items-center gap-2 flex-shrink-0">
                           {!p.isUnpaid && (p.isRefunded
                             ? <button onClick={()=>handleCancelRefund(p.id)}
-                                className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-300 hover:bg-slate-600 font-bold">환불취소</button>
+                                className="text-[10px] px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-600 font-bold">환불취소</button>
                             : <button onClick={()=>openRefundModal(p)}
-                                className="text-[10px] px-1.5 py-0.5 rounded bg-red-500/15 text-red-300 hover:bg-red-500/30 font-bold">환불</button>
+                                className="text-[10px] px-1.5 py-0.5 rounded bg-red-500/15 text-red-700 dark:text-red-300 hover:bg-red-500/30 font-bold">환불</button>
                           )}
                           <button onClick={()=>handleDeletePayment(p.id)}
-                            className="text-slate-600 hover:text-red-400 text-xs transition-colors">🗑</button>
+                            className="text-slate-600 hover:text-red-700 dark:hover:text-red-400 text-xs transition-colors">🗑</button>
                         </div>
                       )}
                     </div>
@@ -1180,12 +1180,12 @@ export default function MemberDetail({ member:initMember, trainers, members=[], 
               {/* 수납 등록 폼 */}
               {!showAddPay ? (
                 <button onClick={openAddPay}
-                  className="w-full py-3 rounded-xl border-2 border-dashed border-slate-700 text-slate-400 hover:border-amber-500/40 hover:text-amber-400 text-sm font-semibold transition-colors">
+                  className="w-full py-3 rounded-xl border-2 border-dashed border-slate-300 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:border-amber-500/40 hover:text-amber-700 dark:hover:text-amber-400 text-sm font-semibold transition-colors">
                   + 수납 등록
                 </button>
               ) : (
-                <div className="bg-slate-800 border border-amber-500/20 rounded-xl p-4 space-y-3">
-                  <p className="text-xs text-amber-400 font-bold uppercase tracking-widest">수납 등록</p>
+                <div className="bg-slate-100 dark:bg-slate-800 border border-amber-500/20 rounded-xl p-4 space-y-3">
+                  <p className="text-xs text-amber-700 dark:text-amber-400 font-bold uppercase tracking-widest">수납 등록</p>
                   <div className="grid grid-cols-2 gap-3">
                     <div><label className={LBL}>결제일</label><input type="date" value={payForm.paidAt} onChange={ppf('paidAt')} className={INP}/></div>
                     <div><label className={LBL}>금액 (원)</label><input type="number" min="0" value={payForm.amount} onChange={e=>onAmountChange(e.target.value)} placeholder="500000" className={INP+" font-mono"}/></div>
@@ -1194,7 +1194,7 @@ export default function MemberDetail({ member:initMember, trainers, members=[], 
                     <div className="flex items-center justify-between mb-1.5">
                       <label className={LBL+" mb-0"}>결제 수단 (복합 선택 가능)</label>
                       {payForm.methodList.length>=2 && (
-                        <span className="px-2 py-0.5 rounded-md text-[11px] font-bold border bg-sky-500/20 text-sky-300 border-sky-500/40">
+                        <span className="px-2 py-0.5 rounded-md text-[11px] font-bold border bg-sky-500/20 text-sky-700 dark:text-sky-300 border-sky-500/40">
                           복합 {payForm.methodList.length}수단
                         </span>
                       )}
@@ -1207,7 +1207,7 @@ export default function MemberDetail({ member:initMember, trainers, members=[], 
                         return (
                           <div key={v} onClick={()=>toggleMethod(v)}
                             className={`py-2.5 rounded-xl text-xs font-bold border cursor-pointer text-center transition-colors select-none
-                              ${on?'bg-amber-500/20 border-amber-500/40 text-amber-400':'border-slate-700 text-slate-400 hover:border-slate-500'}`}>
+                              ${on?'bg-amber-500/20 border-amber-500/40 text-amber-700 dark:text-amber-400':'border-slate-300 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:border-slate-500'}`}>
                             {l}
                           </div>
                         );
@@ -1217,25 +1217,25 @@ export default function MemberDetail({ member:initMember, trainers, members=[], 
                     {payForm.methodList.length>=2 && (() => {
                       const mTotal = payForm.methodList.reduce((s,x)=>s+(Number(x.amount)||0),0);
                       return (
-                        <div className="mt-2 bg-slate-900/60 border border-sky-500/20 rounded-xl p-3 space-y-2">
+                        <div className="mt-2 bg-white dark:bg-slate-900/60 border border-sky-500/20 rounded-xl p-3 space-y-2">
                           <div className="flex items-center justify-between">
-                            <span className="text-[11px] text-slate-400 font-semibold">수단별 금액 (예: 카드 80만 + 페이 20만)</span>
+                            <span className="text-[11px] text-slate-500 dark:text-slate-400 font-semibold">수단별 금액 (예: 카드 80만 + 페이 20만)</span>
                             <button type="button"
                               onClick={()=>setPayForm(p=>({...p, methodList: evenMethods(p.methodList.map(x=>x.method), p.amount)}))}
-                              className="text-[11px] px-2 py-1 rounded-md border border-slate-700 text-slate-400 hover:text-sky-300 hover:border-sky-500/40">균등</button>
+                              className="text-[11px] px-2 py-1 rounded-md border border-slate-300 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:text-sky-700 dark:hover:text-sky-300 hover:border-sky-500/40">균등</button>
                           </div>
                           {payForm.methodList.map(x=>(
                             <div key={x.method} className="flex items-center gap-2">
-                              <span className={`text-xs font-bold w-20 flex-shrink-0 ${METHOD_CLR[x.method]||'text-slate-300'}`}>{METHOD_LBL[x.method]||x.method}</span>
+                              <span className={`text-xs font-bold w-20 flex-shrink-0 ${METHOD_CLR[x.method]||'text-slate-600 dark:text-slate-300'}`}>{METHOD_LBL[x.method]||x.method}</span>
                               <input type="number" min="0" value={x.amount}
                                 onChange={e=>onMethodAmount(x.method, e.target.value)}
-                                className="flex-1 bg-slate-800 border border-slate-700 text-slate-100 rounded-lg px-2 py-1.5 text-xs font-mono text-right"/>
+                                className="flex-1 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-lg px-2 py-1.5 text-xs font-mono text-right"/>
                               <span className="text-[11px] text-slate-500 flex-shrink-0">원</span>
                             </div>
                           ))}
-                          <div className="flex items-center justify-between pt-1 border-t border-slate-800 text-xs">
+                          <div className="flex items-center justify-between pt-1 border-t border-slate-200 dark:border-slate-800 text-xs">
                             <span className="text-slate-500">수단 합계</span>
-                            <span className={`font-mono font-bold ${mTotal===(Number(payForm.amount)||0)?'text-emerald-400':'text-amber-400'}`}>
+                            <span className={`font-mono font-bold ${mTotal===(Number(payForm.amount)||0)?'text-emerald-700 dark:text-emerald-400':'text-amber-700 dark:text-amber-400'}`}>
                               {mTotal.toLocaleString()}원
                               {mTotal!==(Number(payForm.amount)||0) && ` (총액 ${(Number(payForm.amount)||0).toLocaleString()}원)`}
                             </span>
@@ -1250,10 +1250,10 @@ export default function MemberDetail({ member:initMember, trainers, members=[], 
                       const sel = payForm.trainerIds;
                       const mode = sel.length >= 2 ? '다중' : (sel.length === 1 ? '단독' : '미선택');
                       const modeClr = sel.length >= 2
-                        ? 'bg-violet-500/20 text-violet-300 border-violet-500/40'
+                        ? 'bg-violet-500/20 text-violet-700 dark:text-violet-300 border-violet-500/40'
                         : sel.length === 1
-                          ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-                          : 'bg-red-500/20 text-red-300 border-red-500/40';
+                          ? 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border-emerald-500/40'
+                          : 'bg-red-500/20 text-red-700 dark:text-red-300 border-red-500/40';
                       return (
                         <>
                           <div className="flex items-center justify-between mb-1.5">
@@ -1272,10 +1272,10 @@ export default function MemberDetail({ member:initMember, trainers, members=[], 
                               return (
                                 <div key={t.id} onClick={()=>togglePayTrainer(t.id)}
                                   className={`px-3 py-2 rounded-xl text-xs font-bold border cursor-pointer transition-colors select-none flex items-center gap-1.5
-                                    ${on?'border-amber-500/40 bg-amber-500/10 text-amber-400':'border-slate-700 text-slate-400 hover:border-slate-500'}`}>
+                                    ${on?'border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400':'border-slate-300 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:border-slate-500'}`}>
                                   <span className="w-2 h-2 rounded-full" style={{background:t.color||'#94a3b8'}}/>
                                   {t.name}
-                                  {reg && <span className="text-[10px] px-1 rounded bg-slate-700/70 text-slate-300">담당</span>}
+                                  {reg && <span className="text-[10px] px-1 rounded bg-slate-200/70 dark:bg-slate-700/70 text-slate-600 dark:text-slate-300">담당</span>}
                                 </div>
                               );
                             })}
@@ -1290,12 +1290,12 @@ export default function MemberDetail({ member:initMember, trainers, members=[], 
                     const total = payForm.trainerIds.reduce((s,id)=>
                       s + (Number(payForm.split.find(x=>x.trainerId===id)?.amount)||0), 0);
                     return (
-                      <div className="bg-slate-900/60 border border-violet-500/20 rounded-xl p-3 space-y-2">
+                      <div className="bg-white dark:bg-slate-900/60 border border-violet-500/20 rounded-xl p-3 space-y-2">
                         <div className="flex items-center justify-between">
                           <label className={LBL+" mb-0"}>트레이너별 분배 (기본 5:5 · 비율/금액 조정)</label>
                           <button type="button"
                             onClick={()=>setPayForm(p=>({...p, split: evenSplit(p.trainerIds, p.amount)}))}
-                            className="text-[11px] px-2 py-1 rounded-md border border-slate-700 text-slate-400 hover:text-violet-300 hover:border-violet-500/40">
+                            className="text-[11px] px-2 py-1 rounded-md border border-slate-300 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:text-violet-700 dark:hover:text-violet-300 hover:border-violet-500/40">
                             5:5 균등
                           </button>
                         </div>
@@ -1305,28 +1305,28 @@ export default function MemberDetail({ member:initMember, trainers, members=[], 
                           const pct = total>0 ? Math.round(amt/total*100) : 0;
                           return (
                             <div key={id} className="flex items-center gap-2">
-                              <span className="flex items-center gap-1.5 text-xs font-bold text-slate-200 w-24 flex-shrink-0">
+                              <span className="flex items-center gap-1.5 text-xs font-bold text-slate-700 dark:text-slate-200 w-24 flex-shrink-0">
                                 <span className="w-2 h-2 rounded-full" style={{background:t?.color||'#94a3b8'}}/>
                                 {t?.name||'?'}
                               </span>
                               <div className="flex items-center gap-1">
                                 <input type="number" min="0" max="100" value={pct}
                                   onChange={e=>onSplitRatio(id, e.target.value)}
-                                  className="w-14 bg-slate-800 border border-slate-700 text-slate-100 rounded-lg px-2 py-1.5 text-xs font-mono text-right"/>
+                                  className="w-14 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-lg px-2 py-1.5 text-xs font-mono text-right"/>
                                 <span className="text-[11px] text-slate-500">%</span>
                               </div>
                               <div className="flex items-center gap-1 flex-1">
                                 <input type="number" min="0" value={amt}
                                   onChange={e=>onSplitAmount(id, e.target.value)}
-                                  className="w-full bg-slate-800 border border-slate-700 text-slate-100 rounded-lg px-2 py-1.5 text-xs font-mono text-right"/>
+                                  className="w-full bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-lg px-2 py-1.5 text-xs font-mono text-right"/>
                                 <span className="text-[11px] text-slate-500 flex-shrink-0">원</span>
                               </div>
                             </div>
                           );
                         })}
-                        <div className="flex items-center justify-between pt-1 border-t border-slate-800 text-xs">
+                        <div className="flex items-center justify-between pt-1 border-t border-slate-200 dark:border-slate-800 text-xs">
                           <span className="text-slate-500">분배 합계</span>
-                          <span className={`font-mono font-bold ${total===(Number(payForm.amount)||0)?'text-emerald-400':'text-amber-400'}`}>
+                          <span className={`font-mono font-bold ${total===(Number(payForm.amount)||0)?'text-emerald-700 dark:text-emerald-400':'text-amber-700 dark:text-amber-400'}`}>
                             {total.toLocaleString()}원
                             {total!==(Number(payForm.amount)||0) && ` (총액 ${(Number(payForm.amount)||0).toLocaleString()}원)`}
                           </span>
@@ -1335,10 +1335,10 @@ export default function MemberDetail({ member:initMember, trainers, members=[], 
                     );
                   })()}
                   {payForm.trainerIds.length > 0 && (
-                    <div className="bg-slate-900/60 border border-emerald-500/20 rounded-xl p-3 space-y-2">
+                    <div className="bg-white dark:bg-slate-900/60 border border-emerald-500/20 rounded-xl p-3 space-y-2">
                       <div className="flex items-center justify-between">
                         <label className={LBL+" mb-0"}>세션 자동 추가</label>
-                        <span className="text-[11px] text-emerald-300 font-bold">
+                        <span className="text-[11px] text-emerald-700 dark:text-emerald-300 font-bold">
                           수납 저장 시 같이 반영
                         </span>
                       </div>
@@ -1351,7 +1351,7 @@ export default function MemberDetail({ member:initMember, trainers, members=[], 
                           const typeOptions = t?.classTypes?.length ? t.classTypes : (member.classTypes || []);
                           return (
                             <div key={row.trainerId} className="grid grid-cols-1 sm:grid-cols-[minmax(88px,1fr)_96px_minmax(110px,1.2fr)] gap-2 items-center">
-                              <span className="flex items-center gap-1.5 text-xs font-bold text-slate-200 min-w-0">
+                              <span className="flex items-center gap-1.5 text-xs font-bold text-slate-700 dark:text-slate-200 min-w-0">
                                 <span className="w-2 h-2 rounded-full flex-shrink-0" style={{background:t?.color||'#94a3b8'}}/>
                                 <span className="truncate">{t?.name||'트레이너'}</span>
                               </span>
@@ -1359,12 +1359,12 @@ export default function MemberDetail({ member:initMember, trainers, members=[], 
                                 <input type="number" min="0" value={row.count}
                                   onChange={e=>updatePaySessionAdd(row.trainerId, { count:e.target.value })}
                                   placeholder="0"
-                                  className="w-full bg-slate-800 border border-slate-700 text-slate-100 rounded-lg px-2 py-1.5 text-xs font-mono text-right"/>
+                                  className="w-full bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-lg px-2 py-1.5 text-xs font-mono text-right"/>
                                 <span className="text-[11px] text-slate-500 flex-shrink-0">회</span>
                               </div>
                               <select value={row.classType}
                                 onChange={e=>updatePaySessionAdd(row.trainerId, { classType:e.target.value })}
-                                className="w-full bg-slate-800 border border-slate-700 text-slate-100 rounded-lg px-2 py-1.5 text-xs">
+                                className="w-full bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-lg px-2 py-1.5 text-xs">
                                 <option value="">수업종류</option>
                                 {typeOptions.map(ct => <option key={ct} value={ct}>{ct}</option>)}
                               </select>
@@ -1380,7 +1380,7 @@ export default function MemberDetail({ member:initMember, trainers, members=[], 
                       {[['normal','일반 수업'],['edu_center','센터교육'],['edu_external','외부활동']].map(([v,l])=>(
                         <div key={v} onClick={()=>setPayForm(p=>({...p,category:v}))}
                           className={`py-2.5 rounded-xl text-xs font-bold border cursor-pointer text-center transition-colors select-none
-                            ${payForm.category===v?'bg-amber-500/20 border-amber-500/40 text-amber-400':'border-slate-700 text-slate-400 hover:border-slate-500'}`}>
+                            ${payForm.category===v?'bg-amber-500/20 border-amber-500/40 text-amber-700 dark:text-amber-400':'border-slate-300 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:border-slate-500'}`}>
                           {l}
                         </div>
                       ))}
@@ -1393,16 +1393,16 @@ export default function MemberDetail({ member:initMember, trainers, members=[], 
                   <div className="flex items-center gap-3 flex-wrap">
                     <div onClick={()=>setPayForm(p=>({...p,isUnpaid:!p.isUnpaid}))}
                       className={`flex items-center gap-2 px-3 py-2 rounded-xl border cursor-pointer transition-colors select-none
-                        ${payForm.isUnpaid?'border-red-500/40 bg-red-500/10 text-red-400':'border-slate-700 text-slate-400 hover:border-slate-500'}`}>
-                      <span className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 ${payForm.isUnpaid?'bg-red-500 border-red-500':'border-slate-600 bg-slate-800'}`}>
+                        ${payForm.isUnpaid?'border-red-500/40 bg-red-500/10 text-red-700 dark:text-red-400':'border-slate-300 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:border-slate-500'}`}>
+                      <span className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 ${payForm.isUnpaid?'bg-red-500 border-red-500':'border-slate-400 dark:border-slate-600 bg-slate-100 dark:bg-slate-800'}`}>
                         {payForm.isUnpaid&&<svg className="w-2.5 h-2.5 text-white" viewBox="0 0 10 8" fill="none"><path d="M1 4l3 3 5-6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>}
                       </span>
                       <span className="text-xs font-semibold">미수금</span>
                     </div>
                     <div onClick={()=>setPayForm(p=>({...p,isNew:!p.isNew, isReEnroll:false}))}
                       className={`flex items-center gap-2 px-3 py-2 rounded-xl border cursor-pointer transition-colors select-none
-                        ${payForm.isNew?'border-emerald-500/40 bg-emerald-500/10 text-emerald-400':'border-slate-700 text-slate-400 hover:border-slate-500'}`}>
-                      <span className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 ${payForm.isNew?'bg-emerald-500 border-emerald-500':'border-slate-600 bg-slate-800'}`}>
+                        ${payForm.isNew?'border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400':'border-slate-300 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:border-slate-500'}`}>
+                      <span className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 ${payForm.isNew?'bg-emerald-500 border-emerald-500':'border-slate-400 dark:border-slate-600 bg-slate-100 dark:bg-slate-800'}`}>
                         {payForm.isNew&&<svg className="w-2.5 h-2.5 text-white" viewBox="0 0 10 8" fill="none"><path d="M1 4l3 3 5-6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>}
                       </span>
                       <span className="text-xs font-semibold">신규등록</span>
@@ -1415,8 +1415,8 @@ export default function MemberDetail({ member:initMember, trainers, members=[], 
                         reEnrollNo: turningOn ? (p.reEnrollNo || String(nextNo)) : '' };
                     })}
                       className={`flex items-center gap-2 px-3 py-2 rounded-xl border cursor-pointer transition-colors select-none
-                        ${payForm.isReEnroll?'border-blue-500/40 bg-blue-500/10 text-blue-400':'border-slate-700 text-slate-400 hover:border-slate-500'}`}>
-                      <span className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 ${payForm.isReEnroll?'bg-blue-500 border-blue-500':'border-slate-600 bg-slate-800'}`}>
+                        ${payForm.isReEnroll?'border-blue-500/40 bg-blue-500/10 text-blue-700 dark:text-blue-400':'border-slate-300 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:border-slate-500'}`}>
+                      <span className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 ${payForm.isReEnroll?'bg-blue-500 border-blue-500':'border-slate-400 dark:border-slate-600 bg-slate-100 dark:bg-slate-800'}`}>
                         {payForm.isReEnroll&&<svg className="w-2.5 h-2.5 text-white" viewBox="0 0 10 8" fill="none"><path d="M1 4l3 3 5-6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>}
                       </span>
                       <span className="text-xs font-semibold">재등록</span>
@@ -1433,7 +1433,7 @@ export default function MemberDetail({ member:initMember, trainers, members=[], 
                           return (
                             <div key={t.id} onClick={()=>setPayForm(p=>({...p, consultTrainerId: on?'':t.id}))}
                               className={`px-3 py-2 rounded-xl text-xs font-bold border cursor-pointer select-none flex items-center gap-1.5
-                                ${on?'border-emerald-500/40 bg-emerald-500/10 text-emerald-400':'border-slate-700 text-slate-400 hover:border-slate-500'}`}>
+                                ${on?'border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400':'border-slate-300 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:border-slate-500'}`}>
                               <span className="w-2 h-2 rounded-full" style={{background:t.color||'#94a3b8'}}/>{t.name}
                             </div>
                           );
@@ -1451,7 +1451,7 @@ export default function MemberDetail({ member:initMember, trainers, members=[], 
                         <input type="number" min="1" value={payForm.reEnrollNo}
                           onChange={ppf('reEnrollNo')}
                           className={INP+" font-mono w-24"}/>
-                        <span className="text-sm text-blue-400 font-bold">회차</span>
+                        <span className="text-sm text-blue-700 dark:text-blue-400 font-bold">회차</span>
                         <span className="text-[11px] text-slate-500">
                           (자동 제안: {payments.filter(x=>x.isReEnroll).length + 1}회차 · 수정 가능)
                         </span>
@@ -1468,7 +1468,7 @@ export default function MemberDetail({ member:initMember, trainers, members=[], 
                   )}
                   <div><label className={LBL}>메모</label><input value={payForm.note} onChange={ppf('note')} placeholder="PT 10회 등록" className={INP}/></div>
                   <div className="flex gap-2">
-                    <button onClick={()=>setShowAddPay(false)} className="py-2 px-4 rounded-xl border border-slate-700 text-slate-300 hover:text-white text-sm font-semibold transition-colors">취소</button>
+                    <button onClick={()=>setShowAddPay(false)} className="py-2 px-4 rounded-xl border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:text-white text-sm font-semibold transition-colors">취소</button>
                     <button onClick={handleAddPayment} disabled={busy} className="flex-1 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold py-2 rounded-xl text-sm transition-colors disabled:opacity-50">등록</button>
                   </div>
                 </div>
@@ -1482,12 +1482,12 @@ export default function MemberDetail({ member:initMember, trainers, members=[], 
               {bodyRecords.length===0
                 ? <p className="text-slate-600 text-sm text-center py-6">신체정보 기록이 없습니다</p>
                 : [...bodyRecords].sort((a,b)=>b.recordedAt.localeCompare(a.recordedAt)).map((r,idx)=>(
-                  <div key={r.id} className={`bg-slate-800 rounded-xl p-3 border ${idx===0?'border-amber-500/30':'border-slate-700'}`}>
+                  <div key={r.id} className={`bg-slate-100 dark:bg-slate-800 rounded-xl p-3 border ${idx===0?'border-amber-500/30':'border-slate-300 dark:border-slate-700'}`}>
                     <div className="flex items-start justify-between">
                       <div className="flex-1">
                         <div className="flex items-center gap-2 mb-2">
-                          <span className="text-xs text-slate-400 font-semibold">{r.recordedAt}</span>
-                          {idx===0&&<span className="text-[10px] bg-amber-500/20 text-amber-400 px-1.5 py-0.5 rounded font-bold">최신</span>}
+                          <span className="text-xs text-slate-500 dark:text-slate-400 font-semibold">{r.recordedAt}</span>
+                          {idx===0&&<span className="text-[10px] bg-amber-500/20 text-amber-700 dark:text-amber-400 px-1.5 py-0.5 rounded font-bold">최신</span>}
                           {r.note&&<span className="text-xs text-slate-500">{r.note}</span>}
                         </div>
                         {/* [모미 신규] 컨디션 필드가 있을 때만 표시(체중만 기록한 기존 데이터는 그대로) */}
@@ -1495,37 +1495,37 @@ export default function MemberDetail({ member:initMember, trainers, members=[], 
                           <div className="flex items-center gap-2 mb-2 flex-wrap">
                             {r.conditionStatus && (
                               <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
-                                r.conditionStatus==='risk' ? 'bg-red-500/20 text-red-400'
-                                : r.conditionStatus==='caution' ? 'bg-amber-500/20 text-amber-400'
-                                : 'bg-emerald-500/20 text-emerald-400'
+                                r.conditionStatus==='risk' ? 'bg-red-500/20 text-red-700 dark:text-red-400'
+                                : r.conditionStatus==='caution' ? 'bg-amber-500/20 text-amber-700 dark:text-amber-400'
+                                : 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-400'
                               }`}>컨디션 {{normal:'정상',caution:'주의',risk:'위험'}[r.conditionStatus] || r.conditionStatus}</span>
                             )}
-                            {r.fatigue!=null && <span className="text-xs text-slate-400">피로도 {r.fatigue}/5</span>}
-                            {r.painNrs!=null && <span className="text-xs text-slate-400">통증 {r.painNrs}/10</span>}
+                            {r.fatigue!=null && <span className="text-xs text-slate-500 dark:text-slate-400">피로도 {r.fatigue}/5</span>}
+                            {r.painNrs!=null && <span className="text-xs text-slate-500 dark:text-slate-400">통증 {r.painNrs}/10</span>}
                             {r.conditionMemo && <span className="text-xs text-slate-500">“{r.conditionMemo}”</span>}
                           </div>
                         )}
                         <div className="grid grid-cols-4 gap-2">
-                          <div className="text-center bg-slate-700/50 rounded-lg p-2">
+                          <div className="text-center bg-slate-200/50 dark:bg-slate-700/50 rounded-lg p-2">
                             <p className="text-[10px] text-slate-500 mb-0.5">신장</p>
-                            <p className="font-mono font-black text-sm text-slate-100">{r.height??'-'}<span className="text-slate-500 text-[10px]">cm</span></p>
+                            <p className="font-mono font-black text-sm text-slate-800 dark:text-slate-100">{r.height??'-'}<span className="text-slate-500 text-[10px]">cm</span></p>
                           </div>
-                          <div className="text-center bg-slate-700/50 rounded-lg p-2">
+                          <div className="text-center bg-slate-200/50 dark:bg-slate-700/50 rounded-lg p-2">
                             <p className="text-[10px] text-slate-500 mb-0.5">체중</p>
-                            <p className="font-mono font-black text-sm text-slate-100">{r.weight??'-'}<span className="text-slate-500 text-[10px]">kg</span></p>
+                            <p className="font-mono font-black text-sm text-slate-800 dark:text-slate-100">{r.weight??'-'}<span className="text-slate-500 text-[10px]">kg</span></p>
                           </div>
-                          <div className="text-center bg-slate-700/50 rounded-lg p-2">
+                          <div className="text-center bg-slate-200/50 dark:bg-slate-700/50 rounded-lg p-2">
                             <p className="text-[10px] text-slate-500 mb-0.5">최고혈압</p>
-                            <p className="font-mono font-black text-sm text-orange-400">{r.systolic??'-'}<span className="text-slate-500 text-[10px]">mmHg</span></p>
+                            <p className="font-mono font-black text-sm text-orange-700 dark:text-orange-400">{r.systolic??'-'}<span className="text-slate-500 text-[10px]">mmHg</span></p>
                           </div>
-                          <div className="text-center bg-slate-700/50 rounded-lg p-2">
+                          <div className="text-center bg-slate-200/50 dark:bg-slate-700/50 rounded-lg p-2">
                             <p className="text-[10px] text-slate-500 mb-0.5">최저혈압</p>
-                            <p className="font-mono font-black text-sm text-blue-400">{r.diastolic??'-'}<span className="text-slate-500 text-[10px]">mmHg</span></p>
+                            <p className="font-mono font-black text-sm text-blue-700 dark:text-blue-400">{r.diastolic??'-'}<span className="text-slate-500 text-[10px]">mmHg</span></p>
                           </div>
                         </div>
                       </div>
                       {user?.role==='admin'&&(
-                        <button onClick={()=>handleDeleteBody(r.id)} className="text-slate-600 hover:text-red-400 text-xs ml-2 flex-shrink-0 transition-colors">🗑</button>
+                        <button onClick={()=>handleDeleteBody(r.id)} className="text-slate-600 hover:text-red-700 dark:hover:text-red-400 text-xs ml-2 flex-shrink-0 transition-colors">🗑</button>
                       )}
                     </div>
                   </div>
@@ -1533,12 +1533,12 @@ export default function MemberDetail({ member:initMember, trainers, members=[], 
               }
               {!showAddBody ? (
                 <button onClick={()=>setShowAddBody(true)}
-                  className="w-full py-3 rounded-xl border-2 border-dashed border-slate-700 text-slate-400 hover:border-amber-500/40 hover:text-amber-400 text-sm font-semibold transition-colors">
+                  className="w-full py-3 rounded-xl border-2 border-dashed border-slate-300 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:border-amber-500/40 hover:text-amber-700 dark:hover:text-amber-400 text-sm font-semibold transition-colors">
                   + 신체정보 등록
                 </button>
               ) : (
-                <div className="bg-slate-800 border border-amber-500/20 rounded-xl p-4 space-y-3">
-                  <p className="text-xs text-amber-400 font-bold uppercase tracking-widest">신체정보 등록</p>
+                <div className="bg-slate-100 dark:bg-slate-800 border border-amber-500/20 rounded-xl p-4 space-y-3">
+                  <p className="text-xs text-amber-700 dark:text-amber-400 font-bold uppercase tracking-widest">신체정보 등록</p>
                   <div><label className={LBL}>측정일</label><input type="date" value={bodyForm.recordedAt} onChange={pbf('recordedAt')} className={INP}/></div>
                   <div className="grid grid-cols-2 gap-2">
                     <div><label className={LBL}>신장(cm)</label><input type="number" step="0.1" value={bodyForm.height} onChange={pbf('height')} placeholder="175.0" className={INP+" font-mono"}/></div>
@@ -1554,7 +1554,7 @@ export default function MemberDetail({ member:initMember, trainers, members=[], 
                   </div>
                   <div><label className={LBL}>컨디션 메모</label><input value={bodyForm.conditionMemo} onChange={pbf('conditionMemo')} placeholder="예) 어제 스쿼트 후 무릎이 뻐근해요" maxLength={200} className={INP}/></div>
                   <div className="flex gap-2">
-                    <button onClick={()=>setShowAddBody(false)} className="py-2 px-4 rounded-xl border border-slate-700 text-slate-300 hover:text-white text-sm font-semibold transition-colors">취소</button>
+                    <button onClick={()=>setShowAddBody(false)} className="py-2 px-4 rounded-xl border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:text-white text-sm font-semibold transition-colors">취소</button>
                     <button onClick={handleAddBody} className="flex-1 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold py-2 rounded-xl text-sm transition-colors">등록</button>
                   </div>
                 </div>
@@ -1593,11 +1593,11 @@ export default function MemberDetail({ member:initMember, trainers, members=[], 
         {refundDraft && (
           <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4"
             onClick={()=>setRefundDraft(null)}>
-            <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-md p-5 space-y-4"
+            <div className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-2xl w-full max-w-md p-5 space-y-4"
               onClick={e=>e.stopPropagation()}>
               <div className="flex items-center justify-between">
                 <h2 className="text-lg font-black text-white">환불 처리 · {member.name}</h2>
-                <button onClick={()=>setRefundDraft(null)} className="text-slate-400 hover:text-white text-xl leading-none">×</button>
+                <button onClick={()=>setRefundDraft(null)} className="text-slate-500 dark:text-slate-400 hover:text-white text-xl leading-none">×</button>
               </div>
               <p className="text-xs text-slate-500 -mt-2">
                 총 결제액 {refundDraft.amount.toLocaleString()}원 · {refundUnitPriceBasisLabel()}
@@ -1614,9 +1614,9 @@ export default function MemberDetail({ member:initMember, trainers, members=[], 
               <RefundField label="부가세" value={refundDraft.vat}
                 onChange={v=>setRefundDraft(d=>({...d, vat:v}))}/>
 
-              <div className="rounded-xl bg-slate-800 border border-slate-700 p-3 flex items-center justify-between">
-                <span className="text-sm font-bold text-slate-300">환불액</span>
-                <span className="text-xl font-black text-red-300 font-mono">{refundDraftTotal.toLocaleString()}원</span>
+              <div className="rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 p-3 flex items-center justify-between">
+                <span className="text-sm font-bold text-slate-600 dark:text-slate-300">환불액</span>
+                <span className="text-xl font-black text-red-700 dark:text-red-300 font-mono">{refundDraftTotal.toLocaleString()}원</span>
               </div>
               <p className="text-[11px] text-slate-500 leading-relaxed">
                 ※ 이 회원의 잔여 세션은 0으로 정리됩니다. 진행분 수업료는 트레이너 정산에 그대로 남습니다.
@@ -1624,7 +1624,7 @@ export default function MemberDetail({ member:initMember, trainers, members=[], 
 
               <div className="flex gap-2 pt-1">
                 <button onClick={()=>setRefundDraft(null)}
-                  className="py-2.5 px-4 rounded-xl border border-slate-700 text-slate-300 text-sm font-semibold hover:text-white transition-colors">취소</button>
+                  className="py-2.5 px-4 rounded-xl border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 text-sm font-semibold hover:text-white transition-colors">취소</button>
                 <button onClick={confirmRefundPayment}
                   className="flex-1 bg-red-500 hover:bg-red-400 text-white font-bold py-2.5 rounded-xl text-sm transition-colors">환불 확정</button>
               </div>
@@ -1655,16 +1655,16 @@ function RefundField({ label, value, suggested, onChange }) {
   const changed = suggested != null && Number(suggested) !== (Number(value) || 0);
   return (
     <div>
-      <label className="text-xs font-bold text-slate-400 mb-1 block">{label}</label>
+      <label className="text-xs font-bold text-slate-500 dark:text-slate-400 mb-1 block">{label}</label>
       <input
         type="number"
         value={value}
         onChange={e => onChange(e.target.value === '' ? 0 : Number(e.target.value))}
-        className="w-full bg-slate-800 border border-slate-700 text-slate-100 rounded-xl px-3 py-2 text-sm font-mono focus:outline-none focus:border-amber-500"
+        className="w-full bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-xl px-3 py-2 text-sm font-mono focus:outline-none focus:border-amber-500"
       />
       {changed && (
         <button type="button" onClick={() => onChange(suggested)}
-          className="mt-1 text-[11px] text-amber-400 hover:text-amber-300">
+          className="mt-1 text-[11px] text-amber-700 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300">
           자동 계산값 {Number(suggested).toLocaleString()}원으로 되돌리기
         </button>
       )}
@@ -1678,16 +1678,16 @@ function MemoTab({ member, onSave }) {
   return editing ? (
     <div className="space-y-3">
       <textarea rows={8} value={memo} onChange={e=>setMemo(e.target.value)}
-        className="w-full bg-slate-800 border border-slate-700 text-slate-100 rounded-xl px-3 py-2.5 text-sm resize-none focus:outline-none focus:border-amber-500"/>
+        className="w-full bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-xl px-3 py-2.5 text-sm resize-none focus:outline-none focus:border-amber-500"/>
       <div className="flex gap-2">
-        <button onClick={()=>{setMemo(member.memo||'');setEditing(false);}} className="py-2 px-4 rounded-xl border border-slate-700 text-slate-300 text-sm font-semibold hover:text-white transition-colors">취소</button>
+        <button onClick={()=>{setMemo(member.memo||'');setEditing(false);}} className="py-2 px-4 rounded-xl border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 text-sm font-semibold hover:text-white transition-colors">취소</button>
         <button onClick={()=>{onSave(memo);setEditing(false);}} className="flex-1 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold py-2 rounded-xl text-sm transition-colors">저장</button>
       </div>
     </div>
   ) : (
-    <div className="bg-slate-800 rounded-xl p-4 min-h-36">
-      <p className="text-sm text-slate-300 whitespace-pre-line leading-relaxed">{memo||<span className="text-slate-600">메모가 없습니다</span>}</p>
-      <button onClick={()=>setEditing(true)} className="mt-4 text-xs text-amber-400 hover:text-amber-300 font-semibold transition-colors">✏️ 메모 편집</button>
+    <div className="bg-slate-100 dark:bg-slate-800 rounded-xl p-4 min-h-36">
+      <p className="text-sm text-slate-600 dark:text-slate-300 whitespace-pre-line leading-relaxed">{memo||<span className="text-slate-600">메모가 없습니다</span>}</p>
+      <button onClick={()=>setEditing(true)} className="mt-4 text-xs text-amber-700 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300 font-semibold transition-colors">✏️ 메모 편집</button>
     </div>
   );
 }

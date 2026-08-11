@@ -501,14 +501,14 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
             키 미입력 — 속도 계산엔 키 필요
           </span>
         )}
-        <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${referenceScale ? 'bg-emerald-500/85 text-slate-950' : 'bg-slate-700/90 text-slate-200'}`}>
+        <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${referenceScale ? 'bg-emerald-500/85 text-slate-950' : 'bg-slate-200/90 dark:bg-slate-700/90 text-slate-700 dark:text-slate-200'}`}>
           {calibrating ? `거리 보정 ${calibrationPointCount}/2` : referenceScale ? '기준물 보정' : '키 보정'}
         </span>
         {/* 인스타 비율 토글(3:4 / 1:1) — 녹화 중엔 잠금 */}
         <div className="pointer-events-auto flex gap-0.5 rounded-full bg-black/55 backdrop-blur p-0.5 border border-white/10">
           {['3/4', '1/1'].map((r) => (
             <button key={r} onClick={() => !recording && setAspect(r)} disabled={recording}
-              className={`rounded-full px-2 py-0.5 text-[10px] font-black transition-colors disabled:opacity-50 ${aspect === r ? 'bg-amber-500 text-slate-950' : 'text-slate-300'}`}>
+              className={`rounded-full px-2 py-0.5 text-[10px] font-black transition-colors disabled:opacity-50 ${aspect === r ? 'bg-amber-500 text-slate-950' : 'text-slate-600 dark:text-slate-300'}`}>
               {aspectLabel(r)}
             </button>
           ))}
@@ -587,8 +587,8 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
               {
                 label: 'LOSS', value: liveHud?.velocityLossPct ?? null, unit: '%',
                 tone: liveHud?.velocityLossPct == null ? 'text-white'
-                  : liveHud.velocityLossPct > 20 ? 'text-red-300'
-                  : liveHud.velocityLossPct > 10 ? 'text-amber-300' : 'text-emerald-300',
+                  : liveHud.velocityLossPct > 20 ? 'text-red-700 dark:text-red-300'
+                  : liveHud.velocityLossPct > 10 ? 'text-amber-700 dark:text-amber-300' : 'text-emerald-700 dark:text-emerald-300',
               },
             ]}
           />
@@ -597,23 +597,23 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
           <div className="mx-auto max-w-xs w-full rounded-xl bg-black/55 backdrop-blur border border-white/10 p-2">
             <div className="flex items-center justify-center gap-1.5">
               <button onClick={() => { setDialWeight(w => stepWeight(w, -10)); setWeightSource('dial'); }}
-                className="w-9 h-9 rounded-lg bg-white/10 text-slate-100 font-black text-[11px] active:scale-90">−5</button>
+                className="w-9 h-9 rounded-lg bg-white/10 text-slate-800 dark:text-slate-100 font-black text-[11px] active:scale-90">−5</button>
               <button onClick={() => { setDialWeight(w => stepWeight(w, -1)); setWeightSource('dial'); }}
-                className="w-9 h-9 rounded-lg bg-white/10 text-slate-100 font-black active:scale-90">−</button>
+                className="w-9 h-9 rounded-lg bg-white/10 text-slate-800 dark:text-slate-100 font-black active:scale-90">−</button>
               <div className="min-w-[72px] text-center">
                 <p className="font-mono font-black text-2xl text-white leading-none">{snapWeight(dialWeight)}</p>
-                <p className="text-[8px] text-slate-400">kg</p>
+                <p className="text-[8px] text-slate-500 dark:text-slate-400">kg</p>
               </div>
               <button onClick={() => { setDialWeight(w => stepWeight(w, +1)); setWeightSource('dial'); }}
                 className="w-9 h-9 rounded-lg bg-amber-500 text-slate-950 font-black active:scale-90">+</button>
               <button onClick={() => { setDialWeight(w => stepWeight(w, +10)); setWeightSource('dial'); }}
                 className="w-9 h-9 rounded-lg bg-amber-500 text-slate-950 font-black text-[11px] active:scale-90">+5</button>
             </div>
-            <div className="mt-1.5 flex items-center justify-center gap-2 text-[9px] text-slate-400">
+            <div className="mt-1.5 flex items-center justify-center gap-2 text-[9px] text-slate-500 dark:text-slate-400">
               <span>{weightSource === 'plate-color' ? '원판 색 인식 반영' : '수동 무게'}</span>
-              {detected.length > 0 && <span className="text-cyan-300">{detected.map(d => d.label).join(', ')}</span>}
+              {detected.length > 0 && <span className="text-cyan-700 dark:text-cyan-300">{detected.map(d => d.label).join(', ')}</span>}
             </div>
-            <div className="mt-2 flex items-center justify-center gap-2 text-[10px] text-slate-300">
+            <div className="mt-2 flex items-center justify-center gap-2 text-[10px] text-slate-600 dark:text-slate-300">
               <span>기준 길이</span>
               <input
                 type="number"
@@ -645,9 +645,9 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
   //  보여 깜빡임을 없앤다(닫은 뒤 idle 상태에서 로더에 갇히지 않도록).
   if (embedded && !camOpenedOnceRef.current) {
     return (
-      <div className="fixed inset-0 z-[70] bg-slate-950 flex flex-col items-center justify-center gap-3">
+      <div className="fixed inset-0 z-[70] bg-slate-50 dark:bg-slate-950 flex flex-col items-center justify-center gap-3">
         <div className="w-10 h-10 rounded-full border-2 border-amber-400/40 border-t-amber-400 animate-spin" />
-        <p className="text-sm font-bold text-slate-300">카메라를 켜는 중…</p>
+        <p className="text-sm font-bold text-slate-600 dark:text-slate-300">카메라를 켜는 중…</p>
       </div>
     );
   }
@@ -670,8 +670,8 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
 
       <FramingIntro preset={FRAMING_PRESETS.vbt} onStart={startCam} startLabel="📷 카메라 시작 (전체화면)" />
 
-      <details className="rounded-xl bg-slate-900/60 border border-slate-700">
-        <summary className="cursor-pointer px-4 py-3 text-sm font-bold text-slate-300 select-none">
+      <details className="rounded-xl bg-white dark:bg-slate-900/60 border border-slate-300 dark:border-slate-700">
+        <summary className="cursor-pointer px-4 py-3 text-sm font-bold text-slate-600 dark:text-slate-300 select-none">
           원판 무게 설정 (기록용) · 선택
         </summary>
         <div className="px-3 pb-3">

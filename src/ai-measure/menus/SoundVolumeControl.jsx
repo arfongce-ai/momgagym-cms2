@@ -26,7 +26,7 @@ export default function SoundVolumeControl({ compact = false }) {
   const icon = vol === 0 ? '🔇' : vol < 0.45 ? '🔉' : '🔊';
 
   return (
-    <div className={`flex items-center gap-2 ${compact ? '' : 'rounded-xl bg-slate-800/80 border border-white/10 px-3 py-2'}`}>
+    <div className={`flex items-center gap-2 ${compact ? '' : 'rounded-xl bg-slate-100/80 dark:bg-slate-800/80 border border-white/10 px-3 py-2'}`}>
       <button onClick={toggleMute} className="text-lg leading-none active:scale-90" aria-label="음소거">
         {icon}
       </button>
@@ -38,7 +38,7 @@ export default function SoundVolumeControl({ compact = false }) {
         className="flex-1 h-1.5 accent-amber-500 min-w-[72px]"
         aria-label="사운드 볼륨"
       />
-      <span className="font-mono text-[10px] font-bold text-slate-300 w-8 text-right">{Math.round(vol * 100)}%</span>
+      <span className="font-mono text-[10px] font-bold text-slate-600 dark:text-slate-300 w-8 text-right">{Math.round(vol * 100)}%</span>
     </div>
   );
 }

@@ -56,9 +56,9 @@ export default function PlateWeightInput({ value, onChange, getVideo, roi = DEFA
   };
 
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
+    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 space-y-3">
       <div className="flex items-center justify-between">
-        <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest">원판 무게 (기록용)</p>
+        <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-widest">원판 무게 (기록용)</p>
         {getVideo && (
           <button onClick={scanColors} className="px-3 py-1 rounded-lg bg-amber-500 text-slate-950 text-[11px] font-black active:scale-95">
             영상 인식
@@ -67,7 +67,7 @@ export default function PlateWeightInput({ value, onChange, getVideo, roi = DEFA
       </div>
 
       {detected.length > 0 && (
-        <p className="text-[11px] text-cyan-400">
+        <p className="text-[11px] text-cyan-700 dark:text-cyan-400">
           인식된 색: {detected.map(d => `${d.label}(${Math.round(d.ratio * 100)}%)`).join(', ')} — 아래에서 장수를 확인·수정하세요.
         </p>
       )}
@@ -96,7 +96,7 @@ export default function PlateWeightInput({ value, onChange, getVideo, roi = DEFA
 
       {/* 현재 편측 구성 */}
       {sidePlates.length > 0 && (
-        <div className="bg-slate-800 rounded-xl p-3 space-y-2">
+        <div className="bg-slate-100 dark:bg-slate-800 rounded-xl p-3 space-y-2">
           <p className="text-[10px] text-slate-500">한쪽 구성 (확인·수정)</p>
           {sidePlates.map(p => (
             <div key={p.kg} className="flex items-center justify-between">
@@ -104,9 +104,9 @@ export default function PlateWeightInput({ value, onChange, getVideo, roi = DEFA
                 {p.label} {p.kg}kg
               </span>
               <div className="flex items-center gap-2">
-                <button onClick={() => changeCount(p.kg, -1)} className="w-7 h-7 rounded bg-slate-700 text-slate-200 font-bold">−</button>
-                <span className="font-mono font-bold text-slate-100 w-6 text-center">{p.count}</span>
-                <button onClick={() => changeCount(p.kg, +1)} className="w-7 h-7 rounded bg-slate-700 text-slate-200 font-bold">+</button>
+                <button onClick={() => changeCount(p.kg, -1)} className="w-7 h-7 rounded bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold">−</button>
+                <span className="font-mono font-bold text-slate-800 dark:text-slate-100 w-6 text-center">{p.count}</span>
+                <button onClick={() => changeCount(p.kg, +1)} className="w-7 h-7 rounded bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold">+</button>
               </div>
             </div>
           ))}
@@ -116,7 +116,7 @@ export default function PlateWeightInput({ value, onChange, getVideo, roi = DEFA
       {/* 총중량 */}
       <div className="card-accent p-3 text-center">
         <p className="text-[10px] text-slate-500">총중량 (양쪽 + 봉)</p>
-        <p className="font-mono font-black text-2xl text-slate-100">{total}<span className="text-sm text-slate-500"> kg</span></p>
+        <p className="font-mono font-black text-2xl text-slate-800 dark:text-slate-100">{total}<span className="text-sm text-slate-500"> kg</span></p>
       </div>
     </div>
   );

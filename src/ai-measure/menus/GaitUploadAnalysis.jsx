@@ -143,10 +143,10 @@ export default function GaitUploadAnalysis({ member, onBack, onComplete }) {
   const pct = Math.round(progress * 100);
 
   return (
-    <div className="absolute inset-0 bg-slate-950 flex flex-col">
+    <div className="absolute inset-0 bg-slate-50 dark:bg-slate-950 flex flex-col">
       {/* 헤더 */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800">
-        <button onClick={onBack} className="text-slate-300 font-bold text-sm">← 뒤로</button>
+      <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-slate-800">
+        <button onClick={onBack} className="text-slate-600 dark:text-slate-300 font-bold text-sm">← 뒤로</button>
         <h2 className="text-white font-black">영상 업로드 분석</h2>
         <div className="w-12" />
       </div>
@@ -160,7 +160,7 @@ export default function GaitUploadAnalysis({ member, onBack, onComplete }) {
             playsInline muted controls={phase === 'ready' || phase === 'done'}
           />
           {phase === 'analyzing' && (
-            <div className="absolute top-2 left-1/2 -translate-x-1/2 rounded-full bg-black/60 border border-white/15 px-3 py-1 text-[11px] font-bold text-amber-300 backdrop-blur">
+            <div className="absolute top-2 left-1/2 -translate-x-1/2 rounded-full bg-black/60 border border-white/15 px-3 py-1 text-[11px] font-bold text-amber-700 dark:text-amber-300 backdrop-blur">
               분석 중…
             </div>
           )}
@@ -174,22 +174,22 @@ export default function GaitUploadAnalysis({ member, onBack, onComplete }) {
         )}
 
         {fileName && phase !== 'idle' && (
-          <p className="text-xs text-slate-400 truncate max-w-md">📁 {fileName}</p>
+          <p className="text-xs text-slate-500 dark:text-slate-400 truncate max-w-md">📁 {fileName}</p>
         )}
 
         {phase === 'ready' && (
           <div className="flex flex-col items-center gap-3 w-full max-w-md">
-            <p className="text-sm text-slate-300 text-center">
+            <p className="text-sm text-slate-600 dark:text-slate-300 text-center">
               영상이 준비됐습니다. 분석을 시작하면 프레임을 빠르게 건너뛰며 자세를 추출합니다.
             </p>
             {/* 촬영 모드 선택 — 슬로모면 시간축을 보정해 케이던스가 정확해진다 */}
             <div className="w-full">
-              <p className="text-[11px] font-bold text-slate-400 mb-1.5">촬영 모드</p>
+              <p className="text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-1.5">촬영 모드</p>
               <div className="grid grid-cols-3 gap-1.5">
                 {Object.entries(CAPTURE_PRESETS).map(([k, p]) => (
                   <button key={k} onClick={() => setCapture(k)}
                     className={`rounded-lg px-2 py-2 text-xs font-bold transition-colors ${
-                      capture === k ? 'bg-amber-500 text-slate-950' : 'bg-slate-800 text-slate-300'
+                      capture === k ? 'bg-amber-500 text-slate-950' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
                     }`}>
                     {p.label}
                   </button>
@@ -203,7 +203,7 @@ export default function GaitUploadAnalysis({ member, onBack, onComplete }) {
               className="w-full rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black py-3 transition-colors">
               ▶ 분석 시작
             </button>
-            <label className="text-xs text-slate-400 underline cursor-pointer">
+            <label className="text-xs text-slate-500 dark:text-slate-400 underline cursor-pointer">
               다른 영상 선택
               <input type="file" accept="video/*" onChange={handleFile} className="hidden" />
             </label>
@@ -212,23 +212,23 @@ export default function GaitUploadAnalysis({ member, onBack, onComplete }) {
 
         {phase === 'analyzing' && (
           <div className="w-full max-w-md flex flex-col items-center gap-3">
-            <div className="w-full h-3 rounded-full bg-slate-800 overflow-hidden">
+            <div className="w-full h-3 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
               <div className="h-full bg-amber-500 transition-all duration-150" style={{ width: `${pct}%` }} />
             </div>
-            <p className="text-sm font-bold text-amber-400">{pct}% 분석 중…</p>
+            <p className="text-sm font-bold text-amber-700 dark:text-amber-400">{pct}% 분석 중…</p>
             <p className="text-[11px] text-slate-500">1280×720으로 다운스케일하여 처리 중입니다</p>
-            <button onClick={cancelAnalysis} className="text-xs text-slate-400 underline">취소</button>
+            <button onClick={cancelAnalysis} className="text-xs text-slate-500 dark:text-slate-400 underline">취소</button>
           </div>
         )}
 
         {phase === 'done' && (
-          <p className="text-sm font-bold text-emerald-400">✓ 분석 완료 — 리포트로 이동합니다…</p>
+          <p className="text-sm font-bold text-emerald-700 dark:text-emerald-400">✓ 분석 완료 — 리포트로 이동합니다…</p>
         )}
 
         {(phase === 'error' || errorMsg) && (
           <div className="flex flex-col items-center gap-2">
-            <p className="text-sm text-red-400 text-center max-w-md">{errorMsg}</p>
-            <label className="text-xs text-amber-400 underline cursor-pointer">
+            <p className="text-sm text-red-700 dark:text-red-400 text-center max-w-md">{errorMsg}</p>
+            <label className="text-xs text-amber-700 dark:text-amber-400 underline cursor-pointer">
               다시 시도
               <input type="file" accept="video/*" onChange={handleFile} className="hidden" />
             </label>

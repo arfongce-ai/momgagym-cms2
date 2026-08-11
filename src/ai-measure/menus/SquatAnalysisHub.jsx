@@ -101,7 +101,7 @@ export default function SquatAnalysisHub({ member, onBack, onSave, onSaveToFireb
       { label: '종합', value: STATUS_KO[pending.status] || '-' },
     ];
     return (
-      <div className="fixed inset-0 z-[80] bg-slate-950 overflow-y-auto" style={{ height: '100dvh' }}>
+      <div className="fixed inset-0 z-[80] bg-slate-50 dark:bg-slate-950 overflow-y-auto" style={{ height: '100dvh' }}>
         <div className="max-w-md mx-auto p-4">
           <MeasureRecordConfirm
             title="오버헤드 딥 스쿼트"
@@ -132,13 +132,13 @@ export default function SquatAnalysisHub({ member, onBack, onSave, onSaveToFireb
 
   // view === 'measure'
   return (
-    <div className="fixed inset-0 z-[80] bg-slate-950" style={{ height: '100dvh' }}>
+    <div className="fixed inset-0 z-[80] bg-slate-50 dark:bg-slate-950" style={{ height: '100dvh' }}>
       <div className="absolute top-[max(8px,calc(env(safe-area-inset-top)+8px))] inset-x-0 z-[86] flex justify-center px-3 pointer-events-none">
         <div className="pointer-events-auto flex gap-1 rounded-full bg-black/55 backdrop-blur p-1 border border-white/10 shadow-lg">
           {[['live', '🔴 실시간'], ['upload', '📁 영상 업로드']].map(([k, label]) => (
             <button key={k} onClick={() => setMode(k)}
               className={`rounded-full px-3.5 py-1 text-xs font-black transition-colors ${
-                mode === k ? 'bg-amber-500 text-slate-950' : 'text-slate-300'}`}>
+                mode === k ? 'bg-amber-500 text-slate-950' : 'text-slate-600 dark:text-slate-300'}`}>
               {label}
             </button>
           ))}

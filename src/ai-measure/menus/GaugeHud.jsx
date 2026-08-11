@@ -25,9 +25,9 @@ function StatCard({ label, value, unit, tone = 'text-white' }) {
     <div className="min-w-[56px] max-w-full overflow-hidden rounded-xl bg-black/50 backdrop-blur px-2 py-1.5 text-center">
       <p className={`truncate font-mono font-black text-xl leading-none ${tone}`}>
         {value == null || value === '' ? '—' : value}
-        {unit ? <span className="text-[10px] font-bold text-slate-300/70 ml-0.5">{unit}</span> : null}
+        {unit ? <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300/70 ml-0.5">{unit}</span> : null}
       </p>
-      <p className="truncate text-[9px] font-bold text-slate-300/75 mt-1 tracking-wider">{label}</p>
+      <p className="truncate text-[9px] font-bold text-slate-600 dark:text-slate-300/75 mt-1 tracking-wider">{label}</p>
     </div>
   );
 }
@@ -88,7 +88,7 @@ export default function GaugeHud({
             </svg>
           )}
           <div className="relative flex flex-col items-center justify-center">
-            {label && <p className="text-[12px] font-bold text-slate-100/85 leading-none">{label}</p>}
+            {label && <p className="text-[12px] font-bold text-slate-800 dark:text-slate-100/85 leading-none">{label}</p>}
             <p className="font-mono font-black text-white leading-none mt-1" style={{ fontSize: arc ? 46 : 56 }}>{display}</p>
             {unit && <p className="text-[13px] font-black leading-none mt-1" style={{ color: accent }}>{unit}</p>}
           </div>

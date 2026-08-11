@@ -22,7 +22,7 @@ const GRADE_STYLE = {
 
 function Chip({ label, value, sub, tone = 'slate' }) {
   const tones = {
-    slate: 'bg-white/[0.06] border-white/10 text-slate-100',
+    slate: 'bg-white/[0.06] border-white/10 text-slate-800 dark:text-slate-100',
     cyan: 'bg-cyan-400/10 border-cyan-400/25 text-cyan-100',
     amber: 'bg-amber-400/10 border-amber-400/25 text-amber-100',
     fuchsia: 'bg-fuchsia-400/10 border-fuchsia-400/25 text-fuchsia-100',
@@ -46,9 +46,9 @@ function RepBars({ reps, lossPct }) {
   return (
     <div className="rounded-2xl bg-white/[0.04] border border-white/10 p-3">
       <div className="flex items-baseline justify-between mb-2">
-        <p className="text-[10px] font-black text-slate-300 tracking-widest">렙별 평균속도</p>
+        <p className="text-[10px] font-black text-slate-600 dark:text-slate-300 tracking-widest">렙별 평균속도</p>
         {lossPct != null && (
-          <p className={`text-[10px] font-black ${lossPct > 20 ? 'text-rose-400' : lossPct > 10 ? 'text-amber-300' : 'text-emerald-300'}`}>
+          <p className={`text-[10px] font-black ${lossPct > 20 ? 'text-rose-700 dark:text-rose-400' : lossPct > 10 ? 'text-amber-700 dark:text-amber-300' : 'text-emerald-700 dark:text-emerald-300'}`}>
             속도저하 −{lossPct}%
           </p>
         )}
@@ -61,7 +61,7 @@ function RepBars({ reps, lossPct }) {
           const isBest = ok && v === max;
           return (
             <div key={r.repNo} className="flex-1 min-w-0 flex flex-col items-center justify-end gap-1 h-full">
-              {showNum && <span className={`font-mono text-[9px] font-bold ${isBest ? 'text-cyan-300' : 'text-slate-400'}`}>{ok ? v : '–'}</span>}
+              {showNum && <span className={`font-mono text-[9px] font-bold ${isBest ? 'text-cyan-700 dark:text-cyan-300' : 'text-slate-500 dark:text-slate-400'}`}>{ok ? v : '–'}</span>}
               <div
                 className={`w-full rounded-t-md ${isBest
                   ? 'bg-gradient-to-t from-cyan-500 to-cyan-300 shadow-[0_0_10px_rgba(34,211,238,0.45)]'
@@ -96,7 +96,7 @@ export default function LiftingResultSheet({
   const cog = result.cogGap;
 
   return (
-    <div className={`mx-auto max-w-md w-full rounded-3xl bg-slate-950/85 backdrop-blur-xl border ${gs.border} p-4 space-y-3 animate-fade-in shadow-2xl`}>
+    <div className={`mx-auto max-w-md w-full rounded-3xl bg-slate-50/85 dark:bg-slate-950/85 backdrop-blur-xl border ${gs.border} p-4 space-y-3 animate-fade-in shadow-2xl`}>
       {/* ① 등급 히어로 */}
       <div className="flex items-center gap-3">
         <span className={`shrink-0 rounded-2xl bg-gradient-to-br ${gs.badge} px-3 py-2 text-center`}>
@@ -104,8 +104,8 @@ export default function LiftingResultSheet({
           <span className="block text-sm font-black leading-none mt-0.5">{GRADE_LABEL[diag.grade]}</span>
         </span>
         <div className="min-w-0 flex-1">
-          <p className="text-[13px] font-black text-slate-100 leading-snug break-keep">{diag.headline}</p>
-          {zone && <p className="text-[10px] font-bold text-cyan-300 mt-0.5">{zone.label} 존</p>}
+          <p className="text-[13px] font-black text-slate-800 dark:text-slate-100 leading-snug break-keep">{diag.headline}</p>
+          {zone && <p className="text-[10px] font-bold text-cyan-700 dark:text-cyan-300 mt-0.5">{zone.label} 존</p>}
         </div>
       </div>
 
@@ -115,10 +115,10 @@ export default function LiftingResultSheet({
           {mean != null ? mean : '—'}
           <span className="text-lg text-slate-500 font-bold"> m/s</span>
         </p>
-        <p className="mt-1.5 text-[11px] font-bold text-slate-400">
-          {result.romCm != null && <>ROM <span className="text-slate-200 font-mono">{result.romCm}cm</span></>}
-          {time != null && <> · 시간 <span className="text-slate-200 font-mono">{time}s</span></>}
-          {result.reps != null && result.reps > 0 && <> · 반복 <span className="text-slate-200 font-mono">{result.reps}회</span></>}
+        <p className="mt-1.5 text-[11px] font-bold text-slate-500 dark:text-slate-400">
+          {result.romCm != null && <>ROM <span className="text-slate-700 dark:text-slate-200 font-mono">{result.romCm}cm</span></>}
+          {time != null && <> · 시간 <span className="text-slate-700 dark:text-slate-200 font-mono">{time}s</span></>}
+          {result.reps != null && result.reps > 0 && <> · 반복 <span className="text-slate-700 dark:text-slate-200 font-mono">{result.reps}회</span></>}
         </p>
       </div>
 
@@ -153,7 +153,7 @@ export default function LiftingResultSheet({
       {diag.details?.length > 0 && (
         <div className="rounded-2xl bg-white/[0.04] border border-white/10 p-3 space-y-1">
           {diag.details.slice(0, 4).map((d, i) => (
-            <p key={i} className="text-[10.5px] text-slate-300 leading-relaxed break-keep">· {d}</p>
+            <p key={i} className="text-[10.5px] text-slate-600 dark:text-slate-300 leading-relaxed break-keep">· {d}</p>
           ))}
         </div>
       )}
@@ -167,11 +167,11 @@ export default function LiftingResultSheet({
       )}
       {videoBlob && (
         <button onClick={onSaveVideo} disabled={savingVideo}
-          className="w-full h-10 rounded-2xl bg-white/[0.06] border border-white/10 text-slate-200 font-bold text-xs active:scale-[0.98] disabled:opacity-50">
+          className="w-full h-10 rounded-2xl bg-white/[0.06] border border-white/10 text-slate-700 dark:text-slate-200 font-bold text-xs active:scale-[0.98] disabled:opacity-50">
           {savingVideo ? '저장 중…' : '🎥 녹화 영상 폰에 저장'}
         </button>
       )}
-      {videoSavedMsg && <p className="text-center text-[11px] text-emerald-400">{videoSavedMsg}</p>}
+      {videoSavedMsg && <p className="text-center text-[11px] text-emerald-700 dark:text-emerald-400">{videoSavedMsg}</p>}
     </div>
   );
 }

@@ -71,13 +71,13 @@ export default function CombinedAssessmentPanel({ member, onClose }) {
   const availableKinds = Object.keys(available);
 
   return (
-    <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4 space-y-4">
+    <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-xs font-bold uppercase tracking-widest text-slate-400">측정 종합 분석</p>
+          <p className="text-xs font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400">측정 종합 분석</p>
           <p className="text-[11px] text-slate-500 mt-0.5">측정 종류를 골라 하나로 묶어 확인합니다.</p>
         </div>
-        {onClose && <button onClick={onClose} className="text-slate-400 text-sm">닫기 ✕</button>}
+        {onClose && <button onClick={onClose} className="text-slate-500 dark:text-slate-400 text-sm">닫기 ✕</button>}
       </div>
 
       {loading && <p className="text-sm text-slate-500 text-center py-4">불러오는 중…</p>}
@@ -96,7 +96,7 @@ export default function CombinedAssessmentPanel({ member, onClose }) {
                 className={`rounded-full px-3 py-1.5 text-xs font-bold border transition-colors ${
                   selected.has(kind)
                     ? 'bg-amber-500 border-amber-500 text-slate-950'
-                    : 'bg-slate-800 border-slate-700 text-slate-400'}`}
+                    : 'bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-500 dark:text-slate-400'}`}
               >
                 {selected.has(kind) ? '✓ ' : ''}{KIND_KO[kind] || kind}
               </button>
@@ -106,7 +106,7 @@ export default function CombinedAssessmentPanel({ member, onClose }) {
           <button
             onClick={runAnalysis}
             disabled={selected.size === 0}
-            className="w-full rounded-xl bg-emerald-500 disabled:bg-slate-700 disabled:text-slate-500 text-slate-950 font-black py-3"
+            className="w-full rounded-xl bg-emerald-500 disabled:bg-slate-200 dark:disabled:bg-slate-700 disabled:text-slate-500 text-slate-950 font-black py-3"
           >
             {selected.size > 0 ? `선택한 ${selected.size}개 종합 분석` : '1개 이상 선택하세요'}
           </button>
@@ -114,44 +114,44 @@ export default function CombinedAssessmentPanel({ member, onClose }) {
       )}
 
       {result && (
-        <div className="space-y-3 pt-2 border-t border-slate-800">
+        <div className="space-y-3 pt-2 border-t border-slate-200 dark:border-slate-800">
           <div className={`rounded-xl border p-3 ${
             result.severity === 'risk' ? 'border-red-500/40 bg-red-500/10'
               : result.severity === 'caution' ? 'border-amber-500/40 bg-amber-500/10'
               : 'border-emerald-500/40 bg-emerald-500/10'}`}>
-            <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">종합 평가</p>
+            <p className="text-[11px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400">종합 평가</p>
             <p className="text-white font-black text-lg">{STATUS_KO[result.severity] || result.severity}</p>
-            <p className="text-slate-300 text-sm mt-1">{result.evaluation.text}</p>
+            <p className="text-slate-600 dark:text-slate-300 text-sm mt-1">{result.evaluation.text}</p>
             <p className="text-[10px] text-slate-500 mt-1">신뢰도 {result.coverageScore}점 ({result.combinedKinds.length}개 측정 결합)</p>
           </div>
 
           {result.issues.length > 0 && (
             <div className="space-y-1.5">
-              <p className="text-xs font-black text-slate-300">확인된 사항</p>
+              <p className="text-xs font-black text-slate-600 dark:text-slate-300">확인된 사항</p>
               {result.issues.map((it, i) => (
-                <p key={i} className={`text-sm ${it.level === 'risk' ? 'text-red-300' : 'text-amber-300'}`}>• {it.text}</p>
+                <p key={i} className={`text-sm ${it.level === 'risk' ? 'text-red-700 dark:text-red-300' : 'text-amber-700 dark:text-amber-300'}`}>• {it.text}</p>
               ))}
             </div>
           )}
           {result.strengths.length > 0 && (
             <div className="space-y-1.5">
-              <p className="text-xs font-black text-slate-300">양호한 점</p>
-              {result.strengths.map((s, i) => <p key={i} className="text-sm text-emerald-300">• {s}</p>)}
+              <p className="text-xs font-black text-slate-600 dark:text-slate-300">양호한 점</p>
+              {result.strengths.map((s, i) => <p key={i} className="text-sm text-emerald-700 dark:text-emerald-300">• {s}</p>)}
             </div>
           )}
 
           <button
             onClick={askMomiGuide}
             disabled={momiLoading}
-            className="w-full rounded-xl bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-200 font-bold py-2.5 text-sm transition-colors"
+            className="w-full rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-50 text-slate-700 dark:text-slate-200 font-bold py-2.5 text-sm transition-colors"
           >
             {momiLoading ? '모미가 통합 가이드 만드는 중…' : '🤖 모미에게 통합 가이드 요청'}
           </button>
 
-          {momiError && <p className="text-sm text-red-400">{momiError}</p>}
+          {momiError && <p className="text-sm text-red-700 dark:text-red-400">{momiError}</p>}
 
           {momiAnswer && (
-            <div className="rounded-xl bg-slate-800/50 border border-slate-700 p-3 text-sm text-slate-200 whitespace-pre-wrap leading-relaxed">
+            <div className="rounded-xl bg-slate-100/50 dark:bg-slate-800/50 border border-slate-300 dark:border-slate-700 p-3 text-sm text-slate-700 dark:text-slate-200 whitespace-pre-wrap leading-relaxed">
               {momiAnswer}
             </div>
           )}

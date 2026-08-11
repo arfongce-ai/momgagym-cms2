@@ -515,8 +515,8 @@ export default function RomMeasure({ member, onSave, onBack, onViewInReport }) {
         {/* 녹화 영상 미리보기 — 리포트 캡처 노드(#rom-report-sheet) 바깥에 둔다
             (html2canvas 는 video 를 캡처하지 못하므로). 동작 전 구간을 되돌려 본다. */}
         {report.previewVideoUrl && (
-          <div className="rounded-2xl border border-slate-800 bg-slate-900 p-3">
-            <p className="mb-2 text-xs font-bold text-slate-400">측정 녹화 영상 (스켈레톤·각도 오버레이)</p>
+          <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3">
+            <p className="mb-2 text-xs font-bold text-slate-500 dark:text-slate-400">측정 녹화 영상 (스켈레톤·각도 오버레이)</p>
             <video
               src={report.previewVideoUrl}
               className="w-full rounded-xl bg-black"
@@ -526,7 +526,7 @@ export default function RomMeasure({ member, onSave, onBack, onViewInReport }) {
           </div>
         )}
 
-        <div className="space-y-2 rounded-2xl border border-slate-800 bg-slate-950/95 p-3">
+        <div className="space-y-2 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/95 dark:bg-slate-950/95 p-3">
           <ReportActions
             reportNodeId="rom-report-sheet"
             videoBlob={videoBlob}
@@ -537,15 +537,15 @@ export default function RomMeasure({ member, onSave, onBack, onViewInReport }) {
             onAfterReportSave={handleSave}
             onMessage={setActionMsg}
           />
-          {actionMsg && <p className="text-center text-xs text-slate-400">{actionMsg}</p>}
-          {saveState === 'saved' && <p className="text-center text-xs font-bold text-emerald-400">회원 기록에 저장되었습니다.</p>}
-          {saveState === 'error' && <p className="text-center text-xs text-red-400">저장 실패. ‘리포트 저장’을 다시 눌러 주세요.</p>}
-          {errorMsg && <p className="text-center text-xs text-red-400">{errorMsg}</p>}
+          {actionMsg && <p className="text-center text-xs text-slate-500 dark:text-slate-400">{actionMsg}</p>}
+          {saveState === 'saved' && <p className="text-center text-xs font-bold text-emerald-700 dark:text-emerald-400">회원 기록에 저장되었습니다.</p>}
+          {saveState === 'error' && <p className="text-center text-xs text-red-700 dark:text-red-400">저장 실패. ‘리포트 저장’을 다시 눌러 주세요.</p>}
+          {errorMsg && <p className="text-center text-xs text-red-700 dark:text-red-400">{errorMsg}</p>}
           {/* [리포트 통합 2026-08-09] PostureMeasure.jsx와 동일 패턴 — 강제 이동 아님. */}
           {saveState === 'saved' && !member?.isVirtual && typeof onViewInReport === 'function' && (
             <button
               onClick={onViewInReport}
-              className="w-full rounded-xl border border-amber-500/40 bg-amber-500/10 text-amber-300 font-bold text-sm py-2.5"
+              className="w-full rounded-xl border border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300 font-bold text-sm py-2.5"
             >
               📊 결과리포트에서 보기
             </button>
@@ -596,13 +596,13 @@ export default function RomMeasure({ member, onSave, onBack, onViewInReport }) {
         topBar={
           <div className="w-full text-right">
             <p className="text-sm font-black text-white">ROM · {jointName}</p>
-            <p className="text-[11px] font-bold text-amber-300">
+            <p className="text-[11px] font-bold text-amber-700 dark:text-amber-300">
               {member?.name || '회원 미선택'} · {POSE_LABEL[poseMode]} · {side === 'both' ? '양쪽' : side === 'left' ? '좌측' : '우측'}
             </p>
             <div className="mt-1 flex justify-end gap-0.5">
               {['3/4', '1/1'].map((r) => (
                 <button key={r} onClick={() => !recording && setAspect(r)} disabled={recording}
-                  className={`rounded-full px-2 py-0.5 text-[10px] font-black transition-colors disabled:opacity-50 ${aspect === r ? 'bg-amber-500 text-slate-950' : 'bg-black/45 text-slate-300'}`}>
+                  className={`rounded-full px-2 py-0.5 text-[10px] font-black transition-colors disabled:opacity-50 ${aspect === r ? 'bg-amber-500 text-slate-950' : 'bg-black/45 text-slate-600 dark:text-slate-300'}`}>
                   {aspectLabel(r)}
                 </button>
               ))}
@@ -612,12 +612,12 @@ export default function RomMeasure({ member, onSave, onBack, onViewInReport }) {
         controls={
           !recording ? (
             <button onClick={beginRecord} disabled={status !== 'running'}
-              className="h-20 w-20 rounded-full border-4 border-white bg-red-500 text-xs font-black text-white shadow-lg disabled:bg-slate-600 disabled:text-slate-300">
+              className="h-20 w-20 rounded-full border-4 border-white bg-red-500 text-xs font-black text-white shadow-lg disabled:bg-slate-300 dark:disabled:bg-slate-600 disabled:text-slate-600 dark:disabled:text-slate-300">
               녹화<br />시작
             </button>
           ) : (
             <button onClick={finishRecord}
-              className="h-20 w-20 rounded-full border-4 border-white bg-slate-900 text-xs font-black text-amber-300 shadow-lg">
+              className="h-20 w-20 rounded-full border-4 border-white bg-white dark:bg-slate-900 text-xs font-black text-amber-700 dark:text-amber-300 shadow-lg">
               ■<br />종료
             </button>
           )
@@ -676,7 +676,7 @@ export default function RomMeasure({ member, onSave, onBack, onViewInReport }) {
             );
           })()}
           <div className="rounded-2xl border border-white/10 bg-black/55 px-4 py-3 text-center text-sm font-bold text-white backdrop-blur">
-            <span className="text-amber-300">{jointName}</span> · {guide}
+            <span className="text-amber-700 dark:text-amber-300">{jointName}</span> · {guide}
           </div>
         </div>
       </CameraStage>
@@ -695,13 +695,13 @@ export default function RomMeasure({ member, onSave, onBack, onViewInReport }) {
       {/* 측정 관절·자세는 라이브 측정 화면에서 즉시 바꾼다(첫 페이지 중복 제거). */}
 
       {/* 측정 측 */}
-      <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
-        <p className="mb-2 text-xs font-bold text-slate-400">측정 측</p>
+      <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
+        <p className="mb-2 text-xs font-bold text-slate-500 dark:text-slate-400">측정 측</p>
         <div className="flex gap-2">
           {SIDES.map((s) => (
             <button key={s.key} type="button" onClick={() => setSide(s.key)}
               className={`flex-1 rounded-lg border py-2 text-sm font-black ${
-                side === s.key ? 'border-amber-400 bg-amber-400 text-slate-950' : 'border-slate-700 bg-slate-800 text-slate-400'
+                side === s.key ? 'border-amber-400 bg-amber-400 text-slate-950' : 'border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'
               }`}>
               {s.label}
             </button>
@@ -710,22 +710,22 @@ export default function RomMeasure({ member, onSave, onBack, onViewInReport }) {
       </div>
 
       {/* 측정 방식 시작 */}
-      <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4 space-y-3">
-        <p className="text-sm font-bold text-slate-200">측정 방식을 선택하세요</p>
+      <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 space-y-3">
+        <p className="text-sm font-bold text-slate-700 dark:text-slate-200">측정 방식을 선택하세요</p>
         <button onClick={() => setMode('live')}
           className="w-full rounded-xl bg-amber-500 px-4 py-4 text-left active:scale-[0.99] transition">
           <p className="text-base font-black text-slate-950">라이브 측정 (권장) <span className="text-[10px] font-bold text-slate-900/60 align-middle">카메라 분석</span></p>
           <p className="mt-0.5 text-xs font-bold text-slate-900/80">카메라 앞에서 동작을 한 번 천천히 수행 → 최대 가동범위 자동 산출.</p>
         </button>
         <button onClick={() => setMode('upload')}
-          className="w-full rounded-xl border border-slate-700 bg-slate-800 px-4 py-4 text-left active:scale-[0.99] transition">
+          className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-4 py-4 text-left active:scale-[0.99] transition">
           <p className="text-base font-black text-white">영상 업로드 <span className="text-[10px] font-bold text-slate-500 align-middle">수행 각도 확인</span></p>
-          <p className="mt-0.5 text-xs font-bold text-slate-400">스포츠 수행 영상 → 속도 조절·프레임 캡처 후, 그 장면에서 각도 직접 측정.</p>
+          <p className="mt-0.5 text-xs font-bold text-slate-500 dark:text-slate-400">스포츠 수행 영상 → 속도 조절·프레임 캡처 후, 그 장면에서 각도 직접 측정.</p>
         </button>
         <button onClick={() => setMode('sensor')}
           className="w-full rounded-xl border border-emerald-500/50 bg-emerald-500/10 px-4 py-4 text-left active:scale-[0.99] transition">
-          <p className="text-base font-black text-emerald-200">고니오메타 <span className="text-[10px] font-bold text-emerald-400/70 align-middle">카메라 불필요 · 폰 밀착 센서</span></p>
-          <p className="mt-0.5 text-xs font-bold text-emerald-300/80">폰을 관절 부위에 밀착 → 기울기 센서로 가동각 측정 · 좌우 비대칭 자동 산출.</p>
+          <p className="text-base font-black text-emerald-200">고니오메타 <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400/70 align-middle">카메라 불필요 · 폰 밀착 센서</span></p>
+          <p className="mt-0.5 text-xs font-bold text-emerald-700 dark:text-emerald-300/80">폰을 관절 부위에 밀착 → 기울기 센서로 가동각 측정 · 좌우 비대칭 자동 산출.</p>
         </button>
         <p className="text-[11px] text-slate-500 leading-relaxed">
           ※ {POSE_LABEL[poseMode]} 자세에서는{' '}

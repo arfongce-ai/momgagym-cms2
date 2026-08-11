@@ -78,11 +78,11 @@ export default function MeasureRecordConfirm({
       {/* 측정완료 결과 요약 */}
       {summaryRows.length > 0 && (
         <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4">
-          <p className="mb-2 text-[11px] font-bold uppercase tracking-widest text-emerald-300/80">측정완료</p>
+          <p className="mb-2 text-[11px] font-bold uppercase tracking-widest text-emerald-700 dark:text-emerald-300/80">측정완료</p>
           <div className="grid grid-cols-2 gap-2">
             {summaryRows.map((r, i) => (
-              <div key={i} className="rounded-lg bg-slate-900/50 px-3 py-2">
-                <p className="text-[11px] text-slate-400">{r.label}</p>
+              <div key={i} className="rounded-lg bg-white dark:bg-slate-900/50 px-3 py-2">
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">{r.label}</p>
                 <p className="text-lg font-black tabular-nums text-emerald-200">{r.value}</p>
               </div>
             ))}
@@ -92,10 +92,10 @@ export default function MeasureRecordConfirm({
 
       {/* 움직임 기록(ROM·관절) */}
       {movementMode && (
-        <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4 space-y-2">
-          <p className="text-xs font-black text-slate-300">측정한 움직임을 기록하세요</p>
+        <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 space-y-2">
+          <p className="text-xs font-black text-slate-600 dark:text-slate-300">측정한 움직임을 기록하세요</p>
           <select value={movement} onChange={(e) => setMovement(e.target.value)}
-            className="w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2.5 text-sm font-bold text-slate-100">
+            className="w-full rounded-lg border border-slate-400 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2.5 text-sm font-bold text-slate-800 dark:text-slate-100">
             <option value="">움직임 선택</option>
             {presets.map((m) => <option key={m} value={m}>{m}</option>)}
             <option value="__custom">직접 입력…</option>
@@ -103,7 +103,7 @@ export default function MeasureRecordConfirm({
           {movement === '__custom' && (
             <input type="text" value={movementCustom} onChange={(e) => setMovementCustom(e.target.value)}
               placeholder="예: 어깨 굴곡, 발목 외번, 목 좌측 회전"
-              className="w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2.5 text-sm text-slate-100" />
+              className="w-full rounded-lg border border-slate-400 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2.5 text-sm text-slate-800 dark:text-slate-100" />
           )}
           <p className="text-[11px] text-slate-500">같은 동작끼리 회차별로 비교됩니다. (선택 사항)</p>
         </div>
@@ -111,20 +111,20 @@ export default function MeasureRecordConfirm({
 
       {/* 자유 메모(그 외 측정) */}
       {noteMode && (
-        <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4 space-y-2">
-          <p className="text-xs font-black text-slate-300">측정 메모 (선택)</p>
+        <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 space-y-2">
+          <p className="text-xs font-black text-slate-600 dark:text-slate-300">측정 메모 (선택)</p>
           <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2}
             placeholder="예: 컨디션, 특이사항, 촬영 조건 등"
-            className="w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2.5 text-sm text-slate-100" />
+            className="w-full rounded-lg border border-slate-400 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2.5 text-sm text-slate-800 dark:text-slate-100" />
         </div>
       )}
 
       {/* 확인·저장 */}
       <button onClick={handleConfirm} disabled={saving}
-        className="w-full rounded-xl bg-amber-500 px-4 py-4 text-base font-black text-slate-950 disabled:bg-slate-700 disabled:text-slate-400 active:scale-[0.99]">
+        className="w-full rounded-xl bg-amber-500 px-4 py-4 text-base font-black text-slate-950 disabled:bg-slate-200 dark:disabled:bg-slate-700 disabled:text-slate-500 dark:disabled:text-slate-400 active:scale-[0.99]">
         {saving ? '저장 중…' : saved ? '✓ 저장됨 · 기록 확인' : confirmLabel}
       </button>
-      {error && <p className="text-center text-xs text-red-400">저장에 실패했습니다. 다시 시도해 주세요.</p>}
+      {error && <p className="text-center text-xs text-red-700 dark:text-red-400">저장에 실패했습니다. 다시 시도해 주세요.</p>}
       <p className="text-center text-[11px] text-slate-500">
         확인을 누르면 회원 측정이력에 자동 저장되고, 이어서 기록(리포트)을 확인합니다.
       </p>

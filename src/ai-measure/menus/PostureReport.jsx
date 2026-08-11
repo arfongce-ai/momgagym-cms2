@@ -54,21 +54,21 @@ const SKELETON_CONNECTIONS = [
 
 const STATUS_STYLE = {
   normal: {
-    text: 'text-emerald-300',
+    text: 'text-emerald-700 dark:text-emerald-300',
     bg: 'bg-emerald-500/10',
     border: 'border-emerald-500/30',
     stroke: '#34d399',
     ring: 'ring-emerald-500/30',
   },
   caution: {
-    text: 'text-amber-300',
+    text: 'text-amber-700 dark:text-amber-300',
     bg: 'bg-amber-500/10',
     border: 'border-amber-500/30',
     stroke: '#fbbf24',
     ring: 'ring-amber-500/30',
   },
   risk: {
-    text: 'text-red-300',
+    text: 'text-red-700 dark:text-red-300',
     bg: 'bg-red-500/10',
     border: 'border-red-500/30',
     stroke: '#f87171',
@@ -169,12 +169,12 @@ export default function PostureReport({
         <section className="grid gap-3 sm:grid-cols-[240px_1fr_1fr]">
           <ScoreDial score={score} status={analysis.status} />
           <MetricPanel title="체형 나이" value={bodyAge ?? '-'} unit={bodyAge ? '세' : ''} status={analysis.status}>
-            <p className="text-sm leading-relaxed text-slate-400">
+            <p className="text-sm leading-relaxed text-slate-500 dark:text-slate-400">
               실제 나이 대비 자세 편차, 비대칭, 위험 규칙을 반영한 기능적 체형 나이입니다.
             </p>
           </MetricPanel>
           <MetricPanel title="가상 무게중심" value={analysis.cog?.available ? `${Math.abs(analysis.cog.offsetPct)}%` : '-'} unit="" status={analysis.cog?.status}>
-            <p className="text-sm leading-relaxed text-slate-400">
+            <p className="text-sm leading-relaxed text-slate-500 dark:text-slate-400">
               {analysis.cog?.message || 'CoG/BoS 계산을 위한 발목, 골반, 어깨 랜드마크가 부족합니다.'}
             </p>
           </MetricPanel>
@@ -233,7 +233,7 @@ export default function PostureReport({
             </Panel>
 
             <Panel title="종합 코멘트">
-              <p className="text-sm leading-relaxed text-slate-300">
+              <p className="text-sm leading-relaxed text-slate-600 dark:text-slate-300">
                 {analysis.summaryComment || report?.summaryComment || '측정 결과를 기반으로 체형 정렬 상태를 추적하세요.'}
               </p>
             </Panel>
@@ -251,7 +251,7 @@ export default function PostureReport({
           <p className={`text-sm font-bold ${statusStyle.text}`}>
             현재 상태: {POSTURE_STATUS_KO[analysis.status] || '주의'}
           </p>
-          <p className="mt-1 text-xs leading-relaxed text-slate-400">
+          <p className="mt-1 text-xs leading-relaxed text-slate-500 dark:text-slate-400">
             본 리포트는 BlazePose 기반 스크리닝 자료이며, 통증 또는 신경학적 증상이 있는 경우 전문 의료진 평가가 우선입니다.
           </p>
         </section>
@@ -261,10 +261,10 @@ export default function PostureReport({
 }
 
 const LEVEL_STYLE = {
-  normal: { text: 'text-emerald-300', bg: 'bg-emerald-500/10', border: 'border-emerald-500/30', ko: '정상' },
-  caution: { text: 'text-amber-300', bg: 'bg-amber-500/10', border: 'border-amber-500/30', ko: '주의' },
-  risk: { text: 'text-red-300', bg: 'bg-red-500/10', border: 'border-red-500/30', ko: '위험' },
-  insufficient: { text: 'text-slate-400', bg: 'bg-slate-800/40', border: 'border-slate-700', ko: '측정 부족' },
+  normal: { text: 'text-emerald-700 dark:text-emerald-300', bg: 'bg-emerald-500/10', border: 'border-emerald-500/30', ko: '정상' },
+  caution: { text: 'text-amber-700 dark:text-amber-300', bg: 'bg-amber-500/10', border: 'border-amber-500/30', ko: '주의' },
+  risk: { text: 'text-red-700 dark:text-red-300', bg: 'bg-red-500/10', border: 'border-red-500/30', ko: '위험' },
+  insufficient: { text: 'text-slate-500 dark:text-slate-400', bg: 'bg-slate-100/40 dark:bg-slate-800/40', border: 'border-slate-300 dark:border-slate-700', ko: '측정 부족' },
 };
 
 function MetadataStrip({ metadata, viewsMeasured }) {
@@ -275,19 +275,19 @@ function MetadataStrip({ metadata, viewsMeasured }) {
     : '미입력';
   const views = Array.isArray(viewsMeasured) ? viewsMeasured.length : null;
   const cell = (label, value) => (
-    <div className="rounded-md bg-slate-900 px-2.5 py-1.5">
+    <div className="rounded-md bg-white dark:bg-slate-900 px-2.5 py-1.5">
       <p className="text-[10px] font-bold text-slate-500">{label}</p>
-      <p className="text-xs font-black text-slate-200">{value}</p>
+      <p className="text-xs font-black text-slate-700 dark:text-slate-200">{value}</p>
     </div>
   );
   return (
-    <section className="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
+    <section className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 p-3">
       <div className="mb-2 flex items-center justify-between">
-        <p className="text-xs font-black text-slate-300">측정 정보 · 영점 메타데이터</p>
+        <p className="text-xs font-black text-slate-600 dark:text-slate-300">측정 정보 · 영점 메타데이터</p>
         {metadata.horizontalPlaneCertified ? (
-          <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-bold text-emerald-300">✓ AI 수평 평면 변환</span>
+          <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-bold text-emerald-700 dark:text-emerald-300">✓ AI 수평 평면 변환</span>
         ) : (
-          <span className="rounded-full bg-slate-800 px-2 py-0.5 text-[10px] font-bold text-slate-400">수평 보정 정보 없음</span>
+          <span className="rounded-full bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-[10px] font-bold text-slate-500 dark:text-slate-400">수평 보정 정보 없음</span>
         )}
       </div>
       <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-6">
@@ -308,7 +308,7 @@ function MetadataStrip({ metadata, viewsMeasured }) {
 function RegionDiagnoses({ regions }) {
   if (!Array.isArray(regions) || !regions.length) return null;
   return (
-    <section className="rounded-lg border border-slate-800 bg-slate-900 p-4">
+    <section className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
       <p className="mb-3 text-sm font-black text-white">부위별 원인 진단</p>
       <div className="grid gap-2 sm:grid-cols-2">
         {regions.map((r) => {
@@ -322,15 +322,15 @@ function RegionDiagnoses({ regions }) {
               {r.measured.length > 0 && (
                 <div className="mt-1.5 flex flex-wrap gap-1.5">
                   {r.measured.map((m, i) => (
-                    <span key={i} className="rounded bg-slate-950/60 px-1.5 py-0.5 text-[11px] font-bold text-slate-300">
+                    <span key={i} className="rounded bg-slate-50/60 dark:bg-slate-950/60 px-1.5 py-0.5 text-[11px] font-bold text-slate-600 dark:text-slate-300">
                       {m.label} {m.value}{m.unit}
                     </span>
                   ))}
                 </div>
               )}
-              <p className="mt-2 text-xs leading-relaxed text-slate-300">{r.problem}</p>
+              <p className="mt-2 text-xs leading-relaxed text-slate-600 dark:text-slate-300">{r.problem}</p>
               {r.recommendation && (
-                <p className="mt-1.5 text-[11px] leading-relaxed text-sky-300">→ {r.recommendation}</p>
+                <p className="mt-1.5 text-[11px] leading-relaxed text-sky-700 dark:text-sky-300">→ {r.recommendation}</p>
               )}
             </div>
           );
@@ -343,7 +343,7 @@ function RegionDiagnoses({ regions }) {
 function AxialRotationSection({ rotation }) {
   if (!rotation || !rotation.available) {
     return (
-      <section className="rounded-lg border border-slate-800 bg-slate-900 p-4">
+      <section className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
         <p className="mb-1 text-sm font-black text-white">전신 회전(축 정렬) 분석</p>
         <p className="text-xs text-slate-500">회전을 추정할 측정값이 부족합니다.</p>
       </section>
@@ -351,21 +351,21 @@ function AxialRotationSection({ rotation }) {
   }
   const seg = rotation.segments || {};
   const confPct = Math.round((rotation.confidence || 0) * 100);
-  const confColor = confPct >= 70 ? 'text-emerald-300' : confPct >= 45 ? 'text-amber-300' : 'text-red-300';
-  const levelStyle = (lv) => (lv === 'marked' ? 'text-red-300' : lv === 'mild' ? 'text-amber-300' : 'text-emerald-300');
+  const confColor = confPct >= 70 ? 'text-emerald-700 dark:text-emerald-300' : confPct >= 45 ? 'text-amber-700 dark:text-amber-300' : 'text-red-700 dark:text-red-300';
+  const levelStyle = (lv) => (lv === 'marked' ? 'text-red-700 dark:text-red-300' : lv === 'mild' ? 'text-amber-700 dark:text-amber-300' : 'text-emerald-700 dark:text-emerald-300');
 
   const segRow = (label, s) => {
     if (!s) return (
-      <div className="flex items-center justify-between rounded-md bg-slate-950/50 px-3 py-2">
-        <span className="text-xs font-bold text-slate-300">{label}</span>
+      <div className="flex items-center justify-between rounded-md bg-slate-50/50 dark:bg-slate-950/50 px-3 py-2">
+        <span className="text-xs font-bold text-slate-600 dark:text-slate-300">{label}</span>
         <span className="text-xs text-slate-500">측정 부족</span>
       </div>
     );
     return (
-      <div className="flex items-center justify-between rounded-md bg-slate-950/50 px-3 py-2">
-        <span className="text-xs font-bold text-slate-300">{label}</span>
+      <div className="flex items-center justify-between rounded-md bg-slate-50/50 dark:bg-slate-950/50 px-3 py-2">
+        <span className="text-xs font-bold text-slate-600 dark:text-slate-300">{label}</span>
         <span className="flex items-center gap-2">
-          <span className="text-xs font-bold text-slate-200">
+          <span className="text-xs font-bold text-slate-700 dark:text-slate-200">
             {ROTATION_DIRECTION_KO[s.direction] || s.direction}
           </span>
           <span className={`text-xs font-black ${levelStyle(s.level)}`}>
@@ -377,10 +377,10 @@ function AxialRotationSection({ rotation }) {
   };
 
   return (
-    <section className="rounded-lg border border-slate-800 bg-slate-900 p-4">
+    <section className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
       <div className="mb-1 flex items-center gap-2">
         <p className="text-sm font-black text-white">전신 회전(축 정렬) 분석</p>
-        <span className="rounded-full bg-slate-800 px-2 py-0.5 text-[10px] font-bold text-amber-300">4면 종합 · 추정</span>
+        <span className="rounded-full bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-[10px] font-bold text-amber-700 dark:text-amber-300">4면 종합 · 추정</span>
       </div>
       <p className="mb-3 text-[11px] leading-relaxed text-slate-500">
         분절별 좌우 회전 방향과 정도(없음/경미/뚜렷)입니다. 도(°) 단정 대신 방향·단계로 표기합니다.
@@ -395,11 +395,11 @@ function AxialRotationSection({ rotation }) {
 
       {rotation.axialTwist && rotation.axialTwist.level !== 'none' && (
         <div className={`mt-3 rounded-lg border px-3 py-2.5 ${rotation.axialTwist.opposing ? 'border-red-500/40 bg-red-500/10' : 'border-amber-500/30 bg-amber-500/10'}`}>
-          <p className={`text-xs font-black ${rotation.axialTwist.opposing ? 'text-red-300' : 'text-amber-300'}`}>
+          <p className={`text-xs font-black ${rotation.axialTwist.opposing ? 'text-red-700 dark:text-red-300' : 'text-amber-700 dark:text-amber-300'}`}>
             🔄 척추 축 비틀림 {ROTATION_LEVEL_KO[rotation.axialTwist.level]}
             {rotation.axialTwist.opposing ? ' (체간·골반 반대 방향)' : ''}
           </p>
-          <p className="mt-1 text-[11px] leading-relaxed text-slate-300">
+          <p className="mt-1 text-[11px] leading-relaxed text-slate-600 dark:text-slate-300">
             {rotation.axialTwist.opposing
               ? '체간과 골반이 서로 반대 방향으로 회전해 있어 척추 회전(비틀림) 경향이 관찰됩니다. 회전성 요통·디스크 부담을 높일 수 있어 회전 안정화 운동 평가를 권장합니다.'
               : '체간과 골반의 회전 정도에 차이가 있습니다. 좌우 균형 회전 운동을 점검하세요.'}
@@ -416,7 +416,7 @@ function AxialRotationSection({ rotation }) {
 
 function RiskTop3({ items }) {
   return (
-    <section className="rounded-lg border border-slate-800 bg-slate-900 p-4">
+    <section className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
       <p className="mb-1 text-sm font-black text-white">통증·부상 위험 예측 Top 3</p>
       <p className="mb-3 text-[11px] text-slate-500">현재 불균형을 방치할 경우 통증 발생 가능성이 높은 순서입니다. (예측 참고용)</p>
       {(!items || !items.length) ? (
@@ -429,10 +429,10 @@ function RiskTop3({ items }) {
             const st = LEVEL_STYLE[it.level] || LEVEL_STYLE.caution;
             return (
               <div key={it.key} className={`flex items-start gap-3 rounded-lg border p-2.5 ${st.bg} ${st.border}`}>
-                <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-950/60 text-sm font-black ${st.text}`}>{it.rank}</span>
+                <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-50/60 dark:bg-slate-950/60 text-sm font-black ${st.text}`}>{it.rank}</span>
                 <div>
                   <p className="text-sm font-black text-white">{it.area} <span className={`text-[10px] font-bold ${st.text}`}>· {st.ko}</span></p>
-                  <p className="text-xs leading-relaxed text-slate-300">{it.outcome}</p>
+                  <p className="text-xs leading-relaxed text-slate-600 dark:text-slate-300">{it.outcome}</p>
                 </div>
               </div>
             );
@@ -448,10 +448,10 @@ function MuscleBalanceMap({ muscleMap }) {
   const { tight = [], weak = [], note } = muscleMap;
   const empty = tight.length === 0 && weak.length === 0;
   return (
-    <section className="rounded-lg border border-slate-800 bg-slate-900 p-4">
+    <section className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
       <div className="mb-1 flex items-center gap-2">
         <p className="text-sm font-black text-white">근육 밸런스 맵</p>
-        <span className="rounded-full bg-slate-800 px-2 py-0.5 text-[10px] font-bold text-amber-300">추정 · 측정값 아님</span>
+        <span className="rounded-full bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-[10px] font-bold text-amber-700 dark:text-amber-300">추정 · 측정값 아님</span>
       </div>
       <p className="mb-3 text-[11px] leading-relaxed text-slate-500">{note}</p>
       {empty ? (
@@ -461,18 +461,18 @@ function MuscleBalanceMap({ muscleMap }) {
       ) : (
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="rounded-lg border border-red-500/30 bg-red-500/5 p-3">
-            <p className="mb-2 text-xs font-black text-red-300">🔴 긴장·단축 (풀어주기)</p>
+            <p className="mb-2 text-xs font-black text-red-700 dark:text-red-300">🔴 긴장·단축 (풀어주기)</p>
             <ul className="space-y-1.5">
               {tight.length ? tight.map((m, i) => (
-                <li key={i} className="text-xs text-slate-300"><span className="font-bold text-white">{m.name}</span> — {m.reason}</li>
+                <li key={i} className="text-xs text-slate-600 dark:text-slate-300"><span className="font-bold text-white">{m.name}</span> — {m.reason}</li>
               )) : <li className="text-xs text-slate-500">해당 없음</li>}
             </ul>
           </div>
           <div className="rounded-lg border border-sky-500/30 bg-sky-500/5 p-3">
-            <p className="mb-2 text-xs font-black text-sky-300">🔵 약화·이완 (강화하기)</p>
+            <p className="mb-2 text-xs font-black text-sky-700 dark:text-sky-300">🔵 약화·이완 (강화하기)</p>
             <ul className="space-y-1.5">
               {weak.length ? weak.map((m, i) => (
-                <li key={i} className="text-xs text-slate-300"><span className="font-bold text-white">{m.name}</span> — {m.reason}</li>
+                <li key={i} className="text-xs text-slate-600 dark:text-slate-300"><span className="font-bold text-white">{m.name}</span> — {m.reason}</li>
               )) : <li className="text-xs text-slate-500">해당 없음</li>}
             </ul>
           </div>
@@ -486,7 +486,7 @@ function PostureSnapshotGallery({ snapshots }) {
   const items = Array.isArray(snapshots) ? snapshots.filter((s) => s && s.snapshotUrl) : [];
   if (!items.length) return null;
   return (
-    <section className="rounded-lg border border-slate-800 bg-slate-900 p-4">
+    <section className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
       <div className="mb-3 flex items-center justify-between">
         <p className="text-sm font-black text-white">측정 장면 ({items.length}면)</p>
         <p className="text-xs text-slate-500">스켈레톤 인식 상태를 확인하세요</p>
@@ -736,7 +736,7 @@ function SnapshotCard({ item }) {
   }, [item.landmarks, item.key, item.analysis]);
 
   return (
-    <div className="overflow-hidden rounded-lg border border-slate-700 bg-slate-950">
+    <div className="overflow-hidden rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950">
       <div className="relative aspect-[3/4] w-full bg-black">
         <img
           ref={imgRef}
@@ -749,9 +749,9 @@ function SnapshotCard({ item }) {
         <canvas ref={canvasRef} className="absolute inset-0 h-full w-full object-cover" />
       </div>
       <div className="flex items-center justify-between px-2 py-1.5">
-        <span className="text-xs font-bold text-slate-200">{item.label}</span>
+        <span className="text-xs font-bold text-slate-700 dark:text-slate-200">{item.label}</span>
         {item.analysis?.score != null && (
-          <span className="text-xs font-black text-amber-300">{item.analysis.score}점</span>
+          <span className="text-xs font-black text-amber-700 dark:text-amber-300">{item.analysis.score}점</span>
         )}
       </div>
     </div>
@@ -764,7 +764,7 @@ function ScoreDial({ score, status }) {
   const circumference = 2 * Math.PI * radius;
   const offset = circumference * (1 - Math.max(0, Math.min(100, score)) / 100);
   return (
-    <div className={`flex min-h-[190px] flex-col items-center justify-center rounded-lg border bg-slate-900 p-4 ring-1 ${style.border} ${style.ring}`}>
+    <div className={`flex min-h-[190px] flex-col items-center justify-center rounded-lg border bg-white dark:bg-slate-900 p-4 ring-1 ${style.border} ${style.ring}`}>
       <div className="relative h-36 w-36">
         <svg viewBox="0 0 120 120" className="h-full w-full -rotate-90">
           <circle cx="60" cy="60" r={radius} fill="none" stroke="#1e293b" strokeWidth="12" />
@@ -785,7 +785,7 @@ function ScoreDial({ score, status }) {
           <span className="text-xs font-bold text-slate-500">/ 100</span>
         </div>
       </div>
-      <p className="mt-1 text-sm font-bold text-slate-300">통합 체형 점수</p>
+      <p className="mt-1 text-sm font-bold text-slate-600 dark:text-slate-300">통합 체형 점수</p>
     </div>
   );
 }
@@ -793,10 +793,10 @@ function ScoreDial({ score, status }) {
 function MetricPanel({ title, value, unit, status = 'caution', children }) {
   const style = STATUS_STYLE[status] || STATUS_STYLE.caution;
   return (
-    <div className={`rounded-lg border bg-slate-900 p-4 ${style.border}`}>
+    <div className={`rounded-lg border bg-white dark:bg-slate-900 p-4 ${style.border}`}>
       <p className="text-xs font-bold uppercase tracking-[0.16em] text-slate-500">{title}</p>
       <p className={`mt-3 text-4xl font-black tabular-nums ${style.text}`}>
-        {value}<span className="ml-1 text-base text-slate-400">{unit}</span>
+        {value}<span className="ml-1 text-base text-slate-500 dark:text-slate-400">{unit}</span>
       </p>
       <div className="mt-3">{children}</div>
     </div>
@@ -805,7 +805,7 @@ function MetricPanel({ title, value, unit, status = 'caution', children }) {
 
 function Panel({ title, children }) {
   return (
-    <section className="rounded-lg border border-slate-800 bg-slate-900 p-4">
+    <section className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
       <h2 className="mb-3 text-sm font-black text-white">{title}</h2>
       {children}
     </section>
@@ -819,7 +819,7 @@ function FindingRow({ finding }) {
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className={`text-sm font-black ${style.text}`}>{finding.label}</p>
-          <p className="mt-1 text-xs leading-relaxed text-slate-400">{finding.message}</p>
+          <p className="mt-1 text-xs leading-relaxed text-slate-500 dark:text-slate-400">{finding.message}</p>
         </div>
         <span className={`shrink-0 rounded px-2 py-1 text-xs font-black ${style.text}`}>
           {POSTURE_STATUS_KO[finding.status]}
@@ -873,18 +873,18 @@ function GhostingViewer({
     [currentLandmarks, previousLandmarks],
   );
   return (
-    <section className="overflow-hidden rounded-lg border border-slate-800 bg-slate-900">
-      <div className="flex items-center justify-between border-b border-slate-800 px-4 py-3">
+    <section className="overflow-hidden rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
+      <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 px-4 py-3">
         <div>
           <h2 className="text-sm font-black text-white">Before & After Ghosting</h2>
           <p className="text-xs text-slate-500">과거 스켈레톤은 점선, 현재 스켈레톤은 실선으로 표시됩니다.</p>
         </div>
-        <div className="flex items-center gap-3 text-xs font-bold text-slate-400">
+        <div className="flex items-center gap-3 text-xs font-bold text-slate-500 dark:text-slate-400">
           <span className="inline-flex items-center gap-1"><i className="h-2 w-5 border-t-2 border-dashed border-sky-300" /> Before</span>
           <span className="inline-flex items-center gap-1"><i className="h-2 w-5 border-t-2 border-emerald-300" /> Today</span>
         </div>
       </div>
-      <div className="relative aspect-[3/4] w-full bg-slate-950">
+      <div className="relative aspect-[3/4] w-full bg-slate-50 dark:bg-slate-950">
         {previousImageUrl && (
           <img src={previousImageUrl} alt="" className="absolute inset-0 h-full w-full object-contain opacity-25" />
         )}

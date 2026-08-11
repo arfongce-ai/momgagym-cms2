@@ -39,7 +39,7 @@ export function ClassTypeCheckbox({ selected=[], onChange, options=MEMBER_CLASS_
   const toggle = ct => onChange(selected.includes(ct) ? selected.filter(c=>c!==ct) : [...selected, ct]);
   return (
     <div>
-      <label className="block text-xs font-semibold text-slate-400 uppercase tracking-widest mb-2">수업 종류 (복수 선택)</label>
+      <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-2">수업 종류 (복수 선택)</label>
       <div className="grid grid-cols-2 gap-1.5">
         {options.map(ct => {
           const on = selected.includes(ct);
@@ -47,8 +47,8 @@ export function ClassTypeCheckbox({ selected=[], onChange, options=MEMBER_CLASS_
             // ★ onClick 추가 — 이전 버전의 핵심 버그
             <div key={ct} onClick={() => toggle(ct)}
               className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl border cursor-pointer transition-colors select-none
-                ${on ? 'bg-amber-500/15 border-amber-500/40 text-amber-300' : 'border-slate-700 text-slate-400 hover:border-slate-500 hover:text-slate-300'}`}>
-              <span className={`w-4 h-4 rounded flex items-center justify-center flex-shrink-0 border transition-colors ${on ? 'bg-amber-500 border-amber-500' : 'border-slate-600 bg-slate-800'}`}>
+                ${on ? 'bg-amber-500/15 border-amber-500/40 text-amber-700 dark:text-amber-300' : 'border-slate-300 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:border-slate-500 hover:text-slate-600 dark:hover:text-slate-300'}`}>
+              <span className={`w-4 h-4 rounded flex items-center justify-center flex-shrink-0 border transition-colors ${on ? 'bg-amber-500 border-amber-500' : 'border-slate-400 dark:border-slate-600 bg-slate-100 dark:bg-slate-800'}`}>
                 {on && <svg className="w-2.5 h-2.5 text-slate-950" viewBox="0 0 10 8" fill="none">
                   <path d="M1 4l3 3 5-6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
                 </svg>}
@@ -66,7 +66,7 @@ export function ClassTypeCheckbox({ selected=[], onChange, options=MEMBER_CLASS_
 function TrainerSlot({ slot, label, trainers, usedIds, onChange }) {
   const trainer    = trainers.find(t => t.id === slot.trainerId);
   const classTypes = trainer?.classTypes || [];
-  const inp = "w-full bg-slate-800 border border-slate-700 text-slate-100 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-amber-500 disabled:opacity-40";
+  const inp = "w-full bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-amber-500 disabled:opacity-40";
 
   const handleTrainerChange = tid => {
     onChange({ trainerId: tid, classTypes: [], sessionTotal: tid ? 10 : 0 });
@@ -79,17 +79,17 @@ function TrainerSlot({ slot, label, trainers, usedIds, onChange }) {
   };
 
   return (
-    <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-3 space-y-2.5">
+    <div className="bg-slate-100/50 dark:bg-slate-800/50 border border-slate-300 dark:border-slate-700 rounded-xl p-3 space-y-2.5">
       <div className="flex items-center gap-2">
         {slot.trainerId && (
           <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: trainer?.color || '#94a3b8' }} />
         )}
-        <p className="text-xs font-bold text-amber-400 uppercase tracking-widest">{label}</p>
+        <p className="text-xs font-bold text-amber-700 dark:text-amber-400 uppercase tracking-widest">{label}</p>
       </div>
 
       {/* ① 담당 트레이너 */}
       <div>
-        <label className="block text-xs font-semibold text-slate-400 uppercase tracking-widest mb-1">담당 트레이너</label>
+        <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1">담당 트레이너</label>
         <select value={slot.trainerId} onChange={e => handleTrainerChange(e.target.value)} className={inp}>
           <option value="">선택 안 함</option>
           {trainers.map(t => {
@@ -101,7 +101,7 @@ function TrainerSlot({ slot, label, trainers, usedIds, onChange }) {
 
       {/* ② 수업 종류 — 다중 선택 (체크박스) */}
       <div>
-        <label className="block text-xs font-semibold text-slate-400 uppercase tracking-widest mb-1.5">수업 종류 (복수 선택)</label>
+        <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5">수업 종류 (복수 선택)</label>
         {!slot.trainerId ? (
           <p className="text-xs text-slate-500 px-1 py-2">트레이너를 먼저 선택하세요</p>
         ) : classTypes.length === 0 ? (
@@ -113,8 +113,8 @@ function TrainerSlot({ slot, label, trainers, usedIds, onChange }) {
               return (
                 <div key={ct} onClick={() => toggleClassType(ct)}
                   className={`flex items-center gap-2 px-2.5 py-2 rounded-lg border cursor-pointer transition-colors select-none
-                    ${on ? 'bg-amber-500/15 border-amber-500/40 text-amber-300' : 'border-slate-700 text-slate-400 hover:border-slate-500 hover:text-slate-300'}`}>
-                  <span className={`w-4 h-4 rounded flex items-center justify-center flex-shrink-0 border transition-colors ${on ? 'bg-amber-500 border-amber-500' : 'border-slate-600 bg-slate-800'}`}>
+                    ${on ? 'bg-amber-500/15 border-amber-500/40 text-amber-700 dark:text-amber-300' : 'border-slate-300 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:border-slate-500 hover:text-slate-600 dark:hover:text-slate-300'}`}>
+                  <span className={`w-4 h-4 rounded flex items-center justify-center flex-shrink-0 border transition-colors ${on ? 'bg-amber-500 border-amber-500' : 'border-slate-400 dark:border-slate-600 bg-slate-100 dark:bg-slate-800'}`}>
                     {on && <svg className="w-2.5 h-2.5 text-slate-950" viewBox="0 0 10 8" fill="none">
                       <path d="M1 4l3 3 5-6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
                     </svg>}
@@ -129,7 +129,7 @@ function TrainerSlot({ slot, label, trainers, usedIds, onChange }) {
 
       {/* ③ 등록 세션 수 */}
       <div>
-        <label className="block text-xs font-semibold text-slate-400 uppercase tracking-widest mb-1">등록 세션 수</label>
+        <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1">등록 세션 수</label>
         <input type="number" min="0" max="300"
           value={slot.sessionTotal}
           disabled={!slot.trainerId}
@@ -167,8 +167,8 @@ function useSignatureCanvas(canvasRef) {
   return{start,move,end,clear,isEmpty,getDataUrl,resize};
 }
 
-const INP = "w-full bg-slate-800 border border-slate-700 text-slate-100 rounded-xl px-3 py-2.5 text-sm placeholder-slate-500 focus:outline-none focus:border-amber-500";
-const LBL = "block text-xs font-semibold text-slate-400 uppercase tracking-widest mb-1.5";
+const INP = "w-full bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-xl px-3 py-2.5 text-sm placeholder-slate-500 focus:outline-none focus:border-amber-500";
+const LBL = "block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5";
 
 const EMPTY_SLOT = { trainerId:'', classTypes:[], sessionTotal:0 };
 
@@ -269,7 +269,7 @@ export default function MemberRegister({ trainers=[], onSuccess, onCancel }) {
       <div className="modal-box modal-box-large">
 
         {/* 헤더 */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-800 flex-shrink-0">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-slate-800 flex-shrink-0">
           <div>
             <h2 className="font-bold text-base">
               {step==='form'&&'기본 정보 입력'}{step==='terms'&&'이용 약관'}{step==='sign'&&'자필 서명'}{step==='done'&&'등록 완료'}
@@ -278,7 +278,7 @@ export default function MemberRegister({ trainers=[], onSuccess, onCancel }) {
           </div>
           {step!=='done'&&(
             <div className="flex gap-1.5">
-              {[0,1,2].map(i=><div key={i} className={`h-1.5 rounded-full transition-all ${['form','terms','sign'].indexOf(step)>=i?'w-6 bg-amber-500':'w-3 bg-slate-700'}`}/>)}
+              {[0,1,2].map(i=><div key={i} className={`h-1.5 rounded-full transition-all ${['form','terms','sign'].indexOf(step)>=i?'w-6 bg-amber-500':'w-3 bg-slate-200 dark:bg-slate-700'}`}/>)}
             </div>
           )}
         </div>
@@ -291,7 +291,7 @@ export default function MemberRegister({ trainers=[], onSuccess, onCancel }) {
 
               {/* 1줄: 이름 + 성별 (이름칸 넓게) */}
               <div>
-                <label className={LBL}>이름 * <span className="text-amber-400/80">/ 성별 *</span></label>
+                <label className={LBL}>이름 * <span className="text-amber-700 dark:text-amber-400/80">/ 성별 *</span></label>
                 <div className="flex gap-2">
                   <input required value={form.name} onChange={pf('name')} placeholder="홍길동" className={INP + " flex-1"}/>
                   <div className="flex gap-1.5 flex-shrink-0">
@@ -300,8 +300,8 @@ export default function MemberRegister({ trainers=[], onSuccess, onCancel }) {
                         onClick={()=>setForm(f=>({...f, gender: f.gender===val ? '' : val}))}
                         className={`w-14 rounded-xl text-sm font-bold border transition-colors
                           ${form.gender===val
-                            ? 'bg-amber-500/20 border-amber-500/40 text-amber-300'
-                            : 'border-slate-700 text-slate-400 hover:border-slate-500'}`}>
+                            ? 'bg-amber-500/20 border-amber-500/40 text-amber-700 dark:text-amber-300'
+                            : 'border-slate-300 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:border-slate-500'}`}>
                         {lbl}
                       </button>
                     ))}
@@ -335,7 +335,7 @@ export default function MemberRegister({ trainers=[], onSuccess, onCancel }) {
 
               {/* 트레이너 슬롯 2개 (세션 수업) */}
               <div className="space-y-3">
-                <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">담당 트레이너 · 세션 수업 (최대 2명)</p>
+                <p className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">담당 트레이너 · 세션 수업 (최대 2명)</p>
                 {form.trainerSlots.map((slot, idx) => (
                   <TrainerSlot
                     key={idx}
@@ -353,10 +353,10 @@ export default function MemberRegister({ trainers=[], onSuccess, onCancel }) {
               <div className="space-y-2.5 bg-violet-500/5 border border-violet-500/20 rounded-xl p-3">
                 <label className="flex items-center gap-2 cursor-pointer select-none">
                   <span onClick={()=>setForm(f=>({...f, monthlyOn:!f.monthlyOn}))}
-                    className={`w-5 h-5 rounded flex items-center justify-center border transition-colors ${form.monthlyOn?'bg-violet-500 border-violet-500':'border-slate-600 bg-slate-800'}`}>
+                    className={`w-5 h-5 rounded flex items-center justify-center border transition-colors ${form.monthlyOn?'bg-violet-500 border-violet-500':'border-slate-400 dark:border-slate-600 bg-slate-100 dark:bg-slate-800'}`}>
                     {form.monthlyOn && <svg className="w-3 h-3 text-white" viewBox="0 0 10 8" fill="none"><path d="M1 4l3 3 5-6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>}
                   </span>
-                  <span className="text-sm font-bold text-violet-300" onClick={()=>setForm(f=>({...f, monthlyOn:!f.monthlyOn}))}>월정액 등록 (세션과 별개)</span>
+                  <span className="text-sm font-bold text-violet-700 dark:text-violet-300" onClick={()=>setForm(f=>({...f, monthlyOn:!f.monthlyOn}))}>월정액 등록 (세션과 별개)</span>
                 </label>
                 {form.monthlyOn && (
                   <div className="grid grid-cols-2 gap-2 pt-1">
@@ -369,7 +369,7 @@ export default function MemberRegister({ trainers=[], onSuccess, onCancel }) {
                       <input type="date" value={form.monthlyDueDate} onChange={pf('monthlyDueDate')} className={INP}/>
                     </div>
                     <p className="col-span-2 text-[11px] text-slate-500">
-                      월정액은 수업 횟수가 차감되지 않고, <b className="text-slate-300">트레이너 정산에 포함되지 않습니다</b>(센터 수익으로 합산).
+                      월정액은 수업 횟수가 차감되지 않고, <b className="text-slate-600 dark:text-slate-300">트레이너 정산에 포함되지 않습니다</b>(센터 수익으로 합산).
                       결제 예정일 7일 전부터 “결제 만료”에 표시됩니다.
                     </p>
                   </div>
@@ -379,9 +379,9 @@ export default function MemberRegister({ trainers=[], onSuccess, onCancel }) {
               {/* 메모 */}
               <div><label className={LBL}>메모</label><textarea rows={2} value={form.memo} onChange={pf('memo')} placeholder="부상 이력, 특이사항" className={INP+" resize-none"}/></div>
 
-              {error&&<p className="text-red-400 text-xs bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">{error}</p>}
+              {error&&<p className="text-red-700 dark:text-red-400 text-xs bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">{error}</p>}
               <div className="flex gap-2 pt-1">
-                <button type="button" onClick={onCancel} className="py-2.5 px-4 rounded-xl border border-slate-700 text-slate-300 hover:text-white text-sm font-semibold transition-colors">취소</button>
+                <button type="button" onClick={onCancel} className="py-2.5 px-4 rounded-xl border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:text-white text-sm font-semibold transition-colors">취소</button>
                 <button type="submit" className="flex-1 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold py-2.5 rounded-xl text-sm transition-colors">다음: 약관 확인 →</button>
               </div>
             </form>
@@ -390,17 +390,17 @@ export default function MemberRegister({ trainers=[], onSuccess, onCancel }) {
           {/* ─ STEP 2: 약관 ─────────────────────────── */}
           {step==='terms'&&(
             <div className="p-5 flex flex-col" style={{minHeight:'60vh'}}>
-              <div className="flex-1 overflow-y-auto bg-slate-800 border border-slate-700 rounded-xl p-4 text-sm text-slate-300 leading-7 whitespace-pre-line mb-4" style={{minHeight:'45vh'}}>
+              <div className="flex-1 overflow-y-auto bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-4 text-sm text-slate-600 dark:text-slate-300 leading-7 whitespace-pre-line mb-4" style={{minHeight:'45vh'}}>
                 {TERMS_SECTIONS.map((s, i) => (
                   <p key={i} className={i>0 ? 'mt-4' : ''}>
                     {s.highlight != null
-                      ? <>{s.prefix}<strong className="text-red-400 font-extrabold">{s.highlight}</strong>{s.suffix}</>
+                      ? <>{s.prefix}<strong className="text-red-700 dark:text-red-400 font-extrabold">{s.highlight}</strong>{s.suffix}</>
                       : s.text}
                   </p>
                 ))}
               </div>
               <div className="flex gap-2">
-                <button onClick={()=>setStep('form')} className="py-2.5 px-4 rounded-xl border border-slate-700 text-slate-300 hover:text-white text-sm font-semibold transition-colors">← 이전</button>
+                <button onClick={()=>setStep('form')} className="py-2.5 px-4 rounded-xl border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:text-white text-sm font-semibold transition-colors">← 이전</button>
                 <button onClick={()=>setStep('sign')} className="flex-1 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold py-2.5 rounded-xl text-sm transition-colors">동의하고 서명 ✍️</button>
               </div>
             </div>
@@ -409,17 +409,17 @@ export default function MemberRegister({ trainers=[], onSuccess, onCancel }) {
           {/* ─ STEP 3: 서명 ─────────────────────────── */}
           {step==='sign'&&(
             <div className="p-5 flex flex-col" style={{minHeight:'60vh'}}>
-              <p className="text-sm text-slate-400 mb-3">아래 영역에 직접 서명해 주세요.</p>
-              <div className="relative rounded-2xl overflow-hidden border-2 border-dashed border-slate-600 bg-slate-800 flex-1 mb-4" style={{minHeight:'40vh'}}>
+              <p className="text-sm text-slate-500 dark:text-slate-400 mb-3">아래 영역에 직접 서명해 주세요.</p>
+              <div className="relative rounded-2xl overflow-hidden border-2 border-dashed border-slate-400 dark:border-slate-600 bg-slate-100 dark:bg-slate-800 flex-1 mb-4" style={{minHeight:'40vh'}}>
                 <canvas ref={canvasRef} className="absolute inset-0 w-full h-full cursor-crosshair" style={{touchAction:'none'}}
                   onMouseDown={start} onMouseMove={move} onMouseUp={end} onMouseLeave={end}
                   onTouchStart={start} onTouchMove={move} onTouchEnd={end}/>
                 <span className="absolute bottom-2 left-1/2 -translate-x-1/2 text-xs text-slate-600 pointer-events-none">서명란</span>
               </div>
-              {error&&<p className="text-red-400 text-xs bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2 mb-3">{error}</p>}
+              {error&&<p className="text-red-700 dark:text-red-400 text-xs bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2 mb-3">{error}</p>}
               <div className="flex gap-2">
-                <button onClick={()=>setStep('terms')} className="py-2.5 px-4 rounded-xl border border-slate-700 text-slate-300 hover:text-white text-sm font-semibold transition-colors">← 이전</button>
-                <button onClick={clear} className="py-2.5 px-4 rounded-xl border border-slate-700 text-slate-300 hover:text-white text-sm font-semibold transition-colors">지우기</button>
+                <button onClick={()=>setStep('terms')} className="py-2.5 px-4 rounded-xl border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:text-white text-sm font-semibold transition-colors">← 이전</button>
+                <button onClick={clear} className="py-2.5 px-4 rounded-xl border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:text-white text-sm font-semibold transition-colors">지우기</button>
                 <button onClick={handleSubmit} disabled={loading} className="flex-1 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-bold py-2.5 rounded-xl text-sm transition-colors">{loading?'등록 중…':'등록 완료'}</button>
               </div>
             </div>
@@ -430,11 +430,11 @@ export default function MemberRegister({ trainers=[], onSuccess, onCancel }) {
             <div className="p-10 text-center space-y-4">
               <div className="text-6xl">✅</div>
               <h3 className="text-xl font-black">{form.name} 회원 등록 완료!</h3>
-              <div className="bg-slate-800 rounded-xl p-3 text-left space-y-1">
+              <div className="bg-slate-100 dark:bg-slate-800 rounded-xl p-3 text-left space-y-1">
                 {form.trainerSlots.filter(s=>s.trainerId).map((s,i)=>{
                   const t=trainers.find(tr=>tr.id===s.trainerId);
                   const cts = (s.classTypes||[]).join(', ') || '수업 미지정';
-                  return <p key={i} className="text-xs text-slate-400">• {t?.name||'트레이너'} · {cts} · {s.sessionTotal}회</p>;
+                  return <p key={i} className="text-xs text-slate-500 dark:text-slate-400">• {t?.name||'트레이너'} · {cts} · {s.sessionTotal}회</p>;
                 })}
               </div>
               <button onClick={() => onSuccess?.(createdMember)} className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold py-2.5 px-8 rounded-xl text-sm transition-colors">확인</button>

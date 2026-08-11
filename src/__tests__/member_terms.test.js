@@ -57,7 +57,7 @@ describe('MemberRegister.jsx — 강조 문구가 실제로 빨간 굵은 글씨
 
   it('TERMS_SECTIONS를 map으로 렌더링하며, highlight는 red+bold 클래스의 strong 태그로 감싼다', () => {
     expect(src).toContain('TERMS_SECTIONS.map(');
-    expect(src).toMatch(/<strong className="text-red-400 font-extrabold">\{s\.highlight\}<\/strong>/);
+    expect(src).toMatch(/<strong className="text-red-700 dark:text-red-400 font-extrabold">\{s\.highlight\}<\/strong>/);
   });
 });
 

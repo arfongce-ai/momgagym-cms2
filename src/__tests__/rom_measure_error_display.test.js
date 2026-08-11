@@ -37,7 +37,7 @@ describe('RomMeasure.jsx — errorMsg가 실제로 set된다(회귀 방지: 죽�
 
 describe('RomMeasure.jsx — errorMsg가 실제로 화면에 렌더된다(회귀 방지)', () => {
   it('errorMsg가 있으면 화면에 표시한다(saveState 에러 메시지와 같은 스타일)', () => {
-    expect(src).toContain('{errorMsg && <p className="text-center text-xs text-red-400">{errorMsg}</p>}');
+    expect(src).toContain('{errorMsg && <p className="text-center text-xs text-red-700 dark:text-red-400">{errorMsg}</p>}');
   });
 
   it('기존 저장 실패 메시지(saveState==="error")는 그대로 남아있다(교체가 아니라 추가)', () => {

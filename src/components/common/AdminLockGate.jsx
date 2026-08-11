@@ -49,8 +49,8 @@ export default function AdminLockGate({ title = '관리자 확인', adminOnly = 
         <div className="flex items-center justify-center h-[60vh] p-6">
           <div className="text-center max-w-sm">
             <div className="text-4xl mb-3">🔒</div>
-            <div className="text-slate-200 font-bold text-lg mb-1">접근 권한이 없습니다</div>
-            <div className="text-slate-400 text-sm">이 화면은 관리자만 볼 수 있어요.</div>
+            <div className="text-slate-700 dark:text-slate-200 font-bold text-lg mb-1">접근 권한이 없습니다</div>
+            <div className="text-slate-500 dark:text-slate-400 text-sm">이 화면은 관리자만 볼 수 있어요.</div>
           </div>
         </div>
       );
@@ -81,11 +81,11 @@ export default function AdminLockGate({ title = '관리자 확인', adminOnly = 
 
   return (
     <div className="flex items-center justify-center h-[60vh] p-6">
-      <div className="w-full max-w-sm bg-slate-900 border border-slate-800 rounded-2xl p-6">
+      <div className="w-full max-w-sm bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6">
         <div className="text-center mb-5">
           <div className="text-4xl mb-2">🔐</div>
-          <div className="text-slate-100 font-bold text-lg">{title}</div>
-          <div className="text-slate-400 text-xs mt-1">보안을 위해 관리자 비밀번호를 한 번 더 입력해 주세요.</div>
+          <div className="text-slate-800 dark:text-slate-100 font-bold text-lg">{title}</div>
+          <div className="text-slate-500 dark:text-slate-400 text-xs mt-1">보안을 위해 관리자 비밀번호를 한 번 더 입력해 주세요.</div>
         </div>
         <input
           type="password"
@@ -94,9 +94,9 @@ export default function AdminLockGate({ title = '관리자 확인', adminOnly = 
           onKeyDown={e => { if (e.key === 'Enter') submit(); }}
           placeholder="관리자 비밀번호"
           autoFocus
-          className="w-full bg-slate-800 border border-slate-700 text-slate-100 rounded-xl px-3 py-2.5 text-sm placeholder-slate-500 focus:outline-none focus:border-amber-500"
+          className="w-full bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-xl px-3 py-2.5 text-sm placeholder-slate-500 focus:outline-none focus:border-amber-500"
         />
-        {err && <div className="text-red-400 text-xs mt-2">{err}</div>}
+        {err && <div className="text-red-700 dark:text-red-400 text-xs mt-2">{err}</div>}
         <button
           onClick={submit}
           disabled={busy}

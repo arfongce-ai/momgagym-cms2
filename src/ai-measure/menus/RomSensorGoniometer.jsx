@@ -295,17 +295,17 @@ export default function RomSensorGoniometer({ jointName, jointKey, onBack, onCom
 
         {/* 측정 결과 요약 */}
         <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-center">
-          <p className="text-[11px] font-bold uppercase tracking-widest text-emerald-300/80">측정완료 · 최대 가동각</p>
+          <p className="text-[11px] font-bold uppercase tracking-widest text-emerald-700 dark:text-emerald-300/80">측정완료 · 최대 가동각</p>
           <div className="mt-1 flex items-center justify-center">
-            <div><p className="text-[11px] text-slate-400">가동각</p><p className="text-4xl font-black tabular-nums text-emerald-200">{measuredAngle != null ? `${measuredAngle}°` : '—'}</p></div>
+            <div><p className="text-[11px] text-slate-500 dark:text-slate-400">가동각</p><p className="text-4xl font-black tabular-nums text-emerald-200">{measuredAngle != null ? `${measuredAngle}°` : '—'}</p></div>
           </div>
         </div>
 
         {/* 움직임 라벨 기록 */}
-        <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4 space-y-2">
-          <p className="text-xs font-black text-slate-300">측정한 움직임을 기록하세요</p>
+        <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 space-y-2">
+          <p className="text-xs font-black text-slate-600 dark:text-slate-300">측정한 움직임을 기록하세요</p>
           <select value={movement} onChange={(e) => setMovement(e.target.value)}
-            className="w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2.5 text-sm font-bold text-slate-100">
+            className="w-full rounded-lg border border-slate-400 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2.5 text-sm font-bold text-slate-800 dark:text-slate-100">
             <option value="">움직임 선택</option>
             {MOVEMENT_PRESETS.map((m) => <option key={m} value={m}>{m}</option>)}
             <option value="__custom">직접 입력…</option>
@@ -313,7 +313,7 @@ export default function RomSensorGoniometer({ jointName, jointKey, onBack, onCom
           {movement === '__custom' && (
             <input type="text" value={movementCustom} onChange={(e) => setMovementCustom(e.target.value)}
               placeholder="예: 어깨 굴곡, 발목 외번, 목 좌측 회전"
-              className="w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2.5 text-sm text-slate-100" />
+              className="w-full rounded-lg border border-slate-400 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2.5 text-sm text-slate-800 dark:text-slate-100" />
           )}
           <p className="text-[11px] text-slate-500">움직임을 적어두면 같은 동작끼리 회차별로 비교됩니다. (선택 사항)</p>
         </div>
@@ -336,19 +336,19 @@ export default function RomSensorGoniometer({ jointName, jointKey, onBack, onCom
           <h2 className="measure-title">고니오메타</h2>
           <span className="w-12" />
         </div>
-        <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4 space-y-3">
-          <p className="text-sm font-bold text-slate-200">폰을 관절 부위에 밀착해 기울기로 측정합니다</p>
+        <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 space-y-3">
+          <p className="text-sm font-bold text-slate-700 dark:text-slate-200">폰을 관절 부위에 밀착해 기울기로 측정합니다</p>
 
-          <ol className="space-y-1.5 text-[12px] leading-relaxed text-slate-400 list-decimal list-inside">
+          <ol className="space-y-1.5 text-[12px] leading-relaxed text-slate-500 dark:text-slate-400 list-decimal list-inside">
             <li>화면이 바깥을 향하게 폰을 측정 부위(팔·다리)에 평평하게 밀착합니다.</li>
-            <li>시작 자세에서 <span className="font-black text-amber-300">0점</span>을 누르고 0.7초간 그대로 유지하면 평균값으로 0점이 잡힙니다.</li>
-            <li>끝범위에서 각도 변화 없이 <span className="font-black text-amber-300">0.8초 유지</span>하면 <span className="font-black text-amber-300">자동 측정</span>됩니다. (수동 완료도 가능)</li>
+            <li>시작 자세에서 <span className="font-black text-amber-700 dark:text-amber-300">0점</span>을 누르고 0.7초간 그대로 유지하면 평균값으로 0점이 잡힙니다.</li>
+            <li>끝범위에서 각도 변화 없이 <span className="font-black text-amber-700 dark:text-amber-300">0.8초 유지</span>하면 <span className="font-black text-amber-700 dark:text-amber-300">자동 측정</span>됩니다. (수동 완료도 가능)</li>
           </ol>
           <button onClick={activate}
             className="w-full rounded-xl bg-amber-500 px-4 py-4 text-base font-black text-slate-950 active:scale-[0.99] transition">
             센서 활성화 후 측정 시작
           </button>
-          {permErr && <p className="text-xs text-red-400">{permErr}</p>}
+          {permErr && <p className="text-xs text-red-700 dark:text-red-400">{permErr}</p>}
           <p className="text-[11px] leading-relaxed text-slate-500">
             ※ iOS 는 버튼을 누르면 동작·방향 접근 권한 창이 뜹니다. 센서 기울기는 하드웨어
             측정값이라 정확하지만, 폰이 부위에서 미끄러지거나 비틀리면 오차가 생깁니다.
@@ -369,15 +369,15 @@ export default function RomSensorGoniometer({ jointName, jointKey, onBack, onCom
       </div>
 
       {/* [항목 5] 자동/수동 측정 토글 */}
-      <div className="flex items-center justify-between rounded-xl border border-slate-800 bg-slate-900 px-3 py-2">
+      <div className="flex items-center justify-between rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-2">
         <div>
-          <p className="text-xs font-black text-slate-200">자동 측정</p>
+          <p className="text-xs font-black text-slate-700 dark:text-slate-200">자동 측정</p>
           <p className="text-[10px] text-slate-500">끝범위에서 각도 변화 없이 0.8초 유지하면 자동 확정</p>
         </div>
         <button type="button" onClick={() => setAutoMode((v) => !v)}
           aria-pressed={autoMode}
           className={`relative h-7 w-12 shrink-0 rounded-full border transition-colors ${
-            autoMode ? 'border-emerald-400/60 bg-emerald-500/30' : 'border-slate-600 bg-slate-700'
+            autoMode ? 'border-emerald-400/60 bg-emerald-500/30' : 'border-slate-400 dark:border-slate-600 bg-slate-200 dark:bg-slate-700'
           }`}>
           <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-all ${autoMode ? 'left-6' : 'left-0.5'}`} />
         </button>
@@ -385,34 +385,34 @@ export default function RomSensorGoniometer({ jointName, jointKey, onBack, onCom
 
       {/* 실시간 각도 — 크게 표시 */}
       <div className={`rounded-2xl border p-5 text-center ${
-        offPlaneWarn ? 'border-red-500/40 bg-red-500/10' : 'border-amber-500/30 bg-slate-900'
+        offPlaneWarn ? 'border-red-500/40 bg-red-500/10' : 'border-amber-500/30 bg-white dark:bg-slate-900'
       }`}>
-        <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">
+        <p className="text-[11px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400">
           현재 각도 {zeroing ? '(0점 측정 중 — 그대로 유지)' : zero == null ? '(0점을 먼저 잡아주세요)' : ''}
         </p>
-        <p className="mt-1 font-black tabular-nums text-amber-300" style={{ fontSize: '4.5rem', lineHeight: 1.1 }}>
+        <p className="mt-1 font-black tabular-nums text-amber-700 dark:text-amber-300" style={{ fontSize: '4.5rem', lineHeight: 1.1 }}>
           {zeroing ? '···' : liveDeg == null ? '—' : `${liveDeg}°`}
         </p>
         <div className="mt-2 flex items-center justify-center gap-4 text-sm">
-          <span className="text-slate-400">최대 가동각 <b className="text-emerald-300 tabular-nums">{maxDeg > 0 ? `${maxDeg}°` : '—'}</b></span>
-          {still && zero != null && <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-[11px] font-bold text-emerald-300">멈춤 감지</span>}
+          <span className="text-slate-500 dark:text-slate-400">최대 가동각 <b className="text-emerald-700 dark:text-emerald-300 tabular-nums">{maxDeg > 0 ? `${maxDeg}°` : '—'}</b></span>
+          {still && zero != null && <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-[11px] font-bold text-emerald-700 dark:text-emerald-300">멈춤 감지</span>}
         </div>
 
         {/* 자동 확정 진행 바 — 끝범위 유지 시간이 차오른다 */}
         {autoMode && zero != null && !offPlaneWarn && (
           <div className="mt-3">
-            <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-800">
+            <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
               <div className="h-full rounded-full bg-emerald-400 transition-[width] duration-100"
                 style={{ width: `${Math.round(holdPct * 100)}%` }} />
             </div>
-            <p className="mt-1 text-[10px] font-bold text-emerald-300/80">
+            <p className="mt-1 text-[10px] font-bold text-emerald-700 dark:text-emerald-300/80">
               {holdPct >= 1 ? '자동 확정!' : holdPct > 0 ? '끝범위 유지 중… 그대로 멈춰주세요' : '끝 자세에서 잠시 멈추면 자동 측정됩니다'}
             </p>
           </div>
         )}
 
         {offPlaneWarn && (
-          <p className="mt-2 text-xs font-bold text-red-300">
+          <p className="mt-2 text-xs font-bold text-red-700 dark:text-red-300">
             ⚠ 폰이 측정면에서 비틀렸습니다 — 부위에 평평하게 다시 밀착해 주세요 (이 동안 최대각은 갱신되지 않음)
           </p>
         )}
@@ -425,13 +425,13 @@ export default function RomSensorGoniometer({ jointName, jointKey, onBack, onCom
           {zeroing ? '0점 측정 중…' : zero == null ? '0점 잡기 (자세 유지 0.7초)' : '0점 다시 잡기'}
         </button>
         <button onClick={resetSide}
-          className="rounded-xl border border-slate-700 bg-slate-800 px-4 py-3.5 text-sm font-black text-slate-300 active:scale-[0.99]">
+          className="rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-4 py-3.5 text-sm font-black text-slate-600 dark:text-slate-300 active:scale-[0.99]">
           다시 측정
         </button>
       </div>
-      {zeroMsg && <p className="text-xs font-bold text-amber-300">{zeroMsg}</p>}
+      {zeroMsg && <p className="text-xs font-bold text-amber-700 dark:text-amber-300">{zeroMsg}</p>}
       <button onClick={() => finishMeasurement(false)} disabled={zero == null || maxDeg <= 0}
-        className="w-full rounded-xl bg-amber-500 px-4 py-4 text-base font-black text-slate-950 disabled:bg-slate-700 disabled:text-slate-400 active:scale-[0.99]">
+        className="w-full rounded-xl bg-amber-500 px-4 py-4 text-base font-black text-slate-950 disabled:bg-slate-200 dark:disabled:bg-slate-700 disabled:text-slate-500 dark:disabled:text-slate-400 active:scale-[0.99]">
         {autoMode ? '지금 바로 측정완료 (수동)' : '촬영완료'}
       </button>
 

@@ -19,14 +19,14 @@ export default function RomTrimSlider({ startPct, endPct, onChange, sampleCount 
   const trimmed = startPct > 0 || endPct < 100;
 
   return (
-    <div className="rounded-xl bg-slate-800/50 border border-slate-700 p-3 space-y-2">
+    <div className="rounded-xl bg-slate-100/50 dark:bg-slate-800/50 border border-slate-300 dark:border-slate-700 p-3 space-y-2">
       <div className="flex items-center justify-between">
-        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">구간 보정(이상치 제외)</p>
+        <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">구간 보정(이상치 제외)</p>
         {trimmed && (
           <button
             type="button"
             onClick={() => onChange(0, 100)}
-            className="text-[10px] font-bold text-cyan-400 underline"
+            className="text-[10px] font-bold text-cyan-700 dark:text-cyan-400 underline"
           >
             전체로 되돌리기
           </button>
@@ -41,14 +41,14 @@ export default function RomTrimSlider({ startPct, endPct, onChange, sampleCount 
           <input type="range" min={0} max={100} value={startPct}
             onChange={e => setStart(e.target.value)}
             className="flex-1 accent-cyan-400" />
-          <span className="w-9 text-[9px] text-slate-400 font-mono text-right">{Math.round(startPct)}%</span>
+          <span className="w-9 text-[9px] text-slate-500 dark:text-slate-400 font-mono text-right">{Math.round(startPct)}%</span>
         </div>
         <div className="flex items-center gap-2">
           <span className="w-8 text-[9px] text-slate-500 font-mono">끝</span>
           <input type="range" min={0} max={100} value={endPct}
             onChange={e => setEnd(e.target.value)}
             className="flex-1 accent-cyan-400" />
-          <span className="w-9 text-[9px] text-slate-400 font-mono text-right">{Math.round(endPct)}%</span>
+          <span className="w-9 text-[9px] text-slate-500 dark:text-slate-400 font-mono text-right">{Math.round(endPct)}%</span>
         </div>
       </div>
       {sampleCount != null && (

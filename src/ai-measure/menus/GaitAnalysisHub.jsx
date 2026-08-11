@@ -90,7 +90,7 @@ export default function GaitAnalysisHub({ member, onBack, saveToFirebase, onSave
     if (g.speed != null) rows.push({ label: '속도', value: `${g.speed}` });
     if (g.symmetry != null) rows.push({ label: '대칭성', value: `${g.symmetry}%` });
     return (
-      <div className="fixed inset-0 z-[80] bg-slate-950 overflow-y-auto" style={{ height: '100dvh' }}>
+      <div className="fixed inset-0 z-[80] bg-slate-50 dark:bg-slate-950 overflow-y-auto" style={{ height: '100dvh' }}>
         <div className="max-w-md mx-auto p-4">
           <MeasureRecordConfirm
             title="보행·러닝"
@@ -109,11 +109,11 @@ export default function GaitAnalysisHub({ member, onBack, saveToFirebase, onSave
 
   if (view === 'report' && report) {
     return (
-      <div className="fixed inset-0 z-[80] bg-slate-950 overflow-y-auto" style={{ height: '100dvh' }}>
-        <div className="sticky top-0 z-10 flex items-center justify-between px-4 py-3 bg-slate-900/90 backdrop-blur border-b border-slate-800">
-          <button onClick={backToMeasure} className="text-slate-300 font-bold text-sm">← 다시 측정</button>
+      <div className="fixed inset-0 z-[80] bg-slate-50 dark:bg-slate-950 overflow-y-auto" style={{ height: '100dvh' }}>
+        <div className="sticky top-0 z-10 flex items-center justify-between px-4 py-3 bg-white dark:bg-slate-900/90 backdrop-blur border-b border-slate-200 dark:border-slate-800">
+          <button onClick={backToMeasure} className="text-slate-600 dark:text-slate-300 font-bold text-sm">← 다시 측정</button>
           <span className="text-white font-black text-sm">종합 리포트</span>
-          <button onClick={onBack} className="text-slate-400 text-sm font-bold">닫기</button>
+          <button onClick={onBack} className="text-slate-500 dark:text-slate-400 text-sm font-bold">닫기</button>
         </div>
         <GaitReportDashboard
           report={report}
@@ -131,7 +131,7 @@ export default function GaitAnalysisHub({ member, onBack, saveToFirebase, onSave
           <div className="mx-auto w-full max-w-[794px] px-4 pb-6">
             <button
               onClick={onViewInReport}
-              className="w-full rounded-xl border border-amber-500/40 bg-amber-500/10 text-amber-300 font-bold text-sm py-2.5"
+              className="w-full rounded-xl border border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300 font-bold text-sm py-2.5"
             >
               📊 결과리포트에서 보기
             </button>
@@ -142,7 +142,7 @@ export default function GaitAnalysisHub({ member, onBack, saveToFirebase, onSave
   }
 
   return (
-    <div className="fixed inset-0 z-[80] bg-slate-950" style={{ height: '100dvh' }}>
+    <div className="fixed inset-0 z-[80] bg-slate-50 dark:bg-slate-950" style={{ height: '100dvh' }}>
       {/* 모드 전환 UI — 상단 중앙, 라이브 타이틀 아래로 오프셋해 헤더와 겹치지 않게.
           z 는 라이브 헤더(기본)보다 위, 측정 컨트롤보다 아래. */}
       {view === 'measure' && (
@@ -151,7 +151,7 @@ export default function GaitAnalysisHub({ member, onBack, saveToFirebase, onSave
             {[['live', '🔴 실시간'], ['upload', '📁 업로드']].map(([k, label]) => (
               <button key={k} onClick={() => setMode(k)}
                 className={`rounded-full px-3.5 py-1 text-xs font-black transition-colors ${
-                  mode === k ? 'bg-amber-500 text-slate-950' : 'text-slate-300'
+                  mode === k ? 'bg-amber-500 text-slate-950' : 'text-slate-600 dark:text-slate-300'
                 }`}>
                 {label}
               </button>

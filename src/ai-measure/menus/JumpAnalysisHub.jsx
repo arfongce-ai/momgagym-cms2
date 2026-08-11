@@ -99,19 +99,19 @@ export default function JumpAnalysisHub({ member, onBack, onSave, onSaveToFireba
     if (j.rsi != null) rows.push({ label: 'RSI', value: j.rsi });
     if (j.flightTime != null) rows.push({ label: '체공시간', value: `${j.flightTime}ms` });
     return (
-      <div className="fixed inset-0 z-[80] bg-slate-950 overflow-y-auto" style={{ height: '100dvh' }}>
+      <div className="fixed inset-0 z-[80] bg-slate-50 dark:bg-slate-950 overflow-y-auto" style={{ height: '100dvh' }}>
         <div className="max-w-md mx-auto p-4 space-y-3">
           {/* [DJ 박스높이 수동입력 2026-08-11] 측정 방식(실시간/고속영상) 무관하게
               여기 한 곳에서만 물어본다 — 3가지 방식 다 이 record 단계로 모이므로
               (Hub 단일 저장 지점) 각 하위 컴포넌트를 안 건드려도 된다. */}
           {jumpSubType === 'dj' && (
-            <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4 space-y-2">
-              <p className="text-xs font-black text-slate-300">
+            <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 space-y-2">
+              <p className="text-xs font-black text-slate-600 dark:text-slate-300">
                 박스 높이 (cm) <span className="text-slate-500 font-normal normal-case">— 참고용, 카메라로는 측정 안 됨 · 선택</span>
               </p>
               <input type="number" inputMode="decimal" step="1" min="0" value={boxHeightCm}
                 onChange={(e) => setBoxHeightCm(e.target.value)} placeholder="예: 30"
-                className="w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2.5 text-sm font-mono text-slate-100 focus:outline-none focus:border-amber-500" />
+                className="w-full rounded-lg border border-slate-400 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2.5 text-sm font-mono text-slate-800 dark:text-slate-100 focus:outline-none focus:border-amber-500" />
             </div>
           )}
           <MeasureRecordConfirm
@@ -131,28 +131,28 @@ export default function JumpAnalysisHub({ member, onBack, onSave, onSaveToFireba
 
   if (view === 'report' && report) {
     return (
-      <div className="fixed inset-0 z-[80] bg-slate-950 overflow-y-auto" style={{ height: '100dvh' }}>
+      <div className="fixed inset-0 z-[80] bg-slate-50 dark:bg-slate-950 overflow-y-auto" style={{ height: '100dvh' }}>
         <JumpReportDashboard report={report} onClose={onBack} member={member} />
         {/* [리포트 통합 2026-08-09] GaitAnalysisHub.jsx와 동일 패턴. */}
         {!member?.isVirtual && typeof onViewInReport === 'function' && (
           <div className="mx-auto w-full max-w-[794px] px-4 pb-3">
             <button
               onClick={onViewInReport}
-              className="w-full rounded-xl border border-amber-500/40 bg-amber-500/10 text-amber-300 font-bold text-sm py-2.5"
+              className="w-full rounded-xl border border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300 font-bold text-sm py-2.5"
             >
               📊 결과리포트에서 보기
             </button>
           </div>
         )}
-        <div className="sticky bottom-0 z-10 flex justify-center p-3 bg-slate-900/90 backdrop-blur border-t border-slate-800">
-          <button onClick={backToMeasure} className="rounded-lg bg-slate-700 text-white font-bold text-sm px-6 py-2">← 다시 측정</button>
+        <div className="sticky bottom-0 z-10 flex justify-center p-3 bg-white dark:bg-slate-900/90 backdrop-blur border-t border-slate-200 dark:border-slate-800">
+          <button onClick={backToMeasure} className="rounded-lg bg-slate-200 dark:bg-slate-700 text-white font-bold text-sm px-6 py-2">← 다시 측정</button>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="fixed inset-0 z-[80] bg-slate-950" style={{ height: '100dvh' }}>
+    <div className="fixed inset-0 z-[80] bg-slate-50 dark:bg-slate-950" style={{ height: '100dvh' }}>
       {view === 'measure' && (
         <>
           {/* 점프 세부 종류(CMJ/SJ/DJ/SLJ/RSI) + 측정 방식(실시간/고속영상) + 도움말 */}
@@ -162,7 +162,7 @@ export default function JumpAnalysisHub({ member, onBack, onSave, onSaveToFireba
               {JUMP_SUBTYPE_ORDER.map((k) => (
                 <button key={k} onClick={() => setJumpSubType(k)}
                   className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-black transition-colors whitespace-nowrap ${
-                    jumpSubType === k ? 'bg-emerald-500 text-slate-950' : 'text-slate-300'}`}>
+                    jumpSubType === k ? 'bg-emerald-500 text-slate-950' : 'text-slate-600 dark:text-slate-300'}`}>
                   {JUMP_SUBTYPES[k].chipLabel}
                 </button>
               ))}
@@ -173,7 +173,7 @@ export default function JumpAnalysisHub({ member, onBack, onSave, onSaveToFireba
                 {[['left', LEG_LABEL.left], ['right', LEG_LABEL.right]].map(([k, label]) => (
                   <button key={k} onClick={() => setLeg(k)}
                     className={`rounded-full px-3 py-1 text-xs font-black transition-colors ${
-                      leg === k ? 'bg-indigo-500 text-white' : 'text-slate-300'}`}>
+                      leg === k ? 'bg-indigo-500 text-white' : 'text-slate-600 dark:text-slate-300'}`}>
                     {label}
                   </button>
                 ))}
@@ -185,7 +185,7 @@ export default function JumpAnalysisHub({ member, onBack, onSave, onSaveToFireba
                 {[['live', '🔴 실시간'], ['upload', '📁 고속영상']].map(([k, label]) => (
                   <button key={k} onClick={() => setMode(k)}
                     className={`rounded-full px-3.5 py-1 text-xs font-black transition-colors ${
-                      mode === k ? 'bg-amber-500 text-slate-950' : 'text-slate-300'}`}>
+                      mode === k ? 'bg-amber-500 text-slate-950' : 'text-slate-600 dark:text-slate-300'}`}>
                     {label}
                   </button>
                 ))}
@@ -196,7 +196,7 @@ export default function JumpAnalysisHub({ member, onBack, onSave, onSaveToFireba
               </button>
             </div>
             <p className={`pointer-events-none text-[10px] font-bold bg-black/55 backdrop-blur rounded-full px-3 py-0.5 border ${
-              jumpType === 'reactive' ? 'text-emerald-300 border-emerald-500/30' : 'text-amber-300 border-amber-500/30'}`}>
+              jumpType === 'reactive' ? 'text-emerald-700 dark:text-emerald-300 border-emerald-500/30' : 'text-amber-700 dark:text-amber-300 border-amber-500/30'}`}>
               {JUMP_SUBTYPES[jumpSubType].tip}
             </p>
           </div>
@@ -265,29 +265,29 @@ function JumpManualMeasure({ member, onBack, onComplete, onOpenGuide }) {
   };
 
   return (
-    <div className="absolute inset-0 bg-slate-950 flex flex-col">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800 mt-[max(44px,calc(env(safe-area-inset-top)+44px))]">
-        <button onClick={onBack} className="text-slate-300 font-bold text-sm">← 뒤로</button>
+    <div className="absolute inset-0 bg-slate-50 dark:bg-slate-950 flex flex-col">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-slate-800 mt-[max(44px,calc(env(safe-area-inset-top)+44px))]">
+        <button onClick={onBack} className="text-slate-600 dark:text-slate-300 font-bold text-sm">← 뒤로</button>
         <h2 className="text-white font-black">수동 입력</h2>
-        <button onClick={onOpenGuide} className="text-amber-400 text-sm font-bold">측정법 ⓘ</button>
+        <button onClick={onOpenGuide} className="text-amber-700 dark:text-amber-400 text-sm font-bold">측정법 ⓘ</button>
       </div>
 
       <div className="flex-1 overflow-y-auto p-5 space-y-4">
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 space-y-3">
           <div>
-            <label className="block text-xs font-semibold text-slate-400 uppercase tracking-widest mb-1.5">체공 시간 (초)</label>
+            <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5">체공 시간 (초)</label>
             <input type="number" inputMode="decimal" step="0.01" value={flight}
               onChange={e => setFlight(e.target.value)} placeholder="0.50"
-              className="w-full bg-slate-800 border border-slate-700 text-slate-100 rounded-lg px-3 py-2.5 text-base font-mono focus:outline-none focus:border-amber-500" />
+              className="w-full bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-lg px-3 py-2.5 text-base font-mono focus:outline-none focus:border-amber-500" />
             <p className="text-[11px] text-slate-500 mt-1.5">점프매트·앱 타이머·슬로모 프레임 수로 잰 발이 떠 있던 시간</p>
           </div>
           <div>
-            <label className="block text-xs font-semibold text-slate-400 uppercase tracking-widest mb-1.5">
+            <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5">
               체중 (kg) <span className="text-slate-600 normal-case">— 파워 계산 시</span>
             </label>
             <input type="number" inputMode="numeric" step="0.1" value={weight}
               onChange={e => setWeight(e.target.value)} placeholder="70"
-              className="w-full bg-slate-800 border border-slate-700 text-slate-100 rounded-lg px-3 py-2.5 text-base font-mono focus:outline-none focus:border-amber-500" />
+              className="w-full bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-lg px-3 py-2.5 text-base font-mono focus:outline-none focus:border-amber-500" />
           </div>
         </div>
 
@@ -315,18 +315,18 @@ function JumpGuide({ mode, jumpSubType, onClose }) {
   return (
     <div className="fixed inset-0 z-[90] bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center"
       onClick={onClose}>
-      <div className="w-full sm:max-w-md max-h-[85dvh] overflow-y-auto bg-slate-900 border-t sm:border border-slate-700 rounded-t-3xl sm:rounded-3xl p-5 space-y-4"
+      <div className="w-full sm:max-w-md max-h-[85dvh] overflow-y-auto bg-white dark:bg-slate-900 border-t sm:border border-slate-300 dark:border-slate-700 rounded-t-3xl sm:rounded-3xl p-5 space-y-4"
         onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between">
           <h3 className="text-white font-black text-lg">점프 측정 방법</h3>
-          <button onClick={onClose} className="text-slate-400 font-bold text-sm">닫기 ✕</button>
+          <button onClick={onClose} className="text-slate-500 dark:text-slate-400 font-bold text-sm">닫기 ✕</button>
         </div>
 
         {/* 5종 한눈에 — 현재 선택된 종류만 강조 */}
         <div className="grid grid-cols-5 gap-1">
           {JUMP_SUBTYPE_ORDER.map((k) => (
             <div key={k} className={`rounded-lg p-1.5 text-center border ${
-              k === jumpSubType ? 'bg-emerald-500/10 border-emerald-500/40' : 'bg-slate-800/60 border-slate-700'}`}>
+              k === jumpSubType ? 'bg-emerald-500/10 border-emerald-500/40' : 'bg-slate-100/60 dark:bg-slate-800/60 border-slate-300 dark:border-slate-700'}`}>
               <p className="text-white font-black text-[11px]">{JUMP_SUBTYPES[k].code}</p>
             </div>
           ))}
@@ -337,7 +337,7 @@ function JumpGuide({ mode, jumpSubType, onClose }) {
           {jumpSubType === 'rsi' && (
             <>
               <br /><br />
-              <span className="text-amber-300">※ 접지 시간은 ‘착지 → 다시 뜀’ 사이로 측정하므로
+              <span className="text-amber-700 dark:text-amber-300">※ 접지 시간은 ‘착지 → 다시 뜀’ 사이로 측정하므로
               <b className="text-white"> 1~2회만으로는 RSI 변동성을 볼 수 없습니다.</b> 최소 3회 이상 연속으로 뛰세요.
               그리고 <b className="text-white">기본 추천은 측면 촬영</b>입니다 — 정면·후면 영상은 접지시간 신뢰도가 낮아 측정하지 않습니다.</span>
             </>
@@ -345,7 +345,7 @@ function JumpGuide({ mode, jumpSubType, onClose }) {
           {jumpSubType === 'dj' && (
             <>
               <br /><br />
-              <span className="text-amber-300">※ 이 앱은 카메라로 박스 높이를 측정하지 못합니다 — 접지시간·RSI만 기록되고
+              <span className="text-amber-700 dark:text-amber-300">※ 이 앱은 카메라로 박스 높이를 측정하지 못합니다 — 접지시간·RSI만 기록되고
               박스 높이 자체는 참고용으로만 별도 메모하세요. <b className="text-white">기본 추천은 측면 촬영</b>이며,
               착지 순간부터 재도약까지 <b className="text-white">한 세트(2회 접지구간)</b>만 있으면 측정됩니다.</span>
             </>
@@ -354,8 +354,8 @@ function JumpGuide({ mode, jumpSubType, onClose }) {
 
         {isReactive && (
           <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-3">
-            <p className="text-emerald-300 text-xs font-bold mb-1">⏱ 접지시간 정확도</p>
-            <p className="text-slate-300 text-[11px] leading-relaxed">
+            <p className="text-emerald-700 dark:text-emerald-300 text-xs font-bold mb-1">⏱ 접지시간 정확도</p>
+            <p className="text-slate-600 dark:text-slate-300 text-[11px] leading-relaxed">
               접지 시간은 보통 0.15~0.25초로 매우 짧습니다. 일반 카메라(30fps)는 한 프레임이
               0.033초라 오차가 큽니다. <b className="text-white">240fps 고속영상(슬로우 모션)</b>으로
               찍어 ‘고속영상’ 탭에 올리면 가장 정확합니다. 실시간으로 측정하면 정확도 경고가
@@ -386,8 +386,8 @@ function JumpGuide({ mode, jumpSubType, onClose }) {
         </GuideSection>
 
         <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3">
-          <p className="text-amber-300 text-xs font-bold mb-1">💡 정확도 팁</p>
-          <p className="text-slate-300 text-[11px] leading-relaxed">{meta.tip}</p>
+          <p className="text-amber-700 dark:text-amber-300 text-xs font-bold mb-1">💡 정확도 팁</p>
+          <p className="text-slate-600 dark:text-slate-300 text-[11px] leading-relaxed">{meta.tip}</p>
         </div>
       </div>
     </div>
@@ -396,9 +396,9 @@ function JumpGuide({ mode, jumpSubType, onClose }) {
 
 function GuideSection({ title, emoji, highlight, children }) {
   return (
-    <div className={`rounded-xl p-3 ${highlight ? 'bg-emerald-500/10 border border-emerald-500/25' : 'bg-slate-800/60'}`}>
+    <div className={`rounded-xl p-3 ${highlight ? 'bg-emerald-500/10 border border-emerald-500/25' : 'bg-slate-100/60 dark:bg-slate-800/60'}`}>
       <p className="text-white font-bold text-sm mb-1">{emoji} {title}</p>
-      <p className="text-slate-300 text-[11px] leading-relaxed">{children}</p>
+      <p className="text-slate-600 dark:text-slate-300 text-[11px] leading-relaxed">{children}</p>
     </div>
   );
 }

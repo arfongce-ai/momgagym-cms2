@@ -378,23 +378,23 @@ export default function StanceLiveAnalysis({ member, stanceLeg, eyesClosed, onBa
   const topBar = (
     <>
       <p className="text-sm font-black text-white">
-        {legLabel} 지지 <span className={eyesClosed ? 'text-violet-300' : 'text-cyan-300'}>· {eyesClosed ? '눈감고' : '눈뜨고'}</span>
+        {legLabel} 지지 <span className={eyesClosed ? 'text-violet-700 dark:text-violet-300' : 'text-cyan-700 dark:text-cyan-300'}>· {eyesClosed ? '눈감고' : '눈뜨고'}</span>
       </p>
-      {uiPhase === 'calibrating' && <p className="text-xs font-bold text-amber-300">자세 보정 중… {Math.round(calibProgress * 100)}%</p>}
-      {uiPhase === 'low_visibility' && <p className="text-xs font-bold text-red-300">전신이 보이도록 서 주세요</p>}
+      {uiPhase === 'calibrating' && <p className="text-xs font-bold text-amber-700 dark:text-amber-300">자세 보정 중… {Math.round(calibProgress * 100)}%</p>}
+      {uiPhase === 'low_visibility' && <p className="text-xs font-bold text-red-700 dark:text-red-300">전신이 보이도록 서 주세요</p>}
       {!started && !['calibrating', 'low_visibility', 'trial_done', 'finished'].includes(uiPhase) && (
-        <p className="text-xs font-bold text-emerald-300">준비됐어요 — 녹화 시작을 눌러주세요</p>
+        <p className="text-xs font-bold text-emerald-700 dark:text-emerald-300">준비됐어요 — 녹화 시작을 눌러주세요</p>
       )}
-      {started && uiPhase === 'ready' && <p className="text-xs font-bold text-emerald-300">반대쪽 발을 들어 시작</p>}
-      {uiPhase === 'trial_done' && <p className="text-xs font-bold text-emerald-300">{trialsFound}차 완료 — {lastTrialNote}</p>}
-      {uiPhase === 'finished' && <p className="text-xs font-bold text-emerald-300">측정 완료 — {lastTrialNote}</p>}
-      {finishing && <p className="text-xs font-bold text-amber-300">영상 정리 중…</p>}
-      {errorMsg && <p className="text-xs font-bold text-red-300">{errorMsg}</p>}
+      {started && uiPhase === 'ready' && <p className="text-xs font-bold text-emerald-700 dark:text-emerald-300">반대쪽 발을 들어 시작</p>}
+      {uiPhase === 'trial_done' && <p className="text-xs font-bold text-emerald-700 dark:text-emerald-300">{trialsFound}차 완료 — {lastTrialNote}</p>}
+      {uiPhase === 'finished' && <p className="text-xs font-bold text-emerald-700 dark:text-emerald-300">측정 완료 — {lastTrialNote}</p>}
+      {finishing && <p className="text-xs font-bold text-amber-700 dark:text-amber-300">영상 정리 중…</p>}
+      {errorMsg && <p className="text-xs font-bold text-red-700 dark:text-red-300">{errorMsg}</p>}
       {/* [2026-08-05] 예전엔 fixed top-3 right-3로 시행 배지를 따로 띄웠는데,
           CameraStage의 topBar가 이미 top-right에 이 텍스트들을 쌓는 중이라
           겹쳤다. topBar 스택 안에 넣으면 같은 flex-col gap-1.5가 줄 간격을
           자동으로 잡아줘서 겹치지 않는다(스쿼트 화면과 동일한 수정). */}
-      <p className="text-xs font-bold text-slate-300">시행 {trialsFound}/{SLST_LIVE_MAX_TRIALS}</p>
+      <p className="text-xs font-bold text-slate-600 dark:text-slate-300">시행 {trialsFound}/{SLST_LIVE_MAX_TRIALS}</p>
     </>
   );
 
@@ -402,14 +402,14 @@ export default function StanceLiveAnalysis({ member, stanceLeg, eyesClosed, onBa
     <>
       {!started && !['trial_done', 'finished'].includes(uiPhase) && (
         <button onClick={startMeasurement} disabled={status !== 'running'}
-          className="h-20 w-20 rounded-full border-4 border-white bg-red-500 text-xs font-black text-white shadow-lg disabled:bg-slate-600 disabled:text-slate-300 active:scale-95">
+          className="h-20 w-20 rounded-full border-4 border-white bg-red-500 text-xs font-black text-white shadow-lg disabled:bg-slate-300 dark:disabled:bg-slate-600 disabled:text-slate-600 dark:disabled:text-slate-300 active:scale-95">
           녹화<br />시작
         </button>
       )}
       {uiPhase === 'holding' && (
         <>
           <button onClick={markBalanceLoss}
-            className="rounded-full bg-red-500/20 border border-red-500/40 text-red-300 font-black text-xs px-4 py-2.5 active:scale-95">
+            className="rounded-full bg-red-500/20 border border-red-500/40 text-red-700 dark:text-red-300 font-black text-xs px-4 py-2.5 active:scale-95">
             ⚠ 균형 상실
           </button>
           <button onClick={stopCurrentHold}
@@ -420,7 +420,7 @@ export default function StanceLiveAnalysis({ member, stanceLeg, eyesClosed, onBa
       )}
       {uiPhase === 'trial_done' && !finishing && (
         <button onClick={finishAndSubmit}
-          className="rounded-full bg-slate-700 text-white font-bold text-xs px-4 py-2.5 active:scale-95">
+          className="rounded-full bg-slate-200 dark:bg-slate-700 text-white font-bold text-xs px-4 py-2.5 active:scale-95">
           1차만으로 측정 마치기
         </button>
       )}
@@ -431,7 +431,7 @@ export default function StanceLiveAnalysis({ member, stanceLeg, eyesClosed, onBa
         </button>
       )}
       {finishing && (
-        <div className="flex items-center gap-2 text-xs font-bold text-amber-300">
+        <div className="flex items-center gap-2 text-xs font-bold text-amber-700 dark:text-amber-300">
           <div className="w-4 h-4 border-2 border-amber-400 border-t-transparent rounded-full animate-spin" />
           저장 중…
         </div>

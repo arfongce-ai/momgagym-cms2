@@ -109,9 +109,9 @@ export default function StanceUploadAnalysis({ member, stanceLeg, eyesClosed, on
   const legLabel = LEG_KO[stanceLeg] || stanceLeg;
 
   return (
-    <div className="absolute inset-0 bg-slate-950 flex flex-col">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800">
-        <button onClick={onBack} className="text-slate-300 font-bold text-sm">← 뒤로</button>
+    <div className="absolute inset-0 bg-slate-50 dark:bg-slate-950 flex flex-col">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-slate-800">
+        <button onClick={onBack} className="text-slate-600 dark:text-slate-300 font-bold text-sm">← 뒤로</button>
         <h2 className="text-white font-black">한다리서기 · {legLabel} 지지 · {eyesClosed ? '눈감고' : '눈뜨고'}</h2>
         <div className="w-12" />
       </div>
@@ -121,7 +121,7 @@ export default function StanceUploadAnalysis({ member, stanceLeg, eyesClosed, on
           <video ref={videoRef} className="h-full w-full object-contain"
             playsInline muted controls={phase === 'ready' || phase === 'done'} />
           {phase === 'analyzing' && (
-            <div className="absolute left-3 top-3 rounded-full border border-white/15 bg-black/70 px-3 py-1 text-xs font-black text-amber-300 backdrop-blur">
+            <div className="absolute left-3 top-3 rounded-full border border-white/15 bg-black/70 px-3 py-1 text-xs font-black text-amber-700 dark:text-amber-300 backdrop-blur">
               분석 중
             </div>
           )}
@@ -134,22 +134,22 @@ export default function StanceUploadAnalysis({ member, stanceLeg, eyesClosed, on
           </label>
         )}
 
-        {fileName && phase !== 'idle' && <p className="text-xs text-slate-400 truncate max-w-md">📁 {fileName}</p>}
+        {fileName && phase !== 'idle' && <p className="text-xs text-slate-500 dark:text-slate-400 truncate max-w-md">📁 {fileName}</p>}
 
         {phase === 'ready' && (
           <div className="flex flex-col items-center gap-3 w-full max-w-md">
-            <p className="text-sm text-slate-300 text-center">
+            <p className="text-sm text-slate-600 dark:text-slate-300 text-center">
               {legLabel} 다리로 지지하고 반대쪽 발을 들어 버티는 모습을 정면에서 촬영하세요.
-              {eyesClosed && <span className="text-violet-300 font-bold"> 눈을 감고 진행합니다.</span>}
+              {eyesClosed && <span className="text-violet-700 dark:text-violet-300 font-bold"> 눈을 감고 진행합니다.</span>}
               1~2회 시도가 담긴 영상이면 자동으로 각 시행을 구분합니다.
             </p>
             <div className="w-full">
-              <p className="text-[11px] font-bold text-slate-400 mb-1.5">촬영 모드</p>
+              <p className="text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-1.5">촬영 모드</p>
               <div className="grid grid-cols-3 gap-1.5">
                 {Object.entries(CAPTURE_PRESETS).map(([k, p]) => (
                   <button key={k} onClick={() => setCapture(k)}
                     className={`rounded-lg px-2 py-2 text-xs font-bold transition-colors ${
-                      capture === k ? 'bg-amber-500 text-slate-950' : 'bg-slate-800 text-slate-300'}`}>
+                      capture === k ? 'bg-amber-500 text-slate-950' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'}`}>
                     {p.label}
                   </button>
                 ))}
@@ -159,7 +159,7 @@ export default function StanceUploadAnalysis({ member, stanceLeg, eyesClosed, on
               className="w-full rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black py-3 transition-colors">
               ▶ 분석 시작
             </button>
-            <label className="text-xs text-slate-400 underline cursor-pointer">
+            <label className="text-xs text-slate-500 dark:text-slate-400 underline cursor-pointer">
               다른 영상 선택
               <input type="file" accept="video/*" onChange={handleFile} className="hidden" />
             </label>
@@ -168,20 +168,20 @@ export default function StanceUploadAnalysis({ member, stanceLeg, eyesClosed, on
 
         {phase === 'analyzing' && (
           <div className="w-full max-w-md flex flex-col items-center gap-3">
-            <div className="w-full h-3 rounded-full bg-slate-800 overflow-hidden">
+            <div className="w-full h-3 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
               <div className="h-full bg-amber-500 transition-all duration-150" style={{ width: `${pct}%` }} />
             </div>
-            <p className="text-sm font-bold text-amber-400">{pct}% 분석 중…</p>
-            <button onClick={cancelAnalysis} className="text-xs text-slate-400 underline">취소</button>
+            <p className="text-sm font-bold text-amber-700 dark:text-amber-400">{pct}% 분석 중…</p>
+            <button onClick={cancelAnalysis} className="text-xs text-slate-500 dark:text-slate-400 underline">취소</button>
           </div>
         )}
 
-        {phase === 'done' && <p className="text-sm font-bold text-emerald-400">✓ {legLabel} 다리 분석 완료</p>}
+        {phase === 'done' && <p className="text-sm font-bold text-emerald-700 dark:text-emerald-400">✓ {legLabel} 다리 분석 완료</p>}
 
         {(phase === 'error' || errorMsg) && (
           <div className="flex flex-col items-center gap-2">
-            <p className="text-sm text-red-400 text-center max-w-md">{errorMsg}</p>
-            <label className="text-xs text-amber-400 underline cursor-pointer">
+            <p className="text-sm text-red-700 dark:text-red-400 text-center max-w-md">{errorMsg}</p>
+            <label className="text-xs text-amber-700 dark:text-amber-400 underline cursor-pointer">
               다시 시도
               <input type="file" accept="video/*" onChange={handleFile} className="hidden" />
             </label>

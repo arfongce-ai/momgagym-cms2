@@ -198,9 +198,9 @@ export default function GaitReportDashboard({ report, onComment, onClose, videoB
                     name={b.name} value={b.value} unit={b.range.unit}
                     range={b.range} max={b.max} />
                 ))}
-                <div className="mt-1 rounded-lg bg-slate-800/70 px-3 py-2">
+                <div className="mt-1 rounded-lg bg-slate-100/70 dark:bg-slate-800/70 px-3 py-2">
                   <div className="flex justify-between text-[11px]">
-                    <span className="text-slate-400">몸통 전방 기울기</span>
+                    <span className="text-slate-500 dark:text-slate-400">몸통 전방 기울기</span>
                     <span style={{ color: statusColor(m.trunkLean?.avg, RANGES.trunkLean) }} className="font-black">
                       {m.trunkLean?.avg ?? '—'}° · {statusText(m.trunkLean?.avg, RANGES.trunkLean)}
                     </span>
@@ -217,9 +217,9 @@ export default function GaitReportDashboard({ report, onComment, onClose, videoB
               <div className="flex flex-col items-center justify-center h-full py-2">
                 <div className="text-4xl font-black"
                   style={{ color: statusColor(m.strideToHeight, RANGES.stride) }}>
-                  {m.strideToHeight ?? '—'}<span className="text-base text-slate-400 ml-1">×</span>
+                  {m.strideToHeight ?? '—'}<span className="text-base text-slate-500 dark:text-slate-400 ml-1">×</span>
                 </div>
-                <p className="text-[11px] text-slate-400 mt-1">보폭 / 신장 비율</p>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">보폭 / 신장 비율</p>
                 <p className="text-[10px] mt-0.5"
                   style={{ color: statusColor(m.strideToHeight, RANGES.stride) }}>
                   정상 {RANGES.stride.good[0]}~{RANGES.stride.good[1]}× · {statusText(m.strideToHeight, RANGES.stride)}
@@ -233,7 +233,7 @@ export default function GaitReportDashboard({ report, onComment, onClose, videoB
                   value={comment}
                   onChange={(e) => setComment(e.target.value)}
                   placeholder="자세 교정 포인트, 다음 측정까지의 과제 등을 적어주세요."
-                  className="flex-1 w-full resize-none rounded-lg bg-slate-800 border border-slate-700 text-slate-100 text-xs p-2.5 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-500/60"
+                  className="flex-1 w-full resize-none rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-100 text-xs p-2.5 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-500/60"
                 />
                 <div className="flex items-center justify-between">
                   {typeof onComment !== 'function' && (
@@ -271,9 +271,9 @@ const tooltipStyle = {
 
 function Panel({ title, subtitle, children }) {
   return (
-    <div className="rounded-xl bg-slate-800/40 ring-1 ring-slate-700/50 flex flex-col min-h-0 overflow-hidden">
+    <div className="rounded-xl bg-slate-100/40 dark:bg-slate-800/40 ring-1 ring-slate-700/50 flex flex-col min-h-0 overflow-hidden">
       <div className="px-3 pt-2 pb-1 flex items-baseline justify-between">
-        <h3 className="text-xs font-black text-slate-200">{title}</h3>
+        <h3 className="text-xs font-black text-slate-700 dark:text-slate-200">{title}</h3>
         <span className="text-[9px] font-bold tracking-wider text-slate-500 uppercase">{subtitle}</span>
       </div>
       <div className="flex-1 min-h-0">{children}</div>
@@ -286,7 +286,7 @@ function ScoreStat({ score }) {
   return (
     <div className="rounded-xl px-3 py-2.5 flex flex-col items-center justify-center border-2"
       style={{ background: 'rgba(15,23,42,0.7)', borderColor: color }}>
-      <p className="text-[10px] text-slate-400 font-bold">종합 점수</p>
+      <p className="text-[10px] text-slate-500 dark:text-slate-400 font-bold">종합 점수</p>
       <p className="text-3xl font-black leading-none mt-0.5" style={{ color }}>{score}</p>
       <p className="text-[9px] text-slate-500 mt-0.5">/ 100</p>
     </div>
@@ -303,12 +303,12 @@ function GaugeRow({ name, value, unit, range, max }) {
   return (
     <div>
       <div className="flex justify-between items-baseline mb-1">
-        <span className="text-[11px] font-bold text-slate-300">{name}</span>
+        <span className="text-[11px] font-bold text-slate-600 dark:text-slate-300">{name}</span>
         <span className="text-[11px] font-black tabular-nums" style={{ color }}>
           {v ?? '—'}{v != null ? unit : ''} · {statusText(v, range)}
         </span>
       </div>
-      <div className="relative h-2.5 rounded-full bg-slate-700/70 overflow-hidden">
+      <div className="relative h-2.5 rounded-full bg-slate-200/70 dark:bg-slate-700/70 overflow-hidden">
         {/* 정상범위 밴드 */}
         <div className="absolute top-0 h-full bg-emerald-500/25"
           style={{ left: `${goodL}%`, width: `${goodW}%` }} />

@@ -142,20 +142,20 @@ export default function RomVideoAngle({ member, onBack, onCollect }) {
       </div>
 
       {!videoUrl ? (
-        <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4 space-y-3">
-          <p className="text-sm font-bold text-slate-200">스포츠 수행 영상을 올려 각도를 확인합니다</p>
-          <p className="text-[12px] leading-relaxed text-slate-400">
+        <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 space-y-3">
+          <p className="text-sm font-bold text-slate-700 dark:text-slate-200">스포츠 수행 영상을 올려 각도를 확인합니다</p>
+          <p className="text-[12px] leading-relaxed text-slate-500 dark:text-slate-400">
             달리기·역도·점프 등 동작 영상에서 원하는 순간을 세운 뒤, 그 장면의 관절·분절
-            각도를 직접 측정합니다. <span className="text-amber-300">특정 관절 자동 ROM 측정이 아닙니다.</span>
+            각도를 직접 측정합니다. <span className="text-amber-700 dark:text-amber-300">특정 관절 자동 ROM 측정이 아닙니다.</span>
           </p>
           <label className="block">
-            <span className="text-xs font-bold text-slate-400">영상 파일 선택</span>
+            <span className="text-xs font-bold text-slate-500 dark:text-slate-400">영상 파일 선택</span>
             <input type="file" accept="video/*" onChange={onFile}
-              className="mt-1 block w-full text-sm text-slate-300 file:mr-3 file:rounded-lg file:border-0 file:bg-amber-500 file:px-3 file:py-1.5 file:text-sm file:font-bold file:text-slate-950" />
+              className="mt-1 block w-full text-sm text-slate-600 dark:text-slate-300 file:mr-3 file:rounded-lg file:border-0 file:bg-amber-500 file:px-3 file:py-1.5 file:text-sm file:font-bold file:text-slate-950" />
           </label>
         </div>
       ) : (
-        <div className="rounded-2xl border border-slate-800 bg-slate-900 p-3 space-y-3">
+        <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3 space-y-3">
           {fileName && <p className="text-[11px] text-slate-500">파일: {fileName}</p>}
           <div className="overflow-hidden rounded-xl bg-black">
             <video
@@ -173,7 +173,7 @@ export default function RomVideoAngle({ member, onBack, onCollect }) {
           <div className="space-y-1">
             <input type="range" min={0} max={duration || 0} step={0.01} value={current}
               onChange={onSeek} className="w-full accent-amber-400" />
-            <div className="flex justify-between text-[11px] tabular-nums text-slate-400">
+            <div className="flex justify-between text-[11px] tabular-nums text-slate-500 dark:text-slate-400">
               <span>{fmtTime(current)}</span>
               <span>{fmtTime(duration)}</span>
             </div>
@@ -182,23 +182,23 @@ export default function RomVideoAngle({ member, onBack, onCollect }) {
           {/* 재생 · 프레임 이동 */}
           <div className="flex items-center gap-2">
             <button onClick={() => stepFrame(-1)}
-              className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm font-black text-slate-300">◀ 프레임</button>
+              className="rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-3 py-2 text-sm font-black text-slate-600 dark:text-slate-300">◀ 프레임</button>
             <button onClick={togglePlay}
               className="flex-1 rounded-lg bg-amber-500 px-3 py-2 text-sm font-black text-slate-950">
               {playing ? '일시정지' : '재생'}
             </button>
             <button onClick={() => stepFrame(1)}
-              className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm font-black text-slate-300">프레임 ▶</button>
+              className="rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-3 py-2 text-sm font-black text-slate-600 dark:text-slate-300">프레임 ▶</button>
           </div>
 
           {/* [4-1] 재생 속도 */}
           <div>
-            <p className="mb-1 text-xs font-bold text-slate-400">재생 속도</p>
+            <p className="mb-1 text-xs font-bold text-slate-500 dark:text-slate-400">재생 속도</p>
             <div className="flex flex-wrap gap-2">
               {SPEEDS.map((sp) => (
                 <button key={sp} onClick={() => setSpeed(sp)}
                   className={`rounded-full border px-3 py-1.5 text-xs font-black ${
-                    speed === sp ? 'border-amber-400 bg-amber-400 text-slate-950' : 'border-slate-700 bg-slate-800 text-slate-400'
+                    speed === sp ? 'border-amber-400 bg-amber-400 text-slate-950' : 'border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'
                   }`}>
                   {sp}×
                 </button>
@@ -220,15 +220,15 @@ export default function RomVideoAngle({ member, onBack, onCollect }) {
 
       {/* 측정한 장면 목록 */}
       {shots.length > 0 && (
-        <div className="rounded-2xl border border-slate-800 bg-slate-900 p-3 space-y-2">
-          <p className="text-sm font-bold text-slate-300">측정한 장면 ({shots.length})</p>
+        <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3 space-y-2">
+          <p className="text-sm font-bold text-slate-600 dark:text-slate-300">측정한 장면 ({shots.length})</p>
           <div className="grid grid-cols-2 gap-2">
             {shots.map((s, i) => (
-              <div key={i} className="relative overflow-hidden rounded-lg border border-slate-700 bg-slate-800">
+              <div key={i} className="relative overflow-hidden rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800">
                 {s.url && <img src={s.url} alt={`장면 ${i + 1}`} className="w-full" />}
                 <div className="flex items-center justify-between px-2 py-1">
-                  <span className="text-[11px] font-bold text-slate-300">{fmtTime(s.time)}</span>
-                  <span className="text-sm font-black text-amber-300">{s.angle == null ? '—' : `${s.angle}°`}</span>
+                  <span className="text-[11px] font-bold text-slate-600 dark:text-slate-300">{fmtTime(s.time)}</span>
+                  <span className="text-sm font-black text-amber-700 dark:text-amber-300">{s.angle == null ? '—' : `${s.angle}°`}</span>
                 </div>
                 <button onClick={() => removeShot(i)}
                   className="absolute right-1 top-1 rounded bg-black/60 px-1.5 py-0.5 text-[10px] font-bold text-white">삭제</button>

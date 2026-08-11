@@ -45,8 +45,8 @@ export default function SessionShareReport({ item, member }) {
         <UnifiedReportSection title="문제점 확인 중심 요약" subtitle="PROBLEM FOCUS" className="mb-4">
           <div className="space-y-2">
             {findings.slice(0, 3).map((finding, idx) => (
-              <p key={idx} className="break-keep rounded-lg border border-slate-700/60 bg-slate-900/70 px-3 py-2.5 text-[13px] font-semibold leading-relaxed text-slate-200">
-                <span className="mr-1.5 font-black text-amber-300">확인 {idx + 1}.</span>
+              <p key={idx} className="break-keep rounded-lg border border-slate-300/60 dark:border-slate-700/60 bg-white dark:bg-slate-900/70 px-3 py-2.5 text-[13px] font-semibold leading-relaxed text-slate-700 dark:text-slate-200">
+                <span className="mr-1.5 font-black text-amber-700 dark:text-amber-300">확인 {idx + 1}.</span>
                 {finding.text}
               </p>
             ))}
@@ -58,9 +58,9 @@ export default function SessionShareReport({ item, member }) {
         <UnifiedReportSection title="측정 값" subtitle="핵심 지표" className="mb-4">
           <div className="grid grid-cols-2 gap-2">
             {tiles.map((t, i) => (
-              <div key={i} className={`rounded-xl border p-3 ${t.accent ? 'border-amber-500/35 bg-amber-500/10' : 'border-slate-700 bg-slate-800/60'}`}>
-                <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">{t.label}</p>
-                <p className={`mt-2 font-mono text-2xl font-black leading-none ${t.accent ? 'text-amber-300' : 'text-slate-100'}`}>
+              <div key={i} className={`rounded-xl border p-3 ${t.accent ? 'border-amber-500/35 bg-amber-500/10' : 'border-slate-300 dark:border-slate-700 bg-slate-100/60 dark:bg-slate-800/60'}`}>
+                <p className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">{t.label}</p>
+                <p className={`mt-2 font-mono text-2xl font-black leading-none ${t.accent ? 'text-amber-700 dark:text-amber-300' : 'text-slate-800 dark:text-slate-100'}`}>
                   {t.value}
                   {t.unit && <span className="ml-1 text-xs font-bold text-slate-500">{t.unit}</span>}
                 </p>
@@ -82,13 +82,13 @@ export default function SessionShareReport({ item, member }) {
         <UnifiedReportSection title="다음 확인" subtitle="권장 사항">
           <div className="space-y-1.5">
             {recommendations.map((text, idx) => (
-              <p key={idx} className="break-keep text-[13px] font-semibold leading-relaxed text-slate-300">· {text}</p>
+              <p key={idx} className="break-keep text-[13px] font-semibold leading-relaxed text-slate-600 dark:text-slate-300">· {text}</p>
             ))}
           </div>
         </UnifiedReportSection>
       )}
 
-      <p className="mt-6 border-t border-slate-800 pt-3 text-[10px] font-bold text-slate-600">
+      <p className="mt-6 border-t border-slate-200 dark:border-slate-800 pt-3 text-[10px] font-bold text-slate-600">
         몸가짐운동센터 · AI 측정 결과 리포트 · 같은 조건으로 반복 측정했을 때 추세 비교에 가장 의미가 있습니다.
       </p>
       </UnifiedReportPage>

@@ -19,7 +19,7 @@ import { useKioskMode } from './hooks/useKioskMode';
 function RequireAuth({ children, adminOnly = false }) {
   const { user, loading, dataReady, dataError, retryData } = useAuth();
   if (loading) return (
-    <div className="flex items-center justify-center h-screen bg-slate-950">
+    <div className="flex items-center justify-center h-screen bg-slate-50 dark:bg-slate-950">
       <div className="w-8 h-8 border-2 border-amber-500 border-t-transparent rounded-full animate-spin" />
     </div>
   );
@@ -27,10 +27,10 @@ function RequireAuth({ children, adminOnly = false }) {
 
   // 로그인은 됐으나 데이터 로딩이 실패한 경우 — 원인 표시 + 재시도
   if (dataError) return (
-    <div className="flex items-center justify-center h-screen bg-slate-950 p-6">
+    <div className="flex items-center justify-center h-screen bg-slate-50 dark:bg-slate-950 p-6">
       <div className="text-center max-w-sm">
-        <div className="text-red-400 font-bold text-lg mb-2">데이터를 불러오지 못했어요</div>
-        <div className="text-slate-400 text-sm mb-3">로그인은 되었지만 데이터 읽기에 실패했습니다.</div>
+        <div className="text-red-600 dark:text-red-400 font-bold text-lg mb-2">데이터를 불러오지 못했어요</div>
+        <div className="text-slate-500 dark:text-slate-400 text-sm mb-3">로그인은 되었지만 데이터 읽기에 실패했습니다.</div>
         <div className="text-red-300 text-xs bg-red-950/40 border border-red-900 rounded-lg p-3 mb-4 font-mono break-all text-left">{dataError}</div>
         <button onClick={retryData} className="px-4 py-2 rounded-lg bg-amber-500 text-slate-950 font-bold">다시 시도</button>
       </div>
@@ -39,10 +39,10 @@ function RequireAuth({ children, adminOnly = false }) {
 
   // 로그인됐고 아직 데이터 로딩 중
   if (!dataReady) return (
-    <div className="flex items-center justify-center h-screen bg-slate-950">
+    <div className="flex items-center justify-center h-screen bg-slate-50 dark:bg-slate-950">
       <div className="text-center">
         <div className="w-8 h-8 border-2 border-amber-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-        <div className="text-slate-400 text-sm">데이터를 불러오는 중…</div>
+        <div className="text-slate-500 dark:text-slate-400 text-sm">데이터를 불러오는 중…</div>
       </div>
     </div>
   );

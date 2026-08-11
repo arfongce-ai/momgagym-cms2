@@ -16,7 +16,7 @@ export default function SkeletonToggleChip({ className = '' }) {
       className={`shrink-0 rounded-full border px-3 py-1.5 text-xs font-bold backdrop-blur transition active:scale-95
         ${on
           ? 'bg-emerald-500/25 border-emerald-400/60 text-emerald-200'
-          : 'bg-black/55 border-white/25 text-slate-300'} ${className}`}
+          : 'bg-black/55 border-white/25 text-slate-600 dark:text-slate-300'} ${className}`}
     >
       🦴 스켈레톤 {on ? 'ON' : 'OFF'}
     </button>

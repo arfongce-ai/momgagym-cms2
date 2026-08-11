@@ -275,18 +275,18 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
   // ── 신체정보 선등록 게이트(미등록·키 없음) — 점프&RSI 패턴 ──
   if (needBody) {
     return (
-      <div className="fixed inset-0 z-[80] bg-slate-950 flex flex-col" style={{ height: '100dvh' }}>
-        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800">
-          <button onClick={onBack} className="text-slate-300 font-bold text-sm">← 뒤로</button>
+      <div className="fixed inset-0 z-[80] bg-slate-50 dark:bg-slate-950 flex flex-col" style={{ height: '100dvh' }}>
+        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-slate-800">
+          <button onClick={onBack} className="text-slate-600 dark:text-slate-300 font-bold text-sm">← 뒤로</button>
           <h2 className="text-white font-black">바벨 리프팅</h2>
           <div className="w-12" />
         </div>
         <div className="flex-1 flex items-center justify-center p-6">
-          <div className="w-full max-w-sm bg-slate-900 border border-amber-500/30 rounded-2xl p-5 space-y-4">
+          <div className="w-full max-w-sm bg-white dark:bg-slate-900 border border-amber-500/30 rounded-2xl p-5 space-y-4">
             <div className="text-center space-y-1">
               <p className="text-3xl">📏</p>
               <p className="text-white font-black">키와 몸무게를 입력하세요</p>
-              <p className="text-slate-400 text-xs">바벨 cm 환산·속도·파워 계산에 사용됩니다. 입력 후 바로 측정으로 들어갑니다.</p>
+              <p className="text-slate-500 dark:text-slate-400 text-xs">바벨 cm 환산·속도·파워 계산에 사용됩니다. 입력 후 바로 측정으로 들어갑니다.</p>
             </div>
             <div className="grid grid-cols-2 gap-2">
               <label className="block">
@@ -294,8 +294,8 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
                 <div className="flex items-center gap-2">
                   <input type="number" inputMode="numeric" value={heightInput}
                     onChange={e => setHeightInput(e.target.value)} placeholder="170"
-                    className="min-w-0 flex-1 bg-slate-800 border border-slate-700 text-slate-100 rounded-lg px-3 py-2.5 text-sm font-mono focus:outline-none focus:border-amber-500" />
-                  <span className="text-slate-400 text-xs font-bold">cm</span>
+                    className="min-w-0 flex-1 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-lg px-3 py-2.5 text-sm font-mono focus:outline-none focus:border-amber-500" />
+                  <span className="text-slate-500 dark:text-slate-400 text-xs font-bold">cm</span>
                 </div>
               </label>
               <label className="block">
@@ -303,8 +303,8 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
                 <div className="flex items-center gap-2">
                   <input type="number" inputMode="decimal" value={weightInput}
                     onChange={e => setWeightInput(e.target.value)} placeholder="70"
-                    className="min-w-0 flex-1 bg-slate-800 border border-slate-700 text-slate-100 rounded-lg px-3 py-2.5 text-sm font-mono focus:outline-none focus:border-amber-500" />
-                  <span className="text-slate-400 text-xs font-bold">kg</span>
+                    className="min-w-0 flex-1 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-lg px-3 py-2.5 text-sm font-mono focus:outline-none focus:border-amber-500" />
+                  <span className="text-slate-500 dark:text-slate-400 text-xs font-bold">kg</span>
                 </div>
               </label>
             </div>
@@ -312,7 +312,7 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
               className="w-full h-13 rounded-2xl bg-gradient-to-r from-amber-400 to-orange-500 text-slate-950 font-black py-3.5 active:scale-[0.98] shadow-xl shadow-amber-500/25">
               입력하고 시작하기 →
             </button>
-            {bodyError && <p className="text-center text-xs text-red-400">{bodyError}</p>}
+            {bodyError && <p className="text-center text-xs text-red-700 dark:text-red-400">{bodyError}</p>}
           </div>
         </div>
       </div>
@@ -331,7 +331,7 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
     if (metadata.weight != null) rows.push({ label: '중량', value: `${metadata.weight}kg` });
     if (metadata.reps != null) rows.push({ label: '반복', value: `${metadata.reps}회` });
     return (
-      <div className="fixed inset-0 z-[80] bg-slate-950 overflow-y-auto" style={{ height: '100dvh' }}>
+      <div className="fixed inset-0 z-[80] bg-slate-50 dark:bg-slate-950 overflow-y-auto" style={{ height: '100dvh' }}>
         <div className="max-w-md mx-auto p-4">
           <MeasureRecordConfirm
             title="바벨 리프팅"
@@ -351,20 +351,20 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
   // ── 측정 완료 리포트 ──
   if (report) {
     return (
-      <div className="fixed inset-0 z-[80] bg-slate-950 overflow-y-auto" style={{ height: '100dvh' }}>
+      <div className="fixed inset-0 z-[80] bg-slate-50 dark:bg-slate-950 overflow-y-auto" style={{ height: '100dvh' }}>
         <LiftingReportDashboard report={report} onClose={onBack} member={member} />
         {/* [리포트 통합 2026-08-09] GaitAnalysisHub.jsx/JumpAnalysisHub.jsx와 동일 패턴. */}
         {!member?.isVirtual && typeof onViewInReport === 'function' && (
           <div className="mx-auto w-full max-w-[794px] px-4 pb-3">
             <button
               onClick={onViewInReport}
-              className="w-full rounded-xl border border-amber-500/40 bg-amber-500/10 text-amber-300 font-bold text-sm py-2.5"
+              className="w-full rounded-xl border border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300 font-bold text-sm py-2.5"
             >
               📊 결과리포트에서 보기
             </button>
           </div>
         )}
-        <div className="sticky bottom-0 z-10 flex justify-center p-3 bg-slate-900/90 backdrop-blur border-t border-slate-800">
+        <div className="sticky bottom-0 z-10 flex justify-center p-3 bg-white dark:bg-slate-900/90 backdrop-blur border-t border-slate-200 dark:border-slate-800">
           <button onClick={() => { setReport(null); setPending(null); setView('landing'); }} className="rounded-2xl bg-gradient-to-r from-amber-400 to-orange-500 text-slate-950 font-black text-sm px-8 py-2.5 active:scale-95">← 다시 측정</button>
         </div>
       </div>
@@ -372,7 +372,7 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
   }
 
   return (
-    <div className="fixed inset-0 z-[80] bg-slate-950" style={{ height: '100dvh' }}>
+    <div className="fixed inset-0 z-[80] bg-slate-50 dark:bg-slate-950" style={{ height: '100dvh' }}>
       {/* ── 상단 모드·종목 선택기(오버레이) ── */}
       <div ref={hubBarRef} className="absolute top-[max(8px,calc(env(safe-area-inset-top)+8px))] inset-x-0 z-[86] flex flex-col items-center gap-1.5 px-3 pointer-events-none">
         {/* 모드 선택 */}
@@ -380,7 +380,7 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
           {MODES.map(([k, label]) => (
             <button key={k} onClick={() => switchMode(k)}
               className={`rounded-full px-3.5 py-1 text-xs font-black transition-colors ${
-                mode === k ? 'bg-amber-500 text-slate-950' : 'text-slate-300'}`}>
+                mode === k ? 'bg-amber-500 text-slate-950' : 'text-slate-600 dark:text-slate-300'}`}>
               {label}
             </button>
           ))}
@@ -391,7 +391,7 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
             {modeExercises.map(e => (
               <button key={e.key} onClick={() => selectExercise(e.key)}
                 className={`shrink-0 whitespace-nowrap rounded-full px-2.5 py-1 text-[10px] font-black transition-colors ${
-                exerciseType === e.key ? 'bg-emerald-500 text-slate-950' : 'text-slate-300'}`}>
+                exerciseType === e.key ? 'bg-emerald-500 text-slate-950' : 'text-slate-600 dark:text-slate-300'}`}>
                 {e.label}
               </button>
             ))}
@@ -407,13 +407,13 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
             {[['live', '🔴 실시간'], ['upload', '📁 고속영상']].map(([k, label]) => (
               <button key={k} onClick={() => setCaptureMode(k)}
                 className={`rounded-full px-3 py-1 text-[11px] font-black transition-colors ${
-                  captureMode === k ? 'bg-amber-500 text-slate-950' : 'text-slate-300'}`}>
+                  captureMode === k ? 'bg-amber-500 text-slate-950' : 'text-slate-600 dark:text-slate-300'}`}>
                 {label}
               </button>
             ))}
           </div>
         )}
-        <p className="pointer-events-none text-[10px] font-bold text-amber-300 bg-black/55 backdrop-blur rounded-full px-3 py-0.5 border border-amber-500/30">
+        <p className="pointer-events-none text-[10px] font-bold text-amber-700 dark:text-amber-300 bg-black/55 backdrop-blur rounded-full px-3 py-0.5 border border-amber-500/30">
           {mode === 'onerm'
             ? '1RM 실시간 카메라 · 반복 자동 인식 · 스쿼트/데드리프트/벤치프레스'
             : '측면 촬영 권장 · 반복 자동 인식 · 고속영상(120/240fps)이면 최고속도까지 산출'}
@@ -447,18 +447,18 @@ function LiftingGuide({ mode, onClose }) {
   return (
     <div className="fixed inset-0 z-[90] bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center"
       onClick={onClose}>
-      <div className="w-full sm:max-w-md max-h-[85dvh] overflow-y-auto bg-slate-900 border-t sm:border border-slate-700 rounded-t-3xl sm:rounded-3xl p-5 space-y-4"
+      <div className="w-full sm:max-w-md max-h-[85dvh] overflow-y-auto bg-white dark:bg-slate-900 border-t sm:border border-slate-300 dark:border-slate-700 rounded-t-3xl sm:rounded-3xl p-5 space-y-4"
         onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between">
           <h3 className="text-white font-black text-lg">바벨 리프팅 측정 방법</h3>
-          <button onClick={onClose} className="text-slate-400 font-bold text-sm">닫기 ✕</button>
+          <button onClick={onClose} className="text-slate-500 dark:text-slate-400 font-bold text-sm">닫기 ✕</button>
         </div>
 
         <div className="grid grid-cols-3 gap-2">
           {[['vbt', '⚡ VBT', '속도 기반 존 판정'], ['onerm', '💪 1RM', '실시간 카메라']].map(([k, t, d]) => (
-            <div key={k} className={`rounded-xl p-2.5 border ${mode === k ? 'bg-amber-500/10 border-amber-500/40' : 'bg-slate-800/60 border-slate-700'}`}>
+            <div key={k} className={`rounded-xl p-2.5 border ${mode === k ? 'bg-amber-500/10 border-amber-500/40' : 'bg-slate-100/60 dark:bg-slate-800/60 border-slate-300 dark:border-slate-700'}`}>
               <p className="text-white font-bold text-[11px] mb-0.5">{t}</p>
-              <p className="text-slate-300 text-[10px] leading-snug">{d}</p>
+              <p className="text-slate-600 dark:text-slate-300 text-[10px] leading-snug">{d}</p>
             </div>
           ))}
         </div>
@@ -479,8 +479,8 @@ function LiftingGuide({ mode, onClose }) {
               키를 입력하면 화면비율→cm 환산과 속도 정확도가 올라갑니다(신장 기준 정규화).
             </GuideSection>
             <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-3">
-              <p className="text-emerald-300 text-xs font-bold mb-1">⏱ 고속영상과 최고속도</p>
-              <p className="text-slate-300 text-[11px] leading-relaxed">
+              <p className="text-emerald-700 dark:text-emerald-300 text-xs font-bold mb-1">⏱ 고속영상과 최고속도</p>
+              <p className="text-slate-600 dark:text-slate-300 text-[11px] leading-relaxed">
                 실시간(보통 30fps)에서는 <b className="text-white">평균속도</b>만 신뢰할 수 있습니다.
                 순간 <b className="text-white">최고속도(peak)는 120/240fps 고속영상</b>에서만 산출되며,
                 그 외에는 정확도를 위해 표시하지 않습니다(근거기반 정직성).
@@ -491,7 +491,7 @@ function LiftingGuide({ mode, onClose }) {
 
         <p className="text-[11px] text-slate-500 leading-relaxed">
           ※ 카메라 한 대 추정은 전용 엔코더/포스플레이트보다 정밀하진 않으며, 동일 조건에서의
-          <b className="text-slate-300"> 추세 파악</b>에 적합합니다. 신뢰도 점수가 낮게 표시되면
+          <b className="text-slate-600 dark:text-slate-300"> 추세 파악</b>에 적합합니다. 신뢰도 점수가 낮게 표시되면
           조명·각도·키 입력·촬영 방향을 점검하세요.
         </p>
       </div>
@@ -501,9 +501,9 @@ function LiftingGuide({ mode, onClose }) {
 
 function GuideSection({ title, emoji, highlight, children }) {
   return (
-    <div className={`rounded-xl p-3 ${highlight ? 'bg-amber-500/10 border border-amber-500/25' : 'bg-slate-800/60'}`}>
+    <div className={`rounded-xl p-3 ${highlight ? 'bg-amber-500/10 border border-amber-500/25' : 'bg-slate-100/60 dark:bg-slate-800/60'}`}>
       <p className="text-white font-bold text-sm mb-1">{emoji} {title}</p>
-      <p className="text-slate-300 text-[11px] leading-relaxed">{children}</p>
+      <p className="text-slate-600 dark:text-slate-300 text-[11px] leading-relaxed">{children}</p>
     </div>
   );
 }

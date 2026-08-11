@@ -17,7 +17,7 @@ function StatCard({ label, value, align = 'left', tone = 'text-white' }) {
   return (
     <div className={`rounded-xl bg-black/45 backdrop-blur px-3 py-2 ${align === 'right' ? 'text-right' : 'text-left'}`}>
       <p className={`font-mono font-black text-xl leading-none ${tone}`}>{value ?? '—'}</p>
-      <p className="text-[10px] font-bold text-slate-300/80 mt-0.5 tracking-wider">{label}</p>
+      <p className="text-[10px] font-bold text-slate-600 dark:text-slate-300/80 mt-0.5 tracking-wider">{label}</p>
     </div>
   );
 }
@@ -37,8 +37,8 @@ export default function VelocityGaugeHud({ avg = null, reps = 0, best = null, ro
   const frac = hasV ? Math.min(1, v / GAUGE_MAX_MS) : 0;
   const dash = `${CIRC * frac} ${CIRC}`;
   const lossTone = lossPct == null ? 'text-white'
-    : lossPct > 20 ? 'text-red-300'
-    : lossPct > 10 ? 'text-amber-300' : 'text-emerald-300';
+    : lossPct > 20 ? 'text-red-700 dark:text-red-300'
+    : lossPct > 10 ? 'text-amber-700 dark:text-amber-300' : 'text-emerald-700 dark:text-emerald-300';
 
   return (
     <div className="relative mx-auto w-full max-w-sm select-none pointer-events-none" style={{ height: 200 }}>
@@ -63,12 +63,12 @@ export default function VelocityGaugeHud({ avg = null, reps = 0, best = null, ro
           />
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <p className="text-[13px] font-bold text-slate-100/90 leading-none">Avg</p>
+          <p className="text-[13px] font-bold text-slate-800 dark:text-slate-100/90 leading-none">Avg</p>
           <p className="font-mono font-black text-white leading-none mt-1" style={{ fontSize: 44 }}>
             {hasV ? v.toFixed(2) : '—'}
           </p>
-          <p className="text-[13px] font-bold text-slate-100/90 leading-none mt-1">m/s</p>
-          {zoneLabel && <p className="text-[10px] font-black text-cyan-300 mt-1">{zoneLabel}</p>}
+          <p className="text-[13px] font-bold text-slate-800 dark:text-slate-100/90 leading-none mt-1">m/s</p>
+          {zoneLabel && <p className="text-[10px] font-black text-cyan-700 dark:text-cyan-300 mt-1">{zoneLabel}</p>}
         </div>
       </div>
     </div>

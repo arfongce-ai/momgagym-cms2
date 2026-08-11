@@ -23,7 +23,7 @@ const GRADE_TONE = {
   good: 'text-emerald-200 bg-emerald-500/10 border-emerald-500/30',
   attention: 'text-amber-200 bg-amber-500/10 border-amber-500/30',
   focus: 'text-red-200 bg-red-500/10 border-red-500/30',
-  insufficient: 'text-slate-300 bg-slate-800/60 border-slate-700',
+  insufficient: 'text-slate-600 dark:text-slate-300 bg-slate-100/60 dark:bg-slate-800/60 border-slate-300 dark:border-slate-700',
 };
 
 function fmt(v, unit = '°') {
@@ -83,7 +83,7 @@ export default function RomReport({ id = 'rom-report-sheet', report }) {
           <p className="text-xs font-bold text-emerald-200">
             📐 고니오메타 — 폰 밀착 기울기 센서 · 하드웨어 측정값 (신뢰도 {report.confidenceScore ?? 1.0})
           </p>
-          <p className="mt-0.5 text-[11px] text-emerald-300/70">
+          <p className="mt-0.5 text-[11px] text-emerald-700 dark:text-emerald-300/70">
             0점(시작 자세) 대비 최대 이동각. 골반·체간 보상 작용은 센서로 판별하지 않습니다.
           </p>
         </div>
@@ -106,12 +106,12 @@ export default function RomReport({ id = 'rom-report-sheet', report }) {
         <div className="mt-4 rounded-xl border border-sky-500/30 bg-sky-500/10 px-4 py-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
-              <p className="text-xs font-black uppercase tracking-[0.14em] text-sky-300">Posture x ROM</p>
-              <p className="mt-0.5 text-sm font-bold text-slate-100">자세·체형 리포트 연동 해석</p>
+              <p className="text-xs font-black uppercase tracking-[0.14em] text-sky-700 dark:text-sky-300">Posture x ROM</p>
+              <p className="mt-0.5 text-sm font-bold text-slate-800 dark:text-slate-100">자세·체형 리포트 연동 해석</p>
             </div>
             <div className="text-right">
               <p className="text-[10px] font-bold text-slate-500">통합 신뢰도</p>
-              <p className="text-lg font-black text-sky-300">
+              <p className="text-lg font-black text-sky-700 dark:text-sky-300">
                 {integrated_assessment.confidenceScore}점
                 <span className="ml-1 text-xs text-slate-500">({confidenceLabel(integrated_assessment.confidenceLevel)})</span>
               </p>
@@ -125,8 +125,8 @@ export default function RomReport({ id = 'rom-report-sheet', report }) {
           {integrated_assessment.notes?.length > 0 && (
             <ul className="mt-2 space-y-1">
               {integrated_assessment.notes.map((note, i) => (
-                <li key={i} className="flex gap-2 text-xs leading-relaxed text-slate-300">
-                  <span className="mt-0.5 text-sky-300">•</span>
+                <li key={i} className="flex gap-2 text-xs leading-relaxed text-slate-600 dark:text-slate-300">
+                  <span className="mt-0.5 text-sky-700 dark:text-sky-300">•</span>
                   <span>{note}</span>
                 </li>
               ))}
@@ -176,7 +176,7 @@ export default function RomReport({ id = 'rom-report-sheet', report }) {
       {/* 각도 시계열 차트 */}
       {chartData.length >= 3 && (
         <div className="mt-5">
-          <p className="mb-1 text-sm font-bold text-slate-300">좌/우 가동 각도 시계열 (정제·스무딩)</p>
+          <p className="mb-1 text-sm font-bold text-slate-600 dark:text-slate-300">좌/우 가동 각도 시계열 (정제·스무딩)</p>
           <div style={{ width: '100%', height: 220 }}>
             <ResponsiveContainer>
               <LineChart data={chartData} margin={{ top: 6, right: 12, bottom: 4, left: -16 }}>
@@ -196,18 +196,18 @@ export default function RomReport({ id = 'rom-report-sheet', report }) {
       {/* 스냅샷 (있으면) */}
       {snapshotUrl && (
         <div className="mt-4">
-          <p className="mb-1 text-sm font-bold text-slate-300">측정 캡처</p>
-          <img src={snapshotUrl} alt="ROM 캡처" className="rounded-lg border border-slate-700" style={{ maxHeight: 240 }} />
+          <p className="mb-1 text-sm font-bold text-slate-600 dark:text-slate-300">측정 캡처</p>
+          <img src={snapshotUrl} alt="ROM 캡처" className="rounded-lg border border-slate-300 dark:border-slate-700" style={{ maxHeight: 240 }} />
         </div>
       )}
 
       {/* AI 진단 상세 */}
       {diagnosis?.details?.length > 0 && (
         <div className="mt-5">
-          <p className="mb-2 text-sm font-bold text-slate-300">AI 자동 진단</p>
+          <p className="mb-2 text-sm font-bold text-slate-600 dark:text-slate-300">AI 자동 진단</p>
           <ul className="space-y-1.5">
             {diagnosis.details.map((d, i) => (
-              <li key={i} className="flex gap-2 text-sm text-slate-300">
+              <li key={i} className="flex gap-2 text-sm text-slate-600 dark:text-slate-300">
                 <span className="mt-0.5 text-amber-500">▸</span>
                 <span>{d}</span>
               </li>
@@ -216,7 +216,7 @@ export default function RomReport({ id = 'rom-report-sheet', report }) {
         </div>
       )}
 
-      <p className="mt-6 border-t border-slate-700 pt-2 text-[11px] leading-relaxed text-slate-400">
+      <p className="mt-6 border-t border-slate-300 dark:border-slate-700 pt-2 text-[11px] leading-relaxed text-slate-500 dark:text-slate-400">
         ※ 본 수치는 BlazePose 추정 좌표 기반 참고용입니다. 정상치는 평균 성인 임상 가동범위표를 기준으로 하며,
         개인 차·측정 환경에 따라 달라질 수 있습니다. 진단·치료 목적의 의료 판단을 대체하지 않습니다.
       </p>
@@ -242,7 +242,7 @@ function CompensationProfilePanel({ profile, poseMode }) {
   const pelvic = profile.pelvic_drop_pct;
 
   const toneOf = (v, warn, severe) =>
-    v == null ? 'text-slate-500' : v >= severe ? 'text-red-300' : v >= warn ? 'text-amber-300' : 'text-emerald-300';
+    v == null ? 'text-slate-500' : v >= severe ? 'text-red-700 dark:text-red-300' : v >= warn ? 'text-amber-700 dark:text-amber-300' : 'text-emerald-700 dark:text-emerald-300';
   const badgeOf = (v, warn, severe) =>
     v == null ? '기준선 부족' : v >= severe ? '큼' : v >= warn ? '주의' : '양호';
 
@@ -250,11 +250,11 @@ function CompensationProfilePanel({ profile, poseMode }) {
   const tiltDeg = leanSigned == null ? 0 : Math.max(-30, Math.min(30, leanSigned));
 
   return (
-    <div className="mt-4 rounded-xl border border-slate-800 bg-slate-900/70 p-3">
-      <p className="mb-2 text-sm font-bold text-slate-300">보상 패턴 (시작 자세 기준)</p>
+    <div className="mt-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/70 p-3">
+      <p className="mb-2 text-sm font-bold text-slate-600 dark:text-slate-300">보상 패턴 (시작 자세 기준)</p>
       <div className="grid grid-cols-3 gap-2">
         {/* 축 1: 체간 기울기 */}
-        <div className="rounded-lg bg-slate-800/70 p-2.5 text-center">
+        <div className="rounded-lg bg-slate-100/70 dark:bg-slate-800/70 p-2.5 text-center">
           <svg viewBox="0 0 40 40" className="mx-auto h-9 w-9">
             <line x1="20" y1="36" x2="20" y2="30" stroke="#475569" strokeWidth="2" />
             <g transform={`rotate(${tiltDeg} 20 30)`}>
@@ -263,20 +263,20 @@ function CompensationProfilePanel({ profile, poseMode }) {
             </g>
           </svg>
           <p className={`mt-1 text-lg font-black tabular-nums ${toneOf(lean, 8, 15)}`}>{lean == null ? '—' : `${lean}°`}</p>
-          <p className="text-[10px] font-bold text-slate-400">체간 기울기 · {badgeOf(lean, 8, 15)}</p>
+          <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400">체간 기울기 · {badgeOf(lean, 8, 15)}</p>
         </div>
         {/* 축 2: 회전(비틀기) */}
-        <div className="rounded-lg bg-slate-800/70 p-2.5 text-center">
+        <div className="rounded-lg bg-slate-100/70 dark:bg-slate-800/70 p-2.5 text-center">
           <svg viewBox="0 0 40 40" className="mx-auto h-9 w-9">
             <path d="M 10 20 A 10 10 0 1 1 20 30" fill="none"
               stroke={rot != null && rot >= 12 ? '#fbbf24' : '#34d399'} strokeWidth="3" strokeLinecap="round" />
             <path d="M 16 30 L 22 30 L 19 35 Z" fill={rot != null && rot >= 12 ? '#fbbf24' : '#34d399'} />
           </svg>
           <p className={`mt-1 text-lg font-black tabular-nums ${toneOf(rot, 12, 25)}`}>{rot == null ? '—' : `${rot}%`}</p>
-          <p className="text-[10px] font-bold text-slate-400">회전·비틀기 · {badgeOf(rot, 12, 25)}</p>
+          <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400">회전·비틀기 · {badgeOf(rot, 12, 25)}</p>
         </div>
         {/* 축 3: 골반 하강 (STANDING 전용) */}
-        <div className="rounded-lg bg-slate-800/70 p-2.5 text-center">
+        <div className="rounded-lg bg-slate-100/70 dark:bg-slate-800/70 p-2.5 text-center">
           {poseMode === 'STANDING' ? (
             <>
               <svg viewBox="0 0 40 40" className="mx-auto h-9 w-9">
@@ -288,7 +288,7 @@ function CompensationProfilePanel({ profile, poseMode }) {
               <p className={`mt-1 text-lg font-black tabular-nums ${toneOf(pelvic == null ? null : Math.abs(pelvic), 8, 15)}`}>
                 {pelvic == null ? '—' : `${pelvic}%`}
               </p>
-              <p className="text-[10px] font-bold text-slate-400">골반 하강 · {badgeOf(pelvic == null ? null : Math.abs(pelvic), 8, 15)}</p>
+              <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400">골반 하강 · {badgeOf(pelvic == null ? null : Math.abs(pelvic), 8, 15)}</p>
             </>
           ) : (
             <div className="flex h-full flex-col items-center justify-center py-2">

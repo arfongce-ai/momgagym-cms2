@@ -14,16 +14,16 @@ import ReportActions from '../../components/report/ReportActions';
 // [모미 신규] 오늘의 컨디션 판정 상태(normal/caution/risk) → 배지 색.
 // unifiedReport.js STATUS 와 동일한 컬러 매핑(다른 판정 모듈들과 톤 통일).
 const CONDITION_TONE = {
-  normal: 'text-emerald-400',
-  caution: 'text-amber-400',
-  risk: 'text-red-400',
+  normal: 'text-emerald-700 dark:text-emerald-400',
+  caution: 'text-amber-700 dark:text-amber-400',
+  risk: 'text-red-700 dark:text-red-400',
   unknown: 'text-slate-500',
 };
 
 const TIER_STYLE = {
-  good: 'text-emerald-400',
-  warn: 'text-amber-400',
-  bad:  'text-red-400',
+  good: 'text-emerald-700 dark:text-emerald-400',
+  warn: 'text-amber-700 dark:text-amber-400',
+  bad:  'text-red-700 dark:text-red-400',
 };
 
 export default function BodyInfoMeasure({ member, onSave, onBack, onGuestBodyInfoChange, onViewInReport }) {
@@ -149,8 +149,8 @@ export default function BodyInfoMeasure({ member, onSave, onBack, onGuestBodyInf
     }
   };
 
-  const INP = 'w-full bg-slate-800 border border-slate-700 text-slate-100 rounded-xl px-3 py-2.5 text-sm font-mono focus:outline-none focus:border-amber-500';
-  const LBL = 'block text-xs font-semibold text-slate-400 uppercase tracking-widest mb-1.5';
+  const INP = 'w-full bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-xl px-3 py-2.5 text-sm font-mono focus:outline-none focus:border-amber-500';
+  const LBL = 'block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5';
 
   return (
     <div className="space-y-4">
@@ -160,7 +160,7 @@ export default function BodyInfoMeasure({ member, onSave, onBack, onGuestBodyInf
         <span className="w-12" />
       </div>
 
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 grid grid-cols-2 gap-3">
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 grid grid-cols-2 gap-3">
         <div><label className={LBL}>키 (cm)</label><input type="number" step="0.1" value={form.height} onChange={pf('height')} placeholder="175" className={INP} /></div>
         <div><label className={LBL}>몸무게 (kg)</label><input type="number" step="0.1" value={form.weight} onChange={pf('weight')} placeholder="70" className={INP} /></div>
         <div><label className={LBL}>최고혈압</label><input type="number" value={form.systolic} onChange={pf('systolic')} placeholder="120" className={INP} /></div>
@@ -169,8 +169,8 @@ export default function BodyInfoMeasure({ member, onSave, onBack, onGuestBodyInf
 
       {/* [모미 신규] 오늘의 컨디션 — 신체정보와 같은 저장 흐름에 통합. 몸무게 없이 이것만
           입력해도 저장할 수 있다(analyze()의 hasBodyInput/hasConditionInput 참고). */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
-        <p className="text-xs font-bold text-amber-400 uppercase tracking-widest">오늘의 컨디션</p>
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 space-y-3">
+        <p className="text-xs font-bold text-amber-700 dark:text-amber-400 uppercase tracking-widest">오늘의 컨디션</p>
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className={LBL}>피로도 (1~5)</label>
@@ -193,12 +193,12 @@ export default function BodyInfoMeasure({ member, onSave, onBack, onGuestBodyInf
 
       {result && (
         <div className="card-accent p-4 space-y-3 animate-fade-in">
-          <p className="text-xs font-bold text-amber-400 uppercase tracking-widest">분석 결과</p>
+          <p className="text-xs font-bold text-amber-700 dark:text-amber-400 uppercase tracking-widest">분석 결과</p>
           {result.items.map(item => (
-            <div key={item.key} className="bg-slate-800 rounded-xl px-3 py-2.5">
+            <div key={item.key} className="bg-slate-100 dark:bg-slate-800 rounded-xl px-3 py-2.5">
               <div className="flex items-center justify-between">
-                <span className="text-xs text-slate-400">{item.label}</span>
-                <span className="font-mono font-black text-sm text-slate-100">
+                <span className="text-xs text-slate-500 dark:text-slate-400">{item.label}</span>
+                <span className="font-mono font-black text-sm text-slate-800 dark:text-slate-100">
                   {item.value}<span className="text-slate-500 text-[10px]"> {item.unit}</span>
                   <span className={`ml-2 ${TIER_STYLE[item.grade]}`}>{item.status || ''}</span>
                 </span>
@@ -206,20 +206,20 @@ export default function BodyInfoMeasure({ member, onSave, onBack, onGuestBodyInf
               <p className="text-[11px] text-slate-500 mt-1">{item.description}</p>
             </div>
           ))}
-          <div className="bg-slate-800/50 rounded-xl px-3 py-2.5">
-            <p className="text-[11px] text-slate-300 leading-relaxed">{result.summary}</p>
+          <div className="bg-slate-100/50 dark:bg-slate-800/50 rounded-xl px-3 py-2.5">
+            <p className="text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed">{result.summary}</p>
           </div>
           <button onClick={save} disabled={saveState === 'saving'} className="btn btn-primary w-full disabled:opacity-60">
             {saveState === 'saving' ? '저장 중…' : saveState === 'saved' ? '✓ 저장됨 (다시 저장)' : '확인 · 저장'}
           </button>
-          {saveMsg && <p className={`text-center text-xs font-bold ${saveState === 'error' ? 'text-red-400' : 'text-emerald-400'}`}>{saveMsg}</p>}
+          {saveMsg && <p className={`text-center text-xs font-bold ${saveState === 'error' ? 'text-red-700 dark:text-red-400' : 'text-emerald-700 dark:text-emerald-400'}`}>{saveMsg}</p>}
         </div>
       )}
 
       {/* [모미 신규] 체중 없이 컨디션만 저장한 경우 분석 카드가 없으므로, 저장 결과는
           여기서 따로 보여준다(위 카드 안의 saveMsg는 result가 있을 때만 렌더링됨). */}
       {!result && saveMsg && (
-        <p className={`text-center text-xs font-bold ${saveState === 'error' ? 'text-red-400' : 'text-emerald-400'}`}>{saveMsg}</p>
+        <p className={`text-center text-xs font-bold ${saveState === 'error' ? 'text-red-700 dark:text-red-400' : 'text-emerald-700 dark:text-emerald-400'}`}>{saveMsg}</p>
       )}
 
       {/* [모미 신규] 오늘의 운동가이드 — 방금 저장한 컨디션을 Momi(kind:'daily')에게 물어본다.
@@ -227,7 +227,7 @@ export default function BodyInfoMeasure({ member, onSave, onBack, onGuestBodyInf
       {savedCondition && (
         <div className="card-accent p-4 space-y-3 animate-fade-in">
           <div className="flex items-center justify-between">
-            <p className="text-xs font-bold text-amber-400 uppercase tracking-widest">오늘의 컨디션 판정</p>
+            <p className="text-xs font-bold text-amber-700 dark:text-amber-400 uppercase tracking-widest">오늘의 컨디션 판정</p>
             <span className={`text-xs font-black ${CONDITION_TONE[savedCondition.status]}`}>
               {{ normal: '정상', caution: '주의', risk: '위험' }[savedCondition.status] || '확인 필요'}
             </span>
@@ -235,10 +235,10 @@ export default function BodyInfoMeasure({ member, onSave, onBack, onGuestBodyInf
           <button onClick={askDailyGuide} disabled={guideState === 'loading'} className="btn btn-primary w-full disabled:opacity-60">
             {guideState === 'loading' ? '모미가 오늘의 가이드를 준비 중이에요…' : '🤖 오늘의 운동가이드 보기'}
           </button>
-          {guideState === 'error' && <p className="text-center text-xs font-bold text-red-400">{guideMsg}</p>}
+          {guideState === 'error' && <p className="text-center text-xs font-bold text-red-700 dark:text-red-400">{guideMsg}</p>}
           {guideState === 'done' && (
-            <div className="bg-slate-800/50 rounded-xl px-3 py-2.5">
-              <p className="text-[11px] text-slate-200 leading-relaxed whitespace-pre-wrap">{guideText}</p>
+            <div className="bg-slate-100/50 dark:bg-slate-800/50 rounded-xl px-3 py-2.5">
+              <p className="text-[11px] text-slate-700 dark:text-slate-200 leading-relaxed whitespace-pre-wrap">{guideText}</p>
             </div>
           )}
         </div>
@@ -253,14 +253,14 @@ export default function BodyInfoMeasure({ member, onSave, onBack, onGuestBodyInf
             result={result}
             history={member && !isVirtual ? store.getBodyRecords(member.id) : []}
           />
-          <div className="space-y-2 rounded-2xl border border-slate-800 bg-slate-950/95 p-3">
+          <div className="space-y-2 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/95 dark:bg-slate-950/95 p-3">
             <ReportActions
               reportNodeId="body-report-sheet"
               baseName={`${member?.name || '회원'}_신체정보`}
               reportButtonLabel="🖼 A4 리포트 JPG 전송"
               onMessage={setActionMsg}
             />
-            {actionMsg && <p className="text-center text-xs text-slate-400">{actionMsg}</p>}
+            {actionMsg && <p className="text-center text-xs text-slate-500 dark:text-slate-400">{actionMsg}</p>}
           </div>
         </>
       )}
@@ -274,7 +274,7 @@ export default function BodyInfoMeasure({ member, onSave, onBack, onGuestBodyInf
       {saveState === 'saved' && !isVirtual && typeof onViewInReport === 'function' && (
         <button
           onClick={onViewInReport}
-          className="w-full rounded-xl border border-amber-500/40 bg-amber-500/10 text-amber-300 font-bold text-sm py-2.5"
+          className="w-full rounded-xl border border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300 font-bold text-sm py-2.5"
         >
           📊 결과리포트에서 보기
         </button>

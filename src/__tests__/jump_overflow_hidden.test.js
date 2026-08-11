@@ -18,7 +18,7 @@ const src = readFileSync(
 
 describe('JumpPrecisionAnalysis.jsx — 회전된 비디오가 뷰포트 밖으로 흘러넘치지 않는다', () => {
   it('카메라 뷰 최상위 컨테이너에 overflow-hidden이 있다', () => {
-    const idx = src.indexOf("fixed inset-0 z-[80] bg-slate-950 overflow-hidden");
+    const idx = src.indexOf("fixed inset-0 z-[80] bg-slate-50 dark:bg-slate-950 overflow-hidden");
     expect(idx).toBeGreaterThan(-1);
     // 회전 래퍼(100vh/100vw)보다 앞서 선언돼 있어야 실제로 그걸 잘라낸다.
     const rotWrapIdx = src.indexOf("100vh' : '100%'");

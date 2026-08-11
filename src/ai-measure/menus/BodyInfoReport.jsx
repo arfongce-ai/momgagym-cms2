@@ -71,8 +71,8 @@ export default function BodyInfoReport({ id = 'body-report-sheet', member, resul
             ))}
           </div>
           {result?.summary && (
-            <div className="mt-3 rounded-xl bg-slate-800/50 px-3 py-2.5">
-              <p className="text-[11px] leading-relaxed text-slate-300">{result.summary}</p>
+            <div className="mt-3 rounded-xl bg-slate-100/50 dark:bg-slate-800/50 px-3 py-2.5">
+              <p className="text-[11px] leading-relaxed text-slate-600 dark:text-slate-300">{result.summary}</p>
             </div>
           )}
         </UnifiedReportSection>
@@ -81,7 +81,7 @@ export default function BodyInfoReport({ id = 'body-report-sheet', member, resul
         <UnifiedReportSection title="회차별 비교" subtitle={hasWeightTrend || hasBpTrend || hasConditionTrend ? '이전 기록 대비 추이' : '기록이 2회 이상 쌓이면 추이가 표시됩니다'}>
           {hasWeightTrend && (
             <div className="mb-4">
-              <p className="mb-1 text-xs font-bold text-slate-400">체중 (kg)</p>
+              <p className="mb-1 text-xs font-bold text-slate-500 dark:text-slate-400">체중 (kg)</p>
               <div style={{ width: '100%', height: 160 }}>
                 <ResponsiveContainer>
                   <LineChart data={series} margin={{ top: 8, right: 12, bottom: 4, left: -8 }}>
@@ -97,7 +97,7 @@ export default function BodyInfoReport({ id = 'body-report-sheet', member, resul
           )}
           {hasBpTrend && (
             <div>
-              <p className="mb-1 text-xs font-bold text-slate-400">혈압 (mmHg)</p>
+              <p className="mb-1 text-xs font-bold text-slate-500 dark:text-slate-400">혈압 (mmHg)</p>
               <div style={{ width: '100%', height: 160 }}>
                 <ResponsiveContainer>
                   <LineChart data={series} margin={{ top: 8, right: 12, bottom: 4, left: -8 }}>
@@ -115,7 +115,7 @@ export default function BodyInfoReport({ id = 'body-report-sheet', member, resul
           {/* [모미 신규] 컨디션(피로도·통증) 추이 — 체중·혈압과 같은 패턴, 2회 이상일 때만 표시 */}
           {hasConditionTrend && (
             <div>
-              <p className="mb-1 text-xs font-bold text-slate-400">컨디션 (피로도 1~5 · 통증 NRS 0~10)</p>
+              <p className="mb-1 text-xs font-bold text-slate-500 dark:text-slate-400">컨디션 (피로도 1~5 · 통증 NRS 0~10)</p>
               <div style={{ width: '100%', height: 160 }}>
                 <ResponsiveContainer>
                   <LineChart data={series} margin={{ top: 8, right: 12, bottom: 4, left: -8 }}>

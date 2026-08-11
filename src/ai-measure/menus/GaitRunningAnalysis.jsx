@@ -588,7 +588,7 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
 
   return (
     <div
-      className="fixed inset-0 z-[80] w-screen bg-slate-950 overflow-hidden flex flex-col font-sans"
+      className="fixed inset-0 z-[80] w-screen bg-slate-50 dark:bg-slate-950 overflow-hidden flex flex-col font-sans"
       style={{ height: '100dvh' }}
     >
       {(view === 'camera' || view === 'recording') && (
@@ -623,7 +623,7 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
             <div className="text-center">
               <h1 className="measure-title">보행 & 런닝 분석</h1>
               {view === 'camera' && (
-                <p className="text-sm font-bold text-amber-400 mt-1 drop-shadow-md">
+                <p className="text-sm font-bold text-amber-700 dark:text-amber-400 mt-1 drop-shadow-md">
                   {poseLoaded ? '일정한 속도로 뛸 때 시작하세요' : 'AI 분석 모듈 준비 중...'}
                 </p>
               )}
@@ -634,7 +634,7 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
                 </span>
               )}
               {warningMsg && (
-                <p className="text-sm font-bold text-red-400 mt-1 bg-black/50 px-2 py-1 rounded inline-flex items-center gap-2">
+                <p className="text-sm font-bold text-red-700 dark:text-red-400 mt-1 bg-black/50 px-2 py-1 rounded inline-flex items-center gap-2">
                   <span>{warningMsg}</span>
                   {cameraFailed && (
                     <button onClick={startCamera} className="rounded-full bg-white text-red-600 px-2 py-0.5 text-[11px] font-black active:scale-95">
@@ -649,7 +649,7 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
               <div className="flex gap-1 rounded-xl bg-black/55 p-1 backdrop-blur">
                 {['3/4', '1/1'].map((r) => (
                   <button key={r} onClick={() => setAspect(r)}
-                    className={`rounded-lg px-2.5 py-1 text-xs font-black ${aspect === r ? 'bg-amber-500 text-slate-950' : 'text-slate-300'}`}>
+                    className={`rounded-lg px-2.5 py-1 text-xs font-black ${aspect === r ? 'bg-amber-500 text-slate-950' : 'text-slate-600 dark:text-slate-300'}`}>
                     {r === '3/4' ? '3:4' : '1:1'}
                   </button>
                 ))}
@@ -678,7 +678,7 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
               />
             )}
             {view === 'recording' && (
-              <div className="w-full max-w-md h-2 bg-slate-700 rounded-full overflow-hidden">
+              <div className="w-full max-w-md h-2 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
                 <div
                   className={`h-full transition-all duration-1000 ${recordingTime >= 5 ? 'bg-green-500' : 'bg-orange-500'}`}
                   style={{ width: `${(recordingTime / 15) * 100}%` }}
@@ -686,7 +686,7 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
               </div>
             )}
             {view === 'camera' ? (
-              <button onClick={startRecording} disabled={!isReady} className={`w-20 h-20 rounded-full border-4 transition-all ${isReady ? 'border-green-500 bg-red-500' : 'border-slate-500 bg-slate-600'}`} />
+              <button onClick={startRecording} disabled={!isReady} className={`w-20 h-20 rounded-full border-4 transition-all ${isReady ? 'border-green-500 bg-red-500' : 'border-slate-500 bg-slate-300 dark:bg-slate-600'}`} />
             ) : (
               <button onClick={handleStopAttempt} className="w-20 h-20 rounded-full bg-slate-200 flex items-center justify-center text-red-600 text-3xl pb-2">■</button>
             )}
@@ -695,7 +695,7 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
       )}
 
       {view === 'preview' && (
-        <div className="absolute inset-0 flex flex-col md:flex-row bg-slate-900">
+        <div className="absolute inset-0 flex flex-col md:flex-row bg-white dark:bg-slate-900">
           <div className="relative flex-1 md:flex-[2] bg-black flex items-center justify-center overflow-hidden">
             {/* 저장 비율(3:4 또는 1:1)에 맞춘 컨테이너 → 검은 여백은 위아래에만 생기고 좌우엔 없음 */}
             <div
@@ -707,36 +707,36 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
             <div className="absolute top-4 left-4 bg-black/60 p-3 rounded-lg backdrop-blur-md">
               {reportData?.valid === false ? (
                 <>
-                  <p className="text-red-400 font-bold">⚠ 측정 무효</p>
+                  <p className="text-red-700 dark:text-red-400 font-bold">⚠ 측정 무효</p>
                   <p className="text-white text-xs">보행 동작이 감지되지 않았습니다</p>
                 </>
               ) : (
                 <>
-                  <p className="text-amber-400 font-bold">SPM: {reportData?.cadence}</p>
+                  <p className="text-amber-700 dark:text-amber-400 font-bold">SPM: {reportData?.cadence}</p>
                   <p className="text-white text-sm">입각기: {reportData?.stancePct}% | 유각기: {reportData?.swingPct}%</p>
                 </>
               )}
             </div>
             <button onClick={() => setView('camera')} className="absolute top-4 right-4 bg-white/20 text-white px-4 py-2 rounded-lg backdrop-blur-md font-bold">✕ 다시 찍기</button>
           </div>
-          <div id="gait-live-report-sheet" className="flex-1 bg-slate-800 p-6 overflow-y-auto">
+          <div id="gait-live-report-sheet" className="flex-1 bg-slate-100 dark:bg-slate-800 p-6 overflow-y-auto">
             <h2 className="text-2xl font-black text-white mb-6">측정 리포트</h2>
             <div className="grid grid-cols-2 gap-4 mb-6">
-              <div className="bg-slate-700 p-4 rounded-xl">
-                <p className="text-slate-400 text-sm">평균 케이던스</p>
+              <div className="bg-slate-200 dark:bg-slate-700 p-4 rounded-xl">
+                <p className="text-slate-500 dark:text-slate-400 text-sm">평균 케이던스</p>
                 <p className="text-2xl font-bold text-white">{reportData?.cadence} <span className="text-sm">SPM</span></p>
               </div>
-              <div className="bg-slate-700 p-4 rounded-xl">
-                <p className="text-slate-400 text-sm">비율 (Stance/Swing)</p>
+              <div className="bg-slate-200 dark:bg-slate-700 p-4 rounded-xl">
+                <p className="text-slate-500 dark:text-slate-400 text-sm">비율 (Stance/Swing)</p>
                 <p className="text-2xl font-bold text-white">{reportData?.stancePct}% / {reportData?.swingPct}%</p>
               </div>
             </div>
-            <div className="bg-slate-700 p-4 rounded-xl mb-6">
-              <h3 className="text-slate-300 font-bold mb-3">관절 가동 범위 (ROM)</h3>
+            <div className="bg-slate-200 dark:bg-slate-700 p-4 rounded-xl mb-6">
+              <h3 className="text-slate-600 dark:text-slate-300 font-bold mb-3">관절 가동 범위 (ROM)</h3>
               <div className="space-y-2">
-                <div className="flex justify-between text-white"><span className="text-slate-400">고관절</span> <span>{reportData?.angles?.hip?.rom ?? 0}°</span></div>
-                <div className="flex justify-between text-white"><span className="text-slate-400">무릎</span> <span>{reportData?.angles?.knee?.rom ?? 0}°</span></div>
-                <div className="flex justify-between text-white"><span className="text-slate-400">발목</span> <span>{reportData?.angles?.ankle?.rom ?? 0}°</span></div>
+                <div className="flex justify-between text-white"><span className="text-slate-500 dark:text-slate-400">고관절</span> <span>{reportData?.angles?.hip?.rom ?? 0}°</span></div>
+                <div className="flex justify-between text-white"><span className="text-slate-500 dark:text-slate-400">무릎</span> <span>{reportData?.angles?.knee?.rom ?? 0}°</span></div>
+                <div className="flex justify-between text-white"><span className="text-slate-500 dark:text-slate-400">발목</span> <span>{reportData?.angles?.ankle?.rom ?? 0}°</span></div>
               </div>
             </div>
             <div className="space-y-2">
@@ -748,12 +748,12 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
                 className="w-full rounded-xl bg-amber-500 text-slate-950 font-black py-3.5 text-sm active:scale-95">
                 📄 결과 리포트 보기
               </button>
-              <button onClick={handleShareVideo} className="w-full rounded-xl border border-slate-600 bg-slate-700 text-white font-bold py-3 text-sm active:scale-95">
+              <button onClick={handleShareVideo} className="w-full rounded-xl border border-slate-400 dark:border-slate-600 bg-slate-200 dark:bg-slate-700 text-white font-bold py-3 text-sm active:scale-95">
                 📹 동영상 저장
               </button>
-              {shareMsg && <p className="text-center text-xs text-emerald-400">{shareMsg}</p>}
+              {shareMsg && <p className="text-center text-xs text-emerald-700 dark:text-emerald-400">{shareMsg}</p>}
               {reportData?.valid !== true && (
-                <p className="text-center text-xs text-amber-400">측정이 무효하여 저장되지 않았습니다. 다시 측정해 주세요.</p>
+                <p className="text-center text-xs text-amber-700 dark:text-amber-400">측정이 무효하여 저장되지 않았습니다. 다시 측정해 주세요.</p>
               )}
               <p className="text-center text-[11px] text-slate-500">영상은 기기에, 회차 기록(정량 데이터)은 서버에 자동 저장됩니다.</p>
             </div>
@@ -787,7 +787,7 @@ function CompactTools({ open, onToggleOpen, tab, onTab, bpm, onBpm, metroPlaying
       )}
       <button onClick={onToggleOpen} className="flex items-center gap-2 rounded-full bg-black/55 backdrop-blur border border-white/10 px-3 py-1.5 text-white shadow-lg">
         <span className={`h-2 w-2 rounded-full ${(metroPlaying || swRunning) ? 'bg-amber-400 animate-pulse' : 'bg-white/40'}`} />
-        <span className="font-mono text-xs font-bold text-amber-300">{tab === 'metronome' ? `${bpm} BPM` : fmtSw(swElapsed)}</span>
+        <span className="font-mono text-xs font-bold text-amber-700 dark:text-amber-300">{tab === 'metronome' ? `${bpm} BPM` : fmtSw(swElapsed)}</span>
         <span className="text-[10px] text-white/50">{open ? '▾' : '▴'}</span>
       </button>
     </div>
@@ -803,7 +803,7 @@ function CompactStopwatch({ elapsed, running, onRunning, onReset }) {
   const toggle = () => onRunning(!running);
   return (
     <div className="flex items-center gap-1">
-      <div className="flex-1 rounded-lg bg-black/25 py-1.5 text-center font-mono text-base font-black tabular-nums text-amber-300">{fmtSw(elapsed)}</div>
+      <div className="flex-1 rounded-lg bg-black/25 py-1.5 text-center font-mono text-base font-black tabular-nums text-amber-700 dark:text-amber-300">{fmtSw(elapsed)}</div>
       <button onClick={toggle} className={`h-9 w-12 rounded-lg text-[11px] font-black ${running ? 'bg-white/20 text-white' : 'bg-amber-500/90 text-slate-950'}`}>{running ? '정지' : '시작'}</button>
       <button onClick={onReset} className="h-9 w-10 rounded-lg border border-white/15 text-[11px] font-bold text-white/75">리셋</button>
     </div>
@@ -814,7 +814,7 @@ function CompactMetronome({ bpm, playing, onBpm, onPlaying }) {
   return (
     <div className="flex items-center gap-1">
       <button onClick={() => onBpm(Math.max(40, bpm - 5))} className="h-9 w-8 rounded-lg border border-white/15 text-xs font-black text-white/75">-</button>
-      <div className="flex-1 rounded-lg bg-black/25 py-1.5 text-center font-mono text-lg font-black text-amber-300">{bpm}</div>
+      <div className="flex-1 rounded-lg bg-black/25 py-1.5 text-center font-mono text-lg font-black text-amber-700 dark:text-amber-300">{bpm}</div>
       <button onClick={() => onBpm(Math.min(220, bpm + 5))} className="h-9 w-8 rounded-lg border border-white/15 text-xs font-black text-white/75">+</button>
       <button onClick={() => onPlaying(!playing)} className={`h-9 w-12 rounded-lg text-[11px] font-black ${playing ? 'bg-white/20 text-white' : 'bg-amber-500/90 text-slate-950'}`}>{playing ? '정지' : '시작'}</button>
     </div>

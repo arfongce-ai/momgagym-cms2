@@ -43,10 +43,10 @@ function metric(value, suffix = '') {
 }
 
 function status(value, range) {
-  if (value == null || Number.isNaN(Number(value))) return { text: '미측정', color: 'text-slate-400', bar: 'bg-slate-600' };
-  if (value >= range.good[0] && value <= range.good[1]) return { text: '정상', color: 'text-emerald-300', bar: 'bg-emerald-400' };
-  if (value >= range.warn[0] && value <= range.warn[1]) return { text: '주의', color: 'text-amber-300', bar: 'bg-amber-400' };
-  return { text: '개선 필요', color: 'text-red-300', bar: 'bg-red-400' };
+  if (value == null || Number.isNaN(Number(value))) return { text: '미측정', color: 'text-slate-500 dark:text-slate-400', bar: 'bg-slate-300 dark:bg-slate-600' };
+  if (value >= range.good[0] && value <= range.good[1]) return { text: '정상', color: 'text-emerald-700 dark:text-emerald-300', bar: 'bg-emerald-400' };
+  if (value >= range.warn[0] && value <= range.warn[1]) return { text: '주의', color: 'text-amber-700 dark:text-amber-300', bar: 'bg-amber-400' };
+  return { text: '개선 필요', color: 'text-red-700 dark:text-red-300', bar: 'bg-red-400' };
 }
 
 function scoreReport(report, biomech) {
@@ -143,8 +143,8 @@ export default function JumpReportDashboard({ report, onClose, onComment, member
   return (
     <UnifiedReportCanvas className="flex flex-col items-center gap-3 font-sans">
       <div className="w-full max-w-[794px] flex items-center justify-between">
-        <button onClick={onClose} className="text-slate-300 font-bold text-sm">← 닫기</button>
-        {message && <span className="text-xs text-emerald-400">{message}</span>}
+        <button onClick={onClose} className="text-slate-600 dark:text-slate-300 font-bold text-sm">← 닫기</button>
+        {message && <span className="text-xs text-emerald-700 dark:text-emerald-400">{message}</span>}
       </div>
 
       <div id="jump-report-sheet" className="w-full flex flex-col items-center gap-4">
@@ -216,7 +216,7 @@ export default function JumpReportDashboard({ report, onClose, onComment, member
               <BarMetric label="상체 기울기 변화" value={biomech.trunkLeanChange} range={RANGE.trunk} max={35} />
               <BarMetric label="신전 궤적 정렬도" value={biomech.extensionAlignment?.alignmentScore} range={RANGE.align} max={100} />
             </div>
-            <p className="mt-3 text-[11px] leading-relaxed text-slate-400">
+            <p className="mt-3 text-[11px] leading-relaxed text-slate-500 dark:text-slate-400">
               자세와 각도 지표는 측면 촬영에서 가장 정확합니다. 정면 촬영은 점프 높이와 좌우 대칭성 확인에 더 적합합니다.
             </p>
           </Section>
@@ -237,7 +237,7 @@ export default function JumpReportDashboard({ report, onClose, onComment, member
           </Section>
 
           <Section title="영상 분석의 한계">
-            <ul className="list-disc pl-4 text-[11px] leading-relaxed text-slate-400 space-y-1">
+            <ul className="list-disc pl-4 text-[11px] leading-relaxed text-slate-500 dark:text-slate-400 space-y-1">
               <li>좌우 체중 분산은 카메라 영상만으로 직접 측정하지 않습니다. 정확한 하중 분산은 지면반력판이 필요합니다.</li>
               <li>정면 촬영은 점프 높이와 좌우 대칭 분석에 적합하고, 측면 촬영은 자세 각도 분석에 적합합니다.</li>
               <li>모든 값은 같은 방식으로 반복 측정했을 때 상대 비교와 추세 관찰에 가장 의미가 있습니다.</li>
@@ -249,10 +249,10 @@ export default function JumpReportDashboard({ report, onClose, onComment, member
               <textarea
                 value={comment}
                 onChange={(event) => setComment(event.target.value)}
-                className="w-full h-20 rounded-lg bg-slate-800 border border-slate-700 px-3 py-2 text-sm text-slate-100 resize-none focus:outline-none focus:border-amber-400"
+                className="w-full h-20 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 resize-none focus:outline-none focus:border-amber-400"
                 placeholder="회원에게 전달할 코멘트를 입력하세요."
               />
-              <button onClick={saveComment} className="mt-2 rounded-lg bg-slate-700 px-4 py-2 text-xs font-bold text-white">
+              <button onClick={saveComment} className="mt-2 rounded-lg bg-slate-200 dark:bg-slate-700 px-4 py-2 text-xs font-bold text-white">
                 코멘트 저장
               </button>
             </Section>
@@ -260,7 +260,7 @@ export default function JumpReportDashboard({ report, onClose, onComment, member
         </ReportPage>
       </div>
 
-      <div className="w-full max-w-[794px] sticky bottom-0 bg-slate-950 pt-2 pb-[max(8px,env(safe-area-inset-bottom))]">
+      <div className="w-full max-w-[794px] sticky bottom-0 bg-slate-50 dark:bg-slate-950 pt-2 pb-[max(8px,env(safe-area-inset-bottom))]">
         <ReportActions reportNodeId="jump-report-sheet" videoBlob={report.videoBlob || null} baseName={saveName} onMessage={setMessage} />
       </div>
     </UnifiedReportCanvas>
@@ -304,9 +304,9 @@ function StatCard({ label, value, unit, range }) {
   const valueText = String(value ?? '-');
   const valueSize = valueText.length >= 5 ? 'text-[1.25rem]' : valueText.length >= 4 ? 'text-[1.45rem]' : 'text-[1.75rem]';
   return (
-    <div className="min-w-0 rounded-xl bg-slate-800 px-2.5 py-3 text-center">
+    <div className="min-w-0 rounded-xl bg-slate-100 dark:bg-slate-800 px-2.5 py-3 text-center">
       <p className="min-h-[2rem] break-keep text-[10px] font-bold leading-tight text-slate-500 sm:text-[11px]">{label}</p>
-      <p className={`mt-2 break-all font-mono ${valueSize} font-black leading-none tracking-normal tabular-nums ${st?.color || 'text-slate-100'}`}>{valueText}</p>
+      <p className={`mt-2 break-all font-mono ${valueSize} font-black leading-none tracking-normal tabular-nums ${st?.color || 'text-slate-800 dark:text-slate-100'}`}>{valueText}</p>
       <p className="mt-1 text-[11px] font-bold leading-tight text-slate-500">{unit}</p>
       {st && <p className={`mt-1 text-[10px] font-black ${st.color}`}>{st.text}</p>}
     </div>
@@ -315,15 +315,15 @@ function StatCard({ label, value, unit, range }) {
 
 function SmallInfo({ label, value }) {
   return (
-    <div className="rounded-lg bg-slate-800/70 px-3 py-2">
+    <div className="rounded-lg bg-slate-100/70 dark:bg-slate-800/70 px-3 py-2">
       <p className="text-[10px] font-bold text-slate-500">{label}</p>
-      <p className="mt-1 text-sm font-black text-slate-100">{value}</p>
+      <p className="mt-1 text-sm font-black text-slate-800 dark:text-slate-100">{value}</p>
     </div>
   );
 }
 
 function Notice({ tone, text }) {
-  const cls = tone === 'good' ? 'bg-emerald-500/10 text-emerald-300' : 'bg-red-500/10 text-red-300';
+  const cls = tone === 'good' ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300' : 'bg-red-500/10 text-red-700 dark:text-red-300';
   return <div className={`mt-3 rounded-lg px-3 py-2 text-xs font-black ${cls}`}>{text}</div>;
 }
 
@@ -337,8 +337,8 @@ function AsymmetrySection({ asymmetry, report }) {
   if (!asymmetry) {
     return (
       <Section title="③ 좌우 비대칭 비교" subtitle="LSI · 반대쪽 다리와 비교">
-        <div className="rounded-xl bg-slate-800/60 p-4 text-center">
-          <p className="text-sm text-slate-300">
+        <div className="rounded-xl bg-slate-100/60 dark:bg-slate-800/60 p-4 text-center">
+          <p className="text-sm text-slate-600 dark:text-slate-300">
             {LEG_LABEL[thisLeg === 'left' ? 'right' : 'left']} 기록이 아직 없어요.
           </p>
           <p className="mt-1 text-[11px] text-slate-500">반대쪽 다리도 SLJ로 측정하면 좌우 비대칭(LSI)이 여기 표시됩니다.</p>
@@ -355,9 +355,9 @@ function AsymmetrySection({ asymmetry, report }) {
         <StatCard label={LEG_LABEL.right} value={metric(asymmetry.rightValue)} unit="cm" />
         <StatCard label="대칭지수(LSI)" value={metric(asymmetry.lsiPct)} unit="%" range={RANGE.lsi} />
       </div>
-      <p className="mt-3 text-[12px] leading-relaxed text-slate-400">
+      <p className="mt-3 text-[12px] leading-relaxed text-slate-500 dark:text-slate-400">
         LSI(대칭지수)는 약한 쪽 ÷ 강한 쪽 × 100으로, 100%면 완전 대칭입니다. 통상 90% 이상을 정상 범위로 봅니다.
-        {' '}현재 <b className="text-slate-200">{weakerLabel}</b>이(가) 상대적으로 약합니다
+        {' '}현재 <b className="text-slate-700 dark:text-slate-200">{weakerLabel}</b>이(가) 상대적으로 약합니다
         {st.text === '개선 필요' ? ' — 편측 강화 운동을 우선 고려하세요.' : '.'}
       </p>
       <p className="mt-1 text-[11px] text-slate-500">
@@ -377,7 +377,7 @@ function PowerSection({ report }) {
         <SmallInfo label="신장 대비 점프" value={heightRatio ? `${heightRatio}%` : '-'} />
         <SmallInfo label="권장 촬영" value="정면" />
       </div>
-      <p className="mt-3 text-[12px] leading-relaxed text-slate-400">
+      <p className="mt-3 text-[12px] leading-relaxed text-slate-500 dark:text-slate-400">
         파워 점프는 최고 점프 높이, 도약 속도, 최대 파워를 중심으로 폭발적인 힘 생산 능력을 평가합니다.
         정면 촬영에서는 좌우 착지 대칭과 점프 높이 추적이 더 안정적입니다.
       </p>
@@ -403,14 +403,14 @@ function RsiSection({ report }) {
         </div>
       )}
       {Array.isArray(rsi.perCycle) && rsi.perCycle.length > 0 && (
-        <div className="mt-3 rounded-xl border border-emerald-500/20 bg-slate-900/55 p-3">
+        <div className="mt-3 rounded-xl border border-emerald-500/20 bg-white dark:bg-slate-900/55 p-3">
           <div className="mb-2 flex items-center justify-between">
-            <p className="text-xs font-black text-emerald-300">점프별 RSI 데이터</p>
+            <p className="text-xs font-black text-emerald-700 dark:text-emerald-300">점프별 RSI 데이터</p>
             <p className="text-[10px] font-bold text-slate-500">{rsi.perCycle.length} cycles</p>
           </div>
           <div className="space-y-1">
             {rsi.perCycle.map((cycle, index) => (
-              <div key={index} className="grid grid-cols-2 gap-1 rounded-lg bg-slate-800/70 px-2 py-2 text-center sm:grid-cols-5">
+              <div key={index} className="grid grid-cols-2 gap-1 rounded-lg bg-slate-100/70 dark:bg-slate-800/70 px-2 py-2 text-center sm:grid-cols-5">
                 <Mini label={`#${index + 1}`} value={metric(cycle.rsi)} />
                 <Mini label="접지" value={metric(cycle.contactMs, 'ms')} />
                 <Mini label="체공" value={metric(cycle.flightMs, 'ms')} />
@@ -421,7 +421,7 @@ function RsiSection({ report }) {
           </div>
         </div>
       )}
-      <p className="mt-3 text-[11px] leading-relaxed text-slate-400">
+      <p className="mt-3 text-[11px] leading-relaxed text-slate-500 dark:text-slate-400">
         RSI는 체공시간을 접지시간으로 나눈 값입니다. 접지시간이 짧고 체공시간이 길수록 반응 탄성 효율이 높습니다.
         안정적인 평가를 위해 최소 3회 이상의 연속 점프를 기준으로 봅니다.
       </p>
@@ -433,7 +433,7 @@ function Mini({ label, value }) {
   return (
     <div className="min-w-0">
       <p className="break-keep text-[9px] font-bold leading-tight text-slate-500">{label}</p>
-      <p className="break-all font-mono text-[11px] font-black leading-tight tracking-normal text-slate-100">{value}</p>
+      <p className="break-all font-mono text-[11px] font-black leading-tight tracking-normal text-slate-800 dark:text-slate-100">{value}</p>
     </div>
   );
 }
@@ -445,10 +445,10 @@ function BarMetric({ label, value, range, max, lowerIsBetter = false }) {
   return (
     <div>
       <div className="mb-1 flex items-center justify-between">
-        <span className="text-sm font-bold text-slate-300">{label}</span>
+        <span className="text-sm font-bold text-slate-600 dark:text-slate-300">{label}</span>
         <span className={`text-sm font-black ${st.color}`}>{display} · {lowerIsBetter && value != null ? (st.text === '정상' ? '낮음' : st.text) : st.text}</span>
       </div>
-      <div className="h-3 overflow-hidden rounded-full bg-slate-700">
+      <div className="h-3 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700">
         <div className={`h-full rounded-full ${st.bar}`} style={{ width: `${pct}%` }} />
       </div>
     </div>
@@ -470,7 +470,7 @@ function SummaryNotes({ isRsi, report, biomech }) {
     notes.push(`착지 대칭 ${biomech.footLandingSymmetry.symmetryPct}%로 좌우 착지 습관을 함께 확인합니다.`);
   }
   return (
-    <ul className="list-disc pl-4 text-[12px] leading-relaxed text-slate-400 space-y-1">
+    <ul className="list-disc pl-4 text-[12px] leading-relaxed text-slate-500 dark:text-slate-400 space-y-1">
       {notes.map((note, index) => <li key={index}>{note}</li>)}
     </ul>
   );
@@ -486,7 +486,7 @@ function InvalidBlock({ report }) {
     <Section title="측정 무효">
       <div className="rounded-xl bg-red-500/10 p-5 text-center">
         <p className="text-4xl">⚠️</p>
-        <p className="mt-2 text-lg font-black text-red-300">{reason}</p>
+        <p className="mt-2 text-lg font-black text-red-700 dark:text-red-300">{reason}</p>
       </div>
     </Section>
   );

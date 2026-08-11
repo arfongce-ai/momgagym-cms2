@@ -52,11 +52,11 @@ const FMS_REASON_KO = {
 };
 
 const METRIC_STATUS_TOKEN = {
-  normal: { key: 'normal', label: '정상', color: 'text-emerald-300', colorClass: 'text-emerald-300', bgClass: 'bg-emerald-500/12', borderClass: 'border-emerald-400/35', bar: 'bg-emerald-400' },
-  caution: { key: 'caution', label: '주의', color: 'text-amber-300', colorClass: 'text-amber-300', bgClass: 'bg-amber-500/12', borderClass: 'border-amber-400/35', bar: 'bg-amber-400' },
-  risk: { key: 'risk', label: '위험', color: 'text-red-300', colorClass: 'text-red-300', bgClass: 'bg-red-500/12', borderClass: 'border-red-400/35', bar: 'bg-red-400' },
-  observed: { key: 'observed', label: '1회만 관찰(재현 안 됨)', color: 'text-slate-400', colorClass: 'text-slate-300', bgClass: 'bg-slate-500/12', borderClass: 'border-slate-400/35', bar: 'bg-slate-500' },
-  unknown: { key: 'unknown', label: '측정 안 됨', color: 'text-slate-500', colorClass: 'text-slate-400', bgClass: 'bg-slate-600/12', borderClass: 'border-slate-500/35', bar: 'bg-slate-700' },
+  normal: { key: 'normal', label: '정상', color: 'text-emerald-700 dark:text-emerald-300', colorClass: 'text-emerald-700 dark:text-emerald-300', bgClass: 'bg-emerald-500/12', borderClass: 'border-emerald-400/35', bar: 'bg-emerald-400' },
+  caution: { key: 'caution', label: '주의', color: 'text-amber-700 dark:text-amber-300', colorClass: 'text-amber-700 dark:text-amber-300', bgClass: 'bg-amber-500/12', borderClass: 'border-amber-400/35', bar: 'bg-amber-400' },
+  risk: { key: 'risk', label: '위험', color: 'text-red-700 dark:text-red-300', colorClass: 'text-red-700 dark:text-red-300', bgClass: 'bg-red-500/12', borderClass: 'border-red-400/35', bar: 'bg-red-400' },
+  observed: { key: 'observed', label: '1회만 관찰(재현 안 됨)', color: 'text-slate-500 dark:text-slate-400', colorClass: 'text-slate-600 dark:text-slate-300', bgClass: 'bg-slate-500/12', borderClass: 'border-slate-400/35', bar: 'bg-slate-500' },
+  unknown: { key: 'unknown', label: '측정 안 됨', color: 'text-slate-500', colorClass: 'text-slate-500 dark:text-slate-400', bgClass: 'bg-slate-300/12 dark:bg-slate-600/12', borderClass: 'border-slate-500/35', bar: 'bg-slate-200 dark:bg-slate-700' },
 };
 
 function MetricBar({ metricKey, value }) {
@@ -69,12 +69,12 @@ function MetricBar({ metricKey, value }) {
   return (
     <div>
       <div className="mb-1 flex items-baseline justify-between gap-2">
-        <span className="text-[12px] font-bold text-slate-300">{range.label}</span>
+        <span className="text-[12px] font-bold text-slate-600 dark:text-slate-300">{range.label}</span>
         <span className={`text-[12px] font-black tabular-nums ${token.color}`}>
           {value.deg == null ? '측정 안 됨' : `${value.deg}${range.unit}`} · {token.label}
         </span>
       </div>
-      <div className="relative h-2.5 overflow-hidden rounded-full bg-slate-700/70">
+      <div className="relative h-2.5 overflow-hidden rounded-full bg-slate-200/70 dark:bg-slate-700/70">
         <div className="absolute top-0 left-0 h-full bg-emerald-500/20" style={{ width: `${goodW}%` }} />
         {value.deg != null && <div className={`absolute top-0 left-0 h-full rounded-full ${token.bar}`} style={{ width: `${pct}%` }} />}
       </div>
@@ -96,7 +96,7 @@ export default function SquatReportDashboard({ report, member, onClose, onRemeas
   return (
     <UnifiedReportCanvas>
       <div className="mx-auto w-full max-w-[794px] flex items-center justify-between pb-2">
-        <button onClick={onClose} className="text-slate-300 font-bold text-sm">← 닫기</button>
+        <button onClick={onClose} className="text-slate-600 dark:text-slate-300 font-bold text-sm">← 닫기</button>
       </div>
       <UnifiedReportPage id="squat-report-sheet" className="mx-auto">
         <UnifiedReportHeader
@@ -121,7 +121,7 @@ export default function SquatReportDashboard({ report, member, onClose, onRemeas
 
           {report.missingView && (
             <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3">
-              <p className="text-xs font-bold text-amber-300">
+              <p className="text-xs font-bold text-amber-700 dark:text-amber-300">
                 {report.missingView === 'side' ? '측면' : '정면'} 촬영이 없어서 일부 지표는 참고용입니다.
                 {report.needsRetest && ' 재측정을 권장해요.'}
               </p>
@@ -149,7 +149,7 @@ export default function SquatReportDashboard({ report, member, onClose, onRemeas
               <MetricBar metricKey="pelvis" value={{ deg: m.pelvicTiltDeg, status: squatMetricStatus(report, 'pelvic_tilt_') }} />
               <MetricBar metricKey="arm" value={{ deg: m.armDropDeg, status: squatMetricStatus(report, 'arm_drop_') }} />
             </div>
-            <p className="mt-3 text-[11px] leading-relaxed text-slate-400">
+            <p className="mt-3 text-[11px] leading-relaxed text-slate-500 dark:text-slate-400">
               무릎·골반은 정면, 팔 처짐은 측면에서만 신뢰할 수 있는 지표라 각각 해당 방향 시행에서만 값을 가져옵니다.
               {report.torsoLeanSource === 'front_fallback' && ' 상체 기울기는 측면 촬영이 없어 정면 값으로 대체했습니다.'}
             </p>
@@ -157,7 +157,7 @@ export default function SquatReportDashboard({ report, member, onClose, onRemeas
 
           {report.fmsScore != null && report.fmsScore < 3 && report.fmsReasons?.length > 0 && (
             <UnifiedReportSection title="③ FMS 감점 사유" subtitle={`${report.fmsScore}점인 이유`}>
-              <ul className="list-disc space-y-1 pl-4 text-[12px] leading-relaxed text-slate-300">
+              <ul className="list-disc space-y-1 pl-4 text-[12px] leading-relaxed text-slate-600 dark:text-slate-300">
                 {report.fmsReasons.map((r, i) => <li key={i}>{FMS_REASON_KO[r] || r}</li>)}
               </ul>
             </UnifiedReportSection>
@@ -167,7 +167,7 @@ export default function SquatReportDashboard({ report, member, onClose, onRemeas
             <UnifiedReportSection title="④ 시행별 결과" subtitle="정면 2회 · 측면 2회">
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                 {report.trials.map((t, i) => (
-                  <div key={i} className="rounded-xl bg-slate-800/70 border border-slate-700/60 p-3">
+                  <div key={i} className="rounded-xl bg-slate-100/70 dark:bg-slate-800/70 border border-slate-300/60 dark:border-slate-700/60 p-3">
                     <p className="text-[10px] text-slate-500">{i < report.trials.length / 2 ? '정면' : '측면'} {i % (report.trials.length / 2) + 1}회</p>
                     <p className="text-white font-black text-sm">{STATUS_KO[t.status] || '-'}</p>
                     {t.thighInclineDeg != null && <p className="text-[10px] text-slate-500 mt-1">깊이 잔여 {t.thighInclineDeg}°</p>}
@@ -182,7 +182,7 @@ export default function SquatReportDashboard({ report, member, onClose, onRemeas
           )}
 
           <UnifiedReportSection title="영상 분석의 한계">
-            <ul className="list-disc pl-4 text-[11px] leading-relaxed text-slate-400 space-y-1">
+            <ul className="list-disc pl-4 text-[11px] leading-relaxed text-slate-500 dark:text-slate-400 space-y-1">
               <li>깊이는 정면·측면 모두에서 참고하지만, 무릎 정렬은 정면에서만, 팔 처짐·상체 기울기는 측면에서만 신뢰할 수 있습니다.</li>
               <li>같은 신호가 2회 반복돼야 주의/위험으로 확정합니다. 1회만 관찰된 항목은 "1회만 관찰(재현 안 됨)"으로 별도 표시됩니다.</li>
               <li>FMS 공식 점수는 종합 판정(정상/주의/위험)과 별개로, Functional Movement Screen 채점 기준을 그대로 적용한 보조 지표입니다.</li>
@@ -201,17 +201,17 @@ export default function SquatReportDashboard({ report, member, onClose, onRemeas
       <div className="w-full max-w-[794px] mx-auto mt-3 space-y-2">
         <ReportActions reportNodeId="squat-report-sheet" videoBlob={report.videoBlob || null}
           baseName={`${report.member?.name || '회원'}_오버헤드스쿼트`} onMessage={setVideoShareMsg} />
-        {videoShareMsg && <p className="text-center text-xs text-emerald-400">{videoShareMsg}</p>}
+        {videoShareMsg && <p className="text-center text-xs text-emerald-700 dark:text-emerald-400">{videoShareMsg}</p>}
         {!member?.isVirtual && typeof onViewInReport === 'function' && (
           <button
             onClick={onViewInReport}
-            className="w-full rounded-xl border border-amber-500/40 bg-amber-500/10 text-amber-300 font-bold text-sm py-2.5"
+            className="w-full rounded-xl border border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300 font-bold text-sm py-2.5"
           >
             📊 결과리포트에서 보기
           </button>
         )}
         {typeof onRemeasure === 'function' && (
-          <button onClick={onRemeasure} className="w-full rounded-lg bg-slate-800 text-white font-bold text-sm py-2.5">← 다시 측정</button>
+          <button onClick={onRemeasure} className="w-full rounded-lg bg-slate-100 dark:bg-slate-800 text-white font-bold text-sm py-2.5">← 다시 측정</button>
         )}
       </div>
     </UnifiedReportCanvas>

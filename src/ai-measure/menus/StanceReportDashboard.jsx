@@ -37,11 +37,11 @@ const BASIS_KO_STANCE = {
 // 유지시간·각도·시각화를 담는다. 임계값은 singleLegStance.js의 SLST_TUNING을
 // 그대로 가져와 리포트와 판정이 서로 다른 기준을 말하지 않게 한다.
 const STATUS_TOKEN = {
-  normal: { key: 'normal', label: '정상', color: 'text-emerald-300', colorClass: 'text-emerald-300', bgClass: 'bg-emerald-500/12', borderClass: 'border-emerald-400/35', bar: 'bg-emerald-400' },
-  caution: { key: 'caution', label: '주의', color: 'text-amber-300', colorClass: 'text-amber-300', bgClass: 'bg-amber-500/12', borderClass: 'border-amber-400/35', bar: 'bg-amber-400' },
-  risk: { key: 'risk', label: '위험', color: 'text-red-300', colorClass: 'text-red-300', bgClass: 'bg-red-500/12', borderClass: 'border-red-400/35', bar: 'bg-red-400' },
-  observed: { key: 'observed', label: '1회만 관찰(재현 안 됨)', color: 'text-slate-400', colorClass: 'text-slate-300', bgClass: 'bg-slate-500/12', borderClass: 'border-slate-400/35', bar: 'bg-slate-500' },
-  unknown: { key: 'unknown', label: '측정 안 됨', color: 'text-slate-500', colorClass: 'text-slate-400', bgClass: 'bg-slate-600/12', borderClass: 'border-slate-500/35', bar: 'bg-slate-700' },
+  normal: { key: 'normal', label: '정상', color: 'text-emerald-700 dark:text-emerald-300', colorClass: 'text-emerald-700 dark:text-emerald-300', bgClass: 'bg-emerald-500/12', borderClass: 'border-emerald-400/35', bar: 'bg-emerald-400' },
+  caution: { key: 'caution', label: '주의', color: 'text-amber-700 dark:text-amber-300', colorClass: 'text-amber-700 dark:text-amber-300', bgClass: 'bg-amber-500/12', borderClass: 'border-amber-400/35', bar: 'bg-amber-400' },
+  risk: { key: 'risk', label: '위험', color: 'text-red-700 dark:text-red-300', colorClass: 'text-red-700 dark:text-red-300', bgClass: 'bg-red-500/12', borderClass: 'border-red-400/35', bar: 'bg-red-400' },
+  observed: { key: 'observed', label: '1회만 관찰(재현 안 됨)', color: 'text-slate-500 dark:text-slate-400', colorClass: 'text-slate-600 dark:text-slate-300', bgClass: 'bg-slate-500/12', borderClass: 'border-slate-400/35', bar: 'bg-slate-500' },
+  unknown: { key: 'unknown', label: '측정 안 됨', color: 'text-slate-500', colorClass: 'text-slate-500 dark:text-slate-400', bgClass: 'bg-slate-300/12 dark:bg-slate-600/12', borderClass: 'border-slate-500/35', bar: 'bg-slate-200 dark:bg-slate-700' },
 };
 
 function HoldTimeBar({ leg }) {
@@ -56,12 +56,12 @@ function HoldTimeBar({ leg }) {
   return (
     <div>
       <div className="mb-1 flex items-baseline justify-between gap-2">
-        <span className="text-[12px] font-bold text-slate-300">유지 시간</span>
+        <span className="text-[12px] font-bold text-slate-600 dark:text-slate-300">유지 시간</span>
         <span className={`text-[12px] font-black tabular-nums ${token.color}`}>
           {holdS == null ? '측정 안 됨' : `${holdS}초`} · {token.label}
         </span>
       </div>
-      <div className="relative h-2.5 overflow-hidden rounded-full bg-slate-700/70">
+      <div className="relative h-2.5 overflow-hidden rounded-full bg-slate-200/70 dark:bg-slate-700/70">
         <div className="absolute top-0 h-full bg-red-500/15" style={{ left: 0, width: `${minPct}%` }} />
         <div className="absolute top-0 h-full bg-emerald-500/20" style={{ left: `${minPct}%`, width: `${100 - minPct}%` }} />
         {holdS != null && <div className={`absolute top-0 left-0 h-full rounded-full ${token.bar}`} style={{ width: `${pct}%` }} />}
@@ -82,12 +82,12 @@ function AngleBar({ label, leg, metricKey, flagPrefix, cautionDeg, riskDeg }) {
   return (
     <div>
       <div className="mb-1 flex items-baseline justify-between gap-2">
-        <span className="text-[12px] font-bold text-slate-300">{label}</span>
+        <span className="text-[12px] font-bold text-slate-600 dark:text-slate-300">{label}</span>
         <span className={`text-[12px] font-black tabular-nums ${token.color}`}>
           {value == null ? '측정 안 됨' : `${value}°`} · {token.label}
         </span>
       </div>
-      <div className="relative h-2.5 overflow-hidden rounded-full bg-slate-700/70">
+      <div className="relative h-2.5 overflow-hidden rounded-full bg-slate-200/70 dark:bg-slate-700/70">
         <div className="absolute top-0 left-0 h-full bg-emerald-500/20" style={{ width: `${goodW}%` }} />
         {value != null && <div className={`absolute top-0 left-0 h-full rounded-full ${token.bar}`} style={{ width: `${pct}%` }} />}
       </div>
@@ -122,7 +122,7 @@ export default function StanceReportDashboard({ report, member, onClose, onRemea
   return (
     <UnifiedReportCanvas>
       <div className="mx-auto w-full max-w-[794px] flex items-center justify-between pb-2">
-        <button onClick={onClose} className="text-slate-300 font-bold text-sm">← 닫기</button>
+        <button onClick={onClose} className="text-slate-600 dark:text-slate-300 font-bold text-sm">← 닫기</button>
       </div>
       <UnifiedReportPage id="stance-report-sheet" className="mx-auto">
         <UnifiedReportHeader
@@ -147,7 +147,7 @@ export default function StanceReportDashboard({ report, member, onClose, onRemea
 
           {asymmetryAny && (
             <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3">
-              <p className="text-xs font-bold text-amber-300">
+              <p className="text-xs font-bold text-amber-700 dark:text-amber-300">
                 ⚖ 좌우 균형 확인 필요 — 한쪽 다리의 판정 등급이 반대쪽보다 뚜렷하게 낮습니다.
               </p>
             </div>
@@ -177,12 +177,12 @@ export default function StanceReportDashboard({ report, member, onClose, onRemea
           <UnifiedReportSection title="② 눈뜨고" subtitle="👁 왼쪽 · 오른쪽 비교">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-3">
-                <p className="text-[11px] font-black text-slate-400">왼쪽</p>
+                <p className="text-[11px] font-black text-slate-500 dark:text-slate-400">왼쪽</p>
                 <HoldTimeBar leg={eyesOpen.left} />
                 <AngleBar label="골반 기울기" leg={eyesOpen.left} metricKey="pelvicTiltDeg" flagPrefix="pelvic_tilt_" cautionDeg={SLST_TUNING.pelvicTiltCautionDeg} riskDeg={SLST_TUNING.pelvicTiltRiskDeg} />
               </div>
               <div className="space-y-3">
-                <p className="text-[11px] font-black text-slate-400">오른쪽</p>
+                <p className="text-[11px] font-black text-slate-500 dark:text-slate-400">오른쪽</p>
                 <HoldTimeBar leg={eyesOpen.right} />
                 <AngleBar label="골반 기울기" leg={eyesOpen.right} metricKey="pelvicTiltDeg" flagPrefix="pelvic_tilt_" cautionDeg={SLST_TUNING.pelvicTiltCautionDeg} riskDeg={SLST_TUNING.pelvicTiltRiskDeg} />
               </div>
@@ -192,17 +192,17 @@ export default function StanceReportDashboard({ report, member, onClose, onRemea
           <UnifiedReportSection title="③ 눈감고" subtitle="🙈 왼쪽 · 오른쪽 비교">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-3">
-                <p className="text-[11px] font-black text-slate-400">왼쪽</p>
+                <p className="text-[11px] font-black text-slate-500 dark:text-slate-400">왼쪽</p>
                 <HoldTimeBar leg={eyesClosed.left} />
                 <AngleBar label="골반 기울기" leg={eyesClosed.left} metricKey="pelvicTiltDeg" flagPrefix="pelvic_tilt_" cautionDeg={SLST_TUNING.pelvicTiltCautionDeg} riskDeg={SLST_TUNING.pelvicTiltRiskDeg} />
               </div>
               <div className="space-y-3">
-                <p className="text-[11px] font-black text-slate-400">오른쪽</p>
+                <p className="text-[11px] font-black text-slate-500 dark:text-slate-400">오른쪽</p>
                 <HoldTimeBar leg={eyesClosed.right} />
                 <AngleBar label="골반 기울기" leg={eyesClosed.right} metricKey="pelvicTiltDeg" flagPrefix="pelvic_tilt_" cautionDeg={SLST_TUNING.pelvicTiltCautionDeg} riskDeg={SLST_TUNING.pelvicTiltRiskDeg} />
               </div>
             </div>
-            <p className="mt-3 text-[11px] leading-relaxed text-slate-400">
+            <p className="mt-3 text-[11px] leading-relaxed text-slate-500 dark:text-slate-400">
               눈을 감으면 정상인도 유지시간이 짧아지고 흔들림이 커지는 것이 자연스러워, 눈뜨고/눈감고는 서로 다른 기준으로 독립 판정합니다.
             </p>
           </UnifiedReportSection>
@@ -213,7 +213,7 @@ export default function StanceReportDashboard({ report, member, onClose, onRemea
                 ['눈뜨고 · 왼쪽', eyesOpen.left], ['눈뜨고 · 오른쪽', eyesOpen.right],
                 ['눈감고 · 왼쪽', eyesClosed.left], ['눈감고 · 오른쪽', eyesClosed.right],
               ].map(([label, leg]) => (
-                <div key={label} className="rounded-xl bg-slate-800/70 border border-slate-700/60 p-3">
+                <div key={label} className="rounded-xl bg-slate-100/70 dark:bg-slate-800/70 border border-slate-300/60 dark:border-slate-700/60 p-3">
                   <p className="text-[10px] text-slate-500">{label}</p>
                   <p className="text-white font-black text-sm">{STATUS_KO[leg?.status] || '-'}</p>
                   <p className="text-[10px] text-slate-500 mt-1">{BASIS_KO_STANCE[leg?.basis] || '-'}</p>
@@ -228,7 +228,7 @@ export default function StanceReportDashboard({ report, member, onClose, onRemea
           </UnifiedReportSection>
 
           <UnifiedReportSection title="측정 한계">
-            <ul className="list-disc pl-4 text-[11px] leading-relaxed text-slate-400 space-y-1">
+            <ul className="list-disc pl-4 text-[11px] leading-relaxed text-slate-500 dark:text-slate-400 space-y-1">
               <li>같은 신호가 2회 반복돼야 주의/위험으로 확정합니다. 1회만 관찰된 항목은 "1회만 관찰(재현 안 됨)"으로 별도 표시됩니다.</li>
               <li>균형 상실·스텝아웃·최소 유지시간 미달은 1회만 나와도 즉시 위험으로 확정하며, 이 경우 다른 지표는 별도로 재보지 않아 "측정 안 됨"으로 남을 수 있습니다.</li>
               <li>좌우 비대칭은 질환으로 진단하지 않습니다. 측정된 패턴만 보여주며, 임상 해석은 전문가와 상의하세요.</li>
@@ -243,7 +243,7 @@ export default function StanceReportDashboard({ report, member, onClose, onRemea
                     <p className="text-[10px] text-slate-500">{label}</p>
                     <video src={url} controls playsInline className="w-full rounded-lg bg-black aspect-[3/4] object-contain" />
                     <button onClick={() => shareVideo(blob, label)}
-                      className="w-full rounded-lg bg-slate-700 text-white font-bold text-xs py-2 active:scale-95">
+                      className="w-full rounded-lg bg-slate-200 dark:bg-slate-700 text-white font-bold text-xs py-2 active:scale-95">
                       📹 저장/공유
                     </button>
                   </div>
@@ -256,17 +256,17 @@ export default function StanceReportDashboard({ report, member, onClose, onRemea
 
       <div className="w-full max-w-[794px] mx-auto mt-3 space-y-2">
         <ReportActions reportNodeId="stance-report-sheet" baseName={`${report.member?.name || '회원'}_한다리서기`} onMessage={setVideoShareMsg} />
-        {videoShareMsg && <p className="text-center text-xs text-emerald-400">{videoShareMsg}</p>}
+        {videoShareMsg && <p className="text-center text-xs text-emerald-700 dark:text-emerald-400">{videoShareMsg}</p>}
         {!member?.isVirtual && typeof onViewInReport === 'function' && (
           <button
             onClick={onViewInReport}
-            className="w-full rounded-xl border border-amber-500/40 bg-amber-500/10 text-amber-300 font-bold text-sm py-2.5"
+            className="w-full rounded-xl border border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300 font-bold text-sm py-2.5"
           >
             📊 결과리포트에서 보기
           </button>
         )}
         {typeof onRemeasure === 'function' && (
-          <button onClick={onRemeasure} className="w-full rounded-lg bg-slate-800 text-white font-bold text-sm py-2.5">← 다시 측정</button>
+          <button onClick={onRemeasure} className="w-full rounded-lg bg-slate-100 dark:bg-slate-800 text-white font-bold text-sm py-2.5">← 다시 측정</button>
         )}
       </div>
     </UnifiedReportCanvas>

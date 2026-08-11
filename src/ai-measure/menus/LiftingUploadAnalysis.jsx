@@ -279,7 +279,7 @@ export default function LiftingUploadAnalysis({
   const exLabel = exerciseType ? exerciseLabel(exerciseType) : '';
 
   return (
-    <div className="absolute inset-0 bg-slate-950 flex flex-col" style={{ paddingTop: 'max(176px, calc(env(safe-area-inset-top) + 176px))' }}>
+    <div className="absolute inset-0 bg-slate-50 dark:bg-slate-950 flex flex-col" style={{ paddingTop: 'max(176px, calc(env(safe-area-inset-top) + 176px))' }}>
       <div className="flex-1 overflow-y-auto px-5 pb-6 flex flex-col items-center gap-4">
         {/* 미리보기/탭 영역 */}
         <div className="relative w-full max-w-md overflow-hidden rounded-xl bg-black aspect-[3/4]"
@@ -297,19 +297,19 @@ export default function LiftingUploadAnalysis({
             </div>
           )}
           {phase === 'analyzing' && (
-            <div className="absolute left-3 top-3 rounded-full border border-white/15 bg-black/70 px-3 py-1 text-xs font-black text-amber-300 backdrop-blur">
+            <div className="absolute left-3 top-3 rounded-full border border-white/15 bg-black/70 px-3 py-1 text-xs font-black text-amber-700 dark:text-amber-300 backdrop-blur">
               추적 분석 중 {progress}%
             </div>
           )}
         </div>
 
         {heightCm
-          ? <p className="text-[11px] text-emerald-400">회원 키 {heightCm}cm로 cm 환산·속도 보정</p>
-          : <p className="text-[11px] text-amber-400">키 미입력 — 속도는 상대값으로만 표시됩니다</p>}
+          ? <p className="text-[11px] text-emerald-700 dark:text-emerald-400">회원 키 {heightCm}cm로 cm 환산·속도 보정</p>
+          : <p className="text-[11px] text-amber-700 dark:text-amber-400">키 미입력 — 속도는 상대값으로만 표시됩니다</p>}
 
         {phase === 'idle' && (
           <>
-            <p className="text-center text-sm text-slate-300 max-w-md">
+            <p className="text-center text-sm text-slate-600 dark:text-slate-300 max-w-md">
               {modeLabel} {exLabel} · 옆에서 촬영한 고속영상(120/240fps)을 올리면 바벨 궤적과
               속도를 분석합니다. 슬로모 영상일수록 최고속도까지 정확합니다.
             </p>
@@ -320,22 +320,22 @@ export default function LiftingUploadAnalysis({
           </>
         )}
 
-        {fileName && phase !== 'idle' && <p className="text-xs text-slate-400 truncate max-w-md">📁 {fileName}</p>}
+        {fileName && phase !== 'idle' && <p className="text-xs text-slate-500 dark:text-slate-400 truncate max-w-md">📁 {fileName}</p>}
 
         {phase === 'seeding' && (
           <div className="w-full max-w-md space-y-3">
             <div>
-              <label className="block text-[11px] font-bold text-slate-400 mb-1">촬영 모드(슬로모 배수)</label>
+              <label className="block text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-1">촬영 모드(슬로모 배수)</label>
               <select value={capture} onChange={e => setCapture(e.target.value)}
-                className="w-full bg-slate-800 border border-slate-700 text-slate-100 rounded-lg px-3 py-2 text-sm">
+                className="w-full bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-lg px-3 py-2 text-sm">
                 {Object.entries(CAPTURE_PRESETS).map(([k, p]) => (
                   <option key={k} value={k}>{p.label}</option>
                 ))}
               </select>
             </div>
-            <div className="rounded-xl bg-slate-900/70 border border-slate-700 p-3 space-y-2">
+            <div className="rounded-xl bg-white dark:bg-slate-900/70 border border-slate-300 dark:border-slate-700 p-3 space-y-2">
               <div className="flex items-center justify-between gap-2">
-                <label className="text-[11px] font-bold text-slate-400">기준 길이(cm)</label>
+                <label className="text-[11px] font-bold text-slate-500 dark:text-slate-400">기준 길이(cm)</label>
                 <input
                   type="number"
                   min="5"
@@ -343,7 +343,7 @@ export default function LiftingUploadAnalysis({
                   step="0.5"
                   value={referenceLengthCm}
                   onChange={e => setReferenceLengthCm(Number(e.target.value) || 0)}
-                  className="w-20 rounded-lg bg-slate-800 border border-slate-700 px-2 py-1.5 text-center text-sm font-mono text-white"
+                  className="w-20 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 px-2 py-1.5 text-center text-sm font-mono text-white"
                 />
               </div>
               <button
@@ -352,7 +352,7 @@ export default function LiftingUploadAnalysis({
                   setCalibrationPointCount(0);
                   setCalibrating(v => !v);
                 }}
-                className={`w-full rounded-lg py-2 text-xs font-black ${calibrating ? 'bg-cyan-400 text-slate-950' : referenceScale ? 'bg-emerald-500 text-slate-950' : 'bg-slate-700 text-white'}`}>
+                className={`w-full rounded-lg py-2 text-xs font-black ${calibrating ? 'bg-cyan-400 text-slate-950' : referenceScale ? 'bg-emerald-500 text-slate-950' : 'bg-slate-200 dark:bg-slate-700 text-white'}`}>
                 {calibrating ? '영상에서 기준물 양끝 2점 터치' : referenceScale ? '기준물 보정 다시 하기' : '기준물 거리 보정'}
               </button>
             </div>
@@ -360,7 +360,7 @@ export default function LiftingUploadAnalysis({
               className="w-full rounded-xl bg-amber-500 text-slate-950 font-black py-3 active:scale-95 disabled:opacity-50">
               추적 분석 시작
             </button>
-            <label className="block text-center cursor-pointer text-[11px] text-slate-400 underline">
+            <label className="block text-center cursor-pointer text-[11px] text-slate-500 dark:text-slate-400 underline">
               다른 영상 선택
               <input type="file" accept="video/*" onChange={handleFile} className="hidden" />
             </label>
@@ -369,19 +369,19 @@ export default function LiftingUploadAnalysis({
 
         {phase === 'analyzing' && (
           <div className="w-full max-w-md space-y-2">
-            <div className="h-2 w-full overflow-hidden rounded-full bg-slate-800">
+            <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
               <div className="h-full bg-amber-500 transition-all" style={{ width: `${progress}%` }} />
             </div>
-            <button onClick={cancel} className="w-full rounded-lg bg-slate-700 text-slate-200 font-bold py-2 text-sm">취소</button>
+            <button onClick={cancel} className="w-full rounded-lg bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold py-2 text-sm">취소</button>
           </div>
         )}
 
-        {phase === 'done' && <p className="text-sm font-bold text-emerald-400">✓ 분석 완료 — 리포트로 이동합니다…</p>}
+        {phase === 'done' && <p className="text-sm font-bold text-emerald-700 dark:text-emerald-400">✓ 분석 완료 — 리포트로 이동합니다…</p>}
 
         {(phase === 'error' || errorMsg) && (
           <div className="w-full max-w-md space-y-2">
-            <p className="text-center text-xs text-red-400">{errorMsg}</p>
-            <label className="block text-center cursor-pointer rounded-lg bg-slate-700 text-slate-200 font-bold py-2 text-sm">
+            <p className="text-center text-xs text-red-700 dark:text-red-400">{errorMsg}</p>
+            <label className="block text-center cursor-pointer rounded-lg bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold py-2 text-sm">
               다른 영상 선택
               <input type="file" accept="video/*" onChange={handleFile} className="hidden" />
             </label>

@@ -118,15 +118,15 @@ function nameWithRemain(s, members) {
 }
 
 const STATUS_MAP = {
-  scheduled:{ label:'예정', bg:'bg-slate-700 text-slate-300',        dot:'bg-slate-400'   },
-  attended: { label:'출석', bg:'bg-emerald-500/20 text-emerald-400', dot:'bg-emerald-400' },
-  canceled: { label:'취소', bg:'bg-red-500/20 text-red-400',         dot:'bg-red-400'     },
-  noshow:   { label:'노쇼', bg:'bg-orange-500/20 text-orange-400',   dot:'bg-orange-400'  },
+  scheduled:{ label:'예정', bg:'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300',        dot:'bg-slate-400'   },
+  attended: { label:'출석', bg:'bg-emerald-500/20 text-emerald-700 dark:text-emerald-400', dot:'bg-emerald-400' },
+  canceled: { label:'취소', bg:'bg-red-500/20 text-red-700 dark:text-red-400',         dot:'bg-red-400'     },
+  noshow:   { label:'노쇼', bg:'bg-orange-500/20 text-orange-700 dark:text-orange-400',   dot:'bg-orange-400'  },
 };
 
-const SEL = "w-full bg-slate-800 border border-slate-700 text-slate-100 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-amber-500 disabled:opacity-40 disabled:cursor-not-allowed";
-const INP = "w-full bg-slate-800 border border-slate-700 text-slate-100 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-amber-500";
-const LBL = "block text-xs font-semibold text-slate-400 uppercase tracking-widest mb-1.5";
+const SEL = "w-full bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-amber-500 disabled:opacity-40 disabled:cursor-not-allowed";
+const INP = "w-full bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-amber-500";
+const LBL = "block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5";
 
 const getUserTrainerId = user => (user?.role === 'trainer' ? (user.trainerId || user.id) : null);
 const memberHasTrainer = (member, trainerId) => Boolean(trainerId && member?.trainerSessions?.[trainerId]);
@@ -145,9 +145,9 @@ function DateWd({ label, value, onChange }) {
       <label className={LBL}>{label}</label>
       <div className="flex items-center gap-2">
         <input type="date" value={value} onChange={e=>onChange(e.target.value)}
-          className="flex-1 bg-slate-800 border border-slate-700 text-slate-100 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-amber-500"/>
+          className="flex-1 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-amber-500"/>
         {wd && (
-          <span className="text-amber-400 font-black text-sm px-2.5 py-2 bg-amber-500/10 border border-amber-500/20 rounded-xl whitespace-nowrap">
+          <span className="text-amber-700 dark:text-amber-400 font-black text-sm px-2.5 py-2 bg-amber-500/10 border border-amber-500/20 rounded-xl whitespace-nowrap">
             {wd}요일
           </span>
         )}
@@ -164,12 +164,12 @@ function CompactRow({ s, members, onClick }) {
   const st = STATUS_MAP[s.status] || STATUS_MAP.scheduled;
   return (
     <div onClick={() => onClick(s)}
-      className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-slate-800/50 transition-colors">
+      className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-slate-100/50 dark:hover:bg-slate-800/50 transition-colors">
       <div className="w-1 h-8 rounded-full flex-shrink-0" style={{ background: s.trainerColor || '#94a3b8' }} />
-      <div className="flex-shrink-0 w-12 text-[11px] font-mono text-slate-400 leading-tight">{s.startTime}</div>
+      <div className="flex-shrink-0 w-12 text-[11px] font-mono text-slate-500 dark:text-slate-400 leading-tight">{s.startTime}</div>
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-semibold truncate text-slate-200">
-          {isExt && <span className="text-purple-400 text-[10px] mr-1">[외]</span>}{nm}
+        <p className="text-sm font-semibold truncate text-slate-700 dark:text-slate-200">
+          {isExt && <span className="text-purple-700 dark:text-purple-400 text-[10px] mr-1">[외]</span>}{nm}
         </p>
         <p className="text-[10px] text-slate-500 truncate">{s.trainerName || '트레이너'}{s.classType ? ` · ${s.classType}` : ''}</p>
       </div>
@@ -272,13 +272,13 @@ function ScheduleDetailModal({ schedule:initS, onClose, onUpdate, onDelete }) {
       <div className="modal-box">
 
         {/* 헤더 */}
-        <div className="flex items-center gap-3 px-5 py-4 border-b border-slate-800 flex-shrink-0">
+        <div className="flex items-center gap-3 px-5 py-4 border-b border-slate-200 dark:border-slate-800 flex-shrink-0">
           <div className="w-3 h-10 rounded-full flex-shrink-0" style={{background:s.trainerColor||'#94a3b8'}}/>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
               <h3 className="font-bold truncate">{dispName}</h3>
               {isExt && (
-                <span className="text-[10px] bg-purple-500/20 text-purple-400 border border-purple-500/30 px-1.5 py-0.5 rounded font-bold flex-shrink-0">외부</span>
+                <span className="text-[10px] bg-purple-500/20 text-purple-700 dark:text-purple-400 border border-purple-500/30 px-1.5 py-0.5 rounded font-bold flex-shrink-0">외부</span>
               )}
             </div>
             <p className="text-slate-500 text-xs">{s.trainerName||'트레이너'} · {s.date} ({wd}요일) · {s.startTime}</p>
@@ -307,7 +307,7 @@ function ScheduleDetailModal({ schedule:initS, onClose, onUpdate, onDelete }) {
                   })()
                 }] : []),
               ].map(row=>(
-                <div key={row.l} className="flex items-center justify-between py-2 border-b border-slate-800">
+                <div key={row.l} className="flex items-center justify-between py-2 border-b border-slate-200 dark:border-slate-800">
                   <span className="text-xs text-slate-500 uppercase tracking-wide font-semibold w-20 flex-shrink-0">{row.l}</span>
                   <span className="text-sm font-medium text-right">{row.v}</span>
                 </div>
@@ -317,7 +317,7 @@ function ScheduleDetailModal({ schedule:initS, onClose, onUpdate, onDelete }) {
               {!s.statusFinalized ? (
                 <div>
                   <p className="text-xs text-slate-500 uppercase tracking-widest font-semibold mb-2">
-                    처리 {isExt && <span className="text-purple-400">(외부·세션 차감 없음)</span>}
+                    처리 {isExt && <span className="text-purple-700 dark:text-purple-400">(외부·세션 차감 없음)</span>}
                   </p>
                   <div className="grid grid-cols-3 gap-2">
                     {['attended','canceled','noshow'].map(status=>(
@@ -343,14 +343,14 @@ function ScheduleDetailModal({ schedule:initS, onClose, onUpdate, onDelete }) {
                   ✏️ 수정
                 </button>
                 <button onClick={removeSchedule} disabled={processing}
-                  className="flex-1 py-2.5 rounded-xl border border-red-500/30 text-red-400 hover:bg-red-500/10 text-sm font-semibold transition-colors disabled:opacity-50">
+                  className="flex-1 py-2.5 rounded-xl border border-red-500/30 text-red-700 dark:text-red-400 hover:bg-red-500/10 text-sm font-semibold transition-colors disabled:opacity-50">
                   🗑 삭제
                 </button>
               </div>
             </>
           ) : (
             <div className="space-y-3">
-              <p className="text-xs text-amber-400 font-bold uppercase tracking-widest">✏️ 수정</p>
+              <p className="text-xs text-amber-700 dark:text-amber-400 font-bold uppercase tracking-widest">✏️ 수정</p>
               {!isExt && (
                 <div>
                   <label className={LBL}>회원</label>
@@ -578,10 +578,10 @@ function AddModal({ members, trainers, fixedTrainerId, onAdd, onClose }) {
             <button onClick={onClose} className="text-slate-500 hover:text-white text-2xl">×</button>
           </div>
           {/* 탭 전환 */}
-          <div className="flex mx-5 mb-3 bg-slate-800 rounded-xl p-1">
+          <div className="flex mx-5 mb-3 bg-slate-100 dark:bg-slate-800 rounded-xl p-1">
             {[['regular','📋 일반 수업'],['external','📤 외부 일정']].map(([t,l])=>(
               <button key={t} onClick={()=>switchTab(t)}
-                className={`flex-1 py-2 rounded-lg text-xs font-bold transition-colors ${tab===t?'bg-amber-500 text-slate-950':'text-slate-400 hover:text-white'}`}>
+                className={`flex-1 py-2 rounded-lg text-xs font-bold transition-colors ${tab===t?'bg-amber-500 text-slate-950':'text-slate-500 dark:text-slate-400 hover:text-white'}`}>
                 {l}
               </button>
             ))}
@@ -601,8 +601,8 @@ function AddModal({ members, trainers, fixedTrainerId, onAdd, onClose }) {
                     <div key={m} onClick={()=>{ setMemberQuery(''); setForm(p=>({...p, regularMode:m, memberId:'', classType:''})); }}
                       className={`flex-1 py-2.5 rounded-xl text-sm font-bold border cursor-pointer text-center transition-colors select-none
                         ${form.regularMode===m
-                          ? 'bg-amber-500/20 border-amber-500/40 text-amber-300'
-                          : 'border-slate-700 text-slate-400 hover:border-slate-500 hover:text-slate-300'}`}>
+                          ? 'bg-amber-500/20 border-amber-500/40 text-amber-700 dark:text-amber-300'
+                          : 'border-slate-300 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:border-slate-500 hover:text-slate-600 dark:hover:text-slate-300'}`}>
                       {l}
                     </div>
                   ))}
@@ -611,7 +611,7 @@ function AddModal({ members, trainers, fixedTrainerId, onAdd, onClose }) {
 
               {/* ① 트레이너 선택 */}
               <div>
-                <label className={LBL}>① 담당 트레이너 <span className="text-red-400">*</span></label>
+                <label className={LBL}>① 담당 트레이너 <span className="text-red-700 dark:text-red-400">*</span></label>
                 <select value={form.trainerId} onChange={e=>handleTrainerChange(e.target.value)} disabled={!!fixedTrainerId} className={SEL}>
                   <option value="">트레이너를 먼저 선택하세요</option>
                   {trainers.map(t=>(
@@ -632,7 +632,7 @@ function AddModal({ members, trainers, fixedTrainerId, onAdd, onClose }) {
                 <label className={LBL}>
                   ② 회원 선택
                   {form.trainerId && filteredMembers.length === 0 && (
-                    <span className="ml-1 text-red-400 normal-case font-normal">— 담당 회원이 없습니다</span>
+                    <span className="ml-1 text-red-700 dark:text-red-400 normal-case font-normal">— 담당 회원이 없습니다</span>
                   )}
                   {!form.trainerId && <span className="ml-1 text-slate-600 normal-case font-normal">— 트레이너 선택 후 활성화</span>}
                 </label>
@@ -695,7 +695,7 @@ function AddModal({ members, trainers, fixedTrainerId, onAdd, onClose }) {
                   {memberClassTypes.map(ct=><option key={ct} value={ct}>{ct}</option>)}
                 </select>
                 {form.memberId && memberClassTypes.length === 0 && (
-                  <p className="text-xs text-orange-400 mt-1">이 회원에게 등록된 수업 종류가 없습니다</p>
+                  <p className="text-xs text-orange-700 dark:text-orange-400 mt-1">이 회원에게 등록된 수업 종류가 없습니다</p>
                 )}
               </div>
               ) : (
@@ -709,17 +709,17 @@ function AddModal({ members, trainers, fixedTrainerId, onAdd, onClose }) {
 
               {/* 예약 미리보기 */}
               {canSubmitRegular && (
-                <div className="bg-slate-800 border border-amber-500/20 rounded-xl p-3 space-y-1">
-                  <p className="text-xs text-amber-400 font-semibold">{isConsult ? '상담 확인' : '예약 확인'}</p>
+                <div className="bg-slate-100 dark:bg-slate-800 border border-amber-500/20 rounded-xl p-3 space-y-1">
+                  <p className="text-xs text-amber-700 dark:text-amber-400 font-semibold">{isConsult ? '상담 확인' : '예약 확인'}</p>
                   <div className="flex items-center gap-2 text-sm">
                     <div className="w-2 h-2 rounded-full" style={{background:selectedTrainerObj?.color}}/>
                     {isConsult
-                      ? <span className="font-semibold text-amber-300">💬 상담</span>
+                      ? <span className="font-semibold text-amber-700 dark:text-amber-300">💬 상담</span>
                       : <span className="font-semibold">{members.find(m=>m.id===form.memberId)?.name}</span>}
                     <span className="text-slate-500">·</span>
-                    <span className="text-slate-300">{selectedTrainerObj?.name}</span>
+                    <span className="text-slate-600 dark:text-slate-300">{selectedTrainerObj?.name}</span>
                   </div>
-                  <p className="text-slate-400 text-xs">
+                  <p className="text-slate-500 dark:text-slate-400 text-xs">
                     {form.date} ({weekday(form.date)}요일) · {form.startTime} — {form.endTime} · {isConsult ? '상담' : form.classType}
                   </p>
                 </div>
@@ -732,14 +732,14 @@ function AddModal({ members, trainers, fixedTrainerId, onAdd, onClose }) {
             <>
               {/* 외부 종류: 출강/교육/현장 */}
               <div>
-                <label className={LBL}>외부 일정 종류 <span className="text-red-400">*</span></label>
+                <label className={LBL}>외부 일정 종류 <span className="text-red-700 dark:text-red-400">*</span></label>
                 <div className="flex gap-2">
                   {['출강','교육','현장'].map(type=>(
                     <div key={type} onClick={()=>setForm(p=>({...p,externalType:type}))}
                       className={`flex-1 py-2.5 rounded-xl text-sm font-bold border cursor-pointer text-center transition-colors select-none
                         ${form.externalType===type
-                          ? 'bg-purple-500/20 border-purple-500/40 text-purple-300'
-                          : 'border-slate-700 text-slate-400 hover:border-slate-500 hover:text-slate-300'}`}>
+                          ? 'bg-purple-500/20 border-purple-500/40 text-purple-700 dark:text-purple-300'
+                          : 'border-slate-300 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:border-slate-500 hover:text-slate-600 dark:hover:text-slate-300'}`}>
                       {type}
                     </div>
                   ))}
@@ -773,8 +773,8 @@ function AddModal({ members, trainers, fixedTrainerId, onAdd, onClose }) {
                     <div key={m} onClick={()=>setForm(p=>({...p, extDateMode:m, endDate:p.date}))}
                       className={`flex-1 py-2.5 rounded-xl text-sm font-bold border cursor-pointer text-center transition-colors select-none
                         ${form.extDateMode===m
-                          ? 'bg-purple-500/20 border-purple-500/40 text-purple-300'
-                          : 'border-slate-700 text-slate-400 hover:border-slate-500 hover:text-slate-300'}`}>
+                          ? 'bg-purple-500/20 border-purple-500/40 text-purple-700 dark:text-purple-300'
+                          : 'border-slate-300 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:border-slate-500 hover:text-slate-600 dark:hover:text-slate-300'}`}>
                       {l}
                     </div>
                   ))}
@@ -790,14 +790,14 @@ function AddModal({ members, trainers, fixedTrainerId, onAdd, onClose }) {
                 <>
                   <DateWd label="종료 날짜" value={form.endDate} onChange={pf('endDate')}/>
                   {!rangeValid && rangeTooLong && (
-                    <p className="text-xs text-red-400 -mt-2">기간은 최대 {MAX_EXTERNAL_RANGE_DAYS}일까지 설정할 수 있습니다(현재 {rangeSpanDays + 1}일 — 종료 날짜를 확인해 주세요)</p>
+                    <p className="text-xs text-red-700 dark:text-red-400 -mt-2">기간은 최대 {MAX_EXTERNAL_RANGE_DAYS}일까지 설정할 수 있습니다(현재 {rangeSpanDays + 1}일 — 종료 날짜를 확인해 주세요)</p>
                   )}
                   {!rangeValid && !rangeTooLong && (
-                    <p className="text-xs text-red-400 -mt-2">종료 날짜는 시작 날짜와 같거나 이후여야 합니다</p>
+                    <p className="text-xs text-red-700 dark:text-red-400 -mt-2">종료 날짜는 시작 날짜와 같거나 이후여야 합니다</p>
                   )}
                   {rangeValid && (
                     <div className="bg-purple-500/5 border border-purple-500/20 rounded-xl px-3 py-2 -mt-1">
-                      <p className="text-xs text-purple-300 font-semibold">
+                      <p className="text-xs text-purple-700 dark:text-purple-300 font-semibold">
                         총 {(() => { let n=0,d=form.date; while(d<=form.endDate){n++;d=addD(d,1);} return n; })()}일간 일정이 등록됩니다
                       </p>
                       <p className="text-[11px] text-slate-500 mt-0.5">
@@ -813,7 +813,7 @@ function AddModal({ members, trainers, fixedTrainerId, onAdd, onClose }) {
                 <div>
                   <label className={LBL}>
                     시작 시간
-                    <span className="block text-[10px] text-purple-400 normal-case font-normal mt-0.5">자유 입력</span>
+                    <span className="block text-[10px] text-purple-700 dark:text-purple-400 normal-case font-normal mt-0.5">자유 입력</span>
                   </label>
                   {/* ★ step 없음, 분 단위 자유 */}
                   <input type="time" value={form.startTime}
@@ -823,7 +823,7 @@ function AddModal({ members, trainers, fixedTrainerId, onAdd, onClose }) {
                 <div>
                   <label className={LBL}>
                     종료 시간
-                    <span className="block text-[10px] text-purple-400 normal-case font-normal mt-0.5">독립 입력</span>
+                    <span className="block text-[10px] text-purple-700 dark:text-purple-400 normal-case font-normal mt-0.5">독립 입력</span>
                   </label>
                   <input type="time" value={form.endTime}
                     onChange={e=>setForm(p=>({...p,endTime:e.target.value}))}
@@ -833,7 +833,7 @@ function AddModal({ members, trainers, fixedTrainerId, onAdd, onClose }) {
 
               {/* 안내 */}
               <div className="bg-purple-500/5 border border-purple-500/20 rounded-xl px-3 py-2.5">
-                <p className="text-xs text-purple-400 font-semibold mb-1">외부 일정 안내</p>
+                <p className="text-xs text-purple-700 dark:text-purple-400 font-semibold mb-1">외부 일정 안내</p>
                 <p className="text-xs text-slate-500 leading-relaxed">
                   외부 일정은 특정 회원에 종속되지 않으며, 세션 차감이 일어나지 않습니다.
                   {isRange && ' 여러 날 모드에서는 시작~종료 날짜의 모든 날에 같은 시간으로 일정이 만들어집니다.'}
@@ -844,7 +844,7 @@ function AddModal({ members, trainers, fixedTrainerId, onAdd, onClose }) {
         </div>
 
         {/* 하단 등록 버튼 */}
-        <div className="flex gap-2 px-5 py-4 border-t border-slate-800 flex-shrink-0">
+        <div className="flex gap-2 px-5 py-4 border-t border-slate-200 dark:border-slate-800 flex-shrink-0">
           <button onClick={onClose}
             className="btn btn-ghost">
             취소
@@ -876,11 +876,11 @@ function Block({ s, onClick, compact=false, members }) {
 
   if (compact) return (
     <div onClick={()=>onClick(s)}
-      className={`text-[10px] rounded-md px-1.5 py-1 mb-0.5 cursor-pointer hover:opacity-75 transition-opacity border-l-2 ${isExt?'bg-purple-900/30':'bg-slate-800'}`}
+      className={`text-[10px] rounded-md px-1.5 py-1 mb-0.5 cursor-pointer hover:opacity-75 transition-opacity border-l-2 ${isExt?'bg-purple-900/30':'bg-slate-100 dark:bg-slate-800'}`}
       style={{borderColor:bColor}}>
       <div className="flex items-center gap-1">
-        {isExt && <span className="text-purple-400 text-[8px] font-bold">외</span>}
-        <p className="font-bold truncate text-slate-200 leading-tight">{name}</p>
+        {isExt && <span className="text-purple-700 dark:text-purple-400 text-[8px] font-bold">외</span>}
+        <p className="font-bold truncate text-slate-700 dark:text-slate-200 leading-tight">{name}</p>
       </div>
       <p className="text-slate-500 leading-tight">{s.startTime}</p>
       <div className="flex items-center gap-0.5 mt-0.5">
@@ -890,14 +890,14 @@ function Block({ s, onClick, compact=false, members }) {
     </div>
   );
   return (
-    <div onClick={()=>onClick(s)} className="flex items-start gap-3 p-4 hover:bg-slate-800/50 cursor-pointer transition-colors">
+    <div onClick={()=>onClick(s)} className="flex items-start gap-3 p-4 hover:bg-slate-100/50 dark:hover:bg-slate-800/50 cursor-pointer transition-colors">
       <div className="w-1 min-h-12 rounded-full flex-shrink-0 mt-0.5" style={{background:bColor}}/>
       <div className="flex-1 min-w-0">
         <div className="flex items-start justify-between gap-2">
           <div>
             <div className="flex items-center gap-2">
               <p className="font-semibold text-sm">{name}</p>
-              {isExt && <span className="text-[10px] bg-purple-500/20 text-purple-400 border border-purple-500/30 px-1.5 py-0.5 rounded font-bold">외부</span>}
+              {isExt && <span className="text-[10px] bg-purple-500/20 text-purple-700 dark:text-purple-400 border border-purple-500/30 px-1.5 py-0.5 rounded font-bold">외부</span>}
             </div>
             <p className="text-slate-500 text-xs mt-0.5">{s.trainerName||'트레이너'} · {s.classType}</p>
             <p className="text-slate-500 text-xs">{s.startTime} – {s.endTime}</p>
@@ -1115,18 +1115,18 @@ export default function Schedule() {
             const wd=dObj.toLocaleDateString('ko-KR',{weekday:'short'});
             const dayNum=dObj.getDate();
             return (
-              <div key={date} className={`bg-slate-900 border rounded-xl overflow-hidden ${isToday?'border-amber-500/40':'border-slate-800'}`}>
+              <div key={date} className={`bg-white dark:bg-slate-900 border rounded-xl overflow-hidden ${isToday?'border-amber-500/40':'border-slate-200 dark:border-slate-800'}`}>
                 {/* 요일 헤더 — 클릭 시 일 뷰로 */}
                 <button onClick={()=>{ setPivot(date); setView('day'); }}
-                  className={`w-full flex items-center gap-2 px-3 py-2 border-b border-slate-800 hover:bg-slate-800/50 transition-colors ${isToday?'bg-amber-500/5':''}`}>
-                  <span className={`font-mono font-black text-lg ${isToday?'text-amber-400':'text-slate-300'}`}>{dayNum}</span>
-                  <span className={`text-xs font-bold ${isToday?'text-amber-400':'text-slate-500'}`}>{wd}요일</span>
-                  {isToday && <span className="text-[10px] text-amber-400 font-bold">오늘</span>}
+                  className={`w-full flex items-center gap-2 px-3 py-2 border-b border-slate-200 dark:border-slate-800 hover:bg-slate-100/50 dark:hover:bg-slate-800/50 transition-colors ${isToday?'bg-amber-500/5':''}`}>
+                  <span className={`font-mono font-black text-lg ${isToday?'text-amber-700 dark:text-amber-400':'text-slate-600 dark:text-slate-300'}`}>{dayNum}</span>
+                  <span className={`text-xs font-bold ${isToday?'text-amber-700 dark:text-amber-400':'text-slate-500'}`}>{wd}요일</span>
+                  {isToday && <span className="text-[10px] text-amber-700 dark:text-amber-400 font-bold">오늘</span>}
                   <span className="ml-auto text-[11px] text-slate-600">{ds.length>0?`${ds.length}건`:'일정 없음'}</span>
                 </button>
                 {/* 해당 요일 일정 — 내용만큼 표시, 많으면 스크롤 */}
                 {ds.length>0 && (
-                  <div className="max-h-[40vh] overflow-y-auto divide-y divide-slate-800/60">
+                  <div className="max-h-[40vh] overflow-y-auto divide-y divide-slate-200 dark:divide-slate-800/60">
                     {ds.map(s=><CompactRow key={s.id} s={s} members={members} onClick={setDetail}/>)}
                   </div>
                 )}
@@ -1137,14 +1137,14 @@ export default function Schedule() {
       )}
 
       {view==='day'&&(
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
-          <div className="p-4 border-b border-slate-800">
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden">
+          <div className="p-4 border-b border-slate-200 dark:border-slate-800">
             <p className="font-bold">{fmtKo(pivot)}</p>
             <p className="text-slate-500 text-xs">{forDate(pivot).length}개 일정</p>
           </div>
           {forDate(pivot).length===0
             ? <p className="text-center text-slate-600 py-12 text-sm">예정된 일정이 없습니다</p>
-            : <div className="divide-y divide-slate-800 max-h-[65vh] overflow-y-auto">{forDate(pivot).map(s=><CompactRow key={s.id} s={s} members={members} onClick={setDetail}/>)}</div>
+            : <div className="divide-y divide-slate-200 dark:divide-slate-800 max-h-[65vh] overflow-y-auto">{forDate(pivot).map(s=><CompactRow key={s.id} s={s} members={members} onClick={setDetail}/>)}</div>
           }
         </div>
       )}
@@ -1253,22 +1253,22 @@ function ScheduleAuditModal({ groups, user, onOpenItem, onClose }) {
   return (
     <div className="modal-overlay">
       <div className="modal-box modal-box-large">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800 flex-shrink-0">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-slate-800 flex-shrink-0">
           <h2 className="font-black text-white">예약 점검 · 중복 감지</h2>
-          <button onClick={onClose} className="text-slate-400 hover:text-white text-xl leading-none">×</button>
+          <button onClick={onClose} className="text-slate-500 dark:text-slate-400 hover:text-white text-xl leading-none">×</button>
         </div>
 
         <div className="modal-body p-4 space-y-3">
           {groups.length === 0 ? (
             <div className="text-center py-12">
               <p className="text-4xl mb-2">✓</p>
-              <p className="text-emerald-400 font-bold">중복으로 의심되는 예약이 없습니다.</p>
+              <p className="text-emerald-700 dark:text-emerald-400 font-bold">중복으로 의심되는 예약이 없습니다.</p>
               <p className="text-slate-500 text-xs mt-1">같은 회차 중복·같은 시간 이중 예약을 자동 점검합니다.</p>
             </div>
           ) : unconfirmedCount === 0 ? (
             <div className="text-center py-10">
               <p className="text-4xl mb-2">✓</p>
-              <p className="text-emerald-400 font-bold">감지된 항목을 모두 확인했습니다.</p>
+              <p className="text-emerald-700 dark:text-emerald-400 font-bold">감지된 항목을 모두 확인했습니다.</p>
               <p className="text-slate-500 text-xs mt-1">아래에서 확인 내역을 다시 볼 수 있습니다.</p>
             </div>
           ) : (
@@ -1276,7 +1276,7 @@ function ScheduleAuditModal({ groups, user, onOpenItem, onClose }) {
               <p className="text-sm font-bold text-amber-200">
                 확인 필요 {unconfirmedCount}건{groups.length > unconfirmedCount ? ` · 확인됨 ${groups.length - unconfirmedCount}건` : ''}
               </p>
-              <p className="text-[11px] text-amber-300/70 mt-0.5">
+              <p className="text-[11px] text-amber-700 dark:text-amber-300/70 mt-0.5">
                 항목을 눌러 상세에서 확인 후 삭제·수정하거나, 손댈 필요 없다고 판단되면 "확인"을 누르세요.
               </p>
             </div>
@@ -1293,35 +1293,35 @@ function ScheduleAuditModal({ groups, user, onOpenItem, onClose }) {
                 const sig = groupSignature(g);
                 const rec = confirmedMap[sig];
                 return (
-                  <div key={sig} className={`rounded-xl border overflow-hidden ${rec ? 'border-slate-800/60 bg-slate-900/40 opacity-60' : 'border-slate-800 bg-slate-900'}`}>
-                    <div className={`px-3 py-2 ${rec ? 'bg-slate-800/30' : g.type==='same_lot' ? 'bg-red-500/10' : 'bg-slate-800/60'}`}>
+                  <div key={sig} className={`rounded-xl border overflow-hidden ${rec ? 'border-slate-200/60 dark:border-slate-800/60 bg-white dark:bg-slate-900/40 opacity-60' : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900'}`}>
+                    <div className={`px-3 py-2 ${rec ? 'bg-slate-100/30 dark:bg-slate-800/30' : g.type==='same_lot' ? 'bg-red-500/10' : 'bg-slate-100/60 dark:bg-slate-800/60'}`}>
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-2 min-w-0">
-                          <span className={`rounded px-1.5 py-0.5 text-[10px] font-black flex-shrink-0 ${g.type==='same_lot' ? 'bg-red-500/30 text-red-200' : 'bg-slate-600/50 text-slate-300'}`}>
+                          <span className={`rounded px-1.5 py-0.5 text-[10px] font-black flex-shrink-0 ${g.type==='same_lot' ? 'bg-red-500/30 text-red-200' : 'bg-slate-300/50 dark:bg-slate-600/50 text-slate-600 dark:text-slate-300'}`}>
                             {g.type==='same_lot' ? '회차 중복' : '같은 시간'}
                           </span>
-                          <p className="text-sm font-bold text-slate-200 truncate">{g.label}</p>
+                          <p className="text-sm font-bold text-slate-700 dark:text-slate-200 truncate">{g.label}</p>
                         </div>
                         {rec ? (
-                          <span className="flex-shrink-0 text-[10px] font-bold text-emerald-400 whitespace-nowrap">
+                          <span className="flex-shrink-0 text-[10px] font-bold text-emerald-700 dark:text-emerald-400 whitespace-nowrap">
                             ✓ 확인됨{rec.byName ? ` · ${rec.byName}` : ''}
                           </span>
                         ) : (
                           <button onClick={() => confirmGroup(g)}
-                            className="flex-shrink-0 rounded-lg bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 text-[11px] font-bold px-2.5 py-1 hover:bg-emerald-500/25 transition-colors">
+                            className="flex-shrink-0 rounded-lg bg-emerald-500/15 border border-emerald-500/40 text-emerald-700 dark:text-emerald-300 text-[11px] font-bold px-2.5 py-1 hover:bg-emerald-500/25 transition-colors">
                             확인
                           </button>
                         )}
                       </div>
-                      <p className="text-[11px] text-slate-400 mt-1">{g.reason}</p>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">{g.reason}</p>
                       {rec?.at && <p className="text-[10px] text-slate-600 mt-0.5">{fmtConfirmedAt(rec.at)}</p>}
                     </div>
-                    <div className="divide-y divide-slate-800">
+                    <div className="divide-y divide-slate-200 dark:divide-slate-800">
                       {g.items.map((s) => (
                         <button key={s.id} onClick={()=>onOpenItem(s)}
-                          className="w-full flex items-center justify-between px-3 py-2.5 text-left hover:bg-slate-800/50 transition-colors">
+                          className="w-full flex items-center justify-between px-3 py-2.5 text-left hover:bg-slate-100/50 dark:hover:bg-slate-800/50 transition-colors">
                           <div>
-                            <p className="text-sm font-semibold text-slate-200">
+                            <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">
                               {s.date} {s.startTime} · {s.classType || '수업'}
                             </p>
                             <p className="text-[11px] text-slate-500">
@@ -1331,7 +1331,7 @@ function ScheduleAuditModal({ groups, user, onOpenItem, onClose }) {
                               {s.sessionDeducted ? ' · 차감됨' : ' · 미차감'}
                             </p>
                           </div>
-                          <span className="text-[11px] font-bold text-slate-400 flex-shrink-0">
+                          <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 flex-shrink-0">
                             {STATUS_KO[s.status] || s.status} ›
                           </span>
                         </button>
@@ -1341,9 +1341,9 @@ function ScheduleAuditModal({ groups, user, onOpenItem, onClose }) {
                 );
               })}
 
-              <div className="rounded-xl border border-slate-800 bg-slate-950/60 px-3 py-2.5">
-                <p className="text-[11px] leading-relaxed text-slate-400">
-                  <b className="text-slate-300">정리 팁</b> — 같은 회차가 두 번 차감된 유령 항목이면,
+              <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-950/60 px-3 py-2.5">
+                <p className="text-[11px] leading-relaxed text-slate-500 dark:text-slate-400">
+                  <b className="text-slate-600 dark:text-slate-300">정리 팁</b> — 같은 회차가 두 번 차감된 유령 항목이면,
                   실제 수업이 아닌 쪽을 상세에서 삭제하세요. 삭제 후 회원 세션 잔여가 잘못 올라갔는지
                   확인하고, 맞지 않으면 세션 탭에서 «−1 차감»으로 보정하면 됩니다.
                 </p>
@@ -1352,8 +1352,8 @@ function ScheduleAuditModal({ groups, user, onOpenItem, onClose }) {
           )}
         </div>
 
-        <div className="flex-shrink-0 p-3 border-t border-slate-800">
-          <button onClick={onClose} className="w-full font-bold py-2.5 rounded-xl text-sm bg-slate-700 hover:bg-slate-600 text-white transition-colors">닫기</button>
+        <div className="flex-shrink-0 p-3 border-t border-slate-200 dark:border-slate-800">
+          <button onClick={onClose} className="w-full font-bold py-2.5 rounded-xl text-sm bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-white transition-colors">닫기</button>
         </div>
       </div>
     </div>

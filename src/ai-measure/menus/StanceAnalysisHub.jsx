@@ -140,13 +140,13 @@ export default function StanceAnalysisHub({ member, onBack, onSave, onSaveToFire
 
   if (view === 'eyes_transition') {
     return (
-      <div className="fixed inset-0 z-[80] bg-slate-950 flex flex-col items-center justify-center p-6">
-        <div className="w-full max-w-sm bg-slate-900 border border-amber-500/30 rounded-2xl p-6 space-y-4 text-center">
+      <div className="fixed inset-0 z-[80] bg-slate-50 dark:bg-slate-950 flex flex-col items-center justify-center p-6">
+        <div className="w-full max-w-sm bg-white dark:bg-slate-900 border border-amber-500/30 rounded-2xl p-6 space-y-4 text-center">
           <p className="text-4xl">🙈</p>
           <p className="text-white font-black text-lg">눈감고 측정으로 이동</p>
-          <p className="text-slate-400 text-sm leading-relaxed">
+          <p className="text-slate-500 dark:text-slate-400 text-sm leading-relaxed">
             눈뜨고 왼쪽 → 오른쪽 측정이 끝났습니다.<br />
-            이어서 같은 순서로 <span className="text-amber-300 font-bold">눈을 감고</span> 진행합니다.
+            이어서 같은 순서로 <span className="text-amber-700 dark:text-amber-300 font-bold">눈을 감고</span> 진행합니다.
           </p>
           <p className="text-slate-500 text-xs">회원에게 눈을 감아달라고 안내한 뒤 계속을 눌러주세요.</p>
           <button onClick={proceedToClosedPhase}
@@ -168,7 +168,7 @@ export default function StanceAnalysisHub({ member, onBack, onSave, onSaveToFire
       { label: '종합', value: STATUS_KO[pending.status] || '-' },
     ];
     return (
-      <div className="fixed inset-0 z-[80] bg-slate-950 overflow-y-auto" style={{ height: '100dvh' }}>
+      <div className="fixed inset-0 z-[80] bg-slate-50 dark:bg-slate-950 overflow-y-auto" style={{ height: '100dvh' }}>
         <div className="max-w-md mx-auto p-4">
           <MeasureRecordConfirm
             title="한다리서기 (SLST)"
@@ -199,18 +199,18 @@ export default function StanceAnalysisHub({ member, onBack, onSave, onSaveToFire
 
   // view === 'measure' — 눈뜨고(왼쪽→오른쪽) → 눈감고(왼쪽→오른쪽) 순서로 진행
   return (
-    <div className="fixed inset-0 z-[80] bg-slate-950" style={{ height: '100dvh' }}>
+    <div className="fixed inset-0 z-[80] bg-slate-50 dark:bg-slate-950" style={{ height: '100dvh' }}>
       <div className="absolute top-[max(8px,calc(env(safe-area-inset-top)+8px))] inset-x-0 z-[86] flex flex-col items-center gap-1.5 px-3 pointer-events-none">
         <div className="pointer-events-auto flex items-center gap-2 rounded-full bg-black/55 backdrop-blur px-3 py-1.5 border border-white/10 shadow-lg">
-          <span className={`text-xs font-black ${eyesState === 'open' ? 'text-cyan-300' : 'text-violet-300'}`}>
+          <span className={`text-xs font-black ${eyesState === 'open' ? 'text-cyan-700 dark:text-cyan-300' : 'text-violet-700 dark:text-violet-300'}`}>
             {eyesState === 'open' ? '👁 눈뜨고' : '🙈 눈감고'}
           </span>
           <span className="text-slate-500 text-xs">|</span>
-          <span className={`text-xs font-black ${legStep === 'left' ? 'text-amber-300' : 'text-emerald-400'}`}>
+          <span className={`text-xs font-black ${legStep === 'left' ? 'text-amber-700 dark:text-amber-300' : 'text-emerald-700 dark:text-emerald-400'}`}>
             {legStep === 'left' ? '① 왼쪽' : '✓ 왼쪽'}
           </span>
           <span className="text-slate-500 text-xs">→</span>
-          <span className={`text-xs font-black ${legStep === 'right' ? 'text-amber-300' : 'text-slate-500'}`}>
+          <span className={`text-xs font-black ${legStep === 'right' ? 'text-amber-700 dark:text-amber-300' : 'text-slate-500'}`}>
             ② 오른쪽
           </span>
         </div>
@@ -218,7 +218,7 @@ export default function StanceAnalysisHub({ member, onBack, onSave, onSaveToFire
           {[['live', '🔴 실시간'], ['upload', '📁 영상 업로드']].map(([k, label]) => (
             <button key={k} onClick={() => setMode(k)}
               className={`rounded-full px-3.5 py-1 text-xs font-black transition-colors ${
-                mode === k ? 'bg-amber-500 text-slate-950' : 'text-slate-300'}`}>
+                mode === k ? 'bg-amber-500 text-slate-950' : 'text-slate-600 dark:text-slate-300'}`}>
               {label}
             </button>
           ))}

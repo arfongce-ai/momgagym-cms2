@@ -13,19 +13,19 @@ const GRADE_STYLE = {
   good: {
     border:  'border-emerald-500/30',
     bg:      'bg-emerald-500/5',
-    badge:   'bg-emerald-500/20 text-emerald-400',
+    badge:   'bg-emerald-500/20 text-emerald-700 dark:text-emerald-400',
     icon:    '✅',
   },
   warn: {
     border:  'border-amber-500/30',
     bg:      'bg-amber-500/5',
-    badge:   'bg-amber-500/20 text-amber-400',
+    badge:   'bg-amber-500/20 text-amber-700 dark:text-amber-400',
     icon:    '⚠️',
   },
   bad: {
     border:  'border-red-500/30',
     bg:      'bg-red-500/5',
-    badge:   'bg-red-500/20 text-red-400',
+    badge:   'bg-red-500/20 text-red-700 dark:text-red-400',
     icon:    '🔴',
   },
 };
@@ -45,7 +45,7 @@ function AnalysisProgress({ step }) {
         {steps.map((s, i) => (
           <p key={s} className={`text-sm transition-all duration-300
             ${i < step  ? 'text-slate-600 line-through' :
-              i === step ? 'text-amber-400 font-semibold' :
+              i === step ? 'text-amber-700 dark:text-amber-400 font-semibold' :
                            'text-slate-700'}`}>
             {i < step ? '✓' : i === step ? '▶' : '·'} {s}
           </p>
@@ -64,7 +64,7 @@ function ReportCard({ item }) {
         <div className="flex-1">
           <div className="flex items-center gap-2">
             <span>{style.icon}</span>
-            <span className="font-semibold text-sm text-slate-200">{item.label}</span>
+            <span className="font-semibold text-sm text-slate-700 dark:text-slate-200">{item.label}</span>
           </div>
           {item.description && (
             <p className="text-xs text-slate-500 mt-0.5 ml-6">{item.description}</p>
@@ -72,9 +72,9 @@ function ReportCard({ item }) {
         </div>
         <div className="text-right flex-shrink-0">
           <span className={`text-lg font-black font-mono ${
-            item.grade==='good' ? 'text-emerald-400' :
-            item.grade==='warn' ? 'text-amber-400'   :
-                                  'text-red-400'
+            item.grade==='good' ? 'text-emerald-700 dark:text-emerald-400' :
+            item.grade==='warn' ? 'text-amber-700 dark:text-amber-400'   :
+                                  'text-red-700 dark:text-red-400'
           }`}>
             {item.value}
             {item.unit && <span className="text-xs font-normal text-slate-500 ml-0.5">{item.unit}</span>}
@@ -91,7 +91,7 @@ function ReportCard({ item }) {
 }
 
 // ── 메인 컴포넌트 ────────────────────────────────────────
-const INP = `w-full bg-slate-800 border border-slate-700 text-slate-100
+const INP = `w-full bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-100
   rounded-xl px-3 py-2.5 text-sm font-mono placeholder-slate-500
   focus:outline-none focus:border-amber-500`;
 
@@ -185,7 +185,7 @@ export default function AiMeasureReport({ member, onClose, onSaved }) {
       <div className="modal-box">
 
         {/* 헤더 */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-800 flex-shrink-0">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-slate-800 flex-shrink-0">
           <div>
             <h2 className="font-bold text-base">
               {phase === 'input'     && '🤖 AI 체성분 측정'}
@@ -205,35 +205,35 @@ export default function AiMeasureReport({ member, onClose, onSaved }) {
           {phase === 'input' && (
             <div className="p-5 space-y-4">
               <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl px-3 py-2">
-                <p className="text-xs text-amber-400 font-semibold">
+                <p className="text-xs text-amber-700 dark:text-amber-400 font-semibold">
                   💡 체중은 필수, 나머지는 선택 입력입니다
                 </p>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-400 uppercase tracking-widest mb-1.5">
+                  <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5">
                     키 (cm)
                   </label>
                   <input type="number" step="0.1" value={form.height} onChange={pf('height')}
                     placeholder="175.0" className={INP} />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-400 uppercase tracking-widest mb-1.5">
-                    몸무게 (kg) <span className="text-red-400">*</span>
+                  <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5">
+                    몸무게 (kg) <span className="text-red-700 dark:text-red-400">*</span>
                   </label>
                   <input type="number" step="0.1" value={form.weight} onChange={pf('weight')}
                     placeholder="70.0" className={INP} />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-400 uppercase tracking-widest mb-1.5">
+                  <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5">
                     최고혈압 (mmHg)
                   </label>
                   <input type="number" step="1" value={form.systolic} onChange={pf('systolic')}
                     placeholder="120" className={INP} />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-400 uppercase tracking-widest mb-1.5">
+                  <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5">
                     최저혈압 (mmHg)
                   </label>
                   <input type="number" step="1" value={form.diastolic} onChange={pf('diastolic')}
@@ -242,7 +242,7 @@ export default function AiMeasureReport({ member, onClose, onSaved }) {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-400 uppercase tracking-widest mb-1.5">
+                <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5">
                   트레이너 메모 (선택)
                 </label>
                 <textarea rows={2} value={form.memo} onChange={pf('memo')}
@@ -251,7 +251,7 @@ export default function AiMeasureReport({ member, onClose, onSaved }) {
               </div>
 
               {error && (
-                <p className="text-red-400 text-xs bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
+                <p className="text-red-700 dark:text-red-400 text-xs bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
                   {error}
                 </p>
               )}
@@ -275,9 +275,9 @@ export default function AiMeasureReport({ member, onClose, onSaved }) {
                   { label:'최고혈압', value: form.systolic  || '-', unit:'mmHg' },
                   { label:'최저혈압', value: form.diastolic || '-', unit:'mmHg' },
                 ].map(m => (
-                  <div key={m.label} className="bg-slate-800 rounded-xl p-2 text-center">
+                  <div key={m.label} className="bg-slate-100 dark:bg-slate-800 rounded-xl p-2 text-center">
                     <p className="text-[10px] text-slate-500 mb-0.5">{m.label}</p>
-                    <p className="font-mono font-black text-sm text-slate-100">
+                    <p className="font-mono font-black text-sm text-slate-800 dark:text-slate-100">
                       {m.value}
                       <span className="text-[10px] text-slate-500 font-normal">{m.unit}</span>
                     </p>
@@ -301,18 +301,18 @@ export default function AiMeasureReport({ member, onClose, onSaved }) {
               {/* 종합 의견 */}
               <div className={`border rounded-xl p-4 space-y-1 ${
                 analysisResult.error
-                  ? 'border-slate-700 bg-slate-800/50'
-                  : 'border-slate-600 bg-slate-800/40'
+                  ? 'border-slate-300 dark:border-slate-700 bg-slate-100/50 dark:bg-slate-800/50'
+                  : 'border-slate-400 dark:border-slate-600 bg-slate-100/40 dark:bg-slate-800/40'
               }`}>
-                <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">종합 의견</p>
-                <p className="text-sm text-slate-300 leading-relaxed">{analysisResult.summary}</p>
+                <p className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">종합 의견</p>
+                <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed">{analysisResult.summary}</p>
               </div>
 
               {/* 트레이너 메모 */}
               {form.memo && (
-                <div className="bg-slate-800 border border-slate-700 rounded-xl p-3">
+                <div className="bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-3">
                   <p className="text-xs text-slate-500 font-semibold mb-1">트레이너 메모</p>
-                  <p className="text-sm text-slate-300 whitespace-pre-line">{form.memo}</p>
+                  <p className="text-sm text-slate-600 dark:text-slate-300 whitespace-pre-line">{form.memo}</p>
                 </div>
               )}
             </div>
@@ -320,11 +320,11 @@ export default function AiMeasureReport({ member, onClose, onSaved }) {
         </div>
 
         {/* 하단 버튼 */}
-        <div className="flex-shrink-0 px-5 py-4 border-t border-slate-800">
+        <div className="flex-shrink-0 px-5 py-4 border-t border-slate-200 dark:border-slate-800">
           {phase === 'input' && (
             <div className="flex gap-2">
               <button onClick={onClose}
-                className="py-2.5 px-4 rounded-xl border border-slate-700 text-slate-300 hover:text-white text-sm font-semibold transition-colors">
+                className="py-2.5 px-4 rounded-xl border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:text-white text-sm font-semibold transition-colors">
                 취소
               </button>
               <button onClick={handleAnalyze} disabled={!form.weight}
@@ -345,16 +345,16 @@ export default function AiMeasureReport({ member, onClose, onSaved }) {
               {/* 상담 메모로 복사 + 이미지 공유 */}
               <div className="flex gap-2">
                 <button onClick={handleCopyMemo}
-                  className="flex-1 py-2.5 rounded-xl border border-slate-700 text-slate-300 hover:text-white text-sm font-semibold transition-colors flex items-center justify-center gap-1.5">
+                  className="flex-1 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:text-white text-sm font-semibold transition-colors flex items-center justify-center gap-1.5">
                   📋 상담 메모로 복사
                 </button>
                 <button onClick={handleShare}
-                  className="flex-1 py-2.5 rounded-xl border border-amber-500/30 text-amber-400 hover:bg-amber-500/10 text-sm font-semibold transition-colors flex items-center justify-center gap-1.5">
+                  className="flex-1 py-2.5 rounded-xl border border-amber-500/30 text-amber-700 dark:text-amber-400 hover:bg-amber-500/10 text-sm font-semibold transition-colors flex items-center justify-center gap-1.5">
                   📤 이미지 공유
                 </button>
               </div>
               <button onClick={onClose}
-                className="w-full bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold py-2.5 rounded-xl text-sm transition-colors">
+                className="w-full bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 font-semibold py-2.5 rounded-xl text-sm transition-colors">
                 닫기
               </button>
             </div>

@@ -91,11 +91,11 @@ export default function MemberImport({ onClose, onDone }) {
 
   return (
     <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-2xl max-h-[88vh] overflow-y-auto p-5 space-y-4"
+      <div className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-2xl w-full max-w-2xl max-h-[88vh] overflow-y-auto p-5 space-y-4"
         onClick={e=>e.stopPropagation()}>
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-black">회원 · 결제 엑셀 가져오기</h2>
-          <button onClick={onClose} className="text-slate-400 hover:text-white text-xl leading-none">×</button>
+          <button onClick={onClose} className="text-slate-500 dark:text-slate-400 hover:text-white text-xl leading-none">×</button>
         </div>
 
         {/* 1단계: 파일 선택 */}
@@ -105,42 +105,42 @@ export default function MemberImport({ onClose, onDone }) {
           onDrop={e=>{e.preventDefault(); setDragOver(false); handleFile(e.dataTransfer.files?.[0]);}}
           onClick={()=>fileRef.current?.click()}
           className={`cursor-pointer rounded-xl border-2 border-dashed px-4 py-6 text-center transition-colors ${
-            dragOver ? 'border-amber-400 bg-amber-500/10' : 'border-slate-700 hover:border-amber-500/50 hover:bg-slate-800/50'
+            dragOver ? 'border-amber-400 bg-amber-500/10' : 'border-slate-300 dark:border-slate-700 hover:border-amber-500/50 hover:bg-slate-100/50 dark:hover:bg-slate-800/50'
           }`}>
           <input ref={fileRef} type="file" accept=".xlsx,.xls" className="hidden"
             onChange={e=>{ handleFile(e.target.files?.[0]); e.target.value=''; }}/>
-          <p className="text-sm text-slate-200 font-semibold">📂 매출관리 엑셀(.xlsx)을 끌어다 놓거나 클릭해서 선택</p>
+          <p className="text-sm text-slate-700 dark:text-slate-200 font-semibold">📂 매출관리 엑셀(.xlsx)을 끌어다 놓거나 클릭해서 선택</p>
           <p className="text-[11px] text-slate-500 mt-1">
             ‘등록회원’ 시트의 날짜·이름·세션·금액·담당을 읽어 회원과 결제로 정리합니다. 집계행(총매출·고정지출)은 자동 제외됩니다.
           </p>
-          {loading && <p className="text-[11px] text-amber-400 mt-2">파일을 분석하는 중…</p>}
+          {loading && <p className="text-[11px] text-amber-700 dark:text-amber-400 mt-2">파일을 분석하는 중…</p>}
         </div>
 
         {/* 2단계: 미리보기 */}
         {parsed && stats && (
           <div className="space-y-3">
             <div className="grid grid-cols-3 gap-2 text-center">
-              <Stat label="회원" value={`${stats.members}명`} color="text-blue-400"/>
-              <Stat label="결제" value={`${stats.payments}건`} color="text-amber-400"/>
-              <Stat label="총 세션" value={`${stats.totalSessions}회`} color="text-emerald-400"/>
-              <Stat label="재등록 회원" value={`${stats.reEnroll}명`} color="text-slate-200"/>
-              <Stat label="월회원" value={`${stats.monthly}명`} color="text-blue-300"/>
-              <Stat label="환불" value={`${stats.refunds}건`} color="text-red-400"/>
+              <Stat label="회원" value={`${stats.members}명`} color="text-blue-700 dark:text-blue-400"/>
+              <Stat label="결제" value={`${stats.payments}건`} color="text-amber-700 dark:text-amber-400"/>
+              <Stat label="총 세션" value={`${stats.totalSessions}회`} color="text-emerald-700 dark:text-emerald-400"/>
+              <Stat label="재등록 회원" value={`${stats.reEnroll}명`} color="text-slate-700 dark:text-slate-200"/>
+              <Stat label="월회원" value={`${stats.monthly}명`} color="text-blue-700 dark:text-blue-300"/>
+              <Stat label="환불" value={`${stats.refunds}건`} color="text-red-700 dark:text-red-400"/>
             </div>
 
             {parsed.unmatched.length > 0 && (
               <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-3">
-                <p className="text-xs font-bold text-red-400">⚠️ 매칭 안 된 담당 트레이너: {parsed.unmatched.join(', ')}</p>
-                <p className="text-[11px] text-slate-400 mt-1">
+                <p className="text-xs font-bold text-red-700 dark:text-red-400">⚠️ 매칭 안 된 담당 트레이너: {parsed.unmatched.join(', ')}</p>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
                   CMS에 해당 이름의 트레이너가 없어 세션이 연결되지 않았습니다. 트레이너를 먼저 등록하거나 이름을 확인한 뒤 다시 가져오세요.
                 </p>
               </div>
             )}
 
             {/* 회원 목록 미리보기(최대 12명) */}
-            <div className="bg-slate-950/50 border border-slate-800 rounded-xl max-h-60 overflow-y-auto">
+            <div className="bg-slate-50/50 dark:bg-slate-950/50 border border-slate-200 dark:border-slate-800 rounded-xl max-h-60 overflow-y-auto">
               <table className="w-full text-xs">
-                <thead className="sticky top-0 bg-slate-900">
+                <thead className="sticky top-0 bg-white dark:bg-slate-900">
                   <tr className="text-slate-500 text-left">
                     <th className="px-3 py-2">회원</th><th className="px-3 py-2">세션</th>
                     <th className="px-3 py-2">결제</th><th className="px-3 py-2">비고</th>
@@ -156,10 +156,10 @@ export default function MemberImport({ onClose, onDone }) {
                     if (m.payments.filter(p=>!p.isRefunded).length>1) note.push('재등록');
                     if (m.warnings?.length) note.push(...m.warnings);
                     return (
-                      <tr key={i} className="border-t border-slate-800/60">
-                        <td className="px-3 py-1.5 text-slate-200 font-semibold">{m.name}</td>
-                        <td className="px-3 py-1.5 text-slate-400">{sess||'—'}</td>
-                        <td className="px-3 py-1.5 text-slate-400">{m.payments.length}건</td>
+                      <tr key={i} className="border-t border-slate-200/60 dark:border-slate-800/60">
+                        <td className="px-3 py-1.5 text-slate-700 dark:text-slate-200 font-semibold">{m.name}</td>
+                        <td className="px-3 py-1.5 text-slate-500 dark:text-slate-400">{sess||'—'}</td>
+                        <td className="px-3 py-1.5 text-slate-500 dark:text-slate-400">{m.payments.length}건</td>
                         <td className="px-3 py-1.5 text-slate-500">{note.join(' · ')}</td>
                       </tr>
                     );
@@ -172,7 +172,7 @@ export default function MemberImport({ onClose, onDone }) {
             </div>
 
             <div className="flex gap-2 justify-end">
-              <button onClick={()=>setParsed(null)} className="text-xs text-slate-400 hover:text-white px-3 py-2">다시 선택</button>
+              <button onClick={()=>setParsed(null)} className="text-xs text-slate-500 dark:text-slate-400 hover:text-white px-3 py-2">다시 선택</button>
               <button onClick={commit} disabled={committing}
                 className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold px-5 py-2 rounded-lg text-sm disabled:opacity-40">
                 {committing ? '등록 중…' : `${stats.members}명 등록`}
@@ -187,7 +187,7 @@ export default function MemberImport({ onClose, onDone }) {
 
 function Stat({ label, value, color }) {
   return (
-    <div className="bg-slate-950/50 border border-slate-800 rounded-lg py-2">
+    <div className="bg-slate-50/50 dark:bg-slate-950/50 border border-slate-200 dark:border-slate-800 rounded-lg py-2">
       <p className="text-[10px] text-slate-500">{label}</p>
       <p className={`text-sm font-black ${color}`}>{value}</p>
     </div>

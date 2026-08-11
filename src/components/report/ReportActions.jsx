@@ -135,7 +135,7 @@ export default function ReportActions({
         <button
           onClick={saveVideo}
           disabled={busy != null}
-          className="rounded-xl border border-slate-600 bg-slate-700 text-white font-bold py-3 text-sm active:scale-95 disabled:opacity-60 flex items-center justify-center gap-2"
+          className="rounded-xl border border-slate-400 dark:border-slate-600 bg-slate-200 dark:bg-slate-700 text-white font-bold py-3 text-sm active:scale-95 disabled:opacity-60 flex items-center justify-center gap-2"
         >
           {busy === 'video' && <span className="h-4 w-4 rounded-full border-2 border-white border-t-transparent animate-spin" />}
           🎥 동영상 저장
@@ -145,7 +145,7 @@ export default function ReportActions({
         <button
           onClick={saveImages}
           disabled={busy != null}
-          className="rounded-xl border border-slate-600 bg-slate-700 text-white font-bold py-3 text-sm active:scale-95 disabled:opacity-60 flex items-center justify-center gap-2"
+          className="rounded-xl border border-slate-400 dark:border-slate-600 bg-slate-200 dark:bg-slate-700 text-white font-bold py-3 text-sm active:scale-95 disabled:opacity-60 flex items-center justify-center gap-2"
         >
           {busy === 'images' && <span className="h-4 w-4 rounded-full border-2 border-white border-t-transparent animate-spin" />}
           {imageButtonLabel}

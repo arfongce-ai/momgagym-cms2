@@ -25,9 +25,9 @@ function ChangeBadge({ diff, unit, field }) {
     field === 'diastolic' ? trend === 'down' : true;
 
   const cls =
-    trend === 'same'                                  ? 'text-slate-400 bg-slate-700'        :
-    isGood                                            ? 'text-emerald-400 bg-emerald-500/20' :
-                                                        'text-red-400 bg-red-500/20';
+    trend === 'same'                                  ? 'text-slate-500 dark:text-slate-400 bg-slate-200 dark:bg-slate-700'        :
+    isGood                                            ? 'text-emerald-700 dark:text-emerald-400 bg-emerald-500/20' :
+                                                        'text-red-700 dark:text-red-400 bg-red-500/20';
 
   const arrow = trend === 'up' ? '↑' : trend === 'down' ? '↓' : '–';
 
@@ -45,26 +45,26 @@ function SessionCard({ session, prevSession, onDelete, isAdmin }) {
   const changes = prevM ? calcChanges(m, prevM) : {};
 
   const GRADE_CLR = {
-    good: 'bg-emerald-500/20 text-emerald-400',
-    warn: 'bg-amber-500/20 text-amber-400',
-    bad:  'bg-red-500/20 text-red-400',
+    good: 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-400',
+    warn: 'bg-amber-500/20 text-amber-700 dark:text-amber-400',
+    bad:  'bg-red-500/20 text-red-700 dark:text-red-400',
   };
 
   return (
-    <div className="bg-slate-800 border border-slate-700 rounded-xl p-4 space-y-3">
+    <div className="bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-4 space-y-3">
       {/* 날짜 + 삭제 */}
       <div className="flex items-center justify-between">
         <div>
           <span className="font-semibold text-sm">{recordedAt}</span>
           {!prevSession && (
-            <span className="ml-2 text-[10px] bg-amber-500/20 text-amber-400 px-1.5 py-0.5 rounded font-bold">
+            <span className="ml-2 text-[10px] bg-amber-500/20 text-amber-700 dark:text-amber-400 px-1.5 py-0.5 rounded font-bold">
               최신
             </span>
           )}
         </div>
         {isAdmin && (
           <button onClick={() => onDelete(session.id)}
-            className="text-slate-600 hover:text-red-400 text-sm transition-colors">
+            className="text-slate-600 hover:text-red-700 dark:hover:text-red-400 text-sm transition-colors">
             🗑
           </button>
         )}
@@ -76,9 +76,9 @@ function SessionCard({ session, prevSession, onDelete, isAdmin }) {
           const val = m[key];
           if (val == null) return null;
           return (
-            <div key={key} className="bg-slate-700/50 rounded-lg p-2 text-center">
+            <div key={key} className="bg-slate-200/50 dark:bg-slate-700/50 rounded-lg p-2 text-center">
               <p className="text-[10px] text-slate-500 mb-0.5">{meta.icon} {meta.label}</p>
-              <p className="font-mono font-black text-sm text-slate-100">
+              <p className="font-mono font-black text-sm text-slate-800 dark:text-slate-100">
                 {val}
                 <span className="text-slate-500 text-[10px] font-normal">{meta.unit}</span>
               </p>
@@ -106,7 +106,7 @@ function SessionCard({ session, prevSession, onDelete, isAdmin }) {
 
       {/* 종합 의견 */}
       {r?.summary && (
-        <p className="text-xs text-slate-400 leading-relaxed border-t border-slate-700 pt-2">
+        <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed border-t border-slate-300 dark:border-slate-700 pt-2">
           {r.summary}
         </p>
       )}
@@ -118,19 +118,19 @@ function SessionCard({ session, prevSession, onDelete, isAdmin }) {
 
       {/* 변화 요약 (이전 기록 있을 때) */}
       {Object.keys(changes).length > 0 && (
-        <div className="bg-slate-700/30 rounded-lg px-3 py-2">
+        <div className="bg-slate-200/30 dark:bg-slate-700/30 rounded-lg px-3 py-2">
           <p className="text-[10px] text-slate-500 font-semibold uppercase tracking-widest mb-1">
             이전 측정 대비
           </p>
-          <p className="text-xs text-slate-400">
+          <p className="text-xs text-slate-500 dark:text-slate-400">
             {Object.entries(changes).map(([key, ch]) => {
               const meta = FIELD_LABEL[key];
               if (!meta) return null;
               const sign  = ch.trend === 'up' ? '▲' : ch.trend === 'down' ? '▼' : '–';
               const color =
-                (key === 'weight' || key === 'systolic' || key === 'diastolic') && ch.trend === 'down' ? 'text-emerald-400' :
+                (key === 'weight' || key === 'systolic' || key === 'diastolic') && ch.trend === 'down' ? 'text-emerald-700 dark:text-emerald-400' :
                 ch.trend === 'same'                                                                      ? 'text-slate-500'   :
-                                                                                                           'text-red-400';
+                                                                                                           'text-red-700 dark:text-red-400';
               return (
                 <span key={key} className={`mr-3 font-semibold ${color}`}>
                   {sign} {meta.label} {ch.diffStr}{meta.unit}
@@ -181,7 +181,7 @@ export default function MemberMeasureHistory({ member, onNewMeasure }) {
       <button
         onClick={onNewMeasure}
         className="w-full py-3 rounded-xl border-2 border-dashed border-amber-500/30
-                   text-amber-400 hover:border-amber-500/60 hover:bg-amber-500/5
+                   text-amber-700 dark:text-amber-400 hover:border-amber-500/60 hover:bg-amber-500/5
                    text-sm font-semibold transition-colors flex items-center justify-center gap-2">
         🤖 + 새 AI 측정 시작
       </button>

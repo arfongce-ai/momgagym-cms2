@@ -22,9 +22,9 @@ export default function ProblemFocusPanel({ focus, context, variant = 'dark' }) 
   const isLight = variant === 'light';
   const shell = isLight
     ? 'border-slate-200 bg-white text-slate-900'
-    : 'border-slate-700/70 bg-slate-800/40 text-slate-100';
-  const subtle = isLight ? 'text-slate-500' : 'text-slate-400';
-  const item = isLight ? 'border-slate-200 bg-slate-50' : 'border-slate-700 bg-slate-900/60';
+    : 'border-slate-300/70 dark:border-slate-700/70 bg-slate-100/40 dark:bg-slate-800/40 text-slate-800 dark:text-slate-100';
+  const subtle = isLight ? 'text-slate-500' : 'text-slate-500 dark:text-slate-400';
+  const item = isLight ? 'border-slate-200 bg-slate-50' : 'border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900/60';
   const chip = tone[isLight ? 'light' : 'dark'];
   const sourceCount = context?.sources?.length || 0;
   const outputLabel = focus.outputMode === 'photo' ? '사진 리포트' : focus.outputMode === 'video' ? '영상 리포트' : '리포트';
@@ -38,7 +38,7 @@ export default function ProblemFocusPanel({ focus, context, variant = 'dark' }) 
         </div>
         <div className="flex flex-wrap justify-end gap-1.5">
           <span className={`rounded-full border px-2 py-0.5 text-[10px] font-black ${chip}`}>{tone.label}</span>
-          <span className={`rounded-full border px-2 py-0.5 text-[10px] font-black ${isLight ? 'border-slate-200 text-slate-600' : 'border-slate-600 text-slate-300'}`}>{outputLabel}</span>
+          <span className={`rounded-full border px-2 py-0.5 text-[10px] font-black ${isLight ? 'border-slate-200 text-slate-600' : 'border-slate-400 dark:border-slate-600 text-slate-600 dark:text-slate-300'}`}>{outputLabel}</span>
           <span className={`rounded-full border px-2 py-0.5 text-[10px] font-black ${isLight ? 'border-sky-200 text-sky-700' : 'border-sky-500/30 text-sky-200'}`}>
             보강 {sourceCount}건
           </span>

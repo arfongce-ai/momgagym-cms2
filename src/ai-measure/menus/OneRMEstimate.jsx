@@ -488,7 +488,7 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
     const topBar = (
       <>
 
-        <span className="bg-black/65 rounded-full px-2.5 py-1 text-[10px] text-cyan-300 font-bold">
+        <span className="bg-black/65 rounded-full px-2.5 py-1 text-[10px] text-cyan-700 dark:text-cyan-300 font-bold">
           {counting ? '세트 수행 중 — 반복 자동 인식 · 끝나면 정지' : '옆에서 촬영 · 카운트 시작을 누르고 세트 수행'}
         </span>
         <span className={`rounded-full px-3 py-1 text-[11px] font-bold ${framing.level === 'good' ? 'bg-emerald-500/85 text-slate-950' : framing.level === 'warn' ? 'bg-amber-500/85 text-slate-950' : 'bg-red-500/85 text-white'}`}>
@@ -497,7 +497,7 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
         <div className="pointer-events-auto flex gap-0.5 rounded-full bg-black/55 backdrop-blur p-0.5 border border-white/10">
           {['3/4', '1/1'].map((r) => (
             <button key={r} onClick={() => !counting && setAspect(r)} disabled={counting}
-              className={`rounded-full px-2 py-0.5 text-[10px] font-black transition-colors disabled:opacity-50 ${aspect === r ? 'bg-amber-500 text-slate-950' : 'text-slate-300'}`}>
+              className={`rounded-full px-2 py-0.5 text-[10px] font-black transition-colors disabled:opacity-50 ${aspect === r ? 'bg-amber-500 text-slate-950' : 'text-slate-600 dark:text-slate-300'}`}>
               {aspectLabel(r)}
             </button>
           ))}
@@ -512,7 +512,7 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
           {counting ? '■ 카운트 정지' : countdown != null ? '시작 대기' : '● 카운트 시작'}
         </button>
         <button onClick={scanColors}
-          className="px-3.5 h-12 rounded-full text-xs font-black bg-slate-700 text-white active:scale-95 shadow-lg">
+          className="px-3.5 h-12 rounded-full text-xs font-black bg-slate-200 dark:bg-slate-700 text-white active:scale-95 shadow-lg">
           🎨 색 인식
         </button>
       </div>
@@ -534,7 +534,7 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
                 return (
                   <span key={r.repNo}
                     className={`rounded-xl px-2 py-1 font-mono text-[11px] font-black backdrop-blur ${
-                      latest ? 'bg-cyan-400/90 text-slate-950 shadow-lg shadow-cyan-400/30' : 'bg-black/50 text-slate-200 border border-white/10'}`}>
+                      latest ? 'bg-cyan-400/90 text-slate-950 shadow-lg shadow-cyan-400/30' : 'bg-black/50 text-slate-700 dark:text-slate-200 border border-white/10'}`}>
                     {r.repNo}<span className="opacity-60 text-[9px]">회</span> {r.meanVelocity ?? '–'}
                   </span>
                 );
@@ -560,31 +560,31 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
           <div className="mx-auto max-w-xs w-full rounded-xl bg-black/55 backdrop-blur border border-white/10 p-2">
             <div className="flex items-center justify-center gap-1.5">
               <button onClick={() => { bumpDial(-10); }}
-                className="w-9 h-9 rounded-lg bg-white/10 text-slate-100 font-black text-[11px] active:scale-90">−5</button>
+                className="w-9 h-9 rounded-lg bg-white/10 text-slate-800 dark:text-slate-100 font-black text-[11px] active:scale-90">−5</button>
               <button onClick={() => { bumpDial(-1); }}
-                className="w-9 h-9 rounded-lg bg-white/10 text-slate-100 font-black active:scale-90">−</button>
+                className="w-9 h-9 rounded-lg bg-white/10 text-slate-800 dark:text-slate-100 font-black active:scale-90">−</button>
               <div className="min-w-[72px] text-center">
                 <p className="font-mono font-black text-2xl text-white leading-none">{snapWeight(dialWeight)}</p>
-                <p className="text-[8px] text-slate-400">kg</p>
+                <p className="text-[8px] text-slate-500 dark:text-slate-400">kg</p>
               </div>
               <button onClick={() => { bumpDial(+1); }}
                 className="w-9 h-9 rounded-lg bg-amber-500 text-slate-950 font-black active:scale-90">+</button>
               <button onClick={() => { bumpDial(+10); }}
                 className="w-9 h-9 rounded-lg bg-amber-500 text-slate-950 font-black text-[11px] active:scale-90">+5</button>
             </div>
-            <div className="mt-1.5 flex items-center justify-center gap-2 text-[9px] text-slate-400">
+            <div className="mt-1.5 flex items-center justify-center gap-2 text-[9px] text-slate-500 dark:text-slate-400">
               <span>{weightMode === 'plate' ? '원판 색 인식 반영' : '수동 무게'}</span>
-              {detected.length > 0 && <span className="text-cyan-300">{detected.map(d => d.label).join(', ')}</span>}
+              {detected.length > 0 && <span className="text-cyan-700 dark:text-cyan-300">{detected.map(d => d.label).join(', ')}</span>}
             </div>
           </div>
         )}
         {videoBlob && !counting && (
           <div className="mx-auto max-w-xs w-full space-y-1">
             <button onClick={handleSaveVideo} disabled={savingVideo}
-              className="w-full rounded-xl bg-slate-700 text-white font-bold py-2.5 text-sm active:scale-95 disabled:opacity-60">
+              className="w-full rounded-xl bg-slate-200 dark:bg-slate-700 text-white font-bold py-2.5 text-sm active:scale-95 disabled:opacity-60">
               {savingVideo ? '저장 중...' : '녹화 영상 폴더에 저장'}
             </button>
-            {videoSavedMsg && <p className="text-center text-[11px] text-emerald-400">{videoSavedMsg}</p>}
+            {videoSavedMsg && <p className="text-center text-[11px] text-emerald-700 dark:text-emerald-400">{videoSavedMsg}</p>}
           </div>
         )}
       </CameraStage>
@@ -596,9 +596,9 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
   //  (반복 입력/결과 확인) 되돌아오는 화면은 그대로 보여준다.
   if (embedded && !camOpenedOnceRef.current) {
     return (
-      <div className="fixed inset-0 z-[70] bg-slate-950 flex flex-col items-center justify-center gap-3">
+      <div className="fixed inset-0 z-[70] bg-slate-50 dark:bg-slate-950 flex flex-col items-center justify-center gap-3">
         <div className="w-10 h-10 rounded-full border-2 border-amber-400/40 border-t-amber-400 animate-spin" />
-        <p className="text-sm font-bold text-slate-300">카메라를 켜는 중…</p>
+        <p className="text-sm font-bold text-slate-600 dark:text-slate-300">카메라를 켜는 중…</p>
       </div>
     );
   }
@@ -616,10 +616,10 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
 
       {/* 종목 — 임베드(허브) 모드에서는 상단 허브 선택기가 담당하므로 숨김 */}
       {!embedded && (
-        <div className="flex gap-1 rounded-xl bg-slate-800 p-1">
+        <div className="flex gap-1 rounded-xl bg-slate-100 dark:bg-slate-800 p-1">
           {LIFTS.map(l => (
             <button key={l.key} onClick={() => { setLift(l.key); setResult(null); }}
-              className={`flex-1 rounded-lg py-1.5 text-xs font-bold ${lift === l.key ? 'bg-amber-500 text-slate-950' : 'text-slate-400'}`}>
+              className={`flex-1 rounded-lg py-1.5 text-xs font-bold ${lift === l.key ? 'bg-amber-500 text-slate-950' : 'text-slate-500 dark:text-slate-400'}`}>
               {l.label}
             </button>
           ))}
@@ -627,10 +627,10 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
       )}
 
       {/* 무게 입력 방식 토글 (다이얼 기본) */}
-      <div className="flex gap-1 rounded-lg bg-slate-800 p-0.5 w-full text-[11px]">
+      <div className="flex gap-1 rounded-lg bg-slate-100 dark:bg-slate-800 p-0.5 w-full text-[11px]">
         {WEIGHT_MODES.map(([k, label]) => (
           <button key={k} onClick={() => setWeightMode(k)}
-            className={`flex-1 px-2 py-1.5 rounded font-bold ${weightMode === k ? 'bg-amber-500 text-slate-950' : 'text-slate-400'}`}>
+            className={`flex-1 px-2 py-1.5 rounded font-bold ${weightMode === k ? 'bg-amber-500 text-slate-950' : 'text-slate-500 dark:text-slate-400'}`}>
             {label}
           </button>
         ))}
@@ -639,14 +639,14 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
       {weightMode === 'dial' ? (
         /* ── 무게 다이얼(기본 · 0.5kg 단위) ── */
         <div className="card-accent p-4">
-          <label className="block text-xs font-semibold text-slate-400 uppercase tracking-widest mb-3 text-center">든 무게 (0.5kg 단위)</label>
+          <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-3 text-center">든 무게 (0.5kg 단위)</label>
           <div className="flex items-center justify-center gap-3">
             <button onClick={() => bumpDial(-10)}
-              className="w-12 h-12 rounded-xl bg-slate-700 text-slate-200 font-black text-sm active:scale-90">−5</button>
+              className="w-12 h-12 rounded-xl bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 font-black text-sm active:scale-90">−5</button>
             <button onClick={() => bumpDial(-1)}
-              className="w-12 h-12 rounded-xl bg-slate-700 text-slate-200 font-black active:scale-90">−</button>
+              className="w-12 h-12 rounded-xl bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 font-black active:scale-90">−</button>
             <div className="min-w-[110px] text-center">
-              <p className="font-mono font-black text-4xl text-slate-100 leading-none">{snapWeight(dialWeight)}</p>
+              <p className="font-mono font-black text-4xl text-slate-800 dark:text-slate-100 leading-none">{snapWeight(dialWeight)}</p>
               <p className="text-[10px] text-slate-500 mt-1">kg</p>
             </div>
             <button onClick={() => bumpDial(+1)}
@@ -661,7 +661,7 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
       ) : weightMode === 'manual' ? (
         /* ── 직접 입력 ── */
         <div>
-          <label className="block text-xs font-semibold text-slate-400 uppercase tracking-widest mb-1.5">든 무게 (kg)</label>
+          <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5">든 무게 (kg)</label>
           <input type="number" step="0.5" value={manualWeight} onChange={e => { setManualWeight(e.target.value); setWeightUserSet(true); }}
             placeholder="80" className="input-mono" />
         </div>
@@ -675,14 +675,14 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
           />
 
           {detected.length > 0 && (
-            <p className="text-[11px] text-cyan-400">
+            <p className="text-[11px] text-cyan-700 dark:text-cyan-400">
               인식된 색: {detected.map(d => `${d.label}(${Math.round(d.ratio * 100)}%)`).join(', ')} — 아래에서 장수를 확인·수정하세요.
             </p>
           )}
 
           {/* 봉 무게 */}
           <div>
-            <label className="block text-xs font-semibold text-slate-400 uppercase tracking-widest mb-1.5">봉 무게</label>
+            <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5">봉 무게</label>
             <select value={barKg} onChange={e => setBarKg(Number(e.target.value))} className="input">
               {BAR_WEIGHTS.map(b => <option key={b.kg} value={b.kg}>{b.label}</option>)}
             </select>
@@ -690,7 +690,7 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
 
           {/* 편측 원판 추가 */}
           <div>
-            <label className="block text-xs font-semibold text-slate-400 uppercase tracking-widest mb-1.5">한쪽 원판 추가 (양쪽 동일 적용)</label>
+            <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5">한쪽 원판 추가 (양쪽 동일 적용)</label>
             <div className="flex flex-wrap gap-1.5">
               {IWF_PLATES.filter(p => !p.small && !p.chrome).map(p => (
                 <button key={p.label} onClick={() => addPlate(p)}
@@ -703,7 +703,7 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
           </div>
 
           {sidePlates.length > 0 && (
-            <div className="bg-slate-800 rounded-xl p-3 space-y-2">
+            <div className="bg-slate-100 dark:bg-slate-800 rounded-xl p-3 space-y-2">
               <p className="text-[10px] text-slate-500">한쪽 구성 (확인·수정)</p>
               {sidePlates.map(p => (
                 <div key={p.kg} className="flex items-center justify-between">
@@ -711,9 +711,9 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
                     {p.label} {p.kg}kg
                   </span>
                   <div className="flex items-center gap-2">
-                    <button onClick={() => changeCount(p.kg, -1)} className="w-7 h-7 rounded bg-slate-700 text-slate-200 font-bold">−</button>
-                    <span className="font-mono font-bold text-slate-100 w-6 text-center">{p.count}</span>
-                    <button onClick={() => changeCount(p.kg, +1)} className="w-7 h-7 rounded bg-slate-700 text-slate-200 font-bold">+</button>
+                    <button onClick={() => changeCount(p.kg, -1)} className="w-7 h-7 rounded bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold">−</button>
+                    <span className="font-mono font-bold text-slate-800 dark:text-slate-100 w-6 text-center">{p.count}</span>
+                    <button onClick={() => changeCount(p.kg, +1)} className="w-7 h-7 rounded bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold">+</button>
                   </div>
                 </div>
               ))}
@@ -722,19 +722,19 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
 
           <div className="card-accent p-3 text-center">
             <p className="text-[10px] text-slate-500">총중량 (양쪽 + 봉)</p>
-            <p className="font-mono font-black text-2xl text-slate-100">{computedWeight}<span className="text-sm text-slate-500"> kg</span></p>
+            <p className="font-mono font-black text-2xl text-slate-800 dark:text-slate-100">{computedWeight}<span className="text-sm text-slate-500"> kg</span></p>
           </div>
         </div>
       )}
 
       {/* 반복 횟수 — 카운터(제한 없음). 고반복은 차단 않고 신뢰도로 안내 */}
       <div>
-        <label className="block text-xs font-semibold text-slate-400 uppercase tracking-widest mb-1.5">반복 횟수</label>
+        <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5">반복 횟수</label>
         <div className="flex items-center gap-3">
           <button onClick={() => setReps(r => clampReps(Number(r) - 1))}
-            className="w-12 h-12 rounded-xl bg-slate-700 text-slate-200 font-black text-xl active:scale-90">−</button>
+            className="w-12 h-12 rounded-xl bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 font-black text-xl active:scale-90">−</button>
           <div className="flex-1 text-center">
-            <p className="font-mono font-black text-3xl text-slate-100 leading-none">{clampReps(reps)}<span className="text-base text-slate-500"> 회</span></p>
+            <p className="font-mono font-black text-3xl text-slate-800 dark:text-slate-100 leading-none">{clampReps(reps)}<span className="text-base text-slate-500"> 회</span></p>
           </div>
           <button onClick={() => setReps(r => clampReps(Number(r) + 1))}
             className="w-12 h-12 rounded-xl bg-amber-500 text-slate-950 font-black text-xl active:scale-90">+</button>
@@ -742,29 +742,29 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
         <div className="mt-2 flex items-center gap-1.5">
           {[1, 3, 5, 8, 10].map(r => (
             <button key={r} onClick={() => setReps(r)}
-              className={`flex-1 py-1 rounded-lg text-[11px] font-bold ${clampReps(reps) === r ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40' : 'bg-slate-800 text-slate-500'}`}>
+              className={`flex-1 py-1 rounded-lg text-[11px] font-bold ${clampReps(reps) === r ? 'bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/40' : 'bg-slate-100 dark:bg-slate-800 text-slate-500'}`}>
               {r}회
             </button>
           ))}
         </div>
         {(() => {
           const c = repEstimateConfidence(reps);
-          const tone = c.level === 'high' ? 'text-emerald-400' : c.level === 'medium' ? 'text-amber-400' : 'text-red-400';
+          const tone = c.level === 'high' ? 'text-emerald-700 dark:text-emerald-400' : c.level === 'medium' ? 'text-amber-700 dark:text-amber-400' : 'text-red-700 dark:text-red-400';
           return <p className={`mt-1.5 text-[11px] font-bold ${tone}`}>● {c.note}</p>;
         })()}
         <button onClick={openCam}
-          className="mt-2 w-full rounded-xl bg-slate-700 text-white font-bold py-2.5 text-sm active:scale-95">
+          className="mt-2 w-full rounded-xl bg-slate-200 dark:bg-slate-700 text-white font-bold py-2.5 text-sm active:scale-95">
           📷 카메라로 반복 자동 측정
         </button>
       </div>
 
       {videoBlob && (
         <button onClick={handleSaveVideo} disabled={savingVideo}
-          className="w-full rounded-xl bg-slate-700 text-white font-bold py-2.5 text-sm active:scale-95 disabled:opacity-60">
+          className="w-full rounded-xl bg-slate-200 dark:bg-slate-700 text-white font-bold py-2.5 text-sm active:scale-95 disabled:opacity-60">
           {savingVideo ? '저장 중...' : '녹화 영상 폴더에 저장'}
         </button>
       )}
-      {videoSavedMsg && <p className="text-center text-[11px] text-emerald-400">{videoSavedMsg}</p>}
+      {videoSavedMsg && <p className="text-center text-[11px] text-emerald-700 dark:text-emerald-400">{videoSavedMsg}</p>}
 
       <button onClick={calc}
         className="w-full h-14 rounded-2xl bg-gradient-to-r from-amber-400 to-orange-500 text-slate-950 font-black text-base active:scale-[0.98] shadow-xl shadow-amber-500/25">
@@ -773,7 +773,7 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
 
       {/* 도전 차수 누적 기록 */}
       {attempts.length > 0 && (
-        <div className="bg-slate-800 rounded-xl p-3">
+        <div className="bg-slate-100 dark:bg-slate-800 rounded-xl p-3">
           <div className="flex items-center justify-between mb-2">
             <p className="text-[10px] text-slate-500 uppercase tracking-widest">도전 기록 ({attempts.length}차)</p>
             <button onClick={() => setAttempts([])} className="text-[10px] text-slate-500 underline">초기화</button>
@@ -782,10 +782,10 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
             {attempts.map(a => {
               const best = summarizeAttempts(attempts).bestAttemptNo === a.attemptNo;
               return (
-                <div key={a.attemptNo} className={`flex items-center justify-between text-[11px] rounded px-2 py-1 ${best ? 'bg-amber-500/15 border border-amber-500/30' : 'bg-slate-900/60'}`}>
-                  <span className="text-slate-400 font-bold">{a.attemptNo}차</span>
-                  <span className="text-slate-300">{a.weight}kg × {a.reps}회</span>
-                  <span className={`font-mono font-bold ${best ? 'text-amber-300' : 'text-slate-300'}`}>{a.oneRM}kg{best ? ' ★' : ''}</span>
+                <div key={a.attemptNo} className={`flex items-center justify-between text-[11px] rounded px-2 py-1 ${best ? 'bg-amber-500/15 border border-amber-500/30' : 'bg-white dark:bg-slate-900/60'}`}>
+                  <span className="text-slate-500 dark:text-slate-400 font-bold">{a.attemptNo}차</span>
+                  <span className="text-slate-600 dark:text-slate-300">{a.weight}kg × {a.reps}회</span>
+                  <span className={`font-mono font-bold ${best ? 'text-amber-700 dark:text-amber-300' : 'text-slate-600 dark:text-slate-300'}`}>{a.oneRM}kg{best ? ' ★' : ''}</span>
                 </div>
               );
             })}
@@ -794,16 +794,16 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
       )}
 
       {result && (
-        <div className="rounded-3xl bg-slate-950/80 border border-amber-400/30 p-4 space-y-3 animate-fade-in shadow-2xl">
+        <div className="rounded-3xl bg-slate-50/80 dark:bg-slate-950/80 border border-amber-400/30 p-4 space-y-3 animate-fade-in shadow-2xl">
           <div className="flex items-center justify-between">
-            <p className="text-[10px] font-black text-amber-400 tracking-widest">
+            <p className="text-[10px] font-black text-amber-700 dark:text-amber-400 tracking-widest">
               추정 1RM · {result.usedWeight}kg × {result.usedReps ?? reps}회
             </p>
-            {attempts.length > 0 && <span className="rounded-full bg-white/[0.07] border border-white/10 px-2.5 py-0.5 text-[9px] font-black text-slate-300">저장 시 {attempts.length + 1}차</span>}
+            {attempts.length > 0 && <span className="rounded-full bg-white/[0.07] border border-white/10 px-2.5 py-0.5 text-[9px] font-black text-slate-600 dark:text-slate-300">저장 시 {attempts.length + 1}차</span>}
           </div>
           <div className="relative mx-auto w-44 h-44">
             <div className="absolute inset-0 rounded-full bg-gradient-to-br from-amber-400 via-orange-500 to-rose-500 opacity-90" />
-            <div className="absolute inset-[7px] rounded-full bg-slate-950 flex flex-col items-center justify-center">
+            <div className="absolute inset-[7px] rounded-full bg-slate-50 dark:bg-slate-950 flex flex-col items-center justify-center">
               <p className="font-mono font-black text-slate-50 leading-none" style={{ fontSize: 46 }}>{result.average}</p>
               <p className="text-xs font-black text-slate-500 mt-1">kg</p>
             </div>
@@ -811,17 +811,17 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
           <p className="text-center text-[10px] text-slate-500">검증된 {result.formulas.filter(f => f.value != null).length}개 공식 평균</p>
           {result.stats && (
             <div className="grid grid-cols-3 gap-2 text-center">
-              <div className="rounded-xl bg-slate-800 p-2">
+              <div className="rounded-xl bg-slate-100 dark:bg-slate-800 p-2">
                 <p className="text-[10px] text-slate-500">공식 편차</p>
-                <p className="font-mono font-bold text-slate-100">{result.stats.spreadKg ?? '—'}kg</p>
+                <p className="font-mono font-bold text-slate-800 dark:text-slate-100">{result.stats.spreadKg ?? '—'}kg</p>
               </div>
-              <div className="rounded-xl bg-slate-800 p-2">
+              <div className="rounded-xl bg-slate-100 dark:bg-slate-800 p-2">
                 <p className="text-[10px] text-slate-500">편차율</p>
-                <p className="font-mono font-bold text-slate-100">{result.stats.spreadPct != null ? `${result.stats.spreadPct}%` : '—'}</p>
+                <p className="font-mono font-bold text-slate-800 dark:text-slate-100">{result.stats.spreadPct != null ? `${result.stats.spreadPct}%` : '—'}</p>
               </div>
-              <div className="rounded-xl bg-slate-800 p-2">
+              <div className="rounded-xl bg-slate-100 dark:bg-slate-800 p-2">
                 <p className="text-[10px] text-slate-500">참고 범위</p>
-                <p className="font-mono font-bold text-slate-100">
+                <p className="font-mono font-bold text-slate-800 dark:text-slate-100">
                   {result.confidenceInterval?.low != null ? `${result.confidenceInterval.low}~${result.confidenceInterval.high}` : '—'}
                 </p>
               </div>
@@ -834,25 +834,25 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
             const agree = diffPct != null && diffPct <= 10;
             return (
               <div className={`rounded-xl p-3 border ${agree ? 'bg-emerald-500/10 border-emerald-500/30' : 'bg-amber-500/10 border-amber-500/30'}`}>
-                <p className={`text-[10px] mb-1 font-bold ${agree ? 'text-emerald-300' : 'text-amber-300'}`}>
+                <p className={`text-[10px] mb-1 font-bold ${agree ? 'text-emerald-700 dark:text-emerald-300' : 'text-amber-700 dark:text-amber-300'}`}>
                   속도 기반 교차검증 (평균속도 {velocityCheck.meanVelocity}m/s · {velocityCheck.repCount}회 추적)
                 </p>
-                <p className="text-[11px] text-slate-200">
+                <p className="text-[11px] text-slate-700 dark:text-slate-200">
                   속도→%1RM 근거 테이블 추정 <span className="font-mono font-bold">{velocityCheck.oneRm}kg</span>
-                  {diffPct != null && <span className={agree ? 'text-emerald-300' : 'text-amber-300'}> · 공식 평균과 {diffPct}% {agree ? '일치' : '차이 — 무게 입력·추적 확인'}</span>}
+                  {diffPct != null && <span className={agree ? 'text-emerald-700 dark:text-emerald-300' : 'text-amber-700 dark:text-amber-300'}> · 공식 평균과 {diffPct}% {agree ? '일치' : '차이 — 무게 입력·추적 확인'}</span>}
                 </p>
                 <p className="text-[9px] text-slate-500 mt-0.5">신뢰도 {velocityCheck.confidence === 'medium' ? '보통' : '낮음(데드리프트는 연구 편차 큼)'} · 참고용</p>
               </div>
             );
           })()}
 
-          <div className="bg-slate-800 rounded-xl p-3">
+          <div className="bg-slate-100 dark:bg-slate-800 rounded-xl p-3">
             <p className="text-[10px] text-slate-500 mb-1.5">공식별 추정 (kg)</p>
             <div className="grid grid-cols-2 gap-1.5 text-center text-[11px]">
               {result.formulas.map(f => (
-                <div key={f.key} className="flex justify-between bg-slate-900/60 rounded px-2 py-1">
+                <div key={f.key} className="flex justify-between bg-white dark:bg-slate-900/60 rounded px-2 py-1">
                   <span className="text-slate-500">{f.label}</span>
-                  <span className="font-mono font-bold text-slate-200">
+                  <span className="font-mono font-bold text-slate-700 dark:text-slate-200">
                     {f.value != null ? f.value : <span className="text-slate-600">제외</span>}
                   </span>
                 </div>
@@ -860,13 +860,13 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
             </div>
           </div>
 
-          <div className="bg-slate-800 rounded-xl p-3">
+          <div className="bg-slate-100 dark:bg-slate-800 rounded-xl p-3">
             <p className="text-[10px] text-slate-500 mb-1.5">반복별 목표 무게 (참고 · 회원별 실제값은 측정으로 확정)</p>
             <div className="grid grid-cols-2 gap-1 text-center text-[11px]">
               {repTargets(result.average).map(t => (
                 <div key={t.reps}>
                   <p className="text-slate-500">{t.reps}회 ({t.pct}%)</p>
-                  <p className="font-mono font-bold text-amber-400">{t.weight} kg</p>
+                  <p className="font-mono font-bold text-amber-700 dark:text-amber-400">{t.weight} kg</p>
                 </div>
               ))}
             </div>
@@ -879,11 +879,11 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
           )}
           {videoBlob && (
             <button onClick={handleSaveVideo} disabled={savingVideo}
-              className="w-full rounded-xl bg-slate-700 text-white font-bold py-2.5 text-sm active:scale-95 disabled:opacity-60">
+              className="w-full rounded-xl bg-slate-200 dark:bg-slate-700 text-white font-bold py-2.5 text-sm active:scale-95 disabled:opacity-60">
               {savingVideo ? '저장 중...' : '녹화 영상 폴더에 저장'}
             </button>
           )}
-          {videoSavedMsg && <p className="text-center text-[11px] text-emerald-400">{videoSavedMsg}</p>}
+          {videoSavedMsg && <p className="text-center text-[11px] text-emerald-700 dark:text-emerald-400">{videoSavedMsg}</p>}
         </div>
       )}
 

@@ -587,26 +587,26 @@ export default function SquatLiveAnalysis({ member, onBack, onComplete }) {
   const topBar = (
     <>
       <p className="text-sm font-black text-white">오버헤드 딥 스쿼트 · {view === 'front' ? '정면' : '측면'}</p>
-      {uiPhase === 'calibrating' && <p className="text-xs font-bold text-amber-300">자세 보정 중… {Math.round(calibProgress * 100)}%</p>}
-      {uiPhase === 'low_visibility' && <p className="text-xs font-bold text-red-300">전신이 보이도록 서 주세요</p>}
+      {uiPhase === 'calibrating' && <p className="text-xs font-bold text-amber-700 dark:text-amber-300">자세 보정 중… {Math.round(calibProgress * 100)}%</p>}
+      {uiPhase === 'low_visibility' && <p className="text-xs font-bold text-red-700 dark:text-red-300">전신이 보이도록 서 주세요</p>}
       {!started && !['calibrating', 'low_visibility', 'front_done', 'finished'].includes(uiPhase) && (
-        <p className="text-xs font-bold text-emerald-300">준비됐어요 — 녹화 시작을 눌러주세요</p>
+        <p className="text-xs font-bold text-emerald-700 dark:text-emerald-300">준비됐어요 — 녹화 시작을 눌러주세요</p>
       )}
-      {started && uiPhase === 'ready' && <p className="text-xs font-bold text-emerald-300">양팔 들고 스쿼트 시작</p>}
+      {started && uiPhase === 'ready' && <p className="text-xs font-bold text-emerald-700 dark:text-emerald-300">양팔 들고 스쿼트 시작</p>}
       {uiPhase === 'rep_done' && (
-        <p className="text-xs font-bold text-emerald-300">
+        <p className="text-xs font-bold text-emerald-700 dark:text-emerald-300">
           {trialsFound}회차 완료 — 같은 자세로 한 번 더 스쿼트해 주세요({trialsFound}/{SQUAT_LIVE_MAX_TRIALS_PER_VIEW})
         </p>
       )}
-      {uiPhase === 'front_done' && <p className="text-xs font-bold text-emerald-300">정면 촬영 완료! 이제 옆으로 돌아서 주세요</p>}
-      {uiPhase === 'finished' && <p className="text-xs font-bold text-emerald-300">정면·측면 모두 완료 — {lastTrialNote}</p>}
-      {finishing && <p className="text-xs font-bold text-amber-300">영상 정리 중…</p>}
-      {errorMsg && <p className="text-xs font-bold text-red-300">{errorMsg}</p>}
+      {uiPhase === 'front_done' && <p className="text-xs font-bold text-emerald-700 dark:text-emerald-300">정면 촬영 완료! 이제 옆으로 돌아서 주세요</p>}
+      {uiPhase === 'finished' && <p className="text-xs font-bold text-emerald-700 dark:text-emerald-300">정면·측면 모두 완료 — {lastTrialNote}</p>}
+      {finishing && <p className="text-xs font-bold text-amber-700 dark:text-amber-300">영상 정리 중…</p>}
+      {errorMsg && <p className="text-xs font-bold text-red-700 dark:text-red-300">{errorMsg}</p>}
       {/* [2026-08-05] 예전엔 이 아래에 fixed top-3 right-3로 회차 배지를 따로
           띄웠는데, CameraStage의 topBar 자체가 이미 top-right에 이 텍스트들을
           쌓는 중이라 서로 겹쳤다. topBar 스택 안에 넣으면 같은 flex-col
           gap-1.5가 자동으로 줄 간격을 잡아줘서 절대 겹치지 않는다. */}
-      <p className="text-xs font-bold text-slate-300">회차 {totalDone}/{SQUAT_LIVE_TOTAL_TRIALS}</p>
+      <p className="text-xs font-bold text-slate-600 dark:text-slate-300">회차 {totalDone}/{SQUAT_LIVE_TOTAL_TRIALS}</p>
     </>
   );
 
@@ -614,13 +614,13 @@ export default function SquatLiveAnalysis({ member, onBack, onComplete }) {
     <>
       {!started && !['front_done', 'finished'].includes(uiPhase) && (
         <button onClick={startMeasurement} disabled={status !== 'running'}
-          className="h-20 w-20 rounded-full border-4 border-white bg-red-500 text-xs font-black text-white shadow-lg disabled:bg-slate-600 disabled:text-slate-300 active:scale-95">
+          className="h-20 w-20 rounded-full border-4 border-white bg-red-500 text-xs font-black text-white shadow-lg disabled:bg-slate-300 dark:disabled:bg-slate-600 disabled:text-slate-600 dark:disabled:text-slate-300 active:scale-95">
           녹화<br />시작
         </button>
       )}
       {uiPhase === 'active' && (
         <button onClick={markBalanceLoss}
-          className="rounded-full bg-red-500/20 border border-red-500/40 text-red-300 font-black text-xs px-4 py-2.5 active:scale-95">
+          className="rounded-full bg-red-500/20 border border-red-500/40 text-red-700 dark:text-red-300 font-black text-xs px-4 py-2.5 active:scale-95">
           ⚠ 균형 상실 표시
         </button>
       )}
@@ -631,7 +631,7 @@ export default function SquatLiveAnalysis({ member, onBack, onComplete }) {
             다음: 측면 촬영 →
           </button>
           <button onClick={finishAndSubmit}
-            className="rounded-full bg-slate-700 text-white font-bold text-xs px-4 py-2 active:scale-95">
+            className="rounded-full bg-slate-200 dark:bg-slate-700 text-white font-bold text-xs px-4 py-2 active:scale-95">
             측면 생략하고 정면만으로 마치기
           </button>
         </div>
@@ -643,7 +643,7 @@ export default function SquatLiveAnalysis({ member, onBack, onComplete }) {
         </button>
       )}
       {finishing && (
-        <div className="flex items-center gap-2 text-xs font-bold text-amber-300">
+        <div className="flex items-center gap-2 text-xs font-bold text-amber-700 dark:text-amber-300">
           <div className="w-4 h-4 border-2 border-amber-400 border-t-transparent rounded-full animate-spin" />
           저장 중…
         </div>
@@ -689,18 +689,18 @@ export default function SquatLiveAnalysis({ member, onBack, onComplete }) {
       {uiPhase === 'finished' && finishedBio && (() => {
         const st = finishedBio.status;
         const theme = st === 'risk'
-          ? { border: 'border-red-500/40', bg: 'bg-red-500/20', text: 'text-red-300' }
+          ? { border: 'border-red-500/40', bg: 'bg-red-500/20', text: 'text-red-700 dark:text-red-300' }
           : st === 'caution'
-          ? { border: 'border-amber-500/40', bg: 'bg-amber-500/20', text: 'text-amber-300' }
+          ? { border: 'border-amber-500/40', bg: 'bg-amber-500/20', text: 'text-amber-700 dark:text-amber-300' }
           : st === 'normal'
-          ? { border: 'border-emerald-500/40', bg: 'bg-emerald-500/20', text: 'text-emerald-300' }
-          : { border: 'border-slate-500/40', bg: 'bg-slate-500/20', text: 'text-slate-300' };
+          ? { border: 'border-emerald-500/40', bg: 'bg-emerald-500/20', text: 'text-emerald-700 dark:text-emerald-300' }
+          : { border: 'border-slate-500/40', bg: 'bg-slate-500/20', text: 'text-slate-600 dark:text-slate-300' };
         return (
           <div className={`mx-auto w-fit rounded-2xl border ${theme.border} ${theme.bg} px-5 py-2.5 text-center backdrop-blur`}>
-            <div className="text-[10px] font-bold text-slate-300 tracking-wide">종합 판정</div>
+            <div className="text-[10px] font-bold text-slate-600 dark:text-slate-300 tracking-wide">종합 판정</div>
             <div className={`text-sm font-black ${theme.text}`}>
               {STATUS_KO[st] || '확인 필요'}
-              {finishedFms?.score != null && <span className="text-slate-300 font-bold"> · FMS {finishedFms.score}점</span>}
+              {finishedFms?.score != null && <span className="text-slate-600 dark:text-slate-300 font-bold"> · FMS {finishedFms.score}점</span>}
             </div>
           </div>
         );

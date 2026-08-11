@@ -76,9 +76,9 @@ export default function LiftingReportDashboard({ report, onClose, member }) {
     if (m.meanPower != null || m.peakPower != null) tiles.push({ label: '파워(근사)', value: fmt(m.meanPower ?? m.peakPower, ' W') });
   }
 
-  const tone = confPct == null ? 'text-slate-400'
-    : confPct >= 70 ? 'text-emerald-300'
-    : confPct >= 50 ? 'text-amber-300' : 'text-red-300';
+  const tone = confPct == null ? 'text-slate-500 dark:text-slate-400'
+    : confPct >= 70 ? 'text-emerald-700 dark:text-emerald-300'
+    : confPct >= 50 ? 'text-amber-700 dark:text-amber-300' : 'text-red-700 dark:text-red-300';
 
   return (
     <UnifiedReportCanvas>
@@ -88,7 +88,7 @@ export default function LiftingReportDashboard({ report, onClose, member }) {
           baseName={`바벨리프팅_${exLabel}`}
           videoBlob={report.videoBlob || null}
         />
-        <button onClick={onClose} className="rounded-lg bg-slate-700 text-white font-bold text-sm px-4 py-2">닫기</button>
+        <button onClick={onClose} className="rounded-lg bg-slate-200 dark:bg-slate-700 text-white font-bold text-sm px-4 py-2">닫기</button>
       </div>
       <UnifiedReportPage id="lifting-report" className="mx-auto">
           <UnifiedReportHeader
@@ -110,9 +110,9 @@ export default function LiftingReportDashboard({ report, onClose, member }) {
           <UnifiedReportSection title="핵심 수치">
             <div className="grid grid-cols-2 gap-2">
               {tiles.map((t, i) => (
-                <div key={i} className={`rounded-xl p-3 border ${t.accent ? 'bg-amber-500/10 border-amber-500/35' : 'bg-slate-800/60 border-slate-700'}`}>
-                  <p className="text-[10px] text-slate-400 uppercase tracking-widest">{t.label}</p>
-                  <p className={`font-mono font-black text-2xl ${t.accent ? 'text-amber-300' : 'text-slate-100'}`}>{t.value}</p>
+                <div key={i} className={`rounded-xl p-3 border ${t.accent ? 'bg-amber-500/10 border-amber-500/35' : 'bg-slate-100/60 dark:bg-slate-800/60 border-slate-300 dark:border-slate-700'}`}>
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400 uppercase tracking-widest">{t.label}</p>
+                  <p className={`font-mono font-black text-2xl ${t.accent ? 'text-amber-700 dark:text-amber-300' : 'text-slate-800 dark:text-slate-100'}`}>{t.value}</p>
                 </div>
               ))}
             </div>
@@ -121,10 +121,10 @@ export default function LiftingReportDashboard({ report, onClose, member }) {
           {/* AI 자동 평가 */}
           {diag && diag.grade !== 'insufficient' && (
             <UnifiedReportSection title="AI 자동 평가" subtitle={GRADE_LABEL[diag.grade]}>
-              <div className="rounded-xl bg-slate-800/50 p-3 space-y-1.5">
-                <p className="text-[12px] font-black text-slate-100">{diag.headline}</p>
+              <div className="rounded-xl bg-slate-100/50 dark:bg-slate-800/50 p-3 space-y-1.5">
+                <p className="text-[12px] font-black text-slate-800 dark:text-slate-100">{diag.headline}</p>
                 {diag.details.map((d, i) => (
-                  <p key={i} className="text-[11px] text-slate-300 leading-snug">· {d}</p>
+                  <p key={i} className="text-[11px] text-slate-600 dark:text-slate-300 leading-snug">· {d}</p>
                 ))}
               </div>
             </UnifiedReportSection>
@@ -135,9 +135,9 @@ export default function LiftingReportDashboard({ report, onClose, member }) {
             <UnifiedReportSection title="측정 해석" subtitle="목표·목적 기준">
               <div className="space-y-2">
                 {interp.lines.map((ln, i) => (
-                  <div key={i} className="flex gap-3 rounded-xl bg-slate-800/50 p-3">
-                    <span className="shrink-0 text-[11px] font-black text-amber-400 w-20">{ln.label}</span>
-                    <span className="text-[12px] text-slate-200 leading-snug">{ln.text}</span>
+                  <div key={i} className="flex gap-3 rounded-xl bg-slate-100/50 dark:bg-slate-800/50 p-3">
+                    <span className="shrink-0 text-[11px] font-black text-amber-700 dark:text-amber-400 w-20">{ln.label}</span>
+                    <span className="text-[12px] text-slate-700 dark:text-slate-200 leading-snug">{ln.text}</span>
                   </div>
                 ))}
               </div>
@@ -151,12 +151,12 @@ export default function LiftingReportDashboard({ report, onClose, member }) {
                   const active = measuredZone && measuredZone.label === z.label;
                   const range = `${z.min}${z.max === Infinity ? '+' : `~${z.max}`} m/s`;
                   return (
-                    <div key={i} className={`rounded-xl border p-2.5 ${active ? 'bg-amber-500/10 border-amber-500/40' : 'bg-slate-800/45 border-slate-700'}`}>
+                    <div key={i} className={`rounded-xl border p-2.5 ${active ? 'bg-amber-500/10 border-amber-500/40' : 'bg-slate-100/45 dark:bg-slate-800/45 border-slate-300 dark:border-slate-700'}`}>
                       <div className="flex items-center justify-between gap-2">
-                        <span className={`text-[11px] font-black ${active ? 'text-amber-300' : 'text-slate-200'}`}>{z.label}</span>
-                        <span className="font-mono text-[10px] text-slate-400">{range}</span>
+                        <span className={`text-[11px] font-black ${active ? 'text-amber-700 dark:text-amber-300' : 'text-slate-700 dark:text-slate-200'}`}>{z.label}</span>
+                        <span className="font-mono text-[10px] text-slate-500 dark:text-slate-400">{range}</span>
                       </div>
-                      <p className="mt-1 text-[11px] leading-snug text-slate-300">{z.purpose}</p>
+                      <p className="mt-1 text-[11px] leading-snug text-slate-600 dark:text-slate-300">{z.purpose}</p>
                     </div>
                   );
                 })}
@@ -166,19 +166,19 @@ export default function LiftingReportDashboard({ report, onClose, member }) {
 
           {/* 신뢰도·정밀도 */}
           <UnifiedReportSection title="측정 신뢰도">
-            <div className="flex items-center justify-between rounded-xl bg-slate-800/60 p-3">
-              <span className="text-[12px] text-slate-300">측정 신뢰도</span>
+            <div className="flex items-center justify-between rounded-xl bg-slate-100/60 dark:bg-slate-800/60 p-3">
+              <span className="text-[12px] text-slate-600 dark:text-slate-300">측정 신뢰도</span>
               <span className={`font-mono font-black text-lg ${tone}`}>{confPct != null ? `${confPct}%` : '—'}</span>
             </div>
             {(precision.measuredAvgFps || report.source === 'upload') && (
               <div className="mt-2 grid grid-cols-2 gap-2 text-[11px]">
-                <div className="rounded-lg bg-slate-800/40 p-2">
+                <div className="rounded-lg bg-slate-100/40 dark:bg-slate-800/40 p-2">
                   <p className="text-slate-500">분석 프레임</p>
-                  <p className="font-mono font-bold text-slate-200">{fmt(precision.analyzedFrames)}</p>
+                  <p className="font-mono font-bold text-slate-700 dark:text-slate-200">{fmt(precision.analyzedFrames)}</p>
                 </div>
-                <div className="rounded-lg bg-slate-800/40 p-2">
+                <div className="rounded-lg bg-slate-100/40 dark:bg-slate-800/40 p-2">
                   <p className="text-slate-500">실측 평균 fps</p>
-                  <p className="font-mono font-bold text-slate-200">{fmt(precision.measuredAvgFps)}</p>
+                  <p className="font-mono font-bold text-slate-700 dark:text-slate-200">{fmt(precision.measuredAvgFps)}</p>
                 </div>
               </div>
             )}
@@ -186,20 +186,20 @@ export default function LiftingReportDashboard({ report, onClose, member }) {
               <div className="mt-2 grid grid-cols-2 gap-2 text-[11px]">
                 {report.cogGap?.available && (
                   <div className="rounded-lg bg-fuchsia-500/10 border border-fuchsia-500/30 p-2">
-                    <p className="text-fuchsia-300">바-무게중심 이격</p>
+                    <p className="text-fuchsia-700 dark:text-fuchsia-300">바-무게중심 이격</p>
                     <p className="font-mono font-bold text-fuchsia-100">
                       {report.cogGap.medianCm != null ? `${report.cogGap.medianCm}cm` : fmt(report.cogGap.medianRatio)}
-                      {report.cogGap.maxCm != null && <span className="text-[9px] text-fuchsia-300/70"> · 최대 {report.cogGap.maxCm}cm</span>}
+                      {report.cogGap.maxCm != null && <span className="text-[9px] text-fuchsia-700 dark:text-fuchsia-300/70"> · 최대 {report.cogGap.maxCm}cm</span>}
                     </p>
                   </div>
                 )}
                 {report.crossValidation?.totalFrames > 0 && (
                   <div className="rounded-lg bg-cyan-500/10 border border-cyan-500/30 p-2">
-                    <p className="text-cyan-300">교차검증(신호 일치)</p>
+                    <p className="text-cyan-700 dark:text-cyan-300">교차검증(신호 일치)</p>
                     <p className="font-mono font-bold text-cyan-100">
                       {report.crossValidation.avgAgreement != null ? `${Math.round(report.crossValidation.avgAgreement * 100)}%` : '—'}
                       {report.crossValidation.assistRatio > 0 && (
-                        <span className="text-[9px] text-cyan-300/70"> · 보완 {Math.round(report.crossValidation.assistRatio * 100)}%</span>
+                        <span className="text-[9px] text-cyan-700 dark:text-cyan-300/70"> · 보완 {Math.round(report.crossValidation.assistRatio * 100)}%</span>
                       )}
                     </p>
                   </div>
@@ -213,7 +213,7 @@ export default function LiftingReportDashboard({ report, onClose, member }) {
             <UnifiedReportSection title="참고·주의">
               <ul className="space-y-1.5">
                 {interp.cautions.map((c, i) => (
-                  <li key={i} className="flex gap-2 text-[11px] text-amber-300/90">
+                  <li key={i} className="flex gap-2 text-[11px] text-amber-700 dark:text-amber-300/90">
                     <span>⚠</span><span className="leading-snug">{c}</span>
                   </li>
                 ))}

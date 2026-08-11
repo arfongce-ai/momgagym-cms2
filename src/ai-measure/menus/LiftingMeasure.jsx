@@ -651,7 +651,7 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
       <>
 
         <div className="flex items-center gap-1.5 flex-wrap justify-end">
-          <span className="bg-black/65 rounded-full px-2.5 py-1 text-[10px] text-cyan-300 font-bold">
+          <span className="bg-black/65 rounded-full px-2.5 py-1 text-[10px] text-cyan-700 dark:text-cyan-300 font-bold">
             {ptCount === 0
               ? '바벨 끝·원판을 눌러 추적점 지정 또는 색 인식'
               : recording
@@ -677,7 +677,7 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
             키 미입력 — 닫고 입력하면 cm·속도 정확
           </span>
         )}
-        <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${referenceScale ? 'bg-emerald-500/85 text-slate-950' : 'bg-slate-700/90 text-slate-200'}`}>
+        <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${referenceScale ? 'bg-emerald-500/85 text-slate-950' : 'bg-slate-200/90 dark:bg-slate-700/90 text-slate-700 dark:text-slate-200'}`}>
           {calibrating ? `거리 보정 ${calibrationPointCount}/2` : referenceScale ? '기준물 보정' : '키 보정'}
         </span>
       </>
@@ -690,7 +690,7 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
           className={`px-6 h-14 rounded-2xl text-base font-black active:scale-95 shadow-xl disabled:opacity-60 transition-transform ${
             recording ? 'bg-gradient-to-r from-rose-500 to-red-500 text-white shadow-red-500/30'
             : seeded ? 'bg-gradient-to-r from-amber-400 to-orange-500 text-slate-950 shadow-amber-500/30'
-            : 'bg-white/10 border border-white/15 text-slate-300'}`}>
+            : 'bg-white/10 border border-white/15 text-slate-600 dark:text-slate-300'}`}>
           {recording ? '■ 측정 종료' : countdown != null ? '시작 대기' : '● 측정 시작'}
         </button>
         <button onClick={scanPlateColors}
@@ -727,7 +727,7 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
                 return (
                   <span key={r.repNo}
                     className={`rounded-xl px-2 py-1 font-mono text-[11px] font-black backdrop-blur ${
-                      latest ? 'bg-cyan-400/90 text-slate-950 shadow-lg shadow-cyan-400/30' : 'bg-black/50 text-slate-200 border border-white/10'}`}>
+                      latest ? 'bg-cyan-400/90 text-slate-950 shadow-lg shadow-cyan-400/30' : 'bg-black/50 text-slate-700 dark:text-slate-200 border border-white/10'}`}>
                     {r.repNo}<span className="opacity-60 text-[9px]">회</span> {r.meanVelocity ?? '–'}
                   </span>
                 );
@@ -748,8 +748,8 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
               {
                 label: 'LOSS', value: liveHud?.velocityLossPct ?? null, unit: '%',
                 tone: liveHud?.velocityLossPct == null ? 'text-white'
-                  : liveHud.velocityLossPct > 20 ? 'text-red-300'
-                  : liveHud.velocityLossPct > 10 ? 'text-amber-300' : 'text-emerald-300',
+                  : liveHud.velocityLossPct > 20 ? 'text-red-700 dark:text-red-300'
+                  : liveHud.velocityLossPct > 10 ? 'text-amber-700 dark:text-amber-300' : 'text-emerald-700 dark:text-emerald-300',
               },
             ]}
           />
@@ -758,23 +758,23 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
           <div className="mx-auto max-w-xs w-full rounded-xl bg-black/55 backdrop-blur border border-white/10 p-2">
             <div className="flex items-center justify-center gap-1.5">
               <button onClick={() => { setDialWeight(w => stepWeight(w, -10)); setWeightSource('dial'); }}
-                className="w-9 h-9 rounded-lg bg-white/10 text-slate-100 font-black text-[11px] active:scale-90">−5</button>
+                className="w-9 h-9 rounded-lg bg-white/10 text-slate-800 dark:text-slate-100 font-black text-[11px] active:scale-90">−5</button>
               <button onClick={() => { setDialWeight(w => stepWeight(w, -1)); setWeightSource('dial'); }}
-                className="w-9 h-9 rounded-lg bg-white/10 text-slate-100 font-black active:scale-90">−</button>
+                className="w-9 h-9 rounded-lg bg-white/10 text-slate-800 dark:text-slate-100 font-black active:scale-90">−</button>
               <div className="min-w-[72px] text-center">
                 <p className="font-mono font-black text-2xl text-white leading-none">{snapWeight(dialWeight)}</p>
-                <p className="text-[8px] text-slate-400">kg</p>
+                <p className="text-[8px] text-slate-500 dark:text-slate-400">kg</p>
               </div>
               <button onClick={() => { setDialWeight(w => stepWeight(w, +1)); setWeightSource('dial'); }}
                 className="w-9 h-9 rounded-lg bg-amber-500 text-slate-950 font-black active:scale-90">+</button>
               <button onClick={() => { setDialWeight(w => stepWeight(w, +10)); setWeightSource('dial'); }}
                 className="w-9 h-9 rounded-lg bg-amber-500 text-slate-950 font-black text-[11px] active:scale-90">+5</button>
             </div>
-            <div className="mt-1.5 flex items-center justify-center gap-2 text-[9px] text-slate-400">
+            <div className="mt-1.5 flex items-center justify-center gap-2 text-[9px] text-slate-500 dark:text-slate-400">
               <span>{weightSource === 'plate-color' ? '원판 색 인식 반영' : '수동 무게'}</span>
-              {detected.length > 0 && <span className="text-cyan-300">{detected.map(d => d.label).join(', ')}</span>}
+              {detected.length > 0 && <span className="text-cyan-700 dark:text-cyan-300">{detected.map(d => d.label).join(', ')}</span>}
             </div>
-            <div className="mt-2 flex items-center justify-center gap-2 text-[10px] text-slate-300">
+            <div className="mt-2 flex items-center justify-center gap-2 text-[10px] text-slate-600 dark:text-slate-300">
               <span>기준 길이</span>
               <input
                 type="number"
@@ -829,8 +829,8 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
       </p>
 
       {/* 원판 무게(기록용) — 접이식 */}
-      <details className="rounded-xl bg-slate-900/60 border border-slate-700">
-        <summary className="cursor-pointer px-4 py-3 text-sm font-bold text-slate-300 select-none">
+      <details className="rounded-xl bg-white dark:bg-slate-900/60 border border-slate-300 dark:border-slate-700">
+        <summary className="cursor-pointer px-4 py-3 text-sm font-bold text-slate-600 dark:text-slate-300 select-none">
           원판 무게 설정 (기록용) · 선택
         </summary>
         <div className="px-3 pb-3">

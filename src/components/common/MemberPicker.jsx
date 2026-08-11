@@ -47,25 +47,25 @@ export default function MemberPicker({ members, value, onChange, placeholder = '
       {/* 선택 표시 / 토글 버튼 */}
       <button type="button" onClick={() => setOpen(o => !o)}
         className="input w-full text-left flex items-center justify-between">
-        <span className={selected ? 'text-slate-100' : 'text-slate-500'}>
+        <span className={selected ? 'text-slate-800 dark:text-slate-100' : 'text-slate-500'}>
           {selected ? `${selected.name}${selected.phone ? ` (${selected.phone.slice(-4)})` : ''}` : noneLabel}
         </span>
         <span className="text-slate-500 text-xs ml-2">{open ? '▲' : '▼'}</span>
       </button>
 
       {open && (
-        <div className="absolute z-30 mt-1 w-full bg-slate-900 border border-slate-700 rounded-xl shadow-xl overflow-hidden">
+        <div className="absolute z-30 mt-1 w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl shadow-xl overflow-hidden">
           {/* 검색창 */}
-          <div className="p-2 border-b border-slate-800">
+          <div className="p-2 border-b border-slate-200 dark:border-slate-800">
             <input autoFocus value={query} onChange={e => setQuery(e.target.value)}
               placeholder={placeholder}
-              className="w-full bg-slate-800 border border-slate-700 text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-amber-500" />
+              className="w-full bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-amber-500" />
           </div>
           {/* 목록 */}
           <div className="max-h-60 overflow-y-auto">
             {allowNone && (
               <button type="button" onClick={() => pick(null)}
-                className="w-full text-left px-3 py-2 text-sm text-slate-400 hover:bg-slate-800 transition-colors">
+                className="w-full text-left px-3 py-2 text-sm text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
                 {noneLabel}
               </button>
             )}
@@ -74,8 +74,8 @@ export default function MemberPicker({ members, value, onChange, placeholder = '
             ) : (
               filtered.map(m => (
                 <button key={m.id} type="button" onClick={() => pick(m)}
-                  className={`w-full text-left px-3 py-2 text-sm transition-colors hover:bg-slate-800
-                    ${m.id === value ? 'bg-amber-500/10 text-amber-400' : 'text-slate-200'}`}>
+                  className={`w-full text-left px-3 py-2 text-sm transition-colors hover:bg-slate-100 dark:hover:bg-slate-800
+                    ${m.id === value ? 'bg-amber-500/10 text-amber-700 dark:text-amber-400' : 'text-slate-700 dark:text-slate-200'}`}>
                   <span className="font-semibold">{m.name}</span>
                   {m.phone && <span className="text-slate-500 text-xs ml-2">{m.phone.slice(-4)}</span>}
                 </button>

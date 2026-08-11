@@ -234,18 +234,18 @@ export default function JumpUploadAnalysis({ member, onBack, onComplete, onMembe
   // 키 입력 팝업 (요구사항 2)
   if (needHeight) {
     return (
-      <div className="absolute inset-0 bg-slate-950 flex flex-col">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800">
-          <button onClick={onBack} className="text-slate-300 font-bold text-sm">← 뒤로</button>
+      <div className="absolute inset-0 bg-slate-50 dark:bg-slate-950 flex flex-col">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-slate-800">
+          <button onClick={onBack} className="text-slate-600 dark:text-slate-300 font-bold text-sm">← 뒤로</button>
           <h2 className="text-white font-black">점프 정밀 측정</h2>
           <div className="w-12" />
         </div>
         <div className="flex-1 flex items-center justify-center p-6">
-          <div className="w-full max-w-sm bg-slate-900 border border-amber-500/30 rounded-2xl p-5 space-y-4">
+          <div className="w-full max-w-sm bg-white dark:bg-slate-900 border border-amber-500/30 rounded-2xl p-5 space-y-4">
             <div className="text-center space-y-1">
               <p className="text-3xl">📏</p>
               <p className="text-white font-black">키와 몸무게가 필요합니다</p>
-              <p className="text-slate-400 text-xs">cm 환산과 파워 계산에 필요합니다.</p>
+              <p className="text-slate-500 dark:text-slate-400 text-xs">cm 환산과 파워 계산에 필요합니다.</p>
             </div>
             <div className="grid grid-cols-2 gap-2">
               <label className="block">
@@ -253,8 +253,8 @@ export default function JumpUploadAnalysis({ member, onBack, onComplete, onMembe
                 <div className="flex items-center gap-2">
                   <input type="number" inputMode="numeric" value={heightInput}
                     onChange={e => setHeightInput(e.target.value)} placeholder="170"
-                    className="min-w-0 flex-1 bg-slate-800 border border-slate-700 text-slate-100 rounded-lg px-3 py-2.5 text-sm font-mono focus:outline-none focus:border-amber-500" />
-                  <span className="text-slate-400 text-xs font-bold">cm</span>
+                    className="min-w-0 flex-1 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-lg px-3 py-2.5 text-sm font-mono focus:outline-none focus:border-amber-500" />
+                  <span className="text-slate-500 dark:text-slate-400 text-xs font-bold">cm</span>
                 </div>
               </label>
               <label className="block">
@@ -262,15 +262,15 @@ export default function JumpUploadAnalysis({ member, onBack, onComplete, onMembe
                 <div className="flex items-center gap-2">
                   <input type="number" inputMode="decimal" value={weightInput}
                     onChange={e => setWeightInput(e.target.value)} placeholder="70"
-                    className="min-w-0 flex-1 bg-slate-800 border border-slate-700 text-slate-100 rounded-lg px-3 py-2.5 text-sm font-mono focus:outline-none focus:border-amber-500" />
-                  <span className="text-slate-400 text-xs font-bold">kg</span>
+                    className="min-w-0 flex-1 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-lg px-3 py-2.5 text-sm font-mono focus:outline-none focus:border-amber-500" />
+                  <span className="text-slate-500 dark:text-slate-400 text-xs font-bold">kg</span>
                 </div>
               </label>
             </div>
             <button onClick={applyHeight} className="w-full rounded-xl bg-amber-500 text-slate-950 font-black py-3 active:scale-95">
               입력하고 계속
             </button>
-            {errorMsg && <p className="text-center text-xs text-red-400">{errorMsg}</p>}
+            {errorMsg && <p className="text-center text-xs text-red-700 dark:text-red-400">{errorMsg}</p>}
           </div>
         </div>
       </div>
@@ -278,9 +278,9 @@ export default function JumpUploadAnalysis({ member, onBack, onComplete, onMembe
   }
 
   return (
-    <div className="absolute inset-0 bg-slate-950 flex flex-col">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800">
-        <button onClick={onBack} className="text-slate-300 font-bold text-sm">← 뒤로</button>
+    <div className="absolute inset-0 bg-slate-50 dark:bg-slate-950 flex flex-col">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-slate-800">
+        <button onClick={onBack} className="text-slate-600 dark:text-slate-300 font-bold text-sm">← 뒤로</button>
         <h2 className="text-white font-black">고속영상 점프 분석</h2>
         <div className="w-12" />
       </div>
@@ -290,14 +290,14 @@ export default function JumpUploadAnalysis({ member, onBack, onComplete, onMembe
           <video ref={videoRef} className="h-full w-full object-contain"
             playsInline muted controls={phase === 'ready' || phase === 'done'} />
           {phase === 'analyzing' && (
-            <div className="absolute left-3 top-3 rounded-full border border-white/15 bg-black/70 px-3 py-1 text-xs font-black text-amber-300 backdrop-blur">
+            <div className="absolute left-3 top-3 rounded-full border border-white/15 bg-black/70 px-3 py-1 text-xs font-black text-amber-700 dark:text-amber-300 backdrop-blur">
               {JUMP_SUBTYPES[jumpSubType].code} 분석 중
             </div>
           )}
         </div>
 
         {heightCm && (
-          <p className="text-[11px] text-emerald-400">회원 키 {heightCm}cm로 자동 보정합니다</p>
+          <p className="text-[11px] text-emerald-700 dark:text-emerald-400">회원 키 {heightCm}cm로 자동 보정합니다</p>
         )}
 
         {phase === 'idle' && (
@@ -307,20 +307,20 @@ export default function JumpUploadAnalysis({ member, onBack, onComplete, onMembe
           </label>
         )}
 
-        {fileName && phase !== 'idle' && <p className="text-xs text-slate-400 truncate max-w-md">📁 {fileName}</p>}
+        {fileName && phase !== 'idle' && <p className="text-xs text-slate-500 dark:text-slate-400 truncate max-w-md">📁 {fileName}</p>}
 
         {phase === 'ready' && (
           <div className="flex flex-col items-center gap-3 w-full max-w-md">
-            <p className="text-sm text-slate-300 text-center">
+            <p className="text-sm text-slate-600 dark:text-slate-300 text-center">
               {JUMP_SUBTYPES[jumpSubType].code} — {JUMP_SUBTYPES[jumpSubType].tip}. 고속촬영(120/240fps) 영상을 사용하세요.
             </p>
             <div className="w-full">
-              <p className="text-[11px] font-bold text-slate-400 mb-1.5">촬영 모드</p>
+              <p className="text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-1.5">촬영 모드</p>
               <div className="grid grid-cols-3 gap-1.5">
                 {Object.entries(CAPTURE_PRESETS).map(([k, p]) => (
                   <button key={k} onClick={() => setCapture(k)}
                     className={`rounded-lg px-2 py-2 text-xs font-bold transition-colors ${
-                      capture === k ? 'bg-amber-500 text-slate-950' : 'bg-slate-800 text-slate-300'}`}>
+                      capture === k ? 'bg-amber-500 text-slate-950' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'}`}>
                     {p.label}
                   </button>
                 ))}
@@ -334,7 +334,7 @@ export default function JumpUploadAnalysis({ member, onBack, onComplete, onMembe
               className="w-full rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black py-3 transition-colors">
               ▶ 분석 시작
             </button>
-            <label className="text-xs text-slate-400 underline cursor-pointer">
+            <label className="text-xs text-slate-500 dark:text-slate-400 underline cursor-pointer">
               다른 영상 선택
               <input type="file" accept="video/*" onChange={handleFile} className="hidden" />
             </label>
@@ -343,21 +343,21 @@ export default function JumpUploadAnalysis({ member, onBack, onComplete, onMembe
 
         {phase === 'analyzing' && (
           <div className="w-full max-w-md flex flex-col items-center gap-3">
-            <div className="w-full h-3 rounded-full bg-slate-800 overflow-hidden">
+            <div className="w-full h-3 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
               <div className="h-full bg-amber-500 transition-all duration-150" style={{ width: `${pct}%` }} />
             </div>
-            <p className="text-sm font-bold text-amber-400">{pct}% 분석 중…</p>
+            <p className="text-sm font-bold text-amber-700 dark:text-amber-400">{pct}% 분석 중…</p>
             <p className="text-[11px] text-slate-500">모든 프레임을 순차 분석하고 있습니다</p>
-            <button onClick={cancelAnalysis} className="text-xs text-slate-400 underline">취소</button>
+            <button onClick={cancelAnalysis} className="text-xs text-slate-500 dark:text-slate-400 underline">취소</button>
           </div>
         )}
 
-        {phase === 'done' && <p className="text-sm font-bold text-emerald-400">✓ 분석 완료 — 리포트로 이동합니다…</p>}
+        {phase === 'done' && <p className="text-sm font-bold text-emerald-700 dark:text-emerald-400">✓ 분석 완료 — 리포트로 이동합니다…</p>}
 
         {(phase === 'error' || errorMsg) && (
           <div className="flex flex-col items-center gap-2">
-            <p className="text-sm text-red-400 text-center max-w-md">{errorMsg}</p>
-            <label className="text-xs text-amber-400 underline cursor-pointer">
+            <p className="text-sm text-red-700 dark:text-red-400 text-center max-w-md">{errorMsg}</p>
+            <label className="text-xs text-amber-700 dark:text-amber-400 underline cursor-pointer">
               다시 시도
               <input type="file" accept="video/*" onChange={handleFile} className="hidden" />
             </label>

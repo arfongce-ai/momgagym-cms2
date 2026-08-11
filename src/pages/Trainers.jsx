@@ -21,10 +21,10 @@ const COLOR_PALETTE = [
 ];
 
 const STATUSES     = {full:'정규', freelance:'프리랜서', resigned:'퇴직'};
-const STATUS_STYLE = {full:'bg-emerald-500/20 text-emerald-400', freelance:'bg-amber-500/20 text-amber-400', resigned:'bg-slate-700 text-slate-400'};
+const STATUS_STYLE = {full:'bg-emerald-500/20 text-emerald-700 dark:text-emerald-400', freelance:'bg-amber-500/20 text-amber-700 dark:text-amber-400', resigned:'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400'};
 
-const INP = "w-full bg-slate-800 border border-slate-700 text-slate-100 rounded-xl px-3 py-2.5 text-sm placeholder-slate-500 focus:outline-none focus:border-amber-500";
-const LBL = "block text-xs font-semibold text-slate-400 uppercase tracking-widest mb-1.5";
+const INP = "w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 rounded-xl px-3 py-2.5 text-sm placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:border-amber-500";
+const LBL = "block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5";
 
 // ── ClassTypeCheckbox (onClick 버그 수정) ──────────────────
 function ClassTypeCheckbox({ selected=[], onChange }) {
@@ -39,8 +39,8 @@ function ClassTypeCheckbox({ selected=[], onChange }) {
             // ★ onClick 추가 — 핵심 버그 수정
             <div key={ct} onClick={() => toggle(ct)}
               className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl border cursor-pointer transition-colors select-none
-                ${on ? 'bg-amber-500/15 border-amber-500/40 text-amber-300' : 'border-slate-700 text-slate-400 hover:border-slate-500 hover:text-slate-300'}`}>
-              <span className={`w-4 h-4 rounded flex items-center justify-center flex-shrink-0 border transition-colors ${on ? 'bg-amber-500 border-amber-500' : 'border-slate-600 bg-slate-800'}`}>
+                ${on ? 'bg-amber-500/15 border-amber-500/40 text-amber-700 dark:text-amber-300' : 'border-slate-300 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:border-slate-400 dark:hover:border-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}>
+              <span className={`w-4 h-4 rounded flex items-center justify-center flex-shrink-0 border transition-colors ${on ? 'bg-amber-500 border-amber-500' : 'border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800'}`}>
                 {on && <svg className="w-2.5 h-2.5 text-slate-950" viewBox="0 0 10 8" fill="none">
                   <path d="M1 4l3 3 5-6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
                 </svg>}
@@ -74,7 +74,7 @@ function ColorPalette({ value, onChange, usedColors=[] }) {
               className={`w-full aspect-square rounded-lg transition-all duration-150 relative
                 ${isUsed ? 'opacity-20 cursor-not-allowed' : 'cursor-pointer'}
                 ${isMine ? 'ring-2 ring-white ring-offset-2 ring-offset-slate-800 scale-110' : !isUsed ? 'hover:scale-110 opacity-80 hover:opacity-100' : ''}
-                ${isWhite ? 'border border-slate-600' : ''}`}
+                ${isWhite ? 'border border-slate-300 dark:border-slate-600' : ''}`}
               style={{ background: c.hex }}>
               {isMine && (
                 <svg className={`w-full h-full p-1.5 ${isWhite?'text-slate-800':'text-white/90'}`} viewBox="0 0 12 10" fill="none">
@@ -93,7 +93,7 @@ function ColorPalette({ value, onChange, usedColors=[] }) {
       </div>
       {/* 현재 선택 미리보기 */}
       <div className="flex items-center gap-2">
-        <div className="w-5 h-5 rounded border border-slate-600 flex-shrink-0" style={{background:value||'#94a3b8'}}/>
+        <div className="w-5 h-5 rounded border border-slate-300 dark:border-slate-600 flex-shrink-0" style={{background:value||'#94a3b8'}}/>
         <span className="text-xs text-slate-500">
           {COLOR_PALETTE.find(c=>c.hex===value)?.name||'선택 안 됨'}
           {value && <span className="text-slate-600 ml-1 font-mono">{value}</span>}
@@ -195,7 +195,7 @@ export default function Trainers() {
         <div className="flex gap-2">
           {isAdmin && (
             <button onClick={exportTrainers}
-              className="text-xs font-bold px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-slate-200 hover:border-amber-500/40 hover:text-amber-400 transition-colors">
+              className="text-xs font-bold px-3 py-2 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:border-amber-500/40 hover:text-amber-600 dark:hover:text-amber-400 transition-colors">
               📄 다운로드
             </button>
           )}
@@ -208,7 +208,7 @@ export default function Trainers() {
           <div className="col-span-2 text-center py-16 text-slate-600"><p className="text-4xl mb-3">💪</p><p className="text-sm">등록된 트레이너가 없습니다</p></div>
         )}
         {trainers.map(t=>(
-          <div key={t.id} className="bg-slate-900 border border-slate-800 rounded-2xl p-4 hover:border-slate-700 transition-colors">
+          <div key={t.id} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 hover:border-slate-300 dark:hover:border-slate-700 transition-colors">
             <div className="flex items-start gap-3">
               <div className="w-11 h-11 rounded-full flex items-center justify-center text-slate-950 font-black text-base flex-shrink-0 shadow-lg"
                 style={{background:t.color||'#94a3b8'}}>{t.name[0]}</div>
@@ -222,27 +222,27 @@ export default function Trainers() {
                 {t.hireDate&&<p className="text-slate-600 text-xs">입사: {t.hireDate}</p>}
                 {(t.classTypes||[]).length>0&&(
                   <div className="flex flex-wrap gap-1 mt-2">
-                    {t.classTypes.map(ct=><span key={ct} className="text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded">{ct}</span>)}
+                    {t.classTypes.map(ct=><span key={ct} className="text-[10px] bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 px-1.5 py-0.5 rounded">{ct}</span>)}
                   </div>
                 )}
                 <div className="flex items-center gap-1.5 mt-1.5">
-                  <div className="w-3 h-3 rounded-full border border-slate-700" style={{background:t.color||'#94a3b8'}}/>
+                  <div className="w-3 h-3 rounded-full border border-slate-300 dark:border-slate-700" style={{background:t.color||'#94a3b8'}}/>
                   <span className="text-[10px] text-slate-600">{COLOR_PALETTE.find(c=>c.hex===t.color)?.name||''}</span>
                 </div>
                 {t.memo&&<p className="text-slate-600 text-xs mt-1 truncate">{t.memo}</p>}
 
                 {/* ── 로그인 계정 정보 (관리자만) ── */}
                 {isAdmin && t.loginEmail && (
-                  <div className="mt-2 p-2 rounded-lg bg-slate-800/60 border border-slate-700/60 space-y-1">
+                  <div className="mt-2 p-2 rounded-lg bg-slate-100 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60 space-y-1">
                     <div className="flex items-center gap-1.5 text-[11px]">
                       <span className="text-slate-500 w-12 flex-shrink-0">아이디</span>
-                      <span className="text-slate-300 font-mono break-all">{t.loginEmail}</span>
+                      <span className="text-slate-700 dark:text-slate-300 font-mono break-all">{t.loginEmail}</span>
                     </div>
                     <div className="flex items-center gap-1.5 text-[11px]">
                       <span className="text-slate-500 w-12 flex-shrink-0">비번</span>
-                      <span className="text-slate-300 font-mono">{showPw[t.id] ? t.loginPassword : '••••••••'}</span>
+                      <span className="text-slate-700 dark:text-slate-300 font-mono">{showPw[t.id] ? t.loginPassword : '••••••••'}</span>
                       <button type="button" onClick={()=>setShowPw(p=>({...p,[t.id]:!p[t.id]}))}
-                        className="ml-auto text-[10px] px-1.5 py-0.5 rounded border border-slate-600 text-slate-400 hover:text-white">
+                        className="ml-auto text-[10px] px-1.5 py-0.5 rounded border border-slate-300 dark:border-slate-600 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white">
                         {showPw[t.id] ? '숨기기' : '보기'}
                       </button>
                     </div>
@@ -250,9 +250,9 @@ export default function Trainers() {
                 )}
               </div>
             </div>
-            <div className="flex gap-2 mt-3 pt-3 border-t border-slate-800">
-              <button onClick={()=>openEdit(t)} className="flex-1 py-1.5 rounded-lg border border-slate-700 text-slate-400 hover:text-white text-xs font-semibold transition-colors">수정</button>
-              <button onClick={()=>deleteTrainer(t.id)} className="flex-1 py-1.5 rounded-lg border border-red-500/30 text-red-400 hover:bg-red-500/10 text-xs font-semibold transition-colors">삭제</button>
+            <div className="flex gap-2 mt-3 pt-3 border-t border-slate-200 dark:border-slate-800">
+              <button onClick={()=>openEdit(t)} className="flex-1 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white text-xs font-semibold transition-colors">수정</button>
+              <button onClick={()=>deleteTrainer(t.id)} className="flex-1 py-1.5 rounded-lg border border-red-500/30 text-red-700 dark:text-red-400 hover:bg-red-500/10 text-xs font-semibold transition-colors">삭제</button>
             </div>
           </div>
         ))}
@@ -261,12 +261,12 @@ export default function Trainers() {
       {showForm&&(
         <div className="modal-overlay">
           <div className="modal-box">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-800 flex-shrink-0">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-slate-800 flex-shrink-0">
               <div>
                 <h3 className="font-bold text-base">{editTarget?'트레이너 수정':'트레이너 등록'}</h3>
                 {!editTarget&&<p className="text-xs text-amber-500 mt-0.5">캘린더 색상이 자동으로 배정되었습니다</p>}
               </div>
-              <button onClick={closeForm} className="text-slate-500 hover:text-white text-2xl leading-none">×</button>
+              <button onClick={closeForm} className="text-slate-500 hover:text-slate-900 dark:hover:text-white text-2xl leading-none">×</button>
             </div>
 
             <div className="modal-body p-5 space-y-4">
@@ -283,7 +283,7 @@ export default function Trainers() {
                   {Object.entries(STATUSES).map(([k,v])=>(
                     <div key={k} onClick={()=>setForm(f=>({...f,status:k}))}
                       className={`flex-1 py-2.5 rounded-xl text-xs font-bold border cursor-pointer text-center transition-colors select-none
-                        ${form.status===k?'bg-amber-500/20 border-amber-500/40 text-amber-400':'border-slate-700 text-slate-400 hover:border-slate-500'}`}>
+                        ${form.status===k?'bg-amber-500/20 border-amber-500/40 text-amber-700 dark:text-amber-400':'border-slate-300 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:border-slate-400 dark:hover:border-slate-500'}`}>
                       {v}
                     </div>
                   ))}
@@ -299,7 +299,7 @@ export default function Trainers() {
               <div><label className={LBL}>메모</label><textarea rows={2} value={form.memo} onChange={pf('memo')} placeholder="특이사항" className={INP+" resize-none"}/></div>
 
               {/* ── 로그인 계정 (관리자만 설정) ── */}
-              <div className="pt-4 border-t border-slate-800">
+              <div className="pt-4 border-t border-slate-200 dark:border-slate-800">
                 <label className={LBL}>로그인 계정 <span className="normal-case text-slate-500 font-normal">(이 트레이너가 직접 로그인할 때 사용 · 선택)</span></label>
                 <div className="grid grid-cols-1 gap-3">
                   <div>
@@ -313,7 +313,7 @@ export default function Trainers() {
               </div>
             </div>
 
-            <div className="flex gap-2 px-5 py-4 border-t border-slate-800 flex-shrink-0">
+            <div className="flex gap-2 px-5 py-4 border-t border-slate-200 dark:border-slate-800 flex-shrink-0">
               <button onClick={closeForm} className="btn btn-ghost">취소</button>
               <button onClick={saveTrainer} disabled={saving} className="btn btn-primary flex-1 disabled:opacity-50">{saving ? '저장 중…' : (editTarget?'수정 완료':'등록')}</button>
             </div>

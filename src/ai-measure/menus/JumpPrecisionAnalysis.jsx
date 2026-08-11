@@ -824,18 +824,18 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
   // ── 키/몸무게 입력 팝업 (회원 미정 또는 신체정보 부족) ──
   if (needHeight) {
     return (
-      <div className="fixed inset-0 z-[80] bg-slate-950 flex flex-col">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800">
-          <button onClick={onBack} className="text-slate-300 font-bold text-sm">← 뒤로</button>
+      <div className="fixed inset-0 z-[80] bg-slate-50 dark:bg-slate-950 flex flex-col">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-slate-800">
+          <button onClick={onBack} className="text-slate-600 dark:text-slate-300 font-bold text-sm">← 뒤로</button>
           <h2 className="text-white font-black">점프 정밀 측정</h2>
           <div className="w-12" />
         </div>
         <div className="flex-1 flex items-center justify-center p-6">
-          <div className="w-full max-w-sm bg-slate-900 border border-amber-500/30 rounded-2xl p-5 space-y-4">
+          <div className="w-full max-w-sm bg-white dark:bg-slate-900 border border-amber-500/30 rounded-2xl p-5 space-y-4">
             <div className="text-center space-y-1">
               <p className="text-3xl">📏</p>
               <p className="text-white font-black">키와 몸무게가 필요합니다</p>
-              <p className="text-slate-400 text-xs leading-relaxed">
+              <p className="text-slate-500 dark:text-slate-400 text-xs leading-relaxed">
                 {member?.name ? `${member.name} 회원의 ` : '회원 미정 상태입니다. '}
                 cm 보정과 파워 계산을 위해 지금 입력해 주세요.
               </p>
@@ -846,8 +846,8 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
                 <div className="flex items-center gap-2">
                   <input type="number" inputMode="numeric" value={heightInput}
                     onChange={e => setHeightInput(e.target.value)} placeholder="170"
-                    className="min-w-0 flex-1 bg-slate-800 border border-slate-700 text-slate-100 rounded-lg px-3 py-2.5 text-sm font-mono focus:outline-none focus:border-amber-500" />
-                  <span className="text-slate-400 text-xs font-bold">cm</span>
+                    className="min-w-0 flex-1 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-lg px-3 py-2.5 text-sm font-mono focus:outline-none focus:border-amber-500" />
+                  <span className="text-slate-500 dark:text-slate-400 text-xs font-bold">cm</span>
                 </div>
               </label>
               <label className="block">
@@ -855,8 +855,8 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
                 <div className="flex items-center gap-2">
                   <input type="number" inputMode="decimal" value={weightInput}
                     onChange={e => setWeightInput(e.target.value)} placeholder="70"
-                    className="min-w-0 flex-1 bg-slate-800 border border-slate-700 text-slate-100 rounded-lg px-3 py-2.5 text-sm font-mono focus:outline-none focus:border-amber-500" />
-                  <span className="text-slate-400 text-xs font-bold">kg</span>
+                    className="min-w-0 flex-1 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-lg px-3 py-2.5 text-sm font-mono focus:outline-none focus:border-amber-500" />
+                  <span className="text-slate-500 dark:text-slate-400 text-xs font-bold">kg</span>
                 </div>
               </label>
             </div>
@@ -864,19 +864,19 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
               className="w-full rounded-xl bg-amber-500 text-slate-950 font-black py-3 active:scale-95">
               입력하고 측정 시작
             </button>
-            {warning && <p className="text-center text-xs text-red-400">{warning}</p>}
+            {warning && <p className="text-center text-xs text-red-700 dark:text-red-400">{warning}</p>}
           </div>
         </div>
       </div>
     );
   }
 
-  const phaseColor = phase === 'air' ? 'text-amber-400'
-    : phase === 'ready' ? 'text-emerald-400'
-    : phase === 'low_visibility' ? 'text-red-400' : 'text-cyan-400';
+  const phaseColor = phase === 'air' ? 'text-amber-700 dark:text-amber-400'
+    : phase === 'ready' ? 'text-emerald-700 dark:text-emerald-400'
+    : phase === 'low_visibility' ? 'text-red-700 dark:text-red-400' : 'text-cyan-700 dark:text-cyan-400';
 
   return (
-    <div className="fixed inset-0 z-[80] bg-slate-950 overflow-hidden" style={{ height: '100dvh' }}>
+    <div className="fixed inset-0 z-[80] bg-slate-50 dark:bg-slate-950 overflow-hidden" style={{ height: '100dvh' }}>
       {view === 'camera' && (
         <div className="relative w-full h-full">
           <div className={rotationDeg ? '' : 'absolute inset-0 w-full h-full'} style={rotationDeg ? {
@@ -936,7 +936,7 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
           {countdown != null && (
             <div className="absolute inset-0 z-30 flex items-center justify-center pointer-events-none">
               <div className="flex h-44 w-44 items-center justify-center rounded-full bg-black/55 backdrop-blur-sm ring-4 ring-amber-300/80 animate-pulse">
-                <span className="font-black text-amber-300 leading-none" style={{ fontSize: '7rem' }}>
+                <span className="font-black text-amber-700 dark:text-amber-300 leading-none" style={{ fontSize: '7rem' }}>
                   {countdown}
                 </span>
               </div>
@@ -1052,29 +1052,29 @@ function JumpReport({ report, saveState, onSave, onRetry, onBack, onOpenSavedRep
     : isRsi
       ? (report.rsi?.grade
           ? { label: report.rsi.grade.label, color: `text-${report.rsi.grade.tone}-400` }
-          : { label: '평가 불가', color: 'text-slate-400' })
-      : report.heightCm >= 50 ? { label: '매우 우수', color: 'text-blue-400' }
-      : report.heightCm >= 40 ? { label: '우수', color: 'text-emerald-400' }
-      : report.heightCm >= 30 ? { label: '보통', color: 'text-amber-400' }
-      : { label: '개선 필요', color: 'text-red-400' };
+          : { label: '평가 불가', color: 'text-slate-500 dark:text-slate-400' })
+      : report.heightCm >= 50 ? { label: '매우 우수', color: 'text-blue-700 dark:text-blue-400' }
+      : report.heightCm >= 40 ? { label: '우수', color: 'text-emerald-700 dark:text-emerald-400' }
+      : report.heightCm >= 30 ? { label: '보통', color: 'text-amber-700 dark:text-amber-400' }
+      : { label: '개선 필요', color: 'text-red-700 dark:text-red-400' };
 
   const cc = report.crossCheck || {};
   return (
-    <div className="absolute inset-0 bg-slate-950 flex flex-col">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800">
-        <button onClick={onRetry} className="text-slate-300 font-bold text-sm">← 다시 측정</button>
+    <div className="absolute inset-0 bg-slate-50 dark:bg-slate-950 flex flex-col">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-slate-800">
+        <button onClick={onRetry} className="text-slate-600 dark:text-slate-300 font-bold text-sm">← 다시 측정</button>
         <h2 className="text-white font-black">측정 리포트</h2>
-        <button onClick={onBack} className="text-slate-400 text-sm font-bold">닫기</button>
+        <button onClick={onBack} className="text-slate-500 dark:text-slate-400 text-sm font-bold">닫기</button>
       </div>
 
       <div id="jump-live-report-sheet" className="flex-1 overflow-y-auto p-5 space-y-4">
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 space-y-3">
           <div className="flex items-start justify-between gap-3">
             <div>
               <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">Jump Report</p>
               <p className="text-xl font-black text-white">{isRsi ? 'RSI 반응 점프' : '파워 점프'} 결과 리포트</p>
             </div>
-            <span className="shrink-0 rounded-full bg-slate-800 px-3 py-1 text-xs font-bold text-slate-200">
+            <span className="shrink-0 rounded-full bg-slate-100 dark:bg-slate-800 px-3 py-1 text-xs font-bold text-slate-700 dark:text-slate-200">
               {report.source === 'live' ? '실시간 측정' : '영상 분석'}
             </span>
           </div>
@@ -1091,8 +1091,8 @@ function JumpReport({ report, saveState, onSave, onRetry, onBack, onOpenSavedRep
         {report.valid !== true ? (
           <div className="bg-red-500/10 border border-red-500/40 rounded-2xl p-5 text-center space-y-2">
             <p className="text-3xl">⚠</p>
-            <p className="text-red-400 font-black">측정 무효</p>
-            <p className="text-slate-300 text-sm">
+            <p className="text-red-700 dark:text-red-400 font-black">측정 무효</p>
+            <p className="text-slate-600 dark:text-slate-300 text-sm">
               {report.reason === 'no_jump' ? '점프 동작이 감지되지 않았습니다.'
                 : report.reason === 'sanity_fail' ? '측정값이 키 대비 비현실적입니다. 카메라 각도/위치를 확인하고 다시 측정하세요.'
                 : report.rsi?.message ? report.rsi.message
@@ -1101,12 +1101,12 @@ function JumpReport({ report, saveState, onSave, onRetry, onBack, onOpenSavedRep
           </div>
         ) : (
           <>
-            <div className="bg-slate-900 border border-amber-500/30 rounded-2xl p-5 space-y-3">
+            <div className="bg-white dark:bg-slate-900 border border-amber-500/30 rounded-2xl p-5 space-y-3">
               <div className="flex items-baseline justify-between">
-                <p className="text-xs font-bold text-amber-400 uppercase tracking-widest">점프 높이</p>
+                <p className="text-xs font-bold text-amber-700 dark:text-amber-400 uppercase tracking-widest">점프 높이</p>
                 <p className={`text-sm font-bold ${grade.color}`}>{grade.label}</p>
               </div>
-              <p className="text-center font-mono font-black text-6xl text-slate-100">
+              <p className="text-center font-mono font-black text-6xl text-slate-800 dark:text-slate-100">
                 {report.heightCm}<span className="text-xl text-slate-500"> cm</span>
               </p>
               <div className="grid grid-cols-3 gap-2 text-center">
@@ -1134,16 +1134,16 @@ function JumpReport({ report, saveState, onSave, onRetry, onBack, onOpenSavedRep
         {report.valid === true && saveState !== 'saved' && (
           <button onClick={onSave}
             disabled={saveState === 'saving' || saveState === 'saved'}
-            className="w-full rounded-xl bg-slate-700 text-white font-bold py-3 disabled:opacity-60 flex items-center justify-center gap-2">
+            className="w-full rounded-xl bg-slate-200 dark:bg-slate-700 text-white font-bold py-3 disabled:opacity-60 flex items-center justify-center gap-2">
             {saveState === 'saving' && <span className="h-4 w-4 rounded-full border-2 border-white border-t-transparent animate-spin" />}
             {saveState === 'saved' ? '✓ 자동 저장됨' : saveState === 'saving' ? '저장 중...' : saveState === 'error' ? '↻ 다시 저장' : '💾 회차 기록 (데이터)'}
           </button>
         )}
-        <button onClick={onRetry} className="w-full rounded-xl border border-slate-700 text-slate-200 font-bold py-3">
+        <button onClick={onRetry} className="w-full rounded-xl border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 font-bold py-3">
           다시 측정
         </button>
-        {saveState === 'error' && <p className="text-center text-xs text-red-400">자동 저장 실패 — 위 버튼으로 다시 시도하세요</p>}
-        {report.valid !== true && <p className="text-center text-xs text-amber-400">무효 측정은 저장되지 않습니다.</p>}
+        {saveState === 'error' && <p className="text-center text-xs text-red-700 dark:text-red-400">자동 저장 실패 — 위 버튼으로 다시 시도하세요</p>}
+        {report.valid !== true && <p className="text-center text-xs text-amber-700 dark:text-amber-400">무효 측정은 저장되지 않습니다.</p>}
       </div>
     </div>
   );
@@ -1174,7 +1174,7 @@ function PowerReportSections({ report, biomech, viewLabel, crossCheck }) {
           <MetricCard label="체공 시간" value={report.flightTimeMs != null ? `${report.flightTimeMs}ms` : '—'} />
           <MetricCard label="주 측정값" value="최고 점프" />
         </div>
-        <p className="text-[11px] leading-relaxed text-slate-400">
+        <p className="text-[11px] leading-relaxed text-slate-500 dark:text-slate-400">
           파워 점프는 한 번의 최대 수직 도약 능력을 보는 리포트입니다. 높이, 이륙속도, 최고파워, 체중 대비 파워를 함께 보고
           정면 촬영에서는 좌우 안정성과 착지 대칭을 보조 지표로 확인합니다.
         </p>
@@ -1187,7 +1187,7 @@ function PowerReportSections({ report, biomech, viewLabel, crossCheck }) {
           <MetricCard label="골반 불균형" value={biomech.pelvicImbalance != null ? `${biomech.pelvicImbalance}°` : '—'} />
           <MetricCard label="신전 정렬도" value={biomech.extensionAlignment?.alignmentScore != null ? `${biomech.extensionAlignment.alignmentScore}점` : '—'} />
         </div>
-        <p className="text-[11px] leading-relaxed text-slate-400">
+        <p className="text-[11px] leading-relaxed text-slate-500 dark:text-slate-400">
           파워 점프의 추천 방향은 정면입니다. 정면에서는 좌우 흔들림, 착지 발끝 대칭, 골반 기울기 변화를 더 직관적으로 확인할 수 있습니다.
         </p>
       </ReportPanel>
@@ -1210,7 +1210,7 @@ function PowerReportSections({ report, biomech, viewLabel, crossCheck }) {
             {rows.map((row) => {
               const jump = calcJump((row.flightMs || 0) / 1000, report.bodyWeight || null);
               return (
-                <div key={row.no} className="grid grid-cols-5 gap-1 rounded-lg bg-slate-800/70 px-2 py-2 text-center">
+                <div key={row.no} className="grid grid-cols-5 gap-1 rounded-lg bg-slate-100/70 dark:bg-slate-800/70 px-2 py-2 text-center">
                   <Stat label={`#${row.no}`} value={`${row.heightCm ?? '—'}cm`} />
                   <Stat label="체공" value={`${row.flightMs ?? '—'}ms`} />
                   <Stat label="속도" value={jump?.takeoffVelocity != null ? `${jump.takeoffVelocity}` : '—'} />
@@ -1258,14 +1258,14 @@ function RsiReportSections({ report, biomech, viewLabel }) {
           <MetricCard label="최고 접지" value={rsi.contactTimeMs != null ? `${rsi.contactTimeMs}ms` : '—'} />
           <MetricCard label="최고 체공" value={rsi.flightTimeMs != null ? `${rsi.flightTimeMs}ms` : '—'} />
         </div>
-        <p className="text-[11px] leading-relaxed text-slate-400">
+        <p className="text-[11px] leading-relaxed text-slate-500 dark:text-slate-400">
           RSI는 높게 뛰는 능력보다 짧게 접지하고 빠르게 다시 튀어 오르는 반응 탄성을 봅니다. 회차 간 변동률이 높으면
           우연히 짧게 잡힌 접지시간을 피하기 위해 평균 RSI를 대표값으로 사용합니다.
         </p>
       </ReportPanel>
 
       {rsi.lowFps && (
-        <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-xs font-bold leading-relaxed text-amber-300">
+        <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-xs font-bold leading-relaxed text-amber-700 dark:text-amber-300">
           접지 시간이 짧아 프레임 오차 영향이 커질 수 있습니다. RSI는 측면에서 120fps 이상, 가능하면 240fps 슬로우 모션 촬영을 권장합니다.
         </div>
       )}
@@ -1273,7 +1273,7 @@ function RsiReportSections({ report, biomech, viewLabel }) {
       <ReportPanel title="연속 점프 사이클 분석" tone="emerald">
         <div className="space-y-1.5">
           {cycles.map((c, i) => (
-            <div key={i} className="grid grid-cols-5 gap-1 rounded-lg bg-slate-800/70 px-2 py-2 text-center">
+            <div key={i} className="grid grid-cols-5 gap-1 rounded-lg bg-slate-100/70 dark:bg-slate-800/70 px-2 py-2 text-center">
               <Stat label={`Cycle ${i + 1}`} value={c.rsi} />
               <Stat label="접지" value={`${c.contactMs}ms`} />
               <Stat label="체공" value={`${c.flightMs}ms`} />
@@ -1291,7 +1291,7 @@ function RsiReportSections({ report, biomech, viewLabel }) {
         <ReportPanel title="원본 점프별 영상 측정값" tone="slate">
           <div className="space-y-1.5">
             {rows.map((row) => (
-              <div key={row.no} className="grid grid-cols-5 gap-1 rounded-lg bg-slate-800/70 px-2 py-2 text-center">
+              <div key={row.no} className="grid grid-cols-5 gap-1 rounded-lg bg-slate-100/70 dark:bg-slate-800/70 px-2 py-2 text-center">
                 <Stat label={`#${row.no}`} value={`${row.heightCm ?? '—'}cm`} />
                 <Stat label="체공" value={`${row.flightMs ?? '—'}ms`} />
                 <Stat label="접지" value={row.contactMs != null ? `${row.contactMs}ms` : '—'} />
@@ -1310,7 +1310,7 @@ function RsiReportSections({ report, biomech, viewLabel }) {
           <MetricCard label="상체 변화" value={biomech.trunkLeanChange != null ? `${biomech.trunkLeanChange}°` : '—'} />
           <MetricCard label="착지 대칭" value={biomech.footLandingSymmetry?.symmetryPct != null ? `${biomech.footLandingSymmetry.symmetryPct}%` : '—'} />
         </div>
-        <p className="text-[11px] leading-relaxed text-slate-400">
+        <p className="text-[11px] leading-relaxed text-slate-500 dark:text-slate-400">
           RSI의 추천 방향은 측면입니다. 측면에서는 발이 바닥에 닿는 순간과 다시 떨어지는 순간을 더 명확히 구분할 수 있어 접지시간 신뢰도가 올라갑니다.
         </p>
       </ReportPanel>
@@ -1331,14 +1331,14 @@ function ReportPanel({ title, tone = 'slate', children }) {
     ? 'border-emerald-500/25'
     : tone === 'amber'
       ? 'border-amber-500/25'
-      : 'border-slate-800';
+      : 'border-slate-200 dark:border-slate-800';
   const titleClass = tone === 'emerald'
-    ? 'text-emerald-300'
+    ? 'text-emerald-700 dark:text-emerald-300'
     : tone === 'amber'
-      ? 'text-amber-300'
-      : 'text-slate-300';
+      ? 'text-amber-700 dark:text-amber-300'
+      : 'text-slate-600 dark:text-slate-300';
   return (
-    <div className={`bg-slate-900 border ${toneClass} rounded-2xl p-4 space-y-3`}>
+    <div className={`bg-white dark:bg-slate-900 border ${toneClass} rounded-2xl p-4 space-y-3`}>
       <p className={`text-xs font-bold ${titleClass}`}>{title}</p>
       {children}
     </div>
@@ -1349,7 +1349,7 @@ function GuideList({ items }) {
   return (
     <div className="space-y-2">
       {items.map((item, i) => (
-        <div key={item} className="flex gap-2 rounded-xl bg-slate-800/70 px-3 py-2 text-xs leading-relaxed text-slate-300">
+        <div key={item} className="flex gap-2 rounded-xl bg-slate-100/70 dark:bg-slate-800/70 px-3 py-2 text-xs leading-relaxed text-slate-600 dark:text-slate-300">
           <span className="font-black text-slate-500">{i + 1}</span>
           <span>{item}</span>
         </div>
@@ -1360,27 +1360,27 @@ function GuideList({ items }) {
 
 function Stat({ label, value }) {
   return (
-    <div className="bg-slate-800 rounded-xl py-2">
+    <div className="bg-slate-100 dark:bg-slate-800 rounded-xl py-2">
       <p className="text-[10px] text-slate-500">{label}</p>
-      <p className="font-mono font-bold text-slate-200 text-sm">{value}</p>
+      <p className="font-mono font-bold text-slate-700 dark:text-slate-200 text-sm">{value}</p>
     </div>
   );
 }
 
 function InfoRow({ label, value }) {
   return (
-    <div className="rounded-xl bg-slate-800 px-3 py-2">
+    <div className="rounded-xl bg-slate-100 dark:bg-slate-800 px-3 py-2">
       <p className="text-[10px] font-bold text-slate-500">{label}</p>
-      <p className="truncate text-sm font-bold text-slate-100">{value}</p>
+      <p className="truncate text-sm font-bold text-slate-800 dark:text-slate-100">{value}</p>
     </div>
   );
 }
 
 function MetricCard({ label, value }) {
   return (
-    <div className="rounded-xl bg-slate-800 px-3 py-2 text-center">
+    <div className="rounded-xl bg-slate-100 dark:bg-slate-800 px-3 py-2 text-center">
       <p className="text-[10px] font-bold text-slate-500">{label}</p>
-      <p className="font-mono text-base font-black text-slate-100">{value}</p>
+      <p className="font-mono text-base font-black text-slate-800 dark:text-slate-100">{value}</p>
     </div>
   );
 }
@@ -1498,32 +1498,32 @@ function ManualEntryModal({ member, jumpType = 'power', jumpSubType = 'cmj', leg
 
   return (
     <div className="absolute inset-0 z-[88] bg-black/70 backdrop-blur-sm flex items-center justify-center p-6" onClick={onClose}>
-      <div className="w-full max-w-sm bg-slate-900 border border-amber-500/30 rounded-2xl p-5 space-y-4" onClick={e => e.stopPropagation()}>
+      <div className="w-full max-w-sm bg-white dark:bg-slate-900 border border-amber-500/30 rounded-2xl p-5 space-y-4" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between">
-          <p className="text-white font-black">✍️ 수동 입력 {isReactive && <span className="text-emerald-400 text-xs">· RSI</span>}</p>
-          <button onClick={onClose} className="text-slate-400 text-sm font-bold">닫기 ✕</button>
+          <p className="text-white font-black">✍️ 수동 입력 {isReactive && <span className="text-emerald-700 dark:text-emerald-400 text-xs">· RSI</span>}</p>
+          <button onClick={onClose} className="text-slate-500 dark:text-slate-400 text-sm font-bold">닫기 ✕</button>
         </div>
         <div>
-          <label className="block text-xs font-semibold text-slate-400 mb-1.5">체공 시간 (초)</label>
+          <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1.5">체공 시간 (초)</label>
           <input type="number" inputMode="decimal" step="0.01" value={flight}
             onChange={e => setFlight(e.target.value)} placeholder="0.50"
-            className="w-full bg-slate-800 border border-slate-700 text-slate-100 rounded-lg px-3 py-2.5 text-base font-mono focus:outline-none focus:border-amber-500" />
+            className="w-full bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-lg px-3 py-2.5 text-base font-mono focus:outline-none focus:border-amber-500" />
           <p className="text-[11px] text-slate-500 mt-1">점프매트·앱 타이머로 잰 발이 떠 있던 시간</p>
         </div>
         {isReactive ? (
           <div>
-            <label className="block text-xs font-semibold text-slate-400 mb-1.5">접지 시간 (초)</label>
+            <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1.5">접지 시간 (초)</label>
             <input type="number" inputMode="decimal" step="0.01" value={contact}
               onChange={e => setContact(e.target.value)} placeholder="0.20"
-              className="w-full bg-slate-800 border border-slate-700 text-slate-100 rounded-lg px-3 py-2.5 text-base font-mono focus:outline-none focus:border-emerald-500" />
+              className="w-full bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-lg px-3 py-2.5 text-base font-mono focus:outline-none focus:border-emerald-500" />
             <p className="text-[11px] text-slate-500 mt-1">착지 후 다시 뛰기까지 지면에 닿은 시간. RSI = 체공 ÷ 접지</p>
           </div>
         ) : (
           <div>
-            <label className="block text-xs font-semibold text-slate-400 mb-1.5">체중 (kg) <span className="text-slate-600">— 파워 계산 시</span></label>
+            <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1.5">체중 (kg) <span className="text-slate-600">— 파워 계산 시</span></label>
             <input type="number" inputMode="numeric" step="0.1" value={weight}
               onChange={e => setWeight(e.target.value)} placeholder="70"
-              className="w-full bg-slate-800 border border-slate-700 text-slate-100 rounded-lg px-3 py-2.5 text-base font-mono focus:outline-none focus:border-amber-500" />
+              className="w-full bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-lg px-3 py-2.5 text-base font-mono focus:outline-none focus:border-amber-500" />
           </div>
         )}
         <button onClick={submit} disabled={busy}

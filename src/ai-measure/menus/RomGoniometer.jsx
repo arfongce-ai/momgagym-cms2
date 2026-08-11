@@ -184,11 +184,11 @@ export default function RomGoniometer({ member, jointName, onBack, onUseAngle, i
           <span className="w-12" />
         </div>
 
-        <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4 space-y-3">
-          <p className="text-sm font-bold text-slate-200">측정할 부위를 촬영하거나 사진을 올리세요</p>
-          <p className="text-[12px] leading-relaxed text-slate-400">
+        <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 space-y-3">
+          <p className="text-sm font-bold text-slate-700 dark:text-slate-200">측정할 부위를 촬영하거나 사진을 올리세요</p>
+          <p className="text-[12px] leading-relaxed text-slate-500 dark:text-slate-400">
             자동 인식이 어려운 손목·손가락·목·특정 자세도 직접 각도를 잴 수 있습니다.
-            <span className="text-amber-300"> 관절이 카메라와 나란한 측면</span>에서 촬영해야 각도가 정확합니다.
+            <span className="text-amber-700 dark:text-amber-300"> 관절이 카메라와 나란한 측면</span>에서 촬영해야 각도가 정확합니다.
           </p>
 
           {!cameraOn ? (
@@ -206,16 +206,16 @@ export default function RomGoniometer({ member, jointName, onBack, onUseAngle, i
                 <button onClick={shoot}
                   className="flex-1 rounded-xl bg-amber-500 px-4 py-3 text-sm font-black text-slate-950">촬영</button>
                 <button onClick={stopCamera}
-                  className="rounded-xl border border-slate-700 bg-slate-800 px-4 py-3 text-sm font-black text-slate-300">중지</button>
+                  className="rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-4 py-3 text-sm font-black text-slate-600 dark:text-slate-300">중지</button>
               </div>
             </div>
           )}
-          {cameraErr && <p className="text-xs text-red-400">{cameraErr}</p>}
+          {cameraErr && <p className="text-xs text-red-700 dark:text-red-400">{cameraErr}</p>}
 
           <label className="block">
-            <span className="text-xs font-bold text-slate-400">또는 사진 파일 업로드</span>
+            <span className="text-xs font-bold text-slate-500 dark:text-slate-400">또는 사진 파일 업로드</span>
             <input type="file" accept="image/*" capture="environment" onChange={onFile}
-              className="mt-1 block w-full text-sm text-slate-300 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-700 file:px-3 file:py-1.5 file:text-sm file:font-bold file:text-slate-100" />
+              className="mt-1 block w-full text-sm text-slate-600 dark:text-slate-300 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-200 dark:file:bg-slate-700 file:px-3 file:py-1.5 file:text-sm file:font-bold file:text-slate-800 dark:file:text-slate-100" />
           </label>
         </div>
       </div>
@@ -231,8 +231,8 @@ export default function RomGoniometer({ member, jointName, onBack, onUseAngle, i
         {allowRetake ? <button onClick={retake} className="measure-back">다시 촬영</button> : <span className="w-12" />}
       </div>
 
-      <div className="rounded-2xl border border-slate-800 bg-slate-900 p-3 space-y-3">
-        <p className="text-xs font-bold text-slate-300">
+      <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3 space-y-3">
+        <p className="text-xs font-bold text-slate-600 dark:text-slate-300">
           {points.length < 3
             ? `${POINT_LABELS[points.length]} 위치를 탭하세요`
             : '점을 다시 탭/드래그해 미세 조정할 수 있습니다'}
@@ -260,7 +260,7 @@ export default function RomGoniometer({ member, jointName, onBack, onUseAngle, i
         {/* 각도 리드아웃 */}
         <div className="flex items-center justify-between rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3">
           <div>
-            <p className="text-[10px] font-bold text-amber-300/80 uppercase tracking-widest">
+            <p className="text-[10px] font-bold text-amber-700 dark:text-amber-300/80 uppercase tracking-widest">
               {jointName ? `${jointName} · ` : ''}측정 각도
             </p>
             <p className="mt-0.5 text-3xl font-black tabular-nums text-amber-200">
@@ -270,11 +270,11 @@ export default function RomGoniometer({ member, jointName, onBack, onUseAngle, i
           <div className="flex flex-col gap-1.5">
             <button onClick={() => setSupplementary((v) => !v)}
               disabled={rawAngle == null}
-              className="rounded-lg border border-slate-600 bg-slate-800 px-3 py-1.5 text-[11px] font-black text-slate-200 disabled:opacity-40">
+              className="rounded-lg border border-slate-400 dark:border-slate-600 bg-slate-100 dark:bg-slate-800 px-3 py-1.5 text-[11px] font-black text-slate-700 dark:text-slate-200 disabled:opacity-40">
               {supplementary ? '사이각(θ) 보기' : '보각(180−θ) 보기'}
             </button>
             <button onClick={resetPoints}
-              className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-1.5 text-[11px] font-bold text-slate-300">
+              className="rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-3 py-1.5 text-[11px] font-bold text-slate-600 dark:text-slate-300">
               점 초기화
             </button>
           </div>
@@ -282,11 +282,11 @@ export default function RomGoniometer({ member, jointName, onBack, onUseAngle, i
 
         {onUseAngle && (
           <button onClick={useThisAngle} disabled={shownAngle == null}
-            className="w-full rounded-xl bg-amber-500 px-4 py-3 text-sm font-black text-slate-950 disabled:bg-slate-700 disabled:text-slate-400">
+            className="w-full rounded-xl bg-amber-500 px-4 py-3 text-sm font-black text-slate-950 disabled:bg-slate-200 dark:disabled:bg-slate-700 disabled:text-slate-500 dark:disabled:text-slate-400">
             이 각도 기록에 반영
           </button>
         )}
-        {savedMsg && <p className="text-center text-xs font-bold text-emerald-400">{savedMsg}</p>}
+        {savedMsg && <p className="text-center text-xs font-bold text-emerald-700 dark:text-emerald-400">{savedMsg}</p>}
 
         <p className="text-[11px] leading-relaxed text-slate-500">
           ※ 2D 사진 기반 수동 측정입니다. 관절이 카메라와 나란한 측면에서 촬영했을 때 가장 정확하며,
