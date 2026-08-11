@@ -1,3 +1,9 @@
+// [Axis3/4 확장 2026-08-11] 리프팅 문제요약이 core/barbellClinical.js의 기존
+// 정교한 자동평가(등급·flags)를 그대로 재사용하도록 — 계산 로직을 여기 새로
+// 만들지 않는다(squat이 squatBiomechanics.js의 repeatedFlags를 재사용하는
+// 것과 동일한 원칙 — "판단 로직은 한 곳에만").
+import { generateLiftingDiagnosis } from './barbellClinical';
+
 const OUTPUT_POLICY = Object.freeze({
   posture: 'photo',
   rom: 'video',
@@ -42,6 +48,22 @@ const SQUAT_FLAG_KO = Object.freeze({
   elbow_bend_high: { level: 'risk', text: '스쿼트 중 팔꿈치가 크게 굽습니다(완전히 펴지지 않음).' },
   elbow_asym_borderline: { level: 'caution', text: '스쿼트 중 양쪽 팔꿈치 펴짐 정도가 다소 다릅니다.' },
   elbow_asym_high: { level: 'risk', text: '스쿼트 중 양쪽 팔꿈치 펴짐 정도가 크게 다릅니다.' },
+});
+
+// barbellClinical.js generateLiftingDiagnosis()가 반환하는 flags를 사람이 읽을
+// 문장으로 매핑. level 판정 기준은 barbellClinical.js 자체의 등급 강등 폭을
+// 그대로 따른다 — 'needs_work'까지 떨어뜨리는 large_bar_drift만 risk, 나머지
+// (모두 'fair'까지만 떨어뜨림)는 caution. 새 판단 기준을 여기서 새로 만들지
+// 않고, 이미 있는 판단 결과를 그대로 옮겨 적는 것뿐이다.
+const LIFTING_FLAG_KO = Object.freeze({
+  low_confidence: { level: 'caution', text: '측정 신뢰도가 낮습니다 — 조명·각도·추적점을 점검하세요.' },
+  high_formula_spread: { level: 'caution', text: '1RM 추정 공식 간 편차가 커서 추정이 불안정합니다 — 1~6회 세트로 재측정을 권장합니다.' },
+  high_reps: { level: 'caution', text: '10회 초과 반복으로 추정해 1RM 오차가 큽니다(참고용 수치입니다).' },
+  velocity_formula_mismatch: { level: 'caution', text: '속도 기반 추정치가 공식 추정치와 크게 어긋납니다 — 무게 입력·추적을 확인하세요.' },
+  high_velocity_loss: { level: 'caution', text: '세트 내 속도저하가 30%를 넘어 피로가 많이 누적됐습니다.' },
+  inconsistent_reps: { level: 'caution', text: '렙마다 속도 편차가 커서 출력이 일관되지 않습니다 — 무게·자세를 점검하세요.' },
+  large_bar_drift: { level: 'risk', text: '바 궤적이 몸에서 크게 멀어집니다(수평 이탈 큼) — 궤적 교정이 필요합니다.' },
+  low_path_efficiency: { level: 'caution', text: '바 이동 경로 효율이 낮습니다 — 수직 이동 대비 경로가 길어 흔들림/우회가 의심됩니다.' },
 });
 
 export function measurementOutputMode(kind) {
@@ -146,6 +168,23 @@ export function buildProblemFocus(kind, report = {}) {
         if (info) addIssue(info.level, info.text);
       });
       if (!issues.length) addStrength('오버헤드 딥 스쿼트 동작에서 큰 위험 신호가 없습니다.');
+    }
+  } else if (kind === 'lifting') {
+    // [Axis3/4 확장 2026-08-11] 예전엔 이 분기가 아예 없어서(else 없이 통과)
+    // 리프팅은 issues/strengths가 항상 빈 채로 넘어가고, primaryFinding도
+    // "바벨 리프팅(VBT) 결과에서 우선 확인할 문제를 정리했습니다." 같은
+    // 속 빈 문구만 나왔다 — MomiAutoNote/MomiInsightPanel은 붙어있어도
+    // 실제 근거가 텅 빈 상태였던 것. generateLiftingDiagnosis()가 이미
+    // 만들어둔 정교한 판정(등급·flags)을 그대로 재사용해서 채운다.
+    const diag = generateLiftingDiagnosis(report, {});
+    if (diag.grade === 'insufficient') {
+      addIssue('caution', diag.headline || '바벨 리프팅 측정 데이터가 부족해 평가를 보류합니다.');
+    } else {
+      (diag.flags || []).forEach((flag) => {
+        const info = LIFTING_FLAG_KO[flag];
+        if (info) addIssue(info.level, info.text);
+      });
+      if (!issues.length) addStrength('바벨 리프팅(VBT) 지표에서 큰 문제 신호가 없습니다.');
     }
   } else if (kind === 'daily') {
     // [모미 신규] 컨디션 체크인(conditionAssessment.js evaluateCondition() 결과)을 해석한다.

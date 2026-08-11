@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'fs';
+import { join } from 'path';
 import {
   buildCombinedAssessment,
   buildCrossMeasureIntegration,
@@ -8,6 +10,8 @@ import {
 } from '../ai-measure/core/crossMeasureContext';
 import { evaluateSingleLegStance, evaluateSingleLegStanceWithEyes } from '../ai-measure/core/singleLegStance';
 import { evaluateSquatBiomechanics } from '../ai-measure/core/squatBiomechanics';
+
+const readSrc = (...segs) => readFileSync(join(process.cwd(), ...segs), 'utf8');
 
 describe('crossMeasureContext', () => {
   it('측정별 출력 매체 정책을 고정한다', () => {
@@ -75,6 +79,74 @@ describe('crossMeasureContext', () => {
       const focus = buildProblemFocus('body', {});
       expect(focus.issues).toEqual([]);
       expect(focus.strengths).toEqual([]);
+    });
+  });
+
+  // [Axis3/4 확장 2026-08-11] 바벨 리프팅 — 예전엔 이 kind 자체가 buildProblemFocus에
+  // 없어서 issues/strengths가 항상 비어있었다("바벨 리프팅(VBT) 결과에서 우선
+  // 확인할 문제를 정리했습니다."라는 속 빈 문구만 나옴). core/barbellClinical.js
+  // generateLiftingDiagnosis()의 기존 정교한 판정을 재사용해서 채운 뒤의 동작을
+  // 실제 5가지 시나리오로 검증(사전에 Node 프로브 스크립트로 직접 실행 확인 완료).
+  describe("buildProblemFocus('lifting', ...) — 바벨 리프팅(VBT)", () => {
+    it('핵심 수치가 아예 없으면(측정 실패) insufficient로 caution 이슈 하나만', () => {
+      const focus = buildProblemFocus('lifting', { mode: 'vbt', metrics: {} });
+      expect(focus.severity).toBe('caution');
+      expect(focus.issues).toHaveLength(1);
+      expect(focus.issues[0].text).toContain('평가를 보류');
+    });
+
+    it('깨끗한 측정(문제 플래그 없음)은 이슈 없이 강점 문구', () => {
+      const focus = buildProblemFocus('lifting', {
+        mode: 'vbt', exerciseType: 'squat',
+        metrics: { meanVelocity: 0.75, velocityLoss: 8, confidenceScore: 0.9 },
+        metadata: { reps: 3 },
+        barPath: { maxDriftCm: 2, avgEfficiency: 0.95 },
+      });
+      expect(focus.severity).toBe('normal');
+      expect(focus.issues).toEqual([]);
+      expect(focus.strengths.length).toBeGreaterThan(0);
+    });
+
+    it('바 궤적 이탈이 크면(large_bar_drift) risk 이슈 — 유일하게 needs_work까지 강등되는 플래그라 다른 것과 다르게 risk', () => {
+      const focus = buildProblemFocus('lifting', {
+        mode: 'lifting', exerciseType: 'deadlift',
+        metrics: { meanVelocity: 0.5, confidenceScore: 0.9 },
+        barPath: { maxDriftCm: 12, avgEfficiency: 0.7 },
+      });
+      expect(focus.severity).toBe('risk');
+      expect(focus.issues.some((i) => i.level === 'risk' && i.text.includes('궤적 교정이 필요'))).toBe(true);
+      // 경로 효율 저하도 같이 잡히지만 그건 caution(needs_work까지는 안 떨어뜨림).
+      expect(focus.issues.some((i) => i.level === 'caution' && i.text.includes('경로 효율'))).toBe(true);
+    });
+
+    it('속도저하·렙 불일치 둘 다 있으면 caution 이슈 2개(둘 다 fair까지만 강등)', () => {
+      const focus = buildProblemFocus('lifting', {
+        mode: 'vbt', exerciseType: 'bench_press',
+        metrics: { meanVelocity: 0.4, velocityLoss: 35, confidenceScore: 0.9 },
+        consistencyCvPct: 18,
+      });
+      expect(focus.severity).toBe('caution');
+      expect(focus.issues).toHaveLength(2);
+      expect(focus.issues.every((i) => i.level === 'caution')).toBe(true);
+    });
+
+    it('1RM 모드에서 공식 간 편차가 크면 caution 이슈로 재측정을 권장한다', () => {
+      const focus = buildProblemFocus('lifting', {
+        mode: 'onerm', exerciseType: 'squat',
+        metrics: { oneRM: 120, confidenceScore: 0.9 },
+        metadata: { reps: 5, weight: 100, formulaSpreadPct: 15 },
+      });
+      expect(focus.severity).toBe('caution');
+      expect(focus.issues[0].text).toContain('재측정을 권장');
+    });
+
+    it('새 로직이 계산을 새로 만들지 않고 barbellClinical.js의 기존 판정을 그대로 재사용한다(중복 로직 방지 회귀 테스트)', () => {
+      const src = readSrc('src', 'ai-measure', 'core', 'crossMeasureContext.js');
+      expect(src).toContain("import { generateLiftingDiagnosis } from './barbellClinical';");
+      const start = src.indexOf("} else if (kind === 'lifting') {");
+      const end = src.indexOf("} else if (kind === 'daily')", start);
+      const body = src.slice(start, end);
+      expect(body).toContain('generateLiftingDiagnosis(report, {})');
     });
   });
 
