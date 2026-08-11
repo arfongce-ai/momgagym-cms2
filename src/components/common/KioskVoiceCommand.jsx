@@ -45,6 +45,9 @@ export default function KioskVoiceCommand() {
     () => sortByName(scopeMembersToTrainer(store.getMembers(), user)),
     [user]
   );
+  // [무료 확장 2026-08-11] GlobalVoiceCommand.jsx와 동일 — 세션 조정 규칙기반
+  // 매칭의 "트레이너 이름 언급되면 Claude로" 안전장치에 쓴다.
+  const allTrainers = useMemo(() => store.getTrainers(), []);
   const [feedback, setFeedback] = useState('');
 
   const { speak } = useMomiSpeech();
@@ -289,6 +292,7 @@ export default function KioskVoiceCommand() {
           role,
           currentUser: user,
           allMembers,
+          allTrainers,
           navigate,
           mode: 'kiosk', // [예약 생성 프로젝트 2026-08-08] 키오스크=공용 기기, trainerName(말로 지정)만 신뢰.
           // [음성 대화형 2026-08-09] 직전 자유 질문 왕복을 함께 보내서 "그럼

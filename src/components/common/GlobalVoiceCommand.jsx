@@ -44,6 +44,9 @@ export default function GlobalVoiceCommand() {
     () => sortByName(scopeMembersToTrainer(store.getMembers(), user)),
     [user]
   );
+  // [무료 확장 2026-08-11] 세션 조정 규칙기반 매칭이 "문장에 트레이너 이름이
+  // 언급되면 안전하게 Claude로 넘긴다" 판단에 쓴다.
+  const allTrainers = useMemo(() => store.getTrainers(), []);
   const [feedback, setFeedback] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -329,6 +332,7 @@ export default function GlobalVoiceCommand() {
           role,
           currentUser: user,
           allMembers,
+          allTrainers,
           navigate,
           mode: 'phone', // [예약 생성 프로젝트 2026-08-08] 폰/개인 기기 — 로그인된 본인 trainerId를 우선 신뢰.
           // [음성 대화형 2026-08-09] KioskVoiceCommand.jsx와 동일 — 직전 자유

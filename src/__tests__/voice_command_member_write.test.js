@@ -67,6 +67,16 @@ describe('processVoiceCommand() — memo_add_propose 분기', () => {
 });
 
 describe('processVoiceCommand() — session_adjust_propose 분기 (mode별 트레이너 우선순위, 예약류와 동일 규칙)', () => {
+  // [2026-08-11] 이 블록 중 일부(트레이너 이름이 안 나오는 단순 문장)는 이제
+  // 무료 규칙기반 매칭(matchRuleBasedSessionAdjust)이 먼저 잡아서, 아래
+  // mockFetchType으로 지정한 Claude 응답까지 안 가고 끝난다 — 하지만 그래도
+  // 결과가 똑같이 나와야 한다(같은 mode별 trainerId 우선순위 로직을 무료
+  // 경로도 동일하게 그대로 쓰기 때문 — processVoiceCommand 내부에서 실제로
+  // 같은 한 줄: `mode==='kiosk'?null:currentUser?.trainerId`). 즉 이 테스트들은
+  // "무료/유료 어느 경로를 타든 mode별 트레이너 우선순위 계약은 동일하다"를
+  // 검증하는 셈이라 그대로 유효하다. allTrainers를 넘기는 건 트레이너 이름이
+  // 실제로 언급된 케이스(바로 아래)에서 "이건 무료로 처리하면 안 된다"는
+  // 안전장치가 제대로 작동하는지 보려는 것.
   it('phone 모드는 currentUser.trainerId를 우선 사용한다', async () => {
     mockFetchType('session_adjust_propose', { memberName: '김영희', trainerName: null, delta: 2 });
     const result = await processVoiceCommand({
@@ -74,19 +84,21 @@ describe('processVoiceCommand() — session_adjust_propose 분기 (mode별 트�
       role: 'trainer',
       currentUser: { trainerId: 't1' },
       allMembers: MEMBERS,
+      allTrainers: TRAINERS,
       mode: 'phone',
     });
     expect(result.propose.trainerId).toBe('t1');
     expect(result.propose.ready).toBe(true);
   });
 
-  it('kiosk 모드는 currentUser.trainerId가 있어도 무시하고 trainerName만 쓴다(공용 기기 보안 원칙)', async () => {
+  it('트레이너 이름이 실제로 언급되면 무료 경로가 안전하게 포기하고 Claude로 넘긴다 — kiosk 모드는 그 Claude 응답의 trainerName만 신뢰한다(공용 기기 보안 원칙)', async () => {
     mockFetchType('session_adjust_propose', { memberName: '김영희', trainerName: '이서연', delta: 1 });
     const result = await processVoiceCommand({
       transcript: '김영희님 이서연 트레이너 세션 1회 추가해줘',
       role: 'trainer',
       currentUser: { trainerId: 't1' }, // 공용 키오스크에 우연히 로그인된 다른 트레이너
       allMembers: MEMBERS,
+      allTrainers: TRAINERS,
       mode: 'kiosk',
     });
     expect(result.propose.trainerId).toBe('t2');
@@ -99,6 +111,7 @@ describe('processVoiceCommand() — session_adjust_propose 분기 (mode별 트�
       role: 'trainer',
       currentUser: { trainerId: 't1' },
       allMembers: MEMBERS,
+      allTrainers: TRAINERS,
       mode: 'kiosk',
     });
     expect(result.propose.ready).toBe(false);
@@ -111,6 +124,7 @@ describe('processVoiceCommand() — session_adjust_propose 분기 (mode별 트�
       role: 'trainer',
       currentUser: { trainerId: 't1' },
       allMembers: MEMBERS,
+      allTrainers: TRAINERS,
       mode: 'phone',
     });
     expect(result.propose.delta).toBe(-3);
@@ -119,7 +133,7 @@ describe('processVoiceCommand() — session_adjust_propose 분기 (mode별 트�
 
   it('아직 아무것도 저장하지 않는다(propose만 만듦)', async () => {
     mockFetchType('session_adjust_propose', { memberName: '홍길동', trainerName: null, delta: 1 });
-    await processVoiceCommand({ transcript: 't', role: 'trainer', currentUser: { trainerId: 't1' }, allMembers: MEMBERS, mode: 'phone' });
+    await processVoiceCommand({ transcript: 't', role: 'trainer', currentUser: { trainerId: 't1' }, allMembers: MEMBERS, allTrainers: TRAINERS, mode: 'phone' });
     expect(updateMember).not.toHaveBeenCalled();
   });
 });

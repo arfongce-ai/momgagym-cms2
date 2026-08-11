@@ -282,12 +282,83 @@ export function extractMemberNameFromText(commandText, members) {
   return best;
 }
 
+/** 명령 텍스트에 실제 등록된 트레이너 이름이 하나라도 포함돼 있는지. */
+function mentionsAnyTrainer(commandText, trainers) {
+  if (!trainers || trainers.length === 0) return false;
+  const normalized = normalize(commandText);
+  return trainers.some((t) => normalize(t.name) && normalized.includes(normalize(t.name)));
+}
+
+// [무료 확장 2026-08-11] momi 쓰기 권한 3종(메모 추가/세션 조정/전화번호 변경)도
+// "아주 명확한 패턴일 때만" 무료로 처리한다. 안전장치는 지금까지의 원칙을
+// 그대로 잇는다:
+//  (1) 실제 등록된 회원 이름이 문장에 있어야 함(추측 안 함 — extractMemberNameFromText).
+//  (2) 숫자/패턴이 "정중한 종결어미로 문장이 끝나야" 매치된다(POLITE_ENDING) —
+//      "OO회 추가하고 다른 것도 해줘" 같은 복합 문장은 문장 끝이 그 자리가
+//      아니라서 자동으로 매치 실패 → 안전하게 Claude로 넘어간다.
+//  (3) 그렇게 매치돼도 절대 바로 저장 안 됨 — memberWriteService.js의 propose→
+//      confirm 원칙 그대로, 트레이너가 음성으로 "네" 확인한 뒤에만 저장된다.
+//      즉 이 세 함수가 잘못 뽑아도 트레이너가 확인 단계에서 듣고 "아니요"라고
+//      하면 그만이라, 100% 확신이 없어도 시도해볼 수 있는 이중 안전장치가 있다.
+const POLITE_ENDING = String.raw`(?:\s*(?:해\s*주세요|해\s*줄래[요]?|해\s*줘|줘|주세요|줄래[요]?))?[.!?~]*\s*$`;
+
+/** "OO님 세션 N회 추가/차감해줘" — 트레이너가 언급되면(누구 세션인지 애매해질
+ * 여지) 안전하게 Claude로 넘긴다. 숫자가 하나뿐이고 그 숫자가 라벨(추가/차감)
+ * 바로 옆에 있을 때만 매치 — 인터벌 타이머 숫자 처리와 동일한 안전 철학. */
+export function matchRuleBasedSessionAdjust(commandText, members, trainers) {
+  if (!/세션/.test(commandText)) return null;
+  const memberName = extractMemberNameFromText(commandText, members);
+  if (!memberName) return null;
+  if (mentionsAnyTrainer(commandText, trainers)) return null;
+  const addMatch = commandText.match(new RegExp(String.raw`(\d+)\s*회\s*(?:추가|더해|늘려)${POLITE_ENDING}`));
+  const subMatch = commandText.match(new RegExp(String.raw`(\d+)\s*회\s*(?:차감|빼|줄여)${POLITE_ENDING}`));
+  if ((addMatch && subMatch) || (!addMatch && !subMatch)) return null;
+  const allDigits = commandText.match(/\d+/g) || [];
+  if (allDigits.length !== 1) return null;
+  return { memberName, delta: addMatch ? parseInt(addMatch[1], 10) : -parseInt(subMatch[1], 10) };
+}
+
+/** "OO님 전화번호/연락처 010-1234-5678로 바꿔줘". 문장 전체 숫자 글자 수가
+ * 매치된 번호 자릿수와 정확히 같아야 한다(하이픈 유무 무관하게 안전 — 다른
+ * 숫자가 어디든 섞이면 실패해서 Claude로 넘어간다). */
+export function matchRuleBasedPhoneUpdate(commandText, members) {
+  if (!/전화번호|연락처|휴대폰/.test(commandText)) return null;
+  const memberName = extractMemberNameFromText(commandText, members);
+  if (!memberName) return null;
+  const m = commandText.match(new RegExp(
+    String.raw`(01[016789])[-\s]?(\d{3,4})[-\s]?(\d{4})\s*(?:로|으로)?\s*(?:바꿔|변경해|고쳐)${POLITE_ENDING}`
+  ));
+  if (!m) return null;
+  const totalDigits = (commandText.match(/\d/g) || []).length;
+  const matchedDigits = (m[1] + m[2] + m[3]).length;
+  if (totalDigits !== matchedDigits) return null;
+  const field = /비상연락처|보호자|연락처\s*2/.test(commandText) ? 'phone2' : 'phone';
+  return { memberName, field, newValue: `${m[1]}-${m[2]}-${m[3]}` };
+}
+
+/** "OO님 메모에 X라고 추가해줘" 형태의 가장 흔한 문형만 받는다 — 메모 내용은
+ * 자유 문장이라 다른 둘보다 훨씬 보수적으로 접근: 이 정확한 템플릿에서 벗어나면
+ * (메모 언급이 문장 앞쪽에 오는 등) 바로 포기하고 Claude로 넘긴다. 60자 넘는
+ * 추출 결과도 "추출 실패로 문장을 통째로 삼켰을 가능성"으로 보고 버린다. */
+export function matchRuleBasedMemoAdd(commandText, members) {
+  if (!/메모/.test(commandText)) return null;
+  const memberName = extractMemberNameFromText(commandText, members);
+  if (!memberName) return null;
+  const m = commandText.match(new RegExp(
+    String.raw`메모에\s*(.+?)(?:라고|이라고)?\s*(?:추가해|적어|남겨)${POLITE_ENDING}`
+  ));
+  if (!m) return null;
+  const memoText = m[1].trim();
+  if (!memoText || memoText.length > 60) return null;
+  return { memberName, memoText };
+}
+
 // [예약 생성 프로젝트 2026-08-08] "폰: trainerId(로그인 정보로 자동 지정) /
 // 키오스크: trainerName(말로 지정)" — 사용자가 명시적으로 확정한 구분. 어느
 // 쪽인지는 호출부(컴포넌트)가 mode로 알려준다. 기본값은 'phone' — 기존
 // GlobalVoiceCommand.jsx 호출부가 mode를 안 넘겨도 그대로 동작하게 하기 위함.
 export async function processVoiceCommand({
-  transcript, role, currentUser, allMembers, navigate, mode = 'phone', history = [],
+  transcript, role, currentUser, allMembers, allTrainers = [], navigate, mode = 'phone', history = [],
 }) {
   // [무료 우선 2026-08-08] 규칙 기반으로 먼저 시도 — 매치되면 API 호출 자체가
   // 없어서 비용이 전혀 안 든다.
@@ -342,6 +413,44 @@ export async function processVoiceCommand({
       if (navigate) navigate('/ai');
     }
     return { type: 'timer_control', cmd, deliveredLive };
+  }
+
+  // [무료 확장 2026-08-11] momi 쓰기 권한 3종도 아주 명확한 패턴일 때만 무료로
+  // 처리한다. 아래 세 분기는 Claude 경로의 memo_add_propose/session_adjust_propose/
+  // member_info_update_propose 분기와 똑같이 memberWriteService.js의 proposeX()를
+  // 그대로 호출한다 — "아직 저장 안 함, 회원·값 검증까지만" 원칙이 무료/유료
+  // 경로 양쪽에서 완전히 동일하게 유지된다(로직 이원화 없음).
+  const scopedMembersForWrite =
+    role === 'admin' ? allMembers : scopeMembersToTrainer(allMembers, currentUser);
+
+  const ruleSessionAdjust = matchRuleBasedSessionAdjust(transcript, scopedMembersForWrite, allTrainers);
+  if (ruleSessionAdjust) {
+    const trainerId = mode === 'kiosk' ? null : currentUser?.trainerId || null;
+    const propose = proposeAdjustSessionCount({
+      memberQuery: ruleSessionAdjust.memberName,
+      trainerId: trainerId || undefined,
+      delta: ruleSessionAdjust.delta,
+    });
+    return { type: 'session_adjust_propose', propose };
+  }
+
+  const rulePhoneUpdate = matchRuleBasedPhoneUpdate(transcript, scopedMembersForWrite);
+  if (rulePhoneUpdate) {
+    const propose = proposeUpdateMemberInfo({
+      memberQuery: rulePhoneUpdate.memberName,
+      field: rulePhoneUpdate.field,
+      newValue: rulePhoneUpdate.newValue,
+    });
+    return { type: 'member_info_update_propose', propose };
+  }
+
+  const ruleMemoAdd = matchRuleBasedMemoAdd(transcript, scopedMembersForWrite);
+  if (ruleMemoAdd) {
+    const propose = proposeAddMemberMemo({
+      memberQuery: ruleMemoAdd.memberName,
+      memoText: ruleMemoAdd.memoText,
+    });
+    return { type: 'memo_add_propose', propose };
   }
 
   // 규칙 기반으로 확신 있게 못 찾았으면(자유 질문·코칭·애매한 표현·관리자 전용

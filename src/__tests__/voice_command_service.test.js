@@ -12,6 +12,9 @@ import {
   matchRuleBasedSubKind,
   matchRuleBasedTimerControl,
   extractMemberNameFromText,
+  matchRuleBasedSessionAdjust,
+  matchRuleBasedPhoneUpdate,
+  matchRuleBasedMemoAdd,
 } from '../services/voiceCommandService.js';
 
 const readSrc = (...segs) => readFileSync(join(process.cwd(), ...segs), 'utf8');
@@ -316,5 +319,110 @@ describe('extractMemberNameFromText() — 명령 텍스트에서 등록된 회�
 
   it('회원 목록이 비어있으면 null(에러 없이)', () => {
     expect(extractMemberNameFromText('김철수님 리포트 열어줘', [])).toBeNull();
+  });
+});
+
+// [무료 확장 2026-08-11] momi 쓰기 권한 3종(세션조정/전화번호/메모)도 아주
+// 명확한 패턴일 때만 무료로 처리한다. 세 함수 다 사전에 Node 프로브 스크립트로
+// 직접 실행해서 검증한 뒤 코드에 반영했다(특히 "복합 문장이면 문장 끝 앵커가
+// 안 맞아서 자동으로 Claude로 넘어가는지"가 가장 까다로운 부분이었다).
+const WMEMBERS = [{ name: '김철수' }, { name: '강성심' }, { name: '정훈' }, { name: '김영희' }];
+const WTRAINERS = [{ name: '박병준' }, { name: '김동규' }];
+
+describe('matchRuleBasedSessionAdjust() — 무료 규칙 기반 세션 횟수 조정(2026-08-11)', () => {
+  it('"N회 추가/더해/늘려"를 양수 delta로 잡는다', () => {
+    expect(matchRuleBasedSessionAdjust('김철수님 세션 2회 추가해줘', WMEMBERS, WTRAINERS)).toEqual({ memberName: '김철수', delta: 2 });
+    expect(matchRuleBasedSessionAdjust('강성심님 세션 3회 늘려줘', WMEMBERS, WTRAINERS)).toEqual({ memberName: '강성심', delta: 3 });
+  });
+
+  it('"N회 차감/빼/줄여"를 음수 delta로 잡는다', () => {
+    expect(matchRuleBasedSessionAdjust('정훈님 세션 1회 차감해줘', WMEMBERS, WTRAINERS)).toEqual({ memberName: '정훈', delta: -1 });
+    expect(matchRuleBasedSessionAdjust('김영희님 세션 2회 빼줘', WMEMBERS, WTRAINERS)).toEqual({ memberName: '김영희', delta: -2 });
+  });
+
+  it('"해주세요"/"줄래요" 등 다른 정중한 종결어미도 받는다', () => {
+    expect(matchRuleBasedSessionAdjust('김철수님 세션 2회 추가해주세요', WMEMBERS, WTRAINERS)).toEqual({ memberName: '김철수', delta: 2 });
+    expect(matchRuleBasedSessionAdjust('김철수님 세션 2회 늘려줄래요', WMEMBERS, WTRAINERS)).toEqual({ memberName: '김철수', delta: 2 });
+  });
+
+  it('트레이너 이름이 문장에 있으면(누구 세션인지 애매해질 여지) 안전하게 포기하고 Claude로', () => {
+    expect(matchRuleBasedSessionAdjust('박병준 트레이너 김철수님 세션 2회 추가해줘', WMEMBERS, WTRAINERS)).toBeNull();
+  });
+
+  it('추가/차감 동사 자체가 없으면(단순 조회) 포기한다', () => {
+    expect(matchRuleBasedSessionAdjust('김철수님 세션 얼마 남았어', WMEMBERS, WTRAINERS)).toBeNull();
+  });
+
+  it('추가와 차감 문구가 동시에 매치되면(모순) 포기한다', () => {
+    expect(matchRuleBasedSessionAdjust('김철수님 세션 2회 추가하고 3회 차감해줘', WMEMBERS, WTRAINERS)).toBeNull();
+  });
+
+  it('복합 문장(추가 요청 뒤에 다른 요청이 더 붙음)은 문장 끝 앵커가 안 맞아서 자동으로 포기한다(회귀 방지 — 가장 중요한 안전장치)', () => {
+    expect(matchRuleBasedSessionAdjust('김철수님 세션 2회 추가하고 트레이너도 바꿔줘', WMEMBERS, WTRAINERS)).toBeNull();
+    expect(matchRuleBasedSessionAdjust('김철수님 세션 2회 추가해줘 그리고 정훈님도 2회 추가해줘', WMEMBERS, WTRAINERS)).toBeNull();
+  });
+
+  it('등록 안 된 이름이면 포기한다', () => {
+    expect(matchRuleBasedSessionAdjust('없는사람님 세션 2회 추가해줘', WMEMBERS, WTRAINERS)).toBeNull();
+  });
+
+  it('"세션" 키워드 자체가 없으면 즉시 포기한다', () => {
+    expect(matchRuleBasedSessionAdjust('김철수님 리포트 보여줘', WMEMBERS, WTRAINERS)).toBeNull();
+  });
+});
+
+describe('matchRuleBasedPhoneUpdate() — 무료 규칙 기반 전화번호 변경(2026-08-11)', () => {
+  it('하이픈 있는 번호를 표준 형식으로 잡는다', () => {
+    expect(matchRuleBasedPhoneUpdate('김철수님 전화번호 010-9999-8888로 바꿔줘', WMEMBERS)).toEqual({ memberName: '김철수', field: 'phone', newValue: '010-9999-8888' });
+  });
+
+  it('하이픈 없이 붙여 말해도(01099998888) 표준 형식으로 정리해서 잡는다', () => {
+    expect(matchRuleBasedPhoneUpdate('정훈님 연락처 01099998888로 바꿔줘', WMEMBERS)).toEqual({ memberName: '정훈', field: 'phone', newValue: '010-9999-8888' });
+  });
+
+  it('띄어써도(010 1234 5678) 잡히고, "비상연락처"는 phone2로 구분한다', () => {
+    expect(matchRuleBasedPhoneUpdate('강성심님 비상연락처 010 1234 5678로 바꿔줘', WMEMBERS)).toEqual({ memberName: '강성심', field: 'phone2', newValue: '010-1234-5678' });
+  });
+
+  it('번호 없이 "바꿔줘"만 있으면 포기한다', () => {
+    expect(matchRuleBasedPhoneUpdate('김철수님 전화번호 바꿔줘', WMEMBERS)).toBeNull();
+  });
+
+  it('"전화번호/연락처/휴대폰" 키워드 자체가 없으면 포기한다', () => {
+    expect(matchRuleBasedPhoneUpdate('김철수님 이메일 바꿔줘', WMEMBERS)).toBeNull();
+  });
+
+  it('복합 문장(번호 변경 뒤에 다른 요청이 더 붙음)은 문장 끝 앵커가 안 맞아서 포기한다', () => {
+    expect(matchRuleBasedPhoneUpdate('김철수님 전화번호 010-9999-8888로 바꾸고 메모도 추가해줘', WMEMBERS)).toBeNull();
+  });
+
+  it('번호 뒤에 상관없는 숫자가 하나라도 더 섞이면(전체 자릿수 불일치) 포기한다', () => {
+    expect(matchRuleBasedPhoneUpdate('김철수님 전화번호 010-9999-8888로 바꾸고 2반 등록해줘', WMEMBERS)).toBeNull();
+  });
+});
+
+describe('matchRuleBasedMemoAdd() — 무료 규칙 기반 메모 추가(2026-08-11, 셋 중 가장 보수적)', () => {
+  it('"메모에 X라고 추가해줘" 정형 문형을 잡는다', () => {
+    expect(matchRuleBasedMemoAdd('김철수님 메모에 무릎 조심이라고 추가해줘', WMEMBERS)).toEqual({ memberName: '김철수', memoText: '무릎 조심' });
+  });
+
+  it('"적어줘"/"남겨줘"도 같은 동사군으로 받는다', () => {
+    expect(matchRuleBasedMemoAdd('정훈님 메모에 다음주부터 3회로 늘림 적어줘', WMEMBERS)).toEqual({ memberName: '정훈', memoText: '다음주부터 3회로 늘림' });
+  });
+
+  it('"메모"가 문장 앞쪽에 오는 등 정형 문형을 벗어나면 포기한다(자유 문장은 애초에 시도 안 함)', () => {
+    expect(matchRuleBasedMemoAdd('강성심님 메모 좀 남길게 무릎 조심하라고', WMEMBERS)).toBeNull();
+  });
+
+  it('단순 조회("메모 보여줘")는 포기한다', () => {
+    expect(matchRuleBasedMemoAdd('김철수님 메모 보여줘', WMEMBERS)).toBeNull();
+  });
+
+  it('복합 문장(메모 추가 뒤에 다른 요청이 더 붙음)은 문장 끝 앵커가 안 맞아서 포기한다', () => {
+    expect(matchRuleBasedMemoAdd('김철수님 메모에 무릎조심이라고 추가해줘 그리고 세션도 2회 늘려줘', WMEMBERS)).toBeNull();
+  });
+
+  it('"메모" 키워드 자체가 없으면 즉시 포기한다', () => {
+    expect(matchRuleBasedMemoAdd('김철수님 리포트 보여줘', WMEMBERS)).toBeNull();
   });
 });
