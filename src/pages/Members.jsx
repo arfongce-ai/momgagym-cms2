@@ -165,19 +165,19 @@ export default function Members() {
         <div className="flex gap-2">
           {user?.role==='admin' && (
             <button onClick={handleServerRefresh} disabled={refreshing}
-              className="text-xs font-bold px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-slate-200 hover:border-cyan-500/40 hover:text-cyan-300 transition-colors disabled:opacity-50">
+              className="text-xs font-bold px-3 py-2 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:border-cyan-500/40 hover:text-cyan-600 dark:hover:text-cyan-300 transition-colors disabled:opacity-50">
               {refreshing ? '새로고침 중...' : '↻ 서버 새로고침'}
             </button>
           )}
           {user?.role==='admin' && (
             <button onClick={exportMembers}
-              className="text-xs font-bold px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-slate-200 hover:border-amber-500/40 hover:text-amber-400 transition-colors">
+              className="text-xs font-bold px-3 py-2 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:border-amber-500/40 hover:text-amber-600 dark:hover:text-amber-400 transition-colors">
               📄 다운로드
             </button>
           )}
           {user?.role==='admin' && (
             <button onClick={() => setShowImport(true)}
-              className="text-xs font-bold px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-slate-200 hover:border-blue-500/40 hover:text-blue-400 transition-colors">
+              className="text-xs font-bold px-3 py-2 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:border-blue-500/40 hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
               📥 엑셀 가져오기
             </button>
           )}
@@ -189,35 +189,35 @@ export default function Members() {
       </div>
 
       {/* 필터 */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 space-y-3">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
           <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="이름 / 초성 검색"
-            className="bg-slate-800 border border-slate-700 text-slate-100 rounded-xl px-3 py-2 text-sm placeholder-slate-500 focus:outline-none focus:border-amber-500 col-span-2 md:col-span-1"/>
+            className="bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 rounded-xl px-3 py-2 text-sm placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:border-amber-500 col-span-2 md:col-span-1"/>
           <input value={phoneFilter} onChange={e=>setPhoneFilter(e.target.value)} placeholder="연락처 뒷자리"
-            className="bg-slate-800 border border-slate-700 text-slate-100 rounded-xl px-3 py-2 text-sm placeholder-slate-500 focus:outline-none focus:border-amber-500"/>
+            className="bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 rounded-xl px-3 py-2 text-sm placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:border-amber-500"/>
           <select value={trainerFilter} onChange={e=>setTrainerFilter(e.target.value)}
-            className="bg-slate-800 border border-slate-700 text-slate-100 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-amber-500">
+            className="bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-amber-500">
             <option value="">전체 트레이너</option>
             {trainers.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}
           </select>
           <div className="flex gap-2">
             <button onClick={()=>setLowSession(!lowSession)}
-              className={`flex-1 py-2 rounded-xl text-xs font-bold border transition-colors ${lowSession?'bg-orange-500/20 border-orange-500/40 text-orange-400':'border-slate-700 text-slate-400 hover:border-slate-500'}`}>
+              className={`flex-1 py-2 rounded-xl text-xs font-bold border transition-colors ${lowSession?'bg-orange-500/20 border-orange-500/40 text-orange-600 dark:text-orange-400':'border-slate-300 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:border-slate-400 dark:hover:border-slate-500'}`}>
               세션≤5
             </button>
             <button onClick={()=>setExhaustedFilter(!exhaustedFilter)}
-              className={`flex-1 py-2 rounded-xl text-xs font-bold border transition-colors ${exhaustedFilter?'bg-slate-500/30 border-slate-400/50 text-slate-200':'border-slate-700 text-slate-400 hover:border-slate-500'}`}>
+              className={`flex-1 py-2 rounded-xl text-xs font-bold border transition-colors ${exhaustedFilter?'bg-slate-500/30 border-slate-400/50 text-slate-800 dark:text-slate-200':'border-slate-300 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:border-slate-400 dark:hover:border-slate-500'}`}>
               세션마감
             </button>
             <button onClick={()=>setExpiredFilter(!expiredFilter)}
-              className={`flex-1 py-2 rounded-xl text-xs font-bold border transition-colors ${expiredFilter?'bg-red-500/20 border-red-500/40 text-red-400':'border-slate-700 text-slate-400 hover:border-slate-500'}`}>
+              className={`flex-1 py-2 rounded-xl text-xs font-bold border transition-colors ${expiredFilter?'bg-red-500/20 border-red-500/40 text-red-600 dark:text-red-400':'border-slate-300 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:border-slate-400 dark:hover:border-slate-500'}`}>
               결제만료
             </button>
           </div>
         </div>
         {expiredFilter && user?.role==='admin' && (
           <div className="flex items-center justify-between bg-red-500/10 border border-red-500/20 rounded-xl px-3 py-2">
-            <span className="text-red-400 text-xs font-semibold">⚠️ {filtered.length}명 결제 만료 회원</span>
+            <span className="text-red-600 dark:text-red-400 text-xs font-semibold">⚠️ {filtered.length}명 결제 만료 회원</span>
             <button onClick={handleSettleExpiredSessions}
               className="text-xs bg-red-600 hover:bg-red-500 text-white font-bold px-3 py-1.5 rounded-lg transition-colors">
               만료분 정산 처리
@@ -228,19 +228,19 @@ export default function Members() {
           {filtered.length}명
           {(() => {
             const inactive = filtered.filter(isMemberInactive).length;
-            return inactive > 0 ? <span className="text-slate-600"> · 활성 {filtered.length - inactive} / 마감·만료 {inactive}</span> : null;
+            return inactive > 0 ? <span className="text-slate-600 dark:text-slate-600"> · 활성 {filtered.length - inactive} / 마감·만료 {inactive}</span> : null;
           })()}
         </p>
       </div>
 
       {/* 회원 목록 */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden">
         {sorted.length === 0 ? (
           <div className="text-center py-16 text-slate-600">
             <p className="text-4xl mb-3">👥</p><p className="text-sm">검색 결과가 없습니다</p>
           </div>
         ) : (
-          <div className="divide-y divide-slate-800">
+          <div className="divide-y divide-slate-200 dark:divide-slate-800">
             {(() => {
               const firstInactiveIdx = sorted.findIndex(isMemberInactive);
               return sorted.map((m, idx) => {
@@ -252,28 +252,28 @@ export default function Members() {
               return (
                 <div key={m.id}>
                   {showDivider && (
-                    <div className="px-4 py-1.5 bg-slate-950/40 border-y border-slate-800">
+                    <div className="px-4 py-1.5 bg-slate-100 dark:bg-slate-950/40 border-y border-slate-200 dark:border-slate-800">
                       <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">⬇ 세션 마감 · 결제 만료</span>
                     </div>
                   )}
                   <div onClick={() => { setSelected(m); setSelectedInitialTab(null); }}
-                    className={`flex items-center gap-3 px-4 py-3 hover:bg-slate-800/60 cursor-pointer transition-colors ${inactive?'opacity-60':''}`}>
+                    className={`flex items-center gap-3 px-4 py-3 hover:bg-slate-100 dark:hover:bg-slate-800/60 cursor-pointer transition-colors ${inactive?'opacity-60':''}`}>
                     {/* 아바타 */}
-                    <div className="w-9 h-9 rounded-full bg-slate-700 flex items-center justify-center text-sm font-bold flex-shrink-0">
+                    <div className="w-9 h-9 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-100 flex items-center justify-center text-sm font-bold flex-shrink-0">
                       {m.name[0]}
                     </div>
 
                     {/* 이름·연락처·수업종류 */}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className={`font-semibold text-sm ${expired ? 'text-red-400' : 'text-slate-100'}`}>
+                        <span className={`font-semibold text-sm ${expired ? 'text-red-600 dark:text-red-400' : 'text-slate-900 dark:text-slate-100'}`}>
                           {m.name}{expired && ' ⚠️'}
                         </span>
                         {isMonthlyActive(m) && (
-                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-violet-500/20 text-violet-300 font-bold border border-violet-500/30">월정액</span>
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-violet-500/20 text-violet-700 dark:text-violet-300 font-bold border border-violet-500/30">월정액</span>
                         )}
                         {exhausted && !expired && (
-                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-600/40 text-slate-300 font-bold border border-slate-500/40">세션마감</span>
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-600/40 text-slate-800 dark:text-slate-300 font-bold border border-slate-500/40">세션마감</span>
                         )}
                       </div>
                       <p className="text-slate-500 text-xs mt-0.5 truncate">{m.phone} · {classes}</p>
@@ -285,7 +285,7 @@ export default function Members() {
                         <TrainerBadge trainerSessions={m.trainerSessions} trainers={trainers} compact />
                       )}
                       {isMonthlyActive(m) && (
-                        <p className={`text-[11px] font-mono ${expired?'text-red-400':'text-violet-300'}`}>
+                        <p className={`text-[11px] font-mono ${expired?'text-red-600 dark:text-red-400':'text-violet-700 dark:text-violet-300'}`}>
                           월정액 결제일 {monthlyDueOf(m) || '-'}
                         </p>
                       )}

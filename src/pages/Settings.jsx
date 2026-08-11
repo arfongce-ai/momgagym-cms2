@@ -276,7 +276,7 @@ export default function Settings({ darkMode, setDarkMode }) {
             <p className="text-slate-500 text-xs">어두운 테마로 전환합니다</p>
           </div>
           <button onClick={() => setDarkMode(!darkMode)}
-            className={`w-12 h-6 rounded-full transition-colors relative flex-shrink-0 overflow-hidden ${darkMode ? 'bg-amber-500' : 'bg-slate-700'}`}>
+            className={`w-12 h-6 rounded-full transition-colors relative flex-shrink-0 overflow-hidden ${darkMode ? 'bg-amber-500' : 'bg-slate-300'}`}>
             <span className={`absolute left-0.5 top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform duration-200
               ${darkMode ? 'translate-x-6' : 'translate-x-0'}`} />
           </button>

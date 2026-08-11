@@ -29,9 +29,9 @@ export default function TrainerBadge({
 
         // 잔여 비율에 따른 색상
         const colorClass =
-          pct > 30 ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/25' :
-          pct > 0  ? 'text-amber-400  bg-amber-500/10  border-amber-500/25'  :
-                     'text-red-400    bg-red-500/10    border-red-500/25';
+          pct > 30 ? 'text-emerald-700 dark:text-emerald-400 bg-emerald-500/10 border-emerald-500/25' :
+          pct > 0  ? 'text-amber-700 dark:text-amber-400  bg-amber-500/10  border-amber-500/25'  :
+                     'text-red-700 dark:text-red-400    bg-red-500/10    border-red-500/25';
 
         const barColor =
           pct > 30 ? '#10b981' :
@@ -67,7 +67,7 @@ export default function TrainerBadge({
 
             {/* 프로그레스 바 (showBar=true 시) */}
             {showBar && (
-              <div className="h-1 bg-slate-700 rounded-full overflow-hidden w-full">
+              <div className="h-1 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden w-full">
                 <div
                   className="h-full rounded-full transition-all duration-500"
                   style={{ width: `${pct}%`, background: barColor }}

@@ -921,18 +921,18 @@ function MonthView({ pivotDate, schedules, onBlockClick, todayStr, members, onDa
     return (day>0&&day<=days)?`${y}-${String(mo+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`:null;
   });
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
-      <div className="grid grid-cols-7 text-center text-xs font-bold text-slate-500 border-b border-slate-800">
+    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden">
+      <div className="grid grid-cols-7 text-center text-xs font-bold text-slate-500 border-b border-slate-200 dark:border-slate-800">
         {['일','월','화','수','목','금','토'].map(d=><div key={d} className="py-2">{d}</div>)}
       </div>
       <div className="grid grid-cols-7">
         {cells.map((date,i)=>{
-          if(!date) return <div key={i} className="min-h-16 border-b border-r border-slate-800 opacity-20"/>;
+          if(!date) return <div key={i} className="min-h-16 border-b border-r border-slate-200 dark:border-slate-800 opacity-20"/>;
           const ds=schedules.filter(s=>s.date===date), isToday=date===todayStr;
           return (
             <div key={date} onClick={()=>onDayClick&&onDayClick(date)}
-              className={`min-h-16 border-b border-r border-slate-800 p-1 cursor-pointer hover:bg-slate-800/40 transition-colors ${isToday?'bg-amber-500/5':''}`}>
-              <p className={`text-[10px] font-mono font-bold mb-0.5 ${isToday?'text-amber-400':'text-slate-400'}`}>
+              className={`min-h-16 border-b border-r border-slate-200 dark:border-slate-800 p-1 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800/40 transition-colors ${isToday?'bg-amber-500/5':''}`}>
+              <p className={`text-[10px] font-mono font-bold mb-0.5 ${isToday?'text-amber-600 dark:text-amber-400':'text-slate-500 dark:text-slate-400'}`}>
                 {parseInt(date.split('-')[2])}
               </p>
               {ds.slice(0,2).map(s=>{
@@ -1048,16 +1048,16 @@ export default function Schedule() {
       <div className="flex items-center justify-between flex-wrap gap-2">
         <h1 className="text-2xl font-black tracking-tight">스케줄</h1>
         <div className="flex items-center gap-2">
-          <div className="flex bg-slate-800 rounded-xl p-1 text-xs">
+          <div className="flex bg-slate-100 dark:bg-slate-800 rounded-xl p-1 text-xs">
             {[['day','일'],['week','주'],['month','월']].map(([v,l])=>(
               <button key={v} onClick={()=>setView(v)}
-                className={`px-3 py-1.5 rounded-lg font-bold transition-colors ${view===v?'bg-amber-500 text-slate-950':'text-slate-400 hover:text-white'}`}>
+                className={`px-3 py-1.5 rounded-lg font-bold transition-colors ${view===v?'bg-amber-500 text-slate-950':'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'}`}>
                 {l}
               </button>
             ))}
           </div>
           <button onClick={()=>setShowAudit(true)}
-            className={`relative btn btn-sm ${auditSummary.hasIssues ? 'bg-red-500/20 text-red-300 border border-red-500/40' : 'bg-slate-800 text-slate-400 border border-slate-700'}`}
+            className={`relative btn btn-sm ${auditSummary.hasIssues ? 'bg-red-500/20 text-red-700 dark:text-red-300 border border-red-500/40' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-300 dark:border-slate-700'}`}
             title="중복 예약 점검">
             점검
             {auditSummary.hasIssues && (
@@ -1075,8 +1075,8 @@ export default function Schedule() {
 
       <div className="flex items-center gap-2">
         <button onClick={()=>setPivot(addD(pivot,-nav))}
-          className="w-8 h-8 rounded-lg border border-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition-colors text-lg">‹</button>
-        <span className="text-sm font-semibold flex-1 text-center text-slate-300">
+          className="w-8 h-8 rounded-lg border border-slate-300 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white flex items-center justify-center transition-colors text-lg">‹</button>
+        <span className="text-sm font-semibold flex-1 text-center text-slate-700 dark:text-slate-300">
           {view==='week'
             ? `${fmtKo(weekDates[0])} — ${fmtKo(weekDates[6])}`
             : view==='month'
@@ -1084,9 +1084,9 @@ export default function Schedule() {
             : fmtKo(pivot)}
         </span>
         <button onClick={()=>setPivot(addD(pivot,nav))}
-          className="w-8 h-8 rounded-lg border border-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition-colors text-lg">›</button>
+          className="w-8 h-8 rounded-lg border border-slate-300 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white flex items-center justify-center transition-colors text-lg">›</button>
         <button onClick={()=>setPivot(todayStr)}
-          className="text-xs border border-amber-500/30 text-amber-400 px-3 py-1.5 rounded-lg hover:bg-amber-500/10 transition-colors font-semibold">오늘</button>
+          className="text-xs border border-amber-500/30 text-amber-600 dark:text-amber-400 px-3 py-1.5 rounded-lg hover:bg-amber-500/10 transition-colors font-semibold">오늘</button>
       </div>
 
       {/* 검색 */}
@@ -1095,12 +1095,12 @@ export default function Schedule() {
           value={query}
           onChange={e=>setQuery(e.target.value)}
           placeholder={fixedTrainerId ? "내 회원·메모 검색" : "회원·트레이너·메모 검색"}
-          className="w-full bg-slate-900 border border-slate-800 text-slate-100 rounded-xl pl-9 pr-9 py-2.5 text-sm focus:outline-none focus:border-amber-500"
+          className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-800 text-slate-900 dark:text-slate-100 rounded-xl pl-9 pr-9 py-2.5 text-sm focus:outline-none focus:border-amber-500"
         />
         <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">🔍</span>
         {query && (
           <button onClick={()=>setQuery('')}
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white text-sm">✕</button>
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-900 dark:hover:text-white text-sm">✕</button>
         )}
       </div>
       {query.trim() && (

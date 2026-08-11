@@ -79,9 +79,12 @@ function AppRoutes() {
 
   useEffect(() => {
     localStorage.setItem('fitcms_dark', String(darkMode));
+    // [라이트모드 2026-08-11] body 배경/글자색을 여기서 인라인으로 직접
+    // 칠하던 방식은 제거했다 — 이제 index.css가 .dark 클래스 유무에 따라
+    // CSS 변수(--bg/--text)로 제대로 처리한다(카드·버튼 등 나머지 전부와
+    // 같은 방식으로 통일 — 예전엔 body만 따로 인라인으로 바뀌고 나머지는
+    // 그대로라 뒤죽박죽이었던 게 바로 이 버그의 원인이었다).
     document.documentElement.classList.toggle('dark', darkMode);
-    document.body.style.background = darkMode ? '#0f172a' : '#f8fafc';
-    document.body.style.color = darkMode ? '#f1f5f9' : '#0f172a';
   }, [darkMode]);
 
   return (
@@ -92,7 +95,7 @@ function AppRoutes() {
       <Route path="/mic-test" element={<MicTest />} />
       <Route path="/*" element={
         <RequireAuth>
-          <AppLayout darkMode={darkMode}>
+          <AppLayout>
             <TodayScheduleMorningAlert user={user} />
             <div className="page-fade">
               <KioskGuard>

@@ -362,7 +362,7 @@ export default function AiMeasureHub() {
       </div>
 
       {/* 회원 선택 (선택 사항 — 저장하려면 필요) */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4">
         <label className="block text-xs font-semibold text-slate-400 uppercase tracking-widest mb-2">
           회원 선택 (저장 시 필요)
         </label>
@@ -375,24 +375,24 @@ export default function AiMeasureHub() {
         {/* 회원 미선택 시: 미등록회원 신체정보 입력. 모든 측정에서 측정 데이터가
             개별 guest id 로 저장·출력되며, 성별 기준·체형나이 정확도를 높인다. */}
         {!realMember && (
-          <div className="mt-3 border-t border-slate-800 pt-3">
+          <div className="mt-3 border-t border-slate-200 dark:border-slate-800 pt-3">
             {/* [2607-2] 접기/펴기 헤더 — 탭하면 입력 영역이 열리고 닫힌다 */}
             <button type="button" onClick={() => setGuestOpen((v) => !v)}
               className="w-full flex items-center justify-between gap-2 text-left"
               aria-expanded={guestOpen}>
-              <p className="text-xs font-semibold text-amber-300/90">
+              <p className="text-xs font-semibold text-amber-700 dark:text-amber-300/90">
                 <span className={`inline-block mr-1 transition-transform ${guestOpen ? 'rotate-90' : ''}`}>▸</span>
                 미등록회원 신체정보
                 <span className="text-slate-500 font-normal"> (측정 데이터만 개인별로 저장 — 회원 등록 아님)</span>
               </p>
-              <span className="shrink-0 rounded-full border border-slate-700 px-2 py-0.5 text-[10px] font-bold text-slate-400">
+              <span className="shrink-0 rounded-full border border-slate-300 dark:border-slate-700 px-2 py-0.5 text-[10px] font-bold text-slate-500 dark:text-slate-400">
                 {guestOpen ? '접기' : virtualMember ? '입력됨 · 펴기' : '펴기'}
               </span>
             </button>
 
             {/* 접힌 상태에서도 입력 요약은 유지(측정에 그대로 사용됨을 표시) */}
             {!guestOpen && virtualMember && (
-              <p className="mt-2 text-[11px] text-emerald-300/80">
+              <p className="mt-2 text-[11px] text-emerald-700 dark:text-emerald-300/80">
                 미등록회원으로 측정·저장합니다{virtualMember.sex ? ` · ${virtualMember.sex==='female'?'여':'남'}` : ''}
                 {virtualMember.height ? ` · ${virtualMember.height}cm` : ''}
                 {virtualMember.weight ? ` · ${virtualMember.weight}kg` : ''}.
@@ -409,8 +409,8 @@ export default function AiMeasureHub() {
                       onClick={()=>updateVirtual({ sex: virtual.sex===val ? '' : val })}
                       className={`flex-1 rounded-lg text-sm font-bold border py-1.5 transition-colors
                         ${virtual.sex===val
-                          ? 'bg-amber-500/20 border-amber-500/40 text-amber-300'
-                          : 'border-slate-700 text-slate-400 hover:border-slate-500'}`}>
+                          ? 'bg-amber-500/20 border-amber-500/40 text-amber-700 dark:text-amber-300'
+                          : 'border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-slate-400 dark:hover:border-slate-500'}`}>
                       {lbl}
                     </button>
                   ))}
@@ -436,7 +436,7 @@ export default function AiMeasureHub() {
               </div>
             </div>
             {virtualMember && (
-              <p className="mt-2 text-[11px] text-emerald-300/80">
+              <p className="mt-2 text-[11px] text-emerald-700 dark:text-emerald-300/80">
                 미등록회원으로 측정·저장합니다{virtualMember.sex ? ` · ${virtualMember.sex==='female'?'여':'남'}` : ''}
                 {virtualMember.height ? ` · ${virtualMember.height}cm` : ''}
                 {virtualMember.weight ? ` · ${virtualMember.weight}kg` : ''}.
@@ -461,13 +461,17 @@ export default function AiMeasureHub() {
               disabled={!ready}
               className={`text-left rounded-2xl p-4 border transition
                 ${ready
-                  ? 'bg-slate-900 border-amber-500/30 hover:border-amber-500 active:scale-[0.98]'
-                  : 'bg-slate-900/50 border-slate-800 opacity-50 cursor-not-allowed'}`}>
+                  ? 'bg-white dark:bg-slate-900 border-amber-500/30 hover:border-amber-500 active:scale-[0.98]'
+                  : 'bg-slate-100 dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 opacity-50 cursor-not-allowed'}`}>
               <span className="text-2xl">{menu.icon}</span>
-              <p className="font-bold text-sm mt-2">{menu.no}. {menu.title}</p>
+              {/* [라이트모드 2026-08-11 버그 수정] 이 <p>가 글자색 클래스 없이
+                  body 상속에만 기대고 있어서, 다크모드를 끄면 body 기본
+                  글자색이 어두운색으로 바뀌는데 카드 배경은 그대로 어두워서
+                  제목이 안 보이던 게 원래 버그였다. */}
+              <p className="font-bold text-sm mt-2 text-slate-900 dark:text-slate-100">{menu.no}. {menu.title}</p>
               <p className="text-slate-500 text-xs mt-0.5 leading-relaxed">{menu.desc}</p>
               <span className={`inline-block mt-2 text-[10px] px-2 py-0.5 rounded font-semibold
-                ${ready ? 'bg-amber-500/20 text-amber-400' : 'bg-slate-800 text-slate-500'}`}>
+                ${ready ? 'bg-amber-500/20 text-amber-700 dark:text-amber-400' : 'bg-slate-200 dark:bg-slate-800 text-slate-500'}`}>
                 {ready ? '이용 가능' : '준비 중'}
               </span>
             </button>
@@ -476,8 +480,8 @@ export default function AiMeasureHub() {
       </div>
 
       <p className="text-[11px] text-slate-500 leading-relaxed">
-        측정 항목은 단계적으로 추가됩니다. <strong className="text-slate-300">이용 가능</strong> 표시된 항목만
-        구동되며, <strong className="text-slate-300">준비 중</strong> 항목은 작동 검증 후 순차 적용됩니다.
+        측정 항목은 단계적으로 추가됩니다. <strong className="text-slate-700 dark:text-slate-300">이용 가능</strong> 표시된 항목만
+        구동되며, <strong className="text-slate-700 dark:text-slate-300">준비 중</strong> 항목은 작동 검증 후 순차 적용됩니다.
       </p>
     </div>
   );
