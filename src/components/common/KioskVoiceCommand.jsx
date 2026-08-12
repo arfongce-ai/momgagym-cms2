@@ -365,14 +365,17 @@ export default function KioskVoiceCommand() {
     setTimeout(() => setFeedback(''), 3000);
   }, [speak]);
 
-  const handleMismatch = useCallback((heard) => {
-    // 상시 감지라 트레이너·회원 사이의 일반 대화도 계속 들어온다 — 진단 표시를
-    // 버튼식보다 짧게 둔다. [2026-08-08] 다만 "모미야" 무반응 문의 대응으로
-    // 2초→5초로 늘렸다 — 너무 짧으면 원인 파악에 필요한 이 문구 자체를 놓친다.
-    const shown = heard ? `"${heard}"` : '(빈 소리만 인식됨)';
-    setFeedback(`[진단] 들림: ${shown}`);
-    setTimeout(() => setFeedback(''), 5000);
-  }, []);
+  // [버그 수정 — 상시 반응 오인 2026-08-12] "모미야를 부르기 전에도 계속
+  // 반응한다"는 문의. 실제로 명령이 잘못 실행된 건 아니었다(웨이크워드 판정
+  // 자체는 정상) — 원인은 이 콜백이 화면 우상단에 "[진단] 들림: ..." 문구를
+  // 5초씩 띄우던 것. 상시 감지라 웨이크워드 없는 모든 발화(=트레이너·회원의
+  // 일반 대화)가 전부 여기로 들어오는데, 그걸 매번 화면에 노출시키다 보니
+  // "계속 반응하는 것처럼" 보였고, 회원 대화 내용이 화면에 뜨는 프라이버시
+  // 문제도 겹쳐 있었다. 애초에 이 문구는 "모미야가 반응이 없다"는 문의를
+  // 원격으로 진단하려고(2026-08-08) 넣은 것인데, 실사용 단계에 들어오니
+  // 부작용이 더 커졌다 — 화면 노출은 끄고, useMomiVoice.js가 이미 모든
+  // 발화를 남기는 console.log('[모미] 들린 말:', ...)로 필요시 진단한다.
+  const handleMismatch = useCallback((heard) => {}, []);
 
   const handleErrorOccurred = useCallback((errorCode) => {
     const KNOWN = {
