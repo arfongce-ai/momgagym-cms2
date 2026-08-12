@@ -146,8 +146,9 @@ export function drawGaugeHud(ctx, width, height, opts = {}) {
     ctx.textAlign = 'left';
   }
 
-  // ── 하단 회차 스트립(카드) — 게이지 위에 겹치지 않도록 먼저 자리 확보 ──
-  let bottomReserve = pad;
+  // ── 하단 회차 스트립(카드) ──
+  // [2026-08-12] 게이지·코너 스탯이 전부 상단으로 옮겨가면서(아래 참고) 더는
+  // 이 스트립과 세로로 자리를 다툴 일이 없어 bottomReserve 계산은 제거했다.
   if (Array.isArray(cards) && cards.length > 0) {
     const list = cards.slice(-6);
     const cardFs = Math.max(15, Math.round(width / 26));
@@ -176,51 +177,70 @@ export function drawGaugeHud(ctx, width, height, opts = {}) {
       if (c.sub) ctx.fillText(String(c.sub), x0 + cW / 2, y0 + Math.round(cH * 0.70));
     });
     ctx.textAlign = 'left';
-    bottomReserve = cH + pad * 2;
   }
 
-  // ── 좌우 코너 보조 스탯 카드(최대 4: 상단 좌/우, 하단 좌/우) ──
+  // ── 게이지 + 코너 스탯을 "타이틀 칩 바로 아래" 한 줄로 통합 ──
+  // [2026-08-12] 예전엔 게이지(주지표)만 화면 정중앙(cy=height*0.5)에 크게
+  // 그렸다 — 파일 첫머리 주석("피사체 중앙 미가림")과 실제로 반대로 동작해,
+  // 촬영 대상(사람)이 딱 그 자리에 서 있는 점프·스쿼트·SLST·보행 등 거의
+  // 모든 화면에서 얼굴·상체 위에 그대로 겹쳐 찍혔다(실제 저장된 녹화본에서
+  // 확인된 증상). 실시간 화면(GaugeHud.jsx, React)은 이미 상단에 좌카드-게이지
+  // -우카드로 나란히 배치해 이 문제가 없었으므로, 녹화 번인도 같은 배치로
+  // 통일한다 — 화면 중앙은 완전히 비워 피사체를 가리지 않는다.
+  const hasGauge = gauge && gauge.label !== undefined;
+  const rowY = pad + chipH + Math.round(10 * u);
+  const gaugeR = hasGauge ? Math.round(Math.min(width, height) * 0.115) : 0;
+  const gaugeD = gaugeR * 2;
+  const gaugeGap = Math.round(14 * u);
+
   const list = (stats || []).filter(s => s && s.label).slice(0, 4);
-  const scardW = Math.round(width * 0.27);
-  const scLabelFs = Math.round(13 * u);
-  const scValFs = Math.round(30 * u);
-  const scardH = Math.round(scLabelFs + scValFs + 22 * u);
-  const topY = pad + chipH + Math.round(10 * u);
-  const botY = height - bottomReserve - scardH;
-  const anchors = [
-    { x: pad, y: topY },
-    { x: width - pad - scardW, y: topY },
-    { x: pad, y: botY },
-    { x: width - pad - scardW, y: botY },
-  ];
-  list.forEach((s, i) => {
-    const a = anchors[i];
+  // GaugeHud.jsx(React, 실시간 화면)와 동일한 좌/우 분배 규칙(짝수→좌, 홀수→우).
+  const leftList = list.filter((_, i) => i % 2 === 0);
+  const rightList = list.filter((_, i) => i % 2 === 1);
+
+  const sideAvailW = hasGauge
+    ? Math.max(64 * u, (width - pad * 2 - gaugeD - gaugeGap * 2) / 2)
+    : Math.max(64 * u, (width - pad * 2 - 10 * u) / 2);
+  const scardW = Math.round(Math.min(width * 0.24, sideAvailW));
+  const scLabelFs = Math.round(10 * u);
+  const scValFs = Math.round(19 * u);
+  const cardGap = Math.round(6 * u);
+  const scardH = Math.round(scLabelFs + scValFs + 16 * u);
+
+  const drawStatCard = (s, x, y) => {
     ctx.fillStyle = 'rgba(0,0,0,0.45)';
-    roundRectPath(ctx, a.x, a.y, scardW, scardH, Math.round(13 * u));
+    roundRectPath(ctx, x, y, scardW, scardH, Math.round(11 * u));
     ctx.fill();
     ctx.textBaseline = 'top';
     ctx.textAlign = 'left';
     ctx.font = `700 ${scLabelFs}px system-ui, sans-serif`;
     ctx.fillStyle = 'rgba(203,213,225,0.85)';
-    ctx.fillText(String(s.label), a.x + 12 * u, a.y + 9 * u);
+    ctx.fillText(String(s.label), x + 9 * u, y + 7 * u);
     const valStr = (s.value == null || s.value === '') ? '--' : String(s.value);
     ctx.font = `900 ${scValFs}px ui-monospace, Menlo, monospace`;
     ctx.fillStyle = s.tone || '#f8fafc';
-    ctx.fillText(valStr, a.x + 12 * u, a.y + 9 * u + scLabelFs + 4 * u);
+    ctx.fillText(valStr, x + 9 * u, y + 7 * u + scLabelFs + 3 * u);
     if (s.unit) {
       const vw = measureW(valStr);
       ctx.font = `800 ${Math.round(scValFs * 0.5)}px system-ui, sans-serif`;
       ctx.fillStyle = 'rgba(226,232,240,0.75)';
-      ctx.fillText(String(s.unit), a.x + 12 * u + vw + 5 * u, a.y + 9 * u + scLabelFs + 4 * u + scValFs * 0.42);
+      ctx.fillText(String(s.unit), x + 9 * u + vw + 4 * u, y + 7 * u + scLabelFs + 3 * u + scValFs * 0.4);
     }
-  });
+  };
 
-  // ── 중앙 주값(아크는 상한 명확한 값 전용: gauge.arc) ──
-  if (gauge && gauge.label !== undefined) {
+  const leftX = pad;
+  const rightX = width - pad - scardW;
+  leftList.forEach((s, i) => drawStatCard(s, leftX, rowY + i * (scardH + cardGap)));
+  rightList.forEach((s, i) => drawStatCard(s, rightX, rowY + i * (scardH + cardGap)));
+
+  const colH = (n) => (n > 0 ? n * scardH + (n - 1) * cardGap : 0);
+  const rowH = Math.max(gaugeD, colH(leftList.length), colH(rightList.length));
+
+  // ── 주값 게이지(아크는 상한 명확한 값 전용: gauge.arc) — 상단 정보 바 중앙 ──
+  if (hasGauge) {
     const cx = width / 2;
-    const gaugeR = Math.round(Math.min(width, height) * 0.20);
-    const cy = Math.round(height * 0.5);
-    const lw = Math.max(8, Math.round(gaugeR * 0.16));
+    const cy = rowY + rowH / 2;
+    const lw = Math.max(6, Math.round(gaugeR * 0.16));
     const start = Math.PI * 0.75;         // 좌하 (135°)
     const end = Math.PI * 2.25;           // 우하 (405° = 45°), 총 270°
     const gv = gauge.value;

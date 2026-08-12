@@ -115,17 +115,24 @@ export function computeRSIFromFlights(flights, opts = {}) {
   const f = [...list].sort((a, b) => a.takeoffMs - b.takeoffMs);
 
   // 사이클 사이 접지 국면: landing[i] → takeoff[i+1]
-  const cycles = [];
+  // ⚠ [2026-08-12] rawCycles(인덱스 보존용)와 cycles(통계·리포트용, 무효 제외)를
+  //   분리한다. 예전엔 무효 사이클을 그냥 continue로 건너뛰어 배열에서 빠졌는데,
+  //   그러면 이후 사이클들이 한 칸씩 당겨져(index shift) "몇 번째 점프의 GCT인지"
+  //   라는 배열 위치 기반 매칭이 전부 어긋난다(호출부에서 flights[i+1]을 이 배열의
+  //   i번째 원소와 짝짓는 관례를 쓰고 있어서 — allFlightRows 등). rawCycles는
+  //   무효 구간도 null로 자리를 채워 "f[i]→f[i+1] 사이"라는 인덱스 의미를 항상
+  //   보존하고, cycles(대표값·CV 등 통계용)는 기존처럼 유효한 것만 모은다.
+  const rawCycles = [];
   for (let i = 0; i < f.length - 1; i++) {
     const contactMs = f[i + 1].takeoffMs - f[i].landingMs;
     // 이지 이후의 '체공'은 다음(i+1) 점프의 flightMs (접지 직후 솟구친 점프)
     const flightMs = f[i + 1].flightMs;
     const inRange = contactMs >= RSI_TUNING.minContactMs && contactMs <= RSI_TUNING.maxContactMs;
-    if (!inRange || !(flightMs > 0)) continue;
+    if (!inRange || !(flightMs > 0)) { rawCycles.push(null); continue; }
     const flightSec = flightMs / 1000;
     const contactSec = contactMs / 1000;
     const heightM = flightToHeightM(flightSec);
-    cycles.push({
+    rawCycles.push({
       contactMs: Math.round(contactMs),
       flightMs: Math.round(flightMs),
       heightCm: Math.round(heightM * 1000) / 10,
@@ -133,6 +140,7 @@ export function computeRSIFromFlights(flights, opts = {}) {
       rsiHeight: round2(heightM / contactSec),      // 높이/접지 (m/s) — 보조
     });
   }
+  const cycles = rawCycles.filter(Boolean);
 
   if (!cycles.length) {
     return {
@@ -189,7 +197,10 @@ export function computeRSIFromFlights(flights, opts = {}) {
     lowFps,
     frameIntervalMs: fi,
     framesPerContact,
-    perCycle: cycles,                // 사이클별 상세(차트용)
+    perCycle: cycles,                // 사이클별 상세(차트용) — 무효 구간 제외, 순서만 유지
+    perCycleByIndex: rawCycles,      // [2026-08-12 추가] f[i]→f[i+1] 위치 그대로 보존(null=무효).
+                                      // "몇 번째 점프의 GCT/RSI인지" 배열 인덱스로 찾아야 하는
+                                      // 호출부(예: 점프별 카드)는 이 배열을 써야 한다.
   };
 }
 

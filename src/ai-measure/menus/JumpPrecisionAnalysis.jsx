@@ -17,7 +17,7 @@ import {
   JumpBiomechAccumulator, jumpPhaseOf,
 } from '../core/jumpBiomechanics';
 import { calcJump, calcRSI } from '../core/performance';
-import { computeRSIFromFlights, rsiGrade } from '../core/reactiveJump';
+import { computeRSIFromFlights, rsiGrade, RSI_TUNING } from '../core/reactiveJump';
 import { requiredJumpsFor, minCyclesOverrideFor } from '../core/jumpTypes';
 import { applyRepFreeze } from '../core/repFreeze';
 import { OrientationVoter } from '../core/gaitBiomechanics';
@@ -54,13 +54,26 @@ const REC_SIZE = { width: 720, height: 960 }; // 3:4 세로
 const LAND_WINDOW = 10; // 착지 직후 생체역학 지표를 누적할 프레임 수
 const RSI_REQUIRED_JUMPS = 3;
 
+// [2026-08-12 수정] 라이브 화면(카드·게이지·녹화 번인)이 쓰는 RSI 미리보기.
+//  이전엔 접지시간이 0보다 크기만 하면 그대로 통과시켰다 — 포즈 인식이 착지를
+//  순간적으로(예: 20~30ms) 오판하면 분모가 극단적으로 작아져 RSI가 10~20대
+//  같은 비현실적인 값으로 튀었다(실사용 리포트에서 확인된 증상). 최종 리포트
+//  계산(computeRSIFromFlights)은 RSI_TUNING.minContactMs~maxContactMs(80~800ms)
+//  로 이미 이런 구간을 걸러내고 있었는데, 이 미리보기 함수만 그 검증이 빠져
+//  있었다 — 같은 RSI_TUNING을 그대로 재사용해 두 경로를 일치시킨다.
+//  ⚠ 무효 구간은 continue로 건너뛰지 않고 null로 자리를 채운다: 그냥 건너뛰면
+//  이후 사이클들이 배열에서 한 칸씩 당겨져(index shift), "몇 번째 점프인지"를
+//  배열 위치로 찾는 flightRows/allFlightRows의 매칭이 전부 어긋난다(다른 점프의
+//  RSI·접지시간이 엉뚱한 카드 번호에 표시됨) — computeRSIFromFlights의
+//  perCycleByIndex 와 동일한 계약.
 function buildRsiCyclePreview(flights = []) {
   const cycles = [];
   const sorted = [...flights].sort((a, b) => a.takeoffMs - b.takeoffMs);
   for (let i = 0; i < sorted.length - 1; i++) {
     const contactMs = sorted[i + 1].takeoffMs - sorted[i].landingMs;
     const flightMs = sorted[i + 1].flightMs;
-    if (!(contactMs > 0) || !(flightMs > 0)) continue;
+    const inRange = contactMs >= RSI_TUNING.minContactMs && contactMs <= RSI_TUNING.maxContactMs;
+    if (!inRange || !(flightMs > 0)) { cycles.push(null); continue; }
     const jump = calcJump(flightMs / 1000, null);
     cycles.push({
       contactMs: Math.round(contactMs),
@@ -742,7 +755,10 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
       });
     }
     const liveCyclePreview = buildRsiCyclePreview(tracker.flights);
-    const perJump = allFlightRows(tracker.flights, rsiResult?.perCycle || liveCyclePreview);
+    // perCycleByIndex(무효 구간 null 보존)를 써야 "#N 점프"가 실제 N번째 점프의
+    // 값과 짝지어진다 — perCycle(무효 제외)을 쓰면 위와 동일한 index shift가
+    // 저장되는 리포트(report.perJump)에도 그대로 들어간다.
+    const perJump = allFlightRows(tracker.flights, rsiResult?.perCycleByIndex || liveCyclePreview);
 
     const report = {
       ...sum,
