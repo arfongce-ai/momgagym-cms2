@@ -15,7 +15,11 @@ import {
   matchRuleBasedSessionAdjust,
   matchRuleBasedPhoneUpdate,
   matchRuleBasedMemoAdd,
+  matchRuleBasedReservationCreate,
+  matchRuleBasedReservationCancel,
+  matchRuleBasedReservationReschedule,
 } from '../services/voiceCommandService.js';
+import { todayYMD, addDaysYMD } from '../utils/dates.js';
 
 const readSrc = (...segs) => readFileSync(join(process.cwd(), ...segs), 'utf8');
 
@@ -424,5 +428,128 @@ describe('matchRuleBasedMemoAdd() — 무료 규칙 기반 메모 추가(2026-08
 
   it('"메모" 키워드 자체가 없으면 즉시 포기한다', () => {
     expect(matchRuleBasedMemoAdd('김철수님 리포트 보여줘', WMEMBERS)).toBeNull();
+  });
+});
+
+// [무료 확장 2026-08-11] 예약 생성 — 날짜는 하드코딩하지 않고 addDaysYMD로
+// "오늘 기준 N일 뒤"를 그때그때 계산한다(테스트를 언제 돌려도 항상 맞도록).
+describe('matchRuleBasedReservationCreate() — 무료 규칙 기반 예약 생성(2026-08-11)', () => {
+  const TODAY = todayYMD();
+
+  it('"내일 오후 3시"를 정확한 날짜·24시간제 시각으로 변환한다', () => {
+    expect(matchRuleBasedReservationCreate('김철수님 내일 오후 3시에 예약 잡아줘', WMEMBERS, WTRAINERS, TODAY))
+      .toEqual({ memberName: '김철수', trainerName: null, date: addDaysYMD(1, TODAY), startTime: '15:00' });
+  });
+
+  it('"오늘"/"모레"도 잡는다', () => {
+    expect(matchRuleBasedReservationCreate('정훈님 오늘 오전 10시에 예약 걸어줘', WMEMBERS, WTRAINERS, TODAY))
+      .toEqual({ memberName: '정훈', trainerName: null, date: TODAY, startTime: '10:00' });
+    expect(matchRuleBasedReservationCreate('강성심님 모레 오후 2시반에 예약 넣어줘', WMEMBERS, WTRAINERS, TODAY))
+      .toEqual({ memberName: '강성심', trainerName: null, date: addDaysYMD(2, TODAY), startTime: '14:30' });
+  });
+
+  it('오전 12시=자정(00:00), 오후 12시=정오(12:00)로 정확히 변환한다(가장 헷갈리기 쉬운 경계값)', () => {
+    expect(matchRuleBasedReservationCreate('김철수님 내일 오전 12시에 예약 잡아줘', WMEMBERS, WTRAINERS, TODAY).startTime).toBe('00:00');
+    expect(matchRuleBasedReservationCreate('김철수님 내일 오후 12시에 예약 잡아줘', WMEMBERS, WTRAINERS, TODAY).startTime).toBe('12:00');
+  });
+
+  it('시간과 "예약" 사이에 트레이너 언급이 끼어드는 자연스러운 어순도 받는다', () => {
+    expect(matchRuleBasedReservationCreate('김철수님 내일 오후 3시에 박병준 트레이너로 예약 잡아줘', WMEMBERS, WTRAINERS, TODAY).trainerName).toBe('박병준');
+  });
+
+  it('트레이너 언급이 문장 맨 앞에 오는 어순도 받는다', () => {
+    expect(matchRuleBasedReservationCreate('박병준 트레이너 김철수님 내일 오후 3시에 예약 잡아줘', WMEMBERS, WTRAINERS, TODAY).trainerName).toBe('박병준');
+  });
+
+  it('"오전/오후" 없이 그냥 "N시"면(새벽인지 오후인지 알 수 없음) 절대 추측하지 않고 포기한다', () => {
+    expect(matchRuleBasedReservationCreate('김철수님 내일 3시에 예약 잡아줘', WMEMBERS, WTRAINERS, TODAY)).toBeNull();
+  });
+
+  it('요일·구체적 날짜(다음주 화요일 등)는 이번 안전 범위 밖이라 포기한다(계산 복잡도·연도 추론 애매함 때문에 의도적으로 범위 제외)', () => {
+    expect(matchRuleBasedReservationCreate('김철수님 다음주 화요일 오후 3시에 예약 잡아줘', WMEMBERS, WTRAINERS, TODAY)).toBeNull();
+    expect(matchRuleBasedReservationCreate('김철수님 8월 20일 오후 3시에 예약 잡아줘', WMEMBERS, WTRAINERS, TODAY)).toBeNull();
+  });
+
+  it('"예약" 관련 동사가 없으면(단순 조회) 포기한다', () => {
+    expect(matchRuleBasedReservationCreate('김철수님 내일 스케줄 보여줘', WMEMBERS, WTRAINERS, TODAY)).toBeNull();
+    expect(matchRuleBasedReservationCreate('김철수님 내일 오후 3시 예약 있어?', WMEMBERS, WTRAINERS, TODAY)).toBeNull();
+  });
+
+  it('예약 요청 뒤에 다른 요청이 더 붙은 복합 문장은 문장 끝 앵커가 안 맞아서 포기한다(트레이너 언급이 끼어든 경우도 포함)', () => {
+    expect(matchRuleBasedReservationCreate('김철수님 내일 오후 3시에 예약 잡아줘 그리고 세션도 추가해줘', WMEMBERS, WTRAINERS, TODAY)).toBeNull();
+    expect(matchRuleBasedReservationCreate('김철수님 내일 오후 3시에 박병준 트레이너로 예약 잡아줘 그리고 메모도 추가해줘', WMEMBERS, WTRAINERS, TODAY)).toBeNull();
+  });
+
+  it('등록 안 된 회원 이름이면 memberName이 null로 나온다(proposeReservation 쪽에서 "회원을 못 찾았다"고 최종 판단 — 여기선 날짜/시각 패턴만 책임짐)', () => {
+    const r = matchRuleBasedReservationCreate('없는사람님 내일 오후 3시에 예약 잡아줘', WMEMBERS, WTRAINERS, TODAY);
+    expect(r.memberName).toBeNull();
+    expect(r.date).toBe(addDaysYMD(1, TODAY));
+  });
+
+  it('"예약" 키워드 자체가 없으면 즉시 포기한다', () => {
+    expect(matchRuleBasedReservationCreate('김철수님 내일 오후 3시에 만나요', WMEMBERS, WTRAINERS, TODAY)).toBeNull();
+  });
+});
+
+describe('matchRuleBasedReservationCancel() — 무료 규칙 기반 예약 취소(2026-08-11, 생성과 동일 날짜/시각 파서 재사용)', () => {
+  const TODAY = todayYMD();
+
+  it('"내일 오후 3시 예약 취소해줘"를 정확히 잡는다', () => {
+    expect(matchRuleBasedReservationCancel('김철수님 내일 오후 3시 예약 취소해줘', WMEMBERS, WTRAINERS, TODAY))
+      .toEqual({ memberName: '김철수', trainerName: null, date: addDaysYMD(1, TODAY), startTime: '15:00' });
+  });
+
+  it('트레이너 언급이 시간과 예약 사이에 끼어들어도 잡는다', () => {
+    expect(matchRuleBasedReservationCancel('김철수님 내일 오후 3시 박병준 트레이너 예약 취소해줘', WMEMBERS, WTRAINERS, TODAY).trainerName).toBe('박병준');
+  });
+
+  it('오전/오후 없이 "N시"면 포기한다(생성과 동일 안전장치)', () => {
+    expect(matchRuleBasedReservationCancel('김철수님 내일 3시 예약 취소해줘', WMEMBERS, WTRAINERS, TODAY)).toBeNull();
+  });
+
+  it('복합 문장은 포기한다', () => {
+    expect(matchRuleBasedReservationCancel('김철수님 내일 오후 3시 예약 취소해줘 그리고 다른 것도 해줘', WMEMBERS, WTRAINERS, TODAY)).toBeNull();
+  });
+
+  it('"취소" 키워드 자체가 없으면(예: 예약 생성 요청) 즉시 포기한다 — propose_reservation과 서로 안 겹친다', () => {
+    expect(matchRuleBasedReservationCancel('김철수님 내일 오후 3시에 예약 잡아줘', WMEMBERS, WTRAINERS, TODAY)).toBeNull();
+  });
+});
+
+describe('matchRuleBasedReservationReschedule() — 무료 규칙 기반 예약 변경(2026-08-11, 날짜·시각 2쌍)', () => {
+  const TODAY = todayYMD();
+
+  it('"내일 오후 3시 예약을 모레 오전 10시로 옮겨줘"를 기존/새 날짜·시각으로 정확히 나눈다', () => {
+    expect(matchRuleBasedReservationReschedule('김철수님 내일 오후 3시 예약을 모레 오전 10시로 옮겨줘', WMEMBERS, WTRAINERS, TODAY))
+      .toEqual({
+        memberName: '김철수', trainerName: null,
+        oldDate: addDaysYMD(1, TODAY), oldStartTime: '15:00',
+        newDate: addDaysYMD(2, TODAY), newStartTime: '10:00',
+      });
+  });
+
+  it('"변경해줘"/"바꿔줘" 등 다른 동사도 받는다', () => {
+    expect(matchRuleBasedReservationReschedule('홍길동님 오늘 오전 10시 예약을 내일 오후 2시로 변경해줘', WMEMBERS, WTRAINERS, TODAY).newStartTime).toBe('14:00');
+  });
+
+  it('트레이너 언급이 껴도 잡는다', () => {
+    expect(matchRuleBasedReservationReschedule('김철수님 박병준 트레이너 내일 오후 3시 예약을 모레 오전 10시로 옮겨줘', WMEMBERS, WTRAINERS, TODAY).trainerName).toBe('박병준');
+  });
+
+  it('날짜가 하나뿐이면(새 날짜 언급 없음) 포기한다 — 정확히 2개일 때만 기존/새로 나눈다', () => {
+    expect(matchRuleBasedReservationReschedule('김철수님 내일 오후 3시 예약을 오후 5시로 옮겨줘', WMEMBERS, WTRAINERS, TODAY)).toBeNull();
+  });
+
+  it('시각 중 하나라도 오전/오후 없이 나오면 포기한다', () => {
+    expect(matchRuleBasedReservationReschedule('김철수님 내일 오후 3시 예약을 모레 10시로 옮겨줘', WMEMBERS, WTRAINERS, TODAY)).toBeNull();
+  });
+
+  it('복합 문장은 포기한다', () => {
+    expect(matchRuleBasedReservationReschedule('김철수님 내일 오후 3시 예약을 모레 오전 10시로 옮겨줘 그리고 메모도 추가해줘', WMEMBERS, WTRAINERS, TODAY)).toBeNull();
+  });
+
+  it('예약 생성/취소 문장과는 서로 안 겹친다("옮겨/변경/바꿔" 동사가 없으면 즉시 포기)', () => {
+    expect(matchRuleBasedReservationReschedule('김철수님 내일 오후 3시에 예약 잡아줘', WMEMBERS, WTRAINERS, TODAY)).toBeNull();
+    expect(matchRuleBasedReservationReschedule('김철수님 내일 오후 3시 예약 취소해줘', WMEMBERS, WTRAINERS, TODAY)).toBeNull();
   });
 });

@@ -238,12 +238,21 @@ export async function onRequestPost(context) {
       }
     }
 
-    // role에 안 맞는 도구는 애초에 Claude에게 후보로도 전달하지 않는다.
+    // [비용 절감 2026-08-11] role에 안 맞는 도구는 애초에 Claude에게 후보로도
+    // 전달하지 않는다. 그리고 이 tools 배열은 같은 role이면 호출마다 내용이
+    // 100% 똑같다(사용자 발화·오늘 날짜 등 어떤 것도 안 섞임) — 그래서 프롬프트
+    // 캐싱 대상으로 딱 맞는다. 마지막 도구 하나에만 cache_control을 붙이면
+    // Anthropic이 "여기까지(도구 목록 전체)는 이전에 본 내용과 같으면 캐시로
+    // 처리"해준다 — 답변 품질·정확도에는 전혀 영향 없고, 같은 내용을 반복
+    // 전송할 때 그 부분 입력 요금만 대폭 낮아진다(공식 문서 기준 최대 90%↓).
     const tools = ALL_TOOLS.filter((t) => t.roles.includes(effectiveRole)).map((t) => ({
       name: t.name,
       description: t.description,
       input_schema: t.input_schema,
     }));
+    if (tools.length > 0) {
+      tools[tools.length - 1] = { ...tools[tools.length - 1], cache_control: { type: 'ephemeral' } };
+    }
 
     // [예약 생성 프로젝트 2026-08-08] "내일"·"다음주 화요일" 같은 상대 날짜를
     // Claude가 절대 날짜로 바꾸려면 "오늘이 며칠인지" 알아야 한다. Cloudflare
@@ -267,9 +276,19 @@ export async function onRequestPost(context) {
       body: JSON.stringify({
         model: MODEL,
         max_tokens: 512,
-        system:
-          MOMI_SYSTEM_PROMPT +
-          `\n\n---\n\n[음성 명령 라우터 모드] 사용자가 "모미야" 다음에 한 말이 위 도구 목록 중 하나로 화면 이동을 요청하는 것이면 해당 도구를 호출하세요. 화면 이동 요청이 아니라 코칭 질문 등 자유 발화라면 도구를 호출하지 말고, 위 시스템 프롬프트의 모미 페르소나로 1~2문장 이내로 짧게 답하세요.\n\n오늘 날짜는 ${todayKST}(한국 시간 기준)입니다. propose_reservation을 호출할 때 "내일"·"다음주 화요일" 같은 상대적 날짜 표현은 이 기준으로 계산해서 절대 날짜(YYYY-MM-DD)로 변환하세요.`,
+        // [비용 절감 2026-08-11] system을 문자열 하나 대신 블록 배열로 나눈다.
+        // 앞 블록(MOMI_SYSTEM_PROMPT, 매 호출 100% 동일)만 cache_control을
+        // 붙여 캐싱하고, 뒤 블록(오늘 날짜가 들어가서 매일 바뀌는 부분)은
+        // 캐싱 안 한다 — 짧아서 캐싱해도 절감 효과가 거의 없고, 날짜가
+        // 바뀌는 걸 무시하고 캐싱하면 안 되기 때문. 내용 자체(Claude가 실제로
+        // 읽는 지시문)는 기존과 완전히 동일 — 순수하게 과금 방식만 다르다.
+        system: [
+          { type: 'text', text: MOMI_SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } },
+          {
+            type: 'text',
+            text: `\n\n---\n\n[음성 명령 라우터 모드] 사용자가 "모미야" 다음에 한 말이 위 도구 목록 중 하나로 화면 이동을 요청하는 것이면 해당 도구를 호출하세요. 화면 이동 요청이 아니라 코칭 질문 등 자유 발화라면 도구를 호출하지 말고, 위 시스템 프롬프트의 모미 페르소나로 1~2문장 이내로 짧게 답하세요.\n\n오늘 날짜는 ${todayKST}(한국 시간 기준)입니다. propose_reservation을 호출할 때 "내일"·"다음주 화요일" 같은 상대적 날짜 표현은 이 기준으로 계산해서 절대 날짜(YYYY-MM-DD)로 변환하세요.`,
+          },
+        ],
         tools,
         messages: [...validHistory, { role: 'user', content: transcript }],
       }),

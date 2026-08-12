@@ -107,7 +107,11 @@ export async function onRequestPost(context) {
       body: JSON.stringify({
         model: MODEL,
         max_tokens: 1024,
-        system: MOMI_SYSTEM_PROMPT + roleSuffix,
+        // [비용 절감 2026-08-11] MOMI_SYSTEM_PROMPT+roleSuffix는 같은 role이면
+        // 호출마다 글자 하나 안 틀리고 똑같다(회원 리포트·질문 내용은 전부
+        // 아래 messages 쪽에 따로 들어가지 여기 안 섞임) — 그래서 통째로
+        // 캐싱 대상이다. voice-command.js와 동일한 이유·동일한 방식.
+        system: [{ type: 'text', text: MOMI_SYSTEM_PROMPT + roleSuffix, cache_control: { type: 'ephemeral' } }],
         messages: [
           ...validHistory,
           {

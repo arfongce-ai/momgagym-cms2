@@ -294,3 +294,38 @@ describe('voice-command.js — 관리자 화면 무료 규칙 기반 이동(2026
     expect(body).toContain("if (adminDestId === 'revenue') {");
   });
 });
+
+// [비용 절감 2026-08-11] 프롬프트 캐싱 — tools(도구 15개 정의)와 system의
+// 고정불변 부분(MOMI_SYSTEM_PROMPT)은 같은 role이면 호출마다 100% 동일한
+// 내용이다(사용자 발화·오늘 날짜는 여기 안 섞이고 messages/시스템의 별도
+// 블록에 들어감). 캐싱은 Claude가 실제로 받는 내용을 전혀 안 바꾼다 —
+// 반복되는 입력 토큰의 과금 방식만 낮추는 순수 비용 최적화라 답변 품질에는
+// 영향이 없다.
+describe('functions/api/voice-command.js — 프롬프트 캐싱(2026-08-11, 비용 절감)', () => {
+  const src = readSrc('functions', 'api', 'voice-command.js');
+
+  it('tools 배열의 마지막 항목에만 cache_control을 붙인다(도구 목록 전체를 캐싱 — 하나에만 붙이면 그 앞까지 전부 캐싱됨)', () => {
+    const idx = src.indexOf('if (tools.length > 0) {');
+    expect(idx).toBeGreaterThan(-1);
+    const body = src.slice(idx, src.indexOf('};', idx) + 2);
+    expect(body).toContain("tools[tools.length - 1] = { ...tools[tools.length - 1], cache_control: { type: 'ephemeral' } };");
+  });
+
+  it('system은 두 블록으로 나뉘어 있다 — 고정불변인 MOMI_SYSTEM_PROMPT만 캐싱하고, 오늘 날짜가 들어가 매일 바뀌는 뒷부분은 캐싱하지 않는다', () => {
+    const idx = src.indexOf('system: [');
+    expect(idx).toBeGreaterThan(-1);
+    const body = src.slice(idx, src.indexOf('tools,', idx));
+    expect(body).toContain("{ type: 'text', text: MOMI_SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }");
+    // 날짜가 들어가는 두 번째 블록에는 cache_control이 없어야 한다(매일 바뀌는 내용 캐싱 방지).
+    const secondBlockStart = body.indexOf('todayKST');
+    const secondBlockRegionStart = body.lastIndexOf('{', secondBlockStart);
+    const secondBlockRegionEnd = body.indexOf('},', secondBlockStart);
+    const secondBlock = body.slice(secondBlockRegionStart, secondBlockRegionEnd);
+    expect(secondBlock).not.toContain('cache_control');
+  });
+
+  it('캐싱 적용 전후로 Claude에게 전달되는 실제 지시문 내용(MOMI_SYSTEM_PROMPT·라우터 모드 설명·오늘 날짜)은 그대로다 — 과금 방식만 바뀌었을 뿐 프롬프트 문구 자체는 안 건드림', () => {
+    expect(src).toContain('[음성 명령 라우터 모드] 사용자가 "모미야" 다음에 한 말이');
+    expect(src).toContain('오늘 날짜는 ${todayKST}(한국 시간 기준)입니다.');
+  });
+});

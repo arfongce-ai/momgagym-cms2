@@ -4,6 +4,7 @@
 // $0으로 끝낸다. 애매하거나 자유 질문(코칭 등)일 때만 /api/voice-command(Claude,
 // 유료)로 넘어간다. 회원 이름이 포함돼 있으면 실제 회원 목록에서 매칭한다.
 import { scopeMembersToTrainer } from '../utils/memberList.js';
+import { todayYMD, addDaysYMD } from '../utils/dates.js';
 import { findDestination } from '../voice/commandRegistry.js';
 import { setPendingVoiceTarget } from '../voice/pendingVoiceTarget.js';
 import { auth } from '../firebase.js';
@@ -353,6 +354,146 @@ export function matchRuleBasedMemoAdd(commandText, members) {
   return { memberName, memoText };
 }
 
+/** 명령 텍스트에 실제 등록된 트레이너 이름이 포함돼 있으면 추출한다(extractMemberNameFromText와
+ * 완전히 같은 로직이지만 트레이너용 — 의미가 달라 별도 함수로 유지). */
+function extractTrainerNameFromText(commandText, trainers) {
+  if (!trainers || trainers.length === 0) return null;
+  const normalized = normalize(commandText);
+  let best = null;
+  for (const t of trainers) {
+    const n = normalize(t.name);
+    if (n && normalized.includes(n) && (!best || n.length > normalize(best).length)) {
+      best = t.name;
+    }
+  }
+  return best;
+}
+
+// [무료 확장 2026-08-11] 예약 생성도 "아주 명확한 날짜/시각 표현일 때만" 무료로
+// 처리한다. 날짜·시간 표현은 한국어로 워낙 다양해서("다음주 화요일", "이번주
+// 금요일 저녁" 등) 전부 다루려 하지 않고, 애매함이 없는 가장 좁은 범위만
+// 잡는다 — 그 범위를 벗어나면 전부 안전하게 Claude로 넘어간다:
+//  · 날짜: "오늘"/"내일"/"모레"만(요일 표현·구체적 날짜(8월15일)는 계산이
+//    더 복잡하고 연도 추론 등 애매함이 남아있어 이번엔 범위 밖으로 뒀다).
+//  · 시각: "오전"/"오후"가 명시된 "N시"만(반·분 포함). "3시"처럼 오전/오후가
+//    없으면 새벽 3시인지 오후 3시인지 알 수 없어 절대 추측하지 않는다.
+//  · 문장이 "예약(을/를)? 잡아/걸어/넣어/해"+정중한 종결어미로 끝나야 한다
+//    (POLITE_ENDING 재사용) — 뒤에 다른 요청이 더 붙은 복합 문장이면 이
+//    패턴 자체가 안 끝나서 자동으로 Claude로 넘어간다.
+function parseReservationRelativeDate(commandText, todayISO) {
+  if (/모레/.test(commandText)) return addDaysYMD(2, todayISO);
+  if (/내일/.test(commandText)) return addDaysYMD(1, todayISO);
+  if (/오늘/.test(commandText)) return addDaysYMD(0, todayISO);
+  return null;
+}
+
+function parseReservationClockTime(commandText) {
+  const m = commandText.match(/(오전|오후)\s*(\d{1,2})\s*시(?:\s*(\d{1,2})\s*분|\s*반)?/);
+  if (!m) return null;
+  let hour = parseInt(m[2], 10);
+  if (hour < 1 || hour > 12) return null;
+  const minute = m[3] ? parseInt(m[3], 10) : (/시\s*반/.test(m[0]) ? 30 : 0);
+  if (minute < 0 || minute > 59) return null;
+  if (m[1] === '오후' && hour !== 12) hour += 12;
+  if (m[1] === '오전' && hour === 12) hour = 0;
+  return { time: `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`, matchText: m[0], matchIndex: m.index };
+}
+
+/** "OO님 내일 오후 3시에 예약 잡아줘" 형태만 받는다. todayISO는 호출부가
+ * 넘긴다(voiceCommandService.js는 브라우저에서 실행되므로 new Date() 자체는
+ * 문제없지만, dates.js의 UTC 시간대 버그 이력 때문에 반드시 todayYMD()를
+ * 거쳐서 넘기도록 강제 — 직접 new Date().toISOString()을 쓰지 않는다). */
+export function matchRuleBasedReservationCreate(commandText, members, trainers, todayISO) {
+  if (!/예약/.test(commandText)) return null;
+  const memberName = extractMemberNameFromText(commandText, members);
+  const date = parseReservationRelativeDate(commandText, todayISO);
+  if (!date) return null;
+  const timeInfo = parseReservationClockTime(commandText);
+  if (!timeInfo) return null;
+  const tail = commandText.slice(timeInfo.matchIndex + timeInfo.matchText.length);
+  // [트레이너 언급 어순 보강] "내일 오후 3시에 이서연 트레이너로 예약 잡아줘"처럼
+  // 시간과 "예약" 사이에 트레이너 이름이 끼어드는 자연스러운 어순도 있어서,
+  // 그 사이 최대 20자까지는(lazy .{0,20}?) 허용한다 — 그래도 "예약(을/를)?
+  // 동사+종결어미"가 문장 맨 끝(POLITE_ENDING의 $ 앵커)까지 그대로 이어져야
+  // 하므로, 복합 문장("...잡아줘 그리고 메모도...") 거부 안전장치는 그대로다.
+  const endRe = new RegExp(String.raw`^.{0,20}?예약\s*(?:을|를)?\s*(?:잡아|걸어|넣어|해)${POLITE_ENDING}`);
+  if (!endRe.test(tail)) return null;
+  const trainerName = extractTrainerNameFromText(commandText, trainers);
+  return { memberName, trainerName, date, startTime: timeInfo.time };
+}
+
+/** "OO님 내일 오후 3시 예약 취소해줘" — 날짜·시각 파서는 propose_reservation과
+ * 완전히 동일(parseReservationRelativeDate/parseReservationClockTime 재사용).
+ * "취소" 키워드로만 구분되고, 나머지 안전장치(오전/오후 필수·문장 끝 앵커·
+ * 트레이너 언급 시 어순 유연성)는 전부 동일하게 적용된다. */
+export function matchRuleBasedReservationCancel(commandText, members, trainers, todayISO) {
+  if (!/취소/.test(commandText)) return null;
+  const memberName = extractMemberNameFromText(commandText, members);
+  const date = parseReservationRelativeDate(commandText, todayISO);
+  if (!date) return null;
+  const timeInfo = parseReservationClockTime(commandText);
+  if (!timeInfo) return null;
+  const tail = commandText.slice(timeInfo.matchIndex + timeInfo.matchText.length);
+  const endRe = new RegExp(String.raw`^.{0,20}?예약\s*(?:을|를)?\s*취소${POLITE_ENDING}`);
+  if (!endRe.test(tail)) return null;
+  const trainerName = extractTrainerNameFromText(commandText, trainers);
+  return { memberName, trainerName, date, startTime: timeInfo.time };
+}
+
+// [무료 확장 2026-08-11] 예약 변경(reschedule) — "OO님 내일 오후 3시 예약을
+// 모레 오전 10시로 옮겨줘"처럼 날짜·시각이 "기존→새" 두 쌍 나온다. create/
+// cancel과 달리 문장 안에서 같은 종류(날짜/시각) 표현이 두 번 나오는 걸
+// 순서대로 기존/새로 배정해야 해서 전용 파서가 필요하다.
+// 안전장치: 날짜·시각 각각 "정확히 2개"일 때만(그 이상·이하는 확신 없음),
+// 기존 것이 새 것보다 문장에서 먼저 나와야(어순이 뒤바뀐 특이 문장은 제외).
+function findAllReservationDates(commandText, todayISO) {
+  const found = [];
+  const re = /모레|내일|오늘/g;
+  let m;
+  while ((m = re.exec(commandText))) {
+    const value = m[0] === '모레' ? addDaysYMD(2, todayISO) : m[0] === '내일' ? addDaysYMD(1, todayISO) : addDaysYMD(0, todayISO);
+    found.push({ value, index: m.index, length: m[0].length });
+  }
+  return found;
+}
+
+function findAllReservationTimes(commandText) {
+  const found = [];
+  const re = /(오전|오후)\s*(\d{1,2})\s*시(?:\s*(\d{1,2})\s*분|\s*반)?/g;
+  let m;
+  while ((m = re.exec(commandText))) {
+    let hour = parseInt(m[2], 10);
+    if (hour < 1 || hour > 12) continue;
+    const minute = m[3] ? parseInt(m[3], 10) : (/시\s*반/.test(m[0]) ? 30 : 0);
+    if (minute < 0 || minute > 59) continue;
+    if (m[1] === '오후' && hour !== 12) hour += 12;
+    if (m[1] === '오전' && hour === 12) hour = 0;
+    found.push({ value: `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`, index: m.index, length: m[0].length });
+  }
+  return found;
+}
+
+export function matchRuleBasedReservationReschedule(commandText, members, trainers, todayISO) {
+  if (!/옮겨|변경|바꿔/.test(commandText)) return null;
+  if (!/예약/.test(commandText)) return null;
+  const memberName = extractMemberNameFromText(commandText, members);
+  const dates = findAllReservationDates(commandText, todayISO);
+  const times = findAllReservationTimes(commandText);
+  if (dates.length !== 2 || times.length !== 2) return null;
+  const [oldDate, newDate] = dates;
+  const [oldTime, newTime] = times;
+  if (oldDate.index > newDate.index || oldTime.index > newTime.index) return null;
+  const tail = commandText.slice(newTime.index + newTime.length);
+  const endRe = new RegExp(String.raw`^.{0,10}?(?:으로|로)?\s*(?:옮겨|변경해|바꿔)${POLITE_ENDING}`);
+  if (!endRe.test(tail)) return null;
+  const trainerName = extractTrainerNameFromText(commandText, trainers);
+  return {
+    memberName, trainerName,
+    oldDate: oldDate.value, oldStartTime: oldTime.value,
+    newDate: newDate.value, newStartTime: newTime.value,
+  };
+}
+
 // [예약 생성 프로젝트 2026-08-08] "폰: trainerId(로그인 정보로 자동 지정) /
 // 키오스크: trainerName(말로 지정)" — 사용자가 명시적으로 확정한 구분. 어느
 // 쪽인지는 호출부(컴포넌트)가 mode로 알려준다. 기본값은 'phone' — 기존
@@ -451,6 +592,54 @@ export async function processVoiceCommand({
       memoText: ruleMemoAdd.memoText,
     });
     return { type: 'memo_add_propose', propose };
+  }
+
+  // [무료 확장 2026-08-11] 예약 생성 — Claude 경로의 reservation_propose 분기와
+  // 완전히 동일하게 proposeReservation()을 그대로 호출한다(계산 로직 재사용,
+  // 저장은 여전히 트레이너의 "네" 확인 뒤에만 — 다른 무료 확장들과 동일 원칙).
+  const ruleReservation = matchRuleBasedReservationCreate(transcript, scopedMembersForWrite, allTrainers, todayYMD());
+  if (ruleReservation) {
+    const trainerId = mode === 'kiosk' ? null : currentUser?.trainerId || null;
+    const propose = proposeReservation({
+      memberQuery: ruleReservation.memberName || undefined,
+      trainerId: trainerId || undefined,
+      trainerName: ruleReservation.trainerName || undefined,
+      date: ruleReservation.date,
+      startTime: ruleReservation.startTime,
+    });
+    return { type: 'reservation_propose', propose };
+  }
+
+  // [무료 확장 2026-08-11] 예약 취소 — Claude 경로의 reservation_cancel_propose
+  // 분기와 완전히 동일하게 proposeCancelReservation()을 그대로 호출한다.
+  const ruleCancel = matchRuleBasedReservationCancel(transcript, scopedMembersForWrite, allTrainers, todayYMD());
+  if (ruleCancel) {
+    const trainerId = mode === 'kiosk' ? null : currentUser?.trainerId || null;
+    const propose = proposeCancelReservation({
+      memberQuery: ruleCancel.memberName || undefined,
+      trainerId: trainerId || undefined,
+      trainerName: ruleCancel.trainerName || undefined,
+      date: ruleCancel.date,
+      startTime: ruleCancel.startTime,
+    });
+    return { type: 'reservation_cancel_propose', propose };
+  }
+
+  // [무료 확장 2026-08-11] 예약 변경 — Claude 경로의 reservation_reschedule_propose
+  // 분기와 완전히 동일하게 proposeRescheduleReservation()을 그대로 호출한다.
+  const ruleReschedule = matchRuleBasedReservationReschedule(transcript, scopedMembersForWrite, allTrainers, todayYMD());
+  if (ruleReschedule) {
+    const trainerId = mode === 'kiosk' ? null : currentUser?.trainerId || null;
+    const propose = proposeRescheduleReservation({
+      memberQuery: ruleReschedule.memberName || undefined,
+      trainerId: trainerId || undefined,
+      trainerName: ruleReschedule.trainerName || undefined,
+      oldDate: ruleReschedule.oldDate,
+      oldStartTime: ruleReschedule.oldStartTime,
+      newDate: ruleReschedule.newDate,
+      newStartTime: ruleReschedule.newStartTime,
+    });
+    return { type: 'reservation_reschedule_propose', propose };
   }
 
   // 규칙 기반으로 확신 있게 못 찾았으면(자유 질문·코칭·애매한 표현·관리자 전용
