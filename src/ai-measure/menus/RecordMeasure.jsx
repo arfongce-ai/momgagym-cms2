@@ -10,9 +10,11 @@ import { pickRecorderMime } from '../core/recordSink';
 import { nextPhase, firstPhase, phaseDurationSec } from '../core/intervalTimer';
 import { loadPoseLandmarker, detectPoseFrame, isPoseReady, closePoseLandmarker } from '../core/poseBackend';
 import { isSkeletonEnabled, subscribeSkeleton, useSkeletonOverlay } from '../core/skeletonPref';
+import { isTrajectoryEnabled, subscribeTrajectory, useTrajectoryOverlay } from '../core/trajectoryPref';
 import { angleDeg } from '../core/postureMath';
 import { createSmoother, createAngleStabilizer } from '../core/smoothing';
 import SkeletonToggleChip from './SkeletonToggleChip';
+import TrajectoryToggleChip from './TrajectoryToggleChip';
 
 // 스켈레톤 뼈대(어깨~골반~사지) — 전신 스틱 피규어.
 // [2026-08-02] 참고 영상(Live Analysis) 스타일 반영: 상체(빨강)·하체(초록) 2색으로
@@ -241,6 +243,128 @@ function drawSkeletonPaths(ctx, landmarks, px, py, lineW, dotR, scale = 1, stabi
   }
 }
 
+// ── 손·발 궤적(잔상) — 스켈레톤과 별도 토글 ──
+//  손목(15/16)·발목(27/28)의 최근 위치를 짧게 남겨 움직임 궤적을 보여준다.
+//  촬영 시작부터 전체 누적이 아니라 최근 TRAIL_MAX_AGE_MS 동안의 위치만
+//  유지하고, 오래된 점일수록 옅어지며 사라진다(잔상 방식 — 화면이 계속
+//  복잡해지지 않도록).
+const TRAIL_POINTS = { leftHand: 15, rightHand: 16, leftFoot: 27, rightFoot: 28 };
+const TRAIL_MAX_AGE_MS = 1200;
+const TRAIL_COLORS = {
+  leftHand: [251, 191, 36],  // 손 — amber
+  rightHand: [251, 191, 36],
+  leftFoot: [34, 211, 238],  // 발 — cyan
+  rightFoot: [34, 211, 238],
+};
+
+function emptyTrail() {
+  return { leftHand: [], rightHand: [], leftFoot: [], rightFoot: [] };
+}
+
+// 새로 검출된(스무딩된) 랜드마크 중 손목·발목 위치를 궤적 버퍼에 추가한다.
+// 정규화 좌표(0~1)로 저장해 미리보기(cover)·녹화 합성 양쪽에서 재사용한다.
+function pushTrailPoint(buffer, landmarks, now) {
+  if (!landmarks) return;
+  for (const [key, idx] of Object.entries(TRAIL_POINTS)) {
+    const p = landmarks[idx];
+    if (p && Number.isFinite(p.x) && Number.isFinite(p.y) && (p.visibility == null || p.visibility >= 0.35)) {
+      buffer[key].push({ x: p.x, y: p.y, t: now });
+    }
+  }
+}
+
+// TRAIL_MAX_AGE_MS 보다 오래된 점은 버퍼에서 제거한다(잔상이 계속 자라지 않게).
+function pruneTrail(buffer, now) {
+  for (const key of Object.keys(buffer)) {
+    const pts = buffer[key];
+    let i = 0;
+    while (i < pts.length && now - pts[i].t > TRAIL_MAX_AGE_MS) i += 1;
+    if (i > 0) buffer[key] = pts.slice(i);
+  }
+}
+
+// 궤적 선분을 그린다 — 최근 점일수록 진하고, 오래될수록 옅어진다.
+function drawTrailSegments(ctx, buffer, px, py, now, lineW) {
+  Object.entries(buffer).forEach(([key, pts]) => {
+    if (!pts || pts.length === 0) return;
+    const [r, g, b] = TRAIL_COLORS[key];
+    for (let i = 1; i < pts.length; i += 1) {
+      const a = pts[i - 1];
+      const c = pts[i];
+      const age = now - c.t;
+      const alpha = Math.max(0, 1 - age / TRAIL_MAX_AGE_MS) * 0.85;
+      if (alpha <= 0.02) continue;
+      ctx.strokeStyle = `rgba(${r},${g},${b},${alpha.toFixed(3)})`;
+      ctx.lineWidth = lineW;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.beginPath();
+      ctx.moveTo(px(a), py(a));
+      ctx.lineTo(px(c), py(c));
+      ctx.stroke();
+    }
+    const last = pts[pts.length - 1];
+    const lastAge = now - last.t;
+    const dotAlpha = Math.max(0, 1 - lastAge / TRAIL_MAX_AGE_MS);
+    if (dotAlpha > 0.05) {
+      ctx.fillStyle = `rgba(${r},${g},${b},${dotAlpha.toFixed(3)})`;
+      ctx.beginPath();
+      ctx.arc(px(last), py(last), lineW * 1.3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  });
+}
+
+// 미리보기(object-cover)용 궤적 렌더. clear=true 면 캔버스를 먼저 비운다
+// (스켈레톤이 꺼져 있어 이 함수가 유일한 오버레이일 때), clear=false 면
+// drawSkeletonCover가 이미 그린 위에 겹쳐 그린다(스켈레톤+궤적 동시 ON).
+function drawTrajectoryCover(canvas, video, buffer, clear = true) {
+  if (!canvas || !video) return;
+  const cw = canvas.clientWidth || canvas.width;
+  const ch = canvas.clientHeight || canvas.height;
+  if (canvas.width !== cw || canvas.height !== ch) { canvas.width = cw; canvas.height = ch; }
+  const ctx = canvas.getContext('2d');
+  if (clear) ctx.clearRect(0, 0, cw, ch);
+  const vw = video.videoWidth, vh = video.videoHeight;
+  if (!vw || !vh) return;
+  const scale = Math.max(cw / vw, ch / vh);
+  const dw = vw * scale, dh = vh * scale;
+  const ox = (cw - dw) / 2, oy = (ch - dh) / 2;
+  const px = (p) => ox + p.x * dw;
+  const py = (p) => oy + p.y * dh;
+  drawTrailSegments(ctx, buffer, px, py, performance.now(), Math.max(3, cw / 140));
+}
+
+// 녹화 합성 캔버스용 — drawSkeletonToRecordCover와 동일한 크롭으로 좌표를
+// 맞춰 궤적을 굽는다. createRecordedStream의 draw()는 매 프레임 배경을
+// 새로 그리므로 별도 clear가 필요 없다.
+function drawTrajectoryToRecordCover(ctx, video, buffer, width, height) {
+  if (!video) return;
+  const vw = video.videoWidth, vh = video.videoHeight;
+  if (!vw || !vh) return;
+  const sourceRatio = vw / vh;
+  const targetRatio = width / height;
+  let sx = 0, sy = 0, sw = vw, sh = vh;
+  if (sourceRatio > targetRatio) { sw = vh * targetRatio; sx = (vw - sw) / 2; }
+  else { sh = vw / targetRatio; sy = (vh - sh) / 2; }
+  const px = (p) => ((p.x * vw) - sx) / sw * width;
+  const py = (p) => ((p.y * vh) - sy) / sh * height;
+  drawTrailSegments(ctx, buffer, px, py, performance.now(), Math.max(3, width / 160));
+}
+
+// 매 프레임 포즈 검출 — 스켈레톤/궤적 두 오버레이가 동일한 호출 방식을
+// 공유하도록 뺀 헬퍼(중복 방지). 실패 시 null.
+function detectPoseThisFrame(video, tsRef) {
+  try {
+    const ts = Math.max(tsRef.current + 1, Math.round(performance.now()));
+    tsRef.current = ts;
+    const res = detectPoseFrame(video, ts);
+    return res?.landmarks || null;
+  } catch (e) {
+    return null;
+  }
+}
+
 const RECORD_FPS = 30;
 const MAX_RECORD_SECONDS = 30;
 
@@ -382,6 +506,10 @@ export default function RecordMeasure({ member: _member, onBack }) {
   const poseLoadingRef = useRef(false);    // 로더 중복 호출 방지
   const [poseReady, setPoseReady] = useState(false); // 모델 준비 여부(UI 안내)
   const [skeletonOn] = useSkeletonOverlay();          // 렌더 조건용 반응형 on/off
+  // ── 손·발 궤적(잔상) — 스켈레톤과 별개의 토글/설정 ──
+  const trajectoryOnRef = useRef(isTrajectoryEnabled()); // 콜백 안 최신 on/off
+  const trailBufferRef = useRef(emptyTrail());           // {leftHand,rightHand,leftFoot,rightFoot} 각각 최근 점 배열
+  const [trajectoryOn] = useTrajectoryOverlay();          // 렌더 조건용 반응형 on/off
 
   const [status, setStatus] = useState('idle');
   const [error, setError] = useState(null);
@@ -426,6 +554,23 @@ export default function RecordMeasure({ member: _member, onBack }) {
     return off;
   }, [ensurePoseModel]);
 
+  // 궤적 on/off 전역 설정 구독 — 스켈레톤과 독립적으로 켜고 끌 수 있다.
+  // 궤적도 손목·발목 랜드마크가 원본이라 켜질 때 동일하게 포즈 모델을
+  // 준비한다. 꺼지면 남아있던 잔상을 즉시 비운다.
+  useEffect(() => {
+    trajectoryOnRef.current = isTrajectoryEnabled();
+    if (trajectoryOnRef.current) ensurePoseModel();
+    const off = subscribeTrajectory((on) => {
+      trajectoryOnRef.current = on;
+      if (on) {
+        ensurePoseModel();
+      } else {
+        trailBufferRef.current = emptyTrail();
+      }
+    });
+    return off;
+  }, [ensurePoseModel]);
+
   // [2026-07-30] 되돌림: 화면 간 포즈 모델 공유 캐시가 인식 실패(광범위 회귀)를
   // 유발한 것으로 추정되어, 나갈 때마다 모델을 다시 닫는 원래 방식으로 복원.
   useEffect(() => () => { closePoseLandmarker(); }, []);
@@ -452,22 +597,34 @@ export default function RecordMeasure({ member: _member, onBack }) {
     if (video && canvas && video.videoWidth) {
       if (skeletonOnRef.current && isPoseReady()) {
         // 미리보기에 스켈레톤 표시 — detectPoseFrame 은 단조 증가 타임스탬프 필요
-        let landmarks = null;
-        try {
-          const ts = Math.max(poseDetectTsRef.current + 1, Math.round(performance.now()));
-          poseDetectTsRef.current = ts;
-          const res = detectPoseFrame(video, ts);
-          landmarks = res?.landmarks || null;
-        } catch (e) { landmarks = null; }
+        const landmarks = detectPoseThisFrame(video, poseDetectTsRef);
         // 새로 검출된 프레임만 스무더에 통과시킨다. 이번 프레임에 검출이 비면(landmarks
         // null) 스무더를 건드리지 않고 마지막으로 표시하던 좌표를 그대로 유지한다
         // (기존 동작과 동일) — 스무더에 null을 넣으면 내부 상태가 리셋돼버리기 때문.
         if (landmarks) {
           latestLandmarksRef.current = smootherRef.current(landmarks);
         }
+        // 궤적 ON 이면 같은 프레임의 랜드마크로 손목·발목 잔상 버퍼를 갱신한다.
+        if (trajectoryOnRef.current && landmarks) {
+          pushTrailPoint(trailBufferRef.current, latestLandmarksRef.current, performance.now());
+        }
         drawSkeletonCover(canvas, video, latestLandmarksRef.current, angleStabilizerRef.current);
+        if (trajectoryOnRef.current) {
+          pruneTrail(trailBufferRef.current, performance.now());
+          // clear=false: 스켈레톤이 이미 그린 캔버스 위에 궤적을 겹쳐 그린다.
+          drawTrajectoryCover(canvas, video, trailBufferRef.current, false);
+        }
+      } else if (trajectoryOnRef.current && isPoseReady()) {
+        // 스켈레톤은 꺼져 있어도 궤적만 켜져 있으면 포즈 검출은 계속 필요하다.
+        const landmarks = detectPoseThisFrame(video, poseDetectTsRef);
+        if (landmarks) {
+          pushTrailPoint(trailBufferRef.current, smootherRef.current(landmarks), performance.now());
+        }
+        pruneTrail(trailBufferRef.current, performance.now());
+        drawTrajectoryCover(canvas, video, trailBufferRef.current, true);
+        latestLandmarksRef.current = null;
       } else {
-        // 스켈레톤 OFF: 오버레이 캔버스를 비운다.
+        // 스켈레톤·궤적 모두 OFF: 오버레이 캔버스를 비운다.
         const box = canvas.getBoundingClientRect();
         const width = Math.max(1, Math.round(box.width || 720));
         const height = Math.max(1, Math.round(box.height || 960));
@@ -613,6 +770,10 @@ export default function RecordMeasure({ member: _member, onBack }) {
       // 스켈레톤 ON 이면 녹화 영상에도 굽는다(미리보기 loop 가 최신 랜드마크 갱신).
       if (skeletonOnRef.current && latestLandmarksRef.current) {
         drawSkeletonToRecordCover(ctx, video, latestLandmarksRef.current, canvas.width, canvas.height, angleStabilizerRef.current);
+      }
+      // 궤적 ON 이면 녹화 영상에도 손·발 잔상을 굽는다(스켈레톤과 별개 토글).
+      if (trajectoryOnRef.current) {
+        drawTrajectoryToRecordCover(ctx, video, trailBufferRef.current, canvas.width, canvas.height);
       }
       composeRafRef.current = requestAnimationFrame(draw);
     };
@@ -939,9 +1100,11 @@ export default function RecordMeasure({ member: _member, onBack }) {
         </div>
 
         {/* [항목 6] 스켈레톤 ON/OFF — 일반 녹화 영상에 포즈 스켈레톤을 겹쳐 저장 */}
+        {/* 손·발 궤적 ON/OFF — 스켈레톤과 독립된 토글, 손목·발목 잔상을 겹쳐 저장 */}
         <div className="absolute left-4 top-[max(60px,calc(env(safe-area-inset-top)+50px))] z-10 flex items-center gap-2">
           <SkeletonToggleChip />
-          {skeletonOn && !poseReady && (
+          <TrajectoryToggleChip />
+          {(skeletonOn || trajectoryOn) && !poseReady && (
             <span className="rounded-full bg-black/60 px-2 py-1 text-[10px] font-bold text-amber-700 dark:text-amber-300 backdrop-blur">
               스켈레톤 모델 준비 중…
             </span>
