@@ -57,6 +57,34 @@ function getCtx() {
   return _ctx;
 }
 
+/**
+ * [2026-08-16] 초시계·타이머·메트로놈: 소음/음악 위에서도 또렷하게 들리도록
+ * 리미터(다이내믹 레인지 컴프레서)를 거쳐 출력한다 — 평균 음량을 끌어올려도
+ * 클리핑(찢어지는 소리)이 나지 않는다. 컨텍스트당 1개만 만들어 재사용.
+ * createDynamicsCompressor 를 지원하지 않는 환경(테스트 모의 컨텍스트 포함)
+ * 에서는 조용히 ctx.destination 으로 폴백한다 — 기존 동작과 100% 동일.
+ */
+export function getLimiterNode(ctx) {
+  if (!ctx) return null;
+  if (ctx.__momiLimiter) return ctx.__momiLimiter;
+  let node = ctx.destination;
+  try {
+    if (typeof ctx.createDynamicsCompressor === 'function') {
+      const comp = ctx.createDynamicsCompressor();
+      const now = ctx.currentTime;
+      if (comp.threshold) comp.threshold.setValueAtTime(-14, now);
+      if (comp.knee) comp.knee.setValueAtTime(6, now);
+      if (comp.ratio) comp.ratio.setValueAtTime(12, now);
+      if (comp.attack) comp.attack.setValueAtTime(0.002, now);
+      if (comp.release) comp.release.setValueAtTime(0.12, now);
+      comp.connect(ctx.destination);
+      node = comp;
+    }
+  } catch (e) { node = ctx.destination; }
+  try { ctx.__momiLimiter = node; } catch (e) { /* noop */ }
+  return node;
+}
+
 // 단일 톤 재생. freq(Hz), dur(초), gain(0~1), type(파형)
 function tone(freq = 880, dur = 0.12, gain = 0.18, type = 'sine') {
   const g = boostedGain(gain);
@@ -73,7 +101,7 @@ function tone(freq = 880, dur = 0.12, gain = 0.18, type = 'sine') {
     amp.gain.setValueAtTime(0.0001, now);
     amp.gain.exponentialRampToValueAtTime(g, now + 0.01);
     amp.gain.exponentialRampToValueAtTime(0.0001, now + dur);
-    osc.connect(amp).connect(ctx.destination);
+    osc.connect(amp).connect(getLimiterNode(ctx));
     osc.start(now);
     osc.stop(now + dur + 0.02);
   } catch (e) { /* noop */ }
@@ -137,7 +165,7 @@ export function whistle() {
       amp.gain.exponentialRampToValueAtTime(g, now + 0.02);
       amp.gain.setValueAtTime(g, now + dur - 0.04);
       amp.gain.exponentialRampToValueAtTime(0.0001, now + dur);
-      osc.connect(amp).connect(ctx.destination);
+      osc.connect(amp).connect(getLimiterNode(ctx));
       trill.start(now); osc.start(now);
       trill.stop(now + dur + 0.02); osc.stop(now + dur + 0.02);
     } catch (e) { /* noop */ }

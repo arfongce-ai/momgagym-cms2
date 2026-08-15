@@ -4,6 +4,8 @@
 import { useRef, useState, useEffect, useCallback } from 'react';
 import { nextPhase, firstPhase, phaseDurationSec, totalDurationSec } from '../core/intervalTimer';
 import { boostedGain, whistle, primeAudio } from '../core/audioCue';
+// [2026-08-16] 초시계·타이머·메트로놈 HUD 강화 — 소음/음악 위에서도 들리는 리미터.
+import { getLimiterNode } from '../core/audioCue';
 import SoundVolumeControl from './SoundVolumeControl';
 import { subscribeTimerControl } from '../../voice/timerControlBus';
 import { consumePendingTimerCommand } from '../../voice/pendingTimerCommand';
@@ -15,9 +17,23 @@ export function Stopwatch({ compact = false, command = null }) {
   const startRef = useRef(0);
   const accRef = useRef(0);
   const rafRef = useRef(null);
+  // [2026-08-16] 코너 점을 초 단위(1Hz)로 펄스 — DOM에 직접 클래스를 토글해서
+  // 매 프레임(ms 표시 갱신) React 재렌더와 별개로 가볍게 처리한다.
+  const dotRef = useRef(null);
+  const lastPulsedSecRef = useRef(-1);
 
   const tick = useCallback(() => {
-    setElapsed(accRef.current + (performance.now() - startRef.current));
+    const now = accRef.current + (performance.now() - startRef.current);
+    setElapsed(now);
+    const sec = Math.floor(now / 1000);
+    if (sec !== lastPulsedSecRef.current) {
+      lastPulsedSecRef.current = sec;
+      const dot = dotRef.current;
+      if (dot) {
+        dot.classList.add('pulse');
+        setTimeout(() => dot.classList.remove('pulse'), 220);
+      }
+    }
     rafRef.current = requestAnimationFrame(tick);
   }, []);
 
@@ -60,33 +76,35 @@ export function Stopwatch({ compact = false, command = null }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [command?.id]);
 
+  // [2026-08-16] 방식 B + 0.001초(ms) 표시: mm:ss.mmm 까지 실시간 갱신.
   const fmt = (ms) => {
-    const cs = Math.floor((ms % 1000) / 10);
+    const msPart = Math.floor(ms % 1000);
     const s = Math.floor(ms / 1000) % 60;
     const m = Math.floor(ms / 60000);
-    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}.${String(cs).padStart(2, '0')}`;
+    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}.${String(msPart).padStart(3, '0')}`;
   };
 
   return (
     <div className={compact ? 'space-y-3' : 'space-y-4'}>
-      <div className={`text-center bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl ${compact ? 'py-4' : 'py-8'}`}>
-        <p className={`font-mono font-black text-amber-700 dark:text-amber-400 tabular-nums ${compact ? 'text-4xl' : 'text-5xl'}`}>{fmt(elapsed)}</p>
+      <div className={`relative text-center bg-white dark:bg-slate-900 border-2 border-slate-300 dark:border-slate-600 rounded-2xl ${compact ? 'py-4' : 'py-8'}`}>
+        <div ref={dotRef} className="sw-pulse-dot" aria-hidden="true" />
+        <p className={`font-mono font-black text-amber-600 dark:text-amber-300 tabular-nums ${compact ? 'text-4xl' : 'text-5xl'}`}>{fmt(elapsed)}</p>
       </div>
       <div className="grid grid-cols-3 gap-2">
-        <button onClick={reset} className="rounded-xl border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-bold py-3 text-sm">리셋</button>
+        <button onClick={reset} className="rounded-xl border-2 border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-200 font-bold py-3 text-sm">Reset</button>
         <button
           onClick={startStop}
           className={`rounded-xl font-bold py-3 text-sm ${running ? 'bg-red-500 text-white' : 'bg-amber-500 text-slate-950'}`}
         >
-          {running ? '정지' : '시작'}
+          {running ? 'Stop' : 'Start'}
         </button>
-        <button onClick={lap} disabled={!running} className="rounded-xl border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-bold py-3 text-sm disabled:opacity-40">랩</button>
+        <button onClick={lap} disabled={!running} className="rounded-xl border-2 border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-200 font-bold py-3 text-sm disabled:opacity-40">Lap</button>
       </div>
       {laps.length > 0 && (
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl divide-y divide-slate-200 dark:divide-slate-800 max-h-40 overflow-y-auto">
+        <div className="bg-white dark:bg-slate-900 border-2 border-slate-300 dark:border-slate-600 rounded-xl divide-y divide-slate-200 dark:divide-slate-700 max-h-40 overflow-y-auto">
           {laps.map((l, i) => (
             <div key={i} className="flex justify-between px-3 py-2 text-sm">
-              <span className="text-slate-500">랩 {laps.length - i}</span>
+              <span className="text-slate-500">Lap {laps.length - i}</span>
               <span className="font-mono text-slate-700 dark:text-slate-200">{fmt(l)}</span>
             </div>
           ))}
@@ -103,10 +121,32 @@ export function Metronome({ compact = false, command = null }) {
   const nextNoteRef = useRef(0);
   const timerRef = useRef(null);
   const beatRef = useRef(0);
+  // [2026-08-16] 메트로놈 모양 없이, 공이 비트마다 좌우로 왕복하는 시각 HUD.
+  // 오디오 클럭(ctx.currentTime) 기준으로 시각도 같이 스케줄해 어긋나지 않는다.
+  const ballRef = useRef(null);
+  const ballSideRef = useRef(false);
+  const visualTimersRef = useRef([]);
+
+  const clearVisualTimers = () => {
+    visualTimersRef.current.forEach((id) => clearTimeout(id));
+    visualTimersRef.current = [];
+  };
+
+  const swingBall = useCallback((isDownBeat) => {
+    const ball = ballRef.current;
+    if (!ball) return;
+    ballSideRef.current = !ballSideRef.current;
+    const secPerBeat = 60 / bpm;
+    ball.style.transition = `transform ${Math.max(60, secPerBeat * 920)}ms cubic-bezier(.45,.05,.55,.95), box-shadow 90ms ease-out`;
+    ball.style.transform = `translateX(${ballSideRef.current ? 92 : -92}px)`;
+    ball.classList.add(isDownBeat ? 'beat-strong' : 'beat');
+    setTimeout(() => ball.classList.remove('beat-strong', 'beat'), 100);
+  }, [bpm]);
 
   const stop = useCallback(() => {
     if (timerRef.current) clearInterval(timerRef.current);
     timerRef.current = null;
+    clearVisualTimers();
     setPlaying(false);
   }, []);
 
@@ -114,31 +154,52 @@ export function Metronome({ compact = false, command = null }) {
     if (!ctxRef.current) ctxRef.current = new (window.AudioContext || window.webkitAudioContext)();
     const ctx = ctxRef.current;
     if (ctx.state === 'suspended') ctx.resume();
+    const limiter = getLimiterNode(ctx); // 소음/음악 위에서도 들리도록 리미터를 거쳐 출력
     nextNoteRef.current = ctx.currentTime + 0.05;
     beatRef.current = 0;
 
     timerRef.current = setInterval(() => {
       const secPerBeat = 60 / bpm;
       while (nextNoteRef.current < ctx.currentTime + 0.1) {
+        const isDownBeat = beatRef.current % 4 === 0;
+        const baseFreq = isDownBeat ? 1500 : 1000;
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
-        const isDownBeat = beatRef.current % 4 === 0;
-        osc.frequency.value = isDownBeat ? 1500 : 1000;
+        osc.type = 'triangle'; // 배음이 풍부해 사인파보다 소음 속에서 잘 들림
+        osc.frequency.value = baseFreq;
         gain.gain.setValueAtTime(boostedGain(isDownBeat ? 0.5 : 0.3), nextNoteRef.current);
         gain.gain.exponentialRampToValueAtTime(0.001, nextNoteRef.current + 0.05);
         osc.connect(gain);
-        gain.connect(ctx.destination);
+        gain.connect(limiter);
         osc.start(nextNoteRef.current);
         osc.stop(nextNoteRef.current + 0.05);
+
+        // 옥타브 위 배음을 살짝 얹어 저음 음악/소음 위에서도 또렷하게.
+        const harm = ctx.createOscillator();
+        const harmGain = ctx.createGain();
+        harm.type = 'sine';
+        harm.frequency.value = baseFreq * 2;
+        harmGain.gain.setValueAtTime(boostedGain(isDownBeat ? 0.18 : 0.1), nextNoteRef.current);
+        harmGain.gain.exponentialRampToValueAtTime(0.001, nextNoteRef.current + 0.04);
+        harm.connect(harmGain);
+        harmGain.connect(limiter);
+        harm.start(nextNoteRef.current);
+        harm.stop(nextNoteRef.current + 0.04);
+
+        // 오디오 클럭 기준으로 공의 스윙도 정확히 같은 시점에 맞춘다.
+        const delayMs = Math.max(0, (nextNoteRef.current - ctx.currentTime) * 1000);
+        visualTimersRef.current.push(setTimeout(() => swingBall(isDownBeat), delayMs));
+
         nextNoteRef.current += secPerBeat;
         beatRef.current += 1;
       }
     }, 25);
     setPlaying(true);
-  }, [bpm]);
+  }, [bpm, swingBall]);
 
   useEffect(() => () => {
     if (timerRef.current) clearInterval(timerRef.current);
+    clearVisualTimers();
     if (ctxRef.current) {
       try { ctxRef.current.close(); } catch (e) { /* noop */ }
       ctxRef.current = null;
@@ -171,20 +232,24 @@ export function Metronome({ compact = false, command = null }) {
 
   return (
     <div className={compact ? 'space-y-3' : 'space-y-4'}>
-      <div className={`text-center bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl ${compact ? 'py-4' : 'py-6'}`}>
-        <p className={`font-mono font-black text-amber-700 dark:text-amber-400 ${compact ? 'text-4xl' : 'text-5xl'}`}>
+      <div className={`relative text-center bg-white dark:bg-slate-900 border-2 border-slate-300 dark:border-slate-600 rounded-2xl ${compact ? 'py-4' : 'py-6'}`}>
+        <p className={`font-mono font-black text-amber-600 dark:text-amber-300 ${compact ? 'text-4xl' : 'text-5xl'}`}>
           {bpm}<span className="text-lg text-slate-500"> BPM</span>
         </p>
+        <div className="metro-track">
+          <div className="metro-track-line" />
+          <div ref={ballRef} className="metro-ball" aria-hidden="true" />
+        </div>
       </div>
       <input type="range" min="40" max="220" value={bpm} onChange={(e) => setBpm(Number(e.target.value))} className="w-full accent-amber-500" />
       <div className="grid grid-cols-4 gap-2">
-        <button onClick={() => setBpm((b) => Math.max(40, b - 5))} className="rounded-xl border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-bold py-2">-5</button>
-        <button onClick={() => setBpm((b) => Math.min(220, b + 5))} className="rounded-xl border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-bold py-2">+5</button>
+        <button onClick={() => setBpm((b) => Math.max(40, b - 5))} className="rounded-xl border-2 border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-200 font-bold py-2">-5</button>
+        <button onClick={() => setBpm((b) => Math.min(220, b + 5))} className="rounded-xl border-2 border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-200 font-bold py-2">+5</button>
         <button
           onClick={playing ? stop : start}
           className={`col-span-2 rounded-xl font-bold py-2 ${playing ? 'bg-red-500 text-white' : 'bg-amber-500 text-slate-950'}`}
         >
-          {playing ? '정지' : '시작'}
+          {playing ? 'Stop' : 'Start'}
         </button>
       </div>
       <div className="flex gap-2 justify-center flex-wrap">
@@ -206,22 +271,40 @@ export function Countdown({ compact = false, command = null }) {
   const endRef = useRef(0);
   const rafRef = useRef(null);
   const alarmRef = useRef(null);
+  // [2026-08-16] 아날로그 다이얼(줄어드는 파이) 계산용 — 이번 회차를 시작할 때의
+  // 총 시간(ms). 일시정지 후 재개해도 기준이 바뀌지 않도록 별도로 들고 있는다.
+  const totalMsRef = useRef(0);
+  const justFinishedRef = useRef(false);
 
   const beep = () => {
     try {
       const ctx = new (window.AudioContext || window.webkitAudioContext)();
       alarmRef.current = ctx;
+      const limiter = getLimiterNode(ctx); // 소음/음악 위에서도 들리도록 리미터를 거쳐 출력
       const now = ctx.currentTime;
       for (let i = 0; i < 3; i += 1) {
         const o = ctx.createOscillator();
         const g = ctx.createGain();
+        o.type = 'triangle'; // 배음이 풍부해 사인파보다 소음 속에서 잘 들림
         o.frequency.value = 880;
         g.gain.setValueAtTime(boostedGain(0.4), now + i * 0.4);
         g.gain.exponentialRampToValueAtTime(0.001, now + i * 0.4 + 0.3);
         o.connect(g);
-        g.connect(ctx.destination);
+        g.connect(limiter);
         o.start(now + i * 0.4);
         o.stop(now + i * 0.4 + 0.3);
+
+        // 옥타브 위 배음을 살짝 얹어 또렷함을 더한다.
+        const h = ctx.createOscillator();
+        const hg = ctx.createGain();
+        h.type = 'sine';
+        h.frequency.value = 1760;
+        hg.gain.setValueAtTime(boostedGain(0.16), now + i * 0.4);
+        hg.gain.exponentialRampToValueAtTime(0.001, now + i * 0.4 + 0.25);
+        h.connect(hg);
+        hg.connect(limiter);
+        h.start(now + i * 0.4);
+        h.stop(now + i * 0.4 + 0.25);
       }
       setTimeout(() => { try { ctx.close(); } catch (e) { /* noop */ } }, 1500);
     } catch (e) { /* noop */ }
@@ -232,6 +315,7 @@ export function Countdown({ compact = false, command = null }) {
     if (left <= 0) {
       setRemain(0);
       setRunning(false);
+      justFinishedRef.current = true;
       beep();
       return;
     }
@@ -250,6 +334,14 @@ export function Countdown({ compact = false, command = null }) {
     const total = overrideMs != null ? overrideMs : (setMin * 60 + setSec) * 1000;
     const base = overrideMs != null ? overrideMs : (remain > 0 && !running ? remain : total);
     if (base <= 0) return;
+    // 일시정지 후 재개(같은 회차)면 다이얼 기준(총 시간)을 유지하고, 새로 시작하면
+    // 다이얼 기준도 이번 base로 다시 잡는다.
+    if (remain > 0 && !running && overrideMs == null && totalMsRef.current) {
+      // keep existing totalMsRef.current
+    } else {
+      totalMsRef.current = total;
+    }
+    justFinishedRef.current = false;
     endRef.current = performance.now() + base;
     rafRef.current = requestAnimationFrame(tick);
     setRunning(true);
@@ -272,6 +364,24 @@ export function Countdown({ compact = false, command = null }) {
     cancelAnimationFrame(rafRef.current);
     setRunning(false);
     setRemain(0);
+    totalMsRef.current = 0;
+    justFinishedRef.current = false;
+  };
+
+  // [2026-08-16] 30초 단위 프리셋(30초~2분) 외에, -10초/+10초로 10초 단위 수동
+  // 조정. 실행 중에는(디스플레이가 실시간으로 줄어드는 중) 비활성화해 실수로
+  // 시간이 바뀌지 않게 한다. 범위는 10초~20분.
+  const TM_MIN_SEC = 10;
+  const TM_MAX_SEC = 20 * 60;
+  const adjustTotal = (deltaSec) => {
+    if (running) return;
+    const currentSec = remain > 0 ? Math.round(remain / 1000) : (setMin * 60 + setSec);
+    const nextSec = Math.max(TM_MIN_SEC, Math.min(TM_MAX_SEC, currentSec + deltaSec));
+    setSetMin(Math.floor(nextSec / 60));
+    setSetSec(nextSec % 60);
+    setRemain(0);
+    totalMsRef.current = 0;
+    justFinishedRef.current = false;
   };
 
   useEffect(() => () => {
@@ -297,13 +407,33 @@ export function Countdown({ compact = false, command = null }) {
   const display = remain > 0 ? remain : (setMin * 60 + setSec) * 1000;
   const mm = Math.floor(display / 60000);
   const ss = Math.floor((display % 60000) / 1000);
+  const urgent = remain > 0 && remain < 10000;
+  // [2026-08-16] 아날로그 다이얼 진행률(1=가득, 0=소진). 갓 끝났으면 0(빈 파이),
+  // 그 외 대기/재설정 상태면 1(가득 찬 파이)로 보여준다.
+  const pct = remain > 0
+    ? Math.max(0, Math.min(1, remain / (totalMsRef.current || display)))
+    : (justFinishedRef.current ? 0 : 1);
+  const adjustDisabled = running;
 
   return (
     <div className={compact ? 'space-y-3' : 'space-y-4'}>
-      <div className={`text-center bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl ${compact ? 'py-4' : 'py-8'}`}>
-        <p className={`font-mono font-black tabular-nums ${compact ? 'text-5xl' : 'text-6xl'} ${remain > 0 && remain < 10000 ? 'text-red-700 dark:text-red-400' : 'text-amber-700 dark:text-amber-400'}`}>
-          {String(mm).padStart(2, '0')}:{String(ss).padStart(2, '0')}
-        </p>
+      <div className="flex justify-center">
+        <div
+          className={`tm-dial-wrap ${urgent ? 'urgent-pulse' : ''}`}
+          style={{
+            '--tm-pct': pct,
+            '--tm-color': urgent ? '#ef4444' : '#f59e0b',
+            width: compact ? 180 : 220,
+            height: compact ? 180 : 220,
+          }}
+        >
+          <div className="tm-dial" />
+          <div className="tm-dial-center">
+            <p className={`font-mono font-black tabular-nums ${compact ? 'text-3xl' : 'text-4xl'} ${urgent ? 'text-red-600 dark:text-red-400' : 'text-amber-600 dark:text-amber-300'}`}>
+              {String(mm).padStart(2, '0')}:{String(ss).padStart(2, '0')}
+            </p>
+          </div>
+        </div>
       </div>
       {!running && remain === 0 && (
         <div className="flex items-center justify-center gap-3">
@@ -318,16 +448,28 @@ export function Countdown({ compact = false, command = null }) {
         </div>
       )}
       <div className="flex gap-2 justify-center flex-wrap">
-        {[30, 60, 90, 180, 300].map((sec) => (
-          <button key={sec} onClick={() => { setSetMin(Math.floor(sec / 60)); setSetSec(sec % 60); setRemain(0); setRunning(false); }} className="px-3 py-1 rounded-lg text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:text-white">
-            {sec < 60 ? `${sec}초` : `${sec / 60}분`}
+        {[30, 60, 90, 120].map((sec) => (
+          <button
+            key={sec}
+            disabled={adjustDisabled}
+            onClick={() => { setSetMin(Math.floor(sec / 60)); setSetSec(sec % 60); setRemain(0); totalMsRef.current = 0; justFinishedRef.current = false; setRunning(false); }}
+            className="px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:text-white disabled:opacity-40"
+          >
+            {sec}s
           </button>
         ))}
       </div>
+      <div className="flex items-center justify-center gap-3">
+        <button disabled={adjustDisabled} onClick={() => adjustTotal(-10)} className="rounded-xl border-2 border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-200 font-bold py-2 px-4 text-sm disabled:opacity-40">-10s</button>
+        <span className="font-mono font-bold text-sm text-slate-500 dark:text-slate-400 min-w-[56px] text-center">
+          {String(mm).padStart(2, '0')}:{String(ss).padStart(2, '0')}
+        </span>
+        <button disabled={adjustDisabled} onClick={() => adjustTotal(10)} className="rounded-xl border-2 border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-200 font-bold py-2 px-4 text-sm disabled:opacity-40">+10s</button>
+      </div>
       <div className="grid grid-cols-3 gap-2">
-        <button onClick={reset} className="rounded-xl border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-bold py-3 text-sm">리셋</button>
+        <button onClick={reset} className="rounded-xl border-2 border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-200 font-bold py-3 text-sm">Reset</button>
         <button onClick={running ? pause : start} className={`col-span-2 rounded-xl font-bold py-3 text-sm ${running ? 'bg-red-500 text-white' : 'bg-amber-500 text-slate-950'}`}>
-          {running ? '일시정지' : (remain > 0 ? '계속' : '시작')}
+          {running ? 'Stop' : 'Start'}
         </button>
       </div>
     </div>
@@ -367,6 +509,7 @@ export function IntervalTimer({ compact = false, command = null }) {
       if (!ctxRef.current) ctxRef.current = new (window.AudioContext || window.webkitAudioContext)();
       const ctx = ctxRef.current;
       if (ctx.state === 'suspended') ctx.resume();
+      const limiter = getLimiterNode(ctx); // 소음/음악 위에서도 들리도록 리미터를 거쳐 출력
       const now = ctx.currentTime;
       const blips =
         tone === 'work' ? [[880, 0], [1320, 0.12]]
@@ -376,12 +519,13 @@ export function IntervalTimer({ compact = false, command = null }) {
       for (const [freq, t] of blips) {
         const o = ctx.createOscillator();
         const g = ctx.createGain();
+        o.type = 'triangle'; // 배음이 풍부해 사인파보다 소음 속에서 잘 들림
         o.frequency.value = freq;
         const dur = tone === 'count' ? 0.06 : 0.12;
         g.gain.setValueAtTime(boostedGain(0.4), now + t);
         g.gain.exponentialRampToValueAtTime(0.001, now + t + dur);
         o.connect(g);
-        g.connect(ctx.destination);
+        g.connect(limiter);
         o.start(now + t);
         o.stop(now + t + dur);
       }
@@ -523,8 +667,9 @@ export function IntervalTimer({ compact = false, command = null }) {
   const totalLabel = `${Math.floor(totalSec / 60)}분 ${totalSec % 60}초`;
 
   const phaseLabel = phase === 'prepare' ? '준비' : phase === 'work' ? '운동' : phase === 'rest' ? '휴식' : phase === 'done' ? '완료' : '대기';
-  const phaseColor = phase === 'work' ? 'text-emerald-700 dark:text-emerald-400' : phase === 'rest' ? 'text-sky-700 dark:text-sky-400' : phase === 'prepare' ? 'text-amber-700 dark:text-amber-400' : phase === 'done' ? 'text-emerald-700 dark:text-emerald-400' : 'text-slate-500 dark:text-slate-400';
-  const ringBg = phase === 'work' ? 'bg-emerald-500/10 border-emerald-500/40' : phase === 'rest' ? 'bg-sky-500/10 border-sky-500/40' : phase === 'prepare' ? 'bg-amber-500/10 border-amber-500/40' : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800';
+  // [2026-08-16] 키오스크 모드 시인성 — 구간 배경/테두리를 더 진하고 뚜렷하게.
+  const phaseColor = phase === 'work' ? 'text-emerald-600 dark:text-emerald-300' : phase === 'rest' ? 'text-sky-600 dark:text-sky-300' : phase === 'prepare' ? 'text-amber-600 dark:text-amber-300' : phase === 'done' ? 'text-emerald-600 dark:text-emerald-300' : 'text-slate-500 dark:text-slate-400';
+  const ringBg = phase === 'work' ? 'bg-emerald-500/20 border-emerald-500' : phase === 'rest' ? 'bg-sky-500/20 border-sky-500' : phase === 'prepare' ? 'bg-amber-500/20 border-amber-500' : 'bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-600';
 
   const showSec = Math.ceil(remain / 1000);
   const mm = Math.floor(showSec / 60);
@@ -548,7 +693,7 @@ export function IntervalTimer({ compact = false, command = null }) {
 
   return (
     <div className={compact ? 'space-y-3' : 'space-y-4'}>
-      <div className={`text-center border rounded-2xl ${ringBg} ${compact ? 'py-4' : 'py-6'}`}>
+      <div className={`text-center border-2 rounded-2xl ${ringBg} ${compact ? 'py-4' : 'py-6'}`}>
         <p className={`font-bold ${phaseColor} ${compact ? 'text-sm' : 'text-base'}`}>
           {phaseLabel}
           {(phase === 'work' || phase === 'rest') && (
@@ -586,7 +731,7 @@ export function IntervalTimer({ compact = false, command = null }) {
       )}
 
       <div className="grid grid-cols-3 gap-2">
-        <button onClick={reset} className="rounded-xl border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-bold py-3 text-sm">리셋</button>
+        <button onClick={reset} className="rounded-xl border-2 border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-200 font-bold py-3 text-sm">리셋</button>
         <button
           onClick={startPause}
           className={`col-span-2 rounded-xl font-bold py-3 text-sm ${running ? 'bg-red-500 text-white' : 'bg-amber-500 text-slate-950'}`}
