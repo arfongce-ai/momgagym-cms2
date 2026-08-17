@@ -13,10 +13,43 @@
 
 import admin from 'firebase-admin';
 import { Client } from '@notionhq/client';
-// 매출(입금액) 계산은 새로 만들지 않고, 실제 앱이 쓰는 계산 함수를 그대로 가져다 씁니다.
-// (카드수수료·부가세 공제 로직은 momgagym-cms2/src/services/finance.js 가 원본입니다.
-//  이 파일이 나중에 옮겨지거나 함수명이 바뀌면 아래 import 경로도 같이 고쳐야 해요.)
-import { calcNet } from '../../src/services/finance.js';
+
+// ─────────────────────────────────────────────────────────────
+// 아래 calcNet 로직은 src/services/finance.js 의 함수를 그대로 복사한
+// 것입니다 (2026-08-18 기준 스냅샷). 원래는 그 파일을 직접 import해서
+// 쓰려 했지만, Vite 코드는 확장자 없이 파일을 불러와도(import '../utils/dates')
+// 알아서 찾아주는 반면, 순수 Node.js(이 스크립트가 돌아가는 환경)는 그걸
+// 못 찾아서 에러가 났습니다. CMS 쪽 코드를 고치는 대신, 이 스크립트 안에
+// 계산 공식만 그대로 옮겨왔습니다.
+// ⚠️ finance.js의 calcNet 계산 방식이 나중에 바뀌면, 여기도 같이 고쳐야
+//    두 곳의 매출 숫자가 계속 일치합니다.
+const CARD_METHODS = ['card', 'card1', 'card2'];       // 부가세+카드수수료
+const VAT_ONLY_METHODS = ['pay', 'cash_receipt'];        // 부가세만
+
+function deductFor(method, amount, settings) {
+  const isCard = CARD_METHODS.includes(method);
+  const isVatOnly = VAT_ONLY_METHODS.includes(method);
+  const cardFee = isCard ? amount * (settings.cardFeeRate / 100) : 0;
+  const vat = (isCard || isVatOnly) ? amount * (settings.vatRate / 100) : 0;
+  return { cardFee, vat };
+}
+
+function calcNet(payment, settings) {
+  const methods = Array.isArray(payment.methods) && payment.methods.length ? payment.methods : null;
+  if (methods) {
+    const amount = methods.reduce((s, x) => s + (Number(x.amount) || 0), 0);
+    let cardFee = 0, vat = 0;
+    methods.forEach((x) => {
+      const d = deductFor(x.method, Number(x.amount) || 0, settings);
+      cardFee += d.cardFee; vat += d.vat;
+    });
+    return { amount, cardFee, vat, net: amount - cardFee - vat };
+  }
+  const amount = payment.amount || 0;
+  const d = deductFor(payment.method, amount, settings);
+  return { amount, cardFee: d.cardFee, vat: d.vat, net: amount - d.cardFee - d.vat };
+}
+// ─────────────────────────────────────────────────────────────
 
 // ---- 1. 환경변수(GitHub Secrets) 확인 ----
 const { FIREBASE_SERVICE_ACCOUNT, NOTION_TOKEN, NOTION_DATABASE_ID } = process.env;
