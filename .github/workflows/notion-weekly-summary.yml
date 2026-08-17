@@ -1,0 +1,33 @@
+name: Notion 주간 요약 자동 발송
+
+# 매주 월요일 09:00(KST)에 자동 실행됩니다.
+# UTC 기준으로는 00:00 이라서 아래 cron이 '0 0 * * 1' 입니다.
+# 매일 실행하고 싶으면 '0 0 * * 1' 을 '0 0 * * *' 로 바꾸면 됩니다.
+on:
+  schedule:
+    - cron: '0 0 * * 1'
+  workflow_dispatch: {}   # Actions 탭에서 수동으로 "Run workflow" 버튼으로도 실행 가능
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 저장소 코드 가져오기
+        uses: actions/checkout@v4
+
+      - name: Node.js 설치
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: 스크립트 의존성 설치
+        working-directory: scripts/notion-sync
+        run: npm install
+
+      - name: Firestore → Notion 요약 전송
+        working-directory: scripts/notion-sync
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+          NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
+        run: node sync.mjs
