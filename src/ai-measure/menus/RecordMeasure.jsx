@@ -251,10 +251,10 @@ function drawSkeletonPaths(ctx, landmarks, px, py, lineW, dotR, scale = 1, stabi
 const TRAIL_POINTS = { leftHand: 15, rightHand: 16, leftFoot: 27, rightFoot: 28 };
 const TRAIL_MAX_AGE_MS = 1500;
 const TRAIL_COLORS = {
-  leftHand: [239, 68, 68],   // 손목 — red
-  rightHand: [239, 68, 68],
-  leftFoot: [59, 130, 246],  // 발목 — blue
-  rightFoot: [59, 130, 246],
+  leftHand: [205, 46, 58],   // 손목 — #CD2E3A (먼셀 6.0R 4.5/14)
+  rightHand: [205, 46, 58],
+  leftFoot: [0, 71, 160],    // 발목 — #0047A0 (먼셀 5.0PB 3.0/12)
+  rightFoot: [0, 71, 160],
 };
 
 function emptyTrail() {
@@ -725,7 +725,9 @@ export default function RecordMeasure({ member: _member, onBack }) {
     try {
       stopPreviewLoop();
       stopStream();
-      const stream = await openMainCameraStream({ audio: true, preferExactDevice: true });
+      // 사용자 확정: 저장되는 영상에 음성을 녹음하지 않는다(마이크 자체를
+      // 요청하지 않음 — momi 음성 어시스턴트와는 무관, 이 화면만의 정책).
+      const stream = await openMainCameraStream({ audio: false, preferExactDevice: true });
       streamRef.current = stream;
       await attachPreview();
       const ready = await waitForVideoReady(videoRef.current);
@@ -785,7 +787,8 @@ export default function RecordMeasure({ member: _member, onBack }) {
 
     const mixed = new MediaStream();
     canvasStream.getVideoTracks().forEach((track) => mixed.addTrack(track));
-    streamRef.current?.getAudioTracks().forEach((track) => mixed.addTrack(track));
+    // 음성은 저장하지 않는다(카메라 스트림 자체를 audio:false로 여는 정책과
+    // 짝을 이룸 — 마이크를 열지 않으므로 여기서 섞을 오디오 트랙도 없음).
     recordStreamRef.current = mixed;
     return mixed;
   };
