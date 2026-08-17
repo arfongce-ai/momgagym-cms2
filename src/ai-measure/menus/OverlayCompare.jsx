@@ -95,6 +95,8 @@ export default function OverlayCompare({ onBack }) {
   const [lock, setLock] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [rate, setRate] = useState(1);
+  const [loop, setLoop] = useState(false);
+  const [playbackSpeed, setPlaybackSpeed] = useState(1);
   const [timeA, setTimeA] = useState('00:00.0 / 00:00.0');
   const [timeB, setTimeB] = useState('00:00.0 / 00:00.0');
   const [isRecording, setIsRecording] = useState(false);
@@ -111,6 +113,13 @@ export default function OverlayCompare({ onBack }) {
   const opacityRef = useRef(opacity); opacityRef.current = opacity;
   const blendRef = useRef(blend); blendRef.current = blend;
   const grayscaleRef = useRef(grayscale); grayscaleRef.current = grayscale;
+  // rate/playbackSpeed는 재생 배속 관련 이벤트 핸들러(useCallback, 빈 deps)
+  // 안에서 최신값을 즉시 읽고 즉시 갱신해야 하므로 ref를 함께 둔다 — 값을
+  // 바꾸는 지점에서는 setState와 함께 ref도 그 자리에서 바로 갱신한다.
+  const rateRef = useRef(rate); rateRef.current = rate;
+  const playbackSpeedRef = useRef(playbackSpeed); playbackSpeedRef.current = playbackSpeed;
+  const loopRef = useRef(loop); loopRef.current = loop;
+  const loopRestartPendingRef = useRef(false);
 
   const stageRef = useRef(null);
   const imgARef = useRef(null);
@@ -288,7 +297,8 @@ export default function OverlayCompare({ onBack }) {
     const durB = vB.duration;
     if (!Number.isFinite(durA) || !Number.isFinite(durB) || durA <= 0 || durB <= 0) return;
     const nextRate = clamp(durB / durA, 0.25, 4);
-    vB.playbackRate = nextRate;
+    rateRef.current = nextRate;
+    vB.playbackRate = nextRate * playbackSpeedRef.current;
     setRate(nextRate);
     setLock(false);
   }, []);
@@ -344,6 +354,14 @@ export default function OverlayCompare({ onBack }) {
     return undefined;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [layerA.type, layerA.ready, layerA.url, layerB.type, layerB.ready, layerB.url]);
+
+  // 새 영상이 로드되면(업로드·교체) 현재 재생 속도(rate × playbackSpeed) 설정을
+  // 이어서 적용한다 — 새로 생성된 <video> 엘리먼트는 기본 playbackRate(1)로
+  // 시작하므로, 기존에 맞춰둔 배속을 그대로 유지하려면 다시 적용해 줘야 한다.
+  useEffect(() => {
+    if (videoARef.current) videoARef.current.playbackRate = playbackSpeedRef.current;
+    if (videoBRef.current) videoBRef.current.playbackRate = rateRef.current * playbackSpeedRef.current;
+  }, [isVideoA, isVideoB]);
 
   // ---------------------------------------------------------------
   // 레이어 교체(A ↔ B)
@@ -416,11 +434,29 @@ export default function OverlayCompare({ onBack }) {
     if (videoBRef.current && !lockRef.current) videoBRef.current.currentTime = 0;
   }, [seekA]);
 
+  // 반복재생(loop)이 켜져 있으면 두 레이어를 함께 처음으로 되돌려 계속 재생한다.
+  // 단, 영상 저장(녹화) 중에는 자연 종료 시 자동으로 녹화를 멈추는 기존 동작을
+  // 그대로 유지해야 하므로 녹화 중일 때는 반복재생을 일시적으로 건너뛴다
+  // (recorderRef.current가 존재하면 녹화 진행 중이라는 뜻 — startRecording/
+  // stopRecording에서 쓰는 것과 같은 판정 방식).
+  const maybeLoopRestart = useCallback(() => {
+    if (!loopRef.current || recorderRef.current || loopRestartPendingRef.current) return false;
+    loopRestartPendingRef.current = true;
+    requestAnimationFrame(() => {
+      if (videoARef.current) { videoARef.current.currentTime = 0; videoARef.current.play(); }
+      if (videoBRef.current) { videoBRef.current.currentTime = 0; videoBRef.current.play(); }
+      setPlaying(true);
+      loopRestartPendingRef.current = false;
+    });
+    return true;
+  }, []);
+
   const handleEnded = useCallback(() => {
+    if (maybeLoopRestart()) return;
     const aDone = !videoARef.current || videoARef.current.paused;
     const bDone = !videoBRef.current || videoBRef.current.paused;
     if (aDone && bDone) setPlaying(false);
-  }, []);
+  }, [maybeLoopRestart]);
 
   const onAutoEditToggle = useCallback((checked) => {
     setAutoEdit(checked);
@@ -428,7 +464,8 @@ export default function OverlayCompare({ onBack }) {
       setLock(false);
       if (isVideoA && isVideoB) applyAutoSpeedMatch();
     } else if (videoBRef.current) {
-      videoBRef.current.playbackRate = 1;
+      rateRef.current = 1;
+      videoBRef.current.playbackRate = playbackSpeedRef.current;
       setRate(1);
     }
   }, [applyAutoSpeedMatch, isVideoA, isVideoB]);
@@ -437,7 +474,11 @@ export default function OverlayCompare({ onBack }) {
     setLock(checked);
     if (checked) {
       setAutoEdit(false);
-      if (videoBRef.current) { videoBRef.current.playbackRate = 1; setRate(1); }
+      if (videoBRef.current) {
+        rateRef.current = 1;
+        videoBRef.current.playbackRate = playbackSpeedRef.current;
+        setRate(1);
+      }
       if (videoARef.current && videoBRef.current) {
         lockOffsetRef.current = videoBRef.current.currentTime - videoARef.current.currentTime;
       }
@@ -446,9 +487,28 @@ export default function OverlayCompare({ onBack }) {
 
   const onRateChange = useCallback((value) => {
     const v = clamp(parseFloat(value) || 1, 0.25, 4);
-    if (videoBRef.current) videoBRef.current.playbackRate = v;
+    rateRef.current = v;
+    if (videoBRef.current) videoBRef.current.playbackRate = v * playbackSpeedRef.current;
     setRate(v);
     setAutoEdit(false);
+  }, []);
+
+  // ---------------------------------------------------------------
+  // 전역 재생 속도(리뷰용 배속) · 반복재생 — videoA.playbackRate는
+  // playbackSpeed를, videoB.playbackRate는 (rate × playbackSpeed)를 갖도록
+  // 유지해 기존 "A 길이에 맞춘 B 자동 편집" 동기화 값과 곱해서 함께
+  // 동작한다(서로 값을 덮어쓰지 않음).
+  // ---------------------------------------------------------------
+  const onSpeedChange = useCallback((value) => {
+    const v = clamp(parseFloat(value) || 1, 0.25, 2);
+    playbackSpeedRef.current = v;
+    if (videoARef.current) videoARef.current.playbackRate = v;
+    if (videoBRef.current) videoBRef.current.playbackRate = rateRef.current * v;
+    setPlaybackSpeed(v);
+  }, []);
+
+  const onLoopToggle = useCallback((checked) => {
+    setLoop(checked);
   }, []);
 
   // ---------------------------------------------------------------
@@ -805,7 +865,7 @@ export default function OverlayCompare({ onBack }) {
                 )}
                 {layerB.type === 'video' && (
                   <video ref={videoBRef} src={layerB.url} className="max-w-full max-h-full object-contain" playsInline muted
-                    onLoadedData={() => markReady('B')} onTimeUpdate={handleTimeUpdateB} />
+                    onLoadedData={() => markReady('B')} onTimeUpdate={handleTimeUpdateB} onEnded={handleEnded} />
                 )}
               </div>
               {!layerB.type && <p className="text-xs font-bold text-slate-400">레이어 B · 비교</p>}
@@ -853,9 +913,27 @@ export default function OverlayCompare({ onBack }) {
           {/* 재생/정지 — 영상 비교 시 화면을 보면서 바로 조작해야 하는 핵심 컨트롤이라
               "고급 설정"에 넣지 않고 스테이지 바로 아래 항상 노출한다. */}
           {showVideoPanel && (
-            <div className="flex items-center gap-2">
-              <button onClick={togglePlay} className="btn btn-primary btn-sm">{playing ? '⏸ 일시정지' : '▶ 재생'}</button>
-              <button onClick={stopVideos} className="btn btn-ghost btn-sm">⏹ 처음으로</button>
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="flex items-center gap-2">
+                <button onClick={togglePlay} className="btn btn-primary btn-sm">{playing ? '⏸ 일시정지' : '▶ 재생'}</button>
+                <button onClick={stopVideos} className="btn btn-ghost btn-sm">⏹ 처음으로</button>
+              </div>
+              <label
+                className="flex items-center gap-1.5 text-xs font-bold text-slate-500 dark:text-slate-400"
+                title="영상 저장(녹화) 중에는 반복재생이 잠시 꺼집니다."
+              >
+                <input type="checkbox" checked={loop} onChange={(e) => onLoopToggle(e.target.checked)} /> 🔁 반복재생
+              </label>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-slate-500 dark:text-slate-400">재생 속도</span>
+                <input
+                  type="range" min="25" max="200" step="5"
+                  value={Math.round(playbackSpeed * 100)}
+                  onChange={(e) => onSpeedChange((+e.target.value) / 100)}
+                  className="w-28"
+                />
+                <span className="w-12 text-right text-xs font-black text-amber-700 dark:text-amber-300 tabular-nums">{playbackSpeed.toFixed(2)}×</span>
+              </div>
               {isRecording && (
                 <span className="flex items-center gap-1.5 text-xs font-bold text-red-600 dark:text-red-400">
                   <span className="w-2 h-2 rounded-full bg-red-600 animate-pulse" />
