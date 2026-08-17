@@ -23,6 +23,8 @@ const BLEND_OPTIONS = [
   { value: 'lighten', label: 'Lighten' },
 ];
 
+const REC_MIME_CANDIDATES = ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'];
+
 const SCALE_MIN = 30;
 const SCALE_MAX = 300;
 const OFFSET_MIN = -300;
@@ -95,6 +97,7 @@ export default function OverlayCompare({ onBack }) {
   const [rate, setRate] = useState(1);
   const [timeA, setTimeA] = useState('00:00.0 / 00:00.0');
   const [timeB, setTimeB] = useState('00:00.0 / 00:00.0');
+  const [isRecording, setIsRecording] = useState(false);
 
   // 최신 상태를 이벤트 핸들러·비동기 콜백 안에서 스테일 클로저 없이 읽기 위한
   // ref들 — usePoseEngine.js의 onResultRef 패턴과 동일한 이유.
@@ -105,12 +108,24 @@ export default function OverlayCompare({ onBack }) {
   const lockRef = useRef(lock); lockRef.current = lock;
   const fpsRef = useRef(fps); fpsRef.current = fps;
   const lockOffsetRef = useRef(0);
+  const opacityRef = useRef(opacity); opacityRef.current = opacity;
+  const blendRef = useRef(blend); blendRef.current = blend;
+  const grayscaleRef = useRef(grayscale); grayscaleRef.current = grayscale;
 
   const stageRef = useRef(null);
   const imgARef = useRef(null);
   const videoARef = useRef(null);
   const imgBRef = useRef(null);
   const videoBRef = useRef(null);
+
+  // 영상 저장(녹화) 관련 — canvas.captureStream() + MediaRecorder를 쓰므로
+  // React 렌더와 무관하게 매 프레임 갱신되는 값들은 ref로 들고 있는다.
+  const recorderRef = useRef(null);
+  const recordChunksRef = useRef([]);
+  const recordRafRef = useRef(null);
+  const recordCanvasRef = useRef(null);
+  const recordCtxRef = useRef(null);
+  const recordMimeTypeRef = useRef(null);
 
   const isVideoA = layerA.type === 'video';
   const isVideoB = layerB.type === 'video';
@@ -437,6 +452,48 @@ export default function OverlayCompare({ onBack }) {
   }, []);
 
   // ---------------------------------------------------------------
+  // 스냅샷(PNG)·영상 저장(WebM) 공용 합성 렌더 — 화면에 보이는 오버레이
+  // (투명도·블렌드·정렬·흑백)를 그대로 캔버스에 그린다. 영상 녹화 중에는
+  // requestAnimationFrame으로 매 프레임 호출되므로 React state가 아니라
+  // ref(최신값)를 읽어 스테일 클로저 없이 항상 현재 값을 반영한다.
+  // ---------------------------------------------------------------
+  const drawCompositeFrame = useCallback((ctx, w, h) => {
+    const a = layerARef.current;
+    const b = layerBRef.current;
+    const al = alignRef.current;
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, w, h);
+
+    const baseEl = a.type === 'video' ? videoARef.current : imgARef.current;
+    const baseW = a.type === 'video' ? baseEl?.videoWidth : baseEl?.naturalWidth;
+    const baseH = a.type === 'video' ? baseEl?.videoHeight : baseEl?.naturalHeight;
+    if (baseEl && baseW) {
+      const r = computeContainRect(baseW, baseH, w, h);
+      ctx.save();
+      if (grayscaleRef.current) ctx.filter = 'grayscale(1)';
+      ctx.drawImage(baseEl, r.x, r.y, r.w, r.h);
+      ctx.restore();
+    }
+    const topEl = b.type === 'video' ? videoBRef.current : imgBRef.current;
+    const topW = b.type === 'video' ? topEl?.videoWidth : topEl?.naturalWidth;
+    const topH = b.type === 'video' ? topEl?.videoHeight : topEl?.naturalHeight;
+    if (topEl && topW) {
+      const r = computeContainRect(topW, topH, w, h);
+      ctx.save();
+      ctx.globalAlpha = opacityRef.current / 100;
+      ctx.globalCompositeOperation = { normal: 'source-over', difference: 'difference', multiply: 'multiply', screen: 'screen', lighten: 'lighten' }[blendRef.current] || 'source-over';
+      const cx = w / 2;
+      const cy = h / 2;
+      ctx.translate(cx + al.x, cy + al.y);
+      const s = al.scale / 100;
+      ctx.scale(al.flip ? -s : s, s);
+      ctx.translate(-cx, -cy);
+      ctx.drawImage(topEl, r.x, r.y, r.w, r.h);
+      ctx.restore();
+    }
+  }, []);
+
+  // ---------------------------------------------------------------
   // 스냅샷 저장(PNG) — 서버 저장 없이 기기로 바로 다운로드/공유.
   // ---------------------------------------------------------------
   const takeSnapshot = useCallback(async () => {
@@ -452,41 +509,126 @@ export default function OverlayCompare({ onBack }) {
     canvas.height = Math.round(rect.height * dpr);
     const ctx = canvas.getContext('2d');
     ctx.scale(dpr, dpr);
-    ctx.fillStyle = '#000';
-    ctx.fillRect(0, 0, rect.width, rect.height);
-
-    const baseEl = layerA.type === 'video' ? videoARef.current : imgARef.current;
-    const baseW = layerA.type === 'video' ? baseEl?.videoWidth : baseEl?.naturalWidth;
-    const baseH = layerA.type === 'video' ? baseEl?.videoHeight : baseEl?.naturalHeight;
-    if (baseEl && baseW) {
-      const r = computeContainRect(baseW, baseH, rect.width, rect.height);
-      ctx.save();
-      if (grayscale) ctx.filter = 'grayscale(1)';
-      ctx.drawImage(baseEl, r.x, r.y, r.w, r.h);
-      ctx.restore();
-    }
-    const topEl = layerB.type === 'video' ? videoBRef.current : imgBRef.current;
-    const topW = layerB.type === 'video' ? topEl?.videoWidth : topEl?.naturalWidth;
-    const topH = layerB.type === 'video' ? topEl?.videoHeight : topEl?.naturalHeight;
-    if (topEl && topW) {
-      const r = computeContainRect(topW, topH, rect.width, rect.height);
-      ctx.save();
-      ctx.globalAlpha = opacity / 100;
-      ctx.globalCompositeOperation = { normal: 'source-over', difference: 'difference', multiply: 'multiply', screen: 'screen', lighten: 'lighten' }[blend] || 'source-over';
-      const cx = rect.width / 2;
-      const cy = rect.height / 2;
-      ctx.translate(cx + align.x, cy + align.y);
-      const s = align.scale / 100;
-      ctx.scale(align.flip ? -s : s, s);
-      ctx.translate(-cx, -cy);
-      ctx.drawImage(topEl, r.x, r.y, r.w, r.h);
-      ctx.restore();
-    }
+    drawCompositeFrame(ctx, rect.width, rect.height);
     const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
     if (!blob) return;
     const file = new File([blob], `몸가짐_전후비교_${Date.now()}.png`, { type: 'image/png' });
     await shareOrDownloadFile(file, '전/후 비교 스냅샷');
-  }, [layerA, layerB, opacity, blend, align, grayscale]);
+  }, [layerA, layerB, drawCompositeFrame]);
+
+  // ---------------------------------------------------------------
+  // 영상으로 저장 — 오버레이 합성 화면을 canvas.captureStream() +
+  // MediaRecorder로 그대로 녹화해 WebM 파일로 저장한다. 레이어 A/B 중
+  // 최소 하나가 동영상일 때만 의미가 있다(showVideoPanel과 동일 조건).
+  // ---------------------------------------------------------------
+  const stopRecording = useCallback(() => {
+    if (recordRafRef.current) cancelAnimationFrame(recordRafRef.current);
+    recordRafRef.current = null;
+    if (recorderRef.current && recorderRef.current.state !== 'inactive') {
+      recorderRef.current.stop();
+    }
+    videoARef.current?.pause();
+    videoBRef.current?.pause();
+    setPlaying(false);
+  }, []);
+
+  const recordDrawLoop = useCallback(() => {
+    if (!recorderRef.current || recorderRef.current.state === 'inactive') return;
+    const stage = stageRef.current;
+    const rect = stage.getBoundingClientRect();
+    const canvas = recordCanvasRef.current;
+    const w = Math.round(rect.width);
+    const h = Math.round(rect.height);
+    if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
+    drawCompositeFrame(recordCtxRef.current, w, h);
+
+    const vA = videoARef.current;
+    const vB = videoBRef.current;
+    const aDone = layerARef.current.type !== 'video' || !vA || vA.paused || vA.ended;
+    const bDone = layerBRef.current.type !== 'video' || !vB || vB.paused || vB.ended;
+    if (aDone && bDone) {
+      stopRecording();
+      return;
+    }
+    recordRafRef.current = requestAnimationFrame(recordDrawLoop);
+  }, [drawCompositeFrame, stopRecording]);
+
+  const startRecording = useCallback(() => {
+    if (recorderRef.current) return;
+    if (layerARef.current.type !== 'video' && layerBRef.current.type !== 'video') {
+      alert('영상 저장은 레이어 A 또는 B가 동영상일 때만 사용할 수 있어요.');
+      return;
+    }
+    if (typeof MediaRecorder === 'undefined') {
+      alert('이 브라우저에서는 영상 저장을 지원하지 않아요. 최신 Chrome/Edge/Safari를 사용해 주세요.');
+      return;
+    }
+    const mimeType = REC_MIME_CANDIDATES.find((t) => MediaRecorder.isTypeSupported(t));
+    if (!mimeType) {
+      alert('이 브라우저에서는 영상 저장을 지원하지 않아요. 최신 Chrome/Edge/Safari를 사용해 주세요.');
+      return;
+    }
+    const stage = stageRef.current;
+    const rect = stage.getBoundingClientRect();
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(rect.width);
+    canvas.height = Math.round(rect.height);
+    const ctx = canvas.getContext('2d');
+    const stream = canvas.captureStream(30);
+
+    let recorder;
+    try {
+      recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 6_000_000 });
+    } catch (e) {
+      alert(`영상 녹화를 시작하지 못했습니다: ${e.message}`);
+      return;
+    }
+
+    recordCanvasRef.current = canvas;
+    recordCtxRef.current = ctx;
+    recordMimeTypeRef.current = mimeType;
+    recordChunksRef.current = [];
+    recorderRef.current = recorder;
+
+    recorder.ondataavailable = (e) => { if (e.data && e.data.size) recordChunksRef.current.push(e.data); };
+    recorder.onstop = async () => {
+      const blob = new Blob(recordChunksRef.current, { type: mimeType.split(';')[0] });
+      recorderRef.current = null;
+      recordChunksRef.current = [];
+      setIsRecording(false);
+      if (blob.size > 0) {
+        const file = new File([blob], `몸가짐_전후비교_${Date.now()}.webm`, { type: mimeType.split(';')[0] });
+        await shareOrDownloadFile(file, '전/후 비교 영상');
+      }
+    };
+    recorder.start();
+    setIsRecording(true);
+
+    // 처음부터 다시 재생하며 녹화한다.
+    if (layerARef.current.type === 'video') seekA(0);
+    if (layerBRef.current.type === 'video' && !lockRef.current) {
+      const vB = videoBRef.current;
+      if (vB) vB.currentTime = 0;
+    }
+    videoARef.current?.play();
+    videoBRef.current?.play();
+    setPlaying(true);
+
+    recordRafRef.current = requestAnimationFrame(recordDrawLoop);
+  }, [recordDrawLoop, seekA]);
+
+  const toggleRecording = useCallback(() => {
+    if (isRecording) stopRecording();
+    else startRecording();
+  }, [isRecording, startRecording, stopRecording]);
+
+  // 언마운트 시 진행 중인 녹화가 있으면 정리한다.
+  useEffect(() => () => {
+    if (recordRafRef.current) cancelAnimationFrame(recordRafRef.current);
+    if (recorderRef.current && recorderRef.current.state !== 'inactive') {
+      try { recorderRef.current.stop(); } catch (e) { /* noop */ }
+    }
+  }, []);
 
   // ---------------------------------------------------------------
   // 외부 연동 API — 다른 AI측정 화면(자세측정 리포트 등)이 이미 들고 있는
@@ -623,7 +765,7 @@ export default function OverlayCompare({ onBack }) {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <button onClick={() => setStep(1)} className="measure-back">← 업로드 수정</button>
+        <button onClick={() => { if (isRecording) stopRecording(); setStep(1); }} className="measure-back">← 업로드 수정</button>
         <h2 className="measure-title">전/후 비교</h2>
         <button onClick={swapLayers} className="measure-back">⇄ A/B 교체</button>
       </div>
@@ -698,6 +840,14 @@ export default function OverlayCompare({ onBack }) {
             </label>
             <div className="flex-1" />
             <button onClick={takeSnapshot} className="btn btn-primary btn-sm">📸 스냅샷 저장(PNG)</button>
+            {showVideoPanel && (
+              <button
+                onClick={toggleRecording}
+                className={`btn btn-sm ${isRecording ? 'bg-red-600 text-white border-red-600' : 'btn-primary'}`}
+              >
+                {isRecording ? '⏺ 녹화 중지' : '🎥 영상으로 저장'}
+              </button>
+            )}
           </div>
 
           {/* 재생/정지 — 영상 비교 시 화면을 보면서 바로 조작해야 하는 핵심 컨트롤이라
@@ -706,6 +856,12 @@ export default function OverlayCompare({ onBack }) {
             <div className="flex items-center gap-2">
               <button onClick={togglePlay} className="btn btn-primary btn-sm">{playing ? '⏸ 일시정지' : '▶ 재생'}</button>
               <button onClick={stopVideos} className="btn btn-ghost btn-sm">⏹ 처음으로</button>
+              {isRecording && (
+                <span className="flex items-center gap-1.5 text-xs font-bold text-red-600 dark:text-red-400">
+                  <span className="w-2 h-2 rounded-full bg-red-600 animate-pulse" />
+                  녹화 중…
+                </span>
+              )}
             </div>
           )}
         </div>
