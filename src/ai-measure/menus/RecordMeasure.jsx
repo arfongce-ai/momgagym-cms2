@@ -249,12 +249,12 @@ function drawSkeletonPaths(ctx, landmarks, px, py, lineW, dotR, scale = 1, stabi
 //  유지하고, 오래된 점일수록 옅어지며 사라진다(잔상 방식 — 화면이 계속
 //  복잡해지지 않도록).
 const TRAIL_POINTS = { leftHand: 15, rightHand: 16, leftFoot: 27, rightFoot: 28 };
-const TRAIL_MAX_AGE_MS = 1200;
+const TRAIL_MAX_AGE_MS = 1500;
 const TRAIL_COLORS = {
-  leftHand: [251, 191, 36],  // 손 — amber
-  rightHand: [251, 191, 36],
-  leftFoot: [34, 211, 238],  // 발 — cyan
-  rightFoot: [34, 211, 238],
+  leftHand: [239, 68, 68],   // 손목 — red
+  rightHand: [239, 68, 68],
+  leftFoot: [59, 130, 246],  // 발목 — blue
+  rightFoot: [59, 130, 246],
 };
 
 function emptyTrail() {
