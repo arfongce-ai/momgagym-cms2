@@ -35,6 +35,16 @@ function fmtTime(s) {
   return `${String(m).padStart(2, '0')}:${sec}`;
 }
 
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+const ALIGN_PROGRESS_STEPS = [
+  { key: 'confirm', label: '레이어 A 위치 확인' },
+  { key: 'autoAlign', label: '레이어 B 자동 정렬 (A 기준 · 발목)' },
+  { key: 'apply', label: '오버레이 적용' },
+];
+
 function emptyLayer() {
   return { type: null, url: null, name: '', ready: false };
 }
@@ -59,6 +69,7 @@ async function shareOrDownloadFile(file, title) {
 }
 
 export default function OverlayCompare({ onBack }) {
+  // 1 업로드 → 2 정렬(자동 파이프라인 진행 화면) → 3 비교
   const [step, setStep] = useState(1);
   const [layerA, setLayerA] = useState(emptyLayer());
   const [layerB, setLayerB] = useState(emptyLayer());
@@ -73,6 +84,9 @@ export default function OverlayCompare({ onBack }) {
     text: '두 레이어를 모두 업로드하면 자동 정렬을 사용할 수 있어요.',
     kind: 'dim',
   });
+  const [alignProgress, setAlignProgress] = useState({ confirm: 'pending', autoAlign: 'pending', apply: 'pending' });
+  const [alignPipelineError, setAlignPipelineError] = useState('');
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
   const [fps, setFps] = useState(30);
   const [autoEdit, setAutoEdit] = useState(true);
@@ -102,7 +116,7 @@ export default function OverlayCompare({ onBack }) {
   const isVideoB = layerB.type === 'video';
   const showVideoPanel = isVideoA || isVideoB;
 
-  useHardwareBack(step === 2, () => setStep(1));
+  useHardwareBack(step > 1, () => setStep(1));
 
   // ---------------------------------------------------------------
   // 파일 업로드 (또는 외부 postMessage 연동에서의 Blob/URL 주입)
@@ -189,21 +203,21 @@ export default function OverlayCompare({ onBack }) {
   const runAutoAlign = useCallback(async () => {
     if (!layerARef.current.type || !layerBRef.current.type) {
       setAlignStatusSafe('두 레이어를 모두 업로드하면 자동 정렬을 사용할 수 있어요.', 'dim');
-      return;
+      return false;
     }
     setAlignStatusSafe('포즈 인식 모델을 불러오는 중…', 'dim');
     try {
       await loadImagePoseLandmarker();
     } catch (e) {
       setAlignStatusSafe('AI 모델을 불러오지 못했습니다. 인터넷 연결을 확인해 주세요. (수동 슬라이더는 계속 사용할 수 있어요)', 'danger');
-      return;
+      return false;
     }
     setAlignStatusSafe('발목 위치를 분석하는 중…', 'dim');
     const frameA = await captureFrameCanvas('A');
     const frameB = await captureFrameCanvas('B');
     if (!frameA || !frameB) {
       setAlignStatusSafe('이미지를 불러오지 못했습니다.', 'danger');
-      return;
+      return false;
     }
     let resA;
     let resB;
@@ -212,19 +226,19 @@ export default function OverlayCompare({ onBack }) {
       resB = detectPoseImage(frameB.canvas);
     } catch (e) {
       setAlignStatusSafe('포즈 분석 중 오류가 발생했습니다.', 'danger');
-      return;
+      return false;
     }
     const dataA = extractAnkleData(resA);
     const dataB = extractAnkleData(resB);
     if (!dataA || !dataB) {
       setAlignStatusSafe('사람을 인식하지 못했습니다. 전신이 잘 보이는 사진/영상으로 시도해 주세요.', 'danger');
-      return;
+      return false;
     }
     const stage = stageRef.current;
     const stageRect = stage ? stage.getBoundingClientRect() : { width: 0, height: 0 };
     if (!stageRect.width || !stageRect.height) {
       setAlignStatusSafe('화면 크기를 확인하지 못했습니다. 다시 시도해 주세요.', 'danger');
-      return;
+      return false;
     }
     const rectA = computeContainRect(frameA.w, frameA.h, stageRect.width, stageRect.height);
     const rectB = computeContainRect(frameB.w, frameB.h, stageRect.width, stageRect.height);
@@ -245,6 +259,7 @@ export default function OverlayCompare({ onBack }) {
     });
     setAlign((prev) => ({ ...prev, x: result.x, y: result.y, scale: result.scale }));
     setAlignStatusSafe('자동 정렬 완료 ✓ (발목 기준)', 'success');
+    return true;
   }, [setAlignStatusSafe]);
 
   // ---------------------------------------------------------------
@@ -270,13 +285,44 @@ export default function OverlayCompare({ onBack }) {
     try { await runAutoAlign(); } catch (e) { /* 상태 메시지는 runAutoAlign 내부에서 이미 설정됨 */ }
   }, [applyAutoSpeedMatch, runAutoAlign]);
 
-  // 두 레이어가 모두 준비되면 자동으로 비교 화면(2단계)으로 전환하고
+  // 2단계(정렬) 화면: "레이어 A 위치 확인 → 레이어 B 자동 정렬(A 기준) → 오버레이
+  // 적용" 3단계를 눈에 보이게 진행시킨 뒤 비교 화면(3단계)으로 자동 전환한다.
+  // 실패해도 막지 않고, 사용자가 다음 화면에서 슬라이더로 직접 조정할 수 있음을
+  // 안내한 뒤 "계속하기" 버튼으로 진행하게 한다.
+  const runAlignSequence = useCallback(async () => {
+    setAlignProgress({ confirm: 'active', autoAlign: 'pending', apply: 'pending' });
+    setAlignPipelineError('');
+
+    await wait(220);
+    setAlignProgress((prev) => ({ ...prev, confirm: 'done', autoAlign: 'active' }));
+
+    if (layerARef.current.type === 'video' && layerBRef.current.type === 'video' && autoEditRef.current) {
+      applyAutoSpeedMatch();
+    }
+    let ok = true;
+    try { ok = await runAutoAlign(); } catch (e) { ok = false; }
+    setAlignProgress((prev) => ({ ...prev, autoAlign: ok ? 'done' : 'failed' }));
+
+    if (!ok) {
+      setAlignPipelineError('자동 정렬에 실패했어요. 다음 화면에서 슬라이더로 직접 위치를 맞출 수 있어요.');
+      return;
+    }
+
+    await wait(200);
+    setAlignProgress((prev) => ({ ...prev, apply: 'active' }));
+    await wait(280);
+    setAlignProgress((prev) => ({ ...prev, apply: 'done' }));
+    await wait(300);
+    setStep(3);
+  }, [applyAutoSpeedMatch, runAutoAlign]);
+
+  // 두 레이어가 모두 준비되면 자동으로 정렬 화면(2단계)으로 전환하고
   // 자동 정렬·자동 편집 파이프라인을 실행한다.
   useEffect(() => {
     if (layerA.type && layerB.type && layerA.ready && layerB.ready) {
       setStep(2);
       const raf1 = requestAnimationFrame(() => {
-        requestAnimationFrame(() => { runAutoPipeline(); });
+        requestAnimationFrame(() => { runAlignSequence(); });
       });
       return () => cancelAnimationFrame(raf1);
     }
@@ -508,12 +554,67 @@ export default function OverlayCompare({ onBack }) {
           </div>
 
           <button
-            onClick={() => (bothReady ? setStep(2) : alert('두 파일을 모두 업로드해 주세요.'))}
+            onClick={() => {
+              if (!bothReady) { alert('두 파일을 모두 업로드해 주세요.'); return; }
+              setStep(2);
+              requestAnimationFrame(() => requestAnimationFrame(() => runAlignSequence()));
+            }}
             disabled={!bothReady}
             className="btn btn-primary w-full disabled:opacity-40"
           >
             2. 비교 시작하기 →
           </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (step === 2) {
+    return (
+      <div className="space-y-4">
+        <div className="card p-6 max-w-xl mx-auto space-y-4 text-center">
+          <div>
+            <h2 className="measure-title">레이어 위치를 자동으로 맞추는 중입니다</h2>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+              레이어 A를 기준으로, 발목 위치를 인식해 레이어 B를 자동으로 정렬해요.
+            </p>
+          </div>
+
+          <ul className="space-y-2 text-left">
+            {ALIGN_PROGRESS_STEPS.map(({ key, label }) => {
+              const state = alignProgress[key];
+              const rowClass =
+                state === 'done' ? 'border-emerald-500 text-emerald-600 dark:text-emerald-400' :
+                state === 'failed' ? 'border-red-500 text-red-600 dark:text-red-400' :
+                state === 'active' ? 'border-amber-500 text-slate-700 dark:text-slate-200' :
+                'border-slate-200 dark:border-slate-800 text-slate-400 dark:text-slate-500';
+              const iconClass =
+                state === 'done' ? 'bg-emerald-500 border-emerald-500' :
+                state === 'failed' ? 'bg-red-500 border-red-500' :
+                state === 'active' ? 'border-amber-500 border-t-transparent animate-spin' :
+                'border-slate-300 dark:border-slate-700';
+              return (
+                <li key={key} className={`flex items-center gap-3 rounded-xl border px-3.5 py-2.5 text-sm font-bold transition-colors ${rowClass}`}>
+                  <span className={`relative w-5 h-5 flex-none rounded-full border-2 ${iconClass}`}>
+                    {state === 'done' && <span className="absolute inset-0 flex items-center justify-center text-[10px] text-white">✓</span>}
+                    {state === 'failed' && <span className="absolute inset-0 flex items-center justify-center text-[10px] font-black text-white">!</span>}
+                  </span>
+                  <span>{label}</span>
+                </li>
+              );
+            })}
+          </ul>
+
+          {alignPipelineError && (
+            <p className="text-[11px] font-bold text-red-600 dark:text-red-400">{alignPipelineError}</p>
+          )}
+
+          <div className="flex items-center justify-center gap-2 flex-wrap">
+            <button onClick={() => setStep(3)} className="btn btn-ghost btn-sm">지금 건너뛰기 →</button>
+            {alignPipelineError && (
+              <button onClick={() => setStep(3)} className="btn btn-primary btn-sm">비교 화면으로 계속하기 →</button>
+            )}
+          </div>
         </div>
       </div>
     );
@@ -528,7 +629,8 @@ export default function OverlayCompare({ onBack }) {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-4 items-start">
-        {/* 스테이지 */}
+        {/* 스테이지 + 재생 컨트롤 (같은 컬럼에 세로로 쌓음: 재생 컨트롤이 화면을 보면서 바로 조작 가능하도록 스테이지 바로 아래 배치) */}
+        <div className="space-y-3">
         <div className="card p-3 space-y-3">
           <div
             ref={stageRef}
@@ -597,9 +699,20 @@ export default function OverlayCompare({ onBack }) {
             <div className="flex-1" />
             <button onClick={takeSnapshot} className="btn btn-primary btn-sm">📸 스냅샷 저장(PNG)</button>
           </div>
+
+          {/* 재생/정지 — 영상 비교 시 화면을 보면서 바로 조작해야 하는 핵심 컨트롤이라
+              "고급 설정"에 넣지 않고 스테이지 바로 아래 항상 노출한다. */}
+          {showVideoPanel && (
+            <div className="flex items-center gap-2">
+              <button onClick={togglePlay} className="btn btn-primary btn-sm">{playing ? '⏸ 일시정지' : '▶ 재생'}</button>
+              <button onClick={stopVideos} className="btn btn-ghost btn-sm">⏹ 처음으로</button>
+            </div>
+          )}
+        </div>
         </div>
 
-        {/* 사이드 패널 */}
+        {/* 사이드 패널 — 자동 정렬·자동 속도 맞춤이 이미 적용돼 있으므로
+            기본은 오버레이 투명도만 남기고, 나머지는 "고급 설정"에서 펼쳐 본다. */}
         <div className="space-y-3">
           <div className="card p-3 space-y-3">
             <p className="label">오버레이 투명도</p>
@@ -615,115 +728,125 @@ export default function OverlayCompare({ onBack }) {
                 </button>
               ))}
             </div>
-            <label className="block">
-              <span className="text-xs font-bold text-slate-500 dark:text-slate-400">블렌드 모드</span>
-              <select value={blend} onChange={(e) => setBlend(e.target.value)} className="input mt-1">
-                {BLEND_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </select>
-            </label>
           </div>
 
-          <div className="card p-3 space-y-2">
-            <p className="label">색상 비교 모드</p>
-            <label className="flex items-center gap-2 text-xs font-bold text-slate-600 dark:text-slate-300">
-              <input type="checkbox" checked={grayscale} onChange={(e) => setGrayscale(e.target.checked)} />
-              전/후 색 구분 (레이어 A 흑백 · 레이어 B 원본색)
-            </label>
-            <p className="text-[11px] text-slate-500 dark:text-slate-400">기준(전) 자세는 흑백으로, 비교(후) 자세는 원본 색상으로 표시해 두 레이어를 한눈에 구분할 수 있습니다.</p>
-          </div>
+          <button
+            onClick={() => setShowAdvanced((v) => !v)}
+            className="btn btn-ghost w-full justify-center text-sm"
+          >
+            ⚙ 고급 설정 <span className={`inline-block transition-transform ${showAdvanced ? 'rotate-180' : ''}`}>▾</span>
+          </button>
 
-          <div className="card p-3 space-y-3">
-            <p className="label">정렬 조정 (레이어 B)</p>
-            <button onClick={runAutoAlign} className="btn btn-primary btn-sm w-full">🦶 자동 정렬 (발목 기준)</button>
-            <p className={`text-[11px] font-bold ${alignStatus.kind === 'success' ? 'text-emerald-600 dark:text-emerald-400' : alignStatus.kind === 'danger' ? 'text-red-600 dark:text-red-400' : 'text-slate-500 dark:text-slate-400'}`}>
-              {alignStatus.text}
-            </p>
-            <div className="h-px bg-slate-200 dark:bg-slate-800" />
-            {[
-              ['가로 위치', align.x, 'x', OFFSET_MIN, OFFSET_MAX, 'px'],
-              ['세로 위치', align.y, 'y', OFFSET_MIN, OFFSET_MAX, 'px'],
-              ['크기', align.scale, 'scale', SCALE_MIN, SCALE_MAX, '%'],
-            ].map(([label, value, key, min, max, unit]) => (
-              <div key={key} className="flex items-center gap-2">
-                <span className="text-xs font-bold text-slate-500 dark:text-slate-400 w-16">{label}</span>
-                <input type="range" min={min} max={max} value={value}
-                  onChange={(e) => setAlign((prev) => ({ ...prev, [key]: +e.target.value }))} className="flex-1" />
-                <span className="w-12 text-right text-xs font-black text-amber-700 dark:text-amber-300 tabular-nums">{value}{unit}</span>
-              </div>
-            ))}
-            <div className="flex items-center justify-between">
-              <label className="flex items-center gap-1.5 text-xs font-bold text-slate-600 dark:text-slate-300">
-                <input type="checkbox" checked={align.flip} onChange={(e) => setAlign((prev) => ({ ...prev, flip: e.target.checked }))} /> 좌우 반전
-              </label>
-              <button onClick={resetAlign} className="btn btn-ghost btn-sm">정렬 초기화</button>
-            </div>
-          </div>
-
-          {showVideoPanel && (
-            <div className="card p-3 space-y-3">
-              <p className="label">재생 · 프레임 동기화</p>
-              <div className="flex items-center gap-2">
-                <button onClick={togglePlay} className="btn btn-primary btn-sm">{playing ? '⏸ 일시정지' : '▶ 재생'}</button>
-                <button onClick={stopVideos} className="btn btn-ghost btn-sm">⏹ 처음으로</button>
-                <span className="ml-auto flex items-center gap-1.5 text-xs font-bold text-slate-500 dark:text-slate-400">
-                  FPS <input type="number" min="1" max="240" value={fps} onChange={(e) => setFps(clamp(+e.target.value || 30, 1, 240))} className="input w-16 py-1" />
-                </span>
+          {showAdvanced && (
+            <div className="space-y-3">
+              <div className="card p-3 space-y-2">
+                <p className="label">블렌드 모드</p>
+                <select value={blend} onChange={(e) => setBlend(e.target.value)} className="input">
+                  {BLEND_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
               </div>
 
-              {isVideoA && isVideoB && (
-                <>
-                  <label className="flex items-center gap-2 text-xs font-bold text-slate-600 dark:text-slate-300">
-                    <input type="checkbox" checked={autoEdit} onChange={(e) => onAutoEditToggle(e.target.checked)} />
-                    레이어 A 길이에 맞춰 B 자동 편집(재생속도)
-                  </label>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold text-slate-500 dark:text-slate-400">B 재생속도</span>
-                    <input type="number" min="0.25" max="4" step="0.05" value={rate.toFixed(2)}
-                      onChange={(e) => onRateChange(e.target.value)} className="input w-20 py-1" />
-                    <span className="text-[11px] text-slate-500 dark:text-slate-400">× (1.00 = 원본 속도)</span>
-                  </div>
-                </>
-              )}
-
-              <div className="h-px bg-slate-200 dark:bg-slate-800" />
-
-              {isVideoA && (
-                <div className="panel p-2.5 space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-black">레이어 A</span>
-                    <span className="text-[11px] text-slate-500 dark:text-slate-400 tabular-nums">{timeA}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <button onClick={() => seekA((videoARef.current?.currentTime || 0) - 1 / fps)} className="btn btn-ghost btn-sm px-2">⏮</button>
-                    <input type="range" min="0" max={Math.round((videoARef.current?.duration || 0) * 1000) || 1000}
-                      onChange={(e) => seekA((+e.target.value) / 1000)} className="flex-1" />
-                    <button onClick={() => seekA((videoARef.current?.currentTime || 0) + 1 / fps)} className="btn btn-ghost btn-sm px-2">⏭</button>
-                  </div>
-                </div>
-              )}
-              {isVideoB && (
-                <div className="panel p-2.5 space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-black">레이어 B</span>
-                    <span className="text-[11px] text-slate-500 dark:text-slate-400 tabular-nums">{timeB}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <button onClick={() => seekB((videoBRef.current?.currentTime || 0) - 1 / fps)} className="btn btn-ghost btn-sm px-2">⏮</button>
-                    <input type="range" min="0" max={Math.round((videoBRef.current?.duration || 0) * 1000) || 1000}
-                      onChange={(e) => seekB((+e.target.value) / 1000)} className="flex-1" />
-                    <button onClick={() => seekB((videoBRef.current?.currentTime || 0) + 1 / fps)} className="btn btn-ghost btn-sm px-2">⏭</button>
-                  </div>
-                </div>
-              )}
-
-              {isVideoA && isVideoB && (
-                <label className="flex items-center gap-1.5 text-xs font-bold text-slate-600 dark:text-slate-300">
-                  <input type="checkbox" checked={lock} onChange={(e) => onLockToggle(e.target.checked)} /> 동기화 오프셋 고정(수동)
+              <div className="card p-3 space-y-2">
+                <p className="label">색상 비교 모드</p>
+                <label className="flex items-center gap-2 text-xs font-bold text-slate-600 dark:text-slate-300">
+                  <input type="checkbox" checked={grayscale} onChange={(e) => setGrayscale(e.target.checked)} />
+                  전/후 색 구분 (레이어 A 흑백 · 레이어 B 원본색)
                 </label>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">기준(전) 자세는 흑백으로, 비교(후) 자세는 원본 색상으로 표시해 두 레이어를 한눈에 구분할 수 있습니다.</p>
+              </div>
+
+              <div className="card p-3 space-y-3">
+                <p className="label">정렬 조정 (레이어 B)</p>
+                <button onClick={runAutoAlign} className="btn btn-primary btn-sm w-full">🦶 자동 정렬 다시 실행 (발목 기준)</button>
+                <p className={`text-[11px] font-bold ${alignStatus.kind === 'success' ? 'text-emerald-600 dark:text-emerald-400' : alignStatus.kind === 'danger' ? 'text-red-600 dark:text-red-400' : 'text-slate-500 dark:text-slate-400'}`}>
+                  {alignStatus.text}
+                </p>
+                <div className="h-px bg-slate-200 dark:bg-slate-800" />
+                {[
+                  ['가로 위치', align.x, 'x', OFFSET_MIN, OFFSET_MAX, 'px'],
+                  ['세로 위치', align.y, 'y', OFFSET_MIN, OFFSET_MAX, 'px'],
+                  ['크기', align.scale, 'scale', SCALE_MIN, SCALE_MAX, '%'],
+                ].map(([label, value, key, min, max, unit]) => (
+                  <div key={key} className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-slate-500 dark:text-slate-400 w-16">{label}</span>
+                    <input type="range" min={min} max={max} value={value}
+                      onChange={(e) => setAlign((prev) => ({ ...prev, [key]: +e.target.value }))} className="flex-1" />
+                    <span className="w-12 text-right text-xs font-black text-amber-700 dark:text-amber-300 tabular-nums">{value}{unit}</span>
+                  </div>
+                ))}
+                <div className="flex items-center justify-between">
+                  <label className="flex items-center gap-1.5 text-xs font-bold text-slate-600 dark:text-slate-300">
+                    <input type="checkbox" checked={align.flip} onChange={(e) => setAlign((prev) => ({ ...prev, flip: e.target.checked }))} /> 좌우 반전
+                  </label>
+                  <button onClick={resetAlign} className="btn btn-ghost btn-sm">정렬 초기화</button>
+                </div>
+              </div>
+
+              {showVideoPanel && (
+                <div className="card p-3 space-y-3">
+                  <p className="label">재생 상세 설정</p>
+                  <div className="flex items-center gap-2 justify-end">
+                    <span className="flex items-center gap-1.5 text-xs font-bold text-slate-500 dark:text-slate-400">
+                      FPS <input type="number" min="1" max="240" value={fps} onChange={(e) => setFps(clamp(+e.target.value || 30, 1, 240))} className="input w-16 py-1" />
+                    </span>
+                  </div>
+
+                  {isVideoA && isVideoB && (
+                    <>
+                      <label className="flex items-center gap-2 text-xs font-bold text-slate-600 dark:text-slate-300">
+                        <input type="checkbox" checked={autoEdit} onChange={(e) => onAutoEditToggle(e.target.checked)} />
+                        레이어 A 길이에 맞춰 B 자동 편집(재생속도)
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-slate-500 dark:text-slate-400">B 재생속도</span>
+                        <input type="number" min="0.25" max="4" step="0.05" value={rate.toFixed(2)}
+                          onChange={(e) => onRateChange(e.target.value)} className="input w-20 py-1" />
+                        <span className="text-[11px] text-slate-500 dark:text-slate-400">× (1.00 = 원본 속도)</span>
+                      </div>
+                    </>
+                  )}
+
+                  <div className="h-px bg-slate-200 dark:bg-slate-800" />
+
+                  {isVideoA && (
+                    <div className="panel p-2.5 space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-black">레이어 A</span>
+                        <span className="text-[11px] text-slate-500 dark:text-slate-400 tabular-nums">{timeA}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button onClick={() => seekA((videoARef.current?.currentTime || 0) - 1 / fps)} className="btn btn-ghost btn-sm px-2">⏮</button>
+                        <input type="range" min="0" max={Math.round((videoARef.current?.duration || 0) * 1000) || 1000}
+                          onChange={(e) => seekA((+e.target.value) / 1000)} className="flex-1" />
+                        <button onClick={() => seekA((videoARef.current?.currentTime || 0) + 1 / fps)} className="btn btn-ghost btn-sm px-2">⏭</button>
+                      </div>
+                    </div>
+                  )}
+                  {isVideoB && (
+                    <div className="panel p-2.5 space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-black">레이어 B</span>
+                        <span className="text-[11px] text-slate-500 dark:text-slate-400 tabular-nums">{timeB}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button onClick={() => seekB((videoBRef.current?.currentTime || 0) - 1 / fps)} className="btn btn-ghost btn-sm px-2">⏮</button>
+                        <input type="range" min="0" max={Math.round((videoBRef.current?.duration || 0) * 1000) || 1000}
+                          onChange={(e) => seekB((+e.target.value) / 1000)} className="flex-1" />
+                        <button onClick={() => seekB((videoBRef.current?.currentTime || 0) + 1 / fps)} className="btn btn-ghost btn-sm px-2">⏭</button>
+                      </div>
+                    </div>
+                  )}
+
+                  {isVideoA && isVideoB && (
+                    <label className="flex items-center gap-1.5 text-xs font-bold text-slate-600 dark:text-slate-300">
+                      <input type="checkbox" checked={lock} onChange={(e) => onLockToggle(e.target.checked)} /> 동기화 오프셋 고정(수동)
+                    </label>
+                  )}
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+                    "자동 편집"은 두 영상의 속도를 맞춰 동시에 끝나도록 합니다. 같은 배속으로 시작 프레임만 수동으로 맞추고 싶다면 자동 편집을 끄고 "동기화 오프셋 고정"을 사용하세요. 오디오는 비교 명확성을 위해 음소거됩니다.
+                  </p>
+                </div>
               )}
-              <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
-                "자동 편집"은 두 영상의 속도를 맞춰 동시에 끝나도록 합니다. 같은 배속으로 시작 프레임만 수동으로 맞추고 싶다면 자동 편집을 끄고 "동기화 오프셋 고정"을 사용하세요. 오디오는 비교 명확성을 위해 음소거됩니다.
-              </p>
             </div>
           )}
         </div>
