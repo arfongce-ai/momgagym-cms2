@@ -4,10 +4,14 @@ import { lazy } from 'react';
 //  탭 순서(no)는 측정 흐름 순서를 따른다:
 //   1 신체 정보(기본) → 2 자세·체형(정적) → 3 ROM(가동성) → 4 보행·러닝(이동)
 //   → 5 점프·RSI(파워) → 6 바벨 리프팅(근력) → 7 한다리서기(SLST, 균형)
-//   → 8 오버헤드 딥 스쿼트(균형+가동성 복합) → 9 일반 녹화 · 10 초시계
-//   (도구, 항상 맨 마지막 — 기존 테스트 불변식: 정렬 후 timer가 배열 끝).
+//   → 8 오버헤드 딥 스쿼트(균형+가동성 복합) → 9 전/후 비교(오버레이) →
+//   10 일반 녹화 · 11 초시계 (도구, 항상 맨 마지막 — 기존 테스트 불변식:
+//   정렬 후 timer가 배열 끝).
 //  '던지기(throw)'·'스윙(swing)' 준비 중 탭은 제거됨(2607 요청).
 //  7번(SLST)·8번(스쿼트) 모두 실시간·업로드 둘 다 지원.
+//  [전/후 비교 추가] 사진/영상 오버레이·어니언 스킨 비교 도구. 다른 측정처럼
+//  값을 산출/저장하지 않는 시각 비교 도구라 개별 항목들 뒤, 도구(녹화/초시계)
+//  바로 앞에 둔다.
 export const MEASURE_MENUS = [
   {
     id: 'body',
@@ -82,8 +86,17 @@ export const MEASURE_MENUS = [
     component: lazy(() => import('./menus/SquatAnalysisHub.jsx')),
   },
   {
-    id: 'record',
+    id: 'compare',
     no: 9,
+    title: '전/후 비교 (오버레이)',
+    desc: '사진·영상 오버레이 · 어니언 스킨 비교, 발목 기준 자동 정렬',
+    icon: 'CMP',
+    status: 'ready',
+    component: lazy(() => import('./menus/OverlayCompare.jsx')),
+  },
+  {
+    id: 'record',
+    no: 10,
     title: '일반 영상 녹화',
     desc: '카메라 녹화 및 저장',
     icon: 'REC',
@@ -92,7 +105,7 @@ export const MEASURE_MENUS = [
   },
   {
     id: 'timer',
-    no: 10,
+    no: 11,
     title: '초시계·메트로놈',
     desc: '초시계, 타이머, 인터벌, 메트로놈',
     icon: 'TMR',
