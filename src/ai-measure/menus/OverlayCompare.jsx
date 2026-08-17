@@ -25,6 +25,15 @@ const BLEND_OPTIONS = [
 
 const REC_MIME_CANDIDATES = ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'];
 
+// 화면 배율(devicePixelRatio)만큼 캔버스 실제 픽셀 수를 늘려 녹화하고(레티나
+// 화면에서 CSS 픽셀 그대로 녹화하면 해상도가 낮아 흐릿해짐 — 스냅샷은 이미
+// 이렇게 하고 있어 영상도 동일하게 맞춘다), 해상도가 커진 만큼 비트레이트도
+// 함께 올려야 압축 때문에 해상도 이득이 뭉개지지 않는다.
+function computeRecordBitrate(pixelW, pixelH) {
+  const bpp = 0.12; // VP9 기준 프레임당 비트/픽셀 — 여유 있게 고화질 쪽으로
+  return clamp(Math.round(pixelW * pixelH * 30 * bpp), 6_000_000, 20_000_000);
+}
+
 const SCALE_MIN = 30;
 const SCALE_MAX = 300;
 const OFFSET_MIN = -300;
@@ -518,6 +527,11 @@ export default function OverlayCompare({ onBack }) {
   // ref(최신값)를 읽어 스테일 클로저 없이 항상 현재 값을 반영한다.
   // ---------------------------------------------------------------
   const drawCompositeFrame = useCallback((ctx, w, h) => {
+    // 캔버스 2D의 기본 리샘플링 품질은 브라우저에 따라 낮게 설정될 수 있어
+    // (특히 원본보다 축소·확대해서 그릴 때 흐릿해짐) 스냅샷·영상 저장 어디서
+    // 그리든 항상 최고 품질로 그리도록 명시한다.
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
     const a = layerARef.current;
     const b = layerBRef.current;
     const al = alignRef.current;
@@ -597,10 +611,23 @@ export default function OverlayCompare({ onBack }) {
     const stage = stageRef.current;
     const rect = stage.getBoundingClientRect();
     const canvas = recordCanvasRef.current;
-    const w = Math.round(rect.width);
-    const h = Math.round(rect.height);
-    if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
-    drawCompositeFrame(recordCtxRef.current, w, h);
+    const dpr = window.devicePixelRatio || 1;
+    // 주의: startRecording()의 초기 캔버스 크기 계산과 반드시 같은 반올림
+    // 순서(Math.round(rect.width * dpr))를 써야 한다. CSS 폭을 먼저
+    // 반올림한 뒤 dpr을 곱하면(이중 반올림) 1px 오차가 생겨, 매 프레임마다
+    // "크기가 달라졌다"고 오판해 캔버스를 계속 리사이즈하게 된다 — 녹화 중인
+    // captureStream 트랙의 해상도가 프레임마다 바뀌면 인코더가 정상적인
+    // 영상을 만들지 못해 거의 빈 파일이 저장되는 심각한 버그로 이어진다.
+    const pixelW = Math.round(rect.width * dpr);
+    const pixelH = Math.round(rect.height * dpr);
+    if (canvas.width !== pixelW || canvas.height !== pixelH) {
+      canvas.width = pixelW;
+      canvas.height = pixelH;
+      // 캔버스 크기를 바꾸면 브라우저가 변환(transform) 상태를 초기화하므로
+      // 매번 다시 scale()을 걸어줘야 다음 그리기도 실제 픽셀 배율로 그려진다.
+      recordCtxRef.current.scale(dpr, dpr);
+    }
+    drawCompositeFrame(recordCtxRef.current, rect.width, rect.height);
 
     const vA = videoARef.current;
     const vB = videoBRef.current;
@@ -630,15 +657,17 @@ export default function OverlayCompare({ onBack }) {
     }
     const stage = stageRef.current;
     const rect = stage.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
     const canvas = document.createElement('canvas');
-    canvas.width = Math.round(rect.width);
-    canvas.height = Math.round(rect.height);
+    canvas.width = Math.round(rect.width * dpr);
+    canvas.height = Math.round(rect.height * dpr);
     const ctx = canvas.getContext('2d');
+    ctx.scale(dpr, dpr);
     const stream = canvas.captureStream(30);
 
     let recorder;
     try {
-      recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 6_000_000 });
+      recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: computeRecordBitrate(canvas.width, canvas.height) });
     } catch (e) {
       alert(`영상 녹화를 시작하지 못했습니다: ${e.message}`);
       return;
