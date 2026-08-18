@@ -21,12 +21,19 @@
 // ════════════════════════════════════════════════════════════════════════
 
 import { store } from '../demoData';
+import { findClosestNameFuzzy } from '../utils/hangulSimilarity.js';
 
 function normalize(str) {
   return (str || '').replace(/\s+/g, '').toLowerCase();
 }
 
-/** 회원 목록에서 이름으로 찾는다 — reservationService.js findMemberByName과 동일 로직. */
+/** 회원 목록에서 이름으로 찾는다 — reservationService.js findMemberByName과 동일 로직.
+ * [음성인식률 개선 2026-08-18] 정확·부분 일치가 모두 실패하면 자모 유사도로
+ * 마지막으로 한 번 더 시도한다 — 이 함수는 무료 규칙 경로와 Claude(유료) 경로
+ * 양쪽의 propose 단계가 공통으로 거치는 최종 조회 지점이라, 여기서 보정하면
+ * 두 경로 모두 혜택을 받는다. 애매하면(임계값 미만이거나 2등과 근소하면)
+ * hangulSimilarity.js가 null을 돌려주므로 기존과 동일하게 "회원을 못 찾음"
+ * 경고로 이어진다 — 실제 저장은 이 뒤에도 트레이너의 확인을 반드시 거친다. */
 function findMemberByName(members, query) {
   if (!query) return null;
   const target = normalize(query);
@@ -35,7 +42,9 @@ function findMemberByName(members, query) {
   const partial = members.find(
     (m) => normalize(m.name).includes(target) || target.includes(normalize(m.name))
   );
-  return partial || null;
+  if (partial) return partial;
+  const fuzzyName = findClosestNameFuzzy(target, members);
+  return fuzzyName ? members.find((m) => m.name === fuzzyName) || null : null;
 }
 
 /** 트레이너 목록에서 이름으로 찾는다 — reservationService.js findTrainerByName과 동일 로직. */

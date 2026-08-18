@@ -342,6 +342,24 @@ describe('extractMemberNameFromText() — 명령 텍스트에서 등록된 회�
   it('회원 목록이 비어있으면 null(에러 없이)', () => {
     expect(extractMemberNameFromText('김철수님 리포트 열어줘', [])).toBeNull();
   });
+
+  // [음성인식률 개선 2026-08-18] 정확히 일치하는 이름이 없을 때 자모 유사도로
+  // 구제하는 fallback — hangulSimilarity.test.js에서 검증한 임계값을 그대로
+  // 통합 레벨에서도 확인한다.
+  it('발음이 비슷하게 잘못 들린 이름도 자모 유사도로 찾는다(정확 일치 실패 후 fallback)', () => {
+    const fuzzyMembers = [{ name: '한지민' }, { name: '박영희' }];
+    expect(extractMemberNameFromText('한지빈님 세션 2회 추가해줘', fuzzyMembers)).toBe('한지민');
+  });
+
+  it('전혀 다른 이름은 fallback으로도 매칭하지 않는다(오매칭 방지)', () => {
+    const fuzzyMembers = [{ name: '민수' }, { name: '박영희' }];
+    expect(extractMemberNameFromText('민서님 세션 2회 추가해줘', fuzzyMembers)).toBeNull();
+  });
+
+  it('정확히 일치하는 이름이 있으면 자모 유사도보다 그쪽을 그대로 우선한다(회귀 없음)', () => {
+    const members = [{ name: '김철수' }, { name: '김철수민' }];
+    expect(extractMemberNameFromText('김철수님 리포트 열어줘', members)).toBe('김철수');
+  });
 });
 
 // [무료 확장 2026-08-11] momi 쓰기 권한 3종(세션조정/전화번호/메모)도 아주

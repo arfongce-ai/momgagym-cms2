@@ -60,6 +60,15 @@ describe('proposeAddMemberMemo — 순수 조회, 아직 저장 안 함', () => 
     expect(r.warnings[0]).toContain('일치하는 회원을 찾지 못했습니다');
   });
 
+  // [음성인식률 개선 2026-08-18] 정확·부분 일치가 실패해도 자모 유사도로
+  // 구제되는지 확인 — 유료(Claude) 경로가 넘긴 memberQuery가 STT 오인식을
+  // 그대로 담고 있어도(예: "홍길동"이 "홍기동"으로 들림) 회원을 찾는다.
+  it('발음이 비슷하게 오인식된 이름도 자모 유사도로 찾는다', () => {
+    const r = proposeAddMemberMemo({ memberQuery: '홍기동', memoText: '무릎 조심' });
+    expect(r.ready).toBe(true);
+    expect(r.member.id).toBe('m1');
+  });
+
   it('메모 내용이 비어있으면 ready:false', () => {
     const r = proposeAddMemberMemo({ memberQuery: '홍길동', memoText: '  ' });
     expect(r.ready).toBe(false);

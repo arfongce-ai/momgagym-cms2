@@ -10,7 +10,7 @@
 // 화면(트레이너 관리·매출관리)이 선택지에 아예 없다.
 import { MOMI_VOICE_SYSTEM_PROMPT } from '../_shared/momiVoicePrompt.js';
 import { resolveVerifiedRole } from '../_shared/verifyFirebaseToken.js';
-import { clampText, enforceMomiRateLimit, jsonResponse, normalizeMomiHistory, readMomiJson } from '../_shared/momiRequest.js';
+import { applyMomiSafetyGuard, clampText, enforceMomiRateLimit, jsonResponse, normalizeMomiHistory, readMomiJson } from '../_shared/momiRequest.js';
 import { recordPaidAiCost, reservePaidAiCall } from '../_shared/aiBudget.js';
 import { classifyFreeNavigation } from '../_shared/freeAiRouter.js';
 
@@ -454,9 +454,18 @@ export async function onRequestPost(context) {
       );
     }
 
+    // [안전장치 일원화] momi.js(리포트 코칭 경로)는 applyMomiSafetyGuard로 응급·급성
+    // 레드플래그 발화를 코드 레벨에서 강제로 안전 문구로 바꾸는데, 이 음성 경로의
+    // 자유 질문(코칭 Q&A) 응답에는 그 가드가 빠져 있었다(프롬프트 지시문에만 의존).
+    // 같은 함수를 그대로 재사용해서 두 경로의 안전 수준을 맞춘다. report가 없는
+    // 경로라 report:null로 넘기면 emergency·acute 판정은 question(발화 원문)만
+    // 기준으로 동작하고, report 의존 분기(severity 'risk' 트레이너 안내 문구)는
+    // 자연히 건너뛴다(momi.js와 달리 여기선 해당 개념이 없으므로 의도된 동작).
     const textBlock = (data.content || []).find((block) => block.type === 'text');
+    const rawChatText = textBlock ? textBlock.text : '네, 말씀하세요!';
+    const safeChatText = applyMomiSafetyGuard({ kind: 'voice', report: null, question: transcript, text: rawChatText });
     return new Response(
-      JSON.stringify({ type: 'chat', text: textBlock ? textBlock.text : '네, 말씀하세요!' }),
+      JSON.stringify({ type: 'chat', text: safeChatText }),
       { status: 200, headers: { 'Content-Type': 'application/json' } }
     );
   } catch (err) {

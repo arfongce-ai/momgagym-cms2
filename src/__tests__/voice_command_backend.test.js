@@ -338,3 +338,38 @@ describe('functions/api/voice-command.js — 저비용 음성 전용 모델', ()
     expect(src).toContain('MOMI_VOICE_SYSTEM_PROMPT');
   });
 });
+
+// [안전장치 일원화 2026-08-18] momi.js(리포트 코칭 경로)는 applyMomiSafetyGuard로
+// 응급·급성 레드플래그 발화를 코드 레벨에서 강제로 안전 문구로 바꾸는데, 이
+// 음성 경로의 자유 질문(코칭 Q&A) 응답에는 그 가드가 빠져 있었다(프롬프트
+// 지시문에만 의존 — momi_speech.test.js 등 기존 테스트는 이 누락을 못 잡았음).
+// momi.js와 동일한 함수를 재사용해 두 경로의 안전 수준을 맞췄는지 확인한다.
+describe('functions/api/voice-command.js — 자유 질문 응답 안전장치(momi.js와 수준 통일)', () => {
+  const src = readSrc('functions', 'api', 'voice-command.js');
+
+  it('momiRequest.js에서 applyMomiSafetyGuard를 import한다', () => {
+    const importLine = src.split('\n').find((line) => line.includes("from '../_shared/momiRequest.js'"));
+    expect(importLine).toBeDefined();
+    expect(importLine).toContain('applyMomiSafetyGuard');
+  });
+
+  it('textBlock 기반 채팅 응답을 만들기 전에 applyMomiSafetyGuard를 호출한다(원문 textBlock.text를 그대로 응답 JSON에 넣지 않는다)', () => {
+    const idx = src.indexOf('const textBlock = (data.content || []).find(');
+    const returnIdx = src.indexOf("type: 'chat'", idx);
+    expect(idx).toBeGreaterThan(-1);
+    const body = src.slice(idx, returnIdx + 200);
+    expect(body).toContain('applyMomiSafetyGuard(');
+    // 응답 JSON의 text 필드가 textBlock.text 원문이 아니라 안전장치를 거친
+    // 변수(safeChatText)를 참조해야 한다 — 가드를 호출만 하고 결과를 안 쓰는
+    // 회귀를 막는다.
+    expect(body).toMatch(/text:\s*safeChatText/);
+  });
+
+  it('report가 없는 경로이므로 report:null로 호출하고, question에는 사용자 발화(transcript)를 그대로 넘긴다(추측 데이터 주입 방지)', () => {
+    const callIdx = src.indexOf('applyMomiSafetyGuard({');
+    const callEnd = src.indexOf('});', callIdx);
+    const call = src.slice(callIdx, callEnd);
+    expect(call).toContain('report: null');
+    expect(call).toContain('question: transcript');
+  });
+});

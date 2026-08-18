@@ -72,6 +72,13 @@ describe('proposeReservation() — 회원 매칭', () => {
     expect(p.draft.memberId).toBe('m1');
   });
 
+  // [음성인식률 개선 2026-08-18] 예약은 음성 명령에서 가장 자주 쓰이는
+  // 기능이라 이름 오인식(예: "홍길동"→"홍기동")의 영향이 가장 크다.
+  it('발음이 비슷하게 오인식된 이름도 자모 유사도로 찾는다', () => {
+    const p = proposeReservation({ memberQuery: '홍기동', trainerId: 't2', date: '2026-08-11', startTime: '09:00' });
+    expect(p.draft.memberId).toBe('m1');
+  });
+
   it('일치하는 회원이 없으면 경고를 담고 memberName은 입력값 그대로 남긴다', () => {
     const p = proposeReservation({ memberQuery: '없는이름', trainerId: 't2', date: '2026-08-11', startTime: '09:00' });
     expect(p.draft.memberId).toBeNull();

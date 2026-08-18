@@ -5,6 +5,7 @@
 // 유료)로 넘어간다. 회원 이름이 포함돼 있으면 실제 회원 목록에서 매칭한다.
 import { scopeMembersToTrainer } from '../utils/memberList.js';
 import { todayYMD, addDaysYMD } from '../utils/dates.js';
+import { findClosestNameFuzzy } from '../utils/hangulSimilarity.js';
 import { findDestination } from '../voice/commandRegistry.js';
 import { setPendingVoiceTarget } from '../voice/pendingVoiceTarget.js';
 import { auth } from '../firebase.js';
@@ -46,7 +47,13 @@ function fuzzyFindMember(members, spokenName) {
   );
   if (partial) return partial;
 
-  return null;
+  // 3순위: 자모 유사도 — [음성인식률 개선 2026-08-18] extractMemberNameFromText·
+  // memberWriteService.js·reservationService.js와 같은 기준(hangulSimilarity.js)을
+  // 이 함수(내비게이션 경로)에도 맞춘다. 이 함수는 이미 extractMemberNameFromText가
+  // 뽑아준 이름으로 호출되는 경우가 많아 실제로는 자주 안 타지만, data.memberName
+  // (Claude 응답에서 직접 온 이름)으로 호출되는 경로도 있어 여기서도 방어한다.
+  const fuzzyName = findClosestNameFuzzy(target, members);
+  return fuzzyName ? members.find((m) => m.name === fuzzyName) || null : null;
 }
 
 // [무료 우선 2026-08-08] 목적지별 키워드. 순서가 우선순위다 — 더 구체적인
@@ -285,7 +292,17 @@ export function extractMemberNameFromText(commandText, members) {
       best = m.name;
     }
   }
-  return best;
+  if (best) return best;
+
+  // [음성인식률 개선 2026-08-18] 정확히 일치하는 이름이 없으면 자모 유사도로
+  // 한 번 더 시도한다 — STT가 이름 한 글자를 비슷한 발음으로 잘못 들은 경우
+  // (예: "정훈"→"정운")까지 구제한다. hangulSimilarity.js가 임계값·안전
+  // 마진을 관리하며, 애매하면 null을 돌려줘 여기서도 그대로 null이 된다 —
+  // 이 함수를 호출하는 모든 곳(matchRuleBasedSessionAdjust 등)이 이미
+  // "회원을 못 찾으면 Claude 경로로 넘긴다"는 안전한 fallback을 갖고 있고,
+  // 실제 쓰기 작업은 어차피 트레이너 확인(propose→confirm) 뒤에만 실행되므로
+  // 이 fallback이 틀려도 확인 단계에서 바로 잡을 수 있다.
+  return findClosestNameFuzzy(normalized, members);
 }
 
 /** 명령 텍스트에 실제 등록된 트레이너 이름이 하나라도 포함돼 있는지. */

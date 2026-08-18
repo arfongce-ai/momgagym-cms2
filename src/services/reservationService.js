@@ -31,12 +31,16 @@
 // ════════════════════════════════════════════════════════════════════════
 
 import { store } from '../demoData';
+import { findClosestNameFuzzy } from '../utils/hangulSimilarity.js';
 
 function normalize(str) {
   return (str || '').replace(/\s+/g, '').toLowerCase();
 }
 
 /** 회원 목록에서 이름으로 찾는다. 정확히 일치 → 부분 일치 순. */
+// [음성인식률 개선 2026-08-18] memberWriteService.js findMemberByName과 동일하게
+// 자모 유사도 fallback을 추가한다 — 예약 생성/취소/변경은 음성 명령에서 가장
+// 자주 쓰이는 기능이라 이름 오인식의 영향이 가장 크다.
 function findMemberByName(members, query) {
   if (!query) return null;
   const target = normalize(query);
@@ -45,7 +49,9 @@ function findMemberByName(members, query) {
   const partial = members.find(
     (m) => normalize(m.name).includes(target) || target.includes(normalize(m.name))
   );
-  return partial || null;
+  if (partial) return partial;
+  const fuzzyName = findClosestNameFuzzy(target, members);
+  return fuzzyName ? members.find((m) => m.name === fuzzyName) || null : null;
 }
 
 /** 트레이너 목록에서 이름으로 찾는다(키오스크 — 말로 트레이너를 지정하는 경우). */
