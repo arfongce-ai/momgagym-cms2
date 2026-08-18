@@ -16,7 +16,7 @@
 //  종합분석과 같은 원칙: 부가 기능은 실패해도 본 기능(리포트 열람)을 절대 막지 않는다.
 // ════════════════════════════════════════════════════════════════════════
 import { useState, useEffect, useRef } from 'react';
-import { askMomi } from '../../services/momiService';
+import { askMomi, MOMI_PROMPT_VERSION } from '../../services/momiService';
 
 /**
  * @param {string} kind        buildProblemFocus가 아는 kind('posture'|'rom'|'jump'|'gait'|'stance'|'squat')
@@ -29,28 +29,57 @@ export default function MomiAutoNote({ kind, report, member, onSaved }) {
   const [note, setNote] = useState(report?.momiNote || null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const triedRef = useRef(false); // 같은 마운트 동안 중복 호출 방지(리렌더로 재요청 안 되게)
+  const attemptedKeyRef = useRef(null);
+  const activeKeyRef = useRef(null);
 
   useEffect(() => {
-    if (note || triedRef.current) return;
     if (!report?.id || !member?.id) return;
-    triedRef.current = true;
+    const sourceUpdatedAt = report.analysisUpdatedAt || report.updatedAt || report.measuredAt || report.createdAt || report.recordedAt || null;
+    const requestKey = `${member.id}:${report.id}:${sourceUpdatedAt || 'undated'}:${MOMI_PROMPT_VERSION}`;
+    activeKeyRef.current = requestKey;
+
+    const storedNote = report.momiNote || null;
+    const storedIsCurrent = Boolean(
+      storedNote?.text &&
+      storedNote.promptVersion === MOMI_PROMPT_VERSION &&
+      (sourceUpdatedAt == null || storedNote.sourceUpdatedAt === sourceUpdatedAt)
+    );
+    if (storedIsCurrent) {
+      setNote(storedNote);
+      setLoading(false);
+      setError(null);
+      attemptedKeyRef.current = requestKey;
+      return;
+    }
+    if (attemptedKeyRef.current === requestKey) return;
+    attemptedKeyRef.current = requestKey;
+    setNote(null);
     setLoading(true);
     setError(null);
     askMomi({ kind, report, member })
       .then(async (text) => {
-        const saved = { text, createdAt: Date.now() };
+        if (activeKeyRef.current !== requestKey) return;
+        const saved = {
+          text,
+          createdAt: Date.now(),
+          promptVersion: MOMI_PROMPT_VERSION,
+          sourceUpdatedAt,
+        };
         setNote(saved);
         if (onSaved) {
           try { await onSaved({ momiNote: saved }); }
           catch (e) { console.warn('[MomiAutoNote] 저장 실패(화면엔 그대로 표시됨):', e?.message || e); }
         }
       })
-      .catch((e) => setError(e.message || '모미 노트를 만드는 중 문제가 생겼어요.'))
-      .finally(() => setLoading(false));
-    // report/member 식별자가 바뀔 때만 재실행 — kind/onSaved는 매 렌더 새 참조라도 상관없다.
+      .catch((e) => {
+        if (activeKeyRef.current === requestKey) setError(e.message || '모미 노트를 만드는 중 문제가 생겼어요.');
+      })
+      .finally(() => {
+        if (activeKeyRef.current === requestKey) setLoading(false);
+      });
+    // 리포트 식별자·원본 갱신 시각·저장 노트가 바뀔 때 최신성 재검사.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [report?.id, member?.id]);
+  }, [report?.id, member?.id, report?.analysisUpdatedAt, report?.updatedAt, report?.measuredAt, report?.createdAt, report?.recordedAt, report?.momiNote]);
 
   if (!report?.id || !member?.id) return null;
   if (!loading && !error && !note) return null; // 아직 아무 것도 할 게 없으면 자리 안 차지함

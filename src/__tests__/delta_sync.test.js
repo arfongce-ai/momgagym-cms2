@@ -73,7 +73,7 @@ beforeEach(() => {
   for (const k of Object.keys(fsData)) delete fsData[k];
   for (const k of Object.keys(lsBack)) delete lsBack[k];
   readLog.length = 0;
-  lsBack.fitcms_seeded = 'v6.2'; // 시드 확인 스킵(읽기 절감 플래그)
+  lsBack.fitcms_seeded = 'v6.3'; // 시드 확인 스킵(읽기 절감 플래그)
   vi.resetModules();
 });
 

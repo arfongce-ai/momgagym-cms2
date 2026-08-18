@@ -1,24 +1,98 @@
 import { createContext, useContext, useState, useEffect } from 'react';
 import {
-  signInWithEmailAndPassword, signOut, onAuthStateChanged, signInAnonymously,
+  signInWithEmailAndPassword, signOut, onAuthStateChanged,
 } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
+import { collection, deleteDoc, doc, getDoc, getDocs, setDoc } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 import { store, initStore } from '../demoData';
 
 const AuthContext = createContext(null);
+const OWNER_EMAIL = 'momgagym@naver.com';
+let approvalRun = null;
+const AUTH_STEP_TIMEOUT_MS = 20000;
+
+function withTimeout(promise, label, timeoutMs = AUTH_STEP_TIMEOUT_MS) {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(Object.assign(new Error(`${label} 시간이 초과되었습니다.`), { code: 'request-timeout' })), timeoutMs);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
 
 // 역할 결정: Custom Claims(token.admin) 우선 → 없으면 roles/{uid} 문서로 폴백.
 async function resolveRole(fbUser) {
+  const normalizedEmail = (fbUser?.email || '').trim().toLowerCase();
+  let tokenResult = null;
   try {
-    const res = await fbUser.getIdTokenResult();
-    if (res.claims && res.claims.admin === true) return 'admin';
+    tokenResult = await fbUser.getIdTokenResult(true);
   } catch (e) { console.error('[claim 조회 실패]', e); }
+
+  // 역할 확인과 누락된 트레이너 연결 복구는 서버에서 처리한다.
+  // 계정 생성은 성공했지만 roles 문서 저장만 실패한 상태도 로그인 순간 자동 복구된다.
+  if (tokenResult?.token) {
+    try {
+      const response = await fetch('/api/login-role', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${tokenResult.token}` },
+      });
+      const data = await response.json().catch(() => ({}));
+      if (response.ok && data?.ok && data?.role) return data.role;
+      // 서버가 계정 충돌·권한 없음으로 명확히 거절한 경우, 오래된 로컬 역할로 우회하지 않는다.
+      if (response.status === 401 || response.status === 403) return null;
+    } catch (e) {
+      console.error('[서버 역할 확인 실패]', e);
+    }
+  }
+
+  // 서버가 일시적으로 응답하지 않을 때도 기존 정상 계정은 로그인할 수 있게 한다.
+  if (normalizedEmail === OWNER_EMAIL || tokenResult?.claims?.admin === true) return 'admin';
   try {
     const snap = await getDoc(doc(db, 'roles', fbUser.uid));
     if (snap.exists()) return snap.data().role || null;
   } catch (e) { console.error('[역할 조회 실패]', e); }
   return null;
+}
+
+async function submitLoginRequest(fbUser) {
+  if (!fbUser?.uid || !fbUser?.email) return;
+  await setDoc(doc(db, 'loginRequests', fbUser.uid), {
+    email: fbUser.email.trim().toLowerCase(),
+    requestedAt: Date.now(),
+  });
+}
+
+async function approveKnownTrainerRequests(role) {
+  if (role !== 'admin') return 0;
+  if (approvalRun) return approvalRun;
+  approvalRun = (async () => {
+    try {
+      const snapshot = await getDocs(collection(db, 'loginRequests'));
+      let approved = 0;
+      for (const requestDoc of snapshot.docs) {
+        const email = (requestDoc.data()?.email || '').trim().toLowerCase();
+        const trainer = (store.getTrainers() || []).find(
+          item => (item.loginEmail || '').trim().toLowerCase() === email
+        );
+        if (!trainer || (trainer.authUid && trainer.authUid !== requestDoc.id)) continue;
+        try {
+          await setDoc(doc(db, 'roles', requestDoc.id), { role: 'trainer', email });
+          await store.updateTrainer(trainer.id, { authUid: requestDoc.id });
+          await deleteDoc(requestDoc.ref);
+          approved += 1;
+        } catch (error) {
+          try { await deleteDoc(doc(db, 'roles', requestDoc.id)); } catch { /* 원래 오류 유지 */ }
+          console.error('[trainer 로그인 요청 승인 실패]', error);
+        }
+      }
+      return approved;
+    } catch (error) {
+      // 보조 작업 실패가 관리자 로그인을 무한 로딩으로 만들면 안 된다.
+      console.error('[trainer 로그인 요청 목록 조회 실패]', error);
+      return 0;
+    }
+  })();
+  try { return await approvalRun; }
+  finally { approvalRun = null; }
 }
 
 // 트레이너를 이메일로 찾는다. initStore 가 채운 캐시를 우선 사용해 추가 읽기를 없앤다.
@@ -44,6 +118,17 @@ async function findTrainerByEmail(email) {
   return hit;
 }
 
+// 예전에 콘솔에서 수동 생성한 계정도 한 번 로그인하면 트레이너 문서에 UID를 연결한다.
+// 이후 삭제·이메일 변경 시 이 UID의 roles 문서를 제거해 접근 권한을 즉시 끊을 수 있다.
+async function linkTrainerUid(role, trainer, uid) {
+  if (role !== 'trainer' || !trainer || !uid || trainer.authUid === uid) return;
+  try {
+    await store.updateTrainer(trainer.id, { authUid: uid });
+  } catch (error) {
+    console.error('[trainer UID 연결 실패]', error);
+  }
+}
+
 export function AuthProvider({ children }) {
   const [user, setUser]       = useState(null);
   const [loading, setLoading] = useState(true);
@@ -54,63 +139,103 @@ export function AuthProvider({ children }) {
   const ensureData = async () => {
     if (dataReady) return;
     try {
-      await initStore();
+      await withTimeout(initStore(), '센터 데이터 불러오기');
       setDataReady(true);
       setDataError(null);
     } catch (e) {
       console.error('[FitCMS] 데이터 로딩 실패:', e);
-      setDataError(e?.code || e?.message || String(e));
+      const detail = [e?.collection, e?.code || e?.message || String(e)].filter(Boolean).join(': ');
+      setDataError(detail);
     }
   };
 
-  // Firebase 로그인 상태를 신뢰의 원천으로 사용한다.
-  // 트레이너는 Firebase 계정이 없으므로, 비로그인 시 '익명 인증'을 자동 수행해
-  // isSignedIn() 규칙을 통과시킨다(데이터 읽기 가능). 화면용 역할은 그대로 유지.
+  // 권한 오류 뒤의 재시도는 데이터만 다시 읽지 않는다.
+  // 서버 역할 복구 → 강제 전체 동기화 순서로 처음부터 다시 진행한다.
+  const retryData = async () => {
+    setLoading(true);
+    setDataError(null);
+    try {
+      const fbUser = auth.currentUser;
+      if (!fbUser) throw Object.assign(new Error('다시 로그인하세요.'), { code: 'auth-session-missing' });
+      const role = await withTimeout(resolveRole(fbUser), '로그인 권한 복구');
+      if (!role) throw Object.assign(new Error('등록된 CMS 역할을 찾지 못했습니다.'), { code: 'role-not-found' });
+      await withTimeout(initStore({ force: true }), '센터 데이터 다시 불러오기');
+      setDataReady(true);
+      setDataError(null);
+    } catch (e) {
+      console.error('[FitCMS] 권한·데이터 복구 실패:', e);
+      const detail = [e?.collection, e?.code || e?.message || String(e)].filter(Boolean).join(': ');
+      setDataReady(false);
+      setDataError(detail);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const purgeLegacyTrainerPasswords = async role => {
+    if (role !== 'admin') return;
+    try {
+      const removed = await store.purgeLegacyTrainerPasswords();
+      if (removed) console.info(`[FitCMS] 트레이너 평문 비밀번호 ${removed}건 제거 완료`);
+    } catch (e) {
+      console.error('[FitCMS] 트레이너 평문 비밀번호 제거 실패:', e);
+      throw new Error('보안 데이터 정리에 실패했습니다. 네트워크 확인 후 다시 로그인하세요.');
+    }
+  };
+
+  // Firebase 로그인 + roles/{uid} 문서를 신뢰의 원천으로 사용한다.
+  // 익명 인증으로 운영 데이터를 미리 읽지 않는다. 로그인 계정에 역할이 확인된
+  // 뒤에만 Firestore를 로드해, 로그인 화면에서 개인정보가 노출되지 않게 한다.
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (fbUser) => {
-      if (fbUser) {
-        // Firebase 인증됨 (정식 계정 또는 익명). 이제 데이터 읽기 권한 있음.
-        const trainerSession = (() => {
-          try { return JSON.parse(localStorage.getItem('fitcms_trainer_session') || 'null'); }
-          catch { return null; }
-        })();
-
-        if (fbUser.isAnonymous && trainerSession) {
-          // 익명 인증 + 트레이너 세션 → 화면용 사용자는 트레이너 정보로 표시
-          setUser(trainerSession);
-          await ensureData();
-        } else if (fbUser.isAnonymous) {
-          // 익명 인증만 있고 트레이너 세션 없음 → 아직 로그인 화면 필요
-          setUser(null);
-          await ensureData(); // 로그인 화면에서 트레이너 목록을 읽을 수 있도록
+      setLoading(true);
+      try {
+        if (fbUser) {
+          if (fbUser.isAnonymous) {
+            await signOut(auth).catch(() => {});
+            setUser(null);
+            setDataReady(false);
+            setDataError(null);
+            return;
+          }
+          const role = await withTimeout(resolveRole(fbUser), '로그인 권한 확인');
+          if (!role) {
+            // 인증 계정이라도 역할이 등록되지 않았으면 운영 데이터 접근을 허용하지 않는다.
+            setUser(null);
+          } else {
+            await ensureData();
+            try {
+              await purgeLegacyTrainerPasswords(role);
+            } catch (e) {
+              setDataError(e?.message || 'security-cleanup-failed');
+            }
+            await approveKnownTrainerRequests(role);
+            const asTrainer = await findTrainerByEmail(fbUser.email);
+            await linkTrainerUid(role, asTrainer, fbUser.uid);
+            setUser({
+              id: fbUser.uid,
+              email: fbUser.email,
+              role,
+              name: fbUser.displayName || fbUser.email,
+              source: 'firebase',
+              ...(asTrainer ? { trainerId: asTrainer.id } : {}),
+            });
+          }
         } else {
-          // 정식 Firebase 계정(관리자/직원). 데이터 먼저 로드 후 역할/트레이너 연결.
-          await ensureData();
-          const role = await resolveRole(fbUser);
-          // 이 이메일이 트레이너에도 있으면 trainerId 연결(관리자 겸 트레이너).
-          const asTrainer = await findTrainerByEmail(fbUser.email);
-          setUser({
-            id: fbUser.uid,
-            email: fbUser.email,
-            role: role || 'staff',
-            name: fbUser.displayName || fbUser.email,
-            source: 'firebase',
-            ...(asTrainer ? { trainerId: asTrainer.id } : {}),
-          });
-        }
-      } else {
-        // 아직 아무 인증도 없음 → 익명 인증을 자동 수행.
-        // 성공하면 이 콜백이 다시 호출되어 위 분기로 들어간다.
-        try {
-          await signInAnonymously(auth);
-          return; // onAuthStateChanged 재호출 대기 (loading 유지)
-        } catch (e) {
-          console.error('[익명 인증 실패]', e);
-          setDataError(e?.code || e?.message || String(e));
           setUser(null);
+          setDataReady(false);
+          setDataError(null);
         }
+      } catch (error) {
+        // 어떤 인증 후속 작업이 실패해도 loading을 반드시 해제한다.
+        console.error('[FitCMS] 로그인 초기화 실패:', error);
+        setUser(null);
+        setDataReady(false);
+          const detail = [error?.collection, error?.code || error?.message || 'login-initialization-failed'].filter(Boolean).join(': ');
+          setDataError(detail);
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     });
     return () => unsub();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -122,59 +247,42 @@ export function AuthProvider({ children }) {
       throw new Error('이메일 또는 비밀번호가 올바르지 않습니다.');
     }
 
-    // 1) 먼저 트레이너(앱 자체 loginEmail/Password)인지 확인.
-    //    Firebase 로그인을 먼저 시도하면 익명 세션이 흔들려 Firestore 조회가
-    //    막힐 수 있으므로, 트레이너 조회를 앞에 둔다(익명 인증 상태로 안전히 읽음).
-    let trainer = null;
-    let lookupFailed = null;
-    try {
-      trainer = await findTrainerByEmail(e);
-    } catch (lookupErr) {
-      console.error('[trainer 조회 실패]', lookupErr);
-      lookupFailed = lookupErr?.code || lookupErr?.message || 'unknown';
-    }
-    if (trainer && trainer.loginPassword === password) {
-      const u = {
-        id: trainer.id, email: trainer.loginEmail || trainer.email,
-        role: 'trainer', name: trainer.name, trainerId: trainer.id, source: 'trainer',
-      };
-      localStorage.setItem('fitcms_trainer_session', JSON.stringify(u));
-      setUser(u);
-      await ensureData(); // 트레이너 로그인 후 데이터 로딩 보장
-      return u;
-    }
-    if (trainer && trainer.loginPassword !== password) {
-      throw new Error('비밀번호가 올바르지 않습니다.');
-    }
-
-    // 2) 트레이너가 아니면 Firebase 계정(관리자/직원)으로 시도
     try {
       const cred = await signInWithEmailAndPassword(auth, e, password);
       const role = await resolveRole(cred.user);
-      // 관리자 겸 트레이너면 trainerId 연결
+      if (!role) {
+        try { await submitLoginRequest(cred.user); }
+        catch (error) { console.error('[로그인 권한 연결 요청 실패]', error); }
+        await signOut(auth);
+        throw new Error('트레이너 권한 연결 요청을 보냈습니다. 관리자가 한 번 로그인한 뒤 다시 시도하세요.');
+      }
+      await ensureData();
+      await purgeLegacyTrainerPasswords(role);
+      await approveKnownTrainerRequests(role);
       const asTrainer = await findTrainerByEmail(cred.user.email);
+      await linkTrainerUid(role, asTrainer, cred.user.uid);
       const u = {
-        id: cred.user.uid, email: cred.user.email,
-        role: role || 'staff', name: cred.user.displayName || cred.user.email,
+        id: cred.user.uid,
+        email: cred.user.email,
+        role,
+        name: cred.user.displayName || cred.user.email,
         source: 'firebase',
         ...(asTrainer ? { trainerId: asTrainer.id } : {}),
       };
+      setUser(u);
       return u;
     } catch (fbErr) {
-      // 트레이너도 아니고 Firebase 로그인도 실패
-      if (lookupFailed) {
-        throw new Error(`트레이너 조회 실패 [${lookupFailed}] — 익명 인증/권한 확인 필요`);
+      if (fbErr?.message?.includes('권한 연결 요청') || fbErr?.message?.includes('보안 데이터 정리')) throw fbErr;
+      if (fbErr?.code === 'auth/too-many-requests') {
+        throw new Error('로그인을 너무 많이 시도해 Firebase가 잠시 차단했습니다. 잠시 후 한 번만 다시 시도하세요.');
       }
       throw new Error('이메일 또는 비밀번호가 올바르지 않습니다.');
     }
   };
 
   const logout = async () => {
-    localStorage.removeItem('fitcms_trainer_session');
     setUser(null);
     setDataReady(false);
-    // signOut 하면 onAuthStateChanged(null)가 돌고 → 익명 인증 자동 재수행 →
-    // 로그인 화면에서도 데이터(트레이너 목록 등)를 읽을 수 있다.
     try { await signOut(auth); } catch {}
   };
 
@@ -205,6 +313,6 @@ export function AuthProvider({ children }) {
     }
   };
 
-  return <AuthContext.Provider value={{ user, loading, login, logout, reauth, dataReady, dataError, retryData: ensureData }}>{children}</AuthContext.Provider>;
+  return <AuthContext.Provider value={{ user, loading, login, logout, reauth, dataReady, dataError, retryData }}>{children}</AuthContext.Provider>;
 }
 export function useAuth() { return useContext(AuthContext); }

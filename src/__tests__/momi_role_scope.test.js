@@ -14,8 +14,10 @@ describe('functions/api/momi.js — role에 따라 응답 범위가 달라진다
   it('voice-command.js와 동일하게 resolveVerifiedRole로 Authorization 헤더를 직접 검증한다', () => {
     expect(src).toContain("import { resolveVerifiedRole } from '../_shared/verifyFirebaseToken.js';");
     expect(src).toContain(
-      "const { role: effectiveRole } = await resolveVerifiedRole(request.headers.get('Authorization'));"
+      "const { authenticated, role: effectiveRole, uid } = await resolveVerifiedRole(request.headers.get('Authorization'));"
     );
+    expect(src).toContain('if (!authenticated)');
+    expect(src).toContain('enforceMomiRateLimit(env, `momi:${uid}`)');
   });
 
   it('클라이언트가 보낸 role 문자열을 신뢰하지 않는다(body에서 role을 안 꺼내 씀)', () => {
@@ -61,22 +63,18 @@ describe('functions/api/momi.js — role에 따라 응답 범위가 달라진다
   // [Axis4 시작 2026-08-08] 트레이너-모미 양방향 소통 — history(이전 대화 턴)가
   // 오면 Claude에 넘기는 messages 배열에 이어붙여서, 매 호출이 무상태였던 예전
   // 구조를 벗어나 "지난 답변에 이어서 물어보기"가 가능해진다.
-  it('history 배열을 받아 role이 user/assistant인 것만 유효한 턴으로 걸러낸다', () => {
+  it('history 배열을 공용 정규화 함수로 방어적으로 정리한다', () => {
     expect(src).toContain("const { kind, report, member, crossContext, businessContext, question, history } = body || {};");
-    const start = src.indexOf('const validHistory = Array.isArray(history)');
-    const end = src.indexOf(';', start);
-    const body = src.slice(start, end);
-    expect(body).toContain("t.role === 'user'");
-    expect(body).toContain("t.role === 'assistant'");
-    expect(body).toContain("typeof t.content === 'string'");
+    expect(src).toContain('const validHistory = normalizeMomiHistory(history);');
   });
 
-  it('history가 있으면(후속 질문) 리포트 데이터를 다시 프롬프트에 안 담고 질문만 보낸다', () => {
+  it('history가 있으면(후속 질문) 현재 리포트 컨텍스트를 질문과 함께 다시 담는다', () => {
     const start = src.indexOf('let userMessageContent;');
     const end = src.indexOf('const anthropicRes = await fetch(', start);
     const body = src.slice(start, end);
     expect(body).toContain('if (validHistory.length > 0) {');
-    expect(body).toContain('userMessageContent = question || \'\';');
+    expect(body).toContain('현재 회원·측정 컨텍스트');
+    expect(body).toContain('report,');
   });
 
   it('history가 없으면(첫 턴) 기존처럼 리포트 데이터 전체를 프롬프트에 담는다', () => {
@@ -126,14 +124,12 @@ describe('functions/api/momi.js — role에 따라 응답 범위가 달라진다
     expect(body).not.toMatch(/businessContext: businessContext/);
   });
 
-  it('토큰 검증 실패해도(resolveVerifiedRole이 안전하게 trainer 반환) 요청 자체는 계속 처리된다', () => {
-    // resolveVerifiedRole 자체가 실패 시 trainer로 안전하게 떨어지는 설계라
-    // (verifyFirebaseToken.js), 여기서 별도 에러 처리 없이 곧바로 roleSuffix 선택으로
-    // 이어져야 한다(멈추거나 401을 던지지 않음 — 로그인 안 한 상태에서도 최소한
-    // 트레이너 수준 응답은 계속 받을 수 있어야 하므로).
+  it('토큰 검증 실패는 401로 차단해 외부의 유료 API 사용을 막는다', () => {
     const resolveIdx = src.indexOf('await resolveVerifiedRole(');
-    const roleSuffixIdx = src.indexOf('const roleSuffix =');
+    const authGuardIdx = src.indexOf('if (!authenticated)', resolveIdx);
+    const roleSuffixIdx = src.indexOf('const roleSuffix =', authGuardIdx);
     expect(resolveIdx).toBeGreaterThan(-1);
-    expect(roleSuffixIdx).toBeGreaterThan(resolveIdx);
+    expect(authGuardIdx).toBeGreaterThan(resolveIdx);
+    expect(src.slice(authGuardIdx, roleSuffixIdx)).toContain(', 401)');
   });
 });

@@ -50,8 +50,8 @@ function findGaugeArc(arcs) {
   return arcs.filter((a) => a.r > 15).sort((a, b) => b.r - a.r)[0] || null;
 }
 
-describe('drawGaugeHud — 게이지가 화면 정중앙이 아니라 상단에 그려진다(피사체 미가림)', () => {
-  it('RSI 게이지(720x960 캔버스)의 중심이 화면 세로 중앙이 아니라 상단 1/3 안쪽에 있다', () => {
+describe('drawGaugeHud — 의도된 중앙 원형 게이지 배치', () => {
+  it('RSI 게이지(720x960 캔버스)의 중심이 화면 세로 중앙에 있다', () => {
     const ctx = recordingCtx();
     const W = 720, H = 960;
     drawGaugeHud(ctx, W, H, {
@@ -61,12 +61,10 @@ describe('drawGaugeHud — 게이지가 화면 정중앙이 아니라 상단에 
     });
     const gaugeArc = findGaugeArc(ctx._arcs);
     expect(gaugeArc).not.toBeNull();
-    // 예전 버그: cy === height*0.5(정중앙, 480). 지금은 화면 상단 쪽에 있어야 한다.
-    expect(gaugeArc.cy).toBeLessThan(H * 0.35);
-    expect(gaugeArc.cy).not.toBeCloseTo(H * 0.5, 0);
+    expect(gaugeArc.cy).toBeCloseTo(H * 0.5, 0);
   });
 
-  it('게이지 반경이 예전(min(w,h)*0.20)보다 작다 — 상단 한 줄에 코너 카드와 나란히 들어가야 하므로', () => {
+  it('게이지 반경은 화면 짧은 변의 20%다', () => {
     const ctx = recordingCtx();
     const W = 720, H = 960;
     drawGaugeHud(ctx, W, H, {
@@ -75,8 +73,8 @@ describe('drawGaugeHud — 게이지가 화면 정중앙이 아니라 상단에 
       stats: [{ label: '측면', value: '2/2' }],
     });
     const gaugeArc = findGaugeArc(ctx._arcs);
-    const oldRadius = Math.round(Math.min(W, H) * 0.20); // 144
-    expect(gaugeArc.r).toBeLessThan(oldRadius);
+    const intendedRadius = Math.round(Math.min(W, H) * 0.20); // 144
+    expect(gaugeArc.r).toBe(intendedRadius);
   });
 
   it('게이지와 좌/우 코너 스탯 카드가 겹치지 않는다(카드 우측 끝 < 게이지 좌측 끝, 카드 좌측 끝 > 게이지 우측 끝)', () => {

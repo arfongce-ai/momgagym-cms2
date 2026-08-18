@@ -41,8 +41,8 @@ describe('useMomiSpeech.js — 브라우저 내장 TTS 훅', () => {
     expect(effectBody).toContain('synthRef.current?.cancel();');
   });
 
-  it('supported·speak·stop·unlock을 반환한다', () => {
-    expect(src).toContain('return { supported, speak, stop, unlock };');
+  it('supported·speaking·speak·stop·unlock을 반환한다', () => {
+    expect(src).toContain('return { supported, speaking, speak, stop, unlock };');
   });
 });
 
@@ -58,10 +58,7 @@ describe('GlobalVoiceCommand.jsx — TTS 연결 확인', () => {
     const handleStart = src.indexOf('const handleCommand = useCallback(');
     const handleEnd = src.indexOf('const handleWakeOnly = useCallback(');
     const handleBody = src.slice(handleStart, handleEnd);
-    // [2026-08-08] 실패 시 진단 상세를 덧붙이는 삼항연산자로 바뀌었지만, 성공
-    // 시(diagDetail 없을 때)엔 여전히 순수 message가 화면에 그대로 나간다.
-    expect(handleBody).toContain('setFeedback(diagDetail ? ');
-    expect(handleBody).toContain(': message);');
+    expect(handleBody).toContain('setFeedback(message);');
     expect(handleBody).toContain('speak(message);');
   });
 
@@ -94,11 +91,11 @@ describe('GlobalVoiceCommand.jsx — TTS 연결 확인', () => {
     expect(src).toContain('onWakeOnly: handleWakeOnly,');
   });
 
-  it('웨이크워드 불일치 시(handleMismatch) 들린 말을 화면에 보여주되 소리내어 읽지는 않는다', () => {
+  it('빈 인식 결과에는 자연스러운 재시도 문구를 보여주되 소리내어 읽지는 않는다', () => {
     const mismatchStart = src.indexOf('const handleMismatch = useCallback((heard) => {');
     const mismatchEnd = src.indexOf('}, []);', mismatchStart);
     const mismatchBody = src.slice(mismatchStart, mismatchEnd);
-    expect(mismatchBody).toContain("heard ? `\"${heard}\"` : '(빈 소리만 인식됨)'");
+    expect(mismatchBody).toContain('잘 못 들었어요. 조금 천천히 다시 말씀해 주세요.');
     expect(mismatchBody).not.toContain('speak(');
   });
 
@@ -155,17 +152,14 @@ describe('GlobalVoiceCommand.jsx — "모미야→네,선생님→명령→인�
     expect(speakCalls.length).toBeGreaterThanOrEqual(2);
   });
 
-  it('명령 처리가 실패하면 실패 원인(diagDetail)을 화면에도 보여준다(회귀 방지)', () => {
-    // [버그 수정 2026-08-08] "명령이 실행 안 된다"는 문의 대응 — 사과 메시지만
-    // 보여주면 진짜 원인(API 크레딧 부족 등)을 알 길이 없었다. 음성으로는 사과
-    // 문구만 자연스럽게 읽고, 화면에는 원인도 같이 보여준다.
+  it('명령 처리 실패 원인은 콘솔에 남기고 화면에는 자연스러운 문구만 보여준다', () => {
     const handleStart = src.indexOf('const handleCommand = useCallback(');
     const handleEnd = src.indexOf('const handleWakeOnly = useCallback(');
     const handleBody = src.slice(handleStart, handleEnd);
     expect(handleBody).toContain('diagDetail = e?.message || String(e);');
-    expect(handleBody).toContain(
-      "setFeedback(diagDetail ? `${message}\\n[진단] ${diagDetail}` : message);"
-    );
+    expect(handleBody).toContain("console.warn('[모미] 명령 처리 실패:', diagDetail);");
+    expect(handleBody).toContain('setFeedback(message);');
+    expect(handleBody).not.toContain('[진단] ${diagDetail}');
     // 소리로는 원인 문구 없이 사과 메시지만 자연스럽게 읽어야 한다.
     expect(handleBody).toContain('speak(message);');
     expect(handleBody).not.toContain('speak(diagDetail');

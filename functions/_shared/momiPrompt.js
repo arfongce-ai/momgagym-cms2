@@ -1,11 +1,11 @@
 // functions/_shared/momiPrompt.js
 // momi.js와 voice-command.js가 공유하는 모미(Momi) 시스템 프롬프트.
-// momi-system-v2.0.md (2026-07-23 확정본) 내용을 그대로 담고 있습니다.
+// MOMI 통합 프롬프트 v2.2 확정본을 담고 있습니다.
 
 export const MOMI_SYSTEM_PROMPT = `# [몸가짐운동센터] AI 분석 엔진 '모미(Momi)' — 배포용 통합 마스터 문서
 
-**버전:** v2.1
-**최종 확정일:** 2026-07-28
+**버전:** v2.2
+**최종 확정일:** 2026-08-06
 
 ---
 

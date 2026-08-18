@@ -11,11 +11,12 @@ import { toYMD, todayYMD } from './utils/dates';
 import { buildUnifiedReportDocument, inferReportType } from './ai-measure/core/unifiedReport';
 import { computeTransferBasis, mergeTransferBasis } from './services/finance';
 
+// v6.3: 로그인 권한 복구 배포 후 모바일의 오래된 스냅샷을 한 번 폐기한다.
 // v6.2: 델타 동기화 도입 직후, 원자 배치(예약+차감 등)가 updatedAt 도장 없이
 //        저장되던 기간이 있었다. 그 문서들은 델타 조회에 영원히 걸리지 않으므로
 //        버전을 올려 모든 기기의 스냅샷을 무효화 → 배포 후 첫 실행에서 1회
 //        전체 재로딩으로 최신 상태를 다시 기준선으로 잡는다(즉시 복구).
-const DATA_VERSION = 'v6.2';
+const DATA_VERSION = 'v6.3';
 
 // ── [진단] Firestore 읽기 계측 ───────────────────────────────────────
 // 어떤 컬렉션이 읽기를 얼마나 일으키는지 콘솔에서 눈으로 확인하기 위한 래퍼.
@@ -47,6 +48,11 @@ const INITIAL_TRAINERS = [
   { id:'t2', name:'이서연', phone:'010-9876-5432', birthDate:'1993-07-22', hireDate:'2022-05-01', classTypes:['6대체력','다이어트'], status:'freelance', color:'#10b981', memo:'주 4일 근무'  },
   { id:'t3', name:'박지훈', phone:'010-5555-1234', birthDate:'1988-11-08', hireDate:'2020-03-15', classTypes:['선수','6대체력'],   status:'full',      color:'#6366f1', memo:'' },
 ];
+
+function withoutLegacyTrainerPassword(trainer) {
+  const { loginPassword: _removed, ...safeTrainer } = trainer || {};
+  return safeTrainer;
+}
 const INITIAL_MEMBERS = [
   { id:'m1', name:'홍길동', phone:'010-1111-2222', birthDate:'1985-06-20',
     joinDate:'2024-01-15', lastPaymentDate:'2024-11-01', lastAttendedDate:fmt(ago(today,16)),
@@ -175,7 +181,10 @@ async function loadCollection(name, { optional = false } = {}) {
       __failedOptional.add(name); // 실패 기록 — syncedAt을 "성공"으로 잘못 찍지 않도록
       return [];
     }
-    throw e;
+    throw Object.assign(
+      new Error(`${name} 데이터 읽기 실패: ${e?.code || e?.message || 'unknown-error'}`),
+      { code: e?.code || 'data-read-failed', collection: name, cause: e },
+    );
   }
 }
 async function loadGrouped(name, { optional = false } = {}) {
@@ -197,7 +206,10 @@ async function loadGrouped(name, { optional = false } = {}) {
       __failedOptional.add(name); // 실패 기록 — syncedAt을 "성공"으로 잘못 찍지 않도록
       return {};
     }
-    throw e;
+    throw Object.assign(
+      new Error(`${name} 데이터 읽기 실패: ${e?.code || e?.message || 'unknown-error'}`),
+      { code: e?.code || 'data-read-failed', collection: name, cause: e },
+    );
   }
 }
 async function seedIfEmpty() {
@@ -210,7 +222,15 @@ async function seedIfEmpty() {
     }
   } catch (e) { /* localStorage 불가 환경은 아래로 진행 */ }
 
-  const membersSnap = await countedGetDocs('members(seed-check)', collection(db, 'members'));
+  let membersSnap;
+  try {
+    membersSnap = await countedGetDocs('members(seed-check)', collection(db, 'members'));
+  } catch (e) {
+    throw Object.assign(
+      new Error(`members 데이터 읽기 실패: ${e?.code || e?.message || 'unknown-error'}`),
+      { code: e?.code || 'data-read-failed', collection: 'members', cause: e },
+    );
+  }
   if (!membersSnap.empty) {
     // 이미 데이터가 있음 → 플래그만 남기고 이후엔 이 읽기조차 건너뛴다.
     try { localStorage.setItem('fitcms_seeded', DATA_VERSION); } catch (e) { /* noop */ }
@@ -904,18 +924,34 @@ export const store = {
 
   getTrainers:    ()     => cache.trainers,
   addTrainer:     async t => {
-    const nt={...t,id:uid('t')}; const prev=cache.trainers;
+    const nt={...withoutLegacyTrainerPassword(t),id:uid('t')}; const prev=cache.trainers;
     cache.trainers=[...cache.trainers,nt];
     try { await fbSet('trainers',nt.id,nt); return nt; }
     catch(e){ cache.trainers=prev; throw e; }
   },
   updateTrainer:  async (id,p) => {
     const prev=cache.trainers;
-    cache.trainers=cache.trainers.map(t=>t.id===id?{...t,...p}:t);
+    cache.trainers=cache.trainers.map(t=>t.id===id?withoutLegacyTrainerPassword({...t,...p}):t);
     const u=cache.trainers.find(t=>t.id===id);
     if (!u) { cache.trainers = prev; throw new Error('트레이너를 찾을 수 없습니다.'); }
     try { await fbSet('trainers',id,u); }
     catch(e){ cache.trainers=prev; throw e; }
+  },
+  purgeLegacyTrainerPasswords: async () => {
+    const targets = cache.trainers.filter(t => Object.prototype.hasOwnProperty.call(t, 'loginPassword'));
+    if (!targets.length) return 0;
+    const prev = cache.trainers;
+    cache.trainers = cache.trainers.map(withoutLegacyTrainerPassword);
+    try {
+      await Promise.all(targets.map(t => {
+        const safeTrainer = withoutLegacyTrainerPassword(t);
+        return fbSet('trainers', safeTrainer.id, safeTrainer);
+      }));
+      return targets.length;
+    } catch (e) {
+      cache.trainers = prev;
+      throw e;
+    }
   },
   deleteTrainer:  async id => {
     const prev=cache.trainers;
@@ -1803,7 +1839,11 @@ export const aiStore = {
   // updateGaitReport/updateRomReport와 동일한 낙관적 갱신 + 실패 시 롤백 패턴.
   updateSession: async (mid, sid, patch) => {
     const prev = cache.ai[mid];
-    cache.ai[mid] = (cache.ai[mid] || []).map(s => s.id === sid ? { ...s, ...patch } : s);
+    const touchesAnalysis = Object.keys(patch || {}).some(key => key !== 'momiNote');
+    const nextPatch = touchesAnalysis ? { ...patch, analysisUpdatedAt: new Date().toISOString() } : patch;
+    cache.ai[mid] = (cache.ai[mid] || []).map(s => s.id === sid
+      ? { ...s, data: { ...(s.data || {}), ...nextPatch } }
+      : s);
     const u = (cache.ai[mid] || []).find(s => s.id === sid);
     if (!u) { cache.ai[mid] = prev; throw new Error('세션을 찾을 수 없습니다.'); }
     try { await fbSet('ai', sid, { ...u, __mid: mid }); return u; }
@@ -1820,7 +1860,9 @@ export const aiStore = {
   // 위해 추가 — updatePostureReport와 동일한 낙관적 갱신 + 실패 시 롤백 패턴.
   updateGaitReport: async (mid, rid, patch) => {
     const prev = cache.gaitReports[mid];
-    cache.gaitReports[mid] = (cache.gaitReports[mid] || []).map(r => r.id === rid ? { ...r, ...patch } : r);
+    const touchesAnalysis = Object.keys(patch || {}).some(key => key !== 'momiNote');
+    const nextPatch = touchesAnalysis ? { ...patch, analysisUpdatedAt: new Date().toISOString() } : patch;
+    cache.gaitReports[mid] = (cache.gaitReports[mid] || []).map(r => r.id === rid ? { ...r, ...nextPatch } : r);
     const u = (cache.gaitReports[mid] || []).find(r => r.id === rid);
     if (!u) { cache.gaitReports[mid] = prev; throw new Error('보행 리포트를 찾을 수 없습니다.'); }
     try { await fbSet('gait_reports', rid, { ...u, __mid: mid }); return u; }
@@ -1842,7 +1884,9 @@ export const aiStore = {
   // updatePostureReport와 동일한 낙관적 갱신 + 실패 시 롤백 패턴.
   updateRomReport: async (mid, rid, patch) => {
     const prev = cache.romReports[mid];
-    cache.romReports[mid] = (cache.romReports[mid] || []).map(r => r.id === rid ? { ...r, ...patch } : r);
+    const touchesAnalysis = Object.keys(patch || {}).some(key => key !== 'momiNote');
+    const nextPatch = touchesAnalysis ? { ...patch, analysisUpdatedAt: new Date().toISOString() } : patch;
+    cache.romReports[mid] = (cache.romReports[mid] || []).map(r => r.id === rid ? { ...r, ...nextPatch } : r);
     const u = (cache.romReports[mid] || []).find(r => r.id === rid);
     if (!u) { cache.romReports[mid] = prev; throw new Error('ROM 리포트를 찾을 수 없습니다.'); }
     try { await fbSet('rom_reports', rid, { ...u, __mid: mid }); return u; }
@@ -1925,7 +1969,9 @@ export const aiStore = {
   // updatePayment/updateNotice와 동일한 낙관적 갱신 + 실패 시 롤백 패턴.
   updatePostureReport: async (mid, rid, patch) => {
     const prev = cache.postureReports[mid];
-    cache.postureReports[mid] = (cache.postureReports[mid] || []).map(r => r.id === rid ? { ...r, ...patch } : r);
+    const touchesAnalysis = Object.keys(patch || {}).some(key => key !== 'momiNote');
+    const nextPatch = touchesAnalysis ? { ...patch, analysisUpdatedAt: new Date().toISOString() } : patch;
+    cache.postureReports[mid] = (cache.postureReports[mid] || []).map(r => r.id === rid ? { ...r, ...nextPatch } : r);
     const u = (cache.postureReports[mid] || []).find(r => r.id === rid);
     if (!u) { cache.postureReports[mid] = prev; throw new Error('자세 리포트를 찾을 수 없습니다.'); }
     try { await fbSet('posture_reports', rid, { ...u, __mid: mid }); return u; }

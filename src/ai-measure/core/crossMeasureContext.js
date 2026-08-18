@@ -254,7 +254,9 @@ export function buildCrossMeasureIntegration({
   ].filter(Boolean);
 
   const problemFocus = buildProblemFocus(kind, report);
-  const score = Math.min(94, 62 + sources.length * 8 + (problemFocus.severity === 'normal' ? 6 : 0));
+  const currentQuality = reportQuality(report);
+  const sourceEvidence = sources.reduce((sum, source) => sum + source.qualityScore * source.recencyWeight * 6, 0);
+  const score = Math.round(Math.min(94, 50 + currentQuality * 15 + sourceEvidence));
   const notes = sources.map((source) => `${source.label} 리포트가 ${source.relation}.`);
   if (!sources.length) notes.push('연동 가능한 이전 리포트가 아직 없어 현재 탭의 측정값 중심으로 해석합니다.');
 
@@ -335,7 +337,11 @@ export function buildCombinedAssessment(items = []) {
 
   const strengths = unique(perKind.flatMap((p) => p.focus.strengths.map((s) => `[${p.label}] ${s}`))).slice(0, 6);
 
-  const coverageScore = Math.min(96, 55 + valid.length * 7);
+  const evidenceQuality = valid.reduce((sum, item) => {
+    const date = reportDate(item.report);
+    return sum + reportQuality(item.report) * recencyWeight(date);
+  }, 0);
+  const coverageScore = Math.round(Math.min(95, 45 + valid.length * 5 + (evidenceQuality / valid.length) * 20));
 
   const evaluationText = severity === 'risk'
     ? `${valid.length}개 측정(${perKind.map((p) => p.label).join('·')})을 종합했을 때 우선 확인이 필요한 위험 신호가 있습니다.`
@@ -369,13 +375,46 @@ function latestReport(list) {
 
 function sourceOf(kind, report, relation) {
   if (!report) return null;
+  const createdAt = reportDate(report);
+  const focus = buildProblemFocus(kind, report);
   return {
     kind,
     label: KIND_KO[kind] || kind,
     id: report.id || report.reportId || '',
-    createdAt: report.createdAt || report.measuredAt || report.recordedAt || '',
+    createdAt,
     relation,
+    findings: {
+      severity: focus.severity,
+      primaryFinding: focus.primaryFinding,
+      issues: focus.issues,
+      strengths: focus.strengths,
+    },
+    qualityScore: reportQuality(report),
+    recencyWeight: recencyWeight(createdAt),
   };
+}
+
+function reportDate(report) {
+  return report?.createdAt || report?.measuredAt || report?.recordedAt || '';
+}
+
+function reportQuality(report) {
+  if (!report || report.valid === false || report.status === 'unknown' || report.diagnosis?.grade === 'insufficient') return 0.25;
+  const reliability = report.analysis?.reliability;
+  if (reliability?.requiredCount > 0 && reliability?.validCount != null) {
+    return Math.max(0.25, Math.min(1, reliability.validCount / reliability.requiredCount));
+  }
+  return 1;
+}
+
+function recencyWeight(value, now = Date.now()) {
+  const measuredAt = Date.parse(value || '');
+  if (!Number.isFinite(measuredAt)) return 0.7;
+  const ageDays = Math.max(0, (now - measuredAt) / 86400000);
+  if (ageDays <= 90) return 1;
+  if (ageDays <= 180) return 0.8;
+  if (ageDays <= 365) return 0.6;
+  return 0.4;
 }
 
 function confidenceLevel(score) {

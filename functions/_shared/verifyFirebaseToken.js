@@ -11,13 +11,14 @@
 // 토큰을 Firestore REST API 호출에도 그대로 Bearer로 실어 보내면 별도 자격증명
 // 없이 조회할 수 있다(Firestore가 그 토큰을 자체적으로 다시 검증하므로 이중 방어).
 //
-// 실패(토큰 없음/검증 실패/역할 조회 실패)는 항상 'trainer'로 안전하게 떨어진다
-// — "확인 안 되면 관리자로 취급"이 아니라 "확인 안 되면 가장 낮은 권한으로 취급"
-// 이 유일하게 안전한 기본값이다.
+// 토큰 없음/서명 검증 실패/역할 미등록은 인증 실패로 돌려보낸다. 예전처럼
+// trainer로 강등해서 계속 처리하면 로그인하지 않았거나 CMS 역할이 없는 계정도
+// 유료 AI API를 쓸 수 있다.
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 
 const FIREBASE_PROJECT_ID = 'momgagym-cms';
-const JWKS_URL = 'https://www.googleapis.com/service_accounts/v1/jwk/[email protected]';
+const OWNER_EMAIL = 'momgagym@naver.com';
+const JWKS_URL = 'https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com';
 
 let _jwks = null;
 function getJWKS() {
@@ -44,11 +45,11 @@ async function fetchRoleFromFirestore(uid, idToken) {
 /**
  * 요청의 Authorization 헤더를 검증해서 신뢰할 수 있는 role('admin'|'trainer')을 구한다.
  * @param {string|null} authHeader  request.headers.get('Authorization')
- * @returns {Promise<{role:'admin'|'trainer', uid:string|null}>}
+ * @returns {Promise<{authenticated:boolean, role:'admin'|'trainer'|null, uid:string|null}>}
  */
 export async function resolveVerifiedRole(authHeader) {
   const idToken = extractBearerToken(authHeader);
-  if (!idToken) return { role: 'trainer', uid: null };
+  if (!idToken) return { authenticated: false, role: null, uid: null };
 
   let payload;
   try {
@@ -57,18 +58,22 @@ export async function resolveVerifiedRole(authHeader) {
       audience: FIREBASE_PROJECT_ID,
     }));
   } catch (e) {
-    console.warn('[verifyFirebaseToken] ID 토큰 검증 실패(trainer로 처리):', e?.message || e);
-    return { role: 'trainer', uid: null };
+    console.warn('[verifyFirebaseToken] ID 토큰 검증 실패:', e?.message || e);
+    return { authenticated: false, role: null, uid: null };
   }
 
   const uid = payload.sub || null;
-  if (payload.admin === true) return { role: 'admin', uid };
+  if (!uid) return { authenticated: false, role: null, uid: null };
+  const email = typeof payload.email === 'string' ? payload.email.trim().toLowerCase() : '';
+  if (payload.admin === true || email === OWNER_EMAIL) return { authenticated: true, role: 'admin', uid };
 
   try {
     const role = uid ? await fetchRoleFromFirestore(uid, idToken) : null;
-    return { role: role === 'admin' ? 'admin' : 'trainer', uid };
+    if (role === 'admin') return { authenticated: true, role: 'admin', uid };
+    if (role === 'trainer' || role === 'staff') return { authenticated: true, role: 'trainer', uid };
+    return { authenticated: false, role: null, uid };
   } catch (e) {
-    console.warn('[verifyFirebaseToken] roles 문서 조회 실패(trainer로 처리):', e?.message || e);
-    return { role: 'trainer', uid };
+    console.warn('[verifyFirebaseToken] roles 문서 조회 실패:', e?.message || e);
+    return { authenticated: false, role: null, uid };
   }
 }

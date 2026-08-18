@@ -7,6 +7,13 @@ import { todayYMD } from '../utils/dates';
 import { store } from '../demoData';
 import { useAuth } from '../contexts/AuthContext';
 import { downloadCSV } from '../services/finance';
+import {
+  deleteTrainerAuthAccount,
+  grantTrainerAccess,
+  provisionTrainerAccount,
+  revokeTrainerAccess,
+  sendTrainerPasswordReset,
+} from '../services/trainerAccountService';
 
 const TRAINER_CLASS_TYPES = ['6대체력','다이어트','선수','재활','노인','외부','임산부','장애인','기저질환','컨디셔닝'];
 
@@ -103,7 +110,7 @@ function ColorPalette({ value, onChange, usedColors=[] }) {
   );
 }
 
-const EMPTY = { name:'', phone:'', birthDate:'', hireDate:'', classTypes:[], status:'full', color:'#f59e0b', memo:'', loginEmail:'', loginPassword:'' };
+const EMPTY = { name:'', phone:'', birthDate:'', hireDate:'', classTypes:[], status:'full', color:'#f59e0b', memo:'', loginEmail:'', accountPassword:'' };
 
 // 다음 사용 가능한 색상 자동 계산
 function getNextColor(usedColors) {
@@ -117,8 +124,8 @@ export default function Trainers() {
   const [showForm,   setShowForm]   = useState(false);
   const [editTarget, setEditTarget] = useState(null);
   const [form,       setForm]       = useState(EMPTY);
-  const [showPw,     setShowPw]     = useState({}); // 트레이너별 비번 보기 토글
   const [saving,     setSaving]     = useState(false); // 등록/수정 중복 제출 방지
+  const [resetting,  setResetting]  = useState(false);
 
   const load = () => setTrainers(store.getTrainers());
   useEffect(load, []);
@@ -143,7 +150,7 @@ export default function Trainers() {
     setEditTarget(t);
     setForm({ name:t.name, phone:t.phone, birthDate:t.birthDate||'', hireDate:t.hireDate||'',
               classTypes:t.classTypes||[], status:t.status||'full', color:t.color||'#f59e0b', memo:t.memo||'',
-              loginEmail:t.loginEmail||'', loginPassword:t.loginPassword||'' });
+              loginEmail:t.loginEmail||'', accountPassword:'' });
     setShowForm(true);
   };
 
@@ -152,26 +159,102 @@ export default function Trainers() {
   const saveTrainer = async () => {
     if (saving) return;
     if (!form.name.trim() || !form.phone.trim()) { alert('이름과 연락처는 필수입니다.'); return; }
-    // 로그인 계정을 적었다면 이메일+비번 둘 다 있어야 하고, 이메일이 겹치면 안 됨
+    // Firebase Authentication 계정과 연결할 이메일은 트레이너끼리 겹치면 안 됨.
     const email = (form.loginEmail||'').trim().toLowerCase();
-    if (email || form.loginPassword) {
-      if (!email || !form.loginPassword) { alert('로그인 계정을 만들려면 이메일과 비밀번호를 모두 입력하세요.'); return; }
+    if (email) {
       const dupTrainer = trainers.some(t => t.id!==editTarget?.id && (t.loginEmail||'').trim().toLowerCase()===email);
       if (dupTrainer) { alert('이미 사용 중인 이메일입니다. 다른 이메일을 입력하세요.'); return; }
     }
+    const password = form.accountPassword || '';
+    if ((email && password.length === 0 && !editTarget) || (!email && password)) {
+      alert('로그인 이메일과 비밀번호를 모두 입력하세요.'); return;
+    }
+    if (password && password.length < 6) { alert('비밀번호는 6글자 이상으로 입력하세요.'); return; }
+    const previousEmail = (editTarget?.loginEmail || '').trim().toLowerCase();
+    const emailChanged = Boolean(editTarget && previousEmail !== email);
+    if (previousEmail && !email) {
+      alert('기존 로그인 계정의 이메일은 비워둘 수 없습니다. 다른 이메일로 변경하세요.'); return;
+    }
     setSaving(true);
+    let provisioned = null;
     try {
-      if (editTarget) await store.updateTrainer(editTarget.id, form);
-      else await store.addTrainer(form);
+      const needsAccountSave = Boolean(email && (
+        !editTarget || password || emailChanged || !editTarget.authUid
+      ));
+      if (needsAccountSave) {
+        provisioned = await provisionTrainerAccount(email, password, {
+          uid: editTarget?.authUid || '',
+          currentEmail: previousEmail,
+          displayName: form.name.trim(),
+        });
+      }
+      const { accountPassword: _password, ...trainerData } = form;
+      if (provisioned?.uid) trainerData.authUid = provisioned.uid;
+      else if (emailChanged) trainerData.authUid = '';
+      if (editTarget) await store.updateTrainer(editTarget.id, trainerData);
+      else await store.addTrainer(trainerData);
       load(); closeForm();
-    } catch (e) { alert('저장에 실패했습니다. 네트워크 확인 후 다시 시도하세요.'); }
+    } catch (e) {
+      if (provisioned?.uid && !provisioned.hadAccess) {
+        try { await revokeTrainerAccess(provisioned.uid); } catch { /* 원래 오류를 유지 */ }
+      }
+      if (provisioned?.created) {
+        try { await deleteTrainerAuthAccount(provisioned.uid, email); } catch { /* 원래 오류를 유지 */ }
+      } else if (provisioned?.uid && emailChanged && previousEmail) {
+        try {
+          await provisionTrainerAccount(previousEmail, '', {
+            uid: provisioned.uid,
+            currentEmail: email,
+            displayName: editTarget?.name || form.name.trim(),
+          });
+        } catch { /* 원래 오류를 유지 */ }
+      }
+      alert(e?.message || '저장에 실패했습니다. 네트워크 확인 후 다시 시도하세요.');
+    }
     finally { setSaving(false); }
   };
 
   const deleteTrainer = async id => {
+    const target = trainers.find(t => t.id === id);
+    if (!target) return;
     if (!window.confirm('트레이너를 삭제하시겠습니까?')) return;
-    try { await store.deleteTrainer(id); load(); }
-    catch (e) { alert('삭제에 실패했습니다. 네트워크 확인 후 다시 시도하세요.'); }
+    let accessRevoked = false;
+    let trainerDeleted = false;
+    try {
+      if (target.authUid) {
+        await revokeTrainerAccess(target.authUid);
+        accessRevoked = true;
+      }
+      await store.deleteTrainer(id);
+      trainerDeleted = true;
+      await deleteTrainerAuthAccount(target.authUid, target.loginEmail);
+      load();
+    } catch (e) {
+      if (accessRevoked && !trainerDeleted) {
+        try { await grantTrainerAccess(target.authUid, target.loginEmail); } catch { /* 원래 오류를 유지 */ }
+      }
+      if (trainerDeleted) {
+        load();
+        alert('트레이너 정보와 접근 권한은 삭제됐지만 Firebase 계정 정리에 실패했습니다. 다시 삭제할 권한은 남아 있지 않습니다.');
+      } else {
+        alert(e?.message || '삭제에 실패했습니다. 로그인 권한과 트레이너 정보가 원래대로 유지됩니다.');
+      }
+    }
+  };
+
+  const resetTrainerPassword = async () => {
+    const email = (form.loginEmail || '').trim().toLowerCase();
+    if (!email) { alert('먼저 로그인 이메일을 입력하세요.'); return; }
+    if (!window.confirm(`${email} 주소로 비밀번호 재설정 메일을 보낼까요?`)) return;
+    setResetting(true);
+    try {
+      await sendTrainerPasswordReset(email);
+      alert('비밀번호 재설정 메일을 보냈습니다. 트레이너가 메일에서 새 비밀번호를 정하면 됩니다.');
+    } catch (error) {
+      alert(error?.message || '비밀번호 재설정 메일을 보내지 못했습니다.');
+    } finally {
+      setResetting(false);
+    }
   };
 
   const exportTrainers = () => {
@@ -231,20 +314,12 @@ export default function Trainers() {
                 </div>
                 {t.memo&&<p className="text-slate-600 text-xs mt-1 truncate">{t.memo}</p>}
 
-                {/* ── 로그인 계정 정보 (관리자만) ── */}
+                {/* ── Firebase 로그인 연결 이메일 (관리자만) ── */}
                 {isAdmin && t.loginEmail && (
                   <div className="mt-2 p-2 rounded-lg bg-slate-100 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60 space-y-1">
                     <div className="flex items-center gap-1.5 text-[11px]">
-                      <span className="text-slate-500 w-12 flex-shrink-0">아이디</span>
+                      <span className="text-slate-500 w-12 flex-shrink-0">이메일</span>
                       <span className="text-slate-700 dark:text-slate-300 font-mono break-all">{t.loginEmail}</span>
-                    </div>
-                    <div className="flex items-center gap-1.5 text-[11px]">
-                      <span className="text-slate-500 w-12 flex-shrink-0">비번</span>
-                      <span className="text-slate-700 dark:text-slate-300 font-mono">{showPw[t.id] ? t.loginPassword : '••••••••'}</span>
-                      <button type="button" onClick={()=>setShowPw(p=>({...p,[t.id]:!p[t.id]}))}
-                        className="ml-auto text-[10px] px-1.5 py-0.5 rounded border border-slate-300 dark:border-slate-600 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white">
-                        {showPw[t.id] ? '숨기기' : '보기'}
-                      </button>
                     </div>
                   </div>
                 )}
@@ -298,18 +373,24 @@ export default function Trainers() {
 
               <div><label className={LBL}>메모</label><textarea rows={2} value={form.memo} onChange={pf('memo')} placeholder="특이사항" className={INP+" resize-none"}/></div>
 
-              {/* ── 로그인 계정 (관리자만 설정) ── */}
+              {/* ── 트레이너 로그인 계정 (관리자만 설정) ── */}
               <div className="pt-4 border-t border-slate-200 dark:border-slate-800">
-                <label className={LBL}>로그인 계정 <span className="normal-case text-slate-500 font-normal">(이 트레이너가 직접 로그인할 때 사용 · 선택)</span></label>
-                <div className="grid grid-cols-1 gap-3">
+                <label className={LBL}>트레이너 로그인 계정 <span className="normal-case text-slate-500 font-normal">(관리자가 아이디·비밀번호 생성 및 변경)</span></label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
-                    <input value={form.loginEmail} onChange={pf('loginEmail')} placeholder="이메일 (예: trainer-kim@momgagym.com)" className={INP} autoComplete="off"/>
+                    <input type="email" value={form.loginEmail} onChange={pf('loginEmail')} placeholder="로그인 아이디(이메일)" className={INP} autoComplete="off"/>
                   </div>
                   <div>
-                    <input value={form.loginPassword} onChange={pf('loginPassword')} placeholder="비밀번호" className={INP} autoComplete="off"/>
-                    <p className="text-[11px] text-slate-500 mt-1">※ 센터 내부용이라 비밀번호는 관리자가 확인할 수 있게 저장됩니다.</p>
+                    <input type="password" value={form.accountPassword} onChange={pf('accountPassword')} placeholder={editTarget ? '새 비밀번호(변경 없으면 비워두기)' : '임시 비밀번호(6글자 이상)'} className={INP} autoComplete="new-password"/>
                   </div>
                 </div>
+                <p className="text-[11px] text-slate-500 mt-1.5">이메일을 바꾸면 로그인 아이디가 변경됩니다. 새 비밀번호를 입력하면 즉시 변경되고, 비워두면 기존 비밀번호가 유지됩니다. 비밀번호는 저장되지 않습니다.</p>
+                {editTarget && form.loginEmail && (
+                  <button type="button" onClick={resetTrainerPassword} disabled={resetting}
+                    className="mt-2 text-xs font-semibold text-amber-600 dark:text-amber-400 hover:underline disabled:opacity-50">
+                    {resetting ? '메일 보내는 중…' : '비밀번호 재설정 메일 보내기'}
+                  </button>
+                )}
               </div>
             </div>
 

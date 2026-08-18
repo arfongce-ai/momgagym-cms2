@@ -198,15 +198,12 @@ describe('voice-command.js — 기존 navigate 동작은 그대로 유지된다(
 // 같은 패턴을 재사용한다 — 새 메커니즘을 만들지 않았는지 이름 그대로 확인한다.
 describe('voice-command.js — 멀티턴 대화(history) 지원', () => {
   it('요청 바디에서 history를 받는다', () => {
-    expect(src).toContain('const { transcript, history } = body || {};');
+    expect(src).toContain('const { history } = body || {};');
+    expect(src).toContain('const transcript = clampText(body?.transcript, 1000);');
   });
 
   it('momi.js와 동일하게 role/content 형식이 아닌 항목은 방어적으로 걸러낸다', () => {
-    const start = src.indexOf('const validHistory = Array.isArray(history)');
-    const end = src.indexOf(';', start) + 1;
-    const body = src.slice(start, end);
-    expect(body).toContain("t.role === 'user' || t.role === 'assistant'");
-    expect(body).toContain("typeof t.content === 'string'");
+    expect(src).toContain('const validHistory = normalizeMomiHistory(history);');
   });
 
   it('history가 있으면 현재 발화 앞에 이어붙여서 Claude에 보낸다(대화 연속성)', () => {
@@ -233,11 +230,13 @@ describe('voice-command.js — 멀티턴 대화(history) 지원', () => {
 // 최적화만 얹은 것이다.
 describe('voice-command.js — 관리자 화면 무료 규칙 기반 이동(2026-08-10)', () => {
   it('resolveVerifiedRole로 role을 검증한 뒤에만(그 아래에) 관리자 규칙 기반 분기가 있다(순서 회귀 방지)', () => {
-    const roleIdx = src.indexOf('const { role: effectiveRole } = await resolveVerifiedRole(');
+    const roleIdx = src.indexOf('const { authenticated, role: effectiveRole, uid } = await resolveVerifiedRole(');
+    const authGuardIdx = src.indexOf('if (!authenticated)', roleIdx);
     const adminBranchIdx = src.indexOf("if (effectiveRole === 'admin') {");
     const claudeCallIdx = src.indexOf("await fetch('https://api.anthropic.com/v1/messages'");
     expect(roleIdx).toBeGreaterThan(-1);
-    expect(adminBranchIdx).toBeGreaterThan(roleIdx);
+    expect(authGuardIdx).toBeGreaterThan(roleIdx);
+    expect(adminBranchIdx).toBeGreaterThan(authGuardIdx);
     expect(claudeCallIdx).toBeGreaterThan(adminBranchIdx);
   });
 
@@ -252,7 +251,7 @@ describe('voice-command.js — 관리자 화면 무료 규칙 기반 이동(2026
     const idx = src.indexOf("if (effectiveRole === 'admin') {");
     const claudeCallIdx = src.indexOf("await fetch('https://api.anthropic.com/v1/messages'");
     const body = src.slice(idx, claudeCallIdx);
-    expect(body).toContain("return new Response(JSON.stringify(navBody)");
+    expect(body).toContain('return jsonResponse(navBody);');
   });
 
   it('트레이너관리·매출관리 키워드를 모두 인식한다', () => {
@@ -311,11 +310,11 @@ describe('functions/api/voice-command.js — 프롬프트 캐싱(2026-08-11, 비
     expect(body).toContain("tools[tools.length - 1] = { ...tools[tools.length - 1], cache_control: { type: 'ephemeral' } };");
   });
 
-  it('system은 두 블록으로 나뉘어 있다 — 고정불변인 MOMI_SYSTEM_PROMPT만 캐싱하고, 오늘 날짜가 들어가 매일 바뀌는 뒷부분은 캐싱하지 않는다', () => {
+  it('system은 두 블록으로 나뉘어 있다 — 고정불변인 음성 전용 프롬프트만 캐싱하고, 오늘 날짜가 들어가 매일 바뀌는 뒷부분은 캐싱하지 않는다', () => {
     const idx = src.indexOf('system: [');
     expect(idx).toBeGreaterThan(-1);
     const body = src.slice(idx, src.indexOf('tools,', idx));
-    expect(body).toContain("{ type: 'text', text: MOMI_SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }");
+    expect(body).toContain("{ type: 'text', text: MOMI_VOICE_SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }");
     // 날짜가 들어가는 두 번째 블록에는 cache_control이 없어야 한다(매일 바뀌는 내용 캐싱 방지).
     const secondBlockStart = body.indexOf('todayKST');
     const secondBlockRegionStart = body.lastIndexOf('{', secondBlockStart);
@@ -327,5 +326,15 @@ describe('functions/api/voice-command.js — 프롬프트 캐싱(2026-08-11, 비
   it('캐싱 적용 전후로 Claude에게 전달되는 실제 지시문 내용(MOMI_SYSTEM_PROMPT·라우터 모드 설명·오늘 날짜)은 그대로다 — 과금 방식만 바뀌었을 뿐 프롬프트 문구 자체는 안 건드림', () => {
     expect(src).toContain('[음성 명령 라우터 모드] 사용자가 "모미야" 다음에 한 말이');
     expect(src).toContain('오늘 날짜는 ${todayKST}(한국 시간 기준)입니다.');
+  });
+});
+
+describe('functions/api/voice-command.js — 저비용 음성 전용 모델', () => {
+  const src = readSrc('functions', 'api', 'voice-command.js');
+
+  it('음성 라우팅은 Haiku 4.5와 짧은 출력 한도를 사용한다', () => {
+    expect(src).toContain("const MODEL = 'claude-haiku-4-5-20251001';");
+    expect(src).toContain('max_tokens: 256');
+    expect(src).toContain('MOMI_VOICE_SYSTEM_PROMPT');
   });
 });

@@ -17,10 +17,11 @@
 // 이 패널만 다크모드에서 튀는(밝은 박스가 어두운 화면 위에 뜨는) 상태였다.
 // 나머지와 똑같이 Tailwind + dark: variant로 통일한다(동작은 그대로, 색만 정리).
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { askMomi } from '../../services/momiService';
 
-const INITIAL_USER_TURN = { role: 'user', content: '이 리포트를 분석해줘.' };
+const INITIAL_USER_TURN = { role: 'user', content: '이 측정 결과를 핵심부터 설명해줘.' };
+const FOLLOW_UP_SUGGESTIONS = ['왜 이런 결과가 나왔나요?', '다음 운동은 무엇이 좋나요?', '주의할 점을 알려주세요.'];
 
 export default function MomiInsightPanel({ kind, report, member }) {
   const [loading, setLoading] = useState(false);
@@ -28,34 +29,50 @@ export default function MomiInsightPanel({ kind, report, member }) {
   const [error, setError] = useState(null);
   const [history, setHistory] = useState([]); // [{role, content}, ...] — 후속 질문용 대화 맥락
   const [followUpText, setFollowUpText] = useState('');
+  const requestSeqRef = useRef(0);
+
+  useEffect(() => {
+    requestSeqRef.current += 1; // 이전 리포트에서 늦게 도착한 응답 무시
+    setLoading(false);
+    setAnswer(null);
+    setError(null);
+    setHistory([]);
+    setFollowUpText('');
+  }, [kind, report?.id, member?.id]);
 
   const handleAsk = async () => {
+    const requestSeq = ++requestSeqRef.current;
     setLoading(true);
     setError(null);
     try {
       const text = await askMomi({ kind, report, member });
+      if (requestSeq !== requestSeqRef.current) return;
       setAnswer(text);
       setHistory([INITIAL_USER_TURN, { role: 'assistant', content: text }]);
     } catch (e) {
+      if (requestSeq !== requestSeqRef.current) return;
       setError(e.message || '모미에게 물어보는 중 문제가 생겼어요.');
     } finally {
-      setLoading(false);
+      if (requestSeq === requestSeqRef.current) setLoading(false);
     }
   };
 
   const handleFollowUp = async () => {
     const q = followUpText.trim();
     if (!q || loading) return;
+    const requestSeq = ++requestSeqRef.current;
     setLoading(true);
     setError(null);
     try {
       const text = await askMomi({ kind, report, member, question: q, history });
+      if (requestSeq !== requestSeqRef.current) return;
       setHistory((h) => [...h, { role: 'user', content: q }, { role: 'assistant', content: text }]);
       setFollowUpText('');
     } catch (e) {
+      if (requestSeq !== requestSeqRef.current) return;
       setError(e.message || '후속 질문을 처리하는 중 문제가 생겼어요.');
     } finally {
-      setLoading(false);
+      if (requestSeq === requestSeqRef.current) setLoading(false);
     }
   };
 
@@ -98,25 +115,40 @@ export default function MomiInsightPanel({ kind, report, member }) {
       ))}
 
       {answer && (
-        <div className="mt-3 flex gap-2">
-          <input
-            type="text"
-            value={followUpText}
-            onChange={(e) => setFollowUpText(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') handleFollowUp();
-            }}
-            placeholder="이어서 물어보기..."
-            disabled={loading}
-            className="flex-1 px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:outline-none focus:border-amber-500"
-          />
-          <button
-            onClick={handleFollowUp}
-            disabled={loading || !followUpText.trim()}
-            className="px-3.5 py-2 rounded-lg font-semibold text-white bg-slate-900 dark:bg-slate-700 disabled:opacity-50 disabled:cursor-default active:scale-[0.98] transition-transform"
-          >
-            보내기
-          </button>
+        <div className="mt-3 space-y-2">
+          <div className="flex flex-wrap gap-1.5">
+            {FOLLOW_UP_SUGGESTIONS.map((suggestion) => (
+              <button
+                key={suggestion}
+                type="button"
+                onClick={() => setFollowUpText(suggestion)}
+                disabled={loading}
+                className="px-2.5 py-1 rounded-full border border-slate-300 dark:border-slate-600 text-xs text-slate-600 dark:text-slate-300 hover:border-amber-500 disabled:opacity-50"
+              >
+                {suggestion}
+              </button>
+            ))}
+          </div>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={followUpText}
+              onChange={(e) => setFollowUpText(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.nativeEvent.isComposing) handleFollowUp();
+              }}
+              placeholder="이 결과에 대해 이어서 물어보세요"
+              disabled={loading}
+              className="flex-1 px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:outline-none focus:border-amber-500"
+            />
+            <button
+              onClick={handleFollowUp}
+              disabled={loading || !followUpText.trim()}
+              className="px-3.5 py-2 rounded-lg font-semibold text-white bg-slate-900 dark:bg-slate-700 disabled:opacity-50 disabled:cursor-default active:scale-[0.98] transition-transform"
+            >
+              {loading ? '답변 중…' : '보내기'}
+            </button>
+          </div>
         </div>
       )}
     </div>

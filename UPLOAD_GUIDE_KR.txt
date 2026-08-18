@@ -43,6 +43,15 @@ Cloudflare에는 이 dist 폴더 안의 내용을 업로드하면 됩니다.
 GitHub에는 소스만 올립니다.
 Cloudflare에는 dist 빌드 결과만 올립니다.
 
+로그인 권한 규칙(firestore.rules)을 수정한 경우에는 Cloudflare 업로드만으로
+Firebase 권한이 바뀌지 않습니다. 아래 파일도 한 번 실행해야 합니다.
+
+  3_FIREBASE_RULES_DEPLOY.bat
+
+이 단계가 빠지면 로그인은 성공해도 데이터 읽기에서 permission-denied가
+발생할 수 있습니다. 최초 실행 때 Firebase 로그인을 요구하면 화면 안내에 따라
+프로젝트 관리자 Google 계정으로 로그인한 뒤 다시 실행하세요.
+
 업로드가 실패하면 메시지를 확인하세요. 보통 원인은:
  - GitHub 로그인이 안 돼 있음
  - 인터넷 연결 문제

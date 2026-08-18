@@ -18,10 +18,28 @@ import {
   matchRuleBasedReservationCreate,
   matchRuleBasedReservationCancel,
   matchRuleBasedReservationReschedule,
+  processVoiceCommand,
 } from '../services/voiceCommandService.js';
 import { todayYMD, addDaysYMD } from '../utils/dates.js';
 
 const readSrc = (...segs) => readFileSync(join(process.cwd(), ...segs), 'utf8');
+
+describe('processVoiceCommand() — 무료 로컬 대화', () => {
+  const base = { role: 'trainer', currentUser: {}, allMembers: [], allTrainers: [] };
+
+  it('짧은 인사는 API 없이 즉시 자연스럽게 답한다', async () => {
+    await expect(processVoiceCommand({ ...base, transcript: '안녕하세요' })).resolves.toEqual({
+      type: 'chat',
+      text: '안녕하세요, 선생님. 무엇을 도와드릴까요?',
+    });
+  });
+
+  it('기능 안내도 API 없이 즉시 답한다', async () => {
+    const result = await processVoiceCommand({ ...base, transcript: '뭘 할 수 있어?' });
+    expect(result.type).toBe('chat');
+    expect(result.text).toContain('화면 이동');
+  });
+});
 
 // [버그 수정 2026-08-08] "명령이 실행 안 된다"는 문의 대응 — 예전엔 res.ok가
 // false면 상태 코드만 담아 던져서, 백엔드(functions/api/voice-command.js)가

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 vi.mock('../demoData.js', () => ({
-  store: {},
+  store: { getBodyRecords: vi.fn(() => []) },
   aiStore: {
     ensurePostureReports: vi.fn(),
     ensureRomReports: vi.fn(),
@@ -21,8 +21,8 @@ vi.mock('../firebase.js', () => ({
   },
 }));
 
-import { aiStore } from '../demoData.js';
-import { askMomi, loadLatestReportsByKind, buildMemberCombinedAssessment, askMomiCombined } from '../services/momiService.js';
+import { aiStore, store } from '../demoData.js';
+import { askMomi, loadLatestReportsByKind, buildMemberCombinedAssessment, askMomiCombined, buildConditionTrend, compactReportForMomi } from '../services/momiService.js';
 
 function mockFetchOk(payloadCapture) {
   global.fetch = vi.fn(async (_url, opts) => {
@@ -94,7 +94,7 @@ describe('momiService — stance/squat/lifting 확장', () => {
       expect('businessContext' in captured.body).toBe(true);
     });
 
-    it('history가 있으면(후속 질문) loadCrossReports를 다시 안 부른다(ensureSessions 미호출)', async () => {
+    it('history가 있어도 현재 교차 측정 컨텍스트를 다시 붙인다(캐시 기반 ensure 호출)', async () => {
       const captured = {};
       mockFetchOk(captured);
       await askMomi({
@@ -107,7 +107,7 @@ describe('momiService — stance/squat/lifting 확장', () => {
           { role: 'assistant', content: '어깨 정렬이 양호합니다.' },
         ],
       });
-      expect(aiStore.ensureSessions).not.toHaveBeenCalled();
+      expect(aiStore.ensureSessions).toHaveBeenCalledWith('m1');
     });
 
     it('history가 있으면 그대로 페이로드에 담아 보낸다', async () => {
@@ -139,6 +139,8 @@ describe('momiService — stance/squat/lifting 확장', () => {
         history: [{ role: 'user', content: '이 리포트를 분석해줘.' }, { role: 'assistant', content: '...' }],
       });
       expect(captured.body.report).toBeTruthy();
+      expect(captured.body.report.measurements.id).toBe('r1');
+      expect(captured.body.report.summary).toBeTruthy();
       expect(captured.body.member.name).toBe('홍길동');
     });
   });
@@ -157,6 +159,26 @@ describe('momiService — stance/squat/lifting 확장', () => {
 
     const kinds = captured.body.crossContext.cross_measure_context.sources.map((s) => s.kind);
     expect(kinds).toEqual(expect.arrayContaining(['stance', 'squat', 'lifting']));
+    const stance = captured.body.crossContext.cross_measure_context.sources.find((s) => s.kind === 'stance');
+    expect(stance.findings.primaryFinding).toBeTruthy();
+    expect(stance.qualityScore).toBeGreaterThan(0);
+  });
+
+  it('원본 리포트 압축 시 수치는 남기고 영상·랜드마크·URL은 제거한다', () => {
+    const compact = compactReportForMomi({ angle: 12, videoBlob: 'huge', landmarks: [1, 2], reportUrl: 'https://example.com', nested: { status: 'risk' } });
+    expect(compact).toEqual({ angle: 12, nested: { status: 'risk' } });
+  });
+
+  it('컨디션 추이는 최근 N건이 아니라 실제 최근 N일만 포함한다', () => {
+    store.getBodyRecords.mockReturnValue([
+      { recordedAt: '2026-08-14T09:00:00+09:00', fatigue: 4, conditionStatus: 'caution' },
+      { recordedAt: '2026-08-14T18:00:00+09:00', painNrs: 2, conditionStatus: 'normal' },
+      { recordedAt: '2026-08-01T09:00:00+09:00', fatigue: 5, conditionStatus: 'risk' },
+    ]);
+    const trend = buildConditionTrend({ id: 'm1' }, { days: 7, now: new Date('2026-08-14T23:00:00+09:00') });
+    expect(trend.entries).toHaveLength(2);
+    expect(trend.summary).toContain('1일 기록');
+    expect(trend.summary).toContain('주의 이상 1건');
   });
 
   it('세션이 없는 measure(예: body)는 stance/squat/lifting 소스에 섞이지 않는다', async () => {

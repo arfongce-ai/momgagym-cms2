@@ -10,6 +10,7 @@ import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMomiVoice, isIOSStandalone } from '../../hooks/useMomiVoice';
 import { useMomiSpeech } from '../../hooks/useMomiSpeech';
+import MomiVoiceOrb from './MomiVoiceOrb';
 import { processVoiceCommand, buildTimerControlMessage } from '../../services/voiceCommandService';
 import {
   buildReservationSummary,
@@ -49,8 +50,9 @@ export default function GlobalVoiceCommand() {
   const allTrainers = useMemo(() => store.getTrainers(), []);
   const [feedback, setFeedback] = useState('');
   const [busy, setBusy] = useState(false);
+  const [interimText, setInterimText] = useState('');
 
-  const { speak, stop: stopSpeaking, unlock: unlockSpeech } = useMomiSpeech();
+  const { speaking, speak, stop: stopSpeaking, unlock: unlockSpeech } = useMomiSpeech();
 
   // [예약 생성 프로젝트 2단계 2026-08-08] KioskVoiceCommand.jsx와 동일한 이유로
   // ref를 다리로 씀 — awaitReply는 useMomiVoice()가 반환하는데 useMomiVoice()는
@@ -134,7 +136,8 @@ export default function GlobalVoiceCommand() {
               })
               .catch((e) => {
                 const fail = '죄송해요, 처리 중 오류가 났어요.';
-                setFeedback(`${fail}\n[진단] ${e?.message || e}`);
+                setFeedback(fail);
+                console.warn('[모미] 확인 작업 실패:', e?.message || e);
                 speak(fail);
                 setTimeout(() => setFeedback(''), 8000);
               })
@@ -312,6 +315,7 @@ export default function GlobalVoiceCommand() {
         return;
       }
       isHandlingRef.current = true;
+      setInterimText('');
       setBusy(true);
       // [요청 흐름 2026-08-08] "모미야"→"네, 선생님"→(명령)→명령 인지 확인→
       // 실행/응답. 실제 처리(API 호출)로 넘어가기 전에 "들었다"는 걸 먼저
@@ -333,6 +337,9 @@ export default function GlobalVoiceCommand() {
           currentUser: user,
           allMembers,
           allTrainers,
+          // 화면이 이미 구독해 둔 Firestore 캐시를 재사용하므로 추가 읽기 비용이 없다.
+          allSchedules: store.getSchedules(),
+          allPayments: store.getAllPayments(),
           navigate,
           mode: 'phone', // [예약 생성 프로젝트 2026-08-08] 폰/개인 기기 — 로그인된 본인 trainerId를 우선 신뢰.
           // [음성 대화형 2026-08-09] KioskVoiceCommand.jsx와 동일 — 직전 자유
@@ -386,9 +393,9 @@ export default function GlobalVoiceCommand() {
       } finally {
         setBusy(false);
         if (!handledSeparately) {
-          setFeedback(diagDetail ? `${message}\n[진단] ${diagDetail}` : message);
+          setFeedback(message);
           speak(message);
-          setTimeout(() => setFeedback(''), diagDetail ? 8000 : 4000);
+          setTimeout(() => setFeedback(''), 5000);
         }
         isHandlingRef.current = false;
         // [마이크 자동 꺼짐 2026-08-11] 명령 하나(확인이 필요한 예약/메모/세션조정
@@ -424,9 +431,10 @@ export default function GlobalVoiceCommand() {
     // 소리 내어 읽지는 않는다(아무 말에나 계속 TTS가 끼어들면 방해가 됨).
     // [2026-08-08] "모미야"가 계속 무반응이라는 문의 때문에 노출 시간을 늘렸다
     // (4초→7초) — 이 문구를 놓치면 원인 파악이 안 되므로 눈에 띄는 시간을 확보.
-    const shown = heard ? `"${heard}"` : '(빈 소리만 인식됨)';
-    setFeedback(`[진단] 들림: ${shown}`);
-    setTimeout(() => setFeedback(''), 7000);
+    if (!heard) {
+      setFeedback('잘 못 들었어요. 조금 천천히 다시 말씀해 주세요.');
+      setTimeout(() => setFeedback(''), 4000);
+    }
   }, []);
 
   const handleErrorOccurred = useCallback((errorCode) => {
@@ -440,8 +448,8 @@ export default function GlobalVoiceCommand() {
       // 버튼으로 끄고 다시 켜면 대부분 복구된다.
       'restart-failed': '음성 인식이 멈췄어요. 마이크 버튼을 다시 눌러주세요.',
     };
-    const readable = KNOWN[errorCode] || `오류 코드: ${errorCode}`;
-    setFeedback(`[진단] ${readable}`);
+    const readable = KNOWN[errorCode] || '음성 인식에 잠시 문제가 생겼어요. 다시 시도해 주세요.';
+    setFeedback(readable);
     // 마이크가 실제로 죽은 경우(restart-failed)는 놓치면 안 되니 더 오래 보여준다.
     setTimeout(() => setFeedback(''), errorCode === 'restart-failed' ? 15000 : 4000);
   }, []);
@@ -450,6 +458,7 @@ export default function GlobalVoiceCommand() {
     onCommand: handleCommand,
     onWakeOnly: handleWakeOnly,
     onMismatch: handleMismatch,
+    onInterim: setInterimText,
     onErrorOccurred: handleErrorOccurred,
     // [버그 수정 — 웨이크워드 이중 요구 2026-08-09] 마이크 버튼을 직접 눌러서
     // 켜는 방식이라, 그 자체가 이미 "지금부터 나한테 말하는 거야"라는 명시적
@@ -491,7 +500,7 @@ export default function GlobalVoiceCommand() {
           maxWidth: 220,
         }}
       >
-        [진단] 이 브라우저는 음성인식을 지원하지 않아요.{isIOSStandalone()
+        이 브라우저는 음성인식을 지원하지 않아요.{isIOSStandalone()
           ? ' 아이폰 홈 화면 아이콘 대신 Safari 앱에서 주소를 직접 열어보세요.'
           : ' Chrome 사용을 권장해요.'}
       </div>
@@ -506,6 +515,9 @@ export default function GlobalVoiceCommand() {
   // 그대로 두되(다른 iOS 조합에선 될 수도 있어서 아예 막지는 않음), 잘 안
   // 될 때 뭘 시도해보면 되는지 작은 안내를 같이 보여준다.
   const showIOSStandaloneHint = isIOSStandalone();
+  const hasError = /권한|못 찾|연결|멈췄|문제/.test(feedback);
+  const orbState = hasError ? 'error' : speaking ? 'speaking' : busy ? 'thinking' : listening ? 'listening' : 'idle';
+  const orbLabel = speaking ? 'MOMI가 답하고 있어요' : busy ? 'MOMI가 생각하고 있어요' : listening ? '말씀해 주세요' : 'MOMI 음성 대기';
 
   const toggle = () => {
     if (listening) {
@@ -537,7 +549,7 @@ export default function GlobalVoiceCommand() {
       className="fixed right-5 bottom-[calc(88px+env(safe-area-inset-bottom))] md:bottom-5"
       style={{ zIndex: 1000 }}
     >
-      {feedback && (
+      {(feedback || interimText) && (
         <div
           style={{
             marginBottom: 8,
@@ -552,7 +564,7 @@ export default function GlobalVoiceCommand() {
             boxShadow: '0 2px 10px rgba(0,0,0,0.35)',
           }}
         >
-          {feedback}
+          {feedback || `“${interimText}”`}
         </div>
       )}
       {!feedback && showIOSStandaloneHint && (
@@ -572,43 +584,14 @@ export default function GlobalVoiceCommand() {
           음성인식이 안 되면 홈 화면 아이콘 대신 Safari 앱에서 직접 열어보세요.
         </div>
       )}
-      <button
+      <MomiVoiceOrb
+        button
         onClick={toggle}
-        aria-label={listening ? '음성 명령 끄기' : '음성 명령 켜기 (모미야)'}
+        state={orbState}
+        size={72}
+        label={orbLabel}
         disabled={busy}
-        style={{
-          width: 52,
-          height: 52,
-          borderRadius: '50%',
-          border: 'none',
-          background: listening ? '#ef4444' : '#111827',
-          color: '#fff',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          boxShadow: '0 2px 10px rgba(0,0,0,0.25)',
-          position: 'relative',
-          cursor: busy ? 'default' : 'pointer',
-          fontSize: 22,
-          lineHeight: 1,
-        }}
-      >
-        {listening ? '🎙️' : '🔇'}
-        {listening && (
-          <span
-            style={{
-              position: 'absolute',
-              top: 4,
-              right: 4,
-              width: 10,
-              height: 10,
-              borderRadius: '50%',
-              background: '#f87171',
-              boxShadow: '0 0 0 2px #111827',
-            }}
-          />
-        )}
-      </button>
+      />
     </div>
   );
 }

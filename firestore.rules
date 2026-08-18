@@ -5,7 +5,7 @@ rules_version = '2';
 // 또는 CLI:  firebase deploy --only firestore:rules
 //
 // 핵심 원칙
-//  1) roles 컬렉션은 클라이언트에서 절대 write 금지(권한 탈취 차단). 읽기만 허용.
+//  1) roles 컬렉션은 관리자만 trainer 역할을 생성·회수할 수 있다(admin/staff 승격 차단).
 //  2) 운영 데이터는 "로그인한 사용자"만 접근(공개 차단).
 //  3) 관리자 전용 데이터(매출/지출/정산/설정)는 roles 문서가 admin인 사용자만.
 //
@@ -15,39 +15,79 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // 로그인 여부
-    function isSignedIn() {
-      return request.auth != null;
+    // Firebase Auth 계정이며 roles/{uid}에 CMS 역할이 등록된 사용자만 허용.
+    // 익명 인증은 운영 데이터(회원/결제/트레이너)에 접근할 수 없다.
+    function hasRole(role) {
+      return request.auth != null
+        && exists(/databases/$(database)/documents/roles/$(request.auth.uid))
+        && get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role == role;
+    }
+
+    function hasAdminClaim() {
+      return request.auth != null
+        && request.auth.token.admin == true;
+    }
+
+    // 역할 문서가 실수로 지워져도 센터 대표 계정이 복구 작업을 할 수 있는 비상 열쇠.
+    function hasOwnerEmail() {
+      return request.auth != null
+        && request.auth.token.email == 'momgagym@naver.com';
+    }
+
+    function isAuthorized() {
+      return isAdmin() || hasRole('staff') || hasRole('trainer');
     }
 
     // roles/{uid} 문서로 관리자 판별 (Custom Claims 미사용 시)
     function isAdmin() {
-      return isSignedIn()
-        && exists(/databases/$(database)/documents/roles/$(request.auth.uid))
-        && get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role == 'admin';
+      return hasAdminClaim() || hasOwnerEmail() || hasRole('admin');
     }
 
-    // ── roles : 권한의 원천. 클라이언트 write 전면 금지 ──────────────
-    // 읽기는 본인 역할 확인을 위해 로그인 사용자에게 허용.
-    // 쓰기(생성/수정/삭제)는 어떤 클라이언트도 불가 →
-    //   콘솔에서 수동으로 작성하거나 Admin SDK(서버)로만 변경.
+    // ── roles : 권한의 원천 ──────────────────────────────
+    // 본인은 자기 역할만 읽을 수 있다. 관리자는 CMS의 트레이너 등록 화면에서
+    // trainer 역할만 만들거나 갱신할 수 있다(admin/staff 승격은 계속 차단).
     match /roles/{uid} {
-      allow read:  if isSignedIn();
-      allow write: if false;
+      allow get: if request.auth != null && (request.auth.uid == uid || isAdmin());
+      allow list: if false;
+      allow create, update: if isAdmin()
+        && request.resource.data.keys().hasOnly(['role', 'email'])
+        && request.resource.data.role == 'trainer';
+      allow delete: if isAdmin() && resource.data.role == 'trainer';
+    }
+
+    // 권한이 아직 없는 기존 트레이너가 로그인에 성공한 뒤 남기는 연결 요청.
+    // 비밀번호는 저장하지 않으며, 관리자가 등록된 트레이너 이메일과 대조해 승인한다.
+    match /loginRequests/{uid} {
+      allow create, update: if request.auth != null
+        && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['email', 'requestedAt'])
+        && request.resource.data.email == request.auth.token.email;
+      allow get: if request.auth != null && (request.auth.uid == uid || isAdmin());
+      allow list: if isAdmin();
+      allow delete: if request.auth != null && (request.auth.uid == uid || isAdmin());
     }
 
     // ── 일반 운영 데이터 : 로그인 사용자만 ───────────────────────────
-    match /members/{id}    { allow read, write: if isSignedIn(); }
-    match /trainers/{id}   { allow read, write: if isSignedIn(); }
-    match /schedules/{id}  { allow read, write: if isSignedIn(); }
-    match /notices/{id}    { allow read, write: if isSignedIn(); }
-    match /payments/{id}   { allow read, write: if isSignedIn(); }
-    match /body/{id}       { allow read, write: if isSignedIn(); }
-    match /ai/{id}         { allow read, write: if isSignedIn(); }
-    match /gait_reports/{id} { allow read, write: if isSignedIn(); }
-    match /posture_reports/{id} { allow read, write: if isSignedIn(); }
-    match /rom_reports/{id} { allow read, write: if isSignedIn(); }
-    match /users/{userId}/reports/{reportId} { allow read, write: if isSignedIn(); }
+    match /members/{id}    { allow read, write: if isAuthorized(); }
+    match /trainers/{id} {
+      allow read: if isAuthorized();
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin() || (
+        hasRole('trainer')
+        && resource.data.loginEmail == request.auth.token.email
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['authUid', 'updatedAt'])
+        && request.resource.data.authUid == request.auth.uid
+      );
+    }
+    match /schedules/{id}  { allow read, write: if isAuthorized(); }
+    match /notices/{id}    { allow read, write: if isAuthorized(); }
+    match /payments/{id}   { allow read, write: if isAuthorized(); }
+    match /body/{id}       { allow read, write: if isAuthorized(); }
+    match /ai/{id}         { allow read, write: if isAuthorized(); }
+    match /gait_reports/{id} { allow read, write: if isAuthorized(); }
+    match /posture_reports/{id} { allow read, write: if isAuthorized(); }
+    match /rom_reports/{id} { allow read, write: if isAuthorized(); }
+    match /users/{userId}/reports/{reportId} { allow read, write: if isAuthorized(); }
 
     // ── 관리자 전용 데이터 ──────────────────────────────
     // 지출: 완전 관리자 전용
@@ -57,21 +97,21 @@ service cloud.firestore {
     // SNS·스터디 기록 / 정산 수동수정값:
     //   트레이너 본인 정산·기록 조회를 위해 '읽기'는 로그인 사용자 전체에 허용.
     //   '쓰기'(추가·수정·삭제)는 관리자만 — 트레이너 화면은 보기 전용.
-    match /promos/{id}          { allow read: if isSignedIn(); allow write: if isAdmin(); }
-    match /settleOverrides/{id} { allow read: if isSignedIn(); allow write: if isAdmin(); }
-    match /settings/{id}        { allow read: if isSignedIn(); allow write: if isAdmin(); }
+    match /promos/{id}          { allow read: if isAuthorized(); allow write: if isAdmin(); }
+    match /settleOverrides/{id} { allow read: if isAuthorized(); allow write: if isAdmin(); }
+    match /settings/{id}        { allow read: if isAuthorized(); allow write: if isAdmin(); }
 
     // ── 델타 동기화 인프라 ──────────────────────────────
     // meta/versions: 컬렉션별 마지막 쓰기 시각(문서 1개). 앱이 열릴 때 이 문서
     //   하나만 읽고 "바뀐 게 없으면 추가 읽기 0" 을 달성한다. 쓰기는 앱의 모든
     //   저장 동작이 수행하므로 로그인 사용자에게 허용(민감정보 없음 — 시각만).
     match /meta/{id} {
-      allow read, write: if isSignedIn();
+      allow read, write: if isAuthorized();
     }
     // deletions: 삭제 톰스톤(어느 컬렉션의 어떤 id가 언제 지워졌나).
     //   다른 기기의 캐시에서 삭제를 전파하기 위한 추가 전용(append-only) 로그.
     match /deletions/{id} {
-      allow read, create: if isSignedIn();
+      allow read, create: if isAuthorized();
       allow update, delete: if false;
     }
 

@@ -24,6 +24,8 @@ import {
 // 화면으로 이동시킨다.
 import { publishTimerControl } from '../voice/timerControlBus.js';
 import { setPendingTimerCommand } from '../voice/pendingTimerCommand.js';
+import { answerFreeDataQuestion } from './freeVoiceDataService.js';
+import { cacheVoiceResponse, getCachedVoiceResponse } from './voiceResponseCache.js';
 
 // 간단한 한글 이름 퍼지 매칭: 공백 제거 + 부분 일치 우선, 없으면 자모 유사도로 fallback.
 function normalize(str) {
@@ -52,21 +54,24 @@ function fuzzyFindMember(members, spokenName) {
 // 문장에서 올바른 쪽("리포트")이 먼저 걸린다("회원"이 먼저 걸리면 회원관리
 // 화면으로 잘못 이동함).
 const DESTINATION_KEYWORDS = [
-  { id: 'report', keywords: ['리포트'] },
-  { id: 'ai_measure', keywords: ['에이아이측정', 'ai측정', '측정'] },
-  { id: 'schedule', keywords: ['스케줄', '일정'] },
-  { id: 'settings', keywords: ['설정'] },
-  { id: 'trainers', keywords: ['트레이너'] },
-  { id: 'revenue', keywords: ['매출'] },
-  { id: 'members', keywords: ['회원관리', '회원'] },
-  { id: 'home', keywords: ['홈', '대시보드'] },
+  { id: 'report', keywords: ['결과리포트', '분석리포트', '리포트', '결과보고서'] },
+  { id: 'ai_measure', keywords: ['에이아이측정', 'ai측정', '측정분석', '측정'] },
+  { id: 'schedule', keywords: ['예약목록', '수업일정', '스케줄', '일정', '예약표'] },
+  { id: 'settings', keywords: ['환경설정', '설정'] },
+  { id: 'trainers', keywords: ['선생님관리', '트레이너관리', '트레이너'] },
+  { id: 'revenue', keywords: ['수납관리', '매출관리', '매출'] },
+  { id: 'members', keywords: ['회원관리', '회원목록', '회원명단', '회원'] },
+  { id: 'home', keywords: ['첫화면', '메인화면', '홈', '대시보드'] },
 ];
 
 // "화면 이동해줘"라는 의도가 명확할 때만 규칙 기반으로 처리한다 — 목적지
 // 키워드만 보고 판단하면 "이 회원한테 어떤 운동을 추천해야 할까요?" 같은
 // 코칭 질문(회원이 들어있지만 이동 명령이 아님)도 잘못 화면 이동으로
 // 처리해버릴 수 있다. 이동 동사가 없으면 애매한 걸로 보고 Claude로 넘긴다.
-const NAVIGATION_VERBS = ['열어', '띄워', '보여', '가줘', '가자', '이동', '들어가'];
+const NAVIGATION_VERBS = [
+  '열어', '띄워', '보여', '가줘', '가자', '이동', '들어가',
+  '켜줘', '찾아줘', '넘어가', '바로가기', '접속해', '꺼내줘',
+];
 
 function hasNavigationVerb(normalizedText) {
   return NAVIGATION_VERBS.some((v) => normalizedText.includes(normalize(v)));
@@ -499,8 +504,43 @@ export function matchRuleBasedReservationReschedule(commandText, members, traine
 // 쪽인지는 호출부(컴포넌트)가 mode로 알려준다. 기본값은 'phone' — 기존
 // GlobalVoiceCommand.jsx 호출부가 mode를 안 넘겨도 그대로 동작하게 하기 위함.
 export async function processVoiceCommand({
-  transcript, role, currentUser, allMembers, allTrainers = [], navigate, mode = 'phone', history = [],
+  transcript,
+  role,
+  currentUser,
+  allMembers,
+  allTrainers = [],
+  allSchedules = [],
+  allPayments = [],
+  navigate,
+  mode = 'phone',
+  history = [],
 }) {
+  const freeDataAnswer = answerFreeDataQuestion({
+    transcript,
+    role,
+    currentUser,
+    members: allMembers,
+    schedules: allSchedules,
+    payments: allPayments,
+  });
+  if (freeDataAnswer) return freeDataAnswer;
+
+  // 인사·감사·사용법처럼 의미가 확실한 짧은 대화는 서버 AI를 부르지 않는다.
+  // 자연스러운 응답은 유지하면서 반복 호출 비용과 네트워크 오류 가능성을 없앤다.
+  const shortText = (transcript || '').trim().replace(/[.!?~]+$/g, '');
+  if (shortText.length <= 18 && /^(안녕(?:하세요)?|반가워(?:요)?|모미 안녕)$/u.test(shortText)) {
+    return { type: 'chat', text: '안녕하세요, 선생님. 무엇을 도와드릴까요?' };
+  }
+  if (shortText.length <= 18 && /^(고마워(?:요)?|감사(?:해요|합니다)?|도움됐어(?:요)?)$/u.test(shortText)) {
+    return { type: 'chat', text: '도움이 됐다니 좋아요. 더 필요한 게 있으면 말씀해 주세요.' };
+  }
+  if (shortText.length <= 28 && /(뭘|뭐를?|무엇을).*(할 수|도와)|사용법|어떻게 써/u.test(shortText)) {
+    return {
+      type: 'chat',
+      text: '화면 이동, 예약·메모·세션 변경, 타이머 제어와 간단한 코칭 질문을 도와드릴 수 있어요.',
+    };
+  }
+
   // [무료 우선 2026-08-08] 규칙 기반으로 먼저 시도 — 매치되면 API 호출 자체가
   // 없어서 비용이 전혀 안 든다.
   const ruleDestId = matchRuleBasedDestination(transcript);
@@ -642,6 +682,12 @@ export async function processVoiceCommand({
     return { type: 'reservation_reschedule_propose', propose };
   }
 
+  // 개인정보·실시간 데이터·후속 맥락이 없는 센터 FAQ만 기기 캐시에서 재사용한다.
+  // 회원 이름이 한 글자라도 포함되면 캐시 대상에서 제외한다.
+  const cacheOptions = { memberNames: (allMembers || []).map((member) => member.name), history };
+  const cached = getCachedVoiceResponse(transcript, cacheOptions);
+  if (cached) return cached;
+
   // 규칙 기반으로 확신 있게 못 찾았으면(자유 질문·코칭·애매한 표현·관리자 전용
   // 화면 등) 기존처럼 Claude(/api/voice-command)로 넘어간다.
   // [보안 수정] 서버는 이제 이 role 문자열을 그대로 믿지 않고, 아래 idToken을 직접
@@ -678,6 +724,7 @@ export async function processVoiceCommand({
   const data = await res.json();
 
   if (data.type === 'chat') {
+    cacheVoiceResponse(transcript, data.text, cacheOptions);
     return { type: 'chat', text: data.text };
   }
 
