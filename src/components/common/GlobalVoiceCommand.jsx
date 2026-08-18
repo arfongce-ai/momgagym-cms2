@@ -11,6 +11,7 @@ import { useNavigate } from 'react-router-dom';
 import { useMomiVoice, isIOSStandalone } from '../../hooks/useMomiVoice';
 import { useMomiSpeech } from '../../hooks/useMomiSpeech';
 import MomiVoiceOrb from './MomiVoiceOrb';
+import { useCameraStageActive } from '../../ai-measure/core/cameraStageActive';
 import { processVoiceCommand, buildTimerControlMessage } from '../../services/voiceCommandService';
 import {
   buildReservationSummary,
@@ -53,6 +54,12 @@ export default function GlobalVoiceCommand() {
   const [interimText, setInterimText] = useState('');
 
   const { speaking, speak, stop: stopSpeaking, unlock: unlockSpeech } = useMomiSpeech();
+
+  // [2026-08-18] "momi 버튼이 계속 화면을 가린다" — 측정 화면(CameraStage,
+  // z-index 60)보다 이 버튼(z-index 1000)이 항상 위라 스켈레톤·게이지·녹화
+  // 버튼을 가렸다. 모든 측정 탭에서 CameraStage가 뜨는 동안엔 반투명하게
+  // 낮춘다(완전히 숨기지 않고 위치는 그대로 — 필요하면 여전히 누를 수 있게).
+  const cameraActive = useCameraStageActive();
 
   // [예약 생성 프로젝트 2단계 2026-08-08] KioskVoiceCommand.jsx와 동일한 이유로
   // ref를 다리로 씀 — awaitReply는 useMomiVoice()가 반환하는데 useMomiVoice()는
@@ -488,9 +495,10 @@ export default function GlobalVoiceCommand() {
     // (KioskVoiceCommand.jsx는 이미 이렇게 처리 중이었고, 여기만 빠져있었다).
     return (
       <div
-        className="fixed right-5 bottom-[calc(88px+env(safe-area-inset-bottom))] md:bottom-5"
+        className="fixed right-5 bottom-[calc(88px+env(safe-area-inset-bottom))] md:bottom-5 transition-opacity duration-300"
         style={{
           zIndex: 1000,
+          opacity: cameraActive ? 0.22 : 1,
           padding: '8px 12px',
           borderRadius: 8,
           background: 'rgba(0,0,0,0.85)',
@@ -546,8 +554,8 @@ export default function GlobalVoiceCommand() {
     // 에서는 기존 20px 그대로 되돌린다 — AppLayout의 하단바 자체도 같은 md 기준으로
     // 나타났다 사라지므로 같은 기준선을 맞춘 것.
     <div
-      className="fixed right-5 bottom-[calc(88px+env(safe-area-inset-bottom))] md:bottom-5"
-      style={{ zIndex: 1000 }}
+      className="fixed right-5 bottom-[calc(88px+env(safe-area-inset-bottom))] md:bottom-5 transition-opacity duration-300"
+      style={{ zIndex: 1000, opacity: cameraActive ? 0.22 : 1 }}
     >
       {(feedback || interimText) && (
         <div

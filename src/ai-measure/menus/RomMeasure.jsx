@@ -26,7 +26,7 @@ import { dataUrlToFile } from '../core/reportShare';
 import { useHardwareBack } from '../core/useHardwareBack';
 import RomSensorGoniometer from './RomSensorGoniometer.jsx';
 import RomVideoAngle from './RomVideoAngle.jsx';
-import { isSkeletonEnabled } from '../core/skeletonPref';
+import { isSkeletonEnabled, useSkeletonOverlay } from '../core/skeletonPref';
 import { drawGaugeHud } from '../core/recordingOverlay';
 import { DEFAULT_ASPECT, outputSize, aspectLabel, drawVideoCover, coverTransform, rotateLandmarksNormalized } from '../core/recordAspect';
 import { useCameraRotation } from '../core/useCameraRotation';
@@ -104,6 +104,21 @@ export default function RomMeasure({ member, onSave, onBack, onViewInReport }) {
   const [elapsed, setElapsed] = useState(0);
   const [guide, setGuide] = useState('관절이 보이게 서서, 녹화 버튼을 누른 뒤 동작을 한 번 천천히 끝까지 수행하세요.');
 
+  // ── [2026-08-18 요청] 촬영 3-2-1 카운트다운 + 양쪽(건측→환측) 방향전환 ──
+  //  · SLST(StanceLiveAnalysis.jsx)와 동일한 "버튼 → 3-2-1 → 시작" 패턴을 그대로
+  //    가져온다(카운트다운은 CameraStage의 기존 countdown prop을 그대로 씀).
+  //  · side==='both'일 때만 의미 있는 2단계 흐름 — 녹화는 처음부터 끝까지 하나로
+  //    이어지는 연속 촬영(MediaRecorder 재시작 없음)이라 저장되는 영상도, ROM
+  //    누적기(accRef)도 자동으로 "합쳐진" 하나의 결과가 된다(별도 병합 로직 불필요).
+  //  · SUPINE/PRONE(누워서/엎드려)에서는 방향전환이 선택사항 — 버튼은 뜨지만
+  //    강제하지 않는다(관절이 한 번에 다 보이면 그냥 "측정 종료"로 끝내면 됨).
+  const [countdown, setCountdown] = useState(null);
+  const countdownTimerRef = useRef(null);
+  const [direction, setDirection] = useState(null); // null | 'first' | 'second' (side==='both'에서만 사용)
+  const [switching, setSwitching] = useState(false); // 방향전환 카운트다운 진행 중
+  const directionPausedRef = useRef(false); // 전환 카운트다운 동안 ROM 각도 누적만 잠시 멈춤(녹화 자체는 계속)
+  const [skeletonOn] = useSkeletonOverlay(); // 화면에 "스켈레톤 꺼짐 = ROM 인식 중지" 배너를 띄우기 위한 반응형 조회
+
   // ── 녹화(MediaRecorder) — 보행/점프와 동일하게 스켈레톤 오버레이를 합성한
   //    영상 blob 을 만들어 결과 리포트에 첨부(저장·공유)한다. ROM 은 정지 촬영이
   //    아니라 '동작 구간 전체'를 녹화해 회차별로 동작을 되돌려 볼 수 있어야 한다.
@@ -146,6 +161,9 @@ export default function RomMeasure({ member, onSave, onBack, onViewInReport }) {
       setRecording(false);
       setElapsed(0);
       accRef.current = null;
+      setDirection(null);
+      setSwitching(false);
+      directionPausedRef.current = false;
       setMode('select');
       return;
     }
@@ -172,13 +190,23 @@ export default function RomMeasure({ member, onSave, onBack, onViewInReport }) {
     const corrected = rotateLandmarksNormalized(smoothed, rotationDeg);
     if (recordingRef.current && accRef.current) {
       const tMs = ts - startTsRef.current;
-      accRef.current.push(corrected, tMs);
-      setElapsed(Math.round(tMs / 100) / 10);
-      // 라이브 각도 표시(정규화 후 현재 프레임)
-      const norm = normalizePose(corrected) || corrected;
-      const L = jointAngleByMode(norm, joint, 'left', poseMode).angle;
-      const R = jointAngleByMode(norm, joint, 'right', poseMode).angle;
-      setLiveAngle({ left: L, right: R });
+      setElapsed(Math.round(tMs / 100) / 10); // 경과시간은 스켈레톤/방향전환과 무관하게 계속 표시.
+      // [2026-08-18 요청] 스켈레톤이 꺼져 있으면 ROM 인식(각도 누적)도 함께
+      // 멈춘다 — 화면에서 관절이 제대로 잡히는지 확인할 수 없는 채로 데이터만
+      // 쌓이는 걸 막기 위함(측정 정직성). skeletonPref.js의 일반 원칙("OFF는
+      // 화면 표시만 끄고 데이터는 그대로")과 달리 ROM은 의도적 예외.
+      // 방향전환 카운트다운 중(directionPausedRef)에도 동일하게 누적을 쉰다 —
+      // 몸을 돌리는 과도기 동작이 ROM 각도로 잘못 기록되지 않게.
+      if (!isSkeletonEnabled() || directionPausedRef.current) {
+        setLiveAngle({ left: null, right: null });
+      } else {
+        accRef.current.push(corrected, tMs);
+        // 라이브 각도 표시(정규화 후 현재 프레임)
+        const norm = normalizePose(corrected) || corrected;
+        const L = jointAngleByMode(norm, joint, 'left', poseMode).angle;
+        const R = jointAngleByMode(norm, joint, 'right', poseMode).angle;
+        setLiveAngle({ left: L, right: R });
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [joint, poseMode, side, rotationDeg]);
@@ -198,6 +226,11 @@ export default function RomMeasure({ member, onSave, onBack, onViewInReport }) {
       if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
         try { mediaRecorderRef.current.stop(); } catch (e) { /* noop */ }
       }
+      if (countdownTimerRef.current) { clearInterval(countdownTimerRef.current); countdownTimerRef.current = null; }
+      setCountdown(null);
+      setDirection(null);
+      setSwitching(false);
+      directionPausedRef.current = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode]);
@@ -255,6 +288,53 @@ export default function RomMeasure({ member, onSave, onBack, onViewInReport }) {
     accRef.current = null;
   };
 
+  // SLST(StanceLiveAnalysis.jsx)와 동일한 "버튼 → 3-2-1 → 시작" 패턴(UI 통일성).
+  const clearCountdown = useCallback(() => {
+    if (countdownTimerRef.current) { clearInterval(countdownTimerRef.current); countdownTimerRef.current = null; }
+    setCountdown(null);
+  }, []);
+
+  const runStartCountdown = useCallback((onDone) => {
+    if (countdownTimerRef.current) return; // 이미 카운트다운 중이면 중복 방지
+    let next = 3;
+    setCountdown(next);
+    countdownTimerRef.current = setInterval(() => {
+      next -= 1;
+      if (next <= 0) {
+        clearInterval(countdownTimerRef.current);
+        countdownTimerRef.current = null;
+        setCountdown(null);
+        onDone?.();
+      } else {
+        setCountdown(next);
+      }
+    }, 1000);
+  }, []);
+
+  // 촬영 버튼 클릭 → 3-2-1 카운트다운 → 실제 녹화 시작(beginRecord).
+  const startMeasurement = () => {
+    if (countdownTimerRef.current) return;
+    runStartCountdown(() => beginRecord());
+  };
+
+  // [양쪽(건측→환측) 방향전환] 녹화를 멈추지 않은 채로 재카운트다운만 띄운다 —
+  // MediaRecorder·경과시간은 계속 흐르고(그래서 영상이 저절로 하나로 이어짐),
+  // 카운트다운이 끝날 때까지만 ROM 각도 누적을 쉰다(directionPausedRef).
+  const switchDirection = () => {
+    if (!recordingRef.current || side !== 'both' || direction !== 'first' || switching) return;
+    if (countdownTimerRef.current) return;
+    setSwitching(true);
+    directionPausedRef.current = true;
+    setGuide('반대 방향(환측)으로 돌아서 준비하세요. 카운트다운이 끝나면 이어서 녹화됩니다.');
+    runStartCountdown(() => {
+      directionPausedRef.current = false;
+      setSwitching(false);
+      setDirection('second');
+      setGuide('이어서 환측 동작을 한 번 천천히 끝까지 수행한 뒤 "측정 종료"를 눌러주세요.');
+      beepGo();
+    });
+  };
+
   const beginRecord = () => {
     primeAudio();
     accRef.current = new RomAccumulator({ joint, poseMode });
@@ -263,6 +343,10 @@ export default function RomMeasure({ member, onSave, onBack, onViewInReport }) {
     recordedBlobRef.current = null;
     setVideoBlob(null);
     setErrorMsg(''); // 새 시도 시작 — 이전 시도의 녹화 실패 메시지가 남아있지 않게 초기화.
+    // side==='both'면 "① 건측 → ② 환측" 2단계 흐름 시작(방향전환은 선택사항으로도 씀).
+    setDirection(side === 'both' ? 'first' : null);
+    setSwitching(false);
+    directionPausedRef.current = false;
     if (previewUrlRef.current) { URL.revokeObjectURL(previewUrlRef.current); previewUrlRef.current = null; }
     setPreviewUrl('');
 
@@ -308,12 +392,17 @@ export default function RomMeasure({ member, onSave, onBack, onViewInReport }) {
     maxRecordTimerRef.current = setTimeout(() => {
       if (recordingRef.current) finishRecord();
     }, MAX_RECORD_MS);
-    setGuide('동작을 한 번 천천히 최대 지점까지 수행한 뒤 돌아오세요.');
+    setGuide(side === 'both'
+      ? '① 건측(먼저 측정할 쪽) 동작을 천천히 수행하세요. 방향을 바꾸려면 "방향 전환"을 눌러주세요.'
+      : '동작을 한 번 천천히 최대 지점까지 수행한 뒤 돌아오세요.');
     beepGo();
   };
 
   const finishRecord = () => {
     if (maxRecordTimerRef.current) { clearTimeout(maxRecordTimerRef.current); maxRecordTimerRef.current = null; }
+    clearCountdown();
+    setSwitching(false);
+    directionPausedRef.current = false;
     recordingRef.current = false;
     setRecording(false);
     const acc = accRef.current;
@@ -484,6 +573,9 @@ export default function RomMeasure({ member, onSave, onBack, onViewInReport }) {
     accRef.current = null;
     recordingRef.current = false;
     setRecording(false);
+    setDirection(null);
+    setSwitching(false);
+    directionPausedRef.current = false;
     if (previewUrlRef.current) { URL.revokeObjectURL(previewUrlRef.current); previewUrlRef.current = null; }
     setPreviewUrl('');
     setVideoBlob(null);
@@ -593,12 +685,22 @@ export default function RomMeasure({ member, onSave, onBack, onViewInReport }) {
         recording={recording}
         recordingLabel={`측정 중 ${elapsed}s`}
         aspectFrame={aspect}
+        countdown={countdown}
         topBar={
           <div className="w-full text-right">
             <p className="text-sm font-black text-white">ROM · {jointName}</p>
             <p className="text-[11px] font-bold text-amber-700 dark:text-amber-300">
               {member?.name || '회원 미선택'} · {POSE_LABEL[poseMode]} · {side === 'both' ? '양쪽' : side === 'left' ? '좌측' : '우측'}
             </p>
+            {/* [2026-08-18] 양쪽 측정은 건측→환측 2단계 흐름 — 지금 몇 단계인지 표시 */}
+            {side === 'both' && direction && (
+              <p className="text-[11px] font-black">
+                <span className={direction === 'first' ? 'text-amber-700 dark:text-amber-300' : 'text-slate-500'}>① 건측</span>
+                <span className="mx-1 text-slate-500">→</span>
+                <span className={direction === 'second' ? 'text-emerald-700 dark:text-emerald-400' : 'text-slate-500'}>② 환측</span>
+                {switching && <span className="ml-1 text-slate-500">· 방향 전환 중…</span>}
+              </p>
+            )}
             <div className="mt-1 flex justify-end gap-0.5">
               {['3/4', '1/1'].map((r) => (
                 <button key={r} onClick={() => !recording && setAspect(r)} disabled={recording}
@@ -611,15 +713,26 @@ export default function RomMeasure({ member, onSave, onBack, onViewInReport }) {
         }
         controls={
           !recording ? (
-            <button onClick={beginRecord} disabled={status !== 'running'}
+            <button onClick={startMeasurement} disabled={status !== 'running' || countdown != null}
               className="h-20 w-20 rounded-full border-4 border-white bg-red-500 text-xs font-black text-white shadow-lg disabled:bg-slate-300 dark:disabled:bg-slate-600 disabled:text-slate-600 dark:disabled:text-slate-300">
               녹화<br />시작
             </button>
           ) : (
-            <button onClick={finishRecord}
-              className="h-20 w-20 rounded-full border-4 border-white bg-white dark:bg-slate-900 text-xs font-black text-amber-700 dark:text-amber-300 shadow-lg">
-              ■<br />종료
-            </button>
+            <>
+              {/* [2026-08-18] 양쪽 측정 1단계(건측)에서만 노출 — 눌러야 2단계(환측)로
+                  넘어간다. SUPINE/PRONE 등에서는 강제가 아니라 그냥 "측정 종료"로
+                  바로 끝내도 된다(req: 방향전환은 선택사항). */}
+              {side === 'both' && direction === 'first' && !switching && (
+                <button onClick={switchDirection}
+                  className="h-14 rounded-full border-2 border-amber-300 bg-amber-400/90 px-4 text-xs font-black text-slate-950 shadow-lg active:scale-95">
+                  방향 전환 →
+                </button>
+              )}
+              <button onClick={finishRecord} disabled={switching}
+                className="h-20 w-20 rounded-full border-4 border-white bg-white dark:bg-slate-900 text-xs font-black text-amber-700 dark:text-amber-300 shadow-lg disabled:opacity-40">
+                ■<br />종료
+              </button>
+            </>
           )
         }
       >
@@ -658,6 +771,12 @@ export default function RomMeasure({ member, onSave, onBack, onViewInReport }) {
               </button>
             ))}
           </div>
+          {/* [2026-08-18 요청] 스켈레톤 OFF면 ROM 인식도 함께 멈춘다는 걸 명확히 안내 */}
+          {recording && !skeletonOn && (
+            <div className="rounded-xl border border-red-400/40 bg-red-500/15 px-3 py-2 text-center text-xs font-bold text-red-700 dark:text-red-300">
+              스켈레톤이 꺼져 있어 ROM 인식이 일시 중지됐어요. 스켈레톤을 켜면 다시 측정됩니다.
+            </div>
+          )}
           {recording && (() => {
             const L = liveAngle.left, R = liveAngle.right;
             const primary = side === 'left' ? L : side === 'right' ? R

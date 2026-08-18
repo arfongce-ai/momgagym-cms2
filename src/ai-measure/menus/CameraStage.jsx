@@ -20,6 +20,7 @@
 import { useEffect, useState } from 'react';
 import SkeletonToggleChip from './SkeletonToggleChip';
 import { useCameraRotation } from '../core/useCameraRotation';
+import { markCameraStageActive } from '../core/cameraStageActive';
 
 export default function CameraStage({
   videoRef, canvasRef, status, error,
@@ -49,6 +50,16 @@ export default function CameraStage({
     const prev = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     return () => { document.body.style.overflow = prev; };
+  }, []);
+
+  // [2026-08-18] "momi 버튼이 계속 화면을 가린다" — 이 스테이지가 떠 있는 동안
+  // AppLayout의 momi 음성 버튼(GlobalVoiceCommand/KioskVoiceCommand, z-index
+  // 1000)이 이 스테이지(z-index 60)보다 위에 그려져 스켈레톤·게이지·녹화
+  // 버튼을 가리는 문제가 있었다. 모든 측정 탭이 이 컴포넌트 하나를 공유하므로,
+  // 여기서 마운트/언마운트만 알려주면 momi 버튼 쪽에서 알아서 반투명해진다.
+  useEffect(() => {
+    const release = markCameraStageActive();
+    return release;
   }, []);
 
   useEffect(() => {

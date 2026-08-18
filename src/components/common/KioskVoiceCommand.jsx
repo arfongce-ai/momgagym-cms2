@@ -13,6 +13,7 @@ import { useNavigate } from 'react-router-dom';
 import { useMomiVoice } from '../../hooks/useMomiVoice';
 import { useMomiSpeech } from '../../hooks/useMomiSpeech';
 import MomiVoiceOrb from './MomiVoiceOrb';
+import { useCameraStageActive } from '../../ai-measure/core/cameraStageActive';
 import { processVoiceCommand, buildTimerControlMessage } from '../../services/voiceCommandService';
 import {
   buildReservationSummary,
@@ -54,6 +55,11 @@ export default function KioskVoiceCommand() {
   const [interimText, setInterimText] = useState('');
 
   const { speaking, speak } = useMomiSpeech();
+
+  // [2026-08-18] "momi 버튼이 계속 화면을 가린다" — GlobalVoiceCommand.jsx와
+  // 동일한 이유. 키오스크는 버튼이 아니라 상시 표시등이라 완전히 숨기진 않고
+  // 측정 화면(CameraStage)이 뜬 동안엔 반투명하게만 낮춘다.
+  const cameraActive = useCameraStageActive();
 
   // [예약 생성 프로젝트 2단계 2026-08-08] awaitReply는 useMomiVoice()가 반환하는데,
   // useMomiVoice()는 아래에서 handleCommand를 onCommand로 넘겨받는 쪽이라 같은 렌더
@@ -440,6 +446,8 @@ export default function KioskVoiceCommand() {
           top: 16,
           right: 16,
           zIndex: 1000,
+          opacity: cameraActive ? 0.22 : 1,
+          transition: 'opacity 0.3s',
           padding: '8px 12px',
           borderRadius: 8,
           background: 'rgba(0,0,0,0.85)',
@@ -460,7 +468,10 @@ export default function KioskVoiceCommand() {
 
   return (
     <div
-      style={{ position: 'fixed', top: 16, right: 16, zIndex: 1000, display: 'flex', alignItems: 'center', gap: 8 }}
+      style={{
+        position: 'fixed', top: 16, right: 16, zIndex: 1000, display: 'flex', alignItems: 'center', gap: 8,
+        opacity: cameraActive ? 0.22 : 1, transition: 'opacity 0.3s',
+      }}
     >
       {(feedback || interimText) && (
         <div
