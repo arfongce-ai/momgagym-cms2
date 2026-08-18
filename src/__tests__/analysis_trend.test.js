@@ -28,6 +28,36 @@ describe('buildAnalysisTrend', () => {
     expect(jump.landKnee.map(p => p.value)).toEqual([130, 128]);
   });
 
+  // [무릎·고관절 각도 그래프 / 지면반력 대체 지표 2026-08-18]
+  it('biomech 착지 고관절각 시계열을 추출한다', () => {
+    const reports = [
+      { kind: 'jump', createdAt: '2026-01-01', heightCm: 40, flightTimeMs: 570,
+        biomech: { landingHipAngle: 145 } },
+      { kind: 'jump', createdAt: '2026-02-01', heightCm: 41, flightTimeMs: 575,
+        biomech: { landingHipAngle: 150 } },
+    ];
+    const { jump } = buildAnalysisTrend(reports);
+    expect(jump.landHip.map(p => p.value)).toEqual([145, 150]);
+  });
+
+  it('RSI 리포트의 접지시간(GCT) 시계열을 추출한다', () => {
+    const reports = [
+      { kind: 'jump', createdAt: '2026-01-01', heightCm: 12, flightTimeMs: 300, rsi: { rsi: 1.8, contactTimeMs: 210 } },
+      { kind: 'jump', createdAt: '2026-02-01', heightCm: 14, flightTimeMs: 320, rsi: { rsi: 2.1, contactTimeMs: 190 } },
+    ];
+    const { jump } = buildAnalysisTrend(reports);
+    expect(jump.gct.map(p => p.value)).toEqual([210, 190]);
+  });
+
+  it('rsi/biomech가 없는 파워 점프 리포트는 landHip/gct가 비어있다(측정 정직성)', () => {
+    const reports = [
+      { kind: 'jump', createdAt: '2026-01-01', heightCm: 40, flightTimeMs: 570 },
+    ];
+    const { jump } = buildAnalysisTrend(reports);
+    expect(jump.landHip).toEqual([]);
+    expect(jump.gct).toEqual([]);
+  });
+
   it('보행 리포트들을 케이던스/골반/무릎대칭 시계열로 만든다', () => {
     const reports = [
       { kind: 'gait', createdAt: '2026-01-10', cadence: 165, pelvicDropAbs: 3.2, kneeSymmetry: 94 },

@@ -25,8 +25,10 @@ export default function TrendChart({ title, unit, points, color = '#f59e0b', wid
   // y축 눈금 3개
   const ticks = [min, (min + max) / 2, max];
 
-  // x축 라벨 (첫/끝만, 길면 잘림)
-  const shortDate = (d) => String(d).slice(5); // MM-DD
+  // x축 라벨 (첫/끝만, 길면 잘림). 실제 날짜(YYYY-MM-DD)는 뒤 5자(MM-DD)만 —
+  // [GCT 사이클 그래프 2026-08-18] "1차"처럼 5자보다 짧은 라벨(날짜가 아닌
+  // 회차 표시)을 넘길 수도 있으므로, 그 경우 자르지 않고 그대로 쓴다.
+  const shortDate = (d) => { const s = String(d); return s.length > 5 ? s.slice(5) : s; };
 
   return (
     <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`}

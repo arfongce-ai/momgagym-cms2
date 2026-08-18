@@ -164,7 +164,7 @@ describe('JUMP_TUNING is centralized and adjustable', () => {
 // ════════════════════════════════════════════════════════════════════════
 //  JumpBiomechAccumulator — 자세/기술/대칭성 지표
 // ════════════════════════════════════════════════════════════════════════
-import { JumpBiomechAccumulator, jumpPhaseOf, JUMP_TUNING as JT } from '../ai-measure/core/jumpBiomechanics.js';
+import { JumpBiomechAccumulator, jumpPhaseOf, currentJointAngles, JUMP_TUNING as JT } from '../ai-measure/core/jumpBiomechanics.js';
 
 // 측면뷰 가정의 전신 landmark (각도 계산 가능하도록 관절 좌표를 의미있게 배치)
 function makePose({
@@ -259,6 +259,62 @@ describe('JumpBiomechAccumulator', () => {
     expect(s.pelvicImbalance).toBeNull();
     expect(s.extensionAlignment.available).toBe(false);
     expect(s.footLandingSymmetry.available).toBe(false);
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════
+//  [무릎·고관절 각도 그래프 2026-08-18] timeline / landingHipAngle / currentJointAngles
+// ════════════════════════════════════════════════════════════════════════
+describe('JumpBiomechAccumulator — 각도 시계열(timeline) & 착지 고관절각', () => {
+  it('push()마다 무릎/고관절 각도를 시간순으로 timeline에 남긴다', () => {
+    const acc = new JumpBiomechAccumulator({ heightCm: 175 });
+    for (let i = 0; i < 5; i++) acc.push(makePose(), i * 8, 'stand');
+    for (let i = 0; i < 4; i++) acc.push(makePose({ kneeBend: 1.0 }), 100 + i * 8, 'air');
+    for (let i = 0; i < 6; i++) acc.push(makePose({ kneeBend: 1.0 }), 140 + i * 8, 'land');
+    const s = acc.summary();
+    expect(Array.isArray(s.timeline)).toBe(true);
+    expect(s.timeline.length).toBeGreaterThan(0);
+    expect(s.timeline[0]).toHaveProperty('tMs');
+    expect(s.timeline[0]).toHaveProperty('phase');
+    expect(s.timeline[0]).toHaveProperty('knee');
+    expect(s.timeline[0]).toHaveProperty('hip');
+    // 시간순 정렬 확인
+    for (let i = 1; i < s.timeline.length; i++) {
+      expect(s.timeline[i].tMs).toBeGreaterThanOrEqual(s.timeline[i - 1].tMs);
+    }
+  });
+
+  it('착지 고관절각: 깊게 굽힌 착지가 더 작은 각도로 잡힌다', () => {
+    const acc = new JumpBiomechAccumulator({ heightCm: 175 });
+    for (let i = 0; i < 5; i++) acc.push(makePose(), i * 8, 'stand');
+    for (let i = 0; i < 8; i++) acc.push(makePose({ hipBend: 1.0 }), 100 + i * 8, 'land');
+    const s = acc.summary();
+    expect(s.landingHipAngle).not.toBeNull();
+    expect(s.landingHipAngle).toBeLessThan(180);
+  });
+
+  it('아무것도 push 안 하면 timeline은 빈 배열, landingHipAngle은 null', () => {
+    const acc = new JumpBiomechAccumulator({ heightCm: 175 });
+    const s = acc.summary();
+    expect(s.timeline).toEqual([]);
+    expect(s.landingHipAngle).toBeNull();
+  });
+});
+
+describe('currentJointAngles — 실시간 HUD용 단발 프레임 각도', () => {
+  it('직립 자세는 무릎/고관절 모두 180에 가깝다', () => {
+    const { knee, hip } = currentJointAngles(makePose());
+    expect(knee).toBeGreaterThan(170);
+    expect(hip).toBeGreaterThan(170);
+  });
+
+  it('굽히면 각도가 작아진다', () => {
+    const { knee } = currentJointAngles(makePose({ kneeBend: 1.0 }));
+    expect(knee).toBeLessThan(180);
+  });
+
+  it('landmarks가 없으면 null-safe', () => {
+    expect(currentJointAngles(null)).toEqual({ knee: null, hip: null });
   });
 });
 

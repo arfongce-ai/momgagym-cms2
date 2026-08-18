@@ -16,6 +16,9 @@ import { JUMP_SUBTYPES, LEG_LABEL, resolveJumpSubType } from '../core/jumpTypes'
 // [SLJ 좌우 비대칭 2026-08-11] 순수 계산은 core/jumpBiomechanics.js에 —
 // 여기(리포트 화면)는 aiStore에서 회원의 다른 리포트를 가져와 넘기기만 한다.
 import { findSljAsymmetry } from '../core/jumpBiomechanics';
+// [무릎·고관절 각도 그래프 2026-08-18]
+import JumpAngleTimelineChart from '../../components/report/JumpAngleTimelineChart.jsx';
+import TrendChart from '../../components/report/TrendChart';
 
 const RANGE = {
   height: { good: [40, 100], warn: [30, 100], unit: 'cm' },
@@ -76,10 +79,13 @@ function normalizeBiomech(report) {
   return {
     view: biomech.view || report?.videoMetrics?.detectedView || 'unknown',
     landingKneeAngle: biomech.landingKneeAngle,
+    // [무릎·고관절 각도 그래프 2026-08-18]
+    landingHipAngle: biomech.landingHipAngle,
     trunkLeanChange: biomech.trunkLeanChange,
     pelvicImbalance: biomech.pelvicImbalance,
     extensionAlignment: biomech.extensionAlignment || {},
     footLandingSymmetry: biomech.footLandingSymmetry || {},
+    timeline: Array.isArray(biomech.timeline) ? biomech.timeline : [],
   };
 }
 
@@ -216,9 +222,24 @@ export default function JumpReportDashboard({ report, onClose, onComment, member
               <BarMetric label="상체 기울기 변화" value={biomech.trunkLeanChange} range={RANGE.trunk} max={35} />
               <BarMetric label="신전 궤적 정렬도" value={biomech.extensionAlignment?.alignmentScore} range={RANGE.align} max={100} />
             </div>
+            {/* [무릎·고관절 각도 그래프 2026-08-18] 고관절 각도는 아직 검증된
+                정상범위 근거가 없어(무릎처럼 good/warn 임계를 함부로 정하지
+                않음 — 측정 정직성) 등급 배지 없이 값만 참고용으로 보여준다. */}
+            {biomech.landingHipAngle != null && (
+              <div className="mt-3">
+                <SmallInfo label="착지 고관절 각도 (참고)" value={`${biomech.landingHipAngle}°`} />
+              </div>
+            )}
             <p className="mt-3 text-[11px] leading-relaxed text-slate-500 dark:text-slate-400">
               자세와 각도 지표는 측면 촬영에서 가장 정확합니다. 정면 촬영은 점프 높이와 좌우 대칭성 확인에 더 적합합니다.
             </p>
+            {/* [무릎·고관절 각도 그래프 2026-08-18] 이번 점프(준비→도약→착지) 동안
+                무릎·고관절 각도가 어떻게 변했는지 시간축 그래프로. */}
+            {biomech.timeline.length > 1 && (
+              <div className="mt-4">
+                <JumpAngleTimelineChart timeline={biomech.timeline} />
+              </div>
+            )}
           </Section>
 
           <Section title="③ 대칭성 및 안정성" subtitle="정면뷰 권장 · 착지 대칭">
@@ -453,6 +474,22 @@ function RsiSection({ report }) {
               </div>
             ))}
           </div>
+          {/* [지면반력 대체 지표 2026-08-18] 접지시간(GCT)은 힘(N) 자체가 아니라
+              시간이지만, 카메라로 직접 잴 수 없는 지면반력 대신 사이클마다
+              반발 효율이 어떻게 변하는지 보는 보조 지표로 그래프화한다. */}
+          {rsi.perCycle.length > 1 && (
+            <div className="mt-3">
+              <TrendChart
+                title="접지시간(GCT) — 사이클별"
+                unit="ms"
+                points={rsi.perCycle.map((c, i) => ({ date: `${i + 1}차`, value: c.contactMs }))
+                  .filter((p) => p.value != null)}
+                color="#38bdf8"
+                width={320}
+                height={140}
+              />
+            </div>
+          )}
         </div>
       )}
       <p className="mt-3 text-[11px] leading-relaxed text-slate-500 dark:text-slate-400">

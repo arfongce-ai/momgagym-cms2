@@ -526,12 +526,21 @@ export class JumpBiomechAccumulator {
     this.heightCm = heightCm;
     this.stand = { trunkLean: [], pelvicTilt: [] };
     this.air = { trunkLean: [] };
-    this.land = { kneeL: [], kneeR: [], trunkLean: [], footL: [], footR: [] };
+    // [무릎·고관절 각도 그래프 2026-08-18] land에 hipL/hipR 추가 — 기존
+    // kneeL/kneeR과 동일한 패턴으로 착지 시 고관절 굽힘도 함께 모은다
+    // (landingHipAngle 계산용, summary() 참고).
+    this.land = { kneeL: [], kneeR: [], hipL: [], hipR: [], trunkLean: [], footL: [], footR: [] };
     // 이지 접근(takeoff approach) 구간: 신전 '궤적'을 보기 위한 시퀀스(시간순)
     this.approach = { hip: [], knee: [], ankle: [] };
     this._scaleSum = 0; this._scaleN = 0;
     // 촬영 방향 투표 (프레임마다 detectOrientation → 다수결)
     this._viewVotes = { side: 0, back: 0, unknown: 0 };
+    // [무릎·고관절 각도 그래프 2026-08-18] 준비→도약→공중→착지 전 구간의
+    // 무릎/고관절 각도를 시간순으로 남긴다(리포트의 각도-시간 그래프용).
+    // 요약 통계(min/mean)로 뭉개지기 전의 원본 프레임 시퀀스 — push() 될 때마다
+    // 값이 있으면(둘 중 하나라도 non-null) 쌓는다. 값이 전혀 없는 프레임(관절
+    // 미검출)은 그래프에 굳이 안 남긴다.
+    this.timeline = [];
   }
 
   get bodyScale() { return this._scaleN ? this._scaleSum / this._scaleN : null; }
@@ -552,6 +561,24 @@ export class JumpBiomechAccumulator {
       this._viewVotes[o.view] = (this._viewVotes[o.view] || 0) + 1;
     }
 
+    // [무릎·고관절 각도 그래프 2026-08-18] 위상과 무관하게 이 프레임의
+    // 무릎/고관절 각도를 시계열로 남긴다. 아래 phase별 분기(요약 통계용)와는
+    // 별개 — 하나가 없어도 다른 하나는 영향받지 않는다.
+    const kn0 = _knees(lm), hp0 = _hips(lm);
+    const kneeNow = _avg2(kn0.left, kn0.right);
+    const hipNow = _avg2(hp0.left, hp0.right);
+    if (tMs != null && (kneeNow != null || hipNow != null)) {
+      this.timeline.push({
+        tMs,
+        phase,
+        knee: kneeNow != null ? Math.round(kneeNow * 10) / 10 : null,
+        hip: hipNow != null ? Math.round(hipNow * 10) / 10 : null,
+      });
+      // 방어적 상한 — 비정상적으로 긴 세션(예: RSI 연속 측정을 한참 못 끝낸
+      // 경우)에도 메모리가 무한정 늘지 않게(오래된 표본부터 버림).
+      if (this.timeline.length > 1500) this.timeline.shift();
+    }
+
     if (phase === 'stand') {
       const tl = _trunkLean(lm); if (tl != null) this.stand.trunkLean.push(tl);
       const pt = _pelvicTilt(lm, scale); if (pt != null) this.stand.pelvicTilt.push(pt);
@@ -569,6 +596,11 @@ export class JumpBiomechAccumulator {
       const kn = _knees(lm);
       if (kn.left != null) this.land.kneeL.push(kn.left);
       if (kn.right != null) this.land.kneeR.push(kn.right);
+      // [무릎·고관절 각도 그래프 2026-08-18] 착지 고관절 각도 — 무릎과 동일한
+      // 패턴(좌우 각각 모아서 summary()에서 최소값 평균).
+      const hpLand = _hips(lm);
+      if (hpLand.left != null) this.land.hipL.push(hpLand.left);
+      if (hpLand.right != null) this.land.hipR.push(hpLand.right);
       const tl = _trunkLean(lm); if (tl != null) this.land.trunkLean.push(tl);
       // 착지 발 위치 (좌/우) — blur 대비 여러 프레임 모아 중앙값 사용
       const fl = _footPos(lm, 27, 31);
@@ -597,6 +629,13 @@ export class JumpBiomechAccumulator {
     const landKneeR = minOf(this.land.kneeR);
     const landKnee = (landKneeL != null && landKneeR != null)
       ? r1((landKneeL + landKneeR) / 2) : (r1(landKneeL) ?? r1(landKneeR));
+
+    // [무릎·고관절 각도 그래프 2026-08-18] 착지 고관절 각도 — landKnee와
+    // 동일한 방식(좌우 최솟값의 평균 = 가장 깊게 굽혀진 순간).
+    const landHipL = minOf(this.land.hipL);
+    const landHipR = minOf(this.land.hipR);
+    const landHip = (landHipL != null && landHipR != null)
+      ? r1((landHipL + landHipR) / 2) : (r1(landHipL) ?? r1(landHipR));
 
     const standLean = mean(this.stand.trunkLean);
     const landLean = mean(this.land.trunkLean);
@@ -632,12 +671,20 @@ export class JumpBiomechAccumulator {
       landingKneeAngle: landKnee,
       landingKneeLeft: r1(landKneeL),
       landingKneeRight: r1(landKneeR),
+      // [무릎·고관절 각도 그래프 2026-08-18]
+      landingHipAngle: landHip,
+      landingHipLeft: r1(landHipL),
+      landingHipRight: r1(landHipR),
       trunkLeanStand: r1(standLean),
       trunkLeanChange,
       extensionAlignment: alignment,      // 신전 궤적 정렬도
       // 대칭성 및 안정성
       pelvicImbalance,                    // 정면 전용
       footLandingSymmetry: footSym,       // 착지 발끝 대칭 (force plate 대체)
+      // [무릎·고관절 각도 그래프 2026-08-18] 준비→도약→공중→착지 전 구간의
+      // 무릎/고관절 각도 시계열 — [{tMs, phase, knee, hip}, ...] 시간순.
+      // 리포트 화면에서 시간축 라인차트로 그린다(JumpReportDashboard.jsx).
+      timeline: this.timeline,
     };
   }
 }
@@ -649,6 +696,22 @@ const _avg2 = (a, b) => {
   if (b == null) return a;
   return (a + b) / 2;
 };
+
+// [실시간 HUD 2026-08-18] 특정 프레임의 무릎·고관절 각도(좌우 평균)를 즉시
+// 계산한다. JumpBiomechAccumulator.push()의 phase 게이팅(stand/air/land)과는
+// 무관하게 "지금 이 프레임" 값만 필요할 때 쓴다 — 캘리브레이션/대기 중에도
+// 실시간 HUD에 각도를 띄우고 싶은 경우(측정 개시 전이라 accumulator에는 아직
+// 아무것도 안 쌓인 상태) 등. null-safe — 관절이 안 보이면 null.
+export function currentJointAngles(lm) {
+  if (!lm) return { knee: null, hip: null };
+  const kn = _knees(lm), hp = _hips(lm);
+  const knee = _avg2(kn.left, kn.right);
+  const hip = _avg2(hp.left, hp.right);
+  return {
+    knee: knee != null ? Math.round(knee * 10) / 10 : null,
+    hip: hip != null ? Math.round(hip * 10) / 10 : null,
+  };
+}
 
 // 측정 루프에서 위상 판정을 쉽게 하기 위한 헬퍼.
 // 직전 inAir 와 현재 inAir 를 비교해 phase 와 justTookOff/justLanded 를 만든다.

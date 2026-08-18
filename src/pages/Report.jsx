@@ -199,6 +199,9 @@ function extraMenuTrendCharts(menu, trend, postureTrend) {
       trend.jump.peakPower.length > 1 && { key: 'peakPower', title: '최대 파워', unit: 'W', points: trend.jump.peakPower, color: '#22d3ee' },
       trend.jump.footSym.length > 1 && { key: 'footSym', title: '착지 대칭', unit: '%', points: trend.jump.footSym, color: '#34d399' },
       trend.jump.landKnee.length > 1 && { key: 'landKnee', title: '착지 무릎각', unit: '°', points: trend.jump.landKnee, color: '#a78bfa' },
+      // [무릎·고관절 각도 그래프 / 지면반력 대체 지표 2026-08-18]
+      trend.jump.landHip.length > 1 && { key: 'landHip', title: '착지 고관절각', unit: '°', points: trend.jump.landHip, color: '#fb7185' },
+      trend.jump.gct.length > 1 && { key: 'gct', title: '접지시간(GCT)', unit: 'ms', points: trend.jump.gct, color: '#38bdf8' },
     ].filter(Boolean);
   }
   if (menu === 'gait' && trend?.gait?.count > 0) {

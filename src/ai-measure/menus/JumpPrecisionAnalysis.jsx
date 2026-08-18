@@ -14,7 +14,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   StandingCalibrator, JumpFlightTracker,
-  JumpBiomechAccumulator, jumpPhaseOf,
+  JumpBiomechAccumulator, jumpPhaseOf, currentJointAngles,
 } from '../core/jumpBiomechanics';
 import { calcJump, calcRSI } from '../core/performance';
 import { computeRSIFromFlights, rsiGrade, RSI_TUNING } from '../core/reactiveJump';
@@ -141,14 +141,20 @@ function drawJumpLiveOverlay(ctx, width, height, snap = {}) {
   const gauge = isRsi
     ? { label: 'RSI', value: latest?.rsi ?? null, unit: '', arc: true, min: 0, max: 3 }
     : { label: '점프 높이', value: snap.liveJump?.heightCm ?? snap.bestHeight ?? null, unit: 'cm' };
+  // [무릎·고관절 각도 HUD 2026-08-18] 기존 2개(접지/진행 또는 체공/점프)에
+  // 실시간 관절 각도 2개를 더해 GaugeHud 카드 한도(4개)를 채운다.
+  const kneeStat = { label: '무릎각', value: snap.liveAngles?.knee ?? null, unit: '°' };
+  const hipStat = { label: '고관절각', value: snap.liveAngles?.hip ?? null, unit: '°' };
   const stats = isRsi
     ? [
         { label: '접지시간', value: latest?.contactMs ?? null, unit: 'ms' },
         { label: '진행', value: `${snap.jumpCount || 0}/${snap.requiredJumps || RSI_REQUIRED_JUMPS}` },
+        kneeStat, hipStat,
       ]
     : [
         { label: '체공시간', value: snap.liveJump?.flightMs ?? null, unit: 'ms' },
         { label: '점프', value: `${snap.jumpCount || 0}`, unit: '회' },
+        kneeStat, hipStat,
       ];
 
   drawGaugeHud(ctx, width, height, {
@@ -284,6 +290,12 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
   const [rsiCycles, setRsiCycles] = useState([]);
   const [jumpRows, setJumpRows] = useState([]);
   const [liveJump, setLiveJump] = useState({ flightMs: null, heightCm: null });
+  // [무릎·고관절 각도 HUD 2026-08-18] 실시간 관절 각도 표시. currentJointAngles()로
+  // 매 프레임 계산은 하되, 렌더(setState)는 아래 loop()에서 ~150ms 간격으로만
+  // 흘려보낸다(60fps 그대로 setState하면 불필요한 리렌더 폭증 — 다른 값들처럼
+  // ref로 최신값을 들고 있다가 스로틀링해서 반영하는 기존 패턴과 동일).
+  const [liveAngles, setLiveAngles] = useState({ knee: null, hip: null });
+  const liveAnglesTsRef = useRef(0);
   // 측정 시작 게이트: 스켈레톤이 잡혀도 자동으로 측정을 시작하지 않고,
   // 사용자가 '측정 시작' 버튼을 누르면 3초 카운트다운 후 측정을 개시한다.
   const [armed, setArmed] = useState(false);       // true → 점프 트래킹/녹화 진행 중
@@ -370,8 +382,9 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
       bestHeight: bestHeightRef.current,
       heightCm,
       requiredJumps,
+      liveAngles,
     };
-  }, [jumpType, phase, jumpCount, liveJump, rsiCycles, jumpRows, heightCm, requiredJumps]);
+  }, [jumpType, phase, jumpCount, liveJump, rsiCycles, jumpRows, heightCm, requiredJumps, liveAngles]);
 
   // 카메라 생명주기
   useEffect(() => {
@@ -408,6 +421,8 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
     setJumpRows([]);
     jumpFreezeRef.current = new Map(); // 렙/점프 카드 동결 초기화
     setLiveJump({ flightMs: null, heightCm: null });
+    setLiveAngles({ knee: null, hip: null }); // [무릎·고관절 각도 HUD 2026-08-18]
+    liveAnglesTsRef.current = 0;
     setReportData(null);
     setSaveState('idle');
     autoSavedRef.current = null;
@@ -592,6 +607,16 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
       // 완전히 다른 축(좌우 흔들림 등)을 재게 된다. 캘리브레이션·트래킹·
       // 생체역학 누적·방향 판별 전부 보정된 좌표를 써야 한다.
       const corrected = landmarks ? rotateLandmarksNormalized(landmarks, rotationDegRef.current) : null;
+
+      // [무릎·고관절 각도 HUD 2026-08-18] 위상(calib/armed)과 무관하게 지금
+      // 보이는 프레임의 관절 각도를 HUD에 흘려보낸다. 매 프레임 계산은 가볍지만
+      // (좌표 몇 개로 각도 계산) setState는 ~150ms 간격으로 스로틀링해 리렌더가
+      // 과도하게 일어나지 않게 한다(다른 라이브 값들과 동일한 절제 패턴).
+      if (corrected && viewRef.current === 'camera' && ts - liveAnglesTsRef.current > 150) {
+        liveAnglesTsRef.current = ts;
+        const ang = currentJointAngles(corrected);
+        if (ang.knee != null || ang.hip != null) setLiveAngles(ang);
+      }
 
       if (corrected && viewRef.current === 'camera') {
         if (!calib.locked) {
@@ -934,6 +959,7 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
             rsiCycles={rsiCycles}
             jumpRows={jumpRows}
             requiredJumps={requiredJumps}
+            liveAngles={liveAngles}
           />
 
           {warning && (
@@ -1404,6 +1430,7 @@ function MetricCard({ label, value }) {
 function JumpLiveOverlay({
   jumpType, phase, phaseColor, calibMsg, heightCm, jumpCount,
   liveJump, bestHeight, rsiCycles, jumpRows, requiredJumps = RSI_REQUIRED_JUMPS,
+  liveAngles = { knee: null, hip: null },
 }) {
   const isRsi = jumpType === 'reactive';
   const latestCycle = rsiCycles.at(-1) || null;
@@ -1417,14 +1444,20 @@ function JumpLiveOverlay({
   const gauge = isRsi
     ? { label: 'RSI', value: latestCycle?.rsi ?? null, unit: '', decimals: 2, arc: true, min: 0, max: 3 }
     : { label: '점프 높이', value: liveJump.heightCm ?? bestHeight ?? null, unit: 'cm' };
+  // [무릎·고관절 각도 HUD 2026-08-18] 실시간 관절 각도 — 카메라에 잡히는 대로
+  // 즉시 표시(캘리브레이션/대기 중에도 갱신됨). 값이 없으면 GaugeHud가 '—'로 표시.
+  const kneeStat = { label: '무릎각', value: liveAngles?.knee ?? null, unit: '°' };
+  const hipStat = { label: '고관절각', value: liveAngles?.hip ?? null, unit: '°' };
   const stats = isRsi
     ? [
         { label: '접지', value: latestCycle?.contactMs ?? null, unit: 'ms' },
         { label: '진행', value: `${jumpCount}/${requiredJumps}` },
+        kneeStat, hipStat,
       ]
     : [
         { label: '체공', value: liveJump.flightMs ?? null, unit: 'ms' },
         { label: '점프', value: `${jumpCount}`, unit: '회' },
+        kneeStat, hipStat,
       ];
 
   return (

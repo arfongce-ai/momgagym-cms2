@@ -380,6 +380,12 @@ export function buildAnalysisTrend(reports = []) {
     peakPower:   jumpRows.map(r => ({ date: dateOf(r), value: num(r.peakPower) })).filter(p => p.value != null),
     footSym:     jumpRows.map(r => ({ date: dateOf(r), value: num(r.biomech?.footLandingSymmetry?.symmetryPct) })).filter(p => p.value != null),
     landKnee:    jumpRows.map(r => ({ date: dateOf(r), value: num(r.biomech?.landingKneeAngle) })).filter(p => p.value != null),
+    // [무릎·고관절 각도 그래프 2026-08-18] 착지 고관절각 추이 — landKnee와 동일 패턴.
+    landHip:     jumpRows.map(r => ({ date: dateOf(r), value: num(r.biomech?.landingHipAngle) })).filter(p => p.value != null),
+    // [지면반력 대체 지표 2026-08-18] 접지시간(GCT) 추이 — RSI(반응 탄성) 리포트에만
+    // 값이 있다(rsi.contactTimeMs). 카메라로 힘(N) 자체는 잴 수 없어 지면반력의
+    // 직접적 대체는 아니지만, 접지 시간은 힘 생산 효율을 보는 흔한 보조 지표다.
+    gct:         jumpRows.map(r => ({ date: dateOf(r), value: num(r.rsi?.contactTimeMs) })).filter(p => p.value != null),
     latest: jumpRows.at(-1) || null,
   };
 
