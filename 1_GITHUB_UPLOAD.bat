@@ -24,12 +24,14 @@ if errorlevel 1 (
   exit /b 1
 )
 
-REM -- Make sure this folder is a git repository --
+REM -- Refuse to run in a copied/downloaded folder --
 if not exist ".git" (
-  echo [SETUP] This folder is not a git repository yet. Initializing...
-  git init
-  git branch -M main
-  echo.
+  echo [ERROR] This is not the official GitHub work folder.
+  echo Do not upload from a copied or downloaded folder.
+  echo Open this folder instead:
+  echo   C:\Users\MOMGAGYM\Documents\GitHub\momgagym-cms2
+  pause
+  exit /b 1
 )
 
 REM -- Make sure a remote named origin exists --
@@ -44,6 +46,38 @@ if errorlevel 1 (
   git remote add origin "!REPO_URL!"
   echo Saved. You will not need to enter this again.
   echo.
+)
+
+REM -- Read the branch that actually contains the current work --
+for /f "delims=" %%B in ('git branch --show-current') do set CURRENT_BRANCH=%%B
+if "!CURRENT_BRANCH!"=="" (
+  echo [ERROR] Git cannot determine the current branch.
+  echo Open GitHub Desktop and select a branch first.
+  pause
+  exit /b 1
+)
+
+echo Current work branch: !CURRENT_BRANCH!
+echo.
+
+REM -- Stop before overwriting work when GitHub has newer commits --
+echo Checking GitHub for newer files...
+git fetch origin
+if errorlevel 1 (
+  echo [ERROR] Could not check GitHub. Check login and internet connection.
+  pause
+  exit /b 1
+)
+
+git rev-parse --verify "origin/!CURRENT_BRANCH!" >nul 2>nul
+if not errorlevel 1 (
+  git merge-base --is-ancestor "origin/!CURRENT_BRANCH!" HEAD
+  if errorlevel 1 (
+    echo [STOP] GitHub has other changes that are not in this folder.
+    echo Open GitHub Desktop, press Pull origin, and run this file again.
+    pause
+    exit /b 1
+  )
 )
 
 echo [1/4] Checking changed files...
@@ -76,9 +110,9 @@ if errorlevel 1 (
 )
 
 echo.
-echo [4/4] Uploading to GitHub main branch...
+echo [4/4] Uploading the current branch to GitHub...
 REM First push: -u sets the upstream so later pushes are just 'git push'.
-git push -u origin main
+git push -u origin "!CURRENT_BRANCH!"
 if errorlevel 1 (
   echo.
   echo [ERROR] GitHub upload failed.
