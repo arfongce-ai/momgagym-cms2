@@ -335,6 +335,64 @@ describe('useMomiVoice.js — awaitReply(즉답 대기, 회귀 방지)', () => {
   });
 });
 
+// [버그 수정 — 짧은 대답(네/아니요) 유실 2026-08-18] "예약 확인 질문에 '네'라고
+// 답했는데 아무 반응이 없다" 문의 대응. "네"처럼 아주 짧은 한 마디는 isFinal로
+// 확정되기 전에 인식 세션이 끝나버릴 수 있는데, 예전엔 그러면 pendingReplyRef
+// 콜백이 영영 안 불려서 12초 타임아웃까지 조용히 무반응이었다. onend에서
+// 미확정(interim) 조각을 대신 써서 콜백을 살려내는지 정적 소스로 검증한다.
+describe('useMomiVoice.js — awaitReply 중 짧은 대답이 확정 안 된 채 세션이 끝나도 유실되지 않는다(회귀 방지, 2026-08-18)', () => {
+  const src = readSrc('src', 'hooks', 'useMomiVoice.js');
+
+  it('lastInterimSinceAwaitRef를 선언한다', () => {
+    expect(src).toContain("const lastInterimSinceAwaitRef = useRef('');");
+  });
+
+  it('awaitReply 대기 중에는 미확정(interim) 조각도 기억해둔다', () => {
+    const start = src.indexOf('if (!heard) {');
+    const end = src.indexOf('return;', start);
+    const body = src.slice(start, end);
+    expect(body).toContain('if (pendingReplyRef.current && interim) lastInterimSinceAwaitRef.current = interim;');
+  });
+
+  it('onend은 재시작 여부와 무관하게 먼저 미확정 조각으로 콜백을 살려낸다', () => {
+    const onendStart = src.indexOf('recognition.onend = () => {');
+    const restartCheckIdx = src.indexOf(
+      'if (recognitionRef.current === recognition && shouldRestartRef.current && !pausedForSpeechRef.current) {',
+      onendStart
+    );
+    const fallbackIdx = src.indexOf(
+      'if (recognitionRef.current === recognition && pendingReplyRef.current && lastInterimSinceAwaitRef.current.trim()) {',
+      onendStart
+    );
+    expect(fallbackIdx).toBeGreaterThan(onendStart);
+    expect(fallbackIdx).toBeLessThan(restartCheckIdx);
+  });
+
+  it('폴백 경로도 정상 경로와 동일하게 콜백을 부르기 전에 ref를 먼저 비운다(중복 호출 방지)', () => {
+    const fallbackStart = src.indexOf(
+      'if (recognitionRef.current === recognition && pendingReplyRef.current && lastInterimSinceAwaitRef.current.trim()) {'
+    );
+    const fallbackEnd = src.indexOf('cb(fallbackHeard);', fallbackStart);
+    const body = src.slice(fallbackStart, fallbackEnd);
+    expect(body).toContain('pendingReplyRef.current = null;');
+    expect(body).toContain("lastInterimSinceAwaitRef.current = '';");
+  });
+
+  it('awaitReply()를 새로 걸 때마다 이전 미확정 조각 흔적을 지운다(다음 질문에 오염되지 않도록)', () => {
+    const start = src.indexOf('const awaitReply = useCallback((callback, timeoutMs = 12000) => {');
+    const end = src.indexOf('pendingReplyRef.current = callback;', start);
+    const body = src.slice(start, end);
+    expect(body).toContain("lastInterimSinceAwaitRef.current = '';");
+  });
+
+  it('cancelAwaitReply도 미확정 조각 흔적을 같이 정리한다', () => {
+    const start = src.indexOf('const cancelAwaitReply = useCallback(() => {');
+    const end = src.indexOf('}, []);', start);
+    const body = src.slice(start, end);
+    expect(body).toContain("lastInterimSinceAwaitRef.current = '';");
+  });
+});
+
 // [버그 수정 2026-08-08] 마이크 끄기 버튼(stopListening)을 눌러도 recognitionRef.current가
 // 그대로 남아있어서, onend의 재시작 조건이 계속 참이 되어 recognition.start()가 곧바로
 // 다시 불렸다 — 화면(빨간 점)만 꺼지고 인식은 백그라운드에서 계속 도는 상태였음.

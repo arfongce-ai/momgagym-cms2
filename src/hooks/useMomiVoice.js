@@ -178,6 +178,17 @@ export function useMomiVoice({ onCommand, onWakeOnly, onMismatch, onInterim, onE
   const pendingReplyTimerRef = useRef(null);
   const pendingFinalTextRef = useRef('');
   const finalResultTimerRef = useRef(null);
+  // [버그 수정 — 짧은 대답(네/아니요) 유실 2026-08-18] "예약 확인 질문 후 '네'라고
+  // 답해도 아무 반응이 없다"는 문의 대응. "네"처럼 아주 짧은 한 마디는 음성엔진이
+  // isFinal(확정) 신호를 주기 전에 인식 세션이 그냥 끝나버리는 경우가 실제로 있다
+  // (특히 짧은 발화 + 그 직후 조용해지는 조합에서 흔함) — 그러면 heard가 끝내
+  // 확정되지 않아 pendingReplyRef 콜백이 영영 안 불리고, 12초 타임아웃까지
+  // 조용히 흘러간다(사용자 입장에선 "말했는데 완전 무반응"으로 보임).
+  // 아래 lastInterimSinceAwaitRef에 awaitReply() 대기 중 들어온 미확정(interim)
+  // 텍스트를 잠깐 담아뒀다가, 확정 없이 인식 세션이 끝나면(onend) 그 텍스트를
+  // "확정된 것처럼" 대신 써서 콜백을 살려낸다 — 예/아니요처럼 초단문 답변만
+  // 기다리는 좁은 창(awaitReply)에서만 쓰므로, 일반 명령 인식에는 영향 없다.
+  const lastInterimSinceAwaitRef = useRef('');
 
   const clearPendingFinal = useCallback(() => {
     if (finalResultTimerRef.current) {
@@ -193,6 +204,7 @@ export function useMomiVoice({ onCommand, onWakeOnly, onMismatch, onInterim, onE
       pendingReplyTimerRef.current = null;
     }
     pendingReplyRef.current = null;
+    lastInterimSinceAwaitRef.current = '';
   }, []);
 
   // callback은 다음 발화의 heard 텍스트로 정확히 한 번 불린다. timeoutMs 안에
@@ -203,6 +215,7 @@ export function useMomiVoice({ onCommand, onWakeOnly, onMismatch, onInterim, onE
   const awaitReply = useCallback((callback, timeoutMs = 12000) => {
     clearActivation(); // 기존 2단계 명령 대기 상태와 겹치지 않게 먼저 정리.
     if (pendingReplyTimerRef.current) clearTimeout(pendingReplyTimerRef.current);
+    lastInterimSinceAwaitRef.current = ''; // 새로 기다리기 시작하므로 이전 흔적을 지운다.
     pendingReplyRef.current = callback;
     pendingReplyTimerRef.current = setTimeout(() => {
       const cb = pendingReplyRef.current;
@@ -230,6 +243,10 @@ export function useMomiVoice({ onCommand, onWakeOnly, onMismatch, onInterim, onE
       if (!heard) {
         const isAddressed = !requireWakeWord || activatedRef.current || pendingReplyRef.current || matchWakeWord(interim);
         if (interim && isAddressed && onInterim) onInterim(interim);
+        // [버그 수정 — 짧은 대답 유실 2026-08-18] awaitReply 대기 중에는 아직
+        // 확정(isFinal) 안 된 이 조각도 잠깐 기억해둔다 — 세션이 끝날 때까지
+        // 끝내 확정되지 않으면(흔한 엔진 결함) onend에서 이걸 대신 쓴다.
+        if (pendingReplyRef.current && interim) lastInterimSinceAwaitRef.current = interim;
         return;
       }
       // 삼성 인터넷은 완성 중인 여러 조각에도 isFinal=true를 붙인다. 마지막 조각이
@@ -253,6 +270,7 @@ export function useMomiVoice({ onCommand, onWakeOnly, onMismatch, onInterim, onE
       if (pendingReplyRef.current) {
         const cb = pendingReplyRef.current;
         pendingReplyRef.current = null;
+        lastInterimSinceAwaitRef.current = ''; // 정상적으로 확정됐으니 임시 기억분은 필요 없다.
         if (pendingReplyTimerRef.current) {
           clearTimeout(pendingReplyTimerRef.current);
           pendingReplyTimerRef.current = null;
@@ -343,6 +361,27 @@ export function useMomiVoice({ onCommand, onWakeOnly, onMismatch, onInterim, onE
     };
 
     recognition.onend = () => {
+      // [버그 수정 — 짧은 대답(네/아니요) 유실 2026-08-18] "예약 확인 질문에
+      // '네'라고 답했는데 아무 반응이 없다" 문의 대응. awaitReply로 즉답을
+      // 기다리는 중인데(pendingReplyRef.current) 그 발화가 끝내 isFinal로
+      // 확정되지 못한 채 이 인식 세션이 여기서 끝나버리면, 원래는 12초
+      // 타임아웃까지 조용히 아무 일도 안 일어났다 — 사용자 입장에선 "말했는데
+      // 완전 무반응"으로 보이는 게 바로 이 경우다. 위 onresult에서 미리 담아둔
+      // 미확정 조각(lastInterimSinceAwaitRef)이 있으면 그걸 확정된 것처럼
+      // 대신 써서 콜백을 살려낸다 — 아래 재시작 로직과 별개로, 세션이 어떤
+      // 이유로 끝나든(재시작 여부 무관) 항상 먼저 확인한다.
+      if (recognitionRef.current === recognition && pendingReplyRef.current && lastInterimSinceAwaitRef.current.trim()) {
+        const cb = pendingReplyRef.current;
+        const fallbackHeard = lastInterimSinceAwaitRef.current.trim();
+        pendingReplyRef.current = null;
+        lastInterimSinceAwaitRef.current = '';
+        if (pendingReplyTimerRef.current) {
+          clearTimeout(pendingReplyTimerRef.current);
+          pendingReplyTimerRef.current = null;
+        }
+        console.log('[모미] 짧은 대답이 확정되지 않은 채 세션이 끝나 미확정 조각을 대신 사용:', fallbackHeard);
+        cb(fallbackHeard);
+      }
       // continuous:true 브라우저도 가끔 세션이 끊기고, iOS는 위에서 아예
       // continuous:false로 두기 때문에 매 발화마다 항상 여기로 온다.
       // 두 경우 다 꺼진 상태가 아니면(shouldRestartRef) 즉시 재시작해서 "계속 듣는"
