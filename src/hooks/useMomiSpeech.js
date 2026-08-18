@@ -7,7 +7,7 @@
 // speechSynthesis.getVoices().filter(v => v.lang.startsWith('ko'))로 확인 가능.
 // 품질이 부족하면 이 훅의 speak()만 유료 TTS 호출로 교체하면 된다(호출부는 안 바뀜).
 
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 function getSpeechSynthesis() {
   if (typeof window === 'undefined') return null;
@@ -17,12 +17,15 @@ function getSpeechSynthesis() {
 export function useMomiSpeech() {
   const supported = !!getSpeechSynthesis();
   const synthRef = useRef(null);
+  const utteranceRef = useRef(null);
+  const [speaking, setSpeaking] = useState(false);
 
   useEffect(() => {
     synthRef.current = getSpeechSynthesis();
     return () => {
       // 화면 이동 등으로 언마운트될 때 말하던 중이면 멈춘다.
       synthRef.current?.cancel();
+      utteranceRef.current = null;
     };
   }, []);
 
@@ -34,6 +37,19 @@ export function useMomiSpeech() {
     synth.cancel();
     const utterance = new window.SpeechSynthesisUtterance(text);
     utterance.lang = 'ko-KR';
+    utterance.rate = 1.02;
+    utterance.pitch = 1.04;
+    utteranceRef.current = utterance;
+    utterance.onstart = () => {
+      if (utteranceRef.current === utterance) setSpeaking(true);
+    };
+    const finish = () => {
+      if (utteranceRef.current !== utterance) return;
+      utteranceRef.current = null;
+      setSpeaking(false);
+    };
+    utterance.onend = finish;
+    utterance.onerror = finish;
     synth.speak(utterance);
   }, []);
 
@@ -51,8 +67,10 @@ export function useMomiSpeech() {
   }, []);
 
   const stop = useCallback(() => {
+    utteranceRef.current = null;
     synthRef.current?.cancel();
+    setSpeaking(false);
   }, []);
 
-  return { supported, speak, stop, unlock };
+  return { supported, speaking, speak, stop, unlock };
 }

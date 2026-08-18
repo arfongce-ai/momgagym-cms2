@@ -69,9 +69,10 @@ describe('[확인] 진단 능력 자체는 콘솔 로그로 유지된다(useMomi
   });
 });
 
-describe('[회귀 없음] GlobalVoiceCommand.jsx(버튼식)는 그대로 화면 진단 표시를 유지한다', () => {
-  it('handleMismatch가 여전히 setFeedback으로 들린 말을 화면에 보여준다', () => {
+describe('GlobalVoiceCommand.jsx(버튼식)는 빈 인식에 자연스러운 재시도를 안내한다', () => {
+  it('기술 진단 대신 다시 말해 달라는 문구를 보여준다', () => {
     const body = bodyOf(globalSrc, 'const handleMismatch = useCallback((heard) => {', '}, []);');
-    expect(body).toContain('setFeedback(`[진단] 들림: ${shown}`)');
+    expect(body).toContain('잘 못 들었어요. 조금 천천히 다시 말씀해 주세요.');
+    expect(body).not.toContain('[진단]');
   });
 });

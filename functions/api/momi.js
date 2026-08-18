@@ -5,8 +5,18 @@
 
 import { MOMI_SYSTEM_PROMPT } from '../_shared/momiPrompt.js';
 import { resolveVerifiedRole } from '../_shared/verifyFirebaseToken.js';
+import {
+  applyMomiSafetyGuard,
+  clampText,
+  enforceMomiRateLimit,
+  jsonResponse,
+  normalizeMomiHistory,
+  readMomiJson,
+} from '../_shared/momiRequest.js';
+import { recordPaidAiCost, reservePaidAiCall } from '../_shared/aiBudget.js';
 
 const MODEL = 'claude-sonnet-5';
+const PROMPT_VERSION = '2.2';
 
 // [역할별 응답 범위 2026-08-08] "관리자·트레이너 접근 구분을 모미에도 적용" 요청 대응.
 // MOMI_SYSTEM_PROMPT 본문(momi-system-v2.0.md 확정본)은 그대로 두고, voice-command.js가
@@ -39,7 +49,7 @@ const TRAINER_ROLE_SUFFIX = `
 export async function onRequestPost(context) {
   try {
     const { request, env } = context;
-    const body = await request.json();
+    const body = await readMomiJson(request);
 
     // src/services/momiService.js가 buildProblemFocus() 등으로 만들어 보내는 payload.
     // kind: 'posture'|'rom'|'jump'|'gait' 등, report: 해당 측정의 리포트 요약,
@@ -49,16 +59,21 @@ export async function onRequestPost(context) {
     const { kind, report, member, crossContext, businessContext, question, history } = body || {};
 
     if (!report || !member) {
-      return new Response(
-        JSON.stringify({ error: 'report와 member 정보가 필요합니다.' }),
-        { status: 400, headers: { 'Content-Type': 'application/json' } }
-      );
+      return jsonResponse({ error: 'report와 member 정보가 필요합니다.' }, 400);
     }
 
     // [보안] 클라이언트는 role을 안 보낸다 — Authorization 헤더의 Firebase ID 토큰을
     // 서버가 직접 검증해서 role을 구한다(voice-command.js와 동일 패턴, 위조 불가 —
     // functions/_shared/verifyFirebaseToken.js 참고). 실패 시 안전하게 trainer로 떨어짐.
-    const { role: effectiveRole } = await resolveVerifiedRole(request.headers.get('Authorization'));
+    const { authenticated, role: effectiveRole, uid } = await resolveVerifiedRole(request.headers.get('Authorization'));
+    if (!authenticated) {
+      return jsonResponse({ error: '로그인이 만료되었거나 유효하지 않습니다. 다시 로그인해주세요.' }, 401);
+    }
+    await enforceMomiRateLimit(env, `momi:${uid}`);
+    if (!env.ANTHROPIC_API_KEY) {
+      return jsonResponse({ error: 'MOMI 서버 설정이 완료되지 않았습니다.' }, 503);
+    }
+    const budgetReservation = await reservePaidAiCall(env);
     const roleSuffix = effectiveRole === 'admin' ? ADMIN_ROLE_SUFFIX : TRAINER_ROLE_SUFFIX;
 
     // [매출 데이터 연결 배선 준비 2026-08-08] businessContext는 admin일 때만 프롬프트에
@@ -71,16 +86,22 @@ export async function onRequestPost(context) {
     // 논의 때 확인한 구조적 한계). history(이전 턴 배열)가 오면 대화로 이어붙인다.
     // history: [{role:'user'|'assistant', content: string}, ...] — 서버는 이걸
     // 그대로 신뢰하지 않고 role 값이 저 둘 중 하나인 것만 통과시킨다(형식 방어).
-    const validHistory = Array.isArray(history)
-      ? history.filter((t) => t && (t.role === 'user' || t.role === 'assistant') && typeof t.content === 'string')
-      : [];
+    const validHistory = normalizeMomiHistory(history);
+    const safeQuestion = clampText(question, 2000);
 
-    // 후속 질문(history 있음)이면 리포트 데이터를 또 반복해서 안 보낸다 — 첫 턴에
-    // 이미 담겨있고 history로 이어지므로, 질문 텍스트만 보내는 게 더 자연스러운
-    // 대화 흐름이고 토큰도 아낀다.
+    // 후속 질문에도 현재 리포트의 압축 컨텍스트를 함께 보낸다. 예전 UI history에는
+    // 실제 리포트가 아니라 "이 리포트를 분석해줘"라는 문장만 들어가서, 두 번째
+    // 질문부터 각도·좌우차 같은 원본 근거를 잃는 문제가 있었다.
     let userMessageContent;
     if (validHistory.length > 0) {
-      userMessageContent = question || '';
+      const currentContext = JSON.stringify({
+        kind,
+        report,
+        member,
+        crossContext: crossContext || null,
+        businessContext: effectiveBusinessContext,
+      }, null, 2);
+      userMessageContent = `${safeQuestion || '앞선 분석을 현재 자료에 맞춰 이어서 설명해주세요.'}\n\n[현재 회원·측정 컨텍스트 — 앞선 답변보다 이 자료를 우선하세요]\n${currentContext}`;
     } else {
       const userContent = JSON.stringify(
         {
@@ -89,7 +110,7 @@ export async function onRequestPost(context) {
           member,
           crossContext: crossContext || null,
           businessContext: effectiveBusinessContext,
-          question: question || null,
+          question: safeQuestion || null,
         },
         null,
         2
@@ -124,26 +145,22 @@ export async function onRequestPost(context) {
 
     if (!anthropicRes.ok) {
       const errText = await anthropicRes.text();
-      return new Response(
-        JSON.stringify({ error: 'Anthropic API 호출 실패', detail: errText }),
-        { status: anthropicRes.status, headers: { 'Content-Type': 'application/json' } }
-      );
+      console.warn('[momi] Anthropic API 호출 실패:', anthropicRes.status, errText.slice(0, 500));
+      return jsonResponse({ error: 'MOMI 분석 서비스 호출에 실패했습니다.' }, anthropicRes.status);
     }
 
     const data = await anthropicRes.json();
-    const text = (data.content || [])
+    await recordPaidAiCost(env, budgetReservation, MODEL, data.usage);
+    const modelText = (data.content || [])
       .map((block) => (block.type === 'text' ? block.text : ''))
       .filter(Boolean)
       .join('\n');
+    const text = applyMomiSafetyGuard({ kind, report, question: safeQuestion, text: modelText });
 
-    return new Response(JSON.stringify({ text }), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    return jsonResponse({ text, model: MODEL, promptVersion: PROMPT_VERSION });
   } catch (err) {
-    return new Response(
-      JSON.stringify({ error: '서버 오류', detail: String(err && err.message ? err.message : err) }),
-      { status: 500, headers: { 'Content-Type': 'application/json' } }
-    );
+    const status = Number(err?.status) || 500;
+    if (status >= 500) console.error('[momi] 서버 오류:', err);
+    return jsonResponse({ error: err?.message || '서버 오류', code: err?.code || undefined }, status);
   }
 }

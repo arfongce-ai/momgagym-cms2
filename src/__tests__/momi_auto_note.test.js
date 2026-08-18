@@ -23,9 +23,10 @@ describe('MomiAutoNote.jsx — 축3 자동 트리거 배선', () => {
     expect(effectBody).not.toMatch(/onClick/); // 버튼 트리거가 아니라 마운트 시 자동 트리거여야 함
   });
 
-  it('같은 마운트 동안 중복 호출을 막는 가드(triedRef)가 있다', () => {
-    expect(src).toContain('triedRef');
-    expect(src).toContain('if (note || triedRef.current) return;');
+  it('리포트·원본 버전별 중복 호출을 막는 가드가 있다', () => {
+    expect(src).toContain('attemptedKeyRef');
+    expect(src).toContain('if (attemptedKeyRef.current === requestKey) return;');
+    expect(src).toContain('MOMI_PROMPT_VERSION');
   });
 
   it('생성된 노트를 onSaved 콜백으로 영속 저장한다', () => {
@@ -34,7 +35,8 @@ describe('MomiAutoNote.jsx — 축3 자동 트리거 배선', () => {
   });
 
   it('실패해도 조용히 넘어간다(리포트 열람 자체를 막지 않음 — try/catch로 감싸짐)', () => {
-    expect(src).toContain('.catch((e) => setError(');
+    expect(src).toContain('.catch((e) => {');
+    expect(src).toContain("setError(e.message || '모미 노트를 만드는 중 문제가 생겼어요.')");
   });
 });
 
@@ -134,6 +136,7 @@ describe('demoData.js — updateSession (세션 기반 리포트용 신규 저�
     const end = src.indexOf('\n  },', start);
     const body = src.slice(start, end);
     expect(body).toContain('cache.ai[mid] = (cache.ai[mid] || []).map(');
+    expect(body).toContain("data: { ...(s.data || {}), ...nextPatch }");
     expect(body).toContain("fbSet('ai', sid,");
     expect(body).toContain('catch (e) { cache.ai[mid] = prev;');
   });

@@ -14,6 +14,8 @@ import { saveUnifiedReport } from '../services/unifiedReportStore';
 import { useHardwareBack } from './core/useHardwareBack';
 import { useLockPortrait } from './core/useLockPortrait';
 import { consumePendingVoiceTarget, setPendingVoiceTarget } from '../voice/pendingVoiceTarget';
+import { buildMemberTestRecommendations } from './core/memberTestRecommendation';
+import MemberTestRecommendationPanel from '../components/ai/MemberTestRecommendationPanel';
 
 export default function AiMeasureHub() {
   const { user } = useAuth();
@@ -32,6 +34,9 @@ export default function AiMeasureHub() {
   // [2607-2] 미등록회원 신체정보 접기/펴기 — 기본은 접힘(홈 화면 간소화).
   // 입력값이 있으면 접힌 상태에서도 헤더에 요약이 남아 상태를 알 수 있다.
   const [guestOpen, setGuestOpen] = useState(false);
+  const [testRecommendation, setTestRecommendation] = useState(null);
+  const [recommendationLoading, setRecommendationLoading] = useState(false);
+  const [recommendationError, setRecommendationError] = useState('');
 
   const baseMember = members.find(m => m.id === memberId);
   // 회원의 최근 신체기록에서 키·몸무게를 자동 연동
@@ -286,6 +291,62 @@ export default function AiMeasureHub() {
     if (id) setGuestId(null);
   };
 
+  // 회원을 고르면 전용 리포트 + AI 세션을 함께 읽어 다음 측정 상위 3개를 계산한다.
+  // 추천 순서와 안전 제한은 순수 규칙 엔진이 결정하며, 네트워크/모미 응답에 의존하지 않는다.
+  useEffect(() => {
+    let cancelled = false;
+    if (!memberId) {
+      setTestRecommendation(null);
+      setRecommendationError('');
+      setRecommendationLoading(false);
+      return () => { cancelled = true; };
+    }
+
+    const selectedMember = members.find((item) => item.id === memberId);
+    if (!selectedMember) return () => { cancelled = true; };
+    setRecommendationLoading(true);
+    setRecommendationError('');
+
+    Promise.all([
+      aiStore.ensureSessions(memberId),
+      aiStore.ensurePostureReports(memberId),
+      aiStore.ensureRomReports(memberId),
+      aiStore.ensureGaitReports(memberId),
+    ]).then(([sessions, postureReports, romReports, gaitReports]) => {
+      if (cancelled) return;
+      const bodyRecords = store.getBodyRecords(memberId) || [];
+      const sessionReports = (menu) => (sessions || [])
+        .filter((session) => session?.menu === menu)
+        .map((session) => ({
+          createdAt: session.recordedAtFull || session.recordedAt,
+          ...(session.data || {}),
+        }));
+      setTestRecommendation(buildMemberTestRecommendations({
+        member: selectedMember,
+        bodyRecords,
+        reportsByKind: {
+          body: bodyRecords,
+          posture: postureReports,
+          rom: romReports,
+          gait: (gaitReports || []).filter((report) => report?.kind === 'gait' || report?.metrics || report?.cadence),
+          jump: (gaitReports || []).filter((report) => report?.kind === 'jump'),
+          lifting: sessionReports('lifting'),
+          stance: sessionReports('stance'),
+          squat: sessionReports('squat'),
+        },
+      }));
+    }).catch((error) => {
+      if (cancelled) return;
+      console.warn('[AiMeasureHub] 추천 데이터 로딩 실패:', error?.code || error?.message);
+      setTestRecommendation(null);
+      setRecommendationError('추천 데이터를 불러오지 못했습니다. 측정 항목은 직접 선택할 수 있습니다.');
+    }).finally(() => {
+      if (!cancelled) setRecommendationLoading(false);
+    });
+
+    return () => { cancelled = true; };
+  }, [memberId, members]);
+
   // 미등록회원 신체정보 변경. 측정 진행 전(active 없음)이면 guest id 를 리셋해
   // 다음 측정에서 새 사람으로 새 id 가 발급되게 한다(측정 중에는 유지).
   const updateVirtual = (patch) => {
@@ -349,6 +410,7 @@ export default function AiMeasureHub() {
           />
         </Suspense>
       </div>
+
     );
   }
 
@@ -448,6 +510,19 @@ export default function AiMeasureHub() {
         )}
       </div>
 
+      {realMember && (
+        <MemberTestRecommendationPanel
+          member={realMember}
+          result={testRecommendation}
+          loading={recommendationLoading}
+          error={recommendationError}
+          onSelect={(testId) => {
+            const menu = MEASURE_MENUS.find((item) => item.id === testId && item.status === 'ready');
+            if (menu) openMenu(menu);
+          }}
+        />
+      )}
+
       {/* [2607-3] 측정 사운드 볼륨 카드는 홈에서 제거 —
           볼륨 조절은 '초시계·메트로놈' 탭(SoundVolumeControl)에서 계속 가능 */}
 
@@ -455,6 +530,9 @@ export default function AiMeasureHub() {
       <div className="grid grid-cols-2 gap-3">
         {[...MEASURE_MENUS].sort((a, b) => a.no - b.no).map(menu => {
           const ready = menu.status === 'ready';
+          const recommendationRank = testRecommendation?.recommendations
+            ?.findIndex((item) => item.id === menu.id);
+          const recommended = recommendationRank >= 0;
           return (
             <button key={menu.id}
               onClick={() => ready && openMenu(menu)}
@@ -470,6 +548,11 @@ export default function AiMeasureHub() {
                   제목이 안 보이던 게 원래 버그였다. */}
               <p className="font-bold text-sm mt-2 text-slate-900 dark:text-slate-100">{menu.no}. {menu.title}</p>
               <p className="text-slate-500 text-xs mt-0.5 leading-relaxed">{menu.desc}</p>
+              {recommended && (
+                <span className="inline-block mt-2 mr-1 text-[10px] px-2 py-0.5 rounded font-black bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/25">
+                  추천 {recommendationRank + 1}순위
+                </span>
+              )}
               <span className={`inline-block mt-2 text-[10px] px-2 py-0.5 rounded font-semibold
                 ${ready ? 'bg-amber-500/20 text-amber-700 dark:text-amber-400' : 'bg-slate-200 dark:bg-slate-800 text-slate-500'}`}>
                 {ready ? '이용 가능' : '준비 중'}

@@ -191,7 +191,11 @@ describe('없는 id로 나머지 update* 함수를 불러도 조용히 성공하
 
   it('updateSession — VBT/스탠스/스쿼트가 쓰는 경로. 없는 세션 id는 명확히 실패한다', async () => {
     const m = await store.addMember({ name: 'N' });
-    await aiStore.addSession(m.id, { menu: 'stance', data: {} });
+    const session = await aiStore.addSession(m.id, { menu: 'stance', data: { status: 'normal' } });
+    const updated = await aiStore.updateSession(m.id, session.id, { momiNote: { text: '노트' } });
+    expect(updated.data.status).toBe('normal');
+    expect(updated.data.momiNote.text).toBe('노트');
+    expect(updated.momiNote).toBeUndefined();
     await expect(
       aiStore.updateSession(m.id, 'no-such-session-id', { momiNote: { text: '유실될 노트' } })
     ).rejects.toThrow();

@@ -7,7 +7,12 @@
 import { describe, expect, it, vi, afterEach } from 'vitest';
 import { readFileSync } from 'fs';
 import { join } from 'path';
-import { matchWakeWord, isIOSStandalone } from '../hooks/useMomiVoice.js';
+import {
+  matchWakeWord,
+  collectRecognitionText,
+  chooseMoreCompleteTranscript,
+  isIOSStandalone,
+} from '../hooks/useMomiVoice.js';
 
 const readSrc = (...segs) => readFileSync(join(process.cwd(), ...segs), 'utf8');
 
@@ -72,18 +77,28 @@ describe('useMomiVoice.js — iOS 대응 + 진단 로그', () => {
     const errorStart = src.indexOf('recognition.onerror = (event) => {');
     const errorEnd = src.indexOf('};', errorStart);
     const errorBody = src.slice(errorStart, errorEnd);
-    expect(errorBody).toContain("if (event.error === 'no-speech') return;");
-    expect(errorBody.indexOf("if (event.error === 'no-speech') return;")).toBeLessThan(
+    expect(errorBody).toContain("if (event.error === 'no-speech' || event.error === 'aborted') return;");
+    expect(errorBody.indexOf("event.error === 'no-speech'")).toBeLessThan(
       errorBody.indexOf('if (onErrorOccurred) onErrorOccurred(event.error);')
     );
     // console.warn 자체는 no-speech도 여전히 남겨야(콘솔 접근 가능한 경우엔 진단용).
     expect(errorBody.indexOf("console.warn('[모미] 인식 오류:', event.error);")).toBeLessThan(
-      errorBody.indexOf("if (event.error === 'no-speech') return;")
+      errorBody.indexOf("event.error === 'no-speech'")
+    );
+  });
+
+  it('의도적인 recognition.abort() 종료도 오류로 표시하지 않는다', () => {
+    const errorStart = src.indexOf('recognition.onerror = (event) => {');
+    const errorEnd = src.indexOf('};', errorStart);
+    const errorBody = src.slice(errorStart, errorEnd);
+    expect(errorBody).toContain("event.error === 'no-speech' || event.error === 'aborted'");
+    expect(errorBody.indexOf("event.error === 'aborted'")).toBeLessThan(
+      errorBody.indexOf('if (onErrorOccurred) onErrorOccurred(event.error);')
     );
   });
 
   it('onWakeOnly·onMismatch·onErrorOccurred·requireWakeWord 모두 useEffect 의존성 배열에 포함된다', () => {
-    expect(src).toContain('}, [onCommand, onWakeOnly, onMismatch, onErrorOccurred, requireWakeWord]);');
+    expect(src).toContain('}, [onCommand, onWakeOnly, onMismatch, onInterim, onErrorOccurred, requireWakeWord, clearPendingFinal]);');
   });
 
   it('"모미야"만 부르면 다음 발화를 기다리는 대기 상태(activated)로 들어간다', () => {
@@ -117,6 +132,27 @@ describe('useMomiVoice.js — iOS 대응 + 진단 로그', () => {
   });
 });
 
+describe('useMomiVoice.js — 삼성 인터넷의 조각난 최종 결과를 한 번으로 합친다', () => {
+  const src = readSrc('src', 'hooks', 'useMomiVoice.js');
+
+  it('짧은 최종 결과가 연속으로 와도 가장 완성된 문장을 보존한다', () => {
+    const fragments = ['몸이야', '몸이야 회원', '몸이야 회원 관리', '몸이야 회원 관리 열어 줘'];
+    const settled = fragments.reduce(chooseMoreCompleteTranscript, '');
+    expect(settled).toBe('몸이야 회원 관리 열어 줘');
+  });
+
+  it('마지막 결과 뒤 700ms 동안 기다렸다가 한 번만 처리한다', () => {
+    expect(src).toContain('const FINAL_RESULT_SETTLE_MS = 700;');
+    expect(src).toContain('pendingFinalTextRef.current = chooseMoreCompleteTranscript');
+    expect(src).toContain('if (finalResultTimerRef.current) clearTimeout(finalResultTimerRef.current);');
+    expect(src).toContain('}, FINAL_RESULT_SETTLE_MS);');
+  });
+
+  it('마이크를 끄거나 훅이 정리될 때 대기 중인 명령도 취소한다', () => {
+    expect(src.match(/clearPendingFinal\(\);/g)?.length).toBeGreaterThanOrEqual(2);
+  });
+});
+
 // [버그 수정 2026-08-08a] "모미야"를 또박또박 말해도 폰·태블릿·키오스크 전부 무반응
 // 이라는 문의 대응. 한글은 유니코드 정규화 형태(NFC/NFD)가 갈릴 수 있어, 소스에
 // 적힌 웨이크워드 리터럴과 음성인식 API가 돌려주는 transcript의 내부 인코딩이
@@ -126,12 +162,12 @@ describe('useMomiVoice.js — 웨이크워드 비교 전 유니코드(NFC) 정�
 
   it('웨이크워드 후보 배열을 NFC로 정규화한다', () => {
     expect(src).toContain(
-      "const WAKE_WORD_VARIANTS = ['모미야', '몸이야', '모미', '봄이야'].map((w) => w.normalize('NFC'));"
+      "const WAKE_WORD_VARIANTS = ['모미야', '몸이야', '보미야', '봄이야', '모미아', '모미'].map((w) => w.normalize('NFC'));"
     );
   });
 
   it('인식된 transcript도 비교 전에 NFC로 정규화한다(양쪽 형태를 맞춰야 비교가 유효함)', () => {
-    expect(src).toContain("last[0].transcript.trim().normalize('NFC');");
+    expect(src).toContain("(item?.transcript || '').trim().normalize('NFC')");
   });
 });
 
@@ -143,7 +179,7 @@ describe('useMomiVoice.js — "몸이야"(흔한 오인식)도 웨이크워드�
 
   it("웨이크워드 후보에 '몸이야'가 포함된다", () => {
     expect(src).toContain(
-      "const WAKE_WORD_VARIANTS = ['모미야', '몸이야', '모미', '봄이야'].map((w) => w.normalize('NFC'));"
+      "const WAKE_WORD_VARIANTS = ['모미야', '몸이야', '보미야', '봄이야', '모미아', '모미'].map((w) => w.normalize('NFC'));"
     );
   });
 
@@ -152,7 +188,7 @@ describe('useMomiVoice.js — "몸이야"(흔한 오인식)도 웨이크워드�
     const fnEnd = src.indexOf('\n}', fnStart);
     const fnBody = src.slice(fnStart, fnEnd);
     expect(fnBody).toContain('for (const variant of WAKE_WORD_VARIANTS)');
-    expect(fnBody).toContain('heard.indexOf(variant)');
+    expect(fnBody).toContain('normalized.indexOf(variant)');
     expect(fnBody).toContain('return { index, length: variant.length };');
   });
 
@@ -217,6 +253,23 @@ describe('matchWakeWord() — 실동작 검증(실제 진단 로그로 재현)',
     expect(m).not.toBeNull();
     const commandText = heard.slice(m.index + m.length).trim();
     expect(commandText).toBe('트레이너 관리 화면 열어 줘');
+  });
+
+  it('공백이 낀 웨이크워드와 추가 오인식 후보도 인정한다', () => {
+    expect(matchWakeWord('모 미 야 회원 관리 열어줘')).not.toBeNull();
+    expect(matchWakeWord('보미야 일정 보여줘')).not.toBeNull();
+    expect(matchWakeWord('모미아 타이머 켜줘')).not.toBeNull();
+  });
+
+  it('한 이벤트에 나뉘어 온 최종 인식 조각을 모두 합친다', () => {
+    const event = {
+      resultIndex: 0,
+      results: [
+        Object.assign([{ transcript: '모미야 회원' }], { isFinal: true }),
+        Object.assign([{ transcript: '관리 열어줘' }], { isFinal: true }),
+      ],
+    };
+    expect(collectRecognitionText(event, { finalOnly: true })).toBe('모미야 회원 관리 열어줘');
   });
 });
 
@@ -427,7 +480,7 @@ describe('useMomiVoice.js — requireWakeWord (웨이크워드 이중 요구 버
   });
 
   it('onresult 이펙트의 deps 배열에 requireWakeWord가 들어간다(stale closure 방지)', () => {
-    expect(src).toContain('}, [onCommand, onWakeOnly, onMismatch, onErrorOccurred, requireWakeWord]);');
+    expect(src).toContain('}, [onCommand, onWakeOnly, onMismatch, onInterim, onErrorOccurred, requireWakeWord, clearPendingFinal]);');
   });
 
   it('requireWakeWord가 false면 웨이크워드 매칭 없이 들린 말 전체를 곧바로 명령으로 넘긴다', () => {

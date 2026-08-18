@@ -46,7 +46,7 @@ describe('MomiInsightPanel.jsx — 후속 질문(양방향 소통) 배선', () =
     const inputSectionStart = src.lastIndexOf('{answer && (');
     expect(inputSectionStart).toBeGreaterThan(-1);
     const inputSectionBody = src.slice(inputSectionStart);
-    expect(inputSectionBody).toContain('이어서 물어보기');
+    expect(inputSectionBody).toContain('이 결과에 대해 이어서 물어보세요');
   });
 });
 

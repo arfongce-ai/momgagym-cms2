@@ -17,7 +17,7 @@ import TodayScheduleMorningAlert from './components/schedule/TodayScheduleMornin
 import { useKioskMode } from './hooks/useKioskMode';
 
 function RequireAuth({ children, adminOnly = false }) {
-  const { user, loading, dataReady, dataError, retryData } = useAuth();
+  const { user, loading, dataReady, dataError, retryData, logout } = useAuth();
   if (loading) return (
     <div className="flex items-center justify-center h-screen bg-slate-50 dark:bg-slate-950">
       <div className="w-8 h-8 border-2 border-amber-500 border-t-transparent rounded-full animate-spin" />
@@ -31,8 +31,14 @@ function RequireAuth({ children, adminOnly = false }) {
       <div className="text-center max-w-sm">
         <div className="text-red-600 dark:text-red-400 font-bold text-lg mb-2">데이터를 불러오지 못했어요</div>
         <div className="text-slate-500 dark:text-slate-400 text-sm mb-3">로그인은 되었지만 데이터 읽기에 실패했습니다.</div>
-        <div className="text-red-300 text-xs bg-red-950/40 border border-red-900 rounded-lg p-3 mb-4 font-mono break-all text-left">{dataError}</div>
-        <button onClick={retryData} className="px-4 py-2 rounded-lg bg-amber-500 text-slate-950 font-bold">다시 시도</button>
+        <div className="flex justify-center gap-2">
+          <button onClick={retryData} className="px-4 py-2 rounded-lg bg-amber-500 text-slate-950 font-bold">다시 시도</button>
+          <button onClick={logout} className="px-4 py-2 rounded-lg border border-slate-700 text-slate-300 font-bold">로그아웃</button>
+        </div>
+        <details className="mt-4 text-left text-xs text-slate-500">
+          <summary className="cursor-pointer">오류 정보 보기</summary>
+          <div className="mt-2 text-red-300 bg-red-950/40 border border-red-900 rounded-lg p-3 font-mono break-all">{dataError}</div>
+        </details>
       </div>
     </div>
   );

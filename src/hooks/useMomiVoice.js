@@ -29,15 +29,44 @@ import { useRef, useState, useCallback, useEffect } from 'react';
 // 발음이 뭉개지면 서로 헷갈리기 쉽고, "봄이"도 연음되면 "보미"로 들려 결국
 // "모미야"와 사실상 같은 소리가 된다. "봄이야"는 "몸이야"보다 헬스장 대화에서
 // 나올 일이 훨씬 적어(계절 얘기 정도) 오탐 위험이 낮다고 보고 그대로 추가한다.
-const WAKE_WORD_VARIANTS = ['모미야', '몸이야', '모미', '봄이야'].map((w) => w.normalize('NFC'));
+const WAKE_WORD_VARIANTS = ['모미야', '몸이야', '보미야', '봄이야', '모미아', '모미'].map((w) => w.normalize('NFC'));
 
 /** heard 안에서 웨이크워드(또는 흔한 오인식 형태)를 찾는다. 없으면 null. */
 export function matchWakeWord(heard) {
+  const normalized = (heard || '').normalize('NFC');
   for (const variant of WAKE_WORD_VARIANTS) {
-    const index = heard.indexOf(variant);
+    const index = normalized.indexOf(variant);
     if (index !== -1) return { index, length: variant.length };
   }
+  // 음성 엔진이 이름 사이에 공백을 끼우는 경우("모 미야", "몸 이 야")도 허용한다.
+  const flexible = /모\s*미\s*(?:야|아)|몸\s*이\s*야|보\s*미\s*야|봄\s*이\s*야/u.exec(normalized);
+  if (flexible) return { index: flexible.index, length: flexible[0].length };
   return null;
+}
+
+function bestAlternative(result, preferWakeWord) {
+  if (!result?.length) return '';
+  const alternatives = Array.from(result)
+    .map((item) => (item?.transcript || '').trim().normalize('NFC'))
+    .filter(Boolean);
+  if (preferWakeWord) {
+    const wakeCandidate = alternatives.find((text) => matchWakeWord(text));
+    if (wakeCandidate) return wakeCandidate;
+  }
+  return alternatives[0] || '';
+}
+
+/** 한 이벤트에 여러 조각으로 도착한 한국어 문장을 잃지 않고 합친다. */
+export function collectRecognitionText(event, { finalOnly = false, preferWakeWord = false } = {}) {
+  const parts = [];
+  const start = Number.isInteger(event?.resultIndex) ? event.resultIndex : 0;
+  for (let index = start; index < (event?.results?.length || 0); index += 1) {
+    const result = event.results[index];
+    if (finalOnly && !result?.isFinal) continue;
+    const text = bestAlternative(result, preferWakeWord);
+    if (text) parts.push(text);
+  }
+  return parts.join(' ').replace(/\s+/g, ' ').trim();
 }
 // "모미야"만 부른 뒤(onWakeOnly) 이 시간 안에 다음 발화가 오면, 그걸 "모미야"
 // 없이도 바로 명령으로 처리한다. 실사용 테스트에서 "모미야" → "네, 말씀하세요"
@@ -45,6 +74,19 @@ export function matchWakeWord(heard) {
 // 예전 코드는 매 발화마다 "모미야"가 다시 붙어있어야만 반응해서 이 흐름이
 // 전부 무시되고 있었다(콘솔 대신 화면에 찍은 진단 로그로 확인됨).
 const ACTIVATION_WINDOW_MS = 8000;
+
+// 삼성 인터넷/안드로이드 Web Speech API는 한 문장을 말하는 동안
+// "몸이야" → "몸이야 회원" → "몸이야 회원 관리 열어 줘"처럼 길어지는
+// 여러 결과를 모두 isFinal=true로 보내는 경우가 있다. 첫 조각을 즉시 실행하면
+// 완성된 명령이 도착하기 전에 웨이크워드만 처리되어 실제 CMS가 반응하지 않는다.
+// 마지막 결과가 도착한 뒤 잠깐 기다렸다가 가장 완성된 문장 한 번만 실행한다.
+const FINAL_RESULT_SETTLE_MS = 700;
+
+export function chooseMoreCompleteTranscript(previous = '', next = '') {
+  const previousText = String(previous).trim();
+  const nextText = String(next).trim();
+  return nextText.length >= previousText.length ? nextText : previousText;
+}
 
 function getSpeechRecognition() {
   if (typeof window === 'undefined') return null;
@@ -93,7 +135,7 @@ export function isIOSStandalone() {
 // 전용)면 들린 말 전체를 그대로 명령으로 넘긴다 — 습관적으로 "모미야"를
 // 붙여도(예: "모미야 회원 관리 열어줘") 그 뒤 키워드 매칭이 부분 문자열
 // 방식이라 그대로 잘 동작한다(깨지지 않음).
-export function useMomiVoice({ onCommand, onWakeOnly, onMismatch, onErrorOccurred, requireWakeWord = true } = {}) {
+export function useMomiVoice({ onCommand, onWakeOnly, onMismatch, onInterim, onErrorOccurred, requireWakeWord = true } = {}) {
   const [listening, setListening] = useState(false);
   const [supported] = useState(() => !!getSpeechRecognition());
   const recognitionRef = useRef(null);
@@ -134,6 +176,16 @@ export function useMomiVoice({ onCommand, onWakeOnly, onMismatch, onErrorOccurre
   // 앞으로 다른 확인·후속답변이 필요한 기능에도 같은 방식으로 쓸 수 있다.
   const pendingReplyRef = useRef(null); // ((heard: string|null) => void) | null
   const pendingReplyTimerRef = useRef(null);
+  const pendingFinalTextRef = useRef('');
+  const finalResultTimerRef = useRef(null);
+
+  const clearPendingFinal = useCallback(() => {
+    if (finalResultTimerRef.current) {
+      clearTimeout(finalResultTimerRef.current);
+      finalResultTimerRef.current = null;
+    }
+    pendingFinalTextRef.current = '';
+  }, []);
 
   const cancelAwaitReply = useCallback(() => {
     if (pendingReplyTimerRef.current) {
@@ -169,15 +221,31 @@ export function useMomiVoice({ onCommand, onWakeOnly, onMismatch, onErrorOccurre
     // [iOS 대응] 위 isIOS() 설명 참고 — iOS만 false, 그 외(Windows/Android Chrome
     // 등 지금까지 문제없던 조합)는 기존 그대로 true 유지.
     recognition.continuous = !isIOS();
-    recognition.interimResults = false;
+    recognition.interimResults = true;
+    recognition.maxAlternatives = 3;
 
     recognition.onresult = (event) => {
-      const last = event.results[event.results.length - 1];
-      if (!last || !last.isFinal) return;
-      const heard = last[0].transcript.trim().normalize('NFC');
-      // [진단용] 실제로 뭘로 인식했는지 항상 콘솔에 남긴다 — "모미야"가 다른 말로
-      // 잘못 인식되고 있는 건지, 아예 안 들리고 있는 건지 구분하기 위함.
-      console.log('[모미] 들린 말:', heard);
+      const interim = collectRecognitionText(event, { preferWakeWord: requireWakeWord });
+      const heard = collectRecognitionText(event, { finalOnly: true, preferWakeWord: requireWakeWord });
+      if (!heard) {
+        const isAddressed = !requireWakeWord || activatedRef.current || pendingReplyRef.current || matchWakeWord(interim);
+        if (interim && isAddressed && onInterim) onInterim(interim);
+        return;
+      }
+      // 삼성 인터넷은 완성 중인 여러 조각에도 isFinal=true를 붙인다. 마지막 조각이
+      // 올 때마다 타이머를 다시 시작하고, 가장 긴 문장을 화면에 보여주면서 기다린다.
+      pendingFinalTextRef.current = chooseMoreCompleteTranscript(pendingFinalTextRef.current, heard);
+      if (onInterim) onInterim(pendingFinalTextRef.current);
+      if (finalResultTimerRef.current) clearTimeout(finalResultTimerRef.current);
+      finalResultTimerRef.current = setTimeout(() => {
+        const heard = pendingFinalTextRef.current;
+        pendingFinalTextRef.current = '';
+        finalResultTimerRef.current = null;
+        if (!heard) return;
+        if (onInterim) onInterim('');
+        // [진단용] 실제로 뭘로 인식했는지 항상 콘솔에 남긴다 — "모미야"가 다른 말로
+        // 잘못 인식되고 있는 건지, 아예 안 들리고 있는 건지 구분하기 위함.
+        console.log('[모미] 들린 말:', heard);
 
       // [예약 생성 프로젝트 2026-08-08] 즉답 대기 중이면(awaitReply) 웨이크워드도
       // 2단계 명령 대기도 전부 건너뛰고 이 발화를 그 콜백 하나에만 전달한다 —
@@ -250,6 +318,7 @@ export function useMomiVoice({ onCommand, onWakeOnly, onMismatch, onErrorOccurre
         activationTimerRef.current = setTimeout(clearActivation, ACTIVATION_WINDOW_MS);
         onWakeOnly();
       }
+      }, FINAL_RESULT_SETTLE_MS);
     };
 
     recognition.onerror = (event) => {
@@ -259,13 +328,17 @@ export function useMomiVoice({ onCommand, onWakeOnly, onMismatch, onErrorOccurre
       // (not-allowed=권한 거부, no-speech=일정 시간 무음, audio-capture=마이크 없음,
       //  network=네트워크 문제 — Chrome 인식은 온라인 필요)
       console.warn('[모미] 인식 오류:', event.error);
+      if (onInterim) onInterim('');
       // [버그 수정 2026-08-08] no-speech는 진짜 오류가 아니라 몇 초간 무음일 때
       // 항상 나는 정상적인 타임아웃이다 — 상시 듣기 중엔 자주 발생하고, 뒤이어
       // onend가 오면 shouldRestartRef가 알아서 재시작해줘서 동작엔 지장이 없다.
       // 그런데도 화면에 "[진단] 오류 코드: no-speech"가 매번 떠서, 실제로는
       // 정상 동작인데 "PC에서 오류가 난다"는 오해를 만들었다. 실제 조치가
       // 필요한 오류(권한 거부·마이크 없음·네트워크)만 화면에 띄운다.
-      if (event.error === 'no-speech') return;
+      // aborted는 모미가 답변(TTS)을 시작하거나 사용자가 마이크를 끌 때
+      // recognition.abort()를 의도적으로 호출해 생기는 정상 종료 신호다.
+      // 오류로 노출하면 정상 대화 때마다 "오류 코드: aborted"가 떠버린다.
+      if (event.error === 'no-speech' || event.error === 'aborted') return;
       if (onErrorOccurred) onErrorOccurred(event.error);
     };
 
@@ -353,6 +426,7 @@ export function useMomiVoice({ onCommand, onWakeOnly, onMismatch, onErrorOccurre
     return () => {
       recognitionRef.current = null;
       shouldRestartRef.current = false;
+      clearPendingFinal();
       clearActivation();
       cancelAwaitReply();
       try {
@@ -361,7 +435,7 @@ export function useMomiVoice({ onCommand, onWakeOnly, onMismatch, onErrorOccurre
         // no-op
       }
     };
-  }, [onCommand, onWakeOnly, onMismatch, onErrorOccurred, requireWakeWord]);
+  }, [onCommand, onWakeOnly, onMismatch, onInterim, onErrorOccurred, requireWakeWord, clearPendingFinal]);
 
   // [버그 수정 — TTS 재생 중 마이크 충돌 2026-08-09] 위 pausedForSpeechRef 설명
   // 참고. window.speechSynthesis.speaking을 짧은 주기로 확인해서, 모미가 말을
@@ -419,6 +493,7 @@ export function useMomiVoice({ onCommand, onWakeOnly, onMismatch, onErrorOccurre
     // onend가 재시작하지 않는다(위 onend 핸들러 참고).
     shouldRestartRef.current = false;
     pausedForSpeechRef.current = false; // TTS 감시 루프도 재시작 시도를 멈추도록.
+    clearPendingFinal();
     try {
       recognitionRef.current.stop();
     } catch (e) {
@@ -427,7 +502,7 @@ export function useMomiVoice({ onCommand, onWakeOnly, onMismatch, onErrorOccurre
     clearActivation();
     cancelAwaitReply();
     setListening(false);
-  }, [cancelAwaitReply]);
+  }, [cancelAwaitReply, clearPendingFinal]);
 
   return { supported, listening, startListening, stopListening, awaitReply, cancelAwaitReply };
 }

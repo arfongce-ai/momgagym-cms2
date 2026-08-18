@@ -12,6 +12,7 @@ import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMomiVoice } from '../../hooks/useMomiVoice';
 import { useMomiSpeech } from '../../hooks/useMomiSpeech';
+import MomiVoiceOrb from './MomiVoiceOrb';
 import { processVoiceCommand, buildTimerControlMessage } from '../../services/voiceCommandService';
 import {
   buildReservationSummary,
@@ -49,8 +50,10 @@ export default function KioskVoiceCommand() {
   // 매칭의 "트레이너 이름 언급되면 Claude로" 안전장치에 쓴다.
   const allTrainers = useMemo(() => store.getTrainers(), []);
   const [feedback, setFeedback] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [interimText, setInterimText] = useState('');
 
-  const { speak } = useMomiSpeech();
+  const { speaking, speak } = useMomiSpeech();
 
   // [예약 생성 프로젝트 2단계 2026-08-08] awaitReply는 useMomiVoice()가 반환하는데,
   // useMomiVoice()는 아래에서 handleCommand를 onCommand로 넘겨받는 쪽이라 같은 렌더
@@ -110,7 +113,8 @@ export default function KioskVoiceCommand() {
               })
               .catch((e) => {
                 const fail = '죄송해요, 처리 중 오류가 났어요.';
-                setFeedback(`${fail}\n[진단] ${e?.message || e}`);
+                setFeedback(fail);
+                console.warn('[모미] 확인 작업 실패:', e?.message || e);
                 speak(fail);
                 setTimeout(() => setFeedback(''), 8000);
               })
@@ -277,6 +281,8 @@ export default function KioskVoiceCommand() {
         return;
       }
       isHandlingRef.current = true;
+      setInterimText('');
+      setBusy(true);
       // [요청 흐름 2026-08-08] "모미야"→"네, 선생님"→(명령)→명령 인지 확인→
       // 실행/응답. GlobalVoiceCommand.jsx와 동일 패턴.
       setFeedback('네, 확인했어요.');
@@ -293,6 +299,9 @@ export default function KioskVoiceCommand() {
           currentUser: user,
           allMembers,
           allTrainers,
+          // 화면이 이미 구독해 둔 Firestore 캐시를 재사용하므로 추가 읽기 비용이 없다.
+          allSchedules: store.getSchedules(),
+          allPayments: store.getAllPayments(),
           navigate,
           mode: 'kiosk', // [예약 생성 프로젝트 2026-08-08] 키오스크=공용 기기, trainerName(말로 지정)만 신뢰.
           // [음성 대화형 2026-08-09] 직전 자유 질문 왕복을 함께 보내서 "그럼
@@ -343,10 +352,11 @@ export default function KioskVoiceCommand() {
         diagDetail = e?.message || String(e);
         console.warn('[모미] 명령 처리 실패:', diagDetail);
       } finally {
+        setBusy(false);
         if (!handledSeparately) {
-          setFeedback(diagDetail ? `${message}\n[진단] ${diagDetail}` : message);
+          setFeedback(message);
           speak(message);
-          setTimeout(() => setFeedback(''), diagDetail ? 8000 : 4000);
+          setTimeout(() => setFeedback(''), 5000);
         }
         isHandlingRef.current = false;
       }
@@ -386,8 +396,8 @@ export default function KioskVoiceCommand() {
       // 시도해도 둘 다 실패했을 때만 온다 — 흔치 않은 경우라 새로고침을 안내한다.
       'restart-failed': '음성 인식이 멈췄어요. 화면을 새로고침해주세요.',
     };
-    const readable = KNOWN[errorCode] || `오류 코드: ${errorCode}`;
-    setFeedback(`[진단] ${readable}`);
+    const readable = KNOWN[errorCode] || '음성 인식에 잠시 문제가 생겼어요. 다시 말씀해 주세요.';
+    setFeedback(readable);
     // 마이크가 실제로 죽은 경우(restart-failed)는 놓치면 안 되니 더 오래 보여준다.
     setTimeout(() => setFeedback(''), errorCode === 'restart-failed' ? 15000 : 4000);
   }, []);
@@ -396,6 +406,7 @@ export default function KioskVoiceCommand() {
     onCommand: handleCommand,
     onWakeOnly: handleWakeOnly,
     onMismatch: handleMismatch,
+    onInterim: setInterimText,
     onErrorOccurred: handleErrorOccurred,
   });
 
@@ -438,16 +449,20 @@ export default function KioskVoiceCommand() {
           maxWidth: 240,
         }}
       >
-        [진단] 이 브라우저는 음성인식(SpeechRecognition)을 지원하지 않아요.
+        이 브라우저는 음성인식(SpeechRecognition)을 지원하지 않아요.
       </div>
     );
   }
+
+  const hasError = /권한|못 찾|연결|멈췄|문제/.test(feedback);
+  const orbState = hasError ? 'error' : speaking ? 'speaking' : busy ? 'thinking' : listening ? 'listening' : 'idle';
+  const orbLabel = speaking ? 'MOMI가 답하고 있어요' : busy ? 'MOMI가 생각하고 있어요' : listening ? '모미야, 하고 불러주세요' : 'MOMI 음성 대기';
 
   return (
     <div
       style={{ position: 'fixed', top: 16, right: 16, zIndex: 1000, display: 'flex', alignItems: 'center', gap: 8 }}
     >
-      {feedback && (
+      {(feedback || interimText) && (
         <div
           style={{
             padding: '8px 12px',
@@ -461,21 +476,11 @@ export default function KioskVoiceCommand() {
             boxShadow: '0 2px 10px rgba(0,0,0,0.35)',
           }}
         >
-          {feedback}
+          {feedback || `“${interimText}”`}
         </div>
       )}
-      {/* 버튼이 아니라 표시등 — 클릭 대상 아님. 상시 감지 중임을 알리는 프라이버시 고지 목적. */}
-      <div
-        aria-label={listening ? '"모미야" 상시 감지 중' : '마이크 대기 중'}
-        title={listening ? '"모미야" 상시 감지 중' : '마이크 대기 중'}
-        style={{
-          width: 14,
-          height: 14,
-          borderRadius: '50%',
-          background: listening ? '#ef4444' : '#9ca3af',
-          boxShadow: listening ? '0 0 0 4px rgba(239,68,68,0.25)' : 'none',
-        }}
-      />
+      {/* 클릭 대상이 아닌 상태 오브 — 상시 감지와 MOMI 반응을 함께 알린다. */}
+      <MomiVoiceOrb state={orbState} size={78} label={orbLabel} />
     </div>
   );
 }

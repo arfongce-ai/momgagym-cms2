@@ -17,7 +17,7 @@ export const CHAT_HISTORY_TIMEOUT_MS = 2 * 60 * 1000;
 
 // user/assistant 합쳐서 최근 N개 턴만 유지(토큰 비용 방어). 3번 정도의
 // 왕복이면 "그거·그럼" 같은 대명사 참조는 충분히 커버된다.
-export const MAX_CHAT_HISTORY_TURNS = 6;
+export const MAX_CHAT_HISTORY_TURNS = 4;
 
 /**
  * 다음 요청에 실어 보낼 history를 반환한다 — 너무 오래 조용했으면(타임아웃)

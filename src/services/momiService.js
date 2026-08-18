@@ -7,16 +7,62 @@ import { buildMemberBusinessContext } from '../ai-measure/core/memberBusinessCon
 import { store, aiStore } from '../demoData';
 import { auth } from '../firebase.js';
 
+export const MOMI_PROMPT_VERSION = '2.2';
+const MOMI_TIMEOUT_MS = 30000;
+const OMIT_REPORT_KEYS = /^(?:video|videoBlob|blob|image|imageData|photo|base64|frames|rawFrames|landmarks|poseLandmarks|samples|chunks|member)$/i;
+
 // [역할별 응답 범위 2026-08-08] "관리자·트레이너 접근 구분을 모미에도 적용" 요청 대응.
 // voiceCommandService.js와 동일 패턴 — 서버(functions/api/momi.js)가 이 토큰으로
 // role을 직접 검증해서, 관리자만 비즈니스 인사이트를 받을 수 있게 한다.
 async function getAuthHeader() {
   try {
-    const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : null;
-    return idToken ? { Authorization: `Bearer ${idToken}` } : {};
+    if (!auth.currentUser) throw new Error('로그인이 필요합니다.');
+    const idToken = await auth.currentUser.getIdToken();
+    if (!idToken) throw new Error('로그인이 만료되었습니다. 다시 로그인해주세요.');
+    return { Authorization: `Bearer ${idToken}` };
   } catch (e) {
     console.warn('[momiService] ID 토큰 발급 실패:', e?.message || e);
-    return {};
+    throw new Error(e?.message || '로그인 정보를 확인하지 못했습니다.');
+  }
+}
+
+/** 미디어·프레임 원본은 빼고 질문에 필요한 정량값과 판정만 제한된 크기로 남긴다. */
+export function compactReportForMomi(value, depth = 0) {
+  if (value == null || typeof value === 'boolean' || typeof value === 'number') return value;
+  if (typeof value === 'string') return value.slice(0, 1000);
+  if (depth >= 5) return undefined;
+  if (Array.isArray(value)) {
+    return value.slice(0, 20).map((item) => compactReportForMomi(item, depth + 1)).filter((item) => item !== undefined);
+  }
+  if (typeof value !== 'object') return undefined;
+  const result = {};
+  Object.entries(value).slice(0, 80).forEach(([key, item]) => {
+    if (OMIT_REPORT_KEYS.test(key) || /(?:url|uri)$/i.test(key)) return;
+    const compacted = compactReportForMomi(item, depth + 1);
+    if (compacted !== undefined) result[key] = compacted;
+  });
+  return result;
+}
+
+async function postMomi(payload) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), MOMI_TIMEOUT_MS);
+  try {
+    const res = await fetch('/api/momi', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(await getAuthHeader()) },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `모미 호출 실패 (status ${res.status})`);
+    if (typeof data.text !== 'string' || !data.text.trim()) throw new Error('모미가 빈 응답을 반환했습니다.');
+    return data;
+  } catch (error) {
+    if (error?.name === 'AbortError') throw new Error('모미 응답 시간이 초과되었습니다. 다시 시도해주세요.');
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
   }
 }
 
@@ -55,50 +101,30 @@ export async function askMomi({ kind, report, member, question, history } = {}) 
     throw new Error('report와 member 정보가 필요합니다.');
   }
 
-  // [Axis4 시작 2026-08-08] 후속 질문(history 있음)이면 리포트 데이터를 다시
-  // 계산 안 한다 — Firestore 조회(loadCrossReports)까지 포함된 무거운 작업이라,
-  // 이미 첫 턴에서 계산해 서버로 넘긴 걸 history로 이어가면 매번 반복할 필요가
-  // 없다. report/member는 그대로 보낸다(서버 쪽 필수값 검증용, 실제로는 history가
-  // 있으면 서버가 그 내용을 안 씀 — functions/api/momi.js 참고).
+  // 후속 질문에도 현재 측정 근거를 다시 붙인다. ensure* 호출은 첫 로드 뒤 캐시를
+  // 사용하므로 네트워크 중복보다 "두 번째 질문부터 원본 수치를 잃는 문제"를 막는
+  // 편이 중요하다.
   const isFollowUp = Array.isArray(history) && history.length > 0;
+  const problemFocus = buildProblemFocus(kind, report);
+  const reportPayload = {
+    summary: problemFocus,
+    measurements: compactReportForMomi(report),
+  };
+  const { postureReports, romReports, gaitReports, liftingReports, stanceReports, squatReports } = await loadCrossReports(member.id);
+  const crossContext = buildCrossMeasureIntegration
+    ? buildCrossMeasureIntegration({ kind, report, postureReports, romReports, gaitReports, liftingReports, stanceReports, squatReports })
+    : null;
+  const businessContext = buildMemberBusinessContext(member);
 
-  let reportPayload = report;
-  let crossContext = null;
-  let businessContext = null;
-  if (!isFollowUp) {
-    const problemFocus = buildProblemFocus(kind, report);
-    reportPayload = problemFocus || report;
-    const { postureReports, romReports, gaitReports, liftingReports, stanceReports, squatReports } = await loadCrossReports(member.id);
-    crossContext = buildCrossMeasureIntegration
-      ? buildCrossMeasureIntegration({ kind, report, postureReports, romReports, gaitReports, liftingReports, stanceReports, squatReports })
-      : null;
-    // [매출 데이터 연결 배선 준비 2026-08-08] 관리자용 비즈니스 인사이트가 참고할
-    // 신호(잔여 세션·미출석 기간 등)를 항상 같이 보낸다 — role이 admin이 아니면
-    // 서버(momi.js)가 이 필드를 프롬프트에서 아예 빼므로, 트레이너 요청에도 그냥
-    // 같이 보내도 안전하다(서버가 role을 다시 검증하는 게 최종 방어선).
-    businessContext = buildMemberBusinessContext(member);
-  }
-
-  const res = await fetch('/api/momi', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...(await getAuthHeader()) },
-    body: JSON.stringify({
-      kind,
-      report: reportPayload,
-      member: { name: member.name, category: member.category || null },
-      crossContext,
-      businessContext,
-      question: question || null,
-      history: isFollowUp ? history : null,
-    }),
+  const data = await postMomi({
+    kind,
+    report: reportPayload,
+    member: { name: member.name, category: member.category || null },
+    crossContext,
+    businessContext,
+    question: question || null,
+    history: isFollowUp ? history : null,
   });
-
-  if (!res.ok) {
-    const errBody = await res.json().catch(() => ({}));
-    throw new Error(errBody.error || `모미 호출 실패 (status ${res.status})`);
-  }
-
-  const data = await res.json();
   return data.text;
 }
 
@@ -145,10 +171,7 @@ export async function askMomiCombined({ member, result, question } = {}) {
     throw new Error('member와 종합 분석 결과가 필요합니다.');
   }
 
-  const res = await fetch('/api/momi', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...(await getAuthHeader()) },
-    body: JSON.stringify({
+  const data = await postMomi({
       kind: 'combined',
       report: {
         mode: 'problem_identification',
@@ -163,28 +186,27 @@ export async function askMomiCombined({ member, result, question } = {}) {
       member: { name: member.name, category: member.category || null },
       crossContext: null,
       question: question || null,
-    }),
+      history: null,
   });
-
-  if (!res.ok) {
-    const errBody = await res.json().catch(() => ({}));
-    throw new Error(errBody.error || `모미 호출 실패 (status ${res.status})`);
-  }
-
-  const data = await res.json();
   return data.text;
 }
 
 // [모미 신규] 최근 N일 컨디션 추이 — body 기록(store.getBodyRecords)에서 fatigue/painNrs가
 // 있는 항목만 뽑아 날짜 역순으로 최근 며칠치를 요약한다. buildCrossMeasureIntegration은
 // posture/rom/gait만 다루고 body(컨디션)는 대상에 없어 여기서 별도로 만든다.
-export function buildConditionTrend(member, { days = 7 } = {}) {
+export function buildConditionTrend(member, { days = 7, now = new Date() } = {}) {
   if (!member?.id) return { entries: [], summary: '최근 컨디션 기록 없음' };
   const records = store.getBodyRecords(member.id) || [];
+  const cutoff = new Date(now);
+  cutoff.setHours(0, 0, 0, 0);
+  cutoff.setDate(cutoff.getDate() - Math.max(0, days - 1));
   const entries = records
     .filter((r) => r && (r.fatigue != null || r.painNrs != null))
-    .sort((a, b) => String(b.recordedAt).localeCompare(String(a.recordedAt)))
-    .slice(0, days)
+    .filter((r) => {
+      const date = new Date(r.recordedAt);
+      return !Number.isNaN(date.getTime()) && date >= cutoff && date <= now;
+    })
+    .sort((a, b) => new Date(b.recordedAt) - new Date(a.recordedAt))
     .map((r) => ({
       date: r.recordedAt,
       fatigue: r.fatigue ?? null,
@@ -192,8 +214,9 @@ export function buildConditionTrend(member, { days = 7 } = {}) {
       status: r.conditionStatus ?? null,
     }));
   const flagged = entries.filter((e) => e.status === 'caution' || e.status === 'risk').length;
+  const recordedDays = new Set(entries.map((entry) => String(entry.date).slice(0, 10))).size;
   const summary = entries.length
-    ? `최근 ${entries.length}일 기록 중 ${flagged}일 주의 이상`
+    ? `최근 ${days}일 중 ${recordedDays}일 기록 · 주의 이상 ${flagged}건`
     : '최근 컨디션 기록 없음';
   return { entries, summary };
 }
@@ -209,23 +232,13 @@ export async function askMomiDaily({ member, condition, question } = {}) {
   const problemFocus = buildProblemFocus('daily', condition);
   const trend = buildConditionTrend(member);
 
-  const res = await fetch('/api/momi', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...(await getAuthHeader()) },
-    body: JSON.stringify({
+  const data = await postMomi({
       kind: 'daily',
-      report: problemFocus,
+      report: { summary: problemFocus, measurements: compactReportForMomi(condition) },
       member: { name: member.name, category: member.category || null },
       crossContext: { conditionTrend: trend },
       question: question || null,
-    }),
+      history: null,
   });
-
-  if (!res.ok) {
-    const errBody = await res.json().catch(() => ({}));
-    throw new Error(errBody.error || `모미 호출 실패 (status ${res.status})`);
-  }
-
-  const data = await res.json();
   return data.text;
 }

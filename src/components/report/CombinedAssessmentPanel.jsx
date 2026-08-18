@@ -16,7 +16,7 @@ const KIND_KO = {
 };
 const STATUS_KO = { normal: '정상', caution: '주의', risk: '위험' };
 
-export default function CombinedAssessmentPanel({ member, onClose }) {
+export default function CombinedAssessmentPanel({ member, recommendation, onStartTest, onClose }) {
   const [loading, setLoading] = useState(true);
   const [available, setAvailable] = useState({}); // { kind: latestReport }
   const [selected, setSelected] = useState(new Set());
@@ -137,6 +137,24 @@ export default function CombinedAssessmentPanel({ member, onClose }) {
             <div className="space-y-1.5">
               <p className="text-xs font-black text-slate-600 dark:text-slate-300">양호한 점</p>
               {result.strengths.map((s, i) => <p key={i} className="text-sm text-emerald-700 dark:text-emerald-300">• {s}</p>)}
+            </div>
+          )}
+
+          {recommendation?.recommendations?.length > 0 && (
+            <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/10 p-3">
+              <p className="text-[11px] font-black uppercase tracking-widest text-emerald-700 dark:text-emerald-300">통합 결과 기반 다음 측정</p>
+              <div className="mt-2 space-y-1.5">
+                {recommendation.recommendations.map((item, index) => (
+                  <button key={item.id} type="button" onClick={() => onStartTest?.(item.id)}
+                    className="flex w-full items-center gap-2 rounded-lg bg-white/80 px-3 py-2 text-left transition hover:bg-white dark:bg-slate-900/80 dark:hover:bg-slate-900">
+                    <span className="text-xs font-black text-emerald-700 dark:text-emerald-300">{index + 1}</span>
+                    <span className="flex-1 text-xs font-bold text-slate-700 dark:text-slate-200">{item.title}</span>
+                    <span className="text-[11px] font-black text-emerald-700 dark:text-emerald-300">{item.score}점</span>
+                    {item.safety === 'review' && <span className="text-[10px] font-bold text-amber-700 dark:text-amber-300">확인 필요</span>}
+                  </button>
+                ))}
+              </div>
+              <p className="mt-2 text-[10px] leading-relaxed text-slate-500">선택하면 이 회원이 지정된 상태로 해당 측정을 시작합니다.</p>
             </div>
           )}
 

@@ -32,8 +32,7 @@ describe('KioskVoiceCommand.jsx — 버튼 없이 자동으로 상시 감지를 
     const handleStart = src.indexOf('const handleCommand = useCallback(');
     const handleEnd = src.indexOf('const handleWakeOnly = useCallback(');
     const handleBody = src.slice(handleStart, handleEnd);
-    expect(handleBody).toContain('setFeedback(diagDetail ? ');
-    expect(handleBody).toContain(': message);');
+    expect(handleBody).toContain('setFeedback(message);');
     expect(handleBody).toContain('speak(message);');
   });
 
@@ -91,16 +90,14 @@ describe('KioskVoiceCommand.jsx — 버튼 없이 자동으로 상시 감지를 
     expect(preProcessBody).toContain("speak('네, 확인했어요.');");
   });
 
-  it('명령 처리가 실패하면 실패 원인(diagDetail)을 화면에도 보여준다(회귀 방지)', () => {
-    // [버그 수정 2026-08-08] "키오스크에서 반응이 없다"는 문의 대응.
-    // GlobalVoiceCommand.jsx와 동일 패턴.
+  it('명령 처리 실패 원인은 콘솔에 남기고 화면에는 자연스러운 문구만 보여준다', () => {
     const handleStart = src.indexOf('const handleCommand = useCallback(');
     const handleEnd = src.indexOf('const handleWakeOnly = useCallback(');
     const handleBody = src.slice(handleStart, handleEnd);
     expect(handleBody).toContain('diagDetail = e?.message || String(e);');
-    expect(handleBody).toContain(
-      "setFeedback(diagDetail ? `${message}\\n[진단] ${diagDetail}` : message);"
-    );
+    expect(handleBody).toContain("console.warn('[모미] 명령 처리 실패:', diagDetail);");
+    expect(handleBody).toContain('setFeedback(message);');
+    expect(handleBody).not.toContain('[진단] ${diagDetail}');
     expect(handleBody).not.toContain('speak(diagDetail');
   });
 });

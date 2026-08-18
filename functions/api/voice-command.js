@@ -8,10 +8,15 @@
 // id를 써야 한다(백엔드·프론트가 별도 번들이라 직접 import는 안 되고, 값만 동기화해서 씀).
 // role에 따라 애초에 후보 도구 자체를 다르게 넘겨서, 트레이너 음성으로는 관리자 전용
 // 화면(트레이너 관리·매출관리)이 선택지에 아예 없다.
-import { MOMI_SYSTEM_PROMPT } from '../_shared/momiPrompt.js';
+import { MOMI_VOICE_SYSTEM_PROMPT } from '../_shared/momiVoicePrompt.js';
 import { resolveVerifiedRole } from '../_shared/verifyFirebaseToken.js';
+import { clampText, enforceMomiRateLimit, jsonResponse, normalizeMomiHistory, readMomiJson } from '../_shared/momiRequest.js';
+import { recordPaidAiCost, reservePaidAiCall } from '../_shared/aiBudget.js';
+import { classifyFreeNavigation } from '../_shared/freeAiRouter.js';
 
-const MODEL = 'claude-sonnet-5';
+// 음성 라우팅·짧은 답변은 실시간/고빈도 용도의 Haiku로 처리한다.
+// 정밀 리포트(/api/momi)는 기존 Sonnet을 유지해 분석 품질과 비용을 분리한다.
+const MODEL = 'claude-haiku-4-5-20251001';
 
 // commandRegistry.js VOICE_DESTINATIONS 와 id를 맞출 것.
 const ALL_TOOLS = [
@@ -196,7 +201,7 @@ function matchRevenueTab(transcript) {
 export async function onRequestPost(context) {
   try {
     const { request, env } = context;
-    const body = await request.json();
+    const body = await readMomiJson(request);
     // [음성 대화형 2026-08-09] history?: [{role, content}, ...] — 이전 음성
     // 대화 턴(functions/api/momi.js의 Axis4와 완전히 같은 패턴 재사용).
     // 여태 이 엔드포인트는 매 호출이 무상태(stateless)라 "그럼 그건?" 같은
@@ -204,20 +209,22 @@ export async function onRequestPost(context) {
     // 셈이었다. 화면 이동·예약류는 대화 맥락이 필요 없는 단발성 액션이라
     // history에 안 쌓지만(클라이언트 책임), 자유 질문(coaching Q&A) 답변은
     // 여기 쌓여서 다음 질문에 이어붙는다.
-    const { transcript, history } = body || {};
+    const { history } = body || {};
+    const transcript = clampText(body?.transcript, 1000);
 
     if (!transcript) {
-      return new Response(JSON.stringify({ error: 'transcript가 필요합니다.' }), {
-        status: 400,
-        headers: { 'Content-Type': 'application/json' },
-      });
+      return jsonResponse({ error: 'transcript가 필요합니다.' }, 400);
     }
 
     // [보안 수정] 예전엔 body.role을 클라이언트가 보낸 그대로 믿었다 — 트레이너 계정에서
     // role 값만 조작해 보내면 관리자 전용 화면(트레이너관리·매출관리)으로 음성 이동이
     // 가능한 취약점이었다. 이제는 Authorization 헤더의 Firebase ID 토큰을 서버가 직접
     // 서명 검증해서 role을 구한다(위조 불가 — resolveVerifiedRole 헤더 주석 참고).
-    const { role: effectiveRole } = await resolveVerifiedRole(request.headers.get('Authorization'));
+    const { authenticated, role: effectiveRole, uid } = await resolveVerifiedRole(request.headers.get('Authorization'));
+    if (!authenticated) {
+      return jsonResponse({ error: '로그인이 만료되었거나 유효하지 않습니다. 다시 로그인해주세요.' }, 401);
+    }
+    await enforceMomiRateLimit(env, `voice:${uid}`, { limit: 30 });
 
     // [무료 확장 2026-08-10] role이 진짜 admin으로 검증된 경우에만(가드) 트레이너
     // 관리·매출관리 이동을 규칙 기반으로 먼저 시도한다 — 매치되면 Claude를 아예
@@ -231,11 +238,15 @@ export async function onRequestPost(context) {
           const tab = matchRevenueTab(transcript);
           if (tab) navBody.tab = tab;
         }
-        return new Response(JSON.stringify(navBody), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        });
+        return jsonResponse(navBody);
       }
+    }
+
+    // 규칙 사전에 없는 표현은 Cloudflare의 무료 AI가 화면 이동 의도만 분류한다.
+    // 분류 결과는 허용 목록·역할을 다시 검증하며, 실패하면 기존 Claude 경로로 간다.
+    const freeDestinationId = await classifyFreeNavigation(env, transcript, effectiveRole);
+    if (freeDestinationId) {
+      return jsonResponse({ type: 'navigate', destinationId: freeDestinationId, source: 'cloudflare-free-ai' });
     }
 
     // [비용 절감 2026-08-11] role에 안 맞는 도구는 애초에 Claude에게 후보로도
@@ -262,9 +273,11 @@ export async function onRequestPost(context) {
 
     // [음성 대화형 2026-08-09] momi.js와 동일한 방어적 필터 — 클라이언트가 보낸
     // history를 그대로 신뢰하지 않고 형식이 맞는 턴만 통과시킨다.
-    const validHistory = Array.isArray(history)
-      ? history.filter((t) => t && (t.role === 'user' || t.role === 'assistant') && typeof t.content === 'string')
-      : [];
+    const validHistory = normalizeMomiHistory(history);
+    if (!env.ANTHROPIC_API_KEY) {
+      return jsonResponse({ error: 'MOMI 서버 설정이 완료되지 않았습니다.' }, 503);
+    }
+    const budgetReservation = await reservePaidAiCall(env);
 
     const anthropicRes = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -275,7 +288,7 @@ export async function onRequestPost(context) {
       },
       body: JSON.stringify({
         model: MODEL,
-        max_tokens: 512,
+        max_tokens: 256,
         // [비용 절감 2026-08-11] system을 문자열 하나 대신 블록 배열로 나눈다.
         // 앞 블록(MOMI_SYSTEM_PROMPT, 매 호출 100% 동일)만 cache_control을
         // 붙여 캐싱하고, 뒤 블록(오늘 날짜가 들어가서 매일 바뀌는 부분)은
@@ -283,10 +296,10 @@ export async function onRequestPost(context) {
         // 바뀌는 걸 무시하고 캐싱하면 안 되기 때문. 내용 자체(Claude가 실제로
         // 읽는 지시문)는 기존과 완전히 동일 — 순수하게 과금 방식만 다르다.
         system: [
-          { type: 'text', text: MOMI_SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } },
+          { type: 'text', text: MOMI_VOICE_SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } },
           {
             type: 'text',
-            text: `\n\n---\n\n[음성 명령 라우터 모드] 사용자가 "모미야" 다음에 한 말이 위 도구 목록 중 하나로 화면 이동을 요청하는 것이면 해당 도구를 호출하세요. 화면 이동 요청이 아니라 코칭 질문 등 자유 발화라면 도구를 호출하지 말고, 위 시스템 프롬프트의 모미 페르소나로 1~2문장 이내로 짧게 답하세요.\n\n오늘 날짜는 ${todayKST}(한국 시간 기준)입니다. propose_reservation을 호출할 때 "내일"·"다음주 화요일" 같은 상대적 날짜 표현은 이 기준으로 계산해서 절대 날짜(YYYY-MM-DD)로 변환하세요.`,
+            text: `\n\n---\n\n[음성 명령 라우터 모드] 사용자가 "모미야" 다음에 한 말이 위 도구 목록 중 하나로 화면 이동이나 동작을 요청하는 것이면 해당 도구를 호출하세요. 화면 이동 요청이 아니라 코칭 질문 등 자유 발화라면 도구를 호출하지 말고, 위 시스템 프롬프트의 모미 페르소나로 자연스럽고 짧게 답하세요. 이전 대화가 있으면 "그거", "그러면" 같은 표현을 직전 맥락에 연결하되, 불명확하면 추측하지 말고 한 가지 확인 질문을 하세요. 같은 안내를 매번 처음부터 반복하지 마세요.\n\n오늘 날짜는 ${todayKST}(한국 시간 기준)입니다. propose_reservation을 호출할 때 "내일"·"다음주 화요일" 같은 상대적 날짜 표현은 이 기준으로 계산해서 절대 날짜(YYYY-MM-DD)로 변환하세요.`,
           },
         ],
         tools,
@@ -296,13 +309,12 @@ export async function onRequestPost(context) {
 
     if (!anthropicRes.ok) {
       const errText = await anthropicRes.text();
-      return new Response(JSON.stringify({ error: 'Anthropic API 호출 실패', detail: errText }), {
-        status: anthropicRes.status,
-        headers: { 'Content-Type': 'application/json' },
-      });
+      console.warn('[voice-command] Anthropic API 호출 실패:', anthropicRes.status, errText.slice(0, 500));
+      return jsonResponse({ error: 'MOMI 음성 서비스 호출에 실패했습니다.' }, anthropicRes.status);
     }
 
     const data = await anthropicRes.json();
+    await recordPaidAiCost(env, budgetReservation, MODEL, data.usage);
     const toolUse = (data.content || []).find((block) => block.type === 'tool_use');
 
     if (toolUse) {
@@ -448,9 +460,8 @@ export async function onRequestPost(context) {
       { status: 200, headers: { 'Content-Type': 'application/json' } }
     );
   } catch (err) {
-    return new Response(
-      JSON.stringify({ error: '서버 오류', detail: String(err && err.message ? err.message : err) }),
-      { status: 500, headers: { 'Content-Type': 'application/json' } }
-    );
+    const status = Number(err?.status) || 500;
+    if (status >= 500) console.error('[voice-command] 서버 오류:', err);
+    return jsonResponse({ error: err?.message || '서버 오류', code: err?.code || undefined }, status);
   }
 }

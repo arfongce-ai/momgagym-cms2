@@ -16,6 +16,10 @@ GitHub 자동 업로드가 작동하려면 PC가 GitHub 계정에 로그인돼 �
 
 1. GitHub에 소스 올리기 (평소 사용)
 -----------------------------------
+먼저 아래 파일을 더블클릭해서 정식 작업 폴더인지 확인하세요.
+
+  0_WORKSPACE_CHECK.bat
+
 파일을 수정한 뒤 아래 파일을 더블클릭하세요.
 
   1_GITHUB_UPLOAD.bat
@@ -23,8 +27,8 @@ GitHub 자동 업로드가 작동하려면 PC가 GitHub 계정에 로그인돼 �
 중간에 "Write upload memo"가 나오면 간단히 메모를 쓰고 Enter를 누르면 됩니다.
 예: 자세 측정 떨림 보정 추가
 
-이 파일은 GitHub에 올리면 안 되는 node_modules, dist, assets, outputs 폴더를
-자동으로 제외합니다. 또 git 저장소 초기화와 주소 설정도 자동으로 처리합니다.
+이 파일은 현재 작업 중인 브랜치를 확인한 뒤 그 브랜치를 GitHub에 올립니다.
+복사한 폴더나 다운로드 폴더에서는 안전을 위해 실행을 중단합니다.
 
 
 2. Cloudflare에 배포 파일 만들기
@@ -42,6 +46,15 @@ Cloudflare에는 이 dist 폴더 안의 내용을 업로드하면 됩니다.
 ----
 GitHub에는 소스만 올립니다.
 Cloudflare에는 dist 빌드 결과만 올립니다.
+
+로그인 권한 규칙(firestore.rules)을 수정한 경우에는 Cloudflare 업로드만으로
+Firebase 권한이 바뀌지 않습니다. 아래 파일도 한 번 실행해야 합니다.
+
+  3_FIREBASE_RULES_DEPLOY.bat
+
+이 단계가 빠지면 로그인은 성공해도 데이터 읽기에서 permission-denied가
+발생할 수 있습니다. 최초 실행 때 Firebase 로그인을 요구하면 화면 안내에 따라
+프로젝트 관리자 Google 계정으로 로그인한 뒤 다시 실행하세요.
 
 업로드가 실패하면 메시지를 확인하세요. 보통 원인은:
  - GitHub 로그인이 안 돼 있음

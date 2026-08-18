@@ -1,6 +1,7 @@
 // pages/Report.jsx
 // 측정 리포트 페이지: 회원 선택 → 실측 데이터 그래프/요약 열람.
 import { useState, useMemo, useEffect, useRef, lazy, Suspense } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { todayYMD } from '../utils/dates';
 import { useAuth } from '../contexts/AuthContext';
 import { scopeMembersToTrainer, sortByName } from '../utils/memberList';
@@ -18,7 +19,9 @@ import ReportActions from '../components/report/ReportActions';
 import TrendChart from '../components/report/TrendChart';
 import MemberPicker from '../components/common/MemberPicker';
 import CombinedAssessmentPanel from '../components/report/CombinedAssessmentPanel';
-import { consumePendingVoiceTarget } from '../voice/pendingVoiceTarget';
+import MemberTestRecommendationPanel from '../components/ai/MemberTestRecommendationPanel';
+import { buildMemberTestRecommendations } from '../ai-measure/core/memberTestRecommendation';
+import { consumePendingVoiceTarget, setPendingVoiceTarget } from '../voice/pendingVoiceTarget';
 const JumpReportDashboard = lazy(() => import('../ai-measure/menus/JumpReportDashboard'));
 const GaitReportDashboard = lazy(() => import('../ai-measure/menus/GaitReportDashboard'));
 const PostureReport = lazy(() => import('../ai-measure/menus/PostureReport'));
@@ -882,6 +885,7 @@ function UnifiedResultCard({ item, onOpen, onShare, sharing }) {
 
 export default function Report() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   // 트레이너 모드: 담당 회원만 / 모든 회원은 가나다 순으로 노출.
   const members = useMemo(() => sortByName(scopeMembersToTrainer(store.getMembers(), user)), [user]);
   const [memberId, setMemberId] = useState('');
@@ -1136,6 +1140,30 @@ export default function Report() {
     return store.getBodyRecords(member.id) || [];
   }, [member, dataReady]);
 
+  // 결과리포트가 이미 불러온 최신 7종 측정과 신체기록을 그대로 추천 엔진에 전달한다.
+  // 별도 AI 호출이나 추가 Firestore 조회가 없어 AI 측정 홈과 항상 같은 판정이 나온다.
+  const testRecommendation = useMemo(() => {
+    if (!member) return null;
+    const sessions = aiStore.getSessions(member.id) || [];
+    const sessionReports = (menu) => sessions
+      .filter((session) => session?.menu === menu)
+      .map((session) => ({ createdAt: session.recordedAtFull || session.recordedAt, ...(session.data || {}) }));
+    return buildMemberTestRecommendations({
+      member,
+      bodyRecords,
+      reportsByKind: {
+        body: bodyRecords,
+        posture: savedPostureReports,
+        rom: savedRomReports,
+        gait: savedReports.filter((item) => item?.kind === 'gait' || item?.metrics || item?.cadence),
+        jump: savedReports.filter((item) => item?.kind === 'jump'),
+        lifting: sessionReports('lifting'),
+        stance: sessionReports('stance'),
+        squat: sessionReports('squat'),
+      },
+    });
+  }, [member, dataReady, bodyRecords, savedPostureReports, savedRomReports, savedReports]);
+
   const latestBodyDate = useMemo(() => {
     if (!bodyRecords.length) return null;
     return [...bodyRecords].sort((a, b) => String(b?.recordedAt || '').localeCompare(String(a?.recordedAt || '')))[0]?.recordedAt || null;
@@ -1178,9 +1206,16 @@ export default function Report() {
     if (dailyGroups.length > 0) items.push({ id: 'section-calendar', label: '캘린더' });
     if (report?.hasData && report?.ai?.menuSummaries?.length > 0) items.push({ id: 'section-history', label: 'AI측정이력' });
     items.push({ id: 'section-comprehensive', label: '종합리포트' });
+    if (testRecommendation) items.push({ id: 'section-recommendation', label: '추천테스트' });
     if (interpretationGuide.length > 0) items.push({ id: 'section-guide', label: '판독설명서' });
     return items;
-  }, [report, dailyGroups, interpretationGuide]);
+  }, [report, dailyGroups, interpretationGuide, testRecommendation]);
+
+  const startRecommendedTest = (testId) => {
+    if (!member || !testId) return;
+    setPendingVoiceTarget({ memberName: member.name, testId });
+    navigate('/ai');
+  };
 
   const openUnifiedResult = (item) => {
     if (item.source === 'posture') {
@@ -1293,9 +1328,22 @@ export default function Report() {
               📊 측정 종합 분석 보기
             </button>
           ) : (
-            <CombinedAssessmentPanel member={member} onClose={() => setShowCombined(false)} />
+            <CombinedAssessmentPanel
+              member={member}
+              recommendation={testRecommendation}
+              onStartTest={startRecommendedTest}
+              onClose={() => setShowCombined(false)}
+            />
           )}
         </div>
+      )}
+
+      {member && testRecommendation && (
+        <MemberTestRecommendationPanel
+          member={member}
+          result={testRecommendation}
+          onSelect={startRecommendedTest}
+        />
       )}
 
       {/* 섹션 바로가기 — 페이지가 길어서(신체정보~판독설명서) 존재하는 섹션만 골라 보여준다. */}
@@ -1674,7 +1722,11 @@ export default function Report() {
           </div>
           <Suspense fallback={<div className="p-10 text-center text-slate-500 dark:text-slate-400">불러오는 중…</div>}>
             <LiftingReportDashboard
-              report={savedLiftingSessions[liftingViewerIdx]?.data || {}}
+              report={{
+                ...(savedLiftingSessions[liftingViewerIdx]?.data || {}),
+                id: savedLiftingSessions[liftingViewerIdx]?.id,
+                momiNote: savedLiftingSessions[liftingViewerIdx]?.data?.momiNote || savedLiftingSessions[liftingViewerIdx]?.momiNote || null,
+              }}
               member={member}
               onClose={() => setLiftingViewerIdx(null)}
             />
@@ -1701,7 +1753,11 @@ export default function Report() {
           </div>
           <Suspense fallback={<div className="p-10 text-center text-slate-500 dark:text-slate-400">불러오는 중…</div>}>
             <StanceReportDashboard
-              report={savedStanceSessions[stanceViewerIdx]?.data || {}}
+              report={{
+                ...(savedStanceSessions[stanceViewerIdx]?.data || {}),
+                id: savedStanceSessions[stanceViewerIdx]?.id,
+                momiNote: savedStanceSessions[stanceViewerIdx]?.data?.momiNote || savedStanceSessions[stanceViewerIdx]?.momiNote || null,
+              }}
               member={member}
               onClose={() => setStanceViewerIdx(null)}
             />
@@ -1725,7 +1781,11 @@ export default function Report() {
           </div>
           <Suspense fallback={<div className="p-10 text-center text-slate-500 dark:text-slate-400">불러오는 중…</div>}>
             <SquatReportDashboard
-              report={savedSquatSessions[squatViewerIdx]?.data || {}}
+              report={{
+                ...(savedSquatSessions[squatViewerIdx]?.data || {}),
+                id: savedSquatSessions[squatViewerIdx]?.id,
+                momiNote: savedSquatSessions[squatViewerIdx]?.data?.momiNote || savedSquatSessions[squatViewerIdx]?.momiNote || null,
+              }}
               member={member}
               onClose={() => setSquatViewerIdx(null)}
             />

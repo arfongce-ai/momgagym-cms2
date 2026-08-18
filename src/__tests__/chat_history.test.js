@@ -37,7 +37,7 @@ describe('recordChatTurn() — 대화 왕복 쌓기', () => {
     }
     expect(historyRef.current.length).toBe(MAX_CHAT_HISTORY_TURNS);
     // 가장 최근 것들만 남아야 한다.
-    expect(historyRef.current[0].content).toBe('Q8');
+    expect(historyRef.current[0].content).toBe(`Q${11 - (MAX_CHAT_HISTORY_TURNS / 2)}`);
     expect(historyRef.current.at(-1).content).toBe('A10');
   });
 

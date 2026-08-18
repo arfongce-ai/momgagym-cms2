@@ -68,7 +68,7 @@ beforeEach(() => {
   for (const k of Object.keys(fsData)) delete fsData[k];
   for (const k of Object.keys(userReports)) delete userReports[k];
   for (const k of Object.keys(lsBack)) delete lsBack[k];
-  lsBack.fitcms_seeded = 'v6.2';
+  lsBack.fitcms_seeded = 'v6.3';
   vi.resetModules();
 });
 
