@@ -90,9 +90,8 @@ git add -A
 REM -- Stop if there is nothing staged to commit --
 REM git diff --cached --quiet exits 0 when there are NO changes.
 git diff --cached --quiet && (
-  echo No changed files to upload.
-  pause
-  exit /b 0
+  echo No new file changes. Checking saved commits that still need uploading.
+  goto upload
 )
 
 echo.
@@ -110,6 +109,7 @@ if errorlevel 1 (
 )
 
 echo.
+:upload
 echo [4/4] Uploading the current branch to GitHub...
 REM First push: -u sets the upstream so later pushes are just 'git push'.
 git push -u origin "!CURRENT_BRANCH!"
