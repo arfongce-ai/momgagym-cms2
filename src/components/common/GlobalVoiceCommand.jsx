@@ -499,6 +499,13 @@ export default function GlobalVoiceCommand() {
         style={{
           zIndex: 1000,
           opacity: cameraActive ? 0.22 : 1,
+          // [momi 버튼이 무게 다이얼을 가림 2026-08-19] opacity만 낮춰도
+          // pointer(클릭/탭) 이벤트는 여전히 이 div가 가로채, 뒤에 있는
+          // 카메라 스테이지의 무게 +/+5 버튼 등이 눌리지 않았다. 카메라
+          // 스테이지 활성 중엔 탭이 아래 컨트롤로 통과하도록 pointerEvents를
+          // 끈다(웨이크워드 "모미야" 음성 인식은 클릭과 무관하게 계속 듣고
+          // 있으므로 영향 없음).
+          pointerEvents: cameraActive ? 'none' : 'auto',
           padding: '8px 12px',
           borderRadius: 8,
           background: 'rgba(0,0,0,0.85)',
@@ -555,7 +562,14 @@ export default function GlobalVoiceCommand() {
     // 나타났다 사라지므로 같은 기준선을 맞춘 것.
     <div
       className="fixed right-5 bottom-[calc(88px+env(safe-area-inset-bottom))] md:bottom-5 transition-opacity duration-300"
-      style={{ zIndex: 1000, opacity: cameraActive ? 0.22 : 1 }}
+      style={{
+        zIndex: 1000,
+        opacity: cameraActive ? 0.22 : 1,
+        // [momi 버튼이 무게 다이얼을 가림 2026-08-19] 위 !supported 분기와
+        // 동일한 이유 — 카메라 스테이지 활성 중엔 탭이 아래 컨트롤로 통과하게
+        // pointerEvents를 끈다(웨이크워드 음성 인식엔 영향 없음).
+        pointerEvents: cameraActive ? 'none' : 'auto',
+      }}
     >
       {(feedback || interimText) && (
         <div

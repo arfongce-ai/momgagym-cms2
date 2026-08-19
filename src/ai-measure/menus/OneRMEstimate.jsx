@@ -185,6 +185,11 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
 
     // 바 위치 = 양 손목 중점(스켈레톤). 별도 추적점 지정 없이 반복을 자동 인식.
     if (!countingRef.current) return;
+    // [벤치프레스 렙 카운트 과민반응 2026-08-19] 세트가 끝나고 사람이 프레임을
+    // 완전히 벗어나도(전신 미검출) 손목 랜드마크만 남아있으면 그 위치 변화가
+    // 그대로 "가짜 렙"으로 잡혔다. fr.fullBody(머리+발목이 화면 안에 보임)가
+    // 아니면 좌표 축적 자체를 건너뛴다.
+    if (!fr.fullBody) return;
     const bar = barbellPoint(lms);
     if (!bar) return;
     accRef.current.push(bar, ts);

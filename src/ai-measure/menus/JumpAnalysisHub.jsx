@@ -84,7 +84,15 @@ export default function JumpAnalysisHub({ member, onBack, onSave, onSaveToFireba
         const res = await save(persistable);
         if (res && typeof res === 'object') saved = { ...withRecord, ...res };
         setSaveState('saved');
-      } catch (e) { setSaveState('error'); }
+      } catch (e) {
+        // [측정기록 저장 실패 2026-08-19] catch만 하고 그대로 아래 setReport로
+        // 넘어가면(예전 버그) 호출부가 무조건 report로 전환해 저장 실패를
+        // 사용자가 알아채지 못한다. null을 반환해 실패를 호출부(confirmRecord·
+        // finishTrials)에 알리고, 여기서는 화면 전환을 하지 않는다 — 사용자는
+        // MeasureRecordConfirm에 남아 에러 배너 + 재시도 버튼을 본다.
+        setSaveState('error');
+        return null;
+      }
     } else { setSaveState('saved'); }
     setReport(saved);
     return saved;
@@ -100,7 +108,11 @@ export default function JumpAnalysisHub({ member, onBack, onSave, onSaveToFireba
   const finishTrials = useCallback(async (trialsArr) => {
     const combined = combineJumpTrials(trialsArr, jumpType);
     if (!combined) return;
-    await persist(combined, {});
+    // [측정기록 저장 실패 2026-08-19] 저장이 실패(null)하면 trials를 비우거나
+    // 화면을 전환하지 않는다 — 사용자가 "여기서 마치기"를 다시 눌러 재시도할
+    // 수 있게 지금까지 쌓인 회차를 그대로 남겨둔다.
+    const saved = await persist(combined, {});
+    if (!saved) return;
     setTrials([]);
     setPending(null);
     if (jumpSubType === 'slj' && sljFirstLegDone === null) {
@@ -127,8 +139,10 @@ export default function JumpAnalysisHub({ member, onBack, onSave, onSaveToFireba
     const withNote = { ...pending, note: record.note || pending.note || '' };
 
     if (!MULTI_TRIAL_JUMP_SUBTYPES.includes(jumpSubType)) {
-      await persist(withNote, record);
-      setView('report');
+      // [측정기록 저장 실패 2026-08-19] persist가 null(저장 실패)을 반환하면
+      // report로 넘어가지 않는다 — record 화면에 남아 에러 배너·재시도를 본다.
+      const saved = await persist(withNote, record);
+      if (saved) setView('report');
       return;
     }
 

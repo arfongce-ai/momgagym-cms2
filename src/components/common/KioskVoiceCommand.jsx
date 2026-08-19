@@ -447,6 +447,10 @@ export default function KioskVoiceCommand() {
           right: 16,
           zIndex: 1000,
           opacity: cameraActive ? 0.22 : 1,
+          // [momi 버튼이 무게 다이얼을 가림 2026-08-19] GlobalVoiceCommand.jsx와
+          // 동일한 이유 — 클릭 대상이 아닌 상태 표시등이라도 zIndex가 높으면
+          // 여전히 아래 카메라 스테이지 컨트롤의 탭을 가로챈다.
+          pointerEvents: cameraActive ? 'none' : 'auto',
           transition: 'opacity 0.3s',
           padding: '8px 12px',
           borderRadius: 8,
@@ -471,6 +475,8 @@ export default function KioskVoiceCommand() {
       style={{
         position: 'fixed', top: 16, right: 16, zIndex: 1000, display: 'flex', alignItems: 'center', gap: 8,
         opacity: cameraActive ? 0.22 : 1, transition: 'opacity 0.3s',
+        // [momi 버튼이 무게 다이얼을 가림 2026-08-19] 위 !supported 분기와 동일.
+        pointerEvents: cameraActive ? 'none' : 'auto',
       }}
     >
       {(feedback || interimText) && (

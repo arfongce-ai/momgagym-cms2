@@ -121,7 +121,12 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
 
     // 바 위치 = 양 손목 중점(스켈레톤). 별도 추적점 지정 없이 자동으로 잡는다.
     const bar = barbellPoint(lms);
-    if (!bar) {
+    // [렙 카운트 과민반응 2026-08-19] 세트가 끝나고 사람이 일어나 카메라를 보고
+    // 있어도 손목 랜드마크만 남아있으면(부분 검출) 그 위치 변화가 그대로
+    // "가짜 렙"으로 잡혔다. fr.fullBody(머리+발목이 화면 안에 보임)가 아니면
+    // lost 프레임으로 집계만 하고(lostRatio→신뢰도 점수에 반영) 좌표 축적은
+    // 건너뛴다.
+    if (!bar || !fr.fullBody) {
       if (recordingRef.current) {
         frameStatsRef.current.total += 1;
         frameStatsRef.current.lost += 1;
