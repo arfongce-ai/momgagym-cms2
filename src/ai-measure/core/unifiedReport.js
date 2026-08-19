@@ -1,3 +1,10 @@
+// [측정 결과리포트 공유 2026-08-19] stance/squat의 지표별 값·상태는 아래
+// extractKeyMetrics()에서 이 두 core 모듈의 판정 함수를 직접 재사용한다(자세한
+// 이유는 extractKeyMetrics 안의 주석 참고 — range 기반 재채점이 아니라 이미
+// 확정된 판정을 그대로 신뢰한다).
+import { extractSquatMetrics, squatMetricStatus } from './squatBiomechanics';
+import { legMetrics, stanceMetricStatus } from './singleLegStance';
+
 export const MOMGAGYM_BLOG_URL = 'https://blog.naver.com/posture_gym';
 export const MOMGAGYM_PUBLIC_URL = 'https://momgagym-cms2.pages.dev';
 export const MOMGAGYM_CHANNEL_POPUP_PATH = '/login?official=1';
@@ -42,6 +49,23 @@ const STATUS = Object.freeze({
     borderClass: 'border-slate-500/35',
     score: 0,
     rank: 3,
+  },
+  // [측정 결과리포트 공유 2026-08-19] stance(SLST)/squat 전용 — 같은 소프트
+  // 신호가 한 시행에서만 나오고 반대쪽/재시행에서 반복되지 않아 아직 확정
+  // (caution/risk)까지는 못 갔지만, 정상도 아닌 "관찰됨" 상태. squatMetricStatus
+  // ·stanceMetricStatus(core/squatBiomechanics.js·singleLegStance.js)가 이미
+  // 쓰던 상태값을 공유 리포트(SessionShareReport 등)에서도 같은 라벨/색으로
+  // 보여주기 위해 공용 STATUS에 추가한다(각 ReportDashboard의 로컬
+  // METRIC_STATUS_TOKEN.observed와 동일한 라벨).
+  observed: {
+    key: 'observed',
+    label: '1회만 관찰(재현 안 됨)',
+    tone: 'slate',
+    colorClass: 'text-slate-400',
+    bgClass: 'bg-slate-500/12',
+    borderClass: 'border-slate-400/35',
+    score: 50,
+    rank: 1,
   },
 });
 
@@ -219,6 +243,64 @@ export const REPORT_TERM_MAP = Object.freeze({
     label: '무게중심 치우침',
     description: '몸의 중심이 좌우 또는 앞뒤로 치우친 정도입니다.',
     category: 'posture',
+  },
+  // [측정 결과리포트 공유 2026-08-19] 이 키들이 여기 없어서 getLaymanTerm()이
+  // humanizeKey()로 폴백해 "squat Depth" 같은 영문 camelCase 라벨을 그대로
+  // 보여주고 있었다(카카오톡 공유 리포트 실사용 신고로 발견). 라벨·설명은
+  // SquatReportDashboard.jsx METRIC_RANGES·StanceReportDashboard.jsx와 동일하게 맞춘다.
+  squatDepth: {
+    expert: 'Squat Depth',
+    label: '스쿼트 깊이',
+    description: '패러렐(허벅지 수평)까지 남은 각도입니다. 0°에 가까울수록 깊게 앉은 것입니다.',
+    category: 'squat',
+  },
+  squatTorsoLean: {
+    expert: 'Torso Lean',
+    label: '상체 전방 기울기',
+    description: '스쿼트 중 상체가 앞으로 얼마나 숙여지는지입니다.',
+    category: 'squat',
+  },
+  squatKneeValgus: {
+    expert: 'Knee Valgus',
+    label: '무릎 안쪽 쏠림',
+    description: '스쿼트 중 무릎이 안쪽으로 모이는 정도입니다.',
+    category: 'squat',
+  },
+  squatPelvicTilt: {
+    expert: 'Pelvic Tilt',
+    label: '골반 기울기',
+    description: '스쿼트 중 골반이 한쪽으로 기울거나 쏠리는 정도입니다.',
+    category: 'squat',
+  },
+  squatArmDrop: {
+    expert: 'Arm Drop',
+    label: '팔(막대) 처짐',
+    description: '스쿼트 중 팔(막대)이 수직에서 앞으로 떨어지는 각도입니다.',
+    category: 'squat',
+  },
+  stanceHoldTimeLeft: {
+    expert: 'Hold Time (Left)',
+    label: '왼발 유지시간',
+    description: '왼발로 한발서기를 유지한 시간입니다.',
+    category: 'stance',
+  },
+  stanceHoldTimeRight: {
+    expert: 'Hold Time (Right)',
+    label: '오른발 유지시간',
+    description: '오른발로 한발서기를 유지한 시간입니다.',
+    category: 'stance',
+  },
+  stancePelvicTiltLeft: {
+    expert: 'Pelvic Tilt (Left)',
+    label: '왼발 골반 기울기',
+    description: '왼발 한발서기 중 골반이 기울어지는 정도입니다.',
+    category: 'stance',
+  },
+  stancePelvicTiltRight: {
+    expert: 'Pelvic Tilt (Right)',
+    label: '오른발 골반 기울기',
+    description: '오른발 한발서기 중 골반이 기울어지는 정도입니다.',
+    category: 'stance',
   },
 });
 
@@ -559,7 +641,73 @@ export function shareSummaryToKakao(summaryInput, options = {}) {
   return Kakao.Share.sendDefault(template);
 }
 
+// stance/squat 전용 — squatMetricStatus()/stanceMetricStatus()가 돌려주는
+// 문자열('normal'|'caution'|'risk'|'observed'|'unknown')을 공용 STATUS 토큰으로.
+const JUDGED_METRIC_STATUS_MAP = {
+  normal: STATUS.normal,
+  caution: STATUS.caution,
+  risk: STATUS.risk,
+  observed: STATUS.observed,
+  unknown: STATUS.unknown,
+};
+
+// [측정 결과리포트 공유 2026-08-19] extractSquatMetrics()가 "권위 소스"(무릎·
+// 골반=정면, 팔=측면, 상체=torsoLeanSource, 깊이=양쪽 중 더 나쁜 값) 규칙으로
+// 이미 뽑아둔 대표값 + squatMetricStatus()가 이미 확정한 상태(재현성/즉시확정)를
+// 그대로 카드로 옮긴다 — 아래 METRIC_DEFINITIONS.squat(구버전, trials.0.*)처럼
+// range로 재채점하지 않는다(재채점하면 range가 없어 전부 "확인 필요"가 됨 +
+// trials[0]은 항상 정면 시행이라 상체기울기처럼 측면이 권위 소스인 지표는 값
+// 자체도 틀리게 나온다).
+function extractSquatKeyMetrics(report) {
+  const m = extractSquatMetrics(report);
+  return [
+    ['squatDepth', m.depthDeg, 'depth_'],
+    ['squatTorsoLean', m.torsoLeanDeg, 'torso_lean_'],
+    ['squatKneeValgus', m.kneeValgusDeg, 'knee_valgus_'],
+    ['squatPelvicTilt', m.pelvicTiltDeg, 'pelvic_tilt_'],
+    ['squatArmDrop', m.armDropDeg, 'arm_drop_'],
+  ]
+    .filter(([, value]) => value != null)
+    .map(([key, value, flagPrefix]) => toLaymanMetric(key, value, {
+      unit: '도',
+      status: JUDGED_METRIC_STATUS_MAP[squatMetricStatus(report, flagPrefix)] || STATUS.unknown,
+    }));
+}
+
+// stance(SLST)도 위와 동일한 이유 — legMetrics()/stanceMetricStatus()가 이미
+// 확정한 다리별(왼발/오른발) 유지시간·골반기울기를 그대로 옮긴다. report.left/
+// report.right는 evaluateSingleLegStanceWithEyes()가 하위 호환으로 얹어주는
+// 눈뜨고(eyesOpen) 조건 대표값(파일 상단 singleLegStance.js 주석 참고).
+function extractStanceKeyMetrics(report) {
+  const out = [];
+  [['Left', report?.left], ['Right', report?.right]].forEach(([side, leg]) => {
+    if (!leg) return;
+    const m = legMetrics(leg);
+    if (m.holdMs != null) {
+      out.push(toLaymanMetric(`stanceHoldTime${side}`, Math.round(m.holdMs / 100) / 10, {
+        unit: '초',
+        status: JUDGED_METRIC_STATUS_MAP[stanceMetricStatus(leg, 'hold_time_', 'hold_time_insufficient')] || STATUS.unknown,
+      }));
+    }
+    if (m.pelvicTiltDeg != null) {
+      out.push(toLaymanMetric(`stancePelvicTilt${side}`, m.pelvicTiltDeg, {
+        unit: '도',
+        status: JUDGED_METRIC_STATUS_MAP[stanceMetricStatus(leg, 'pelvic_tilt_')] || STATUS.unknown,
+      }));
+    }
+  });
+  return out;
+}
+
 export function extractKeyMetrics(report = {}, reportType = inferReportType(report)) {
+  // [측정 결과리포트 공유 2026-08-19] JUDGED_STATUS_REPORT_TYPES(위 주석 참고)와
+  // 동일한 이유로, 종합 점수뿐 아니라 개별 지표 카드도 stance/squat는 range 기반
+  // rangeToStatus 재채점 대신 이미 확정된 판정을 그대로 쓴다. 이 분기가 없던
+  // 동안엔 아래 METRIC_DEFINITIONS.squat/stance에 range가 없어 모든 카드가 값과
+  // 무관하게 "확인 필요"로만 표시됐다(카카오톡 리포트 공유 실사용 신고로 발견).
+  if (reportType === 'squat') return extractSquatKeyMetrics(report);
+  if (reportType === 'stance') return extractStanceKeyMetrics(report);
+
   const definitions = METRIC_DEFINITIONS[reportType] || [];
   return definitions
     .map((definition) => {

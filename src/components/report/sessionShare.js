@@ -9,6 +9,15 @@
 //   · 텍스트 피드 공유는 캡처 실패 시의 최후 폴백으로만 남는다.
 // ════════════════════════════════════════════════════════════════════════
 
+// [측정 결과리포트 공유 2026-08-19] 스쿼트/한다리서기(SLST)는 core 판정 모듈이
+// 이미 "권위 소스" 규칙(무릎·골반=정면, 팔=측면, 상체=torsoLeanSource, 깊이=
+// 양쪽 등)으로 대표값을 뽑아주는 전용 함수(extractSquatMetrics/legMetrics)가
+// 있다 — 아래 default 분기(원시 필드 몇 개를 그대로 대문자 라벨로 나열)로
+// 떨어지면 basis/measuredAt/torsoLeanSource 같은 내부 메타 필드가 그대로
+// 노출된다(카카오톡 공유 리포트 실사용 신고로 발견).
+import { extractSquatMetrics } from '../../ai-measure/core/squatBiomechanics';
+import { legMetrics } from '../../ai-measure/core/singleLegStance';
+
 // 통합 바벨 리프팅 페이로드(mode/metrics 구조)면 전용 LiftingReportDashboard 로 렌더.
 export function isLiftingShapedSession(data = {}) {
   if (!data || typeof data !== 'object') return false;
@@ -69,6 +78,41 @@ export function extractSessionDetailTiles(menu, data = {}) {
         pushTile(tiles, '혈압', `${d.systolic}/${d.diastolic}`, 'mmHg');
       }
       break;
+    // [측정 결과리포트 공유 2026-08-19] squat/stance/gait이 이 switch에 없어서
+    // 아래 default(원시 필드 나열)로 떨어져 basis/measuredAt/torsoLeanSource
+    // 같은 내부 메타 필드가 라벨도 못 바뀐 채(BASIS/MEASUREDAT 등 대문자
+    // camelCase) 그대로 노출되던 문제 — 카카오톡 공유 리포트 실사용 신고로
+    // 발견. extractSquatMetrics()가 이미 "권위 소스" 규칙(무릎·골반=정면,
+    // 팔=측면, 상체=torsoLeanSource, 깊이=양쪽 중 더 나쁜 값)으로 뽑아준
+    // 대표값을 그대로 쓴다(unifiedReport.js의 keyMetrics/상태 판정과 동일 소스).
+    case 'squat': {
+      const m = extractSquatMetrics(d);
+      const BASIS_KO = { front_side_combined: '정면+측면 결합', single_view_only: '단일 각도(재측정 권장)' };
+      pushTile(tiles, '스쿼트 깊이', num(m.depthDeg), '도', true);
+      pushTile(tiles, '상체 전방 기울기', num(m.torsoLeanDeg), '도');
+      pushTile(tiles, '무릎 안쪽 쏠림', num(m.kneeValgusDeg), '도');
+      pushTile(tiles, '골반 기울기', num(m.pelvicTiltDeg), '도');
+      pushTile(tiles, '판정 근거', BASIS_KO[d.basis] || null);
+      break;
+    }
+    case 'stance': {
+      const left = legMetrics(d?.left);
+      const right = legMetrics(d?.right);
+      pushTile(tiles, '왼발 유지시간', left.holdMs != null ? Math.round(left.holdMs / 100) / 10 : null, '초', true);
+      pushTile(tiles, '오른발 유지시간', right.holdMs != null ? Math.round(right.holdMs / 100) / 10 : null, '초', true);
+      pushTile(tiles, '왼발 골반 기울기', num(left.pelvicTiltDeg), '도');
+      pushTile(tiles, '오른발 골반 기울기', num(right.pelvicTiltDeg), '도');
+      pushTile(tiles, '좌우 비대칭', d.asymmetryFlag ? '있음' : (d.asymmetryFlag === false ? '없음' : null));
+      break;
+    }
+    case 'gait': {
+      const m = d.metrics || {};
+      pushTile(tiles, '케이던스', num(m.cadence ?? d.cadence), 'SPM', true);
+      pushTile(tiles, '입지구간 비율', num(m.stancePct ?? d.stancePct), '%');
+      pushTile(tiles, '골반 드롭', num(m.pelvicDropAbs ?? d.pelvicDropAbs), '%');
+      pushTile(tiles, '무릎 대칭', num(m.kneeSymmetry ?? d.kneeSymmetry), '%');
+      break;
+    }
     default: {
       // 알 수 없는 메뉴: 대표적인 1차 숫자 필드 몇 개만 노출(최대 4개).
       const skip = new Set(['id', 'memberId', 'isVirtual', 'valid']);
