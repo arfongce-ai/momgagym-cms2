@@ -79,9 +79,17 @@ export default function SquatAnalysisHub({ member, onBack, onSave, onSaveToFireb
       try {
         const res = await save(persistable);
         if (res && typeof res === 'object') saved = { ...withRecord, ...res };
-        setSaveState('saved');
-      } catch (e) { setSaveState('error'); }
-    } else { setSaveState('saved'); }
+      } catch (e) {
+        // 저장 실패 — report로 넘어가면 사용자는 성공한 걸로 착각하고 이 기록은
+        // Firestore id 없이 유실된다("기록이 안 됨" 버그). record 화면에 남아
+        // MeasureRecordConfirm 의 에러 배너 + 재시도 버튼을 그대로 보여준다.
+        setSaveState('error');
+        return;
+      }
+      setSaveState('saved');
+    } else {
+      setSaveState('saved');
+    }
     setReport(saved);
     setView('report');
   }, [save]);

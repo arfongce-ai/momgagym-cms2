@@ -153,8 +153,16 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
         const flat = res.data && typeof res.data === 'object' ? res.data : res;
         saved = { ...nextPayload, ...flat, id: res.id ?? flat.id ?? nextPayload.id };
       }
-      setSaveState('saved');
-    } catch (e) { setSaveState('error'); }
+    } catch (e) {
+      // 저장(Firestore 쓰기)이 실패했는데도 그대로 리포트 화면으로 넘어가면,
+      // 사용자는 측정이 정상 기록된 것으로 착각하고 이 기록은 다시는 볼 수
+      // 없게 유실된다("측정 후 기록이 안 됨 · 결과리포트에도 없음" 버그의
+      // 원인) — 여기서 멈추고 record 화면(MeasureRecordConfirm)에 남아
+      // error 배너 + 재시도 가능한 '확인 · 저장' 버튼을 보여준다.
+      setSaveState('error');
+      return;
+    }
+    setSaveState('saved');
     sessionHistoryRef.current = saved;
     setReport({ ...saved, ...pending.reportExtras });
     setView('report');

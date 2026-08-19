@@ -129,11 +129,33 @@ export async function findMainBackCameraId() {
 function baseVideoConstraints(deviceId) {
   return [
     deviceId ? { deviceId: { exact: deviceId }, width: { ideal: 1920 }, height: { ideal: 1080 } } : null,
+    { facingMode: { exact: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+    { facingMode: { exact: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
+    { facingMode: { exact: 'environment' } },
     { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } },
     { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
     { facingMode: 'environment' },
     true,
   ].filter(Boolean);
+}
+
+// 세션 내 후면 카메라 deviceId 캐시. 라벨(카메라 이름)은 getUserMedia 로 권한을
+// 한 번 얻고 나면 그 뒤로는 enumerateDevices() 만으로도 계속 채워져 나온다
+// (스펙 동작) — 그런데도 이 함수가 매 호출(실시간 측정 진입·모드 전환·재측정
+// 마다)마다 별도 "probe" getUserMedia 를 새로 여는 바람에, 후면 확정 전 잠깐
+// 전면 카메라가 열리는 기종이 있었다("실시간 촬영 시 전면카메라가 한번씩
+// 켜짐" 버그의 원인 — probe 가 facingMode:{ideal:'environment'} 라는 물렁한
+// 제약이라 브라우저/OS 카메라 HAL 이 초기화 중 기본(전면) 카메라를 먼저 여는
+// 경우가 있었음). 한 세션에서 한 번만 probe 하고 이후로는 캐시된 deviceId 를
+// 재사용해 반복적인 전면 카메라 노출을 없앤다.
+let cachedBackCameraId = null;
+let labelsUnlocked = false;
+
+/** 다음 openMainCameraStream 호출부터 다시 probe 하도록 캐시를 비운다
+ *  (예: 카메라 연결이 바뀌었거나 캐시된 deviceId 가 더 이상 유효하지 않을 때). */
+export function resetCameraSelectionCache() {
+  cachedBackCameraId = null;
+  labelsUnlocked = false;
 }
 
 /**
@@ -144,18 +166,28 @@ function baseVideoConstraints(deviceId) {
 export async function openMainCameraStream({ audio = false, preferExactDevice = true } = {}) {
   assertMediaDevices();
 
-  let deviceId = null;
-  if (preferExactDevice) {
-    // First ask for a simple rear stream to unlock device labels. Some WebViews
-    // fail if this probe also asks for audio, so keep it video-only.
+  let deviceId = cachedBackCameraId;
+  if (preferExactDevice && !labelsUnlocked) {
+    // 이 세션에서 처음 여는 카메라만 probe 한다. 라벨(카메라 이름)을 얻으려면
+    // 한 번은 getUserMedia 로 권한을 받아야 하는데, 이때 "environment"를
+    // exact(하드 제약)로 먼저 시도해 전면 카메라가 열릴 가능성을 원천 차단한다.
+    // exact 가 기기에서 지원되지 않으면(OverconstrainedError) 기존처럼 ideal 로
+    // 한 번 더만 시도한다(마지막 안전판 — 그래도 대부분 후면이 선택됨).
     let probe = null;
     try {
-      probe = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false });
-      deviceId = await findMainBackCameraId();
+      probe = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { exact: 'environment' } }, audio: false });
     } catch (e) {
-      deviceId = null;
-    } finally {
-      if (probe) probe.getTracks().forEach((t) => t.stop());
+      try {
+        probe = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false });
+      } catch (e2) {
+        probe = null;
+      }
+    }
+    if (probe) {
+      deviceId = await findMainBackCameraId();
+      probe.getTracks().forEach((t) => t.stop());
+      labelsUnlocked = true;
+      cachedBackCameraId = deviceId;
     }
   }
 
@@ -171,6 +203,12 @@ export async function openMainCameraStream({ audio = false, preferExactDevice = 
         return stream;
       } catch (e) {
         lastError = e;
+        // 캐시된 deviceId 가 더 이상 유효하지 않으면(기기 분리·재연결 등)
+        // 다음 시도부터는 버리고 facingMode 기반 제약으로 폴백한다.
+        if (video?.deviceId?.exact === deviceId) {
+          cachedBackCameraId = null;
+          labelsUnlocked = false;
+        }
       }
     }
   }

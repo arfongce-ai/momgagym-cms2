@@ -77,9 +77,19 @@ export default function JumpAnalysisHub({ member, onBack, onSave, onSaveToFireba
       try {
         const res = await save(withRecord);
         if (res && typeof res === 'object') saved = { ...withRecord, ...res };
-        setSaveState('saved');
-      } catch (e) { setSaveState('error'); }
-    } else { setSaveState('saved'); }
+      } catch (e) {
+        // 저장 실패 — 그대로 report로 넘어가면 사용자는 성공한 걸로 착각하고
+        // 이 기록은 Firestore id 없이 유실된다("기록이 안 됨" 버그). 호출부
+        // (confirmRecord/finishTrials)가 null 을 받아 화면 전환을 멈추고
+        // 현재 화면(record 확인 또는 trial_done/slj_other_leg)에 머물러
+        // 재시도할 수 있게 한다.
+        setSaveState('error');
+        return null;
+      }
+      setSaveState('saved');
+    } else {
+      setSaveState('saved');
+    }
     setReport(saved);
     return saved;
   }, [save, jumpSubType, leg, boxHeightCm]);
@@ -94,7 +104,8 @@ export default function JumpAnalysisHub({ member, onBack, onSave, onSaveToFireba
   const finishTrials = useCallback(async (trialsArr) => {
     const combined = combineJumpTrials(trialsArr, jumpType);
     if (!combined) return;
-    await persist(combined, {});
+    const saved = await persist(combined, {});
+    if (!saved) return; // 저장 실패 — trials 를 유지해 재시도(finishNow 재클릭) 가능하게 한다.
     setTrials([]);
     setPending(null);
     if (jumpSubType === 'slj' && sljFirstLegDone === null) {
@@ -121,8 +132,10 @@ export default function JumpAnalysisHub({ member, onBack, onSave, onSaveToFireba
     const withNote = { ...pending, note: record.note || pending.note || '' };
 
     if (!MULTI_TRIAL_JUMP_SUBTYPES.includes(jumpSubType)) {
-      await persist(withNote, record);
-      setView('report');
+      const saved = await persist(withNote, record);
+      // 저장 실패 시(saved === null) report로 넘어가지 않고 record 화면에
+      // 남아 MeasureRecordConfirm 의 에러 배너 + 재시도 버튼을 보여준다.
+      if (saved) setView('report');
       return;
     }
 
@@ -219,10 +232,13 @@ export default function JumpAnalysisHub({ member, onBack, onSave, onSaveToFireba
             className="w-full rounded-xl bg-amber-500 text-slate-950 font-black py-3.5 active:scale-95">
             {nextCount}차 측정하기
           </button>
-          <button onClick={finishNow}
-            className="w-full rounded-xl border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-bold py-3 active:scale-95">
-            여기서 마치기 ({doneCount}회 평균으로 저장)
+          <button onClick={finishNow} disabled={saveState === 'saving'}
+            className="w-full rounded-xl border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-bold py-3 active:scale-95 disabled:opacity-60">
+            {saveState === 'saving' ? '저장 중…' : `여기서 마치기 (${doneCount}회 평균으로 저장)`}
           </button>
+          {saveState === 'error' && (
+            <p className="text-xs text-red-700 dark:text-red-400">저장에 실패했습니다. 다시 시도해 주세요.</p>
+          )}
         </div>
       </div>
     );
