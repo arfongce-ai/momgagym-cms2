@@ -420,7 +420,7 @@ function OverviewTab({ settings, trainers, trainerMap }) {
       )}
 
       {/* 상세 + 담당 트레이너 + 환불 */}
-      <RefundableList filtered={filtered} settings={settings} trainers={trainers} trainerMap={trainerMap} onChange={refresh}/>
+      <RefundableList filtered={filtered} settings={settings} trainers={trainers} trainerMap={trainerMap} onChange={refresh} period={period}/>
     </div>
   );
 }
@@ -496,11 +496,98 @@ function MonthlyTrend({ rows, maxMonth, period, isMonth, isYear }) {
 }
 
 
-function RefundableList({ filtered, settings, trainers, trainerMap, onChange }) {
+// 결제 상세 내역 캘린더의 기본 표시 달을 정한다.
+//  · 상단에서 특정 월(YYYY-MM)을 골랐으면 그 달을 그대로 보여준다.
+//  · 연/전체 선택이면 이번 달에 결제가 있으면 이번 달, 없으면 가장 최근 결제가 있는 달.
+function defaultCalPivot(list, period) {
+  if (isValidMonthKey(period)) return period;
+  const todayM = todayYMD().slice(0, 7);
+  if (list.some(p => (p.paidAt || '').slice(0, 7) === todayM)) return todayM;
+  return (list[0]?.paidAt || '').slice(0, 7) || todayM;
+}
+
+const CAL_WEEKDAYS = ['일','월','화','수','목','금','토'];
+
+// 결제 상세 내역 — 월 캘린더 뷰. 날짜 칸에 그날 결제 건수·합계 금액을 보여주고,
+// 누르면 아래 목록이 그 날짜 결제로 좁혀진다(Report.jsx MeasureCalendar와 동일한 그리드 방식).
+function PaymentCalendar({ pivot, onPivotChange, dailyMap, selectedDate, onSelectDate, todayStr }) {
+  const d = new Date(`${pivot}-01T12:00:00`);
+  const y = d.getFullYear(), mo = d.getMonth();
+  const first = new Date(y, mo, 1).getDay();
+  const days = new Date(y, mo + 1, 0).getDate();
+  const cells = Array.from({ length: Math.ceil((first + days) / 7) * 7 }, (_, i) => {
+    const day = i - first + 1;
+    return (day > 0 && day <= days) ? `${y}-${String(mo + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}` : null;
+  });
+
+  const shiftMonth = (delta) => {
+    const nd = new Date(y, mo + delta, 1);
+    onPivotChange(`${nd.getFullYear()}-${String(nd.getMonth() + 1).padStart(2, '0')}`);
+  };
+
+  const monthCount = cells.reduce((s, date) => s + (date ? (dailyMap[date]?.count || 0) : 0), 0);
+  const monthTotal = cells.reduce((s, date) => s + (date ? (dailyMap[date]?.total || 0) : 0), 0);
+
+  return (
+    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden mb-3">
+      <div className="flex items-center justify-between px-3 py-2.5 border-b border-slate-200 dark:border-slate-800">
+        <button type="button" onClick={()=>shiftMonth(-1)} className="px-2 py-1 text-sm font-bold text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white">◀</button>
+        <div className="text-center">
+          <p className="text-sm font-black text-slate-800 dark:text-white">{y}년 {mo+1}월</p>
+          <p className="text-[10px] text-slate-500">{monthCount}건 · {won(monthTotal)}</p>
+        </div>
+        <button type="button" onClick={()=>shiftMonth(1)} className="px-2 py-1 text-sm font-bold text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white">▶</button>
+      </div>
+      <div className="grid grid-cols-7 border-b border-slate-200 dark:border-slate-800 text-center text-[11px] font-bold text-slate-500">
+        {CAL_WEEKDAYS.map(w => <div key={w} className="py-2">{w}</div>)}
+      </div>
+      <div className="grid grid-cols-7">
+        {cells.map((date, i) => {
+          if (!date) return <div key={i} className="min-h-16 border-b border-r border-slate-200/70 dark:border-slate-800/70 opacity-20" />;
+          const g = dailyMap[date];
+          const isToday = date === todayStr;
+          const isSelected = date === selectedDate;
+          return (
+            <button
+              key={date}
+              type="button"
+              onClick={()=>onSelectDate(isSelected ? null : date)}
+              className={`min-h-16 border-b border-r border-slate-200/70 dark:border-slate-800/70 p-1 text-left transition-colors ${
+                isSelected ? 'bg-amber-500/15' : isToday ? 'bg-amber-500/5' : 'hover:bg-slate-100/40 dark:hover:bg-slate-800/40'
+              }`}
+            >
+              <p className={`font-mono text-[10px] font-bold ${isToday ? 'text-amber-700 dark:text-amber-400' : 'text-slate-500 dark:text-slate-400'}`}>
+                {parseInt(date.slice(8, 10), 10)}
+              </p>
+              {g && (
+                <>
+                  <p className="text-[10px] font-black text-emerald-700 dark:text-emerald-400 leading-tight break-all">{won(g.total)}</p>
+                  <p className="text-[9px] text-slate-500">{g.count}건</p>
+                </>
+              )}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function RefundableList({ filtered, settings, trainers, trainerMap, onChange, period }) {
   const [, force] = useState(0);
   const [editId, setEditId] = useState(null);
   const [edit, setEdit] = useState(null);
   const [query, setQuery] = useState('');
+  const [viewMode, setViewMode] = useState('calendar'); // 'calendar' | 'list'
+  const [calPivot, setCalPivot] = useState(() => defaultCalPivot(filtered, period));
+  const [selectedDate, setSelectedDate] = useState(null);
+  // 상단 기간(연/월/전체) 선택이 바뀔 때만 캘린더 달을 다시 맞춘다.
+  // 결제 수정·삭제로 filtered 참조가 새로 생기는 것과는 무관하게 유지한다(편집 후 캘린더가 튀지 않도록).
+  useEffect(() => {
+    setCalPivot(defaultCalPivot(filtered, period));
+    setSelectedDate(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [period]);
   const refresh = () => { force(n=>n+1); onChange?.(); };
 
   const METHODS = [['pay','페이'],['transfer','계좌'],['cash','현금'],['cash_receipt','현금영수증'],['card1','카드1'],['card2','카드2']];
@@ -601,7 +688,19 @@ function RefundableList({ filtered, settings, trainers, trainerMap, onChange }) 
   return (
     <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
-        <h2 className="font-bold text-sm uppercase tracking-widest text-slate-500 dark:text-slate-400">결제 상세 내역 (관리자 수정)</h2>
+        <div className="flex items-center gap-2">
+          <h2 className="font-bold text-sm uppercase tracking-widest text-slate-500 dark:text-slate-400">결제 상세 내역 (관리자 수정)</h2>
+          <div className="flex rounded-lg border border-slate-300 dark:border-slate-700 overflow-hidden text-[11px] font-bold flex-shrink-0">
+            <button type="button" onClick={()=>setViewMode('calendar')}
+              className={`px-2.5 py-1 transition-colors ${viewMode==='calendar' ? 'bg-amber-500 text-slate-950' : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white'}`}>
+              📅 캘린더
+            </button>
+            <button type="button" onClick={()=>setViewMode('list')}
+              className={`px-2.5 py-1 transition-colors ${viewMode==='list' ? 'bg-amber-500 text-slate-950' : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white'}`}>
+              ≡ 리스트
+            </button>
+          </div>
+        </div>
         <div className="relative sm:w-64">
           <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">🔍</span>
           <input
@@ -619,6 +718,7 @@ function RefundableList({ filtered, settings, trainers, trainerMap, onChange }) 
       {(() => {
         const q = query.trim().toLowerCase();
         const qDigits = q.replace(/[^0-9]/g, '');
+        const isSearching = !!q;
         const shown = !q ? filtered : filtered.filter(p => {
           const trNames = (p.trainerIds||[]).map(id=>trainerMap[id]?.name||'').join(' ');
           const consult = p.consultTrainerId ? (trainerMap[p.consultTrainerId]?.name||'') : '';
@@ -636,12 +736,47 @@ function RefundableList({ filtered, settings, trainers, trainerMap, onChange }) 
           }
           return false;
         });
-        return shown.length===0
-          ? <p className="text-slate-600 text-sm text-center py-4">{q?'검색 결과가 없습니다':'내역이 없습니다'}</p>
+
+        // 캘린더용 날짜별 집계 — 검색 중이면 검색 결과 기준으로 집계한다.
+        const dailyMap = {};
+        shown.forEach(p => {
+          const dt = p.paidAt;
+          if (!dt) return;
+          if (!dailyMap[dt]) dailyMap[dt] = { count: 0, total: 0 };
+          dailyMap[dt].count += 1;
+          dailyMap[dt].total += Number(p.amount) || 0;
+        });
+
+        // 캘린더 모드(검색 중이 아닐 때): 날짜를 고르면 그 날짜만, 안 고르면 캘린더에 보이는 달 전체.
+        // 리스트 모드나 검색 중일 때는 기존과 동일하게 shown 전체를 보여준다.
+        const monthItems = shown.filter(p => (p.paidAt||'').slice(0,7) === calPivot);
+        const listItems = (viewMode === 'calendar' && !isSearching)
+          ? (selectedDate ? shown.filter(p => p.paidAt === selectedDate) : monthItems)
+          : shown;
+
+        const emptyMsg = isSearching
+          ? '검색 결과가 없습니다'
+          : (viewMode === 'calendar' ? (selectedDate ? '이 날짜엔 내역이 없습니다' : '이 달엔 내역이 없습니다') : '내역이 없습니다');
+
+        return <>
+          {viewMode === 'calendar' && !isSearching && (
+            <>
+              <PaymentCalendar pivot={calPivot} onPivotChange={setCalPivot} dailyMap={dailyMap}
+                selectedDate={selectedDate} onSelectDate={setSelectedDate} todayStr={todayYMD()}/>
+              {selectedDate && (
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-[11px] text-slate-500">{selectedDate} 결제 내역 · {listItems.length}건</p>
+                  <button onClick={()=>setSelectedDate(null)} className="text-[11px] text-amber-700 dark:text-amber-400 hover:underline">전체 달 보기</button>
+                </div>
+              )}
+            </>
+          )}
+          {listItems.length===0
+          ? <p className="text-slate-600 text-sm text-center py-4">{emptyMsg}</p>
           : <>
-            {q && <p className="text-[11px] text-slate-500 mb-2">"{query}" 검색 — {shown.length}건</p>}
+            {isSearching && <p className="text-[11px] text-slate-500 mb-2">"{query}" 검색 — {listItems.length}건</p>}
             <div className="space-y-2">
-            {shown.map(p=>{
+            {listItems.map(p=>{
               const net = calcNet(p, settings).net;
               if (editId===p.id) {
                 return (
@@ -759,7 +894,8 @@ function RefundableList({ filtered, settings, trainers, trainerMap, onChange }) 
               );
             })}
             </div>
-          </>;
+          </>}
+        </>;
       })()}
     </div>
   );
