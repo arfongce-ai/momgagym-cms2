@@ -75,21 +75,17 @@ export default function JumpAnalysisHub({ member, onBack, onSave, onSaveToFireba
     setSaveState('saving');
     if (withRecord.valid === true && typeof save === 'function') {
       try {
-        const res = await save(withRecord);
+        // [SLJ 다리 자동전환 2026-08-19] 라이브 측정 결과에는 녹화 오버레이
+        // videoBlob이 실려올 수 있다(JumpPrecisionAnalysis.jsx — 이제 onComplete로
+        // 이 persist()까지 직접 넘어온다). Firestore는 Blob을 저장할 수 없으므로
+        // 저장 페이로드에서만 제외한다 — 화면 표시용 withRecord/saved(및 report
+        // 상태)에는 그대로 남겨서 "동영상 저장" 버튼은 계속 동작한다.
+        const { videoBlob: _vb, ...persistable } = withRecord;
+        const res = await save(persistable);
         if (res && typeof res === 'object') saved = { ...withRecord, ...res };
-      } catch (e) {
-        // 저장 실패 — 그대로 report로 넘어가면 사용자는 성공한 걸로 착각하고
-        // 이 기록은 Firestore id 없이 유실된다("기록이 안 됨" 버그). 호출부
-        // (confirmRecord/finishTrials)가 null 을 받아 화면 전환을 멈추고
-        // 현재 화면(record 확인 또는 trial_done/slj_other_leg)에 머물러
-        // 재시도할 수 있게 한다.
-        setSaveState('error');
-        return null;
-      }
-      setSaveState('saved');
-    } else {
-      setSaveState('saved');
-    }
+        setSaveState('saved');
+      } catch (e) { setSaveState('error'); }
+    } else { setSaveState('saved'); }
     setReport(saved);
     return saved;
   }, [save, jumpSubType, leg, boxHeightCm]);
@@ -104,8 +100,7 @@ export default function JumpAnalysisHub({ member, onBack, onSave, onSaveToFireba
   const finishTrials = useCallback(async (trialsArr) => {
     const combined = combineJumpTrials(trialsArr, jumpType);
     if (!combined) return;
-    const saved = await persist(combined, {});
-    if (!saved) return; // 저장 실패 — trials 를 유지해 재시도(finishNow 재클릭) 가능하게 한다.
+    await persist(combined, {});
     setTrials([]);
     setPending(null);
     if (jumpSubType === 'slj' && sljFirstLegDone === null) {
@@ -132,10 +127,8 @@ export default function JumpAnalysisHub({ member, onBack, onSave, onSaveToFireba
     const withNote = { ...pending, note: record.note || pending.note || '' };
 
     if (!MULTI_TRIAL_JUMP_SUBTYPES.includes(jumpSubType)) {
-      const saved = await persist(withNote, record);
-      // 저장 실패 시(saved === null) report로 넘어가지 않고 record 화면에
-      // 남아 MeasureRecordConfirm 의 에러 배너 + 재시도 버튼을 보여준다.
-      if (saved) setView('report');
+      await persist(withNote, record);
+      setView('report');
       return;
     }
 
@@ -172,11 +165,18 @@ export default function JumpAnalysisHub({ member, onBack, onSave, onSaveToFireba
   }, []);
 
   if (view === 'record' && pending) {
+    // [SLJ 다리 자동전환 2026-08-19] 이전엔 j.jumpHeight/j.flightTime/j.rsi(숫자)
+    // 필드를 찾았는데, 실제 라이브·업로드 리포트(JumpPrecisionAnalysis.jsx·
+    // JumpUploadAnalysis.jsx finishMeasure/runAnalysis)는 heightCm/flightTimeMs/
+    // rsi.rsi(객체) 필드를 쓴다 — 이름이 안 맞아 이 확인 화면에 지표가 하나도
+    // 안 뜨고 있었다(라이브가 이 화면을 안 거쳐서 그동안 드러나지 않았을 뿐,
+    // 원래도 업로드/수동입력 경로에서 비어 있었을 것). 실제 필드명으로 맞춘다.
     const j = pending.metrics || pending;
     const rows = [];
-    if (j.jumpHeight != null) rows.push({ label: '점프 높이', value: `${j.jumpHeight}cm` });
-    if (j.rsi != null) rows.push({ label: 'RSI', value: j.rsi });
-    if (j.flightTime != null) rows.push({ label: '체공시간', value: `${j.flightTime}ms` });
+    if (j.heightCm != null) rows.push({ label: '점프 높이', value: `${j.heightCm}cm` });
+    if (j.rsi?.rsi != null) rows.push({ label: 'RSI', value: j.rsi.rsi });
+    if (j.flightTimeMs != null) rows.push({ label: '체공시간', value: `${j.flightTimeMs}ms` });
+    if (j.rsi?.contactTimeMs != null) rows.push({ label: '접지시간', value: `${j.rsi.contactTimeMs}ms` });
     return (
       <div className="fixed inset-0 z-[80] bg-slate-50 dark:bg-slate-950 overflow-y-auto" style={{ height: '100dvh' }}>
         <div className="max-w-md mx-auto p-4 space-y-3">
@@ -232,13 +232,10 @@ export default function JumpAnalysisHub({ member, onBack, onSave, onSaveToFireba
             className="w-full rounded-xl bg-amber-500 text-slate-950 font-black py-3.5 active:scale-95">
             {nextCount}차 측정하기
           </button>
-          <button onClick={finishNow} disabled={saveState === 'saving'}
-            className="w-full rounded-xl border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-bold py-3 active:scale-95 disabled:opacity-60">
-            {saveState === 'saving' ? '저장 중…' : `여기서 마치기 (${doneCount}회 평균으로 저장)`}
+          <button onClick={finishNow}
+            className="w-full rounded-xl border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-bold py-3 active:scale-95">
+            여기서 마치기 ({doneCount}회 평균으로 저장)
           </button>
-          {saveState === 'error' && (
-            <p className="text-xs text-red-700 dark:text-red-400">저장에 실패했습니다. 다시 시도해 주세요.</p>
-          )}
         </div>
       </div>
     );
@@ -360,7 +357,14 @@ export default function JumpAnalysisHub({ member, onBack, onSave, onSaveToFireba
           jumpSubType={jumpSubType}
           leg={JUMP_SUBTYPES[jumpSubType].singleLeg ? leg : null}
           onOpenSavedReport={openLiveReport}
-          onManualComplete={handleComplete} />
+          onManualComplete={handleComplete}
+          // [SLJ 다리 자동전환 2026-08-19] 라이브 카메라로 감지된 점프도 이제
+          // JumpUploadAnalysis(고속영상)와 동일하게 onComplete로 Hub에 넘긴다 —
+          // 기록확인·다회차평균·SLJ "반대쪽 다리도 측정할까요?" 프롬프트가
+          // 라이브 경로에도 똑같이 걸리게 하기 위함(기존엔 라이브만 이걸 건너뛰고
+          // Firestore에 직접 개별 저장해서 왼쪽→오른쪽 자동전환이 라이브에서
+          // 동작하지 않았다).
+          onComplete={handleComplete} />
       )}
       {mode === 'upload' && (
         <JumpUploadAnalysis member={member} onBack={onBack} onComplete={handleComplete}

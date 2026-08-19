@@ -266,7 +266,7 @@ function drawBaseline(canvas, video, baselineFeetY, rotationDeg = 0) {
   ctx.setLineDash([]);
 }
 
-export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase, onSave, onMemberHeightChange, onManualComplete, onOpenSavedReport, jumpType = 'power', jumpSubType = 'cmj', leg = null }) {
+export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase, onSave, onMemberHeightChange, onManualComplete, onComplete, onOpenSavedReport, jumpType = 'power', jumpSubType = 'cmj', leg = null }) {
   const saveToFirebase = onSaveToFirebase || onSave;
   // [2026-08-10 추가] 세부 종류(CMJ/SJ/DJ/SLJ/RSI)에 따른 파생값. jumpType은
   // 기존 그대로 'power'|'reactive' 엔진 분기용으로 계속 쓰고, 아래 두 값만
@@ -814,9 +814,23 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
       report.valid = report.valid === true && rsiResult?.valid === true;
       if (rsiResult && rsiResult.valid !== true) report.reason = rsiResult.reason;
     }
+    stopCamera();
+    // [SLJ 다리 자동전환 2026-08-19] onComplete가 있으면(JumpAnalysisHub.jsx가
+    // 항상 넘겨줌) 여기서 직접 미리보기를 띄우거나 저장하지 않고 Hub로 결과를
+    // 그대로 넘긴다 — '고속영상 업로드'(JumpUploadAnalysis.jsx)가 이미 쓰고
+    // 있는 것과 동일한 onComplete 패턴이다. 이렇게 해야 Hub의 기록확인→
+    // 다회차평균(combineJumpTrials)→(SLJ) "반대쪽 다리도 측정할까요?" 프롬프트가
+    // 라이브 카메라 경로에도 똑같이 걸린다 — 예전엔 라이브만 이 흐름을 건너뛰고
+    // 여기서 곧장 Firestore에 개별 저장해서, SLJ 왼쪽→오른쪽 자동 전환이 라이브
+    // 모드에서는 아예 동작하지 않았다(Hub 쪽 로직 자체가 호출되지 않았으므로).
+    // onComplete가 없는 호출부(예전 방식/독립 사용)에서는 기존처럼 이 화면
+    // 자체에서 미리보기 + 자동저장한다(하위호환 — 아래 else 분기).
+    if (typeof onComplete === 'function') {
+      await onComplete(report);
+      return;
+    }
     setReportData(report);
     setView('preview');
-    stopCamera();
     // 유효 측정만 자동 저장 (gait 와 동일 철학) — videoBlob 은 저장 페이로드에서 제외
     if (report.valid === true && saveToFirebase && autoSavedRef.current !== report.measuredAt) {
       autoSavedRef.current = report.measuredAt;
