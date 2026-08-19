@@ -426,8 +426,13 @@ function ScheduleDetailModal({ schedule:initS, onClose, onUpdate, onDelete }) {
 }
 
 // ── 예약 추가 모달 — 5가지 요구사항 통합 ─────────────────
-function AddModal({ members, trainers, fixedTrainerId, onAdd, onClose }) {
-  const today = fmt(new Date());
+function AddModal({ members, trainers, fixedTrainerId, initialDate, onAdd, onClose }) {
+  // [날짜 클릭→예약 연결 2026-08-19] 예전엔 항상 오늘 날짜로만 초기화돼서,
+  // 달력에서 다른 날짜를 눌러 이동해도(주/월 뷰의 날짜 클릭 → pivot 변경)
+  // "+ 예약" 폼은 여전히 오늘 날짜로 열렸다 — 보던 날짜에 예약하려면 매번
+  // 날짜를 다시 골라야 했다. 상위(Schedule)가 현재 보고 있는 날짜(pivot)를
+  // initialDate로 넘겨주면 그 날짜로 바로 열리고, 없으면(방어적) 오늘로 폴백한다.
+  const today = initialDate || fmt(new Date());
   const fixedTrainer = fixedTrainerId ? trainers.find(t=>t.id===fixedTrainerId) : null;
   // 탭: 'regular' | 'external'
   const [tab, setTab] = useState('regular');
@@ -1160,6 +1165,7 @@ export default function Schedule() {
           members={visibleMembers}
           trainers={visibleTrainers.length ? visibleTrainers : trainers}
           fixedTrainerId={fixedTrainerId}
+          initialDate={pivot}
           onAdd={async d=>{
             try {
               const res = await store.createScheduleWithDeduction(d);  // 예약+세션차감 원자적 처리
