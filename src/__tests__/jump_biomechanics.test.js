@@ -301,6 +301,75 @@ describe('JumpBiomechAccumulator — 각도 시계열(timeline) & 착지 고관�
   });
 });
 
+// ════════════════════════════════════════════════════════════════════════
+//  [점프 리플레이 그래프 2026-08-20] comHeightCm(무게중심 높이) & liveComHeightCm
+// ════════════════════════════════════════════════════════════════════════
+// 어깨(11/12)·골반(23/24, pelvisY로 수직 위치 조절)·발목(27/28) 을 갖춘
+// landmark. bodyScale(어깨~발목)이 항상 0.5로 고정되도록 어깨/발목 y를
+// 함께 잡아 cmPerNormY 계산이 예측 가능하게 만든다.
+const makeComPose = (pelvisY) => {
+  const a = Array.from({ length: 33 }, () => ({ x: 0.5, y: 0.5, visibility: 0.95 }));
+  a[11] = { x: 0.45, y: 0.20, visibility: 0.95 };
+  a[12] = { x: 0.55, y: 0.20, visibility: 0.95 };
+  a[23] = { x: 0.45, y: pelvisY, visibility: 0.95 };
+  a[24] = { x: 0.55, y: pelvisY, visibility: 0.95 };
+  a[25] = { x: 0.45, y: 0.55, visibility: 0.95 };
+  a[26] = { x: 0.55, y: 0.55, visibility: 0.95 };
+  a[27] = { x: 0.45, y: 0.70, visibility: 0.95 };
+  a[28] = { x: 0.55, y: 0.70, visibility: 0.95 };
+  return a;
+};
+
+describe('JumpBiomechAccumulator — 무게중심(골반) 높이 곡선(comHeightCm)', () => {
+  it('서 있는 기준선보다 골반이 뜨면(점프 상승) comHeightCm이 양수', () => {
+    const acc = new JumpBiomechAccumulator({ heightCm: 175 });
+    // 준비(stand): 기준선 pelvisY=0.50 로 여러 프레임
+    for (let i = 0; i < 5; i++) acc.push(makeComPose(0.50), i * 8, 'stand');
+    // 공중(air): 골반이 위로(y 감소) 떠오름
+    acc.push(makeComPose(0.40), 100, 'air');
+    const s = acc.summary();
+    const airPt = s.timeline.find((p) => p.phase === 'air');
+    expect(airPt.comHeightCm).toBeGreaterThan(0);
+  });
+
+  it('기준선보다 골반이 내려가면(착지·굽힘) comHeightCm이 음수', () => {
+    const acc = new JumpBiomechAccumulator({ heightCm: 175 });
+    for (let i = 0; i < 5; i++) acc.push(makeComPose(0.50), i * 8, 'stand');
+    acc.push(makeComPose(0.58), 100, 'land'); // 굽혀서 골반이 아래로(y 증가)
+    const s = acc.summary();
+    const landPt = s.timeline.find((p) => p.phase === 'land');
+    expect(landPt.comHeightCm).toBeLessThan(0);
+  });
+
+  it('회원 키가 없으면(스케일 미상) comHeightCm은 null — 허위 수치 방지', () => {
+    const acc = new JumpBiomechAccumulator({ heightCm: null });
+    for (let i = 0; i < 5; i++) acc.push(makeComPose(0.50), i * 8, 'stand');
+    acc.push(makeComPose(0.40), 100, 'air');
+    const s = acc.summary();
+    const airPt = s.timeline.find((p) => p.phase === 'air');
+    expect(airPt.comHeightCm).toBeNull();
+    expect(airPt.comY).not.toBeNull(); // 원시값은 그대로 남는다
+  });
+});
+
+describe('JumpBiomechAccumulator.liveComHeightCm — 라이브 HUD용 실시간 근사치', () => {
+  it('stand 표본이 쌓이기 전에는 null(허위값 방지)', () => {
+    const acc = new JumpBiomechAccumulator({ heightCm: 175 });
+    expect(acc.liveComHeightCm(0.40)).toBeNull();
+  });
+
+  it('stand 표본이 쌓인 뒤에는 summary()의 comHeightCm과 동일한 부호/크기로 계산', () => {
+    const acc = new JumpBiomechAccumulator({ heightCm: 175 });
+    for (let i = 0; i < 5; i++) acc.push(makeComPose(0.50), i * 8, 'stand');
+    const live = acc.liveComHeightCm(0.40);
+    expect(live).toBeGreaterThan(0);
+    acc.push(makeComPose(0.40), 100, 'air');
+    const s = acc.summary();
+    const airPt = s.timeline.find((p) => p.phase === 'air');
+    expect(live).toBeCloseTo(airPt.comHeightCm, 1);
+  });
+});
+
 describe('currentJointAngles — 실시간 HUD용 단발 프레임 각도', () => {
   it('직립 자세는 무릎/고관절 모두 180에 가깝다', () => {
     const { knee, hip } = currentJointAngles(makePose());

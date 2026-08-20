@@ -14,7 +14,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   StandingCalibrator, JumpFlightTracker,
-  JumpBiomechAccumulator, jumpPhaseOf, currentJointAngles,
+  JumpBiomechAccumulator, jumpPhaseOf, currentJointAngles, pelvisCenterY,
 } from '../core/jumpBiomechanics';
 import { calcJump, calcRSI } from '../core/performance';
 import { computeRSIFromFlights, rsiGrade, RSI_TUNING } from '../core/reactiveJump';
@@ -296,6 +296,13 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
   // ref로 최신값을 들고 있다가 스로틀링해서 반영하는 기존 패턴과 동일).
   const [liveAngles, setLiveAngles] = useState({ knee: null, hip: null });
   const liveAnglesTsRef = useRef(0);
+  // [점프 리플레이 그래프 2026-08-20] 라이브 무게중심 높이 파형 — "서 있는
+  // 기준선 대비 지금 얼마나 뜨고 가라앉았는가"를 측정 중에 실시간으로 그려
+  // 보여준다(비디오 동기화 아님 — 그건 측정 종료 후 리포트 화면의
+  // JumpReplayGraph가 담당). armed(측정 단계)에서만 값이 쌓인다 —
+  // biomechAccRef가 그 전엔 'stand' 표본을 안 모으므로 자연히 비어 있다.
+  const [liveHeightSeries, setLiveHeightSeries] = useState([]);
+  const liveHeightTsRef = useRef(0);
   // 측정 시작 게이트: 스켈레톤이 잡혀도 자동으로 측정을 시작하지 않고,
   // 사용자가 '측정 시작' 버튼을 누르면 3초 카운트다운 후 측정을 개시한다.
   const [armed, setArmed] = useState(false);       // true → 점프 트래킹/녹화 진행 중
@@ -423,6 +430,8 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
     setLiveJump({ flightMs: null, heightCm: null });
     setLiveAngles({ knee: null, hip: null }); // [무릎·고관절 각도 HUD 2026-08-18]
     liveAnglesTsRef.current = 0;
+    setLiveHeightSeries([]); // [점프 리플레이 그래프 2026-08-20]
+    liveHeightTsRef.current = 0;
     setReportData(null);
     setSaveState('idle');
     autoSavedRef.current = null;
@@ -671,6 +680,18 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
           const landActive = landFramesLeftRef.current > 0;
           const { phase: jp, justTookOff } = jumpPhaseOf(prevInAir, curInAir, landActive);
           biomechAccRef.current?.push(corrected, ts, jp, justTookOff);
+          // [점프 리플레이 그래프 2026-08-20] 라이브 파형 — 무릎/고관절 각도와
+          // 동일한 스로틀 절제(100ms) 후 setState. 롤링 윈도우(최근 60개 표본
+          // ≈ 6초)만 유지해 메모리·리렌더 부담을 낮춘다.
+          if (ts - liveHeightTsRef.current > 100) {
+            liveHeightTsRef.current = ts;
+            const comYNow = pelvisCenterY(corrected);
+            const h = biomechAccRef.current?.liveComHeightCm(comYNow) ?? null;
+            setLiveHeightSeries((prev) => {
+              const next = [...prev, { tMs: ts, comHeightCm: h }];
+              return next.length > 60 ? next.slice(-60) : next;
+            });
+          }
           if (landActive && !curInAir) landFramesLeftRef.current--;
           prevInAirRef.current = curInAir;
           // 반응(RSI) 모드: 측면뷰 판정용 방향 누적.
@@ -763,6 +784,19 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
     const videoBlob = recordedBlobRef.current || null;
     const sum = tracker.summary({ heightCm: heightRef.current });
     const biomech = biomechAccRef.current?.summary() || null;
+    // [점프 리플레이 그래프 2026-08-20] biomech.timeline의 tMs는
+    // performance.now() 절대값 — 녹화 영상(videoBlob)의 currentTime(0부터
+    // 시작)과 동기화하려면 녹화 시작 시각(recStartedAtRef, startRecording()에서
+    // 기록)을 원점으로 다시 맞춰야 한다. armed 진입과 녹화 시작이 같은 틱에서
+    // 일어나므로(beginCountdown 참고) 거의 항상 0 근처에서 시작하지만, 정확한
+    // 동기화를 위해 명시적으로 재계산한다. 녹화 시작 이전 표본(음수)은
+    // 영상에 없는 구간이라 버린다.
+    if (biomech?.timeline?.length && recStartedAtRef.current) {
+      const t0 = recStartedAtRef.current;
+      biomech.timeline = biomech.timeline
+        .map((p) => ({ ...p, tMs: Math.round(p.tMs - t0) }))
+        .filter((p) => p.tMs >= 0);
+    }
     // performance.calcJump 로 파워(Sayers)까지 일관 산출 (체중 있으면)
     const power = calcJump(sum.flightTimeSec, resolveWeight(member, weightRef.current));
 
@@ -974,6 +1008,7 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
             jumpRows={jumpRows}
             requiredJumps={requiredJumps}
             liveAngles={liveAngles}
+            liveHeightSeries={liveHeightSeries}
           />
 
           {warning && (
@@ -1444,7 +1479,7 @@ function MetricCard({ label, value }) {
 function JumpLiveOverlay({
   jumpType, phase, phaseColor, calibMsg, heightCm, jumpCount,
   liveJump, bestHeight, rsiCycles, jumpRows, requiredJumps = RSI_REQUIRED_JUMPS,
-  liveAngles = { knee: null, hip: null },
+  liveAngles = { knee: null, hip: null }, liveHeightSeries = [],
 }) {
   const isRsi = jumpType === 'reactive';
   const latestCycle = rsiCycles.at(-1) || null;
@@ -1493,7 +1528,34 @@ function JumpLiveOverlay({
         )}
       </div>
       <GaugeHud {...gauge} accent={accent} stats={stats} />
+      <LiveHeightWave series={liveHeightSeries} accent={accent} />
     </div>
+  );
+}
+
+// [점프 리플레이 그래프 2026-08-20] 라이브 무게중심 높이 파형 — 순수 SVG
+// 스파크라인(TrendChart.jsx·JumpAngleTimelineChart.jsx와 동일한 "외부
+// 의존성 0" 패턴). 측정 종료 후 리포트 화면의 JumpReplayGraph(비디오
+// 스크러버 동기화)와는 별개 — 이건 지금 쌓이고 있는 값을 그대로 그리는
+// 실시간 표시일 뿐이다. 표본이 2개 미만이면(선을 그릴 수 없음) 아무것도
+// 그리지 않는다.
+function LiveHeightWave({ series = [], accent = '#22d3ee' }) {
+  const pts = series.filter((p) => p.comHeightCm != null);
+  if (pts.length < 2) return null;
+  const W = 380, H = 56, padX = 6, padY = 8;
+  const vals = pts.map((p) => p.comHeightCm);
+  let min = Math.min(...vals, 0), max = Math.max(...vals, 0); // 0(서 있는 기준선) 항상 포함
+  if (min === max) { min -= 1; max += 1; }
+  const t0 = pts[0].tMs, t1 = pts[pts.length - 1].tMs;
+  const xAt = (t) => padX + (t1 === t0 ? 0 : ((t - t0) / (t1 - t0)) * (W - padX * 2));
+  const yAt = (v) => padY + (H - padY * 2) * (1 - (v - min) / (max - min));
+  const path = pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${xAt(p.tMs).toFixed(1)} ${yAt(p.comHeightCm).toFixed(1)}`).join(' ');
+  const zeroY = yAt(0);
+  return (
+    <svg width="100%" viewBox={`0 0 ${W} ${H}`} className="mt-1.5 rounded-xl bg-black/40" style={{ display: 'block' }}>
+      <line x1={padX} y1={zeroY} x2={W - padX} y2={zeroY} stroke="rgba(255,255,255,0.25)" strokeWidth="1" strokeDasharray="3,3" />
+      <path d={path} fill="none" stroke={accent} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+    </svg>
   );
 }
 

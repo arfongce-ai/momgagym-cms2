@@ -18,6 +18,7 @@ import { JUMP_SUBTYPES, LEG_LABEL, resolveJumpSubType } from '../core/jumpTypes'
 import { findSljAsymmetry } from '../core/jumpBiomechanics';
 // [무릎·고관절 각도 그래프 2026-08-18]
 import JumpAngleTimelineChart from '../../components/report/JumpAngleTimelineChart.jsx';
+import JumpReplayGraph from '../../components/report/JumpReplayGraph.jsx';
 import TrendChart from '../../components/report/TrendChart';
 
 const RANGE = {
@@ -238,6 +239,14 @@ export default function JumpReportDashboard({ report, onClose, onComment, member
             {biomech.timeline.length > 1 && (
               <div className="mt-4">
                 <JumpAngleTimelineChart timeline={biomech.timeline} />
+              </div>
+            )}
+            {/* [점프 리플레이 그래프 2026-08-20] videoBlob이 있으면(라이브 측정)
+                녹화 영상 재생과 동기화된 무게중심 높이 곡선을, 없으면(고속영상
+                업로드 흐름) 정적 곡선만 보여준다 — 컴포넌트 안에서 자동 분기. */}
+            {biomech.timeline.length > 1 && (
+              <div className="mt-4">
+                <JumpReplayGraph videoBlob={report.videoBlob || null} timeline={biomech.timeline} />
               </div>
             )}
           </Section>

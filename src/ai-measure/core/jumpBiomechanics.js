@@ -524,7 +524,10 @@ const _pelvicTilt = (lm, scale) => {
 export class JumpBiomechAccumulator {
   constructor({ heightCm = null } = {}) {
     this.heightCm = heightCm;
-    this.stand = { trunkLean: [], pelvicTilt: [] };
+    // [점프 리플레이 그래프 2026-08-20] pelvisY — 'stand'(준비) 구간의 골반
+    // 중점 y를 모아 summary()에서 "서 있는 기준선"을 잡는다(무게중심 높이
+    // 그래프의 0점). 기존 pelvicTilt(좌우 높이차)와는 다른 값 — 혼동 주의.
+    this.stand = { trunkLean: [], pelvicTilt: [], pelvisY: [] };
     this.air = { trunkLean: [] };
     // [무릎·고관절 각도 그래프 2026-08-18] land에 hipL/hipR 추가 — 기존
     // kneeL/kneeR과 동일한 패턴으로 착지 시 고관절 굽힘도 함께 모은다
@@ -564,15 +567,21 @@ export class JumpBiomechAccumulator {
     // [무릎·고관절 각도 그래프 2026-08-18] 위상과 무관하게 이 프레임의
     // 무릎/고관절 각도를 시계열로 남긴다. 아래 phase별 분기(요약 통계용)와는
     // 별개 — 하나가 없어도 다른 하나는 영향받지 않는다.
+    // [점프 리플레이 그래프 2026-08-20] 골반 중점 y(comY)도 같은 방식으로
+    // 시계열에 원시값을 남긴다 — cm 환산(comHeightCm)은 summary()에서
+    // 전체 'stand' 표본으로 기준선이 확정된 뒤 일괄 계산한다(push() 시점엔
+    // 아직 기준선을 모른다).
     const kn0 = _knees(lm), hp0 = _hips(lm);
     const kneeNow = _avg2(kn0.left, kn0.right);
     const hipNow = _avg2(hp0.left, hp0.right);
-    if (tMs != null && (kneeNow != null || hipNow != null)) {
+    const comYNow = pelvisCenterY(lm);
+    if (tMs != null && (kneeNow != null || hipNow != null || comYNow != null)) {
       this.timeline.push({
         tMs,
         phase,
         knee: kneeNow != null ? Math.round(kneeNow * 10) / 10 : null,
         hip: hipNow != null ? Math.round(hipNow * 10) / 10 : null,
+        comY: comYNow,
       });
       // 방어적 상한 — 비정상적으로 긴 세션(예: RSI 연속 측정을 한참 못 끝낸
       // 경우)에도 메모리가 무한정 늘지 않게(오래된 표본부터 버림).
@@ -582,6 +591,7 @@ export class JumpBiomechAccumulator {
     if (phase === 'stand') {
       const tl = _trunkLean(lm); if (tl != null) this.stand.trunkLean.push(tl);
       const pt = _pelvicTilt(lm, scale); if (pt != null) this.stand.pelvicTilt.push(pt);
+      if (comYNow != null) this.stand.pelvisY.push(comYNow);
       // 이지 접근 시퀀스: 준비 후반(앉았다 펴는 구간)의 각도 추이를 모은다
       const hp = _hips(lm), kn = _knees(lm), an = _ankles(lm);
       const hipAvg = _avg2(hp.left, hp.right);
@@ -614,6 +624,20 @@ export class JumpBiomechAccumulator {
     const { side, back } = this._viewVotes;
     if (side === 0 && back === 0) return 'unknown';
     return side >= back ? 'side' : 'back';
+  }
+
+  // [점프 리플레이 그래프 2026-08-20 · 라이브 HUD] summary()가 끝나길 기다리지
+  // 않고, 지금까지 쌓인 'stand' 표본만으로 실시간 근사 무게중심 높이(cm)를
+  // 낸다 — summary()의 comHeightCm과 동일 공식. 측정 초반(캘리브레이션 직후
+  // 'stand' 표본이 아직 없거나 키가 없어 스케일을 못 낼 때)엔 null — 라이브
+  // 파형 쪽에서 null-safe 처리(허위값을 그리지 않는다).
+  liveComHeightCm(comY) {
+    if (comY == null || !this.stand.pelvisY.length) return null;
+    const base = this.stand.pelvisY.reduce((s, x) => s + x, 0) / this.stand.pelvisY.length;
+    const scale = this.bodyScale;
+    const cmPerNormY = (this.heightCm && scale) ? this.heightCm / scale : null;
+    if (cmPerNormY == null) return null;
+    return Math.round((base - comY) * cmPerNormY * 10) / 10;
   }
 
   summary() {
@@ -664,6 +688,22 @@ export class JumpBiomechAccumulator {
       footSymmetry: footSym.available,   // 발끝 대칭 = 양쪽 가능
     };
 
+    // [점프 리플레이 그래프 2026-08-20] 무게중심(골반) 높이 곡선 — 지면반력을
+    // 직접 잴 수 없는 카메라 한계 안에서, "서 있는 기준선 대비 골반이 얼마나
+    // 뜨고 가라앉았는가"를 그 대체 지표로 삼는다(다리 굽힘=음수, 도약/공중=
+    // 양수). standPelvisBase는 'stand' 구간(도약 전 준비 자세)의 골반 y 평균,
+    // cmPerNormY는 어깨~발목 정규화 거리와 회원 키로 만든 대략적 px↔cm 스케일
+    // (StandingCalibrator의 정식 스케일과는 별개 근사치 — 참고용 시각화이지
+    // 정밀 측정값이 아니다). 둘 중 하나라도 없으면(키 미입력 등) comHeightCm은
+    // null로 두고 원시 comY만 남긴다 — 그래프 쪽에서 null-safe 처리.
+    const standPelvisBase = mean(this.stand.pelvisY);
+    const cmPerNormY = (this.heightCm && scale) ? this.heightCm / scale : null;
+    const timelineWithHeight = this.timeline.map((pt) => {
+      const comHeightCm = (pt.comY != null && standPelvisBase != null && cmPerNormY != null)
+        ? r1((standPelvisBase - pt.comY) * cmPerNormY) : null;
+      return { ...pt, comHeightCm };
+    });
+
     return {
       view,
       enabled,
@@ -681,10 +721,12 @@ export class JumpBiomechAccumulator {
       // 대칭성 및 안정성
       pelvicImbalance,                    // 정면 전용
       footLandingSymmetry: footSym,       // 착지 발끝 대칭 (force plate 대체)
-      // [무릎·고관절 각도 그래프 2026-08-18] 준비→도약→공중→착지 전 구간의
-      // 무릎/고관절 각도 시계열 — [{tMs, phase, knee, hip}, ...] 시간순.
-      // 리포트 화면에서 시간축 라인차트로 그린다(JumpReportDashboard.jsx).
-      timeline: this.timeline,
+      // [무릎·고관절 각도 그래프 2026-08-18][점프 리플레이 그래프 2026-08-20]
+      // 준비→도약→공중→착지 전 구간의 무릎/고관절 각도 + 무게중심 높이 시계열
+      // — [{tMs, phase, knee, hip, comY, comHeightCm}, ...] 시간순.
+      // 리포트 화면에서 시간축 라인차트/재생 동기화 그래프로 그린다
+      // (JumpReportDashboard.jsx / JumpReplayGraph.jsx).
+      timeline: timelineWithHeight,
     };
   }
 }
