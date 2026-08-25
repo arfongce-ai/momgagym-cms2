@@ -12,6 +12,7 @@ import Schedule from './pages/Schedule';
 import Settings from './pages/Settings';
 import AiMeasureHub from './ai-measure/AiMeasureHub';
 import Report from './pages/Report';
+import Dashboard from './pages/Dashboard';
 import AdminLockGate from './components/common/AdminLockGate';
 import TodayScheduleMorningAlert from './components/schedule/TodayScheduleMorningAlert';
 import { useKioskMode } from './hooks/useKioskMode';
@@ -115,6 +116,9 @@ function AppRoutes() {
                   <Route path="/members"  element={<Members />} />
                   <Route path="/schedule" element={<Schedule />} />
                   <Route path="/trainers" element={<RequireAuth adminOnly><AdminLockGate title="트레이너 관리 잠금" adminOnly><Trainers /></AdminLockGate></RequireAuth>} />
+                  <Route path="/dashboard" element={<RequireAuth adminOnly><Dashboard /></RequireAuth>} />
+                  {/* 9장 대시보드: 회원 개인정보가 없는 집계 그래프라 트레이너 관리처럼
+                      AdminLockGate(2차 PIN)까지는 걸지 않음 — adminOnly 라우트 가드만. */}
                   <Route path="/revenue"  element={<AdminLockGate title="매출관리 잠금"><Revenue /></AdminLockGate>} />
                   {/* /revenue: 관리자=이중잠금 후 전체, 트레이너=본인 정산 조회(게이트 통과) */}
                   <Route path="/settings" element={<Settings darkMode={darkMode} setDarkMode={setDarkMode} />} />

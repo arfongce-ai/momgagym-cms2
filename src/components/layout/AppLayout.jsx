@@ -21,6 +21,7 @@ const NAV = [
   // 섹션으로 흡수됐다(ComprehensiveReportSection) — 메뉴 항목을 따로 안 둔다.
   { path:'/report',   label:'리포트',   icon:'📊' },
   { path:'/trainers', label:'트레이너', icon:'💪', adminOnly:true },
+  { path:'/dashboard', label:'대시보드', icon:'📈', adminOnly:true },
   { path:'/revenue',  label:'매출관리', icon:'💰' },
   { path:'/settings', label:'설정',     icon:'⚙️' },
 ];
