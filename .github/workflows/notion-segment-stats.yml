@@ -1,0 +1,30 @@
+name: Notion Segment Stats Sync
+
+# 8장 "세그먼트별 통계" — 매주 월요일 9시(KST) Firestore members.targetSegment
+# 기준으로 세그먼트별 신규/활성 회원 수를 집계해 Notion에 새 행을 추가한다.
+# scripts/segment-stats/sync.mjs 참고.
+#
+# ⚠️ 이 파일은 device_commit_files가 "protected file"로 거부해서 채팅으로만
+#    전달됨 — 저장소의 .github/workflows/ 폴더에 수동으로 저장해야 함.
+
+on:
+  workflow_dispatch: {}
+  schedule:
+    - cron: '0 0 * * 1' # 매주 월요일 09:00 KST(UTC+9) = 00:00 UTC
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: scripts/segment-stats
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install
+      - run: node sync.mjs
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}

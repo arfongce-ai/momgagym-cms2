@@ -1,0 +1,31 @@
+name: AI 측정 상담 퍼널 전환율 자동 집계 (8-3)
+
+# 매주 월요일 09:00(KST)에 자동 실행됩니다. notion-weekly-summary.yml과 같은
+# 시각대(UTC 00:00)로 맞춰 같은 날 아침에 두 요약이 함께 갱신되게 했습니다.
+on:
+  schedule:
+    - cron: '0 0 * * 1'
+  workflow_dispatch: {}   # Actions 탭에서 수동으로 "Run workflow" 버튼으로도 실행 가능
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 저장소 코드 가져오기
+        uses: actions/checkout@v4
+
+      - name: Node.js 설치
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: 스크립트 의존성 설치
+        working-directory: scripts/funnel-sync
+        run: npm install
+
+      - name: 리드 매칭 + 채널별 전환율 집계
+        working-directory: scripts/funnel-sync
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+        run: node sync.mjs

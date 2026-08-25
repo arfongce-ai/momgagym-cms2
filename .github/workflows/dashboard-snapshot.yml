@@ -1,0 +1,29 @@
+name: Dashboard Snapshot Sync
+
+# 9장 "준실시간 그래프뷰 대시보드" — 30분마다 Firestore dashboardSnapshots에
+# 스냅샷 1건을 추가한다. scripts/dashboard-snapshot/sync.mjs 참고.
+#
+# ⚠️ 이 파일은 device_commit_files가 "protected file"로 거부해서 채팅으로만
+#    전달됨 — 저장소의 .github/workflows/ 폴더에 수동으로 저장해야 함
+#    (notion-funnel-sync.yml, notion-trainer-stats.yml과 동일한 케이스).
+
+on:
+  workflow_dispatch: {}
+  schedule:
+    - cron: '*/30 * * * *'
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: scripts/dashboard-snapshot
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install
+      - run: node sync.mjs
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
