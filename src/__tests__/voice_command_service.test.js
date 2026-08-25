@@ -170,6 +170,17 @@ describe('matchRuleBasedSubKind() — 무료 규칙 기반 세부 탭/측정 종
     expect(matchRuleBasedSubKind('ai_measure', '점프 측정하게 해줘')).toBe('jump');
   });
 
+  // [2026-08-25 디버깅] registry.js에 나중에 추가된 'compare'(전/후 비교)·
+  // 'imaging'(근골격계 영상 판독)이 이 무료 규칙 매칭에서 빠져 있어서, 두 메뉴는
+  // 항상 유료 Claude 경로로만 열렸던 회귀를 잡는 테스트. '영상판독'의 '영상'이
+  // record('녹화'/'영상')보다 먼저 매칭돼야 한다(목록 순서 의존).
+  it('AI측정: compare·imaging도 찾고, "영상판독"이 record로 잘못 잡히지 않는다', () => {
+    expect(matchRuleBasedSubKind('ai_measure', '영상판독 열어줘')).toBe('imaging');
+    expect(matchRuleBasedSubKind('ai_measure', '엑스레이 측정하게 해줘')).toBe('imaging');
+    expect(matchRuleBasedSubKind('ai_measure', '전후비교 열어줘')).toBe('compare');
+    expect(matchRuleBasedSubKind('ai_measure', '녹화 열어줘')).toBe('record');
+  });
+
   it('세부 키워드가 전혀 없으면 null(기존처럼 목적지 화면만 열림 — 회귀 아님)', () => {
     expect(matchRuleBasedSubKind('members', '회원관리 열어줘')).toBeNull();
     expect(matchRuleBasedSubKind('report', '리포트 열어줘')).toBeNull();

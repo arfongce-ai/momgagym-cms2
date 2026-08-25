@@ -49,15 +49,18 @@ const ALL_TOOLS = [
       tab: { type: 'string', enum: ['overview', 'settle', 'expense', 'config'],
         description: '바로 열 탭. "개요"/"손익"→overview, "정산"/"트레이너 정산"→settle, "지출"→expense, "설정"→config. 언급 없으면 생략(개요 탭으로 열림).' } } } },
   // [음성 명령 확장 2026-08-09] testId enum을 ai-measure/registry.js의 MEASURE_MENUS
-  // 10개 전부(신체정보~초시계·메트로놈)로 맞춘다. AiMeasureHub.jsx는 이미 이 id들을
+  // 전부(신체정보~초시계·메트로놈)로 맞춘다. AiMeasureHub.jsx는 이미 이 id들을
   // 그대로 매칭해 자동으로 메뉴를 열어주므로(consumePendingVoiceTarget), 여기 enum만
   // 넓히면 프론트 변경 없이 나머지 측정 페이지들도 음성으로 열린다.
+  // [2026-08-25 디버깅] registry.js에 'compare'(전/후 비교, no.9)와 'imaging'(근골격계
+  // 영상 판독, no.10)이 추가된 뒤 이 enum이 갱신되지 않아 두 메뉴는 음성으로 못 열고
+  // 있었다("모미야 영상판독 열어줘"가 동작하지 않던 원인) — 여기서 둘 다 추가.
   { name: 'go_ai_measure', destinationId: 'ai_measure', roles: ['trainer', 'admin'],
-    description: 'AI측정 화면을 연다. "OO님 신체정보/자세/ROM/보행/점프/바벨/한다리서기/오버헤드스쿼트/녹화/초시계 측정하게 해줘" 같은 요청.',
+    description: 'AI측정 화면을 연다. "OO님 신체정보/자세/ROM/보행/점프/바벨/한다리서기/오버헤드스쿼트/전후비교/영상판독/녹화/초시계 측정하게 해줘" 같은 요청.',
     input_schema: { type: 'object', properties: {
       memberName: { type: 'string', description: '들린 회원 이름 그대로. 언급 없으면 생략.' },
-      testId: { type: 'string', enum: ['body', 'posture', 'rom', 'gait', 'jump', 'lifting', 'stance', 'squat', 'record', 'timer'],
-        description: '언급된 측정 종류. "신체정보"→body, "자세"/"체형"→posture, "ROM"/"가동범위"→rom, "보행"/"런닝"→gait, "점프"/"RSI"→jump, "바벨"/"리프팅"→lifting, "한다리서기"/"SLST"/"균형"→stance, "오버헤드"/"딥스쿼트"→squat, "녹화"/"영상"→record, "초시계"/"타이머"/"인터벌"/"메트로놈"→timer. 없으면 생략.' } } } },
+      testId: { type: 'string', enum: ['body', 'posture', 'rom', 'gait', 'jump', 'lifting', 'stance', 'squat', 'compare', 'imaging', 'record', 'timer'],
+        description: '언급된 측정 종류. "신체정보"→body, "자세"/"체형"→posture, "ROM"/"가동범위"→rom, "보행"/"런닝"→gait, "점프"/"RSI"→jump, "바벨"/"리프팅"→lifting, "한다리서기"/"SLST"/"균형"→stance, "오버헤드"/"딥스쿼트"→squat, "전후비교"/"오버레이"/"비교"→compare, "영상판독"/"엑스레이"/"X-ray"/"CT"/"초음파"/"MRI"→imaging, "녹화"/"영상"→record, "초시계"/"타이머"/"인터벌"/"메트로놈"→timer. 없으면 생략.' } } } },
   { name: 'go_report', destinationId: 'report', roles: ['trainer', 'admin'],
     description: '리포트 화면을 연다. "OO님 리포트 열어줘"·"OO님 점프 리포트 보여줘" 같은 요청.',
     input_schema: { type: 'object', properties: {

@@ -135,6 +135,13 @@ const TESTID_KEYWORDS = [
 ];
 const AI_MEASURE_ONLY_TESTID_KEYWORDS = [
   { id: 'body', keywords: ['신체정보', '체성분'] },
+  // [2026-08-25 디버깅] registry.js에 'compare'(전/후 비교)·'imaging'(근골격계 영상
+  // 판독)이 추가된 뒤 이 목록이 갱신되지 않아 무료 규칙 경로에서 못 잡고 매번
+  // Claude(유료) 경로로 넘어가고 있었다 — voice-command.js의 testId enum 확장과
+  // 짝을 맞춰 여기도 추가. 'record'(녹화·영상)보다 먼저 검사해야 "영상판독"의
+  // "영상"이 record로 먼저 잡히지 않는다(목록 순서 = 매칭 우선순위).
+  { id: 'imaging', keywords: ['영상판독', '엑스레이', 'x-ray', 'xray', '초음파', 'mri'] },
+  { id: 'compare', keywords: ['전후비교', '전/후비교', '오버레이비교', '어니언스킨'] },
   { id: 'record', keywords: ['녹화', '영상'] },
   { id: 'timer', keywords: ['초시계', '타이머', '인터벌', '메트로놈'] },
 ];
