@@ -5,13 +5,19 @@ import { lazy } from 'react';
 //   1 신체 정보(기본) → 2 자세·체형(정적) → 3 ROM(가동성) → 4 보행·러닝(이동)
 //   → 5 점프·RSI(파워) → 6 바벨 리프팅(근력) → 7 한다리서기(SLST, 균형)
 //   → 8 오버헤드 딥 스쿼트(균형+가동성 복합) → 9 전/후 비교(오버레이) →
-//   10 일반 녹화 · 11 초시계 (도구, 항상 맨 마지막 — 기존 테스트 불변식:
+//   → 10 근골격계 영상 판독(업로드 X-ray·CT·초음파·MRI) →
+//   11 일반 녹화 · 12 초시계 (도구, 항상 맨 마지막 — 기존 테스트 불변식:
 //   정렬 후 timer가 배열 끝).
 //  '던지기(throw)'·'스윙(swing)' 준비 중 탭은 제거됨(2607 요청).
 //  7번(SLST)·8번(스쿼트) 모두 실시간·업로드 둘 다 지원.
 //  [전/후 비교 추가] 사진/영상 오버레이·어니언 스킨 비교 도구. 다른 측정처럼
 //  값을 산출/저장하지 않는 시각 비교 도구라 개별 항목들 뒤, 도구(녹화/초시계)
 //  바로 앞에 둔다.
+//  [영상 판독 추가] 카메라/MediaPipe가 아니라 이미 촬영된 X-ray·CT·초음파·MRI
+//  파일을 업로드해 직접 측정·소견 태그하는 내부 참고용 도구
+//  (public/imaging-tool.html을 iframe으로 구동, postMessage로 결과 수신 —
+//  자세한 설명은 ImagingMeasure.jsx 상단 주석 참고). 회원 촬영 흐름과는
+//  성격이 달라 개별 측정 항목들과 도구(녹화/초시계) 사이에 둔다.
 export const MEASURE_MENUS = [
   {
     id: 'body',
@@ -95,8 +101,17 @@ export const MEASURE_MENUS = [
     component: lazy(() => import('./menus/OverlayCompare.jsx')),
   },
   {
-    id: 'record',
+    id: 'imaging',
     no: 10,
+    title: '근골격계 영상 판독',
+    desc: 'X-ray·CT·초음파·MRI 업로드 — 각도/거리 측정, 소견 태그(내부 참고용)',
+    icon: 'IMG',
+    status: 'ready',
+    component: lazy(() => import('./menus/ImagingMeasure.jsx')),
+  },
+  {
+    id: 'record',
+    no: 11,
     title: '일반 영상 녹화',
     desc: '카메라 녹화 및 저장',
     icon: 'REC',
@@ -105,7 +120,7 @@ export const MEASURE_MENUS = [
   },
   {
     id: 'timer',
-    no: 11,
+    no: 12,
     title: '초시계·메트로놈',
     desc: '초시계, 타이머, 인터벌, 메트로놈',
     icon: 'TMR',

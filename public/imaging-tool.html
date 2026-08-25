@@ -1,0 +1,2322 @@
+<title>체형영상 측정기</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+  :root{
+    --void:#0a0d12;
+    --panel:#12161d;
+    --raised:#1a1f28;
+    --raised-hover:#212836;
+    --raised-active:#243040;
+    --border:#262c37;
+    --border-soft:#1a1f28;
+    --text:#e8ecf1;
+    --text-muted:#8b94a3;
+    --text-faint:#5a6272;
+    --accent:#4fd1c5;
+    --accent-strong:#7ee8de;
+    --accent-dim:#1f4a48;
+    --accent-soft-bg:rgba(79,209,197,0.14);
+    --good:#6ee7a8;
+    --good-bg:rgba(110,231,168,0.14);
+    --warn:#f5b942;
+    --warn-bg:rgba(245,185,66,0.14);
+    --critical:#f2607a;
+    --critical-bg:rgba(242,96,122,0.14);
+    --grid:rgba(255,255,255,0.055);
+    --focus-ring:#7ee8de;
+    --font-ui:'IBM Plex Sans KR', 'Pretendard', 'Malgun Gothic', system-ui, sans-serif;
+    --font-mono:'IBM Plex Mono', 'D2Coding', ui-monospace, monospace;
+  }
+
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; padding:0; }
+  body{
+    background:var(--void);
+    color:var(--text);
+    font-family:var(--font-ui);
+    height:100vh;
+    overflow:hidden;
+    -webkit-font-smoothing:antialiased;
+  }
+  ::selection{ background:var(--accent-soft-bg); color:var(--accent-strong); }
+  ::-webkit-scrollbar{ width:10px; height:10px; }
+  ::-webkit-scrollbar-track{ background:transparent; }
+  ::-webkit-scrollbar-thumb{ background:var(--raised-hover); border-radius:6px; }
+  button{ font-family:inherit; }
+  *:focus-visible{ outline:2px solid var(--focus-ring); outline-offset:2px; }
+
+  @media (prefers-reduced-motion: reduce){
+    *{ animation-duration:0.001ms !important; transition-duration:0.001ms !important; }
+  }
+
+  #app{
+    display:grid;
+    grid-template-rows:44px 1fr 26px;
+    grid-template-columns:56px 1fr 336px;
+    grid-template-areas:
+      "top   top    top"
+      "rail  stage  side"
+      "bar   bar    bar";
+    height:100vh;
+    width:100vw;
+  }
+
+  /* ---------- Top bar ---------- */
+  #topbar{
+    grid-area:top;
+    display:flex;
+    align-items:center;
+    gap:14px;
+    padding:0 14px;
+    background:var(--panel);
+    border-bottom:1px solid var(--border);
+    min-width:0;
+  }
+  .brand{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    font-weight:600;
+    font-size:14px;
+    letter-spacing:0.01em;
+    white-space:nowrap;
+  }
+  .brand .mark{
+    width:20px; height:20px;
+    border-radius:5px;
+    background:linear-gradient(155deg, var(--accent) 0%, var(--accent-dim) 100%);
+    display:flex; align-items:center; justify-content:center;
+    flex-shrink:0;
+  }
+  .brand .mark svg{ width:12px; height:12px; }
+  .brand small{ color:var(--text-faint); font-weight:500; font-size:11px; }
+
+  .topbtn{
+    display:flex; align-items:center; gap:6px;
+    background:var(--raised);
+    border:1px solid var(--border);
+    color:var(--text);
+    padding:6px 12px;
+    border-radius:7px;
+    font-size:12.5px;
+    font-weight:500;
+    cursor:pointer;
+    transition:background .12s ease, border-color .12s ease;
+    white-space:nowrap;
+  }
+  .topbtn:hover{ background:var(--raised-hover); border-color:#33404f; }
+  .topbtn:active{ background:var(--raised-active); }
+  .topbtn.primary{ background:var(--accent-soft-bg); border-color:var(--accent-dim); color:var(--accent-strong); }
+  .topbtn.primary:hover{ background:rgba(79,209,197,0.22); }
+  .topbtn svg{ width:14px; height:14px; flex-shrink:0; }
+
+  #filename{
+    font-family:var(--font-mono);
+    font-size:12px;
+    color:var(--text-muted);
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+    max-width:220px;
+  }
+  #topbar .spacer{ flex:1; min-width:8px; }
+
+  /* ---------- Left tool rail ---------- */
+  #rail{
+    grid-area:rail;
+    background:var(--panel);
+    border-right:1px solid var(--border);
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    padding:10px 0;
+    gap:4px;
+    overflow-y:auto;
+  }
+  .tool{
+    width:38px; height:38px;
+    border-radius:9px;
+    background:transparent;
+    border:1px solid transparent;
+    color:var(--text-muted);
+    display:flex; align-items:center; justify-content:center;
+    cursor:pointer;
+    position:relative;
+    transition:background .12s ease, color .12s ease;
+    flex-shrink:0;
+  }
+  .tool svg{ width:18px; height:18px; }
+  .tool:hover{ background:var(--raised); color:var(--text); }
+  .tool.active{ background:var(--accent-soft-bg); color:var(--accent); border-color:var(--accent-dim); }
+  .tool.active::before{
+    content:'';
+    position:absolute; left:-10px; top:50%; transform:translateY(-50%);
+    width:3px; height:18px; border-radius:2px; background:var(--accent);
+  }
+  .rail-divider{ width:26px; height:1px; background:var(--border); margin:6px 0; flex-shrink:0; }
+
+  .tool[data-tip]::after{
+    content:attr(data-tip);
+    position:absolute;
+    left:48px; top:50%; transform:translateY(-50%);
+    background:#05070a;
+    border:1px solid var(--border);
+    color:var(--text);
+    padding:5px 8px;
+    border-radius:6px;
+    font-size:11.5px;
+    white-space:nowrap;
+    opacity:0;
+    pointer-events:none;
+    transition:opacity .1s ease;
+    z-index:50;
+  }
+  .tool[data-tip]:hover::after{ opacity:1; }
+
+  /* ---------- Stage ---------- */
+  #stage{
+    grid-area:stage;
+    position:relative;
+    background:
+      radial-gradient(ellipse at 50% 40%, #0d1117 0%, var(--void) 70%);
+    overflow:hidden;
+    cursor:crosshair;
+  }
+  #imgWrap{
+    position:absolute;
+    top:0; left:0;
+    transform-origin:0 0;
+    image-rendering:pixelated;
+  }
+  #imgWrap.smooth{ image-rendering:auto; }
+  #imgCanvas, #overlayCanvas, #edgeCanvas{
+    position:absolute; top:0; left:0;
+    display:block;
+  }
+  #overlayCanvas{ image-rendering:auto; }
+  #edgeCanvas{ image-rendering:auto; pointer-events:none; mix-blend-mode:screen; }
+
+  #dropHint{
+    position:absolute; inset:0;
+    display:flex; align-items:center; justify-content:center;
+    flex-direction:column; gap:14px;
+    color:var(--text-faint);
+    pointer-events:none;
+    text-align:center;
+  }
+  #dropHint .dropicon{
+    width:56px; height:56px;
+    border-radius:14px;
+    border:1.5px dashed var(--border);
+    display:flex; align-items:center; justify-content:center;
+    color:var(--text-faint);
+  }
+  #dropHint .dropicon svg{ width:26px; height:26px; }
+  #dropHint b{ color:var(--text-muted); font-weight:600; font-size:14px; }
+  #dropHint span{ font-size:12px; }
+  #stage.dragging #dropHint .dropicon{ border-color:var(--accent); color:var(--accent); }
+
+  /* floating readout, bottom-left of stage */
+  #readout{
+    position:absolute; left:14px; bottom:14px;
+    background:rgba(10,13,18,0.82);
+    backdrop-filter:blur(6px);
+    border:1px solid var(--border);
+    border-radius:8px;
+    padding:8px 12px;
+    font-family:var(--font-mono);
+    font-size:11.5px;
+    color:var(--text-muted);
+    display:flex; gap:16px;
+    pointer-events:none;
+    font-variant-numeric:tabular-nums;
+  }
+  #readout .stat b{ display:block; color:var(--text); font-size:12.5px; font-weight:600; }
+  #readout .stat span{ color:var(--text-faint); font-size:9.5px; text-transform:uppercase; letter-spacing:0.06em; }
+
+  /* window/level floating panel, top-right of stage */
+  #wlPanel{
+    position:absolute; right:14px; top:14px;
+    background:rgba(15,19,26,0.88);
+    backdrop-filter:blur(6px);
+    border:1px solid var(--border);
+    border-radius:10px;
+    padding:12px 14px;
+    width:220px;
+    display:none;
+    flex-direction:column;
+    gap:10px;
+  }
+  #wlPanel.show{ display:flex; }
+  #wlPanel h4{ margin:0; font-size:11px; color:var(--text-muted); font-weight:600; text-transform:uppercase; letter-spacing:0.06em; }
+  .slider-row{ display:flex; flex-direction:column; gap:4px; }
+  .slider-row .lbl{ display:flex; justify-content:space-between; font-size:11.5px; color:var(--text-muted); }
+  .slider-row .lbl b{ color:var(--text); font-family:var(--font-mono); font-weight:500; font-variant-numeric:tabular-nums; }
+  input[type=range]{
+    -webkit-appearance:none;
+    width:100%; height:4px;
+    border-radius:2px;
+    background:var(--border);
+    outline:none;
+  }
+  input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance:none;
+    width:13px; height:13px;
+    border-radius:50%;
+    background:var(--accent);
+    border:2px solid #06171a;
+    cursor:pointer;
+  }
+  .wl-actions{ display:flex; gap:6px; }
+  .miniBtn{
+    flex:1;
+    background:var(--raised);
+    border:1px solid var(--border);
+    color:var(--text-muted);
+    padding:5px 0;
+    border-radius:6px;
+    font-size:11px;
+    cursor:pointer;
+  }
+  .miniBtn:hover{ background:var(--raised-hover); color:var(--text); }
+  .miniBtn.active{ background:var(--accent-soft-bg); border-color:var(--accent-dim); color:var(--accent-strong); }
+  .wl-divider{ height:1px; background:var(--border); margin:2px 0; }
+  .edgeToggle{ width:100%; }
+  .wl-hint{ font-size:10px; line-height:1.5; color:var(--text-faint); }
+  #presetRow .miniBtn[disabled]{ opacity:0.4; cursor:not-allowed; }
+
+  /* calibration prompt */
+  #calibBox{
+    position:absolute; left:50%; top:14px; transform:translateX(-50%);
+    background:rgba(15,19,26,0.92);
+    border:1px solid var(--accent-dim);
+    border-radius:10px;
+    padding:10px 14px;
+    display:none;
+    align-items:center;
+    gap:10px;
+    font-size:12.5px;
+  }
+  #calibBox.show{ display:flex; }
+  #calibBox input{
+    width:70px;
+    background:var(--raised);
+    border:1px solid var(--border);
+    color:var(--text);
+    border-radius:6px;
+    padding:5px 7px;
+    font-family:var(--font-mono);
+    font-size:12.5px;
+  }
+  #calibBox button{
+    background:var(--accent-soft-bg);
+    border:1px solid var(--accent-dim);
+    color:var(--accent-strong);
+    border-radius:6px;
+    padding:5px 10px;
+    font-size:12px;
+    cursor:pointer;
+  }
+
+  /* label editor popup for text/point annotation */
+  #labelEditor{
+    position:absolute;
+    display:none;
+    background:var(--raised);
+    border:1px solid var(--accent-dim);
+    border-radius:6px;
+    padding:4px;
+    z-index:60;
+  }
+  #labelEditor.show{ display:block; }
+  #labelEditor input{
+    background:transparent;
+    border:none;
+    color:var(--text);
+    font-family:var(--font-ui);
+    font-size:12.5px;
+    padding:4px 6px;
+    width:150px;
+    outline:none;
+  }
+
+  /* finding-tag popup (골절/붓기/염증 등 소견 태그) */
+  #findingEditor{
+    position:absolute;
+    display:none;
+    flex-direction:column;
+    gap:9px;
+    background:var(--raised);
+    border:1px solid var(--accent-dim);
+    border-radius:10px;
+    padding:12px;
+    width:290px;
+    max-height:78vh;
+    overflow-y:auto;
+    z-index:70;
+    box-shadow:0 10px 30px rgba(0,0,0,0.4);
+  }
+  #findingEditor.show{ display:flex; }
+  #findingEditor .fe-title{ font-size:11px; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.05em; }
+  .fe-checklist{ display:flex; flex-direction:column; gap:2px; }
+  .fe-checklist .fe-empty{ font-size:11.5px; color:var(--text-faint); padding:2px 0; }
+  .fe-check{
+    display:flex; align-items:flex-start; gap:7px;
+    padding:6px 7px;
+    border-radius:6px;
+    cursor:pointer;
+    font-size:12px;
+    line-height:1.45;
+    color:var(--text-muted);
+  }
+  .fe-check:hover{ background:var(--void); }
+  .fe-check input{ margin-top:2px; accent-color:var(--accent); flex-shrink:0; }
+  .fe-check.checked{ color:var(--text); }
+  .fe-tally{ font-size:11px; color:var(--accent); font-family:var(--font-mono); }
+  #findingEditor select{
+    background:var(--void);
+    border:1px solid var(--border);
+    color:var(--text);
+    border-radius:7px;
+    padding:7px 8px;
+    font-family:var(--font-ui);
+    font-size:12.5px;
+    outline:none;
+  }
+  #findingEditor .fe-levels{ display:flex; gap:5px; }
+  #findingEditor .fe-level{
+    flex:1;
+    background:var(--void);
+    border:1px solid var(--border);
+    color:var(--text-muted);
+    border-radius:7px;
+    padding:6px 0;
+    font-size:11.5px;
+    font-weight:600;
+    cursor:pointer;
+  }
+  #findingEditor .fe-level.sel-good{ background:var(--good-bg); border-color:var(--good); color:var(--good); }
+  #findingEditor .fe-level.sel-warn{ background:var(--warn-bg); border-color:var(--warn); color:var(--warn); }
+  #findingEditor .fe-level.sel-critical{ background:var(--critical-bg); border-color:var(--critical); color:var(--critical); }
+  #findingEditor input[type=text]{
+    background:var(--void);
+    border:1px solid var(--border);
+    color:var(--text);
+    border-radius:7px;
+    padding:7px 8px;
+    font-family:var(--font-ui);
+    font-size:12.5px;
+    outline:none;
+    width:100%;
+  }
+  #findingEditor .fe-actions{ display:flex; gap:6px; }
+  #findingEditor .fe-actions button{ flex:1; border-radius:7px; padding:7px 0; font-size:12.5px; cursor:pointer; border:1px solid var(--border); }
+  #findingEditor .fe-cancel{ background:transparent; color:var(--text-muted); }
+  #findingEditor .fe-confirm{ background:var(--accent-soft-bg); border-color:var(--accent-dim); color:var(--accent-strong); font-weight:600; }
+
+  /* ---------- Right side panel ---------- */
+  #side{
+    grid-area:side;
+    background:var(--panel);
+    border-left:1px solid var(--border);
+    display:flex;
+    flex-direction:column;
+    min-height:0;
+  }
+  #tabs{
+    display:flex;
+    border-bottom:1px solid var(--border);
+    flex-shrink:0;
+  }
+  .tabbtn{
+    flex:1;
+    background:transparent;
+    border:none;
+    color:var(--text-faint);
+    padding:11px 0;
+    font-size:12.5px;
+    font-weight:600;
+    cursor:pointer;
+    border-bottom:2px solid transparent;
+    letter-spacing:0.01em;
+  }
+  .tabbtn.active{ color:var(--accent); border-bottom-color:var(--accent); }
+  .tabbtn:hover:not(.active){ color:var(--text-muted); }
+
+  .tabpanel{ display:none; flex:1; min-height:0; flex-direction:column; }
+  .tabpanel.active{ display:flex; }
+
+  #measureList{
+    flex:1;
+    overflow-y:auto;
+    padding:10px;
+    display:flex;
+    flex-direction:column;
+    gap:8px;
+  }
+  #overallSummary{
+    margin:10px 10px 0;
+    padding:12px 13px;
+    border-radius:10px;
+    background:linear-gradient(165deg, rgba(79,209,197,0.09), rgba(79,209,197,0.02));
+    border:1px solid var(--accent-dim);
+    flex-shrink:0;
+    display:none;
+  }
+  #overallSummary.show{ display:block; }
+  #overallSummary h4{
+    margin:0 0 7px;
+    font-size:11px;
+    font-weight:700;
+    letter-spacing:0.06em;
+    text-transform:uppercase;
+    color:var(--accent);
+    display:flex; align-items:center; gap:6px;
+  }
+  #overallSummary h4 svg{ width:13px; height:13px; }
+  #overallSummary p{ margin:0 0 6px; font-size:12.5px; line-height:1.65; color:var(--text); }
+  #overallSummary p:last-child{ margin-bottom:0; }
+  #overallSummary .tagrow{ display:flex; flex-wrap:wrap; gap:5px; margin-bottom:8px; }
+  .empty-state{
+    margin:auto;
+    text-align:center;
+    color:var(--text-faint);
+    font-size:12.5px;
+    padding:30px 20px;
+    display:flex; flex-direction:column; gap:10px; align-items:center;
+  }
+  .empty-state svg{ width:34px; height:34px; opacity:0.5; }
+
+  .mcard{
+    background:var(--raised);
+    border:1px solid var(--border);
+    border-radius:9px;
+    padding:10px 11px;
+    display:flex;
+    flex-direction:column;
+    gap:6px;
+  }
+  .mcard.selected{ border-color:var(--accent-dim); background:var(--raised-hover); }
+  .mcard-top{ display:flex; align-items:center; gap:8px; }
+  .mcard-swatch{ width:9px; height:9px; border-radius:50%; flex-shrink:0; }
+  .mcard-type{ font-size:11.5px; font-weight:600; color:var(--text); flex:1; }
+  .mcard-del{
+    background:transparent; border:none; color:var(--text-faint);
+    cursor:pointer; padding:2px; border-radius:4px; display:flex;
+  }
+  .mcard-del:hover{ color:var(--critical); background:rgba(242,96,122,0.1); }
+  .mcard-del svg{ width:14px; height:14px; }
+  .mcard-val{
+    font-family:var(--font-mono);
+    font-size:17px;
+    font-weight:600;
+    color:var(--accent-strong);
+    font-variant-numeric:tabular-nums;
+  }
+  .mcard-val span{ font-size:11px; color:var(--text-faint); font-weight:500; margin-left:4px; }
+  .mcard-badge{
+    align-self:flex-start;
+    font-size:10.5px;
+    font-weight:600;
+    padding:2px 8px;
+    border-radius:20px;
+    letter-spacing:0.01em;
+  }
+  .badge-good{ background:var(--good-bg); color:var(--good); }
+  .badge-warn{ background:var(--warn-bg); color:var(--warn); }
+  .badge-critical{ background:var(--critical-bg); color:var(--critical); }
+  .mcard-note{ font-size:11px; color:var(--text-muted); line-height:1.5; }
+
+  #sideFooter{
+    border-top:1px solid var(--border);
+    padding:10px;
+    display:flex;
+    flex-direction:column;
+    gap:8px;
+    flex-shrink:0;
+  }
+  .footbtn{
+    display:flex; align-items:center; justify-content:center; gap:7px;
+    background:var(--raised);
+    border:1px solid var(--border);
+    color:var(--text);
+    padding:9px 0;
+    border-radius:8px;
+    font-size:12.5px;
+    font-weight:500;
+    cursor:pointer;
+  }
+  .footbtn:hover{ background:var(--raised-hover); }
+  .footbtn svg{ width:14px; height:14px; }
+  .footrow{ display:flex; gap:8px; }
+  .footrow .footbtn{ flex:1; }
+
+  #infoPanel{ padding:16px; overflow-y:auto; font-size:12.5px; line-height:1.7; color:var(--text-muted); flex:1; }
+  #infoPanel h3{ font-size:12.5px; color:var(--text); margin:18px 0 6px; }
+  #infoPanel h3:first-child{ margin-top:0; }
+  #infoPanel .refrow{ display:flex; justify-content:space-between; gap:8px; padding:5px 0; border-bottom:1px dashed var(--border-soft); font-family:var(--font-mono); font-size:11.5px; }
+  #infoPanel .refrow .rlabel{ font-family:var(--font-ui); color:var(--text-muted); }
+  #infoPanel .refrow.guide{ flex-direction:column; gap:3px; font-family:var(--font-ui); font-size:12px; }
+  #infoPanel .refrow.guide .rlabel{ font-weight:600; color:var(--text); }
+  #infoPanel .refrow.guide span:last-child{ color:var(--text-muted); line-height:1.6; }
+
+  /* ---------- Bottom disclaimer bar ---------- */
+  #discbar{
+    grid-area:bar;
+    background:#0d1015;
+    border-top:1px solid var(--border);
+    display:flex;
+    align-items:center;
+    gap:8px;
+    padding:0 14px;
+    font-size:10.5px;
+    color:var(--text-faint);
+  }
+  #discbar svg{ width:12px; height:12px; flex-shrink:0; color:var(--warn); }
+  #discbar b{ color:var(--text-muted); font-weight:600; }
+
+  #fileInput{ display:none; }
+
+  .hidden{ display:none !important; }
+
+  #toast{
+    position:absolute; left:50%; bottom:44px; transform:translateX(-50%) translateY(10px);
+    background:#05070a;
+    border:1px solid var(--border);
+    color:var(--text);
+    padding:9px 16px;
+    border-radius:8px;
+    font-size:12.5px;
+    opacity:0;
+    pointer-events:none;
+    transition:opacity .18s ease, transform .18s ease;
+    z-index:80;
+    max-width:70%;
+    text-align:center;
+  }
+  #toast.show{ opacity:1; transform:translateX(-50%) translateY(0); }
+
+  #draftHint{
+    position:absolute; left:50%; top:14px; transform:translateX(-50%);
+    background:rgba(15,19,26,0.9);
+    border:1px solid var(--border);
+    color:var(--text-muted);
+    padding:6px 13px;
+    border-radius:20px;
+    font-size:11.5px;
+    display:none;
+    align-items:center;
+    gap:8px;
+  }
+  #draftHint.show{ display:flex; }
+  #draftHint kbd{
+    background:var(--raised);
+    border:1px solid var(--border);
+    border-radius:4px;
+    padding:1px 5px;
+    font-family:var(--font-mono);
+    font-size:10.5px;
+  }
+</style>
+
+<div id="app">
+  <div id="topbar">
+    <div class="brand">
+      <span class="mark"><svg viewBox="0 0 24 24" fill="none"><path d="M4 12h4l2-7 4 14 2-7h4" stroke="#06171a" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+      체형영상 측정기 <small>근골격계 소견 · 내부 참고용</small>
+    </div>
+    <button class="topbtn primary" id="btnOpen">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+      영상 불러오기
+    </button>
+    <span id="filename"></span>
+    <div class="spacer"></div>
+    <button class="topbtn" id="btnFit" data-tip="화면에 맞추기">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
+      맞춤
+    </button>
+  </div>
+
+  <div id="rail"></div>
+
+  <div id="stage">
+    <div id="imgWrap">
+      <canvas id="imgCanvas" width="10" height="10"></canvas>
+      <canvas id="edgeCanvas" width="10" height="10"></canvas>
+      <canvas id="overlayCanvas" width="10" height="10"></canvas>
+    </div>
+    <div id="dropHint">
+      <div class="dropicon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="M21 15l-5-5L5 21"/></svg></div>
+      <b>X-ray · CT · 초음파 · MRI 영상을 불러오세요</b>
+      <span>JPG, PNG 또는 DICOM(.dcm) 파일을 드래그하거나 클릭해서 여세요</span>
+    </div>
+    <div id="wlPanel">
+      <h4 id="wlTitle">윈도우 레벨 / 폭</h4>
+      <div class="slider-row">
+        <div class="lbl"><span>Level (밝기 중심)</span><b id="wcVal">0</b></div>
+        <input type="range" id="wcSlider" min="0" max="100" value="50">
+      </div>
+      <div class="slider-row">
+        <div class="lbl"><span>Width (대비 폭)</span><b id="wwVal">0</b></div>
+        <input type="range" id="wwSlider" min="0" max="100" value="50">
+      </div>
+      <div class="wl-actions">
+        <button class="miniBtn" id="wlReset">기본값</button>
+        <button class="miniBtn" id="wlInvert">반전</button>
+      </div>
+      <div class="wl-divider"></div>
+      <h4>시각 강조 필터</h4>
+      <div class="wl-actions" id="presetRow">
+        <button class="miniBtn" id="presetBone">골 강조</button>
+        <button class="miniBtn" id="presetSoft">연부조직 강조</button>
+      </div>
+      <button class="miniBtn edgeToggle" id="edgeToggle">경계선 강조 보기</button>
+      <div class="wl-hint">구조 윤곽선을 시각적으로 강조할 뿐, 질환을 판별·표시하지 않습니다.</div>
+    </div>
+    <div id="calibBox">
+      <span>기준선의 실제 길이를 입력하세요:</span>
+      <input type="number" id="calibInput" placeholder="예: 100" step="0.1">
+      <span style="color:var(--text-faint)">mm</span>
+      <button id="calibConfirm">확인</button>
+    </div>
+    <div id="labelEditor"><input type="text" id="labelInput" placeholder="라벨 입력 후 Enter" maxlength="40"></div>
+    <div id="findingEditor">
+      <div class="fe-title">관찰 소견 기록</div>
+      <select id="feCategory">
+        <option value="fracture">골절 의심</option>
+        <option value="stressFracture">미세골절 · 피로골절 의심</option>
+        <option value="inflammation">염증 소견 (부종 · 삼출)</option>
+        <option value="muscleInjury">근육 · 연부조직 손상 의심</option>
+        <option value="swelling">붓기 (연부조직 종창)</option>
+        <option value="other">기타 소견</option>
+      </select>
+      <div id="feChecklist" class="fe-checklist"></div>
+      <div class="fe-title" style="margin-top:2px">담당자 종합 판단</div>
+      <div class="fe-levels">
+        <button type="button" class="fe-level" data-level="low">의심 낮음</button>
+        <button type="button" class="fe-level" data-level="mid">의심 보통</button>
+        <button type="button" class="fe-level" data-level="high">의심 높음</button>
+      </div>
+      <input type="text" id="feNote" placeholder="메모 (선택)" maxlength="60">
+      <div class="fe-actions">
+        <button type="button" class="fe-cancel" id="feCancel">취소</button>
+        <button type="button" class="fe-confirm" id="feConfirm">태그 추가</button>
+      </div>
+    </div>
+    <div id="draftHint"></div>
+    <div id="readout"></div>
+    <div id="toast"></div>
+  </div>
+
+  <div id="side">
+    <div id="tabs">
+      <button class="tabbtn active" data-tab="measure">측정 기록</button>
+      <button class="tabbtn" data-tab="info">참고 기준</button>
+    </div>
+    <div class="tabpanel active" id="tab-measure">
+      <div id="overallSummary"></div>
+      <div id="measureList"></div>
+      <div id="sideFooter">
+        <div class="footrow" id="cmsRow" style="display:none">
+          <button class="footbtn" id="btnSendCms" style="background:var(--accent);color:#06171a;font-weight:700">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v16H4z"/><path d="M4 9h16"/><path d="M9 21V9"/></svg>
+            CMS로 전송 · 회원 기록에 저장
+          </button>
+        </div>
+        <div class="footrow">
+          <button class="footbtn" id="btnExportPng">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+            이미지
+          </button>
+          <button class="footbtn" id="btnExportReport">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+            리포트
+          </button>
+        </div>
+        <div class="footrow">
+          <button class="footbtn" id="btnSaveJson">세션 저장</button>
+          <button class="footbtn" id="btnLoadJson">세션 불러오기</button>
+        </div>
+      </div>
+    </div>
+    <div class="tabpanel" id="tab-info">
+      <div id="infoPanel"></div>
+    </div>
+  </div>
+
+  <div id="discbar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+    <b>내부 참고용 도구입니다.</b> 의료기기 인증을 받지 않았으며 자동 판독이 아닌 담당자가 입력한 측정값 기반의 참고 소견입니다 · 실제 진단·처방이 필요한 사례는 반드시 의료기관 확인을 거치세요.
+  </div>
+</div>
+
+<input type="file" id="fileInput" accept=".dcm,.dicom,image/png,image/jpeg,image/jpg">
+<input type="file" id="jsonInput" accept=".json" class="hidden">
+
+<script>
+/* Vendor: dicom-parser (MIT) — https://github.com/cornerstonejs/dicomParser */
+/*! dicom-parser - 1.8.12 - 2023-02-20 | (c) 2017 Chris Hafey | https://github.com/cornerstonejs/dicomParser */
+!function(e,t){"object"==typeof exports&&"object"==typeof module?module.exports=t(require("zlib")):"function"==typeof define&&define.amd?define("dicom-parser",["zlib"],t):"object"==typeof exports?exports["dicom-parser"]=t(require("zlib")):e.dicomParser=t(e.zlib)}(this,function(r){return a=[function(e,t){e.exports=r},function(e,t,s){"use strict";s.r(t),s.d(t,"isStringVr",function(){return d}),s.d(t,"isPrivateTag",function(){return f}),s.d(t,"parsePN",function(){return a}),s.d(t,"parseTM",function(){return n}),s.d(t,"parseDA",function(){return o}),s.d(t,"explicitElementToString",function(){return l}),s.d(t,"explicitDataSetToJS",function(){return u}),s.d(t,"createJPEGBasicOffsetTable",function(){return p}),s.d(t,"parseDicomDataSetExplicit",function(){return q}),s.d(t,"parseDicomDataSetImplicit",function(){return T}),s.d(t,"readFixedString",function(){return b}),s.d(t,"alloc",function(){return k}),s.d(t,"version",function(){return L}),s.d(t,"bigEndianByteArrayParser",function(){return N}),s.d(t,"ByteStream",function(){return J}),s.d(t,"sharedCopy",function(){return j}),s.d(t,"DataSet",function(){return w}),s.d(t,"findAndSetUNElementLength",function(){return y}),s.d(t,"findEndOfEncapsulatedElement",function(){return g}),s.d(t,"findItemDelimitationItemAndSetElementLength",function(){return x}),s.d(t,"littleEndianByteArrayParser",function(){return M}),s.d(t,"parseDicom",function(){return V}),s.d(t,"readDicomElementExplicit",function(){return B}),s.d(t,"readDicomElementImplicit",function(){return A}),s.d(t,"readEncapsulatedImageFrame",function(){return W}),s.d(t,"readEncapsulatedPixelData",function(){return K}),s.d(t,"readEncapsulatedPixelDataFromFragments",function(){return _}),s.d(t,"readPart10Header",function(){return G}),s.d(t,"readSequenceItemsExplicit",function(){return I}),s.d(t,"readSequenceItemsImplicit",function(){return F}),s.d(t,"readSequenceItem",function(){return S}),s.d(t,"readTag",function(){return h});var r={AE:!0,AS:!0,AT:!1,CS:!0,DA:!0,DS:!0,DT:!0,FL:!1,FD:!1,IS:!0,LO:!0,LT:!0,OB:!1,OD:!1,OF:!1,OW:!1,PN:!0,SH:!0,SL:!1,SQ:!1,SS:!1,ST:!0,TM:!0,UI:!0,UL:!1,UN:void 0,UR:!0,US:!1,UT:!0},d=function(e){return r[e]},f=function(e){e=parseInt(e[4],16);if(isNaN(e))throw"dicomParser.isPrivateTag: cannot parse last character of group";return e%2==1},a=function(e){if(void 0!==e){e=e.split("^");return{familyName:e[0],givenName:e[1],middleName:e[2],prefix:e[3],suffix:e[4]}}};function n(e,t){if(2<=e.length){var r=parseInt(e.substring(0,2),10),a=4<=e.length?parseInt(e.substring(2,4),10):void 0,n=6<=e.length?parseInt(e.substring(4,6),10):void 0,i=8<=e.length?e.substring(7,13):void 0,i=i?parseInt(i,10)*Math.pow(10,6-i.length):void 0;if(t&&(isNaN(r)||void 0!==a&&isNaN(a)||void 0!==n&&isNaN(n)||void 0!==i&&isNaN(i)||r<0||23<r||a&&(a<0||59<a)||n&&(n<0||59<n)||i&&(i<0||999999<i)))throw"invalid TM '".concat(e,"'");return{hours:r,minutes:a,seconds:n,fractionalSeconds:i}}if(t)throw"invalid TM '".concat(e,"'")}function i(e,t,r){return!isNaN(r)&&(0<t&&t<=12&&0<e&&e<=function(e,t){switch(e){case 2:return t%4==0&&t%100||t%400==0?29:28;case 9:case 4:case 6:case 11:return 30;default:return 31}}(t,r))}function o(e,t){if(e&&8===e.length){var r=parseInt(e.substring(0,4),10),a=parseInt(e.substring(4,6),10),n=parseInt(e.substring(6,8),10);if(t&&!0!==i(n,a,r))throw"invalid DA '".concat(e,"'");return{year:r,month:a,day:n}}if(t)throw"invalid DA '".concat(e,"'")}function l(n,e){if(void 0===n||void 0===e)throw"dicomParser.explicitElementToString: missing required parameters";if(void 0===e.vr)throw"dicomParser.explicitElementToString: cannot convert implicit element to string";var t,r=e.vr,i=e.tag;function a(e,t){for(var r="",a=0;a<e;a++)0!==a&&(r+="/"),r+=t.call(n,i,a).toString();return r}if(!0===d(r))t=n.string(i);else{if("AT"===r){var o=n.uint32(i);return void 0===o?void 0:"x".concat((o=o<0?4294967295+o+1:o).toString(16).toUpperCase())}"US"===r?t=a(e.length/2,n.uint16):"SS"===r?t=a(e.length/2,n.int16):"UL"===r?t=a(e.length/4,n.uint32):"SL"===r?t=a(e.length/4,n.int32):"FD"===r?t=a(e.length/8,n.double):"FL"===r&&(t=a(e.length/4,n.float))}return t}function u(e,t){if(void 0===e)throw"dicomParser.explicitDataSetToJS: missing required parameter dataSet";t=t||{omitPrivateAttibutes:!0,maxElementLength:128};var r,a={};for(r in e.elements){var n=e.elements[r];if(!0!==t.omitPrivateAttibutes||!f(r))if(n.items){for(var i=[],o=0;o<n.items.length;o++)i.push(u(n.items[o].dataSet,t));a[r]=i}else{var s=void 0;n.length<t.maxElementLength&&(s=l(e,n)),a[r]=void 0!==s?s:{dataOffset:n.dataOffset,length:n.length}}}return a}function c(e,t){return 255===e.byteArray[t]&&217===e.byteArray[t+1]}function m(e,t,r){for(var a,n,i=r;i<t.fragments.length;i++)if(a=e,n=i,n=t.fragments[n],!(!c(a,n.position+n.length-2)&&!c(a,n.position+n.length-3)))return i}function p(e,t,r){if(void 0===e)throw"dicomParser.createJPEGBasicOffsetTable: missing required parameter dataSet";if(void 0===t)throw"dicomParser.createJPEGBasicOffsetTable: missing required parameter pixelDataElement";if("x7fe00010"!==t.tag)throw"dicomParser.createJPEGBasicOffsetTable: parameter 'pixelDataElement' refers to non pixel data tag (expected tag = x7fe00010'";if(!0!==t.encapsulatedPixelData)throw"dicomParser.createJPEGBasicOffsetTable: parameter 'pixelDataElement' refers to pixel data element that does not have encapsulated pixel data";if(!0!==t.hadUndefinedLength)throw"dicomParser.createJPEGBasicOffsetTable: parameter 'pixelDataElement' refers to pixel data element that does not have encapsulated pixel data";if(void 0===t.basicOffsetTable)throw"dicomParser.createJPEGBasicOffsetTable: parameter 'pixelDataElement' refers to pixel data element that does not have encapsulated pixel data";if(void 0===t.fragments)throw"dicomParser.createJPEGBasicOffsetTable: parameter 'pixelDataElement' refers to pixel data element that does not have encapsulated pixel data";if(t.fragments.length<=0)throw"dicomParser.createJPEGBasicOffsetTable: parameter 'pixelDataElement' refers to pixel data element that does not have encapsulated pixel data";if(r&&r.length<=0)throw"dicomParser.createJPEGBasicOffsetTable: parameter 'fragments' must not be zero length";r=r||t.fragments;for(var a=[],n=0;;){a.push(t.fragments[n].offset);var i=m(e,t,n);if(void 0===i||i===t.fragments.length-1)return a;n=i+1}}function h(e){if(void 0===e)throw"dicomParser.readTag: missing required parameter 'byteStream'";var t=256*e.readUint16()*256,e=e.readUint16();return"x".concat("00000000".concat((t+e).toString(16)).substr(-8))}function g(e,t,r){if(void 0===e)throw"dicomParser.findEndOfEncapsulatedElement: missing required parameter 'byteStream'";if(void 0===t)throw"dicomParser.findEndOfEncapsulatedElement: missing required parameter 'element'";if(t.encapsulatedPixelData=!0,t.basicOffsetTable=[],t.fragments=[],"xfffee000"!==h(e))throw"dicomParser.findEndOfEncapsulatedElement: basic offset table not found";for(var a=e.readUint32()/4,n=0;n<a;n++){var i=e.readUint32();t.basicOffsetTable.push(i)}for(var o=e.position;e.position<e.byteArray.length;){var s=h(e),d=e.readUint32();if("xfffee0dd"===s)return e.seek(d),void(t.length=e.position-t.dataOffset);if("xfffee000"!==s)return r&&r.push("unexpected tag ".concat(s," while searching for end of pixel data element with undefined length")),d>e.byteArray.length-e.position&&(d=e.byteArray.length-e.position),t.fragments.push({offset:e.position-o-8,position:e.position,length:d}),e.seek(d),void(t.length=e.position-t.dataOffset);t.fragments.push({offset:e.position-o-8,position:e.position,length:d}),e.seek(d)}r&&r.push("pixel data element ".concat(t.tag," missing sequence delimiter tag xfffee0dd"))}function y(e,t){if(void 0===e)throw"dicomParser.findAndSetUNElementLength: missing required parameter 'byteStream'";for(var r=e.byteArray.length-8;e.position<=r;)if(65534===e.readUint16()){var a=e.readUint16();if(57565===a)return 0!==e.readUint32()&&e.warnings("encountered non zero length following item delimiter at position ".concat(e.position-4," while reading element of undefined length with tag ").concat(t.tag)),void(t.length=e.position-t.dataOffset)}t.length=e.byteArray.length-t.dataOffset,e.seek(e.byteArray.length-e.position)}function b(e,t,r){if(r<0)throw"dicomParser.readFixedString - length cannot be less than 0";if(t+r>e.length)throw"dicomParser.readFixedString: attempt to read past end of buffer";for(var a,n="",i=0;i<r;i++){if(0===(a=e[t+i]))return t+=r,n;n+=String.fromCharCode(a)}return n}function v(e,t){for(var r=0;r<t.length;r++){var a=t[r];a.enumerable=a.enumerable||!1,a.configurable=!0,"value"in a&&(a.writable=!0),Object.defineProperty(e,a.key,a)}}function P(e,t){return void 0!==e.parser?e.parser:t}var w=function(){function a(e,t,r){!function(e,t){if(!(e instanceof t))throw new TypeError("Cannot call a class as a function")}(this,a),this.byteArrayParser=e,this.byteArray=t,this.elements=r}var e,t,r;return e=a,(t=[{key:"uint16",value:function(e,t){e=this.elements[e];if(t=void 0!==t?t:0,e&&0!==e.length)return P(e,this.byteArrayParser).readUint16(this.byteArray,e.dataOffset+2*t)}},{key:"int16",value:function(e,t){e=this.elements[e];if(t=void 0!==t?t:0,e&&0!==e.length)return P(e,this.byteArrayParser).readInt16(this.byteArray,e.dataOffset+2*t)}},{key:"uint32",value:function(e,t){e=this.elements[e];if(t=void 0!==t?t:0,e&&0!==e.length)return P(e,this.byteArrayParser).readUint32(this.byteArray,e.dataOffset+4*t)}},{key:"int32",value:function(e,t){e=this.elements[e];if(t=void 0!==t?t:0,e&&0!==e.length)return P(e,this.byteArrayParser).readInt32(this.byteArray,e.dataOffset+4*t)}},{key:"float",value:function(e,t){e=this.elements[e];if(t=void 0!==t?t:0,e&&0!==e.length)return P(e,this.byteArrayParser).readFloat(this.byteArray,e.dataOffset+4*t)}},{key:"double",value:function(e,t){e=this.elements[e];if(t=void 0!==t?t:0,e&&0!==e.length)return P(e,this.byteArrayParser).readDouble(this.byteArray,e.dataOffset+8*t)}},{key:"numStringValues",value:function(e){e=this.elements[e];if(e&&0<e.length){e=b(this.byteArray,e.dataOffset,e.length).match(/\\/g);return null===e?1:e.length+1}}},{key:"string",value:function(e,t){e=this.elements[e];if(e&&e.Value)return e.Value;if(e&&0<e.length){e=b(this.byteArray,e.dataOffset,e.length);return 0<=t?e.split("\\")[t].trim():e.trim()}}},{key:"text",value:function(e,t){e=this.elements[e];if(e&&0<e.length){e=b(this.byteArray,e.dataOffset,e.length);return 0<=t?e.split("\\")[t].replace(/ +$/,""):e.replace(/ +$/,"")}}},{key:"floatString",value:function(e,t){var r=this.elements[e];if(r&&0<r.length){t=this.string(e,t=void 0!==t?t:0);if(void 0!==t)return parseFloat(t)}}},{key:"intString",value:function(e,t){var r=this.elements[e];if(r&&0<r.length){t=this.string(e,t=void 0!==t?t:0);if(void 0!==t)return parseInt(t)}}},{key:"attributeTag",value:function(e){var t=this.elements[e];if(t&&4===t.length){var r=P(t,this.byteArrayParser).readUint16,e=this.byteArray,t=t.dataOffset;return"x".concat("00000000".concat((256*r(e,t)*256+r(e,t+2)).toString(16)).substr(-8))}}}])&&v(e.prototype,t),r&&v(e,r),Object.defineProperty(e,"prototype",{writable:!1}),a}();function x(e,t){if(void 0===e)throw"dicomParser.readDicomElementImplicit: missing required parameter 'byteStream'";for(var r=e.byteArray.length-8;e.position<=r;)if(65534===e.readUint16()){var a=e.readUint16();if(57357===a)return 0!==e.readUint32()&&e.warnings("encountered non zero length following item delimiter at position ".concat(e.position-4," while reading element of undefined length with tag ").concat(t.tag)),void(t.length=e.position-t.dataOffset)}t.length=e.byteArray.length-t.dataOffset,e.seek(e.byteArray.length-e.position)}var E=function(e,t){if(void 0!==e.vr)return"SQ"===e.vr;if(t.position+4<=t.byteArray.length){e=h(t);return t.seek(-4),"xfffee000"===e||"xfffee0dd"===e}return t.warnings.push("eof encountered before finding sequence item tag or sequence delimiter tag in peeking to determine VR"),!1};function A(e,t,r){if(void 0===e)throw"dicomParser.readDicomElementImplicit: missing required parameter 'byteStream'";var a=h(e),a={tag:a,vr:void 0!==r?r(a):void 0,length:e.readUint32(),dataOffset:e.position};return 4294967295===a.length&&(a.hadUndefinedLength=!0),a.tag===t||(!E(a,e)||f(a.tag)&&!a.hadUndefinedLength?a.hadUndefinedLength?x(e,a):e.seek(a.length):(F(e,a,r),f(a.tag)&&(a.items=void 0))),a}function S(e){if(void 0===e)throw"dicomParser.readSequenceItem: missing required parameter 'byteStream'";var t={tag:h(e),length:e.readUint32(),dataOffset:e.position};if("xfffee000"!==t.tag)throw"dicomParser.readSequenceItem: item tag (FFFE,E000) not found at offset ".concat(e.position);return t}function D(e,t){var r=S(e);return 4294967295===r.length?(r.hadUndefinedLength=!0,r.dataSet=function(e,t){for(var r={};e.position<e.byteArray.length;){var a=A(e,void 0,t);if("xfffee00d"===(r[a.tag]=a).tag)return new w(e.byteArrayParser,e.byteArray,r)}return e.warnings.push("eof encountered before finding sequence item delimiter in sequence item of undefined length"),new w(e.byteArrayParser,e.byteArray,r)}(e,t),r.length=e.position-r.dataOffset):(r.dataSet=new w(e.byteArrayParser,e.byteArray,{}),T(r.dataSet,e,e.position+r.length,{vrCallback:t})),r}function F(e,t,r){if(void 0===e)throw"dicomParser.readSequenceItemsImplicit: missing required parameter 'byteStream'";if(void 0===t)throw"dicomParser.readSequenceItemsImplicit: missing required parameter 'element'";t.items=[],(4294967295===t.length?function(e,t,r){for(;e.position+4<=e.byteArray.length;){var a=h(e);if(e.seek(-4),"xfffee0dd"===a)return t.length=e.position-t.dataOffset,e.seek(8);a=D(e,r);t.items.push(a)}e.warnings.push("eof encountered before finding sequence delimiter in sequence of undefined length"),t.length=e.byteArray.length-t.dataOffset}:function(e,t,r){for(var a=t.dataOffset+t.length;e.position<a;){var n=D(e,r);t.items.push(n)}})(e,t,r)}function O(e,t){var r=S(e);return 4294967295===r.length?(r.hadUndefinedLength=!0,r.dataSet=function(e,t){for(var r={};e.position<e.byteArray.length;){var a=B(e,t);if("xfffee00d"===(r[a.tag]=a).tag)return new w(e.byteArrayParser,e.byteArray,r)}return t.push("eof encountered before finding item delimiter tag while reading sequence item of undefined length"),new w(e.byteArrayParser,e.byteArray,r)}(e,t),r.length=e.position-r.dataOffset):(r.dataSet=new w(e.byteArrayParser,e.byteArray,{}),q(r.dataSet,e,e.position+r.length)),r}function I(e,t,r){if(void 0===e)throw"dicomParser.readSequenceItemsExplicit: missing required parameter 'byteStream'";if(void 0===t)throw"dicomParser.readSequenceItemsExplicit: missing required parameter 'element'";t.items=[],(4294967295===t.length?function(e,t,r){for(;e.position+4<=e.byteArray.length;){var a=h(e);if(e.seek(-4),"xfffee0dd"===a)return t.length=e.position-t.dataOffset,e.seek(8);a=O(e,r);t.items.push(a)}r.push("eof encountered before finding sequence delimitation tag while reading sequence of undefined length"),t.length=e.position-t.dataOffset}:function(e,t,r){for(var a=t.dataOffset+t.length;e.position<a;){var n=O(e,r);t.items.push(n)}})(e,t,r)}var U=function(e){return"OB"===e||"OD"===e||"OL"===e||"OW"===e||"SQ"===e||"OF"===e||"UC"===e||"UR"===e||"UT"===e||"UN"===e?4:2};function B(e,t,r){if(void 0===e)throw"dicomParser.readDicomElementExplicit: missing required parameter 'byteStream'";var a={tag:h(e),vr:e.readFixedString(2)};return 2===U(a.vr)?a.length=e.readUint16():(e.seek(2),a.length=e.readUint32()),a.dataOffset=e.position,4294967295===a.length&&(a.hadUndefinedLength=!0),a.tag===r||("SQ"===a.vr?I(e,a,t):4294967295===a.length?"x7fe00010"===a.tag?g(e,a,t):("UN"===a.vr?F:x)(e,a):e.seek(a.length)),a}function q(e,t,r){var a=3<arguments.length&&void 0!==arguments[3]?arguments[3]:{};if(r=void 0===r?t.byteArray.length:r,void 0===t)throw"dicomParser.parseDicomDataSetExplicit: missing required parameter 'byteStream'";if(r<t.position||r>t.byteArray.length)throw"dicomParser.parseDicomDataSetExplicit: invalid value for parameter 'maxP osition'";for(var n=e.elements;t.position<r;){var i=B(t,e.warnings,a.untilTag);if((n[i.tag]=i).tag===a.untilTag)return}if(t.position>r)throw"dicomParser:parseDicomDataSetExplicit: buffer overrun"}function T(e,t,r){var a=3<arguments.length&&void 0!==arguments[3]?arguments[3]:{};if(r=void 0===r?e.byteArray.length:r,void 0===t)throw"dicomParser.parseDicomDataSetImplicit: missing required parameter 'byteStream'";if(r<t.position||r>t.byteArray.length)throw"dicomParser.parseDicomDataSetImplicit: invalid value for parameter 'maxPosition'";for(var n=e.elements;t.position<r;){var i=A(t,a.untilTag,a.vrCallback);if((n[i.tag]=i).tag===a.untilTag)return}}function k(e,t){if("undefined"!=typeof Buffer&&e instanceof Buffer)return Buffer.alloc(t);if(e instanceof Uint8Array)return new Uint8Array(t);throw"dicomParser.alloc: unknown type for byteArray"}var L="1.8.12",N={readUint16:function(e,t){if(t<0)throw"bigEndianByteArrayParser.readUint16: position cannot be less than 0";if(t+2>e.length)throw"bigEndianByteArrayParser.readUint16: attempt to read past end of buffer";return(e[t]<<8)+e[t+1]},readInt16:function(e,t){if(t<0)throw"bigEndianByteArrayParser.readInt16: position cannot be less than 0";if(t+2>e.length)throw"bigEndianByteArrayParser.readInt16: attempt to read past end of buffer";t=(e[t]<<8)+e[t+1];return t=32768&t?t-65535-1:t},readUint32:function(e,t){if(t<0)throw"bigEndianByteArrayParser.readUint32: position cannot be less than 0";if(t+4>e.length)throw"bigEndianByteArrayParser.readUint32: attempt to read past end of buffer";return 256*(256*(256*e[t]+e[t+1])+e[t+2])+e[t+3]},readInt32:function(e,t){if(t<0)throw"bigEndianByteArrayParser.readInt32: position cannot be less than 0";if(t+4>e.length)throw"bigEndianByteArrayParser.readInt32: attempt to read past end of buffer";return(e[t]<<24)+(e[t+1]<<16)+(e[t+2]<<8)+e[t+3]},readFloat:function(e,t){if(t<0)throw"bigEndianByteArrayParser.readFloat: position cannot be less than 0";if(t+4>e.length)throw"bigEndianByteArrayParser.readFloat: attempt to read past end of buffer";var r=new Uint8Array(4);return r[3]=e[t],r[2]=e[t+1],r[1]=e[t+2],r[0]=e[t+3],new Float32Array(r.buffer)[0]},readDouble:function(e,t){if(t<0)throw"bigEndianByteArrayParser.readDouble: position cannot be less than 0";if(t+8>e.length)throw"bigEndianByteArrayParser.readDouble: attempt to read past end of buffer";var r=new Uint8Array(8);return r[7]=e[t],r[6]=e[t+1],r[5]=e[t+2],r[4]=e[t+3],r[3]=e[t+4],r[2]=e[t+5],r[1]=e[t+6],r[0]=e[t+7],new Float64Array(r.buffer)[0]}};function j(e,t,r){if("undefined"!=typeof Buffer&&e instanceof Buffer)return e.slice(t,t+r);if(e instanceof Uint8Array)return new Uint8Array(e.buffer,e.byteOffset+t,r);throw"dicomParser.from: unknown type for byteArray"}function C(e,t){for(var r=0;r<t.length;r++){var a=t[r];a.enumerable=a.enumerable||!1,a.configurable=!0,"value"in a&&(a.writable=!0),Object.defineProperty(e,a.key,a)}}var J=function(){function a(e,t,r){if(!function(e,t){if(!(e instanceof t))throw new TypeError("Cannot call a class as a function")}(this,a),void 0===e)throw"dicomParser.ByteStream: missing required parameter 'byteArrayParser'";if(void 0===t)throw"dicomParser.ByteStream: missing required parameter 'byteArray'";if(t instanceof Uint8Array==!1&&("undefined"==typeof Buffer||t instanceof Buffer==!1))throw"dicomParser.ByteStream: parameter byteArray is not of type Uint8Array or Buffer";if(r<0)throw"dicomParser.ByteStream: parameter 'position' cannot be less than 0";if(r>=t.length)throw"dicomParser.ByteStream: parameter 'position' cannot be greater than or equal to 'byteArray' length";this.byteArrayParser=e,this.byteArray=t,this.position=r||0,this.warnings=[]}var e,t,r;return e=a,(t=[{key:"seek",value:function(e){if(this.position+e<0)throw"dicomParser.ByteStream.prototype.seek: cannot seek to position < 0";this.position+=e}},{key:"readByteStream",value:function(e){if(this.position+e>this.byteArray.length)throw"dicomParser.ByteStream.prototype.readByteStream: readByteStream - buffer overread";var t=j(this.byteArray,this.position,e);return this.position+=e,new a(this.byteArrayParser,t)}},{key:"getSize",value:function(){return this.byteArray.length}},{key:"readUint16",value:function(){var e=this.byteArrayParser.readUint16(this.byteArray,this.position);return this.position+=2,e}},{key:"readUint32",value:function(){var e=this.byteArrayParser.readUint32(this.byteArray,this.position);return this.position+=4,e}},{key:"readFixedString",value:function(e){var t=b(this.byteArray,this.position,e);return this.position+=e,t}}])&&C(e.prototype,t),r&&C(e,r),Object.defineProperty(e,"prototype",{writable:!1}),a}(),M={readUint16:function(e,t){if(t<0)throw"littleEndianByteArrayParser.readUint16: position cannot be less than 0";if(t+2>e.length)throw"littleEndianByteArrayParser.readUint16: attempt to read past end of buffer";return e[t]+256*e[t+1]},readInt16:function(e,t){if(t<0)throw"littleEndianByteArrayParser.readInt16: position cannot be less than 0";if(t+2>e.length)throw"littleEndianByteArrayParser.readInt16: attempt to read past end of buffer";t=e[t]+(e[t+1]<<8);return t=32768&t?t-65535-1:t},readUint32:function(e,t){if(t<0)throw"littleEndianByteArrayParser.readUint32: position cannot be less than 0";if(t+4>e.length)throw"littleEndianByteArrayParser.readUint32: attempt to read past end of buffer";return e[t]+256*e[t+1]+256*e[t+2]*256+256*e[t+3]*256*256},readInt32:function(e,t){if(t<0)throw"littleEndianByteArrayParser.readInt32: position cannot be less than 0";if(t+4>e.length)throw"littleEndianByteArrayParser.readInt32: attempt to read past end of buffer";return e[t]+(e[t+1]<<8)+(e[t+2]<<16)+(e[t+3]<<24)},readFloat:function(e,t){if(t<0)throw"littleEndianByteArrayParser.readFloat: position cannot be less than 0";if(t+4>e.length)throw"littleEndianByteArrayParser.readFloat: attempt to read past end of buffer";var r=new Uint8Array(4);return r[0]=e[t],r[1]=e[t+1],r[2]=e[t+2],r[3]=e[t+3],new Float32Array(r.buffer)[0]},readDouble:function(e,t){if(t<0)throw"littleEndianByteArrayParser.readDouble: position cannot be less than 0";if(t+8>e.length)throw"littleEndianByteArrayParser.readDouble: attempt to read past end of buffer";var r=new Uint8Array(8);return r[0]=e[t],r[1]=e[t+1],r[2]=e[t+2],r[3]=e[t+3],r[4]=e[t+4],r[5]=e[t+5],r[6]=e[t+6],r[7]=e[t+7],new Float64Array(r.buffer)[0]}};function G(e){var i=1<arguments.length&&void 0!==arguments[1]?arguments[1]:{};if(void 0===e)throw"dicomParser.readPart10Header: missing required parameter 'byteArray'";var o=i.TransferSyntaxUID,s=new J(M,e);return function(){var e=function(){if(s.getSize()<=132&&o)return!1;if(s.seek(128),"DICM"===s.readFixedString(4))return!0;if(!(i||{}).TransferSyntaxUID)throw"dicomParser.readPart10Header: DICM prefix not found at location 132 - this is not a valid DICOM P10 file.";return s.seek(0),!1}(),t=[],r={};if(!e)return s.position=0,{elements:{x00020010:{tag:"x00020010",vr:"UI",Value:o}},warnings:t};for(;s.position<s.byteArray.length;){var a=s.position,n=B(s,t);if("x0002ffff"<n.tag){s.position=a;break}n.parser=M,r[n.tag]=n}return(e=new w(s.byteArrayParser,s.byteArray,r)).warnings=s.warnings,e.position=s.position,e}()}var z="1.2.840.10008.1.2.2";function V(i){var o=1<arguments.length&&void 0!==arguments[1]?arguments[1]:{};if(void 0===i)throw new Error("dicomParser.parseDicom: missing required parameter 'byteArray'");var e,a=function(e){if(void 0===e.elements.x00020010)throw new Error("dicomParser.parseDicom: missing required meta header attribute 0002,0010");e=e.elements.x00020010;return e&&e.Value||b(i,e.dataOffset,e.length)};function t(t){var e=a(t),r="1.2.840.10008.1.2"!==e,e=function(e,t){var r="[object process]"===Object.prototype.toString.call("undefined"!=typeof process?process:0);if("1.2.840.10008.1.2.1.99"!==e)return new J(e===z?N:M,i,t);if(o&&o.inflater){e=o.inflater(i,t);return new J(M,e,0)}if(!0==r){var a=s(0),n=j(i,t,i.length-t),a=a.inflateRawSync(n),n=k(i,a.length+t);return i.copy(n,0,0,t),a.copy(n,t),new J(M,n,0)}if("undefined"==typeof pako)throw"dicomParser.parseDicom: no inflater available to handle deflate transfer syntax";return a=i.slice(t),n=pako.inflateRaw(a),(a=k(i,n.length+t)).set(i.slice(0,t),0),a.set(n,t),new J(M,a,0)}(e,t.position),t=new w(e.byteArrayParser,e.byteArray,{});t.warnings=e.warnings;try{(r?q:T)(t,e,e.byteArray.length,o)}catch(e){throw{exception:e,dataSet:t}}return t}return function(e,t){for(var r in e.elements)e.elements.hasOwnProperty(r)&&(t.elements[r]=e.elements[r]);return void 0!==e.warnings&&(t.warnings=e.warnings.concat(t.warnings)),t}(e=G(i,o),t(e))}var R=function(e,t,r){for(var a=0,n=t;n<t+r;n++)a+=e[n].length;return a};function _(e,t,r,a,n){if(n=n||t.fragments,void 0===e)throw"dicomParser.readEncapsulatedPixelDataFromFragments: missing required parameter 'dataSet'";if(void 0===t)throw"dicomParser.readEncapsulatedPixelDataFromFragments: missing required parameter 'pixelDataElement'";if(void 0===r)throw"dicomParser.readEncapsulatedPixelDataFromFragments: missing required parameter 'startFragmentIndex'";if(void 0===(a=a||1))throw"dicomParser.readEncapsulatedPixelDataFromFragments: missing required parameter 'numFragments'";if("x7fe00010"!==t.tag)throw"dicomParser.readEncapsulatedPixelDataFromFragments: parameter 'pixelDataElement' refers to non pixel data tag (expected tag = x7fe00010";if(!0!==t.encapsulatedPixelData)throw"dicomParser.readEncapsulatedPixelDataFromFragments: parameter 'pixelDataElement' refers to pixel data element that does not have encapsulated pixel data";if(!0!==t.hadUndefinedLength)throw"dicomParser.readEncapsulatedPixelDataFromFragments: parameter 'pixelDataElement' refers to pixel data element that does not have encapsulated pixel data";if(void 0===t.basicOffsetTable)throw"dicomParser.readEncapsulatedPixelDataFromFragments: parameter 'pixelDataElement' refers to pixel data element that does not have encapsulated pixel data";if(void 0===t.fragments)throw"dicomParser.readEncapsulatedPixelDataFromFragments: parameter 'pixelDataElement' refers to pixel data element that does not have encapsulated pixel data";if(t.fragments.length<=0)throw"dicomParser.readEncapsulatedPixelDataFromFragments: parameter 'pixelDataElement' refers to pixel data element that does not have encapsulated pixel data";if(r<0)throw"dicomParser.readEncapsulatedPixelDataFromFragments: parameter 'startFragmentIndex' must be >= 0";if(r>=t.fragments.length)throw"dicomParser.readEncapsulatedPixelDataFromFragments: parameter 'startFragmentIndex' must be < number of fragments";if(a<1)throw"dicomParser.readEncapsulatedPixelDataFromFragments: parameter 'numFragments' must be > 0";if(r+a>t.fragments.length)throw"dicomParser.readEncapsulatedPixelDataFromFragments: parameter 'startFragment' + 'numFragments' < number of fragments";var i=new J(e.byteArrayParser,e.byteArray,t.dataOffset),t=S(i);if("xfffee000"!==t.tag)throw"dicomParser.readEncapsulatedPixelData: missing basic offset table xfffee000";i.seek(t.length);var o=i.position;if(1===a)return j(i.byteArray,o+n[r].offset+8,n[r].length);for(var t=R(n,r,a),s=k(i.byteArray,t),d=0,f=r;f<r+a;f++)for(var l=o+n[f].offset+8,u=0;u<n[f].length;u++)s[d++]=i.byteArray[l++];return s}var H=function(e,t){for(var r=0;r<e.length;r++)if(e[r].offset===t)return r},Q=function(e,t,r,a){if(e===t.length-1)return r.length-a;for(var n=t[e+1],i=a+1;i<r.length;i++)if(r[i].offset===n)return i-a;throw"dicomParser.calculateNumberOfFragmentsForFrame: could not find fragment with offset matching basic offset table"};function W(e,t,r,a,n){if(a=a||t.basicOffsetTable,n=n||t.fragments,void 0===e)throw"dicomParser.readEncapsulatedImageFrame: missing required parameter 'dataSet'";if(void 0===t)throw"dicomParser.readEncapsulatedImageFrame: missing required parameter 'pixelDataElement'";if(void 0===r)throw"dicomParser.readEncapsulatedImageFrame: missing required parameter 'frameIndex'";if(void 0===a)throw"dicomParser.readEncapsulatedImageFrame: parameter 'pixelDataElement' does not have basicOffsetTable";if("x7fe00010"!==t.tag)throw"dicomParser.readEncapsulatedImageFrame: parameter 'pixelDataElement' refers to non pixel data tag (expected tag = x7fe00010)";if(!0!==t.encapsulatedPixelData)throw"dicomParser.readEncapsulatedImageFrame: parameter 'pixelDataElement' refers to pixel data element that does not have encapsulated pixel data";if(!0!==t.hadUndefinedLength)throw"dicomParser.readEncapsulatedImageFrame: parameter 'pixelDataElement' refers to pixel data element that does not have undefined length";if(void 0===t.fragments)throw"dicomParser.readEncapsulatedImageFrame: parameter 'pixelDataElement' refers to pixel data element that does not have fragments";if(0===a.length)throw"dicomParser.readEncapsulatedImageFrame: basicOffsetTable has zero entries";if(r<0)throw"dicomParser.readEncapsulatedImageFrame: parameter 'frameIndex' must be >= 0";if(r>=a.length)throw"dicomParser.readEncapsulatedImageFrame: parameter 'frameIndex' must be < basicOffsetTable.length";var i=a[r],i=H(n,i);if(void 0===i)throw"dicomParser.readEncapsulatedImageFrame: unable to find fragment that matches basic offset table entry";return _(e,t,i,Q(r,a,n,i),n)}var $=!1;function K(e,t,r){if($||($=!0,console&&console.log&&console.log("WARNING: dicomParser.readEncapsulatedPixelData() has been deprecated")),void 0===e)throw"dicomParser.readEncapsulatedPixelData: missing required parameter 'dataSet'";if(void 0===t)throw"dicomParser.readEncapsulatedPixelData: missing required parameter 'element'";if(void 0===r)throw"dicomParser.readEncapsulatedPixelData: missing required parameter 'frame'";if("x7fe00010"!==t.tag)throw"dicomParser.readEncapsulatedPixelData: parameter 'element' refers to non pixel data tag (expected tag = x7fe00010)";if(!0!==t.encapsulatedPixelData)throw"dicomParser.readEncapsulatedPixelData: parameter 'element' refers to pixel data element that does not have encapsulated pixel data";if(!0!==t.hadUndefinedLength)throw"dicomParser.readEncapsulatedPixelData: parameter 'element' refers to pixel data element that does not have encapsulated pixel data";if(void 0===t.basicOffsetTable)throw"dicomParser.readEncapsulatedPixelData: parameter 'element' refers to pixel data element that does not have encapsulated pixel data";if(void 0===t.fragments)throw"dicomParser.readEncapsulatedPixelData: parameter 'element' refers to pixel data element that does not have encapsulated pixel data";if(r<0)throw"dicomParser.readEncapsulatedPixelData: parameter 'frame' must be >= 0";return 0!==t.basicOffsetTable.length?W(e,t,r):_(e,t,0,t.fragments.length)}t.default={isStringVr:d,isPrivateTag:f,parsePN:a,parseTM:n,parseDA:o,explicitElementToString:l,explicitDataSetToJS:u,createJPEGBasicOffsetTable:p,parseDicomDataSetExplicit:q,parseDicomDataSetImplicit:T,readFixedString:b,alloc:k,version:L,bigEndianByteArrayParser:N,ByteStream:J,sharedCopy:j,DataSet:w,findAndSetUNElementLength:y,findEndOfEncapsulatedElement:g,findItemDelimitationItemAndSetElementLength:x,littleEndianByteArrayParser:M,parseDicom:V,readDicomElementExplicit:B,readDicomElementImplicit:A,readEncapsulatedImageFrame:W,readEncapsulatedPixelData:K,readEncapsulatedPixelDataFromFragments:_,readPart10Header:G,readSequenceItemsExplicit:I,readSequenceItemsImplicit:F,readSequenceItem:S,readTag:h,LEI:"1.2.840.10008.1.2",LEE:"1.2.840.10008.1.2.1"}}],i={},n.m=a,n.c=i,n.d=function(e,t,r){n.o(e,t)||Object.defineProperty(e,t,{enumerable:!0,get:r})},n.r=function(e){"undefined"!=typeof Symbol&&Symbol.toStringTag&&Object.defineProperty(e,Symbol.toStringTag,{value:"Module"}),Object.defineProperty(e,"__esModule",{value:!0})},n.t=function(t,e){if(1&e&&(t=n(t)),8&e)return t;if(4&e&&"object"==typeof t&&t&&t.__esModule)return t;var r=Object.create(null);if(n.r(r),Object.defineProperty(r,"default",{enumerable:!0,value:t}),2&e&&"string"!=typeof t)for(var a in t)n.d(r,a,function(e){return t[e]}.bind(null,a));return r},n.n=function(e){var t=e&&e.__esModule?function(){return e.default}:function(){return e};return n.d(t,"a",t),t},n.o=function(e,t){return Object.prototype.hasOwnProperty.call(e,t)},n.p="",n(n.s=1);function n(e){if(i[e])return i[e].exports;var t=i[e]={i:e,l:!1,exports:{}};return a[e].call(t.exports,t,t.exports,n),t.l=!0,t.exports}var a,i});
+//# sourceMappingURL=dicomParser.min.js.map</script>
+<script>
+(function(){
+'use strict';
+
+/* ============================== ICONS ============================== */
+const ICONS = {
+  select: '<path d="M4 4l6.5 16 2-6.5L19 11z"/>',
+  pan: '<path d="M12 2v20M2 12h20M6 6l-3 3 3 3M18 6l3 3-3 3M6 18l-3-3 3-3M18 18l3-3-3-3"/>',
+  calibrate: '<path d="M3 17L17 3l4 4L7 21z"/><path d="M13 6l2 2M9 10l2 2M5 14l2 2"/>',
+  distance: '<circle cx="5" cy="19" r="1.6"/><circle cx="19" cy="5" r="1.6"/><line x1="6.3" y1="17.7" x2="17.7" y2="6.3"/>',
+  angle: '<path d="M4 20h16"/><path d="M4 20L16 6"/><path d="M8.5 20a7.5 7.5 0 0 1 2-5.3" stroke-dasharray="2.2 2.2"/>',
+  cobb: '<line x1="4" y1="7" x2="12" y2="9"/><line x1="4" y1="18" x2="12" y2="16"/><line x1="12" y1="9" x2="20" y2="4" stroke-dasharray="2 2"/><line x1="12" y1="16" x2="20" y2="21" stroke-dasharray="2 2"/>',
+  pelvic: '<line x1="3" y1="12" x2="21" y2="12" stroke-dasharray="2.2 2.2"/><line x1="5" y1="16" x2="19" y2="8"/><circle cx="5" cy="16" r="1.6"/><circle cx="19" cy="8" r="1.6"/>',
+  point: '<path d="M12 22s7-7.58 7-12a7 7 0 1 0-14 0c0 4.42 7 12 7 12z"/><circle cx="12" cy="10" r="2.2"/>',
+  text: '<path d="M4 5h16M12 5v14M9 19h6"/>',
+  freehand: '<path d="M3 21l4-1 12-12-3-3L4 17z"/><path d="M14 5l3 3"/>',
+  cva: '<circle cx="17" cy="6" r="2.3"/><line x1="15.2" y1="7.8" x2="7" y2="17"/><circle cx="7" cy="17" r="1.6"/><line x1="3" y1="17" x2="12" y2="17" stroke-dasharray="2 2"/>',
+  shoulder: '<path d="M12 3v4"/><line x1="4" y1="10" x2="20" y2="10" stroke-dasharray="2.2 2.2"/><line x1="6" y1="8" x2="18" y2="12"/><circle cx="6" cy="8" r="1.6"/><circle cx="18" cy="12" r="1.6"/>',
+  leglength: '<line x1="7" y1="4" x2="7" y2="20"/><line x1="17" y1="9" x2="17" y2="20"/><line x1="3" y1="20" x2="21" y2="20"/><line x1="4" y1="4" x2="10" y2="4" stroke-dasharray="2 2"/>',
+  kneeAlign: '<path d="M6 4l6 10 6 6"/><path d="M12.5 14.5a4.5 4.5 0 0 1 3.3-1" stroke-dasharray="2 2"/>',
+  finding: '<circle cx="12" cy="12" r="9"/><line x1="12" y1="7.5" x2="12" y2="13"/><circle cx="12" cy="16.2" r="0.9" fill="currentColor" stroke="none"/>',
+  trash: '<polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>',
+  clipboard: '<rect x="6" y="3" width="12" height="4" rx="1"/><path d="M9 5H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-3"/><path d="M9 12h6M9 16h6"/>'
+};
+
+const FINDING_CATEGORIES = {
+  fracture:'골절 의심', stressFracture:'미세골절 · 피로골절 의심', inflammation:'염증 소견 (부종 · 삼출)',
+  muscleInjury:'근육 · 연부조직 손상 의심', swelling:'붓기 (연부조직 종창)', other:'기타 소견'
+};
+const LEVEL_META = {
+  low:{ label:'의심 낮음', css:'good', color:'#6ee7a8' },
+  mid:{ label:'의심 보통', css:'warn', color:'#f5b942' },
+  high:{ label:'의심 높음', css:'critical', color:'#f2607a' }
+};
+/* 질환(범주) 선택 후 담당자가 직접 확인·체크하는 관찰 체크리스트. 자동 판정이 아니라
+   무엇을 확인했는지 기록을 구조화하기 위한 항목입니다. */
+const CHECKLIST_ITEMS = {
+  fracture: [
+    '골 피질선의 뚜렷한 불연속이 보인다',
+    '계단형 정렬 어긋남이 보인다',
+    '주변 연부조직 종창이 동반된다',
+    '반대측(정상측) 대비 뚜렷한 차이가 있다'
+  ],
+  stressFracture: [
+    '압통 부위와 촬영 부위가 일치한다',
+    '국소 골막반응 · 경화 음영이 의심된다',
+    '반복 부하(과사용) 부위와 일치한다',
+    '영상은 정상에 가까우나 임상 증상이 지속된다'
+  ],
+  inflammation: [
+    '연부조직 음영이 증가되어 보인다',
+    '관절강 내 삼출이 의심된다',
+    '관절 주변 부종 음영이 동반된다',
+    '반대측 대비 비대칭적 음영 증가가 있다'
+  ],
+  muscleInjury: [
+    '근육 음영의 국소적 비대칭이 보인다',
+    '혈종 · 액체 저류가 의심된다',
+    '근육-건 연결부 불연속이 의심된다',
+    '해당 부위 압통 · 기능 제한과 일치한다'
+  ],
+  swelling: [
+    '연부조직 두께 증가가 보인다',
+    '피하 지방층 음영 소실 · 흐림이 있다',
+    '반대측 대비 부피 차이가 뚜렷하다'
+  ],
+  other: []
+};
+
+const TOOL_DEFS = [
+  { id:'select',    tip:'선택 / 이동',            group:1 },
+  { id:'pan',       tip:'화면 이동',              group:1 },
+  { id:'calibrate', tip:'실측 보정',              group:2 },
+  { id:'distance',  tip:'거리 측정',              group:2 },
+  { id:'angle',     tip:'각도 측정 (일반)',       group:2 },
+  { id:'cobb',      tip:'코브각(Cobb) · 척추측만', group:3 },
+  { id:'pelvic',    tip:'골반 기울기',            group:3 },
+  { id:'cva',       tip:'거북목 각도(CVA)',       group:3 },
+  { id:'shoulder',  tip:'어깨 높이 비대칭',       group:3 },
+  { id:'leglength', tip:'다리 길이차',            group:3 },
+  { id:'kneeAlign', tip:'무릎 정렬 편차',         group:3 },
+  { id:'finding',   tip:'소견 태그 (골절·염증 등)', group:4 },
+  { id:'point',     tip:'지점 표시',              group:4 },
+  { id:'text',      tip:'텍스트 메모',            group:4 },
+  { id:'freehand',  tip:'자유 그리기',            group:4 },
+];
+
+const TYPE_LABEL = {
+  distance:'거리', angle:'각도', cobb:'코브각(Cobb)', pelvic:'골반 기울기',
+  cva:'거북목 각도(CVA)', shoulder:'어깨 높이 비대칭', leglength:'다리 길이차', kneeAlign:'무릎 정렬 편차',
+  point:'지점 표시', text:'메모', freehand:'자유 그리기', finding:'소견 태그'
+};
+const TYPE_COLOR = {
+  distance:'#4fd1c5', angle:'#8ea6ff', cobb:'#c084fc', pelvic:'#38bdf8',
+  cva:'#22d3ee', shoulder:'#a5b4fc', leglength:'#5eead4', kneeAlign:'#7dd3fc',
+  point:'#f472b6', text:'#e2e8f0', freehand:'#9ca8b8', finding:'#f5b942'
+};
+const REQUIRED_POINTS = { distance:2, angle:3, cobb:4, pelvic:2, cva:2, shoulder:2, leglength:2, kneeAlign:3 };
+/* condition-group tags used for the overall-impression narrative */
+const COND_GROUP = { cobb:'spine', pelvic:'pelvis', cva:'neck', shoulder:'shoulder', leglength:'leg', kneeAlign:'knee' };
+
+/* ============================== STATE ============================== */
+const state = {
+  tool:'select',
+  image:null,
+  zoom:1, panX:0, panY:0,
+  pixelsPerMM:null, calibSource:null,
+  annotations:[],
+  selectedId:null,
+  draft:null,
+  hoverPt:null,
+  dragging:null,
+  fileName:'',
+  nextId:1,
+};
+
+let downloadsApi = null;
+if (window.claude && typeof window.claude.use === 'function') {
+  window.claude.use('downloads').then((d)=>{ downloadsApi = d; });
+}
+
+/* ============================== DOM ============================== */
+const $ = (id) => document.getElementById(id);
+const stage = $('stage');
+const imgWrap = $('imgWrap');
+const imgCanvas = $('imgCanvas');
+const edgeCanvas = $('edgeCanvas');
+const overlayCanvas = $('overlayCanvas');
+const railEl = $('rail');
+const dropHint = $('dropHint');
+const filenameEl = $('filename');
+const readoutEl = $('readout');
+const wlPanel = $('wlPanel');
+const wlTitle = $('wlTitle');
+const wcSlider = $('wcSlider'); const wwSlider = $('wwSlider');
+const wcVal = $('wcVal'); const wwVal = $('wwVal');
+const calibBox = $('calibBox'); const calibInput = $('calibInput'); const calibConfirm = $('calibConfirm');
+const labelEditor = $('labelEditor'); const labelInput = $('labelInput');
+const findingEditor = $('findingEditor'); const feCategory = $('feCategory'); const feNote = $('feNote');
+const feConfirm = $('feConfirm'); const feCancel = $('feCancel'); const feChecklist = $('feChecklist');
+const presetBone = $('presetBone'); const presetSoft = $('presetSoft'); const edgeToggle = $('edgeToggle');
+const draftHint = $('draftHint');
+const toastEl = $('toast');
+const measureListEl = $('measureList');
+const infoPanelEl = $('infoPanel');
+const fileInput = $('fileInput');
+const jsonInput = $('jsonInput');
+
+const ictx = imgCanvas.getContext('2d');
+const ectx = edgeCanvas.getContext('2d');
+const octx = overlayCanvas.getContext('2d');
+
+/* ============================== UTIL ============================== */
+function clamp(v,a,b){ return Math.max(a,Math.min(b,v)); }
+function dist(a,b){ return Math.hypot(b.x-a.x, b.y-a.y); }
+function lineAngleDeg(a,b){ return Math.atan2(b.y-a.y, b.x-a.x)*180/Math.PI; }
+function fmt(n, d){ if (n===null||n===undefined||isNaN(n)) return '—'; return n.toFixed(d===undefined?1:d); }
+
+function toast(msg, ms){
+  toastEl.textContent = msg;
+  toastEl.classList.add('show');
+  clearTimeout(toast._t);
+  toast._t = setTimeout(()=>toastEl.classList.remove('show'), ms||2400);
+}
+
+function pointToSegDist(p, a, b){
+  const abx=b.x-a.x, aby=b.y-a.y;
+  const len2 = abx*abx+aby*aby;
+  if (len2===0) return dist(p,a);
+  let t = ((p.x-a.x)*abx + (p.y-a.y)*aby)/len2;
+  t = clamp(t,0,1);
+  const proj = { x:a.x+t*abx, y:a.y+t*aby };
+  return dist(p,proj);
+}
+
+function lineIntersection(p1,p2,p3,p4){
+  const d1x=p2.x-p1.x, d1y=p2.y-p1.y;
+  const d2x=p4.x-p3.x, d2y=p4.y-p3.y;
+  const denom = d1x*d2y - d1y*d2x;
+  if (Math.abs(denom) < 1e-9) return null;
+  const t = ((p3.x-p1.x)*d2y - (p3.y-p1.y)*d2x)/denom;
+  return { x: p1.x + t*d1x, y: p1.y + t*d1y };
+}
+
+function uid(){ return 'm' + (state.nextId++); }
+
+/* ============================== RAIL ============================== */
+function buildRail(){
+  let lastGroup = null;
+  TOOL_DEFS.forEach((t)=>{
+    if (lastGroup!==null && t.group!==lastGroup){
+      const div = document.createElement('div');
+      div.className = 'rail-divider';
+      railEl.appendChild(div);
+    }
+    lastGroup = t.group;
+    const btn = document.createElement('button');
+    btn.className = 'tool' + (t.id===state.tool ? ' active' : '');
+    btn.dataset.tool = t.id;
+    btn.dataset.tip = t.tip;
+    btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">'+ICONS[t.id]+'</svg>';
+    btn.addEventListener('click', ()=> setTool(t.id));
+    railEl.appendChild(btn);
+  });
+}
+
+function setTool(id){
+  state.tool = id;
+  cancelDraft();
+  document.querySelectorAll('.tool').forEach((b)=> b.classList.toggle('active', b.dataset.tool===id));
+  stage.style.cursor = (id==='pan') ? 'grab' : (id==='select' ? 'default' : 'crosshair');
+  updateDraftHint();
+}
+
+/* ============================== TRANSFORM / VIEWPORT ============================== */
+function applyTransform(){
+  imgWrap.style.transform = 'translate('+state.panX+'px,'+state.panY+'px) scale('+state.zoom+')';
+  updateReadout();
+}
+
+function fitToScreen(){
+  if (!state.image) return;
+  const rect = stage.getBoundingClientRect();
+  const margin = 0.92;
+  const zx = (rect.width/state.image.width)*margin;
+  const zy = (rect.height/state.image.height)*margin;
+  state.zoom = clamp(Math.min(zx,zy), 0.02, 40);
+  state.panX = (rect.width - state.image.width*state.zoom)/2;
+  state.panY = (rect.height - state.image.height*state.zoom)/2;
+  applyTransform();
+}
+
+function screenToImage(clientX, clientY){
+  const rect = stage.getBoundingClientRect();
+  const sx = clientX-rect.left, sy = clientY-rect.top;
+  return { x:(sx-state.panX)/state.zoom, y:(sy-state.panY)/state.zoom };
+}
+
+stage.addEventListener('wheel', (e)=>{
+  if (!state.image) return;
+  e.preventDefault();
+  const rect = stage.getBoundingClientRect();
+  const sx = e.clientX-rect.left, sy = e.clientY-rect.top;
+  const before = screenToImage(e.clientX, e.clientY);
+  const factor = Math.exp(-e.deltaY*0.0012);
+  const newZoom = clamp(state.zoom*factor, 0.02, 40);
+  state.panX = sx - before.x*newZoom;
+  state.panY = sy - before.y*newZoom;
+  state.zoom = newZoom;
+  applyTransform();
+  renderOverlay();
+}, { passive:false });
+
+window.addEventListener('resize', ()=>{ if (state.image) { fitToScreen(); renderOverlay(); } });
+
+/* ============================== FILE LOADING ============================== */
+function hideDropHint(){ dropHint.classList.add('hidden'); }
+function showDropHint(){ dropHint.classList.remove('hidden'); }
+
+function handleFiles(fileList){
+  const file = fileList && fileList[0];
+  if (!file) return;
+  state.fileName = file.name;
+  filenameEl.textContent = file.name;
+  const reader = new FileReader();
+  reader.onload = (e)=>{
+    const buf = e.target.result;
+    const bytes = new Uint8Array(buf);
+    const looksDicom = bytes.length>132 && bytes[128]===0x44 && bytes[129]===0x49 && bytes[130]===0x43 && bytes[131]===0x4D;
+    const lower = file.name.toLowerCase();
+    if (looksDicom || lower.endsWith('.dcm') || lower.endsWith('.dicom')){
+      try { loadDicomFile(buf); return; }
+      catch(err){
+        console.error(err);
+        toast('DICOM 파일을 해석하지 못했습니다: ' + err.message);
+        if (looksDicom) return;
+      }
+    }
+    const blob = new Blob([buf]);
+    const url = URL.createObjectURL(blob);
+    loadRasterFile(url);
+  };
+  reader.onerror = ()=> toast('파일을 읽지 못했습니다.');
+  reader.readAsArrayBuffer(file);
+}
+
+fileInput.addEventListener('change', (e)=> handleFiles(e.target.files));
+$('btnOpen').addEventListener('click', ()=> fileInput.click());
+dropHint.addEventListener('click', ()=> fileInput.click());
+['dragover'].forEach((ev)=> stage.addEventListener(ev, (e)=>{ e.preventDefault(); stage.classList.add('dragging'); }));
+['dragleave','drop'].forEach((ev)=> stage.addEventListener(ev, (e)=>{ e.preventDefault(); stage.classList.remove('dragging'); }));
+stage.addEventListener('drop', (e)=>{ if (e.dataTransfer && e.dataTransfer.files.length) handleFiles(e.dataTransfer.files); });
+
+function resetForNewImage(){
+  state.annotations = [];
+  state.selectedId = null;
+  state.pixelsPerMM = null;
+  state.calibSource = null;
+  cancelDraft();
+  renderMeasureList();
+}
+
+function loadRasterFile(url){
+  const img = new Image();
+  img.onload = ()=>{
+    resetForNewImage();
+    state.image = { kind:'raster', width:img.naturalWidth, height:img.naturalHeight, brightness:100, contrast:100 };
+    imgCanvas.width = overlayCanvas.width = edgeCanvas.width = img.naturalWidth;
+    imgCanvas.height = overlayCanvas.height = edgeCanvas.height = img.naturalHeight;
+    imgCanvas.style.filter = 'none';
+    ictx.clearRect(0,0,img.naturalWidth,img.naturalHeight);
+    ictx.drawImage(img,0,0);
+    resetEnhancementUI();
+    setupWlPanelForRaster();
+    fitToScreen();
+    renderOverlay();
+    hideDropHint();
+    URL.revokeObjectURL(url);
+    toast(img.naturalWidth+'×'+img.naturalHeight+' 이미지를 불러왔습니다.');
+  };
+  img.onerror = ()=> toast('이미지를 불러오지 못했습니다. 지원되는 형식인지 확인하세요.');
+  img.src = url;
+}
+
+function parseFirstNumeric(str){
+  if (!str) return null;
+  const first = String(str).split('\\')[0].trim();
+  const n = parseFloat(first);
+  return isNaN(n) ? null : n;
+}
+
+function extractPixels(dataSet, pdElement, bitsAllocated, pixelRepresentation){
+  const buf = dataSet.byteArray.buffer;
+  const base = dataSet.byteArray.byteOffset + pdElement.dataOffset;
+  const dv = new DataView(buf, base, pdElement.length);
+  let count, reader;
+  if (bitsAllocated<=8){
+    count = pdElement.length;
+    reader = (i)=> dv.getUint8(i);
+  } else {
+    count = Math.floor(pdElement.length/2);
+    reader = pixelRepresentation===1 ? (i)=>dv.getInt16(i*2,true) : (i)=>dv.getUint16(i*2,true);
+  }
+  const out = new Float32Array(count);
+  for (let i=0;i<count;i++) out[i] = reader(i);
+  return out;
+}
+
+function extractColorPixels(dataSet, pdElement, photometric, planarConfig, cols, rows){
+  const buf = dataSet.byteArray.buffer;
+  const base = dataSet.byteArray.byteOffset + pdElement.dataOffset;
+  const bytes = new Uint8Array(buf, base, pdElement.length);
+  const n = cols*rows;
+  const rgba = new Uint8ClampedArray(n*4);
+  for (let p=0; p<n; p++){
+    let c0,c1,c2;
+    if (planarConfig===1){
+      c0 = bytes[p]; c1 = bytes[n+p]; c2 = bytes[2*n+p];
+    } else {
+      const o3 = p*3; c0 = bytes[o3]; c1 = bytes[o3+1]; c2 = bytes[o3+2];
+    }
+    let r,g,b;
+    if (photometric==='YBR_FULL'){
+      const Y=c0, Cb=c1-128, Cr=c2-128;
+      r = Y + 1.402*Cr;
+      g = Y - 0.344136*Cb - 0.714136*Cr;
+      b = Y + 1.772*Cb;
+    } else {
+      r=c0; g=c1; b=c2;
+    }
+    const o = p*4;
+    rgba[o]=r; rgba[o+1]=g; rgba[o+2]=b; rgba[o+3]=255;
+  }
+  return rgba;
+}
+
+function autoWindow(rescaled){
+  const n = rescaled.length;
+  const step = Math.max(1, Math.floor(n/200000));
+  const sample = [];
+  for (let i=0;i<n;i+=step) sample.push(rescaled[i]);
+  sample.sort((a,b)=>a-b);
+  const lo = sample[Math.floor(sample.length*0.005)];
+  const hi = sample[Math.ceil(sample.length*0.995)-1];
+  const min = sample[0], max = sample[sample.length-1];
+  return { wc:(lo+hi)/2, ww:Math.max(1,hi-lo), min, max };
+}
+
+const UNCOMPRESSED_TRANSFER_SYNTAXES = ['1.2.840.10008.1.2','1.2.840.10008.1.2.1','1.2.840.10008.1.2.2','1.2.840.10008.1.2.1.99'];
+
+function loadDicomFile(arrayBuffer){
+  const byteArray = new Uint8Array(arrayBuffer);
+  const dataSet = window.dicomParser.parseDicom(byteArray);
+  const rows = dataSet.uint16('x00280010');
+  const cols = dataSet.uint16('x00280011');
+  if (!rows || !cols) throw new Error('영상 크기 정보를 찾을 수 없습니다.');
+  const bitsAllocated = dataSet.uint16('x00280100') || 16;
+  const pixelRepresentation = dataSet.uint16('x00280103') || 0;
+  const samplesPerPixel = dataSet.uint16('x00280002') || 1;
+  const planarConfig = dataSet.uint16('x00280006') || 0;
+  const photometric = (dataSet.string('x00280004')||'MONOCHROME2').toUpperCase();
+  const modality = (dataSet.string('x00080060')||'').toUpperCase();
+  const transferSyntax = dataSet.string('x00020010') || '';
+
+  const pdElement = dataSet.elements.x7fe00010;
+  if (!pdElement) throw new Error('픽셀 데이터를 찾을 수 없습니다 (압축된 전송 구문일 수 있습니다).');
+  const isCompressed = pdElement.length === 0xffffffff || (transferSyntax && UNCOMPRESSED_TRANSFER_SYNTAXES.indexOf(transferSyntax)===-1);
+  if (isCompressed){
+    throw new Error('압축된 DICOM 형식(JPEG 등)은 현재 지원되지 않습니다. 장비/PACS에서 PNG 또는 JPG로 내보내 업로드해 주세요.');
+  }
+
+  const spacingStr = dataSet.string('x00280030') || dataSet.string('x00181164');
+  let pixelSpacing = null;
+  if (spacingStr){
+    const parts = spacingStr.split('\\').map(Number);
+    if (parts.length===2 && parts.every((n)=>!isNaN(n) && n>0)) pixelSpacing = parts;
+  }
+
+  resetForNewImage();
+
+  if (samplesPerPixel>=3){
+    // 컬러 DICOM (예: 초음파 컬러 도플러, 캡처 영상) — HU 윈도잉 개념이 없어 밝기/대비 방식으로 처리합니다.
+    if (photometric!=='RGB' && photometric!=='YBR_FULL'){
+      throw new Error('지원되지 않는 색상 형식('+photometric+')의 DICOM입니다. 장비/PACS에서 PNG 또는 JPG로 내보내 업로드해 주세요.');
+    }
+    const rgba = extractColorPixels(dataSet, pdElement, photometric, planarConfig, cols, rows);
+    state.image = {
+      kind:'dicom', colorMode:true, width:cols, height:rows, rgba,
+      modality, pixelSpacing
+    };
+    imgCanvas.width = overlayCanvas.width = edgeCanvas.width = cols;
+    imgCanvas.height = overlayCanvas.height = edgeCanvas.height = rows;
+    imgCanvas.style.filter = 'none';
+    if (pixelSpacing){ state.pixelsPerMM = 1/pixelSpacing[1]; state.calibSource = 'DICOM'; }
+    renderDicomColor();
+    resetEnhancementUI();
+    setupWlPanelForRaster(modality);
+    fitToScreen();
+    renderOverlay();
+    hideDropHint();
+    toast('DICOM 컬러 영상 ('+cols+'×'+rows+(modality?', '+modality:'')+')을 불러왔습니다.');
+    return;
+  }
+
+  const slope = parseFirstNumeric(dataSet.string('x00281053'));
+  const intercept = parseFirstNumeric(dataSet.string('x00281052'));
+  const slopeV = slope===null ? 1 : slope;
+  const interceptV = intercept===null ? 0 : intercept;
+  let wc = parseFirstNumeric(dataSet.string('x00281050'));
+  let ww = parseFirstNumeric(dataSet.string('x00281051'));
+
+  const raw = extractPixels(dataSet, pdElement, bitsAllocated, pixelRepresentation);
+  const rescaled = new Float32Array(raw.length);
+  for (let i=0;i<raw.length;i++) rescaled[i] = raw[i]*slopeV + interceptV;
+
+  const auto = autoWindow(rescaled);
+  if (wc===null) wc = auto.wc;
+  if (ww===null || ww<=0) ww = auto.ww;
+
+  state.image = {
+    kind:'dicom', width:cols, height:rows, rescaled,
+    wc, ww,
+    wcMin: auto.min - (auto.max-auto.min)*0.6 - 1,
+    wcMax: auto.max + (auto.max-auto.min)*0.6 + 1,
+    wwMin: Math.max(1, (auto.max-auto.min)*0.01),
+    wwMax: Math.max(10, (auto.max-auto.min)*2.6),
+    inverted: photometric==='MONOCHROME1',
+    modality, pixelSpacing
+  };
+  imgCanvas.width = overlayCanvas.width = edgeCanvas.width = cols;
+  imgCanvas.height = overlayCanvas.height = edgeCanvas.height = rows;
+  imgCanvas.style.filter = 'none';
+
+  if (pixelSpacing){
+    state.pixelsPerMM = 1/pixelSpacing[1];
+    state.calibSource = 'DICOM';
+  }
+
+  renderDicom();
+  resetEnhancementUI();
+  setupWlPanelForDicom();
+  fitToScreen();
+  renderOverlay();
+  hideDropHint();
+  toast('DICOM 영상 ('+cols+'×'+rows+(modality?', '+modality:'')+')을 불러왔습니다.');
+}
+
+/* ============================== RENDER IMAGE ============================== */
+function renderDicom(){
+  const img = state.image;
+  const w = img.width, h = img.height;
+  const id = ictx.createImageData(w,h);
+  const data = id.data;
+  const wc = img.wc, ww = Math.max(1,img.ww);
+  const lo = wc - 0.5 - (ww-1)/2;
+  const scale = 255/(ww-1<=0?1:ww-1);
+  for (let i=0, n=w*h; i<n; i++){
+    let v = (img.rescaled[i]-lo)*scale;
+    v = clamp(v,0,255);
+    if (img.inverted) v = 255-v;
+    const o = i*4;
+    data[o]=v; data[o+1]=v; data[o+2]=v; data[o+3]=255;
+  }
+  ictx.putImageData(id,0,0);
+}
+
+function renderDicomColor(){
+  const img = state.image;
+  const id = ictx.createImageData(img.width, img.height);
+  id.data.set(img.rgba);
+  ictx.putImageData(id,0,0);
+}
+
+function syncDicomWlSliders(){
+  const im = state.image;
+  const unit = im.modality==='CT' ? ' HU' : '';
+  wcSlider.value = clamp((im.wc-im.wcMin)/(im.wcMax-im.wcMin)*100,0,100);
+  wwSlider.value = clamp((im.ww-im.wwMin)/(im.wwMax-im.wwMin)*100,0,100);
+  wcVal.textContent = Math.round(im.wc)+unit;
+  wwVal.textContent = Math.round(im.ww)+unit;
+}
+
+function setupWlPanelForDicom(){
+  wlPanel.classList.add('show');
+  wlTitle.textContent = '윈도우 레벨 / 폭' + (state.image.modality ? '  ·  '+state.image.modality : '');
+  const unit = state.image.modality==='CT' ? ' HU' : '';
+  syncDicomWlSliders();
+  wcSlider.oninput = ()=>{
+    const t = wcSlider.value/100;
+    state.image.wc = state.image.wcMin + t*(state.image.wcMax-state.image.wcMin);
+    wcVal.textContent = Math.round(state.image.wc)+unit;
+    renderDicom(); refreshEdgeOverlayIfOn();
+  };
+  wwSlider.oninput = ()=>{
+    const t = wwSlider.value/100;
+    state.image.ww = state.image.wwMin + t*(state.image.wwMax-state.image.wwMin);
+    wwVal.textContent = Math.round(state.image.ww)+unit;
+    renderDicom(); refreshEdgeOverlayIfOn();
+  };
+  $('wlReset').onclick = ()=>{
+    const auto = autoWindow(state.image.rescaled);
+    state.image.wc = auto.wc; state.image.ww = auto.ww;
+    syncDicomWlSliders(); renderDicom(); refreshEdgeOverlayIfOn();
+  };
+  $('wlInvert').onclick = ()=>{ state.image.inverted = !state.image.inverted; renderDicom(); refreshEdgeOverlayIfOn(); };
+}
+
+function setupWlPanelForRaster(modalitySuffix){
+  wlPanel.classList.add('show');
+  wlTitle.textContent = '밝기 / 대비' + (modalitySuffix ? '  ·  '+modalitySuffix : '');
+  wcSlider.value = 50; wwSlider.value = 50;
+  wcVal.textContent = '100%'; wwVal.textContent = '100%';
+  function apply(){
+    const b = 40 + (wcSlider.value/100)*160;
+    const c = 40 + (wwSlider.value/100)*160;
+    state.image.brightness = b; state.image.contrast = c;
+    imgCanvas.style.filter = 'brightness('+b+'%) contrast('+c+'%)';
+    wcVal.textContent = Math.round(b)+'%'; wwVal.textContent = Math.round(c)+'%';
+    refreshEdgeOverlayIfOn();
+  }
+  wcSlider.oninput = apply; wwSlider.oninput = apply;
+  $('wlReset').onclick = ()=>{ wcSlider.value=50; wwSlider.value=50; apply(); };
+  $('wlInvert').onclick = ()=>{
+    const cur = imgCanvas.style.filter||'';
+    imgCanvas.style.filter = cur.indexOf('invert')>-1 ? cur.replace(' invert(1)','') : cur+' invert(1)';
+  };
+}
+
+/* ============================== ENHANCEMENT FILTERS (시각 강조 — 판독/진단 아님) ============================== */
+function computeEdgeOverlay(){
+  if (!state.image) return;
+  const w = imgCanvas.width, h = imgCanvas.height;
+  if (!w || !h) return;
+  const src = ictx.getImageData(0,0,w,h).data;
+  const gray = new Float32Array(w*h);
+  for (let i=0;i<w*h;i++) gray[i] = src[i*4];
+  const out = new Uint8ClampedArray(w*h*4);
+  for (let y=1;y<h-1;y++){
+    const rowBase = y*w;
+    for (let x=1;x<w-1;x++){
+      const i = rowBase+x;
+      const gx = -gray[i-w-1] - 2*gray[i-1] - gray[i+w-1] + gray[i-w+1] + 2*gray[i+1] + gray[i+w+1];
+      const gy = -gray[i-w-1] - 2*gray[i-w] - gray[i-w+1] + gray[i+w-1] + 2*gray[i+w] + gray[i+w+1];
+      let mag = Math.sqrt(gx*gx+gy*gy);
+      mag = mag>60 ? Math.min(255,mag) : 0;
+      const o = i*4;
+      out[o]=110; out[o+1]=255; out[o+2]=255; out[o+3]=mag;
+    }
+  }
+  ectx.putImageData(new ImageData(out,w,h),0,0);
+}
+function clearEdgeOverlay(){ if (edgeCanvas.width && edgeCanvas.height) ectx.clearRect(0,0,edgeCanvas.width,edgeCanvas.height); }
+function refreshEdgeOverlayIfOn(){ if (state.edgeOn) computeEdgeOverlay(); }
+function setEdgeOn(on){
+  state.edgeOn = on;
+  edgeToggle.classList.toggle('active', on);
+  edgeToggle.textContent = on ? '경계선 강조 끄기' : '경계선 강조 보기';
+  if (on) computeEdgeOverlay(); else clearEdgeOverlay();
+}
+edgeToggle.addEventListener('click', ()=>{
+  if (!state.image){ toast('먼저 영상을 불러오세요.'); return; }
+  setEdgeOn(!state.edgeOn);
+});
+
+function resetEnhancementUI(){
+  state.edgeOn = false;
+  clearEdgeOverlay();
+  edgeToggle.classList.remove('active');
+  edgeToggle.textContent = '경계선 강조 보기';
+  const isHuDicom = !!(state.image && state.image.kind==='dicom' && !state.image.colorMode);
+  const isDicomNonCT = isHuDicom && state.image.modality!=='CT';
+  presetBone.disabled = !!isDicomNonCT;
+  presetSoft.disabled = !!isDicomNonCT;
+  presetBone.title = isDicomNonCT ? 'CT 영상에서만 사용할 수 있습니다' : '';
+  presetSoft.title = isDicomNonCT ? 'CT 영상에서만 사용할 수 있습니다' : '';
+}
+
+presetBone.addEventListener('click', ()=>{
+  if (!state.image) return;
+  if (state.image.kind==='dicom' && !state.image.colorMode){
+    if (state.image.modality!=='CT') return;
+    state.image.wc = 300; state.image.ww = 1500;
+    state.image.wcMin = Math.min(state.image.wcMin,-200); state.image.wcMax = Math.max(state.image.wcMax,800);
+    state.image.wwMin = Math.min(state.image.wwMin,50); state.image.wwMax = Math.max(state.image.wwMax,2000);
+    renderDicom(); syncDicomWlSliders();
+  } else {
+    wcSlider.value = 55; wwSlider.value = 82;
+    wcSlider.dispatchEvent(new Event('input'));
+  }
+  refreshEdgeOverlayIfOn();
+  toast('골 강조 프리셋을 적용했습니다.');
+});
+presetSoft.addEventListener('click', ()=>{
+  if (!state.image) return;
+  if (state.image.kind==='dicom' && !state.image.colorMode){
+    if (state.image.modality!=='CT') return;
+    state.image.wc = 40; state.image.ww = 400;
+    renderDicom(); syncDicomWlSliders();
+  } else {
+    wcSlider.value = 58; wwSlider.value = 38;
+    wcSlider.dispatchEvent(new Event('input'));
+  }
+  refreshEdgeOverlayIfOn();
+  toast('연부조직 강조 프리셋을 적용했습니다.');
+});
+
+/* relabel the wl reset button on tab; actually invert label text update */
+document.addEventListener('DOMContentLoaded', ()=>{
+  const btn = $('wlInvert'); if (btn) btn.textContent = '반전';
+});
+
+/* ============================== ANNOTATIONS: MATH ============================== */
+function toRealLen(px){ return state.pixelsPerMM ? px/state.pixelsPerMM : null; }
+
+function computeValue(ann){
+  const p = ann.points;
+  if (ann.type==='distance'){
+    const px = dist(p[0],p[1]);
+    const mm = toRealLen(px);
+    ann.value = mm!==null ? mm : px;
+    ann.unit = mm!==null ? 'mm' : 'px';
+    ann.pxValue = px;
+  } else if (ann.type==='angle'){
+    const v1={x:p[0].x-p[1].x,y:p[0].y-p[1].y}, v2={x:p[2].x-p[1].x,y:p[2].y-p[1].y};
+    const dot=v1.x*v2.x+v1.y*v2.y;
+    const mag=Math.hypot(v1.x,v1.y)*Math.hypot(v2.x,v2.y);
+    ann.value = mag>0 ? Math.acos(clamp(dot/mag,-1,1))*180/Math.PI : 0;
+    ann.unit='°';
+  } else if (ann.type==='cobb'){
+    let a1=lineAngleDeg(p[0],p[1]), a2=lineAngleDeg(p[2],p[3]);
+    let d=Math.abs(a1-a2)%180; if (d>90) d=180-d;
+    ann.value=d; ann.unit='°';
+  } else if (ann.type==='pelvic'){
+    let a=Math.abs(lineAngleDeg(p[0],p[1]))%180; if (a>90) a=180-a;
+    ann.value=a; ann.unit='°';
+  } else if (ann.type==='cva'){
+    let a=Math.abs(lineAngleDeg(p[0],p[1]))%180; if (a>90) a=180-a;
+    ann.value=a; ann.unit='°';
+  } else if (ann.type==='shoulder'){
+    let a=Math.abs(lineAngleDeg(p[0],p[1]))%180; if (a>90) a=180-a;
+    ann.value=a; ann.unit='°';
+  } else if (ann.type==='leglength'){
+    const pxV = Math.abs(p[0].y-p[1].y);
+    const mm = toRealLen(pxV);
+    ann.value = mm!==null ? mm : pxV;
+    ann.unit = mm!==null ? 'mm' : 'px';
+    ann.pxValue = pxV;
+  } else if (ann.type==='kneeAlign'){
+    const v1={x:p[0].x-p[1].x,y:p[0].y-p[1].y}, v2={x:p[2].x-p[1].x,y:p[2].y-p[1].y};
+    const dot=v1.x*v2.x+v1.y*v2.y;
+    const mag=Math.hypot(v1.x,v1.y)*Math.hypot(v2.x,v2.y);
+    const raw = mag>0 ? Math.acos(clamp(dot/mag,-1,1))*180/Math.PI : 180;
+    ann.rawAngle = raw;
+    ann.value = Math.abs(180-raw);
+    ann.unit='°';
+  }
+  if (ann.type==='cobb') ann.ref = interpretCobb(ann.value);
+  else if (ann.type==='pelvic') ann.ref = interpretPelvicTilt(ann.value);
+  else if (ann.type==='cva') ann.ref = interpretCVA(ann.value);
+  else if (ann.type==='shoulder') ann.ref = interpretShoulder(ann.value);
+  else if (ann.type==='leglength') ann.ref = ann.unit==='mm' ? interpretLegLength(ann.value) : null;
+  else if (ann.type==='kneeAlign') ann.ref = interpretKneeAlign(ann.value);
+  else ann.ref = null;
+}
+
+function interpretCobb(a){
+  if (a<10) return {level:'good', label:'정상 범위 참고치', note:'일반적으로 임상적 의미가 크지 않다고 보는 범위입니다.', group:'spine'};
+  if (a<25) return {level:'warn', label:'경도 의심 참고치', note:'경도 척추측만 범위에 해당할 수 있습니다. 경과 관찰을 권장합니다.', group:'spine'};
+  if (a<40) return {level:'warn', label:'중등도 의심 참고치', note:'중등도 범위로, 전문의 정밀 검사를 권장합니다.', group:'spine'};
+  return {level:'critical', label:'중증 의심 참고치', note:'중증 범위로, 반드시 전문의 진료가 필요합니다.', group:'spine'};
+}
+function interpretPelvicTilt(a){
+  if (a<2) return {level:'good', label:'정상 범위 참고치', note:'측정 오차 범위 내로 볼 수 있는 수준입니다.', group:'pelvis'};
+  if (a<5) return {level:'warn', label:'경도 비대칭 참고치', note:'경미한 골반 비대칭이 의심됩니다.', group:'pelvis'};
+  return {level:'critical', label:'뚜렷한 비대칭 참고치', note:'뚜렷한 비대칭으로, 전문가 평가를 권장합니다.', group:'pelvis'};
+}
+function interpretCVA(a){
+  if (a>=53) return {level:'good', label:'정상 범위 참고치', note:'거북목(전방머리자세) 소견이 뚜렷하지 않은 범위입니다.', group:'neck'};
+  if (a>=45) return {level:'warn', label:'경도 거북목 의심', note:'경도 전방머리자세 범위로, 경추 정렬 운동을 고려할 수 있습니다.', group:'neck'};
+  return {level:'critical', label:'중등도 이상 거북목 의심', note:'각도가 작을수록 전방머리자세가 뚜렷한 것으로 참고되며, 정밀 평가를 권장합니다.', group:'neck'};
+}
+function interpretShoulder(a){
+  if (a<2) return {level:'good', label:'정상 범위 참고치', note:'측정 오차 범위 내로 볼 수 있는 수준입니다.', group:'shoulder'};
+  if (a<4) return {level:'warn', label:'경도 비대칭 참고치', note:'경미한 어깨 높이 비대칭이 의심됩니다.', group:'shoulder'};
+  return {level:'critical', label:'뚜렷한 비대칭 참고치', note:'뚜렷한 어깨 높이 비대칭으로, 정밀 평가를 권장합니다.', group:'shoulder'};
+}
+function interpretLegLength(mm){
+  if (mm<5) return {level:'good', label:'정상 범위 참고치', note:'임상적으로 유의미하지 않다고 보는 범위입니다.', group:'leg'};
+  if (mm<15) return {level:'warn', label:'경도 차이 참고치', note:'경도~중등도의 다리 길이차가 의심됩니다.', group:'leg'};
+  return {level:'critical', label:'뚜렷한 차이 참고치', note:'뚜렷한 다리 길이차로, 정밀 평가를 권장합니다.', group:'leg'};
+}
+function interpretKneeAlign(dev){
+  if (dev<5) return {level:'good', label:'정상 범위 참고치', note:'무릎 정렬 편차가 크지 않은 범위입니다.', group:'knee'};
+  if (dev<10) return {level:'warn', label:'경도 편위 참고치', note:'경도의 내반/외반 편위가 의심됩니다 (방향은 영상에서 직접 확인).', group:'knee'};
+  return {level:'critical', label:'뚜렷한 편위 참고치', note:'뚜렷한 정렬 편위로, 정밀 평가를 권장합니다 (방향은 영상에서 직접 확인).', group:'knee'};
+}
+
+/* ============================== ANNOTATION INTERACTION ============================== */
+function cancelDraft(){
+  state.draft = null;
+  updateDraftHint();
+  renderOverlay();
+}
+
+function updateDraftHint(){
+  if (state.draft){
+    const need = REQUIRED_POINTS[state.draft.type];
+    const have = state.draft.points.length;
+    draftHint.innerHTML = TYPE_LABEL[state.draft.type]+' 측정 중 ('+have+'/'+need+' 지점) · <kbd>Esc</kbd> 취소';
+    draftHint.classList.add('show');
+  } else if (state.tool==='freehand'){
+    draftHint.innerHTML = '드래그하여 자유롭게 그리세요';
+    draftHint.classList.add('show');
+  } else if (state.tool==='calibrate'){
+    draftHint.innerHTML = '실제 길이를 아는 두 지점을 클릭하세요';
+    draftHint.classList.add('show');
+  } else {
+    draftHint.classList.remove('show');
+  }
+}
+
+function addAnnotation(type, points, extra){
+  const ann = Object.assign({ id:uid(), type, points, color:TYPE_COLOR[type], createdAt:Date.now() }, extra||{});
+  if (REQUIRED_POINTS[type]) computeValue(ann);
+  state.annotations.push(ann);
+  state.selectedId = ann.id;
+  renderMeasureList();
+  renderOverlay();
+  return ann;
+}
+
+function deleteAnnotation(id){
+  state.annotations = state.annotations.filter((a)=>a.id!==id);
+  if (state.selectedId===id) state.selectedId=null;
+  renderMeasureList(); renderOverlay();
+}
+
+function findAnnotation(id){ return state.annotations.find((a)=>a.id===id); }
+
+function hitTestHandle(pt, tol){
+  for (let i=state.annotations.length-1;i>=0;i--){
+    const a = state.annotations[i];
+    for (let j=0;j<a.points.length;j++){
+      if (dist(pt, a.points[j])<tol) return { id:a.id, idx:j };
+    }
+  }
+  return null;
+}
+
+function hitTestBody(pt, tol){
+  for (let i=state.annotations.length-1;i>=0;i--){
+    const a = state.annotations[i];
+    if (a.type==='point' || a.type==='finding'){
+      if (dist(pt, a.points[0])<tol*1.6) return { id:a.id };
+    } else if (a.type==='text'){
+      if (dist(pt, a.points[0])<tol*3) return { id:a.id };
+    } else if (a.type==='freehand'){
+      for (let j=0;j<a.points.length-1;j++) if (pointToSegDist(pt,a.points[j],a.points[j+1])<tol) return { id:a.id };
+    } else if (a.type==='angle' || a.type==='kneeAlign'){
+      if (pointToSegDist(pt,a.points[0],a.points[1])<tol || pointToSegDist(pt,a.points[1],a.points[2])<tol) return { id:a.id };
+    } else if (a.type==='cobb'){
+      if (pointToSegDist(pt,a.points[0],a.points[1])<tol || pointToSegDist(pt,a.points[2],a.points[3])<tol) return { id:a.id };
+    } else {
+      if (pointToSegDist(pt,a.points[0],a.points[1])<tol) return { id:a.id };
+    }
+  }
+  return null;
+}
+
+function selectAnnotation(id){ state.selectedId = id; renderMeasureList(); renderOverlay(); }
+
+/* ---- pointer handling ---- */
+let lastPanClient = null;
+
+overlayCanvas.addEventListener('pointerdown', (e)=>{
+  if (!state.image) return;
+  e.preventDefault();
+  overlayCanvas.setPointerCapture(e.pointerId);
+  const pt = screenToImage(e.clientX, e.clientY);
+  const tool = state.tool;
+
+  if (tool==='pan'){
+    state.dragging = { mode:'pan', lastClient:{x:e.clientX,y:e.clientY} };
+    stage.style.cursor='grabbing';
+    return;
+  }
+
+  if (tool==='select'){
+    const tol = 8/state.zoom;
+    const handle = hitTestHandle(pt, tol);
+    if (handle){
+      state.dragging = { mode:'handle', id:handle.id, idx:handle.idx };
+      selectAnnotation(handle.id);
+      return;
+    }
+    const body = hitTestBody(pt, tol);
+    if (body){
+      state.dragging = { mode:'move', id:body.id, last:pt };
+      selectAnnotation(body.id);
+      return;
+    }
+    selectAnnotation(null);
+    state.dragging = { mode:'pan', lastClient:{x:e.clientX,y:e.clientY} };
+    return;
+  }
+
+  if (tool==='finding'){
+    openFindingEditor(pt, e.clientX, e.clientY);
+    setTool('select');
+    return;
+  }
+  if (tool==='point'){
+    const ann = addAnnotation('point',[pt]);
+    openLabelEditor(ann, e.clientX, e.clientY);
+    setTool('select');
+    return;
+  }
+  if (tool==='text'){
+    const draftAnn = { id:null, points:[pt] };
+    openLabelEditor(draftAnn, e.clientX, e.clientY, (text)=>{
+      if (text && text.trim()) addAnnotation('text',[pt],{ label:text.trim() });
+    });
+    setTool('select');
+    return;
+  }
+  if (tool==='freehand'){
+    state.draft = { type:'freehand', points:[pt] };
+    state.dragging = { mode:'freehand' };
+    return;
+  }
+  if (tool==='calibrate'){
+    if (!state.draft) state.draft = { type:'calibrate', points:[] };
+    state.draft.points.push(pt);
+    updateDraftHint();
+    if (state.draft.points.length===2){
+      showCalibBox();
+    }
+    renderOverlay();
+    return;
+  }
+  if (REQUIRED_POINTS[tool]){
+    if (!state.draft || state.draft.type!==tool) state.draft = { type:tool, points:[] };
+    state.draft.points.push(pt);
+    updateDraftHint();
+    if (state.draft.points.length===REQUIRED_POINTS[tool]){
+      addAnnotation(tool, state.draft.points.slice());
+      state.draft = null;
+      updateDraftHint();
+      setTool('select');
+    }
+    renderOverlay();
+  }
+});
+
+overlayCanvas.addEventListener('pointermove', (e)=>{
+  state.hoverPt = state.image ? screenToImage(e.clientX,e.clientY) : null;
+  updateReadout();
+  const d = state.dragging;
+  if (d && d.mode==='pan'){
+    const dx = e.clientX-d.lastClient.x, dy = e.clientY-d.lastClient.y;
+    state.panX += dx; state.panY += dy;
+    d.lastClient = {x:e.clientX,y:e.clientY};
+    applyTransform();
+  } else if (d && d.mode==='handle'){
+    const ann = findAnnotation(d.id);
+    if (ann){ ann.points[d.idx] = state.hoverPt; if (REQUIRED_POINTS[ann.type]) computeValue(ann); renderMeasureList(); }
+  } else if (d && d.mode==='move'){
+    const ann = findAnnotation(d.id);
+    if (ann){
+      const dx = state.hoverPt.x-d.last.x, dy = state.hoverPt.y-d.last.y;
+      ann.points = ann.points.map((p)=>({x:p.x+dx,y:p.y+dy}));
+      d.last = state.hoverPt;
+      if (REQUIRED_POINTS[ann.type]) computeValue(ann);
+      renderMeasureList();
+    }
+  } else if (d && d.mode==='freehand' && state.draft){
+    const pts = state.draft.points;
+    const lastP = pts[pts.length-1];
+    if (dist(lastP, state.hoverPt) > 2/state.zoom) pts.push(state.hoverPt);
+  }
+  renderOverlay();
+});
+
+window.addEventListener('pointerup', (e)=>{
+  const d = state.dragging;
+  if (d && d.mode==='freehand' && state.draft){
+    if (state.draft.points.length>1) addAnnotation('freehand', state.draft.points);
+    state.draft = null;
+    setTool('select');
+  }
+  if (d && d.mode==='pan') stage.style.cursor = state.tool==='pan' ? 'grab' : (state.tool==='select' ? 'default' : 'crosshair');
+  state.dragging = null;
+  updateDraftHint();
+});
+
+window.addEventListener('keydown', (e)=>{
+  const activeTag = document.activeElement && document.activeElement.tagName;
+  if (activeTag==='INPUT') return;
+  if (e.key==='Escape'){ cancelDraft(); selectAnnotation(null); hideCalibBox(); closeFindingEditor(); }
+  if ((e.key==='Delete' || e.key==='Backspace') && state.selectedId){ deleteAnnotation(state.selectedId); }
+});
+
+/* ---- calibration ---- */
+function showCalibBox(){ calibBox.classList.add('show'); calibInput.value=''; calibInput.focus(); }
+function hideCalibBox(){ calibBox.classList.remove('show'); if (state.draft && state.draft.type==='calibrate'){ state.draft=null; updateDraftHint(); renderOverlay(); } }
+calibConfirm.addEventListener('click', confirmCalib);
+calibInput.addEventListener('keydown', (e)=>{ if (e.key==='Enter') confirmCalib(); });
+function confirmCalib(){
+  const mm = parseFloat(calibInput.value);
+  if (!mm || mm<=0){ toast('올바른 길이(mm)를 입력하세요.'); return; }
+  const p = state.draft.points;
+  const px = dist(p[0],p[1]);
+  state.pixelsPerMM = px/mm;
+  state.calibSource = '수동';
+  calibBox.classList.remove('show');
+  state.draft = null;
+  updateDraftHint();
+  state.annotations.filter((a)=>a.type==='distance').forEach(computeValue);
+  renderMeasureList(); renderOverlay();
+  setTool('select');
+  toast('보정 완료: 1mm = '+state.pixelsPerMM.toFixed(2)+'px');
+}
+
+/* ---- label editor (point / text) ---- */
+let labelEditorCtx = null;
+function openLabelEditor(annOrDraft, clientX, clientY, onCommit){
+  const rect = stage.getBoundingClientRect();
+  labelEditor.style.left = (clientX-rect.left+10)+'px';
+  labelEditor.style.top = (clientY-rect.top-14)+'px';
+  labelEditor.classList.add('show');
+  labelInput.value='';
+  labelInput.focus();
+  labelEditorCtx = { annOrDraft, onCommit };
+}
+function closeLabelEditor(){ labelEditor.classList.remove('show'); labelEditorCtx=null; }
+labelInput.addEventListener('keydown', (e)=>{
+  if (e.key==='Enter'){
+    const val = labelInput.value;
+    if (labelEditorCtx){
+      if (labelEditorCtx.onCommit) labelEditorCtx.onCommit(val);
+      else if (labelEditorCtx.annOrDraft && labelEditorCtx.annOrDraft.id){ labelEditorCtx.annOrDraft.label = val.trim(); renderMeasureList(); renderOverlay(); }
+    }
+    closeLabelEditor();
+  } else if (e.key==='Escape'){ closeLabelEditor(); }
+});
+labelInput.addEventListener('blur', ()=> setTimeout(closeLabelEditor, 120));
+
+/* ---- finding-tag editor (골절 / 붓기 / 근육손상 / 미세골절 / 염증 등) ---- */
+let findingPending = null;
+let findingLevel = 'mid';
+
+function setFindingLevelUI(level){
+  findingLevel = level;
+  document.querySelectorAll('.fe-level').forEach((b)=>{
+    b.classList.remove('sel-good','sel-warn','sel-critical');
+    if (b.dataset.level===level) b.classList.add('sel-'+LEVEL_META[level].css);
+  });
+}
+document.querySelectorAll('.fe-level').forEach((b)=> b.addEventListener('click', ()=> setFindingLevelUI(b.dataset.level)));
+
+function renderChecklist(category){
+  const items = CHECKLIST_ITEMS[category] || [];
+  if (!items.length){
+    feChecklist.innerHTML = '<div class="fe-empty">이 항목은 체크리스트 없이 메모로만 기록합니다.</div>';
+    return;
+  }
+  feChecklist.innerHTML = items.map((text,i)=>
+    '<label class="fe-check"><input type="checkbox" data-idx="'+i+'"><span>'+text+'</span></label>'
+  ).join('');
+  feChecklist.querySelectorAll('input[type=checkbox]').forEach((cb)=>{
+    cb.addEventListener('change', ()=> cb.closest('.fe-check').classList.toggle('checked', cb.checked));
+  });
+}
+feCategory.addEventListener('change', ()=> renderChecklist(feCategory.value));
+
+function openFindingEditor(pt, clientX, clientY){
+  const rect = stage.getBoundingClientRect();
+  let left = clientX-rect.left+10, top = clientY-rect.top-10;
+  left = clamp(left, 6, rect.width-300);
+  top = clamp(top, 6, rect.height-360);
+  findingEditor.style.left = left+'px';
+  findingEditor.style.top = top+'px';
+  feCategory.value = 'fracture';
+  feNote.value = '';
+  renderChecklist('fracture');
+  setFindingLevelUI('mid');
+  findingEditor.classList.add('show');
+  findingPending = { pt };
+}
+function closeFindingEditor(){ findingEditor.classList.remove('show'); findingPending = null; }
+
+feConfirm.addEventListener('click', ()=>{
+  if (!findingPending) return;
+  const category = feCategory.value;
+  const meta = LEVEL_META[findingLevel];
+  const note = feNote.value.trim();
+  const allItems = CHECKLIST_ITEMS[category] || [];
+  const checked = Array.from(feChecklist.querySelectorAll('input[type=checkbox]:checked'))
+    .map((cb)=> allItems[parseInt(cb.dataset.idx,10)]);
+  addAnnotation('finding', [findingPending.pt], {
+    category, level: findingLevel, note,
+    checklist: checked, checklistTotal: allItems.length,
+    color: meta.color,
+    ref: { level: meta.css, label: meta.label, note: note || ('담당자 관찰 기반 소견 태그: '+FINDING_CATEGORIES[category]), group:'finding' }
+  });
+  closeFindingEditor();
+  toast('소견 태그가 추가되었습니다.');
+});
+feCancel.addEventListener('click', closeFindingEditor);
+
+/* ============================== RENDER OVERLAY ============================== */
+function drawSeg(ctx,a,b,color,lw){ ctx.strokeStyle=color; ctx.lineWidth=lw; ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke(); }
+function drawDot(ctx,p,r,color){ ctx.fillStyle=color; ctx.beginPath(); ctx.arc(p.x,p.y,r,0,Math.PI*2); ctx.fill(); }
+
+function drawValueLabel(ctx, pos, text, color, fontPx){
+  ctx.font = '600 '+fontPx+'px "IBM Plex Mono", monospace';
+  const pad = fontPx*0.35;
+  const w = ctx.measureText(text).width + pad*2;
+  const h = fontPx + pad*1.1;
+  ctx.fillStyle = 'rgba(6,8,11,0.82)';
+  ctx.strokeStyle = color; ctx.lineWidth = fontPx*0.06;
+  roundRect(ctx, pos.x, pos.y-h/2, w, h, h*0.28);
+  ctx.fill(); ctx.stroke();
+  ctx.fillStyle = color;
+  ctx.textBaseline='middle';
+  ctx.fillText(text, pos.x+pad, pos.y+1);
+}
+function roundRect(ctx,x,y,w,h,r){
+  ctx.beginPath();
+  ctx.moveTo(x+r,y);
+  ctx.arcTo(x+w,y,x+w,y+h,r);
+  ctx.arcTo(x+w,y+h,x,y+h,r);
+  ctx.arcTo(x,y+h,x,y,r);
+  ctx.arcTo(x,y,x+w,y,r);
+  ctx.closePath();
+}
+
+function renderOverlay(){
+  if (!state.image) return;
+  const w = overlayCanvas.width, h = overlayCanvas.height;
+  octx.clearRect(0,0,w,h);
+  const z = state.zoom;
+  const lw = 1.6/z, hr = 4.2/z, fontPx = 12.5/z;
+
+  state.annotations.forEach((a)=> renderAnnotation(a, a.id===state.selectedId, lw, hr, fontPx));
+
+  if (state.draft){
+    const pts = state.draft.points;
+    const preview = pts.concat(state.hoverPt ? [state.hoverPt] : []);
+    octx.setLineDash([5/z,4/z]);
+    octx.strokeStyle = TYPE_COLOR[state.draft.type] || '#9ca8b8';
+    octx.lineWidth = lw;
+    if (state.draft.type==='freehand'){
+      octx.setLineDash([]);
+      octx.beginPath();
+      pts.forEach((p,i)=> i===0?octx.moveTo(p.x,p.y):octx.lineTo(p.x,p.y));
+      octx.stroke();
+    } else if (state.draft.type==='cobb'){
+      if (preview.length>=2) drawSeg(octx,preview[0],preview[1],octx.strokeStyle,lw);
+      if (preview.length>=3){ octx.setLineDash([5/z,4/z]); drawSeg(octx,preview[2],preview[3]||preview[2],octx.strokeStyle,lw); }
+    } else {
+      for (let i=0;i<preview.length-1;i++) drawSeg(octx,preview[i],preview[i+1],octx.strokeStyle,lw);
+    }
+    octx.setLineDash([]);
+    pts.forEach((p)=> drawDot(octx,p,hr*0.7,TYPE_COLOR[state.draft.type]||'#9ca8b8'));
+  }
+}
+
+function renderAnnotation(a, selected, lw, hr, fontPx){
+  const c = a.color;
+  const emph = selected ? lw*1.8 : lw;
+  if (a.type==='point'){
+    drawDot(octx,a.points[0],hr,c);
+    octx.strokeStyle='#05070a'; octx.lineWidth=lw*0.6; octx.beginPath(); octx.arc(a.points[0].x,a.points[0].y,hr,0,Math.PI*2); octx.stroke();
+    if (a.label) drawValueLabel(octx,{x:a.points[0].x+hr*1.8,y:a.points[0].y},a.label,c,fontPx);
+  } else if (a.type==='finding'){
+    const p0 = a.points[0];
+    const r = hr*1.25;
+    octx.fillStyle = c; octx.beginPath(); octx.arc(p0.x,p0.y,r,0,Math.PI*2); octx.fill();
+    octx.strokeStyle='#05070a'; octx.lineWidth=lw*0.7; octx.stroke();
+    octx.strokeStyle='#05070a'; octx.lineWidth=lw*0.9; octx.lineCap='round';
+    octx.beginPath(); octx.moveTo(p0.x,p0.y-r*0.45); octx.lineTo(p0.x,p0.y+r*0.05); octx.stroke();
+    octx.fillStyle='#05070a'; octx.beginPath(); octx.arc(p0.x,p0.y+r*0.45,r*0.13,0,Math.PI*2); octx.fill();
+    const catShort = FINDING_CATEGORIES[a.category] || '소견';
+    const labelText = catShort + (a.note ? ' · '+a.note : '');
+    drawValueLabel(octx, {x:p0.x+r*1.6,y:p0.y}, labelText, c, fontPx);
+  } else if (a.type==='text'){
+    octx.font = '500 '+fontPx+'px "IBM Plex Sans KR", sans-serif';
+    octx.fillStyle = selected ? '#ffffff' : c;
+    octx.textBaseline='middle';
+    octx.fillText(a.label||'', a.points[0].x, a.points[0].y);
+  } else if (a.type==='freehand'){
+    octx.strokeStyle=c; octx.lineWidth=emph; octx.lineJoin='round'; octx.lineCap='round';
+    octx.beginPath();
+    a.points.forEach((p,i)=> i===0?octx.moveTo(p.x,p.y):octx.lineTo(p.x,p.y));
+    octx.stroke();
+  } else if (a.type==='distance'){
+    drawSeg(octx,a.points[0],a.points[1],c,emph);
+    a.points.forEach((p)=>drawDot(octx,p,hr*0.6,c));
+    const mid = { x:(a.points[0].x+a.points[1].x)/2, y:(a.points[0].y+a.points[1].y)/2 };
+    drawValueLabel(octx, mid, fmt(a.value,1)+' '+a.unit, c, fontPx);
+  } else if (a.type==='angle'){
+    drawSeg(octx,a.points[0],a.points[1],c,emph);
+    drawSeg(octx,a.points[1],a.points[2],c,emph);
+    a.points.forEach((p)=>drawDot(octx,p,hr*0.6,c));
+    drawValueLabel(octx, {x:a.points[1].x+hr*1.5,y:a.points[1].y-fontPx*1.3}, fmt(a.value,1)+'°', c, fontPx);
+  } else if (a.type==='cobb'){
+    const [p1,p2,p3,p4] = a.points;
+    drawSeg(octx,p1,p2,c,emph);
+    drawSeg(octx,p3,p4,c,emph);
+    a.points.forEach((p)=>drawDot(octx,p,hr*0.6,c));
+    octx.setLineDash([5/state.zoom,4/state.zoom]);
+    octx.strokeStyle=c; octx.lineWidth=lw*0.8;
+    const ext = 1.6;
+    const e1a = { x:p1.x+(p1.x-p2.x)*ext, y:p1.y+(p1.y-p2.y)*ext };
+    const e2b = { x:p4.x+(p4.x-p3.x)*ext, y:p4.y+(p4.y-p3.y)*ext };
+    drawSeg(octx,p2,e1a,c,lw*0.8);
+    drawSeg(octx,p3,e2b,c,lw*0.8);
+    octx.setLineDash([]);
+    const segMid1 = { x:(p1.x+p2.x)/2, y:(p1.y+p2.y)/2 };
+    const segMid2 = { x:(p3.x+p4.x)/2, y:(p3.y+p4.y)/2 };
+    const diag = Math.hypot(overlayCanvas.width, overlayCanvas.height);
+    const inter = lineIntersection(p1,p2,p3,p4);
+    let labelPos = { x:(segMid1.x+segMid2.x)/2, y:(segMid1.y+segMid2.y)/2 };
+    if (inter && dist(inter, labelPos) < diag*0.9){
+      octx.setLineDash([2/state.zoom,3/state.zoom]);
+      octx.strokeStyle=c; octx.lineWidth=lw*0.6;
+      octx.beginPath(); octx.arc(inter.x, inter.y, Math.min(dist(inter,p2),dist(inter,p3))*0.28, 0, Math.PI*2); octx.stroke();
+      octx.setLineDash([]);
+    }
+    drawValueLabel(octx, {x:labelPos.x+hr*2.5, y:labelPos.y}, fmt(a.value,1)+'° Cobb', c, fontPx);
+  } else if (a.type==='pelvic' || a.type==='cva' || a.type==='shoulder'){
+    const [p1,p2] = a.points;
+    const midY = (p1.y+p2.y)/2;
+    octx.setLineDash([5/state.zoom,4/state.zoom]);
+    drawSeg(octx,{x:Math.min(p1.x,p2.x)-30/state.zoom,y:midY},{x:Math.max(p1.x,p2.x)+30/state.zoom,y:midY},'rgba(255,255,255,0.35)',lw*0.7);
+    octx.setLineDash([]);
+    drawSeg(octx,p1,p2,c,emph);
+    a.points.forEach((p)=>drawDot(octx,p,hr*0.6,c));
+    const mid = { x:(p1.x+p2.x)/2, y:(p1.y+p2.y)/2 };
+    const suffix = a.type==='pelvic' ? '° 골반기울기' : (a.type==='cva' ? '° CVA' : '° 어깨차');
+    drawValueLabel(octx, {x:mid.x, y:mid.y-fontPx*1.6}, fmt(a.value,1)+suffix, c, fontPx);
+  } else if (a.type==='leglength'){
+    const [p1,p2] = a.points;
+    octx.setLineDash([4/state.zoom,3/state.zoom]);
+    drawSeg(octx,p1,{x:p2.x,y:p1.y},'rgba(255,255,255,0.3)',lw*0.7);
+    octx.setLineDash([]);
+    drawSeg(octx,p1,p2,c,emph);
+    a.points.forEach((p)=>drawDot(octx,p,hr*0.6,c));
+    const mid = { x:(p1.x+p2.x)/2, y:(p1.y+p2.y)/2 };
+    drawValueLabel(octx, {x:mid.x+hr*1.5, y:mid.y}, fmt(a.value,1)+' '+a.unit+' 차이', c, fontPx);
+  } else if (a.type==='kneeAlign'){
+    drawSeg(octx,a.points[0],a.points[1],c,emph);
+    drawSeg(octx,a.points[1],a.points[2],c,emph);
+    a.points.forEach((p)=>drawDot(octx,p,hr*0.6,c));
+    drawValueLabel(octx, {x:a.points[1].x+hr*1.5,y:a.points[1].y-fontPx*1.3}, fmt(a.value,1)+'° 편차', c, fontPx);
+  }
+}
+
+/* ============================== READOUT ============================== */
+function updateReadout(){
+  if (!state.image){ readoutEl.innerHTML=''; return; }
+  const zoomPct = Math.round(state.zoom*100);
+  let px='—', py='—', val='—';
+  if (state.hoverPt){
+    px = Math.round(state.hoverPt.x); py = Math.round(state.hoverPt.y);
+    if (state.image.kind==='dicom' && !state.image.colorMode){
+      const ix=Math.round(state.hoverPt.x), iy=Math.round(state.hoverPt.y);
+      if (ix>=0 && iy>=0 && ix<state.image.width && iy<state.image.height){
+        const v = state.image.rescaled[iy*state.image.width+ix];
+        val = Math.round(v) + (state.image.modality==='CT' ? ' HU' : '');
+      }
+    }
+  }
+  const calib = state.pixelsPerMM ? state.pixelsPerMM.toFixed(2)+' px/mm ('+state.calibSource+')' : '미보정 (px 단위)';
+  readoutEl.innerHTML =
+    '<div class="stat"><span>Zoom</span><b>'+zoomPct+'%</b></div>'+
+    '<div class="stat"><span>X , Y</span><b>'+px+', '+py+'</b></div>'+
+    (state.image.kind==='dicom' && !state.image.colorMode ? '<div class="stat"><span>Value</span><b>'+val+'</b></div>' : '')+
+    '<div class="stat"><span>보정</span><b>'+calib+'</b></div>';
+}
+
+/* ============================== MEASUREMENT LIST ============================== */
+const GROUP_LABEL = { spine:'척추(측만)', pelvis:'골반', neck:'목(전방머리)', shoulder:'어깨', leg:'다리길이', knee:'무릎정렬' };
+const LEVEL_RANK = { good:0, warn:1, critical:2 };
+
+function buildOverallSummary(){
+  const flagged = state.annotations.filter((a)=>a.ref);
+  if (!flagged.length) return null;
+
+  const measures = flagged.filter((a)=> a.ref.group!=='finding');
+  const findings = flagged.filter((a)=> a.ref.group==='finding');
+
+  // worst finding per condition group, using level rank to break ties
+  const byGroup = {};
+  measures.forEach((a)=>{
+    const g = a.ref.group;
+    if (!byGroup[g] || LEVEL_RANK[a.ref.level] >= LEVEL_RANK[byGroup[g].ref.level]) byGroup[g] = a;
+  });
+  const groups = Object.keys(byGroup);
+  const notable = groups.filter((g)=> byGroup[g].ref.level !== 'good');
+  const tagRow = groups.map((g)=>{
+    const a = byGroup[g];
+    return '<span class="mcard-badge badge-'+a.ref.level+'">'+GROUP_LABEL[g]+'</span>';
+  }).join('');
+
+  // finding tags grouped by category, worst level per category
+  const byCat = {};
+  findings.forEach((a)=>{
+    if (!byCat[a.category] || LEVEL_RANK[a.level] >= LEVEL_RANK[byCat[a.category].level]) byCat[a.category] = a;
+  });
+  const catKeys = Object.keys(byCat);
+  const findingRow = catKeys.map((k)=>{
+    const a = byCat[k];
+    return '<span class="mcard-badge badge-'+a.ref.level+'">'+FINDING_CATEGORIES[k]+'</span>';
+  }).join('');
+
+  let lines = [];
+  if (!notable.length && !catKeys.length){
+    lines.push('현재까지 입력한 측정값과 소견 태그 기준으로는 특이 근골격계 소견이 확인되지 않습니다.');
+  } else {
+    if (notable.length){
+      const parts = notable.map((g)=> GROUP_LABEL[g]+'('+byGroup[g].ref.label.replace(' 참고치','')+')');
+      lines.push('측정값 기준으로 '+parts.join(', ')+' 소견이 참고됩니다.');
+      if (notable.includes('spine') && notable.includes('pelvis')) lines.push('척추측만과 골반 비대칭은 함께 관찰되는 경우가 많아, 골반 균형 교정을 함께 고려할 수 있습니다.');
+      if (notable.includes('neck') && notable.includes('shoulder')) lines.push('전방머리자세와 어깨 높이 비대칭이 동반되는 경우 상부교차증후군 패턴을 참고해볼 수 있습니다.');
+      if (notable.includes('leg') && notable.includes('pelvis')) lines.push('다리 길이차는 골반 비대칭과 연관되어 나타나는 경우가 있어 함께 확인하는 것이 좋습니다.');
+    }
+    if (catKeys.length){
+      const highCount = findings.filter((a)=>a.level==='high').length;
+      const catParts = catKeys.map((k)=> FINDING_CATEGORIES[k]+'('+LEVEL_META[byCat[k].level].label+')');
+      lines.push('담당자가 태그한 소견은 '+catParts.join(', ')+'입니다.'+(highCount ? ' 의심 높음으로 표시된 항목은 우선적으로 재확인을 권장합니다.' : ''));
+    }
+  }
+  return { tagRow, findingRow, text: lines.join(' ') };
+}
+
+function renderOverallSummary(){
+  const box = $('overallSummary');
+  const summary = buildOverallSummary();
+  if (!summary){ box.classList.remove('show'); box.innerHTML=''; return; }
+  box.classList.add('show');
+  box.innerHTML =
+    '<h4><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'+ICONS.clipboard+'</svg>종합 소견 (참고용)</h4>'+
+    '<div class="tagrow">'+summary.tagRow+summary.findingRow+'</div>'+
+    '<p>'+summary.text+'</p>'+
+    '<p style="color:var(--text-faint);font-size:11px">※ 담당자가 직접 입력·관찰한 내용에 대한 규칙 기반 참고 소견이며, 자동 영상 판독이 아닙니다.</p>';
+}
+
+function renderMeasureList(){
+  renderOverallSummary();
+  measureListEl.innerHTML='';
+  if (!state.annotations.length){
+    measureListEl.innerHTML =
+      '<div class="empty-state"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17L17 3l4 4L7 21z"/></svg>'+
+      '왼쪽 도구로 측정을 시작하면<br>여기에 기록이 표시됩니다.</div>';
+    return;
+  }
+  state.annotations.slice().reverse().forEach((a)=>{
+    const card = document.createElement('div');
+    card.className = 'mcard'+(a.id===state.selectedId?' selected':'');
+    let valueHtml = '';
+    if (a.value!==undefined){
+      valueHtml = '<div class="mcard-val">'+fmt(a.value,1)+' <span>'+a.unit+'</span></div>';
+      if ((a.type==='distance' || a.type==='leglength') && a.unit==='mm') valueHtml += '<div class="mcard-note">'+ (a.value/10).toFixed(2) +' cm</div>';
+      if (a.type==='leglength' && a.unit==='px') valueHtml += '<div class="mcard-note">실측 보정 시 mm/cm로 표시됩니다.</div>';
+    } else if (a.label){
+      valueHtml = '<div class="mcard-note" style="font-size:12.5px;color:var(--text)">'+escapeHtml(a.label)+'</div>';
+    } else if (a.type==='finding'){
+      let bits = '';
+      if (a.checklistTotal){
+        bits += '<div class="mcard-note" style="color:var(--accent)">체크리스트 '+a.checklist.length+'/'+a.checklistTotal+' 확인'+(a.checklist.length?': '+a.checklist.map(escapeHtml).join(' · '):'')+'</div>';
+      }
+      if (a.note) bits += '<div class="mcard-note" style="font-size:12.5px;color:var(--text)">'+escapeHtml(a.note)+'</div>';
+      valueHtml = bits;
+    }
+    const badge = a.ref ? '<span class="mcard-badge badge-'+a.ref.level+'">'+a.ref.label+'</span>' : '';
+    const note = (a.ref && a.type!=='finding') ? '<div class="mcard-note">'+a.ref.note+'</div>' : '';
+    const typeText = a.type==='finding' ? (FINDING_CATEGORIES[a.category]||'소견 태그') : TYPE_LABEL[a.type];
+    card.innerHTML =
+      '<div class="mcard-top">'+
+        '<span class="mcard-swatch" style="background:'+a.color+'"></span>'+
+        '<span class="mcard-type">'+typeText+'</span>'+
+        '<button class="mcard-del" title="삭제"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'+ICONS.trash+'</svg></button>'+
+      '</div>'+
+      valueHtml + badge + note;
+    card.addEventListener('click', (e)=>{ if (!e.target.closest('.mcard-del')) selectAnnotation(a.id); });
+    card.querySelector('.mcard-del').addEventListener('click', ()=> deleteAnnotation(a.id));
+    measureListEl.appendChild(card);
+  });
+}
+function escapeHtml(s){ const d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
+
+/* ============================== TABS ============================== */
+document.querySelectorAll('.tabbtn').forEach((btn)=>{
+  btn.addEventListener('click', ()=>{
+    document.querySelectorAll('.tabbtn').forEach((b)=>b.classList.remove('active'));
+    document.querySelectorAll('.tabpanel').forEach((p)=>p.classList.remove('active'));
+    btn.classList.add('active');
+    $('tab-'+btn.dataset.tab).classList.add('active');
+  });
+});
+
+function buildInfoPanel(){
+  infoPanelEl.innerHTML =
+    '<h3>도구 안내</h3>'+
+    '<div class="refrow guide"><span class="rlabel">실측 보정</span><span>두 지점의 실제 거리(mm)를 입력해 픽셀↔실측 단위를 맞춥니다. DICOM은 자동 보정됩니다.</span></div>'+
+    '<div class="refrow guide"><span class="rlabel">코브각(Cobb)</span><span>척추 상·하단 종판 두 선의 사이각. 척추측만 정도를 나타내는 지표입니다.</span></div>'+
+    '<div class="refrow guide"><span class="rlabel">골반 기울기</span><span>좌우 골반 랜드마크를 잇는 선이 수평선과 이루는 각도입니다.</span></div>'+
+    '<div class="refrow guide"><span class="rlabel">거북목 각도(CVA)</span><span>C7과 이주(귀)를 잇는 선이 수평선과 이루는 각도. 작을수록 전방머리자세가 뚜렷합니다.</span></div>'+
+    '<div class="refrow guide"><span class="rlabel">어깨 높이 비대칭</span><span>좌우 견봉을 잇는 선이 수평선과 이루는 각도입니다.</span></div>'+
+    '<div class="refrow guide"><span class="rlabel">다리 길이차</span><span>좌우 랜드마크(예: 전상장골극, 내측 복사뼈)의 수직 높이 차이입니다.</span></div>'+
+    '<div class="refrow guide"><span class="rlabel">무릎 정렬 편차</span><span>고관절–무릎–발목 3점 각도의 직선(180°) 대비 편차. 내반/외반 방향은 영상에서 직접 확인이 필요합니다.</span></div>'+
+    '<h3>코브각(척추측만) 참고 범위 <span style="font-weight:400;color:var(--text-faint)">(교육/선별용)</span></h3>'+
+    '<div class="refrow"><span class="rlabel">&lt; 10°</span><span style="color:var(--good)">정상 범위 참고치</span></div>'+
+    '<div class="refrow"><span class="rlabel">10° – 24°</span><span style="color:var(--warn)">경도 의심</span></div>'+
+    '<div class="refrow"><span class="rlabel">25° – 39°</span><span style="color:var(--warn)">중등도 의심</span></div>'+
+    '<div class="refrow"><span class="rlabel">≥ 40°</span><span style="color:var(--critical)">중증 의심</span></div>'+
+    '<h3>골반 기울기 참고 범위</h3>'+
+    '<div class="refrow"><span class="rlabel">&lt; 2°</span><span style="color:var(--good)">정상 범위 참고치</span></div>'+
+    '<div class="refrow"><span class="rlabel">2° – 5°</span><span style="color:var(--warn)">경도 비대칭</span></div>'+
+    '<div class="refrow"><span class="rlabel">≥ 5°</span><span style="color:var(--critical)">뚜렷한 비대칭</span></div>'+
+    '<h3>거북목 각도(CVA) 참고 범위</h3>'+
+    '<div class="refrow"><span class="rlabel">≥ 53°</span><span style="color:var(--good)">정상 범위 참고치</span></div>'+
+    '<div class="refrow"><span class="rlabel">45° – 52°</span><span style="color:var(--warn)">경도 거북목 의심</span></div>'+
+    '<div class="refrow"><span class="rlabel">&lt; 45°</span><span style="color:var(--critical)">중등도 이상 의심</span></div>'+
+    '<h3>어깨 높이 비대칭 참고 범위</h3>'+
+    '<div class="refrow"><span class="rlabel">&lt; 2°</span><span style="color:var(--good)">정상 범위 참고치</span></div>'+
+    '<div class="refrow"><span class="rlabel">2° – 4°</span><span style="color:var(--warn)">경도 비대칭</span></div>'+
+    '<div class="refrow"><span class="rlabel">≥ 4°</span><span style="color:var(--critical)">뚜렷한 비대칭</span></div>'+
+    '<h3>다리 길이차 참고 범위</h3>'+
+    '<div class="refrow"><span class="rlabel">&lt; 5 mm</span><span style="color:var(--good)">정상 범위 참고치</span></div>'+
+    '<div class="refrow"><span class="rlabel">5 – 14 mm</span><span style="color:var(--warn)">경도~중등도 의심</span></div>'+
+    '<div class="refrow"><span class="rlabel">≥ 15 mm</span><span style="color:var(--critical)">뚜렷한 차이 의심</span></div>'+
+    '<h3>무릎 정렬 편차 참고 범위</h3>'+
+    '<div class="refrow"><span class="rlabel">&lt; 5°</span><span style="color:var(--good)">정상 범위 참고치</span></div>'+
+    '<div class="refrow"><span class="rlabel">5° – 9°</span><span style="color:var(--warn)">경도 편위 의심</span></div>'+
+    '<div class="refrow"><span class="rlabel">≥ 10°</span><span style="color:var(--critical)">뚜렷한 편위 의심</span></div>'+
+    '<h3>소견 태그 (골절 · 붓기 · 근육손상 등)</h3>'+
+    '<div style="line-height:1.6;margin-bottom:8px;color:var(--text-muted)">소견 태그는 프로그램이 영상을 분석해 자동으로 찾아내는 기능이 아니라, 담당자가 영상을 보고 의심되는 부위를 직접 클릭해 종류와 의심 정도를 기록하는 메모 기능입니다. 아래는 각 항목을 태그할 때 참고할 수 있는 일반적인 관찰 포인트입니다.</div>'+
+    '<div class="refrow guide"><span class="rlabel">골절 의심</span><span>골 피질선의 뚜렷한 불연속, 계단 모양의 어긋남, 국소적인 골 정렬 이상이 보일 때</span></div>'+
+    '<div class="refrow guide"><span class="rlabel">미세골절 · 피로골절 의심</span><span>뚜렷한 골절선 없이 국소 골막 반응·경화가 의심될 때. X-ray 초기에는 잘 보이지 않아 MRI·골스캔이 더 민감할 수 있습니다.</span></div>'+
+    '<div class="refrow guide"><span class="rlabel">염증 소견</span><span>연부조직 음영 증가, 관절강 내 삼출 의심, 관절 주변 부종 음영이 보일 때</span></div>'+
+    '<div class="refrow guide"><span class="rlabel">근육 · 연부조직 손상 의심</span><span>근육 음영의 비대칭, 국소 혈종·결손이 의심되는 부위</span></div>'+
+    '<div class="refrow guide"><span class="rlabel">붓기</span><span>연부조직 두께 증가, 피하 지방층 음영 소실이 보이는 부위</span></div>'+
+    '<h3>지원 영상 종류</h3>'+
+    '<div class="refrow guide"><span class="rlabel">X-ray / CT</span><span>DICOM(.dcm)과 JPG·PNG를 모두 지원합니다. CT는 골/연부조직 HU 프리셋을 제공합니다.</span></div>'+
+    '<div class="refrow guide"><span class="rlabel">MRI (T1 · T2)</span><span>DICOM과 JPG·PNG를 지원합니다. MRI는 장비·시퀀스마다 신호 강도 기준이 달라 HU 같은 절대 단위가 없으므로, 밝기 조절은 자동 산출된 초기값을 기준으로 화면에서 직접 조정해 주세요. T1/T2 여부는 DICOM에 표준적으로 기록되지 않는 경우가 많아 담당자가 파일명·촬영 정보로 직접 구분해야 합니다.</span></div>'+
+    '<div class="refrow guide"><span class="rlabel">초음파(US)</span><span>흑백(B-mode)과 컬러 도플러 캡처(RGB) DICOM, JPG·PNG 캡처 이미지를 지원합니다. 컬러 영상은 밝기/대비 방식으로 조절되며 HU/윈도우 레벨 값은 표시되지 않습니다.</span></div>'+
+    '<div class="refrow guide"><span class="rlabel">지원 제한</span><span>JPEG 등으로 압축된 DICOM 파일은 현재 열리지 않습니다. 이 경우 장비·PACS에서 PNG 또는 JPG로 내보내 업로드해 주세요.</span></div>'+
+    '<h3>유의사항 (내부 참고용)</h3>'+
+    '<div style="line-height:1.7">이 프로그램은 센터 내부에서 근골격계 자세·체형 소견을 참고하기 위한 도구이며, 의료기기 인증을 받지 않았고 영상을 자동으로 판독하지 않습니다. 각도·거리 등 측정값은 담당자가 화면에서 직접 클릭해 입력한 좌표를 바탕으로 계산되며, 골절·미세골절·염증·근육손상·붓기 등의 소견 태그 역시 프로그램이 스스로 찾아낸 결과가 아니라 담당자가 영상을 보고 표시한 관찰 기록입니다. 표시되는 참고 범위와 설명은 일반적으로 통용되는 교육·선별용 정보로 촬영 조건과 측정 방식에 따라 오차가 클 수 있습니다. 정확성보다 빠른 참고와 기록 목적에 맞게 설계되었으므로, 실제 질환 여부에 대한 진단과 처방은 반드시 의사·방사선사 등 의료 전문가의 확인을 받으시기 바랍니다.</div>';
+}
+buildInfoPanel();
+
+/* ============================== EXPORTS (downloads capability) ============================== */
+async function offerDownload(filename, data){
+  if (!downloadsApi){ toast('이 환경에서는 파일 저장 기능을 사용할 수 없습니다.'); return; }
+  try {
+    await downloadsApi.save({ filename, data });
+    toast('저장되었습니다: '+filename);
+  } catch(err){
+    if (err && err.code==='declined') return;
+    toast('저장 실패: '+(err && err.message ? err.message : '알 수 없는 오류'));
+  }
+}
+
+$('btnExportPng').addEventListener('click', async ()=>{
+  if (!state.image){ toast('먼저 영상을 불러오세요.'); return; }
+  const w = imgCanvas.width, h = imgCanvas.height;
+  const tmp = document.createElement('canvas'); tmp.width=w; tmp.height=h;
+  const tctx = tmp.getContext('2d');
+  tctx.filter = imgCanvas.style.filter || 'none';
+  tctx.drawImage(imgCanvas,0,0);
+  tctx.filter = 'none';
+  tctx.drawImage(overlayCanvas,0,0);
+  tmp.toBlob(async (blob)=>{
+    if (!blob){ toast('이미지 생성에 실패했습니다.'); return; }
+    const base = (state.fileName||'image').replace(/\.[^.]+$/,'');
+    await offerDownload(base+'_측정.png', blob);
+  }, 'image/png');
+});
+
+$('btnExportReport').addEventListener('click', async ()=>{
+  if (!state.annotations.length){ toast('저장할 측정 기록이 없습니다.'); return; }
+  const now = new Date();
+  const lines = [];
+  lines.push('# 체형영상 측정 리포트');
+  lines.push('');
+  lines.push('- 파일: '+(state.fileName||'-'));
+  lines.push('- 생성 일시: '+now.toLocaleString('ko-KR'));
+  lines.push('- 보정 상태: '+(state.pixelsPerMM ? state.pixelsPerMM.toFixed(3)+' px/mm ('+state.calibSource+')' : '미보정'));
+  lines.push('');
+  const summary = buildOverallSummary();
+  if (summary){
+    lines.push('## 종합 소견 (참고용)');
+    lines.push('');
+    lines.push(summary.text);
+    lines.push('');
+    lines.push('> 담당자가 직접 입력한 측정값에 대한 규칙 기반 참고 소견이며, 자동 영상 판독이 아닙니다.');
+    lines.push('');
+  }
+  lines.push('## 측정 기록');
+  lines.push('');
+  state.annotations.forEach((a,i)=>{
+    if (a.type==='finding'){
+      lines.push((i+1)+'. **'+(FINDING_CATEGORIES[a.category]||'소견 태그')+'**'+(a.note?' — '+a.note:''));
+      lines.push('   - 담당자 종합 판단: '+a.ref.label+' (관찰 기록, 자동 판독 아님)');
+      if (a.checklistTotal) lines.push('   - 확인된 체크리스트: '+a.checklist.length+'/'+a.checklistTotal+(a.checklist.length?' — '+a.checklist.join('; '):''));
+    } else {
+      lines.push((i+1)+'. **'+TYPE_LABEL[a.type]+'**' + (a.value!==undefined ? ' — '+fmt(a.value,1)+' '+a.unit : '') + (a.label ? ' — '+a.label : ''));
+      if (a.ref) lines.push('   - 참고 판정: '+a.ref.label+' ('+a.ref.note+')');
+    }
+  });
+  lines.push('');
+  lines.push('---');
+  lines.push('본 리포트는 내부 참고용이며 의료기기 인증을 받은 자동 판독 결과가 아닙니다. 실제 진단·처방이 필요한 사례는 반드시 의료기관 확인을 거치시기 바랍니다.');
+  const md = lines.join('\n');
+  const base = (state.fileName||'image').replace(/\.[^.]+$/,'');
+  await offerDownload(base+'_리포트.md', md);
+});
+
+/* ============================== CMS EMBED BRIDGE (postMessage) ==============================
+ * momgagym-cms2의 'AI 측정·분석 > 근골격계 영상 판독' 탭에서 이 페이지를 iframe으로
+ * 열었을 때만 활성화된다. 독립 실행(단독 URL 접속)이면 부모 창이 자기 자신이라
+ * cmsRow가 숨겨진 채로 남고, 기존 단독 사용 흐름에는 아무 영향이 없다. */
+const inCmsFrame = (function(){
+  try { return window.parent && window.parent !== window; } catch(e){ return true; }
+})();
+if (inCmsFrame){
+  const cmsRow = $('cmsRow');
+  if (cmsRow) cmsRow.style.display = '';
+  const btnSendCms = $('btnSendCms');
+  if (btnSendCms){
+    btnSendCms.addEventListener('click', ()=>{
+      if (!state.annotations.length){ toast('전송할 측정/소견 기록이 없습니다.'); return; }
+      const summary = buildOverallSummary();
+      const payload = {
+        fileName: state.fileName || null,
+        imageWidth: state.image ? state.image.width : null,
+        imageHeight: state.image ? state.image.height : null,
+        modality: state.image ? (state.image.modality || (state.image.kind==='dicom' ? 'DICOM' : '')) : null,
+        calibration: state.pixelsPerMM ? { pixelsPerMM: state.pixelsPerMM, source: state.calibSource } : null,
+        annotationCount: state.annotations.length,
+        summaryHeadline: summary ? summary.text.split('\n')[0] : null,
+        summaryText: summary ? summary.text : null,
+        annotations: state.annotations.map((a)=>{
+          if (a.type==='finding'){
+            return {
+              kind:'finding',
+              category: a.category, categoryLabel: FINDING_CATEGORIES[a.category]||a.category,
+              level: a.level, levelLabel: a.ref ? a.ref.label : '',
+              checklist: a.checklist||[], checklistTotal: a.checklistTotal||0,
+              note: a.note||''
+            };
+          }
+          return {
+            kind:'measurement',
+            type: a.type, typeLabel: TYPE_LABEL[a.type]||a.type,
+            value: a.value!==undefined ? Math.round(a.value*10)/10 : null,
+            unit: a.unit||'',
+            refLabel: a.ref ? a.ref.label : '',
+            label: a.label||''
+          };
+        })
+      };
+      try {
+        window.parent.postMessage({ source:'momgagym-imaging-tool', type:'IMAGING_RESULT', payload }, '*');
+        toast('CMS로 전송했습니다. 상단에서 확인·저장을 눌러 완료하세요.');
+      } catch(e){
+        toast('CMS 전송에 실패했습니다: '+(e && e.message || '알 수 없는 오류'));
+      }
+    });
+  }
+}
+
+$('btnSaveJson').addEventListener('click', async ()=>{
+  if (!state.image){ toast('먼저 영상을 불러오세요.'); return; }
+  const payload = {
+    fileName: state.fileName,
+    imageWidth: state.image.width, imageHeight: state.image.height,
+    pixelsPerMM: state.pixelsPerMM, calibSource: state.calibSource,
+    annotations: state.annotations
+  };
+  await offerDownload((state.fileName||'session').replace(/\.[^.]+$/,'')+'_session.json', JSON.stringify(payload,null,2));
+});
+
+$('btnLoadJson').addEventListener('click', ()=> jsonInput.click());
+jsonInput.addEventListener('change', (e)=>{
+  const file = e.target.files[0]; if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (ev)=>{
+    try {
+      const payload = JSON.parse(ev.target.result);
+      if (!state.image){ toast('세션을 불러오려면 먼저 해당 영상을 불러오세요.'); return; }
+      if (payload.imageWidth!==state.image.width || payload.imageHeight!==state.image.height){
+        toast('현재 영상과 크기가 달라 좌표가 맞지 않을 수 있습니다.');
+      }
+      state.pixelsPerMM = payload.pixelsPerMM||null;
+      state.calibSource = payload.calibSource||null;
+      state.annotations = payload.annotations||[];
+      state.nextId = state.annotations.reduce((m,a)=>Math.max(m, parseInt((a.id||'m0').slice(1))||0), 0)+1;
+      renderMeasureList(); renderOverlay();
+      toast('세션을 불러왔습니다.');
+    } catch(err){ toast('세션 파일을 읽지 못했습니다.'); }
+  };
+  reader.readAsText(file);
+  jsonInput.value='';
+});
+
+/* ============================== TOPBAR ============================== */
+$('btnFit').addEventListener('click', ()=>{ if (state.image){ fitToScreen(); renderOverlay(); } else toast('먼저 영상을 불러오세요.'); });
+
+/* ============================== INIT ============================== */
+buildRail();
+setTool('select');
+updateReadout();
+
+})();
+</script>
