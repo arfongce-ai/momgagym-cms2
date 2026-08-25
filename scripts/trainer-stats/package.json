@@ -1,0 +1,10 @@
+{
+  "name": "trainer-stats",
+  "private": true,
+  "type": "module",
+  "description": "트레이너별 신규/활성 회원 수·매출 기여도·측정 리포트 건수를 Firestore에서 집계해 Notion으로 보내는 배치 스크립트(8장). 메인 CMS 앱과 완전히 분리되어 있어 빌드/배포에 영향이 없습니다.",
+  "dependencies": {
+    "firebase-admin": "^12.7.0",
+    "@notionhq/client": "^2.2.15"
+  }
+}
