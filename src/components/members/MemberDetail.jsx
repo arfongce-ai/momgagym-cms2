@@ -7,7 +7,7 @@ import { useState, useEffect } from 'react';
 import { store } from '../../demoData';
 import { todayYMD, addMonthsYMD } from '../../utils/dates';
 import { useAuth } from '../../contexts/AuthContext';
-import MemberRegister, { ClassTypeCheckbox } from './MemberRegister';
+import MemberRegister, { ClassTypeCheckbox, SEGMENT_OPTIONS, segmentLabel } from './MemberRegister';
 import MemberPicker from '../common/MemberPicker';
 import AiMeasureReport     from '../ai/AiMeasureReport';
 import MemberMeasureHistory from '../ai/MemberMeasureHistory';
@@ -105,6 +105,7 @@ export default function MemberDetail({ member:initMember, trainers, members=[], 
         joinDate:editForm.joinDate||'',
         // 최근결제일은 '수납 등록' 시에만 자동 갱신됨 — 기본정보 저장에서 건드리지 않는다.
         classTypes:editForm.classTypes||[], memo:editForm.memo||'',
+        targetSegment: editForm.targetSegment || null, snsConsent: !!editForm.snsConsent,
       });
       refresh(); setEdit(false); onUpdate?.();
     } catch (e) { alert('저장에 실패했습니다. 네트워크 확인 후 다시 시도하세요.'); }
@@ -739,6 +740,8 @@ export default function MemberDetail({ member:initMember, trainers, members=[], 
                   {l:'최근결제일', v:member.lastPaymentDate||'미등록'},
                   {l:'최근출석일', v:member.lastAttendedDate||'미출석'},
                   {l:'수업종류',   v:(member.classTypes||[]).length?member.classTypes.join(', '):'미등록'},
+                  {l:'타깃 세그먼트', v:member.targetSegment ? segmentLabel(member.targetSegment) : '미지정'},
+                  {l:'SNS 활용 동의', v:member.snsConsent ? '동의함' : '동의 안 함'},
                 ].map(row=>(
                   <div key={row.l} className="flex items-center justify-between py-2 border-b border-slate-200 dark:border-slate-800">
                     <span className="text-xs text-slate-500 uppercase tracking-wide font-semibold w-24 flex-shrink-0">{row.l}</span>
@@ -799,6 +802,20 @@ export default function MemberDetail({ member:initMember, trainers, members=[], 
                   </div>
                 </div>
                 <ClassTypeCheckbox selected={editForm.classTypes||[]} onChange={v=>setEF(f=>({...f,classTypes:v}))}/>
+                <div>
+                  <label className={LBL}>타깃 세그먼트 (선택)</label>
+                  <select value={editForm.targetSegment||''} onChange={pfe('targetSegment')} className={INP}>
+                    <option value="">선택 안 함</option>
+                    {SEGMENT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  </select>
+                </div>
+                <label className="flex items-center gap-2.5 cursor-pointer select-none">
+                  <span onClick={()=>setEF(f=>({...f, snsConsent:!f.snsConsent}))}
+                    className={`w-5 h-5 rounded flex items-center justify-center flex-shrink-0 border transition-colors ${editForm.snsConsent?'bg-amber-500 border-amber-500':'border-slate-400 dark:border-slate-600 bg-slate-100 dark:bg-slate-800'}`}>
+                    {editForm.snsConsent && <svg className="w-3 h-3 text-slate-950" viewBox="0 0 10 8" fill="none"><path d="M1 4l3 3 5-6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+                  </span>
+                  <span onClick={()=>setEF(f=>({...f, snsConsent:!f.snsConsent}))} className="text-sm font-semibold text-slate-700 dark:text-slate-200">측정·코칭 사례 SNS·홍보 활용 동의</span>
+                </label>
                 <div><label className={LBL}>메모</label><textarea rows={2} value={editForm.memo||''} onChange={pfe('memo')} className={INP+" resize-none"}/></div>
                 <div className="flex gap-2">
                   <button onClick={()=>setEdit(false)} className="py-2.5 px-4 rounded-xl border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:text-white text-sm font-semibold transition-colors">취소</button>

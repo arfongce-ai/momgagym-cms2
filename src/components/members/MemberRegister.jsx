@@ -34,6 +34,16 @@ export const TERMS = TERMS_SECTIONS
 
 export const MEMBER_CLASS_TYPES = ['트레이닝','선수','재활','외부','컨디셔닝'];
 
+// [세그먼트 통계 2026-08-25] 세컨드브레인_CMS연동_수익구조_전략.md 8장의 "3대 타깃
+// 세그먼트" 태그. Notion 트레이너/세그먼트별 통계 배치가 이 값을 그대로 집계 축으로
+// 쓸 예정이라, value는 한번 정하면 바꾸지 않는 게 좋다(바꾸면 과거 데이터와 안 맞음).
+export const SEGMENT_OPTIONS = [
+  { value: 'local',   label: '삼산동·달동 지역' },
+  { value: 'athlete', label: '운동선수·학생운동선수' },
+  { value: 'rehab',   label: '재활·노인' },
+];
+export const segmentLabel = (value) => SEGMENT_OPTIONS.find(o => o.value === value)?.label || '미지정';
+
 // ── ClassTypeCheckbox (onClick 버그 수정) ──────────────────
 export function ClassTypeCheckbox({ selected=[], onChange, options=MEMBER_CLASS_TYPES }) {
   const toggle = ct => onChange(selected.includes(ct) ? selected.filter(c=>c!==ct) : [...selected, ct]);
@@ -192,6 +202,9 @@ export default function MemberRegister({ trainers=[], onSuccess, onCancel }) {
     monthlyDueDate: addMonthsYMD(1, today),
     // 2개 담당 트레이너 슬롯 (세션 수업)
     trainerSlots: [{ ...EMPTY_SLOT }, { ...EMPTY_SLOT }],
+    // [세그먼트 통계 2026-08-25] 타깃 세그먼트 태그 + SNS 활용 동의 (둘 다 선택)
+    targetSegment: '',
+    snsConsent: false,
   });
 
   const canvasRef = useRef(null);
@@ -255,6 +268,7 @@ export default function MemberRegister({ trainers=[], onSuccess, onCancel }) {
         monthly,
         lastAttendedDate:null, memo:form.memo,
         classTypes, trainerSessions,
+        targetSegment: form.targetSegment || null, snsConsent: !!form.snsConsent,
         signatureUrl:getDataUrl(), isActive:true,
         createdAt:new Date().toISOString(),
       });
@@ -375,6 +389,28 @@ export default function MemberRegister({ trainers=[], onSuccess, onCancel }) {
                   </div>
                 )}
               </div>
+
+              {/* [세그먼트 통계 2026-08-25] 타깃 세그먼트 태그 (선택) */}
+              <div>
+                <label className={LBL}>타깃 세그먼트 (선택)</label>
+                <select value={form.targetSegment} onChange={pf('targetSegment')} className={INP}>
+                  <option value="">선택 안 함</option>
+                  {SEGMENT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+                <p className="text-[11px] text-slate-500 mt-1">트레이너별·세그먼트별 통계 집계용 — 나중에 회원 상세에서도 바꿀 수 있어요.</p>
+              </div>
+
+              {/* SNS 활용 동의 */}
+              <label className="flex items-start gap-2.5 cursor-pointer select-none bg-slate-100/50 dark:bg-slate-800/50 border border-slate-300 dark:border-slate-700 rounded-xl p-3">
+                <span onClick={()=>setForm(f=>({...f, snsConsent:!f.snsConsent}))}
+                  className={`w-5 h-5 mt-0.5 rounded flex items-center justify-center flex-shrink-0 border transition-colors ${form.snsConsent?'bg-amber-500 border-amber-500':'border-slate-400 dark:border-slate-600 bg-slate-100 dark:bg-slate-800'}`}>
+                  {form.snsConsent && <svg className="w-3 h-3 text-slate-950" viewBox="0 0 10 8" fill="none"><path d="M1 4l3 3 5-6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+                </span>
+                <span onClick={()=>setForm(f=>({...f, snsConsent:!f.snsConsent}))} className="text-sm">
+                  <span className="font-semibold text-slate-700 dark:text-slate-200">측정·코칭 사례의 SNS·홍보 활용에 동의합니다</span>
+                  <span className="block text-[11px] text-slate-500 mt-0.5">체크하지 않으면 콘텐츠 소재 후보에서 자동 제외됩니다. 나중에 회원 상세에서 철회할 수 있어요.</span>
+                </span>
+              </label>
 
               {/* 메모 */}
               <div><label className={LBL}>메모</label><textarea rows={2} value={form.memo} onChange={pf('memo')} placeholder="부상 이력, 특이사항" className={INP+" resize-none"}/></div>
