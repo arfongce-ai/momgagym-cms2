@@ -301,7 +301,17 @@ export default function Members() {
 
       {showRegister && (
         <MemberRegister trainers={trainers}
-          onSuccess={() => { load(); setShowRegister(false); }}
+          // [2026-08-26 요청] 신규등록 서명 완료 후 "확인"을 누르면 바로 그 회원의
+          // 수납 탭으로 이동한다 — MemberDetail의 initialTab 메커니즘(기존에 음성
+          // 명령·무결성검사 이동에서 쓰던 것과 동일)을 재사용.
+          onSuccess={(newMember) => {
+            load();
+            setShowRegister(false);
+            if (newMember) {
+              setSelected(newMember);
+              setSelectedInitialTab('payments');
+            }
+          }}
           onCancel={() => setShowRegister(false)} />
       )}
       {showImport && (
