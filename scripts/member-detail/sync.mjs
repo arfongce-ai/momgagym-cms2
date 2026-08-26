@@ -21,7 +21,12 @@
 import admin from 'firebase-admin';
 import { Client } from '@notionhq/client';
 
-const MEMBER_DETAIL_DATABASE_ID = '280c7da4-a6d3-4c5f-bf63-731ed2fbb28d'; // 회원별 측정 이력 (자동집계)
+// ⚠️ 2026-08-26 수정: 처음엔 데이터 소스 ID(280c7da4-...)를 잘못 넣어서
+//    notion.pages.create가 "database not found"로 계속 실패했습니다. Notion의
+//    데이터베이스/데이터소스 분리 모델 때문에 pages.create의 parent.database_id
+//    에는 반드시 데이터베이스(페이지) ID를 써야 합니다 — notion-fetch로 확인한
+//    실제 데이터베이스 ID로 교체.
+const MEMBER_DETAIL_DATABASE_ID = '56497823-72f8-4600-893e-2bf2f530b129'; // 회원별 측정 이력 (자동집계)
 const MEMBER_ID_CHUNK_SIZE = 10;
 
 // segment-stats/sync.mjs와 반드시 같이 맞출 것
