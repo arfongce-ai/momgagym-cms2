@@ -83,7 +83,7 @@ export default function ImagingMeasure({ member, onSave, onBack }) {
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <button onClick={onBack} className="measure-back">← 메뉴</button>
-        <h2 className="measure-title">근골격계 영상 판독</h2>
+        <h2 className="measure-title">근골격계 영상 확인</h2>
         <span className="w-12" />
       </div>
 
