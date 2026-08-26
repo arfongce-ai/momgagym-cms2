@@ -1,0 +1,32 @@
+name: Notion Member Detail Sync
+
+# 8-2 "개별 회원 상세" — 매주 월요일 9시(KST) 지난 7일간의 측정 리포트
+# (ai/gait_reports/posture_reports/rom_reports)를 회원별 "코칭 이력"으로 보고
+# Notion "회원별 측정 이력 (자동집계)" DB에 새 행으로 쌓는다.
+# scripts/member-detail/sync.mjs 참고.
+#
+# ⚠️ 대표님 판단으로 법률 자문 완료 전 진행 — 실명/연락처/주소/결제수단/부상
+#    자유서술은 절대 올리지 않고, 가명 회원코드 + 담당트레이너 이름 + 세그먼트
+#    태그만 씀(자세한 안전장치는 sync.mjs 상단 주석 참고).
+
+on:
+  workflow_dispatch: {}
+  schedule:
+    - cron: '0 0 * * 1' # 매주 월요일 09:00 KST(UTC+9) = 00:00 UTC
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: scripts/member-detail
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install
+      - run: node sync.mjs
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
