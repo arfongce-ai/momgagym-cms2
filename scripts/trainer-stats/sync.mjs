@@ -158,7 +158,12 @@ async function main() {
     });
   });
 
-  // ---- 6. 측정 리포트 건수 (4개 컬렉션 합산, __mid로 담당 회원과 매칭, createdAt 기준) ----
+  // ---- 6. 측정 리포트 건수 (4개 컬렉션 합산, __mid로 담당 회원과 매칭, recordedAtFull 기준) ----
+  // ⚠️ 2026-08-26 수정: 원래 여기서 'createdAt' 필드로 걸러냈는데, Firebase 콘솔에서
+  //    ai 컬렉션 문서를 직접 열어 확인해보니 실제로는 createdAt 필드가 존재하지
+  //    않습니다(측정 시각은 recordedAtFull에 ISO 문자열로 들어있음). 필드명이
+  //    안 맞아서 이 쿼리는 색인이 걸려도 계속 0건만 반환하고 있었습니다 —
+  //    아래처럼 recordedAtFull로 바꿔야 실제 건수가 집계됩니다.
   const reportCollections = ['ai', 'gait_reports', 'posture_reports', 'rom_reports'];
   const reportsByTrainer = {};
   for (const trainer of trainers) {
@@ -170,8 +175,8 @@ async function main() {
         const snap = await db
           .collection(col)
           .where('__mid', 'in', idChunk)
-          .where('createdAt', '>=', startISO)
-          .where('createdAt', '<=', endISO)
+          .where('recordedAtFull', '>=', startISO)
+          .where('recordedAtFull', '<=', endISO)
           .get();
         count += snap.size;
       }
