@@ -27,6 +27,7 @@ import { pickRecorderMime } from '../core/recordSink';
 import { beepTick, beepGo, primeAudio } from '../core/audioCue';
 import { lockZoom, unlockZoom } from '../../utils/viewportLock';
 import ReportActions from '../../components/report/ReportActions';
+import { buildSummaryData } from '../core/unifiedReport';
 import { store } from '../../demoData';
 import { isSkeletonEnabled } from '../core/skeletonPref';
 import SkeletonToggleChip from './SkeletonToggleChip';
@@ -1221,7 +1222,9 @@ function JumpReport({ report, saveState, onSave, onRetry, onBack, onOpenSavedRep
           videoBlob={report.videoBlob || null}
           onReportClick={() => onOpenSavedReport?.(report)}
           reportButtonLabel="📄 결과 리포트 보기"
-          baseName={`${report.member?.name || '회원'}_점프`} onMessage={() => {}} />
+          baseName={`${report.member?.name || '회원'}_점프`} onMessage={() => {}}
+          simpleSummary={report.valid === true ? buildSummaryData(report, { reportType: 'jump' }) : null}
+          simpleMember={report.member} />
         {report.valid === true && saveState !== 'saved' && (
           <button onClick={onSave}
             disabled={saveState === 'saving' || saveState === 'saved'}

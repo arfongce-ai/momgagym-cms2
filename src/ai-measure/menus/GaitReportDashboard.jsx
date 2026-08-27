@@ -11,6 +11,7 @@ import { aiStore } from '../../demoData';
 import ReportActions from '../../components/report/ReportActions';
 import { MetricCard, UnifiedReportCanvas, UnifiedReportHeader, UnifiedReportPage } from '../../components/report/UnifiedReportPrimitives';
 import { rangeToStatus } from '../core/unifiedReport';
+import { buildSummaryData } from '../core/unifiedReport';
 
 /*
  * GaitReportDashboard — 보행/러닝 종합 리포트 (1장 대시보드)
@@ -256,6 +257,8 @@ export default function GaitReportDashboard({ report, onComment, onClose, videoB
           reportNodeId="gait-report-sheet"
           videoBlob={videoBlob || report?.videoBlob || null}
           baseName={`${memberName}_보행`}
+          simpleSummary={buildSummaryData(report, { reportType: 'gait' })}
+          simpleMember={member}
         />
       </div>
     </UnifiedReportCanvas>

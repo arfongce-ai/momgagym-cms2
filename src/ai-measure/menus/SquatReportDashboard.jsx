@@ -12,6 +12,7 @@
 import { useMemo, useState } from 'react';
 import { MetricCard, UnifiedReportCanvas, UnifiedReportHeader, UnifiedReportPage, UnifiedReportSection } from '../../components/report/UnifiedReportPrimitives';
 import { SQUAT_TUNING, extractSquatMetrics, squatMetricStatus, computeSquatScore } from '../core/squatBiomechanics';
+import { buildSummaryData } from '../core/unifiedReport';
 import { depthPctFromThighIncline } from '../core/squatFms';
 import ProblemFocusPanel from './ProblemFocusPanel.jsx';
 import MomiAutoNote from '../../components/report/MomiAutoNote.jsx';
@@ -200,7 +201,8 @@ export default function SquatReportDashboard({ report, member, onClose, onRemeas
 
       <div className="w-full max-w-[794px] mx-auto mt-3 space-y-2">
         <ReportActions reportNodeId="squat-report-sheet" videoBlob={report.videoBlob || null}
-          baseName={`${report.member?.name || '회원'}_오버헤드스쿼트`} onMessage={setVideoShareMsg} />
+          baseName={`${report.member?.name || '회원'}_오버헤드스쿼트`} onMessage={setVideoShareMsg}
+          simpleSummary={buildSummaryData(report, { reportType: 'squat' })} simpleMember={member} />
         {videoShareMsg && <p className="text-center text-xs text-emerald-700 dark:text-emerald-400">{videoShareMsg}</p>}
         {!member?.isVirtual && typeof onViewInReport === 'function' && (
           <button

@@ -7,6 +7,7 @@ import { beepTick, beepGo, beepSuccess, primeAudio } from '../core/audioCue';
 import CameraStage from './CameraStage.jsx';
 import PostureReport from './PostureReport.jsx';
 import ReportActions from '../../components/report/ReportActions';
+import { buildSummaryData } from '../core/unifiedReport';
 import { drawPostureSnapshotOverlay } from '../core/postureOverlay';
 import { useHardwareBack } from '../core/useHardwareBack';
 import { isSkeletonEnabled } from '../core/skeletonPref';
@@ -461,6 +462,8 @@ export default function PostureMeasure({ member, onSave, onBack, onViewInReport 
             reportButtonLabel={saveState === 'saved' ? '✓ 리포트 저장됨' : '🖼 리포트 저장'}
             onAfterReportSave={handleSave}
             onMessage={setActionMsg}
+            simpleSummary={buildSummaryData(report, { reportType: 'posture' })}
+            simpleMember={member}
           />
           {actionMsg && <p className="text-center text-xs text-slate-500 dark:text-slate-400">{actionMsg}</p>}
           {saveState === 'saved' && (

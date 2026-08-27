@@ -22,6 +22,7 @@ import CameraStage from './CameraStage.jsx';
 import GaugeHud from './GaugeHud.jsx';
 import RomReport from './RomReport.jsx';
 import ReportActions from '../../components/report/ReportActions';
+import { buildSummaryData } from '../core/unifiedReport';
 import { dataUrlToFile } from '../core/reportShare';
 import { useHardwareBack } from '../core/useHardwareBack';
 import RomSensorGoniometer from './RomSensorGoniometer.jsx';
@@ -628,6 +629,8 @@ export default function RomMeasure({ member, onSave, onBack, onViewInReport }) {
             reportButtonLabel={saveState === 'saved' ? '✓ 리포트 저장됨' : '🖼 리포트 저장'}
             onAfterReportSave={handleSave}
             onMessage={setActionMsg}
+            simpleSummary={buildSummaryData(report, { reportType: 'rom' })}
+            simpleMember={member}
           />
           {actionMsg && <p className="text-center text-xs text-slate-500 dark:text-slate-400">{actionMsg}</p>}
           {saveState === 'saved' && <p className="text-center text-xs font-bold text-emerald-700 dark:text-emerald-400">회원 기록에 저장되었습니다.</p>}

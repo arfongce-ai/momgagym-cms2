@@ -11,6 +11,38 @@ import { askMomiDaily } from '../../services/momiService';
 import BodyInfoReport from './BodyInfoReport.jsx';
 import ReportActions from '../../components/report/ReportActions';
 
+// [쉬운 버전 리포트 2026-08-27] 신체정보는 analyzeBody()가 자체 판정
+// (grade: good/warn/bad)을 쓰고 있어 unifiedReport.buildSummaryData()의
+// 표준 필드 구조(자세·보행 등이 쓰는 형태)와 맞지 않는다 — 그대로 넘기면
+// keyMetrics가 비어 나온다. 그래서 이 화면만 별도로 SimpleResultReport가
+// 기대하는 모양으로 직접 변환한다(grade→normal/caution/risk 매핑).
+function buildBodyInfoSimpleSummary(result) {
+  if (!result?.items?.length) return null;
+  const GRADE_TO_STATUS = { good: 'normal', warn: 'caution', bad: 'risk' };
+  const STATUS_LABEL = { normal: '정상', caution: '주의', risk: '확인 필요' };
+  const keyMetrics = result.items.map((item) => ({
+    key: item.key,
+    label: item.label,
+    displayValue: item.value,
+    unit: item.unit,
+    status: { key: GRADE_TO_STATUS[item.grade] || 'unknown', label: item.status },
+  }));
+  const worstKey = keyMetrics.reduce((acc, m) => {
+    const rank = { risk: 2, caution: 1, normal: 0, unknown: 0 }[m.status.key] || 0;
+    return rank > acc.rank ? { key: m.status.key, rank } : acc;
+  }, { key: 'normal', rank: 0 }).key;
+  return {
+    title: '신체정보',
+    overallScore: worstKey === 'normal' ? 90 : worstKey === 'caution' ? 65 : 35,
+    status: worstKey,
+    statusLabel: STATUS_LABEL[worstKey],
+    keyMetrics,
+    topFindings: [],
+    recommendations: [result.summary].filter(Boolean),
+    measuredAt: result.analyzedAt,
+  };
+}
+
 // [모미 신규] 오늘의 컨디션 판정 상태(normal/caution/risk) → 배지 색.
 // unifiedReport.js STATUS 와 동일한 컬러 매핑(다른 판정 모듈들과 톤 통일).
 const CONDITION_TONE = {
@@ -259,6 +291,8 @@ export default function BodyInfoMeasure({ member, onSave, onBack, onGuestBodyInf
               baseName={`${member?.name || '회원'}_신체정보`}
               reportButtonLabel="🖼 A4 리포트 JPG 전송"
               onMessage={setActionMsg}
+              simpleSummary={buildBodyInfoSimpleSummary(result)}
+              simpleMember={member}
             />
             {actionMsg && <p className="text-center text-xs text-slate-500 dark:text-slate-400">{actionMsg}</p>}
           </div>

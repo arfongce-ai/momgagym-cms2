@@ -15,6 +15,9 @@ import { findAnomalies } from '../ai-measure/core/comprehensiveReport';
 import { captureNodeToJpgFile, shareMeasurementSummaryToKakao } from '../ai-measure/core/reportShare';
 import { canCaptureUnifiedResult, isLiftingShapedSession } from '../components/report/sessionShare';
 import SessionShareReport from '../components/report/SessionShareReport';
+// [쉬운 버전 리포트 2026-08-27] 측정 종류를 안 가리는 단일 컴포넌트라 lazy 아님
+// (preloadReportChunk 대상 아님 — 캡처 시점에 바로 준비되어 있어야 하는 작은 파일).
+import SimpleResultReport from '../components/report/SimpleResultReport';
 import ReportActions from '../components/report/ReportActions';
 import TrendChart from '../components/report/TrendChart';
 import MemberPicker from '../components/common/MemberPicker';
@@ -706,10 +709,22 @@ async function shareReportFilesOrDownload(files, { title, text } = {}) {
   };
 }
 
-function ShareCaptureReport({ item, member }) {
+function ShareCaptureReport({ item, member, simple }) {
   if (!item) return null;
   const report = item.report || {};
   const reportMember = member || report.member;
+
+  // [쉬운 버전 리포트 2026-08-27] 측정 종류(item.source)를 가리지 않고 항상
+  // 같은 컴포넌트로 렌더한다 — buildSummaryData가 이미 모든 종류를 같은
+  // 모양(item.summary)으로 통일해뒀기 때문에 가능하다. 아래 기존 분기
+  // (상세 리포트)는 전혀 건드리지 않는다.
+  if (simple) {
+    return (
+      <div data-share-report-ready="true" className="w-full bg-slate-50 dark:bg-slate-950">
+        <SimpleResultReport summary={item.summary} member={reportMember} />
+      </div>
+    );
+  }
 
   if (item.source === 'saved-report') {
     return (
@@ -821,7 +836,7 @@ export function extractSessionMetric(session) {
   }
 }
 
-function UnifiedResultCard({ item, onOpen, onShare, sharing }) {
+function UnifiedResultCard({ item, onOpen, onShare, onShareSimple, sharing, sharingSimple }) {
   const statusStyle = STATUS_STYLE[item.summary.status] || STATUS_STYLE.unknown;
   const findings = (item.summary.topFindings || []).slice(0, 3);
   const canOpen = item.source !== 'session' || item.session?.menu;
@@ -873,15 +888,27 @@ function UnifiedResultCard({ item, onOpen, onShare, sharing }) {
         </div>
       </button>
 
-      {/* 카카오톡 공유: 리포트 화면이 있으면 이미지 파일 공유, 없으면 요약 공유 */}
-      <button
-        type="button"
-        onClick={(e) => { e.stopPropagation(); onShare?.(item); }}
-        disabled={sharing}
-        className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-xl bg-[#FEE500] py-2.5 text-[13px] font-black text-[#191600] transition active:scale-[0.99] disabled:opacity-60"
-      >
-        {sharing ? '리포트 생성 중…' : '카카오톡으로 리포트 공유'}
-      </button>
+      {/* 카카오톡 공유: 리포트 화면이 있으면 이미지 파일 공유, 없으면 요약 공유.
+          쉬운 버전(오른쪽)은 트레이너용 상세 화면은 그대로 두고, 회원에게 보낼
+          카드만 큰 아이콘·쉬운 말 중심으로 새로 만든 버전이다(모든 측정 종류 공통). */}
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onShare?.(item); }}
+          disabled={sharing || sharingSimple}
+          className="flex items-center justify-center gap-1.5 rounded-xl bg-[#FEE500] py-2.5 text-[12.5px] font-black text-[#191600] transition active:scale-[0.99] disabled:opacity-60"
+        >
+          {sharing ? '생성 중…' : '상세 리포트 공유'}
+        </button>
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onShareSimple?.(item); }}
+          disabled={sharing || sharingSimple}
+          className="flex items-center justify-center gap-1.5 rounded-xl border-2 border-amber-400 bg-amber-50 dark:bg-amber-500/10 py-2.5 text-[12.5px] font-black text-amber-700 dark:text-amber-300 transition active:scale-[0.99] disabled:opacity-60"
+        >
+          {sharingSimple ? '생성 중…' : '🙂 쉬운 버전 공유'}
+        </button>
+      </div>
     </div>
   );
 }
@@ -912,7 +939,9 @@ export default function Report() {
   }, []);
   const [msg, setMsg] = useState(null);
   const [sharingId, setSharingId] = useState(null);
+  const [sharingMode, setSharingMode] = useState(null); // 'detail' | 'simple' — sharingId와 짝지어 어느 버튼이 진행 중인지 구분
   const [shareCaptureItem, setShareCaptureItem] = useState(null);
+  const [shareCaptureSimple, setShareCaptureSimple] = useState(false); // 쉬운 버전 캡처 중인지
   const shareCaptureRef = useRef(null);
 
   const member = members.find(m => m.id === memberId);
@@ -1244,10 +1273,15 @@ export default function Report() {
     }
   };
 
-  const captureUnifiedResultFiles = async (item) => {
-    if (!canCaptureUnifiedResult(item)) return [];
-    await preloadReportChunk(item);
+  // simple=true(쉬운 버전)는 buildSummaryData 결과(item.summary)만 있으면
+  // 항상 캡처 가능하다 — 전용 대시보드 화면이 없는 측정도 포함해서 전부.
+  // 그래서 canCaptureUnifiedResult(상세 리포트 전용 판단)를 simple일 땐 보지 않는다.
+  const captureUnifiedResultFiles = async (item, { simple = false } = {}) => {
+    if (simple && !item?.summary) return [];
+    if (!simple && !canCaptureUnifiedResult(item)) return [];
+    if (!simple) await preloadReportChunk(item); // 쉬운 버전은 lazy 청크가 없어 프리로드 불필요
     setShareCaptureItem(item);
+    setShareCaptureSimple(simple);
     try {
       await nextFrame();
       const root = await waitForShareCapture(shareCaptureRef);
@@ -1257,7 +1291,7 @@ export default function Report() {
 
       const pages = Array.from(root.querySelectorAll(REPORT_CAPTURE_PAGE_SELECTOR));
       const targets = pages.length ? pages : [root];
-      const baseName = buildShareFileBaseName(item, member);
+      const baseName = buildShareFileBaseName(item, member) + (simple ? '_쉬운버전' : '');
       const files = [];
 
       for (let i = 0; i < targets.length; i += 1) {
@@ -1268,17 +1302,18 @@ export default function Report() {
       return files;
     } finally {
       setShareCaptureItem(null);
+      setShareCaptureSimple(false);
     }
   };
 
-  const shareUnifiedResult = async (item) => {
+  const shareUnifiedResult = async (item, { simple = false } = {}) => {
     if (!item || sharingId) return;
-    setSharingId(item.id); setMsg(null);
+    setSharingId(item.id); setSharingMode(simple ? 'simple' : 'detail'); setMsg(null);
     try {
-      if (canCaptureUnifiedResult(item)) {
+      if (simple || canCaptureUnifiedResult(item)) {
         try {
-          setMsg('리포트 이미지를 만드는 중입니다...');
-          const files = await captureUnifiedResultFiles(item);
+          setMsg(simple ? '쉬운 버전 리포트를 만드는 중입니다...' : '리포트 이미지를 만드는 중입니다...');
+          const files = await captureUnifiedResultFiles(item, { simple });
           if (files.length) {
             const res = await shareReportFilesOrDownload(files, {
               title: `${member?.name || '회원'} 결과 리포트`,
@@ -1292,6 +1327,8 @@ export default function Report() {
         }
       }
 
+      // 쉬운 버전은 이미지 캡처가 항상 되므로(요약 데이터만 있으면 가능) 여기까지
+      // 오지 않는다 — 이 텍스트 폴백은 상세 리포트 전용 실패 시에만 쓰인다.
       const res = await shareMeasurementSummaryToKakao(item.summary, {
         memberName: member?.name || '',
         reportType: item.reportType,
@@ -1302,6 +1339,7 @@ export default function Report() {
       setMsg(`카카오 공유 실패: ${e?.message || '오류'}`);
     } finally {
       setSharingId(null);
+      setSharingMode(null);
       setTimeout(() => setMsg(null), 2600);
     }
   };
@@ -1453,7 +1491,15 @@ export default function Report() {
 
               <div className="space-y-2">
                 {selectedGroup.items.length > 0 ? selectedGroup.items.map((item) => (
-                  <UnifiedResultCard key={item.id} item={item} onOpen={openUnifiedResult} onShare={shareUnifiedResult} sharing={sharingId === item.id} />
+                  <UnifiedResultCard
+                    key={item.id}
+                    item={item}
+                    onOpen={openUnifiedResult}
+                    onShare={shareUnifiedResult}
+                    onShareSimple={(it) => shareUnifiedResult(it, { simple: true })}
+                    sharing={sharingId === item.id && sharingMode !== 'simple'}
+                    sharingSimple={sharingId === item.id && sharingMode === 'simple'}
+                  />
                 )) : (
                   <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 text-center text-sm font-semibold text-slate-500">
                     이날은 신체정보 기록만 있습니다.
@@ -1631,7 +1677,7 @@ export default function Report() {
         >
           <div ref={shareCaptureRef} className="w-[860px] bg-slate-50 dark:bg-slate-950">
             <Suspense fallback={<div className="min-h-[1123px] w-[794px] bg-white dark:bg-slate-900" />}>
-              <ShareCaptureReport item={shareCaptureItem} member={member} />
+              <ShareCaptureReport item={shareCaptureItem} member={member} simple={shareCaptureSimple} />
             </Suspense>
           </div>
         </div>

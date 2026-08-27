@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import ReportActions from '../../components/report/ReportActions';
+import { buildSummaryData } from '../core/unifiedReport';
 import {
   UnifiedEmptyState,
   UnifiedReportCanvas,
@@ -291,7 +292,14 @@ export default function JumpReportDashboard({ report, onClose, onComment, member
       </div>
 
       <div className="w-full max-w-[794px] sticky bottom-0 bg-slate-50 dark:bg-slate-950 pt-2 pb-[max(8px,env(safe-area-inset-bottom))]">
-        <ReportActions reportNodeId="jump-report-sheet" videoBlob={report.videoBlob || null} baseName={saveName} onMessage={setMessage} />
+        <ReportActions
+          reportNodeId="jump-report-sheet"
+          videoBlob={report.videoBlob || null}
+          baseName={saveName}
+          onMessage={setMessage}
+          simpleSummary={buildSummaryData(report, { reportType: 'jump' })}
+          simpleMember={member}
+        />
       </div>
     </UnifiedReportCanvas>
   );

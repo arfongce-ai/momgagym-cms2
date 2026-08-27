@@ -11,6 +11,7 @@
 // ════════════════════════════════════════════════════════════════════════
 import { useMemo } from 'react';
 import ReportActions from '../../components/report/ReportActions';
+import { buildSummaryData } from '../core/unifiedReport';
 import {
   UnifiedEmptyState, UnifiedReportCanvas, UnifiedReportHeader, UnifiedReportPage, UnifiedReportSection,
 } from '../../components/report/UnifiedReportPrimitives';
@@ -87,6 +88,8 @@ export default function LiftingReportDashboard({ report, onClose, member }) {
           reportNodeId="lifting-report"
           baseName={`바벨리프팅_${exLabel}`}
           videoBlob={report.videoBlob || null}
+          simpleSummary={buildSummaryData(report)}
+          simpleMember={member}
         />
         <button onClick={onClose} className="rounded-lg bg-slate-200 dark:bg-slate-700 text-white font-bold text-sm px-4 py-2">닫기</button>
       </div>

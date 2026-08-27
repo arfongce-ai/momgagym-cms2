@@ -23,6 +23,7 @@ import ProblemFocusPanel from './ProblemFocusPanel.jsx';
 import MomiAutoNote from '../../components/report/MomiAutoNote.jsx';
 import MomiInsightPanel from '../../components/report/MomiInsightPanel.jsx';
 import ReportActions from '../../components/report/ReportActions';
+import { buildSummaryData } from '../core/unifiedReport';
 import { aiStore } from '../../demoData';
 
 const STATUS_KO = { normal: '정상', caution: '주의', risk: '위험', unknown: '확인 필요' };
@@ -255,7 +256,8 @@ export default function StanceReportDashboard({ report, member, onClose, onRemea
       </UnifiedReportPage>
 
       <div className="w-full max-w-[794px] mx-auto mt-3 space-y-2">
-        <ReportActions reportNodeId="stance-report-sheet" baseName={`${report.member?.name || '회원'}_한다리서기`} onMessage={setVideoShareMsg} />
+        <ReportActions reportNodeId="stance-report-sheet" baseName={`${report.member?.name || '회원'}_한다리서기`} onMessage={setVideoShareMsg}
+          simpleSummary={buildSummaryData(report, { reportType: 'stance' })} simpleMember={member} />
         {videoShareMsg && <p className="text-center text-xs text-emerald-700 dark:text-emerald-400">{videoShareMsg}</p>}
         {!member?.isVirtual && typeof onViewInReport === 'function' && (
           <button
