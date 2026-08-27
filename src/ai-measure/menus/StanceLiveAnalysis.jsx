@@ -361,6 +361,25 @@ export default function StanceLiveAnalysis({ member, stanceLeg, eyesClosed, onBa
       if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
         try { mediaRecorderRef.current.stop(); } catch (e) { /* noop */ }
       }
+      // [2026-08-27] "SLST 측정 후 화면이 검게 변하며 멈추는 현상" 버그 수정.
+      // 위에서 이미 stop()으로 카메라를 꺼버린 채(video.srcObject=null → 검은
+      // 화면) 이 분기로 들어오면, 에러 메시지는 "다시 시도해 주세요"라고
+      // 안내하면서도 정작 재시도할 버튼이 하나도 렌더되지 않았다(started가 이미
+      // true라 "녹화 시작" 버튼 조건에 안 걸리고, uiPhase도 holding/ready에 멈춰
+      // 있어 trial_done/finished 버튼도 안 뜸) — 사용자 입장에선 화면이 까맣게
+      // 멈춘 것으로 보였다. 카메라·트래커 상태를 처음(캘리브레이션 대기)으로
+      // 리셋하고 usePoseEngine을 재시작해 실제로 다시 시도할 수 있게 한다.
+      measureStartedRef.current = false;
+      trackerRef.current = null;
+      calibRef.current = null;
+      recordingStartedRef.current = false;
+      mediaRecorderRef.current = null;
+      setStarted(false);
+      setUiPhase('calibrating');
+      setCalibProgress(0);
+      setTrialsFound(0);
+      setHoldMs(0);
+      start();
       return;
     }
     pendingSummaryRef.current = summary;

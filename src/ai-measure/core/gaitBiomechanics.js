@@ -347,14 +347,31 @@ export const jointAnglesFromPose = (lm) => {
   };
 };
 
+// [2026-08-27] "보행·러닝 관절 각도가 리포트에 제대로 반영되는지" 확인 과정에서
+// 발견: push()가 angles.left.* 만 누적하고 있었다 — jointAnglesFromPose()는
+// 좌/우 모두 계산해 넘겨주는데, 오른쪽 고관절·발목 데이터가 전부 조용히
+// 유실되고 있었음(무릎은 별도의 BiomechAccumulator가 좌우를 정확히 추적해서
+// 문제 없었지만, 고관절·발목은 이 클래스가 유일한 경로였음). 그 결과
+// GaitReportDashboard.jsx의 "관절 각도 비교(좌·우 비교)" 레이더 차트에서
+// 고관절 ROM·발목 ROM 두 축은 좌/우에 같은 값을 그대로 복제해 보여주고
+// 있었다(실제 좌우 비대칭이 있어도 항상 대칭으로 보임). 좌/우를 각각
+// 누적하도록 수정하고, 기존 소비처(단일 rom/avg를 읽던 곳)가 깨지지 않도록
+// 좌우 통합값은 그대로 avg/rom에 유지하면서 left/right를 추가로 반환한다.
 export class AngleAccumulator {
   constructor() {
-    this.data = { hip: [], knee: [], ankle: [] };
+    this.data = {
+      hip: { left: [], right: [] },
+      knee: { left: [], right: [] },
+      ankle: { left: [], right: [] },
+    };
   }
   push(angles) {
-    if (angles?.left?.hip) this.data.hip.push(angles.left.hip);
-    if (angles?.left?.knee) this.data.knee.push(angles.left.knee);
-    if (angles?.left?.ankle) this.data.ankle.push(angles.left.ankle);
+    ['hip', 'knee', 'ankle'].forEach((joint) => {
+      const l = angles?.left?.[joint];
+      const r = angles?.right?.[joint];
+      if (l != null) this.data[joint].left.push(l);
+      if (r != null) this.data[joint].right.push(r);
+    });
   }
   summary() {
     const calc = (arr) => {
@@ -364,10 +381,17 @@ export class AngleAccumulator {
       const avg = arr.reduce((a, b) => a + b, 0) / arr.length;
       return { avg: Math.round(avg), rom: Math.round(max - min) };
     };
+    const bySide = (joint) => {
+      const left = calc(this.data[joint].left);
+      const right = calc(this.data[joint].right);
+      // 기존 형태(avg/rom 단일값) 호환 — 좌우 데이터를 합쳐 계산.
+      const combined = calc([...this.data[joint].left, ...this.data[joint].right]);
+      return { ...combined, left, right };
+    };
     return {
-      hip: calc(this.data.hip),
-      knee: calc(this.data.knee),
-      ankle: calc(this.data.ankle)
+      hip: bySide('hip'),
+      knee: bySide('knee'),
+      ankle: bySide('ankle'),
     };
   }
 }

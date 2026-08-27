@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   GaitCycleTracker, jointAnglesFromPose, AngleAccumulator,
-  pelvisRelativeFeet, cameraAngleQuality, detectOrientation
+  pelvisRelativeFeet, cameraAngleQuality, detectOrientation, BiomechAccumulator
 } from '../core/gaitBiomechanics';
 import { boostedGain } from '../core/audioCue';
 import { loadPoseLandmarker, detectPoseFrame, isPoseReady, closePoseLandmarker } from '../core/poseBackend';
@@ -191,6 +191,13 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
   // 데이터 파이프라인 인스턴스
   const trackerRef = useRef(new GaitCycleTracker());
   const angleAccRef = useRef(new AngleAccumulator());
+  // [2026-08-27] "보행·러닝 관절 각도가 리포트에 제대로 반영되는지" 확인 과정에서
+  // 발견: 업로드 분석(GaitUploadAnalysis.jsx)은 처음부터 BiomechAccumulator를
+  // 써서 무릎 좌우 굽힘·몸통 기울기·골반 드롭·수직 진폭·무릎 대칭·보폭 비율을
+  // 리포트에 저장하는데, 실시간(라이브) 화면인 이 파일은 애초에 이 누적기를
+  // import조차 하지 않아 해당 지표들이 전부 빠진 채 저장되고 있었다(기본값이
+  // 라이브 모드라 실제로는 대부분의 측정에 영향). 업로드 경로와 동일하게 추가.
+  const biomechAccRef = useRef(new BiomechAccumulator());
 
   useEffect(() => { viewRef.current = view; }, [view]);
   useEffect(() => { aspectRef.current = aspect; }, [aspect]);
@@ -347,6 +354,7 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
           // 녹화 중: 분석 누적 (화면엔 수치 미표시)
           trackerRef.current.push(pelvisRelativeFeet(corrected), ts);
           angleAccRef.current.push(jointAnglesFromPose(corrected));
+          biomechAccRef.current.push(corrected);
           if (ts - metricsLastUiRef.current > 250) {
             metricsLastUiRef.current = ts;
             const s = trackerRef.current.summary();
@@ -453,6 +461,7 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
     chunksRef.current = [];
     trackerRef.current = new GaitCycleTracker(); // 녹화 시작 시 파이프라인 초기화
     angleAccRef.current = new AngleAccumulator();
+    biomechAccRef.current = new BiomechAccumulator();
     armingSinceRef.current = null;
     recordingStartedAtRef.current = performance.now();
     // 이전 측정의 저장/공유 상태 리셋 (재녹화 시 저장 버튼이 막히지 않도록)
@@ -483,6 +492,27 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
       // 녹화 종료 시 실제 누적된 분석 데이터를 리포트로 설정 (하드코딩 아님)
       const cycleSummary = trackerRef.current.summary();
       const angleSummary = angleAccRef.current.summary();
+      // [2026-08-27] 업로드 분석과 동일하게 BiomechAccumulator 요약을 포함시켜
+      // GaitReportDashboard.jsx가 report.metrics에서 읽는 trunkLean/kneeFlexion/
+      // pelvicDrop/pelvicDropAbs/verticalOscillation/kneeSymmetry/strideToHeight가
+      // 라이브 측정에서도 실제 값으로 채워지도록 한다(전에는 전부 빠져 있었음).
+      const biomech = biomechAccRef.current.summary();
+      const metrics = {
+        cadence: cycleSummary.averageCadenceSpm,
+        stancePct: cycleSummary.stancePct,
+        swingPct: cycleSummary.swingPct,
+        totalSteps: cycleSummary.totalSteps,
+        signalAmp: cycleSummary.signalAmp,
+        valid: cycleSummary.valid,
+        angles: angleSummary,
+        trunkLean: biomech.trunkLean,
+        kneeFlexion: biomech.kneeFlexion,
+        pelvicDrop: biomech.pelvicDrop,
+        pelvicDropAbs: biomech.pelvicDropAbs,
+        verticalOscillation: biomech.verticalOscillation,
+        kneeSymmetry: biomech.kneeSymmetry,
+        strideToHeight: biomech.strideToHeight,
+      };
 
       setReportData({
         cadence: cycleSummary.averageCadenceSpm,
@@ -493,8 +523,10 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
         signalAmp: cycleSummary.signalAmp,
         angles: angleSummary,
         aspect: aspectRef.current,
+        source: 'live', // 업로드 분석과 동일하게 출처 기록(업로드는 'upload')
         member: { id: member?.id || null, name: member?.name || null },
         measuredAt: new Date().toISOString(),
+        metrics,
       });
       setView('preview');
     };

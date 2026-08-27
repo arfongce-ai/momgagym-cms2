@@ -109,13 +109,18 @@ export default function GaitReportDashboard({ report, onComment, onClose, videoB
   const problemFocus = useMemo(() => report?.problem_focus || buildProblemFocus('gait', report), [report]);
 
   // 중단 좌측: 좌/우 무릎·골반·발목 비교 (Kinematic 레이더)
-  // 무릎=BiomechAccumulator 좌우, 골반/발목=angles(좌측 기준)로 보강
+  // 무릎=BiomechAccumulator 좌우, 고관절/발목=angles(AngleAccumulator) 좌우.
+  // [2026-08-27] 이전엔 angles(hip/ankle)가 좌측 landmark만 누적해 이 두 축이
+  // 항상 좌=우로 복제되어(실제 비대칭이 있어도 항상 대칭으로) 표시됐다 —
+  // AngleAccumulator가 좌우를 각각 누적하도록 고쳐(gaitBiomechanics.js) 이제
+  // 실제 좌/우 값을 쓴다. 구버전 리포트(각도 데이터에 left/right 없음)는
+  // ?? 0 폴백으로 0으로 표시된다(재측정 전까지는 정상적인 동작).
   const kf = m.kneeFlexion;
   const radarData = [
     { axis: '무릎 굽힘', left: kf.left?.min ?? 0, right: kf.right?.min ?? 0 },
     { axis: '무릎 신전', left: kf.left?.max ?? 0, right: kf.right?.max ?? 0 },
-    { axis: '고관절 ROM', left: m.angles?.hip?.rom ?? 0, right: m.angles?.hip?.rom ?? 0 },
-    { axis: '발목 ROM', left: m.angles?.ankle?.rom ?? 0, right: m.angles?.ankle?.rom ?? 0 },
+    { axis: '고관절 ROM', left: m.angles?.hip?.left?.rom ?? 0, right: m.angles?.hip?.right?.rom ?? 0 },
+    { axis: '발목 ROM', left: m.angles?.ankle?.left?.rom ?? 0, right: m.angles?.ankle?.right?.rom ?? 0 },
     { axis: '무릎 평균', left: kf.left?.avg ?? 0, right: kf.right?.avg ?? 0 },
   ];
 
