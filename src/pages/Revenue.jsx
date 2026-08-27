@@ -14,6 +14,7 @@ import {
   calcNet, downloadCSV, computeSessionSettlement, computeSessionSettlementWithExpiry,
   buildRefreezePlan, buildRefreezeAllPlan, planRateFreeze, planConsumedIndexBackfill,
   autoRefundUsedAmount, computeRefundEstimate, refundUnitPriceBasisLabel,
+  computeMonthRates,
 } from '../services/finance';
 import { todayYMD, thisYM, thisYear } from '../utils/dates';
 import { getUserTrainerId } from '../utils/memberList';
@@ -288,11 +289,33 @@ function OverviewTab({ settings, trainers, trainerMap }) {
 
   // "트레이너 정산" 총액 = 트레이너별 정산 내역의 합(단일 소스 — 두 숫자가 어긋날 일이 없다)
   const settlePayout = useMemo(()=>trainerBreakdown.reduce((s,b)=>s+b.payout,0), [trainerBreakdown]);
-  // 신규+재등록 참고 합계 — 실제 지급액(settlePayout)과는 별개, 카드 하단 참고용.
-  const salesRefTotal = useMemo(()=>trainerBreakdown.reduce((s,b)=>s+b.salesRefPayout,0), [trainerBreakdown]);
-  // "트레이너별 정산 내역" 블록 전용 합계 — 매출×해당월 확정 정산비율만(인센티브 미포함).
+
+  // 트레이너별 "해당 월 확정 정산비율"(계약서 4조 자동판정 — 40/50/60%, 수동 지정 시 그 값).
+  //  · trainerBreakdown의 splitRate는 회원마다 다른 결제월 비율이 섞인 "가중평균 혼합비율"이라
+  //    44%·46%·55% 같은 값이 나올 수 있다 — 이런 비율 자체는 존재하지 않는다.
+  //  · "트레이너별 정산 내역" 블록은 그 대신, 정산 탭 저장 시 실제로 쓰이는 computeMonthRates
+  //    (determineSplitRate)와 동일한 함수로 그 달 조건에 따라 트레이너 단위로 하나만 정해지는
+  //    비율(40/50/60% 또는 수동값)을 사용한다.
+  const monthConfirmedRates = useMemo(() => {
+    if (!isMonth) return {};
+    const grouped = {}; store.getMembers().forEach(m=>{ grouped[m.id]=store.getPayments(m.id); });
+    return computeMonthRates({
+      trainers, members: store.getMembers(), payments: grouped,
+      records: store.getPromos(), settings, ym: period,
+    });
+  }, [isMonth, period, trainers, settings, allPayments]);
+
+  // "트레이너별 정산 내역" 블록 전용 합계 — 매출 × 해당월 확정 정산비율만(인센티브 미포함).
   // 인센티브까지 포함한 실제 지급액 합계는 settlePayout(위 손익 요약의 "트레이너 정산"에 사용).
-  const sessionPayoutTotal = useMemo(()=>trainerBreakdown.reduce((s,b)=>s+b.sessionPayout,0), [trainerBreakdown]);
+  const confirmedPayoutTotal = useMemo(()=>trainerBreakdown.reduce((s,b)=>{
+    const rate = monthConfirmedRates[b.trainer.id]?.rate ?? b.splitRate;
+    return s + Math.round(b.sessionTotal * rate / 100);
+  }, 0), [trainerBreakdown, monthConfirmedRates]);
+  // 신규+재등록 참고 합계(확정비율 기준) — 실제 지급액과는 별개, 카드 하단 참고용.
+  const confirmedSalesRefTotal = useMemo(()=>trainerBreakdown.reduce((s,b)=>{
+    const rate = monthConfirmedRates[b.trainer.id]?.rate ?? b.splitRate;
+    return s + Math.round((b.newSales + b.reEnrollSales) * rate / 100);
+  }, 0), [trainerBreakdown, monthConfirmedRates]);
 
   const netProfit = totals.net - settlePayout - totalExpense;
 
@@ -379,26 +402,33 @@ function OverviewTab({ settings, trainers, trainerMap }) {
         {!isMonth && <p className="text-[11px] text-slate-600 mt-2">* {isYear?`${period}년`:'전체 기간'} 고정지출은 결제가 발생한 {periodMonths.length}개월분을 합산한 값입니다. 특정 월을 선택하면 그 달 기준으로 보여집니다.</p>}
       </div>
 
-      {/* 트레이너별 정산 내역 — 매출 × 해당월 확정 정산비율만 보여주는 참고용 개요(인센티브 미포함).
-          위 손익 요약의 "트레이너 정산"(실제 지급액, 인센티브 포함 — settlePayout)과는
-          의도적으로 다른 숫자다. 인센티브까지 포함한 실제 지급 내역은 "정산" 탭에서 확인.
+      {/* 트레이너별 정산 내역 — 매출 × 해당월 확정 정산비율(계약서 4조, 40/50/60%)만 보여주는
+          참고용 개요(인센티브 미포함). 정산 탭의 회원별 혼합비율(splitRate)이 아니라
+          computeMonthRates(=determineSplitRate) 결과를 쓴다 — 44%·46%·55% 같은 혼합값은
+          실제 존재하는 비율 조건이 아니기 때문. 위 손익 요약의 "트레이너 정산"(실제 지급액,
+          인센티브 포함 — settlePayout)과는 의도적으로 다른 숫자다. 인센티브까지 포함한 실제
+          지급 내역은 "정산" 탭에서 확인.
           (특정 월 선택 시에만 표시. 연/전체는 여러 달 정산비율이 섞여 트레이너별 대조가
           덜 명확해지므로, 정산 탭과 동일하게 "월 단위"로만 맞춘다.) */}
       {isMonth && trainerBreakdown.length > 0 && (
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4">
           <h2 className="font-bold text-sm uppercase tracking-widest text-slate-500 dark:text-slate-400 mb-3">트레이너별 정산 내역</h2>
           <div className="space-y-2.5">
-            {trainerBreakdown.map(b=>(
+            {trainerBreakdown.map(b=>{
+              const confirmedRate = monthConfirmedRates[b.trainer.id]?.rate ?? b.splitRate;
+              const confirmedAmount = Math.round(b.sessionTotal * confirmedRate / 100);
+              const confirmedSalesRef = Math.round((b.newSales + b.reEnrollSales) * confirmedRate / 100);
+              return (
               <div key={b.trainer.id}>
                 <div className="flex items-center justify-between gap-3 text-sm">
                   <div className="flex items-center gap-2 min-w-0">
                     <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{background:b.trainer.color||'#94a3b8'}}/>
                     <span className="font-bold text-slate-700 dark:text-slate-200 flex-shrink-0">{b.trainer.name}</span>
                     <span className="text-[11px] text-slate-500 truncate">
-                      매출 {won(b.sessionTotal)} × {b.splitRate}%
+                      매출 {won(b.sessionTotal)} × {confirmedRate}%
                     </span>
                   </div>
-                  <span className="font-mono font-bold text-amber-700 dark:text-amber-400 flex-shrink-0">{won(b.sessionPayout)}</span>
+                  <span className="font-mono font-bold text-amber-700 dark:text-amber-400 flex-shrink-0">{won(confirmedAmount)}</span>
                 </div>
                 {b.promoIncentive > 0 && (
                   <div className="pl-4 text-[10px] text-slate-600 mt-0.5 truncate">
@@ -407,25 +437,26 @@ function OverviewTab({ settings, trainers, trainerMap }) {
                 )}
                 {(b.newSales + b.reEnrollSales) > 0 && (
                   <div className="pl-4 text-[10px] text-slate-600 mt-0.5 truncate">
-                    참고 · 신규+재등록 {won(b.newSales + b.reEnrollSales)} × {b.splitRate}% = {won(b.salesRefPayout)} <span className="text-slate-700">(지급액 아님)</span>
+                    참고 · 신규+재등록 {won(b.newSales + b.reEnrollSales)} × {confirmedRate}% = {won(confirmedSalesRef)} <span className="text-slate-700">(지급액 아님)</span>
                   </div>
                 )}
               </div>
-            ))}
+              );
+            })}
             <div className="flex items-center justify-between text-sm pt-2 border-t border-slate-200 dark:border-slate-800">
               <span className="font-bold text-slate-600 dark:text-slate-300">
                 {trainerBreakdown.length<=4 ? trainerBreakdown.map(b=>b.trainer.name).join(' + ') : '전체'} 합계 (매출×확정%)
               </span>
-              <span className="font-mono font-black text-amber-700 dark:text-amber-400">{won(sessionPayoutTotal)}</span>
+              <span className="font-mono font-black text-amber-700 dark:text-amber-400">{won(confirmedPayoutTotal)}</span>
             </div>
-            {salesRefTotal > 0 && (
+            {confirmedSalesRefTotal > 0 && (
               <div className="flex items-center justify-between text-[11px] text-slate-600">
                 <span>신규+재등록 참고 합계</span>
-                <span className="font-mono">{won(salesRefTotal)}</span>
+                <span className="font-mono">{won(confirmedSalesRefTotal)}</span>
               </div>
             )}
           </div>
-          <p className="text-[11px] text-slate-600 mt-3">* 매출(수업료 합계) × 해당월 확정 정산비율만 곱한 값입니다(인센티브 미포함). 위 손익 요약의 "트레이너 정산" 금액은 여기에 인센티브까지 더한 실제 지급액 기준이라 서로 다를 수 있습니다.<br/>* "참고" 줄은 신규+재등록 순매출(부가세·카드수수료 제외) × 정산비율이며, 위 정산액과는 별개의 확인용 숫자입니다(지급액에 가산되지 않음).</p>
+          <p className="text-[11px] text-slate-600 mt-3">* 매출(수업료 합계) × 해당월 확정 정산비율(계약서 4조 조건에 따라 그 달 자동판정되는 40/50/60%, 수동 지정 시 그 값)만 곱한 값입니다(인센티브 미포함). 위 손익 요약의 "트레이너 정산" 금액은 여기에 인센티브까지 더한 실제 지급액 기준이라 서로 다를 수 있습니다.<br/>* "참고" 줄은 신규+재등록 순매출(부가세·카드수수료 제외) × 확정 정산비율이며, 위 정산액과는 별개의 확인용 숫자입니다(지급액에 가산되지 않음).</p>
         </div>
       )}
 
