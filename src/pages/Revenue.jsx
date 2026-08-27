@@ -290,6 +290,9 @@ function OverviewTab({ settings, trainers, trainerMap }) {
   const settlePayout = useMemo(()=>trainerBreakdown.reduce((s,b)=>s+b.payout,0), [trainerBreakdown]);
   // 신규+재등록 참고 합계 — 실제 지급액(settlePayout)과는 별개, 카드 하단 참고용.
   const salesRefTotal = useMemo(()=>trainerBreakdown.reduce((s,b)=>s+b.salesRefPayout,0), [trainerBreakdown]);
+  // "트레이너별 정산 내역" 블록 전용 합계 — 매출×해당월 확정 정산비율만(인센티브 미포함).
+  // 인센티브까지 포함한 실제 지급액 합계는 settlePayout(위 손익 요약의 "트레이너 정산"에 사용).
+  const sessionPayoutTotal = useMemo(()=>trainerBreakdown.reduce((s,b)=>s+b.sessionPayout,0), [trainerBreakdown]);
 
   const netProfit = totals.net - settlePayout - totalExpense;
 
@@ -376,7 +379,9 @@ function OverviewTab({ settings, trainers, trainerMap }) {
         {!isMonth && <p className="text-[11px] text-slate-600 mt-2">* {isYear?`${period}년`:'전체 기간'} 고정지출은 결제가 발생한 {periodMonths.length}개월분을 합산한 값입니다. 특정 월을 선택하면 그 달 기준으로 보여집니다.</p>}
       </div>
 
-      {/* 트레이너별 정산 내역 — 위 손익 요약의 "트레이너 정산" 금액이 어떻게 나왔는지 검증
+      {/* 트레이너별 정산 내역 — 매출 × 해당월 확정 정산비율만 보여주는 참고용 개요(인센티브 미포함).
+          위 손익 요약의 "트레이너 정산"(실제 지급액, 인센티브 포함 — settlePayout)과는
+          의도적으로 다른 숫자다. 인센티브까지 포함한 실제 지급 내역은 "정산" 탭에서 확인.
           (특정 월 선택 시에만 표시. 연/전체는 여러 달 정산비율이 섞여 트레이너별 대조가
           덜 명확해지므로, 정산 탭과 동일하게 "월 단위"로만 맞춘다.) */}
       {isMonth && trainerBreakdown.length > 0 && (
@@ -390,11 +395,16 @@ function OverviewTab({ settings, trainers, trainerMap }) {
                     <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{background:b.trainer.color||'#94a3b8'}}/>
                     <span className="font-bold text-slate-700 dark:text-slate-200 flex-shrink-0">{b.trainer.name}</span>
                     <span className="text-[11px] text-slate-500 truncate">
-                      매출 {won(b.sessionTotal)} × {b.splitRate}%{b.promoIncentive>0 ? ` + 인센티브 ${won(b.promoIncentive)}` : ''}
+                      매출 {won(b.sessionTotal)} × {b.splitRate}%
                     </span>
                   </div>
-                  <span className="font-mono font-bold text-amber-700 dark:text-amber-400 flex-shrink-0">{won(b.payout)}</span>
+                  <span className="font-mono font-bold text-amber-700 dark:text-amber-400 flex-shrink-0">{won(b.sessionPayout)}</span>
                 </div>
+                {b.promoIncentive > 0 && (
+                  <div className="pl-4 text-[10px] text-slate-600 mt-0.5 truncate">
+                    인센티브 {won(b.promoIncentive)} <span className="text-slate-700">(이 금액엔 미포함 — 위 손익 요약 "트레이너 정산"엔 포함됨)</span>
+                  </div>
+                )}
                 {(b.newSales + b.reEnrollSales) > 0 && (
                   <div className="pl-4 text-[10px] text-slate-600 mt-0.5 truncate">
                     참고 · 신규+재등록 {won(b.newSales + b.reEnrollSales)} × {b.splitRate}% = {won(b.salesRefPayout)} <span className="text-slate-700">(지급액 아님)</span>
@@ -404,9 +414,9 @@ function OverviewTab({ settings, trainers, trainerMap }) {
             ))}
             <div className="flex items-center justify-between text-sm pt-2 border-t border-slate-200 dark:border-slate-800">
               <span className="font-bold text-slate-600 dark:text-slate-300">
-                {trainerBreakdown.length<=4 ? trainerBreakdown.map(b=>b.trainer.name).join(' + ') : '전체'} 합계
+                {trainerBreakdown.length<=4 ? trainerBreakdown.map(b=>b.trainer.name).join(' + ') : '전체'} 합계 (매출×확정%)
               </span>
-              <span className="font-mono font-black text-amber-700 dark:text-amber-400">{won(settlePayout)}</span>
+              <span className="font-mono font-black text-amber-700 dark:text-amber-400">{won(sessionPayoutTotal)}</span>
             </div>
             {salesRefTotal > 0 && (
               <div className="flex items-center justify-between text-[11px] text-slate-600">
@@ -415,7 +425,7 @@ function OverviewTab({ settings, trainers, trainerMap }) {
               </div>
             )}
           </div>
-          <p className="text-[11px] text-slate-600 mt-3">* 매출(수업료 합계) × 정산비율(+인센티브가 있으면 가산)이 트레이너별 정산액이며, 이를 모두 더하면 위 손익 요약의 "트레이너 정산" 금액과 정확히 일치합니다.<br/>* "참고" 줄은 신규+재등록 순매출(부가세·카드수수료 제외) × 정산비율이며, 위 정산액과는 별개의 확인용 숫자입니다(지급액에 가산되지 않음).</p>
+          <p className="text-[11px] text-slate-600 mt-3">* 매출(수업료 합계) × 해당월 확정 정산비율만 곱한 값입니다(인센티브 미포함). 위 손익 요약의 "트레이너 정산" 금액은 여기에 인센티브까지 더한 실제 지급액 기준이라 서로 다를 수 있습니다.<br/>* "참고" 줄은 신규+재등록 순매출(부가세·카드수수료 제외) × 정산비율이며, 위 정산액과는 별개의 확인용 숫자입니다(지급액에 가산되지 않음).</p>
         </div>
       )}
 
