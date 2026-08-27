@@ -39,6 +39,10 @@ export default function StanceAnalysisHub({ member, onBack, onSave, onSaveToFire
 
   // 요청에 따라 실시간을 기본값으로 (JumpAnalysisHub와 동일한 자리에 동일한 토글 UI)
   const [mode, setMode] = useState('live'); // live | upload
+  // [2026-08-27] "눈 뜨고/눈 감고 test를 선택으로 진행" 요청 반영 — 측정 시작
+  // 전에 눈뜨고만 할지, 눈뜨고+눈감고 둘 다 할지 트레이너가 고를 수 있게 한다.
+  // 기본값은 기존 동작 그대로(둘 다 진행) 유지.
+  const [testMode, setTestMode] = useState('both'); // both | openOnly
   const [eyesState, setEyesState] = useState('open'); // open | closed
   const [legStep, setLegStep] = useState('left'); // left | right
   const [openLeft, setOpenLeft] = useState(null);
@@ -88,7 +92,14 @@ export default function StanceAnalysisHub({ member, onBack, onSave, onSaveToFire
         setLegStep('right');
       } else {
         setOpenRight(summary);
-        setView('eyes_transition'); // 눈뜨고 좌/우 완료 — 눈감고 단계로 넘어가는 전환 화면
+        // [2026-08-27] testMode==='openOnly'면 눈감고 단계를 건너뛰고 바로
+        // 종합 판정으로 진행(closedLeft/closedRight는 null — evaluateSingleLegStanceWithEyes가
+        // "눈감고 데이터 없음"으로 정상 처리하도록 이미 설계돼 있다).
+        if (testMode === 'openOnly') {
+          combineAndProceed(openLeft, summary, null, null);
+        } else {
+          setView('eyes_transition'); // 눈뜨고 좌/우 완료 — 눈감고 단계로 넘어가는 전환 화면
+        }
       }
     } else if (legStep === 'left') {
       setClosedLeft(summary);
@@ -97,7 +108,7 @@ export default function StanceAnalysisHub({ member, onBack, onSave, onSaveToFire
       setClosedRight(summary);
       combineAndProceed(openLeft, openRight, closedLeft, summary);
     }
-  }, [eyesState, legStep, openLeft, openRight, closedLeft, combineAndProceed]);
+  }, [eyesState, legStep, openLeft, openRight, closedLeft, testMode, combineAndProceed]);
 
   const proceedToClosedPhase = () => {
     setEyesState('closed');
@@ -231,6 +242,20 @@ export default function StanceAnalysisHub({ member, onBack, onSave, onSaveToFire
             </button>
           ))}
         </div>
+        {/* [2026-08-27] "눈 뜨고/눈 감고 test를 선택으로 진행" — 아직 측정을
+            시작하기 전(첫 다리 시작 전)에만 고를 수 있게 잠근다. 시작한 뒤
+            바꾸면 이미 모은 눈뜨고 데이터와 상태가 꼬이기 때문. */}
+        {eyesState === 'open' && legStep === 'left' && !openLeft && (
+          <div className="pointer-events-auto flex gap-1 rounded-full bg-black/55 backdrop-blur p-1 border border-white/10 shadow-lg">
+            {[['both', '👁🙈 눈뜨고+눈감고'], ['openOnly', '👁 눈뜨고만']].map(([k, label]) => (
+              <button key={k} onClick={() => setTestMode(k)}
+                className={`rounded-full px-3.5 py-1 text-xs font-black transition-colors ${
+                  testMode === k ? 'bg-cyan-500 text-slate-950' : 'text-slate-600 dark:text-slate-300'}`}>
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
       {mode === 'live' ? (
         <StanceLiveAnalysis

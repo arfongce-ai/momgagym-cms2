@@ -336,6 +336,27 @@ export default function StanceLiveAnalysis({ member, stanceLeg, eyesClosed, onBa
     }
   };
 
+  // [2026-08-27] "이 다리 건너뛰기" — 인식 실패가 반복되거나 원인 불문 화면이
+  // 진행되지 않을 때 트레이너가 직접 다음 단계로 넘어갈 수 있는 탈출구.
+  // trial1/trial2를 undefined로 넘기면 singleLegStance.js의 judgeTrial()이
+  // valid:false로 처리해 이 다리는 "unknown"(측정 안 됨)으로 남고, 종합 판정은
+  // 나머지 다리/조건 데이터로 정상 진행된다(둘 다 없을 때만 리포트 자체가
+  // 무효 처리됨 — evaluateSingleLegStanceWithEyes 참고).
+  const skipThisLeg = () => {
+    if (finishing) return;
+    stop();
+    stopComposeLoop();
+    clearCountdown();
+    if (maxRecordTimerRef.current) { clearTimeout(maxRecordTimerRef.current); maxRecordTimerRef.current = null; }
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+      try { mediaRecorderRef.current.stop(); } catch (e) { /* noop */ }
+    }
+    mediaRecorderRef.current = null;
+    if (typeof onComplete === 'function') {
+      onComplete({ trial1: undefined, trial2: undefined, trialsFound: 0, videoBlob: null, previewVideoUrl: '', hasVideo: false, skipped: true });
+    }
+  };
+
   // MediaRecorder.onstop에서 blob이 준비되면 최종적으로 onComplete 호출.
   const finishWithBlob = async (blob) => {
     const summary = pendingSummaryRef.current;
@@ -454,6 +475,15 @@ export default function StanceLiveAnalysis({ member, stanceLeg, eyesClosed, onBa
           <div className="w-4 h-4 border-2 border-amber-400 border-t-transparent rounded-full animate-spin" />
           저장 중…
         </div>
+      )}
+      {/* [2026-08-27] "반대편으로 안 넘어감" 대응 — 인식이 잘 안 되거나 재시도가
+          계속 실패해도(원인 불문) 트레이너가 막히지 않도록 항상 탈출구를 둔다.
+          이 다리는 "측정 안 됨(unknown)"으로 남기고 다음 단계로 그대로 진행. */}
+      {!finishing && !['trial_done', 'finished'].includes(uiPhase) && (
+        <button onClick={skipThisLeg}
+          className="rounded-full bg-black/40 border border-white/20 text-white/80 font-bold text-[11px] px-3 py-2 active:scale-95">
+          이 다리 건너뛰기 →
+        </button>
       )}
     </>
   );

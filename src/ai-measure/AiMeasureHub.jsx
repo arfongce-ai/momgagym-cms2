@@ -105,6 +105,8 @@ export default function AiMeasureHub() {
     const isPosture = active.id === 'posture';
     const isRom = active.id === 'rom';
     const isLifting = active.id === 'lifting';
+    const isStance = active.id === 'stance';
+    const isSquat = active.id === 'squat';
 
     // 측정 정직성: 미등록회원인데 guest id 가 아직 없으면 저장 직전 확정 발급
     // (null __mid 로 저장되어 데이터가 유실/혼합되는 것을 방지). 같은 측정 묶음은
@@ -241,6 +243,18 @@ export default function AiMeasureHub() {
       //  미러링(inferReportType)까지 처리한다. 여기서는 저장된 세션을 그대로 돌려줘
       //  BarbellLiftingHub 가 리포트(A4)로 전환하게 한다.
       if (isLifting) {
+        return savedSession;
+      }
+      // [2026-08-27] "SLST 평가가 정상적으로 마무리되지 않고 리포트가 안 나온다"
+      // 버그 원인 — 한다리서기(stance)·오버헤드 딥 스쿼트(squat)는 gait/jump/
+      // posture/rom/lifting과 달리 이 분기들 어디에도 안 걸려 아래 alert()까지
+      // 떨어지고 있었다. 두 화면 모두 풀스크린 카메라 오버레이 위에서 "측정→
+      // 기록 확인→리포트"를 이 컴포넌트(handleSave) 호출 하나로 이어가는 구조라,
+      // 여기서 뜨는 네이티브 alert()가 JS 스레드를 막아버려(사용자가 눈치 못 채면)
+      // 확인 화면이 리포트로 못 넘어가는 것처럼 보였다. lifting과 동일하게 alert
+      // 없이 저장된 세션을 그대로 반환한다(호출부 StanceAnalysisHub.jsx/
+      // SquatAnalysisHub.jsx의 persist()가 이 결과를 merge해 리포트를 띄운다).
+      if (isStance || isSquat) {
         return savedSession;
       }
       alert(member.isVirtual ? '미등록회원 측정이 저장되었습니다.' : '측정이 저장되었습니다.');
