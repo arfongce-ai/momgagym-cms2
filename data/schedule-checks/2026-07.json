@@ -1,0 +1,2824 @@
+{
+  "month": "2026-07",
+  "generatedAt": "2026-08-31T11:13:55.434Z",
+  "count": 313,
+  "schedules": [
+    {
+      "id": "s1782724655530001",
+      "date": "2026-07-01",
+      "startTime": "17:00",
+      "trainerId": "t1781060178172",
+      "trainerName": "주호진 ",
+      "memberId": "m1782721739432005",
+      "memberName": "김지후 "
+    },
+    {
+      "id": "s1782808955257001",
+      "date": "2026-07-01",
+      "startTime": "09:30",
+      "trainerId": "t1780668248685",
+      "trainerName": "김동규",
+      "memberId": "m1781077246094",
+      "memberName": "서지율"
+    },
+    {
+      "id": "s1782868175252001",
+      "date": "2026-07-01",
+      "startTime": "08:30",
+      "trainerId": "t1780710896938",
+      "trainerName": "김나영",
+      "memberId": "m1781772987975006",
+      "memberName": "이지영"
+    },
+    {
+      "id": "s1782889992224003",
+      "date": "2026-07-01",
+      "startTime": "16:00",
+      "trainerId": "t1780668248685",
+      "trainerName": "김동규",
+      "memberId": "m1782889870552001",
+      "memberName": "김근락"
+    },
+    {
+      "id": "s1782890230815001",
+      "date": "2026-07-01",
+      "startTime": "17:00",
+      "trainerId": "t1780668248685",
+      "trainerName": "김동규",
+      "memberId": "m1782201478290001",
+      "memberName": "한보경"
+    },
+    {
+      "id": "s1782890263749001",
+      "date": "2026-07-01",
+      "startTime": "18:00",
+      "trainerId": "t1780668248685",
+      "trainerName": "김동규",
+      "memberId": "m1781126986692",
+      "memberName": "이강혁"
+    },
+    {
+      "id": "s1782893706227003",
+      "date": "2026-07-01",
+      "startTime": "18:30",
+      "trainerId": "t1780710896938",
+      "trainerName": "김나영",
+      "memberId": "m1781167588676",
+      "memberName": "박희주"
+    },
+    {
+      "id": "s1787142519240005",
+      "date": "2026-07-01",
+      "startTime": "18:00",
+      "trainerId": "t1781060808396",
+      "trainerName": "박병준 ",
+      "memberId": "m1781785813536003",
+      "memberName": "권민준 "
+    },
+    {
+      "id": "s1782375218780001",
+      "date": "2026-07-02",
+      "startTime": "16:00",
+      "trainerId": "t1781060178172",
+      "trainerName": "주호진 ",
+      "memberId": "m1781236608518",
+      "memberName": "주정돈"
+    },
+    {
+      "id": "s1782646319655004",
+      "date": "2026-07-02",
+      "startTime": "12:00",
+      "trainerId": "t1781071506172",
+      "trainerName": "정주인",
+      "memberId": "m1781775359111012",
+      "memberName": "김승배"
+    },
+    {
+      "id": "s1782646538249001",
+      "date": "2026-07-02",
+      "startTime": "16:00",
+      "trainerId": "t1781071506172",
+      "trainerName": "정주인",
+      "memberId": "m1781924185324094",
+      "memberName": "박은정"
+    },
+    {
+      "id": "s1782868204693002",
+      "date": "2026-07-02",
+      "startTime": "08:00",
+      "trainerId": "t1780710896938",
+      "trainerName": "김나영",
+      "memberId": "m1780891610343",
+      "memberName": "최흥식"
+    },
+    {
+      "id": "s1782868260714003",
+      "date": "2026-07-02",
+      "startTime": "10:00",
+      "trainerId": "t1780710896938",
+      "trainerName": "김나영",
+      "memberId": "m1781076650191",
+      "memberName": "임찬현"
+    },
+    {
+      "id": "s1782646585409003",
+      "date": "2026-07-03",
+      "startTime": "16:00",
+      "trainerId": "t1781071506172",
+      "trainerName": "정주인",
+      "memberId": "m1781924185324094",
+      "memberName": "박은정"
+    },
+    {
+      "id": "s1782735617329003",
+      "date": "2026-07-03",
+      "startTime": "18:30",
+      "trainerId": "t1781060808396",
+      "trainerName": "박병준 ",
+      "memberId": "m1781390099279",
+      "memberName": "정민준"
+    },
+    {
+      "id": "s1782787444549003",
+      "date": "2026-07-03",
+      "startTime": "17:00",
+      "trainerId": "t1781060178172",
+      "trainerName": "주호진 ",
+      "memberId": "m1782721739432005",
+      "memberName": "김지후 "
+    },
+    {
+      "id": "s1782809028841002",
+      "date": "2026-07-03",
+      "startTime": "14:00",
+      "trainerId": "t1780668248685",
+      "trainerName": "김동규",
+      "memberId": "m1781924185323057",
+      "memberName": "김지윤"
+    },
+    {
+      "id": "s1783040826892002",
+      "date": "2026-07-03",
+      "startTime": "09:30",
+      "trainerId": "t1780668248685",
+      "trainerName": "김동규",
+      "memberId": "m1781077246094",
+      "memberName": "서지율"
+    },
+    {
+      "id": "s1783059457125001",
+      "date": "2026-07-03",
+      "startTime": "16:30",
+      "trainerId": "t1780668248685",
+      "trainerName": "김동규",
+      "memberId": "m1781235704229",
+      "memberName": "우준석"
+    },
+    {
+      "id": "s1783062293494001",
+      "date": "2026-07-03",
+      "startTime": "20:00",
+      "trainerId": "t1780668248685",
+      "trainerName": "김동규",
+      "memberId": "m1781193168997",
+      "memberName": "구성구"
+    },
+    {
+      "id": "s1783082662560001",
+      "date": "2026-07-03",
+      "startTime": "18:00",
+      "trainerId": "t1780668248685",
+      "trainerName": "김동규",
+      "memberId": "m1781924185323041",
+      "memberName": "박서연"
+    },
+    {
+      "id": "s1783083082204004",
+      "date": "2026-07-03",
+      "startTime": "18:00",
+      "trainerId": "t1780668248685",
+      "trainerName": "김동규",
+      "memberId": "m1783082984633002",
+      "memberName": "김채안"
+    },
+    {
+      "id": "s1783083110954005",
+      "date": "2026-07-03",
+      "startTime": "20:00",
+      "trainerId": "t1780668248685",
+      "trainerName": "김동규",
+      "memberId": "m1781237478514",
+      "memberName": "이다인"
+    },
+    {
+      "id": "s1782893789989005",
+      "date": "2026-07-04",
+      "startTime": "09:00",
+      "trainerId": "t1780710896938",
+      "trainerName": "김나영",
+      "memberId": "m1782119550439004",
+      "memberName": "권순자"
+    },
+    {
+      "id": "s1782893818605006",
+      "date": "2026-07-04",
+      "startTime": "10:00",
+      "trainerId": "t1780710896938",
+      "trainerName": "김나영",
+      "memberId": "m1782183143077018",
+      "memberName": "이상이"
+    },
+    {
+      "id": "s1782893838750007",
+      "date": "2026-07-04",
+      "startTime": "11:30",
+      "trainerId": "t1780710896938",
+      "trainerName": "김나영",
+      "memberId": "m1781772987975006",
+      "memberName": "이지영"
+    },
+    {
+      "id": "s1783069038725001",
+      "date": "2026-07-04",
+      "startTime": "13:00",
+      "trainerId": "t1781060808396",
+      "trainerName": "박병준 ",
+      "memberId": "m1781924185321005",
+      "memberName": "홍성예"
+    },
+    {
+      "id": "s1783071441553001",
+      "date": "2026-07-04",
+      "startTime": "09:00",
+      "trainerId": "t1781060178172",
+      "trainerName": "주호진 ",
+      "memberId": "m1781060585690",
+      "memberName": "김가영"
+    },
+    {
+      "id": "s1783141623402003",
+      "date": "2026-07-04",
+      "startTime": "12:00",
+      "trainerId": "t1781177361535",
+      "trainerName": "김현우",
+      "memberId": "m1783141431070001",
+      "memberName": "곽도현"
+    },
+    {
+      "id": "s1782735775278005",
+      "date": "2026-07-05",
+      "startTime": "09:00",
+      "trainerId": "t1781060808396",
+      "trainerName": "박병준 ",
+      "memberId": "m1781390099279",
+      "memberName": "정민준"
+    },
+    {
+      "id": "s1782831228580015",
+      "date": "2026-07-05",
+      "startTime": "16:30",
+      "trainerId": "t1780973048566",
+      "trainerName": "박재만",
+      "memberId": "m1781178197866",
+      "memberName": "이정현"
+    },
+    {
+      "id": "s1783152480162001",
+      "date": "2026-07-05",
+      "startTime": "09:00",
+      "trainerId": "t1781060808396",
+      "trainerName": "박병준 ",
+      "memberId": "m1781924185325145",
+      "memberName": "구윤우"
+    },
+    {
+      "id": "s1782646269485002",
+      "date": "2026-07-06",
+      "startTime": "13:00",
+      "trainerId": "t1781071506172",
+      "trainerName": "정주인",
+      "memberId": "m1781778477185005",
+      "memberName": "이영석"
+    },
+    {
+      "id": "s1782646563944002",
+      "date": "2026-07-06",
+      "startTime": "17:00",
+      "trainerId": "t1781071506172",
+      "trainerName": "정주인",
+      "memberId": "m1781775359111012",
+      "memberName": "김승배"
+    },
+    {
+      "id": "s1782818739098001",
+      "date": "2026-07-06",
+      "startTime": "19:00",
+      "trainerId": "t1781075962429",
+      "trainerName": "김현진",
+      "memberId": "m1781177839548",
+      "memberName": "정우제"
+    },
+    {
+      "id": "s1782980217625002",
+      "date": "2026-07-06",
+      "startTime": "17:00",
+      "trainerId": "t1781060178172",
+      "trainerName": "주호진 ",
+      "memberId": "m1782721739432005",
+      "memberName": "김지후 "
+    },
+    {
+      "id": "s1783173689719001",
+      "date": "2026-07-06",
+      "startTime": "16:00",
+      "trainerId": "t1781071506172",
+      "trainerName": "정주인",
+      "memberId": "m1781924185324094",
+      "memberName": "박은정"
+    },
+    {
+      "id": "s1783217311016001",
+      "date": "2026-07-06",
+      "startTime": "19:00",
+      "trainerId": "t1781060808396",
+      "trainerName": "박병준 ",
+      "memberId": "m1781924185321005",
+      "memberName": "홍성예"
+    },
+    {
+      "id": "s1783335609753001",
+      "date": "2026-07-06",
+      "startTime": "20:00",
+      "trainerId": "t1781060178172",
+      "trainerName": "주호진 ",
+      "memberId": "m1783335484032001",
+      "memberName": "박성준"
+    },
+    {
+      "id": "s1783336817666001",
+      "date": "2026-07-06",
+      "startTime": "19:00",
+      "trainerId": "t1781060808396",
+      "trainerName": "박병준 ",
+      "memberId": "m1783333220683001",
+      "memberName": "이선민"
+    },
+    {
+      "id": "s1783337198014001",
+      "date": "2026-07-06",
+      "startTime": "20:30",
+      "trainerId": "t1781060808396",
+      "trainerName": "박병준 ",
+      "memberId": null,
+      "memberName": null
+    },
+    {
+      "id": "s1783385173910003",
+      "date": "2026-07-06",
+      "startTime": "08:00",
+      "trainerId": "t1780710896938",
+      "trainerName": "김나영",
+      "memberId": "m1780891610343",
+      "memberName": "최흥식"
+    },
+    {
+      "id": "s1783385189581004",
+      "date": "2026-07-06",
+      "startTime": "09:00",
+      "trainerId": "t1780710896938",
+      "trainerName": "김나영",
+      "memberId": "m1782119550439004",
+      "memberName": "권순자"
+    },
+    {
+      "id": "s1783416316253001",
+      "date": "2026-07-06",
+      "startTime": "17:00",
+      "trainerId": "t1780668248685",
+      "trainerName": "김동규",
+      "memberId": "m1783416159594001",
+      "memberName": "정청아"
+    },
+    {
+      "id": "s1782646600190004",
+      "date": "2026-07-07",
+      "startTime": "11:00",
+      "trainerId": "t1781071506172",
+      "trainerName": "정주인",
+      "memberId": "m1781924185324092",
+      "memberName": "이한성"
+    },
+    {
+      "id": "s1782836504662021",
+      "date": "2026-07-07",
+      "startTime": "10:00",
+      "trainerId": "t1781060178172",
+      "trainerName": "주호진 ",
+      "memberId": "m1781249255292",
+      "memberName": "이경하"
+    },
+    {
+      "id": "s1783054965767001",
+      "date": "2026-07-07",
+      "startTime": "16:00",
+      "trainerId": "t1781060178172",
+      "trainerName": "주호진 ",
+      "memberId": "m1781782851446001",
+      "memberName": "윤선정"
+    },
+    {
+      "id": "s1783173710258002",
+      "date": "2026-07-07",
+      "startTime": "16:00",
+      "trainerId": "t1781071506172",
+      "trainerName": "정주인",
+      "memberId": "m1781924185324094",
+      "memberName": "박은정"
+    },
+    {
+      "id": "s1783173728160003",
+      "date": "2026-07-07",
+      "startTime": "17:00",
+      "trainerId": "t1781071506172",
+      "trainerName": "정주인",
+      "memberId": "m1781775359111012",
+      "memberName": "김승배"
+    },
+    {
+      "id": "s1783173761075004",
+      "date": "2026-07-07",
+      "startTime": "12:00",
+      "trainerId": "t1781071506172",
+      "trainerName": "정주인",
+      "memberId": "m1781924185325154",
+      "memberName": "송정빈"
+    },
+    {
+      "id": "s1783325514124001",
+      "date": "2026-07-07",
+      "startTime": "19:30",
+      "trainerId": "t1781060178172",
+      "trainerName": "주호진 ",
+      "memberId": "m1781192925605",
+      "memberName": "김효진 "
+    },
+    {
+      "id": "s1783383672730001",
+      "date": "2026-07-07",
+      "startTime": "10:00",
+      "trainerId": "t1780668248685",
+      "trainerName": "김동규",
+      "memberId": null,
+      "memberName": null
+    },
+    {
+      "id": "s1783385107716001",
+      "date": "2026-07-07",
+      "startTime": "10:00",
+      "trainerId": "t1780710896938",
+      "trainerName": "김나영",
+      "memberId": "m1781077504948",
+      "memberName": "정재은 "
+    },
+    {
+      "id": "s1783398157603001",
+      "date": "2026-07-07",
+      "startTime": "09:00",
+      "trainerId": "t1780653836121",
+      "trainerName": "황지영",
+      "memberId": "m1781772987975006",
+      "memberName": "이지영"
+    },
+    {
+      "id": "s1783398182430002",
+      "date": "2026-07-07",
+      "startTime": "14:00",
+      "trainerId": "t1780653836121",
+      "trainerName": "황지영",
+      "memberId": "m1781924185326174",
+      "memberName": "조연정"
+    },
+    {
+      "id": "s1783415130269001",
+      "date": "2026-07-07",
+      "startTime": "19:00",
+      "trainerId": "t1781060808396",
+      "trainerName": "박병준 ",
+      "memberId": "m1783414839635001",
+      "memberName": "김도운"
+    },
+    {
+      "id": "s1784620796149004",
+      "date": "2026-07-07",
+      "startTime": "19:30",
+      "trainerId": "t1780710896938",
+      "trainerName": "김나영",
+      "memberId": "m1781235103763",
+      "memberName": "오세원 "
+    },
+    {
+      "id": "s1785410955161001",
+      "date": "2026-07-07",
+      "startTime": "15:00",
+      "trainerId": "t1780653836121",
+      "trainerName": "황지영",
+      "memberId": "m1781077834627",
+      "memberName": "김준범 "
+    },
+    {
+      "id": "s1783050473784001",
+      "date": "2026-07-08",
+      "startTime": "09:30",
+      "trainerId": "t1780668248685",
+      "trainerName": "김동규",
+      "memberId": "m1781077246094",
+      "memberName": "서지율"
+    },
+    {
+      "id": "s1783300994662001",
+      "date": "2026-07-08",
+      "startTime": "19:30",
+      "trainerId": "t1781060808396",
+      "trainerName": "박병준 ",
+      "memberId": "m1781924185321005",
+      "memberName": "홍성예"
+    },
+    {
+      "id": "s1783339714326001",
+      "date": "2026-07-08",
+      "startTime": "20:00",
+      "trainerId": "t1781060178172",
+      "trainerName": "주호진 ",
+      "memberId": "m1783335484032001",
+      "memberName": "박성준"
+    },
+    {
+      "id": "s1783428328415001",
+      "date": "2026-07-08",
+      "startTime": "18:00",
+      "trainerId": "t1781060808396",
+      "trainerName": "박병준 ",
+      "memberId": "m1783414839635001",
+      "memberName": "김도운"
+    },
+    {
+      "id": "s1783463965988001",
+      "date": "2026-07-08",
+      "startTime": "17:00",
+      "trainerId": "t1780668248685",
+      "trainerName": "김동규",
+      "memberId": "m1783416159594001",
+      "memberName": "정청아"
+    },
+    {
+      "id": "s1783472131773001",
+      "date": "2026-07-08",
+      "startTime": "17:00",
+      "trainerId": "t1780668248685",
+      "trainerName": "김동규",
+      "memberId": "m1782201478290001",
+      "memberName": "한보경"
+    },
+    {
+      "id": "s1783519387875002",
+      "date": "2026-07-08",
+      "startTime": "18:00",
+      "trainerId": "t1780668248685",
+      "trainerName": "김동규",
+      "memberId": "m1781126986692",
+      "memberName": "이강혁"
+    },
+    {
+      "id": "s1783519411885003",
+      "date": "2026-07-08",
+      "startTime": "19:00",
+      "trainerId": "t1780668248685",
+      "trainerName": "김동규",
+      "memberId": "m1781193168997",
+      "memberName": "구성구"
+    },
+    {
+      "id": "s1783896388697004",
+      "date": "2026-07-08",
+      "startTime": "18:30",
+      "trainerId": "t1780710896938",
+      "trainerName": "김나영",
+      "memberId": "m1782119550439004",
+      "memberName": "권순자"
+    },
+    {
+      "id": "s1783896409613005",
+      "date": "2026-07-08",
+      "startTime": "18:30",
+      "trainerId": "t1780710896938",
+      "trainerName": "김나영",
+      "memberId": "m1781167588676",
+      "memberName": "박희주"
+    },
+    {
+      "id": "s1787142587147006",
+      "date": "2026-07-08",
+      "startTime": "18:00",
+      "trainerId": "t1781060808396",
+      "trainerName": "박병준 ",
+      "memberId": "m1781785813536003",
+      "memberName": "권민준 "
+    },
+    {
+      "id": "s1782646301091003",
+      "date": "2026-07-09",
+      "startTime": "15:00",
+      "trainerId": "t1781071506172",
+      "trainerName": "정주인",
+      "memberId": "m1781778477185005",
+      "memberName": "이영석"
+    },
+    {
+      "id": "s1782818766523002",
+      "date": "2026-07-09",
+      "startTime": "19:00",
+      "trainerId": "t1781075962429",
+      "trainerName": "김현진",
+      "memberId": "m1781177839548",
+      "memberName": "정우제"
+    },
+    {
+      "id": "s1782979986508001",
+      "date": "2026-07-09",
+      "startTime": "16:00",
+      "trainerId": "t1781060178172",
+      "trainerName": "주호진 ",
+      "memberId": "m1781236608518",
+      "memberName": "주정돈"
+    },
+    {
+      "id": "s1783173783995005",
+      "date": "2026-07-09",
+      "startTime": "16:00",
+      "trainerId": "t1781071506172",
+      "trainerName": "정주인",
+      "memberId": "m1781924185324094",
+      "memberName": "박은정"
+    },
+    {
+      "id": "s1783173799880006",
+      "date": "2026-07-09",
+      "startTime": "17:00",
+      "trainerId": "t1781071506172",
+      "trainerName": "정주인",
+      "memberId": "m1781775359111012",
+      "memberName": "김승배"
+    },
+    {
+      "id": "s1783319702415002",
+      "date": "2026-07-09",
+      "startTime": "17:00",
+      "trainerId": "t1781060178172",
+      "trainerName": "주호진 ",
+      "memberId": "m1782721739432005",
+      "memberName": "김지후 "
+    },
+    {
+      "id": "s1783399504919001",
+      "date": "2026-07-09",
+      "startTime": "10:00",
+      "trainerId": "t1780668248685",
+      "trainerName": "김동규",
+      "memberId": "m1781924185325154",
+      "memberName": "송정빈"
+    },
+    {
+      "id": "s1783519511572005",
+      "date": "2026-07-09",
+      "startTime": "09:00",
+      "trainerId": "t1780668248685",
+      "trainerName": "김동규",
+      "memberId": "m1781077246094",
+      "memberName": "서지율"
+    },
+    {
+      "id": "s1783580009467001",
+      "date": "2026-07-09",
+      "startTime": "18:00",
+      "trainerId": "t1781060178172",
+      "trainerName": "주호진 ",
+      "memberId": "m1781060585690",
+      "memberName": "김가영"
+    },
+    {
+      "id": "s1783612858214002",
+      "date": "2026-07-09",
+      "startTime": "19:00",
+      "trainerId": "t1781060808396",
+      "trainerName": "박병준 ",
+      "memberId": "m1783414839635001",
+      "memberName": "김도운"
+    },
+    {
+      "id": "s1783896364537003",
+      "date": "2026-07-09",
+      "startTime": "08:00",
+      "trainerId": "t1780710896938",
+      "trainerName": "김나영",
+      "memberId": "m1780891610343",
+      "memberName": "최흥식"
+    },
+    {
+      "id": "s1782774655634001",
+      "date": "2026-07-10",
+      "startTime": "19:00",
+      "trainerId": "t1781060808396",
+      "trainerName": "박병준 ",
+      "memberId": "m1781076946973",
+      "memberName": "강현웅"
+    },
+    {
+      "id": "s1783173821109007",
+      "date": "2026-07-10",
+      "startTime": "16:00",
+      "trainerId": "t1781071506172",
+      "trainerName": "정주인",
+      "memberId": "m1781924185324094",
+      "memberName": "박은정"
+    },
+    {
+      "id": "s1783173834540008",
+      "date": "2026-07-10",
+      "startTime": "17:00",
+      "trainerId": "t1781071506172",
+      "trainerName": "정주인",
+      "memberId": "m1781775359111012",
+      "memberName": "김승배"
+    },
+    {
+      "id": "s1783301013755002",
+      "date": "2026-07-10",
+      "startTime": "20:00",
+      "trainerId": "t1781060808396",
+      "trainerName": "박병준 ",
+      "memberId": "m1781924185321005",
+      "memberName": "홍성예"
+    },
+    {
+      "id": "s1783319657462001",
+      "date": "2026-07-10",
+      "startTime": "17:00",
+      "trainerId": "t1781060178172",
+      "trainerName": "주호진 ",
+      "memberId": "m1781782851446001",
+      "memberName": "윤선정"
+    },
+    {
+      "id": "s1783339742768002",
+      "date": "2026-07-10",
+      "startTime": "20:00",
+      "trainerId": "t1781060178172",
+      "trainerName": "주호진 ",
+      "memberId": "m1783335484032001",
+      "memberName": "박성준"
+    },
+    {
+      "id": "s1783408701195001",
+      "date": "2026-07-10",
+      "startTime": "19:30",
+      "trainerId": "t1780668248685",
+      "trainerName": "김동규",
+      "memberId": "m1781924185326201",
+      "memberName": "한수연"
+    },
+    {
+      "id": "s1783408745786002",
+      "date": "2026-07-10",
+      "startTime": "20:00",
+      "trainerId": "t1780668248685",
+      "trainerName": "김동규",
+      "memberId": "m1781237478514",
+      "memberName": "이다인"
+    },
+    {
+      "id": "s1783612897518003",
+      "date": "2026-07-10",
+      "startTime": "19:00",
+      "trainerId": "t1781060808396",
+      "trainerName": "박병준 ",
+      "memberId": "m1783414839635001",
+      "memberName": "김도운"
+    },
+    {
+      "id": "s1783637208283001",
+      "date": "2026-07-10",
+      "startTime": "17:00",
+      "trainerId": "t1780668248685",
+      "trainerName": "김동규",
+      "memberId": "m1783416159594001",
+      "memberName": "정청아"
+    },
+    {
+      "id": "s1783641127944001",
+      "date": "2026-07-10",
+      "startTime": "09:00",
+      "trainerId": "t1780653836121",
+      "trainerName": "황지영",
+      "memberId": "m1781776451971016",
+      "memberName": "정유정 "
+    },
+    {
+      "id": "s1783641146872002",
+      "date": "2026-07-10",
+      "startTime": "10:00",
+      "trainerId": "t1780653836121",
+      "trainerName": "황지영",
+      "memberId": "m1781776118850014",
+      "memberName": "김진성 "
+    },
+    {
+      "id": "s1783660071309001",
+      "date": "2026-07-10",
+      "startTime": "09:30",
+      "trainerId": "t1780668248685",
+      "trainerName": "김동규",
+      "memberId": "m1781077246094",
+      "memberName": "서지율"
+    },
+    {
+      "id": "s1783671324711001",
+      "date": "2026-07-10",
+      "startTime": "17:00",
+      "trainerId": "t1780668248685",
+      "trainerName": "김동규",
+      "memberId": "m1781079005285",
+      "memberName": "김민식"
+    },
+    {
+      "id": "s1783678592765001",
+      "date": "2026-07-10",
+      "startTime": "18:00",
+      "trainerId": "t1780653836121",
+      "trainerName": "황지영",
+      "memberId": null,
+      "memberName": null
+    },
+    {
+      "id": "s1783678962596002",
+      "date": "2026-07-10",
+      "startTime": "20:00",
+      "trainerId": "t1780653836121",
+      "trainerName": "황지영",
+      "memberId": "m1781161941983",
+      "memberName": "한도현"
+    },
+    {
+      "id": "s1783678994019003",
+      "date": "2026-07-10",
+      "startTime": "20:00",
+      "trainerId": "t1780653836121",
+      "trainerName": "황지영",
+      "memberId": "m1781924185325163",
+      "memberName": "오형규"
+    },
+    {
+      "id": "s1783896331941002",
+      "date": "2026-07-10",
+      "startTime": "09:00",
+      "trainerId": "t1780710896938",
+      "trainerName": "김나영",
+      "memberId": "m1781077504948",
+      "memberName": "정재은 "
+    },
+    {
+      "id": "s1784160794939003",
+      "date": "2026-07-10",
+      "startTime": "22:00",
+      "trainerId": "t1780668248685",
+      "trainerName": "김동규",
+      "memberId": "m1784117096382001",
+      "memberName": "신승우"
+    },
+    {
+      "id": "s1784200748976008",
+      "date": "2026-07-10",
+      "startTime": "16:00",
+      "trainerId": "t1780653836121",
+      "trainerName": "황지영",
+      "memberId": "m1781924185326174",
+      "memberName": "조연정"
+    },
+    {
+      "id": "s1783698440842004",
+      "date": "2026-07-11",
+      "startTime": "09:00",
+      "trainerId": "t1780653836121",
+      "trainerName": "황지영",
+      "memberId": "m1781772987975006",
+      "memberName": "이지영"
+    },
+    {
+      "id": "s1783698460452005",
+      "date": "2026-07-11",
+      "startTime": "10:00",
+      "trainerId": "t1780653836121",
+      "trainerName": "황지영",
+      "memberId": "m1781192472536",
+      "memberName": "이시영"
+    },
+    {
+      "id": "s1783245933578001",
+      "date": "2026-07-12",
+      "startTime": "16:30",
+      "trainerId": "t1780973048566",
+      "trainerName": "박재만",
+      "memberId": "m1781178197866",
+      "memberName": "이정현"
+    },
+    {
+      "id": "s1785465820123010",
+      "date": "2026-07-12",
+      "startTime": "14:00",
+      "trainerId": "t1780973048566",
+      "trainerName": "박재만",
+      "memberId": "m1781924185320001",
+      "memberName": "안재훈"
+    },
+    {
+      "id": "s1782809064185003",
+      "date": "2026-07-13",
+      "startTime": "14:00",
+      "trainerId": "t1780668248685",
+      "trainerName": "김동규",
+      "memberId": "m1781924185323057",
+      "memberName": "김지윤"
+    },
+    {
+      "id": "s1783665708879002",
+      "date": "2026-07-13",
+      "startTime": "16:00",
+      "trainerId": "t1780668248685",
+      "trainerName": "김동규",
+      "memberId": "m1781512796094",
+      "memberName": "임경호"
+    },
+    {
+      "id": "s1783703367077001",
+      "date": "2026-07-13",
+      "startTime": "20:00",
+      "trainerId": "t1781060178172",
+      "trainerName": "주호진 ",
+      "memberId": "m1783335484032001",
+      "memberName": "박성준"
+    },
+    {
+      "id": "s1783835476976001",
+      "date": "2026-07-13",
+      "startTime": "09:30",
+      "trainerId": "t1780668248685",
+      "trainerName": "김동규",
+      "memberId": "m1781077246094",
+      "memberName": "서지율"
+    },
+    {
+      "id": "s1783896296505001",
+      "date": "2026-07-13",
+      "startTime": "08:00",
+      "trainerId": "t1780710896938",
+      "trainerName": "김나영",
+      "memberId": "m1780891610343",
+      "memberName": "최흥식"
+    },
+    {
+      "id": "s1783898858930001",
+      "date": "2026-07-13",
+      "startTime": "19:00",
+      "trainerId": "t1781060808396",
+      "trainerName": "박병준 ",
+      "memberId": "m1781076946973",
+      "memberName": "강현웅"
+    },
+    {
+      "id": "s1783898999744002",
+      "date": "2026-07-13",
+      "startTime": "19:00",
+      "trainerId": "t1781060808396",
+      "trainerName": "박병준 ",
+      "memberId": "m1783414839635001",
+      "memberName": "김도운"
+    },
+    {
+      "id": "s1783899018176003",
+      "date": "2026-07-13",
+      "startTime": "20:00",
+      "trainerId": "t1781060808396",
+      "trainerName": "박병준 ",
+      "memberId": "m1781924185321005",
+      "memberName": "홍성예"
+    },
+    {
+      "id": "s1783913467087001",
+      "date": "2026-07-13",
+      "startTime": "11:00",
+      "trainerId": "t1780668248685",
+      "trainerName": "김동규",
+      "memberId": "m1781924185325154",
+      "memberName": "송정빈"
+    },
+    {
+      "id": "s1783918852693003",
+      "date": "2026-07-13",
+      "startTime": "17:00",
+      "trainerId": "t1780668248685",
+      "trainerName": "김동규",
+      "memberId": "m1781138451063",
+      "memberName": "박지아"
+    },
+    {
+      "id": "s1783922711824001",
+      "date": "2026-07-13",
+      "startTime": "16:00",
+      "trainerId": "t1780653836121",
+      "trainerName": "황지영",
+      "memberId": "m1781924185326174",
+      "memberName": "조연정"
+    },
+    {
+      "id": "s1783922748122002",
+      "date": "2026-07-13",
+      "startTime": "18:00",
+      "trainerId": "t1780653836121",
+      "trainerName": "황지영",
+      "memberId": null,
+      "memberName": null
+    },
+    {
+      "id": "s1783922787673003",
+      "date": "2026-07-13",
+      "startTime": "19:30",
+      "trainerId": "t1780653836121",
+      "trainerName": "황지영",
+      "memberId": "m1781236201545",
+      "memberName": "김태완"
+    },
+    {
+      "id": "s1783933727250002",
+      "date": "2026-07-13",
+      "startTime": "18:00",
+      "trainerId": "t1780668248685",
+      "trainerName": "김동규",
+      "memberId": "m1783416159594001",
+      "memberName": "정청아"
+    },
+    {
+      "id": "s1783998696386002",
+      "date": "2026-07-13",
+      "startTime": "09:00",
+      "trainerId": "t1780710896938",
+      "trainerName": "김나영",
+      "memberId": "m1782119550439004",
+      "memberName": "권순자"
+    },
+    {
+      "id": "s1783703394597002",
+      "date": "2026-07-14",
+      "startTime": "16:00",
+      "trainerId": "t1781060178172",
+      "trainerName": "주호진 ",
+      "memberId": "m1781782851446001",
+      "memberName": "윤선정"
+    },
+    {
+      "id": "s1783703414405003",
+      "date": "2026-07-14",
+      "startTime": "10:00",
+      "trainerId": "t1781060178172",
+      "trainerName": "주호진 ",
+      "memberId": "m1781249255292",
+      "memberName": "이경하"
+    },
+    {
+      "id": "s1783831485804002",
+      "date": "2026-07-14",
+      "startTime": "15:00",
+      "trainerId": "t1781071506172",
+      "trainerName": "정주인",
+      "memberId": "m1781778477185005",
+      "memberName": "이영석"
+    },
+    {
+      "id": "s1783831509222004",
+      "date": "2026-07-14",
+      "startTime": "16:00",
+      "trainerId": "t1781071506172",
+      "trainerName": "정주인",
+      "memberId": "m1781924185324094",
+      "memberName": "박은정"
+    },
+    {
+      "id": "s1783922826131004",
+      "date": "2026-07-14",
+      "startTime": "18:00",
+      "trainerId": "t1780653836121",
+      "trainerName": "황지영",
+      "memberId": null,
+      "memberName": null
+    },
+    {
+      "id": "s1783922848808005",
+      "date": "2026-07-14",
+      "startTime": "19:30",
+      "trainerId": "t1780653836121",
+      "trainerName": "황지영",
+      "memberId": "m1783677837453003",
+      "memberName": "하민성"
+    },
+    {
+      "id": "s1783937998113001",
+      "date": "2026-07-14",
+      "startTime": "20:30",
+      "trainerId": "t1780653836121",
+      "trainerName": "황지영",
+      "memberId": "m1781776451971016",
+      "memberName": "정유정 "
+    },
+    {
+      "id": "s1783938497644001",
+      "date": "2026-07-14",
+      "startTime": "19:00",
+      "trainerId": "t1781060808396",
+      "trainerName": "박병준 ",
+      "memberId": "m1783414839635001",
+      "memberName": "김도운"
+    },
+    {
+      "id": "s1783943854957001",
+      "date": "2026-07-14",
+      "startTime": "16:00",
+      "trainerId": "t1780653836121",
+      "trainerName": "황지영",
+      "memberId": "m1781236201545",
+      "memberName": "김태완"
+    },
+    {
+      "id": "s1783978012980001",
+      "date": "2026-07-14",
+      "startTime": "10:00",
+      "trainerId": "t1780710896938",
+      "trainerName": "김나영",
+      "memberId": "m1781077504948",
+      "memberName": "정재은 "
+    },
+    {
+      "id": "s1783990057813003",
+      "date": "2026-07-14",
+      "startTime": "18:30",
+      "trainerId": "t1780710896938",
+      "trainerName": "김나영",
+      "memberId": "m1781167588676",
+      "memberName": "박희주"
+    },
+    {
+      "id": "s1783992388944002",
+      "date": "2026-07-14",
+      "startTime": "16:00",
+      "trainerId": "t1780668248685",
+      "trainerName": "김동규",
+      "memberId": "m1782889870552001",
+      "memberName": "김근락"
+    },
+    {
+      "id": "s1783998617271001",
+      "date": "2026-07-14",
+      "startTime": "11:00",
+      "trainerId": "t1780710896938",
+      "trainerName": "김나영",
+      "memberId": "m1781237007608",
+      "memberName": "이금호"
+    },
+    {
+      "id": "s1784024313868002",
+      "date": "2026-07-14",
+      "startTime": "18:00",
+      "trainerId": "t1781060178172",
+      "trainerName": "주호진 ",
+      "memberId": "m1781060585690",
+      "memberName": "김가영"
+    },
+    {
+      "id": "s1784025501144001",
+      "date": "2026-07-14",
+      "startTime": "20:00",
+      "trainerId": "t1781060808396",
+      "trainerName": "박병준 ",
+      "memberId": "m1781924185325133",
+      "memberName": "류보람"
+    },
+    {
+      "id": "s1783703442315004",
+      "date": "2026-07-15",
+      "startTime": "17:00",
+      "trainerId": "t1781060178172",
+      "trainerName": "주호진 ",
+      "memberId": "m1782721739432005",
+      "memberName": "김지후 "
+    },
+    {
+      "id": "s1783703538310006",
+      "date": "2026-07-15",
+      "startTime": "20:00",
+      "trainerId": "t1781060178172",
+      "trainerName": "주호진 ",
+      "memberId": "m1783335484032001",
+      "memberName": "박성준"
+    },
+    {
+      "id": "s1783831535338006",
+      "date": "2026-07-15",
+      "startTime": "16:00",
+      "trainerId": "t1781071506172",
+      "trainerName": "정주인",
+      "memberId": "m1781924185324094",
+      "memberName": "박은정"
+    },
+    {
+      "id": "s1783922896221006",
+      "date": "2026-07-15",
+      "startTime": "18:00",
+      "trainerId": "t1780653836121",
+      "trainerName": "황지영",
+      "memberId": null,
+      "memberName": null
+    },
+    {
+      "id": "s1783927372947001",
+      "date": "2026-07-15",
+      "startTime": "15:00",
+      "trainerId": "t1781071506172",
+      "trainerName": "정주인",
+      "memberId": "m1781924185324092",
+      "memberName": "이한성"
+    },
+    {
+      "id": "s1783938515827002",
+      "date": "2026-07-15",
+      "startTime": "19:00",
+      "trainerId": "t1781060808396",
+      "trainerName": "박병준 ",
+      "memberId": "m1783414839635001",
+      "memberName": "김도운"
+    },
+    {
+      "id": "s1784040026061001",
+      "date": "2026-07-15",
+      "startTime": "20:00",
+      "trainerId": "t1781060808396",
+      "trainerName": "박병준 ",
+      "memberId": "m1781924185321005",
+      "memberName": "홍성예"
+    },
+    {
+      "id": "s1784047705610001",
+      "date": "2026-07-15",
+      "startTime": "09:00",
+      "trainerId": "t1780653836121",
+      "trainerName": "황지영",
+      "memberId": "m1781772987975006",
+      "memberName": "이지영"
+    },
+    {
+      "id": "s1784047746842002",
+      "date": "2026-07-15",
+      "startTime": "16:00",
+      "trainerId": "t1780653836121",
+      "trainerName": "황지영",
+      "memberId": null,
+      "memberName": null
+    },
+    {
+      "id": "s1784077882221001",
+      "date": "2026-07-15",
+      "startTime": "09:30",
+      "trainerId": "t1780668248685",
+      "trainerName": "김동규",
+      "memberId": "m1781077246094",
+      "memberName": "서지율"
+    },
+    {
+      "id": "s1784100969244002",
+      "date": "2026-07-15",
+      "startTime": "17:00",
+      "trainerId": "t1780668248685",
+      "trainerName": "김동규",
+      "memberId": "m1781785813536003",
+      "memberName": "권민준 "
+    },
+    {
+      "id": "s1784101063883001",
+      "date": "2026-07-15",
+      "startTime": "18:00",
+      "trainerId": "t1780668248685",
+      "trainerName": "김동규",
+      "memberId": "m1783416159594001",
+      "memberName": "정청아"
+    },
+    {
+      "id": "s1784160825647004",
+      "date": "2026-07-15",
+      "startTime": "21:00",
+      "trainerId": "t1780668248685",
+      "trainerName": "김동규",
+      "memberId": "m1784117096382001",
+      "memberName": "신승우"
+    },
+    {
+      "id": "s1784190183765002",
+      "date": "2026-07-15",
+      "startTime": "10:00",
+      "trainerId": "t1780710896938",
+      "trainerName": "김나영",
+      "memberId": "m1781076650191",
+      "memberName": "임찬현"
+    },
+    {
+      "id": "s1787142685566007",
+      "date": "2026-07-15",
+      "startTime": "19:00",
+      "trainerId": "t1781060808396",
+      "trainerName": "박병준 ",
+      "memberId": "m1781785813536003",
+      "memberName": "권민준 "
+    },
+    {
+      "id": "s1782809099453004",
+      "date": "2026-07-16",
+      "startTime": "16:00",
+      "trainerId": "t1780668248685",
+      "trainerName": "김동규",
+      "memberId": "m1781924185323057",
+      "memberName": "김지윤"
+    },
+    {
+      "id": "s1783831555589008",
+      "date": "2026-07-16",
+      "startTime": "16:00",
+      "trainerId": "t1781071506172",
+      "trainerName": "정주인",
+      "memberId": "m1781924185324094",
+      "memberName": "박은정"
+    },
+    {
+      "id": "s1783831569046009",
+      "date": "2026-07-16",
+      "startTime": "15:00",
+      "trainerId": "t1781071506172",
+      "trainerName": "정주인",
+      "memberId": "m1781778477185005",
+      "memberName": "이영석"
+    },
+    {
+      "id": "s1783991226011001",
+      "date": "2026-07-16",
+      "startTime": "10:00",
+      "trainerId": "t1780668248685",
+      "trainerName": "김동규",
+      "memberId": "m1781924185325154",
+      "memberName": "송정빈"
+    },
+    {
+      "id": "s1784019191475001",
+      "date": "2026-07-16",
+      "startTime": "17:00",
+      "trainerId": "t1780668248685",
+      "trainerName": "김동규",
+      "memberId": "m1782889870552001",
+      "memberName": "김근락"
+    },
+    {
+      "id": "s1784020149895001",
+      "date": "2026-07-16",
+      "startTime": "19:00",
+      "trainerId": "t1780668248685",
+      "trainerName": "김동규",
+      "memberId": "m1781126986692",
+      "memberName": "이강혁"
+    },
+    {
+      "id": "s1784078211284001",
+      "date": "2026-07-16",
+      "startTime": "09:30",
+      "trainerId": "t1780668248685",
+      "trainerName": "김동규",
+      "memberId": "m1781077246094",
+      "memberName": "서지율"
+    },
+    {
+      "id": "s1784113268885001",
+      "date": "2026-07-16",
+      "startTime": "17:00",
+      "trainerId": "t1781071506172",
+      "trainerName": "정주인",
+      "memberId": "m1781924185324092",
+      "memberName": "이한성"
+    },
+    {
+      "id": "s1784190211527003",
+      "date": "2026-07-16",
+      "startTime": "08:00",
+      "trainerId": "t1780710896938",
+      "trainerName": "김나영",
+      "memberId": "m1780891610343",
+      "memberName": "최흥식"
+    },
+    {
+      "id": "s1784190231962004",
+      "date": "2026-07-16",
+      "startTime": "09:00",
+      "trainerId": "t1780710896938",
+      "trainerName": "김나영",
+      "memberId": "m1782119550439004",
+      "memberName": "권순자"
+    },
+    {
+      "id": "s1784190254733005",
+      "date": "2026-07-16",
+      "startTime": "10:00",
+      "trainerId": "t1780710896938",
+      "trainerName": "김나영",
+      "memberId": "m1781077504948",
+      "memberName": "정재은 "
+    },
+    {
+      "id": "s1784193313684002",
+      "date": "2026-07-16",
+      "startTime": "19:00",
+      "trainerId": "t1780668248685",
+      "trainerName": "김동규",
+      "memberId": "m1783082984633002",
+      "memberName": "김채안"
+    },
+    {
+      "id": "s1784193338119003",
+      "date": "2026-07-16",
+      "startTime": "19:00",
+      "trainerId": "t1780668248685",
+      "trainerName": "김동규",
+      "memberId": "m1781924185323041",
+      "memberName": "박서연"
+    },
+    {
+      "id": "s1784193383219004",
+      "date": "2026-07-16",
+      "startTime": "19:00",
+      "trainerId": "t1780668248685",
+      "trainerName": "김동규",
+      "memberId": "m1781138243079",
+      "memberName": "이수민"
+    },
+    {
+      "id": "s1784193807251009",
+      "date": "2026-07-16",
+      "startTime": "19:00",
+      "trainerId": "t1780668248685",
+      "trainerName": "김동규",
+      "memberId": "m1781924185324100",
+      "memberName": "김건우"
+    },
+    {
+      "id": "s1783062399898002",
+      "date": "2026-07-17",
+      "startTime": "09:30",
+      "trainerId": "t1780668248685",
+      "trainerName": "김동규",
+      "memberId": null,
+      "memberName": null
+    },
+    {
+      "id": "s1783703565447007",
+      "date": "2026-07-17",
+      "startTime": "20:00",
+      "trainerId": "t1781060178172",
+      "trainerName": "주호진 ",
+      "memberId": "m1783335484032001",
+      "memberName": "박성준"
+    },
+    {
+      "id": "s1783938534814003",
+      "date": "2026-07-17",
+      "startTime": "18:00",
+      "trainerId": "t1781060808396",
+      "trainerName": "박병준 ",
+      "memberId": "m1783414839635001",
+      "memberName": "김도운"
+    },
+    {
+      "id": "s1784101303512001",
+      "date": "2026-07-17",
+      "startTime": "19:00",
+      "trainerId": "t1781060808396",
+      "trainerName": "박병준 ",
+      "memberId": null,
+      "memberName": null
+    },
+    {
+      "id": "s1784110988735001",
+      "date": "2026-07-17",
+      "startTime": "14:30",
+      "trainerId": "t1780668248685",
+      "trainerName": "김동규",
+      "memberId": "m1781237478514",
+      "memberName": "이다인"
+    },
+    {
+      "id": "s1784181040253002",
+      "date": "2026-07-17",
+      "startTime": "20:00",
+      "trainerId": "t1781060808396",
+      "trainerName": "박병준 ",
+      "memberId": "m1781924185325133",
+      "memberName": "류보람"
+    },
+    {
+      "id": "s1784189605284001",
+      "date": "2026-07-17",
+      "startTime": "15:00",
+      "trainerId": "t1780668248685",
+      "trainerName": "김동규",
+      "memberId": "m1781924185326201",
+      "memberName": "한수연"
+    },
+    {
+      "id": "s1784196434698001",
+      "date": "2026-07-17",
+      "startTime": "15:00",
+      "trainerId": "t1780653836121",
+      "trainerName": "황지영",
+      "memberId": null,
+      "memberName": null
+    },
+    {
+      "id": "s1784196466211002",
+      "date": "2026-07-17",
+      "startTime": "11:30",
+      "trainerId": "t1780653836121",
+      "trainerName": "황지영",
+      "memberId": "m1781924185325165",
+      "memberName": "김나리"
+    },
+    {
+      "id": "s1784196499137003",
+      "date": "2026-07-17",
+      "startTime": "17:00",
+      "trainerId": "t1780653836121",
+      "trainerName": "황지영",
+      "memberId": "m1781776451971016",
+      "memberName": "정유정 "
+    },
+    {
+      "id": "s1784196518204004",
+      "date": "2026-07-17",
+      "startTime": "10:30",
+      "trainerId": "t1780653836121",
+      "trainerName": "황지영",
+      "memberId": "m1781776118850014",
+      "memberName": "김진성 "
+    },
+    {
+      "id": "s1784196540723005",
+      "date": "2026-07-17",
+      "startTime": "18:00",
+      "trainerId": "t1780653836121",
+      "trainerName": "황지영",
+      "memberId": "m1781924185326174",
+      "memberName": "조연정"
+    },
+    {
+      "id": "s1784196558838006",
+      "date": "2026-07-17",
+      "startTime": "14:00",
+      "trainerId": "t1780653836121",
+      "trainerName": "황지영",
+      "memberId": "m1781161941983",
+      "memberName": "한도현"
+    },
+    {
+      "id": "s1784196572457007",
+      "date": "2026-07-17",
+      "startTime": "14:00",
+      "trainerId": "t1780653836121",
+      "trainerName": "황지영",
+      "memberId": "m1781924185325163",
+      "memberName": "오형규"
+    },
+    {
+      "id": "s1784246983510001",
+      "date": "2026-07-17",
+      "startTime": "09:20",
+      "trainerId": "t1780653836121",
+      "trainerName": "황지영",
+      "memberId": "m1781192472536",
+      "memberName": "이시영"
+    },
+    {
+      "id": "s1784277335479001",
+      "date": "2026-07-17",
+      "startTime": "15:00",
+      "trainerId": "t1780668248685",
+      "trainerName": "김동규",
+      "memberId": "m1781077246094",
+      "memberName": "서지율"
+    },
+    {
+      "id": "s1785136879000005",
+      "date": "2026-07-17",
+      "startTime": "10:30",
+      "trainerId": "t1780710896938",
+      "trainerName": "김나영",
+      "memberId": "m1781237007608",
+      "memberName": "이금호"
+    },
+    {
+      "id": "s1785136898552006",
+      "date": "2026-07-17",
+      "startTime": "09:30",
+      "trainerId": "t1780710896938",
+      "trainerName": "김나영",
+      "memberId": "m1781167588676",
+      "memberName": "박희주"
+    },
+    {
+      "id": "s1784285210588001",
+      "date": "2026-07-18",
+      "startTime": "15:30",
+      "trainerId": "t1781177361535",
+      "trainerName": "김현우",
+      "memberId": "m1781245516151",
+      "memberName": "오은수"
+    },
+    {
+      "id": "s1784289014135001",
+      "date": "2026-07-18",
+      "startTime": "13:00",
+      "trainerId": "t1781060808396",
+      "trainerName": "박병준 ",
+      "memberId": "m1784284245552001",
+      "memberName": "강도원"
+    },
+    {
+      "id": "s1784458393128002",
+      "date": "2026-07-19",
+      "startTime": "20:00",
+      "trainerId": "t1781060808396",
+      "trainerName": "박병준 ",
+      "memberId": "m1781924185325167",
+      "memberName": "서혁준"
+    },
+    {
+      "id": "s1782809130355005",
+      "date": "2026-07-20",
+      "startTime": "14:00",
+      "trainerId": "t1780668248685",
+      "trainerName": "김동규",
+      "memberId": "m1781924185323057",
+      "memberName": "김지윤"
+    },
+    {
+      "id": "s1783703517393005",
+      "date": "2026-07-20",
+      "startTime": "17:00",
+      "trainerId": "t1781060178172",
+      "trainerName": "주호진 ",
+      "memberId": "m1782721739432005",
+      "memberName": "김지후 "
+    },
+    {
+      "id": "s1783831464656001",
+      "date": "2026-07-20",
+      "startTime": "17:00",
+      "trainerId": "t1781071506172",
+      "trainerName": "정주인",
+      "memberId": "m1781775359111012",
+      "memberName": "김승배"
+    },
+    {
+      "id": "s1784181013942001",
+      "date": "2026-07-20",
+      "startTime": "20:00",
+      "trainerId": "t1781060808396",
+      "trainerName": "박병준 ",
+      "memberId": "m1781924185321005",
+      "memberName": "홍성예"
+    },
+    {
+      "id": "s1784255801801002",
+      "date": "2026-07-20",
+      "startTime": "20:00",
+      "trainerId": "t1781060178172",
+      "trainerName": "주호진 ",
+      "memberId": "m1783335484032001",
+      "memberName": "박성준"
+    },
+    {
+      "id": "s1784431446425001",
+      "date": "2026-07-20",
+      "startTime": "15:00",
+      "trainerId": "t1781071506172",
+      "trainerName": "정주인",
+      "memberId": "m1781778477185005",
+      "memberName": "이영석"
+    },
+    {
+      "id": "s1784431459397002",
+      "date": "2026-07-20",
+      "startTime": "16:00",
+      "trainerId": "t1781071506172",
+      "trainerName": "정주인",
+      "memberId": "m1781924185324094",
+      "memberName": "박은정"
+    },
+    {
+      "id": "s1784503168316001",
+      "date": "2026-07-20",
+      "startTime": "18:00",
+      "trainerId": "t1781060808396",
+      "trainerName": "박병준 ",
+      "memberId": "m1783414839635001",
+      "memberName": "김도운"
+    },
+    {
+      "id": "s1784506275184001",
+      "date": "2026-07-20",
+      "startTime": "09:00",
+      "trainerId": "t1780668248685",
+      "trainerName": "김동규",
+      "memberId": "m1781141171224",
+      "memberName": "유덕재"
+    },
+    {
+      "id": "s1784521470066001",
+      "date": "2026-07-20",
+      "startTime": "14:00",
+      "trainerId": "t1781060178172",
+      "trainerName": "주호진 ",
+      "memberId": "m1781076650191",
+      "memberName": "임찬현"
+    },
+    {
+      "id": "s1784541269554001",
+      "date": "2026-07-20",
+      "startTime": "19:00",
+      "trainerId": "t1781060808396",
+      "trainerName": "박병준 ",
+      "memberId": "m1784515155947001",
+      "memberName": "차준민"
+    },
+    {
+      "id": "s1783703679436009",
+      "date": "2026-07-21",
+      "startTime": "17:30",
+      "trainerId": "t1781060178172",
+      "trainerName": "주호진 ",
+      "memberId": "m1781782851446001",
+      "memberName": "윤선정"
+    },
+    {
+      "id": "s1784255771137001",
+      "date": "2026-07-21",
+      "startTime": "10:00",
+      "trainerId": "t1781060178172",
+      "trainerName": "주호진 ",
+      "memberId": "m1781249255292",
+      "memberName": "이경하"
+    },
+    {
+      "id": "s1784431473645003",
+      "date": "2026-07-21",
+      "startTime": "16:00",
+      "trainerId": "t1781071506172",
+      "trainerName": "정주인",
+      "memberId": "m1781924185324094",
+      "memberName": "박은정"
+    },
+    {
+      "id": "s1784503268655002",
+      "date": "2026-07-21",
+      "startTime": "20:00",
+      "trainerId": "t1781060808396",
+      "trainerName": "박병준 ",
+      "memberId": "m1784284245552001",
+      "memberName": "강도원"
+    },
+    {
+      "id": "s1784503289809003",
+      "date": "2026-07-21",
+      "startTime": "19:00",
+      "trainerId": "t1781060808396",
+      "trainerName": "박병준 ",
+      "memberId": "m1783414839635001",
+      "memberName": "김도운"
+    },
+    {
+      "id": "s1784513810952001",
+      "date": "2026-07-21",
+      "startTime": "10:00",
+      "trainerId": "t1780668248685",
+      "trainerName": "김동규",
+      "memberId": "m1781924185325154",
+      "memberName": "송정빈"
+    },
+    {
+      "id": "s1784540254870002",
+      "date": "2026-07-21",
+      "startTime": "09:00",
+      "trainerId": "t1781060178172",
+      "trainerName": "주호진 ",
+      "memberId": "m1781060585690",
+      "memberName": "김가영"
+    },
+    {
+      "id": "s1784546360907001",
+      "date": "2026-07-21",
+      "startTime": "19:00",
+      "trainerId": "t1781060808396",
+      "trainerName": "박병준 ",
+      "memberId": "m1784515155947001",
+      "memberName": "차준민"
+    },
+    {
+      "id": "s1784548491153001",
+      "date": "2026-07-21",
+      "startTime": "15:00",
+      "trainerId": "t1781071506172",
+      "trainerName": "정주인",
+      "memberId": "m1781924185324092",
+      "memberName": "이한성"
+    },
+    {
+      "id": "s1784602810792002",
+      "date": "2026-07-21",
+      "startTime": "11:00",
+      "trainerId": "t1780668248685",
+      "trainerName": "김동규",
+      "memberId": "m1781924185325133",
+      "memberName": "류보람"
+    },
+    {
+      "id": "s1784620687707002",
+      "date": "2026-07-21",
+      "startTime": "18:30",
+      "trainerId": "t1780710896938",
+      "trainerName": "김나영",
+      "memberId": "m1782119550439004",
+      "memberName": "권순자"
+    },
+    {
+      "id": "s1784620720762003",
+      "date": "2026-07-21",
+      "startTime": "19:30",
+      "trainerId": "t1780710896938",
+      "trainerName": "김나영",
+      "memberId": "m1781235103763",
+      "memberName": "오세원 "
+    },
+    {
+      "id": "s1784621347540001",
+      "date": "2026-07-21",
+      "startTime": "19:00",
+      "trainerId": "t1780668248685",
+      "trainerName": "김동규",
+      "memberId": "m1783082984633002",
+      "memberName": "김채안"
+    },
+    {
+      "id": "s1784621371232002",
+      "date": "2026-07-21",
+      "startTime": "19:00",
+      "trainerId": "t1780668248685",
+      "trainerName": "김동규",
+      "memberId": "m1781924185323041",
+      "memberName": "박서연"
+    },
+    {
+      "id": "s1784028901527001",
+      "date": "2026-07-22",
+      "startTime": "20:00",
+      "trainerId": "t1781060808396",
+      "trainerName": "박병준 ",
+      "memberId": "m1781076946973",
+      "memberName": "강현웅"
+    },
+    {
+      "id": "s1784255866409003",
+      "date": "2026-07-22",
+      "startTime": "20:00",
+      "trainerId": "t1781060178172",
+      "trainerName": "주호진 ",
+      "memberId": "m1783335484032001",
+      "memberName": "박성준"
+    },
+    {
+      "id": "s1784503442373004",
+      "date": "2026-07-22",
+      "startTime": "19:30",
+      "trainerId": "t1781060808396",
+      "trainerName": "박병준 ",
+      "memberId": "m1781924185321005",
+      "memberName": "홍성예"
+    },
+    {
+      "id": "s1784547355166002",
+      "date": "2026-07-22",
+      "startTime": "19:00",
+      "trainerId": "t1781060808396",
+      "trainerName": "박병준 ",
+      "memberId": "m1784515155947001",
+      "memberName": "차준민"
+    },
+    {
+      "id": "s1784618366968001",
+      "date": "2026-07-22",
+      "startTime": "10:20",
+      "trainerId": "t1780653836121",
+      "trainerName": "황지영",
+      "memberId": "m1781776118850014",
+      "memberName": "김진성 "
+    },
+    {
+      "id": "s1784618410458002",
+      "date": "2026-07-22",
+      "startTime": "17:00",
+      "trainerId": "t1780653836121",
+      "trainerName": "황지영",
+      "memberId": "m1781924185326174",
+      "memberName": "조연정"
+    },
+    {
+      "id": "s1784618425062003",
+      "date": "2026-07-22",
+      "startTime": "18:00",
+      "trainerId": "t1780653836121",
+      "trainerName": "황지영",
+      "memberId": "m1783677837453003",
+      "memberName": "하민성"
+    },
+    {
+      "id": "s1784683894213001",
+      "date": "2026-07-22",
+      "startTime": "17:00",
+      "trainerId": "t1780668248685",
+      "trainerName": "김동규",
+      "memberId": "m1782201478290001",
+      "memberName": "한보경"
+    },
+    {
+      "id": "s1784683955991002",
+      "date": "2026-07-22",
+      "startTime": "17:00",
+      "trainerId": "t1780668248685",
+      "trainerName": "김동규",
+      "memberId": "m1783416159594001",
+      "memberName": "정청아"
+    },
+    {
+      "id": "s1784705896364003",
+      "date": "2026-07-22",
+      "startTime": "19:00",
+      "trainerId": "t1781060808396",
+      "trainerName": "박병준 ",
+      "memberId": "m1783414839635001",
+      "memberName": "김도운"
+    },
+    {
+      "id": "s1785165872536001",
+      "date": "2026-07-22",
+      "startTime": "13:00",
+      "trainerId": "t1781177361535",
+      "trainerName": "김현우",
+      "memberId": "m1784692197452001",
+      "memberName": "김서진"
+    },
+    {
+      "id": "s1783703587148008",
+      "date": "2026-07-23",
+      "startTime": "16:00",
+      "trainerId": "t1781060178172",
+      "trainerName": "주호진 ",
+      "memberId": "m1781236608518",
+      "memberName": "주정돈"
+    },
+    {
+      "id": "s1783831496049003",
+      "date": "2026-07-23",
+      "startTime": "17:00",
+      "trainerId": "t1781071506172",
+      "trainerName": "정주인",
+      "memberId": "m1781775359111012",
+      "memberName": "김승배"
+    },
+    {
+      "id": "s1784431502189004",
+      "date": "2026-07-23",
+      "startTime": "15:00",
+      "trainerId": "t1781071506172",
+      "trainerName": "정주인",
+      "memberId": "m1781778477185005",
+      "memberName": "이영석"
+    },
+    {
+      "id": "s1784431512774005",
+      "date": "2026-07-23",
+      "startTime": "16:00",
+      "trainerId": "t1781071506172",
+      "trainerName": "정주인",
+      "memberId": "m1781924185324094",
+      "memberName": "박은정"
+    },
+    {
+      "id": "s1784528740833001",
+      "date": "2026-07-23",
+      "startTime": "17:00",
+      "trainerId": "t1781060178172",
+      "trainerName": "주호진 ",
+      "memberId": "m1781076650191",
+      "memberName": "임찬현"
+    },
+    {
+      "id": "s1784768669690001",
+      "date": "2026-07-23",
+      "startTime": "10:00",
+      "trainerId": "t1780668248685",
+      "trainerName": "김동규",
+      "memberId": "m1781924185325133",
+      "memberName": "류보람"
+    },
+    {
+      "id": "s1784786490535001",
+      "date": "2026-07-23",
+      "startTime": "14:00",
+      "trainerId": "t1780668248685",
+      "trainerName": "김동규",
+      "memberId": "m1781785813536003",
+      "memberName": "권민준 "
+    },
+    {
+      "id": "s1784805411784001",
+      "date": "2026-07-23",
+      "startTime": "20:00",
+      "trainerId": "t1780668248685",
+      "trainerName": "김동규",
+      "memberId": "m1781193168997",
+      "memberName": "구성구"
+    },
+    {
+      "id": "s1783831524575005",
+      "date": "2026-07-24",
+      "startTime": "17:00",
+      "trainerId": "t1781071506172",
+      "trainerName": "정주인",
+      "memberId": "m1781775359111012",
+      "memberName": "김승배"
+    },
+    {
+      "id": "s1784436764397001",
+      "date": "2026-07-24",
+      "startTime": "17:00",
+      "trainerId": "t1781060178172",
+      "trainerName": "주호진 ",
+      "memberId": "m1782721739432005",
+      "memberName": "김지후 "
+    },
+    {
+      "id": "s1784436823924003",
+      "date": "2026-07-24",
+      "startTime": "10:00",
+      "trainerId": "t1781060178172",
+      "trainerName": "주호진 ",
+      "memberId": "m1783335484032001",
+      "memberName": "박성준"
+    },
+    {
+      "id": "s1784436857236004",
+      "date": "2026-07-24",
+      "startTime": "16:00",
+      "trainerId": "t1781060178172",
+      "trainerName": "주호진 ",
+      "memberId": "m1781782851446001",
+      "memberName": "윤선정"
+    },
+    {
+      "id": "s1784590314874002",
+      "date": "2026-07-24",
+      "startTime": "19:30",
+      "trainerId": "t1781060808396",
+      "trainerName": "박병준 ",
+      "memberId": "m1784515155947001",
+      "memberName": "차준민"
+    },
+    {
+      "id": "s1784631644573001",
+      "date": "2026-07-24",
+      "startTime": "20:00",
+      "trainerId": "t1781060808396",
+      "trainerName": "박병준 ",
+      "memberId": "m1781924185325133",
+      "memberName": "류보람"
+    },
+    {
+      "id": "s1784705336203001",
+      "date": "2026-07-24",
+      "startTime": "19:00",
+      "trainerId": "t1781060808396",
+      "trainerName": "박병준 ",
+      "memberId": "m1784284245552001",
+      "memberName": "강도원"
+    },
+    {
+      "id": "s1784705911923004",
+      "date": "2026-07-24",
+      "startTime": "19:00",
+      "trainerId": "t1781060808396",
+      "trainerName": "박병준 ",
+      "memberId": "m1783414839635001",
+      "memberName": "김도운"
+    },
+    {
+      "id": "s1784786546446001",
+      "date": "2026-07-24",
+      "startTime": "16:00",
+      "trainerId": "t1780668248685",
+      "trainerName": "김동규",
+      "memberId": "m1781138451063",
+      "memberName": "박지아"
+    },
+    {
+      "id": "s1784807933016001",
+      "date": "2026-07-24",
+      "startTime": "15:00",
+      "trainerId": "t1781071506172",
+      "trainerName": "정주인",
+      "memberId": "m1781924185324092",
+      "memberName": "이한성"
+    },
+    {
+      "id": "s1784815816775001",
+      "date": "2026-07-24",
+      "startTime": "09:10",
+      "trainerId": "t1780653836121",
+      "trainerName": "황지영",
+      "memberId": "m1781776118850014",
+      "memberName": "김진성 "
+    },
+    {
+      "id": "s1784855835822001",
+      "date": "2026-07-24",
+      "startTime": "11:00",
+      "trainerId": "t1780653836121",
+      "trainerName": "황지영",
+      "memberId": null,
+      "memberName": null
+    },
+    {
+      "id": "s1784855867684002",
+      "date": "2026-07-24",
+      "startTime": "16:00",
+      "trainerId": "t1780653836121",
+      "trainerName": "황지영",
+      "memberId": "m1781924185326174",
+      "memberName": "조연정"
+    },
+    {
+      "id": "s1784855888386001",
+      "date": "2026-07-24",
+      "startTime": "14:00",
+      "trainerId": "t1780668248685",
+      "trainerName": "김동규",
+      "memberId": "m1781924185323057",
+      "memberName": "김지윤"
+    },
+    {
+      "id": "s1784855943284002",
+      "date": "2026-07-24",
+      "startTime": "13:00",
+      "trainerId": "t1780668248685",
+      "trainerName": "김동규",
+      "memberId": "m1781237478514",
+      "memberName": "이다인"
+    },
+    {
+      "id": "s1784863877535001",
+      "date": "2026-07-24",
+      "startTime": "19:00",
+      "trainerId": "t1780668248685",
+      "trainerName": "김동규",
+      "memberId": "m1781924185326201",
+      "memberName": "한수연"
+    },
+    {
+      "id": "s1784863939360002",
+      "date": "2026-07-24",
+      "startTime": "10:00",
+      "trainerId": "t1780668248685",
+      "trainerName": "김동규",
+      "memberId": "m1783416159594001",
+      "memberName": "정청아"
+    },
+    {
+      "id": "s1784870807043003",
+      "date": "2026-07-24",
+      "startTime": "14:00",
+      "trainerId": "t1780668248685",
+      "trainerName": "김동규",
+      "memberId": "m1781126986692",
+      "memberName": "이강혁"
+    },
+    {
+      "id": "s1785408678820002",
+      "date": "2026-07-24",
+      "startTime": "19:00",
+      "trainerId": "t1780653836121",
+      "trainerName": "황지영",
+      "memberId": "m1781161941983",
+      "memberName": "한도현"
+    },
+    {
+      "id": "s1784713268106001",
+      "date": "2026-07-25",
+      "startTime": "09:00",
+      "trainerId": "t1781060178172",
+      "trainerName": "주호진 ",
+      "memberId": "m1781060585690",
+      "memberName": "김가영"
+    },
+    {
+      "id": "s1784889530666002",
+      "date": "2026-07-25",
+      "startTime": "20:00",
+      "trainerId": "t1781060808396",
+      "trainerName": "박병준 ",
+      "memberId": "m1784515155947001",
+      "memberName": "차준민"
+    },
+    {
+      "id": "s1784977655629001",
+      "date": "2026-07-25",
+      "startTime": "20:00",
+      "trainerId": "t1781060808396",
+      "trainerName": "박병준 ",
+      "memberId": "m1784977449059001",
+      "memberName": "김대경"
+    },
+    {
+      "id": "s1785165955572002",
+      "date": "2026-07-25",
+      "startTime": "10:30",
+      "trainerId": "t1781177361535",
+      "trainerName": "김현우",
+      "memberId": "m1784692197452001",
+      "memberName": "김서진"
+    },
+    {
+      "id": "s1785470486581001",
+      "date": "2026-07-25",
+      "startTime": "10:00",
+      "trainerId": "t1780668248685",
+      "trainerName": "김동규",
+      "memberId": "m1781924185325133",
+      "memberName": "류보람"
+    },
+    {
+      "id": "s1784889574254003",
+      "date": "2026-07-26",
+      "startTime": "09:00",
+      "trainerId": "t1781060808396",
+      "trainerName": "박병준 ",
+      "memberId": "m1784515155947001",
+      "memberName": "차준민"
+    },
+    {
+      "id": "s1784889647829004",
+      "date": "2026-07-26",
+      "startTime": "09:00",
+      "trainerId": "t1781060808396",
+      "trainerName": "박병준 ",
+      "memberId": "m1783414839635001",
+      "memberName": "김도운"
+    },
+    {
+      "id": "s1784977796174001",
+      "date": "2026-07-26",
+      "startTime": "09:00",
+      "trainerId": "t1781060808396",
+      "trainerName": "박병준 ",
+      "memberId": "m1784977449059001",
+      "memberName": "김대경"
+    },
+    {
+      "id": "s1783831546292007",
+      "date": "2026-07-27",
+      "startTime": "12:00",
+      "trainerId": "t1781071506172",
+      "trainerName": "정주인",
+      "memberId": "m1781775359111012",
+      "memberName": "김승배"
+    },
+    {
+      "id": "s1784590273792001",
+      "date": "2026-07-27",
+      "startTime": "20:00",
+      "trainerId": "t1781060808396",
+      "trainerName": "박병준 ",
+      "memberId": "m1781924185321005",
+      "memberName": "홍성예"
+    },
+    {
+      "id": "s1784798286902001",
+      "date": "2026-07-27",
+      "startTime": "10:00",
+      "trainerId": "t1781060178172",
+      "trainerName": "주호진 ",
+      "memberId": "m1781076650191",
+      "memberName": "임찬현"
+    },
+    {
+      "id": "s1784953328980001",
+      "date": "2026-07-27",
+      "startTime": "17:00",
+      "trainerId": "t1781060178172",
+      "trainerName": "주호진 ",
+      "memberId": "m1782721739432005",
+      "memberName": "김지후 "
+    },
+    {
+      "id": "s1784953382580002",
+      "date": "2026-07-27",
+      "startTime": "20:00",
+      "trainerId": "t1781060178172",
+      "trainerName": "주호진 ",
+      "memberId": "m1783335484032001",
+      "memberName": "박성준"
+    },
+    {
+      "id": "s1785046965892001",
+      "date": "2026-07-27",
+      "startTime": "15:00",
+      "trainerId": "t1781071506172",
+      "trainerName": "정주인",
+      "memberId": "m1781778477185005",
+      "memberName": "이영석"
+    },
+    {
+      "id": "s1785113317330001",
+      "date": "2026-07-27",
+      "startTime": "10:00",
+      "trainerId": "t1780668248685",
+      "trainerName": "김동규",
+      "memberId": "m1783416159594001",
+      "memberName": "정청아"
+    },
+    {
+      "id": "s1785113402634003",
+      "date": "2026-07-27",
+      "startTime": "09:00",
+      "trainerId": "t1780668248685",
+      "trainerName": "김동규",
+      "memberId": "m1781141171224",
+      "memberName": "유덕재"
+    },
+    {
+      "id": "s1785116053904001",
+      "date": "2026-07-27",
+      "startTime": "19:00",
+      "trainerId": "t1781060808396",
+      "trainerName": "박병준 ",
+      "memberId": "m1783414839635001",
+      "memberName": "김도운"
+    },
+    {
+      "id": "s1785116069473002",
+      "date": "2026-07-27",
+      "startTime": "07:00",
+      "trainerId": "t1781060808396",
+      "trainerName": "박병준 ",
+      "memberId": "m1784515155947001",
+      "memberName": "차준민"
+    },
+    {
+      "id": "s1784431525898006",
+      "date": "2026-07-28",
+      "startTime": "16:00",
+      "trainerId": "t1781071506172",
+      "trainerName": "정주인",
+      "memberId": "m1781924185324094",
+      "memberName": "박은정"
+    },
+    {
+      "id": "s1784893090503005",
+      "date": "2026-07-28",
+      "startTime": "18:00",
+      "trainerId": "t1781060808396",
+      "trainerName": "박병준 ",
+      "memberId": "m1784284245552001",
+      "memberName": "강도원"
+    },
+    {
+      "id": "s1784953408685003",
+      "date": "2026-07-28",
+      "startTime": "10:00",
+      "trainerId": "t1781060178172",
+      "trainerName": "주호진 ",
+      "memberId": "m1781249255292",
+      "memberName": "이경하"
+    },
+    {
+      "id": "s1785046980535002",
+      "date": "2026-07-28",
+      "startTime": "12:00",
+      "trainerId": "t1781071506172",
+      "trainerName": "정주인",
+      "memberId": "m1781775359111012",
+      "memberName": "김승배"
+    },
+    {
+      "id": "s1785134017217001",
+      "date": "2026-07-28",
+      "startTime": "19:00",
+      "trainerId": "t1781060808396",
+      "trainerName": "박병준 ",
+      "memberId": "m1783414839635001",
+      "memberName": "김도운"
+    },
+    {
+      "id": "s1785134040575002",
+      "date": "2026-07-28",
+      "startTime": "18:00",
+      "trainerId": "t1781060808396",
+      "trainerName": "박병준 ",
+      "memberId": "m1784977449059001",
+      "memberName": "김대경"
+    },
+    {
+      "id": "s1785134073470003",
+      "date": "2026-07-28",
+      "startTime": "19:00",
+      "trainerId": "t1781060808396",
+      "trainerName": "박병준 ",
+      "memberId": "m1784515155947001",
+      "memberName": "차준민"
+    },
+    {
+      "id": "s1785136689677001",
+      "date": "2026-07-28",
+      "startTime": "19:30",
+      "trainerId": "t1780710896938",
+      "trainerName": "김나영",
+      "memberId": "m1781235103763",
+      "memberName": "오세원 "
+    },
+    {
+      "id": "s1785168976302001",
+      "date": "2026-07-28",
+      "startTime": "10:30",
+      "trainerId": "t1780653836121",
+      "trainerName": "황지영",
+      "memberId": "m1781237007608",
+      "memberName": "이금호"
+    },
+    {
+      "id": "s1785168992983002",
+      "date": "2026-07-28",
+      "startTime": "15:30",
+      "trainerId": "t1780653836121",
+      "trainerName": "황지영",
+      "memberId": "m1781077834627",
+      "memberName": "김준범 "
+    },
+    {
+      "id": "s1785169035003003",
+      "date": "2026-07-28",
+      "startTime": "18:00",
+      "trainerId": "t1780653836121",
+      "trainerName": "황지영",
+      "memberId": "m1783677837453003",
+      "memberName": "하민성"
+    },
+    {
+      "id": "s1785208593878001",
+      "date": "2026-07-28",
+      "startTime": "14:00",
+      "trainerId": "t1780668248685",
+      "trainerName": "김동규",
+      "memberId": "m1781924185323057",
+      "memberName": "김지윤"
+    },
+    {
+      "id": "s1785136708887002",
+      "date": "2026-07-29",
+      "startTime": "19:00",
+      "trainerId": "t1780710896938",
+      "trainerName": "김나영",
+      "memberId": "m1781167588676",
+      "memberName": "박희주"
+    },
+    {
+      "id": "s1785136724241003",
+      "date": "2026-07-29",
+      "startTime": "19:00",
+      "trainerId": "t1780710896938",
+      "trainerName": "김나영",
+      "memberId": "m1782119550439004",
+      "memberName": "권순자"
+    },
+    {
+      "id": "s1785148504394001",
+      "date": "2026-07-29",
+      "startTime": "09:00",
+      "trainerId": "t1781060178172",
+      "trainerName": "주호진 ",
+      "memberId": "m1781060585690",
+      "memberName": "김가영"
+    },
+    {
+      "id": "s1785219640864001",
+      "date": "2026-07-29",
+      "startTime": "17:00",
+      "trainerId": "t1780668248685",
+      "trainerName": "김동규",
+      "memberId": "m1783416159594001",
+      "memberName": "정청아"
+    },
+    {
+      "id": "s1785219878758002",
+      "date": "2026-07-29",
+      "startTime": "17:00",
+      "trainerId": "t1780668248685",
+      "trainerName": "김동규",
+      "memberId": "m1782201478290001",
+      "memberName": "한보경"
+    },
+    {
+      "id": "s1785219927454003",
+      "date": "2026-07-29",
+      "startTime": "16:00",
+      "trainerId": "t1780668248685",
+      "trainerName": "김동규",
+      "memberId": "m1781126986692",
+      "memberName": "이강혁"
+    },
+    {
+      "id": "s1785222228390001",
+      "date": "2026-07-29",
+      "startTime": "18:00",
+      "trainerId": "t1781060808396",
+      "trainerName": "박병준 ",
+      "memberId": "m1783414839635001",
+      "memberName": "김도운"
+    },
+    {
+      "id": "s1785222244292002",
+      "date": "2026-07-29",
+      "startTime": "18:00",
+      "trainerId": "t1781060808396",
+      "trainerName": "박병준 ",
+      "memberId": "m1784515155947001",
+      "memberName": "차준민"
+    },
+    {
+      "id": "s1785222272410003",
+      "date": "2026-07-29",
+      "startTime": "18:00",
+      "trainerId": "t1781060808396",
+      "trainerName": "박병준 ",
+      "memberId": "m1784977449059001",
+      "memberName": "김대경"
+    },
+    {
+      "id": "s1785313295935002",
+      "date": "2026-07-29",
+      "startTime": "15:00",
+      "trainerId": "t1780668248685",
+      "trainerName": "김동규",
+      "memberId": "m1781138451063",
+      "memberName": "박지아"
+    },
+    {
+      "id": "s1785320310277001",
+      "date": "2026-07-29",
+      "startTime": "20:00",
+      "trainerId": "t1781060808396",
+      "trainerName": "박병준 ",
+      "memberId": "m1781390037892",
+      "memberName": "민시영"
+    },
+    {
+      "id": "s1785325513146002",
+      "date": "2026-07-29",
+      "startTime": "19:30",
+      "trainerId": "t1780668248685",
+      "trainerName": "김동규",
+      "memberId": "m1785320755683001",
+      "memberName": "김보현"
+    },
+    {
+      "id": "s1784799397937002",
+      "date": "2026-07-30",
+      "startTime": "16:00",
+      "trainerId": "t1781060178172",
+      "trainerName": "주호진 ",
+      "memberId": "m1781236608518",
+      "memberName": "주정돈"
+    },
+    {
+      "id": "s1784953460959004",
+      "date": "2026-07-30",
+      "startTime": "17:00",
+      "trainerId": "t1781060178172",
+      "trainerName": "주호진 ",
+      "memberId": "m1782721739432005",
+      "memberName": "김지후 "
+    },
+    {
+      "id": "s1785046999902003",
+      "date": "2026-07-30",
+      "startTime": "11:00",
+      "trainerId": "t1781071506172",
+      "trainerName": "정주인",
+      "memberId": "m1781775359111012",
+      "memberName": "김승배"
+    },
+    {
+      "id": "s1785047014300004",
+      "date": "2026-07-30",
+      "startTime": "16:00",
+      "trainerId": "t1781071506172",
+      "trainerName": "정주인",
+      "memberId": "m1781924185324094",
+      "memberName": "박은정"
+    },
+    {
+      "id": "s1785235978794001",
+      "date": "2026-07-30",
+      "startTime": "14:30",
+      "trainerId": "t1781071506172",
+      "trainerName": "정주인",
+      "memberId": "m1785227773012001",
+      "memberName": "이수호"
+    },
+    {
+      "id": "s1785284080174001",
+      "date": "2026-07-30",
+      "startTime": "19:30",
+      "trainerId": "t1780710896938",
+      "trainerName": "김나영",
+      "memberId": "m1781235103763",
+      "memberName": "오세원 "
+    },
+    {
+      "id": "s1785388656494001",
+      "date": "2026-07-30",
+      "startTime": "15:00",
+      "trainerId": "t1780668248685",
+      "trainerName": "김동규",
+      "memberId": "m1781079005285",
+      "memberName": "김민식"
+    },
+    {
+      "id": "s1785388675955002",
+      "date": "2026-07-30",
+      "startTime": "15:00",
+      "trainerId": "t1780668248685",
+      "trainerName": "김동규",
+      "memberId": "m1781599415282",
+      "memberName": "홍정혁"
+    },
+    {
+      "id": "s1785396291260001",
+      "date": "2026-07-30",
+      "startTime": "17:00",
+      "trainerId": "t1780653836121",
+      "trainerName": "황지영",
+      "memberId": "m1781776118850014",
+      "memberName": "김진성 "
+    },
+    {
+      "id": "s1785396351497002",
+      "date": "2026-07-30",
+      "startTime": "18:00",
+      "trainerId": "t1780653836121",
+      "trainerName": "황지영",
+      "memberId": "m1783677837453003",
+      "memberName": "하민성"
+    },
+    {
+      "id": "s1785407632103003",
+      "date": "2026-07-30",
+      "startTime": "21:00",
+      "trainerId": "t1780653836121",
+      "trainerName": "황지영",
+      "memberId": "m1781924185326174",
+      "memberName": "조연정"
+    },
+    {
+      "id": "s1784889030962001",
+      "date": "2026-07-31",
+      "startTime": "20:00",
+      "trainerId": "t1781060808396",
+      "trainerName": "박병준 ",
+      "memberId": "m1781924185321005",
+      "memberName": "홍성예"
+    },
+    {
+      "id": "s1785047031611005",
+      "date": "2026-07-31",
+      "startTime": "13:00",
+      "trainerId": "t1781071506172",
+      "trainerName": "정주인",
+      "memberId": "m1781778477185005",
+      "memberName": "이영석"
+    },
+    {
+      "id": "s1785047047988006",
+      "date": "2026-07-31",
+      "startTime": "15:00",
+      "trainerId": "t1781071506172",
+      "trainerName": "정주인",
+      "memberId": "m1781775359111012",
+      "memberName": "김승배"
+    },
+    {
+      "id": "s1785234967358001",
+      "date": "2026-07-31",
+      "startTime": "18:00",
+      "trainerId": "t1781060808396",
+      "trainerName": "박병준 ",
+      "memberId": "m1783414839635001",
+      "memberName": "김도운"
+    },
+    {
+      "id": "s1785234988982002",
+      "date": "2026-07-31",
+      "startTime": "18:00",
+      "trainerId": "t1781060808396",
+      "trainerName": "박병준 ",
+      "memberId": "m1784284245552001",
+      "memberName": "강도원"
+    },
+    {
+      "id": "s1785235057390003",
+      "date": "2026-07-31",
+      "startTime": "18:00",
+      "trainerId": "t1781060808396",
+      "trainerName": "박병준 ",
+      "memberId": "m1784977449059001",
+      "memberName": "김대경"
+    },
+    {
+      "id": "s1785296824366001",
+      "date": "2026-07-31",
+      "startTime": "20:00",
+      "trainerId": "t1781060178172",
+      "trainerName": "주호진 ",
+      "memberId": "m1783335484032001",
+      "memberName": "박성준"
+    },
+    {
+      "id": "s1785308782695001",
+      "date": "2026-07-31",
+      "startTime": "16:00",
+      "trainerId": "t1781071506172",
+      "trainerName": "정주인",
+      "memberId": "m1781924185324094",
+      "memberName": "박은정"
+    },
+    {
+      "id": "s1785408926911001",
+      "date": "2026-07-31",
+      "startTime": "08:00",
+      "trainerId": "t1780653836121",
+      "trainerName": "황지영",
+      "memberId": null,
+      "memberName": null
+    },
+    {
+      "id": "s1785470309678001",
+      "date": "2026-07-31",
+      "startTime": "09:30",
+      "trainerId": "t1780668248685",
+      "trainerName": "김동규",
+      "memberId": "m1783416159594001",
+      "memberName": "정청아"
+    },
+    {
+      "id": "s1785487156116001",
+      "date": "2026-07-31",
+      "startTime": "18:00",
+      "trainerId": "t1781060808396",
+      "trainerName": "박병준 ",
+      "memberId": "m1784515155947001",
+      "memberName": "차준민"
+    },
+    {
+      "id": "s1785495405039001",
+      "date": "2026-07-31",
+      "startTime": "19:00",
+      "trainerId": "t1780668248685",
+      "trainerName": "김동규",
+      "memberId": "m1781924185326201",
+      "memberName": "한수연"
+    }
+  ]
+}
