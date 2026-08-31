@@ -13,6 +13,7 @@ import { useHardwareBack } from '../core/useHardwareBack';
 import { isSkeletonEnabled } from '../core/skeletonPref';
 import { useCameraRotation } from '../core/useCameraRotation';
 import { rotateLandmarksNormalized, drawVideoCover } from '../core/recordAspect';
+import { aiStore } from '../../demoData';
 
 const VIEW_STEPS = [
   { key: 'front', label: '정면', short: '앞' },
@@ -73,6 +74,26 @@ export default function PostureMeasure({ member, onSave, onBack, onViewInReport 
   useEffect(() => { capturesRef.current = captures; }, [captures]);
   const [report, setReport] = useState(null);
   const [previewUrl, setPreviewUrl] = useState('');
+  // [전/후 변화 요약 2026-08-31] 측정이 끝나면 같은 회원의 직전 자세 측정 기록을
+  // 하나 불러와 리포트의 "이전 측정 대비 변화" 계산에 쓴다. 미등록회원(isVirtual)은
+  // 애초에 posture_reports에 이력이 안 쌓이므로 조회하지 않는다.
+  const [previousReport, setPreviousReport] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    if (!report || !member?.id || member?.isVirtual) { setPreviousReport(null); return undefined; }
+    (async () => {
+      try {
+        const list = await aiStore.ensurePostureReports(member.id);
+        if (cancelled) return;
+        const sorted = [...(list || [])].sort((a, b) => String(b.createdAt || b.measuredAt || b.recordedAt || '')
+          .localeCompare(String(a.createdAt || a.measuredAt || a.recordedAt || '')));
+        setPreviousReport(sorted[0] || null);
+      } catch (e) {
+        if (!cancelled) setPreviousReport(null);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [report, member?.id, member?.isVirtual]);
   const [saveState, setSaveState] = useState('idle');
   const [actionMsg, setActionMsg] = useState('');
   const [guide, setGuide] = useState('정면으로 서서 전신이 화면 안에 들어오게 맞춰주세요.');
@@ -450,6 +471,7 @@ export default function PostureMeasure({ member, onSave, onBack, onViewInReport 
           heightCm={bodyInfo.heightCm}
           actualAge={bodyInfo.actualAge}
           perViewSnapshots={report.perViewSnapshots}
+          previousReport={previousReport}
         />
 
         <div className="space-y-2 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/95 dark:bg-slate-950/95 p-3">

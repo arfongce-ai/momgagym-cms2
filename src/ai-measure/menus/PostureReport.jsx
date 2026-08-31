@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useEffect, useRef } from 'react';
 import {
   POSTURE_STATUS_KO,
   POSE_LANDMARKS,
@@ -88,9 +88,15 @@ export default function PostureReport({
   actualAge,
   heightCm,
   onClose,
+  // [전/후 변화 요약 2026-08-31] 같은 회원의 직전 자세 측정 기록(posture_reports
+  // 문서 원본) — 있으면 수치 변화표·문장 요약과 Before&After Ghosting의
+  // 이전 스켈레톤을 자동으로 채운다. 사진은 저장 정책상(recordSink.js 참고)
+  // 클라우드에 안 남으므로, 이전 사진만은 GhostingViewer에서 그 자리에서
+  // 업로드해 비교한다(값/스켈레톤 비교는 자동, 사진 비교는 즉석 업로드).
+  previousReport,
 }) {
   const currentPose = currentLandmarks || report?.rawLandmarks || report?.landmarks || report?.rawPose?.landmarks;
-  const previousPose = previousLandmarks || report?.comparison?.previousLandmarks;
+  const previousPose = previousLandmarks || report?.comparison?.previousLandmarks || previousReport?.rawLandmarks;
   const analysis = useMemo(() => {
     if (report?.analysis) return report.analysis;
     if (!currentPose) return null;
@@ -129,6 +135,12 @@ export default function PostureReport({
       : { front: analysis };
     return analyzeAxialRotation(pv);
   }, [report, analysis]);
+
+  // [전/후 변화 요약] 직전 측정 대비 핵심 지표 변화값 + 한 줄 요약.
+  const changeSummary = useMemo(() => {
+    if (!analysis) return null;
+    return buildPostureChangeSummary(analysis, report, previousReport);
+  }, [analysis, report, previousReport]);
 
   if (!analysis) {
     return (
@@ -179,6 +191,8 @@ export default function PostureReport({
             </p>
           </MetricPanel>
         </section>
+
+        <PostureChangeSummary summary={changeSummary} />
 
         <section className="grid gap-4 sm:grid-cols-[1.3fr_0.9fr]">
           <GhostingViewer
@@ -859,6 +873,93 @@ function pelvisPatternLabel(pattern) {
   return '판별 보류';
 }
 
+// mode: 'higherBetter'(점수처럼 높을수록 좋음) · 'lowerBetter'(그대로 낮을수록 좋음)
+// · 'closerZeroBetter'(좌우 편차·기울기 등 0에 가까울수록 좋음 — 절대값으로 비교).
+function computeChangeRow(label, prevRaw, curRaw, unit, mode) {
+  if (typeof curRaw !== 'number' || !Number.isFinite(curRaw)) return null;
+  if (typeof prevRaw !== 'number' || !Number.isFinite(prevRaw)) return null;
+  const prevVal = mode === 'closerZeroBetter' ? Math.abs(prevRaw) : prevRaw;
+  const curVal = mode === 'closerZeroBetter' ? Math.abs(curRaw) : curRaw;
+  const diff = Math.round((curVal - prevVal) * 10) / 10;
+  let direction = 'same';
+  if (Math.abs(diff) >= 0.1) {
+    const better = mode === 'higherBetter' ? diff > 0 : diff < 0;
+    direction = better ? 'improved' : 'worsened';
+  }
+  return { key: label, label, prevVal, curVal, diff, unit, direction };
+}
+
+// 직전 자세 측정 기록(posture_reports 원본 문서) 대비 핵심 지표 변화값 + 한 줄 요약.
+// previousReport 가 없으면(첫 측정이거나 아직 안 불러왔으면) null — 화면에서 섹션 자체를 숨긴다.
+function buildPostureChangeSummary(analysis, report, previousReport) {
+  if (!previousReport) return null;
+  const prevAnalysis = previousReport.analysis || {};
+  const rows = [
+    computeChangeRow('통합 체형 점수', previousReport.postureScore ?? prevAnalysis.score, analysis.score ?? report?.postureScore, '점', 'higherBetter'),
+    computeChangeRow('체형 나이', previousReport.bodyAge ?? prevAnalysis.bodyAge, analysis.bodyAge ?? report?.bodyAge, '세', 'lowerBetter'),
+    computeChangeRow('좌우 비대칭', prevAnalysis.asymmetry?.averageAsi, analysis.asymmetry?.averageAsi, '%', 'lowerBetter'),
+    computeChangeRow('좌우 기울기', prevAnalysis.rotations?.rollDeg, analysis.rotations?.rollDeg, '°', 'closerZeroBetter'),
+    computeChangeRow('앞뒤 기울기', prevAnalysis.rotations?.pitchDeg, analysis.rotations?.pitchDeg, '°', 'closerZeroBetter'),
+    computeChangeRow('몸통 틀어짐', prevAnalysis.rotations?.yawDeg, analysis.rotations?.yawDeg, '°', 'closerZeroBetter'),
+    computeChangeRow('어깨 높이차', prevAnalysis.frontal?.shoulderHeightDiffMm, analysis.frontal?.shoulderHeightDiffMm, 'mm', 'closerZeroBetter'),
+    computeChangeRow('골반 높이차', prevAnalysis.frontal?.pelvisHeightDiffMm, analysis.frontal?.pelvisHeightDiffMm, 'mm', 'closerZeroBetter'),
+    computeChangeRow('거북목 거리', prevAnalysis.sagittal?.forwardHeadMm, analysis.sagittal?.forwardHeadMm, 'mm', 'closerZeroBetter'),
+  ].filter(Boolean);
+
+  if (!rows.length) return null;
+
+  const improved = [...rows].filter((r) => r.direction === 'improved').sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff));
+  const worsened = [...rows].filter((r) => r.direction === 'worsened').sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff));
+  const fmt = (r) => `${r.label} ${r.diff > 0 ? '+' : ''}${r.diff}${r.unit}`;
+  const parts = [];
+  if (improved.length) parts.push(`${improved.slice(0, 2).map(fmt).join(', ')} 개선`);
+  if (worsened.length) parts.push(`${worsened.slice(0, 2).map(fmt).join(', ')}은(는) 주의 필요`);
+  const previousDate = String(previousReport.measuredAt || previousReport.createdAt || previousReport.recordedAt || '').slice(0, 10);
+  const narrative = parts.length
+    ? `지난 측정(${previousDate || '이전'}) 대비 ${parts.join(' · ')}`
+    : '지난 측정과 비교해 뚜렷한 변화는 관찰되지 않았습니다.';
+
+  return { rows, narrative, previousDate };
+}
+
+function PostureChangeSummary({ summary }) {
+  if (!summary) return null;
+  return (
+    <section className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
+      <div className="mb-2 flex items-center justify-between">
+        <p className="text-sm font-black text-white">이전 측정 대비 변화</p>
+        {summary.previousDate && <span className="text-[11px] text-slate-500">{summary.previousDate} → 오늘</span>}
+      </div>
+      <p className="mb-3 text-xs leading-relaxed text-slate-600 dark:text-slate-300">{summary.narrative}</p>
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+        {summary.rows.map((r) => {
+          const tone = r.direction === 'improved'
+            ? 'border-emerald-500/30 bg-emerald-500/10'
+            : r.direction === 'worsened'
+              ? 'border-red-500/30 bg-red-500/10'
+              : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/40';
+          const arrowTone = r.direction === 'improved'
+            ? 'text-emerald-700 dark:text-emerald-300'
+            : r.direction === 'worsened'
+              ? 'text-red-700 dark:text-red-300'
+              : 'text-slate-500';
+          return (
+            <div key={r.key} className={`rounded-md border px-2.5 py-2 ${tone}`}>
+              <p className="text-[10px] font-bold text-slate-500">{r.label}</p>
+              <p className="text-sm font-black text-white">
+                {r.curVal}{r.unit}
+                <span className={`ml-1 text-[11px] font-bold ${arrowTone}`}>
+                  {r.diff > 0 ? '▲' : r.diff < 0 ? '▼' : '–'}{Math.abs(r.diff)}{r.unit}
+                </span>
+              </p>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 function GhostingViewer({
   currentImageUrl,
   previousImageUrl,
@@ -872,9 +973,29 @@ function GhostingViewer({
     () => normalizeLandmarksForOverlay(previousLandmarks, currentLandmarks),
     [currentLandmarks, previousLandmarks],
   );
+
+  // [즉석 업로드 2026-08-31] 사진은 정책상 클라우드에 저장되지 않으므로(위 파일
+  // 상단 주석 참고), 직전 측정 사진은 트레이너가 그 자리에서 업로드한 파일로
+  // 비교한다. 업로드가 없으면 previousImageUrl(같은 세션 내 전달값)을 그대로 쓴다.
+  const [uploadedPreviousUrl, setUploadedPreviousUrl] = useState(null);
+  const effectivePreviousImageUrl = uploadedPreviousUrl || previousImageUrl;
+  // 언마운트 시 마지막 업로드 URL을 해제 — 클로저가 stale 값을 참조하지 않도록
+  // ref에 최신값을 계속 동기화해두고(state와 동일 패턴, OverlayCompare.jsx 참고) 그 ref를 읽는다.
+  const uploadedPreviousUrlRef = useRef(null);
+  useEffect(() => { uploadedPreviousUrlRef.current = uploadedPreviousUrl; }, [uploadedPreviousUrl]);
+  useEffect(() => () => {
+    if (uploadedPreviousUrlRef.current) URL.revokeObjectURL(uploadedPreviousUrlRef.current);
+  }, []);
+  const handleUploadPrevious = (file) => {
+    if (!file) return;
+    if (!file.type.startsWith('image/')) { alert('이미지 파일만 업로드할 수 있습니다.'); return; }
+    if (uploadedPreviousUrl) URL.revokeObjectURL(uploadedPreviousUrl);
+    setUploadedPreviousUrl(URL.createObjectURL(file));
+  };
+
   return (
     <section className="overflow-hidden rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
-      <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 px-4 py-3">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 dark:border-slate-800 px-4 py-3">
         <div>
           <h2 className="text-sm font-black text-white">Before & After Ghosting</h2>
           <p className="text-xs text-slate-500">과거 스켈레톤은 점선, 현재 스켈레톤은 실선으로 표시됩니다.</p>
@@ -882,16 +1003,20 @@ function GhostingViewer({
         <div className="flex items-center gap-3 text-xs font-bold text-slate-500 dark:text-slate-400">
           <span className="inline-flex items-center gap-1"><i className="h-2 w-5 border-t-2 border-dashed border-sky-300" /> Before</span>
           <span className="inline-flex items-center gap-1"><i className="h-2 w-5 border-t-2 border-emerald-300" /> Today</span>
+          <label className="cursor-pointer rounded-md border border-slate-300 dark:border-slate-700 px-2 py-1 text-[11px] font-bold text-amber-700 dark:text-amber-300 hover:border-amber-500">
+            📷 이전 사진 업로드
+            <input type="file" accept="image/*" hidden onChange={(e) => handleUploadPrevious(e.target.files[0])} />
+          </label>
         </div>
       </div>
       <div className="relative aspect-[3/4] w-full bg-slate-50 dark:bg-slate-950">
-        {previousImageUrl && (
-          <img src={previousImageUrl} alt="" className="absolute inset-0 h-full w-full object-contain opacity-25" />
+        {effectivePreviousImageUrl && (
+          <img src={effectivePreviousImageUrl} alt="" className="absolute inset-0 h-full w-full object-contain opacity-25" />
         )}
         {currentImageUrl && (
           <img src={currentImageUrl} alt="" className="absolute inset-0 h-full w-full object-contain opacity-80" />
         )}
-        {!currentImageUrl && !previousImageUrl && (
+        {!currentImageUrl && !effectivePreviousImageUrl && (
           <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(148,163,184,0.08)_1px,transparent_1px),linear-gradient(0deg,rgba(148,163,184,0.08)_1px,transparent_1px)] bg-[size:32px_32px]" />
         )}
         <svg className="absolute inset-0 h-full w-full" viewBox="0 0 100 100" preserveAspectRatio="none">
@@ -902,6 +1027,11 @@ function GhostingViewer({
           )}
         </svg>
       </div>
+      {!previousImageUrl && !uploadedPreviousUrl && (
+        <p className="px-4 py-2 text-[11px] text-slate-500">
+          이전 측정 사진은 클라우드에 저장되지 않습니다 — 트레이너 폰/갤러리에 저장해둔 지난 측정 사진을 위 버튼으로 업로드하면 바로 비교할 수 있어요.
+        </p>
+      )}
     </section>
   );
 }

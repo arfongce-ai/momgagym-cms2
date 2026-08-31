@@ -1748,6 +1748,8 @@ export default function Report() {
               heightCm={savedPostureReports[postureViewerIdx]?.heightCm}
               actualAge={savedPostureReports[postureViewerIdx]?.actualAge}
               onClose={() => setPostureViewerIdx(null)}
+              // savedPostureReports는 최신순 정렬이므로 바로 다음 인덱스가 직전 회차.
+              previousReport={savedPostureReports[postureViewerIdx + 1] || null}
             />
           </Suspense>
           <div className="mx-auto w-full max-w-[794px] p-4 pt-0">
