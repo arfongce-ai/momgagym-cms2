@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   RadarChart, PolarGrid, PolarAngleAxis, Radar, Legend,
   BarChart, Bar, XAxis, YAxis, Cell, ResponsiveContainer, Tooltip,
@@ -12,6 +12,30 @@ import ReportActions from '../../components/report/ReportActions';
 import { MetricCard, UnifiedReportCanvas, UnifiedReportHeader, UnifiedReportPage } from '../../components/report/UnifiedReportPrimitives';
 import { rangeToStatus } from '../core/unifiedReport';
 import { buildSummaryData } from '../core/unifiedReport';
+import { computeChangeRow, summarizeChanges, reportDateOnly } from '../core/measurementComparison';
+import ChangeSummaryPanel from '../../components/report/ChangeSummaryPanel.jsx';
+import VideoCompareUpload from '../../components/report/VideoCompareUpload.jsx';
+
+const rangeCenter = (r) => (r.good[0] + r.good[1]) / 2;
+
+// [전/후 변화 요약 2026-08-31] 직전 보행/러닝 측정(gait_reports, kind==='gait') 대비
+// 핵심 지표 변화. 정상범위가 0이 아닌 특정 구간인 지표(케이던스·입각기 비율·
+// 몸통기울기·수직진폭·보폭비율)는 "정상범위 중앙값에 가까워졌는지"로 판단하고,
+// 골반 드롭(낮을수록 좋음)·무릎 대칭(높을수록 좋음)만 단순 방향으로 판단한다.
+function buildGaitChangeSummary(m, previousReport) {
+  if (!previousReport) return null;
+  const pm = previousReport?.metrics || previousReport || {};
+  const rows = [
+    computeChangeRow('케이던스', pm.cadence, m.cadence, 'spm', 'closerTargetBetter', rangeCenter(RANGES.cadence)),
+    computeChangeRow('입각기 비율', pm.stancePct, m.stancePct, '%', 'closerTargetBetter', rangeCenter(RANGES.stance)),
+    computeChangeRow('몸통 기울기', pm.trunkLean?.avg, m.trunkLean?.avg, '°', 'closerTargetBetter', rangeCenter(RANGES.trunkLean)),
+    computeChangeRow('골반 드롭', pm.pelvicDropAbs, m.pelvicDropAbs, '%', 'lowerBetter'),
+    computeChangeRow('수직 진폭', pm.verticalOscillation, m.verticalOscillation, '%', 'closerTargetBetter', rangeCenter(RANGES.verticalOsc)),
+    computeChangeRow('무릎 대칭', pm.kneeSymmetry, m.kneeSymmetry, '%', 'higherBetter'),
+    computeChangeRow('보폭 비율', pm.strideToHeight, m.strideToHeight, '×', 'closerTargetBetter', rangeCenter(RANGES.stride)),
+  ];
+  return summarizeChanges(rows, reportDateOnly(previousReport));
+}
 
 /*
  * GaitReportDashboard — 보행/러닝 종합 리포트 (1장 대시보드)
@@ -97,11 +121,23 @@ function normalizeMetrics(report) {
   };
 }
 
-export default function GaitReportDashboard({ report, onComment, onClose, videoBlob, member }) {
+export default function GaitReportDashboard({ report, onComment, onClose, videoBlob, member, previousReport }) {
   const m = useMemo(() => normalizeMetrics(report), [report]);
   const score = useMemo(() => computeScore(m), [m]);
   const [comment, setComment] = useState(report?.trainerComment || '');
   const [saved, setSaved] = useState(false);
+  const changeSummary = useMemo(() => buildGaitChangeSummary(m, previousReport), [m, previousReport]);
+
+  // 측정 직후 화면에서만 넘어오는 videoBlob(메모리 상 녹화본)을 재생 가능한
+  // object URL로 변환 — 저장된 이력 화면(Report.jsx)에서는 videoBlob이 없으므로
+  // VideoCompareUpload가 알아서 업로드 2칸 모드로 대체된다.
+  const [currentVideoUrl, setCurrentVideoUrl] = useState(null);
+  useEffect(() => {
+    if (!videoBlob) { setCurrentVideoUrl(null); return undefined; }
+    const url = URL.createObjectURL(videoBlob);
+    setCurrentVideoUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [videoBlob]);
 
   const resolvedMember = member || report?.member || null;
   const memberName = resolvedMember?.name || '회원';
@@ -216,6 +252,12 @@ export default function GaitReportDashboard({ report, onComment, onClose, videoB
               </div>
             </Panel>
           </section>
+
+          {/* [전/후 변화 요약] 같은 종류(보행)의 직전 측정 대비 변화 */}
+          {changeSummary && <ChangeSummaryPanel summary={changeSummary} />}
+
+          {/* [전/후 영상 비교 · 즉석 업로드] */}
+          <VideoCompareUpload currentVideoUrl={currentVideoUrl} title="전/후 영상 비교" />
 
           {/* ④ 하단: Spatial + 코멘트 */}
           <section className="grid h-[180px] grid-cols-[1fr_1.4fr] gap-3">

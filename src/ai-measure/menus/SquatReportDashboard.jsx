@@ -19,6 +19,26 @@ import MomiAutoNote from '../../components/report/MomiAutoNote.jsx';
 import MomiInsightPanel from '../../components/report/MomiInsightPanel.jsx';
 import ReportActions from '../../components/report/ReportActions';
 import { aiStore } from '../../demoData';
+import { computeChangeRow, summarizeChanges, reportDateOnly } from '../core/measurementComparison';
+import ChangeSummaryPanel from '../../components/report/ChangeSummaryPanel.jsx';
+import VideoCompareUpload from '../../components/report/VideoCompareUpload.jsx';
+
+// [전/후 변화 요약 2026-08-31] previousReport는 SquatAnalysisHub.jsx(라이브
+// 직후)/Report.jsx(이력 뷰어)가 이미 같은 종류(menu==='squat')로 걸러 넘겨준
+// 세션의 data다. 모든 보상 각도는 0°(정상)에 가까울수록 좋다(lowerBetter).
+function buildSquatChangeSummary(report, metrics, previousReport) {
+  if (!previousReport) return null;
+  const pm = extractSquatMetrics(previousReport);
+  const rows = [
+    computeChangeRow('종합 점수', computeSquatScore(previousReport, pm), computeSquatScore(report, metrics), '점', 'higherBetter'),
+    computeChangeRow('패러렐까지 남은 각', pm.depthDeg, metrics.depthDeg, '°', 'lowerBetter'),
+    computeChangeRow('상체 전방 기울기', pm.torsoLeanDeg, metrics.torsoLeanDeg, '°', 'lowerBetter'),
+    computeChangeRow('무릎 안쪽 쏠림', pm.kneeValgusDeg, metrics.kneeValgusDeg, '°', 'lowerBetter'),
+    computeChangeRow('골반 기울기', pm.pelvicTiltDeg, metrics.pelvicTiltDeg, '°', 'lowerBetter'),
+    computeChangeRow('팔(막대) 처짐', pm.armDropDeg, metrics.armDropDeg, '°', 'lowerBetter'),
+  ];
+  return summarizeChanges(rows, reportDateOnly(previousReport));
+}
 
 const STATUS_KO = { normal: '정상', caution: '주의', risk: '위험', unknown: '확인 필요' };
 const BASIS_KO = {
@@ -84,10 +104,14 @@ function MetricBar({ metricKey, value }) {
   );
 }
 
-export default function SquatReportDashboard({ report, member, onClose, onRemeasure, onViewInReport }) {
+export default function SquatReportDashboard({ report, member, onClose, onRemeasure, onViewInReport, previousReport }) {
   const [videoShareMsg, setVideoShareMsg] = useState('');
   const reportMetrics = useMemo(() => extractSquatMetrics(report), [report]);
   const reportScore = useMemo(() => computeSquatScore(report, reportMetrics), [report, reportMetrics]);
+  const changeSummary = useMemo(
+    () => buildSquatChangeSummary(report, reportMetrics, previousReport),
+    [report, reportMetrics, previousReport],
+  );
 
   if (!report) return null;
 
@@ -181,6 +205,12 @@ export default function SquatReportDashboard({ report, member, onClose, onRemeas
               </div>
             </UnifiedReportSection>
           )}
+
+          {changeSummary && <ChangeSummaryPanel summary={changeSummary} />}
+          <VideoCompareUpload
+            currentVideoUrl={report.hasVideo ? (report.previewVideoUrl || null) : null}
+            title="전/후 영상 비교"
+          />
 
           <UnifiedReportSection title="영상 분석의 한계">
             <ul className="list-disc pl-4 text-[11px] leading-relaxed text-slate-500 dark:text-slate-400 space-y-1">

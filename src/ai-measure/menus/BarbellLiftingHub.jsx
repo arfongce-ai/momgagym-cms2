@@ -14,7 +14,7 @@
 //     (점프/보행/자세/ROM 과 동일) — 통합 리포트·카카오 공유·이력에 자연 합류.
 //   - JumpAnalysisHub 패턴을 그대로 따른다(검증된 구조 재사용).
 // ════════════════════════════════════════════════════════════════════════
-import React, { useState, useCallback, useMemo, useRef, useLayoutEffect } from 'react';
+import React, { useState, useCallback, useMemo, useRef, useLayoutEffect, useEffect } from 'react';
 import VbtMeasure from './VbtMeasure';
 import OneRMEstimate from './OneRMEstimate';
 import LiftingUploadAnalysis from './LiftingUploadAnalysis';
@@ -26,6 +26,7 @@ import {
   vbtConfidence, estimateMeanPower, buildLiftingPayload, detectMeasurementOutlier,
 } from '../core/lifting';
 import { buildLoadVelocityPoint } from '../core/loadVelocityProfile';
+import { aiStore } from '../../demoData';
 
 const MODES = [
   ['vbt',     '⚡ VBT'],
@@ -54,6 +55,30 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
     setReport(null); setPending(null); setView('measure');
   });
   const sessionHistoryRef = useRef(null);
+  // [전/후 변화 요약 2026-08-31] 저장된 report가 뜨면 같은 회원의 직전 "같은
+  // 종목·같은 측정 모드"(mode+exerciseType 둘 다 같아야 의미 있는 비교 —
+  // VBT 스쿼트와 1RM 벤치프레스를 섞어 비교하면 무의미) 리프팅 세션을 하나
+  // 불러온다. 전용 컬렉션 없이 세션(menu:'lifting')에 저장되므로
+  // aiStore.ensureSessions 사용(JumpAnalysisHub.jsx의 jumpSubType 매칭과 동일 발상).
+  const [previousReport, setPreviousReport] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    if (!report || !member?.id || member?.isVirtual) { setPreviousReport(null); return undefined; }
+    (async () => {
+      try {
+        const list = await aiStore.ensureSessions(member.id);
+        if (cancelled) return;
+        const matching = (list || []).filter((s) => s.menu === 'lifting' && s.id !== report.id
+          && s.data?.mode === report.mode && s.data?.exerciseType === report.exerciseType);
+        const sorted = matching.sort((a, b) => String(b.recordedAtFull || b.recordedAt || '')
+          .localeCompare(String(a.recordedAtFull || a.recordedAt || '')));
+        setPreviousReport(sorted[0]?.data || null);
+      } catch (e) {
+        if (!cancelled) setPreviousReport(null);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [report, member?.id, member?.isVirtual]);
 
   // ── 오버레이 겹침 수정 ──
   //  상단 모드/종목/촬영방식 선택 바의 실제 렌더 높이를 측정해 자식 카메라
@@ -360,7 +385,7 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
   if (report) {
     return (
       <div className="fixed inset-0 z-[80] bg-slate-50 dark:bg-slate-950 overflow-y-auto" style={{ height: '100dvh' }}>
-        <LiftingReportDashboard report={report} onClose={onBack} member={member} />
+        <LiftingReportDashboard report={report} onClose={onBack} member={member} previousReport={previousReport} />
         {/* [리포트 통합 2026-08-09] GaitAnalysisHub.jsx/JumpAnalysisHub.jsx와 동일 패턴. */}
         {!member?.isVirtual && typeof onViewInReport === 'function' && (
           <div className="mx-auto w-full max-w-[794px] px-4 pb-3">

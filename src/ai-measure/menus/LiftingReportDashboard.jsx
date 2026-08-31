@@ -9,7 +9,7 @@
 //     - 역도: 궤적·속도·가동범위
 //   · 데이터는 측정 페이로드에서만 도출(추적 데이터 우선). 값 없으면 생략.
 // ════════════════════════════════════════════════════════════════════════
-import { useMemo } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import ReportActions from '../../components/report/ReportActions';
 import { buildSummaryData } from '../core/unifiedReport';
 import {
@@ -20,6 +20,28 @@ import { generateLiftingDiagnosis, GRADE_LABEL } from '../core/barbellClinical';
 import MomiAutoNote from '../../components/report/MomiAutoNote.jsx';
 import MomiInsightPanel from '../../components/report/MomiInsightPanel.jsx';
 import { aiStore } from '../../demoData';
+import { computeChangeRow, summarizeChanges, reportDateOnly } from '../core/measurementComparison';
+import ChangeSummaryPanel from '../../components/report/ChangeSummaryPanel.jsx';
+import VideoCompareUpload from '../../components/report/VideoCompareUpload.jsx';
+
+// [전/후 변화 요약 2026-08-31] previousReport는 BarbellLiftingHub.jsx(라이브
+// 직후)/Report.jsx(이력 뷰어)가 이미 같은 종목·같은 모드(mode+exerciseType)로
+// 걸러 넘겨준 세션의 data다 — 다른 운동·다른 측정 방식과 비교하면 의미가
+// 없어서 이 조건까지 맞춰 넘어온 걸 그대로 신뢰한다.
+function buildLiftingChangeSummary(report, previousReport) {
+  if (!previousReport) return null;
+  const m = report.metrics || {};
+  const pm = previousReport.metrics || {};
+  const mode = report.mode || 'vbt';
+  const rows = mode === 'onerm'
+    ? [computeChangeRow('추정 1RM', pm.oneRM, m.oneRM, 'kg', 'higherBetter')]
+    : [
+      computeChangeRow('평균속도', pm.meanVelocity, m.meanVelocity, 'm/s', 'higherBetter'),
+      computeChangeRow('최고속도', pm.peakVelocity, m.peakVelocity, 'm/s', 'higherBetter'),
+      computeChangeRow('속도저하', pm.velocityLoss, m.velocityLoss, '%', 'lowerBetter'),
+    ];
+  return summarizeChanges(rows, reportDateOnly(previousReport));
+}
 
 function fmt(v, unit = '') {
   return v == null || Number.isNaN(Number(v)) ? '—' : `${v}${unit}`;
@@ -27,9 +49,20 @@ function fmt(v, unit = '') {
 
 const MODE_TITLE = { lifting: '역도 궤적 분석', vbt: 'VBT 속도 분석', onerm: '1RM 추정' };
 
-export default function LiftingReportDashboard({ report, onClose, member }) {
+export default function LiftingReportDashboard({ report, onClose, member, previousReport }) {
   const interp = useMemo(() => buildLiftingInterpretation(report || {}), [report]);
   const diag = useMemo(() => generateLiftingDiagnosis(report || {}, {}), [report]);
+  const changeSummary = useMemo(() => buildLiftingChangeSummary(report || {}, previousReport), [report, previousReport]);
+  // [전/후 변화 요약 2026-08-31] 영상은 저장하지 않는 정책 그대로 — 라이브
+  // 측정 직후라면 report.videoBlob(메모리 전용)을 "현재" 영상으로 쓰고,
+  // "이전" 영상은 트레이너가 그 자리에서 업로드.
+  const [currentVideoUrl, setCurrentVideoUrl] = useState(null);
+  useEffect(() => {
+    if (!report?.videoBlob) { setCurrentVideoUrl(null); return undefined; }
+    const url = URL.createObjectURL(report.videoBlob);
+    setCurrentVideoUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [report?.videoBlob]);
 
   if (!report) return <UnifiedEmptyState onClose={onClose} />;
 
@@ -210,6 +243,9 @@ export default function LiftingReportDashboard({ report, onClose, member }) {
               </div>
             )}
           </UnifiedReportSection>
+
+          {changeSummary && <ChangeSummaryPanel summary={changeSummary} />}
+          <VideoCompareUpload currentVideoUrl={currentVideoUrl} title="전/후 영상 비교" />
 
           {/* 주의(정직성) */}
           {interp.cautions.length > 0 && (

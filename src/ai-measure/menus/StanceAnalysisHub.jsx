@@ -19,7 +19,7 @@
 //  동일한 mode 토글 자리(실시간/업로드). 두 방식 모두 singleLegStanceTracker.js
 //  하나를 공유하므로 판정 결과는 방식과 무관하게 동일한 로직으로 나온다.
 // ════════════════════════════════════════════════════════════════════════
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import StanceLiveAnalysis from './StanceLiveAnalysis';
 import StanceUploadAnalysis from './StanceUploadAnalysis';
 import StanceReportDashboard from './StanceReportDashboard';
@@ -27,6 +27,7 @@ import { evaluateSingleLegStanceWithEyes } from '../core/singleLegStance';
 import { buildProblemFocus } from '../core/crossMeasureContext';
 import { useHardwareBack } from '../core/useHardwareBack';
 import MeasureRecordConfirm from '../components/MeasureRecordConfirm.jsx';
+import { aiStore } from '../../demoData';
 
 // [리포트 통합 2026-08-09] 결과 리포트 표시(HoldTimeBar/AngleBar/STATUS_TOKEN 등
 // 포함)는 StanceReportDashboard.jsx로 옮겼다 — Report.jsx(저장된 리포트 다시
@@ -54,6 +55,28 @@ export default function StanceAnalysisHub({ member, onBack, onSave, onSaveToFire
   const [report, setReport] = useState(null);
   const [pending, setPending] = useState(null);
   const [saveState, setSaveState] = useState('idle'); // idle | saving | saved | error
+  // [전/후 변화 요약 2026-08-31] SLST는 전용 컬렉션 없이 세션(menu:'stance')에
+  // 저장되므로(GaitAnalysisHub.jsx의 gait_reports 패턴과 달리) aiStore.ensureSessions
+  // 로 같은 회원의 세션을 불러와 menu==='stance' && 방금 저장한 이 리포트 자신은
+  // 제외하고 최신 1건을 비교 기준으로 쓴다.
+  const [previousReport, setPreviousReport] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    if (!report || !member?.id || member?.isVirtual) { setPreviousReport(null); return undefined; }
+    (async () => {
+      try {
+        const list = await aiStore.ensureSessions(member.id);
+        if (cancelled) return;
+        const matching = (list || []).filter((s) => s.menu === 'stance' && s.id !== report.id);
+        const sorted = matching.sort((a, b) => String(b.recordedAtFull || b.recordedAt || '')
+          .localeCompare(String(a.recordedAtFull || a.recordedAt || '')));
+        setPreviousReport(sorted[0]?.data || null);
+      } catch (e) {
+        if (!cancelled) setPreviousReport(null);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [report, member?.id, member?.isVirtual]);
 
   const combineAndProceed = useCallback((openL, openR, closedL, closedR) => {
     const evalResult = evaluateSingleLegStanceWithEyes({
@@ -212,6 +235,7 @@ export default function StanceAnalysisHub({ member, onBack, onSave, onSaveToFire
         onClose={onBack}
         onRemeasure={backToMeasure}
         onViewInReport={onViewInReport}
+        previousReport={previousReport}
       />
     );
   }

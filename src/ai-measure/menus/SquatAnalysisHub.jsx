@@ -11,7 +11,7 @@
 //  구분이 없어 좌/우 2단계 대신 단일 측정 1단계로 끝난다(반복 2회 모두 트래커가
 //  한 번에 잡아낸다).
 // ════════════════════════════════════════════════════════════════════════
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import SquatUploadAnalysis from './SquatUploadAnalysis';
 import SquatLiveAnalysis from './SquatLiveAnalysis';
 import SquatReportDashboard from './SquatReportDashboard';
@@ -19,6 +19,7 @@ import { evaluateSquatBiomechanics } from '../core/squatBiomechanics';
 import { buildProblemFocus } from '../core/crossMeasureContext';
 import { useHardwareBack } from '../core/useHardwareBack';
 import MeasureRecordConfirm from '../components/MeasureRecordConfirm.jsx';
+import { aiStore } from '../../demoData';
 
 // [리포트 통합 2026-08-09] 결과 리포트 표시(MetricBar/METRIC_RANGES 등 포함)는
 // SquatReportDashboard.jsx로 옮겼다 — Report.jsx(저장된 리포트 다시 보기)에서도
@@ -44,6 +45,26 @@ export default function SquatAnalysisHub({ member, onBack, onSave, onSaveToFireb
   const [saveState, setSaveState] = useState('idle'); // idle | saving | saved | error
   // 요청에 따라 실시간을 기본값으로 (StanceAnalysisHub·JumpAnalysisHub와 동일한 자리에 동일한 토글 UI)
   const [mode, setMode] = useState('live'); // live | upload
+  // [전/후 변화 요약 2026-08-31] 스쿼트도 SLST와 동일하게 전용 컬렉션 없이
+  // 세션(menu:'squat')에 저장 — StanceAnalysisHub.jsx와 완전히 같은 패턴.
+  const [previousReport, setPreviousReport] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    if (!report || !member?.id || member?.isVirtual) { setPreviousReport(null); return undefined; }
+    (async () => {
+      try {
+        const list = await aiStore.ensureSessions(member.id);
+        if (cancelled) return;
+        const matching = (list || []).filter((s) => s.menu === 'squat' && s.id !== report.id);
+        const sorted = matching.sort((a, b) => String(b.recordedAtFull || b.recordedAt || '')
+          .localeCompare(String(a.recordedAtFull || a.recordedAt || '')));
+        setPreviousReport(sorted[0]?.data || null);
+      } catch (e) {
+        if (!cancelled) setPreviousReport(null);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [report, member?.id, member?.isVirtual]);
 
   const handleComplete = useCallback((summary) => {
     const evalResult = evaluateSquatBiomechanics(summary);
@@ -134,6 +155,7 @@ export default function SquatAnalysisHub({ member, onBack, onSave, onSaveToFireb
         onClose={onBack}
         onRemeasure={backToMeasure}
         onViewInReport={onViewInReport}
+        previousReport={previousReport}
       />
     );
   }

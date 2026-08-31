@@ -1700,8 +1700,29 @@ export default function Report() {
           </div>
           <Suspense fallback={<div className="p-10 text-center text-slate-500 dark:text-slate-400">불러오는 중…</div>}>
             {savedReports[viewerIdx].kind === 'jump'
-              ? <JumpReportDashboard report={savedReports[viewerIdx]} onClose={() => setViewerIdx(null)} member={member} />
-              : <GaitReportDashboard report={savedReports[viewerIdx]} onClose={() => setViewerIdx(null)} member={member} />}
+              ? <JumpReportDashboard
+                  report={savedReports[viewerIdx]}
+                  onClose={() => setViewerIdx(null)}
+                  member={member}
+                  // [전/후 변화 요약 2026-08-31] 같은 세부 종류(jumpSubType, SLJ는
+                  // 같은 다리까지)여야 의미 있는 비교라 GaitAnalysisHub.jsx/
+                  // JumpAnalysisHub.jsx의 매칭 조건과 동일하게 맞춘다.
+                  previousReport={savedReports.slice(viewerIdx + 1).find((r) => {
+                    const cur = savedReports[viewerIdx];
+                    const curSubType = cur.jumpSubType || 'cmj';
+                    return r.kind === 'jump'
+                      && (r.jumpSubType || 'cmj') === curSubType
+                      && (curSubType !== 'slj' || r.leg === cur.leg);
+                  }) || null}
+                />
+              : <GaitReportDashboard
+                  report={savedReports[viewerIdx]}
+                  onClose={() => setViewerIdx(null)}
+                  member={member}
+                  // gait_reports는 점프와 공유되므로(kind로 구분), 바로 다음 인덱스가
+                  // 아니라 같은 kind(보행) 중 가장 가까운(더 과거) 회차를 찾는다.
+                  previousReport={savedReports.slice(viewerIdx + 1).find((r) => (r.kind || 'gait') === 'gait') || null}
+                />}
           </Suspense>
         </div>
       )}
@@ -1787,6 +1808,14 @@ export default function Report() {
               }}
               member={member}
               onClose={() => setLiftingViewerIdx(null)}
+              // [전/후 변화 요약 2026-08-31] 리프팅 세션 목록엔 종목·모드가 다 섞여
+              // 있어(VBT 스쿼트, 1RM 벤치 등) 바로 다음 인덱스가 아니라 같은
+              // mode+exerciseType인 항목 중 가장 가까운(더 과거) 회차를 찾는다 —
+              // BarbellLiftingHub.jsx의 매칭 조건과 동일.
+              previousReport={savedLiftingSessions.slice(liftingViewerIdx + 1).find((s) => {
+                const cur = savedLiftingSessions[liftingViewerIdx]?.data || {};
+                return s.data?.mode === cur.mode && s.data?.exerciseType === cur.exerciseType;
+              })?.data || null}
             />
           </Suspense>
         </div>
@@ -1818,6 +1847,10 @@ export default function Report() {
               }}
               member={member}
               onClose={() => setStanceViewerIdx(null)}
+              // [전/후 변화 요약 2026-08-31] savedStanceSessions는 이미 menu==='stance'
+              // 만 담긴 단일 종류 목록(최신순)이라 gait/jump·리프팅과 달리 바로 다음
+              // 인덱스가 곧 직전 회차다.
+              previousReport={savedStanceSessions[stanceViewerIdx + 1]?.data || null}
             />
           </Suspense>
         </div>
@@ -1846,6 +1879,9 @@ export default function Report() {
               }}
               member={member}
               onClose={() => setSquatViewerIdx(null)}
+              // [전/후 변화 요약 2026-08-31] savedSquatSessions도 SLST와 동일하게
+              // menu==='squat'만 담긴 단일 종류 목록 — 바로 다음 인덱스가 직전 회차.
+              previousReport={savedSquatSessions[squatViewerIdx + 1]?.data || null}
             />
           </Suspense>
         </div>

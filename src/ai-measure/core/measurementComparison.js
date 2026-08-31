@@ -12,20 +12,35 @@
  * @param {number} prevRaw 이전 측정값
  * @param {number} curRaw 현재 측정값
  * @param {string} unit 단위 문자열(표시용)
- * @param {'higherBetter'|'lowerBetter'|'closerZeroBetter'} mode
+ * @param {'higherBetter'|'lowerBetter'|'closerZeroBetter'|'closerTargetBetter'} mode
  *   higherBetter: 점수처럼 높을수록 좋음
  *   lowerBetter: 그대로 낮을수록 좋음
  *   closerZeroBetter: 좌우 편차·기울기 등 0에 가까울수록 좋음(절대값으로 비교)
+ *   closerTargetBetter: 보행 케이던스처럼 "정상범위 중앙값"에 가까울수록 좋음
+ *     (target 필요 — 정상범위가 0이 아닌 특정 구간인 지표용, RANGES.good 평균 등)
+ * @param {number} [target] mode==='closerTargetBetter'일 때 기준값
  */
-export function computeChangeRow(label, prevRaw, curRaw, unit, mode) {
+export function computeChangeRow(label, prevRaw, curRaw, unit, mode, target) {
   if (typeof curRaw !== 'number' || !Number.isFinite(curRaw)) return null;
   if (typeof prevRaw !== 'number' || !Number.isFinite(prevRaw)) return null;
-  const prevVal = mode === 'closerZeroBetter' ? Math.abs(prevRaw) : prevRaw;
-  const curVal = mode === 'closerZeroBetter' ? Math.abs(curRaw) : curRaw;
+  const toComparable = (v) => {
+    if (mode === 'closerZeroBetter') return Math.abs(v);
+    if (mode === 'closerTargetBetter') return Math.abs(v - (target ?? 0));
+    return v;
+  };
+  const prevVal = mode === 'closerTargetBetter' ? prevRaw : toComparable(prevRaw);
+  const curVal = mode === 'closerTargetBetter' ? curRaw : toComparable(curRaw);
+  // closerTargetBetter는 표시값(prevVal/curVal)은 원래 값 그대로 보여주고,
+  // 방향 판정에만 "목표까지의 거리"를 쓴다 — 그래야 화면에 실제 측정값이 보인다.
+  const prevDist = mode === 'closerTargetBetter' ? Math.abs(prevRaw - (target ?? 0)) : toComparable(prevRaw);
+  const curDist = mode === 'closerTargetBetter' ? Math.abs(curRaw - (target ?? 0)) : toComparable(curRaw);
   const diff = Math.round((curVal - prevVal) * 10) / 10;
+  const distDiff = curDist - prevDist;
   let direction = 'same';
-  if (Math.abs(diff) >= 0.1) {
-    const better = mode === 'higherBetter' ? diff > 0 : diff < 0;
+  if (Math.abs(mode === 'closerTargetBetter' ? distDiff : diff) >= 0.1) {
+    const better = mode === 'higherBetter' ? diff > 0
+      : mode === 'closerTargetBetter' ? distDiff < 0
+      : diff < 0;
     direction = better ? 'improved' : 'worsened';
   }
   return { key: label, label, prevVal, curVal, diff, unit, direction };

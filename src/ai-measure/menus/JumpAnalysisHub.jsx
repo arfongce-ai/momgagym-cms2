@@ -7,7 +7,7 @@
 //  저장은 Hub 가 단일 책임으로 처리(중복 저장 방지).
 //  상단 ⓘ 버튼으로 측정 방법 안내(가이드)를 띄운다.
 // ════════════════════════════════════════════════════════════════════════
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import JumpPrecisionAnalysis from './JumpPrecisionAnalysis';
 import JumpUploadAnalysis from './JumpUploadAnalysis';
 import JumpReportDashboard from './JumpReportDashboard';
@@ -16,6 +16,7 @@ import { combineJumpTrials, MULTI_TRIAL_JUMP_SUBTYPES, MAX_JUMP_TRIALS } from '.
 import { useHardwareBack } from '../core/useHardwareBack';
 import MeasureRecordConfirm from '../components/MeasureRecordConfirm.jsx';
 import { JUMP_SUBTYPES, JUMP_SUBTYPE_ORDER, LEG_LABEL, engineOf } from '../core/jumpTypes';
+import { aiStore } from '../../demoData';
 
 export default function JumpAnalysisHub({ member, onBack, onSave, onSaveToFirebase, onMemberHeightChange, onViewInReport }) {
   const save = onSaveToFirebase || onSave;
@@ -49,6 +50,32 @@ export default function JumpAnalysisHub({ member, onBack, onSave, onSaveToFireba
   const [pending, setPending] = useState(null);   // 측정완료~확인 사이의 리포트 데이터
   const [saveState, setSaveState] = useState('idle'); // idle | saving | saved | error
   const [showGuide, setShowGuide] = useState(false);
+  // [전/후 변화 요약 2026-08-31] 저장된 report가 뜨면 같은 회원의 직전 "같은
+  // 세부 종류" 점프 기록(gait_reports는 보행과 공유하므로 kind==='jump'만,
+  // 세부 종류(jumpSubType)까지 같아야 의미 있는 비교 — SLJ는 같은 다리까지
+  // 맞아야 함, 그리고 방금 저장된 이 report 자신은 제외)을 하나 불러온다.
+  const [previousReport, setPreviousReport] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    if (!report || !member?.id || member?.isVirtual) { setPreviousReport(null); return undefined; }
+    (async () => {
+      try {
+        const list = await aiStore.ensureGaitReports(member.id);
+        if (cancelled) return;
+        const reportSubType = report.jumpSubType || jumpSubType;
+        const matching = (list || []).filter((r) => r.kind === 'jump'
+          && r.id !== report.id
+          && (r.jumpSubType || 'cmj') === reportSubType
+          && (reportSubType !== 'slj' || r.leg === report.leg));
+        const sorted = matching.sort((a, b) => String(b.createdAt || b.measuredAt || '')
+          .localeCompare(String(a.createdAt || a.measuredAt || '')));
+        setPreviousReport(sorted[0] || null);
+      } catch (e) {
+        if (!cancelled) setPreviousReport(null);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [report, member?.id, member?.isVirtual, jumpSubType]);
 
   // 실제 저장(확인 시). 유효 측정만 서버 저장하고, 결과는 항상 리포트로 확인.
   // [2026-08-10] jumpSubType/leg는 하위 컴포넌트가 이미 report에 채워 보내지만,
@@ -269,7 +296,7 @@ export default function JumpAnalysisHub({ member, onBack, onSave, onSaveToFireba
   if (view === 'report' && report) {
     return (
       <div className="fixed inset-0 z-[80] bg-slate-50 dark:bg-slate-950 overflow-y-auto" style={{ height: '100dvh' }}>
-        <JumpReportDashboard report={report} onClose={onBack} member={member} />
+        <JumpReportDashboard report={report} onClose={onBack} member={member} previousReport={previousReport} />
         {/* [리포트 통합 2026-08-09] GaitAnalysisHub.jsx와 동일 패턴. */}
         {!member?.isVirtual && typeof onViewInReport === 'function' && (
           <div className="mx-auto w-full max-w-[794px] px-4 pb-3">

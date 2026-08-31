@@ -21,6 +21,29 @@ import { findSljAsymmetry } from '../core/jumpBiomechanics';
 import JumpAngleTimelineChart from '../../components/report/JumpAngleTimelineChart.jsx';
 import JumpReplayGraph from '../../components/report/JumpReplayGraph.jsx';
 import TrendChart from '../../components/report/TrendChart';
+import { computeChangeRow, summarizeChanges, reportDateOnly } from '../core/measurementComparison';
+import ChangeSummaryPanel from '../../components/report/ChangeSummaryPanel.jsx';
+import VideoCompareUpload from '../../components/report/VideoCompareUpload.jsx';
+
+const rangeCenter = (r) => (r.good[0] + r.good[1]) / 2;
+
+// [전/후 변화 요약 2026-08-31] 같은 세부 종류(CMJ/SJ/DJ/SLJ/RSI, SLJ는 같은 다리까지)의
+// 직전 점프 측정 대비 핵심 지표 변화. previousReport는 호출 쪽(JumpAnalysisHub.jsx/
+// Report.jsx)에서 이미 같은 종류로 걸러서 넘겨준다.
+function buildJumpChangeSummary(report, biomech, previousReport, isRsi) {
+  if (!previousReport) return null;
+  const pb = previousReport.biomech || {};
+  const rows = [
+    computeChangeRow('점프 높이', previousReport.heightCm, report.heightCm, 'cm', 'higherBetter'),
+    computeChangeRow('착지 무릎 각도', pb.landingKneeAngle, biomech.landingKneeAngle, '°', 'closerTargetBetter', rangeCenter(RANGE.knee)),
+    computeChangeRow('상체 기울기 변화', pb.trunkLeanChange, biomech.trunkLeanChange, '°', 'lowerBetter'),
+    computeChangeRow('골반 불균형', pb.pelvicImbalance, biomech.pelvicImbalance, '%', 'lowerBetter'),
+    computeChangeRow('신전 궤적 정렬도', pb.extensionAlignment?.alignmentScore, biomech.extensionAlignment?.alignmentScore, '점', 'higherBetter'),
+    computeChangeRow('착지 대칭', pb.footLandingSymmetry?.symmetryPct, biomech.footLandingSymmetry?.symmetryPct, '%', 'higherBetter'),
+  ];
+  if (isRsi) rows.push(computeChangeRow('RSI(반응탄성지수)', previousReport.rsi?.rsi, report.rsi?.rsi, '', 'higherBetter'));
+  return summarizeChanges(rows, reportDateOnly(previousReport));
+}
 
 const RANGE = {
   height: { good: [40, 100], warn: [30, 100], unit: 'cm' },
@@ -91,12 +114,29 @@ function normalizeBiomech(report) {
   };
 }
 
-export default function JumpReportDashboard({ report, onClose, onComment, member }) {
+export default function JumpReportDashboard({ report, onClose, onComment, member, previousReport }) {
   const [message, setMessage] = useState('');
   const [comment, setComment] = useState(report?.trainerComment || '');
   const biomech = useMemo(() => normalizeBiomech(report), [report]);
   const score = useMemo(() => scoreReport(report, biomech), [report, biomech]);
   const isRsi = isRsiReport(report);
+  // [전/후 변화 요약 2026-08-31] previousReport는 호출 쪽(JumpAnalysisHub.jsx의
+  // 라이브 흐름, Report.jsx의 이력 뷰어)에서 이미 같은 세부 종류(jumpSubType,
+  // SLJ는 leg까지)로 걸러서 넘겨준다 — 여기서는 지표만 비교하면 된다.
+  const changeSummary = useMemo(
+    () => buildJumpChangeSummary(report, biomech, previousReport, isRsi),
+    [report, biomech, previousReport, isRsi],
+  );
+  // [전/후 변화 요약 2026-08-31] 영상은 저장하지 않는 정책 그대로 유지 —
+  // 라이브 측정 직후라면 report.videoBlob(메모리 전용, Firestore 저장 X)을
+  // "현재" 영상으로 바로 쓰고, "이전" 영상은 트레이너가 그 자리에서 업로드.
+  const [currentVideoUrl, setCurrentVideoUrl] = useState(null);
+  useEffect(() => {
+    if (!report?.videoBlob) { setCurrentVideoUrl(null); return undefined; }
+    const url = URL.createObjectURL(report.videoBlob);
+    setCurrentVideoUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [report?.videoBlob]);
   // [2026-08-10] 세부 종류(CMJ/SJ/DJ/SLJ/RSI) — isRsi는 엔진(파워/반응) 선택에만
   // 계속 쓰고(PowerSection/RsiSection 어느 걸 렌더할지는 그대로), 화면에 보이는
   // 이름표(reportName/reportCode/saveName)만 이 세분화된 라벨로 바꾼다.
@@ -266,6 +306,15 @@ export default function JumpReportDashboard({ report, onClose, onComment, member
           <Section title="④ 평가 요약" subtitle={isRsi ? '반응 탄성 중심' : '파워 생산 중심'}>
             <SummaryNotes isRsi={isRsi} report={report} biomech={biomech} />
           </Section>
+
+          {changeSummary && (
+            <div className="mt-4">
+              <ChangeSummaryPanel summary={changeSummary} />
+            </div>
+          )}
+          <div className="mt-4">
+            <VideoCompareUpload currentVideoUrl={currentVideoUrl} title="전/후 영상 비교" />
+          </div>
 
           <Section title="영상 분석의 한계">
             <ul className="list-disc pl-4 text-[11px] leading-relaxed text-slate-500 dark:text-slate-400 space-y-1">

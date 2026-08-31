@@ -25,6 +25,36 @@ import MomiInsightPanel from '../../components/report/MomiInsightPanel.jsx';
 import ReportActions from '../../components/report/ReportActions';
 import { buildSummaryData } from '../core/unifiedReport';
 import { aiStore } from '../../demoData';
+import { computeChangeRow, summarizeChanges, reportDateOnly } from '../core/measurementComparison';
+import ChangeSummaryPanel from '../../components/report/ChangeSummaryPanel.jsx';
+import VideoCompareUpload from '../../components/report/VideoCompareUpload.jsx';
+
+// [전/후 변화 요약 2026-08-31] previousReport는 StanceAnalysisHub.jsx(라이브
+// 직후)/Report.jsx(이력 뷰어)가 이미 같은 종류(menu==='stance')로 걸러 넘겨준
+// 세션의 data(=이 컴포넌트의 report와 동일한 필드 구조)다. 유지시간은 목표
+// 대비 길수록 좋고(higherBetter), 골반 기울기는 작을수록 좋다(lowerBetter).
+function buildStanceChangeSummary(report, previousReport) {
+  if (!previousReport) return null;
+  const curOpen = report.eyesOpen || {}, curClosed = report.eyesClosed || {};
+  const prevOpen = previousReport.eyesOpen || {}, prevClosed = previousReport.eyesClosed || {};
+  const holdRow = (label, prevLeg, curLeg) => {
+    const p = legMetrics(prevLeg).holdMs, c = legMetrics(curLeg).holdMs;
+    return computeChangeRow(label, p == null ? null : Math.round(p / 100) / 10, c == null ? null : Math.round(c / 100) / 10, '초', 'higherBetter');
+  };
+  const avgTilt = (open, closed) => {
+    const vals = [open.left, open.right, closed.left, closed.right].map((leg) => legMetrics(leg).pelvicTiltDeg).filter((v) => v != null);
+    return vals.length ? Math.round((vals.reduce((s, v) => s + v, 0) / vals.length) * 10) / 10 : null;
+  };
+  const rows = [
+    computeChangeRow('종합 점수', computeStanceScore(previousReport), computeStanceScore(report), '점', 'higherBetter'),
+    holdRow('눈뜨고·왼쪽 유지', prevOpen.left, curOpen.left),
+    holdRow('눈뜨고·오른쪽 유지', prevOpen.right, curOpen.right),
+    holdRow('눈감고·왼쪽 유지', prevClosed.left, curClosed.left),
+    holdRow('눈감고·오른쪽 유지', prevClosed.right, curClosed.right),
+    computeChangeRow('골반 기울기(평균)', avgTilt(prevOpen, prevClosed), avgTilt(curOpen, curClosed), '°', 'lowerBetter'),
+  ];
+  return summarizeChanges(rows, reportDateOnly(previousReport));
+}
 
 const STATUS_KO = { normal: '정상', caution: '주의', risk: '위험', unknown: '확인 필요' };
 const BASIS_KO_STANCE = {
@@ -97,9 +127,10 @@ function AngleBar({ label, leg, metricKey, flagPrefix, cautionDeg, riskDeg }) {
   );
 }
 
-export default function StanceReportDashboard({ report, member, onClose, onRemeasure, onViewInReport }) {
+export default function StanceReportDashboard({ report, member, onClose, onRemeasure, onViewInReport, previousReport }) {
   const [videoShareMsg, setVideoShareMsg] = useState('');
   const reportScore = useMemo(() => computeStanceScore(report), [report]);
+  const changeSummary = useMemo(() => buildStanceChangeSummary(report, previousReport), [report, previousReport]);
 
   const shareVideo = async (blob, label) => {
     setVideoShareMsg('');
@@ -227,6 +258,12 @@ export default function StanceReportDashboard({ report, member, onClose, onRemea
               ))}
             </div>
           </UnifiedReportSection>
+
+          {changeSummary && <ChangeSummaryPanel summary={changeSummary} />}
+          <VideoCompareUpload
+            currentVideoUrl={videoItems[0]?.[1] || null}
+            title="전/후 영상 비교"
+          />
 
           <UnifiedReportSection title="측정 한계">
             <ul className="list-disc pl-4 text-[11px] leading-relaxed text-slate-500 dark:text-slate-400 space-y-1">

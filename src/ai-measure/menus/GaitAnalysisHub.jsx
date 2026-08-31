@@ -1,9 +1,10 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { useHardwareBack } from '../core/useHardwareBack';
 import GaitRunningAnalysis from './GaitRunningAnalysis';
 import GaitUploadAnalysis from './GaitUploadAnalysis';
 import GaitReportDashboard from './GaitReportDashboard';
 import MeasureRecordConfirm from '../components/MeasureRecordConfirm.jsx';
+import { aiStore } from '../../demoData';
 
 /*
  * GaitAnalysisHub — 보행/러닝 분석 진입점
@@ -30,6 +31,27 @@ export default function GaitAnalysisHub({ member, onBack, saveToFirebase, onSave
   const [pendingVideo, setPendingVideo] = useState(null);
   const [saveState, setSaveState] = useState('idle');
   const [reportVideoBlob, setReportVideoBlob] = useState(null); // 결과 리포트 동영상 저장용(화면 전용)
+  // [전/후 변화 요약 2026-08-31] 저장된 report가 뜨면 같은 회원의 직전 "보행"
+  // 기록(gait_reports는 점프와 공유하므로 kind==='gait'만, 그리고 방금 저장된
+  // 이 report 자신은 제외)을 하나 불러와 비교 기준으로 쓴다.
+  const [previousReport, setPreviousReport] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    if (!report || !member?.id || member?.isVirtual) { setPreviousReport(null); return undefined; }
+    (async () => {
+      try {
+        const list = await aiStore.ensureGaitReports(member.id);
+        if (cancelled) return;
+        const matching = (list || []).filter((r) => (r.kind || 'gait') === 'gait' && r.id !== report.id);
+        const sorted = matching.sort((a, b) => String(b.createdAt || b.measuredAt || '')
+          .localeCompare(String(a.createdAt || a.measuredAt || '')));
+        setPreviousReport(sorted[0] || null);
+      } catch (e) {
+        if (!cancelled) setPreviousReport(null);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [report, member?.id, member?.isVirtual]);
 
   // 확인 시 실제 저장(유효 측정만) → 리포트 확인
   const persist = useCallback(async (reportData, record = {}, videoBlob) => {
@@ -129,6 +151,7 @@ export default function GaitAnalysisHub({ member, onBack, saveToFirebase, onSave
           onComment={(onCommentSave && report.id) ? (text) => onCommentSave(report.id, text) : undefined}
           onClose={onBack}
           member={member}
+          previousReport={previousReport}
         />
         {/* [리포트 통합 2026-08-09] PostureMeasure.jsx/RomMeasure.jsx와 동일 패턴 —
             강제 이동 아님. 이 화면 자체가 이미 결과 리포트를 보여주고 있어서(인라인),
