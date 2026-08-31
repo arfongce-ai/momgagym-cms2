@@ -20,6 +20,13 @@ import {
   UnifiedReportPage,
 } from '../../components/report/UnifiedReportPrimitives';
 import { scoreToStatus } from '../core/unifiedReport';
+// [전/후 변화 요약 공통모듈화 2026-08-31] 자세측정은 이 기능이 가장 먼저
+// 구현되어(measurementComparison.js/ChangeSummaryPanel.jsx 도입 전) 계산·표시
+// 로직을 자체적으로 갖고 있었다 — 이후 ROM·보행·점프·리프팅·SLST·스쿼트가
+// 전부 공용 모듈을 쓰게 되면서 여기만 중복 코드로 남아있던 것을 정리한다.
+// 결과(화면 표시)는 100% 동일하게 유지하는 순수 리팩터링.
+import { computeChangeRow, summarizeChanges, reportDateOnly } from '../core/measurementComparison';
+import ChangeSummaryPanel from '../../components/report/ChangeSummaryPanel.jsx';
 
 // 'risk'|'caution'|'normal' 문자열 판정을 공용 MetricCard가 쓰는 상태 토큰으로 변환.
 //  · scoreToStatus 임계값(>=80 정상/>=60 주의/그 외 위험)과 동일한 대표 점수를 사용해
@@ -192,7 +199,7 @@ export default function PostureReport({
           </MetricPanel>
         </section>
 
-        <PostureChangeSummary summary={changeSummary} />
+        <ChangeSummaryPanel summary={changeSummary} />
 
         <section className="grid gap-4 sm:grid-cols-[1.3fr_0.9fr]">
           <GhostingViewer
@@ -873,24 +880,11 @@ function pelvisPatternLabel(pattern) {
   return '판별 보류';
 }
 
-// mode: 'higherBetter'(점수처럼 높을수록 좋음) · 'lowerBetter'(그대로 낮을수록 좋음)
-// · 'closerZeroBetter'(좌우 편차·기울기 등 0에 가까울수록 좋음 — 절대값으로 비교).
-function computeChangeRow(label, prevRaw, curRaw, unit, mode) {
-  if (typeof curRaw !== 'number' || !Number.isFinite(curRaw)) return null;
-  if (typeof prevRaw !== 'number' || !Number.isFinite(prevRaw)) return null;
-  const prevVal = mode === 'closerZeroBetter' ? Math.abs(prevRaw) : prevRaw;
-  const curVal = mode === 'closerZeroBetter' ? Math.abs(curRaw) : curRaw;
-  const diff = Math.round((curVal - prevVal) * 10) / 10;
-  let direction = 'same';
-  if (Math.abs(diff) >= 0.1) {
-    const better = mode === 'higherBetter' ? diff > 0 : diff < 0;
-    direction = better ? 'improved' : 'worsened';
-  }
-  return { key: label, label, prevVal, curVal, diff, unit, direction };
-}
-
 // 직전 자세 측정 기록(posture_reports 원본 문서) 대비 핵심 지표 변화값 + 한 줄 요약.
 // previousReport 가 없으면(첫 측정이거나 아직 안 불러왔으면) null — 화면에서 섹션 자체를 숨긴다.
+// [공통모듈화 2026-08-31] 계산은 measurementComparison.js(computeChangeRow/
+// summarizeChanges)로 위임 — mode: 'higherBetter'·'lowerBetter'·'closerZeroBetter'
+// (좌우 편차·기울기 등 0에 가까울수록 좋음 — 절대값으로 비교) 의미는 그대로다.
 function buildPostureChangeSummary(analysis, report, previousReport) {
   if (!previousReport) return null;
   const prevAnalysis = previousReport.analysis || {};
@@ -904,60 +898,8 @@ function buildPostureChangeSummary(analysis, report, previousReport) {
     computeChangeRow('어깨 높이차', prevAnalysis.frontal?.shoulderHeightDiffMm, analysis.frontal?.shoulderHeightDiffMm, 'mm', 'closerZeroBetter'),
     computeChangeRow('골반 높이차', prevAnalysis.frontal?.pelvisHeightDiffMm, analysis.frontal?.pelvisHeightDiffMm, 'mm', 'closerZeroBetter'),
     computeChangeRow('거북목 거리', prevAnalysis.sagittal?.forwardHeadMm, analysis.sagittal?.forwardHeadMm, 'mm', 'closerZeroBetter'),
-  ].filter(Boolean);
-
-  if (!rows.length) return null;
-
-  const improved = [...rows].filter((r) => r.direction === 'improved').sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff));
-  const worsened = [...rows].filter((r) => r.direction === 'worsened').sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff));
-  const fmt = (r) => `${r.label} ${r.diff > 0 ? '+' : ''}${r.diff}${r.unit}`;
-  const parts = [];
-  if (improved.length) parts.push(`${improved.slice(0, 2).map(fmt).join(', ')} 개선`);
-  if (worsened.length) parts.push(`${worsened.slice(0, 2).map(fmt).join(', ')}은(는) 주의 필요`);
-  const previousDate = String(previousReport.measuredAt || previousReport.createdAt || previousReport.recordedAt || '').slice(0, 10);
-  const narrative = parts.length
-    ? `지난 측정(${previousDate || '이전'}) 대비 ${parts.join(' · ')}`
-    : '지난 측정과 비교해 뚜렷한 변화는 관찰되지 않았습니다.';
-
-  return { rows, narrative, previousDate };
-}
-
-function PostureChangeSummary({ summary }) {
-  if (!summary) return null;
-  return (
-    <section className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
-      <div className="mb-2 flex items-center justify-between">
-        <p className="text-sm font-black text-white">이전 측정 대비 변화</p>
-        {summary.previousDate && <span className="text-[11px] text-slate-500">{summary.previousDate} → 오늘</span>}
-      </div>
-      <p className="mb-3 text-xs leading-relaxed text-slate-600 dark:text-slate-300">{summary.narrative}</p>
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
-        {summary.rows.map((r) => {
-          const tone = r.direction === 'improved'
-            ? 'border-emerald-500/30 bg-emerald-500/10'
-            : r.direction === 'worsened'
-              ? 'border-red-500/30 bg-red-500/10'
-              : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/40';
-          const arrowTone = r.direction === 'improved'
-            ? 'text-emerald-700 dark:text-emerald-300'
-            : r.direction === 'worsened'
-              ? 'text-red-700 dark:text-red-300'
-              : 'text-slate-500';
-          return (
-            <div key={r.key} className={`rounded-md border px-2.5 py-2 ${tone}`}>
-              <p className="text-[10px] font-bold text-slate-500">{r.label}</p>
-              <p className="text-sm font-black text-white">
-                {r.curVal}{r.unit}
-                <span className={`ml-1 text-[11px] font-bold ${arrowTone}`}>
-                  {r.diff > 0 ? '▲' : r.diff < 0 ? '▼' : '–'}{Math.abs(r.diff)}{r.unit}
-                </span>
-              </p>
-            </div>
-          );
-        })}
-      </div>
-    </section>
-  );
+  ];
+  return summarizeChanges(rows, reportDateOnly(previousReport));
 }
 
 function GhostingViewer({

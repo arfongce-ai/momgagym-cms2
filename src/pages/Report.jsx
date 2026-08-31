@@ -709,7 +709,7 @@ async function shareReportFilesOrDownload(files, { title, text } = {}) {
   };
 }
 
-function ShareCaptureReport({ item, member, simple }) {
+function ShareCaptureReport({ item, member, simple, previousReport }) {
   if (!item) return null;
   const report = item.report || {};
   const reportMember = member || report.member;
@@ -730,8 +730,8 @@ function ShareCaptureReport({ item, member, simple }) {
     return (
       <div data-share-report-ready="true" className="w-full bg-slate-50 dark:bg-slate-950">
         {report.kind === 'jump'
-          ? <JumpReportDashboard report={report} member={reportMember} />
-          : <GaitReportDashboard report={report} member={reportMember} />}
+          ? <JumpReportDashboard report={report} member={reportMember} previousReport={previousReport} />
+          : <GaitReportDashboard report={report} member={reportMember} previousReport={previousReport} />}
       </div>
     );
   }
@@ -744,6 +744,7 @@ function ShareCaptureReport({ item, member, simple }) {
           member={reportMember}
           heightCm={report?.heightCm}
           actualAge={report?.actualAge}
+          previousReport={previousReport}
         />
       </div>
     );
@@ -752,7 +753,7 @@ function ShareCaptureReport({ item, member, simple }) {
   if (item.source === 'rom') {
     return (
       <div data-share-report-ready="true" className="w-full bg-slate-50 dark:bg-slate-950">
-        <RomReport report={{ ...report, member: report.member || reportMember }} />
+        <RomReport report={{ ...report, member: report.member || reportMember }} previousReport={previousReport} />
       </div>
     );
   }
@@ -760,7 +761,7 @@ function ShareCaptureReport({ item, member, simple }) {
   if (item.source === 'lifting') {
     return (
       <div data-share-report-ready="true" className="w-full bg-slate-50 dark:bg-slate-950">
-        <LiftingReportDashboard report={report} member={reportMember} />
+        <LiftingReportDashboard report={report} member={reportMember} previousReport={previousReport} />
       </div>
     );
   }
@@ -1067,6 +1068,45 @@ export default function Report() {
       .filter((s) => s.menu === 'squat')
       .sort((a, b) => String(b.recordedAtFull || b.recordedAt).localeCompare(String(a.recordedAtFull || a.recordedAt)));
   }, [member, dataReady]);
+
+  // [전/후 변화 요약 · 카카오 공유 캡처 확장 2026-08-31] "상세 리포트 공유" 캡처
+  // 화면(ShareCaptureReport)도 트레이너가 실제로 회원에게 보내는 결과물이라,
+  // 화면에서 보던 "이전 측정 대비 변화" 패널이 공유 이미지에도 그대로 나오는 게
+  // 맞다. 여기서 걸러주는 매칭 조건은 각 이력 뷰어(위 viewerIdx 등)에서 쓰는
+  // 것과 완전히 동일 — 새 매칭 로직을 만들지 않고 그대로 재사용한다.
+  //  · session(SLST/스쿼트 등 전용 대시보드 없는 세션)과 simple(쉬운 버전) 캡처는
+  //    애초에 이 컴포넌트들을 안 거치므로(SessionShareReport/SimpleResultReport)
+  //    범위 밖 — previousReport를 계산해도 쓰일 곳이 없다.
+  const shareCapturePreviousReport = useMemo(() => {
+    const item = shareCaptureItem;
+    if (!item) return null;
+    if (item.source === 'posture') {
+      return savedPostureReports[item.index + 1] || null;
+    }
+    if (item.source === 'rom') {
+      const cur = savedRomReports[item.index];
+      if (!cur) return null;
+      return savedRomReports.slice(item.index + 1)
+        .find((r) => r.joint === cur.joint && r.poseMode === cur.poseMode) || null;
+    }
+    if (item.source === 'lifting') {
+      const cur = savedLiftingSessions[item.index]?.data || {};
+      return savedLiftingSessions.slice(item.index + 1)
+        .find((s) => s.data?.mode === cur.mode && s.data?.exerciseType === cur.exerciseType)?.data || null;
+    }
+    if (item.source === 'saved-report') {
+      const cur = savedReports[item.index];
+      if (!cur) return null;
+      if (cur.kind === 'jump') {
+        const curSubType = cur.jumpSubType || 'cmj';
+        return savedReports.slice(item.index + 1).find((r) => r.kind === 'jump'
+          && (r.jumpSubType || 'cmj') === curSubType
+          && (curSubType !== 'slj' || r.leg === cur.leg)) || null;
+      }
+      return savedReports.slice(item.index + 1).find((r) => (r.kind || 'gait') === 'gait') || null;
+    }
+    return null;
+  }, [shareCaptureItem, savedPostureReports, savedRomReports, savedLiftingSessions, savedReports]);
 
   const [viewerIdx, setViewerIdx] = useState(null); // 열람 중인 리포트 인덱스
   const [postureViewerIdx, setPostureViewerIdx] = useState(null); // 자세 리포트 열람 인덱스
@@ -1677,7 +1717,7 @@ export default function Report() {
         >
           <div ref={shareCaptureRef} className="w-[860px] bg-slate-50 dark:bg-slate-950">
             <Suspense fallback={<div className="min-h-[1123px] w-[794px] bg-white dark:bg-slate-900" />}>
-              <ShareCaptureReport item={shareCaptureItem} member={member} simple={shareCaptureSimple} />
+              <ShareCaptureReport item={shareCaptureItem} member={member} simple={shareCaptureSimple} previousReport={shareCapturePreviousReport} />
             </Suspense>
           </div>
         </div>
