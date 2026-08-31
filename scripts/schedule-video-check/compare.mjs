@@ -67,7 +67,8 @@ export function compare(scheduleExport, inventory) {
 
   const scheduleWithoutVideo = [];
   for (const s of scheduleExport.schedules) {
-    const key = `${s.trainerName}|${s.memberName}|${s.date}`;
+    // CMS 데이터에 트레이너/회원 이름 앞뒤 공백이 섞여 들어오는 경우가 있어 trim 처리
+    const key = `${(s.trainerName || '').trim()}|${(s.memberName || '').trim()}|${s.date}`;
     scheduleKeys.add(key);
     if (!videoIndex.has(key)) {
       scheduleWithoutVideo.push(s);
