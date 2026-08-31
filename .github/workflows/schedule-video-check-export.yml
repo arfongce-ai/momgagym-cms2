@@ -1,0 +1,43 @@
+name: 월간 스케줄 내보내기 (영상 대조용)
+
+on:
+  workflow_dispatch:
+    inputs:
+      month:
+        description: "대상 월 (YYYY-MM). 비워두면 지난 달을 자동 계산합니다."
+        required: false
+  schedule:
+    # 매달 1일 00:10 KST(=전날 15:10 UTC)에 "지난 달" 스케줄을 내보냄
+    - cron: "10 15 1 * *"
+
+permissions:
+  contents: write
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: 의존성 설치
+        working-directory: scripts/schedule-video-check
+        run: npm install
+
+      - name: 스케줄 내보내기
+        working-directory: scripts/schedule-video-check
+        env:
+          SCHEDULE_EXPORT_SERVICE_ACCOUNT: ${{ secrets.SCHEDULE_EXPORT_SERVICE_ACCOUNT }}
+          TARGET_MONTH: ${{ github.event.inputs.month }}
+        run: node export.mjs
+
+      - name: 결과 커밋 & 푸시
+        run: |
+          git config user.name "schedule-video-check-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add data/schedule-checks/
+          git diff --cached --quiet || git commit -m "chore: 월간 스케줄 내보내기 자동 갱신"
+          git push
