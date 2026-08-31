@@ -8,7 +8,7 @@
 import { initializeApp, cert } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { writeFileSync, mkdirSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { dirname, join } from 'node:path';
 
 function resolveTargetMonth() {
   if (process.env.TARGET_MONTH) return process.env.TARGET_MONTH;
@@ -58,7 +58,9 @@ async function main() {
     });
   });
 
-  const outPath = `data/schedule-checks/${targetMonth}.json`;
+  // 이 스크립트는 저장소 루트가 아니라 scripts/schedule-video-check 안에서 실행되므로
+  // (워크플로의 working-directory 설정), 저장소 루트의 data/schedule-checks/ 로 두 단계 위로 나가서 씁니다.
+  const outPath = join('..', '..', 'data', 'schedule-checks', `${targetMonth}.json`);
   mkdirSync(dirname(outPath), { recursive: true });
   writeFileSync(
     outPath,
