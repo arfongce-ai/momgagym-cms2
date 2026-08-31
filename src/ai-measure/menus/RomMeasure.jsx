@@ -23,6 +23,7 @@ import GaugeHud from './GaugeHud.jsx';
 import RomReport from './RomReport.jsx';
 import ReportActions from '../../components/report/ReportActions';
 import { buildSummaryData } from '../core/unifiedReport';
+import { aiStore } from '../../demoData';
 import { dataUrlToFile } from '../core/reportShare';
 import { useHardwareBack } from '../core/useHardwareBack';
 import RomSensorGoniometer from './RomSensorGoniometer.jsx';
@@ -141,6 +142,27 @@ export default function RomMeasure({ member, onSave, onBack, onViewInReport }) {
   const [saveState, setSaveState] = useState('idle');
   const [actionMsg, setActionMsg] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
+  // [전/후 변화 요약 2026-08-31] 측정이 끝나면 같은 관절·자세의 직전 ROM 측정
+  // 기록을 하나 불러와 리포트의 "이전 측정 대비 변화" 계산에 쓴다. 관절·자세가
+  // 다른 과거 기록은 비교 의미가 없으므로 joint/poseMode가 같은 것만 고른다.
+  const [previousReport, setPreviousReport] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    if (!report || !member?.id || member?.isVirtual) { setPreviousReport(null); return undefined; }
+    (async () => {
+      try {
+        const list = await aiStore.ensureRomReports(member.id);
+        if (cancelled) return;
+        const matching = (list || []).filter((r) => r.joint === report.joint && r.poseMode === report.poseMode);
+        const sorted = matching.sort((a, b) => String(b.createdAt || b.measuredAt || b.recordedAt || '')
+          .localeCompare(String(a.createdAt || a.measuredAt || a.recordedAt || '')));
+        setPreviousReport(sorted[0] || null);
+      } catch (e) {
+        if (!cancelled) setPreviousReport(null);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [report, member?.id, member?.isVirtual]);
 
   // 관절을 바꾸면 그 관절의 첫 허용 자세모드로 보정.
   useEffect(() => {
@@ -602,7 +624,7 @@ export default function RomMeasure({ member, onSave, onBack, onViewInReport }) {
         </div>
 
         <div className="overflow-x-auto">
-          <RomReport report={{ ...report, snapshotUrl: report.snapshotUrl }} member={member} />
+          <RomReport report={{ ...report, snapshotUrl: report.snapshotUrl }} member={member} previousReport={previousReport} />
         </div>
 
         {/* 녹화 영상 미리보기 — 리포트 캡처 노드(#rom-report-sheet) 바깥에 둔다

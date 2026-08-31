@@ -15,6 +15,29 @@ import {
   UnifiedReportPage,
 } from '../../components/report/UnifiedReportPrimitives';
 import { scoreToStatus } from '../core/unifiedReport';
+import { computeChangeRow, summarizeChanges, reportDateOnly } from '../core/measurementComparison';
+import ChangeSummaryPanel from '../../components/report/ChangeSummaryPanel.jsx';
+import VideoCompareUpload from '../../components/report/VideoCompareUpload.jsx';
+
+// [전/후 변화 요약 2026-08-31] 같은 관절(joint)·자세(poseMode)의 직전 ROM 측정
+// 대비 핵심 지표 변화. 관절·자세가 다르면 비교 의미가 없으므로, previousReport는
+// 호출 쪽(RomMeasure.jsx/Report.jsx)에서 이미 같은 joint+poseMode로 걸러서 넘겨준다.
+function buildRomChangeSummary(summary, previousReport) {
+  if (!previousReport) return null;
+  const ps = previousReport.summary || {};
+  const pc = ps.compensation_profile || {};
+  const cc = summary.compensation_profile || {};
+  const rows = [
+    computeChangeRow('좌측 최대 가동범위', ps.left_max_rom, summary.left_max_rom, '°', 'higherBetter'),
+    computeChangeRow('우측 최대 가동범위', ps.right_max_rom, summary.right_max_rom, '°', 'higherBetter'),
+    computeChangeRow('단일 가동범위', ps.max_rom, summary.max_rom, '°', 'higherBetter'),
+    computeChangeRow('좌우 비대칭', ps.symmetry_index_score, summary.symmetry_index_score, '%', 'lowerBetter'),
+    computeChangeRow('체간 기울기(보상)', pc.lean_max_dev_deg, cc.lean_max_dev_deg, '°', 'lowerBetter'),
+    computeChangeRow('회전·비틀기(보상)', pc.rotation_max_pct, cc.rotation_max_pct, '%', 'lowerBetter'),
+    computeChangeRow('골반 하강(보상)', pc.pelvic_drop_pct, cc.pelvic_drop_pct, '%', 'closerZeroBetter'),
+  ];
+  return summarizeChanges(rows, reportDateOnly(previousReport));
+}
 
 const JOINT_KO = { HIP: '고관절', KNEE: '슬관절', SHOULDER: '견관절', ANKLE: '족관절', ELBOW: '주관절' };
 const POSE_KO = { STANDING: '서서(체중지지)', SUPINE: '앙와위(누워서)', PRONE: '복와위(엎드려)', SEATED: '앉아서' };
@@ -37,13 +60,14 @@ function gradeScore(grade) {
   return null;
 }
 
-export default function RomReport({ id = 'rom-report-sheet', report }) {
+export default function RomReport({ id = 'rom-report-sheet', report, previousReport }) {
   if (!report) return <UnifiedEmptyState>리포트 데이터가 없습니다.</UnifiedEmptyState>;
   const { joint, poseMode, summary, diagnosis, member, recordedAt, captureMode, snapshotUrl, hasVideo, posture_context, integrated_assessment } = report;
   const s = summary || {};
   // [항목 5] end-range 지표는 불확실하여 리포트에서 사용하지 않는다.
   const comp = s.compensation || {};
   const problemFocus = report.problem_focus || buildProblemFocus('rom', report);
+  const changeSummary = buildRomChangeSummary(s, previousReport);
 
   // 차트 데이터: 정제된 좌/우 각도 시계열(다운샘플 — 최대 120포인트).
   const series = (s.timeSeries || []);
@@ -172,6 +196,18 @@ export default function RomReport({ id = 'rom-report-sheet', report }) {
 
       {/* [보상 프로파일] 3축 보상 패턴 — 숫자 + 방향 시각화 (카메라 측정 전용) */}
       <CompensationProfilePanel profile={s.compensation_profile} poseMode={poseMode} />
+
+      {/* [전/후 변화 요약] 같은 관절·자세의 직전 측정 대비 변화 */}
+      {changeSummary && (
+        <div className="mt-4">
+          <ChangeSummaryPanel summary={changeSummary} />
+        </div>
+      )}
+
+      {/* [전/후 영상 비교 · 즉석 업로드] */}
+      <div className="mt-4">
+        <VideoCompareUpload currentVideoUrl={report.previewVideoUrl} title="전/후 영상 비교" />
+      </div>
 
       {/* 각도 시계열 차트 */}
       {chartData.length >= 3 && (

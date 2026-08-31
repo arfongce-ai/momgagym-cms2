@@ -1720,7 +1720,14 @@ export default function Report() {
             </div>
           </div>
           <Suspense fallback={<div className="p-10 text-center text-slate-500 dark:text-slate-400">불러오는 중…</div>}>
-            <RomReport report={savedRomReports[romViewerIdx]} member={member} />
+            <RomReport
+              report={savedRomReports[romViewerIdx]}
+              member={member}
+              // ROM은 관절·자세별로 회차가 섞여 있어 바로 다음 인덱스가 아니라,
+              // 같은 관절+자세인 것 중 가장 가까운(더 과거) 회차를 찾아 비교한다.
+              previousReport={savedRomReports.slice(romViewerIdx + 1)
+                .find((r) => r.joint === savedRomReports[romViewerIdx].joint && r.poseMode === savedRomReports[romViewerIdx].poseMode) || null}
+            />
           </Suspense>
           <div className="mx-auto w-full max-w-[794px] p-4 pt-0">
             <ReportActions reportNodeId="rom-report-sheet" baseName={`${member?.name || '회원'}_ROM`} />
