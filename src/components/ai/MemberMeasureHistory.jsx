@@ -165,14 +165,21 @@ export default function MemberMeasureHistory({ member, onNewMeasure }) {
 
   useEffect(() => { load(); }, [member.id]);
 
-  const handleDelete = (sid) => {
+  // [버그 수정 2026-09] deleteAiSession은 async 함수인데 await 없이 호출하고
+  // 바로 load()를 부르고 있었다. deleteAiSession 자체가 내부에서 오류를
+  // 잡아 { success:false, error } 형태로 반환하므로(절대 throw하지 않음)
+  // 아래 try/catch는 실제로는 아무 것도 못 잡는 죽은 코드였다 — Firestore
+  // 삭제가 실패해도 트레이너에게는 아무 안내 없이 조용히 넘어갔다(화면은
+  // 이미 낙관적으로 지워진 것처럼 보이지만 실제로는 안 지워졌을 수 있음).
+  // await로 결과를 받아 성공 여부를 확인하고, 실패면 알려준 뒤 항상
+  // load()로 실제 저장소 상태를 다시 반영한다.
+  const handleDelete = async (sid) => {
     if (!window.confirm('이 측정 기록을 삭제하시겠습니까?')) return;
-    try {
-      deleteAiSession(member.id, sid);
-      load();
-    } catch (err) {
-      alert('삭제 중 오류가 발생했습니다: ' + err.message);
+    const result = await deleteAiSession(member.id, sid);
+    if (!result.success) {
+      alert('삭제 중 오류가 발생했습니다: ' + (result.error || '알 수 없는 오류'));
     }
+    load();
   };
 
   return (

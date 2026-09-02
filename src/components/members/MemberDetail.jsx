@@ -1498,7 +1498,14 @@ export default function MemberDetail({ member:initMember, trainers, members=[], 
             <div className="space-y-4">
               {bodyRecords.length===0
                 ? <p className="text-slate-600 text-sm text-center py-6">신체정보 기록이 없습니다</p>
-                : [...bodyRecords].sort((a,b)=>b.recordedAt.localeCompare(a.recordedAt)).map((r,idx)=>(
+                // [버그 수정 2026-09] 같은 날짜에 기록이 두 건 이상이면(예: AI 측정
+                // 자동저장 + 트레이너 수동 등록을 같은 날 둘 다 한 경우) recordedAt
+                // 문자열 비교만으로는 동점이 나고, 정렬은 안정 정렬이라 동점인 항목은
+                // "먼저 생성된" 순서 그대로 남아 정작 나중에 등록한 최신 기록이 아래로
+                // 밀려나며 "최신" 배지가 옛 기록에 붙는 문제가 있었다. 정렬 전에 배열을
+                // 뒤집어(cache 저장 순서=생성 오름차순 → 뒤집으면 생성 내림차순) 동점일
+                // 때도 가장 최근에 만든 기록이 위로 오도록 한다.
+                : [...bodyRecords].reverse().sort((a,b)=>b.recordedAt.localeCompare(a.recordedAt)).map((r,idx)=>(
                   <div key={r.id} className={`bg-slate-100 dark:bg-slate-800 rounded-xl p-3 border ${idx===0?'border-amber-500/30':'border-slate-300 dark:border-slate-700'}`}>
                     <div className="flex items-start justify-between">
                       <div className="flex-1">

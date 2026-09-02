@@ -986,6 +986,24 @@ export const store = {
     }
     try { await fbSet('schedules',id,u); }
     catch(e){ cache.schedules=prev; throw e; }
+    // [버그 수정 2026-09] 회차(sessionAtBooking) 표시는 예약 "생성" 시점에만
+    // renumberSessionAtBooking으로 날짜순 재정렬됐고, 이미 만들어진 예약의
+    // 날짜·시작시간·트레이너를 나중에 바꾸는 경로(Schedule.jsx 수정 모달의
+    // saveEdit, 음성 예약 변경 reservationService.rescheduleReservation)는
+    // 둘 다 이 updateSchedule을 그대로 위임만 하고 재배정을 부르지 않았다.
+    // 그 결과 예약을 다른 날짜로 옮기면 회차 숫자가 옛 순서에 박제된 채로
+    // 남아, 스케줄 화면에 표시되는 회차 카운터가 날짜순과 어긋나 "한번씩"
+    // 틀리게 보이는 문제가 있었다. 새 예약 생성 때와 동일하게, 정규 세션
+    // 예약(외부/상담 제외)의 날짜·시작시간·트레이너가 바뀌면 형제 예약들과
+    // 함께 재배정한다 — 표시용 보정이라 실패해도 방금 수정 자체는 이미
+    // 정상 저장된 상태(실패 시 로그만 남김, renumberSessionAtBooking 내부에서 처리).
+    if (
+      !u.isExternal && !u.isConsult && u.memberId && u.trainerId &&
+      u.sessionAtBooking != null &&
+      ('date' in p || 'startTime' in p || 'trainerId' in p)
+    ) {
+      await renumberSessionAtBooking(u.memberId, u.trainerId);
+    }
   },
   deleteSchedule:  async id => {
     const prev=cache.schedules;
