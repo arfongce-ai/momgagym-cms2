@@ -42,10 +42,10 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
   //  plateTrackerRef = 원판 색 블롭 연속 추적(색 인식 후 자동 시드)
   //  fusedRef     = color/skeleton/plate 세 신호를 매 프레임 융합해 실시간
   //                 생체역학 엔진(BarbellAccumulator)에 넣는다. 렙 분절·속도·
-  //                 굌적(드리프트/효율)이 매 프레임 실시간으로 산출된다.
+  //                 궤적(드리프트/효율)이 매 프레임 실시간으로 산출된다.
   const plateTrackerRef = useRef(createPlateBlobTracker());
   const fusedRef = useRef(new BarbellAccumulator());
-  // [2026-08-02] fusedRef.path()는 라이브 굌적 표시 + 녹화 합성(coverMapPath가
+  // [2026-08-02] fusedRef.path()는 라이브 궤적 표시 + 녹화 합성(coverMapPath가
   // 자체적으로 회전 보정) 두 곳에서 원본(raw) 좌표를 그대로 기대하므로 건드릴
   // 수 없다. 반면 속도·렙 판정(.live()/.summary())은 y축 기준 계산이라 회전
   // 보정이 필요하다 — 그래서 판정 전용으로 같은 시퀀스를 보정된 좌표로 다시
@@ -58,7 +58,7 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
   const phSamplesRef = useRef([]);
   const frameStatsRef = useRef({ total: 0, lost: 0 });
   const recordingRef = useRef(false);
-  // [2026-09-04 추가] 굌적/잔상효과 on-off — 기본값 켜짐(기존 동작 유지).
+  // [2026-09-04 추가] 궤적/잔상효과 on-off — 기본값 켜짐(기존 동작 유지).
   // 라이브 캔버스(handleResult, 매 프레임)와 녹화 합성 루프(createRecordedStream,
   // RAF) 둘 다 state가 아니라 ref를 참조하므로(recordingRef와 동일 패턴) 리렌더
   // 없이 즉시 반영된다.
@@ -72,7 +72,7 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
   const countdownTimerRef = useRef(null);
   const maxRecordTimerRef = useRef(null);
 
-  // ── 녹화(MediaRecorder) — 영상 위에 바벨 굌적선 + 데이터HUD를 합성해 번인.
+  // ── 녹화(MediaRecorder) — 영상 위에 바벨 궤적선 + 데이터HUD를 합성해 번인.
   //    측정 데이터는 Firestore, 영상 blob 은 트레이너 폰(saveVideoToPhone)으로 분리 저장.
   const mediaRecorderRef = useRef(null);
   const chunksRef = useRef([]);
@@ -178,11 +178,11 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
     if (cap.isSeeded()) {
       const p = cap.update(video);
       const colorActive = cap.activeCount();
-      // 세 신호(색/스켈레톤/원판색) 융합 — 한 신호가 가려져도 굌적이 끊기지 않는다.
+      // 세 신호(색/스켈레톤/원판색) 융합 — 한 신호가 가려져도 궤적이 끊기지 않는다.
       const fused = fuseTrackingCandidates({ colorPoint: p, colorActive, skeletonPoint, plateColorPoint });
 
       if (fused.point && recordingRef.current) {
-        // fusedRef: 라이브 굌적 표시·녹화 합성용 — 원본(raw) 좌표 그대로 유지.
+        // fusedRef: 라이브 궤적 표시·녹화 합성용 — 원본(raw) 좌표 그대로 유지.
         fusedRef.current.push(fused.point, ts);
         // judgeAccRef: 속도·렙 판정용 — 회전 보정된 좌표로 같은 시퀀스를 별도 누적.
         const correctedFusedPoint = rotateLandmarksNormalized([fused.point], rotationDeg)[0];
@@ -222,7 +222,7 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
       }
 
       const path = fusedRef.current.path();
-      // [2026-09-04 추가] 굌적선을 "잔상효과"(최근 굌적만 밝고, 오래된 굌적은
+      // [2026-09-04 추가] 궤적선을 "잔상효과"(최근 궤적만 밝고, 오래된 궤적은
       // 점점 흐려지다 사라짐)로 표시 — 실측 좌표(fusedRef.path())는 그대로,
       // 그리는 방식만 drawFadingBarPath로 교체(판정 로직 영향 없음).
       ctx.save();
@@ -373,7 +373,7 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
     if (recordStreamRef.current) { recordStreamRef.current.getTracks().forEach(t => t.stop()); recordStreamRef.current = null; }
   };
 
-  // 녹화용 합성 스트림: 카메라 영상 + 바벨 굌적선 + 데이터HUD 를 오프스크린
+  // 녹화용 합성 스트림: 카메라 영상 + 바벨 궤적선 + 데이터HUD 를 오프스크린
   // 캔버스에 매 프레임 그려 captureStream 으로 뽑는다(RomMeasure 와 동일 구조).
   const createRecordedStream = () => {
     const video = videoRef.current;
@@ -386,7 +386,7 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
       ctx.fillStyle = '#000';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       drawVideoCover(ctx, video, canvas.width, canvas.height, rotationDeg);
-      // 실제 추적 굌적선(장식 아님) — 카메라 원본 정규화 좌표를 cover 크롭 좌표로 매핑.
+      // 실제 추적 궤적선(장식 아님) — 카메라 원본 정규화 좌표를 cover 크롭 좌표로 매핑.
       // [2026-09-04 추가] 라이브 화면과 동일하게 잔상효과로 표시. coverMapPath는
       // {x,y}만 반환하므로(회귀 방지를 위해 coverMapPath 자체는 손대지 않음),
       // 원본 배열과 같은 순서·길이인 점을 이용해 ts만 다시 붙여준다.
@@ -633,7 +633,7 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
       meanVelocity: result.velocity,
       peakVelocity: result.peakVelocity ?? null,   // 실시간 평활 추정(sg_ok일 때만 값 존재)
       peakReason: result.peakReason ?? null,
-      barPath: result.barPath ?? null,             // 굌적 드리프트/효율(역도 평가 근거)
+      barPath: result.barPath ?? null,             // 궤적 드리프트/효율(역도 평가 근거)
       consistencyCvPct: result.consistencyCvPct ?? null,
       reps: result.reps ?? null,
       repVelocity: result.repVelocity ?? null,
