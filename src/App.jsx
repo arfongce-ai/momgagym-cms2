@@ -1,21 +1,39 @@
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, lazy, Suspense } from 'react';
 import AppLayout from './components/layout/AppLayout';
 import Login from './pages/Login';
 import MicTest from './pages/MicTest';
-import Home from './pages/Home';
-import Members from './pages/Members';
-import Trainers from './pages/Trainers';
-import Revenue from './pages/Revenue';
-import Schedule from './pages/Schedule';
-import Settings from './pages/Settings';
-import AiMeasureHub from './ai-measure/AiMeasureHub';
-import Report from './pages/Report';
-import Dashboard from './pages/Dashboard';
 import AdminLockGate from './components/common/AdminLockGate';
 import TodayScheduleMorningAlert from './components/schedule/TodayScheduleMorningAlert';
 import { useKioskMode } from './hooks/useKioskMode';
+
+// [성능 개선 2026-09] 이전엔 아래 9개 페이지(Revenue 141KB·Report 103KB·
+// MemberDetail을 포함한 Members·AiMeasureHub의 전체 측정엔진 등)를 전부
+// 최상단에서 즉시 import 했다 — 로그인 직후 어느 메뉴로 가든 상관없이
+// 모든 페이지의 코드를 한 번에 내려받은 뒤에야 화면이 뜨는 구조였다.
+// 이게 "웹이 느림"의 핵심 원인. React.lazy로 라우트 단위 코드 스플리팅을
+// 적용해 실제로 클릭한 메뉴의 코드만 그때그때 내려받도록 바꾼다
+// (Login·MicTest·AppLayout처럼 항상 필요한 건 그대로 즉시 import 유지).
+const Home       = lazy(() => import('./pages/Home'));
+const Members    = lazy(() => import('./pages/Members'));
+const Trainers   = lazy(() => import('./pages/Trainers'));
+const Revenue    = lazy(() => import('./pages/Revenue'));
+const Schedule   = lazy(() => import('./pages/Schedule'));
+const Settings   = lazy(() => import('./pages/Settings'));
+const AiMeasureHub = lazy(() => import('./ai-measure/AiMeasureHub'));
+const Report      = lazy(() => import('./pages/Report'));
+const Dashboard   = lazy(() => import('./pages/Dashboard'));
+
+// 라우트 전환 시 코드가 내려오는 짧은 순간에 보여줄 스피너.
+// RequireAuth의 로딩 스피너와 동일한 스타일로 통일.
+function RouteFallback() {
+  return (
+    <div className="flex items-center justify-center h-[60vh]">
+      <div className="w-8 h-8 border-2 border-amber-500 border-t-transparent rounded-full animate-spin" />
+    </div>
+  );
+}
 
 function RequireAuth({ children, adminOnly = false }) {
   const { user, loading, dataReady, dataError, retryData, logout } = useAuth();
@@ -111,26 +129,28 @@ function AppRoutes() {
             <TodayScheduleMorningAlert user={user} />
             <div className="page-fade">
               <KioskGuard>
-                <Routes>
-                  <Route path="/"         element={<Home />} />
-                  <Route path="/members"  element={<Members />} />
-                  <Route path="/schedule" element={<Schedule />} />
-                  <Route path="/trainers" element={<RequireAuth adminOnly><AdminLockGate title="트레이너 관리 잠금" adminOnly><Trainers /></AdminLockGate></RequireAuth>} />
-                  <Route path="/dashboard" element={<RequireAuth adminOnly><Dashboard /></RequireAuth>} />
-                  {/* 9장 대시보드: 회원 개인정보가 없는 집계 그래프라 트레이너 관리처럼
-                      AdminLockGate(2차 PIN)까지는 걸지 않음 — adminOnly 라우트 가드만. */}
-                  <Route path="/revenue"  element={<AdminLockGate title="매출관리 잠금"><Revenue /></AdminLockGate>} />
-                  {/* /revenue: 관리자=이중잠금 후 전체, 트레이너=본인 정산 조회(게이트 통과) */}
-                  <Route path="/settings" element={<Settings darkMode={darkMode} setDarkMode={setDarkMode} />} />
-                  <Route path="/ai"       element={<AiMeasureHub />} />
-                  <Route path="/report"   element={<Report />} />
-                  {/* [리포트 통합 2026-08-09] 종합리포트(day/week/month 트렌드)는 Report.jsx
-                      안의 ComprehensiveReportSection으로 완전히 흡수됨(이상 데이터 삭제
-                      기능까지 이관 완료) — 별도 페이지가 더 이상 필요 없다. 기존
-                      북마크/딥링크가 죽지 않도록 리다이렉트만 남긴다. */}
-                  <Route path="/summary"  element={<Navigate to="/report" replace />} />
-                  <Route path="*"         element={<Navigate to="/" replace />} />
-                </Routes>
+                <Suspense fallback={<RouteFallback />}>
+                  <Routes>
+                    <Route path="/"         element={<Home />} />
+                    <Route path="/members"  element={<Members />} />
+                    <Route path="/schedule" element={<Schedule />} />
+                    <Route path="/trainers" element={<RequireAuth adminOnly><AdminLockGate title="트레이너 관리 잠금" adminOnly><Trainers /></AdminLockGate></RequireAuth>} />
+                    <Route path="/dashboard" element={<RequireAuth adminOnly><Dashboard /></RequireAuth>} />
+                    {/* 9장 대시보드: 회원 개인정보가 없는 집계 그래프라 트레이너 관리처럼
+                        AdminLockGate(2차 PIN)까지는 걸지 않음 — adminOnly 라우트 가드만. */}
+                    <Route path="/revenue"  element={<AdminLockGate title="매출관리 잠금"><Revenue /></AdminLockGate>} />
+                    {/* /revenue: 관리자=이중잠금 후 전체, 트레이너=본인 정산 조회(게이트 통과) */}
+                    <Route path="/settings" element={<Settings darkMode={darkMode} setDarkMode={setDarkMode} />} />
+                    <Route path="/ai"       element={<AiMeasureHub />} />
+                    <Route path="/report"   element={<Report />} />
+                    {/* [리포트 통합 2026-08-09] 종합리포트(day/week/month 트렌드)는 Report.jsx
+                        안의 ComprehensiveReportSection으로 완전히 흡수됨(이상 데이터 삭제
+                        기능까지 이관 완료) — 별도 페이지가 더 이상 필요 없다. 기존
+                        북마크/딥링크가 죽지 않도록 리다이렉트만 남긴다. */}
+                    <Route path="/summary"  element={<Navigate to="/report" replace />} />
+                    <Route path="*"         element={<Navigate to="/" replace />} />
+                  </Routes>
+                </Suspense>
               </KioskGuard>
             </div>
           </AppLayout>
