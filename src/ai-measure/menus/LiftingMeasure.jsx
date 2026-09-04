@@ -1,8 +1,8 @@
 // ai-measure/menus/LiftingMeasure.jsx
-// 메뉴 8: 역도 — 바벨 엔드칵(봉 끝) 탭 추적 + 수직 변위/추진시간 기록.
+// 메뉴 8: 역도 — 바벨 엔드캡(봉 끝) 탭 추적 + 수직 변위/추진시간 기록.
 //  - [재설계] 카메라를 켜면 화면 전체를 덮는 풀스크린 오버레이로 띄우고,
 //    가이드·컨트롤·결과를 모두 영상 위에 겹쳐 한 화면에서 측정→확인이 끝난다.
-//  - 화면에서 엔드칵을 톡 누르면 그 색을 학습해 따라간다(원판이 손 가려도 OK).
+//  - 화면에서 엔드캡을 톡 누르면 그 색을 학습해 따라간다(원판이 손 가려도 OK).
 //  - 옆에서 촬영 권장. cm 환산은 회원 키 기준(근사).
 import { useRef, useState, useEffect, useCallback } from 'react';
 import { usePoseEngine } from '../core/usePoseEngine';
@@ -38,7 +38,7 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
   const canvasRef = useRef(null);
   const capRef = useRef(createMultiTracker());
   // ── 다중 신호 융합 ──
-  //  capRef       = 사용자가 탭한 색(엔드칵/원판) 추적(UI 점 개수/신뢰도 표시 겸용)
+  //  capRef       = 사용자가 탭한 색(엔드캡/원판) 추적(UI 점 개수/신뢰도 표시 겸용)
   //  plateTrackerRef = 원판 색 블롭 연속 추적(색 인식 후 자동 시드)
   //  fusedRef     = color/skeleton/plate 세 신호를 매 프레임 융합해 실시간
   //                 생체역학 엔진(BarbellAccumulator)에 넣는다. 렙 분절·속도·
@@ -139,7 +139,7 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
     setCogActive(prev => (prev !== cog.available ? cog.available : prev));
 
     // [2026-08-02] 카메라 원본이 회전된 채로 들어오는 기종(키오스크) 보정 —
-    // 바-COG 수평 이격(barCogHorizontalGap)은 \"좌우\" 축을 가정하는 판정이라
+    // 바-COG 수평 이격(barCogHorizontalGap)은 "좌우" 축을 가정하는 판정이라
     // 회전 보정된 좌표가 필요하다. 색상/원판색 트래킹은 픽셀 기반이라 그대로
     // 두고(융합 로직 내부 일관성 유지), 판정에 들어가기 직전(최종 융합 지점·
     // COG)에서만 보정한다.
@@ -222,7 +222,7 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
       }
 
       const path = fusedRef.current.path();
-      // [2026-09-04 추가] 굌적선을 \"잔상효과\"(최근 굌적만 밝고, 오래된 굌적은
+      // [2026-09-04 추가] 굌적선을 "잔상효과"(최근 굌적만 밝고, 오래된 굌적은
       // 점점 흐려지다 사라짐)로 표시 — 실측 좌표(fusedRef.path())는 그대로,
       // 그리는 방식만 drawFadingBarPath로 교체(판정 로직 영향 없음).
       ctx.save();
