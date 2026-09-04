@@ -11,6 +11,7 @@ const OUTPUT_POLICY = Object.freeze({
   gait: 'video',
   stance: 'video',
   squat: 'video',
+  sprint: 'video',
 });
 
 const KIND_KO = Object.freeze({
@@ -20,6 +21,7 @@ const KIND_KO = Object.freeze({
   gait: '보행·러닝',
   stance: '한다리서기',
   squat: '오버헤드 스쿼트',
+  sprint: '스프린트 & 아질리티',
   daily: '오늘의 컨디션',
   lifting: '바벨 리프팅(VBT)',
   body: '신체 정보',
@@ -168,6 +170,29 @@ export function buildProblemFocus(kind, report = {}) {
         if (info) addIssue(info.level, info.text);
       });
       if (!issues.length) addStrength('오버헤드 딥 스쿼트 동작에서 큰 위험 신호가 없습니다.');
+    }
+  } else if (kind === 'sprint' || kind === 'agility') {
+    // [스프린트 추가 2026-09-04] sprintAgility.js SprintTracker.finalize()가
+    // 반환하는 필드(totalDistanceM/reactionTimeMs/deceleration/turnCount/splits)를
+    // 그대로 해석한다 — 다른 kind처럼 별도 flag 테이블 없이 임계값을 직접 판정
+    // (아직 등급 체계가 없는 신규 측정이라, squat/lifting의 flags 재사용 패턴을
+    // 아직 적용할 대상이 없다).
+    if (!report.totalDistanceM) {
+      addIssue('caution', '스프린트 측정 데이터가 부족합니다.');
+    } else {
+      if (report.reactionTimeMs != null && report.reactionTimeMs > 300) {
+        addIssue('caution', `스타트 반응속도가 느립니다(${report.reactionTimeMs}ms).`);
+      }
+      if (report.deceleration?.decelTimeMs != null && report.deceleration.decelTimeMs > 600) {
+        addIssue('caution', `최고속도 후 감속·제동에 시간이 오래 걸립니다(${report.deceleration.decelTimeMs}ms) — 무릎 제동력 점검 권장.`);
+      }
+      if (report.turnCount > 0) {
+        addStrength(`방향전환 ${report.turnCount}회를 안정적으로 완료했습니다.`);
+      }
+      if (report.splits?.['10m']) {
+        addStrength(`10m 구간기록 ${(report.splits['10m'] / 1000).toFixed(2)}초.`);
+      }
+      if (!issues.length) addStrength('스프린트 지표에서 큰 위험 신호가 없습니다.');
     }
   } else if (kind === 'lifting') {
     // [Axis3/4 확장 2026-08-11] 예전엔 이 분기가 아예 없어서(else 없이 통과)

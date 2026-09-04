@@ -3,11 +3,15 @@ import { lazy } from 'react';
 // AI 측정 · 분석 탭 등록부.
 //  탭 순서(no)는 측정 흐름 순서를 따른다:
 //   1 신체 정보(기본) → 2 자세·체형(정적) → 3 ROM(가동성) → 4 보행·러닝(이동)
-//   → 5 점프·RSI(파워) → 6 바벨 리프팅(근력) → 7 한다리서기(SLST, 균형)
-//   → 8 오버헤드 딥 스쿼트(균형+가동성 복합) → 9 전/후 비교(오버레이) →
-//   → 10 근골격계 영상 확인(업로드 X-ray·CT·초음파·MRI) →
-//   11 일반 녹화 · 12 초시계 (도구, 항상 맨 마지막 — 기존 테스트 불변식:
+//   → 5 점프·RSI(파워) → 6 스프린트 & 아질리티(속도·순발력, 점프 다음이 자연스러움)
+//   → 7 바벨 리프팅(근력) → 8 한다리서기(SLST, 균형)
+//   → 9 오버헤드 딥 스쿼트(균형+가동성 복합) → 10 전/후 비교(오버레이) →
+//   → 11 근골격계 영상 확인(업로드 X-ray·CT·초음파·MRI) →
+//   12 일반 녹화 · 13 초시계 (도구, 항상 맨 마지막 — 기존 테스트 불변식:
 //   정렬 후 timer가 배열 끝).
+//  [스프린트 추가 2026-09-04] 5m/10m 스프린트, 5-0-5 아질리티 — 카메라 1대로
+//  골반(Hip) 좌표를 추적해 속도·구간기록을 산출. 캘리브레이션은 다른 탭처럼
+//  자동 세이프존이 아니라 바닥 기준점 2점 터치 방식(sprintAgility.js 참고).
 //  '던지기(throw)'·'스윙(swing)' 준비 중 탭은 제거됨(2607 요청).
 //  7번(SLST)·8번(스쿼트) 모두 실시간·업로드 둘 다 지원.
 //  [전/후 비교 추가] 사진/영상 오버레이·어니언 스킨 비교 도구. 다른 측정처럼
@@ -65,8 +69,17 @@ export const MEASURE_MENUS = [
     component: lazy(() => import('./menus/JumpAnalysisHub.jsx')),
   },
   {
-    id: 'lifting',
+    id: 'sprint',
     no: 6,
+    title: '스프린트 & 아질리티',
+    desc: '5m/10m 스프린트, 5-0-5 방향전환 — 실시간 카메라 (업로드 모드 준비 중)',
+    icon: 'SPD',
+    status: 'ready',
+    component: lazy(() => import('./menus/SprintAnalysisHub.jsx')),
+  },
+  {
+    id: 'lifting',
+    no: 7,
     title: '바벨 리프팅',
     desc: 'VBT 속도 · 1RM 추정 · 고속영상 분석',
     icon: 'BAR',
@@ -75,7 +88,7 @@ export const MEASURE_MENUS = [
   },
   {
     id: 'stance',
-    no: 7,
+    no: 8,
     title: '한다리서기 (SLST)',
     desc: '균형 능력, 좌우 비대칭 — 실시간 카메라·영상 업로드',
     icon: 'LEG',
@@ -84,7 +97,7 @@ export const MEASURE_MENUS = [
   },
   {
     id: 'squat',
-    no: 8,
+    no: 9,
     title: '오버헤드 딥 스쿼트',
     desc: '깊이·상체 기울기·무릎 정렬·골반 — 실시간 카메라·영상 업로드',
     icon: 'SQT',
@@ -93,7 +106,7 @@ export const MEASURE_MENUS = [
   },
   {
     id: 'compare',
-    no: 9,
+    no: 10,
     title: '전/후 비교 (오버레이)',
     desc: '사진·영상 오버레이 · 어니언 스킨 비교, 발목 기준 자동 정렬',
     icon: 'CMP',
@@ -102,7 +115,7 @@ export const MEASURE_MENUS = [
   },
   {
     id: 'imaging',
-    no: 10,
+    no: 11,
     title: '근골격계 영상 확인',
     desc: 'X-ray·CT·초음파·MRI 업로드 — 각도/거리 측정, 소견 태그(내부 참고용)',
     icon: 'IMG',
@@ -111,7 +124,7 @@ export const MEASURE_MENUS = [
   },
   {
     id: 'record',
-    no: 11,
+    no: 12,
     title: '일반 영상 녹화',
     desc: '카메라 녹화 및 저장',
     icon: 'REC',
@@ -120,7 +133,7 @@ export const MEASURE_MENUS = [
   },
   {
     id: 'timer',
-    no: 12,
+    no: 13,
     title: '초시계·메트로놈',
     desc: '초시계, 타이머, 인터벌, 메트로놈',
     icon: 'TMR',
