@@ -1,8 +1,8 @@
 // ai-measure/menus/LiftingMeasure.jsx
-// 메뉴 8: 역도 — 바벨 엔드캡(봉 끝) 탭 추적 + 수직 변위/추진시간 기록.
+// 메뉴 8: 역도 — 바벨 엔드칵(봉 끝) 탭 추적 + 수직 변위/추진시간 기록.
 //  - [재설계] 카메라를 켜면 화면 전체를 덮는 풀스크린 오버레이로 띄우고,
 //    가이드·컨트롤·결과를 모두 영상 위에 겹쳐 한 화면에서 측정→확인이 끝난다.
-//  - 화면에서 엔드캡을 톡 누르면 그 색을 학습해 따라간다(원판이 손 가려도 OK).
+//  - 화면에서 엔드칵을 톡 누르면 그 색을 학습해 따라간다(원판이 손 가려도 OK).
 //  - 옆에서 촬영 권장. cm 환산은 회원 키 기준(근사).
 import { useRef, useState, useEffect, useCallback } from 'react';
 import { usePoseEngine } from '../core/usePoseEngine';
@@ -17,7 +17,7 @@ import { exerciseLabel as exerciseLabelLocal, snapWeight, stepWeight } from '../
 import { fuseTrackingCandidates, summarizeCrossValidation } from '../core/trackFusion';
 import { estimateBodyCOG, barCogHorizontalGap } from '../core/bodyCog';
 import { saveVideoToPhone, pickRecorderMime } from '../core/recordSink';
-import { drawLiftingDataHud, drawBarPathToRecord } from '../core/recordingOverlay';
+import { drawLiftingDataHud, drawFadingBarPath } from '../core/recordingOverlay';
 import { DEFAULT_ASPECT, outputSize, aspectLabel, drawVideoCover, coverMapPath, rotateLandmarksNormalized } from '../core/recordAspect';
 import { useCameraRotation } from '../core/useCameraRotation';
 import {
@@ -38,14 +38,14 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
   const canvasRef = useRef(null);
   const capRef = useRef(createMultiTracker());
   // ── 다중 신호 융합 ──
-  //  capRef       = 사용자가 탭한 색(엔드캡/원판) 추적(UI 점 개수/신뢰도 표시 겸용)
+  //  capRef       = 사용자가 탭한 색(엔드칵/원판) 추적(UI 점 개수/신뢰도 표시 겸용)
   //  plateTrackerRef = 원판 색 블롭 연속 추적(색 인식 후 자동 시드)
   //  fusedRef     = color/skeleton/plate 세 신호를 매 프레임 융합해 실시간
   //                 생체역학 엔진(BarbellAccumulator)에 넣는다. 렙 분절·속도·
-  //                 궤적(드리프트/효율)이 매 프레임 실시간으로 산출된다.
+  //                 굌적(드리프트/효율)이 매 프레임 실시간으로 산출된다.
   const plateTrackerRef = useRef(createPlateBlobTracker());
   const fusedRef = useRef(new BarbellAccumulator());
-  // [2026-08-02] fusedRef.path()는 라이브 궤적 표시 + 녹화 합성(coverMapPath가
+  // [2026-08-02] fusedRef.path()는 라이브 굌적 표시 + 녹화 합성(coverMapPath가
   // 자체적으로 회전 보정) 두 곳에서 원본(raw) 좌표를 그대로 기대하므로 건드릴
   // 수 없다. 반면 속도·렙 판정(.live()/.summary())은 y축 기준 계산이라 회전
   // 보정이 필요하다 — 그래서 판정 전용으로 같은 시퀀스를 보정된 좌표로 다시
@@ -58,6 +58,12 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
   const phSamplesRef = useRef([]);
   const frameStatsRef = useRef({ total: 0, lost: 0 });
   const recordingRef = useRef(false);
+  // [2026-09-04 추가] 굌적/잔상효과 on-off — 기본값 켜짐(기존 동작 유지).
+  // 라이브 캔버스(handleResult, 매 프레임)와 녹화 합성 루프(createRecordedStream,
+  // RAF) 둘 다 state가 아니라 ref를 참조하므로(recordingRef와 동일 패턴) 리렌더
+  // 없이 즉시 반영된다.
+  const trailOnRef = useRef(true);
+  const [trailOn, setTrailOn] = useState(true);
   const seededRef = useRef(false);
   const framingRef = useRef({ level: 'bad', message: '' });
   const consumedAutoStartRef = useRef(0);
@@ -66,7 +72,7 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
   const countdownTimerRef = useRef(null);
   const maxRecordTimerRef = useRef(null);
 
-  // ── 녹화(MediaRecorder) — 영상 위에 바벨 궤적선 + 데이터HUD를 합성해 번인.
+  // ── 녹화(MediaRecorder) — 영상 위에 바벨 굌적선 + 데이터HUD를 합성해 번인.
   //    측정 데이터는 Firestore, 영상 blob 은 트레이너 폰(saveVideoToPhone)으로 분리 저장.
   const mediaRecorderRef = useRef(null);
   const chunksRef = useRef([]);
@@ -133,7 +139,7 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
     setCogActive(prev => (prev !== cog.available ? cog.available : prev));
 
     // [2026-08-02] 카메라 원본이 회전된 채로 들어오는 기종(키오스크) 보정 —
-    // 바-COG 수평 이격(barCogHorizontalGap)은 "좌우" 축을 가정하는 판정이라
+    // 바-COG 수평 이격(barCogHorizontalGap)은 \"좌우\" 축을 가정하는 판정이라
     // 회전 보정된 좌표가 필요하다. 색상/원판색 트래킹은 픽셀 기반이라 그대로
     // 두고(융합 로직 내부 일관성 유지), 판정에 들어가기 직전(최종 융합 지점·
     // COG)에서만 보정한다.
@@ -172,11 +178,11 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
     if (cap.isSeeded()) {
       const p = cap.update(video);
       const colorActive = cap.activeCount();
-      // 세 신호(색/스켈레톤/원판색) 융합 — 한 신호가 가려져도 궤적이 끊기지 않는다.
+      // 세 신호(색/스켈레톤/원판색) 융합 — 한 신호가 가려져도 굌적이 끊기지 않는다.
       const fused = fuseTrackingCandidates({ colorPoint: p, colorActive, skeletonPoint, plateColorPoint });
 
       if (fused.point && recordingRef.current) {
-        // fusedRef: 라이브 궤적 표시·녹화 합성용 — 원본(raw) 좌표 그대로 유지.
+        // fusedRef: 라이브 굌적 표시·녹화 합성용 — 원본(raw) 좌표 그대로 유지.
         fusedRef.current.push(fused.point, ts);
         // judgeAccRef: 속도·렙 판정용 — 회전 보정된 좌표로 같은 시퀀스를 별도 누적.
         const correctedFusedPoint = rotateLandmarksNormalized([fused.point], rotationDeg)[0];
@@ -216,17 +222,11 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
       }
 
       const path = fusedRef.current.path();
+      // [2026-09-04 추가] 굌적선을 \"잔상효과\"(최근 굌적만 밝고, 오래된 굌적은
+      // 점점 흐려지다 사라짐)로 표시 — 실측 좌표(fusedRef.path())는 그대로,
+      // 그리는 방식만 drawFadingBarPath로 교체(판정 로직 영향 없음).
       ctx.save();
-      ctx.strokeStyle = 'rgba(34,211,238,0.95)';
-      ctx.lineWidth = 6;
-      ctx.lineCap = 'round';
-      ctx.lineJoin = 'round';
-      ctx.beginPath();
-      path.forEach((q, i) => {
-        const X = q.x * cw, Y = q.y * ch;
-        i === 0 ? ctx.moveTo(X, Y) : ctx.lineTo(X, Y);
-      });
-      ctx.stroke();
+      if (trailOnRef.current) drawFadingBarPath(ctx, path, cw, ch, ts, { fadeMs: 900, minWidthDivisor: cw / 6 });
       cap.points().forEach(pt => {
         if (!pt.ema) return;
         ctx.fillStyle = pt.alive ? 'rgba(16,185,129,0.95)' : 'rgba(148,163,184,0.6)';
@@ -373,7 +373,7 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
     if (recordStreamRef.current) { recordStreamRef.current.getTracks().forEach(t => t.stop()); recordStreamRef.current = null; }
   };
 
-  // 녹화용 합성 스트림: 카메라 영상 + 바벨 궤적선 + 데이터HUD 를 오프스크린
+  // 녹화용 합성 스트림: 카메라 영상 + 바벨 굌적선 + 데이터HUD 를 오프스크린
   // 캔버스에 매 프레임 그려 captureStream 으로 뽑는다(RomMeasure 와 동일 구조).
   const createRecordedStream = () => {
     const video = videoRef.current;
@@ -386,8 +386,15 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
       ctx.fillStyle = '#000';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       drawVideoCover(ctx, video, canvas.width, canvas.height, rotationDeg);
-      // 실제 추적 궤적선(장식 아님) — 카메라 원본 정규화 좌표를 cover 크롭 좌표로 매핑.
-      drawBarPathToRecord(ctx, coverMapPath(fusedRef.current.path(), video, canvas.width, canvas.height, rotationDeg), canvas.width, canvas.height);
+      // 실제 추적 굌적선(장식 아님) — 카메라 원본 정규화 좌표를 cover 크롭 좌표로 매핑.
+      // [2026-09-04 추가] 라이브 화면과 동일하게 잔상효과로 표시. coverMapPath는
+      // {x,y}만 반환하므로(회귀 방지를 위해 coverMapPath 자체는 손대지 않음),
+      // 원본 배열과 같은 순서·길이인 점을 이용해 ts만 다시 붙여준다.
+      if (trailOnRef.current) {
+        const mappedLivePath = coverMapPath(fusedRef.current.path(), video, canvas.width, canvas.height, rotationDeg);
+        const mappedLivePathWithTs = mappedLivePath.map((p, i) => ({ x: p.x, y: p.y, ts: fusedRef.current.path()[i]?.ts }));
+        drawFadingBarPath(ctx, mappedLivePathWithTs, canvas.width, canvas.height, performance.now(), { fadeMs: 900 });
+      }
       // 데이터-only HUD: 수직이동(cm) · 평균속도 · 경과시간.
       const elapsedSec = recordingRef.current ? (performance.now() - recordStartRef.current) / 1000 : null;
       drawLiftingDataHud(ctx, canvas.width, canvas.height, {
@@ -626,7 +633,7 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
       meanVelocity: result.velocity,
       peakVelocity: result.peakVelocity ?? null,   // 실시간 평활 추정(sg_ok일 때만 값 존재)
       peakReason: result.peakReason ?? null,
-      barPath: result.barPath ?? null,             // 궤적 드리프트/효율(역도 평가 근거)
+      barPath: result.barPath ?? null,             // 굌적 드리프트/효율(역도 평가 근거)
       consistencyCvPct: result.consistencyCvPct ?? null,
       reps: result.reps ?? null,
       repVelocity: result.repVelocity ?? null,
@@ -645,7 +652,7 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
     });
   };
 
-  // ───────── 풀스크린 카메라(측정 중) ─────────
+  // ────────── 풀스크린 카메라(측정 중) ──────────
   if (status !== 'idle') {
     const topBar = (
       <>
@@ -706,6 +713,14 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
           disabled={recording || countdown != null}
           className={`h-14 px-3 rounded-2xl text-[11px] font-black active:scale-95 disabled:opacity-50 backdrop-blur ${calibrating ? 'bg-cyan-400 text-slate-950' : 'bg-white/[0.08] border border-white/15 text-white'}`}>
           📐<span className="block text-[9px] mt-0.5">{calibrating ? '보정점' : '거리 보정'}</span>
+        </button>
+        <button
+          onClick={() => {
+            trailOnRef.current = !trailOnRef.current;
+            setTrailOn(trailOnRef.current);
+          }}
+          className={`h-14 px-3 rounded-2xl text-[11px] font-black active:scale-95 backdrop-blur ${trailOn ? 'bg-cyan-400 text-slate-950' : 'bg-white/[0.08] border border-white/15 text-white'}`}>
+          ✨<span className="block text-[9px] mt-0.5">{trailOn ? '잔상 켜짐' : '잔상 꺼짐'}</span>
         </button>
       </div>
     );
@@ -801,7 +816,7 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
     );
   }
 
-  // ───────── 준비 화면(카메라 꺼짐) ─────────
+  // ────────── 준비 화면(카메라 꺼짐) ──────────
   return (
     <div className={`space-y-4 ${embedded ? 'pt-44 px-3 max-w-md mx-auto overflow-y-auto pb-8' : ''}`} style={embedded ? { height: '100dvh' } : undefined}>
       {/* 임베드(허브) 모드에서는 상단 허브 오버레이가 뒤로가기·종목을 담당하므로 자체 헤더 숨김 */}
