@@ -80,14 +80,14 @@ export function drawMeasurementOverlay(ctx, width, height, opts = {}) {
   ctx.restore();
 }
 
-// ════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════════════════
 //  대형 시인성 HUD (측정 공통 · 녹화 영상 번인용)
 //   · 요구사항: 핵심 정보만 크게, 직관적으로. 피사체(중앙)를 가리지 않도록
 //     화면 가장자리(상단 코너 + 하단 스트립)에만 배치한다.
 //   · 상단: 제목 칩(REC 점·상태) + 경과시간 칩 → 그 아래 좌/우 대형 수치 카드.
 //   · 하단: 회차(렙·점프) 히스토리 카드 스트립(선택).
 //   · 값이 없으면 '--' — 허위값을 그리지 않는다(측정 정직성).
-// ════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════════════════
 export function drawGaugeHud(ctx, width, height, opts = {}) {
   const {
     title = '', status = '', recording = false, elapsedSec = null,
@@ -170,7 +170,7 @@ export function drawGaugeHud(ctx, width, height, opts = {}) {
       if (c.top) ctx.fillText(String(c.top), x0 + cW / 2, y0 + Math.round(cH * 0.10));
       ctx.font = `900 ${cardFs}px ui-monospace, Menlo, monospace`;
       ctx.fillStyle = textMain;
-      ctx.fillText(c.main != null ? String(c.main) : '\u2013', x0 + cW / 2, y0 + Math.round(cH * 0.36));
+      ctx.fillText(c.main != null ? String(c.main) : '–', x0 + cW / 2, y0 + Math.round(cH * 0.36));
       ctx.font = `700 ${Math.round(cardFs * 0.56)}px system-ui, sans-serif`;
       ctx.fillStyle = textSub;
       if (c.sub) ctx.fillText(String(c.sub), x0 + cW / 2, y0 + Math.round(cH * 0.70));
@@ -216,23 +216,18 @@ export function drawGaugeHud(ctx, width, height, opts = {}) {
   });
 
   // ── 중앙 주값(아크는 상한 명확한 값 전용: gauge.arc) ──
-  // [2026-08-12] 상단 배치를 잠깐 시도했다가(피사체 미가림 목적) 몸가짐운동센터
-  // 요청으로 다시 정중앙 배치로 되돌렸다 — 겹침보다 "주지표를 크고 눈에 띄게"
-  // 쪽을 택한 의도적 선택. 접지시간·진행 등 보조 스탯은 그대로 코너에 남는다.
   if (gauge && gauge.label !== undefined) {
     const cx = width / 2;
     const gaugeR = Math.round(Math.min(width, height) * 0.20);
     const cy = Math.round(height * 0.5);
     const lw = Math.max(8, Math.round(gaugeR * 0.16));
-    const start = Math.PI * 0.75;         // 좌하 (135°)
-    const end = Math.PI * 2.25;           // 우하 (405° = 45°), 총 270°
+    const start = Math.PI * 0.75;
+    const end = Math.PI * 2.25;
     const gv = gauge.value;
     const min = Number.isFinite(gauge.min) ? gauge.min : 0;
     const max = Number.isFinite(gauge.max) ? gauge.max : 1;
-    // null/undefined/'' 는 '값 없음' → '--' (Number(null)===0 유출 방지).
     const hasV = gv != null && gv !== '' && Number.isFinite(Number(gv));
     const v = hasV ? Number(gv) : NaN;
-    // 아크는 상한이 생리학적으로 명확한 값(속도·RSI)에만. 무게·각도 등은 숫자만.
     const useArc = gauge.arc === true;
     const frac = useArc && hasV && max > min ? Math.max(0, Math.min(1, (v - min) / (max - min))) : 0;
 
@@ -252,7 +247,6 @@ export function drawGaugeHud(ctx, width, height, opts = {}) {
         ctx.stroke();
       }
     }
-    // 중앙 값 + 라벨/단위 (아크 유무와 무관하게 동일한 크기·위치)
     const valFs = useArc ? gaugeR * 0.62 : gaugeR * 0.78;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
@@ -275,13 +269,6 @@ export function drawGaugeHud(ctx, width, height, opts = {}) {
   ctx.restore();
 }
 
-// ════════════════════════════════════════════════════════════════════════
-//  바벨 리프팅 데이터-only HUD (장식 없음 · 측정 필수값만 영상에 번인)
-//   · drawRomHud 와 동일 철학: 반투명 박스 + 실제 측정 수치만.
-//   · 코너 프레임/스캔라인/가짜 게이지/링 등 SF 장식은 일절 그리지 않는다.
-//   · 표시 항목: 수직이동(cm) · 평균속도(m/s) · 경과시간(s). 값이 없으면 '--'.
-//   (바벨 궤적선은 이 함수가 아니라 호출부에서 실제 추적 경로를 그린다.)
-// ════════════════════════════════════════════════════════════════════════
 export function drawLiftingDataHud(ctx, width, height, data = {}) {
   const {
     romCm = null, meanVelocity = null, elapsedSec = null,
@@ -289,11 +276,10 @@ export function drawLiftingDataHud(ctx, width, height, data = {}) {
   } = data;
   const r1 = (x) => (Number.isFinite(x) ? Math.round(x * 10) / 10 : null);
 
-  // 렙별 속도 카드(하단) — RSI 점프별 기록처럼 녹화 영상에도 렙마다 남긴다.
   const cards = (Array.isArray(repList) && repList.length > 0)
     ? repList.slice(-6).map((r, i, arr) => ({
         top: `#${r.repNo}`,
-        main: r.meanVelocity != null ? String(r.meanVelocity) : '\u2013',
+        main: r.meanVelocity != null ? String(r.meanVelocity) : '–',
         sub: (r.lossPct != null && r.lossPct > 0) ? `-${r.lossPct}%`
           : (r.romCm != null ? `${r.romCm}cm` : 'm/s'),
         latest: i === arr.length - 1,
@@ -313,7 +299,6 @@ export function drawLiftingDataHud(ctx, width, height, data = {}) {
   });
 }
 
-// 둥근 사각형 경로(HUD 카드용).
 function roundRectPath(ctx, x, y, w, h, r) {
   const rr = Math.min(r, w / 2, h / 2);
   ctx.beginPath();
@@ -325,10 +310,6 @@ function roundRectPath(ctx, x, y, w, h, r) {
   ctx.closePath();
 }
 
-/**
- * 바벨 궤적선을 녹화 캔버스에 그린다(실제 추적 경로 · 장식 아님).
- * @param {Array<{x:number,y:number}>} path 정규화(0~1) 좌표 배열
- */
 export function drawBarPathToRecord(ctx, path, width, height) {
   if (!Array.isArray(path) || path.length < 2) return;
   ctx.save();
@@ -342,5 +323,31 @@ export function drawBarPathToRecord(ctx, path, width, height) {
     i === 0 ? ctx.moveTo(X, Y) : ctx.lineTo(X, Y);
   });
   ctx.stroke();
+  ctx.restore();
+}
+
+export function drawFadingBarPath(ctx, path, width, height, nowTs, opts = {}) {
+  if (!Array.isArray(path) || path.length < 2) return;
+  const fadeMs = opts.fadeMs ?? 900;
+  const rgb = opts.rgb ?? '34,211,238';
+  const maxAlpha = opts.maxAlpha ?? 0.95;
+  const lineWidth = Math.max(4, width / (opts.minWidthDivisor ?? 160));
+  ctx.save();
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  for (let i = 1; i < path.length; i++) {
+    const p0 = path[i - 1], p1 = path[i];
+    const ts1 = p1?.ts;
+    const age = Number.isFinite(ts1) && Number.isFinite(nowTs) ? Math.max(0, nowTs - ts1) : 0;
+    if (age > fadeMs) continue;
+    const alpha = maxAlpha * (1 - age / fadeMs);
+    if (alpha <= 0.02) continue;
+    ctx.strokeStyle = `rgba(${rgb},${alpha.toFixed(3)})`;
+    ctx.lineWidth = lineWidth;
+    ctx.beginPath();
+    ctx.moveTo(p0.x * width, p0.y * height);
+    ctx.lineTo(p1.x * width, p1.y * height);
+    ctx.stroke();
+  }
   ctx.restore();
 }
