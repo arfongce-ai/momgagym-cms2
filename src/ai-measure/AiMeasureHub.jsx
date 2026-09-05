@@ -107,6 +107,7 @@ export default function AiMeasureHub() {
     const isLifting = active.id === 'lifting';
     const isStance = active.id === 'stance';
     const isSquat = active.id === 'squat';
+    const isSprint = active.id === 'sprint';
 
     // 측정 정직성: 미등록회원인데 guest id 가 아직 없으면 저장 직전 확정 발급
     // (null __mid 로 저장되어 데이터가 유실/혼합되는 것을 방지). 같은 측정 묶음은
@@ -140,7 +141,11 @@ export default function AiMeasureHub() {
         enrichedData = romPostureIntegration ? { ...data, ...romPostureIntegration } : data;
       }
 
-      const measurementKind = isPosture ? 'posture' : isRom ? 'rom' : isJump ? 'jump' : isGait ? 'gait' : '';
+      // sprint 는 실시간/업로드 모두 sprintAgility.js SprintTracker.finalize()가
+      // report.kind 에 'sprint'|'agility' 를 이미 채워 넘겨준다 — crossMeasureContext.js
+      // buildProblemFocus() 가 이 두 kind 를 그대로 분기 판정에 쓰므로 그대로 전달한다.
+      const measurementKind = isPosture ? 'posture' : isRom ? 'rom' : isJump ? 'jump' : isGait ? 'gait'
+        : isSprint ? (data?.kind === 'agility' ? 'agility' : 'sprint') : '';
       if (measurementKind) {
         const [allPostureReports, romReports, gaitReports] = await Promise.all([
           postureReports ? Promise.resolve(postureReports) : aiStore.ensurePostureReports(saveMid),
@@ -202,6 +207,14 @@ export default function AiMeasureHub() {
         await saveUnifiedCopy(saved, 'jump');
         return saved;
       }
+      // sprint(5m/10m)·agility(5-0-5) — gait_reports 컬렉션 공유(jump와 동일 패턴).
+      // SprintLiveAnalysis.jsx/SprintUploadAnalysis.jsx 둘 다 saveState UI를 자체
+      // 보유하므로(gait와 동일) alert 없이 저장된 리포트를 그대로 반환한다.
+      if (isSprint) {
+        const saved = await aiStore.addGaitReport({ ...virtualBody, ...storableData, kind: measurementKind, member: memberRef, linkedSessionId: savedSession.id });
+        await saveUnifiedCopy(saved, measurementKind);
+        return saved;
+      }
       if (isPosture) {
         const saved = await aiStore.addPostureReport({ ...virtualBody, ...storableData, kind: 'posture', member: memberRef, linkedSessionId: savedSession.id });
         await saveUnifiedCopy(saved, 'posture');
@@ -259,7 +272,7 @@ export default function AiMeasureHub() {
       }
       alert(member.isVirtual ? '미등록회원 측정이 저장되었습니다.' : '측정이 저장되었습니다.');
     } catch (e) {
-      if (isGait || isJump || isPosture || isRom) throw e; // 컴포넌트 saveState='error' 로 표시되게 전파
+      if (isGait || isJump || isPosture || isRom || isSprint) throw e; // 컴포넌트 saveState='error' 로 표시되게 전파
       alert('저장에 실패했습니다. 네트워크 확인 후 다시 시도하세요.\n' + (e?.message || ''));
     }
   };

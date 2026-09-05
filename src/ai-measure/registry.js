@@ -72,7 +72,7 @@ export const MEASURE_MENUS = [
     id: 'sprint',
     no: 6,
     title: '스프린트 & 아질리티',
-    desc: '5m/10m 스프린트, 5-0-5 방향전환 — 실시간 카메라 (업로드 모드 준비 중)',
+    desc: '5m/10m 스프린트, 5-0-5 방향전환 — 실시간 카메라·영상 업로드',
     icon: 'SPD',
     status: 'ready',
     component: lazy(() => import('./menus/SprintAnalysisHub.jsx')),
