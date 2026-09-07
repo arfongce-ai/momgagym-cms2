@@ -413,11 +413,14 @@ export const METRIC_DEFINITIONS = Object.freeze({
   // deceleration.decelTimeMs>600)와 같은 기준값으로 range를 맞춘다. avgVelocity/
   // peakVelocity/totalTime은 테스트 종류(5m/10m/505)마다 기준이 달라 range 생략 —
   // 카드에는 표시되지만 unknown 상태로 점수에는 반영하지 않는다.
+  // [SprintReportDashboard 2026-09-07] 헤드라인 카드 3개(SprintReportDashboard.jsx의
+  // summary.keyMetrics.slice(0,3))가 총 소요시간·최고속도·반응속도가 되도록 순서를
+  // 맞춘다 — 라이브/업로드 결과 화면의 ResultRow 순서와도 동일.
   sprint: [
-    { key: 'reactionTime', paths: ['reactionTimeMs'], unit: 'ms', range: { good: [0, 220], warn: [0, 300] } },
     { key: 'totalTime', paths: ['totalTimeMs'], unit: 'ms' },
-    { key: 'avgVelocity', paths: ['avgVelocityMs'], unit: 'm/s' },
     { key: 'peakVelocity', paths: ['peakVelocityMs'], unit: 'm/s' },
+    { key: 'reactionTime', paths: ['reactionTimeMs'], unit: 'ms', range: { good: [0, 220], warn: [0, 300] } },
+    { key: 'avgVelocity', paths: ['avgVelocityMs'], unit: 'm/s' },
     { key: 'decelTime', paths: ['deceleration.decelTimeMs'], unit: 'ms', range: { good: [0, 400], warn: [0, 600] } },
   ],
   rom: [

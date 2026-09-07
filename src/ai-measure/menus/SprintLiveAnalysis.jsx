@@ -11,16 +11,24 @@
 // v1 → v2에서 반영된 것(가로모드 안내, 단순화된 버튼)은 그대로 유지.
 //
 // [범위 안내 — 아직 안 넣은 것]
-//   - 영상 녹화(MediaRecorder) / 스톱워치·메트로놈 도구 서랍
+//   - 스톱워치·메트로놈 도구 서랍
 //   - 필요해지면 GaitRunningAnalysis.jsx의 해당 부분을 옮겨오면 된다.
+//
+// [영상 다시보기 2026-09-07] GaitRunningAnalysis.jsx는 포즈 오버레이를 캔버스에
+// 합성해 녹화하지만(별도 15초 녹화 창), 스프린트는 이미 "큐 → 종료"로 구간이
+// 명확해 그 구간 동안 카메라 원본 스트림(streamRef)을 MediaRecorder로 그대로
+// 녹화한다 — 캔버스 합성 없이 더 단순하게. 화면 전용(recordedBlobRef)이며
+// storagePolicy.videoStored:false 정책과 동일하게 Firestore/Storage에는 저장하지 않는다.
 
 import React, { useState, useEffect, useRef } from 'react';
 import { SprintTracker, calibrateTrack } from '../core/sprintAgility';
 import { beepTick, beepGo, primeAudio } from '../core/audioCue';
 import { loadPoseLandmarker, detectPoseFrame, isPoseReady, closePoseLandmarker } from '../core/poseBackend';
 import { openMainCameraStream, describeCameraError } from '../core/cameraSelect';
+import { pickRecorderMime } from '../core/recordSink';
 import { aiStore } from '../../demoData';
 import MeasureRecordConfirm from '../components/MeasureRecordConfirm.jsx';
+import SprintReportDashboard from './SprintReportDashboard.jsx';
 
 const TEST_TYPES = {
   sprint5: { label: '5m 스프린트', mode: 'sprint', splitDistancesM: [5], trackDistanceM: 5 },
@@ -89,6 +97,11 @@ export default function SprintLiveAnalysis({ member, onBack, onSaveToFirebase, o
   const trackerRef = useRef(null);
   const cueTimerRef = useRef(null);
   const draggingIndexRef = useRef(null);
+  // [영상 다시보기 2026-09-07] GaitRunningAnalysis.jsx의 mediaRecorderRef/chunksRef/
+  // recordedBlobRef와 동일한 역할.
+  const mediaRecorderRef = useRef(null);
+  const chunksRef = useRef([]);
+  const recordedBlobRef = useRef(null);
 
   useEffect(() => { viewRef.current = view; }, [view]);
 
@@ -242,12 +255,43 @@ export default function SprintLiveAnalysis({ member, onBack, onSaveToFirebase, o
     setCountdown(COUNTDOWN_SEC);
   };
 
+  // [영상 다시보기 2026-09-07] 큐(출발 신호) 순간부터 카메라 원본 스트림을
+  // 그대로 녹화한다. GaitRunningAnalysis.jsx처럼 캔버스에 포즈 오버레이를 합성하지
+  // 않는 이유: 스프린트는 트랙 전체가 프레임 안에 들어와야 해서 오버레이보다
+  // "원본을 다시 보며 육안으로 자세를 확인"하는 쓰임이 크다.
+  const startRecording = () => {
+    if (typeof MediaRecorder === 'undefined' || !streamRef.current) return;
+    try {
+      chunksRef.current = [];
+      const mime = pickRecorderMime();
+      const rec = new MediaRecorder(streamRef.current, mime ? { mimeType: mime } : undefined);
+      rec.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
+      rec.onstop = () => {
+        recordedBlobRef.current = chunksRef.current.length
+          ? new Blob(chunksRef.current, { type: mime || 'video/webm' })
+          : null;
+      };
+      mediaRecorderRef.current = rec;
+      rec.start();
+    } catch (e) {
+      // 녹화 실패는 측정 자체를 막지 않는다 — 다시보기 영상만 없을 뿐.
+      mediaRecorderRef.current = null;
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+      mediaRecorderRef.current.stop();
+    }
+  };
+
   useEffect(() => {
     if (view !== 'countdown') return undefined;
     if (countdown <= 0) {
       const cueTs = performance.now();
       beepGo();
       trackerRef.current?.markCue(cueTs);
+      startRecording();
       setView('running');
       return undefined;
     }
@@ -258,6 +302,7 @@ export default function SprintLiveAnalysis({ member, onBack, onSaveToFirebase, o
 
   const finishRun = () => {
     if (!trackerRef.current) return;
+    stopRecording();
     const summary = trackerRef.current.finalize();
     setReportData({
       ...summary,
@@ -317,6 +362,8 @@ export default function SprintLiveAnalysis({ member, onBack, onSaveToFirebase, o
     setSaveState('idle');
     setPreviousReport(null);
     trackerRef.current = null;
+    recordedBlobRef.current = null;
+    chunksRef.current = [];
     setView('camera');
   };
 
@@ -339,6 +386,28 @@ export default function SprintLiveAnalysis({ member, onBack, onSaveToFirebase, o
             saved={saveState === 'saved'}
             error={saveState === 'error'}
           />
+        </div>
+      </div>
+    );
+  }
+
+  // [스프린트 전용 결과리포트 대시보드 2026-09-07] SprintUploadAnalysis.jsx와
+  // 동일 — 저장 완료 후 SprintReportDashboard로 결과를 보여준다. videoBlob은
+  // 큐~종료 구간 카메라 원본 녹화본(화면 전용).
+  if (view === 'result' && reportData) {
+    return (
+      <div style={{ ...styles.root, overflowY: 'auto' }}>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '10px 16px 0' }}>
+          {onBack && <button style={styles.textBtn} onClick={onBack}>닫기</button>}
+        </div>
+        <SprintReportDashboard
+          report={reportData}
+          previousReport={previousReport}
+          videoBlob={recordedBlobRef.current}
+          member={member}
+        />
+        <div style={{ display: 'flex', justifyContent: 'center', padding: '0 16px 24px' }}>
+          <button style={styles.primaryBtn} onClick={handleRetry}>다시 측정</button>
         </div>
       </div>
     );
@@ -406,34 +475,6 @@ export default function SprintLiveAnalysis({ member, onBack, onSaveToFirebase, o
 
         {warningMsg && <div style={styles.warning}>{warningMsg}</div>}
       </div>
-
-      {view === 'result' && reportData && (
-        <div style={styles.resultPanel}>
-          <h3 style={styles.resultTitle}>{reportData.testLabel} 결과 <span style={styles.savedBadge}>✓ 저장됨</span></h3>
-          <ResultRow label="총 소요시간" value={`${(reportData.totalTimeMs / 1000).toFixed(2)}초`} />
-          <ResultRow label="최고속도" value={`${reportData.peakVelocityMs.toFixed(1)} m/s`} />
-          {Object.entries(reportData.splits || {}).map(([d, ms]) => (
-            <ResultRow key={d} label={`${d} 구간기록`} value={`${(ms / 1000).toFixed(2)}초`} />
-          ))}
-          {reportData.reactionTimeMs != null && <ResultRow label="스타트 반응속도" value={`${reportData.reactionTimeMs}ms`} />}
-          {reportData.deceleration && (
-            <ResultRow label="감속·제동" value={`${reportData.deceleration.decelTimeMs}ms / ${reportData.deceleration.decelDistanceM}m`} />
-          )}
-          {reportData.turnCount > 0 && <ResultRow label="방향전환" value={`${reportData.turnCount}회`} />}
-          {previousReport && (
-            <>
-              <p style={styles.compareTitle}>이전 대비 변화 ({reportData.testLabel})</p>
-              <DeltaRow label="총 소요시간" current={reportData.totalTimeMs} previous={previousReport.totalTimeMs} unit="초" scale={1 / 1000} decimals={2} lowerIsBetter />
-              <DeltaRow label="최고속도" current={reportData.peakVelocityMs} previous={previousReport.peakVelocityMs} unit="m/s" decimals={1} lowerIsBetter={false} />
-              <DeltaRow label="스타트 반응속도" current={reportData.reactionTimeMs} previous={previousReport.reactionTimeMs} unit="ms" decimals={0} lowerIsBetter />
-            </>
-          )}
-          <div style={styles.resultActions}>
-            <button style={styles.primaryBtn} onClick={handleRetry}>다시 측정</button>
-            {onBack && <button style={styles.textBtn} onClick={onBack}>목록</button>}
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -490,34 +531,6 @@ function DragHandle({ point, label, color, onPointerDown }) {
   );
 }
 
-function ResultRow({ label, value }) {
-  return (
-    <div style={styles.resultRow}>
-      <span style={styles.resultLabel}>{label}</span>
-      <span style={styles.resultValue}>{value}</span>
-    </div>
-  );
-}
-
-// [직전 측정 비교 2026-09-07] SprintUploadAnalysis.jsx와 동일 — scale은 단위 환산
-// (ms→초)에만 쓰고, 좋고 나쁨 판정(lowerIsBetter)은 원 단위 기준으로 한다.
-function DeltaRow({ label, current, previous, unit, scale = 1, decimals = 2, lowerIsBetter }) {
-  if (current == null || previous == null) return null;
-  const diffRaw = current - previous;
-  const diff = diffRaw * scale;
-  if (Math.abs(diffRaw) < 1e-9) return <ResultRow label={label} value="변화 없음" />;
-  const improved = lowerIsBetter ? diffRaw < 0 : diffRaw > 0;
-  const sign = diff > 0 ? '+' : '';
-  return (
-    <div style={styles.resultRow}>
-      <span style={styles.resultLabel}>{label}</span>
-      <span style={{ ...styles.resultValue, color: improved ? '#4ade80' : '#f87171' }}>
-        {sign}{diff.toFixed(decimals)}{unit} {improved ? '▼' : '▲'}
-      </span>
-    </div>
-  );
-}
-
 const styles = {
   root: { display: 'flex', flexDirection: 'column', height: '100%', background: '#0b0f14', color: '#fff' },
   videoWrap: { position: 'relative', flex: 1, overflow: 'hidden' },
@@ -540,12 +553,4 @@ const styles = {
   hudSub: { fontSize: 13, opacity: 0.75, marginTop: 2 },
   stopBtn: { marginTop: 10, padding: '8px 18px', borderRadius: 16, background: '#ef4444', color: '#fff', border: 'none', fontSize: 13, fontWeight: 600 },
   warning: { position: 'absolute', top: 10, left: 10, right: 10, padding: 8, background: 'rgba(0,0,0,0.65)', borderRadius: 8, fontSize: 12, textAlign: 'center' },
-  resultPanel: { padding: 18, background: '#111827' },
-  resultTitle: { marginBottom: 10, fontSize: 16 },
-  savedBadge: { fontSize: 11, fontWeight: 800, color: '#4ade80', marginLeft: 8, verticalAlign: 'middle' },
-  resultRow: { display: 'flex', justifyContent: 'space-between', padding: '7px 0', borderBottom: '1px solid rgba(255,255,255,0.07)', fontSize: 13.5 },
-  resultLabel: { opacity: 0.65 },
-  resultValue: { fontWeight: 600 },
-  compareTitle: { fontSize: 11.5, fontWeight: 800, color: 'rgba(255,255,255,0.5)', marginTop: 14, marginBottom: 2, textTransform: 'uppercase', letterSpacing: 0.3 },
-  resultActions: { display: 'flex', gap: 8, marginTop: 16 },
 };

@@ -11,10 +11,12 @@
 // [기록·확인 단계 2026-09-07] 마찬가지로 두 컴포넌트 안에 각각 GaitAnalysisHub.jsx의
 // view==='record' 화면(MeasureRecordConfirm)과 동일한 패턴을 이식 — 측정 직후
 // 바로 저장하지 않고 메모를 남기고 확인해야 실제 저장된다.
-//
-// GaitAnalysisHub.jsx와 달리 아직 없는 것: 결과리포트 대시보드(GaitReportDashboard
-// 상당) — 다른 탭과 동일한 리포트 대시보드가 필요해지면 GaitAnalysisHub.jsx를
-// 참고해 이 파일에 추가한다.
+// [결과리포트 대시보드·영상 다시보기 2026-09-07] SprintReportDashboard.jsx가
+// GaitReportDashboard.jsx 상당의 전용 대시보드다(같은 컴포넌트 조합: 문제 포커스·
+// 모미 자동노트/대화·전후 변화·영상 비교·트레이너 코멘트). 라이브 모드는 큐~종료
+// 구간을 MediaRecorder로 녹화(GaitRunningAnalysis.jsx 참고, 캔버스 합성 없이 원본
+// 그대로), 업로드 모드는 업로드된 원본 파일을 그대로 videoBlob으로 넘긴다 — 둘 다
+// 화면 전용(Firestore/Storage 미저장, storagePolicy.videoStored:false와 동일 정책).
 
 import React, { useState } from 'react';
 import SprintLiveAnalysis from './SprintLiveAnalysis';

@@ -17,6 +17,7 @@ import { SprintTracker, calibrateTrack } from '../core/sprintAgility';
 import { analyzeUploadedVideo, CAPTURE_PRESETS } from '../core/videoAnalyzer';
 import { aiStore } from '../../demoData';
 import MeasureRecordConfirm from '../components/MeasureRecordConfirm.jsx';
+import SprintReportDashboard from './SprintReportDashboard.jsx';
 
 const TEST_TYPES = {
   sprint5: { label: '5m 스프린트', mode: 'sprint', splitDistancesM: [5], trackDistanceM: 5 },
@@ -52,6 +53,11 @@ export default function SprintUploadAnalysis({ member, onBack, onSaveToFirebase,
   const fileUrlRef = useRef(null);
   const abortRef = useRef(null);
   const draggingIndexRef = useRef(null);
+  // [영상 다시보기 2026-09-07] 업로드 모드는 이미 영상 파일이 있으므로 별도
+  // 녹화(MediaRecorder) 없이 이 File을 그대로 SprintReportDashboard의 videoBlob으로
+  // 넘긴다(GaitRunningAnalysis.jsx의 recordedBlobRef와 동일하게 화면 전용 —
+  // Firestore/Storage에는 저장하지 않는다, storagePolicy.videoStored:false 정책).
+  const uploadedFileRef = useRef(null);
 
   const handleFile = (e) => {
     const file = e.target.files?.[0];
@@ -63,6 +69,7 @@ export default function SprintUploadAnalysis({ member, onBack, onSaveToFirebase,
     setErrorMsg('');
     setFileName(file.name);
     setCalibPoints(DEFAULT_CALIB_POINTS);
+    uploadedFileRef.current = file;
     if (fileUrlRef.current) URL.revokeObjectURL(fileUrlRef.current);
     const url = URL.createObjectURL(file);
     fileUrlRef.current = url;
@@ -239,6 +246,29 @@ export default function SprintUploadAnalysis({ member, onBack, onSaveToFirebase,
     );
   }
 
+  // [스프린트 전용 결과리포트 대시보드 2026-09-07] GaitAnalysisHub.jsx의
+  // view==='report' 화면과 동일한 위치·역할 — 저장 완료 후 GaitReportDashboard
+  // 상당의 SprintReportDashboard로 결과를 보여준다. videoBlob은 업로드한 원본
+  // 파일 그대로(화면 전용, Firestore/Storage에는 저장하지 않음 — Gait와 동일 정책).
+  if (phase === 'done' && reportData) {
+    return (
+      <div style={{ ...styles.root, overflowY: 'auto' }}>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '10px 16px 0' }}>
+          <button style={styles.textBtn} onClick={onBack}>닫기</button>
+        </div>
+        <SprintReportDashboard
+          report={reportData}
+          previousReport={previousReport}
+          videoBlob={uploadedFileRef.current}
+          member={member}
+        />
+        <div style={{ display: 'flex', justifyContent: 'center', padding: '0 16px 24px' }}>
+          <button style={styles.primaryBtn} onClick={handleRetry}>다시 측정</button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={styles.root}>
       <div style={styles.header}>
@@ -342,33 +372,6 @@ export default function SprintUploadAnalysis({ member, onBack, onSaveToFirebase,
           </div>
         )}
 
-        {phase === 'done' && reportData && (
-          <div style={styles.resultCol}>
-            <h3 style={styles.resultTitle}>{reportData.testLabel} 결과 <span style={styles.savedBadge}>✓ 저장됨</span></h3>
-            <ResultRow label="총 소요시간" value={`${(reportData.totalTimeMs / 1000).toFixed(2)}초`} />
-            <ResultRow label="최고속도" value={`${reportData.peakVelocityMs.toFixed(1)} m/s`} />
-            {Object.entries(reportData.splits || {}).map(([d, ms]) => (
-              <ResultRow key={d} label={`${d} 구간기록`} value={`${(ms / 1000).toFixed(2)}초`} />
-            ))}
-            {reportData.reactionTimeMs != null && <ResultRow label="스타트 반응속도" value={`${reportData.reactionTimeMs}ms`} />}
-            {reportData.deceleration && (
-              <ResultRow label="감속·제동" value={`${reportData.deceleration.decelTimeMs}ms / ${reportData.deceleration.decelDistanceM}m`} />
-            )}
-            {reportData.turnCount > 0 && <ResultRow label="방향전환" value={`${reportData.turnCount}회`} />}
-            {previousReport && (
-              <>
-                <p style={styles.compareTitle}>이전 대비 변화 ({cfg.label})</p>
-                <DeltaRow label="총 소요시간" current={reportData.totalTimeMs} previous={previousReport.totalTimeMs} unit="초" scale={1 / 1000} decimals={2} lowerIsBetter />
-                <DeltaRow label="최고속도" current={reportData.peakVelocityMs} previous={previousReport.peakVelocityMs} unit="m/s" decimals={1} lowerIsBetter={false} />
-                <DeltaRow label="스타트 반응속도" current={reportData.reactionTimeMs} previous={previousReport.reactionTimeMs} unit="ms" decimals={0} lowerIsBetter />
-              </>
-            )}
-            <div style={styles.resultActions}>
-              <button style={styles.primaryBtn} onClick={handleRetry}>다시 측정</button>
-            </div>
-          </div>
-        )}
-
         {(phase === 'error' || errorMsg) && phase !== 'analyzing' && (
           <div style={styles.errorCol}>
             <p style={styles.errorText}>{errorMsg}</p>
@@ -407,34 +410,6 @@ function DragHandle({ point, label, color, onPointerDown }) {
   );
 }
 
-function ResultRow({ label, value }) {
-  return (
-    <div style={styles.resultRow}>
-      <span style={styles.resultLabel}>{label}</span>
-      <span style={styles.resultValue}>{value}</span>
-    </div>
-  );
-}
-
-// [직전 측정 비교 2026-09-07] scale은 ms→초 같은 단위 환산에만 쓰고, 값 자체의
-// 좋고 나쁨 판정(lowerIsBetter)은 원 단위(ms/m/s) 기준으로 한다.
-function DeltaRow({ label, current, previous, unit, scale = 1, decimals = 2, lowerIsBetter }) {
-  if (current == null || previous == null) return null;
-  const diffRaw = current - previous;
-  const diff = diffRaw * scale;
-  if (Math.abs(diffRaw) < 1e-9) return <ResultRow label={label} value="변화 없음" />;
-  const improved = lowerIsBetter ? diffRaw < 0 : diffRaw > 0;
-  const sign = diff > 0 ? '+' : '';
-  return (
-    <div style={styles.resultRow}>
-      <span style={styles.resultLabel}>{label}</span>
-      <span style={{ ...styles.resultValue, color: improved ? '#4ade80' : '#f87171' }}>
-        {sign}{diff.toFixed(decimals)}{unit} {improved ? '▼' : '▲'}
-      </span>
-    </div>
-  );
-}
-
 const styles = {
   root: { display: 'flex', flexDirection: 'column', height: '100%', background: '#0b0f14', color: '#fff' },
   header: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', borderBottom: '1px solid rgba(255,255,255,0.08)' },
@@ -461,14 +436,6 @@ const styles = {
   progressTrack: { width: '100%', height: 10, borderRadius: 999, background: 'rgba(255,255,255,0.08)', overflow: 'hidden' },
   progressFill: { height: '100%', background: '#f59e0b', transition: 'width 150ms' },
   progressText: { fontSize: 13, fontWeight: 700, color: '#fbbf24', textAlign: 'center' },
-  resultCol: { width: '100%', maxWidth: 420, display: 'flex', flexDirection: 'column', gap: 2 },
-  resultTitle: { fontSize: 16, fontWeight: 900, marginBottom: 8 },
-  savedBadge: { fontSize: 11, fontWeight: 800, color: '#4ade80', marginLeft: 8, verticalAlign: 'middle' },
-  resultRow: { display: 'flex', justifyContent: 'space-between', padding: '7px 0', borderBottom: '1px solid rgba(255,255,255,0.07)', fontSize: 13.5 },
-  resultLabel: { opacity: 0.65 },
-  resultValue: { fontWeight: 700 },
-  compareTitle: { fontSize: 11.5, fontWeight: 800, color: 'rgba(255,255,255,0.5)', marginTop: 14, marginBottom: 2, textTransform: 'uppercase', letterSpacing: 0.3 },
-  resultActions: { display: 'flex', gap: 8, marginTop: 16, justifyContent: 'center' },
   errorCol: { display: 'flex', flexDirection: 'column', gap: 10, alignItems: 'center' },
   errorText: { fontSize: 13, color: '#f87171', textAlign: 'center', maxWidth: 420 },
 };
