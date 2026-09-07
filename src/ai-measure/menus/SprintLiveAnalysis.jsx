@@ -500,15 +500,60 @@ export default function SprintLiveAnalysis({ member, onBack, onSaveToFirebase, o
   );
 }
 
+// [트랙 가이드 비주얼 리뉴얼 2026-09-07] Metric Sprint 앱류 AR 트랙 오버레이
+// 느낌으로 정리 — 좁아지는 원근 코리더 + 미터 눈금 + 필 배지 라벨. 좌표 로직
+// (calibrateTrack에 넘기는 handle 위치, viewBox 0~100 기준)은 손대지 않았고
+// 순수 표현만 바꿨다. 두 컴포넌트가 공유하는 시각 톤: 앰버(#f97316)를 트랙의
+// 주 색으로, 0m 지점은 시안(#22d3ee)으로 구분.
+const TRACK_AMBER = '#f97316';
+const TRACK_CYAN = '#22d3ee';
+
 // camera 화면용 — 아직 조작 전, 위치만 대략 보여주는 정적(비반응) 가이드.
 function StaticTrackGuide({ trackDistanceM, mode }) {
   const label = mode === 'agility' ? '왕복' : `${trackDistanceM}m`;
+  const ticks = mode === 'agility' ? [0, 1] : Array.from({ length: trackDistanceM + 1 }, (_, i) => i / trackDistanceM);
+  // 사다리꼴 코너: 하단(가까운 쪽) 넓게, 상단(먼 쪽) 좁게 — t(0~1)로 좌우 x, y를 보간.
+  const laneAt = (t) => ({ xL: 15 + (35 - 15) * t, xR: 85 - (85 - 65) * t, y: 82 - (82 - 45) * t });
+  const near = laneAt(0);
+  const far = laneAt(1);
   return (
-    <svg viewBox="0 0 100 100" style={styles.guideOverlay} preserveAspectRatio="none">
-      <polygon points="15,82 85,82 65,45 35,45" fill="rgba(163,230,53,0.06)" stroke="rgba(163,230,53,0.4)" strokeWidth="0.6" strokeDasharray="2,2" />
-      <text x="15" y="78" fontSize="4" fill="rgba(255,255,255,0.6)" textAnchor="middle">0m</text>
-      <text x="85" y="78" fontSize="4" fill="rgba(255,255,255,0.6)" textAnchor="middle">{label}</text>
-    </svg>
+    <>
+      <svg viewBox="0 0 100 100" style={styles.guideOverlay} preserveAspectRatio="none">
+        <defs>
+          <linearGradient id="trackFade" x1="0" y1="1" x2="0" y2="0">
+            <stop offset="0%" stopColor="rgba(249,115,22,0.14)" />
+            <stop offset="100%" stopColor="rgba(249,115,22,0.02)" />
+          </linearGradient>
+        </defs>
+        <polygon
+          points={`${near.xL},${near.y} ${near.xR},${near.y} ${far.xR},${far.y} ${far.xL},${far.y}`}
+          fill="url(#trackFade)" stroke="rgba(249,115,22,0.55)" strokeWidth="0.5"
+        />
+        {/* 중앙 러닝라인 */}
+        <line x1={50} y1={near.y} x2={50} y2={far.y} stroke="rgba(255,255,255,0.35)" strokeWidth="0.35" strokeDasharray="1.6,1.6" />
+        {/* 미터 눈금 */}
+        {ticks.map((t, i) => {
+          const p = laneAt(t);
+          return <line key={i} x1={p.xL} y1={p.y} x2={p.xR} y2={p.y} stroke="rgba(249,115,22,0.5)" strokeWidth="0.4" />;
+        })}
+      </svg>
+      <TrackBadge x={(near.xL + near.xR) / 2} y={near.y} text="0m" color={TRACK_CYAN} />
+      <TrackBadge x={(far.xL + far.xR) / 2} y={far.y} text={label} color={TRACK_AMBER} />
+    </>
+  );
+}
+
+// 거리 라벨용 필 배지 — SVG <text>보다 폰트 렌더링이 또렷해 HTML로 얹는다.
+function TrackBadge({ x, y, text, color }) {
+  return (
+    <div style={{
+      position: 'absolute', left: `${x}%`, top: `${y}%`, transform: 'translate(-50%, 6px)',
+      fontSize: 12, fontWeight: 800, color: '#fff', background: 'rgba(10,12,16,0.72)',
+      padding: '3px 10px', borderRadius: 10, border: `1px solid ${color}66`,
+      fontVariantNumeric: 'tabular-nums', pointerEvents: 'none', whiteSpace: 'nowrap',
+    }}>
+      {text}
+    </div>
   );
 }
 
@@ -520,10 +565,19 @@ function DraggableTrackGuide({ points, trackDistanceM, mode, onHandleDown }) {
   return (
     <>
       <svg viewBox="0 0 100 100" style={styles.guideOverlay} preserveAspectRatio="none">
-        <line x1={a.x * 100} y1={a.y * 100} x2={b.x * 100} y2={b.y * 100} stroke="#a3e635" strokeWidth="0.8" strokeDasharray="2,2" />
+        <defs>
+          <linearGradient id="calibLine" x1={a.x * 100} y1={a.y * 100} x2={b.x * 100} y2={b.y * 100} gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stopColor={TRACK_CYAN} />
+            <stop offset="100%" stopColor={TRACK_AMBER} />
+          </linearGradient>
+        </defs>
+        <line x1={a.x * 100} y1={a.y * 100} x2={b.x * 100} y2={b.y * 100} stroke="url(#calibLine)" strokeWidth="0.9" strokeLinecap="round" opacity="0.9" />
+        {[0.25, 0.5, 0.75].map((t) => (
+          <circle key={t} cx={a.x * 100 + (b.x - a.x) * 100 * t} cy={a.y * 100 + (b.y - a.y) * 100 * t} r="0.6" fill="rgba(255,255,255,0.7)" />
+        ))}
       </svg>
-      <DragHandle point={a} label="0m" color="#22d3ee" onPointerDown={onHandleDown(0)} />
-      <DragHandle point={b} label={label} color="#f97316" onPointerDown={onHandleDown(1)} />
+      <DragHandle point={a} label="0m" color={TRACK_CYAN} onPointerDown={onHandleDown(0)} />
+      <DragHandle point={b} label={label} color={TRACK_AMBER} onPointerDown={onHandleDown(1)} />
     </>
   );
 }
@@ -544,13 +598,26 @@ function DragHandle({ point, label, color, onPointerDown }) {
         cursor: 'grab',
       }}
     >
-      <div style={{ width: 26, height: 26, borderRadius: '50%', background: color, border: '3px solid #fff', boxShadow: '0 0 0 4px rgba(0,0,0,0.25)' }} />
-      <span style={{ marginTop: 4, fontSize: 12, fontWeight: 700, color: '#fff', background: 'rgba(0,0,0,0.55)', padding: '2px 6px', borderRadius: 8 }}>
+      {/* 이중 링 — 바깥은 은은한 글로우, 안쪽은 실제 손잡이 */}
+      <div style={{ position: 'relative', width: 40, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', border: `1.5px solid ${color}`, opacity: 0.4 }} />
+        <div style={{ width: 22, height: 22, borderRadius: '50%', background: color, border: '3px solid #fff', boxShadow: `0 2px 10px ${color}99` }} />
+      </div>
+      <span style={{
+        marginTop: 2, fontSize: 12, fontWeight: 800, letterSpacing: 0.2, color: '#fff',
+        background: 'rgba(10,12,16,0.72)', padding: '3px 9px', borderRadius: 10,
+        border: `1px solid ${color}55`, fontVariantNumeric: 'tabular-nums',
+      }}>
         {label}
       </span>
     </div>
   );
 }
+
+// [비주얼 리뉴얼 2026-09-07] Metric Sprint류 프로 카메라 앱 톤(글래스 패널 +
+// 앰버 액센트 + 타이트한 타이포)으로 정리. 레이아웃 위치·클릭 핸들러는 그대로 두고
+// 색·굵기·블러·라운딩만 다듬었다.
+const glass = { background: 'rgba(10,12,16,0.55)', backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)' };
 
 const styles = {
   root: { display: 'flex', flexDirection: 'column', height: '100%', background: '#0b0f14', color: '#fff' },
@@ -558,20 +625,45 @@ const styles = {
   video: { width: '100%', height: '100%', objectFit: 'cover' },
   overlay: { position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' },
   guideOverlay: { position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' },
-  rotateBanner: { position: 'absolute', top: 10, left: 10, right: 10, textAlign: 'center', background: 'rgba(0,0,0,0.65)', borderRadius: 10, padding: '8px 10px', fontSize: 12.5 },
-  centerPanel: { position: 'absolute', left: 0, right: 0, bottom: 18, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 },
-  testPicker: { display: 'flex', gap: 6 },
-  testBtn: { padding: '6px 12px', borderRadius: 16, border: '1px solid rgba(255,255,255,0.2)', background: 'rgba(0,0,0,0.35)', color: 'rgba(255,255,255,0.8)', fontSize: 12.5 },
-  testBtnActive: { background: '#fff', color: '#0b0f14', borderColor: '#fff', fontWeight: 600 },
-  primaryBtn: { padding: '9px 20px', borderRadius: 18, background: '#22d3ee', color: '#0b0f14', fontWeight: 600, fontSize: 13.5, border: 'none' },
-  textBtn: { padding: '9px 16px', borderRadius: 18, background: 'transparent', color: 'rgba(255,255,255,0.75)', border: 'none', fontSize: 13 },
-  hintBar: { position: 'absolute', left: 0, right: 0, bottom: 18, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 },
-  hintText: { fontSize: 13, background: 'rgba(0,0,0,0.5)', padding: '6px 12px', borderRadius: 14, textAlign: 'center' },
+  rotateBanner: {
+    position: 'absolute', top: 10, left: 10, right: 10, textAlign: 'center', ...glass,
+    borderRadius: 14, padding: '9px 12px', fontSize: 12.5, fontWeight: 600,
+    border: '1px solid rgba(255,255,255,0.1)', boxShadow: '0 4px 16px rgba(0,0,0,0.35)',
+  },
+  centerPanel: { position: 'absolute', left: 0, right: 0, bottom: 18, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 },
+  testPicker: { display: 'flex', gap: 6, padding: 4, borderRadius: 20, ...glass, border: '1px solid rgba(255,255,255,0.08)' },
+  testBtn: { padding: '7px 14px', borderRadius: 16, border: 'none', background: 'transparent', color: 'rgba(255,255,255,0.7)', fontSize: 12.5, fontWeight: 600, letterSpacing: 0.1 },
+  testBtnActive: { background: TRACK_AMBER, color: '#0b0f14', fontWeight: 800, boxShadow: '0 2px 10px rgba(249,115,22,0.5)' },
+  primaryBtn: {
+    padding: '11px 26px', borderRadius: 22, background: `linear-gradient(135deg, ${TRACK_AMBER}, #fb923c)`,
+    color: '#0b0f14', fontWeight: 800, fontSize: 14, border: 'none', letterSpacing: 0.2,
+    boxShadow: '0 6px 18px rgba(249,115,22,0.4)',
+  },
+  textBtn: { padding: '9px 16px', borderRadius: 18, background: 'transparent', color: 'rgba(255,255,255,0.75)', border: 'none', fontSize: 13, fontWeight: 600 },
+  hintBar: { position: 'absolute', left: 0, right: 0, bottom: 18, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 },
+  hintText: {
+    fontSize: 12.5, fontWeight: 600, ...glass, padding: '7px 14px', borderRadius: 14, textAlign: 'center',
+    border: '1px solid rgba(255,255,255,0.1)',
+  },
   calibConfirmRow: { display: 'flex', gap: 8 },
-  countdownOverlay: { position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 72, fontWeight: 700, color: '#22d3ee' },
-  hud: { position: 'absolute', top: 14, left: 0, right: 0, textAlign: 'center' },
-  hudMain: { fontSize: 32, fontWeight: 700 },
-  hudSub: { fontSize: 13, opacity: 0.75, marginTop: 2 },
-  stopBtn: { marginTop: 10, padding: '8px 18px', borderRadius: 16, background: '#ef4444', color: '#fff', border: 'none', fontSize: 13, fontWeight: 600 },
-  warning: { position: 'absolute', top: 10, left: 10, right: 10, padding: 8, background: 'rgba(0,0,0,0.65)', borderRadius: 8, fontSize: 12, textAlign: 'center' },
+  countdownOverlay: {
+    position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
+    fontSize: 88, fontWeight: 900, color: '#fff', fontVariantNumeric: 'tabular-nums',
+    textShadow: `0 0 40px ${TRACK_AMBER}, 0 4px 24px rgba(0,0,0,0.6)`,
+  },
+  hud: {
+    position: 'absolute', top: 14, left: '50%', transform: 'translateX(-50%)', textAlign: 'center',
+    ...glass, borderRadius: 20, padding: '10px 24px', border: '1px solid rgba(255,255,255,0.1)',
+    boxShadow: '0 6px 20px rgba(0,0,0,0.4)',
+  },
+  hudMain: { fontSize: 32, fontWeight: 900, fontVariantNumeric: 'tabular-nums', color: TRACK_AMBER },
+  hudSub: { fontSize: 12.5, opacity: 0.8, marginTop: 2, fontWeight: 600, fontVariantNumeric: 'tabular-nums' },
+  stopBtn: {
+    marginTop: 10, padding: '8px 22px', borderRadius: 16, background: '#ef4444', color: '#fff',
+    border: 'none', fontSize: 13, fontWeight: 800, boxShadow: '0 4px 14px rgba(239,68,68,0.45)',
+  },
+  warning: {
+    position: 'absolute', top: 10, left: 10, right: 10, padding: '8px 12px', ...glass, borderRadius: 12,
+    fontSize: 12, fontWeight: 600, textAlign: 'center', border: '1px solid rgba(255,255,255,0.1)',
+  },
 };
