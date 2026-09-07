@@ -78,6 +78,12 @@ export const MEASURE_MENUS = [
     icon: 'SPD',
     status: 'ready',
     component: lazy(() => import('./menus/SprintAnalysisHub.jsx')),
+    // [가로모드 메뉴 2026-09-07] 트랙 전체가 보여야 하는 필드 측정이라 세로가
+    // 아니라 가로가 기준 화면이다. AiMeasureHub.jsx는 이 필드를 보고 해당 메뉴가
+    // 열려있는 동안만 전역 세로고정(useLockPortrait)을 끈다 — 다른 측정을 하드코딩
+    // id 목록으로 예외처리하지 않고, 앞으로 가로가 필요한 측정이 추가되면 여기에
+    // orientation: 'landscape' 한 줄만 추가하면 되도록 데이터 기반으로 뒀다.
+    orientation: 'landscape',
   },
   {
     id: 'lifting',

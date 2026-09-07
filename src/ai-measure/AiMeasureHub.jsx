@@ -280,12 +280,14 @@ export default function AiMeasureHub() {
   // ── AI 측정·분석 사용 중 화면 자동 회전 방지(세로 고정) ──
   //  네이티브 잠금이 되면 그대로 세로 고정. 안 되는 브라우저에서 가로가 되면
   //  isPortraitBlocked=true → 아래에서 "세로로 돌려주세요" 안내를 덮는다.
-  // [스프린트 가로모드 예외 2026-09-07] 스프린트(필드용)는 트랙 전체를 담으려면
-  // 가로가 맞다 — 세로 고정 훅이 sprint 메뉴에서까지 활성화되면 SprintLiveAnalysis.jsx
-  // 자체의 "가로로 돌려주세요" 안내와 정반대로 충돌해(자동회전 꺼진 기기에서 세로
-  // 고정 오버레이가 덮어써버림) 가로 화면 자체를 못 쓰게 된다. sprint 메뉴가 열려있는
-  // 동안은 이 훅을 비활성화한다.
-  const isPortraitBlocked = useLockPortrait(active?.id !== 'sprint');
+  // [가로모드 메뉴 예외 2026-09-07] registry.js에 orientation:'landscape'로 표시된
+  // 메뉴(현재 스프린트)가 열려있는 동안은 전역 세로고정을 끈다 — 트랙 전체를 담으려면
+  // 가로가 맞고, 세로 고정 훅이 켜진 채로는 SprintLiveAnalysis.jsx 자체의 "가로로
+  // 돌려주세요" 안내와 정반대로 충돌해(자동회전 꺼진 기기에서 세로고정 오버레이가
+  // 덮어써버림) 가로 화면을 못 쓰게 된다. id를 하드코딩하지 않고 registry 필드를
+  // 보는 이유는 앞으로 가로가 필요한 측정이 늘어도 이 줄을 안 고치기 위해서다.
+  // 나머지(보행/점프/자세/ROM 등)는 원래대로 세로 기준 레이아웃이라 계속 세로 고정.
+  const isPortraitBlocked = useLockPortrait(active?.orientation !== 'landscape');
 
   // ── 폰(브라우저) 뒤로가기 연동 ──
   // 측정 메뉴가 열려 있으면(active) 폰 뒤로가기 = 허브(메뉴 목록)로 복귀.
