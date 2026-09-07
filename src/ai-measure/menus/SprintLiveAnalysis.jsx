@@ -42,19 +42,40 @@ const COUNTDOWN_SEC = 3;
 const DEFAULT_CALIB_POINTS = [{ x: 0.18, y: 0.82 }, { x: 0.82, y: 0.82 }];
 
 function useIsLandscape() {
+  // [가로모드 감지 2026-09-07 수정] innerWidth/innerHeight 실측을 1순위로 삼는다.
+  // matchMedia('orientation: landscape')만 쓰면 일부 안드로이드 Chrome/WebView에서
+  // orientationchange 이벤트가 실제 리사이즈보다 먼저 발생해 치수가 갱신되기 전
+  // 값을 읽는 경우가 있어, 이벤트 이후 살짝 지연(150ms)해서 한 번 더 재확인한다.
+  // 그래도 안 바뀐다면 기기 자체의 "자동 회전" 잠금이 원인일 가능성이 크다
+  // (앱 코드가 아니라 OS 설정 — 빠른설정에서 자동회전 켜져 있는지 확인 필요).
   const getIsLandscape = () => {
     if (typeof window === 'undefined') return true;
+    if (typeof window.innerWidth === 'number' && typeof window.innerHeight === 'number' && window.innerHeight > 0) {
+      return window.innerWidth > window.innerHeight;
+    }
     if (window.matchMedia) return window.matchMedia('(orientation: landscape)').matches;
-    return window.innerWidth > window.innerHeight;
+    return true;
   };
   const [isLandscape, setIsLandscape] = useState(getIsLandscape);
   useEffect(() => {
-    const onChange = () => setIsLandscape(getIsLandscape());
+    let retryTimer = null;
+    const onChange = () => {
+      setIsLandscape(getIsLandscape());
+      clearTimeout(retryTimer);
+      retryTimer = setTimeout(() => setIsLandscape(getIsLandscape()), 150);
+    };
     window.addEventListener('resize', onChange);
     window.addEventListener('orientationchange', onChange);
+    if (window.screen && window.screen.orientation) {
+      window.screen.orientation.addEventListener('change', onChange);
+    }
     return () => {
+      clearTimeout(retryTimer);
       window.removeEventListener('resize', onChange);
       window.removeEventListener('orientationchange', onChange);
+      if (window.screen && window.screen.orientation) {
+        window.screen.orientation.removeEventListener('change', onChange);
+      }
     };
   }, []);
   return isLandscape;
