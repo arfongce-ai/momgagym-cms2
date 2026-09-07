@@ -16,6 +16,7 @@ import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { SprintTracker, calibrateTrack } from '../core/sprintAgility';
 import { analyzeUploadedVideo, CAPTURE_PRESETS } from '../core/videoAnalyzer';
 import { aiStore } from '../../demoData';
+import MeasureRecordConfirm from '../components/MeasureRecordConfirm.jsx';
 
 const TEST_TYPES = {
   sprint5: { label: '5m 스프린트', mode: 'sprint', splitDistancesM: [5], trackDistanceM: 5 },
@@ -30,7 +31,8 @@ export default function SprintUploadAnalysis({ member, onBack, onSaveToFirebase,
   const saveToFirebase = onSaveToFirebase || onSave;
 
   // idle(파일 선택) → ready(재생가능, 프레임 고르기) → calibrate(바닥 기준선) →
-  // analyzing → done(결과) | error
+  // analyzing → record(기록·확인 — MeasureRecordConfirm, 다른 탭과 동일 패턴,
+  // 2026-09-07 추가) → done(저장된 결과) | error
   const [phase, setPhase] = useState('idle');
   const [testKey, setTestKey] = useState('sprint10');
   const [capture, setCapture] = useState('normal');
@@ -144,7 +146,7 @@ export default function SprintUploadAnalysis({ member, onBack, onSaveToFirebase,
       };
       setReportData(data);
       setSaveState('idle');
-      setPhase('done');
+      setPhase('record');
     } catch (e) {
       setErrorMsg(e?.message || '분석 중 오류가 발생했습니다.');
       setPhase('error');
@@ -155,16 +157,23 @@ export default function SprintUploadAnalysis({ member, onBack, onSaveToFirebase,
 
   const cancelAnalysis = () => { abortRef.current?.abort(); };
 
-  const handleSave = async () => {
+  // [기록·확인 단계 2026-09-07] MeasureRecordConfirm의 onConfirm으로 위임 — 다른
+  // 탭(Gait/ROM/Posture 등)과 동일하게 '확인·저장'을 눌러야 실제 Firestore에
+  // 쓴다. 이전에는 분석 완료 즉시 결과 화면에 별도 저장 버튼만 있었는데, 메모
+  // 기록 없이 바로 저장/재측정으로 넘어가 다른 탭과 흐름이 달랐다.
+  const handleConfirmRecord = async (record) => {
     if (!reportData || !saveToFirebase) return;
+    const withNote = { ...reportData, note: record?.note || '' };
+    setReportData(withNote);
     setSaveState('saving');
     try {
-      const res = await saveToFirebase(reportData);
-      if (res && typeof res === 'object') setReportData((prev) => ({ ...prev, ...res }));
+      const res = await saveToFirebase(withNote);
+      const saved = (res && typeof res === 'object') ? { ...withNote, ...res } : withNote;
+      setReportData(saved);
       setSaveState('saved');
+      setPhase('done');
     } catch (e) {
       setSaveState('error');
-      setErrorMsg('저장에 실패했습니다. 다시 시도해주세요.');
     }
   };
 
@@ -205,6 +214,30 @@ export default function SprintUploadAnalysis({ member, onBack, onSaveToFirebase,
 
   const pct = Math.round(progress * 100);
   const cfg = TEST_TYPES[testKey];
+
+  // [기록·확인 단계 2026-09-07] GaitAnalysisHub.jsx의 view==='record' 화면과
+  // 동일한 위치·역할 — 분석 직후, 실제 저장 전에 메모를 남기고 확인한다.
+  if (phase === 'record' && reportData) {
+    const rows = [{ label: '총 소요시간', value: `${(reportData.totalTimeMs / 1000).toFixed(2)}초` }];
+    if (reportData.peakVelocityMs != null) rows.push({ label: '최고속도', value: `${reportData.peakVelocityMs.toFixed(1)} m/s` });
+    if (reportData.reactionTimeMs != null) rows.push({ label: '반응속도', value: `${reportData.reactionTimeMs}ms` });
+    return (
+      <div style={{ ...styles.root, overflowY: 'auto' }}>
+        <div style={{ maxWidth: 420, margin: '0 auto', padding: 16, width: '100%' }}>
+          <MeasureRecordConfirm
+            title={reportData.testLabel}
+            summaryRows={rows}
+            noteMode
+            onConfirm={handleConfirmRecord}
+            onBack={handleRetry}
+            saving={saveState === 'saving'}
+            saved={saveState === 'saved'}
+            error={saveState === 'error'}
+          />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={styles.root}>
@@ -311,7 +344,7 @@ export default function SprintUploadAnalysis({ member, onBack, onSaveToFirebase,
 
         {phase === 'done' && reportData && (
           <div style={styles.resultCol}>
-            <h3 style={styles.resultTitle}>{reportData.testLabel} 결과</h3>
+            <h3 style={styles.resultTitle}>{reportData.testLabel} 결과 <span style={styles.savedBadge}>✓ 저장됨</span></h3>
             <ResultRow label="총 소요시간" value={`${(reportData.totalTimeMs / 1000).toFixed(2)}초`} />
             <ResultRow label="최고속도" value={`${reportData.peakVelocityMs.toFixed(1)} m/s`} />
             {Object.entries(reportData.splits || {}).map(([d, ms]) => (
@@ -331,10 +364,7 @@ export default function SprintUploadAnalysis({ member, onBack, onSaveToFirebase,
               </>
             )}
             <div style={styles.resultActions}>
-              <button style={styles.textBtn} onClick={handleRetry}>다시 측정</button>
-              <button style={styles.primaryBtn} onClick={handleSave} disabled={saveState === 'saving' || saveState === 'saved'}>
-                {saveState === 'saved' ? '저장됨' : saveState === 'saving' ? '저장 중...' : '저장'}
-              </button>
+              <button style={styles.primaryBtn} onClick={handleRetry}>다시 측정</button>
             </div>
           </div>
         )}
@@ -433,6 +463,7 @@ const styles = {
   progressText: { fontSize: 13, fontWeight: 700, color: '#fbbf24', textAlign: 'center' },
   resultCol: { width: '100%', maxWidth: 420, display: 'flex', flexDirection: 'column', gap: 2 },
   resultTitle: { fontSize: 16, fontWeight: 900, marginBottom: 8 },
+  savedBadge: { fontSize: 11, fontWeight: 800, color: '#4ade80', marginLeft: 8, verticalAlign: 'middle' },
   resultRow: { display: 'flex', justifyContent: 'space-between', padding: '7px 0', borderBottom: '1px solid rgba(255,255,255,0.07)', fontSize: 13.5 },
   resultLabel: { opacity: 0.65 },
   resultValue: { fontWeight: 700 },

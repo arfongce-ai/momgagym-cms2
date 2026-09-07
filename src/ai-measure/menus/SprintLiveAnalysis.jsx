@@ -20,6 +20,7 @@ import { beepTick, beepGo, primeAudio } from '../core/audioCue';
 import { loadPoseLandmarker, detectPoseFrame, isPoseReady, closePoseLandmarker } from '../core/poseBackend';
 import { openMainCameraStream, describeCameraError } from '../core/cameraSelect';
 import { aiStore } from '../../demoData';
+import MeasureRecordConfirm from '../components/MeasureRecordConfirm.jsx';
 
 const TEST_TYPES = {
   sprint5: { label: '5m 스프린트', mode: 'sprint', splitDistancesM: [5], trackDistanceM: 5 },
@@ -97,8 +98,11 @@ export default function SprintLiveAnalysis({ member, onBack, onSaveToFirebase, o
   }, [view]);
 
   useEffect(() => {
-    if (view !== 'result' && !streamRef.current) startCamera();
-    if (view === 'result') stopCamera();
+    // [기록·확인 단계 2026-09-07] 측정 종료 직후(record)부터 카메라를 끈다 —
+    // 예전엔 result까지 켜둔 채였는데, 이제 record 화면이 그 사이에 끼어들어
+    // 그대로 두면 저장 확인하는 동안 카메라가 계속 돈다.
+    if (view !== 'result' && view !== 'record' && !streamRef.current) startCamera();
+    if (view === 'result' || view === 'record') stopCamera();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view]);
 
@@ -263,16 +267,24 @@ export default function SprintLiveAnalysis({ member, onBack, onSaveToFirebase, o
       member: { id: member?.id || null, name: member?.name || null },
       measuredAt: new Date().toISOString(),
     });
-    setView('result');
+    // [기록·확인 단계 2026-09-07] 측정 직후 바로 결과+저장 버튼을 보여주던 것을
+    // 다른 탭(Gait 등)과 동일하게 '기록' 단계(MeasureRecordConfirm)로 바꾼다.
+    setView('record');
   };
 
-  const handleSave = async () => {
+  // [기록·확인 단계 2026-09-07] SprintUploadAnalysis.jsx와 동일 — 확인·저장을
+  // 눌러야 실제 Firestore에 쓴다.
+  const handleConfirmRecord = async (record) => {
     if (!reportData || !saveToFirebase) return;
+    const withNote = { ...reportData, note: record?.note || '' };
+    setReportData(withNote);
     setSaveState('saving');
     try {
-      const res = await saveToFirebase(reportData);
-      if (res && typeof res === 'object') setReportData((prev) => ({ ...prev, ...res }));
+      const res = await saveToFirebase(withNote);
+      const saved = (res && typeof res === 'object') ? { ...withNote, ...res } : withNote;
+      setReportData(saved);
       setSaveState('saved');
+      setView('result');
     } catch (e) {
       setSaveState('error');
       setWarningMsg('저장에 실패했습니다. 다시 시도해주세요.');
@@ -307,6 +319,30 @@ export default function SprintLiveAnalysis({ member, onBack, onSaveToFirebase, o
     trackerRef.current = null;
     setView('camera');
   };
+
+  // [기록·확인 단계 2026-09-07] GaitAnalysisHub.jsx의 view==='record' 화면과
+  // 동일한 위치·역할 — 측정 직후, 실제 저장 전에 메모를 남기고 확인한다.
+  if (view === 'record' && reportData) {
+    const rows = [{ label: '총 소요시간', value: `${(reportData.totalTimeMs / 1000).toFixed(2)}초` }];
+    if (reportData.peakVelocityMs != null) rows.push({ label: '최고속도', value: `${reportData.peakVelocityMs.toFixed(1)} m/s` });
+    if (reportData.reactionTimeMs != null) rows.push({ label: '반응속도', value: `${reportData.reactionTimeMs}ms` });
+    return (
+      <div style={{ ...styles.root, overflowY: 'auto' }}>
+        <div style={{ maxWidth: 420, margin: '0 auto', padding: 16, width: '100%' }}>
+          <MeasureRecordConfirm
+            title={reportData.testLabel}
+            summaryRows={rows}
+            noteMode
+            onConfirm={handleConfirmRecord}
+            onBack={handleRetry}
+            saving={saveState === 'saving'}
+            saved={saveState === 'saved'}
+            error={saveState === 'error'}
+          />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={styles.root}>
@@ -373,7 +409,7 @@ export default function SprintLiveAnalysis({ member, onBack, onSaveToFirebase, o
 
       {view === 'result' && reportData && (
         <div style={styles.resultPanel}>
-          <h3 style={styles.resultTitle}>{reportData.testLabel} 결과</h3>
+          <h3 style={styles.resultTitle}>{reportData.testLabel} 결과 <span style={styles.savedBadge}>✓ 저장됨</span></h3>
           <ResultRow label="총 소요시간" value={`${(reportData.totalTimeMs / 1000).toFixed(2)}초`} />
           <ResultRow label="최고속도" value={`${reportData.peakVelocityMs.toFixed(1)} m/s`} />
           {Object.entries(reportData.splits || {}).map(([d, ms]) => (
@@ -393,10 +429,7 @@ export default function SprintLiveAnalysis({ member, onBack, onSaveToFirebase, o
             </>
           )}
           <div style={styles.resultActions}>
-            <button style={styles.textBtn} onClick={handleRetry}>다시 측정</button>
-            <button style={styles.primaryBtn} onClick={handleSave} disabled={saveState === 'saving' || saveState === 'saved'}>
-              {saveState === 'saved' ? '저장됨' : saveState === 'saving' ? '저장 중...' : '저장'}
-            </button>
+            <button style={styles.primaryBtn} onClick={handleRetry}>다시 측정</button>
             {onBack && <button style={styles.textBtn} onClick={onBack}>목록</button>}
           </div>
         </div>
@@ -509,6 +542,7 @@ const styles = {
   warning: { position: 'absolute', top: 10, left: 10, right: 10, padding: 8, background: 'rgba(0,0,0,0.65)', borderRadius: 8, fontSize: 12, textAlign: 'center' },
   resultPanel: { padding: 18, background: '#111827' },
   resultTitle: { marginBottom: 10, fontSize: 16 },
+  savedBadge: { fontSize: 11, fontWeight: 800, color: '#4ade80', marginLeft: 8, verticalAlign: 'middle' },
   resultRow: { display: 'flex', justifyContent: 'space-between', padding: '7px 0', borderBottom: '1px solid rgba(255,255,255,0.07)', fontSize: 13.5 },
   resultLabel: { opacity: 0.65 },
   resultValue: { fontWeight: 600 },

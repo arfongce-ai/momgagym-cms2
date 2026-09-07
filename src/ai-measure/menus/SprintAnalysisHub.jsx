@@ -2,15 +2,19 @@
 //
 // GaitAnalysisHub.jsx의 진입점 패턴(라이브/업로드 모드 전환)을 따른다.
 // SprintUploadAnalysis.jsx(고속촬영 업로드 모드) 연결 완료 — 라이브·업로드 모두
-// 자체 결과 화면 + 저장 버튼을 갖고 있어(SprintLiveAnalysis.jsx와 동일 패턴)
-// Hub는 모드 전환만 담당한다.
+// 자체 측정→기록·확인(MeasureRecordConfirm)→결과 화면을 갖고 있어(SprintLiveAnalysis.jsx와
+// 동일 패턴) Hub는 모드 전환만 담당한다.
 //
-// GaitAnalysisHub.jsx와 달리 아직 없는 것: 결과리포트 대시보드(GaitReportDashboard
-// 상당), 기록·확인(MeasureRecordConfirm) 단계. 직전 측정 비교(previousReport)는
 // [직전 측정 비교 2026-09-07] SprintLiveAnalysis.jsx/SprintUploadAnalysis.jsx가
 // 각자 결과 화면을 자체 소유하는 구조라 Hub가 아니라 두 컴포넌트 안에 각각
-// GaitAnalysisHub.jsx:38-54와 동일 패턴으로 이식했다. 다른 탭과 동일한 리포트
-// 대시보드가 필요해지면 GaitAnalysisHub.jsx를 참고해 이 파일에 추가한다.
+// GaitAnalysisHub.jsx:38-54와 동일 패턴으로 previousReport를 이식했다.
+// [기록·확인 단계 2026-09-07] 마찬가지로 두 컴포넌트 안에 각각 GaitAnalysisHub.jsx의
+// view==='record' 화면(MeasureRecordConfirm)과 동일한 패턴을 이식 — 측정 직후
+// 바로 저장하지 않고 메모를 남기고 확인해야 실제 저장된다.
+//
+// GaitAnalysisHub.jsx와 달리 아직 없는 것: 결과리포트 대시보드(GaitReportDashboard
+// 상당) — 다른 탭과 동일한 리포트 대시보드가 필요해지면 GaitAnalysisHub.jsx를
+// 참고해 이 파일에 추가한다.
 
 import React, { useState } from 'react';
 import SprintLiveAnalysis from './SprintLiveAnalysis';
