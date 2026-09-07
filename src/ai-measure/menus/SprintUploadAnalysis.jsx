@@ -15,6 +15,7 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { SprintTracker, calibrateTrack } from '../core/sprintAgility';
 import { analyzeUploadedVideo, CAPTURE_PRESETS } from '../core/videoAnalyzer';
+import { aiStore } from '../../demoData';
 
 const TEST_TYPES = {
   sprint5: { label: '5m 스프린트', mode: 'sprint', splitDistancesM: [5], trackDistanceM: 5 },
@@ -39,6 +40,10 @@ export default function SprintUploadAnalysis({ member, onBack, onSaveToFirebase,
   const [fileName, setFileName] = useState('');
   const [reportData, setReportData] = useState(null);
   const [saveState, setSaveState] = useState('idle');
+  // [직전 측정 비교 2026-09-07] GaitAnalysisHub.jsx의 previousReport 패턴을 그대로
+  // 이식 — gait_reports를 공유하지만 sprint/agility는 testKey(5m/10m/5-0-5)가
+  // 다르면 비교 의미가 없어 같은 testKey인 직전 기록만 찾는다.
+  const [previousReport, setPreviousReport] = useState(null);
 
   const videoRef = useRef(null);
   const dragAreaRef = useRef(null);
@@ -154,7 +159,8 @@ export default function SprintUploadAnalysis({ member, onBack, onSaveToFirebase,
     if (!reportData || !saveToFirebase) return;
     setSaveState('saving');
     try {
-      await saveToFirebase(reportData);
+      const res = await saveToFirebase(reportData);
+      if (res && typeof res === 'object') setReportData((prev) => ({ ...prev, ...res }));
       setSaveState('saved');
     } catch (e) {
       setSaveState('error');
@@ -162,11 +168,33 @@ export default function SprintUploadAnalysis({ member, onBack, onSaveToFirebase,
     }
   };
 
+  // [직전 측정 비교 2026-09-07] 저장 성공 후 같은 회원·같은 testKey의 직전 기록을
+  // 하나 불러온다(GaitAnalysisHub.jsx:38-54와 동일 패턴). 미등록회원은 조회 대상이
+  // 없어(가상 회원 ID) 건너뛴다.
+  useEffect(() => {
+    let cancelled = false;
+    if (saveState !== 'saved' || !reportData?.id || !member?.id || member?.isVirtual) return undefined;
+    (async () => {
+      try {
+        const list = await aiStore.ensureGaitReports(member.id);
+        if (cancelled) return;
+        const matching = (list || []).filter((r) => r.testKey === reportData.testKey && r.id !== reportData.id);
+        const sorted = matching.sort((a, b) => String(b.createdAt || b.measuredAt || '')
+          .localeCompare(String(a.createdAt || a.measuredAt || '')));
+        setPreviousReport(sorted[0] || null);
+      } catch (e) {
+        if (!cancelled) setPreviousReport(null);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [saveState, reportData?.id, reportData?.testKey, member?.id, member?.isVirtual]);
+
   const handleRetry = () => {
     setCalibPoints(DEFAULT_CALIB_POINTS);
     setReportData(null);
     setSaveState('idle');
     setErrorMsg('');
+    setPreviousReport(null);
     setPhase('ready');
   };
 
@@ -294,6 +322,14 @@ export default function SprintUploadAnalysis({ member, onBack, onSaveToFirebase,
               <ResultRow label="감속·제동" value={`${reportData.deceleration.decelTimeMs}ms / ${reportData.deceleration.decelDistanceM}m`} />
             )}
             {reportData.turnCount > 0 && <ResultRow label="방향전환" value={`${reportData.turnCount}회`} />}
+            {previousReport && (
+              <>
+                <p style={styles.compareTitle}>이전 대비 변화 ({cfg.label})</p>
+                <DeltaRow label="총 소요시간" current={reportData.totalTimeMs} previous={previousReport.totalTimeMs} unit="초" scale={1 / 1000} decimals={2} lowerIsBetter />
+                <DeltaRow label="최고속도" current={reportData.peakVelocityMs} previous={previousReport.peakVelocityMs} unit="m/s" decimals={1} lowerIsBetter={false} />
+                <DeltaRow label="스타트 반응속도" current={reportData.reactionTimeMs} previous={previousReport.reactionTimeMs} unit="ms" decimals={0} lowerIsBetter />
+              </>
+            )}
             <div style={styles.resultActions}>
               <button style={styles.textBtn} onClick={handleRetry}>다시 측정</button>
               <button style={styles.primaryBtn} onClick={handleSave} disabled={saveState === 'saving' || saveState === 'saved'}>
@@ -350,6 +386,25 @@ function ResultRow({ label, value }) {
   );
 }
 
+// [직전 측정 비교 2026-09-07] scale은 ms→초 같은 단위 환산에만 쓰고, 값 자체의
+// 좋고 나쁨 판정(lowerIsBetter)은 원 단위(ms/m/s) 기준으로 한다.
+function DeltaRow({ label, current, previous, unit, scale = 1, decimals = 2, lowerIsBetter }) {
+  if (current == null || previous == null) return null;
+  const diffRaw = current - previous;
+  const diff = diffRaw * scale;
+  if (Math.abs(diffRaw) < 1e-9) return <ResultRow label={label} value="변화 없음" />;
+  const improved = lowerIsBetter ? diffRaw < 0 : diffRaw > 0;
+  const sign = diff > 0 ? '+' : '';
+  return (
+    <div style={styles.resultRow}>
+      <span style={styles.resultLabel}>{label}</span>
+      <span style={{ ...styles.resultValue, color: improved ? '#4ade80' : '#f87171' }}>
+        {sign}{diff.toFixed(decimals)}{unit} {improved ? '▼' : '▲'}
+      </span>
+    </div>
+  );
+}
+
 const styles = {
   root: { display: 'flex', flexDirection: 'column', height: '100%', background: '#0b0f14', color: '#fff' },
   header: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', borderBottom: '1px solid rgba(255,255,255,0.08)' },
@@ -381,6 +436,7 @@ const styles = {
   resultRow: { display: 'flex', justifyContent: 'space-between', padding: '7px 0', borderBottom: '1px solid rgba(255,255,255,0.07)', fontSize: 13.5 },
   resultLabel: { opacity: 0.65 },
   resultValue: { fontWeight: 700 },
+  compareTitle: { fontSize: 11.5, fontWeight: 800, color: 'rgba(255,255,255,0.5)', marginTop: 14, marginBottom: 2, textTransform: 'uppercase', letterSpacing: 0.3 },
   resultActions: { display: 'flex', gap: 8, marginTop: 16, justifyContent: 'center' },
   errorCol: { display: 'flex', flexDirection: 'column', gap: 10, alignItems: 'center' },
   errorText: { fontSize: 13, color: '#f87171', textAlign: 'center', maxWidth: 420 },

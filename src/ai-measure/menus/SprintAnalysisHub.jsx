@@ -6,9 +6,11 @@
 // Hub는 모드 전환만 담당한다.
 //
 // GaitAnalysisHub.jsx와 달리 아직 없는 것: 결과리포트 대시보드(GaitReportDashboard
-// 상당), 기록·확인(MeasureRecordConfirm) 단계, 직전 측정 비교(previousReport)
-// 자동 조회. 다른 탭과 동일한 리포트 대시보드가 필요해지면 GaitAnalysisHub.jsx를
-// 참고해 이 파일에 추가한다.
+// 상당), 기록·확인(MeasureRecordConfirm) 단계. 직전 측정 비교(previousReport)는
+// [직전 측정 비교 2026-09-07] SprintLiveAnalysis.jsx/SprintUploadAnalysis.jsx가
+// 각자 결과 화면을 자체 소유하는 구조라 Hub가 아니라 두 컴포넌트 안에 각각
+// GaitAnalysisHub.jsx:38-54와 동일 패턴으로 이식했다. 다른 탭과 동일한 리포트
+// 대시보드가 필요해지면 GaitAnalysisHub.jsx를 참고해 이 파일에 추가한다.
 
 import React, { useState } from 'react';
 import SprintLiveAnalysis from './SprintLiveAnalysis';

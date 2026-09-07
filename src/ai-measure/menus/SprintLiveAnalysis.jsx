@@ -19,6 +19,7 @@ import { SprintTracker, calibrateTrack } from '../core/sprintAgility';
 import { beepTick, beepGo, primeAudio } from '../core/audioCue';
 import { loadPoseLandmarker, detectPoseFrame, isPoseReady, closePoseLandmarker } from '../core/poseBackend';
 import { openMainCameraStream, describeCameraError } from '../core/cameraSelect';
+import { aiStore } from '../../demoData';
 
 const TEST_TYPES = {
   sprint5: { label: '5m 스프린트', mode: 'sprint', splitDistancesM: [5], trackDistanceM: 5 },
@@ -73,6 +74,9 @@ export default function SprintLiveAnalysis({ member, onBack, onSaveToFirebase, o
   const [liveMetrics, setLiveMetrics] = useState({ distanceM: 0, velocityMs: 0, elapsedMs: 0 });
   const [reportData, setReportData] = useState(null);
   const [saveState, setSaveState] = useState('idle');
+  // [직전 측정 비교 2026-09-07] SprintUploadAnalysis.jsx와 동일 패턴 —
+  // GaitAnalysisHub.jsx의 previousReport를 라이브 모드에도 이식.
+  const [previousReport, setPreviousReport] = useState(null);
 
   const videoRef = useRef(null);
   const overlayCanvasRef = useRef(null);
@@ -266,7 +270,8 @@ export default function SprintLiveAnalysis({ member, onBack, onSaveToFirebase, o
     if (!reportData || !saveToFirebase) return;
     setSaveState('saving');
     try {
-      await saveToFirebase(reportData);
+      const res = await saveToFirebase(reportData);
+      if (res && typeof res === 'object') setReportData((prev) => ({ ...prev, ...res }));
       setSaveState('saved');
     } catch (e) {
       setSaveState('error');
@@ -274,10 +279,31 @@ export default function SprintLiveAnalysis({ member, onBack, onSaveToFirebase, o
     }
   };
 
+  // [직전 측정 비교 2026-09-07] 저장 성공 후 같은 회원·같은 testKey의 직전 기록을
+  // 하나 불러온다(GaitAnalysisHub.jsx:38-54, SprintUploadAnalysis.jsx와 동일 패턴).
+  useEffect(() => {
+    let cancelled = false;
+    if (saveState !== 'saved' || !reportData?.id || !member?.id || member?.isVirtual) return undefined;
+    (async () => {
+      try {
+        const list = await aiStore.ensureGaitReports(member.id);
+        if (cancelled) return;
+        const matching = (list || []).filter((r) => r.testKey === reportData.testKey && r.id !== reportData.id);
+        const sorted = matching.sort((a, b) => String(b.createdAt || b.measuredAt || '')
+          .localeCompare(String(a.createdAt || a.measuredAt || '')));
+        setPreviousReport(sorted[0] || null);
+      } catch (e) {
+        if (!cancelled) setPreviousReport(null);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [saveState, reportData?.id, reportData?.testKey, member?.id, member?.isVirtual]);
+
   const handleRetry = () => {
     setCalibPoints(DEFAULT_CALIB_POINTS);
     setReportData(null);
     setSaveState('idle');
+    setPreviousReport(null);
     trackerRef.current = null;
     setView('camera');
   };
@@ -358,6 +384,14 @@ export default function SprintLiveAnalysis({ member, onBack, onSaveToFirebase, o
             <ResultRow label="감속·제동" value={`${reportData.deceleration.decelTimeMs}ms / ${reportData.deceleration.decelDistanceM}m`} />
           )}
           {reportData.turnCount > 0 && <ResultRow label="방향전환" value={`${reportData.turnCount}회`} />}
+          {previousReport && (
+            <>
+              <p style={styles.compareTitle}>이전 대비 변화 ({reportData.testLabel})</p>
+              <DeltaRow label="총 소요시간" current={reportData.totalTimeMs} previous={previousReport.totalTimeMs} unit="초" scale={1 / 1000} decimals={2} lowerIsBetter />
+              <DeltaRow label="최고속도" current={reportData.peakVelocityMs} previous={previousReport.peakVelocityMs} unit="m/s" decimals={1} lowerIsBetter={false} />
+              <DeltaRow label="스타트 반응속도" current={reportData.reactionTimeMs} previous={previousReport.reactionTimeMs} unit="ms" decimals={0} lowerIsBetter />
+            </>
+          )}
           <div style={styles.resultActions}>
             <button style={styles.textBtn} onClick={handleRetry}>다시 측정</button>
             <button style={styles.primaryBtn} onClick={handleSave} disabled={saveState === 'saving' || saveState === 'saved'}>
@@ -432,6 +466,25 @@ function ResultRow({ label, value }) {
   );
 }
 
+// [직전 측정 비교 2026-09-07] SprintUploadAnalysis.jsx와 동일 — scale은 단위 환산
+// (ms→초)에만 쓰고, 좋고 나쁨 판정(lowerIsBetter)은 원 단위 기준으로 한다.
+function DeltaRow({ label, current, previous, unit, scale = 1, decimals = 2, lowerIsBetter }) {
+  if (current == null || previous == null) return null;
+  const diffRaw = current - previous;
+  const diff = diffRaw * scale;
+  if (Math.abs(diffRaw) < 1e-9) return <ResultRow label={label} value="변화 없음" />;
+  const improved = lowerIsBetter ? diffRaw < 0 : diffRaw > 0;
+  const sign = diff > 0 ? '+' : '';
+  return (
+    <div style={styles.resultRow}>
+      <span style={styles.resultLabel}>{label}</span>
+      <span style={{ ...styles.resultValue, color: improved ? '#4ade80' : '#f87171' }}>
+        {sign}{diff.toFixed(decimals)}{unit} {improved ? '▼' : '▲'}
+      </span>
+    </div>
+  );
+}
+
 const styles = {
   root: { display: 'flex', flexDirection: 'column', height: '100%', background: '#0b0f14', color: '#fff' },
   videoWrap: { position: 'relative', flex: 1, overflow: 'hidden' },
@@ -459,5 +512,6 @@ const styles = {
   resultRow: { display: 'flex', justifyContent: 'space-between', padding: '7px 0', borderBottom: '1px solid rgba(255,255,255,0.07)', fontSize: 13.5 },
   resultLabel: { opacity: 0.65 },
   resultValue: { fontWeight: 600 },
+  compareTitle: { fontSize: 11.5, fontWeight: 800, color: 'rgba(255,255,255,0.5)', marginTop: 14, marginBottom: 2, textTransform: 'uppercase', letterSpacing: 0.3 },
   resultActions: { display: 'flex', gap: 8, marginTop: 16 },
 };
