@@ -302,6 +302,39 @@ export const REPORT_TERM_MAP = Object.freeze({
     description: '오른발 한발서기 중 골반이 기울어지는 정도입니다.',
     category: 'stance',
   },
+  // [트레드밀/필드 구분 2026-09-05] sprint(5m/10m 스프린트)·agility(5-0-5) 리포트가
+  // 여기 없어 getLaymanTerm()이 humanizeKey()로 폴백해 영문 라벨을 그대로
+  // 보여주던 문제를 gait_reports 공유 저장 시점에 함께 해결한다.
+  reactionTime: {
+    expert: 'Reaction Time',
+    label: '반응 시간',
+    description: '출발 신호(정지 상태) 후 실제로 움직이기 시작하기까지 걸린 시간입니다.',
+    category: 'sprint',
+  },
+  totalTime: {
+    expert: 'Total Time',
+    label: '기록',
+    description: '측정 구간을 통과하는 데 걸린 총 시간입니다.',
+    category: 'sprint',
+  },
+  avgVelocity: {
+    expert: 'Average Velocity',
+    label: '평균 속도',
+    description: '측정 구간 전체의 평균 이동 속도입니다.',
+    category: 'sprint',
+  },
+  peakVelocity: {
+    expert: 'Peak Velocity',
+    label: '최고 속도',
+    description: '측정 구간 중 순간적으로 가장 빨랐던 속도입니다.',
+    category: 'sprint',
+  },
+  decelTime: {
+    expert: 'Deceleration Time',
+    label: '감속 시간',
+    description: '방향전환(아질리티) 시 최고 속도에서 멈추기까지 걸린 시간입니다.',
+    category: 'sprint',
+  },
 });
 
 const TERM_LOOKUP = Object.freeze(
@@ -374,6 +407,18 @@ export const METRIC_DEFINITIONS = Object.freeze({
     { key: 'pelvicDrop', paths: ['metrics.pelvicDropAbs', 'pelvicDropAbs', 'metrics.pelvicDrop.avg'], unit: '%', range: { good: [0, 4], warn: [0, 7] } },
     { key: 'kneeSymmetry', paths: ['metrics.kneeSymmetry', 'kneeSymmetry'], unit: '%', range: { good: [92, 100], warn: [85, 100] } },
     { key: 'verticalOscillation', paths: ['metrics.verticalOscillation', 'verticalOscillation'], unit: '%', range: { good: [4, 9], warn: [0, 13] } },
+  ],
+  // [트레드밀/필드 구분 2026-09-05] sprint(5m/10m)·agility(5-0-5) 공용 —
+  // crossMeasureContext.js buildProblemFocus()의 sprint/agility 분기(reactionTimeMs>300,
+  // deceleration.decelTimeMs>600)와 같은 기준값으로 range를 맞춘다. avgVelocity/
+  // peakVelocity/totalTime은 테스트 종류(5m/10m/505)마다 기준이 달라 range 생략 —
+  // 카드에는 표시되지만 unknown 상태로 점수에는 반영하지 않는다.
+  sprint: [
+    { key: 'reactionTime', paths: ['reactionTimeMs'], unit: 'ms', range: { good: [0, 220], warn: [0, 300] } },
+    { key: 'totalTime', paths: ['totalTimeMs'], unit: 'ms' },
+    { key: 'avgVelocity', paths: ['avgVelocityMs'], unit: 'm/s' },
+    { key: 'peakVelocity', paths: ['peakVelocityMs'], unit: 'm/s' },
+    { key: 'decelTime', paths: ['deceleration.decelTimeMs'], unit: 'ms', range: { good: [0, 400], warn: [0, 600] } },
   ],
   rom: [
     { key: 'rom', paths: ['summary.max_rom', 'summary.left_max_rom', 'summary.right_max_rom', 'summary.max_angle', 'maxAngle', 'angle', 'rom'], unit: '도' },
@@ -470,6 +515,9 @@ export function inferReportType(report = {}) {
   if (kind.includes('posture')) return 'posture';
   if (kind.includes('rom')) return 'rom';
   if (kind.includes('gait') || kind.includes('running')) return 'gait';
+  // [트레드밀/필드 구분 2026-09-05] sprintAgility.js SprintTracker.finalize()가
+  // kind:'sprint'|'agility' 를 채워 넘긴다 — 둘 다 같은 METRIC_DEFINITIONS.sprint로 채점.
+  if (kind.includes('sprint') || kind.includes('agility')) return 'sprint';
   if (kind.includes('stance')) return 'stance';
   if (kind.includes('squat')) return 'squat';
   if (kind.includes('jump') || r.jumpType || r.rsi) return 'jump';
@@ -845,6 +893,7 @@ export function defaultRecommendation(reportType, status) {
   if (reportType === 'posture') return '자세 정렬과 ROM 제한이 함께 나타나는지 교차 확인하세요.';
   if (reportType === 'rom') return '좌우 가동범위 차이가 반복되는지 같은 조건으로 재측정하세요.';
   if (reportType === 'gait') return '반복 보행에서 같은 비대칭이 유지되는지 확인하세요.';
+  if (reportType === 'sprint') return '반응 시간·감속 구간이 반복 측정에서도 비슷한 패턴인지 확인하세요.';
   if (reportType === 'stance') return '자세·ROM 리포트에서 좌우 비대칭의 정렬적 원인을 함께 확인하세요.';
   if (reportType === 'squat') return '한다리서기·ROM 리포트와 함께 좌우 정렬·가동성 원인을 확인하세요.';
   return '핵심 지표를 다음 측정과 비교해 변화 추이를 확인하세요.';
@@ -920,6 +969,7 @@ function reportTitle(reportType) {
     rom: '관절 가동범위 평가',
     jump: '점프·반응 탄성 평가',
     gait: '보행·러닝 평가',
+    sprint: '스프린트·아질리티 평가',
     one_rm: '최대 근력 평가',
     vbt: '운동 속도 기반 근력 평가',
     general: '측정 결과 평가',

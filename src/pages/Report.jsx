@@ -44,6 +44,7 @@ const REPORT_TYPE_META = {
   rom: { title: '관절 가동범위', badge: 'ROM', accent: 'text-sky-700 dark:text-sky-300', bg: 'bg-sky-500/15', border: 'border-sky-500/25' },
   jump: { title: '점프·RSI', badge: 'JUMP', accent: 'text-amber-700 dark:text-amber-300', bg: 'bg-amber-500/15', border: 'border-amber-500/25' },
   gait: { title: '보행·러닝', badge: 'GAIT', accent: 'text-cyan-700 dark:text-cyan-300', bg: 'bg-cyan-500/15', border: 'border-cyan-500/25' },
+  sprint: { title: '스프린트·아질리티', badge: 'SPD', accent: 'text-orange-700 dark:text-orange-300', bg: 'bg-orange-500/15', border: 'border-orange-500/25' },
   one_rm: { title: '최대 근력', badge: '1RM', accent: 'text-violet-700 dark:text-violet-300', bg: 'bg-violet-500/15', border: 'border-violet-500/25' },
   vbt: { title: '운동 속도 근력', badge: 'VBT', accent: 'text-fuchsia-700 dark:text-fuchsia-300', bg: 'bg-fuchsia-500/15', border: 'border-fuchsia-500/25' },
   general: { title: '측정 결과', badge: 'AI', accent: 'text-slate-600 dark:text-slate-300', bg: 'bg-slate-200 dark:bg-slate-700', border: 'border-slate-300 dark:border-slate-700' },
@@ -533,7 +534,14 @@ export function buildUnifiedResults({ member, savedReports, savedPostureReports,
     items.push(makeUnifiedResult({ report, reportType: 'rom', source: 'rom', index, member }));
   });
   savedReports.forEach((report, index) => {
-    const reportType = report?.kind === 'jump' || report?.jumpType || report?.heightCm != null ? 'jump' : 'gait';
+    // [트레드밀/필드 구분 2026-09-05] gait_reports는 gait/jump/sprint/agility가
+    // 공유하는 컬렉션 — kind가 없던 옛 gait 기록만 기본값 'gait'로 폴백한다.
+    // 이 분기가 없으면 sprint/agility 기록이 전부 'gait'로 잘못 라벨링된다.
+    const reportType = report?.kind === 'jump' || report?.jumpType || report?.heightCm != null
+      ? 'jump'
+      : (report?.kind === 'sprint' || report?.kind === 'agility')
+        ? 'sprint'
+        : 'gait';
     items.push(makeUnifiedResult({ report, reportType, source: 'saved-report', index, member }));
   });
   // 바벨 리프팅: 전용 컬렉션이 없어 세션의 data를 그대로 리포트로 쓴다
@@ -1229,6 +1237,10 @@ export default function Report() {
         rom: savedRomReports,
         gait: savedReports.filter((item) => item?.kind === 'gait' || item?.metrics || item?.cadence),
         jump: savedReports.filter((item) => item?.kind === 'jump'),
+        // [트레드밀/필드 구분 2026-09-05] sprint(5m/10m)·agility(5-0-5) — gait_reports를
+        // 공유하지만 여기 분기가 없어 추천 엔진(memberTestRecommendation.js)에서
+        // 완전히 빠져있었다.
+        sprint: savedReports.filter((item) => item?.kind === 'sprint' || item?.kind === 'agility'),
         lifting: sessionReports('lifting'),
         stance: sessionReports('stance'),
         squat: sessionReports('squat'),

@@ -6,8 +6,9 @@ export const RECOMMENDABLE_TESTS = [
   { id: 'body', title: '신체 정보' },
   { id: 'posture', title: '자세·체형 측정' },
   { id: 'rom', title: 'ROM 좌우 비교' },
-  { id: 'gait', title: '보행 & 러닝' },
+  { id: 'gait', title: '보행 & 러닝 (트레드밀용)' },
   { id: 'jump', title: '점프 & RSI' },
+  { id: 'sprint', title: '보행 & 스프린터 (필드용)' },
   { id: 'lifting', title: '바벨 리프팅' },
   { id: 'stance', title: '한다리서기 (SLST)' },
   { id: 'squat', title: '오버헤드 딥 스쿼트' },
@@ -18,6 +19,9 @@ const COMPLEMENTS = {
   rom: ['squat', 'gait', 'stance'],
   gait: ['rom', 'stance', 'squat'],
   jump: ['rom', 'stance', 'squat'],
+  // [트레드밀/필드 구분 2026-09-05] sprint(5m/10m)·agility(5-0-5) — 스타트 반응속도·
+  // 감속(무릎 제동력) 이슈는 ROM·스쿼트(무릎 정렬)·한다리서기(균형)와 교차 확인.
+  sprint: ['rom', 'squat', 'stance'],
   lifting: ['rom', 'squat'],
   stance: ['gait', 'rom', 'squat'],
   squat: ['rom', 'stance', 'gait'],
@@ -27,6 +31,7 @@ const GOAL_SIGNALS = [
   { words: ['러닝', '달리기', '마라톤', '보행'], tests: ['gait', 'rom', 'stance'], label: '러닝·보행 목적' },
   { words: ['근력', '웨이트', '바벨', '파워리프팅', '역도'], tests: ['lifting', 'squat', 'rom'], label: '근력 향상 목적' },
   { words: ['점프', '순발력', '민첩성', '스포츠', '선수'], tests: ['jump', 'stance', 'squat'], label: '스포츠 수행 목적' },
+  { words: ['스프린트', '단거리', '속도', '아질리티', '방향전환'], tests: ['sprint', 'rom', 'squat'], label: '스프린트·아질리티 목적' },
   { words: ['체형', '자세', '교정', '재활'], tests: ['posture', 'rom', 'squat'], label: '자세·기능 개선 목적' },
   { words: ['시니어', '노인', '낙상', '균형'], tests: ['stance', 'gait', 'rom'], label: '균형·낙상 예방 목적' },
 ];
@@ -150,7 +155,7 @@ export function buildMemberTestRecommendations({
 
   const safety = conditionSafety(bodyRecords, now);
   if (safety.pain != null && safety.pain >= 7) {
-    ['jump', 'lifting'].forEach((id) => {
+    ['jump', 'lifting', 'sprint'].forEach((id) => {
       candidates[id].safety = 'blocked';
       candidates[id].safetyReasons.push(`최근 통증 NRS ${safety.pain}점으로 고강도 측정을 제한합니다.`);
     });
@@ -160,14 +165,14 @@ export function buildMemberTestRecommendations({
     });
     addReason(candidates.body, 30, '높은 통증이 기록되어 오늘 컨디션 재확인이 우선입니다.');
   } else if (safety.pain != null && safety.pain >= 4) {
-    ['jump', 'lifting'].forEach((id) => {
+    ['jump', 'lifting', 'sprint'].forEach((id) => {
       candidates[id].safety = 'review';
       candidates[id].safetyReasons.push(`최근 통증 NRS ${safety.pain}점: 고강도 측정 전 트레이너 확인이 필요합니다.`);
     });
     addReason(candidates.body, 18, '최근 중등도 통증 기록을 다시 확인해야 합니다.');
   }
   if (safety.fatigue != null && safety.fatigue >= 4) {
-    ['jump', 'lifting'].forEach((id) => {
+    ['jump', 'lifting', 'sprint'].forEach((id) => {
       if (candidates[id].safety === 'allowed') candidates[id].safety = 'review';
       candidates[id].safetyReasons.push(`최근 피로도 ${safety.fatigue}/5: 고강도 측정 전 회복 상태를 확인하세요.`);
     });

@@ -400,7 +400,21 @@ export function buildAnalysisTrend(reports = []) {
     latest: gaitRows.at(-1) || null,
   };
 
-  return { jump, gait };
+  // [트레드밀/필드 구분 2026-09-05] 스프린트(5m/10m)·아질리티(5-0-5) 추세 —
+  // gait_reports를 gait/jump와 공유하지만 이 화이트리스트 필터가 없어 지금까지
+  // 추세 그래프에서 완전히 빠져있었다.
+  const sprintRows = sorted.filter(r => r.kind === 'sprint' || r.kind === 'agility');
+  const sprint = {
+    count: sprintRows.length,
+    reactionMs:  sprintRows.map(r => ({ date: dateOf(r), value: num(r.reactionTimeMs) })).filter(p => p.value != null),
+    avgVelocity: sprintRows.map(r => ({ date: dateOf(r), value: num(r.avgVelocityMs) })).filter(p => p.value != null),
+    peakVelocity:sprintRows.map(r => ({ date: dateOf(r), value: num(r.peakVelocityMs) })).filter(p => p.value != null),
+    totalTimeMs: sprintRows.map(r => ({ date: dateOf(r), value: num(r.totalTimeMs) })).filter(p => p.value != null),
+    decelMs:     sprintRows.map(r => ({ date: dateOf(r), value: num(r.deceleration?.decelTimeMs) })).filter(p => p.value != null),
+    latest: sprintRows.at(-1) || null,
+  };
+
+  return { jump, gait, sprint };
 }
 
 // 자세·체형 측정 이력 추세 (posture_reports)
