@@ -175,6 +175,55 @@ export function whistle() {
 }
 
 /**
+ * [스프린트 출발 신호 2026-09-08] 실제 육상 스타팅건("탕!")을 흉내낸 노이즈
+ * 크랙 사운드 — beepTick/beepGo(둘 다 순음 sine, gain 0.16~0.2)보다 훨씬 크고
+ * 또렷하게 트랙에서 멀리 있어도 들리도록 whistle()과 비슷한 수준의 큰 게인을 쓴다.
+ * 화이트노이즈 버퍼를 짧게(≈80ms) 터뜨리고 하이패스로 저음을 거둬 '탕' 하는
+ * 타격감을 내고, 그 위에 낮은 톤(120Hz) 펄스를 겹쳐 몸으로도 느껴지는 무게감을 더한다.
+ */
+export function starterShot() {
+  const ctx = getCtx();
+  if (!ctx) return;
+  const g = boostedGain(0.7); // whistle()(0.55)보다도 크게 — 출발 신호는 놓치면 안 됨
+  if (g <= 0.001) return;
+  try {
+    const now = ctx.currentTime;
+    const dur = 0.09;
+    // 화이트 노이즈 버퍼
+    const bufferSize = Math.ceil(ctx.sampleRate * dur);
+    const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+    const noise = ctx.createBufferSource();
+    noise.buffer = buffer;
+    const hp = ctx.createBiquadFilter();
+    hp.type = 'highpass';
+    hp.frequency.setValueAtTime(700, now);
+    const noiseAmp = ctx.createGain();
+    noiseAmp.gain.setValueAtTime(g, now);
+    noiseAmp.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+    noise.connect(hp).connect(noiseAmp).connect(getLimiterNode(ctx));
+    noise.start(now);
+    noise.stop(now + dur + 0.02);
+    // 저음 펄스(타격감)
+    const thump = ctx.createOscillator();
+    const thumpAmp = ctx.createGain();
+    thump.type = 'sine';
+    thump.frequency.setValueAtTime(120, now);
+    thumpAmp.gain.setValueAtTime(g * 0.8, now);
+    thumpAmp.gain.exponentialRampToValueAtTime(0.0001, now + dur * 1.4);
+    thump.connect(thumpAmp).connect(getLimiterNode(ctx));
+    thump.start(now);
+    thump.stop(now + dur * 1.4 + 0.02);
+  } catch (e) { /* noop */ }
+}
+
+/** 카운트다운 '틱' 음 — 스프린트 등 야외 필드에서도 잘 들리도록 더 크게. */
+export function beepTickLoud() {
+  tone(660, 0.10, 0.34, 'square');
+}
+
+/**
  * 사용자 제스처(버튼 탭) 시점에 먼저 호출해 두면 이후 setTimeout 안의
  * 사운드도 막히지 않는다(컨텍스트 워밍업).
  */

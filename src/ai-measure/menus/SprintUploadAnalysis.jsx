@@ -25,8 +25,14 @@ const TEST_TYPES = {
   agility505: { label: '5-0-5 아질리티', mode: 'agility', splitDistancesM: [5], trackDistanceM: 5 },
 };
 
-// 캘리브레이션 핸들 기본 위치(화면 하단, 좌우로 벌어진 상태) — SprintLiveAnalysis와 동일 규약.
-const DEFAULT_CALIB_POINTS = [{ x: 0.18, y: 0.82 }, { x: 0.82, y: 0.82 }];
+// [촬영 각도 추가 2026-09-08] SprintLiveAnalysis.jsx와 동일 — 카메라를 트랙
+// 진행 방향(근-원)에 놓았는지, 트랙 옆(좌-우 측면)에 놓았는지에 따라 기본
+// 캘리브레이션 위치만 다르게 준다. 계산(calibrateTrack)은 두 점을 잇는 축에
+// 사영하는 범용 방식이라 방향에 상관없이 동일하게 동작한다.
+const CAM_ANGLES = {
+  depth: { label: '정면·후면 (근-원)', points: [{ x: 0.5, y: 0.90 }, { x: 0.5, y: 0.40 }] },
+  lateral: { label: '측면 (좌-우)', points: [{ x: 0.15, y: 0.58 }, { x: 0.85, y: 0.58 }] },
+};
 
 export default function SprintUploadAnalysis({ member, onBack, onSaveToFirebase, onSave }) {
   const saveToFirebase = onSaveToFirebase || onSave;
@@ -36,8 +42,9 @@ export default function SprintUploadAnalysis({ member, onBack, onSaveToFirebase,
   // 2026-09-07 추가) → done(저장된 결과) | error
   const [phase, setPhase] = useState('idle');
   const [testKey, setTestKey] = useState('sprint10');
+  const [camAngle, setCamAngle] = useState('depth'); // depth(근-원) | lateral(좌-우)
   const [capture, setCapture] = useState('normal');
-  const [calibPoints, setCalibPoints] = useState(DEFAULT_CALIB_POINTS);
+  const [calibPoints, setCalibPoints] = useState(CAM_ANGLES.depth.points);
   const [progress, setProgress] = useState(0);
   const [errorMsg, setErrorMsg] = useState('');
   const [fileName, setFileName] = useState('');
@@ -68,7 +75,7 @@ export default function SprintUploadAnalysis({ member, onBack, onSaveToFirebase,
     }
     setErrorMsg('');
     setFileName(file.name);
-    setCalibPoints(DEFAULT_CALIB_POINTS);
+    setCalibPoints(CAM_ANGLES[camAngle].points);
     uploadedFileRef.current = file;
     if (fileUrlRef.current) URL.revokeObjectURL(fileUrlRef.current);
     const url = URL.createObjectURL(file);
@@ -106,7 +113,7 @@ export default function SprintUploadAnalysis({ member, onBack, onSaveToFirebase,
   };
   useEffect(() => () => onHandleUp(), []);
 
-  const resetCalibration = () => setCalibPoints(DEFAULT_CALIB_POINTS);
+  const resetCalibration = () => setCalibPoints(CAM_ANGLES[camAngle].points);
 
   const runAnalysis = useCallback(async () => {
     const video = videoRef.current;
@@ -206,7 +213,7 @@ export default function SprintUploadAnalysis({ member, onBack, onSaveToFirebase,
   }, [saveState, reportData?.id, reportData?.testKey, member?.id, member?.isVirtual]);
 
   const handleRetry = () => {
-    setCalibPoints(DEFAULT_CALIB_POINTS);
+    setCalibPoints(CAM_ANGLES[camAngle].points);
     setReportData(null);
     setSaveState('idle');
     setErrorMsg('');
@@ -324,6 +331,18 @@ export default function SprintUploadAnalysis({ member, onBack, onSaveToFirebase,
                 {Object.entries(TEST_TYPES).map(([k, c]) => (
                   <button key={k} onClick={() => setTestKey(k)}
                     style={{ ...styles.testBtn, ...(testKey === k ? styles.testBtnActive : {}) }}>
+                    {c.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <p style={styles.smallLabel}>촬영 각도</p>
+              <div style={styles.pickerRow}>
+                {Object.entries(CAM_ANGLES).map(([k, c]) => (
+                  <button key={k} onClick={() => setCamAngle(k)}
+                    style={{ ...styles.testBtn, ...(camAngle === k ? styles.testBtnActive : {}) }}>
                     {c.label}
                   </button>
                 ))}

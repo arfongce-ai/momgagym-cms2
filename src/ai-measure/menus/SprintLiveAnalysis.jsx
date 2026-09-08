@@ -14,18 +14,21 @@
 //   - 스톱워치·메트로놈 도구 서랍
 //   - 필요해지면 GaitRunningAnalysis.jsx의 해당 부분을 옮겨오면 된다.
 //
-// [영상 다시보기 2026-09-07] GaitRunningAnalysis.jsx는 포즈 오버레이를 캔버스에
-// 합성해 녹화하지만(별도 15초 녹화 창), 스프린트는 이미 "큐 → 종료"로 구간이
-// 명확해 그 구간 동안 카메라 원본 스트림(streamRef)을 MediaRecorder로 그대로
-// 녹화한다 — 캔버스 합성 없이 더 단순하게. 화면 전용(recordedBlobRef)이며
-// storagePolicy.videoStored:false 정책과 동일하게 Firestore/Storage에는 저장하지 않는다.
+// [영상 다시보기 2026-09-07] 큐(출발 신호) → 종료 구간을 녹화한다. 화면 전용
+// (recordedBlobRef)이며 storagePolicy.videoStored:false 정책과 동일하게
+// Firestore/Storage에는 저장하지 않는다.
+// [녹화 HUD 번인 2026-09-08] 처음엔 원본 스트림을 그대로 녹화했지만(HUD 없음),
+// GaitRunningAnalysis.jsx의 캔버스 합성 패턴으로 바꿔 속도·거리·경과시간 HUD를
+// 번인한다 — createRecordedStream() 참고. captureStream() 미지원 환경에서는
+// 원본 스트림으로 자동 폴백(HUD 없이라도 다시보기 영상 자체는 남도록).
 
 import React, { useState, useEffect, useRef } from 'react';
 import { SprintTracker, calibrateTrack } from '../core/sprintAgility';
-import { beepTick, beepGo, primeAudio } from '../core/audioCue';
+import { beepTickLoud, starterShot, primeAudio } from '../core/audioCue';
 import { loadPoseLandmarker, detectPoseFrame, isPoseReady, closePoseLandmarker } from '../core/poseBackend';
 import { openMainCameraStream, describeCameraError } from '../core/cameraSelect';
 import { pickRecorderMime } from '../core/recordSink';
+import { drawMeasurementOverlay } from '../core/recordingOverlay';
 import { aiStore } from '../../demoData';
 import MeasureRecordConfirm from '../components/MeasureRecordConfirm.jsx';
 import SprintReportDashboard from './SprintReportDashboard.jsx';
@@ -37,9 +40,20 @@ const TEST_TYPES = {
 };
 
 const COUNTDOWN_SEC = 3;
-// 캘리브레이션 핸들 기본 위치(화면 하단, 좌우로 벌어진 상태) — 여기서부터
-// 트레이너가 실제 바닥 표시 쪽으로 드래그해 맞춘다.
-const DEFAULT_CALIB_POINTS = [{ x: 0.18, y: 0.82 }, { x: 0.82, y: 0.82 }];
+
+// [촬영 각도 추가 2026-09-08] 스프린트는 두 가지 카메라 설치 방식을 지원한다:
+//  · depth(근-원, 기본값) — 카메라를 트랙 진행 방향에 놓고 선수가 카메라 쪽으로
+//    다가오거나 멀어지며 달리는 걸 촬영. 화면상 가까운 지점은 아래·크게, 먼
+//    지점은 위·작게 보인다(원근감) — StaticTrackGuide의 사다리꼴 가이드가 이 형태.
+//  · lateral(좌-우, 측면) — 카메라를 트랙 옆(측면)에 세워 선수가 화면을 가로질러
+//    달리는 걸 촬영. 두 기준점이 화면 좌우로 비슷한 높이에 위치.
+//  계산 로직(sprintAgility.js의 calibrateTrack)은 두 점을 잇는 축에 골반 좌표를
+//  사영하는 범용 방식이라 방향에 상관없이 그대로 동작 — 여기서 바뀌는 건 기본
+//  핸들 위치와 화면 안내 그림뿐이다.
+const CAM_ANGLES = {
+  depth: { label: '정면·후면 (근-원)', points: [{ x: 0.5, y: 0.90 }, { x: 0.5, y: 0.40 }] },
+  lateral: { label: '측면 (좌-우)', points: [{ x: 0.15, y: 0.58 }, { x: 0.85, y: 0.58 }] },
+};
 
 function useIsLandscape() {
   // [가로모드 감지 2026-09-07 수정] innerWidth/innerHeight 실측을 1순위로 삼는다.
@@ -96,10 +110,11 @@ export default function SprintLiveAnalysis({ member, onBack, onSaveToFirebase, o
 
   const [view, setView] = useState('camera');
   const [testKey, setTestKey] = useState('sprint10');
+  const [camAngle, setCamAngle] = useState('depth'); // depth(근-원) | lateral(좌-우)
   const [warningMsg, setWarningMsg] = useState('');
   const [cameraFailed, setCameraFailed] = useState(false);
   const [poseLoaded, setPoseLoaded] = useState(false);
-  const [calibPoints, setCalibPoints] = useState(DEFAULT_CALIB_POINTS);
+  const [calibPoints, setCalibPoints] = useState(CAM_ANGLES.depth.points);
   const [countdown, setCountdown] = useState(COUNTDOWN_SEC);
   const [liveMetrics, setLiveMetrics] = useState({ distanceM: 0, velocityMs: 0, elapsedMs: 0 });
   const [reportData, setReportData] = useState(null);
@@ -123,12 +138,21 @@ export default function SprintLiveAnalysis({ member, onBack, onSaveToFirebase, o
   const mediaRecorderRef = useRef(null);
   const chunksRef = useRef([]);
   const recordedBlobRef = useRef(null);
+  // [녹화 HUD 번인 2026-09-08] GaitRunningAnalysis.jsx의 캔버스 합성 녹화 패턴과 동일 —
+  // 원본 스트림을 그대로 녹화하지 않고, 비디오 프레임 위에 속도/거리 HUD를 매 프레임
+  // 그린 캔버스를 캡처해서 녹화한다. 그래야 "다시보기" 영상만으로도 그 순간의
+  // 속도·경과시간·거리를 바로 확인할 수 있다.
+  const recordCanvasRef = useRef(null);
+  const composeRafRef = useRef(null);
+  const recordStreamRef = useRef(null);
 
   useEffect(() => { viewRef.current = view; }, [view]);
 
-  // calibrate 화면 진입할 때마다 핸들 기본 위치로 리셋(직전 측정에서 옮긴 채 남지 않게)
+  // calibrate 화면 진입할 때마다 핸들 기본 위치로 리셋(직전 측정에서 옮긴 채 남지 않게).
+  // 촬영 각도(camAngle)별 기본 위치가 다르므로 카메라 화면에서 고른 값을 반영한다.
   useEffect(() => {
-    if (view === 'calibrate') setCalibPoints(DEFAULT_CALIB_POINTS);
+    if (view === 'calibrate') setCalibPoints(CAM_ANGLES[camAngle].points);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view]);
 
   useEffect(() => {
@@ -140,7 +164,12 @@ export default function SprintLiveAnalysis({ member, onBack, onSaveToFirebase, o
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view]);
 
-  useEffect(() => () => { stopCamera(); closePoseLandmarker(); }, []);
+  useEffect(() => () => {
+    stopCamera();
+    closePoseLandmarker();
+    if (composeRafRef.current) cancelAnimationFrame(composeRafRef.current);
+    if (recordStreamRef.current) recordStreamRef.current.getTracks().forEach((t) => t.stop());
+  }, []);
 
   const startCamera = async () => {
     setWarningMsg('');
@@ -261,7 +290,7 @@ export default function SprintLiveAnalysis({ member, onBack, onSaveToFirebase, o
   };
   useEffect(() => () => onHandleUp(), []); // 언마운트 시 잔여 리스너 정리
 
-  const resetCalibration = () => setCalibPoints(DEFAULT_CALIB_POINTS);
+  const resetCalibration = () => setCalibPoints(CAM_ANGLES[camAngle].points);
 
   const confirmCalibrationAndStart = () => {
     const cfg = TEST_TYPES[testKey];
@@ -280,14 +309,53 @@ export default function SprintLiveAnalysis({ member, onBack, onSaveToFirebase, o
   // 그대로 녹화한다. GaitRunningAnalysis.jsx처럼 캔버스에 포즈 오버레이를 합성하지
   // 않는 이유: 스프린트는 트랙 전체가 프레임 안에 들어와야 해서 오버레이보다
   // "원본을 다시 보며 육안으로 자세를 확인"하는 쓰임이 크다.
+  // [녹화 HUD 번인 2026-09-08] 원본 비디오 해상도 그대로(크롭 없음 — 트랙 전체가
+  // 프레임에 들어와야 하는 필드 측정이라 GaitRunningAnalysis.jsx처럼 3:4로 자르지
+  // 않는다) 캔버스에 매 프레임 그리고, 그 위에 속도/거리/경과시간 HUD를 얹는다.
+  const createRecordedStream = () => {
+    const video = videoRef.current;
+    if (!video || !video.videoWidth) return null;
+    const canvas = recordCanvasRef.current || document.createElement('canvas');
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    recordCanvasRef.current = canvas;
+    const ctx = canvas.getContext('2d', { alpha: false });
+    const draw = () => {
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const tracker = trackerRef.current;
+      const last = tracker?.samples[tracker.samples.length - 1] || null;
+      drawMeasurementOverlay(ctx, canvas.width, canvas.height, {
+        title: TEST_TYPES[testKey].label,
+        elapsedMs: last ? last.tMs : 0,
+        metrics: [
+          { label: '속도', value: last ? `${last.velocityMs.toFixed(1)} m/s` : '--' },
+          { label: '거리', value: last ? `${last.distanceM.toFixed(1)} m` : '--' },
+        ],
+        accent: '#f97316',
+      });
+      composeRafRef.current = requestAnimationFrame(draw);
+    };
+    if (composeRafRef.current) cancelAnimationFrame(composeRafRef.current);
+    draw();
+    const canvasStream = canvas.captureStream ? canvas.captureStream(30) : null;
+    if (!canvasStream) return null; // 폴백은 startRecording에서 원본 스트림으로 처리
+    recordStreamRef.current = canvasStream;
+    return canvasStream;
+  };
+
   const startRecording = () => {
     if (typeof MediaRecorder === 'undefined' || !streamRef.current) return;
     try {
       chunksRef.current = [];
       const mime = pickRecorderMime();
-      const rec = new MediaRecorder(streamRef.current, mime ? { mimeType: mime } : undefined);
+      // HUD가 번인된 캔버스 스트림을 우선 시도하고, 실패하면 원본 스트림으로 폴백
+      // (HUD 없이라도 다시보기 영상 자체는 남아야 한다).
+      const recordingStream = createRecordedStream() || streamRef.current;
+      const rec = new MediaRecorder(recordingStream, mime ? { mimeType: mime } : undefined);
       rec.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
       rec.onstop = () => {
+        if (composeRafRef.current) { cancelAnimationFrame(composeRafRef.current); composeRafRef.current = null; }
+        if (recordStreamRef.current) { recordStreamRef.current.getTracks().forEach((t) => t.stop()); recordStreamRef.current = null; }
         recordedBlobRef.current = chunksRef.current.length
           ? new Blob(chunksRef.current, { type: mime || 'video/webm' })
           : null;
@@ -296,6 +364,7 @@ export default function SprintLiveAnalysis({ member, onBack, onSaveToFirebase, o
       rec.start();
     } catch (e) {
       // 녹화 실패는 측정 자체를 막지 않는다 — 다시보기 영상만 없을 뿐.
+      if (composeRafRef.current) { cancelAnimationFrame(composeRafRef.current); composeRafRef.current = null; }
       mediaRecorderRef.current = null;
     }
   };
@@ -303,6 +372,10 @@ export default function SprintLiveAnalysis({ member, onBack, onSaveToFirebase, o
   const stopRecording = () => {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
       mediaRecorderRef.current.stop();
+    } else if (composeRafRef.current) {
+      // 레코더가 아예 안 만들어진 경우에도 합성 루프는 반드시 정리한다.
+      cancelAnimationFrame(composeRafRef.current);
+      composeRafRef.current = null;
     }
   };
 
@@ -310,13 +383,13 @@ export default function SprintLiveAnalysis({ member, onBack, onSaveToFirebase, o
     if (view !== 'countdown') return undefined;
     if (countdown <= 0) {
       const cueTs = performance.now();
-      beepGo();
+      starterShot(); // [출발신호 강화 2026-09-08] 순음 대신 스타팅건 크랙 사운드
       trackerRef.current?.markCue(cueTs);
       startRecording();
       setView('running');
       return undefined;
     }
-    beepTick();
+    beepTickLoud();
     cueTimerRef.current = setTimeout(() => setCountdown((c) => c - 1), 1000);
     return () => clearTimeout(cueTimerRef.current);
   }, [view, countdown]);
@@ -378,7 +451,7 @@ export default function SprintLiveAnalysis({ member, onBack, onSaveToFirebase, o
   }, [saveState, reportData?.id, reportData?.testKey, member?.id, member?.isVirtual]);
 
   const handleRetry = () => {
-    setCalibPoints(DEFAULT_CALIB_POINTS);
+    setCalibPoints(CAM_ANGLES[camAngle].points);
     setReportData(null);
     setSaveState('idle');
     setPreviousReport(null);
@@ -440,7 +513,7 @@ export default function SprintLiveAnalysis({ member, onBack, onSaveToFirebase, o
         <video ref={videoRef} playsInline muted style={styles.video} />
 
         {/* camera 화면: 아직 핸들 조작 전, 눈대중용 정적 가이드만 살짝 보여줌 */}
-        {view === 'camera' && <StaticTrackGuide trackDistanceM={TEST_TYPES[testKey].trackDistanceM} mode={TEST_TYPES[testKey].mode} />}
+        {view === 'camera' && <StaticTrackGuide trackDistanceM={TEST_TYPES[testKey].trackDistanceM} mode={TEST_TYPES[testKey].mode} camAngle={camAngle} />}
 
         {/* calibrate 화면: 실제 드래그 가능한 가이드선 + 핸들 2개 */}
         {view === 'calibrate' && (
@@ -453,6 +526,14 @@ export default function SprintLiveAnalysis({ member, onBack, onSaveToFirebase, o
         )}
 
         <canvas ref={overlayCanvasRef} style={styles.overlay} />
+
+        {/* [뒤로가기 추가 2026-09-08] camera/calibrate/countdown 단계엔 화면을 벗어날
+            방법이 아예 없었다(record/result 단계는 각각 MeasureRecordConfirm의
+            onBack, "닫기" 버튼이 이미 있음). 측정을 실제로 시작(running)하기 전까지만
+            노출 — 달리는 도중엔 실수로 나가는 걸 막기 위해 숨긴다. */}
+        {onBack && (view === 'camera' || view === 'calibrate' || view === 'countdown') && (
+          <button style={styles.backBtn} onClick={onBack}>← 뒤로</button>
+        )}
 
         {!isLandscape && (
           <div style={styles.rotateBanner}>📱 화면을 가로로 돌려주세요 — 트랙 전체가 보여야 정확히 측정돼요</div>
@@ -467,6 +548,16 @@ export default function SprintLiveAnalysis({ member, onBack, onSaveToFirebase, o
                 </button>
               ))}
             </div>
+            {/* [좌우/전후 촬영모드 추가 2026-09-08] 카메라를 어느 방향에 세웠는지 —
+                두 값 모두 sprintAgility.js 계산은 그대로, 기본 캘리브레이션 위치와
+                안내 그림만 바뀐다. */}
+            <div style={styles.testPicker}>
+              {Object.entries(CAM_ANGLES).map(([key, cfg]) => (
+                <button key={key} onClick={() => setCamAngle(key)} style={{ ...styles.testBtn, ...(camAngle === key ? styles.testBtnActive : {}) }}>
+                  {cfg.label}
+                </button>
+              ))}
+            </div>
             <button style={styles.primaryBtn} onClick={() => setView('calibrate')} disabled={!poseLoaded}>
               {poseLoaded ? '바닥 기준선 잡기' : '로딩 중...'}
             </button>
@@ -476,8 +567,8 @@ export default function SprintLiveAnalysis({ member, onBack, onSaveToFirebase, o
 
         {view === 'calibrate' && (
           <div style={styles.hintBar}>
-            <span style={styles.hintText}>초록 점을 바닥 0m·{TEST_TYPES[testKey].trackDistanceM}m 표시로 밀어서 맞추세요</span>
-            <div style={styles.calibConfirmRow}>
+            <span style={{ ...styles.hintText, pointerEvents: 'auto' }}>초록 점을 바닥 0m·{TEST_TYPES[testKey].trackDistanceM}m 표시로 밀어서 맞추세요</span>
+            <div style={{ ...styles.calibConfirmRow, pointerEvents: 'auto' }}>
               <button style={styles.textBtn} onClick={resetCalibration}>가운데로 리셋</button>
               <button style={styles.primaryBtn} onClick={confirmCalibrationAndStart}>측정 시작</button>
             </div>
@@ -509,10 +600,35 @@ const TRACK_AMBER = '#f97316';
 const TRACK_CYAN = '#22d3ee';
 
 // camera 화면용 — 아직 조작 전, 위치만 대략 보여주는 정적(비반응) 가이드.
-function StaticTrackGuide({ trackDistanceM, mode }) {
+// [좌우/전후 촬영모드 추가 2026-09-08] camAngle==='lateral'이면 카메라가 트랙
+// 옆(측면)에 서 있다는 뜻이라 원근 사다리꼴 대신 화면을 가로지르는 수평 레인을
+// 보여준다. depth(기본)는 기존 사다리꼴(근-원) 가이드를 그대로 유지.
+function StaticTrackGuide({ trackDistanceM, mode, camAngle = 'depth' }) {
   const label = mode === 'agility' ? '왕복' : `${trackDistanceM}m`;
   const ticks = mode === 'agility' ? [0, 1] : Array.from({ length: trackDistanceM + 1 }, (_, i) => i / trackDistanceM);
-  // 사다리꼴 코너: 하단(가까운 쪽) 넓게, 상단(먼 쪽) 좁게 — t(0~1)로 좌우 x, y를 보간.
+
+  if (camAngle === 'lateral') {
+    const laneY = 58;
+    const laneAt = (t) => ({ x: 15 + (85 - 15) * t, y: laneY });
+    const near = laneAt(0);
+    const far = laneAt(1);
+    return (
+      <>
+        <svg viewBox="0 0 100 100" style={styles.guideOverlay} preserveAspectRatio="none">
+          {/* 수평 러닝라인(측면 촬영 — 선수가 화면을 가로질러 달림) */}
+          <line x1={near.x} y1={laneY} x2={far.x} y2={laneY} stroke="rgba(249,115,22,0.55)" strokeWidth="0.6" />
+          {ticks.map((t, i) => {
+            const p = laneAt(t);
+            return <line key={i} x1={p.x} y1={laneY - 3} x2={p.x} y2={laneY + 3} stroke="rgba(249,115,22,0.5)" strokeWidth="0.4" />;
+          })}
+        </svg>
+        <TrackBadge x={near.x} y={laneY} text="0m" color={TRACK_CYAN} />
+        <TrackBadge x={far.x} y={laneY} text={label} color={TRACK_AMBER} />
+      </>
+    );
+  }
+
+  // depth(근-원): 사다리꼴 코너 — 하단(가까운 쪽) 넓게, 상단(먼 쪽) 좁게. t(0~1)로 좌우 x, y를 보간.
   const laneAt = (t) => ({ xL: 15 + (35 - 15) * t, xR: 85 - (85 - 65) * t, y: 82 - (82 - 45) * t });
   const near = laneAt(0);
   const far = laneAt(1);
@@ -625,6 +741,11 @@ const styles = {
   video: { width: '100%', height: '100%', objectFit: 'cover' },
   overlay: { position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' },
   guideOverlay: { position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' },
+  backBtn: {
+    position: 'absolute', top: 'max(12px, env(safe-area-inset-top))', left: 'max(12px, env(safe-area-inset-left))',
+    zIndex: 90, padding: '8px 14px', borderRadius: 18, ...glass, color: '#fff',
+    border: '1px solid rgba(255,255,255,0.14)', fontSize: 12.5, fontWeight: 700,
+  },
   rotateBanner: {
     position: 'absolute', top: 10, left: 10, right: 10, textAlign: 'center', ...glass,
     borderRadius: 14, padding: '9px 12px', fontSize: 12.5, fontWeight: 600,
@@ -640,7 +761,14 @@ const styles = {
     boxShadow: '0 6px 18px rgba(249,115,22,0.4)',
   },
   textBtn: { padding: '9px 16px', borderRadius: 18, background: 'transparent', color: 'rgba(255,255,255,0.75)', border: 'none', fontSize: 13, fontWeight: 600 },
-  hintBar: { position: 'absolute', left: 0, right: 0, bottom: 18, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 },
+  // [가로모드 드래그 버그 수정 2026-09-08] 이 바는 left:0,right:0 전체 폭을 덮는
+  // 투명 박스라 pointerEvents 기본값(auto)이면 그 안의 빈 공간까지 터치를 가로챈다.
+  // DraggableTrackGuide 핸들(기본 y:0.82)이 세로에서는 이 바보다 위쪽 여백에 있어
+  // 우연히 안 겹쳤지만, 가로모드는 화면 높이가 짧아져 같은 y 영역에 이 바가 그대로
+  // 깔리면서 핸들 터치를 가로채 드래그가 안 되는 버그가 있었다 — 박스 자체는
+  // pointerEvents:none으로 투과시키고, 실제 클릭 대상(hintText/calibConfirmRow)에만
+  // pointerEvents:auto를 되살린다.
+  hintBar: { position: 'absolute', left: 0, right: 0, bottom: 18, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, pointerEvents: 'none' },
   hintText: {
     fontSize: 12.5, fontWeight: 600, ...glass, padding: '7px 14px', borderRadius: 14, textAlign: 'center',
     border: '1px solid rgba(255,255,255,0.1)',
