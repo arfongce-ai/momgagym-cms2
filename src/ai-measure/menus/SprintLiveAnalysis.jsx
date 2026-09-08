@@ -29,6 +29,8 @@ import { loadPoseLandmarker, detectPoseFrame, isPoseReady, closePoseLandmarker }
 import { openMainCameraStream, describeCameraError } from '../core/cameraSelect';
 import { pickRecorderMime } from '../core/recordSink';
 import { drawMeasurementOverlay } from '../core/recordingOverlay';
+import { drawAnkleTrail } from '../core/trajectoryPref';
+import TrajectoryToggleChip from './TrajectoryToggleChip';
 import { aiStore } from '../../demoData';
 import MeasureRecordConfirm from '../components/MeasureRecordConfirm.jsx';
 import SprintReportDashboard from './SprintReportDashboard.jsx';
@@ -247,7 +249,8 @@ export default function SprintLiveAnalysis({ member, onBack, onSaveToFirebase, o
     loop();
   };
 
-  // 골반 위치 점만 캔버스에 그린다 — 캘리브레이션 선/핸들은 이제 HTML+SVG 오버레이(아래)가 담당.
+  // 골반 위치 점 + (옵션) 발목 궤적을 캔버스에 그린다 — 캘리브레이션 선/핸들은
+  // 이제 HTML+SVG 오버레이(아래)가 담당.
   const drawHipDot = (landmarks) => {
     const canvas = overlayCanvasRef.current;
     const video = videoRef.current;
@@ -256,6 +259,11 @@ export default function SprintLiveAnalysis({ member, onBack, onSaveToFirebase, o
     if (canvas.width !== cw || canvas.height !== ch) { canvas.width = cw; canvas.height = ch; }
     const ctx = canvas.getContext('2d');
     ctx.clearRect(0, 0, cw, ch);
+    // [발목 궤적 추가 2026-09-08] 이 화면은 object-cover 보정 없이 정규화 좌표를
+    // 그대로 픽셀에 매핑해왔다(hx*cw 방식) — 궤적도 동일한 변환으로 맞춘다.
+    const px = (p) => p.x * cw;
+    const py = (p) => p.y * ch;
+    drawAnkleTrail(canvas, ctx, px, py, landmarks);
     if (landmarks && landmarks[23] && landmarks[24]) {
       const hx = (landmarks[23].x + landmarks[24].x) / 2;
       const hy = (landmarks[23].y + landmarks[24].y) / 2;
@@ -535,6 +543,12 @@ export default function SprintLiveAnalysis({ member, onBack, onSaveToFirebase, o
           <button style={styles.backBtn} onClick={onBack}>← 뒤로</button>
         )}
 
+        {/* [발목 궤적 토글 추가 2026-09-08] GaitRunningAnalysis.jsx와 동일한 전역
+            trajectoryPref 설정 — 뒤로가기 버튼과 겹치지 않게 오른쪽에 둔다. 촬영
+            중(running)에도 궤적을 계속 볼 수 있어야 하므로 뒤로가기와 달리
+            running에서도 유지한다. */}
+        <div style={styles.trailToggleWrap}><TrajectoryToggleChip /></div>
+
         {!isLandscape && (
           <div style={styles.rotateBanner}>📱 화면을 가로로 돌려주세요 — 트랙 전체가 보여야 정확히 측정돼요</div>
         )}
@@ -745,6 +759,10 @@ const styles = {
     position: 'absolute', top: 'max(12px, env(safe-area-inset-top))', left: 'max(12px, env(safe-area-inset-left))',
     zIndex: 90, padding: '8px 14px', borderRadius: 18, ...glass, color: '#fff',
     border: '1px solid rgba(255,255,255,0.14)', fontSize: 12.5, fontWeight: 700,
+  },
+  trailToggleWrap: {
+    position: 'absolute', top: 'max(12px, env(safe-area-inset-top))', right: 'max(12px, env(safe-area-inset-right))',
+    zIndex: 90,
   },
   rotateBanner: {
     position: 'absolute', top: 10, left: 10, right: 10, textAlign: 'center', ...glass,

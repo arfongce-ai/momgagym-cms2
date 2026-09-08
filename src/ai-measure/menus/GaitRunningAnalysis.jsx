@@ -12,6 +12,8 @@ import { drawGaugeHud } from '../core/recordingOverlay';
 import { lockZoom, unlockZoom } from '../../utils/viewportLock';
 import { isSkeletonEnabled } from '../core/skeletonPref';
 import SkeletonToggleChip from './SkeletonToggleChip';
+import { drawAnkleTrail } from '../core/trajectoryPref';
+import TrajectoryToggleChip from './TrajectoryToggleChip';
 import { useCameraRotation } from '../core/useCameraRotation';
 import { rotateLandmarksNormalized } from '../core/recordAspect';
 import GaugeHud from './GaugeHud';
@@ -81,8 +83,7 @@ function drawSkeleton(canvas, video, landmarks, locked) {
   if (canvas.width !== cw || canvas.height !== ch) { canvas.width = cw; canvas.height = ch; }
   const ctx = canvas.getContext('2d');
   ctx.clearRect(0, 0, cw, ch);
-  if (!landmarks) return;
-  if (!isSkeletonEnabled()) return; // OFF: 스켈레톤 미표시(추적·분석은 계속)
+  if (!landmarks) { canvas.__ankleTrail = null; return; }
   const vw = video.videoWidth, vh = video.videoHeight;
   if (!vw || !vh) return;
   // object-cover: 비디오를 캔버스에 꽉 채우며 크롭. 정규화 좌표를 화면 픽셀로 변환.
@@ -91,6 +92,13 @@ function drawSkeleton(canvas, video, landmarks, locked) {
   const ox = (cw - dw) / 2, oy = (ch - dh) / 2;
   const px = (p) => ox + p.x * dw;
   const py = (p) => oy + p.y * dh;
+
+  // [발목 궤적 추가 2026-09-08] 스켈레톤 on/off와 완전히 독립된 오버레이라
+  // 아래 isSkeletonEnabled() 이른 반환보다 먼저 그린다 — 스켈레톤을 꺼도
+  // 궤적만 켜둘 수 있어야 한다(trajectoryPref.js 주석 참고).
+  drawAnkleTrail(canvas, ctx, px, py, landmarks);
+
+  if (!isSkeletonEnabled()) return; // OFF: 스켈레톤 미표시(추적·분석은 계속)
   const col = locked ? 'rgba(52,211,153,0.95)' : 'rgba(34,211,238,0.95)';
   // 뼈대
   ctx.strokeStyle = col; ctx.lineWidth = 3; ctx.lineCap = 'round';
@@ -651,6 +659,7 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
                 ↻ 화면 회전{rotationDeg ? ` ${rotationDeg}°` : ''}
               </button>
               <SkeletonToggleChip />
+              <TrajectoryToggleChip />
             </div>
             <div className="text-center">
               <h1 className="measure-title">보행 & 런닝 분석</h1>
