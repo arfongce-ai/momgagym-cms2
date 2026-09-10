@@ -7,6 +7,7 @@ import { useState, useEffect } from 'react';
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { useKioskMode } from '../../hooks/useKioskMode';
+import { useIsDesktop } from '../../hooks/useIsDesktop';
 import GlobalVoiceCommand from '../common/GlobalVoiceCommand';
 import KioskVoiceCommand from '../common/KioskVoiceCommand';
 import AdminLockGate from '../common/AdminLockGate';
@@ -108,6 +109,12 @@ export default function AppLayout({ children }) {
   const [sheetOpen, setSheetOpen] = useState(false);
   const [unlockOpen, setUnlockOpen] = useState(false);
   const { kioskOn, enableKiosk, disableKiosk } = useKioskMode();
+  // [모미 PC·키오스크 전용 2026-09-10] 폰에서는 화면이 좁아 모미 HUD가 늘
+  // 컨텐츠를 가리는 문제 — 사장님 요청으로 폰에서는 아예 안 띄우고, PC와
+  // 키오스크 모드에서만 쓰도록 범위를 좁힌다. isDesktop 기준은 이미 위
+  // 사이드바(hidden md:flex)·모바일 하단바(md:hidden)가 쓰는 것과 동일한
+  // 768px 브레이크포인트라 레이아웃과 항상 일치한다.
+  const isDesktop = useIsDesktop();
 
   // 키오스크 모드면 NAV 자체를 AI측정·리포트만 남기고 걸러낸다(주소창 방어는 App.jsx가 담당).
   const visibleNav = kioskOn ? NAV.filter(it => KIOSK_ALLOWED.includes(it.path)) : NAV;
@@ -204,9 +211,11 @@ export default function AppLayout({ children }) {
         </AdminLockGate>
       )}
 
-      {/* [모미 신규] "모미야" 음성 명령 — 키오스크는 버튼 없는 상시 감지, 그 외(폰·태블릿·
-          데스크탑)는 클릭식 버튼. 둘 다 useMomiVoice/처리 로직은 동일, UI만 다름. */}
-      {kioskOn ? <KioskVoiceCommand /> : <GlobalVoiceCommand />}
+      {/* [모미 신규 → 2026-09-10 범위 축소] "모미야" 음성 명령 — 키오스크는 버튼 없는
+          상시 감지, PC(데스크탑 너비)는 클릭식 버튼. 폰(좁은 화면)에서는 HUD가 화면을
+          가려 불편하다는 피드백으로 아예 렌더링하지 않는다 — 태블릿 이상 너비는 기존
+          "PC" 취급 그대로 유지(=isDesktop). */}
+      {kioskOn ? <KioskVoiceCommand /> : (isDesktop && <GlobalVoiceCommand />)}
     </div>
   );
 }
