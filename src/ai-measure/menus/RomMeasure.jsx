@@ -289,9 +289,9 @@ export default function RomMeasure({ member, onSave, onBack, onViewInReport }) {
     return canvasStream;
   };
 
-  // 라이브 측정 중(녹화 전) 위치(관절) 전환. 누적 각도/가이드를 리셋한다.
-  const changeJointLive = (nextJoint) => {
-    if (recording) return;
+  // [2026-09-10] 촬영 전 설정 화면에서 관절/자세를 고른다(라이브 화면 HUD
+  // 정리 — 촬영 중에는 스켈레톤/궤적/게이지만 남기고 구성 버튼은 옮김).
+  const chooseJoint = (nextJoint) => {
     setJoint(nextJoint);
     const allowed = POSE_MODES_BY_JOINT[nextJoint] || [];
     if (!allowed.some((m) => m.key === poseMode)) {
@@ -303,9 +303,7 @@ export default function RomMeasure({ member, onSave, onBack, onViewInReport }) {
     setGuide(`${nm} 위치로 변경했습니다. 관절이 보이게 선 뒤 녹화를 시작하세요.`);
   };
 
-  // 라이브 측정 중(녹화 전) 자세 모드 전환.
-  const changePoseLive = (nextPose) => {
-    if (recording) return;
+  const choosePose = (nextPose) => {
     setPoseMode(nextPose);
     setLiveAngle({ left: null, right: null });
     accRef.current = null;
@@ -762,40 +760,8 @@ export default function RomMeasure({ member, onSave, onBack, onViewInReport }) {
         }
       >
         <div className="mx-auto max-w-md space-y-2">
-          {/* 측정 중 위치(관절)·자세 변경: 녹화 전에는 자유롭게 바꿀 수 있다.
-              녹화 중에는 일관성을 위해 비활성화. */}
-          <div className="flex flex-wrap justify-center gap-1">
-            {JOINTS.map((j) => (
-              <button
-                key={j.key}
-                type="button"
-                disabled={recording}
-                onClick={() => changeJointLive(j.key)}
-                className={`rounded-full border px-2.5 py-1 text-[11px] font-black transition ${
-                  joint === j.key
-                    ? 'border-amber-300 bg-amber-400 text-slate-950'
-                    : 'border-white/20 bg-black/45 text-white/80'
-                } ${recording ? 'opacity-40' : ''}`}>
-                {j.short}
-              </button>
-            ))}
-          </div>
-          <div className="flex flex-wrap justify-center gap-1">
-            {(POSE_MODES_BY_JOINT[joint] || []).map((m) => (
-              <button
-                key={m.key}
-                type="button"
-                disabled={recording}
-                onClick={() => changePoseLive(m.key)}
-                className={`rounded-full border px-2.5 py-1 text-[11px] font-bold transition ${
-                  poseMode === m.key
-                    ? 'border-emerald-300 bg-emerald-400 text-slate-950'
-                    : 'border-white/15 bg-black/40 text-white/70'
-                } ${recording ? 'opacity-40' : ''}`}>
-                {m.label}
-              </button>
-            ))}
-          </div>
+          {/* [2026-09-10] 관절·자세 구성 버튼은 촬영 전 설정 화면으로 이동 —
+              촬영 화면에는 스켈레톤·궤적·게이지 HUD만 남긴다. */}
           {/* [2026-08-18 요청] 스켈레톤 OFF면 ROM 인식도 함께 멈춘다는 걸 명확히 안내 */}
           {recording && !skeletonOn && (
             <div className="rounded-xl border border-red-400/40 bg-red-500/15 px-3 py-2 text-center text-xs font-bold text-red-700 dark:text-red-300">
@@ -836,7 +802,32 @@ export default function RomMeasure({ member, onSave, onBack, onViewInReport }) {
         <span className="w-12" />
       </div>
 
-      {/* 측정 관절·자세는 라이브 측정 화면에서 즉시 바꾼다(첫 페이지 중복 제거). */}
+      {/* [2026-09-10] 관절·자세 구성은 촬영 전 이 화면에서 고른다 — 촬영
+          화면은 스켈레톤·궤적·게이지 HUD만 남기고 구성 버튼은 여기로 이동. */}
+      <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
+        <p className="mb-2 text-xs font-bold text-slate-500 dark:text-slate-400">측정 관절</p>
+        <div className="flex flex-wrap gap-1.5">
+          {JOINTS.map((j) => (
+            <button key={j.key} type="button" onClick={() => chooseJoint(j.key)}
+              className={`rounded-full border px-3 py-1.5 text-xs font-black transition ${
+                joint === j.key ? 'border-amber-400 bg-amber-400 text-slate-950' : 'border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'
+              }`}>
+              {j.short}
+            </button>
+          ))}
+        </div>
+        <p className="mt-3 mb-2 text-xs font-bold text-slate-500 dark:text-slate-400">자세</p>
+        <div className="flex flex-wrap gap-1.5">
+          {(POSE_MODES_BY_JOINT[joint] || []).map((m) => (
+            <button key={m.key} type="button" onClick={() => choosePose(m.key)}
+              className={`rounded-full border px-3 py-1.5 text-xs font-bold transition ${
+                poseMode === m.key ? 'border-emerald-400 bg-emerald-400 text-slate-950' : 'border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'
+              }`}>
+              {m.label}
+            </button>
+          ))}
+        </div>
+      </div>
 
       {/* 측정 측 */}
       <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
