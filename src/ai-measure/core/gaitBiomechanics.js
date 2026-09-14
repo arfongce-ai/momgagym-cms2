@@ -35,6 +35,12 @@ export const GAIT_TUNING = {
   // 비율이라 신장 대비 10%/16%를 보수적 시작값으로 둔다. 실측 쌓이면 조정.
   stepWidthWarnPct: 10,
   stepWidthFlagPct: 16,
+  // [가위걸음(Scissoring) 판정 추가 2026-09-14] 무릎이 정중선을 넘어 교차하는
+  // 프레임의 비율. 순간적 교차(노이즈·보행 중 다리가 스쳐 지나가는 정상 프레임)와
+  // 지속적 교차(내전근 과활성/경직 의심)를 구분하기 위해 낮은 문턱을 쓴다.
+  // 실측 쌓이면 조정.
+  scissorWarnPct: 3,
+  scissorFlagPct: 10,
 };
 
 export const angleAt = (a, b, c) => {
@@ -506,6 +512,13 @@ export class BiomechAccumulator {
     this.ankleSpread = [];    // 보폭용 (max)
     this._scaleSum = 0;
     this._scaleN = 0;
+    // [가위걸음 판정 2026-09-14] 무릎(25,26)이 골반(23,24) 순서와 반대로 뒤집히는
+    // (=정중선을 넘어 교차하는) 프레임 비율. 부호 비교만 쓰므로 정면/후면 어느
+    // 쪽에서 찍었든(좌우가 화면상 어느 쪽이든) 그대로 맞는다 — 측면뷰에서는 이
+    // 부호 관계가 좌우 교차가 아니라 보폭(전후) 잡음이라 의미가 없으니 호출부에서
+    // orientation==='back'|'front'일 때만 노출할 것(stepWidthAssessment와 동일 원칙).
+    this._scissorFrames = 0;
+    this._scissorCheckFrames = 0;
   }
 
   push(lm) {
@@ -528,6 +541,15 @@ export class BiomechAccumulator {
 
     const as = ankleSpread(lm);
     if (as != null) this.ankleSpread.push(as);
+
+    if (_vis(lm[23]) && _vis(lm[24]) && _vis(lm[25]) && _vis(lm[26])) {
+      const hipSign = Math.sign(lm[23].x - lm[24].x);
+      const kneeSign = Math.sign(lm[25].x - lm[26].x);
+      if (hipSign !== 0 && kneeSign !== 0) {
+        this._scissorCheckFrames += 1;
+        if (kneeSign !== hipSign) this._scissorFrames += 1;
+      }
+    }
   }
 
   summary() {
@@ -590,6 +612,15 @@ export class BiomechAccumulator {
       : stepWidthPct >= T.stepWidthWarnPct ? POSTURE_STATUS.CAUTION
       : POSTURE_STATUS.NORMAL;
 
+    // [가위걸음 판정 2026-09-14] 무릎-골반 좌우 순서가 뒤집힌(교차) 프레임의 비율.
+    const scissorPct = this._scissorCheckFrames
+      ? round1((this._scissorFrames / this._scissorCheckFrames) * 100)
+      : null;
+    const scissorLevel = scissorPct == null ? POSTURE_STATUS.NORMAL
+      : scissorPct >= T.scissorFlagPct ? POSTURE_STATUS.RISK
+      : scissorPct >= T.scissorWarnPct ? POSTURE_STATUS.CAUTION
+      : POSTURE_STATUS.NORMAL;
+
     return {
       // Kinematic
       trunkLean: stat(this.trunkLean),                 // 몸통 전방 기울기(도)
@@ -621,6 +652,14 @@ export class BiomechAccumulator {
         level: stepWidthLevel,       // 'normal' | 'caution' | 'risk'
         warnPct: T.stepWidthWarnPct,
         flagPct: T.stepWidthFlagPct,
+      },
+      // [가위걸음 판정 2026-09-14] 후면·정면뷰 전용 — 측면 촬영에서는 무릎-골반
+      // 좌우 순서 관계가 교차가 아니라 보폭(전후) 잡음이라 의미가 없다.
+      scissoringAssessment: {
+        crossedPct: scissorPct,
+        level: scissorLevel,         // 'normal' | 'caution' | 'risk'
+        warnPct: T.scissorWarnPct,
+        flagPct: T.scissorFlagPct,
       },
       verticalOscillation,                             // 수직 진폭 비율(%)
       // 좌우 무릎 대칭(%): 100 = 완전 대칭

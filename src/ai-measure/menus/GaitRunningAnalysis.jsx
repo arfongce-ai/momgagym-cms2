@@ -577,6 +577,11 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
         stepWidthAssessment: (orientationRef.current === 'back' || orientationRef.current === 'front')
           ? biomech.stepWidthAssessment
           : null,
+        // [가위걸음 2026-09-14] 후면·정면뷰 전용 — stepWidthAssessment와 동일한
+        // 게이팅 원칙(gaitBiomechanics.js의 scissoringAssessment 정의부 참고).
+        scissoringAssessment: (orientationRef.current === 'back' || orientationRef.current === 'front')
+          ? biomech.scissoringAssessment
+          : null,
         verticalOscillation: biomech.verticalOscillation,
         kneeSymmetry: biomech.kneeSymmetry,
         strideToHeight: biomech.strideToHeight,

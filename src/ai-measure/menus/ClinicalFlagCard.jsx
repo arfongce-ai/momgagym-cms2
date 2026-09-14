@@ -73,6 +73,20 @@ export function buildClinicalFlags(m, orientation) {
     });
   }
 
+  // [가위걸음 2026-09-14] 후면·정면 둘 다에서 관찰 가능(좌우 무릎 교차라 촬영
+  // 방향에 상관없이 같은 의미) — gaitBiomechanics.js의 scissoringAssessment 재사용.
+  if ((orientation === 'back' || orientation === 'front') && m.scissoringAssessment && m.scissoringAssessment.level !== 'normal') {
+    const s = m.scissoringAssessment;
+    flags.push({
+      key: 'scissoring',
+      title: '가위걸음(Scissoring) 경향',
+      level: s.level,
+      message: s.level === 'risk'
+        ? `측정 중 무릎이 정중선을 넘어 교차하는 프레임이 전체의 ${s.crossedPct}%로 뚜렷합니다(임계 ${s.flagPct}%). 내전근 과활성·경직 가능성을 확인해 보세요.`
+        : `무릎이 정중선을 넘어 교차하는 경향이 경미하게 관찰됩니다(${s.crossedPct}%). 추적 관찰을 권장합니다.`,
+    });
+  }
+
   return flags;
 }
 

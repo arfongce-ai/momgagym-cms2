@@ -257,6 +257,48 @@ describe('BiomechAccumulator.pelvicDropAssessment / stepWidthAssessment', () => 
     expect(s.pelvicDropAssessment.level).toBe('normal');
     expect(s.stepWidthAssessment.widthPct).toBeNull();
     expect(s.stepWidthAssessment.level).toBe('normal');
+    expect(s.scissoringAssessment.crossedPct).toBeNull();
+    expect(s.scissoringAssessment.level).toBe('normal');
+  });
+});
+
+// ── 가위걸음(Scissoring) — 무릎이 골반 좌우 순서를 뒤집는(교차) 프레임 비율 ──
+describe('BiomechAccumulator.scissoringAssessment', () => {
+  // 골반(23,24)은 항상 정상 순서로 고정, 무릎(25,26)만 교차 여부를 바꾼다.
+  const frame = (crossed) => {
+    const a = Array.from({ length: 33 }, () => ({ x: 0.5, y: 0.5, visibility: 0.9 }));
+    a[23] = { x: 0.45, y: 0.5, visibility: 0.9 }; a[24] = { x: 0.55, y: 0.5, visibility: 0.9 };
+    a[25] = crossed ? { x: 0.56, y: 0.7, visibility: 0.9 } : { x: 0.45, y: 0.7, visibility: 0.9 };
+    a[26] = crossed ? { x: 0.44, y: 0.7, visibility: 0.9 } : { x: 0.55, y: 0.7, visibility: 0.9 };
+    return a;
+  };
+
+  it('no crossing frames → normal', () => {
+    const acc = new BiomechAccumulator();
+    for (let i = 0; i < 20; i++) acc.push(frame(false));
+    expect(acc.summary().scissoringAssessment.level).toBe('normal');
+  });
+
+  it('occasional crossing (~5%) → caution', () => {
+    const acc = new BiomechAccumulator();
+    for (let i = 0; i < 20; i++) acc.push(frame(i === 0)); // 1/20 = 5%
+    const s = acc.summary().scissoringAssessment;
+    expect(s.level).toBe('caution');
+    expect(s.crossedPct).toBeCloseTo(5, 0);
+  });
+
+  it('frequent crossing (~15%) → risk', () => {
+    const acc = new BiomechAccumulator();
+    for (let i = 0; i < 20; i++) acc.push(frame(i < 3)); // 3/20 = 15%
+    const s = acc.summary().scissoringAssessment;
+    expect(s.level).toBe('risk');
+  });
+
+  it('empty accumulator defaults safely', () => {
+    const acc = new BiomechAccumulator();
+    const s = acc.summary().scissoringAssessment;
+    expect(s.crossedPct).toBeNull();
+    expect(s.level).toBe('normal');
   });
 });
 

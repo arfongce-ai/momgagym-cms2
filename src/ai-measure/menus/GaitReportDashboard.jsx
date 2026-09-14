@@ -124,6 +124,7 @@ function normalizeMetrics(report) {
     pelvicDropAssessment: m.pelvicDropAssessment ?? null,
     kneeAlignment: m.kneeAlignment ?? null,
     stepWidthAssessment: m.stepWidthAssessment ?? null,
+    scissoringAssessment: m.scissoringAssessment ?? null,
   };
 }
 

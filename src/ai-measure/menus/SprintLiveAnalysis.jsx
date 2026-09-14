@@ -457,6 +457,8 @@ export default function SprintLiveAnalysis({ member, onBack, onSaveToFirebase, o
     // [광각/실조성 보행 2026-09-14] 후면·정면 둘 다 유효 — depth 모드에서 pelvicAccRef가
     // 두 orientation 모두 채워지므로(위 loop() 참고) camAngle==='depth'이기만 하면 된다.
     const stepWidthAssessment = camAngle === 'depth' ? pelvicSummary.stepWidthAssessment : null;
+    // [가위걸음 2026-09-14] stepWidthAssessment와 동일한 게이팅(depth 모드면 OK).
+    const scissoringAssessment = camAngle === 'depth' ? pelvicSummary.scissoringAssessment : null;
     setReportData({
       ...summary,
       testKey,
@@ -465,7 +467,7 @@ export default function SprintLiveAnalysis({ member, onBack, onSaveToFirebase, o
       // [임상 플래그 표시용 2026-09-14] GaitReportDashboard.jsx와 동일한 orientation
       // 필드 — camAngle==='lateral'이면 'side', depth면 트레이너가 고른 front/back 그대로.
       orientation: camAngle === 'lateral' ? 'side' : depthOrientation,
-      metrics: { pelvicDropAssessment, kneeAlignment, stepWidthAssessment },
+      metrics: { pelvicDropAssessment, kneeAlignment, stepWidthAssessment, scissoringAssessment },
       member: { id: member?.id || null, name: member?.name || null },
       measuredAt: new Date().toISOString(),
     });
