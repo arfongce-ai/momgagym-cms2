@@ -54,6 +54,77 @@ describe('buildRegionDiagnoses', () => {
   });
 });
 
+// [후면뷰 반영 2026-09-14] back이 파라미터로만 받아지고 실제로는 버려지던
+// 버그를 고친 뒤의 회귀 테스트 — 정면이 정상이어도 후면이 더 심하면 그 값이
+// 채택되어야 하고, 정면만 있던 기존 동작(위 테스트들)은 그대로 유지돼야 한다.
+describe('buildRegionDiagnoses — 후면뷰 반영', () => {
+  it('정면은 정상, 후면이 심각하면 어깨·골반·하지 정렬 모두 후면 값으로 risk 판정', () => {
+    const pv = {
+      front: {
+        frontal: { shoulderHeightDiffMm: 3, pelvisHeightDiffMm: 2, pelvisPattern: 'within_error', legAlignment: { status: 'normal' } },
+        cog: { available: true, balanceOffsetPct: 2, offsetPct: 2 },
+        sagittal: {},
+      },
+      back: {
+        frontal: {
+          shoulderHeightDiffMm: 24, pelvisHeightDiffMm: 16, pelvisPattern: 'functional_lumbopelvic_pattern',
+          legAlignment: { key: 'genu_valgum', status: 'risk', label: 'X 다리 경향', value: 40, unit: 'index', message: 'X다리 위험' },
+        },
+      },
+      left: { sagittal: { forwardHeadMm: 10, kyphosisProxyDeg: 178, kneeExtensionProxyDeg: 178 } },
+    };
+    const regions = buildRegionDiagnoses(pv);
+    const shoulder = regions.find((r) => r.key === 'shoulder_back');
+    const pelvis = regions.find((r) => r.key === 'pelvis_spine');
+    const leg = regions.find((r) => r.key === 'foot_leg');
+    expect(shoulder.level).toBe(CLINICAL_LEVEL.risk);
+    expect(shoulder.measured.find((m) => m.label.includes('어깨 높이차')).label).toContain('후면');
+    expect(pelvis.level).toBe(CLINICAL_LEVEL.risk);
+    expect(pelvis.measured.find((m) => m.label.includes('골반 높이차')).label).toContain('후면');
+    expect(leg.level).toBe(CLINICAL_LEVEL.risk);
+  });
+
+  it('정면이 후면보다 더 심하면 정면 값이 채택되고 라벨도 정면으로 표기된다', () => {
+    const pv = {
+      front: {
+        frontal: { shoulderHeightDiffMm: 24, pelvisHeightDiffMm: 2, pelvisPattern: 'within_error', legAlignment: { status: 'normal' } },
+        cog: { available: true, balanceOffsetPct: 2, offsetPct: 2 },
+        sagittal: {},
+      },
+      back: { frontal: { shoulderHeightDiffMm: 3, pelvisHeightDiffMm: 2, pelvisPattern: 'within_error', legAlignment: { status: 'normal' } } },
+      left: { sagittal: { forwardHeadMm: 10, kyphosisProxyDeg: 178, kneeExtensionProxyDeg: 178 } },
+    };
+    const regions = buildRegionDiagnoses(pv);
+    const shoulder = regions.find((r) => r.key === 'shoulder_back');
+    expect(shoulder.level).toBe(CLINICAL_LEVEL.risk);
+    expect(shoulder.measured.find((m) => m.label.includes('어깨 높이차')).label).toContain('정면');
+  });
+
+  it('후면 측정만 있어도 어깨·골반·하지 정렬을 판정한다(정면 없이도 insufficient 아님)', () => {
+    const pv = {
+      back: {
+        frontal: { shoulderHeightDiffMm: 24, pelvisHeightDiffMm: 16, pelvisPattern: 'functional_lumbopelvic_pattern', legAlignment: { status: 'risk', message: 'X다리 위험' } },
+      },
+    };
+    const regions = buildRegionDiagnoses(pv);
+    const shoulder = regions.find((r) => r.key === 'shoulder_back');
+    const pelvis = regions.find((r) => r.key === 'pelvis_spine');
+    expect(shoulder.level).toBe(CLINICAL_LEVEL.risk);
+    expect(pelvis.level).toBe(CLINICAL_LEVEL.risk);
+  });
+
+  it('무게중심(CoG)은 후면 데이터가 있어도 정면 전용으로 유지된다(좌우 라벨 혼용 방지)', () => {
+    const pv = {
+      front: { frontal: { shoulderHeightDiffMm: 2, pelvisHeightDiffMm: 2, pelvisPattern: 'within_error', legAlignment: { status: 'normal' } }, cog: { available: true, balanceOffsetPct: 2, offsetPct: 2 }, sagittal: {} },
+      back: { frontal: { shoulderHeightDiffMm: 2, pelvisHeightDiffMm: 2, pelvisPattern: 'within_error', legAlignment: { status: 'normal' } }, cog: { available: true, balanceOffsetPct: 40, offsetPct: 40 } },
+    };
+    const regions = buildRegionDiagnoses(pv);
+    const pelvis = regions.find((r) => r.key === 'pelvis_spine');
+    // back의 cog(40%)가 반영됐다면 risk였을 것 — 정면 cog(2%)만 반영돼 normal이어야 함.
+    expect(pelvis.level).toBe(CLINICAL_LEVEL.normal);
+  });
+});
+
 describe('buildMuscleMap', () => {
   it('활성 부위에서 긴장/약화 근육을 추정하고 estimated=true 를 명시한다', () => {
     const regions = buildRegionDiagnoses(severeperView);

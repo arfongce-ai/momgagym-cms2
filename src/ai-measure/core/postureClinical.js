@@ -103,6 +103,37 @@ export function buildMetadata(bodyInfo = {}, camera = {}) {
   };
 }
 
+// [후면뷰 반영 2026-09-14] analyzePostureFromLandmarks()는 촬영 뷰와 무관하게
+// frontal(어깨/골반 높이차 등)·legAlignment를 항상 계산해 반환한다 — 즉 back
+// 캡처에도 이미 이 값들이 들어 있는데, 지금까지 이 함수가 front/side만 읽고
+// back은 파라미터로만 받아둔 채 버려지고 있었다(사용자 지적).
+//  - 어깨/골반 높이차, 하지 정렬(O/X)은 크기(절댓값) 비교라 카메라가 앞/뒤
+//    어느 쪽에서 찍었든 값 자체는 그대로 유효하다(classifyLegAlignment는
+//    hip/knee/ankle 폭 "비율"만 쓰므로 좌우 라벨과 무관 — 재확인 완료).
+//  - 단, "어느 쪽이 더 높은가/틀어졌는가" 같은 좌우 방향 라벨은 후면 촬영에서
+//    BlazePose가 매기는 left/right가 정면 촬영과 반대 관례가 될 수 있어(정면은
+//    카메라를 마주보므로 거울상, 후면은 같은 방향을 보므로 거울상이 아님) 두
+//    뷰의 방향 라벨을 섞지 않는다 — "더 크게 벗어난 쪽 뷰"의 라벨만 그대로 쓴다.
+// 두 뷰 다 있으면 보수적으로 "더 크게 벗어난 쪽" 값을 채택한다(과소평가보다
+// 과대평가 쪽으로 스크리닝하는 게 안전 — 기존 임계값 설계 원칙과 동일).
+function worseAbsMm(frontMm, backMm) {
+  const fa = frontMm == null ? null : Math.abs(frontMm);
+  const ba = backMm == null ? null : Math.abs(backMm);
+  if (fa == null && ba == null) return { value: null, source: null };
+  if (fa == null) return { value: backMm, source: 'back' };
+  if (ba == null) return { value: frontMm, source: 'front' };
+  return fa >= ba ? { value: frontMm, source: 'front' } : { value: backMm, source: 'back' };
+}
+
+const STATUS_RANK = { risk: 2, caution: 1, normal: 0 };
+function worseLegAlignment(frontLeg, backLeg) {
+  const fr = frontLeg ? (STATUS_RANK[frontLeg.status] ?? 0) : -1;
+  const br = backLeg ? (STATUS_RANK[backLeg.status] ?? 0) : -1;
+  if (fr < 0 && br < 0) return null;
+  if (br > fr) return backLeg;
+  return frontLeg || backLeg;
+}
+
 // ── 2) 부위별 원인 진단 ────────────────────────────────────────────────
 // 각 region: { key, title, level, measured[], problem, recommendation, estimated }
 export function buildRegionDiagnoses(perViewAnalysis = {}, { sex = null } = {}) {
@@ -137,12 +168,15 @@ export function buildRegionDiagnoses(perViewAnalysis = {}, { sex = null } = {}) 
     // kyphosisProxyDeg 는 180에 가까울수록 곧음. 165도 미만이면 굽은 등 경향.
     const kyphDev = kyph == null ? null : 180 - kyph;
     const kyphLevel = levelFromDeg(kyphDev, ...POSTURE_THRESHOLDS.kyphosisDevDeg);
-    const shDiff = front?.frontal?.shoulderHeightDiffMm ?? null;
+    // [후면뷰 반영 2026-09-14] 어깨 높이차는 정면·후면 둘 다에서 계산되던 값 —
+    // 더 크게 벗어난 쪽을 채택(위 worseAbsMm 정의부 참고).
+    const shPick = worseAbsMm(front?.frontal?.shoulderHeightDiffMm ?? null, back?.frontal?.shoulderHeightDiffMm ?? null);
+    const shDiff = shPick.value;
     const shLevel = levelFromMm(shDiff, ...POSTURE_THRESHOLDS.shoulderDiffMm);
     const level = worst([kyphLevel, shLevel]);
     const measured = [];
     if (kyphDev != null) measured.push({ label: '굽은 등(흉추후만) 편차', value: Math.round(kyphDev), unit: '°' });
-    if (shDiff != null) measured.push({ label: '어깨 높이차', value: Math.round(Math.abs(shDiff)), unit: 'mm' });
+    if (shDiff != null) measured.push({ label: `어깨 높이차${shPick.source ? `(${shPick.source === 'back' ? '후면' : '정면'})` : ''}`, value: Math.round(Math.abs(shDiff)), unit: 'mm' });
     regions.push({
       key: 'shoulder_back',
       title: '어깨·등',
@@ -159,18 +193,22 @@ export function buildRegionDiagnoses(perViewAnalysis = {}, { sex = null } = {}) 
     });
   }
 
-  // (3) 골반·척추 — 정면 골반 높이차 + 패턴 + CoG 좌우 편향
+  // (3) 골반·척추 — 정면·후면 골반 높이차(더 큰 쪽) + 패턴 + CoG 좌우 편향(정면 전용)
   {
-    const pelvisDiff = front?.frontal?.pelvisHeightDiffMm ?? null;
+    // [후면뷰 반영 2026-09-14] 골반 높이차도 어깨와 동일하게 정면·후면 둘 다에서
+    // 계산되므로 더 크게 벗어난 쪽을 채택. CoG(무게중심)는 좌우 "방향"이 의미를
+    // 가지는 지표라 정면/후면 라벨을 섞으면 위험하므로 정면 전용 유지.
+    const pelvisPick = worseAbsMm(front?.frontal?.pelvisHeightDiffMm ?? null, back?.frontal?.pelvisHeightDiffMm ?? null);
+    const pelvisDiff = pelvisPick.value;
     const [pelvisCaution, pelvisRisk] = genderThreshold('pelvisDiffMm', sex);
     const pelvisLevel = levelFromMm(pelvisDiff, pelvisCaution, pelvisRisk);
     const cog = front?.cog?.available ? front.cog : null;
     const cogOffset = cog ? abs(cog.balanceOffsetPct ?? cog.offsetPct) : null;
     const cogLevel = cogOffset == null ? LEVEL.insufficient : cogOffset >= 35 ? LEVEL.risk : cogOffset >= 18 ? LEVEL.caution : LEVEL.normal;
     const level = worst([pelvisLevel, cogLevel]);
-    const pattern = front?.frontal?.pelvisPattern;
+    const pattern = pelvisPick.source === 'back' ? back?.frontal?.pelvisPattern : front?.frontal?.pelvisPattern;
     const measured = [];
-    if (pelvisDiff != null) measured.push({ label: '골반 높이차', value: Math.round(Math.abs(pelvisDiff)), unit: 'mm' });
+    if (pelvisDiff != null) measured.push({ label: `골반 높이차${pelvisPick.source ? `(${pelvisPick.source === 'back' ? '후면' : '정면'})` : ''}`, value: Math.round(Math.abs(pelvisDiff)), unit: 'mm' });
     if (cogOffset != null) measured.push({ label: '무게중심 좌우 편향', value: Math.round(cogOffset), unit: '%' });
     const patternKo =
       pattern === 'structural_leg_length_pattern' ? '구조적 다리 길이차 가능성' :
@@ -183,7 +221,7 @@ export function buildRegionDiagnoses(perViewAnalysis = {}, { sex = null } = {}) 
       measured,
       problem:
         level === LEVEL.insufficient
-          ? '골반 정렬을 판정할 정면 측정값이 부족합니다.'
+          ? '골반 정렬을 판정할 정면·후면 측정값이 부족합니다.'
           : level === LEVEL.normal
             ? '골반 좌우 높이와 무게중심이 정상 범위입니다.'
             : `골반 좌우 비대칭${patternKo ? `(${patternKo})` : ''}과 무게중심 편향이 관찰됩니다. 짝다리 습관이 동반되면 요통과 좌우 다리 길이 차이를 유발할 수 있습니다.`,
@@ -194,12 +232,22 @@ export function buildRegionDiagnoses(perViewAnalysis = {}, { sex = null } = {}) 
 
   // (4) 발·다리 — 하지 정렬(O/X) + 무릎 신전각 + Q각 프록시(성별 기준)
   {
-    const leg = front?.frontal?.legAlignment || front?.rules?.legAlignment || null;
+    // [후면뷰 반영 2026-09-14] classifyLegAlignment는 hip/knee/ankle 폭 "비율"만
+    // 쓰는 좌우 라벨 무관 크기 비교라 후면 촬영값도 그대로 유효(위 정의부 확인
+    // 완료) — 정면·후면 중 더 안 좋게 나온 쪽을 채택(worseLegAlignment).
+    const legFront = front?.frontal?.legAlignment || front?.rules?.legAlignment || null;
+    const legBack = back?.frontal?.legAlignment || back?.rules?.legAlignment || null;
+    const leg = worseLegAlignment(legFront, legBack);
     const knee = side?.sagittal?.kneeExtensionProxyDeg ?? front?.sagittal?.kneeExtensionProxyDeg ?? null;
     const { cautionAbove, riskAbove } = POSTURE_THRESHOLDS.kneeExtensionDeg;
     const kneeLevel = knee == null ? LEVEL.insufficient : knee > riskAbove ? LEVEL.risk : knee > cautionAbove ? LEVEL.caution : LEVEL.normal;
     const legLevel = leg?.status === 'risk' ? LEVEL.risk : leg?.status === 'caution' ? LEVEL.caution : leg ? LEVEL.normal : LEVEL.insufficient;
-    const qDev = qAngleDeviation(front?.frontal?.qAngleProxyDeg);
+    // [후면뷰 반영 2026-09-14] Q각 프록시도 고관절-무릎-발목 각의 180° 편위(크기)라
+    // 후면 촬영값도 동일하게 유효 — 더 크게 벗어난 쪽 채택.
+    const qDevFront = qAngleDeviation(front?.frontal?.qAngleProxyDeg);
+    const qDevBack = qAngleDeviation(back?.frontal?.qAngleProxyDeg);
+    const qDev = (qDevFront == null && qDevBack == null) ? null
+      : Math.max(qDevFront ?? -Infinity, qDevBack ?? -Infinity);
     const [qCaution, qRisk] = genderThreshold('qAngleDevDeg', sex);
     const qLevel = levelFromDeg(qDev, qCaution, qRisk);
     const level = worst([kneeLevel, legLevel, qLevel]);
