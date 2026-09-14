@@ -302,6 +302,86 @@ describe('BiomechAccumulator.scissoringAssessment', () => {
   });
 });
 
+// ── 교차보행(Crossover gait) — 가위걸음과 동일 원리, 관절만 발목(27,28) ──
+describe('BiomechAccumulator.crossoverAssessment', () => {
+  // 골반(23,24)은 항상 정상 순서로 고정, 발목(27,28)만 교차 여부를 바꾼다.
+  const frame = (crossed) => {
+    const a = Array.from({ length: 33 }, () => ({ x: 0.5, y: 0.5, visibility: 0.9 }));
+    a[23] = { x: 0.45, y: 0.5, visibility: 0.9 }; a[24] = { x: 0.55, y: 0.5, visibility: 0.9 };
+    a[27] = crossed ? { x: 0.56, y: 0.9, visibility: 0.9 } : { x: 0.45, y: 0.9, visibility: 0.9 };
+    a[28] = crossed ? { x: 0.44, y: 0.9, visibility: 0.9 } : { x: 0.55, y: 0.9, visibility: 0.9 };
+    return a;
+  };
+
+  it('no crossing frames → normal', () => {
+    const acc = new BiomechAccumulator();
+    for (let i = 0; i < 20; i++) acc.push(frame(false));
+    expect(acc.summary().crossoverAssessment.level).toBe('normal');
+  });
+
+  it('occasional crossing (~5%) → caution', () => {
+    const acc = new BiomechAccumulator();
+    for (let i = 0; i < 20; i++) acc.push(frame(i === 0)); // 1/20 = 5%
+    const c = acc.summary().crossoverAssessment;
+    expect(c.level).toBe('caution');
+    expect(c.crossedPct).toBeCloseTo(5, 0);
+  });
+
+  it('frequent crossing (~15%) → risk', () => {
+    const acc = new BiomechAccumulator();
+    for (let i = 0; i < 20; i++) acc.push(frame(i < 3)); // 3/20 = 15%
+    const c = acc.summary().crossoverAssessment;
+    expect(c.level).toBe('risk');
+  });
+
+  it('empty accumulator defaults safely', () => {
+    const acc = new BiomechAccumulator();
+    const c = acc.summary().crossoverAssessment;
+    expect(c.crossedPct).toBeNull();
+    expect(c.level).toBe('normal');
+  });
+});
+
+// ── 팔 크로스바디 스윙 — 가위걸음/교차보행과 동일 원리, 관절만 손목(15,16)-어깨(11,12) ──
+describe('BiomechAccumulator.armCrossAssessment', () => {
+  // 어깨(11,12)는 항상 정상 순서로 고정, 손목(15,16)만 교차 여부를 바꾼다.
+  const frame = (crossed) => {
+    const a = Array.from({ length: 33 }, () => ({ x: 0.5, y: 0.5, visibility: 0.9 }));
+    a[11] = { x: 0.4, y: 0.3, visibility: 0.9 }; a[12] = { x: 0.6, y: 0.3, visibility: 0.9 };
+    a[15] = crossed ? { x: 0.62, y: 0.5, visibility: 0.9 } : { x: 0.35, y: 0.5, visibility: 0.9 };
+    a[16] = crossed ? { x: 0.38, y: 0.5, visibility: 0.9 } : { x: 0.65, y: 0.5, visibility: 0.9 };
+    return a;
+  };
+
+  it('no crossing frames → normal', () => {
+    const acc = new BiomechAccumulator();
+    for (let i = 0; i < 20; i++) acc.push(frame(false));
+    expect(acc.summary().armCrossAssessment.level).toBe('normal');
+  });
+
+  it('occasional crossing (~5%) → caution', () => {
+    const acc = new BiomechAccumulator();
+    for (let i = 0; i < 20; i++) acc.push(frame(i === 0)); // 1/20 = 5%
+    const a = acc.summary().armCrossAssessment;
+    expect(a.level).toBe('caution');
+    expect(a.crossedPct).toBeCloseTo(5, 0);
+  });
+
+  it('frequent crossing (~15%) → risk', () => {
+    const acc = new BiomechAccumulator();
+    for (let i = 0; i < 20; i++) acc.push(frame(i < 3)); // 3/20 = 15%
+    const a = acc.summary().armCrossAssessment;
+    expect(a.level).toBe('risk');
+  });
+
+  it('empty accumulator defaults safely', () => {
+    const acc = new BiomechAccumulator();
+    const a = acc.summary().armCrossAssessment;
+    expect(a.crossedPct).toBeNull();
+    expect(a.level).toBe('normal');
+  });
+});
+
 // ── 동적 무릎 정렬(외반/내반) — postureMath.classifyLegAlignment 재사용 ──
 describe('DynamicKneeAlignmentTracker (postureMath.classifyLegAlignment 재사용)', () => {
   const legFrame = ({ hipW = 0.2, kneeW = 0.2, ankleW = 0.2 } = {}) => {

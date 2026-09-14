@@ -41,6 +41,18 @@ export const GAIT_TUNING = {
   // 실측 쌓이면 조정.
   scissorWarnPct: 3,
   scissorFlagPct: 10,
+  // [교차보행(Crossover gait) 판정 추가 2026-09-14] 러닝 시 발이 신체 정중선을
+  // 넘어 착지하는 프레임의 비율. 가위걸음과 같은 원리(정중선 교차)지만 판정
+  // 관절이 무릎이 아니라 발목이라는 점이 다르다 — 골반 안정성 부족/과도한
+  // 고관절 내전 지표. 가위걸음과 동일한 보수적 시작값 사용, 실측 쌓이면 조정.
+  crossoverWarnPct: 3,
+  crossoverFlagPct: 10,
+  // [팔 크로스바디 스윙(Contralateral arm swing) 판정 추가 2026-09-14] 러닝 시
+  // 팔이 몸통 정중선을 넘어 반대편으로 스윙하는 프레임의 비율. 가위걸음·교차보행과
+  // 같은 원리(정중선 교차)를 손목-어깨 관절에 적용 — 체간 회전 보상 지표.
+  // 가위걸음과 동일한 보수적 시작값 사용, 실측 쌓이면 조정.
+  armCrossWarnPct: 3,
+  armCrossFlagPct: 10,
 };
 
 export const angleAt = (a, b, c) => {
@@ -519,6 +531,18 @@ export class BiomechAccumulator {
     // orientation==='back'|'front'일 때만 노출할 것(stepWidthAssessment와 동일 원칙).
     this._scissorFrames = 0;
     this._scissorCheckFrames = 0;
+    // [교차보행(Crossover gait) 판정 2026-09-14] 발목(27,28)이 골반(23,24) 순서와
+    // 반대로 뒤집히는(=정중선을 넘어 착지하는) 프레임 비율. 가위걸음과 동일한
+    // 부호비교 방식 — 관절만 무릎→발목으로 바꿔 재사용(촬영 방향 무관, 측면뷰
+    // 제외는 호출부에서 동일 원칙 적용).
+    this._crossoverFrames = 0;
+    this._crossoverCheckFrames = 0;
+    // [팔 크로스바디 스윙 판정 2026-09-14] 손목(15,16)이 어깨(11,12) 순서와
+    // 반대로 뒤집히는(=팔이 몸통 정중선을 넘어가는) 프레임 비율. 가위걸음·
+    // 교차보행과 동일한 부호비교 방식 — 관절만 손목/어깨로 재사용(촬영 방향
+    // 무관, 측면뷰 제외는 호출부에서 동일 원칙 적용).
+    this._armCrossFrames = 0;
+    this._armCrossCheckFrames = 0;
   }
 
   push(lm) {
@@ -548,6 +572,24 @@ export class BiomechAccumulator {
       if (hipSign !== 0 && kneeSign !== 0) {
         this._scissorCheckFrames += 1;
         if (kneeSign !== hipSign) this._scissorFrames += 1;
+      }
+    }
+
+    if (_vis(lm[23]) && _vis(lm[24]) && _vis(lm[27]) && _vis(lm[28])) {
+      const hipSign = Math.sign(lm[23].x - lm[24].x);
+      const ankleSign = Math.sign(lm[27].x - lm[28].x);
+      if (hipSign !== 0 && ankleSign !== 0) {
+        this._crossoverCheckFrames += 1;
+        if (ankleSign !== hipSign) this._crossoverFrames += 1;
+      }
+    }
+
+    if (_vis(lm[11]) && _vis(lm[12]) && _vis(lm[15]) && _vis(lm[16])) {
+      const shoulderSign = Math.sign(lm[11].x - lm[12].x);
+      const wristSign = Math.sign(lm[15].x - lm[16].x);
+      if (shoulderSign !== 0 && wristSign !== 0) {
+        this._armCrossCheckFrames += 1;
+        if (wristSign !== shoulderSign) this._armCrossFrames += 1;
       }
     }
   }
@@ -621,6 +663,26 @@ export class BiomechAccumulator {
       : scissorPct >= T.scissorWarnPct ? POSTURE_STATUS.CAUTION
       : POSTURE_STATUS.NORMAL;
 
+    // [교차보행(Crossover gait) 판정 2026-09-14] 발목-골반 좌우 순서가 뒤집힌
+    // (교차 착지) 프레임의 비율.
+    const crossoverPct = this._crossoverCheckFrames
+      ? round1((this._crossoverFrames / this._crossoverCheckFrames) * 100)
+      : null;
+    const crossoverLevel = crossoverPct == null ? POSTURE_STATUS.NORMAL
+      : crossoverPct >= T.crossoverFlagPct ? POSTURE_STATUS.RISK
+      : crossoverPct >= T.crossoverWarnPct ? POSTURE_STATUS.CAUTION
+      : POSTURE_STATUS.NORMAL;
+
+    // [팔 크로스바디 스윙 판정 2026-09-14] 손목-어깨 좌우 순서가 뒤집힌
+    // (팔이 정중선을 넘어감) 프레임의 비율.
+    const armCrossPct = this._armCrossCheckFrames
+      ? round1((this._armCrossFrames / this._armCrossCheckFrames) * 100)
+      : null;
+    const armCrossLevel = armCrossPct == null ? POSTURE_STATUS.NORMAL
+      : armCrossPct >= T.armCrossFlagPct ? POSTURE_STATUS.RISK
+      : armCrossPct >= T.armCrossWarnPct ? POSTURE_STATUS.CAUTION
+      : POSTURE_STATUS.NORMAL;
+
     return {
       // Kinematic
       trunkLean: stat(this.trunkLean),                 // 몸통 전방 기울기(도)
@@ -660,6 +722,24 @@ export class BiomechAccumulator {
         level: scissorLevel,         // 'normal' | 'caution' | 'risk'
         warnPct: T.scissorWarnPct,
         flagPct: T.scissorFlagPct,
+      },
+      // [교차보행(Crossover gait) 판정 2026-09-14] 후면·정면뷰 전용 — 측면
+      // 촬영에서는 발목-골반 좌우 순서 관계가 교차가 아니라 보폭(전후) 잡음이라
+      // 의미가 없다(scissoringAssessment와 동일 원칙).
+      crossoverAssessment: {
+        crossedPct: crossoverPct,
+        level: crossoverLevel,       // 'normal' | 'caution' | 'risk'
+        warnPct: T.crossoverWarnPct,
+        flagPct: T.crossoverFlagPct,
+      },
+      // [팔 크로스바디 스윙 판정 2026-09-14] 후면·정면뷰 전용 — 측면 촬영에서는
+      // 손목-어깨 좌우 순서 관계가 크로스바디 스윙이 아니라 팔 전후 스윙(잡음)이라
+      // 의미가 없다(scissoringAssessment/crossoverAssessment와 동일 원칙).
+      armCrossAssessment: {
+        crossedPct: armCrossPct,
+        level: armCrossLevel,        // 'normal' | 'caution' | 'risk'
+        warnPct: T.armCrossWarnPct,
+        flagPct: T.armCrossFlagPct,
       },
       verticalOscillation,                             // 수직 진폭 비율(%)
       // 좌우 무릎 대칭(%): 100 = 완전 대칭

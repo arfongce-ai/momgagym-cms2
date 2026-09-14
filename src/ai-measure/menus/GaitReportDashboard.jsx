@@ -125,6 +125,8 @@ function normalizeMetrics(report) {
     kneeAlignment: m.kneeAlignment ?? null,
     stepWidthAssessment: m.stepWidthAssessment ?? null,
     scissoringAssessment: m.scissoringAssessment ?? null,
+    crossoverAssessment: m.crossoverAssessment ?? null,
+    armCrossAssessment: m.armCrossAssessment ?? null,
   };
 }
 

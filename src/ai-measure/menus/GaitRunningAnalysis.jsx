@@ -582,6 +582,16 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
         scissoringAssessment: (orientationRef.current === 'back' || orientationRef.current === 'front')
           ? biomech.scissoringAssessment
           : null,
+        // [교차보행(Crossover gait) 2026-09-14] 후면·정면뷰 전용 — scissoringAssessment와
+        // 동일한 게이팅 원칙(gaitBiomechanics.js의 crossoverAssessment 정의부 참고).
+        crossoverAssessment: (orientationRef.current === 'back' || orientationRef.current === 'front')
+          ? biomech.crossoverAssessment
+          : null,
+        // [팔 크로스바디 스윙 2026-09-14] 후면·정면뷰 전용 — crossoverAssessment와
+        // 동일한 게이팅 원칙(gaitBiomechanics.js의 armCrossAssessment 정의부 참고).
+        armCrossAssessment: (orientationRef.current === 'back' || orientationRef.current === 'front')
+          ? biomech.armCrossAssessment
+          : null,
         verticalOscillation: biomech.verticalOscillation,
         kneeSymmetry: biomech.kneeSymmetry,
         strideToHeight: biomech.strideToHeight,

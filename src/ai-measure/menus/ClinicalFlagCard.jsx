@@ -87,6 +87,35 @@ export function buildClinicalFlags(m, orientation) {
     });
   }
 
+  // [교차보행(Crossover gait) 2026-09-14] 후면·정면 둘 다에서 관찰 가능(좌우
+  // 발목 교차라 촬영 방향에 상관없이 같은 의미) — gaitBiomechanics.js의
+  // crossoverAssessment 재사용. 가위걸음(무릎)과 별개 지표라 동시에 뜰 수 있다.
+  if ((orientation === 'back' || orientation === 'front') && m.crossoverAssessment && m.crossoverAssessment.level !== 'normal') {
+    const c = m.crossoverAssessment;
+    flags.push({
+      key: 'crossover',
+      title: '교차보행(Crossover gait) 경향',
+      level: c.level,
+      message: c.level === 'risk'
+        ? `측정 중 발이 정중선을 넘어 착지하는 프레임이 전체의 ${c.crossedPct}%로 뚜렷합니다(임계 ${c.flagPct}%). 골반 안정성·과도한 고관절 내전 가능성을 확인해 보세요(ITB 증후군·경골 스트레스 반응 위험 신호).`
+        : `발이 정중선을 넘어 착지하는 경향이 경미하게 관찰됩니다(${c.crossedPct}%). 추적 관찰을 권장합니다.`,
+    });
+  }
+
+  // [팔 크로스바디 스윙 2026-09-14] 후면·정면 둘 다에서 관찰 가능(좌우 손목 교차라
+  // 촬영 방향에 상관없이 같은 의미) — gaitBiomechanics.js의 armCrossAssessment 재사용.
+  if ((orientation === 'back' || orientation === 'front') && m.armCrossAssessment && m.armCrossAssessment.level !== 'normal') {
+    const a = m.armCrossAssessment;
+    flags.push({
+      key: 'armCross',
+      title: '팔 크로스바디 스윙 경향',
+      level: a.level,
+      message: a.level === 'risk'
+        ? `측정 중 팔이 몸통 정중선을 넘어 반대편으로 스윙하는 프레임이 전체의 ${a.crossedPct}%로 뚜렷합니다(임계 ${a.flagPct}%). 체간 회전 보상·에너지 효율 저하 가능성이 있어 골반 회전 이상과 함께 확인해 보세요.`
+        : `팔이 몸통 정중선을 넘어 스윙하는 경향이 경미하게 관찰됩니다(${a.crossedPct}%). 추적 관찰을 권장합니다.`,
+    });
+  }
+
   return flags;
 }
 
