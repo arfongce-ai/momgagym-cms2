@@ -431,6 +431,50 @@ describe('BiomechAccumulator.toeAngleAssessment', () => {
   });
 });
 
+// ── 체간 시상면 기울기 — 기존 trunkForwardLean(측면뷰) 값에 임계값만 적용 ──
+describe('BiomechAccumulator.trunkLeanAssessment', () => {
+  // 어깨(11,12)-골반(23,24) 벡터가 수직에서 deg만큼 벌어지도록 구성.
+  const frame = (deg) => {
+    const a = Array.from({ length: 33 }, () => ({ x: 0.5, y: 0.5, visibility: 0.9 }));
+    const vy = 0.3; // |sh.y - hip.y|
+    const vx = vy * Math.tan((deg * Math.PI) / 180);
+    a[11] = { x: 0.5 + vx, y: 0.3, visibility: 0.9 };
+    a[12] = { x: 0.5 + vx, y: 0.3, visibility: 0.9 };
+    a[23] = { x: 0.5, y: 0.6, visibility: 0.9 };
+    a[24] = { x: 0.5, y: 0.6, visibility: 0.9 };
+    return a;
+  };
+
+  it('near-vertical trunk → normal', () => {
+    const acc = new BiomechAccumulator();
+    for (let i = 0; i < 10; i++) acc.push(frame(0));
+    const tl = acc.summary().trunkLeanAssessment;
+    expect(tl.level).toBe('normal');
+  });
+
+  it('moderate lean (~10°) → caution', () => {
+    const acc = new BiomechAccumulator();
+    for (let i = 0; i < 10; i++) acc.push(frame(10));
+    const tl = acc.summary().trunkLeanAssessment;
+    expect(tl.level).toBe('caution');
+    expect(tl.avgDeg).toBeCloseTo(10, 0);
+  });
+
+  it('severe lean (~20°) → risk', () => {
+    const acc = new BiomechAccumulator();
+    for (let i = 0; i < 10; i++) acc.push(frame(20));
+    const tl = acc.summary().trunkLeanAssessment;
+    expect(tl.level).toBe('risk');
+  });
+
+  it('empty accumulator defaults safely', () => {
+    const acc = new BiomechAccumulator();
+    const tl = acc.summary().trunkLeanAssessment;
+    expect(tl.avgDeg).toBeNull();
+    expect(tl.level).toBe('normal');
+  });
+});
+
 // ── 동적 무릎 정렬(외반/내반) — postureMath.classifyLegAlignment 재사용 ──
 describe('DynamicKneeAlignmentTracker (postureMath.classifyLegAlignment 재사용)', () => {
   const legFrame = ({ hipW = 0.2, kneeW = 0.2, ankleW = 0.2 } = {}) => {

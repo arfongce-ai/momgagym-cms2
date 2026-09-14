@@ -60,6 +60,17 @@ export const GAIT_TUNING = {
   // 근사하는 "투영 비율 지표"다(실제 각도 아님, 참고용 스크리닝). 실측 쌓이면 조정.
   toeAngleWarnPct: 4,
   toeAngleFlagPct: 8,
+  // [체간 시상면 기울기(전방경사 과다/대상성 후굴) 판정 추가 2026-09-14] 기존에
+  // 이미 계산·누적되던 trunkLean(어깨-골반 벡터와 수직선 각도, 측면뷰 전용)에
+  // 임계값만 새로 씌운다. 단, trunkForwardLean()이 Math.abs(vx) 기반이라 "앞으로
+  // 숙임"과 "뒤로 젖힘"을 구분하지 못한다(둘 다 수직에서 벗어난 크기만 나옴) —
+  // 진행 방향을 별도로 추정하지 않는 한 화면상 부호만으로는 전방/후방을 신뢰성
+  // 있게 가릴 수 없어, 방향 구분 없이 "수직에서 크게 벗어남"만 판정하고 실제
+  // 방향은 트레이너 육안 확인에 맡긴다(호출부 메시지 참고). postureMath.js의
+  // trunkPitchDeg(정적 자세측정, cautionAbove:8/riskAbove:15)와 같은 수치를 재사용해
+  // 일관성을 맞춤 — 실측 쌓이면 조정.
+  trunkLeanWarnDeg: 8,
+  trunkLeanFlagDeg: 15,
 };
 
 export const angleAt = (a, b, c) => {
@@ -730,9 +741,18 @@ export class BiomechAccumulator {
       : toeWorstMag >= T.toeAngleWarnPct ? POSTURE_STATUS.CAUTION
       : POSTURE_STATUS.NORMAL;
 
+    // [체간 시상면 기울기 판정 2026-09-14] 기존 trunkLean(측면뷰 전용, 방향 구분
+    // 없음)의 평균값에 임계값만 새로 씌운다 — 새 지표 계산 없음.
+    const trunkLeanStat = stat(this.trunkLean);
+    const trunkLeanAvg = this.trunkLean.length ? trunkLeanStat.avg : null;
+    const trunkLeanLevel = trunkLeanAvg == null ? POSTURE_STATUS.NORMAL
+      : trunkLeanAvg >= T.trunkLeanFlagDeg ? POSTURE_STATUS.RISK
+      : trunkLeanAvg >= T.trunkLeanWarnDeg ? POSTURE_STATUS.CAUTION
+      : POSTURE_STATUS.NORMAL;
+
     return {
       // Kinematic
-      trunkLean: stat(this.trunkLean),                 // 몸통 전방 기울기(도)
+      trunkLean: trunkLeanStat,                         // 몸통 전방 기울기(도)
       kneeFlexion: {                                   // 무릎 굽힘(도) 좌/우
         left: kL, right: kR,
         // 최대 굽힘 = 측정 중 가장 작은 각(가장 깊게 굽힌 순간)
@@ -800,6 +820,16 @@ export class BiomechAccumulator {
         level: toeAngleLevel,         // 'normal' | 'caution' | 'risk'
         warnPct: T.toeAngleWarnPct,
         flagPct: T.toeAngleFlagPct,
+      },
+      // [체간 시상면 기울기 판정 2026-09-14] 측면뷰 전용 — 후면/정면뷰에서는
+      // 어깨-골반 벡터의 x성분이 거의 변하지 않아 의미 없다(호출부에서
+      // orientation==='side'일 때만 노출할 것). 방향(전방경사 vs 대상성 후굴)은
+      // 구분하지 않음 — 위 GAIT_TUNING 주석 참고.
+      trunkLeanAssessment: {
+        avgDeg: trunkLeanAvg,
+        level: trunkLeanLevel,       // 'normal' | 'caution' | 'risk'
+        warnDeg: T.trunkLeanWarnDeg,
+        flagDeg: T.trunkLeanFlagDeg,
       },
       verticalOscillation,                             // 수직 진폭 비율(%)
       // 좌우 무릎 대칭(%): 100 = 완전 대칭

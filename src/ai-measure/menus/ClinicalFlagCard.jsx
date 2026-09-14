@@ -133,6 +133,22 @@ export function buildClinicalFlags(m, orientation) {
     });
   }
 
+  // [체간 시상면 기울기 2026-09-14] 측면뷰 전용 — gaitBiomechanics.js의
+  // trunkLeanAssessment 재사용. 전방경사(Excessive forward trunk lean)와
+  // 대상성 후굴(Compensatory trunk extension)은 방향이 반대지만, trunkLean이
+  // 방향을 구분하지 못해(위 정의부 참고) 하나의 플래그로 합쳐 표시한다.
+  if (orientation === 'side' && m.trunkLeanAssessment && m.trunkLeanAssessment.level !== 'normal') {
+    const tl = m.trunkLeanAssessment;
+    flags.push({
+      key: 'trunkLean',
+      title: '체간 시상면 기울기 이상 경향',
+      level: tl.level,
+      message: tl.level === 'risk'
+        ? `측정 중 체간이 수직에서 평균 ${tl.avgDeg}° 벗어나 있습니다(임계 ${tl.flagDeg}°). 전방경사 과다(고관절 굴곡근 단축·둔근 약화) 또는 대상성 후굴(고관절 신전 제한 보상, 요추 과전만 위험)일 수 있어 영상을 육안으로 확인해 방향을 판별하고 고관절 가동성을 함께 평가해 보세요.`
+        : `체간이 수직에서 다소 벗어나는 경향이 있습니다(평균 ${tl.avgDeg}°). 추적 관찰을 권장합니다.`,
+    });
+  }
+
   return flags;
 }
 

@@ -597,6 +597,12 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
         toeAngleAssessment: (orientationRef.current === 'back' || orientationRef.current === 'front')
           ? biomech.toeAngleAssessment
           : null,
+        // [체간 시상면 기울기 2026-09-14] 측면뷰 전용 — 후면/정면에서는 어깨-골반
+        // 벡터의 x성분이 거의 변하지 않아 의미 없다(gaitBiomechanics.js의
+        // trunkLeanAssessment 정의부 참고). 보행(Gait)에만 적용.
+        trunkLeanAssessment: orientationRef.current === 'side'
+          ? biomech.trunkLeanAssessment
+          : null,
         verticalOscillation: biomech.verticalOscillation,
         kneeSymmetry: biomech.kneeSymmetry,
         strideToHeight: biomech.strideToHeight,

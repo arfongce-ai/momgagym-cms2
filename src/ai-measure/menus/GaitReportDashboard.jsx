@@ -128,6 +128,9 @@ function normalizeMetrics(report) {
     crossoverAssessment: m.crossoverAssessment ?? null,
     armCrossAssessment: m.armCrossAssessment ?? null,
     toeAngleAssessment: m.toeAngleAssessment ?? null,
+    // [체간 시상면 기울기 2026-09-14] 측면뷰 전용 — 보행(Gait)에만 적용, 스프린트는
+    // 가속기/최고속기 구간별 기준 분리가 필요해 보류(사용자 확인, ways-of-working 참고).
+    trunkLeanAssessment: m.trunkLeanAssessment ?? null,
   };
 }
 
