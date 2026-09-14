@@ -83,6 +83,17 @@ export const POSTURE_THRESHOLDS = Object.freeze({
   // findings(항목별 체크 결과)에는 반영되어 있지 않았다. 그 기존 8° 기준을
   // 그대로 주의 문턱으로 삼고, 위험 문턱만 새로 추가한다.
   trunkPitchDeg: Object.freeze({ cautionAbove: 8, riskAbove: 15 }),
+  // [플럼라인(Plumb line) 편차 판정 추가 2026-09-14] analyzeSagittalAlignment()가
+  // 이미 측면뷰에서 계산해 반환하던 anklePlumbKneeDeviationMm/anklePlumbHipDeviationMm
+  // (발목 수직선 기준 무릎/고관절의 전후 이탈 거리 — 고전적 자세평가의 plumb line
+  // 기준선 개념)이 findings/postureClinical.js 어디에도 전혀 반영되지 않고
+  // 버려지고 있었다(사용자 지적으로 발견). trunkPitchDeg와 동일하게 방향(전방
+  // vs 후방)은 단정하지 않고 편차 크기만으로 판정 — 무릎은 발목 바로 위에 있을
+  // 때가 이상적이라 허용폭이 좁고(20/35mm), 고관절은 신체 구조상 발목보다 다소
+  // 앞에 있는 게 자연스러워 허용폭을 더 넓게 잡았다(35/60mm). 실측 데이터 없이
+  // 정한 보수적 시작값 — 실측 쌓이면 조정.
+  ankleKneePlumbMm: [20, 35],
+  ankleHipPlumbMm: [35, 60],
 });
 
 export function round(value, digits = 1) {

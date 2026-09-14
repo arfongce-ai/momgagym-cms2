@@ -205,11 +205,17 @@ export function buildRegionDiagnoses(perViewAnalysis = {}, { sex = null } = {}) 
     const cog = front?.cog?.available ? front.cog : null;
     const cogOffset = cog ? abs(cog.balanceOffsetPct ?? cog.offsetPct) : null;
     const cogLevel = cogOffset == null ? LEVEL.insufficient : cogOffset >= 35 ? LEVEL.risk : cogOffset >= 18 ? LEVEL.caution : LEVEL.normal;
-    const level = worst([pelvisLevel, cogLevel]);
+    // [플럼라인 반영 2026-09-14] analyzeSagittalAlignment()가 측면뷰에서 계산해
+    // 두던 anklePlumbHipDeviationMm(발목 수직선 기준 고관절 전후 이탈)이 지금까지
+    // 어디에도 쓰이지 않고 버려지고 있었다 — 골반 시상면 정렬 소견으로 반영.
+    const hipPlumbMm = side?.sagittal?.anklePlumbHipDeviationMm ?? null;
+    const hipPlumbLevel = levelFromMm(hipPlumbMm, ...POSTURE_THRESHOLDS.ankleHipPlumbMm);
+    const level = worst([pelvisLevel, cogLevel, hipPlumbLevel]);
     const pattern = pelvisPick.source === 'back' ? back?.frontal?.pelvisPattern : front?.frontal?.pelvisPattern;
     const measured = [];
     if (pelvisDiff != null) measured.push({ label: `골반 높이차${pelvisPick.source ? `(${pelvisPick.source === 'back' ? '후면' : '정면'})` : ''}`, value: Math.round(Math.abs(pelvisDiff)), unit: 'mm' });
     if (cogOffset != null) measured.push({ label: '무게중심 좌우 편향', value: Math.round(cogOffset), unit: '%' });
+    if (hipPlumbMm != null) measured.push({ label: '발목 수직선 대비 고관절 편차', value: Math.round(Math.abs(hipPlumbMm)), unit: 'mm' });
     const patternKo =
       pattern === 'structural_leg_length_pattern' ? '구조적 다리 길이차 가능성' :
       pattern === 'functional_lumbopelvic_pattern' ? '기능적 요추-골반 비대칭 가능성' :
@@ -223,8 +229,8 @@ export function buildRegionDiagnoses(perViewAnalysis = {}, { sex = null } = {}) 
         level === LEVEL.insufficient
           ? '골반 정렬을 판정할 정면·후면 측정값이 부족합니다.'
           : level === LEVEL.normal
-            ? '골반 좌우 높이와 무게중심이 정상 범위입니다.'
-            : `골반 좌우 비대칭${patternKo ? `(${patternKo})` : ''}과 무게중심 편향이 관찰됩니다. 짝다리 습관이 동반되면 요통과 좌우 다리 길이 차이를 유발할 수 있습니다.`,
+            ? '골반 좌우 높이와 무게중심, 전후 정렬이 정상 범위입니다.'
+            : `골반 좌우 비대칭${patternKo ? `(${patternKo})` : ''}과 무게중심 편향이 관찰됩니다.${hipPlumbLevel !== LEVEL.normal && hipPlumbLevel !== LEVEL.insufficient && hipPlumbMm != null ? ' 고관절이 발목 수직선 대비 전후로 이탈되어 있어 골반 전후 기울임(전방/후방 경사) 경향도 함께 관찰됩니다.' : ''} 짝다리 습관이 동반되면 요통과 좌우 다리 길이 차이를 유발할 수 있습니다.`,
       recommendation: level === LEVEL.normal || level === LEVEL.insufficient ? null : '양발 균등 체중 부하 습관, 약화된 둔근·코어 강화 권장.',
       estimated: false,
     });
@@ -250,10 +256,16 @@ export function buildRegionDiagnoses(perViewAnalysis = {}, { sex = null } = {}) 
       : Math.max(qDevFront ?? -Infinity, qDevBack ?? -Infinity);
     const [qCaution, qRisk] = genderThreshold('qAngleDevDeg', sex);
     const qLevel = levelFromDeg(qDev, qCaution, qRisk);
-    const level = worst([kneeLevel, legLevel, qLevel]);
+    // [플럼라인 반영 2026-09-14] analyzeSagittalAlignment()가 측면뷰에서 계산해
+    // 두던 anklePlumbKneeDeviationMm(발목 수직선 기준 무릎 전후 이탈)도 골반
+    // 고관절 편차와 동일하게 지금까지 버려지고 있었다 — 하지 시상면 정렬 소견으로 반영.
+    const kneePlumbMm = side?.sagittal?.anklePlumbKneeDeviationMm ?? null;
+    const kneePlumbLevel = levelFromMm(kneePlumbMm, ...POSTURE_THRESHOLDS.ankleKneePlumbMm);
+    const level = worst([kneeLevel, legLevel, qLevel, kneePlumbLevel]);
     const measured = [];
     if (knee != null) measured.push({ label: '무릎 신전각', value: Math.round(knee), unit: '°' });
     if (qDev != null) measured.push({ label: 'Q각 편위(프록시)', value: Math.round(qDev), unit: '°' });
+    if (kneePlumbMm != null) measured.push({ label: '발목 수직선 대비 무릎 편차', value: Math.round(Math.abs(kneePlumbMm)), unit: 'mm' });
     if (leg && leg.key && leg.key !== 'leg_alignment') {
       measured.push({ label: leg.label || '하지 정렬', value: leg.value ?? '', unit: leg.unit === 'index' ? '' : (leg.unit || '') });
     }
@@ -274,8 +286,8 @@ export function buildRegionDiagnoses(perViewAnalysis = {}, { sex = null } = {}) 
         level === LEVEL.insufficient
           ? '하지 정렬을 판정할 측정값이 부족합니다.'
           : level === LEVEL.normal
-            ? '하지 정렬과 무릎 신전각이 정상 범위입니다.'
-            : `${leg?.message ? leg.message + ' ' : ''}하지 정렬 또는 무릎 과신전 경향이 관찰됩니다. 방치 시 팔자/안짱걸음과 무릎 관절 부담 증가를 유발할 수 있습니다.${qNote}`,
+            ? '하지 정렬과 무릎 신전각, 전후 정렬이 정상 범위입니다.'
+            : `${leg?.message ? leg.message + ' ' : ''}하지 정렬 또는 무릎 과신전 경향이 관찰됩니다.${kneePlumbLevel !== LEVEL.normal && kneePlumbLevel !== LEVEL.insufficient && kneePlumbMm != null ? ' 무릎이 발목 수직선보다 앞/뒤로 벗어나 있어 무릎 과신전 또는 굴곡 보상 경향도 함께 관찰됩니다.' : ''} 방치 시 팔자/안짱걸음과 무릎 관절 부담 증가를 유발할 수 있습니다.${qNote}`,
       recommendation: level === LEVEL.normal || level === LEVEL.insufficient ? null : '발목·고관절 정렬 운동, 무릎 잠금 습관 교정 권장.',
       estimated: false,
     });

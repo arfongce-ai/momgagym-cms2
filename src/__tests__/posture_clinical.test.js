@@ -125,6 +125,49 @@ describe('buildRegionDiagnoses — 후면뷰 반영', () => {
   });
 });
 
+// [플럼라인 반영 2026-09-14] analyzeSagittalAlignment()가 측면뷰에서 계산해
+// 반환하던 anklePlumbKneeDeviationMm/anklePlumbHipDeviationMm이 어디에도
+// 쓰이지 않고 버려지던 버그를 고친 뒤의 회귀 테스트.
+describe('buildRegionDiagnoses — 플럼라인(발목 수직선) 반영', () => {
+  it('무릎 플럼라인 편차가 크면 발·다리 부위가 risk로 판정되고 측정값에 포함된다', () => {
+    const pv = {
+      front: normalPerView.front,
+      left: { sagittal: { forwardHeadMm: 10, kyphosisProxyDeg: 178, kneeExtensionProxyDeg: 178, anklePlumbKneeDeviationMm: 40 } },
+    };
+    const regions = buildRegionDiagnoses(pv);
+    const leg = regions.find((r) => r.key === 'foot_leg');
+    expect(leg.level).toBe(CLINICAL_LEVEL.risk);
+    expect(leg.measured.find((m) => m.label.includes('무릎 편차')).value).toBe(40);
+  });
+
+  it('고관절 플럼라인 편차가 크면 골반·척추 부위가 risk로 판정되고 측정값에 포함된다', () => {
+    const pv = {
+      front: normalPerView.front,
+      left: { sagittal: { forwardHeadMm: 10, kyphosisProxyDeg: 178, kneeExtensionProxyDeg: 178, anklePlumbHipDeviationMm: 65 } },
+    };
+    const regions = buildRegionDiagnoses(pv);
+    const pelvis = regions.find((r) => r.key === 'pelvis_spine');
+    expect(pelvis.level).toBe(CLINICAL_LEVEL.risk);
+    expect(pelvis.measured.find((m) => m.label.includes('고관절 편차')).value).toBe(65);
+  });
+
+  it('플럼라인 편차가 정상 범위면 정상으로 판정된다', () => {
+    const pv = {
+      front: normalPerView.front,
+      left: { sagittal: { forwardHeadMm: 10, kyphosisProxyDeg: 178, kneeExtensionProxyDeg: 178, anklePlumbKneeDeviationMm: 5, anklePlumbHipDeviationMm: 10 } },
+    };
+    const regions = buildRegionDiagnoses(pv);
+    expect(regions.find((r) => r.key === 'foot_leg').level).toBe(CLINICAL_LEVEL.normal);
+    expect(regions.find((r) => r.key === 'pelvis_spine').level).toBe(CLINICAL_LEVEL.normal);
+  });
+
+  it('플럼라인 측정값이 없어도 다른 지표만으로 정상 판정이 가능하다(insufficient로 전체를 막지 않음)', () => {
+    const regions = buildRegionDiagnoses(normalPerView);
+    expect(regions.find((r) => r.key === 'foot_leg').level).toBe(CLINICAL_LEVEL.normal);
+    expect(regions.find((r) => r.key === 'pelvis_spine').level).toBe(CLINICAL_LEVEL.normal);
+  });
+});
+
 describe('buildMuscleMap', () => {
   it('활성 부위에서 긴장/약화 근육을 추정하고 estimated=true 를 명시한다', () => {
     const regions = buildRegionDiagnoses(severeperView);
