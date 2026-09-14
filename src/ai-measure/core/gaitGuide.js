@@ -5,9 +5,13 @@
 // '중앙 세이프 존' 안에서만 촬영하도록 얇은 타겟 박스를 그린다.
 //
 // opts:
-//   view: 'side' | 'back'
+//   view: 'side' | 'back' | 'front'
 //   locked: boolean   — 캘리브레이션 완료(2초 안정) 시 true → 박스 녹색
 //   armingPct: 0~1    — 안정화 진행률(없으면 0)
+//
+// [정면뷰 추가 2026-09-14] 'front'는 정중선 계산이 'back'과 동일(화면 중앙,
+// w/2)하므로 별도 분기 없이 back과 같은 경로를 탄다 — 관상면(정면) 촬영 시
+// 골반·무릎 좌우 정렬을 보기 위한 중앙 기준선이라는 점에서 후면과 목적이 같다.
 
 export function drawGaitGuides(ctx, w, h, { view = 'side', locked = false, armingPct = 0 } = {}) {
   ctx.save();
@@ -57,11 +61,11 @@ export function drawGaitGuides(ctx, w, h, { view = 'side', locked = false, armin
     ctx.fillText(r.label, bx + 5, y - 4);
   }
 
-  // 정렬 수직선: 측면=시상면 중앙, 후면=정중선
+  // 정렬 수직선: 측면=시상면 중앙, 후면/정면=정중선
   ctx.setLineDash([6, 9]);
   ctx.lineWidth = 1.2;
   ctx.strokeStyle = locked ? 'rgba(52,211,153,0.5)' : amber;
-  const cx = view === 'back' ? w / 2 : bx + bw / 2;
+  const cx = (view === 'back' || view === 'front') ? w / 2 : bx + bw / 2;
   ctx.beginPath(); ctx.moveTo(cx, by); ctx.lineTo(cx, by + bh); ctx.stroke();
 
   // 캘리브레이션 진행 게이지 (상단 변을 따라 차오름)

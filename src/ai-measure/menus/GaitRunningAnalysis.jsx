@@ -17,6 +17,7 @@ import TrajectoryToggleChip from './TrajectoryToggleChip';
 import { useCameraRotation } from '../core/useCameraRotation';
 import { rotateLandmarksNormalized } from '../core/recordAspect';
 import GaugeHud from './GaugeHud';
+import { drawGaitGuides } from '../core/gaitGuide';
 
 // 캘리브레이션: 세이프존 + 인식 안정이 이만큼 유지되면 락
 const CALIB_HOLD_MS = 800; // 사람이 잡히면 거의 즉시 인식(0.8초 안정화로 깜빡임만 방지)
@@ -150,8 +151,16 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
   const [shareMsg, setShareMsg] = useState('');
   const [poseLoaded, setPoseLoaded] = useState(false); // MediaPipe 준비 여부
   const [aspect, setAspect] = useState('3/4'); // 3/4 | 1/1
-  const [orientation, setOrientation] = useState('unknown'); // side | back | unknown
+  const [orientation, setOrientation] = useState('unknown'); // side | back | front | unknown
   const orientationRef = useRef(null); // 히스테리시스용 직전 판정
+  // [정면뷰 선택 2026-09-14] 측면/후면은 어깨·골반 너비 비율로 자동판별되지만,
+  // 정면은 2D 관절좌표만으로는 후면과 기하학적으로 구분이 안 된다(gaitBiomechanics.js
+  // detectOrientation 주석 참고) — 그래서 정면은 자동판별에 넣지 않고, 트레이너가
+  // 촬영 전에 직접 고르는 수동 선택지로 추가한다. 'auto'면 기존 측면/후면
+  // 자동판별을 그대로 쓰고, 'side'/'back'/'front'를 고르면 그 값으로 고정한다.
+  const [viewMode, setViewMode] = useState('auto'); // auto | side | back | front
+  const viewModeRef = useRef('auto');
+  useEffect(() => { viewModeRef.current = viewMode; }, [viewMode]);
   // 컴팩트 도구 (초시계/메트로놈)
   const [toolsOpen, setToolsOpen] = useState(false);
   const [toolTab, setToolTab] = useState('stopwatch');
@@ -352,6 +361,22 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
       // CameraStage와 같은 CSS 회전 래퍼를 공유하므로 원본(raw) 좌표를 그대로 쓴다.
       try { drawSkeleton(skeletonCanvasRef.current, video, landmarks, isReadyRef.current); } catch (e) { /* noop */ }
 
+      // [정면뷰 선택 2026-09-14] 세이프존 + 캘리브레이션 진행률 가이드 오버레이.
+      // 녹화 중에는 화면을 가리지 않도록 끈다. drawSkeleton이 매 프레임 캔버스를
+      // 지우고 다시 그리므로, 같은 캔버스 컨텍스트에 이어서 그려도 잔상이 남지 않는다.
+      try {
+        const guideCanvas = skeletonCanvasRef.current;
+        if (guideCanvas && viewRef.current !== 'recording') {
+          const gCtx = guideCanvas.getContext('2d');
+          const heldMs = armingSinceRef.current != null ? Math.max(0, ts - armingSinceRef.current) : 0;
+          drawGaitGuides(gCtx, guideCanvas.width, guideCanvas.height, {
+            view: orientationRef.current || 'side',
+            locked: isReadyRef.current,
+            armingPct: Math.min(1, heldMs / CALIB_HOLD_MS),
+          });
+        }
+      } catch (e) { /* noop */ }
+
       // [2026-08-02] 카메라 원본이 회전된 채로 들어오는 기종(키오스크) 보정 —
       // 판정(보폭·관절각·좌우뷰 판별·카메라 각도·세이프존)은 전부 회전 보정된
       // 좌표를 써야 "위/아래·좌/우" 가정이 이 카메라에서도 정확하다.
@@ -377,12 +402,20 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
         } else {
           // 방향 판별 (측면/후면) — 히스테리시스로 경계 떨림 방지.
           // unknown 이면 직전 판정을 유지해 잠깐 인식 실패 시 깜빡임을 막는다.
-          const ori = detectOrientation(corrected, orientationRef.current);
-          if (ori.view !== 'unknown') { orientationRef.current = ori.view; setOrientationOnce(ori.view); }
+          // [정면뷰 선택 2026-09-14] 수동으로 뷰를 고른 경우(viewMode !== 'auto')엔
+          // 자동판별 대신 그 값을 그대로 쓴다 — 정면/후면은 2D 좌표만으론 자동
+          // 구분이 안 되므로(detectOrientation 주석 참고) 트레이너 선택에 맡긴다.
+          if (viewModeRef.current !== 'auto') {
+            orientationRef.current = viewModeRef.current;
+            setOrientationOnce(viewModeRef.current);
+          } else {
+            const ori = detectOrientation(corrected, orientationRef.current);
+            if (ori.view !== 'unknown') { orientationRef.current = ori.view; setOrientationOnce(ori.view); }
+          }
           // 캘리브레이션: 앵글 품질 + 세이프존이 유지되면 락.
-          // 후면뷰는 어깨가 넓어 high_angle 오판이 잦으므로 앵글 검사를 완화한다.
+          // 후면/정면뷰는 어깨가 넓어 high_angle 오판이 잦으므로 앵글 검사를 완화한다.
           const q = cameraAngleQuality(corrected);
-          const angleOk = orientationRef.current === 'back' ? true : q.ok;
+          const angleOk = (orientationRef.current === 'back' || orientationRef.current === 'front') ? true : q.ok;
           const inZone = isInSafeZone(corrected);
           if (angleOk && inZone) {
             lostFramesRef.current = 0;
@@ -660,6 +693,21 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
               </button>
               <SkeletonToggleChip />
               <TrajectoryToggleChip />
+              {/* [정면뷰 선택 2026-09-14] 측면/후면 자동판별 + 정면 수동선택.
+                  녹화 전(camera 화면)에만 노출 — 녹화 중 전환은 지표 기준이
+                  바뀌어 혼란을 주므로 막는다. */}
+              {view === 'camera' && (
+                <div className="flex gap-0.5 rounded-full bg-black/55 backdrop-blur p-1 border border-white/10">
+                  {[['auto', '자동'], ['side', '측면'], ['back', '후면'], ['front', '정면']].map(([k, label]) => (
+                    <button key={k} onClick={() => setViewMode(k)}
+                      className={`rounded-full px-2 py-0.5 text-[10px] font-black transition-colors ${
+                        viewMode === k ? 'bg-amber-500 text-slate-950' : 'text-slate-300'
+                      }`}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
             <div className="text-center">
               <h1 className="measure-title">보행 & 런닝 분석</h1>
@@ -668,10 +716,16 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
                   {poseLoaded ? '일정한 속도로 뛸 때 시작하세요' : 'AI 분석 모듈 준비 중...'}
                 </p>
               )}
-              {/* 측면/후면 자동 판별 표시 */}
+              {/* 측면/후면/정면 뷰 표시 (자동판별 또는 수동선택) */}
               {poseLoaded && orientation !== 'unknown' && (
-                <span className={`inline-block mt-1 rounded-full px-2.5 py-0.5 text-[11px] font-black ${orientation === 'side' ? 'bg-emerald-500/90 text-slate-950' : 'bg-sky-500/90 text-white'}`}>
-                  {orientation === 'side' ? '◧ 측면뷰 (관절 각도 분석)' : '⬓ 후면뷰 (좌우 대칭 분석)'}
+                <span className={`inline-block mt-1 rounded-full px-2.5 py-0.5 text-[11px] font-black ${
+                  orientation === 'side' ? 'bg-emerald-500/90 text-slate-950'
+                    : orientation === 'front' ? 'bg-amber-500/90 text-slate-950'
+                    : 'bg-sky-500/90 text-white'
+                }`}>
+                  {orientation === 'side' ? '◧ 측면뷰 (관절 각도 분석)'
+                    : orientation === 'front' ? '⬒ 정면뷰 (좌우 정렬 분석)'
+                    : '⬓ 후면뷰 (좌우 대칭 분석)'}
                 </span>
               )}
               {warningMsg && (
