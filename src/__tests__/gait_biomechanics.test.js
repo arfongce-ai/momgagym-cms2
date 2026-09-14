@@ -136,6 +136,52 @@ describe('GaitCycleTracker v3 (IC detection, field-grade)', () => {
   });
 });
 
+// ── 보폭 비대칭 — 스텝 카운트용으로 이미 추적 중인 발별 적응형 진폭(hi-lo) 재사용 ──
+describe('GaitCycleTracker.strideLengthAssessment', () => {
+  // ampL/ampR: 좌/우 발의 전후 스윙 진폭(다르면 보폭 비대칭 시뮬레이션).
+  const simAsym = (ampL, ampR) => {
+    const g = new GaitCycleTracker({ minStepIntervalMs: 200, minCutoff: 1.5, beta: 0.02 });
+    let ts = 0;
+    const altLm = (tt) => {
+      const a = Array.from({ length: 33 }, () => ({ x: 0.5, y: 0.5, visibility: 0.9 }));
+      a[23] = { x: 0.45, y: 0.5, visibility: 0.9 }; a[24] = { x: 0.55, y: 0.5, visibility: 0.9 };
+      const L = ampL * Math.sin(tt * 2 * Math.PI * 1);
+      const R = ampR * Math.sin(tt * 2 * Math.PI * 1 + Math.PI);
+      a[27] = { x: 0.5 + L, y: 0.75, visibility: 0.9 }; a[28] = { x: 0.5 + R, y: 0.75, visibility: 0.9 };
+      a[31] = { x: 0.52 + L, y: 0.82, visibility: 0.9 }; a[32] = { x: 0.52 + R, y: 0.82, visibility: 0.9 };
+      a[29] = { x: 0.5 + L, y: 0.8, visibility: 0.9 }; a[30] = { x: 0.5 + R, y: 0.8, visibility: 0.9 };
+      return a;
+    };
+    for (let i = 0; i < 240; i++) { ts += 1000 / 60; g.push(pelvisRelativeFeet(altLm(i / 60)), ts); }
+    return g.summary();
+  };
+
+  it('symmetric swing amplitude → normal', () => {
+    const s = simAsym(0.12, 0.12);
+    expect(s.strideLengthAssessment.level).toBe('normal');
+  });
+
+  it('moderately asymmetric swing (~right 30% shorter) → caution or risk', () => {
+    const s = simAsym(0.12, 0.08);
+    expect(s.strideLengthAssessment.level).not.toBe('normal');
+    expect(s.strideLengthAssessment.shorterSide).toBe('right');
+  });
+
+  it('markedly asymmetric swing (~right 60% shorter) → risk', () => {
+    const s = simAsym(0.12, 0.045);
+    expect(s.strideLengthAssessment.level).toBe('risk');
+    expect(s.strideLengthAssessment.shorterSide).toBe('right');
+  });
+
+  it('empty tracker defaults safely', () => {
+    const g = new GaitCycleTracker();
+    const s = g.summary().strideLengthAssessment;
+    expect(s.asymmetryPct).toBeNull();
+    expect(s.shorterSide).toBeNull();
+    expect(s.level).toBe('normal');
+  });
+});
+
 describe('jointAnglesFromPose / AngleAccumulator', () => {
   it('computes a knee angle from a 33-point array', () => {
     const a = Array.from({ length: 33 }, () => ({ x: 0.5, y: 0.5, visibility: 0.9 }));

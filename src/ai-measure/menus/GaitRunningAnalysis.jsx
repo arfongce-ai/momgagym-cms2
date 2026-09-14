@@ -603,6 +603,12 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
         trunkLeanAssessment: orientationRef.current === 'side'
           ? biomech.trunkLeanAssessment
           : null,
+        // [보폭 비대칭 2026-09-14] 측면뷰 전용 — trunkLeanAssessment와 동일한
+        // 게이팅 원칙(gaitBiomechanics.js의 strideLengthAssessment 정의부 참고).
+        // biomech(BiomechAccumulator)가 아니라 cycleSummary(GaitCycleTracker)에서 온다.
+        strideLengthAssessment: orientationRef.current === 'side'
+          ? cycleSummary.strideLengthAssessment
+          : null,
         verticalOscillation: biomech.verticalOscillation,
         kneeSymmetry: biomech.kneeSymmetry,
         strideToHeight: biomech.strideToHeight,

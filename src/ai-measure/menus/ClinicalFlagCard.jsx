@@ -149,6 +149,21 @@ export function buildClinicalFlags(m, orientation) {
     });
   }
 
+  // [보폭 비대칭(Stride length asymmetry) 2026-09-14] 측면뷰 전용 —
+  // gaitBiomechanics.js의 strideLengthAssessment(GaitCycleTracker) 재사용.
+  if (orientation === 'side' && m.strideLengthAssessment && m.strideLengthAssessment.level !== 'normal') {
+    const sl = m.strideLengthAssessment;
+    const side = SIDE_LABEL[sl.shorterSide] || '';
+    flags.push({
+      key: 'strideLength',
+      title: '보폭 비대칭 경향',
+      level: sl.level,
+      message: sl.level === 'risk'
+        ? `좌우 보폭 길이 차이가 ${sl.asymmetryPct}%로 뚜렷합니다(임계 ${sl.flagPct}%, ${side} 다리가 더 짧게 나옴). 편측 근력·유연성 결손 가능성을 확인해 보세요.`
+        : `좌우 보폭 길이가 다소 비대칭적입니다(${sl.asymmetryPct}%, ${side} 다리가 더 짧게 나옴). 추적 관찰을 권장합니다.`,
+    });
+  }
+
   return flags;
 }
 

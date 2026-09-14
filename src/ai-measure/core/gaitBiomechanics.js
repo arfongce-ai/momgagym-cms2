@@ -71,6 +71,13 @@ export const GAIT_TUNING = {
   // 일관성을 맞춤 — 실측 쌓이면 조정.
   trunkLeanWarnDeg: 8,
   trunkLeanFlagDeg: 15,
+  // [보폭 비대칭(Stride length asymmetry) 판정 추가 2026-09-14] GaitCycleTracker가
+  // 스텝 카운트를 위해 이미 발마다 추적하던 적응형 진폭 밴드(foot.hi-foot.lo,
+  // pelvisRelativeFeet()로 골반너비 정규화된 좌표라 별도 스케일 보정 불필요)를
+  // 좌우 비교해 재사용한다 — 새 신호 계산 없음. 측면뷰에서만 실제 "보폭 길이"
+  // 의미를 갖는다(후면/정면에서는 이 x성분이 좌우 폭 잡음). 실측 쌓이면 조정.
+  strideAsymmetryWarnPct: 10,
+  strideAsymmetryFlagPct: 20,
 };
 
 export const angleAt = (a, b, c) => {
@@ -375,6 +382,23 @@ export class GaitCycleTracker {
     // 유효 측정: 충분한 움직임 + 최소 스텝 수. 누워있거나 가만히 있으면 false.
     const valid = signalAmp >= GAIT_TUNING.validMinAmp && this.steps >= GAIT_TUNING.validMinSteps;
 
+    // [보폭 비대칭 판정 2026-09-14] 스텝 카운트용으로 이미 추적 중인 발별 적응형
+    // 진폭(foot.hi-foot.lo)을 좌우 비교 — pelvisRelativeFeet()가 골반너비로 이미
+    // 정규화한 좌표라 추가 스케일 보정 없이 바로 % 비교 가능.
+    const leftRange = (this._foot.left.hi > this._foot.left.lo) ? (this._foot.left.hi - this._foot.left.lo) : null;
+    const rightRange = (this._foot.right.hi > this._foot.right.lo) ? (this._foot.right.hi - this._foot.right.lo) : null;
+    let strideAsymmetryPct = null;
+    if (leftRange != null && rightRange != null && (leftRange + rightRange) > 0) {
+      strideAsymmetryPct = Math.round((Math.abs(leftRange - rightRange) / ((leftRange + rightRange) / 2)) * 1000) / 10;
+    }
+    const strideAsymmetryLevel = strideAsymmetryPct == null ? POSTURE_STATUS.NORMAL
+      : strideAsymmetryPct >= GAIT_TUNING.strideAsymmetryFlagPct ? POSTURE_STATUS.RISK
+      : strideAsymmetryPct >= GAIT_TUNING.strideAsymmetryWarnPct ? POSTURE_STATUS.CAUTION
+      : POSTURE_STATUS.NORMAL;
+    const shorterSide = (leftRange != null && rightRange != null && leftRange !== rightRange)
+      ? (leftRange < rightRange ? 'left' : 'right')
+      : null;
+
     return {
       totalSteps: this.steps,
       stancePct: stance,
@@ -382,6 +406,16 @@ export class GaitCycleTracker {
       averageCadenceSpm: Math.round(spm),
       signalAmp: Math.round(signalAmp * 100) / 100,
       valid,
+      // [보폭 비대칭 판정 2026-09-14] 측면뷰 전용 — 후면/정면뷰에서는 이 발별
+      // 진폭이 좌우 폭(step width) 관련 값이라 보폭 길이 의미가 없다(호출부에서
+      // orientation==='side'일 때만 노출할 것, stepWidthAssessment와 동일 원칙).
+      strideLengthAssessment: {
+        asymmetryPct: strideAsymmetryPct,
+        shorterSide,                 // 'left' | 'right' | null — 더 짧게 나온 쪽
+        level: strideAsymmetryLevel, // 'normal' | 'caution' | 'risk'
+        warnPct: GAIT_TUNING.strideAsymmetryWarnPct,
+        flagPct: GAIT_TUNING.strideAsymmetryFlagPct,
+      },
     };
   }
 }
