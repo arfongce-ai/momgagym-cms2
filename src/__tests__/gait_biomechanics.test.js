@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   angleAt, OneEuroFilter, Resampler, GaitCycleTracker,
   jointAnglesFromPose, AngleAccumulator, pelvisRelativeFeet, cameraAngleQuality,
-  detectOrientation, OrientationVoter,
+  detectOrientation, OrientationVoter, BiomechAccumulator, DynamicKneeAlignmentTracker,
 } from '../ai-measure/core/gaitBiomechanics.js';
 
 const rot = (p, deg) => {
@@ -195,5 +195,115 @@ describe('detectOrientation (히스테리시스)', () => {
     for (let i = 0; i < 5; i++) voter.push(pose({ width: 0.25 })); // back
     voter.push(pose({ width: 0.03 })); // side 1회(노이즈)
     expect(voter.decide()).toBe('back');
+  });
+});
+
+// ── 골반 낙하(Trendelenburg) / 광각 보행(step width) 판정 ──
+// 어깨 y=0.3, 발목 y=0.9 → bodyScale=0.6. 골반 y차이·발목 간격을 이 스케일로
+// 정규화한 값이 GAIT_TUNING의 pelvicDrop*/stepWidth* 임계값과 비교된다.
+describe('BiomechAccumulator.pelvicDropAssessment / stepWidthAssessment', () => {
+  const frame = ({ leftHipY = 0.6, rightHipY = 0.6, ankleDx = 0.02 } = {}) => {
+    const a = Array.from({ length: 33 }, () => ({ x: 0.5, y: 0.5, visibility: 0.9 }));
+    a[11] = { x: 0.4, y: 0.3, visibility: 0.9 }; a[12] = { x: 0.6, y: 0.3, visibility: 0.9 };
+    a[23] = { x: 0.45, y: leftHipY, visibility: 0.9 }; a[24] = { x: 0.55, y: rightHipY, visibility: 0.9 };
+    a[25] = { x: 0.45, y: 0.75, visibility: 0.9 }; a[26] = { x: 0.55, y: 0.75, visibility: 0.9 };
+    a[27] = { x: 0.5 - ankleDx / 2, y: 0.9, visibility: 0.9 };
+    a[28] = { x: 0.5 + ankleDx / 2, y: 0.9, visibility: 0.9 };
+    return a;
+  };
+
+  it('normal amplitude/width → both normal', () => {
+    const acc = new BiomechAccumulator();
+    for (let i = 0; i < 10; i++) acc.push(frame());
+    const s = acc.summary();
+    expect(s.pelvicDropAssessment.level).toBe('normal');
+    expect(s.stepWidthAssessment.level).toBe('normal');
+  });
+
+  it('caution-level left pelvic drop (~4% amplitude)', () => {
+    const acc = new BiomechAccumulator();
+    for (let i = 0; i < 10; i++) acc.push(frame({ leftHipY: i % 2 === 0 ? 0.624 : 0.6 })); // amp ≈ 4.0%
+    const s = acc.summary();
+    expect(s.pelvicDropAssessment.level).toBe('caution');
+    expect(s.pelvicDropAssessment.side).toBe('left');
+  });
+
+  it('risk-level right pelvic drop (~7% amplitude)', () => {
+    const acc = new BiomechAccumulator();
+    for (let i = 0; i < 10; i++) acc.push(frame({ rightHipY: i % 2 === 0 ? 0.642 : 0.6 })); // amp ≈ 7.0%
+    const s = acc.summary();
+    expect(s.pelvicDropAssessment.level).toBe('risk');
+    expect(s.pelvicDropAssessment.side).toBe('right');
+  });
+
+  it('caution-level step width (~12% of height)', () => {
+    const acc = new BiomechAccumulator();
+    for (let i = 0; i < 10; i++) acc.push(frame({ ankleDx: 0.07 })); // 0.07/0.6 ≈ 11.7%
+    const s = acc.summary();
+    expect(s.stepWidthAssessment.level).toBe('caution');
+  });
+
+  it('risk-level step width (~18% of height)', () => {
+    const acc = new BiomechAccumulator();
+    for (let i = 0; i < 10; i++) acc.push(frame({ ankleDx: 0.11 })); // 0.11/0.6 ≈ 18.3%
+    const s = acc.summary();
+    expect(s.stepWidthAssessment.level).toBe('risk');
+  });
+
+  it('empty accumulator defaults safely (no push)', () => {
+    const acc = new BiomechAccumulator();
+    const s = acc.summary();
+    expect(s.pelvicDropAssessment.side).toBeNull();
+    expect(s.pelvicDropAssessment.level).toBe('normal');
+    expect(s.stepWidthAssessment.widthPct).toBeNull();
+    expect(s.stepWidthAssessment.level).toBe('normal');
+  });
+});
+
+// ── 동적 무릎 정렬(외반/내반) — postureMath.classifyLegAlignment 재사용 ──
+describe('DynamicKneeAlignmentTracker (postureMath.classifyLegAlignment 재사용)', () => {
+  const legFrame = ({ hipW = 0.2, kneeW = 0.2, ankleW = 0.2 } = {}) => {
+    const a = Array.from({ length: 33 }, () => ({ x: 0.5, y: 0.5, visibility: 0.9 }));
+    a[23] = { x: 0.5 - hipW / 2, y: 0.5, visibility: 0.9 }; a[24] = { x: 0.5 + hipW / 2, y: 0.5, visibility: 0.9 };
+    a[25] = { x: 0.5 - kneeW / 2, y: 0.7, visibility: 0.9 }; a[26] = { x: 0.5 + kneeW / 2, y: 0.7, visibility: 0.9 };
+    a[27] = { x: 0.5 - ankleW / 2, y: 0.9, visibility: 0.9 }; a[28] = { x: 0.5 + ankleW / 2, y: 0.9, visibility: 0.9 };
+    return a;
+  };
+
+  it('even widths → normal, no peak recorded', () => {
+    const t = new DynamicKneeAlignmentTracker();
+    for (let i = 0; i < 20; i++) t.push(legFrame());
+    const s = t.summary();
+    expect(s.status).toBe('normal');
+    expect(s.frames).toBe(20);
+  });
+
+  it('captures a transient valgus peak amid mostly-normal frames', () => {
+    const t = new DynamicKneeAlignmentTracker();
+    for (let i = 0; i < 20; i++) {
+      // 딱 한 프레임만 뚜렷한 외반(무릎이 좁고 발목이 넓음)을 순간적으로 보인다 —
+      // 평균으로는 씻겨나갈 신호라 peak-tracking이 아니면 놓친다.
+      t.push(i === 10 ? legFrame({ hipW: 0.2, kneeW: 0.1, ankleW: 0.3 }) : legFrame());
+    }
+    const s = t.summary();
+    expect(s.status).toBe('risk');
+    expect(s.key).toBe('genu_valgum');
+    expect(s.maxValgusIndex).toBeGreaterThanOrEqual(35);
+    expect(s.flaggedFramePct).toBeLessThan(10);
+  });
+
+  it('detects genu varum (knees wide, ankles narrow)', () => {
+    const t = new DynamicKneeAlignmentTracker();
+    for (let i = 0; i < 5; i++) t.push(legFrame({ hipW: 0.2, kneeW: 0.3, ankleW: 0.1 }));
+    const s = t.summary();
+    expect(s.key).toBe('genu_varum');
+    expect(s.status).not.toBe('normal');
+  });
+
+  it('empty tracker defaults safely (no push)', () => {
+    const t = new DynamicKneeAlignmentTracker();
+    const s = t.summary();
+    expect(s.frames).toBe(0);
+    expect(s.status).toBe('normal');
   });
 });

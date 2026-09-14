@@ -28,6 +28,13 @@ export const GAIT_TUNING = {
   // 실측 쌓이면 이 값들만 조정.
   pelvicDropWarnPct: 3,  // 이상 → 주의(경미한 비대칭)
   pelvicDropFlagPct: 6,  // 이상 → 유의미(뚜렷한 비대칭 — Trendelenburg 의심)
+  // [광각/실조성 보행 판정 추가 2026-09-14] ankleSpread(발목 간 거리, 기존
+  // strideToHeight 계산에 쓰이던 값)를 후면·정면뷰에서는 "보폭 너비(step width)"로
+  // 재해석해 광각(wide-based)/실조성(ataxic) 보행 — 임상평가 가이드 문서 낙상위험
+  // 스크리닝 항목 — 을 스크리닝한다. 문헌상 정상 보폭너비는 신장 대비 매우 작은
+  // 비율이라 신장 대비 10%/16%를 보수적 시작값으로 둔다. 실측 쌓이면 조정.
+  stepWidthWarnPct: 10,
+  stepWidthFlagPct: 16,
 };
 
 export const angleAt = (a, b, c) => {
@@ -571,6 +578,18 @@ export class BiomechAccumulator {
       : pelvicDropAbs >= T.pelvicDropWarnPct ? POSTURE_STATUS.CAUTION
       : POSTURE_STATUS.NORMAL;
 
+    // [광각/실조성 보행 판정 2026-09-14] ankleSpread 최대값(위 strideToHeight와
+    // 같은 원시값)을 신장 대비 %로 환산 — 후면·정면뷰에서만 "보폭 너비" 의미를
+    // 갖는다(측면뷰에서는 보폭 길이라 stepWidthWarnPct 기준을 적용하면 안 된다.
+    // 호출부에서 orientation별로 골라 쓸 것).
+    const stepWidthPct = (this.ankleSpread.length && meanScale)
+      ? round1((Math.max(...this.ankleSpread) / meanScale) * 100)
+      : null;
+    const stepWidthLevel = stepWidthPct == null ? POSTURE_STATUS.NORMAL
+      : stepWidthPct >= T.stepWidthFlagPct ? POSTURE_STATUS.RISK
+      : stepWidthPct >= T.stepWidthWarnPct ? POSTURE_STATUS.CAUTION
+      : POSTURE_STATUS.NORMAL;
+
     return {
       // Kinematic
       trunkLean: stat(this.trunkLean),                 // 몸통 전방 기울기(도)
@@ -593,6 +612,15 @@ export class BiomechAccumulator {
         level: pelvicDropLevel,      // 'normal' | 'caution' | 'risk' (POSTURE_STATUS)
         warnPct: T.pelvicDropWarnPct,
         flagPct: T.pelvicDropFlagPct,
+      },
+      // [광각/실조성 보행 판정 2026-09-14] 후면·정면뷰 전용 — 측면 촬영에서는
+      // strideToHeight(보폭 길이) 의미이므로 호출부에서 orientation==='back'|'front'
+      // 일 때만 노출할 것.
+      stepWidthAssessment: {
+        widthPct: stepWidthPct,
+        level: stepWidthLevel,       // 'normal' | 'caution' | 'risk'
+        warnPct: T.stepWidthWarnPct,
+        flagPct: T.stepWidthFlagPct,
       },
       verticalOscillation,                             // 수직 진폭 비율(%)
       // 좌우 무릎 대칭(%): 100 = 완전 대칭

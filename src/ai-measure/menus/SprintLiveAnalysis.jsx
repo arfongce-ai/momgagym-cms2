@@ -253,12 +253,14 @@ export default function SprintLiveAnalysis({ member, onBack, onSaveToFirebase, o
       drawHipDot(landmarks);
 
       if (viewRef.current === 'running' && landmarks) {
-        // [임상 플래그 추가 2026-09-14] depth(근-원) 모드 + 트레이너가 고른 정면/후면에
-        // 따라 해당 누적기에만 채운다 — lateral(측면)에서는 이 분석을 하지 않는다.
-        if (camAngleRef.current === 'depth' && depthOrientationRef.current === 'back') {
+        // [임상 플래그 추가 2026-09-14] depth(근-원) 모드에서만 채운다 —
+        // lateral(측면)에서는 이 분석을 하지 않는다. pelvicAccRef(BiomechAccumulator)는
+        // 골반 낙하(후면 전용)뿐 아니라 광각 보행 스크리닝(stepWidthAssessment,
+        // 후면·정면 둘 다 유효)에도 쓰여서 정면/후면 모두에서 채운다 — kneeAlignAccRef는
+        // 무릎 정렬이 정면에서만 의미 있어 정면일 때만 채운다.
+        if (camAngleRef.current === 'depth') {
           pelvicAccRef.current.push(landmarks);
-        } else if (camAngleRef.current === 'depth' && depthOrientationRef.current === 'front') {
-          kneeAlignAccRef.current.push(landmarks);
+          if (depthOrientationRef.current === 'front') kneeAlignAccRef.current.push(landmarks);
         }
       }
       if (viewRef.current === 'running' && landmarks && trackerRef.current) {
@@ -452,6 +454,9 @@ export default function SprintLiveAnalysis({ member, onBack, onSaveToFirebase, o
     const kneeAlignment = (camAngle === 'depth' && depthOrientation === 'front' && kneeAlignSummary.frames > 0)
       ? kneeAlignSummary
       : null;
+    // [광각/실조성 보행 2026-09-14] 후면·정면 둘 다 유효 — depth 모드에서 pelvicAccRef가
+    // 두 orientation 모두 채워지므로(위 loop() 참고) camAngle==='depth'이기만 하면 된다.
+    const stepWidthAssessment = camAngle === 'depth' ? pelvicSummary.stepWidthAssessment : null;
     setReportData({
       ...summary,
       testKey,
@@ -460,7 +465,7 @@ export default function SprintLiveAnalysis({ member, onBack, onSaveToFirebase, o
       // [임상 플래그 표시용 2026-09-14] GaitReportDashboard.jsx와 동일한 orientation
       // 필드 — camAngle==='lateral'이면 'side', depth면 트레이너가 고른 front/back 그대로.
       orientation: camAngle === 'lateral' ? 'side' : depthOrientation,
-      metrics: { pelvicDropAssessment, kneeAlignment },
+      metrics: { pelvicDropAssessment, kneeAlignment, stepWidthAssessment },
       member: { id: member?.id || null, name: member?.name || null },
       measuredAt: new Date().toISOString(),
     });

@@ -78,6 +78,11 @@ export const POSTURE_THRESHOLDS = Object.freeze({
   // BlazePose 3점각은 정의상 180°를 넘을 수 없어(acos 결과 범위), 180° 미만 값은
   // '살짝 덜 편 자세'일 뿐 과신전과 성격이 달라 위험으로 잡지 않는다.
   kneeExtensionDeg: Object.freeze({ cautionAbove: 180, riskAbove: 185 }),
+  // [시상면 소견 추가 2026-09-14] 체간·골반 라인이 수직에서 벗어난 정도(추정치) —
+  // 이미 PostureReport.jsx에 "앞뒤 기울기" 원시 수치로 8° 주의선이 떠 있었지만
+  // findings(항목별 체크 결과)에는 반영되어 있지 않았다. 그 기존 8° 기준을
+  // 그대로 주의 문턱으로 삼고, 위험 문턱만 새로 추가한다.
+  trunkPitchDeg: Object.freeze({ cautionAbove: 8, riskAbove: 15 }),
 });
 
 export function round(value, digits = 1) {
@@ -346,6 +351,8 @@ export function evaluatePostureRules(landmarks) {
   const leftKneeExtension = estimateKneeExtensionAngle(landmarks, 'left');
   const rightKneeExtension = estimateKneeExtensionAngle(landmarks, 'right');
   const legAlignment = classifyLegAlignment(landmarks);
+  const sagittalTilt = classifySagittalTilt(landmarks);
+  const kyphosis = classifyKyphosis(landmarks);
 
   const findings = [];
   const { cautionAbove: kneeCaution, riskAbove: kneeRisk } = POSTURE_THRESHOLDS.kneeExtensionDeg;
@@ -373,6 +380,8 @@ export function evaluatePostureRules(landmarks) {
   }
 
   if (legAlignment.status !== POSTURE_STATUS.NORMAL) findings.push(legAlignment);
+  if (sagittalTilt.status !== POSTURE_STATUS.NORMAL) findings.push(sagittalTilt);
+  if (kyphosis.status !== POSTURE_STATUS.NORMAL) findings.push(kyphosis);
 
   return {
     status: worstStatus(findings.map((item) => item.status)),
@@ -380,7 +389,68 @@ export function evaluatePostureRules(landmarks) {
     angles,
     kneeExtension: { left: leftKneeExtension, right: rightKneeExtension },
     legAlignment,
+    sagittalTilt,
+    kyphosis,
   };
+}
+
+// [시상면 소견 추가 2026-09-14] 체간(어깨중점-골반중점) 라인이 수직에서 앞/뒤로
+// 기울어진 정도 — estimate3DRotation()의 pitchDeg를 그대로 재사용한다(z좌표 기반
+// 추정치라 정확한 방향(전방 vs 후방)까지는 단정하지 않고, 다른 시상면 지표들
+// (forwardHeadMm 등)과 동일하게 편위 크기만으로 판정한다 — 좌/우 어느 쪽에서
+// 촬영했는지에 따라 z부호 해석이 달라질 수 있어 방향을 단정하면 오히려 위험하다.
+export function classifySagittalTilt(landmarks) {
+  const rotations = estimate3DRotation(landmarks);
+  const pitch = rotations.pitchDeg;
+  const { cautionAbove, riskAbove } = POSTURE_THRESHOLDS.trunkPitchDeg;
+  if (pitch == null) {
+    return { key: 'sagittal_tilt', status: POSTURE_STATUS.NORMAL, label: '체간·골반 전후 기울림', message: '판별 가능한 랜드마크가 부족합니다.' };
+  }
+  const dev = Math.abs(pitch);
+  if (dev >= riskAbove) {
+    return {
+      key: 'sagittal_tilt', status: POSTURE_STATUS.RISK, label: '체간·골반 전후 기울림 (전방경사 의심)',
+      value: round(dev, 1), unit: 'deg',
+      message: '측면 기준 체간-골반 라인이 수직에서 크게 벗어나 있습니다. 골반 전방경사(Anterior Pelvic Tilt)나 요추 전만 과다 가능성이 있어 고관절 굴곡근 단축·둔근/코어 약화를 함께 확인해야 합니다.',
+    };
+  }
+  if (dev >= cautionAbove) {
+    return {
+      key: 'sagittal_tilt', status: POSTURE_STATUS.CAUTION, label: '체간·골반 전후 기울림 주의',
+      value: round(dev, 1), unit: 'deg',
+      message: '체간-골반 라인이 수직에서 다소 벗어나는 경향이 있습니다. 골반 전방경사 경향을 추적 관찰하세요.',
+    };
+  }
+  return { key: 'sagittal_tilt', status: POSTURE_STATUS.NORMAL, label: '체간·골반 전후 기울림', value: round(dev, 1), unit: 'deg', message: '정상 범위입니다.' };
+}
+
+// [시상면 소견 추가 2026-09-14] 귀-어깨-골반 각(kyphosisProxyDeg, 기존 계산 재사용) —
+// 180°에서 벗어난 만큼을 흉추 후만·거북목 경향의 편위로 본다. 임계값은 이미
+// POSTURE_THRESHOLDS.kyphosisDevDeg([15,25])로 정의만 되어 있고 findings에는
+// 연결돼 있지 않았던 것을 이번에 연결한다.
+export function classifyKyphosis(landmarks) {
+  const sagittal = analyzeSagittalAlignment(landmarks);
+  const angle = sagittal.kyphosisProxyDeg;
+  const [cautionDev, riskDev] = POSTURE_THRESHOLDS.kyphosisDevDeg;
+  if (angle == null) {
+    return { key: 'kyphosis', status: POSTURE_STATUS.NORMAL, label: '흉추 후만 경향', message: '판별 가능한 랜드마크가 부족합니다.' };
+  }
+  const dev = Math.abs(180 - angle);
+  if (dev >= riskDev) {
+    return {
+      key: 'kyphosis', status: POSTURE_STATUS.RISK, label: '흉추 후만 경향 (거북목 동반 의심)',
+      value: round(dev, 1), unit: 'deg',
+      message: '귀-어깨-골반 라인이 크게 굽어 있습니다. 흉추 후만·거북목이 함께 진행 중일 가능성이 있어 흉추 신전·견갑 안정화 운동을 우선 고려하세요.',
+    };
+  }
+  if (dev >= cautionDev) {
+    return {
+      key: 'kyphosis', status: POSTURE_STATUS.CAUTION, label: '흉추 후만 경향 주의',
+      value: round(dev, 1), unit: 'deg',
+      message: '등이 다소 굽어 보이는 경향이 있습니다. 흉추 가동성·상부 자세 근지구력을 추적 관찰하세요.',
+    };
+  }
+  return { key: 'kyphosis', status: POSTURE_STATUS.NORMAL, label: '흉추 후만 경향', value: round(dev, 1), unit: 'deg', message: '정상 범위입니다.' };
 }
 
 export function classifyLegAlignment(landmarks) {

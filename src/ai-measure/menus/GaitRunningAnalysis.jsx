@@ -571,6 +571,12 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
         pelvicDropAssessment: biomech.pelvicDropAssessment,
         // 정면뷰 전용 — 위 kneeAlignment 참고.
         kneeAlignment,
+        // [광각/실조성 보행 2026-09-14] 후면·정면뷰 전용 — 측면에서는 같은
+        // 원시값(ankleSpread)이 strideToHeight(보폭 길이) 의미라 여기서 걸러낸다
+        // (gaitBiomechanics.js의 stepWidthAssessment 정의부 참고).
+        stepWidthAssessment: (orientationRef.current === 'back' || orientationRef.current === 'front')
+          ? biomech.stepWidthAssessment
+          : null,
         verticalOscillation: biomech.verticalOscillation,
         kneeSymmetry: biomech.kneeSymmetry,
         strideToHeight: biomech.strideToHeight,
