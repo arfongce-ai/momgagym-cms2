@@ -11,6 +11,7 @@ import { buildSummaryData } from '../core/unifiedReport';
 import { computeChangeRow, summarizeChanges, reportDateOnly } from '../core/measurementComparison';
 import ChangeSummaryPanel from '../../components/report/ChangeSummaryPanel.jsx';
 import VideoCompareUpload from '../../components/report/VideoCompareUpload.jsx';
+import ClinicalFlagCard, { buildClinicalFlag } from './ClinicalFlagCard.jsx';
 
 /*
  * SprintReportDashboard — 스프린트 & 아질리티 종합 리포트 (1장 대시보드)
@@ -34,6 +35,17 @@ import VideoCompareUpload from '../../components/report/VideoCompareUpload.jsx';
 
 // [전/후 변화 요약] GaitReportDashboard.jsx의 buildGaitChangeSummary와 동일한 역할.
 // decelTime은 agility(5-0-5)에만 있는 지표라 값이 있을 때만 행을 만든다.
+// [임상 플래그 추가 2026-09-14] SprintLiveAnalysis.jsx가 depth(근-원) 촬영모드 +
+// 트레이너가 고른 정면/후면일 때만 report.metrics에 채워 넣는다(GaitRunningAnalysis.jsx와
+// 동일한 계약 — ClinicalFlagCard.jsx의 buildClinicalFlag가 report.orientation과 함께 읽는다).
+function normalizeClinicalMetrics(report) {
+  const m = report?.metrics || {};
+  return {
+    pelvicDropAssessment: m.pelvicDropAssessment ?? null,
+    kneeAlignment: m.kneeAlignment ?? null,
+  };
+}
+
 function buildSprintChangeSummary(report, previousReport) {
   if (!previousReport) return null;
   const rows = [
@@ -51,6 +63,8 @@ export default function SprintReportDashboard({ report, previousReport, onCommen
   const [comment, setComment] = useState(report?.trainerComment || '');
   const [saved, setSaved] = useState(false);
   const changeSummary = useMemo(() => buildSprintChangeSummary(report, previousReport), [report, previousReport]);
+  const clinicalM = useMemo(() => normalizeClinicalMetrics(report), [report]);
+  const clinicalFlag = useMemo(() => buildClinicalFlag(clinicalM, report?.orientation), [clinicalM, report?.orientation]);
 
   // 측정 직후 화면에서만 넘어오는 videoBlob(메모리 상 녹화본/업로드 원본)을
   // 재생 가능한 object URL로 변환 — GaitReportDashboard.jsx와 동일 패턴.
@@ -95,6 +109,7 @@ export default function SprintReportDashboard({ report, previousReport, onCommen
 
         <div className="grid gap-3">
           <ProblemFocusPanel focus={problemFocus} context={report?.cross_measure_context} />
+          {clinicalFlag && <ClinicalFlagCard flag={clinicalFlag} />}
           {/* gait_reports 컬렉션을 gait/jump와 공유하므로 updateGaitReport를 그대로 쓴다. */}
           <MomiAutoNote kind={kind} report={report} member={resolvedMember}
             onSaved={(patch) => aiStore.updateGaitReport(resolvedMember?.id, report.id, patch)} />

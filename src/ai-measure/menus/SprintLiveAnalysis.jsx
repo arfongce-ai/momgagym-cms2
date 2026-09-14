@@ -24,6 +24,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { SprintTracker, calibrateTrack } from '../core/sprintAgility';
+import { BiomechAccumulator, DynamicKneeAlignmentTracker } from '../core/gaitBiomechanics';
 import { beepTickLoud, starterShot, primeAudio } from '../core/audioCue';
 import { loadPoseLandmarker, detectPoseFrame, isPoseReady, closePoseLandmarker } from '../core/poseBackend';
 import { openMainCameraStream, describeCameraError } from '../core/cameraSelect';
@@ -55,6 +56,16 @@ const COUNTDOWN_SEC = 3;
 const CAM_ANGLES = {
   depth: { label: '정면·후면 (근-원)', points: [{ x: 0.5, y: 0.90 }, { x: 0.5, y: 0.40 }] },
   lateral: { label: '측면 (좌-우)', points: [{ x: 0.15, y: 0.58 }, { x: 0.85, y: 0.58 }] },
+};
+
+// [임상 플래그 추가 2026-09-14] depth(근-원) 모드는 트랙 계산상 정면이든 후면이든
+// 동일하게 동작하지만(위 CAM_ANGLES 주석 참고), 골반 낙하(Trendelenburg)는 후면,
+// 무릎 정렬(외반/내반)은 정면에서만 임상적으로 의미가 있다 — GaitRunningAnalysis.jsx의
+// viewMode 수동 선택과 동일하게, 2D 좌표만으로는 정면/후면을 자동 구분할 수 없으므로
+// 트레이너가 직접 고르게 한다. lateral(측면) 모드는 이 분석 대상이 아니라서 선택지가 없다.
+const DEPTH_ORIENTATIONS = {
+  back: { label: '후면 (골반 낙하 분석)' },
+  front: { label: '정면 (무릎 정렬 분석)' },
 };
 
 function useIsLandscape() {
@@ -113,6 +124,14 @@ export default function SprintLiveAnalysis({ member, onBack, onSaveToFirebase, o
   const [view, setView] = useState('camera');
   const [testKey, setTestKey] = useState('sprint10');
   const [camAngle, setCamAngle] = useState('depth'); // depth(근-원) | lateral(좌-우)
+  // [임상 플래그 추가 2026-09-14] depth 모드에서만 쓰는 정면/후면 수동 선택 —
+  // DEPTH_ORIENTATIONS 주석 참고. 기본값은 후면(현장에서 가장 흔한 설치: 카메라를
+  // 결승선 쪽에 두고 선수가 멀어지며 달리는 모습을 뒤에서 촬영).
+  const [depthOrientation, setDepthOrientation] = useState('back'); // front | back
+  const camAngleRef = useRef('depth');
+  const depthOrientationRef = useRef('back');
+  useEffect(() => { camAngleRef.current = camAngle; }, [camAngle]);
+  useEffect(() => { depthOrientationRef.current = depthOrientation; }, [depthOrientation]);
   const [warningMsg, setWarningMsg] = useState('');
   const [cameraFailed, setCameraFailed] = useState(false);
   const [poseLoaded, setPoseLoaded] = useState(false);
@@ -133,6 +152,11 @@ export default function SprintLiveAnalysis({ member, onBack, onSaveToFirebase, o
   const lastTsRef = useRef(0);
   const viewRef = useRef('camera');
   const trackerRef = useRef(null);
+  // [임상 플래그 추가 2026-09-14] GaitRunningAnalysis.jsx와 동일하게 gaitBiomechanics.js의
+  // 기존 누적기를 그대로 재사용 — 새 계산 로직을 만들지 않는다. depth 모드일 때만
+  // (아래 loop() 참고) 매 프레임 밀어 넣는다.
+  const pelvicAccRef = useRef(new BiomechAccumulator());
+  const kneeAlignAccRef = useRef(new DynamicKneeAlignmentTracker());
   const cueTimerRef = useRef(null);
   const draggingIndexRef = useRef(null);
   // [영상 다시보기 2026-09-07] GaitRunningAnalysis.jsx의 mediaRecorderRef/chunksRef/
@@ -228,6 +252,15 @@ export default function SprintLiveAnalysis({ member, onBack, onSaveToFirebase, o
 
       drawHipDot(landmarks);
 
+      if (viewRef.current === 'running' && landmarks) {
+        // [임상 플래그 추가 2026-09-14] depth(근-원) 모드 + 트레이너가 고른 정면/후면에
+        // 따라 해당 누적기에만 채운다 — lateral(측면)에서는 이 분석을 하지 않는다.
+        if (camAngleRef.current === 'depth' && depthOrientationRef.current === 'back') {
+          pelvicAccRef.current.push(landmarks);
+        } else if (camAngleRef.current === 'depth' && depthOrientationRef.current === 'front') {
+          kneeAlignAccRef.current.push(landmarks);
+        }
+      }
       if (viewRef.current === 'running' && landmarks && trackerRef.current) {
         trackerRef.current.push(landmarks, ts);
         if (ts - lastUi > 100) {
@@ -308,6 +341,8 @@ export default function SprintLiveAnalysis({ member, onBack, onSaveToFirebase, o
       return;
     }
     trackerRef.current = new SprintTracker({ calibration, splitDistancesM: cfg.splitDistancesM, mode: cfg.mode });
+    pelvicAccRef.current = new BiomechAccumulator();
+    kneeAlignAccRef.current = new DynamicKneeAlignmentTracker();
     primeAudio();
     setView('countdown');
     setCountdown(COUNTDOWN_SEC);
@@ -406,11 +441,26 @@ export default function SprintLiveAnalysis({ member, onBack, onSaveToFirebase, o
     if (!trackerRef.current) return;
     stopRecording();
     const summary = trackerRef.current.finalize();
+    // [임상 플래그 추가 2026-09-14] GaitRunningAnalysis.jsx와 동일 — depth 모드가
+    // 아니거나(lateral) 프레임이 하나도 안 쌓였으면 null로 둬서 리포트 화면에서
+    // 조용히 무시되게 한다(ClinicalFlagCard.jsx의 buildClinicalFlag 참고).
+    const pelvicSummary = pelvicAccRef.current.summary();
+    const pelvicDropAssessment = (camAngle === 'depth' && depthOrientation === 'back' && pelvicSummary.pelvicDropAssessment?.side != null)
+      ? pelvicSummary.pelvicDropAssessment
+      : null;
+    const kneeAlignSummary = kneeAlignAccRef.current.summary();
+    const kneeAlignment = (camAngle === 'depth' && depthOrientation === 'front' && kneeAlignSummary.frames > 0)
+      ? kneeAlignSummary
+      : null;
     setReportData({
       ...summary,
       testKey,
       testLabel: TEST_TYPES[testKey].label,
       source: 'live',
+      // [임상 플래그 표시용 2026-09-14] GaitReportDashboard.jsx와 동일한 orientation
+      // 필드 — camAngle==='lateral'이면 'side', depth면 트레이너가 고른 front/back 그대로.
+      orientation: camAngle === 'lateral' ? 'side' : depthOrientation,
+      metrics: { pelvicDropAssessment, kneeAlignment },
       member: { id: member?.id || null, name: member?.name || null },
       measuredAt: new Date().toISOString(),
     });
@@ -572,6 +622,17 @@ export default function SprintLiveAnalysis({ member, onBack, onSaveToFirebase, o
                 </button>
               ))}
             </div>
+            {/* [임상 플래그 추가 2026-09-14] depth 모드에서만 정면/후면을 고르게 한다 —
+                DEPTH_ORIENTATIONS 주석 참고. lateral(측면)은 이 분석 대상이 아니다. */}
+            {camAngle === 'depth' && (
+              <div style={styles.testPicker}>
+                {Object.entries(DEPTH_ORIENTATIONS).map(([key, cfg]) => (
+                  <button key={key} onClick={() => setDepthOrientation(key)} style={{ ...styles.testBtn, ...(depthOrientation === key ? styles.testBtnActive : {}) }}>
+                    {cfg.label}
+                  </button>
+                ))}
+              </div>
+            )}
             <button style={styles.primaryBtn} onClick={() => setView('calibrate')} disabled={!poseLoaded}>
               {poseLoaded ? '바닥 기준선 잡기' : '로딩 중...'}
             </button>

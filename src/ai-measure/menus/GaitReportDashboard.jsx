@@ -15,6 +15,7 @@ import { buildSummaryData } from '../core/unifiedReport';
 import { computeChangeRow, summarizeChanges, reportDateOnly } from '../core/measurementComparison';
 import ChangeSummaryPanel from '../../components/report/ChangeSummaryPanel.jsx';
 import VideoCompareUpload from '../../components/report/VideoCompareUpload.jsx';
+import ClinicalFlagCard, { buildClinicalFlag } from './ClinicalFlagCard.jsx';
 
 const rangeCenter = (r) => (r.good[0] + r.good[1]) / 2;
 
@@ -118,6 +119,10 @@ function normalizeMetrics(report) {
     verticalOscillation: m.verticalOscillation ?? null,
     kneeSymmetry: m.kneeSymmetry ?? null,
     strideToHeight: m.strideToHeight ?? null,
+    // [임상 플래그 추가 2026-09-14] 후면뷰 전용(Trendelenburg)/정면뷰 전용(외반·내반) —
+    // ClinicalFlagCard.jsx의 buildClinicalFlag가 report.orientation과 함께 읽는다.
+    pelvicDropAssessment: m.pelvicDropAssessment ?? null,
+    kneeAlignment: m.kneeAlignment ?? null,
   };
 }
 
@@ -127,6 +132,7 @@ export default function GaitReportDashboard({ report, onComment, onClose, videoB
   const [comment, setComment] = useState(report?.trainerComment || '');
   const [saved, setSaved] = useState(false);
   const changeSummary = useMemo(() => buildGaitChangeSummary(m, previousReport), [m, previousReport]);
+  const clinicalFlag = useMemo(() => buildClinicalFlag(m, report?.orientation), [m, report?.orientation]);
 
   // 측정 직후 화면에서만 넘어오는 videoBlob(메모리 상 녹화본)을 재생 가능한
   // object URL로 변환 — 저장된 이력 화면(Report.jsx)에서는 videoBlob이 없으므로
@@ -191,6 +197,7 @@ export default function GaitReportDashboard({ report, onComment, onClose, videoB
         {/* ── 본문: 4분할 ── */}
         <div className="grid gap-3">
           <ProblemFocusPanel focus={problemFocus} context={report?.cross_measure_context} />
+          {clinicalFlag && <ClinicalFlagCard flag={clinicalFlag} />}
           {/* [Axis3 확장 2026-08-08] MomiAutoNote — PostureReport.jsx와 동일 패턴.
               gait_reports 컬렉션을 jump와 공유하므로 updateGaitReport를 그대로 쓴다. */}
           <MomiAutoNote kind="gait" report={report} member={resolvedMember}
