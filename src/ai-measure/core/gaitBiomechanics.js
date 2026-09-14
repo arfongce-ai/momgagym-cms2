@@ -1,5 +1,10 @@
 // ai-measure/core/gaitBiomechanics.js
 
+// [동적 무릎 정렬 2026-09-14] 자세측정(postureMath.js)이 이미 검증해둔 X다리/
+// O다리 판정을 그대로 재사용한다 — postureMath.js는 의존성이 없는 leaf 모듈이라
+// 순환참조 위험 없이 가져다 쓸 수 있다. 새로 만들지 않고 재사용(사용자 확인).
+import { classifyLegAlignment, POSTURE_STATUS } from './postureMath.js';
+
 // ───────── 현장 튜닝 설정 (한 곳에 모음) ─────────
 // 측정 데이터가 쌓이면 이 값들만 조정해 정확도를 올릴 수 있다.
 // "정상인데 무효 처리됨" → validMinAmp/validMinSteps 낮추기
@@ -17,6 +22,12 @@ export const GAIT_TUNING = {
   orientationSideRatio: 0.35, // 호환용(중앙값)
   orientationSideMax: 0.30,   // 이하 → 측면 확정
   orientationBackMin: 0.42,   // 이상 → 후면/전면 확정 (그 사이는 직전 판정 유지)
+  // [골반 낙하 판정 2026-09-14] 실측 데이터 없이 정한 보수적 시작값 — 문헌상
+  // 명확한 합의치가 없어(Trendelenburg는 통상 육안 관찰 기준) 기존 pelvicDropAbs
+  // (좌우 진폭, % 신장 대비)에 대해 "주의"/"유의미" 2단계로만 우선 나눈다.
+  // 실측 쌓이면 이 값들만 조정.
+  pelvicDropWarnPct: 3,  // 이상 → 주의(경미한 비대칭)
+  pelvicDropFlagPct: 6,  // 이상 → 유의미(뚜렷한 비대칭 — Trendelenburg 의심)
 };
 
 export const angleAt = (a, b, c) => {
@@ -540,6 +551,26 @@ export class BiomechAccumulator {
     const kR = stat(this.kneeR);
     const pd = stat(this.pelvicDrop);
 
+    // [골반 낙하 판정 2026-09-14] pelvicDropAbs(좌우 진폭)를 GAIT_TUNING 임계값과
+    // 비교해 후면뷰 Trendelenburg 의심 여부를 플래그한다. 어느 쪽이 더 처졌는지는
+    // pd.max(왼쪽이 낮음 쪽 극값, 부호 +)와 pd.min(오른쪽이 낮음 쪽 극값, 부호 -)
+    // 중 절대값이 큰 쪽으로 판정 — pelvicDrop 정의(lm[23].y - lm[24].y, 부호 좌-우)
+    // 그대로 재사용. side는 "더 처진 쪽"을 가리킬 뿐, 어느 근육이 약한지는 임상
+    // 해석 몫으로 남겨둔다(반대측 지지기 abductor 약화가 통상적 해석).
+    const T = GAIT_TUNING;
+    const pelvicDropAbs = round1(Math.abs(pd.max - pd.min));
+    const dropLeftMag = Math.max(0, pd.max);
+    const dropRightMag = Math.max(0, -pd.min);
+    const pelvicDropSide = (dropLeftMag === 0 && dropRightMag === 0)
+      ? null
+      : (dropLeftMag >= dropRightMag ? 'left' : 'right');
+    // [자세측정과 표기 통일 2026-09-14] postureMath.js의 POSTURE_STATUS와 같은
+    // 3단계 문자열('normal'/'caution'/'risk')을 쓴다 — 앱 전체에서 같은 의미의
+    // 값이 화면마다 다른 이름(warn/flag 등)으로 나오지 않게.
+    const pelvicDropLevel = pelvicDropAbs >= T.pelvicDropFlagPct ? POSTURE_STATUS.RISK
+      : pelvicDropAbs >= T.pelvicDropWarnPct ? POSTURE_STATUS.CAUTION
+      : POSTURE_STATUS.NORMAL;
+
     return {
       // Kinematic
       trunkLean: stat(this.trunkLean),                 // 몸통 전방 기울기(도)
@@ -552,7 +583,17 @@ export class BiomechAccumulator {
       },
       // Symmetry
       pelvicDrop: pd,                                  // 골반 드롭(% 신장 대비, 부호 좌-우)
-      pelvicDropAbs: round1(Math.abs(pd.max - pd.min)),// 좌우 진폭(비대칭 크기)
+      pelvicDropAbs,                                   // 좌우 진폭(비대칭 크기) — 기존 필드 유지
+      // [골반 낙하 판정 2026-09-14] 후면뷰 전용 — 정면/측면 촬영에서는 이 골반
+      // y좌표 차이가 지지기와 무관한 노이즈라 side/level 해석에 의미가 없다.
+      // 호출부(리포트 화면)에서 orientation==='back'일 때만 노출할 것.
+      pelvicDropAssessment: {
+        side: pelvicDropSide,        // 'left' | 'right' | null — 더 많이 처진 쪽
+        amplitudePct: pelvicDropAbs,
+        level: pelvicDropLevel,      // 'normal' | 'caution' | 'risk' (POSTURE_STATUS)
+        warnPct: T.pelvicDropWarnPct,
+        flagPct: T.pelvicDropFlagPct,
+      },
       verticalOscillation,                             // 수직 진폭 비율(%)
       // 좌우 무릎 대칭(%): 100 = 완전 대칭
       kneeSymmetry: (kL.avg && kR.avg)
@@ -560,6 +601,65 @@ export class BiomechAccumulator {
         : 0,
       // Spatial
       strideToHeight,                                  // 보폭/신장 비율
+    };
+  }
+}
+
+const round1 = (n) => Math.round(n * 10) / 10;
+
+// ════════════════════════════════════════════════════════════════════════
+//  DynamicKneeAlignmentTracker — 정면뷰 동적 무릎 정렬(외반/내반) 추적
+//  [2026-09-14] 새로 만들지 않고 postureMath.js의 classifyLegAlignment()를
+//  그대로 재사용한다 — 정적 자세측정에서 이미 검증된 임계값(X다리 valgusIndex
+//  0.22/0.35, O다리 varusIndex 0.2/0.32)과 한국어 메시지를 보행/러닝에도 동일
+//  적용. 자세측정과 다른 점은 "정지 자세 1회 판정"이 아니라 "녹화 전체 프레임
+//  중 가장 심한 순간(peak)"을 잡는다는 것 — 동적 외반은 입각기 순간에만 짧게
+//  나타나므로 평균을 내면 씻겨 나간다.
+//  정면뷰 촬영에서만 의미 있다 — 측면/후면에서는 좌우 무릎이 겹쳐 보여
+//  kneeWidth/ankleWidth 자체가 신뢰할 수 없다(호출부에서 orientation==='front'
+//  일 때만 쓸 것).
+// ════════════════════════════════════════════════════════════════════════
+export class DynamicKneeAlignmentTracker {
+  constructor() {
+    this.maxValgusIndex = 0;
+    this.maxVarusIndex = 0;
+    this.worstStatus = POSTURE_STATUS.NORMAL;
+    this.worstKey = null;
+    this.frames = 0;
+    this.flaggedFrames = 0; // caution 이상이었던 프레임 수(대략적 지속 비율 참고용)
+  }
+
+  push(lm) {
+    const result = classifyLegAlignment(lm);
+    if (!result) return null;
+    this.frames += 1;
+
+    if (result.key === 'genu_valgum' && result.value != null) {
+      this.maxValgusIndex = Math.max(this.maxValgusIndex, result.value);
+    }
+    if (result.key === 'genu_varum' && result.value != null) {
+      this.maxVarusIndex = Math.max(this.maxVarusIndex, result.value);
+    }
+
+    if (result.status !== POSTURE_STATUS.NORMAL) {
+      this.flaggedFrames += 1;
+      const rank = { [POSTURE_STATUS.NORMAL]: 0, [POSTURE_STATUS.CAUTION]: 1, [POSTURE_STATUS.RISK]: 2 };
+      if (rank[result.status] > rank[this.worstStatus]) {
+        this.worstStatus = result.status;
+        this.worstKey = result.key;
+      }
+    }
+    return result;
+  }
+
+  summary() {
+    return {
+      status: this.worstStatus,                 // 'normal' | 'caution' | 'risk'
+      key: this.worstKey,                       // 'genu_valgum' | 'genu_varum' | null
+      maxValgusIndex: round1(this.maxValgusIndex),
+      maxVarusIndex: round1(this.maxVarusIndex),
+      flaggedFramePct: this.frames ? round1((this.flaggedFrames / this.frames) * 100) : 0,
+      frames: this.frames,
     };
   }
 }

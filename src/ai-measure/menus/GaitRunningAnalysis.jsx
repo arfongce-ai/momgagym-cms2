@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   GaitCycleTracker, jointAnglesFromPose, AngleAccumulator,
-  pelvisRelativeFeet, cameraAngleQuality, detectOrientation, BiomechAccumulator
+  pelvisRelativeFeet, cameraAngleQuality, detectOrientation, BiomechAccumulator,
+  DynamicKneeAlignmentTracker
 } from '../core/gaitBiomechanics';
 import { boostedGain } from '../core/audioCue';
 import { loadPoseLandmarker, detectPoseFrame, isPoseReady, closePoseLandmarker } from '../core/poseBackend';
@@ -215,6 +216,10 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
   // import조차 하지 않아 해당 지표들이 전부 빠진 채 저장되고 있었다(기본값이
   // 라이브 모드라 실제로는 대부분의 측정에 영향). 업로드 경로와 동일하게 추가.
   const biomechAccRef = useRef(new BiomechAccumulator());
+  // [동적 무릎 정렬 2026-09-14] 정면뷰 전용 — 측면/후면에선 좌우 무릎이
+  // 겹쳐 보여 폭 계산 자체가 신뢰 불가하므로 녹화 루프에서 orientation
+  // === 'front'일 때만 push한다(아래 startVisionPipeline 참고).
+  const kneeAlignAccRef = useRef(new DynamicKneeAlignmentTracker());
 
   useEffect(() => { viewRef.current = view; }, [view]);
   useEffect(() => { aspectRef.current = aspect; }, [aspect]);
@@ -388,6 +393,9 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
           trackerRef.current.push(pelvisRelativeFeet(corrected), ts);
           angleAccRef.current.push(jointAnglesFromPose(corrected));
           biomechAccRef.current.push(corrected);
+          // 정면뷰로 촬영 중일 때만 동적 무릎 정렬(외반/내반)을 누적한다 —
+          // 측면/후면은 좌우 무릎이 겹쳐 보여 폭 기반 판정이 무의미하다.
+          if (orientationRef.current === 'front') kneeAlignAccRef.current.push(corrected);
           if (ts - metricsLastUiRef.current > 250) {
             metricsLastUiRef.current = ts;
             const s = trackerRef.current.summary();
@@ -503,6 +511,7 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
     trackerRef.current = new GaitCycleTracker(); // 녹화 시작 시 파이프라인 초기화
     angleAccRef.current = new AngleAccumulator();
     biomechAccRef.current = new BiomechAccumulator();
+    kneeAlignAccRef.current = new DynamicKneeAlignmentTracker();
     armingSinceRef.current = null;
     recordingStartedAtRef.current = performance.now();
     // 이전 측정의 저장/공유 상태 리셋 (재녹화 시 저장 버튼이 막히지 않도록)
@@ -538,6 +547,12 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
       // pelvicDrop/pelvicDropAbs/verticalOscillation/kneeSymmetry/strideToHeight가
       // 라이브 측정에서도 실제 값으로 채워지도록 한다(전에는 전부 빠져 있었음).
       const biomech = biomechAccRef.current.summary();
+      // [정면뷰 지표 2026-09-14] 정면으로 촬영했을 때만 의미 있는 값이라
+      // orientationRef.current === 'front'였을 때만 채우고, 아니면 null로
+      // 남겨 화면(GaitReportDashboard.jsx)이 "측정 안 됨"과 "정상"을 구분하게 한다.
+      const kneeAlignment = orientationRef.current === 'front'
+        ? kneeAlignAccRef.current.summary()
+        : null;
       const metrics = {
         cadence: cycleSummary.averageCadenceSpm,
         stancePct: cycleSummary.stancePct,
@@ -550,6 +565,12 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
         kneeFlexion: biomech.kneeFlexion,
         pelvicDrop: biomech.pelvicDrop,
         pelvicDropAbs: biomech.pelvicDropAbs,
+        // 후면뷰 전용 — pelvicDrop 정의 자체가 orientation과 무관하게 항상
+        // 계산되므로, 정면/측면 촬영본에서는 화면에서 무시할 것(주석은
+        // gaitBiomechanics.js의 pelvicDropAssessment 정의부 참고).
+        pelvicDropAssessment: biomech.pelvicDropAssessment,
+        // 정면뷰 전용 — 위 kneeAlignment 참고.
+        kneeAlignment,
         verticalOscillation: biomech.verticalOscillation,
         kneeSymmetry: biomech.kneeSymmetry,
         strideToHeight: biomech.strideToHeight,
