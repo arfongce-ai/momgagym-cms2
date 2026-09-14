@@ -592,6 +592,11 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
         armCrossAssessment: (orientationRef.current === 'back' || orientationRef.current === 'front')
           ? biomech.armCrossAssessment
           : null,
+        // [발 진행각(Toe-out/Toe-in) 2026-09-14] 후면·정면뷰 전용 — armCrossAssessment와
+        // 동일한 게이팅 원칙(gaitBiomechanics.js의 toeAngleAssessment 정의부 참고).
+        toeAngleAssessment: (orientationRef.current === 'back' || orientationRef.current === 'front')
+          ? biomech.toeAngleAssessment
+          : null,
         verticalOscillation: biomech.verticalOscillation,
         kneeSymmetry: biomech.kneeSymmetry,
         strideToHeight: biomech.strideToHeight,

@@ -463,6 +463,8 @@ export default function SprintLiveAnalysis({ member, onBack, onSaveToFirebase, o
     const crossoverAssessment = camAngle === 'depth' ? pelvicSummary.crossoverAssessment : null;
     // [팔 크로스바디 스윙 2026-09-14] crossoverAssessment와 동일한 게이팅(depth 모드면 OK).
     const armCrossAssessment = camAngle === 'depth' ? pelvicSummary.armCrossAssessment : null;
+    // [발 진행각(Toe-out/Toe-in) 2026-09-14] armCrossAssessment와 동일한 게이팅(depth 모드면 OK).
+    const toeAngleAssessment = camAngle === 'depth' ? pelvicSummary.toeAngleAssessment : null;
     setReportData({
       ...summary,
       testKey,
@@ -471,7 +473,7 @@ export default function SprintLiveAnalysis({ member, onBack, onSaveToFirebase, o
       // [임상 플래그 표시용 2026-09-14] GaitReportDashboard.jsx와 동일한 orientation
       // 필드 — camAngle==='lateral'이면 'side', depth면 트레이너가 고른 front/back 그대로.
       orientation: camAngle === 'lateral' ? 'side' : depthOrientation,
-      metrics: { pelvicDropAssessment, kneeAlignment, stepWidthAssessment, scissoringAssessment, crossoverAssessment, armCrossAssessment },
+      metrics: { pelvicDropAssessment, kneeAlignment, stepWidthAssessment, scissoringAssessment, crossoverAssessment, armCrossAssessment, toeAngleAssessment },
       member: { id: member?.id || null, name: member?.name || null },
       measuredAt: new Date().toISOString(),
     });

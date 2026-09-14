@@ -47,6 +47,7 @@ function normalizeClinicalMetrics(report) {
     scissoringAssessment: m.scissoringAssessment ?? null,
     crossoverAssessment: m.crossoverAssessment ?? null,
     armCrossAssessment: m.armCrossAssessment ?? null,
+    toeAngleAssessment: m.toeAngleAssessment ?? null,
   };
 }
 

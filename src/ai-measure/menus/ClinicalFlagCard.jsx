@@ -116,6 +116,23 @@ export function buildClinicalFlags(m, orientation) {
     });
   }
 
+  // [발 진행각(Toe-out/Toe-in) 2026-09-14] 후면·정면 둘 다에서 관찰 가능 —
+  // gaitBiomechanics.js의 toeAngleAssessment 재사용. 2D 투영 근사치라 실제 도(deg)
+  // 단위가 아니라 %로 표기(문구에서도 "각도"라 단정하지 않는다).
+  if ((orientation === 'back' || orientation === 'front') && m.toeAngleAssessment && m.toeAngleAssessment.level !== 'normal') {
+    const t = m.toeAngleAssessment;
+    const side = SIDE_LABEL[t.side] || '';
+    const dirLabel = t.direction === 'out' ? '외측(toe-out)' : '내측(toe-in)';
+    flags.push({
+      key: 'toeAngle',
+      title: `발 진행각 이상 경향 (${dirLabel})`,
+      level: t.level,
+      message: t.level === 'risk'
+        ? `${side} 발끝이 측정 중 ${dirLabel}으로 뚜렷하게 벌어지는 경향이 관찰됩니다(참고 지표 ${Math.abs(t[t.side === 'left' ? 'leftPct' : 'rightPct'])}%). 고관절 회전 프로파일·추진 효율을 함께 확인해 보세요(2D 촬영 기반 참고치이며 실제 진행각(도) 측정값은 아닙니다).`
+        : `${side} 발끝이 ${dirLabel}으로 다소 벌어지는 경향이 있습니다. 추적 관찰을 권장합니다.`,
+    });
+  }
+
   return flags;
 }
 

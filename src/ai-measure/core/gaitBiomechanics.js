@@ -53,6 +53,13 @@ export const GAIT_TUNING = {
   // 가위걸음과 동일한 보수적 시작값 사용, 실측 쌓이면 조정.
   armCrossWarnPct: 3,
   armCrossFlagPct: 10,
+  // [발 진행각(Toe-out/Toe-in) 판정 추가 2026-09-14] 문헌상 정상 기준은 3D
+  // 보행분석 기준 "외측 8~10도" 같은 각도(deg)지만, 단일 2D 카메라(후면/정면)
+  // 로는 발의 실제 진행각(주로 깊이축 회전)을 정확히 복원할 수 없다 — 여기서는
+  // 발목→발끝 벡터가 몸 중심선에서 얼마나 더/덜 벌어지는지를 신장 대비 %로
+  // 근사하는 "투영 비율 지표"다(실제 각도 아님, 참고용 스크리닝). 실측 쌓이면 조정.
+  toeAngleWarnPct: 4,
+  toeAngleFlagPct: 8,
 };
 
 export const angleAt = (a, b, c) => {
@@ -543,6 +550,13 @@ export class BiomechAccumulator {
     // 무관, 측면뷰 제외는 호출부에서 동일 원칙 적용).
     this._armCrossFrames = 0;
     this._armCrossCheckFrames = 0;
+    // [발 진행각(Toe-out/Toe-in) 판정 2026-09-14] 발목(27/28)→발끝(31/32) 벡터가
+    // 그 발의 몸 중심선 기준 바깥쪽(양수=toe-out)/안쪽(음수=toe-in)으로 벌어지는
+    // 정도. 좌우 어느 쪽이 화면상 어디에 있든(전면/후면 무관) 부호가 그대로
+    // 맞도록 "그 발의 중심선 기준 방향"을 곱해 정규화한다(가위걸음의 부호비교와
+    // 같은 원리를 연속값에 적용).
+    this.toeAngleL = [];
+    this.toeAngleR = [];
   }
 
   push(lm) {
@@ -590,6 +604,18 @@ export class BiomechAccumulator {
       if (shoulderSign !== 0 && wristSign !== 0) {
         this._armCrossCheckFrames += 1;
         if (wristSign !== shoulderSign) this._armCrossFrames += 1;
+      }
+    }
+
+    if (_vis(lm[23]) && _vis(lm[24])) {
+      const hipMidX = (lm[23].x + lm[24].x) / 2;
+      if (_vis(lm[27]) && _vis(lm[31])) {
+        const sideL = Math.sign(lm[27].x - hipMidX);
+        if (sideL !== 0) this.toeAngleL.push((lm[31].x - lm[27].x) * sideL);
+      }
+      if (_vis(lm[28]) && _vis(lm[32])) {
+        const sideR = Math.sign(lm[28].x - hipMidX);
+        if (sideR !== 0) this.toeAngleR.push((lm[32].x - lm[28].x) * sideR);
       }
     }
   }
@@ -683,6 +709,27 @@ export class BiomechAccumulator {
       : armCrossPct >= T.armCrossWarnPct ? POSTURE_STATUS.CAUTION
       : POSTURE_STATUS.NORMAL;
 
+    // [발 진행각(Toe-out/Toe-in) 판정 2026-09-14] 좌/우 각각 평균을 신장 대비
+    // %로 정규화 — 양수=toe-out(바깥으로 벌어짐), 음수=toe-in(안쪽으로 모임).
+    const avg = (arr) => (arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null);
+    const toeAvgL = avg(this.toeAngleL);
+    const toeAvgR = avg(this.toeAngleR);
+    const toeOutPctL = (toeAvgL != null && meanScale) ? round1((toeAvgL / meanScale) * 100) : null;
+    const toeOutPctR = (toeAvgR != null && meanScale) ? round1((toeAvgR / meanScale) * 100) : null;
+    let toeSide = null, toeDirection = null, toeWorstPct = null;
+    const magL = toeOutPctL != null ? Math.abs(toeOutPctL) : -1;
+    const magR = toeOutPctR != null ? Math.abs(toeOutPctR) : -1;
+    if (magL >= 0 || magR >= 0) {
+      if (magL >= magR && magL >= 0) { toeSide = 'left'; toeWorstPct = toeOutPctL; }
+      else if (magR >= 0) { toeSide = 'right'; toeWorstPct = toeOutPctR; }
+      if (toeWorstPct != null) toeDirection = toeWorstPct >= 0 ? 'out' : 'in';
+    }
+    const toeWorstMag = toeWorstPct != null ? Math.abs(toeWorstPct) : null;
+    const toeAngleLevel = toeWorstMag == null ? POSTURE_STATUS.NORMAL
+      : toeWorstMag >= T.toeAngleFlagPct ? POSTURE_STATUS.RISK
+      : toeWorstMag >= T.toeAngleWarnPct ? POSTURE_STATUS.CAUTION
+      : POSTURE_STATUS.NORMAL;
+
     return {
       // Kinematic
       trunkLean: stat(this.trunkLean),                 // 몸통 전방 기울기(도)
@@ -740,6 +787,19 @@ export class BiomechAccumulator {
         level: armCrossLevel,        // 'normal' | 'caution' | 'risk'
         warnPct: T.armCrossWarnPct,
         flagPct: T.armCrossFlagPct,
+      },
+      // [발 진행각(Toe-out/Toe-in) 판정 2026-09-14] 후면·정면뷰 전용 — 측면
+      // 촬영에서는 발목→발끝 벡터의 x성분이 진행각이 아니라 발 길이(깊이) 잡음이라
+      // 의미가 없다. leftPct/rightPct: 양수=toe-out, 음수=toe-in(신장 대비 %,
+      // 실제 3D 진행각(도)이 아닌 2D 투영 근사치 — 참고용).
+      toeAngleAssessment: {
+        leftPct: toeOutPctL,
+        rightPct: toeOutPctR,
+        side: toeSide,                // 'left' | 'right' | null — 더 뚜렷한 쪽
+        direction: toeDirection,      // 'out' | 'in' | null
+        level: toeAngleLevel,         // 'normal' | 'caution' | 'risk'
+        warnPct: T.toeAngleWarnPct,
+        flagPct: T.toeAngleFlagPct,
       },
       verticalOscillation,                             // 수직 진폭 비율(%)
       // 좌우 무릎 대칭(%): 100 = 완전 대칭

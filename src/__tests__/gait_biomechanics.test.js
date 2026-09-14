@@ -382,6 +382,55 @@ describe('BiomechAccumulator.armCrossAssessment', () => {
   });
 });
 
+// ── 발 진행각(Toe-out/Toe-in) — 발목→발끝 벡터의 중심선 기준 벌어짐 정도(2D 투영 근사치) ──
+describe('BiomechAccumulator.toeAngleAssessment', () => {
+  // 어깨(11,12) y=0.3, 골반(23,24) x=0.5 중심(좌 0.4/우 0.6), 발목 y=0.9 → bodyScale=0.6.
+  // offsetL/offsetR: 양수 = 그 발이 toe-out, 음수 = toe-in (몸 중심선 기준).
+  const frame = (offsetL = 0, offsetR = 0) => {
+    const a = Array.from({ length: 33 }, () => ({ x: 0.5, y: 0.5, visibility: 0.9 }));
+    a[11] = { x: 0.4, y: 0.3, visibility: 0.9 }; a[12] = { x: 0.6, y: 0.3, visibility: 0.9 };
+    a[23] = { x: 0.4, y: 0.6, visibility: 0.9 }; a[24] = { x: 0.6, y: 0.6, visibility: 0.9 };
+    a[27] = { x: 0.4, y: 0.9, visibility: 0.9 }; a[28] = { x: 0.6, y: 0.9, visibility: 0.9 };
+    a[31] = { x: 0.4 - offsetL, y: 0.9, visibility: 0.9 }; // sideL=-1 → value=(toe-ankle)*-1=offsetL
+    a[32] = { x: 0.6 + offsetR, y: 0.9, visibility: 0.9 }; // sideR=+1 → value=(toe-ankle)*1=offsetR
+    return a;
+  };
+
+  it('no lateral deviation → normal', () => {
+    const acc = new BiomechAccumulator();
+    for (let i = 0; i < 20; i++) acc.push(frame(0, 0));
+    expect(acc.summary().toeAngleAssessment.level).toBe('normal');
+  });
+
+  it('left foot mild toe-out (~5%) → caution', () => {
+    const acc = new BiomechAccumulator();
+    for (let i = 0; i < 20; i++) acc.push(frame(0.03, 0)); // 0.03/0.6*100 = 5%
+    const t = acc.summary().toeAngleAssessment;
+    expect(t.level).toBe('caution');
+    expect(t.side).toBe('left');
+    expect(t.direction).toBe('out');
+    expect(t.leftPct).toBeCloseTo(5, 0);
+  });
+
+  it('left foot marked toe-in (~-10%) → risk', () => {
+    const acc = new BiomechAccumulator();
+    for (let i = 0; i < 20; i++) acc.push(frame(-0.06, 0)); // -0.06/0.6*100 = -10%
+    const t = acc.summary().toeAngleAssessment;
+    expect(t.level).toBe('risk');
+    expect(t.side).toBe('left');
+    expect(t.direction).toBe('in');
+  });
+
+  it('empty accumulator defaults safely', () => {
+    const acc = new BiomechAccumulator();
+    const t = acc.summary().toeAngleAssessment;
+    expect(t.leftPct).toBeNull();
+    expect(t.rightPct).toBeNull();
+    expect(t.side).toBeNull();
+    expect(t.level).toBe('normal');
+  });
+});
+
 // ── 동적 무릎 정렬(외반/내반) — postureMath.classifyLegAlignment 재사용 ──
 describe('DynamicKneeAlignmentTracker (postureMath.classifyLegAlignment 재사용)', () => {
   const legFrame = ({ hipW = 0.2, kneeW = 0.2, ankleW = 0.2 } = {}) => {
