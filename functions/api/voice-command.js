@@ -64,7 +64,7 @@ const ALL_TOOLS = [
     input_schema: { type: 'object', properties: {
       memberName: { type: 'string', description: '들린 회원 이름 그대로. 언급 없으면 생략.' },
       testId: { type: 'string', enum: ['body', 'posture', 'rom', 'gait', 'jump', 'broadjump', 'lifting', 'stance', 'squat', 'compare', 'imaging', 'record', 'timer'],
-        description: '언급된 측정 종류. "신체정보"→body, "자세"/"체형"→posture, "ROM"/"가동범위"→rom, "보행"/"런닝"→gait, "점프"/"RSI"→jump, "제자리멀리뛰기"/"멀리뛰기"/"SBJ"→broadjump, "바벨"/"리프팅"→lifting, "한다리서기"/"SLST"/"균형"→stance, "오버헤드"/"딥스쿼트"→squat, "전후비교"/"오버레이"/"비교"→compare, "영상판독"/"엑스레이"/"X-ray"/"CT"/"초음파"/"MRI"→imaging, "녹화"/"영상"→record, "초시계"/"타이머"/"인터벌"/"메트로놈"→timer. 없으면 생략.' } } } },
+        description: '언급된 측정 종류. "신체정보"→body, "자세"/"체형"→posture, "ROM"/"가동범위"→rom, "보행"/"런닝"→gait, "점프"/"RSI"→jump, "제자리멀리뛰기"/"멀리뛰기"/"SBJ"/"한발멀리뛰기"/"한발 멀리뛰기"→broadjump, "바벨"/"리프팅"→lifting, "한다리서기"/"SLST"/"균형"→stance, "오버헤드"/"딥스쿼트"→squat, "전후비교"/"오버레이"/"비교"→compare, "영상판독"/"엑스레이"/"X-ray"/"CT"/"초음파"/"MRI"→imaging, "녹화"/"영상"→record, "초시계"/"타이머"/"인터벌"/"메트로놈"→timer. 없으면 생략.' } } } },
   { name: 'go_report', destinationId: 'report', roles: ['trainer', 'admin'],
     description: '리포트 화면을 연다. "OO님 리포트 열어줘"·"OO님 점프 리포트 보여줘" 같은 요청.',
     input_schema: { type: 'object', properties: {

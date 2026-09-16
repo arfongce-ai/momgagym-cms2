@@ -198,7 +198,11 @@ export default function JumpUploadAnalysis({ member, onBack, onComplete, onMembe
         calibHeightCm: effHeightCm,
         jumpType,
         jumpSubType,
-        leg: jumpSubType === 'slj' ? leg : null,
+        // [한발멀리뛰기 추가 2026-09-16] leg prop은 이미 Hub에서
+        // singleLeg 종류일 때만 값을 채워 내려준다(JUMP_SUBTYPES[..].singleLeg
+        // ? leg : null) — 여기서 'slj'만 하드코딩해서 다시 걸러내면 SLJ 외
+        // 다른 singleLeg 종류(한발멀리뛰기 등)의 다리 정보가 사라진다.
+        leg: leg ?? null,
         rsi: rsiResult,
         source: 'upload',
         precision,

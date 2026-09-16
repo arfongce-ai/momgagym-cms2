@@ -835,7 +835,10 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
       calibHeightCm: heightRef.current,
       jumpType,                       // 'power' | 'reactive' (엔진 — 하위호환 유지)
       jumpSubType,                    // 'cmj' | 'sj' | 'dj' | 'slj' | 'rsi' (세부 종류)
-      leg: jumpSubType === 'slj' ? leg : null, // SLJ만 의미 있음
+      // [한발멀리뛰기 추가 2026-09-16] leg prop은 Hub가 singleLeg 종류일 때만
+      // 채워 내려주므로 여기서 그대로 쓴다(SLJ만 하드코딩하면 다른 singleLeg
+      // 종류의 다리 정보가 사라짐).
+      leg: leg ?? null,
       rsi: rsiResult,                 // 반응 모드에서만 채워짐(null 가능)
       source: 'live',
       videoBlob, // 오버레이 합성 녹화본 (저장은 안 함, 화면에서 '동영상 저장'에 사용)
@@ -1620,7 +1623,7 @@ function ManualEntryModal({ member, jumpType = 'power', jumpSubType = 'cmj', leg
     setBusy(true);
     await onSubmit?.({
       valid: true, reason: 'ok', source: 'manual', jumpType: 'power', jumpSubType,
-      leg: jumpSubType === 'slj' ? leg : null, jumps: 1,
+      leg: leg ?? null, jumps: 1, // [한발멀리뛰기 추가 2026-09-16] 위와 동일 이유로 일반화
       flightTimeSec: ft, flightTimeMs: Math.round(ft * 1000),
       heightCm: r.heightCm, takeoffVelocity: r.takeoffVelocity, peakPower: r.peakPower,
       bodyWeight: weight ? Number(weight) : null,

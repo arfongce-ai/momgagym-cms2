@@ -16,13 +16,15 @@ import { lazy } from 'react';
 //  자동 세이프존이 아니라 바닥 기준점 2점 터치 방식(sprintAgility.js 참고).
 //  '던지기(throw)'·'스윙(swing)' 준비 중 탭은 제거됨(2607 요청).
 //  8번(SLST)·9번(스쿼트) 모두 실시간·업로드 둘 다 지원.
-//  [제자리멀리뛰기(SBJ) 탭 분리 2026-09-16] 점프 5종(CMJ/SJ/DJ/SLJ/RSI)은
-//  전부 "수직" 점프라 5번 탭 안의 세부종류 칩으로 묶여 있었는데, SBJ는
-//  "수평" 이동거리를 재는 별개 측정이라 별도 6번 탭으로 분리했다. 화면은
-//  5번과 동일한 JumpAnalysisHub.jsx를 그대로 재사용하되(component 재사용 —
-//  새로 안 만듦), fixedSubType='sbj' prop으로 세부종류 선택 칩을 숨기고
-//  SBJ 하나로 고정한다(AiMeasureHub.jsx가 active.id==='broadjump'일 때만
-//  이 prop을 얹어준다 — jumpTypes.js/JumpAnalysisHub.jsx 참고).
+//  [제자리멀리뛰기(SBJ) 탭 분리 2026-09-16, 한발멀리뛰기 추가로 확장] 점프
+//  5종(CMJ/SJ/DJ/SLJ/RSI)은 전부 "수직" 점프라 5번 탭 안의 세부종류 칩으로
+//  묶여 있었는데, SBJ(양발)·한발멀리뛰기(정면/안쪽/바깥쪽)는 "수평" 이동거리를
+//  재는 별개 측정이라 별도 6번 탭으로 분리했다. 화면은 5번과 동일한
+//  JumpAnalysisHub.jsx를 그대로 재사용하되(component 재사용 — 새로 안 만듦),
+//  allowedSubTypes=BROAD_JUMP_SUBTYPES(=['sbj','shjf','shjm','shjl']) prop으로
+//  세부종류 선택 칩을 그 4종만으로 제한한다(AiMeasureHub.jsx가
+//  active.id==='broadjump'일 때만 이 prop을 얹어준다 — jumpTypes.js/
+//  JumpAnalysisHub.jsx 참고).
 //  [전/후 비교 추가] 사진/영상 오버레이·어니언 스킨 비교 도구. 다른 측정처럼
 //  값을 산출/저장하지 않는 시각 비교 도구라 개별 항목들 뒤, 도구(녹화/초시계)
 //  바로 앞에 둔다.
@@ -77,16 +79,17 @@ export const MEASURE_MENUS = [
     status: 'ready',
     component: lazy(() => import('./menus/JumpAnalysisHub.jsx')),
   },
-  // [제자리멀리뛰기 추가 2026-09-16] 5번(점프 & RSI)과 완전히 같은 화면
-  // 구조(JumpAnalysisHub.jsx)를 그대로 재사용하되, fixedSubType='sbj'로
-  // 세부종류 선택 칩을 숨기고 SBJ 하나로 고정한 별도 탭. 점프 5종은 전부
-  // "수직" 점프라 한 탭 안의 세부종류로 묶여 있었지만, SBJ(제자리멀리뛰기)는
-  // "수평" 측정이라 성격이 달라 별도 탭으로 분리해달라는 요청 반영.
+  // [제자리멀리뛰기 추가 2026-09-16, 한발멀리뛰기 추가로 확장] 5번(점프 &
+  // RSI)과 완전히 같은 화면 구조(JumpAnalysisHub.jsx)를 그대로 재사용하되,
+  // allowedSubTypes로 세부종류 선택 칩을 SBJ+한발멀리뛰기(정면/안쪽/바깥쪽)
+  // 4종만으로 제한한 별도 탭. 점프 5종은 전부 "수직" 점프라 한 탭 안의
+  // 세부종류로 묶여 있었지만, 이 4종은 "수평" 측정이라 성격이 달라 별도
+  // 탭으로 분리해달라는 요청 반영.
   {
     id: 'broadjump',
     no: 6,
     title: '제자리멀리뛰기',
-    desc: '수평 이동거리(SBJ), 실시간/고속영상 분석',
+    desc: '수평 이동거리(SBJ · 한발멀리뛰기 정면/안쪽/바깥쪽), 실시간/고속영상 분석',
     icon: 'SBJ',
     status: 'ready',
     component: lazy(() => import('./menus/JumpAnalysisHub.jsx')),

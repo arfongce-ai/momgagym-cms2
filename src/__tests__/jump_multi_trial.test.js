@@ -15,8 +15,8 @@ import {
 const readSrc = (...segs) => readFileSync(join(process.cwd(), ...segs), 'utf8');
 
 describe('MULTI_TRIAL_JUMP_SUBTYPES / MAX_JUMP_TRIALS — 상수', () => {
-  it('CMJ·SJ·DJ·SLJ·SBJ 5종만 다회차 대상이다(RSI는 제외 — 이미 자기 안에서 여러 사이클을 평균 냄)', () => {
-    expect(MULTI_TRIAL_JUMP_SUBTYPES).toEqual(['cmj', 'sj', 'dj', 'slj', 'sbj']);
+  it('CMJ·SJ·DJ·SLJ·SBJ·한발멀리뛰기(3방향) 8종만 다회차 대상이다(RSI는 제외 — 이미 자기 안에서 여러 사이클을 평균 냄)', () => {
+    expect(MULTI_TRIAL_JUMP_SUBTYPES).toEqual(['cmj', 'sj', 'dj', 'slj', 'sbj', 'shjf', 'shjm', 'shjl']);
     expect(MULTI_TRIAL_JUMP_SUBTYPES).not.toContain('rsi');
   });
 

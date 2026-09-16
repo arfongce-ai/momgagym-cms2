@@ -156,6 +156,13 @@ export function menuGroupKey(session) {
     if (d.jumpSubType === 'sj') return 'jump_sj';
     if (d.jumpSubType === 'dj') return 'jump_dj';
     if (d.jumpSubType === 'slj') return 'jump_slj';
+    // [제자리멀리뛰기 추가 2026-09-16, 한발멀리뛰기 추가로 확장] SBJ·
+    // 한발멀리뛰기(3방향)는 distanceCm이 핵심 지표라 heightCm 기준
+    // jump_power 그룹에 섞이면 추이 그래프가 뒤섞인다 — 각자 별도 그룹으로.
+    if (d.jumpSubType === 'sbj') return 'jump_sbj';
+    if (d.jumpSubType === 'shjf') return 'jump_shjf';
+    if (d.jumpSubType === 'shjm') return 'jump_shjm';
+    if (d.jumpSubType === 'shjl') return 'jump_shjl';
     return (d.jumpType === 'reactive' || d.rsi) ? 'jump_rsi' : 'jump_power';
   }
   if (session?.menu === 'lifting') {

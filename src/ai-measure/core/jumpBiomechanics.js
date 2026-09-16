@@ -1018,8 +1018,8 @@ export function computeExtensionAlignment(hipSeq, kneeSeq, ankleSeq = []) {
 //  예전 리포트 화면 어디에도 새 필드가 안 보여서 100% 그대로 동작한다.
 // ════════════════════════════════════════════════════════════════════════
 
-/** CMJ·SJ·SLJ·SBJ에서 이 종류가 다회차 평균 대상인지. */
-export const MULTI_TRIAL_JUMP_SUBTYPES = ['cmj', 'sj', 'dj', 'slj', 'sbj'];
+/** CMJ·SJ·SLJ·SBJ·한발멀리뛰기(3방향)에서 이 종류가 다회차 평균 대상인지. */
+export const MULTI_TRIAL_JUMP_SUBTYPES = ['cmj', 'sj', 'dj', 'slj', 'sbj', 'shjf', 'shjm', 'shjl'];
 export const MAX_JUMP_TRIALS = 3;
 
 /**
@@ -1122,24 +1122,31 @@ export function computeLegAsymmetry({ leftValue, rightValue }) {
  * 애초에 비교 대상이 아니므로 null. 반대쪽 다리 기록이 아예 없어도 null —
  * 이 경우 "아직 비교 불가"일 뿐 오류가 아니다(호출부가 안내 문구로 처리).
  */
-export function findSljAsymmetry({ reports, currentReport }) {
-  if (!currentReport?.leg || currentReport.heightCm == null) return null;
+// [한발멀리뛰기 추가 2026-09-16] findSljAsymmetry의 실제 로직을 subType·값
+// 필드만 다르게 받는 일반형으로 뽑아낸다. findSljAsymmetry는 기존 동작·
+// export 시그니처를 그대로 유지하는 얇은 래퍼로 남긴다(기존 테스트가 이
+// 함수명·인자를 그대로 검증하므로 바꾸지 않음) — 한발멀리뛰기(정면/안쪽/
+// 바깥쪽)는 findHopAsymmetry로 같은 로직을 재사용한다. SLJ는 heightCm(수직
+// 높이), 한발멀리뛰기는 distanceCm(수평 거리)이 비교 대상이라는 점만 다르고,
+// "반대쪽 다리 최신 유효 기록 찾기 → LSI 계산" 흐름은 완전히 동일하다.
+function findOppositeLegAsymmetry({ reports, currentReport, subType, valueField }) {
+  if (!currentReport?.leg || currentReport[valueField] == null) return null;
   const oppositeLeg = currentReport.leg === 'left' ? 'right' : 'left';
   const candidates = (reports || [])
     .filter((r) => r
       && r.id !== currentReport.id
       && r.kind === 'jump'
-      && resolveJumpSubType(r) === 'slj'
+      && resolveJumpSubType(r) === subType
       && r.leg === oppositeLeg
       && r.valid !== false
-      && r.heightCm != null)
+      && r[valueField] != null)
     .sort((a, b) => new Date(b.createdAt || b.measuredAt || 0) - new Date(a.createdAt || a.measuredAt || 0));
   const other = candidates[0];
   if (!other) return null;
 
   const result = computeLegAsymmetry({
-    leftValue: currentReport.leg === 'left' ? currentReport.heightCm : other.heightCm,
-    rightValue: currentReport.leg === 'right' ? currentReport.heightCm : other.heightCm,
+    leftValue: currentReport.leg === 'left' ? currentReport[valueField] : other[valueField],
+    rightValue: currentReport.leg === 'right' ? currentReport[valueField] : other[valueField],
   });
   if (!result) return null;
 
@@ -1148,4 +1155,15 @@ export function findSljAsymmetry({ reports, currentReport }) {
     otherReportDate: other.createdAt || other.measuredAt || null,
     otherReportId: other.id || null,
   };
+}
+
+export function findSljAsymmetry({ reports, currentReport }) {
+  return findOppositeLegAsymmetry({ reports, currentReport, subType: 'slj', valueField: 'heightCm' });
+}
+
+// [한발멀리뛰기 추가 2026-09-16] subType은 'shjf'|'shjm'|'shjl' 중 하나를
+// 반드시 넘겨야 한다 — 방향이 다르면 비교 대상이 아니므로(정면 기록을
+// 안쪽 기록과 비교하면 의미가 없음) 같은 방향끼리만 묶는다.
+export function findHopAsymmetry({ reports, currentReport, subType }) {
+  return findOppositeLegAsymmetry({ reports, currentReport, subType, valueField: 'distanceCm' });
 }

@@ -16,6 +16,8 @@ import { useLockPortrait } from './core/useLockPortrait';
 import { consumePendingVoiceTarget, setPendingVoiceTarget } from '../voice/pendingVoiceTarget';
 import { buildMemberTestRecommendations } from './core/memberTestRecommendation';
 import MemberTestRecommendationPanel from '../components/ai/MemberTestRecommendationPanel';
+// [한발멀리뛰기 추가 2026-09-16] '제자리멀리뛰기' 탭의 세부종류 선택 제한에 사용.
+import { BROAD_JUMP_SUBTYPES } from './core/jumpTypes';
 
 export default function AiMeasureHub() {
   const { user } = useAuth();
@@ -449,10 +451,12 @@ export default function AiMeasureHub() {
             onMemberHeightChange={rememberMemberHeight}
             onGuestBodyInfoChange={member?.isVirtual ? applyGuestBodyInfo : undefined}
             onViewInReport={() => viewInReport(active.id)}
-            // [제자리멀리뛰기(SBJ) 탭 분리 2026-09-16] 'jump' 탭과 컴포넌트를
-            // 재사용하되, 이 탭에서만 세부종류를 SBJ로 고정(JumpAnalysisHub.jsx
-            // fixedSubType 참고) — 'jump' 탭은 이 prop 자체를 안 받아 기존 그대로.
-            {...(active.id === 'broadjump' ? { fixedSubType: 'sbj' } : {})}
+            // [제자리멀리뛰기(SBJ) 탭 분리 2026-09-16, 한발멀리뛰기 추가로 일반화]
+            // 'jump' 탭과 컴포넌트를 재사용하되, 이 탭에서만 세부종류 선택을
+            // 수평(horizontal) 엔진 4종(SBJ+한발멀리뛰기 3방향)으로 제한한다
+            // (JumpAnalysisHub.jsx allowedSubTypes 참고) — 'jump' 탭은 이 prop
+            // 자체를 안 받아 기존 9종 전체 선택 그대로.
+            {...(active.id === 'broadjump' ? { allowedSubTypes: BROAD_JUMP_SUBTYPES } : {})}
           />
         </Suspense>
       </div>

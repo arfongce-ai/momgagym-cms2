@@ -16,7 +16,7 @@ import { aiStore } from '../../demoData';
 import { JUMP_SUBTYPES, LEG_LABEL, resolveJumpSubType } from '../core/jumpTypes';
 // [SLJ 좌우 비대칭 2026-08-11] 순수 계산은 core/jumpBiomechanics.js에 —
 // 여기(리포트 화면)는 aiStore에서 회원의 다른 리포트를 가져와 넘기기만 한다.
-import { findSljAsymmetry } from '../core/jumpBiomechanics';
+import { findSljAsymmetry, findHopAsymmetry } from '../core/jumpBiomechanics';
 // [무릎·고관절 각도 그래프 2026-08-18]
 import JumpAngleTimelineChart from '../../components/report/JumpAngleTimelineChart.jsx';
 import JumpReplayGraph from '../../components/report/JumpReplayGraph.jsx';
@@ -30,11 +30,15 @@ const rangeCenter = (r) => (r.good[0] + r.good[1]) / 2;
 // [전/후 변화 요약 2026-08-31] 같은 세부 종류(CMJ/SJ/DJ/SLJ/RSI, SLJ는 같은 다리까지)의
 // 직전 점프 측정 대비 핵심 지표 변화. previousReport는 호출 쪽(JumpAnalysisHub.jsx/
 // Report.jsx)에서 이미 같은 종류로 걸러서 넘겨준다.
-function buildJumpChangeSummary(report, biomech, previousReport, isRsi) {
+function buildJumpChangeSummary(report, biomech, previousReport, isRsi, isHorizontal) {
   if (!previousReport) return null;
   const pb = previousReport.biomech || {};
   const rows = [
-    computeChangeRow('점프 높이', previousReport.heightCm, report.heightCm, 'cm', 'higherBetter'),
+    // [제자리멀리뛰기 추가 2026-09-16] SBJ(horizontal)는 heightCm이 아니라
+    // distanceCm이 핵심 지표 — 비교 지표만 바꾸고 나머지(착지 각도 등)는 동일.
+    isHorizontal
+      ? computeChangeRow('이동 거리', previousReport.distanceCm, report.distanceCm, 'cm', 'higherBetter')
+      : computeChangeRow('점프 높이', previousReport.heightCm, report.heightCm, 'cm', 'higherBetter'),
     computeChangeRow('착지 무릎 각도', pb.landingKneeAngle, biomech.landingKneeAngle, '°', 'closerTargetBetter', rangeCenter(RANGE.knee)),
     computeChangeRow('상체 기울기 변화', pb.trunkLeanChange, biomech.trunkLeanChange, '°', 'lowerBetter'),
     computeChangeRow('골반 불균형', pb.pelvicImbalance, biomech.pelvicImbalance, '%', 'lowerBetter'),
@@ -56,10 +60,21 @@ const RANGE = {
   // 흔히 쓰는 기준(예: ACL 재활 복귀 판정)을 그대로 따름: 90% 이상 정상,
   // 80~90% 주의, 80% 미만 개선 필요.
   lsi: { good: [90, 100], warn: [80, 100], unit: '%' },
+  // [제자리멀리뛰기 추가 2026-09-16] 제자리멀리뛰기(SBJ) 등급 기준(cm) — 아직
+  // 실측 데이터·확정 기준이 없어 일반 성인 참고치로 잠정 설정. 실사용 데이터가
+  // 쌓이면(또는 대표님이 기준을 정하면) 여기 한 곳만 조정하면 된다.
+  distance: { good: [150, 300], warn: [100, 300], unit: 'cm' },
 };
 
 function isRsiReport(report) {
   return report?.jumpType === 'reactive' || Boolean(report?.rsi);
+}
+
+// [제자리멀리뛰기 추가 2026-09-16] report.jumpType은 라이브/업로드 측정
+// 컴포넌트가 그대로 채워 넘기는 필드('power'|'reactive'|'horizontal') —
+// isRsiReport와 동일한 패턴.
+function isHorizontalReport(report) {
+  return report?.jumpType === 'horizontal';
 }
 
 function formatDate(value) {
@@ -86,6 +101,9 @@ function scoreReport(report, biomech) {
     values.push(s === '정상' ? 100 : s === '주의' ? 65 : 35);
   };
   add(report?.heightCm, RANGE.height);
+  // [제자리멀리뛰기 추가 2026-09-16] SBJ 리포트는 heightCm이 없고 distanceCm만
+  // 있다 — 다른 종류는 distanceCm이 없으므로 add()가 조용히 건너뛴다(무해).
+  add(report?.distanceCm, RANGE.distance);
   add(biomech.landingKneeAngle, RANGE.knee);
   add(biomech.trunkLeanChange, RANGE.trunk);
   add(biomech.pelvicImbalance, RANGE.pelvis);
@@ -120,12 +138,14 @@ export default function JumpReportDashboard({ report, onClose, onComment, member
   const biomech = useMemo(() => normalizeBiomech(report), [report]);
   const score = useMemo(() => scoreReport(report, biomech), [report, biomech]);
   const isRsi = isRsiReport(report);
+  // [제자리멀리뛰기 추가 2026-09-16]
+  const isHorizontal = isHorizontalReport(report);
   // [전/후 변화 요약 2026-08-31] previousReport는 호출 쪽(JumpAnalysisHub.jsx의
   // 라이브 흐름, Report.jsx의 이력 뷰어)에서 이미 같은 세부 종류(jumpSubType,
   // SLJ는 leg까지)로 걸러서 넘겨준다 — 여기서는 지표만 비교하면 된다.
   const changeSummary = useMemo(
-    () => buildJumpChangeSummary(report, biomech, previousReport, isRsi),
-    [report, biomech, previousReport, isRsi],
+    () => buildJumpChangeSummary(report, biomech, previousReport, isRsi, isHorizontal),
+    [report, biomech, previousReport, isRsi, isHorizontal],
   );
   // [전/후 변화 요약 2026-08-31] 영상은 저장하지 않는 정책 그대로 유지 —
   // 라이브 측정 직후라면 report.videoBlob(메모리 전용, Firestore 저장 X)을
@@ -145,8 +165,10 @@ export default function JumpReportDashboard({ report, onClose, onComment, member
   const resolvedMember = member || report?.member || null;
   const memberName = resolvedMember?.name || '가상회원';
   const date = formatDate(report?.createdAt || report?.measuredAt);
-  // [SLJ 좌우 비대칭 2026-08-11] 어느 다리를 쟀는지 리포트 이름에 바로 보이게.
-  const legLabel = jumpSubType === 'slj' && report?.leg ? LEG_LABEL[report.leg] : null;
+  // [SLJ 좌우 비대칭 2026-08-11, 한발멀리뛰기 추가로 일반화 2026-09-16]
+  // 어느 다리를 쟀는지 리포트 이름에 바로 보이게 — SLJ뿐 아니라 singleLeg인
+  // 종류(한발멀리뛰기 정면/안쪽/바깥쪽) 전부 해당.
+  const legLabel = subMeta.singleLeg && report?.leg ? LEG_LABEL[report.leg] : null;
   const reportName = `${subMeta.label} 평가표${legLabel ? ` · ${legLabel}` : ''}`;
   const reportCode = `${subMeta.code} JUMP`;
   const viewLabel = biomech.view === 'side' ? '측면' : biomech.view === 'back' || biomech.view === 'front' ? '정면' : '미확인';
@@ -178,6 +200,32 @@ export default function JumpReportDashboard({ report, onClose, onComment, member
     return () => { cancelled = true; };
   }, [jumpSubType, report?.id, report?.leg, report?.heightCm, resolvedMember?.id, resolvedMember?.isVirtual]);
 
+  // [한발멀리뛰기 추가 2026-09-16] 위 SLJ 블록과 동일한 패턴 — 다만 비교
+  // 지표가 heightCm이 아니라 distanceCm이고, 같은 "방향"(정면/안쪽/바깥쪽)
+  // 끼리만 비교해야 의미가 있어(findHopAsymmetry가 subType까지 맞춰 찾음)
+  // SLJ 블록을 그대로 재사용하지 않고 별도로 둔다.
+  const [hopAsymmetry, setHopAsymmetry] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      const isHopSubType = subMeta.singleLeg && subMeta.engine === 'horizontal';
+      if (!isHopSubType || !report?.leg || report?.distanceCm == null
+        || !resolvedMember?.id || resolvedMember?.isVirtual) {
+        setHopAsymmetry(null);
+        return;
+      }
+      try {
+        const reports = await aiStore.ensureGaitReports(resolvedMember.id);
+        if (cancelled) return;
+        setHopAsymmetry(findHopAsymmetry({ reports, currentReport: report, subType: jumpSubType }));
+      } catch (e) {
+        if (!cancelled) setHopAsymmetry(null);
+      }
+    }
+    load();
+    return () => { cancelled = true; };
+  }, [jumpSubType, report?.id, report?.leg, report?.distanceCm, resolvedMember?.id, resolvedMember?.isVirtual]);
+
   const saveComment = () => {
     onComment?.(comment);
     setMessage('코멘트를 저장했습니다.');
@@ -199,7 +247,7 @@ export default function JumpReportDashboard({ report, onClose, onComment, member
         <ReportPage>
           <ReportHeader
             code={reportCode}
-            type={isRsi ? 'RSI' : 'POWER'}
+            type={isRsi ? 'RSI' : isHorizontal ? 'DISTANCE' : 'POWER'}
             title={memberName}
             subtitle={`${date} · ${reportName}`}
             score={score}
@@ -220,13 +268,23 @@ export default function JumpReportDashboard({ report, onClose, onComment, member
             <InvalidBlock report={report} />
           ) : (
             <>
-              <Section title="① 성능 및 파워" subtitle="비행시간 기반 · 핵심 지표">
-                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                  <StatCard label="점프 높이" value={metric(report.heightCm)} unit="cm" range={RANGE.height} />
-                  <StatCard label="체공 시간" value={metric(report.flightTimeMs)} unit="ms" />
-                  <StatCard label="도약 속도" value={metric(report.takeoffVelocity)} unit="m/s" />
-                  <StatCard label="최대 파워" value={metric(report.peakPower)} unit="W" />
-                </div>
+              <Section title="① 성능 및 파워" subtitle={isHorizontal ? '수평 이동거리 기반 · 핵심 지표' : '비행시간 기반 · 핵심 지표'}>
+                {/* [제자리멀리뛰기 추가 2026-09-16] SBJ는 수직 점프와 달리
+                    도약속도/최대파워를 계산하지 않는다(항상 null) — 그 칸 대신
+                    이동거리 카드만 보여준다. */}
+                {isHorizontal ? (
+                  <div className="grid grid-cols-2 gap-2">
+                    <StatCard label="이동 거리" value={metric(report.distanceCm)} unit="cm" range={RANGE.distance} />
+                    <StatCard label="체공 시간" value={metric(report.flightTimeMs)} unit="ms" />
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                    <StatCard label="점프 높이" value={metric(report.heightCm)} unit="cm" range={RANGE.height} />
+                    <StatCard label="체공 시간" value={metric(report.flightTimeMs)} unit="ms" />
+                    <StatCard label="도약 속도" value={metric(report.takeoffVelocity)} unit="m/s" />
+                    <StatCard label="최대 파워" value={metric(report.peakPower)} unit="W" />
+                  </div>
+                )}
                 <div className="mt-3 grid grid-cols-2 gap-2">
                   <SmallInfo label="측정 방향" value={`${viewLabel} 촬영`} />
                   <SmallInfo label="신체 정보" value={`${metric(report.calibHeightCm, 'cm')} · ${metric(report.bodyWeight, 'kg')}`} />
@@ -240,8 +298,15 @@ export default function JumpReportDashboard({ report, onClose, onComment, member
               </Section>
 
               {jumpSubType === 'slj' && <AsymmetrySection asymmetry={asymmetry} report={report} />}
+              {/* [한발멀리뛰기 추가 2026-09-16] SLJ와 동일한 컴포넌트 재사용 — 이
+                  컴포넌트는 report.leg/createdAt만 읽고 asymmetry.leftValue·
+                  rightValue(이미 distanceCm 기준으로 계산됨)를 그대로 보여주므로
+                  손댈 필요 없다. */}
+              {subMeta.singleLeg && subMeta.engine === 'horizontal' && (
+                <AsymmetrySection asymmetry={hopAsymmetry} report={report} subTypeCode={subMeta.code} />
+              )}
 
-              {isRsi ? <RsiSection report={report} /> : <PowerSection report={report} />}
+              {isRsi ? <RsiSection report={report} /> : isHorizontal ? <DistanceSection report={report} subMeta={subMeta} /> : <PowerSection report={report} />}
             </>
           )}
         </ReportPage>
@@ -249,7 +314,7 @@ export default function JumpReportDashboard({ report, onClose, onComment, member
         <ReportPage>
           <ReportHeader
             code={reportCode}
-            type={isRsi ? 'RSI' : 'POWER'}
+            type={isRsi ? 'RSI' : isHorizontal ? 'DISTANCE' : 'POWER'}
             title={memberName}
             subtitle={`${date} · 자세/대칭/해석`}
             score={score}
@@ -303,8 +368,8 @@ export default function JumpReportDashboard({ report, onClose, onComment, member
             </div>
           </Section>
 
-          <Section title="④ 평가 요약" subtitle={isRsi ? '반응 탄성 중심' : '파워 생산 중심'}>
-            <SummaryNotes isRsi={isRsi} report={report} biomech={biomech} />
+          <Section title="④ 평가 요약" subtitle={isRsi ? '반응 탄성 중심' : isHorizontal ? '수평 도약력 중심' : '파워 생산 중심'}>
+            <SummaryNotes isRsi={isRsi} isHorizontal={isHorizontal} isSingleLegHorizontal={isHorizontal && subMeta.singleLeg} report={report} biomech={biomech} />
           </Section>
 
           {changeSummary && (
@@ -418,7 +483,10 @@ function Notice({ tone, text }) {
 // 반대쪽을 안 쟀으면(asymmetry === null) 비교 대신 "반대쪽도 재면 비교가
 // 뜬다"는 안내만 보여준다 — 데이터가 없다고 섹션 자체를 숨기면 트레이너가
 // "이 기능이 있는지"조차 모를 수 있어서, 항상 보여주되 상태에 맞게 안내한다.
-function AsymmetrySection({ asymmetry, report }) {
+// [한발멀리뛰기 추가 2026-09-16] subTypeCode: 안내 문구에 쓸 종류 코드
+// (SLJ 호출부는 안 넘겨서 기존 기본값 'SLJ' 그대로, 한발멀리뛰기 호출부는
+// subMeta.code를 넘겨 정확한 코드를 안내한다).
+function AsymmetrySection({ asymmetry, report, subTypeCode = 'SLJ' }) {
   const thisLeg = report?.leg;
   const thisLabel = LEG_LABEL[thisLeg] || '이번';
   if (!asymmetry) {
@@ -428,7 +496,7 @@ function AsymmetrySection({ asymmetry, report }) {
           <p className="text-sm text-slate-600 dark:text-slate-300">
             {LEG_LABEL[thisLeg === 'left' ? 'right' : 'left']} 기록이 아직 없어요.
           </p>
-          <p className="mt-1 text-[11px] text-slate-500">반대쪽 다리도 SLJ로 측정하면 좌우 비대칭(LSI)이 여기 표시됩니다.</p>
+          <p className="mt-1 text-[11px] text-slate-500">반대쪽 다리도 {subTypeCode}로 측정하면 좌우 비대칭(LSI)이 여기 표시됩니다.</p>
         </div>
       </Section>
     );
@@ -482,6 +550,49 @@ function PowerSection({ report }) {
               <div key={i} className="rounded-lg bg-slate-100/70 dark:bg-slate-800/70 px-2 py-2 text-center">
                 <p className="text-[10px] font-bold text-slate-500">{i + 1}차</p>
                 <p className="text-sm font-mono font-black text-slate-900 dark:text-slate-100">{metric(t.heightCm)}cm</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </Section>
+  );
+}
+
+// [제자리멀리뛰기 추가 2026-09-16, 한발멀리뛰기 추가로 확장] PowerSection과
+// 동일 패턴 — heightCm 대신 distanceCm(수평 이동거리)을 중심으로 해석 문구·
+// 회차별 기록을 보여준다. subMeta를 넘기면(한발멀리뛰기 3종) 종류별 제목·
+// 권장 촬영 방향·설명 문구를 그에 맞게 바꾼다 — 안 넘기면(SBJ) 기존 그대로.
+function DistanceSection({ report, subMeta = null }) {
+  const distanceRatio = report.calibHeightCm && report.distanceCm
+    ? ((report.distanceCm / report.calibHeightCm) * 100).toFixed(1)
+    : null;
+  const trials = Array.isArray(report.trials) ? report.trials : null;
+  const isSingleLeg = Boolean(subMeta?.singleLeg);
+  const viewLabel = subMeta?.view === 'front' ? '정면' : '측면';
+  const title = isSingleLeg ? `${subMeta.label} 해석` : '제자리멀리뛰기 해석';
+  const desc = isSingleLeg
+    ? `한발멀리뛰기는 한쪽 다리로만 도약·착지해 하체의 좌우 개별 순발력과 착지 안정성을 평가합니다. ${viewLabel} 촬영에서 출발선과 착지 지점이 화면에 모두 들어와야 정확하게 측정됩니다.`
+    : '제자리멀리뛰기는 출발선에서 착지 지점까지의 수평 이동거리로 하체의 순발력·폭발적 파워를 평가합니다. 측면 촬영에서 출발선과 착지 지점이 화면에 모두 들어와야 정확하게 측정됩니다.';
+  return (
+    <Section title={title} subtitle="수평 도약력 · 하체 파워">
+      <div className="grid grid-cols-2 gap-2">
+        <SmallInfo label="신장 대비 이동거리" value={distanceRatio ? `${distanceRatio}%` : '-'} />
+        <SmallInfo label="권장 촬영" value={viewLabel} />
+      </div>
+      <p className="mt-3 text-[12px] leading-relaxed text-slate-500 dark:text-slate-400">
+        {desc}
+      </p>
+      {trials && trials.length > 1 && (
+        <div className="mt-3 rounded-xl border border-amber-500/20 bg-white dark:bg-slate-900/55 p-3">
+          <div className="mb-2 flex items-center justify-between">
+            <p className="text-xs font-black text-amber-700 dark:text-amber-300">회차별 기록 ({trials.length}회 평균)</p>
+          </div>
+          <div className={`grid gap-1 ${trials.length >= 3 ? 'grid-cols-3' : 'grid-cols-2'}`}>
+            {trials.map((t, i) => (
+              <div key={i} className="rounded-lg bg-slate-100/70 dark:bg-slate-800/70 px-2 py-2 text-center">
+                <p className="text-[10px] font-bold text-slate-500">{i + 1}차</p>
+                <p className="text-sm font-mono font-black text-slate-900 dark:text-slate-100">{metric(t.distanceCm)}cm</p>
               </div>
             ))}
           </div>
@@ -592,12 +703,21 @@ function BarMetric({ label, value, range, max, lowerIsBetter = false }) {
   );
 }
 
-function SummaryNotes({ isRsi, report, biomech }) {
+function SummaryNotes({ isRsi, isHorizontal, isSingleLegHorizontal = false, report, biomech }) {
   const notes = [];
   if (isRsi) {
     notes.push('RSI는 반응 속도와 탄성 사용 능력을 보는 지표입니다.');
     notes.push(`현재 RSI ${metric(report.rsi?.rsi)} · 접지 ${metric(report.rsi?.contactTimeMs, 'ms')} · 체공 ${metric(report.rsi?.flightTimeMs, 'ms')}`);
     notes.push('접지시간이 길게 나오면 발목-무릎-고관절의 빠른 반발 훈련을 우선 추천합니다.');
+  } else if (isHorizontal) {
+    // [제자리멀리뛰기 추가 2026-09-16, 한발멀리뛰기 추가로 문구 분기]
+    notes.push(isSingleLegHorizontal
+      ? '한발멀리뛰기는 한쪽 다리만의 수평 방향 순발력과 착지 안정성을 보는 지표입니다.'
+      : '제자리멀리뛰기는 수평 방향 순발력과 하체 폭발적 파워를 보는 지표입니다.');
+    notes.push(`현재 이동 거리 ${metric(report.distanceCm, 'cm')} · 체공 시간 ${metric(report.flightTimeMs, 'ms')}`);
+    notes.push(isSingleLegHorizontal
+      ? '좌우 다리 이동 거리 차이가 크면(비대칭 비교 참고) 편측 강화 운동을 우선 고려하세요.'
+      : '이동 거리가 낮으면 하체 근력, 팔 스윙, 착지 시 무릎 완충 패턴을 함께 확인합니다.');
   } else {
     notes.push('파워 점프는 폭발적 힘과 도약 능력을 보는 지표입니다.');
     notes.push(`현재 점프 높이 ${metric(report.heightCm, 'cm')} · 최대 파워 ${metric(report.peakPower, 'W')}`);

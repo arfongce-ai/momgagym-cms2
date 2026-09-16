@@ -825,7 +825,15 @@ export function extractSessionMetric(session) {
       if (subMeta.engine === 'reactive') {
         return { value: d.rsi?.rsi ?? d.rsi, unit: '', label: `${subMeta.code} · 높이 ${d.heightCm ?? '-'}cm` };
       }
-      const legSuffix = subType === 'slj' && d.leg ? ` · ${d.leg === 'left' ? '왼발' : '오른발'}` : '';
+      // [한발멀리뛰기 추가 2026-09-16] legSuffix는 SLJ뿐 아니라 singleLeg인
+      // 종류(한발멀리뛰기 정면/안쪽/바깥쪽) 전부 해당.
+      const legSuffix = subMeta.singleLeg && d.leg ? ` · ${d.leg === 'left' ? '왼발' : '오른발'}` : '';
+      // [제자리멀리뛰기 추가 2026-09-16] horizontal(SBJ·한발멀리뛰기)은
+      // heightCm이 아니라 distanceCm이 핵심 지표 — peakPower도 항상 null이라
+      // 그 자리에 "이동거리 기반"이라고 표시한다.
+      if (subMeta.engine === 'horizontal') {
+        return { value: d.distanceCm, unit: 'cm', label: `${subMeta.code} · 이동거리 기반${legSuffix}` };
+      }
       return { value: d.heightCm, unit: 'cm', label: `${subMeta.code} · ${d.peakPower ? `${d.peakPower}W` : '파워 미입력'}${legSuffix}` };
     }
     case 'posture': {

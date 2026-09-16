@@ -18,19 +18,22 @@ import MeasureRecordConfirm from '../components/MeasureRecordConfirm.jsx';
 import { JUMP_SUBTYPES, JUMP_SUBTYPE_ORDER, LEG_LABEL, engineOf } from '../core/jumpTypes';
 import { aiStore } from '../../demoData';
 
-// [제자리멀리뛰기(SBJ) 탭 분리 2026-09-16] fixedSubType: 넘기면(예: 'sbj')
-// 세부종류 선택 칩을 숨기고 그 종류 하나로 고정한다 — registry.js의 새
-// '제자리멀리뛰기' 탭이 이 컴포넌트를 그대로 재사용하면서 쓴다. 안 넘기면
-// (undefined, 기존 '점프 & RSI' 탭) 기존 5종 선택 UI가 100% 그대로 동작한다.
-export default function JumpAnalysisHub({ member, onBack, onSave, onSaveToFirebase, onMemberHeightChange, onViewInReport, fixedSubType = null }) {
+// [제자리멀리뛰기(SBJ) 탭 분리 2026-09-16, 한발멀리뛰기 추가로 일반화 2026-09-16]
+// allowedSubTypes: 넘기면(예: ['sbj','shjf','shjm','shjl']) 세부종류 선택 칩을
+// 그 부분집합으로만 제한한다 — registry.js의 '제자리멀리뛰기' 탭이 이 컴포넌트를
+// 그대로 재사용하면서 쓴다(BROAD_JUMP_SUBTYPES). 1개짜리 배열을 넘기면 예전
+// fixedSubType처럼 선택 칩 자체가 숨겨진다(고를 게 하나뿐이므로). 안 넘기면
+// (undefined, 기존 '점프 & RSI' 탭) 기존 9종 전체 선택 UI가 100% 그대로 동작한다.
+export default function JumpAnalysisHub({ member, onBack, onSave, onSaveToFirebase, onMemberHeightChange, onViewInReport, allowedSubTypes = null }) {
   const save = onSaveToFirebase || onSave;
   // 요구사항 7: 실시간 → 고속영상 순서, 실시간이 기본
   const [mode, setMode] = useState('live');
-  // [2026-08-10 확장] 세부 종류(CMJ/SJ/DJ/SLJ/RSI/SBJ) 선택. 기존 jumpType('power'|
-  // 'reactive'|'horizontal')은 아래 파생값으로 그대로 계산해서 JumpPrecisionAnalysis·
-  // JumpUploadAnalysis 등 하위 컴포넌트의 기존 분기는 손대지 않는다 — 새 종류는
-  // 어차피 이 중 하나의 엔진을 그대로 재사용하기 때문(jumpTypes.js 참고).
-  const [jumpSubType, setJumpSubType] = useState(fixedSubType || 'cmj');
+  // [2026-08-10 확장] 세부 종류(CMJ/SJ/DJ/SLJ/RSI/SBJ/한발멀리뛰기×3) 선택. 기존
+  // jumpType('power'|'reactive'|'horizontal')은 아래 파생값으로 그대로 계산해서
+  // JumpPrecisionAnalysis·JumpUploadAnalysis 등 하위 컴포넌트의 기존 분기는 손대지
+  // 않는다 — 새 종류는 어차피 이 중 하나의 엔진을 그대로 재사용하기 때문(jumpTypes.js 참고).
+  const subTypeOrder = allowedSubTypes || JUMP_SUBTYPE_ORDER;
+  const [jumpSubType, setJumpSubType] = useState(subTypeOrder[0] || 'cmj');
   const jumpType = engineOf(jumpSubType); // 파생값 — 'power' | 'reactive'
   // SLJ(한발 점프) 전용 — 테스트할 다리. 다른 종류에서는 쓰이지 않는다.
   const [leg, setLeg] = useState('left');
@@ -67,10 +70,14 @@ export default function JumpAnalysisHub({ member, onBack, onSave, onSaveToFireba
         const list = await aiStore.ensureGaitReports(member.id);
         if (cancelled) return;
         const reportSubType = report.jumpSubType || jumpSubType;
+        // [한발멀리뛰기 추가 2026-09-16] SLJ뿐 아니라 singleLeg인 종류는 전부
+        // 같은 다리끼리만 "직전 기록"으로 비교해야 의미가 있다(왼발 기록을
+        // 오른발과 비교하면 변화 요약이 왜곡됨).
+        const isSingleLegSubType = Boolean(JUMP_SUBTYPES[reportSubType]?.singleLeg);
         const matching = (list || []).filter((r) => r.kind === 'jump'
           && r.id !== report.id
           && (r.jumpSubType || 'cmj') === reportSubType
-          && (reportSubType !== 'slj' || r.leg === report.leg));
+          && (!isSingleLegSubType || r.leg === report.leg));
         const sorted = matching.sort((a, b) => String(b.createdAt || b.measuredAt || '')
           .localeCompare(String(a.createdAt || a.measuredAt || '')));
         setPreviousReport(sorted[0] || null);
@@ -93,7 +100,9 @@ export default function JumpAnalysisHub({ member, onBack, onSave, onSaveToFireba
     const withRecord = {
       ...reportData,
       jumpSubType: reportData.jumpSubType || jumpSubType,
-      ...(jumpSubType === 'slj' ? { leg: reportData.leg || leg } : {}),
+      // [한발멀리뛰기 추가 2026-09-16] SLJ만 하드코딩하면 다른 singleLeg
+      // 종류(한발멀리뛰기 정면/안쪽/바깥쪽)의 다리 정보가 안전망에서 누락된다.
+      ...(JUMP_SUBTYPES[jumpSubType].singleLeg ? { leg: reportData.leg || leg } : {}),
       // [DJ 박스높이 2026-08-11] 숫자로 뭔가 입력됐을 때만 필드를 채운다 —
       // 빈 문자열이면 아예 필드를 안 만들어서(undefined) "0cm로 측정했다"는
       // 것과 "안 적었다"를 리포트에서 구분할 수 있게 한다.
@@ -134,7 +143,13 @@ export default function JumpAnalysisHub({ member, onBack, onSave, onSaveToFireba
     await persist(combined, {});
     setTrials([]);
     setPending(null);
+    // [한발멀리뛰기 추가 2026-09-16] 위 SLJ 조건은 기존 테스트가 문자열
+    // 그대로 검증하므로 손대지 않고, 다른 singleLeg 종류(한발멀리뛰기
+    // 정면/안쪽/바깥쪽)에도 "반대쪽 다리도?" 프롬프트가 뜨게 별도 분기로 추가한다.
     if (jumpSubType === 'slj' && sljFirstLegDone === null) {
+      setSljFirstLegDone(leg);
+      setView('slj_other_leg');
+    } else if (JUMP_SUBTYPES[jumpSubType].singleLeg && jumpSubType !== 'slj' && sljFirstLegDone === null) {
       setSljFirstLegDone(leg);
       setView('slj_other_leg');
     } else {
@@ -261,7 +276,7 @@ export default function JumpAnalysisHub({ member, onBack, onSave, onSaveToFireba
               : `${last.heightCm ?? '—'}cm`}
           </p>
           <p className="text-slate-500 text-sm mt-2">
-            {JUMP_SUBTYPES[jumpSubType].code}{jumpSubType === 'slj' ? ` · ${LEG_LABEL[leg]}` : ''} · 총 {MAX_JUMP_TRIALS}회 중 {doneCount}회 완료
+            {JUMP_SUBTYPES[jumpSubType].code}{JUMP_SUBTYPES[jumpSubType].singleLeg ? ` · ${LEG_LABEL[leg]}` : ''} · 총 {MAX_JUMP_TRIALS}회 중 {doneCount}회 완료
           </p>
         </div>
         <div className="w-full max-w-xs space-y-2.5">
@@ -281,11 +296,14 @@ export default function JumpAnalysisHub({ member, onBack, onSave, onSaveToFireba
   if (view === 'slj_other_leg') {
     const doneLeg = sljFirstLegDone;
     const otherLeg = doneLeg === 'left' ? 'right' : 'left';
+    // [한발멀리뛰기 추가 2026-09-16] SLJ(수직)는 heightCm, 한발멀리뛰기(수평)는
+    // distanceCm — 이 화면은 두 엔진 모두에서 뜰 수 있으므로 값도 맞춰 고른다.
+    const displayValue = jumpType === 'horizontal' ? report?.distanceCm : report?.heightCm;
     return (
       <div className="fixed inset-0 z-[80] bg-slate-50 dark:bg-slate-950 flex flex-col items-center justify-center p-6 text-center gap-5">
         <div>
           <p className="text-emerald-600 dark:text-emerald-400 font-black text-sm mb-1">{LEG_LABEL[doneLeg]} 측정 완료</p>
-          <p className="text-4xl font-black text-slate-900 dark:text-white">{report?.heightCm ?? '—'}cm</p>
+          <p className="text-4xl font-black text-slate-900 dark:text-white">{displayValue ?? '—'}cm</p>
           <p className="text-slate-500 text-sm mt-2">{report?.trials?.length || 1}회 평균</p>
         </div>
         <div className="w-full max-w-xs space-y-2.5">
@@ -331,11 +349,12 @@ export default function JumpAnalysisHub({ member, onBack, onSave, onSaveToFireba
         <>
           {/* 점프 세부 종류(CMJ/SJ/DJ/SLJ/RSI) + 측정 방식(실시간/고속영상) + 도움말 */}
           <div className="absolute top-[max(8px,calc(env(safe-area-inset-top)+8px))] inset-x-0 z-[86] flex flex-col items-center gap-1.5 px-3 pointer-events-none">
-            {/* 점프 세부 종류 — fixedSubType이 있으면(예: 제자리멀리뛰기 전용 탭)
-                선택 칩 자체를 숨긴다(이미 한 종류로 고정돼 고를 게 없음). */}
-            {!fixedSubType && (
+            {/* 점프 세부 종류 — allowedSubTypes가 1개짜리면(예: 예전 SBJ 전용
+                고정) 선택 칩 자체를 숨긴다(고를 게 없음). 여러 개면(예:
+                제자리멀리뛰기 탭의 SBJ+한발멀리뛰기 3방향) 그 부분집합만 보여준다. */}
+            {subTypeOrder.length > 1 && (
               <div className="pointer-events-auto flex gap-1 rounded-full bg-black/55 backdrop-blur p-1 border border-white/10 shadow-lg max-w-full overflow-x-auto">
-                {JUMP_SUBTYPE_ORDER.map((k) => (
+                {subTypeOrder.map((k) => (
                   <button key={k} onClick={() => setJumpSubType(k)}
                     className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-black transition-colors whitespace-nowrap ${
                       jumpSubType === k ? 'bg-emerald-500 text-slate-950' : 'text-slate-600 dark:text-slate-300'}`}>
@@ -386,7 +405,7 @@ export default function JumpAnalysisHub({ member, onBack, onSave, onSaveToFireba
             )}
           </div>
 
-          {showGuide && <JumpGuide mode={mode} jumpSubType={jumpSubType} onClose={() => setShowGuide(false)} />}
+          {showGuide && <JumpGuide mode={mode} jumpSubType={jumpSubType} subTypeOrder={subTypeOrder} onClose={() => setShowGuide(false)} />}
         </>
       )}
 
@@ -501,9 +520,12 @@ function JumpManualMeasure({ member, onBack, onComplete, onOpenGuide }) {
 // ════════════════════════════════════════════════════════════════════════
 //  측정 방법 안내 (가이드 시트)
 // ════════════════════════════════════════════════════════════════════════
-function JumpGuide({ mode, jumpSubType, onClose }) {
+function JumpGuide({ mode, jumpSubType, subTypeOrder = JUMP_SUBTYPE_ORDER, onClose }) {
   const meta = JUMP_SUBTYPES[jumpSubType];
   const isReactive = meta.engine === 'reactive';
+  // [한발멀리뛰기 추가 2026-09-16] 이 탭에서 실제로 고를 수 있는 종류만
+  // 한눈에 보여준다(제자리멀리뛰기 탭이면 4개, 점프&RSI 탭이면 9개 전부).
+  const gridCols = subTypeOrder.length <= 4 ? 'grid-cols-4' : subTypeOrder.length <= 6 ? 'grid-cols-6' : 'grid-cols-9';
   return (
     <div className="fixed inset-0 z-[90] bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center"
       onClick={onClose}>
@@ -514,9 +536,9 @@ function JumpGuide({ mode, jumpSubType, onClose }) {
           <button onClick={onClose} className="text-slate-500 dark:text-slate-400 font-bold text-sm">닫기 ✕</button>
         </div>
 
-        {/* 6종 한눈에(SBJ 추가로 5→6) — 현재 선택된 종류만 강조 */}
-        <div className="grid grid-cols-6 gap-1">
-          {JUMP_SUBTYPE_ORDER.map((k) => (
+        {/* 이 탭에서 고를 수 있는 종류 한눈에 — 현재 선택된 종류만 강조 */}
+        <div className={`grid ${gridCols} gap-1`}>
+          {subTypeOrder.map((k) => (
             <div key={k} className={`rounded-lg p-1.5 text-center border ${
               k === jumpSubType ? 'bg-emerald-500/10 border-emerald-500/40' : 'bg-slate-100/60 dark:bg-slate-800/60 border-slate-300 dark:border-slate-700'}`}>
               <p className="text-white font-black text-[11px]">{JUMP_SUBTYPES[k].code}</p>

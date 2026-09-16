@@ -65,10 +65,46 @@ export const JUMP_SUBTYPES = {
     guideBody: '두 발을 모아 출발선에 맞춰 선 다음, 팔과 무릎 반동을 이용해 최대한 멀리 앞으로 뛰어 두 발로 착지하는 점프입니다. 착지 후 뒤로 손을 짚거나 넘어지면 그 지점까지가 기록에 영향을 줄 수 있으니 균형을 잡고 서서 마무리하세요. 좌우가 아니라 앞뒤 이동을 재는 측정이라 반드시 옆에서(측면) 촬영해야 합니다.',
     tip: '측면 촬영 필수 · 출발선에 발을 맞추고, 이동 경로 전체(착지 지점까지)가 화면에 다 들어와야 함',
   },
+  // [한발멀리뛰기 추가 2026-09-16] SBJ(양발)와 계산 엔진은 100% 동일
+  // (engine:'horizontal', BroadJumpTracker의 발목 x 변위→거리) — 다른 건
+  // "한 발로만" 뛴다는 것(singleLeg:true, SLJ와 동일한 다리선택 UI 재사용)과
+  // 방향 3가지뿐이다. 방향에 따라 카메라 위치가 달라진다:
+  //  · 정면(forward) — SBJ와 동일하게 "옆에서" 촬영(측면 view) → 이동거리가
+  //    화면의 가로(x)축과 일치.
+  //  · 안쪽/바깥쪽(medial/lateral) — 좌우 이동이라 "정면에서"(view:'front')
+  //    촬영해야 화면의 가로(x)축과 일치한다(옆에서 찍으면 좌우 이동이 카메라
+  //    쪽/반대쪽 깊이 방향이 돼 2D 포즈로는 잴 수 없음). 계산 자체는 손 안 댐 —
+  //    "어느 방향으로 서서 찍는지"만 다르고 같은 x축 변위 로직을 그대로 씀.
+  shjf: {
+    code: 'SHJ-F', label: '한발멀리뛰기 (정면)', chipLabel: '🦶 정면',
+    engine: 'horizontal', view: 'side', singleLeg: true,
+    guideTitle: '한발멀리뛰기 · 정면(SHJ-F)이란?',
+    guideBody: '한쪽 다리로만 서서 그 다리로만 앞으로 뛰고 그 다리로만 착지하는 제자리멀리뛰기입니다. 반대쪽 다리는 편하게 들어 올려두고, 착지 후 균형을 잃고 손을 짚거나 반대 발이 먼저 닿으면 그 지점까지가 기록에 영향을 줍니다. SBJ와 같은 방식으로 반드시 옆에서(측면) 촬영하세요.',
+    tip: '측면 촬영 필수 · 테스트할 다리를 먼저 선택 · 착지까지 화면에 다 들어와야 함',
+  },
+  shjm: {
+    code: 'SHJ-M', label: '한발멀리뛰기 (안쪽)', chipLabel: '🦶 안쪽',
+    engine: 'horizontal', view: 'front', singleLeg: true,
+    guideTitle: '한발멀리뛰기 · 안쪽(SHJ-M)이란?',
+    guideBody: '한쪽 다리로 서서 몸 안쪽(반대쪽 다리 방향)으로 최대한 멀리 뛰어 같은 다리로 착지합니다. 좌우 이동을 재는 측정이라 정면(카메라를 마주보고 서는 방향)에서 촬영해야 합니다. 균형·고관절 안정성을 보는 측정이라 무리하지 말고 편한 범위에서 진행하세요.',
+    tip: '정면 촬영 필수 · 테스트할 다리를 먼저 선택 · 안쪽(반대 다리 쪽)으로 도약',
+  },
+  shjl: {
+    code: 'SHJ-L', label: '한발멀리뛰기 (바깥쪽)', chipLabel: '🦶 바깥쪽',
+    engine: 'horizontal', view: 'front', singleLeg: true,
+    guideTitle: '한발멀리뛰기 · 바깥쪽(SHJ-L)이란?',
+    guideBody: '한쪽 다리로 서서 몸 바깥쪽(반대쪽 다리와 먼 방향)으로 최대한 멀리 뛰어 같은 다리로 착지합니다. 좌우 이동을 재는 측정이라 정면(카메라를 마주보고 서는 방향)에서 촬영해야 합니다. 균형·고관절 안정성을 보는 측정이라 무리하지 말고 편한 범위에서 진행하세요.',
+    tip: '정면 촬영 필수 · 테스트할 다리를 먼저 선택 · 바깥쪽으로 도약',
+  },
 };
 
 // 화면에 보여줄 순서(선택 칩·가이드 카드 등에서 공통으로 사용).
-export const JUMP_SUBTYPE_ORDER = ['cmj', 'sj', 'dj', 'slj', 'rsi', 'sbj'];
+export const JUMP_SUBTYPE_ORDER = ['cmj', 'sj', 'dj', 'slj', 'rsi', 'sbj', 'shjf', 'shjm', 'shjl'];
+
+// [한발멀리뛰기 추가 2026-09-16] '제자리멀리뛰기' 탭(registry.js의 broadjump)에서
+// 고를 수 있는 세부 종류만 모은 부분집합 — SBJ(양발) + 한발멀리뛰기 3방향.
+// engine이 전부 'horizontal'인 것과 정확히 일치한다(JUMP_SUBTYPE_ORDER 순서 유지).
+export const BROAD_JUMP_SUBTYPES = JUMP_SUBTYPE_ORDER.filter((k) => JUMP_SUBTYPES[k].engine === 'horizontal');
 
 // [SLJ 좌우 비대칭 2026-08-11] 다리 코드('left'|'right') → 표시 라벨.
 // JumpAnalysisHub.jsx(다리 선택 버튼)와 JumpReportDashboard.jsx(리포트 표시·
