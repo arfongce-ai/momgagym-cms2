@@ -305,18 +305,6 @@ function OverviewTab({ settings, trainers, trainerMap }) {
     });
   }, [isMonth, period, trainers, settings, allPayments]);
 
-  // "트레이너별 정산 내역" 블록 전용 합계 — 매출 × 해당월 확정 정산비율만(인센티브 미포함).
-  // 인센티브까지 포함한 실제 지급액 합계는 settlePayout(위 손익 요약의 "트레이너 정산"에 사용).
-  const confirmedPayoutTotal = useMemo(()=>trainerBreakdown.reduce((s,b)=>{
-    const rate = monthConfirmedRates[b.trainer.id]?.rate ?? b.splitRate;
-    return s + Math.round(b.sessionTotal * rate / 100);
-  }, 0), [trainerBreakdown, monthConfirmedRates]);
-  // 신규+재등록 참고 합계(확정비율 기준) — 실제 지급액과는 별개, 카드 하단 참고용.
-  const confirmedSalesRefTotal = useMemo(()=>trainerBreakdown.reduce((s,b)=>{
-    const rate = monthConfirmedRates[b.trainer.id]?.rate ?? b.splitRate;
-    return s + Math.round((b.newSales + b.reEnrollSales) * rate / 100);
-  }, 0), [trainerBreakdown, monthConfirmedRates]);
-
   // 선생님별 "월 매출(입금매출)" — 세션 소진(sessionTotal)이 아니라 이번 달 실제 결제(paidAt
   // 이번 달)를 트레이너별로 귀속시킨 금액(computeMonthRates의 monthNet, calcNet 합산).
   //  · 전체 트레이너 합산이 위 "손익 요약"의 입금금액(순매출)과 정확히 일치한다.
@@ -416,63 +404,14 @@ function OverviewTab({ settings, trainers, trainerMap }) {
         {!isMonth && <p className="text-[11px] text-slate-600 mt-2">* {isYear?`${period}년`:'전체 기간'} 고정지출은 결제가 발생한 {periodMonths.length}개월분을 합산한 값입니다. 특정 월을 선택하면 그 달 기준으로 보여집니다.</p>}
       </div>
 
-      {/* 트레이너별 정산 내역 — 매출 × 해당월 확정 정산비율(계약서 4조, 40/50/60%)만 보여주는
-          참고용 개요(인센티브 미포함). 정산 탭의 회원별 혼합비율(splitRate)이 아니라
-          computeMonthRates(=determineSplitRate) 결과를 쓴다 — 44%·46%·55% 같은 혼합값은
-          실제 존재하는 비율 조건이 아니기 때문. 위 손익 요약의 "트레이너 정산"(실제 지급액,
-          인센티브 포함 — settlePayout)과는 의도적으로 다른 숫자다. 인센티브까지 포함한 실제
-          지급 내역은 "정산" 탭에서 확인.
-          (특정 월 선택 시에만 표시. 연/전체는 여러 달 정산비율이 섞여 트레이너별 대조가
-          덜 명확해지므로, 정산 탭과 동일하게 "월 단위"로만 맞춘다.) */}
-      {isMonth && trainerBreakdown.length > 0 && (
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4">
-          <h2 className="font-bold text-sm uppercase tracking-widest text-slate-500 dark:text-slate-400 mb-3">트레이너별 정산 내역</h2>
-          <div className="space-y-2.5">
-            {trainerBreakdown.map(b=>{
-              const confirmedRate = monthConfirmedRates[b.trainer.id]?.rate ?? b.splitRate;
-              const confirmedAmount = Math.round(b.sessionTotal * confirmedRate / 100);
-              const confirmedSalesRef = Math.round((b.newSales + b.reEnrollSales) * confirmedRate / 100);
-              return (
-              <div key={b.trainer.id}>
-                <div className="flex items-center justify-between gap-3 text-sm">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{background:b.trainer.color||'#94a3b8'}}/>
-                    <span className="font-bold text-slate-700 dark:text-slate-200 flex-shrink-0">{b.trainer.name}</span>
-                    <span className="text-[11px] text-slate-500 truncate">
-                      매출 {won(b.sessionTotal)} × {confirmedRate}%
-                    </span>
-                  </div>
-                  <span className="font-mono font-bold text-amber-700 dark:text-amber-400 flex-shrink-0">{won(confirmedAmount)}</span>
-                </div>
-                {b.promoIncentive > 0 && (
-                  <div className="pl-4 text-[10px] text-slate-600 mt-0.5 truncate">
-                    인센티브 {won(b.promoIncentive)} <span className="text-slate-700">(이 금액엔 미포함 — 위 손익 요약 "트레이너 정산"엔 포함됨)</span>
-                  </div>
-                )}
-                {(b.newSales + b.reEnrollSales) > 0 && (
-                  <div className="pl-4 text-[10px] text-slate-600 mt-0.5 truncate">
-                    참고 · 신규+재등록 {won(b.newSales + b.reEnrollSales)} × {confirmedRate}% = {won(confirmedSalesRef)} <span className="text-slate-700">(지급액 아님)</span>
-                  </div>
-                )}
-              </div>
-              );
-            })}
-            <div className="flex items-center justify-between text-sm pt-2 border-t border-slate-200 dark:border-slate-800">
-              <span className="font-bold text-slate-600 dark:text-slate-300">
-                {trainerBreakdown.length<=4 ? trainerBreakdown.map(b=>b.trainer.name).join(' + ') : '전체'} 합계 (매출×확정%)
-              </span>
-              <span className="font-mono font-black text-amber-700 dark:text-amber-400">{won(confirmedPayoutTotal)}</span>
-            </div>
-            {confirmedSalesRefTotal > 0 && (
-              <div className="flex items-center justify-between text-[11px] text-slate-600">
-                <span>신규+재등록 참고 합계</span>
-                <span className="font-mono">{won(confirmedSalesRefTotal)}</span>
-              </div>
-            )}
-          </div>
-          <p className="text-[11px] text-slate-600 mt-3">* 매출(수업료 합계) × 해당월 확정 정산비율(계약서 4조 조건에 따라 그 달 자동판정되는 40/50/60%, 수동 지정 시 그 값)만 곱한 값입니다(인센티브 미포함). 위 손익 요약의 "트레이너 정산" 금액은 여기에 인센티브까지 더한 실제 지급액 기준이라 서로 다를 수 있습니다.<br/>* "참고" 줄은 신규+재등록 순매출(부가세·카드수수료 제외) × 확정 정산비율이며, 위 정산액과는 별개의 확인용 숫자입니다(지급액에 가산되지 않음).</p>
-        </div>
-      )}
+      {/* [2026-09-16] 세션 소진 기준 "트레이너별 정산 내역" 카드는 개요 탭에서 제거했다.
+          그 방식은 이번 달 결제(입금)가 없는 트레이너도 과거 결제분 세션을 이번 달에
+          소진했으면 매출이 잡혀 노출됐는데(예: 정주인·김현진·김현우처럼 9월 결제가 없는
+          트레이너), 대표님 확인 결과 개요에서는 "이번 달 매출 없으면 안 보여야 한다"가
+          맞는 기준이었다. 세션 소진 기준 상세는 여전히 필요하므로 "정산" 탭(SettleTab)의
+          카드 리스트에서 그대로 확인 가능 — 그쪽은 원래부터 이 변경의 영향을 받지 않는다.
+          개요에는 아래 "선생님별 월 매출(입금매출 기준)" 카드만 남긴다(이번 달 실제
+          매출이 없는 트레이너는 자동으로 목록에서 빠진다 — depositBreakdown 필터 참고). */}
 
       {/* 선생님별 월 매출(입금매출 기준) — 위 블록(세션 소진 기준)과 달리, 이번 달 실제
           결제(paidAt)를 트레이너별로 귀속시킨 현금 기준 매출이다. 전체 합계가 위 "손익 요약"의
