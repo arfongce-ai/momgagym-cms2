@@ -18,15 +18,19 @@ import MeasureRecordConfirm from '../components/MeasureRecordConfirm.jsx';
 import { JUMP_SUBTYPES, JUMP_SUBTYPE_ORDER, LEG_LABEL, engineOf } from '../core/jumpTypes';
 import { aiStore } from '../../demoData';
 
-export default function JumpAnalysisHub({ member, onBack, onSave, onSaveToFirebase, onMemberHeightChange, onViewInReport }) {
+// [제자리멀리뛰기(SBJ) 탭 분리 2026-09-16] fixedSubType: 넘기면(예: 'sbj')
+// 세부종류 선택 칩을 숨기고 그 종류 하나로 고정한다 — registry.js의 새
+// '제자리멀리뛰기' 탭이 이 컴포넌트를 그대로 재사용하면서 쓴다. 안 넘기면
+// (undefined, 기존 '점프 & RSI' 탭) 기존 5종 선택 UI가 100% 그대로 동작한다.
+export default function JumpAnalysisHub({ member, onBack, onSave, onSaveToFirebase, onMemberHeightChange, onViewInReport, fixedSubType = null }) {
   const save = onSaveToFirebase || onSave;
   // 요구사항 7: 실시간 → 고속영상 순서, 실시간이 기본
   const [mode, setMode] = useState('live');
-  // [2026-08-10 확장] 세부 종류(CMJ/SJ/DJ/SLJ/RSI) 선택. 기존 jumpType('power'|
-  // 'reactive')은 아래 파생값으로 그대로 계산해서 JumpPrecisionAnalysis·
+  // [2026-08-10 확장] 세부 종류(CMJ/SJ/DJ/SLJ/RSI/SBJ) 선택. 기존 jumpType('power'|
+  // 'reactive'|'horizontal')은 아래 파생값으로 그대로 계산해서 JumpPrecisionAnalysis·
   // JumpUploadAnalysis 등 하위 컴포넌트의 기존 분기는 손대지 않는다 — 새 종류는
-  // 어차피 이 둘 중 하나의 엔진을 그대로 재사용하기 때문(jumpTypes.js 참고).
-  const [jumpSubType, setJumpSubType] = useState('cmj');
+  // 어차피 이 중 하나의 엔진을 그대로 재사용하기 때문(jumpTypes.js 참고).
+  const [jumpSubType, setJumpSubType] = useState(fixedSubType || 'cmj');
   const jumpType = engineOf(jumpSubType); // 파생값 — 'power' | 'reactive'
   // SLJ(한발 점프) 전용 — 테스트할 다리. 다른 종류에서는 쓰이지 않는다.
   const [leg, setLeg] = useState('left');
@@ -327,16 +331,19 @@ export default function JumpAnalysisHub({ member, onBack, onSave, onSaveToFireba
         <>
           {/* 점프 세부 종류(CMJ/SJ/DJ/SLJ/RSI) + 측정 방식(실시간/고속영상) + 도움말 */}
           <div className="absolute top-[max(8px,calc(env(safe-area-inset-top)+8px))] inset-x-0 z-[86] flex flex-col items-center gap-1.5 px-3 pointer-events-none">
-            {/* 점프 세부 종류 — 5종, 가로 스크롤 허용(좁은 화면 대비) */}
-            <div className="pointer-events-auto flex gap-1 rounded-full bg-black/55 backdrop-blur p-1 border border-white/10 shadow-lg max-w-full overflow-x-auto">
-              {JUMP_SUBTYPE_ORDER.map((k) => (
-                <button key={k} onClick={() => setJumpSubType(k)}
-                  className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-black transition-colors whitespace-nowrap ${
-                    jumpSubType === k ? 'bg-emerald-500 text-slate-950' : 'text-slate-600 dark:text-slate-300'}`}>
-                  {JUMP_SUBTYPES[k].chipLabel}
-                </button>
-              ))}
-            </div>
+            {/* 점프 세부 종류 — fixedSubType이 있으면(예: 제자리멀리뛰기 전용 탭)
+                선택 칩 자체를 숨긴다(이미 한 종류로 고정돼 고를 게 없음). */}
+            {!fixedSubType && (
+              <div className="pointer-events-auto flex gap-1 rounded-full bg-black/55 backdrop-blur p-1 border border-white/10 shadow-lg max-w-full overflow-x-auto">
+                {JUMP_SUBTYPE_ORDER.map((k) => (
+                  <button key={k} onClick={() => setJumpSubType(k)}
+                    className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-black transition-colors whitespace-nowrap ${
+                      jumpSubType === k ? 'bg-emerald-500 text-slate-950' : 'text-slate-600 dark:text-slate-300'}`}>
+                    {JUMP_SUBTYPES[k].chipLabel}
+                  </button>
+                ))}
+              </div>
+            )}
             {/* SLJ(한발 점프) 전용 — 테스트할 다리 선택 */}
             {JUMP_SUBTYPES[jumpSubType].singleLeg && (
               <div className="pointer-events-auto flex gap-1 rounded-full bg-black/55 backdrop-blur p-1 border border-white/10 shadow-lg">
@@ -507,8 +514,8 @@ function JumpGuide({ mode, jumpSubType, onClose }) {
           <button onClick={onClose} className="text-slate-500 dark:text-slate-400 font-bold text-sm">닫기 ✕</button>
         </div>
 
-        {/* 5종 한눈에 — 현재 선택된 종류만 강조 */}
-        <div className="grid grid-cols-5 gap-1">
+        {/* 6종 한눈에(SBJ 추가로 5→6) — 현재 선택된 종류만 강조 */}
+        <div className="grid grid-cols-6 gap-1">
           {JUMP_SUBTYPE_ORDER.map((k) => (
             <div key={k} className={`rounded-lg p-1.5 text-center border ${
               k === jumpSubType ? 'bg-emerald-500/10 border-emerald-500/40' : 'bg-slate-100/60 dark:bg-slate-800/60 border-slate-300 dark:border-slate-700'}`}>

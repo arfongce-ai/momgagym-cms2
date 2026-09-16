@@ -101,7 +101,13 @@ export default function AiMeasureHub() {
     // 보행 분석은 컴포넌트가 자체 저장 상태 UI(저장 중/✓/실패)를 표시하므로
     // alert 없이 에러를 그대로 throw 해 컴포넌트가 처리하게 한다.
     const isGait = active.id === 'gait';
-    const isJump = active.id === 'jump';
+    // [제자리멀리뛰기(SBJ) 탭 분리 2026-09-16] 'broadjump'는 화면(탭)만 분리했을
+    // 뿐 저장 방식은 'jump'와 완전히 같다(gait_reports에 kind:'jump' +
+    // jumpSubType:'sbj'로 저장 — JumpAnalysisHub.jsx가 기존 5종과 동일하게
+    // report.jumpSubType을 이미 채워 넘긴다). 여기서 isJump에 안 넣으면 아래
+    // 'if (isJump && ...)' 저장 분기를 안 타서 SBJ 측정이 세션 로그에만 남고
+    // 전용 리포트 컬렉션엔 저장되지 않는 조용한 데이터 유실이 생긴다.
+    const isJump = active.id === 'jump' || active.id === 'broadjump';
     const isPosture = active.id === 'posture';
     const isRom = active.id === 'rom';
     const isLifting = active.id === 'lifting';
@@ -429,7 +435,9 @@ export default function AiMeasureHub() {
   // 메뉴 구동 화면
   if (active && active.status === 'ready') {
     const Comp = active.component;
-    const wideMeasure = active.id === 'gait' || active.id === 'jump' || active.id === 'posture' || active.id === 'rom' || active.id === 'lifting' || active.id === 'compare' || active.id === 'imaging';
+    // [제자리멀리뛰기(SBJ) 탭 분리 2026-09-16] 'broadjump'도 'jump'와 동일한
+    // 화면(JumpAnalysisHub.jsx, 카메라 뷰)이라 같은 넓은 레이아웃을 쓴다.
+    const wideMeasure = active.id === 'gait' || active.id === 'jump' || active.id === 'broadjump' || active.id === 'posture' || active.id === 'rom' || active.id === 'lifting' || active.id === 'compare' || active.id === 'imaging';
     return (
       <div className={`${wideMeasure ? 'max-w-6xl' : 'max-w-md'} mx-auto`}>
         {isPortraitBlocked && <RotateHint />}
@@ -441,6 +449,10 @@ export default function AiMeasureHub() {
             onMemberHeightChange={rememberMemberHeight}
             onGuestBodyInfoChange={member?.isVirtual ? applyGuestBodyInfo : undefined}
             onViewInReport={() => viewInReport(active.id)}
+            // [제자리멀리뛰기(SBJ) 탭 분리 2026-09-16] 'jump' 탭과 컴포넌트를
+            // 재사용하되, 이 탭에서만 세부종류를 SBJ로 고정(JumpAnalysisHub.jsx
+            // fixedSubType 참고) — 'jump' 탭은 이 prop 자체를 안 받아 기존 그대로.
+            {...(active.id === 'broadjump' ? { fixedSubType: 'sbj' } : {})}
           />
         </Suspense>
       </div>

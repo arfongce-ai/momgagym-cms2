@@ -3,19 +3,26 @@ import { lazy } from 'react';
 // AI 측정 · 분석 탭 등록부.
 //  탭 순서(no)는 측정 흐름 순서를 따른다:
 //   1 신체 정보(기본) → 2 자세·체형(정적) → 3 ROM(가동성) → 4 보행·러닝(트레드밀용, 이동)
-//   → 5 점프·RSI(파워) → 6 보행 & 스프린터(필드용, 속도·순발력, 점프 다음이 자연스러움)
-//   → 7 바벨 리프팅(근력) → 8 한다리서기(SLST, 균형)
-//   → 9 오버헤드 딥 스쿼트(균형+가동성 복합) → 10 전/후 비교(오버레이) →
-//   → 11 근골격계 영상 확인(업로드 X-ray·CT·초음파·MRI) →
-//   12 일반 녹화 · 13 초시계 (도구, 항상 맨 마지막 — 기존 테스트 불변식:
+//   → 5 점프·RSI(파워) → 6 제자리멀리뛰기(SBJ, 수평) → 7 보행 & 스프린터(필드용,
+//   속도·순발력, 점프 다음이 자연스러움) → 8 바벨 리프팅(근력) → 9 한다리서기(SLST, 균형)
+//   → 10 오버헤드 딥 스쿼트(균형+가동성 복합) → 11 전/후 비교(오버레이) →
+//   → 12 근골격계 영상 확인(업로드 X-ray·CT·초음파·MRI) →
+//   13 일반 녹화 · 14 초시계 (도구, 항상 맨 마지막 — 기존 테스트 불변식:
 //   정렬 후 timer가 배열 끝).
 //  [트레드밀/필드 구분 2026-09-05] 4번(gait)은 트레드밀 등 실내 고정 보행 측정,
-//  6번(sprint)은 필드(야외 트랙) 스프린트·아질리티 측정으로 용도를 명확히 구분.
+//  7번(sprint)은 필드(야외 트랙) 스프린트·아질리티 측정으로 용도를 명확히 구분.
 //  [스프린트 추가 2026-09-04] 5m/10m 스프린트, 5-0-5 아질리티 — 카메라 1대로
 //  골반(Hip) 좌표를 추적해 속도·구간기록을 산출. 캘리브레이션은 다른 탭처럼
 //  자동 세이프존이 아니라 바닥 기준점 2점 터치 방식(sprintAgility.js 참고).
 //  '던지기(throw)'·'스윙(swing)' 준비 중 탭은 제거됨(2607 요청).
-//  7번(SLST)·8번(스쿼트) 모두 실시간·업로드 둘 다 지원.
+//  8번(SLST)·9번(스쿼트) 모두 실시간·업로드 둘 다 지원.
+//  [제자리멀리뛰기(SBJ) 탭 분리 2026-09-16] 점프 5종(CMJ/SJ/DJ/SLJ/RSI)은
+//  전부 "수직" 점프라 5번 탭 안의 세부종류 칩으로 묶여 있었는데, SBJ는
+//  "수평" 이동거리를 재는 별개 측정이라 별도 6번 탭으로 분리했다. 화면은
+//  5번과 동일한 JumpAnalysisHub.jsx를 그대로 재사용하되(component 재사용 —
+//  새로 안 만듦), fixedSubType='sbj' prop으로 세부종류 선택 칩을 숨기고
+//  SBJ 하나로 고정한다(AiMeasureHub.jsx가 active.id==='broadjump'일 때만
+//  이 prop을 얹어준다 — jumpTypes.js/JumpAnalysisHub.jsx 참고).
 //  [전/후 비교 추가] 사진/영상 오버레이·어니언 스킨 비교 도구. 다른 측정처럼
 //  값을 산출/저장하지 않는 시각 비교 도구라 개별 항목들 뒤, 도구(녹화/초시계)
 //  바로 앞에 둔다.
@@ -70,9 +77,23 @@ export const MEASURE_MENUS = [
     status: 'ready',
     component: lazy(() => import('./menus/JumpAnalysisHub.jsx')),
   },
+  // [제자리멀리뛰기 추가 2026-09-16] 5번(점프 & RSI)과 완전히 같은 화면
+  // 구조(JumpAnalysisHub.jsx)를 그대로 재사용하되, fixedSubType='sbj'로
+  // 세부종류 선택 칩을 숨기고 SBJ 하나로 고정한 별도 탭. 점프 5종은 전부
+  // "수직" 점프라 한 탭 안의 세부종류로 묶여 있었지만, SBJ(제자리멀리뛰기)는
+  // "수평" 측정이라 성격이 달라 별도 탭으로 분리해달라는 요청 반영.
+  {
+    id: 'broadjump',
+    no: 6,
+    title: '제자리멀리뛰기',
+    desc: '수평 이동거리(SBJ), 실시간/고속영상 분석',
+    icon: 'SBJ',
+    status: 'ready',
+    component: lazy(() => import('./menus/JumpAnalysisHub.jsx')),
+  },
   {
     id: 'sprint',
-    no: 6,
+    no: 7,
     title: '보행 & 스프린터 (필드용)',
     desc: '5m/10m 스프린트, 5-0-5 방향전환 — 필드(야외 트랙) 실시간 카메라·영상 업로드',
     icon: 'SPD',
@@ -87,7 +108,7 @@ export const MEASURE_MENUS = [
   },
   {
     id: 'lifting',
-    no: 7,
+    no: 8,
     title: '바벨 리프팅',
     desc: 'VBT 속도 · 1RM 추정 · 고속영상 분석',
     icon: 'BAR',
@@ -96,7 +117,7 @@ export const MEASURE_MENUS = [
   },
   {
     id: 'stance',
-    no: 8,
+    no: 9,
     title: '한다리서기 (SLST)',
     desc: '균형 능력, 좌우 비대칭 — 실시간 카메라·영상 업로드',
     icon: 'LEG',
@@ -105,7 +126,7 @@ export const MEASURE_MENUS = [
   },
   {
     id: 'squat',
-    no: 9,
+    no: 10,
     title: '오버헤드 딥 스쿼트',
     desc: '깊이·상체 기울기·무릎 정렬·골반 — 실시간 카메라·영상 업로드',
     icon: 'SQT',
@@ -114,7 +135,7 @@ export const MEASURE_MENUS = [
   },
   {
     id: 'compare',
-    no: 10,
+    no: 11,
     title: '전/후 비교 (오버레이)',
     desc: '사진·영상 오버레이 · 어니언 스킨 비교, 발목 기준 자동 정렬',
     icon: 'CMP',
@@ -123,7 +144,7 @@ export const MEASURE_MENUS = [
   },
   {
     id: 'imaging',
-    no: 11,
+    no: 12,
     title: '근골격계 영상 확인',
     desc: 'X-ray·CT·초음파·MRI 업로드 — 각도/거리 측정, 소견 태그(내부 참고용)',
     icon: 'IMG',
@@ -132,7 +153,7 @@ export const MEASURE_MENUS = [
   },
   {
     id: 'record',
-    no: 12,
+    no: 13,
     title: '일반 영상 녹화',
     desc: '카메라 녹화 및 저장',
     icon: 'REC',
@@ -141,7 +162,7 @@ export const MEASURE_MENUS = [
   },
   {
     id: 'timer',
-    no: 13,
+    no: 14,
     title: '초시계·메트로놈',
     desc: '초시계, 타이머, 인터벌, 메트로놈',
     icon: 'TMR',
