@@ -126,17 +126,23 @@ describe('Revenue.jsx 소스 배선 — 개요 탭이 실제로 위 알고리즘
     expect(src).toContain('const settlePayout = useMemo(()=>trainerBreakdown.reduce((s,b)=>s+b.payout,0)');
   });
 
-  it('트레이너별 정산 내역 카드의 합계 줄이 별도로 재계산하지 않고 settlePayout을 그대로 표시한다', () => {
-    const cardStart = src.indexOf('트레이너별 정산 내역');
-    expect(cardStart).toBeGreaterThan(-1);
-    const cardEnd = src.indexOf('상세 + 담당 트레이너 + 환불', cardStart);
-    const card = src.slice(cardStart, cardEnd);
-    expect(card).toContain('{won(settlePayout)}');
-    expect(card).toContain('매출');
-    expect(card).toContain('정산비율');
+  it('손익 요약의 "트레이너 정산" 줄이 별도로 재계산하지 않고 settlePayout을 그대로 표시한다', () => {
+    expect(src).toContain('{won(settlePayout)}');
+    expect(src).toContain('const netProfit = totals.net - settlePayout - totalExpense;');
   });
 
-  it('트레이너별 정산 내역 카드는 특정 월을 선택했을 때만 노출된다(연/전체 기간엔 숨김)', () => {
-    expect(src).toContain('{isMonth && trainerBreakdown.length > 0 && (');
+  // [2026-09-16] 세션 소진 기준 "트레이너별 정산 내역" 카드는 개요에서 제거됐다.
+  //  · 이번 달 결제가 없는 트레이너(지난달 결제분을 이번 달에 소진)까지 개요에 노출되는 게
+  //    대표님 기준과 맞지 않았다 — 개요는 "그 달 입금매출" 기준으로만 본다.
+  //  · 여기서 검증하는 trainerBreakdown 누적 알고리즘 자체는 없어지지 않았다(손익 요약의
+  //    "트레이너 정산"·순익이 여전히 이 값에서 나온다). 화면 카드만 빠진 것.
+  //  · 개요의 입금매출 기준 카드는 overview_deposit_revenue.test.js에서 검증한다.
+  it('세션 소진 기준 트레이너별 정산 내역 카드는 개요에서 제거됐다(정산 탭에만 남김)', () => {
+    expect(src).not.toContain('{isMonth && trainerBreakdown.length > 0 && (');
+    expect(src).not.toContain('>트레이너별 정산 내역</h2>');
+  });
+
+  it('대신 개요에는 입금매출 기준 카드가 월 단위로만 노출된다', () => {
+    expect(src).toContain('{isMonth && depositBreakdown.length > 0 && (');
   });
 });

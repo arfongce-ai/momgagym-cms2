@@ -109,12 +109,14 @@ describe('Revenue.jsx 소스 배선 — 개요 탭이 참고용 숫자를 실제
     expect(src).not.toContain('s+b.payout+b.salesRefPayout');
   });
 
-  it('카드에 "참고" 라벨과 "지급액 아님" 문구로 명시적으로 구분해 표시한다', () => {
-    const cardStart = src.indexOf('트레이너별 정산 내역');
-    const cardEnd = src.indexOf('상세 + 담당 트레이너 + 환불', cardStart);
-    const card = src.slice(cardStart, cardEnd);
-    expect(card).toContain('참고');
-    expect(card).toContain('지급액 아님');
-    expect(card).toContain('salesRefPayout');
+  // [2026-09-16] "신규+재등록 × 정산비율" 참고 줄은 세션 소진 기준 "트레이너별 정산 내역"
+  // 카드 안에 있었는데, 그 카드가 개요에서 제거되면서 화면 표시도 함께 빠졌다.
+  //  · 계산·누적(finance.js의 salesRefPayout, trainerBreakdown 누적)은 그대로 살아 있어서
+  //    위 계산 테스트들은 계속 유효하고, 화면에 다시 붙일 때 추가 작업이 필요 없다.
+  //  · 지급액(payout/settlePayout)에 절대 가산되지 않는다는 핵심 불변조건도 그대로 검증한다.
+  it('참고값은 데이터 계층에만 남고 개요 화면에는 표시되지 않는다(지급액에는 여전히 미가산)', () => {
+    expect(src).toContain('acc[tid].salesRefPayout += b.salesRefPayout;');
+    expect(src).not.toContain('지급액 아님');
+    expect(src).not.toContain('s+b.payout+b.salesRefPayout');
   });
 });
