@@ -70,6 +70,9 @@ export const JUMP_TUNING = {
   crossTolPct: 25,           // 비행시간 높이 vs 골반변위 높이 허용 불일치(%)
   // ── 물리적 sanity (회원 키 대비) ──
   maxHeightToBodyRatio: 0.85,// 점프 높이가 키의 이 비율을 넘으면 비현실적(검출 오류)
+  // [제자리멀리뛰기 추가 2026-09-16] 일반 성인 기준 최고기록도 키의 ~1.6배 안팎
+  // (세계기록급 제외)이라 이보다 크면 검출 오류로 본다. 현장 데이터로 조정 대상.
+  maxBroadJumpToBodyRatio: 1.6,
 
   // ── Triple Extension 신전 임계(도) ── 이지 직전 세 관절이 거의 펴졌는지
   //   고관절/무릎은 신뢰, 발목은 참고. 현장 데이터로 조정 대상.
@@ -90,6 +93,18 @@ export const feetCenterY = (lm) => {
   if (!okL && !okR) return null;
   if (okL && okR) return (lm[27].y + lm[28].y) / 2;
   return okL ? lm[27].y : lm[28].y; // 한쪽만 보이면 그쪽 사용 (blur 관용)
+};
+
+// [제자리멀리뛰기 추가 2026-09-16] 두 발(발목)의 평균 x — 수평 이동거리(SBJ)
+// 전용 신호. feetCenterY와 동일한 가시성 처리를 x축에 그대로 적용한 것뿐이다.
+export const feetCenterX = (lm) => {
+  if (!lm || !lm[27] || !lm[28]) return null;
+  const v = JUMP_TUNING.minVisibility;
+  const okL = lm[27].visibility == null || lm[27].visibility >= v;
+  const okR = lm[28].visibility == null || lm[28].visibility >= v;
+  if (!okL && !okR) return null;
+  if (okL && okR) return (lm[27].x + lm[28].x) / 2;
+  return okL ? lm[27].x : lm[28].x;
 };
 
 // [2026-07-31] 한쪽 발목(27 또는 28)만 고정으로 추적 — "이번 프레임엔 평균,
@@ -177,6 +192,10 @@ export class StandingCalibrator {
     this._feetY = [];
     this._pelvisY = [];
     this._bodyPx = [];
+    // [제자리멀리뛰기 추가 2026-09-16] 출발선 기준 발목 x — feetY/pelvisY와
+    // 동일한 조건(fY!=null && pY!=null)일 때만 같이 쌓는다(같은 표본 프레임끼리
+    // 짝을 맞추기 위함). SBJ 이외 종류는 이 필드를 그냥 안 쓸 뿐이라 무해하다.
+    this._feetX = [];
     // [스쿼트 추적기 신규] 무릎·뒤꿈치는 선택적 부가 정보라 별도 배열로 모으고,
     // 아래 push()/_tryLock()의 lock 조건(안정성 판정)에는 전혀 관여하지 않는다.
     this._kneeY = [];
@@ -218,6 +237,12 @@ export class StandingCalibrator {
       this._feetY.push(fY);
       this._pelvisY.push(pY);
     }
+    // [제자리멀리뛰기 추가 2026-09-16] 무릎/뒤꿈치(_kneeY/_heelY)와 동일한
+    // 패턴 — feetY/pelvisY의 안정성 판정(_tryLock 슬라이딩 윈도우)과는 별개로
+    // 독립 수집한다. 프레임 정합은 요구하지 않고(참고용 출발선 위치일 뿐) 표본
+    // 수만으로 신뢰도를 판단한다(_finalizeLock의 5개 임계 참고).
+    const fX = feetCenterX(lm);
+    if (fX != null) this._feetX.push(fX);
     // 좌/우 개별 가시성 카운트 + 값(위 fY 병합 로직과 무관하게 독립적으로 집계).
     // 캘리브레이션 중엔 두 배열 다 짧게 유지되므로(calibMinFrames 근처) 계속
     // 쌓아도 무리 없다 — 잠금 시점의 두 배열 길이/평균으로 승자를 정한다.
@@ -296,10 +321,14 @@ export class StandingCalibrator {
     // 표본이 없으면 병합값으로 안전하게 폴백한다.
     const baselineAnkleYL = this._feetYL.length ? mean(this._feetYL) : baselineFeetY;
     const baselineAnkleYR = this._feetYR.length ? mean(this._feetYR) : baselineFeetY;
+    // [제자리멀리뛰기 추가 2026-09-16] 출발선 기준 발목 x(정규화). 표본이 너무
+    // 적으면(코 기준 bPx와 같은 이유로 각도가 안 좋은 카메라 등) null —
+    // BroadJumpTracker가 null-safe하게 처리한다(SBJ 이외 종류는 아예 안 씀).
+    const baselineFeetX = this._feetX.length >= 5 ? mean(this._feetX) : null;
     this.result = {
       baselineFeetY, baselinePelvisY, bodyPx, scaleCmPerY, feetStd: std(feetArr), visRatio,
       baselineKneeY, baselineHeelY, basis, ankleSide, baselineAnkleY,
-      baselineAnkleYL, baselineAnkleYR,
+      baselineAnkleYL, baselineAnkleYR, baselineFeetX,
     };
     this.locked = true;
   }
@@ -466,6 +495,93 @@ export class JumpFlightTracker {
         deltaPct: crossDeltaPct,             // 두 방식 불일치(%)
         agree: crossOk,                      // null=검증 불가, true/false
       },
+      sanityOk,
+    };
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════
+//  [제자리멀리뛰기(SBJ) 추가 2026-09-16] BroadJumpTracker
+//   JumpFlightTracker와 이착지(비행) 검출 로직은 100% 동일(발목 y 신호로
+//   takeoff/landing 판정) — 다른 건 결과값뿐이다: "체공시간→높이" 대신
+//   "이착지 사이 발목 x 변위→수평거리"를 잰다.
+//   ⚠ px↔cm 환산은 Y축 캘리브레이션 스케일(scaleCmPerY = 키÷전신픽셀높이)을
+//   그대로 재사용한다 — 카메라가 측면에서, 줌 변화 없이, 정사각 픽셀로 찍는다는
+//   전제의 근사치다(원근 왜곡이 큰 각도에선 오차가 커질 수 있음 — JUMP_TUNING
+//   상단 crossTolPct 관련 주석과 같은 종류의 한계). 정밀 계측이 아니라 트레이너
+//   참고·경과 비교용 수치로 취급해야 한다.
+// ════════════════════════════════════════════════════════════════════════
+export class BroadJumpTracker {
+  constructor(calib, {
+    minCutoff = JUMP_TUNING.feetFilterMinCutoff,
+    beta = JUMP_TUNING.feetFilterBeta,
+  } = {}) {
+    this.calib = calib;
+    this.band = JUMP_TUNING.liftoffBandFrac;
+    this._filtFeet = new OneEuroFilter({ minCutoff, beta, dCutoff: 1.0 });
+    this.inAir = false;
+    this.takeoffMs = null;
+    this.flights = []; // [{ takeoffMs, landingMs, flightMs, landingX }]
+    this.ankleSide = calib?.ankleSide ?? null;
+    this.baselineAnkleY = calib?.baselineAnkleY ?? calib?.baselineFeetY ?? null;
+    this.baselineFeetX = calib?.baselineFeetX ?? null;
+  }
+
+  push(lm, tMs) {
+    if (!this.calib) return;
+    const fYraw = this.ankleSide ? singleAnkleY(lm, this.ankleSide) : feetCenterY(lm);
+    if (fYraw == null) return;
+    const fY = this._filtFeet.filter(fYraw, tMs / 1000);
+    const liftThreshold = this.baselineAnkleY - this.band;
+
+    if (!this.inAir) {
+      if (fY < liftThreshold) {
+        this.inAir = true;
+        this.takeoffMs = tMs;
+      }
+    } else if (fY >= this.baselineAnkleY - this.band) {
+      const landingMs = tMs;
+      const flightMs = landingMs - this.takeoffMs;
+      // 착지 순간의 발목 x — 출발선(baselineFeetX) 대비 얼마나 이동했는지의 종점.
+      const landingX = feetCenterX(lm);
+      if (flightMs >= JUMP_TUNING.minFlightMs && flightMs <= JUMP_TUNING.maxFlightMs && landingX != null) {
+        this.flights.push({ takeoffMs: this.takeoffMs, landingMs, flightMs, landingX });
+      }
+      this.inAir = false;
+      this.takeoffMs = null;
+    }
+  }
+
+  // 여러 번 뛰었으면(다회차) 각 회차의 수평변위가 가장 큰(=가장 멀리 뛴) 시도를
+  // 채택한다 — JumpFlightTracker가 "가장 긴 체공"을 고르는 것과 같은 철학
+  // (대표값은 최고 기록), 다만 기준이 체공시간이 아니라 실제 이동거리.
+  summary({ heightCm = null } = {}) {
+    if (!this.flights.length) {
+      return { valid: false, reason: 'no_jump', jumps: 0 };
+    }
+    if (this.baselineFeetX == null) {
+      return { valid: false, reason: 'no_x_calibration', jumps: this.flights.length };
+    }
+    const scored = this.flights.map((f) => ({ ...f, dxNorm: Math.abs(f.landingX - this.baselineFeetX) }));
+    const best = scored.reduce((a, b) => (b.dxNorm > a.dxNorm ? b : a));
+    const t = best.flightMs / 1000;
+
+    const scale = this.calib?.scaleCmPerY ?? null;
+    const distanceCm = scale != null ? Math.round(best.dxNorm * scale * 10) / 10 : null;
+
+    const bodyCm = heightCm || this.calibHeightCm || null;
+    let sanityOk = true;
+    if (bodyCm && distanceCm != null) sanityOk = distanceCm <= bodyCm * JUMP_TUNING.maxBroadJumpToBodyRatio;
+
+    const valid = distanceCm != null && sanityOk;
+
+    return {
+      valid,
+      reason: distanceCm == null ? 'no_scale' : (!sanityOk ? 'sanity_fail' : 'ok'),
+      jumps: this.flights.length,
+      flightTimeMs: Math.round(best.flightMs),
+      flightTimeSec: Math.round(t * 1000) / 1000,
+      distanceCm,           // 주 결과 — 수평 이동거리(cm)
       sanityOk,
     };
   }
@@ -902,8 +1018,8 @@ export function computeExtensionAlignment(hipSeq, kneeSeq, ankleSeq = []) {
 //  예전 리포트 화면 어디에도 새 필드가 안 보여서 100% 그대로 동작한다.
 // ════════════════════════════════════════════════════════════════════════
 
-/** CMJ·SJ·SLJ에서 이 종류가 다회차 평균 대상인지. */
-export const MULTI_TRIAL_JUMP_SUBTYPES = ['cmj', 'sj', 'dj', 'slj'];
+/** CMJ·SJ·SLJ·SBJ에서 이 종류가 다회차 평균 대상인지. */
+export const MULTI_TRIAL_JUMP_SUBTYPES = ['cmj', 'sj', 'dj', 'slj', 'sbj'];
 export const MAX_JUMP_TRIALS = 3;
 
 /**
@@ -924,6 +1040,16 @@ export function combineJumpTrials(trials, engine) {
   };
   // 회원 정보·valid 등 측정치가 아닌 필드는 가장 마지막(최신) 회차 기준으로.
   const base = trials[trials.length - 1];
+
+  if (engine === 'horizontal') {
+    return {
+      ...base,
+      distanceCm: avgNum((t) => t.distanceCm),
+      trials: trials.map((t) => ({
+        distanceCm: t.distanceCm, measuredAt: t.measuredAt || null,
+      })),
+    };
+  }
 
   if (engine === 'reactive') {
     return {

@@ -9,7 +9,7 @@
 // ════════════════════════════════════════════════════════════════════════
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
-  StandingCalibrator, JumpFlightTracker,
+  StandingCalibrator, JumpFlightTracker, BroadJumpTracker,
   JumpBiomechAccumulator, jumpPhaseOf,
 } from '../core/jumpBiomechanics';
 import { calcJump } from '../core/performance';
@@ -113,7 +113,12 @@ export default function JumpUploadAnalysis({ member, onBack, onComplete, onMembe
           if (!calib.locked) {
             calib.push(landmarks);
             if (calib.locked) {
-              tracker = new JumpFlightTracker(calib.result);
+              // [제자리멀리뛰기 추가 2026-09-16] engine='horizontal'(SBJ)만
+              // BroadJumpTracker — 이착지 검출은 JumpFlightTracker와 동일, 결과만
+              // 수평거리(distanceCm)로 다르다(jumpBiomechanics.js 참고).
+              tracker = jumpType === 'horizontal'
+                ? new BroadJumpTracker(calib.result)
+                : new JumpFlightTracker(calib.result);
               tracker.calibHeightCm = effHeightCm;
             }
           } else if (tracker) {
@@ -141,7 +146,10 @@ export default function JumpUploadAnalysis({ member, onBack, onComplete, onMembe
 
       const sum = tracker ? tracker.summary({ heightCm: effHeightCm })
         : { valid: false, reason: 'no_jump', jumps: 0 };
-      const power = calcJump(sum.flightTimeSec, effWeight);
+      // [제자리멀리뛰기 추가 2026-09-16] calcJump(체공시간→수직 높이/파워)는
+      // 수직 점프 전용 공식(h=g·t²/8)이라 SBJ(수평 거리)에는 의미가 없다 —
+      // peakPower/takeoffVelocity를 아예 안 붙인다(null로 report에 남지도 않음).
+      const power = jumpType === 'horizontal' ? null : calcJump(sum.flightTimeSec, effWeight);
 
       // ── 정밀도 리포트 (요구사항 3) ──
       // 실측 평균 fps: 분석한 프레임의 realMs 간격으로 역산. 컨테이너 기준.

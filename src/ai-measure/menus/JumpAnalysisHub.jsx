@@ -201,6 +201,8 @@ export default function JumpAnalysisHub({ member, onBack, onSave, onSaveToFireba
     const j = pending.metrics || pending;
     const rows = [];
     if (j.heightCm != null) rows.push({ label: '점프 높이', value: `${j.heightCm}cm` });
+    // [제자리멀리뛰기 추가 2026-09-16] SBJ는 heightCm이 아니라 distanceCm.
+    if (j.distanceCm != null) rows.push({ label: '이동 거리', value: `${j.distanceCm}cm` });
     if (j.rsi?.rsi != null) rows.push({ label: 'RSI', value: j.rsi.rsi });
     if (j.flightTimeMs != null) rows.push({ label: '체공시간', value: `${j.flightTimeMs}ms` });
     if (j.rsi?.contactTimeMs != null) rows.push({ label: '접지시간', value: `${j.rsi.contactTimeMs}ms` });
@@ -241,6 +243,8 @@ export default function JumpAnalysisHub({ member, onBack, onSave, onSaveToFireba
     // 방금 막 확정된 회차(trials의 마지막)를 요약으로 보여준다.
     const last = trials[trials.length - 1] || {};
     const isReactive = jumpType === 'reactive';
+    // [제자리멀리뛰기 추가 2026-09-16] SBJ(horizontal)는 heightCm이 아니라 distanceCm.
+    const isHorizontal = jumpType === 'horizontal';
     const doneCount = trials.length;
     const nextCount = doneCount + 1;
     return (
@@ -248,7 +252,9 @@ export default function JumpAnalysisHub({ member, onBack, onSave, onSaveToFireba
         <div>
           <p className="text-emerald-600 dark:text-emerald-400 font-black text-sm mb-1">{doneCount}차 측정 완료</p>
           <p className="text-4xl font-black text-slate-900 dark:text-white">
-            {isReactive ? `RSI ${last.rsi?.rsi ?? '—'}` : `${last.heightCm ?? '—'}cm`}
+            {isReactive ? `RSI ${last.rsi?.rsi ?? '—'}`
+              : isHorizontal ? `${last.distanceCm ?? '—'}cm`
+              : `${last.heightCm ?? '—'}cm`}
           </p>
           <p className="text-slate-500 text-sm mt-2">
             {JUMP_SUBTYPES[jumpSubType].code}{jumpSubType === 'slj' ? ` · ${LEG_LABEL[leg]}` : ''} · 총 {MAX_JUMP_TRIALS}회 중 {doneCount}회 완료

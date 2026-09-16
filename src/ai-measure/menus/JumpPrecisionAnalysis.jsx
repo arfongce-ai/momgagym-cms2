@@ -13,7 +13,7 @@
 // ════════════════════════════════════════════════════════════════════════
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  StandingCalibrator, JumpFlightTracker,
+  StandingCalibrator, JumpFlightTracker, BroadJumpTracker,
   JumpBiomechAccumulator, jumpPhaseOf, currentJointAngles, pelvisCenterY,
 } from '../core/jumpBiomechanics';
 import { calcJump, calcRSI } from '../core/performance';
@@ -664,7 +664,11 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
           // ── 측정 단계 ── (armed=true 시점에 트래커가 아직 없으면 여기서 생성 —
           // 카운트다운이 캘리브레이션보다 먼저 끝난 경우 대비)
           if (!trackerRef.current) {
-            trackerRef.current = new JumpFlightTracker(calib.result);
+            // [제자리멀리뛰기 추가 2026-09-16] engine='horizontal'(SBJ)만
+            // BroadJumpTracker — 이착지 검출은 동일, 결과만 수평거리로 다르다.
+            trackerRef.current = jumpType === 'horizontal'
+              ? new BroadJumpTracker(calib.result)
+              : new JumpFlightTracker(calib.result);
             trackerRef.current.calibHeightCm = heightRef.current;
             orientRef.current = jumpType === 'reactive' ? new OrientationVoter() : null;
             prevInAirRef.current = false;
@@ -799,7 +803,9 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
         .filter((p) => p.tMs >= 0);
     }
     // performance.calcJump 로 파워(Sayers)까지 일관 산출 (체중 있으면)
-    const power = calcJump(sum.flightTimeSec, resolveWeight(member, weightRef.current));
+    // [제자리멀리뛰기 추가 2026-09-16] calcJump은 수직 점프 전용 공식이라
+    // SBJ(수평 거리, jumpType==='horizontal')에는 적용하지 않는다.
+    const power = jumpType === 'horizontal' ? null : calcJump(sum.flightTimeSec, resolveWeight(member, weightRef.current));
 
     // ── 반응 탄성 점프 모드: 사이클 간 접지시간으로 RSI 산출 ──
     // 측면뷰 강제: 누적된 방향이 'side'가 아니면 코어가 무효 처리한다.
@@ -837,7 +843,9 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
       videoMetrics: {
         overlayRecorded: Boolean(videoBlob),
         recordingFps: RECORD_FPS,
-        recommendedView: jumpType === 'reactive' ? 'side' : 'front',
+        // [제자리멀리뛰기 추가 2026-09-16] SBJ(horizontal)도 DJ/RSI(reactive)처럼
+        // 측면 촬영이 기준이다(jumpTypes.js sbj.view: 'side').
+        recommendedView: (jumpType === 'reactive' || jumpType === 'horizontal') ? 'side' : 'front',
         detectedView: biomech?.view ?? null,
       },
       biomech,

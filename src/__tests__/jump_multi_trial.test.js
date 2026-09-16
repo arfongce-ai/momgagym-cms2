@@ -15,8 +15,8 @@ import {
 const readSrc = (...segs) => readFileSync(join(process.cwd(), ...segs), 'utf8');
 
 describe('MULTI_TRIAL_JUMP_SUBTYPES / MAX_JUMP_TRIALS — 상수', () => {
-  it('CMJ·SJ·DJ·SLJ 4종만 다회차 대상이다(RSI는 제외 — 이미 자기 안에서 여러 사이클을 평균 냄)', () => {
-    expect(MULTI_TRIAL_JUMP_SUBTYPES).toEqual(['cmj', 'sj', 'dj', 'slj']);
+  it('CMJ·SJ·DJ·SLJ·SBJ 5종만 다회차 대상이다(RSI는 제외 — 이미 자기 안에서 여러 사이클을 평균 냄)', () => {
+    expect(MULTI_TRIAL_JUMP_SUBTYPES).toEqual(['cmj', 'sj', 'dj', 'slj', 'sbj']);
     expect(MULTI_TRIAL_JUMP_SUBTYPES).not.toContain('rsi');
   });
 
@@ -95,6 +95,33 @@ describe('combineJumpTrials() — reactive 엔진(DJ)', () => {
       { heightCm: 5, rsi: 1.85, contactTimeMs: 210, measuredAt: 't1' },
       { heightCm: 5, rsi: 2.05, contactTimeMs: 195, measuredAt: 't2' },
     ]);
+  });
+});
+
+describe('combineJumpTrials() — horizontal 엔진(SBJ, 제자리멀리뛰기)', () => {
+  const trials = [
+    { distanceCm: 180.5, valid: true, measuredAt: 't1' },
+    { distanceCm: 195.2, valid: true, measuredAt: 't2' },
+    { distanceCm: 188.0, valid: true, measuredAt: 't3' },
+  ];
+
+  it('distanceCm을 평균 낸다', () => {
+    const combined = combineJumpTrials(trials, 'horizontal');
+    expect(combined.distanceCm).toBe(187.9); // (180.5+195.2+188.0)/3 = 187.9(반올림)
+  });
+
+  it('회차별 원본은 distanceCm만 뽑아 trials에 남긴다', () => {
+    const combined = combineJumpTrials(trials, 'horizontal');
+    expect(combined.trials).toEqual([
+      { distanceCm: 180.5, measuredAt: 't1' },
+      { distanceCm: 195.2, measuredAt: 't2' },
+      { distanceCm: 188.0, measuredAt: 't3' },
+    ]);
+  });
+
+  it('1회차뿐이면 원본 그대로(하위호환)', () => {
+    const combined = combineJumpTrials([trials[0]], 'horizontal');
+    expect(combined).toEqual(trials[0]);
   });
 });
 

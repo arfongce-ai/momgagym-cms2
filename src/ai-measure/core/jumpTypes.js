@@ -52,10 +52,23 @@ export const JUMP_SUBTYPES = {
     guideBody: '제자리에서 연속 3회 이상 빠르게 점프하세요(포고 점프). 착지 후 지면에 닿는 시간을 최대한 짧게, 곧바로 다시 높이 뛰는 게 핵심입니다. RSI = 체공시간 ÷ 접지시간(무단위)으로, 접지가 짧고 높이 뛸수록 값이 높습니다.',
     tip: '측면 촬영 추천 · 연속 3회 이상 · 접지 짧게 · 고속영상(240fps) 권장',
   },
+  // [제자리멀리뛰기 추가 2026-09-16] 기존 5종은 전부 '수직' 점프(체공시간→높이)라
+  // engine이 power|reactive 둘뿐이었다. SBJ(Standing Broad Jump)는 수평 이동거리를
+  // 재는 완전히 다른 측정이라 engine='horizontal' 세 번째 계산 파이프라인을 새로
+  // 둔다(jumpBiomechanics.js BroadJumpTracker 참고) — 이착지(비행) 검출 자체는
+  // 기존 power 엔진과 동일한 발목 y 신호를 재사용하고, 다른 건 "체공시간→높이" 대신
+  // "이착지 사이 발목 x 변위→거리"로 바꾼 것뿐이다.
+  sbj: {
+    code: 'SBJ', label: 'SBJ (제자리멀리뛰기)', chipLabel: '📏 SBJ',
+    engine: 'horizontal', view: 'side', singleLeg: false,
+    guideTitle: '제자리멀리뛰기(SBJ)란?',
+    guideBody: '두 발을 모아 출발선에 맞춰 선 다음, 팔과 무릎 반동을 이용해 최대한 멀리 앞으로 뛰어 두 발로 착지하는 점프입니다. 착지 후 뒤로 손을 짚거나 넘어지면 그 지점까지가 기록에 영향을 줄 수 있으니 균형을 잡고 서서 마무리하세요. 좌우가 아니라 앞뒤 이동을 재는 측정이라 반드시 옆에서(측면) 촬영해야 합니다.',
+    tip: '측면 촬영 필수 · 출발선에 발을 맞추고, 이동 경로 전체(착지 지점까지)가 화면에 다 들어와야 함',
+  },
 };
 
 // 화면에 보여줄 순서(선택 칩·가이드 카드 등에서 공통으로 사용).
-export const JUMP_SUBTYPE_ORDER = ['cmj', 'sj', 'dj', 'slj', 'rsi'];
+export const JUMP_SUBTYPE_ORDER = ['cmj', 'sj', 'dj', 'slj', 'rsi', 'sbj'];
 
 // [SLJ 좌우 비대칭 2026-08-11] 다리 코드('left'|'right') → 표시 라벨.
 // JumpAnalysisHub.jsx(다리 선택 버튼)와 JumpReportDashboard.jsx(리포트 표시·
@@ -76,9 +89,12 @@ export function resolveJumpSubType(data) {
   return (data.jumpType === 'reactive' || data.rsi) ? 'rsi' : 'cmj';
 }
 
-/** 세부 종류 → 계산 엔진('power'|'reactive'). 모르는 값이면 안전하게 'power'. */
+/** 세부 종류 → 계산 엔진('power'|'reactive'|'horizontal'). 모르는 값이면 안전하게 'power'. */
 export function engineOf(subType) {
-  return JUMP_SUBTYPES[subType]?.engine === 'reactive' ? 'reactive' : 'power';
+  const e = JUMP_SUBTYPES[subType]?.engine;
+  if (e === 'reactive') return 'reactive';
+  if (e === 'horizontal') return 'horizontal';
+  return 'power';
 }
 
 /** 세부 종류 → 이 종류를 측정하는 데 필요한 최소 점프 횟수(진행률 표시·버튼 활성화용). */

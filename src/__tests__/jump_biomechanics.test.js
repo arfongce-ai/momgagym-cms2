@@ -1,17 +1,18 @@
 import { describe, it, expect } from 'vitest';
 import {
-  JUMP_TUNING, feetCenterY, pelvisCenterY, bodyPixelHeight,
-  StandingCalibrator, JumpFlightTracker,
+  JUMP_TUNING, feetCenterY, feetCenterX, pelvisCenterY, bodyPixelHeight,
+  StandingCalibrator, JumpFlightTracker, BroadJumpTracker,
 } from '../ai-measure/core/jumpBiomechanics.js';
 
 // 33점 landmark 헬퍼: 발목(27/28), 골반(23/24), 정수리(0)만 의미있게 채운다.
-const makeLm = ({ feetY = 0.9, pelvisY = 0.6, headY = 0.1, vis = 0.95 } = {}) => {
+// feetX: 발목 중심 x(기본 0.5) — 제자리멀리뛰기(SBJ)처럼 좌우 이동을 흉내낼 때만 씀.
+const makeLm = ({ feetY = 0.9, pelvisY = 0.6, headY = 0.1, vis = 0.95, feetX = 0.5 } = {}) => {
   const a = Array.from({ length: 33 }, () => ({ x: 0.5, y: 0.5, visibility: vis }));
   a[0] = { x: 0.5, y: headY, visibility: vis };
-  a[23] = { x: 0.45, y: pelvisY, visibility: vis };
-  a[24] = { x: 0.55, y: pelvisY, visibility: vis };
-  a[27] = { x: 0.45, y: feetY, visibility: vis };
-  a[28] = { x: 0.55, y: feetY, visibility: vis };
+  a[23] = { x: feetX - 0.05, y: pelvisY, visibility: vis };
+  a[24] = { x: feetX + 0.05, y: pelvisY, visibility: vis };
+  a[27] = { x: feetX - 0.05, y: feetY, visibility: vis };
+  a[28] = { x: feetX + 0.05, y: feetY, visibility: vis };
   return a;
 };
 
@@ -400,5 +401,104 @@ describe('JUMP_TUNING tripleExtension 상수', () => {
     expect(JT.tripleExtension).toHaveProperty('hipMinDeg');
     expect(JT.tripleExtension).toHaveProperty('kneeMinDeg');
     expect(JT.tripleExtension).toHaveProperty('ankleMinDeg');
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════
+//  [제자리멀리뛰기(SBJ) 추가 2026-09-16]
+// ════════════════════════════════════════════════════════════════════════
+describe('feetCenterX — 수평 이동거리(SBJ) 전용 신호', () => {
+  it('두 발목의 평균 x를 낸다', () => {
+    expect(feetCenterX(makeLm({ feetX: 0.5 }))).toBeCloseTo(0.5, 6);
+    expect(feetCenterX(makeLm({ feetX: 0.7 }))).toBeCloseTo(0.7, 6);
+  });
+  it('가시성이 둘 다 낮으면 null', () => {
+    expect(feetCenterX(makeLm({ vis: 0.05 }))).toBeNull();
+  });
+});
+
+describe('StandingCalibrator — baselineFeetX(SBJ 출발선)', () => {
+  it('표본이 충분히 쌓이면 출발선 x를 계산한다', () => {
+    const calib = new StandingCalibrator({ heightCm: 180 });
+    for (let i = 0; i < 12; i++) calib.push(makeLm({ feetY: 0.9, headY: 0.1, feetX: 0.3 }));
+    expect(calib.locked).toBe(true);
+    expect(calib.result.baselineFeetX).toBeCloseTo(0.3, 3);
+  });
+});
+
+// 이착지 사이 발목 x가 baseline에서 dxNorm만큼 이동한 뒤 착지하는 점프를 흉내낸다.
+// JumpFlightTracker용 simulateJump()와 동일한 비행 프로필(포물선 y)에, 착지 x만
+// takeoff x + dxNorm으로 옮겨 "제자리에서 앞으로 이동해 착지"를 표현한다.
+function simulateBroadJump(tracker, { baselineFeetY = 0.9, baselineFeetX = 0.3, dxNorm = 0.2, flightMs = 400, dtMs = 8 }) {
+  let t = 0;
+  for (let i = 0; i < 3; i++) { tracker.push(makeLm({ feetY: baselineFeetY, feetX: baselineFeetX }), t); t += dtMs; }
+  const nAir = Math.round(flightMs / dtMs);
+  for (let i = 0; i <= nAir; i++) {
+    const frac = i / nAir;
+    const lift = Math.sin(frac * Math.PI);
+    const fY = baselineFeetY - lift * 0.12; // band 초과해야 공중 판정
+    const fX = baselineFeetX + frac * dxNorm; // 착지 시점(frac=1)에 목표 x 도달
+    tracker.push(makeLm({ feetY: fY, feetX: fX }), t);
+    t += dtMs;
+  }
+  for (let i = 0; i < 3; i++) { tracker.push(makeLm({ feetY: baselineFeetY, feetX: baselineFeetX + dxNorm }), t); t += dtMs; }
+}
+
+describe('BroadJumpTracker — 수평 이동거리(SBJ)', () => {
+  const calib = new StandingCalibrator({ heightCm: 180 });
+  for (let i = 0; i < 12; i++) calib.push(makeLm({ feetY: 0.9, headY: 0.1, feetX: 0.3 }));
+  // bodyPx = 0.8 정규화 → scaleCmPerY = 180/0.8 = 225 cm per 정규화-단위(공유 스케일)
+
+  it('이착지를 검출하고 x 변위를 cm 거리로 환산한다', () => {
+    const tracker = new BroadJumpTracker(calib.result);
+    simulateBroadJump(tracker, { dxNorm: 0.6 }); // 0.6 * 225 = 135cm
+    const sum = tracker.summary({ heightCm: 180 });
+    expect(sum.valid).toBe(true);
+    expect(sum.reason).toBe('ok');
+    // 착지 검출은 발이 기준선 band 안으로 복귀하는 프레임에서 확정되므로
+    // (포물선 마지막 프레임보다 살짝 이름) 목표 135cm보다 소폭 작게 나올 수
+    // 있다 — 정확한 등식이 아니라 합리적 범위로 검증.
+    expect(sum.distanceCm).toBeGreaterThan(100);
+    expect(sum.distanceCm).toBeLessThanOrEqual(135);
+    expect(sum.jumps).toBeGreaterThanOrEqual(1);
+  });
+
+  it('한 번도 뛰지 않으면 no_jump', () => {
+    const tracker = new BroadJumpTracker(calib.result);
+    for (let i = 0, t = 0; i < 30; i++, t += 8) tracker.push(makeLm({ feetY: 0.9, feetX: 0.3 }), t);
+    const sum = tracker.summary({ heightCm: 180 });
+    expect(sum.valid).toBe(false);
+    expect(sum.reason).toBe('no_jump');
+  });
+
+  it('출발선 x 캘리브레이션이 없으면(구식 카메라 각도 등) no_x_calibration', () => {
+    const calibNoX = { ...calib.result, baselineFeetX: null };
+    const tracker = new BroadJumpTracker(calibNoX);
+    simulateBroadJump(tracker, { dxNorm: 0.6 });
+    const sum = tracker.summary({ heightCm: 180 });
+    expect(sum.valid).toBe(false);
+    expect(sum.reason).toBe('no_x_calibration');
+  });
+
+  it('키 대비 비현실적으로 먼 거리는 sanity_fail', () => {
+    const tracker = new BroadJumpTracker(calib.result);
+    // dxNorm 2.0 * 225cm = 450cm ≫ 키(180cm)*1.6 = 288cm
+    simulateBroadJump(tracker, { dxNorm: 2.0 });
+    const sum = tracker.summary({ heightCm: 180 });
+    expect(sum.valid).toBe(false);
+    expect(sum.reason).toBe('sanity_fail');
+  });
+
+  it('여러 회차 중 가장 멀리 뛴 시도를 대표값으로 채택한다', () => {
+    // 거리는 항상 '고정된' 캘리브레이션 출발선(0.3, calib.result.baselineFeetX)
+    // 기준으로 재므로, 두 회차 모두 같은 출발선에서 다시 서서 뛴다고 가정한다.
+    const tracker = new BroadJumpTracker(calib.result);
+    simulateBroadJump(tracker, { baselineFeetX: 0.3, dxNorm: 0.3 }); // 1차: 0.3*225=67.5cm
+    simulateBroadJump(tracker, { baselineFeetX: 0.3, dxNorm: 0.6 }); // 2차: 0.6*225=135cm (더 멀리)
+    const sum = tracker.summary({ heightCm: 180 });
+    expect(sum.jumps).toBe(2);
+    // 2차(dxNorm 0.6)가 1차(0.3)보다 확실히 더 멀리 뛴 것으로 채택돼야 한다.
+    expect(sum.distanceCm).toBeGreaterThan(0.3 * 225);
+    expect(sum.distanceCm).toBeLessThanOrEqual(0.6 * 225);
   });
 });

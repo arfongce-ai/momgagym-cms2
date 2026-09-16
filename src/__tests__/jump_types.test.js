@@ -7,9 +7,9 @@ import {
   resolveJumpSubType, engineOf, requiredJumpsFor, minCyclesOverrideFor, labelOf,
 } from '../ai-measure/core/jumpTypes.js';
 
-describe('JUMP_SUBTYPES — 5종 메타데이터 무결성', () => {
-  it('cmj/sj/dj/slj/rsi 5종이 모두 있고 순서(JUMP_SUBTYPE_ORDER)와 일치한다', () => {
-    expect(JUMP_SUBTYPE_ORDER).toEqual(['cmj', 'sj', 'dj', 'slj', 'rsi']);
+describe('JUMP_SUBTYPES — 6종 메타데이터 무결성', () => {
+  it('cmj/sj/dj/slj/rsi/sbj 6종이 모두 있고 순서(JUMP_SUBTYPE_ORDER)와 일치한다', () => {
+    expect(JUMP_SUBTYPE_ORDER).toEqual(['cmj', 'sj', 'dj', 'slj', 'rsi', 'sbj']);
     JUMP_SUBTYPE_ORDER.forEach(k => expect(JUMP_SUBTYPES[k]).toBeTruthy());
   });
 
@@ -18,11 +18,17 @@ describe('JUMP_SUBTYPES — 5종 메타데이터 무결성', () => {
       const m = JUMP_SUBTYPES[k];
       expect(m.code).toBeTruthy();
       expect(m.label).toBeTruthy();
-      expect(['power', 'reactive']).toContain(m.engine);
+      expect(['power', 'reactive', 'horizontal']).toContain(m.engine);
       expect(m.guideTitle).toBeTruthy();
       expect(m.guideBody).toBeTruthy();
       expect(m.tip).toBeTruthy();
     });
+  });
+
+  it('SBJ(제자리멀리뛰기)는 engine이 horizontal이고 측면 촬영이다', () => {
+    expect(JUMP_SUBTYPES.sbj.engine).toBe('horizontal');
+    expect(JUMP_SUBTYPES.sbj.view).toBe('side');
+    expect(JUMP_SUBTYPES.sbj.singleLeg).toBeFalsy();
   });
 
   it('CMJ 라벨은 "CMJ (반동점프)"로 정확히 바뀌었다(파워 점프 이름 변경 요청)', () => {
@@ -85,6 +91,9 @@ describe('engineOf() — 세부 종류 → 계산 엔진 매핑', () => {
     expect(engineOf('dj')).toBe('reactive');
     expect(engineOf('rsi')).toBe('reactive');
   });
+  it('sbj → horizontal', () => {
+    expect(engineOf('sbj')).toBe('horizontal');
+  });
   it('모르는 값은 안전하게 power로 폴백', () => {
     expect(engineOf('nonsense')).toBe('power');
     expect(engineOf(undefined)).toBe('power');
@@ -102,6 +111,9 @@ describe('requiredJumpsFor() — 종류별 필요 최소 점프 횟수', () => {
   });
   it('RSI(연속)는 기존 그대로 3회', () => {
     expect(requiredJumpsFor('rsi')).toBe(3);
+  });
+  it('SBJ(horizontal 엔진)도 1회', () => {
+    expect(requiredJumpsFor('sbj')).toBe(1);
   });
 });
 
