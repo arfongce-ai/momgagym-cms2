@@ -216,7 +216,10 @@ export function computeMonthRates({ trainers, members, payments, records, settin
       newSales:Math.round(newSales[t.id]||0),
       reEnrollSales:Math.round(reSales[t.id]||0),
       blogCount:blog, studyCount:study });
-    out[t.id] = { rate: d.rate, reason: d.reason, mode: d.mode };
+    // depositRevenue: 이 트레이너에게 귀속된 "이번 달 입금 매출(순매출, 결제 기준)".
+    //  · 개요 상단 "입금금액(순매출)"과 같은 원천(calcNet 합)이라, 전체 트레이너 합산이
+    //    상단 순매출과 정확히 일치한다(세션 소진 기준인 sessionTotal과는 다른 숫자).
+    out[t.id] = { rate: d.rate, reason: d.reason, mode: d.mode, depositRevenue: Math.round(monthNet[t.id]||0) };
   });
   return out;
 }

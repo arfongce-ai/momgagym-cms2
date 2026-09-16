@@ -317,6 +317,20 @@ function OverviewTab({ settings, trainers, trainerMap }) {
     return s + Math.round((b.newSales + b.reEnrollSales) * rate / 100);
   }, 0), [trainerBreakdown, monthConfirmedRates]);
 
+  // 선생님별 "월 매출(입금매출)" — 세션 소진(sessionTotal)이 아니라 이번 달 실제 결제(paidAt
+  // 이번 달)를 트레이너별로 귀속시킨 금액(computeMonthRates의 monthNet, calcNet 합산).
+  //  · 전체 트레이너 합산이 위 "손익 요약"의 입금금액(순매출)과 정확히 일치한다.
+  //  · 세션 소진 기준 트레이너별 정산 내역(위 블록)과는 의도적으로 다른, 현금 기준 숫자다.
+  const depositBreakdown = useMemo(() => {
+    if (!isMonth) return [];
+    return trainers
+      .map(t => ({ trainer: t, ...(monthConfirmedRates[t.id] || { rate:0, depositRevenue:0 }) }))
+      .filter(d => (d.depositRevenue||0) > 0)
+      .sort((a,b)=>(b.depositRevenue||0)-(a.depositRevenue||0));
+  }, [isMonth, trainers, monthConfirmedRates]);
+  const depositRevenueTotal = useMemo(()=>depositBreakdown.reduce((s,d)=>s+(d.depositRevenue||0),0), [depositBreakdown]);
+  const depositPayoutTotal  = useMemo(()=>depositBreakdown.reduce((s,d)=>s+Math.round((d.depositRevenue||0)*(d.rate||0)/100),0), [depositBreakdown]);
+
   const netProfit = totals.net - settlePayout - totalExpense;
 
   return (
@@ -457,6 +471,41 @@ function OverviewTab({ settings, trainers, trainerMap }) {
             )}
           </div>
           <p className="text-[11px] text-slate-600 mt-3">* 매출(수업료 합계) × 해당월 확정 정산비율(계약서 4조 조건에 따라 그 달 자동판정되는 40/50/60%, 수동 지정 시 그 값)만 곱한 값입니다(인센티브 미포함). 위 손익 요약의 "트레이너 정산" 금액은 여기에 인센티브까지 더한 실제 지급액 기준이라 서로 다를 수 있습니다.<br/>* "참고" 줄은 신규+재등록 순매출(부가세·카드수수료 제외) × 확정 정산비율이며, 위 정산액과는 별개의 확인용 숫자입니다(지급액에 가산되지 않음).</p>
+        </div>
+      )}
+
+      {/* 선생님별 월 매출(입금매출 기준) — 위 블록(세션 소진 기준)과 달리, 이번 달 실제
+          결제(paidAt)를 트레이너별로 귀속시킨 현금 기준 매출이다. 전체 합계가 위 "손익 요약"의
+          입금금액(순매출)과 정확히 일치한다. */}
+      {isMonth && depositBreakdown.length > 0 && (
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4">
+          <h2 className="font-bold text-sm uppercase tracking-widest text-slate-500 dark:text-slate-400 mb-3">선생님별 월 매출(입금매출 기준)</h2>
+          <div className="space-y-2.5">
+            {depositBreakdown.map(d=>{
+              const payout = Math.round((d.depositRevenue||0) * (d.rate||0) / 100);
+              return (
+                <div key={d.trainer.id} className="flex items-center justify-between gap-3 text-sm">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{background:d.trainer.color||'#94a3b8'}}/>
+                    <span className="font-bold text-slate-700 dark:text-slate-200 flex-shrink-0">{d.trainer.name}</span>
+                    <span className="text-[11px] text-slate-500 truncate">
+                      입금매출 {won(d.depositRevenue)} × {d.rate}%
+                    </span>
+                  </div>
+                  <span className="font-mono font-bold text-emerald-700 dark:text-emerald-400 flex-shrink-0">{won(payout)}</span>
+                </div>
+              );
+            })}
+            <div className="flex items-center justify-between text-sm pt-2 border-t border-slate-200 dark:border-slate-800">
+              <span className="font-bold text-slate-600 dark:text-slate-300">전체 합계 (입금매출×확정%)</span>
+              <span className="font-mono font-black text-emerald-700 dark:text-emerald-400">{won(depositPayoutTotal)}</span>
+            </div>
+            <div className="flex items-center justify-between text-[11px] text-slate-600">
+              <span>선생님별 입금매출 합계 (= 위 손익 요약 입금금액과 일치)</span>
+              <span className="font-mono">{won(depositRevenueTotal)}</span>
+            </div>
+          </div>
+          <p className="text-[11px] text-slate-600 mt-3">* "입금매출"은 세션 소진이 아니라 이번 달 실제 결제액(순매출)을 담당 트레이너에게 귀속시킨 금액입니다 — 여러 트레이너가 관여한 결제는 지분대로 나눕니다. 그 금액에 위 "확정 정산비율"(40/50/60%)을 곱한 값이 옆에 표시됩니다.<br/>* 위 "트레이너별 정산 내역"(세션 소진 기준)과는 계산 방식이 달라 트레이너별 금액이 서로 다를 수 있으나, 전체 합계는 상단 손익 요약의 입금금액(순매출)과 일치합니다.</p>
         </div>
       )}
 
