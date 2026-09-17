@@ -16,6 +16,9 @@ import { useLockPortrait } from './core/useLockPortrait';
 import { consumePendingVoiceTarget, setPendingVoiceTarget } from '../voice/pendingVoiceTarget';
 import { buildMemberTestRecommendations } from './core/memberTestRecommendation';
 import MemberTestRecommendationPanel from '../components/ai/MemberTestRecommendationPanel';
+// [사람찾기 추가 2026-09-17] Report.jsx/MemberDetail.jsx와 동일한 검색형 회원 선택기.
+// 회원 수가 많아지면 드롭다운 스크롤보다 이름/초성/전화 뒤4자리 검색이 훨씬 빠르다.
+import MemberPicker from '../components/common/MemberPicker';
 // [한발멀리뛰기 추가 2026-09-16] '제자리멀리뛰기' 탭의 세부종류 선택 제한에 사용.
 import { BROAD_JUMP_SUBTYPES } from './core/jumpTypes';
 
@@ -476,13 +479,11 @@ export default function AiMeasureHub() {
       {/* 회원 선택 (선택 사항 — 저장하려면 필요) */}
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4">
         <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-2">
-          회원 선택 (저장 시 필요)
+          회원 찾기 (저장 시 필요)
         </label>
-        <select value={memberId} onChange={e => handleSelectMember(e.target.value)}
-          className="input">
-          <option value="">선택 안 함 (미등록회원으로 측정)</option>
-          {members.map(m => <option key={m.id} value={m.id}>{m.name} ({m.phone?.slice(-4)})</option>)}
-        </select>
+        <MemberPicker members={members} value={memberId} onChange={handleSelectMember}
+          allowNone noneLabel="선택 안 함 (미등록회원으로 측정)"
+          placeholder="이름 / 초성 / 전화 뒤4자리" />
 
         {/* 회원 미선택 시: 미등록회원 신체정보 입력. 모든 측정에서 측정 데이터가
             개별 guest id 로 저장·출력되며, 성별 기준·체형나이 정확도를 높인다. */}

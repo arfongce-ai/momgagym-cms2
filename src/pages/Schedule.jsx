@@ -11,6 +11,9 @@ import { toYMD } from '../utils/dates';
 import { sortByName } from '../utils/memberList';
 import { findDuplicateSchedules, summarizeDuplicates } from '../services/scheduleAudit';
 import { consumePendingVoiceTarget } from '../voice/pendingVoiceTarget';
+// [예약 시간 통일 2026-09-17] PC/폰/테블릿마다 다르게 그려지던 네이티브 type="time"을
+// 대체 — 모든 기기에서 동일한 UI로 시간을 고른다.
+import TimeField from '../components/common/TimeField';
 
 // ── 시간 유틸 ─────────────────────────────────────────────
 // 10분 단위 반올림 스냅
@@ -376,15 +379,16 @@ function ScheduleDetailModal({ schedule:initS, onClose, onUpdate, onDelete }) {
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className={LBL}>시작</label>
-                  <input type="time" step={isExt?undefined:"600"} value={form.startTime}
-                    onChange={e=>{
-                      const t = isExt ? e.target.value : snapTo10(e.target.value);
-                      setForm(p=>({...p, startTime:t, ...(!isExt && {endTime:addHour(t)})}));
-                    }} className={INP}/>
+                  <TimeField value={form.startTime} stepMinutes={isExt?1:10} className={INP}
+                    onChange={t=>{
+                      const tt = isExt ? t : snapTo10(t);
+                      setForm(p=>({...p, startTime:tt, ...(!isExt && {endTime:addHour(tt)})}));
+                    }}/>
                 </div>
                 <div>
                   <label className={LBL}>종료</label>
-                  <input type="time" value={form.endTime} onChange={pf('endTime')} className={INP}/>
+                  <TimeField value={form.endTime} stepMinutes={1} className={INP}
+                    onChange={t=>setForm(p=>({...p,endTime:t}))}/>
                 </div>
               </div>
               <div>
@@ -484,13 +488,15 @@ function AddModal({ members, trainers, fixedTrainerId, initialDate, onAdd, onClo
   };
 
   // ── 요구사항4: 10분 스냅 + 자동 종료 ──────────────────
-  const handleStartTimeRegular = e => {
-    const snapped = snapTo10(e.target.value);
+  // [예약 시간 통일 2026-09-17] TimeField는 네이티브 이벤트가 아니라 "HH:MM" 문자열을
+  // 바로 넘겨준다(MemberPicker의 onChange(id) 관례와 동일).
+  const handleStartTimeRegular = t => {
+    const snapped = snapTo10(t);
     setForm(p=>({...p, startTime:snapped, endTime:addHour(snapped)}));
   };
   // 요구사항5: 외부 일정 — 스냅 없이 자유 입력
-  const handleStartTimeExternal = e => {
-    setForm(p=>({...p, startTime:e.target.value}));
+  const handleStartTimeExternal = t => {
+    setForm(p=>({...p, startTime:t}));
   };
 
   // 완성 여부
@@ -670,9 +676,8 @@ function AddModal({ members, trainers, fixedTrainerId, initialDate, onAdd, onClo
                   ④ 시작 시간
                   <span className="ml-1 text-slate-500 normal-case font-normal">(10분 단위 자동 보정)</span>
                 </label>
-                <input type="time" step="600" value={form.startTime}
-                  onChange={handleStartTimeRegular}
-                  className={INP}/>
+                <TimeField value={form.startTime} stepMinutes={10} className={INP}
+                  onChange={handleStartTimeRegular}/>
               </div>
 
               {/* 종료 시간 — 시작+1시간 자동 + 수정 가능 */}
@@ -681,9 +686,8 @@ function AddModal({ members, trainers, fixedTrainerId, initialDate, onAdd, onClo
                   종료 시간
                   <span className="ml-1 text-slate-500 normal-case font-normal">(시작 +1시간 자동 설정)</span>
                 </label>
-                <input type="time" step="600" value={form.endTime}
-                  onChange={e=>setForm(p=>({...p,endTime:e.target.value}))}
-                  className={INP}/>
+                <TimeField value={form.endTime} stepMinutes={10} className={INP}
+                  onChange={t=>setForm(p=>({...p,endTime:t}))}/>
               </div>
 
               {/* ⑤ 수업 종류 — 회원 수업 모드에서만, 상담은 '상담' 고정 */}
@@ -821,18 +825,16 @@ function AddModal({ members, trainers, fixedTrainerId, initialDate, onAdd, onClo
                     <span className="block text-[10px] text-purple-700 dark:text-purple-400 normal-case font-normal mt-0.5">자유 입력</span>
                   </label>
                   {/* ★ step 없음, 분 단위 자유 */}
-                  <input type="time" value={form.startTime}
-                    onChange={handleStartTimeExternal}
-                    className={INP}/>
+                  <TimeField value={form.startTime} stepMinutes={1} className={INP}
+                    onChange={handleStartTimeExternal}/>
                 </div>
                 <div>
                   <label className={LBL}>
                     종료 시간
                     <span className="block text-[10px] text-purple-700 dark:text-purple-400 normal-case font-normal mt-0.5">독립 입력</span>
                   </label>
-                  <input type="time" value={form.endTime}
-                    onChange={e=>setForm(p=>({...p,endTime:e.target.value}))}
-                    className={INP}/>
+                  <TimeField value={form.endTime} stepMinutes={1} className={INP}
+                    onChange={t=>setForm(p=>({...p,endTime:t}))}/>
                 </div>
               </div>
 
@@ -963,7 +965,8 @@ function MonthView({ pivotDate, schedules, onBlockClick, todayStr, members, onDa
 // ── 메인 ──────────────────────────────────────────────────
 export default function Schedule() {
   const { user } = useAuth();
-  const [view, setView]         = useState('week');
+  // [기본 뷰 변경 2026-09-17] 스케줄 진입 시 '주' 대신 '일' 보기가 먼저 보이도록.
+  const [view, setView]         = useState('day');
   const [pivot, setPivot]       = useState(fmt(new Date()));
   const [schedules, setSchedules] = useState([]);
   const [members,   setMembers]   = useState([]);
