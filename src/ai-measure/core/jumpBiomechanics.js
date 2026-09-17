@@ -511,6 +511,19 @@ export class JumpFlightTracker {
 //   상단 crossTolPct 관련 주석과 같은 종류의 한계). 정밀 계측이 아니라 트레이너
 //   참고·경과 비교용 수치로 취급해야 한다.
 // ════════════════════════════════════════════════════════════════════════
+/**
+ * [환산식 단일화 2026-09-17] 착지 지점(landingX, 0~1 정규화 좌표)과 출발선
+ * (baselineFeetX)의 수평 변위를 cm로 환산한다. BroadJumpTracker.summary()(최종
+ * 저장값)와 라이브 HUD·녹화 오버레이(JumpPrecisionAnalysis.jsx의 회차별 표시)가
+ * 이 함수 하나만 쓴다 — 예전엔 같은 식이 두 곳에 각각 적혀 있어서, 환산식을
+ * 한쪽만 고치면 "측정 중 화면에 보인 값"과 "저장된 값"이 조용히 달라질 수 있었다.
+ * @returns {number|null} 소수 첫째자리까지 반올림한 cm. 입력이 비면 null.
+ */
+export function broadJumpDistanceCm(landingX, baselineFeetX, scaleCmPerY) {
+  if (landingX == null || baselineFeetX == null || scaleCmPerY == null) return null;
+  return Math.round(Math.abs(landingX - baselineFeetX) * scaleCmPerY * 10) / 10;
+}
+
 export class BroadJumpTracker {
   constructor(calib, {
     minCutoff = JUMP_TUNING.feetFilterMinCutoff,
@@ -567,7 +580,10 @@ export class BroadJumpTracker {
     const t = best.flightMs / 1000;
 
     const scale = this.calib?.scaleCmPerY ?? null;
-    const distanceCm = scale != null ? Math.round(best.dxNorm * scale * 10) / 10 : null;
+    // [환산식 단일화 2026-09-17] 아래 broadJumpDistanceCm 하나만 쓴다 — 라이브
+    // HUD·녹화 오버레이(JumpPrecisionAnalysis.jsx)도 같은 함수를 import해서
+    // 쓰므로, 환산식을 고칠 일이 생겨도 화면값과 저장값이 갈라지지 않는다.
+    const distanceCm = broadJumpDistanceCm(best.landingX, this.baselineFeetX, scale);
 
     const bodyCm = heightCm || this.calibHeightCm || null;
     let sanityOk = true;

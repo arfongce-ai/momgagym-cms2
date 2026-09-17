@@ -13,7 +13,7 @@
 // ════════════════════════════════════════════════════════════════════════
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  StandingCalibrator, JumpFlightTracker, BroadJumpTracker,
+  StandingCalibrator, JumpFlightTracker, BroadJumpTracker, broadJumpDistanceCm,
   JumpBiomechAccumulator, jumpPhaseOf, currentJointAngles, pelvisCenterY,
 } from '../core/jumpBiomechanics';
 import { calcJump, calcRSI } from '../core/performance';
@@ -92,11 +92,11 @@ function buildRsiCyclePreview(flights = []) {
 // 가짜 "높이" 숫자가 나와 트레이너를 오도할 수 있음). horizontalScale이 주어지면
 // (baselineFeetX, scaleCmPerY) landingX 기반으로 distanceCm을 계산하고, heightCm은
 // 아예 채우지 않는다.
+// ⚠ 환산식 자체는 core의 broadJumpDistanceCm 하나만 쓴다(2026-09-17) — 최종
+// 저장값(BroadJumpTracker.summary)과 똑같은 함수라 화면값과 저장값이 항상 일치한다.
 function distanceCmOf(f, horizontalScale) {
-  if (!horizontalScale || f.landingX == null) return null;
-  const { baselineFeetX, scaleCmPerY } = horizontalScale;
-  if (baselineFeetX == null || scaleCmPerY == null) return null;
-  return Math.round(Math.abs(f.landingX - baselineFeetX) * scaleCmPerY * 10) / 10;
+  if (!horizontalScale) return null;
+  return broadJumpDistanceCm(f.landingX, horizontalScale.baselineFeetX, horizontalScale.scaleCmPerY);
 }
 
 function flightRows(flights = [], cycles = [], horizontalScale = null) {
