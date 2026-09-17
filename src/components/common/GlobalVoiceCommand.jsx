@@ -52,6 +52,15 @@ export default function GlobalVoiceCommand() {
   const [feedback, setFeedback] = useState('');
   const [busy, setBusy] = useState(false);
   const [interimText, setInterimText] = useState('');
+  // [정확도 시각화 2026-09] 마이크 실제 음량(0~1)·이번 발화 인식 확신도(0~1|null)·
+  // "방금 제대로 알아들었는지" 반짝임을 오브에 그대로 넘겨서 화면으로 보여준다.
+  const [micLevel, setMicLevel] = useState(0);
+  const [confidence, setConfidence] = useState(null);
+  const [flash, setFlash] = useState({ kind: null, seq: 0 });
+  const handleRecognitionMeta = useCallback((meta) => {
+    setConfidence(meta.confidence > 0 ? meta.confidence : null);
+    setFlash((prev) => ({ kind: meta.matched ? 'matched' : 'mismatch', seq: prev.seq + 1 }));
+  }, []);
 
   const { speaking, speak, stop: stopSpeaking, unlock: unlockSpeech } = useMomiSpeech();
 
@@ -467,6 +476,8 @@ export default function GlobalVoiceCommand() {
     onMismatch: handleMismatch,
     onInterim: setInterimText,
     onErrorOccurred: handleErrorOccurred,
+    onRecognitionMeta: handleRecognitionMeta,
+    onAudioLevel: setMicLevel,
     // [버그 수정 — 웨이크워드 이중 요구 2026-08-09] 마이크 버튼을 직접 눌러서
     // 켜는 방식이라, 그 자체가 이미 "지금부터 나한테 말하는 거야"라는 명시적
     // 신호다 — 그 위에 "모미야"까지 요구하면 중복이다(실사용 스크린샷으로 확인:
@@ -613,6 +624,10 @@ export default function GlobalVoiceCommand() {
         size={72}
         label={orbLabel}
         disabled={busy}
+        level={micLevel}
+        confidence={confidence}
+        flashKind={flash.kind}
+        flashSeq={flash.seq}
       />
     </div>
   );

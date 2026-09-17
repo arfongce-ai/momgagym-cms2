@@ -53,6 +53,15 @@ export default function KioskVoiceCommand() {
   const [feedback, setFeedback] = useState('');
   const [busy, setBusy] = useState(false);
   const [interimText, setInterimText] = useState('');
+  // [정확도 시각화 2026-09] GlobalVoiceCommand.jsx와 동일 — 상시 감지 키오스크야말로
+  // "지금 제대로 듣고 있는지"를 트레이너가 곁눈질만으로 알 수 있어야 더 유용하다.
+  const [micLevel, setMicLevel] = useState(0);
+  const [confidence, setConfidence] = useState(null);
+  const [flash, setFlash] = useState({ kind: null, seq: 0 });
+  const handleRecognitionMeta = useCallback((meta) => {
+    setConfidence(meta.confidence > 0 ? meta.confidence : null);
+    setFlash((prev) => ({ kind: meta.matched ? 'matched' : 'mismatch', seq: prev.seq + 1 }));
+  }, []);
 
   const { speaking, speak } = useMomiSpeech();
 
@@ -414,6 +423,8 @@ export default function KioskVoiceCommand() {
     onMismatch: handleMismatch,
     onInterim: setInterimText,
     onErrorOccurred: handleErrorOccurred,
+    onRecognitionMeta: handleRecognitionMeta,
+    onAudioLevel: setMicLevel,
   });
 
   // awaitReply는 useMomiVoice() 내부에서 deps:[]로 만들어진 안정적 함수라 사실상
@@ -497,7 +508,15 @@ export default function KioskVoiceCommand() {
         </div>
       )}
       {/* 클릭 대상이 아닌 상태 오브 — 상시 감지와 MOMI 반응을 함께 알린다. */}
-      <MomiVoiceOrb state={orbState} size={78} label={orbLabel} />
+      <MomiVoiceOrb
+        state={orbState}
+        size={78}
+        label={orbLabel}
+        level={micLevel}
+        confidence={confidence}
+        flashKind={flash.kind}
+        flashSeq={flash.seq}
+      />
     </div>
   );
 }

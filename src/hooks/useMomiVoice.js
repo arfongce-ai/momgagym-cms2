@@ -31,6 +31,62 @@ import { useRef, useState, useCallback, useEffect } from 'react';
 // 나올 일이 훨씬 적어(계절 얘기 정도) 오탐 위험이 낮다고 보고 그대로 추가한다.
 const WAKE_WORD_VARIANTS = ['모미야', '몸이야', '보미야', '봄이야', '모미아', '모미'].map((w) => w.normalize('NFC'));
 
+// [정확도 개선 2026-09] 지금까지는 실제로 신고된 오인식 사례가 나올 때마다
+// WAKE_WORD_VARIANTS에 하나씩 손으로 추가해왔다(몸이야/보미야/봄이야 등) — 매번
+// 새 오인식 패턴을 신고받고 나서야 대응하는 방식이라 한계가 있다. 대신 한글을
+// 초성/중성/종성(자모)으로 풀어서, "모미"와 자모 단위 편집거리가 1 이내인
+// 두 글자 뒤에 "야/아" 종결 어미가 붙어 있으면 그것도 웨이크워드로 인정한다 —
+// 목록에 없는 새로운 오인식(예: "노미야", "고미야")까지 미리 커버하기 위함.
+// 오탐(엉뚱한 일상 대화를 웨이크워드로 착각) 위험을 줄이려고 조건을 엄격히
+// 둔다: 자모 거리 1 이내로만 허용하고, 종결 어미(야/아) 뒤에 공백·문장 끝이
+// 와야만(=독립된 낱말처럼 쓰였을 때만) 인정한다.
+function decomposeHangulSyllable(ch) {
+  const code = ch.codePointAt(0) - 0xac00;
+  if (code < 0 || code > 11171) return null;
+  const CHO = 'ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ';
+  const JUNG = 'ㅏㅐㅑㅒㅓㅔㅕㅖㅗㅘㅙㅚㅛㅜㅝㅞㅟㅠㅡㅢㅣ';
+  const JONG = ' ㄱㄲㄳㄴㄵㄶㄷㄹㄺㄻㄼㄽㄾㄿㅀㅁㅂㅄㅅㅆㅇㅈㅊㅋㅌㅍㅎ';
+  const cho = Math.floor(code / (21 * 28));
+  const jung = Math.floor((code % (21 * 28)) / 28);
+  const jong = code % 28;
+  return CHO[cho] + JUNG[jung] + JONG[jong];
+}
+
+/** 두 한글 문자열을 자모 단위로 풀어서 레벤슈타인 편집거리를 구한다. */
+function jamoDistance(a, b) {
+  const toJamo = (s) =>
+    Array.from(s)
+      .map((ch) => decomposeHangulSyllable(ch) || ch)
+      .join('');
+  const da = toJamo(a);
+  const db = toJamo(b);
+  const m = da.length;
+  const n = db.length;
+  const dp = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+  for (let i = 0; i <= m; i += 1) dp[i][0] = i;
+  for (let j = 0; j <= n; j += 1) dp[0][j] = j;
+  for (let i = 1; i <= m; i += 1) {
+    for (let j = 1; j <= n; j += 1) {
+      dp[i][j] = da[i - 1] === db[j - 1]
+        ? dp[i - 1][j - 1]
+        : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
+    }
+  }
+  return dp[m][n];
+}
+
+/** "모미"와 자모 거리 1 이내인 두 글자 + 종결 어미(야/아)를 찾는다. 없으면 null. */
+function fuzzyMatchWakeWord(normalized) {
+  const pattern = /([가-힣]{2})[야아](?=\s|$)/gu;
+  let match;
+  while ((match = pattern.exec(normalized))) {
+    if (jamoDistance(match[1], '모미') <= 1) {
+      return { index: match.index, length: match[0].length };
+    }
+  }
+  return null;
+}
+
 /** heard 안에서 웨이크워드(또는 흔한 오인식 형태)를 찾는다. 없으면 null. */
 export function matchWakeWord(heard) {
   const normalized = (heard || '').normalize('NFC');
@@ -41,19 +97,49 @@ export function matchWakeWord(heard) {
   // 음성 엔진이 이름 사이에 공백을 끼우는 경우("모 미야", "몸 이 야")도 허용한다.
   const flexible = /모\s*미\s*(?:야|아)|몸\s*이\s*야|보\s*미\s*야|봄\s*이\s*야/u.exec(normalized);
   if (flexible) return { index: flexible.index, length: flexible[0].length };
+  // [정확도 개선 2026-09] 위 fuzzyMatchWakeWord 설명 참고 — 목록에 없는 새로운
+  // 오인식 형태까지 자모 유사도로 넓게 잡아낸다(최후 수단이라 맨 마지막에 검사).
+  const fuzzy = fuzzyMatchWakeWord(normalized);
+  if (fuzzy) return fuzzy;
   return null;
 }
 
+// [정확도 개선 2026-09] Web Speech API는 대안(alternative)마다 confidence(0~1,
+// 엔진이 얼마나 확신하는지)를 함께 주는 경우가 있다(Chrome 등). 예전엔 이 값을
+// 완전히 무시하고 그냥 "웨이크워드로 매칭되는 첫 번째 후보" 또는 "엔진이 준
+// 1순위"를 그대로 썼는데, maxAlternatives를 넉넉히 받아오는 지금은 후보들 중
+// 확신도가 더 높은 쪽을 골라 쓰는 게 오인식을 줄이는 데 도움이 된다. confidence를
+// 안 주는 브라우저(값이 전부 0)에서는 기존과 동일하게 동작한다(회귀 없음).
 function bestAlternative(result, preferWakeWord) {
   if (!result?.length) return '';
   const alternatives = Array.from(result)
-    .map((item) => (item?.transcript || '').trim().normalize('NFC'))
-    .filter(Boolean);
+    .map((item) => ({
+      text: (item?.transcript || '').trim().normalize('NFC'),
+      confidence: typeof item?.confidence === 'number' ? item.confidence : 0,
+    }))
+    .filter((a) => a.text);
+  if (!alternatives.length) return '';
   if (preferWakeWord) {
-    const wakeCandidate = alternatives.find((text) => matchWakeWord(text));
-    if (wakeCandidate) return wakeCandidate;
+    const wakeCandidates = alternatives.filter((a) => matchWakeWord(a.text));
+    if (wakeCandidates.length) {
+      return wakeCandidates.reduce((best, cur) => (cur.confidence > best.confidence ? cur : best)).text;
+    }
   }
-  return alternatives[0] || '';
+  const best = alternatives.reduce((acc, cur) => (cur.confidence > acc.confidence ? cur : acc));
+  return best.confidence > 0 ? best.text : alternatives[0].text;
+}
+
+/** result(또는 이벤트의 마지막 결과)에서 대안들 중 가장 높은 confidence를 뽑는다.
+ * confidence를 안 주는 엔진에서는 항상 0 — 시각화(onRecognitionMeta)에서만 쓰이는
+ * 진단성 값이라, 0이 나와도 인식 동작 자체엔 아무 영향이 없다. */
+function highestConfidence(result) {
+  if (!result?.length) return 0;
+  let max = 0;
+  for (const item of Array.from(result)) {
+    const c = typeof item?.confidence === 'number' ? item.confidence : 0;
+    if (c > max) max = c;
+  }
+  return max;
 }
 
 /** 한 이벤트에 여러 조각으로 도착한 한국어 문장을 잃지 않고 합친다. */
@@ -135,7 +221,21 @@ export function isIOSStandalone() {
 // 전용)면 들린 말 전체를 그대로 명령으로 넘긴다 — 습관적으로 "모미야"를
 // 붙여도(예: "모미야 회원 관리 열어줘") 그 뒤 키워드 매칭이 부분 문자열
 // 방식이라 그대로 잘 동작한다(깨지지 않음).
-export function useMomiVoice({ onCommand, onWakeOnly, onMismatch, onInterim, onErrorOccurred, requireWakeWord = true } = {}) {
+export function useMomiVoice({
+  onCommand,
+  onWakeOnly,
+  onMismatch,
+  onInterim,
+  onErrorOccurred,
+  // [정확도 시각화 2026-09] 이 두 콜백은 선택 항목이다 — 안 넘기면 예전과 완전히
+  // 동일하게 동작한다(회귀 없음). onRecognitionMeta({heard, confidence, matched,
+  // kind})는 발화 하나가 처리될 때마다(명령·웨이크만·불일치 등) 불려서 화면에
+  // "제대로 들었는지"를 보여줄 수 있게 한다. onAudioLevel(0~1)은 실제 마이크
+  // 음량을 주기적으로 흘려보내 오브가 소리에 반응하게 한다.
+  onRecognitionMeta,
+  onAudioLevel,
+  requireWakeWord = true,
+} = {}) {
   const [listening, setListening] = useState(false);
   const [supported] = useState(() => !!getSpeechRecognition());
   const recognitionRef = useRef(null);
@@ -189,6 +289,18 @@ export function useMomiVoice({ onCommand, onWakeOnly, onMismatch, onInterim, onE
   // "확정된 것처럼" 대신 써서 콜백을 살려낸다 — 예/아니요처럼 초단문 답변만
   // 기다리는 좁은 창(awaitReply)에서만 쓰므로, 일반 명령 인식에는 영향 없다.
   const lastInterimSinceAwaitRef = useRef('');
+  // [정확도 시각화 2026-09] pendingFinalTextRef와 짝을 이루는 값 — 지금 모으고
+  // 있는 문장 조각들 중 엔진이 가장 확신한 confidence를 같이 들고 있다가,
+  // 문장이 확정되는 순간 onRecognitionMeta로 함께 흘려보낸다.
+  const pendingConfidenceRef = useRef(0);
+  // onRecognitionMeta·onAudioLevel은 매 렌더마다 새 함수로 넘어올 수 있는(useCallback
+  // 없이 인라인으로 넘겨도 안전하게) 선택 콜백이라, 다른 콜백들처럼 메인 인식
+  // useEffect의 의존성 배열에 넣지 않고(넣으면 매 렌더 재구독이 생김) ref로
+  // 최신 값만 따로 추적한다 — awaitReplyRef 등 이 파일의 기존 패턴과 동일.
+  const onRecognitionMetaRef = useRef(onRecognitionMeta);
+  useEffect(() => {
+    onRecognitionMetaRef.current = onRecognitionMeta;
+  });
 
   const clearPendingFinal = useCallback(() => {
     if (finalResultTimerRef.current) {
@@ -196,6 +308,7 @@ export function useMomiVoice({ onCommand, onWakeOnly, onMismatch, onInterim, onE
       finalResultTimerRef.current = null;
     }
     pendingFinalTextRef.current = '';
+    pendingConfidenceRef.current = 0;
   }, []);
 
   const cancelAwaitReply = useCallback(() => {
@@ -235,7 +348,10 @@ export function useMomiVoice({ onCommand, onWakeOnly, onMismatch, onInterim, onE
     // 등 지금까지 문제없던 조합)는 기존 그대로 true 유지.
     recognition.continuous = !isIOS();
     recognition.interimResults = true;
-    recognition.maxAlternatives = 3;
+    // [정확도 개선 2026-09] 3개였던 대안 수를 5개로 늘렸다 — bestAlternative가
+    // 이제 confidence를 비교해 고르므로(위 참고), 후보가 더 많을수록 그중
+    // 실제로 맞는 해석이 섞여 있을 확률이 올라간다.
+    recognition.maxAlternatives = 5;
 
     recognition.onresult = (event) => {
       const interim = collectRecognitionText(event, { preferWakeWord: requireWakeWord });
@@ -249,6 +365,12 @@ export function useMomiVoice({ onCommand, onWakeOnly, onMismatch, onInterim, onE
         if (pendingReplyRef.current && interim) lastInterimSinceAwaitRef.current = interim;
         return;
       }
+      // [정확도 시각화 2026-09] 이번 조각의 confidence도 같이 기억해둔다(여러
+      // 조각 중 가장 높은 값 — 문장이 길어질수록 대체로 뒤쪽 조각이 더 정확함).
+      pendingConfidenceRef.current = Math.max(
+        pendingConfidenceRef.current,
+        highestConfidence(event.results[event.results.length - 1])
+      );
       // 삼성 인터넷은 완성 중인 여러 조각에도 isFinal=true를 붙인다. 마지막 조각이
       // 올 때마다 타이머를 다시 시작하고, 가장 긴 문장을 화면에 보여주면서 기다린다.
       pendingFinalTextRef.current = chooseMoreCompleteTranscript(pendingFinalTextRef.current, heard);
@@ -256,7 +378,9 @@ export function useMomiVoice({ onCommand, onWakeOnly, onMismatch, onInterim, onE
       if (finalResultTimerRef.current) clearTimeout(finalResultTimerRef.current);
       finalResultTimerRef.current = setTimeout(() => {
         const heard = pendingFinalTextRef.current;
+        const confidence = pendingConfidenceRef.current;
         pendingFinalTextRef.current = '';
+        pendingConfidenceRef.current = 0;
         finalResultTimerRef.current = null;
         if (!heard) return;
         if (onInterim) onInterim('');
@@ -275,6 +399,7 @@ export function useMomiVoice({ onCommand, onWakeOnly, onMismatch, onInterim, onE
           clearTimeout(pendingReplyTimerRef.current);
           pendingReplyTimerRef.current = null;
         }
+        onRecognitionMetaRef.current?.({ heard, confidence, matched: true, kind: 'reply' });
         cb(heard);
         return;
       }
@@ -284,8 +409,10 @@ export function useMomiVoice({ onCommand, onWakeOnly, onMismatch, onInterim, onE
       if (activatedRef.current) {
         clearActivation();
         if (heard && onCommand) {
+          onRecognitionMetaRef.current?.({ heard, confidence, matched: true, kind: 'command' });
           onCommand(heard);
         } else if (onMismatch) {
+          onRecognitionMetaRef.current?.({ heard, confidence, matched: false, kind: 'mismatch' });
           onMismatch(heard);
         }
         return;
@@ -304,13 +431,16 @@ export function useMomiVoice({ onCommand, onWakeOnly, onMismatch, onInterim, onE
             activatedRef.current = true;
             if (activationTimerRef.current) clearTimeout(activationTimerRef.current);
             activationTimerRef.current = setTimeout(clearActivation, ACTIVATION_WINDOW_MS);
+            onRecognitionMetaRef.current?.({ heard, confidence, matched: true, kind: 'wake' });
             onWakeOnly();
           }
           return;
         }
         if (heard && onCommand) {
+          onRecognitionMetaRef.current?.({ heard, confidence, matched: true, kind: 'command' });
           onCommand(heard);
         } else if (onMismatch) {
+          onRecognitionMetaRef.current?.({ heard, confidence, matched: false, kind: 'mismatch' });
           onMismatch(heard);
         }
         return;
@@ -322,11 +452,13 @@ export function useMomiVoice({ onCommand, onWakeOnly, onMismatch, onInterim, onE
         // 잡혔을 때 실제로 뭘로 들렸는지 화면에도 잠깐 보여준다. heard가 완전
         // 빈 문자열(최종 결과인데 내용이 없는 경우)이어도 그 자체가 진단 정보라
         // onMismatch로 알려준다.
+        onRecognitionMetaRef.current?.({ heard, confidence, matched: false, kind: 'mismatch' });
         if (onMismatch) onMismatch(heard);
         return;
       }
       const commandText = heard.slice(wakeMatch.index + wakeMatch.length).trim();
       if (commandText && onCommand) {
+        onRecognitionMetaRef.current?.({ heard, confidence, matched: true, kind: 'command' });
         onCommand(commandText);
       } else if (!commandText && onWakeOnly) {
         // "모미야"만 말한 경우 — 다음 발화를 명령으로 기다린다(ACTIVATION_WINDOW_MS
@@ -334,6 +466,7 @@ export function useMomiVoice({ onCommand, onWakeOnly, onMismatch, onInterim, onE
         activatedRef.current = true;
         if (activationTimerRef.current) clearTimeout(activationTimerRef.current);
         activationTimerRef.current = setTimeout(clearActivation, ACTIVATION_WINDOW_MS);
+        onRecognitionMetaRef.current?.({ heard, confidence, matched: true, kind: 'wake' });
         onWakeOnly();
       }
       }, FINAL_RESULT_SETTLE_MS);
@@ -514,6 +647,80 @@ export function useMomiVoice({ onCommand, onWakeOnly, onMismatch, onInterim, onE
     }, 150);
     return () => clearInterval(timer);
   }, [listening]);
+
+  // [정확도 시각화 2026-09] "제대로 듣고 있는지 화면으로 보여달라"는 요청 대응 —
+  // SpeechRecognition 자체는 음량 정보를 안 주므로, 별도 getUserMedia +
+  // AnalyserNode로 실제 마이크 음량(0~1)을 뽑아 onAudioLevel로 흘려보낸다.
+  // 인식용 세션(recognition)과는 완전히 독립된 별도 오디오 스트림이라, 이
+  // 쪽이 실패하거나(권한 거부 등) 브라우저가 미지원이어도 음성 인식 자체엔
+  // 전혀 영향이 없다(별도 effect + 전부 try/catch). onAudioLevel을 안 넘긴
+  // 화면(콜백 없음)에서는 아예 마이크를 추가로 열지 않는다.
+  useEffect(() => {
+    if (!listening || !onAudioLevel) return undefined;
+    if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) return undefined;
+    let audioContext;
+    let analyser;
+    let source;
+    let stream;
+    let rafId;
+    let cancelled = false;
+
+    navigator.mediaDevices
+      .getUserMedia({ audio: true })
+      .then((mediaStream) => {
+        if (cancelled) {
+          mediaStream.getTracks().forEach((track) => track.stop());
+          return;
+        }
+        stream = mediaStream;
+        const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContextCtor) return;
+        audioContext = new AudioContextCtor();
+        analyser = audioContext.createAnalyser();
+        analyser.fftSize = 256;
+        analyser.smoothingTimeConstant = 0.75;
+        source = audioContext.createMediaStreamSource(stream);
+        source.connect(analyser);
+        const data = new Uint8Array(analyser.frequencyBinCount);
+        const tick = () => {
+          analyser.getByteFrequencyData(data);
+          let sum = 0;
+          for (let i = 0; i < data.length; i += 1) sum += data[i];
+          // 128 부근을 "제법 크게 말하는 소리"로 대충 정규화 — 정밀한 dB 계산이
+          // 아니라 오브가 반응할 상대적인 크기감만 필요하므로 이 정도면 충분하다.
+          const level = Math.min(1, sum / data.length / 128);
+          onAudioLevel(level);
+          rafId = requestAnimationFrame(tick);
+        };
+        tick();
+      })
+      .catch(() => {
+        // 인식용 마이크 권한은 허용했지만 이 시각화 전용 스트림만 거부된 경우 등 —
+        // 시각화만 못 할 뿐 음성 인식 자체는 그대로 동작하므로 조용히 넘어간다.
+      });
+
+    return () => {
+      cancelled = true;
+      if (rafId) cancelAnimationFrame(rafId);
+      try {
+        source?.disconnect();
+      } catch (e) {
+        // no-op
+      }
+      try {
+        analyser?.disconnect();
+      } catch (e) {
+        // no-op
+      }
+      try {
+        audioContext?.close();
+      } catch (e) {
+        // no-op
+      }
+      stream?.getTracks().forEach((track) => track.stop());
+      onAudioLevel(0);
+    };
+  }, [listening, onAudioLevel]);
 
   const startListening = useCallback(() => {
     if (!recognitionRef.current) return;
