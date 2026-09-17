@@ -46,11 +46,14 @@ describe('AppLayout.jsx — 키오스크 메뉴 화이트리스트', () => {
     expect(layoutSrc).toMatch(/\{!kioskOn && \(/);
   });
 
-  it('kioskOn일 때 GlobalVoiceCommand(버튼식) 대신 KioskVoiceCommand(상시 감지)를 마운트한다', () => {
+  it('kioskOn이면 KioskVoiceCommand, 아니면 PC(데스크탑 너비)에서만 GlobalVoiceCommand를 마운트한다', () => {
     // [2026-08-08] 이전엔 키오스크에서 음성 명령을 아예 껐었는데(!kioskOn일 때만 마운트),
     // 트레이너가 손이 자유롭지 않은 게 키오스크의 핵심 시나리오라 오히려 거기서 더
-    // 필요하다는 판단으로 뒤집었다 — 버튼식 대신 자동 상시 감지로.
-    expect(layoutSrc).toMatch(/\{kioskOn \? <KioskVoiceCommand \/> : <GlobalVoiceCommand \/>\}/);
+    // 필요하다는 판단으로 뒤집었다.
+    // [2026-09-10 범위 축소] 폰(좁은 화면)에서는 화면을 가려 불편하다는 피드백으로
+    // 아예 렌더링하지 않는다 — 모미는 PC·키오스크 전용. 이 테스트가 그때 같이
+    // 갱신되지 않아 계속 실패하고 있었다(2026-09c에 수정).
+    expect(layoutSrc).toMatch(/\{kioskOn \? <KioskVoiceCommand \/> : \(isDesktop && <GlobalVoiceCommand \/>\)\}/);
     expect(layoutSrc).not.toMatch(/\{!kioskOn && <GlobalVoiceCommand \/>\}/);
   });
 

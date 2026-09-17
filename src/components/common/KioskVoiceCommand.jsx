@@ -12,9 +12,7 @@ import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMomiVoice } from '../../hooks/useMomiVoice';
 import { useMomiSpeech } from '../../hooks/useMomiSpeech';
-import MomiVoiceOrb from './MomiVoiceOrb';
-import MomiHud from './MomiHud';
-import MomiVoiceStage, { STAGE_COLLAPSE_MS } from './MomiVoiceStage';
+import MomiVoiceStage, { STAGE_FADE_MS } from './MomiVoiceStage';
 import { useCameraStageActive } from '../../ai-measure/core/cameraStageActive';
 import { processVoiceCommand, buildTimerControlMessage } from '../../services/voiceCommandService';
 import {
@@ -55,30 +53,36 @@ export default function KioskVoiceCommand() {
   const [feedback, setFeedback] = useState('');
   const [busy, setBusy] = useState(false);
   const [interimText, setInterimText] = useState('');
-  // [정확도 시각화 2026-09] GlobalVoiceCommand.jsx와 동일 — 상시 감지 키오스크야말로
-  // "지금 제대로 듣고 있는지"를 트레이너가 곁눈질만으로 알 수 있어야 더 유용하다.
+  // [화면에서 사라지는 모미 2026-09c] GlobalVoiceCommand.jsx와 완전히 동일한 흐름 —
+  // 평소엔 화면에 아무것도 없고, "모미야"라고 부른 순간에만 전체화면 음성인식
+  // 그래프가 그라데이션으로 떠올랐다가 명령이 끝나면 사라진다. 상시 감지 기기라
+  // 예전처럼 상태 표시등(오브)을 계속 띄워두면 화면을 영구히 차지하게 된다.
   const [micLevel, setMicLevel] = useState(0);
+  const [bands, setBands] = useState(null);
   const [confidence, setConfidence] = useState(null);
-  const [flash, setFlash] = useState({ kind: null, seq: 0 });
-  // [전체화면 오브 2026-09b] 키오스크는 상시 감지라 "듣는 중"만으로 무대를 열면
-  // 화면이 영영 가려진다. 그래서 "모미야"라고 실제로 불렀을 때(handleWakeOnly)만
-  // 열고, 명령을 알아들으면 HUD 쪽으로 접으며 대기로 돌아간다.
   const [stagePhase, setStagePhase] = useState(null);
+  const stagePhaseRef = useRef(null);
   const stageTimerRef = useRef(null);
-  const stageAutoCloseRef = useRef(null);
-  const closeStageSoon = useCallback(() => {
-    if (stageAutoCloseRef.current) clearTimeout(stageAutoCloseRef.current);
-    setStagePhase((prev) => (prev ? 'collapsing' : prev));
+  const stageIdleTimerRef = useRef(null);
+  const [closeRequested, setCloseRequested] = useState(false);
+
+  const openStage = useCallback(() => {
+    setCloseRequested(false);
     if (stageTimerRef.current) clearTimeout(stageTimerRef.current);
-    stageTimerRef.current = setTimeout(() => setStagePhase(null), STAGE_COLLAPSE_MS);
+    setStagePhase('open');
   }, []);
+
   const handleRecognitionMeta = useCallback((meta) => {
     setConfidence(meta.confidence > 0 ? meta.confidence : null);
-    setFlash((prev) => ({ kind: meta.matched ? 'matched' : 'mismatch', seq: prev.seq + 1 }));
-    // 못 알아들었으면 무대를 그대로 둔다(바로 다시 말하면 됨).
-    if (!meta.matched || meta.kind === 'wake') return;
-    closeStageSoon();
-  }, [closeStageSoon]);
+    if (meta.matched) openStage();
+  }, [openStage]);
+
+  // 무대가 떠 있는 동안에만 음량·그래프를 state로 올린다(대기 중엔 리렌더 0).
+  const handleAudioLevel = useCallback((lv, nextBands) => {
+    if (!stagePhaseRef.current) return;
+    setMicLevel(lv);
+    if (nextBands) setBands(Array.from(nextBands));
+  }, []);
 
   const { speaking, speak } = useMomiSpeech();
 
@@ -391,6 +395,9 @@ export default function KioskVoiceCommand() {
           setTimeout(() => setFeedback(''), 5000);
         }
         isHandlingRef.current = false;
+        // [화면에서 사라지는 모미 2026-09c] 명령 처리가 끝났다 → 답을 보여준 뒤
+        // 무대를 닫는다(아래 effect가 말이 끝날 때까지 기다린다).
+        setCloseRequested(true);
       }
     },
     [
@@ -405,12 +412,13 @@ export default function KioskVoiceCommand() {
     setFeedback(message);
     speak(message);
     setTimeout(() => setFeedback(''), 3000);
-    // [전체화면 오브 2026-09b] "모미야"를 부른 순간 = 대화 시작 → 무대를 연다.
-    // 명령이 안 오면(ACTIVATION_WINDOW_MS 8초) 혼자 닫혀서 화면을 돌려준다.
-    setStagePhase('open');
-    if (stageAutoCloseRef.current) clearTimeout(stageAutoCloseRef.current);
-    stageAutoCloseRef.current = setTimeout(closeStageSoon, 9500);
-  }, [speak, closeStageSoon]);
+    // [화면에서 사라지는 모미 2026-09c] "모미야"를 부른 순간 = 대화 시작 →
+    // 그라데이션으로 떠오른다. 명령이 안 오면(웨이크워드 대기창 8초) 혼자
+    // 사라져서 키오스크 화면을 돌려준다.
+    openStage();
+    if (stageIdleTimerRef.current) clearTimeout(stageIdleTimerRef.current);
+    stageIdleTimerRef.current = setTimeout(() => setCloseRequested(true), 9500);
+  }, [speak, openStage]);
 
   // [버그 수정 — 상시 반응 오인 2026-08-12] "모미야를 부르기 전에도 계속
   // 반응한다"는 문의. 실제로 명령이 잘못 실행된 건 아니었다(웨이크워드 판정
@@ -439,14 +447,14 @@ export default function KioskVoiceCommand() {
     setTimeout(() => setFeedback(''), errorCode === 'restart-failed' ? 15000 : 4000);
   }, []);
 
-  const { supported, listening, startListening, awaitReply } = useMomiVoice({
+  const { supported, startListening, awaitReply } = useMomiVoice({
     onCommand: handleCommand,
     onWakeOnly: handleWakeOnly,
     onMismatch: handleMismatch,
     onInterim: setInterimText,
     onErrorOccurred: handleErrorOccurred,
     onRecognitionMeta: handleRecognitionMeta,
-    onAudioLevel: setMicLevel,
+    onAudioLevel: handleAudioLevel,
   });
 
   // awaitReply는 useMomiVoice() 내부에서 deps:[]로 만들어진 안정적 함수라 사실상
@@ -467,10 +475,39 @@ export default function KioskVoiceCommand() {
     if (supported) startListening();
   }, [supported, startListening]);
 
-  // [전체화면 오브 2026-09b] 화면을 벗어날 때 무대 타이머도 같이 정리한다.
+  // 무대가 떠 있는지를 ref로도 들고 있는다 — 음량 콜백이 매 프레임 참조한다.
+  useEffect(() => {
+    stagePhaseRef.current = stagePhase;
+    if (!stagePhase) {
+      setMicLevel(0);
+      setBands(null);
+    }
+  }, [stagePhase]);
+
+  // 측정 카메라 화면이 뜨면 무대를 즉시 내린다(화면을 가리면 안 된다).
+  useEffect(() => {
+    if (cameraActive) setStagePhase(null);
+  }, [cameraActive]);
+
+  // [화면에서 사라지는 모미 2026-09c] 닫기 요청이 들어와도 모미가 답을 말하는
+  // 중이거나 처리 중이면 기다렸다가, 답을 읽을 시간을 잠깐 준 뒤 사라진다.
+  useEffect(() => {
+    if (!closeRequested || stagePhase !== 'open') return undefined;
+    if (busy || speaking) return undefined;
+    const hold = setTimeout(() => {
+      setStagePhase('closing');
+      stageTimerRef.current = setTimeout(() => {
+        setStagePhase(null);
+        setCloseRequested(false);
+      }, STAGE_FADE_MS);
+    }, 1400);
+    return () => clearTimeout(hold);
+  }, [closeRequested, stagePhase, busy, speaking]);
+
+  // 화면을 벗어날 때 무대 타이머도 같이 정리한다.
   useEffect(() => () => {
     if (stageTimerRef.current) clearTimeout(stageTimerRef.current);
-    if (stageAutoCloseRef.current) clearTimeout(stageAutoCloseRef.current);
+    if (stageIdleTimerRef.current) clearTimeout(stageIdleTimerRef.current);
   }, []);
 
   if (!supported) {
@@ -506,50 +543,21 @@ export default function KioskVoiceCommand() {
   }
 
   const hasError = /권한|못 찾|연결|멈췄|문제/.test(feedback);
-  const orbState = hasError ? 'error' : speaking ? 'speaking' : busy ? 'thinking' : listening ? 'listening' : 'idle';
-  const orbLabel = speaking ? 'MOMI가 답하고 있어요' : busy ? 'MOMI가 생각하고 있어요' : listening ? '모미야, 하고 불러주세요' : 'MOMI 음성 대기';
+  const stageState = hasError ? 'error' : speaking ? 'speaking' : busy ? 'thinking' : 'listening';
+
+  // [화면에서 사라지는 모미 2026-09c] 평소엔 정말로 아무것도 그리지 않는다 —
+  // 상시 감지 표시등(오브)도, 코너 HUD도 없앴다. "모미야"로 부른 순간에만
+  // 전체화면 음성인식 그래프가 그라데이션으로 떠오르고, 명령이 끝나면 사라진다.
+  if (!stagePhase) return null;
 
   return (
-    <div
-      style={{
-        position: 'fixed', top: 16, right: 16, zIndex: 1000, display: 'flex', alignItems: 'center', gap: 8,
-        opacity: cameraActive ? 0.22 : 1, transition: 'opacity 0.3s',
-        // [momi 버튼이 무게 다이얼을 가림 2026-08-19] 위 !supported 분기와 동일.
-        pointerEvents: cameraActive ? 'none' : 'auto',
-      }}
-    >
-      {stagePhase && !cameraActive && (
-        <MomiVoiceStage
-          phase={stagePhase}
-          state={orbState}
-          text={feedback || (interimText ? `“${interimText}”` : '')}
-          confidence={confidence}
-          level={micLevel}
-          collapseTo="top-right"
-        />
-      )}
-      {/* [모미 HUD 2026-09] GlobalVoiceCommand.jsx와 동일 — 키오스크는 몇 걸음
-          떨어져서 곁눈질로 보는 기기라 시인성이 특히 중요하다. 상시 감지라
-          마이크는 항상 켜져 있으므로 HUD도 항상 떠 있되, 대기 중엔 작게 접히고
-          말을 걸면 커지면서 색과 도형이 바뀐다. */}
-      <MomiHud
-        state={orbState}
-        text={feedback || (interimText ? `“${interimText}”` : '')}
-        confidence={confidence}
-        level={micLevel}
-        flashKind={flash.kind}
-        flashSeq={flash.seq}
-      />
-      {/* 클릭 대상이 아닌 상태 오브 — 상시 감지와 MOMI 반응을 함께 알린다. */}
-      <MomiVoiceOrb
-        state={orbState}
-        size={78}
-        label={orbLabel}
-        level={micLevel}
-        confidence={confidence}
-        flashKind={flash.kind}
-        flashSeq={flash.seq}
-      />
-    </div>
+    <MomiVoiceStage
+      phase={stagePhase}
+      state={stageState}
+      text={feedback || (interimText ? `“${interimText}”` : '')}
+      confidence={confidence}
+      level={micLevel}
+      bands={bands}
+    />
   );
 }

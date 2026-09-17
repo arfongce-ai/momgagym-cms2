@@ -1,6 +1,14 @@
 // src/components/common/GlobalVoiceCommand.jsx
-// 앱 전체(홈 포함)에서 항상 떠 있는 마이크 버튼. 기본값은 꺼짐 — 트레이너가 직접 켜야 한다.
-// 켜져 있을 때는 화면에 항상 빨간 점으로 표시해 프라이버시를 알린다.
+// PC(데스크탑 너비) 전용 모미 — 폰에서는 AppLayout이 아예 렌더링하지 않는다.
+//
+// [화면에서 사라지는 모미 2026-09c] 예전엔 화면 오른쪽 아래에 마이크 버튼(오브)이
+// 항상 떠 있고, 그걸 눌러야 듣기 시작했다. 사장님 요청으로 흐름을 바꾼다:
+//   평소    — 화면에 아무것도 안 보인다(오브·HUD 전부 없음).
+//   "모미야" — 그때 전체화면 음성인식 그래프(HUD)가 그라데이션으로 떠오른다.
+//   명령 후 — 답을 보여준 뒤 그라데이션으로 사라지고, 다음 "모미야"에 다시 뜬다.
+// 그래서 키오스크와 동일하게 웨이크워드 상시 감지 방식으로 통일했다(버튼 없음).
+// 주의: 마이크가 계속 켜져 있는데 화면에 표시가 없으므로, 켜고 끄는 스위치가
+// 필요해지면 여기에 다시 넣어야 한다(현재는 요청대로 완전히 보이지 않게 둠).
 //
 // [2026-08-08] 마이크 켜는 즉시 "듣고 있어요"를 알려주던 진단용 확인 문구는
 // 뺐다 — TTS·화면 표시가 정상 동작함을 실기기 캡처로 이미 확인했고(웨이크워드
@@ -10,9 +18,7 @@ import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMomiVoice, isIOSStandalone } from '../../hooks/useMomiVoice';
 import { useMomiSpeech } from '../../hooks/useMomiSpeech';
-import MomiVoiceOrb from './MomiVoiceOrb';
-import MomiHud from './MomiHud';
-import MomiVoiceStage, { STAGE_COLLAPSE_MS } from './MomiVoiceStage';
+import MomiVoiceStage, { STAGE_FADE_MS } from './MomiVoiceStage';
 import { useCameraStageActive } from '../../ai-measure/core/cameraStageActive';
 import { processVoiceCommand, buildTimerControlMessage } from '../../services/voiceCommandService';
 import {
@@ -54,27 +60,42 @@ export default function GlobalVoiceCommand() {
   const [feedback, setFeedback] = useState('');
   const [busy, setBusy] = useState(false);
   const [interimText, setInterimText] = useState('');
-  // [정확도 시각화 2026-09] 마이크 실제 음량(0~1)·이번 발화 인식 확신도(0~1|null)·
-  // "방금 제대로 알아들었는지" 반짝임을 오브에 그대로 넘겨서 화면으로 보여준다.
+  // [정확도 시각화 2026-09] 마이크 실제 음량(0~1)·대역별 세기(그래프)·이번 발화
+  // 인식 확신도(0~1|null).
   const [micLevel, setMicLevel] = useState(0);
+  const [bands, setBands] = useState(null);
   const [confidence, setConfidence] = useState(null);
-  const [flash, setFlash] = useState({ kind: null, seq: 0 });
-  // [전체화면 오브 2026-09b] 음성 인식 중에는 오브가 화면 전체로 커지고(stagePhase
-  // 'open'), 인식이 끝나면 HUD 쪽으로 접히며('collapsing') 사라진다 → 그 뒤는 코너
-  // HUD가 결과를 보여주고 대기 상태로 돌아간다.
+  // [화면에서 사라지는 모미 2026-09c] 'open'=그라데이션으로 떠 있음,
+  // 'closing'=그라데이션으로 사라지는 중, null=화면에 아무것도 없음(대기).
   const [stagePhase, setStagePhase] = useState(null);
+  const stagePhaseRef = useRef(null);
   const stageTimerRef = useRef(null);
-  const handleRecognitionMeta = useCallback((meta) => {
-    setConfidence(meta.confidence > 0 ? meta.confidence : null);
-    setFlash((prev) => ({ kind: meta.matched ? 'matched' : 'mismatch', seq: prev.seq + 1 }));
-    // 못 알아들었을 때는 무대를 그대로 열어둔다 — 바로 다시 말하면 되니까.
-    if (!meta.matched) return;
-    setStagePhase((prev) => (prev ? 'collapsing' : prev));
+  const stageIdleTimerRef = useRef(null);
+  // 명령 처리가 끝나 "이제 닫아도 된다"는 표시 — 모미가 답을 말하는 중이면
+  // 아래 effect가 말이 끝날 때까지 기다렸다가 닫는다.
+  const [closeRequested, setCloseRequested] = useState(false);
+
+  const openStage = useCallback(() => {
+    setCloseRequested(false);
     if (stageTimerRef.current) clearTimeout(stageTimerRef.current);
-    stageTimerRef.current = setTimeout(() => setStagePhase(null), STAGE_COLLAPSE_MS);
+    setStagePhase('open');
   }, []);
 
-  const { speaking, speak, stop: stopSpeaking, unlock: unlockSpeech } = useMomiSpeech();
+  const handleRecognitionMeta = useCallback((meta) => {
+    setConfidence(meta.confidence > 0 ? meta.confidence : null);
+    // 웨이크워드든 명령이든, 모미가 나를 향해 반응한 순간 화면에 떠오른다.
+    if (meta.matched) openStage();
+  }, [openStage]);
+
+  // 마이크 음량·그래프는 무대가 떠 있는 동안에만 state로 올린다 — 평소(대기)엔
+  // 화면에 아무것도 없으므로 초당 60번 리렌더할 이유가 전혀 없다.
+  const handleAudioLevel = useCallback((lv, nextBands) => {
+    if (!stagePhaseRef.current) return;
+    setMicLevel(lv);
+    if (nextBands) setBands(Array.from(nextBands));
+  }, []);
+
+  const { speaking, speak } = useMomiSpeech();
 
   // [2026-08-18] "momi 버튼이 계속 화면을 가린다" — 측정 화면(CameraStage,
   // z-index 60)보다 이 버튼(z-index 1000)이 항상 위라 스켈레톤·게이지·녹화
@@ -426,14 +447,11 @@ export default function GlobalVoiceCommand() {
           setTimeout(() => setFeedback(''), 5000);
         }
         isHandlingRef.current = false;
-        // [마이크 자동 꺼짐 2026-08-11] 명령 하나(확인이 필요한 예약/메모/세션조정
-        // 등은 "네/아니요"까지 다 끝난 뒤) 처리가 끝나면 자동으로 마이크를 끈다.
-        // "모미야" 없이 버튼 눌러 켜는 방식이라 매번 다시 켜는 수고가 있지만,
-        // 트레이너가 요청한 방식 — 켜둔 채 계속 듣게 두지 않는다(프라이버시 +
-        // 의도치 않은 오작동 방지). 예약 확인처럼 awaitReply로 응답을 기다리는
-        // 구간은 이 finally보다 먼저(위에서 await로) 끝나므로 그 사이엔 마이크가
-        // 계속 켜져 있어 "네/아니요"를 정상적으로 들을 수 있다.
-        stopListeningRef.current?.();
+        // [화면에서 사라지는 모미 2026-09c] 예전엔 여기서 마이크를 아예 껐다
+        // (버튼으로 다시 켜는 방식이었으므로). 지금은 "모미야"로만 부르는
+        // 방식이라 마이크를 끄면 다음 호출을 못 듣는다 — 대신 화면(무대)만
+        // 닫는다. 답을 말하는 중이면 아래 effect가 말이 끝난 뒤 닫아준다.
+        setCloseRequested(true);
       }
     },
     [
@@ -450,7 +468,12 @@ export default function GlobalVoiceCommand() {
     setFeedback(message);
     speak(message);
     setTimeout(() => setFeedback(''), 3000);
-  }, [speak]);
+    // [화면에서 사라지는 모미 2026-09c] 불렀으니 화면에 떠오른다. 그 뒤로 명령이
+    // 안 오면(웨이크워드 대기창 8초) 혼자 그라데이션으로 사라져 화면을 돌려준다.
+    openStage();
+    if (stageIdleTimerRef.current) clearTimeout(stageIdleTimerRef.current);
+    stageIdleTimerRef.current = setTimeout(() => setCloseRequested(true), 9500);
+  }, [speak, openStage]);
 
   const handleMismatch = useCallback((heard) => {
     // [진단용] 웨이크워드가 안 잡혔을 때 실제로 뭘로 들렸는지 화면에 잠깐
@@ -482,21 +505,20 @@ export default function GlobalVoiceCommand() {
     setTimeout(() => setFeedback(''), errorCode === 'restart-failed' ? 15000 : 4000);
   }, []);
 
-  const { supported, listening, startListening, stopListening, awaitReply } = useMomiVoice({
+  const { supported, startListening, stopListening, awaitReply } = useMomiVoice({
     onCommand: handleCommand,
     onWakeOnly: handleWakeOnly,
     onMismatch: handleMismatch,
     onInterim: setInterimText,
     onErrorOccurred: handleErrorOccurred,
     onRecognitionMeta: handleRecognitionMeta,
-    onAudioLevel: setMicLevel,
-    // [버그 수정 — 웨이크워드 이중 요구 2026-08-09] 마이크 버튼을 직접 눌러서
-    // 켜는 방식이라, 그 자체가 이미 "지금부터 나한테 말하는 거야"라는 명시적
-    // 신호다 — 그 위에 "모미야"까지 요구하면 중복이다(실사용 스크린샷으로 확인:
-    // 버튼 누르고 "회원 관리 들어가 줘"라고 또렷이 말해도 "모미야"가 없어서
-    // 그냥 무시됐음). KioskVoiceCommand.jsx(항상 켜진 공용 기기)는 기본값
-    // true를 그대로 써서 웨이크워드를 계속 요구한다.
-    requireWakeWord: false,
+    onAudioLevel: handleAudioLevel,
+    // [화면에서 사라지는 모미 2026-09c] 예전엔 버튼을 눌러 켜는 방식이라 그
+    // 클릭 자체가 "지금부터 나한테 말하는 거야"라는 신호여서 웨이크워드를
+    // 요구하지 않았다(requireWakeWord:false). 지금은 버튼이 아예 없고 "모미야"로만
+    // 부르는 방식이므로, 키오스크와 동일하게 웨이크워드를 요구한다 — 안 그러면
+    // 트레이너·회원의 평범한 대화가 전부 명령으로 들어간다.
+    requireWakeWord: true,
   });
 
   // awaitReply는 useMomiVoice() 내부에서 deps:[]로 만들어진 안정적 함수라 사실상
@@ -506,30 +528,52 @@ export default function GlobalVoiceCommand() {
     awaitReplyRef.current = awaitReply;
   }, [awaitReply]);
 
-  // [마이크 자동 꺼짐 2026-08-11] stopListening도 같은 이유로 ref에 담는다.
+  // stopListening도 같은 이유로 ref에 담는다(언마운트 정리 등에서 쓴다).
   useEffect(() => {
     stopListeningRef.current = stopListening;
   }, [stopListening]);
 
-  // [전체화면 오브 2026-09b] 마이크가 켜져 있는 동안 무대를 연다. 접히는 중
-  // ('collapsing')이면 그 애니메이션을 끊지 않는다. 측정 카메라 화면이 떠 있을
-  // 때는 화면을 가리면 안 되므로 아예 열지 않는다.
+  // [화면에서 사라지는 모미 2026-09c] 버튼이 없어졌으므로 화면에 올라오는 즉시
+  // "모미야" 상시 감지를 시작한다(키오스크와 동일). 내부 onend 자동 재시작이
+  // 이어붙여 주므로 이후로도 계속 듣는다.
   useEffect(() => {
-    // 측정 카메라 화면이 뜨면(도중에 떠도) 무대를 즉시 내린다 — 반투명하게만
-    // 낮추면 pointer-events가 살아있어 스켈레톤·무게 다이얼 조작을 막아버린다.
-    if (cameraActive) {
-      setStagePhase(null);
-      return;
+    if (supported) startListening();
+  }, [supported, startListening]);
+
+  // 무대가 떠 있는지를 ref로도 들고 있는다 — 음량 콜백이 매 프레임 참조한다.
+  useEffect(() => {
+    stagePhaseRef.current = stagePhase;
+    if (!stagePhase) {
+      setMicLevel(0);
+      setBands(null);
     }
-    if (listening) {
-      setStagePhase((prev) => (prev === 'collapsing' ? prev : 'open'));
-    } else {
-      setStagePhase(null);
-    }
-  }, [listening, cameraActive]);
+  }, [stagePhase]);
+
+  // 측정 카메라 화면이 뜨면(도중에 떠도) 무대를 즉시 내린다 — 반투명하게만
+  // 낮추면 pointer-events가 살아있어 스켈레톤·무게 다이얼 조작을 막아버린다.
+  useEffect(() => {
+    if (cameraActive) setStagePhase(null);
+  }, [cameraActive]);
+
+  // [화면에서 사라지는 모미 2026-09c] 닫기 요청이 들어와도, 모미가 답을 말하는
+  // 중이거나 아직 처리 중이면 기다린다 — 말이 끝나고 잠깐(답을 읽을 시간) 뒤에
+  // 그라데이션으로 사라진다.
+  useEffect(() => {
+    if (!closeRequested || stagePhase !== 'open') return undefined;
+    if (busy || speaking) return undefined;
+    const hold = setTimeout(() => {
+      setStagePhase('closing');
+      stageTimerRef.current = setTimeout(() => {
+        setStagePhase(null);
+        setCloseRequested(false);
+      }, STAGE_FADE_MS);
+    }, 1400);
+    return () => clearTimeout(hold);
+  }, [closeRequested, stagePhase, busy, speaking]);
 
   useEffect(() => () => {
     if (stageTimerRef.current) clearTimeout(stageTimerRef.current);
+    if (stageIdleTimerRef.current) clearTimeout(stageIdleTimerRef.current);
   }, []);
 
   if (!supported) {
@@ -566,112 +610,23 @@ export default function GlobalVoiceCommand() {
     );
   }
 
-  // [아이폰 음성인식 진단 2026-08-11] 여기부터는 "지원한다고는 나오는" 상태 —
-  // 그런데 홈 화면 아이콘(standalone) + 아이폰 조합은 SpeechRecognition
-  // 생성자는 존재해도(그래서 위 !supported 분기를 안 탐) 실제로는 마이크가
-  // 켜진 채 결과가 전혀 안 올라오는 애플 자체 제약이 있다(코드로 완전히
-  // 우회 불가 — useMomiVoice.js isIOSStandalone() 설명 참고). 버튼 자체는
-  // 그대로 두되(다른 iOS 조합에선 될 수도 있어서 아예 막지는 않음), 잘 안
-  // 될 때 뭘 시도해보면 되는지 작은 안내를 같이 보여준다.
-  const showIOSStandaloneHint = isIOSStandalone();
   const hasError = /권한|못 찾|연결|멈췄|문제/.test(feedback);
-  const orbState = hasError ? 'error' : speaking ? 'speaking' : busy ? 'thinking' : listening ? 'listening' : 'idle';
-  const orbLabel = speaking ? 'MOMI가 답하고 있어요' : busy ? 'MOMI가 생각하고 있어요' : listening ? '말씀해 주세요' : 'MOMI 음성 대기';
+  const stageState = hasError ? 'error' : speaking ? 'speaking' : busy ? 'thinking' : 'listening';
 
-  const toggle = () => {
-    if (listening) {
-      // 예약 확인 흐름이 응답을 기다리는 중이면, 마이크를 끄기 전에 먼저
-      // 풀어준다 — 안 그러면 busy가 안 풀려 이 버튼 자체가 먹통이 된다
-      // (위 pendingConfirmResolveRef 설명 참고).
-      if (pendingConfirmResolveRef.current) {
-        pendingConfirmResolveRef.current();
-      }
-      stopListening();
-      // 마이크를 끄면 모미가 말하던 중이어도 같이 멈춘다.
-      stopSpeaking();
-    } else {
-      // iOS Safari 대응: 지금 이 탭 이벤트 안에서 미리 오디오를 잠금 해제해둬야
-      // 나중에 "모미야" 응답을 비동기로 speak()할 때 소리가 나온다.
-      unlockSpeech();
-      startListening();
-    }
-  };
+  // [화면에서 사라지는 모미 2026-09c] 평소엔 정말로 아무것도 그리지 않는다 —
+  // 오브(마이크 버튼)도, 코너 HUD도 없다. "모미야"로 불렀을 때만 전체화면
+  // 음성인식 그래프가 그라데이션으로 떠오르고, 명령이 끝나면 다시 사라진다.
+  // 측정 카메라 화면이 떠 있는 동안에는 위 effect가 무대를 내려둔다.
+  if (!stagePhase) return null;
 
   return (
-    // [버그 수정 2026-07] 데스크탑은 사이드바라 bottom:20이면 충분하지만, 모바일은
-    // AppLayout의 하단 탭바(핵심 4개 + "전체")가 화면 맨 아래를 차지하고 있어
-    // 마이크 버튼이 그 위에 겹쳐 "전체" 탭을 가렸다. 모바일 하단바 높이(~56px
-    // + 아이콘/라벨 여백 + 아이폰 하단 안전영역)만큼 더 띄우고, md 이상(데스크탑)
-    // 에서는 기존 20px 그대로 되돌린다 — AppLayout의 하단바 자체도 같은 md 기준으로
-    // 나타났다 사라지므로 같은 기준선을 맞춘 것.
-    <div
-      className="fixed right-5 bottom-[calc(88px+env(safe-area-inset-bottom))] md:bottom-5 transition-opacity duration-300"
-      style={{
-        zIndex: 1000,
-        opacity: cameraActive ? 0.22 : 1,
-        // [momi 버튼이 무게 다이얼을 가림 2026-08-19] 위 !supported 분기와
-        // 동일한 이유 — 카메라 스테이지 활성 중엔 탭이 아래 컨트롤로 통과하게
-        // pointerEvents를 끈다(웨이크워드 음성 인식엔 영향 없음).
-        pointerEvents: cameraActive ? 'none' : 'auto',
-      }}
-    >
-      {stagePhase && (
-        <MomiVoiceStage
-          phase={stagePhase}
-          state={orbState}
-          text={feedback || (interimText ? `“${interimText}”` : '')}
-          confidence={confidence}
-          level={micLevel}
-          interactive
-          collapseTo="bottom-right"
-          onDismiss={toggle}
-        />
-      )}
-      {/* [모미 HUD 2026-09] 예전엔 여기 작은 검은 말풍선 하나로 인식 결과만
-          보여줬다 — 지금 듣고 있는지, 방금 제대로 알아들었는지가 눈에 안 들어온다는
-          지적에 따라 상태별로 크기·색·기하 도형이 전부 달라지는 HUD로 교체한다.
-          말할 게 없고 마이크도 꺼져 있으면 아예 안 그린다(평소 화면을 안 가림). */}
-      {(feedback || interimText || listening) && (
-        <div style={{ marginBottom: 10, display: 'flex', justifyContent: 'flex-end' }}>
-          <MomiHud
-            state={orbState}
-            text={feedback || (interimText ? `“${interimText}”` : '')}
-            confidence={confidence}
-            level={micLevel}
-            flashKind={flash.kind}
-            flashSeq={flash.seq}
-          />
-        </div>
-      )}
-      {!feedback && showIOSStandaloneHint && (
-        <div
-          style={{
-            marginBottom: 8,
-            padding: '6px 10px',
-            borderRadius: 8,
-            background: 'rgba(0,0,0,0.75)',
-            color: '#fbbf24',
-            fontSize: 11,
-            fontWeight: 500,
-            maxWidth: 200,
-            lineHeight: 1.4,
-          }}
-        >
-          음성인식이 안 되면 홈 화면 아이콘 대신 Safari 앱에서 직접 열어보세요.
-        </div>
-      )}
-      <MomiVoiceOrb
-        button
-        onClick={toggle}
-        state={orbState}
-        size={72}
-        label={orbLabel}
-        disabled={busy}
-        level={micLevel}
-        confidence={confidence}
-        flashKind={flash.kind}
-        flashSeq={flash.seq}
-      />
-    </div>
+    <MomiVoiceStage
+      phase={stagePhase}
+      state={stageState}
+      text={feedback || (interimText ? `“${interimText}”` : '')}
+      confidence={confidence}
+      level={micLevel}
+      bands={bands}
+    />
   );
 }

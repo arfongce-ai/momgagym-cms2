@@ -175,6 +175,8 @@ const FINAL_RESULT_SETTLE_MS = 700;
 // 한 번도 없었으면, 그 결과는 주변 소음을 말소리로 착각한 것으로 보고 버린다.
 // 넉넉하게 잡아서(5초) 정상 발화를 실수로 버리는 일이 없게 한다.
 const VOICE_GATE_LEVEL = 0.05;
+// [전체화면 그래프 2026-09c] 음성 대역을 몇 개로 쪼개서 그래프로 넘길지.
+const BAND_COUNT = 28;
 const NOISE_GATE_WINDOW_MS = 5000;
 
 export function chooseMoreCompleteTranscript(previous = '', next = '') {
@@ -765,6 +767,7 @@ export function useMomiVoice({
         let framesInBucket = 0;
         let noiseFloor = 0;
         let smoothed = 0;
+        const bands = new Array(BAND_COUNT).fill(0);
         const tick = () => {
           analyser.getByteFrequencyData(data);
           let sum = 0;
@@ -792,7 +795,30 @@ export function useMomiVoice({
           smoothed = smoothed * 0.55 + level * 0.45;
           const output = smoothed < 0.02 ? 0 : smoothed;
           if (output > VOICE_GATE_LEVEL) lastVoiceAtRef.current = Date.now();
-          onAudioLevel(output);
+
+          // [전체화면 그래프 2026-09c] 전체 음량 하나만으로는 "막대가 위아래로
+          // 같이 움직이는" 가짜 그래프밖에 못 만든다. 음성 대역을 BAND_COUNT개로
+          // 나눠 각 대역의 세기를 따로 넘겨서, 실제 목소리 주파수 분포가 그대로
+          // 보이는 그래프를 그릴 수 있게 한다. 각 대역도 같은 노이즈 플로어를
+          // 빼서, 소음만 있을 땐 전부 0에 눕는다.
+          for (let b = 0; b < BAND_COUNT; b += 1) {
+            const from = startBin + Math.floor((b * (endBin - startBin + 1)) / BAND_COUNT);
+            const to = startBin + Math.floor(((b + 1) * (endBin - startBin + 1)) / BAND_COUNT);
+            let bandSum = 0;
+            let count = 0;
+            for (let i = from; i < Math.max(to, from + 1) && i <= endBin; i += 1) {
+              bandSum += data[i];
+              count += 1;
+            }
+            const bandRaw = count ? bandSum / count / 255 : 0;
+            const bandAbove = Math.max(0, bandRaw - noiseFloor * 1.4 - 0.012);
+            const bandLevel = Math.min(1, bandAbove * 5);
+            const smoothedBand = bands[b] * 0.45 + bandLevel * 0.55;
+            // 아주 작은 값은 0으로 딱 떨어뜨린다 — 화면상 차이는 없는데, 안 그러면
+            // 조용할 때 denormal(1e-200 같은) 숫자가 매 프레임 계속 돈다.
+            bands[b] = smoothedBand < 0.005 ? 0 : smoothedBand;
+          }
+          onAudioLevel(output, bands);
           rafId = requestAnimationFrame(tick);
         };
         tick();
@@ -821,7 +847,7 @@ export function useMomiVoice({
         // no-op
       }
       stream?.getTracks().forEach((track) => track.stop());
-      onAudioLevel(0);
+      onAudioLevel(0, new Array(BAND_COUNT).fill(0));
     };
   }, [listening, onAudioLevel]);
 

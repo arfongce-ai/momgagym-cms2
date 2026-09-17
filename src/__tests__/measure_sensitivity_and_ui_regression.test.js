@@ -21,21 +21,31 @@ import { readFileSync } from 'node:fs';
 
 const read = (p) => readFileSync(new URL(`../${p}`, import.meta.url), 'utf8');
 
-describe('음성 명령 버튼 — 카메라 스테이지 활성 중 클릭이 아래 컨트롤로 통과한다', () => {
+// [화면에서 사라지는 모미 2026-09c] 예전엔 모미가 화면 구석에 항상 떠 있는
+// 버튼/표시등이라, 측정 카메라 화면 위에서 그 자리의 탭을 가로채지 않도록
+// pointerEvents를 cameraActive로 게이팅했다. 지금은 평소에 아무것도 렌더링하지
+// 않고("모미야" 때만 전체화면 무대), 그 무대조차 pointer-events:none이라 애초에
+// 가로챌 것이 없다. 요구사항("측정 중 클릭이 아래 컨트롤로 통과한다")은 그대로라
+// 검증 방식만 새 구조에 맞춘다.
+describe('음성 명령 — 카메라 스테이지 활성 중 클릭이 아래 컨트롤로 통과한다', () => {
   const files = [
     'components/common/GlobalVoiceCommand.jsx',
     'components/common/KioskVoiceCommand.jsx',
   ];
 
-  it.each(files)('%s: cameraActive일 때 pointerEvents를 none으로 끈다', (path) => {
+  it.each(files)('%s: cameraActive면 무대를 내려서 화면을 완전히 비운다', (path) => {
     const src = read(path);
-    expect(src).toMatch(/pointerEvents:\s*cameraActive\s*\?\s*'none'\s*:\s*'auto'/);
+    expect(src).toMatch(/if \(cameraActive\) setStagePhase\(null\);/);
   });
 
-  it.each(files)('%s: !supported 분기와 정상 렌더 분기 둘 다에 pointerEvents 게이팅이 있다', (path) => {
+  it.each(files)('%s: 무대가 없으면 아무것도 렌더링하지 않는다(null 반환)', (path) => {
     const src = read(path);
-    const matches = src.match(/pointerEvents:\s*cameraActive\s*\?\s*'none'\s*:\s*'auto'/g) || [];
-    expect(matches.length).toBeGreaterThanOrEqual(2);
+    expect(src).toContain('if (!stagePhase) return null;');
+  });
+
+  it('MomiVoiceStage.jsx: 무대 자체가 기본적으로 pointer-events를 받지 않는다', () => {
+    const src = read('components/common/MomiVoiceStage.jsx');
+    expect(src).toMatch(/\.momi-stage\{[^}]*pointer-events:none/);
   });
 });
 

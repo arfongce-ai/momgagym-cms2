@@ -62,21 +62,17 @@ describe('GlobalVoiceCommand.jsx — TTS 연결 확인', () => {
     expect(handleBody).toContain('speak(message);');
   });
 
-  it('마이크를 끄면 말하던 중인 음성도 함께 멈춘다', () => {
-    const toggleStart = src.indexOf('const toggle = () => {');
-    const toggleEnd = src.indexOf('};', toggleStart);
-    const toggleBody = src.slice(toggleStart, toggleEnd);
-    expect(toggleBody).toContain('stopSpeaking();');
+  // [화면에서 사라지는 모미 2026-09c] 마이크 버튼(toggle) 자체가 없어졌다 —
+  // 평소엔 화면에 아무것도 없고 "모미야"로만 부른다. 그래서 "버튼을 누르면
+  // 꺼진다/오디오를 잠금 해제한다" 같은 버튼 전제 테스트는 더 이상 성립하지
+  // 않는다. 대신 그 자리를 대신하는 새 계약을 검증한다.
+  it('마이크 버튼(toggle)이 더 이상 없다 — 화면에 상시 표시되는 조작부가 없어야 한다', () => {
+    expect(src).not.toContain('const toggle = () => {');
+    expect(src).not.toContain('<MomiVoiceOrb');
   });
 
-  it('마이크를 켜는 탭 이벤트 안에서 startListening보다 먼저 오디오를 잠금 해제한다(iOS 대응)', () => {
-    const toggleStart = src.indexOf('const toggle = () => {');
-    const toggleEnd = src.indexOf('};', toggleStart);
-    const toggleBody = src.slice(toggleStart, toggleEnd);
-    expect(toggleBody).toContain('unlockSpeech();');
-    expect(toggleBody.indexOf('unlockSpeech();')).toBeLessThan(
-      toggleBody.indexOf('startListening();')
-    );
+  it('PC도 화면에 올라오는 즉시 "모미야" 상시 감지를 시작한다(클릭 대기 없음)', () => {
+    expect(src).toMatch(/useEffect\(\(\) => \{\s*if \(supported\) startListening\(\);\s*\}, \[supported, startListening\]\);/);
   });
 
   it('"모미야"만 듣고 명령이 없으면(onWakeOnly) 들었다는 걸 화면 표시+음성으로 알려준다', () => {
@@ -229,23 +225,23 @@ describe('GlobalVoiceCommand.jsx — 음성 대화형(history) 배선', () => {
   });
 });
 
-// [버그 수정 — 웨이크워드 이중 요구 2026-08-09] 실사용 스크린샷 확인 —
-// 마이크 버튼을 눌러서 켰는데도 "모미야"가 없으면 명확한 명령("회원 관리
-// 들어가 줘" 등)조차 무시됐다. 버튼을 누른 행위 자체가 이미 명시적 신호라
-// 웨이크워드를 또 요구할 필요가 없다.
-describe('GlobalVoiceCommand.jsx — requireWakeWord: false (버튼으로 켰으니 웨이크워드 중복 요구 안 함)', () => {
+// [화면에서 사라지는 모미 2026-09c] 예전엔 버튼을 눌러 켜는 방식이라 그 클릭이
+// "지금부터 나한테 말하는 거야"라는 신호여서 웨이크워드를 요구하지 않았다
+// (requireWakeWord:false). 지금은 버튼이 없고 "모미야"로만 부르므로, 키오스크와
+// 동일하게 웨이크워드를 요구해야 한다 — 안 그러면 평범한 대화가 전부 명령이 된다.
+describe('GlobalVoiceCommand.jsx — requireWakeWord: true (버튼이 없어졌으므로 "모미야"로만 부른다)', () => {
   const src = readSrc('src', 'components', 'common', 'GlobalVoiceCommand.jsx');
 
-  it('useMomiVoice에 requireWakeWord: false를 넘긴다', () => {
-    const start = src.indexOf('const { supported, listening, startListening, stopListening, awaitReply } = useMomiVoice({');
+  it('useMomiVoice에 requireWakeWord: true를 넘긴다', () => {
+    const start = src.indexOf('const { supported, startListening, stopListening, awaitReply } = useMomiVoice({');
     const end = src.indexOf('});', start);
     const body = src.slice(start, end);
     expect(start).toBeGreaterThan(-1);
-    expect(body).toContain('requireWakeWord: false,');
+    expect(body).toContain('requireWakeWord: true,');
   });
 });
 
-describe('GlobalVoiceCommand.jsx — 마이크 자동 꺼짐(2026-08-11, 사장님 요청)', () => {
+describe('GlobalVoiceCommand.jsx — 명령 후 화면만 사라진다(2026-09c, 마이크는 계속 듣는다)', () => {
   const src = readSrc('src', 'components', 'common', 'GlobalVoiceCommand.jsx');
 
   it('stopListeningRef가 선언되어 있다(awaitReplyRef와 동일한 순환의존 회피 패턴)', () => {
@@ -256,22 +252,30 @@ describe('GlobalVoiceCommand.jsx — 마이크 자동 꺼짐(2026-08-11, 사장�
     expect(src).toMatch(/useEffect\(\(\) => \{\s*stopListeningRef\.current = stopListening;\s*\}, \[stopListening\]\);/);
   });
 
-  it('handleCommand의 finally 블록에서 처리(확인흐름 포함)가 다 끝난 뒤 마이크를 끈다', () => {
+  // [화면에서 사라지는 모미 2026-09c] 예전엔 명령 하나가 끝나면 마이크를 아예
+  // 껐다(버튼으로 다시 켜는 방식이었으므로). 지금은 "모미야"로만 부르기 때문에
+  // 마이크를 끄면 다음 호출을 못 듣는다 — 대신 화면(무대)만 닫는다.
+  it('명령이 끝나도 마이크는 끄지 않는다(껐다면 다음 "모미야"를 못 듣는다)', () => {
     const finallyIdx = src.indexOf('} finally {');
     const finallyEnd = src.indexOf('}\n    },', finallyIdx);
     const body = src.slice(finallyIdx, finallyEnd);
-    expect(body).toContain('stopListeningRef.current?.();');
-    // isHandlingRef 해제보다 뒤에 와야 한다는 뜻은 아니지만, 최소한 finally
-    // 블록 "안"에서 호출되어 예외가 나도 항상 실행되는지 확인.
     expect(finallyIdx).toBeGreaterThan(-1);
+    expect(body).not.toContain('stopListeningRef.current?.();');
   });
 
-  it('finally 블록의 stopListeningRef 호출은 speak(message) 다음에 온다(마지막 안내 음성이 끊기지 않게)', () => {
+  it('명령이 끝나면 finally에서 무대 닫기를 요청한다(화면만 사라짐)', () => {
     const finallyIdx = src.indexOf('} finally {');
-    const speakIdx = src.indexOf('speak(message);', finallyIdx);
-    const stopIdx = src.indexOf('stopListeningRef.current?.();', finallyIdx);
-    expect(speakIdx).toBeGreaterThan(-1);
-    expect(stopIdx).toBeGreaterThan(speakIdx);
+    const finallyEnd = src.indexOf('}\n    },', finallyIdx);
+    const body = src.slice(finallyIdx, finallyEnd);
+    expect(body).toContain('setCloseRequested(true);');
+  });
+
+  it('닫기 요청이 있어도 모미가 말하는 중(speaking)이거나 처리 중(busy)이면 기다렸다가 닫는다', () => {
+    const idx = src.indexOf('if (!closeRequested || stagePhase !== \'open\') return undefined;');
+    expect(idx).toBeGreaterThan(-1);
+    const body = src.slice(idx, src.indexOf('}, [closeRequested, stagePhase, busy, speaking]);', idx));
+    expect(body).toContain('if (busy || speaking) return undefined;');
+    expect(body).toContain("setStagePhase('closing');");
   });
 
   it('runVoiceConfirmFlow(예약/메모/세션조정 등 "네/아니요" 확인)는 stopListening을 직접 부르지 않는다(응답을 들어야 하므로 finally에서만 꺼짐)', () => {

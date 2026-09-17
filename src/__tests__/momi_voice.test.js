@@ -667,9 +667,16 @@ describe('GlobalVoiceCommand.jsx — 미지원/아이폰 홈화면 안내(2026-0
     expect(body).toContain('Safari 앱에서 주소를 직접 열어보세요');
   });
 
-  it('마이크 버튼 자체는 iOS 홈화면 조합이어도 계속 보여준다(다른 iOS 조합에선 될 수도 있어서 아예 막지 않음) — 대신 작은 우회 안내를 같이 띄운다', () => {
-    expect(src).toContain('const showIOSStandaloneHint = isIOSStandalone();');
-    expect(src).toContain('showIOSStandaloneHint && (');
-    expect(src).toContain('홈 화면 아이콘 대신 Safari 앱에서 직접 열어보세요');
+  // [화면에서 사라지는 모미 2026-09c] 이 컴포넌트는 이제 PC(데스크탑 너비)에서만
+  // 마운트되고(AppLayout), 화면에 상시 표시되는 버튼도 없다 — 아이폰 홈화면
+  // standalone 조합에 대한 작은 우회 안내는 띄울 자리 자체가 사라졌다. 다만
+  // "지원 자체가 안 되는 브라우저"는 여전히 이유를 보여줘야 하므로(위 테스트),
+  // isIOSStandalone()은 그 !supported 안내 문구 안에서 계속 쓰인다.
+  it('상시 표시되는 안내/버튼은 없고, 미지원 안내 안에서만 아이폰 우회법을 알려준다', () => {
+    expect(src).not.toContain('const showIOSStandaloneHint = isIOSStandalone();');
+    const idx = src.indexOf('if (!supported) {');
+    const body = src.slice(idx, src.indexOf('const hasError', idx));
+    expect(body).toContain('isIOSStandalone()');
+    expect(body).toContain('Safari 앱에서 주소를 직접 열어보세요');
   });
 });
