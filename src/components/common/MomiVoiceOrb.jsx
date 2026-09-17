@@ -71,7 +71,9 @@ export default function MomiVoiceOrb({
       type={button ? 'button' : undefined}
       className={`momi-orb momi-orb--${state}${activeFlash ? ` momi-orb--flash-${activeFlash}` : ''}`}
       style={{
-        '--momi-orb-size': `${size}px`,
+        // [전체화면 오브 2026-09b] size는 보통 숫자(px)지만, 전체화면 무대에서는
+        // 'min(62vw,62vh)' 같은 CSS 길이 문자열을 그대로 넘길 수 있어야 한다.
+        '--momi-orb-size': typeof size === 'number' ? `${size}px` : size,
         '--momi-orb-level': clampedLevel,
         '--momi-orb-glow': 0.4 + clampedLevel * 0.6,
       }}

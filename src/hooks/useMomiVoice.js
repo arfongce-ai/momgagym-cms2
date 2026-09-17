@@ -168,6 +168,15 @@ const ACTIVATION_WINDOW_MS = 8000;
 // 마지막 결과가 도착한 뒤 잠깐 기다렸다가 가장 완성된 문장 한 번만 실행한다.
 const FINAL_RESULT_SETTLE_MS = 700;
 
+// [노이즈 캔슬링 2026-09b] 아래 소음 게이트가 쓰는 두 값.
+// VOICE_GATE_LEVEL: 노이즈 플로어를 뺀 뒤의 음량이 이 값을 넘으면 "사람이 말했다"로
+// 본다(0~1). 너무 높이면 작게 말하는 트레이너를 놓치므로 낮게 잡는다.
+// NOISE_GATE_WINDOW_MS: 인식 결과가 확정된 시점 기준 이 시간 안에 사람 목소리가
+// 한 번도 없었으면, 그 결과는 주변 소음을 말소리로 착각한 것으로 보고 버린다.
+// 넉넉하게 잡아서(5초) 정상 발화를 실수로 버리는 일이 없게 한다.
+const VOICE_GATE_LEVEL = 0.05;
+const NOISE_GATE_WINDOW_MS = 5000;
+
 export function chooseMoreCompleteTranscript(previous = '', next = '') {
   const previousText = String(previous).trim();
   const nextText = String(next).trim();
@@ -293,6 +302,12 @@ export function useMomiVoice({
   // 있는 문장 조각들 중 엔진이 가장 확신한 confidence를 같이 들고 있다가,
   // 문장이 확정되는 순간 onRecognitionMeta로 함께 흘려보낸다.
   const pendingConfidenceRef = useRef(0);
+  // [노이즈 캔슬링 2026-09b] 아래 음량 측정 effect가 실제로 돌고 있는지(meterActive)와,
+  // 마지막으로 사람 목소리다운 소리가 들린 시각(lastVoiceAt). 측정이 안 되는
+  // 환경(권한 거부·미지원)에서는 meterActive가 false라 게이트가 항상 열린다 —
+  // 즉 소음 판정 때문에 인식이 조용히 죽는 일은 없다(항상 fail-open).
+  const meterActiveRef = useRef(false);
+  const lastVoiceAtRef = useRef(0);
   // onRecognitionMeta·onAudioLevel은 매 렌더마다 새 함수로 넘어올 수 있는(useCallback
   // 없이 인라인으로 넘겨도 안전하게) 선택 콜백이라, 다른 콜백들처럼 메인 인식
   // useEffect의 의존성 배열에 넣지 않고(넣으면 매 렌더 재구독이 생김) ref로
@@ -387,6 +402,21 @@ export function useMomiVoice({
         // [진단용] 실제로 뭘로 인식했는지 항상 콘솔에 남긴다 — "모미야"가 다른 말로
         // 잘못 인식되고 있는 건지, 아예 안 들리고 있는 건지 구분하기 위함.
         console.log('[모미] 들린 말:', heard);
+
+      // [노이즈 캔슬링 2026-09b] 음량 측정이 돌고 있는데도 최근 몇 초간 사람
+      // 목소리다운 소리가 한 번도 없었다면, 이 결과는 음악·기구 소음을 말로
+      // 착각한 것이다(헬스장에서 실제로 흔하다). 실행하지 않고 버린다.
+      // 단 "네/아니요" 즉답을 기다리는 중(pendingReplyRef)에는 절대 적용하지
+      // 않는다 — 아주 짧고 작은 대답이 게이트에 걸려 유실되면 확인 흐름 자체가
+      // 멈춰버리기 때문이다.
+      if (
+        meterActiveRef.current
+        && !pendingReplyRef.current
+        && Date.now() - lastVoiceAtRef.current > NOISE_GATE_WINDOW_MS
+      ) {
+        console.log('[모미] 주변 소음으로 판단해 무시함(사람 목소리 미감지):', heard);
+        return;
+      }
 
       // [예약 생성 프로젝트 2026-08-08] 즉답 대기 중이면(awaitReply) 웨이크워드도
       // 2단계 명령 대기도 전부 건너뛰고 이 발화를 그 콜백 하나에만 전달한다 —
@@ -648,25 +678,46 @@ export function useMomiVoice({
     return () => clearInterval(timer);
   }, [listening]);
 
-  // [정확도 시각화 2026-09] "제대로 듣고 있는지 화면으로 보여달라"는 요청 대응 —
-  // SpeechRecognition 자체는 음량 정보를 안 주므로, 별도 getUserMedia +
-  // AnalyserNode로 실제 마이크 음량(0~1)을 뽑아 onAudioLevel로 흘려보낸다.
-  // 인식용 세션(recognition)과는 완전히 독립된 별도 오디오 스트림이라, 이
-  // 쪽이 실패하거나(권한 거부 등) 브라우저가 미지원이어도 음성 인식 자체엔
-  // 전혀 영향이 없다(별도 effect + 전부 try/catch). onAudioLevel을 안 넘긴
-  // 화면(콜백 없음)에서는 아예 마이크를 추가로 열지 않는다.
+  // [정확도 시각화 2026-09 / 노이즈 캔슬링 2026-09b] SpeechRecognition 자체는
+  // 음량 정보를 안 주므로, 별도 getUserMedia + AnalyserNode로 실제 마이크 음량을
+  // 뽑아 onAudioLevel로 흘려보낸다. 인식용 세션과는 완전히 독립된 스트림이라,
+  // 이쪽이 실패하거나(권한 거부 등) 브라우저가 미지원이어도 음성 인식 자체엔
+  // 전혀 영향이 없다(별도 effect + 전부 try/catch).
+  //
+  // [노이즈 캔슬링 2026-09b] 헬스장은 음악·러닝머신·웨이트 소리가 끊이지 않는
+  // 환경이라 그대로 두면 (1) 아무도 말 안 하는데 오브가 계속 춤추고, (2) 엔진이
+  // 소음을 말소리로 착각한 결과를 올려보내 엉뚱하게 반응한다. 3중으로 막는다:
+  //   1) 브라우저 내장 노이즈 억제 — getUserMedia 제약조건으로 noiseSuppression·
+  //      echoCancellation(모미 자기 목소리 되먹힘 방지)·autoGainControl을 켠다.
+  //   2) 음성 대역만 통과 — 120Hz 하이패스(기구 진동·저역 웅웅거림 제거) +
+  //      4.5kHz 로우패스(금속 마찰음·쇳소리 제거)로 사람 목소리 대역만 남긴다.
+  //   3) 적응형 노이즈 플로어(최소 통계) — 최근 1~2초의 최소 에너지를 "현재 환경의
+  //      소음 바닥"으로 잡고, 그보다 확실히 큰 성분만 음량으로 인정한다. 그래서
+  //      시끄러운 헬스장에서도 오브는 사람이 말할 때만 반응한다.
+  // 마지막으로, 이 게이트로 "실제 사람 목소리가 있었는지"를 알 수 있으므로,
+  // 발화 없이 올라온 인식 결과(=소음 오인식)는 위 onresult에서 버린다.
   useEffect(() => {
     if (!listening || !onAudioLevel) return undefined;
     if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) return undefined;
     let audioContext;
     let analyser;
     let source;
+    let highpass;
+    let lowpass;
     let stream;
     let rafId;
     let cancelled = false;
 
     navigator.mediaDevices
-      .getUserMedia({ audio: true })
+      .getUserMedia({
+        audio: {
+          // 1) 브라우저가 제공하는 노이즈 억제·에코 제거·자동 게인.
+          noiseSuppression: true,
+          echoCancellation: true,
+          autoGainControl: true,
+          channelCount: 1,
+        },
+      })
       .then((mediaStream) => {
         if (cancelled) {
           mediaStream.getTracks().forEach((track) => track.stop());
@@ -677,41 +728,93 @@ export function useMomiVoice({
         if (!AudioContextCtor) return;
         audioContext = new AudioContextCtor();
         analyser = audioContext.createAnalyser();
-        analyser.fftSize = 256;
-        analyser.smoothingTimeConstant = 0.75;
+        analyser.fftSize = 512;
+        analyser.smoothingTimeConstant = 0.7;
         source = audioContext.createMediaStreamSource(stream);
-        source.connect(analyser);
+        // 2) 사람 목소리 대역(대략 120Hz~4.5kHz)만 남긴다.
+        highpass = audioContext.createBiquadFilter();
+        highpass.type = 'highpass';
+        highpass.frequency.value = 120;
+        lowpass = audioContext.createBiquadFilter();
+        lowpass.type = 'lowpass';
+        lowpass.frequency.value = 4500;
+        source.connect(highpass);
+        highpass.connect(lowpass);
+        lowpass.connect(analyser);
+        meterActiveRef.current = true;
+        // 측정이 막 시작된 직후에는 "최근에 목소리가 없었다"가 당연히 참이라,
+        // 게이트가 곧바로 닫혀 첫 발화를 통째로 버릴 수 있다. 시작 시각을 마지막
+        // 목소리 시각으로 깔아둬서 최소 NOISE_GATE_WINDOW_MS 동안은 무조건 열어둔다.
+        lastVoiceAtRef.current = Date.now();
+
         const data = new Uint8Array(analyser.frequencyBinCount);
+        const binHz = audioContext.sampleRate / analyser.fftSize;
+        const startBin = Math.max(1, Math.floor(150 / binHz));
+        const endBin = Math.min(data.length - 1, Math.ceil(4000 / binHz));
+        // 3) 적응형 노이즈 플로어 — "최소 통계" 방식. 최근 1~2초 구간의 최소
+        //    에너지를 그 환경의 소음 바닥으로 본다. 사람은 단어·문장 사이에 반드시
+        //    쉬기 때문에, 말하는 중이어도 최근 최소값은 소음 수준에 머문다. 반대로
+        //    음악·러닝머신처럼 계속 일정한 소음은 최소값 자체가 높아져 통째로
+        //    깎여나간다. (평균을 천천히 따라가는 방식은 음악이 중간에 켜졌을 때
+        //    적응에 15초 넘게 걸려서 그동안 오브가 계속 춤추는 문제가 있었다.)
+        //    다만 아주 긴 발화로 최소값까지 올라가버리는 경우를 대비해, 바닥이
+        //    올라갈 때만은 천천히(수 초에 걸쳐) 따라가게 눌러둔다.
+        const BUCKET_FRAMES = 60; // 약 1초(60fps 기준)
+        let bucketMin = Infinity;
+        let lastBucketMin = Infinity;
+        let framesInBucket = 0;
+        let noiseFloor = 0;
+        let smoothed = 0;
         const tick = () => {
           analyser.getByteFrequencyData(data);
           let sum = 0;
-          for (let i = 0; i < data.length; i += 1) sum += data[i];
-          // 128 부근을 "제법 크게 말하는 소리"로 대충 정규화 — 정밀한 dB 계산이
-          // 아니라 오브가 반응할 상대적인 크기감만 필요하므로 이 정도면 충분하다.
-          const level = Math.min(1, sum / data.length / 128);
-          onAudioLevel(level);
+          for (let i = startBin; i <= endBin; i += 1) sum += data[i];
+          const raw = sum / (endBin - startBin + 1) / 255;
+
+          bucketMin = Math.min(bucketMin, raw);
+          framesInBucket += 1;
+          if (framesInBucket >= BUCKET_FRAMES) {
+            lastBucketMin = bucketMin;
+            bucketMin = Infinity;
+            framesInBucket = 0;
+          }
+          const windowMin = Math.min(bucketMin, lastBucketMin === Infinity ? bucketMin : lastBucketMin);
+          if (Number.isFinite(windowMin)) {
+            noiseFloor = windowMin < noiseFloor
+              ? windowMin                                   // 조용해지면 즉시 내려간다
+              : noiseFloor * 0.995 + windowMin * 0.005;     // 올라갈 땐 몇 초에 걸쳐서만
+          }
+
+          // 소음 바닥보다 확실히(1.4배 + 여유) 큰 부분만 "말소리"로 인정한다.
+          const above = Math.max(0, raw - noiseFloor * 1.4 - 0.012);
+          const level = Math.min(1, above * 5);
+          // 급격한 튐을 줄여 오브가 떨리지 않게 한다.
+          smoothed = smoothed * 0.55 + level * 0.45;
+          const output = smoothed < 0.02 ? 0 : smoothed;
+          if (output > VOICE_GATE_LEVEL) lastVoiceAtRef.current = Date.now();
+          onAudioLevel(output);
           rafId = requestAnimationFrame(tick);
         };
         tick();
       })
       .catch(() => {
-        // 인식용 마이크 권한은 허용했지만 이 시각화 전용 스트림만 거부된 경우 등 —
-        // 시각화만 못 할 뿐 음성 인식 자체는 그대로 동작하므로 조용히 넘어간다.
+        // 인식용 마이크 권한은 허용했지만 이 스트림만 거부된 경우 등 — 시각화와
+        // 소음 게이트만 못 쓸 뿐 음성 인식 자체는 그대로 동작한다(게이트는
+        // meterActiveRef가 false라 자동으로 열린 상태가 된다).
+        meterActiveRef.current = false;
       });
 
     return () => {
       cancelled = true;
+      meterActiveRef.current = false;
       if (rafId) cancelAnimationFrame(rafId);
-      try {
-        source?.disconnect();
-      } catch (e) {
-        // no-op
-      }
-      try {
-        analyser?.disconnect();
-      } catch (e) {
-        // no-op
-      }
+      [source, highpass, lowpass, analyser].forEach((node) => {
+        try {
+          node?.disconnect();
+        } catch (e) {
+          // no-op
+        }
+      });
       try {
         audioContext?.close();
       } catch (e) {

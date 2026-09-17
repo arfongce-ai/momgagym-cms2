@@ -12,6 +12,7 @@ import { useMomiVoice, isIOSStandalone } from '../../hooks/useMomiVoice';
 import { useMomiSpeech } from '../../hooks/useMomiSpeech';
 import MomiVoiceOrb from './MomiVoiceOrb';
 import MomiHud from './MomiHud';
+import MomiVoiceStage, { STAGE_COLLAPSE_MS } from './MomiVoiceStage';
 import { useCameraStageActive } from '../../ai-measure/core/cameraStageActive';
 import { processVoiceCommand, buildTimerControlMessage } from '../../services/voiceCommandService';
 import {
@@ -58,9 +59,19 @@ export default function GlobalVoiceCommand() {
   const [micLevel, setMicLevel] = useState(0);
   const [confidence, setConfidence] = useState(null);
   const [flash, setFlash] = useState({ kind: null, seq: 0 });
+  // [전체화면 오브 2026-09b] 음성 인식 중에는 오브가 화면 전체로 커지고(stagePhase
+  // 'open'), 인식이 끝나면 HUD 쪽으로 접히며('collapsing') 사라진다 → 그 뒤는 코너
+  // HUD가 결과를 보여주고 대기 상태로 돌아간다.
+  const [stagePhase, setStagePhase] = useState(null);
+  const stageTimerRef = useRef(null);
   const handleRecognitionMeta = useCallback((meta) => {
     setConfidence(meta.confidence > 0 ? meta.confidence : null);
     setFlash((prev) => ({ kind: meta.matched ? 'matched' : 'mismatch', seq: prev.seq + 1 }));
+    // 못 알아들었을 때는 무대를 그대로 열어둔다 — 바로 다시 말하면 되니까.
+    if (!meta.matched) return;
+    setStagePhase((prev) => (prev ? 'collapsing' : prev));
+    if (stageTimerRef.current) clearTimeout(stageTimerRef.current);
+    stageTimerRef.current = setTimeout(() => setStagePhase(null), STAGE_COLLAPSE_MS);
   }, []);
 
   const { speaking, speak, stop: stopSpeaking, unlock: unlockSpeech } = useMomiSpeech();
@@ -500,6 +511,27 @@ export default function GlobalVoiceCommand() {
     stopListeningRef.current = stopListening;
   }, [stopListening]);
 
+  // [전체화면 오브 2026-09b] 마이크가 켜져 있는 동안 무대를 연다. 접히는 중
+  // ('collapsing')이면 그 애니메이션을 끊지 않는다. 측정 카메라 화면이 떠 있을
+  // 때는 화면을 가리면 안 되므로 아예 열지 않는다.
+  useEffect(() => {
+    // 측정 카메라 화면이 뜨면(도중에 떠도) 무대를 즉시 내린다 — 반투명하게만
+    // 낮추면 pointer-events가 살아있어 스켈레톤·무게 다이얼 조작을 막아버린다.
+    if (cameraActive) {
+      setStagePhase(null);
+      return;
+    }
+    if (listening) {
+      setStagePhase((prev) => (prev === 'collapsing' ? prev : 'open'));
+    } else {
+      setStagePhase(null);
+    }
+  }, [listening, cameraActive]);
+
+  useEffect(() => () => {
+    if (stageTimerRef.current) clearTimeout(stageTimerRef.current);
+  }, []);
+
   if (!supported) {
     // [진단용 2026-08-11] "아이폰에서 음성인식이 안 된다"는 문의 대응 — 예전엔
     // 미지원이면 그냥 아무것도 안 그려서(return null), 반응이 없는 게 "미지원
@@ -583,6 +615,18 @@ export default function GlobalVoiceCommand() {
         pointerEvents: cameraActive ? 'none' : 'auto',
       }}
     >
+      {stagePhase && (
+        <MomiVoiceStage
+          phase={stagePhase}
+          state={orbState}
+          text={feedback || (interimText ? `“${interimText}”` : '')}
+          confidence={confidence}
+          level={micLevel}
+          interactive
+          collapseTo="bottom-right"
+          onDismiss={toggle}
+        />
+      )}
       {/* [모미 HUD 2026-09] 예전엔 여기 작은 검은 말풍선 하나로 인식 결과만
           보여줬다 — 지금 듣고 있는지, 방금 제대로 알아들었는지가 눈에 안 들어온다는
           지적에 따라 상태별로 크기·색·기하 도형이 전부 달라지는 HUD로 교체한다.

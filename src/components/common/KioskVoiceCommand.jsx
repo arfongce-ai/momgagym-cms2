@@ -14,6 +14,7 @@ import { useMomiVoice } from '../../hooks/useMomiVoice';
 import { useMomiSpeech } from '../../hooks/useMomiSpeech';
 import MomiVoiceOrb from './MomiVoiceOrb';
 import MomiHud from './MomiHud';
+import MomiVoiceStage, { STAGE_COLLAPSE_MS } from './MomiVoiceStage';
 import { useCameraStageActive } from '../../ai-measure/core/cameraStageActive';
 import { processVoiceCommand, buildTimerControlMessage } from '../../services/voiceCommandService';
 import {
@@ -59,10 +60,25 @@ export default function KioskVoiceCommand() {
   const [micLevel, setMicLevel] = useState(0);
   const [confidence, setConfidence] = useState(null);
   const [flash, setFlash] = useState({ kind: null, seq: 0 });
+  // [전체화면 오브 2026-09b] 키오스크는 상시 감지라 "듣는 중"만으로 무대를 열면
+  // 화면이 영영 가려진다. 그래서 "모미야"라고 실제로 불렀을 때(handleWakeOnly)만
+  // 열고, 명령을 알아들으면 HUD 쪽으로 접으며 대기로 돌아간다.
+  const [stagePhase, setStagePhase] = useState(null);
+  const stageTimerRef = useRef(null);
+  const stageAutoCloseRef = useRef(null);
+  const closeStageSoon = useCallback(() => {
+    if (stageAutoCloseRef.current) clearTimeout(stageAutoCloseRef.current);
+    setStagePhase((prev) => (prev ? 'collapsing' : prev));
+    if (stageTimerRef.current) clearTimeout(stageTimerRef.current);
+    stageTimerRef.current = setTimeout(() => setStagePhase(null), STAGE_COLLAPSE_MS);
+  }, []);
   const handleRecognitionMeta = useCallback((meta) => {
     setConfidence(meta.confidence > 0 ? meta.confidence : null);
     setFlash((prev) => ({ kind: meta.matched ? 'matched' : 'mismatch', seq: prev.seq + 1 }));
-  }, []);
+    // 못 알아들었으면 무대를 그대로 둔다(바로 다시 말하면 됨).
+    if (!meta.matched || meta.kind === 'wake') return;
+    closeStageSoon();
+  }, [closeStageSoon]);
 
   const { speaking, speak } = useMomiSpeech();
 
@@ -389,7 +405,12 @@ export default function KioskVoiceCommand() {
     setFeedback(message);
     speak(message);
     setTimeout(() => setFeedback(''), 3000);
-  }, [speak]);
+    // [전체화면 오브 2026-09b] "모미야"를 부른 순간 = 대화 시작 → 무대를 연다.
+    // 명령이 안 오면(ACTIVATION_WINDOW_MS 8초) 혼자 닫혀서 화면을 돌려준다.
+    setStagePhase('open');
+    if (stageAutoCloseRef.current) clearTimeout(stageAutoCloseRef.current);
+    stageAutoCloseRef.current = setTimeout(closeStageSoon, 9500);
+  }, [speak, closeStageSoon]);
 
   // [버그 수정 — 상시 반응 오인 2026-08-12] "모미야를 부르기 전에도 계속
   // 반응한다"는 문의. 실제로 명령이 잘못 실행된 건 아니었다(웨이크워드 판정
@@ -446,6 +467,12 @@ export default function KioskVoiceCommand() {
     if (supported) startListening();
   }, [supported, startListening]);
 
+  // [전체화면 오브 2026-09b] 화면을 벗어날 때 무대 타이머도 같이 정리한다.
+  useEffect(() => () => {
+    if (stageTimerRef.current) clearTimeout(stageTimerRef.current);
+    if (stageAutoCloseRef.current) clearTimeout(stageAutoCloseRef.current);
+  }, []);
+
   if (!supported) {
     // [진단용 2026-08-08] "키오스크에서 반응이 없다"는 문의 대응 — 예전엔 미지원
     // 브라우저면 그냥 아무것도 안 그려서(return null), 반응이 없는 게 "미지원
@@ -491,6 +518,16 @@ export default function KioskVoiceCommand() {
         pointerEvents: cameraActive ? 'none' : 'auto',
       }}
     >
+      {stagePhase && !cameraActive && (
+        <MomiVoiceStage
+          phase={stagePhase}
+          state={orbState}
+          text={feedback || (interimText ? `“${interimText}”` : '')}
+          confidence={confidence}
+          level={micLevel}
+          collapseTo="top-right"
+        />
+      )}
       {/* [모미 HUD 2026-09] GlobalVoiceCommand.jsx와 동일 — 키오스크는 몇 걸음
           떨어져서 곁눈질로 보는 기기라 시인성이 특히 중요하다. 상시 감지라
           마이크는 항상 켜져 있으므로 HUD도 항상 떠 있되, 대기 중엔 작게 접히고
