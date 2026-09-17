@@ -86,29 +86,46 @@ function buildRsiCyclePreview(flights = []) {
   return cycles;
 }
 
-function flightRows(flights = [], cycles = []) {
+// [제자리멀리뛰기/한발멀리뛰기 추가 2026-09-16] horizontal 엔진(BroadJumpTracker)의
+// flights는 {takeoffMs, landingMs, flightMs, landingX} 형태 — calcJump(체공시간→높이)는
+// 수직 점프 전용 공식이라 horizontal에는 의미가 없다(실제로 써보면 그럴듯해 보이는
+// 가짜 "높이" 숫자가 나와 트레이너를 오도할 수 있음). horizontalScale이 주어지면
+// (baselineFeetX, scaleCmPerY) landingX 기반으로 distanceCm을 계산하고, heightCm은
+// 아예 채우지 않는다.
+function distanceCmOf(f, horizontalScale) {
+  if (!horizontalScale || f.landingX == null) return null;
+  const { baselineFeetX, scaleCmPerY } = horizontalScale;
+  if (baselineFeetX == null || scaleCmPerY == null) return null;
+  return Math.round(Math.abs(f.landingX - baselineFeetX) * scaleCmPerY * 10) / 10;
+}
+
+function flightRows(flights = [], cycles = [], horizontalScale = null) {
   return flights.slice(-5).map((f, i, arr) => {
     const originalIndex = flights.length - arr.length + i;
-    const jump = calcJump((f.flightMs || 0) / 1000, null);
+    const isHorizontal = Boolean(horizontalScale);
+    const jump = isHorizontal ? null : calcJump((f.flightMs || 0) / 1000, null);
     return {
       no: originalIndex + 1,
       flightMs: Math.round(f.flightMs || 0),
       heightCm: jump?.heightCm ?? null,
+      distanceCm: isHorizontal ? distanceCmOf(f, horizontalScale) : null,
       rsi: originalIndex > 0 ? cycles[originalIndex - 1]?.rsi ?? null : null,
       contactMs: originalIndex > 0 ? cycles[originalIndex - 1]?.contactMs ?? null : null,
     };
   });
 }
 
-function allFlightRows(flights = [], cycles = []) {
+function allFlightRows(flights = [], cycles = [], horizontalScale = null) {
   return flights.map((f, i) => {
-    const jump = calcJump((f.flightMs || 0) / 1000, null);
+    const isHorizontal = Boolean(horizontalScale);
+    const jump = isHorizontal ? null : calcJump((f.flightMs || 0) / 1000, null);
     return {
       no: i + 1,
       takeoffMs: Math.round(f.takeoffMs || 0),
       landingMs: Math.round(f.landingMs || 0),
       flightMs: Math.round(f.flightMs || 0),
       heightCm: jump?.heightCm ?? null,
+      distanceCm: isHorizontal ? distanceCmOf(f, horizontalScale) : null,
       rsi: i > 0 ? cycles[i - 1]?.rsi ?? null : null,
       contactMs: i > 0 ? cycles[i - 1]?.contactMs ?? null : null,
     };
@@ -119,6 +136,11 @@ function allFlightRows(flights = [], cycles = []) {
 // 가장자리에 크게, 회차별 기록은 하단 카드 스트립으로 — 피사체(중앙) 미가림.
 function drawJumpLiveOverlay(ctx, width, height, snap = {}) {
   const isRsi = snap.jumpType === 'reactive';
+  // [제자리멀리뛰기/한발멀리뛰기 추가 2026-09-16] horizontal 엔진(SBJ·한발멀리뛰기)은
+  // heightCm이 아니라 distanceCm이 핵심 지표 — 안 넣으면 "점프 높이" 칸에
+  // calcJump로 만든 무의미한 가짜 높이가 표시된다(체공시간만으로 계산되는데,
+  // horizontal은 체공시간이 아니라 수평 변위가 실제 지표라 둘이 무관함).
+  const isHorizontal = snap.jumpType === 'horizontal';
   const phase = snap.phase || 'arming';
   const accent = phase === 'air' ? '#fbbf24' : phase === 'ready' ? '#34d399' : phase === 'low_visibility' ? '#f87171' : '#22d3ee';
   const statusTxt = phase === 'ready' ? 'READY' : phase === 'air' ? 'AIR'
@@ -131,7 +153,9 @@ function drawJumpLiveOverlay(ctx, width, height, snap = {}) {
         top: `#${r.no}`,
         main: isRsi
           ? (r.rsi != null ? String(r.rsi) : (r.heightCm != null ? `${r.heightCm}` : '--'))
-          : (r.heightCm != null ? String(r.heightCm) : '--'),
+          : isHorizontal
+            ? (r.distanceCm != null ? String(r.distanceCm) : '--')
+            : (r.heightCm != null ? String(r.heightCm) : '--'),
         sub: isRsi
           ? (r.contactMs != null ? `${r.contactMs}ms` : (r.flightMs ? `${r.flightMs}ms` : ''))
           : (r.flightMs ? `${r.flightMs}ms` : ''),
@@ -141,7 +165,9 @@ function drawJumpLiveOverlay(ctx, width, height, snap = {}) {
 
   const gauge = isRsi
     ? { label: 'RSI', value: latest?.rsi ?? null, unit: '', arc: true, min: 0, max: 3 }
-    : { label: '점프 높이', value: snap.liveJump?.heightCm ?? snap.bestHeight ?? null, unit: 'cm' };
+    : isHorizontal
+      ? { label: '이동거리', value: snap.liveJump?.distanceCm ?? snap.bestDistance ?? null, unit: 'cm' }
+      : { label: '점프 높이', value: snap.liveJump?.heightCm ?? snap.bestHeight ?? null, unit: 'cm' };
   // [무릎·고관절 각도 HUD 2026-08-18] 기존 2개(접지/진행 또는 체공/점프)에
   // 실시간 관절 각도 2개를 더해 GaugeHud 카드 한도(4개)를 채운다.
   const kneeStat = { label: '무릎각', value: snap.liveAngles?.knee ?? null, unit: '°' };
@@ -159,7 +185,7 @@ function drawJumpLiveOverlay(ctx, width, height, snap = {}) {
       ];
 
   drawGaugeHud(ctx, width, height, {
-    title: isRsi ? 'RSI · SIDE' : 'JUMP · FRONT',
+    title: isRsi ? 'RSI · SIDE' : isHorizontal ? 'BROAD JUMP' : 'JUMP · FRONT',
     status: statusTxt,
     recording: true,
     accent,
@@ -370,6 +396,9 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
   const recStartedAtRef = useRef(0);
   const jumpCountRef = useRef(0);
   const bestHeightRef = useRef(null);
+  // [제자리멀리뛰기/한발멀리뛰기 추가 2026-09-16] horizontal 엔진 전용 —
+  // bestHeightRef와 같은 역할이지만 값은 distanceCm.
+  const bestDistanceRef = useRef(null);
 
   useEffect(() => { viewRef.current = view; }, [view]);
   useEffect(() => { phaseRef.current = phase; }, [phase]);
@@ -388,6 +417,7 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
       latestCycle: rsiCycles.at(-1) || null,
       jumpRows,
       bestHeight: bestHeightRef.current,
+      bestDistance: bestDistanceRef.current,
       heightCm,
       requiredJumps,
       liveAngles,
@@ -428,7 +458,7 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
     setRsiCycles([]);
     setJumpRows([]);
     jumpFreezeRef.current = new Map(); // 렙/점프 카드 동결 초기화
-    setLiveJump({ flightMs: null, heightCm: null });
+    setLiveJump({ flightMs: null, heightCm: null, distanceCm: null });
     setLiveAngles({ knee: null, hip: null }); // [무릎·고관절 각도 HUD 2026-08-18]
     liveAnglesTsRef.current = 0;
     setLiveHeightSeries([]); // [점프 리플레이 그래프 2026-08-20]
@@ -438,6 +468,7 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
     autoSavedRef.current = null;
     jumpCountRef.current = 0;
     bestHeightRef.current = null;
+    bestDistanceRef.current = null;
     recordedBlobRef.current = null;
   };
 
@@ -509,6 +540,7 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
         phase: phaseRef.current,
         jumpCount: jumpCountRef.current,
         bestHeight: bestHeightRef.current,
+        bestDistance: bestDistanceRef.current,
       });
       composeRafRef.current = requestAnimationFrame(draw);
     };
@@ -723,18 +755,40 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
             try {
               const s = tracker.summary({ heightCm: heightRef.current });
               if (s?.heightCm != null) bestHeightRef.current = s.heightCm;
+              // [제자리멀리뛰기/한발멀리뛰기 추가 2026-09-16] BroadJumpTracker.summary()는
+              // heightCm이 아니라 distanceCm을 돌려준다.
+              if (s?.distanceCm != null) bestDistanceRef.current = s.distanceCm;
               const latest = tracker.flights.at(-1);
-              let nextLiveJump = overlayRef.current.liveJump || { flightMs: null, heightCm: null };
+              const isHorizontal = jumpType === 'horizontal';
+              let nextLiveJump = overlayRef.current.liveJump || { flightMs: null, heightCm: null, distanceCm: null };
               if (latest?.flightMs) {
-                const jump = calcJump(latest.flightMs / 1000, null);
-                nextLiveJump = {
-                  flightMs: Math.round(latest.flightMs),
-                  heightCm: jump?.heightCm ?? null,
-                };
+                if (isHorizontal) {
+                  // 방금 끝난 이번 회차 자체의 거리(누적 최고가 아니라 "이번 점프")를
+                  // 카드/게이지에 즉시 보여준다 — calib.scaleCmPerY·baselineFeetX는
+                  // BroadJumpTracker 생성 시 이미 계산돼 있다(jumpBiomechanics.js).
+                  const distanceCm = distanceCmOf(latest, {
+                    baselineFeetX: tracker.baselineFeetX,
+                    scaleCmPerY: tracker.calib?.scaleCmPerY,
+                  });
+                  nextLiveJump = {
+                    flightMs: Math.round(latest.flightMs),
+                    heightCm: null,
+                    distanceCm,
+                  };
+                } else {
+                  const jump = calcJump(latest.flightMs / 1000, null);
+                  nextLiveJump = {
+                    flightMs: Math.round(latest.flightMs),
+                    heightCm: jump?.heightCm ?? null,
+                  };
+                }
                 setLiveJump(nextLiveJump);
               }
               let nextCycles = [];
               let nextRows = [];
+              const horizontalScale = isHorizontal
+                ? { baselineFeetX: tracker.baselineFeetX, scaleCmPerY: tracker.calib?.scaleCmPerY }
+                : null;
               if (jumpType === 'reactive') {
                 const cyclePreview = buildRsiCyclePreview(tracker.flights);
                 nextCycles = cyclePreview;
@@ -746,7 +800,7 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
                 setJumpRows(nextRows);
               } else {
                 nextRows = applyRepFreeze(
-                  flightRows(tracker.flights, []),
+                  flightRows(tracker.flights, [], horizontalScale),
                   jumpFreezeRef.current, tracker.flights.length,
                 );
                 setJumpRows(nextRows);
@@ -761,6 +815,7 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
                 latestCycle: nextCycles[nextCycles.length - 1] || null,
                 jumpRows: nextRows,
                 bestHeight: bestHeightRef.current,
+                bestDistance: bestDistanceRef.current,
                 heightCm: heightRef.current,
               };
             } catch (e) { /* noop */ }
@@ -824,7 +879,13 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
     // perCycleByIndex(무효 구간 null 보존)를 써야 "#N 점프"가 실제 N번째 점프의
     // 값과 짝지어진다 — perCycle(무효 제외)을 쓰면 위와 동일한 index shift가
     // 저장되는 리포트(report.perJump)에도 그대로 들어간다.
-    const perJump = allFlightRows(tracker.flights, rsiResult?.perCycleByIndex || liveCyclePreview);
+    // [제자리멀리뛰기/한발멀리뛰기 추가 2026-09-16] horizontal이면 각 회차의
+    // heightCm 대신 distanceCm을 채운다(perJump는 현재 화면엔 안 쓰이지만
+    // 저장되는 리포트 데이터라 잘못된 값을 남기지 않는다).
+    const horizontalScale = jumpType === 'horizontal'
+      ? { baselineFeetX: tracker.baselineFeetX, scaleCmPerY: tracker.calib?.scaleCmPerY }
+      : null;
+    const perJump = allFlightRows(tracker.flights, rsiResult?.perCycleByIndex || liveCyclePreview, horizontalScale);
 
     const report = {
       ...sum,
@@ -1016,6 +1077,7 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
             jumpCount={jumpCount}
             liveJump={liveJump}
             bestHeight={bestHeightRef.current}
+            bestDistance={bestDistanceRef.current}
             rsiCycles={rsiCycles}
             jumpRows={jumpRows}
             requiredJumps={requiredJumps}
@@ -1492,12 +1554,15 @@ function MetricCard({ label, value }) {
 
 function JumpLiveOverlay({
   jumpType, phase, phaseColor, calibMsg, heightCm, jumpCount,
-  liveJump, bestHeight, rsiCycles, jumpRows, requiredJumps = RSI_REQUIRED_JUMPS,
+  liveJump, bestHeight, bestDistance, rsiCycles, jumpRows, requiredJumps = RSI_REQUIRED_JUMPS,
   liveAngles = { knee: null, hip: null }, liveHeightSeries = [],
 }) {
   const isRsi = jumpType === 'reactive';
+  // [제자리멀리뛰기/한발멀리뛰기 추가 2026-09-16] horizontal(SBJ·한발멀리뛰기)은
+  // heightCm이 아니라 distanceCm이 핵심 지표.
+  const isHorizontal = jumpType === 'horizontal';
   const latestCycle = rsiCycles.at(-1) || null;
-  const readyText = isRsi ? `측면 · 연속 ${requiredJumps}회` : '정면 · 1회 최대 점프';
+  const readyText = isRsi ? `측면 · 연속 ${requiredJumps}회` : isHorizontal ? '측면/정면 · 1회 최대 도약' : '정면 · 1회 최대 점프';
   const statusText = phase === 'air' ? '공중'
     : phase === 'ready' ? '준비됨'
     : phase === 'low_visibility' ? '자세 확인'
@@ -1506,7 +1571,9 @@ function JumpLiveOverlay({
 
   const gauge = isRsi
     ? { label: 'RSI', value: latestCycle?.rsi ?? null, unit: '', decimals: 2, arc: true, min: 0, max: 3 }
-    : { label: '점프 높이', value: liveJump.heightCm ?? bestHeight ?? null, unit: 'cm' };
+    : isHorizontal
+      ? { label: '이동거리', value: liveJump.distanceCm ?? bestDistance ?? null, unit: 'cm' }
+      : { label: '점프 높이', value: liveJump.heightCm ?? bestHeight ?? null, unit: 'cm' };
   // [무릎·고관절 각도 HUD 2026-08-18] 실시간 관절 각도 — 카메라에 잡히는 대로
   // 즉시 표시(캘리브레이션/대기 중에도 갱신됨). 값이 없으면 GaugeHud가 '—'로 표시.
   const kneeStat = { label: '무릎각', value: liveAngles?.knee ?? null, unit: '°' };
@@ -1530,7 +1597,9 @@ function JumpLiveOverlay({
           <span className={`h-2.5 w-2.5 rounded-full ${
             phase === 'air' ? 'bg-amber-400' : phase === 'ready' ? 'bg-emerald-400' : phase === 'low_visibility' ? 'bg-red-400' : 'bg-cyan-400'
           }`} />
-          <p className="truncate text-xs font-black text-white/90">{isRsi ? 'RSI 측정' : '파워 점프'} · {readyText}</p>
+          {/* isHorizontal은 SBJ·한발멀리뛰기 3방향을 전부 포괄하므로(이 컴포넌트는
+              jumpSubType까지 받지 않음) 종류를 특정하지 않는 일반 명칭을 쓴다. */}
+          <p className="truncate text-xs font-black text-white/90">{isRsi ? 'RSI 측정' : isHorizontal ? '수평 도약 측정' : '파워 점프'} · {readyText}</p>
           <span className={`ml-auto text-[11px] font-bold ${phaseColor}`}>{statusText}</span>
         </div>
         {/* [2026-07-31] calibMsg(보정 진행률 "자세 보정 중... N%"·안내 문구)를

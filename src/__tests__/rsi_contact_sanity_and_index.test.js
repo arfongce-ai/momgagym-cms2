@@ -113,7 +113,10 @@ describe('JumpPrecisionAnalysis.jsx — buildRsiCyclePreview(라이브 미리보
   });
 
   it('finishMeasure의 perJump 계산은 perCycle이 아니라 perCycleByIndex(인덱스 보존판)를 우선 사용한다', () => {
-    expect(jumpSrc).toMatch(/allFlightRows\(tracker\.flights,\s*rsiResult\?\.perCycleByIndex\s*\|\|\s*liveCyclePreview\)/);
+    // [한발멀리뛰기 추가 2026-09-16] allFlightRows에 horizontalScale(3번째
+    // 인자, SBJ/한발멀리뛰기 distanceCm 계산용)이 추가돼 정규식에 선택적
+    // 트레일링 인자를 허용한다 — perCycleByIndex 우선 사용 자체는 그대로.
+    expect(jumpSrc).toMatch(/allFlightRows\(tracker\.flights,\s*rsiResult\?\.perCycleByIndex\s*\|\|\s*liveCyclePreview(,[^)]*)?\)/);
     // 예전처럼 perCycle을 직접 쓰는 폴백은 남아있으면 안 된다(인덱스 밀림 재도입 방지).
     expect(jumpSrc).not.toMatch(/allFlightRows\(tracker\.flights,\s*rsiResult\?\.perCycle\s*\|\|/);
   });
