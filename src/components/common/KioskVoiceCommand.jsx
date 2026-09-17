@@ -13,6 +13,7 @@ import { useNavigate } from 'react-router-dom';
 import { useMomiVoice } from '../../hooks/useMomiVoice';
 import { useMomiSpeech } from '../../hooks/useMomiSpeech';
 import MomiVoiceOrb from './MomiVoiceOrb';
+import MomiHud from './MomiHud';
 import { useCameraStageActive } from '../../ai-measure/core/cameraStageActive';
 import { processVoiceCommand, buildTimerControlMessage } from '../../services/voiceCommandService';
 import {
@@ -490,23 +491,18 @@ export default function KioskVoiceCommand() {
         pointerEvents: cameraActive ? 'none' : 'auto',
       }}
     >
-      {(feedback || interimText) && (
-        <div
-          style={{
-            padding: '8px 12px',
-            borderRadius: 8,
-            background: 'rgba(0,0,0,0.85)',
-            color: '#fff',
-            fontSize: 15,
-            fontWeight: 500,
-            maxWidth: 280,
-            whiteSpace: 'pre-line',
-            boxShadow: '0 2px 10px rgba(0,0,0,0.35)',
-          }}
-        >
-          {feedback || `“${interimText}”`}
-        </div>
-      )}
+      {/* [모미 HUD 2026-09] GlobalVoiceCommand.jsx와 동일 — 키오스크는 몇 걸음
+          떨어져서 곁눈질로 보는 기기라 시인성이 특히 중요하다. 상시 감지라
+          마이크는 항상 켜져 있으므로 HUD도 항상 떠 있되, 대기 중엔 작게 접히고
+          말을 걸면 커지면서 색과 도형이 바뀐다. */}
+      <MomiHud
+        state={orbState}
+        text={feedback || (interimText ? `“${interimText}”` : '')}
+        confidence={confidence}
+        level={micLevel}
+        flashKind={flash.kind}
+        flashSeq={flash.seq}
+      />
       {/* 클릭 대상이 아닌 상태 오브 — 상시 감지와 MOMI 반응을 함께 알린다. */}
       <MomiVoiceOrb
         state={orbState}

@@ -11,6 +11,7 @@ import { useNavigate } from 'react-router-dom';
 import { useMomiVoice, isIOSStandalone } from '../../hooks/useMomiVoice';
 import { useMomiSpeech } from '../../hooks/useMomiSpeech';
 import MomiVoiceOrb from './MomiVoiceOrb';
+import MomiHud from './MomiHud';
 import { useCameraStageActive } from '../../ai-measure/core/cameraStageActive';
 import { processVoiceCommand, buildTimerControlMessage } from '../../services/voiceCommandService';
 import {
@@ -582,22 +583,20 @@ export default function GlobalVoiceCommand() {
         pointerEvents: cameraActive ? 'none' : 'auto',
       }}
     >
-      {(feedback || interimText) && (
-        <div
-          style={{
-            marginBottom: 8,
-            padding: '10px 14px',
-            borderRadius: 8,
-            background: 'rgba(0,0,0,0.85)',
-            color: '#fff',
-            fontSize: 15,
-            fontWeight: 500,
-            maxWidth: 280,
-            whiteSpace: 'pre-line',
-            boxShadow: '0 2px 10px rgba(0,0,0,0.35)',
-          }}
-        >
-          {feedback || `“${interimText}”`}
+      {/* [모미 HUD 2026-09] 예전엔 여기 작은 검은 말풍선 하나로 인식 결과만
+          보여줬다 — 지금 듣고 있는지, 방금 제대로 알아들었는지가 눈에 안 들어온다는
+          지적에 따라 상태별로 크기·색·기하 도형이 전부 달라지는 HUD로 교체한다.
+          말할 게 없고 마이크도 꺼져 있으면 아예 안 그린다(평소 화면을 안 가림). */}
+      {(feedback || interimText || listening) && (
+        <div style={{ marginBottom: 10, display: 'flex', justifyContent: 'flex-end' }}>
+          <MomiHud
+            state={orbState}
+            text={feedback || (interimText ? `“${interimText}”` : '')}
+            confidence={confidence}
+            level={micLevel}
+            flashKind={flash.kind}
+            flashSeq={flash.seq}
+          />
         </div>
       )}
       {!feedback && showIOSStandaloneHint && (
