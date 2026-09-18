@@ -14,6 +14,7 @@ import MemberMeasureHistory from '../ai/MemberMeasureHistory';
 import { METHOD_LBL, METHOD_CLR, computeMonthRates, autoRefundUsedAmount, computeRefundEstimate, refundUnitPriceBasisLabel } from '../../services/finance';
 import { buildMemberSessionExpiry, computeExpirySettlement, EXPIRY_STATUS_LABEL } from '../../services/sessionExpiry';
 import { evaluateCondition } from '../../ai-measure/core/conditionAssessment';
+import { issueNutritionLinkCode } from '../../services/nutritionLinkService';
 
 const INP = "w-full bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-xl px-3 py-2.5 text-sm placeholder-slate-500 focus:outline-none focus:border-amber-500";
 const LBL = "block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5";
@@ -47,6 +48,26 @@ export default function MemberDetail({ member:initMember, trainers, members=[], 
   // 더블탭/더블클릭으로 두 번 실행되면 결제가 중복 기록되거나 세션이 두 번 양도될 수 있다.
   // 버튼 비활성화로 재진입을 막는다(Schedule.jsx의 finalizeSchedule 이중처리 방지와 동일 원리).
   const [busy, setBusy] = useState(false);
+
+  // 영양 앱(nutrition-cms) 연결코드 발급 — 2026-09-17 추가. 코드는 화면에만
+  // 잠깐 보여주고 Firestore에는 CMS가 별도로 저장하지 않는다(서버의
+  // linkCodes/{code} 문서가 10분 뒤 만료되는 것이 유일한 보관 형태).
+  const [nutritionCode, setNutritionCode] = useState(null); // { code, expiresAt }
+  const [nutritionCodeBusy, setNutritionCodeBusy] = useState(false);
+  const [nutritionCodeError, setNutritionCodeError] = useState('');
+
+  const handleIssueNutritionCode = async () => {
+    setNutritionCodeBusy(true);
+    setNutritionCodeError('');
+    try {
+      const { code, expiresInSec } = await issueNutritionLinkCode(member.id);
+      setNutritionCode({ code, expiresAt: Date.now() + expiresInSec * 1000 });
+    } catch (e) {
+      setNutritionCodeError(e?.message || '연결코드 발급에 실패했습니다.');
+    } finally {
+      setNutritionCodeBusy(false);
+    }
+  };
 
   // 세션 추가 (결제 동반)
   const [showAddSess,   setShowAddSess]   = useState(false);
@@ -754,6 +775,21 @@ export default function MemberDetail({ member:initMember, trainers, members=[], 
                     <p className="text-sm text-slate-600 dark:text-slate-300 whitespace-pre-line leading-relaxed">{member.memo}</p>
                   </div>
                 )}
+                <div className="py-3 border-b border-slate-200 dark:border-slate-800">
+                  <span className="text-xs text-slate-500 uppercase tracking-wide font-semibold block mb-2">영양 앱 연결</span>
+                  {nutritionCode && nutritionCode.expiresAt > Date.now() ? (
+                    <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3">
+                      <p className="text-2xl font-black tracking-widest text-amber-700 dark:text-amber-400 text-center">{nutritionCode.code}</p>
+                      <p className="text-[11px] text-slate-500 text-center mt-1">회원에게 이 코드를 불러주세요 · 10분간 1회만 사용 가능</p>
+                    </div>
+                  ) : (
+                    <button onClick={handleIssueNutritionCode} disabled={nutritionCodeBusy}
+                      className="w-full py-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/20 text-sm font-semibold transition-colors disabled:opacity-50">
+                      {nutritionCodeBusy ? '발급 중…' : '🥗 영양 앱 연결코드 발급'}
+                    </button>
+                  )}
+                  {nutritionCodeError && <p className="text-[11px] text-red-600 dark:text-red-400 mt-1">{nutritionCodeError}</p>}
+                </div>
                 <div className="flex gap-2 pt-4">
                   <button onClick={()=>{setEF({...member});setEdit(true);}}
                     className="flex-1 py-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-700 dark:text-amber-400 hover:bg-amber-500/20 text-sm font-semibold transition-colors">

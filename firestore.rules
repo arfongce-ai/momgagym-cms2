@@ -124,6 +124,22 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // ── 영양 앱(nutrition-cms) 연동 — 전부 서버 함수 전용 ──────────────────
+    // functions/api/nutrition-*.js, teacher-nutrition.js가 서비스 계정
+    // access token(REST)으로만 읽고 쓴다(trainer-account.js와 동일 패턴 —
+    // 이 규칙을 그대로 우회함). CMS 프론트엔드(src/)도, 영양 앱도 이
+    // 컬렉션들을 클라이언트 SDK로 직접 건드리지 않는다 — 아래 4줄이 없어도
+    // 맨 아래 기본 차단 규칙에 의해 막히지만, "실수로 빠뜨린 게 아니라
+    // 의도적으로 서버 전용"임을 명시하기 위해 남겨둔다.
+    //   linkCodes           : 1회용 연결코드(10분 만료)
+    //   nutritionConnections: 회원별 연동 상태(activeJti) — 연결 해제의 기준
+    //   nutritionSummaries  : 일일 영양 요약 스냅샷(memberRef_date)
+    //   nutritionFeedback   : 트레이너 피드백 + 회원 답변
+    match /linkCodes/{id}            { allow read, write: if false; }
+    match /nutritionConnections/{id} { allow read, write: if false; }
+    match /nutritionSummaries/{id}   { allow read, write: if false; }
+    match /nutritionFeedback/{id}    { allow read, write: if false; }
+
     // 그 외 모든 경로 기본 차단
     match /{document=**} {
       allow read, write: if false;
