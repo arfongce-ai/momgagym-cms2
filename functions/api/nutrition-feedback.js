@@ -63,7 +63,9 @@ export async function onRequestPost({ request, env }) {
       const replyText = String(body.reply || '').trim().slice(0, 1000);
       if (!replyText) return json({ ok: false, code: 'INVALID_INPUT', message: '답변 내용이 비어 있습니다.' }, 400);
       await patchDocument(accessToken, `nutritionFeedback/${encodeURIComponent(feedbackId)}`, {
-        memberReply: replyText,
+        // 필드명은 반드시 client(FeedbackSheet.jsx)가 읽는 `reply`와 맞춘다 —
+        // 예전엔 memberReply로 저장해서 화면에 절대 안 뜨는 버그가 있었음(2026-09-18 수정).
+        reply: replyText,
         repliedAt: new Date().toISOString(),
         readByMember: true,
       });

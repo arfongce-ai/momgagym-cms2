@@ -55,6 +55,17 @@ export default function MemberDetail({ member:initMember, trainers, members=[], 
   const [nutritionCode, setNutritionCode] = useState(null); // { code, expiresAt }
   const [nutritionCodeBusy, setNutritionCodeBusy] = useState(false);
   const [nutritionCodeError, setNutritionCodeError] = useState('');
+  const [, forceNutritionCodeTick] = useState(0);
+
+  // expiresAt > Date.now() 비교는 렌더 시점에만 평가되므로, 다른 이유로 화면이
+  // 다시 렌더링되지 않으면 10분이 지나도 코드가 계속 "사용 가능"한 것처럼
+  // 보인다(트레이너가 만료된 코드를 회원에게 불러줄 위험) — 1초마다 강제로
+  // 다시 렌더링해서 만료되면 버튼으로 바로 바뀌게 한다.
+  useEffect(() => {
+    if (!nutritionCode) return undefined;
+    const id = setInterval(() => forceNutritionCodeTick((n) => n + 1), 1000);
+    return () => clearInterval(id);
+  }, [nutritionCode]);
 
   const handleIssueNutritionCode = async () => {
     setNutritionCodeBusy(true);

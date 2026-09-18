@@ -125,16 +125,33 @@ export async function onRequestPost({ request, env }) {
       return json({ ok: false, error: '담당하지 않는 회원에게는 피드백을 작성할 수 없습니다.' }, 403);
     }
 
+    // 회원 앱(FeedbackSheet.jsx)에 표시할 작성자 이름 — trainers/{id}.name을 조회한다.
+    // admin이 쓰는 경우(trainerScope=null)는 트레이너 문서가 없으므로 "센터 관리자"로 표시.
+    let teacherDisplayName = '센터 관리자';
+    if (trainerScope) {
+      const trainerDoc = docToPlain(await getDocument(accessToken, `trainers/${encodeURIComponent(trainerScope)}`));
+      teacherDisplayName = trainerDoc?.name || '담당 선생님';
+    }
+
     const feedbackId = crypto.randomUUID();
     const payload = {
+      // Firestore 문서 id와 동일한 값을 필드로도 저장 — docToPlain()은 문서 id를
+      // `id`로 돌려주고 `feedbackId`는 안 돌려주는데, 회원 앱 클라이언트
+      // (FeedbackSheet.jsx/nutritionFeedback.js)는 item.feedbackId를 그대로 쓴다.
+      // 필드로 같이 저장해두면 GET 응답에 자동으로 실려서 별도 매핑이 필요 없다.
+      feedbackId,
       memberRef,
       trainerId: trainerScope || 'admin',
+      teacherDisplayName,
       authorUid: auth.uid,
+      type: 'NUTRITION_GUIDANCE',
       message,
       date: body.date && /^\d{4}-\d{2}-\d{2}$/.test(body.date) ? body.date : null,
       createdAt: new Date().toISOString(),
       readByMember: false,
-      memberReply: null,
+      readAt: null,
+      reply: null,
+      repliedAt: null,
     };
     await setDocument(accessToken, `nutritionFeedback/${encodeURIComponent(feedbackId)}`, payload);
     return json({ ok: true, feedbackId });
