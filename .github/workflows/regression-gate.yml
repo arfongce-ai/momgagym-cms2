@@ -1,0 +1,32 @@
+name: 회귀 테스트 게이트
+
+# cloudflare-pages.yml(배포)과 별개로 동작합니다. 새 실패만 차단합니다.
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+    branches: ['**']
+
+jobs:
+  regression-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+
+      - name: run tests as json
+        run: npx vitest run --reporter=json --outputFile=test-results.json
+        continue-on-error: true
+
+      - name: check regression
+        run: node scripts/check-regression.cjs
+
+      - name: build check
+        run: npm run build
