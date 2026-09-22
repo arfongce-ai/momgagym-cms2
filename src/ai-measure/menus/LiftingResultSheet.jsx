@@ -1,5 +1,5 @@
 // ai-measure/menus/LiftingResultSheet.jsx
-// ════════════════════════════════════════════════════════════════════════
+// ═════════════════════════════════════════════════════════════════════
 //  바벨 측정 결과 시트 — UI/UX 전면 재설계 (역도·VBT 공용).
 //  구성(위→아래):
 //   ① 등급 히어로 — AI 평가 등급 배지 + 헤드라인 + 존 칩
@@ -9,7 +9,7 @@
 //   ⑤ AI 평가 상세(근거 문장)
 //   ⑥ 저장/영상 버튼
 //  측정 정직성: 값이 없는 지표는 칩 자체를 렌더하지 않는다(빈 값·가짜 값 없음).
-// ════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════
 import { generateLiftingDiagnosis, GRADE_LABEL } from '../core/barbellClinical';
 
 const GRADE_STYLE = {
@@ -85,7 +85,7 @@ function RepBars({ reps, lossPct }) {
  */
 export default function LiftingResultSheet({
   mode, exerciseType, result, zone = null,
-  onSave, videoBlob, onSaveVideo, savingVideo, videoSavedMsg,
+  onSave,
 }) {
   if (!result) return null;
   const mean = result.meanVelocity ?? result.velocity ?? null;
@@ -165,13 +165,10 @@ export default function LiftingResultSheet({
           이 측정 저장 →
         </button>
       )}
-      {videoBlob && (
-        <button onClick={onSaveVideo} disabled={savingVideo}
-          className="w-full h-10 rounded-2xl bg-white/[0.06] border border-white/10 text-slate-700 dark:text-slate-200 font-bold text-xs active:scale-[0.98] disabled:opacity-50">
-          {savingVideo ? '저장 중…' : '🎥 녹화 영상 폰에 저장'}
-        </button>
-      )}
-      {videoSavedMsg && <p className="text-center text-[11px] text-emerald-700 dark:text-emerald-400">{videoSavedMsg}</p>}
+      {/* [2026-09-22] "영상만 폰에 저장" 버튼 제거 — 실제 저장 버튼과 혼동돼
+          "영상은 있는데 리포트가 없다"는 문제를 만들었음. 다른 측정 종목과
+          동일하게, 영상은 위 저장 버튼을 누르면 reportExtras.videoBlob으로
+          리포트에 자동 포함된다. */}
     </div>
   );
 }
