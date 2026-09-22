@@ -22,7 +22,7 @@ import { assessFraming, FRAMING_PRESETS } from '../core/framingGuide';
 import { personHeightRatio, barbellPoint } from '../core/barbell';
 import { BarbellAccumulator, estimateOneRmFromMeanVelocity } from '../core/barbellBiomechanics';
 import { beepRep } from '../core/audioCue';
-import { saveVideoToPhone, pickRecorderMime } from '../core/recordSink';
+import { pickRecorderMime } from '../core/recordSink';
 import { drawGaugeHud } from '../core/recordingOverlay';
 import { DEFAULT_ASPECT, outputSize, aspectLabel, drawVideoCover, rotateLandmarksNormalized } from '../core/recordAspect';
 import { useCameraRotation } from '../core/useCameraRotation';
@@ -99,8 +99,6 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
   useEffect(() => { aspectRef.current = aspect; }, [aspect]);
   const [liveReps, setLiveReps] = useState(0);
   const [videoBlob, setVideoBlob] = useState(null);
-  const [savingVideo, setSavingVideo] = useState(false);
-  const [videoSavedMsg, setVideoSavedMsg] = useState('');
 
   // 최종 사용 무게 = '화면 다이얼에 보이는 값'을 단일 진실로 삼는다.
   //  (원판 색 인식·직접입력 모두 dialWeight 를 갱신하므로, 다이얼 = 저장/HUD 값.
@@ -408,23 +406,10 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
     setWeightUserSet(false); // 색 인식 채택 → 자동값 상태로 전환
   };
 
-  const handleSaveVideo = async () => {
-    const blob = videoBlobRef.current || videoBlob;
-    if (!blob) { alert('저장할 녹화 영상이 없습니다.'); return; }
-    setSavingVideo(true);
-    try {
-      const res = await saveVideoToPhone(blob, {
-        measure: `1RM_${LIFTS.find(l => l.key === lift)?.label || lift}`,
-        member,
-      });
-      setVideoSavedMsg(res.saved
-        ? (res.method === 'share' ? '저장/공유 창을 열었습니다.' : '영상이 다운로드되었습니다.')
-        : '저장이 취소되었습니다.');
-    } catch (e) {
-      setVideoSavedMsg('영상 저장에 실패했습니다.');
-    }
-    setSavingVideo(false);
-  };
+  // [2026-09-22] 영상은 저장(onSave) 시 reportExtras.videoBlob으로 리포트에
+  // 자동 포함된다(다른 측정 종목과 동일). "영상만 따로 폴더에 저장" 버튼은
+  // 실제 저장 버튼과 혼동돼 "영상은 있는데 리포트가 없다"는 문제를 만들어
+  // 제거함 — 다른 측정과 동일하게 단일 저장 버튼만 쓴다.
 
   const addPlate = (p) => {
     setWeightMode('plate');
@@ -581,15 +566,6 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
               <span>{weightMode === 'plate' ? '원판 색 인식 반영' : '수동 무게'}</span>
               {detected.length > 0 && <span className="text-cyan-700 dark:text-cyan-300">{detected.map(d => d.label).join(', ')}</span>}
             </div>
-          </div>
-        )}
-        {videoBlob && !counting && (
-          <div className="mx-auto max-w-xs w-full space-y-1">
-            <button onClick={handleSaveVideo} disabled={savingVideo}
-              className="w-full rounded-xl bg-slate-200 dark:bg-slate-700 text-white font-bold py-2.5 text-sm active:scale-95 disabled:opacity-60">
-              {savingVideo ? '저장 중...' : '녹화 영상 폴더에 저장'}
-            </button>
-            {videoSavedMsg && <p className="text-center text-[11px] text-emerald-700 dark:text-emerald-400">{videoSavedMsg}</p>}
           </div>
         )}
       </CameraStage>
@@ -763,14 +739,6 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
         </button>
       </div>
 
-      {videoBlob && (
-        <button onClick={handleSaveVideo} disabled={savingVideo}
-          className="w-full rounded-xl bg-slate-200 dark:bg-slate-700 text-white font-bold py-2.5 text-sm active:scale-95 disabled:opacity-60">
-          {savingVideo ? '저장 중...' : '녹화 영상 폴더에 저장'}
-        </button>
-      )}
-      {videoSavedMsg && <p className="text-center text-[11px] text-emerald-700 dark:text-emerald-400">{videoSavedMsg}</p>}
-
       <button onClick={calc}
         className="w-full h-14 rounded-2xl bg-gradient-to-r from-amber-400 to-orange-500 text-slate-950 font-black text-base active:scale-[0.98] shadow-xl shadow-amber-500/25">
         1RM 계산 →
@@ -882,13 +850,6 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
               저장하고 1RM 결과 리포트 보기 →
             </button>
           )}
-          {videoBlob && (
-            <button onClick={handleSaveVideo} disabled={savingVideo}
-              className="w-full rounded-xl bg-slate-200 dark:bg-slate-700 text-white font-bold py-2.5 text-sm active:scale-95 disabled:opacity-60">
-              {savingVideo ? '저장 중...' : '녹화 영상 폴더에 저장'}
-            </button>
-          )}
-          {videoSavedMsg && <p className="text-center text-[11px] text-emerald-700 dark:text-emerald-400">{videoSavedMsg}</p>}
         </div>
       )}
 
