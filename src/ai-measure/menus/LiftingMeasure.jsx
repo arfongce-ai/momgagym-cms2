@@ -16,7 +16,7 @@ import {
 import { exerciseLabel as exerciseLabelLocal, snapWeight, stepWeight } from '../core/lifting';
 import { fuseTrackingCandidates, summarizeCrossValidation } from '../core/trackFusion';
 import { estimateBodyCOG, barCogHorizontalGap } from '../core/bodyCog';
-import { saveVideoToPhone, pickRecorderMime } from '../core/recordSink';
+import { pickRecorderMime } from '../core/recordSink';
 import { drawLiftingDataHud, drawFadingBarPath } from '../core/recordingOverlay';
 import { DEFAULT_ASPECT, outputSize, aspectLabel, drawVideoCover, coverMapPath, rotateLandmarksNormalized } from '../core/recordAspect';
 import { useCameraRotation } from '../core/useCameraRotation';
@@ -73,7 +73,8 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
   const maxRecordTimerRef = useRef(null);
 
   // ── 녹화(MediaRecorder) — 영상 위에 바벨 궤적선 + 데이터HUD를 합성해 번인.
-  //    측정 데이터는 Firestore, 영상 blob 은 트레이너 폰(saveVideoToPhone)으로 분리 저장.
+  //    측정 데이터와 영상 blob 모두 저장 버튼 하나로 Firestore 리포트에 함께
+  //    저장된다(다른 측정 종목과 동일, 2026-09-22 통일).
   const mediaRecorderRef = useRef(null);
   const chunksRef = useRef([]);
   const recordCanvasRef = useRef(null);     // 합성용 오프스크린 캔버스
@@ -85,8 +86,6 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
   const [liveHud, setLiveHud] = useState(null); // 실시간 렙/속도/저하 HUD
   const videoBlobRef = useRef(null);
   const [videoBlob, setVideoBlob] = useState(null);
-  const [savingVideo, setSavingVideo] = useState(false);
-  const [videoSavedMsg, setVideoSavedMsg] = useState('');
 
   const [recording, setRecording] = useState(false);
   const [aspect, setAspect] = useState(DEFAULT_ASPECT);
@@ -325,7 +324,7 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
     setCalibrationPointCount(0);
     setCalibrating(false);
     cogRef.current = { available: false, point: null };
-    setVideoBlob(null); videoBlobRef.current = null; setVideoSavedMsg('');
+    setVideoBlob(null); videoBlobRef.current = null;
     start();
   }, [start]);
   const closeCam = () => {
@@ -530,7 +529,7 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
       alert('추적이 자주 끊겼습니다(인식 ' + Math.round((1 - res.lostRatio) * 100) + '%). 끝이 보이는 지점을 2~3곳 눌러 다시 측정하면 정확합니다.');
     }
     setResult(res);
-    if (autoLimited) setVideoSavedMsg('최대 60초 녹화가 완료되었습니다.');
+    if (autoLimited) alert('최대 60초 녹화가 완료되었습니다.');
   };
 
   const toggleRecord = () => {
@@ -553,7 +552,7 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
         lockCapture().then(setExposureLock).catch(() => setExposureLock(false));
         setRecording(true);
         setResult(null);
-        setVideoBlob(null); videoBlobRef.current = null; setVideoSavedMsg('');
+        setVideoBlob(null); videoBlobRef.current = null;
         // MediaRecorder 시작(지원 시). 미지원이면 측정만 진행(영상 없음).
         try {
           chunksRef.current = [];
@@ -600,24 +599,8 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
     }
   };
 
-  // 녹화 영상을 트레이너 폰에 저장(몸가짐ai 파일명).
-  const handleSaveVideo = async () => {
-    const blob = videoBlobRef.current || videoBlob;
-    if (!blob) { alert('저장할 녹화 영상이 없습니다.'); return; }
-    setSavingVideo(true);
-    try {
-      const res = await saveVideoToPhone(blob, {
-        measure: exerciseType ? exerciseLabelLocal(exerciseType) : '역도',
-        member,
-      });
-      setVideoSavedMsg(res.saved
-        ? (res.method === 'share' ? '저장/공유 창을 열었습니다.' : '영상을 다운로드했습니다.')
-        : '저장이 취소되었습니다.');
-    } catch (e) {
-      setVideoSavedMsg('영상 저장에 실패했습니다.');
-    }
-    setSavingVideo(false);
-  };
+  // [2026-09-22] handleSaveVideo(영상만 폰에 저장) 제거 — LiftingResultSheet.jsx
+  // 참고. 영상은 저장 버튼을 누르면 리포트에 자동 포함된다.
 
   const save = () => {
     if (!result) return;
@@ -808,8 +791,6 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
           <LiftingResultSheet
             mode="lifting" exerciseType={exerciseType} result={result} zone={null}
             onSave={onSave ? save : null}
-            videoBlob={videoBlob} onSaveVideo={handleSaveVideo}
-            savingVideo={savingVideo} videoSavedMsg={videoSavedMsg}
           />
         )}
       </CameraStage>
