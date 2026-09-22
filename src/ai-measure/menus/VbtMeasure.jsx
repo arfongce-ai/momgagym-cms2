@@ -12,7 +12,7 @@ import {
   plateCmPerRatio, PLATE_CALIBRATION_TAGS,
 } from '../core/plates';
 import { exerciseLabel as exerciseLabelLocal, snapWeight, stepWeight } from '../core/lifting';
-import { saveVideoToPhone, pickRecorderMime } from '../core/recordSink';
+import { pickRecorderMime } from '../core/recordSink';
 import { drawLiftingDataHud } from '../core/recordingOverlay';
 import { DEFAULT_ASPECT, outputSize, aspectLabel, drawVideoCover, rotateLandmarksNormalized } from '../core/recordAspect';
 import { useCameraRotation } from '../core/useCameraRotation';
@@ -63,8 +63,6 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
   const [liveHud, setLiveHud] = useState(null); // 실시간 렙 속도/저하 HUD
   const videoBlobRef = useRef(null);
   const [videoBlob, setVideoBlob] = useState(null);
-  const [savingVideo, setSavingVideo] = useState(false);
-  const [videoSavedMsg, setVideoSavedMsg] = useState('');
 
   const [recording, setRecording] = useState(false);
   const [aspect, setAspect] = useState(DEFAULT_ASPECT); // 인스타 비율(3:4 기본 / 1:1)
@@ -216,7 +214,7 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
     calibrationPointsRef.current = [];
     setCalibrationPointCount(0);
     setCalibrating(false);
-    setVideoBlob(null); videoBlobRef.current = null; setVideoSavedMsg('');
+    setVideoBlob(null); videoBlobRef.current = null;
     camOpenedOnceRef.current = true;
     start();
   }, [start]);
@@ -261,23 +259,8 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
     return canvasStream;
   };
 
-  const handleSaveVideo = async () => {
-    const blob = videoBlobRef.current || videoBlob;
-    if (!blob) { alert('저장할 녹화 영상이 없습니다.'); return; }
-    setSavingVideo(true);
-    try {
-      const res = await saveVideoToPhone(blob, {
-        measure: `VBT_${exerciseType ? exerciseLabelLocal(exerciseType) : '속도'}`,
-        member,
-      });
-      setVideoSavedMsg(res.saved
-        ? (res.method === 'share' ? '저장/공유 창을 열었습니다.' : '영상을 다운로드했습니다.')
-        : '저장이 취소되었습니다.');
-    } catch (e) {
-      setVideoSavedMsg('영상 저장에 실패했습니다.');
-    }
-    setSavingVideo(false);
-  };
+  // [2026-09-22] handleSaveVideo(영상만 폰에 저장) 제거 — LiftingResultSheet.jsx
+  // 참고. 영상은 저장 버튼을 누르면 리포트에 자동 포함된다.
 
   const applyPlateWeight = useCallback((next, source = 'plate-manual') => {
     const normalized = { barKg: next?.barKg ?? 20, sidePlates: next?.sidePlates ?? [] };
@@ -396,7 +379,7 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
       alert('관절 인식이 자주 끊겼습니다(인식 ' + Math.round((1 - res.lostRatio) * 100) + '%). 전신·양팔이 화면에 들어오게 다시 측정해 주세요.');
     }
     setResult(res);
-    if (autoLimited) setVideoSavedMsg('최대 60초 녹화가 완료되었습니다.');
+    if (autoLimited) alert('최대 60초 녹화가 완료되었습니다.');
   };
 
   const toggleRecord = () => {
@@ -415,7 +398,7 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
         lockCapture().then(setExposureLock).catch(() => setExposureLock(false));
         setRecording(true);
         setResult(null);
-        setVideoBlob(null); videoBlobRef.current = null; setVideoSavedMsg('');
+        setVideoBlob(null); videoBlobRef.current = null;
         try {
           chunksRef.current = [];
           const stream = createRecordedStream();
@@ -637,8 +620,6 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
           <LiftingResultSheet
             mode="vbt" exerciseType={exerciseType} result={result} zone={result.zone}
             onSave={onSave ? save : null}
-            videoBlob={videoBlob} onSaveVideo={handleSaveVideo}
-            savingVideo={savingVideo} videoSavedMsg={videoSavedMsg}
           />
         )}
       </CameraStage>
