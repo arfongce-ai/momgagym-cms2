@@ -16,6 +16,12 @@ import { buildMemberSessionExpiry, computeExpirySettlement, EXPIRY_STATUS_LABEL 
 import { evaluateCondition } from '../../ai-measure/core/conditionAssessment';
 import { issueNutritionLinkCode } from '../../services/nutritionLinkService';
 import { fetchNutritionSummaries, fetchNutritionFeedback, sendNutritionFeedback } from '../../services/teacherNutritionService';
+import QRCode from 'qrcode';
+
+// 영양 앱 주소 — CMS functions/_shared/cors.js의 ALLOWED_ORIGINS와 동일한 값.
+// 연결코드를 이 주소의 쿼리스트링(?code=)에 실어 링크/QR 하나로 "앱 열기 + 코드
+// 입력"이 한 번에 되게 한다(2026-09-22, AppGate.jsx가 ?code=를 읽어 자동 연결).
+const NUTRITION_APP_URL = 'https://momgagym-nutrition.pages.dev';
 
 const INP = "w-full bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-xl px-3 py-2.5 text-sm placeholder-slate-500 focus:outline-none focus:border-amber-500";
 const LBL = "block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5";
@@ -56,6 +62,8 @@ export default function MemberDetail({ member:initMember, trainers, members=[], 
   const [nutritionCode, setNutritionCode] = useState(null); // { code, expiresAt }
   const [nutritionCodeBusy, setNutritionCodeBusy] = useState(false);
   const [nutritionCodeError, setNutritionCodeError] = useState('');
+  const [nutritionQr, setNutritionQr] = useState(''); // 연결링크 QR data URL
+  const [nutritionShareState, setNutritionShareState] = useState(''); // '' | 'copied'
   const [, forceNutritionCodeTick] = useState(0);
 
   // expiresAt > Date.now() 비교는 렌더 시점에만 평가되므로, 다른 이유로 화면이
@@ -68,9 +76,23 @@ export default function MemberDetail({ member:initMember, trainers, members=[], 
     return () => clearInterval(id);
   }, [nutritionCode]);
 
+  // 코드가 새로 발급되면 "앱 열기 + 코드 입력"을 한 번에 처리하는 링크의 QR을
+  // 미리 그려둔다 — 트레이너가 코드를 불러주는 대신 화면을 보여주거나
+  // 카카오톡으로 링크 하나만 보내면 되게 하기 위함(2026-09-22 추가).
+  const nutritionLinkUrl = nutritionCode ? `${NUTRITION_APP_URL}/?code=${nutritionCode.code}` : '';
+  useEffect(() => {
+    if (!nutritionLinkUrl) { setNutritionQr(''); return undefined; }
+    let cancelled = false;
+    QRCode.toDataURL(nutritionLinkUrl, { width: 220, margin: 1 })
+      .then((url) => { if (!cancelled) setNutritionQr(url); })
+      .catch(() => { if (!cancelled) setNutritionQr(''); });
+    return () => { cancelled = true; };
+  }, [nutritionLinkUrl]);
+
   const handleIssueNutritionCode = async () => {
     setNutritionCodeBusy(true);
     setNutritionCodeError('');
+    setNutritionShareState('');
     try {
       const { code, expiresInSec } = await issueNutritionLinkCode(member.id);
       setNutritionCode({ code, expiresAt: Date.now() + expiresInSec * 1000 });
@@ -78,6 +100,29 @@ export default function MemberDetail({ member:initMember, trainers, members=[], 
       setNutritionCodeError(e?.message || '연결코드 발급에 실패했습니다.');
     } finally {
       setNutritionCodeBusy(false);
+    }
+  };
+
+  // 링크 공유 — 모바일/지원 브라우저는 카카오톡 등으로 바로 공유(Web Share API),
+  // 지원 안 하면 클립보드에 복사해서 트레이너가 직접 붙여넣기만 하면 되게 한다.
+  const handleShareNutritionLink = async () => {
+    if (!nutritionLinkUrl) return;
+    const shareText = `[몸가짐 센터] 영양 기록 앱 연결 링크입니다. 10분 안에 눌러주세요.\n${nutritionLinkUrl}`;
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: '몸가짐 영양 앱 연결', text: shareText, url: nutritionLinkUrl });
+        return;
+      } catch {
+        // 공유 취소 등은 무시 — 아래 클립보드 복사로 폴백하지 않고 그냥 둔다.
+        return;
+      }
+    }
+    try {
+      await navigator.clipboard.writeText(nutritionLinkUrl);
+      setNutritionShareState('copied');
+      setTimeout(() => setNutritionShareState(''), 2000);
+    } catch {
+      setNutritionCodeError('링크 복사에 실패했습니다. 화면의 링크를 직접 선택해 복사해주세요.');
     }
   };
 
@@ -790,9 +835,21 @@ export default function MemberDetail({ member:initMember, trainers, members=[], 
                 <div className="py-3 border-b border-slate-200 dark:border-slate-800">
                   <span className="text-xs text-slate-500 uppercase tracking-wide font-semibold block mb-2">영양 앱 연결</span>
                   {nutritionCode && nutritionCode.expiresAt > Date.now() ? (
-                    <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3">
+                    <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 space-y-3">
+                      {nutritionQr ? (
+                        <div className="flex justify-center">
+                          <img src={nutritionQr} alt="영양 앱 연결 QR코드" width={160} height={160}
+                            className="rounded-lg bg-white p-2 border border-amber-500/20" />
+                        </div>
+                      ) : null}
                       <p className="text-2xl font-black tracking-widest text-amber-700 dark:text-amber-400 text-center">{nutritionCode.code}</p>
-                      <p className="text-[11px] text-slate-500 text-center mt-1">회원에게 이 코드를 불러주세요 · 10분간 1회만 사용 가능</p>
+                      <p className="text-[11px] text-slate-500 text-center">
+                        회원이 QR을 스캔하면 앱이 열리며 코드가 자동으로 입력됩니다 · 코드를 직접 불러줘도 됩니다 · 10분간 1회만 사용 가능
+                      </p>
+                      <button type="button" onClick={handleShareNutritionLink}
+                        className="w-full py-2 rounded-lg bg-amber-500/15 border border-amber-500/30 text-amber-700 dark:text-amber-400 hover:bg-amber-500/25 text-xs font-semibold transition-colors">
+                        {nutritionShareState === 'copied' ? '링크가 복사되었습니다 ✓' : '🔗 링크 공유 (카카오톡 등)'}
+                      </button>
                     </div>
                   ) : (
                     <button onClick={handleIssueNutritionCode} disabled={nutritionCodeBusy}
