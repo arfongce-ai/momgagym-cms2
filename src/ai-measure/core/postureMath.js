@@ -709,7 +709,14 @@ export function calculatePostureScore({
     ...weights,
   };
 
-  const deviationValues = Object.values(deviationsMm).filter((value) => typeof value === 'number' && Number.isFinite(value));
+  // [버그 수정 2026-09-22] Object.values(deviationsMm)를 그대로 쓰면 calculatePosturalDeviationMm()이
+  // 함께 반환하는 referenceX(정규화 좌표 0~1, mm 아님)까지 "편차값"으로 섞여 들어간다. referenceX는
+  // 항상 10mm 이하라 페널티는 0이지만 분모(deviationValues.length)만 +1 되어 모든 사용자의
+  // deviationScore가 실제 편차와 무관하게 정상(100) 쪽으로 일괄 희석됐다 — 점수가
+  // "일괄적으로 나온다"는 증상의 핵심 원인. head/shoulder/pelvis/knee 네 개의 실제 mm 편차만 쓴다.
+  const deviationValues = ['head', 'shoulder', 'pelvis', 'knee']
+    .map((key) => deviationsMm[key])
+    .filter((value) => typeof value === 'number' && Number.isFinite(value));
   const deviationPenalty = deviationValues.reduce((sum, value) => {
     const mm = Math.abs(value);
     if (mm <= 10) return sum;
@@ -904,6 +911,81 @@ export function analyzePostureFromLandmarks(landmarks, { heightCm = null, actual
     cog,
     summaryComment,
     status: worstStatus([rules.status, cog.status, scoreResult.score < 55 ? POSTURE_STATUS.RISK : scoreResult.score < 70 ? POSTURE_STATUS.CAUTION : POSTURE_STATUS.NORMAL]),
+  };
+}
+
+// [다면 통합 2026-09-22 — "점수가 일괄적으로 나온다" 버그 수정]
+// 정면/좌우측면/후면을 다 찍어도 여태까지 헤드라인 점수·체형나이·findings·요약코멘트는
+// 대표 1개 면(주로 정면, buildReport의 primaryCapture)의 analysis만 사용했다.
+// 문제는 거북목(forwardHeadMm)·척추후만(kyphosis)·시상면 기울기 같은 "옆에서 봐야
+// 의미 있는" 지표를, 정면 카메라로 찍은 랜드마크에서 그대로 계산해 헤드라인에
+// 얹고 있었다는 것 — 정면에서는 그 축이 노이즈에 가까워 사람마다 비슷비슷한(=
+// "일괄적인") 값이 나온다. 이 함수는 실제로 캡처된 모든 면의 analysis를 합쳐,
+// 시상면 지표는 측면에서, 관상면 지표는 정면/후면에서 가져오고 위험 findings는
+// 합집합으로 병합한 뒤 점수를 다시 계산한다. 한 면만 찍었을 땐 기존과 동일하게
+// 그 면의 analysis를 그대로 쓴다(동작 변화 없음).
+export function mergePostureViews(perViewAnalysis = {}, { actualAge = null } = {}) {
+  const views = perViewAnalysis || {};
+  const captured = Object.values(views).filter(Boolean);
+  if (!captured.length) return null;
+
+  const frontSource = views.front || views.back || null;
+  const sideSource = views.left || views.right || null;
+  if (!frontSource || !sideSource || captured.length === 1) {
+    return frontSource || sideSource || captured[0];
+  }
+
+  const deviationsMm = {
+    ...frontSource.deviationsMm,
+    // 전후 편위(거북목·무릎 전후 밀림)는 측면 촬영이라야 의미가 있다 — 측면 값 우선.
+    head: sideSource.deviationsMm?.head ?? frontSource.deviationsMm?.head,
+    knee: sideSource.deviationsMm?.knee ?? frontSource.deviationsMm?.knee,
+  };
+
+  const severityRank = { [POSTURE_STATUS.RISK]: 2, [POSTURE_STATUS.CAUTION]: 1, [POSTURE_STATUS.NORMAL]: 0 };
+  const findingsByKey = new Map();
+  captured.forEach((view) => {
+    (view.rules?.findings || []).forEach((finding) => {
+      const prev = findingsByKey.get(finding.key);
+      if (!prev || (severityRank[finding.status] ?? 0) > (severityRank[prev.status] ?? 0)) {
+        findingsByKey.set(finding.key, finding);
+      }
+    });
+  });
+  const mergedFindings = Array.from(findingsByKey.values());
+  const mergedRulesStatus = worstStatus(mergedFindings.map((item) => item.status));
+
+  const scoreResult = calculatePostureScore({
+    deviationsMm,
+    asi: frontSource.asymmetry?.averageAsi ?? null,
+    ruleFindings: mergedFindings,
+    cog: frontSource.cog,
+  });
+  const bodyAge = mapScoreToBodyAge(scoreResult.score, actualAge);
+  const summaryComment = generatePostureComment({
+    score: scoreResult.score,
+    bodyAge,
+    actualAge,
+    ruleFindings: mergedFindings,
+    cog: frontSource.cog,
+    asymmetry: frontSource.asymmetry,
+  });
+  const status = worstStatus([
+    mergedRulesStatus,
+    frontSource.cog?.status,
+    scoreResult.score < 55 ? POSTURE_STATUS.RISK : scoreResult.score < 70 ? POSTURE_STATUS.CAUTION : POSTURE_STATUS.NORMAL,
+  ]);
+
+  return {
+    ...frontSource,
+    sagittal: sideSource.sagittal || frontSource.sagittal,
+    deviationsMm,
+    score: scoreResult.score,
+    scoreComponents: scoreResult.components,
+    bodyAge,
+    summaryComment,
+    status,
+    rules: { ...frontSource.rules, findings: mergedFindings, status: mergedRulesStatus },
   };
 }
 

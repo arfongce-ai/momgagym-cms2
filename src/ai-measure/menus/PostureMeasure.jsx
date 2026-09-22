@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { todayYMD } from '../../utils/dates';
 import { usePoseEngine } from '../core/usePoseEngine';
 import { createSmoother } from '../core/smoothing';
-import { analyzePostureFromLandmarks, classifyPostureAgeGroup, medianLandmarks, detectPostureView, PostureViewVoter, sanitizeBackLandmarks } from '../core/postureMath';
+import { analyzePostureFromLandmarks, classifyPostureAgeGroup, medianLandmarks, detectPostureView, PostureViewVoter, sanitizeBackLandmarks, mergePostureViews } from '../core/postureMath';
 import { beepTick, beepGo, beepSuccess, primeAudio } from '../core/audioCue';
 import CameraStage from './CameraStage.jsx';
 import PostureReport from './PostureReport.jsx';
@@ -768,6 +768,12 @@ function buildReport({ member, bodyInfo, captures, selectedSteps }) {
     })
     .filter(Boolean);
 
+  // [버그 수정 2026-09-22] 여러 면을 찍어도 헤드라인 점수/체형나이/findings가
+  // 대표 1개 면(front)만 반영해 "일괄적으로 나온다"는 문제 — 캡처된 모든 면을
+  // 합쳐 시상면(측면)·관상면(정면) 지표를 각각 맞는 면에서 가져온 헤드라인을 쓴다.
+  const perViewAnalysisMap = Object.fromEntries(Object.entries(perView).map(([key, value]) => [key, value.analysis]));
+  const mergedAnalysis = mergePostureViews(perViewAnalysisMap, { actualAge: bodyInfo.actualAge }) || primaryCapture?.analysis;
+
   return {
     kind: 'posture',
     member: member ? { id: member.id, name: member.name } : null,
@@ -790,12 +796,12 @@ function buildReport({ member, bodyInfo, captures, selectedSteps }) {
     image_urls: { front: '', side_left: '', side_right: '', back: '', current: { front: '', side_left: '', side_right: '', back: '' }, before: {} },
     rawLandmarks: primaryCapture?.landmarks || [],
     viewLandmarks: Object.fromEntries(Object.entries(perView).map(([key, value]) => [key, value.landmarks])),
-    perViewAnalysis: Object.fromEntries(Object.entries(perView).map(([key, value]) => [key, value.analysis])),
+    perViewAnalysis: perViewAnalysisMap,
     perViewSnapshots, // 화면 전용 (저장 시 제외)
-    analysis: primaryCapture?.analysis,
-    postureScore: primaryCapture?.analysis?.score ?? null,
-    bodyAge: primaryCapture?.analysis?.bodyAge ?? null,
-    summaryComment: primaryCapture?.analysis?.summaryComment || '',
+    analysis: mergedAnalysis,
+    postureScore: mergedAnalysis?.score ?? null,
+    bodyAge: mergedAnalysis?.bodyAge ?? null,
+    summaryComment: mergedAnalysis?.summaryComment || '',
     comparison: {},
     localPreviewUrl: primaryCapture?.snapshotUrl || '',
   };

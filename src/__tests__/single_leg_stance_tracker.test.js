@@ -19,6 +19,9 @@ function calibrate(heightCm = 170) {
 }
 
 // 유지 구간을 편하게 밀어넣는 헬퍼. holds(ms) 만큼 오른발을 들고 있다가 내림.
+// [2026-09-22] 발내림 판정에 releaseHysteresisMs(연속 유지 문턱) 디바운스가 생겨서,
+// 실제 스트림처럼 "내려놓은 자세"가 그 시간 동안 이어져야 시행이 닫힌다 — 프레임
+// 한 장만 찍고 멈추는 건 카메라가 계속 프레임을 보내는 실제 사용과 다르다.
 function pushHold(tr, t, holdMs, { sway = false } = {}) {
   const step = 33;
   const steps = Math.round(holdMs / step);
@@ -28,8 +31,11 @@ function pushHold(tr, t, holdMs, { sway = false } = {}) {
     tr.push(mkLM({ ankRY: baseline - 0.15, hipLX: 0.45 + swayOffset, hipRX: 0.55 + swayOffset }), t);
     t += step;
   }
-  tr.push(mkLM({ ankRY: baseline }), t); // 발 내림
-  t += step;
+  const releaseFrames = Math.ceil(300 / step); // releaseHysteresisMs(150ms)보다 넉넉히
+  for (let i = 0; i < releaseFrames; i++) {
+    tr.push(mkLM({ ankRY: baseline }), t); // 발 내림 — 여러 프레임 유지
+    t += step;
+  }
   return t;
 }
 
@@ -152,7 +158,10 @@ describe('SingleLegStanceTracker (synthetic landmark check)', () => {
     expect(s.trialsFound).toBe(2);
     expect(s.trial1.holdTimeMs).toBeGreaterThan(2900);
     expect(s.trial2.holdTimeMs).toBeGreaterThan(2400);
-    expect(s.trial2.holdTimeMs).toBeLessThan(2600);
+    // [2026-09-22] releaseHysteresisMs(150ms) 만큼 종료 확정이 의도적으로 늦어져
+    // holdTimeMs에 그 지연이 그대로 포함된다(단일 프레임 잡음 방지의 트레이드오프) —
+    // 상한을 그만큼 넉넉히 잡는다.
+    expect(s.trial2.holdTimeMs).toBeLessThan(2900);
   });
 
   it('9) maxTrials(기본 2) 도달 후 3번째 시행은 무시된다', () => {

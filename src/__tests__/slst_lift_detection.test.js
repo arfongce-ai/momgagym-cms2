@@ -74,6 +74,8 @@ describe('[회귀] 현실적으로 살짝 든 발도 유지시간이 측정된�
   // "들었다"고 보는 높이지만, 기존 고정 문턱 0.05 에는 미달해 무시됐다.
   const LIFT = 0.032;
 
+  // [2026-09-22] 발내림 판정에 releaseHysteresisMs(연속 유지 문턱) 디바운스가 생겨서,
+  // 실제 스트림처럼 "내려놓은 자세"가 그 시간 동안 이어져야 시행이 닫힌다.
   function runHold(tr, holdMs, { base = 0.9 } = {}) {
     const step = 33;
     let t = 0;
@@ -82,8 +84,12 @@ describe('[회귀] 현실적으로 살짝 든 발도 유지시간이 측정된�
       tr.push(mkLM({ ankRY: base - LIFT }), t);
       t += step;
     }
-    tr.push(mkLM({ ankRY: base }), t);      // 발 내림
-    return t + step;
+    const releaseFrames = Math.ceil(300 / step); // releaseHysteresisMs(150ms)보다 넉넉히
+    for (let i = 0; i < releaseFrames; i++) {
+      tr.push(mkLM({ ankRY: base }), t);    // 발 내림 — 여러 프레임 유지
+      t += step;
+    }
+    return t;
   }
 
   it('3초 유지가 시행으로 기록된다(수정 전에는 아예 감지되지 않았다)', () => {
@@ -124,7 +130,7 @@ describe('[회귀] 좌우 발목 높이가 다른 상태에서도 감지된다',
       tr.push(mkLM({ ankLY: 0.86, ankRY: 0.94 - 0.032 }), t);
       t += step;
     }
-    tr.push(mkLM({ ankLY: 0.86, ankRY: 0.94 }), t);
+    for (let i = 0; i < 10; i++) { tr.push(mkLM({ ankLY: 0.86, ankRY: 0.94 }), t); t += step; }
     const s = tr.summary();
     expect(s.trialsFound).toBeGreaterThanOrEqual(1);
     expect(s.trial1.holdTimeMs).toBeGreaterThan(2500);
@@ -138,7 +144,7 @@ describe('[회귀] 좌우 발목 높이가 다른 상태에서도 감지된다',
     const step = 33;
     let t = 0;
     for (let i = 0; i < 90; i++) { tr.push(mkLM({ ankRY: 0.9 - 0.04 }), t); t += step; }
-    tr.push(mkLM({ ankRY: 0.9 }), t);
+    for (let i = 0; i < 10; i++) { tr.push(mkLM({ ankRY: 0.9 }), t); t += step; }
     expect(tr.summary().trialsFound).toBeGreaterThanOrEqual(1);
   });
 });
@@ -170,7 +176,7 @@ describe('[회귀] 문턱 상수가 실제 판정 코드에 연결돼 있다', (
     const above = tr2.liftBand * 1.5;
     let t2 = 0;
     for (let i = 0; i < 90; i++) { tr2.push(mkLM({ ankRY: 0.9 - above }), t2); t2 += 33; }
-    tr2.push(mkLM({ ankRY: 0.9 }), t2);
+    for (let i = 0; i < 10; i++) { tr2.push(mkLM({ ankRY: 0.9 }), t2); t2 += 33; }
     expect(tr2.summary().trialsFound).toBeGreaterThanOrEqual(1);
   });
 });

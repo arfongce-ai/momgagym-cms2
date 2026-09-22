@@ -624,6 +624,14 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
         angles: angleSummary,
         aspect: aspectRef.current,
         source: 'live', // 업로드 분석과 동일하게 출처 기록(업로드는 'upload')
+        // [2026-09-22 버그수정] 이 필드가 누락돼 있어 GaitReportDashboard가
+        // report?.orientation으로 읽는 값이 항상 undefined였다 — 그 결과
+        // ClinicalFlagCard.buildClinicalFlags()의 모든 분기(orientation==='back'|
+        // 'front'|'side' 매칭)가 항상 거짓이 되어, 실제로 후면뷰에서 골반 낙하가
+        // 잡히든 정면뷰에서 무릎 외반이 잡히든 저장된 리포트에는 임상 플래그가
+        // 단 한 번도 뜨지 않았다(SprintLiveAnalysis.jsx는 이미 이 필드를 저장하고
+        // 있어 문제 없었음 — 같은 패턴으로 맞춤).
+        orientation: orientationRef.current || null,
         member: { id: member?.id || null, name: member?.name || null },
         measuredAt: new Date().toISOString(),
         metrics,

@@ -23,14 +23,23 @@ const rangeCenter = (r) => (r.good[0] + r.good[1]) / 2;
 // 핵심 지표 변화. 정상범위가 0이 아닌 특정 구간인 지표(케이던스·입각기 비율·
 // 몸통기울기·수직진폭·보폭비율)는 "정상범위 중앙값에 가까워졌는지"로 판단하고,
 // 골반 드롭(낮을수록 좋음)·무릎 대칭(높을수록 좋음)만 단순 방향으로 판단한다.
-function buildGaitChangeSummary(m, previousReport) {
+// [2026-09-22 버그수정] computeScore와 동일한 이유(§ computeScore 주석) —
+// trunkLean/pelvicDrop은 촬영각에 따라 노이즈일 수 있어, 이번·직전 리포트
+// 둘 다 그 지표가 유효한 각도로 찍혔을 때만 전/후 비교에 포함한다. 둘 중
+// 하나라도 orientation을 모르면(구버전) 기존처럼 그냥 비교한다.
+function buildGaitChangeSummary(m, previousReport, orientation) {
   if (!previousReport) return null;
   const pm = previousReport?.metrics || previousReport || {};
+  const prevOrientation = previousReport?.orientation;
+  const pelvicDropOk = (!orientation || orientation === 'back') && (!prevOrientation || prevOrientation === 'back');
+  const trunkLeanOk = (!orientation || orientation === 'side') && (!prevOrientation || prevOrientation === 'side');
+  // computeChangeRow는 값이 숫자가 아니면 null을 돌려주고 summarizeChanges가
+  // null을 걸러내므로, 각도가 안 맞을 때는 값 대신 null을 넘기기만 하면 된다.
   const rows = [
     computeChangeRow('케이던스', pm.cadence, m.cadence, 'spm', 'closerTargetBetter', rangeCenter(RANGES.cadence)),
     computeChangeRow('입각기 비율', pm.stancePct, m.stancePct, '%', 'closerTargetBetter', rangeCenter(RANGES.stance)),
-    computeChangeRow('몸통 기울기', pm.trunkLean?.avg, m.trunkLean?.avg, '°', 'closerTargetBetter', rangeCenter(RANGES.trunkLean)),
-    computeChangeRow('골반 드롭', pm.pelvicDropAbs, m.pelvicDropAbs, '%', 'lowerBetter'),
+    computeChangeRow('몸통 기울기', trunkLeanOk ? pm.trunkLean?.avg : null, trunkLeanOk ? m.trunkLean?.avg : null, '°', 'closerTargetBetter', rangeCenter(RANGES.trunkLean)),
+    computeChangeRow('골반 드롭', pelvicDropOk ? pm.pelvicDropAbs : null, pelvicDropOk ? m.pelvicDropAbs : null, '%', 'lowerBetter'),
     computeChangeRow('수직 진폭', pm.verticalOscillation, m.verticalOscillation, '%', 'closerTargetBetter', rangeCenter(RANGES.verticalOsc)),
     computeChangeRow('무릎 대칭', pm.kneeSymmetry, m.kneeSymmetry, '%', 'higherBetter'),
     computeChangeRow('보폭 비율', pm.strideToHeight, m.strideToHeight, '×', 'closerTargetBetter', rangeCenter(RANGES.stride)),
@@ -80,12 +89,19 @@ const statusText = (v, r) => {
 };
 
 // 종합 점수: 핵심 지표가 정상범위에 들면 가점 (0~100)
-function computeScore(m) {
+// [2026-09-22 버그수정] trunkLean·pelvicDrop은 gaitBiomechanics.js 원문 주석대로
+// 특정 촬영각(각각 측면뷰/후면뷰)에서만 의미가 있고, 그 외 각도에서는 노이즈다
+// (예: 정면뷰에서 trunkLean은 거의 0에 수렴 → RANGES.trunkLean 기준 "주의"로
+// 잘못 표시됨). orientation을 알 때는 맞는 각도의 값만 점수에 반영하고, 구버전
+// 리포트처럼 orientation이 없어 알 수 없을 때만 기존처럼 그대로 반영한다.
+function computeScore(m, orientation) {
+  const pelvicDropOk = !orientation || orientation === 'back';
+  const trunkLeanOk = !orientation || orientation === 'side';
   const checks = [
     [m.cadence, RANGES.cadence],
     [m.stancePct, RANGES.stance],
-    [m.trunkLean?.avg, RANGES.trunkLean],
-    [m.pelvicDropAbs, RANGES.pelvicDrop],
+    [trunkLeanOk ? m.trunkLean?.avg : null, RANGES.trunkLean],
+    [pelvicDropOk ? m.pelvicDropAbs : null, RANGES.pelvicDrop],
     [m.verticalOscillation, RANGES.verticalOsc],
     [m.kneeSymmetry, RANGES.kneeSym],
     [m.strideToHeight, RANGES.stride],
@@ -137,11 +153,15 @@ function normalizeMetrics(report) {
 
 export default function GaitReportDashboard({ report, onComment, onClose, videoBlob, member, previousReport }) {
   const m = useMemo(() => normalizeMetrics(report), [report]);
-  const score = useMemo(() => computeScore(m), [m]);
+  const score = useMemo(() => computeScore(m, report?.orientation), [m, report?.orientation]);
   const [comment, setComment] = useState(report?.trainerComment || '');
   const [saved, setSaved] = useState(false);
-  const changeSummary = useMemo(() => buildGaitChangeSummary(m, previousReport), [m, previousReport]);
+  const changeSummary = useMemo(() => buildGaitChangeSummary(m, previousReport, report?.orientation), [m, previousReport, report?.orientation]);
   const clinicalFlags = useMemo(() => buildClinicalFlags(m, report?.orientation), [m, report?.orientation]);
+  // [2026-09-22 버그수정] computeScore와 동일한 이유로 골반드롭/몸통기울기
+  // 게이지·박스 표시에도 같은 각도 게이팅을 적용(§ computeScore 주석 참고).
+  const pelvicDropDisplayOk = !report?.orientation || report.orientation === 'back';
+  const trunkLeanDisplayOk = !report?.orientation || report.orientation === 'side';
 
   // 측정 직후 화면에서만 넘어오는 videoBlob(메모리 상 녹화본)을 재생 가능한
   // object URL로 변환 — 저장된 이력 화면(Report.jsx)에서는 videoBlob이 없으므로
@@ -177,7 +197,7 @@ export default function GaitReportDashboard({ report, onComment, onClose, videoB
 
   // 중단 우측: Symmetry 게이지용
   const symBars = [
-    { key: 'pelvicDrop', name: '골반 드롭', value: m.pelvicDropAbs, range: RANGES.pelvicDrop, max: 12 },
+    { key: 'pelvicDrop', name: '골반 드롭', value: pelvicDropDisplayOk ? m.pelvicDropAbs : null, range: RANGES.pelvicDrop, max: 12 },
     { key: 'verticalOsc', name: '수직 진폭', value: m.verticalOscillation, range: RANGES.verticalOsc, max: 16 },
     { key: 'kneeSym', name: '무릎 대칭', value: m.kneeSymmetry, range: RANGES.kneeSym, max: 100 },
   ];
@@ -259,8 +279,8 @@ export default function GaitReportDashboard({ report, onComment, onClose, videoB
                 <div className="mt-1 rounded-lg bg-slate-100/70 dark:bg-slate-800/70 px-3 py-2">
                   <div className="flex justify-between text-[11px]">
                     <span className="text-slate-500 dark:text-slate-400">몸통 전방 기울기</span>
-                    <span style={{ color: statusColor(m.trunkLean?.avg, RANGES.trunkLean) }} className="font-black">
-                      {m.trunkLean?.avg ?? '—'}° · {statusText(m.trunkLean?.avg, RANGES.trunkLean)}
+                    <span style={{ color: statusColor(trunkLeanDisplayOk ? m.trunkLean?.avg : null, RANGES.trunkLean) }} className="font-black">
+                      {trunkLeanDisplayOk && m.trunkLean?.avg != null ? `${m.trunkLean.avg}°` : '—'} · {statusText(trunkLeanDisplayOk ? m.trunkLean?.avg : null, RANGES.trunkLean)}
                     </span>
                   </div>
                   <p className="text-[9px] text-slate-500 mt-0.5">정상 {RANGES.trunkLean.good[0]}~{RANGES.trunkLean.good[1]}°</p>

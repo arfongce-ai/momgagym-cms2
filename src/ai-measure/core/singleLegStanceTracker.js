@@ -20,10 +20,19 @@
 //      아래 한계 참고). [2026-08-02] 흔들림 누적 경로(sway path) 자체는 더는
 //      추적하지 않는다 — 핵심 측정 대상은 발을 든(lift) 순간부터 다시 딛는
 //      (touch) 순간까지의 유지시간이고, 흔들림은 판정에 반영하지 않기로 함.
-//   4) 들었던 발이 기준선 근처로 다시 내려오면 → 그 시행 종료(정의상 조기
-//      종료=stepOut:true). 목표 시간 도달 등으로 stopManually()가 먼저
-//      호출되면 stepOut:false. 종료 후 다음 시행을 위해 자동으로 대기 상태로
-//      복귀한다(최대 maxTrials회까지).
+//      [2026-09-22] 시행 시작 대비 골반 yaw(제자리 회전) 변화도 함께 추적한다 —
+//      힙 이동 속도만으로는 몸을 축으로 도는 동작을 못 잡기 때문(3-2 참고).
+//   4) 시행 종료 3가지 경로:
+//      4-1) 들었던 발이 기준선 근처로 releaseHysteresisMs 이상 연속 유지되며
+//           내려오면 → 조기 종료(stepOut:true, endReason:'foot_down').
+//      4-2) 균형 상실(속도 휴리스틱 또는 markBalanceLoss() 수동 호출) 또는
+//           rotationYawDeltaDeg 이상 회전이 rotationHysteresisMs 이상 지속되면
+//           → 즉시 종료(balanceLoss:true, endReason:'balance_loss'|'rotation').
+//           [2026-09-22 수정] 예전엔 balanceLoss가 플래그만 세우고 유지시간을
+//           계속 누적해 "흔들리고 돌아도 계속 됨"으로 보였다 — 이제 감지 즉시 종료.
+//      4-3) 목표 시간 도달 등으로 stopManually()가 먼저 호출되면 조기 종료 아님
+//           (stepOut:false, endReason:'manual_stop').
+//      종료 후 다음 시행을 위해 자동으로 대기 상태로 복귀한다(최대 maxTrials회까지).
 //   5) minHoldForValidMs 보다 짧은 시행(순간적인 흔들림 등 오검출)은 조용히
 //      버리고 계속 다음 시행을 기다린다 — 잡음으로 판정 자체를 막지 않는다.
 //
@@ -31,6 +40,9 @@
 //   · balanceLoss는 "골반 이동 속도 급변" 휴리스틱으로 추정한 값이며, 실제
 //     넘어짐·휘청임 여부를 진단하지 않는다. 라이브 측정 화면에서는 트레이너가
 //     육안으로 보고 markBalanceLoss()를 직접 호출해 보완할 수 있다.
+//   · 회전(rotation) 감지는 골반 좌우 랜드마크의 z(카메라 기준 깊이) 차이를 쓰는
+//     휴리스틱이다 — BlazePose z는 x/y보다 노이즈가 커서, 카메라 각도·조명에
+//     따라 민감도가 달라질 수 있다.
 //   · 무릎 외반(kneeValgusDeg)은 이 추적기에서 계산하지 않는다(선택 신호이며
 //     singleLegStance.js는 이 필드가 없어도 정상 동작한다).
 // ════════════════════════════════════════════════════════════════════════
@@ -61,6 +73,14 @@ export const SLST_TRACK_TUNING = {
   filterMinCutoff: 1.0,
   filterBeta: 0.01,
   balanceLossVelocityThreshold: 0.35, // 골반(정규화좌표) 속도(단위/초) 이 이상이면 균형상실 추정
+  // [측정 기준 일관성 수정 2026-09-22] "어쩔때는 조금만 움직여도 끝나고, 어쩔때는
+  // 흔들리고 돌아도 계속 됨" 현장 피드백 대응 — 원인은 종료 판정 두 경로가 서로
+  // 비대칭이었기 때문: 발내림(foot_down)은 필터링 없는 단일 프레임 잡음에도 즉시
+  // 종료됐고(과민), 균형상실(balanceLoss)은 감지는 해도 플래그만 세울 뿐 시행을
+  // 끝내지 않았으며(둔감), 회전/제자리돌기를 감지하는 신호 자체가 없었다.
+  releaseHysteresisMs: 150,   // 발내림 판정도 이 시간만큼 연속으로 문턱 아래여야 확정(단일 프레임 잡음 방지)
+  rotationYawDeltaDeg: 18,    // 시행 시작 시점 대비 이만큼 회전하면 "돌았다"로 간주
+  rotationHysteresisMs: 200,  // 회전 판정도 이 시간만큼 연속 유지돼야 확정
 };
 
 const HIP_L = 23;
@@ -82,6 +102,20 @@ function pelvicTiltDegOf(lm) {
   const dx = lm[HIP_R].x - lm[HIP_L].x;
   if (!dx && !dy) return 0;
   return Math.abs((Math.atan2(dy, dx) * 180) / Math.PI);
+}
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+// [회전/제자리돌기 감지 2026-09-22] 힙 중점의 프레임간 이동(위 balanceLoss 판정)만으로는
+// 몸을 축으로 제자리에서 도는 동작을 못 잡는다 — 회전 중에는 골반 중심 자체는 거의
+// 안 움직인다. 좌우 골반의 카메라 기준 깊이(z) 차이를 각도로 환산해 "몸이 카메라를
+// 얼마나 비스듬히 보고 있는지"를 추적한다(postureMath.js의 estimateLowerYawProxy와
+// 동일한 공식, 이 모듈은 독립성을 위해 postureMath를 import하지 않고 자체 계산한다).
+function hipYawProxyDeg(lm) {
+  const l = lm?.[HIP_L];
+  const r = lm?.[HIP_R];
+  if (!l || !r || l.z == null || r.z == null) return null;
+  return clamp((r.z - l.z) * 120, -90, 90);
 }
 
 /**
@@ -125,6 +159,12 @@ export class SingleLegStanceTracker {
 
   // 이 발목이 자기 기준선보다 얼마나 떠 있는지(정규화 y, 클수록 높이 들림).
   // 화면 좌표는 아래로 갈수록 y가 커지므로 (기준선 - 현재값)이 들린 양이다.
+  // [과민 종료 수정 2026-09-22] 여기서 OneEuroFilter로 스무딩하는 방법도 시도했지만,
+  // releaseBand 자체가 아주 작은 값이라 큰 낙하(발을 훅 내리는 정상 동작)일수록
+  // 필터가 그 문턱 아래로 수렴하는 데 오히려 더 오래 걸려(관찰상 최대 0.5초 이상)
+  // "정상적으로 내려도 안 끝난다"는 반대 방향 버그를 만들었다. 대신 원본값은 그대로
+  // 쓰고, push()의 releaseHysteresisMs(연속 프레임 요구)만으로 단일 프레임 잡음을
+  // 거른다 — 지연이 프레임 수에 비례해 예측 가능하고, 낙폭 크기와 무관하다.
   _liftAmount(lm, side) {
     const y = ankleY(lm, side);
     const base = side === 'left' ? this._baseL : this._baseR;
@@ -140,6 +180,10 @@ export class SingleLegStanceTracker {
     this._balanceLoss = false;
     this._prevHip = null;
     this._prevT = null;
+    // [측정 기준 일관성 수정 2026-09-22] 발내림·회전 판정용 디바운스 상태.
+    this._belowReleaseSinceMs = null;
+    this._rotatedSinceMs = null;
+    this._baselineYawDeg = null;
   }
 
   // 라이브 측정에서 트레이너가 육안으로 균형 상실을 봤을 때 직접 호출 가능.
@@ -168,7 +212,12 @@ export class SingleLegStanceTracker {
 
   _closeHold(endMs, endReason) {
     const holdTimeMs = Math.max(0, endMs - this._liftStartMs);
-    if (holdTimeMs >= this.tuning.minHoldForValidMs) {
+    // [2026-09-22] minHoldForValidMs는 "발을 든 게 잡음성 블립이었는지"를 걸러내기
+    // 위한 문턱이다 — balance_loss/rotation은 반대로 "짧게라도 정말 불안정했다"는
+    // 확정적 신호라, 발을 들자마자 곧바로 휘청였다면 그 자체가 유효한(그리고
+    // 중요한) 실패 결과다. 이 두 사유는 길이와 무관하게 항상 기록한다.
+    const isDecisiveFailure = endReason === 'balance_loss' || endReason === 'rotation';
+    if (holdTimeMs >= this.tuning.minHoldForValidMs || isDecisiveFailure) {
       this.trials.push({
         holdTimeMs: Math.round(holdTimeMs),
         pelvicTiltDeg: Math.round(this._maxPelvicTiltDeg * 10) / 10,
@@ -196,6 +245,8 @@ export class SingleLegStanceTracker {
       if (lift >= this.liftBand) {
         this.phase = 'holding';
         this._liftStartMs = tMs;
+        // 회전 감지 기준선 — 시행 시작 시점의 골반 yaw를 "정면"으로 삼는다.
+        this._baselineYawDeg = hipYawProxyDeg(lm);
       }
       return;
     }
@@ -221,10 +272,45 @@ export class SingleLegStanceTracker {
     const tilt = pelvicTiltDegOf(lm);
     if (tilt != null) this._maxPelvicTiltDeg = Math.max(this._maxPelvicTiltDeg, tilt);
 
+    // [측정 기준 일관성 수정 2026-09-22] 균형 상실이 감지되면(위 속도 휴리스틱 또는
+    // markBalanceLoss() 수동 호출) 그 자리에서 시행을 종료한다. 예전엔 플래그만
+    // 세우고 유지시간을 계속 누적해 "흔들려도 계속 됨"으로 보였다 — 시행 자체는
+    // 여전히 balanceLoss:true로 저장되어 singleLegStance.js가 즉시확정 RISK로 판정한다.
+    if (this._balanceLoss) {
+      this._closeHold(tMs, 'balance_loss');
+      return;
+    }
+
+    // 제자리 회전/돌기 감지 — 힙 이동 속도(위)만으로는 몸을 축으로 도는 동작을 못
+    // 잡는다(회전 중엔 골반 중심 자체는 거의 안 움직인다). 시행 시작 대비 골반
+    // yaw 변화가 rotationYawDeltaDeg 이상 rotationHysteresisMs 이상 지속되면 종료.
+    const yawNow = hipYawProxyDeg(lm);
+    if (yawNow != null && this._baselineYawDeg != null) {
+      const yawDelta = Math.abs(yawNow - this._baselineYawDeg);
+      if (yawDelta >= this.tuning.rotationYawDeltaDeg) {
+        if (this._rotatedSinceMs == null) this._rotatedSinceMs = tMs;
+        if (tMs - this._rotatedSinceMs >= this.tuning.rotationHysteresisMs) {
+          this._balanceLoss = true; // 회전도 정적 자세 유지 실패 — 즉시확정 RISK로 남긴다.
+          this._closeHold(tMs, 'rotation');
+          return;
+        }
+      } else {
+        this._rotatedSinceMs = null;
+      }
+    }
+
     // 히스테리시스: 내려놓음 판정은 더 낮은 문턱(releaseBand)으로 — 올릴 때와
     // 같은 문턱을 쓰면 경계 근처에서 유지/종료가 매 프레임 번갈아 튄다.
+    // [과민 종료 수정 2026-09-22] 문턱 아래로 내려간 순간 바로 끝내지 않고,
+    // releaseHysteresisMs 동안 연속으로 아래에 머물러야 확정한다 — 단일 잡음
+    // 프레임(또는 필터가 못 따라간 튐) 하나로 "조금만 움직여도 끝나는" 것을 막는다.
     if (lift < this.releaseBand) {
-      this._closeHold(tMs, 'foot_down');
+      if (this._belowReleaseSinceMs == null) this._belowReleaseSinceMs = tMs;
+      if (tMs - this._belowReleaseSinceMs >= this.tuning.releaseHysteresisMs) {
+        this._closeHold(tMs, 'foot_down');
+      }
+    } else {
+      this._belowReleaseSinceMs = null;
     }
   }
 
