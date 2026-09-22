@@ -15,6 +15,7 @@ import { METHOD_LBL, METHOD_CLR, computeMonthRates, autoRefundUsedAmount, comput
 import { buildMemberSessionExpiry, computeExpirySettlement, EXPIRY_STATUS_LABEL } from '../../services/sessionExpiry';
 import { evaluateCondition } from '../../ai-measure/core/conditionAssessment';
 import { issueNutritionLinkCode } from '../../services/nutritionLinkService';
+import { fetchNutritionSummaries, fetchNutritionFeedback, sendNutritionFeedback } from '../../services/teacherNutritionService';
 
 const INP = "w-full bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-xl px-3 py-2.5 text-sm placeholder-slate-500 focus:outline-none focus:border-amber-500";
 const LBL = "block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1.5";
@@ -724,7 +725,7 @@ export default function MemberDetail({ member:initMember, trainers, members=[], 
   const ppf = f => e => setPayForm(p=>({...p,[f]:e.target.value}));
   const pbf = f => e => setBodyForm(p=>({...p,[f]:e.target.value}));
 
-  const TABS = [['info','기본정보'],['sessions','세션'],['payments','수납'],['body','신체정보'],['ai','측정이력'],['memo','메모']];
+  const TABS = [['info','기본정보'],['sessions','세션'],['payments','수납'],['body','신체정보'],['ai','측정이력'],['nutrition','영양 기록'],['memo','메모']];
 
   return (
     <div className="modal-overlay">
@@ -1644,6 +1645,11 @@ export default function MemberDetail({ member:initMember, trainers, members=[], 
             </div>
           )}
 
+          {/* ━━ 영양 기록 탭 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
+          {tab==='nutrition' && (
+            <NutritionTab memberRef={member.id} />
+          )}
+
           {/* ━━ 메모 탭 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
           {tab==='memo' && (
             <MemoTab member={member} onSave={memo=>{store.updateMember(member.id,{memo});refresh();onUpdate?.();}}/>
@@ -1739,6 +1745,122 @@ function RefundField({ label, value, suggested, onChange }) {
           자동 계산값 {Number(suggested).toLocaleString()}원으로 되돌리기
         </button>
       )}
+    </div>
+  );
+}
+
+// 영양 기록 탭 — 회원이 영양 앱(nutrition-cms)에 기록한 하루 요약을 보고,
+// 담당 선생님이 피드백을 남긴다. teacher-nutrition.js가 담당 회원 여부를
+// 서버에서 다시 검증하므로(memberHasTrainer), 여기서는 memberRef만 넘긴다.
+// 회원이 아직 영양 앱과 연결하지 않았거나 기록이 없으면 요약·피드백 모두
+// 빈 배열로 온다 — 별도 "연결 여부" API는 없으므로 빈 상태 안내로 갈음한다.
+function NutritionTab({ memberRef }) {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [summaries, setSummaries] = useState([]);
+  const [feedback, setFeedback] = useState([]);
+  const [message, setMessage] = useState('');
+  const [sending, setSending] = useState(false);
+
+  const load = () => {
+    setLoading(true);
+    setError('');
+    Promise.all([fetchNutritionSummaries(memberRef), fetchNutritionFeedback(memberRef)])
+      .then(([s, f]) => { setSummaries(s); setFeedback(f); })
+      .catch(e => setError(e.message || '영양 데이터를 불러오지 못했습니다.'))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [memberRef]);
+
+  const handleSend = async () => {
+    const text = message.trim();
+    if (!text) return;
+    setSending(true);
+    try {
+      await sendNutritionFeedback(memberRef, text);
+      setMessage('');
+      load();
+    } catch (e) {
+      setError(e.message || '피드백 전송에 실패했습니다.');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  if (loading) {
+    return <div className="text-sm text-slate-500 dark:text-slate-400 py-6 text-center">불러오는 중…</div>;
+  }
+
+  return (
+    <div className="space-y-5">
+      {error && (
+        <div className="rounded-xl bg-red-500/10 border border-red-500/30 text-red-700 dark:text-red-300 text-xs px-3 py-2">{error}</div>
+      )}
+
+      {/* 최근 하루 요약 */}
+      <div>
+        <h3 className="text-xs font-bold text-slate-500 dark:text-slate-400 mb-2">최근 기록</h3>
+        {summaries.length === 0 ? (
+          <div className="bg-slate-100 dark:bg-slate-800 rounded-xl p-4 text-sm text-slate-600 dark:text-slate-300">
+            아직 기록이 없습니다. 회원이 영양 앱과 연결한 뒤 하루 기록을 남기면 여기에 표시됩니다.
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {summaries.slice(0, 7).map(s => (
+              <div key={s.date} className="bg-slate-100 dark:bg-slate-800 rounded-xl px-3 py-2.5 flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-bold text-slate-800 dark:text-slate-100">{s.date}</p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    {Math.round(s.totals?.calories || 0)} kcal · 물 {s.totals?.waterMl || 0}mL
+                    {s.totals?.recordedMealCount != null ? ` · 식사 ${s.totals.recordedMealCount}회` : ''}
+                  </p>
+                </div>
+                {s.dayCompleted && (
+                  <span className="text-[11px] font-bold text-amber-700 dark:text-amber-400 bg-amber-500/10 px-2 py-1 rounded-full">완료</span>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* 피드백 이력 + 작성 */}
+      <div>
+        <h3 className="text-xs font-bold text-slate-500 dark:text-slate-400 mb-2">피드백</h3>
+        <div className="space-y-2 mb-3">
+          {feedback.length === 0 ? (
+            <div className="bg-slate-100 dark:bg-slate-800 rounded-xl p-4 text-sm text-slate-600 dark:text-slate-300">
+              아직 남긴 피드백이 없습니다.
+            </div>
+          ) : (
+            feedback.map(f => (
+              <div key={f.feedbackId} className="bg-slate-100 dark:bg-slate-800 rounded-xl p-3">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs font-bold text-slate-600 dark:text-slate-300">{f.teacherDisplayName || '담당 선생님'}</span>
+                  <span className="text-[11px] text-slate-500 dark:text-slate-400">{String(f.createdAt || '').slice(0, 10)}</span>
+                </div>
+                <p className="text-sm text-slate-800 dark:text-slate-100 whitespace-pre-line">{f.message}</p>
+                {f.reply && (
+                  <div className="mt-2 pl-3 border-l-2 border-amber-500/40">
+                    <p className="text-[11px] font-bold text-amber-700 dark:text-amber-400 mb-0.5">회원 답변</p>
+                    <p className="text-sm text-slate-700 dark:text-slate-200 whitespace-pre-line">{f.reply}</p>
+                  </div>
+                )}
+              </div>
+            ))
+          )}
+        </div>
+        <div className="space-y-2">
+          <textarea rows={3} value={message} onChange={e => setMessage(e.target.value)}
+            placeholder="회원에게 남길 피드백을 입력하세요"
+            className="w-full bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-xl px-3 py-2.5 text-sm resize-none focus:outline-none focus:border-amber-500" />
+          <button onClick={handleSend} disabled={sending || !message.trim()}
+            className="w-full bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-bold py-2 rounded-xl text-sm transition-colors">
+            {sending ? '전송 중…' : '피드백 보내기'}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
