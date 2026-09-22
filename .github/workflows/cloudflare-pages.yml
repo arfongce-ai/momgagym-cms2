@@ -48,10 +48,11 @@ jobs:
         run: npm run build
 
       - name: Deploy to Cloudflare Pages
-        uses: cloudflare/pages-action@v1
+        # 2026-09-22: cloudflare/pages-action은 보안 취약점(CVE-2026-11325)으로
+        # 2026-09-18 저장소 자체가 삭제됨(archived → removed). 공식 후속 액션인
+        # wrangler-action으로 마이그레이션.
+        uses: cloudflare/wrangler-action@v4
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          projectName: ${{ env.CLOUDFLARE_PROJECT_NAME }}
-          directory: dist
-          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
+          command: pages deploy dist --project-name=${{ env.CLOUDFLARE_PROJECT_NAME }}
