@@ -97,8 +97,38 @@ describe('useMomiVoice.js — iOS 대응 + 진단 로그', () => {
     );
   });
 
-  it('onWakeOnly·onMismatch·onErrorOccurred·requireWakeWord 모두 useEffect 의존성 배열에 포함된다', () => {
-    expect(src).toContain('}, [onCommand, onWakeOnly, onMismatch, onInterim, onErrorOccurred, requireWakeWord, clearPendingFinal]);');
+  // [버그 수정 — 페이지 이동 후 모미가 귀를 닫음 2026-09-22] 예전엔 여기서 "콜백들이
+  // 전부 메인 effect 의존성 배열에 있어야 한다(stale closure 방지)"를 검사했다. 그런데
+  // 바로 그 구조 때문에, BrowserRouter의 navigate가 페이지 이동마다 새 함수가 되면서
+  // handleCommand → onCommand가 바뀌고 → 인식기가 부서졌다가 start() 없이 다시
+  // 만들어져 영원히 못 듣게 됐다(재현 테스트로 확정). 이제 콜백은 callbacksRef로
+  // 호출 시점의 최신 값을 읽으므로 stale closure도 없고, 인식기도 부서지지 않는다.
+  it('콜백은 의존성 배열이 아니라 callbacksRef로 최신 값을 읽는다(페이지 이동마다 인식기가 부서지던 버그 방지)', () => {
+    expect(src).toContain('callbacksRef.current = { onCommand, onWakeOnly, onMismatch, onInterim, onErrorOccurred };');
+    expect(src).toContain('}, [requireWakeWord, clearPendingFinal]);');
+    expect(src).not.toContain('}, [onCommand, onWakeOnly, onMismatch, onInterim, onErrorOccurred, requireWakeWord, clearPendingFinal]);');
+  });
+
+  it('인식기 이벤트 핸들러는 호출 시점에 callbacksRef에서 최신 콜백을 꺼내 쓴다', () => {
+    const resultStart = src.indexOf('recognition.onresult = (event) => {');
+    expect(src.slice(resultStart, resultStart + 120)).toContain('= callbacksRef.current;');
+    const settleStart = src.indexOf('finalResultTimerRef.current = setTimeout(() => {');
+    expect(src.slice(settleStart, settleStart + 260)).toContain('const { onCommand, onWakeOnly, onMismatch, onInterim } = callbacksRef.current;');
+    const errorStart = src.indexOf('recognition.onerror = (event) => {');
+    expect(src.slice(errorStart, errorStart + 120)).toContain('= callbacksRef.current;');
+    const endStart = src.indexOf('recognition.onend = () => {');
+    expect(src.slice(endStart, endStart + 120)).toContain('= callbacksRef.current;');
+  });
+
+  it('인식기가 어떤 이유로든 새로 만들어지면, 듣던 중이었을 경우 즉시 다시 켠다(조용히 먹통 방지)', () => {
+    const idx = src.indexOf('    recognitionRef.current = recognition;\n');
+    const body = src.slice(idx, idx + 700);
+    expect(body).toContain('if (wantListeningRef.current) {');
+    expect(body).toContain('recognition.start();');
+    const startBody = src.slice(src.indexOf('const startListening = useCallback(() => {'));
+    expect(startBody.slice(0, 120)).toContain('wantListeningRef.current = true;');
+    const stopBody = src.slice(src.indexOf('const stopListening = useCallback(() => {'));
+    expect(stopBody.slice(0, 120)).toContain('wantListeningRef.current = false;');
   });
 
   it('"모미야"만 부르면 다음 발화를 기다리는 대기 상태(activated)로 들어간다', () => {
@@ -538,7 +568,9 @@ describe('useMomiVoice.js — requireWakeWord (웨이크워드 이중 요구 버
   });
 
   it('onresult 이펙트의 deps 배열에 requireWakeWord가 들어간다(stale closure 방지)', () => {
-    expect(src).toContain('}, [onCommand, onWakeOnly, onMismatch, onInterim, onErrorOccurred, requireWakeWord, clearPendingFinal]);');
+    // [2026-09-22] 콜백들은 callbacksRef로 옮겼지만(위 설명), requireWakeWord는 인식기
+    // 동작 방식 자체를 바꾸는 값이라 여전히 의존성으로 둔다.
+    expect(src).toContain('}, [requireWakeWord, clearPendingFinal]);');
   });
 
   it('requireWakeWord가 false면 웨이크워드 매칭 없이 들린 말 전체를 곧바로 명령으로 넘긴다', () => {

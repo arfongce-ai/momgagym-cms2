@@ -71,6 +71,7 @@ export default function GlobalVoiceCommand() {
   const stagePhaseRef = useRef(null);
   const stageTimerRef = useRef(null);
   const stageIdleTimerRef = useRef(null);
+  const lastShownErrorRef = useRef({ code: null, at: 0 });
   // 명령 처리가 끝나 "이제 닫아도 된다"는 표시 — 모미가 답을 말하는 중이면
   // 아래 effect가 말이 끝날 때까지 기다렸다가 닫는다.
   const [closeRequested, setCloseRequested] = useState(false);
@@ -78,6 +79,9 @@ export default function GlobalVoiceCommand() {
   const openStage = useCallback(() => {
     setCloseRequested(false);
     if (stageTimerRef.current) clearTimeout(stageTimerRef.current);
+    // [2026-09-22] 앞선 "모미야"가 걸어둔 9.5초 자동 닫힘 타이머가 남아 있으면,
+    // 그 사이 시작된 새 대화를 중간에 닫아버린다 — 열 때마다 정리한다.
+    if (stageIdleTimerRef.current) clearTimeout(stageIdleTimerRef.current);
     setStagePhase('open');
   }, []);
 
@@ -494,16 +498,28 @@ export default function GlobalVoiceCommand() {
       'not-allowed': '마이크 권한이 거부돼 있어요.',
       'audio-capture': '마이크 장치를 못 찾았어요.',
       network: '인터넷 연결을 확인해주세요.',
-      // [버그 수정 2026-08-09] useMomiVoice.js가 재시작을 두 번(즉시+0.3초 뒤)
-      // 시도해도 둘 다 실패했을 때만 온다. 여긴 버튼이 있으니 새로고침 대신
-      // 버튼으로 끄고 다시 켜면 대부분 복구된다.
-      'restart-failed': '음성 인식이 멈췄어요. 마이크 버튼을 다시 눌러주세요.',
+      // [버그 수정 2026-08-09] useMomiVoice.js가 재시작을 여러 번 시도해도 모두
+      // 실패했을 때만 온다. [2026-09-22] 마이크 버튼이 없어졌으므로(화면에서 사라지는
+      // 모미) 키오스크와 같이 새로고침을 안내한다.
+      'restart-failed': '음성 인식이 멈췄어요. 화면을 새로고침해주세요.',
     };
     const readable = KNOWN[errorCode] || '음성 인식에 잠시 문제가 생겼어요. 다시 시도해 주세요.';
     setFeedback(readable);
     // 마이크가 실제로 죽은 경우(restart-failed)는 놓치면 안 되니 더 오래 보여준다.
-    setTimeout(() => setFeedback(''), errorCode === 'restart-failed' ? 15000 : 4000);
-  }, []);
+    const showMs = errorCode === 'restart-failed' ? 15000 : 4000;
+    setTimeout(() => setFeedback(''), showMs);
+    // [2026-09-22] 모미는 평소 화면에 아무것도 없어서, 권한 거부·마이크 없음·네트워크
+    // 오류가 나도 예전엔 전혀 보이지 않았다("불러도 대답이 없다"로만 느껴짐). 오류는
+    // 무대를 띄워(빨간 오류 상태) 이유를 보여주고, 표시 시간이 끝나면 닫는다.
+    // 권한 거부·네트워크 끊김처럼 재시작할 때마다 같은 오류가 반복되는 경우, 매번
+    // 화면 전체를 덮으면 키오스크를 못 쓴다 — 같은 오류는 1분에 한 번만 띄운다.
+    const now = Date.now();
+    const last = lastShownErrorRef.current;
+    if (last.code === errorCode && now - last.at < 60000) return;
+    lastShownErrorRef.current = { code: errorCode, at: now };
+    openStage();
+    stageIdleTimerRef.current = setTimeout(() => setCloseRequested(true), showMs);
+  }, [openStage]);
 
   const { supported, startListening, stopListening, awaitReply } = useMomiVoice({
     onCommand: handleCommand,
@@ -512,7 +528,9 @@ export default function GlobalVoiceCommand() {
     onInterim: setInterimText,
     onErrorOccurred: handleErrorOccurred,
     onRecognitionMeta: handleRecognitionMeta,
-    onAudioLevel: handleAudioLevel,
+    // [2026-09-22] 그래프용 측정 마이크는 무대가 떠 있을 때만 연다 — 대기 중(대부분의
+    // 시간)엔 인식용 마이크 하나만 쓰게 해서 두 스트림이 부딪칠 여지를 없앤다.
+    onAudioLevel: stagePhase ? handleAudioLevel : undefined,
     // [화면에서 사라지는 모미 2026-09c] 예전엔 버튼을 눌러 켜는 방식이라 그
     // 클릭 자체가 "지금부터 나한테 말하는 거야"라는 신호여서 웨이크워드를
     // 요구하지 않았다(requireWakeWord:false). 지금은 버튼이 아예 없고 "모미야"로만

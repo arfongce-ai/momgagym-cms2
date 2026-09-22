@@ -64,11 +64,15 @@ export default function KioskVoiceCommand() {
   const stagePhaseRef = useRef(null);
   const stageTimerRef = useRef(null);
   const stageIdleTimerRef = useRef(null);
+  const lastShownErrorRef = useRef({ code: null, at: 0 });
   const [closeRequested, setCloseRequested] = useState(false);
 
   const openStage = useCallback(() => {
     setCloseRequested(false);
     if (stageTimerRef.current) clearTimeout(stageTimerRef.current);
+    // [2026-09-22] 앞선 "모미야"가 걸어둔 9.5초 자동 닫힘 타이머가 남아 있으면,
+    // 그 사이 시작된 새 대화를 중간에 닫아버린다 — 열 때마다 정리한다.
+    if (stageIdleTimerRef.current) clearTimeout(stageIdleTimerRef.current);
     setStagePhase('open');
   }, []);
 
@@ -444,8 +448,20 @@ export default function KioskVoiceCommand() {
     const readable = KNOWN[errorCode] || '음성 인식에 잠시 문제가 생겼어요. 다시 말씀해 주세요.';
     setFeedback(readable);
     // 마이크가 실제로 죽은 경우(restart-failed)는 놓치면 안 되니 더 오래 보여준다.
-    setTimeout(() => setFeedback(''), errorCode === 'restart-failed' ? 15000 : 4000);
-  }, []);
+    const showMs = errorCode === 'restart-failed' ? 15000 : 4000;
+    setTimeout(() => setFeedback(''), showMs);
+    // [2026-09-22] 모미는 평소 화면에 아무것도 없어서, 권한 거부·마이크 없음·네트워크
+    // 오류가 나도 예전엔 전혀 보이지 않았다("불러도 대답이 없다"로만 느껴짐). 오류는
+    // 무대를 띄워(빨간 오류 상태) 이유를 보여주고, 표시 시간이 끝나면 닫는다.
+    // 권한 거부·네트워크 끊김처럼 재시작할 때마다 같은 오류가 반복되는 경우, 매번
+    // 화면 전체를 덮으면 키오스크를 못 쓴다 — 같은 오류는 1분에 한 번만 띄운다.
+    const now = Date.now();
+    const last = lastShownErrorRef.current;
+    if (last.code === errorCode && now - last.at < 60000) return;
+    lastShownErrorRef.current = { code: errorCode, at: now };
+    openStage();
+    stageIdleTimerRef.current = setTimeout(() => setCloseRequested(true), showMs);
+  }, [openStage]);
 
   const { supported, startListening, awaitReply } = useMomiVoice({
     onCommand: handleCommand,
@@ -454,7 +470,9 @@ export default function KioskVoiceCommand() {
     onInterim: setInterimText,
     onErrorOccurred: handleErrorOccurred,
     onRecognitionMeta: handleRecognitionMeta,
-    onAudioLevel: handleAudioLevel,
+    // [2026-09-22] 그래프용 측정 마이크는 무대가 떠 있을 때만 연다 — 대기 중(대부분의
+    // 시간)엔 인식용 마이크 하나만 쓰게 해서 두 스트림이 부딪칠 여지를 없앤다.
+    onAudioLevel: stagePhase ? handleAudioLevel : undefined,
   });
 
   // awaitReply는 useMomiVoice() 내부에서 deps:[]로 만들어진 안정적 함수라 사실상

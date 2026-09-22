@@ -175,6 +175,8 @@ const FINAL_RESULT_SETTLE_MS = 700;
 // 한 번도 없었으면, 그 결과는 주변 소음을 말소리로 착각한 것으로 보고 버린다.
 // 넉넉하게 잡아서(5초) 정상 발화를 실수로 버리는 일이 없게 한다.
 const VOICE_GATE_LEVEL = 0.05;
+// [2026-09-22] 소음 바닥보다 이만큼 커야 목소리로 본다(로그 스케일 기준 ≈ 2.5dB).
+const VOICE_MARGIN = 0.035;
 // [전체화면 그래프 2026-09c] 음성 대역을 몇 개로 쪼개서 그래프로 넘길지.
 const BAND_COUNT = 28;
 const NOISE_GATE_WINDOW_MS = 5000;
@@ -319,6 +321,26 @@ export function useMomiVoice({
     onRecognitionMetaRef.current = onRecognitionMeta;
   });
 
+  // [버그 수정 — 페이지 이동 후 모미가 귀를 닫음 2026-09-22] "키오스크에서 모미를
+  // 불러도 대답을 안 한다" 문의로 재현 테스트를 돌려 원인을 확정했다:
+  //   BrowserRouter의 navigate는 페이지를 이동할 때마다 새 함수가 된다 →
+  //   그걸 쓰는 handleCommand도 새 함수 → 예전엔 onCommand가 아래 메인 인식
+  //   effect의 의존성이라 effect가 다시 돌았다 → 정리(cleanup)에서 기존 인식기를
+  //   멈추고 shouldRestartRef를 내린 뒤, 새 인식기를 만들기만 하고 start()는 아무도
+  //   안 불렀다. 그래서 메뉴를 한 번 클릭하거나 "회원 관리 열어줘"처럼 화면을
+  //   옮기는 명령을 한 번 처리하면, 그 뒤로는 화면상 아무 표시 없이 영원히 못
+  //   들었다(2026-08-09 "첫 명령은 되는데 그 뒤로 '모미야'조차 무반응" 문의의
+  //   실제 원인도 이것으로 보인다 — 당시엔 TTS 충돌로 판단했었다).
+  // 해결: 콜백은 매 렌더 최신 값을 이 ref에 담아두고, 인식기 이벤트 핸들러가
+  // 호출 시점에 여기서 꺼내 쓴다. 메인 effect는 더 이상 콜백이 바뀔 때마다
+  // 인식기를 부수고 다시 만들지 않는다.
+  const callbacksRef = useRef({});
+  callbacksRef.current = { onCommand, onWakeOnly, onMismatch, onInterim, onErrorOccurred };
+  // 사용자가 "듣고 있기를 원하는" 상태(startListening~stopListening 사이). 혹시라도
+  // 인식기가 다시 만들어지면(requireWakeWord 변경 등) 이 값을 보고 즉시 다시 켠다 —
+  // 위 버그 같은 "조용히 죽는" 상태가 어떤 경로로도 다시 생기지 않도록 이중 안전장치.
+  const wantListeningRef = useRef(false);
+
   const clearPendingFinal = useCallback(() => {
     if (finalResultTimerRef.current) {
       clearTimeout(finalResultTimerRef.current);
@@ -371,6 +393,7 @@ export function useMomiVoice({
     recognition.maxAlternatives = 5;
 
     recognition.onresult = (event) => {
+      const { onInterim } = callbacksRef.current;
       const interim = collectRecognitionText(event, { preferWakeWord: requireWakeWord });
       const heard = collectRecognitionText(event, { finalOnly: true, preferWakeWord: requireWakeWord });
       if (!heard) {
@@ -394,6 +417,8 @@ export function useMomiVoice({
       if (onInterim) onInterim(pendingFinalTextRef.current);
       if (finalResultTimerRef.current) clearTimeout(finalResultTimerRef.current);
       finalResultTimerRef.current = setTimeout(() => {
+        // 문장이 확정되는 사이(0.7초)에 페이지가 바뀌었을 수도 있으니 다시 최신 값을 꺼낸다.
+        const { onCommand, onWakeOnly, onMismatch, onInterim } = callbacksRef.current;
         const heard = pendingFinalTextRef.current;
         const confidence = pendingConfidenceRef.current;
         pendingFinalTextRef.current = '';
@@ -405,19 +430,19 @@ export function useMomiVoice({
         // 잘못 인식되고 있는 건지, 아예 안 들리고 있는 건지 구분하기 위함.
         console.log('[모미] 들린 말:', heard);
 
-      // [노이즈 캔슬링 2026-09b] 음량 측정이 돌고 있는데도 최근 몇 초간 사람
-      // 목소리다운 소리가 한 번도 없었다면, 이 결과는 음악·기구 소음을 말로
-      // 착각한 것이다(헬스장에서 실제로 흔하다). 실행하지 않고 버린다.
-      // 단 "네/아니요" 즉답을 기다리는 중(pendingReplyRef)에는 절대 적용하지
-      // 않는다 — 아주 짧고 작은 대답이 게이트에 걸려 유실되면 확인 흐름 자체가
-      // 멈춰버리기 때문이다.
+      // [노이즈 게이트 완화 2026-09-22] 원래 여기서 "최근 5초간 사람 목소리가 한 번도
+      // 감지되지 않았으면 소음 오인식으로 보고 버렸다". 그런데 (1) 음량 판정이
+      // 로그(dB) 스케일 값에 배수(×1.4)를 곱하는 잘못된 방식이라 시끄러운 헬스장일수록
+      // 목소리가 훨씬 커야 통과했고(약 9dB), (2) 노트북 내장 마이크로 멀리서 부르면
+      // 실제 발화도 "소음"으로 판정돼 명령·웨이크워드가 조용히 버려질 수 있었다 —
+      // "모미를 불러도 대답을 안 한다"의 또 다른 원인 후보. 웨이크워드("모미야")
+      // 필수 조건만으로도 소음이 명령으로 둔갑할 일은 거의 없으므로, 결과를 버리는
+      // 것은 그만두고 진단 로그만 남긴다(엉뚱한 반응이 생기면 이 로그로 추적).
       if (
         meterActiveRef.current
-        && !pendingReplyRef.current
         && Date.now() - lastVoiceAtRef.current > NOISE_GATE_WINDOW_MS
       ) {
-        console.log('[모미] 주변 소음으로 판단해 무시함(사람 목소리 미감지):', heard);
-        return;
+        console.log('[모미] 참고: 최근 음성 미감지 상태에서 인식됨(그대로 처리):', heard);
       }
 
       // [예약 생성 프로젝트 2026-08-08] 즉답 대기 중이면(awaitReply) 웨이크워드도
@@ -505,6 +530,7 @@ export function useMomiVoice({
     };
 
     recognition.onerror = (event) => {
+      const { onInterim, onErrorOccurred } = callbacksRef.current;
       // [진단용] 이전엔 전부 조용히 무시해서 마이크 권한 거부 같은 심각한 에러도
       // 화면상 "듣고 있음" 상태로 보였다. 콘솔뿐 아니라 화면에도 원인을 남긴다
       // (원격 디버깅이 안 되는 기기가 많아서 콘솔만으론 부족함).
@@ -526,6 +552,7 @@ export function useMomiVoice({
     };
 
     recognition.onend = () => {
+      const { onErrorOccurred } = callbacksRef.current;
       // [버그 수정 — 짧은 대답(네/아니요) 유실 2026-08-18] "예약 확인 질문에
       // '네'라고 답했는데 아무 반응이 없다" 문의 대응. awaitReply로 즉답을
       // 기다리는 중인데(pendingReplyRef.current) 그 발화가 끝내 isFinal로
@@ -626,6 +653,17 @@ export function useMomiVoice({
     };
 
     recognitionRef.current = recognition;
+    // [버그 수정 2026-09-22] 위 callbacksRef 설명 참고 — 인식기가 어떤 이유로든
+    // 새로 만들어졌는데 사용자는 계속 듣기를 원하는 상태라면, 여기서 바로 켠다.
+    // (예전엔 이 경우 아무도 start()를 안 불러 조용히 먹통이 됐다.)
+    if (wantListeningRef.current) {
+      shouldRestartRef.current = true;
+      try {
+        recognition.start();
+      } catch (e) {
+        console.warn('[모미] 인식기 재생성 후 시작 실패:', e?.message || e);
+      }
+    }
 
     return () => {
       recognitionRef.current = null;
@@ -639,7 +677,7 @@ export function useMomiVoice({
         // no-op
       }
     };
-  }, [onCommand, onWakeOnly, onMismatch, onInterim, onErrorOccurred, requireWakeWord, clearPendingFinal]);
+  }, [requireWakeWord, clearPendingFinal]);
 
   // [버그 수정 — TTS 재생 중 마이크 충돌 2026-08-09] 위 pausedForSpeechRef 설명
   // 참고. window.speechSynthesis.speaking을 짧은 주기로 확인해서, 모미가 말을
@@ -713,10 +751,15 @@ export function useMomiVoice({
     navigator.mediaDevices
       .getUserMedia({
         audio: {
-          // 1) 브라우저가 제공하는 노이즈 억제·에코 제거·자동 게인.
-          noiseSuppression: true,
-          echoCancellation: true,
-          autoGainControl: true,
+          // [2026-09-22] 이 스트림은 그래프를 그리기 위한 "관찰용"일 뿐이라 장치
+          // 상태를 바꾸는 처리는 전부 끈다. 특히 Windows Chrome에서 autoGainControl은
+          // 마이크 하드웨어 볼륨 자체를 조절할 수 있어 — 음성 인식이 쓰는 같은 마이크의
+          // 입력 크기까지 흔들 수 있고, echoCancellation은 통화 모드로 전환돼 Windows가
+          // 다른 소리(모미 답변 음성 포함)를 최대 80%까지 줄이는 원인이 될 수 있다.
+          // 소음 억제는 아래 소프트웨어 대역 필터 + 노이즈 플로어로 충분하다.
+          noiseSuppression: false,
+          echoCancellation: false,
+          autoGainControl: false,
           channelCount: 1,
         },
       })
@@ -788,9 +831,12 @@ export function useMomiVoice({
               : noiseFloor * 0.995 + windowMin * 0.005;     // 올라갈 땐 몇 초에 걸쳐서만
           }
 
-          // 소음 바닥보다 확실히(1.4배 + 여유) 큰 부분만 "말소리"로 인정한다.
-          const above = Math.max(0, raw - noiseFloor * 1.4 - 0.012);
-          const level = Math.min(1, above * 5);
+          // 소음 바닥보다 확실히 큰 부분만 "말소리"로 인정한다. getByteFrequencyData
+          // 값은 이미 dB(로그) 스케일이라(0~1 ≈ 70dB) 문턱은 곱셈이 아니라 덧셈이어야
+          // 한다 — 곱셈이면 주변이 시끄러울수록 요구 SNR이 커진다(2026-09-22 수정).
+          // VOICE_MARGIN 0.035 ≈ 소음 바닥보다 약 2.5dB 이상 큰 소리부터 반응.
+          const above = Math.max(0, raw - noiseFloor - VOICE_MARGIN);
+          const level = Math.min(1, above * 6);
           // 급격한 튐을 줄여 오브가 떨리지 않게 한다.
           smoothed = smoothed * 0.55 + level * 0.45;
           const output = smoothed < 0.02 ? 0 : smoothed;
@@ -811,8 +857,8 @@ export function useMomiVoice({
               count += 1;
             }
             const bandRaw = count ? bandSum / count / 255 : 0;
-            const bandAbove = Math.max(0, bandRaw - noiseFloor * 1.4 - 0.012);
-            const bandLevel = Math.min(1, bandAbove * 5);
+            const bandAbove = Math.max(0, bandRaw - noiseFloor - VOICE_MARGIN);
+            const bandLevel = Math.min(1, bandAbove * 6);
             const smoothedBand = bands[b] * 0.45 + bandLevel * 0.55;
             // 아주 작은 값은 0으로 딱 떨어뜨린다 — 화면상 차이는 없는데, 안 그러면
             // 조용할 때 denormal(1e-200 같은) 숫자가 매 프레임 계속 돈다.
@@ -852,6 +898,7 @@ export function useMomiVoice({
   }, [listening, onAudioLevel]);
 
   const startListening = useCallback(() => {
+    wantListeningRef.current = true;
     if (!recognitionRef.current) return;
     shouldRestartRef.current = true;
     try {
@@ -863,6 +910,7 @@ export function useMomiVoice({
   }, []);
 
   const stopListening = useCallback(() => {
+    wantListeningRef.current = false;
     if (!recognitionRef.current) return;
     // [버그 수정 2026-08-08] 이걸 먼저 false로 내려놔야, stop()이 비동기로 유발하는
     // onend가 재시작하지 않는다(위 onend 핸들러 참고).
