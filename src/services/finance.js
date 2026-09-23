@@ -174,14 +174,16 @@ export function determineSplitRate({ settings, trainerId, monthNet, newSales=0, 
 export function computeMonthRates({ trainers, members, payments, records, settings, ym }) {
   const inMonth = (d) => d && d.slice(0,7) === ym;
   const monthNet = {};   // tid -> 그 달 귀속 입금액
+  const depositRevenue = {}; // tid -> 화면 표시용 원 단위 입금매출(잔여 원 배분 포함)
   const newSales = {};   // tid -> 신규(isNew) 귀속 입금액
   const reSales  = {};   // tid -> 재등록(isReEnroll) 귀속 입금액
+  const trainerIdsInRoster = new Set(trainers.map(t => t.id));
   const addTo = (bucket, tid, v) => { bucket[tid] = (bucket[tid]||0) + v; };
   members.forEach(m => {
     const ts = m.trainerSessions || {};
     const tids = Object.keys(ts);
     const totalReg = Object.values(ts).reduce((s,v)=>s+(v.total||0),0);
-    (payments[m.id]||[]).filter(p=>!p.isUnpaid && !p.isRefunded && !p.isMonthly && inMonth(p.paidAt)).forEach(p=>{
+    (payments[m.id]||[]).filter(p=>!p.isUnpaid && !p.isRefunded && inMonth(p.paidAt)).forEach(p=>{
       const amt = calcNet(p, settings).net;
       // 트레이너별 귀속분을 [tid, part]로 산출
       const parts = [];
@@ -201,8 +203,26 @@ export function computeMonthRates({ trainers, members, payments, records, settin
         addTo(monthNet, tid, part);
         if (p.isReEnroll) addTo(reSales, tid, part); // 재등록 → 담당
       });
+      // 표시 매출은 결제별 원 단위로 나눠 반올림 잔액을 가장 큰 소수 몫에 배정한다.
+      // 담당 정보가 없거나 roster 밖 ID인 몫은 depositRevenue에 넣지 않아 센터 귀속으로 둔다.
+      if (parts.length) {
+        const allocations = parts.map(([tid, part], index) => ({
+          tid, amount: Math.floor(part), fraction: part - Math.floor(part), index,
+        }));
+        let remainder = Math.round(amt) - allocations.reduce((sum, part) => sum + part.amount, 0);
+        if (remainder > 0) {
+          const order = [...allocations].sort((a, b) => b.fraction - a.fraction || a.index - b.index);
+          for (let i = 0; i < remainder; i++) order[i % order.length].amount++;
+        } else if (remainder < 0) {
+          const order = [...allocations].sort((a, b) => a.fraction - b.fraction || b.index - a.index);
+          for (let i = 0; i < -remainder; i++) order[i % order.length].amount--;
+        }
+        allocations.forEach(({ tid, amount }) => {
+          if (trainerIdsInRoster.has(tid)) addTo(depositRevenue, tid, amount);
+        });
+      }
       // 신규매출 → 상담 트레이너 1명에게 전액 귀속
-      if (p.isNew && p.consultTrainerId) addTo(newSales, p.consultTrainerId, amt);
+      if (!p.isMonthly && p.isNew && p.consultTrainerId) addTo(newSales, p.consultTrainerId, amt);
     });
   });
   const out = {};
@@ -216,10 +236,8 @@ export function computeMonthRates({ trainers, members, payments, records, settin
       newSales:Math.round(newSales[t.id]||0),
       reEnrollSales:Math.round(reSales[t.id]||0),
       blogCount:blog, studyCount:study });
-    // depositRevenue: 이 트레이너에게 귀속된 "이번 달 입금 매출(순매출, 결제 기준)".
-    //  · 개요 상단 "입금금액(순매출)"과 같은 원천(calcNet 합)이라, 전체 트레이너 합산이
-    //    상단 순매출과 정확히 일치한다(세션 소진 기준인 sessionTotal과는 다른 숫자).
-    out[t.id] = { rate: d.rate, reason: d.reason, mode: d.mode, depositRevenue: Math.round(monthNet[t.id]||0) };
+    // depositRevenue: 월 결제를 포함한 표시용 입금 매출. 환불 결제의 잔액과 미귀속 몫은 센터 귀속.
+    out[t.id] = { rate: d.rate, reason: d.reason, mode: d.mode, depositRevenue: depositRevenue[t.id]||0 };
   });
   return out;
 }
