@@ -46,6 +46,25 @@
 ## 작업 로그
 최신 항목이 위. 형식을 그대로 복사해서 쓴다.
 
+### 2026-09-23 14:10 · Claude · Codex 교차 검토 체계 구축
+- 한 일:
+  - main(b000371) 점검: `AGENTS.md:25`가 가리키는 `docs/REVIEW_LOOP.md` 누락, HANDOFF 작업 로그 비어 있음 확인
+  - `docs/REVIEW_LOOP.md`(검토 절차), `docs/REVIEW_QUEUE.md`(Claude 작업 R1~R8, 위험도 순) 작성 → `cf62024`로 main 반영
+  - Claude Code 및 OpenAI 공식 Codex 플러그인 설치, `/codex:setup` 통과(ChatGPT 로그인, review gate off)
+- 연결 방식: claude.ai 대화 ↔ Codex는 HANDOFF·GitHub 경유, Claude Code ↔ Codex는 플러그인(`/codex:rescue`, `/codex:review`)으로 직접
+- 변경 파일: `docs/REVIEW_LOOP.md`, `docs/REVIEW_QUEUE.md` (코드 변경 없음)
+- 테스트: 해당 없음(문서만)
+- 비용 규칙:
+  - Claude는 Pro 구독 로그인, Codex는 ChatGPT 로그인만 사용
+  - `ANTHROPIC_API_KEY`·`OPENAI_API_KEY`를 PC 환경 변수에 두지 않음(있으면 API 요금 청구). 모미 서버 키는 Cloudflare 비밀값에만 둠
+  - Claude 사용량 추가 구매(Usage credits)·Codex 크레딧 구매 금지, 한도가 차면 초기화될 때까지 대기
+  - review gate는 off 유지, Codex 검토는 대기열 항목 1개씩
+  - `npm test`는 유료 API를 부르지 않음(`voice_command_backend.test.js`는 소스 문자열만 검사)
+- 남은 위험:
+  - `agent/codex-claude-sync` 브랜치는 main과 크게 어긋난 옛 브랜치라 사용 금지
+  - R1 사전 점검 의심: 상단 순매출(`Revenue.jsx:173, 185~186`)과 선생님별 매출(`finance.js:184`)의 필터가 다름. 주석(`Revenue.jsx:310·418`, `finance.js:221`)은 둘이 "정확히 일치"한다고 주장
+- 다음에 할 일: Codex가 R1 검토 → HANDOFF에 기록 → 사용자가 업로드 → Claude가 교차 확인
+
 ### YYYY-MM-DD HH:MM · 도구(Codex/Claude Code) · 한 줄 요약
 - 한 일:
 - 변경 파일:
