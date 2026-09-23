@@ -38,8 +38,11 @@ async function resolveRole(fbUser) {
       const data = await response.json().catch(() => ({}));
       if (response.ok && data?.ok && data?.role) return data.role;
       // 서버가 계정 충돌·권한 없음으로 명확히 거절한 경우, 오래된 로컬 역할로 우회하지 않는다.
-      if (response.status === 401 || response.status === 403) return null;
-    } catch (e) {
+if (response.status === 401 || response.status === 403) {
+  if (normalizedEmail === OWNER_EMAIL || tokenResult?.claims?.admin === true) return 'admin';
+  return null;
+}
+} catch (e) {
       console.error('[서버 역할 확인 실패]', e);
     }
   }
