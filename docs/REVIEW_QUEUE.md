@@ -25,6 +25,19 @@
 - Codex 보완(2026-09-23): 월 결제는 담당 선생님 매출에 포함, 환불 결제의 잔액·미귀속/목록 외 담당분은 센터 귀속으로 화면 제외. 3인 분할 반올림 잔액 배분.
 - 확인할 것 4: 대체된 08-26 코드의 잔여·죽은 코드는 현재 `Revenue.jsx`에서 찾지 못함; `computeMonthRates`는 여전히 사용 중.
 - 검증: R1 기존 테스트 11/11 통과, 전체 `npm test` 3059/3070(기준선 충족, 기존 실패 11), `npm run build` 통과. 상세는 HANDOFF 작업 로그.
+- Claude 교차확인(2026-09-23): 반올림 해결·확인할 것 4 동의. 추가 보완 — ① 화면 문구 "합계 = 입금금액과 일치" → "환불·담당 미지정분은 센터 귀속으로 제외"(`Revenue.jsx:445,449`) ② 월 결제를 정산비율 판정에서 제외(`finance.js:202-208`, 보완 전과 비율 차이 0건 — 무작위 500세트) ③ 실행형 회귀 테스트 `review_R1_attribution.test.js` 11개(기준선 파일 `.github/test-baseline.json` 3071/3082 상향은 원격 쓰기 금지 폴더라 사용자 수정). `npm run build` 통과. 상세는 HANDOFF 작업 로그.
+
+## R9 · 월정액 결제의 트레이너 정산 제외 규칙 미작동 의심 (센터 이익) · 2026-09-23 · ⏳ (대표님 결정: 다음 차례로 우선 확인)
+
+- 발견: Claude(R1 교차확인 중). 코드 수정 없음 — 확인 먼저
+- 대상: `src/services/finance.js` `buildTrainerLots` 417, `computeSessionSettlement` 611~615(주석 "월정액 결제(isMonthly)는 트레이너 정산에서 제외 → 센터 수익으로만 합산") / 결제 저장: `src/components/members/MemberDetail.jsx` `handleAddPayment` 536~, `src/pages/Revenue.jsx` 결제 수정 632·672, `src/utils/memberImport.js` 130~132·`payloadOf` 148~161 / Notion: `scripts/trainer-stats/sync.mjs:152`, `scripts/dashboard-snapshot/sync.mjs:135`
+- 사실: 저장소 이력 전체에서 결제에 `isMonthly`를 저장하는 코드가 없음(테스트에서만 사용) → 위 제외 규칙이 실데이터에 한 번도 적용되지 않았을 가능성. CSV 가져오기는 월정액 결제에도 `trainerIds`를 채움
+- 영향 가능성: 월정액 회원(`member.monthly.active`) 결제에 담당 트레이너가 지정되고, 같은 트레이너에게 세션 등록분도 있으면 legacy lot 결제액에 섞여 회당 단가·정산액이 올라갈 수 있음(`buildLegacyLots` 388~396)
+- 확인할 것
+  1. 실제 Firestore `payments`에 월정액 회원 결제가 있는지, `trainerIds`·`isMonthly`가 어떻게 들어가 있는지(사용자 확인 필요 — 이름·금액 기록 금지, 건수만)
+  2. 그런 결제가 정산 탭 단가·지급액에 섞이는지 실행형 재현 테스트로 확인
+  3. 해결 방향은 사용자 결정: (가) 월정액 결제 저장 시 `isMonthly: true` 저장 + 기존 데이터 보정 (나) 회원 `monthly.active` 기준으로 판정 — 이미 지급·박제된 과거 정산에 소급 영향 주의
+  4. 결정 후 R1 개요 표시(월 결제 포함)와 정산(제외) 규칙이 서로 맞는지 재확인
 
 ## R2 · 스케줄 회차 재정렬 + 신체정보 최신 정렬 + 측정이력 삭제 실패 처리 · 2026-09-02 · ⏳
 
@@ -95,6 +108,18 @@
   1. 회원 상세 동기화(`scripts/member-detail/sync.mjs`)가 최소 필드만 보내는지(연락처 등 제외)
   2. 실패 시 워크플로가 빨간불로 끝나는지(조용히 0건 처리 방지)
   3. 불필요한 Firestore 전체 읽기 여부(무료 한도)
+
+## R10 · 1RM 카메라 오류(setVideoSavedMsg) 수정 + 멈춤 방지 테스트 · 2026-09-23 · ⏳
+
+- 커밋: 사용자 업로드 커밋(R1 교차확인 보완과 같은 커밋)
+- 대상: `src/ai-measure/menus/OneRMEstimate.jsx:102-105` / `src/__tests__/lint_crash_guard.test.js`
+- 테스트: `lint_crash_guard.test.js` — src 전체 no-undef·react/jsx-no-undef·react-hooks/rules-of-hooks 오류 0건
+- Claude 검증: `npm test` 3071/3082(기존 실패 11), `npm run build` 통과, `npm run lint` 오류 4→1(남은 1건은 `unifiedReport.js:109,326` peakVelocity 중복 키 — 기존, 범위 밖)
+- 규칙: `ae7049f`가 지운 상태 선언을 setter만 복구 — 화면·저장 동작 변화 없음
+- 확인할 것
+  1. 1RM 추정 화면에서 카메라 열기·측정 시작·60초 자동 종료가 오류 없이 되는지(실기기)
+  2. 같은 날 버튼 제거 커밋(`VbtMeasure.jsx`, `LiftingMeasure.jsx`, `LiftingResultSheet.jsx`)에 남은 참조가 없는지 — lint 가드로 1차 확인됨
+  3. lint 가드 실행 시간(약 7초)이 부담되면 대상 폴더를 줄일지
 
 ---
 

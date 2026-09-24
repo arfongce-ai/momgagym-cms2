@@ -15,7 +15,8 @@
 //  이 테스트가 지키는 것:
 //   1) depositRevenue는 그 달 결제(paidAt)만 본다 — 지난달 결제 + 이번 달 출석인
 //      트레이너는 0원이어야 한다(= 개요에서 사라져야 한다).
-//   2) 트레이너별 depositRevenue 합 = 그 달 순매출 합(개요 상단 "입금금액"과 일치).
+//   2) 트레이너별 depositRevenue 합 = 그 달 순매출 합(환불·담당 미지정 결제가 없는 달 기준.
+//      그런 결제는 센터 귀속으로 빠진다 — R1 규칙, review_R1_attribution.test.js 참고).
 //   3) 결제총액이 아니라 공제 후 순매출(calcNet)이다.
 //   4) 한 결제에 트레이너가 여럿이면 지분대로 나뉜다.
 //   5) Revenue.jsx가 실제로 그렇게 배선돼 있다(0원 트레이너 필터 + 옛 카드 제거).
@@ -91,7 +92,7 @@ describe('선생님별 월 매출(입금매출) — computeMonthRates().depositR
     expect(rates.t3.depositRevenue).toBe(Math.round(p3Net / 2));
   });
 
-  it('트레이너별 입금매출 합계 = 그 달 전체 순매출(개요 상단 "입금금액"과 일치)', () => {
+  it('환불·담당 미지정 결제가 없는 달에는 트레이너별 입금매출 합계 = 그 달 전체 순매출(개요 상단 "입금금액")', () => {
     const monthNetTotal = Object.values(payments)
       .flat()
       .filter(p => p.paidAt.slice(0, 7) === ym)

@@ -99,6 +99,10 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
   useEffect(() => { aspectRef.current = aspect; }, [aspect]);
   const [liveReps, setLiveReps] = useState(0);
   const [videoBlob, setVideoBlob] = useState(null);
+  // [2026-09-23] ae7049f('영상만 저장' 버튼 제거)에서 이 상태 선언도 함께 지워졌는데 setVideoSavedMsg
+  //  호출 3곳(측정 카운트다운 시작·카메라 열기·60초 자동 종료)은 남아 ReferenceError로 1RM 카메라가
+  //  열리지 않았다. 메시지를 보여주던 UI는 없으므로 값은 읽지 않고 setter만 되살린다(동작 변화 없음).
+  const [, setVideoSavedMsg] = useState('');
 
   // 최종 사용 무게 = '화면 다이얼에 보이는 값'을 단일 진실로 삼는다.
   //  (원판 색 인식·직접입력 모두 dialWeight 를 갱신하므로, 다이얼 = 저장/HUD 값.

@@ -306,9 +306,11 @@ function OverviewTab({ settings, trainers, trainerMap }) {
   }, [isMonth, period, trainers, settings, allPayments]);
 
   // 선생님별 "월 매출(입금매출)" — 세션 소진(sessionTotal)이 아니라 이번 달 실제 결제(paidAt
-  // 이번 달)를 트레이너별로 귀속시킨 금액(computeMonthRates의 monthNet, calcNet 합산).
-  //  · 전체 트레이너 합산이 위 "손익 요약"의 입금금액(순매출)과 정확히 일치한다.
-  //  · 세션 소진 기준 트레이너별 정산 내역(위 블록)과는 의도적으로 다른, 현금 기준 숫자다.
+  // 이번 달)를 트레이너별로 귀속시킨 금액(computeMonthRates의 depositRevenue, calcNet 기준).
+  //  · 환불 처리된 결제의 남은 금액, 담당 정보가 없는 결제, 선생님 목록 밖 몫은 센터 귀속이라
+  //    빠진다(R1, 2026-09-23 대표님 결정) → 그런 결제가 있는 달엔 합계가 위 "손익 요약"의
+  //    입금금액(순매출)과 다를 수 있다.
+  //  · 세션 소진 기준 트레이너별 정산 내역(정산 탭)과는 의도적으로 다른, 현금 기준 숫자다.
   const depositBreakdown = useMemo(() => {
     if (!isMonth) return [];
     return trainers
@@ -414,8 +416,8 @@ function OverviewTab({ settings, trainers, trainerMap }) {
           매출이 없는 트레이너는 자동으로 목록에서 빠진다 — depositBreakdown 필터 참고). */}
 
       {/* 선생님별 월 매출(입금매출 기준) — 위 블록(세션 소진 기준)과 달리, 이번 달 실제
-          결제(paidAt)를 트레이너별로 귀속시킨 현금 기준 매출이다. 전체 합계가 위 "손익 요약"의
-          입금금액(순매출)과 정확히 일치한다. */}
+          결제(paidAt)를 트레이너별로 귀속시킨 현금 기준 매출이다. 환불·담당 미지정분은 센터
+          귀속으로 빠지므로 합계가 위 "손익 요약"의 입금금액(순매출)과 다를 수 있다(R1). */}
       {isMonth && depositBreakdown.length > 0 && (
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4">
           <h2 className="font-bold text-sm uppercase tracking-widest text-slate-500 dark:text-slate-400 mb-3">선생님별 월 매출(입금매출 기준)</h2>
@@ -440,11 +442,11 @@ function OverviewTab({ settings, trainers, trainerMap }) {
               <span className="font-mono font-black text-emerald-700 dark:text-emerald-400">{won(depositPayoutTotal)}</span>
             </div>
             <div className="flex items-center justify-between text-[11px] text-slate-600">
-              <span>선생님별 입금매출 합계 (= 위 손익 요약 입금금액과 일치)</span>
+              <span>선생님별 입금매출 합계 (환불·담당 미지정분은 센터 귀속으로 제외)</span>
               <span className="font-mono">{won(depositRevenueTotal)}</span>
             </div>
           </div>
-          <p className="text-[11px] text-slate-600 mt-3">* "입금매출"은 세션 소진이 아니라 이번 달 실제 결제액(순매출)을 담당 트레이너에게 귀속시킨 금액입니다 — 여러 트레이너가 관여한 결제는 지분대로 나눕니다. 그 금액에 위 "확정 정산비율"(40/50/60%)을 곱한 값이 옆에 표시됩니다.<br/>* 위 "트레이너별 정산 내역"(세션 소진 기준)과는 계산 방식이 달라 트레이너별 금액이 서로 다를 수 있으나, 전체 합계는 상단 손익 요약의 입금금액(순매출)과 일치합니다.</p>
+          <p className="text-[11px] text-slate-600 mt-3">* "입금매출"은 세션 소진이 아니라 이번 달 실제 결제액(순매출)을 담당 트레이너에게 귀속시킨 금액입니다 — 여러 트레이너가 관여한 결제는 지분대로 나눕니다. 그 금액에 위 "확정 정산비율"(40/50/60%)을 곱한 값이 옆에 표시됩니다.<br/>* 환불 처리된 결제의 남은 금액과, 담당 선생님이 없거나 현재 선생님 목록에 없는 결제는 센터 귀속으로 이 목록에서 빠집니다. 그래서 합계가 위 손익 요약의 입금금액(순매출)과 다를 수 있습니다. 세션 소진 기준 금액은 "정산" 탭에서 확인하세요.</p>
         </div>
       )}
 

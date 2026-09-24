@@ -200,6 +200,9 @@ export function computeMonthRates({ trainers, members, payments, records, settin
         const per = amt/tids.length; tids.forEach(tid=>parts.push([tid, per]));
       }
       parts.forEach(([tid, part]) => {
+        // 월 결제(isMonthly)는 정산비율 판정 입력에서 제외한다(R1 보완 전과 동일 — 비율·지급액 불변).
+        // 아래 표시용 depositRevenue에만 포함된다(2026-09-23 대표님 결정).
+        if (p.isMonthly) return;
         addTo(monthNet, tid, part);
         if (p.isReEnroll) addTo(reSales, tid, part); // 재등록 → 담당
       });

@@ -14,7 +14,7 @@
 ## 프로젝트 현황 (2026-09-22 기준, 착수 전 `git status`로 재확인)
 
 ### 테스트 기준선
-- `npm test` **3059/3070** 통과. 기존부터 실패 중인 11개는 전부 "테스트가 구버전"인 경우로 확인됨(아래 참고), 실사용 버그 아님. `.github/test-baseline.json`의 `minPassing`이 이 숫자를 자동으로 지킨다(회귀 게이트)
+- `npm test` **3071/3082** 통과(2026-09-23 R1 회귀 11개 + 멈춤 방지 `lint_crash_guard` 1개 추가, 이전 3059/3070 — `test-baseline.json`도 3071/3082로 맞출 것). 기존부터 실패 중인 11개는 전부 "테스트가 구버전"인 경우로 확인됨(아래 참고), 실사용 버그 아님. `.github/test-baseline.json`의 `minPassing`이 이 숫자를 자동으로 지킨다(회귀 게이트)
 
 ### 기존 11개 실패 테스트 — 2026-09-22 원인 확인 완료 (실제 버그 아님)
 - `measure_save_failure_regression.test.js`의 6개(Barbell/Gait/Squat/Stance/Jump): 저장 실패 시 report로 안 넘어가게 막는 실제 코드(`setSaveState('error'); return;`)는 이미 올바르게 들어가 있음. 테스트의 정규식이 파일 안의 **다른, 무관한** `catch (e) {` 블록(더 앞쪽에 있는)을 잘못 집어서 실패하는 것 — 테스트 정규식 버그. 실제 저장 실패 처리는 정상 작동
@@ -45,6 +45,41 @@
 
 ## 작업 로그
 최신 항목이 위. 형식을 그대로 복사해서 쓴다.
+
+### 2026-09-24 10:07 · Claude · 1RM 카메라 오류 수정 + 멈춤 방지 테스트 (R10)
+- 발견(R1 검증 중 `npm run lint`): 🔴 `src/ai-measure/menus/OneRMEstimate.jsx:213,328,358`(수정 전 줄 번호, 수정 후 217·332·362) — `ae7049f`(9/22 "1RM 영상만 저장하는 버튼 제거")가 `useState` 선언까지 지웠는데 `setVideoSavedMsg` 호출 3곳(측정 카운트다운 시작·카메라 열기·60초 자동 종료)이 남음 → ReferenceError. 카메라 열기(`openCam`)가 자동 시작 effect(수정 전 366)에서도 불려서, 앱에 ErrorBoundary가 없으니 자동 시작 시 화면 전체가 멈출 수 있음. 빌드·기존 테스트로는 안 잡힘.
+- 사용자 결정(2026-09-23): 같이 고치기.
+- 변경 파일: `src/ai-measure/menus/OneRMEstimate.jsx:102-105`(지워진 선언을 setter만 복구 `const [, setVideoSavedMsg] = useState('')` — 메시지 표시 UI는 이미 없으므로 화면·저장 동작 변화 없음), `src/__tests__/lint_crash_guard.test.js`(신규 — src 전체에 no-undef·react/jsx-no-undef·react-hooks/rules-of-hooks 오류 0건 확인, .eslintrc.json 그대로 사용, 약 7초)
+- 테스트: 가드 테스트는 수정 전 파일에서 위 3줄을 정확히 잡고(실패), 수정 후 통과. `npm run lint` 오류 4→1. 전체 결과는 아래 R1 보완 완료 항목과 같음.
+- 남은 위험: 실기기 1RM 카메라 확인 전. `src/ai-measure/core/unifiedReport.js:109,326` `peakVelocity` 중복 키(no-dupe-keys, 9/7부터 — 뒤의 스프린트 정의가 앞의 VBT 정의를 덮음)는 멈춤 원인이 아니고 범위 밖이라 보류.
+- 다음에 할 일: 업로드 후 1RM 추정 화면에서 카메라 열기·측정·60초 자동 종료 확인 → REVIEW_QUEUE R10 Codex 검토.
+
+### 2026-09-23 22:00 · Claude · 교차확인 R1 매출관리 개요 (Codex 보완 `08be0eb`·`79e1dff`)
+- 한 일:
+  - main `79e1dff`(PC 작업 폴더와 동일 확인) 기준으로 Codex 보완 diff와 재현 스크립트 검토
+  - 보완 전(`4ef4929`)/후 `computeMonthRates`를 무작위 데이터 200세트로 차등 비교
+- 발견:
+  - 🟠 `src/pages/Revenue.jsx:443,447`(주석 310, 417-418) — 화면 문구가 "선생님별 입금매출 합계 = 위 손익 요약 입금금액과 일치"로 남아 있음. 결정된 규칙(환불 결제의 남은 금액·담당 미지정·목록 밖 몫은 센터 귀속)상 그런 결제가 있는 달에는 두 숫자가 다름. 재현(가상 금액): 9월 결제 100만(t1) + 50만(t2), 50만 건을 20만 부분환불 → 상단 130만 / 선생님 합계 100만인데 화면은 "일치"로 표시.
+  - 🟡(잠재) `src/services/finance.js:202-205` — 월 결제(isMonthly)를 반복문에 포함하면서 신규매출(:225)만 가드하고 재등록매출(reSales)·monthNet은 가드하지 않음 → isMonthly+재등록 300만이면 정산비율 40%→50%, 결제 저장 시 `splitRateAtPay`로 박제됨(`MemberDetail.jsx:582`). 단, 저장소 이력 전체에 결제에 isMonthly를 저장하는 코드가 없어 실데이터 영향은 없을 가능성이 큼(Firestore 미확인).
+  - 🟡 재현 스크립트 `src/__tests__/review_R1_reproduction.mjs`는 vitest 대상(`*.test.js`)이 아니어서 `npm test`·회귀 게이트에서 실행되지 않음 → 보완 동작을 잠그는 테스트가 없음. 아래 Codex 로그의 "재현 파일은 미커밋"은 업로드 때 `79e1dff`로 커밋되어 현재는 커밋 상태. `overview_deposit_revenue.test.js:94` 테스트 제목도 "합계 = 입금금액 일치" 그대로.
+- 테스트: `npm test` → 3059/3070(기준선 3059 충족, 알려진 기존 실패 11). `npm run build` 성공. 차등 비교: isMonthly 없는 데이터에서 rate·reason 200세트 전부 동일, depositRevenue 차이 최대 2원(반올림 방식 변경분), 새 합계 = 귀속 결제 `Math.round(net)` 합과 정확히 일치.
+- 확인할 것 2·4: 반올림 해결 확인 / 08-26 대체 코드 잔여 없음 — Codex 판단에 동의.
+- 제안 수정: ① Revenue.jsx 문구를 "환불·담당 미지정분은 센터 귀속으로 제외 — 입금금액과 다를 수 있음"으로 ② finance.js 월 결제를 정산비율 판정 입력에서 제외(보완 전과 동일, 표시 매출에만 포함) ③ 재현 내용을 vitest 회귀 테스트로 전환 + 기준선 상향
+- 사용자 결정(2026-09-23): 진행. "현재 사용 중이라 문제 없이, 신뢰도 높이고, 센터 이익 최우선."
+- 다음에 할 일: 최소 수정 + 회귀 테스트 → 전체 테스트·빌드 → 업로드는 사용자
+
+#### 보완 완료 · 2026-09-24 10:07
+- 변경:
+  - `src/services/finance.js:202-208` — 월 결제(isMonthly)는 정산비율 판정 입력(monthNet·재등록매출)에서 제외. 표시용 depositRevenue에는 그대로 포함(대표님 결정 유지).
+  - `src/pages/Revenue.jsx:445,449`(주석 308-313, 418-420) — "합계 = 입금금액과 일치" 문구를 "환불·담당 미지정분은 센터 귀속으로 제외 — 입금금액과 다를 수 있음"으로. 계산·배선 변경 없음.
+  - `src/__tests__/overview_deposit_revenue.test.js:18-19,95` — 설명·테스트 제목만 새 규칙에 맞춤(단언 변경 없음).
+  - `src/__tests__/review_R1_attribution.test.js`(신규, 11개) — 월 결제 표시 포함 / 환불 잔액·담당 미지정·목록 밖 몫 센터 귀속 / 3인 분할·소수점 순매출 원 단위 정확 / split 지분 / 월 결제+재등록·신규 300만에도 비율 40% 유지 / 월 결제 섞인 무작위 100세트 비율 = 월 결제 뺀 판정 / 화면 문구.
+  - `.github/test-baseline.json` — minPassing 3059→3071, total 3070→3082로 올려야 함(새 테스트 12개 반영). **`.github` 폴더는 원격 도구 쓰기가 막혀 있어 사용자가 직접 수정** — 수정 전까지 게이트는 옛 기준(3059)으로 동작(통과는 하지만 새 테스트 보호가 약함).
+- 테스트: `npm test` → 3071/3082(새 기준선 충족, 알려진 기존 실패 11 — 4개 파일 동일). `node scripts/check-regression.cjs` 통과. `npm run build` 성공(기존 chunk 크기 경고만). eslint 변경 파일 새 경고 0.
+- 검증: 새 테스트가 옛 코드에서 실제로 실패하는지 확인 — Codex 보완본 finance.js에서 비율 보호 2개 실패, 보완 전 finance.js에서 월 결제·반올림 3개 실패, 옛 Revenue.jsx에서 문구 1개 실패. 무작위 500세트(월 결제 포함) 차등: 수정본 정산비율 = 보완 전과 차이 0건(Codex 보완본은 60건 달랐음), 표시 매출은 Codex 보완본과 100% 동일.
+- 참고: 재현 스크립트 `review_R1_reproduction.mjs`는 이제 위 vitest 테스트가 대신함(남겨둬도 무해).
+- 남은 위험: 8월 결제를 9월에 환불 기록하면 8월 선생님 매출이 소급해서 0이 되는 기존 동작(이번 변경과 무관, 규칙상 센터 귀속). 실데이터 화면 확인 전.
+- 다음에 할 일: 사용자 업로드(`1_GITHUB_UPLOAD.bat`) → 배포 후 매출관리 개요에서 문구 확인. 다음 검토는 REVIEW_QUEUE R9(월정액 정산).
 
 ### 2026-09-23 14:16 · Codex · 검토 R1 매출관리 개요
 - 한 일:
