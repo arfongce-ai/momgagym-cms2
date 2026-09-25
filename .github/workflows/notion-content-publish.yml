@@ -1,0 +1,65 @@
+name: Notion approved content
+
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: 'Write approved pages to Firestore (false is a safe dry run)'
+        required: true
+        default: false
+        type: boolean
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install --no-save @notionhq/client@2.2.15 firebase-admin@12.7.0
+      - name: Preview or publish approved content
+        env:
+          APPLY: ${{ inputs.apply }}
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          NOTION_CONTENT_TOKEN: ${{ secrets.NOTION_CONTENT_TOKEN }}
+          NOTION_CONTENT_DATABASE_ID: a3e775a5-5577-4a97-b120-06ec2594c97e
+        run: |
+          node --input-type=module <<'NODE'
+          import admin from 'firebase-admin';
+          import { Client } from '@notionhq/client';
+          const notion = new Client({ auth: process.env.NOTION_CONTENT_TOKEN });
+          const now = new Date();
+          const text = (p) => (p?.title || p?.rich_text || []).map((x) => x.plain_text || '').join('').trim();
+          const future = (v) => v && new Date(v.length === 10 ? v + 'T23:59:59.999Z' : v) > now;
+          async function body(id) {
+            const out = []; let cursor;
+            do {
+              const r = await notion.blocks.children.list({ block_id: id, page_size: 100, ...(cursor ? { start_cursor: cursor } : {}) });
+              for (const b of r.results) {
+                const line = (b[b.type]?.rich_text || []).map((x) => x.plain_text || '').join('').trim();
+                if (line) out.push(line);
+                if (b.has_children) out.push(await body(b.id));
+              }
+              cursor = r.has_more ? r.next_cursor : undefined;
+            } while (cursor);
+            return out.filter(Boolean).join('\n\n');
+          }
+          const pages = []; let cursor;
+          do {
+            const r = await notion.databases.query({ database_id: process.env.NOTION_CONTENT_DATABASE_ID, filter: { property: '검수 상태', status: { equals: '승인' } }, page_size: 100, ...(cursor ? { start_cursor: cursor } : {}) });
+            pages.push(...r.results); cursor = r.has_more ? r.next_cursor : undefined;
+          } while (cursor);
+          const rows = [];
+          for (const page of pages) {
+            const p = page.properties || {}; const title = text(p['콘텐츠 제목']); const publishAt = p['발행예정일']?.date?.start || '';
+            if (!title || future(publishAt)) continue;
+            rows.push({ id: 'notion_' + page.id.replaceAll('-', ''), data: { source: 'notion', notionPageId: page.id, title, body: await body(page.id), categories: (p['카테고리']?.multi_select || []).map((x) => x.name), driveUrl: p['Drive 링크']?.url || '', publishAt, status: 'published', sourceLastEditedAt: page.last_edited_time || '', syncedAt: now.toISOString(), schemaVersion: 1 } });
+          }
+          console.log('Approved pages:', pages.length, 'ready:', rows.length, 'apply:', process.env.APPLY);
+          if (process.env.APPLY !== 'true') { console.log('Dry run complete. No Firestore documents were written.'); process.exit(0); }
+          admin.initializeApp({ credential: admin.credential.cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT)) });
+          const db = admin.firestore();
+          for (let i = 0; i < rows.length; i += 400) { const batch = db.batch(); rows.slice(i, i + 400).forEach(({ id, data }) => batch.set(db.collection('contentPublications').doc(id), data)); await batch.commit(); }
+          console.log('Published:', rows.length);
+          NODE
