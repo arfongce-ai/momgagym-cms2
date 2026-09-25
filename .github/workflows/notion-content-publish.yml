@@ -47,7 +47,7 @@ jobs:
           }
           const pages = []; let cursor;
           do {
-            const r = await notion.databases.query({ database_id: process.env.NOTION_CONTENT_DATABASE_ID, filter: { property: '검수 상태', status: { equals: '승인' } }, page_size: 100, ...(cursor ? { start_cursor: cursor } : {}) });
+            const r = await notion.databases.query({ database_id: process.env.NOTION_CONTENT_DATABASE_ID, filter: { property: '검수 상태', select: { equals: '승인' } }, page_size: 100, ...(cursor ? { start_cursor: cursor } : {}) });
             pages.push(...r.results); cursor = r.has_more ? r.next_cursor : undefined;
           } while (cursor);
           const rows = [];
