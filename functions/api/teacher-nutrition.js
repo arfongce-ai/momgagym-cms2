@@ -85,12 +85,16 @@ export async function onRequestGet({ request, env }) {
     if (resource === 'summary') {
       const date = url.searchParams.get('date');
       if (date) {
-        const doc = await getDocument(accessToken, `nutritionSummaries/${encodeURIComponent(`${memberRef}_${date}`)}`);
+        const doc = await getDocument(accessToken, `nutritionSummaries/${encodeURIComponent(`${memberRef}_${date}`)}`, [
+          'memberRef', 'date', 'recordedMealCount', 'dayCompleted', 'totals', 'missingNutrition', 'sourceUpdatedAt', 'updatedAt',
+        ]);
         return json({ ok: true, summary: docToPlain(doc) });
       }
-      const all = await queryEquals(accessToken, 'nutritionSummaries', 'memberRef', memberRef, 62); // 최근 두 달치 정도
-      all.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
-      return json({ ok: true, summaries: all });
+      const summaries = await queryEquals(accessToken, 'nutritionSummaries', 'memberRef', memberRef, 7, {
+        select: ['memberRef', 'date', 'recordedMealCount', 'dayCompleted', 'totals', 'missingNutrition', 'sourceUpdatedAt', 'updatedAt'],
+        orderBy: { fieldPath: 'date', direction: 'DESCENDING' },
+      });
+      return json({ ok: true, summaries });
     }
 
     if (resource === 'feedback') {

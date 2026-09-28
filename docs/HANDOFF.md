@@ -130,3 +130,18 @@
 - 테스트: (명령어 → 결과)
 - 남은 위험:
 - 다음에 할 일:
+
+### 2026-09-28 · Codex · momgagym-cms ↔ nutrition-cms 연동·데이터 사용 코드 점검
+- 한 일: CMS의 연결 발급/교환, 회원 API, 교사 API 및 Firestore 조회 경로와 최소 저장 필드를 읽기 전용으로 추적.
+- 발견: `functions/_shared/nutritionEligibility.js`에서 이용권 확인할 때마다 `payments`를 `__mid`로 최대 200건 읽고 회원·설정 문서도 조회함. 회원 앱의 세션 확인과 요약 저장에서 이 검증이 각각 실행됨. 데이터 재전송을 막는 일별 문서 덮어쓰기는 확인됨.
+- 변경 파일: 없음(이 항목만 작업 잠금 기록).
+- 테스트: `npm test -- --run` 실행 실패 — Vitest/esbuild가 상위 `../../..` 접근 거부로 Vite 설정 파일을 해석하지 못함. 빌드 미실행.
+- 남은 위험: nutrition-cms 체크아웃 및 배포 환경 변수·실기기 접근 불가로 클라이언트 API 경로/비밀키/Firebase 프로젝트 일치와 실제 왕복은 미확인.
+- 다음에 할 일: 사용자가 nutrition-cms 작업공간과 Cloudflare 설정을 열 수 있을 때 클라이언트 요청 경로·환경 설정을 대조하고 실기기 연결/저장/조회 확인. 이용권 조회량 최적화는 별도 회귀 검증 필요.
+
+### 2026-09-28 · Codex · 영양 연동 Firestore 조회량 절감
+- 한 일: Firestore REST GET/동등조건 조회에 필드 마스크·필드 선택·정렬 옵션을 추가하고 영양 연동 조회에 적용.
+- 변경 파일: `functions/_shared/firestoreRest.js` — 선택 필드/정렬/문서 마스크 지원. `functions/_shared/nutritionEligibility.js` — 결제에서 만료 계산에 필요한 필드만, 설정 문서에서 계산 관련 4필드만 읽음(최대 200건 limit은 유지해 판정 의미 불변). `functions/api/teacher-nutrition.js` — CMS 영양 탭 요약을 최신 날짜순 7건만 읽고 화면에 필요한 요약 필드만 전송. `src/__tests__/nutrition_link_shared.test.js` — Firestore 필드 마스크 및 제한/선택/정렬 쿼리 검증 2개 추가.
+- 테스트: 관련 테스트 `npm test -- src/__tests__/nutrition_link_shared.test.js` → 13/13 통과. 전체 `npm test -- --run` → 3071/3084 통과, 실패 13(기존 기준선 11개 외 시간초과 등 2개; 통과 수는 `.github/test-baseline.json` minPassing 3059 이상). `npm run build` 성공(기존 chunk 크기 및 중복 Firebase 동적/정적 import 경고). `git diff --check` 통과.
+- 남은 위험: Firestore 실쿼리/배포/실기기 왕복 미확인. 영양 요약의 최근 7일은 이제 서버에서 날짜 내림차순으로 선택. 전체 실패 수가 HANDOFF의 과거 11개 기준보다 2개 더 나와, 두 항목이 환경성/일시성인지 추후 재확인 필요.
+- 다음에 할 일: 업로드 전 Cloudflare Pages에서 함수 배포 후 CMS 영양 탭의 최근 날짜·화면 표시 및 영양 앱 연결/기록 왕복 확인.

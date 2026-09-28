@@ -26,8 +26,16 @@ export async function checkNutritionEligibility(accessToken, memberRef) {
   }
 
   const [payments, settingsDoc] = await Promise.all([
-    queryEquals(accessToken, 'payments', '__mid', memberRef, 200),
-    getDocument(accessToken, 'settings/config'),
+    queryEquals(accessToken, 'payments', '__mid', memberRef, 200, {
+      // 만료 판정과 buildTrainerLots에 필요한 필드만 조회한다.
+      select: [
+        'amount', 'method', 'methods', 'isUnpaid', 'isMonthly', 'trainerIds',
+        'sessionAdds', 'paidAt', 'sessionStartDate', 'expiryExtensions', 'expirySettlements',
+      ],
+    }),
+    getDocument(accessToken, 'settings/config', [
+      'cardFeeRate', 'vatRate', 'expiryDaysPer10Sessions', 'expiryWarnDays',
+    ]),
   ]);
   const settings = settingsDoc ? docToPlain(settingsDoc) : null;
 

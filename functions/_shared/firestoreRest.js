@@ -75,8 +75,11 @@ export function docToPlain(document) {
 }
 
 /** 문서 1개 조회. 없으면 null. */
-export async function getDocument(accessToken, path) {
-  const res = await fetch(`${BASE_URL}/${path}`, {
+export async function getDocument(accessToken, path, fields) {
+  const mask = Array.isArray(fields) && fields.length
+    ? `?${fields.map(field => `mask.fieldPaths=${encodeURIComponent(field)}`).join('&')}`
+    : '';
+  const res = await fetch(`${BASE_URL}/${path}${mask}`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
   if (res.status === 404) return null;
@@ -124,23 +127,31 @@ export async function deleteDocument(accessToken, path) {
 }
 
 /** 단순 동등조건 쿼리(컬렉션 전체에서 field==value). */
-export async function queryEquals(accessToken, collectionId, field, value, limit = 20) {
+export async function queryEquals(accessToken, collectionId, field, value, limit = 20, options = {}) {
+  const structuredQuery = {
+    from: [{ collectionId }],
+    where: {
+      fieldFilter: {
+        field: { fieldPath: field },
+        op: 'EQUAL',
+        value: toFirestoreValue(value),
+      },
+    },
+    limit,
+  };
+  if (Array.isArray(options.select) && options.select.length) {
+    structuredQuery.select = { fields: options.select.map(fieldPath => ({ fieldPath })) };
+  }
+  if (options.orderBy?.fieldPath) {
+    structuredQuery.orderBy = [{
+      field: { fieldPath: options.orderBy.fieldPath },
+      direction: options.orderBy.direction === 'DESCENDING' ? 'DESCENDING' : 'ASCENDING',
+    }];
+  }
   const res = await fetch(`${BASE_URL}:runQuery`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${accessToken}`, 'content-type': 'application/json' },
-    body: JSON.stringify({
-      structuredQuery: {
-        from: [{ collectionId }],
-        where: {
-          fieldFilter: {
-            field: { fieldPath: field },
-            op: 'EQUAL',
-            value: toFirestoreValue(value),
-          },
-        },
-        limit,
-      },
-    }),
+    body: JSON.stringify({ structuredQuery }),
   });
   if (!res.ok) throw Object.assign(new Error(`Firestore 조회 실패: ${collectionId}.${field}`), { status: 503 });
   const rows = await res.json();

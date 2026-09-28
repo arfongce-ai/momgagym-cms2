@@ -5,15 +5,43 @@
 // 만료 테스트로 확인(claude/2026-09-17_영양앱-CMS연동_1단계조사_설계문서.md
 // 섹션 8 테스트 계획 참고). 여기서는 값 인코딩과 토큰 서명·검증처럼 "틀리면
 // 조용히 모든 요청이 깨지는" 부분만 자동화한다.
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
-  toFirestoreValue, fromFirestoreValue, toFirestoreFields, fromFirestoreFields, docToPlain,
+  toFirestoreValue, fromFirestoreValue, toFirestoreFields, fromFirestoreFields, docToPlain, getDocument, queryEquals,
 } from '../../functions/_shared/firestoreRest.js';
 import {
   signConnectionToken, verifyConnectionToken, newJti, newLinkCode,
 } from '../../functions/_shared/nutritionToken.js';
 
 describe('firestoreRest 값 인코딩', () => {
+  it('단일 문서 조회는 요청한 필드만 마스킹한다', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ fields: {} })));
+    try {
+      await getDocument('token', 'settings/config', ['vatRate', 'expiryWarnDays']);
+      expect(fetchSpy.mock.calls[0][0]).toContain('mask.fieldPaths=vatRate&mask.fieldPaths=expiryWarnDays');
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it('동등조건 조회는 필드 선택, 최신순 정렬, 제한을 Firestore 쿼리에 함께 전달한다', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('[]'));
+    try {
+      await queryEquals('token', 'nutritionSummaries', 'memberRef', 'm1', 7, {
+        select: ['memberRef', 'date', 'totals'],
+        orderBy: { fieldPath: 'date', direction: 'DESCENDING' },
+      });
+      const body = JSON.parse(fetchSpy.mock.calls[0][1].body);
+      expect(body.structuredQuery).toMatchObject({
+        limit: 7,
+        select: { fields: [{ fieldPath: 'memberRef' }, { fieldPath: 'date' }, { fieldPath: 'totals' }] },
+        orderBy: [{ field: { fieldPath: 'date' }, direction: 'DESCENDING' }],
+      });
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
   it('문자열·숫자·불리언·배열·중첩객체를 왕복 변환해도 원래 값과 같다', () => {
     const original = {
       memberRef: 'member_123',
