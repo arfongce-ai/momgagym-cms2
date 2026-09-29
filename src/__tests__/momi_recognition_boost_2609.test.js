@@ -3,7 +3,13 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'fs';
 import { join } from 'path';
-import { isSafeWakeOnly, matchWakeWord, resolveInterimWakeCommand } from '../hooks/useMomiVoice';
+import {
+  isSafeWakeOnly,
+  matchWakeWord,
+  MOMI_SPEECH_AUDIO_CONSTRAINTS,
+  resolveInterimWakeCommand,
+  supportsSpeechRecognitionAudioTrack,
+} from '../hooks/useMomiVoice';
 
 const read = (p) => readFileSync(join(__dirname, '..', p), 'utf-8');
 const hook = read('hooks/useMomiVoice.js');
@@ -43,6 +49,26 @@ describe('웨이크워드 오인식 제어', () => {
   });
 });
 
+describe('실제 음성인식 입력의 소음 억제', () => {
+  it('Chromium 135 이상에서 전처리된 오디오 트랙을 음성인식에 전달한다', () => {
+    expect(supportsSpeechRecognitionAudioTrack('Mozilla/5.0 Chrome/134.0.0.0 Safari/537.36')).toBe(false);
+    expect(supportsSpeechRecognitionAudioTrack('Mozilla/5.0 Chrome/135.0.0.0 Safari/537.36')).toBe(true);
+    expect(supportsSpeechRecognitionAudioTrack('Mozilla/5.0 Chrome/135.0.0.0 Edg/135.0.0.0')).toBe(true);
+    expect(supportsSpeechRecognitionAudioTrack('Mozilla/5.0 Version/18.0 Safari/605.1.15')).toBe(false);
+    expect(hook).toContain('recognition.start(track)');
+    expect(hook).toContain('getUserMedia({ audio: MOMI_SPEECH_AUDIO_CONSTRAINTS })');
+  });
+
+  it('인식에 넘기는 스트림은 소음 억제·에코 제거·자동 음량 조절을 요청한다', () => {
+    expect(MOMI_SPEECH_AUDIO_CONSTRAINTS).toEqual({
+      noiseSuppression: true,
+      echoCancellation: true,
+      autoGainControl: true,
+      channelCount: 1,
+    });
+  });
+});
+
 describe('지연·무응답 방지 배선', () => {
   it('확정 대기는 400ms, 웨이크 후 명령 대기창은 10초', () => {
     expect(hook).toContain('const FINAL_RESULT_SETTLE_MS = 400;');
@@ -71,9 +97,9 @@ describe('지연·무응답 방지 배선', () => {
     const onerror = hook.slice(hook.indexOf('recognition.onerror = (event) => {'));
     const stopAt = onerror.indexOf("event.error === 'not-allowed'");
     expect(stopAt).toBeGreaterThan(-1);
-    expect(onerror.slice(stopAt, stopAt + 420)).toContain('shouldRestartRef.current = false;');
-    expect(onerror.slice(stopAt, stopAt + 420)).toContain('wantListeningRef.current = false;');
-    expect(onerror.slice(stopAt, stopAt + 420)).toContain('onErrorOccurred(event.error);');
+    expect(onerror.slice(stopAt, stopAt + 620)).toContain('shouldRestartRef.current = false;');
+    expect(onerror.slice(stopAt, stopAt + 620)).toContain('wantListeningRef.current = false;');
+    expect(onerror.slice(stopAt, stopAt + 620)).toContain('onErrorOccurred(event.error);');
   });
 
   it.each(['components/common/KioskVoiceCommand.jsx', 'components/common/GlobalVoiceCommand.jsx'])(

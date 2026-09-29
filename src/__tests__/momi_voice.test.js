@@ -124,7 +124,7 @@ describe('useMomiVoice.js — iOS 대응 + 진단 로그', () => {
     const idx = src.indexOf('    recognitionRef.current = recognition;\n');
     const body = src.slice(idx, idx + 700);
     expect(body).toContain('if (wantListeningRef.current) {');
-    expect(body).toContain('recognition.start();');
+    expect(body).toContain('startRecognition();');
     const startBody = src.slice(src.indexOf('const startListening = useCallback(() => {'));
     expect(startBody.slice(0, 120)).toContain('wantListeningRef.current = true;');
     const stopBody = src.slice(src.indexOf('const stopListening = useCallback(() => {'));
@@ -536,7 +536,7 @@ describe('useMomiVoice.js — onend 재시작 실패 시 재시도 확대(회귀
   });
 
   it('네 번째(마지막) 시도까지 실패했을 때만 listening을 false로 내리고 restart-failed를 알린다', () => {
-    const lastAttemptIdx = onendBody.lastIndexOf('recognition.start();');
+    const lastAttemptIdx = onendBody.lastIndexOf('startRecognition();');
     const afterLastAttempt = onendBody.slice(lastAttemptIdx);
     expect(afterLastAttempt).toContain('setListening(false);');
     expect(afterLastAttempt).toContain("onErrorOccurred('restart-failed')");
@@ -625,7 +625,7 @@ describe('useMomiVoice.js — TTS 재생 중 마이크 일시정지(회귀 방�
     const body = src.slice(idx, end);
     expect(body).toContain('pausedForSpeechRef.current = false;');
     expect(body).toContain('if (recognitionRef.current && shouldRestartRef.current) {');
-    expect(body).toContain('recognitionRef.current.start();');
+    expect(body).toContain('startRecognitionRef.current?.();');
   });
 
   it('onend는 pausedForSpeechRef가 true인 동안 재시작을 시도하지 않는다(감시 effect와 충돌 방지)', () => {

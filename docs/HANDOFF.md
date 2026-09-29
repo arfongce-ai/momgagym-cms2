@@ -45,6 +45,13 @@
 
 ## 작업 로그
 최신 항목이 위. 형식을 그대로 복사해서 쓴다.
+### 2026-09-29 21:20 · Codex · R11 실사용 음성 입력 소음 억제 보완
+- 한 일: 여러 PC에서 같은 `no-speech`가 반복되는 원인을 확인. 기존 소음 억제 트랙은 입력 표시기에서만 사용되고 SpeechRecognition에는 전달되지 않았음. Chrome/Edge 135+에서 실제 인식기에 소음 억제·에코 제거·자동 게인 조절이 켜진 오디오 트랙을 전달하고, 미지원 브라우저는 기본 마이크 경로로 유지.
+- 변경 파일: `src/hooks/useMomiVoice.js`, `src/__tests__/momi_recognition_boost_2609.test.js`, `src/__tests__/momi_voice.test.js`, `docs/REVIEW_QUEUE.md`.
+- 검증: 관련 6개 파일 168/168 통과. 전체 테스트 3104/3115(기존 실패 11과 동일). 변경 파일 ESLint 및 `npm run build` 통과; 빌드에는 기존 Firebase import/chunk 크기 경고.
+- 남은 위험: SpeechRecognition의 사용자 지정 오디오 트랙은 Chromium 135+에서만 연결. 실제 운동센터 소음 환경에서 배포 후 확인 필요. 구형 브라우저에서는 기존 브라우저 기본 입력 사용.
+- 다음에 할 일: 변경을 로컬 커밋. 업로드·배포 후 관리자 계정으로 소음 환경에서 웨이크워드와 명령을 확인.
+
 ### 2026-09-29 20:10 · Codex · Git 병합 정리 및 모미 관리자 전용·오탐 축소
 - 한 일: 진행 중인 origin/main 병합 충돌에서 로컬 R11 로그와 원격 Issue #2 실행 검증 로그를 함께 보존. 키오스크·PC 음성 컴포넌트를 관리자 조건으로 분리하고 웨이크워드 시작 위치/단어 경계 검사를 강화.
 - 변경 파일: `docs/HANDOFF.md`, `docs/REVIEW_QUEUE.md`, `src/components/layout/AppLayout.jsx`, `src/hooks/useMomiVoice.js`, 관련 테스트 3개.
