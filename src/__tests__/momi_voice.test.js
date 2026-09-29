@@ -192,7 +192,7 @@ describe('useMomiVoice.js — 웨이크워드 비교 전 유니코드(NFC) 정�
 
   it('웨이크워드 후보 배열을 NFC로 정규화한다', () => {
     expect(src).toContain(
-      "const WAKE_WORD_VARIANTS = ['모미야', '몸이야', '보미야', '봄이야', '모미아', '모미'].map((w) => w.normalize('NFC'));"
+      "const WAKE_WORD_VARIANTS = ['모미야', '몸이야', '모미아', '모미'].map((w) => w.normalize('NFC'));"
     );
   });
 
@@ -209,7 +209,7 @@ describe('useMomiVoice.js — "몸이야"(흔한 오인식)도 웨이크워드�
 
   it("웨이크워드 후보에 '몸이야'가 포함된다", () => {
     expect(src).toContain(
-      "const WAKE_WORD_VARIANTS = ['모미야', '몸이야', '보미야', '봄이야', '모미아', '모미'].map((w) => w.normalize('NFC'));"
+      "const WAKE_WORD_VARIANTS = ['모미야', '몸이야', '모미아', '모미'].map((w) => w.normalize('NFC'));"
     );
   });
 
@@ -277,17 +277,15 @@ describe('matchWakeWord() — 실동작 검증(실제 진단 로그로 재현)',
 
   // [버그 수정 2026-08-08d] 발음이 부정확하면 "봄이야"(ㅂ·ㅁ 양순음 혼동 + 연음)로도
   // 잘못 인식됨을 확인함 — "몸이야"와 같은 종류의 문제.
-  it("발음이 부정확할 때 나오는 '봄이야'도 웨이크워드로 인정한다", () => {
-    const heard = '봄이야 트레이너 관리 화면 열어 줘';
-    const m = matchWakeWord(heard);
-    expect(m).not.toBeNull();
-    const commandText = heard.slice(m.index + m.length).trim();
-    expect(commandText).toBe('트레이너 관리 화면 열어 줘');
+  it("사람 이름과 일반 단어에 가까운 '보미야/봄이야/소미야'는 오탐하지 않는다", () => {
+    expect(matchWakeWord('보미야 일정 보여줘')).toBeNull();
+    expect(matchWakeWord('봄이야 트레이너 관리 화면 열어 줘')).toBeNull();
+    expect(matchWakeWord('소미야 회원 관리 열어줘')).toBeNull();
   });
 
-  it('공백이 낀 웨이크워드와 추가 오인식 후보도 인정한다', () => {
+  it('첫 단어의 웨이크워드에 낀 공백만 허용하고 문장 중간 언급은 무시한다', () => {
     expect(matchWakeWord('모 미 야 회원 관리 열어줘')).not.toBeNull();
-    expect(matchWakeWord('보미야 일정 보여줘')).not.toBeNull();
+    expect(matchWakeWord('오늘 모미야라고 불렀어')).toBeNull();
     expect(matchWakeWord('모미아 타이머 켜줘')).not.toBeNull();
   });
 

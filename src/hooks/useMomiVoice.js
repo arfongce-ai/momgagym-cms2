@@ -30,7 +30,7 @@ const WAKE_WORD_VARIANTS = ['모미야', '몸이야', '모미아', '모미'].map
 
 // 퍼지 유사도는 "소미야" 같은 사람 이름도 호출어로 인식할 수 있어 사용하지 않는다.
 
-/** heard 안에서 웨이크워드(또는 흔한 오인식 형태)를 찾는다. 없으면 null. */
+/** 발화 첫머리에서 안전 목록의 웨이크워드만 찾는다. 없으면 null. */
 export function matchWakeWord(heard) {
   const normalized = (heard || '').normalize('NFC');
   const isAtUtteranceStart = (index) => /^[\s,，.!?。、…-]*$/u.test(normalized.slice(0, index));
@@ -502,7 +502,9 @@ export function useMomiVoice({
         if (onMismatch) onMismatch(heard);
         return;
       }
-      const commandText = heard.slice(wakeMatch.index + wakeMatch.length).trim();
+      const commandText = heard.slice(wakeMatch.index + wakeMatch.length)
+        .replace(/^[\s,，.!?。、…-]+/u, '')
+        .trim();
       if (!commandText && !isSafeWakeOnly(heard, wakeMatch)) {
         clearWakeInterim();
         onRecognitionMetaRef.current?.({ heard, confidence, matched: false, kind: 'mismatch' });
