@@ -46,6 +46,13 @@
 ## 작업 로그
 최신 항목이 위. 형식을 그대로 복사해서 쓴다.
 
+### 2026-09-29 · Gemini · Issue #2 개인정보·운영 안정성 독립 검토
+- 한 일: Issue #2와 `9b50fde`, `940a117` 기준으로 개인정보·운영 안정성 위험을 검토했다고 보고됨.
+- 유효한 발견: 실제 동의 원본과의 시스템 대조 부재, 영상 내 제3자·얼굴·음성 식별 가능성, 로컬 임시 산출물 관리 위험은 현재 MVP의 운영 전제에 반영 필요.
+- 범위 구분: 현재 구현은 로컬 Node+FFmpeg 스크립트이며 브라우저 편집 UI, IndexedDB, WebCodecs, Cloudflare 영상 전송, 키오스크 모달을 만들지 않았다. 따라서 해당 경로의 메모리·라우트 위험은 현 코드 결함이 아니라 향후 CMS 내장 편집 기능을 만들 때의 설계 조건.
+- 결정: `src/ai-measure`나 키오스크 코드에 동의 가드·편집 UI를 추가하지 않음. 회원 영상과 CMS·측정 파이프라인의 분리를 유지.
+- 다음에 할 일: 사용자와 동의 원본(서면/Notion DB) 및 담당 확인 절차를 확정한 뒤, 실제 동의된 테스트 복사본 1건으로 로컬 리허설. 공개 전에는 얼굴·배경·음성·자막을 사람이 검수.
+
 ### 2026-09-29 · Codex · Issue #2 Claude 검토 보완
 - 한 일: 여러 결과를 한 화면에서 확인하는 로컬 `review_index.html` 검수 갤러리 추가. 갤러리에는 검수용 파일명만 표시하고 원본 경로·동의 참조값을 넣지 않음. 로컬 매니페스트 Git 제외를 하위 폴더까지 확장.
 - 변경 파일: `scripts/content-video/videoMvp.mjs`, `scripts/content-video/prepare-review.mjs`, `src/__tests__/content_video_mvp.test.js`, `docs/VIDEO_AUTOMATION_MVP.md`, `.gitignore`.
