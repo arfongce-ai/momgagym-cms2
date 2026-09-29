@@ -46,6 +46,14 @@
 ## 작업 로그
 최신 항목이 위. 형식을 그대로 복사해서 쓴다.
 
+### 2026-09-29 · Claude · 검토 Issue #2 동의 영상 자동 편집 MVP
+- 한 일: `9b50fde` 설계·보안·운영 검토. 별도 환경에서 합성 영상·로고·엔딩 카드로 로컬 처리 스크립트의 실제 실행을 확인했다고 보고됨.
+- 확인: 외부 네트워크/Firestore 호출 없이 로컬 파일·FFmpeg만 사용, 동의/길이/자막 검증과 검수 대기 결과 생성이 확인됐다고 보고됨. 셸 문자열 대신 인수 배열로 FFmpeg를 실행.
+- 발견: 🟠 여러 클립을 한 번에 검수할 사람용 갤러리 없음. 🟠 동의 참조값은 문자열 존재만 확인하며 실제 동의 기록과 시스템적으로 대조하지 않음. 🟡 매니페스트의 source·자막에 개인정보가 들어갈 수 있음. 🟡 `.gitignore`의 local 매니페스트 범위가 하위 폴더를 포괄하지 않음. 🟡 중간 실패 시 앞선 검수 결과는 남음.
+- 제안: 검수 갤러리와 Git 제외 범위 보완은 Issue #2에 포함. 실제 동의 기록 대조는 동의 원본(Notion DB/필드 등)을 사용자 결정 후 별도 단계로 구현. 테스트 기준선 변경은 Vitest 정상 실행 확인 뒤에만 검토.
+- 남은 위험: 얼굴 자동 블러 미구현. 자동 게시·자동 Drive 업로드는 계속 금지 상태.
+- 다음에 할 일: 사용자 결정 후 Codex가 검수 갤러리·Git 제외 보완 → Gemini 독립 검토 → 실제 PC에서 동의 완료 테스트 복사본 1건 리허설.
+
 ### 2026-09-29 · Codex · Issue #2 동의 영상 자동 편집 MVP
 - 한 일: 로컬 FFmpeg 기반 검수 대기 영상 생성기를 추가. 공개 동의·동의 참조값·10~30초 길이·자막 초안이 모두 있는 클립만 처리하며, 세로 9:16 변환·선택형 로고·2초 엔딩 카드·SRT 초안을 만든다.
 - 변경 파일: `scripts/content-video/videoMvp.mjs`, `scripts/content-video/prepare-review.mjs`, `content-video/approved.example.json`, `docs/VIDEO_AUTOMATION_MVP.md`, `src/__tests__/content_video_mvp.test.js`, `package.json`, `.gitignore`.
