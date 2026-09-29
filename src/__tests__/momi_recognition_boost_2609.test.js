@@ -7,6 +7,7 @@ import {
   isSafeWakeOnly,
   matchWakeWord,
   getMomiLocalRecognitionAvailability,
+  hasMicSignal,
   resolveInterimWakeCommand,
 } from '../hooks/useMomiVoice';
 
@@ -81,6 +82,32 @@ describe('온디바이스 한국어 음성 인식', () => {
     expect(hook).toContain('recognition.start();');
     expect(hook).not.toContain('recognition.start(track)');
   });
+});
+
+describe('로컬 마이크 입력 진단', () => {
+  it('주변 소음보다 말할 때 입력이 충분히 커졌는지 분류한다', () => {
+    expect(hasMicSignal(0.01, 0.02)).toBe(true);
+    expect(hasMicSignal(0.01, 0.011)).toBe(false);
+    expect(hasMicSignal(0, 0.005)).toBe(false);
+  });
+
+  it('검사 샘플은 브라우저 안에서만 분석하고 마이크 트랙을 끝난 뒤 닫는다', () => {
+    expect(hook).toContain('navigator.mediaDevices.getUserMedia({');
+    expect(hook).toContain('analyser.getFloatTimeDomainData(samples);');
+    expect(hook).toContain('stream?.getTracks().forEach((track) => track.stop());');
+    expect(hook).toContain('await audioContext.close()');
+    expect(hook).not.toContain('fetch(');
+  });
+
+  it.each(['components/common/GlobalVoiceCommand.jsx', 'components/common/KioskVoiceCommand.jsx'])(
+    '%s: no-speech가 반복되면 마이크 진단 버튼을 보여준다',
+    (file) => {
+      const component = read(file);
+      expect(component).toContain("'no-speech', 'mic-diagnostic-running'");
+      expect(component).toContain('onClick={async () => {');
+      expect(component).toContain('마이크 입력 진단');
+    }
+  );
 });
 
 describe('지연·무응답 방지 배선', () => {

@@ -61,6 +61,8 @@ export default function GlobalVoiceCommand() {
   const [recognitionStatus, setRecognitionStatus] = useState('checking');
   const [localInstallOffered, setLocalInstallOffered] = useState(false);
   const [speechRecognitionIssue, setSpeechRecognitionIssue] = useState(false);
+  const [micDiagnosticRunning, setMicDiagnosticRunning] = useState(false);
+  const [micDiagnosticResult, setMicDiagnosticResult] = useState('');
   const [busy, setBusy] = useState(false);
   const [interimText, setInterimText] = useState('');
   // [정확도 시각화 2026-09] 마이크 실제 음량(0~1)·대역별 세기(그래프)·이번 발화
@@ -545,6 +547,7 @@ export default function GlobalVoiceCommand() {
     startListening,
     stopListening,
     installLocalRecognition,
+    diagnoseMicrophone,
     awaitReply,
   } = useMomiVoice({
     onCommand: handleCommand,
@@ -662,6 +665,7 @@ export default function GlobalVoiceCommand() {
   // 음성인식 그래프가 그라데이션으로 떠오르고, 명령이 끝나면 다시 사라진다.
   // 측정 카메라 화면이 떠 있는 동안에는 위 effect가 무대를 내려둔다.
   const showLocalInstall = speechRecognitionIssue || localInstallOffered;
+  const showMicDiagnostic = speechRecognitionIssue || ['no-speech', 'mic-diagnostic-running', 'mic-signal-detected', 'mic-signal-low', 'mic-diagnostic-failed', 'mic-diagnostic-unsupported'].includes(recognitionStatus);
   const localInstallText = speechRecognitionIssue
     ? '말소리는 감지했지만 음성 인식 서비스가 글자를 돌려주지 않았어요. 한국어 음성팩을 설치해 이 PC에서 처리해 보세요.'
     : recognitionStatus === 'local-installing'
@@ -686,6 +690,36 @@ export default function GlobalVoiceCommand() {
               한국어 음성팩 설치
             </button>
           )}
+        </aside>
+      )}
+      {showMicDiagnostic && (
+        <aside className="fixed left-5 bottom-5 z-[1001] max-w-sm rounded-xl border border-sky-300 bg-slate-950/95 p-3 text-sm text-white shadow-xl">
+          <p className="mb-2">
+            {micDiagnosticResult || (recognitionStatus === 'mic-diagnostic-running'
+              ? '5초 검사 중입니다. 처음 2초는 조용히 기다리고, 다음 3초는 마이크 가까이에서 말해 주세요.'
+              : '모미가 음성 결과를 받지 못했어요. 먼저 마이크에 실제 음성이 들어오는지 확인해 주세요.')}
+          </p>
+          <button
+            type="button"
+            disabled={micDiagnosticRunning}
+            onClick={async () => {
+              setMicDiagnosticRunning(true);
+              setMicDiagnosticResult('');
+              setRecognitionStatus('mic-diagnostic-running');
+              const result = await diagnoseMicrophone();
+              setMicDiagnosticResult(result?.reason === 'unsupported'
+                ? '이 브라우저에서는 마이크 진단 기능을 사용할 수 없습니다.'
+                : result?.ok
+                  ? '마이크 신호가 들어옵니다. 음성 문장을 못 돌려주는 브라우저 인식 엔진 쪽으로 원인이 좁혀졌습니다.'
+                  : result?.reason
+                    ? `마이크 진단 실패: ${result.reason}`
+                    : '말할 때 입력 신호 변화가 거의 없습니다. 운영체제 입력 장치와 마이크 연결을 확인해 주세요.');
+              setMicDiagnosticRunning(false);
+            }}
+            className="rounded-lg bg-sky-300 px-3 py-2 font-semibold text-slate-950 disabled:opacity-50"
+          >
+            {micDiagnosticRunning ? '마이크 확인 중…' : '마이크 입력 진단'}
+          </button>
         </aside>
       )}
       {stagePhase && (

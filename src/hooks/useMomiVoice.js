@@ -171,6 +171,10 @@ export async function getMomiLocalRecognitionAvailability(SpeechRecognitionCtor)
   }
 }
 
+export function hasMicSignal(ambientRms, voiceRms) {
+  return Number.isFinite(voiceRms) && voiceRms >= Math.max(0.006, (Number.isFinite(ambientRms) ? ambientRms : 0) * 1.35);
+}
+
 // iOS Safari(아이폰·아이패드)는 continuous:true에서 세션이 응답 없이 멈추는(마이크는
 // 켜진 채 결과가 전혀 안 올라오는) 알려진 버그가 있다. iOS에서만 continuous:false로
 // 짧게 끊어 듣고, 매번 onend에서 재시작해 이어붙이는 방식으로 우회한다.
@@ -1035,6 +1039,64 @@ export function useMomiVoice({
   }, []);
   startListeningRef.current = startListening;
 
+  // `no-speech` alone cannot distinguish a quiet microphone from a browser ASR failure.
+  // This user-triggered local probe compares mic energy before/while speaking; it never
+  // records or uploads samples and always releases the stream afterwards.
+  const diagnoseMicrophone = useCallback(async () => {
+    if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
+      callbacksRef.current.onRecognitionStatus?.('mic-diagnostic-unsupported');
+      return { ok: false, reason: 'unsupported' };
+    }
+    let stream;
+    let audioContext;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+      });
+      const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContextCtor) throw new Error('AudioContext is not supported');
+      audioContext = new AudioContextCtor();
+      await audioContext.resume();
+      const source = audioContext.createMediaStreamSource(stream);
+      const highPass = audioContext.createBiquadFilter();
+      highPass.type = 'highpass';
+      highPass.frequency.value = 120;
+      const lowPass = audioContext.createBiquadFilter();
+      lowPass.type = 'lowpass';
+      lowPass.frequency.value = 4000;
+      const analyser = audioContext.createAnalyser();
+      analyser.fftSize = 2048;
+      source.connect(highPass);
+      highPass.connect(lowPass);
+      lowPass.connect(analyser);
+      const samples = new Float32Array(analyser.fftSize);
+      let ambientRms = 0;
+      let voiceRms = 0;
+      const startedAt = Date.now();
+      while (Date.now() - startedAt < 5000) {
+        analyser.getFloatTimeDomainData(samples);
+        let sumSquares = 0;
+        for (let i = 0; i < samples.length; i += 1) sumSquares += samples[i] * samples[i];
+        const rms = Math.sqrt(sumSquares / samples.length);
+        if (Date.now() - startedAt < 2000) ambientRms = Math.max(ambientRms, rms);
+        else voiceRms = Math.max(voiceRms, rms);
+        await new Promise((resolve) => setTimeout(resolve, 80));
+      }
+      const detected = hasMicSignal(ambientRms, voiceRms);
+      callbacksRef.current.onRecognitionStatus?.(detected ? 'mic-signal-detected' : 'mic-signal-low');
+      return { ok: detected, ambientRms, voiceRms };
+    } catch (error) {
+      console.warn('[모미] 마이크 입력 진단 실패:', error?.message || error);
+      callbacksRef.current.onRecognitionStatus?.('mic-diagnostic-failed');
+      return { ok: false, reason: error?.name || 'diagnostic-failed' };
+    } finally {
+      stream?.getTracks().forEach((track) => track.stop());
+      if (audioContext && audioContext.state !== 'closed') {
+        try { await audioContext.close(); } catch (error) { /* no-op */ }
+      }
+    }
+  }, []);
+
   const installLocalRecognition = useCallback(async () => {
     const SpeechRecognitionCtor = getSpeechRecognition();
     if (typeof SpeechRecognitionCtor?.install !== 'function') {
@@ -1126,6 +1188,7 @@ export function useMomiVoice({
     startListening,
     stopListening,
     installLocalRecognition,
+    diagnoseMicrophone,
     awaitReply,
     cancelAwaitReply,
   };
