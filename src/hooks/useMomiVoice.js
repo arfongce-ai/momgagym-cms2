@@ -180,6 +180,17 @@ const FINAL_RESULT_SETTLE_MS = 400;
 // 빼고 주는 경우가 있어, 그때 이 흔적으로 명령을 살려낸다.
 const WAKE_INTERIM_MEMORY_MS = 4000;
 
+// 임시 결과에 웨이크워드와 명령이 함께 들어있을 때만, 확정 문장에서 빠진
+// 웨이크워드를 보완한다. 웨이크워드만 들린 상태로는 뒤의 일반 대화를 명령으로
+// 승격하지 않는다.
+export function resolveInterimWakeCommand(interimText, finalText, interimAt, now = Date.now()) {
+  if (!interimText || !finalText || now - interimAt >= WAKE_INTERIM_MEMORY_MS) return null;
+  const match = matchWakeWord(interimText);
+  if (!match) return null;
+  const interimCommand = interimText.slice(match.index + match.length).trim();
+  return interimCommand ? finalText : null;
+}
+
 // [노이즈 캔슬링 2026-09b] 아래 소음 게이트가 쓰는 두 값.
 // VOICE_GATE_LEVEL: 노이즈 플로어를 뺀 뒤의 음량이 이 값을 넘으면 "사람이 말했다"로
 // 본다(0~1). 너무 높이면 작게 말하는 트레이너를 놓치므로 낮게 잡는다.
@@ -529,14 +540,15 @@ export function useMomiVoice({
 
       const wakeMatch = matchWakeWord(heard);
       if (!wakeMatch) {
-        // [인식률 개선 2026-09-29] 방금 임시 결과에서는 "모미야"가 들렸는데 확정 문장에서
-        // 빠진 경우 — 확정 문장 전체를 명령으로 살려낸다.
+        // [인식률 개선 2026-09-29] 임시 결과에 웨이크워드와 명령이 함께 있었는데
+        // 확정 문장에서 웨이크워드만 빠진 경우에 한해 명령을 살려낸다.
         const w = wakeInterimRef.current;
-        if (w.text && Date.now() - w.at < WAKE_INTERIM_MEMORY_MS) {
+        const interimCommand = resolveInterimWakeCommand(w.text, heard, w.at);
+        if (interimCommand) {
           clearWakeInterim();
           if (onCommand) {
             onRecognitionMetaRef.current?.({ heard, confidence, matched: true, kind: 'command' });
-            onCommand(heard);
+            onCommand(interimCommand);
             return;
           }
         }
@@ -574,6 +586,16 @@ export function useMomiVoice({
       //  network=네트워크 문제 — Chrome 인식은 온라인 필요)
       console.warn('[모미] 인식 오류:', event.error);
       if (onInterim) onInterim('');
+      // 브라우저 권한 거부는 재시작해도 회복되지 않아 반복 오류만 만든다.
+      // 권한을 바꾼 뒤에는 화면을 다시 열어 새 인식 세션을 시작하도록 둔다.
+      if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+        shouldRestartRef.current = false;
+        wantListeningRef.current = false;
+        clearWakeInterim();
+        clearActivation();
+        if (onErrorOccurred) onErrorOccurred(event.error);
+        return;
+      }
       // [버그 수정 2026-08-08] no-speech는 진짜 오류가 아니라 몇 초간 무음일 때
       // 항상 나는 정상적인 타임아웃이다 — 상시 듣기 중엔 자주 발생하고, 뒤이어
       // onend가 오면 shouldRestartRef가 알아서 재시작해줘서 동작엔 지장이 없다.
@@ -595,6 +617,7 @@ export function useMomiVoice({
       if (
         requireWakeWord
         && recognitionRef.current === recognition
+        && !pendingReplyRef.current
         && wi.text
         && Date.now() - wi.at < WAKE_INTERIM_MEMORY_MS
         && !pendingFinalTextRef.current

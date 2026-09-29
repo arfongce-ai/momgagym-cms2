@@ -46,6 +46,24 @@
 ## 작업 로그
 최신 항목이 위. 형식을 그대로 복사해서 쓴다.
 
+### 2026-09-29 19:02 · Codex · 검토 R11 모미 음성인식·명령 지연 개선
+- 한 일: `70f245c`와 `556cf21`의 대상 코드·테스트를 검토하고 기준선·관련 테스트·빌드를 실행.
+- 검토 당시 발견:
+  - 🔴 `src/components/common/KioskVoiceCommand.jsx:332,399-407`, `GlobalVoiceCommand.jsx:378,449-457` — `ackTimer`가 `try` 블록 안의 `const`인데 바깥 `finally`에서 참조됨. `clearTimeout(ackTimer)`에서 `ReferenceError`가 발생해 `setBusy(false)`와 `isHandlingRef.current = false`가 실행되지 않음. 다음 음성 명령이 계속 무시될 수 있음. `try` 블록 스코프를 재현하는 Node 검증으로 확인.
+  - 🟠 `src/hooks/useMomiVoice.js:568-572,590-640` — `not-allowed`를 포함한 권한 오류에서 재시작 플래그를 끄지 않고 `onend`가 재시작을 계속 시도함. 대기열에 기록된 미해결 동작으로, 권한 거부 시 반복 오류/재시작 위험이 남음.
+  - 🟡 `src/__tests__/momi_recognition_boost_2609.test.js` — 웨이크워드 파싱 순수 함수 검증 외에는 대부분 소스 문자열 검사라 `onend` 복구, interim 오탐, `ackTimer`의 실제 컴포넌트 실행 경로를 잠그지 못함.
+- 테스트: 전체 `npm test -- --run` → 3095/3106, 실패 11(기록된 기존 실패와 동일; `.github/test-baseline.json` minPassing 3059 충족). R11 관련 5개 파일 → 156/156 통과. `npm run build` 통과(기존 Firebase 동적/정적 import 및 큰 chunk 경고). 실기기 음성 테스트 미실행.
+- 제안 수정: 두 컴포넌트에서 타이머 핸들을 `try` 바깥에 선언해 `finally`가 안전하게 정리하도록 수정하고, handleCommand가 정상·예외 종료 후 busy/handling 상태를 해제하는 실행형 회귀 테스트 추가. 마이크 권한 오류에서 재시작 중단 여부는 운영 결정이 필요.
+- 남은 위험: interim 웨이크워드 기억은 웨이크 호출 없이 이어진 주변 발화를 4초 안에 명령으로 실행할 수 있음. 관리자 전용 마운트가 실제 키오스크 관리자 계정과 맞는지, 사람 이름 오탐 및 실기기 인식률은 미확인.
+- 사용자 결정: 2026-09-29 보완 진행 승인. 관리자 전용 마운트 유지.
+- 검토 시 다음 단계: 최소 수정·실행형 회귀 테스트 → 전체 테스트·빌드 재확인(아래 보완 완료).
+
+#### R11 보완 완료 · 2026-09-29 19:15
+- 변경 파일: `src/components/common/KioskVoiceCommand.jsx`, `GlobalVoiceCommand.jsx` — acknowledgement 타이머를 `try` 바깥에서 선언해 finally가 정상 정리하고 busy/handling 잠금을 항상 해제하도록 수정. `src/hooks/useMomiVoice.js` — interim 웨이크워드만으로 후속 발화를 명령 처리하지 않도록 제한, pendingReply 중 onend 합성 결과 차단, 권한 거부 시 자동 재시작 중단. `src/services/voiceCommandService.js` — 응답 본문 읽기까지 12초 제한 적용 및 토큰 타이머 정리. 실행형 helper·타임아웃 회귀 테스트 보강.
+- 테스트: R11 관련 6개 파일 164/164 통과. 전체 `npm test -- --run` 3100/3111(실패 11, HANDOFF 기존 실패와 동일, minPassing 3059 충족). `npm run build` 통과. 변경 파일 대상 ESLint 통과; 전체 `npm run lint`는 기존 `src/ai-measure/core/unifiedReport.js:326` 중복 `peakVelocity` 키 1건으로 실패.
+- 남은 위험: Chrome 키오스크 실기기 음성 테스트 미실행. `보미야`는 명시적 웨이크워드 변형이고 자모 유사도는 `소미야`도 잡을 수 있어, 사람 이름 호명 뒤 명령처럼 들리는 말이 이어지면 오탐 가능성이 남음. 권한을 거부해 인식이 중단되면 브라우저 권한을 허용한 뒤 화면을 다시 열어야 새 인식 세션이 시작됨.
+- 다음에 할 일: 업로드·배포 후 관리자 로그인 키오스크에서 웨이크워드·명령 왕복 및 권한 허용 흐름 확인.
+
 ### 2026-09-29 · Claude Code · 모미 인식률·지연 개선 + 관리자 전용 (R11 대기열 등록)
 - 한 일: ① 모미 음성인식을 관리자 로그인에서만 마운트(`AppLayout.jsx:218`, `70f245c`) ② 웨이크워드 오인식 변형 10종 추가 + 임시 결과에서 웨이크워드 기억(4초)·확정 문장에서 웨이크가 빠져도 명령 살림·확정 없이 세션 종료 시 복구 ③ 확정 대기 700→400ms, 웨이크 후 명령 대기창 8→10초 ④ "네, 확인했어요" 안내를 0.9초 넘게 걸릴 때만 말함(마이크 끊김·지연 감소) ⑤ 서버 음성 명령 12초 타임아웃(무응답 시 이후 명령이 영구 무시되던 문제) ⑥ TTS `speaking` 12초 고착 시 강제 취소.
 - 변경 파일: `src/hooks/useMomiVoice.js`, `KioskVoiceCommand.jsx`, `GlobalVoiceCommand.jsx`, `voiceCommandService.js`, `AppLayout.jsx`, 테스트 `momi_recognition_boost_2609.test.js`(신규)·`momi_voice.test.js`(700→400)·`kiosk_nav_filter.test.js`.

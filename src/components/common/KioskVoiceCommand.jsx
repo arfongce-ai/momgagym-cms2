@@ -326,10 +326,11 @@ export default function KioskVoiceCommand() {
       // [요청 흐름 2026-08-08] "모미야"→"네, 선생님"→(명령)→명령 인지 확인→
       // 실행/응답. GlobalVoiceCommand.jsx와 동일 패턴.
       setFeedback('네, 확인했어요.');
+      let ackTimer = null;
       // [지연 개선 2026-09-29] 규칙 기반 명령은 즉시 끝나는데도 예전엔 매번 "네, 확인했어요"를
       // 먼저 말했다 — TTS가 돌면 마이크가 끊겼다 재시작돼 그 사이 말이 유실되고 최종 응답도
       // 늦어졌다. 0.9초 넘게 걸리는 명령(서버 AI 호출)에서만 안내 음성을 낸다.
-      const ackTimer = setTimeout(() => {
+      ackTimer = setTimeout(() => {
         speak('네, 확인했어요.');
       }, 900);
       let message = '';

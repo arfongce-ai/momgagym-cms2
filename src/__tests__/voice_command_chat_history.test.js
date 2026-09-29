@@ -76,4 +76,26 @@ describe('processVoiceCommand() — history를 백엔드 요청에 그대로 실
     });
     expect(result).toEqual({ type: 'chat', text: '꾸준히 좋아지고 있어요!' });
   });
+
+  it('서버가 응답 본문을 끝내지 않아도 12초 안에 요청을 중단한다', async () => {
+    vi.useFakeTimers();
+    global.fetch = vi.fn(async (_url, { signal }) => ({
+      ok: true,
+      json: () => new Promise((_, reject) => {
+        signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), { once: true });
+      }),
+    }));
+
+    const pending = processVoiceCommand({
+      transcript: '오늘 컨디션 어때요',
+      role: 'trainer',
+      currentUser: { trainerId: 't1' },
+      allMembers: [],
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    const rejectsAfterTimeout = expect(pending).rejects.toThrow('음성 명령 응답 시간 초과');
+    await vi.advanceTimersByTimeAsync(12000);
+    await rejectsAfterTimeout;
+    vi.useRealTimers();
+  });
 });

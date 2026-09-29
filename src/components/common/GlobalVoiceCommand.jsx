@@ -374,8 +374,9 @@ export default function GlobalVoiceCommand() {
       // 실행/응답. 실제 처리(API 호출)로 넘어가기 전에 "들었다"는 걸 먼저
       // 알려줘서, 트레이너가 "제대로 들리긴 한 건가" 불안하게 기다리지 않게 한다.
       setFeedback('네, 확인했어요.');
+      let ackTimer = null;
       // [지연 개선 2026-09-29] KioskVoiceCommand.jsx와 동일 — 0.9초 넘게 걸릴 때만 안내 음성.
-      const ackTimer = setTimeout(() => {
+      ackTimer = setTimeout(() => {
         speak('네, 확인했어요.');
       }, 900);
       // 화면 표시(feedback)와 음성 출력(speak)이 서로 다른 문구로 갈리지 않도록

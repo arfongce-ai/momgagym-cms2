@@ -121,7 +121,7 @@
   2. 같은 날 버튼 제거 커밋(`VbtMeasure.jsx`, `LiftingMeasure.jsx`, `LiftingResultSheet.jsx`)에 남은 참조가 없는지 — lint 가드로 1차 확인됨
   3. lint 가드 실행 시간(약 7초)이 부담되면 대상 폴더를 줄일지
 
-## R11 · 모미 음성 인식률·명령 지연 개선 + 관리자 전용 마운트 · 2026-09-29 · ⏳
+## R11 · 모미 음성 인식률·명령 지연 개선 + 관리자 전용 마운트 · 2026-09-29 · ✅보완완료
 
 - 커밋: 관리자 전용 `70f245c` / 인식률·지연 개선은 이번 커밋(해시는 `git log --oneline -3`로 확인)
 - 대상: `src/hooks/useMomiVoice.js` (`WAKE_WORD_VARIANTS` unshift, `wakeInterimRef`, `onend` 복구, TTS 12초 고착 방지, `FINAL_RESULT_SETTLE_MS`) / `src/components/common/KioskVoiceCommand.jsx`·`GlobalVoiceCommand.jsx` `handleCommand`의 `ackTimer` / `src/services/voiceCommandService.js` `/api/voice-command` 12초 타임아웃 / `src/components/layout/AppLayout.jsx:218` `user?.role === 'admin'` 조건
@@ -135,6 +135,9 @@
   4. `not-allowed`(마이크 거부) 시 `onend`가 무조건 재시작해 오류가 반복되는 문제 **미수정**(`useMomiVoice.js` onend 재시작 조건).
   5. 테스트가 소스 문자열 위주라 "약함" — 실제 SpeechRecognition 모의 객체로 실행형 테스트를 추가할 수 있는지.
   6. 트레이너 계정으로 로그인된 키오스크에서는 모미가 안 뜸 — 운영상 문제 없는지 사용자 확인.
+
+- Codex 검토(2026-09-29): 🔴 `KioskVoiceCommand.jsx`·`GlobalVoiceCommand.jsx`에서 `ackTimer`를 `try` 내부 `const`로 선언하고 `finally`에서 참조해 ReferenceError 발생; busy/handling 잠금 해제가 중단됨. 🟠 `not-allowed` 시 자동 재시작 위험은 미해결. 테스트 3095/3106(기존 11 실패), R11 관련 156/156, 빌드 통과. 상세·수정 제안은 HANDOFF 최신 로그.
+- Codex 보완 완료(2026-09-29): acknowledgement 잠금 해제, interim 오탐 제한, 권한 거부 후 재시작 중단, 응답 본문 포함 12초 API 제한 수정. R11 관련 164/164, 전체 3100/3111(기존 실패 11), 빌드 통과. 실기기 키오스크 확인은 배포 후 진행.
 
 ---
 

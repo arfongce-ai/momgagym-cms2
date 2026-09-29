@@ -3,7 +3,7 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'fs';
 import { join } from 'path';
-import { matchWakeWord } from '../hooks/useMomiVoice';
+import { matchWakeWord, resolveInterimWakeCommand } from '../hooks/useMomiVoice';
 
 const read = (p) => readFileSync(join(__dirname, '..', p), 'utf-8');
 const hook = read('hooks/useMomiVoice.js');
@@ -29,6 +29,13 @@ describe('웨이크워드 오인식 변형 추가', () => {
     expect(matchWakeWord('모미야')).not.toBeNull();
     expect(matchWakeWord('몸이야 리포트')).not.toBeNull();
   });
+
+  it('웨이크워드와 명령이 함께 들린 임시 결과만 확정 문장 복구에 사용한다', () => {
+    expect(resolveInterimWakeCommand('모미야 회원 관리 열어줘', '회원 관리 열어줘', 1000, 2000))
+      .toBe('회원 관리 열어줘');
+    expect(resolveInterimWakeCommand('모미야', '회원 관리 열어줘', 1000, 2000)).toBeNull();
+    expect(resolveInterimWakeCommand('모미야 회원 관리', '회원 관리 열어줘', 1000, 5001)).toBeNull();
+  });
 });
 
 describe('지연·무응답 방지 배선', () => {
@@ -39,14 +46,15 @@ describe('지연·무응답 방지 배선', () => {
 
   it('임시 결과에서 웨이크워드가 들리면 기억했다가 확정 문장에서 웨이크가 빠져도 명령으로 살린다', () => {
     expect(hook).toContain('wakeInterimRef.current.text = interim;');
-    expect(hook).toContain('WAKE_INTERIM_MEMORY_MS');
+    expect(hook).toContain('resolveInterimWakeCommand(w.text, heard, w.at)');
     const flush = hook.slice(hook.indexOf('const wakeMatch = matchWakeWord(heard);'));
-    expect(flush.slice(0, 700)).toContain('onCommand(heard);');
+    expect(flush.slice(0, 900)).toContain('onCommand(interimCommand);');
   });
 
   it('확정 없이 세션이 끝나도 임시 웨이크 텍스트를 한 번 처리한다(onend 복구)', () => {
     const onend = hook.slice(hook.indexOf('recognition.onend = () => {'));
     expect(onend.slice(0, 1200)).toContain('recognition.onresult({ resultIndex: 0, results: [fake] })');
+    expect(onend.slice(0, 1200)).toContain('&& !pendingReplyRef.current');
   });
 
   it('speechSynthesis.speaking이 12초 넘게 굳으면 강제로 취소해 마이크를 되살린다', () => {
@@ -54,11 +62,31 @@ describe('지연·무응답 방지 배선', () => {
     expect(hook).toContain('synth.cancel()');
   });
 
+  it('마이크 권한 거부는 자동 재시작을 중단하고 오류를 화면으로 전달한다', () => {
+    const onerror = hook.slice(hook.indexOf('recognition.onerror = (event) => {'));
+    const stopAt = onerror.indexOf("event.error === 'not-allowed'");
+    expect(stopAt).toBeGreaterThan(-1);
+    expect(onerror.slice(stopAt, stopAt + 420)).toContain('shouldRestartRef.current = false;');
+    expect(onerror.slice(stopAt, stopAt + 420)).toContain('wantListeningRef.current = false;');
+    expect(onerror.slice(stopAt, stopAt + 420)).toContain('onErrorOccurred(event.error);');
+  });
+
+  it.each(['components/common/KioskVoiceCommand.jsx', 'components/common/GlobalVoiceCommand.jsx'])(
+    '%s: acknowledgement timer는 try 바깥에서 선언돼 finally에서 정리 가능하다',
+    (file) => {
+      const src = read(file);
+      const handle = src.slice(src.indexOf('const handleCommand = useCallback('), src.indexOf('const handleWakeOnly = useCallback('));
+      expect(handle.indexOf('let ackTimer = null;')).toBeLessThan(handle.indexOf('try {'));
+      expect(handle).toContain('ackTimer = setTimeout(() => {');
+      expect(handle).toContain('clearTimeout(ackTimer);');
+    }
+  );
+
   it.each(['components/common/KioskVoiceCommand.jsx', 'components/common/GlobalVoiceCommand.jsx'])(
     '%s: "네, 확인했어요"는 0.9초 넘게 걸릴 때만 말하고 처리 종료 시 타이머를 정리한다',
     (file) => {
       const src = read(file);
-      expect(src).toContain('const ackTimer = setTimeout(() => {');
+      expect(src).toContain('ackTimer = setTimeout(() => {');
       expect(src).toContain('}, 900);');
       expect(src).toContain('clearTimeout(ackTimer);');
     }

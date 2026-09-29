@@ -43,7 +43,7 @@ describe('useMomiVoice.js — iOS 대응 + 진단 로그', () => {
 
   it('인식 오류를 더 이상 무조건 무시하지 않고 원인을 콘솔에 남긴다', () => {
     const errorStart = src.indexOf('recognition.onerror = (event) => {');
-    const errorEnd = src.indexOf('};', errorStart);
+    const errorEnd = src.indexOf('recognition.onend =', errorStart);
     const errorBody = src.slice(errorStart, errorEnd);
     expect(errorBody).toContain("console.warn('[모미] 인식 오류:', event.error);");
   });
@@ -65,7 +65,7 @@ describe('useMomiVoice.js — iOS 대응 + 진단 로그', () => {
 
   it('인식 오류가 나면 콘솔뿐 아니라 onErrorOccurred로 화면에도 알린다', () => {
     const errorStart = src.indexOf('recognition.onerror = (event) => {');
-    const errorEnd = src.indexOf('};', errorStart);
+    const errorEnd = src.indexOf('recognition.onend =', errorStart);
     const errorBody = src.slice(errorStart, errorEnd);
     expect(errorBody).toContain('if (onErrorOccurred) onErrorOccurred(event.error);');
   });
@@ -75,11 +75,11 @@ describe('useMomiVoice.js — iOS 대응 + 진단 로그', () => {
     // 코드: no-speech"로 띄웠더니, 정상 동작(몇 초 무음 후 자동 재시작)인데도
     // "PC에서 오류가 난다"는 오해를 만들었다. 콘솔 로그는 남기되 화면엔 안 띄운다.
     const errorStart = src.indexOf('recognition.onerror = (event) => {');
-    const errorEnd = src.indexOf('};', errorStart);
+    const errorEnd = src.indexOf('recognition.onend =', errorStart);
     const errorBody = src.slice(errorStart, errorEnd);
     expect(errorBody).toContain("if (event.error === 'no-speech' || event.error === 'aborted') return;");
     expect(errorBody.indexOf("event.error === 'no-speech'")).toBeLessThan(
-      errorBody.indexOf('if (onErrorOccurred) onErrorOccurred(event.error);')
+      errorBody.lastIndexOf('if (onErrorOccurred) onErrorOccurred(event.error);')
     );
     // console.warn 자체는 no-speech도 여전히 남겨야(콘솔 접근 가능한 경우엔 진단용).
     expect(errorBody.indexOf("console.warn('[모미] 인식 오류:', event.error);")).toBeLessThan(
@@ -89,11 +89,11 @@ describe('useMomiVoice.js — iOS 대응 + 진단 로그', () => {
 
   it('의도적인 recognition.abort() 종료도 오류로 표시하지 않는다', () => {
     const errorStart = src.indexOf('recognition.onerror = (event) => {');
-    const errorEnd = src.indexOf('};', errorStart);
+    const errorEnd = src.indexOf('recognition.onend =', errorStart);
     const errorBody = src.slice(errorStart, errorEnd);
     expect(errorBody).toContain("event.error === 'no-speech' || event.error === 'aborted'");
     expect(errorBody.indexOf("event.error === 'aborted'")).toBeLessThan(
-      errorBody.indexOf('if (onErrorOccurred) onErrorOccurred(event.error);')
+      errorBody.lastIndexOf('if (onErrorOccurred) onErrorOccurred(event.error);')
     );
   });
 

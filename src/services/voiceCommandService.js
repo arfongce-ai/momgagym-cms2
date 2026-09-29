@@ -726,18 +726,25 @@ export async function processVoiceCommand({
   const controller = new AbortController();
   const abortTimer = setTimeout(() => controller.abort(), VOICE_API_TIMEOUT_MS);
   let idToken = null;
+  let tokenTimeout;
   try {
     idToken = auth.currentUser
       ? await Promise.race([
           auth.currentUser.getIdToken(),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('토큰 발급 시간 초과')), 5000)),
+          new Promise((_, reject) => {
+            tokenTimeout = setTimeout(() => reject(new Error('토큰 발급 시간 초과')), 5000);
+          }),
         ])
       : null;
-  } catch (e) { console.warn('[voiceCommandService] ID 토큰 발급 실패:', e?.message || e); }
+  } catch (e) {
+    console.warn('[voiceCommandService] ID 토큰 발급 실패:', e?.message || e);
+  } finally {
+    clearTimeout(tokenTimeout);
+  }
 
-  let res;
+  let data;
   try {
-    res = await fetch('/api/voice-command', {
+    const res = await fetch('/api/voice-command', {
       method: 'POST',
       signal: controller.signal,
       headers: {
@@ -746,29 +753,28 @@ export async function processVoiceCommand({
       },
       body: JSON.stringify({ transcript, role, history }),
     });
+    if (!res.ok) {
+      // [진단용 2026-08-08] "명령 실행이 안 된다"는 문의 대응 — 백엔드가 실패
+      // 응답에 detail을 담아 보내면 그 이유도 사용자 오류에 포함한다.
+      let detail = '';
+      try {
+        const body = await res.json();
+        detail = body?.detail || body?.error || '';
+      } catch (e) {
+        if (e?.name === 'AbortError') throw e;
+        // 응답이 JSON이 아닌 경우 — 상태 코드만으로 넘어간다.
+      }
+      throw new Error(`음성 명령 처리 실패 (status ${res.status})${detail ? ` — ${detail}` : ''}`);
+    }
+    // 응답 본문 읽기도 같은 12초 제한 안에 둔다. 서버가 헤더만 보내고 본문을
+    // 끝내지 않는 경우에도 handleCommand가 finally까지 도달해야 한다.
+    data = await res.json();
   } catch (e) {
     if (e?.name === 'AbortError') throw new Error('음성 명령 응답 시간 초과');
     throw e;
   } finally {
     clearTimeout(abortTimer);
   }
-
-  if (!res.ok) {
-    // [진단용 2026-08-08] "명령 실행이 안 된다"는 문의 대응 — 예전엔 상태 코드만
-    // 담아 던져서 정작 왜 실패했는지(예: Anthropic API 크레딧 부족 등 서버 쪽
-    // 문제)는 화면에 안 보였다. 백엔드(functions/api/voice-command.js)가 실패
-    // 응답에 detail을 이미 담아 보내주므로, 그걸 읽어서 에러 메시지에 포함한다.
-    let detail = '';
-    try {
-      const body = await res.json();
-      detail = body?.detail || body?.error || '';
-    } catch (e) {
-      // 응답이 JSON이 아닌 경우(네트워크 레벨 오류 등) — 상태 코드만으로 넘어간다.
-    }
-    throw new Error(`음성 명령 처리 실패 (status ${res.status})${detail ? ` — ${detail}` : ''}`);
-  }
-
-  const data = await res.json();
 
   if (data.type === 'chat') {
     cacheVoiceResponse(transcript, data.text, cacheOptions);
