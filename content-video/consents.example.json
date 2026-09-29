@@ -1,0 +1,12 @@
+{
+  "exportedAt": "2026-09-29T00:00:00.000Z",
+  "records": [
+    {
+      "reference": "CONSENT-2026-0001",
+      "publicContent": true,
+      "revoked": false,
+      "allowedChannels": ["instagram", "youtube_shorts"],
+      "expiresAt": "2027-12-31"
+    }
+  ]
+}

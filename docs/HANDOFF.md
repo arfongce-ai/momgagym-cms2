@@ -9,7 +9,7 @@
 
 | 도구 | 수정 중인 파일/영역 | 시작 일시 |
 |------|--------------------|-----------|
-| (없음) | | |
+| Codex | Issue #2 동의 스냅샷 검증 — `scripts/content-video/**`, `content-video/**`, `docs/VIDEO_AUTOMATION_MVP.md`, 테스트/HANDOFF | 2026-09-29 |
 
 ## 프로젝트 현황 (2026-09-22 기준, 착수 전 `git status`로 재확인)
 

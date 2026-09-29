@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildFfmpegArgs, buildReviewIndexHtml, srtText, validateClip } from '../../scripts/content-video/videoMvp.mjs';
+import { buildFfmpegArgs, buildReviewIndexHtml, srtText, validateClip, validateConsentSnapshot } from '../../scripts/content-video/videoMvp.mjs';
 
 const approved = {
   id: 'exercise-balance-001',
@@ -34,5 +34,17 @@ describe('콘텐츠 영상 MVP', () => {
     expect(html).toContain('exercise-balance-001-review.mp4');
     expect(html).not.toContain(approved.source);
     expect(html).not.toContain(approved.consent.reference);
+  });
+
+  it('최근 Notion 동의 스냅샷의 공개 승인·채널·철회·만료를 모두 대조한다', () => {
+    const snapshot = {
+      exportedAt: '2026-09-29T00:00:00.000Z',
+      records: [{ reference: 'CONSENT-REFERENCE', publicContent: true, revoked: false, allowedChannels: ['instagram'], expiresAt: '2026-12-31' }],
+    };
+    const options = { reference: approved.consent.reference, channels: ['instagram'], now: new Date('2026-09-29T12:00:00.000Z') };
+    expect(validateConsentSnapshot(snapshot, options)).toEqual([]);
+    expect(validateConsentSnapshot({ ...snapshot, records: [{ ...snapshot.records[0], revoked: true }] }, options)).toContain('해당 동의는 철회되어 처리할 수 없습니다.');
+    expect(validateConsentSnapshot(snapshot, { ...options, channels: ['youtube_shorts'] })).toContain('해당 동의의 허용 채널에 게시 예정 채널이 모두 포함되지 않습니다.');
+    expect(validateConsentSnapshot({ ...snapshot, exportedAt: '2026-09-01T00:00:00.000Z' }, options)[0]).toContain('7일 이내');
   });
 });

@@ -2,6 +2,7 @@ import path from 'node:path';
 
 export const MIN_CLIP_SECONDS = 10;
 export const MAX_CLIP_SECONDS = 30;
+export const DEFAULT_CONSENT_SNAPSHOT_MAX_AGE_DAYS = 7;
 
 export function validateClip(clip) {
   const errors = [];
@@ -18,6 +19,41 @@ export function validateClip(clip) {
     errors.push(`편집 길이는 ${MIN_CLIP_SECONDS}~${MAX_CLIP_SECONDS}초여야 합니다.`);
   }
   if (typeof clip.captionDraft !== 'string' || !clip.captionDraft.trim()) errors.push('검수할 자막 초안(captionDraft)이 필요합니다.');
+  return errors;
+}
+
+/**
+ * Notion에서 사람이 내보낸 동의 현황 스냅샷을 검사한다.
+ * 실제 서명 원본은 이 파일에 넣지 않고, 공개 가능 여부만 익명 참조값으로 대조한다.
+ */
+export function validateConsentSnapshot(snapshot, { reference, channels, now = new Date(), maxAgeDays = DEFAULT_CONSENT_SNAPSHOT_MAX_AGE_DAYS } = {}) {
+  const errors = [];
+  if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) return ['동의 스냅샷 파일 형식이 올바르지 않습니다.'];
+  if (!Array.isArray(snapshot.records)) return ['동의 스냅샷에 records 목록이 필요합니다.'];
+  if (typeof reference !== 'string' || !reference.trim()) return ['동의 기록 참조값이 필요합니다.'];
+  if (!Array.isArray(channels) || channels.length === 0 || channels.some((channel) => typeof channel !== 'string' || !channel.trim())) {
+    return ['게시 예정 채널 목록이 필요합니다.'];
+  }
+
+  const exportedAt = new Date(snapshot.exportedAt);
+  if (Number.isNaN(exportedAt.getTime())) return ['동의 스냅샷의 exportedAt 시간이 올바르지 않습니다.'];
+  const ageMs = now.getTime() - exportedAt.getTime();
+  if (ageMs > maxAgeDays * 86_400_000) errors.push(`동의 스냅샷은 ${maxAgeDays}일 이내에 다시 내보내야 합니다.`);
+  if (ageMs < -300_000) errors.push('동의 스냅샷 시간이 현재보다 미래입니다.');
+
+  const record = snapshot.records.find((item) => item?.reference === reference.trim());
+  if (!record) return [...errors, '동의 기록 참조값을 스냅샷에서 찾지 못했습니다.'];
+  if (record.publicContent !== true) errors.push('해당 동의는 공개 콘텐츠 사용으로 승인되지 않았습니다.');
+  if (record.revoked === true) errors.push('해당 동의는 철회되어 처리할 수 없습니다.');
+
+  if (!Array.isArray(record.allowedChannels) || channels.some((channel) => !record.allowedChannels.includes(channel.trim()))) {
+    errors.push('해당 동의의 허용 채널에 게시 예정 채널이 모두 포함되지 않습니다.');
+  }
+  if (record.expiresAt !== null && record.expiresAt !== undefined && record.expiresAt !== '') {
+    const expiresAt = new Date(`${record.expiresAt}T23:59:59.999`);
+    if (Number.isNaN(expiresAt.getTime())) errors.push('동의 만료일 형식이 올바르지 않습니다.');
+    else if (expiresAt.getTime() < now.getTime()) errors.push('해당 동의가 만료되었습니다.');
+  }
   return errors;
 }
 
@@ -45,11 +81,12 @@ export function outputPaths(outputDir, clip) {
 
 /** 원본 경로·동의 참조값을 노출하지 않는 로컬 검수 페이지를 만든다. */
 export function buildReviewIndexHtml(items) {
+  const escapeHtml = (value) => String(value).replace(/[&<>'"]/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[character]);
   const cards = items.map(({ id, videoFile, subtitleFile }) => `
     <article>
-      <h2>${id}</h2>
-      <video controls preload="metadata" src="${videoFile}"></video>
-      <p><a href="${subtitleFile}">자막 초안(SRT) 열기</a></p>
+      <h2>${escapeHtml(id)}</h2>
+      <video controls preload="metadata" src="${escapeHtml(videoFile)}"></video>
+      <p><a href="${escapeHtml(subtitleFile)}">자막 초안(SRT) 열기</a></p>
       <p class="notice">공개 전 얼굴·배경·음성·자막을 확인하세요. 이 파일은 자동 게시되지 않습니다.</p>
     </article>`).join('\n');
   return `<!doctype html>

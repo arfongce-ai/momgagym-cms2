@@ -2,7 +2,7 @@ import { access, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import process from 'node:process';
-import { buildFfmpegArgs, buildReviewIndexHtml, outputPaths, srtText, validateClip } from './videoMvp.mjs';
+import { buildFfmpegArgs, buildReviewIndexHtml, outputPaths, srtText, validateClip, validateConsentSnapshot } from './videoMvp.mjs';
 
 function option(name) {
   const index = process.argv.indexOf(name);
@@ -16,12 +16,29 @@ if (!manifestPath) {
 }
 
 const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
+const manifestDir = path.dirname(path.resolve(manifestPath));
 const outputDir = path.resolve(manifest.outputDir || 'content-video/review');
 const clips = Array.isArray(manifest.clips) ? manifest.clips : [];
-const invalid = clips.flatMap((clip) => validateClip(clip).map((message) => `${clip?.id || '(id 없음)'}: ${message}`));
+const channels = manifest.publishing?.channels;
+if (typeof manifest.consentRegistry !== 'string' || !manifest.consentRegistry.trim()) {
+  console.error('consentRegistry(동의 스냅샷 경로)가 필요합니다. 원본 영상은 처리하지 않습니다.');
+  process.exit(1);
+}
+const consentSnapshot = JSON.parse(await readFile(path.resolve(manifestDir, manifest.consentRegistry), 'utf8'));
+const invalid = clips.flatMap((clip) => [
+  ...validateClip(clip),
+  ...validateConsentSnapshot(consentSnapshot, { reference: clip?.consent?.reference, channels }),
+].map((message) => `${clip?.id || '(id 없음)'}: ${message}`));
 if (invalid.length) {
-  console.error('동의/길이/자막 검증에 실패했습니다. 원본 영상은 처리하지 않습니다.');
+  console.error('동의 스냅샷/길이/자막 검증에 실패했습니다. 원본 영상은 처리하지 않습니다.');
   invalid.forEach((message) => console.error(`- ${message}`));
+  process.exit(1);
+}
+
+try {
+  await Promise.all(clips.map((clip) => access(clip.source)));
+} catch {
+  console.error('입력 원본 중 접근할 수 없는 파일이 있습니다. 원본 영상은 처리하지 않습니다.');
   process.exit(1);
 }
 
@@ -34,7 +51,6 @@ if (runtime.error || runtime.status !== 0) {
 await mkdir(outputDir, { recursive: true });
 const reviewItems = [];
 for (const clip of clips) {
-  await access(clip.source);
   const files = outputPaths(outputDir, clip);
   const command = buildFfmpegArgs({
     clip,
@@ -47,10 +63,8 @@ for (const clip of clips) {
   await writeFile(files.subtitle, srtText(clip), 'utf8');
   await writeFile(files.review, JSON.stringify({
     id: clip.id,
-    consentReference: clip.consent.reference,
-    source: clip.source,
-    output: files.video,
-    subtitleDraft: files.subtitle,
+    outputFile: path.basename(files.video),
+    subtitleFile: path.basename(files.subtitle),
     status: 'review_required',
     publishAllowed: false,
   }, null, 2));
