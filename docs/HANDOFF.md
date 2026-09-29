@@ -9,7 +9,7 @@
 
 | 도구 | 수정 중인 파일/영역 | 시작 일시 |
 |------|--------------------|-----------|
-| Codex | Issue #2 동의 스냅샷 검증 — `scripts/content-video/**`, `content-video/**`, `docs/VIDEO_AUTOMATION_MVP.md`, 테스트/HANDOFF | 2026-09-29 |
+| (없음) | | |
 
 ## 프로젝트 현황 (2026-09-22 기준, 착수 전 `git status`로 재확인)
 
@@ -45,6 +45,14 @@
 
 ## 작업 로그
 최신 항목이 위. 형식을 그대로 복사해서 쓴다.
+
+### 2026-09-29 · Codex · Issue #2 Notion 동의 스냅샷 검증
+- 한 일: 자동 편집 시작 전에 최근 Notion 동의 현황 스냅샷을 대조하도록 보완. 공개 승인·철회 여부·허용 채널·만료일·스냅샷 생성 시점(7일 이내)을 모두 통과한 클립만 FFmpeg 전 단계로 진행한다.
+- 변경 파일: `scripts/content-video/videoMvp.mjs`, `scripts/content-video/prepare-review.mjs`, `content-video/approved.example.json`, `content-video/consents.example.json`(신규), `docs/VIDEO_AUTOMATION_MVP.md`, `src/__tests__/content_video_mvp.test.js`.
+- 개인정보 최소화: 검수 JSON에서 원본 경로와 동의 참조값을 제거. 동의 스냅샷은 Git 제외 `.local.json`으로만 두며, 서명 원본·회원 이름·연락처·영상 파일은 넣지 않는다.
+- 테스트: Node 문법 검사 및 동의 승인/철회/채널 불일치/만료 스모크 통과, `git diff --check` 통과. `npm test -- --run src/__tests__/content_video_mvp.test.js`, `npm run build`는 현재 샌드박스가 상위 폴더 접근을 거부해 Vite 설정을 읽지 못하여 시작 실패(코드 테스트 실패 아님).
+- 남은 위험: 현재는 Notion API가 아닌 수동 내보내기 스냅샷이다. 실제 서명 원본과 DB의 대응 및 얼굴·배경·음성 검수는 담당자가 계속 확인해야 한다.
+- 다음에 할 일: 사용자 PC에서 비공개 Notion `영상 공개 동의 관리` DB를 만들고 `consents.local.json`을 최근 상태로 내보낸 뒤, 동의 완료된 테스트 복사본 1건으로 FFmpeg 리허설. 이후 Claude/Gemini가 변경 커밋을 교차 검토.
 
 ### 2026-09-29 · Gemini · Issue #2 개인정보·운영 안정성 독립 검토
 - 한 일: Issue #2와 `9b50fde`, `940a117` 기준으로 개인정보·운영 안정성 위험을 검토했다고 보고됨.
