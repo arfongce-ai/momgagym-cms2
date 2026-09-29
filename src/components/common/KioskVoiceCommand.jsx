@@ -51,6 +51,9 @@ export default function KioskVoiceCommand() {
   // 매칭의 "트레이너 이름 언급되면 Claude로" 안전장치에 쓴다.
   const allTrainers = useMemo(() => store.getTrainers(), []);
   const [feedback, setFeedback] = useState('');
+  const [recognitionStatus, setRecognitionStatus] = useState('checking');
+  const [localInstallOffered, setLocalInstallOffered] = useState(false);
+  const [speechRecognitionIssue, setSpeechRecognitionIssue] = useState(false);
   const [busy, setBusy] = useState(false);
   const [interimText, setInterimText] = useState('');
   // [화면에서 사라지는 모미 2026-09c] GlobalVoiceCommand.jsx와 완전히 동일한 흐름 —
@@ -80,6 +83,17 @@ export default function KioskVoiceCommand() {
     setConfidence(meta.confidence > 0 ? meta.confidence : null);
     if (meta.matched) openStage();
   }, [openStage]);
+
+  const handleRecognitionStatus = useCallback((status) => {
+    setRecognitionStatus(status);
+    if (['local-install-required', 'local-downloading', 'local-installing', 'local-install-failed'].includes(status)) {
+      setLocalInstallOffered(true);
+    } else if (status === 'local-ready' || status === 'online-only') {
+      setLocalInstallOffered(false);
+    }
+    if (status === 'speech-without-result') setSpeechRecognitionIssue(true);
+    if (status === 'transcript') setSpeechRecognitionIssue(false);
+  }, []);
 
   // 무대가 떠 있는 동안에만 음량·그래프를 state로 올린다(대기 중엔 리렌더 0).
   const handleAudioLevel = useCallback((lv, nextBands) => {
@@ -470,12 +484,18 @@ export default function KioskVoiceCommand() {
     stageIdleTimerRef.current = setTimeout(() => setCloseRequested(true), showMs);
   }, [openStage]);
 
-  const { supported, startListening, awaitReply } = useMomiVoice({
+  const {
+    supported,
+    startListening,
+    installLocalRecognition,
+    awaitReply,
+  } = useMomiVoice({
     onCommand: handleCommand,
     onWakeOnly: handleWakeOnly,
     onMismatch: handleMismatch,
     onInterim: setInterimText,
     onErrorOccurred: handleErrorOccurred,
+    onRecognitionStatus: handleRecognitionStatus,
     onRecognitionMeta: handleRecognitionMeta,
     // [2026-09-22] 그래프용 측정 마이크는 무대가 떠 있을 때만 연다 — 대기 중(대부분의
     // 시간)엔 인식용 마이크 하나만 쓰게 해서 두 스트림이 부딪칠 여지를 없앤다.
@@ -573,16 +593,43 @@ export default function KioskVoiceCommand() {
   // [화면에서 사라지는 모미 2026-09c] 평소엔 정말로 아무것도 그리지 않는다 —
   // 상시 감지 표시등(오브)도, 코너 HUD도 없앴다. "모미야"로 부른 순간에만
   // 전체화면 음성인식 그래프가 그라데이션으로 떠오르고, 명령이 끝나면 사라진다.
-  if (!stagePhase) return null;
+  const showLocalInstall = speechRecognitionIssue || localInstallOffered;
+  const localInstallText = speechRecognitionIssue
+    ? '말소리는 감지했지만 음성 인식 서비스가 글자를 돌려주지 않았어요. 한국어 음성팩을 설치해 이 PC에서 처리해 보세요.'
+    : recognitionStatus === 'local-installing'
+    ? '한국어 음성팩을 설치하고 있어요.'
+    : recognitionStatus === 'local-downloading'
+      ? '한국어 음성팩 다운로드가 필요해요.'
+      : recognitionStatus === 'local-install-failed'
+        ? '로컬 음성팩 설치에 실패했어요. 다시 시도해 주세요.'
+        : '음성 인식이 불안정하면 한국어 음성팩을 설치해 이 PC에서 처리할 수 있어요.';
 
   return (
-    <MomiVoiceStage
-      phase={stagePhase}
-      state={stageState}
-      text={feedback || (interimText ? `“${interimText}”` : '')}
-      confidence={confidence}
-      level={micLevel}
-      bands={bands}
-    />
+    <>
+      {showLocalInstall && (
+        <aside className="fixed right-5 bottom-5 z-[1001] max-w-sm rounded-xl border border-amber-300 bg-slate-950/95 p-3 text-sm text-white shadow-xl">
+          <p className="mb-2">{localInstallText}</p>
+          {recognitionStatus !== 'local-installing' && recognitionStatus !== 'awaiting-reply' && localInstallOffered && (
+            <button
+              type="button"
+              onClick={installLocalRecognition}
+              className="rounded-lg bg-amber-400 px-3 py-2 font-semibold text-slate-950"
+            >
+              한국어 음성팩 설치
+            </button>
+          )}
+        </aside>
+      )}
+      {stagePhase && (
+        <MomiVoiceStage
+          phase={stagePhase}
+          state={stageState}
+          text={feedback || (interimText ? `“${interimText}”` : '')}
+          confidence={confidence}
+          level={micLevel}
+          bands={bands}
+        />
+      )}
+    </>
   );
 }

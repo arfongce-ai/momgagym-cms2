@@ -1,14 +1,13 @@
 // [2026-09-29] 모미 인식률·지연 개선 회귀 테스트.
 // 순수 함수(matchWakeWord)는 실행형, 나머지는 기존 voice 테스트처럼 정적 소스 검사.
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import {
   isSafeWakeOnly,
   matchWakeWord,
-  MOMI_SPEECH_AUDIO_CONSTRAINTS,
+  getMomiLocalRecognitionAvailability,
   resolveInterimWakeCommand,
-  supportsSpeechRecognitionAudioTrack,
 } from '../hooks/useMomiVoice';
 
 const read = (p) => readFileSync(join(__dirname, '..', p), 'utf-8');
@@ -49,23 +48,38 @@ describe('웨이크워드 오인식 제어', () => {
   });
 });
 
-describe('실제 음성인식 입력의 소음 억제', () => {
-  it('Chromium 135 이상에서 전처리된 오디오 트랙을 음성인식에 전달한다', () => {
-    expect(supportsSpeechRecognitionAudioTrack('Mozilla/5.0 Chrome/134.0.0.0 Safari/537.36')).toBe(false);
-    expect(supportsSpeechRecognitionAudioTrack('Mozilla/5.0 Chrome/135.0.0.0 Safari/537.36')).toBe(true);
-    expect(supportsSpeechRecognitionAudioTrack('Mozilla/5.0 Chrome/135.0.0.0 Edg/135.0.0.0')).toBe(true);
-    expect(supportsSpeechRecognitionAudioTrack('Mozilla/5.0 Version/18.0 Safari/605.1.15')).toBe(false);
-    expect(hook).toContain('recognition.start(track)');
-    expect(hook).toContain('getUserMedia({ audio: MOMI_SPEECH_AUDIO_CONSTRAINTS })');
+describe('온디바이스 한국어 음성 인식', () => {
+  it('Chrome이 지원하면 한국어 로컬 음성팩 가용성을 조회한다', async () => {
+    const available = vi.fn().mockResolvedValue('available');
+    await expect(getMomiLocalRecognitionAvailability({ available })).resolves.toBe('available');
+    expect(available).toHaveBeenCalledWith({ langs: ['ko-KR'], processLocally: true });
   });
 
-  it('인식에 넘기는 스트림은 소음 억제·에코 제거·자동 음량 조절을 요청한다', () => {
-    expect(MOMI_SPEECH_AUDIO_CONSTRAINTS).toEqual({
-      noiseSuppression: true,
-      echoCancellation: true,
-      autoGainControl: true,
-      channelCount: 1,
-    });
+  it('로컬 API가 없거나 조회가 실패하면 기존 원격 인식 경로를 유지한다', async () => {
+    await expect(getMomiLocalRecognitionAvailability({})).resolves.toBe('unsupported');
+    await expect(getMomiLocalRecognitionAvailability({
+      available: vi.fn().mockRejectedValue(new Error('unavailable')),
+    })).resolves.toBe('unsupported');
+  });
+
+  it('한국어 팩이 있으면 로컬 처리하고, 다운로드 가능하면 설치 안내를 노출한다', () => {
+    expect(hook).toContain("recognition.processLocally = true;");
+    expect(hook).toContain("availability === 'downloadable' || availability === 'downloading'");
+    for (const file of ['components/common/GlobalVoiceCommand.jsx', 'components/common/KioskVoiceCommand.jsx']) {
+      const component = read(file);
+      expect(component).toContain('onRecognitionStatus: handleRecognitionStatus');
+      expect(component).toContain('onClick={installLocalRecognition}');
+      expect(component).toContain('한국어 음성팩 설치');
+      expect(component).toContain('setLocalInstallOffered(true)');
+      expect(component).toContain('const showLocalInstall = speechRecognitionIssue || localInstallOffered;');
+      expect(component).toContain("recognitionStatus !== 'awaiting-reply'");
+    }
+  });
+
+  it('미지원 기기에서는 브라우저 기본 마이크를 사용한다', () => {
+    expect(hook).toContain('recognition.processLocally = false;');
+    expect(hook).toContain('recognition.start();');
+    expect(hook).not.toContain('recognition.start(track)');
   });
 });
 

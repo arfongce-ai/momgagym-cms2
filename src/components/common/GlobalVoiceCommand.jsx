@@ -58,6 +58,9 @@ export default function GlobalVoiceCommand() {
   // 언급되면 안전하게 Claude로 넘긴다" 판단에 쓴다.
   const allTrainers = useMemo(() => store.getTrainers(), []);
   const [feedback, setFeedback] = useState('');
+  const [recognitionStatus, setRecognitionStatus] = useState('checking');
+  const [localInstallOffered, setLocalInstallOffered] = useState(false);
+  const [speechRecognitionIssue, setSpeechRecognitionIssue] = useState(false);
   const [busy, setBusy] = useState(false);
   const [interimText, setInterimText] = useState('');
   // [정확도 시각화 2026-09] 마이크 실제 음량(0~1)·대역별 세기(그래프)·이번 발화
@@ -90,6 +93,17 @@ export default function GlobalVoiceCommand() {
     // 웨이크워드든 명령이든, 모미가 나를 향해 반응한 순간 화면에 떠오른다.
     if (meta.matched) openStage();
   }, [openStage]);
+
+  const handleRecognitionStatus = useCallback((status) => {
+    setRecognitionStatus(status);
+    if (['local-install-required', 'local-downloading', 'local-installing', 'local-install-failed'].includes(status)) {
+      setLocalInstallOffered(true);
+    } else if (status === 'local-ready' || status === 'online-only') {
+      setLocalInstallOffered(false);
+    }
+    if (status === 'speech-without-result') setSpeechRecognitionIssue(true);
+    if (status === 'transcript') setSpeechRecognitionIssue(false);
+  }, []);
 
   // 마이크 음량·그래프는 무대가 떠 있는 동안에만 state로 올린다 — 평소(대기)엔
   // 화면에 아무것도 없으므로 초당 60번 리렌더할 이유가 전혀 없다.
@@ -526,12 +540,19 @@ export default function GlobalVoiceCommand() {
     stageIdleTimerRef.current = setTimeout(() => setCloseRequested(true), showMs);
   }, [openStage]);
 
-  const { supported, startListening, stopListening, awaitReply } = useMomiVoice({
+  const {
+    supported,
+    startListening,
+    stopListening,
+    installLocalRecognition,
+    awaitReply,
+  } = useMomiVoice({
     onCommand: handleCommand,
     onWakeOnly: handleWakeOnly,
     onMismatch: handleMismatch,
     onInterim: setInterimText,
     onErrorOccurred: handleErrorOccurred,
+    onRecognitionStatus: handleRecognitionStatus,
     onRecognitionMeta: handleRecognitionMeta,
     // [2026-09-22] 그래프용 측정 마이크는 무대가 떠 있을 때만 연다 — 대기 중(대부분의
     // 시간)엔 인식용 마이크 하나만 쓰게 해서 두 스트림이 부딪칠 여지를 없앤다.
@@ -640,16 +661,43 @@ export default function GlobalVoiceCommand() {
   // 오브(마이크 버튼)도, 코너 HUD도 없다. "모미야"로 불렀을 때만 전체화면
   // 음성인식 그래프가 그라데이션으로 떠오르고, 명령이 끝나면 다시 사라진다.
   // 측정 카메라 화면이 떠 있는 동안에는 위 effect가 무대를 내려둔다.
-  if (!stagePhase) return null;
+  const showLocalInstall = speechRecognitionIssue || localInstallOffered;
+  const localInstallText = speechRecognitionIssue
+    ? '말소리는 감지했지만 음성 인식 서비스가 글자를 돌려주지 않았어요. 한국어 음성팩을 설치해 이 PC에서 처리해 보세요.'
+    : recognitionStatus === 'local-installing'
+    ? '한국어 음성팩을 설치하고 있어요.'
+    : recognitionStatus === 'local-downloading'
+      ? '한국어 음성팩 다운로드가 필요해요.'
+      : recognitionStatus === 'local-install-failed'
+        ? '로컬 음성팩 설치에 실패했어요. 다시 시도해 주세요.'
+        : '음성 인식이 불안정하면 한국어 음성팩을 설치해 이 PC에서 처리할 수 있어요.';
 
   return (
-    <MomiVoiceStage
-      phase={stagePhase}
-      state={stageState}
-      text={feedback || (interimText ? `“${interimText}”` : '')}
-      confidence={confidence}
-      level={micLevel}
-      bands={bands}
-    />
+    <>
+      {showLocalInstall && (
+        <aside className="fixed right-5 bottom-5 z-[1001] max-w-sm rounded-xl border border-amber-300 bg-slate-950/95 p-3 text-sm text-white shadow-xl">
+          <p className="mb-2">{localInstallText}</p>
+          {recognitionStatus !== 'local-installing' && recognitionStatus !== 'awaiting-reply' && localInstallOffered && (
+            <button
+              type="button"
+              onClick={installLocalRecognition}
+              className="rounded-lg bg-amber-400 px-3 py-2 font-semibold text-slate-950"
+            >
+              한국어 음성팩 설치
+            </button>
+          )}
+        </aside>
+      )}
+      {stagePhase && (
+        <MomiVoiceStage
+          phase={stagePhase}
+          state={stageState}
+          text={feedback || (interimText ? `“${interimText}”` : '')}
+          confidence={confidence}
+          level={micLevel}
+          bands={bands}
+        />
+      )}
+    </>
   );
 }

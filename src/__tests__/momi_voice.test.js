@@ -81,10 +81,9 @@ describe('useMomiVoice.js — iOS 대응 + 진단 로그', () => {
     expect(errorBody.indexOf("event.error === 'no-speech'")).toBeLessThan(
       errorBody.lastIndexOf('if (onErrorOccurred) onErrorOccurred(event.error);')
     );
-    // console.warn 자체는 no-speech도 여전히 남겨야(콘솔 접근 가능한 경우엔 진단용).
-    expect(errorBody.indexOf("console.warn('[모미] 인식 오류:', event.error);")).toBeLessThan(
-      errorBody.indexOf("event.error === 'no-speech'")
-    );
+    // 정상적인 무음 세션은 경고 대신 정보 로그로 남겨 실제 오류와 구분한다.
+    expect(errorBody).toContain("console.info('[모미] 발화 결과 없음(no-speech) — 인식기를 다시 시작합니다.');");
+    expect(errorBody).toContain("console.warn('[모미] 인식 오류:', event.error);");
   });
 
   it('의도적인 recognition.abort() 종료도 오류로 표시하지 않는다', () => {
@@ -104,7 +103,7 @@ describe('useMomiVoice.js — iOS 대응 + 진단 로그', () => {
   // 만들어져 영원히 못 듣게 됐다(재현 테스트로 확정). 이제 콜백은 callbacksRef로
   // 호출 시점의 최신 값을 읽으므로 stale closure도 없고, 인식기도 부서지지 않는다.
   it('콜백은 의존성 배열이 아니라 callbacksRef로 최신 값을 읽는다(페이지 이동마다 인식기가 부서지던 버그 방지)', () => {
-    expect(src).toContain('callbacksRef.current = { onCommand, onWakeOnly, onMismatch, onInterim, onErrorOccurred };');
+    expect(src).toContain('onCommand, onWakeOnly, onMismatch, onInterim, onErrorOccurred, onRecognitionStatus,');
     expect(src).toContain('}, [requireWakeWord, clearPendingFinal]);');
     expect(src).not.toContain('}, [onCommand, onWakeOnly, onMismatch, onInterim, onErrorOccurred, requireWakeWord, clearPendingFinal]);');
   });
@@ -124,8 +123,8 @@ describe('useMomiVoice.js — iOS 대응 + 진단 로그', () => {
     const idx = src.indexOf('    recognitionRef.current = recognition;\n');
     const body = src.slice(idx, idx + 700);
     expect(body).toContain('if (wantListeningRef.current) {');
-    expect(body).toContain('startRecognition();');
-    const startBody = src.slice(src.indexOf('const startListening = useCallback(() => {'));
+    expect(body).toContain('startListeningRef.current?.();');
+    const startBody = src.slice(src.indexOf('const startListening = useCallback(async () => {'));
     expect(startBody.slice(0, 120)).toContain('wantListeningRef.current = true;');
     const stopBody = src.slice(src.indexOf('const stopListening = useCallback(() => {'));
     expect(stopBody.slice(0, 120)).toContain('wantListeningRef.current = false;');
@@ -357,9 +356,7 @@ describe('useMomiVoice.js — awaitReply(즉답 대기, 회귀 방지)', () => {
   });
 
   it('훅이 awaitReply·cancelAwaitReply를 외부에 노출한다', () => {
-    expect(src).toContain(
-      'return { supported, listening, startListening, stopListening, awaitReply, cancelAwaitReply };'
-    );
+    expect(src).toMatch(/return \{[\s\S]*supported,[\s\S]*awaitReply,[\s\S]*cancelAwaitReply,[\s\S]*\};/);
   });
 });
 
@@ -457,7 +454,7 @@ describe('useMomiVoice.js — 마이크 끄기 시 실제로 재시작하지 않
   });
 
   it('startListening이 shouldRestartRef를 true로 올린다', () => {
-    const start = src.indexOf('const startListening = useCallback(() => {');
+    const start = src.indexOf('const startListening = useCallback(async () => {');
     const end = src.indexOf('}, []);', start);
     const body = src.slice(start, end);
     expect(body).toContain('shouldRestartRef.current = true;');

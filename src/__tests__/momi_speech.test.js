@@ -233,7 +233,8 @@ describe('GlobalVoiceCommand.jsx — requireWakeWord: true (버튼이 없어졌�
   const src = readSrc('src', 'components', 'common', 'GlobalVoiceCommand.jsx');
 
   it('useMomiVoice에 requireWakeWord: true를 넘긴다', () => {
-    const start = src.indexOf('const { supported, startListening, stopListening, awaitReply } = useMomiVoice({');
+    const call = src.indexOf('} = useMomiVoice({');
+    const start = src.lastIndexOf('const {', call);
     const end = src.indexOf('});', start);
     const body = src.slice(start, end);
     expect(start).toBeGreaterThan(-1);

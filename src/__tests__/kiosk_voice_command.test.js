@@ -23,9 +23,9 @@ describe('KioskVoiceCommand.jsx — 버튼 없이 자동으로 상시 감지를 
     expect(effectBody).toContain('if (supported) startListening();');
   });
 
-  it('버튼(onClick 토글)이 없다 — 표시등만 있고 클릭 핸들러가 없다', () => {
-    expect(src).not.toContain('onClick');
-    expect(src).not.toContain('<button');
+  it('기본 음성 감지는 자동 시작하며 마이크 토글은 없고 음성팩 설치 버튼만 제공한다', () => {
+    expect(src).toContain('onClick={installLocalRecognition}');
+    expect(src).not.toMatch(/onClick=\{(?:toggle|startListening|stopListening)/);
   });
 
   it('명령 처리 결과를 화면 표시와 동시에 speak()로 읽어준다(GlobalVoiceCommand와 동일 패턴)', () => {

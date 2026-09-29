@@ -161,20 +161,15 @@ function getSpeechRecognition() {
   return window.SpeechRecognition || window.webkitSpeechRecognition || null;
 }
 
-// Chrome 135+/Edge 135+ can recognize a supplied MediaStreamTrack. Passing an
-// explicitly processed microphone track lets the gym's noise suppression
-// constraints reach speech recognition instead of only the visual meter.
-export function supportsSpeechRecognitionAudioTrack(userAgent = '') {
-  const chromiumVersion = /(?:Chrome|Chromium|Edg)\/(\d+)/u.exec(userAgent);
-  return Boolean(chromiumVersion && Number(chromiumVersion[1]) >= 135);
+export async function getMomiLocalRecognitionAvailability(SpeechRecognitionCtor) {
+  if (typeof SpeechRecognitionCtor?.available !== 'function') return 'unsupported';
+  try {
+    return await SpeechRecognitionCtor.available({ langs: ['ko-KR'], processLocally: true });
+  } catch (error) {
+    console.warn('[모미] 온디바이스 음성 인식 확인 실패:', error?.message || error);
+    return 'unsupported';
+  }
 }
-
-export const MOMI_SPEECH_AUDIO_CONSTRAINTS = Object.freeze({
-  noiseSuppression: true,
-  echoCancellation: true,
-  autoGainControl: true,
-  channelCount: 1,
-});
 
 // iOS Safari(아이폰·아이패드)는 continuous:true에서 세션이 응답 없이 멈추는(마이크는
 // 켜진 채 결과가 전혀 안 올라오는) 알려진 버그가 있다. iOS에서만 continuous:false로
@@ -224,6 +219,7 @@ export function useMomiVoice({
   onMismatch,
   onInterim,
   onErrorOccurred,
+  onRecognitionStatus,
   // [정확도 시각화 2026-09] 이 두 콜백은 선택 항목이다 — 안 넘기면 예전과 완전히
   // 동일하게 동작한다(회귀 없음). onRecognitionMeta({heard, confidence, matched,
   // kind})는 발화 하나가 처리될 때마다(명령·웨이크만·불일치 등) 불려서 화면에
@@ -236,10 +232,13 @@ export function useMomiVoice({
   const [listening, setListening] = useState(false);
   const [supported] = useState(() => !!getSpeechRecognition());
   const recognitionRef = useRef(null);
-  const recognitionStreamRef = useRef(null);
-  const recognitionAudioTrackRef = useRef(null);
   const startRecognitionRef = useRef(null);
-  const recognitionAudioRequestRef = useRef(null);
+  const startListeningRef = useRef(null);
+  const localRecognitionModeRef = useRef('unknown');
+  const localAvailabilityRequestRef = useRef(null);
+  const localInstallEndResolverRef = useRef(null);
+  const recognitionSessionHadSpeechRef = useRef(false);
+  const recognitionSessionHadResultRef = useRef(false);
   // "모미야"만 듣고 다음 명령을 기다리는 중인지(2단계 대화 흐름용).
   const activatedRef = useRef(false);
   const activationTimerRef = useRef(null);
@@ -331,47 +330,13 @@ export function useMomiVoice({
   // 호출 시점에 여기서 꺼내 쓴다. 메인 effect는 더 이상 콜백이 바뀔 때마다
   // 인식기를 부수고 다시 만들지 않는다.
   const callbacksRef = useRef({});
-  callbacksRef.current = { onCommand, onWakeOnly, onMismatch, onInterim, onErrorOccurred };
+  callbacksRef.current = {
+    onCommand, onWakeOnly, onMismatch, onInterim, onErrorOccurred, onRecognitionStatus,
+  };
   // 사용자가 "듣고 있기를 원하는" 상태(startListening~stopListening 사이). 혹시라도
   // 인식기가 다시 만들어지면(requireWakeWord 변경 등) 이 값을 보고 즉시 다시 켠다 —
   // 위 버그 같은 "조용히 죽는" 상태가 어떤 경로로도 다시 생기지 않도록 이중 안전장치.
   const wantListeningRef = useRef(false);
-
-  const requestRecognitionAudioTrack = useCallback(() => {
-    if (recognitionAudioTrackRef.current?.readyState === 'live') {
-      return Promise.resolve(recognitionAudioTrackRef.current);
-    }
-    if (recognitionAudioRequestRef.current) return recognitionAudioRequestRef.current;
-    if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
-      return Promise.resolve(null);
-    }
-
-    const request = navigator.mediaDevices.getUserMedia({ audio: MOMI_SPEECH_AUDIO_CONSTRAINTS })
-      .then((stream) => {
-        if (!wantListeningRef.current || !shouldRestartRef.current) {
-          stream.getTracks().forEach((track) => track.stop());
-          return null;
-        }
-        const track = stream.getAudioTracks()[0];
-        if (!track) {
-          stream.getTracks().forEach((item) => item.stop());
-          return null;
-        }
-        recognitionStreamRef.current?.getTracks().forEach((item) => item.stop());
-        recognitionStreamRef.current = stream;
-        recognitionAudioTrackRef.current = track;
-        return track;
-      })
-      .catch((error) => {
-        console.warn('[모미] 소음 억제 입력 준비 실패, 브라우저 기본 입력으로 전환:', error?.message || error);
-        return null;
-      })
-      .finally(() => {
-        recognitionAudioRequestRef.current = null;
-      });
-    recognitionAudioRequestRef.current = request;
-    return request;
-  }, []);
 
   const clearPendingFinal = useCallback(() => {
     if (finalResultTimerRef.current) {
@@ -414,20 +379,10 @@ export function useMomiVoice({
     if (!SpeechRecognitionCtor) return;
 
     const recognition = new SpeechRecognitionCtor();
-    const userAgent = typeof navigator === 'undefined' ? '' : navigator.userAgent || '';
-    let canUseAudioTrack = supportsSpeechRecognitionAudioTrack(userAgent);
+    if (localRecognitionModeRef.current === 'local') recognition.processLocally = true;
+    recognitionSessionHadSpeechRef.current = false;
+    recognitionSessionHadResultRef.current = false;
     const startRecognition = () => {
-      const track = canUseAudioTrack ? recognitionAudioTrackRef.current : null;
-      if (track?.readyState === 'live') {
-        try {
-          recognition.start(track);
-          return;
-        } catch (error) {
-          if (error?.name !== 'TypeError' && error?.name !== 'NotSupportedError') throw error;
-          canUseAudioTrack = false;
-          console.warn('[모미] 이 브라우저는 오디오 트랙 인식을 지원하지 않아 기본 마이크로 전환합니다.');
-        }
-      }
       recognition.start();
     };
     startRecognitionRef.current = startRecognition;
@@ -440,9 +395,22 @@ export function useMomiVoice({
     // 이제 confidence를 비교해 고르므로(위 참고), 후보가 더 많을수록 그중
     // 실제로 맞는 해석이 섞여 있을 확률이 올라간다.
     recognition.maxAlternatives = 5;
+    recognition.onstart = () => {
+      recognitionSessionHadSpeechRef.current = false;
+      recognitionSessionHadResultRef.current = false;
+      callbacksRef.current.onRecognitionStatus?.(
+        localRecognitionModeRef.current === 'local' ? 'local-listening' : 'online-listening'
+      );
+    };
+    recognition.onspeechstart = () => {
+      recognitionSessionHadSpeechRef.current = true;
+      callbacksRef.current.onRecognitionStatus?.('speech-detected');
+    };
 
     recognition.onresult = (event) => {
       const { onInterim } = callbacksRef.current;
+      recognitionSessionHadResultRef.current = true;
+      callbacksRef.current.onRecognitionStatus?.('transcript');
       const interim = collectRecognitionText(event, { preferWakeWord: requireWakeWord });
       const heard = collectRecognitionText(event, { finalOnly: true, preferWakeWord: requireWakeWord });
       if (!heard) {
@@ -610,16 +578,23 @@ export function useMomiVoice({
       // (원격 디버깅이 안 되는 기기가 많아서 콘솔만으론 부족함).
       // (not-allowed=권한 거부, no-speech=일정 시간 무음, audio-capture=마이크 없음,
       //  network=네트워크 문제 — Chrome 인식은 온라인 필요)
-      console.warn('[모미] 인식 오류:', event.error);
+      if (event.error === 'no-speech') {
+        // Web Speech API는 무음 구간마다 이 이벤트를 내므로 일반 오류처럼 반복 경고하지 않는다.
+        callbacksRef.current.onRecognitionStatus?.(
+          recognitionSessionHadSpeechRef.current && !recognitionSessionHadResultRef.current
+            ? 'speech-without-result'
+            : 'no-speech'
+        );
+        console.info('[모미] 발화 결과 없음(no-speech) — 인식기를 다시 시작합니다.');
+      } else {
+        console.warn('[모미] 인식 오류:', event.error);
+      }
       if (onInterim) onInterim('');
       // 브라우저 권한 거부는 재시작해도 회복되지 않아 반복 오류만 만든다.
       // 권한을 바꾼 뒤에는 화면을 다시 열어 새 인식 세션을 시작하도록 둔다.
       if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
         shouldRestartRef.current = false;
         wantListeningRef.current = false;
-        recognitionStreamRef.current?.getTracks().forEach((track) => track.stop());
-        recognitionStreamRef.current = null;
-        recognitionAudioTrackRef.current = null;
         clearWakeInterim();
         clearActivation();
         if (onErrorOccurred) onErrorOccurred(event.error);
@@ -681,6 +656,12 @@ export function useMomiVoice({
         }
         console.log('[모미] 짧은 대답이 확정되지 않은 채 세션이 끝나 미확정 조각을 대신 사용:', fallbackHeard);
         cb(fallbackHeard);
+      }
+      if (localInstallEndResolverRef.current) {
+        const resolveInstallEnd = localInstallEndResolverRef.current;
+        localInstallEndResolverRef.current = null;
+        resolveInstallEnd();
+        return;
       }
       // continuous:true 브라우저도 가끔 세션이 끊기고, iOS는 위에서 아예
       // continuous:false로 두기 때문에 매 발화마다 항상 여기로 온다.
@@ -766,11 +747,7 @@ export function useMomiVoice({
     // (예전엔 이 경우 아무도 start()를 안 불러 조용히 먹통이 됐다.)
     if (wantListeningRef.current) {
       shouldRestartRef.current = true;
-      try {
-        startRecognition();
-      } catch (e) {
-        console.warn('[모미] 인식기 재생성 후 시작 실패:', e?.message || e);
-      }
+      startListeningRef.current?.();
     }
 
     return () => {
@@ -784,10 +761,7 @@ export function useMomiVoice({
       } catch (e) {
         // no-op
       }
-      recognitionStreamRef.current?.getTracks().forEach((track) => track.stop());
-      recognitionStreamRef.current = null;
-      recognitionAudioTrackRef.current = null;
-      recognitionAudioRequestRef.current = null;
+      localAvailabilityRequestRef.current = null;
     };
   }, [requireWakeWord, clearPendingFinal]);
 
@@ -1017,29 +991,116 @@ export function useMomiVoice({
     };
   }, [listening, onAudioLevel]);
 
-  const startListening = useCallback(() => {
+  const startListening = useCallback(async () => {
     wantListeningRef.current = true;
-    if (!recognitionRef.current) return;
+    const recognition = recognitionRef.current;
+    const SpeechRecognitionCtor = getSpeechRecognition();
+    if (!recognition || !SpeechRecognitionCtor) return;
     shouldRestartRef.current = true;
-    setListening(true);
-    const start = () => {
-      if (!shouldRestartRef.current || !recognitionRef.current) return;
-      try {
-        startRecognitionRef.current?.();
-      } catch (error) {
-        console.warn('[모미] 인식 시작 실패:', error?.message || error);
+
+    try {
+      if (localRecognitionModeRef.current === 'unknown') {
+        if (!localAvailabilityRequestRef.current) {
+          localAvailabilityRequestRef.current = getMomiLocalRecognitionAvailability(SpeechRecognitionCtor);
+        }
+        const availability = await localAvailabilityRequestRef.current;
+        if (recognitionRef.current !== recognition || !shouldRestartRef.current) return;
+
+        if (availability === 'available') {
+          recognition.processLocally = true;
+          localRecognitionModeRef.current = 'local';
+          callbacksRef.current.onRecognitionStatus?.('local-ready');
+        } else {
+          // 설치가 필요한 경우에도 기존 인식은 계속 제공하되, 화면에 로컬팩 설치 동작을 노출한다.
+          recognition.processLocally = false;
+          localRecognitionModeRef.current = 'remote';
+          if (availability === 'downloadable' || availability === 'downloading') {
+            callbacksRef.current.onRecognitionStatus?.(
+              availability === 'downloading' ? 'local-downloading' : 'local-install-required'
+            );
+          } else {
+            callbacksRef.current.onRecognitionStatus?.('online-only');
+          }
+        }
       }
-    };
-    const userAgent = typeof navigator === 'undefined' ? '' : navigator.userAgent || '';
-    if (
-      supportsSpeechRecognitionAudioTrack(userAgent)
-      && recognitionAudioTrackRef.current?.readyState !== 'live'
-    ) {
-      requestRecognitionAudioTrack().finally(start);
-      return;
+
+      if (!shouldRestartRef.current || recognitionRef.current !== recognition) return;
+      setListening(true);
+      startRecognitionRef.current?.();
+    } catch (error) {
+      console.warn('[모미] 인식 시작 실패:', error?.message || error);
+      setListening(false);
+      callbacksRef.current.onErrorOccurred?.(error?.name || 'start-failed');
     }
-    start();
-  }, [requestRecognitionAudioTrack]);
+  }, []);
+  startListeningRef.current = startListening;
+
+  const installLocalRecognition = useCallback(async () => {
+    const SpeechRecognitionCtor = getSpeechRecognition();
+    if (typeof SpeechRecognitionCtor?.install !== 'function') {
+      callbacksRef.current.onRecognitionStatus?.('online-only');
+      return false;
+    }
+
+    // 설치 중 인식기를 abort하면 onend가 대기 중인 확인 답변을 명령으로 처리할 수 있다.
+    // 예약·정보 수정 확인 중에는 설치를 미루고 답변이 끝난 뒤 다시 누르게 한다.
+    if (pendingReplyRef.current) {
+      callbacksRef.current.onRecognitionStatus?.('awaiting-reply');
+      return false;
+    }
+
+    const recognition = recognitionRef.current;
+    const shouldResume = wantListeningRef.current && Boolean(recognition);
+    clearWakeInterim();
+    clearActivation();
+    clearPendingFinal();
+    shouldRestartRef.current = false;
+    callbacksRef.current.onRecognitionStatus?.('local-installing');
+
+    try {
+      // install() must be invoked synchronously from the button's user gesture.
+      const installRequest = SpeechRecognitionCtor.install({ langs: ['ko-KR'], processLocally: true });
+      if (recognition) {
+        const ended = new Promise((resolve) => {
+          const timeout = setTimeout(() => {
+            localInstallEndResolverRef.current = null;
+            resolve();
+          }, 1500);
+          localInstallEndResolverRef.current = () => {
+            clearTimeout(timeout);
+            resolve();
+          };
+        });
+        try {
+          recognition.abort();
+        } catch (error) {
+          // 인식기가 이미 끝난 상태면 아래 제한 시간 뒤 설치를 계속한다.
+        }
+        await ended;
+      }
+      const installed = await installRequest;
+      if (!installed) throw new Error('한국어 음성 팩 설치에 실패했습니다.');
+      if (!recognition || recognitionRef.current !== recognition) return false;
+
+      recognition.processLocally = true;
+      localRecognitionModeRef.current = 'local';
+      callbacksRef.current.onRecognitionStatus?.('local-ready');
+      if (shouldResume && wantListeningRef.current) {
+        shouldRestartRef.current = true;
+        setListening(true);
+        startRecognitionRef.current?.();
+      }
+      return true;
+    } catch (error) {
+      console.warn('[모미] 한국어 음성 팩 설치 실패:', error?.message || error);
+      callbacksRef.current.onRecognitionStatus?.('local-install-failed');
+      if (shouldResume && wantListeningRef.current) {
+        shouldRestartRef.current = true;
+        setTimeout(() => startListeningRef.current?.(), 300);
+      }
+      return false;
+    }
+  }, [clearPendingFinal]);
 
   const stopListening = useCallback(() => {
     wantListeningRef.current = false;
@@ -1054,13 +1115,18 @@ export function useMomiVoice({
     } catch (e) {
       // no-op
     }
-    recognitionStreamRef.current?.getTracks().forEach((track) => track.stop());
-    recognitionStreamRef.current = null;
-    recognitionAudioTrackRef.current = null;
     clearActivation();
     cancelAwaitReply();
     setListening(false);
   }, [cancelAwaitReply, clearPendingFinal]);
 
-  return { supported, listening, startListening, stopListening, awaitReply, cancelAwaitReply };
+  return {
+    supported,
+    listening,
+    startListening,
+    stopListening,
+    installLocalRecognition,
+    awaitReply,
+    cancelAwaitReply,
+  };
 }

@@ -38,9 +38,9 @@ describe('음성 명령 — 카메라 스테이지 활성 중 클릭이 아래 �
     expect(src).toMatch(/if \(cameraActive\) setStagePhase\(null\);/);
   });
 
-  it.each(files)('%s: 무대가 없으면 아무것도 렌더링하지 않는다(null 반환)', (path) => {
+  it.each(files)('%s: 무대는 stagePhase가 활성일 때만 렌더링한다', (path) => {
     const src = read(path);
-    expect(src).toContain('if (!stagePhase) return null;');
+    expect(src).toMatch(/\{stagePhase && \(\s*<MomiVoiceStage/);
   });
 
   it('MomiVoiceStage.jsx: 무대 자체가 기본적으로 pointer-events를 받지 않는다', () => {
