@@ -36,7 +36,11 @@ export function matchWakeWord(heard) {
   const isAtUtteranceStart = (index) => /^[\s,，.!?。、…-]*$/u.test(normalized.slice(0, index));
   for (const variant of WAKE_WORD_VARIANTS) {
     const index = normalized.indexOf(variant);
-    if (index !== -1 && isAtUtteranceStart(index)) return { index, length: variant.length };
+    const nextCharacter = index === -1 ? '' : normalized[index + variant.length];
+    const endsAtWordBoundary = !nextCharacter || !/[가-힣]/u.test(nextCharacter);
+    if (index !== -1 && isAtUtteranceStart(index) && endsAtWordBoundary) {
+      return { index, length: variant.length };
+    }
   }
   // 음성 엔진이 이름 사이에 공백을 끼우는 경우("모 미야", "몸 이 야")도 허용한다.
   const flexible = /^[\s,，.!?。、…-]*(모\s*미\s*(?:야|아)|몸\s*이\s*야)/u.exec(normalized);
