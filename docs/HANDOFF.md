@@ -46,6 +46,13 @@
 ## 작업 로그
 최신 항목이 위. 형식을 그대로 복사해서 쓴다.
 
+### 2026-09-29 · Codex · Codex·Claude·Gemini 단일 접수 운영판
+- 한 일: 모바일 사용자가 한 곳에만 요청을 남기고, 다음 AI가 GitHub Issue와 HANDOFF를 읽어 구현·교차 검토를 이어가는 절차를 문서화.
+- 변경 파일: `docs/AI_COLLABORATION.md` 신규, `docs/HANDOFF.md` 작업 로그.
+- 테스트: 문서 변경만 적용. `git diff --check` 통과.
+- 남은 위험: Claude/Gemini가 같은 저장소 또는 GitHub Issue에 접근할 수 있는지와 각 도구의 실제 자동 메시지 연결은 환경별로 확인 필요. AI끼리 대화창을 직접 공유하는 기능은 아님.
+- 다음에 할 일: 첫 작업은 GitHub Issue 하나로 등록하고, 각 AI에게 Issue와 HANDOFF를 읽도록 지시.
+
 ### 2026-09-24 10:07 · Claude · 1RM 카메라 오류 수정 + 멈춤 방지 테스트 (R10)
 - 발견(R1 검증 중 `npm run lint`): 🔴 `src/ai-measure/menus/OneRMEstimate.jsx:213,328,358`(수정 전 줄 번호, 수정 후 217·332·362) — `ae7049f`(9/22 "1RM 영상만 저장하는 버튼 제거")가 `useState` 선언까지 지웠는데 `setVideoSavedMsg` 호출 3곳(측정 카운트다운 시작·카메라 열기·60초 자동 종료)이 남음 → ReferenceError. 카메라 열기(`openCam`)가 자동 시작 effect(수정 전 366)에서도 불려서, 앱에 ErrorBoundary가 없으니 자동 시작 시 화면 전체가 멈출 수 있음. 빌드·기존 테스트로는 안 잡힘.
 - 사용자 결정(2026-09-23): 같이 고치기.
