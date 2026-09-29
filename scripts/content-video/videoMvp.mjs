@@ -43,6 +43,21 @@ export function outputPaths(outputDir, clip) {
   };
 }
 
+/** 원본 경로·동의 참조값을 노출하지 않는 로컬 검수 페이지를 만든다. */
+export function buildReviewIndexHtml(items) {
+  const cards = items.map(({ id, videoFile, subtitleFile }) => `
+    <article>
+      <h2>${id}</h2>
+      <video controls preload="metadata" src="${videoFile}"></video>
+      <p><a href="${subtitleFile}">자막 초안(SRT) 열기</a></p>
+      <p class="notice">공개 전 얼굴·배경·음성·자막을 확인하세요. 이 파일은 자동 게시되지 않습니다.</p>
+    </article>`).join('\n');
+  return `<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>몸가짐 콘텐츠 검수 대기</title><style>body{font-family:system-ui,sans-serif;max-width:960px;margin:32px auto;padding:0 16px;background:#111;color:#f5f5f5}article{margin:24px 0;padding:16px;background:#202020;border-radius:12px}video{width:100%;max-height:720px;background:#000}.notice{color:#f8d56b}</style></head>
+<body><h1>콘텐츠 검수 대기</h1><p>이 페이지는 로컬 검수용입니다. 승인 전 외부 게시 금지.</p>${cards || '<p>생성된 영상이 없습니다.</p>'}</body></html>`;
+}
+
 /** ffmpeg가 설치된 로컬 PC에서만 실행한다. 원본은 복사·업로드하지 않는다. */
 export function buildFfmpegArgs({ clip, outputFile, logoPath = null, endCardPath = null }) {
   const duration = Number(clip.trim.endSec) - Number(clip.trim.startSec);

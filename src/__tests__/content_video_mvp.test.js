@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildFfmpegArgs, srtText, validateClip } from '../../scripts/content-video/videoMvp.mjs';
+import { buildFfmpegArgs, buildReviewIndexHtml, srtText, validateClip } from '../../scripts/content-video/videoMvp.mjs';
 
 const approved = {
   id: 'exercise-balance-001',
@@ -27,5 +27,12 @@ describe('콘텐츠 영상 MVP', () => {
   it('자막은 영상 길이에 맞춘 검수용 SRT로 만든다', () => {
     expect(srtText(approved)).toContain('00:00:00,000 --> 00:00:20,000');
     expect(srtText(approved)).toContain(approved.captionDraft);
+  });
+
+  it('검수 갤러리에는 원본 경로·동의 참조값을 넣지 않는다', () => {
+    const html = buildReviewIndexHtml([{ id: approved.id, videoFile: 'exercise-balance-001-review.mp4', subtitleFile: 'exercise-balance-001-review.srt' }]);
+    expect(html).toContain('exercise-balance-001-review.mp4');
+    expect(html).not.toContain(approved.source);
+    expect(html).not.toContain(approved.consent.reference);
   });
 });

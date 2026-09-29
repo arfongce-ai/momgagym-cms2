@@ -46,6 +46,13 @@
 ## 작업 로그
 최신 항목이 위. 형식을 그대로 복사해서 쓴다.
 
+### 2026-09-29 · Codex · Issue #2 Claude 검토 보완
+- 한 일: 여러 결과를 한 화면에서 확인하는 로컬 `review_index.html` 검수 갤러리 추가. 갤러리에는 검수용 파일명만 표시하고 원본 경로·동의 참조값을 넣지 않음. 로컬 매니페스트 Git 제외를 하위 폴더까지 확장.
+- 변경 파일: `scripts/content-video/videoMvp.mjs`, `scripts/content-video/prepare-review.mjs`, `src/__tests__/content_video_mvp.test.js`, `docs/VIDEO_AUTOMATION_MVP.md`, `.gitignore`.
+- 테스트: Node 문법 검사·검수 갤러리 스모크 통과, `git diff --check` 통과. Vitest는 기존 환경 접근 오류로 미실행.
+- 보류: 실제 동의 기록 대조는 동의 원본과 Notion 속성 정의가 정해진 뒤 구현. 기준선 변경도 Vitest 정상 실행 뒤에만 검토.
+- 다음에 할 일: Gemini 독립 검토 → 실제 PC의 동의된 테스트 복사본 1건으로 FFmpeg 실행 리허설.
+
 ### 2026-09-29 · Claude · 검토 Issue #2 동의 영상 자동 편집 MVP
 - 한 일: `9b50fde` 설계·보안·운영 검토. 별도 환경에서 합성 영상·로고·엔딩 카드로 로컬 처리 스크립트의 실제 실행을 확인했다고 보고됨.
 - 확인: 외부 네트워크/Firestore 호출 없이 로컬 파일·FFmpeg만 사용, 동의/길이/자막 검증과 검수 대기 결과 생성이 확인됐다고 보고됨. 셸 문자열 대신 인수 배열로 FFmpeg를 실행.

@@ -2,7 +2,7 @@ import { access, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import process from 'node:process';
-import { buildFfmpegArgs, outputPaths, srtText, validateClip } from './videoMvp.mjs';
+import { buildFfmpegArgs, buildReviewIndexHtml, outputPaths, srtText, validateClip } from './videoMvp.mjs';
 
 function option(name) {
   const index = process.argv.indexOf(name);
@@ -32,6 +32,7 @@ if (runtime.error || runtime.status !== 0) {
 }
 
 await mkdir(outputDir, { recursive: true });
+const reviewItems = [];
 for (const clip of clips) {
   await access(clip.source);
   const files = outputPaths(outputDir, clip);
@@ -53,5 +54,8 @@ for (const clip of clips) {
     status: 'review_required',
     publishAllowed: false,
   }, null, 2));
+  reviewItems.push({ id: clip.id, videoFile: path.basename(files.video), subtitleFile: path.basename(files.subtitle) });
   console.log(`검수 대기 생성: ${files.video}`);
 }
+await writeFile(path.join(outputDir, 'review_index.html'), buildReviewIndexHtml(reviewItems), 'utf8');
+console.log(`검수 갤러리 생성: ${path.join(outputDir, 'review_index.html')}`);

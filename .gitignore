@@ -2,7 +2,7 @@ node_modules/
 dist/
 assets/
 outputs/
-content-video/*.local.json
+content-video/**/*.local.json
 content-video/review/
 .env
 .env.*

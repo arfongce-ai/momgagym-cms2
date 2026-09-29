@@ -20,7 +20,7 @@
 npm run video:review -- --manifest content-video/approved.local.json
 ```
 
-결과 MP4·SRT·검수 JSON은 `content-video/review/`에 생긴다. 검수자가 승인한 파일만 이후 Google Drive의 게시 대기 폴더로 수동 이동한다.
+결과 MP4·SRT·검수 JSON과 `review_index.html`은 `content-video/review/`에 생긴다. `review_index.html`을 브라우저로 열어 여러 클립을 검수한다. 이 페이지에는 원본 경로나 동의 참조값을 표시하지 않는다. 검수자가 승인한 파일만 이후 Google Drive의 게시 대기 폴더로 수동 이동한다.
 
 ## 아직 하지 않는 것
 
