@@ -171,8 +171,8 @@ describe('useMomiVoice.js — 삼성 인터넷의 조각난 최종 결과를 한
     expect(settled).toBe('몸이야 회원 관리 열어 줘');
   });
 
-  it('마지막 결과 뒤 700ms 동안 기다렸다가 한 번만 처리한다', () => {
-    expect(src).toContain('const FINAL_RESULT_SETTLE_MS = 700;');
+  it('마지막 결과 뒤 400ms 동안 기다렸다가 한 번만 처리한다', () => {
+    expect(src).toContain('const FINAL_RESULT_SETTLE_MS = 400;');
     expect(src).toContain('pendingFinalTextRef.current = chooseMoreCompleteTranscript');
     expect(src).toContain('if (finalResultTimerRef.current) clearTimeout(finalResultTimerRef.current);');
     expect(src).toContain('}, FINAL_RESULT_SETTLE_MS);');

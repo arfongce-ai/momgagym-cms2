@@ -30,6 +30,12 @@ import { useRef, useState, useCallback, useEffect } from 'react';
 // "모미야"와 사실상 같은 소리가 된다. "봄이야"는 "몸이야"보다 헬스장 대화에서
 // 나올 일이 훨씬 적어(계절 얘기 정도) 오탐 위험이 낮다고 보고 그대로 추가한다.
 const WAKE_WORD_VARIANTS = ['모미야', '몸이야', '보미야', '봄이야', '모미아', '모미'].map((w) => w.normalize('NFC'));
+// [인식률 개선 2026-09-29] 실사용에서 자주 나오는 오인식 형태 추가. 자모 유사도(거리 1)로도
+// 잡히지만 3음절로 갈라지는 형태는 놓치므로 명시적으로 인정한다. '모미'가 먼저 매치돼
+// 뒤 글자(여 등)가 명령으로 남지 않도록 반드시 앞쪽에 넣는다.
+WAKE_WORD_VARIANTS.unshift(
+  ...['모임이야', '모이야', '오미야', '모니야', '무미야', '머미야', '마미야', '모비야', '모미여', '몸이여'].map((w) => w.normalize('NFC'))
+);
 
 // [정확도 개선 2026-09] 지금까지는 실제로 신고된 오인식 사례가 나올 때마다
 // WAKE_WORD_VARIANTS에 하나씩 손으로 추가해왔다(몸이야/보미야/봄이야 등) — 매번
@@ -159,14 +165,20 @@ export function collectRecognitionText(event, { finalOnly = false, preferWakeWor
 // 응답 → 그 다음 명령을 따로 말하는 자연스러운 2단계 대화로 쓰길 원했는데,
 // 예전 코드는 매 발화마다 "모미야"가 다시 붙어있어야만 반응해서 이 흐름이
 // 전부 무시되고 있었다(콘솔 대신 화면에 찍은 진단 로그로 확인됨).
-const ACTIVATION_WINDOW_MS = 8000;
+const ACTIVATION_WINDOW_MS = 10000;
 
 // 삼성 인터넷/안드로이드 Web Speech API는 한 문장을 말하는 동안
 // "몸이야" → "몸이야 회원" → "몸이야 회원 관리 열어 줘"처럼 길어지는
 // 여러 결과를 모두 isFinal=true로 보내는 경우가 있다. 첫 조각을 즉시 실행하면
 // 완성된 명령이 도착하기 전에 웨이크워드만 처리되어 실제 CMS가 반응하지 않는다.
 // 마지막 결과가 도착한 뒤 잠깐 기다렸다가 가장 완성된 문장 한 번만 실행한다.
-const FINAL_RESULT_SETTLE_MS = 700;
+// [지연 개선 2026-09-29] 700ms → 400ms. 명령을 말한 뒤 실행까지 0.3초 단축. 삼성 인터넷의
+// 조각 확정 문제는 아래 chooseMoreCompleteTranscript로 계속 커버된다.
+const FINAL_RESULT_SETTLE_MS = 400;
+// [인식률 개선 2026-09-29] 임시(interim) 결과에서 웨이크워드가 들렸던 흔적을 이 시간 동안
+// 기억한다. Chrome은 소음이 있으면 확정(final)을 늦게 주거나, 확정 문장에서 "모미야"만
+// 빼고 주는 경우가 있어, 그때 이 흔적으로 명령을 살려낸다.
+const WAKE_INTERIM_MEMORY_MS = 4000;
 
 // [노이즈 캔슬링 2026-09b] 아래 소음 게이트가 쓰는 두 값.
 // VOICE_GATE_LEVEL: 노이즈 플로어를 뺀 뒤의 음량이 이 값을 넘으면 "사람이 말했다"로
@@ -306,6 +318,14 @@ export function useMomiVoice({
   // 있는 문장 조각들 중 엔진이 가장 확신한 confidence를 같이 들고 있다가,
   // 문장이 확정되는 순간 onRecognitionMeta로 함께 흘려보낸다.
   const pendingConfidenceRef = useRef(0);
+  // [인식률 개선 2026-09-29] 임시 결과에서 웨이크워드가 들린 텍스트와 시각.
+  const wakeInterimRef = useRef({ text: '', at: 0 });
+  const clearWakeInterim = () => {
+    wakeInterimRef.current.text = '';
+    wakeInterimRef.current.at = 0;
+  };
+  // [TTS 정지 방지 2026-09-29] TTS 때문에 마이크를 멈춘 시각.
+  const pausedAtRef = useRef(0);
   // [노이즈 캔슬링 2026-09b] 아래 음량 측정 effect가 실제로 돌고 있는지(meterActive)와,
   // 마지막으로 사람 목소리다운 소리가 들린 시각(lastVoiceAt). 측정이 안 되는
   // 환경(권한 거부·미지원)에서는 meterActive가 false라 게이트가 항상 열린다 —
@@ -399,6 +419,10 @@ export function useMomiVoice({
       if (!heard) {
         const isAddressed = !requireWakeWord || activatedRef.current || pendingReplyRef.current || matchWakeWord(interim);
         if (interim && isAddressed && onInterim) onInterim(interim);
+        if (requireWakeWord && interim && matchWakeWord(interim)) {
+          wakeInterimRef.current.text = interim;
+          wakeInterimRef.current.at = Date.now();
+        }
         // [버그 수정 — 짧은 대답 유실 2026-08-18] awaitReply 대기 중에는 아직
         // 확정(isFinal) 안 된 이 조각도 잠깐 기억해둔다 — 세션이 끝날 때까지
         // 끝내 확정되지 않으면(흔한 엔진 결함) onend에서 이걸 대신 쓴다.
@@ -505,6 +529,17 @@ export function useMomiVoice({
 
       const wakeMatch = matchWakeWord(heard);
       if (!wakeMatch) {
+        // [인식률 개선 2026-09-29] 방금 임시 결과에서는 "모미야"가 들렸는데 확정 문장에서
+        // 빠진 경우 — 확정 문장 전체를 명령으로 살려낸다.
+        const w = wakeInterimRef.current;
+        if (w.text && Date.now() - w.at < WAKE_INTERIM_MEMORY_MS) {
+          clearWakeInterim();
+          if (onCommand) {
+            onRecognitionMetaRef.current?.({ heard, confidence, matched: true, kind: 'command' });
+            onCommand(heard);
+            return;
+          }
+        }
         // [진단용] 원격 디버깅(콘솔)에 접근 못 하는 상황을 위해, 웨이크워드가 안
         // 잡혔을 때 실제로 뭘로 들렸는지 화면에도 잠깐 보여준다. heard가 완전
         // 빈 문자열(최종 결과인데 내용이 없는 경우)이어도 그 자체가 진단 정보라
@@ -514,6 +549,7 @@ export function useMomiVoice({
         return;
       }
       const commandText = heard.slice(wakeMatch.index + wakeMatch.length).trim();
+      clearWakeInterim();
       if (commandText && onCommand) {
         onRecognitionMetaRef.current?.({ heard, confidence, matched: true, kind: 'command' });
         onCommand(commandText);
@@ -553,6 +589,26 @@ export function useMomiVoice({
 
     recognition.onend = () => {
       const { onErrorOccurred } = callbacksRef.current;
+      // [인식률 개선 2026-09-29] "모미야"가 임시 결과로만 들리고 확정 없이 세션이 끝난 경우
+      // (소음 속 짧은 호출에서 흔함) — 그 임시 텍스트를 확정된 것처럼 한 번 처리한다.
+      const wi = wakeInterimRef.current;
+      if (
+        requireWakeWord
+        && recognitionRef.current === recognition
+        && wi.text
+        && Date.now() - wi.at < WAKE_INTERIM_MEMORY_MS
+        && !pendingFinalTextRef.current
+        && !finalResultTimerRef.current
+      ) {
+        clearWakeInterim();
+        const fake = [{ transcript: wi.text, confidence: 0 }];
+        fake.isFinal = true;
+        try {
+          recognition.onresult({ resultIndex: 0, results: [fake] });
+        } catch (e) {
+          console.warn('[모미] 임시 결과 복구 실패:', e?.message || e);
+        }
+      }
       // [버그 수정 — 짧은 대답(네/아니요) 유실 2026-08-18] "예약 확인 질문에
       // '네'라고 답했는데 아무 반응이 없다" 문의 대응. awaitReply로 즉답을
       // 기다리는 중인데(pendingReplyRef.current) 그 발화가 끝내 isFinal로
@@ -690,8 +746,16 @@ export function useMomiVoice({
     if (!synth) return;
     const timer = setInterval(() => {
       const speaking = synth.speaking;
+      // [TTS 정지 방지 2026-09-29] Chrome은 speechSynthesis.speaking이 true로 굳는 경우가 있다.
+      // 12초 넘게 "말하는 중"이면 고착으로 보고 강제로 끊어 마이크를 되살린다.
+      if (speaking && pausedForSpeechRef.current && pausedAtRef.current
+        && Date.now() - pausedAtRef.current > 12000) {
+        try { synth.cancel(); } catch (e) { /* no-op */ }
+        pausedAtRef.current = 0;
+      }
       if (speaking && !pausedForSpeechRef.current) {
         pausedForSpeechRef.current = true;
+        pausedAtRef.current = Date.now();
         if (recognitionRef.current) {
           try {
             // abort()는 stop()과 달리 처리 중이던 오디오를 즉시 버린다 — 방금

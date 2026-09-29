@@ -121,6 +121,21 @@
   2. 같은 날 버튼 제거 커밋(`VbtMeasure.jsx`, `LiftingMeasure.jsx`, `LiftingResultSheet.jsx`)에 남은 참조가 없는지 — lint 가드로 1차 확인됨
   3. lint 가드 실행 시간(약 7초)이 부담되면 대상 폴더를 줄일지
 
+## R11 · 모미 음성 인식률·명령 지연 개선 + 관리자 전용 마운트 · 2026-09-29 · ⏳
+
+- 커밋: 관리자 전용 `70f245c` / 인식률·지연 개선은 이번 커밋(해시는 `git log --oneline -3`로 확인)
+- 대상: `src/hooks/useMomiVoice.js` (`WAKE_WORD_VARIANTS` unshift, `wakeInterimRef`, `onend` 복구, TTS 12초 고착 방지, `FINAL_RESULT_SETTLE_MS`) / `src/components/common/KioskVoiceCommand.jsx`·`GlobalVoiceCommand.jsx` `handleCommand`의 `ackTimer` / `src/services/voiceCommandService.js` `/api/voice-command` 12초 타임아웃 / `src/components/layout/AppLayout.jsx:218` `user?.role === 'admin'` 조건
+- 테스트: `momi_recognition_boost_2609.test.js`(신규), `momi_voice.test.js`, `momi_speech.test.js`, `kiosk_voice_command.test.js`, `kiosk_nav_filter.test.js`
+- Claude 검증: `npm test` 3095/3106(기존 실패 11 그대로, 새 실패 0), eslint 오류 0, `npm run build` 통과. **실기기(키오스크 노트북 Chrome) 음성 테스트 미실행**
+- 규칙: "모미야" 호출 인식률↑, 명령 실행 지연↓, 서버 무응답 시 이후 명령이 영구 무시되지 않게. 모미는 관리자 로그인에서만 마운트.
+- 확인할 것
+  1. **오탐 위험** — 임시(interim) 결과에서 웨이크워드를 기억했다가(4초) 확정 문장에 웨이크가 없어도 명령으로 실행함(`useMomiVoice.js` `wakeMatch` 직전 분기). 웨이크워드를 부르지 않은 주변 대화가 4초 창 안에 명령으로 실행될 수 있는지, 4초가 적절한지.
+  2. `onend` 복구에서 `recognition.onresult`에 가짜 이벤트를 넣는 방식이 `pendingReplyRef`(awaitReply 대기 중) 흐름과 충돌하지 않는지.
+  3. 자모 유사도 정규식(`fuzzyMatchWakeWord`)이 "소미야/보미야" 같은 사람 이름 호명에도 반응하는 문제는 **미수정** — 관리자 전용으로 노출은 줄었으나 남아 있음. 좁힐지 사용자 결정.
+  4. `not-allowed`(마이크 거부) 시 `onend`가 무조건 재시작해 오류가 반복되는 문제 **미수정**(`useMomiVoice.js` onend 재시작 조건).
+  5. 테스트가 소스 문자열 위주라 "약함" — 실제 SpeechRecognition 모의 객체로 실행형 테스트를 추가할 수 있는지.
+  6. 트레이너 계정으로 로그인된 키오스크에서는 모미가 안 뜸 — 운영상 문제 없는지 사용자 확인.
+
 ---
 
 ## 새 항목 형식 (Claude·Codex 공통)

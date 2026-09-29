@@ -46,6 +46,14 @@
 ## 작업 로그
 최신 항목이 위. 형식을 그대로 복사해서 쓴다.
 
+### 2026-09-29 · Claude Code · 모미 인식률·지연 개선 + 관리자 전용 (R11 대기열 등록)
+- 한 일: ① 모미 음성인식을 관리자 로그인에서만 마운트(`AppLayout.jsx:218`, `70f245c`) ② 웨이크워드 오인식 변형 10종 추가 + 임시 결과에서 웨이크워드 기억(4초)·확정 문장에서 웨이크가 빠져도 명령 살림·확정 없이 세션 종료 시 복구 ③ 확정 대기 700→400ms, 웨이크 후 명령 대기창 8→10초 ④ "네, 확인했어요" 안내를 0.9초 넘게 걸릴 때만 말함(마이크 끊김·지연 감소) ⑤ 서버 음성 명령 12초 타임아웃(무응답 시 이후 명령이 영구 무시되던 문제) ⑥ TTS `speaking` 12초 고착 시 강제 취소.
+- 변경 파일: `src/hooks/useMomiVoice.js`, `KioskVoiceCommand.jsx`, `GlobalVoiceCommand.jsx`, `voiceCommandService.js`, `AppLayout.jsx`, 테스트 `momi_recognition_boost_2609.test.js`(신규)·`momi_voice.test.js`(700→400)·`kiosk_nav_filter.test.js`.
+- 테스트: `npm test` 새 실패 0(기존 11 그대로), `npm run build` 통과. 실기기 음성 테스트 미실행.
+- 남은 위험: 오탐(웨이크 없이 4초 창 안의 대화가 명령이 될 수 있음), 사람 이름 호명("소미야") 반응, `not-allowed` 재시작 반복 — 검토 항목은 `docs/REVIEW_QUEUE.md` R11.
+- 사용자 결정 필요: 키오스크 노트북 로그인 계정이 관리자인지, 위 남은 위험 수정 진행 여부.
+- 다음에 할 일: Codex가 R11 검토(REVIEW_LOOP 절차) → 실기기에서 "모미야" 인식·명령 지연 재확인.
+
 ### 2026-09-29 · Codex · Issue #2 Notion 동의 스냅샷 검증
 - 한 일: 자동 편집 시작 전에 최근 Notion 동의 현황 스냅샷을 대조하도록 보완. 공개 승인·철회 여부·허용 채널·만료일·스냅샷 생성 시점(7일 이내)을 모두 통과한 클립만 FFmpeg 전 단계로 진행한다.
 - 변경 파일: `scripts/content-video/videoMvp.mjs`, `scripts/content-video/prepare-review.mjs`, `content-video/approved.example.json`, `content-video/consents.example.json`(신규), `docs/VIDEO_AUTOMATION_MVP.md`, `src/__tests__/content_video_mvp.test.js`.

@@ -719,18 +719,39 @@ export async function processVoiceCommand({
   // [보안 수정] 서버는 이제 이 role 문자열을 그대로 믿지 않고, 아래 idToken을 직접
   // 검증해서 진짜 role을 구한다(functions/_shared/verifyFirebaseToken.js 참고).
   // role은 과도기 호환용으로만 계속 같이 보낸다.
+  // [무응답 방지 2026-09-29] 예전엔 토큰 발급·서버 호출에 시간 제한이 없어서, 네트워크가
+  // 멈추면 handleCommand가 영원히 끝나지 않았다 — isHandlingRef가 안 풀려 이후 모든
+  // 명령이 조용히 무시됐다("진행이 안 됨"). 12초 안에 못 받으면 오류로 끝내 다시 말하게 한다.
+  const VOICE_API_TIMEOUT_MS = 12000;
+  const controller = new AbortController();
+  const abortTimer = setTimeout(() => controller.abort(), VOICE_API_TIMEOUT_MS);
   let idToken = null;
-  try { idToken = auth.currentUser ? await auth.currentUser.getIdToken() : null; }
-  catch (e) { console.warn('[voiceCommandService] ID 토큰 발급 실패:', e?.message || e); }
+  try {
+    idToken = auth.currentUser
+      ? await Promise.race([
+          auth.currentUser.getIdToken(),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('토큰 발급 시간 초과')), 5000)),
+        ])
+      : null;
+  } catch (e) { console.warn('[voiceCommandService] ID 토큰 발급 실패:', e?.message || e); }
 
-  const res = await fetch('/api/voice-command', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
-    },
-    body: JSON.stringify({ transcript, role, history }),
-  });
+  let res;
+  try {
+    res = await fetch('/api/voice-command', {
+      method: 'POST',
+      signal: controller.signal,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
+      },
+      body: JSON.stringify({ transcript, role, history }),
+    });
+  } catch (e) {
+    if (e?.name === 'AbortError') throw new Error('음성 명령 응답 시간 초과');
+    throw e;
+  } finally {
+    clearTimeout(abortTimer);
+  }
 
   if (!res.ok) {
     // [진단용 2026-08-08] "명령 실행이 안 된다"는 문의 대응 — 예전엔 상태 코드만
