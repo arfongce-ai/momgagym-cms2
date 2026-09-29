@@ -215,7 +215,9 @@ export default function AppLayout({ children }) {
           상시 감지, PC(데스크탑 너비)는 클릭식 버튼. 폰(좁은 화면)에서는 HUD가 화면을
           가려 불편하다는 피드백으로 아예 렌더링하지 않는다 — 태블릿 이상 너비는 기존
           "PC" 취급 그대로 유지(=isDesktop). */}
-      {kioskOn ? <KioskVoiceCommand /> : (isDesktop && <GlobalVoiceCommand />)}
+      {/* [2026-09-29] 사장님 요청: 모미 음성인식은 관리자(role==='admin') 로그인에서만 동작.
+          트레이너 계정에서는 마이크 권한 요청·상시 감지 자체를 시작하지 않는다. */}
+      {user?.role === 'admin' && (kioskOn ? <KioskVoiceCommand /> : (isDesktop && <GlobalVoiceCommand />))}
     </div>
   );
 }

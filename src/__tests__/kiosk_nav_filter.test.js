@@ -53,7 +53,8 @@ describe('AppLayout.jsx — 키오스크 메뉴 화이트리스트', () => {
     // [2026-09-10 범위 축소] 폰(좁은 화면)에서는 화면을 가려 불편하다는 피드백으로
     // 아예 렌더링하지 않는다 — 모미는 PC·키오스크 전용. 이 테스트가 그때 같이
     // 갱신되지 않아 계속 실패하고 있었다(2026-09c에 수정).
-    expect(layoutSrc).toMatch(/\{kioskOn \? <KioskVoiceCommand \/> : \(isDesktop && <GlobalVoiceCommand \/>\)\}/);
+    // [2026-09-29] 관리자(role==='admin') 로그인에서만 마운트한다.
+    expect(layoutSrc).toMatch(/user\?\.role === 'admin' && \(kioskOn \? <KioskVoiceCommand \/> : \(isDesktop && <GlobalVoiceCommand \/>\)\)/);
     expect(layoutSrc).not.toMatch(/\{!kioskOn && <GlobalVoiceCommand \/>\}/);
   });
 
