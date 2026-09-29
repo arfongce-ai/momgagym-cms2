@@ -3,14 +3,14 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'fs';
 import { join } from 'path';
-import { matchWakeWord, resolveInterimWakeCommand } from '../hooks/useMomiVoice';
+import { isSafeWakeOnly, matchWakeWord, resolveInterimWakeCommand } from '../hooks/useMomiVoice';
 
 const read = (p) => readFileSync(join(__dirname, '..', p), 'utf-8');
 const hook = read('hooks/useMomiVoice.js');
 
-describe('웨이크워드 오인식 변형 추가', () => {
-  it.each(['모임이야', '모이야', '오미야', '모니야', '무미야', '머미야', '마미야', '모비야'])(
-    '"%s 회원 관리 열어줘"를 웨이크워드 + 명령으로 분리한다',
+describe('웨이크워드 오인식 제어', () => {
+  it.each(['모미야', '몸이야', '모미아', '모미'])(
+    '확인된 호출어 "%s"는 발화 첫 단어일 때만 웨이크워드로 분리한다',
     (wake) => {
       const heard = `${wake} 회원 관리 열어줘`;
       const m = matchWakeWord(heard);
@@ -19,10 +19,8 @@ describe('웨이크워드 오인식 변형 추가', () => {
     }
   );
 
-  it('"모미여"는 뒤의 "여"가 명령으로 남지 않게 통째로 인정한다', () => {
-    const heard = '모미여 스케줄 열어줘';
-    const m = matchWakeWord(heard);
-    expect(heard.slice(m.index + m.length).trim()).toBe('스케줄 열어줘');
+  it.each(['소미야', '보미야', '봄이야', '모니야', '모미여', '오늘 모미야'])('%s는 웨이크워드로 오탐하지 않는다', (heard) => {
+    expect(matchWakeWord(heard)).toBeNull();
   });
 
   it('기존 변형(모미야/몸이야)은 그대로 동작한다', () => {
@@ -36,12 +34,19 @@ describe('웨이크워드 오인식 변형 추가', () => {
     expect(resolveInterimWakeCommand('모미야', '회원 관리 열어줘', 1000, 2000)).toBeNull();
     expect(resolveInterimWakeCommand('모미야 회원 관리', '회원 관리 열어줘', 1000, 5001)).toBeNull();
   });
+
+  it('단독 호출은 고유한 "모미야/모미"만 활성화하고 발음 혼동 별칭은 명령과 함께일 때만 허용한다', () => {
+    expect(isSafeWakeOnly('모미야', matchWakeWord('모미야'))).toBe(true);
+    expect(isSafeWakeOnly('모미', matchWakeWord('모미'))).toBe(true);
+    expect(isSafeWakeOnly('몸이야', matchWakeWord('몸이야'))).toBe(false);
+    expect(isSafeWakeOnly('모미아', matchWakeWord('모미아'))).toBe(false);
+  });
 });
 
 describe('지연·무응답 방지 배선', () => {
   it('확정 대기는 400ms, 웨이크 후 명령 대기창은 10초', () => {
     expect(hook).toContain('const FINAL_RESULT_SETTLE_MS = 400;');
-    expect(hook).toContain('const ACTIVATION_WINDOW_MS = 10000;');
+    expect(hook).toContain('const ACTIVATION_WINDOW_MS = 5000;');
   });
 
   it('임시 결과에서 웨이크워드가 들리면 기억했다가 확정 문장에서 웨이크가 빠져도 명령으로 살린다', () => {

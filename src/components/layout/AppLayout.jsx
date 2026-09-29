@@ -217,7 +217,8 @@ export default function AppLayout({ children }) {
           "PC" 취급 그대로 유지(=isDesktop). */}
       {/* [2026-09-29] 사장님 요청: 모미 음성인식은 관리자(role==='admin') 로그인에서만 동작.
           트레이너 계정에서는 마이크 권한 요청·상시 감지 자체를 시작하지 않는다. */}
-      {user?.role === 'admin' && (kioskOn ? <KioskVoiceCommand /> : (isDesktop && <GlobalVoiceCommand />))}
+      {user?.role === 'admin' && kioskOn && <KioskVoiceCommand />}
+      {user?.role === 'admin' && !kioskOn && isDesktop && <GlobalVoiceCommand />}
     </div>
   );
 }

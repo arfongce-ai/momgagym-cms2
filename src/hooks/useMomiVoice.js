@@ -24,89 +24,23 @@ import { useRef, useState, useCallback, useEffect } from 'react';
 // 이걸 넣으면 트레이너·회원의 평범한 대화에도 계속 오작동(오탐)할 위험이 크다.
 // "모미"는 사전에 없는 말이라 그런 위험이 훨씬 낮다.
 //
-// [2026-08-08d] 발음이 부정확할 때 "봄이야"(봄+이야 = "it's spring")로도 인식됨을
-// 확인함. "몸이야"와 같은 구조의 문제다 — ㅂ·ㅁ은 둘 다 입술소리(양순음)라
-// 발음이 뭉개지면 서로 헷갈리기 쉽고, "봄이"도 연음되면 "보미"로 들려 결국
-// "모미야"와 사실상 같은 소리가 된다. "봄이야"는 "몸이야"보다 헬스장 대화에서
-// 나올 일이 훨씬 적어(계절 얘기 정도) 오탐 위험이 낮다고 보고 그대로 추가한다.
-const WAKE_WORD_VARIANTS = ['모미야', '몸이야', '보미야', '봄이야', '모미아', '모미'].map((w) => w.normalize('NFC'));
-// [인식률 개선 2026-09-29] 실사용에서 자주 나오는 오인식 형태 추가. 자모 유사도(거리 1)로도
-// 잡히지만 3음절로 갈라지는 형태는 놓치므로 명시적으로 인정한다. '모미'가 먼저 매치돼
-// 뒤 글자(여 등)가 명령으로 남지 않도록 반드시 앞쪽에 넣는다.
-WAKE_WORD_VARIANTS.unshift(
-  ...['모임이야', '모이야', '오미야', '모니야', '무미야', '머미야', '마미야', '모비야', '모미여', '몸이여'].map((w) => w.normalize('NFC'))
-);
+// 고유한 호출어와 실제로 확인된 발음 혼동만 허용한다. 사람 이름과 비슷한 후보를
+// 넓게 받아들이면 상시 감지에서 주변 대화에 반응할 수 있어 퍼지 매칭은 쓰지 않는다.
+const WAKE_WORD_VARIANTS = ['모미야', '몸이야', '모미아', '모미'].map((w) => w.normalize('NFC'));
 
-// [정확도 개선 2026-09] 지금까지는 실제로 신고된 오인식 사례가 나올 때마다
-// WAKE_WORD_VARIANTS에 하나씩 손으로 추가해왔다(몸이야/보미야/봄이야 등) — 매번
-// 새 오인식 패턴을 신고받고 나서야 대응하는 방식이라 한계가 있다. 대신 한글을
-// 초성/중성/종성(자모)으로 풀어서, "모미"와 자모 단위 편집거리가 1 이내인
-// 두 글자 뒤에 "야/아" 종결 어미가 붙어 있으면 그것도 웨이크워드로 인정한다 —
-// 목록에 없는 새로운 오인식(예: "노미야", "고미야")까지 미리 커버하기 위함.
-// 오탐(엉뚱한 일상 대화를 웨이크워드로 착각) 위험을 줄이려고 조건을 엄격히
-// 둔다: 자모 거리 1 이내로만 허용하고, 종결 어미(야/아) 뒤에 공백·문장 끝이
-// 와야만(=독립된 낱말처럼 쓰였을 때만) 인정한다.
-function decomposeHangulSyllable(ch) {
-  const code = ch.codePointAt(0) - 0xac00;
-  if (code < 0 || code > 11171) return null;
-  const CHO = 'ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ';
-  const JUNG = 'ㅏㅐㅑㅒㅓㅔㅕㅖㅗㅘㅙㅚㅛㅜㅝㅞㅟㅠㅡㅢㅣ';
-  const JONG = ' ㄱㄲㄳㄴㄵㄶㄷㄹㄺㄻㄼㄽㄾㄿㅀㅁㅂㅄㅅㅆㅇㅈㅊㅋㅌㅍㅎ';
-  const cho = Math.floor(code / (21 * 28));
-  const jung = Math.floor((code % (21 * 28)) / 28);
-  const jong = code % 28;
-  return CHO[cho] + JUNG[jung] + JONG[jong];
-}
-
-/** 두 한글 문자열을 자모 단위로 풀어서 레벤슈타인 편집거리를 구한다. */
-function jamoDistance(a, b) {
-  const toJamo = (s) =>
-    Array.from(s)
-      .map((ch) => decomposeHangulSyllable(ch) || ch)
-      .join('');
-  const da = toJamo(a);
-  const db = toJamo(b);
-  const m = da.length;
-  const n = db.length;
-  const dp = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
-  for (let i = 0; i <= m; i += 1) dp[i][0] = i;
-  for (let j = 0; j <= n; j += 1) dp[0][j] = j;
-  for (let i = 1; i <= m; i += 1) {
-    for (let j = 1; j <= n; j += 1) {
-      dp[i][j] = da[i - 1] === db[j - 1]
-        ? dp[i - 1][j - 1]
-        : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
-    }
-  }
-  return dp[m][n];
-}
-
-/** "모미"와 자모 거리 1 이내인 두 글자 + 종결 어미(야/아)를 찾는다. 없으면 null. */
-function fuzzyMatchWakeWord(normalized) {
-  const pattern = /([가-힣]{2})[야아](?=\s|$)/gu;
-  let match;
-  while ((match = pattern.exec(normalized))) {
-    if (jamoDistance(match[1], '모미') <= 1) {
-      return { index: match.index, length: match[0].length };
-    }
-  }
-  return null;
-}
+// 퍼지 유사도는 "소미야" 같은 사람 이름도 호출어로 인식할 수 있어 사용하지 않는다.
 
 /** heard 안에서 웨이크워드(또는 흔한 오인식 형태)를 찾는다. 없으면 null. */
 export function matchWakeWord(heard) {
   const normalized = (heard || '').normalize('NFC');
+  const isAtUtteranceStart = (index) => /^[\s,，.!?。、…-]*$/u.test(normalized.slice(0, index));
   for (const variant of WAKE_WORD_VARIANTS) {
     const index = normalized.indexOf(variant);
-    if (index !== -1) return { index, length: variant.length };
+    if (index !== -1 && isAtUtteranceStart(index)) return { index, length: variant.length };
   }
   // 음성 엔진이 이름 사이에 공백을 끼우는 경우("모 미야", "몸 이 야")도 허용한다.
-  const flexible = /모\s*미\s*(?:야|아)|몸\s*이\s*야|보\s*미\s*야|봄\s*이\s*야/u.exec(normalized);
-  if (flexible) return { index: flexible.index, length: flexible[0].length };
-  // [정확도 개선 2026-09] 위 fuzzyMatchWakeWord 설명 참고 — 목록에 없는 새로운
-  // 오인식 형태까지 자모 유사도로 넓게 잡아낸다(최후 수단이라 맨 마지막에 검사).
-  const fuzzy = fuzzyMatchWakeWord(normalized);
-  if (fuzzy) return fuzzy;
+  const flexible = /^[\s,，.!?。、…-]*(모\s*미\s*(?:야|아)|몸\s*이\s*야)/u.exec(normalized);
+  if (flexible) return { index: flexible.index + flexible[0].indexOf(flexible[1]), length: flexible[1].length };
   return null;
 }
 
@@ -165,7 +99,7 @@ export function collectRecognitionText(event, { finalOnly = false, preferWakeWor
 // 응답 → 그 다음 명령을 따로 말하는 자연스러운 2단계 대화로 쓰길 원했는데,
 // 예전 코드는 매 발화마다 "모미야"가 다시 붙어있어야만 반응해서 이 흐름이
 // 전부 무시되고 있었다(콘솔 대신 화면에 찍은 진단 로그로 확인됨).
-const ACTIVATION_WINDOW_MS = 10000;
+const ACTIVATION_WINDOW_MS = 5000;
 
 // 삼성 인터넷/안드로이드 Web Speech API는 한 문장을 말하는 동안
 // "몸이야" → "몸이야 회원" → "몸이야 회원 관리 열어 줘"처럼 길어지는
@@ -189,6 +123,14 @@ export function resolveInterimWakeCommand(interimText, finalText, interimAt, now
   if (!match) return null;
   const interimCommand = interimText.slice(match.index + match.length).trim();
   return interimCommand ? finalText : null;
+}
+
+export function isSafeWakeOnly(heard, match) {
+  if (!heard || !match) return false;
+  const wake = heard.slice(match.index, match.index + match.length).replace(/[\s,，.!?。、…-]/gu, '');
+  // 음성 혼동 변형은 같은 문장에 명령이 있을 때만 받는다. 단독으로 2단계 대화를
+  // 여는 호출은 고유 이름 또는 잘린 고유 이름만 허용해 이름 오탐을 줄인다.
+  return wake === '모미야' || wake === '모미';
 }
 
 // [노이즈 캔슬링 2026-09b] 아래 소음 게이트가 쓰는 두 값.
@@ -518,7 +460,7 @@ export function useMomiVoice({
       // 대기)으로 자연스럽게 이어준다.
       if (!requireWakeWord) {
         const soloWake = matchWakeWord(heard);
-        if (soloWake && !heard.slice(soloWake.index + soloWake.length).trim()) {
+        if (soloWake && isSafeWakeOnly(heard, soloWake) && !heard.slice(soloWake.index + soloWake.length).trim()) {
           if (onWakeOnly) {
             activatedRef.current = true;
             if (activationTimerRef.current) clearTimeout(activationTimerRef.current);
@@ -561,6 +503,12 @@ export function useMomiVoice({
         return;
       }
       const commandText = heard.slice(wakeMatch.index + wakeMatch.length).trim();
+      if (!commandText && !isSafeWakeOnly(heard, wakeMatch)) {
+        clearWakeInterim();
+        onRecognitionMetaRef.current?.({ heard, confidence, matched: false, kind: 'mismatch' });
+        if (onMismatch) onMismatch(heard);
+        return;
+      }
       clearWakeInterim();
       if (commandText && onCommand) {
         onRecognitionMetaRef.current?.({ heard, confidence, matched: true, kind: 'command' });
