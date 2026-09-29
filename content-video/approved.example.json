@@ -1,0 +1,16 @@
+{
+  "outputDir": "content-video/review",
+  "brand": {
+    "logoPath": "C:/brand/momgagym-logo.png",
+    "endCardPath": "C:/brand/momgagym-end-card.png"
+  },
+  "clips": [
+    {
+      "id": "exercise-balance-001",
+      "source": "F:/approved-content/exercise-balance-001.mp4",
+      "consent": { "publicContent": true, "reference": "CONSENT-REFERENCE" },
+      "trim": { "startSec": 0, "endSec": 20 },
+      "captionDraft": "균형 운동은 천천히, 안전하게 시작하세요."
+    }
+  ]
+}

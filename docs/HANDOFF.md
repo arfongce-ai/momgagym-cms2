@@ -46,6 +46,14 @@
 ## 작업 로그
 최신 항목이 위. 형식을 그대로 복사해서 쓴다.
 
+### 2026-09-29 · Codex · Issue #2 동의 영상 자동 편집 MVP
+- 한 일: 로컬 FFmpeg 기반 검수 대기 영상 생성기를 추가. 공개 동의·동의 참조값·10~30초 길이·자막 초안이 모두 있는 클립만 처리하며, 세로 9:16 변환·선택형 로고·2초 엔딩 카드·SRT 초안을 만든다.
+- 변경 파일: `scripts/content-video/videoMvp.mjs`, `scripts/content-video/prepare-review.mjs`, `content-video/approved.example.json`, `docs/VIDEO_AUTOMATION_MVP.md`, `src/__tests__/content_video_mvp.test.js`, `package.json`, `.gitignore`.
+- 테스트: Node 문법 검사·단위 스모크 통과, `git diff --check` 통과. Vitest는 현재 환경에서 Vite 설정 파일 접근 거부로 시작하지 못함.
+- 안전 장치: 실제 원본을 자동 업로드·게시하지 않음. `content-video/*.local.json`과 `content-video/review/`는 Git 제외. 검수 JSON은 `review_required`, `publishAllowed: false`로 생성.
+- 남은 위험: 현재 PC에서 `ffmpeg` 명령을 찾지 못해 실제 인코딩 실행은 미검증. 얼굴 자동 블러·음성 받아쓰기·Google Drive 자동 업로드는 별도 검토/PR 필요.
+- 다음에 할 일: FFmpeg 설치 후 동의 완료된 테스트 복사본 1개로 실행 검증 → Claude가 Issue #2와 이 로그를 검토 → Google Drive 검수 대기 폴더 연결 범위를 결정.
+
 ### 2026-09-29 · Codex · Codex·Claude·Gemini 단일 접수 운영판
 - 한 일: 모바일 사용자가 한 곳에만 요청을 남기고, 다음 AI가 GitHub Issue와 HANDOFF를 읽어 구현·교차 검토를 이어가는 절차를 문서화.
 - 변경 파일: `docs/AI_COLLABORATION.md` 신규, `docs/HANDOFF.md` 작업 로그.
