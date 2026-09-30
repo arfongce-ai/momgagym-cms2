@@ -65,9 +65,11 @@
   - `GlobalVoiceCommand.jsx`·`KioskVoiceCommand.jsx` — `localInstallFailure` 상태로 실패 사유 문구를 유지(재시작 `onstart`가 덮지 않음), 재시도 불필요한 사유는 설치 버튼 숨김, 진단 결과에 수치 표시.
   - `src/pages/MicTest.jsx`(`/mic-test`, 로그인 불필요) — 환경(브라우저·`available()` 로컬/원격 값·장치 수), 마이크 원시/처리 각 5초 측정(장치명·음소거·컨텍스트·적용 옵션), 음성팩 `install()` 시험, 인식 모드 선택(기본/로컬/원격), 이벤트 시각(+ms) 기록, 결과 복사. 인식 문장은 글자 수·신뢰도만 표시, 전송·저장 없음.
   - 테스트: `src/__tests__/momi_root_cause_2609.test.js`(신규 18개, 실행형 위주), `momi_recognition_boost_2609.test.js` 2곳(측정 로직 이동·`errorKind` 표현) 갱신.
-- 테스트 결과: 전체 `npx vitest run` 3129/3140, 실패 11개 = 수정 전 기준선과 동일(4개 파일: `ai_measure_items_2607` 1, `measure_fixes_batch` 2, `measure_save_failure_regression` 7, `member_transfer_cross_member_ui` 1). 새 실패 0. 음성 관련 7개 파일 198/198. `npm run lint`는 기존 `unifiedReport.js:326` 중복 키 1건만(변경 파일 ESLint 0건). `npm run build` 통과(기존 chunk 크기 경고).
+- 테스트 결과: 전체 `npx vitest run` 3135/3146(실행형 훅 테스트 6개 포함, 최종), 실패 11개 = 수정 전 기준선과 동일(4개 파일: `ai_measure_items_2607` 1, `measure_fixes_batch` 2, `measure_save_failure_regression` 7, `member_transfer_cross_member_ui` 1). 새 실패 0. 음성 관련 7개 파일 198/198. `npm run lint`는 기존 `unifiedReport.js:326` 중복 키 1건만(변경 파일 ESLint 0건). `npm run build` 통과(기존 chunk 크기 경고).
 - 남은 불확실성(실기기 미검증): ① `install()`이 false를 주는 원인(브라우저/배포판별 언어팩 미제공 추정, 미확인) ② `network`의 원인(서비스 접근/네트워크/엔진) ③ 저신호가 하드웨어·OS 때문인지 진단 방식 때문인지(`181ac20` 후 재측정 전) ④ 로컬 fallback 분기는 표준 오류 코드 기준이며 실제 브라우저에서 발생시켜 보지는 못함 ⑤ 진단 중 무대가 열려 있으면 측정용 스트림이 하나 더 열려 있음(미수정).
 - 다음에 할 일: 배포 후 두 노트북에서 `/mic-test`의 “결과 복사” 값 수집(아래 사용자 절차) → 값에 따라 원인 확정.
+- 재검증(2026-09-30 10:55, 사용자 요청 “한 번 더 정밀하게”): `src/__tests__/momi_hook_exec_2609.test.js`(신규 6개) — 가짜 React 훅+가짜 `SpeechRecognition`으로 실제 `useMomiVoice`를 실행해 이벤트 순서를 검증. 설치 `false`→사유 `returned-false`·`aborted`는 정보 로그·300ms 뒤 청취 재개, 설치 무응답→`timeout` 후 재개, 로컬 모드 `language-not-supported`→`processLocally=false` 복귀 후 재시작(원격에서도 같으면 중단), `network`→오류 보고+재시작, `not-allowed`→재시작 안 함. 수정 전 훅(`0d65e2c`)으로 바꿔 돌리면 앞의 3개(설치 사유·무응답 멈춤·로컬 복귀)가 실패하고 나머지 3개는 종전에도 통과 — 즉 위 결함이 실제로 있었고 수정이 이를 고쳤음을 확인. 실제 브라우저의 이벤트는 재현하지 못함(가짜 객체 기준).
+- 미확인: 운영 번들 반영 여부(이 세션은 배포 사이트·GitHub Actions 조회 불가). 사용자가 `/mic-test`가 열리고 “마이크 신호 측정(원시/처리)” 버튼이 보이는지로 확인.
 
 ### 2026-09-30 · Codex · R11 실기기 화면 재검토 — 진단 동시 캡처 및 로컬팩 실패
 - 한 일: 두 노트북 운영 화면을 검토. 첫 기기는 `몸이야?`/`모미야?` 전사 로그가 있어 입력·일부 전사는 동작하지만 한국어 음성팩 설치 실패와 `network`/`aborted`가 반복됨. 두 번째 기기의 “입력 신호 변화가 거의 없습니다” 진단 결과는 측정 방식의 신뢰성을 점검.
