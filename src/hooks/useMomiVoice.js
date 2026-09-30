@@ -1047,9 +1047,36 @@ export function useMomiVoice({
       callbacksRef.current.onRecognitionStatus?.('mic-diagnostic-unsupported');
       return { ok: false, reason: 'unsupported' };
     }
+    // SpeechRecognition may keep the selected input device open. Pause it before opening
+    // the diagnostic stream so two simultaneous captures cannot make a working mic look silent.
+    if (pendingReplyRef.current) {
+      callbacksRef.current.onRecognitionStatus?.('awaiting-reply');
+      return { ok: false, reason: 'awaiting-reply' };
+    }
+    const recognition = recognitionRef.current;
+    const shouldResume = wantListeningRef.current && Boolean(recognition);
+    clearWakeInterim();
+    clearActivation();
+    clearPendingFinal();
+    shouldRestartRef.current = false;
+    if (recognition) {
+      const ended = new Promise((resolve) => {
+        const timeout = setTimeout(() => {
+          localInstallEndResolverRef.current = null;
+          resolve();
+        }, 1200);
+        localInstallEndResolverRef.current = () => {
+          clearTimeout(timeout);
+          resolve();
+        };
+      });
+      try { recognition.abort(); } catch (error) { /* already stopped */ }
+      await ended;
+    }
     let stream;
     let audioContext;
     try {
+      callbacksRef.current.onRecognitionStatus?.('mic-diagnostic-running');
       stream = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
       });
@@ -1094,8 +1121,12 @@ export function useMomiVoice({
       if (audioContext && audioContext.state !== 'closed') {
         try { await audioContext.close(); } catch (error) { /* no-op */ }
       }
+      if (shouldResume && wantListeningRef.current && recognitionRef.current === recognition) {
+        shouldRestartRef.current = true;
+        setTimeout(() => startListeningRef.current?.(), 250);
+      }
     }
-  }, []);
+  }, [clearPendingFinal]);
 
   const installLocalRecognition = useCallback(async () => {
     const SpeechRecognitionCtor = getSpeechRecognition();

@@ -99,6 +99,16 @@ describe('로컬 마이크 입력 진단', () => {
     expect(hook).not.toContain('fetch(');
   });
 
+  it('모미 인식기를 먼저 중지한 뒤 측정하고, 끝나면 청취 의사가 있을 때 재개한다', () => {
+    const diagnostic = hook.slice(hook.indexOf('const diagnoseMicrophone = useCallback('), hook.indexOf('const installLocalRecognition = useCallback('));
+    expect(diagnostic.indexOf('recognition.abort();')).toBeGreaterThan(-1);
+    expect(diagnostic.indexOf('await ended;')).toBeGreaterThan(diagnostic.indexOf('recognition.abort();'));
+    expect(diagnostic.indexOf('await ended;')).toBeLessThan(diagnostic.indexOf('navigator.mediaDevices.getUserMedia({'));
+    expect(diagnostic).toContain('if (shouldResume && wantListeningRef.current && recognitionRef.current === recognition)');
+    expect(diagnostic).toContain('startListeningRef.current?.()');
+    expect(diagnostic).toContain("if (pendingReplyRef.current)");
+  });
+
   it.each(['components/common/GlobalVoiceCommand.jsx', 'components/common/KioskVoiceCommand.jsx'])(
     '%s: no-speech가 반복되면 마이크 진단 버튼을 보여준다',
     (file) => {
