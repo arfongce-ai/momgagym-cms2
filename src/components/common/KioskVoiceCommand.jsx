@@ -54,6 +54,7 @@ export default function KioskVoiceCommand() {
   const [recognitionStatus, setRecognitionStatus] = useState('checking');
   const [localInstallOffered, setLocalInstallOffered] = useState(false);
   const [speechRecognitionIssue, setSpeechRecognitionIssue] = useState(false);
+  const [noSpeechDetected, setNoSpeechDetected] = useState(false);
   const [micDiagnosticRunning, setMicDiagnosticRunning] = useState(false);
   const [micDiagnosticResult, setMicDiagnosticResult] = useState('');
   const [busy, setBusy] = useState(false);
@@ -95,6 +96,8 @@ export default function KioskVoiceCommand() {
     }
     if (status === 'speech-without-result') setSpeechRecognitionIssue(true);
     if (status === 'transcript') setSpeechRecognitionIssue(false);
+    if (status === 'no-speech' || status === 'speech-without-result') setNoSpeechDetected(true);
+    if (status === 'transcript') setNoSpeechDetected(false);
   }, []);
 
   // 무대가 떠 있는 동안에만 음량·그래프를 state로 올린다(대기 중엔 리렌더 0).
@@ -597,7 +600,7 @@ export default function KioskVoiceCommand() {
   // 상시 감지 표시등(오브)도, 코너 HUD도 없앴다. "모미야"로 부른 순간에만
   // 전체화면 음성인식 그래프가 그라데이션으로 떠오르고, 명령이 끝나면 사라진다.
   const showLocalInstall = speechRecognitionIssue || localInstallOffered;
-  const showMicDiagnostic = speechRecognitionIssue || ['no-speech', 'mic-diagnostic-running', 'mic-signal-detected', 'mic-signal-low', 'mic-diagnostic-failed', 'mic-diagnostic-unsupported'].includes(recognitionStatus);
+  const showMicDiagnostic = noSpeechDetected || speechRecognitionIssue || ['mic-diagnostic-running', 'mic-signal-detected', 'mic-signal-low', 'mic-diagnostic-failed', 'mic-diagnostic-unsupported'].includes(recognitionStatus);
   const localInstallText = speechRecognitionIssue
     ? '말소리는 감지했지만 음성 인식 서비스가 글자를 돌려주지 않았어요. 한국어 음성팩을 설치해 이 PC에서 처리해 보세요.'
     : recognitionStatus === 'local-installing'

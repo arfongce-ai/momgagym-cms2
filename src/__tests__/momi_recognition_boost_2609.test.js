@@ -103,7 +103,8 @@ describe('로컬 마이크 입력 진단', () => {
     '%s: no-speech가 반복되면 마이크 진단 버튼을 보여준다',
     (file) => {
       const component = read(file);
-      expect(component).toContain("'no-speech', 'mic-diagnostic-running'");
+      expect(component).toContain("status === 'no-speech' || status === 'speech-without-result'");
+      expect(component).toContain('const showMicDiagnostic = noSpeechDetected || speechRecognitionIssue');
       expect(component).toContain('onClick={async () => {');
       expect(component).toContain('마이크 입력 진단');
     }
