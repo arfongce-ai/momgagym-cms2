@@ -6,6 +6,15 @@
 // 트레이너가 직접 마이크 버튼으로 켜고 꺼야 한다(GlobalVoiceCommand.jsx 참고).
 
 import { useRef, useState, useCallback, useEffect } from 'react';
+import {
+  hasMicSignal,
+  requestLocalRecognitionInstall,
+  isLocalInstallRetryable,
+  describeLocalInstallFailure,
+  describeMicDiagnostic,
+  classifyRecognitionError,
+  measureMicrophone,
+} from '../utils/momiDiagnostics';
 
 // [버그 수정 2026-08-08a] "모미야"를 또박또박 말해도 전혀 반응이 없다는 문의로
 // 화면 진단 로그를 확인해보니, 음성인식이 "모미야"를 "몸이야"로 알아듣고 있었다.
@@ -171,9 +180,7 @@ export async function getMomiLocalRecognitionAvailability(SpeechRecognitionCtor)
   }
 }
 
-export function hasMicSignal(ambientRms, voiceRms) {
-  return Number.isFinite(voiceRms) && voiceRms >= Math.max(0.006, (Number.isFinite(ambientRms) ? ambientRms : 0) * 1.35);
-}
+export { hasMicSignal, isLocalInstallRetryable, describeLocalInstallFailure, describeMicDiagnostic };
 
 // iOS Safari(아이폰·아이패드)는 continuous:true에서 세션이 응답 없이 멈추는(마이크는
 // 켜진 채 결과가 전혀 안 올라오는) 알려진 버그가 있다. iOS에서만 continuous:false로
@@ -241,6 +248,8 @@ export function useMomiVoice({
   const localRecognitionModeRef = useRef('unknown');
   const localAvailabilityRequestRef = useRef(null);
   const localInstallEndResolverRef = useRef(null);
+  // 모미가 직접 abort()를 부른 직후인지 — 그때 오는 `aborted` 오류는 브라우저 음성 서비스 오류가 아니다.
+  const abortedByAppRef = useRef(false);
   const recognitionSessionHadSpeechRef = useRef(false);
   const recognitionSessionHadResultRef = useRef(false);
   // "모미야"만 듣고 다음 명령을 기다리는 중인지(2단계 대화 흐름용).
@@ -400,6 +409,7 @@ export function useMomiVoice({
     // 실제로 맞는 해석이 섞여 있을 확률이 올라간다.
     recognition.maxAlternatives = 5;
     recognition.onstart = () => {
+      abortedByAppRef.current = false;
       recognitionSessionHadSpeechRef.current = false;
       recognitionSessionHadResultRef.current = false;
       callbacksRef.current.onRecognitionStatus?.(
@@ -582,6 +592,10 @@ export function useMomiVoice({
       // (원격 디버깅이 안 되는 기기가 많아서 콘솔만으론 부족함).
       // (not-allowed=권한 거부, no-speech=일정 시간 무음, audio-capture=마이크 없음,
       //  network=네트워크 문제 — Chrome 인식은 온라인 필요)
+      const errorKind = classifyRecognitionError(event.error, {
+        localMode: localRecognitionModeRef.current,
+        abortedByApp: abortedByAppRef.current,
+      });
       if (event.error === 'no-speech') {
         // Web Speech API는 무음 구간마다 이 이벤트를 내므로 일반 오류처럼 반복 경고하지 않는다.
         callbacksRef.current.onRecognitionStatus?.(
@@ -590,13 +604,25 @@ export function useMomiVoice({
             : 'no-speech'
         );
         console.info('[모미] 발화 결과 없음(no-speech) — 인식기를 다시 시작합니다.');
+      } else if (errorKind === 'app-abort') {
+        // 진단·음성팩 설치·TTS 중 마이크 일시정지에서 모미가 직접 abort()를 불러 생긴 정상 신호.
+        console.info('[모미] 인식 세션을 모미가 직접 중단했습니다(aborted) — 브라우저 오류 아님.');
       } else {
         console.warn('[모미] 인식 오류:', event.error);
       }
       if (onInterim) onInterim('');
+      // 로컬(온디바이스) 처리를 켠 상태에서 언어팩이 없거나 로컬 처리가 거부되면, 같은 설정으로
+      // 재시작해도 영원히 실패한다. 원격(기본) 인식으로 실제로 되돌린 뒤 onend 재시작에 맡긴다.
+      if (errorKind === 'local-fallback') {
+        recognition.processLocally = false;
+        localRecognitionModeRef.current = 'remote';
+        console.warn(`[모미] 로컬 인식 실패(${event.error}) — 온라인 인식으로 되돌립니다.`);
+        callbacksRef.current.onRecognitionStatus?.('local-fallback', event.error);
+        return;
+      }
       // 브라우저 권한 거부는 재시작해도 회복되지 않아 반복 오류만 만든다.
       // 권한을 바꾼 뒤에는 화면을 다시 열어 새 인식 세션을 시작하도록 둔다.
-      if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+      if (errorKind === 'fatal') {
         shouldRestartRef.current = false;
         wantListeningRef.current = false;
         clearWakeInterim();
@@ -795,6 +821,7 @@ export function useMomiVoice({
             // abort()는 stop()과 달리 처리 중이던 오디오를 즉시 버린다 — 방금
             // 막 들어온, Momi 자신의 목소리일 수 있는 조각이 onresult로 새어
             // 나가지 않도록 딱 잘라 끊는 편이 안전하다.
+            abortedByAppRef.current = true;
             recognitionRef.current.abort();
           } catch (e) {
             // no-op
@@ -1070,57 +1097,20 @@ export function useMomiVoice({
           resolve();
         };
       });
+      abortedByAppRef.current = true;
       try { recognition.abort(); } catch (error) { /* already stopped */ }
       await ended;
     }
-    let stream;
-    let audioContext;
     try {
       callbacksRef.current.onRecognitionStatus?.('mic-diagnostic-running');
-      stream = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-      });
-      const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
-      if (!AudioContextCtor) throw new Error('AudioContext is not supported');
-      audioContext = new AudioContextCtor();
-      await audioContext.resume();
-      const source = audioContext.createMediaStreamSource(stream);
-      const highPass = audioContext.createBiquadFilter();
-      highPass.type = 'highpass';
-      highPass.frequency.value = 120;
-      const lowPass = audioContext.createBiquadFilter();
-      lowPass.type = 'lowpass';
-      lowPass.frequency.value = 4000;
-      const analyser = audioContext.createAnalyser();
-      analyser.fftSize = 2048;
-      source.connect(highPass);
-      highPass.connect(lowPass);
-      lowPass.connect(analyser);
-      const samples = new Float32Array(analyser.fftSize);
-      let ambientRms = 0;
-      let voiceRms = 0;
-      const startedAt = Date.now();
-      while (Date.now() - startedAt < 5000) {
-        analyser.getFloatTimeDomainData(samples);
-        let sumSquares = 0;
-        for (let i = 0; i < samples.length; i += 1) sumSquares += samples[i] * samples[i];
-        const rms = Math.sqrt(sumSquares / samples.length);
-        if (Date.now() - startedAt < 2000) ambientRms = Math.max(ambientRms, rms);
-        else voiceRms = Math.max(voiceRms, rms);
-        await new Promise((resolve) => setTimeout(resolve, 80));
-      }
-      const detected = hasMicSignal(ambientRms, voiceRms);
-      callbacksRef.current.onRecognitionStatus?.(detected ? 'mic-signal-detected' : 'mic-signal-low');
-      return { ok: detected, ambientRms, voiceRms };
+      const result = await measureMicrophone({ echoCancellation: true, noiseSuppression: true, autoGainControl: true });
+      callbacksRef.current.onRecognitionStatus?.(result.ok ? 'mic-signal-detected' : 'mic-signal-low');
+      return result;
     } catch (error) {
       console.warn('[모미] 마이크 입력 진단 실패:', error?.message || error);
       callbacksRef.current.onRecognitionStatus?.('mic-diagnostic-failed');
       return { ok: false, reason: error?.name || 'diagnostic-failed' };
     } finally {
-      stream?.getTracks().forEach((track) => track.stop());
-      if (audioContext && audioContext.state !== 'closed') {
-        try { await audioContext.close(); } catch (error) { /* no-op */ }
-      }
       if (shouldResume && wantListeningRef.current && recognitionRef.current === recognition) {
         shouldRestartRef.current = true;
         setTimeout(() => startListeningRef.current?.(), 250);
@@ -1152,7 +1142,7 @@ export function useMomiVoice({
 
     try {
       // install() must be invoked synchronously from the button's user gesture.
-      const installRequest = SpeechRecognitionCtor.install({ langs: ['ko-KR'], processLocally: true });
+      const installRequest = requestLocalRecognitionInstall(SpeechRecognitionCtor);
       if (recognition) {
         const ended = new Promise((resolve) => {
           const timeout = setTimeout(() => {
@@ -1164,6 +1154,7 @@ export function useMomiVoice({
             resolve();
           };
         });
+        abortedByAppRef.current = true;
         try {
           recognition.abort();
         } catch (error) {
@@ -1171,8 +1162,17 @@ export function useMomiVoice({
         }
         await ended;
       }
+      // 실패 사유(미지원/설치 불가 응답/브라우저 예외/시간 초과)를 구분해 상태로 전달한다.
       const installed = await installRequest;
-      if (!installed) throw new Error('한국어 음성 팩 설치에 실패했습니다.');
+      if (!installed.ok) {
+        console.warn(`[모미] 한국어 음성 팩 설치 실패(${installed.reason}${installed.detail ? `:${installed.detail}` : ''})`);
+        callbacksRef.current.onRecognitionStatus?.('local-install-failed', installed.reason, installed.detail);
+        if (shouldResume && wantListeningRef.current) {
+          shouldRestartRef.current = true;
+          setTimeout(() => startListeningRef.current?.(), 300);
+        }
+        return false;
+      }
       if (!recognition || recognitionRef.current !== recognition) return false;
 
       recognition.processLocally = true;
@@ -1185,8 +1185,8 @@ export function useMomiVoice({
       }
       return true;
     } catch (error) {
-      console.warn('[모미] 한국어 음성 팩 설치 실패:', error?.message || error);
-      callbacksRef.current.onRecognitionStatus?.('local-install-failed');
+      console.warn('[모미] 한국어 음성 팩 설치 처리 오류:', error?.message || error);
+      callbacksRef.current.onRecognitionStatus?.('local-install-failed', 'threw', error?.name);
       if (shouldResume && wantListeningRef.current) {
         shouldRestartRef.current = true;
         setTimeout(() => startListeningRef.current?.(), 300);

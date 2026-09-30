@@ -11,6 +11,7 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMomiVoice } from '../../hooks/useMomiVoice';
+import { isLocalInstallRetryable, describeLocalInstallFailure, describeMicDiagnostic } from '../../utils/momiDiagnostics';
 import { useMomiSpeech } from '../../hooks/useMomiSpeech';
 import MomiVoiceStage, { STAGE_FADE_MS } from './MomiVoiceStage';
 import { useCameraStageActive } from '../../ai-measure/core/cameraStageActive';
@@ -53,6 +54,8 @@ export default function KioskVoiceCommand() {
   const [feedback, setFeedback] = useState('');
   const [recognitionStatus, setRecognitionStatus] = useState('checking');
   const [localInstallOffered, setLocalInstallOffered] = useState(false);
+  // 설치 실패·로컬 인식 되돌림 사유. 인식이 재시작돼 상태가 덮여도 안내가 사라지지 않게 따로 든다.
+  const [localInstallFailure, setLocalInstallFailure] = useState(null);
   const [speechRecognitionIssue, setSpeechRecognitionIssue] = useState(false);
   const [noSpeechDetected, setNoSpeechDetected] = useState(false);
   const [micDiagnosticRunning, setMicDiagnosticRunning] = useState(false);
@@ -87,13 +90,17 @@ export default function KioskVoiceCommand() {
     if (meta.matched) openStage();
   }, [openStage]);
 
-  const handleRecognitionStatus = useCallback((status) => {
+  const handleRecognitionStatus = useCallback((status, reason, detail) => {
     setRecognitionStatus(status);
-    if (['local-install-required', 'local-downloading', 'local-installing', 'local-install-failed'].includes(status)) {
+    if (status === 'local-install-failed') setLocalInstallFailure({ reason, detail });
+    if (status === 'local-fallback') setLocalInstallFailure({ reason: 'fallback', detail: reason });
+    if (status === 'local-ready' || status === 'local-installing') setLocalInstallFailure(null);
+    if (['local-install-required', 'local-downloading', 'local-installing', 'local-install-failed', 'local-fallback'].includes(status)) {
       setLocalInstallOffered(true);
     } else if (status === 'local-ready' || status === 'online-only') {
       setLocalInstallOffered(false);
     }
+    if (status === 'online-only') setLocalInstallFailure(null);
     if (status === 'speech-without-result') setSpeechRecognitionIssue(true);
     if (status === 'transcript') setSpeechRecognitionIssue(false);
     if (status === 'no-speech' || status === 'speech-without-result') setNoSpeechDetected(true);
@@ -601,7 +608,9 @@ export default function KioskVoiceCommand() {
   // 전체화면 음성인식 그래프가 그라데이션으로 떠오르고, 명령이 끝나면 사라진다.
   const showLocalInstall = speechRecognitionIssue || localInstallOffered;
   const showMicDiagnostic = noSpeechDetected || speechRecognitionIssue || ['mic-diagnostic-running', 'mic-signal-detected', 'mic-signal-low', 'mic-diagnostic-failed', 'mic-diagnostic-unsupported'].includes(recognitionStatus);
-  const localInstallText = speechRecognitionIssue
+  const localInstallText = localInstallFailure
+    ? describeLocalInstallFailure(localInstallFailure.reason, localInstallFailure.detail)
+    : speechRecognitionIssue
     ? '말소리는 감지했지만 음성 인식 서비스가 글자를 돌려주지 않았어요. 한국어 음성팩을 설치해 이 PC에서 처리해 보세요.'
     : recognitionStatus === 'local-installing'
     ? '한국어 음성팩을 설치하고 있어요.'
@@ -616,7 +625,8 @@ export default function KioskVoiceCommand() {
       {showLocalInstall && (
         <aside className="fixed right-5 bottom-5 z-[1001] max-w-sm rounded-xl border border-amber-300 bg-slate-950/95 p-3 text-sm text-white shadow-xl">
           <p className="mb-2">{localInstallText}</p>
-          {recognitionStatus !== 'local-installing' && recognitionStatus !== 'awaiting-reply' && localInstallOffered && (
+          {recognitionStatus !== 'local-installing' && recognitionStatus !== 'awaiting-reply' && localInstallOffered
+            && (!localInstallFailure || isLocalInstallRetryable(localInstallFailure.reason)) && (
             <button
               type="button"
               onClick={installLocalRecognition}
@@ -642,13 +652,7 @@ export default function KioskVoiceCommand() {
               setMicDiagnosticResult('');
               setRecognitionStatus('mic-diagnostic-running');
               const result = await diagnoseMicrophone();
-              setMicDiagnosticResult(result?.reason === 'unsupported'
-                ? '이 브라우저에서는 마이크 진단 기능을 사용할 수 없습니다.'
-                : result?.ok
-                  ? '마이크 신호가 들어옵니다. 음성 문장을 못 돌려주는 브라우저 인식 엔진 쪽으로 원인이 좁혀졌습니다.'
-                  : result?.reason
-                    ? `마이크 진단 실패: ${result.reason}`
-                    : '말할 때 입력 신호 변화가 거의 없습니다. 운영체제 입력 장치와 마이크 연결을 확인해 주세요.');
+              setMicDiagnosticResult(describeMicDiagnostic(result));
               setMicDiagnosticRunning(false);
             }}
             className="rounded-lg bg-sky-300 px-3 py-2 font-semibold text-slate-950 disabled:opacity-50"

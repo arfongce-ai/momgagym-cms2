@@ -45,6 +45,30 @@
 
 ## 작업 로그
 최신 항목이 위. 형식을 그대로 복사해서 쓴다.
+### 2026-09-30 10:50 · Claude Code · R11 모미 음성인식 근본 원인 재조사
+- 한 일: main `0d65e2c` 기준 `useMomiVoice.js`·`GlobalVoiceCommand.jsx`·`KioskVoiceCommand.jsx`·`AppLayout.jsx` 이벤트 흐름 추적, `181ac20` diff 검토, 제공된 스크린샷 2장의 콘솔 문구·시각·번들명을 코드와 대조. Claude in Chrome 확장이 이 세션에 연결되지 않아 실기기 브라우저에서 `SpeechRecognition.available()` 등을 직접 실행하지는 못함(미검증으로 표시).
+- 입증된 사실(코드+스크린샷):
+  - 🟠 **스크린샷은 `181ac20` 배포 전 화면** — 작업표시줄 시각 9:13/9:17, `181ac20` 커밋 09:33, 스크린샷 콘솔 번들 `index-Dudjcpg4.js`는 `0413184` 배포본(HANDOFF 09-29 22:17 항목)이고 `181ac20` 배포본은 `index-D4Lo7rMl.js`. 따라서 두 화면은 “동시 캡처 수정”을 검증도 반증도 하지 못함. 저신호 결과는 수정 전 코드(인식기가 켜진 채 두 번째 캡처) 결과이며, 수정 후 재측정 전에는 원인 미확정.
+  - 🟠 `useMomiVoice.js:1174-1175` — 콘솔의 `한국어 음성 팩 설치 실패: 한국어 음성 팩 설치에 실패했습니다.`는 앱이 직접 만든 Error 문구. `SpeechRecognition.install()`이 **예외 없이 falsy로 resolve**된 경우에만 이 문구가 나옴(예외였다면 브라우저 예외 메시지가 표시됨). 즉 `install`은 존재하지만 브라우저가 “설치 안 됨”을 반환. 원인(SODA 구성요소 미제공 등)은 반환값만으로 알 수 없음. 현재는 미지원/반환 false/예외/무응답이 구분되지 않고 timeout도 없어 `await installRequest`가 멈추면 인식기가 꺼진 채 남음.
+  - 🟠 `aborted`는 앱이 직접 만듦: `installLocalRecognition`(1168), `diagnoseMicrophone`(1073), TTS 일시정지(798)가 `recognition.abort()`를 호출하고 `onerror`(594)가 이를 `console.warn('[모미] 인식 오류: aborted')`로 출력. 스크린샷 콘솔의 `aborted → 설치 실패` 쌍 3회는 설치 버튼 3회 클릭과 일치. 브라우저 음성 서비스 오류가 아님(단, 오해를 부르는 경고).
+  - 🟠 설치 실패 안내가 300ms 뒤 사라짐: 실패 후 `startListeningRef`가 재시작 → `onstart`가 `online-listening`으로 상태를 덮어써 `로컬 음성팩 설치에 실패했어요` 문구(`*VoiceCommand.jsx` localInstallText)가 표시되지 않고 기본 안내+같은 설치 버튼이 계속 노출됨(스크린샷 2 우하단이 기본 문구). 동일 유형 버그가 09-30 08:59에 no-speech에서 이미 한 번 수정됨.
+  - 🟠 `network`는 앱이 만들지 않음(`network` 문자열은 `handleErrorOccurred` 안내 문구뿐, 오류 코드는 `event.error` 그대로 전달) → 브라우저 음성 서비스 경로 오류. `몸이야?`/`모미야?` 전사가 같이 나오는 것으로 보아 원격 인식이 간헐적으로만 성공. 원인(서비스 접근 차단·네트워크·엔진)은 코드로 특정 불가.
+  - 🟠 로컬 처리 실패 후 원격 복귀 없음: `startListening`(1013-1019)이 `available()==='available'`이면 `processLocally=true`로 고정하고, `onerror`에는 `language-not-supported`(로컬 팩 없음/언어 미지원 시 표준 오류) 분기가 없어 `onend`가 같은 설정으로 무한 재시작함. `service-not-allowed`는 권한 거부로 취급되어 인식이 영구 중단됨(로컬 모드에서도 동일).
+  - 🟡 진단 측정 vs 실제 엔진: 진단은 `echoCancellation/noiseSuppression/autoGainControl: true`로 캡처(1080-1082)하는데 같은 파일 852-857 주석은 Windows에서 이 옵션이 마이크 레벨·통화 모드를 바꾼다고 기록. 인식 엔진은 브라우저 기본 캡처(제약조건 제어 불가) — 동일 장치·동일 처리라고 보장할 수 없음. 진단은 수치·장치·AudioContext 상태를 보여주지 않아 “저신호”의 근거를 사용자가 확인할 수 없고, 처음 2초 안에 말하면 ambient가 커져 저신호로 판정됨(`hasMicSignal`). 무대(`stagePhase`)가 열려 있으면 측정 스트림(`onAudioLevel`)이 별도로 열려 있어 진단 중 동시 캡처가 1개 더 남음.
+  - 확인된 정상: PC/키오스크는 `AppLayout.jsx:220-221`에서 관리자(`role==='admin'`)만, `kioskOn` 여부로 서로 배타적으로 마운트. 시작은 마운트 시 `startListening()`(사용자 제스처 없음 — 마이크 권한은 이미 허용된 경우만 성공, 설치 버튼만 제스처 사용). `ERR_BLOCKED_BY_CLIENT`(Firestore Listen)와 Tracking Prevention(jsDelivr 저장소 접근)은 음성 경로(SpeechRecognition/getUserMedia)와 코드상 접점이 없어 원인으로 분류하지 않음(인과 미입증).
+- 미확인: 실기기에서 `available()` 반환값, `install()`이 false를 주는 이유, `network`의 원인, 마이크 저신호가 하드웨어/OS인지 진단 방식인지. 각 노트북에서 실행할 사용자 실행형 진단 페이지를 추가할 예정(녹음·전송·발화 내용 저장 없음).
+- 계획(최소 수정): ① 설치 실패를 원인 코드로 구분+timeout+실패 문구 유지 ② `language-not-supported`/로컬 시작 실패 시 원격 인식으로 실제 복귀 ③ 앱이 낸 `aborted`는 경고 대신 정보 로그 ④ 인앱 진단이 수치·장치 정보 표시 ⑤ 정적 진단 페이지 `public/momi-diag.html`.
+- 사용자 결정: 2026-09-30 “제대로 작동되게 진행”·“적용” 요청 유지.
+- 수정(위 계획 그대로, 입증된 결함만):
+  - `src/utils/momiDiagnostics.js`(신규, 앱 의존성 없음) — `requestLocalRecognitionInstall`(미지원/`returned-false`/예외/90초 시간 초과 구분), `classifyRecognitionError`, `measureMicrophone`+`classifyMicMeasurement`(음소거·컨텍스트 미시작·완전 무음·조기 발화·저신호·정상), 진단 문구(수치 표시).
+  - `src/hooks/useMomiVoice.js` — 설치 실패 사유 전달(`local-install-failed`, reason, detail)·timeout, 모미가 직접 낸 `aborted`는 `console.info`(abort 3경로에서 `abortedByAppRef`), 로컬 모드의 `language-not-supported`/`service-not-allowed`는 `processLocally=false`+원격 모드로 실제 복귀(`local-fallback`), 원격 모드에서 회복 불가 오류는 재시작 루프 대신 중단. 인앱 진단은 `measureMicrophone`으로 옮기고 수치·판정 반환(동작·제약조건은 종전과 동일).
+  - `GlobalVoiceCommand.jsx`·`KioskVoiceCommand.jsx` — `localInstallFailure` 상태로 실패 사유 문구를 유지(재시작 `onstart`가 덮지 않음), 재시도 불필요한 사유는 설치 버튼 숨김, 진단 결과에 수치 표시.
+  - `src/pages/MicTest.jsx`(`/mic-test`, 로그인 불필요) — 환경(브라우저·`available()` 로컬/원격 값·장치 수), 마이크 원시/처리 각 5초 측정(장치명·음소거·컨텍스트·적용 옵션), 음성팩 `install()` 시험, 인식 모드 선택(기본/로컬/원격), 이벤트 시각(+ms) 기록, 결과 복사. 인식 문장은 글자 수·신뢰도만 표시, 전송·저장 없음.
+  - 테스트: `src/__tests__/momi_root_cause_2609.test.js`(신규 18개, 실행형 위주), `momi_recognition_boost_2609.test.js` 2곳(측정 로직 이동·`errorKind` 표현) 갱신.
+- 테스트 결과: 전체 `npx vitest run` 3129/3140, 실패 11개 = 수정 전 기준선과 동일(4개 파일: `ai_measure_items_2607` 1, `measure_fixes_batch` 2, `measure_save_failure_regression` 7, `member_transfer_cross_member_ui` 1). 새 실패 0. 음성 관련 7개 파일 198/198. `npm run lint`는 기존 `unifiedReport.js:326` 중복 키 1건만(변경 파일 ESLint 0건). `npm run build` 통과(기존 chunk 크기 경고).
+- 남은 불확실성(실기기 미검증): ① `install()`이 false를 주는 원인(브라우저/배포판별 언어팩 미제공 추정, 미확인) ② `network`의 원인(서비스 접근/네트워크/엔진) ③ 저신호가 하드웨어·OS 때문인지 진단 방식 때문인지(`181ac20` 후 재측정 전) ④ 로컬 fallback 분기는 표준 오류 코드 기준이며 실제 브라우저에서 발생시켜 보지는 못함 ⑤ 진단 중 무대가 열려 있으면 측정용 스트림이 하나 더 열려 있음(미수정).
+- 다음에 할 일: 배포 후 두 노트북에서 `/mic-test`의 “결과 복사” 값 수집(아래 사용자 절차) → 값에 따라 원인 확정.
+
 ### 2026-09-30 · Codex · R11 실기기 화면 재검토 — 진단 동시 캡처 및 로컬팩 실패
 - 한 일: 두 노트북 운영 화면을 검토. 첫 기기는 `몸이야?`/`모미야?` 전사 로그가 있어 입력·일부 전사는 동작하지만 한국어 음성팩 설치 실패와 `network`/`aborted`가 반복됨. 두 번째 기기의 “입력 신호 변화가 거의 없습니다” 진단 결과는 측정 방식의 신뢰성을 점검.
 - 발견: 🟠 `src/hooks/useMomiVoice.js:1045` — 모미의 SpeechRecognition을 계속 실행한 채 두 번째 `getUserMedia()` 스트림을 열어 RMS 측정. 브라우저/장치의 동시 마이크 캡처 동작에 따라 실제 입력이 있는데도 진단이 낮게 나올 수 있음. 첫 화면의 jsDelivr Tracking Prevention 경고는 음성 팩/ASR 실패의 직접 원인으로 확인되지 않음.

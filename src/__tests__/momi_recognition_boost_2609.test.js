@@ -13,6 +13,7 @@ import {
 
 const read = (p) => readFileSync(join(__dirname, '..', p), 'utf-8');
 const hook = read('hooks/useMomiVoice.js');
+const diagUtil = read('utils/momiDiagnostics.js');
 
 describe('웨이크워드 오인식 제어', () => {
   it.each(['모미야', '몸이야', '모미아', '모미'])(
@@ -92,18 +93,21 @@ describe('로컬 마이크 입력 진단', () => {
   });
 
   it('검사 샘플은 브라우저 안에서만 분석하고 마이크 트랙을 끝난 뒤 닫는다', () => {
-    expect(hook).toContain('navigator.mediaDevices.getUserMedia({');
-    expect(hook).toContain('analyser.getFloatTimeDomainData(samples);');
-    expect(hook).toContain('stream?.getTracks().forEach((track) => track.stop());');
-    expect(hook).toContain('await audioContext.close()');
+    // 측정 로직은 hook과 /mic-test가 공유하는 utils/momiDiagnostics.js로 옮겼다.
+    expect(diagUtil).toContain('navigator.mediaDevices.getUserMedia({');
+    expect(diagUtil).toContain('analyser.getFloatTimeDomainData(samples);');
+    expect(diagUtil).toContain('stream?.getTracks().forEach((track) => track.stop());');
+    expect(diagUtil).toContain('await audioContext.close()');
+    expect(diagUtil).not.toContain('fetch(');
     expect(hook).not.toContain('fetch(');
+    expect(hook).toContain('measureMicrophone(');
   });
 
   it('모미 인식기를 먼저 중지한 뒤 측정하고, 끝나면 청취 의사가 있을 때 재개한다', () => {
     const diagnostic = hook.slice(hook.indexOf('const diagnoseMicrophone = useCallback('), hook.indexOf('const installLocalRecognition = useCallback('));
     expect(diagnostic.indexOf('recognition.abort();')).toBeGreaterThan(-1);
     expect(diagnostic.indexOf('await ended;')).toBeGreaterThan(diagnostic.indexOf('recognition.abort();'));
-    expect(diagnostic.indexOf('await ended;')).toBeLessThan(diagnostic.indexOf('navigator.mediaDevices.getUserMedia({'));
+    expect(diagnostic.indexOf('await ended;')).toBeLessThan(diagnostic.indexOf('measureMicrophone('));
     expect(diagnostic).toContain('if (shouldResume && wantListeningRef.current && recognitionRef.current === recognition)');
     expect(diagnostic).toContain('startListeningRef.current?.()');
     expect(diagnostic).toContain("if (pendingReplyRef.current)");
@@ -147,7 +151,8 @@ describe('지연·무응답 방지 배선', () => {
 
   it('마이크 권한 거부는 자동 재시작을 중단하고 오류를 화면으로 전달한다', () => {
     const onerror = hook.slice(hook.indexOf('recognition.onerror = (event) => {'));
-    const stopAt = onerror.indexOf("event.error === 'not-allowed'");
+    // 권한 거부 등 회복 불가 오류는 classifyRecognitionError가 'fatal'로 분류한다(실행형 검증은 momi_root_cause_2609).
+    const stopAt = onerror.indexOf("errorKind === 'fatal'");
     expect(stopAt).toBeGreaterThan(-1);
     expect(onerror.slice(stopAt, stopAt + 620)).toContain('shouldRestartRef.current = false;');
     expect(onerror.slice(stopAt, stopAt + 620)).toContain('wantListeningRef.current = false;');
