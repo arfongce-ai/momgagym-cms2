@@ -4,6 +4,8 @@ assets/
 outputs/
 content-video/**/*.local.json
 content-video/review/
+content-video/state/
+content-video/config.local.json
 .env
 .env.*
 !.env.example

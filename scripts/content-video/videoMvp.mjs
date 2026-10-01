@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { CLIP_ID_PATTERN } from './inputGuard.mjs';
 
 export const MIN_CLIP_SECONDS = 10;
 export const MAX_CLIP_SECONDS = 30;
@@ -6,19 +7,18 @@ export const DEFAULT_CONSENT_SNAPSHOT_MAX_AGE_DAYS = 7;
 
 export function validateClip(clip) {
   const errors = [];
-  if (!clip || typeof clip !== 'object') return ['클립 항목이 올바르지 않습니다.'];
-  if (!/^[a-z0-9][a-z0-9_-]{2,80}$/i.test(clip.id || '')) errors.push('id는 개인정보 없는 영문·숫자 식별자여야 합니다.');
-  if (typeof clip.source !== 'string' || !clip.source.trim()) errors.push('source 영상 경로가 필요합니다.');
-  if (clip.consent?.publicContent !== true) errors.push('공개 콘텐츠 동의(publicContent: true)가 확인되지 않았습니다.');
-  if (typeof clip.consent?.reference !== 'string' || !clip.consent.reference.trim()) errors.push('동의 기록 참조값(reference)이 필요합니다.');
+  if (!clip || typeof clip !== 'object') return ['PATH_REJECTED'];
+  if (!CLIP_ID_PATTERN.test(clip.clipId || '')) errors.push('PATH_REJECTED');
+  if (Object.hasOwn(clip, 'source')) errors.push('PATH_REJECTED');
+  if (typeof clip.consent?.reference !== 'string' || !clip.consent.reference.trim()) errors.push('NO_CONSENT');
   const start = Number(clip.trim?.startSec ?? 0);
   const end = Number(clip.trim?.endSec);
   if (!Number.isFinite(start) || start < 0 || !Number.isFinite(end) || end <= start) {
-    errors.push('trim.startSec과 trim.endSec을 올바르게 입력해야 합니다.');
+    errors.push('TOO_LONG');
   } else if (end - start < MIN_CLIP_SECONDS || end - start > MAX_CLIP_SECONDS) {
-    errors.push(`편집 길이는 ${MIN_CLIP_SECONDS}~${MAX_CLIP_SECONDS}초여야 합니다.`);
+    errors.push('TOO_LONG');
   }
-  if (typeof clip.captionDraft !== 'string' || !clip.captionDraft.trim()) errors.push('검수할 자막 초안(captionDraft)이 필요합니다.');
+  if (typeof clip.captionDraft !== 'string' || !clip.captionDraft.trim()) errors.push('UNKNOWN');
   return errors;
 }
 
@@ -26,34 +26,33 @@ export function validateClip(clip) {
  * Notion에서 사람이 내보낸 동의 현황 스냅샷을 검사한다.
  * 실제 서명 원본은 이 파일에 넣지 않고, 공개 가능 여부만 익명 참조값으로 대조한다.
  */
-export function validateConsentSnapshot(snapshot, { reference, channels, now = new Date(), maxAgeDays = DEFAULT_CONSENT_SNAPSHOT_MAX_AGE_DAYS } = {}) {
+export function validateConsentSnapshot(snapshot, { reference, channels, clipId, now = new Date(), maxAgeDays = DEFAULT_CONSENT_SNAPSHOT_MAX_AGE_DAYS } = {}) {
   const errors = [];
-  if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) return ['동의 스냅샷 파일 형식이 올바르지 않습니다.'];
-  if (!Array.isArray(snapshot.records)) return ['동의 스냅샷에 records 목록이 필요합니다.'];
-  if (typeof reference !== 'string' || !reference.trim()) return ['동의 기록 참조값이 필요합니다.'];
-  if (!Array.isArray(channels) || channels.length === 0 || channels.some((channel) => typeof channel !== 'string' || !channel.trim())) {
-    return ['게시 예정 채널 목록이 필요합니다.'];
-  }
+  if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot) || !Array.isArray(snapshot.records)) return ['NO_CONSENT'];
+  if (typeof reference !== 'string' || !reference.trim() || !CLIP_ID_PATTERN.test(clipId || '')) return ['NO_CONSENT'];
+  if (!Array.isArray(channels) || channels.length === 0 || channels.some((channel) => typeof channel !== 'string' || !channel.trim())) return ['CHANNEL'];
 
   const exportedAt = new Date(snapshot.exportedAt);
-  if (Number.isNaN(exportedAt.getTime())) return ['동의 스냅샷의 exportedAt 시간이 올바르지 않습니다.'];
+  if (Number.isNaN(exportedAt.getTime())) return ['NO_CONSENT'];
   const ageMs = now.getTime() - exportedAt.getTime();
-  if (ageMs > maxAgeDays * 86_400_000) errors.push(`동의 스냅샷은 ${maxAgeDays}일 이내에 다시 내보내야 합니다.`);
-  if (ageMs < -300_000) errors.push('동의 스냅샷 시간이 현재보다 미래입니다.');
+  if (ageMs > maxAgeDays * 86_400_000 || ageMs < -300_000) errors.push('NO_CONSENT');
 
-  const record = snapshot.records.find((item) => item?.reference === reference.trim());
-  if (!record) return [...errors, '동의 기록 참조값을 스냅샷에서 찾지 못했습니다.'];
-  if (record.publicContent !== true) errors.push('해당 동의는 공개 콘텐츠 사용으로 승인되지 않았습니다.');
-  if (record.revoked === true) errors.push('해당 동의는 철회되어 처리할 수 없습니다.');
-
-  if (!Array.isArray(record.allowedChannels) || channels.some((channel) => !record.allowedChannels.includes(channel.trim()))) {
-    errors.push('해당 동의의 허용 채널에 게시 예정 채널이 모두 포함되지 않습니다.');
-  }
-  if (record.expiresAt !== null && record.expiresAt !== undefined && record.expiresAt !== '') {
-    const expiresAt = new Date(`${record.expiresAt}T23:59:59.999`);
-    if (Number.isNaN(expiresAt.getTime())) errors.push('동의 만료일 형식이 올바르지 않습니다.');
-    else if (expiresAt.getTime() < now.getTime()) errors.push('해당 동의가 만료되었습니다.');
-  }
+  const records = snapshot.records.filter((item) => item?.reference === reference.trim());
+  if (records.length === 0) return [...errors, 'NO_CONSENT'];
+  const recordErrors = (record) => {
+    const currentErrors = [];
+    if (record.clipId !== clipId) currentErrors.push('CLIP_MISMATCH');
+    if (record.publicContent !== true) currentErrors.push('NO_CONSENT');
+    if (record.revoked !== false) currentErrors.push('REVOKED');
+    if (!Array.isArray(record.allowedChannels) || channels.some((channel) => !record.allowedChannels.includes(channel.trim()))) currentErrors.push('CHANNEL');
+    if (record.expiresAt !== null && record.expiresAt !== undefined && record.expiresAt !== '') {
+      const expiresAt = new Date(`${record.expiresAt}T23:59:59.999`);
+      if (Number.isNaN(expiresAt.getTime())) currentErrors.push('NO_CONSENT');
+      else if (expiresAt.getTime() < now.getTime()) currentErrors.push('EXPIRED');
+    }
+    return currentErrors;
+  };
+  if (!records.every((record) => recordErrors(record).length === 0)) errors.push(...new Set(records.flatMap(recordErrors)));
   return errors;
 }
 
@@ -71,7 +70,7 @@ export function srtText(clip) {
 }
 
 export function outputPaths(outputDir, clip) {
-  const stem = `${clip.id}-review`;
+  const stem = `${clip.clipId}-review`;
   return {
     video: path.join(outputDir, `${stem}.mp4`),
     subtitle: path.join(outputDir, `${stem}.srt`),
@@ -82,9 +81,9 @@ export function outputPaths(outputDir, clip) {
 /** 원본 경로·동의 참조값을 노출하지 않는 로컬 검수 페이지를 만든다. */
 export function buildReviewIndexHtml(items) {
   const escapeHtml = (value) => String(value).replace(/[&<>'"]/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[character]);
-  const cards = items.map(({ id, videoFile, subtitleFile }) => `
+  const cards = items.map(({ clipId, videoFile, subtitleFile }) => `
     <article>
-      <h2>${escapeHtml(id)}</h2>
+      <h2>${escapeHtml(clipId)}</h2>
       <video controls preload="metadata" src="${escapeHtml(videoFile)}"></video>
       <p><a href="${escapeHtml(subtitleFile)}">자막 초안(SRT) 열기</a></p>
       <p class="notice">공개 전 얼굴·배경·음성·자막을 확인하세요. 이 파일은 자동 게시되지 않습니다.</p>
@@ -96,10 +95,10 @@ export function buildReviewIndexHtml(items) {
 }
 
 /** ffmpeg가 설치된 로컬 PC에서만 실행한다. 원본은 복사·업로드하지 않는다. */
-export function buildFfmpegArgs({ clip, outputFile, logoPath = null, endCardPath = null }) {
+export function buildFfmpegArgs({ clip, inputFile, outputFile, logoPath = null, endCardPath = null }) {
   const duration = Number(clip.trim.endSec) - Number(clip.trim.startSec);
   const baseFilter = 'scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1';
-  const args = ['-y', '-ss', String(clip.trim.startSec), '-t', String(duration), '-i', clip.source];
+  const args = ['-y', '-ss', String(clip.trim.startSec), '-t', String(duration), '-i', inputFile];
   if (logoPath) args.push('-i', logoPath);
   if (endCardPath) args.push('-loop', '1', '-t', '2', '-i', endCardPath);
 

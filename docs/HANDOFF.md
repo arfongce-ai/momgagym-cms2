@@ -45,6 +45,15 @@
 
 ## 작업 로그
 최신 항목이 위. 형식을 그대로 복사해서 쓴다.
+### 2026-10-01 18:12 · Codex · Issue #2 PR1 입력 가드 + 클립 격리
+- 한 일: `scripts/content-video/inputGuard.mjs`를 추가해 가명 클립 ID로 루트 바로 아래의 허용 파일만 찾고, realpath/상대 경로·심볼릭 링크·정션·네트워크 경로·확장자·출력 루트를 확인. 매니페스트 경로 입력을 제거하고 동의 스냅샷의 중복 참조 레코드를 전부 대조하며, 클립별 FFmpeg 실패 격리·임시 출력·SHA-256 원장·재실행 건너뛰기를 구현.
+- 변경 파일: `scripts/content-video/inputGuard.mjs`, `scripts/content-video/videoMvp.mjs`, `scripts/content-video/prepare-review.mjs`, `src/__tests__/content_video_mvp.test.js`, `content-video/approved.example.json`, `content-video/consents.example.json`, `docs/VIDEO_AUTOMATION_MVP.md`, `AGENTS.md`, `GEMINI.md`, `.gitignore`, `docs/HANDOFF.md`.
+- 기준점 차이: 이전 예시는 자유 `source` 경로·브랜드 절대 경로를 포함했고 동의 검증은 참조 첫 항목만 찾았다. 현재 스키마를 확인해 `clipId` 기반으로 바꾸고 경로는 무시/거부하도록 처리했다.
+- 테스트: 영상 테스트 19/19 통과. 전체 `npm test -- --run --reporter=json` 3147/3160 통과; 문서화된 기존 실패 11개와 추가 시간 초과 2개(`ai_menu_grouping.test.js`, `session_share.test.js`). 두 시간 초과 파일은 단독 재실행 시 34/34 통과. 전체 실패 수는 기준선보다 2개 높지만, 두 테스트는 개별 통과했고 변경 범위 밖에서 전체 실행 중 시간 초과가 발생.
+- 빌드·정적 확인: `npm run build` 성공(기존 Firebase 동적/정적 import와 큰 청크 경고). Node 문법 검사, `git diff --check`, 로컬 설정·원장 Git 제외 확인 통과. 수정 범위에서 외부 통신/게시 도메인 검색 결과 없음.
+- 확인 불가: FFmpeg 9.0.1은 설치 확인했으나, 로컬 설정의 실제 루트 권한과 실제 입력 소재 인코딩은 실행하지 않음. 실제 PC 폴더 접근 권한과 운영 파일 검수는 미확인.
+- 다음에 할 일: Claude 보안 검토 → Gemini 독립 검토 → 검토 발견이 있으면 Codex 보완. 대표님 최종 확인 후 사용자 방식으로 업로드.
+
 ### 2026-09-30 10:50 · Claude Code · R11 모미 음성인식 근본 원인 재조사
 - 한 일: main `0d65e2c` 기준 `useMomiVoice.js`·`GlobalVoiceCommand.jsx`·`KioskVoiceCommand.jsx`·`AppLayout.jsx` 이벤트 흐름 추적, `181ac20` diff 검토, 제공된 스크린샷 2장의 콘솔 문구·시각·번들명을 코드와 대조. Claude in Chrome 확장이 이 세션에 연결되지 않아 실기기 브라우저에서 `SpeechRecognition.available()` 등을 직접 실행하지는 못함(미검증으로 표시).
 - 입증된 사실(코드+스크린샷):
