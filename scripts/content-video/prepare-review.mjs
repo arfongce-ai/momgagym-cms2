@@ -6,12 +6,13 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { CLIP_ID_PATTERN, resolveBrandAsset, resolveClipInput, resolveOutputPath } from './inputGuard.mjs';
-import { buildFfmpegArgs, buildReviewIndexHtml, outputPaths, srtText, validateClip, validateConsentSnapshot } from './videoMvp.mjs';
+import { buildFfmpegArgs, buildReviewIndexHtml, normalizeClip, outputPaths, srtText, validateNormalizedClip, validateConsentSnapshot } from './videoMvp.mjs';
 
 const FAILURE_CODES = new Set(['NO_CONSENT', 'REVOKED', 'EXPIRED', 'CHANNEL', 'CLIP_MISMATCH', 'PATH_REJECTED', 'BAD_EXT', 'TOO_LONG', 'FFMPEG', 'UNKNOWN']);
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const CONTENT_DIR = path.resolve(SCRIPT_DIR, '../../content-video');
 const LEDGER_DIR = path.join(CONTENT_DIR, 'state');
+const RENDER_SETTINGS = Object.freeze({ width: 1080, height: 1920, videoCodec: 'libx264', crf: 20, preset: 'medium', audioCodec: 'aac', faststart: true, timeoutMs: 180000 });
 
 function option(name, args = process.argv) {
   const index = args.indexOf(name);
@@ -54,19 +55,26 @@ export async function prepareReview({ config, manifest, consentSnapshot, ledgerD
   const ledger = await loadJson(path.join(ledgerDir, 'ledger.json'), fs).catch(() => ({ records: {} }));
   if (!ledger.records || typeof ledger.records !== 'object' || Array.isArray(ledger.records)) ledger.records = {};
 
-  const runtime = run('ffmpeg', ['-version'], { encoding: 'utf8', stdio: 'ignore' });
+  const runtime = run('ffmpeg', ['-version'], { encoding: 'utf8', stdio: 'ignore', timeout: 30000 });
   if (runtime.error || runtime.status !== 0) throw new Error('FFMPEG');
 
   await fs.mkdir(config.outputRoot, { recursive: true });
   const channels = manifest.publishing?.channels;
   const clips = Array.isArray(manifest.clips) ? manifest.clips : [];
+  const seenClipIds = new Set();
 
-  for (const clip of clips) {
+  for (const sourceClip of clips) {
+    const clip = normalizeClip(sourceClip);
     let id = CLIP_ID_PATTERN.test(clip?.clipId || '') ? clip.clipId : 'UNKNOWN';
     let inputHash = null;
     const cleanupPaths = [];
+    if (id !== 'UNKNOWN' && seenClipIds.has(id)) {
+      results.push({ clipId: 'UNKNOWN', resultCode: 'UNKNOWN' });
+      continue;
+    }
+    if (id !== 'UNKNOWN') seenClipIds.add(id);
     try {
-      const clipErrors = validateClip(clip);
+      const clipErrors = validateNormalizedClip(clip);
       if (clipErrors.length) throw new Error(clipErrors[0]);
       id = clip.clipId;
       const consentErrors = validateConsentSnapshot(consentSnapshot, {
@@ -79,28 +87,38 @@ export async function prepareReview({ config, manifest, consentSnapshot, ledgerD
 
       const inputFile = await resolveClipInput(config.inputRoot, clip.clipId);
       inputHash = await sha256(inputFile);
+      let logoPath = null;
+      let endCardPath = null;
+      if (manifest.brand?.logoFile) logoPath = await resolveBrandAsset(config.brandRoot, manifest.brand.logoFile);
+      if (manifest.brand?.endCardFile) endCardPath = await resolveBrandAsset(config.brandRoot, manifest.brand.endCardFile);
+      const logoSha256 = logoPath ? await sha256(logoPath) : null;
+      const endCardSha256 = endCardPath ? await sha256(endCardPath) : null;
+      const renderFingerprint = crypto.createHash('sha256').update(JSON.stringify({
+        version: 1,
+        inputSha256: inputHash,
+        trim: { startSec: clip.trim.startSec, endSec: Number(clip.trim.endSec) },
+        captionDraft: clip.captionDraft,
+        logoSha256,
+        endCardSha256,
+        settings: RENDER_SETTINGS,
+      })).digest('hex');
       const names = outputPaths('', clip);
       const videoFile = await resolveOutputPath(config.outputRoot, path.basename(names.video));
       const subtitleFile = await resolveOutputPath(config.outputRoot, path.basename(names.subtitle));
       const reviewFile = await resolveOutputPath(config.outputRoot, path.basename(names.review));
       const prior = ledger.records[clip.clipId];
-      if (prior?.inputSha256 === inputHash && prior?.resultCode === 'OK' && prior?.outputSha256 && await sha256(videoFile).then((hash) => hash === prior.outputSha256).catch(() => false)) {
+      if (prior?.renderFingerprint === renderFingerprint && prior?.resultCode === 'OK' && prior?.outputSha256 && await sha256(videoFile).then((hash) => hash === prior.outputSha256).catch(() => false)) {
         reviewItems.push({ clipId: id, videoFile: path.basename(videoFile), subtitleFile: path.basename(subtitleFile) });
         results.push({ clipId: id, resultCode: 'SKIPPED' });
         continue;
       }
-
-      let logoPath = null;
-      let endCardPath = null;
-      if (manifest.brand?.logoFile) logoPath = await resolveBrandAsset(config.brandRoot, manifest.brand.logoFile);
-      if (manifest.brand?.endCardFile) endCardPath = await resolveBrandAsset(config.brandRoot, manifest.brand.endCardFile);
 
       const tempVideo = await resolveOutputPath(config.outputRoot, `${path.basename(videoFile, '.mp4')}.tmp.mp4`);
       const tempSubtitle = await resolveOutputPath(config.outputRoot, `${path.basename(subtitleFile, '.srt')}.tmp.srt`);
       const tempReview = await resolveOutputPath(config.outputRoot, `${path.basename(reviewFile, '.json')}.tmp.json`);
       cleanupPaths.push(tempVideo, tempSubtitle, tempReview);
       const command = buildFfmpegArgs({ clip, inputFile, outputFile: tempVideo, logoPath, endCardPath });
-      const rendered = run('ffmpeg', command, { stdio: 'ignore' });
+      const rendered = run('ffmpeg', command, { stdio: 'ignore', timeout: RENDER_SETTINGS.timeoutMs });
       if (rendered.error || rendered.status !== 0) throw new Error('FFMPEG');
 
       await fs.writeFile(tempSubtitle, srtText(clip), 'utf8');
@@ -116,7 +134,7 @@ export async function prepareReview({ config, manifest, consentSnapshot, ledgerD
       await fs.rename(tempReview, reviewFile);
 
       const outputHash = await sha256(videoFile);
-      ledger.records[clip.clipId] = { inputSha256: inputHash, outputSha256: outputHash, recordedAt: now.toISOString(), resultCode: 'OK' };
+      ledger.records[clip.clipId] = { inputSha256: inputHash, renderFingerprint, outputSha256: outputHash, recordedAt: now.toISOString(), resultCode: 'OK' };
       reviewItems.push({ clipId: id, videoFile: path.basename(videoFile), subtitleFile: path.basename(subtitleFile) });
       results.push({ clipId: id, resultCode: 'OK' });
     } catch (error) {

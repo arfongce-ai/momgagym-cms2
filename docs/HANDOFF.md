@@ -45,6 +45,13 @@
 
 ## 작업 로그
 최신 항목이 위. 형식을 그대로 복사해서 쓴다.
+### 2026-10-01 21:37 · Codex · PR1 Claude 보안 검토 보완
+- 한 일: 출력 경로에서 `lstat` 후 `realpath`를 호출하고, `realpath`의 `ENOENT` 뒤 재검증한 항목(끊어진 링크 포함)은 `PATH_REJECTED` 처리. 렌더 건너뛰기 지문에 입력 해시·트림·자막·로고/엔딩카드 파일 해시·고정 렌더 설정을 반영. 클립의 `startSec`를 파이프라인 진입에서 숫자로 정규화해 검증·FFmpeg가 같은 값을 사용하도록 변경. FFmpeg 실행에 유한 timeout을 지정하고 manifest 내 중복 클립 ID의 두 번째 항목을 `UNKNOWN` 실패로 격리.
+- 변경 파일: `scripts/content-video/inputGuard.mjs`, `scripts/content-video/prepare-review.mjs`, `scripts/content-video/videoMvp.mjs`, `src/__tests__/content_video_mvp.test.js`, `docs/HANDOFF.md`.
+- 테스트: 콘텐츠 영상 테스트 27/27 통과(끊어진 링크 및 ENOENT 재검증, 자막 변경 재렌더, startSec 누락/문자열, 중복 ID, timeout, 외부 통신 문자열 및 경로 누출 검사 포함). 전체 `npm test -- --run` 3157/3168 통과; 실패 11개는 기준선에 문서화된 기존 테스트 실패와 동일한 4개 파일. `npm run build` 성공(기존 Firebase import 및 대형 청크 경고). `git diff --check` 통과.
+- 확인 불가: FFmpeg의 실제 장시간 중단/종료 동작은 더미 runner로 timeout 옵션만 검증. 실제 운영 영상·권한은 사용하지 않음.
+- 다음에 할 일: Claude 보안 검토 → Gemini 독립 검토 → 대표님 최종 승인 후 사용자 방식으로 푸시.
+
 ### 2026-10-01 18:12 · Codex · Issue #2 PR1 입력 가드 + 클립 격리
 - 한 일: `scripts/content-video/inputGuard.mjs`를 추가해 가명 클립 ID로 루트 바로 아래의 허용 파일만 찾고, realpath/상대 경로·심볼릭 링크·정션·네트워크 경로·확장자·출력 루트를 확인. 매니페스트 경로 입력을 제거하고 동의 스냅샷의 중복 참조 레코드를 전부 대조하며, 클립별 FFmpeg 실패 격리·임시 출력·SHA-256 원장·재실행 건너뛰기를 구현.
 - 변경 파일: `scripts/content-video/inputGuard.mjs`, `scripts/content-video/videoMvp.mjs`, `scripts/content-video/prepare-review.mjs`, `src/__tests__/content_video_mvp.test.js`, `content-video/approved.example.json`, `content-video/consents.example.json`, `docs/VIDEO_AUTOMATION_MVP.md`, `AGENTS.md`, `GEMINI.md`, `.gitignore`, `docs/HANDOFF.md`.

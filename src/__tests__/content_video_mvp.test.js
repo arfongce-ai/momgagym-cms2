@@ -4,7 +4,7 @@ import { lstat, mkdtemp, mkdir, readFile, readdir, realpath, rm, symlink, writeF
 import os from 'node:os';
 import path from 'node:path';
 import { resolveClipInput, resolveOutputPath } from '../../scripts/content-video/inputGuard.mjs';
-import { buildFfmpegArgs, buildReviewIndexHtml, srtText, validateClip, validateConsentSnapshot } from '../../scripts/content-video/videoMvp.mjs';
+import { buildFfmpegArgs, buildReviewIndexHtml, normalizeClip, srtText, validateClip, validateConsentSnapshot } from '../../scripts/content-video/videoMvp.mjs';
 import { prepareReview } from '../../scripts/content-video/prepare-review.mjs';
 
 const roots = [];
@@ -128,12 +128,60 @@ describe('콘텐츠 영상 입력 가드와 로컬 렌더', () => {
     await expect(resolveOutputPath(root, 'linked.mp4')).rejects.toThrow('PATH_REJECTED');
   });
 
+  it('끊어진 출력 심볼릭 링크를 PATH_REJECTED로 거부한다', async () => {
+    const root = await tempRoot();
+    try {
+      await symlink(path.join(root, 'missing-target.mp4'), path.join(root, 'dangling.mp4'));
+    } catch (error) {
+      if (['EPERM', 'EACCES', 'ENOTSUP'].includes(error.code)) return;
+      throw error;
+    }
+    await expect(resolveOutputPath(root, 'dangling.mp4')).rejects.toThrow('PATH_REJECTED');
+  });
+
+  it('출력 realpath가 ENOENT를 주더라도 재확인 lstat에서 항목이 보이면 거부한다', async () => {
+    const root = await tempRoot();
+    const candidate = path.join(root, 'appeared.mp4');
+    let candidateStats = 0;
+    const calls = [];
+    const fakeFs = {
+      lstat: async (file) => {
+        calls.push(`lstat:${path.basename(file)}`);
+        if (file === root) return { isSymbolicLink: () => false, isDirectory: () => true };
+        candidateStats += 1;
+        return { isSymbolicLink: () => false, isFile: () => true };
+      },
+      realpath: async (file) => {
+        calls.push(`realpath:${path.basename(file)}`);
+        if (file === root) return root;
+        const error = new Error('ENOENT');
+        error.code = 'ENOENT';
+        throw error;
+      },
+    };
+    await expect(resolveOutputPath(root, 'appeared.mp4', { fs: fakeFs })).rejects.toThrow('PATH_REJECTED');
+    expect(candidateStats).toBe(2);
+    expect(calls.indexOf(`lstat:${path.basename(candidate)}`)).toBeLessThan(calls.indexOf(`realpath:${path.basename(candidate)}`));
+  });
+
   it('클립은 경로 대신 ID만 받고 클립 길이와 자막을 확인한다', () => {
     const clip = makeClip(ids[0]);
     expect(validateClip(clip)).toEqual([]);
     expect(validateClip({ ...clip, source: 'ignored' })).toContain('PATH_REJECTED');
     expect(validateClip({ ...clip, trim: { startSec: 0, endSec: 31 } })).toContain('TOO_LONG');
     expect(validateClip({ ...clip, clipId: '../outside' })).toContain('PATH_REJECTED');
+  });
+
+  it('startSec 누락은 0으로, 숫자 문자열은 한 번 정규화해 검증과 FFmpeg에 쓴다', () => {
+    const missing = makeClip(ids[0]);
+    delete missing.trim.startSec;
+    const normalizedMissing = normalizeClip(missing);
+    expect(normalizedMissing.trim.startSec).toBe(0);
+    expect(validateClip(missing)).toEqual([]);
+    const numericString = normalizeClip({ ...makeClip(ids[0]), trim: { startSec: '2', endSec: '22' } });
+    expect(numericString.trim.startSec).toBe(2);
+    expect(validateClip(numericString)).toEqual([]);
+    expect(buildFfmpegArgs({ clip: numericString, inputFile: 'guarded.mp4', outputFile: 'tmp.mp4' }).slice(1, 5)).toEqual(['-ss', '2', '-t', '20']);
   });
 
   it('같은 동의 참조의 모든 기록이 유효해야 하며 클립 ID가 없거나 다르면 거부한다', () => {
@@ -184,6 +232,62 @@ describe('콘텐츠 영상 입력 가드와 로컬 렌더', () => {
     const second = await executeJob(job);
     expect(job.renderCount).toBe(firstCount);
     expect(second.results[0].resultCode).toBe('SKIPPED');
+  });
+
+  it('자막만 바뀌어도 렌더 지문이 달라져 다시 렌더한다', async () => {
+    const job = await setupJob({ count: 1 });
+    await executeJob(job);
+    const before = job.renderCount;
+    job.manifest.clips[0].captionDraft = '다른 자막 초안입니다.';
+    const changed = await executeJob(job);
+    expect(job.renderCount).toBe(before + 1);
+    expect(changed.results[0].resultCode).toBe('OK');
+  });
+
+  it('중복 clipId의 두 번째 항목은 UNKNOWN 실패로 격리한다', async () => {
+    const job = await setupJob({ count: 1 });
+    job.manifest.clips.push({ ...makeClip(ids[0]), captionDraft: '중복 더미' });
+    const result = await executeJob(job);
+    expect(result.results).toEqual([{ clipId: ids[0], resultCode: 'OK' }, { clipId: 'UNKNOWN', resultCode: 'UNKNOWN' }]);
+    expect(result.failedCount).toBe(1);
+    expect(job.renderCount).toBe(1);
+  });
+
+  it('FFmpeg 실행에는 유한 timeout을 설정한다', async () => {
+    const job = await setupJob({ count: 1 });
+    const observed = [];
+    const run = (command, args, options) => {
+      observed.push(options?.timeout);
+      return job.syncRun(command, args, options);
+    };
+    await executeJob(job, { run });
+    expect(observed).toEqual([30000, 180000]);
+  });
+
+  it('로컬 영상 소스에는 네트워크 호출·외부 주소 리터럴이 없다', async () => {
+    const sourceRoot = path.resolve('scripts/content-video');
+    const sourceFiles = ['inputGuard.mjs', 'prepare-review.mjs', 'videoMvp.mjs'];
+    const sources = await Promise.all(sourceFiles.map((file) => readFile(path.join(sourceRoot, file), 'utf8')));
+    const networkCall = new RegExp(['fe', 'tch'].join('') + '\\s*\\(|\\b' + ['http', 's?'].join('') + '://|\\bhttps?\\s*\\.\\s*');
+    expect(sources.some((source) => networkCall.test(source))).toBe(false);
+  });
+
+  it('실패 결과·원장·로그 출력에 입력 경로나 파일명이 들어가지 않는다', async () => {
+    const job = await setupJob({ count: 1 });
+    const inputFilename = `${ids[0]}.mp4`;
+    const logged = [];
+    const originalError = console.error;
+    console.error = (...args) => logged.push(args.join(' '));
+    try {
+      const result = await executeJob(job, { run: (command, args) => args[0] === '-version' ? { status: 0 } : { status: 1 } });
+      const ledger = await readFile(path.join(job.ledgerDir, 'ledger.json'), 'utf8');
+      const output = JSON.stringify(result) + ledger + logged.join(' ');
+      expect(output).not.toContain(job.config.inputRoot);
+      expect(output).not.toContain(inputFilename);
+      expect(result.results[0].resultCode).toBe('FFMPEG');
+    } finally {
+      console.error = originalError;
+    }
   });
 
   it('검수 JSON과 원장은 publishAllowed false이며 경로·동의 참조를 저장하지 않는다', async () => {

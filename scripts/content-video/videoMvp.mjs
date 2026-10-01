@@ -5,13 +5,18 @@ export const MIN_CLIP_SECONDS = 10;
 export const MAX_CLIP_SECONDS = 30;
 export const DEFAULT_CONSENT_SNAPSHOT_MAX_AGE_DAYS = 7;
 
-export function validateClip(clip) {
+export function normalizeClip(clip) {
+  if (!clip || typeof clip !== 'object') return clip;
+  return { ...clip, trim: { ...clip.trim, startSec: Number(clip.trim?.startSec ?? 0) } };
+}
+
+export function validateNormalizedClip(clip) {
   const errors = [];
   if (!clip || typeof clip !== 'object') return ['PATH_REJECTED'];
   if (!CLIP_ID_PATTERN.test(clip.clipId || '')) errors.push('PATH_REJECTED');
   if (Object.hasOwn(clip, 'source')) errors.push('PATH_REJECTED');
   if (typeof clip.consent?.reference !== 'string' || !clip.consent.reference.trim()) errors.push('NO_CONSENT');
-  const start = Number(clip.trim?.startSec ?? 0);
+  const start = clip.trim?.startSec;
   const end = Number(clip.trim?.endSec);
   if (!Number.isFinite(start) || start < 0 || !Number.isFinite(end) || end <= start) {
     errors.push('TOO_LONG');
@@ -20,6 +25,10 @@ export function validateClip(clip) {
   }
   if (typeof clip.captionDraft !== 'string' || !clip.captionDraft.trim()) errors.push('UNKNOWN');
   return errors;
+}
+
+export function validateClip(clip) {
+  return validateNormalizedClip(normalizeClip(clip));
 }
 
 /**
@@ -96,7 +105,7 @@ export function buildReviewIndexHtml(items) {
 
 /** ffmpeg가 설치된 로컬 PC에서만 실행한다. 원본은 복사·업로드하지 않는다. */
 export function buildFfmpegArgs({ clip, inputFile, outputFile, logoPath = null, endCardPath = null }) {
-  const duration = Number(clip.trim.endSec) - Number(clip.trim.startSec);
+  const duration = Number(clip.trim.endSec) - clip.trim.startSec;
   const baseFilter = 'scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1';
   const args = ['-y', '-ss', String(clip.trim.startSec), '-t', String(duration), '-i', inputFile];
   if (logoPath) args.push('-i', logoPath);

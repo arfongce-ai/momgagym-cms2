@@ -74,13 +74,20 @@ export async function resolveOutputPath(root, filename, { fs = { lstat, realpath
     assertLocalAbsolutePath(candidate, canonicalRoot);
     if (!isWithinRoot(canonicalRoot, candidate)) throw new Error('PATH_REJECTED');
     try {
+      const entry = await fs.lstat(candidate);
+      if (entry.isSymbolicLink() || !entry.isFile()) throw new Error('PATH_REJECTED');
       const canonicalFile = await fs.realpath(candidate);
+      assertLocalAbsolutePath(canonicalFile, canonicalRoot);
       if (!isWithinRoot(canonicalRoot, canonicalFile)) throw new Error('PATH_REJECTED');
-      const info = await fs.lstat(candidate);
-      if (info.isSymbolicLink() || !info.isFile()) throw new Error('PATH_REJECTED');
       return canonicalFile;
     } catch (error) {
       if (error?.code !== 'ENOENT') throw error;
+      try {
+        await fs.lstat(candidate);
+        throw new Error('PATH_REJECTED');
+      } catch (statError) {
+        if (statError?.code !== 'ENOENT') throw statError;
+      }
       return candidate;
     }
   } catch {
