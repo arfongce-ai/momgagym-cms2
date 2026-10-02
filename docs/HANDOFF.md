@@ -45,6 +45,13 @@
 
 ## 작업 로그
 최신 항목이 위. 형식을 그대로 복사해서 쓴다.
+### 2026-10-02 · Codex · Gemini 독립 검토 보완
+- 한 일: 동의 만료일을 한국 시간 기준 `23:59:59.999+09:00`로 해석하고 경계 테스트를 추가. 입력 클립은 경로 입력 후 `lstat(filePath)`를 먼저 수행하고 링크 확인도 원래 경로 기준으로 유지. 입력 루트 자체의 심볼릭 링크·정션 거부 규칙을 문서화.
+- 변경 파일: `scripts/content-video/videoMvp.mjs`, `scripts/content-video/inputGuard.mjs`, `docs/VIDEO_AUTOMATION_MVP.md`, `src/__tests__/content_video_mvp.test.js`, `docs/HANDOFF.md`.
+- 테스트: `$env:TZ='UTC'; npm test -- --run src/__tests__/content_video_mvp.test.js` → 28/28 통과. `npm run build` 성공(기존 Firebase import 및 대형 청크 경고). `git diff --check` 통과.
+- 남은 위험: 정션 생성·검증은 현재 경로의 실제 OS 권한 환경에서 별도 실험하지 않음.
+- 다음에 할 일: 같은 작업 브랜치에 커밋.
+
 ### 2026-10-01 21:37 · Codex · PR1 Claude 보안 검토 보완
 - 한 일: 출력 경로에서 `lstat` 후 `realpath`를 호출하고, `realpath`의 `ENOENT` 뒤 재검증한 항목(끊어진 링크 포함)은 `PATH_REJECTED` 처리. 렌더 건너뛰기 지문에 입력 해시·트림·자막·로고/엔딩카드 파일 해시·고정 렌더 설정을 반영. 클립의 `startSec`를 파이프라인 진입에서 숫자로 정규화해 검증·FFmpeg가 같은 값을 사용하도록 변경. FFmpeg 실행에 유한 timeout을 지정하고 manifest 내 중복 클립 ID의 두 번째 항목을 `UNKNOWN` 실패로 격리.
 - 변경 파일: `scripts/content-video/inputGuard.mjs`, `scripts/content-video/prepare-review.mjs`, `scripts/content-video/videoMvp.mjs`, `src/__tests__/content_video_mvp.test.js`, `docs/HANDOFF.md`.

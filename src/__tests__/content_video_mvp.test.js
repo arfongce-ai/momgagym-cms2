@@ -194,6 +194,14 @@ describe('콘텐츠 영상 입력 가드와 로컬 렌더', () => {
     expect(validateConsentSnapshot({ ...snapshot, records: [withoutId] }, options)).toContain('CLIP_MISMATCH');
   });
 
+  it('동의 만료일은 한국 시간 자정 직전까지 유효하고 다음 날에는 만료된다', () => {
+    const clip = makeClip(ids[0]);
+    const snapshot = { exportedAt: '2026-12-31T00:00:00.000Z', records: [{ ...makeRecord(clip), expiresAt: '2026-12-31' }] };
+    const options = { reference: clip.consent.reference, channels: ['instagram'], clipId: clip.clipId };
+    expect(validateConsentSnapshot(snapshot, { ...options, now: new Date('2026-12-31T23:59:59.998+09:00') })).toEqual([]);
+    expect(validateConsentSnapshot(snapshot, { ...options, now: new Date('2027-01-01T00:00:00.000+09:00') })).toContain('EXPIRED');
+  });
+
   it('매니페스트의 자기 신고 없이 동의 레코드의 공개 허용으로 검증한다', () => {
     const clip = makeClip(ids[0]);
     const snapshot = { exportedAt: '2026-10-01T00:00:00.000Z', records: [makeRecord(clip)] };

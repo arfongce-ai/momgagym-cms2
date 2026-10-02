@@ -50,11 +50,11 @@ export async function resolveClipInput(root, clipId, { fs = { lstat, realpath, r
 
     const filePath = path.join(canonicalRoot, allowed[0].name);
     assertLocalAbsolutePath(filePath, canonicalRoot);
+    const info = await fs.lstat(filePath);
+    if (info.isSymbolicLink() || !info.isFile()) throw new Error('PATH_REJECTED');
     const canonicalFile = await fs.realpath(filePath);
     assertLocalAbsolutePath(canonicalFile, canonicalRoot);
     if (!isWithinRoot(canonicalRoot, canonicalFile)) throw new Error('PATH_REJECTED');
-    const info = await fs.lstat(filePath);
-    if (info.isSymbolicLink() || !info.isFile()) throw new Error('PATH_REJECTED');
     if (!['.mp4', '.mov'].includes(path.extname(canonicalFile).toLowerCase())) throw new Error('BAD_EXT');
     return canonicalFile;
   } catch (error) {

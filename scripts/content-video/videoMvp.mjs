@@ -55,7 +55,7 @@ export function validateConsentSnapshot(snapshot, { reference, channels, clipId,
     if (record.revoked !== false) currentErrors.push('REVOKED');
     if (!Array.isArray(record.allowedChannels) || channels.some((channel) => !record.allowedChannels.includes(channel.trim()))) currentErrors.push('CHANNEL');
     if (record.expiresAt !== null && record.expiresAt !== undefined && record.expiresAt !== '') {
-      const expiresAt = new Date(`${record.expiresAt}T23:59:59.999`);
+      const expiresAt = new Date(`${record.expiresAt}T23:59:59.999+09:00`);
       if (Number.isNaN(expiresAt.getTime())) currentErrors.push('NO_CONSENT');
       else if (expiresAt.getTime() < now.getTime()) currentErrors.push('EXPIRED');
     }
