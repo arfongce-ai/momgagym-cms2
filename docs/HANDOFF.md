@@ -45,6 +45,11 @@
 
 ## 작업 로그
 최신 항목이 위. 형식을 그대로 복사해서 쓴다.
+### 2026-10-06 16:54 · Codex · PR2 및 이미지 후처리 재검증
+- 한 일: PR2 구현(`c61e3b0`)과 후처리 코드를 현재 브랜치에서 재확인. Notion 쓰기 허용 목록 및 검수/게시 승인 속성 비쓰기, 동의 조회 실패 시 fail-closed, 로컬 전용 이미지 후처리 요구를 확인. 코드 수정은 없고 기존 구현을 검증함.
+- 검증: PR1/PR2 Vitest 42/42 통과. 전체 `npm test -- --run` 3172/3183 통과, 기존 기록의 실패 11개만 재현(첫 실행의 `session_share` 시간초과는 단독 14/14 및 전체 재실행에서 해소). Python 이미지 더미 테스트 3/3 통과(시스템 맑은 고딕을 시험용 대체 폰트로 사용). `npm run build` 성공(기존 Firebase import 및 큰 청크 경고). FFmpeg 9.0.1·ffprobe 확인.
+- 미완료: Gowun Dodum 글꼴 없음. 지정 이미지 폴더가 없고 이 세션에서 원본 5장도 제공되지 않아 실제 `final` PNG/해시를 만들지 않음. Notion 환경 설정 4개 및 로컬 설정/동의/승인 파일이 없어 실 Notion 왕복 및 영상 렌더는 미실행. Notion 스키마 수동 설정 및 별도 Claude 교차검토도 대기.
+- 다음에 할 일: 실제 비식별 원본 PNG 5장·Gowun Dodum 글꼴과 동의된 로컬 설정이 준비되면 오프라인 후처리/영상 리허설을 하고, Notion 스키마·Integration 준비 뒤 목 응답이 아닌 1회 실연결 확인. 사용자가 `1_GITHUB_UPLOAD.bat`으로 업로드한 뒤 Claude 교차 검토.
 ### 2026-10-06 · Codex · PR2 Notion 대기열 및 이미지 후처리
 - 한 일: PR #3 병합 커밋을 origin/main에서 확인하고 PR2 브랜치에서 진행. 구현 커밋 `c61e3b0`. Notion data source query 클라이언트, 읽기 전용 동의 연결/캘린더 쓰기 연결 분리, 허용 목록 기반 쓰기, 동의 실패 시 fail-closed, 30분 stale 편집 복구 및 로컬 영상 렌더 파이프라인 연결 추가. Python/Pillow로 PNG 5장 1:1 크롭·1080 정규화·한글 문구/선택 로고 합성·경로 없는 SHA-256 색인 스크립트 추가.
 - Notion 확인: 연결된 Notion에서 캘린더 data source 스키마만 읽음(행 데이터/본문은 읽지 않음). 기존 속성은 `콘텐츠 유형`·`제작 상태`·`채널` select, `클립 ID` text, `Drive 링크` URL. `대본`, 구간 시작/끝, 동의 참조, 결과 해시, 처리 시각, 오류 요약은 현재 없음. 추가 속성은 수동으로 만들지 않았으며 `docs/VIDEO_AUTOMATION_MVP.md`에 제안만 기록. 별도 동의 data source 스키마·Integration token은 확인하지 않았으므로 실 Notion 왕복은 미검증.
