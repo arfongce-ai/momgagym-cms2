@@ -45,6 +45,13 @@
 
 ## 작업 로그
 최신 항목이 위. 형식을 그대로 복사해서 쓴다.
+### 2026-10-06 · Codex · Cloudflare Production 배포 검증 강화
+- 한 일: PR4 배포는 성공했지만 기존 배포 workflow가 테스트 실패를 무조건 무시하는 점을 확인. 회귀 기준선 검사 통과 후에만 배포하도록 하고, 수동 실행도 main에서만 허용. Pages 배포 브랜치를 main으로 고정하고 Production URL이 현재 빌드의 JS 자산을 제공하는지 확인하도록 변경.
+- 변경 파일: `.github/workflows/cloudflare-pages.yml`
+- 테스트: `npm run build` 성공(기존 Firebase import/대형 청크 경고); `git diff --check` 및 YAML 파싱 통과. 전체 Vitest 로컬 실행은 sandbox의 상위 경로 접근 거부로 설정 파일을 읽지 못함.
+- 남은 위험: CI 회귀 기준선과 배포 후 HTML/JS 자산 응답은 검증하지만 로그인 후 Firebase/개별 업무 화면의 실제 동작까지 보증하지는 않음.
+- 다음에 할 일: PR CI에서 회귀 게이트와 Production smoke check 확인. 특정 화면의 런타임 오류는 해당 오류를 재현해 별도 보완.
+
 ### 2026-10-06 · Codex · 사용자 제공 Claude 검토 로그 반영
 - 한 일: 사용자가 전달한 Claude의 PR2 교차 검토 및 보완 기록을 이 작업 로그 맨 위에 추가. 현재 브랜치에 반영된 보완·검증 기록은 이어지는 최신 Codex 로그를 기준으로 확인.
 - 다음에 할 일: Claude가 현재 원격 브랜치와 최신 Codex 검증 기록을 기준으로 후속 검토.

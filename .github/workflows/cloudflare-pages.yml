@@ -8,7 +8,9 @@ on:
 
 concurrency:
   group: cloudflare-pages-main
-  cancel-in-progress: true
+  # Let an active Production deploy finish; a push during deployment must not
+  # cancel verification after Cloudflare has already published the new build.
+  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -16,7 +18,11 @@ permissions:
 
 jobs:
   deploy:
+    # workflow_dispatch can be started from any branch. Never let that create a
+    # Preview deployment while appearing to be a production release.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     env:
       CLOUDFLARE_PROJECT_NAME: ${{ vars.CLOUDFLARE_PROJECT_NAME || 'momgagym-cms2' }}
 
@@ -33,16 +39,12 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run tests
-        # [2026-08-05] integrity_audit.test.js에 11개 알려진/의도적으로 보류 중인
-        # 실패가 있다(dismissIntegrityFinding 미구현 — 별도로 계획된 작업).
-        # 이 스텝이 그대로 실패를 전파하면 Build/Deploy 스텝 자체가 안 돌아가서,
-        # main에 뭘 올려도 이 배포 파이프라인에서는 조용히 막혀 있었다.
-        # continue-on-error로 테스트 결과는 로그에 남기되(가시성 유지) 배포는
-        # 막지 않는다. dismissIntegrityFinding 구현이 끝나면 이 줄을 지우고
-        # 다시 엄격하게 막는 것을 권장.
-        run: npm test
+      - name: Run tests against the approved baseline
+        run: npx vitest run --reporter=json --outputFile=test-results.json
         continue-on-error: true
+
+      - name: Block new test regressions
+        run: node scripts/check-regression.cjs
 
       - name: Build
         run: npm run build
@@ -51,8 +53,40 @@ jobs:
         # 2026-09-22: cloudflare/pages-action은 보안 취약점(CVE-2026-11325)으로
         # 2026-09-18 저장소 자체가 삭제됨(archived → removed). 공식 후속 액션인
         # wrangler-action으로 마이그레이션.
+        id: deploy
         uses: cloudflare/wrangler-action@v4
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy dist --project-name=${{ env.CLOUDFLARE_PROJECT_NAME }}
+          command: pages deploy dist --project-name=${{ env.CLOUDFLARE_PROJECT_NAME }} --branch=main
+      - name: Verify Production deployment serves this build
+        env:
+          PRODUCTION_URL: https://${{ env.CLOUDFLARE_PROJECT_NAME }}.pages.dev
+        run: |
+          set -euo pipefail
+          target_url="${PRODUCTION_URL:-}"
+          if [ -z "$target_url" ]; then
+            echo "Cloudflare did not return the Production alias URL."
+            exit 1
+          fi
+          expected_asset="$(grep -Eo 'src="/assets/[^" ]+\.js"' dist/index.html | head -n 1 | cut -d '"' -f 2)"
+          if [ -z "$expected_asset" ]; then
+            echo "The build output did not contain the expected app bundle."
+            exit 1
+          fi
+          for attempt in $(seq 1 12); do
+            if curl --fail --silent --show-error --max-time 30 \
+              "$target_url/" --output /tmp/production-index.html; then
+              actual_asset="$(grep -Eo 'src="/assets/[^" ]+\.js"' /tmp/production-index.html | head -n 1 | cut -d '"' -f 2)"
+              if [ "$actual_asset" = "$expected_asset" ] && \
+                curl --fail --silent --show-error --max-time 30 \
+                  "$target_url$actual_asset" --output /dev/null; then
+                echo "Production alias $target_url serves this build's app bundle $actual_asset."
+                exit 0
+              fi
+              echo "Waiting for Production alias to serve $expected_asset (attempt $attempt/12)."
+            fi
+            sleep 5
+          done
+          echo "Production alias did not serve the expected build after 12 checks."
+          exit 1
