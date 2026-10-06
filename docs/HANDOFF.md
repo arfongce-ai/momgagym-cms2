@@ -45,6 +45,40 @@
 
 ## 작업 로그
 최신 항목이 위. 형식을 그대로 복사해서 쓴다.
+### 2026-10-06 · Codex · 사용자 제공 Claude 검토 로그 반영
+- 한 일: 사용자가 전달한 Claude의 PR2 교차 검토 및 보완 기록을 이 작업 로그 맨 위에 추가. 현재 브랜치에 반영된 보완·검증 기록은 이어지는 최신 Codex 로그를 기준으로 확인.
+- 다음에 할 일: Claude가 현재 원격 브랜치와 최신 Codex 검증 기록을 기준으로 후속 검토.
+### 2026-10-06 · Claude · 교차 검토 PR2 (c61e3b0) Notion 연동·이미지 후처리
+
+- 한 일: `c61e3b0`(및 이후 문서 커밋)의 notionClient / notionWorkflow / run-notion-review / prepare-review diff / postprocess_images.py / 테스트 2개 / VIDEO_AUTOMATION_MVP.md 추가분을 읽기 전용으로 검토. 코드 수정·커밋 없음.
+- 실제 실행한 명령: git show/grep/sed(읽기 전용)뿐. `npm test`, `npm run build`, Python 단위 테스트는 **실행하지 않음**. Codex가 적은 3172/3183 등 결과는 보고만 받았고 독립 확인 못 함.
+- 실제 검증 미통과(확인 못 함): 실제 Notion 왕복(Integration·속성·환경변수 없음), 실제 이미지 5장 후처리(원본 PNG·Gowun Dodum 글꼴 없음), 실제 영상 렌더(승인 자산·동의 스냅샷 없음). Pillow 테스트는 글꼴이 없으면 skip 되므로 통과로 세지 않음.
+- 발견:
+  - 🟠 `scripts/content-video/notionWorkflow.mjs:50-62` + `notionClient.mjs:162-165` — `편집 중`인데 `마지막 처리 시각`이 비어 있으면 stale 판정이 false라 영원히 복구되지 않음(수동 입력·속성 신설 직후 행). 테스트도 시각이 있는 경우만 확인.
+  - 🟠 `notionWorkflow.mjs:101-110` — 선점(편집 중 기록) 전에 재조회·재확인이 없어 06:00 작업이 겹쳐 돌면 같은 행을 둘 다 처리할 수 있음(단일 PC면 낮은 위험).
+  - 🟠 `notionClient.mjs:142` — `채널`이 단일 선택이면 행 1개 = 채널 1개. 계획(하루 1개를 4채널 동시)과 동의 허용 채널 대조가 맞는지 사용자 결정 필요.
+  - 🟠 `postprocess_images.py:54-75` — 문구 상자가 항상 하단(68% 이후)에 고정. 프롬프트상 1·2번은 상단, 5번은 중앙에 여백을 남기므로 피사체를 가릴 수 있음. 실제 이미지로 확인 못 함.
+  - 🟡 `postprocess_images.py:71` — 흰 반투명 둥근 상자는 "PPT/템플릿 느낌 금지" 규칙과 충돌 가능. 실제 결과물을 보고 판단 필요.
+  - 🟡 `notionClient.mjs:36` — `request()`가 public이라 허용 목록 검사(`updatePage`)를 거치지 않고 호출 가능. 현재 호출자는 없음.
+  - 🟡 `notionClient.mjs:123,140` — `클립 ID`·`동의 참조값`을 rich_text로만 읽음. 동의 DB의 실제 속성 유형은 확인 못 함(title이면 빈 값 → NO_CONSENT/필터 오류 → fail-closed).
+  - 🟡 `notionWorkflow.mjs:86-98` — 검증 실패 행은 `영상 제작 대기`로 되돌려져 매 실행마다 재시도·재기록됨(허용 상태에 반려/수정 요청이 없어서). 의도라면 문서화 필요.
+  - 🟡 `postprocess_images.py:161-162` — 파일 6개를 하나씩 교체하므로 도중 중단 시 구/신 파일이 섞일 수 있음.
+  - 🟡 `content-video/image-phrases.example.json` 예시 문구가 Notion 이미지 계획 문구와 다름(실행 전 교체 필요).
+  - 🟡 테스트 공백(`src/__tests__/content_video_notion.test.js`): SKIPPED 경로, 쓰기 실패 경로, 페이지네이션, 로그에 경로 미노출(run-notion-review), Notion 외 호스트 거부, `publishAllowed:false` 확인이 PR2 테스트에는 없음(마지막은 PR1 테스트에 있을 수 있음 — 확인 못 함).
+  - ✅ 잠금 확인됨(테스트 존재): 동의 조회/파싱 실패 시 전체 차단(98행), 쓰기 허용 목록·게시 상태 거부(80·86행), 읽기 전용 클라이언트 쓰기 거부(86행), 429 재시도 3회·토큰 미노출(53·66행), stale 복구(시각 있을 때, 135행).
+- 남은 위험: 위 미검증 3건. `Notion-Version: 2026-03-11` 값은 실제 호출로 확인 못 함.
+- 다음에 할 일: 사용자가 "진행"을 지시하면 🟠 항목부터 1건 1커밋으로 보완(회귀 테스트 포함). 그 전에는 코드 수정 없음. 업로드는 사용자가 `1_GITHUB_UPLOAD.bat`.
+
+### 2026-10-06 · Claude · PR2 보완 (사용자 "진행" 지시 후)
+
+- 한 일: 🟠 3건 보완, 건당 1커밋(로컬 clone `codex/notion-content-pr2` 위, push 안 함).
+  - `6ee26c7` 처리 시각 없는 `편집 중` 행도 복구(`notionClient.mjs isStaleEdit`) + 테스트 2개
+  - `d13151b` 선점 직전 대기열 재조회(`notionWorkflow.mjs`) + 테스트 1개
+  - `5ccaa2a` 이미지 문구 위치 `positions`(top/center/bottom ×5, 생략 시 전부 bottom) `postprocess_images.py` + 테스트 2개
+- 테스트: `npx vitest run content_video_notion.test.js` → 17/17. `npm test -- --run` → 3175/3186(실패 11 = 기존 알려진 11개, 4파일). `npm run build` 성공(기존 chunk 경고). Python: 대체 글꼴(Noto Sans CJK, Gowun Dodum 아님)로 `unittest` 5/5 — 실제 글꼴 검증 아님.
+- 보완하지 않은 것: 🟠 `채널` 단일 선택 구조(대표님 결정 필요), 🟡 전 항목. 실제 Notion·이미지·영상 검증은 여전히 미통과.
+- 다음: `.github/test-baseline.json` minPassing 갱신 여부는 대표님 판단. 이미지 문구 계획 JSON에 positions 추가 필요(1·2번 top, 5번 center 권장).
+
 ### 2026-10-06 17:40 · Codex · Claude 인계 문서 최신화
 - 한 일: `docs/CLAUDE_HANDOFF_PR2_2026-10-06.md`에 보완 커밋 `fbeb857`, 새 테스트/기준선, Notion 동시 실행의 비원자성 한계를 반영. 작업 잠금 해제.
 - 다음에 할 일: Claude가 최신 원격 브랜치 `codex/notion-content-pr2`와 인계 문서를 기준으로 교차 검토.
