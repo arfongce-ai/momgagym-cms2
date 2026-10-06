@@ -45,6 +45,14 @@
 
 ## 작업 로그
 최신 항목이 위. 형식을 그대로 복사해서 쓴다.
+### 2026-10-06 · Codex · PR2 Notion 대기열 및 이미지 후처리
+- 한 일: PR #3 병합 커밋을 origin/main에서 확인하고 PR2 브랜치에서 진행. Notion data source query 클라이언트, 읽기 전용 동의 연결/캘린더 쓰기 연결 분리, 허용 목록 기반 쓰기, 동의 실패 시 fail-closed, 30분 stale 편집 복구 및 로컬 영상 렌더 파이프라인 연결 추가. Python/Pillow로 PNG 5장 1:1 크롭·1080 정규화·한글 문구/선택 로고 합성·경로 없는 SHA-256 색인 스크립트 추가.
+- Notion 확인: 연결된 Notion에서 캘린더 data source 스키마만 읽음(행 데이터/본문은 읽지 않음). 기존 속성은 `콘텐츠 유형`·`제작 상태`·`채널` select, `클립 ID` text, `Drive 링크` URL. `대본`, 구간 시작/끝, 동의 참조, 결과 해시, 처리 시각, 오류 요약은 현재 없음. 추가 속성은 수동으로 만들지 않았으며 `docs/VIDEO_AUTOMATION_MVP.md`에 제안만 기록. 별도 동의 data source 스키마·Integration token은 확인하지 않았으므로 실 Notion 왕복은 미검증.
+- 변경 파일: `.github/test-baseline.json`, `.gitignore`, `scripts/content-video/notionClient.mjs`, `scripts/content-video/notionWorkflow.mjs`, `scripts/content-video/run-notion-review.mjs`, `scripts/content-video/prepare-review.mjs`, `scripts/content-video/postprocess_images.py`, `content-video/image-phrases.example.json`, `requirements-content-video.txt`, `src/__tests__/content_video_notion.test.js`, `tests/content-video/test_postprocess_images.py`, `package.json`, `docs/VIDEO_AUTOMATION_MVP.md`, `docs/HANDOFF.md`, `docs/REVIEW_QUEUE.md`.
+- 테스트: PR2/PR1 관련 Vitest 42/42 통과. 전체 `npm test -- --run` → 3172/3183 통과, 실패 11은 기존 문서화된 네 파일에만 있음(`measure_save_failure_regression` 7, `measure_fixes_batch` 2, `ai_measure_items_2607` 1, `member_transfer_cross_member_ui` 1). 이미지 더미 unittest 3/3 통과(Pillow 12.3.0, 테스트 폰트는 Windows 맑은 고딕; Gowun Dodum 글꼴은 없음). `npm run build` 성공(기존 Firebase import·chunk 크기 경고). `git diff --check` 통과.
+- 제한: 이 PC의 네 Notion 환경변수와 로컬 `config.local.json`·동의/승인 매니페스트는 미설정/미발견(값·경로는 기록하지 않음). 필요한 수동 schema 속성도 아직 없음. 회원 영상·D:/F:는 열지 않았고 실제 이미지·Notion 쓰기·티스토리 업로드·예약 등록은 하지 않음. 이미지 렌더는 임시 더미 소재로만 테스트.
+- 다음에 할 일: 동의 DB/캘린더 속성과 별도 토큰을 사용자 PC에서 설정한 뒤 Notion 목이 아닌 1회 연결 시험. 다른 도구가 PR2를 교차 검토하고, 발견사항을 먼저 기록한 후 사용자 지시에 따라 보완.
+
 ### 2026-10-02 · Codex · Gemini 독립 검토 보완
 - 한 일: 동의 만료일을 한국 시간 기준 `23:59:59.999+09:00`로 해석하고 경계 테스트를 추가. 입력 클립은 경로 입력 후 `lstat(filePath)`를 먼저 수행하고 링크 확인도 원래 경로 기준으로 유지. 입력 루트 자체의 심볼릭 링크·정션 거부 규칙을 문서화.
 - 변경 파일: `scripts/content-video/videoMvp.mjs`, `scripts/content-video/inputGuard.mjs`, `docs/VIDEO_AUTOMATION_MVP.md`, `src/__tests__/content_video_mvp.test.js`, `docs/HANDOFF.md`.

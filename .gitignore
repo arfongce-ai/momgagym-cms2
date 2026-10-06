@@ -14,5 +14,7 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 dev-server*.log
+__pycache__/
+*.py[cod]
 .DS_Store
 Thumbs.db
