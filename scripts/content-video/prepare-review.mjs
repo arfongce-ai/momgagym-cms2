@@ -1,75 +1,174 @@
-import { access, mkdir, readFile, writeFile } from 'node:fs/promises';
+import crypto from 'node:crypto';
+import { createReadStream } from 'node:fs';
+import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import process from 'node:process';
-import { buildFfmpegArgs, buildReviewIndexHtml, outputPaths, srtText, validateClip, validateConsentSnapshot } from './videoMvp.mjs';
+import { fileURLToPath } from 'node:url';
+import { CLIP_ID_PATTERN, resolveBrandAsset, resolveClipInput, resolveOutputPath } from './inputGuard.mjs';
+import { buildFfmpegArgs, buildReviewIndexHtml, normalizeClip, outputPaths, srtText, validateNormalizedClip, validateConsentSnapshot } from './videoMvp.mjs';
 
-function option(name) {
-  const index = process.argv.indexOf(name);
-  return index === -1 ? null : process.argv[index + 1] || null;
+const FAILURE_CODES = new Set(['NO_CONSENT', 'REVOKED', 'EXPIRED', 'CHANNEL', 'CLIP_MISMATCH', 'PATH_REJECTED', 'BAD_EXT', 'TOO_LONG', 'FFMPEG', 'UNKNOWN']);
+const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
+const CONTENT_DIR = path.resolve(SCRIPT_DIR, '../../content-video');
+const LEDGER_DIR = path.join(CONTENT_DIR, 'state');
+const RENDER_SETTINGS = Object.freeze({ width: 1080, height: 1920, videoCodec: 'libx264', crf: 20, preset: 'medium', audioCodec: 'aac', faststart: true, timeoutMs: 180000 });
+
+function option(name, args = process.argv) {
+  const index = args.indexOf(name);
+  return index === -1 ? null : args[index + 1] || null;
 }
 
-const manifestPath = option('--manifest');
-if (!manifestPath) {
-  console.error('사용법: node scripts/content-video/prepare-review.mjs --manifest content-video/approved.local.json');
-  process.exit(1);
+function failureCode(error) {
+  return FAILURE_CODES.has(error?.message) ? error.message : 'UNKNOWN';
 }
 
-const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
-const manifestDir = path.dirname(path.resolve(manifestPath));
-const outputDir = path.resolve(manifest.outputDir || 'content-video/review');
-const clips = Array.isArray(manifest.clips) ? manifest.clips : [];
-const channels = manifest.publishing?.channels;
-if (typeof manifest.consentRegistry !== 'string' || !manifest.consentRegistry.trim()) {
-  console.error('consentRegistry(동의 스냅샷 경로)가 필요합니다. 원본 영상은 처리하지 않습니다.');
-  process.exit(1);
-}
-const consentSnapshot = JSON.parse(await readFile(path.resolve(manifestDir, manifest.consentRegistry), 'utf8'));
-const invalid = clips.flatMap((clip) => [
-  ...validateClip(clip),
-  ...validateConsentSnapshot(consentSnapshot, { reference: clip?.consent?.reference, channels }),
-].map((message) => `${clip?.id || '(id 없음)'}: ${message}`));
-if (invalid.length) {
-  console.error('동의 스냅샷/길이/자막 검증에 실패했습니다. 원본 영상은 처리하지 않습니다.');
-  invalid.forEach((message) => console.error(`- ${message}`));
-  process.exit(1);
-}
-
-try {
-  await Promise.all(clips.map((clip) => access(clip.source)));
-} catch {
-  console.error('입력 원본 중 접근할 수 없는 파일이 있습니다. 원본 영상은 처리하지 않습니다.');
-  process.exit(1);
-}
-
-const runtime = spawnSync('ffmpeg', ['-version'], { encoding: 'utf8' });
-if (runtime.error || runtime.status !== 0) {
-  console.error('FFmpeg를 찾지 못했습니다. 설치 후 다시 실행하세요. 원본 영상은 변경되지 않았습니다.');
-  process.exit(1);
-}
-
-await mkdir(outputDir, { recursive: true });
-const reviewItems = [];
-for (const clip of clips) {
-  const files = outputPaths(outputDir, clip);
-  const command = buildFfmpegArgs({
-    clip,
-    outputFile: files.video,
-    logoPath: manifest.brand?.logoPath || null,
-    endCardPath: manifest.brand?.endCardPath || null,
+function sha256(file) {
+  return new Promise((resolve, reject) => {
+    const hash = crypto.createHash('sha256');
+    const stream = createReadStream(file);
+    stream.on('data', (chunk) => hash.update(chunk));
+    stream.on('error', reject);
+    stream.on('end', () => resolve(hash.digest('hex')));
   });
-  const result = spawnSync('ffmpeg', command, { stdio: 'inherit' });
-  if (result.status !== 0) process.exit(result.status || 1);
-  await writeFile(files.subtitle, srtText(clip), 'utf8');
-  await writeFile(files.review, JSON.stringify({
-    id: clip.id,
-    outputFile: path.basename(files.video),
-    subtitleFile: path.basename(files.subtitle),
-    status: 'review_required',
-    publishAllowed: false,
-  }, null, 2));
-  reviewItems.push({ id: clip.id, videoFile: path.basename(files.video), subtitleFile: path.basename(files.subtitle) });
-  console.log(`검수 대기 생성: ${files.video}`);
 }
-await writeFile(path.join(outputDir, 'review_index.html'), buildReviewIndexHtml(reviewItems), 'utf8');
-console.log(`검수 갤러리 생성: ${path.join(outputDir, 'review_index.html')}`);
+
+async function writeLedger(ledger, ledgerDir = LEDGER_DIR, fs = { mkdir, writeFile, rename, rm }) {
+  await fs.mkdir(ledgerDir, { recursive: true });
+  const temp = path.join(ledgerDir, 'ledger.tmp.json');
+  const target = path.join(ledgerDir, 'ledger.json');
+  await fs.writeFile(temp, JSON.stringify(ledger, null, 2), 'utf8');
+  await fs.rename(temp, target);
+}
+
+async function loadJson(file, fs = { readFile }) {
+  return JSON.parse(await fs.readFile(file, 'utf8'));
+}
+
+/** Testable local-only pipeline. All roots are supplied by the ignored local config. */
+export async function prepareReview({ config, manifest, consentSnapshot, ledgerDir = LEDGER_DIR, fs = { mkdir, readFile, writeFile, rename, rm }, run = spawnSync, now = new Date() }) {
+  if (!config || !['inputRoot', 'outputRoot', 'brandRoot'].every((key) => typeof config[key] === 'string' && path.isAbsolute(config[key]) && !config[key].startsWith('\\\\') && !config[key].startsWith('//'))) {
+    throw new Error('PATH_REJECTED');
+  }
+  const results = [];
+  const reviewItems = [];
+  const ledger = await loadJson(path.join(ledgerDir, 'ledger.json'), fs).catch(() => ({ records: {} }));
+  if (!ledger.records || typeof ledger.records !== 'object' || Array.isArray(ledger.records)) ledger.records = {};
+
+  const runtime = run('ffmpeg', ['-version'], { encoding: 'utf8', stdio: 'ignore', timeout: 30000 });
+  if (runtime.error || runtime.status !== 0) throw new Error('FFMPEG');
+
+  await fs.mkdir(config.outputRoot, { recursive: true });
+  const channels = manifest.publishing?.channels;
+  const clips = Array.isArray(manifest.clips) ? manifest.clips : [];
+  const seenClipIds = new Set();
+
+  for (const sourceClip of clips) {
+    const clip = normalizeClip(sourceClip);
+    let id = CLIP_ID_PATTERN.test(clip?.clipId || '') ? clip.clipId : 'UNKNOWN';
+    let inputHash = null;
+    const cleanupPaths = [];
+    if (id !== 'UNKNOWN' && seenClipIds.has(id)) {
+      results.push({ clipId: 'UNKNOWN', resultCode: 'UNKNOWN' });
+      continue;
+    }
+    if (id !== 'UNKNOWN') seenClipIds.add(id);
+    try {
+      const clipErrors = validateNormalizedClip(clip);
+      if (clipErrors.length) throw new Error(clipErrors[0]);
+      id = clip.clipId;
+      const consentErrors = validateConsentSnapshot(consentSnapshot, {
+        reference: clip.consent.reference,
+        channels,
+        clipId: clip.clipId,
+        now,
+      });
+      if (consentErrors.length) throw new Error(consentErrors[0]);
+
+      const inputFile = await resolveClipInput(config.inputRoot, clip.clipId);
+      inputHash = await sha256(inputFile);
+      let logoPath = null;
+      let endCardPath = null;
+      if (manifest.brand?.logoFile) logoPath = await resolveBrandAsset(config.brandRoot, manifest.brand.logoFile);
+      if (manifest.brand?.endCardFile) endCardPath = await resolveBrandAsset(config.brandRoot, manifest.brand.endCardFile);
+      const logoSha256 = logoPath ? await sha256(logoPath) : null;
+      const endCardSha256 = endCardPath ? await sha256(endCardPath) : null;
+      const renderFingerprint = crypto.createHash('sha256').update(JSON.stringify({
+        version: 1,
+        inputSha256: inputHash,
+        trim: { startSec: clip.trim.startSec, endSec: Number(clip.trim.endSec) },
+        captionDraft: clip.captionDraft,
+        logoSha256,
+        endCardSha256,
+        settings: RENDER_SETTINGS,
+      })).digest('hex');
+      const names = outputPaths('', clip);
+      const videoFile = await resolveOutputPath(config.outputRoot, path.basename(names.video));
+      const subtitleFile = await resolveOutputPath(config.outputRoot, path.basename(names.subtitle));
+      const reviewFile = await resolveOutputPath(config.outputRoot, path.basename(names.review));
+      const prior = ledger.records[clip.clipId];
+      if (prior?.renderFingerprint === renderFingerprint && prior?.resultCode === 'OK' && prior?.outputSha256 && await sha256(videoFile).then((hash) => hash === prior.outputSha256).catch(() => false)) {
+        reviewItems.push({ clipId: id, videoFile: path.basename(videoFile), subtitleFile: path.basename(subtitleFile) });
+        results.push({ clipId: id, resultCode: 'SKIPPED' });
+        continue;
+      }
+
+      const tempVideo = await resolveOutputPath(config.outputRoot, `${path.basename(videoFile, '.mp4')}.tmp.mp4`);
+      const tempSubtitle = await resolveOutputPath(config.outputRoot, `${path.basename(subtitleFile, '.srt')}.tmp.srt`);
+      const tempReview = await resolveOutputPath(config.outputRoot, `${path.basename(reviewFile, '.json')}.tmp.json`);
+      cleanupPaths.push(tempVideo, tempSubtitle, tempReview);
+      const command = buildFfmpegArgs({ clip, inputFile, outputFile: tempVideo, logoPath, endCardPath });
+      const rendered = run('ffmpeg', command, { stdio: 'ignore', timeout: RENDER_SETTINGS.timeoutMs });
+      if (rendered.error || rendered.status !== 0) throw new Error('FFMPEG');
+
+      await fs.writeFile(tempSubtitle, srtText(clip), 'utf8');
+      await fs.writeFile(tempReview, JSON.stringify({
+        clipId: clip.clipId,
+        outputFile: path.basename(videoFile),
+        subtitleFile: path.basename(subtitleFile),
+        status: 'review_required',
+        publishAllowed: false,
+      }, null, 2));
+      await fs.rename(tempVideo, videoFile);
+      await fs.rename(tempSubtitle, subtitleFile);
+      await fs.rename(tempReview, reviewFile);
+
+      const outputHash = await sha256(videoFile);
+      ledger.records[clip.clipId] = { inputSha256: inputHash, renderFingerprint, outputSha256: outputHash, recordedAt: now.toISOString(), resultCode: 'OK' };
+      reviewItems.push({ clipId: id, videoFile: path.basename(videoFile), subtitleFile: path.basename(subtitleFile) });
+      results.push({ clipId: id, resultCode: 'OK' });
+    } catch (error) {
+      await Promise.all(cleanupPaths.map((file) => fs.rm(file, { force: true }).catch(() => {})));
+      const code = failureCode(error);
+      if (id !== 'UNKNOWN') ledger.records[id] = { inputSha256: inputHash, outputSha256: null, recordedAt: now.toISOString(), resultCode: code };
+      results.push({ clipId: id, resultCode: code });
+    }
+  }
+
+  await fs.writeFile(await resolveOutputPath(config.outputRoot, 'review_index.html'), buildReviewIndexHtml(reviewItems), 'utf8');
+  await writeLedger(ledger, ledgerDir, fs);
+  return { results, failedCount: results.filter((item) => FAILURE_CODES.has(item.resultCode)).length };
+}
+
+async function main() {
+  const manifestName = option('--manifest');
+  if (!manifestName || path.basename(manifestName) !== manifestName || !manifestName.endsWith('.local.json')) {
+    console.error('PATH_REJECTED');
+    process.exitCode = 1;
+    return;
+  }
+  try {
+    const [config, manifest, consentSnapshot] = await Promise.all([
+      loadJson(path.join(CONTENT_DIR, 'config.local.json')),
+      loadJson(path.join(CONTENT_DIR, manifestName)),
+      loadJson(path.join(CONTENT_DIR, 'consents.local.json')),
+    ]);
+    const { failedCount } = await prepareReview({ config, manifest, consentSnapshot });
+    if (failedCount > 0) process.exitCode = 1;
+  } catch (error) {
+    console.error(failureCode(error));
+    process.exitCode = 1;
+  }
+}
+
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) await main();
