@@ -98,6 +98,19 @@ export async function runNotionVideoWorkflow({ consentClient, calendarClient, co
       continue;
     }
 
+    // 선점 직전 대기열에서 빠졌는지 재확인해 이미 처리된 행을 건너뛴다.
+    // 조회와 수정은 원자적이지 않아 동시 실행 전체를 잠그지는 못한다.
+    try {
+      const fresh = await calendarClient.queryDataSource(calendarDataSourceId, CONTENT_QUEUE_FILTER);
+      if (!fresh.some((item) => item?.id === row.pageId)) {
+        summary.processed -= 1;
+        continue;
+      }
+    } catch {
+      summary.processed -= 1;
+      summary.failed.NOTION = (summary.failed.NOTION || 0) + 1;
+      continue;
+    }
     try {
       await calendarClient.updatePage(row.pageId, {
         '제작 상태': '편집 중',

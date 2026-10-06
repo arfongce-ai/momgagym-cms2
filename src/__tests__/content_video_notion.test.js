@@ -139,4 +139,35 @@ describe('Notion 연결과 제작 쓰기 허용 목록', () => {
     expect(result.processed).toBe(0);
     expect(calendarClient.updates[0].properties['제작 상태']).toBe('영상 제작 대기');
   });
+
+  it('마지막 처리 시각이 없는 편집 중 행도 영상 제작 대기로 복구한다', async () => {
+    const consentClient = fakeClient({ consentPages: [consentPage()] });
+    const calendarClient = fakeClient({ editingPages: [queuePage({ '마지막 처리 시각': { date: null } })] });
+    await runNotionVideoWorkflow({ consentClient, calendarClient, consentDataSourceId: consentDatabaseId, calendarDataSourceId: calendarDatabaseId, processClip: vi.fn(), now: new Date('2026-10-06T00:00:00.000Z') });
+    expect(calendarClient.updates[0].properties['제작 상태']).toBe('영상 제작 대기');
+  });
+
+  it('30분 이내의 편집 중 행은 건드리지 않는다', async () => {
+    const consentClient = fakeClient({ consentPages: [consentPage()] });
+    const calendarClient = fakeClient({ editingPages: [queuePage({ '마지막 처리 시각': { date: { start: '2026-10-05T23:50:00.000Z' } } })] });
+    await runNotionVideoWorkflow({ consentClient, calendarClient, consentDataSourceId: consentDatabaseId, calendarDataSourceId: calendarDatabaseId, processClip: vi.fn(), now: new Date('2026-10-06T00:00:00.000Z') });
+    expect(calendarClient.updates).toEqual([]);
+  });
+
+  it('선점 직전 재조회에서 이미 사라진 행은 처리하지 않는다', async () => {
+    const consentClient = fakeClient({ consentPages: [consentPage()] });
+    const calendarClient = fakeClient({ queuePages: [queuePage()] });
+    let calls = 0;
+    const base = calendarClient.queryDataSource;
+    calendarClient.queryDataSource = async (id, filter) => {
+      const isQueue = filter?.and?.some((part) => part.select?.equals === '영상 제작 대기');
+      if (isQueue) { calls += 1; if (calls > 1) return []; }
+      return base(id, filter);
+    };
+    const processClip = vi.fn();
+    const result = await runNotionVideoWorkflow({ consentClient, calendarClient, consentDataSourceId: consentDatabaseId, calendarDataSourceId: calendarDatabaseId, processClip, now: new Date('2026-10-06T00:00:00.000Z') });
+    expect(processClip).not.toHaveBeenCalled();
+    expect(calendarClient.updates).toEqual([]);
+    expect(result.processed).toBe(0);
+  });
 });

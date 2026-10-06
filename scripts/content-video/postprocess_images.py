@@ -51,7 +51,10 @@ def wrap_pixels(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.FreeTypeFo
     return lines
 
 
-def draw_caption(image: Image.Image, phrase: str, font_path: Path) -> None:
+POSITIONS = ("top", "center", "bottom")
+
+
+def draw_caption(image: Image.Image, phrase: str, font_path: Path, position: str = "bottom") -> None:
     draw = ImageDraw.Draw(image, "RGBA")
     max_width = int(CANVAS * 0.82)
     top = int(CANVAS * 0.68)
@@ -67,7 +70,12 @@ def draw_caption(image: Image.Image, phrase: str, font_path: Path) -> None:
     pad_x, pad_y = 36, 26
     text_height = line_height * len(lines) - 12
     box_height = text_height + pad_y * 2
-    box_top = min(CANVAS - box_height - 32, max(top, CANVAS - box_height - 42))
+    if position == "top":
+        box_top = 48
+    elif position == "center":
+        box_top = (CANVAS - box_height) // 2
+    else:
+        box_top = min(CANVAS - box_height - 32, max(top, CANVAS - box_height - 42))
     draw.rounded_rectangle((48, box_top, CANVAS - 48, box_top + box_height), radius=22, fill=(255, 255, 255, 238))
     y = box_top + pad_y
     for line in lines:
@@ -95,6 +103,20 @@ def crop_square(image: Image.Image) -> Image.Image:
     left = (width - side) // 2
     top = (height - side) // 2
     return image.crop((left, top, left + side, top + side)).resize((CANVAS, CANVAS), Image.Resampling.LANCZOS)
+
+
+def read_positions(path: Path) -> list[str]:
+    """Optional `positions` (top/center/bottom x5) in the phrase plan; default is all bottom."""
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception as error:
+        raise ImageJobError("PHRASE_PLAN") from error
+    positions = payload.get("positions") if isinstance(payload, dict) else None
+    if positions is None:
+        return ["bottom"] * 5
+    if not isinstance(positions, list) or len(positions) != 5 or any(item not in POSITIONS for item in positions):
+        raise ImageJobError("PHRASE_PLAN")
+    return list(positions)
 
 
 def read_phrases(path: Path) -> list[str]:
@@ -128,6 +150,7 @@ def process_images(input_dir: Path, phrases_file: Path, font_file: Path, logo_fi
         raise ImageJobError("PATH_REJECTED")
     try:
         phrases = read_phrases(Path(phrases_file))
+        positions = read_positions(Path(phrases_file))
     except ImageJobError:
         raise
     if not Path(font_file).is_file() or Path(font_file).is_symlink():
@@ -141,7 +164,7 @@ def process_images(input_dir: Path, phrases_file: Path, font_file: Path, logo_fi
 
     staged_dir = Path(tempfile.mkdtemp(prefix="image-final-", dir=input_dir))
     try:
-        for source, phrase in zip(sources, phrases):
+        for source, phrase, position in zip(sources, phrases, positions):
             try:
                 with Image.open(source) as opened:
                     image = crop_square(ImageOps.exif_transpose(opened).convert("RGB"))
@@ -151,7 +174,7 @@ def process_images(input_dir: Path, phrases_file: Path, font_file: Path, logo_fi
                 raise ImageJobError("IMAGE_READ") from error
             image = image.convert("RGBA")
             composite_logo(image, Path(logo_file) if logo_file else None)
-            draw_caption(image, phrase, Path(font_file))
+            draw_caption(image, phrase, Path(font_file), position)
             image.save(staged_dir / source.name, format="PNG", optimize=True)
         files = [{"name": name, "sha256": _hash(staged_dir / name), "width": CANVAS, "height": CANVAS} for name in IMAGE_NAMES]
         (staged_dir / "hashes.json").write_text(json.dumps({"version": 1, "files": files}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")

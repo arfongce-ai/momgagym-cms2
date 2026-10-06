@@ -66,6 +66,24 @@ class ImagePostprocessTests(unittest.TestCase):
         with self.assertRaisesRegex(ImageJobError, "TEXT_OVERFLOW"):
             draw_caption(image, "가" * 1200, Path(FONT))
 
+    def test_positions_move_the_caption_box(self):
+        def dark_rows(position):
+            image = Image.new("RGB", (1080, 1080), (20, 20, 20)).convert("RGBA")
+            draw_caption(image, "한쪽만 뻐근하다면", Path(FONT), position)
+            px = image.load()
+            return [y for y in range(1080) if px[540, y][0] > 200]
+        top, center, bottom = dark_rows("top"), dark_rows("center"), dark_rows("bottom")
+        self.assertLess(max(top), 400)
+        self.assertTrue(300 < min(center) and max(center) < 780)
+        self.assertGreater(min(bottom), 650)
+
+    def test_bad_positions_are_rejected(self):
+        for name in IMAGE_NAMES:
+            Image.new("RGB", (100, 100)).save(self.root / name)
+        self.plan.write_text(json.dumps({"phrases": PHRASES, "positions": ["top", "left", "bottom", "bottom", "bottom"]}, ensure_ascii=False), encoding="utf-8")
+        with self.assertRaisesRegex(ImageJobError, "PHRASE_PLAN"):
+            process_images(self.root, self.plan, Path(FONT))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -43,7 +43,7 @@ npm run video:review -- --manifest approved.local.json
 ## 티스토리 이미지 후처리(오프라인)
 
 - 이미지 생성은 외부 이미지 AI에서 사람·글자 없이 만든 PNG 5장을 받아 로컬에서 처리한다. 회원 영상·사진을 이미지 모델이나 외부 서비스에 보내지 않는다.
-- 실행 입력은 사용자가 준 문구 계획 JSON의 `phrases` 5개, `01.png`~`05.png`, 로컬 Gowun Dodum 글꼴이다. 5번째 문구는 정확히 `네이버에서 '몸가짐운동센터' 검색`이어야 한다. 나머지 문구에는 전화번호·URL·센터명이 허용되지 않는다.
+- 실행 입력은 사용자가 준 문구 계획 JSON의 `phrases` 5개, `01.png`~`05.png`, 로컬 Gowun Dodum 글꼴이다. 선택 필드 `positions`는 이미지 순서에 맞춘 `top`·`center`·`bottom` 다섯 값이며, 생략하면 모두 아래쪽에 배치한다. 5번째 문구는 정확히 `네이버에서 '몸가짐운동센터' 검색`이어야 한다. 나머지 문구에는 전화번호·URL·센터명이 허용되지 않는다.
 - `python -m pip install -r requirements-content-video.txt` 후 다음처럼 실행한다. 실제 경로는 로컬 PC 명령행에서만 지정한다.
 
 ```powershell

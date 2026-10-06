@@ -161,5 +161,7 @@ export function parseVideoQueueRow(page) {
 
 export function isStaleEdit(lastProcessedAt, now = new Date()) {
   const timestamp = Date.parse(lastProcessedAt || '');
-  return Number.isFinite(timestamp) && now.getTime() - timestamp > 30 * 60 * 1000;
+  // 처리 시각이 없는 '편집 중' 행은 선점 기록이 없는 것이므로 복구 대상으로 본다.
+  if (!Number.isFinite(timestamp)) return true;
+  return now.getTime() - timestamp > 30 * 60 * 1000;
 }
