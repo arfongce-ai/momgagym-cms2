@@ -4,18 +4,20 @@
 
 - 저장소: `arfongce-ai/momgagym-cms2`
 - 작업 브랜치: `codex/notion-content-pr2`
-- 현재 원격 반영 기준: `4348f53` (`docs: record PR2 verification limits`)
+- 현재 원격 반영 기준: `fbeb857` (`fix: apply PR2 queue and image patch`)
 - PR #3(PR1)은 `main`에 병합됨(`4397d3f`). PR2 구현은 `c61e3b0`에 있음.
+- Claude 제공 보완 패치 3건도 `fbeb857`에 반영됨: 시각 누락 편집 행 복구, 선점 직전 대기열 재조회, 이미지 문구 위치 지정 지원.
 - GPT 이미지 생성 프롬프트 작성은 이번 인계 범위에서 제외.
 
 ## Codex가 검증한 결과
 
-- PR1/PR2 집중 Vitest: 42/42 통과.
-- 전체 `npm test -- --run`: 3172/3183 통과. 기존 기록된 11개 실패만 확인. 별도 첫 실행에서 `session_share` 한 건 시간초과했으나 단독 재실행 14/14, 전체 재실행 통과.
-- 이미지 후처리 더미 테스트: 3/3 통과. 이 PC에는 Gowun Dodum이 없어 시스템 맑은 고딕을 시험 전용 대체 폰트로 사용함. 운영 글꼴로 검증한 결과는 아님.
+- PR1/PR2 집중 Vitest(보완 후): 45/45 통과.
+- 전체 `npm test -- --run`: 3175/3186 통과. 기존 기록된 11개 실패만 확인. `.github/test-baseline.json`도 3175/3186으로 갱신됨.
+- 이미지 후처리 더미 테스트(보완 후): 5/5 통과. 이 PC에는 Gowun Dodum이 없어 시스템 맑은 고딕을 시험 전용 대체 폰트로 사용함. 운영 글꼴로 검증한 결과는 아님.
 - `npm run build`: 성공. 기존 Firebase 동적/정적 import 및 큰 chunk 경고.
 - FFmpeg 9.0.1 및 ffprobe 확인.
 - 금지 상태/외부 게시/API 업로드 동작은 추가하지 않음. 실제 회원 영상·사진은 열거나 전송하지 않음.
+- 선점 직전 재조회는 이미 대기열에서 빠진 행을 건너뛰는 보완이지만, Notion 조회와 상태 수정은 원자적이지 않아 거의 동시에 실행된 두 작업의 중복 처리를 완전히 막지 못함.
 
 ## 확인이 필요한 점과 현재 차단 사유
 
