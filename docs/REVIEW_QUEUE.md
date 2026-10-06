@@ -155,7 +155,7 @@
 - 확인: PR #3 병합 후 PR2 착수 조건 충족.
 
 ## R14 · PR2 Notion 영상 대기열 연동 + 오프라인 이미지 후처리 · 2026-10-06 · ⏳
-- 커밋: PR2 브랜치 커밋 전
+- 커밋: `c61e3b0`
 - 대상: `scripts/content-video/notionClient.mjs`, `notionWorkflow.mjs`, `run-notion-review.mjs`, `prepare-review.mjs`, `postprocess_images.py`, 관련 Vitest/Python 더미 테스트
 - 검증: PR1/PR2 Vitest 42/42, 전체 npm test 3172/3183(기존 실패 11건은 위 R13에 적힌 기존 네 파일만), `.github/test-baseline.json`을 이 통과 수/총 테스트 수로 갱신, Python 이미지 더미 3/3, `npm run build` 통과(기존 경고)
 - Notion 점검(읽기 전용 스키마): 현재 캘린더에 대본·시작/끝 초·동의 참조·결과 해시·마지막 처리 시각·오류 요약 속성이 없음. 별도 동의 data source/Integration 설정은 미검증. 실 Notion 왕복 없음.
