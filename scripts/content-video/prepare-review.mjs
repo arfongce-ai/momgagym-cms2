@@ -52,6 +52,7 @@ export async function prepareReview({ config, manifest, consentSnapshot, ledgerD
   }
   const results = [];
   const reviewItems = [];
+  const outputHashes = {};
   const ledger = await loadJson(path.join(ledgerDir, 'ledger.json'), fs).catch(() => ({ records: {} }));
   if (!ledger.records || typeof ledger.records !== 'object' || Array.isArray(ledger.records)) ledger.records = {};
 
@@ -109,6 +110,7 @@ export async function prepareReview({ config, manifest, consentSnapshot, ledgerD
       const prior = ledger.records[clip.clipId];
       if (prior?.renderFingerprint === renderFingerprint && prior?.resultCode === 'OK' && prior?.outputSha256 && await sha256(videoFile).then((hash) => hash === prior.outputSha256).catch(() => false)) {
         reviewItems.push({ clipId: id, videoFile: path.basename(videoFile), subtitleFile: path.basename(subtitleFile) });
+        outputHashes[id] = prior.outputSha256;
         results.push({ clipId: id, resultCode: 'SKIPPED' });
         continue;
       }
@@ -134,6 +136,7 @@ export async function prepareReview({ config, manifest, consentSnapshot, ledgerD
       await fs.rename(tempReview, reviewFile);
 
       const outputHash = await sha256(videoFile);
+      outputHashes[id] = outputHash;
       ledger.records[clip.clipId] = { inputSha256: inputHash, renderFingerprint, outputSha256: outputHash, recordedAt: now.toISOString(), resultCode: 'OK' };
       reviewItems.push({ clipId: id, videoFile: path.basename(videoFile), subtitleFile: path.basename(subtitleFile) });
       results.push({ clipId: id, resultCode: 'OK' });
@@ -147,7 +150,7 @@ export async function prepareReview({ config, manifest, consentSnapshot, ledgerD
 
   await fs.writeFile(await resolveOutputPath(config.outputRoot, 'review_index.html'), buildReviewIndexHtml(reviewItems), 'utf8');
   await writeLedger(ledger, ledgerDir, fs);
-  return { results, failedCount: results.filter((item) => FAILURE_CODES.has(item.resultCode)).length };
+  return { results, outputHashes, failedCount: results.filter((item) => FAILURE_CODES.has(item.resultCode)).length };
 }
 
 async function main() {

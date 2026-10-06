@@ -148,6 +148,22 @@
 
 ---
 
+## R13 · PR1 입력 가드·클립 격리 검토 · 2026-10-05 · ✅ 병합
+- PR: [#3](https://github.com/arfongce-ai/momgagym-cms2/pull/3), `codex/video-input-guard-pr1` → `main`, 병합 커밋 `4397d3f`
+- 대상: `scripts/content-video/inputGuard.mjs`, `prepare-review.mjs`, `videoMvp.mjs` 및 테스트
+- 테스트 당시 기록: 전체 npm test 3158/3169, 알려진 네 파일에서 11개 실패; 새 실패 파일 없음. 이후 main에서 전체 테스트를 다시 실행해 기준선을 현재 3183개로 확인함(기존 실패 11).
+- 확인: PR #3 병합 후 PR2 착수 조건 충족.
+
+## R14 · PR2 Notion 영상 대기열 연동 + 오프라인 이미지 후처리 · 2026-10-06 · ⏳
+- 커밋: `c61e3b0`
+- 대상: `scripts/content-video/notionClient.mjs`, `notionWorkflow.mjs`, `run-notion-review.mjs`, `prepare-review.mjs`, `postprocess_images.py`, 관련 Vitest/Python 더미 테스트
+- 검증: PR1/PR2 Vitest 42/42, 전체 npm test 3172/3183(기존 실패 11건은 위 R13에 적힌 기존 네 파일만), `.github/test-baseline.json`을 이 통과 수/총 테스트 수로 갱신, Python 이미지 더미 3/3, `npm run build` 통과(기존 경고)
+- Notion 점검(읽기 전용 스키마): 현재 캘린더에 대본·시작/끝 초·동의 참조·결과 해시·마지막 처리 시각·오류 요약 속성이 없음. 별도 동의 data source/Integration 설정은 미검증. 실 Notion 왕복 없음.
+- Claude/Gemini 교차 검토 대기: API/data source 쿼리, 읽기 전용 동의 토큰 분리, 쓰기 허용 목록, fail-closed, stale edit 복구, 경로·PII 비노출, 이미지 크롭 및 텍스트 넘침.
+- 사용자 수동 작업 제안: 필요한 Notion 속성 추가, `검수 결과 링크`는 기존 `Drive 링크` 재사용 여부 결정. `이미지 폴더 확인`, `티스토리 초안 번호`는 옵션으로 제안만(코드에서 생성 안 함).
+
+---
+
 ## 새 항목 형식 (Claude·Codex 공통)
 
 ```
