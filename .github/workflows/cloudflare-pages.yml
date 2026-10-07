@@ -15,6 +15,7 @@ concurrency:
 permissions:
   contents: read
   deployments: write
+  pull-requests: read
 
 jobs:
   deploy:
@@ -29,6 +30,34 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Require a merged pull request for Production
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const response = await github.rest.repos.listPullRequestsAssociatedWithCommit({
+              owner,
+              repo,
+              commit_sha: context.sha,
+            });
+            const releasePullRequest = response.data.find((pullRequest) =>
+              pullRequest.base.ref === 'main' &&
+              pullRequest.merged_at &&
+              pullRequest.merge_commit_sha === context.sha
+            );
+
+            if (!releasePullRequest) {
+              core.setFailed(
+                `Refusing Production deployment for ${context.sha}: ` +
+                'the commit is not the merge commit of a completed pull request into main.'
+              );
+              return;
+            }
+
+            core.info(
+              `Production release approved by merged PR #${releasePullRequest.number}.`
+            );
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -48,6 +77,27 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      - name: Ensure Production run targets the latest main commit
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const main = await github.rest.repos.getBranch({
+              owner,
+              repo,
+              branch: 'main',
+            });
+
+            if (main.data.commit.sha !== context.sha) {
+              core.setFailed(
+                `Refusing stale Production deployment: run=${context.sha}, ` +
+                `main=${main.data.commit.sha}. Deploy the latest main run instead.`
+              );
+              return;
+            }
+
+            core.info(`Confirmed ${context.sha} is the current main commit.`);
 
       - name: Deploy to Cloudflare Pages
         # 2026-09-22: cloudflare/pages-action은 보안 취약점(CVE-2026-11325)으로
@@ -90,3 +140,24 @@ jobs:
           done
           echo "Production alias did not serve the expected build after 12 checks."
           exit 1
+
+      - name: Ensure main did not advance during Production deployment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const main = await github.rest.repos.getBranch({
+              owner,
+              repo,
+              branch: 'main',
+            });
+
+            if (main.data.commit.sha !== context.sha) {
+              core.setFailed(
+                `Production deployed ${context.sha}, but main advanced to ` +
+                `${main.data.commit.sha} during deployment. The queued latest run must finish.`
+              );
+              return;
+            }
+
+            core.info(`Production and main both point to ${context.sha}.`);

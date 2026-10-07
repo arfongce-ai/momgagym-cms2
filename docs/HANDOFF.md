@@ -45,6 +45,18 @@
 
 ## 작업 로그
 최신 항목이 위. 형식을 그대로 복사해서 쓴다.
+### 2026-10-07 09:20 · Codex · Production 배포 경로 충돌 방지
+- 한 일: Cloudflare 화면의 `Production ec548ed`와 `Preview 6874b45`를 대조. `6874b45`는 `ec548ed`의 조상 커밋이므로 해당 변경은 Production에 포함됨. Preview는 작업 브랜치 검토 배포이고 Production은 병합된 `main` 배포임을 문서화.
+- 변경 파일: `.github/workflows/cloudflare-pages.yml`, `docs/DEPLOYMENT.md`, `docs/HANDOFF.md`.
+- 발견: 🟠 `.github/workflows/cloudflare-pages.yml` — `main` push만 확인하고 PR 병합 커밋인지 검증하지 않았음. 또 로컬 `main`은 원격보다 10커밋 뒤처졌고, `codex/video-input-guard-pr1`은 최신 `origin/main`보다 10커밋 뒤처진 채 2개 문서 커밋이 추가돼 있어 후속 작업 시 혼선·충돌 위험이 있었음. 해당 브랜치들은 보존하고 최신 `origin/main`에서 새 브랜치를 시작함.
+- 보완: Production 배포 전에 대상 SHA가 `main`으로 병합 완료된 PR의 merge commit인지 GitHub API로 확인. PR 누락·권한 오류·조회 실패는 fail-closed 처리. Preview/Production 구분, PR 배포 순서, 오래된 브랜치 재사용 금지를 `docs/DEPLOYMENT.md`에 기록.
+- 교차 검토 발견(수정 전 기록): 🟠 `.github/workflows/cloudflare-pages.yml` — 오래된 성공 run 재실행 또는 과거 main SHA 수동 실행 시 PR 검증만으로는 통과해 이전 빌드를 Production에 다시 게시할 수 있음. 업로드 직전 최신 main SHA 일치 확인이 필요.
+- 보완: 배포 직전과 배포 후 최신 `main` SHA를 비교하도록 추가. 오래된 run 재실행·과거 SHA 수동 배포는 막고, 배포 중 main이 전진하면 해당 실행을 실패 처리해 최신 run 결과를 기다림.
+- 교차 검토: 독립 읽기 전용 리뷰에서 stale rerun 위험을 발견해 수정함. Claude 전용 연결은 이 세션에 제공되지 않음.
+- 테스트: `npm test -- --run` → 3175/3186 통과(기준선 3175 충족, 기존 알려진 11개 실패). 배포 workflow와 같은 JSON 회귀 검사 → 3175/3186, 통과. `session_share.test.js` 단독 14/14 통과(전체 테스트+빌드 동시 실행 때만 나타난 1개 시간초과). `npm run build` 성공(기존 Firebase import 및 큰 청크 경고). workflow YAML과 필수 guard 단계 파싱, `git diff --check` 통과.
+- 남은 위험: 저장소 밖 Cloudflare 수동 배포와 GitHub branch protection 설정은 대시보드 권한 없이 변경·강제할 수 없음. 로그인 후 CMS 실사용 기능 검증은 별도임.
+- 다음에 할 일: PR 병합 후 Production deploy와 운영 번들 smoke check 성공 확인.
+
 ### 2026-10-06 · Codex · Cloudflare Production 배포 검증 강화
 - 한 일: PR4 배포는 성공했지만 기존 배포 workflow가 테스트 실패를 무조건 무시하는 점을 확인. 회귀 기준선 검사 통과 후에만 배포하도록 하고, 수동 실행도 main에서만 허용. Pages 배포 브랜치를 main으로 고정하고 Production URL이 현재 빌드의 JS 자산을 제공하는지 확인하도록 변경.
 - 변경 파일: `.github/workflows/cloudflare-pages.yml`
