@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import importlib.util
 import json
 import os
@@ -137,6 +138,31 @@ def find_target_page(token: str) -> tuple[str, str]:
     return page_id, f"T-{datetime.now(timezone.utc).astimezone().strftime('%Y%m%d')}-{compact[:8]}"
 
 
+def has_processed_page(output_root: Path, page_id: str, processor) -> bool:
+    """Detect a prior result by full page ID marker and legacy date-based output folder."""
+    if not output_root.exists():
+        return False
+    if processor.is_link_or_junction(output_root) or not output_root.is_dir():
+        raise JobError("PATH_REJECTED")
+    compact_id = page_id.replace("-", "").lower()
+    marker_root = output_root / ".processed_pages"
+    marker = marker_root / f"{hashlib.sha256(compact_id.encode('ascii')).hexdigest()}.json"
+    if processor.is_link_or_junction(marker_root) or processor.is_link_or_junction(marker):
+        raise JobError("PATH_REJECTED")
+    if marker.is_file():
+        return True
+    # Recognize output from before the full-ID marker was added.
+    prior_pattern = re.compile(rf"^T-\d{{8}}-{re.escape(compact_id[:8])}$", re.I)
+    for entry in output_root.iterdir():
+        if not prior_pattern.fullmatch(entry.name):
+            continue
+        if processor.is_link_or_junction(entry):
+            raise JobError("PATH_REJECTED")
+        if entry.is_dir():
+            return True
+    return False
+
+
 def _get_json(url: str, token: str) -> dict:
     request = urllib.request.Request(url, headers={
         "Authorization": f"Bearer {token}",
@@ -223,10 +249,12 @@ def run(job_file: Path | None, downloads: Path, output_root: Path, font: Path, t
         article_id = article_id or auto_id
     elif article_id is None:
         article_id = f"T-{page_id.replace('-', '').lower()[:12]}"
+    processor = load_processor()
+    if has_processed_page(output_root, page_id, processor):
+        raise JobError("OUTPUT_EXISTS")
     names = select_recent_gemini(downloads, now) if job["source_files"] == "auto" else job["source_files"]
     sources = validate_sources(downloads, names, now)
     plan = read_plan(get_comments(page_id, token))
-    processor = load_processor()
     if not font.is_file() or font.is_symlink():
         raise JobError("FONT_MISSING")
     article_root = output_root / article_id
@@ -243,6 +271,16 @@ def run(job_file: Path | None, downloads: Path, output_root: Path, font: Path, t
         result = processor.process_images(article_root, phrase_file, font)
     finally:
         phrase_file.unlink(missing_ok=True)
+    marker_root = output_root / ".processed_pages"
+    if processor.is_link_or_junction(marker_root):
+        raise JobError("PATH_REJECTED")
+    marker_root.mkdir(exist_ok=True)
+    marker = marker_root / f"{hashlib.sha256(page_id.replace('-', '').lower().encode('ascii')).hexdigest()}.json"
+    try:
+        with marker.open("x", encoding="utf-8") as stream:
+            json.dump({"article_id": article_id, "processed_at": datetime.now(timezone.utc).isoformat()}, stream)
+    except FileExistsError as error:
+        raise JobError("OUTPUT_EXISTS") from error
     result["article_id"] = article_id
     return result
 

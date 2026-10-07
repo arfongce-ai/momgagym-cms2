@@ -3,7 +3,7 @@ import json
 import os
 import tempfile
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -153,6 +153,18 @@ class FinalizeImagesTests(unittest.TestCase):
         self.assertEqual(result["article_id"], "T-20261008-12345678")
         self.assertTrue((self.output / "T-20261008-12345678" / "final" / "05.png").is_file())
         self.assertTrue((self.downloads / "unrelated.png").is_file())
+
+    def test_same_notion_page_is_not_processed_again_on_a_later_date(self):
+        self._gemini_batch(5)
+        next_day = self.now + timedelta(days=1)
+        with patch.object(finalizer, "get_comments", return_value=COMMENTS), \
+             patch.object(finalizer, "find_target_page", side_effect=[
+                 (PAGE_ID, "T-20261007-12345678"),
+                 (PAGE_ID, "T-20261008-12345678"),
+             ]):
+            finalizer.run(None, self.downloads, self.output, FONT, "test-token-not-a-secret", self.now)
+            with self.assertRaisesRegex(finalizer.JobError, "OUTPUT_EXISTS"):
+                finalizer.run(None, self.downloads, self.output, FONT, "test-token-not-a-secret", next_day)
 
     def test_post_is_limited_to_the_calendar_query(self):
         with self.assertRaisesRegex(finalizer.JobError, "NOTION"):
