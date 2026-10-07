@@ -9,6 +9,19 @@
 
 ---
 
+## R10 · 매일 Gemini 이미지 로컬 최종화 · 2026-10-07 · ⏳
+
+- 작성: Codex, 브랜치 `codex/daily-image-finalizer`
+- 대상: `scripts/content-image/finalize_images.py`, `scripts/content-image/register-finalizer-task.ps1`, `scripts/content-video/postprocess_images.py`, `tests/content-image/test_finalize_images.py`, `.gitignore`, `docs/VIDEO_AUTOMATION_MVP.md`
+- 확인할 것
+  1. Notion 요청이 한 페이지의 댓글 GET으로만 제한되고 페이지네이션·오류·리다이렉트가 fail-closed인지, 토큰/경로가 출력되지 않는지
+  2. 로컬 작업표에 지정된 정확히 5개 파일만 최근 24시간 범위에서 복사하고 무관한 다운로드·원본은 건드리지 않는지
+  3. 잘못된 계획·문구/위치·4:3·텍스트 넘침·기존 `final` 재실행 경계가 안전한지
+  4. PowerShell 등록이 기본 미리보기이며 명시적 `-Register` 외에는 작업을 만들지 않는지
+  5. Python 테스트·전체 `npm test` 기준선·빌드 결과를 독립 재실행
+- Codex 검증: Python 더미 테스트 8/8, 기존 이미지 후처리 5/5(시험용 맑은 고딕), 전체 Vitest 3175/3186(기존 실패 11), `npm run build` 통과. 실제 Notion 호출·다운로드 폴더·작업 등록은 미실행.
+- Codex 수정은 검토자가 HANDOFF에 발견을 먼저 기록하고 사용자 지시에 따라 보완.
+
 ## R1 · 매출관리 개요 — 선생님별 월 매출(입금 기준) · 2026-09-16 · ✅보완완료
 
 - 커밋: `85d87fa`, `3b49846`, `6141755` (08-26~27 `c2d9075`, `10641af`는 이 작업으로 대체됨)

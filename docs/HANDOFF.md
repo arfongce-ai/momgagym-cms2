@@ -45,6 +45,15 @@
 
 ## 작업 로그
 최신 항목이 위. 형식을 그대로 복사해서 쓴다.
+### 2026-10-07 09:45 · Codex · 매일 Gemini 이미지 로컬 최종화
+- 한 일: Claude가 로컬 작업표로 지정한 최근 24시간 이내 다운로드 이미지 5개만 복사하고, 지정 Notion 페이지 댓글의 JSON 문구 계획을 읽어 기존 Pillow 후처리로 최종 PNG·SHA-256 목록을 만드는 스크립트 추가. Notion은 읽기 전용 GET만 사용. 오류는 코드만 출력하며 원본 다운로드는 유지.
+- 변경 파일: `scripts/content-image/finalize_images.py`, `scripts/content-image/register-finalizer-task.ps1`, `tests/content-image/test_finalize_images.py`, `scripts/content-video/postprocess_images.py`(payload 검증 함수 추출), `.gitignore`, `docs/VIDEO_AUTOMATION_MVP.md`, `docs/REVIEW_QUEUE.md`, `docs/HANDOFF.md`.
+- 스케줄: 매일 07:30 PowerShell 등록 스크립트 작성. 기본은 미리보기이고 `-Register` 사용 전까지 등록하지 않음. 현재 태스크는 등록하지 않았음.
+- 테스트: 새 Python 더미 테스트 8/8, 기존 이미지 후처리 테스트 5/5(운영 Gowun Dodum 대신 시험용 맑은 고딕), PowerShell 문법 파싱·Python compile·`git diff --check` 통과. `npm test -- --run` 3175/3186(기존 알려진 11개 실패만). `npm run build` 성공(기존 Firebase import·청크 경고).
+- 미검증: 실제 Notion 토큰/댓글 조회, Gemini 다운로드 폴더 입력, 운영 글꼴 사용, Windows 작업 등록·실행, 실제 티스토리 삽입은 확인하지 않음. 08:47 이미지 생성과 07:30 처리 시각 때문에 첫 생성일 당일 삽입은 불가하고 다음 날 처리 흐름임.
+- 교차 검토: `docs/REVIEW_QUEUE.md`의 R10에 독립 검토 요청 기록. 이 세션에서 Claude 교차 검토는 수행하지 않음.
+- 다음에 할 일: Claude가 R10을 독립 검토한 뒤, 사용자 PC에서 필요한 로컬 경로·글꼴·읽기 토큰을 설정하고 등록 스크립트 미리보기 결과를 확인.
+
 ### 2026-10-07 09:20 · Codex · Production 배포 경로 충돌 방지
 - 한 일: Cloudflare 화면의 `Production ec548ed`와 `Preview 6874b45`를 대조. `6874b45`는 `ec548ed`의 조상 커밋이므로 해당 변경은 Production에 포함됨. Preview는 작업 브랜치 검토 배포이고 Production은 병합된 `main` 배포임을 문서화.
 - 변경 파일: `.github/workflows/cloudflare-pages.yml`, `docs/DEPLOYMENT.md`, `docs/HANDOFF.md`.

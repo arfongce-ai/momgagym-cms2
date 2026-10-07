@@ -53,6 +53,18 @@ python scripts/content-video/postprocess_images.py --input "$ImageJobRoot" --phr
 - 중앙 정사각형 크롭 및 1080×1080 리사이즈, 고대비 한글 문구 합성, 선택적인 소형 로고 합성, `final\01.png`~`05.png`와 경로 없는 SHA-256 `hashes.json`을 만든다. 5장 부족·글꼴 부재·문구 넘침은 코드로 실패하며 외부 통신은 없다.
 - 더미 검증은 `GOWUN_DODUM_FONT`를 설정한 뒤 `python -m unittest discover -s tests/content-video`로 실행한다. Python/Pillow가 없는 Codex 환경에서는 실행 결과를 통과로 표시하지 않는다.
 
+## 일일 Gemini 이미지 최종화 (로컬 전용)
+
+- `python scripts/content-image/finalize_images.py`는 로컬에서만 실행한다. 이미지 파일이나 프레임을 Notion·외부 API에 보내지 않는다. Notion 사용은 지정된 한 글의 댓글을 읽는 GET 요청뿐이며, 페이지 변경·티스토리 업로드·공개 게시를 하지 않는다.
+- Claude는 Gemini에서 이미지 5장을 다운로드한 뒤 Git 제외 로컬 작업표 `content-image/jobs.local/today.json`을 작성한다. 형식은 `{"article_id":"TST-2026-0002","notion_page_id":"<페이지 ID>","source_files":["01.png","02.png","03.png","04.png","05.png"]}`. `source_files`에는 Downloads에 실제 저장된 basename 5개를 시간순으로 적는다. Gemini 파일명 규칙을 가정하지 않는다. 5개가 아니거나 중복·잘못된 파일이면 `IMG_COUNT` 또는 `JOB_FILE`로 중단한다.
+- 대상 Notion 글의 댓글 하나에 `IMAGE_PLAN_JSON` 한 줄 다음 JSON을 둔다: `{"phrases":["문구1","문구2","문구3","문구4","네이버에서 '몸가짐운동센터' 검색"],"positions":["top","top","bottom","bottom","center"]}`. 유효 계획이 없거나 여러 개면 `PHRASE_PLAN`으로 중단한다. API는 페이지네이션 포함 댓글 GET만 사용하고, 읽기 토큰은 `NOTION_CONTENT_READ_TOKEN` 환경변수로만 받는다.
+- 처리 전에 명시된 다섯 파일이 다운로드 폴더 바로 아래에 있고 모두 최근 24시간 이내인지 확인한다. 명시되지 않은 파일은 검색·열기·수정·이동하지 않는다. 원본 다운로드는 복사만 하며 삭제하지 않는다. 실행할 때마다 새 `article_id`를 사용하고 `final`이 이미 있으면 기존 결과를 덮어쓰지 않고 `OUTPUT_EXISTS`로 중단한다.
+- 결과는 로컬 이미지 루트의 `<article_id>/01.png`~`05.png`, `final/01.png`~`05.png`, `final/hashes.json`이다. 중앙 정사각 크롭 및 1080×1080 PNG는 기존 후처리 함수를 재사용한다. `hashes.json`에는 결과 파일명·해시·크기만 기록하며 로컬 경로는 기록하지 않는다. 실패 시 코드만 출력한다.
+- Python과 `requirements-content-video.txt`의 Pillow, Gowun Dodum 글꼴, Notion 읽기 토큰, 이미지 작업 루트가 사용자 PC에 준비돼야 한다. Gowun Dodum이 없으면 자동 설치하지 않고 `FONT_MISSING`으로 종료한다.
+- 작업 스케줄러 등록 스크립트는 `scripts/content-image/register-finalizer-task.ps1`이다. 기본 동작은 등록하지 않는 미리보기이며, 사용자가 매개변수를 검토해 명시적으로 `-Register`를 붙였을 때만 매일 07:30 작업을 등록한다. 로그인된 현재 사용자로만 실행하고 동시 실행은 무시한다. 코드가 자동 등록하지 않는다.
+- Claude가 08:47에 이미지 생성·다운로드를 하므로 07:30 작업은 전날 이미지를 처리한다. 첫 생성 당일 본문 삽입은 되지 않고, 다음 날 Claude 실행에서 로컬 `final` 결과가 준비돼야 삽입할 수 있다. 실제 예약 등록·실 Notion 호출·실 다운로드 처리는 별도 PC 설정 후 확인한다.
+- 더미 테스트: `python -m unittest discover -s tests/content-image` (기본 Windows 테스트 글꼴은 맑은 고딕이며, 운영 글꼴 검증은 아님).
+
 ## 새 AI 서비스 추가
 
 새 AI 서비스는 요금, 무료 한도, 데이터 보관·학습 이용 조건을 확인하고 문서화한 뒤 별도 승인된 범위에서만 사용한다. 회원 영상과 프레임은 전송하지 않는다.
