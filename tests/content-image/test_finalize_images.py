@@ -185,7 +185,20 @@ class FinalizeImagesTests(unittest.TestCase):
     def test_no_approved_target_stops(self):
         with patch.object(finalizer, "_post_json", return_value={"results": []}):
             with self.assertRaisesRegex(finalizer.JobError, "NO_TARGET"):
-                finalizer.find_target_page("test-token-not-a-secret")
+                finalizer.find_target_page("test-token-not-a-secret", self.output, self.now)
+
+    def test_target_selection_skips_processed_page_and_paginates(self):
+        (self.output / "T-20261007-12345678").mkdir()
+        next_page = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+        with patch.object(finalizer, "_post_json", side_effect=[
+            {"results": [{"id": PAGE_ID}], "has_more": True, "next_cursor": "next-page"},
+            {"results": [{"id": next_page}], "has_more": False},
+        ]) as query:
+            page_id, article_id = finalizer.find_target_page("test-token-not-a-secret", self.output, self.now)
+        self.assertEqual(page_id, next_page)
+        self.assertEqual(article_id, "T-20261007-aaaaaaaa")
+        self.assertEqual(query.call_count, 2)
+        self.assertEqual(query.call_args_list[1].args[2]["start_cursor"], "next-page")
 
 
 if __name__ == "__main__":

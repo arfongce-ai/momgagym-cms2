@@ -115,27 +115,41 @@ def _post_json(url: str, token: str, body: dict) -> dict:
     return payload
 
 
-def find_target_page(token: str) -> tuple[str, str]:
+def find_target_page(token: str, output_root: Path, now: datetime | None = None) -> tuple[str, str]:
     """Earliest approved, unpublished Tistory-post row (same rule the daily Claude routine uses)."""
-    body = {
-        "filter": {"and": [
-            {"property": "채널", "select": {"equals": "티스토리"}},
-            {"property": "콘텐츠 유형", "select": {"equals": "티스토리 글"}},
-            {"property": "검수 상태", "select": {"equals": "승인"}},
-            {"property": "게시후링크", "url": {"is_empty": True}},
-        ]},
-        "sorts": [{"property": "발행예정일", "direction": "ascending"}],
-        "page_size": 1,
-    }
-    payload = _post_json(f"{NOTION_ORIGIN}/v1/data_sources/{CALENDAR_DATA_SOURCE}/query", token, body)
-    results = payload.get("results")
-    if not isinstance(results, list) or not results or not isinstance(results[0], dict):
-        raise JobError("NO_TARGET")
-    page_id = results[0].get("id")
-    if not isinstance(page_id, str) or not PAGE_ID_RE.fullmatch(page_id):
-        raise JobError("NOTION")
-    compact = page_id.replace("-", "").lower()
-    return page_id, f"T-{datetime.now(timezone.utc).astimezone().strftime('%Y%m%d')}-{compact[:8]}"
+    cursor = None
+    processor = load_processor()
+    while True:
+        body = {
+            "filter": {"and": [
+                {"property": "채널", "select": {"equals": "티스토리"}},
+                {"property": "콘텐츠 유형", "select": {"equals": "티스토리 글"}},
+                {"property": "검수 상태", "select": {"equals": "승인"}},
+                {"property": "게시후링크", "url": {"is_empty": True}},
+            ]},
+            "sorts": [{"property": "발행예정일", "direction": "ascending"}],
+            "page_size": 100,
+            **({"start_cursor": cursor} if cursor else {}),
+        }
+        payload = _post_json(f"{NOTION_ORIGIN}/v1/data_sources/{CALENDAR_DATA_SOURCE}/query", token, body)
+        if payload.get("request_status", {}).get("type") == "incomplete":
+            raise JobError("NOTION")
+        results = payload.get("results")
+        if not isinstance(results, list):
+            raise JobError("NOTION")
+        for result in results:
+            page_id = result.get("id") if isinstance(result, dict) else None
+            if not isinstance(page_id, str) or not PAGE_ID_RE.fullmatch(page_id):
+                raise JobError("NOTION")
+            if not has_processed_page(output_root, page_id, processor):
+                compact = page_id.replace("-", "").lower()
+                run_date = (now or datetime.now(timezone.utc)).astimezone().strftime('%Y%m%d')
+                return page_id, f"T-{run_date}-{compact[:8]}"
+        if not payload.get("has_more"):
+            raise JobError("NO_TARGET")
+        cursor = payload.get("next_cursor")
+        if not isinstance(cursor, str) or not cursor:
+            raise JobError("NOTION")
 
 
 def has_processed_page(output_root: Path, page_id: str, processor) -> bool:
@@ -245,7 +259,7 @@ def run(job_file: Path | None, downloads: Path, output_root: Path, font: Path, t
     job = read_job(job_file)
     page_id, article_id = job["notion_page_id"], job["article_id"]
     if page_id is None:
-        page_id, auto_id = find_target_page(token)
+        page_id, auto_id = find_target_page(token, output_root, now)
         article_id = article_id or auto_id
     elif article_id is None:
         article_id = f"T-{page_id.replace('-', '').lower()[:12]}"
