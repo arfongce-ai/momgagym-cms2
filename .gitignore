@@ -6,6 +6,9 @@ content-video/**/*.local.json
 content-video/review/
 content-video/state/
 content-video/config.local.json
+content-image/**/*.local.json
+content-image/jobs.local/
+content-image/state/
 .env
 .env.*
 !.env.example

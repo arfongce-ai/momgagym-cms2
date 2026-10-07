@@ -9,6 +9,25 @@
 
 ---
 
+## R15 · 매일 Gemini 이미지 로컬 최종화 · 2026-10-07 · ✅보완완료
+
+- 작성: Codex, 브랜치 `codex/daily-image-finalizer`
+- 대상: `scripts/content-image/finalize_images.py`, `scripts/content-image/register-finalizer-task.ps1`, `scripts/content-video/postprocess_images.py`, `tests/content-image/test_finalize_images.py`, `.gitignore`, `docs/VIDEO_AUTOMATION_MVP.md`
+- 확인할 것
+  1. Notion 요청이 읽기 전용 data source query POST 및 페이지 댓글 GET으로 제한되고 페이지네이션·오류·리다이렉트가 fail-closed인지, 토큰/경로가 출력되지 않는지
+  2. 로컬 작업표에 지정된 정확히 5개 파일만 최근 24시간 범위에서 복사하고 무관한 다운로드·원본은 건드리지 않는지
+  3. 잘못된 계획·문구/위치·4:3·텍스트 넘침·기존 `final` 재실행 경계가 안전한지
+  4. PowerShell 등록이 기본 미리보기이며 명시적 `-Register` 외에는 작업을 만들지 않는지
+  5. Python 테스트·전체 `npm test` 기준선·빌드 결과를 독립 재실행
+- Codex 검증: Python 더미 테스트 17/17(시험용 맑은 고딕), 전체 Vitest 3175/3186(기존 실패 11), `npm run build` 통과. 실제 Notion 호출·다운로드 폴더·작업 등록은 미실행.
+- Codex 수정은 검토자가 HANDOFF에 발견을 먼저 기록하고 사용자 지시에 따라 보완.
+- Claude 보완(2026-10-07): ① `--job` 없이 자동 실행 — 최근 24시간 `Gemini*` 이미지가 정확히 5개일 때만 진행 ② Notion 달력에서 승인·미게시 티스토리 행을 발행예정일 순으로 선택 ③ `NO_TARGET` 추가. data source query POST는 Notion의 read-content 전용 기능이며 API 속성 쓰기가 아님.
+- 남은 일: Claude 예약 작업의 Notion 댓글에 `IMAGE_PLAN_JSON` 줄(문구·positions JSON)을 넣어야 이 스크립트가 읽을 수 있음(현재 평문 댓글).
+- Codex 보완 커밋: `f18c73d` — query POST 리다이렉트 거부 및 응답 URL 전체 검사. `5bdfc6c` — 페이지 ID 기반 처리 기록과 이전 날짜 결과 폴더 확인, 재처리 시 `OUTPUT_EXISTS`. `2d9da65` — 처리한 글을 Notion 후보 목록에서 건너뛰고 다음 승인 글을 선택(페이지네이션 포함).
+- Notion 공식 문서는 data source query를 HTTP POST로 정의하며 `read content` capability를 요구한다. 그러므로 조회 POST 예외는 승인 가능하다. [Notion Query a data source](https://developers.notion.com/reference/query-a-data-source)
+- 최종 검증: Python 17/17(시험용 맑은 고딕), 전체 Vitest 3175/3186(기존 실패 11개), 빌드 통과. 실제 Notion 연결·스키마, Gowun Dodum 운영 글꼴, Downloads 및 예약 작업은 미검증.
+- 남은 연동: Claude 예약 댓글에 `IMAGE_PLAN_JSON` 및 `positions` JSON을 기록해야 이 스크립트가 문구를 읽는다. 현재 댓글이 평문이면 `PHRASE_PLAN`으로 fail-closed 중단.
+
 ## R1 · 매출관리 개요 — 선생님별 월 매출(입금 기준) · 2026-09-16 · ✅보완완료
 
 - 커밋: `85d87fa`, `3b49846`, `6141755` (08-26~27 `c2d9075`, `10641af`는 이 작업으로 대체됨)

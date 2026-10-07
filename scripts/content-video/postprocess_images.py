@@ -111,6 +111,10 @@ def read_positions(path: Path) -> list[str]:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except Exception as error:
         raise ImageJobError("PHRASE_PLAN") from error
+    return read_positions_from_payload(payload)
+
+
+def read_positions_from_payload(payload: dict) -> list[str]:
     positions = payload.get("positions") if isinstance(payload, dict) else None
     if positions is None:
         return ["bottom"] * 5
@@ -122,9 +126,13 @@ def read_positions(path: Path) -> list[str]:
 def read_phrases(path: Path) -> list[str]:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
-        phrases = payload["phrases"]
     except Exception as error:
         raise ImageJobError("PHRASE_PLAN") from error
+    return read_phrases_from_payload(payload)
+
+
+def read_phrases_from_payload(payload: dict) -> list[str]:
+    phrases = payload.get("phrases") if isinstance(payload, dict) else None
     if not isinstance(phrases, list) or len(phrases) != 5 or any(not isinstance(item, str) or not item.strip() for item in phrases):
         raise ImageJobError("PHRASE_COUNT")
     cleaned = [item.strip() for item in phrases]
