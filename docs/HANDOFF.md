@@ -55,7 +55,9 @@
 - 교차 검토: 독립 읽기 전용 리뷰에서 stale rerun 위험을 발견해 수정함. Claude 전용 연결은 이 세션에 제공되지 않음.
 - 테스트: `npm test -- --run` → 3175/3186 통과(기준선 3175 충족, 기존 알려진 11개 실패). 배포 workflow와 같은 JSON 회귀 검사 → 3175/3186, 통과. `session_share.test.js` 단독 14/14 통과(전체 테스트+빌드 동시 실행 때만 나타난 1개 시간초과). `npm run build` 성공(기존 Firebase import 및 큰 청크 경고). workflow YAML과 필수 guard 단계 파싱, `git diff --check` 통과.
 - 남은 위험: 저장소 밖 Cloudflare 수동 배포와 GitHub branch protection 설정은 대시보드 권한 없이 변경·강제할 수 없음. 로그인 후 CMS 실사용 기능 검증은 별도임.
-- 다음에 할 일: PR 병합 후 Production deploy와 운영 번들 smoke check 성공 확인.
+- 배포 확인: PR #6 병합 커밋 `0bb7231`에서 GitHub Actions Production run #412 성공. PR 출처 확인, 테스트 회귀 게이트, 빌드, 최신 main 사전·사후 확인을 통과했고 Wrangler 배포 주소 `https://162a7bac.momgagym-cms2.pages.dev`를 생성함. 운영 별칭 `https://momgagym-cms2.pages.dev`가 이번 빌드 번들 `/assets/index-CaRIug2c.js`를 제공함.
+- 현재 상태: 로컬 `main`을 `origin/main`의 `0bb7231`까지 fast-forward. 기존 `codex/video-input-guard-pr1`의 별도 문서 커밋은 보존했으며, 새 작업은 최신 `origin/main`에서 시작.
+- 다음에 할 일: CMS 내부 로그인 후 기능 검증은 별도 업무 변경을 배포할 때 수행. Claude 전용 연결은 이 세션에 제공되지 않아 독립 리뷰 결과를 기록함.
 
 ### 2026-10-06 · Codex · Cloudflare Production 배포 검증 강화
 - 한 일: PR4 배포는 성공했지만 기존 배포 workflow가 테스트 실패를 무조건 무시하는 점을 확인. 회귀 기준선 검사 통과 후에만 배포하도록 하고, 수동 실행도 main에서만 허용. Pages 배포 브랜치를 main으로 고정하고 Production URL이 현재 빌드의 JS 자산을 제공하는지 확인하도록 변경.
