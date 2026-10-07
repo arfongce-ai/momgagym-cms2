@@ -9,7 +9,7 @@
 
 | 도구 | 수정 중인 파일/영역 | 시작 일시 |
 |------|--------------------|-----------|
-| (없음) | | |
+| (없음) | — | — |
 
 ## 프로젝트 현황 (2026-09-22 기준, 착수 전 `git status`로 재확인)
 
@@ -45,14 +45,29 @@
 
 ## 작업 로그
 최신 항목이 위. 형식을 그대로 복사해서 쓴다.
+### 2026-10-07 10:00 · Codex · R15 이미지 자동화 보완분 교차 검토 및 보완
+- 한 일: 사용자가 전달한 Claude 변경을 검토하고 승인된 두 결함을 수정. R15 기능을 커밋한 뒤 발견별로 독립 보완 커밋 생성.
+- 발견 및 보완:
+  - 🟠 `scripts/content-image/finalize_images.py` `find_target_page`/`run` — 자동 article ID에 오늘 날짜와 Notion page ID 앞 8자리만 사용. 같은 Notion 행이 다음 날에도 미게시 조건이면 새 폴더 ID가 생겨 `OUTPUT_EXISTS`를 우회하고 같은 글을 재처리할 수 있음. 페이지 기준 지속 중복 방지 필요.
+  - 🟠 `scripts/content-image/finalize_images.py` `_post_json` — 요청 URL은 정확히 허용된 data source query로 제한하지만 `urlopen`의 리다이렉트를 허용하고 최종 URL은 호스트만 검사. 같은 호스트 내 리다이렉트가 다른 경로로 향하면 POST가 허용 목록 밖 경로까지 전달될 수 있으므로, 리다이렉트 거부 또는 최종 URL 전체 비교가 필요.
+  - 보완 커밋 `f18c73d`: Notion 조회 POST 전용 리다이렉트 차단 및 응답 URL 전체 일치 확인. `5bdfc6c`: 페이지 ID 해시 로컬 처리 기록과 이전 날짜 형식 결과 폴더 확인으로 같은 글 재처리 차단.
+  - 추가 발견(수정 전 기록): 🟠 `find_target_page` — Notion 조회가 `page_size: 1`로 가장 오래된 승인·미게시 행만 가져온다. 초안 저장 후에도 `게시후링크`가 비어 있으면 이 행을 매일 다시 골라 `OUTPUT_EXISTS`로 멈추고 뒤의 승인 글은 처리하지 못한다. 조회 결과에서 로컬 처리 완료 페이지를 건너뛰고 다음 미처리 행을 찾아야 함.
+  - 보완 커밋 `2d9da65`: 조회 페이지네이션을 지원하고 로컬에서 이미 처리한 행을 건너뛰어 다음 승인 글을 선택. 처리 완료 ID는 해시 기반 로컬 표식으로 유지.
+  - 🟡 Notion의 data source ID/속성명·타입은 현재 자격정보 없는 상태에서 검증하지 않음. `게시후링크` URL 속성 및 필터 이름 불일치 시 조회는 `NOTION` 오류로 중단될 수 있음.
+- POST 판단: Notion 공식 문서는 data source query를 POST로 정의하고 `read content` capability만 요구하므로 읽기 전용 예외로 허용. 코드에는 해당 query 외 POST/PATCH/PUT/DELETE가 없음.
+- 테스트: Python 새 테스트 17/17(Windows 맑은 고딕 시험 폰트; Gowun Dodum 실환경 검증은 아님). 전체 `npm test -- --run` 3175/3186(기존 11개 실패만; 추가로 관측된 `ai_menu_grouping` 일시 시간초과는 단독 20/20 및 전체 재실행에서 해소). `npm run build` 성공(기존 Firebase 동적/정적 import·대형 청크 경고). `git diff --check` 통과.
+- 실제 Notion/다운로드 폴더 접근은 하지 않음. 속성명·타입은 미확인.
+- 남은 일: Claude 예약 댓글에 `IMAGE_PLAN_JSON` 형식을 넣기 전에는 `PHRASE_PLAN`으로 중단함. 실제 Notion 속성/Integration, Gowun Dodum, 다운로드 및 예약 작업 실행은 사용자 PC에서 별도 검증 필요.
+- 커밋: `1550e76` R15 자동 타깃 선택, `f18c73d` POST 리다이렉트 차단, `5bdfc6c` 같은 글 재처리 차단, `2d9da65` 완료한 글을 건너뛰고 다음 행 선택. 문서 커밋 후 원격 브랜치로 푸시함.
+
 ### 2026-10-07 09:45 · Codex · 매일 Gemini 이미지 로컬 최종화
-- 한 일: Claude가 로컬 작업표로 지정한 최근 24시간 이내 다운로드 이미지 5개만 복사하고, 지정 Notion 페이지 댓글의 JSON 문구 계획을 읽어 기존 Pillow 후처리로 최종 PNG·SHA-256 목록을 만드는 스크립트 추가. Notion은 읽기 전용 GET만 사용. 오류는 코드만 출력하며 원본 다운로드는 유지.
+- 한 일: 로컬 모드에서 지정한 이미지 5개를 처리하고, 자동 모드에서는 Notion 캘린더의 승인된 티스토리 행 및 최근 Gemini 다운로드 5개를 선택하도록 구현. data source 조회는 읽기 전용 POST, 댓글은 GET. 오류 코드를 출력하고 원본 다운로드를 유지.
 - 변경 파일: `scripts/content-image/finalize_images.py`, `scripts/content-image/register-finalizer-task.ps1`, `tests/content-image/test_finalize_images.py`, `scripts/content-video/postprocess_images.py`(payload 검증 함수 추출), `.gitignore`, `docs/VIDEO_AUTOMATION_MVP.md`, `docs/REVIEW_QUEUE.md`, `docs/HANDOFF.md`.
 - 스케줄: 매일 07:30 PowerShell 등록 스크립트 작성. 기본은 미리보기이고 `-Register` 사용 전까지 등록하지 않음. 현재 태스크는 등록하지 않았음.
 - 테스트: 새 Python 더미 테스트 8/8, 기존 이미지 후처리 테스트 5/5(운영 Gowun Dodum 대신 시험용 맑은 고딕), PowerShell 문법 파싱·Python compile·`git diff --check` 통과. `npm test -- --run` 3175/3186(기존 알려진 11개 실패만). `npm run build` 성공(기존 Firebase import·청크 경고).
 - 미검증: 실제 Notion 토큰/댓글 조회, Gemini 다운로드 폴더 입력, 운영 글꼴 사용, Windows 작업 등록·실행, 실제 티스토리 삽입은 확인하지 않음. 08:47 이미지 생성과 07:30 처리 시각 때문에 첫 생성일 당일 삽입은 불가하고 다음 날 처리 흐름임.
-- 교차 검토: `docs/REVIEW_QUEUE.md`의 R10에 독립 검토 요청 기록. 이 세션에서 Claude 교차 검토는 수행하지 않음.
-- 다음에 할 일: Claude가 R10을 독립 검토한 뒤, 사용자 PC에서 필요한 로컬 경로·글꼴·읽기 토큰을 설정하고 등록 스크립트 미리보기 결과를 확인.
+- 교차 검토: `docs/REVIEW_QUEUE.md`의 R15에 독립 검토 요청 기록. 이 세션에서 Claude 교차 검토는 수행하지 않음.
+- 다음에 할 일: Claude가 R15를 독립 검토한 뒤, 사용자 PC에서 필요한 로컬 경로·글꼴·읽기 토큰을 설정하고 등록 스크립트 미리보기 결과를 확인.
 
 ### 2026-10-07 09:20 · Codex · Production 배포 경로 충돌 방지
 - 한 일: Cloudflare 화면의 `Production ec548ed`와 `Preview 6874b45`를 대조. `6874b45`는 `ec548ed`의 조상 커밋이므로 해당 변경은 Production에 포함됨. Preview는 작업 브랜치 검토 배포이고 Production은 병합된 `main` 배포임을 문서화.
