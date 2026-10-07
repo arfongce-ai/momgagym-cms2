@@ -115,6 +115,54 @@ class FinalizeImagesTests(unittest.TestCase):
             with self.assertRaisesRegex(finalizer.JobError, "OUTPUT_EXISTS"):
                 finalizer.run(self.job, self.downloads, self.output, FONT, "test-token-not-a-secret", self.now)
 
+    def _gemini_batch(self, count=5):
+        for name in self.names:
+            (self.downloads / name).unlink()
+        names = [f"Gemini_Generated_Image_{index}.png" for index in range(count)]
+        for index, name in enumerate(names):
+            Image.new("RGB", (1000, 1000), (60 + index, 110, 90)).save(self.downloads / name)
+            os.utime(self.downloads / name, (self.now.timestamp() - 60 + index, self.now.timestamp() - 60 + index))
+        return names
+
+    def test_auto_selects_exactly_five_recent_gemini_files(self):
+        names = self._gemini_batch(5)
+        self.assertEqual(sorted(finalizer.select_recent_gemini(self.downloads, self.now)), sorted(names))
+
+    def test_auto_rejects_six_or_four_gemini_files(self):
+        self._gemini_batch(6)
+        with self.assertRaisesRegex(finalizer.JobError, "IMG_COUNT"):
+            finalizer.select_recent_gemini(self.downloads, self.now)
+        (self.downloads / "Gemini_Generated_Image_5.png").unlink()
+        (self.downloads / "Gemini_Generated_Image_4.png").unlink()
+        with self.assertRaisesRegex(finalizer.JobError, "IMG_COUNT"):
+            finalizer.select_recent_gemini(self.downloads, self.now)
+
+    def test_auto_ignores_old_gemini_files(self):
+        names = self._gemini_batch(5)
+        old = self.downloads / "Gemini_Generated_Image_old.png"
+        Image.new("RGB", (100, 100)).save(old)
+        os.utime(old, (self.now.timestamp() - 90000, self.now.timestamp() - 90000))
+        self.assertEqual(len(finalizer.select_recent_gemini(self.downloads, self.now)), 5)
+
+    def test_full_automatic_run_without_job_file(self):
+        self._gemini_batch(5)
+        with patch.object(finalizer, "get_comments", return_value=COMMENTS), \
+             patch.object(finalizer, "find_target_page", return_value=(PAGE_ID, "T-20261008-12345678")):
+            result = finalizer.run(None, self.downloads, self.output, FONT, "test-token-not-a-secret", self.now)
+        self.assertEqual(result["count"], 5)
+        self.assertEqual(result["article_id"], "T-20261008-12345678")
+        self.assertTrue((self.output / "T-20261008-12345678" / "final" / "05.png").is_file())
+        self.assertTrue((self.downloads / "unrelated.png").is_file())
+
+    def test_post_is_limited_to_the_calendar_query(self):
+        with self.assertRaisesRegex(finalizer.JobError, "NOTION"):
+            finalizer._post_json("https://api.notion.com/v1/pages", "test-token-not-a-secret", {})
+
+    def test_no_approved_target_stops(self):
+        with patch.object(finalizer, "_post_json", return_value={"results": []}):
+            with self.assertRaisesRegex(finalizer.JobError, "NO_TARGET"):
+                finalizer.find_target_page("test-token-not-a-secret")
+
 
 if __name__ == "__main__":
     unittest.main()

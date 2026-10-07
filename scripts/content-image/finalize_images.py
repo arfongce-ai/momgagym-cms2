@@ -20,6 +20,8 @@ PAGE_ID_RE = re.compile(r"^[0-9a-f]{32}$|^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0
 ARTICLE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
 ALLOWED_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp"}
 PLAN_MARKER = "IMAGE_PLAN_JSON"
+CALENDAR_DATA_SOURCE = "df92dd1a-16db-4d27-b5fe-bf5c15090f90"
+GEMINI_NAME_RE = re.compile(r"^Gemini.*\.(png|jpe?g|webp)$", re.I)
 
 
 class JobError(Exception):
@@ -38,22 +40,95 @@ def load_processor():
     return module
 
 
-def read_job(path: Path) -> dict:
+def read_job(path: Path | None) -> dict:
+    """Job JSON is optional. Without it (or with source_files "auto"/missing) the batch is
+    discovered: the earliest approved Tistory row in Notion and exactly five recent Gemini downloads."""
+    if path is None:
+        return {"article_id": None, "notion_page_id": None, "source_files": "auto"}
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
     except Exception as error:
         raise JobError("JOB_FILE") from error
     if not isinstance(value, dict):
         raise JobError("JOB_FILE")
-    article_id, page_id, files = value.get("article_id"), value.get("notion_page_id"), value.get("source_files")
-    if not isinstance(article_id, str) or not ARTICLE_ID_RE.fullmatch(article_id) or not isinstance(page_id, str) or not PAGE_ID_RE.fullmatch(page_id):
+    article_id, page_id, files = value.get("article_id"), value.get("notion_page_id"), value.get("source_files", "auto")
+    if article_id is not None and (not isinstance(article_id, str) or not ARTICLE_ID_RE.fullmatch(article_id)):
         raise JobError("JOB_FILE")
+    if page_id is not None and (not isinstance(page_id, str) or not PAGE_ID_RE.fullmatch(page_id)):
+        raise JobError("JOB_FILE")
+    if files == "auto":
+        return {"article_id": article_id, "notion_page_id": page_id, "source_files": "auto"}
     if not isinstance(files, list) or len(files) != 5 or any(not isinstance(name, str) for name in files) or len(set(files)) != 5:
         raise JobError("IMG_COUNT")
     for name in files:
-        if not isinstance(name, str) or Path(name).name != name or Path(name).suffix.lower() not in ALLOWED_SUFFIXES:
+        if Path(name).name != name or Path(name).suffix.lower() not in ALLOWED_SUFFIXES:
             raise JobError("JOB_FILE")
     return {"article_id": article_id, "notion_page_id": page_id, "source_files": files}
+
+
+def select_recent_gemini(downloads: Path, now: datetime | None = None) -> list[str]:
+    """Exactly five Gemini image downloads from the last 24 hours; any other count fails closed
+    (a second Gemini run the same day, or a partial batch, must be sorted out by a person)."""
+    if not downloads.is_dir() or downloads.is_symlink():
+        raise JobError("DOWNLOADS")
+    now = now or datetime.now(timezone.utc)
+    names = []
+    for entry in downloads.iterdir():
+        if entry.is_symlink() or not entry.is_file() or not GEMINI_NAME_RE.fullmatch(entry.name):
+            continue
+        age = (now - datetime.fromtimestamp(entry.stat().st_mtime, timezone.utc)).total_seconds()
+        if -300 <= age <= 24 * 60 * 60:
+            names.append(entry.name)
+    if len(names) != 5:
+        raise JobError("IMG_COUNT")
+    return names
+
+
+def _post_json(url: str, token: str, body: dict) -> dict:
+    """Only the fixed calendar data-source query may use POST (read-only query)."""
+    if url != f"{NOTION_ORIGIN}/v1/data_sources/{CALENDAR_DATA_SOURCE}/query":
+        raise JobError("NOTION")
+    request = urllib.request.Request(url, data=json.dumps(body).encode("utf-8"), method="POST", headers={
+        "Authorization": f"Bearer {token}",
+        "Notion-Version": NOTION_VERSION,
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+    })
+    try:
+        with urllib.request.urlopen(request, timeout=20) as response:
+            if urllib.parse.urlsplit(response.geturl()).netloc != "api.notion.com":
+                raise JobError("NOTION")
+            payload = json.loads(response.read().decode("utf-8"))
+    except JobError:
+        raise
+    except Exception as error:
+        raise JobError("NOTION") from error
+    if not isinstance(payload, dict):
+        raise JobError("NOTION")
+    return payload
+
+
+def find_target_page(token: str) -> tuple[str, str]:
+    """Earliest approved, unpublished Tistory-post row (same rule the daily Claude routine uses)."""
+    body = {
+        "filter": {"and": [
+            {"property": "채널", "select": {"equals": "티스토리"}},
+            {"property": "콘텐츠 유형", "select": {"equals": "티스토리 글"}},
+            {"property": "검수 상태", "select": {"equals": "승인"}},
+            {"property": "게시후링크", "url": {"is_empty": True}},
+        ]},
+        "sorts": [{"property": "발행예정일", "direction": "ascending"}],
+        "page_size": 1,
+    }
+    payload = _post_json(f"{NOTION_ORIGIN}/v1/data_sources/{CALENDAR_DATA_SOURCE}/query", token, body)
+    results = payload.get("results")
+    if not isinstance(results, list) or not results or not isinstance(results[0], dict):
+        raise JobError("NO_TARGET")
+    page_id = results[0].get("id")
+    if not isinstance(page_id, str) or not PAGE_ID_RE.fullmatch(page_id):
+        raise JobError("NOTION")
+    compact = page_id.replace("-", "").lower()
+    return page_id, f"T-{datetime.now(timezone.utc).astimezone().strftime('%Y%m%d')}-{compact[:8]}"
 
 
 def _get_json(url: str, token: str) -> dict:
@@ -132,18 +207,23 @@ def validate_sources(downloads: Path, names: list[str], now: datetime | None = N
     return sorted(sources, key=lambda source: (source.stat().st_mtime_ns, source.name.casefold()))
 
 
-def run(job_file: Path, downloads: Path, output_root: Path, font: Path, token: str, now: datetime | None = None) -> dict:
+def run(job_file: Path | None, downloads: Path, output_root: Path, font: Path, token: str, now: datetime | None = None) -> dict:
     if not token or len(token.strip()) < 10:
         raise JobError("NOTION_CONFIG")
     job = read_job(job_file)
-    sources = validate_sources(downloads, job["source_files"], now)
-    plan = read_plan(get_comments(job["notion_page_id"], token))
+    page_id, article_id = job["notion_page_id"], job["article_id"]
+    if page_id is None:
+        page_id, auto_id = find_target_page(token)
+        article_id = article_id or auto_id
+    elif article_id is None:
+        article_id = f"T-{page_id.replace('-', '').lower()[:12]}"
+    names = select_recent_gemini(downloads, now) if job["source_files"] == "auto" else job["source_files"]
+    sources = validate_sources(downloads, names, now)
+    plan = read_plan(get_comments(page_id, token))
     processor = load_processor()
     if not font.is_file() or font.is_symlink():
         raise JobError("FONT_MISSING")
-    if processor.is_link_or_junction(output_root):
-        raise JobError("PATH_REJECTED")
-    article_root = output_root / job["article_id"]
+    article_root = output_root / article_id
     if processor.is_link_or_junction(article_root):
         raise JobError("PATH_REJECTED")
     if article_root.exists():
@@ -157,18 +237,20 @@ def run(job_file: Path, downloads: Path, output_root: Path, font: Path, token: s
         result = processor.process_images(article_root, phrase_file, font)
     finally:
         phrase_file.unlink(missing_ok=True)
+    result["article_id"] = article_id
     return result
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Finalize a declared batch of five local Gemini downloads.")
-    parser.add_argument("--job", required=True, type=Path, help="Local job JSON supplied for this article run.")
+    parser.add_argument("--job", type=Path, default=None, help="Optional job JSON. Omit for the daily automatic run.")
     parser.add_argument("--downloads", required=True, type=Path)
     parser.add_argument("--output-root", required=True, type=Path)
     parser.add_argument("--font", type=Path, default=Path(os.environ.get("GOWUN_DODUM_FONT", "")))
     args = parser.parse_args()
     try:
         result = run(args.job, args.downloads, args.output_root, args.font, os.environ.get("NOTION_CONTENT_READ_TOKEN", ""))
+        print(f"ARTICLE:{result['article_id']}")
         print(f"IMAGES:{result['count']}")
         print("SHA256:" + ",".join(result["hashes"]))
         return 0

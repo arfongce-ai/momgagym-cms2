@@ -17,14 +17,13 @@ if (-not $python) { throw 'PYTHON_MISSING' }
 $scriptPath = Join-Path $RepoRoot 'scripts\content-image\finalize_images.py'
 if (-not (Test-Path -LiteralPath $scriptPath -PathType Leaf)) { throw 'SCRIPT_MISSING' }
 
-# Claude writes this ignored local job file after downloading the five images.
-$jobPath = Join-Path $RepoRoot 'content-image\jobs.local\today.json'
-$arguments = '"{0}" --job "{1}" --downloads "{2}" --output-root "{3}" --font "{4}"' -f $scriptPath, $jobPath, $Downloads, $ImageRoot, $FontPath
+# Auto mode: no job file. The script picks exactly five recent Gemini* downloads and the approved Tistory row in Notion.
+$arguments = '"{0}" --downloads "{1}" --output-root "{2}" --font "{3}"' -f $scriptPath, $Downloads, $ImageRoot, $FontPath
 $action = New-ScheduledTaskAction -Execute $python.Source -Argument $arguments -WorkingDirectory $RepoRoot
 $trigger = New-ScheduledTaskTrigger -Daily -At '7:30AM'
 $principal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType Interactive -RunLevel Limited
 $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Minutes 15) -MultipleInstances IgnoreNew
-$task = New-ScheduledTask -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Description 'Finalize the declared five-image local blog batch. Does not publish content.'
+$task = New-ScheduledTask -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Description 'Finalize the five most recent Gemini images for the approved Tistory post. Does not publish content.'
 
 if ($Register) {
     Register-ScheduledTask -TaskName $TaskName -InputObject $task -Force | Out-Null
