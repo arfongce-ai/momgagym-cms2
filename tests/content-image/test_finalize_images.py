@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 try:
     from PIL import Image
@@ -157,6 +157,18 @@ class FinalizeImagesTests(unittest.TestCase):
     def test_post_is_limited_to_the_calendar_query(self):
         with self.assertRaisesRegex(finalizer.JobError, "NOTION"):
             finalizer._post_json("https://api.notion.com/v1/pages", "test-token-not-a-secret", {})
+
+    def test_post_redirect_is_not_followed_or_accepted(self):
+        handler = finalizer._NoRedirectHandler()
+        request = finalizer.urllib.request.Request("https://api.notion.com/v1/data_sources/id/query", data=b"{}", method="POST")
+        self.assertIsNone(handler.redirect_request(request, None, 307, "redirect", {}, "https://api.notion.com/v1/pages"))
+        response = MagicMock()
+        response.__enter__.return_value = response
+        response.geturl.return_value = "https://api.notion.com/v1/pages"
+        with patch.object(finalizer.urllib.request, "build_opener") as build_opener:
+            build_opener.return_value.open.return_value = response
+            with self.assertRaisesRegex(finalizer.JobError, "NOTION"):
+                finalizer._post_json(f"{finalizer.NOTION_ORIGIN}/v1/data_sources/{finalizer.CALENDAR_DATA_SOURCE}/query", "test-token-not-a-secret", {})
 
     def test_no_approved_target_stops(self):
         with patch.object(finalizer, "_post_json", return_value={"results": []}):

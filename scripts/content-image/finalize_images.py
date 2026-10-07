@@ -84,6 +84,11 @@ def select_recent_gemini(downloads: Path, now: datetime | None = None) -> list[s
     return names
 
 
+class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, request, file_pointer, code, message, headers, new_url):
+        return None
+
+
 def _post_json(url: str, token: str, body: dict) -> dict:
     """Only the fixed calendar data-source query may use POST (read-only query)."""
     if url != f"{NOTION_ORIGIN}/v1/data_sources/{CALENDAR_DATA_SOURCE}/query":
@@ -95,8 +100,9 @@ def _post_json(url: str, token: str, body: dict) -> dict:
         "Content-Type": "application/json",
     })
     try:
-        with urllib.request.urlopen(request, timeout=20) as response:
-            if urllib.parse.urlsplit(response.geturl()).netloc != "api.notion.com":
+        opener = urllib.request.build_opener(_NoRedirectHandler)
+        with opener.open(request, timeout=20) as response:
+            if response.geturl() != url:
                 raise JobError("NOTION")
             payload = json.loads(response.read().decode("utf-8"))
     except JobError:
