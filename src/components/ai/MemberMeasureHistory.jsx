@@ -38,8 +38,37 @@ function ChangeBadge({ diff, unit, field }) {
   );
 }
 
+// ── AI측정 허브 세션 카드 (measurements 없는 새 저장 형식) ──
+// [버그 수정 2026-10] AiMeasureHub 가 저장하는 세션은 { menu, menuTitle, data } 형식이라
+// measurements 가 없다. 아래 체성분 카드가 m[key] 를 읽다가 TypeError 로 탭 전체가
+// 빈 화면이 되던 문제 → 이 형식은 간단한 카드로 따로 그린다. (체성분 카드는 그대로)
+function MenuSessionCard({ session, onDelete, isAdmin }) {
+  const title = session.menuTitle || session.menu || 'AI 측정';
+  return (
+    <div className="bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-4 space-y-1">
+      <div className="flex items-center justify-between">
+        <div>
+          <span className="font-semibold text-sm">{session.recordedAt || '-'}</span>
+          <span className="ml-2 text-xs font-bold text-slate-700 dark:text-slate-200">{title}</span>
+        </div>
+        {isAdmin && (
+          <button onClick={() => onDelete(session.id)}
+            className="text-slate-600 hover:text-red-700 dark:hover:text-red-400 text-sm transition-colors">
+            🗑
+          </button>
+        )}
+      </div>
+      {session.memo && <p className="text-xs text-slate-500 italic">📝 {session.memo}</p>}
+      <p className="text-[10px] text-slate-500">상세 결과는 리포트 화면에서 확인할 수 있습니다.</p>
+    </div>
+  );
+}
+
 // ── 세션 카드 ─────────────────────────────────────────────
 function SessionCard({ session, prevSession, onDelete, isAdmin }) {
+  if (!session?.measurements) {
+    return <MenuSessionCard session={session || {}} onDelete={onDelete} isAdmin={isAdmin} />;
+  }
   const { measurements: m, analysisResult: r, recordedAt, memo } = session;
   const prevM  = prevSession?.measurements;
   const changes = prevM ? calcChanges(m, prevM) : {};
