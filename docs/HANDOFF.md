@@ -45,6 +45,15 @@
 
 ## 작업 로그
 최신 항목이 위. 형식을 그대로 복사해서 쓴다.
+### 2026-10-08 · Codex · 로컬 회원 영상 후보·이미지·숏폼 도구
+- 한 일: 회원 수업 원본을 외부로 보내지 않는 로컬 전용 도구 추가. 번호가 붙은 강사 폴더만 탐색하고 2025-01-01 이후 MP4/MOV를 3초 간격 샘플링하도록 구현. OpenCV Haar 정면 얼굴 임계치, 번호만 보이는 로컬 HTML 컨택트 시트, 선택 프레임 5장의 1200×1200 후처리/해시, 선택 구간 3~4개·15~20초의 무음 1080×1920 렌더/`publishAllowed:false` 메타데이터를 추가.
+- 변경 파일: `scripts/content-media/media_common.py`, `extract_candidates.py`, `build_post_images.py`, `build_short_video.py`, `tests/content-media/test_local_member_media.py`, `docs/VIDEO_AUTOMATION_MVP.md`, `docs/REVIEW_QUEUE.md`.
+- 검증: 더미 소재 Python 단위 테스트 6/6, compileall, `git diff --check` 통과. 전체 Vitest 3170/3186(16 실패): 기존 알려진 11개 외 5개가 병렬 실행 시간 초과. 해당 4개 파일 단독 실행은 171/171 통과. `npm run build` 성공(기존 Firebase import 및 500KB 초과 청크 경고). 실제 회원 영상·프레임은 열지 않음.
+- 미확인: 이 PC 실행 환경에서 OpenCV·FFmpeg/ffprobe·Gowun Dodum을 찾지 못함. 따라서 실제 후보 추출·컨택트 시트·최종 이미지·영상 파일은 만들지 못함. Haar는 큰 정면 얼굴 일부만 제외하므로 최종 검수는 사람이 해야 함.
+- 보안: 성공 출력은 생성 수/길이만 표시하며 오류는 허용 코드만 출력. 매니페스트·해시에는 입력 경로·원본 이름 대신 해시 ID만 기록. 네트워크 전송·Notion 쓰기·업로드·공개 게시 없음.
+- 다음에 할 일: `docs/REVIEW_QUEUE.md` R16 독립 검토, 사용자 PC에서 로컬 도구·글꼴 준비 후 후보 컨택트 시트를 생성하고 대표님이 선택.
+- 커밋: 미생성. 푸시하지 않음.
+
 ### 2026-10-07 10:00 · Codex · R15 이미지 자동화 보완분 교차 검토 및 보완
 - 한 일: 사용자가 전달한 Claude 변경을 검토하고 승인된 두 결함을 수정. R15 기능을 커밋한 뒤 발견별로 독립 보완 커밋 생성.
 - 발견 및 보완:
