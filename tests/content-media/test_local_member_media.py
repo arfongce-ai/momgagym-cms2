@@ -11,6 +11,8 @@ SCRIPT_DIR = Path(__file__).resolve().parents[2] / "scripts" / "content-media"
 sys.path.insert(0, str(SCRIPT_DIR))
 
 from build_post_images import build
+from build_article_media import _video_segments
+from auto_select_frames import _angle
 from build_short_video import render, validate_segments
 from extract_candidates import extract, has_large_frontal_face
 from media_common import MediaError, build_video_map
@@ -68,12 +70,15 @@ class FakeCV2:
     def cvtColor(self, frame, _code):
         return frame
 
-    def imwrite(self, path, _frame, _params):
-        Path(path).write_bytes(b"dummy-frame")
-        return True
+    def imencode(self, _extension, _frame, _params):
+        return True, SimpleNamespace(tobytes=lambda: b"dummy-frame")
 
 
 class LocalMemberMediaTests(unittest.TestCase):
+    def test_pose_angle_is_calculated_without_exposing_landmarks(self):
+        self.assertAlmostEqual(_angle((1, 0), (0, 0), (0, 1)), 90)
+        self.assertIsNone(_angle((0, 0), (0, 0), (1, 1)))
+
     def test_large_front_face_threshold(self):
         self.assertTrue(has_large_frontal_face([(2, 3, 20, 20)], 100, 100))
         self.assertFalse(has_large_frontal_face([(2, 3, 10, 10)], 100, 100))
@@ -162,6 +167,17 @@ class LocalMemberMediaTests(unittest.TestCase):
         short = {"segments": [{"clip_id": f"v_{i:08x}", "start_sec": 0, "end_sec": 3} for i in range(4)]}
         with self.assertRaises(MediaError):
             validate_segments(short)
+
+    def test_auto_video_segments_are_four_distinct_local_clips_and_sixteen_seconds(self):
+        details = [
+            {"clip_id": f"v_{index:08x}", "timestamp_ms": 10_000 + index * 1000,
+             "source_duration_ms": 30_000}
+            for index in range(5)
+        ]
+        segments = _video_segments(details)
+        self.assertEqual(len(segments), 4)
+        self.assertEqual(len({item["clip_id"] for item in segments}), 4)
+        self.assertEqual(sum(item["end_sec"] - item["start_sec"] for item in segments), 16)
 
     def test_video_dry_run_never_invokes_encoder(self):
         with tempfile.TemporaryDirectory() as temp:

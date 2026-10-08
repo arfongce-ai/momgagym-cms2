@@ -68,9 +68,9 @@ python scripts/content-video/postprocess_images.py --input "$ImageJobRoot" --phr
 ## 회원 수업 영상에서 이미지·숏폼 만들기 (PC 로컬 전용)
 
 - `scripts/content-media/` 도구는 사람 영상·프레임을 로컬 PC에서만 읽고 출력한다. 영상 API, 클라우드, 외부 AI, 저장소와 Notion에 파일이나 프레임을 보내지 않는다. 원본 영상은 읽기만 하며 이동·수정·삭제하지 않는다. 로그는 오류 코드 또는 생성 수만 출력한다.
-- `extract_candidates.py`는 지정한 미디어 루트 바로 아래 `1.`~`11.` 번호 폴더만 재귀 탐색하고, `교육&공부`는 `--include-education`을 명시한 경우에만 포함한다. MP4/MOV 중 수정 시각이 2025-01-01 UTC 이후인 파일만 후보로 삼는다. `홍보`, `영수증`, `운동시설이용확인서`, `종료 회원 영상` 경로는 제외한다. 기본 3초 간격으로 프레임을 샘플링한다.
-- OpenCV Haar 정면 얼굴 감지 상자가 프레임 높이의 18% 이상이거나 프레임 면적의 4.5% 이상이면 해당 프레임을 제외한다. 이 기준은 정면 얼굴만 일부 걸러내며 옆얼굴·가림·제3자를 판별하지 못한다. `contact_sheet.html`은 로컬에서만 열고, 번호를 확인한 뒤 사람이 다섯 장을 선택해야 한다.
-- 후보 파일명은 해시 기반 클립 ID와 시각만 포함한다. `candidates.json`에도 번호·가명 ID·상대 이미지 파일명·시간만 기록하며 원본 경로·파일명·강사 폴더명은 기록하지 않는다. 선택 파일 예시:
+- `extract_candidates.py`는 지정한 미디어 루트 바로 아래 `1.`~`11.` 번호 폴더만 재귀 탐색하고, `교육&공부`는 `--include-education`을 명시한 경우에만 포함한다. MP4/MOV 중 수정 시각이 2025-01-01 UTC 이후인 파일만 후보로 삼는다. `홍보`, `영수증`, `운동시설이용확인서`, `종료 회원 영상` 경로는 제외한다. 기본 3초 간격으로 프레임을 샘플링하되 처리량 제한을 위해 최신 영상 100개에서 영상당 최대 12프레임을 저장한다. 긴 영상은 전체 길이에 걸쳐 간격을 늘려 샘플링한다.
+- OpenCV Haar 정면 얼굴 감지 상자가 프레임 높이의 18% 이상이거나 프레임 면적의 4.5% 이상이면 해당 프레임을 제외한다. HOG와 OpenCV DNN 자세 추정 모델의 관절 가시성·무릎 굽힘·측면 겹침·프레임 변화를 조합해 5개 슬롯을 자동 선택한다. 원본 파일 경로·이름의 제한된 주제 단어 힌트는 메모리에서만 검사하고, 매니페스트에는 불리언 결과만 남긴다. 측정기구 자체를 확정 탐지하지는 않으므로 얼굴·장면·제3자 노출은 사람이 최종 검수한다.
+- 후보 파일명은 해시 기반 클립 ID와 시각만 포함한다. `candidates.json`에는 번호·가명 ID·상대 이미지 파일명·시간·주제 힌트 불리언만 기록하며 원본 경로·파일명·강사 폴더명은 기록하지 않는다. 자동 선택 결과는 로컬 `auto-selection.json`에 후보 ID·주제·점수만 기록한다.
 
 ```json
 {"slots":{"01":12,"02":28,"03":41,"04":55,"05":73}}
@@ -89,9 +89,9 @@ python scripts/content-media/build_post_images.py --candidate-dir $CandidateRun 
 ```
 
 - 이미지 명령은 `selection.json` 번호와 지정 문구를 사용해 1200×1200 중앙 크롭 결과를 `T-YYYYMMDD-<페이지ID 앞 8자리>/final/01.png`~`05.png`로 만든다. 문구 위치 기본값은 `top, top, bottom, bottom, center`; 선택 로고는 작은 크기로 모서리에 합성한다. 기존 결과는 덮어쓰지 않는다. SHA-256 색인에는 결과 파일명·해시·크기만 기록한다.
-- 숏폼은 `video-selection.json`에 3~4개 구간의 `clip_id`, `start_sec`, `end_sec`를 적고 총 길이 15~20초가 되게 선택한다. 먼저 `--dry-run`으로 길이·대상만 확인한다. 실제 실행은 FFmpeg와 ffprobe를 사용해 1080×1920 세로 영상으로 만들고, 선택한 원본의 음성은 넣지 않는다. 자막은 위 문구 5개를 순서대로 표시하며 별도 엔딩 카드 없이 마지막 문구를 영상 위에 표시한다. `.review.json`은 항상 `publishAllowed:false`, `review_required:true`다. 얼굴·구간·자막·제3자 노출은 사람이 확인한다.
+- `build_article_media.py`가 추출 → 자동 선택 → 이미지 5장 → 15~20초 검수용 세로 영상 렌더를 한 번에 실행한다. 영상은 FFmpeg/ffprobe로 만들고 원본 음성은 넣지 않는다. `.review.json`은 항상 `publishAllowed:false`, `review_required:true`다. 얼굴·장면·문구·제3자 노출은 사람이 게시 전에 확인한다.
 - `video-selection.json` 예시(가명 ID만 기입): `{"segments":[{"clip_id":"v_ab12cd34","start_sec":2,"end_sec":7},{"clip_id":"v_1a2b3c4d","start_sec":4,"end_sec":9},{"clip_id":"v_9a8b7c6d","start_sec":1,"end_sec":6}]}`. 실행 예시는 `python scripts/content-media/build_short_video.py --media-root $env:MOMGAGYM_VIDEO_ROOT --output-dir $env:MOMGAGYM_REVIEW_ROOT --selection $VideoSelection --article-id T-20261008-3f21b5ca --font $env:GOWUN_DODUM_FONT --dry-run`; 길이 확인 후 실제로 렌더할 때 `--dry-run`을 제거한다.
-- 준비물은 Python, Pillow, OpenCV, FFmpeg/ffprobe, Gowun Dodum 글꼴이다. 현재 OpenCV·FFmpeg/ffprobe·Gowun Dodum의 설치 및 실제 영상 렌더 상태는 별도 확인이 필요하다. 코드는 도구가 없으면 코드만 출력하고 멈춘다.
+- 준비물은 Python, Pillow, OpenCV, FFmpeg/ffprobe, Gowun Dodum 글꼴, 로컬 OpenCV Zoo MP Pose/Person Detection 모델 파일이다. 설치 안내는 `requirements-content-media.txt`와 `scripts/content-media/README.md`를 참고한다. 생성물은 지정된 로컬 검수 폴더에만 둔다.
 - 테스트: `python -m unittest discover -s tests/content-media` (합성 더미 프레임·영상만 사용).
 
 ## 새 AI 서비스 추가
