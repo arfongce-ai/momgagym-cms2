@@ -9,6 +9,21 @@
 
 ---
 
+## R16 · 회원 수업 영상 로컬 주제별 이미지·숏폼 자동 제작 · 2026-10-08 · ⏳대기
+
+- 작성: Codex, 브랜치 `codex/local-member-media-assets`
+- 대상: `scripts/content-media/`, `requirements-content-media.txt`, `tests/content-media/`, `docs/VIDEO_AUTOMATION_MVP.md`
+- 확인할 것
+  1. 번호 폴더만 탐색, 날짜·제외 폴더 규칙, 심볼릭 링크/정션 거부, 원본 읽기 전용인지
+  2. 로그·컨택트 시트·매니페스트·해시 파일에 회원 폴더명이나 원본 경로가 없는지
+  3. 얼굴 임계치와 OpenCV DNN 자세 추정 점수로 주제별 5개를 자동 선택하는지, 1200 정사각 이미지·해시 및 덮어쓰기 방지
+  4. 영상 구간 수·15~20초·1080×1920·음성 제외·`publishAllowed:false`
+  5. 더미 테스트, 전체 npm 기준선, 빌드
+- Codex 실행: 사용자가 로컬 영상 사용·도구 설치·자동 장면 선택을 승인. OpenCV 4.13, Gowun Dodum, OpenCV Zoo MP Pose/Person 모델을 로컬 준비. 승인된 번호 폴더에서 최근 영상 최대 100개·영상당 12시점을 분석해 관절 자세 점수 기반으로 서로 다른 클립 5개를 자동 선택. 최종 이미지 5장(1200×1200, 해시 검증)과 무음 H.264 영상 1개(1080×1920, 16초, `publishAllowed:false`)를 로컬에 생성. 원본은 읽기만 함. 파일명·회원명·프레임은 저장소/클라우드/Notion/Tistory로 보내지 않음.
+- 테스트: Python 더미 8/8, compileall, `git diff --check` 통과. Vitest 병렬 3171/3186(기존 11개 실패+시간초과 4개), 단일 worker 전체 3173/3186(기존 11개 실패+시간초과 2개); 느린 테스트 2개 파일 단독 실행 34/34. `npm run build` 성공(기존 Firebase 동적/정적 import 및 큰 청크 경고).
+- 남은 위험: ROM 측정기구 자체를 자동 탐지하지는 않고 측면 관절 자세를 대리 기준으로 선택. Haar는 큰 정면 얼굴만 일부 제외하므로 게시 전 사람/제3자/음성 검수 필수. 티스토리 삽입·Notion 기록·게시·예약 자동화는 이번 실행에서 하지 않음.
+- 다음: Claude 독립 교차 검토. 로컬 결과물은 브라우저에 업로드하지 않고 사람 검수 후 티스토리 삽입 단계 진행.
+
 ## R15 · 매일 Gemini 이미지 로컬 최종화 · 2026-10-07 · ✅보완완료
 
 - 작성: Codex, 브랜치 `codex/daily-image-finalizer`

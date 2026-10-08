@@ -45,6 +45,25 @@
 
 ## 작업 로그
 최신 항목이 위. 형식을 그대로 복사해서 쓴다.
+### 2026-10-08 · Codex · 승인 회원 영상에서 주제별 이미지·숏폼 로컬 제작
+- 한 일: 사용자 승인에 따라 무료 로컬 도구를 준비하고, 승인된 회원 수업 영상의 최근 후보를 읽기 전용으로 분석. OpenCV 4.13.0.92, Gowun Dodum, OpenCV Zoo MP Pose/Person DNN 모델 사용. HOG·자세 랜드마크·무릎 굽힘·측면 겹침·프레임 변화로 서로 다른 클립 5개를 주제별 자동 선택.
+- 결과: 이미지 5장(각 1200×1200)과 SHA-256 색인 검증. H.264 무음 영상 1개(1080×1920, 16초) 생성, 검수 JSON `publishAllowed:false`. 기존 휴리스틱 초안은 로컬 백업으로 보존하고 자세 기반 결과를 기본 결과로 이동. 컨택트 시트와 선택 기록은 로컬 후보 폴더에 저장.
+- 보안: 원본 영상은 읽기만 함. 회원 영상/프레임은 외부 AI·클라우드·저장소·Notion으로 보내지 않음. 이름/경로는 출력·로그·공개 문서에 남기지 않음. 티스토리 본문 삽입·Notion 기록·게시·예약 등록은 하지 않음.
+- 변경 파일: `scripts/content-media/extract_candidates.py`, `auto_select_frames.py`, `build_article_media.py`, `README.md`, `requirements-content-media.txt`, `tests/content-media/test_local_member_media.py`, `docs/VIDEO_AUTOMATION_MVP.md`, `docs/REVIEW_QUEUE.md`.
+- 검증: Python 더미 테스트 8/8, `compileall`, `git diff --check` 통과. 최종 산출물 개수·크기·해시·영상 코덱/해상도/길이·무음·게시 차단 확인. 전체 Vitest 병렬 3171/3186(기존 11개 실패 + 시간 초과 4개); 단일 worker 전체 3173/3186(기존 11개 실패 + 시간 초과 2개); 느린 두 파일 단독 재실행 34/34. `npm run build` 성공(기존 Firebase import·큰 청크 경고).
+- 남은 위험: 자세 모델은 ROM 측정기구를 식별하지 않아 측면 관절 자세를 대리 기준으로 선택. 얼굴 자동 제외는 큰 정면 얼굴만 일부 걸러내므로 사람/제3자 노출 최종 검수 필요. 전체 테스트는 기준선 3175에 2개 못 미쳤지만 해당 두 시간 초과 파일 단독 재실행은 통과.
+- 다음에 할 일: R16 독립 교차 검토. 사람 검수 후 티스토리 삽입과 Notion 기록은 별도 실행.
+- 커밋: `63b82ed` (코드·문서 작업).
+
+### 2026-10-08 · Codex · 로컬 회원 영상 후보·이미지·숏폼 도구
+- 한 일: 회원 수업 원본을 외부로 보내지 않는 로컬 전용 도구 추가. 번호가 붙은 강사 폴더만 탐색하고 2025-01-01 이후 MP4/MOV를 3초 간격 샘플링하도록 구현. OpenCV Haar 정면 얼굴 임계치, 번호만 보이는 로컬 HTML 컨택트 시트, 선택 프레임 5장의 1200×1200 후처리/해시, 선택 구간 3~4개·15~20초의 무음 1080×1920 렌더/`publishAllowed:false` 메타데이터를 추가.
+- 변경 파일: `scripts/content-media/media_common.py`, `extract_candidates.py`, `build_post_images.py`, `build_short_video.py`, `tests/content-media/test_local_member_media.py`, `docs/VIDEO_AUTOMATION_MVP.md`, `docs/REVIEW_QUEUE.md`.
+- 검증: 더미 소재 Python 단위 테스트 6/6, compileall, `git diff --check` 통과. 전체 Vitest 3170/3186(16 실패): 기존 알려진 11개 외 5개가 병렬 실행 시간 초과. 해당 4개 파일 단독 실행은 171/171 통과. `npm run build` 성공(기존 Firebase import 및 500KB 초과 청크 경고). 실제 회원 영상·프레임은 열지 않음.
+- 미확인: 이 PC 실행 환경에서 OpenCV·FFmpeg/ffprobe·Gowun Dodum을 찾지 못함. 따라서 실제 후보 추출·컨택트 시트·최종 이미지·영상 파일은 만들지 못함. Haar는 큰 정면 얼굴 일부만 제외하므로 최종 검수는 사람이 해야 함.
+- 보안: 성공 출력은 생성 수/길이만 표시하며 오류는 허용 코드만 출력. 매니페스트·해시에는 입력 경로·원본 이름 대신 해시 ID만 기록. 네트워크 전송·Notion 쓰기·업로드·공개 게시 없음.
+- 다음에 할 일: `docs/REVIEW_QUEUE.md` R16 독립 검토, 사용자 PC에서 로컬 도구·글꼴 준비 후 후보 컨택트 시트를 생성하고 대표님이 선택.
+- 커밋: 미생성. 푸시하지 않음.
+
 ### 2026-10-07 10:00 · Codex · R15 이미지 자동화 보완분 교차 검토 및 보완
 - 한 일: 사용자가 전달한 Claude 변경을 검토하고 승인된 두 결함을 수정. R15 기능을 커밋한 뒤 발견별로 독립 보완 커밋 생성.
 - 발견 및 보완:
