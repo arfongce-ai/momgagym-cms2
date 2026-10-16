@@ -1,6 +1,7 @@
 // components/common/MemberPicker.jsx
 // 검색 가능한 회원 선택기. 이름/초성으로 즉시 필터링한다.
 import { useState, useMemo, useRef, useEffect } from 'react';
+import { sortExpiredLast, isMemberInactive } from '../../utils/memberList';
 
 function getChosung(str) {
   const cs = ['ㄱ','ㄲ','ㄴ','ㄷ','ㄸ','ㄹ','ㅁ','ㅂ','ㅃ','ㅅ','ㅆ','ㅇ','ㅈ','ㅉ','ㅊ','ㅋ','ㅌ','ㅍ','ㅎ'];
@@ -10,7 +11,9 @@ function getChosung(str) {
   }).join('');
 }
 
-export default function MemberPicker({ members, value, onChange, placeholder = '이름 / 초성 검색', allowNone = true, noneLabel = '선택 안 함' }) {
+// autoFocusSearch: 목록을 열 때 검색창에 바로 커서(=모바일 키보드)를 둘지. 기본 true(기존 동작 유지).
+// AI 측정 화면은 목록을 먼저 훑어보는 용도라 false로 넘겨 키보드가 자동으로 뜨지 않게 한다.
+export default function MemberPicker({ members, value, onChange, placeholder = '이름 / 초성 검색', allowNone = true, noneLabel = '선택 안 함', autoFocusSearch = true }) {
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
   const boxRef = useRef(null);
@@ -24,17 +27,20 @@ export default function MemberPicker({ members, value, onChange, placeholder = '
     return () => document.removeEventListener('mousedown', h);
   }, []);
 
+  // [세션 마감 하단 2026-10-16] 세션 마감·만료 회원은 목록 아래로 따로 모은다(가나다 순 유지).
+  const ordered = useMemo(() => sortExpiredLast(members), [members]);
+
   const filtered = useMemo(() => {
     const q = query.trim();
-    if (!q) return members;
+    if (!q) return ordered;
     const qU = q.toUpperCase();
-    return members.filter(m => {
+    return ordered.filter(m => {
       const name = m.name || '';
       const cs = getChosung(name);
       const tail = (m.phone || '').replace(/-/g, '').slice(-4);
       return name.includes(q) || cs.includes(qU) || tail.includes(q.replace(/-/g, ''));
     });
-  }, [members, query]);
+  }, [ordered, query]);
 
   const pick = (m) => {
     onChange(m ? m.id : '');
@@ -57,7 +63,7 @@ export default function MemberPicker({ members, value, onChange, placeholder = '
         <div className="absolute z-30 mt-1 w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl shadow-xl overflow-hidden">
           {/* 검색창 */}
           <div className="p-2 border-b border-slate-200 dark:border-slate-800">
-            <input autoFocus value={query} onChange={e => setQuery(e.target.value)}
+            <input autoFocus={autoFocusSearch} value={query} onChange={e => setQuery(e.target.value)}
               placeholder={placeholder}
               className="w-full bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-amber-500" />
           </div>
@@ -72,14 +78,25 @@ export default function MemberPicker({ members, value, onChange, placeholder = '
             {filtered.length === 0 ? (
               <p className="px-3 py-4 text-center text-xs text-slate-600">검색 결과가 없습니다</p>
             ) : (
-              filtered.map(m => (
-                <button key={m.id} type="button" onClick={() => pick(m)}
-                  className={`w-full text-left px-3 py-2 text-sm transition-colors hover:bg-slate-100 dark:hover:bg-slate-800
-                    ${m.id === value ? 'bg-amber-500/10 text-amber-700 dark:text-amber-400' : 'text-slate-700 dark:text-slate-200'}`}>
-                  <span className="font-semibold">{m.name}</span>
-                  {m.phone && <span className="text-slate-500 text-xs ml-2">{m.phone.slice(-4)}</span>}
-                </button>
-              ))
+              filtered.map((m, i) => {
+                const inactive = isMemberInactive(m);
+                const firstInactive = inactive && (i === 0 || !isMemberInactive(filtered[i - 1]));
+                return (
+                  <div key={m.id}>
+                    {firstInactive && (
+                      <p className="px-3 py-1 text-[11px] font-semibold text-slate-500 bg-slate-50 dark:bg-slate-800/60 border-y border-slate-200 dark:border-slate-800">
+                        세션 마감 · 만료
+                      </p>
+                    )}
+                    <button type="button" onClick={() => pick(m)}
+                      className={`w-full text-left px-3 py-2 text-sm transition-colors hover:bg-slate-100 dark:hover:bg-slate-800
+                        ${m.id === value ? 'bg-amber-500/10 text-amber-700 dark:text-amber-400' : inactive ? 'text-slate-500 dark:text-slate-400' : 'text-slate-700 dark:text-slate-200'}`}>
+                      <span className="font-semibold">{m.name}</span>
+                      {m.phone && <span className="text-slate-500 text-xs ml-2">{m.phone.slice(-4)}</span>}
+                    </button>
+                  </div>
+                );
+              })
             )}
           </div>
         </div>
