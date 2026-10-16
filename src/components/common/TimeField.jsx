@@ -22,6 +22,9 @@ const polar = (deg, r) => {
 export default function TimeField({ value, onChange, stepMinutes = 5, className = 'input', placeholder = '--:--' }) {
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState('hour'); // 'hour' | 'minute'
+  // [시계 위치 상향 2026-10-16] 시계가 입력칸 아래로 열려 예약창 하단에서 잘리던 문제.
+  // 위쪽 공간이 충분하면 입력칸 위로 열고, 부족하면 기존처럼 아래로 연다.
+  const [openUp, setOpenUp] = useState(false);
   const boxRef = useRef(null);
   const dialRef = useRef(null);
   const draggingRef = useRef(false);
@@ -44,6 +47,19 @@ export default function TimeField({ value, onChange, stepMinutes = 5, className 
 
   // 열 때는 항상 시 다이얼부터 시작한다.
   useEffect(() => { if (open) setMode('hour'); }, [open]);
+
+  // 열릴 때 한 번 위·아래 공간을 재서 방향을 정한다(시계 팝업 높이 약 340px).
+  useEffect(() => {
+    if (!open || !boxRef.current) return;
+    const POPUP_H = 340;
+    const rect = boxRef.current.getBoundingClientRect();
+    // 예약창(.modal-body)이 팝업을 잘라내므로 화면 전체가 아니라 그 안쪽 영역 기준으로 잰다.
+    const wrap = boxRef.current.closest('.modal-body');
+    const topEdge = wrap ? wrap.getBoundingClientRect().top : 0;
+    const spaceAbove = rect.top - topEdge;
+    // 위쪽이 충분할 때만 위로 연다. 부족하면 위로 열면 잘리므로 기존처럼 아래로(스크롤 가능).
+    setOpenUp(spaceAbove >= POPUP_H);
+  }, [open]);
 
   const commit = useCallback((h, m) => onChange(`${pad2(h)}:${pad2(m)}`), [onChange]);
 
@@ -119,7 +135,7 @@ export default function TimeField({ value, onChange, stepMinutes = 5, className 
       </button>
 
       {open && (
-        <div className="absolute z-30 mt-1 w-64 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-2xl shadow-xl p-3 select-none">
+        <div className={`absolute z-30 w-64 ${openUp ? 'bottom-full mb-1' : 'mt-1'} bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-2xl shadow-xl p-3 select-none`}>
           {/* 상단: HH : MM + 오전/오후 */}
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center font-mono text-2xl font-bold">

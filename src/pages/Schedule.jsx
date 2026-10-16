@@ -8,7 +8,7 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { store } from '../demoData';
 import { toYMD } from '../utils/dates';
-import { sortByName } from '../utils/memberList';
+import { sortExpiredLast, isMemberInactive } from '../utils/memberList';
 import { findDuplicateSchedules, summarizeDuplicates } from '../services/scheduleAudit';
 import { consumePendingVoiceTarget } from '../voice/pendingVoiceTarget';
 // [예약 시간 통일 2026-09-17] PC/폰/테블릿마다 다르게 그려지던 네이티브 type="time"을
@@ -299,6 +299,12 @@ function ScheduleDetailModal({ schedule:initS, onClose, onUpdate, onDelete }) {
                 {l:'날짜',               v: `${s.date} (${wd}요일)`},
                 {l:'시간',               v: `${s.startTime} — ${s.endTime}`},
                 {l:'수업',               v: s.classType},
+                // [상담 메모 표시 2026-10-16] 상담은 상단 '메모' 행이 "💬 상담"으로만 나와
+                // 입력한 특이사항이 안 보였다. 상담 일정은 메모 내용을 별도 행으로 보여준다.
+                ...(isConsult && s.memo ? [{
+                  l:'특이사항',
+                  v: <span className="whitespace-pre-wrap break-words">{s.memo}</span>
+                }] : []),
                 ...(!isExt && !isConsult && s.sessionAtBooking != null ? [{
                   l:'회차',
                   v: (() => {
@@ -358,7 +364,7 @@ function ScheduleDetailModal({ schedule:initS, onClose, onUpdate, onDelete }) {
                 <div>
                   <label className={LBL}>회원</label>
                   <select value={form.memberId} onChange={pf('memberId')} className={SEL}>
-                    {sortByName(members).map(m=><option key={m.id} value={m.id}>{m.name}</option>)}
+                    {sortExpiredLast(members).map(m=><option key={m.id} value={m.id}>{m.name}</option>)}
                   </select>
                 </div>
               )}
@@ -467,7 +473,7 @@ function AddModal({ members, trainers, fixedTrainerId, initialDate, onAdd, onClo
   const selectedTrainerObj = trainers.find(t=>t.id===form.trainerId) || fixedTrainer;
   // 선택된 트레이너를 담당 트레이너로 둔 회원만 표시
   const trainerMembers = form.trainerId
-    ? sortByName(members.filter(m => memberHasTrainer(m, form.trainerId)))
+    ? sortExpiredLast(members.filter(m => memberHasTrainer(m, form.trainerId)))
     : [];
   const memberQ = memberQuery.trim().toLowerCase();
   const filteredMembers = memberQ
@@ -658,11 +664,21 @@ function AddModal({ members, trainers, fixedTrainerId, initialDate, onAdd, onClo
                   disabled={!form.trainerId}
                   className={SEL}>
                   <option value="">회원 선택</option>
-                  {filteredMembers.map(m=>(
+                  {/* [세션 마감 하단 2026-10-16] 정상 회원 먼저, 세션 마감·만료 회원은 따로 모아 아래 */}
+                  {filteredMembers.filter(m=>!isMemberInactive(m)).map(m=>(
                     <option key={m.id} value={m.id}>
                       {m.name} (잔여 {m.trainerSessions?.[form.trainerId]?.remaining||0}회)
                     </option>
                   ))}
+                  {filteredMembers.some(m=>isMemberInactive(m)) && (
+                    <optgroup label="── 세션 마감 · 만료 ──">
+                      {filteredMembers.filter(m=>isMemberInactive(m)).map(m=>(
+                        <option key={m.id} value={m.id}>
+                          {m.name} (잔여 {m.trainerSessions?.[form.trainerId]?.remaining||0}회)
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
                 </select>
               </div>
               )}
@@ -731,6 +747,11 @@ function AddModal({ members, trainers, fixedTrainerId, initialDate, onAdd, onClo
                   <p className="text-slate-500 dark:text-slate-400 text-xs">
                     {form.date} ({weekday(form.date)}요일) · {form.startTime} — {form.endTime} · {isConsult ? '상담' : form.classType}
                   </p>
+                  {isConsult && form.memo?.trim() && (
+                    <p className="text-xs text-slate-600 dark:text-slate-300 whitespace-pre-wrap break-words">
+                      📝 {form.memo.trim()}
+                    </p>
+                  )}
                 </div>
               )}
             </>

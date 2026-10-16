@@ -482,6 +482,7 @@ export default function AiMeasureHub() {
           회원 찾기 (저장 시 필요)
         </label>
         <MemberPicker members={members} value={memberId} onChange={handleSelectMember}
+          autoFocusSearch={false}
           allowNone noneLabel="선택 안 함 (미등록회원으로 측정)"
           placeholder="이름 / 초성 / 전화 뒤4자리" />
 
