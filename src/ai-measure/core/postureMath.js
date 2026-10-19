@@ -73,7 +73,9 @@ export const POSTURE_THRESHOLDS = Object.freeze({
   // 골반 높이차의 성중립 기본값(사진 마커 등 성별 정보가 없는 곳에서 사용).
   // 성별을 아는 곳(postureClinical.js)은 GENDER_NORMS.pelvisDiffMm을 대신 쓴다 —
   // neutral 값은 이것과 반드시 같게 유지해야 한다.
-  pelvisDiffMmNeutral: [8, 15],
+  // [2026-10 서적 근거] Magee 'Orthopedic Physical Assessment' — 다리 길이 차이 1~1.3cm 는 정상으로 본다(줄자 실측 기준).
+  //  골반 높이차 8mm 주의는 정상인을 걸러낼 수 있어 13/20mm 로 조정. 위험 20mm 는 근거 없는 보수적 값(실측 쌓이면 조정).
+  pelvisDiffMmNeutral: [13, 20],
   // 무릎 신전각(원시 각도) — 과신전 방향만 판정한다(평가에 반영되는 값과 동일 기준).
   // BlazePose 3점각은 정의상 180°를 넘을 수 없어(acos 결과 범위), 180° 미만 값은
   // '살짝 덜 편 자세'일 뿐 과신전과 성격이 달라 위험으로 잡지 않는다.

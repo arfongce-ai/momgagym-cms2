@@ -61,7 +61,7 @@ const worst = (levels) => {
 //     → 남성은 좁은 편위 임계, 여성은 넓은 편위 임계.
 //   • 어깨 높이차: 성차 작아 동일 기준 유지(근거 부족 시 비보정).
 const GENDER_NORMS = {
-  pelvisDiffMm: { male: [8, 15], female: [9, 16], neutral: [8, 15] },
+  pelvisDiffMm: { male: [13, 20], female: [14, 21], neutral: [13, 20] }, // 정상 상한 1~1.3cm: Magee 정형외과 평가 / 성별 +1mm 는 기존 설계 유지(근거 없음)
   qAngleDevDeg: { male: [6, 12], female: [9, 15], neutral: [7, 13] },
 };
 

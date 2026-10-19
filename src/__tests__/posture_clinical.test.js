@@ -10,7 +10,7 @@ import {
 // 측정값이 충분히 큰(위험) 자세 패턴
 const severeperView = {
   front: {
-    frontal: { shoulderHeightDiffMm: 24, pelvisHeightDiffMm: 16, pelvisPattern: 'functional_lumbopelvic_pattern', legAlignment: { status: 'caution', message: 'X다리 경향' } },
+    frontal: { shoulderHeightDiffMm: 24, pelvisHeightDiffMm: 22, pelvisPattern: 'functional_lumbopelvic_pattern', legAlignment: { status: 'caution', message: 'X다리 경향' } },
     cog: { available: true, balanceOffsetPct: 40, offsetPct: 40 },
     sagittal: {},
   },
@@ -67,7 +67,7 @@ describe('buildRegionDiagnoses — 후면뷰 반영', () => {
       },
       back: {
         frontal: {
-          shoulderHeightDiffMm: 24, pelvisHeightDiffMm: 16, pelvisPattern: 'functional_lumbopelvic_pattern',
+          shoulderHeightDiffMm: 24, pelvisHeightDiffMm: 22, pelvisPattern: 'functional_lumbopelvic_pattern',
           legAlignment: { key: 'genu_valgum', status: 'risk', label: 'X 다리 경향', value: 40, unit: 'index', message: 'X다리 위험' },
         },
       },
@@ -103,7 +103,7 @@ describe('buildRegionDiagnoses — 후면뷰 반영', () => {
   it('후면 측정만 있어도 어깨·골반·하지 정렬을 판정한다(정면 없이도 insufficient 아님)', () => {
     const pv = {
       back: {
-        frontal: { shoulderHeightDiffMm: 24, pelvisHeightDiffMm: 16, pelvisPattern: 'functional_lumbopelvic_pattern', legAlignment: { status: 'risk', message: 'X다리 위험' } },
+        frontal: { shoulderHeightDiffMm: 24, pelvisHeightDiffMm: 22, pelvisPattern: 'functional_lumbopelvic_pattern', legAlignment: { status: 'risk', message: 'X다리 위험' } },
       },
     };
     const regions = buildRegionDiagnoses(pv);
@@ -225,7 +225,7 @@ describe('buildClinicalInterpretation', () => {
 describe('성별 기준 적용', () => {
   const borderlinePelvis = {
     front: {
-      frontal: { pelvisHeightDiffMm: 8.5, pelvisPattern: 'functional_lumbopelvic_pattern', shoulderHeightDiffMm: 2, legAlignment: { status: 'normal' } },
+      frontal: { pelvisHeightDiffMm: 13.5, pelvisPattern: 'functional_lumbopelvic_pattern', shoulderHeightDiffMm: 2, legAlignment: { status: 'normal' } },
       cog: { available: true, balanceOffsetPct: 2, offsetPct: 2 },
       sagittal: {},
     },
@@ -233,11 +233,11 @@ describe('성별 기준 적용', () => {
   };
   const pelvisRegion = (regions) => regions.find((r) => r.key === 'pelvis_spine');
 
-  it('골반 경계값(8.5mm): 남성=주의, 여성=정상', () => {
+  it('골반 경계값(13.5mm): 남성=주의, 여성=정상', () => {
     expect(pelvisRegion(buildRegionDiagnoses(borderlinePelvis, { sex: 'male' })).level).toBe(CLINICAL_LEVEL.caution);
     expect(pelvisRegion(buildRegionDiagnoses(borderlinePelvis, { sex: 'female' })).level).toBe(CLINICAL_LEVEL.normal);
   });
-  it('성별 미입력 시 성중립(=남성 8mm) 기준', () => {
+  it('성별 미입력 시 성중립(=남성 13mm) 기준', () => {
     expect(pelvisRegion(buildRegionDiagnoses(borderlinePelvis, {})).level).toBe(CLINICAL_LEVEL.caution);
   });
   it('Q각 프록시 편위 8°: 남성=주의, 여성=정상', () => {

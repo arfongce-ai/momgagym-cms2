@@ -18,6 +18,7 @@ export const GAIT_CADENCE_RANGES = Object.freeze({
   run: Object.freeze({ good: [160, 180], warn: [150, 190] }),
 });
 
+// 근거: Magee 'Orthopedic Physical Assessment' — 입각기는 걷기 주기의 60~65%(유각기 35~40%). 55~65 는 영상 근사 오차를 감안한 범위.
 export const GAIT_STANCE_RANGE_WALK = Object.freeze({ good: [55, 65], warn: [50, 70] });
 
 export const GAIT_MODE_LABEL = Object.freeze({ walk: '걷기', run: '달리기' });

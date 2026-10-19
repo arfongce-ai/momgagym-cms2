@@ -44,11 +44,11 @@ describe('buildPostureMarkers', () => {
   });
 
   it('정면: 골반 높이차 마커 severity 경계(주의)', () => {
-    const analysis = { frontal: { shoulderHeightDiffMm: 1, pelvisHeightDiffMm: 9 }, sagittal: {} };
+    const analysis = { frontal: { shoulderHeightDiffMm: 1, pelvisHeightDiffMm: 14 }, sagittal: {} };
     const markers = buildPostureMarkers(analysis, baseLandmarks(), 'front');
     const pv = markers.find((m) => m.label.includes('골반'));
     expect(pv).toBeTruthy();
-    expect(pv.severity).toBe('caution'); // 9 in [8,15) — neutral pelvis threshold
+    expect(pv.severity).toBe('caution'); // 14 in [13,20) — neutral pelvis threshold
   });
 
   it('측면: 거북목이 크면 머리에 화살표 마커', () => {
