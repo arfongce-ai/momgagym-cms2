@@ -21,3 +21,8 @@ __pycache__/
 *.py[cod]
 .DS_Store
 Thumbs.db
+
+# Windows 시스템 캐시가 실수로 커밋되는 것 방지
+%SystemDrive%/
+ProgramData/
+*.ver0x*.db
