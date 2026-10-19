@@ -111,6 +111,7 @@ export function aggregateTopics(docsByMember, minMembers = MIN_MEMBERS) {
   const entries = docsByMember instanceof Map ? [...docsByMember.values()] : Object.values(docsByMember || {});
   const acc = {}; // type -> { members:Set-less count, metrics: key -> {label, n, out} }
   let skippedSmall = 0;
+  let skippedNone = 0;
   for (const docs of entries) {
     const latest = {}; // type -> doc
     for (const d of docs || []) {
@@ -126,8 +127,9 @@ export function aggregateTopics(docsByMember, minMembers = MIN_MEMBERS) {
       for (const m of TOPIC_METRICS[t]) {
         const v = firstNumber(payload, m.paths);
         if (v == null) continue;
-        const slot = (acc[t].metrics[m.key] = acc[t].metrics[m.key] || { label: m.label, n: 0, out: 0 });
+        const slot = (acc[t].metrics[m.key] = acc[t].metrics[m.key] || { label: m.label, n: 0, out: 0, values: [] });
         slot.n += 1;
+        slot.values.push(v);
         if (outOfRange(v, m.good, m.abs)) slot.out += 1;
       }
     }
@@ -137,12 +139,25 @@ export function aggregateTopics(docsByMember, minMembers = MIN_MEMBERS) {
     if (info.members < minMembers) { skippedSmall += 1; continue; }
     for (const [key, s] of Object.entries(info.metrics)) {
       if (s.n < minMembers) { skippedSmall += 1; continue; }
+      // 범위 밖 회원이 0명이면 주제로 쓸 거리가 없어 후보에서 뺀다.
+      if (s.out === 0) { skippedNone += 1; continue; }
       const outPct = Math.round((s.out / s.n) * 100);
-      candidates.push({ type: t, typeName: TYPE_NAME[t], metricKey: key, label: s.label, members: s.n, outCount: s.out, outPct });
+      candidates.push({ type: t, typeName: TYPE_NAME[t], metricKey: key, label: s.label, members: s.n, outCount: s.out, outPct, goodRange: m0(t, key).good, median: median(s.values) });
     }
   }
   candidates.sort((a, b) => b.outPct - a.outPct || b.members - a.members);
-  return { candidates, skipped: { belowMinMembers: skippedSmall } };
+  return { candidates, skipped: { belowMinMembers: skippedSmall, noneOutOfRange: skippedNone } };
+}
+
+function m0(type, key) {
+  return TOPIC_METRICS[type].find((m) => m.key === key) || {};
+}
+
+function median(values) {
+  const a = [...values].sort((x, y) => x - y);
+  const mid = Math.floor(a.length / 2);
+  const v = a.length % 2 ? a[mid] : (a[mid - 1] + a[mid]) / 2;
+  return Math.round(v * 100) / 100;
 }
 
 /** 후보 문구. 진단·치료 단정 표현·AI 표기 없이 수치 기준으로만 쓴다. */

@@ -38,9 +38,9 @@ describe('measure-topics core', () => {
     const docs = {};
     for (let i = 0; i < 5; i++) docs[`m${i}`] = [gaitDoc(150, '2026-01-01T00:00:00Z'), gaitDoc(170, '2026-09-01T00:00:00Z')];
     docs.bad = [{ ...gaitDoc(100), valid: false }];
-    const c = aggregateTopics(docs).candidates.find((x) => x.metricKey === 'cadence');
-    expect(c.members).toBe(5);
-    expect(c.outPct).toBe(0);
+    const r = aggregateTopics(docs);
+    expect(r.candidates.find((x) => x.metricKey === 'cadence')).toBeUndefined(); // 5명 모두 170(범위 안) → 후보 없음
+    expect(r.skipped.noneOutOfRange).toBeGreaterThan(0);
   });
   it('결과에 회원 id·날짜·개별 수치가 없다', () => {
     const out = JSON.stringify(aggregateTopics(members([150, 170, 175, 140, 172, 168])));
@@ -51,6 +51,11 @@ describe('measure-topics core', () => {
     expect(t).toContain('수치 기준');
     expect(t).toContain('6명 중 2명(33%)');
     expect(t).not.toMatch(/AI|진단|치료|질환/);
+  });
+  it('후보에 권장범위와 중앙값이 들어간다(점검용)', () => {
+    const c = aggregateTopics(members([150, 170, 175, 140, 172, 168])).candidates.find((x) => x.metricKey === 'cadence');
+    expect(c.goodRange).toEqual([160, 180]);
+    expect(c.median).toBe(169);
   });
   it('outOfRange 는 절댓값 옵션을 지원한다', () => {
     expect(outOfRange(-10, [0, 8], true)).toBe(true);
