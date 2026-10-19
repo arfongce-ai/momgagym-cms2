@@ -1,3 +1,4 @@
+# [2026-10-19 일시중지] 자동 집계 표 보관(A안)으로 주간 자동 실행 중지. 되살리려면 아래 schedule 두 줄의 # 를 지우세요. 수동 실행(workflow_dispatch)은 그대로 가능.
 name: Notion Segment Stats Sync
 
 # 8장 "세그먼트별 통계" — 매주 월요일 9시(KST) Firestore members.targetSegment
@@ -9,8 +10,8 @@ name: Notion Segment Stats Sync
 
 on:
   workflow_dispatch: {}
-  schedule:
-    - cron: '0 0 * * 1' # 매주 월요일 09:00 KST(UTC+9) = 00:00 UTC
+#  schedule:
+#    - cron: '0 0 * * 1' # 매주 월요일 09:00 KST(UTC+9) = 00:00 UTC
 
 jobs:
   sync:

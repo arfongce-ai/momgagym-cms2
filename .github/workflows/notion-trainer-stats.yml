@@ -1,10 +1,11 @@
+# [2026-10-19 일시중지] 자동 집계 표 보관(A안)으로 주간 자동 실행 중지. 되살리려면 아래 schedule 두 줄의 # 를 지우세요. 수동 실행(workflow_dispatch)은 그대로 가능.
 name: 트레이너별 실적 자동 집계 (8장)
 
 # 매주 월요일 09:00(KST)에 자동 실행됩니다. 다른 두 배치(notion-weekly-summary,
 # notion-funnel-sync)와 같은 시각대(UTC 00:00)로 맞춰 같은 날 아침에 함께 갱신됩니다.
 on:
-  schedule:
-    - cron: '0 0 * * 1'
+#  schedule:
+#    - cron: '0 0 * * 1'
   workflow_dispatch: {}   # Actions 탭에서 수동으로 "Run workflow" 버튼으로도 실행 가능
 
 jobs:
