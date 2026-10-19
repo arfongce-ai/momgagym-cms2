@@ -252,6 +252,7 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
       extra: {
         crossValidation: raw?.crossValidation ?? null,   // 교차검증 요약 보존(역도와 동일)
         cogGap: raw?.cogGap ?? null,                       // 바-COG 이격(측면시)
+        barTilt: raw?.barTilt ?? null,                     // 바 기울기(표시·데이터 축적용)
         barPath: raw?.barPath ?? null,                     // 궤적 드리프트/효율(엔진)
         consistencyCvPct: raw?.consistencyCvPct ?? null,   // 렙 일관성(CV%)
       },

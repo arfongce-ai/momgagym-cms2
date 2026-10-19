@@ -19,6 +19,39 @@ export function barbellPoint(lms) {
   return null;
 }
 
+/**
+ * 바벨 기울기(deg): 양 손목을 잇는 선이 수평에서 벗어난 각. 정면 촬영 기준이며
+ * 양수=화면 오른쪽이 낮음. 손목 하나라도 안 보이면 null(정직성: 추정하지 않음).
+ * 손목은 바를 잡은 손 위치라 실제 바 각도의 근사치다(그립 폭·손목 각도 영향).
+ */
+export function barTiltDeg(lms) {
+  if (!lms) return null;
+  const lw = lms[LM.LEFT_WRIST], rw = lms[LM.RIGHT_WRIST];
+  const vis = (p) => p && (p.visibility == null || p.visibility >= 0.3);
+  if (!vis(lw) || !vis(rw)) return null;
+  const dx = rw.x - lw.x, dy = rw.y - lw.y;
+  if (!dx && !dy) return null;
+  // 미러링 없는 정면 영상은 왼손목이 화면 오른쪽이므로 dx 부호를 맞춰 수평 기준으로 환산.
+  const deg = (Math.atan2(dy, dx) * 180) / Math.PI;
+  const folded = deg > 90 ? deg - 180 : deg < -90 ? deg + 180 : deg;
+  return folded;
+}
+
+/** 기울기 샘플(deg 배열) 요약: 절대값 평균/최대, 부호 있는 중앙값(한쪽으로 기우는 경향). */
+export function summarizeBarTilt(samples = []) {
+  const v = samples.filter((x) => Number.isFinite(x));
+  if (v.length < 5) return null;
+  const abs = v.map(Math.abs);
+  const sorted = [...v].sort((a, b) => a - b);
+  const r1 = (x) => Math.round(x * 10) / 10;
+  return {
+    meanAbsDeg: r1(abs.reduce((s, x) => s + x, 0) / abs.length),
+    maxAbsDeg: r1(Math.max(...abs)),
+    medianDeg: r1(sorted[Math.floor(sorted.length / 2)]),
+    samples: v.length,
+  };
+}
+
 // 추적 안정화 상수 (민감도 낮춤)
 //  - EMA_ALPHA: 작을수록 부드러움↑(떨림↓). 0.25 = 강한 떨림 완화.
 //  - DEADZONE:  이보다 작은 프레임 간 이동은 "정지"로 보고 무시(미세 흔들림 컷).

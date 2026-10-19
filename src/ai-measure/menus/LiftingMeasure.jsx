@@ -6,7 +6,7 @@
 //  - 옆에서 촬영 권장. cm 환산은 회원 키 기준(근사).
 import { useRef, useState, useEffect, useCallback } from 'react';
 import { usePoseEngine } from '../core/usePoseEngine';
-import { personHeightRatio, barbellPoint } from '../core/barbell';
+import { personHeightRatio, barbellPoint, barTiltDeg, summarizeBarTilt } from '../core/barbell';
 import { createMultiTracker } from '../core/endcapTracker';
 import { assessFraming, FRAMING_PRESETS } from '../core/framingGuide';
 import {
@@ -53,6 +53,7 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
   const judgeAccRef = useRef(new BarbellAccumulator());
   const crossValFramesRef = useRef([]);     // 세트 동안 프레임별 융합 소스/일치도 로그
   const cogRef = useRef({ available: false, point: null });   // 최신 COG(측면 촬영시만)
+  const barTiltSamplesRef = useRef([]);     // 세트 동안 바(양 손목선) 기울기(deg) 샘플
   const barCogGapSamplesRef = useRef([]);   // 세트 동안 바-COG 수평 이격(cm) 샘플
   const phRef = useRef(null);
   const phSamplesRef = useRef([]);
@@ -187,6 +188,7 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
         const correctedFusedPoint = rotateLandmarksNormalized([fused.point], rotationDeg)[0];
         judgeAccRef.current.push(correctedFusedPoint, ts);
         crossValFramesRef.current.push({ source: fused.source, agreement: fused.agreement, usedFallback: fused.usedFallback });
+        { const tilt = barTiltDeg(correctedLms); if (tilt != null) barTiltSamplesRef.current.push(tilt); }
         // 바-COG 수평 이격(측면 인식시에만) — 정직성: COG 없으면 샘플을 남기지 않는다.
         if (correctedCog.available && correctedCog.point) {
           const gapRatio = barCogHorizontalGap(correctedFusedPoint, correctedCog.point);
@@ -320,6 +322,7 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
     judgeAccRef.current.reset();
     crossValFramesRef.current = [];
     barCogGapSamplesRef.current = [];
+    barTiltSamplesRef.current = [];
     calibrationPointsRef.current = [];
     setCalibrationPointCount(0);
     setCalibrating(false);
@@ -508,6 +511,7 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
       lostRatio,
       crossValidation: crossVal,
       cogGap,
+      barTilt: summarizeBarTilt(barTiltSamplesRef.current),
     };
   }, [heightCm, referenceScale]);
 
@@ -542,6 +546,7 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
         judgeAccRef.current.reset();
         crossValFramesRef.current = [];
         barCogGapSamplesRef.current = [];
+    barTiltSamplesRef.current = [];
         phSamplesRef.current = [];
         frameStatsRef.current = { total: 0, lost: 0 };
         liveHudRef.current = { romCm: null, meanVelocity: null };
@@ -631,6 +636,7 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
       weightSource,
       crossValidation: result.crossValidation ?? null,  // 다중 신호 교차검증 요약
       cogGap: result.cogGap ?? null,                     // 바-COG 수평 이격(측면시)
+      barTilt: result.barTilt ?? null,                   // 바(양 손목선) 기울기 — 표시·데이터 축적용
       videoBlob: videoBlobRef.current || videoBlob || null,
     });
   };

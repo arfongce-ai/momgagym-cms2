@@ -606,3 +606,8 @@
 - `squatBiomechanicsTracker.js`: 반복마다 최댓값(비율은 평균)을 `observation`으로 시행에 저장 → 리포트 시행 데이터에 보존(`judgeTrial` base). 판정·점수에는 영향 없음(테스트로 확인).
 - 방침: 센터 측정 데이터가 판정에 쓸 만큼 쌓이면 분포(백분위)와 문헌을 근거로 기준을 정해 판정에 연결. 2D 영상 값이라 카메라 각도·거리 영향 있음. 바 편차는 오버헤드 스쿼트에서 손목 위치를 바 대용으로 쓴 값(실제 바 아님).
 - 테스트 3269/3269, 빌드 통과.
+
+## 2026-10-20 바벨 기울기(표시·데이터 축적용)
+- `core/barbell.js` `barTiltDeg`(양 손목선의 수평 대비 각, 손목 하나라도 안 보이면 null), `summarizeBarTilt`(평균·최대 절대값, 부호 있는 중앙값). `LiftingMeasure`가 기록 중 회전 보정 좌표로 누적 → 결과 `barTilt`, `BarbellLiftingHub` extra에 저장, `LiftingReportDashboard`에 "바 기울기(참고)" 카드.
+- 판정·점수 미연결(기준 근거 없음). 정면 촬영 기준, 손목은 실제 바의 근사. VbtMeasure·OneRMEstimate는 미적용.
+- 테스트 3273/3273, 빌드 통과.

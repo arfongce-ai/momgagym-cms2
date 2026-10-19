@@ -218,7 +218,7 @@ export default function LiftingReportDashboard({ report, onClose, member, previo
                 </div>
               </div>
             )}
-            {(report.cogGap?.available || report.crossValidation?.totalFrames > 0) && (
+            {(report.cogGap?.available || report.barTilt || report.crossValidation?.totalFrames > 0) && (
               <div className="mt-2 grid grid-cols-2 gap-2 text-[11px]">
                 {report.cogGap?.available && (
                   <div className="rounded-lg bg-fuchsia-500/10 border border-fuchsia-500/30 p-2">
@@ -226,6 +226,15 @@ export default function LiftingReportDashboard({ report, onClose, member, previo
                     <p className="font-mono font-bold text-fuchsia-100">
                       {report.cogGap.medianCm != null ? `${report.cogGap.medianCm}cm` : fmt(report.cogGap.medianRatio)}
                       {report.cogGap.maxCm != null && <span className="text-[9px] text-fuchsia-700 dark:text-fuchsia-300/70"> · 최대 {report.cogGap.maxCm}cm</span>}
+                    </p>
+                  </div>
+                )}
+                {report.barTilt && (
+                  <div className="rounded-lg bg-amber-500/10 border border-amber-500/30 p-2">
+                    <p className="text-amber-700 dark:text-amber-300">바 기울기(참고)</p>
+                    <p className="font-mono font-bold text-amber-900 dark:text-amber-100">
+                      평균 {report.barTilt.meanAbsDeg}°
+                      <span className="text-[9px] text-amber-700 dark:text-amber-300/70"> · 최대 {report.barTilt.maxAbsDeg}°</span>
                     </p>
                   </div>
                 )}
