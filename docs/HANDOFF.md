@@ -611,3 +611,4 @@
 - `core/barbell.js` `barTiltDeg`(양 손목선의 수평 대비 각, 손목 하나라도 안 보이면 null), `summarizeBarTilt`(평균·최대 절대값, 부호 있는 중앙값). `LiftingMeasure`가 기록 중 회전 보정 좌표로 누적 → 결과 `barTilt`, `BarbellLiftingHub` extra에 저장, `LiftingReportDashboard`에 "바 기울기(참고)" 카드.
 - 판정·점수 미연결(기준 근거 없음). 정면 촬영 기준, 손목은 실제 바의 근사. VbtMeasure·OneRMEstimate는 미적용.
 - 테스트 3273/3273, 빌드 통과.
+- (추가) 바 기울기: 정면·후면(framingGuide orientation 'front') 촬영에서만 표본 누적, 측면은 제외. 정면/후면 구분은 자세 인식으로 불가 → 부호는 화면 기준. 테스트 3274.

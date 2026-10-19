@@ -188,7 +188,8 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
         const correctedFusedPoint = rotateLandmarksNormalized([fused.point], rotationDeg)[0];
         judgeAccRef.current.push(correctedFusedPoint, ts);
         crossValFramesRef.current.push({ source: fused.source, agreement: fused.agreement, usedFallback: fused.usedFallback });
-        { const tilt = barTiltDeg(correctedLms); if (tilt != null) barTiltSamplesRef.current.push(tilt); }
+        // 정면·후면(어깨 간격이 넓은 'front' 판정) 촬영에서만 기울기 표본을 쌓는다 — 측면은 손목이 겹쳐 의미 없음
+        if (correctedFr.orientation === 'front') { const tilt = barTiltDeg(correctedLms); if (tilt != null) barTiltSamplesRef.current.push(tilt); }
         // 바-COG 수평 이격(측면 인식시에만) — 정직성: COG 없으면 샘플을 남기지 않는다.
         if (correctedCog.available && correctedCog.point) {
           const gapRatio = barCogHorizontalGap(correctedFusedPoint, correctedCog.point);

@@ -26,3 +26,11 @@ describe('바 기울기', () => {
     expect(s.samples).toBe(5);
   });
 });
+
+describe('후면 촬영', () => {
+  it('좌우가 뒤바뀐 후면 영상에서도 절댓값이 같다', () => {
+    const front = Math.abs(barTiltDeg(lms({ x: 0.6, y: 0.3 }, { x: 0.4, y: 0.4 })));
+    const rear = Math.abs(barTiltDeg(lms({ x: 0.4, y: 0.3 }, { x: 0.6, y: 0.4 })));
+    expect(rear).toBeCloseTo(front, 5);
+  });
+});
