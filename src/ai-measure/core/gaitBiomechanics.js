@@ -310,6 +310,9 @@ export class GaitCycleTracker {
       if (enough && spaced && turnsDown && nearHi) {
         this.steps++;
         foot.lastStepTime = ts;
+        // [2026-10] 케이던스는 '첫 스텝~마지막 스텝' 구간으로 계산한다(앞뒤에 서 있는 시간 제외).
+        if (this._firstStepTs == null) this._firstStepTs = ts;
+        this._lastStepTs = ts;
       }
       if (slope !== 0) foot.prevSlope = slope;
     }
@@ -370,12 +373,15 @@ export class GaitCycleTracker {
   }
 
   summary() {
-    const durationMinutes = (this.lastTime - this.firstTime) / 60000 || 1;
-    const spm = this.steps > 0 ? (this.steps / durationMinutes) : 0;
+    // [2026-10 정확성 수정] 이전에는 영상 전체 길이로 나눠 앞뒤에 서 있는 구간이 있으면 케이던스가 낮게 나왔다.
+    //  이제 첫 스텝~마지막 스텝 사이에 (스텝 수 - 1)개의 간격이 있다고 보고 계산한다.
+    //  스텝이 2개 미만이거나 간격이 0이면 계산할 수 없으므로 0(미측정)으로 둔다.
+    const stepSpanMs = (this._firstStepTs != null && this._lastStepTs != null) ? this._lastStepTs - this._firstStepTs : 0;
+    const spm = (this.steps >= 2 && stepSpanMs > 0) ? ((this.steps - 1) / (stepSpanMs / 60000)) : 0;
 
-    let stance = this.totalFrames > 0 ? Math.round((this.stanceFrames / this.totalFrames) * 100) : 60;
-    if (stance < 40) stance = 40; // 생체역학적 최소/최대 안전장치
-    if (stance > 70) stance = 70;
+    // [2026-10 정확성 수정] 프레임이 없으면 '정상값 60%'로 채우지 않고 null(미측정)로 둔다.
+    //  40~70% 강제 클램프도 제거 — 범위를 벗어난 값이 정상처럼 보이는 것을 막는다.
+    const stance = this.totalFrames > 0 ? Math.round((this.stanceFrames / this.totalFrames) * 100) : null;
 
     // 전체 신호의 절대 진폭. 실제 보행은 정규화 기준 2~4, 정지/노이즈는 보통 0.5 미만.
     const signalAmp = (this._absHi > this._absLo) ? (this._absHi - this._absLo) : 0;
@@ -402,7 +408,7 @@ export class GaitCycleTracker {
     return {
       totalSteps: this.steps,
       stancePct: stance,
-      swingPct: 100 - stance,
+      swingPct: stance == null ? null : 100 - stance,
       averageCadenceSpm: Math.round(spm),
       signalAmp: Math.round(signalAmp * 100) / 100,
       valid,

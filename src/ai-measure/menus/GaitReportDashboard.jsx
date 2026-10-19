@@ -126,8 +126,8 @@ function normalizeMetrics(report) {
   const top = report || {};
   return {
     cadence: m.cadence ?? top.cadence ?? 0,
-    stancePct: m.stancePct ?? top.stancePct ?? 0,
-    swingPct: m.swingPct ?? top.swingPct ?? 0,
+    stancePct: m.stancePct ?? top.stancePct ?? null,
+    swingPct: m.swingPct ?? top.swingPct ?? null,
     totalSteps: m.totalSteps ?? top.totalSteps ?? 0,
     valid: m.valid ?? top.valid,
     angles: m.angles ?? top.angles ?? { hip: {}, knee: {}, ankle: {} },
@@ -243,7 +243,7 @@ export default function GaitReportDashboard({ report, onComment, onClose, videoB
             <MetricCard metric={{ key:'cadence', label:'분당 걸음수', displayValue:m.cadence, unit:'spm',
               description:`${GAIT_MODE_LABEL[classifyGaitMode(m.cadence)] || '달리기'} 기준 ${cadenceRangeFor(m.cadence).good[0]}~${cadenceRangeFor(m.cadence).good[1]}`,
               status: rangeToStatus(m.cadence, cadenceRangeFor(m.cadence)) }} />
-            <MetricCard metric={{ key:'stance', label:'땅 딛는 · 뜨는 비율', displayValue:`${m.stancePct}/${m.swingPct}`, unit:'%',
+            <MetricCard metric={{ key:'stance', label:'땅 딛는 · 뜨는 비율', displayValue: m.stancePct != null ? `${m.stancePct}/${m.swingPct}` : '—', unit:'%',
               description: stanceRangeFor(m.cadence) ? `걷기 기준 ${stanceRangeFor(m.cadence).good[0]}~${stanceRangeFor(m.cadence).good[1]}%` : '달리기는 기준 없음(참고값)',
               status: rangeToStatus(m.stancePct, stanceRangeFor(m.cadence)) }} />
             <MetricCard metric={{ key:'steps', label:'총 스텝', displayValue:m.totalSteps, unit:'회',

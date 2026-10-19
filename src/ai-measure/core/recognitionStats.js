@@ -4,6 +4,8 @@
 //  - 주요 관절: 어깨(11·12), 엉덩이(23·24), 무릎(25·26), 발목(27·28)
 //  - 한 프레임이 '인식됨'이려면 검출 성공 + 주요 관절 평균 visibility ≥ minVisibility
 // 결과는 측정 리포트에 recognition 으로 저장되고, 이력 화면에 '측정 인식률'로 표시된다.
+// [2026-10 정확성 수정] 카메라를 켜고 자세를 잡는 준비 시간이 분모에 들어가 인식률이 낮게 나오던 문제:
+//  처음으로 주요 관절이 또렷하게 인식된 프레임부터 세기 시작한다(그 전 프레임은 setupFrames 로만 기록).
 // 측정 판정 자체에는 쓰지 않는다(정보 표시용). 순수 로직 — 카메라/브라우저 의존 없음.
 
 export const KEY_LANDMARKS = Object.freeze([11, 12, 23, 24, 25, 26, 27, 28]);
@@ -27,20 +29,30 @@ export function createRecognitionTracker(minVisibility = MIN_VISIBILITY) {
   let detected = 0;
   let good = 0;
   let visSum = 0;
+  let started = false; // 처음 또렷하게 인식된 프레임 이후부터 집계
+  let setup = 0;       // 준비 구간(집계 제외) 프레임 수
   return {
-    /** landmarks 가 null 이면 검출 실패 프레임으로 센다. */
+    /** landmarks 가 null 이면 검출 실패 프레임으로 센다(집계 시작 후). */
     record(landmarks) {
-      frames += 1;
       const v = frameKeyVisibility(landmarks);
+      if (!started) {
+        if (v != null && v >= minVisibility) started = true;
+        else { setup += 1; return; }
+      }
+      frames += 1;
       if (v == null) return;
       detected += 1;
       visSum += v;
       if (v >= minVisibility) good += 1;
     },
-    reset() { frames = 0; detected = 0; good = 0; visSum = 0; },
+    reset() { frames = 0; detected = 0; good = 0; visSum = 0; started = false; setup = 0; },
     /** 프레임이 하나도 없으면 null. ratio 는 0~1. */
     snapshot() {
-      if (!frames) return null;
+      if (!frames && !setup) return null;
+      if (!frames) {
+        // 끝까지 또렷하게 인식된 적이 없음 — 인식률 0%, 준비 구간만 있었음
+        return { frames: setup, detectedFrames: 0, goodFrames: 0, ratio: 0, detectionRatio: 0, avgVisibility: 0, setupFrames: 0 };
+      }
       const r4 = (x) => Math.round(x * 1000) / 1000;
       return {
         frames,
@@ -49,6 +61,7 @@ export function createRecognitionTracker(minVisibility = MIN_VISIBILITY) {
         ratio: r4(good / frames),
         detectionRatio: r4(detected / frames),
         avgVisibility: detected ? r4(visSum / detected) : 0,
+        setupFrames: setup,
       };
     },
   };

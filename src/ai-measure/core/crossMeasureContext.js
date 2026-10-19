@@ -3,6 +3,7 @@
 // 만들지 않는다(squat이 squatBiomechanics.js의 repeatedFlags를 재사용하는
 // 것과 동일한 원칙 — "판단 로직은 한 곳에만").
 import { cadenceRangeFor, classifyGaitMode } from './gaitMode';
+import { ROM_SYMMETRY_CAUTION_MAX_PCT } from './romThresholds';
 import { generateLiftingDiagnosis } from './barbellClinical';
 
 const OUTPUT_POLICY = Object.freeze({
@@ -103,7 +104,7 @@ export function buildProblemFocus(kind, report = {}) {
     else if (dx.grade === 'attention') addIssue('caution', dx.headline || '가동범위 또는 좌우차를 확인해야 합니다.');
     else if (dx.grade === 'insufficient') addIssue('caution', '측정 프레임이 부족해 보완 측정이 필요합니다.');
     else addStrength(dx.headline || '가동범위 지표가 대체로 안정적입니다.');
-    if (summary.symmetry_index_score >= 15) addIssue('caution', `좌우 가동범위 차이 ${summary.symmetry_index_score}%`);
+    if (summary.symmetry_index_score >= ROM_SYMMETRY_CAUTION_MAX_PCT) addIssue('caution', `좌우 가동범위 차이 ${summary.symmetry_index_score}%`);
     if (dx.details?.length) dx.details.slice(0, 3).forEach((text) => addIssue(dx.grade === 'focus' ? 'risk' : 'caution', text));
   } else if (kind === 'jump') {
     if (report.valid === false) addIssue('risk', invalidReason(report.reason));
@@ -111,9 +112,7 @@ export function buildProblemFocus(kind, report = {}) {
     if (biomech.landingKneeAngle != null && biomech.landingKneeAngle < 110) addIssue('caution', `착지 무릎 각도가 낮습니다(${biomech.landingKneeAngle}도).`);
     if (biomech.trunkLeanChange != null && biomech.trunkLeanChange > 20) addIssue('caution', `착지 시 상체 기울기 변화가 큽니다(${biomech.trunkLeanChange}도).`);
     if (biomech.pelvicImbalance != null && biomech.pelvicImbalance > 7) addIssue('caution', `착지 골반 불균형이 큽니다(${biomech.pelvicImbalance}%).`);
-    if (biomech.footLandingSymmetry?.symmetryPct != null && biomech.footLandingSymmetry.symmetryPct < 70) {
-      addIssue('caution', `착지 좌우 대칭성이 낮습니다(${biomech.footLandingSymmetry.symmetryPct}%).`);
-    }
+    // [2026-10] 착지 대칭(두 발 위치 차이 기반 자체 점수)은 검증된 기준이 없어 주의 판정에서 뺐다.
     if (!issues.length && report.valid !== false) addStrength('점프 높이와 착지 기술 지표가 큰 위험 신호 없이 측정되었습니다.');
   } else if (kind === 'gait') {
     const m = report.metrics || report || {};

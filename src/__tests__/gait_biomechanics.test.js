@@ -568,3 +568,26 @@ describe('DynamicKneeAlignmentTracker (postureMath.classifyLegAlignment 재사�
     expect(s.status).toBe('normal');
   });
 });
+
+describe('GaitCycleTracker — 케이던스/입각기 정확성 (2026-10)', () => {
+  const run = (padSec) => {
+    const g = new GaitCycleTracker({ fps: 60, minStepIntervalMs: 200, minCutoff: 1.5, beta: 0.02 });
+    let ts = 0;
+    const still = () => pelvisRelativeFeet(gaitLm(0.25, 0, 1)); // sin(2*pi*2*0.25)=0 → 정지 자세
+    for (let i = 0; i < padSec * 60; i++) { ts += 1000 / 60; g.push(still(), ts); }
+    for (let i = 0; i < 240; i++) { ts += 1000 / 60; g.push(pelvisRelativeFeet(gaitLm(i / 60)), ts); }
+    for (let i = 0; i < padSec * 60; i++) { ts += 1000 / 60; g.push(still(), ts); }
+    return g.summary();
+  };
+  it('영상 앞뒤에 서 있는 구간이 있어도 케이던스가 낮아지지 않는다', () => {
+    const base = run(0).averageCadenceSpm;
+    const padded = run(3).averageCadenceSpm;
+    expect(Math.abs(padded - base)).toBeLessThanOrEqual(Math.max(5, base * 0.05));
+  });
+  it('프레임이 없으면 입각기를 60%로 채우지 않고 null 로 둔다', () => {
+    const s = new GaitCycleTracker({ fps: 60, minStepIntervalMs: 200 }).summary();
+    expect(s.stancePct).toBeNull();
+    expect(s.swingPct).toBeNull();
+    expect(s.averageCadenceSpm).toBe(0);
+  });
+});

@@ -875,7 +875,7 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
               ) : (
                 <>
                   <p className="text-amber-700 dark:text-amber-400 font-bold">SPM: {reportData?.cadence}</p>
-                  <p className="text-white text-sm">입각기: {reportData?.stancePct}% | 유각기: {reportData?.swingPct}%</p>
+                  <p className="text-white text-sm">입각기: {reportData?.stancePct != null ? `${reportData.stancePct}%` : '—'} | 유각기: {reportData?.swingPct != null ? `${reportData.swingPct}%` : '—'}</p>
                 </>
               )}
             </div>
@@ -890,7 +890,7 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
               </div>
               <div className="bg-slate-200 dark:bg-slate-700 p-4 rounded-xl">
                 <p className="text-slate-500 dark:text-slate-400 text-sm">비율 (Stance/Swing)</p>
-                <p className="text-2xl font-bold text-white">{reportData?.stancePct}% / {reportData?.swingPct}%</p>
+                <p className="text-2xl font-bold text-white">{reportData?.stancePct != null ? `${reportData.stancePct}% / ${reportData.swingPct}%` : '—'}</p>
               </div>
             </div>
             <div className="bg-slate-200 dark:bg-slate-700 p-4 rounded-xl mb-6">

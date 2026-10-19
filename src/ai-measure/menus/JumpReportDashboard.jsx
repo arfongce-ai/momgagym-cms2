@@ -52,7 +52,6 @@ const RANGE = {
   height: { good: [40, 100], warn: [30, 100], unit: 'cm' },
   trunk: { good: [0, 12], warn: [0, 20], unit: '°' },
   pelvis: { good: [0, 4], warn: [0, 7], unit: '%' },
-  foot: { good: [85, 100], warn: [70, 100], unit: '%' },
   align: { good: [80, 100], warn: [60, 100], unit: '점' },
   // [SLJ 좌우 비대칭 2026-08-11] LSI(Limb Symmetry Index) — 스포츠의학에서
   // 흔히 쓰는 기준(예: ACL 재활 복귀 판정)을 그대로 따름: 90% 이상 정상,
@@ -105,7 +104,6 @@ function scoreReport(report, biomech) {
   add(biomech.trunkLeanChange, RANGE.trunk);
   add(biomech.pelvicImbalance, RANGE.pelvis);
   add(biomech.extensionAlignment?.alignmentScore, RANGE.align);
-  add(biomech.footLandingSymmetry?.symmetryPct, RANGE.foot);
 
   if (isRsiReport(report) && report?.rsi?.rsi != null) {
     const rsi = Number(report.rsi.rsi);
@@ -364,7 +362,8 @@ export default function JumpReportDashboard({ report, onClose, onComment, member
           <Section title="③ 대칭성 및 안정성" subtitle="정면뷰 권장 · 착지 대칭">
             <div className="space-y-4">
               <BarMetric label="골반 불균형" value={biomech.pelvicImbalance} range={RANGE.pelvis} max={12} lowerIsBetter />
-              <BarMetric label="착지 대칭" value={biomech.footLandingSymmetry?.symmetryPct} range={RANGE.foot} max={100} />
+              {/* [2026-10] 착지 대칭은 두 발 착지 위치 차이 기반 자체 점수라 검증된 기준이 없어 등급 없이 값만 표시 */}
+              <SmallInfo label="착지 대칭 (참고)" value={biomech.footLandingSymmetry?.symmetryPct != null ? `${biomech.footLandingSymmetry.symmetryPct}%` : '—'} />
             </div>
             <div className="mt-3 grid grid-cols-2 gap-2">
               <SmallInfo label="좌우 차이" value={metric(biomech.footLandingSymmetry?.lateralDiffPct, '%')} />

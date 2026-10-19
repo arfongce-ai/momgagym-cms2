@@ -14,7 +14,8 @@ import {
   UnifiedReportHeader,
   UnifiedReportPage,
 } from '../../components/report/UnifiedReportPrimitives';
-import { scoreToStatus } from '../core/unifiedReport';
+import { scoreToStatus, rangeToStatus } from '../core/unifiedReport';
+import { ROM_SYMMETRY_RANGE } from '../core/romThresholds';
 import { computeChangeRow, summarizeChanges, reportDateOnly } from '../core/measurementComparison';
 import ChangeSummaryPanel from '../../components/report/ChangeSummaryPanel.jsx';
 import VideoCompareUpload from '../../components/report/VideoCompareUpload.jsx';
@@ -184,7 +185,7 @@ export default function RomReport({ id = 'rom-report-sheet', report, previousRep
             displayValue: s.symmetry_index_score == null ? '—' : `${s.symmetry_index_score}%`,
             description:'차이(작을수록 대칭)',
             status: s.symmetry_index_score == null ? undefined
-              : scoreToStatus(s.symmetry_index_score >= 15 ? 65 : 90),
+              : rangeToStatus(s.symmetry_index_score, ROM_SYMMETRY_RANGE),
           }} />
           <MetricCard metric={{
             key:'comp', label:'보상 작용',

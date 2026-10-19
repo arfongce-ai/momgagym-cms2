@@ -20,7 +20,7 @@ export const TOPIC_METRICS = {
   jump: [
     { key: 'jumpHeight', label: '점프 높이', paths: ['heightCm'], good: [40, 100] },
     // 착지 무릎 각도는 검증된 정상범위가 없어(Krosshaug 2016) 주제 후보에서 제외했다.
-    { key: 'footLandingSymmetry', label: '좌우 착지 대칭', paths: ['biomech.footLandingSymmetry.symmetryPct'], good: [85, 100] },
+    // 좌우 착지 대칭은 검증된 기준이 없어 주제 후보에서 제외했다.
     { key: 'pelvicImbalance', label: '골반 좌우 균형', paths: ['biomech.pelvicImbalance'], good: [0, 4] },
     { key: 'rsi', label: '반응 점프 지수', paths: ['rsi.rsi'], good: [2, 10] },
   ],
@@ -45,7 +45,7 @@ export const TOPIC_METRICS = {
     { key: 'decelTime', label: '감속 시간', paths: ['deceleration.decelTimeMs'], good: [0, 400] },
   ],
   rom: [
-    { key: 'asymmetry', label: '관절 가동 좌우 차이', paths: ['summary.symmetry_index_score', 'symmetry_index_score', 'leftRightDiffDeg'], good: [0, 10] },
+    { key: 'asymmetry', label: '관절 가동 좌우 차이', paths: ['summary.symmetry_index_score', 'symmetry_index_score'], good: [0, 8] }, // romThresholds.js 와 같은 기준
   ],
   one_rm: [
     { key: 'velocityLoss', label: '바벨 속도 저하', paths: ['metrics.velocityLoss', 'velocityLoss', 'vbt.velocityLoss'], good: [0, 15] },

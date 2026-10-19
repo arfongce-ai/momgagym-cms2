@@ -44,3 +44,44 @@ describe('saveGuards', () => {
     expect(isSprintStorable({})).toBe(true);
   });
 });
+
+import { createRecognitionTracker } from '../ai-measure/core/recognitionStats';
+import { ROM_SYMMETRY_RANGE } from '../ai-measure/core/romThresholds';
+import { rangeToStatus, METRIC_DEFINITIONS } from '../ai-measure/core/unifiedReport';
+
+describe('측정 인식률 — 준비 시간 제외', () => {
+  const lm = (vis) => Array.from({ length: 33 }, () => ({ x: 0, y: 0, visibility: vis }));
+  it('처음 또렷하게 인식되기 전 프레임은 분모에 넣지 않는다', () => {
+    const t = createRecognitionTracker();
+    for (let i = 0; i < 30; i++) t.record(null);       // 자세 잡는 중
+    for (let i = 0; i < 10; i++) t.record(lm(0.9));    // 측정 중
+    const s = t.snapshot();
+    expect(s.frames).toBe(10);
+    expect(s.ratio).toBe(1);
+    expect(s.setupFrames).toBe(30);
+  });
+  it('측정 시작 후 놓친 프레임은 그대로 센다', () => {
+    const t = createRecognitionTracker();
+    t.record(lm(0.9)); t.record(null);
+    expect(t.snapshot().ratio).toBe(0.5);
+  });
+  it('끝까지 인식되지 않으면 0%', () => {
+    const t = createRecognitionTracker();
+    t.record(null); t.record(lm(0.1));
+    expect(t.snapshot().ratio).toBe(0);
+  });
+});
+
+describe('ROM 좌우 비대칭 기준 통일 / 착지 대칭 미판정', () => {
+  it('ROM 비대칭은 8% 이하 양호, 15% 이하 주의, 초과 위험(한 기준)', () => {
+    expect(ROM_SYMMETRY_RANGE.good).toEqual([0, 8]);
+    const def = METRIC_DEFINITIONS.rom.find((d) => d.key === 'asymmetry');
+    expect(def.range).toBe(ROM_SYMMETRY_RANGE);
+    expect(def.paths).not.toContain('leftRightDiffDeg'); // 단위(도) 섞임 방지
+    expect(rangeToStatus(12, ROM_SYMMETRY_RANGE).key).toBe('caution');
+  });
+  it('착지 대칭은 검증된 기준이 없어 판정 범위가 없다', () => {
+    const def = METRIC_DEFINITIONS.jump.find((d) => d.key === 'footLandingSymmetry');
+    expect(def.range).toBeUndefined();
+  });
+});

@@ -5,6 +5,7 @@
 import { extractSquatMetrics, squatMetricStatus } from './squatBiomechanics';
 import { legMetrics, stanceMetricStatus } from './singleLegStance';
 import { cadenceRangeFor, stanceRangeFor } from './gaitMode';
+import { ROM_SYMMETRY_RANGE } from './romThresholds';
 
 export const MOMGAGYM_BLOG_URL = 'https://blog.naver.com/posture_gym';
 export const MOMGAGYM_PUBLIC_URL = 'https://momgagym-cms2.pages.dev';
@@ -391,7 +392,9 @@ export const METRIC_DEFINITIONS = Object.freeze({
     //  근거: Krosshaug 2016(AJSM) — 최대 무릎 굴곡이 작을수록 ACL 손상 위험이 높았지만(10°↑당 HR 0.55)
     //  개인 선별에는 쓸 수 없음(AUC 0.6), 절단값 없음. 평균 최대 굴곡은 부상 81.5°/비부상 84.6°(3D, 30cm 드롭점프).
     { key: 'landingKneeAngle', paths: ['biomech.landingKneeAngle'], unit: '도' },
-    { key: 'footLandingSymmetry', paths: ['biomech.footLandingSymmetry.symmetryPct'], unit: '%', range: { good: [85, 100], warn: [70, 100] } },
+    // [2026-10] 착지 대칭은 힘(지면반력)이 아니라 '두 발 착지 위치 차이(키 대비 %)'를 10%=0점으로 환산한 자체 점수라
+    //  문헌의 비대칭 절단값(힘 기준 10~15%)과 직접 비교할 수 없다. 검증된 기준이 없어 판정 범위를 두지 않고 값만 표시한다.
+    { key: 'footLandingSymmetry', paths: ['biomech.footLandingSymmetry.symmetryPct'], unit: '%' },
     { key: 'pelvicImbalance', paths: ['biomech.pelvicImbalance'], unit: '%', range: { good: [0, 4], warn: [0, 7] } },
     { key: 'rsi', paths: ['rsi.rsi'], unit: '', range: { good: [2, 10], warn: [1.5, 10] } },
     { key: 'contactTime', paths: ['rsi.contactTimeMs'], unit: 'ms' },
@@ -429,7 +432,8 @@ export const METRIC_DEFINITIONS = Object.freeze({
   ],
   rom: [
     { key: 'rom', paths: ['summary.max_rom', 'summary.left_max_rom', 'summary.right_max_rom', 'summary.max_angle', 'maxAngle', 'angle', 'rom'], unit: '도' },
-    { key: 'asymmetry', paths: ['summary.symmetry_index_score', 'symmetry_index_score', 'leftRightDiffDeg'], unit: '%', range: { good: [0, 10], warn: [0, 18] } },
+    // [2026-10] 기준은 romThresholds.js 한 곳에서 관리. 단위가 다른 leftRightDiffDeg(도) 경로는 % 지표에 섞이지 않게 뺐다.
+    { key: 'asymmetry', paths: ['summary.symmetry_index_score', 'symmetry_index_score'], unit: '%', range: ROM_SYMMETRY_RANGE },
   ],
   one_rm: [
     { key: 'oneRM', paths: ['metrics.oneRM', 'estimatedOneRM', 'oneRM', 'summary.oneRM'], unit: 'kg' },
