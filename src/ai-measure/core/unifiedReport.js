@@ -109,12 +109,6 @@ export const REPORT_TERM_MAP = Object.freeze({
     description: '동작 중 바벨이나 신체가 움직인 평균 속도입니다.',
     category: 'strength',
   },
-  peakVelocity: {
-    expert: 'Peak Velocity',
-    label: '최고 운동 속도',
-    description: '동작 중 가장 빠르게 움직인 순간 속도입니다.',
-    category: 'strength',
-  },
   velocityLoss: {
     expert: 'Velocity Loss',
     label: '속도 저하',
@@ -329,7 +323,7 @@ export const REPORT_TERM_MAP = Object.freeze({
   peakVelocity: {
     expert: 'Peak Velocity',
     label: '최고 속도',
-    description: '측정 구간 중 순간적으로 가장 빨랐던 속도입니다.',
+    description: '측정 구간(또는 동작) 중 순간적으로 가장 빨랐던 속도입니다.',
     category: 'sprint',
   },
   peakVelocitySmooth: {
