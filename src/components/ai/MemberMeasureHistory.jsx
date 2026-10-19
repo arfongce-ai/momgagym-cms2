@@ -7,6 +7,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { deleteAiSession, calcChanges } from '../../services/aiService';
 import { loadMeasureEntries, describeEntry } from '../../services/measureHistoryService';
 import { buildMemberTimelines } from '../../services/measureCompareService';
+import { buildPreConsultSummary } from '../../services/preConsultSummary';
 import TrendChart from '../report/TrendChart';
 import { useAuth } from '../../contexts/AuthContext';
 import { aiStore } from '../../demoData';
@@ -244,6 +245,39 @@ function SessionCard({ session, prevSession, onDelete, isAdmin }) {
   );
 }
 
+// ── 상담 전 요약 (2026-10, 3단계) ─────────────────────────────
+// 상담 직전에 볼 것만: 지난 회차 대비 변화 · 확인 전 항목 · 인식률 낮은 기록 · 측정 공백.
+function PreConsultCard({ entries }) {
+  const sum = useMemo(() => {
+    try { return buildPreConsultSummary(entries); } catch (e) { console.warn('[PreConsultCard]', e?.message); return null; }
+  }, [entries]);
+  if (!sum || sum.empty) return null;
+  const fmt = (r) => `${r.typeLabel} ${r.label} ${r.diff > 0 ? '+' : ''}${r.diff}${r.unit}`;
+  const Line = ({ title, tone, children }) => (
+    <div className="text-xs">
+      <span className={`font-bold mr-2 ${tone}`}>{title}</span>
+      <span className="text-slate-600 dark:text-slate-300">{children}</span>
+    </div>
+  );
+  return (
+    <div className="bg-amber-50 dark:bg-amber-500/10 border border-amber-300/60 dark:border-amber-500/30 rounded-xl p-4 space-y-1.5">
+      <p className="text-sm font-bold">상담 전 요약
+        <span className="ml-2 text-[10px] font-normal text-slate-500">
+          측정 {sum.total}건 · 마지막 {sum.latestDate}{sum.daysSinceLatest != null ? ` (${sum.daysSinceLatest}일 전)` : ''}
+        </span>
+      </p>
+      {sum.improved.length > 0 && <Line title="▲ 개선" tone="text-emerald-700 dark:text-emerald-400">{sum.improved.map(fmt).join(' · ')}</Line>}
+      {sum.worsened.length > 0 && <Line title="▼ 주의" tone="text-red-700 dark:text-red-400">{sum.worsened.map(fmt).join(' · ')}</Line>}
+      {sum.improved.length === 0 && sum.worsened.length === 0 && <Line title="변화" tone="text-slate-500">비교할 이전 회차가 없거나 뚜렷한 변화가 없습니다.</Line>}
+      {sum.unreviewed.length > 0 && <Line title="확인 전" tone="text-sky-700 dark:text-sky-400">{sum.unreviewed.length}건 (최근 {sum.unreviewed.slice(0, 3).map(u => `${u.date} ${u.title}`).join(', ')})</Line>}
+      {sum.lowQuality.length > 0 && <Line title="재확인 권장" tone="text-amber-700 dark:text-amber-400">
+        {sum.lowQuality.slice(0, 3).map(l => `${l.date} ${l.title} ${l.source === 'derived.coverage' ? '충족도' : '인식률'} ${l.pct}%`).join(', ')}
+      </Line>}
+      {sum.stale.length > 0 && <Line title="측정 공백" tone="text-slate-600 dark:text-slate-300">{sum.stale.slice(0, 3).map(t => `${t.title} ${t.days}일`).join(' · ')}</Line>}
+    </div>
+  );
+}
+
 // ── 회차별 비교 (2026-10, 2단계) ─────────────────────────────
 // 종류별로 회차 추이 그래프 + 이전/처음 대비 변화를 보여준다. 판정이 아니라 수치 변화만 표시한다.
 const DIR_LABEL = { improved: ['▲ 개선', 'text-emerald-700 dark:text-emerald-400'], worsened: ['▼ 주의', 'text-red-700 dark:text-red-400'], same: ['– 변화 없음', 'text-slate-500'], neutral: ['변화', 'text-slate-500'] };
@@ -382,6 +416,7 @@ export default function MemberMeasureHistory({ member, onNewMeasure }) {
         </div>
       )}
 
+      {!loading && <PreConsultCard entries={entries} />}
       {!loading && <CompareSection entries={entries} />}
 
       {/* 카드 나열 */}

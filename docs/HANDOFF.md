@@ -45,6 +45,10 @@
 
 ## 작업 로그
 최신 항목이 위. 형식을 그대로 복사해서 쓴다.
+### 2026-10-19 · Claude Code · 3단계-1 상담 전 요약
+- 한 일: `src/services/preConsultSummary.js` 신규(`buildPreConsultSummary`) — 이전 회차 대비 개선/주의(기준범위 기반 방향 재사용, 새 판정 없음), 트레이너 확인 전 항목, 인식률·충족도 60% 미만 기록, 종류별 마지막 측정 60일 이상 공백. 이력 탭 맨 위 `PreConsultCard`로 표시. 회원 한 명 기준이라 개인정보 이동 없음.
+- 미해결: 3단계-2(Notion 주제 풀)·3(쇼츠 소재)은 센터 전체 읽기량 확인 후 설계 승인 필요.
+- 검증: 새 테스트 5건 통과, 빌드·전체 테스트 결과는 아래 PR 본문 참고. 실제 화면 확인 못 함.
 ### 2026-10-19 · Claude Code · 측정 인식률(2단계 보완)
 - 한 일: `src/ai-measure/core/recognitionStats.js` 신규 — 포즈 검출 프레임마다 주요 관절(어깨·엉덩이·무릎·발목) 평균 visibility ≥ 0.5 인 프레임 비율을 집계. `poseBackend.detectPoseFrame`(실시간·영상 업로드 공통)과 `poseImageBackend.detectPoseImage`(정지이미지)가 기록. `AiMeasureHub.handleSave`가 저장 시 `recognition`({frames,detectedFrames,goodFrames,ratio,detectionRatio,avgVisibility})을 리포트에 함께 저장, 메뉴 전환·저장 성공 시 집계 초기화(실패 시 유지). 이력 화면에 "측정 인식률 N%" 표시(`normalizeConfidence`가 `recognition.ratio`를 읽음). 판정에는 쓰지 않음.
 - 한계: 집계는 메뉴를 연 뒤 카메라가 돈 전체 구간(준비 자세 포함) 기준이라 실제 측정 구간만의 값이 아님. 2026-10-19 이전 기록엔 없음(그 경우 "데이터 충족도"). 실카메라 확인 못 함.
