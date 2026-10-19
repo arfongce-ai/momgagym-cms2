@@ -1789,6 +1789,7 @@ export function isGuestMid(mid) {
 export const aiStore = {
   // ── 지연 로딩 추적: 이미 읽은 회원은 다시 읽지 않는다(세션 내) ──
   _aiLoaded: new Set(),
+  _aiLoadError: '',
   _gaitLoaded: new Set(),
   _postureLoaded: new Set(),
   _romLoaded: new Set(),
@@ -1801,8 +1802,11 @@ export const aiStore = {
       const snap = await countedGetDocs(`ai(mid:${mid})`, query(collection(db, 'ai'), where('__mid', '==', mid)));
       cache.ai[mid] = snap.docs.map(d => { const { __mid, ...rest } = d.data(); return rest; });
       aiStore._aiLoaded.add(mid);
+      aiStore._aiLoadError = '';
     } catch (e) {
       console.warn('[aiStore.ensureSessions] 로딩 실패:', e?.code || e?.message);
+      // 측정이력 화면이 "이력 없음"과 "읽기 실패"를 구분해 안내할 수 있게 기록한다.
+      aiStore._aiLoadError = e?.code || e?.message || 'unknown';
       cache.ai[mid] = cache.ai[mid] || [];
     }
     return cache.ai[mid];
@@ -1839,12 +1843,19 @@ export const aiStore = {
     aiStore._aiLoaded.add(mid);   // 이후 ensureSessions 가 덮어쓰지 않도록 로딩됨 표시
     try {
       await fbSet('ai', ns.id, {...ns, __mid:mid});
-      // jump/vbt/1RM 등 측정 세션만 통합 리포트로 미러링(신체정보 등 비측정 세션은 제외).
-      const t = inferReportType({ ...ns, member: { id: mid } });
-      if (t !== 'general') await mirrorUnifiedReport(mid, { ...ns, member: { id: mid } }, t);
-      return ns;
     }
     catch(e){ cache.ai[mid]=prev; throw e; }
+    // jump/vbt/1RM 등 측정 세션만 통합 리포트로 미러링(신체정보 등 비측정 세션은 제외).
+    // [버그 수정 2026-10] 미러링은 부가 기록이다. 세션 저장이 이미 성공한 뒤 미러링만
+    // 실패했는데 캐시를 롤백하고 throw 하면, Firestore 엔 저장됐는데 화면은 "실패"로 보여
+    // 재시도 시 중복 기록이 생겼다. 실패는 경고만 남기고 저장은 성공으로 처리한다.
+    try {
+      const t = inferReportType({ ...ns, member: { id: mid } });
+      if (t !== 'general') await mirrorUnifiedReport(mid, { ...ns, member: { id: mid } }, t);
+    } catch (e) {
+      console.warn('[aiStore.addSession] 통합 리포트 미러링 생략:', e?.code || e?.message);
+    }
+    return ns;
   },
   deleteSession: async (mid, sid) => {
     const prev=cache.ai[mid];
