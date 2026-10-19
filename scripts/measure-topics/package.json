@@ -1,0 +1,12 @@
+{
+  "name": "measure-topics",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dry-run": "node aggregate.mjs",
+    "write": "node aggregate.mjs --write"
+  },
+  "dependencies": {
+    "firebase-admin": "^12.7.0"
+  }
+}

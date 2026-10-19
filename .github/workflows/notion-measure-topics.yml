@@ -1,0 +1,35 @@
+name: Notion 측정 주제후보 (수동 실행)
+
+# 센터 회원 측정 기록을 집계해서 Notion 콘텐츠 캘린더에
+# '주제후보'(검수 상태: 아이디어) 행으로 올린다. 내부용이라 인원 수·비율은 정확히 낸다.
+#  - 수동 실행 전용. 자동 주간 실행은 하지 않는다(2026-10-19 자동 집계 일시중지 방침).
+#  - 기본은 시험 실행: Firestore 읽기 + 로그만, Notion에는 쓰지 않는다.
+#  - Notion에 쓰려면 실행 화면에서 write 를 true 로 고른다.
+# scripts/measure-topics/aggregate.mjs 참고.
+on:
+  workflow_dispatch:
+    inputs:
+      write:
+        description: 'Notion에 실제로 쓰기 (기본 false = 시험 실행)'
+        type: boolean
+        default: false
+
+jobs:
+  topics:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: scripts/measure-topics
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install
+      - name: 측정 집계
+        run: node aggregate.mjs
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          NOTION_CONTENT_CALENDAR_TOKEN: ${{ secrets.NOTION_CONTENT_CALENDAR_TOKEN }}
+          NOTION_CONTENT_CALENDAR_DATA_SOURCE_ID: ${{ secrets.NOTION_CONTENT_CALENDAR_DATA_SOURCE_ID }}
+          WRITE: ${{ inputs.write && '1' || '0' }}

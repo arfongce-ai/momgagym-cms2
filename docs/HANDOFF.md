@@ -45,6 +45,18 @@
 
 ## 작업 로그
 최신 항목이 위. 형식을 그대로 복사해서 쓴다.
+### 2026-10-19 · Claude Code · 3단계-2 측정 집계 → Notion 주제후보 (시험 실행 단계)
+- 한 일: `scripts/measure-topics/` 신규 — `core.mjs`(회원×종류별 최신 유효 기록 1건, 권장 범위 밖 인원·비율을 정확히 집계, 최소 인원 기본 1명·`MIN_MEMBERS`로 조절, 결과에 회원 id·이름·날짜·개별 수치 없음), `aggregate.mjs`(Firestore 읽기, 기본 시험 실행·`--write`일 때만 Notion 콘텐츠 캘린더에 '[주제후보] … N명 중 M명(P%)…' 행을 검수 상태·제작 상태 '아이디어'로 생성, 같은 제목은 건너뜀, '승인'은 절대 만들지 않음). `.github/workflows/notion-measure-topics.yml`은 수동 실행 전용(`write` 입력 기본 false). 대표님 결정: 내부 용도라 인원 제한·반올림 없이 정확하게.
+- 기준범위는 core.mjs에 인라인(Actions 순수 Node 제약) — `measure_topics_core.test.js`가 `METRIC_DEFINITIONS`와 일치하는지 검사.
+- 필요한 Secrets: 시험 실행은 `FIREBASE_SERVICE_ACCOUNT`(기존), 쓰기는 `NOTION_CONTENT_CALENDAR_TOKEN`, `NOTION_CONTENT_CALENDAR_DATA_SOURCE_ID`(content-video 스크립트가 쓰는 이름 — 저장소 Secrets 등록 여부는 확인 못 함).
+- 미해결: 실제 Firestore 읽기량·회원 수는 시험 실행 로그로 확인해야 함. Notion 쓰기 경로(`/v1/pages`, data_source_id parent, API 2026-03-11)는 실행해 보지 못함. 3단계-3(예약 작업이 승인 후보를 참고)은 쓰기 확인 후.
+- 검증: 새 테스트 8건 통과.
+### 2026-10-19 · Claude Code · 3단계-2 익명 집계 → Notion 주제후보 (시험 실행 단계)
+- 한 일: `scripts/measure-topics/` 신규 — `core.mjs`(순수 집계: 회원×종류별 최신 유효 기록 1건, 권장 범위 밖 비율을 5% 단위로 반올림, 같은 측정 5명 미만 제외, 결과에 회원 id·날짜·개별 수치 없음), `aggregate.mjs`(Firestore 읽기, 기본 시험 실행·`--write`일 때만 Notion 콘텐츠 캘린더에 '[주제후보] …' 행을 검수 상태·제작 상태 '아이디어'로 생성, 같은 제목은 건너뜀, '승인'은 절대 만들지 않음). `.github/workflows/notion-measure-topics.yml`은 수동 실행 전용(`write` 입력 기본 false).
+- 기준범위는 core.mjs에 인라인(Actions 순수 Node 제약) — `measure_topics_core.test.js`가 `METRIC_DEFINITIONS`와 일치하는지 검사.
+- 필요한 Secrets: 시험 실행은 `FIREBASE_SERVICE_ACCOUNT`(기존), 쓰기는 `NOTION_CONTENT_CALENDAR_TOKEN`, `NOTION_CONTENT_CALENDAR_DATA_SOURCE_ID`(content-video 스크립트가 이미 쓰는 이름 — 저장소 Secrets 등록 여부는 확인 못 함).
+- 미해결: 실제 Firestore 읽기량·회원 수는 시험 실행 로그로 확인해야 함. Notion 쓰기 경로(`/v1/pages`, data_source_id parent, API 2026-03-11)는 실제로 실행해 보지 못함. 3단계-3(예약 작업이 승인 후보를 참고)은 쓰기 확인 후.
+- 검증: 새 테스트 7건 통과.
 ### 2026-10-19 · Claude Code · 측정 인식률(2단계 보완)
 - 한 일: `src/ai-measure/core/recognitionStats.js` 신규 — 포즈 검출 프레임마다 주요 관절(어깨·엉덩이·무릎·발목) 평균 visibility ≥ 0.5 인 프레임 비율을 집계. `poseBackend.detectPoseFrame`(실시간·영상 업로드 공통)과 `poseImageBackend.detectPoseImage`(정지이미지)가 기록. `AiMeasureHub.handleSave`가 저장 시 `recognition`({frames,detectedFrames,goodFrames,ratio,detectionRatio,avgVisibility})을 리포트에 함께 저장, 메뉴 전환·저장 성공 시 집계 초기화(실패 시 유지). 이력 화면에 "측정 인식률 N%" 표시(`normalizeConfidence`가 `recognition.ratio`를 읽음). 판정에는 쓰지 않음.
 - 한계: 집계는 메뉴를 연 뒤 카메라가 돈 전체 구간(준비 자세 포함) 기준이라 실제 측정 구간만의 값이 아님. 2026-10-19 이전 기록엔 없음(그 경우 "데이터 충족도"). 실카메라 확인 못 함.
