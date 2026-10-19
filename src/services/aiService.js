@@ -151,7 +151,9 @@ export async function createAiSession(memberId, measurements, memo = '') {
 export function getAiSessions(memberId) {
   try {
     return aiStore.getSessions(memberId)
-      .sort((a, b) => b.recordedAtFull?.localeCompare(a.recordedAtFull || ''));
+      .slice()
+      .sort((a, b) => String(b?.recordedAtFull || b?.recordedAt || '')
+        .localeCompare(String(a?.recordedAtFull || a?.recordedAt || '')));
   } catch (err) {
     console.error('[getAiSessions]', err);
     return [];
