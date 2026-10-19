@@ -195,6 +195,12 @@ export default function AiMeasureHub() {
         }
       };
 
+      // [2026-10] 무효 점프(valid !== true)는 세션도 전용 리포트도 저장하지 않는다.
+      //  이전에는 세션만 저장되고 전용 리포트는 빠진 채 아래 alert 로 떨어졌다(이력 불일치).
+      if (isJump && storableData?.valid !== true) {
+        throw new Error('무효 측정은 저장되지 않습니다.');
+      }
+
       // 측정이력(ai): 실제 회원은 회원 id, 미등록회원은 개별 guest id 로 저장.
       const savedSession = await aiStore.addSession(saveMid, {
         menu: active.id,
@@ -208,13 +214,22 @@ export default function AiMeasureHub() {
       // 보행/점프 분석은 전용 컬렉션(gait_reports)에도 정량 리포트를 추가 저장 → 회차별 비교.
       //  linkedSessionId: 위에서 저장한 세션과 명시적으로 연결(측정이력↔전용리포트 매칭이
       //  measuredAt 우연 일치에 기대지 않도록 — 두 저장이 별도 시각에 찍혀 어긋날 수 있다).
+      // [2026-10] 세션 저장 뒤 전용 리포트 저장이 실패하면 세션만 남지 않도록 세션을 되돌린다.
+      const withRollback = async (fn) => {
+        try { return await fn(); } catch (err) {
+          try { await aiStore.deleteSession(saveMid, savedSession.id); } catch (rbErr) {
+            console.warn('[AiMeasureHub] 세션 롤백 실패:', rbErr?.code || rbErr?.message);
+          }
+          throw err;
+        }
+      };
       if (isGait) {
-        const saved = await aiStore.addGaitReport({ ...virtualBody, ...storableData, kind: 'gait', member: memberRef, linkedSessionId: savedSession.id });
+        const saved = await withRollback(() => aiStore.addGaitReport({ ...virtualBody, ...storableData, kind: 'gait', member: memberRef, linkedSessionId: savedSession.id }));
         await saveUnifiedCopy(saved, 'gait');
         return saved;
       }
       if (isJump && storableData?.valid === true) {
-        const saved = await aiStore.addGaitReport({ ...virtualBody, ...storableData, kind: 'jump', member: memberRef, linkedSessionId: savedSession.id });
+        const saved = await withRollback(() => aiStore.addGaitReport({ ...virtualBody, ...storableData, kind: 'jump', member: memberRef, linkedSessionId: savedSession.id }));
         await saveUnifiedCopy(saved, 'jump');
         return saved;
       }
@@ -222,17 +237,17 @@ export default function AiMeasureHub() {
       // SprintLiveAnalysis.jsx/SprintUploadAnalysis.jsx 둘 다 saveState UI를 자체
       // 보유하므로(gait와 동일) alert 없이 저장된 리포트를 그대로 반환한다.
       if (isSprint) {
-        const saved = await aiStore.addGaitReport({ ...virtualBody, ...storableData, kind: measurementKind, member: memberRef, linkedSessionId: savedSession.id });
+        const saved = await withRollback(() => aiStore.addGaitReport({ ...virtualBody, ...storableData, kind: measurementKind, member: memberRef, linkedSessionId: savedSession.id }));
         await saveUnifiedCopy(saved, measurementKind);
         return saved;
       }
       if (isPosture) {
-        const saved = await aiStore.addPostureReport({ ...virtualBody, ...storableData, kind: 'posture', member: memberRef, linkedSessionId: savedSession.id });
+        const saved = await withRollback(() => aiStore.addPostureReport({ ...virtualBody, ...storableData, kind: 'posture', member: memberRef, linkedSessionId: savedSession.id }));
         await saveUnifiedCopy(saved, 'posture');
         return saved;
       }
       if (isRom) {
-        const saved = await aiStore.addRomReport({
+        const saved = await withRollback(() => aiStore.addRomReport({
           ...virtualBody,
           ...storableData,
           kind: 'rom',
@@ -245,7 +260,7 @@ export default function AiMeasureHub() {
             createdAt: new Date(),
             linkedPostureReportId,
           },
-        });
+        }));
         await saveUnifiedCopy(saved, 'rom');
         // 회원 신체기록에 최신 ROM 요약 남기기(실회원만). 미등록회원은 프로필이
         // 없으므로 생략. 실패해도 리포트 저장 자체는 성공으로 둔다(부가 기록).

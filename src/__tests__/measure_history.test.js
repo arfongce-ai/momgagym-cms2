@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { mergeMeasureEntries, normalizeConfidence } from '../services/measureHistoryService.js';
+import { mergeMeasureEntries, normalizeConfidence, deriveCoverage, describeEntry } from '../services/measureHistoryService.js';
 
 describe('normalizeConfidence', () => {
   it('0~1 값은 백분율로 바꾼다', () => {
@@ -68,5 +68,22 @@ describe('mergeMeasureEntries', () => {
     });
     expect(entries).toHaveLength(1);
     expect(entries[0].source).toBe('report');
+  });
+});
+
+describe('deriveCoverage', () => {
+  it('핵심 지표가 얼마나 채워졌는지 비율로 낸다', () => {
+    expect(deriveCoverage({}, 'gait', [{}, {}, {}, {}, {}]).pct).toBe(100);
+    expect(deriveCoverage({}, 'gait', [{}, {}]).pct).toBe(40);
+  });
+  it('무효 측정은 0, 정의 없는 종류는 null', () => {
+    expect(deriveCoverage({ valid: false }, 'jump', [{}]).pct).toBe(0);
+    expect(deriveCoverage({}, 'unknown_type', []).pct).toBeNull();
+  });
+  it('describeEntry 는 저장된 신뢰도가 없을 때만 충족도로 대신한다', () => {
+    const noConf = describeEntry({ type: 'gait', payload: { metrics: { cadence: 170 } } });
+    expect(noConf.confidence.source).toBe('derived.coverage');
+    const withConf = describeEntry({ type: 'gait', payload: { confidenceScore: 0.9, metrics: { cadence: 170 } } });
+    expect(withConf.confidence).toEqual({ pct: 90, source: 'confidenceScore' });
   });
 });

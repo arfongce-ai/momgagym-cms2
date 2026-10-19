@@ -6,7 +6,7 @@
 // 순수 함수(mergeMeasureEntries, normalizeConfidence)는 테스트 가능하게 분리했다.
 
 import { aiStore } from '../demoData';
-import { extractKeyMetrics, inferReportType } from '../ai-measure/core/unifiedReport';
+import { extractKeyMetrics, inferReportType, METRIC_DEFINITIONS } from '../ai-measure/core/unifiedReport';
 
 export const TYPE_LABEL = Object.freeze({
   body: '신체정보',
@@ -66,6 +66,20 @@ export function normalizeConfidence(payload) {
     return { pct: Math.max(0, Math.min(100, Math.round((valid / need) * 100))), source: 'analysis.reliability' };
   }
   return { pct: null, source: '' };
+}
+
+/**
+ * 데이터 충족도(0~100): 측정 엔진이 신뢰도를 저장하지 않는 메뉴(보행·점프·스프린트·한다리서기·스쿼트 등)용.
+ * 그 종류의 핵심 지표 중 실제 값이 들어 있는 비율이다. 카메라 인식 품질이 아니라
+ * "기록이 얼마나 빠짐없이 저장됐는지"이므로 화면에서 신뢰도와 다른 이름으로 표시한다.
+ * 무효 측정(valid === false)은 0.
+ */
+export function deriveCoverage(payload, type, metrics) {
+  const defs = METRIC_DEFINITIONS[type];
+  if (!defs || !defs.length) return { pct: null, source: '' };
+  if (payload && payload.valid === false) return { pct: 0, source: 'derived.coverage' };
+  const found = Array.isArray(metrics) ? metrics.length : 0;
+  return { pct: Math.max(0, Math.min(100, Math.round((found / defs.length) * 100))), source: 'derived.coverage' };
 }
 
 /**
@@ -144,12 +158,16 @@ export function mergeMeasureEntries({ sessions = [], gait = [], posture = [], ro
 export function describeEntry(entry, limit = 4) {
   if (!entry || entry.type === 'body') return { metrics: [], confidence: { pct: null, source: '' } };
   let metrics = [];
+  let all = [];
   try {
-    metrics = extractKeyMetrics(entry.payload || {}, entry.type).slice(0, limit);
+    all = extractKeyMetrics(entry.payload || {}, entry.type);
+    metrics = all.slice(0, limit);
   } catch (e) {
     console.warn('[describeEntry] 지표 추출 실패:', e?.message);
   }
-  return { metrics, confidence: normalizeConfidence(entry.payload) };
+  const confidence = normalizeConfidence(entry.payload);
+  // 저장된 신뢰도가 없으면 데이터 충족도로 대신한다(source 가 'derived.coverage').
+  return { metrics, confidence: confidence.pct != null ? confidence : deriveCoverage(entry.payload, entry.type, all) };
 }
 
 /** 회원 한 명의 모든 측정 기록을 읽어 합친 목록을 돌려준다. */
