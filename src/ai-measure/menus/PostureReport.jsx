@@ -236,6 +236,9 @@ export default function PostureReport({
                 <MetricCard metric={{ key:'knee', label:'무릎 펴짐 각도', displayValue: analysis.sagittal?.kneeExtensionProxyDeg ?? '-', unit:'°',
                   status: statusToken(kneeExtensionStatus(analysis.sagittal?.kneeExtensionProxyDeg)) }} />
               </div>
+              <p className="mt-3 text-[11px] leading-relaxed text-slate-500">
+                mm는 입력한 키로 환산한 추정값이고 %는 키 대비 비율입니다. 주의·위험 구간은 검증된 컷오프가 아닌 참고 기준이며, 회차 비교는 같은 거리·같은 자세로 찍은 기록끼리, % 값을 기준으로 봐 주세요.
+              </p>
               <p className="mt-3 text-xs leading-relaxed text-slate-500">
                 골반 패턴: {pelvisPatternLabel(analysis.frontal?.pelvisPattern)} · 신뢰도 {analysis.reliability?.validCount ?? 0}/{analysis.reliability?.requiredCount ?? 8}
               </p>

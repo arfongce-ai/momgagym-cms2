@@ -244,8 +244,10 @@ export function estimateBodyScale(landmarks, heightCm = null) {
   const normalizedHeight = top && ankle ? Math.abs(ankle.y - top.y) : null;
   if (!normalizedHeight || normalizedHeight < 0.05) return null;
   // [2026-10] 화면에서 잰 '코(또는 어깨)~발목' 길이는 키 전체가 아니다. 예전에는 이를 키로 간주해 mm가
-  //  약 12~22% 크게 나왔다. Drillis & Contini(1966) 신체 비례(발목 0.039H, 코·눈높이 약 0.92~0.94H, 어깨 0.818H)로 환산:
-  //  코~발목 ≈ 0.88H, 어깨~발목 ≈ 0.78H. 비례는 평균값이라 개인차(수 %)가 남는다.
+  //  약 12~22% 크게 나왔다. Contini(1972)/Drillis&Contini 비례(2차 자료로 확인): 눈 0.936H, 어깨 0.819H,
+  //  발목 0.043H(남)·0.048H(여). 코끝은 눈과 턱(0.870H) 사이 약 0.90H 로 '추정'(문헌 직접값 아님)
+  //  → 코~발목 ≈ 0.86H, 어깨~발목 ≈ 0.77H. 평균 비례라 개인차(수 %)가 남는다.
+  //  같은 회원의 회차 비교에서는 이 비율이 상쇄되므로 '키 대비 %' 값이 더 안정적이다.
   const heightRatio = nose ? POSTURE_SPAN_TO_HEIGHT.nose : POSTURE_SPAN_TO_HEIGHT.shoulder;
   const fullHeightNormalized = normalizedHeight / heightRatio;
   return {
@@ -257,7 +259,7 @@ export function estimateBodyScale(landmarks, heightCm = null) {
   };
 }
 
-export const POSTURE_SPAN_TO_HEIGHT = { nose: 0.88, shoulder: 0.78 };
+export const POSTURE_SPAN_TO_HEIGHT = { nose: 0.86, shoulder: 0.77 };
 
 /** 화면 거리 차이를 '키 대비 %'로 환산(키 입력 없이도 가능). 소수 둘째 자리. */
 export function normalizedDeltaToPctHeight(delta, landmarks) {
