@@ -107,6 +107,11 @@ function drawJointAngleLabels(ctx, landmarks, view, X, Y) {
     if (vis(hip)) drawAngleLabel(ctx, X(hip) + 26, Y(hip), `고관절 ${fmtDeg(a.hipFlexion)}`, '#a78bfa');
     if (vis(knee)) drawAngleLabel(ctx, X(knee) + 26, Y(knee), `무릎 ${fmtDeg(a.kneeFlexion)}`, '#fbbf24');
     if (vis(ank)) drawAngleLabel(ctx, X(ank) + 26, Y(ank) - 14, `발목 ${fmtDeg(a.ankleFlexion)}`, '#34d399');
+    // [2026-10-20] 표시 전용: 정강이·대퇴 기울기, 정강이/대퇴 비율, 바(손목) 편차 — 판정 미연결
+    if (vis(knee)) drawAngleLabel(ctx, X(knee) + 26, Y(knee) + 18, `정강이 ${fmtDeg(a.shankAngle)} · 대퇴 ${fmtDeg(a.thighAngle)}`, '#fde68a');
+    if (vis(ank) && a.shankThighRatio != null) drawAngleLabel(ctx, X(ank) + 26, Y(ank) + 8, `정강이/대퇴 ${a.shankThighRatio.toFixed(2)}`, '#bbf7d0');
+    const wri = landmarks[15] ?? landmarks[16];
+    if (vis(wri)) drawAngleLabel(ctx, X(wri) + 26, Y(wri), `바 편차 ${fmtDeg(a.barOffset)}`, '#93c5fd');
     // 발목 기준 CoG: 발목에서 수직 기준선 + 실제 CoG까지 선으로 표시
     if (vis(sho) && vis(hip) && vis(ank)) {
       const cog = { x: (sho.x + hip.x) / 2, y: (sho.y + hip.y) / 2 };
@@ -140,6 +145,13 @@ function drawJointAngleLabels(ctx, landmarks, view, X, Y) {
         : (landmarks[25] ?? landmarks[26]);
       if (vis(kneeMid)) drawAngleLabel(ctx, X(kneeMid), Y(kneeMid) + 22, `무릎정렬 ${fmtDeg(kneeValgus)}`, '#fbbf24');
     }
+    // [2026-10-20] 표시 전용: 무릎-발 정렬(좌/우), 몸 중심선, 좌우 무릎 높이 차 — 판정 미연결
+    const lKn = landmarks[25], rKn = landmarks[26];
+    const fmtPct = (v) => (v == null ? '—' : `${Math.round(v)}%`);
+    if (vis(lKn)) drawAngleLabel(ctx, X(lKn) - 40, Y(lKn), `무릎-발 ${fmtPct(a.kneeOverFootL)}`, '#fde68a');
+    if (vis(rKn)) drawAngleLabel(ctx, X(rKn) + 40, Y(rKn), `무릎-발 ${fmtPct(a.kneeOverFootR)}`, '#fde68a');
+    if (vis(lSho) && vis(rSho)) drawAngleLabel(ctx, (X(lSho) + X(rSho)) / 2, Y(lSho) + 26, `중심선 ${fmtDeg(a.bodyMidline)}`, '#bbf7d0');
+    if (vis(lKn) && vis(rKn)) drawAngleLabel(ctx, (X(lKn) + X(rKn)) / 2, Y(lKn) + 44, `무릎높이차 ${fmtPct(a.kneeHeightDiff)}`, '#93c5fd');
     if (vis(nose)) drawAngleLabel(ctx, X(nose), Y(nose) - 18, `머리기울기 ${fmtDeg(a.headTilt)}`, '#34d399');
     // 정면 CoG 기울기: 발목 중점 기준 수직선 + 실제 CoG까지 선
     if (vis(lSho) && vis(rSho) && vis(lHip) && vis(rHip) && vis(lAnk) && vis(rAnk)) {

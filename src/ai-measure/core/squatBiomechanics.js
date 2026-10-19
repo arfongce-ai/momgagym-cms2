@@ -196,6 +196,8 @@ function judgeTrial(trial = {}) {
     headTiltDeg: trial.headTiltDeg ?? null,
     elbowExtensionDeg: trial.elbowExtensionDeg ?? null,
     elbowAsymDeg: trial.elbowAsymDeg ?? null,
+    // [2026-10-20] 표시 전용 관찰값(판정 미연결) — 데이터 축적용으로 시행과 함께 저장
+    observation: trial.observation ?? null,
   };
 
   if (immediateReasons.length) {

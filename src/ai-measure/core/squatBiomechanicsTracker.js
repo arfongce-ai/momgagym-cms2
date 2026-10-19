@@ -32,6 +32,7 @@
 
 import { OneEuroFilter } from './gaitBiomechanics';
 import { StandingCalibrator } from './jumpBiomechanics';
+import { shankAngleDeg, shankThighRatio, barOffsetDeg, kneeOverFootPct, bodyMidlineDeg, kneeHeightDiffPct } from './squatJointAngles';
 
 // 화면(UI)에서 캘리브레이션도 이 파일 하나만 import 하도록 재노출.
 export { StandingCalibrator };
@@ -214,7 +215,19 @@ export class SquatBiomechanicsTracker {
     this._resetRep();
   }
 
+  _observation() {
+    const r = (v) => (v == null ? null : Math.round(v * 10) / 10);
+    const o = this._obs || {};
+    return {
+      shankAngleDeg: r(o.shankAngleDeg), barOffsetDeg: r(o.barOffsetDeg),
+      kneeOverFootLPct: r(o.kneeOverFootLPct), kneeOverFootRPct: r(o.kneeOverFootRPct),
+      bodyMidlineDeg: r(o.bodyMidlineDeg), kneeHeightDiffPct: r(o.kneeHeightDiffPct),
+      shankThighRatio: this._ratioN ? Math.round((this._ratioSum / this._ratioN) * 100) / 100 : null,
+    };
+  }
+
   _resetRep() {
+    this._ratioSum = 0; this._ratioN = 0;
     this._filtHipX = new OneEuroFilter({ minCutoff: this.tuning.filterMinCutoff, beta: this.tuning.filterBeta, dCutoff: 1.0 });
     this._filtHipY = new OneEuroFilter({ minCutoff: this.tuning.filterMinCutoff, beta: this.tuning.filterBeta, dCutoff: 1.0 });
     this._minThighIncline = 90; // 이 반복 중 도달한 최소 각도(=최고 깊이)
@@ -226,6 +239,7 @@ export class SquatBiomechanicsTracker {
     this._maxCogOverAnkle = 0;
     this._maxCogTilt = 0;
     this._maxHeadTilt = 0;
+    this._obs = {};
     this._minElbowExt = 180;
     this._maxElbowAsym = 0;
     this._heelLift = false;
@@ -296,6 +310,16 @@ export class SquatBiomechanicsTracker {
     if (cogTilt != null) this._maxCogTilt = Math.max(this._maxCogTilt, cogTilt);
     const headTilt = headTiltDegOf(lm);
     if (headTilt != null) this._maxHeadTilt = Math.max(this._maxHeadTilt, headTilt);
+    // [2026-10-20] 표시 전용 관찰값: 반복 중 최댓값(정강이/대퇴 비율은 평균용 합계) — 판정에 쓰지 않는다
+    const bump = (k, v) => { if (v != null && Number.isFinite(v)) this._obs[k] = Math.max(this._obs[k] ?? 0, v); };
+    bump('shankAngleDeg', shankAngleDeg(lm, 'left') ?? shankAngleDeg(lm, 'right'));
+    bump('barOffsetDeg', barOffsetDeg(lm, 'left') ?? barOffsetDeg(lm, 'right'));
+    bump('kneeOverFootLPct', kneeOverFootPct(lm, 'left'));
+    bump('kneeOverFootRPct', kneeOverFootPct(lm, 'right'));
+    bump('bodyMidlineDeg', bodyMidlineDeg(lm));
+    bump('kneeHeightDiffPct', kneeHeightDiffPct(lm));
+    const stRatio = shankThighRatio(lm, 'left') ?? shankThighRatio(lm, 'right');
+    if (stRatio != null && Number.isFinite(stRatio)) { this._ratioSum = (this._ratioSum || 0) + stRatio; this._ratioN = (this._ratioN || 0) + 1; }
     const elbowExt = elbowExtensionOf(lm);
     if (elbowExt) {
       this._minElbowExt = Math.min(this._minElbowExt, elbowExt.minExt);
@@ -323,6 +347,7 @@ export class SquatBiomechanicsTracker {
         headTiltDeg: Math.round(this._maxHeadTilt * 10) / 10,
         elbowExtensionDeg: Math.round(this._minElbowExt * 10) / 10,
         elbowAsymDeg: Math.round(this._maxElbowAsym * 10) / 10,
+        observation: this._observation(),
         balanceLoss: this._balanceLoss,
         heelLift: this._heelLift,
       });

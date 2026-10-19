@@ -133,3 +133,49 @@ describe('squatJointAngles — 기하 계산 정확성', () => {
     expect(computeDisplayAngles(null, 'front')).toBeNull();
   });
 });
+
+describe('squatJointAngles — 표시 전용 추가 지표(2026-10-20)', () => {
+  const mk = (pts) => { const lm = Array(33).fill(null); Object.entries(pts).forEach(([i, [x, y]]) => { lm[i] = { x, y, visibility: 1 }; }); return lm; };
+  it('정강이가 수직이면 0°, 45° 기울면 45°', async () => {
+    const m = await import('../ai-measure/core/squatJointAngles');
+    expect(m.shankAngleDeg(mk({ 25: [0.5, 0.5], 27: [0.5, 0.8] }), 'left')).toBeCloseTo(0, 5);
+    expect(m.shankAngleDeg(mk({ 25: [0.6, 0.7], 27: [0.5, 0.8] }), 'left')).toBeCloseTo(45, 5);
+  });
+  it('대퇴가 수평이면 0°(패러렐), 수직이면 90°', async () => {
+    const m = await import('../ai-measure/core/squatJointAngles');
+    expect(m.thighAngleDeg(mk({ 23: [0.3, 0.6], 25: [0.5, 0.6] }), 'left')).toBeCloseTo(0, 5);
+    expect(m.thighAngleDeg(mk({ 23: [0.5, 0.4], 25: [0.5, 0.6] }), 'left')).toBeCloseTo(90, 5);
+  });
+  it('정강이/대퇴 길이 비율', async () => {
+    const m = await import('../ai-measure/core/squatJointAngles');
+    expect(m.shankThighRatio(mk({ 23: [0.5, 0.4], 25: [0.5, 0.6], 27: [0.5, 0.9] }), 'left')).toBeCloseTo(1.5, 5);
+  });
+  it('좌표가 없으면 null', async () => {
+    const m = await import('../ai-measure/core/squatJointAngles');
+    expect(m.shankAngleDeg(mk({}), 'left')).toBeNull();
+    expect(m.bodyMidlineDeg(mk({}))).toBeNull();
+    expect(m.kneeHeightDiffPct(mk({}))).toBeNull();
+  });
+  it('무릎-발 정렬·몸 중심선·무릎 높이 차', async () => {
+    const m = await import('../ai-measure/core/squatJointAngles');
+    expect(m.kneeOverFootPct(mk({ 25: [0.5, 0.6], 27: [0.5, 0.9] }), 'left')).toBeCloseTo(0, 5);
+    expect(m.kneeOverFootPct(mk({ 25: [0.6, 0.7], 27: [0.5, 0.8] }), 'left')).toBeCloseTo(70.71, 1);
+    const upright = mk({ 11: [0.6, 0.2], 12: [0.4, 0.2], 23: [0.58, 0.5], 24: [0.42, 0.5], 25: [0.58, 0.7], 26: [0.42, 0.7] });
+    expect(m.bodyMidlineDeg(upright)).toBeCloseTo(0, 5);
+    expect(m.kneeHeightDiffPct(upright)).toBeCloseTo(0, 5);
+    const tilted = mk({ 11: [0.6, 0.2], 12: [0.4, 0.2], 23: [0.58, 0.5], 24: [0.42, 0.5], 25: [0.58, 0.7], 26: [0.42, 0.75] });
+    expect(m.kneeHeightDiffPct(tilted)).toBeCloseTo(16.67, 1);
+  });
+});
+
+describe('표시 전용 관찰값이 시행과 함께 저장된다(판정에는 영향 없음)', () => {
+  it('judgeTrial base 에 observation 이 보존되고 상태는 그대로다', async () => {
+    const { evaluateSquatBiomechanics } = await import('../ai-measure/core/squatBiomechanics');
+    const obs = { shankAngleDeg: 20, shankThighRatio: 1.1 };
+    const t = { valid: true, thighInclineDeg: 0, torsoLeanDeg: 10, kneeValgusDeg: 2, pelvicTiltDeg: 1, observation: obs };
+    const withObs = evaluateSquatBiomechanics({ trial1: t, trial2: { ...t } });
+    const without = evaluateSquatBiomechanics({ trial1: { ...t, observation: undefined }, trial2: { ...t, observation: undefined } });
+    expect(withObs.status).toBe(without.status);
+    expect(JSON.stringify(withObs)).toContain('shankAngleDeg');
+  });
+});

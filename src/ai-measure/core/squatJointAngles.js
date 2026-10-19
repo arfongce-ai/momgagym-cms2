@@ -163,6 +163,75 @@ export function cogTiltFrontDeg(lm) {
   return angleFromVertical(dx, dy);
 }
 
+// ────────────── [2026-10-20 추가] 표시 전용 지표 — 판정에 연결하지 않음 ──────────────
+// 근거 기준(정상/주의 컷오프)이 아직 없어 값만 보여주고, 센터 측정 데이터가 쌓이면
+// 근거 기반으로 판정에 연결한다(대표님 방침). 2D 영상 값이라 카메라 각도·거리에 영향받는다.
+
+/** 정강이 기울기: 정강이(발목→무릎)가 수직에서 벗어난 각(절대값). 앞무릎 이동(무릎이 발끝 쪽으로 나감) 정도. */
+export function shankAngleDeg(lm, side) {
+  const knee = pickSide(lm, 'knee', side);
+  const ank = pickSide(lm, 'ankle', side);
+  if (!knee || !ank) return null;
+  return Math.abs(angleFromVertical(knee.x - ank.x, knee.y - ank.y));
+}
+
+/** 대퇴 기울기: 대퇴(무릎→엉덩이)가 수평에서 벗어난 각(절대값). 0°=패러렐. */
+export function thighAngleDeg(lm, side) {
+  const hip = pickSide(lm, 'hip', side);
+  const knee = pickSide(lm, 'knee', side);
+  if (!hip || !knee) return null;
+  const fromVertical = Math.abs(angleFromVertical(hip.x - knee.x, hip.y - knee.y));
+  return Math.abs(90 - fromVertical);
+}
+
+/** 정강이/대퇴 길이 비율(2D 화면 길이). 측면 촬영일 때만 의미가 있다. */
+export function shankThighRatio(lm, side) {
+  const hip = pickSide(lm, 'hip', side);
+  const knee = pickSide(lm, 'knee', side);
+  const ank = pickSide(lm, 'ankle', side);
+  if (!hip || !knee || !ank) return null;
+  const thigh = Math.hypot(hip.x - knee.x, hip.y - knee.y);
+  if (!thigh) return null;
+  return Math.hypot(knee.x - ank.x, knee.y - ank.y) / thigh;
+}
+
+/** 바(손목 위치) 편차각: 손목이 발목 수직선에서 앞/뒤로 벗어난 각(절대값). 오버헤드 스쿼트에서 바 위치의 대용값. */
+export function barOffsetDeg(lm, side) {
+  const wri = pickSide(lm, 'wrist', side);
+  const ank = pickSide(lm, 'ankle', side);
+  if (!wri || !ank) return null;
+  return Math.abs(angleFromVertical(wri.x - ank.x, wri.y - ank.y));
+}
+
+/** 무릎-발 정렬: 무릎이 같은 쪽 발목 수직선에서 좌우로 벗어난 정도(정강이 길이 대비 %, 절대값). */
+export function kneeOverFootPct(lm, side) {
+  const knee = pickSide(lm, 'knee', side);
+  const ank = pickSide(lm, 'ankle', side);
+  if (!knee || !ank) return null;
+  const shank = Math.hypot(knee.x - ank.x, knee.y - ank.y);
+  if (!shank) return null;
+  return (Math.abs(knee.x - ank.x) / shank) * 100;
+}
+
+/** 몸 중심선 기울기(정면): 엉덩이 중점→어깨 중점 선이 수직에서 벗어난 각(절대값). */
+export function bodyMidlineDeg(lm) {
+  const lSho = pt(lm, L_SHO), rSho = pt(lm, R_SHO), lHip = pt(lm, L_HIP), rHip = pt(lm, R_HIP);
+  if (!lSho || !rSho || !lHip || !rHip) return null;
+  const sho = { x: (lSho.x + rSho.x) / 2, y: (lSho.y + rSho.y) / 2 };
+  const hip = { x: (lHip.x + rHip.x) / 2, y: (lHip.y + rHip.y) / 2 };
+  return Math.abs(angleFromVertical(sho.x - hip.x, sho.y - hip.y));
+}
+
+/** 좌우 무릎 높이 차(몸통 길이 대비 %, 절대값) — 좌우 체중 쏠림 참고. */
+export function kneeHeightDiffPct(lm) {
+  const lK = pt(lm, L_KNEE), rK = pt(lm, R_KNEE);
+  const lSho = pt(lm, L_SHO), rSho = pt(lm, R_SHO), lHip = pt(lm, L_HIP), rHip = pt(lm, R_HIP);
+  if (!lK || !rK || !lSho || !rSho || !lHip || !rHip) return null;
+  const torso = Math.hypot((lSho.x + rSho.x) / 2 - (lHip.x + rHip.x) / 2, (lSho.y + rSho.y) / 2 - (lHip.y + rHip.y) / 2);
+  if (!torso) return null;
+  return (Math.abs(lK.y - rK.y) / torso) * 100;
+}
+
 /** 한 프레임의 모든 표시용 각도를 한 번에 계산(라이브 오버레이용). */
 export function computeDisplayAngles(lm, view) {
   if (!lm) return null;
@@ -173,6 +242,10 @@ export function computeDisplayAngles(lm, view) {
       kneeFlexion: kneeFlexionDeg(lm, 'left') ?? kneeFlexionDeg(lm, 'right'),
       ankleFlexion: ankleFlexionDeg(lm, 'left') ?? ankleFlexionDeg(lm, 'right'),
       cogOverAnkle: cogOverAnkleDeg(lm, 'left') ?? cogOverAnkleDeg(lm, 'right'),
+      shankAngle: shankAngleDeg(lm, 'left') ?? shankAngleDeg(lm, 'right'),
+      thighAngle: thighAngleDeg(lm, 'left') ?? thighAngleDeg(lm, 'right'),
+      shankThighRatio: shankThighRatio(lm, 'left') ?? shankThighRatio(lm, 'right'),
+      barOffset: barOffsetDeg(lm, 'left') ?? barOffsetDeg(lm, 'right'),
     };
   }
   return {
@@ -182,5 +255,9 @@ export function computeDisplayAngles(lm, view) {
     headTilt: headTiltDeg(lm),
     earShoulderGapL: earShoulderGap(lm, 'left'),
     earShoulderGapR: earShoulderGap(lm, 'right'),
+    kneeOverFootL: kneeOverFootPct(lm, 'left'),
+    kneeOverFootR: kneeOverFootPct(lm, 'right'),
+    bodyMidline: bodyMidlineDeg(lm),
+    kneeHeightDiff: kneeHeightDiffPct(lm),
   };
 }
