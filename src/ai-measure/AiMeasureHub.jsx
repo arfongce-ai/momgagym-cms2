@@ -1,6 +1,7 @@
 // ai-measure/AiMeasureHub.jsx
 // AI 측정 허브. 메뉴를 고르면 해당 모듈만 lazy 로드해 구동한다(필요 기능만).
 import { useState, useEffect, Suspense } from 'react';
+import { isGaitStorable, isSprintStorable } from './core/saveGuards';
 import { useNavigate } from 'react-router-dom';
 import { MEASURE_MENUS } from './registry';
 import { getRecognitionSnapshot, resetRecognition } from './core/recognitionStats';
@@ -207,6 +208,13 @@ export default function AiMeasureHub() {
       //  이전에는 세션만 저장되고 전용 리포트는 빠진 채 아래 alert 로 떨어졌다(이력 불일치).
       if (isJump && storableData?.valid !== true) {
         throw new Error('무효 측정은 저장되지 않습니다.');
+      }
+      // [2026-10] 보행·스프린트도 같은 원칙: 무효(보행 metrics.valid) / 불가능한 값(반응 50ms 미만·2초 초과)은 저장하지 않는다.
+      if (isGait && !isGaitStorable(storableData)) {
+        throw new Error('무효 측정은 저장되지 않습니다. 다시 측정해 주세요.');
+      }
+      if (isSprint && !isSprintStorable(storableData)) {
+        throw new Error('측정값이 비정상이라 저장되지 않습니다. 다시 측정해 주세요.');
       }
 
       // 측정이력(ai): 실제 회원은 회원 id, 미등록회원은 개별 guest id 로 저장.

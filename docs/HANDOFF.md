@@ -44,6 +44,15 @@
 - 미완료: Cloudflare `NUTRITION_LINK_SECRET` 등록, `VITE_FIREBASE_PROJECT_ID` 일치 확인, 실기기 왕복 테스트 — 전부 사용자 액션 필요(Cloudflare 대시보드 접근 권한 필요)
 
 ## 작업 로그
+
+### 2026-10-19 걷기/달리기 분리 · 착지 무릎 기준 · 무효 측정 저장 차단 (Claude Code)
+- 걷기/달리기: 케이던스 140 기준으로 구분(`core/gaitMode.js`). 걷기 100~130(경고 85~140), 달리기 160~180(경고 150~190). 입각기 55~65%는 걷기 전용, 달리기는 판정 없음. 적용: unifiedReport, GaitReportDashboard, crossMeasureContext, measureCompareService(걷기↔달리기 케이던스 비교 제외, 입각기는 방향 판정 없음), measure-topics(cadenceWalk/cadenceRun/stanceWalk 분리)
+- 근거: 대표님 GAIT 발표자료(보행 4~5km/h, 한 걸음 72cm → 약 93~116 spm), CADENCE-adults(100/130 spm), 러닝 서적(트랙 선수 입각기 약 26.6%)
+- 점프 착지 무릎 각도: 검증된 정상범위가 없어(Krosshaug 2016, 개인 선별 AUC 0.6) 등급·점수·변화방향 판정에서 제외, 값만 표시
+- 저장 차단: 보행 `metrics.valid !== true`, 스프린트 반응시간 50ms 미만/2초 초과는 저장하지 않음(`core/saveGuards.js`, AiMeasureHub). 기존 저장 데이터는 지우지 않음
+- 아직 미해결(근거 확보 후 처리): 케이던스 분모에 정지 구간 포함, 입각기 기본값 60/40~70 클램프, ROM 비대칭 15%/10% 불일치, 착지 대칭 기준(85~100)과 실데이터 차이, 측정 인식률에 준비시간 포함
+- 테스트: 3226 통과 / 11 실패(기존부터 실패 중인 11개와 동일), 빌드 통과
+
 최신 항목이 위. 형식을 그대로 복사해서 쓴다.
 ### 2026-10-19 · Claude Code · 정확성 점검: 무효 측정 제외 + 미해결 정확성 이슈 목록
 - 수정: 보행 리포트는 유효 여부를 `metrics.valid`에 담는데(최상위 `valid` 없음) 집계·비교가 최상위만 봐서 무효 보행 측정이 섞일 수 있었음 → 주제후보 집계, 회차 비교·상담 전 요약, 데이터 충족도에서 `metrics.valid===false` 제외(이력 목록에는 그대로 표시).

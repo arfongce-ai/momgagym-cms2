@@ -11,10 +11,15 @@
 export const MIN_MEMBERS = 1;
 
 // key: unifiedReport 의 metric key / label: 후보 문구용 쉬운 이름 / abs: 절댓값 비교
+function cadenceOf(p) {
+  const v = Number(p?.metrics?.cadence ?? p?.cadence);
+  return Number.isFinite(v) && v > 0 ? v : NaN; // NaN 이면 비교가 모두 false → 구분 불가 기록은 제외
+}
+
 export const TOPIC_METRICS = {
   jump: [
     { key: 'jumpHeight', label: '점프 높이', paths: ['heightCm'], good: [40, 100] },
-    { key: 'landingKneeAngle', label: '착지 무릎 각도', paths: ['biomech.landingKneeAngle'], good: [110, 150] },
+    // 착지 무릎 각도는 검증된 정상범위가 없어(Krosshaug 2016) 주제 후보에서 제외했다.
     { key: 'footLandingSymmetry', label: '좌우 착지 대칭', paths: ['biomech.footLandingSymmetry.symmetryPct'], good: [85, 100] },
     { key: 'pelvicImbalance', label: '골반 좌우 균형', paths: ['biomech.pelvicImbalance'], good: [0, 4] },
     { key: 'rsi', label: '반응 점프 지수', paths: ['rsi.rsi'], good: [2, 10] },
@@ -27,8 +32,10 @@ export const TOPIC_METRICS = {
     { key: 'asymmetry', label: '좌우 비대칭', paths: ['analysis.asymmetry.averageAsi', 'asymmetry.averageAsi'], good: [0, 10] },
   ],
   gait: [
-    { key: 'cadence', label: '걸음 속도(케이던스)', paths: ['metrics.cadence', 'cadence'], good: [160, 180] },
-    { key: 'stancePct', label: '지지 시간 비율', paths: ['metrics.stancePct', 'stancePct'], good: [55, 65] },
+    // 걷기/달리기는 케이던스 140 기준으로 나눠 따로 본다(src/ai-measure/core/gaitMode.js 와 동일, 테스트가 확인).
+    { key: 'cadenceWalk', label: '걷기 케이던스', paths: ['metrics.cadence', 'cadence'], good: [100, 130], when: (p) => cadenceOf(p) < 140 },
+    { key: 'cadenceRun', label: '달리기 케이던스', paths: ['metrics.cadence', 'cadence'], good: [160, 180], when: (p) => cadenceOf(p) >= 140 },
+    { key: 'stanceWalk', label: '걷기 지지 시간 비율', paths: ['metrics.stancePct', 'stancePct'], good: [55, 65], when: (p) => cadenceOf(p) < 140 },
     { key: 'pelvicDrop', label: '골반 처짐', paths: ['metrics.pelvicDropAbs', 'pelvicDropAbs', 'metrics.pelvicDrop.avg'], good: [0, 4] },
     { key: 'kneeSymmetry', label: '좌우 무릎 대칭', paths: ['metrics.kneeSymmetry', 'kneeSymmetry'], good: [92, 100] },
     { key: 'verticalOscillation', label: '상하 움직임', paths: ['metrics.verticalOscillation', 'verticalOscillation'], good: [4, 9] },
@@ -132,6 +139,7 @@ export function aggregateTopics(docsByMember, minMembers = MIN_MEMBERS) {
       acc[t] = acc[t] || { members: 0, metrics: {} };
       acc[t].members += 1;
       for (const m of TOPIC_METRICS[t]) {
+        if (m.when && !m.when(payload)) continue;
         const v = firstNumber(payload, m.paths);
         if (v == null) continue;
         if (m.bounds && (v < m.bounds[0] || v > m.bounds[1])) { skippedImplausible += 1; continue; }

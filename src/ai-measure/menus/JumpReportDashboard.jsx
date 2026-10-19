@@ -39,7 +39,6 @@ function buildJumpChangeSummary(report, biomech, previousReport, isRsi, isHorizo
     isHorizontal
       ? computeChangeRow('이동 거리', previousReport.distanceCm, report.distanceCm, 'cm', 'higherBetter')
       : computeChangeRow('점프 높이', previousReport.heightCm, report.heightCm, 'cm', 'higherBetter'),
-    computeChangeRow('착지 무릎 각도', pb.landingKneeAngle, biomech.landingKneeAngle, '°', 'closerTargetBetter', rangeCenter(RANGE.knee)),
     computeChangeRow('상체 기울기 변화', pb.trunkLeanChange, biomech.trunkLeanChange, '°', 'lowerBetter'),
     computeChangeRow('골반 불균형', pb.pelvicImbalance, biomech.pelvicImbalance, '%', 'lowerBetter'),
     computeChangeRow('신전 궤적 정렬도', pb.extensionAlignment?.alignmentScore, biomech.extensionAlignment?.alignmentScore, '점', 'higherBetter'),
@@ -51,7 +50,6 @@ function buildJumpChangeSummary(report, biomech, previousReport, isRsi, isHorizo
 
 const RANGE = {
   height: { good: [40, 100], warn: [30, 100], unit: 'cm' },
-  knee: { good: [110, 150], warn: [90, 165], unit: '°' },
   trunk: { good: [0, 12], warn: [0, 20], unit: '°' },
   pelvis: { good: [0, 4], warn: [0, 7], unit: '%' },
   foot: { good: [85, 100], warn: [70, 100], unit: '%' },
@@ -104,7 +102,6 @@ function scoreReport(report, biomech) {
   // [제자리멀리뛰기 추가 2026-09-16] SBJ 리포트는 heightCm이 없고 distanceCm만
   // 있다 — 다른 종류는 distanceCm이 없으므로 add()가 조용히 건너뛴다(무해).
   add(report?.distanceCm, RANGE.distance);
-  add(biomech.landingKneeAngle, RANGE.knee);
   add(biomech.trunkLeanChange, RANGE.trunk);
   add(biomech.pelvicImbalance, RANGE.pelvis);
   add(biomech.extensionAlignment?.alignmentScore, RANGE.align);
@@ -325,13 +322,20 @@ export default function JumpReportDashboard({ report, onClose, onComment, member
 
           <Section title="② 자세 및 기술" subtitle={viewLabel === '측면' ? '측면뷰 · 활성' : '측면뷰 권장'}>
             <div className="space-y-4">
-              <BarMetric label="착지 무릎 각도" value={biomech.landingKneeAngle} range={RANGE.knee} max={180} />
               <BarMetric label="상체 기울기 변화" value={biomech.trunkLeanChange} range={RANGE.trunk} max={35} />
               <BarMetric label="신전 궤적 정렬도" value={biomech.extensionAlignment?.alignmentScore} range={RANGE.align} max={100} />
             </div>
             {/* [무릎·고관절 각도 그래프 2026-08-18] 고관절 각도는 아직 검증된
                 정상범위 근거가 없어(무릎처럼 good/warn 임계를 함부로 정하지
                 않음 — 측정 정직성) 등급 배지 없이 값만 참고용으로 보여준다. */}
+            {/* [2026-10] 착지 무릎 각도: 검증된 정상범위(절단값)가 없어 등급 없이 값만 보여준다.
+                근거: Krosshaug 2016(AJSM) — 최대 무릎 굴곡이 작을수록 위험이 높았지만 개인 선별 기준으로는 쓸 수 없음. */}
+            {biomech.landingKneeAngle != null && (
+              <div className="mt-3">
+                <SmallInfo label="착지 무릎 각도 (참고 · 작을수록 깊이 굽힘)" value={`${biomech.landingKneeAngle}°`} />
+                <p className="mt-1 text-[10px] text-slate-500 dark:text-slate-400">정상범위 기준이 없어 등급을 매기지 않습니다. 회차별 변화로 참고하세요.</p>
+              </div>
+            )}
             {biomech.landingHipAngle != null && (
               <div className="mt-3">
                 <SmallInfo label="착지 고관절 각도 (참고)" value={`${biomech.landingHipAngle}°`} />

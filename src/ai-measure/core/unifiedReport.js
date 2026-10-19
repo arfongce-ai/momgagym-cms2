@@ -4,6 +4,7 @@
 // 확정된 판정을 그대로 신뢰한다).
 import { extractSquatMetrics, squatMetricStatus } from './squatBiomechanics';
 import { legMetrics, stanceMetricStatus } from './singleLegStance';
+import { cadenceRangeFor, stanceRangeFor } from './gaitMode';
 
 export const MOMGAGYM_BLOG_URL = 'https://blog.naver.com/posture_gym';
 export const MOMGAGYM_PUBLIC_URL = 'https://momgagym-cms2.pages.dev';
@@ -386,7 +387,10 @@ export const METRIC_DEFINITIONS = Object.freeze({
     { key: 'jumpHeight', paths: ['heightCm'], unit: 'cm', range: { good: [40, 100], warn: [30, 100] } },
     { key: 'peakPower', paths: ['peakPower'], unit: 'W' },
     { key: 'takeoffVelocity', paths: ['takeoffVelocity'], unit: 'm/s' },
-    { key: 'landingKneeAngle', paths: ['biomech.landingKneeAngle'], unit: '도', range: { good: [110, 150], warn: [90, 165] } },
+    // [2026-10] 착지 무릎 각도는 검증된 정상범위가 없어 판정 범위를 두지 않는다(값·회차 변화만 표시).
+    //  근거: Krosshaug 2016(AJSM) — 최대 무릎 굴곡이 작을수록 ACL 손상 위험이 높았지만(10°↑당 HR 0.55)
+    //  개인 선별에는 쓸 수 없음(AUC 0.6), 절단값 없음. 평균 최대 굴곡은 부상 81.5°/비부상 84.6°(3D, 30cm 드롭점프).
+    { key: 'landingKneeAngle', paths: ['biomech.landingKneeAngle'], unit: '도' },
     { key: 'footLandingSymmetry', paths: ['biomech.footLandingSymmetry.symmetryPct'], unit: '%', range: { good: [85, 100], warn: [70, 100] } },
     { key: 'pelvicImbalance', paths: ['biomech.pelvicImbalance'], unit: '%', range: { good: [0, 4], warn: [0, 7] } },
     { key: 'rsi', paths: ['rsi.rsi'], unit: '', range: { good: [2, 10], warn: [1.5, 10] } },
@@ -765,9 +769,15 @@ export function extractKeyMetrics(report = {}, reportType = inferReportType(repo
       const raw = firstDefinedPath(report, definition.paths);
       if (raw == null || raw === '') return null;
       const value = definition.abs ? Math.abs(Number(raw)) : raw;
+      // [2026-10] 걷기/달리기는 케이던스로 구분해 기준을 따로 적용한다(gaitMode.js).
+      let range = definition.range;
+      if (reportType === 'gait' && (definition.key === 'cadence' || definition.key === 'stancePct')) {
+        const cad = firstDefinedPath(report, ['metrics.cadence', 'cadence']);
+        range = definition.key === 'cadence' ? cadenceRangeFor(cad) : (stanceRangeFor(cad) || undefined);
+      }
       return toLaymanMetric(definition.key, value, {
         unit: definition.unit,
-        range: definition.range,
+        range,
         abs: definition.abs,
       });
     })

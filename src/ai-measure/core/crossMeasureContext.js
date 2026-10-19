@@ -2,6 +2,7 @@
 // 정교한 자동평가(등급·flags)를 그대로 재사용하도록 — 계산 로직을 여기 새로
 // 만들지 않는다(squat이 squatBiomechanics.js의 repeatedFlags를 재사용하는
 // 것과 동일한 원칙 — "판단 로직은 한 곳에만").
+import { cadenceRangeFor, classifyGaitMode } from './gaitMode';
 import { generateLiftingDiagnosis } from './barbellClinical';
 
 const OUTPUT_POLICY = Object.freeze({
@@ -116,7 +117,7 @@ export function buildProblemFocus(kind, report = {}) {
     if (!issues.length && report.valid !== false) addStrength('점프 높이와 착지 기술 지표가 큰 위험 신호 없이 측정되었습니다.');
   } else if (kind === 'gait') {
     const m = report.metrics || report || {};
-    if (m.cadence != null && (m.cadence < 150 || m.cadence > 190)) addIssue('caution', `케이던스가 권장 범위를 벗어납니다(${m.cadence} SPM).`);
+    if (m.cadence != null) { const cr = cadenceRangeFor(m.cadence).warn; if (m.cadence < cr[0] || m.cadence > cr[1]) addIssue('caution', `케이던스가 ${classifyGaitMode(m.cadence) === 'walk' ? '걷기' : '달리기'} 권장 범위를 벗어납니다(${m.cadence} SPM).`); }
     const pelvicDrop = m.pelvicDropAbs ?? m.pelvicDrop?.avg;
     if (pelvicDrop != null && pelvicDrop > 7) addIssue('caution', `골반 드롭이 큽니다(${pelvicDrop}%).`);
     if (m.kneeSymmetry != null && m.kneeSymmetry < 85) addIssue('caution', `무릎 움직임 좌우 대칭성이 낮습니다(${m.kneeSymmetry}%).`);

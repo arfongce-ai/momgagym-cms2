@@ -9,6 +9,7 @@
 import { METRIC_DEFINITIONS, extractKeyMetrics } from '../ai-measure/core/unifiedReport';
 import { computeChangeRow } from '../ai-measure/core/measurementComparison';
 import { TYPE_LABEL, isInvalidPayload } from './measureHistoryService';
+import { cadenceRangeFor, classifyGaitMode } from '../ai-measure/core/gaitMode';
 
 export const MIN_AGGREGATE_MEMBERS = 5;
 
@@ -27,6 +28,18 @@ function numericValue(m) {
 }
 
 function changeRow(label, prev, cur, unit, def) {
+  // [2026-10] 걷기/달리기가 섞인 케이던스 비교는 의미가 없어 제외, 목표는 현재 모드 기준.
+  if (def?.key === 'cadence') {
+    if (classifyGaitMode(prev) !== classifyGaitMode(cur)) return null;
+    const g = cadenceRangeFor(cur).good;
+    return computeChangeRow(label, prev, cur, unit, 'closerTargetBetter', (g[0] + g[1]) / 2);
+  }
+  // 입각기: 걷기/달리기 기준이 달라 값만으로 좋고 나쁨을 정할 수 없어 방향 판정 없이 변화량만 보여준다.
+  if (def?.key === 'stancePct') {
+    const row = computeChangeRow(label, prev, cur, unit, 'higherBetter');
+    if (row) row.direction = row.diff === 0 ? 'same' : 'neutral';
+    return row;
+  }
   const { mode, target } = modeForDefinition(def);
   const row = computeChangeRow(label, prev, cur, unit, mode === 'neutral' ? 'higherBetter' : mode, target);
   if (row && mode === 'neutral') row.direction = row.diff === 0 ? 'same' : 'neutral';

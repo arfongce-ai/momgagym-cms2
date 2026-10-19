@@ -29,8 +29,10 @@ describe('buildInterpretationGuide — 측정별 판독 설명서', () => {
 
   it('정상 범위가 정의된 지표는 hint 문구를 만든다', () => {
     const [jumpGuide] = buildInterpretationGuide(['jump']);
-    const landingKnee = jumpGuide.metrics.find(m => m.key === 'landingKneeAngle');
-    expect(landingKnee.hint).toMatch(/정상 범위/);
+    const pelvic = jumpGuide.metrics.find(m => m.key === 'pelvicImbalance');
+    expect(pelvic.hint).toMatch(/정상 범위/);
+    // [2026-10] 착지 무릎 각도는 검증된 정상범위가 없어 hint 를 만들지 않는다.
+    expect(jumpGuide.metrics.find(m => m.key === 'landingKneeAngle').hint).toBeNull();
   });
 
   it('정상 범위가 없는 지표는 hint가 null이다(수치 기준 없는데 있는 것처럼 보이면 안 됨)', () => {

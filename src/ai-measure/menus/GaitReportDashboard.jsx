@@ -11,6 +11,7 @@ import { aiStore } from '../../demoData';
 import ReportActions from '../../components/report/ReportActions';
 import { MetricCard, UnifiedReportCanvas, UnifiedReportHeader, UnifiedReportPage } from '../../components/report/UnifiedReportPrimitives';
 import { rangeToStatus } from '../core/unifiedReport';
+import { cadenceRangeFor, stanceRangeFor, classifyGaitMode, GAIT_MODE_LABEL } from '../core/gaitMode';
 import { buildSummaryData } from '../core/unifiedReport';
 import { computeChangeRow, summarizeChanges, reportDateOnly } from '../core/measurementComparison';
 import ChangeSummaryPanel from '../../components/report/ChangeSummaryPanel.jsx';
@@ -35,9 +36,11 @@ function buildGaitChangeSummary(m, previousReport, orientation) {
   const trunkLeanOk = (!orientation || orientation === 'side') && (!prevOrientation || prevOrientation === 'side');
   // computeChangeRow는 값이 숫자가 아니면 null을 돌려주고 summarizeChanges가
   // null을 걸러내므로, 각도가 안 맞을 때는 값 대신 null을 넘기기만 하면 된다.
+  const sameMode = classifyGaitMode(pm.cadence) === classifyGaitMode(m.cadence);
   const rows = [
-    computeChangeRow('케이던스', pm.cadence, m.cadence, 'spm', 'closerTargetBetter', rangeCenter(RANGES.cadence)),
-    computeChangeRow('입각기 비율', pm.stancePct, m.stancePct, '%', 'closerTargetBetter', rangeCenter(RANGES.stance)),
+    // [2026-10] 걷기/달리기가 서로 다르면 케이던스·입각기 비교는 의미가 없어 제외한다.
+    computeChangeRow('케이던스', sameMode ? pm.cadence : null, sameMode ? m.cadence : null, 'spm', 'closerTargetBetter', rangeCenter(cadenceRangeFor(m.cadence))),
+    computeChangeRow('입각기 비율', sameMode && stanceRangeFor(m.cadence) ? pm.stancePct : null, sameMode && stanceRangeFor(m.cadence) ? m.stancePct : null, '%', 'closerTargetBetter', stanceRangeFor(m.cadence) ? rangeCenter(stanceRangeFor(m.cadence)) : undefined),
     computeChangeRow('몸통 기울기', trunkLeanOk ? pm.trunkLean?.avg : null, trunkLeanOk ? m.trunkLean?.avg : null, '°', 'closerTargetBetter', rangeCenter(RANGES.trunkLean)),
     computeChangeRow('골반 드롭', pelvicDropOk ? pm.pelvicDropAbs : null, pelvicDropOk ? m.pelvicDropAbs : null, '%', 'lowerBetter'),
     computeChangeRow('수직 진폭', pm.verticalOscillation, m.verticalOscillation, '%', 'closerTargetBetter', rangeCenter(RANGES.verticalOsc)),
@@ -98,8 +101,8 @@ function computeScore(m, orientation) {
   const pelvicDropOk = !orientation || orientation === 'back';
   const trunkLeanOk = !orientation || orientation === 'side';
   const checks = [
-    [m.cadence, RANGES.cadence],
-    [m.stancePct, RANGES.stance],
+    [m.cadence, cadenceRangeFor(m.cadence)],
+    [m.stancePct, stanceRangeFor(m.cadence)],
     [trunkLeanOk ? m.trunkLean?.avg : null, RANGES.trunkLean],
     [pelvicDropOk ? m.pelvicDropAbs : null, RANGES.pelvicDrop],
     [m.verticalOscillation, RANGES.verticalOsc],
@@ -108,7 +111,7 @@ function computeScore(m, orientation) {
   ];
   let score = 0, n = 0;
   for (const [v, r] of checks) {
-    if (v == null || Number.isNaN(v)) continue;
+    if (v == null || Number.isNaN(v) || !r) continue;
     n++;
     if (v >= r.good[0] && v <= r.good[1]) score += 100;
     else if (v >= r.warn[0] && v <= r.warn[1]) score += 65;
@@ -238,11 +241,11 @@ export default function GaitReportDashboard({ report, onComment, onClose, videoB
           {/* ① 상단 요약 */}
           <section className="grid grid-cols-4 gap-2.5">
             <MetricCard metric={{ key:'cadence', label:'분당 걸음수', displayValue:m.cadence, unit:'spm',
-              description:`정상 ${RANGES.cadence.good[0]}~${RANGES.cadence.good[1]}`,
-              status: rangeToStatus(m.cadence, RANGES.cadence) }} />
+              description:`${GAIT_MODE_LABEL[classifyGaitMode(m.cadence)] || '달리기'} 기준 ${cadenceRangeFor(m.cadence).good[0]}~${cadenceRangeFor(m.cadence).good[1]}`,
+              status: rangeToStatus(m.cadence, cadenceRangeFor(m.cadence)) }} />
             <MetricCard metric={{ key:'stance', label:'땅 딛는 · 뜨는 비율', displayValue:`${m.stancePct}/${m.swingPct}`, unit:'%',
-              description:`정상 ${RANGES.stance.good[0]}~${RANGES.stance.good[1]}%`,
-              status: rangeToStatus(m.stancePct, RANGES.stance) }} />
+              description: stanceRangeFor(m.cadence) ? `걷기 기준 ${stanceRangeFor(m.cadence).good[0]}~${stanceRangeFor(m.cadence).good[1]}%` : '달리기는 기준 없음(참고값)',
+              status: rangeToStatus(m.stancePct, stanceRangeFor(m.cadence)) }} />
             <MetricCard metric={{ key:'steps', label:'총 스텝', displayValue:m.totalSteps, unit:'회',
               description:'측정 구간 누적' }} />
             <ScoreStat score={score} />

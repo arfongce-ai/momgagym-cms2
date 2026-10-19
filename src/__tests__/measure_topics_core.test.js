@@ -1,11 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import { aggregateTopics, topicTitle, TOPIC_METRICS, outOfRange } from '../../scripts/measure-topics/core.mjs';
+import { GAIT_CADENCE_RANGES, GAIT_STANCE_RANGE_WALK } from '../ai-measure/core/gaitMode';
 import { METRIC_DEFINITIONS } from '../ai-measure/core/unifiedReport';
 
 describe('measure-topics core', () => {
   it('인라인 기준범위가 METRIC_DEFINITIONS 와 같다(어긋남 방지)', () => {
     for (const [type, list] of Object.entries(TOPIC_METRICS)) {
       for (const m of list) {
+        if (['cadenceWalk', 'cadenceRun', 'stanceWalk'].includes(m.key)) continue; // 아래 gaitMode 테스트에서 확인
         const def = (METRIC_DEFINITIONS[type] || []).find((d) => d.key === m.key);
         expect(def, `${type}.${m.key} 정의 없음`).toBeTruthy();
         expect(def.range.good, `${type}.${m.key} 범위`).toEqual(m.good);
@@ -17,7 +19,7 @@ describe('measure-topics core', () => {
   const members = (values) => Object.fromEntries(values.map((v, i) => [`m${i}`, [gaitDoc(v)]]));
 
   it('기본은 인원 제한이 없어 1명도 그대로 집계한다', () => {
-    const c = aggregateTopics(members([150])).candidates.find((x) => x.metricKey === 'cadence');
+    const c = aggregateTopics(members([150])).candidates.find((x) => x.metricKey === 'cadenceRun');
     expect(c.members).toBe(1);
     expect(c.outCount).toBe(1);
     expect(c.outPct).toBe(100);
@@ -29,7 +31,7 @@ describe('measure-topics core', () => {
   });
   it('인원 수와 비율을 정확히 낸다(반올림은 정수 %만)', () => {
     const r = aggregateTopics(members([150, 170, 175, 140, 172, 168])); // 6명 중 2명 = 33%
-    const c = r.candidates.find((x) => x.metricKey === 'cadence');
+    const c = r.candidates.find((x) => x.metricKey === 'cadenceRun');
     expect(c.members).toBe(6);
     expect(c.outCount).toBe(2);
     expect(c.outPct).toBe(33);
@@ -39,7 +41,7 @@ describe('measure-topics core', () => {
     for (let i = 0; i < 5; i++) docs[`m${i}`] = [gaitDoc(150, '2026-01-01T00:00:00Z'), gaitDoc(170, '2026-09-01T00:00:00Z')];
     docs.bad = [{ ...gaitDoc(100), valid: false }];
     const r = aggregateTopics(docs);
-    expect(r.candidates.find((x) => x.metricKey === 'cadence')).toBeUndefined(); // 5명 모두 170(범위 안) → 후보 없음
+    expect(r.candidates.find((x) => x.metricKey === 'cadenceRun')).toBeUndefined(); // 5명 모두 170(범위 안) → 후보 없음
     expect(r.skipped.noneOutOfRange).toBeGreaterThan(0);
   });
   it('결과에 회원 id·날짜·개별 수치가 없다', () => {
@@ -54,11 +56,11 @@ describe('measure-topics core', () => {
   });
   it('보행 metrics.valid=false 도 무효 측정으로 집계에서 뺀다', () => {
     const docs = { a: [{ kind: 'gait', createdAt: '2026-10-01T00:00:00Z', metrics: { cadence: 60, valid: false } }], b: [gaitDoc(150)] };
-    const c = aggregateTopics(docs).candidates.find((x) => x.metricKey === 'cadence');
+    const c = aggregateTopics(docs).candidates.find((x) => x.metricKey === 'cadenceRun');
     expect(c.members).toBe(1);
   });
   it('후보에 권장범위와 중앙값이 들어간다(점검용)', () => {
-    const c = aggregateTopics(members([150, 170, 175, 140, 172, 168])).candidates.find((x) => x.metricKey === 'cadence');
+    const c = aggregateTopics(members([150, 170, 175, 140, 172, 168])).candidates.find((x) => x.metricKey === 'cadenceRun');
     expect(c.goodRange).toEqual([160, 180]);
     expect(c.median).toBe(169);
   });
@@ -70,15 +72,34 @@ describe('measure-topics core', () => {
     expect(r.skipped.implausibleValues).toBe(1);
   });
   it('거의 전원이 범위 밖이면 기준 재확인 필요로 표시한다', () => {
-    const r = aggregateTopics(members([110, 115, 120, 118])); // 4명 전원 케이던스 범위 밖
-    expect(r.candidates.find((x) => x.metricKey === 'cadence').needsReview).toBe(true);
-    const ok = aggregateTopics(members([150, 170, 175, 140, 172, 168])).candidates.find((x) => x.metricKey === 'cadence');
+    const r = aggregateTopics(members([190, 195, 200, 185])); // 4명 전원 달리기 케이던스 범위 밖
+    expect(r.candidates.find((x) => x.metricKey === 'cadenceRun').needsReview).toBe(true);
+    const ok = aggregateTopics(members([150, 170, 175, 140, 172, 168])).candidates.find((x) => x.metricKey === 'cadenceRun');
     expect(ok.needsReview).toBe(false);
-    const tiny = aggregateTopics(members([110, 115])).candidates.find((x) => x.metricKey === 'cadence');
+    const tiny = aggregateTopics(members([190, 195])).candidates.find((x) => x.metricKey === 'cadenceRun');
     expect(tiny.needsReview).toBe(false); // 3명 미만은 표본이 적어 판단 보류
   });
   it('outOfRange 는 절댓값 옵션을 지원한다', () => {
     expect(outOfRange(-10, [0, 8], true)).toBe(true);
     expect(outOfRange(-5, [0, 8], true)).toBe(false);
+  });
+
+  it('걷기/달리기 기준이 gaitMode.js 와 같다', () => {
+    const g = Object.fromEntries(TOPIC_METRICS.gait.map((m) => [m.key, m.good]));
+    expect(g.cadenceWalk).toEqual(GAIT_CADENCE_RANGES.walk.good);
+    expect(g.cadenceRun).toEqual(GAIT_CADENCE_RANGES.run.good);
+    expect(g.stanceWalk).toEqual(GAIT_STANCE_RANGE_WALK.good);
+  });
+  it('걷기(110)는 걷기 기준으로, 달리기(170)는 달리기 기준으로 따로 본다', () => {
+    const r = aggregateTopics({ a: [gaitDoc(110)], b: [gaitDoc(170)], c: [gaitDoc(150)] });
+    expect(r.candidates.find((x) => x.metricKey === 'cadenceWalk')).toBeUndefined(); // 110 은 걷기 범위 안
+    const run = r.candidates.find((x) => x.metricKey === 'cadenceRun');
+    expect(run.members).toBe(2); // 170, 150 (150 은 범위 밖)
+    expect(run.outCount).toBe(1);
+  });
+  it('달리기 기록에는 걷기 입각기 기준을 적용하지 않는다', () => {
+    const d = { kind: 'gait', createdAt: '2026-10-01T00:00:00Z', metrics: { cadence: 170, stancePct: 40 } };
+    const r = aggregateTopics({ a: [d] });
+    expect(r.candidates.find((x) => x.metricKey === 'stanceWalk')).toBeUndefined();
   });
 });
