@@ -52,6 +52,11 @@ describe('measure-topics core', () => {
     expect(t).toContain('6명 중 2명(33%)');
     expect(t).not.toMatch(/AI|진단|치료|질환/);
   });
+  it('보행 metrics.valid=false 도 무효 측정으로 집계에서 뺀다', () => {
+    const docs = { a: [{ kind: 'gait', createdAt: '2026-10-01T00:00:00Z', metrics: { cadence: 60, valid: false } }], b: [gaitDoc(150)] };
+    const c = aggregateTopics(docs).candidates.find((x) => x.metricKey === 'cadence');
+    expect(c.members).toBe(1);
+  });
   it('후보에 권장범위와 중앙값이 들어간다(점검용)', () => {
     const c = aggregateTopics(members([150, 170, 175, 140, 172, 168])).candidates.find((x) => x.metricKey === 'cadence');
     expect(c.goodRange).toEqual([160, 180]);

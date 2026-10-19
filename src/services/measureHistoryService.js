@@ -78,10 +78,17 @@ export function normalizeConfidence(payload) {
  * "기록이 얼마나 빠짐없이 저장됐는지"이므로 화면에서 신뢰도와 다른 이름으로 표시한다.
  * 무효 측정(valid === false)은 0.
  */
+/** 무효 측정 여부. 보행은 metrics.valid, 점프 등은 valid 에 담는다. */
+export function isInvalidPayload(payload) {
+  const p = payload && typeof payload === 'object' ? payload : {};
+  const d = p.data && typeof p.data === 'object' ? p.data : {};
+  return p.valid === false || d.valid === false || p.metrics?.valid === false || d.metrics?.valid === false;
+}
+
 export function deriveCoverage(payload, type, metrics) {
   const defs = METRIC_DEFINITIONS[type];
   if (!defs || !defs.length) return { pct: null, source: '' };
-  if (payload && payload.valid === false) return { pct: 0, source: 'derived.coverage' };
+  if (isInvalidPayload(payload)) return { pct: 0, source: 'derived.coverage' };
   const found = Array.isArray(metrics) ? metrics.length : 0;
   return { pct: Math.max(0, Math.min(100, Math.round((found / defs.length) * 100))), source: 'derived.coverage' };
 }

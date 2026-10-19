@@ -99,7 +99,8 @@ export function docTime(doc) {
 /** 무효 측정은 집계에서 뺀다. */
 function isValid(doc) {
   const p = doc && typeof doc.data === 'object' && doc.data ? doc.data : doc;
-  return !(doc?.valid === false || p?.valid === false);
+  // 보행 리포트는 유효 여부를 metrics.valid 에 담는다(최상위 valid 없음) — 같이 확인.
+  return !(doc?.valid === false || p?.valid === false || doc?.metrics?.valid === false || p?.metrics?.valid === false);
 }
 
 export function outOfRange(value, good, abs = false) {

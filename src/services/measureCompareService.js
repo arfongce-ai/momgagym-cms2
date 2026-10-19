@@ -8,7 +8,7 @@
 
 import { METRIC_DEFINITIONS, extractKeyMetrics } from '../ai-measure/core/unifiedReport';
 import { computeChangeRow } from '../ai-measure/core/measurementComparison';
-import { TYPE_LABEL } from './measureHistoryService';
+import { TYPE_LABEL, isInvalidPayload } from './measureHistoryService';
 
 export const MIN_AGGREGATE_MEMBERS = 5;
 
@@ -42,6 +42,8 @@ export function buildMemberTimelines(entries = []) {
   const byType = new Map();
   for (const e of entries) {
     if (!e || e.type === 'body') continue;
+    // 무효 측정은 회차 비교·추이에서 뺀다(잘못된 변화량이 나오는 것 방지). 이력 목록에는 그대로 남는다.
+    if (isInvalidPayload(e.payload)) continue;
     if (!byType.has(e.type)) byType.set(e.type, []);
     byType.get(e.type).push(e);
   }
@@ -95,6 +97,7 @@ export function aggregateAnonymous(entriesPerMember = [], minMembers = MIN_AGGRE
     const grouped = new Map();
     for (const e of entries || []) {
       if (!e || e.type === 'body') continue;
+      if (isInvalidPayload(e.payload)) continue;
       if (!grouped.has(e.type)) grouped.set(e.type, []);
       grouped.get(e.type).push(e);
     }

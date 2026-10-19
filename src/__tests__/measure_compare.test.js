@@ -36,6 +36,15 @@ describe('buildMemberTimelines', () => {
   });
 });
 
+describe('무효 측정 제외', () => {
+  it('보행 metrics.valid=false 기록은 회차 비교에서 뺀다', () => {
+    const bad = { id: 'x', type: 'gait', date: '2026-10-05', at: '2026-10-05T00:00:00Z', payload: { metrics: { cadence: 60, valid: false } } };
+    const t = buildMemberTimelines([bad, gait('b', '2026-09-03T00:00:00Z', 170), gait('a', '2026-08-03T00:00:00Z', 160)]);
+    const m = t[0].metrics.find((x) => x.key === 'cadence');
+    expect(m.points.map((p) => p.value)).toEqual([160, 170]);
+  });
+});
+
 describe('aggregateAnonymous', () => {
   const member = (rt) => [sprint('s', '2026-10-01', rt)];
   it('최소 인원 미만이면 결과에서 뺀다', () => {
