@@ -3,9 +3,11 @@
 //   - 카드 나열식 렌더링
 //   - 과거 대비 변화 자동 요약 (예: 골격근량 +0.2kg)
 //   - try-catch 완비
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { deleteAiSession, calcChanges } from '../../services/aiService';
 import { loadMeasureEntries, describeEntry } from '../../services/measureHistoryService';
+import { buildMemberTimelines } from '../../services/measureCompareService';
+import TrendChart from '../report/TrendChart';
 import { useAuth } from '../../contexts/AuthContext';
 import { aiStore } from '../../demoData';
 
@@ -242,6 +244,55 @@ function SessionCard({ session, prevSession, onDelete, isAdmin }) {
   );
 }
 
+// ── 회차별 비교 (2026-10, 2단계) ─────────────────────────────
+// 종류별로 회차 추이 그래프 + 이전/처음 대비 변화를 보여준다. 판정이 아니라 수치 변화만 표시한다.
+const DIR_LABEL = { improved: ['▲ 개선', 'text-emerald-700 dark:text-emerald-400'], worsened: ['▼ 주의', 'text-red-700 dark:text-red-400'], same: ['– 변화 없음', 'text-slate-500'], neutral: ['변화', 'text-slate-500'] };
+
+function ChangeText({ row, prefix }) {
+  if (!row) return null;
+  const [txt, cls] = DIR_LABEL[row.direction] || DIR_LABEL.neutral;
+  return (
+    <span className={`mr-3 ${cls}`}>
+      {prefix} {row.diff > 0 ? '+' : ''}{row.diff}{row.unit} {txt}
+    </span>
+  );
+}
+
+function CompareSection({ entries }) {
+  const timelines = useMemo(() => {
+    try { return buildMemberTimelines(entries); } catch (e) { console.warn('[CompareSection]', e?.message); return []; }
+  }, [entries]);
+  const [open, setOpen] = useState(null);
+  const multi = timelines.filter(t => t.count >= 2);
+  if (!multi.length) return null;
+  return (
+    <div className="bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-4 space-y-2">
+      <p className="text-sm font-bold">회차별 비교</p>
+      {multi.map(t => (
+        <div key={t.type} className="border-t border-slate-300 dark:border-slate-700 pt-2">
+          <button onClick={() => setOpen(o => o === t.type ? null : t.type)}
+            className="w-full flex items-center justify-between text-xs font-semibold">
+            <span>{t.title} · {t.count}회</span><span>{open === t.type ? '접기' : '펼치기'}</span>
+          </button>
+          {open === t.type && (
+            <div className="mt-2 space-y-3">
+              {t.metrics.filter(m => m.points.length >= 2).map(m => (
+                <div key={m.key} className="space-y-1">
+                  <p className="text-[11px] text-slate-600 dark:text-slate-300">
+                    <ChangeText row={m.vsPrev} prefix={`${m.label} 이전 대비`} />
+                    <ChangeText row={m.vsFirst} prefix="처음 대비" />
+                  </p>
+                  <TrendChart title={m.label} unit={m.unit} points={m.points.map(p => ({ label: p.date, value: p.value, date: p.date }))} />
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ── 메인 컴포넌트 ────────────────────────────────────────
 export default function MemberMeasureHistory({ member, onNewMeasure }) {
   const { user }        = useAuth();
@@ -330,6 +381,8 @@ export default function MemberMeasureHistory({ member, onNewMeasure }) {
           <p className="text-xs mt-1">위 버튼으로 첫 측정을 시작해 보세요.</p>
         </div>
       )}
+
+      {!loading && <CompareSection entries={entries} />}
 
       {/* 카드 나열 */}
       {!loading && entries.map((entry) => {

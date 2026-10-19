@@ -45,6 +45,11 @@
 
 ## 작업 로그
 최신 항목이 위. 형식을 그대로 복사해서 쓴다.
+### 2026-10-19 · Claude Code · 측정 이력 2단계(회차별 비교 + 익명 집계 함수)
+- 한 일: `src/services/measureCompareService.js` 신규. `buildMemberTimelines`(종류·지표별 회차 추이, 이전/처음 대비 변화, 좋은 방향은 `METRIC_DEFINITIONS` 기준범위로만 판단·기준 없으면 변화량만), `aggregateAnonymous`(회원 id·날짜 없이 종류별 인원·중앙값, 5명 미만은 숨김). 이력 탭에 "회차별 비교" 섹션(`TrendChart` 재사용) 추가.
+- 미해결: 센터 전체 익명 집계는 함수만 있고 화면·전체 회원 읽기는 없음(Firestore 읽기 비용 때문에 3단계 설계 후 결정). 1단계 브랜치 위에서 작업(PR #14 포함).
+- 검증: 새 테스트 7건 통과(1단계 10건 포함 17건), 빌드 성공, `npm test` 실패 11건은 main과 동일.
+- 변경 파일: `src/services/measureCompareService.js`(신규), `src/__tests__/measure_compare.test.js`(신규), `src/components/ai/MemberMeasureHistory.jsx`, `docs/HANDOFF.md`.
 ### 2026-10-19 · Claude Code · 측정 이력 통합 1단계(저장 점검 + 이력 탭 통합)
 - 한 일: 이력 탭이 `ai` 컬렉션만 읽어 전용 컬렉션(gait/posture/rom_reports)에만 있는 과거 기록이 안 보일 수 있던 점을 보완. `src/services/measureHistoryService.js` 신규(네 컬렉션 병합, `linkedSessionId`로 세션·전용 리포트 묶음, 신뢰도 0~100 정규화). `MemberMeasureHistory.jsx`는 병합 목록 + 대표 지표 + 신뢰도 + 트레이너 확인 표시로 교체. `aiStore.setTrainerReview` 추가(세션과 연결 리포트에 `trainerReview` 저장, `analysisUpdatedAt` 미변경).
 - 점검 결과(저장 현황): 신규 측정은 모두 `ai`에 세션 저장, 보행·점프·스프린트·자세·ROM은 전용 컬렉션에 추가 저장. 한다리서기·스쿼트·바벨은 `ai`만. 신뢰도는 VBT/1RM/ROM만 저장(0~1 또는 0~100), 자세는 `analysis.reliability`, 보행·점프·스프린트·한다리서기·스쿼트는 신뢰도 필드 없음(화면에 "미기록"). 트레이너 확인값은 저장 코드 자체가 없었음 → 이번에 추가.
