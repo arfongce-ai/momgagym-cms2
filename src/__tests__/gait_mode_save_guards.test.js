@@ -91,7 +91,7 @@ import { BiomechAccumulator } from '../ai-measure/core/gaitBiomechanics';
 
 describe('수직 진폭 걷기/달리기 분리, 미측정은 null', () => {
   it('걷기와 달리기는 다른 기준을 쓴다', () => {
-    expect(verticalOscRangeFor(116).good).toEqual([2.5, 5.0]);
+    expect(verticalOscRangeFor(116).good).toEqual([2.5, 4.0]);
     expect(verticalOscRangeFor(170).good).toEqual([4.5, 7.5]);
   });
   it('프레임이 없으면 수직 진폭·보폭 비율·무릎 대칭이 0이 아니라 null', () => {

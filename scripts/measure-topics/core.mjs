@@ -37,7 +37,7 @@ export const TOPIC_METRICS = {
     { key: 'stanceWalk', label: '걷기 지지 시간 비율', paths: ['metrics.stancePct', 'stancePct'], good: [55, 65], when: (p) => cadenceOf(p) < 140 },
     { key: 'pelvicDrop', label: '골반 처짐', paths: ['metrics.pelvicDropAbs', 'pelvicDropAbs', 'metrics.pelvicDrop.avg'], good: [0, 4] },
     { key: 'kneeSymmetry', label: '좌우 무릎 대칭', paths: ['metrics.kneeSymmetry', 'kneeSymmetry'], good: [92, 100] },
-    { key: 'verticalOscWalk', label: '걷기 상하 움직임', paths: ['metrics.verticalOscillation', 'verticalOscillation'], good: [2.5, 5.0], when: (p) => cadenceOf(p) < 140 },
+    { key: 'verticalOscWalk', label: '걷기 상하 움직임', paths: ['metrics.verticalOscillation', 'verticalOscillation'], good: [2.5, 4.0], when: (p) => cadenceOf(p) < 140 },
     { key: 'verticalOscRun', label: '달리기 상하 움직임', paths: ['metrics.verticalOscillation', 'verticalOscillation'], good: [4.5, 7.5], when: (p) => cadenceOf(p) >= 140 },
   ],
   sprint: [
