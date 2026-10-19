@@ -34,7 +34,7 @@ export const TOPIC_METRICS = {
     { key: 'verticalOscillation', label: '상하 움직임', paths: ['metrics.verticalOscillation', 'verticalOscillation'], good: [4, 9] },
   ],
   sprint: [
-    { key: 'reactionTime', label: '반응 시간', paths: ['reactionTimeMs'], good: [0, 220] },
+    { key: 'reactionTime', label: '반응 시간', paths: ['reactionTimeMs'], good: [0, 220], bounds: [50, 2000] }, // 반응 2초 초과·50ms 미만은 측정 오류/테스트 값으로 보고 제외
     { key: 'decelTime', label: '감속 시간', paths: ['deceleration.decelTimeMs'], good: [0, 400] },
   ],
   rom: [
@@ -47,6 +47,11 @@ export const TOPIC_METRICS = {
     { key: 'velocityLoss', label: '바벨 속도 저하', paths: ['metrics.velocityLoss', 'velocityLoss', 'vbt.velocityLoss'], good: [0, 15] },
   ],
 };
+
+// 후보 중 '거의 전원이 범위 밖'인 항목은 회원 문제라기보다 기준(범위·단위)이 실제 데이터와 안 맞는 신호다.
+// 이런 후보는 Notion에 쓰지 않고 로그에 '기준 재확인 필요'로만 남긴다.
+export const REVIEW_PCT = 90;
+export const REVIEW_MIN_MEMBERS = 3;
 
 export const TYPE_NAME = {
   jump: '점프', posture: '자세', gait: '보행', sprint: '스프린트·민첩성', rom: '관절가동범위', one_rm: '1RM', vbt: '바벨 속도',
@@ -112,6 +117,7 @@ export function aggregateTopics(docsByMember, minMembers = MIN_MEMBERS) {
   const acc = {}; // type -> { members:Set-less count, metrics: key -> {label, n, out} }
   let skippedSmall = 0;
   let skippedNone = 0;
+  let skippedImplausible = 0;
   for (const docs of entries) {
     const latest = {}; // type -> doc
     for (const d of docs || []) {
@@ -127,6 +133,7 @@ export function aggregateTopics(docsByMember, minMembers = MIN_MEMBERS) {
       for (const m of TOPIC_METRICS[t]) {
         const v = firstNumber(payload, m.paths);
         if (v == null) continue;
+        if (m.bounds && (v < m.bounds[0] || v > m.bounds[1])) { skippedImplausible += 1; continue; }
         const slot = (acc[t].metrics[m.key] = acc[t].metrics[m.key] || { label: m.label, n: 0, out: 0, values: [] });
         slot.n += 1;
         slot.values.push(v);
@@ -142,11 +149,11 @@ export function aggregateTopics(docsByMember, minMembers = MIN_MEMBERS) {
       // 범위 밖 회원이 0명이면 주제로 쓸 거리가 없어 후보에서 뺀다.
       if (s.out === 0) { skippedNone += 1; continue; }
       const outPct = Math.round((s.out / s.n) * 100);
-      candidates.push({ type: t, typeName: TYPE_NAME[t], metricKey: key, label: s.label, members: s.n, outCount: s.out, outPct, goodRange: m0(t, key).good, median: median(s.values) });
+      candidates.push({ type: t, typeName: TYPE_NAME[t], metricKey: key, label: s.label, members: s.n, outCount: s.out, outPct, goodRange: m0(t, key).good, median: median(s.values), needsReview: outPct >= REVIEW_PCT && s.n >= REVIEW_MIN_MEMBERS });
     }
   }
   candidates.sort((a, b) => b.outPct - a.outPct || b.members - a.members);
-  return { candidates, skipped: { belowMinMembers: skippedSmall, noneOutOfRange: skippedNone } };
+  return { candidates, skipped: { belowMinMembers: skippedSmall, noneOutOfRange: skippedNone, implausibleValues: skippedImplausible } };
 }
 
 function m0(type, key) {

@@ -75,10 +75,10 @@ async function main() {
   console.log(`측정 기록이 있는 활성 회원: ${byMember.size}명`);
 
   const { candidates, skipped } = aggregateTopics(byMember, MIN_MEMBERS);
-  console.log(`후보 ${candidates.length}개 (최소 인원 미달로 제외 ${skipped.belowMinMembers}건, 범위 밖 0명이라 제외 ${skipped.noneOutOfRange}건)`);
+  console.log(`후보 ${candidates.length}개 (최소 인원 미달로 제외 ${skipped.belowMinMembers}건, 범위 밖 0명이라 제외 ${skipped.noneOutOfRange}건, 불가능한 측정값 제외 ${skipped.implausibleValues}건)`);
   // 점검용: 범위 설정이 실제 측정값과 맞는지 보려고 권장 범위와 중앙값(개별 값 아님)을 같이 찍는다.
   // ⚠️ 저장소가 public 이라 Actions 로그도 공개된다 — 개별 값·회원 정보는 찍지 않는다.
-  for (const c of candidates) console.log(`- ${topicTitle(c)} (n=${c.members}) · 권장범위 ${c.goodRange?.join('~')} · 중앙값 ${c.median}`);
+  for (const c of candidates) console.log(`${c.needsReview ? '⚠️ [기준 재확인 필요 · Notion 제외] ' : ''}- ${topicTitle(c)} (n=${c.members}) · 권장범위 ${c.goodRange?.join('~')} · 중앙값 ${c.median}`);
 
   if (!WRITE) {
     console.log('ℹ️ 시험 실행이라 Notion에는 아무것도 쓰지 않았습니다. 쓰려면 write 옵션으로 다시 실행하세요.');
@@ -86,7 +86,9 @@ async function main() {
   }
   let created = 0;
   let existed = 0;
-  for (const c of candidates) {
+  const writable = candidates.filter((c) => !c.needsReview);
+  console.log(`Notion에 쓸 후보 ${writable.length}개 (기준 재확인 필요로 보류 ${candidates.length - writable.length}개)`);
+  for (const c of writable) {
     const title = topicTitle(c);
     if (await titleExists(title)) { existed += 1; continue; }
     await notion('/v1/pages', {

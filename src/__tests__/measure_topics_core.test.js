@@ -57,6 +57,21 @@ describe('measure-topics core', () => {
     expect(c.goodRange).toEqual([160, 180]);
     expect(c.median).toBe(169);
   });
+  it('불가능한 측정값(반응 시간 6.5초 등)은 집계에서 뺀다', () => {
+    const sp = (ms) => [{ kind: 'sprint', createdAt: '2026-10-01T00:00:00Z', reactionTimeMs: ms }];
+    const r = aggregateTopics({ a: sp(6530), b: sp(300) });
+    const c = r.candidates.find((x) => x.metricKey === 'reactionTime');
+    expect(c.members).toBe(1); // 6530ms 는 제외, 300ms 만 집계
+    expect(r.skipped.implausibleValues).toBe(1);
+  });
+  it('거의 전원이 범위 밖이면 기준 재확인 필요로 표시한다', () => {
+    const r = aggregateTopics(members([110, 115, 120, 118])); // 4명 전원 케이던스 범위 밖
+    expect(r.candidates.find((x) => x.metricKey === 'cadence').needsReview).toBe(true);
+    const ok = aggregateTopics(members([150, 170, 175, 140, 172, 168])).candidates.find((x) => x.metricKey === 'cadence');
+    expect(ok.needsReview).toBe(false);
+    const tiny = aggregateTopics(members([110, 115])).candidates.find((x) => x.metricKey === 'cadence');
+    expect(tiny.needsReview).toBe(false); // 3명 미만은 표본이 적어 판단 보류
+  });
   it('outOfRange 는 절댓값 옵션을 지원한다', () => {
     expect(outOfRange(-10, [0, 8], true)).toBe(true);
     expect(outOfRange(-5, [0, 8], true)).toBe(false);
