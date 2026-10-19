@@ -9,6 +9,7 @@ import { buildClinicalInterpretation } from '../core/postureClinical';
 import { analyzeAxialRotation, ROTATION_DIRECTION_KO, ROTATION_LEVEL_KO } from '../core/postureRotation';
 import { buildProblemFocus } from '../core/crossMeasureContext';
 import ProblemFocusPanel from './ProblemFocusPanel.jsx';
+import PatternInsightPanel from './PatternInsightPanel.jsx';
 import MomiAutoNote from '../../components/report/MomiAutoNote.jsx';
 import MomiInsightPanel from '../../components/report/MomiInsightPanel.jsx';
 import { aiStore } from '../../demoData';
@@ -179,6 +180,7 @@ export default function PostureReport({
 
         <MetadataStrip metadata={clinical.metadata} viewsMeasured={report?.viewsMeasured} />
         <ProblemFocusPanel focus={problemFocus} context={report?.cross_measure_context} />
+<PatternInsightPanel measure="posture" report={report} />
         <MomiAutoNote kind="posture" report={report} member={member}
           onSaved={(patch) => aiStore.updatePostureReport(member.id, report.id, patch)} />
         {/* [Axis4 확장 2026-08-08] MomiAutoNote(자동 노트)와 별개로, 필요하면

@@ -6,6 +6,7 @@ import { extractSquatMetrics, squatMetricStatus } from './squatBiomechanics';
 import { legMetrics, stanceMetricStatus } from './singleLegStance';
 import { cadenceRangeFor, stanceRangeFor, verticalOscRangeFor } from './gaitMode';
 import { ROM_SYMMETRY_RANGE } from './romThresholds';
+import { POSTURE_THRESHOLDS } from './postureMath';
 
 export const MOMGAGYM_BLOG_URL = 'https://blog.naver.com/posture_gym';
 export const MOMGAGYM_PUBLIC_URL = 'https://momgagym-cms2.pages.dev';
@@ -433,10 +434,10 @@ export const METRIC_DEFINITIONS = Object.freeze({
     { key: 'flightTime', paths: ['rsi.flightTimeMs', 'flightTimeMs'], unit: 'ms' },
   ],
   posture: [
-    { key: 'forwardHead', paths: ['analysis.sagittal.forwardHeadMm', 'sagittal.forwardHeadMm'], unit: 'mm', range: { good: [0, 20], warn: [0, 35] } },
+    { key: 'forwardHead', paths: ['analysis.sagittal.forwardHeadMm', 'sagittal.forwardHeadMm'], unit: 'mm', range: { good: [0, POSTURE_THRESHOLDS.forwardHeadMm[0]], warn: [0, POSTURE_THRESHOLDS.forwardHeadMm[1]] } }, // 다른 화면과 같은 기준(postureMath.js 단일 소스)
     { key: 'thoracicKyphosis', paths: ['analysis.sagittal.kyphosisProxyDeg', 'sagittal.kyphosisProxyDeg'], unit: '도' },
-    { key: 'shoulderHeightDiff', paths: ['analysis.frontal.shoulderHeightDiffMm', 'frontal.shoulderHeightDiffMm'], unit: 'mm', abs: true, range: { good: [0, 8], warn: [0, 15] } },
-    { key: 'pelvisHeightDiff', paths: ['analysis.frontal.pelvisHeightDiffMm', 'frontal.pelvisHeightDiffMm'], unit: 'mm', abs: true, range: { good: [0, 8], warn: [0, 15] } },
+    { key: 'shoulderHeightDiff', paths: ['analysis.frontal.shoulderHeightDiffMm', 'frontal.shoulderHeightDiffMm'], unit: 'mm', abs: true, range: { good: [0, POSTURE_THRESHOLDS.shoulderDiffMm[0]], warn: [0, POSTURE_THRESHOLDS.shoulderDiffMm[1]] } },
+    { key: 'pelvisHeightDiff', paths: ['analysis.frontal.pelvisHeightDiffMm', 'frontal.pelvisHeightDiffMm'], unit: 'mm', abs: true, range: { good: [0, POSTURE_THRESHOLDS.pelvisDiffMmNeutral[0]], warn: [0, POSTURE_THRESHOLDS.pelvisDiffMmNeutral[1]] } },
     { key: 'centerOfGravity', paths: ['analysis.cog.offsetPct', 'cog.offsetPct'], unit: '%', range: { good: [0, 12], warn: [0, 25] } },
     { key: 'asymmetry', paths: ['analysis.asymmetry.averageAsi', 'asymmetry.averageAsi'], unit: '%', range: { good: [0, 10], warn: [0, 18] } },
   ],

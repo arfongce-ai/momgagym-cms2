@@ -24,9 +24,9 @@ export const TOPIC_METRICS = {
     { key: 'pelvicImbalance', label: '골반 좌우 균형', paths: ['biomech.pelvicImbalance'], good: [0, 4] },
   ],
   posture: [
-    { key: 'forwardHead', label: '머리 앞쪽 위치', paths: ['analysis.sagittal.forwardHeadMm', 'sagittal.forwardHeadMm'], good: [0, 20] },
+    { key: 'forwardHead', label: '머리 앞쪽 위치', paths: ['analysis.sagittal.forwardHeadMm', 'sagittal.forwardHeadMm'], good: [0, 25] },
     { key: 'shoulderHeightDiff', label: '어깨 높이 차이', paths: ['analysis.frontal.shoulderHeightDiffMm', 'frontal.shoulderHeightDiffMm'], good: [0, 8], abs: true },
-    { key: 'pelvisHeightDiff', label: '골반 높이 차이', paths: ['analysis.frontal.pelvisHeightDiffMm', 'frontal.pelvisHeightDiffMm'], good: [0, 8], abs: true },
+    { key: 'pelvisHeightDiff', label: '골반 높이 차이', paths: ['analysis.frontal.pelvisHeightDiffMm', 'frontal.pelvisHeightDiffMm'], good: [0, 13], abs: true },
     { key: 'centerOfGravity', label: '체중 중심 치우침', paths: ['analysis.cog.offsetPct', 'cog.offsetPct'], good: [0, 12] },
     { key: 'asymmetry', label: '좌우 비대칭', paths: ['analysis.asymmetry.averageAsi', 'asymmetry.averageAsi'], good: [0, 10] },
   ],

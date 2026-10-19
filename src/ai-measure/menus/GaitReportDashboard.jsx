@@ -5,6 +5,7 @@ import {
 } from 'recharts';
 import { buildProblemFocus } from '../core/crossMeasureContext';
 import ProblemFocusPanel from './ProblemFocusPanel.jsx';
+import PatternInsightPanel from './PatternInsightPanel.jsx';
 import MomiAutoNote from '../../components/report/MomiAutoNote.jsx';
 import MomiInsightPanel from '../../components/report/MomiInsightPanel.jsx';
 import { aiStore } from '../../demoData';
@@ -228,6 +229,7 @@ export default function GaitReportDashboard({ report, onComment, onClose, videoB
         {/* ── 본문: 4분할 ── */}
         <div className="grid gap-3">
           <ProblemFocusPanel focus={problemFocus} context={report?.cross_measure_context} />
+<PatternInsightPanel measure="gait" report={report} />
           {clinicalFlags.map((f) => <ClinicalFlagCard key={f.key} flag={f} />)}
           {/* [Axis3 확장 2026-08-08] MomiAutoNote — PostureReport.jsx와 동일 패턴.
               gait_reports 컬렉션을 jump와 공유하므로 updateGaitReport를 그대로 쓴다. */}

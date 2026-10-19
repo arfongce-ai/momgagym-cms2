@@ -4,6 +4,7 @@
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, CartesianGrid } from 'recharts';
 import { buildProblemFocus } from '../core/crossMeasureContext';
 import ProblemFocusPanel from './ProblemFocusPanel.jsx';
+import PatternInsightPanel from './PatternInsightPanel.jsx';
 import MomiAutoNote from '../../components/report/MomiAutoNote.jsx';
 import MomiInsightPanel from '../../components/report/MomiInsightPanel.jsx';
 import { aiStore } from '../../demoData';
@@ -116,6 +117,7 @@ export default function RomReport({ id = 'rom-report-sheet', report, previousRep
 
       <div className="mt-4">
         <ProblemFocusPanel focus={problemFocus} context={report.cross_measure_context} />
+<PatternInsightPanel measure="rom" report={report} />
       </div>
 
       {/* [Axis3 확장 2026-08-08] MomiAutoNote — PostureReport.jsx와 동일 패턴.

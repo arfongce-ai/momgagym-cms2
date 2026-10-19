@@ -560,3 +560,10 @@
 - 테스트: 관련 테스트 `npm test -- src/__tests__/nutrition_link_shared.test.js` → 13/13 통과. 전체 `npm test -- --run` → 3071/3084 통과, 실패 13(기존 기준선 11개 외 시간초과 등 2개; 통과 수는 `.github/test-baseline.json` minPassing 3059 이상). `npm run build` 성공(기존 chunk 크기 및 중복 Firebase 동적/정적 import 경고). `git diff --check` 통과.
 - 남은 위험: Firestore 실쿼리/배포/실기기 왕복 미확인. 영양 요약의 최근 7일은 이제 서버에서 날짜 내림차순으로 선택. 전체 실패 수가 HANDOFF의 과거 11개 기준보다 2개 더 나와, 두 항목이 환경성/일시성인지 추후 재확인 필요.
 - 다음에 할 일: 업로드 전 Cloudflare Pages에서 함수 배포 후 CMS 영양 탭의 최근 날짜·화면 표시 및 영양 앱 연결/기록 왕복 확인.
+
+## 2026-10-20 자세·움직임 패턴 참고 패널
+- `core/patternInsights.js`(패턴 7종, 출처·근거수준 포함) + `menus/PatternInsightPanel.jsx`. 자세·보행·점프·스프린트·ROM 리포트에 ProblemFocusPanel 아래 삽입.
+- 지표가 주의/위험일 때만 표시, 진단 문구 없음, '트레이너 확인용'. 쪽수는 책 텍스트 기준 ±1쪽 오차 가능.
+- unifiedReport 자세 기준을 POSTURE_THRESHOLDS로 통일(머리 25/45, 어깨 8/18, 골반 13/20), measure-topics core 동기화.
+- 미사용 결정: 척추 번호별 장기·질환 표(근거 미확인), 근막 사슬(참고 연결로도 아직 미포함).
+- 테스트 3259/3259, 빌드 통과.

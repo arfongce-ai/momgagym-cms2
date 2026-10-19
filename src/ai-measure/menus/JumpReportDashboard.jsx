@@ -10,6 +10,7 @@ import {
 } from '../../components/report/UnifiedReportPrimitives';
 import { buildProblemFocus } from '../core/crossMeasureContext';
 import ProblemFocusPanel from './ProblemFocusPanel.jsx';
+import PatternInsightPanel from './PatternInsightPanel.jsx';
 import MomiAutoNote from '../../components/report/MomiAutoNote.jsx';
 import MomiInsightPanel from '../../components/report/MomiInsightPanel.jsx';
 import { aiStore } from '../../demoData';
@@ -248,6 +249,7 @@ export default function JumpReportDashboard({ report, onClose, onComment, member
           />
 
           <ProblemFocusPanel focus={problemFocus} context={report.cross_measure_context} />
+<PatternInsightPanel measure="jump" report={report} />
           {/* [Axis3 확장 2026-08-08] MomiAutoNote — PostureReport.jsx와 동일 패턴.
               gait_reports 컬렉션을 gait와 공유하므로 updateGaitReport를 그대로 쓴다. */}
           <MomiAutoNote kind="jump" report={report} member={resolvedMember}

@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip, Cell } from 'recharts';
 import { buildProblemFocus } from '../core/crossMeasureContext';
 import ProblemFocusPanel from './ProblemFocusPanel.jsx';
+import PatternInsightPanel from './PatternInsightPanel.jsx';
 import MomiAutoNote from '../../components/report/MomiAutoNote.jsx';
 import MomiInsightPanel from '../../components/report/MomiInsightPanel.jsx';
 import { aiStore } from '../../demoData';
@@ -119,6 +120,7 @@ export default function SprintReportDashboard({ report, previousReport, onCommen
 
         <div className="grid gap-3">
           <ProblemFocusPanel focus={problemFocus} context={report?.cross_measure_context} />
+<PatternInsightPanel measure="sprint" report={report} />
           {clinicalFlags.map((f) => <ClinicalFlagCard key={f.key} flag={f} />)}
           {/* gait_reports 컬렉션을 gait/jump와 공유하므로 updateGaitReport를 그대로 쓴다. */}
           <MomiAutoNote kind={kind} report={report} member={resolvedMember}
