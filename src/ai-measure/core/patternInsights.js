@@ -16,7 +16,6 @@ export const EVIDENCE = Object.freeze({
 
 const MAGEE = 'Magee, Orthopedic Physical Assessment';
 const NASM = 'NASM, Essentials of Corrective Exercise Training';
-const MYERS = '근막경선 해부학(Myers, Anatomy Trains 번역서)';
 const KENDALL = 'Kendall류 자세와 통증치료에 있어서 근육의 기능과 검사(번역서)';
 
 export const PATTERN_LIBRARY = Object.freeze([
