@@ -6,6 +6,7 @@
 import { useState, useEffect } from 'react';
 import { getAiSessions, loadAiSessions, deleteAiSession, calcChanges } from '../../services/aiService';
 import { useAuth } from '../../contexts/AuthContext';
+import { aiStore } from '../../demoData';
 
 const FIELD_LABEL = {
   weight:    { label: '몸무게',   unit: 'kg',   icon: '⚖️'  },
@@ -178,12 +179,17 @@ export default function MemberMeasureHistory({ member, onNewMeasure }) {
   const { user }        = useAuth();
   const [sessions, setSessions] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const isAdmin = user?.role === 'admin';
 
   const load = async () => {
     setLoading(true);
     try {
-      setSessions(await loadAiSessions(member.id));
+      setLoadError('');
+      const list = await loadAiSessions(member.id);
+      setSessions(list);
+      // ensureSessions 는 읽기 실패를 빈 목록으로 삼키므로, 실패 사유를 따로 확인해 안내한다.
+      if (list.length === 0 && aiStore._aiLoadError) setLoadError(aiStore._aiLoadError);
     } catch (err) {
       console.error('[MemberMeasureHistory] 로드 오류:', err);
       setSessions([]);
@@ -230,7 +236,14 @@ export default function MemberMeasureHistory({ member, onNewMeasure }) {
       )}
 
       {/* 이력 없음 */}
-      {!loading && sessions.length === 0 && (
+      {!loading && sessions.length === 0 && loadError && (
+        <div className="text-center py-6 text-red-700 dark:text-red-400">
+          <p className="text-sm font-semibold">측정 이력을 불러오지 못했습니다 ({loadError})</p>
+          <button onClick={load} className="mt-2 text-xs underline">다시 불러오기</button>
+        </div>
+      )}
+
+      {!loading && sessions.length === 0 && !loadError && (
         <div className="text-center py-10 text-slate-600">
           <p className="text-3xl mb-2">📊</p>
           <p className="text-sm">측정 이력이 없습니다</p>
