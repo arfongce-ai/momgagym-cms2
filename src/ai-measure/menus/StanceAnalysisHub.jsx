@@ -24,6 +24,18 @@ import StanceLiveAnalysis from './StanceLiveAnalysis';
 import StanceUploadAnalysis from './StanceUploadAnalysis';
 import StanceReportDashboard from './StanceReportDashboard';
 import { evaluateSingleLegStanceWithEyes } from '../core/singleLegStance';
+
+function stanceAgeYears(member) {
+  const b = member?.birthDate && new Date(member.birthDate);
+  if (b && !Number.isNaN(b.getTime())) {
+    const now = new Date();
+    let a = now.getFullYear() - b.getFullYear();
+    if (now.getMonth() < b.getMonth() || (now.getMonth() === b.getMonth() && now.getDate() < b.getDate())) a -= 1;
+    return a;
+  }
+  const n = Number(member?.age);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
 import { buildProblemFocus } from '../core/crossMeasureContext';
 import { useHardwareBack } from '../core/useHardwareBack';
 import MeasureRecordConfirm from '../components/MeasureRecordConfirm.jsx';
@@ -82,6 +94,7 @@ export default function StanceAnalysisHub({ member, onBack, onSave, onSaveToFire
     const evalResult = evaluateSingleLegStanceWithEyes({
       open: { left: openL, right: openR },
       closed: { left: closedL, right: closedR },
+      ageYears: stanceAgeYears(member),
     });
     const focus = buildProblemFocus('stance', evalResult);
     const reportData = {

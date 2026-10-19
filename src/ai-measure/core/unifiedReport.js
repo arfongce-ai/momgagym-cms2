@@ -474,14 +474,14 @@ export const METRIC_DEFINITIONS = Object.freeze({
     { key: 'oneRM', paths: ['metrics.oneRM', 'estimatedOneRM', 'oneRM', 'summary.oneRM'], unit: 'kg' },
     { key: 'formulaSpread', paths: ['metadata.formulaSpreadKg', 'metadata.estimateStats.spreadKg', 'formulaSpreadKg'], unit: 'kg' },
     { key: 'meanVelocity', paths: ['metrics.meanVelocity', 'meanVelocity', 'vbt.meanVelocity'], unit: 'm/s' },
-    { key: 'velocityLoss', paths: ['metrics.velocityLoss', 'velocityLoss', 'vbt.velocityLoss'], unit: '%', range: { good: [0, 15], warn: [0, 30] } },
+    { key: 'velocityLoss', paths: ['metrics.velocityLoss', 'velocityLoss', 'vbt.velocityLoss'], unit: '%', range: { good: [0, 20], warn: [0, 40] } }, // Pareja-Blanco 2017: 20%·40% 비교 연구 기준(15/30은 출처 미확인이어서 교체)
   ],
   vbt: [
     { key: 'meanVelocity', paths: ['metrics.meanVelocity', 'meanVelocity', 'vbt.meanVelocity'], unit: 'm/s' },
     { key: 'peakVelocity', paths: ['metrics.peakVelocity', 'peakVelocity', 'vbt.peakVelocity'], unit: 'm/s' },
     { key: 'peakPower', paths: ['metrics.peakPower', 'metrics.meanPower', 'peakPower', 'vbt.peakPower'], unit: 'W' },
     { key: 'rom', paths: ['metrics.rangeOfMotion'], unit: 'cm' },
-    { key: 'velocityLoss', paths: ['metrics.velocityLoss', 'velocityLoss', 'vbt.velocityLoss'], unit: '%', range: { good: [0, 15], warn: [0, 30] } },
+    { key: 'velocityLoss', paths: ['metrics.velocityLoss', 'velocityLoss', 'vbt.velocityLoss'], unit: '%', range: { good: [0, 20], warn: [0, 40] } }, // Pareja-Blanco 2017: 20%·40% 비교 연구 기준(15/30은 출처 미확인이어서 교체)
   ],
   // stance/squat는 이미 CMS 판정 모듈(singleLegStance.js/squatBiomechanics.js)이
   // normal/caution/risk로 확정한 결과라, 다른 타입처럼 원시 수치에 범위(range)를

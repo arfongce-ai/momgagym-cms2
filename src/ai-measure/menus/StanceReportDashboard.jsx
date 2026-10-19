@@ -75,12 +75,12 @@ const STATUS_TOKEN = {
   unknown: { key: 'unknown', label: '측정 안 됨', color: 'text-slate-500', colorClass: 'text-slate-500 dark:text-slate-400', bgClass: 'bg-slate-300/12 dark:bg-slate-600/12', borderClass: 'border-slate-500/35', bar: 'bg-slate-200 dark:bg-slate-700' },
 };
 
-function HoldTimeBar({ leg }) {
+function HoldTimeBar({ leg, th }) {
   const m = legMetrics(leg);
   const status = stanceMetricStatus(leg, 'hold_time_', 'hold_time_insufficient');
   const token = STATUS_TOKEN[status] || STATUS_TOKEN.unknown;
-  const targetS = SLST_TUNING.targetHoldMs / 1000;
-  const minS = SLST_TUNING.minAcceptableHoldMs / 1000;
+  const targetS = (th?.targetMs ?? SLST_TUNING.targetHoldMs) / 1000;
+  const minS = (th?.minMs ?? SLST_TUNING.minAcceptableHoldMs) / 1000;
   const holdS = m.holdMs == null ? null : Math.round(m.holdMs / 100) / 10;
   const pct = holdS == null ? 0 : Math.max(0, Math.min(100, (holdS / targetS) * 100));
   const minPct = (minS / targetS) * 100;
@@ -198,7 +198,7 @@ export default function StanceReportDashboard({ report, member, onClose, onRemea
                 return (
                   <MetricCard key={label} metric={{
                     key: label, label, displayValue: holdMs == null ? '-' : Math.round(holdMs / 100) / 10,
-                    unit: holdMs == null ? '' : '초', description: `목표 ${SLST_TUNING.targetHoldMs / 1000}초`,
+                    unit: holdMs == null ? '' : '초', description: `목표 ${(report.holdThresholds?.targetMs ?? SLST_TUNING.targetHoldMs) / 1000}초${report.holdThresholds?.ageGroup ? ` · ${report.holdThresholds.ageGroup} 건강 성인 평균 ${report.holdThresholds.referenceMeanS}초(참고)` : ''}`,
                     status: STATUS_TOKEN[st],
                   }} />
                 );
@@ -210,12 +210,12 @@ export default function StanceReportDashboard({ report, member, onClose, onRemea
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-3">
                 <p className="text-[11px] font-black text-slate-500 dark:text-slate-400">왼쪽</p>
-                <HoldTimeBar leg={eyesOpen.left} />
+                <HoldTimeBar leg={eyesOpen.left} th={report.holdThresholds} />
                 <AngleBar label="골반 기울기" leg={eyesOpen.left} metricKey="pelvicTiltDeg" flagPrefix="pelvic_tilt_" cautionDeg={SLST_TUNING.pelvicTiltCautionDeg} riskDeg={SLST_TUNING.pelvicTiltRiskDeg} />
               </div>
               <div className="space-y-3">
                 <p className="text-[11px] font-black text-slate-500 dark:text-slate-400">오른쪽</p>
-                <HoldTimeBar leg={eyesOpen.right} />
+                <HoldTimeBar leg={eyesOpen.right} th={report.holdThresholds} />
                 <AngleBar label="골반 기울기" leg={eyesOpen.right} metricKey="pelvicTiltDeg" flagPrefix="pelvic_tilt_" cautionDeg={SLST_TUNING.pelvicTiltCautionDeg} riskDeg={SLST_TUNING.pelvicTiltRiskDeg} />
               </div>
             </div>
@@ -225,12 +225,12 @@ export default function StanceReportDashboard({ report, member, onClose, onRemea
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-3">
                 <p className="text-[11px] font-black text-slate-500 dark:text-slate-400">왼쪽</p>
-                <HoldTimeBar leg={eyesClosed.left} />
+                <HoldTimeBar leg={eyesClosed.left} th={report.holdThresholds} />
                 <AngleBar label="골반 기울기" leg={eyesClosed.left} metricKey="pelvicTiltDeg" flagPrefix="pelvic_tilt_" cautionDeg={SLST_TUNING.pelvicTiltCautionDeg} riskDeg={SLST_TUNING.pelvicTiltRiskDeg} />
               </div>
               <div className="space-y-3">
                 <p className="text-[11px] font-black text-slate-500 dark:text-slate-400">오른쪽</p>
-                <HoldTimeBar leg={eyesClosed.right} />
+                <HoldTimeBar leg={eyesClosed.right} th={report.holdThresholds} />
                 <AngleBar label="골반 기울기" leg={eyesClosed.right} metricKey="pelvicTiltDeg" flagPrefix="pelvic_tilt_" cautionDeg={SLST_TUNING.pelvicTiltCautionDeg} riskDeg={SLST_TUNING.pelvicTiltRiskDeg} />
               </div>
             </div>

@@ -50,6 +50,43 @@ export const SLST_TUNING = {
   asymmetryRankGap: 1,
 };
 
+// ── 연령별 한발서기 기준(눈 뜸) ──
+// 근거: Springer 등 2007 규준(건강 성인 n=549, 3회 중 최고, 45초 상한) 평균 —
+//  18~39세 44.7 / 40~49 41.9 / 50~59 41.2 / 60~69 32.1 / 70~79 21.5 / 80+ 9.4 초.
+// 설계(내 판단, 논문 값 아님): 나이를 모르거나 60대까지는 기존 30/20/10초를 그대로 쓰고,
+//  평균이 30초보다 낮은 70대 이상만 평균/30 비율로 낮춘다(젊은 층은 기준을 올리지 않음 —
+//  표본 SD 표기가 불확실해 컷오프 근거가 약함). 표시용 참고 평균은 항상 함께 돌려준다.
+export const SLST_AGE_REFERENCE_MEAN_S = Object.freeze([
+  { maxAge: 39, label: '18~39세', mean: 44.7 },
+  { maxAge: 49, label: '40~49세', mean: 41.9 },
+  { maxAge: 59, label: '50~59세', mean: 41.2 },
+  { maxAge: 69, label: '60~69세', mean: 32.1 },
+  { maxAge: 79, label: '70~79세', mean: 21.5 },
+  { maxAge: Infinity, label: '80세 이상', mean: 9.4 },
+]);
+
+export function holdThresholdsForAge(ageYears) {
+  const base = {
+    targetMs: SLST_TUNING.targetHoldMs,
+    cautionMs: SLST_TUNING.cautionHoldMs,
+    minMs: SLST_TUNING.minAcceptableHoldMs,
+    ageGroup: null,
+    referenceMeanS: null,
+  };
+  const age = Number(ageYears);
+  if (!Number.isFinite(age) || age < 18) return base;
+  const row = SLST_AGE_REFERENCE_MEAN_S.find((r) => age <= r.maxAge);
+  const ratio = Math.min(1, row.mean / (SLST_TUNING.targetHoldMs / 1000));
+  if (ratio >= 1) return { ...base, ageGroup: row.label, referenceMeanS: row.mean };
+  return {
+    targetMs: Math.round(SLST_TUNING.targetHoldMs * ratio),
+    cautionMs: Math.round(SLST_TUNING.cautionHoldMs * ratio),
+    minMs: Math.round(SLST_TUNING.minAcceptableHoldMs * ratio),
+    ageGroup: row.label,
+    referenceMeanS: row.mean,
+  };
+}
+
 const STATUS_RANK = { normal: 0, caution: 1, risk: 2, unknown: 3 };
 
 // 재현성확정된 소프트 플래그가 어떤 등급으로 확정되는지 명시적으로 정의.
@@ -78,7 +115,7 @@ function worse(a, b) {
  * @param {number}  [trial.kneeValgusDeg] 최대 동적 무릎 외반각(deg, 선택 신호)
  * @returns {object}
  */
-function judgeTrial(trial = {}) {
+function judgeTrial(trial = {}, th = holdThresholdsForAge(null)) {
   if (!trial.valid) {
     return {
       valid: false,
@@ -93,7 +130,7 @@ function judgeTrial(trial = {}) {
   const immediateReasons = [];
   if (trial.balanceLoss) immediateReasons.push('balance_loss');
   if (trial.stepOut) immediateReasons.push('step_out');
-  if ((trial.holdTimeMs ?? 0) < SLST_TUNING.minAcceptableHoldMs) immediateReasons.push('hold_time_insufficient');
+  if ((trial.holdTimeMs ?? 0) < th.minMs) immediateReasons.push('hold_time_insufficient');
 
   const base = {
     holdTimeMs: trial.holdTimeMs ?? null,
@@ -109,7 +146,7 @@ function judgeTrial(trial = {}) {
   let status = 'normal';
   const softFlags = [];
 
-  if ((trial.holdTimeMs ?? 0) < SLST_TUNING.cautionHoldMs) {
+  if ((trial.holdTimeMs ?? 0) < th.cautionMs) {
     softFlags.push('hold_time_borderline');
     status = worse(status, 'caution');
   }
@@ -133,9 +170,9 @@ function judgeTrial(trial = {}) {
  * - 둘 다 유효하면 → 같은 softFlag가 양쪽에서 반복된 것만 CAUTION/RISK로 확정하고,
  *   한쪽에만 나온 소프트 신호는 상태를 올리지 않고 "미확정 관찰"로만 남긴다.
  */
-function combineLegTrials(trial1, trial2) {
-  const t1 = judgeTrial(trial1);
-  const t2 = judgeTrial(trial2);
+function combineLegTrials(trial1, trial2, th) {
+  const t1 = judgeTrial(trial1, th);
+  const t2 = judgeTrial(trial2, th);
 
   if (t1.immediateFail || t2.immediateFail) {
     const failed = t1.immediateFail ? t1 : t2;
@@ -167,8 +204,9 @@ function combineLegTrials(trial1, trial2) {
  * @returns {object} valid:false 시 { valid:false, reason, message }
  */
 export function evaluateSingleLegStance(input = {}) {
-  const left = input.left ? combineLegTrials(input.left.trial1, input.left.trial2) : null;
-  const right = input.right ? combineLegTrials(input.right.trial1, input.right.trial2) : null;
+  const th = holdThresholdsForAge(input.ageYears);
+  const left = input.left ? combineLegTrials(input.left.trial1, input.left.trial2, th) : null;
+  const right = input.right ? combineLegTrials(input.right.trial1, input.right.trial2, th) : null;
 
   if (!left && !right) {
     return { valid: false, reason: 'no_trials', message: '한다리서기 측정 데이터가 없습니다.' };
@@ -187,6 +225,7 @@ export function evaluateSingleLegStance(input = {}) {
     left,
     right,
     asymmetryFlag,
+    holdThresholds: th,
   };
 }
 
@@ -205,8 +244,8 @@ export function evaluateSingleLegStance(input = {}) {
  * @returns {object} valid:false 시 { valid:false, reason, message }
  */
 export function evaluateSingleLegStanceWithEyes(input = {}) {
-  const eyesOpen = evaluateSingleLegStance(input.open || {});
-  const eyesClosed = evaluateSingleLegStance(input.closed || {});
+  const eyesOpen = evaluateSingleLegStance({ ...(input.open || {}), ageYears: input.ageYears });
+  const eyesClosed = evaluateSingleLegStance({ ...(input.closed || {}), ageYears: input.ageYears });
 
   if (!eyesOpen.valid && !eyesClosed.valid) {
     return { valid: false, reason: 'no_trials', message: '한다리서기 측정 데이터가 없습니다.' };
@@ -229,6 +268,7 @@ export function evaluateSingleLegStanceWithEyes(input = {}) {
     left: eyesOpen.valid ? eyesOpen.left : null,
     right: eyesOpen.valid ? eyesOpen.right : null,
     asymmetryFlag: eyesOpen.valid ? eyesOpen.asymmetryFlag : false,
+    holdThresholds: holdThresholdsForAge(input.ageYears),
   };
 }
 

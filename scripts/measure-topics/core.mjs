@@ -48,10 +48,10 @@ export const TOPIC_METRICS = {
     { key: 'asymmetry', label: '관절 가동 좌우 차이', paths: ['summary.symmetry_index_score', 'symmetry_index_score'], good: [0, 8] }, // romThresholds.js 와 같은 기준
   ],
   one_rm: [
-    { key: 'velocityLoss', label: '바벨 속도 저하', paths: ['metrics.velocityLoss', 'velocityLoss', 'vbt.velocityLoss'], good: [0, 15] },
+    { key: 'velocityLoss', label: '바벨 속도 저하', paths: ['metrics.velocityLoss', 'velocityLoss', 'vbt.velocityLoss'], good: [0, 20] },
   ],
   vbt: [
-    { key: 'velocityLoss', label: '바벨 속도 저하', paths: ['metrics.velocityLoss', 'velocityLoss', 'vbt.velocityLoss'], good: [0, 15] },
+    { key: 'velocityLoss', label: '바벨 속도 저하', paths: ['metrics.velocityLoss', 'velocityLoss', 'vbt.velocityLoss'], good: [0, 20] },
   ],
 };
 
