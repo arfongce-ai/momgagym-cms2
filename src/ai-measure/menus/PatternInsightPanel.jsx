@@ -31,6 +31,11 @@ export default function PatternInsightPanel({ measure, report }) {
             {p.suggestions?.length ? (
               <ul className="list-disc pl-4 text-xs">{p.suggestions.map((s) => <li key={s}>{s}</li>)}</ul>
             ) : null}
+            {p.fascialLink ? (
+              <p className="text-xs text-slate-600 dark:text-slate-300">
+                <b>참고 연결(근거 약함)</b> {p.fascialLink.text} <span className="text-[10px]">저자의 임상 경험에 기반한 가설이며 연구로 검증되지 않았습니다. 출처: 근막경선 해부학 {p.fascialLink.where}</span>
+              </p>
+            ) : null}
             {p.caution ? <p className="text-xs text-amber-700 dark:text-amber-300">{p.caution}</p> : null}
             <p className="text-[10px] text-slate-500 dark:text-slate-400">
               근거 수준: {EVIDENCE[p.evidence]} · 출처(쪽수는 ±1쪽 오차 가능): {p.sources.map((s) => `${s.book} ${s.where}`).join(' / ')}

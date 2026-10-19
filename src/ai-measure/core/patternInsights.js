@@ -16,6 +16,7 @@ export const EVIDENCE = Object.freeze({
 
 const MAGEE = 'Magee, Orthopedic Physical Assessment';
 const NASM = 'NASM, Essentials of Corrective Exercise Training';
+const MYERS = '근막경선 해부학(Myers, Anatomy Trains 번역서)';
 const KENDALL = 'Kendall류 자세와 통증치료에 있어서 근육의 기능과 검사(번역서)';
 
 export const PATTERN_LIBRARY = Object.freeze([
@@ -32,6 +33,7 @@ export const PATTERN_LIBRARY = Object.freeze([
       { book: MAGEE, where: '3장 경추 p.163–164, Fig 3-16 (상부 교차 증후군)' },
       { book: NASM, where: '6장 p.122 (머리가 앞으로 이동: 상부 승모근·흉쇄유돌근·견갑거근 과활성, 깊은 목 굴곡근 저활성)' },
     ],
+    fascialLink: { text: '나선선의 가지선(가슴띠)이 머리 앞쪽 자세와 함께 긴장된다고 설명됩니다.', where: '6장 나선선 p.~180 (전방머리 자세와 가슴띠)' },
     evidence: 'concept',
   },
   {
@@ -44,6 +46,7 @@ export const PATTERN_LIBRARY = Object.freeze([
     suggestions: ['어깨가 올라간 쪽의 목·어깨 긴장 이완', '가방 메는 쪽·팔 쓰는 습관 확인', '다음 회차에도 같은 자세·거리로 찍어 변화 확인'],
     caution: '갑작스러운 변화나 통증이 동반되면 전문가 상담을 권합니다.',
     sources: [{ book: MAGEE, where: '3장 경추 p.163 (어깨 높이: 우세측이 약간 낮음, 손상 쪽은 상부 승모근·견갑거근으로 올라갈 수 있음)' }],
+    fascialLink: { text: '외측선(몸 옆면)은 좌우 옆면의 균형을 맡는 선으로 설명되며, 좌우 높이 차이를 볼 때 함께 살펴볼 수 있습니다.', where: '5장 외측선 p.~147' },
     evidence: 'textbook',
   },
   {
@@ -59,6 +62,7 @@ export const PATTERN_LIBRARY = Object.freeze([
       { book: KENDALL, where: '골반 측면 경사 설명(높은 쪽 고관절 내전·외전근 신장, 반대쪽 외전근·대퇴근막장근 단축)' },
       { book: MAGEE, where: '10장 고관절 p.~725 (다리 길이 차이 1~1.3cm는 정상), 15장 자세 평가' },
     ],
+    fascialLink: { text: '외측선(몸 옆면)은 좌우 옆면의 균형을 맡는 선으로 설명되며, 좌우 높이 차이를 볼 때 함께 살펴볼 수 있습니다.', where: '5장 외측선 p.~147' },
     evidence: 'textbook',
   },
   {
