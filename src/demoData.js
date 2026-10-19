@@ -1878,6 +1878,36 @@ export const aiStore = {
     try { await fbSet('ai', sid, { ...u, __mid: mid }); return u; }
     catch (e) { cache.ai[mid] = prev; throw e; }
   },
+  // [트레이너 확인 2026-10] 설계 원칙 "측정값 + 신뢰도 + 원본 영상 + 트레이너 확인값"의 마지막 항목.
+  // 자동 측정값은 그대로 두고, 트레이너가 확인/보정한 내용을 별도 필드(trainerReview)로 덧붙인다.
+  //   review = { status:'confirmed'|'adjusted', note, adjustedText, by, at }
+  // 세션(ai)에 저장하고, 연결된 전용 리포트가 있으면 같은 값을 복사한다(어느 쪽을 읽어도 보이게).
+  // analysisUpdatedAt 은 건드리지 않는다(분석이 바뀐 것이 아니므로).
+  setTrainerReview: async (mid, { sessionId = '', reportId = '', reportCollection = '' } = {}, review) => {
+    if (!mid || (!sessionId && !reportId)) throw new Error('확인할 측정 기록을 찾을 수 없습니다.');
+    const stamped = { ...review, at: review?.at || new Date().toISOString() };
+    const cacheKeyOf = { gait_reports: 'gaitReports', posture_reports: 'postureReports', rom_reports: 'romReports' };
+    const rKey = cacheKeyOf[reportCollection];
+    const prevAi = cache.ai[mid];
+    const prevRep = rKey ? cache[rKey][mid] : undefined;
+    if (sessionId) cache.ai[mid] = (cache.ai[mid] || []).map(s => s.id === sessionId ? { ...s, trainerReview: stamped } : s);
+    if (rKey && reportId) cache[rKey][mid] = (cache[rKey][mid] || []).map(r => r.id === reportId ? { ...r, trainerReview: stamped } : r);
+    try {
+      if (sessionId) {
+        const u = (cache.ai[mid] || []).find(s => s.id === sessionId);
+        if (u) await fbSet('ai', sessionId, { ...u, __mid: mid });
+      }
+      if (rKey && reportId) {
+        const u = (cache[rKey][mid] || []).find(r => r.id === reportId);
+        if (u) await fbSet(reportCollection, reportId, { ...u, __mid: mid });
+      }
+      return stamped;
+    } catch (e) {
+      cache.ai[mid] = prevAi;
+      if (rKey) cache[rKey][mid] = prevRep;
+      throw e;
+    }
+  },
   // 전용 리포트 삭제(측정별/회차별 삭제 기능) — deleteSession과 동일한 낙관적 캐시 반영 패턴.
   deleteGaitReport: async (mid, rid) => {
     const prev = cache.gaitReports[mid];

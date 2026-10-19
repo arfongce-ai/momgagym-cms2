@@ -45,6 +45,12 @@
 
 ## 작업 로그
 최신 항목이 위. 형식을 그대로 복사해서 쓴다.
+### 2026-10-19 · Claude Code · 측정 이력 통합 1단계(저장 점검 + 이력 탭 통합)
+- 한 일: 이력 탭이 `ai` 컬렉션만 읽어 전용 컬렉션(gait/posture/rom_reports)에만 있는 과거 기록이 안 보일 수 있던 점을 보완. `src/services/measureHistoryService.js` 신규(네 컬렉션 병합, `linkedSessionId`로 세션·전용 리포트 묶음, 신뢰도 0~100 정규화). `MemberMeasureHistory.jsx`는 병합 목록 + 대표 지표 + 신뢰도 + 트레이너 확인 표시로 교체. `aiStore.setTrainerReview` 추가(세션과 연결 리포트에 `trainerReview` 저장, `analysisUpdatedAt` 미변경).
+- 점검 결과(저장 현황): 신규 측정은 모두 `ai`에 세션 저장, 보행·점프·스프린트·자세·ROM은 전용 컬렉션에 추가 저장. 한다리서기·스쿼트·바벨은 `ai`만. 신뢰도는 VBT/1RM/ROM만 저장(0~1 또는 0~100), 자세는 `analysis.reliability`, 보행·점프·스프린트·한다리서기·스쿼트는 신뢰도 필드 없음(화면에 "미기록"). 트레이너 확인값은 저장 코드 자체가 없었음 → 이번에 추가.
+- 미해결: 보행·점프·스쿼트 등의 신뢰도 산출(측정 엔진 수정 필요, 이번 범위 밖). 점프 `valid!==true`는 세션만 저장되고 전용 리포트는 저장 안 됨.
+- 검증: 새 테스트 10건 통과, `npm run build` 성공, `npm test` 실패 11건은 변경 전 main과 동일(기존 실패 목록 참고).
+- 변경 파일: `src/services/measureHistoryService.js`(신규), `src/components/ai/MemberMeasureHistory.jsx`, `src/demoData.js`(`setTrainerReview`), `src/__tests__/measure_history.test.js`(신규), `docs/HANDOFF.md`.
 ### 2026-10-09 · Codex · 보행 글 미디어 중복 교체 및 426px 재편집
 - 한 일: 10월 8일·9일 로컬 선택 기록을 대조해 원본 클립이 반복된 원인을 확인. 이전에 사용한 클립과 겹치지 않는 이미지 5개 원본·영상 4개 원본으로 다시 제작했고, 이미지·영상 원본을 서로 분리.
 - 결과: 이미지 5장 426×426, H.264 무음 영상 1개 426×758·약 16초. 현재 보행 글 문구를 반영하고 `publishAllowed:false` 확인. 이전 고해상도 결과는 로컬 백업에 보존, 회원 원본은 수정하지 않음.

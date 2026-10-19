@@ -4,7 +4,8 @@
 //   - 과거 대비 변화 자동 요약 (예: 골격근량 +0.2kg)
 //   - try-catch 완비
 import { useState, useEffect } from 'react';
-import { getAiSessions, loadAiSessions, deleteAiSession, calcChanges } from '../../services/aiService';
+import { deleteAiSession, calcChanges } from '../../services/aiService';
+import { loadMeasureEntries, describeEntry } from '../../services/measureHistoryService';
 import { useAuth } from '../../contexts/AuthContext';
 import { aiStore } from '../../demoData';
 
@@ -39,27 +40,97 @@ function ChangeBadge({ diff, unit, field }) {
   );
 }
 
-// ── AI측정 허브 세션 카드 (measurements 없는 새 저장 형식) ──
-// [버그 수정 2026-10] AiMeasureHub 가 저장하는 세션은 { menu, menuTitle, data } 형식이라
-// measurements 가 없다. 아래 체성분 카드가 m[key] 를 읽다가 TypeError 로 탭 전체가
-// 빈 화면이 되던 문제 → 이 형식은 간단한 카드로 따로 그린다. (체성분 카드는 그대로)
-function MenuSessionCard({ session, onDelete, isAdmin }) {
-  const title = session.menuTitle || session.menu || 'AI 측정';
+// ── 측정 기록 카드 (허브 저장 형식 + 전용 리포트 통합) ───────────────
+// [2026-10] 세션(ai)·보행/자세/ROM 전용 리포트를 한 목록으로 합쳐 보여준다.
+// 카드마다 대표 지표 · 신뢰도 · 트레이너 확인 상태를 같은 형식으로 표시한다.
+const STATUS_CLR = {
+  normal:  'bg-emerald-500/20 text-emerald-700 dark:text-emerald-400',
+  caution: 'bg-amber-500/20 text-amber-700 dark:text-amber-400',
+  risk:    'bg-red-500/20 text-red-700 dark:text-red-400',
+};
+
+function EntryCard({ entry, onDelete, onReview, isAdmin, canReview }) {
+  const [open, setOpen] = useState(false);
+  const [note, setNote] = useState(entry.trainerReview?.note || '');
+  const [adj, setAdj] = useState(entry.trainerReview?.adjustedText || '');
+  const [saving, setSaving] = useState(false);
+  const { metrics, confidence } = describeEntry(entry);
+  const rv = entry.trainerReview;
+
+  const submit = async (status) => {
+    setSaving(true);
+    try { await onReview(entry, { status, note: note.trim(), adjustedText: adj.trim() }); setOpen(false); }
+    finally { setSaving(false); }
+  };
+
   return (
-    <div className="bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-4 space-y-1">
+    <div className="bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-4 space-y-2">
       <div className="flex items-center justify-between">
         <div>
-          <span className="font-semibold text-sm">{session.recordedAt || '-'}</span>
-          <span className="ml-2 text-xs font-bold text-slate-700 dark:text-slate-200">{title}</span>
+          <span className="font-semibold text-sm">{entry.date || '-'}</span>
+          <span className="ml-2 text-xs font-bold text-slate-700 dark:text-slate-200">{entry.title}</span>
         </div>
-        {isAdmin && (
-          <button onClick={() => onDelete(session.id)}
+        {isAdmin && entry.sessionId && (
+          <button onClick={() => onDelete(entry.sessionId)}
             className="text-slate-600 hover:text-red-700 dark:hover:text-red-400 text-sm transition-colors">
             🗑
           </button>
         )}
       </div>
-      {session.memo && <p className="text-xs text-slate-500 italic">📝 {session.memo}</p>}
+
+      {metrics.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {metrics.map(m => (
+            <span key={m.key}
+              className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${STATUS_CLR[m.status?.key] || 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300'}`}>
+              {m.label}: {m.displayValue}{m.unit}
+            </span>
+          ))}
+        </div>
+      )}
+
+      <div className="flex flex-wrap items-center gap-2 text-[10px]">
+        <span className="text-slate-500">
+          신뢰도 {confidence.pct != null ? `${confidence.pct}%` : '미기록'}
+        </span>
+        {rv ? (
+          <span className="px-1.5 py-0.5 rounded bg-sky-500/20 text-sky-700 dark:text-sky-400 font-bold">
+            트레이너 {rv.status === 'adjusted' ? '보정' : '확인'} 완료
+          </span>
+        ) : (
+          <span className="text-slate-500">트레이너 확인 전</span>
+        )}
+        {entry.source === 'report' && <span className="text-slate-400">전용 리포트 기록</span>}
+      </div>
+
+      {rv && (rv.note || rv.adjustedText) && (
+        <p className="text-xs text-slate-600 dark:text-slate-300">
+          {rv.adjustedText ? `보정: ${rv.adjustedText}` : ''}{rv.adjustedText && rv.note ? ' · ' : ''}{rv.note ? `메모: ${rv.note}` : ''}
+        </p>
+      )}
+      {entry.memo && <p className="text-xs text-slate-500 italic">📝 {entry.memo}</p>}
+
+      {canReview && (
+        <div>
+          <button onClick={() => setOpen(o => !o)} className="text-[11px] underline text-slate-500">
+            {rv ? '확인 내용 수정' : '트레이너 확인'}
+          </button>
+          {open && (
+            <div className="mt-2 space-y-2">
+              <input value={adj} onChange={e => setAdj(e.target.value)} placeholder="보정한 값이 있으면 입력 (예: 좌 45° / 우 52°)"
+                className="w-full text-xs rounded-md px-2 py-1.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600" />
+              <input value={note} onChange={e => setNote(e.target.value)} placeholder="확인 메모 (선택)"
+                className="w-full text-xs rounded-md px-2 py-1.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600" />
+              <div className="flex gap-2">
+                <button disabled={saving} onClick={() => submit('confirmed')}
+                  className="text-xs px-3 py-1.5 rounded-md bg-sky-600 text-white disabled:opacity-50">측정값 맞음</button>
+                <button disabled={saving || !adj.trim()} onClick={() => submit('adjusted')}
+                  className="text-xs px-3 py-1.5 rounded-md bg-amber-600 text-white disabled:opacity-50">보정값으로 저장</button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
       <p className="text-[10px] text-slate-500">상세 결과는 리포트 화면에서 확인할 수 있습니다.</p>
     </div>
   );
@@ -67,9 +138,6 @@ function MenuSessionCard({ session, onDelete, isAdmin }) {
 
 // ── 세션 카드 ─────────────────────────────────────────────
 function SessionCard({ session, prevSession, onDelete, isAdmin }) {
-  if (!session?.measurements) {
-    return <MenuSessionCard session={session || {}} onDelete={onDelete} isAdmin={isAdmin} />;
-  }
   const { measurements: m, analysisResult: r, recordedAt, memo } = session;
   const prevM  = prevSession?.measurements;
   const changes = prevM ? calcChanges(m, prevM) : {};
@@ -177,7 +245,7 @@ function SessionCard({ session, prevSession, onDelete, isAdmin }) {
 // ── 메인 컴포넌트 ────────────────────────────────────────
 export default function MemberMeasureHistory({ member, onNewMeasure }) {
   const { user }        = useAuth();
-  const [sessions, setSessions] = useState([]);
+  const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const isAdmin = user?.role === 'admin';
@@ -186,13 +254,13 @@ export default function MemberMeasureHistory({ member, onNewMeasure }) {
     setLoading(true);
     try {
       setLoadError('');
-      const list = await loadAiSessions(member.id);
-      setSessions(list);
+      const list = await loadMeasureEntries(member.id);
+      setEntries(list);
       // ensureSessions 는 읽기 실패를 빈 목록으로 삼키므로, 실패 사유를 따로 확인해 안내한다.
       if (list.length === 0 && aiStore._aiLoadError) setLoadError(aiStore._aiLoadError);
     } catch (err) {
       console.error('[MemberMeasureHistory] 로드 오류:', err);
-      setSessions([]);
+      setEntries([]);
     } finally {
       setLoading(false);
     }
@@ -217,6 +285,18 @@ export default function MemberMeasureHistory({ member, onNewMeasure }) {
     load();
   };
 
+  // 트레이너 확인 저장 — 실패하면 알리고, 항상 실제 저장소 상태로 다시 불러온다.
+  const handleReview = async (entry, review) => {
+    try {
+      await aiStore.setTrainerReview(member.id, {
+        sessionId: entry.sessionId, reportId: entry.reportId, reportCollection: entry.reportCollection,
+      }, { ...review, by: user?.name || user?.email || user?.trainerId || '' });
+    } catch (err) {
+      alert('트레이너 확인 저장 중 오류가 발생했습니다: ' + (err?.message || '알 수 없는 오류'));
+    }
+    load();
+  };
+
   return (
     <div className="space-y-4">
       {/* 신규 측정 버튼 */}
@@ -236,14 +316,14 @@ export default function MemberMeasureHistory({ member, onNewMeasure }) {
       )}
 
       {/* 이력 없음 */}
-      {!loading && sessions.length === 0 && loadError && (
+      {!loading && entries.length === 0 && loadError && (
         <div className="text-center py-6 text-red-700 dark:text-red-400">
           <p className="text-sm font-semibold">측정 이력을 불러오지 못했습니다 ({loadError})</p>
           <button onClick={load} className="mt-2 text-xs underline">다시 불러오기</button>
         </div>
       )}
 
-      {!loading && sessions.length === 0 && !loadError && (
+      {!loading && entries.length === 0 && !loadError && (
         <div className="text-center py-10 text-slate-600">
           <p className="text-3xl mb-2">📊</p>
           <p className="text-sm">측정 이력이 없습니다</p>
@@ -252,15 +332,20 @@ export default function MemberMeasureHistory({ member, onNewMeasure }) {
       )}
 
       {/* 카드 나열 */}
-      {!loading && sessions.map((session, idx) => (
-        <SessionCard
-          key={session.id}
-          session={session}
-          prevSession={sessions[idx + 1] || null}
-          onDelete={handleDelete}
-          isAdmin={isAdmin}
-        />
-      ))}
+      {!loading && entries.map((entry) => {
+        if (entry.type === 'body' && entry.session) {
+          const bodies = entries.filter(e => e.type === 'body' && e.session);
+          const prev = bodies[bodies.findIndex(e => e.id === entry.id) + 1]?.session || null;
+          return (
+            <SessionCard key={entry.id} session={entry.session} prevSession={prev}
+              onDelete={handleDelete} isAdmin={isAdmin} />
+          );
+        }
+        return (
+          <EntryCard key={entry.id} entry={entry} onDelete={handleDelete} onReview={handleReview}
+            isAdmin={isAdmin} canReview={user?.role === 'admin' || user?.role === 'trainer'} />
+        );
+      })}
     </div>
   );
 }
