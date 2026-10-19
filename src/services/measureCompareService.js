@@ -15,6 +15,7 @@ export const MIN_AGGREGATE_MEMBERS = 5;
 
 /** 기준범위(range.good)로 "좋은 방향"을 정한다. 기준이 없으면 neutral. */
 export function modeForDefinition(def) {
+  if (def?.better === 'higher' && !def?.range) return { mode: 'higherBetter' };
   const good = def?.range?.good;
   if (!Array.isArray(good) || good.length !== 2) return { mode: 'neutral' };
   const [lo, hi] = good;

@@ -1,13 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import { aggregateTopics, topicTitle, TOPIC_METRICS, outOfRange } from '../../scripts/measure-topics/core.mjs';
-import { GAIT_CADENCE_RANGES, GAIT_STANCE_RANGE_WALK } from '../ai-measure/core/gaitMode';
+import { GAIT_CADENCE_RANGES, GAIT_STANCE_RANGE_WALK, GAIT_VERTICAL_OSC_RANGES } from '../ai-measure/core/gaitMode';
 import { METRIC_DEFINITIONS } from '../ai-measure/core/unifiedReport';
 
 describe('measure-topics core', () => {
   it('인라인 기준범위가 METRIC_DEFINITIONS 와 같다(어긋남 방지)', () => {
     for (const [type, list] of Object.entries(TOPIC_METRICS)) {
       for (const m of list) {
-        if (['cadenceWalk', 'cadenceRun', 'stanceWalk'].includes(m.key)) continue; // 아래 gaitMode 테스트에서 확인
+        if (['cadenceWalk', 'cadenceRun', 'stanceWalk', 'verticalOscWalk', 'verticalOscRun'].includes(m.key)) continue; // 아래 gaitMode 테스트에서 확인
         const def = (METRIC_DEFINITIONS[type] || []).find((d) => d.key === m.key);
         expect(def, `${type}.${m.key} 정의 없음`).toBeTruthy();
         expect(def.range.good, `${type}.${m.key} 범위`).toEqual(m.good);
@@ -89,6 +89,8 @@ describe('measure-topics core', () => {
     expect(g.cadenceWalk).toEqual(GAIT_CADENCE_RANGES.walk.good);
     expect(g.cadenceRun).toEqual(GAIT_CADENCE_RANGES.run.good);
     expect(g.stanceWalk).toEqual(GAIT_STANCE_RANGE_WALK.good);
+    expect(g.verticalOscWalk).toEqual(GAIT_VERTICAL_OSC_RANGES.walk.good);
+    expect(g.verticalOscRun).toEqual(GAIT_VERTICAL_OSC_RANGES.run.good);
   });
   it('걷기(110)는 걷기 기준으로, 달리기(170)는 달리기 기준으로 따로 본다', () => {
     const r = aggregateTopics({ a: [gaitDoc(110)], b: [gaitDoc(170)], c: [gaitDoc(150)] });

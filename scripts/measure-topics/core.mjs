@@ -18,11 +18,10 @@ function cadenceOf(p) {
 
 export const TOPIC_METRICS = {
   jump: [
-    { key: 'jumpHeight', label: '점프 높이', paths: ['heightCm'], good: [40, 100] },
+    // 점프 높이·RSI는 연령/성별 규준이 확인되지 않아 주제 후보에서 제외했다.
     // 착지 무릎 각도는 검증된 정상범위가 없어(Krosshaug 2016) 주제 후보에서 제외했다.
     // 좌우 착지 대칭은 검증된 기준이 없어 주제 후보에서 제외했다.
     { key: 'pelvicImbalance', label: '골반 좌우 균형', paths: ['biomech.pelvicImbalance'], good: [0, 4] },
-    { key: 'rsi', label: '반응 점프 지수', paths: ['rsi.rsi'], good: [2, 10] },
   ],
   posture: [
     { key: 'forwardHead', label: '머리 앞쪽 위치', paths: ['analysis.sagittal.forwardHeadMm', 'sagittal.forwardHeadMm'], good: [0, 20] },
@@ -38,7 +37,8 @@ export const TOPIC_METRICS = {
     { key: 'stanceWalk', label: '걷기 지지 시간 비율', paths: ['metrics.stancePct', 'stancePct'], good: [55, 65], when: (p) => cadenceOf(p) < 140 },
     { key: 'pelvicDrop', label: '골반 처짐', paths: ['metrics.pelvicDropAbs', 'pelvicDropAbs', 'metrics.pelvicDrop.avg'], good: [0, 4] },
     { key: 'kneeSymmetry', label: '좌우 무릎 대칭', paths: ['metrics.kneeSymmetry', 'kneeSymmetry'], good: [92, 100] },
-    { key: 'verticalOscillation', label: '상하 움직임', paths: ['metrics.verticalOscillation', 'verticalOscillation'], good: [4, 9] },
+    { key: 'verticalOscWalk', label: '걷기 상하 움직임', paths: ['metrics.verticalOscillation', 'verticalOscillation'], good: [2.5, 5.0], when: (p) => cadenceOf(p) < 140 },
+    { key: 'verticalOscRun', label: '달리기 상하 움직임', paths: ['metrics.verticalOscillation', 'verticalOscillation'], good: [4.5, 7.5], when: (p) => cadenceOf(p) >= 140 },
   ],
   sprint: [
     { key: 'reactionTime', label: '반응 시간', paths: ['reactionTimeMs'], good: [0, 220], bounds: [50, 2000] }, // 반응 2초 초과·50ms 미만은 측정 오류/테스트 값으로 보고 제외

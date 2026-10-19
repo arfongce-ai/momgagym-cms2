@@ -53,19 +53,17 @@ describe('측정 허브 — 저장 실패 시 성공한 것처럼 report로 넘�
     // 에러 여부와 무관하게 바로 아래 setReport/setView('report')로 이어졌다.
     expect(src).not.toMatch(/catch \(e\) \{ setSaveState\('error'\); \}/);
     // 새 패턴: catch 블록이 setSaveState('error') 다음 return으로 끝난다.
-    const catchMatch = src.match(/catch \(e\) \{[\s\S]{0,400}?\}/);
+    // 파일에는 저장과 무관한 catch(이전 리포트 조회 등)도 있어, 'setSaveState('error')'를 담은 catch 블록을 찾는다.
+    const catchMatch = src.match(/catch \(e\) \{(?:(?!catch \(e\))[\s\S]){0,700}?setSaveState\('error'\);[\s\S]{0,40}?\}/);
     expect(catchMatch).toBeTruthy();
-    expect(catchMatch[0]).toContain("setSaveState('error')");
     expect(catchMatch[0]).toMatch(/return;?\s*\}$/);
   });
 
   it('JumpAnalysisHub.jsx: persist()의 catch는 null을 반환해 실패를 호출부에 알린다', () => {
     const src = read('menus/JumpAnalysisHub.jsx');
     expect(src).not.toMatch(/catch \(e\) \{ setSaveState\('error'\); \}/);
-    const catchMatch = src.match(/catch \(e\) \{[\s\S]{0,400}?\}/);
+    const catchMatch = src.match(/catch \(e\) \{(?:(?!catch \(e\))[\s\S]){0,700}?setSaveState\('error'\);[\s\S]{0,40}?return null;?\s*\}/);
     expect(catchMatch).toBeTruthy();
-    expect(catchMatch[0]).toContain("setSaveState('error')");
-    expect(catchMatch[0]).toMatch(/return null;?\s*\}$/);
   });
 
   it('JumpAnalysisHub.jsx: confirmRecord는 persist 성공(truthy 반환) 시에만 report로 전환한다', () => {

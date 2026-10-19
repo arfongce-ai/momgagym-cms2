@@ -683,14 +683,17 @@ export class BiomechAccumulator {
     const meanScale = this._scaleN ? this._scaleSum / this._scaleN : null;
 
     // 수직 진폭(Vertical Oscillation): 골반 y 이동량(max-min)을 신장으로 정규화(%).
-    let verticalOscillation = 0;
-    if (this.pelvisY.length && meanScale) {
-      const amp = Math.max(...this.pelvisY) - Math.min(...this.pelvisY);
-      verticalOscillation = round1((amp / meanScale) * 100);
+    // [2026-10 정확성 수정] ① 계산 못 하면 0이 아니라 null(미측정). ② 한두 프레임 튀는 값(검출 노이즈·카메라 흔들림)이
+    //  최댓값-최솟값을 키우지 않도록 5~95 백분위 범위를 쓴다. 단위는 어깨~발목 길이 대비 %.
+    let verticalOscillation = null;
+    if (this.pelvisY.length >= 10 && meanScale) {
+      const sorted = [...this.pelvisY].sort((a, b) => a - b);
+      const at = (q) => sorted[Math.min(sorted.length - 1, Math.max(0, Math.round(q * (sorted.length - 1))))];
+      verticalOscillation = round1(((at(0.95) - at(0.05)) / meanScale) * 100);
     }
 
     // 추정 보폭 비율(Stride to Height Ratio): 발목 최대 거리 / 신장.
-    let strideToHeight = 0;
+    let strideToHeight = null; // [2026-10] 계산 못 하면 0이 아니라 null(미측정)
     if (this.ankleSpread.length && meanScale) {
       strideToHeight = round1((Math.max(...this.ankleSpread) / meanScale) * 100) / 100; // 0~ (배수)
     }
@@ -875,7 +878,7 @@ export class BiomechAccumulator {
       // 좌우 무릎 대칭(%): 100 = 완전 대칭
       kneeSymmetry: (kL.avg && kR.avg)
         ? Math.round((1 - Math.abs(kL.avg - kR.avg) / ((kL.avg + kR.avg) / 2)) * 1000) / 10
-        : 0,
+        : null, // [2026-10] 한쪽이라도 못 쟀으면 0%(최악)가 아니라 미측정
       // Spatial
       strideToHeight,                                  // 보폭/신장 비율
     };

@@ -11,7 +11,7 @@ import { aiStore } from '../../demoData';
 import ReportActions from '../../components/report/ReportActions';
 import { MetricCard, UnifiedReportCanvas, UnifiedReportHeader, UnifiedReportPage } from '../../components/report/UnifiedReportPrimitives';
 import { rangeToStatus } from '../core/unifiedReport';
-import { cadenceRangeFor, stanceRangeFor, classifyGaitMode, GAIT_MODE_LABEL } from '../core/gaitMode';
+import { cadenceRangeFor, stanceRangeFor, verticalOscRangeFor, classifyGaitMode, GAIT_MODE_LABEL } from '../core/gaitMode';
 import { buildSummaryData } from '../core/unifiedReport';
 import { computeChangeRow, summarizeChanges, reportDateOnly } from '../core/measurementComparison';
 import ChangeSummaryPanel from '../../components/report/ChangeSummaryPanel.jsx';
@@ -43,7 +43,7 @@ function buildGaitChangeSummary(m, previousReport, orientation) {
     computeChangeRow('입각기 비율', sameMode && stanceRangeFor(m.cadence) ? pm.stancePct : null, sameMode && stanceRangeFor(m.cadence) ? m.stancePct : null, '%', 'closerTargetBetter', stanceRangeFor(m.cadence) ? rangeCenter(stanceRangeFor(m.cadence)) : undefined),
     computeChangeRow('몸통 기울기', trunkLeanOk ? pm.trunkLean?.avg : null, trunkLeanOk ? m.trunkLean?.avg : null, '°', 'closerTargetBetter', rangeCenter(RANGES.trunkLean)),
     computeChangeRow('골반 드롭', pelvicDropOk ? pm.pelvicDropAbs : null, pelvicDropOk ? m.pelvicDropAbs : null, '%', 'lowerBetter'),
-    computeChangeRow('수직 진폭', pm.verticalOscillation, m.verticalOscillation, '%', 'closerTargetBetter', rangeCenter(RANGES.verticalOsc)),
+    computeChangeRow('수직 진폭', sameMode ? pm.verticalOscillation : null, sameMode ? m.verticalOscillation : null, '%', 'closerTargetBetter', rangeCenter(verticalOscRangeFor(m.cadence))),
     computeChangeRow('무릎 대칭', pm.kneeSymmetry, m.kneeSymmetry, '%', 'higherBetter'),
     computeChangeRow('보폭 비율', pm.strideToHeight, m.strideToHeight, '×', 'closerTargetBetter', rangeCenter(RANGES.stride)),
   ];
@@ -72,7 +72,6 @@ const RANGES = {
   stance: { good: [55, 65], warn: [50, 70], unit: '%', label: '입각기' },
   trunkLean: { good: [4, 12], warn: [0, 18], unit: '°', label: '몸통 기울기' },
   pelvicDrop: { good: [0, 4], warn: [0, 7], unit: '%', label: '골반 드롭' },
-  verticalOsc: { good: [4, 9], warn: [0, 13], unit: '%', label: '수직 진폭' },
   kneeSym: { good: [92, 100], warn: [85, 100], unit: '%', label: '무릎 대칭' },
   stride: { good: [0.7, 1.1], warn: [0.5, 1.4], unit: '×', label: '보폭/신장' },
 };
@@ -105,7 +104,7 @@ function computeScore(m, orientation) {
     [m.stancePct, stanceRangeFor(m.cadence)],
     [trunkLeanOk ? m.trunkLean?.avg : null, RANGES.trunkLean],
     [pelvicDropOk ? m.pelvicDropAbs : null, RANGES.pelvicDrop],
-    [m.verticalOscillation, RANGES.verticalOsc],
+    [m.verticalOscillation, verticalOscRangeFor(m.cadence)],
     [m.kneeSymmetry, RANGES.kneeSym],
     [m.strideToHeight, RANGES.stride],
   ];
@@ -201,7 +200,7 @@ export default function GaitReportDashboard({ report, onComment, onClose, videoB
   // 중단 우측: Symmetry 게이지용
   const symBars = [
     { key: 'pelvicDrop', name: '골반 드롭', value: pelvicDropDisplayOk ? m.pelvicDropAbs : null, range: RANGES.pelvicDrop, max: 12 },
-    { key: 'verticalOsc', name: '수직 진폭', value: m.verticalOscillation, range: RANGES.verticalOsc, max: 16 },
+    { key: 'verticalOsc', name: '수직 진폭', value: m.verticalOscillation, range: verticalOscRangeFor(m.cadence), max: 12 },
     { key: 'kneeSym', name: '무릎 대칭', value: m.kneeSymmetry, range: RANGES.kneeSym, max: 100 },
   ];
 

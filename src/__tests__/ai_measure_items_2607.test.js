@@ -527,7 +527,7 @@ describe('[화면 회전 방지] AI 측정 세로 고정', () => {
 
   it('허브가 useLockPortrait 로 세로 고정을 활성화한다', () => {
     expect(hub).toMatch(/import \{ useLockPortrait \}/);
-    expect(hub).toMatch(/useLockPortrait\(true\)/);
+    expect(hub).toMatch(/useLockPortrait\(/); // 가로 전용 메뉴(active.orientation === 'landscape')만 예외로 조건부 호출
   });
 
   it('네이티브 잠금(screen.orientation.lock)을 우선 시도한다', () => {

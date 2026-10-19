@@ -38,3 +38,18 @@ export function cadenceRangeFor(cadence) {
 export function stanceRangeFor(cadence) {
   return classifyGaitMode(cadence) === 'run' ? null : GAIT_STANCE_RANGE_WALK;
 }
+
+// ── 수직 진폭(골반 높이 위아래 움직임) 기준 (2026-10) ──
+// 단위: 어깨~발목 길이 대비 %. (앱은 어깨 중점~발목 중점 수직거리로 정규화한다. 인체계측상 키의 약 78%,
+//  키 170cm 기준 약 132cm — Drillis & Contini 비율에서 어깨높이 0.818H, 외측복사 0.039H.)
+//  - 걷기: 무게중심 상하 이동 약 4~5cm(대표님 보행 발표자료·Whittle) → 약 3~4% 가 중심. 양호 2.5~5.0%
+//  - 달리기: 러닝 코칭 가이드에서 흔히 쓰는 목표 약 6~9cm → 약 4.5~7% 가 중심. 양호 4.5~7.5%
+// ⚠️ 임상 절단값이 아니라 참고 기준이며, 골반 랜드마크로 잰 근사치다. 트레이너가 조정할 수 있게 상수로 둔다.
+export const GAIT_VERTICAL_OSC_RANGES = Object.freeze({
+  walk: Object.freeze({ good: [2.5, 5.0], warn: [1.5, 6.5] }),
+  run: Object.freeze({ good: [4.5, 7.5], warn: [3.0, 9.5] }),
+});
+
+export function verticalOscRangeFor(cadence) {
+  return GAIT_VERTICAL_OSC_RANGES[classifyGaitMode(cadence) || 'run'];
+}

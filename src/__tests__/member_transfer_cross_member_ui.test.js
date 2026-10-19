@@ -70,7 +70,7 @@ describe('MemberDetail.jsx — 양도 UI: 대상 선택(기존/신규 회원) �
   const src = read('components/members/MemberDetail.jsx');
 
   it('MemberPicker와 MemberRegister(기본 export)를 함께 임포트한다(재사용 — 새로 안 만듦)', () => {
-    expect(src).toContain("import MemberRegister, { ClassTypeCheckbox } from './MemberRegister';");
+    expect(src).toMatch(/import MemberRegister, \{[^}]*ClassTypeCheckbox[^}]*\} from '\.\/MemberRegister';/); // 이후 SEGMENT_OPTIONS 등이 추가됨
     expect(src).toContain("import MemberPicker from '../common/MemberPicker';");
   });
 

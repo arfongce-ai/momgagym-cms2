@@ -23,11 +23,13 @@ describe('[항목 3] ROM 첫 페이지 관절/자세 중복 제거 + 라이브 �
   const src = read('ai-measure/menus/RomMeasure.jsx');
   it('첫 페이지(설정 화면)에서 측정 관절/측정 자세 블록을 제거했다', () => {
     expect(src).not.toContain('측정 자세 (역학 기준선이 달라집니다)');
-    expect(src).toContain('첫 페이지 중복 제거');
+    // [2026-09-10] 이후 설계: 관절·자세는 촬영 전 설정 화면에서 한 번만 고른다(chooseJoint/choosePose).
+    expect(src).toContain('const chooseJoint');
   });
   it('라이브 화면에서 관절/자세를 즉시 바꾼다(changeJointLive/changePoseLive)', () => {
-    expect(src).toContain('changeJointLive');
-    expect(src).toContain('changePoseLive');
+    // 라이브 화면에는 관절/자세 버튼이 없고(HUD 정리), 설정 화면의 chooseJoint/choosePose 만 쓴다.
+    expect(src).toContain('const choosePose');
+    expect(src).not.toContain('changeJointLive');
   });
 });
 

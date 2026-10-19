@@ -124,7 +124,12 @@ export default function JumpAnalysisHub({ member, onBack, onSave, onSaveToFireba
         const res = await save(persistable);
         if (res && typeof res === 'object') saved = { ...withRecord, ...res };
         setSaveState('saved');
-      } catch (e) { setSaveState('error'); }
+      } catch (e) {
+        // 저장 실패 — report로 넘어가면 성공한 것으로 착각하고 기록이 유실된다.
+        // null 을 돌려줘 호출부(confirmRecord/finishTrials)가 record 화면에 남게 한다.
+        setSaveState('error');
+        return null;
+      }
     } else { setSaveState('saved'); }
     setReport(saved);
     return saved;
@@ -140,7 +145,8 @@ export default function JumpAnalysisHub({ member, onBack, onSave, onSaveToFireba
   const finishTrials = useCallback(async (trialsArr) => {
     const combined = combineJumpTrials(trialsArr, jumpType);
     if (!combined) return;
-    await persist(combined, {});
+    const saved = await persist(combined, {});
+    if (!saved) return; // 저장 실패 — 회차를 비우거나 report 로 넘어가지 않는다
     setTrials([]);
     setPending(null);
     // [한발멀리뛰기 추가 2026-09-16] 위 SLJ 조건은 기존 테스트가 문자열
@@ -173,8 +179,8 @@ export default function JumpAnalysisHub({ member, onBack, onSave, onSaveToFireba
     const withNote = { ...pending, note: record.note || pending.note || '' };
 
     if (!MULTI_TRIAL_JUMP_SUBTYPES.includes(jumpSubType)) {
-      await persist(withNote, record);
-      setView('report');
+      const saved = await persist(withNote, record);
+      if (saved) setView('report');
       return;
     }
 

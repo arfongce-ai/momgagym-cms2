@@ -4,7 +4,7 @@
 // 확정된 판정을 그대로 신뢰한다).
 import { extractSquatMetrics, squatMetricStatus } from './squatBiomechanics';
 import { legMetrics, stanceMetricStatus } from './singleLegStance';
-import { cadenceRangeFor, stanceRangeFor } from './gaitMode';
+import { cadenceRangeFor, stanceRangeFor, verticalOscRangeFor } from './gaitMode';
 import { ROM_SYMMETRY_RANGE } from './romThresholds';
 
 export const MOMGAGYM_BLOG_URL = 'https://blog.naver.com/posture_gym';
@@ -385,7 +385,9 @@ const MEASURED_AT_PATHS = [
 
 export const METRIC_DEFINITIONS = Object.freeze({
   jump: [
-    { key: 'jumpHeight', paths: ['heightCm'], unit: 'cm', range: { good: [40, 100], warn: [30, 100] } },
+    // [2026-10] 점프 높이·RSI는 나이/성별/종목/측정방식(드롭 높이)에 따라 정상이 크게 달라 일괄 기준(40cm, RSI 2)이
+    //  일반 회원을 '주의/위험'으로 잘못 보이게 했다. 검증된 연령·성별 규준을 확인하지 못해 등급 없이 값과 회차 변화(높을수록 좋음)만 본다.
+    { key: 'jumpHeight', paths: ['heightCm'], unit: 'cm', better: 'higher' },
     { key: 'peakPower', paths: ['peakPower'], unit: 'W' },
     { key: 'takeoffVelocity', paths: ['takeoffVelocity'], unit: 'm/s' },
     // [2026-10] 착지 무릎 각도는 검증된 정상범위가 없어 판정 범위를 두지 않는다(값·회차 변화만 표시).
@@ -396,7 +398,7 @@ export const METRIC_DEFINITIONS = Object.freeze({
     //  문헌의 비대칭 절단값(힘 기준 10~15%)과 직접 비교할 수 없다. 검증된 기준이 없어 판정 범위를 두지 않고 값만 표시한다.
     { key: 'footLandingSymmetry', paths: ['biomech.footLandingSymmetry.symmetryPct'], unit: '%' },
     { key: 'pelvicImbalance', paths: ['biomech.pelvicImbalance'], unit: '%', range: { good: [0, 4], warn: [0, 7] } },
-    { key: 'rsi', paths: ['rsi.rsi'], unit: '', range: { good: [2, 10], warn: [1.5, 10] } },
+    { key: 'rsi', paths: ['rsi.rsi'], unit: '', better: 'higher' },
     { key: 'contactTime', paths: ['rsi.contactTimeMs'], unit: 'ms' },
     { key: 'flightTime', paths: ['rsi.flightTimeMs', 'flightTimeMs'], unit: 'ms' },
   ],
@@ -775,9 +777,11 @@ export function extractKeyMetrics(report = {}, reportType = inferReportType(repo
       const value = definition.abs ? Math.abs(Number(raw)) : raw;
       // [2026-10] 걷기/달리기는 케이던스로 구분해 기준을 따로 적용한다(gaitMode.js).
       let range = definition.range;
-      if (reportType === 'gait' && (definition.key === 'cadence' || definition.key === 'stancePct')) {
+      if (reportType === 'gait' && (definition.key === 'cadence' || definition.key === 'stancePct' || definition.key === 'verticalOscillation')) {
         const cad = firstDefinedPath(report, ['metrics.cadence', 'cadence']);
-        range = definition.key === 'cadence' ? cadenceRangeFor(cad) : (stanceRangeFor(cad) || undefined);
+        range = definition.key === 'cadence' ? cadenceRangeFor(cad)
+          : definition.key === 'verticalOscillation' ? verticalOscRangeFor(cad)
+          : (stanceRangeFor(cad) || undefined);
       }
       return toLaymanMetric(definition.key, value, {
         unit: definition.unit,

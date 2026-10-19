@@ -49,7 +49,6 @@ function buildJumpChangeSummary(report, biomech, previousReport, isRsi, isHorizo
 }
 
 const RANGE = {
-  height: { good: [40, 100], warn: [30, 100], unit: 'cm' },
   trunk: { good: [0, 12], warn: [0, 20], unit: '°' },
   pelvis: { good: [0, 4], warn: [0, 7], unit: '%' },
   align: { good: [80, 100], warn: [60, 100], unit: '점' },
@@ -60,7 +59,6 @@ const RANGE = {
   // [제자리멀리뛰기 추가 2026-09-16] 제자리멀리뛰기(SBJ) 등급 기준(cm) — 아직
   // 실측 데이터·확정 기준이 없어 일반 성인 참고치로 잠정 설정. 실사용 데이터가
   // 쌓이면(또는 대표님이 기준을 정하면) 여기 한 곳만 조정하면 된다.
-  distance: { good: [150, 300], warn: [100, 300], unit: 'cm' },
 };
 
 function isRsiReport(report) {
@@ -97,10 +95,9 @@ function scoreReport(report, biomech) {
     const s = status(value, range).text;
     values.push(s === '정상' ? 100 : s === '주의' ? 65 : 35);
   };
-  add(report?.heightCm, RANGE.height);
+  // [2026-10] 점프 높이·이동 거리는 연령/성별 규준이 확인되지 않아 점수·등급에 넣지 않는다(값과 회차 변화만).
   // [제자리멀리뛰기 추가 2026-09-16] SBJ 리포트는 heightCm이 없고 distanceCm만
   // 있다 — 다른 종류는 distanceCm이 없으므로 add()가 조용히 건너뛴다(무해).
-  add(report?.distanceCm, RANGE.distance);
   add(biomech.trunkLeanChange, RANGE.trunk);
   add(biomech.pelvicImbalance, RANGE.pelvis);
   add(biomech.extensionAlignment?.alignmentScore, RANGE.align);
@@ -269,12 +266,12 @@ export default function JumpReportDashboard({ report, onClose, onComment, member
                     이동거리 카드만 보여준다. */}
                 {isHorizontal ? (
                   <div className="grid grid-cols-2 gap-2">
-                    <StatCard label="이동 거리" value={metric(report.distanceCm)} unit="cm" range={RANGE.distance} />
+                    <StatCard label="이동 거리" value={metric(report.distanceCm)} unit="cm" />
                     <StatCard label="체공 시간" value={metric(report.flightTimeMs)} unit="ms" />
                   </div>
                 ) : (
                   <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                    <StatCard label="점프 높이" value={metric(report.heightCm)} unit="cm" range={RANGE.height} />
+                    <StatCard label="점프 높이" value={metric(report.heightCm)} unit="cm" />
                     <StatCard label="체공 시간" value={metric(report.flightTimeMs)} unit="ms" />
                     <StatCard label="도약 속도" value={metric(report.takeoffVelocity)} unit="m/s" />
                     <StatCard label="최대 파워" value={metric(report.peakPower)} unit="W" />
