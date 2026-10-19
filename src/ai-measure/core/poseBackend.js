@@ -1,3 +1,4 @@
+import { recordRecognitionFrame } from './recognitionStats';
 // ai-measure/core/poseBackend.js
 // MediaPipe PoseLandmarker(Tasks Vision)를 CDN에서 런타임 로드해 1회 초기화한다.
 // xlsx(loadXlsx.js)와 동일한 전략: package.json 의존성으로 넣지 않아 Cloudflare
@@ -104,9 +105,12 @@ export function detectPoseFrame(video, timestampMs) {
   if (!_landmarker || !video || video.readyState < 2) return null;
   const result = _landmarker.detectForVideo(video, timestampMs);
   const lm = result?.landmarks?.[0];
+  // 측정 인식률 집계(2026-10): 검출 성공/실패를 프레임마다 센다. 판정 로직에는 영향 없음.
+  try { recordRecognitionFrame(lm && lm.length ? lm : null); } catch (e) { /* 집계 실패는 무시 */ }
   if (!lm || !lm.length) return null;
   return { landmarks: lm };
 }
+
 
 /** 자원 해제(언마운트 시). 다시 쓰려면 loadPoseLandmarker 재호출. */
 export function closePoseLandmarker() {

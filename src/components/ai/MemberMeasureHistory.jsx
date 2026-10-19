@@ -93,7 +93,7 @@ function EntryCard({ entry, onDelete, onReview, isAdmin, canReview }) {
 
       <div className="flex flex-wrap items-center gap-2 text-[10px]">
         <span className="text-slate-500">
-          {confidence.source === 'derived.coverage' ? '데이터 충족도' : '신뢰도'} {confidence.pct != null ? `${confidence.pct}%` : '미기록'}
+          {confidence.source === 'derived.coverage' ? '데이터 충족도' : confidence.source.includes('recognition') ? '측정 인식률' : '신뢰도'} {confidence.pct != null ? `${confidence.pct}%` : '미기록'}
         </span>
         {rv ? (
           <span className="px-1.5 py-0.5 rounded bg-sky-500/20 text-sky-700 dark:text-sky-400 font-bold">

@@ -1,3 +1,4 @@
+import { recordRecognitionFrame } from './recognitionStats';
 // ai-measure/core/poseImageBackend.js
 // MediaPipe PoseLandmarker(Tasks Vision)를 정지 이미지(IMAGE 모드)로 쓰는 버전.
 // poseBackend.js(VIDEO 모드, 실시간 카메라용)와 CDN 로드 전략은 동일하지만
@@ -74,6 +75,7 @@ export function detectPoseImage(source) {
   if (!_landmarker || !source) return null;
   const result = _landmarker.detect(source);
   const lm = result?.landmarks?.[0];
+  try { recordRecognitionFrame(lm && lm.length ? lm : null); } catch (e) { /* 집계 실패는 무시 */ }
   if (!lm || !lm.length) return null;
   return { landmarks: lm };
 }

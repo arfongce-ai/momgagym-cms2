@@ -3,6 +3,7 @@
 import { useState, useEffect, Suspense } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { MEASURE_MENUS } from './registry';
+import { getRecognitionSnapshot, resetRecognition } from './core/recognitionStats';
 import { store, aiStore, makeGuestId } from '../demoData';
 import { todayYMD } from '../utils/dates';
 import { useAuth } from '../contexts/AuthContext';
@@ -140,6 +141,7 @@ export default function AiMeasureHub() {
       isVirtualMember: true,
     } : {};
 
+    let saveFailed = false;
     try {
       let enrichedData = data;
       let linkedPostureReportId = data?.basic_info?.linkedPostureReportId || data?.linkedPostureReportId || '';
@@ -179,6 +181,12 @@ export default function AiMeasureHub() {
             integrated_assessment: mergeIntegratedAssessment(enrichedData?.integrated_assessment, crossIntegration.integrated_assessment),
           };
         }
+      }
+      // [2026-10] 측정 인식률: 이 측정 동안 주요 관절이 또렷이 인식된 프레임 비율을 리포트에 함께 저장.
+      //  (판정에는 쓰지 않고 이력 화면의 '측정 인식률' 표시에만 쓴다. 프레임이 없으면 저장 안 함.)
+      const recognition = getRecognitionSnapshot();
+      if (recognition && enrichedData && typeof enrichedData === 'object' && !Array.isArray(enrichedData)) {
+        enrichedData = { ...enrichedData, recognition };
       }
       const storableData = measurementKind ? sanitizeReportPayload(enrichedData) : enrichedData;
       const saveUnifiedCopy = async (savedReport, reportType) => {
@@ -298,8 +306,12 @@ export default function AiMeasureHub() {
       }
       alert(member.isVirtual ? '미등록회원 측정이 저장되었습니다.' : '측정이 저장되었습니다.');
     } catch (e) {
+      saveFailed = true;
       if (isGait || isJump || isPosture || isRom || isSprint) throw e; // 컴포넌트 saveState='error' 로 표시되게 전파
       alert('저장에 실패했습니다. 네트워크 확인 후 다시 시도하세요.\n' + (e?.message || ''));
+    } finally {
+      // 저장에 성공했을 때만 인식률 집계를 비운다(실패 후 재시도하면 같은 측정 값을 다시 쓴다).
+      if (!saveFailed) resetRecognition();
     }
   };
 
@@ -353,6 +365,9 @@ export default function AiMeasureHub() {
 
   // 회원을 고르면 전용 리포트 + AI 세션을 함께 읽어 다음 측정 상위 3개를 계산한다.
   // 추천 순서와 안전 제한은 순수 규칙 엔진이 결정하며, 네트워크/모미 응답에 의존하지 않는다.
+  // 메뉴를 바꾸면 이전 메뉴의 인식률 집계를 버린다.
+  useEffect(() => { resetRecognition(); }, [active?.id]);
+
   useEffect(() => {
     let cancelled = false;
     if (!memberId) {

@@ -42,7 +42,8 @@ function isoOf(item) {
  *  - VBT·1RM·ROM(센서): confidenceScore 0~1
  *  - ROM 통합평가: integrated_assessment.confidenceScore 0~100
  *  - 자세: analysis.reliability (검출된 주요 관절 수 / 필요 수)
- *  - 보행·점프·스프린트·한다리서기·스쿼트: 저장된 신뢰도 필드 없음 → null (화면에 "신뢰도 미기록")
+ *  - 2026-10 이후 모든 카메라 측정: recognition.ratio(주요 관절이 또렷이 인식된 프레임 비율, 0~1)
+ *  - 그 이전 보행·점프·스프린트·한다리서기·스쿼트: 저장된 값 없음 → describeEntry 가 데이터 충족도로 대신함
  */
 export function normalizeConfidence(payload) {
   const p = payload && typeof payload === 'object' ? payload : {};
@@ -52,6 +53,9 @@ export function normalizeConfidence(payload) {
     ['data.confidenceScore', d.confidenceScore], ['data.metrics.confidenceScore', d.metrics?.confidenceScore],
     ['integrated_assessment.confidenceScore', p.integrated_assessment?.confidenceScore],
     ['data.integrated_assessment.confidenceScore', d.integrated_assessment?.confidenceScore],
+    // 측정 인식률(2026-10~): 저장 시 recognitionStats 가 계산한 0~1 비율
+    ['recognition.ratio', p.recognition?.ratio],
+    ['data.recognition.ratio', d.recognition?.ratio],
   ];
   for (const [source, raw] of candidates) {
     const n = asNumber(raw);

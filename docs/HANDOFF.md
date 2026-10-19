@@ -45,6 +45,10 @@
 
 ## 작업 로그
 최신 항목이 위. 형식을 그대로 복사해서 쓴다.
+### 2026-10-19 · Claude Code · 측정 인식률(2단계 보완)
+- 한 일: `src/ai-measure/core/recognitionStats.js` 신규 — 포즈 검출 프레임마다 주요 관절(어깨·엉덩이·무릎·발목) 평균 visibility ≥ 0.5 인 프레임 비율을 집계. `poseBackend.detectPoseFrame`(실시간·영상 업로드 공통)과 `poseImageBackend.detectPoseImage`(정지이미지)가 기록. `AiMeasureHub.handleSave`가 저장 시 `recognition`({frames,detectedFrames,goodFrames,ratio,detectionRatio,avgVisibility})을 리포트에 함께 저장, 메뉴 전환·저장 성공 시 집계 초기화(실패 시 유지). 이력 화면에 "측정 인식률 N%" 표시(`normalizeConfidence`가 `recognition.ratio`를 읽음). 판정에는 쓰지 않음.
+- 한계: 집계는 메뉴를 연 뒤 카메라가 돈 전체 구간(준비 자세 포함) 기준이라 실제 측정 구간만의 값이 아님. 2026-10-19 이전 기록엔 없음(그 경우 "데이터 충족도"). 실카메라 확인 못 함.
+- 검증: 새 테스트 4건 포함 31건 통과, 빌드 성공, `npm test` 실패 11건은 main과 동일.
 ### 2026-10-19 · Claude Code · 측정 저장 오류 수정 + 신뢰도 미기록 보완
 - 한 일: (1) 무효 점프(valid!==true)는 세션도 저장하지 않도록 `AiMeasureHub.jsx`에서 차단. (2) 세션 저장 후 전용 리포트 저장이 실패하면 세션을 되돌리는 `withRollback` 추가(gait/jump/sprint/posture/rom). (3) 신뢰도가 저장되지 않는 메뉴는 `deriveCoverage`(핵심 지표 충족 비율)를 "데이터 충족도"로 표시 — 카메라 인식 품질이 아님.
 - 미해결: 엔진 단위의 실제 신뢰도(프레임 가시성 등) 산출은 실카메라 검증이 필요해 보류.
