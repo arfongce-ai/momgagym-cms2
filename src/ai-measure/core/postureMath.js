@@ -243,11 +243,27 @@ export function estimateBodyScale(landmarks, heightCm = null) {
   const top = nose || shoulder;
   const normalizedHeight = top && ankle ? Math.abs(ankle.y - top.y) : null;
   if (!normalizedHeight || normalizedHeight < 0.05) return null;
+  // [2026-10] 화면에서 잰 '코(또는 어깨)~발목' 길이는 키 전체가 아니다. 예전에는 이를 키로 간주해 mm가
+  //  약 12~22% 크게 나왔다. Drillis & Contini(1966) 신체 비례(발목 0.039H, 코·눈높이 약 0.92~0.94H, 어깨 0.818H)로 환산:
+  //  코~발목 ≈ 0.88H, 어깨~발목 ≈ 0.78H. 비례는 평균값이라 개인차(수 %)가 남는다.
+  const heightRatio = nose ? POSTURE_SPAN_TO_HEIGHT.nose : POSTURE_SPAN_TO_HEIGHT.shoulder;
+  const fullHeightNormalized = normalizedHeight / heightRatio;
   return {
     normalizedHeight,
-    cmPerNormalizedUnit: heightCm ? heightCm / normalizedHeight : null,
-    mmPerNormalizedUnit: heightCm ? (heightCm * 10) / normalizedHeight : null,
+    heightRatio,
+    fullHeightNormalized,
+    cmPerNormalizedUnit: heightCm ? heightCm / fullHeightNormalized : null,
+    mmPerNormalizedUnit: heightCm ? (heightCm * 10) / fullHeightNormalized : null,
   };
+}
+
+export const POSTURE_SPAN_TO_HEIGHT = { nose: 0.88, shoulder: 0.78 };
+
+/** 화면 거리 차이를 '키 대비 %'로 환산(키 입력 없이도 가능). 소수 둘째 자리. */
+export function normalizedDeltaToPctHeight(delta, landmarks) {
+  const scale = estimateBodyScale(landmarks, null);
+  if (!scale?.fullHeightNormalized || delta == null) return null;
+  return round((delta / scale.fullHeightNormalized) * 100, 2);
 }
 
 export function calculatePixelToCmScale(landmarks, heightCm = null) {
@@ -550,6 +566,11 @@ export function analyzeFrontalAlignment(landmarks, { heightCm = null } = {}) {
     ? normalizedDeltaToMm(leftAnkle.y - rightAnkle.y, landmarks, heightCm)
     : null;
 
+  const pct = (a, b) => (a && b ? normalizedDeltaToPctHeight(a.y - b.y, landmarks) : null);
+  const shoulderDiffPct = pct(leftShoulder, rightShoulder);
+  const pelvisDiffPct = pct(leftHip, rightHip);
+  const ankleDiffPct = pct(leftAnkle, rightAnkle);
+
   const pelvisAbs = Math.abs(pelvisDiffMm ?? 0);
   const ankleAbs = Math.abs(ankleDiffMm ?? 0);
   const pelvisPattern = pelvisDiffMm == null
@@ -562,6 +583,9 @@ export function analyzeFrontalAlignment(landmarks, { heightCm = null } = {}) {
 
   return {
     shoulderHeightDiffMm: shoulderDiffMm,
+    shoulderHeightDiffPct: shoulderDiffPct,
+    pelvisHeightDiffPct: pelvisDiffPct,
+    ankleHeightDiffPct: ankleDiffPct,
     shoulderHigherSide: higherSideFromY(leftShoulder, rightShoulder),
     pelvisHeightDiffMm: pelvisDiffMm,
     pelvisHigherSide: higherSideFromY(leftHip, rightHip),
@@ -587,6 +611,7 @@ export function analyzeSagittalAlignment(landmarks, { heightCm = null } = {}) {
   const forwardHeadMm = ear && shoulder
     ? normalizedDeltaToMm(Math.abs(ear.x - shoulder.x), landmarks, heightCm)
     : null;
+  const forwardHeadPct = ear && shoulder ? normalizedDeltaToPctHeight(Math.abs(ear.x - shoulder.x), landmarks) : null;
   const kyphosisProxyDeg = angleDeg(ear, shoulder, hip, false);
   const kneeExtensionProxyDeg = angleDeg(hip, knee, ankle, false);
   const anklePlumbKneeDeviationMm = ankle && knee
@@ -598,6 +623,7 @@ export function analyzeSagittalAlignment(landmarks, { heightCm = null } = {}) {
 
   return {
     forwardHeadMm,
+    forwardHeadPct,
     kyphosisProxyDeg,
     pelvicPitchProxyDeg: rotations.segments?.trunkPitchDeg ?? rotations.pitchDeg,
     kneeExtensionProxyDeg,

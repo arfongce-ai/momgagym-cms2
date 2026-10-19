@@ -64,12 +64,10 @@ describe('measure-topics core', () => {
     expect(c.goodRange).toEqual([160, 180]);
     expect(c.median).toBe(169);
   });
-  it('불가능한 측정값(반응 시간 6.5초 등)은 집계에서 뺀다', () => {
+  it('출발 반응 시간은 등급 기준이 없어 주제 후보에서 제외된다', () => {
     const sp = (ms) => [{ kind: 'sprint', createdAt: '2026-10-01T00:00:00Z', reactionTimeMs: ms }];
-    const r = aggregateTopics({ a: sp(6530), b: sp(300) });
-    const c = r.candidates.find((x) => x.metricKey === 'reactionTime');
-    expect(c.members).toBe(1); // 6530ms 는 제외, 300ms 만 집계
-    expect(r.skipped.implausibleValues).toBe(1);
+    const r = aggregateTopics({ a: sp(6530), b: sp(300), c: sp(900) });
+    expect(r.candidates.find((x) => x.metricKey === 'reactionTime')).toBeUndefined();
   });
   it('거의 전원이 범위 밖이면 기준 재확인 필요로 표시한다', () => {
     const r = aggregateTopics(members([190, 195, 200, 185])); // 4명 전원 달리기 케이던스 범위 밖

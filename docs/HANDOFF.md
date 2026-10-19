@@ -45,6 +45,15 @@
 
 ## 작업 로그
 
+### 2026-10-19 · Claude Code · 스프린트 개편 + 자세 mm·% 병행
+- 대표 종목 3개: 10m 스프린트 / 5m 왕복 / 10m 왕복(`core/sprintTests.js`). 촬영 기본값은 가로(lateral), 콘 2개 = 화면 가로 길이.
+- 10m 파생 지표(`core/sprintMetrics.js`): 미터별 구간, 0.2초 평균 최고속도, 최대 가속, 0~5/5~10m, 속도 유지율(마지막 2m), 왕복 구간 시간.
+- 출발 반응: 등급 기준 삭제(프레임 ~33ms·인식 지연·소리 지연 포함). 값만 표시, 같은 조건 회차 비교만. 주제후보·주의 문구에서도 제외.
+- 라이브 자동 종료: 왕복은 '회전 후 출발선 복귀'로 판정(기존 편도×2 기준은 도달 불가). 실기기 검증 못 함.
+- 자세: 코~발목 길이를 키 전체로 보던 오류 수정(코 0.88H, 어깨 0.78H; Drillis&Contini 평균 비례). mm와 키 대비 % 병행(`*Pct` 필드, 키 없어도 % 표시). 기존 저장 mm 기록은 그대로 호환(재계산 안 함).
+- 미해결: 자세 판정 임계값(mm) 출처 미검증, `unifiedReport.js` peakVelocity 키 중복(이전부터 존재, strength 라벨이 sprint 라벨로 덮임).
+- 테스트 3255/3255, 빌드 통과.
+
 ### 2026-10-19 걷기/달리기 분리 · 착지 무릎 기준 · 무효 측정 저장 차단 (Claude Code)
 - 걷기/달리기: 케이던스 140 기준으로 구분(`core/gaitMode.js`). 걷기 100~130(경고 85~140), 달리기 160~180(경고 150~190). 입각기 55~65%는 걷기 전용, 달리기는 판정 없음. 적용: unifiedReport, GaitReportDashboard, crossMeasureContext, measureCompareService(걷기↔달리기 케이던스 비교 제외, 입각기는 방향 판정 없음), measure-topics(cadenceWalk/cadenceRun/stanceWalk 분리)
 - 근거: 대표님 GAIT 발표자료(보행 4~5km/h, 한 걸음 72cm → 약 93~116 spm), CADENCE-adults(100/130 spm), 러닝 서적(트랙 선수 입각기 약 26.6%)

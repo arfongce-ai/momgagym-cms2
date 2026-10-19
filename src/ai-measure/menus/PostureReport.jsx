@@ -227,11 +227,11 @@ export default function PostureReport({
 
             <Panel title="뷰별 핵심 지표">
               <div className="grid grid-cols-2 gap-2">
-                <MetricCard metric={{ key:'shoulder', label:'어깨 높이', displayValue: absValue(analysis.frontal?.shoulderHeightDiffMm), unit:'mm',
+                <MetricCard metric={{ key:'shoulder', label:'어깨 높이', displayValue: mmPctValue(analysis.frontal?.shoulderHeightDiffMm, analysis.frontal?.shoulderHeightDiffPct), unit:'',
                   status: statusToken(mmStatus(analysis.frontal?.shoulderHeightDiffMm, ...POSTURE_THRESHOLDS.shoulderDiffMm)) }} />
-                <MetricCard metric={{ key:'pelvis', label:'골반 높이', displayValue: absValue(analysis.frontal?.pelvisHeightDiffMm), unit:'mm',
+                <MetricCard metric={{ key:'pelvis', label:'골반 높이', displayValue: mmPctValue(analysis.frontal?.pelvisHeightDiffMm, analysis.frontal?.pelvisHeightDiffPct), unit:'',
                   status: statusToken(mmStatus(analysis.frontal?.pelvisHeightDiffMm, ...POSTURE_THRESHOLDS.pelvisDiffMmNeutral)) }} />
-                <MetricCard metric={{ key:'fhead', label:'거북목 거리', displayValue: absValue(analysis.sagittal?.forwardHeadMm), unit:'mm',
+                <MetricCard metric={{ key:'fhead', label:'거북목 거리', displayValue: mmPctValue(analysis.sagittal?.forwardHeadMm, analysis.sagittal?.forwardHeadPct), unit:'',
                   status: statusToken(mmStatus(analysis.sagittal?.forwardHeadMm, ...POSTURE_THRESHOLDS.forwardHeadMm)) }} />
                 <MetricCard metric={{ key:'knee', label:'무릎 펴짐 각도', displayValue: analysis.sagittal?.kneeExtensionProxyDeg ?? '-', unit:'°',
                   status: statusToken(kneeExtensionStatus(analysis.sagittal?.kneeExtensionProxyDeg)) }} />
@@ -848,6 +848,16 @@ function FindingRow({ finding }) {
       </div>
     </div>
   );
+}
+
+// mm 와 키 대비 % 를 함께 보여준다. mm 는 키 입력이 있어야 계산되므로, 없으면 %만 표시한다(옛 기록은 % 없이 mm만).
+function mmPctValue(mm, pct) {
+  const hasMm = typeof mm === 'number' && Number.isFinite(mm);
+  const hasPct = typeof pct === 'number' && Number.isFinite(pct);
+  if (hasMm && hasPct) return `${Math.abs(Math.round(mm))}mm · ${Math.abs(pct).toFixed(1)}%`;
+  if (hasMm) return `${Math.abs(Math.round(mm))}mm`;
+  if (hasPct) return `${Math.abs(pct).toFixed(1)}%`;
+  return '-';
 }
 
 function absValue(value) {

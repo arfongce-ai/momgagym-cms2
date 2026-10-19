@@ -35,12 +35,11 @@ import TrajectoryToggleChip from './TrajectoryToggleChip';
 import { aiStore } from '../../demoData';
 import MeasureRecordConfirm from '../components/MeasureRecordConfirm.jsx';
 import SprintReportDashboard from './SprintReportDashboard.jsx';
+import { SPRINT_TEST_TYPES, SPRINT_TEST_ORDER, DEFAULT_CAM_ANGLE } from '../core/sprintTests';
+import { isRunComplete } from '../core/sprintMetrics';
 
-const TEST_TYPES = {
-  sprint5: { label: '5m 스프린트', mode: 'sprint', splitDistancesM: [5], trackDistanceM: 5 },
-  sprint10: { label: '10m 스프린트', mode: 'sprint', splitDistancesM: [5, 10], trackDistanceM: 10 },
-  agility505: { label: '5-0-5 아질리티', mode: 'agility', splitDistancesM: [5], trackDistanceM: 5 },
-};
+// 종목 정의는 core/sprintTests.js 한 곳에서 관리(라이브·업로드 공용)
+const TEST_TYPES = SPRINT_TEST_TYPES;
 
 const COUNTDOWN_SEC = 3;
 
@@ -123,12 +122,12 @@ export default function SprintLiveAnalysis({ member, onBack, onSaveToFirebase, o
 
   const [view, setView] = useState('camera');
   const [testKey, setTestKey] = useState('sprint10');
-  const [camAngle, setCamAngle] = useState('depth'); // depth(근-원) | lateral(좌-우)
+  const [camAngle, setCamAngle] = useState(DEFAULT_CAM_ANGLE); // 기본: 측면(가로) 기준 — 콘 두 개로 화면 가로 길이를 정한다
   // [임상 플래그 추가 2026-09-14] depth 모드에서만 쓰는 정면/후면 수동 선택 —
   // DEPTH_ORIENTATIONS 주석 참고. 기본값은 후면(현장에서 가장 흔한 설치: 카메라를
   // 결승선 쪽에 두고 선수가 멀어지며 달리는 모습을 뒤에서 촬영).
   const [depthOrientation, setDepthOrientation] = useState('back'); // front | back
-  const camAngleRef = useRef('depth');
+  const camAngleRef = useRef(DEFAULT_CAM_ANGLE);
   const depthOrientationRef = useRef('back');
   useEffect(() => { camAngleRef.current = camAngle; }, [camAngle]);
   useEffect(() => { depthOrientationRef.current = depthOrientation; }, [depthOrientation]);
@@ -271,11 +270,13 @@ export default function SprintLiveAnalysis({ member, onBack, onSaveToFirebase, o
           if (last) setLiveMetrics({ distanceM: last.distanceM, velocityMs: last.velocityMs, elapsedMs: last.tMs });
         }
         const cfg = TEST_TYPES[testKey];
-        const target = cfg.mode === 'agility' ? cfg.trackDistanceM * 2 : cfg.trackDistanceM;
         const last = trackerRef.current.samples[trackerRef.current.samples.length - 1];
-        if (trackerRef.current.lastDistanceM != null &&
-            Math.abs(trackerRef.current.lastDistanceM) >= target - 0.3 &&
-            Math.abs(last?.velocityMs || 0) < 0.3) {
+        // [2026-10] 자동 종료 판단은 core/sprintMetrics.js isRunComplete 로 분리(왕복 종료 버그 수정)
+        if (isRunComplete({
+          mode: cfg.mode, trackDistanceM: cfg.trackDistanceM,
+          lastDistanceM: trackerRef.current.lastDistanceM, velocityMs: last?.velocityMs,
+          turnCount: trackerRef.current.turns.length,
+        })) {
           finishRun();
         }
       }
@@ -342,7 +343,7 @@ export default function SprintLiveAnalysis({ member, onBack, onSaveToFirebase, o
       setWarningMsg('캘리브레이션에 실패했습니다. 두 핸들 간격을 넓혀주세요.');
       return;
     }
-    trackerRef.current = new SprintTracker({ calibration, splitDistancesM: cfg.splitDistancesM, mode: cfg.mode });
+    trackerRef.current = new SprintTracker({ calibration, splitDistancesM: cfg.splitDistancesM, mode: cfg.mode, trackDistanceM: cfg.trackDistanceM });
     pelvicAccRef.current = new BiomechAccumulator();
     kneeAlignAccRef.current = new DynamicKneeAlignmentTracker();
     primeAudio();
@@ -619,7 +620,7 @@ export default function SprintLiveAnalysis({ member, onBack, onSaveToFirebase, o
         {view === 'camera' && (
           <div style={styles.centerPanel}>
             <div style={styles.testPicker}>
-              {Object.entries(TEST_TYPES).map(([key, cfg]) => (
+              {SPRINT_TEST_ORDER.map((key) => [key, TEST_TYPES[key]]).map(([key, cfg]) => (
                 <button key={key} onClick={() => setTestKey(key)} style={{ ...styles.testBtn, ...(testKey === key ? styles.testBtnActive : {}) }}>
                   {cfg.label}
                 </button>

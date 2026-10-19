@@ -309,8 +309,8 @@ export const REPORT_TERM_MAP = Object.freeze({
   // 보여주던 문제를 gait_reports 공유 저장 시점에 함께 해결한다.
   reactionTime: {
     expert: 'Reaction Time',
-    label: '반응 시간',
-    description: '출발 신호(정지 상태) 후 실제로 움직이기 시작하기까지 걸린 시간입니다.',
+    label: '출발 반응(영상 기준)',
+    description: '출발 소리 후 영상에서 몸이 움직이기 시작한 것으로 인식된 시점까지의 시간입니다. 영상 프레임(약 33ms)과 움직임 인식 지연이 포함돼 실제 반응보다 크게 나올 수 있어, 같은 조건에서 찍은 회차끼리 비교해 주세요.',
     category: 'sprint',
   },
   totalTime: {
@@ -329,6 +329,36 @@ export const REPORT_TERM_MAP = Object.freeze({
     expert: 'Peak Velocity',
     label: '최고 속도',
     description: '측정 구간 중 순간적으로 가장 빨랐던 속도입니다.',
+    category: 'sprint',
+  },
+  peakVelocitySmooth: {
+    expert: 'Peak Velocity (0.2 s mean)',
+    label: '최고 속도(0.2초 평균)',
+    description: '프레임 한 장의 흔들림을 줄이기 위해 0.2초 동안의 평균으로 구한 최고 속도입니다.',
+    category: 'sprint',
+  },
+  maxAccel: {
+    expert: 'Max Acceleration',
+    label: '최대 가속',
+    description: '출발 후 최고 속도에 이르는 동안 속도가 가장 빠르게 늘어난 정도입니다.',
+    category: 'sprint',
+  },
+  firstHalf: {
+    expert: '0-5 m Time',
+    label: '0~5m 구간 기록',
+    description: '출발해서 5m 지점까지 걸린 시간(가속 구간)입니다.',
+    category: 'sprint',
+  },
+  secondHalf: {
+    expert: '5-10 m Time',
+    label: '5~10m 구간 기록',
+    description: '5m 지점에서 10m 지점까지 걸린 시간(최고 속도 구간)입니다.',
+    category: 'sprint',
+  },
+  speedMaintenance: {
+    expert: 'Speed Maintenance',
+    label: '속도 유지율',
+    description: '마지막 2m의 평균 속도가 최고 속도의 몇 %인지 나타냅니다. 높을수록 끝까지 속도를 유지한 것입니다.',
     category: 'sprint',
   },
   decelTime: {
@@ -428,9 +458,17 @@ export const METRIC_DEFINITIONS = Object.freeze({
   sprint: [
     { key: 'totalTime', paths: ['totalTimeMs'], unit: 'ms' },
     { key: 'peakVelocity', paths: ['peakVelocityMs'], unit: 'm/s' },
-    { key: 'reactionTime', paths: ['reactionTimeMs'], unit: 'ms', range: { good: [0, 220], warn: [0, 300] } },
+    // [2026-10] 출발 반응은 영상 프레임(약 33ms)+움직임 인식 지연+소리 출력 지연이 섞여 등급 기준(220/300ms)을 쓸 수 없다.
+    //  등급 없이 값만 표시하고 같은 조건의 회차끼리 변화(작을수록 빠름)만 본다.
+    { key: 'reactionTime', paths: ['reactionTimeMs'], unit: 'ms', better: 'lower' },
     { key: 'avgVelocity', paths: ['avgVelocityMs'], unit: 'm/s' },
     { key: 'decelTime', paths: ['deceleration.decelTimeMs'], unit: 'ms', range: { good: [0, 400], warn: [0, 600] } },
+    // [2026-10] 10m 전체 지표(core/sprintMetrics.js) — 뒤쪽에 둬서 헤드라인 카드 3개 순서는 그대로 유지
+    { key: 'peakVelocitySmooth', paths: ['analysis.peakVelocitySmoothMs'], unit: 'm/s', better: 'higher' },
+    { key: 'maxAccel', paths: ['analysis.maxAccelMs2'], unit: 'm/s²', better: 'higher' },
+    { key: 'firstHalf', paths: ['analysis.firstHalfMs'], unit: 'ms', better: 'lower' },
+    { key: 'secondHalf', paths: ['analysis.secondHalfMs'], unit: 'ms', better: 'lower' },
+    { key: 'speedMaintenance', paths: ['analysis.speedMaintenancePct'], unit: '%', better: 'higher' },
   ],
   rom: [
     { key: 'rom', paths: ['summary.max_rom', 'summary.left_max_rom', 'summary.right_max_rom', 'summary.max_angle', 'maxAngle', 'angle', 'rom'], unit: '도' },

@@ -41,7 +41,7 @@ export const TOPIC_METRICS = {
     { key: 'verticalOscRun', label: '달리기 상하 움직임', paths: ['metrics.verticalOscillation', 'verticalOscillation'], good: [4.5, 7.5], when: (p) => cadenceOf(p) >= 140 },
   ],
   sprint: [
-    { key: 'reactionTime', label: '반응 시간', paths: ['reactionTimeMs'], good: [0, 220], bounds: [50, 2000] }, // 반응 2초 초과·50ms 미만은 측정 오류/테스트 값으로 보고 제외
+    // 출발 반응은 영상 해상도·인식 지연이 섞여 있어 주제 후보에서 제외했다.
     { key: 'decelTime', label: '감속 시간', paths: ['deceleration.decelTimeMs'], good: [0, 400] },
   ],
   rom: [

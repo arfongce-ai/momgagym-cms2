@@ -180,9 +180,7 @@ export function buildProblemFocus(kind, report = {}) {
     if (!report.totalDistanceM) {
       addIssue('caution', '스프린트 측정 데이터가 부족합니다.');
     } else {
-      if (report.reactionTimeMs != null && report.reactionTimeMs > 300) {
-        addIssue('caution', `스타트 반응속도가 느립니다(${report.reactionTimeMs}ms).`);
-      }
+      // [2026-10] 출발 반응은 영상 해상도·인식 지연이 섞여 있어 '느리다' 판정을 하지 않는다(회차 변화로만 확인).
       if (report.deceleration?.decelTimeMs != null && report.deceleration.decelTimeMs > 600) {
         addIssue('caution', `최고속도 후 감속·제동에 시간이 오래 걸립니다(${report.deceleration.decelTimeMs}ms) — 무릎 제동력 점검 권장.`);
       }

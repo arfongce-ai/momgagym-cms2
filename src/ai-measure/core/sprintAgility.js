@@ -19,6 +19,7 @@
 import { LM } from './geometry';
 import { OneEuroFilter } from './gaitBiomechanics';
 import { buildReferenceScale } from './calibration';
+import { deriveSprintMetrics } from './sprintMetrics';
 
 // ───────── 현장 튜닝 설정 (한 곳에 모음) ─────────
 export const SPRINT_TUNING = {
@@ -99,7 +100,8 @@ export class SprintTracker {
    * @param {number[]} opt.splitDistancesM  구간기록을 찍을 거리(m) 목록. 기본 [5, 10]
    * @param {'sprint'|'agility'} opt.mode
    */
-  constructor({ calibration, splitDistancesM = [5, 10], mode = 'sprint', tuning = {} } = {}) {
+  constructor({ calibration, splitDistancesM = [5, 10], mode = 'sprint', tuning = {}, trackDistanceM = 0 } = {}) {
+    this.trackDistanceM = trackDistanceM;
     this.tuning = { ...SPRINT_TUNING, ...tuning };
     this.calibration = calibration;
     this.splitDistancesM = splitDistancesM;
@@ -231,6 +233,10 @@ export class SprintTracker {
       turns: this.turns,
       reactionTimeMs: this.reactionTimeMs != null ? Math.round(this.reactionTimeMs) : null,
       deceleration: this._decelerationSummary(),
+      // [2026-10] 10m 전체 지표(구간별 시간·평활 최고속도·최대가속·속도유지율·왕복 구간 시간)
+      analysis: deriveSprintMetrics({
+        samples: this.samples, splits: splitsOut, turns: this.turns, mode: this.mode, trackDistanceM: this.trackDistanceM,
+      }),
       samples: this.samples, // 가속 구간 그래프(속도 vs 시간)에 그대로 사용
     };
   }

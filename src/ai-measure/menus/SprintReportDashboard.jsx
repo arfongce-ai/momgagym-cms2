@@ -56,7 +56,12 @@ function buildSprintChangeSummary(report, previousReport) {
   const rows = [
     computeChangeRow('총 소요시간', previousReport.totalTimeMs, report.totalTimeMs, 'ms', 'lowerBetter'),
     computeChangeRow('최고속도', previousReport.peakVelocityMs, report.peakVelocityMs, 'm/s', 'higherBetter'),
-    computeChangeRow('반응속도', previousReport.reactionTimeMs, report.reactionTimeMs, 'ms', 'lowerBetter'),
+    computeChangeRow('출발 반응(영상 기준)', previousReport.reactionTimeMs, report.reactionTimeMs, 'ms', 'lowerBetter'),
+    computeChangeRow('최고속도(0.2초 평균)', previousReport.analysis?.peakVelocitySmoothMs, report.analysis?.peakVelocitySmoothMs, 'm/s', 'higherBetter'),
+    computeChangeRow('최대 가속', previousReport.analysis?.maxAccelMs2, report.analysis?.maxAccelMs2, 'm/s²', 'higherBetter'),
+    computeChangeRow('0~5m 기록', previousReport.analysis?.firstHalfMs, report.analysis?.firstHalfMs, 'ms', 'lowerBetter'),
+    computeChangeRow('5~10m 기록', previousReport.analysis?.secondHalfMs, report.analysis?.secondHalfMs, 'ms', 'lowerBetter'),
+    computeChangeRow('속도 유지율', previousReport.analysis?.speedMaintenancePct, report.analysis?.speedMaintenancePct, '%', 'higherBetter'),
     computeChangeRow('감속시간', previousReport.deceleration?.decelTimeMs, report.deceleration?.decelTimeMs, 'ms', 'lowerBetter'),
   ];
   return summarizeChanges(rows, reportDateOnly(previousReport));
@@ -156,6 +161,22 @@ export default function SprintReportDashboard({ report, previousReport, onCommen
                 ) : (
                   <p className="text-center text-xs text-slate-500">직선 스프린트 종목이라 방향전환 지표가 없습니다.</p>
                 )}
+                {report?.analysis && (
+                  <>
+                    <StatRow label="최고속도(0.2초 평균)" value={report.analysis.peakVelocitySmoothMs != null ? `${report.analysis.peakVelocitySmoothMs} m/s` : '—'} />
+                    <StatRow label="최대 가속" value={report.analysis.maxAccelMs2 != null ? `${report.analysis.maxAccelMs2} m/s²` : '—'} />
+                    {kind !== 'agility' && (
+                      <>
+                        <StatRow label="0~5m / 5~10m" value={report.analysis.firstHalfMs != null && report.analysis.secondHalfMs != null ? `${report.analysis.firstHalfMs} / ${report.analysis.secondHalfMs} ms` : '—'} />
+                        <StatRow label="속도 유지율(마지막 2m)" value={report.analysis.speedMaintenancePct != null ? `${report.analysis.speedMaintenancePct}%` : '—'} />
+                      </>
+                    )}
+                    {kind === 'agility' && report.analysis.legs?.length > 0 && (
+                      <StatRow label="구간별 시간" value={report.analysis.legs.map((l) => `${(l.timeMs / 1000).toFixed(2)}s`).join(' · ')} />
+                    )}
+                  </>
+                )}
+                <p className="text-[10px] text-slate-500">출발 반응·시간은 영상 프레임(약 33ms) 단위입니다. 같은 기기·같은 설정으로 찍은 회차끼리 비교해 주세요.</p>
                 <div className="mt-1 rounded-lg bg-slate-100/70 dark:bg-slate-800/70 px-3 py-2">
                   <div className="flex justify-between text-[11px]">
                     <span className="text-slate-500 dark:text-slate-400">평균 속도</span>

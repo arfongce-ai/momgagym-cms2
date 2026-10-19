@@ -18,12 +18,10 @@ import { analyzeUploadedVideo, CAPTURE_PRESETS } from '../core/videoAnalyzer';
 import { aiStore } from '../../demoData';
 import MeasureRecordConfirm from '../components/MeasureRecordConfirm.jsx';
 import SprintReportDashboard from './SprintReportDashboard.jsx';
+import { SPRINT_TEST_TYPES, SPRINT_TEST_ORDER, DEFAULT_CAM_ANGLE } from '../core/sprintTests';
 
-const TEST_TYPES = {
-  sprint5: { label: '5m 스프린트', mode: 'sprint', splitDistancesM: [5], trackDistanceM: 5 },
-  sprint10: { label: '10m 스프린트', mode: 'sprint', splitDistancesM: [5, 10], trackDistanceM: 10 },
-  agility505: { label: '5-0-5 아질리티', mode: 'agility', splitDistancesM: [5], trackDistanceM: 5 },
-};
+// 종목 정의는 core/sprintTests.js 한 곳에서 관리(라이브·업로드 공용)
+const TEST_TYPES = SPRINT_TEST_TYPES;
 
 // [촬영 각도 추가 2026-09-08] SprintLiveAnalysis.jsx와 동일 — 카메라를 트랙
 // 진행 방향(근-원)에 놓았는지, 트랙 옆(좌-우 측면)에 놓았는지에 따라 기본
@@ -42,7 +40,7 @@ export default function SprintUploadAnalysis({ member, onBack, onSaveToFirebase,
   // 2026-09-07 추가) → done(저장된 결과) | error
   const [phase, setPhase] = useState('idle');
   const [testKey, setTestKey] = useState('sprint10');
-  const [camAngle, setCamAngle] = useState('depth'); // depth(근-원) | lateral(좌-우)
+  const [camAngle, setCamAngle] = useState(DEFAULT_CAM_ANGLE); // 기본: 측면(가로) 기준
   const [capture, setCapture] = useState('normal');
   const [calibPoints, setCalibPoints] = useState(CAM_ANGLES.depth.points);
   const [progress, setProgress] = useState(0);
@@ -130,7 +128,7 @@ export default function SprintUploadAnalysis({ member, onBack, onSaveToFirebase,
     setProgress(0);
     setErrorMsg('');
 
-    const tracker = new SprintTracker({ calibration, splitDistancesM: cfg.splitDistancesM, mode: cfg.mode });
+    const tracker = new SprintTracker({ calibration, splitDistancesM: cfg.splitDistancesM, mode: cfg.mode, trackDistanceM: cfg.trackDistanceM });
     const abort = new AbortController();
     abortRef.current = abort;
     const preset = CAPTURE_PRESETS[capture] || CAPTURE_PRESETS.normal;
@@ -328,7 +326,7 @@ export default function SprintUploadAnalysis({ member, onBack, onSaveToFirebase,
             <div>
               <p style={styles.smallLabel}>측정 종류</p>
               <div style={styles.pickerRow}>
-                {Object.entries(TEST_TYPES).map(([k, c]) => (
+                {SPRINT_TEST_ORDER.map((k) => [k, TEST_TYPES[k]]).map(([k, c]) => (
                   <button key={k} onClick={() => setTestKey(k)}
                     style={{ ...styles.testBtn, ...(testKey === k ? styles.testBtnActive : {}) }}>
                     {c.label}
