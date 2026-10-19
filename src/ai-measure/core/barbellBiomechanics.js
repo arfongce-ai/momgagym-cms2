@@ -61,8 +61,11 @@ export const BARBELL_TUNING = {
   minValidSamples: 8,      // 세트 전체 최소 샘플
   minValidRomRatio: 0.03,  // 세트 전체 최소 수직 변위
 
-  // ── 속도저하(velocity loss) 해석 임계(%) — Pareja-Blanco 근거 ──
-  velocityLossBands: { fresh: 10, strength: 20, hypertrophy: 30 },
+  // ── 속도저하(velocity loss) 해석 임계(%) ──
+  // 근거: 힘·점프 목적은 ≤20%가 유리(속도저하 비교 연구 종합, Frontiers Physiol 2022),
+  //  10~20%가 신경근 적응에 도움(Włodarczyk 2021 리뷰), 40%는 일부 근비대에 유리하나 점프 향상은 20%가 우세
+  //  (Pareja-Blanco 2017, 남성 22명). 30%는 근거 없는 중간값이어서 40%로 교체. 표본이 작아 참고 기준.
+  velocityLossBands: { fresh: 10, strength: 20, hypertrophy: 40 },
 };
 
 const r1 = (x) => (x == null ? null : Math.round(x * 10) / 10);

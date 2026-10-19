@@ -266,11 +266,11 @@ describe('barbellClinical · AI 자동 평가', () => {
   it('VBT: 존/속도저하/일관성을 근거로 평가한다', () => {
     const d = generateLiftingDiagnosis({
       mode: 'vbt', exerciseType: 'squat',
-      metrics: { meanVelocity: 0.62, velocityLoss: 35, confidenceScore: 0.9 },
+      metrics: { meanVelocity: 0.62, velocityLoss: 45, confidenceScore: 0.9 },
       consistencyCvPct: 4,
     });
     expect(d.flags).toContain('high_velocity_loss');
-    expect(d.details.join(' ')).toContain('속도저하 35%');
+    expect(d.details.join(' ')).toContain('속도저하 45%');
   });
 
   it('역도: 큰 바 드리프트는 needs_work 로 강등', () => {
@@ -303,6 +303,6 @@ describe('barbellClinical · AI 자동 평가', () => {
     expect(velocityLossInterpretation(8).band).toBe('fresh');
     expect(velocityLossInterpretation(18).band).toBe('strength');
     expect(velocityLossInterpretation(28).band).toBe('hypertrophy');
-    expect(velocityLossInterpretation(40).band).toBe('fatigue');
+    expect(velocityLossInterpretation(45).band).toBe('fatigue');
   });
 });

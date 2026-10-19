@@ -122,7 +122,7 @@ describe('crossMeasureContext', () => {
     it('속도저하·렙 불일치 둘 다 있으면 caution 이슈 2개(둘 다 fair까지만 강등)', () => {
       const focus = buildProblemFocus('lifting', {
         mode: 'vbt', exerciseType: 'bench_press',
-        metrics: { meanVelocity: 0.4, velocityLoss: 35, confidenceScore: 0.9 },
+        metrics: { meanVelocity: 0.4, velocityLoss: 45, confidenceScore: 0.9 },
         consistencyCvPct: 18,
       });
       expect(focus.severity).toBe('caution');

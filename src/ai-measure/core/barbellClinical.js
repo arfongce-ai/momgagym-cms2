@@ -48,8 +48,8 @@ export function velocityLossInterpretation(lossPct) {
   const B = BARBELL_TUNING.velocityLossBands;
   if (v <= B.fresh) return { band: 'fresh', text: `속도저하 ${v}% — 피로 누적이 적어 스피드·파워 훈련에 적합한 상태입니다.` };
   if (v <= B.strength) return { band: 'strength', text: `속도저하 ${v}% — 근력 훈련 권장 범위(≤20%) 안입니다.` };
-  if (v <= B.hypertrophy) return { band: 'hypertrophy', text: `속도저하 ${v}% — 근비대 자극 범위입니다. 파워 목적이면 세트를 일찍 끊으세요.` };
-  return { band: 'fatigue', text: `속도저하 ${v}% — 피로 누적이 큽니다(>30%). 세트 종료 또는 무게 하향을 권장합니다.` };
+  if (v <= B.hypertrophy) return { band: 'hypertrophy', text: `속도저하 ${v}% — 근비대 쪽에 유리한 범위입니다. 점프·파워 목적이면 20% 안에서 세트를 끊는 편이 유리합니다.` };
+  return { band: 'fatigue', text: `속도저하 ${v}% — 피로 누적이 큽니다(>40%). 세트 종료 또는 무게 하향을 권장합니다.` };
 }
 
 const gradeRank = { excellent: 4, good: 3, fair: 2, needs_work: 1 };

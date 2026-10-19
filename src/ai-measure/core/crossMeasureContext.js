@@ -64,7 +64,7 @@ const LIFTING_FLAG_KO = Object.freeze({
   high_formula_spread: { level: 'caution', text: '1RM 추정 공식 간 편차가 커서 추정이 불안정합니다 — 1~6회 세트로 재측정을 권장합니다.' },
   high_reps: { level: 'caution', text: '10회 초과 반복으로 추정해 1RM 오차가 큽니다(참고용 수치입니다).' },
   velocity_formula_mismatch: { level: 'caution', text: '속도 기반 추정치가 공식 추정치와 크게 어긋납니다 — 무게 입력·추적을 확인하세요.' },
-  high_velocity_loss: { level: 'caution', text: '세트 내 속도저하가 30%를 넘어 피로가 많이 누적됐습니다.' },
+  high_velocity_loss: { level: 'caution', text: '세트 내 속도저하가 40%를 넘어 피로가 많이 누적됐습니다.' },
   inconsistent_reps: { level: 'caution', text: '렙마다 속도 편차가 커서 출력이 일관되지 않습니다 — 무게·자세를 점검하세요.' },
   large_bar_drift: { level: 'risk', text: '바 궤적이 몸에서 크게 멀어집니다(수평 이탈 큼) — 궤적 교정이 필요합니다.' },
   low_path_efficiency: { level: 'caution', text: '바 이동 경로 효율이 낮습니다 — 수직 이동 대비 경로가 길어 흔들림/우회가 의심됩니다.' },
