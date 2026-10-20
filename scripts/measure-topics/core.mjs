@@ -60,6 +60,30 @@ export const TOPIC_METRICS = {
 export const REVIEW_PCT = 90;
 export const REVIEW_MIN_MEMBERS = 3;
 
+// ── 신뢰도(표본이 쌓일수록 올라간다) ──
+// 범위 밖 비율의 95% Wilson 신뢰구간을 같이 계산하고, 인원 수로 등급을 나눈다.
+//  · low  (n<5)    : 참고만. Notion에 쓰지 않는다(로그에는 표시).
+//  · mid  (5~19명) : 쓸 수 있으나 구간이 넓다.
+//  · high (n≥20)   : 구간이 충분히 좁다(대략 ±20%p 이내).
+// 등급 경계 5·20은 통상 표본 크기 관례를 쓴 설계값이며 연구 컷오프가 아니다.
+export const CONFIDENCE_MID_MIN = 5;
+export const CONFIDENCE_HIGH_MIN = 20;
+
+export function wilsonInterval(out, n, z = 1.96) {
+  if (!n) return null;
+  const p = out / n;
+  const denom = 1 + (z * z) / n;
+  const center = (p + (z * z) / (2 * n)) / denom;
+  const half = (z * Math.sqrt((p * (1 - p)) / n + (z * z) / (4 * n * n))) / denom;
+  return [Math.max(0, Math.round((center - half) * 100)), Math.min(100, Math.round((center + half) * 100))];
+}
+
+export function confidenceOf(n, out) {
+  const tier = n >= CONFIDENCE_HIGH_MIN ? 'high' : n >= CONFIDENCE_MID_MIN ? 'mid' : 'low';
+  const label = { low: '낮음(표본 적음)', mid: '보통', high: '높음' }[tier];
+  return { tier, label, interval: wilsonInterval(out, n) };
+}
+
 export const TYPE_NAME = {
   jump: '점프', posture: '자세', gait: '보행', sprint: '스프린트·민첩성', rom: '관절가동범위', one_rm: '1RM', vbt: '바벨 속도',
 };
@@ -158,10 +182,11 @@ export function aggregateTopics(docsByMember, minMembers = MIN_MEMBERS) {
       // 범위 밖 회원이 0명이면 주제로 쓸 거리가 없어 후보에서 뺀다.
       if (s.out === 0) { skippedNone += 1; continue; }
       const outPct = Math.round((s.out / s.n) * 100);
-      candidates.push({ type: t, typeName: TYPE_NAME[t], metricKey: key, label: s.label, members: s.n, outCount: s.out, outPct, goodRange: m0(t, key).good, median: median(s.values), needsReview: outPct >= REVIEW_PCT && s.n >= REVIEW_MIN_MEMBERS });
+      candidates.push({ type: t, typeName: TYPE_NAME[t], metricKey: key, label: s.label, members: s.n, outCount: s.out, outPct, goodRange: m0(t, key).good, median: median(s.values), needsReview: outPct >= REVIEW_PCT && s.n >= REVIEW_MIN_MEMBERS, confidence: confidenceOf(s.n, s.out) });
     }
   }
-  candidates.sort((a, b) => b.outPct - a.outPct || b.members - a.members);
+  const tierRank = { high: 2, mid: 1, low: 0 };
+  candidates.sort((a, b) => (tierRank[b.confidence.tier] - tierRank[a.confidence.tier]) || b.outPct - a.outPct || b.members - a.members);
   return { candidates, skipped: { belowMinMembers: skippedSmall, noneOutOfRange: skippedNone, implausibleValues: skippedImplausible } };
 }
 

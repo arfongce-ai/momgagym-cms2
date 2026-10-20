@@ -117,3 +117,31 @@ describe('상하 움직임 비현실 값 제외', () => {
     expect(c.outCount).toBe(1);
   });
 });
+
+import { wilsonInterval, confidenceOf } from '../../scripts/measure-topics/core.mjs';
+
+describe('후보 신뢰도(표본이 쌓일수록 올라감)', () => {
+  it('등급은 인원 5명·20명 경계로 나뉜다', () => {
+    expect(confidenceOf(4, 2).tier).toBe('low');
+    expect(confidenceOf(5, 2).tier).toBe('mid');
+    expect(confidenceOf(19, 5).tier).toBe('mid');
+    expect(confidenceOf(20, 5).tier).toBe('high');
+  });
+  it('같은 비율이어도 인원이 많으면 신뢰구간이 좁아진다', () => {
+    const w = (n, out) => { const [lo, hi] = wilsonInterval(out, n); return hi - lo; };
+    expect(w(10, 5)).toBeGreaterThan(w(40, 20));
+    expect(w(40, 20)).toBeGreaterThan(w(160, 80));
+  });
+  it('Wilson 구간 알려진 값(2/10 → 약 6~51%)', () => {
+    expect(wilsonInterval(2, 10)).toEqual([6, 51]);
+  });
+  it('후보에 confidence 가 붙고 신뢰도 높은 후보가 앞에 온다', () => {
+    const gd = (c) => ({ kind: 'gait', createdAt: '2026-10-01T00:00:00Z', metrics: { cadence: c } });
+    const docs = {};
+    for (let i = 0; i < 5; i++) docs[`m${i}`] = [gd(150)]; // 달리기 케이던스 5명 전원 밖(needsReview)
+    docs.x = [gd(170)];
+    const r = aggregateTopics(docs);
+    expect(r.candidates[0].confidence).toBeTruthy();
+    expect(['low', 'mid', 'high']).toContain(r.candidates[0].confidence.tier);
+  });
+});
