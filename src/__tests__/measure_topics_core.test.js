@@ -103,3 +103,17 @@ describe('measure-topics core', () => {
     expect(r.candidates.find((x) => x.metricKey === 'stanceWalk')).toBeUndefined();
   });
 });
+
+describe('상하 움직임 비현실 값 제외', () => {
+  const g = (osc, cadence) => ({ kind: 'gait', createdAt: '2026-10-01T00:00:00Z', metrics: { cadence, verticalOscillation: osc } });
+  it('걷기 9%·달리기 23.9%는 측정 오류로 보고 후보에서 뺀다', () => {
+    const r = aggregateTopics({ a: [g(9, 116)], b: [g(23.9, 170)] });
+    expect(r.candidates.find((x) => x.metricKey === 'verticalOscWalk')).toBeUndefined();
+    expect(r.candidates.find((x) => x.metricKey === 'verticalOscRun')).toBeUndefined();
+    expect(r.skipped.implausibleValues).toBeGreaterThanOrEqual(2);
+  });
+  it('걷기 6%는 현실 범위라 후보에 남는다', () => {
+    const c = aggregateTopics({ a: [g(6, 116)] }).candidates.find((x) => x.metricKey === 'verticalOscWalk');
+    expect(c.outCount).toBe(1);
+  });
+});

@@ -37,8 +37,8 @@ export const TOPIC_METRICS = {
     { key: 'stanceWalk', label: '걷기 지지 시간 비율', paths: ['metrics.stancePct', 'stancePct'], good: [55, 65], when: (p) => cadenceOf(p) < 140 },
     { key: 'pelvicDrop', label: '골반 처짐', paths: ['metrics.pelvicDropAbs', 'pelvicDropAbs', 'metrics.pelvicDrop.avg'], good: [0, 4] },
     { key: 'kneeSymmetry', label: '좌우 무릎 대칭', paths: ['metrics.kneeSymmetry', 'kneeSymmetry'], good: [92, 100] },
-    { key: 'verticalOscWalk', label: '걷기 상하 움직임', paths: ['metrics.verticalOscillation', 'verticalOscillation'], good: [2.5, 4.0], when: (p) => cadenceOf(p) < 140 },
-    { key: 'verticalOscRun', label: '달리기 상하 움직임', paths: ['metrics.verticalOscillation', 'verticalOscillation'], good: [4.5, 7.5], when: (p) => cadenceOf(p) >= 140 },
+    { key: 'verticalOscWalk', label: '걷기 상하 움직임', paths: ['metrics.verticalOscillation', 'verticalOscillation'], good: [2.5, 4.0], bounds: [0, 8], when: (p) => cadenceOf(p) < 140 }, // 8% 초과(약 10cm↑)는 걷기에서 물리적으로 비현실 → 측정 오류로 제외
+    { key: 'verticalOscRun', label: '달리기 상하 움직임', paths: ['metrics.verticalOscillation', 'verticalOscillation'], good: [4.5, 7.5], bounds: [0, 15], when: (p) => cadenceOf(p) >= 140 }, // 15% 초과는 달리기에서도 비현실 → 측정 오류로 제외
   ],
   sprint: [
     // 출발 반응은 영상 해상도·인식 지연이 섞여 있어 주제 후보에서 제외했다.
