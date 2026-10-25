@@ -125,28 +125,70 @@ export function computeA4Breaks(heightPx, pagePx, candidates = []) {
   return breaks;
 }
 
-// DOM 노드 → A4 크기 JPG File 배열. 내용이 A4 한 장보다 길면 섹션 경계에서 나눠
-// 여러 장(_p1, _p2 …)으로 만든다. 프린트 시 A4 한 장 안에 맞게 출력된다.
+// 복제 DOM(캡처 폭 기준 레이아웃)을 A4 쪽(pagePx 높이) 단위로 재배치한다.
+//  • 섹션/카드가 쪽 경계에 걸리면 다음 쪽 맨 위로 밀어(margin-top) 중간이 잘리지 않게 한다.
+//  • 한 쪽보다 큰 블록은 자식 단위로 내려가 같은 규칙을 적용한다(세로 쌓기 블록만).
+//  • 전체 높이는 pagePx 의 배수로 맞춘다 → 쪽마다 정확히 A4 한 장.
+// 반환: 쪽 수. 화면(원본) DOM 은 건드리지 않고 캡처용 복제본에만 적용한다.
+export function paginateA4(el, pagePx, { padTop = 28, padBottom = 28 } = {}) {
+  const win = el.ownerDocument.defaultView;
+  const top0 = () => el.getBoundingClientRect().top;
+  const relTop = (n) => n.getBoundingClientRect().top - top0();
+  const relBottom = (n) => n.getBoundingClientRect().bottom - top0();
+  const usable = pagePx - padTop - padBottom;
+  const push = (n, delta) => {
+    const mt = parseFloat(win.getComputedStyle(n).marginTop) || 0;
+    n.style.marginTop = `${mt + delta}px`;
+  };
+  const stacksVertically = (n) => {
+    const cs = win.getComputedStyle(n);
+    if (cs.display === 'block' || cs.display === 'flow-root') return true;
+    return cs.display === 'flex' && cs.flexDirection.startsWith('column');
+  };
+  const place = (container, depth) => {
+    Array.from(container.children).forEach((c) => {
+      const cs = win.getComputedStyle(c);
+      if (cs.display === 'none' || cs.position === 'absolute' || cs.position === 'fixed') return;
+      const top = relTop(c);
+      const bottom = relBottom(c);
+      const h = bottom - top;
+      if (h < 1) return;
+      const page = Math.floor((top + 0.5) / pagePx);
+      if (bottom <= (page + 1) * pagePx - padBottom) return; // 이 쪽에 들어감
+      const nextTop = (page + 1) * pagePx + padTop;
+      if (h <= usable) { push(c, nextTop - top); return; }
+      if (c.children.length && depth < 4 && stacksVertically(c)) { place(c, depth + 1); return; }
+      if (top - page * pagePx > padTop + 8) push(c, nextTop - top); // 큰 단일 블록은 새 쪽에서 시작
+    });
+  };
+  place(el, 0);
+  const last = Array.from(el.children).filter((c) => win.getComputedStyle(c).position !== 'absolute').pop();
+  const padB = parseFloat(win.getComputedStyle(el).paddingBottom) || 0;
+  const total = Math.max(last ? relBottom(last) + padB : 0, pagePx);
+  const pages = Math.max(1, Math.ceil(total / pagePx - 0.001));
+  el.style.minHeight = `${pages * pagePx}px`;
+  el.style.height = `${pages * pagePx}px`;
+  el.style.borderRadius = '0';
+  el.style.boxShadow = 'none';
+  return pages;
+}
+
+// DOM 노드 → A4 크기 JPG File 배열. 캡처용 복제 DOM 을 A4 쪽 단위로 재배치(paginateA4)한 뒤
+// 쪽마다 JPG 한 장(_p1, _p2 …)으로 저장한다. 한 쪽에 들어가면 파일은 1장.
 export async function captureNodeToA4JpgFiles(node, filename, { scale = 2, bg = '#0f172a', width } = {}) {
   const html2canvas = await loadHtml2Canvas();
   const opts = { backgroundColor: bg, scale, useCORS: true, logging: false };
   if (width) opts.windowWidth = width;
-  // 캡처용 복제 DOM 에서 섹션 경계(자식·손자 요소 하단)를 측정한다 — 캡처 폭 기준 레이아웃.
+  const cssW = width || Math.round(node.getBoundingClientRect().width) || 794;
+  const pageCss = Math.round(cssW * A4_RATIO);
   const tag = `a4cap-${Date.now()}`;
   node.setAttribute('data-a4-cap', tag);
-  let candidates = [];
+  let pages = 0;
   opts.onclone = (doc) => {
     try {
       const el = doc.querySelector(`[data-a4-cap="${tag}"]`);
-      if (!el) return;
-      const top = el.getBoundingClientRect().top;
-      const out = [];
-      Array.from(el.children).forEach((c) => {
-        out.push(c.getBoundingClientRect().bottom - top);
-        Array.from(c.children).forEach((g) => out.push(g.getBoundingClientRect().bottom - top));
-      });
-      candidates = out;
-    } catch (e) { /* 측정 실패 시 A4 높이에서 단순 분할 */ }
+      if (el) pages = paginateA4(el, pageCss);
+    } catch (e) { pages = 0; /* 실패 시 아래 단순 분할로 대체 */ }
   };
   let canvas;
   try { canvas = await html2canvas(node, opts); } finally { node.removeAttribute('data-a4-cap'); }
@@ -156,8 +198,10 @@ export async function captureNodeToA4JpgFiles(node, filename, { scale = 2, bg = 
     if (!blob) throw new Error('이미지 변환 실패');
     return new File([blob], name, { type: 'image/jpeg' });
   };
-  const pagePx = Math.round(canvas.width * A4_RATIO);
-  const breaks = computeA4Breaks(canvas.height, pagePx, candidates.map((c) => c * scale));
+  const pagePx = Math.round(pageCss * scale);
+  const breaks = pages > 0
+    ? Array.from({ length: Math.max(0, Math.round(canvas.height / pagePx) - 1) }, (_, k) => (k + 1) * pagePx)
+    : computeA4Breaks(canvas.height, pagePx, []);
   if (!breaks.length) return [await toFile(canvas, filename)];
 
   const edges = [0, ...breaks, canvas.height];

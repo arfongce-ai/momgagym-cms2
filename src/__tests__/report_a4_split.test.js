@@ -20,3 +20,16 @@ describe('computeA4Breaks', () => {
     for (let i = 0; i < edges.length - 1; i += 1) expect(edges[i + 1] - edges[i]).toBeLessThanOrEqual(P * 1.03);
   });
 });
+
+import fs from 'node:fs';
+describe('A4 쪽 단위 재배치', () => {
+  const src = fs.readFileSync('src/ai-measure/core/reportShare.js', 'utf8');
+  it('캡처용 복제 DOM(onclone)에서 paginateA4 로 쪽 경계를 맞춘다', () => {
+    expect(src).toMatch(/export function paginateA4/);
+    expect(src).toMatch(/opts\.onclone[\s\S]*paginateA4\(el, pageCss\)/);
+  });
+  it('쪽 경계에 걸린 블록은 다음 쪽으로 밀고 전체 높이를 A4 배수로 맞춘다', () => {
+    expect(src).toMatch(/push\(c, nextTop - top\)/);
+    expect(src).toMatch(/pages \* pagePx/);
+  });
+});
