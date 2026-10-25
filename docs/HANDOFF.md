@@ -620,3 +620,9 @@
 - `scripts/measure-topics/core.mjs`: 후보마다 `confidence`(등급 low n<5 / mid 5~19 / high ≥20, 범위 밖 비율 95% Wilson 구간) 추가, 신뢰도 높은 후보를 앞에 정렬. 등급 경계는 관례 기반 설계값.
 - `aggregate.mjs`: 로그에 신뢰도·구간 표시. write 시 표본 5명 미만(low)은 Notion에 쓰지 않음(제목은 그대로라 중복 방지 로직 영향 없음).
 - 테스트 3280/3280.
+
+## 2026-10-25 — 1RM 저장·적용 실패 수정 (claude/onerm-save-fix-20261025)
+- 원인: `AiMeasureHub.handleSave` 가 바벨(1RM·VBT)·스탠스·스쿼트 저장 실패를 alert 로 삼키고 undefined 반환 → 호출부 persist 가 "저장 성공"으로 오인, 리포트로 넘어가 기록 유실. 또한 이 3종은 sanitize 를 안 거쳐 undefined 필드가 있으면 Firestore setDoc 이 거부.
+- 수정: 위 3종도 sanitizeReportPayload 적용 + 실패 시 throw(호출부 error 배너·재시도).
+- 영상: 정책상(storagePolicy.videoStored:false, 회원 영상 PC 로컬) Firestore 저장 안 함. 리포트 화면 메모리에만 존재 — 실기기 확인 못 함.
+- 테스트 3282/3282, 빌드 통과.

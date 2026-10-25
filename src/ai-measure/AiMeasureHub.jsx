@@ -189,7 +189,10 @@ export default function AiMeasureHub() {
       if (recognition && enrichedData && typeof enrichedData === 'object' && !Array.isArray(enrichedData)) {
         enrichedData = { ...enrichedData, recognition };
       }
-      const storableData = measurementKind ? sanitizeReportPayload(enrichedData) : enrichedData;
+      // [2026-10-25] 1RM/VBT/스탠스/스쿼트도 undefined·Blob 을 걸러 저장한다.
+      //  (Firestore setDoc 은 undefined 필드를 거부 → 저장 실패)
+      const storableData = (measurementKind || isLifting || isStance || isSquat)
+        ? sanitizeReportPayload(enrichedData) : enrichedData;
       const saveUnifiedCopy = async (savedReport, reportType) => {
         try {
           await saveUnifiedReport({
@@ -315,7 +318,9 @@ export default function AiMeasureHub() {
       alert(member.isVirtual ? '미등록회원 측정이 저장되었습니다.' : '측정이 저장되었습니다.');
     } catch (e) {
       saveFailed = true;
-      if (isGait || isJump || isPosture || isRom || isSprint) throw e; // 컴포넌트 saveState='error' 로 표시되게 전파
+      // [2026-10-25] 바벨·스탠스·스쿼트도 전파한다. 예전엔 alert 후 undefined 를 반환해
+      //  호출부가 '저장 성공'으로 오인하고 리포트로 넘어가 기록이 유실됐다.
+      if (isGait || isJump || isPosture || isRom || isSprint || isLifting || isStance || isSquat) throw e; // 컴포넌트 saveState='error' 로 표시되게 전파
       alert('저장에 실패했습니다. 네트워크 확인 후 다시 시도하세요.\n' + (e?.message || ''));
     } finally {
       // 저장에 성공했을 때만 인식률 집계를 비운다(실패 후 재시도하면 같은 측정 값을 다시 쓴다).
