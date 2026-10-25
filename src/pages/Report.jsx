@@ -12,7 +12,7 @@ import { buildSummaryData, scoreToStatus, defaultRecommendation } from '../ai-me
 import { buildComprehensiveReport } from '../ai-measure/core/comprehensiveReport';
 import { loadAllMeasureRecords, deleteMeasureRound, deleteMeasureType, deleteMeasureRecord } from '../services/comprehensiveReportService';
 import { findAnomalies } from '../ai-measure/core/comprehensiveReport';
-import { captureNodeToJpgFile, shareMeasurementSummaryToKakao } from '../ai-measure/core/reportShare';
+import { captureNodeToA4JpgFiles, shareMeasurementSummaryToKakao } from '../ai-measure/core/reportShare';
 import { canCaptureUnifiedResult, isLiftingShapedSession } from '../components/report/sessionShare';
 import SessionShareReport from '../components/report/SessionShareReport';
 // [쉬운 버전 리포트 2026-08-27] 측정 종류를 안 가리는 단일 컴포넌트라 lazy 아님
@@ -1356,7 +1356,7 @@ export default function Report() {
 
       for (let i = 0; i < targets.length; i += 1) {
         const suffix = targets.length > 1 ? `_A4_${i + 1}` : '_A4';
-        files.push(await captureNodeToJpgFile(targets[i], `${baseName}${suffix}.jpg`, { bg: '#0f172a', width: 794 }));
+        files.push(...await captureNodeToA4JpgFiles(targets[i], `${baseName}${suffix}.jpg`, { bg: '#0f172a', width: 794 }));
       }
 
       return files;

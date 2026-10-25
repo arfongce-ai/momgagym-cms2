@@ -101,6 +101,84 @@ export async function captureNodeToJpgFile(node, filename, { scale = 2, bg = '#0
   return new File([blob], filename, { type: 'image/jpeg' });
 }
 
+// A4 세로 비율(높이/폭). 297/210.
+export const A4_RATIO = 297 / 210;
+
+// 캔버스 높이가 A4 한 장을 넘으면 어느 높이에서 자를지 계산한다(순수 함수 — 테스트 대상).
+//  heightPx: 전체 높이, pagePx: A4 한 장 높이, candidates: 섹션 경계 후보(px, 오름차순 불필요).
+//  후보 중 현재 페이지 하단 50~100% 구간에서 가장 큰 값을 골라 카드/섹션 중간이 잘리지 않게 한다.
+//  후보가 없으면 A4 높이에서 그냥 자른다. 1.03배 이내는 한 장으로 본다(미세 초과 허용).
+export function computeA4Breaks(heightPx, pagePx, candidates = []) {
+  if (!(heightPx > 0) || !(pagePx > 0) || heightPx <= pagePx * 1.03) return [];
+  const cands = candidates.filter((c) => Number.isFinite(c) && c > 0 && c < heightPx).sort((a, b) => a - b);
+  const breaks = [];
+  let start = 0;
+  while (heightPx - start > pagePx * 1.03) {
+    const limit = start + pagePx;
+    let cut = limit;
+    for (let i = cands.length - 1; i >= 0; i -= 1) {
+      if (cands[i] <= limit && cands[i] > start + pagePx * 0.5) { cut = cands[i]; break; }
+    }
+    breaks.push(Math.round(cut));
+    start = cut;
+  }
+  return breaks;
+}
+
+// DOM 노드 → A4 크기 JPG File 배열. 내용이 A4 한 장보다 길면 섹션 경계에서 나눠
+// 여러 장(_p1, _p2 …)으로 만든다. 프린트 시 A4 한 장 안에 맞게 출력된다.
+export async function captureNodeToA4JpgFiles(node, filename, { scale = 2, bg = '#0f172a', width } = {}) {
+  const html2canvas = await loadHtml2Canvas();
+  const opts = { backgroundColor: bg, scale, useCORS: true, logging: false };
+  if (width) opts.windowWidth = width;
+  // 캡처용 복제 DOM 에서 섹션 경계(자식·손자 요소 하단)를 측정한다 — 캡처 폭 기준 레이아웃.
+  const tag = `a4cap-${Date.now()}`;
+  node.setAttribute('data-a4-cap', tag);
+  let candidates = [];
+  opts.onclone = (doc) => {
+    try {
+      const el = doc.querySelector(`[data-a4-cap="${tag}"]`);
+      if (!el) return;
+      const top = el.getBoundingClientRect().top;
+      const out = [];
+      Array.from(el.children).forEach((c) => {
+        out.push(c.getBoundingClientRect().bottom - top);
+        Array.from(c.children).forEach((g) => out.push(g.getBoundingClientRect().bottom - top));
+      });
+      candidates = out;
+    } catch (e) { /* 측정 실패 시 A4 높이에서 단순 분할 */ }
+  };
+  let canvas;
+  try { canvas = await html2canvas(node, opts); } finally { node.removeAttribute('data-a4-cap'); }
+
+  const toFile = async (c, name) => {
+    const blob = await new Promise((res) => c.toBlob(res, 'image/jpeg', 0.92));
+    if (!blob) throw new Error('이미지 변환 실패');
+    return new File([blob], name, { type: 'image/jpeg' });
+  };
+  const pagePx = Math.round(canvas.width * A4_RATIO);
+  const breaks = computeA4Breaks(canvas.height, pagePx, candidates.map((c) => c * scale));
+  if (!breaks.length) return [await toFile(canvas, filename)];
+
+  const edges = [0, ...breaks, canvas.height];
+  const dot = filename.lastIndexOf('.');
+  const stem = dot > 0 ? filename.slice(0, dot) : filename;
+  const ext = dot > 0 ? filename.slice(dot) : '.jpg';
+  const files = [];
+  for (let i = 0; i < edges.length - 1; i += 1) {
+    const sh = edges[i + 1] - edges[i];
+    const page = document.createElement('canvas');
+    page.width = canvas.width;
+    page.height = pagePx;
+    const ctx = page.getContext('2d');
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, page.width, page.height);
+    ctx.drawImage(canvas, 0, edges[i], canvas.width, sh, 0, 0, canvas.width, sh);
+    files.push(await toFile(page, `${stem}_p${i + 1}${ext}`));
+  }
+  return files;
+}
+
 function triggerDownload(file) {
   const url = URL.createObjectURL(file);
   const a = document.createElement('a');

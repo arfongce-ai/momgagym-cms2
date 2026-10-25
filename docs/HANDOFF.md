@@ -626,3 +626,8 @@
 - 수정: 위 3종도 sanitizeReportPayload 적용 + 실패 시 throw(호출부 error 배너·재시도).
 - 영상: 정책상(storagePolicy.videoStored:false, 회원 영상 PC 로컬) Firestore 저장 안 함. 리포트 화면 메모리에만 존재 — 실기기 확인 못 함.
 - 테스트 3282/3282, 빌드 통과.
+
+## 2026-10-25 — 결과 리포트 A4 자동 분할 (claude/report-a4-split-20261025)
+- `reportShare.js` 에 `captureNodeToA4JpgFiles`·`computeA4Breaks` 추가. 리포트 캡처가 A4 한 장(폭 794 기준 높이 1123)을 넘으면 섹션 경계(자식·손자 요소 하단)에서 나눠 `_p1,_p2…` 로 저장. 경계 후보가 없으면 A4 높이에서 절단.
+- 적용: `ReportActions.jsx`(리포트·쉬운버전), `pages/Report.jsx`(공유 캡처).
+- 테스트 3286/3286, 빌드 통과. 실기기 인쇄 확인 못 함(분할 위치·여백은 실제 리포트로 확인 필요).
