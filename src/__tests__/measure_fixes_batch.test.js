@@ -91,7 +91,7 @@ describe('[항목 6] 6개 결과지 모두 A4 JPG 전송', () => {
   }
   it('A4 캡처는 JPG 파일로 내보낸다', () => {
     const ra = read('components/report/ReportActions.jsx');
-    expect(ra).toContain('captureNodeToJpgFile');
+    expect(ra).toContain('captureNodeToA4JpgFiles');
     expect(ra).toContain('.report-a4-page');
   });
 });
