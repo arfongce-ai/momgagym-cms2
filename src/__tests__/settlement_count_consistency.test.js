@@ -46,3 +46,27 @@ describe('buildTrainerLots: split(7:3) 결제 귀속이 월 정산과 동일', (
     expect(buildTrainerLots({ payments: S, trainerId: 't2', settings, trainerRegTotal: 10 })[0].unit).toBe(30000);
   });
 });
+
+describe('결제 없는 증정 세션도 0원 기록(sessionAdds)으로 남기면 유료 수업이 0원 단가가 되지 않는다', () => {
+  const free = { id: 'pf', paidAt: '2026-09-15', amount: 0, method: 'transfer', trainerIds: ['t1'], sessionAdds: [{ trainerId: 't1', count: 5 }], isFree: true };
+  it('유료 10회 + 증정 5회: 처음 3회 출석은 유료 단가 100,000', () => {
+    const row = settle([{ id: 'm1', name: 'M', trainerSessions: { t1: { total: 15, remaining: 12 } } }], [P1, free], sched);
+    expect(row.autoUnit).toBe(100000);
+    expect(row.amount).toBe(300000);
+    expect(row.regRoundCount).toBe(10);
+  });
+  it('(참고) 기록 없이 세션만 늘린 예전 방식은 0원 단가가 나온다 — 이 경로를 더 이상 쓰지 않는다', () => {
+    const row = settle([{ id: 'm1', name: 'M', trainerSessions: { t1: { total: 15, remaining: 12 } } }], [P1], sched);
+    expect(row.autoUnit).toBe(0);
+  });
+});
+
+describe('MemberDetail 소스 점검', () => {
+  it('재등록 체크 + 횟수 미입력은 저장 전에 막고, 증정 추가는 0원 기록을 남긴다', async () => {
+    const fs = await import('node:fs');
+    const src = fs.readFileSync(new URL('../components/members/MemberDetail.jsx', import.meta.url), 'utf8');
+    expect(src).toContain('payForm.isReEnroll && sessionAdds.length === 0');
+    expect(src).toContain('isFree: true');
+    expect(src).toContain('addPaymentWithMemberUpdate(member.id, freePayment');
+  });
+});
