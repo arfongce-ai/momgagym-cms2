@@ -310,3 +310,41 @@ describe('store.dismissIntegrityFinding — 무시 처리 저장·조회', () =>
     expect(dismissStore.getIntegrityDismissals().some(d => d.id === 'k1')).toBe(false);
   });
 });
+
+import { auditPaymentConsistency } from '../services/integrityAudit';
+
+describe('auditPaymentConsistency — 수납·세션·정산 정합성 점검', () => {
+  const trainers = [{ id: 't1', name: 'A' }];
+  const pay = (o) => ({ id: 'p', paidAt: '2026-08-01', amount: 1000000, method: 'cash', trainerIds: ['t1'], ...o });
+  const run = (members, payments, schedules = []) => auditPaymentConsistency({ members, trainers, schedules, payments });
+
+  it('수납 세션 합 > 총 횟수 → payment_session_mismatch', () => {
+    const f = run([{ id: 'm1', name: 'M', trainerSessions: { t1: { total: 5, remaining: 5 } } }],
+      { m1: [pay({ sessionAdds: [{ trainerId: 't1', count: 10 }] })] });
+    expect(f.map(x => x.type)).toContain('payment_session_mismatch');
+  });
+  it('세션카드가 없는데 수납 세션이 있으면 payment_session_mismatch', () => {
+    const f = run([{ id: 'm1', name: 'M', trainerSessions: {} }], { m1: [pay({ sessionAdds: [{ trainerId: 't1', count: 10 }] })] });
+    expect(f.map(x => x.type)).toContain('payment_session_mismatch');
+  });
+  it('재등록인데 세션 횟수 없음 → reenroll_without_sessions', () => {
+    const f = run([{ id: 'm1', name: 'M', trainerSessions: { t1: { total: 10, remaining: 10 } } }],
+      { m1: [pay({ isReEnroll: true, reEnrollNo: 2 })] });
+    expect(f.map(x => x.type)).toContain('reenroll_without_sessions');
+  });
+  it('유료 수납이 모두 회차별인데 총 횟수가 더 큼 → free_sessions_first', () => {
+    const f = run([{ id: 'm1', name: 'M', trainerSessions: { t1: { total: 15, remaining: 15 } } }],
+      { m1: [pay({ sessionAdds: [{ trainerId: 't1', count: 10 }] })] });
+    expect(f.map(x => x.type)).toContain('free_sessions_first');
+  });
+  it('정상(수납 10회 = 총 10회)은 지적하지 않는다', () => {
+    const f = run([{ id: 'm1', name: 'M', trainerSessions: { t1: { total: 10, remaining: 7 } } }],
+      { m1: [pay({ sessionAdds: [{ trainerId: 't1', count: 10 }] })] });
+    expect(f).toHaveLength(0);
+  });
+  it('트레이너 목록에 없는 트레이너의 출석 → trainer_missing (회원·트레이너당 1건)', () => {
+    const sch = [1, 2].map(i => ({ id: 's' + i, memberId: 'm1', trainerId: 'gone', trainerName: '퇴사', status: 'attended' }));
+    const f = run([{ id: 'm1', name: 'M', trainerSessions: {} }], { m1: [] }, sch);
+    expect(f.filter(x => x.type === 'trainer_missing')).toHaveLength(1);
+  });
+});

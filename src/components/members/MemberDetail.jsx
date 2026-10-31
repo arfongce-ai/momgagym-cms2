@@ -215,7 +215,17 @@ export default function MemberDetail({ member:initMember, trainers, members=[], 
     try {
       if (addSessNoPay) {
         // 결제 없이 세션만 추가(증정·보정 등) — 결제 기록은 만들지 않는다.
-        await store.updateMember(member.id, { trainerSessions:ts, classTypes:upCT, lastPaymentDate:addSessDate });
+        // [2026-10 수정] 예전엔 결제 기록 없이 세션 수만 올렸다. 그러면 정산이 이 세션을 "예전 등록분"으로 보고
+        // 맨 앞에 먼저 소진된 것으로 계산해, 유료 수업이 0원 단가로 잡히고 회차 표시도 어긋났다.
+        // 0원 증정 기록(sessionAdds 포함)을 함께 남겨 날짜순으로 소진되게 한다. 매출은 0원이라 변동 없음.
+        const freePayment = {
+          paidAt: addSessDate, amount: 0, method: 'transfer', methods: [], split: [],
+          trainerIds: [addTrainerId],
+          sessionAdds: [{ trainerId:addTrainerId, count:Number(addCount), classType:addClassType||'' }],
+          isReEnroll: false, isNew: false, isFree: true, consultTrainerId: '',
+          memo: '증정/보정 세션(결제 없음)',
+        };
+        await store.addPaymentWithMemberUpdate(member.id, freePayment, { trainerSessions:ts, classTypes:upCT, lastPaymentDate:addSessDate });
       } else {
         // 결제 + 세션을 한 batch로 원자적 저장 (정산 기준 데이터 정합성 보장)
         const reList = (store.getPayments(member.id)||[]).filter(x=>x.isReEnroll);
@@ -561,6 +571,12 @@ export default function MemberDetail({ member:initMember, trainers, members=[], 
           classType: x.classType || '',
         }))
         .filter(x => x.count > 0);
+      // [2026-10 수정] 재등록으로 체크했는데 세션 횟수가 비어 있으면 세션이 안 늘고 "재등록 N회차" 배지만 남아
+      // 회원등록과 정산이 어긋났다 → 저장 전에 막는다.
+      if (payForm.isReEnroll && sessionAdds.length === 0) {
+        alert('재등록은 트레이너별 세션 횟수를 입력해야 합니다.\n(횟수 없이 금액만 기록하려면 "재등록" 체크를 해제해 주세요)');
+        return;
+      }
       const { methodList, sessionAdds: _sessionAdds, ...rest } = payForm;
       // 신규일 때만 상담 트레이너 저장(아니면 비움)
       const consultTrainerId = payForm.isNew ? (payForm.consultTrainerId || '') : '';
@@ -628,7 +644,10 @@ export default function MemberDetail({ member:initMember, trainers, members=[], 
   };
 
   const handleDeletePayment = async pid => {
-    if (!window.confirm('이 수납 기록을 삭제하시겠습니까?')) return;
+    const target = (store.getPayments(member.id)||[]).find(x=>x.id===pid);
+    const hasSess = Array.isArray(target?.sessionAdds) && target.sessionAdds.length;
+    if (!window.confirm('이 수납 기록을 삭제하시겠습니까?' +
+      (hasSess ? '\n\n※ 이 결제로 등록된 세션 횟수(총/잔여)는 그대로 남습니다. 삭제하면 정산 단가가 0원이 될 수 있으니 세션도 함께 조정하세요.' : ''))) return;
     try { await store.deletePayment(member.id, pid); refresh(); }
     catch (e) { alert('삭제에 실패했습니다. 네트워크 확인 후 다시 시도하세요.'); }
   };

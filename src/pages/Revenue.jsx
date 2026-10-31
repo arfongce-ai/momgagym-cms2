@@ -257,10 +257,27 @@ function OverviewTab({ settings, trainers, trainerMap }) {
   //  · 특정 월: 그 달만 계산
   //  · 연/전체: 해당 기간의 모든 달을 각각 계산해 트레이너 id 기준으로 누적
   //    (정산은 월 단위 소진 기준이라 기간 전체를 한 번에 계산할 수 없다)
+  // [2026-10 수정] 연/전체 보기는 "결제가 있던 달"(periodMonths)만 정산해, 결제 없이 수업만 있던 달(또는 이번 달 초)의
+  // 트레이너 지급액이 합계에서 빠졌다. 정산 대상 달은 "결제가 있는 달 ∪ 출석·노쇼 수업이 있는 달"로 잡는다.
+  // (고정비는 기존대로 periodMonths 기준 유지)
+  const settleMonths = useMemo(()=>{
+    if (isMonth) return [period];
+    const set = new Set(periodMonths);
+    store.getSchedules().forEach(s=>{
+      if (s.isExternal || !s.memberId || !s.trainerId) return;
+      if (s.status!=='attended' && s.status!=='noshow') return;
+      const k = (s.date||'').slice(0,7);
+      if (!isValidMonthKey(k)) return;
+      if (isYear && k.slice(0,4)!==period) return;
+      set.add(k);
+    });
+    return [...set].sort();
+  }, [isMonth, isYear, period, periodMonths, allPayments]);
+
   const trainerBreakdown = useMemo(()=>{
     const grouped = {}; store.getMembers().forEach(m=>{ grouped[m.id]=store.getPayments(m.id); });
     const acc = {};
-    periodMonths.forEach(ym=>{
+    settleMonths.forEach(ym=>{
       const blocks = computeSessionSettlementWithExpiry({
         trainers, members: store.getMembers(), schedules: store.getSchedules(),
         payments: grouped, records: store.getPromos(), settings, ym,
@@ -285,7 +302,7 @@ function OverviewTab({ settings, trainers, trainerMap }) {
     return Object.values(acc)
       .map(b=>({ ...b, splitRate: b.sessionTotal>0 ? Math.round(b.sessionPayout/b.sessionTotal*100) : 0 }))
       .sort((a,b)=>b.payout-a.payout);
-  }, [allPayments, trainers, settings, periodMonths]);
+  }, [allPayments, trainers, settings, settleMonths]);
 
   // "트레이너 정산" 총액 = 트레이너별 정산 내역의 합(단일 소스 — 두 숫자가 어긋날 일이 없다)
   const settlePayout = useMemo(()=>trainerBreakdown.reduce((s,b)=>s+b.payout,0), [trainerBreakdown]);
@@ -637,6 +654,16 @@ function RefundableList({ filtered, settings, trainers, trainerMap, onChange, pe
 
   const saveEdit = async (p) => {
     if (!edit.amount) { alert('금액을 입력해 주세요.'); return; }
+    // [2026-10 수정] 세션 횟수(sessionAdds)가 기록된 결제의 담당 트레이너를 바꾸면 결제 귀속과 세션 lot이
+    // 서로 다른 트레이너를 가리켜 정산 단가가 0원이 된다 → 막고 안내한다.
+    {
+      const before = [...(p.trainerIds||[])].sort().join(',');
+      const after  = [...(edit.trainerIds||[])].sort().join(',');
+      if (Array.isArray(p.sessionAdds) && p.sessionAdds.length && before !== after) {
+        alert('세션 횟수가 기록된 결제는 담당 트레이너를 바꿀 수 없습니다.\n(회원상세에서 세션 양도를 쓰거나, 결제를 삭제 후 다시 등록해 주세요)');
+        return;
+      }
+    }
     try {
       // split 정합성: 다중(2명+)이 아니면 비우고, 트레이너가 바뀌었으면 균등 재분배.
       const total = Math.max(0, Math.round(Number(edit.amount)||0));
@@ -678,13 +705,15 @@ function RefundableList({ filtered, settings, trainers, trainerMap, onChange, pe
   };
 
   const del = async (p) => {
-    if (!window.confirm(`${p.memberName} · ${won(p.amount)} 결제를 삭제할까요?\n(회원 수납 내역에서도 삭제됩니다)`)) return;
+    const hasSess = Array.isArray(p.sessionAdds) && p.sessionAdds.length;
+    if (!window.confirm(`${p.memberName} · ${won(p.amount)} 결제를 삭제할까요?\n(회원 수납 내역에서도 삭제됩니다)` +
+      (hasSess ? '\n\n※ 이 결제로 등록된 세션 횟수(총/잔여)는 그대로 남습니다. 삭제하면 정산 단가가 0원이 될 수 있으니 회원상세에서 세션도 함께 조정하세요.' : ''))) return;
     try { await store.deletePayment(p.memberId, p.id); refresh(); }
     catch(e){ alert('삭제에 실패했습니다.'); }
   };
 
   const handleRefund = async (p) => {
-    const suggested = autoRefundUsedAmount(p, p.memberId, { members: store.getMembers(), schedules: store.getSchedules(), settings });
+    const suggested = autoRefundUsedAmount(p, p.memberId, { members: store.getMembers(), schedules: store.getSchedules(), settings, payments: store.getPayments(p.memberId) });
     const usedInput = window.prompt(
       `환불 처리 — ${p.memberName}\n총 결제액: ${won(p.amount)}\n\n` +
       `진행분(이미 수업한 회차 × 단가)을 입력하세요 (원):\n` +

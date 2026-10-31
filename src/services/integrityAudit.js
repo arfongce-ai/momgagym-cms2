@@ -32,6 +32,10 @@ export const TAB_FOR_FINDING_TYPE = {
   session_mismatch: 'sessions',
   refund_incomplete: 'payments',
   rate_not_frozen: 'payments',
+  payment_session_mismatch: 'payments',
+  reenroll_without_sessions: 'payments',
+  free_sessions_first: 'payments',
+  trainer_missing: 'sessions',
 };
 
 // members: [...], trainers: [...], schedules: [...], payments: { [memberId]: [...] }
@@ -110,4 +114,74 @@ export function summarizeFindings(findings = []) {
   const bySeverity = { error: 0, warn: 0, info: 0 };
   findings.forEach(f => { bySeverity[f.severity] = (bySeverity[f.severity] || 0) + 1; });
   return bySeverity;
+}
+
+// ── 수납(회차) ↔ 세션 ↔ 정산 정합성 점검 (2026-10 추가) ────────────────────
+//  기존 auditMemberIntegrity 결과는 건드리지 않도록 별도 함수로 둔다(호출부에서 합친다).
+//   1) payment_session_mismatch — 수납에 등록된 세션 횟수 합(sessionAdds)이 회원의 총 횟수보다 크거나,
+//      세션카드(trainerSessions)가 없는 트레이너에게 등록한 수납이 있는 경우(수납 삭제·수정·카드 삭제 의심).
+//   2) reenroll_without_sessions — 재등록으로 기록됐지만 세션 횟수(sessionAdds)가 없는 수납.
+//   3) free_sessions_first — 모든 유료 수납이 회차별(sessionAdds)로 기록돼 있는데 총 횟수가 그 합보다 큰 경우:
+//      남는 세션이 "맨 앞에 먼저 소진되는 0원 등록분"으로 정산돼 유료 수업이 0원 단가가 될 수 있다.
+//   4) trainer_missing — 출석·노쇼 수업의 트레이너가 트레이너 목록에 없음(정산에서 통째로 빠진다).
+export function auditPaymentConsistency({ members = [], trainers = [], schedules = [], payments = {} }) {
+  const findings = [];
+  const trainerIds = new Set(trainers.map(t => t.id));
+  const trainerMap = Object.fromEntries(trainers.map(t => [t.id, t]));
+  const tName = (tid) => trainerMap[tid]?.name || tid;
+
+  members.forEach(m => {
+    const ts = m.trainerSessions || {};
+    const list = (payments[m.id] || []).filter(p => !p.isUnpaid && !p.isMonthly);
+    const explicit = {};            // tid -> sessionAdds 횟수 합(환불 건 포함: 정산 lot과 동일 기준)
+    const hasLegacyPayment = {};    // tid -> sessionAdds 없는 유료 수납 존재 여부
+    list.forEach(p => {
+      const adds = Array.isArray(p.sessionAdds) ? p.sessionAdds.filter(sa => (Number(sa.count) || 0) > 0) : [];
+      const tids = Array.isArray(p.trainerIds) && p.trainerIds.length ? p.trainerIds : Object.keys(ts);
+      if (adds.length) adds.forEach(sa => { explicit[sa.trainerId] = (explicit[sa.trainerId] || 0) + (Number(sa.count) || 0); });
+      else tids.forEach(tid => { hasLegacyPayment[tid] = true; });
+      if (p.isReEnroll && !adds.length) {
+        findings.push({
+          key: `reenroll_without_sessions:${m.id}:${p.id}`, type: 'reenroll_without_sessions', severity: 'warn',
+          memberId: m.id, memberName: m.name || '?', paymentId: p.id, paidAt: p.paidAt || '',
+          message: `재등록${p.reEnrollNo ? ` ${p.reEnrollNo}회차` : ''}로 기록됐지만 세션 횟수가 없습니다(정산 회차에 안 나타남)`,
+        });
+      }
+    });
+    Object.entries(explicit).forEach(([tid, sum]) => {
+      const slot = ts[tid];
+      if (!slot || sum > (Number(slot.total) || 0)) {
+        findings.push({
+          key: `payment_session_mismatch:${m.id}:${tid}`, type: 'payment_session_mismatch', severity: 'warn',
+          memberId: m.id, memberName: m.name || '?', trainerId: tid, trainerName: tName(tid),
+          message: slot
+            ? `수납에 등록된 ${tName(tid)} 세션 ${sum}회 > 회원 총 ${Number(slot.total) || 0}회 (수납 삭제·세션 직접조정 의심)`
+            : `${tName(tid)} 세션 ${sum}회가 수납에 있으나 회원에게 세션카드가 없습니다(정산 단가 확인 필요)`,
+        });
+      } else if (!hasLegacyPayment[tid] && (Number(slot.total) || 0) > sum) {
+        findings.push({
+          key: `free_sessions_first:${m.id}:${tid}`, type: 'free_sessions_first', severity: 'warn',
+          memberId: m.id, memberName: m.name || '?', trainerId: tid, trainerName: tName(tid),
+          message: `${tName(tid)} 총 ${Number(slot.total) || 0}회 중 ${(Number(slot.total) || 0) - sum}회는 결제 기록이 없습니다 — 정산에서 먼저 소진된 0원 등록분으로 계산될 수 있습니다`,
+        });
+      }
+    });
+  });
+
+  const seen = new Set();
+  schedules.forEach(s => {
+    if (s.isExternal || !s.memberId || !s.trainerId) return;
+    if (s.status !== 'attended' && s.status !== 'noshow') return;
+    if (trainerIds.has(s.trainerId)) return;
+    const k = `trainer_missing:${s.memberId}:${s.trainerId}`;
+    if (seen.has(k)) return;
+    seen.add(k);
+    const m = members.find(x => x.id === s.memberId);
+    findings.push({
+      key: k, type: 'trainer_missing', severity: 'warn',
+      memberId: s.memberId, memberName: m?.name || '?', trainerId: s.trainerId, trainerName: s.trainerName || s.trainerId,
+      message: `출석 기록의 트레이너(${s.trainerName || s.trainerId})가 트레이너 목록에 없습니다 — 정산에서 빠집니다`,
+    });
+  });
+  return findings;
 }

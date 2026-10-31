@@ -7,7 +7,7 @@ import { daysAgoYMD } from '../utils/dates';
 import { store, aiStore } from '../demoData';
 import { useAuth } from '../contexts/AuthContext';
 import { recomputeBodyAgeIfStale } from '../ai-measure/core/postureMath';
-import { auditMemberIntegrity, filterDismissed, TAB_FOR_FINDING_TYPE, SEVERITY_LABEL } from '../services/integrityAudit';
+import { auditMemberIntegrity, auditPaymentConsistency, filterDismissed, TAB_FOR_FINDING_TYPE, SEVERITY_LABEL } from '../services/integrityAudit';
 
 function serializeDate(v) {
   if (!v) return null;
@@ -234,7 +234,10 @@ export default function Settings({ darkMode, setDarkMode }) {
       const schedules = store.getSchedules();
       const payments = {};
       members.forEach(m => { payments[m.id] = store.getPayments(m.id); });
-      const findings = auditMemberIntegrity({ members, trainers, schedules, payments });
+      const findings = [
+        ...auditMemberIntegrity({ members, trainers, schedules, payments }),
+        ...auditPaymentConsistency({ members, trainers, schedules, payments }),
+      ];
       const dismissedIds = store.getIntegrityDismissals().map(d => d.id);
       setIntegrityFindings(filterDismissed(findings, dismissedIds));
       setIntegrityMsg(findings.length === 0 ? '이상 없음.' : '');
