@@ -242,7 +242,14 @@ function ScheduleDetailModal({ schedule:initS, onClose, onUpdate, onDelete }) {
     }
   };
 
-  const saveEdit = () => {
+  const saveEdit = async () => {
+    // [2026-10 수정] 이미 세션이 차감된(또는 출석 확정된) 수업의 회원·트레이너를 바꾸면
+    // 차감이 이전 트레이너에 남고 정산은 새 트레이너로 가서 횟수가 어긋난다 → 막고 삭제 후 재예약을 안내.
+    if (!isExt && !isConsult && (s.sessionDeducted || s.statusFinalized)
+        && (form.trainerId !== s.trainerId || form.memberId !== s.memberId)) {
+      alert('세션이 이미 차감(또는 출석 처리)된 수업은 회원/트레이너를 바꿀 수 없습니다.\n삭제(세션 자동 복원) 후 다시 예약해 주세요.');
+      return;
+    }
     const t = trainers.find(tr=>tr.id===form.trainerId);
     const m = members.find(me=>me.id===form.memberId);
     // 회차 수동 수정 처리 (일반 회원 수업만)
@@ -257,13 +264,19 @@ function ScheduleDetailModal({ schedule:initS, onClose, onUpdate, onDelete }) {
         }
       }
     }
-    store.updateSchedule(s.id, {
-      date:form.date, startTime:form.startTime, endTime:form.endTime,
-      classType:form.classType, trainerId:form.trainerId,
-      trainerName:t?.name||s.trainerName, trainerColor:t?.color||s.trainerColor,
-      ...(isExt ? { memo:form.memo } : { memberId:form.memberId, memberName:m?.name||s.memberName }),
-      ...sessionPatch,
-    });
+    try {
+      await store.updateSchedule(s.id, {
+        date:form.date, startTime:form.startTime, endTime:form.endTime,
+        classType:form.classType, trainerId:form.trainerId,
+        trainerName:t?.name||s.trainerName, trainerColor:t?.color||s.trainerColor,
+        ...(isExt ? { memo:form.memo } : { memberId:form.memberId, memberName:m?.name||s.memberName }),
+        ...sessionPatch,
+      });
+    } catch (e) {
+      console.error('[일정 수정 실패]', e);
+      alert(e?.message || '수정 저장에 실패했습니다. 네트워크 확인 후 다시 시도하세요.');
+      return;
+    }
     setEdit(false); onUpdate();
   };
 

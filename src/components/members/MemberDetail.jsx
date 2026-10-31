@@ -218,7 +218,8 @@ export default function MemberDetail({ member:initMember, trainers, members=[], 
         await store.updateMember(member.id, { trainerSessions:ts, classTypes:upCT, lastPaymentDate:addSessDate });
       } else {
         // 결제 + 세션을 한 batch로 원자적 저장 (정산 기준 데이터 정합성 보장)
-        const reEnrollNo = (store.getPayments(member.id)||[]).filter(x=>x.isReEnroll).length + 1;
+        const reList = (store.getPayments(member.id)||[]).filter(x=>x.isReEnroll);
+        const reEnrollNo = Math.max(reList.length, ...reList.map(x=>Number(x.reEnrollNo)||0)) + 1; // 환불·수동입력 번호와 겹치지 않게
         const newPayment = {
           paidAt: addSessDate,
           amount,
@@ -637,7 +638,7 @@ export default function MemberDetail({ member:initMember, trainers, members=[], 
   // 환불액은 이 4개 값에서 항상 다시 계산되는 파생값이라 직접 입력 항목과 최종액이 어긋나지 않는다.
   const openRefundModal = (p) => {
     const settings = store.getSettings();
-    const suggested = autoRefundUsedAmount(p, member.id, { members: store.getMembers(), schedules: store.getSchedules(), settings });
+    const suggested = autoRefundUsedAmount(p, member.id, { members: store.getMembers(), schedules: store.getSchedules(), settings, payments: store.getPayments(member.id) });
     const est = computeRefundEstimate(p, settings, suggested);
     setRefundDraft({
       payment: p,

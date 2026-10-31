@@ -62,9 +62,16 @@ export function calcNet(payment, settings) {
 // 항상 0으로 나오던 실제 버그가 있었다).
 // [2026-07] 정상가 우선 적용 로직 폐지 — 항상 결제가로 계산한다(settings의 레거시
 // 값은 이 함수가 아예 참조하지 않으므로 자동으로 무시됨).
-export function autoRefundUsedAmount(payment, memberId, { members = [], schedules = [], settings } = {}) {
+export function autoRefundUsedAmount(payment, memberId, { members = [], schedules = [], settings, payments = null } = {}) {
   const member = members.find(m => m.id === memberId);
   if (!member) return 0;
+  // [2026-10 수정] 회원의 전체 결제 목록(payments)이 넘어오면 "이 결제가 공급한 등록분(lot)"에서
+  // 소진된 수업만 그 lot 단가로 계산한다. 예전 방식(회원 전체 등록횟수 분모 × 전체 출석)은
+  // 재등록한 회원의 진행분을 틀리게 냈다. payments를 안 넘기는 기존 호출은 예전 계산 그대로.
+  if (Array.isArray(payments) && payments.length && payment?.id) {
+    const lotUsed = lotAwareRefundUsed(payment, member, schedules, payments, settings);
+    if (lotUsed != null) return lotUsed;
+  }
   const tids = Array.isArray(payment.trainerIds) && payment.trainerIds.length ? payment.trainerIds : null;
   const ts = member.trainerSessions || {};
   const regTotal = tids
@@ -80,6 +87,40 @@ export function autoRefundUsedAmount(payment, memberId, { members = [], schedule
     && (!tids || tids.includes(s.trainerId))
   ).length;
   return Math.round(unit * attendedCount);
+}
+
+
+// 결제 하나가 공급한 lot에서 소진된 수업의 금액 합. 계산 불가(해당 lot 없음)면 null → 호출부가 예전 방식으로 폴백.
+function lotAwareRefundUsed(payment, member, schedules, payments, settings) {
+  const ts = member.trainerSessions || {};
+  const tids = Array.isArray(payment.trainerIds) && payment.trainerIds.length ? payment.trainerIds : Object.keys(ts);
+  let used = 0, anyLots = false;
+  tids.forEach(tid => {
+    const slot = ts[tid];
+    if (!slot) return;
+    const lots = buildTrainerLots({ payments, trainerId: tid, settings, trainerRegTotal: slot.total, memberTrainerSessions: ts });
+    if (lots.length) anyLots = true;
+    const list = (schedules || [])
+      .filter(s => s && s.memberId === member.id && s.trainerId === tid && !s.isExternal
+        && (s.status === 'attended' || s.status === 'noshow'))
+      .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : (String(a.id) < String(b.id) ? -1 : 1)));
+    const total = Number(slot.total), remaining = Number(slot.remaining);
+    const consumed = (Number.isFinite(total) && Number.isFinite(remaining)) ? Math.max(0, total - remaining) : list.length;
+    const base = list.length >= consumed ? 0 : consumed - list.length;
+    // 이 결제가 legacy lot(sessionAdds 없는 결제)에 속하면 lot 단가에 이 결제의 몫 비율을 곱한다.
+    const hasOwnLot = lots.some(l => l.paymentId === payment.id);
+    const net = calcNet(payment, settings).net;
+    list.forEach((s, i) => {
+      const lot = lotForConsumedIndex(lots, base + i);
+      if (!lot) return;
+      if (lot.paymentId === payment.id) { used += Number(lot.unit) || 0; }
+      else if (lot.legacy && !hasOwnLot && (Number(lot.paid) || 0) > 0) {
+        const share = Math.min(1, (net / (tids.length || 1)) / lot.paid);
+        used += (Number(lot.unit) || 0) * share;
+      }
+    });
+  });
+  return anyLots ? Math.round(used) : null;
 }
 
 // 환불 확인창에 표시할 단가 기준 문구. 인자를 받지만(구버전 호출부 호환) 항상 고정
@@ -404,7 +445,7 @@ function buildLegacyLots({ idPrefix, legacyCount, legacyPaid, legacyRate, legacy
   return lots;
 }
 
-export function buildTrainerLots({ payments = [], trainerId, settings, trainerRegTotal, transferBasis = null }) {
+export function buildTrainerLots({ payments = [], trainerId, settings, trainerRegTotal, transferBasis = null, memberTrainerSessions = null }) {
   const tid = trainerId;
   const frozenRate = (p) => {
     const r = p.splitRateAtPay && p.splitRateAtPay[tid];
@@ -417,9 +458,25 @@ export function buildTrainerLots({ payments = [], trainerId, settings, trainerRe
   (payments || []).filter(p => !p.isUnpaid && !p.isMonthly).forEach(p => {
     const net = settings ? calcNet(p, settings).net : (Number(p.amount) || 0);
     // 이 결제에서 이 트레이너 귀속분(간단화: trainerIds 1/n, 없으면 전액)
+    // [2026-10 수정] 귀속 계산을 computeSessionSettlement(paymentParts)와 동일하게 맞춘다:
+    //  split(트레이너별 금액) 우선 → trainerIds 1/n → (회원 세션 정보가 있으면) 등록횟수 비율 → 전액.
     const pTids = Array.isArray(p.trainerIds) && p.trainerIds.length ? p.trainerIds : null;
-    const part = pTids ? (pTids.includes(tid) ? net / pTids.length : 0) : net;
-    if (pTids && !pTids.includes(tid)) return;
+    const splitList = Array.isArray(p.split) && p.split.length ? p.split : null;
+    let part;
+    if (splitList) {
+      const gross = splitList.reduce((s2, x) => s2 + (Number(x.amount) || 0), 0) || (p.amount || 0) || 1;
+      const mine = splitList.filter(x => x.trainerId === tid).reduce((s2, x) => s2 + (Number(x.amount) || 0), 0);
+      if (!mine) return;
+      part = net * (mine / gross);
+    } else if (pTids) {
+      if (!pTids.includes(tid)) return;
+      part = net / pTids.length;
+    } else if (memberTrainerSessions && memberTrainerSessions[tid]) {
+      const totalReg = Object.values(memberTrainerSessions).reduce((s2, v) => s2 + (Number(v?.total) || 0), 0);
+      part = totalReg > 0 ? net * ((Number(memberTrainerSessions[tid].total) || 0) / totalReg) : net;
+    } else {
+      part = net;
+    }
     const adds = Array.isArray(p.sessionAdds)
       ? p.sessionAdds.map((sa, idx) => ({ ...sa, idx, count: Number(sa.count) || 0 }))
           .filter(sa => sa.trainerId === tid && sa.count > 0)
@@ -687,7 +744,10 @@ export function computeSessionSettlement({ trainers, members, schedules, payment
     });
     memberTrainerPay[m.id] = acc;
     memberTrainerLots[m.id] = {};
-    tids.forEach(tid => {
+    // [2026-10 수정] 세션카드가 삭제/전체양도로 사라진 트레이너도 결제(sessionAdds)에서 만든 lot은 남긴다.
+    // 안 그러면 출석 횟수는 잡히는데 단가가 0원이 되어 정산 금액이 0으로 나왔다.
+    const lotTids = [...new Set([...tids, ...Object.keys(explicitLots), ...Object.keys(legacyLots)])];
+    lotTids.forEach(tid => {
       const trainerReg = Number(ts[tid]?.total) || 0;
       const explicit = (explicitLots[tid] || [])
         .sort((a,b) => (a.orderDate || '').localeCompare(b.orderDate || '') || (a.order||0) - (b.order||0));
@@ -780,7 +840,12 @@ export function computeSessionSettlement({ trainers, members, schedules, payment
       //    잔여 기준으로 뒤에서 앵커(base = 소진수 − list 개수).
       const member = memberMap[mid];
       const totalReg = Number(member?.trainerSessions?.[tid]?.total);
-      const remainingNow = Number(member?.trainerSessions?.[tid]?.remaining);
+      // [2026-10 수정] 환불 처리(processRefund)는 잔여를 0으로 만든다. 그대로 쓰면 '소진수'가 부풀어
+      // 이번 달 수업이 뒤쪽 등록분으로 밀려 단가·비율이 바뀐다 → 환불 전 잔여 스냅샷(refundPrevSessions)을 되돌려 계산.
+      const refundAddBack = (payments[mid] || [])
+        .filter(p => p.isRefunded && p.refundPrevSessions)
+        .reduce((sum, p) => sum + (Number(p.refundPrevSessions[tid]) || 0), 0);
+      const remainingNow = Number(member?.trainerSessions?.[tid]?.remaining) + refundAddBack;
       const consumedSoFar = (Number.isFinite(totalReg) && Number.isFinite(remainingNow))
         ? Math.max(0, totalReg - remainingNow) : list.length;
       const base = list.length >= consumedSoFar ? 0 : Math.max(0, consumedSoFar - list.length);

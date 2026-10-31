@@ -1507,6 +1507,23 @@ export const store = {
         if (status === 'attended' || status === 'noshow') {
           // 계약서 2조: 노쇼도 출석과 동일하게 횟수 차감 유지(복원 안 함)
           updatedMember = { ...member, lastAttendedDate: todayYMD() }; // CV-A: 로컬 날짜
+          // [2026-10 수정] 잔여 0일 때 잡은 예약(no_remaining: sessionDeducted===false, sessionAtBooking===0)은
+          // 예약 당시 차감이 안 됐다. 그 뒤 재등록으로 잔여가 생겼다면 출석 확정 때 지금 차감한다.
+          // 안 하면 정산은 출석으로 지급되는데 회원 잔여는 그대로 남는다. (구 데이터는 건드리지 않도록 엄격 조건)
+          const slot = member.trainerSessions?.[sched.trainerId];
+          if (sched.sessionDeducted === false && sched.sessionAtBooking === 0
+              && slot && !slot.monthly && (Number(slot.remaining) || 0) > 0) {
+            const ts2 = JSON.parse(JSON.stringify(member.trainerSessions));
+            const remainBefore = Number(ts2[sched.trainerId].remaining);
+            const totalEver = Number(ts2[sched.trainerId].total);
+            ts2[sched.trainerId].remaining = remainBefore - 1;
+            updatedMember = { ...updatedMember, trainerSessions: ts2 };
+            updatedSched.sessionDeducted = true;
+            updatedSched.sessionAtBooking = remainBefore;
+            updatedSched.sessionTotalAtBooking = Number.isFinite(totalEver) ? totalEver : null;
+            updatedSched.consumedIndexAtBooking = Number.isFinite(totalEver) ? Math.max(0, totalEver - remainBefore) : null;
+            batch.set('schedules', scheduleId, updatedSched);
+          }
         } else if (status === 'canceled' && sched.sessionDeducted) {
           // 취소만 세션 복원
           const ts = JSON.parse(JSON.stringify(member.trainerSessions||{}));

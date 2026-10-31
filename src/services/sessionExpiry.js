@@ -83,7 +83,7 @@ export function buildMemberSessionExpiry({ member, payments = [], settings, toda
     if (!slot || slot.monthly) return; // 월정액 슬롯은 세션 유효기간 대상 아님(횟수 개념 없음)
     const total = Number(slot.total) || 0;
     if (total <= 0) return;
-    const rawLots = buildTrainerLots({ payments, trainerId: tid, settings, trainerRegTotal: total });
+    const rawLots = buildTrainerLots({ payments, trainerId: tid, settings, trainerRegTotal: total, memberTrainerSessions: ts });
     const paymentById = Object.fromEntries((payments || []).filter(p => p.id).map(p => [p.id, p]));
     // FIFO 소진 배분: 이미 소진된 수(total-remaining)를 등록 순서대로 앞 lot부터 채운다.
     // (buildTrainerLots가 이미 legacy → 시간순 explicit 순으로 정렬해 반환한다.)
