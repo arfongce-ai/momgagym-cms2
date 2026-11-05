@@ -54,7 +54,8 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
   // 사용자가 다이얼/직접입력으로 무게를 직접 정했는지 여부. true 면 색 인식이
   // 확인 없이 덮어쓰지 않는다(수동 40kg 이 자동 70kg 로 바뀌던 문제 방지).
   const [weightUserSet, setWeightUserSet] = useState(false);
-  const [result, setResult] = useState(null);
+  const [resultState, setResult] = useState(null);
+  const result = resultState;
   const [attempts, setAttempts] = useState([]);              // 도전 차수 누적
   // 카메라 세트에서 측정된 평균속도 기반 교차검증(속도→%1RM 근거 테이블).
   const [velocityCheck, setVelocityCheck] = useState(null);
@@ -329,7 +330,11 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
     const w = computedWeight;
     const r = clampReps(repCount || reps);
     if (!w || w <= 0 || !r) return;
-    setResult({ ...estimate1RM(w, r), usedWeight: w, usedReps: r });
+    const res = { ...estimate1RM(w, r), usedWeight: w, usedReps: r };
+    setResult(res);
+    // 반복이 자동 인식됐으면 정지와 동시에 기록 확인(영상 포함) → 리포트로 바로 넘어간다.
+    //  인식 못 했으면(기본 반복수 추정치) 가짜 기록 방지를 위해 카드에서 직접 저장하게 둔다.
+    if (repCount > 0) save(res);
   };
 
   const finishCounting = (autoLimited = false) => {
@@ -450,7 +455,8 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
     setResult({ ...estimate1RM(w, r), usedWeight: w, usedReps: r });
   };
 
-  const save = async () => {
+  const save = async (resArg) => {
+    const result = resArg && resArg.average != null ? resArg : resultState;
     if (!result) return;
     if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
       try { mediaRecorderRef.current.stop(); } catch (e) { /* noop */ }
