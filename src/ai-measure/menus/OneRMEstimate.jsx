@@ -54,7 +54,8 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
   // 사용자가 다이얼/직접입력으로 무게를 직접 정했는지 여부. true 면 색 인식이
   // 확인 없이 덮어쓰지 않는다(수동 40kg 이 자동 70kg 로 바뀌던 문제 방지).
   const [weightUserSet, setWeightUserSet] = useState(false);
-  const [result, setResult] = useState(null);
+  const [resultState, setResult] = useState(null);
+  const result = resultState;
   const [attempts, setAttempts] = useState([]);              // 도전 차수 누적
   // 카메라 세트에서 측정된 평균속도 기반 교차검증(속도→%1RM 근거 테이블).
   const [velocityCheck, setVelocityCheck] = useState(null);
@@ -92,6 +93,7 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
   const recordStreamRef = useRef(null);
   const recordStartRef = useRef(0);
   const videoBlobRef = useRef(null);
+  const recorderDoneRef = useRef(null); // 녹화 Blob 확정 대기용 Promise(저장 시 영상 누락 방지)
   const [counting, setCounting] = useState(false);
   const [aspect, setAspect] = useState(DEFAULT_ASPECT);
   const aspectRef = useRef(DEFAULT_ASPECT);
@@ -225,14 +227,17 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
             const mime = pickRecorderMime();
             const mr = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
             mediaRecorderRef.current = mr;
-            mr.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
-            mr.onstop = () => {
-              stopCompose();
-              const type = mr.mimeType || 'video/webm';
-              const blob = new Blob(chunksRef.current, { type });
-              videoBlobRef.current = blob;
-              setVideoBlob(blob);
-            };
+            recorderDoneRef.current = new Promise((resolve) => {
+              mr.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
+              mr.onstop = () => {
+                stopCompose();
+                const type = mr.mimeType || 'video/webm';
+                const blob = new Blob(chunksRef.current, { type });
+                videoBlobRef.current = blob;
+                setVideoBlob(blob);
+                resolve(blob);
+              };
+            });
             // 타임슬라이스로 청크를 나눠 받으면(특히 mp4) Blob 이어붙이기 과정에서
             // 실제 녹화 시간보다 재생 가능한 길이가 짧아지는 문제가 생긴다.
             // stop() 시 한 번에 완전한 Blob을 받도록 타임슬라이스 없이 시작한다.
@@ -251,7 +256,7 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
       } else {
         stopCompose();
       }
-      applyEngineResult(); // 자동 카운트 + 속도 기반 교차검증 반영
+      autoCalc(applyEngineResult()); // 자동 카운트 + 속도 기반 교차검증 + 결과 자동 계산
     }
   };
 
@@ -306,7 +311,7 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
     const heightNum = Number(member?.height) || null;
     const cmPerRatio = heightNum && phRef.current ? heightNum / phRef.current : null;
     const sum = accRef.current.summary({ cmPerRatio, source: 'live' });
-    if (!sum || sum.valid === false) return;
+    if (!sum || sum.valid === false) return null;
     if (sum.repCount > 0) setReps(sum.repCount);
     const vc = estimateOneRmFromMeanVelocity({
       exerciseType: liftToEx(liftRef.current),
@@ -316,6 +321,20 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
     setVelocityCheck(vc.oneRm != null
       ? { ...vc, meanVelocity: sum.meanVelocity, repCount: sum.repCount }
       : null); // 범위 밖/스케일 없음이면 표시하지 않음(그럴듯한 가짜값 금지)
+    return sum.repCount > 0 ? sum.repCount : null;
+  };
+
+  // 카운트 정지 직후 결과를 자동 계산한다. 예전에는 카메라를 닫고 '계산'을 따로 눌러야
+  //  result 가 생겨, 녹화 후 그냥 카메라가 꺼지고 저장할 데이터가 없었다.
+  const autoCalc = (repCount) => {
+    const w = computedWeight;
+    const r = clampReps(repCount || reps);
+    if (!w || w <= 0 || !r) return;
+    const res = { ...estimate1RM(w, r), usedWeight: w, usedReps: r };
+    setResult(res);
+    // 반복이 자동 인식됐으면 정지와 동시에 기록 확인(영상 포함) → 리포트로 바로 넘어간다.
+    //  인식 못 했으면(기본 반복수 추정치) 가짜 기록 방지를 위해 카드에서 직접 저장하게 둔다.
+    if (repCount > 0) save(res);
   };
 
   const finishCounting = (autoLimited = false) => {
@@ -328,7 +347,7 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
     } else {
       stopCompose();
     }
-    applyEngineResult();
+    autoCalc(applyEngineResult());
     if (autoLimited) setVideoSavedMsg('최대 60초 녹화가 완료되었습니다.');
   };
 
@@ -436,8 +455,15 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
     setResult({ ...estimate1RM(w, r), usedWeight: w, usedReps: r });
   };
 
-  const save = () => {
+  const save = async (resArg) => {
+    const result = resArg && resArg.average != null ? resArg : resultState;
     if (!result) return;
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+      try { mediaRecorderRef.current.stop(); } catch (e) { /* noop */ }
+    }
+    if (recorderDoneRef.current) {
+      await Promise.race([recorderDoneRef.current, new Promise(r => setTimeout(r, 3000))]);
+    }
     // 도전 차수 누적(같은 세션 1·2·3차…). 저장 시 현재 결과를 한 차수로 기록.
     const nextAttempts = appendAttempt(attempts, {
       weight: result.usedWeight,
@@ -548,6 +574,20 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
               { label: 'V', value: liveHud?.lastRepVelocity ?? null, unit: 'm/s' },
             ]}
           />
+        )}
+        {/* 카운트 정지 직후 자동 계산된 결과 + 저장(카메라를 닫지 않고 바로 저장·리포트로 이동) */}
+        {!counting && result && (
+          <div className="mx-auto max-w-xs w-full rounded-xl bg-black/70 backdrop-blur border border-amber-500/40 p-3 text-center space-y-2">
+            <p className="text-[10px] text-slate-300">{result.usedWeight}kg × {result.usedReps}회</p>
+            <p className="font-mono font-black text-3xl text-amber-400 leading-none">{result.average}<span className="text-sm ml-1">kg</span></p>
+            <p className="text-[10px] text-slate-400">추정 1RM{videoBlob ? ' · 녹화영상 포함' : ''}</p>
+            {onSave && (
+              <button onClick={save}
+                className="w-full h-11 rounded-xl bg-gradient-to-r from-amber-400 to-orange-500 text-slate-950 font-black text-sm active:scale-[0.98]">
+                저장하고 1RM 결과 리포트 보기 →
+              </button>
+            )}
+          </div>
         )}
         {/* 무게 다이얼 반투명 오버레이 — 녹화(카운트) 버튼 바로 위. 촬영 전 무게 조정 */}
         {!counting && (
