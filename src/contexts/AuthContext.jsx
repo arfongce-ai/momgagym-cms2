@@ -212,7 +212,6 @@ export function AuthProvider({ children }) {
             } catch (e) {
               setDataError(e?.message || 'security-cleanup-failed');
             }
-            await approveKnownTrainerRequests(role);
             const asTrainer = await findTrainerByEmail(fbUser.email);
             await linkTrainerUid(role, asTrainer, fbUser.uid);
             setUser({
@@ -223,6 +222,8 @@ export function AuthProvider({ children }) {
               source: 'firebase',
               ...(asTrainer ? { trainerId: asTrainer.id } : {}),
             });
+            // 트레이너 로그인 요청 승인은 관리자 보조 작업이라 화면 진입을 막지 않고 뒤에서 처리한다.
+            approveKnownTrainerRequests(role).catch(() => {});
           }
         } else {
           setUser(null);
