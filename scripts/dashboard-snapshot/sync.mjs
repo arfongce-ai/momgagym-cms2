@@ -205,17 +205,28 @@ async function main() {
     byTrainer: byTrainerRev,
   });
 
-  // ---- 지난 날짜 보충(백필): 최근 DAILY_WINDOW 일 중 빠진 날이 있으면 1회성으로 채운다 ----
-  // 빠진 날이 없으면 읽기 1건(count)으로 끝난다. 과거 활성 회원 수는 알 수 없어 비워 둔다.
+  // ---- 지난 날짜 보충(백필) + 어제 확정 ----
+  // GitHub 예약 실행은 30분마다 정확히 돌지 않고 하루 몇 번만 도는 일이 흔하다. 그러면 오늘 문서는
+  // '마지막 실행 시점 값'이라 하루 합계보다 적을 수 있다 → 날이 바뀐 뒤 어제 문서를 한 번 전체 재계산해
+  // final:true 로 확정한다. 빠진 날이 있으면 같이 채운다(과거 활성 회원 수는 알 수 없어 비움).
   const windowStart = shiftYMD(todayYMD, -(DAILY_WINDOW - 1));
+  const yesterday = shiftYMD(todayYMD, -1);
   const have = await db.collection('dashboardDaily').where('date', '>=', windowStart).count().get();
-  if (have.data().count < DAILY_WINDOW) {
-    console.log(`일 요약 ${have.data().count}/${DAILY_WINDOW}건 — 빠진 날짜를 보충합니다.`);
-    const existing = new Set(
-      (await db.collection('dashboardDaily').where('date', '>=', windowStart).select('date').get()).docs.map((d) => d.id),
-    );
+  const yDoc = await db.collection('dashboardDaily').doc(yesterday).get();
+  const needYesterday = !yDoc.exists || !yDoc.data().final;
+  if (have.data().count < DAILY_WINDOW || needYesterday) {
+    const existing = have.data().count < DAILY_WINDOW
+      ? new Set((await db.collection('dashboardDaily').where('date', '>=', windowStart).select('date').get()).docs.map((d) => d.id))
+      : new Set(Array.from({ length: DAILY_WINDOW }, (_, i) => shiftYMD(todayYMD, -i)));
+    const targets = [];
+    for (let i = DAILY_WINDOW - 1; i >= 1; i -= 1) {
+      const day = shiftYMD(todayYMD, -i);
+      if (!existing.has(day) || (day === yesterday && needYesterday)) targets.push(day);
+    }
+    console.log(`일 요약 재계산 대상 ${targets.length}일: ${targets.join(', ')}`);
+    const fromDay = targets[0] || yesterday;
     const pastPays = await db.collection('payments')
-      .where('paidAt', '>=', windowStart).where('paidAt', '<', todayYMD).get();
+      .where('paidAt', '>=', fromDay).where('paidAt', '<', todayYMD).get();
     const revByDay = {}; const revByDayTrainer = {};
     pastPays.forEach((doc) => {
       const p = doc.data();
@@ -228,9 +239,7 @@ async function main() {
         revByDayTrainer[day][tid] = (revByDayTrainer[day][tid] || 0) + part;
       });
     });
-    for (let i = DAILY_WINDOW - 1; i >= 1; i -= 1) {
-      const day = shiftYMD(todayYMD, -i);
-      if (existing.has(day)) continue;
+    for (const day of targets) {
       const startISO = new Date(`${day}T00:00:00+09:00`).toISOString();
       const endISO = new Date(`${day}T23:59:59.999+09:00`).toISOString();
       let rep = 0;
@@ -246,12 +255,12 @@ async function main() {
         date: day,
         updatedAt: new Date().toISOString(),
         expireAt: dailyExpire,
-        backfilled: true,
+        final: true,
         newMembers: members.filter((m) => m.joinDate === day).length,
         revenue: Math.round(revByDay[day] || 0),
         reports: rep,
-        activeMembers: null,
-        totalMembers: null,
+        activeMembers: day === yesterday && yDoc.exists ? (yDoc.data().activeMembers ?? null) : null,
+        totalMembers: day === yesterday && yDoc.exists ? (yDoc.data().totalMembers ?? null) : null,
         byTrainer: bt,
       });
     }
