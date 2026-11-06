@@ -24,8 +24,12 @@
 // ─────────────────────────────────────────────────────────────
 
 import admin from 'firebase-admin';
+import { summarizeMembers, shiftYMD } from './memberStatus.mjs';
 
 const RETENTION_DAYS = 90;
+const DAILY_RETENTION_DAYS = 400; // 일 단위 요약(1주·1달 보기용)
+const DAILY_WINDOW = 31;          // 대시보드가 읽는 일 수
+const RUN_HOUR_FROM = 7;          // KST 07시~23시만 수집(새벽 빈 구간은 읽기 낭비라 건너뜀)
 
 const { FIREBASE_SERVICE_ACCOUNT } = process.env;
 
@@ -97,10 +101,15 @@ async function main() {
   const todayStartISO = new Date(`${todayYMD}T00:00:00+09:00`).toISOString();
   const todayEndISO = new Date(`${todayYMD}T23:59:59.999+09:00`).toISOString();
   console.log(`스냅샷 기준일(KST): ${todayYMD}`);
+  const hourKST = nowKST.getUTCHours();
+  if (process.env.FORCE_RUN !== '1' && (hourKST < RUN_HOUR_FROM)) {
+    console.log(`KST ${hourKST}시 — 수집 시간대(${RUN_HOUR_FROM}시~) 밖이라 건너뜁니다.`);
+    return;
+  }
 
   const [trainersSnap, membersSnap, settingsDoc] = await Promise.all([
     db.collection('trainers').get(),
-    db.collection('members').select('isActive', 'trainerSessions', 'joinDate').get(),
+    db.collection('members').select('trainerSessions', 'joinDate', 'monthly', 'membershipType', 'monthlyDueDate', 'lastPaymentDate').get(),
     db.collection('settings').doc('config').get(),
   ]);
   const settings = settingsDoc.exists ? settingsDoc.data() : {};
@@ -109,16 +118,12 @@ async function main() {
   const memberById = new Map(members.map((m) => [m.id, m]));
 
   // ---- 활성 회원 수(전체 + 트레이너별) ----
-  let activeMembers = 0;
-  const activeByTrainer = {};
-  members.forEach((m) => {
-    if (m.isActive) {
-      activeMembers += 1;
-      Object.keys(m.trainerSessions || {}).forEach((tid) => {
-        activeByTrainer[tid] = (activeByTrainer[tid] || 0) + 1;
-      });
-    }
-  });
+  // [수정 2026-11] 예전엔 members.isActive 플래그를 셌는데, 이 값은 가입 때 true 로 저장된 뒤
+  // 한 번도 false 로 바뀌지 않아 만료·세션마감 회원까지 전부 '활성'으로 잡혔다.
+  // CMS 회원 목록과 같은 기준(결제 만료 OR 세션 마감 = 비활성)으로 센다.
+  const ms = summarizeMembers(members, todayYMD);
+  const activeMembers = ms.active;
+  const activeByTrainer = ms.activeByTrainer;
 
   // ---- 오늘 신규 회원 수 ----
   const newMembersToday = members.filter((m) => m.joinDate === todayYMD).length;
@@ -169,6 +174,9 @@ async function main() {
     expireAt: admin.firestore.Timestamp.fromMillis(Date.now() + RETENTION_DAYS * 24 * 60 * 60 * 1000),
     newMembersToday,
     activeMembers,
+    totalMembers: ms.total,
+    expiredMembers: ms.expired,
+    exhaustedMembers: ms.exhausted,
     revenueToday: Math.round(revenueToday),
     reportsToday,
     byTrainer,
@@ -177,6 +185,78 @@ async function main() {
 
   await db.collection('dashboardSnapshots').add(snapshot);
   console.log('✅ dashboardSnapshots에 저장 완료!');
+
+  // ---- 일 단위 요약(dashboardDaily/{YYYY-MM-DD}) — 1주·1달 보기용 ----
+  // 오늘 문서는 매 실행마다 덮어써서 그날의 마지막 값(=하루 합계)이 남는다.
+  const byTrainerRev = {};
+  trainers.forEach((t) => {
+    byTrainerRev[t.id] = { name: t.name || t.id, revenue: Math.round(revenueByTrainer[t.id] || 0) };
+  });
+  const dailyExpire = admin.firestore.Timestamp.fromMillis(Date.now() + DAILY_RETENTION_DAYS * 24 * 60 * 60 * 1000);
+  await db.collection('dashboardDaily').doc(todayYMD).set({
+    date: todayYMD,
+    updatedAt: snapshot.timestamp,
+    expireAt: dailyExpire,
+    newMembers: newMembersToday,
+    revenue: snapshot.revenueToday,
+    reports: reportsToday,
+    activeMembers,
+    totalMembers: ms.total,
+    byTrainer: byTrainerRev,
+  });
+
+  // ---- 지난 날짜 보충(백필): 최근 DAILY_WINDOW 일 중 빠진 날이 있으면 1회성으로 채운다 ----
+  // 빠진 날이 없으면 읽기 1건(count)으로 끝난다. 과거 활성 회원 수는 알 수 없어 비워 둔다.
+  const windowStart = shiftYMD(todayYMD, -(DAILY_WINDOW - 1));
+  const have = await db.collection('dashboardDaily').where('date', '>=', windowStart).count().get();
+  if (have.data().count < DAILY_WINDOW) {
+    console.log(`일 요약 ${have.data().count}/${DAILY_WINDOW}건 — 빠진 날짜를 보충합니다.`);
+    const existing = new Set(
+      (await db.collection('dashboardDaily').where('date', '>=', windowStart).select('date').get()).docs.map((d) => d.id),
+    );
+    const pastPays = await db.collection('payments')
+      .where('paidAt', '>=', windowStart).where('paidAt', '<', todayYMD).get();
+    const revByDay = {}; const revByDayTrainer = {};
+    pastPays.forEach((doc) => {
+      const p = doc.data();
+      if (p.isUnpaid || p.isRefunded || p.isMonthly) return;
+      const { net } = calcNet(p, settings);
+      const day = p.paidAt;
+      revByDay[day] = (revByDay[day] || 0) + net;
+      attributeParts(p, memberById.get(p.__mid), net).forEach(([tid, part]) => {
+        revByDayTrainer[day] = revByDayTrainer[day] || {};
+        revByDayTrainer[day][tid] = (revByDayTrainer[day][tid] || 0) + part;
+      });
+    });
+    for (let i = DAILY_WINDOW - 1; i >= 1; i -= 1) {
+      const day = shiftYMD(todayYMD, -i);
+      if (existing.has(day)) continue;
+      const startISO = new Date(`${day}T00:00:00+09:00`).toISOString();
+      const endISO = new Date(`${day}T23:59:59.999+09:00`).toISOString();
+      let rep = 0;
+      for (const col of reportCollections) {
+        const agg = await db.collection(col).where('createdAt', '>=', startISO).where('createdAt', '<=', endISO).count().get();
+        rep += agg.data().count;
+      }
+      const bt = {};
+      trainers.forEach((t) => {
+        bt[t.id] = { name: t.name || t.id, revenue: Math.round((revByDayTrainer[day] || {})[t.id] || 0) };
+      });
+      await db.collection('dashboardDaily').doc(day).set({
+        date: day,
+        updatedAt: new Date().toISOString(),
+        expireAt: dailyExpire,
+        backfilled: true,
+        newMembers: members.filter((m) => m.joinDate === day).length,
+        revenue: Math.round(revByDay[day] || 0),
+        reports: rep,
+        activeMembers: null,
+        totalMembers: null,
+        byTrainer: bt,
+      });
+    }
+    console.log('✅ 일 요약 보충 완료');
+  }
 }
 
 main().catch((err) => {
