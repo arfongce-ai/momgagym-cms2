@@ -356,9 +356,10 @@ async function __deltaSync() {
     return;
   }
   let pulled = 0;
-  for (const col of __SYNC_COLLECTIONS) {
+  // 바뀐 컬렉션의 델타 조회를 동시에 보낸다(예전엔 하나씩 await 해서 왕복 시간이 컬렉션 수만큼 누적).
+  await Promise.all(__SYNC_COLLECTIONS.map(async (col) => {
     const since = __syncedAt[col] || 0;
-    if (!(Number(versions[col]) >= since)) continue; // 이 컬렉션은 그대로(같은 ms 경계 포함)
+    if (!(Number(versions[col]) >= since)) return; // 이 컬렉션은 그대로(같은 ms 경계 포함)
     try {
       const q = query(collection(db, col), where('updatedAt', '>', since - __DELTA_MARGIN_MS));
       const snap = await countedGetDocs(`${col}(delta)`, q);
@@ -369,7 +370,7 @@ async function __deltaSync() {
       // 트레이너 계정은 expenses 등 관리자 전용 컬렉션 접근이 거부된다 — 건너뜀.
       console.warn(`[FitCMS] ${col} 델타 건너뜀:`, e?.code || e?.message);
     }
-  }
+  }));
   const delSince = __syncedAt.deletions || 0;
   if (Number(versions.deletions) >= delSince) {
     const q = query(collection(db, 'deletions'), where('at', '>', delSince - __DELTA_MARGIN_MS));
