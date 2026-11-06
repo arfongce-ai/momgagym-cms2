@@ -162,7 +162,7 @@ export default function Dashboard() {
   // 마지막 스냅샷이 너무 오래됐으면(수집이 멈춘 것) 알려준다. 새벽(수집 안 하는 시간)엔 제외.
   const nowH = new Date().getHours();
   const staleMin = latest ? Math.round((Date.now() - new Date(latest.timestamp).getTime()) / 60000) : 0;
-  const stale = latest && staleMin > 100 && nowH >= 8;
+  const stale = latest && staleMin > 360 && nowH >= 8; // GitHub 예약 실행은 몇 시간씩 건너뛰기도 해서 6시간 기준
 
   const activeMembersPoints = todaySnaps.map((s) => ({ value: s.activeMembers || 0, label: timeLabel(s.timestamp) }));
   const revenuePoints = todaySnaps.map((s) => ({ value: s.revenueToday || 0, label: timeLabel(s.timestamp) }));
@@ -194,7 +194,7 @@ export default function Dashboard() {
         <div>
           <h1 className="text-2xl font-black tracking-tight">📈 대시보드</h1>
           <p className="text-slate-500 text-sm mt-1">
-            30분마다 자동 수집(KST 07시~) · 오늘은 시간대별, 1주·1달은 일별 합계
+            자동 수집(GitHub 일정 기준·KST 07시~, 실행 간격은 달라질 수 있음) · 오늘은 수집 시점별, 1주·1달은 일별 합계(전날까지 확정)
           </p>
         </div>
         {lastFetchedAt && (
@@ -227,7 +227,7 @@ export default function Dashboard() {
 
       {!loading && stale && (
         <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl px-4 py-3 text-xs text-amber-700 dark:text-amber-300">
-          마지막 수집이 {staleMin}분 전입니다. 수집(GitHub Actions)이 멈췄을 수 있어요 — 숫자가 최신이 아닐 수 있습니다.
+          마지막 수집이 {Math.floor(staleMin / 60)}시간 {staleMin % 60}분 전입니다. 수집(GitHub Actions)이 멈췄을 수 있어요 — 숫자가 최신이 아닐 수 있습니다.
         </div>
       )}
 
