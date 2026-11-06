@@ -45,6 +45,14 @@
 
 ## 작업 로그
 
+### 2026-11-06 · Claude Code · 대시보드 활성회원 오류 수정 + 1주·1달 보기
+- 원인: `scripts/dashboard-snapshot/sync.mjs`가 `members.isActive`(가입 시 true, 이후 안 바뀜)를 세어 만료·횟수마감 회원까지 활성으로 집계.
+- 수정: CMS 회원 목록과 같은 기준(`memberStatus.mjs`, dates.js/memberList.js 인라인 복사본)으로 집계. 전체/만료/횟수마감 수도 스냅샷에 추가.
+- 추가: `dashboardDaily/{날짜}` 일 요약 컬렉션(매 실행 덮어쓰기 + 빠진 31일 백필), `Dashboard.jsx` 오늘/1주/1달 탭, `src/utils/dashboardRollup.js`.
+- 읽기 절감: 수집은 KST 07시 이후만, 화면 새로고침 10분 + 숨김 탭 제외, 1주·1달은 탭 열 때만 일 요약 읽기.
+- ⚠️ 배포 후 수동 작업: Firebase 콘솔에서 firestore.rules 게시(dashboardDaily 읽기 권한), Actions에서 'Dashboard Snapshot Sync' 수동 실행 1회(백필).
+- 테스트·빌드 통과(신규 dashboard_week_month.test.js). 실서버 데이터 확인 못 함.
+
 ### 2026-11-05 · Claude Code · 1RM 녹화 후 결과·영상 저장 안 됨 수정
 - 원인: `OneRMEstimate.jsx` 카운트 정지 시 `result`가 만들어지지 않고(별도 '계산' 버튼 필요), 카메라 화면에 저장 버튼도 없어 카메라를 닫으면 데이터·영상이 그냥 사라짐.
 - 수정: 정지(수동/60초 자동) 시 `autoCalc`로 1RM 자동 계산, 정지 시 반복 인식되면 바로 기록확인(영상 포함)→리포트로 자동 이동, 미인식이면 카메라 안 결과 카드+저장 버튼, 저장 시 녹화 Blob 확정(`recorderDoneRef`)까지 대기해 영상 누락 방지.
