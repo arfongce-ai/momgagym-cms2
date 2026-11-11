@@ -745,7 +745,7 @@ export function IntervalTimer({ compact = false, command = null }) {
   );
 }
 
-export default function TimerTool({ onBack, member = null }) {
+export default function TimerTool({ onBack, member = null, onSave = null }) {
   const [tab, setTab] = useState('stopwatch');
   // [음성 타이머 제어 2026-08-09] 화면이 이미 열려 있을 때 momi가 실시간으로
   // 실행시킬 명령. 부모(이 컴포넌트)가 tool 탭 전환과 명령 전달을 함께 맡는다 —
@@ -801,7 +801,7 @@ export default function TimerTool({ onBack, member = null }) {
           : tab === 'interval' ? <IntervalTimer command={liveCommand} />
             : <Metronome command={liveCommand} />}
       {/* [심박 밴드 2026-11-11] 초시계·타이머 아래에 항상 보이는 실시간 심박 패널. */}
-      <HeartRatePanel member={member} />
+      <HeartRatePanel member={member} onSave={onSave} timerTab={tab} />
     </div>
   );
 }

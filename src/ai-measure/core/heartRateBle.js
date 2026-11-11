@@ -76,6 +76,110 @@ export function shortBandId(name) {
   return digits ? digits.slice(-4) : '';
 }
 
+// ── [심박 기록 2026-11-11] 기록 요약 ─────────────────────────────────────
+// 화면에서 "기록 시작 ~ 종료" 사이에 받은 값(samples: [{ t: 시작 후 ms, bpm }])을
+// 저장용 요약으로 줄인다. 초 단위 원본은 저장하지 않고(문서 크기·읽기 비용),
+// 평균·최고·최저·구간별 시간 + 굵게 줄인 그래프용 값만 남긴다.
+export const HEART_RATE_RECORD_KIND = 'heart_rate';
+export const HEART_RATE_MIN_RECORD_SEC = 10;   // 이보다 짧으면 저장 가치가 없어 저장 버튼을 막는다
+const SERIES_MAX_POINTS = 360;                 // 그래프용 값 최대 개수(5초 간격이면 30분)
+const SERIES_BASE_STEP_SEC = 5;
+
+export function summarizeHeartRateSamples(samples = [], { durationMs = null, maxHr = null } = {}) {
+  const valid = (Array.isArray(samples) ? samples : [])
+    .filter((s) => s && Number.isFinite(s.t) && s.t >= 0 && Number.isFinite(s.bpm) && s.bpm >= 30 && s.bpm <= 240)
+    .sort((a, b) => a.t - b.t);
+  if (!valid.length) return null;
+
+  const lastT = valid[valid.length - 1].t;
+  const totalMs = Math.max(Number.isFinite(durationMs) ? durationMs : 0, lastT);
+  const durationSec = Math.round(totalMs / 1000);
+
+  let sum = 0;
+  let maxBpm = 0;
+  let minBpm = Infinity;
+  for (const s of valid) {
+    sum += s.bpm;
+    if (s.bpm > maxBpm) maxBpm = s.bpm;
+    if (s.bpm < minBpm) minBpm = s.bpm;
+  }
+
+  // 구간별 머문 시간(초): 한 값이 다음 값이 올 때까지 유지됐다고 본다.
+  // 신호가 끊긴 긴 공백(5초 초과)은 5초까지만 인정해 부풀리지 않는다.
+  let zoneSec = null;
+  if (maxHr) {
+    zoneSec = { z1: 0, z2: 0, z3: 0, z4: 0, z5: 0 };
+    for (let i = 0; i < valid.length; i += 1) {
+      const next = i + 1 < valid.length ? valid[i + 1].t : totalMs;
+      const held = Math.min(Math.max(next - valid[i].t, 0), 5000) / 1000;
+      const zone = heartRateZone(valid[i].bpm, maxHr);
+      if (zone) zoneSec[`z${zone.zone}`] += held;
+    }
+    for (const k of Object.keys(zoneSec)) zoneSec[k] = Math.round(zoneSec[k]);
+  }
+
+  // 그래프용 값: stepSec 간격으로 묶어 평균. 길어지면 간격을 넓혀 개수를 제한한다.
+  let stepSec = SERIES_BASE_STEP_SEC;
+  while (Math.ceil((totalMs / 1000 + 1) / stepSec) > SERIES_MAX_POINTS) stepSec *= 2;
+  const buckets = new Map();
+  for (const s of valid) {
+    const idx = Math.floor(s.t / 1000 / stepSec);
+    const b = buckets.get(idx) || { sum: 0, n: 0 };
+    b.sum += s.bpm; b.n += 1;
+    buckets.set(idx, b);
+  }
+  const bucketCount = Math.max(...buckets.keys()) + 1;
+  const bpmSeries = [];
+  for (let i = 0; i < bucketCount; i += 1) {
+    const b = buckets.get(i);
+    bpmSeries.push(b ? Math.round(b.sum / b.n) : 0); // 0 = 그 구간에 신호 없음
+  }
+
+  return {
+    durationSec,
+    avgBpm: Math.round(sum / valid.length),
+    maxBpm,
+    minBpm,
+    sampleCount: valid.length,
+    maxHrEstimate: maxHr || null,
+    avgPctOfMax: maxHr ? Math.round((sum / valid.length / maxHr) * 100) : null,
+    zoneSec,
+    seriesStepSec: stepSec,
+    bpmSeries,
+  };
+}
+
+// 저장 페이로드. 측정 허브의 기존 저장 경로(onSave → ai 세션)를 그대로 탄다.
+// 필드 이름은 다른 측정 유형 판정(unifiedReport.inferReportType)에 걸리지 않게 고른다
+// (heightCm·mode·type·summary·analysis 등 사용 금지).
+export function buildHeartRateRecord({ summary, startedAt, endedAt, bandLabel = '', timerTab = '' } = {}) {
+  if (!summary) return null;
+  return {
+    kind: HEART_RATE_RECORD_KIND,
+    startedAt: startedAt || null,
+    endedAt: endedAt || null,
+    bandLabel: String(bandLabel || '').slice(0, 12),
+    timerTab: String(timerTab || ''),
+    ...summary,
+  };
+}
+
+export function formatDuration(sec) {
+  const s = Math.max(0, Math.round(Number(sec) || 0));
+  return `${Math.floor(s / 60)}분 ${String(s % 60).padStart(2, '0')}초`;
+}
+
+// 측정 이력 카드에 보여줄 요약 칩. 정상/주의 판정은 하지 않는다(값만 표시).
+export function heartRateHistoryMetrics(payload = {}) {
+  const p = payload && typeof payload === 'object' ? payload : {};
+  const out = [];
+  if (Number.isFinite(p.avgBpm)) out.push({ key: 'avgBpm', label: '평균', displayValue: String(p.avgBpm), unit: 'bpm', value: p.avgBpm });
+  if (Number.isFinite(p.maxBpm)) out.push({ key: 'maxBpm', label: '최고', displayValue: String(p.maxBpm), unit: 'bpm', value: p.maxBpm });
+  if (Number.isFinite(p.durationSec)) out.push({ key: 'durationSec', label: '시간', displayValue: formatDuration(p.durationSec), unit: '', value: p.durationSec });
+  if (Number.isFinite(p.avgPctOfMax)) out.push({ key: 'avgPctOfMax', label: '평균 강도', displayValue: String(p.avgPctOfMax), unit: '%', value: p.avgPctOfMax });
+  return out;
+}
+
 // 밴드별 표시 이름(번호 스티커 등)·나이를 이 기기에만 기억한다(localStorage).
 // 회원 실명 대신 밴드 번호를 쓰도록 화면에서 안내한다. 심박 값은 저장하지 않는다.
 const PROFILE_KEY = 'momgagym.heartRateBandProfiles.v1';
