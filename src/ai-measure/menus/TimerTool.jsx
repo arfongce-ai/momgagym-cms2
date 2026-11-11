@@ -7,6 +7,8 @@ import { boostedGain, whistle, primeAudio } from '../core/audioCue';
 // [2026-08-16] 초시계·타이머·메트로놈 HUD 강화 — 소음/음악 위에서도 들리는 리미터.
 import { getLimiterNode } from '../core/audioCue';
 import SoundVolumeControl from './SoundVolumeControl';
+// [심박 밴드 2026-11-11] 탭과 무관하게 항상 보이는 실시간 심박 패널(도구 아래).
+import HeartRatePanel from './HeartRatePanel';
 import { subscribeTimerControl } from '../../voice/timerControlBus';
 import { consumePendingTimerCommand } from '../../voice/pendingTimerCommand';
 
@@ -743,7 +745,7 @@ export function IntervalTimer({ compact = false, command = null }) {
   );
 }
 
-export default function TimerTool({ onBack }) {
+export default function TimerTool({ onBack, member = null }) {
   const [tab, setTab] = useState('stopwatch');
   // [음성 타이머 제어 2026-08-09] 화면이 이미 열려 있을 때 momi가 실시간으로
   // 실행시킬 명령. 부모(이 컴포넌트)가 tool 탭 전환과 명령 전달을 함께 맡는다 —
@@ -798,6 +800,8 @@ export default function TimerTool({ onBack }) {
         : tab === 'countdown' ? <Countdown command={liveCommand} />
           : tab === 'interval' ? <IntervalTimer command={liveCommand} />
             : <Metronome command={liveCommand} />}
+      {/* [심박 밴드 2026-11-11] 초시계·타이머 아래에 항상 보이는 실시간 심박 패널. */}
+      <HeartRatePanel member={member} />
     </div>
   );
 }
