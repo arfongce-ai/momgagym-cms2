@@ -101,6 +101,18 @@ export function saveBandProfile(bandName, profile, storage = typeof localStorage
   }
 }
 
+// [2026-11-11 보완] 블루투스 연결은 기기 한도·거리 문제로 응답 없이 멈출 수 있다.
+// 정해진 시간 안에 안 끝나면 'timeout' 오류로 끊어, 화면이 "찾는 중…"에 갇히지 않게 한다.
+export const HEART_RATE_CONNECT_TIMEOUT_MS = 12000;
+
+export function withTimeout(promise, ms, label = 'timeout') {
+  let timer = null;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(label)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
 // 밴드 1개 연결. 반드시 버튼 클릭(사용자 동작) 안에서 호출해야 크롬이 기기 선택 창을 띄운다.
 //   onValue({ bpm, contact })  : 심박이 올 때마다(약 1초 간격)
 //   onStatus('connected' | 'reconnecting' | 'disconnected')
@@ -123,7 +135,7 @@ export async function connectHeartRateBand({ onValue, onStatus, excludeIds = [] 
     if (parsed) onValue?.(parsed);
   };
 
-  const open = async () => {
+  const openSteps = async () => {
     const server = await device.gatt.connect();
     const service = await server.getPrimaryService(HEART_RATE_SERVICE);
     characteristic = await service.getCharacteristic(HEART_RATE_MEASUREMENT);
@@ -131,6 +143,7 @@ export async function connectHeartRateBand({ onValue, onStatus, excludeIds = [] 
     await characteristic.startNotifications();
     return server;
   };
+  const open = () => withTimeout(openSteps(), HEART_RATE_CONNECT_TIMEOUT_MS);
 
   // 밴드가 잠깐 멀어지거나 헐거워져 끊기면 몇 번 다시 붙여 본다.
   const handleDisconnect = async () => {
@@ -151,14 +164,25 @@ export async function connectHeartRateBand({ onValue, onStatus, excludeIds = [] 
   };
   device.addEventListener('gattserverdisconnected', handleDisconnect);
 
-  const server = await open();
+  let server;
+  try {
+    server = await open();
+  } catch (err) {
+    // 실패하면 반쯤 열린 연결을 꼭 놓아 준다 — 안 그러면 다음 시도도 막힌다.
+    closed = true;
+    device.removeEventListener('gattserverdisconnected', handleDisconnect);
+    try { if (device.gatt.connected) device.gatt.disconnect(); } catch { /* 이미 끊김 */ }
+    throw err;
+  }
 
-  // 배터리는 있으면 한 번만 읽는다(없는 밴드는 조용히 건너뜀).
+  // 배터리는 있으면 한 번만 읽는다(없거나 3초 안에 답이 없으면 조용히 건너뜀).
   let battery = null;
   try {
-    const batteryService = await server.getPrimaryService(BATTERY_SERVICE);
-    const level = await batteryService.getCharacteristic(BATTERY_LEVEL);
-    battery = (await level.readValue()).getUint8(0);
+    battery = await withTimeout((async () => {
+      const batteryService = await server.getPrimaryService(BATTERY_SERVICE);
+      const level = await batteryService.getCharacteristic(BATTERY_LEVEL);
+      return (await level.readValue()).getUint8(0);
+    })(), 3000);
   } catch {
     battery = null;
   }

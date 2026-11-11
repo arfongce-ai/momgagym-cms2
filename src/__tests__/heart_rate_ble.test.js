@@ -13,6 +13,7 @@ import {
   isHeartRateBleSupported,
   loadBandProfiles,
   saveBandProfile,
+  withTimeout,
 } from '../ai-measure/core/heartRateBle.js';
 
 const view = (...bytes) => new DataView(new Uint8Array(bytes).buffer);
@@ -105,5 +106,17 @@ describe('TimerTool 연결', () => {
   it('심박 패널이 도구(초시계 등) 아래에 한 번만 들어가 있다', () => {
     expect(src.match(/<HeartRatePanel member=\{member\} \/>/g)).toHaveLength(1);
     expect(src.indexOf('<HeartRatePanel member={member} />')).toBeGreaterThan(src.indexOf('<Metronome command={liveCommand} />'));
+  });
+});
+
+describe('withTimeout — 연결이 멈춰도 화면이 갇히지 않게', () => {
+  it('제때 끝나면 값을 그대로 돌려준다', async () => {
+    await expect(withTimeout(Promise.resolve(7), 50)).resolves.toBe(7);
+  });
+  it('시간 안에 안 끝나면 timeout 오류', async () => {
+    await expect(withTimeout(new Promise(() => {}), 20)).rejects.toThrow('timeout');
+  });
+  it('원래 오류는 그대로 전달', async () => {
+    await expect(withTimeout(Promise.reject(new Error('boom')), 50)).rejects.toThrow('boom');
   });
 });

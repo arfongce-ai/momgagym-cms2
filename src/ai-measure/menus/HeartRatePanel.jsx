@@ -36,7 +36,12 @@ const NO_ZONE_STYLE = 'bg-white text-slate-800 border-slate-300 dark:bg-slate-90
 // 이 시간 동안 새 값이 없으면 숫자 대신 "--"를 보여준다(밴드가 헐겁거나 멀어짐).
 const STALE_MS = 5000;
 
-function errorMessage(err) {
+function errorMessage(err, connectedCount = 0) {
+  if (err?.message === 'timeout') {
+    return connectedCount >= 3
+      ? `연결 시간이 지났습니다. 이 기기가 한 번에 연결할 수 있는 한도(지금 ${connectedCount}개)일 수 있습니다. 밴드를 가까이 두고 한 번 더 눌러 보세요.`
+      : '연결 시간이 지났습니다. 밴드를 팔에 차고 가까이 둔 뒤 다시 눌러 주세요.';
+  }
   if (err?.message === 'duplicate') return '이미 연결된 밴드입니다. 다른 밴드를 골라 주세요.';
   if (err?.name === 'NotFoundError') return ''; // 기기 선택 창에서 취소 — 안내 불필요
   if (err?.name === 'SecurityError' || err?.name === 'NotAllowedError') return '블루투스 권한이 꺼져 있습니다. 브라우저·기기 설정에서 허용해 주세요.';
@@ -175,7 +180,7 @@ export default function HeartRatePanel({ member = null }) {
         ...box.early,
       }]);
     } catch (err) {
-      setError(errorMessage(err));
+      setError(errorMessage(err, handlesRef.current.size));
     } finally {
       setConnecting(false);
     }
@@ -265,7 +270,7 @@ export default function HeartRatePanel({ member = null }) {
               disabled={connecting}
               className="w-full rounded-xl border-2 border-dashed border-slate-400 dark:border-slate-500 py-2.5 text-sm font-bold text-slate-600 dark:text-slate-200 disabled:opacity-50"
             >
-              {connecting ? '밴드 찾는 중…' : bands.length === 0 ? '+ 밴드 연결' : `+ 밴드 추가 (${bands.length}/${limit})`}
+              {connecting ? '밴드 연결 중… (최대 12초)' : bands.length === 0 ? '+ 밴드 연결' : `+ 밴드 추가 (${bands.length}/${limit})`}
             </button>
           )}
 
