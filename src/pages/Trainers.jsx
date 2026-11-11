@@ -110,7 +110,7 @@ function ColorPalette({ value, onChange, usedColors=[] }) {
   );
 }
 
-const EMPTY = { name:'', phone:'', birthDate:'', hireDate:'', classTypes:[], status:'full', color:'#f59e0b', memo:'', loginEmail:'', accountPassword:'' };
+const EMPTY = { name:'', phone:'', birthDate:'', gender:'', hireDate:'', classTypes:[], status:'full', color:'#f59e0b', memo:'', loginEmail:'', accountPassword:'' };
 
 // 다음 사용 가능한 색상 자동 계산
 function getNextColor(usedColors) {
@@ -148,7 +148,7 @@ export default function Trainers() {
 
   const openEdit = t => {
     setEditTarget(t);
-    setForm({ name:t.name, phone:t.phone, birthDate:t.birthDate||'', hireDate:t.hireDate||'',
+    setForm({ name:t.name, phone:t.phone, birthDate:t.birthDate||'', gender:t.gender||'', hireDate:t.hireDate||'',
               classTypes:t.classTypes||[], status:t.status||'full', color:t.color||'#f59e0b', memo:t.memo||'',
               loginEmail:t.loginEmail||'', accountPassword:'' });
     setShowForm(true);
@@ -350,6 +350,15 @@ export default function Trainers() {
                 <div><label className={LBL}>연락처 *</label><input value={form.phone} onChange={pf('phone')} placeholder="010-0000-0000" className={INP}/></div>
               </div>
               <div><label className={LBL}>생년월일</label><input type="date" value={form.birthDate} onChange={pf('birthDate')} className={INP}/></div>
+              {/* [트레이너 본인 기록 2026-11-11] 본인 측정의 기준값(나이·성별)에 쓴다. 선택 입력. */}
+              <div>
+                <label className={LBL}>성별 (본인 측정용 · 선택)</label>
+                <select value={form.gender} onChange={pf('gender')} className={INP}>
+                  <option value="">미등록</option>
+                  <option value="male">남</option>
+                  <option value="female">여</option>
+                </select>
+              </div>
               <div><label className={LBL}>입사일</label><input type="date" value={form.hireDate} onChange={pf('hireDate')} className={INP}/></div>
 
               <div>

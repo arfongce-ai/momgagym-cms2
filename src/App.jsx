@@ -22,6 +22,7 @@ const Revenue    = lazy(() => import('./pages/Revenue'));
 const Schedule   = lazy(() => import('./pages/Schedule'));
 const Settings   = lazy(() => import('./pages/Settings'));
 const AiMeasureHub = lazy(() => import('./ai-measure/AiMeasureHub'));
+const MyRecords = lazy(() => import('./pages/MyRecords'));
 const Report      = lazy(() => import('./pages/Report'));
 const Dashboard   = lazy(() => import('./pages/Dashboard'));
 
@@ -143,6 +144,8 @@ function AppRoutes() {
                     <Route path="/settings" element={<Settings darkMode={darkMode} setDarkMode={setDarkMode} />} />
                     <Route path="/ai"       element={<AiMeasureHub />} />
                     <Route path="/report"   element={<Report />} />
+                    {/* [트레이너 본인 기록 2026-11-11] 트레이너 본인(관리자는 전체 트레이너)의 신체정보·측정이력 */}
+                    <Route path="/my-records" element={<MyRecords />} />
                     {/* [리포트 통합 2026-08-09] 종합리포트(day/week/month 트렌드)는 Report.jsx
                         안의 ComprehensiveReportSection으로 완전히 흡수됨(이상 데이터 삭제
                         기능까지 이관 완료) — 별도 페이지가 더 이상 필요 없다. 기존

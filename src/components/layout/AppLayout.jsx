@@ -22,6 +22,8 @@ const NAV = [
   // [리포트 통합 2026-08-09] 종합리포트는 별도 메뉴가 아니라 '리포트' 안의 한
   // 섹션으로 흡수됐다(ComprehensiveReportSection) — 메뉴 항목을 따로 안 둔다.
   { path:'/report',   label:'리포트',   icon:'📊' },
+  // [트레이너 본인 기록 2026-11-11] 트레이너·관리자만 보인다(직원 계정은 숨김).
+  { path:'/my-records', label:'내 기록', icon:'🧍', selfRecords:true },
   { path:'/trainers', label:'트레이너', icon:'💪', adminOnly:true },
   { path:'/revenue',  label:'매출관리', icon:'💰' },
   { path:'/settings', label:'설정',     icon:'⚙️' },
@@ -35,6 +37,7 @@ const MOBILE_MAIN = ['/', '/members', '/schedule', '/ai'];
 function NavItem({ item }) {
   const { user } = useAuth();
   if (item.adminOnly && user?.role !== 'admin') return null;
+  if (item.selfRecords && user?.role !== 'admin' && user?.role !== 'trainer') return null;
   const base = 'flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors';
   const active = 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20';
   return (
@@ -61,7 +64,8 @@ function MobileTab({ item }) {
 function MenuSheet({ onClose, visibleNav }) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
-  const visible = visibleNav.filter(it => !(it.adminOnly && user?.role !== 'admin'));
+  const visible = visibleNav.filter(it => !(it.adminOnly && user?.role !== 'admin'))
+    .filter(it => !(it.selfRecords && user?.role !== 'admin' && user?.role !== 'trainer'));
   const go = (path) => { onClose(); navigate(path); };
   return (
     <div className="fixed inset-0 z-[70] md:hidden" onClick={onClose}>

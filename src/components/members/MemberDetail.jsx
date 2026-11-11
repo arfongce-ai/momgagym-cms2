@@ -45,7 +45,10 @@ const makePayForm = () => ({
 
 export default function MemberDetail({ member:initMember, trainers, members=[], onClose, onUpdate, initialTab }) {
   const { user } = useAuth();
-  const [tab, setTab]       = useState(initialTab || 'info');
+  // [트레이너 본인 기록 2026-11-11] 트레이너 본인 기록 대상은 회원 문서가 없으므로
+  //  기본정보·세션·수납·메모 탭을 숨기고 신체정보·측정이력만 쓴다.
+  const isTrainerSelf = initMember?.isTrainerSelf === true;
+  const [tab, setTab]       = useState(initialTab || (isTrainerSelf ? 'body' : 'info'));
   const [member, setMember] = useState(initMember);
   const [editMode, setEdit] = useState(false);
   const [editForm, setEF]   = useState({ ...initMember });
@@ -790,7 +793,8 @@ export default function MemberDetail({ member:initMember, trainers, members=[], 
   const ppf = f => e => setPayForm(p=>({...p,[f]:e.target.value}));
   const pbf = f => e => setBodyForm(p=>({...p,[f]:e.target.value}));
 
-  const TABS = [['info','기본정보'],['sessions','세션'],['payments','수납'],['body','신체정보'],['ai','측정이력'],['nutrition','영양 기록'],['memo','메모']];
+  const ALL_TABS = [['info','기본정보'],['sessions','세션'],['payments','수납'],['body','신체정보'],['ai','측정이력'],['nutrition','영양 기록'],['memo','메모']];
+  const TABS = isTrainerSelf ? ALL_TABS.filter(([t]) => t === 'body' || t === 'ai') : ALL_TABS;
 
   return (
     <div className="modal-overlay">
@@ -803,7 +807,7 @@ export default function MemberDetail({ member:initMember, trainers, members=[], 
           </div>
           <div className="flex-1 min-w-0">
             <h2 className="font-bold">{member.name}</h2>
-            <p className="text-slate-500 text-xs">{member.phone}</p>
+            <p className="text-slate-500 text-xs">{isTrainerSelf ? '본인 기록 · 신체정보와 측정이력' : member.phone}</p>
           </div>
           <button onClick={onClose} className="text-slate-500 hover:text-white text-2xl leading-none p-1 flex-shrink-0">×</button>
         </div>

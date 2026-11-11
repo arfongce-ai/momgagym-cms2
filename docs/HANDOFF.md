@@ -45,6 +45,13 @@
 
 ## 작업 로그
 
+### 2026-11-11 · Claude Code · 트레이너 본인 기록 1단계(신체정보·체력측정·분석·비교)
+- 요청: 등록된 트레이너도 CMS의 건강정보·체력측정·영양 기록을 본인용으로 사용. 대표님 결정: 열람은 본인 + 대표, 순서는 측정·건강정보 먼저(영양은 영양앱 연결 완료 후).
+- 방식: members 문서를 만들지 않고 대상 ID `trself_<트레이너ID>`로 기존 컬렉션(body/ai/gait·posture·rom_reports/users.reports)에 저장(`src/utils/trainerSelf.js`). 회원 수·매출·대시보드·Notion 집계 스크립트는 members 기준이라 섞이지 않는다. firestore.rules 변경 없음.
+- 화면: 메뉴 '내 기록'(`/my-records`, `src/pages/MyRecords.jsx`, 트레이너·관리자만) → 회원 상세(MemberDetail)의 신체정보·측정이력 탭만 재사용(`isTrainerSelf` 분기 3곳). 측정 허브·리포트의 대상 선택에 "이름 (트레이너)" 추가. 트레이너 관리 폼에 성별(선택) 추가 — 생년월일·성별은 trainers 문서에서 읽는다(규칙상 관리자만 수정).
+- 한계: 열람 범위는 화면 단 구분(규칙은 기존 측정 기록처럼 로그인 사용자 공통). 영양 기록 탭은 미포함(`functions/api/nutrition-link.js`가 members 문서를 확인하므로 2단계에서 서버 함수 확장 필요). 모미 음성 명령의 이름 검색에는 트레이너 대상이 없다.
+- 테스트·빌드 통과(3328 → 3341, 신규 trainer_self_records.test.js 13개). 모의 로그인·모의 데이터로 트레이너/대표/직원별 화면 확인. ⚠️ 실서버 계정으로 측정 저장 → 내 기록 표시는 확인 못 함.
+
 ### 2026-11-11 · Claude Code · 측정 14번(초시계·메트로놈)에 실시간 심박 패널
 - 추가: `src/ai-measure/core/heartRateBle.js`(블루투스 표준 심박 0x180D 연결·해석), `src/ai-measure/menus/HeartRatePanel.jsx`(화면), `TimerTool.jsx`에는 import 1줄 + 패널 1줄 + `member` prop만.
 - 동작: 개인(1명)/그룹(최대 5명), 밴드 이름표·나이(이 기기 localStorage), 5단계 강도 색, 자동 재연결, 배터리 20% 이하 경고. 허브에서 회원을 고르면 개인 모드에서 생년월일로 나이 자동 적용, 회원 없이도 단순 측정.

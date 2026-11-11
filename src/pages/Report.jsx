@@ -21,6 +21,7 @@ import SimpleResultReport from '../components/report/SimpleResultReport';
 import ReportActions from '../components/report/ReportActions';
 import TrendChart from '../components/report/TrendChart';
 import MemberPicker from '../components/common/MemberPicker';
+import { withTrainerSelfSubjects } from '../utils/trainerSelf';
 import CombinedAssessmentPanel from '../components/report/CombinedAssessmentPanel';
 import MemberTestRecommendationPanel from '../components/ai/MemberTestRecommendationPanel';
 import { buildMemberTestRecommendations } from '../ai-measure/core/memberTestRecommendation';
@@ -934,7 +935,8 @@ export default function Report() {
   const { user } = useAuth();
   const navigate = useNavigate();
   // 트레이너 모드: 담당 회원만 / 모든 회원은 가나다 순으로 노출.
-  const members = useMemo(() => sortByName(scopeMembersToTrainer(store.getMembers(), user)), [user]);
+  // [트레이너 본인 기록 2026-11-11] 트레이너 본인(관리자는 전체 트레이너)도 리포트 대상에 포함.
+  const members = useMemo(() => withTrainerSelfSubjects(sortByName(scopeMembersToTrainer(store.getMembers(), user)), user, store.getTrainers()), [user]);
   const [memberId, setMemberId] = useState('');
   const [showCombined, setShowCombined] = useState(false); // 종합 분석 패널 표시 여부(신규, 기존 상태와 독립)
   // [리포트 통합 2026-08-09] AI측정 저장 화면의 "결과리포트에서 보기" 버튼으로
