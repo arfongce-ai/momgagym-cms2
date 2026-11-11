@@ -102,8 +102,8 @@ describe('지원 여부·상한', () => {
 
 describe('TimerTool 연결', () => {
   const src = readFileSync(new URL('../ai-measure/menus/TimerTool.jsx', import.meta.url), 'utf8');
-  it('심박 패널이 탭 줄 위에 한 번만 들어가 있다', () => {
+  it('심박 패널이 도구(초시계 등) 아래에 한 번만 들어가 있다', () => {
     expect(src.match(/<HeartRatePanel member=\{member\} \/>/g)).toHaveLength(1);
-    expect(src.indexOf('<HeartRatePanel member={member} />')).toBeLessThan(src.indexOf("['stopwatch', '초시계']"));
+    expect(src.indexOf('<HeartRatePanel member={member} />')).toBeGreaterThan(src.indexOf('<Metronome command={liveCommand} />'));
   });
 });
