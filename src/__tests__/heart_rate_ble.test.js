@@ -104,8 +104,8 @@ describe('지원 여부·상한', () => {
 describe('TimerTool 연결', () => {
   const src = readFileSync(new URL('../ai-measure/menus/TimerTool.jsx', import.meta.url), 'utf8');
   it('심박 패널이 도구(초시계 등) 아래에 한 번만 들어가 있다', () => {
-    expect(src.match(/<HeartRatePanel member=\{member\} \/>/g)).toHaveLength(1);
-    expect(src.indexOf('<HeartRatePanel member={member} />')).toBeGreaterThan(src.indexOf('<Metronome command={liveCommand} />'));
+    expect(src.match(/<HeartRatePanel /g)).toHaveLength(1);
+    expect(src.indexOf('<HeartRatePanel ')).toBeGreaterThan(src.indexOf('<Metronome command={liveCommand} />'));
   });
 });
 
@@ -118,5 +118,113 @@ describe('withTimeout — 연결이 멈춰도 화면이 갇히지 않게', () =>
   });
   it('원래 오류는 그대로 전달', async () => {
     await expect(withTimeout(Promise.reject(new Error('boom')), 50)).rejects.toThrow('boom');
+  });
+});
+
+// ── [심박 기록 2026-11-11] 기록 요약·이력 표시 ─────────────────────────────
+import {
+  HEART_RATE_RECORD_KIND,
+  summarizeHeartRateSamples,
+  buildHeartRateRecord,
+  heartRateHistoryMetrics,
+  formatDuration,
+} from '../ai-measure/core/heartRateBle.js';
+import { mergeMeasureEntries, describeEntry, TYPE_LABEL } from '../services/measureHistoryService.js';
+import { inferReportType } from '../ai-measure/core/unifiedReport.js';
+
+const everySecond = (bpms) => bpms.map((bpm, i) => ({ t: i * 1000, bpm }));
+
+describe('summarizeHeartRateSamples — 기록 구간 요약', () => {
+  it('평균·최고·최저·시간', () => {
+    const s = summarizeHeartRateSamples(everySecond([100, 110, 120, 130, 140]), { durationMs: 5000 });
+    expect(s).toMatchObject({ durationSec: 5, avgBpm: 120, maxBpm: 140, minBpm: 100, sampleCount: 5, zoneSec: null, maxHrEstimate: null, avgPctOfMax: null });
+  });
+  it('값이 없으면 null, 0·이상값(밴드 미접촉)은 버린다', () => {
+    expect(summarizeHeartRateSamples([])).toBeNull();
+    expect(summarizeHeartRateSamples(everySecond([0, 0, 0]))).toBeNull();
+    expect(summarizeHeartRateSamples(everySecond([0, 100, 255, 110])).sampleCount).toBe(2);
+  });
+  it('최대심박이 있으면 구간별 시간(초)을 센다', () => {
+    // 최대 180 기준: 100=56%(1구간) 3초, 150=83%(4구간) 2초
+    const s = summarizeHeartRateSamples(everySecond([100, 100, 100, 150, 150]), { durationMs: 5000, maxHr: 180 });
+    expect(s.zoneSec).toEqual({ z1: 3, z2: 0, z3: 0, z4: 2, z5: 0 });
+    expect(s.avgPctOfMax).toBe(67);
+  });
+  it('신호가 끊긴 긴 공백은 5초까지만 구간 시간으로 인정', () => {
+    const s = summarizeHeartRateSamples([{ t: 0, bpm: 100 }, { t: 60000, bpm: 100 }], { durationMs: 61000, maxHr: 180 });
+    expect(s.zoneSec.z1).toBe(6); // 5초(공백 상한) + 1초
+    expect(s.durationSec).toBe(61);
+  });
+  it('그래프용 값: 5초 묶음 평균, 신호 없는 묶음은 0', () => {
+    const s = summarizeHeartRateSamples([...everySecond([100, 100, 100, 100, 100]), { t: 12000, bpm: 130 }], { durationMs: 13000 });
+    expect(s.seriesStepSec).toBe(5);
+    expect(s.bpmSeries).toEqual([100, 0, 130]);
+  });
+  it('긴 기록은 간격을 넓혀 360개 이하로 유지', () => {
+    const twoHours = Array.from({ length: 7200 }, (_, i) => ({ t: i * 1000, bpm: 120 }));
+    const s = summarizeHeartRateSamples(twoHours, { durationMs: 7200000 });
+    expect(s.bpmSeries.length).toBeLessThanOrEqual(360);
+    expect(s.seriesStepSec).toBe(40);
+    expect(s.avgBpm).toBe(120);
+  });
+});
+
+describe('buildHeartRateRecord — 저장 페이로드', () => {
+  const summary = summarizeHeartRateSamples(everySecond([100, 120, 140]), { durationMs: 3000, maxHr: 180 });
+  const record = buildHeartRateRecord({ summary, startedAt: '2026-11-11T10:00:00.000Z', endedAt: '2026-11-11T10:00:03.000Z', bandLabel: '7번', timerTab: 'interval' });
+
+  it('kind 와 요약 필드를 담고 undefined 가 없다(Firestore 저장 가능)', () => {
+    expect(record.kind).toBe(HEART_RATE_RECORD_KIND);
+    expect(record).toMatchObject({ bandLabel: '7번', timerTab: 'interval', avgBpm: 120, maxBpm: 140 });
+    expect(JSON.stringify(record)).not.toContain('undefined');
+    expect(Object.values(record).some((v) => v === undefined)).toBe(false);
+  });
+  it('요약이 없으면 null', () => {
+    expect(buildHeartRateRecord({ summary: null })).toBeNull();
+  });
+  it('다른 측정 유형으로 오인되지 않는다(통합 리포트 미러링 제외 = general)', () => {
+    expect(inferReportType({ menu: 'timer', menuTitle: '초시계·메트로놈', data: record })).toBe('general');
+  });
+});
+
+describe('측정 이력 표시', () => {
+  const summary = summarizeHeartRateSamples(everySecond([100, 120, 140]), { durationMs: 95000, maxHr: 180 });
+  const record = buildHeartRateRecord({ summary, startedAt: '2026-11-11T10:00:00.000Z', endedAt: '2026-11-11T10:01:35.000Z' });
+  const session = { id: 'ai_1', menu: 'timer', menuTitle: '초시계·메트로놈', recordedAt: '2026-11-11', recordedAtFull: '2026-11-11T10:01:35.000Z', data: record };
+
+  it('심박 기록 세션은 "심박 측정"으로 묶인다', () => {
+    const [entry] = mergeMeasureEntries({ sessions: [session] });
+    expect(entry.type).toBe('heart_rate');
+    expect(entry.title).toBe(TYPE_LABEL.heart_rate);
+    expect(entry.title).toBe('심박 측정');
+  });
+  it('평균·최고·시간 칩을 보여주고 신뢰도는 미기록', () => {
+    const [entry] = mergeMeasureEntries({ sessions: [session] });
+    const { metrics, confidence } = describeEntry(entry);
+    expect(metrics.map((m) => `${m.label}: ${m.displayValue}${m.unit}`)).toEqual(['평균: 120bpm', '최고: 140bpm', '시간: 1분 35초', '평균 강도: 67%']);
+    expect(confidence).toEqual({ pct: null, source: '' });
+  });
+  it('다른 초시계 세션(심박 아님)은 기존 표시 그대로', () => {
+    const [entry] = mergeMeasureEntries({ sessions: [{ id: 'ai_2', menu: 'timer', menuTitle: '초시계·메트로놈', recordedAt: '2026-11-11', data: { laps: 3 } }] });
+    expect(entry.type).toBe('timer');
+    expect(entry.title).toBe('초시계·메트로놈');
+  });
+  it('요약 칩·시간 표기 보조 함수', () => {
+    expect(formatDuration(0)).toBe('0분 00초');
+    expect(formatDuration(125)).toBe('2분 05초');
+    expect(heartRateHistoryMetrics({})).toEqual([]);
+  });
+});
+
+describe('허브·패널 저장 연결', () => {
+  const hub = readFileSync(new URL('../ai-measure/AiMeasureHub.jsx', import.meta.url), 'utf8');
+  const tool = readFileSync(new URL('../ai-measure/menus/TimerTool.jsx', import.meta.url), 'utf8');
+  it('TimerTool 이 onSave·member·현재 탭을 패널에 넘긴다', () => {
+    expect(tool).toContain('<HeartRatePanel member={member} onSave={onSave} timerTab={tab} />');
+  });
+  it('허브는 심박 기록을 alert 없이 돌려주고 실패는 전파한다', () => {
+    expect(hub).toContain("const isHeartRate = active.id === 'timer' && data?.kind === 'heart_rate';");
+    expect(hub).toMatch(/if \(isHeartRate\) \{\s*return savedSession;/);
+    expect(hub).toContain('if (isHeartRate) throw e;');
   });
 });

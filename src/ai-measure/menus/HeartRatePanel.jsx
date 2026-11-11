@@ -7,13 +7,21 @@
 //  · 이 화면을 나가면 모든 밴드 연결을 끊는다.
 //  · [회원 연계 준비] 측정 허브에서 회원을 골라 두면 개인 모드에서 그 회원의
 //    나이(생년월일)를 자동으로 써서 강도 색을 보여준다. 회원을 안 골라도
-//    그대로 쓸 수 있다(단순 측정). 저장 연동은 아직 없음 — 동의 절차와 함께 추후.
+//    그대로 쓸 수 있다(단순 측정).
+//  · [심박 기록 2026-11-11] 개인 모드에서 "기록 시작 → 종료" 구간의 평균·최고·구간별
+//    시간을 요약해, 회원이 선택돼 있으면 트레이너가 확인 후 [저장]을 눌러 회원 측정
+//    이력(ai 세션)에 남긴다. 회원이 없으면 결과만 보여주고 저장하지 않는다.
+//    그룹 모드 기록 저장은 아직 없음(밴드별 회원 지정이 필요 — 추후).
 // ════════════════════════════════════════════════════════════════════════
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   MAX_HEART_RATE_BANDS,
+  HEART_RATE_MIN_RECORD_SEC,
   HEART_RATE_ZONE_LABELS,
   ageFromBirthDate,
+  buildHeartRateRecord,
+  formatDuration,
+  summarizeHeartRateSamples,
   connectHeartRateBand,
   heartRateZone,
   isHeartRateBleSupported,
@@ -121,7 +129,7 @@ function EditSheet({ band, onSave, onClose }) {
   );
 }
 
-export default function HeartRatePanel({ member = null }) {
+export default function HeartRatePanel({ member = null, onSave = null, timerTab = '' }) {
   const supported = isHeartRateBleSupported();
   const [mode, setMode] = useState('solo'); // 'solo' 개인 | 'group' 그룹
   const [bands, setBands] = useState([]);
@@ -130,17 +138,24 @@ export default function HeartRatePanel({ member = null }) {
   const [editingId, setEditingId] = useState(null);
   const [, setNow] = useState(0); // 1초마다 다시 그려 "신호 대기 중" 판정을 갱신
   const handlesRef = useRef(new Map()); // id → { disconnect }
+  // [심박 기록] 기록 중인 구간. recRef 는 값 콜백에서 바로 쓰려고 ref 로도 둔다.
+  const recRef = useRef(null); // { bandId, startPerf, startedAt, samples: [{ t, bpm }] }
+  const [recording, setRecording] = useState(false);
+  const [result, setResult] = useState(null); // { record, saveState: 'idle'|'saving'|'saved'|'error', error }
 
   const limit = mode === 'solo' ? 1 : MAX_HEART_RATE_BANDS;
   // 회원 연계는 개인 모드에서만(그룹은 밴드별 이름표·나이로 구분).
   const linkedMember = mode === 'solo' && member ? member : null;
   const memberAge = linkedMember ? (ageFromBirthDate(linkedMember.birthDate) || Number(linkedMember.age) || null) : null;
+  const memberAgeRef = useRef(memberAge);
+  memberAgeRef.current = memberAge;
 
   const patchBand = useCallback((id, patch) => {
     setBands((items) => items.map((b) => (b.id === id ? { ...b, ...patch } : b)));
   }, []);
 
   const removeBand = useCallback((id) => {
+    // 기록 중인 밴드를 끊으면 그때까지의 기록으로 마무리한다(아래 effect 가 처리).
     handlesRef.current.get(id)?.disconnect();
     handlesRef.current.delete(id);
     setBands((items) => items.filter((b) => b.id !== id));
@@ -158,6 +173,8 @@ export default function HeartRatePanel({ member = null }) {
         excludeIds: [...handlesRef.current.keys()],
         onValue: ({ bpm, contact }) => {
           const patch = { bpm, contact, at: Date.now() };
+          const rec = recRef.current;
+          if (rec && box.id && rec.bandId === box.id) rec.samples.push({ t: performance.now() - rec.startPerf, bpm });
           if (box.id) patchBand(box.id, patch); else Object.assign(box.early, patch);
         },
         onStatus: (status) => {
@@ -186,9 +203,50 @@ export default function HeartRatePanel({ member = null }) {
     }
   };
 
+  // ── 기록(개인 모드 전용) ──
+  const soloBand = mode === 'solo' ? bands[0] || null : null;
+
+  const startRecording = () => {
+    if (!soloBand || recRef.current) return;
+    recRef.current = { bandId: soloBand.id, startPerf: performance.now(), startedAt: new Date().toISOString(), samples: [] };
+    setResult(null);
+    setRecording(true);
+  };
+
+  const stopRecording = useCallback(() => {
+    const rec = recRef.current;
+    if (!rec) return;
+    recRef.current = null;
+    setRecording(false);
+    const band = bands.find((b) => b.id === rec.bandId) || null;
+    const summary = summarizeHeartRateSamples(rec.samples, {
+      durationMs: performance.now() - rec.startPerf,
+      maxHr: maxHeartRateFromAge(band?.age || memberAgeRef.current),
+    });
+    const record = buildHeartRateRecord({
+      summary,
+      startedAt: rec.startedAt,
+      endedAt: new Date().toISOString(),
+      bandLabel: band?.label || (band ? `밴드 ${shortBandId(band.name)}` : ''),
+      timerTab,
+    });
+    setResult(record ? { record, saveState: 'idle', error: '' } : { record: null, saveState: 'idle', error: '기록된 심박이 없습니다. 밴드를 밀착한 뒤 다시 기록해 주세요.' });
+  }, [bands, timerTab]);
+
+  const saveResult = async () => {
+    if (!result?.record || !onSave || !member || result.saveState === 'saving' || result.saveState === 'saved') return;
+    setResult((r) => ({ ...r, saveState: 'saving', error: '' }));
+    try {
+      await onSave(result.record);
+      setResult((r) => ({ ...r, saveState: 'saved' }));
+    } catch (err) {
+      setResult((r) => ({ ...r, saveState: 'error', error: err?.message || '저장에 실패했습니다.' }));
+    }
+  };
+
   // 그룹 → 개인으로 바꾸면 첫 번째 밴드만 남긴다.
   const switchMode = (next) => {
-    if (next === mode) return;
+    if (next === mode || recRef.current) return; // 기록 중에는 모드를 바꾸지 않는다
     if (next === 'solo') bands.slice(1).forEach((b) => removeBand(b.id));
     setMode(next);
   };
@@ -208,7 +266,21 @@ export default function HeartRatePanel({ member = null }) {
     };
   }, []);
 
+  // 기록 중인 밴드가 사라지면(✕ 또는 연결 끊김 후 제거) 그때까지의 값으로 기록을 마무리한다.
+  useEffect(() => {
+    const rec = recRef.current;
+    if (rec && !bands.some((b) => b.id === rec.bandId)) stopRecording();
+  }, [bands, stopRecording]);
+
   const editing = bands.find((b) => b.id === editingId) || null;
+
+  // 기록 중 실시간 요약(1초마다 다시 그려질 때 계산 — 값 수천 개 수준이라 가볍다).
+  const live = recording && recRef.current
+    ? summarizeHeartRateSamples(recRef.current.samples, { durationMs: performance.now() - recRef.current.startPerf })
+    : null;
+  const liveSec = recording && recRef.current ? Math.round((performance.now() - recRef.current.startPerf) / 1000) : 0;
+  const memberLabel = member ? (member.isVirtual ? '미등록회원' : `${member.name || '회원'} 회원`) : '';
+  const tooShort = result?.record ? result.record.durationSec < HEART_RATE_MIN_RECORD_SEC : false;
 
   return (
     <div className="rounded-xl bg-slate-100/80 dark:bg-slate-800/80 border border-white/10 px-3 py-3 space-y-2" data-testid="heart-rate-panel">
@@ -262,6 +334,64 @@ export default function HeartRatePanel({ member = null }) {
                 setEditingId(null);
               }}
             />
+          )}
+
+          {soloBand && !recording && !result && (
+            <button onClick={startRecording} className="w-full rounded-xl bg-amber-500 py-2.5 text-sm font-bold text-slate-950" data-testid="heart-rate-record-start">
+              ● 기록 시작
+            </button>
+          )}
+
+          {soloBand && recording && (
+            <div className="space-y-2" data-testid="heart-rate-recording">
+              <p className="text-center text-xs font-bold text-red-600 dark:text-red-400">
+                ● 기록 중 {formatDuration(liveSec)}{live ? ` · 평균 ${live.avgBpm} · 최고 ${live.maxBpm}` : ''}
+              </p>
+              <button onClick={stopRecording} className="w-full rounded-xl bg-red-500 py-2.5 text-sm font-bold text-white">■ 기록 종료</button>
+            </div>
+          )}
+
+          {result && (
+            <div className="rounded-xl border-2 border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 p-3 space-y-2" data-testid="heart-rate-result">
+              <p className="text-xs font-bold text-slate-600 dark:text-slate-300">기록 결과</p>
+              {result.record ? (
+                <>
+                  <div className="grid grid-cols-4 gap-1 text-center">
+                    {[['시간', formatDuration(result.record.durationSec)], ['평균', `${result.record.avgBpm}`], ['최고', `${result.record.maxBpm}`], ['최저', `${result.record.minBpm}`]].map(([l, v]) => (
+                      <div key={l} className="rounded-lg bg-slate-100 dark:bg-slate-800 py-1.5">
+                        <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400">{l}</p>
+                        <p className="font-mono text-sm font-black text-slate-800 dark:text-slate-100">{v}</p>
+                      </div>
+                    ))}
+                  </div>
+                  {result.record.zoneSec && (
+                    <p className="text-[11px] text-slate-600 dark:text-slate-300">
+                      {[1, 2, 3, 4, 5].filter((z) => result.record.zoneSec[`z${z}`] > 0).map((z) => `${HEART_RATE_ZONE_LABELS[z]} ${formatDuration(result.record.zoneSec[`z${z}`])}`).join(' · ') || '구간 기록 없음'}
+                    </p>
+                  )}
+                  {!member && (
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400">단순 측정이라 저장하지 않습니다. 회원 기록에 남기려면 측정 화면에서 회원을 먼저 고른 뒤 기록해 주세요.</p>
+                  )}
+                  {member && tooShort && result.saveState !== 'saved' && (
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400">{HEART_RATE_MIN_RECORD_SEC}초보다 짧은 기록은 저장하지 않습니다.</p>
+                  )}
+                  {result.saveState === 'saved' && (
+                    <p className="text-xs font-bold text-emerald-700 dark:text-emerald-400">✓ {memberLabel} 측정 이력에 저장했습니다.</p>
+                  )}
+                </>
+              ) : null}
+              {result.error && <p className="text-xs font-bold text-red-600 dark:text-red-400">{result.error}</p>}
+              <div className="grid grid-cols-2 gap-2">
+                <button onClick={() => setResult(null)} disabled={result.saveState === 'saving'} className="rounded-lg border-2 border-slate-300 dark:border-slate-600 py-2 text-xs font-bold text-slate-600 dark:text-slate-200 disabled:opacity-50">
+                  {result.saveState === 'saved' || !member || !result.record ? '닫기' : '버리기'}
+                </button>
+                {member && onSave && result.record && result.saveState !== 'saved' ? (
+                  <button onClick={saveResult} disabled={tooShort || result.saveState === 'saving'} className="rounded-lg bg-amber-500 py-2 text-xs font-bold text-slate-950 disabled:opacity-40">
+                    {result.saveState === 'saving' ? '저장 중…' : result.saveState === 'error' ? '다시 저장' : `${memberLabel} 기록에 저장`}
+                  </button>
+                ) : <span />}
+              </div>
+            </div>
           )}
 
           {bands.length < limit && (

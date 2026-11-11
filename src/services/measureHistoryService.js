@@ -7,6 +7,8 @@
 
 import { aiStore } from '../demoData';
 import { extractKeyMetrics, inferReportType, METRIC_DEFINITIONS } from '../ai-measure/core/unifiedReport';
+// [심박 기록 2026-11-11] 초시계 화면에서 저장한 심박 기록을 이력에 '심박 측정'으로 보여준다.
+import { HEART_RATE_RECORD_KIND, heartRateHistoryMetrics } from '../ai-measure/core/heartRateBle';
 
 export const TYPE_LABEL = Object.freeze({
   body: '신체정보',
@@ -20,6 +22,7 @@ export const TYPE_LABEL = Object.freeze({
   squat: '스쿼트',
   vbt: '바벨 속도(VBT)',
   one_rm: '1RM',
+  heart_rate: '심박 측정',
   general: '측정',
 });
 
@@ -126,6 +129,9 @@ export function mergeMeasureEntries({ sessions = [], gait = [], posture = [], ro
     const payload = main || (s.data && typeof s.data === 'object' ? { ...s.data, kind: s.data.kind || s.menu } : s);
     let type = s.measurements ? 'body' : inferReportType(main ? main : { ...s });
     if (type === 'general' && s.menu) type = String(s.menu);
+    // 심박 기록은 메뉴(timer)가 아니라 기록 종류로 구분한다.
+    const isHeartRate = !main && s.data?.kind === HEART_RATE_RECORD_KIND;
+    if (isHeartRate) type = HEART_RATE_RECORD_KIND;
     entries.push({
       id: s.id,
       sessionId: s.id,
@@ -133,7 +139,7 @@ export function mergeMeasureEntries({ sessions = [], gait = [], posture = [], ro
       reportCollection: linked[0]?.col || '',
       source: main ? 'session+report' : 'session',
       type,
-      title: s.menuTitle || TYPE_LABEL[type] || '측정',
+      title: isHeartRate ? TYPE_LABEL.heart_rate : (s.menuTitle || TYPE_LABEL[type] || '측정'),
       date: s.recordedAt || dateOnly(isoOf(s)),
       at: isoOf(s) || isoOf(main),
       memo: s.memo || '',
@@ -168,6 +174,10 @@ export function mergeMeasureEntries({ sessions = [], gait = [], posture = [], ro
 /** 항목의 대표 지표(최대 limit개)와 신뢰도. 신체정보는 별도 카드가 처리하므로 빈 배열. */
 export function describeEntry(entry, limit = 4) {
   if (!entry || entry.type === 'body') return { metrics: [], confidence: { pct: null, source: '' } };
+  // 심박 기록: 평균·최고·시간만 값으로 보여준다(판정·신뢰도 없음).
+  if (entry.type === HEART_RATE_RECORD_KIND) {
+    return { metrics: heartRateHistoryMetrics(entry.payload).slice(0, limit), confidence: { pct: null, source: '' } };
+  }
   let metrics = [];
   let all = [];
   try {
