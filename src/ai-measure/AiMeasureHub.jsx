@@ -9,6 +9,8 @@ import { store, aiStore, makeGuestId } from '../demoData';
 import { todayYMD } from '../utils/dates';
 import { useAuth } from '../contexts/AuthContext';
 import { scopeMembersToTrainer, sortByName } from '../utils/memberList';
+// [트레이너 본인 기록 2026-11-11] 트레이너도 본인을 측정 대상으로 고를 수 있게 한다.
+import { withTrainerSelfSubjects } from '../utils/trainerSelf';
 import { buildRomPostureIntegration, pickLinkedPostureReport } from './core/romPostureIntegration';
 import { buildCrossMeasureIntegration, mergeIntegratedAssessment } from './core/crossMeasureContext';
 import { sanitizeReportPayload } from './core/unifiedReport';
@@ -28,7 +30,7 @@ export default function AiMeasureHub() {
   const { user } = useAuth();
   const navigate = useNavigate();
   // 트레이너 모드: 담당 회원만 / 모든 회원은 가나다 순으로 노출.
-  const [members] = useState(() => sortByName(scopeMembersToTrainer(store.getMembers(), user)));
+  const [members] = useState(() => withTrainerSelfSubjects(sortByName(scopeMembersToTrainer(store.getMembers(), user)), user, store.getTrainers()));
   const [memberId, setMemberId] = useState('');
   const [heightOverrides, setHeightOverrides] = useState({});
   const [active, setActive] = useState(null); // 선택된 메뉴 객체

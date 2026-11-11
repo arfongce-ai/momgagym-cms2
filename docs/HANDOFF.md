@@ -45,6 +45,13 @@
 
 ## 작업 로그
 
+### 2026-11-11 · Claude Code · 트레이너 본인 기록 1단계(신체정보·체력측정·분석·비교)
+- 요청: 등록된 트레이너도 CMS의 건강정보·체력측정·영양 기록을 본인용으로 사용. 대표님 결정: 열람은 본인 + 대표, 순서는 측정·건강정보 먼저(영양은 영양앱 연결 완료 후).
+- 방식: members 문서를 만들지 않고 대상 ID `trself_<트레이너ID>`로 기존 컬렉션(body/ai/gait·posture·rom_reports/users.reports)에 저장(`src/utils/trainerSelf.js`). 회원 수·매출·대시보드·Notion 집계 스크립트는 members 기준이라 섞이지 않는다. firestore.rules 변경 없음.
+- 화면: 메뉴 '내 기록'(`/my-records`, `src/pages/MyRecords.jsx`, 트레이너·관리자만) → 회원 상세(MemberDetail)의 신체정보·측정이력 탭만 재사용(`isTrainerSelf` 분기 3곳). 측정 허브·리포트의 대상 선택에 "이름 (트레이너)" 추가. 트레이너 관리 폼에 성별(선택) 추가 — 생년월일·성별은 trainers 문서에서 읽는다(규칙상 관리자만 수정).
+- 한계: 열람 범위는 화면 단 구분(규칙은 기존 측정 기록처럼 로그인 사용자 공통). 영양 기록 탭은 미포함(`functions/api/nutrition-link.js`가 members 문서를 확인하므로 2단계에서 서버 함수 확장 필요). 모미 음성 명령의 이름 검색에는 트레이너 대상이 없다.
+- 테스트·빌드 통과(3328 → 3341, 신규 trainer_self_records.test.js 13개). 모의 로그인·모의 데이터로 트레이너/대표/직원별 화면 확인. ⚠️ 실서버 계정으로 측정 저장 → 내 기록 표시는 확인 못 함.
+
 ### 2026-11-11 · Claude Code · 심박 기록 저장(개인 모드) + 측정 이력 표시
 - 추가: 14번 심박 패널 개인 모드에 `● 기록 시작 → ■ 기록 종료 → [회원 기록에 저장]`. 종료 시 평균·최고·최저·시간·구간별 시간을 요약(`heartRateBle.js` `summarizeHeartRateSamples`/`buildHeartRateRecord`)하고, 트레이너가 결과를 본 뒤 저장을 눌러야 저장된다.
 - 저장 경로: 기존 `onSave` → `AiMeasureHub.handleSave` → `aiStore.addSession`(ai 컬렉션, `menu:'timer'`, `data.kind:'heart_rate'`). 허브에는 `isHeartRate` 분기 3줄만 추가(alert 없이 세션 반환, 실패는 throw). 초 단위 원본은 저장 안 함 — 5초 이상 간격 평균 최대 360개(`bpmSeries`)만.
