@@ -224,7 +224,7 @@ describe('허브·패널 저장 연결', () => {
   });
   it('허브는 심박 기록을 alert 없이 돌려주고 실패는 전파한다', () => {
     expect(hub).toContain("const isHeartRate = active.id === 'timer' && data?.kind === 'heart_rate';");
-    expect(hub).toMatch(/if \(isHeartRate\) \{\s*return savedSession;/);
-    expect(hub).toContain('if (isHeartRate) throw e;');
+    expect(hub).toMatch(/if \(isHeartRate( \|\| isCardio)?\) \{\s*return savedSession;/);
+    expect(hub).toMatch(/if \(isHeartRate( \|\| isCardio)?\) throw e;/);
   });
 });

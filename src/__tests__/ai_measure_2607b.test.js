@@ -43,7 +43,9 @@ describe('[2607-1/4] 탭 순서 정리 및 던지기·스윙 제거', () => {
   it('신체 정보가 첫 탭, 도구(녹화/초시계)가 마지막 쪽에 온다', () => {
     const order = [...MEASURE_MENUS].sort((a, b) => a.no - b.no).map((m) => m.id);
     expect(order[0]).toBe('body');
-    expect(order.indexOf('timer')).toBe(order.length - 1);
+    // [15번 심폐지구력 2026-11-12] 대표님 요청으로 15번(cardio)이 초시계 바로 뒤 맨 끝.
+    expect(order.indexOf('timer')).toBe(order.length - 2);
+    expect(order[order.length - 1]).toBe('cardio');
     // 측정 흐름: 자세 → ROM → 보행 → 점프 → 리프팅
     expect(order.indexOf('posture')).toBeLessThan(order.indexOf('rom'));
     expect(order.indexOf('rom')).toBeLessThan(order.indexOf('jump'));

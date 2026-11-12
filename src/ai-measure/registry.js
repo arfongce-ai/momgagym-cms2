@@ -182,4 +182,15 @@ export const MEASURE_MENUS = [
     // [가로 허용 2026-11-12] 카메라 자세 판정이 없는 화면이라 세로·가로 모두 쓴다.
     orientation: 'any',
   },
+  {
+    // [15번 심폐지구력 2026-11-12] 로잉·에어바이크·스키 블루투스 + 심박 밴드 자동 기록 → 참고 VO2max.
+    id: 'cardio',
+    no: 15,
+    title: '심폐지구력 (VO2max)',
+    desc: '로잉·에어바이크·스키 장비 자동 기록, 심박·회복, 참고 VO2max',
+    icon: 'VO2',
+    status: 'ready',
+    component: lazy(() => import('./menus/CardioTestMeasure.jsx')),
+    orientation: 'any',
+  },
 ];
