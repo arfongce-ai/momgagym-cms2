@@ -679,3 +679,8 @@
 - 원인 추정: KeyTec 콘솔 FTMS 안에 Rower/Indoor Bike 데이터 칸이 함께 있을 때 첫 칸(Rower)만 구독. `fitnessMachineBle.js`가 이제 있는 데이터 칸 전부(+Cycling Power)를 구독, 값이 오는 칸의 종류를 데이터에 실음.
 - `CardioTestMeasure.jsx`: 바이크 신호가 오면 장비 카드 자동 전환(준비 화면), 연결 후 8초 무신호 경고(신호 칸·서비스 목록 표시), 측정 중 장비 숫자 없음 안내. 저장 기록에 characteristics·detectedKind 추가.
 - 테스트 276 파일 통과, 빌드 통과. 바이크 실기기 재확인 필요.
+
+## 2026-11-12 — 대시보드 1주·1달 표시 (fix/dashboard-axis-label, Claude)
+- 1주·1달 "권한 없음": 콘솔에 게시된 Firestore 규칙에 `dashboardDaily` 블록이 빠져 있었음(저장소 `firestore.rules`에는 있었음). 대표님이 콘솔에서 해당 4줄만 추가 게시(다른 규칙 변경 없음). 콘솔 규칙엔 여전히 `linkCodes`·`nutrition*` 블록은 없음(영양앱 연동 시 게시 필요).
+- 매출 그래프 축 금액 잘림: `MiniLineChart` 왼쪽 여백(46px)에 "1,075,200원"이 안 들어가 "75,200원"으로 보임 → `wonShort`(만/억 단위) 축 표시. 데이터·합계 계산은 정상이었음.
+- 테스트 277 파일 / 3,411 통과, 빌드 통과.

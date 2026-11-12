@@ -42,3 +42,13 @@ export function summarizeRange(dailyDocs, nDays, todayYMD) {
     byTrainer: [...trainerMap.values()].sort((a, b) => b.revenue - a.revenue),
   };
 }
+
+// [축 글자 잘림 수정 2026-11-12] 그래프 축 금액을 짧게: 1,075,200 → "107.5만", 9,000 → "9,000".
+// 그래프 왼쪽 여백이 좁아 "1,075,200원"의 앞자리가 잘려 "75,200원"으로 보이던 문제.
+export function wonShort(v) {
+  const n = Math.round(Number(v) || 0);
+  const abs = Math.abs(n);
+  if (abs >= 100000000) return `${Math.round(n / 10000000) / 10}억`;
+  if (abs >= 10000) return `${Math.round(n / 1000) / 10}만`;
+  return n.toLocaleString('ko-KR');
+}

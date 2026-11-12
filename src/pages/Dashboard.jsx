@@ -13,7 +13,7 @@ import { collection, query, orderBy, limit, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
 import { won } from '../services/finance';
 import { todayYMD } from '../utils/dates';
-import { summarizeRange } from '../utils/dashboardRollup';
+import { summarizeRange, wonShort } from '../utils/dashboardRollup';
 
 const REFRESH_MS = 10 * 60 * 1000; // 스냅샷이 30분마다 쌓이므로 10분이면 충분(읽기 절감). 탭이 숨겨져 있으면 건너뜀
 const SNAPSHOT_LIMIT = 48; // 30분 간격 × 48 = 최근 24시간(오늘 것만 골라 그림)
@@ -248,7 +248,7 @@ export default function Dashboard() {
 
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4">
             <h2 className="text-sm font-bold text-slate-600 dark:text-slate-300 mb-2">오늘 누적 매출 추이</h2>
-            <MiniLineChart points={revenuePoints} color="#f59e0b" formatY={(v) => won(v)} />
+            <MiniLineChart points={revenuePoints} color="#f59e0b" formatY={(v) => wonShort(v)} />
           </div>
 
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4">
@@ -286,7 +286,7 @@ export default function Dashboard() {
 
               <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4">
                 <h2 className="text-sm font-bold text-slate-600 dark:text-slate-300 mb-2">일별 매출</h2>
-                <MiniLineChart points={dayPoints('revenue')} color="#f59e0b" formatY={(v) => won(v)} />
+                <MiniLineChart points={dayPoints('revenue')} color="#f59e0b" formatY={(v) => wonShort(v)} />
               </div>
               <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4">
                 <h2 className="text-sm font-bold text-slate-600 dark:text-slate-300 mb-2">일별 신규 회원</h2>
