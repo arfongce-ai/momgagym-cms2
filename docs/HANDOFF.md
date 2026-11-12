@@ -664,3 +664,12 @@
 - 수정: 위 3종도 sanitizeReportPayload 적용 + 실패 시 throw(호출부 error 배너·재시도).
 - 영상: 정책상(storagePolicy.videoStored:false, 회원 영상 PC 로컬) Firestore 저장 안 함. 리포트 화면 메모리에만 존재 — 실기기 확인 못 함.
 - 테스트 3282/3282, 빌드 통과.
+
+## 2026-11-12 — AI분석 15번 심폐지구력(VO2max) 추가 (feat/cardio-vo2max, Claude)
+- 새 파일: `core/fitnessMachineBle.js`(FTMS Rower/Indoor Bike/Cross Trainer + Cycling Power 해석·연결, 표준 아닌 장비는 서비스 목록 안내), `core/cardioTest.js`(테스트 정의·설명, 1초 기록, 요약, 참고 추정, 누적 보정), `menus/CardioTestMeasure.jsx`(15번 화면).
+- 추정: 로잉 2000m → Hagerman(Concept2 파워식), 에어바이크 Åstrand 6분(125~170·5/6분 차 ≤5), 단계 테스트 → 심박-와트 직선 연장 최대파워(+바이크 ACSM 사이클식). 스키·트레드밀·클라이머는 기록만. 전부 "참고 추정 + 신뢰 A/B/C + 이유" 저장, 판정 없음.
+- 누적: 개인 최대심박(실측 최고 > 220-나이면 교체), 같은 회원·장비 단계 테스트 점 180일 풀링, 트레이너 입력 실측 VO2max로 보정계수(중앙값).
+- 저장: ai 세션(menu 'cardio', kind 'cardio_test')에 1초 원본(hr/w/cad/dist, 최대 3600초) 포함. 허브 `isCardio` 분기(alert 없이 세션 반환, 실패 전파). 이력 '심폐지구력' 표시, 음성 키워드 'cardio'.
+- 기존 테스트 2개("timer가 맨 끝")를 15번 순서에 맞게 갱신.
+- 테스트 276 파일 / 3,407 통과(기준선 3,282 이상, 새 실패 0), 빌드 통과.
+- 확인 못 함: 실제 KeyTec·Overmax 장비가 FTMS 표준인지(실기기 연결 미시험), 에어바이크 와트 정밀도.

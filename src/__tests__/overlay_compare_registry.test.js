@@ -21,7 +21,9 @@ describe('registry.js — 전/후 비교(compare) 메뉴 등록', () => {
 
   it('timer는 여전히 정렬 후 배열 맨 끝이다(기존 불변식 유지)', () => {
     const order = [...MEASURE_MENUS].sort((a, b) => a.no - b.no).map((m) => m.id);
-    expect(order.indexOf('timer')).toBe(order.length - 1);
+    // [15번 심폐지구력 2026-11-12] 15번(cardio)만 초시계 뒤에 온다.
+    expect(order.indexOf('timer')).toBe(order.length - 2);
+    expect(order[order.length - 1]).toBe('cardio');
     expect(order[0]).toBe('body');
   });
 
