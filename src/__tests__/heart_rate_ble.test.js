@@ -105,7 +105,7 @@ describe('TimerTool 연결', () => {
   const src = readFileSync(new URL('../ai-measure/menus/TimerTool.jsx', import.meta.url), 'utf8');
   it('심박 패널이 도구(초시계 등) 아래에 한 번만 들어가 있다', () => {
     expect(src.match(/<HeartRatePanel /g)).toHaveLength(1);
-    expect(src.indexOf('<HeartRatePanel ')).toBeGreaterThan(src.indexOf('<Metronome command={liveCommand} />'));
+    expect(src.indexOf('<HeartRatePanel ')).toBeGreaterThan(src.indexOf('<Metronome '));
   });
 });
 

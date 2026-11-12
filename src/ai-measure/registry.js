@@ -42,6 +42,8 @@ export const MEASURE_MENUS = [
     icon: 'BIO',
     status: 'ready',
     component: lazy(() => import('./menus/BodyInfoMeasure.jsx')),
+    // [가로 허용 2026-11-12] 카메라 자세 판정이 없는 화면이라 세로·가로 모두 쓴다.
+    orientation: 'any',
   },
   {
     id: 'posture',
@@ -144,6 +146,8 @@ export const MEASURE_MENUS = [
     icon: 'CMP',
     status: 'ready',
     component: lazy(() => import('./menus/OverlayCompare.jsx')),
+    // [가로 허용 2026-11-12] 카메라 자세 판정이 없는 화면이라 세로·가로 모두 쓴다.
+    orientation: 'any',
   },
   {
     id: 'imaging',
@@ -153,6 +157,8 @@ export const MEASURE_MENUS = [
     icon: 'IMG',
     status: 'ready',
     component: lazy(() => import('./menus/ImagingMeasure.jsx')),
+    // [가로 허용 2026-11-12] 카메라 자세 판정이 없는 화면이라 세로·가로 모두 쓴다.
+    orientation: 'any',
   },
   {
     id: 'record',
@@ -162,6 +168,8 @@ export const MEASURE_MENUS = [
     icon: 'REC',
     status: 'ready',
     component: lazy(() => import('./menus/RecordMeasure.jsx')),
+    // [가로 허용 2026-11-12] 카메라 자세 판정이 없는 화면이라 세로·가로 모두 쓴다.
+    orientation: 'any',
   },
   {
     id: 'timer',
@@ -171,5 +179,7 @@ export const MEASURE_MENUS = [
     icon: 'TMR',
     status: 'ready',
     component: lazy(() => import('./menus/TimerTool.jsx')),
+    // [가로 허용 2026-11-12] 카메라 자세 판정이 없는 화면이라 세로·가로 모두 쓴다.
+    orientation: 'any',
   },
 ];
