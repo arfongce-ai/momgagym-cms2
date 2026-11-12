@@ -147,6 +147,10 @@ export default function CardioTestMeasure({ onBack, member = null, onSave = null
   const [bandInfo, setBandInfo] = useState(null);
   const [connecting, setConnecting] = useState('');
   const [error, setError] = useState('');
+  // [바이크 인식 수정 2026-11-12] 실제로 값이 오는 신호 종류(rower/bike/cross)와 안내 문구
+  const [detectedKind, setDetectedKind] = useState(null);
+  const [notice, setNotice] = useState('');
+  const connectedAtRef = useRef(0);
 
   const connectMachine = async (showAll = false) => {
     if (connecting) return;
@@ -155,11 +159,17 @@ export default function CardioTestMeasure({ onBack, member = null, onSave = null
       machineRef.current?.disconnect();
       const handle = await connectFitnessMachine({
         showAll,
-        onData: (d) => { machineLive.current = { ...machineLive.current, ...d, at: Date.now() }; },
+        onData: (d) => {
+          machineLive.current = { ...machineLive.current, ...d, at: Date.now() };
+          if (d.machineKind && (d.powerW != null || d.cadence != null || d.distanceM != null)) setDetectedKind(d.machineKind);
+        },
         onStatus: (status) => setMachineInfo((m) => (m ? { ...m, status } : m)),
       });
       machineRef.current = handle;
-      setMachineInfo({ name: handle.name, protocol: handle.protocol, machineKind: handle.machineKind, services: handle.services, status: 'connected' });
+      machineLive.current = {};
+      setDetectedKind(null);
+      connectedAtRef.current = Date.now();
+      setMachineInfo({ name: handle.name, protocol: handle.protocol, machineKind: handle.machineKind, services: handle.services, characteristics: handle.characteristics || [], status: 'connected' });
     } catch (err) {
       setError(machineError(err));
     } finally { setConnecting(''); }
@@ -330,7 +340,7 @@ export default function CardioTestMeasure({ onBack, member = null, onSave = null
     const record = buildCardioRecord({
       protocolId: run.protocolId,
       machineId: run.machineId,
-      machine: machineInfo,
+      machine: machineInfo ? { ...machineInfo, detectedKind } : null,
       startedAt: run.startedAt,
       endedAt: run.endedAt,
       rec: recRef.current,
@@ -368,6 +378,23 @@ export default function CardioTestMeasure({ onBack, member = null, onSave = null
     setProtocolId(first?.id || 'free');
     if (STEP_DEFAULTS[id]) setStepPlan({ ...STEP_DEFAULTS[id] });
   };
+
+  // 장비가 보내는 신호 종류로 장비 카드를 자동으로 맞춘다(준비 화면에서만).
+  useEffect(() => {
+    if (phase !== 'setup' || !detectedKind) return;
+    if (detectedKind === 'bike' && machineId !== 'bike') {
+      pickMachine('bike');
+      setNotice('바이크 신호가 들어와서 장비를 "에어바이크"로 바꿨습니다.');
+    } else if (detectedKind !== 'bike' && machineId === 'bike') {
+      pickMachine('rower');
+      setNotice('로잉 계열 신호가 들어와서 장비를 "로잉머신"으로 바꿨습니다. 스키라면 "스키에르고미터"를 눌러 주세요.');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detectedKind, phase]);
+
+  const machineSilent = Boolean(machineInfo && machineInfo.status === 'connected'
+    && Date.now() - connectedAtRef.current > 8000
+    && (!machineLive.current.at || Date.now() - machineLive.current.at > FRESH_MS));
 
   const inputCls = 'mt-1 w-full rounded-lg border-2 border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-2 py-1.5 text-sm text-slate-800 dark:text-slate-100';
 
@@ -457,6 +484,12 @@ export default function CardioTestMeasure({ onBack, member = null, onSave = null
                 장비가 목록에 안 보이면: 모든 블루투스 기기 보기
               </button>
             )}
+            {notice && <p className="mt-1 text-[11px] font-bold text-emerald-700 dark:text-emerald-300">{notice}</p>}
+            {machineSilent && (
+              <p className="mt-1 text-[11px] font-bold text-amber-700 dark:text-amber-300" data-testid="cardio-machine-silent">
+                장비는 연결됐지만 숫자가 안 들어옵니다. 페달·노를 몇 번 움직여 보세요. 계속 안 되면 이 문구를 캡처해 보내 주세요 — 신호 칸: {(machineInfo.characteristics || []).join(', ') || '없음'} / 서비스: {(machineInfo.services || []).join(', ') || '없음'}
+              </p>
+            )}
             {kindMismatch && <p className="mt-1 text-[11px] font-bold text-amber-700 dark:text-amber-300">연결된 장비가 바이크 신호가 아닙니다({machineInfo.machineKind}). 장비를 다시 골랐는지 확인하세요.</p>}
             <div className="mt-2 grid grid-cols-4 gap-1">
               <Tile label="심박" value={live.hr || '--'} unit={live.hrFrom === 'machine' ? '장비' : ''} />
@@ -500,6 +533,11 @@ export default function CardioTestMeasure({ onBack, member = null, onSave = null
                 </>
               )}
             </div>
+            {phase === 'running' && machineMeta.ble && rec.t.length > 10 && live.powerW == null && live.distanceM == null && (
+              <p className="rounded-lg bg-amber-100 dark:bg-amber-900/40 p-2 text-[11px] font-bold text-amber-800 dark:text-amber-200">
+                장비 숫자가 안 들어오고 있습니다(심박만 기록 중). 끝난 뒤 결과 화면에 장비 화면 숫자를 입력하면 저장됩니다.
+              </p>
+            )}
             <div className="grid grid-cols-3 gap-2">
               <Tile big label="심박" value={live.hr || '--'} tone={zone ? 'border-red-400 bg-red-50 dark:bg-red-900/30' : ''} />
               <Tile big label="와트" value={live.powerW ?? '--'} />

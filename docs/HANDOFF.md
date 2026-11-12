@@ -673,3 +673,9 @@
 - 기존 테스트 2개("timer가 맨 끝")를 15번 순서에 맞게 갱신.
 - 테스트 276 파일 / 3,407 통과(기준선 3,282 이상, 새 실패 0), 빌드 통과.
 - 확인 못 함: 실제 KeyTec·Overmax 장비가 FTMS 표준인지(실기기 연결 미시험), 에어바이크 와트 정밀도.
+
+## 2026-11-12 — 15번 바이크 장비 신호 미수신 수정 (fix/cardio-bike-ftms, Claude)
+- 현장 확인: 스키(Overmax)·로잉(KeyTec) 실기기 연결·수신 정상. 바이크(KeyTec)는 심박만 오고 와트·rpm·거리 없음.
+- 원인 추정: KeyTec 콘솔 FTMS 안에 Rower/Indoor Bike 데이터 칸이 함께 있을 때 첫 칸(Rower)만 구독. `fitnessMachineBle.js`가 이제 있는 데이터 칸 전부(+Cycling Power)를 구독, 값이 오는 칸의 종류를 데이터에 실음.
+- `CardioTestMeasure.jsx`: 바이크 신호가 오면 장비 카드 자동 전환(준비 화면), 연결 후 8초 무신호 경고(신호 칸·서비스 목록 표시), 측정 중 장비 숫자 없음 안내. 저장 기록에 characteristics·detectedKind 추가.
+- 테스트 276 파일 통과, 빌드 통과. 바이크 실기기 재확인 필요.

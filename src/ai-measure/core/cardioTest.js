@@ -452,7 +452,7 @@ export function buildCardioRecord({ protocolId, machineId, machine = null, start
     protocolLabel: protocol?.label || '',
     machineId,
     machineLabel: CARDIO_MACHINES[machineId]?.label || machineId,
-    machine: machine ? { name: String(machine.name || '').slice(0, 40), protocol: machine.protocol || null, reportedKind: machine.machineKind || null, services: (machine.services || []).slice(0, 12) } : null,
+    machine: machine ? { name: String(machine.name || '').slice(0, 40), protocol: machine.protocol || null, reportedKind: machine.machineKind || null, services: (machine.services || []).slice(0, 12), characteristics: (machine.characteristics || []).slice(0, 6), detectedKind: machine.detectedKind || null } : null,
     startedAt: startedAt || null,
     endedAt: endedAt || null,
     hrSource,
