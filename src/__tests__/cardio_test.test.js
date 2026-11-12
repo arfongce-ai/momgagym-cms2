@@ -279,6 +279,10 @@ describe('화면·허브 배선', () => {
   it('화면을 나가면 장비·밴드 연결을 끊는다', () => {
     expect(screen).toMatch(/machineRef\.current\?\.disconnect\(\);\s*bandRef\.current\?\.disconnect\(\);/);
   });
+  it('바이크는 속도로 /1km 페이스를 계산해 보여준다', () => {
+    expect(screen).toContain('formatPace(live.speedKmh > 0 ? 3600 / live.speedKmh : null)');
+    expect(screen).toContain('speedKmh: mFresh ? m.speedKmh ?? null : null');
+  });
   it('바이크 신호가 오면 장비 카드를 바이크로 자동 전환, 무신호 경고', () => {
     expect(screen).toContain("if (detectedKind === 'bike' && machineId !== 'bike')");
     expect(screen).toContain('data-testid="cardio-machine-silent"');

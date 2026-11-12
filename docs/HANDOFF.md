@@ -679,3 +679,9 @@
 - 원인 추정: KeyTec 콘솔 FTMS 안에 Rower/Indoor Bike 데이터 칸이 함께 있을 때 첫 칸(Rower)만 구독. `fitnessMachineBle.js`가 이제 있는 데이터 칸 전부(+Cycling Power)를 구독, 값이 오는 칸의 종류를 데이터에 실음.
 - `CardioTestMeasure.jsx`: 바이크 신호가 오면 장비 카드 자동 전환(준비 화면), 연결 후 8초 무신호 경고(신호 칸·서비스 목록 표시), 측정 중 장비 숫자 없음 안내. 저장 기록에 characteristics·detectedKind 추가.
 - 테스트 276 파일 통과, 빌드 통과. 바이크 실기기 재확인 필요.
+
+## 2026-11-12 — 15번 바이크 페이스 표시 (fix/cardio-bike-pace, Claude)
+- 현장 확인: KeyTec 에어바이크 실기기 와트·rpm·거리·심박 수신 정상(PR #37 효과). 페이스만 "-".
+- 원인: FTMS Indoor Bike Data는 페이스가 아니라 속도(km/h)를 보냄. 화면은 /500m 페이스만 읽었음.
+- 수정: `CardioTestMeasure.jsx` 바이크일 때 속도로 /1km 페이스(3600/km/h) 표시(콘솔과 같은 단위).
+- 테스트 276 파일 / 3,410 통과, 빌드 통과.
