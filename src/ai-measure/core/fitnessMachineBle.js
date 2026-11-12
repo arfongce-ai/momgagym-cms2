@@ -145,10 +145,10 @@ export function parseCyclingPower(view, prev = null) {
   return { data, crank };
 }
 
-const FTMS_PARSERS = [
-  [FTMS_ROWER_DATA, parseRowerData],
-  [FTMS_INDOOR_BIKE_DATA, parseIndoorBikeData],
-  [FTMS_CROSS_TRAINER_DATA, parseCrossTrainerData],
+export const FTMS_PARSERS = [
+  [FTMS_ROWER_DATA, parseRowerData, 'Rower Data'],
+  [FTMS_INDOOR_BIKE_DATA, parseIndoorBikeData, 'Indoor Bike Data'],
+  [FTMS_CROSS_TRAINER_DATA, parseCrossTrainerData, 'Cross Trainer Data'],
 ];
 
 export function serviceLabel(uuid) {
@@ -176,38 +176,55 @@ export async function connectFitnessMachine({ onData, onStatus, showAll = false 
     : { filters: [{ services: [FTMS_SERVICE] }, { services: [CYCLING_POWER_SERVICE] }], optionalServices: DIAGNOSTIC_SERVICES });
 
   let closed = false;
-  let subscribed = null; // { characteristic, handler }
-  let info = { protocol: null, machineKind: null, services: [] };
+  let subscribed = []; // [{ characteristic, handler }]
+  let info = { protocol: null, machineKind: null, services: [], characteristics: [] };
+
+  // [바이크 인식 수정 2026-11-12] KeyTec 로잉·바이크는 같은 계열 콘솔이라 FTMS 안에
+  // 로잉용·바이크용 데이터 칸이 함께 있을 수 있다. 예전엔 처음 찾은 칸(로잉용) 하나만 들어서
+  // 바이크가 보내는 숫자를 못 받았다 → 있는 데이터 칸을 전부 듣고, 실제로 값이 오는 칸의
+  // 종류(machineKind)를 데이터에 실어 보낸다.
+  const listen = async (ch, toData) => {
+    const handler = (e) => { const d = toData(e.target.value); if (d) onData?.(d); };
+    ch.addEventListener('characteristicvaluechanged', handler);
+    await ch.startNotifications();
+    subscribed.push({ characteristic: ch, handler });
+  };
 
   const openSteps = async () => {
     const server = await device.gatt.connect();
     let services = [];
     try { services = await server.getPrimaryServices(); } catch { services = []; }
     info.services = services.map((s) => serviceLabel(s.uuid));
+    info.characteristics = [];
+    subscribed = [];
 
     const ftms = services.find((s) => String(s.uuid).toLowerCase().startsWith('00001826'));
     if (ftms) {
-      for (const [uuid, parse] of FTMS_PARSERS) {
+      for (const [uuid, parse, label] of FTMS_PARSERS) {
         let ch = null;
         try { ch = await ftms.getCharacteristic(uuid); } catch { ch = null; }
         if (!ch) continue;
-        const handler = (e) => { const d = parse(e.target.value); if (d) onData?.(d); };
-        ch.addEventListener('characteristicvaluechanged', handler);
-        await ch.startNotifications();
-        subscribed = { characteristic: ch, handler };
-        info = { ...info, protocol: 'ftms', machineKind: parse === parseRowerData ? 'rower' : parse === parseIndoorBikeData ? 'bike' : 'cross' };
-        return server;
+        try {
+          await listen(ch, parse);
+          info.characteristics.push(label);
+        } catch { /* 이 칸은 알림을 지원하지 않음 */ }
       }
     }
     const cps = services.find((s) => String(s.uuid).toLowerCase().startsWith('00001818'));
     if (cps) {
-      const ch = await cps.getCharacteristic(CYCLING_POWER_MEASUREMENT);
-      let crank = null;
-      const handler = (e) => { const res = parseCyclingPower(e.target.value, crank); crank = res.crank; if (res.data) onData?.(res.data); };
-      ch.addEventListener('characteristicvaluechanged', handler);
-      await ch.startNotifications();
-      subscribed = { characteristic: ch, handler };
-      info = { ...info, protocol: 'cps', machineKind: 'bike' };
+      try {
+        const ch = await cps.getCharacteristic(CYCLING_POWER_MEASUREMENT);
+        let crank = null;
+        await listen(ch, (value) => { const res = parseCyclingPower(value, crank); crank = res.crank; return res.data; });
+        info.characteristics.push('Cycling Power');
+      } catch { /* 없음 */ }
+    }
+    if (subscribed.length) {
+      info.protocol = ftms ? 'ftms' : 'cps';
+      // 칸이 하나뿐이면 종류가 확정, 여러 개면 실제 값이 오는 칸으로 화면에서 판단한다.
+      info.machineKind = info.characteristics.length === 1
+        ? ({ 'Rower Data': 'rower', 'Indoor Bike Data': 'bike', 'Cross Trainer Data': 'cross', 'Cycling Power': 'bike' })[info.characteristics[0]]
+        : null;
       return server;
     }
     const err = new Error('unsupported-machine');
@@ -218,8 +235,10 @@ export async function connectFitnessMachine({ onData, onStatus, showAll = false 
   const open = () => withTimeout(openSteps(), MACHINE_CONNECT_TIMEOUT_MS);
 
   const release = () => {
-    try { subscribed?.characteristic.removeEventListener('characteristicvaluechanged', subscribed.handler); } catch { /* 이미 끊김 */ }
-    subscribed = null;
+    for (const sub of subscribed) {
+      try { sub.characteristic.removeEventListener('characteristicvaluechanged', sub.handler); } catch { /* 이미 끊김 */ }
+    }
+    subscribed = [];
   };
 
   const handleDisconnect = async () => {
@@ -251,6 +270,7 @@ export async function connectFitnessMachine({ onData, onStatus, showAll = false 
     protocol: info.protocol,
     machineKind: info.machineKind,
     services: info.services,
+    characteristics: info.characteristics,
     disconnect() {
       closed = true;
       device.removeEventListener('gattserverdisconnected', handleDisconnect);

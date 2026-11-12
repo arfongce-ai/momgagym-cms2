@@ -61,6 +61,44 @@ describe('FTMS 신호 해석', () => {
   });
 });
 
+describe('장비 연결: 데이터 칸 여러 개(바이크 인식 수정)', () => {
+  // 로잉용·바이크용 칸이 둘 다 있고 바이크용만 값을 보내는 콘솔을 흉내 낸다.
+  function fakeChar() {
+    const listeners = [];
+    return {
+      addEventListener: (_t, fn) => listeners.push(fn),
+      removeEventListener: () => {},
+      startNotifications: async () => {},
+      emit: (bytes) => listeners.forEach((fn) => fn({ target: { value: dv(bytes) } })),
+    };
+  }
+  it('있는 칸을 모두 듣고, 값이 오는 바이크 칸의 데이터를 받는다', async () => {
+    const { connectFitnessMachine, FTMS_INDOOR_BIKE_DATA, FTMS_ROWER_DATA } = await import('../ai-measure/core/fitnessMachineBle');
+    const rowerCh = fakeChar();
+    const bikeCh = fakeChar();
+    const ftms = {
+      uuid: '00001826-0000-1000-8000-00805f9b34fb',
+      getCharacteristic: async (u) => (u === FTMS_ROWER_DATA ? rowerCh : u === FTMS_INDOOR_BIKE_DATA ? bikeCh : Promise.reject(new Error('none'))),
+    };
+    const device = {
+      id: 'd1', name: 'KeyTec Bike',
+      addEventListener() {}, removeEventListener() {},
+      gatt: { connected: true, connect: async () => ({ getPrimaryServices: async () => [ftms] }), disconnect() {} },
+    };
+    const prev = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+    Object.defineProperty(globalThis, 'navigator', { value: { bluetooth: { requestDevice: async () => device } }, configurable: true, writable: true });
+    const got = [];
+    const handle = await connectFitnessMachine({ onData: (d) => got.push(d) });
+    expect(handle.characteristics).toEqual(['Rower Data', 'Indoor Bike Data']);
+    expect(handle.machineKind).toBeNull(); // 칸이 여러 개면 실제 값으로 판단
+    const flags = 0x0004 | 0x0040; // 속도(bit0=0)·케이던스·파워
+    bikeCh.emit([flags & 0xff, flags >> 8, 0xb8, 0x0b, 120, 0, 180, 0]);
+    expect(got[0]).toMatchObject({ machineKind: 'bike', cadence: 60, powerW: 180 });
+    handle.disconnect();
+    if (prev) Object.defineProperty(globalThis, 'navigator', prev);
+  });
+});
+
 describe('추정 공식', () => {
   it('Concept2 파워 공식과 Hagerman: 2000m 7:00, 80kg ≈ 58.8', () => {
     expect(Math.round(wattsFromPace(420, 2000))).toBe(302);
@@ -240,6 +278,10 @@ describe('화면·허브 배선', () => {
   });
   it('화면을 나가면 장비·밴드 연결을 끊는다', () => {
     expect(screen).toMatch(/machineRef\.current\?\.disconnect\(\);\s*bandRef\.current\?\.disconnect\(\);/);
+  });
+  it('바이크 신호가 오면 장비 카드를 바이크로 자동 전환, 무신호 경고', () => {
+    expect(screen).toContain("if (detectedKind === 'bike' && machineId !== 'bike')");
+    expect(screen).toContain('data-testid="cardio-machine-silent"');
   });
   it('음성명령으로 15번을 연다', () => {
     expect(read('services/voiceCommandService.js')).toContain("{ id: 'cardio', keywords:");
