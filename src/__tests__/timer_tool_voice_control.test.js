@@ -133,10 +133,22 @@ describe('TimerTool.jsx — 기본 export: 탭 전환 + 명령 전달', () => {
     expect(busBody).toContain('setTab(cmd.tool);');
   });
 
-  it('현재 탭에 해당하는 컴포넌트에만 liveCommand를 command prop으로 내려준다', () => {
-    expect(body).toContain('<Stopwatch command={liveCommand} />');
-    expect(body).toContain('<Countdown command={liveCommand} />');
-    expect(body).toContain('<IntervalTimer command={liveCommand} />');
-    expect(body).toContain('<Metronome command={liveCommand} />');
+  it('명령은 cmd.tool 과 같은 도구에만 내려준다(4개 도구가 항상 마운트돼 있으므로)', () => {
+    expect(body).toContain("<Stopwatch command={commandFor('stopwatch')} />");
+    expect(body).toContain("<Countdown command={commandFor('countdown')} />");
+    expect(body).toContain("<IntervalTimer command={commandFor('interval')} />");
+    expect(body).toContain("command={commandFor('metronome')}");
+    expect(body).toContain("liveCommand?.tool === tool ? liveCommand : null");
+  });
+
+  it('[동시 사용 2026-11-12] 메트로놈을 초시계·타이머·인터벌과 함께 켤 수 있고, 메트로놈은 한 개만 마운트한다', () => {
+    expect(body).toContain('＋ 메트로놈 함께 켜기');
+    expect(body.match(/<Metronome /g)).toHaveLength(1);
+    expect(body).toContain("const showMetronome = tab === 'metronome' || withMetronome;");
+  });
+
+  it('[동시 사용 2026-11-12] 함께 켜기 없이 메트로놈 탭을 떠나거나 함께 켜기를 닫으면 메트로놈을 멈춘다', () => {
+    expect(body).toMatch(/tab === 'metronome' && next !== 'metronome' && !withMetronomeRef\.current\) stopMetronome\(\)/);
+    expect(body).toMatch(/if \(withMetronome\) stopMetronome\(\);/);
   });
 });

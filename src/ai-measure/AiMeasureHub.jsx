@@ -347,7 +347,11 @@ export default function AiMeasureHub() {
   // 덮어써버림) 가로 화면을 못 쓰게 된다. id를 하드코딩하지 않고 registry 필드를
   // 보는 이유는 앞으로 가로가 필요한 측정이 늘어도 이 줄을 안 고치기 위해서다.
   // 나머지(보행/점프/자세/ROM 등)는 원래대로 세로 기준 레이아웃이라 계속 세로 고정.
-  const isPortraitBlocked = useLockPortrait(active?.orientation !== 'landscape');
+  // [가로 허용 2026-11-12] orientation:'any'(신체정보·전/후 비교·영상 확인·일반 녹화·초시계)는
+  //  세로·가로 모두 허용. 메뉴 목록 화면도 고정하지 않는다 — 가로로 쓰던 메뉴에서 '← 메뉴'로
+  //  나왔을 때 "세로로 돌려주세요"가 덮이지 않게. 카메라 판정 측정(2~6, 8~10)만 세로 고정.
+  const needsPortrait = Boolean(active) && active.orientation !== 'landscape' && active.orientation !== 'any';
+  const isPortraitBlocked = useLockPortrait(needsPortrait);
 
   // ── 폰(브라우저) 뒤로가기 연동 ──
   // 측정 메뉴가 열려 있으면(active) 폰 뒤로가기 = 허브(메뉴 목록)로 복귀.
@@ -496,7 +500,8 @@ export default function AiMeasureHub() {
     // 화면(JumpAnalysisHub.jsx, 카메라 뷰)이라 같은 넓은 레이아웃을 쓴다.
     const wideMeasure = active.id === 'gait' || active.id === 'jump' || active.id === 'broadjump' || active.id === 'posture' || active.id === 'rom' || active.id === 'lifting' || active.id === 'compare' || active.id === 'imaging';
     return (
-      <div className={`${wideMeasure ? 'max-w-6xl' : 'max-w-md'} mx-auto`}>
+      // [가로 허용 2026-11-12] 초시계(14번)는 가로일 때 도구 | 심박 2열로 넓힌다.
+      <div className={`${wideMeasure ? 'max-w-6xl' : active.id === 'timer' ? 'max-w-md landscape:max-w-4xl' : 'max-w-md'} mx-auto`}>
         {isPortraitBlocked && <RotateHint />}
         <Suspense fallback={<div className="text-center text-slate-500 dark:text-slate-400 py-10 text-sm">모듈 로딩 중…</div>}>
           <Comp

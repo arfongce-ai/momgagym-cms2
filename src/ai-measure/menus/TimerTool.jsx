@@ -747,11 +747,38 @@ export function IntervalTimer({ compact = false, command = null }) {
 
 export default function TimerTool({ onBack, member = null, onSave = null }) {
   const [tab, setTab] = useState('stopwatch');
+  // [동시 사용 2026-11-12] 초시계·타이머·인터벌을 보면서 메트로놈도 함께 켜 두는 옵션.
+  //  메트로놈은 한 개만 마운트해 두고 '보이기'만 바꾼다 — 소리가 두 겹으로 나지 않는다.
+  const [withMetronome, setWithMetronome] = useState(false);
+  const withMetronomeRef = useRef(false);
+  useEffect(() => { withMetronomeRef.current = withMetronome; }, [withMetronome]);
+  const tabRef = useRef('stopwatch');
+  useEffect(() => { tabRef.current = tab; }, [tab]);
   // [음성 타이머 제어 2026-08-09] 화면이 이미 열려 있을 때 momi가 실시간으로
-  // 실행시킬 명령. 부모(이 컴포넌트)가 tool 탭 전환과 명령 전달을 함께 맡는다 —
-  // 4개 하위 도구는 한 번에 하나만 마운트돼 있으므로(아래 삼항연산자), 명령이
-  // 다른 탭을 가리키면 먼저 그 탭으로 전환해야 해당 도구가 명령을 받을 수 있다.
+  // 실행시킬 명령. 부모(이 컴포넌트)가 tool 탭 전환과 명령 전달을 함께 맡는다.
+  // [동시 사용 2026-11-12] 4개 도구를 항상 마운트해 두므로(탭을 바꿔도 돌던 도구가
+  // 멈추지 않음) 명령은 cmd.tool 과 같은 도구에만 내려준다(commandFor).
   const [liveCommand, setLiveCommand] = useState(null);
+  // 메트로놈은 음성 명령 + 화면 쪽 '정지'를 함께 받으므로 전용 명령 칸을 둔다
+  //  (다른 도구 명령이 와도 지난 메트로놈 명령이 다시 실행되지 않게).
+  const [metroCommand, setMetroCommand] = useState(null);
+  const sendCommand = (cmd) => {
+    if (cmd.tool === 'metronome') setMetroCommand(cmd);
+    else setLiveCommand(cmd);
+  };
+  const commandFor = (tool) => (tool === 'metronome' ? metroCommand : (liveCommand?.tool === tool ? liveCommand : null));
+  const stopMetronome = () => setMetroCommand({ tool: 'metronome', action: 'stop', id: `ui_stop_${Date.now()}` });
+
+  // 탭 이동: 메트로놈을 '함께 켜기' 하지 않은 채 메트로놈 탭을 떠나면 예전처럼 멈춘다
+  //  (보이지 않는 곳에서 소리만 계속 나는 일 방지).
+  const selectTab = (next) => {
+    if (tab === 'metronome' && next !== 'metronome' && !withMetronomeRef.current) stopMetronome();
+    setTab(next);
+  };
+  const toggleWithMetronome = () => {
+    if (withMetronome) stopMetronome(); // 닫으면 소리도 끈다
+    setWithMetronome(!withMetronome);
+  };
 
   // 이 화면이 열리기 전에 momi 명령이 왔으면(voiceCommandService.js가 화면
   // 이동시키며 1회성으로 담아둔 값) 마운트 시 한 번 꺼내서 해당 탭으로 열고
@@ -762,7 +789,7 @@ export default function TimerTool({ onBack, member = null, onSave = null }) {
     const pending = consumePendingTimerCommand();
     if (pending?.tool) {
       setTab(pending.tool);
-      setLiveCommand({ ...pending, id: `pending_${Date.now()}` });
+      sendCommand({ ...pending, id: `pending_${Date.now()}` });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -770,11 +797,17 @@ export default function TimerTool({ onBack, member = null, onSave = null }) {
   useEffect(() => {
     const unsubscribe = subscribeTimerControl((cmd) => {
       if (!cmd?.tool) return;
-      setTab(cmd.tool);
-      setLiveCommand({ ...cmd, id: `live_${Date.now()}_${Math.random()}` });
+      // 메트로놈을 '함께 켜기'로 이미 띄워 둔 상태면 화면(탭)은 그대로 두고 메트로놈만 조작한다.
+      if (!(cmd.tool === 'metronome' && withMetronomeRef.current)) {
+        if (tabRef.current === 'metronome' && cmd.tool !== 'metronome' && !withMetronomeRef.current) stopMetronome();
+        setTab(cmd.tool);
+      }
+      sendCommand({ ...cmd, id: `live_${Date.now()}_${Math.random()}` });
     });
     return unsubscribe;
   }, []);
+
+  const showMetronome = tab === 'metronome' || withMetronome;
 
   return (
     <div className="space-y-4">
@@ -783,25 +816,40 @@ export default function TimerTool({ onBack, member = null, onSave = null }) {
         <h2 className="measure-title">초시계 · 타이머 · 메트로놈</h2>
         <span className="w-12" />
       </div>
-      <SoundVolumeControl />
-      <div className="flex gap-1 rounded-xl bg-slate-100 dark:bg-slate-800 p-1">
-        {[
-          ['stopwatch', '초시계'],
-          ['countdown', '타이머'],
-          ['interval', '인터벌'],
-          ['metronome', '메트로놈'],
-        ].map(([k, l]) => (
-          <button key={k} onClick={() => setTab(k)} className={`flex-1 rounded-lg py-1.5 text-xs font-bold ${tab === k ? 'bg-amber-500 text-slate-950' : 'text-slate-500 dark:text-slate-400'}`}>
-            {l}
-          </button>
-        ))}
+      {/* [가로 허용 2026-11-12] 가로 화면에서는 왼쪽 도구 | 오른쪽 심박 2열. 세로는 기존처럼 위→아래. */}
+      <div className="space-y-4 landscape:space-y-0 landscape:grid landscape:grid-cols-2 landscape:gap-4 landscape:items-start">
+        <div className="space-y-4">
+          <SoundVolumeControl />
+          <div className="flex gap-1 rounded-xl bg-slate-100 dark:bg-slate-800 p-1">
+            {[
+              ['stopwatch', '초시계'],
+              ['countdown', '타이머'],
+              ['interval', '인터벌'],
+              ['metronome', '메트로놈'],
+            ].map(([k, l]) => (
+              <button key={k} onClick={() => selectTab(k)} className={`flex-1 rounded-lg py-1.5 text-xs font-bold ${tab === k ? 'bg-amber-500 text-slate-950' : 'text-slate-500 dark:text-slate-400'}`}>
+                {l}
+              </button>
+            ))}
+          </div>
+          {/* 4개 도구는 항상 마운트, 선택한 탭만 보인다 → 탭을 바꿔도 돌던 초시계·타이머가 계속 돈다. */}
+          <div className={tab === 'stopwatch' ? '' : 'hidden'}><Stopwatch command={commandFor('stopwatch')} /></div>
+          <div className={tab === 'countdown' ? '' : 'hidden'}><Countdown command={commandFor('countdown')} /></div>
+          <div className={tab === 'interval' ? '' : 'hidden'}><IntervalTimer command={commandFor('interval')} /></div>
+          {tab !== 'metronome' && (
+            <button
+              type="button"
+              onClick={toggleWithMetronome}
+              className={`w-full rounded-xl border-2 py-2 text-sm font-bold ${withMetronome ? 'border-amber-500 bg-amber-500/15 text-amber-700 dark:text-amber-300' : 'border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300'}`}
+            >
+              {withMetronome ? '메트로놈 함께 쓰는 중 · 닫기' : '＋ 메트로놈 함께 켜기'}
+            </button>
+          )}
+          <div className={showMetronome ? '' : 'hidden'}><Metronome compact={tab !== 'metronome'} command={commandFor('metronome')} /></div>
+        </div>
+        {/* [심박 밴드 2026-11-11] 초시계·타이머 아래(가로일 땐 오른쪽)에 항상 보이는 실시간 심박 패널. */}
+        <HeartRatePanel member={member} onSave={onSave} timerTab={tab} />
       </div>
-      {tab === 'stopwatch' ? <Stopwatch command={liveCommand} />
-        : tab === 'countdown' ? <Countdown command={liveCommand} />
-          : tab === 'interval' ? <IntervalTimer command={liveCommand} />
-            : <Metronome command={liveCommand} />}
-      {/* [심박 밴드 2026-11-11] 초시계·타이머 아래에 항상 보이는 실시간 심박 패널. */}
-      <HeartRatePanel member={member} onSave={onSave} timerTab={tab} />
     </div>
   );
 }
