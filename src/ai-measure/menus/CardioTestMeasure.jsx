@@ -210,6 +210,7 @@ export default function CardioTestMeasure({ onBack, member = null, onSave = null
       cadence: mFresh ? m.cadence ?? null : null,
       distanceM: mFresh ? m.distanceM ?? null : null,
       paceSec500: mFresh ? m.paceSec500 ?? null : null,
+      speedKmh: mFresh ? m.speedKmh ?? null : null,
     };
   }, []);
 
@@ -543,7 +544,10 @@ export default function CardioTestMeasure({ onBack, member = null, onSave = null
               <Tile big label="와트" value={live.powerW ?? '--'} />
               <Tile big label={machineMeta.cadenceUnit || '케이던스'} value={live.cadence ?? '--'} />
               <Tile label="거리" value={dist ?? '--'} unit="m" />
-              <Tile label="페이스/500m" value={formatPace(live.paceSec500)} />
+              {/* [바이크 페이스 2026-11-12] 바이크는 페이스 대신 속도(km/h)를 보낸다 → /1km 페이스로 바꿔 표시(콘솔과 같은 단위). */}
+              {machineId === 'bike'
+                ? <Tile label="페이스/1km" value={formatPace(live.speedKmh > 0 ? 3600 / live.speedKmh : null)} />
+                : <Tile label="페이스/500m" value={formatPace(live.paceSec500)} />}
               <Tile label="강도" value={zone ? `${zone.pct}%` : '--'} unit={zone ? HEART_RATE_ZONE_LABELS[zone.zone] : ''} />
             </div>
           </div>
