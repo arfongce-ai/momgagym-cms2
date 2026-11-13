@@ -33,10 +33,29 @@ import { lazy } from 'react';
 //  (public/imaging-tool.html을 iframe으로 구동, postMessage로 결과 수신 —
 //  자세한 설명은 ImagingMeasure.jsx 상단 주석 참고). 회원 촬영 흐름과는
 //  성격이 달라 개별 측정 항목들과 도구(녹화/초시계) 사이에 둔다.
+// [메뉴 묶음 2026-11-13] 비슷한 측정끼리 홈 화면에서 묶어 보여준다. 번호(no)는 그대로라
+//  "14번 초시계", "15번 심폐지구력" 같은 기존 호출·음성 명령·테스트는 바뀌지 않는다.
+export const MEASURE_GROUPS = [
+  { id: 'basic', title: '기본 정보 · 자세', hint: '신체 정보, 정적 자세, 관절 가동범위' },
+  { id: 'move', title: '이동 · 달리기', hint: '트레드밀 보행·러닝, 필드 스프린트' },
+  { id: 'power', title: '파워 · 점프', hint: '수직 점프·RSI, 제자리멀리뛰기' },
+  { id: 'strength', title: '근력 · 균형', hint: '바벨, 한다리서기, 오버헤드 딥 스쿼트' },
+  { id: 'cardio', title: '심폐지구력', hint: '장비 자동 기록, 심박·회복, VO2max' },
+  { id: 'tool', title: '비교 · 영상 · 도구', hint: '전/후 비교, 영상 확인, 녹화, 초시계' },
+];
+
+// 묶음 순서대로, 묶음 안에서는 번호 순으로 정렬한 [{ group, menus }] (빈 묶음은 뺀다).
+export function groupMeasureMenus(menus = MEASURE_MENUS) {
+  return MEASURE_GROUPS
+    .map((group) => ({ group, menus: menus.filter((m) => m.group === group.id).sort((a, b) => a.no - b.no) }))
+    .filter((entry) => entry.menus.length > 0);
+}
+
 export const MEASURE_MENUS = [
   {
     id: 'body',
     no: 1,
+    group: 'basic',
     title: '신체 정보',
     desc: '키, 몸무게, 혈압 입력 및 분석',
     icon: 'BIO',
@@ -48,6 +67,7 @@ export const MEASURE_MENUS = [
   {
     id: 'posture',
     no: 2,
+    group: 'basic',
     title: '자세·체형 측정',
     desc: 'Posture score, Body age, CoG, Ghosting',
     icon: 'BAL',
@@ -57,6 +77,7 @@ export const MEASURE_MENUS = [
   {
     id: 'rom',
     no: 3,
+    group: 'basic',
     title: 'ROM 좌우 비교',
     desc: '관절 가동범위 및 좌우 대칭',
     icon: 'ROM',
@@ -66,6 +87,7 @@ export const MEASURE_MENUS = [
   {
     id: 'gait',
     no: 4,
+    group: 'move',
     title: '보행 & 러닝 (트레드밀용)',
     desc: '측면/정면, 각도, 케이던스, 주기 분석 — 트레드밀 등 실내 고정 보행 측정',
     icon: 'RUN',
@@ -75,6 +97,7 @@ export const MEASURE_MENUS = [
   {
     id: 'jump',
     no: 5,
+    group: 'power',
     title: '점프 & RSI',
     desc: '반동점프, 반응탄성, 고속영상/수동 분석',
     icon: 'JMP',
@@ -90,6 +113,7 @@ export const MEASURE_MENUS = [
   {
     id: 'broadjump',
     no: 6,
+    group: 'power',
     title: '제자리멀리뛰기',
     desc: '수평 이동거리(SBJ · 한발멀리뛰기 정면/안쪽/바깥쪽), 실시간/고속영상 분석',
     icon: 'SBJ',
@@ -99,6 +123,7 @@ export const MEASURE_MENUS = [
   {
     id: 'sprint',
     no: 7,
+    group: 'move',
     title: '보행 & 스프린터 (필드용)',
     desc: '5m/10m 스프린트, 5-0-5 방향전환 — 필드(야외 트랙) 실시간 카메라·영상 업로드',
     icon: 'SPD',
@@ -114,6 +139,7 @@ export const MEASURE_MENUS = [
   {
     id: 'lifting',
     no: 8,
+    group: 'strength',
     title: '바벨 리프팅',
     desc: 'VBT 속도 · 1RM 추정 · 고속영상 분석',
     icon: 'BAR',
@@ -123,6 +149,7 @@ export const MEASURE_MENUS = [
   {
     id: 'stance',
     no: 9,
+    group: 'strength',
     title: '한다리서기 (SLST)',
     desc: '균형 능력, 좌우 비대칭 — 실시간 카메라·영상 업로드',
     icon: 'LEG',
@@ -132,6 +159,7 @@ export const MEASURE_MENUS = [
   {
     id: 'squat',
     no: 10,
+    group: 'strength',
     title: '오버헤드 딥 스쿼트',
     desc: '깊이·상체 기울기·무릎 정렬·골반 — 실시간 카메라·영상 업로드',
     icon: 'SQT',
@@ -141,6 +169,7 @@ export const MEASURE_MENUS = [
   {
     id: 'compare',
     no: 11,
+    group: 'tool',
     title: '전/후 비교 (오버레이)',
     desc: '사진·영상 오버레이 · 어니언 스킨 비교, 발목 기준 자동 정렬',
     icon: 'CMP',
@@ -152,6 +181,7 @@ export const MEASURE_MENUS = [
   {
     id: 'imaging',
     no: 12,
+    group: 'tool',
     title: '근골격계 영상 확인',
     desc: 'X-ray·CT·초음파·MRI 업로드 — 각도/거리 측정, 소견 태그(내부 참고용)',
     icon: 'IMG',
@@ -163,6 +193,7 @@ export const MEASURE_MENUS = [
   {
     id: 'record',
     no: 13,
+    group: 'tool',
     title: '일반 영상 녹화',
     desc: '카메라 녹화 및 저장',
     icon: 'REC',
@@ -174,6 +205,7 @@ export const MEASURE_MENUS = [
   {
     id: 'timer',
     no: 14,
+    group: 'tool',
     title: '초시계·메트로놈',
     desc: '초시계, 타이머, 인터벌, 메트로놈',
     icon: 'TMR',
@@ -186,6 +218,7 @@ export const MEASURE_MENUS = [
     // [15번 심폐지구력 2026-11-12] 로잉·에어바이크·스키 블루투스 + 심박 밴드 자동 기록 → 참고 VO2max.
     id: 'cardio',
     no: 15,
+    group: 'cardio',
     title: '심폐지구력 (VO2max)',
     desc: '로잉·에어바이크·스키 장비 자동 기록, 심박·회복, 참고 VO2max',
     icon: 'VO2',

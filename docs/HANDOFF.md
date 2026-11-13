@@ -45,6 +45,11 @@
 
 ## 작업 로그
 
+### 2026-11-13 · Claude Code · AI분석 홈: 15개 측정을 비슷한 것끼리 묶음
+- `registry.js`에 `MEASURE_GROUPS`·메뉴별 `group`·`groupMeasureMenus()` 추가, `AiMeasureHub.jsx` 홈 그리드를 묶음 제목+카드로 표시. 번호(no)·id·음성 명령·추천 로직은 그대로.
+- 묶음: 기본 정보·자세(1·2·3) / 이동·달리기(4·7) / 파워·점프(5·6) / 근력·균형(8·9·10) / 심폐지구력(15) / 비교·영상·도구(11·12·13·14).
+- 테스트: `measure_menu_groups.test.js` 추가. 미확인: 실제 화면 모양(폰·태블릿).
+
 ### 2026-11-13 · Claude Code · 15번 결과 리포트 저장 + A4 JPG 저장·전송 + 저장 확인 팝업
 - 원인: 15번(심폐지구력)은 측정 이력(`ai`)에만 저장되고 전용 결과 리포트·통합 리포트 연결이 없었다(`inferReportType`이 'general' → 미러링 제외, 리포트 화면은 일반 카드).
 - 15번: `unifiedReport.js`에 `cardio` 유형 추가(통합 리포트 미러링·핵심 지표·제목), `src/components/report/CardioReportSheet.jsx`(A4 한 장, 심박·와트 그래프) 신설 → 저장 직후 `CardioTestMeasure.jsx`와 `Report.jsx` 세션 상세에서 같은 화면. 회차 비교 지표(`extractSessionMetric`)·유형 배지 추가.

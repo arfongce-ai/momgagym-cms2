@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, Suspense } from 'react';
 import { createPortal } from 'react-dom';
 import { isGaitStorable, isSprintStorable } from './core/saveGuards';
 import { useNavigate } from 'react-router-dom';
-import { MEASURE_MENUS } from './registry';
+import { MEASURE_MENUS, groupMeasureMenus } from './registry';
 import { getRecognitionSnapshot, resetRecognition } from './core/recognitionStats';
 import { store, aiStore, makeGuestId } from '../demoData';
 import { todayYMD } from '../utils/dates';
@@ -676,8 +676,14 @@ export default function AiMeasureHub() {
           볼륨 조절은 '초시계·메트로놈' 탭(SoundVolumeControl)에서 계속 가능 */}
 
       {/* 메뉴 그리드 */}
+      {groupMeasureMenus().map(({ group, menus }) => (
+      <section key={group.id} data-testid={`measure-group-${group.id}`} className="space-y-2">
+        <div className="px-1">
+          <h2 className="text-sm font-black text-slate-900 dark:text-slate-100">{group.title}</h2>
+          <p className="text-[11px] text-slate-500">{group.hint}</p>
+        </div>
       <div className="grid grid-cols-2 gap-3">
-        {[...MEASURE_MENUS].sort((a, b) => a.no - b.no).map(menu => {
+        {menus.map(menu => {
           const ready = menu.status === 'ready';
           const recommendationRank = testRecommendation?.recommendations
             ?.findIndex((item) => item.id === menu.id);
@@ -710,6 +716,8 @@ export default function AiMeasureHub() {
           );
         })}
       </div>
+      </section>
+      ))}
 
       <p className="text-[11px] text-slate-500 leading-relaxed">
         측정 항목은 단계적으로 추가됩니다. <strong className="text-slate-700 dark:text-slate-300">이용 가능</strong> 표시된 항목만
