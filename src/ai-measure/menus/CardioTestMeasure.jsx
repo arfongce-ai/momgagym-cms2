@@ -40,6 +40,7 @@ import {
   recordTick,
   windowAvg,
 } from '../core/cardioTest';
+import CardioReportSheet from '../../components/report/CardioReportSheet';
 
 const FRESH_MS = 5000; // 이 시간 안에 온 값만 '현재 값'으로 쓴다
 const MACHINE_ORDER = ['rower', 'bike', 'ski', 'treadmill', 'climber'];
@@ -288,6 +289,7 @@ export default function CardioTestMeasure({ onBack, member = null, onSave = null
     };
     setResultInputs({ time: '', distance: '', power: '', confirmed: '', reference: '', note: '' });
     setSaveState({ state: 'idle', error: '' });
+    setSavedRecord(null);
     setPhase('running');
     try { if (navigator.wakeLock?.request) wakeRef.current = await navigator.wakeLock.request('screen'); } catch { /* 지원 안 함 */ }
   };
@@ -301,6 +303,8 @@ export default function CardioTestMeasure({ onBack, member = null, onSave = null
   // 결과 화면 입력
   const [resultInputs, setResultInputs] = useState({ time: '', distance: '', power: '', confirmed: '', reference: '', note: '' });
   const [saveState, setSaveState] = useState({ state: 'idle', error: '' });
+  const [savedRecord, setSavedRecord] = useState(null); // 저장 직후 A4 결과 리포트로 보여줄 기록
+  const [reportMsg, setReportMsg] = useState('');
 
   const past = useMemo(() => pastCardioRecords(allSessions, machineId), [allSessions, machineId]);
   const manual = useMemo(() => {
@@ -355,6 +359,7 @@ export default function CardioTestMeasure({ onBack, member = null, onSave = null
     });
     try {
       await onSave(record);
+      setSavedRecord(record);
       setSaveState({ state: 'saved', error: '' });
     } catch (err) {
       setSaveState({ state: 'error', error: err?.message || '저장에 실패했습니다.' });
@@ -662,6 +667,12 @@ export default function CardioTestMeasure({ onBack, member = null, onSave = null
               </button>
             ) : <span />}
           </div>
+          {saveState.state === 'saved' && savedRecord && (
+            <div className="pt-2">
+              <CardioReportSheet report={savedRecord} member={member} onMessage={setReportMsg} />
+              {reportMsg && <p className="mt-2 text-center text-[11px] font-bold text-slate-500">{reportMsg}</p>}
+            </div>
+          )}
         </div>
       )}
     </div>

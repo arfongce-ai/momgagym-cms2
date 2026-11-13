@@ -7,6 +7,7 @@ import { legMetrics, stanceMetricStatus } from './singleLegStance';
 import { cadenceRangeFor, stanceRangeFor, verticalOscRangeFor } from './gaitMode';
 import { ROM_SYMMETRY_RANGE } from './romThresholds';
 import { POSTURE_THRESHOLDS } from './postureMath';
+import { cardioHistoryMetrics } from './cardioTest';
 
 export const MOMGAGYM_BLOG_URL = 'https://blog.naver.com/posture_gym';
 export const MOMGAGYM_PUBLIC_URL = 'https://momgagym-cms2.pages.dev';
@@ -558,6 +559,8 @@ export function inferReportType(report = {}) {
     ? { ...report.data, ...report }
     : report;
   const kind = String(r.kind || r.menu || r.reportType || '').toLowerCase();
+  // [15번 심폐지구력 2026-11-13] 저장 기록(kind:'cardio_test')을 통합 리포트로도 쌓는다.
+  if (kind.includes('cardio')) return 'cardio';
   if (kind.includes('posture')) return 'posture';
   if (kind.includes('rom')) return 'rom';
   if (kind.includes('gait') || kind.includes('running')) return 'gait';
@@ -799,6 +802,10 @@ export function extractKeyMetrics(report = {}, reportType = inferReportType(repo
   // rangeToStatus 재채점 대신 이미 확정된 판정을 그대로 쓴다. 이 분기가 없던
   // 동안엔 아래 METRIC_DEFINITIONS.squat/stance에 range가 없어 모든 카드가 값과
   // 무관하게 "확인 필요"로만 표시됐다(카카오톡 리포트 공유 실사용 신고로 발견).
+  // 심폐지구력은 판정(신호등) 없이 값만 보여준다 — 추정값이라 정상/위험으로 나누지 않는다.
+  if (reportType === 'cardio') {
+    return cardioHistoryMetrics(report).map((m) => ({ key: m.key, label: m.label, value: m.value, displayValue: m.displayValue, unit: m.unit, status: STATUS.unknown }));
+  }
   if (reportType === 'squat') return extractSquatKeyMetrics(report);
   if (reportType === 'stance') return extractStanceKeyMetrics(report);
 
@@ -1026,6 +1033,7 @@ function reportTitle(reportType) {
     sprint: '스프린트·아질리티 평가',
     one_rm: '최대 근력 평가',
     vbt: '운동 속도 기반 근력 평가',
+    cardio: '심폐지구력(VO2max) 평가',
     general: '측정 결과 평가',
   };
   return titles[reportType] || titles.general;

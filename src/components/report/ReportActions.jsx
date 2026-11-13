@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import { captureNodeToJpgFile } from '../../ai-measure/core/reportShare';
 import SimpleResultReport from './SimpleResultReport';
+import { printReportById } from '../../utils/printA4';
 
 async function shareOrDownload(files, title, onMessage) {
   const list = Array.isArray(files) ? files : [files];
@@ -94,6 +95,11 @@ export default function ReportActions({
     }
   };
 
+  // [A4 인쇄 2026-11-13] 모든 결과 리포트 공통 — 화면의 A4 페이지를 그대로 프린터로 보낸다(장수 무관).
+  const printReport = () => {
+    if (!printReportById(reportNodeId)) onMessage?.('인쇄할 리포트 화면을 찾을 수 없습니다.');
+  };
+
   const saveVideo = async () => {
     if (!videoBlob) return;
     setBusy('video');
@@ -185,6 +191,17 @@ export default function ReportActions({
           </button>
         )}
       </div>
+
+      {reportNodeId && (
+        <button
+          onClick={printReport}
+          disabled={busy != null}
+          data-testid="report-print"
+          className="mt-2 w-full rounded-xl border-2 border-slate-400 dark:border-slate-500 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 font-black py-3 text-sm active:scale-95 disabled:opacity-60 flex items-center justify-center gap-2"
+        >
+          🖨 A4 인쇄
+        </button>
+      )}
 
       {simpleSummary && (
         <button

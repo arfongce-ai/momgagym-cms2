@@ -231,7 +231,8 @@ describe('저장 페이로드·이력', () => {
     expect(Object.values(record.series).every((v) => !Array.isArray(v) || v.every((x) => !Array.isArray(x)))).toBe(true);
   });
   it('다른 측정 유형으로 잘못 분류되지 않는다', () => {
-    expect(inferReportType({ menu: 'cardio', data: record })).toBe('general');
+    // [2026-11-13] 심폐지구력은 전용 'cardio' 유형으로 통합 리포트에 쌓는다(다른 유형으로는 분류되지 않음).
+    expect(inferReportType({ menu: 'cardio', data: record })).toBe('cardio');
   });
   it('측정 이력에 "심폐지구력"과 요약 칩이 나온다', () => {
     const entries = mergeMeasureEntries({ sessions: [{ id: 's1', menu: 'cardio', menuTitle: '심폐지구력 (VO2max)', recordedAt: '2026-11-12', data: record }] });

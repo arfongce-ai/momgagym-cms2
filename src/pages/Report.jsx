@@ -31,6 +31,7 @@ const GaitReportDashboard = lazy(() => import('../ai-measure/menus/GaitReportDas
 const PostureReport = lazy(() => import('../ai-measure/menus/PostureReport'));
 const RomReport = lazy(() => import('../ai-measure/menus/RomReport'));
 const LiftingReportDashboard = lazy(() => import('../ai-measure/menus/LiftingReportDashboard'));
+import CardioReportSheet from '../components/report/CardioReportSheet';
 // [리포트 통합 2026-08-09] SLST 저장된 리포트 열람 신설 — 다른 5개 측정 종류와
 // 마찬가지로 이제 이 화면에서도 볼 수 있다(StanceAnalysisHub.jsx/
 // StanceReportDashboard.jsx와 같은 컴포넌트를 재사용, 재구현 아님).
@@ -48,6 +49,7 @@ const REPORT_TYPE_META = {
   sprint: { title: '스프린트·아질리티', badge: 'SPD', accent: 'text-orange-700 dark:text-orange-300', bg: 'bg-orange-500/15', border: 'border-orange-500/25' },
   one_rm: { title: '최대 근력', badge: '1RM', accent: 'text-violet-700 dark:text-violet-300', bg: 'bg-violet-500/15', border: 'border-violet-500/25' },
   vbt: { title: '운동 속도 근력', badge: 'VBT', accent: 'text-fuchsia-700 dark:text-fuchsia-300', bg: 'bg-fuchsia-500/15', border: 'border-fuchsia-500/25' },
+  cardio: { title: '심폐지구력', badge: 'VO2', accent: 'text-rose-700 dark:text-rose-300', bg: 'bg-rose-500/15', border: 'border-rose-500/25' },
   general: { title: '측정 결과', badge: 'AI', accent: 'text-slate-600 dark:text-slate-300', bg: 'bg-slate-200 dark:bg-slate-700', border: 'border-slate-300 dark:border-slate-700' },
 };
 
@@ -783,7 +785,9 @@ function ShareCaptureReport({ item, member, simple, previousReport }) {
       <div data-share-report-ready="true" className="w-full bg-slate-50 dark:bg-slate-950">
         {isLiftingShapedSession(report)
           ? <LiftingReportDashboard report={report} member={reportMember} />
-          : <SessionShareReport item={item} member={reportMember} />}
+          : item.session?.data?.kind === 'cardio_test'
+            ? <CardioReportSheet report={{ ...item.session.data, measuredAt: item.date }} member={reportMember} showActions={false} reportNodeId={`cardio-report-${item.id || 'x'}`} />
+            : <SessionShareReport item={item} member={reportMember} />}
       </div>
     );
   }
@@ -815,6 +819,11 @@ export function extractSessionMetric(session) {
         return { value: m.oneRM, unit: 'kg', label: `1RM 추정 (${d.metadata?.weight ?? '-'}kg×${d.metadata?.reps ?? '-'}회)` };
       }
       return { value: plausibleVelocity(m.meanVelocity), unit: 'm/s', label: d.mode === 'lifting' ? '역도 평균속도' : 'VBT 평균속도' };
+    }
+    case 'cardio': {
+      const v = d.estimates?.vo2max;
+      const shown = Number.isFinite(d.confirmedVo2max) ? d.confirmedVo2max : (v?.calibratedValue ?? v?.value);
+      return { value: Number.isFinite(shown) ? shown : null, unit: 'mL/kg/min', label: `VO2max (${d.machineLabel ?? ''} ${d.protocolLabel ?? ''})`.trim() };
     }
     case 'rsi':     return { value: d.rsi, unit: '', label: `RSI · 높이 ${d.heightCm ?? '-'}cm` };
     case 'vbt':     return { value: plausibleVelocity(d.meanVelocity), unit: 'm/s', label: `평균속도 (${d.zone ?? ''})` };

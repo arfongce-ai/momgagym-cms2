@@ -58,7 +58,7 @@ const TIER_STYLE = {
   bad:  'text-red-700 dark:text-red-400',
 };
 
-export default function BodyInfoMeasure({ member, onSave, onBack, onGuestBodyInfoChange, onViewInReport }) {
+export default function BodyInfoMeasure({ member, onSave, onConfirmSave, onBack, onGuestBodyInfoChange, onViewInReport }) {
   const isVirtual = member?.isVirtual === true;
   // 회원(실제/미등록)의 기존 키·몸무게를 초기값으로 채워, 다른 탭과의 연동 상태를
   // 눈으로 확인하고 이어서 보정할 수 있게 한다.
@@ -133,6 +133,8 @@ export default function BodyInfoMeasure({ member, onSave, onBack, onGuestBodyInf
       conditionMemo: condition.memo,
       conditionStatus: condition.valid ? condition.status : null,
     };
+    // [저장 확인 팝업 2026-11-13] 신체정보도 저장 전에 '저장하시겠습니까?'를 묻는다(허브 공통 팝업).
+    if (onConfirmSave && !(await onConfirmSave())) return;
     setSaveState('saving');
     if (isVirtual) {
       // [항목 1] 미등록회원: 영구 신체기록(store)에 남기지 않고, 허브 신체정보에 반영해
