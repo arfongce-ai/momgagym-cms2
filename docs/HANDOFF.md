@@ -45,6 +45,14 @@
 
 ## 작업 로그
 
+### 2026-11-13 · Claude Code · 15번 결과 리포트 저장 + A4 JPG 저장·전송 + 저장 확인 팝업
+- 원인: 15번(심폐지구력)은 측정 이력(`ai`)에만 저장되고 전용 결과 리포트·통합 리포트 연결이 없었다(`inferReportType`이 'general' → 미러링 제외, 리포트 화면은 일반 카드).
+- 15번: `unifiedReport.js`에 `cardio` 유형 추가(통합 리포트 미러링·핵심 지표·제목), `src/components/report/CardioReportSheet.jsx`(A4 한 장, 심박·와트 그래프) 신설 → 저장 직후 `CardioTestMeasure.jsx`와 `Report.jsx` 세션 상세에서 같은 화면. 회차 비교 지표(`extractSessionMetric`)·유형 배지 추가.
+- A4 JPG 저장·전송: `reportShare.js` `captureNodeToA4Files`(정확한 A4 비율, 짧으면 채움·6%까지 줄임·길면 여러 장)로 리포트 저장/공유가 같은 이미지를 쓴다. 프린트 버튼은 두지 않는다(대표님 판단: 저장한 JPG를 그대로 출력). 기존 `measure_fixes_batch.test.js` 기대 함수명 변경.
+- 저장 확인 팝업: `AiMeasureHub.jsx` handleSave 앞에서 '저장하시겠습니까?'(거절 시 저장 안 하고 오류로 반환). 신체정보(1번)는 `onConfirmSave`로 저장 전에 한 번만 묻는다.
+- 테스트: `cardio_test.test.js` 분류 기대값을 'cardio'로 변경, `measure_save_print_cardio.test.js` 추가. 전체 통과, 빌드·린트 통과.
+- 미확인: 실기기 저장 왕복·팝업 표시(이 저장소 테스트 환경엔 DOM이 없어 소스·렌더 문자열 수준만 확인).
+
 ### 2026-11-11 · Claude Code · 트레이너 본인 기록 1단계(신체정보·체력측정·분석·비교)
 - 요청: 등록된 트레이너도 CMS의 건강정보·체력측정·영양 기록을 본인용으로 사용. 대표님 결정: 열람은 본인 + 대표, 순서는 측정·건강정보 먼저(영양은 영양앱 연결 완료 후).
 - 방식: members 문서를 만들지 않고 대상 ID `trself_<트레이너ID>`로 기존 컬렉션(body/ai/gait·posture·rom_reports/users.reports)에 저장(`src/utils/trainerSelf.js`). 회원 수·매출·대시보드·Notion 집계 스크립트는 members 기준이라 섞이지 않는다. firestore.rules 변경 없음.

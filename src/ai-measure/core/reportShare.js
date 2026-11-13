@@ -101,6 +101,61 @@ export async function captureNodeToJpgFile(node, filename, { scale = 2, bg = '#0
   return new File([blob], filename, { type: 'image/jpeg' });
 }
 
+// [A4 JPG 2026-11-13] 리포트 노드를 '정확한 A4 비율(210×297)' JPG 로 만든다 — 저장·전송·프린트 모두 같은 파일.
+//  · 내용이 A4 한 장보다 짧으면 배경색으로 채워 한 장으로 만든다.
+//  · 한 장보다 아주 조금(6% 이내) 길면 한 장에 맞게 줄인다.
+//  · 그보다 길면 A4 높이 단위로 나눠 여러 장(매수 제한 없음)으로 만든다.
+export const A4_RATIO = 297 / 210;
+
+export function planA4Pages(widthPx, heightPx) {
+  const pageH = Math.round(widthPx * A4_RATIO);
+  if (heightPx <= pageH) return { pageH, mode: 'pad', pages: 1 };
+  if (heightPx <= pageH * 1.06) return { pageH, mode: 'fit', pages: 1 };
+  return { pageH, mode: 'slice', pages: Math.ceil(heightPx / pageH) };
+}
+
+function resolveNodeBg(node, fallback) {
+  try {
+    const c = getComputedStyle(node).backgroundColor;
+    if (c && c !== 'transparent' && !/rgba\(\s*0,\s*0,\s*0,\s*0\s*\)/.test(c)) return c;
+  } catch (e) { /* 무시 */ }
+  return fallback;
+}
+
+export async function captureNodeToA4Files(node, baseName, { scale = 2, width = 794, bg } = {}) {
+  const html2canvas = await loadHtml2Canvas();
+  const pageBg = bg || resolveNodeBg(node, '#ffffff');
+  const canvas = await html2canvas(node, { backgroundColor: pageBg, scale, useCORS: true, logging: false, windowWidth: width });
+  const plan = planA4Pages(canvas.width, canvas.height);
+  const pageCanvases = [];
+  for (let i = 0; i < plan.pages; i += 1) {
+    const page = document.createElement('canvas');
+    page.width = canvas.width;
+    page.height = plan.pageH;
+    const ctx = page.getContext('2d');
+    ctx.fillStyle = pageBg;
+    ctx.fillRect(0, 0, page.width, page.height);
+    if (plan.mode === 'fit') {
+      const k = plan.pageH / canvas.height;
+      const w = canvas.width * k;
+      ctx.drawImage(canvas, (page.width - w) / 2, 0, w, plan.pageH);
+    } else {
+      const sy = i * plan.pageH;
+      const sh = Math.min(plan.pageH, canvas.height - sy);
+      ctx.drawImage(canvas, 0, sy, canvas.width, sh, 0, 0, canvas.width, sh);
+    }
+    pageCanvases.push(page);
+  }
+  const files = [];
+  for (let i = 0; i < pageCanvases.length; i += 1) {
+    const blob = await new Promise((res) => pageCanvases[i].toBlob(res, 'image/jpeg', 0.92));
+    if (!blob) throw new Error('이미지 변환 실패');
+    const suffix = pageCanvases.length > 1 ? `_A4_${i + 1}` : '_A4';
+    files.push(new File([blob], `${baseName}${suffix}.jpg`, { type: 'image/jpeg' }));
+  }
+  return files;
+}
+
 function triggerDownload(file) {
   const url = URL.createObjectURL(file);
   const a = document.createElement('a');
@@ -121,7 +176,7 @@ export async function shareReportWithVideo(reportNode, videoBlob, { baseName = '
   // 1) 리포트 JPG
   if (reportNode) {
     try {
-      files.push(await captureNodeToJpgFile(reportNode, `몸가짐_${baseName}_리포트.jpg`));
+      files.push(...await captureNodeToA4Files(reportNode, `몸가짐_${baseName}_리포트`));
     } catch (e) { /* 캡처 실패해도 영상은 시도 */ }
   }
   // 2) 영상

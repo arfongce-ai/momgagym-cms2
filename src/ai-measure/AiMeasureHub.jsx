@@ -1,6 +1,7 @@
 // ai-measure/AiMeasureHub.jsx
 // AI 측정 허브. 메뉴를 고르면 해당 모듈만 lazy 로드해 구동한다(필요 기능만).
-import { useState, useEffect, Suspense } from 'react';
+import { useState, useEffect, useRef, Suspense } from 'react';
+import { createPortal } from 'react-dom';
 import { isGaitStorable, isSprintStorable } from './core/saveGuards';
 import { useNavigate } from 'react-router-dom';
 import { MEASURE_MENUS } from './registry';
@@ -32,6 +33,22 @@ export default function AiMeasureHub() {
   // 트레이너 모드: 담당 회원만 / 모든 회원은 가나다 순으로 노출.
   const [members] = useState(() => withTrainerSelfSubjects(sortByName(scopeMembersToTrainer(store.getMembers(), user)), user, store.getTrainers()));
   const [memberId, setMemberId] = useState('');
+  // [저장 확인 팝업 2026-11-13] 측정이 끝나 저장하려 할 때 '저장하시겠습니까?'를 먼저 묻는다.
+  //  모든 측정 화면이 handleSave 한 곳으로 저장하므로 여기서 한 번만 걸면 1~15번 전부 적용된다.
+  //  (네이티브 confirm 은 카메라 오버레이 위에서 화면을 멈추므로 화면 안 팝업을 쓴다.)
+  const [savePrompt, setSavePrompt] = useState(false);
+  const savePromptResolve = useRef(null);
+  const askSaveConfirm = () => new Promise((resolve) => {
+    savePromptResolve.current?.(false);
+    savePromptResolve.current = resolve;
+    setSavePrompt(true);
+  });
+  const answerSavePrompt = (yes) => {
+    setSavePrompt(false);
+    const resolve = savePromptResolve.current;
+    savePromptResolve.current = null;
+    resolve?.(yes);
+  };
   const [heightOverrides, setHeightOverrides] = useState({});
   const [active, setActive] = useState(null); // 선택된 메뉴 객체
   // 회원 미선택 시 입력하는 '미등록회원(게스트)' 신체정보. 측정 데이터만 저장되며,
@@ -107,6 +124,11 @@ export default function AiMeasureHub() {
   //  • 미등록회원: members 등록 없이 측정 데이터만 개별 guest id(__mid)로 분리 저장.
   const handleSave = async (data) => {
     if (!member) { alert('회원을 선택하거나, 미등록회원 신체정보를 입력해 주세요.'); return; }
+    // 신체정보(1번)는 화면에서 이미 확인(onConfirmSave)한 뒤 호출하므로 여기서 다시 묻지 않는다.
+    if (active.id !== 'body' && !(await askSaveConfirm())) {
+      // 화면들이 '저장 실패'로 보여 다시 저장 버튼을 쓸 수 있게 오류로 돌려준다(저장 안 함).
+      throw new Error('저장하지 않았습니다. 저장하려면 저장 버튼을 다시 눌러 주세요.');
+    }
     // 보행 분석은 컴포넌트가 자체 저장 상태 UI(저장 중/✓/실패)를 표시하므로
     // alert 없이 에러를 그대로 throw 해 컴포넌트가 처리하게 한다.
     const isGait = active.id === 'gait';
@@ -509,6 +531,7 @@ export default function AiMeasureHub() {
           <Comp
             member={member}
             onSave={handleSave}
+            onConfirmSave={askSaveConfirm}
             onBack={closeActiveMenu}
             onMemberHeightChange={rememberMemberHeight}
             onGuestBodyInfoChange={member?.isVirtual ? applyGuestBodyInfo : undefined}
@@ -521,6 +544,21 @@ export default function AiMeasureHub() {
             {...(active.id === 'broadjump' ? { allowedSubTypes: BROAD_JUMP_SUBTYPES } : {})}
           />
         </Suspense>
+        {savePrompt && createPortal(
+          <div className="fixed inset-0 z-[100000] flex items-center justify-center bg-black/60 p-4" role="dialog" aria-modal="true" data-testid="save-confirm">
+            <div className="w-full max-w-xs rounded-2xl bg-white dark:bg-slate-900 p-5 shadow-2xl ring-1 ring-slate-300 dark:ring-slate-700">
+              <p className="text-center text-base font-black text-slate-900 dark:text-slate-100">저장하시겠습니까?</p>
+              <p className="mt-1 text-center text-xs font-semibold text-slate-500 dark:text-slate-400">
+                {member?.isVirtual ? '미등록회원 측정 결과가 저장됩니다.' : `${member?.name || '회원'} 회원의 측정이력과 리포트에 저장됩니다.`}
+              </p>
+              <div className="mt-4 grid grid-cols-2 gap-2">
+                <button onClick={() => answerSavePrompt(false)} className="rounded-xl border-2 border-slate-300 dark:border-slate-600 py-3 text-sm font-bold text-slate-700 dark:text-slate-200" data-testid="save-confirm-no">저장 안 함</button>
+                <button onClick={() => answerSavePrompt(true)} className="rounded-xl bg-amber-500 py-3 text-sm font-black text-slate-950" data-testid="save-confirm-yes">저장</button>
+              </div>
+            </div>
+          </div>,
+          document.body,
+        )}
       </div>
 
     );
