@@ -3,7 +3,7 @@
 //  15번 심폐지구력(VO2max) 결과 리포트 — A4 한 장.
 //   · 측정 직후(CardioTestMeasure 저장 후)와 리포트 화면(Report.jsx)에서 같은 모양으로 쓴다.
 //   · 저장된 값만 그린다. 계산 못 한 값은 '계산하지 않음'과 이유를 보여준다(측정 정직성).
-//   · 공통 ReportActions 로 A4 인쇄·리포트 이미지 저장을 제공한다.
+//   · 공통 ReportActions 로 A4 리포트 이미지(JPG) 저장을 제공한다.
 // ════════════════════════════════════════════════════════════════════════
 import {
   UnifiedReportCanvas, UnifiedReportHeader, UnifiedReportPage, UnifiedReportSection,

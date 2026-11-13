@@ -1,11 +1,10 @@
-// 2026-11-13 — 15번 결과 리포트 저장, 공통 A4 인쇄, 저장 확인 팝업.
+// 2026-11-13 — 15번 결과 리포트 저장, A4 리포트 JPG 저장, 저장 확인 팝업.
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { buildSummaryData, inferReportType } from '../ai-measure/core/unifiedReport';
 import { extractSessionMetric } from '../pages/Report';
-import { printReportNodes } from '../utils/printA4';
 import CardioReportSheet from '../components/report/CardioReportSheet';
 
 const record = {
@@ -42,24 +41,15 @@ describe('15번 VO2max 리포트 저장', () => {
   });
 });
 
-describe('공통 A4 인쇄', () => {
-  // 이 저장소 테스트 환경엔 DOM(jsdom)이 없어 소스 규칙으로 확인한다. 실제 인쇄 미리보기는 브라우저에서 확인 필요.
-  const print = readFileSync('src/utils/printA4.js', 'utf8');
-  it('A4 용지·페이지 나눔·정리 규칙이 있다', () => {
-    expect(print).toContain('size: A4');
-    expect(print).toContain('break-after: page');
-    expect(print).toContain("classList.remove('dark')"); // 흰 종이로 인쇄
-    expect(print).toContain("addEventListener('afterprint'"); // 인쇄 뒤 원래대로
-    expect(print).toContain('canvas.toDataURL'); // 캔버스 그림 유지
-  });
-  it('모든 결과 리포트 공통 버튼(ReportActions)에 인쇄가 있다', () => {
+describe('리포트 저장(A4 JPG)', () => {
+  it('모든 결과 리포트 공통 버튼(ReportActions)이 리포트 저장(JPG)을 제공하고 인쇄 버튼은 없다', () => {
     const src = readFileSync('src/components/report/ReportActions.jsx', 'utf8');
-    expect(src).toContain('printReportById');
-    expect(src).toContain('A4 인쇄');
+    expect(src).toContain('리포트 저장');
+    expect(src).toContain('.jpg');
+    expect(src).not.toContain('A4 인쇄');
   });
-  it('printReportNodes 는 노드가 없으면 인쇄하지 않는다', () => {
-    expect(printReportNodes([])).toBe(false);
-    expect(printReportNodes(null)).toBe(false);
+  it('15번 리포트도 공통 버튼을 쓴다', () => {
+    expect(readFileSync('src/components/report/CardioReportSheet.jsx', 'utf8')).toContain('<ReportActions');
   });
 });
 
