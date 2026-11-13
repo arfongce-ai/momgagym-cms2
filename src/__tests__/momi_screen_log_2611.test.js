@@ -47,4 +47,22 @@ describe('momiLog 화면 진단 기록', () => {
     mod = await import('../utils/momiLog');
     expect(mod.isMomiLogEnabled()).toBe(false);
   });
+
+  it('설정 화면 스위치(setMomiLogEnabled)로 새로고침 없이 켜고 끄며, 이 기기에 기억한다', async () => {
+    const win = fakeWindow('');
+    globalThis.window = win;
+    const mod = await import('../utils/momiLog');
+    let notified = 0;
+    mod.subscribeMomiLog(() => { notified += 1; });
+    mod.setMomiLogEnabled(true);
+    expect(mod.isMomiLogEnabled()).toBe(true);
+    expect(win.localStorage.getItem('momiLog')).toBe('1');
+    expect(notified).toBeGreaterThan(0);
+    mod.momiLog('마이크 켜짐');
+    expect(mod.getMomiLogEntries().map((e) => e.text)).toContain('마이크 켜짐');
+    mod.setMomiLogEnabled(false);
+    expect(mod.isMomiLogEnabled()).toBe(false);
+    expect(win.localStorage.getItem('momiLog')).toBe(null);
+    expect(mod.getMomiLogEntries()).toEqual([]);
+  });
 });

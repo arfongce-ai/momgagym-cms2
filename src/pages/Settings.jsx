@@ -6,6 +6,7 @@ import { useNavigate } from 'react-router-dom';
 import { daysAgoYMD } from '../utils/dates';
 import { store, aiStore } from '../demoData';
 import { useAuth } from '../contexts/AuthContext';
+import { isMomiLogEnabled, setMomiLogEnabled } from '../utils/momiLog';
 import { recomputeBodyAgeIfStale } from '../ai-measure/core/postureMath';
 import { auditMemberIntegrity, auditPaymentConsistency, filterDismissed, TAB_FOR_FINDING_TYPE, SEVERITY_LABEL } from '../services/integrityAudit';
 
@@ -36,6 +37,7 @@ function serializeDoc(obj) {
 export default function Settings({ darkMode, setDarkMode }) {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const [momiLogOn, setMomiLogOn] = useState(() => isMomiLogEnabled());
   const [backupYear,   setBackupYear]   = useState(new Date().getFullYear());
   const [backupMonth,  setBackupMonth]  = useState(new Date().getMonth() + 1);
   const [purgeList,    setPurgeList]    = useState([]);
@@ -284,6 +286,21 @@ export default function Settings({ darkMode, setDarkMode }) {
               ${darkMode ? 'translate-x-6' : 'translate-x-0'}`} />
           </button>
         </div>
+        {/* [2026-11-13] 모미 화면 기록 — 앱처럼 설치해 주소창이 없는 기기에서도 켤 수 있게 스위치로 둔다. */}
+        {user?.role === 'admin' && (
+          <div className="flex items-center justify-between mt-4 pt-4 border-t border-slate-200 dark:border-slate-800">
+            <div>
+              <p className="font-semibold text-sm">모미 화면 기록</p>
+              <p className="text-slate-500 text-xs">모미가 반응이 없을 때 원인을 화면 왼쪽 아래에 보여줍니다 (이 기기만)</p>
+            </div>
+            <button onClick={() => { setMomiLogEnabled(!momiLogOn); setMomiLogOn(!momiLogOn); }}
+              aria-label="모미 화면 기록 켜기/끄기"
+              className={`w-12 h-6 rounded-full transition-colors relative flex-shrink-0 overflow-hidden ${momiLogOn ? 'bg-amber-500' : 'bg-slate-300'}`}>
+              <span className={`absolute left-0.5 top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform duration-200
+                ${momiLogOn ? 'translate-x-6' : 'translate-x-0'}`} />
+            </button>
+          </div>
+        )}
       </div>
 
       {/* 저장소 안내 */}

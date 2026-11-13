@@ -1,7 +1,8 @@
 // src/utils/momiLog.js
 // [2026-11-13] 모미 화면 진단 기록. 폰·키오스크처럼 콘솔을 볼 수 없는 기기에서
 // "왜 반응이 없는지"를 화면 캡처 한 장으로 확인하기 위한 것.
-// 주소에 ?momilog=1 을 붙여 한 번 열면 켜지고(이 기기에 기억), ?momilog=0 으로 끈다.
+// 설정 화면의 "모미 화면 기록" 스위치로 켜고 끈다(이 기기에 기억). 앱처럼 설치해 주소창이
+// 없는 기기에서도 쓸 수 있게 하기 위함. 주소에 ?momilog=1 / ?momilog=0 을 붙여도 된다.
 // 꺼져 있을 때는 아무것도 기록하지 않고 화면에도 아무것도 그리지 않는다.
 // 기록은 이 기기 메모리에만 있고 어디에도 저장·전송하지 않는다.
 
@@ -27,6 +28,20 @@ function readEnabled() {
 export function isMomiLogEnabled() {
   if (enabledCache === null) enabledCache = readEnabled();
   return enabledCache;
+}
+
+// 설정 화면 스위치용 — 새로고침 없이 바로 켜고 끈다.
+export function setMomiLogEnabled(on) {
+  enabledCache = !!on;
+  try {
+    if (on) window.localStorage?.setItem(KEY, '1');
+    else window.localStorage?.removeItem(KEY);
+  } catch (e) { /* no-op */ }
+  if (!on) entries.length = 0;
+  listeners.forEach((fn) => {
+    try { fn(); } catch (e) { /* no-op */ }
+  });
+  if (on) momiLog('화면 기록 켬');
 }
 
 function clock() {
