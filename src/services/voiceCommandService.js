@@ -146,7 +146,7 @@ const AI_MEASURE_ONLY_TESTID_KEYWORDS = [
   { id: 'compare', keywords: ['전후비교', '전/후비교', '오버레이비교', '어니언스킨'] },
   { id: 'record', keywords: ['녹화', '영상'] },
   { id: 'timer', keywords: ['초시계', '타이머', '인터벌', '메트로놈'] },
-  // [15번 심폐지구력 2026-11-12]
+  // [11번 심폐지구력 2026-11-12]
   { id: 'cardio', keywords: ['심폐지구력', '심폐', 'vo2', '브이오투', '최대산소', '로잉테스트', '2000m'] },
 ];
 

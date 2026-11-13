@@ -1,25 +1,26 @@
 import { lazy } from 'react';
 
 // AI 측정 · 분석 탭 등록부.
-//  탭 순서(no)는 측정 흐름 순서를 따른다:
-//   1 신체 정보(기본) → 2 자세·체형(정적) → 3 ROM(가동성) → 4 보행·러닝(트레드밀용, 이동)
-//   → 5 점프·RSI(파워) → 6 제자리멀리뛰기(SBJ, 수평) → 7 보행 & 스프린터(필드용,
-//   속도·순발력, 점프 다음이 자연스러움) → 8 바벨 리프팅(근력) → 9 한다리서기(SLST, 균형)
-//   → 10 오버헤드 딥 스쿼트(균형+가동성 복합) → 11 전/후 비교(오버레이) →
-//   → 12 근골격계 영상 확인(업로드 X-ray·CT·초음파·MRI) →
-//   13 일반 녹화 · 14 초시계 (도구, 항상 맨 마지막 — 기존 테스트 불변식:
-//   정렬 후 timer가 배열 끝).
+//  탭 순서(no)는 홈 화면의 묶음 순서를 따른다 (2026-11-13 묶음 순서로 번호 재정렬):
+//   [기본 정보·자세] 1 신체 정보 · 2 자세·체형(정적) · 3 ROM(가동성)
+//   [이동·달리기]    4 보행·러닝(트레드밀용) · 5 보행 & 스프린터(필드용)
+//   [파워·점프]      6 점프·RSI(수직) · 7 제자리멀리뛰기(SBJ, 수평)
+//   [근력·균형]      8 바벨 리프팅 · 9 한다리서기(SLST) · 10 오버헤드 딥 스쿼트
+//   [심폐지구력]     11 심폐지구력(VO2max)
+//   [비교·영상·도구] 12 전/후 비교 · 13 근골격계 영상 확인 · 14 일반 녹화 · 15 초시계(항상 맨 마지막)
+//  (예전 번호: 보행&스프린터 7→5, 점프 5→6, 제자리멀리뛰기 6→7, 심폐지구력 15→11,
+//   전/후 비교 11→12, 영상 확인 12→13, 일반 녹화 13→14, 초시계 14→15)
 //  [트레드밀/필드 구분 2026-09-05] 4번(gait)은 트레드밀 등 실내 고정 보행 측정,
-//  7번(sprint)은 필드(야외 트랙) 스프린트·아질리티 측정으로 용도를 명확히 구분.
+//  5번(sprint)은 필드(야외 트랙) 스프린트·아질리티 측정으로 용도를 명확히 구분.
 //  [스프린트 추가 2026-09-04] 5m/10m 스프린트, 5-0-5 아질리티 — 카메라 1대로
 //  골반(Hip) 좌표를 추적해 속도·구간기록을 산출. 캘리브레이션은 다른 탭처럼
 //  자동 세이프존이 아니라 바닥 기준점 2점 터치 방식(sprintAgility.js 참고).
 //  '던지기(throw)'·'스윙(swing)' 준비 중 탭은 제거됨(2607 요청).
-//  8번(SLST)·9번(스쿼트) 모두 실시간·업로드 둘 다 지원.
+//  9번(SLST)·10번(스쿼트) 모두 실시간·업로드 둘 다 지원.
 //  [제자리멀리뛰기(SBJ) 탭 분리 2026-09-16, 한발멀리뛰기 추가로 확장] 점프
-//  5종(CMJ/SJ/DJ/SLJ/RSI)은 전부 "수직" 점프라 5번 탭 안의 세부종류 칩으로
+//  5종(CMJ/SJ/DJ/SLJ/RSI)은 전부 "수직" 점프라 6번 탭 안의 세부종류 칩으로
 //  묶여 있었는데, SBJ(양발)·한발멀리뛰기(정면/안쪽/바깥쪽)는 "수평" 이동거리를
-//  재는 별개 측정이라 별도 6번 탭으로 분리했다. 화면은 5번과 동일한
+//  재는 별개 측정이라 별도 7번 탭으로 분리했다. 화면은 6번과 동일한
 //  JumpAnalysisHub.jsx를 그대로 재사용하되(component 재사용 — 새로 안 만듦),
 //  allowedSubTypes=BROAD_JUMP_SUBTYPES(=['sbj','shjf','shjm','shjl']) prop으로
 //  세부종류 선택 칩을 그 4종만으로 제한한다(AiMeasureHub.jsx가
@@ -33,10 +34,29 @@ import { lazy } from 'react';
 //  (public/imaging-tool.html을 iframe으로 구동, postMessage로 결과 수신 —
 //  자세한 설명은 ImagingMeasure.jsx 상단 주석 참고). 회원 촬영 흐름과는
 //  성격이 달라 개별 측정 항목들과 도구(녹화/초시계) 사이에 둔다.
+// [메뉴 묶음 2026-11-13] 비슷한 측정끼리 홈 화면에서 묶어 보여준다. 번호(no)는 그대로라
+//  번호는 이 묶음 순서대로 다시 매겼다(15번 초시계가 항상 맨 끝). 음성 명령은 번호가 아니라 이름으로 찾는다.
+export const MEASURE_GROUPS = [
+  { id: 'basic', title: '기본 정보 · 자세', hint: '신체 정보, 정적 자세, 관절 가동범위' },
+  { id: 'move', title: '이동 · 달리기', hint: '트레드밀 보행·러닝, 필드 스프린트' },
+  { id: 'power', title: '파워 · 점프', hint: '수직 점프·RSI, 제자리멀리뛰기' },
+  { id: 'strength', title: '근력 · 균형', hint: '바벨, 한다리서기, 오버헤드 딥 스쿼트' },
+  { id: 'cardio', title: '심폐지구력', hint: '장비 자동 기록, 심박·회복, VO2max' },
+  { id: 'tool', title: '비교 · 영상 · 도구', hint: '전/후 비교, 영상 확인, 녹화, 초시계' },
+];
+
+// 묶음 순서대로, 묶음 안에서는 번호 순으로 정렬한 [{ group, menus }] (빈 묶음은 뺀다).
+export function groupMeasureMenus(menus = MEASURE_MENUS) {
+  return MEASURE_GROUPS
+    .map((group) => ({ group, menus: menus.filter((m) => m.group === group.id).sort((a, b) => a.no - b.no) }))
+    .filter((entry) => entry.menus.length > 0);
+}
+
 export const MEASURE_MENUS = [
   {
     id: 'body',
     no: 1,
+    group: 'basic',
     title: '신체 정보',
     desc: '키, 몸무게, 혈압 입력 및 분석',
     icon: 'BIO',
@@ -48,6 +68,7 @@ export const MEASURE_MENUS = [
   {
     id: 'posture',
     no: 2,
+    group: 'basic',
     title: '자세·체형 측정',
     desc: 'Posture score, Body age, CoG, Ghosting',
     icon: 'BAL',
@@ -57,6 +78,7 @@ export const MEASURE_MENUS = [
   {
     id: 'rom',
     no: 3,
+    group: 'basic',
     title: 'ROM 좌우 비교',
     desc: '관절 가동범위 및 좌우 대칭',
     icon: 'ROM',
@@ -66,6 +88,7 @@ export const MEASURE_MENUS = [
   {
     id: 'gait',
     no: 4,
+    group: 'move',
     title: '보행 & 러닝 (트레드밀용)',
     desc: '측면/정면, 각도, 케이던스, 주기 분석 — 트레드밀 등 실내 고정 보행 측정',
     icon: 'RUN',
@@ -73,32 +96,9 @@ export const MEASURE_MENUS = [
     component: lazy(() => import('./menus/GaitAnalysisHub.jsx')),
   },
   {
-    id: 'jump',
-    no: 5,
-    title: '점프 & RSI',
-    desc: '반동점프, 반응탄성, 고속영상/수동 분석',
-    icon: 'JMP',
-    status: 'ready',
-    component: lazy(() => import('./menus/JumpAnalysisHub.jsx')),
-  },
-  // [제자리멀리뛰기 추가 2026-09-16, 한발멀리뛰기 추가로 확장] 5번(점프 &
-  // RSI)과 완전히 같은 화면 구조(JumpAnalysisHub.jsx)를 그대로 재사용하되,
-  // allowedSubTypes로 세부종류 선택 칩을 SBJ+한발멀리뛰기(정면/안쪽/바깥쪽)
-  // 4종만으로 제한한 별도 탭. 점프 5종은 전부 "수직" 점프라 한 탭 안의
-  // 세부종류로 묶여 있었지만, 이 4종은 "수평" 측정이라 성격이 달라 별도
-  // 탭으로 분리해달라는 요청 반영.
-  {
-    id: 'broadjump',
-    no: 6,
-    title: '제자리멀리뛰기',
-    desc: '수평 이동거리(SBJ · 한발멀리뛰기 정면/안쪽/바깥쪽), 실시간/고속영상 분석',
-    icon: 'SBJ',
-    status: 'ready',
-    component: lazy(() => import('./menus/JumpAnalysisHub.jsx')),
-  },
-  {
     id: 'sprint',
-    no: 7,
+    no: 5,
+    group: 'move',
     title: '보행 & 스프린터 (필드용)',
     desc: '5m/10m 스프린트, 5-0-5 방향전환 — 필드(야외 트랙) 실시간 카메라·영상 업로드',
     icon: 'SPD',
@@ -112,8 +112,35 @@ export const MEASURE_MENUS = [
     orientation: 'landscape',
   },
   {
+    id: 'jump',
+    no: 6,
+    group: 'power',
+    title: '점프 & RSI',
+    desc: '반동점프, 반응탄성, 고속영상/수동 분석',
+    icon: 'JMP',
+    status: 'ready',
+    component: lazy(() => import('./menus/JumpAnalysisHub.jsx')),
+  },
+  // [제자리멀리뛰기 추가 2026-09-16, 한발멀리뛰기 추가로 확장] 6번(점프 &
+  // RSI)과 완전히 같은 화면 구조(JumpAnalysisHub.jsx)를 그대로 재사용하되,
+  // allowedSubTypes로 세부종류 선택 칩을 SBJ+한발멀리뛰기(정면/안쪽/바깥쪽)
+  // 4종만으로 제한한 별도 탭. 점프 5종은 전부 "수직" 점프라 한 탭 안의
+  // 세부종류로 묶여 있었지만, 이 4종은 "수평" 측정이라 성격이 달라 별도
+  // 탭으로 분리해달라는 요청 반영.
+  {
+    id: 'broadjump',
+    no: 7,
+    group: 'power',
+    title: '제자리멀리뛰기',
+    desc: '수평 이동거리(SBJ · 한발멀리뛰기 정면/안쪽/바깥쪽), 실시간/고속영상 분석',
+    icon: 'SBJ',
+    status: 'ready',
+    component: lazy(() => import('./menus/JumpAnalysisHub.jsx')),
+  },
+  {
     id: 'lifting',
     no: 8,
+    group: 'strength',
     title: '바벨 리프팅',
     desc: 'VBT 속도 · 1RM 추정 · 고속영상 분석',
     icon: 'BAR',
@@ -123,6 +150,7 @@ export const MEASURE_MENUS = [
   {
     id: 'stance',
     no: 9,
+    group: 'strength',
     title: '한다리서기 (SLST)',
     desc: '균형 능력, 좌우 비대칭 — 실시간 카메라·영상 업로드',
     icon: 'LEG',
@@ -132,6 +160,7 @@ export const MEASURE_MENUS = [
   {
     id: 'squat',
     no: 10,
+    group: 'strength',
     title: '오버헤드 딥 스쿼트',
     desc: '깊이·상체 기울기·무릎 정렬·골반 — 실시간 카메라·영상 업로드',
     icon: 'SQT',
@@ -139,8 +168,21 @@ export const MEASURE_MENUS = [
     component: lazy(() => import('./menus/SquatAnalysisHub.jsx')),
   },
   {
-    id: 'compare',
+    // [11번 심폐지구력 2026-11-12] 로잉·에어바이크·스키 블루투스 + 심박 밴드 자동 기록 → 참고 VO2max.
+    id: 'cardio',
     no: 11,
+    group: 'cardio',
+    title: '심폐지구력 (VO2max)',
+    desc: '로잉·에어바이크·스키 장비 자동 기록, 심박·회복, 참고 VO2max',
+    icon: 'VO2',
+    status: 'ready',
+    component: lazy(() => import('./menus/CardioTestMeasure.jsx')),
+    orientation: 'any',
+  },
+  {
+    id: 'compare',
+    no: 12,
+    group: 'tool',
     title: '전/후 비교 (오버레이)',
     desc: '사진·영상 오버레이 · 어니언 스킨 비교, 발목 기준 자동 정렬',
     icon: 'CMP',
@@ -151,7 +193,8 @@ export const MEASURE_MENUS = [
   },
   {
     id: 'imaging',
-    no: 12,
+    no: 13,
+    group: 'tool',
     title: '근골격계 영상 확인',
     desc: 'X-ray·CT·초음파·MRI 업로드 — 각도/거리 측정, 소견 태그(내부 참고용)',
     icon: 'IMG',
@@ -162,7 +205,8 @@ export const MEASURE_MENUS = [
   },
   {
     id: 'record',
-    no: 13,
+    no: 14,
+    group: 'tool',
     title: '일반 영상 녹화',
     desc: '카메라 녹화 및 저장',
     icon: 'REC',
@@ -173,24 +217,14 @@ export const MEASURE_MENUS = [
   },
   {
     id: 'timer',
-    no: 14,
+    no: 15,
+    group: 'tool',
     title: '초시계·메트로놈',
     desc: '초시계, 타이머, 인터벌, 메트로놈',
     icon: 'TMR',
     status: 'ready',
     component: lazy(() => import('./menus/TimerTool.jsx')),
     // [가로 허용 2026-11-12] 카메라 자세 판정이 없는 화면이라 세로·가로 모두 쓴다.
-    orientation: 'any',
-  },
-  {
-    // [15번 심폐지구력 2026-11-12] 로잉·에어바이크·스키 블루투스 + 심박 밴드 자동 기록 → 참고 VO2max.
-    id: 'cardio',
-    no: 15,
-    title: '심폐지구력 (VO2max)',
-    desc: '로잉·에어바이크·스키 장비 자동 기록, 심박·회복, 참고 VO2max',
-    icon: 'VO2',
-    status: 'ready',
-    component: lazy(() => import('./menus/CardioTestMeasure.jsx')),
     orientation: 'any',
   },
 ];

@@ -1,6 +1,6 @@
 // ai-measure/core/fitnessMachineBle.js
 // ════════════════════════════════════════════════════════════════════════
-//  [15번 심폐지구력 2026-11-12] 유산소 장비(로잉머신·에어바이크·스키에르고미터)의
+//  [11번 심폐지구력 2026-11-12] 유산소 장비(로잉머신·에어바이크·스키에르고미터)의
 //  블루투스 표준 신호를 크롬 Web Bluetooth로 직접 읽는다. (비용 0원, 서버 없음)
 //   · FTMS(Fitness Machine Service 0x1826): Rower Data / Indoor Bike Data / Cross Trainer Data
 //   · Cycling Power(0x1818): 파워미터형 바이크

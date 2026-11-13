@@ -37,7 +37,7 @@ describe('registry.js — broadjump(제자리멀리뛰기) 탭 등록', () => {
   it('jump 탭과 동일한 컴포넌트(JumpAnalysisHub.jsx)를 재사용한다(새로 안 만듦)', () => {
     const src = readSrc('src', 'ai-measure', 'registry.js');
     const jumpBlock = src.slice(src.indexOf("id: 'jump'"), src.indexOf("id: 'broadjump'"));
-    const broadjumpBlock = src.slice(src.indexOf("id: 'broadjump'"), src.indexOf("id: 'sprint'"));
+    const broadjumpBlock = src.slice(src.indexOf("id: 'broadjump'"), src.indexOf("id: 'lifting'"));
     expect(jumpBlock).toContain("JumpAnalysisHub.jsx'");
     expect(broadjumpBlock).toContain("JumpAnalysisHub.jsx'");
   });

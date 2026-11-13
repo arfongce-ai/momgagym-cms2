@@ -267,9 +267,9 @@ describe('화면·허브 배선', () => {
   const registry = read('ai-measure/registry.js');
   const hub = read('ai-measure/AiMeasureHub.jsx');
   const screen = read('ai-measure/menus/CardioTestMeasure.jsx');
-  it('15번 메뉴가 등록되고 가로·세로 모두 허용', () => {
+  it('11번 메뉴가 등록되고 가로·세로 모두 허용', () => {
     expect(registry).toContain("id: 'cardio'");
-    expect(registry).toContain('no: 15');
+    expect(registry).toContain('no: 11');
     expect(registry).toContain("import('./menus/CardioTestMeasure.jsx')");
   });
   it('허브는 15번 기록을 alert 없이 세션으로 돌려주고 실패는 전파', () => {

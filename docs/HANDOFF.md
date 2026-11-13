@@ -45,6 +45,12 @@
 
 ## 작업 로그
 
+### 2026-11-13 · Claude Code · AI분석 홈: 15개 측정을 비슷한 것끼리 묶음 + 번호 재정렬
+- `registry.js`에 `MEASURE_GROUPS`·메뉴별 `group`·`groupMeasureMenus()` 추가, `AiMeasureHub.jsx` 홈 그리드를 묶음 제목+카드로 표시. 대표님 요청으로 번호(no)도 묶음 순서대로 다시 매김(id·음성 명령·추천 로직은 이름/ID 기준이라 그대로).
+- 새 번호: 1 신체정보 · 2 자세·체형 · 3 ROM / 4 보행·러닝(트레드밀) · 5 보행&스프린터(필드) / 6 점프&RSI · 7 제자리멀리뛰기 / 8 바벨 · 9 한다리서기 · 10 오버헤드 딥 스쿼트 / 11 심폐지구력 / 12 전·후 비교 · 13 영상 확인 · 14 일반 녹화 · 15 초시계. (예전: 스프린터 7→5, 점프 5→6, 제자리멀리뛰기 6→7, 심폐지구력 15→11, 전후비교 11→12, 영상확인 12→13, 녹화 13→14, 초시계 14→15)
+- 주의: 이 파일의 이전 작업 로그에 적힌 '14번 초시계', '15번 심폐지구력' 등은 옛 번호다. 저장된 측정 기록은 번호가 아니라 메뉴 id/제목으로 저장돼 영향 없음.
+- 테스트: `measure_menu_groups.test.js` 추가, 번호 순서를 가정한 기존 테스트 4개(`ai_measure_2607b`, `overlay_compare_registry`, `cardio_test`, `broadjump_tab`) 기대값 갱신. 미확인: 실제 화면(폰·태블릿).
+
 ### 2026-11-13 · Claude Code · 15번 결과 리포트 저장 + A4 JPG 저장·전송 + 저장 확인 팝업
 - 원인: 15번(심폐지구력)은 측정 이력(`ai`)에만 저장되고 전용 결과 리포트·통합 리포트 연결이 없었다(`inferReportType`이 'general' → 미러링 제외, 리포트 화면은 일반 카드).
 - 15번: `unifiedReport.js`에 `cardio` 유형 추가(통합 리포트 미러링·핵심 지표·제목), `src/components/report/CardioReportSheet.jsx`(A4 한 장, 심박·와트 그래프) 신설 → 저장 직후 `CardioTestMeasure.jsx`와 `Report.jsx` 세션 상세에서 같은 화면. 회차 비교 지표(`extractSessionMetric`)·유형 배지 추가.
