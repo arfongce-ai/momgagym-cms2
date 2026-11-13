@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
-import { captureNodeToJpgFile } from '../../ai-measure/core/reportShare';
+import { captureNodeToA4Files } from '../../ai-measure/core/reportShare';
+import { printImageFiles } from '../../utils/printA4';
 import SimpleResultReport from './SimpleResultReport';
 
 async function shareOrDownload(files, title, onMessage) {
@@ -55,14 +56,29 @@ export default function ReportActions({
   const hasImages = hasImageFactory || staticImageFiles.length > 0;
   const hasSecondary = Boolean(videoBlob) || hasImages;
 
+  // 화면의 A4 페이지들을 '정확한 A4 비율 JPG'로 만든다(저장·전송·프린트 공통).
+  const buildReportFiles = async () => {
+    const node = document.getElementById(reportNodeId);
+    if (!node) return null;
+    const pages = Array.from(node.querySelectorAll('.report-a4-page'));
+    const targets = pages.length > 0 ? pages : [node];
+    const files = [];
+    for (let i = 0; i < targets.length; i += 1) {
+      // width: 794 — report-a4-page의 max-width(A4 폭)와 동일. 안 주면 폰 화면의
+      // 좁은 실제 렌더링 폭 그대로 캡처돼 A4 카드가 아니라 세로로 긴 이미지가 나온다.
+      const base = targets.length > 1 ? `몸가짐_${baseName}_${i + 1}` : `몸가짐_${baseName}`;
+      files.push(...await captureNodeToA4Files(targets[i], base, { width: 794 }));
+    }
+    return files;
+  };
+
   const saveReport = async () => {
     if (onReportClick) {
       onReportClick();
       return;
     }
 
-    const node = document.getElementById(reportNodeId);
-    if (!node) {
+    if (!document.getElementById(reportNodeId)) {
       onMessage?.('리포트 화면을 찾을 수 없습니다.');
       return;
     }
@@ -70,18 +86,7 @@ export default function ReportActions({
     setBusy('report');
     onMessage?.('A4 리포트 이미지를 만드는 중...');
     try {
-      const pages = Array.from(node.querySelectorAll('.report-a4-page'));
-      const targets = pages.length > 0 ? pages : [node];
-      const files = [];
-
-      for (let i = 0; i < targets.length; i += 1) {
-        const suffix = targets.length > 1 ? `_A4_${i + 1}` : '_A4';
-        // width: 794 — report-a4-page의 max-width(A4 폭)와 동일. 안 주면 폰 화면의
-        // 좁은 실제 렌더링 폭 그대로 캡처돼 A4 카드가 아니라 세로로 긴 이미지가 나온다.
-        const file = await captureNodeToJpgFile(targets[i], `몸가짐_${baseName}${suffix}.jpg`, { bg: '#0f172a', width: 794 });
-        files.push(file);
-      }
-
+      const files = await buildReportFiles();
       await shareOrDownload(files, '측정 리포트', onMessage);
       // 리포트 저장(A4 JPG) 성공 후 회원 기록 자동 저장 (별도 탭 불필요)
       if (onAfterReportSave) {
@@ -89,6 +94,25 @@ export default function ReportActions({
       }
     } catch (e) {
       onMessage?.('리포트 저장에 실패했습니다. 화면을 다시 열고 시도해주세요.');
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  // [A4 프린트 2026-11-13] 저장·전송하는 A4 JPG 와 같은 이미지를 그대로 프린터로 보낸다.
+  const printReport = async () => {
+    if (!document.getElementById(reportNodeId)) {
+      onMessage?.('리포트 화면을 찾을 수 없습니다.');
+      return;
+    }
+    setBusy('print');
+    onMessage?.('A4 프린트 이미지를 만드는 중...');
+    try {
+      const files = await buildReportFiles();
+      const ok = await printImageFiles(files);
+      onMessage?.(ok ? '프린트 창을 열었습니다. 용지는 A4로 선택해 주세요.' : '프린트 창을 열지 못했습니다.');
+    } catch (e) {
+      onMessage?.('프린트 준비에 실패했습니다. 화면을 다시 열고 시도해주세요.');
     } finally {
       setBusy(null);
     }
@@ -141,7 +165,7 @@ export default function ReportActions({
         onMessage?.('쉬운 버전 화면을 찾을 수 없습니다.');
         return;
       }
-      const file = await captureNodeToJpgFile(node, `몸가짐_${baseName}_쉬운버전_A4.jpg`, { bg: '#0f172a', width: 794 });
+      const file = await captureNodeToA4Files(node, `몸가짐_${baseName}_쉬운버전`, { width: 794 });
       await shareOrDownload(file, '쉬운 버전 리포트', onMessage);
       if (onAfterReportSave) {
         try { await onAfterReportSave(); } catch (e) { /* 저장 실패는 onAfterReportSave 내부에서 처리 */ }
@@ -185,6 +209,18 @@ export default function ReportActions({
           </button>
         )}
       </div>
+
+      {reportNodeId && !onReportClick && (
+        <button
+          onClick={printReport}
+          disabled={busy != null}
+          data-testid="report-print"
+          className="mt-2 w-full rounded-xl border-2 border-slate-400 dark:border-slate-500 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 font-black py-3 text-sm active:scale-95 disabled:opacity-60 flex items-center justify-center gap-2"
+        >
+          {busy === 'print' && <span className="h-4 w-4 rounded-full border-2 border-slate-500 border-t-transparent animate-spin" />}
+          🖨 프린트 (A4)
+        </button>
+      )}
 
       {simpleSummary && (
         <button

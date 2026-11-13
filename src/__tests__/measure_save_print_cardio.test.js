@@ -1,5 +1,7 @@
-// 2026-11-13 — 15번 결과 리포트 저장, A4 리포트 JPG 저장, 저장 확인 팝업.
+// 2026-11-13 — 15번 결과 리포트 저장, A4 JPG 저장·전송·프린트, 저장 확인 팝업.
 import { describe, it, expect } from 'vitest';
+import { planA4Pages } from '../ai-measure/core/reportShare';
+import { buildPrintHtml } from '../utils/printA4';
 import { readFileSync } from 'node:fs';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -41,12 +43,30 @@ describe('15번 VO2max 리포트 저장', () => {
   });
 });
 
-describe('리포트 저장(A4 JPG)', () => {
-  it('모든 결과 리포트 공통 버튼(ReportActions)이 리포트 저장(JPG)을 제공하고 인쇄 버튼은 없다', () => {
+describe('리포트 저장·전송·프린트(A4 JPG)', () => {
+  it('A4 페이지 계획: 짧으면 채우고, 조금 길면 줄이고, 길면 여러 장으로 나눈다', () => {
+    const w = 1588; const h = Math.round(w * 297 / 210);
+    expect(planA4Pages(w, h - 300)).toMatchObject({ mode: 'pad', pages: 1 });
+    expect(planA4Pages(w, Math.round(h * 1.04))).toMatchObject({ mode: 'fit', pages: 1 });
+    expect(planA4Pages(w, h * 2.5)).toMatchObject({ mode: 'slice', pages: 3 });
+    expect(planA4Pages(w, h).pageH).toBe(h);
+  });
+  it('프린트 문서는 A4 용지에 JPG 한 장씩 깐다', () => {
+    const html = buildPrintHtml(['blob:a', 'blob:b']);
+    expect(html).toContain('size: A4');
+    expect(html.match(/class="pg"/g)).toHaveLength(2);
+    expect(html).toContain('width: 210mm');
+  });
+  it('공통 버튼(ReportActions)과 리포트 화면이 같은 A4 JPG 로 저장·전송·프린트한다', () => {
     const src = readFileSync('src/components/report/ReportActions.jsx', 'utf8');
     expect(src).toContain('리포트 저장');
-    expect(src).toContain('.jpg');
-    expect(src).not.toContain('A4 인쇄');
+    expect(src).toContain('프린트 (A4)');
+    expect(src).toContain('captureNodeToA4Files');
+    expect(src).toContain('printImageFiles');
+    const report = readFileSync('src/pages/Report.jsx', 'utf8');
+    expect(report).toContain('captureNodeToA4Files');
+    expect(report).toContain('printUnifiedResult');
+    expect(report).not.toContain('captureNodeToJpgFile(targets');
   });
   it('15번 리포트도 공통 버튼을 쓴다', () => {
     expect(readFileSync('src/components/report/CardioReportSheet.jsx', 'utf8')).toContain('<ReportActions');

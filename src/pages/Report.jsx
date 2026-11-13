@@ -12,7 +12,8 @@ import { buildSummaryData, scoreToStatus, defaultRecommendation } from '../ai-me
 import { buildComprehensiveReport } from '../ai-measure/core/comprehensiveReport';
 import { loadAllMeasureRecords, deleteMeasureRound, deleteMeasureType, deleteMeasureRecord } from '../services/comprehensiveReportService';
 import { findAnomalies } from '../ai-measure/core/comprehensiveReport';
-import { captureNodeToJpgFile, shareMeasurementSummaryToKakao } from '../ai-measure/core/reportShare';
+import { captureNodeToA4Files, shareMeasurementSummaryToKakao } from '../ai-measure/core/reportShare';
+import { printImageFiles } from '../utils/printA4';
 import { canCaptureUnifiedResult, isLiftingShapedSession } from '../components/report/sessionShare';
 import SessionShareReport from '../components/report/SessionShareReport';
 // [쉬운 버전 리포트 2026-08-27] 측정 종류를 안 가리는 단일 컴포넌트라 lazy 아님
@@ -863,7 +864,7 @@ export function extractSessionMetric(session) {
   }
 }
 
-function UnifiedResultCard({ item, onOpen, onShare, onShareSimple, sharing, sharingSimple }) {
+function UnifiedResultCard({ item, onOpen, onShare, onShareSimple, onPrint, sharing, sharingSimple }) {
   const statusStyle = STATUS_STYLE[item.summary.status] || STATUS_STYLE.unknown;
   const findings = (item.summary.topFindings || []).slice(0, 3);
   const canOpen = item.source !== 'session' || item.session?.menu;
@@ -934,6 +935,15 @@ function UnifiedResultCard({ item, onOpen, onShare, onShareSimple, sharing, shar
           className="flex items-center justify-center gap-1.5 rounded-xl border-2 border-amber-400 bg-amber-50 dark:bg-amber-500/10 py-2.5 text-[12.5px] font-black text-amber-700 dark:text-amber-300 transition active:scale-[0.99] disabled:opacity-60"
         >
           {sharingSimple ? '생성 중…' : '🙂 쉬운 버전 공유'}
+        </button>
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onPrint?.(item); }}
+          disabled={sharing || sharingSimple}
+          data-testid="result-print"
+          className="col-span-2 flex items-center justify-center gap-1.5 rounded-xl border-2 border-slate-400 dark:border-slate-500 bg-white dark:bg-slate-800 py-2.5 text-[12.5px] font-black text-slate-800 dark:text-slate-100 transition active:scale-[0.99] disabled:opacity-60"
+        >
+          🖨 프린트 (A4)
         </button>
       </div>
     </div>
@@ -1366,8 +1376,9 @@ export default function Report() {
       const files = [];
 
       for (let i = 0; i < targets.length; i += 1) {
-        const suffix = targets.length > 1 ? `_A4_${i + 1}` : '_A4';
-        files.push(await captureNodeToJpgFile(targets[i], `${baseName}${suffix}.jpg`, { bg: '#0f172a', width: 794 }));
+        // 저장·전송·프린트 모두 같은 '정확한 A4 비율 JPG'(긴 리포트는 여러 장)를 쓴다.
+        const base = targets.length > 1 ? `${baseName}_${i + 1}` : baseName;
+        files.push(...await captureNodeToA4Files(targets[i], base, { width: 794 }));
       }
 
       return files;
@@ -1408,6 +1419,24 @@ export default function Report() {
       setMsg(res.msg);
     } catch (e) {
       setMsg(`카카오 공유 실패: ${e?.message || '오류'}`);
+    } finally {
+      setSharingId(null);
+      setSharingMode(null);
+      setTimeout(() => setMsg(null), 2600);
+    }
+  };
+
+  // [A4 프린트 2026-11-13] 공유하는 A4 JPG 와 같은 이미지를 그대로 프린터로 보낸다.
+  const printUnifiedResult = async (item) => {
+    if (!item || sharingId) return;
+    setSharingId(item.id); setSharingMode('print'); setMsg('A4 프린트 이미지를 만드는 중입니다...');
+    try {
+      const files = canCaptureUnifiedResult(item) ? await captureUnifiedResultFiles(item) : [];
+      if (!files.length) { setMsg('이 결과는 프린트할 리포트 화면이 없습니다. 상세 리포트를 열어 프린트해 주세요.'); return; }
+      const ok = await printImageFiles(files);
+      setMsg(ok ? '프린트 창을 열었습니다. 용지는 A4로 선택해 주세요.' : '프린트 창을 열지 못했습니다.');
+    } catch (e) {
+      setMsg(`프린트 준비 실패: ${e?.message || '오류'}`);
     } finally {
       setSharingId(null);
       setSharingMode(null);
@@ -1568,6 +1597,7 @@ export default function Report() {
                     onOpen={openUnifiedResult}
                     onShare={shareUnifiedResult}
                     onShareSimple={(it) => shareUnifiedResult(it, { simple: true })}
+                    onPrint={printUnifiedResult}
                     sharing={sharingId === item.id && sharingMode !== 'simple'}
                     sharingSimple={sharingId === item.id && sharingMode === 'simple'}
                   />
