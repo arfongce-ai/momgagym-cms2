@@ -1,0 +1,237 @@
+diff --git a/src/__tests__/momi_activation_window_2611.test.js b/src/__tests__/momi_activation_window_2611.test.js
+new file mode 100644
+index 0000000..3386e6e
+--- /dev/null
++++ b/src/__tests__/momi_activation_window_2611.test.js
+@@ -0,0 +1,97 @@
++// [2026-11-13] "모미야" → "네, 선생님." 뒤 명령이 실행되지 않던 문제의 실행형 검증.
++// 대기창(5초)이 호출 확정 시점부터 흘러, 느린 기기에서는 명령이 확정되기 전에 닫혔다.
++import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
++
++const store = { slots: [], idx: 0, effects: [] };
++vi.mock('react', () => ({
++  useState: (init) => {
++    const i = store.idx++;
++    if (!(i in store.slots)) store.slots[i] = { v: typeof init === 'function' ? init() : init };
++    const slot = store.slots[i];
++    return [slot.v, (v) => { slot.v = typeof v === 'function' ? v(slot.v) : v; }];
++  },
++  useRef: (init) => {
++    const i = store.idx++;
++    if (!(i in store.slots)) store.slots[i] = { current: init };
++    return store.slots[i];
++  },
++  useCallback: (fn) => fn,
++  useEffect: (fn) => { store.effects.push(fn); },
++}));
++
++class FakeSR {
++  static instances = [];
++  static available = async () => 'unavailable';
++  constructor() { FakeSR.instances.push(this); }
++  start() { queueMicrotask(() => this.onstart?.()); }
++  stop() { queueMicrotask(() => this.onend?.()); }
++  abort() { queueMicrotask(() => { this.onerror?.({ error: 'aborted' }); this.onend?.(); }); }
++  emit(text, isFinal) {
++    const result = Object.assign([{ transcript: text, confidence: 0.9 }], { isFinal });
++    this.onresult?.({ resultIndex: 0, results: [result] });
++  }
++}
++
++const flush = async () => { for (let i = 0; i < 5; i += 1) await Promise.resolve(); };
++
++async function mountHook() {
++  store.idx = 0;
++  store.effects = [];
++  const { useMomiVoice: momiVoice } = await import('../hooks/useMomiVoice');
++  const commands = [];
++  const mismatches = [];
++  const wakes = [];
++  const api = momiVoice({
++    onCommand: (t) => commands.push(t),
++    onMismatch: (t) => mismatches.push(t),
++    onWakeOnly: () => wakes.push(1),
++  });
++  store.effects.forEach((fn) => fn());
++  const recognition = FakeSR.instances[FakeSR.instances.length - 1];
++  await api.startListening();
++  await flush();
++  return { commands, mismatches, wakes, recognition };
++}
++
++describe('모미 호출 뒤 명령 대기창 (실행형)', () => {
++  beforeEach(() => {
++    store.slots = []; store.idx = 0; store.effects = [];
++    FakeSR.instances = [];
++    globalThis.window = { SpeechRecognition: FakeSR };
++    vi.stubGlobal('navigator', { userAgent: 'test', platform: 'Win32', maxTouchPoints: 0 });
++    vi.useFakeTimers();
++    vi.spyOn(console, 'warn').mockImplementation(() => {});
++    vi.spyOn(console, 'info').mockImplementation(() => {});
++    vi.spyOn(console, 'log').mockImplementation(() => {});
++  });
++  afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); delete globalThis.window; });
++
++  it('대기창 안에 말을 시작했으면, 확정이 5초를 넘겨도 명령으로 실행한다', async () => {
++    const { commands, mismatches, wakes, recognition } = await mountHook();
++    recognition.emit('모미야', true);
++    await vi.advanceTimersByTimeAsync(400);
++    expect(wakes.length).toBe(1);
++    // 모미 대답 + 마이크 재시작으로 3.6초가 지난 뒤에야 말이 들리기 시작(호출 후 4초)
++    await vi.advanceTimersByTimeAsync(3600);
++    recognition.emit('회원', false);
++    await vi.advanceTimersByTimeAsync(900);
++    recognition.emit('회원 관리', false);
++    await vi.advanceTimersByTimeAsync(900);
++    // 호출 확정 후 약 5.8초 시점에 확정 — 수정 전에는 5초에 창이 닫혀 mismatch로 버려졌다
++    recognition.emit('회원 관리 열어 줘', true);
++    await vi.advanceTimersByTimeAsync(400);
++    expect(commands).toEqual(['회원 관리 열어 줘']);
++    expect(mismatches).toEqual([]);
++  });
++
++  it('5초 동안 아무 말도 없으면 창이 닫히고, 그 뒤의 말은 명령으로 실행하지 않는다', async () => {
++    const { commands, mismatches, recognition } = await mountHook();
++    recognition.emit('모미야', true);
++    await vi.advanceTimersByTimeAsync(400);
++    await vi.advanceTimersByTimeAsync(5100);
++    recognition.emit('오늘 점심 뭐 먹지', true);
++    await vi.advanceTimersByTimeAsync(400);
++    expect(commands).toEqual([]);
++    expect(mismatches).toEqual(['오늘 점심 뭐 먹지']);
++  });
++});
+diff --git a/src/__tests__/momi_recognition_boost_2609.test.js b/src/__tests__/momi_recognition_boost_2609.test.js
+index 4920d1a..fcba2aa 100644
+--- a/src/__tests__/momi_recognition_boost_2609.test.js
++++ b/src/__tests__/momi_recognition_boost_2609.test.js
+@@ -26,10 +26,24 @@ describe('웨이크워드 오인식 제어', () => {
+     }
+   );
+ 
+-  it.each(['소미야', '보미야', '봄이야', '모니야', '모미여', '오늘 모미야'])('%s는 웨이크워드로 오탐하지 않는다', (heard) => {
++  it.each(['소미야', '보미야', '봄이야', '내 몸이야 진짜 아파', '아까 모미 켰어', '하모니야', '오늘 모미야라고 불렀어'])('%s는 웨이크워드로 오탐하지 않는다', (heard) => {
+     expect(matchWakeWord(heard)).toBeNull();
+   });
+ 
++  // [2026-11-13] 대표님 요청 — 비슷한 발음 추가 + 앞에 군소리가 붙어도 인정.
++  it.each(['모니야', '모미여', '오미야', '모비야', '노미야', '모미요', '뭐미야'])('추가된 비슷한 발음 "%s"도 호출어로 분리한다', (wake) => {
++    const heard = `${wake} 회원 관리 열어줘`;
++    const m = matchWakeWord(heard);
++    expect(m).not.toBeNull();
++    expect(heard.slice(m.index + m.length).trim()).toBe('회원 관리 열어줘');
++  });
++
++  it.each(['어 모미야 타이머 켜줘', '자 내려가고 모미야 타이머 켜줘', '오늘 모니야 타이머 켜줘'])('앞에 다른 말이 붙은 "%s"에서도 호출어 뒤를 명령으로 자른다', (heard) => {
++    const m = matchWakeWord(heard);
++    expect(m).not.toBeNull();
++    expect(heard.slice(m.index + m.length).trim()).toBe('타이머 켜줘');
++  });
++
+   it('기존 변형(모미야/몸이야)은 그대로 동작한다', () => {
+     expect(matchWakeWord('모미야')).not.toBeNull();
+     expect(matchWakeWord('몸이야 리포트')).not.toBeNull();
+@@ -42,11 +56,14 @@ describe('웨이크워드 오인식 제어', () => {
+     expect(resolveInterimWakeCommand('모미야 회원 관리', '회원 관리 열어줘', 1000, 5001)).toBeNull();
+   });
+ 
+-  it('단독 호출은 고유한 "모미야/모미"만 활성화하고 발음 혼동 별칭은 명령과 함께일 때만 허용한다', () => {
++  it('단독 호출: 고유한 "모미야/모미"는 항상, 발음 혼동 별칭은 그 한마디가 발화 전부일 때만 활성화한다', () => {
+     expect(isSafeWakeOnly('모미야', matchWakeWord('모미야'))).toBe(true);
+     expect(isSafeWakeOnly('모미', matchWakeWord('모미'))).toBe(true);
+-    expect(isSafeWakeOnly('몸이야', matchWakeWord('몸이야'))).toBe(false);
+-    expect(isSafeWakeOnly('모미아', matchWakeWord('모미아'))).toBe(false);
++    expect(isSafeWakeOnly('어 모미야', matchWakeWord('어 모미야'))).toBe(true);
++    expect(isSafeWakeOnly('몸이야', matchWakeWord('몸이야'))).toBe(true);
++    expect(isSafeWakeOnly('모미아', matchWakeWord('모미아'))).toBe(true);
++    expect(isSafeWakeOnly('모니야?', matchWakeWord('모니야?'))).toBe(true);
++    expect(isSafeWakeOnly('오늘 모니야', matchWakeWord('오늘 모니야'))).toBe(false);
+   });
+ });
+ 
+diff --git a/src/hooks/useMomiVoice.js b/src/hooks/useMomiVoice.js
+index ee8b6c4..4760b2c 100644
+--- a/src/hooks/useMomiVoice.js
++++ b/src/hooks/useMomiVoice.js
+@@ -36,6 +36,19 @@ import {
+ // 고유한 호출어와 실제로 확인된 발음 혼동만 허용한다. 사람 이름과 비슷한 후보를
+ // 넓게 받아들이면 상시 감지에서 주변 대화에 반응할 수 있어 퍼지 매칭은 쓰지 않는다.
+ const WAKE_WORD_VARIANTS = ['모미야', '몸이야', '모미아', '모미'].map((w) => w.normalize('NFC'));
++// [인식률 개선 2026-11-13] "불러도 묵묵부답" 대응(대표님 요청) — 엔진이 "모미야"를 자주
++// 잘못 받아쓰는 형태를 명시적으로 인정한다. 사람 이름(보미야·소미야·봄이야)은 계속 제외.
++// 긴 형태가 '모미'보다 먼저 검사되도록 앞쪽에 넣는다.
++WAKE_WORD_VARIANTS.unshift(
++  ...[
++    '모임이야', '모이야', '오미야', '모니야', '무미야', '머미야', '마미야', '모비야', '모미여', '몸이여',
++    '모미요', '노미야', '모메야', '모매야', '뭐미야', '몸미야', '모니아', '몸이아', '모미얌', '모미양',
++  ].map((w) => w.normalize('NFC'))
++);
++// 실제 낱말·일상 표현과 겹칠 수 있는 형태는 지금처럼 발화 첫머리에서만 인정한다.
++// 그 밖의(사전에 없는) 형태는 "어 모미야", "자 내려가고 모미야 타이머"처럼 앞에 다른 말이
++// 붙어도 독립된 낱말이면 인정한다 — 소음 속에서 앞에 군소리가 붙어 무시되던 문제 대응.
++const WAKE_START_ONLY = new Set(['모미', '몸이야', '몸이여', '몸이아', '모임이야', '모이야', '마미야']);
+ 
+ // 퍼지 유사도는 "소미야" 같은 사람 이름도 호출어로 인식할 수 있어 사용하지 않는다.
+ 
+@@ -47,7 +60,9 @@ export function matchWakeWord(heard) {
+     const index = normalized.indexOf(variant);
+     const nextCharacter = index === -1 ? '' : normalized[index + variant.length];
+     const endsAtWordBoundary = !nextCharacter || !/[가-힣]/u.test(nextCharacter);
+-    if (index !== -1 && isAtUtteranceStart(index) && endsAtWordBoundary) {
++    const startsAtWordBoundary = index <= 0 || !/[가-힣]/u.test(normalized[index - 1]);
++    const positionOk = WAKE_START_ONLY.has(variant) ? isAtUtteranceStart(index) : startsAtWordBoundary;
++    if (index !== -1 && positionOk && endsAtWordBoundary) {
+       return { index, length: variant.length };
+     }
+   }
+@@ -141,9 +156,11 @@ export function resolveInterimWakeCommand(interimText, finalText, interimAt, now
+ export function isSafeWakeOnly(heard, match) {
+   if (!heard || !match) return false;
+   const wake = heard.slice(match.index, match.index + match.length).replace(/[\s,，.!?。、…-]/gu, '');
+-  // 음성 혼동 변형은 같은 문장에 명령이 있을 때만 받는다. 단독으로 2단계 대화를
+-  // 여는 호출은 고유 이름 또는 잘린 고유 이름만 허용해 이름 오탐을 줄인다.
+-  return wake === '모미야' || wake === '모미';
++  if (wake === '모미야' || wake === '모미') return true;
++  // [2026-11-13] 발음 혼동 변형도, 그 한마디가 발화의 전부(앞에 다른 말 없음)일 때는
++  // 단독 호출로 받는다 — 실기기에서 "모미야"가 "몸이야"로만 들려 대답이 없던 문제.
++  // 앞에 다른 말이 붙은 변형("오늘 모니야")은 여전히 명령이 함께 있을 때만 받는다.
++  return /^[\s,，.!?。、…-]*$/u.test(heard.slice(0, match.index));
+ }
+ 
+ // [노이즈 캔슬링 2026-09b] 아래 소음 게이트가 쓰는 두 값.
+@@ -281,6 +298,16 @@ export function useMomiVoice({
+       activationTimerRef.current = null;
+     }
+   };
++  // [버그 수정 2026-11-13] "모미야" → "네, 선생님." 뒤 명령이 실행되지 않던 문제.
++  // 대기창(ACTIVATION_WINDOW_MS)이 "모미야"가 확정된 순간부터 흘러서, 모미가 대답하는
++  // 시간(그동안 마이크는 꺼짐)·마이크 재시작·명령을 말하는 시간·확정 지연이 전부 그 5초를
++  // 깎아 먹었다. 폰·노트북처럼 재시작과 확정이 느린 기기에서는 명령이 확정될 때 이미 창이
++  // 닫혀 일반 대화(mismatch)로 버려졌다. 대기 중일 때만 창을 다시 연다(새로 열지는 않음).
++  const extendActivation = () => {
++    if (!activatedRef.current) return;
++    if (activationTimerRef.current) clearTimeout(activationTimerRef.current);
++    activationTimerRef.current = setTimeout(clearActivation, ACTIVATION_WINDOW_MS);
++  };
+ 
+   // [예약 생성 프로젝트 2026-08-08] "모미야" 없이 바로 "네/아니요" 같은 즉답을
+   // 받아야 하는 경우(예: 예약 제안 후 확인) — activatedRef(2단계 명령 대기)와는
+@@ -427,6 +454,8 @@ export function useMomiVoice({
+       callbacksRef.current.onRecognitionStatus?.('transcript');
+       const interim = collectRecognitionText(event, { preferWakeWord: requireWakeWord });
+       const heard = collectRecognitionText(event, { finalOnly: true, preferWakeWord: requireWakeWord });
++      // 대기창 안에 말을 시작했으면, 문장이 확정될 때까지 창을 닫지 않는다.
++      if (interim || heard) extendActivation();
+       if (!heard) {
+         const isAddressed = !requireWakeWord || activatedRef.current || pendingReplyRef.current || matchWakeWord(interim);
+         if (interim && isAddressed && onInterim) onInterim(interim);
+@@ -806,6 +835,9 @@ export function useMomiVoice({
+     if (!synth) return;
+     const timer = setInterval(() => {
+       const speaking = synth.speaking;
++      // 모미가 말하는 동안은 마이크가 꺼져 있으므로 대기창 시간을 쓰지 않는다 —
++      // 말이 끝난 시점부터 5초가 흐르게 한다(고착 시 아래 12초 강제 취소로 끝남).
++      if (speaking) extendActivation();
+       // [TTS 정지 방지 2026-09-29] Chrome은 speechSynthesis.speaking이 true로 굳는 경우가 있다.
+       // 12초 넘게 "말하는 중"이면 고착으로 보고 강제로 끊어 마이크를 되살린다.
+       if (speaking && pausedForSpeechRef.current && pausedAtRef.current
