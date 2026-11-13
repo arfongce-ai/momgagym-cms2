@@ -6,6 +6,7 @@
 // 트레이너가 직접 마이크 버튼으로 켜고 꺼야 한다(GlobalVoiceCommand.jsx 참고).
 
 import { useRef, useState, useCallback, useEffect } from 'react';
+import { momiLog } from '../utils/momiLog';
 import {
   hasMicSignal,
   requestLocalRecognitionInstall,
@@ -436,6 +437,7 @@ export function useMomiVoice({
     // 실제로 맞는 해석이 섞여 있을 확률이 올라간다.
     recognition.maxAlternatives = 5;
     recognition.onstart = () => {
+      momiLog(`마이크 켜짐(${localRecognitionModeRef.current === 'local' ? '기기 내 인식' : '온라인 인식'})`);
       abortedByAppRef.current = false;
       recognitionSessionHadSpeechRef.current = false;
       recognitionSessionHadResultRef.current = false;
@@ -459,6 +461,7 @@ export function useMomiVoice({
       if (!heard) {
         const isAddressed = !requireWakeWord || activatedRef.current || pendingReplyRef.current || matchWakeWord(interim);
         if (interim && isAddressed && onInterim) onInterim(interim);
+        if (interim) momiLog(`듣는 중: ${interim}`);
         if (requireWakeWord && interim && matchWakeWord(interim)) {
           wakeInterimRef.current.text = interim;
           wakeInterimRef.current.at = Date.now();
@@ -621,6 +624,7 @@ export function useMomiVoice({
       // (원격 디버깅이 안 되는 기기가 많아서 콘솔만으론 부족함).
       // (not-allowed=권한 거부, no-speech=일정 시간 무음, audio-capture=마이크 없음,
       //  network=네트워크 문제 — Chrome 인식은 온라인 필요)
+      momiLog(`인식 오류: ${event.error}${abortedByAppRef.current ? '(모미가 직접 끔)' : ''}`);
       const errorKind = classifyRecognitionError(event.error, {
         localMode: localRecognitionModeRef.current,
         abortedByApp: abortedByAppRef.current,
@@ -673,6 +677,7 @@ export function useMomiVoice({
     };
 
     recognition.onend = () => {
+      momiLog(`마이크 꺼짐(다시 켬: ${shouldRestartRef.current ? (pausedForSpeechRef.current ? '모미 말 끝난 뒤' : '즉시') : '안 함'})`);
       const { onErrorOccurred } = callbacksRef.current;
       // [인식률 개선 2026-09-29] "모미야"가 임시 결과로만 들리고 확정 없이 세션이 끝난 경우
       // (소음 속 짧은 호출에서 흔함) — 그 임시 텍스트를 확정된 것처럼 한 번 처리한다.
@@ -848,6 +853,7 @@ export function useMomiVoice({
       if (speaking && !pausedForSpeechRef.current) {
         pausedForSpeechRef.current = true;
         pausedAtRef.current = Date.now();
+        momiLog('모미가 말하는 중 — 마이크 잠시 끔');
         if (recognitionRef.current) {
           try {
             // abort()는 stop()과 달리 처리 중이던 오디오를 즉시 버린다 — 방금
@@ -861,6 +867,7 @@ export function useMomiVoice({
         }
       } else if (!speaking && pausedForSpeechRef.current) {
         pausedForSpeechRef.current = false;
+        momiLog('모미 말 끝 — 마이크 다시 켜기 시도');
         if (recognitionRef.current && shouldRestartRef.current) {
           try {
             startRecognitionRef.current?.();

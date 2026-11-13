@@ -10,6 +10,7 @@ import { useKioskMode } from '../../hooks/useKioskMode';
 import { useIsDesktop } from '../../hooks/useIsDesktop';
 import GlobalVoiceCommand from '../common/GlobalVoiceCommand';
 import KioskVoiceCommand from '../common/KioskVoiceCommand';
+import MomiLogOverlay from '../common/MomiLogOverlay';
 import AdminLockGate from '../common/AdminLockGate';
 
 // 전체 메뉴 (사이드바 · 전체메뉴 시트 공용)
@@ -223,6 +224,8 @@ export default function AppLayout({ children }) {
           트레이너 계정에서는 마이크 권한 요청·상시 감지 자체를 시작하지 않는다. */}
       {user?.role === 'admin' && kioskOn && <KioskVoiceCommand />}
       {user?.role === 'admin' && !kioskOn && isDesktop && <GlobalVoiceCommand />}
+      {/* [2026-11-13] 모미 화면 진단 기록 — 주소에 ?momilog=1 로 켠 기기에서만 보인다. */}
+      {user?.role === 'admin' && <MomiLogOverlay />}
     </div>
   );
 }
