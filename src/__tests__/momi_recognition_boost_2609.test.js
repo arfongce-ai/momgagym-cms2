@@ -26,8 +26,22 @@ describe('웨이크워드 오인식 제어', () => {
     }
   );
 
-  it.each(['소미야', '보미야', '봄이야', '모니야', '모미여', '오늘 모미야'])('%s는 웨이크워드로 오탐하지 않는다', (heard) => {
+  it.each(['소미야', '보미야', '봄이야', '내 몸이야 진짜 아파', '아까 모미 켰어', '하모니야', '오늘 모미야라고 불렀어'])('%s는 웨이크워드로 오탐하지 않는다', (heard) => {
     expect(matchWakeWord(heard)).toBeNull();
+  });
+
+  // [2026-11-13] 대표님 요청 — 비슷한 발음 추가 + 앞에 군소리가 붙어도 인정.
+  it.each(['모니야', '모미여', '오미야', '모비야', '노미야', '모미요', '뭐미야'])('추가된 비슷한 발음 "%s"도 호출어로 분리한다', (wake) => {
+    const heard = `${wake} 회원 관리 열어줘`;
+    const m = matchWakeWord(heard);
+    expect(m).not.toBeNull();
+    expect(heard.slice(m.index + m.length).trim()).toBe('회원 관리 열어줘');
+  });
+
+  it.each(['어 모미야 타이머 켜줘', '자 내려가고 모미야 타이머 켜줘', '오늘 모니야 타이머 켜줘'])('앞에 다른 말이 붙은 "%s"에서도 호출어 뒤를 명령으로 자른다', (heard) => {
+    const m = matchWakeWord(heard);
+    expect(m).not.toBeNull();
+    expect(heard.slice(m.index + m.length).trim()).toBe('타이머 켜줘');
   });
 
   it('기존 변형(모미야/몸이야)은 그대로 동작한다', () => {
@@ -42,11 +56,14 @@ describe('웨이크워드 오인식 제어', () => {
     expect(resolveInterimWakeCommand('모미야 회원 관리', '회원 관리 열어줘', 1000, 5001)).toBeNull();
   });
 
-  it('단독 호출은 고유한 "모미야/모미"만 활성화하고 발음 혼동 별칭은 명령과 함께일 때만 허용한다', () => {
+  it('단독 호출: 고유한 "모미야/모미"는 항상, 발음 혼동 별칭은 그 한마디가 발화 전부일 때만 활성화한다', () => {
     expect(isSafeWakeOnly('모미야', matchWakeWord('모미야'))).toBe(true);
     expect(isSafeWakeOnly('모미', matchWakeWord('모미'))).toBe(true);
-    expect(isSafeWakeOnly('몸이야', matchWakeWord('몸이야'))).toBe(false);
-    expect(isSafeWakeOnly('모미아', matchWakeWord('모미아'))).toBe(false);
+    expect(isSafeWakeOnly('어 모미야', matchWakeWord('어 모미야'))).toBe(true);
+    expect(isSafeWakeOnly('몸이야', matchWakeWord('몸이야'))).toBe(true);
+    expect(isSafeWakeOnly('모미아', matchWakeWord('모미아'))).toBe(true);
+    expect(isSafeWakeOnly('모니야?', matchWakeWord('모니야?'))).toBe(true);
+    expect(isSafeWakeOnly('오늘 모니야', matchWakeWord('오늘 모니야'))).toBe(false);
   });
 });
 
