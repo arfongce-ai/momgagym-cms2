@@ -21,9 +21,8 @@ describe('registry.js — 전/후 비교(compare) 메뉴 등록', () => {
 
   it('timer는 여전히 정렬 후 배열 맨 끝이다(기존 불변식 유지)', () => {
     const order = [...MEASURE_MENUS].sort((a, b) => a.no - b.no).map((m) => m.id);
-    // [15번 심폐지구력 2026-11-12] 15번(cardio)만 초시계 뒤에 온다.
-    expect(order.indexOf('timer')).toBe(order.length - 2);
-    expect(order[order.length - 1]).toBe('cardio');
+    // [번호 재정렬 2026-11-13] 묶음 순서로 번호를 다시 매겨 timer(15번)가 다시 맨 끝.
+    expect(order[order.length - 1]).toBe('timer');
     expect(order[0]).toBe('body');
   });
 
@@ -35,7 +34,7 @@ describe('registry.js — 전/후 비교(compare) 메뉴 등록', () => {
     expect(nos.every((n) => Number.isInteger(n))).toBe(true);
   });
 
-  it('compare는 개별 측정 항목들(스쿼트까지) 뒤, 도구(녹화·초시계) 앞에 온다', () => {
+  it('compare는 개별 측정 항목들(스쿼트·심폐지구력까지) 뒤, 도구(녹화·초시계) 앞에 온다', () => {
     const order = [...MEASURE_MENUS].sort((a, b) => a.no - b.no).map((m) => m.id);
     expect(order.indexOf('squat')).toBeLessThan(order.indexOf('compare'));
     expect(order.indexOf('compare')).toBeLessThan(order.indexOf('record'));

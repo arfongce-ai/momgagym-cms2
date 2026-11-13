@@ -145,10 +145,10 @@ export default function AiMeasureHub() {
     const isStance = active.id === 'stance';
     const isSquat = active.id === 'squat';
     const isSprint = active.id === 'sprint';
-    // [심박 기록 2026-11-11] 14번(초시계) 화면의 심박 패널이 넘기는 기록. 패널이 저장 상태
+    // [심박 기록 2026-11-11] 15번(초시계) 화면의 심박 패널이 넘기는 기록. 패널이 저장 상태
     //  (저장 중/✓/실패)를 직접 보여주므로 lifting·stance 처럼 alert 없이 세션을 돌려준다.
     const isHeartRate = active.id === 'timer' && data?.kind === 'heart_rate';
-    // [15번 심폐지구력 2026-11-12] 화면이 저장 상태를 직접 보여주므로 alert 없이 세션을 돌려준다.
+    // [11번 심폐지구력 2026-11-12] 화면이 저장 상태를 직접 보여주므로 alert 없이 세션을 돌려준다.
     const isCardio = active.id === 'cardio' && data?.kind === 'cardio_test';
 
     // 측정 정직성: 미등록회원인데 guest id 가 아직 없으면 저장 직전 확정 발급
@@ -524,7 +524,7 @@ export default function AiMeasureHub() {
     // 화면(JumpAnalysisHub.jsx, 카메라 뷰)이라 같은 넓은 레이아웃을 쓴다.
     const wideMeasure = active.id === 'gait' || active.id === 'jump' || active.id === 'broadjump' || active.id === 'posture' || active.id === 'rom' || active.id === 'lifting' || active.id === 'compare' || active.id === 'imaging';
     return (
-      // [가로 허용 2026-11-12] 초시계(14번)는 가로일 때 도구 | 심박 2열로 넓힌다.
+      // [가로 허용 2026-11-12] 초시계(15번)는 가로일 때 도구 | 심박 2열로 넓힌다.
       <div className={`${wideMeasure ? 'max-w-6xl' : active.id === 'timer' ? 'max-w-md landscape:max-w-4xl' : 'max-w-md'} mx-auto`}>
         {isPortraitBlocked && <RotateHint />}
         <Suspense fallback={<div className="text-center text-slate-500 dark:text-slate-400 py-10 text-sm">모듈 로딩 중…</div>}>

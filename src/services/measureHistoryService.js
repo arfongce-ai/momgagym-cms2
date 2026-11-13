@@ -9,7 +9,7 @@ import { aiStore } from '../demoData';
 import { extractKeyMetrics, inferReportType, METRIC_DEFINITIONS } from '../ai-measure/core/unifiedReport';
 // [심박 기록 2026-11-11] 초시계 화면에서 저장한 심박 기록을 이력에 '심박 측정'으로 보여준다.
 import { HEART_RATE_RECORD_KIND, heartRateHistoryMetrics } from '../ai-measure/core/heartRateBle';
-// [15번 심폐지구력 2026-11-12] 장비 테스트 기록을 '심폐지구력'으로 보여준다.
+// [11번 심폐지구력 2026-11-12] 장비 테스트 기록을 '심폐지구력'으로 보여준다.
 import { CARDIO_RECORD_KIND, cardioHistoryMetrics } from '../ai-measure/core/cardioTest';
 
 export const TYPE_LABEL = Object.freeze({

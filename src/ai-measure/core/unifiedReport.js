@@ -559,7 +559,7 @@ export function inferReportType(report = {}) {
     ? { ...report.data, ...report }
     : report;
   const kind = String(r.kind || r.menu || r.reportType || '').toLowerCase();
-  // [15번 심폐지구력 2026-11-13] 저장 기록(kind:'cardio_test')을 통합 리포트로도 쌓는다.
+  // [11번 심폐지구력 2026-11-13] 저장 기록(kind:'cardio_test')을 통합 리포트로도 쌓는다.
   if (kind.includes('cardio')) return 'cardio';
   if (kind.includes('posture')) return 'posture';
   if (kind.includes('rom')) return 'rom';
