@@ -854,12 +854,12 @@ export default function RomMeasure({ member, onSave, onBack, onViewInReport }) {
         </button>
         <button onClick={() => setMode('upload')}
           className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-4 py-4 text-left active:scale-[0.99] transition">
-          <p className="text-base font-black text-white">영상 업로드 <span className="text-[10px] font-bold text-slate-500 align-middle">수행 각도 확인</span></p>
+          <p className="text-base font-black text-slate-900 dark:text-white">영상 업로드 <span className="text-[10px] font-bold text-slate-500 align-middle">수행 각도 확인</span></p>
           <p className="mt-0.5 text-xs font-bold text-slate-500 dark:text-slate-400">스포츠 수행 영상 → 속도 조절·프레임 캡처 후, 그 장면에서 각도 직접 측정.</p>
         </button>
         <button onClick={() => setMode('sensor')}
           className="w-full rounded-xl border border-emerald-500/50 bg-emerald-500/10 px-4 py-4 text-left active:scale-[0.99] transition">
-          <p className="text-base font-black text-emerald-200">고니오메타 <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400/70 align-middle">카메라 불필요 · 폰 밀착 센서</span></p>
+          <p className="text-base font-black text-emerald-800 dark:text-emerald-200">고니오메타 <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400/70 align-middle">카메라 불필요 · 폰 밀착 센서</span></p>
           <p className="mt-0.5 text-xs font-bold text-emerald-700 dark:text-emerald-300/80">폰을 관절 부위에 밀착 → 기울기 센서로 가동각 측정 · 좌우 비대칭 자동 산출.</p>
         </button>
         <p className="text-[11px] text-slate-500 leading-relaxed">
