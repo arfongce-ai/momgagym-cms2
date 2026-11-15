@@ -35,6 +35,11 @@ const AUTO_HOLD_MS = 800;   // 끝범위 유지 시간(0.8초)
 const AUTO_BAND = 2.5;      // 유지 허용 변동폭(°) — 넓을수록 민감도 낮음
 const AUTO_MIN_DEG = 5;     // 이 각도 미만(≈시작자세)에서는 자동 확정 안 함
 
+// 원형 다이얼(viewBox 200) 치수
+const DIAL_R = 84;
+const DIAL_C = 2 * Math.PI * DIAL_R;
+const DIAL_C_OUT = 2 * Math.PI * (DIAL_R + 8);
+
 
 export default function RomSensorGoniometer({ jointName, jointKey, onBack, onComplete }) {
   // 좌/우 구분 없이 한 번 측정하고 '측정완료'로 끝낸다(단일 측정).
@@ -69,8 +74,6 @@ export default function RomSensorGoniometer({ jointName, jointKey, onBack, onCom
   const [movementCustom, setMovementCustom] = useState('');
   const effMovement = movement === '__custom' ? movementCustom.trim() : movement;
 
-  useEffect(() => { autoModeRef.current = autoMode; }, [autoMode]);
-
   const [phase, setPhase] = useState('permission'); // permission | measure | record
   const [permErr, setPermErr] = useState('');
   const [zero, setZero] = useState(null);          // 0점(평활 언랩각 기준)
@@ -87,6 +90,8 @@ export default function RomSensorGoniometer({ jointName, jointKey, onBack, onCom
   const holdRef = useRef(null);     // 끝범위 유지 감지기
   const autoModeRef = useRef(true); // 콜백 안에서 최신 자동모드 참조
   const autoFinishRef = useRef(null); // 자동 확정 트리거(최신 finishMeasurement 참조)
+  // ※ 반드시 autoMode·autoModeRef 선언 '뒤'에 둔다 — 앞에 두면 렌더 즉시 예외로 화면이 안 뜬다.
+  useEffect(() => { autoModeRef.current = autoMode; }, [autoMode]);
   const trackerRef = useRef(null);
   const zeroRef = useRef(null);
   const maxRef = useRef(0);
@@ -297,7 +302,7 @@ export default function RomSensorGoniometer({ jointName, jointKey, onBack, onCom
         <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-center">
           <p className="text-[11px] font-bold uppercase tracking-widest text-emerald-700 dark:text-emerald-300/80">측정완료 · 최대 가동각</p>
           <div className="mt-1 flex items-center justify-center">
-            <div><p className="text-[11px] text-slate-500 dark:text-slate-400">가동각</p><p className="text-4xl font-black tabular-nums text-emerald-200">{measuredAngle != null ? `${measuredAngle}°` : '—'}</p></div>
+            <div><p className="text-[11px] text-slate-500 dark:text-slate-400">가동각</p><p className="text-4xl font-black tabular-nums text-emerald-700 dark:text-emerald-200">{measuredAngle != null ? `${measuredAngle}°` : '—'}</p></div>
           </div>
         </div>
 
@@ -360,6 +365,16 @@ export default function RomSensorGoniometer({ jointName, jointKey, onBack, onCom
 
   // ════════════════ 측정 화면 ════════════════
   const offPlaneWarn = offPlane >= OFF_PLANE_WARN;
+  const dialArc = liveDeg == null ? 0 : (Math.min(360, Math.abs(liveDeg)) / 360) * DIAL_C;
+  const canFinish = zero != null && maxDeg > 0;
+  const dialHint = zeroing ? '0점 측정 중 — 그대로 유지'
+    : zero == null ? '눌러서 0점 잡기'
+    : canFinish ? '눌러서 측정완료' : '동작을 시작하세요';
+  const onDialTap = () => {
+    if (zeroing) return;
+    if (zero == null) calibrateZero();
+    else if (canFinish) finishMeasurement(false);
+  };
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -383,36 +398,43 @@ export default function RomSensorGoniometer({ jointName, jointKey, onBack, onCom
         </button>
       </div>
 
-      {/* 실시간 각도 — 크게 표시 */}
-      <div className={`rounded-2xl border p-5 text-center ${
-        offPlaneWarn ? 'border-red-500/40 bg-red-500/10' : 'border-amber-500/30 bg-white dark:bg-slate-900'
-      }`}>
-        <p className="text-[11px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400">
-          현재 각도 {zeroing ? '(0점 측정 중 — 그대로 유지)' : zero == null ? '(0점을 먼저 잡아주세요)' : ''}
-        </p>
-        <p className="mt-1 font-black tabular-nums text-amber-700 dark:text-amber-300" style={{ fontSize: '4.5rem', lineHeight: 1.1 }}>
-          {zeroing ? '···' : liveDeg == null ? '—' : `${liveDeg}°`}
-        </p>
-        <div className="mt-2 flex items-center justify-center gap-4 text-sm">
-          <span className="text-slate-500 dark:text-slate-400">최대 가동각 <b className="text-emerald-700 dark:text-emerald-300 tabular-nums">{maxDeg > 0 ? `${maxDeg}°` : '—'}</b></span>
-          {still && zero != null && <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-[11px] font-bold text-emerald-700 dark:text-emerald-300">멈춤 감지</span>}
-        </div>
+      {/* 실시간 각도 — 원형 다이얼. 다이얼 자체가 큰 버튼:
+          0점 전에는 누르면 0점, 0점 후에는 누르면 측정완료(폰을 몸에 댄 채 한 손 조작). */}
+      <div className="flex flex-col items-center">
+        <button type="button" onClick={onDialTap} disabled={zeroing}
+          aria-label={dialHint}
+          className="relative block w-full max-w-[19rem] aspect-square rounded-full active:scale-[0.98] transition-transform">
+          <svg viewBox="0 0 200 200" className="absolute inset-0 h-full w-full -rotate-90">
+            <circle cx="100" cy="100" r={DIAL_R + 8} fill="#0f172a" />
+            {/* 눈금 바탕 링 */}
+            <circle cx="100" cy="100" r={DIAL_R} fill="none" stroke="#334155" strokeWidth="7" />
+            {/* 현재 각도만큼 차오르는 링(360° = 한 바퀴) */}
+            <circle cx="100" cy="100" r={DIAL_R} fill="none"
+              stroke={offPlaneWarn ? '#f87171' : '#fbbf24'} strokeWidth="7" strokeLinecap="round"
+              strokeDasharray={`${dialArc} ${DIAL_C}`} />
+            {/* 자동 확정 진행 링 — 끝범위 유지 시간이 차오른다 */}
+            {autoMode && zero != null && !offPlaneWarn && holdPct > 0 && (
+              <circle cx="100" cy="100" r={DIAL_R + 8} fill="none" stroke="#34d399" strokeWidth="4" strokeLinecap="round"
+                strokeDasharray={`${holdPct * DIAL_C_OUT} ${DIAL_C_OUT}`} />
+            )}
+          </svg>
+          <span className="absolute inset-0 flex flex-col items-center justify-center">
+            <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">현재 각도</span>
+            <span className={`font-black tabular-nums leading-none ${offPlaneWarn ? 'text-red-300' : 'text-amber-300'}`} style={{ fontSize: '4.25rem' }}>
+              {zeroing ? '···' : liveDeg == null ? '—' : `${liveDeg}°`}
+            </span>
+            <span className="mt-1 text-xs text-slate-400">최대 <b className="text-emerald-300 tabular-nums">{maxDeg > 0 ? `${maxDeg}°` : '—'}</b></span>
+            <span className="mt-2 rounded-full bg-white/10 px-3 py-1 text-[11px] font-black text-white">{dialHint}</span>
+          </span>
+        </button>
 
-        {/* 자동 확정 진행 바 — 끝범위 유지 시간이 차오른다 */}
-        {autoMode && zero != null && !offPlaneWarn && (
-          <div className="mt-3">
-            <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
-              <div className="h-full rounded-full bg-emerald-400 transition-[width] duration-100"
-                style={{ width: `${Math.round(holdPct * 100)}%` }} />
-            </div>
-            <p className="mt-1 text-[10px] font-bold text-emerald-700 dark:text-emerald-300/80">
-              {holdPct >= 1 ? '자동 확정!' : holdPct > 0 ? '끝범위 유지 중… 그대로 멈춰주세요' : '끝 자세에서 잠시 멈추면 자동 측정됩니다'}
-            </p>
-          </div>
-        )}
+        <p className="mt-2 min-h-[1rem] text-center text-[11px] font-bold text-emerald-700 dark:text-emerald-300">
+          {zero == null ? '' : !autoMode ? (still ? '멈춤 감지' : '')
+            : holdPct >= 1 ? '자동 확정!' : holdPct > 0 ? '끝범위 유지 중… 그대로 멈춰주세요' : '끝 자세에서 잠시 멈추면 자동 측정됩니다'}
+        </p>
 
         {offPlaneWarn && (
-          <p className="mt-2 text-xs font-bold text-red-700 dark:text-red-300">
+          <p className="mt-1 text-center text-xs font-bold text-red-700 dark:text-red-300">
             ⚠ 폰이 측정면에서 비틀렸습니다 — 부위에 평평하게 다시 밀착해 주세요 (이 동안 최대각은 갱신되지 않음)
           </p>
         )}
@@ -421,7 +443,7 @@ export default function RomSensorGoniometer({ jointName, jointKey, onBack, onCom
       {/* 조작 버튼 */}
       <div className="grid grid-cols-2 gap-2">
         <button onClick={calibrateZero} disabled={zeroing}
-          className="rounded-xl border border-sky-500/50 bg-sky-500/15 px-4 py-3.5 text-sm font-black text-sky-200 active:scale-[0.99] disabled:opacity-60">
+          className="rounded-xl border border-sky-500/50 bg-sky-500/15 px-4 py-3.5 text-sm font-black text-sky-800 dark:text-sky-200 active:scale-[0.99] disabled:opacity-60">
           {zeroing ? '0점 측정 중…' : zero == null ? '0점 잡기 (자세 유지 0.7초)' : '0점 다시 잡기'}
         </button>
         <button onClick={resetSide}
