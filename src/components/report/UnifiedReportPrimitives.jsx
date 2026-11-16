@@ -34,7 +34,7 @@ export function UnifiedReportPage({ id, children, className = '', minHeight = 11
 export function UnifiedReportFooter() {
   return (
     <footer className="mt-8 flex items-center justify-center border-t border-slate-200 dark:border-slate-800 pt-4">
-      <img src={MOMGAGYM_LOGO_DATA_URI} alt="몸가짐 운동센터" className="h-11 w-auto opacity-90" />
+<img src={MOMGAGYM_LOGO_DATA_URI} alt="몸가짐 운동센터" className="h-11 w-auto opacity-90" />
     </footer>
   );
 }
