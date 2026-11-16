@@ -366,6 +366,18 @@ export default function CardioTestMeasure({ onBack, member = null, onSave = null
     }
   };
 
+  // [자동 저장 2026-11-16] 결과가 계산되면 회원 기록에 한 번 자동 저장한다(버튼을 안 눌러 기록이 사라지던 문제).
+  //  실패하면 saveState='error' 로 '다시 저장' 버튼이 나온다. 저장 뒤에 적는 메모·수동 입력은 반영되지 않는다.
+  const autoSavedRef = useRef(false);
+  useEffect(() => {
+    if (phase !== 'result' || !computed || !onSave || !member) return;
+    if (autoSavedRef.current) return;
+    autoSavedRef.current = true;
+    save();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, computed, onSave, member]);
+  useEffect(() => { if (phase !== 'result') autoSavedRef.current = false; }, [phase]);
+
   // ── 화면 ──
   const run = runRef.current;
   const rec = recRef.current;
