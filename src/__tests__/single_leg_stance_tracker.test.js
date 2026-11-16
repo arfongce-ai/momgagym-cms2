@@ -92,7 +92,8 @@ describe('SingleLegStanceTracker (synthetic landmark check)', () => {
     let t = 0;
     tr.push(mkLM(), t); t += 33;
     const baseline = calib.result.baselineFeetY;
-    for (let i = 0; i < 10; i++) { tr.push(mkLM({ ankRY: baseline - 0.15 }), t); t += 33; }
+    // [2026-11-16] 들어올린 직후 0.7초는 체중 이동 구간이라 판정을 쉰다 → 1초 버틴 뒤 휘청
+    for (let i = 0; i < 30; i++) { tr.push(mkLM({ ankRY: baseline - 0.15 }), t); t += 33; }
     tr.push(mkLM({ ankRY: baseline - 0.15, hipLX: 0.9, hipRX: 1.0 }), t); t += 33;
     for (let i = 0; i < 10; i++) { tr.push(mkLM({ ankRY: baseline - 0.15 }), t); t += 33; }
     tr.stopManually(t);
@@ -196,7 +197,7 @@ describe('SingleLegStanceTracker (synthetic landmark check)', () => {
     const trRight = new SingleLegStanceTracker(calib.result, 'right');
     let t = 0;
     const baseline = calib.result.baselineFeetY;
-    for (let i = 0; i < 10; i++) { trRight.push(mkLM({ ankLY: baseline - 0.15 }), t); t += 33; }
+    for (let i = 0; i < 30; i++) { trRight.push(mkLM({ ankLY: baseline - 0.15 }), t); t += 33; }
     trRight.push(mkLM({ ankLY: baseline - 0.15, hipLX: 0.9, hipRX: 1.0 }), t); t += 33;
     for (let i = 0; i < 400; i++) { trRight.push(mkLM({ ankLY: baseline - 0.15 }), t); t += 33; }
     trRight.stopManually(t);
@@ -221,5 +222,43 @@ describe('SingleLegStanceTracker (synthetic landmark check)', () => {
     expect(tr.elapsedHoldMs(t)).toBeLessThanOrEqual(1510);
     tr.stopManually(t);
     expect(tr.elapsedHoldMs(t + 1000)).toBe(0);
+  });
+});
+
+// [2026-11-16] 현장 피드백 "한발서기는 내용과 상관없이 다 위험" — 골반 기울기 공식 오류 회귀 방지
+import { pelvicTiltDegOf } from '../ai-measure/core/singleLegStanceTracker';
+describe('골반 기울기 공식(정면 촬영 좌우 순서와 무관)', () => {
+  const lm = (lx, ly, rx, ry) => { const a = []; a[23] = { x: lx, y: ly }; a[24] = { x: rx, y: ry }; return a; };
+  it('정면(회원 왼쪽 골반이 화면 오른쪽)에서 수평이면 0°', () => {
+    expect(pelvicTiltDegOf(lm(0.55, 0.5, 0.45, 0.5))).toBeCloseTo(0, 5);
+  });
+  it('좌우가 바뀌어도 같은 값', () => {
+    const a = pelvicTiltDegOf(lm(0.55, 0.5, 0.45, 0.51));
+    const b = pelvicTiltDegOf(lm(0.45, 0.51, 0.55, 0.5));
+    expect(a).toBeCloseTo(b, 6);
+    expect(a).toBeGreaterThan(5); expect(a).toBeLessThan(6);
+  });
+  it('측면처럼 골반이 겹치면 판정 안 함(null)', () => {
+    expect(pelvicTiltDegOf(lm(0.5, 0.5, 0.505, 0.52))).toBeNull();
+  });
+});
+
+// [2026-11-16] 눈감고 기준 분리·판정 이유
+import { evaluateSingleLegStanceWithEyes, holdThresholdsForAge, explainLegStatus } from '../ai-measure/core/singleLegStance';
+describe('눈감고 연령별 기준 / 판정 이유', () => {
+  const trial = (ms) => ({ valid: true, holdTimeMs: ms, pelvicTiltDeg: 1, balanceLoss: false, stepOut: false });
+  it('30대 눈감고 12초는 정상(예전엔 최소 10초 기준이라 경계였고 8초는 위험)', () => {
+    const r = evaluateSingleLegStanceWithEyes({ ageYears: 35, open: { left: { trial1: trial(40000), trial2: trial(40000) } }, closed: { left: { trial1: trial(12000), trial2: trial(12000) } } });
+    expect(r.eyesClosed.left.status).toBe('normal');
+    expect(holdThresholdsForAge(35, { eyes: 'closed' }).targetMs).toBe(15200);
+  });
+  it('60대 눈감고 3초는 위험 아님(최소 1.5초)', () => {
+    const r = evaluateSingleLegStanceWithEyes({ ageYears: 65, closed: { left: { trial1: trial(3000), trial2: trial(3000) } } });
+    expect(r.eyesClosed.left.status).not.toBe('risk');
+  });
+  it('휘청임은 이유가 한글로 나온다', () => {
+    const r = evaluateSingleLegStanceWithEyes({ ageYears: 35, open: { left: { trial1: { ...trial(2000), balanceLoss: true }, trial2: trial(2000) } } });
+    expect(r.eyesOpen.left.status).toBe('risk');
+    expect(explainLegStatus(r.eyesOpen.left).join()).toContain('휘청');
   });
 });

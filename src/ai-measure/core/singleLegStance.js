@@ -65,7 +65,36 @@ export const SLST_AGE_REFERENCE_MEAN_S = Object.freeze([
   { maxAge: Infinity, label: '80세 이상', mean: 9.4 },
 ]);
 
-export function holdThresholdsForAge(ageYears) {
+// [눈감고 기준 분리 2026-11-16] 같은 논문(Springer 2007, 3회 중 최고, 45초 상한)의 눈감고 평균(초).
+//  예전에는 눈감고에도 눈뜨고 기준(최소 10초·목표 30초)을 그대로 써서, 정상 성인 대부분이 '위험'으로 나왔다
+//  (18~39세 눈감고 평균이 15.2초, 60대 4.4초). 눈감고는 연령 평균=목표, 평균×2/3=주의선, 평균×1/3=최소선으로 본다
+//  (눈뜨고의 30/20/10초 비율과 같게 맞춘 설계 — 논문 컷오프 아님). 나이를 모르면 전체 평균 8.0초를 쓴다.
+export const SLST_AGE_REFERENCE_CLOSED_MEAN_S = Object.freeze([
+  { maxAge: 39, label: '18~39세', mean: 15.2 },
+  { maxAge: 49, label: '40~49세', mean: 12.7 },
+  { maxAge: 59, label: '50~59세', mean: 8.3 },
+  { maxAge: 69, label: '60~69세', mean: 4.4 },
+  { maxAge: 79, label: '70~79세', mean: 3.1 },
+  { maxAge: Infinity, label: '80세 이상', mean: 1.9 },
+]);
+const SLST_CLOSED_ALL_AGES_MEAN_S = 8.0;
+
+function closedThresholdsForAge(ageYears) {
+  const age = Number(ageYears);
+  const row = Number.isFinite(age) && age >= 18 ? SLST_AGE_REFERENCE_CLOSED_MEAN_S.find((r) => age <= r.maxAge) : null;
+  const meanS = row ? row.mean : SLST_CLOSED_ALL_AGES_MEAN_S;
+  return {
+    targetMs: Math.round(meanS * 1000),
+    cautionMs: Math.round((meanS * 1000 * 2) / 3),
+    minMs: Math.round((meanS * 1000) / 3),
+    ageGroup: row ? row.label : '전체 평균',
+    referenceMeanS: meanS,
+    eyes: 'closed',
+  };
+}
+
+export function holdThresholdsForAge(ageYears, { eyes = 'open' } = {}) {
+  if (eyes === 'closed') return closedThresholdsForAge(ageYears);
   const base = {
     targetMs: SLST_TUNING.targetHoldMs,
     cautionMs: SLST_TUNING.cautionHoldMs,
@@ -204,7 +233,7 @@ function combineLegTrials(trial1, trial2, th) {
  * @returns {object} valid:false 시 { valid:false, reason, message }
  */
 export function evaluateSingleLegStance(input = {}) {
-  const th = holdThresholdsForAge(input.ageYears);
+  const th = holdThresholdsForAge(input.ageYears, { eyes: input.eyes || 'open' });
   const left = input.left ? combineLegTrials(input.left.trial1, input.left.trial2, th) : null;
   const right = input.right ? combineLegTrials(input.right.trial1, input.right.trial2, th) : null;
 
@@ -245,7 +274,7 @@ export function evaluateSingleLegStance(input = {}) {
  */
 export function evaluateSingleLegStanceWithEyes(input = {}) {
   const eyesOpen = evaluateSingleLegStance({ ...(input.open || {}), ageYears: input.ageYears });
-  const eyesClosed = evaluateSingleLegStance({ ...(input.closed || {}), ageYears: input.ageYears });
+  const eyesClosed = evaluateSingleLegStance({ ...(input.closed || {}), ageYears: input.ageYears, eyes: 'closed' });
 
   if (!eyesOpen.valid && !eyesClosed.valid) {
     return { valid: false, reason: 'no_trials', message: '한다리서기 측정 데이터가 없습니다.' };
@@ -269,6 +298,7 @@ export function evaluateSingleLegStanceWithEyes(input = {}) {
     right: eyesOpen.valid ? eyesOpen.right : null,
     asymmetryFlag: eyesOpen.valid ? eyesOpen.asymmetryFlag : false,
     holdThresholds: holdThresholdsForAge(input.ageYears),
+    holdThresholdsClosed: holdThresholdsForAge(input.ageYears, { eyes: 'closed' }),
   };
 }
 
@@ -324,4 +354,36 @@ export function computeStanceScore(report) {
     });
   });
   return scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0;
+}
+
+// [판정 이유 표시 2026-11-16] 리포트에 "왜 이 판정인지"를 쉬운 말로 보여주기 위한 변환.
+const REASON_KO = {
+  balance_loss: '버티는 중 몸이 크게 휘청이거나 몸이 돌아감',
+  step_out: '들었던 발이 중간에 바닥에 닿음',
+  hold_time_insufficient: '유지 시간이 최소 기준보다 짧음',
+  hold_time_borderline: '유지 시간이 목표에 못 미침',
+  pelvic_tilt_borderline: '골반이 한쪽으로 처짐(5° 이상)',
+  pelvic_tilt_high: '골반이 한쪽으로 크게 처짐(10° 이상)',
+  knee_valgus_borderline: '무릎이 안쪽으로 모임(10° 이상)',
+  knee_valgus_high: '무릎이 안쪽으로 크게 모임(15° 이상)',
+  landmarks_unreliable: '관절 인식이 불안정해 판정 보류',
+};
+
+export function explainLegStatus(leg) {
+  if (!leg) return ['측정하지 않음'];
+  const out = [];
+  if (leg.basis === 'immediate') (leg.immediateReasons || []).forEach((r) => out.push(REASON_KO[r] || r));
+  if (leg.basis === 'reproducibility') (leg.repeatedFlags || []).forEach((f) => out.push(`${REASON_KO[f] || f} — 2회 모두`));
+  if (leg.basis === 'single_trial_only') {
+    const t = (leg.trials || []).find((x) => x?.valid);
+    (t?.immediateReasons || []).forEach((r) => out.push(REASON_KO[r] || r));
+    (t?.softFlags || []).forEach((f) => out.push(REASON_KO[f] || f));
+    out.push('1회만 유효 — 재측정 권장');
+  }
+  if (leg.basis === 'no_valid_trial') {
+    const t = (leg.trials || []).find((x) => x?.reason);
+    out.push(REASON_KO[t?.reason] || '유효한 시행 없음');
+  }
+  if (!out.length) out.push(leg.status === 'normal' ? '기준 이내' : '판정 근거 없음');
+  return out;
 }

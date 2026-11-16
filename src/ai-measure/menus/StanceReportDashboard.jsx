@@ -17,7 +17,7 @@
 // ════════════════════════════════════════════════════════════════════════
 import { useMemo, useState } from 'react';
 import { MetricCard, UnifiedReportCanvas, UnifiedReportHeader, UnifiedReportPage, UnifiedReportSection } from '../../components/report/UnifiedReportPrimitives';
-import { SLST_TUNING, stanceMetricStatus, legMetrics, computeStanceScore } from '../core/singleLegStance';
+import { SLST_TUNING, stanceMetricStatus, legMetrics, computeStanceScore, explainLegStatus, holdThresholdsForAge } from '../core/singleLegStance';
 import { shareReportWithVideo } from '../core/reportShare';
 import ProblemFocusPanel from './ProblemFocusPanel.jsx';
 import MomiAutoNote from '../../components/report/MomiAutoNote.jsx';
@@ -145,6 +145,9 @@ export default function StanceReportDashboard({ report, member, onClose, onRemea
   const focus = report.problemFocus || {};
   const eyesOpen = report.eyesOpen || {};
   const eyesClosed = report.eyesClosed || {};
+  // 눈감고는 눈뜨고와 다른 연령별 기준을 쓴다(2026-11-16). 예전 저장 기록엔 없어서 나이로 다시 계산한다.
+  const thClosed = report.holdThresholdsClosed
+    || holdThresholdsForAge(null, { eyes: 'closed' });
   const videoItems = [
     ['눈뜨고 · 왼쪽', report.openLeftPreviewVideoUrl, report.openLeftVideoBlob],
     ['눈뜨고 · 오른쪽', report.openRightPreviewVideoUrl, report.openRightVideoBlob],
@@ -201,7 +204,7 @@ export default function StanceReportDashboard({ report, member, onClose, onRemea
                 return (
                   <MetricCard key={label} metric={{
                     key: label, label, displayValue: holdMs == null ? '-' : Math.round(holdMs / 100) / 10,
-                    unit: holdMs == null ? '' : '초', description: `목표 ${(report.holdThresholds?.targetMs ?? SLST_TUNING.targetHoldMs) / 1000}초${report.holdThresholds?.ageGroup ? ` · ${report.holdThresholds.ageGroup} 건강 성인 평균 ${report.holdThresholds.referenceMeanS}초(참고)` : ''}`,
+                    unit: holdMs == null ? '' : '초', description: (() => { const t = label.startsWith('눈감고') ? thClosed : report.holdThresholds; return `목표 ${Math.round((t?.targetMs ?? SLST_TUNING.targetHoldMs) / 100) / 10}초${t?.ageGroup ? ` · ${t.ageGroup} 건강 성인 평균 ${t.referenceMeanS}초(참고)` : ''}`; })(),
                     status: STATUS_TOKEN[st],
                   }} />
                 );
@@ -228,18 +231,29 @@ export default function StanceReportDashboard({ report, member, onClose, onRemea
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-3">
                 <p className="text-[11px] font-black text-slate-500 dark:text-slate-400">왼쪽</p>
-                <HoldTimeBar leg={eyesClosed.left} th={report.holdThresholds} />
+                <HoldTimeBar leg={eyesClosed.left} th={thClosed} />
                 <AngleBar label="골반 기울기" leg={eyesClosed.left} metricKey="pelvicTiltDeg" flagPrefix="pelvic_tilt_" cautionDeg={SLST_TUNING.pelvicTiltCautionDeg} riskDeg={SLST_TUNING.pelvicTiltRiskDeg} />
               </div>
               <div className="space-y-3">
                 <p className="text-[11px] font-black text-slate-500 dark:text-slate-400">오른쪽</p>
-                <HoldTimeBar leg={eyesClosed.right} th={report.holdThresholds} />
+                <HoldTimeBar leg={eyesClosed.right} th={thClosed} />
                 <AngleBar label="골반 기울기" leg={eyesClosed.right} metricKey="pelvicTiltDeg" flagPrefix="pelvic_tilt_" cautionDeg={SLST_TUNING.pelvicTiltCautionDeg} riskDeg={SLST_TUNING.pelvicTiltRiskDeg} />
               </div>
             </div>
             <p className="mt-3 text-[11px] leading-relaxed text-slate-500 dark:text-slate-400">
               눈을 감으면 정상인도 유지시간이 짧아지고 흔들림이 커지는 것이 자연스러워, 눈뜨고/눈감고는 서로 다른 기준으로 독립 판정합니다.
             </p>
+          </UnifiedReportSection>
+
+          <UnifiedReportSection title="판정 기준 안내" subtitle="왜 이 등급인지">
+            <ul className="space-y-1 text-[11px] leading-relaxed text-slate-600 dark:text-slate-300">
+              <li>· <b>위험</b>: 버티는 중 크게 휘청이거나 몸이 돌아감, 들었던 발이 바닥에 닿음, 또는 유지 시간이 최소 기준 미만</li>
+              <li>· <b>주의</b>: 유지 시간이 목표에 못 미치거나 골반 처짐 5°↑ · 2회 시행 모두에서 반복될 때만 확정</li>
+              <li>· 골반 기울기는 좌우 골반선이 수평선과 이루는 각도(정면 촬영 기준). 10°↑ 위험</li>
+              <li>· 눈뜨고 기준: 최소 목표의 1/3 · 주의 2/3 · 목표 = 같은 나이대 건강 성인 평균(Springer 2007, 45초 상한, 70대 이상은 비율 보정)</li>
+              <li>· 눈감고 기준: 같은 논문의 눈감고 평균(18~39세 15.2초 · 60대 4.4초)을 따로 사용 — 눈뜨고 기준을 그대로 쓰지 않음</li>
+              <li>· 표시된 기준 비율(1/3·2/3)과 골반·무릎 각도 컷오프는 센터 현장 보정용 시작값이며 논문 컷오프가 아닙니다. 임상 판단은 트레이너 확인 후 확정하세요.</li>
+            </ul>
           </UnifiedReportSection>
 
           <UnifiedReportSection title="④ 시행별 결과" subtitle="다리마다 2회 반복">
@@ -252,6 +266,11 @@ export default function StanceReportDashboard({ report, member, onClose, onRemea
                   <p className="text-[10px] text-slate-500">{label}</p>
                   <p className="text-slate-900 dark:text-white font-black text-sm">{STATUS_KO[leg?.status] || '-'}</p>
                   <p className="text-[10px] text-slate-500 mt-1">{BASIS_KO_STANCE[leg?.basis] || '-'}</p>
+                  {leg?.status && leg.status !== 'normal' && (
+                    <ul className="mt-1 list-disc pl-3 text-[10px] font-bold text-slate-700 dark:text-slate-200">
+                      {explainLegStatus(leg).map((t) => <li key={t}>{t}</li>)}
+                    </ul>
+                  )}
                   {(leg?.trials || []).filter((t) => t.valid).map((t, i) => (
                     <p key={i} className="text-[10px] text-slate-500">
                       {i + 1}회 {t.holdTimeMs != null ? `${Math.round(t.holdTimeMs / 100) / 10}초` : '-'}

@@ -12,7 +12,8 @@ import { evaluateSingleLegStanceWithEyes, evaluateSingleLegStance } from '../ai-
 const normalTrial = { valid: true, holdTimeMs: 30000, pelvicTiltDeg: 1 };
 // 눈감고 조건에서 유지시간이 짧아지는 건 정상인도 흔히 보이는 자연스러운 패턴 —
 // cautionHoldMs(20s) 미만으로 구성해 hold_time_borderline으로 caution을 유발한다.
-const closedNormalTrial = { valid: true, holdTimeMs: 15000, pelvicTiltDeg: 2 };
+// [2026-11-16] 눈감고는 별도 연령 기준(나이 미상=전체 평균 8.0초 → 주의선 5.3초·최소 2.7초). 4초면 주의.
+const closedNormalTrial = { valid: true, holdTimeMs: 4000, pelvicTiltDeg: 2 };
 const riskTrial = { valid: true, holdTimeMs: 9000, pelvicTiltDeg: 12 };
 
 describe('evaluateSingleLegStanceWithEyes', () => {
