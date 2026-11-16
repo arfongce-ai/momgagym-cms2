@@ -249,7 +249,7 @@ function JumpReportDashboardInner({ report, onClose, onComment, member, previous
             invalid={report.valid === false}
             member={resolvedMember}
           />
-          {report.valid !== false && <QuickResultSheet report={report} reportType="jump" score={score} previousReport={previousReport} />}
+          <QuickResultSheet report={report} reportType="jump" score={score} previousReport={previousReport} />
 
           <ProblemFocusPanel focus={problemFocus} context={report.cross_measure_context} />
 <PatternInsightPanel measure="jump" report={report} />
@@ -261,9 +261,9 @@ function JumpReportDashboardInner({ report, onClose, onComment, member, previous
               직접 물어보고 후속 질문까지 이어갈 수 있는 대화창. */}
           <MomiInsightPanel kind="jump" report={report} member={resolvedMember} />
 
-          {report.valid === false ? (
-            <InvalidBlock report={report} />
-          ) : (
+          {/* [2026-11-16] 이상 데이터도 기록으로 남기므로, 무효여도 저장된 숫자를 숨기지 않고 안내만 위에 붙인다. */}
+          {report.valid === false && <InvalidBlock report={report} />}
+          {(
             <>
               <Section title="① 성능 및 파워" subtitle={isHorizontal ? '수평 이동거리 기반 · 핵심 지표' : '비행시간 기반 · 핵심 지표'}>
                 {/* [제자리멀리뛰기 추가 2026-09-16] SBJ는 수직 점프와 달리
@@ -743,9 +743,9 @@ function InvalidBlock({ report }) {
     ? 'RSI는 최소 3회 이상의 연속 점프가 필요합니다.'
     : report.reason === 'no_jump'
       ? '점프 동작을 감지하지 못했습니다.'
-      : '측정값이 유효하지 않습니다. 카메라 각도와 기준선을 확인해주세요.';
+      : '측정값이 불안정합니다. 아래 숫자는 참고용이며, 카메라 각도와 기준선을 확인해주세요.';
   return (
-    <Section title="측정 무효">
+    <Section title="참고용 기록 · 확인 필요">
       <div className="rounded-xl bg-red-500/10 p-5 text-center">
         <p className="text-4xl">⚠️</p>
         <p className="mt-2 text-lg font-black text-red-700 dark:text-red-300">{reason}</p>

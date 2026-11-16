@@ -469,6 +469,7 @@ export default function CardioTestMeasure({ onBack, member = null, onSave = null
 
           <div>
             <p className="mb-1 text-xs font-bold text-slate-600 dark:text-slate-300">③ 대상자 {member ? `· ${memberLabel}` : '· 회원 미선택(저장 안 됨)'}</p>
+            {member && <p className="mb-1 text-[11px] font-semibold text-slate-500 dark:text-slate-400" data-testid="cardio-save-where-setup">측정이 끝나면 자동 저장됩니다 · 저장 위치: 결과리포트 → {memberLabel} → AI 측정 이력 → 심폐지구력(VO2max)</p>}
             <div className="grid grid-cols-3 gap-2">
               <label className="text-[11px] font-bold text-slate-500 dark:text-slate-400">나이
                 <input inputMode="numeric" value={subject.age} onChange={(e) => setSubject((s) => ({ ...s, age: e.target.value.replace(/\D+/g, '').slice(0, 3) }))} className={inputCls} />
@@ -667,6 +668,9 @@ export default function CardioTestMeasure({ onBack, member = null, onSave = null
           </div>
 
           {!member && <p className="text-[11px] text-slate-500 dark:text-slate-400">회원을 고르지 않아 저장하지 않습니다. 측정 화면에서 회원을 먼저 고른 뒤 다시 측정해 주세요.</p>}
+          {saveState.state === 'saving' && member && (
+            <p className="text-xs font-bold text-amber-700 dark:text-amber-300">저장 중… 저장 위치: 결과리포트 → {memberLabel} → AI 측정 이력 → 심폐지구력(VO2max)</p>
+          )}
           {saveState.state === 'saved' && (
             <div className="space-y-1.5">
               <p className="text-xs font-bold text-emerald-700 dark:text-emerald-400">✓ {memberLabel} 측정 이력에 저장했습니다(1초 단위 원본 포함).</p>

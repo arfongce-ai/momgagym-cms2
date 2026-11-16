@@ -173,7 +173,12 @@ export default function StanceReportDashboard({ report, member, onClose, onRemea
         />
 
         <div className="grid gap-3">
-          {report.valid !== false && <QuickResultSheet report={report} reportType="stance" score={reportScore} previousReport={previousReport} />}
+          {report.valid === false && (
+            <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3" data-testid="review-banner">
+              <p className="text-xs font-bold text-amber-800 dark:text-amber-300">참고용 기록 — 인식이 불안정했던 측정입니다. 값은 그대로 저장되어 있으니 확인 후 필요하면 다시 측정해 주세요.</p>
+            </div>
+          )}
+          <QuickResultSheet report={report} reportType="stance" score={reportScore} previousReport={previousReport} />
           <ProblemFocusPanel focus={focus} context={report.cross_measure_context} />
           {/* [Axis3 확장 2026-08-08] MomiAutoNote — PostureReport.jsx와 동일 패턴.
               SLST도 리프팅처럼 전용 컬렉션 없이 세션(ai)에 저장되므로 updateSession을 쓴다. */}
