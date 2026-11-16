@@ -136,15 +136,16 @@ function JudgedCard({ item, active, anchorPrefix }) {
   return (
     <div id={`${anchorPrefix}-${item.key}`}
       className={`scroll-mt-4 rounded-xl border bg-white p-3.5 dark:bg-slate-900 ${active ? 'border-sky-500 ring-2 ring-sky-500/30' : 'border-slate-200 dark:border-slate-800'}`}>
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
+      {/* 값이 길어도(예: 138 / 93 mmHg) 제목이 한 글자씩 꺾이지 않게: 좁으면 값이 아래줄로 내려간다 */}
+      <div className="flex flex-wrap items-start justify-between gap-x-2 gap-y-1">
+        <div className="min-w-[8rem] flex-1 break-keep">
           <p className="text-sm font-black text-slate-900 dark:text-white">
             {item.label}
             {item.tag && <span className="ml-1.5 text-[10px] font-bold text-slate-500">{item.tag}</span>}
           </p>
           {item.description && <p className="mt-0.5 text-[11px] leading-relaxed text-slate-500">{item.description}</p>}
         </div>
-        <div className="shrink-0 text-right">
+        <div className="ml-auto shrink-0 whitespace-nowrap text-right">
           <p className={`text-xl font-black tabular-nums ${st.text}`}>{item.display}<span className="ml-0.5 text-xs">{item.unit}</span></p>
           <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${st.chip}`}>{st.ko}</span>
         </div>
@@ -283,7 +284,7 @@ export default function QuickResultSheet({
             <p className="text-sm font-black text-slate-900 dark:text-white">항목별 결과</p>
             <span className="text-[10px] text-slate-500">눈금 기준은 참고 기준</span>
           </div>
-          <div className="grid gap-2.5 md:grid-cols-2">
+          <div className="grid gap-2.5 md:grid-cols-2 [&>*]:min-w-0">
             {judged.map((it) => <JudgedCard key={it.key} item={it} active={activeKey === it.key} anchorPrefix={anchorPrefix} />)}
           </div>
         </div>

@@ -146,7 +146,7 @@ export function TrafficLightBadge({ status }) {
   const token = typeof status === 'string' ? scoreToStatus(status === 'normal' ? 100 : status === 'caution' ? 65 : 35) : status;
   const finalToken = token?.key ? token : scoreToStatus(null);
   return (
-    <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-black ${finalToken.bgClass} ${finalToken.borderClass} ${finalToken.colorClass}`}>
+    <span className={`inline-flex shrink-0 items-center whitespace-nowrap rounded-full border px-2.5 py-1 text-[11px] font-black ${finalToken.bgClass} ${finalToken.borderClass} ${finalToken.colorClass}`}>
       {finalToken.label}
     </span>
   );
@@ -179,14 +179,14 @@ export function MetricCard({ metric }) {
   return (
     <div className="min-w-0 rounded-xl bg-slate-100/70 dark:bg-slate-800/70 px-3 py-3 ring-1 ring-slate-700/60">
       <div className="flex items-start justify-between gap-2">
-        <p className="break-keep text-[11px] font-black leading-tight text-slate-600 dark:text-slate-300">{metric?.label || '측정 항목'}</p>
+        <p className="min-w-0 flex-1 break-keep text-[11px] font-black leading-tight text-slate-600 dark:text-slate-300">{metric?.label || '측정 항목'}</p>
         <TrafficLightBadge status={token} />
       </div>
-      <p className={`mt-3 font-mono text-2xl font-black leading-none tracking-normal ${token.colorClass}`}>
+      <p className={`mt-3 flex flex-wrap items-baseline font-mono text-2xl font-black leading-none tracking-normal ${token.colorClass}`}>
         {metric?.displayValue ?? '-'}
         {metric?.unit && <span className="ml-1 text-xs font-bold text-slate-500">{metric.unit}</span>}
       </p>
-      {metric?.description && <p className="mt-2 text-[11px] leading-relaxed text-slate-500">{metric.description}</p>}
+      {metric?.description && <p className="mt-2 break-keep text-[11px] leading-relaxed text-slate-500">{metric.description}</p>}
     </div>
   );
 }
