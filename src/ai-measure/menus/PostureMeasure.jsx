@@ -216,7 +216,6 @@ export default function PostureMeasure({ member, onSave, onBack, onViewInReport 
       // [항목 3] 측면(left/right)은 판정이 더 자주 흔들리므로 안정 요건을 살짝 완화해
       // '측면 인식이 잘 안 되어 촬영이 안 넘어가는' 문제를 줄이되, 촬영이 너무 빨리
       // 시작되지 않도록 최소 프레임 수를 늘려 '멈춤 확인' 시간을 확보한다.
-      const isSideTarget = target === 'left' || target === 'right';
       const stableOpts = isSideTarget
         ? { minRatio: 0.62, minFrames: 12 }
         : { minRatio: 0.7, minFrames: 14 };
