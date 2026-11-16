@@ -519,9 +519,12 @@ export class JumpFlightTracker {
  * 한쪽만 고치면 "측정 중 화면에 보인 값"과 "저장된 값"이 조용히 달라질 수 있었다.
  * @returns {number|null} 소수 첫째자리까지 반올림한 cm. 입력이 비면 null.
  */
-export function broadJumpDistanceCm(landingX, baselineFeetX, scaleCmPerY) {
+export function broadJumpDistanceCm(landingX, baselineFeetX, scaleCmPerY, frameAspect = 1) {
   if (landingX == null || baselineFeetX == null || scaleCmPerY == null) return null;
-  return Math.round(Math.abs(landingX - baselineFeetX) * scaleCmPerY * 10) / 10;
+  // [2026-11-16] scaleCmPerY 는 '정규화 Y 1.0 = 몇 cm'. 정규화 X 1.0 은 화면 가로 전체라 가로세로비(W/H)만큼 더 길다.
+  //  가로 촬영(16:9)에서 보정하지 않으면 거리가 약 44% 작게 나온다. frameAspect 를 안 주면(=1) 예전 값 그대로.
+  const a = Number.isFinite(frameAspect) && frameAspect > 0 ? frameAspect : 1;
+  return Math.round(Math.abs(landingX - baselineFeetX) * scaleCmPerY * a * 10) / 10;
 }
 
 export class BroadJumpTracker {
@@ -530,6 +533,7 @@ export class BroadJumpTracker {
     beta = JUMP_TUNING.feetFilterBeta,
   } = {}) {
     this.calib = calib;
+    this.frameAspect = 1; // 영상 W/H — 생성한 쪽이 설정(가로 촬영 거리 보정)
     this.band = JUMP_TUNING.liftoffBandFrac;
     this._filtFeet = new OneEuroFilter({ minCutoff, beta, dCutoff: 1.0 });
     this.inAir = false;
@@ -583,7 +587,7 @@ export class BroadJumpTracker {
     // [환산식 단일화 2026-09-17] 아래 broadJumpDistanceCm 하나만 쓴다 — 라이브
     // HUD·녹화 오버레이(JumpPrecisionAnalysis.jsx)도 같은 함수를 import해서
     // 쓰므로, 환산식을 고칠 일이 생겨도 화면값과 저장값이 갈라지지 않는다.
-    const distanceCm = broadJumpDistanceCm(best.landingX, this.baselineFeetX, scale);
+    const distanceCm = broadJumpDistanceCm(best.landingX, this.baselineFeetX, scale, this.frameAspect);
 
     const bodyCm = heightCm || this.calibHeightCm || null;
     let sanityOk = true;

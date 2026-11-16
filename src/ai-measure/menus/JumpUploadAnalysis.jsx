@@ -120,6 +120,7 @@ export default function JumpUploadAnalysis({ member, onBack, onComplete, onMembe
                 ? new BroadJumpTracker(calib.result)
                 : new JumpFlightTracker(calib.result);
               tracker.calibHeightCm = effHeightCm;
+              if (jumpType === 'horizontal' && video?.videoWidth && video?.videoHeight) tracker.frameAspect = video.videoWidth / video.videoHeight;
             }
           } else if (tracker) {
             tracker.push(landmarks, tMs); // tMs = 슬로모 보정된 실제 시간축

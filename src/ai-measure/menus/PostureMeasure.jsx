@@ -292,10 +292,13 @@ export default function PostureMeasure({ member, onSave, onBack, onViewInReport 
     // 측면 촬영은 반대쪽 관절이 가려지는 게 정상 → 한쪽만 보여도 촬영 허용(수동 촬영 포함)
     const sideStepNow = activeViewKeyRef.current === 'left' || activeViewKeyRef.current === 'right';
     const bodyOk = (lm) => (sideStepNow ? isOneSideBodyVisible(lm) : isFullBodyVisible(lm));
-    if (!live || !bodyOk(live)) {
-      setGuide('측정 가능한 전신 자세가 아직 안정적으로 인식되지 않았습니다.');
+    // [일단 기록 2026-11-16] 관절이 일부 가려져도 촬영은 진행하고, 리포트에 '확인 필요' 표시만 남긴다.
+    //  (예전엔 여기서 촬영을 거부해 측면이 인식돼도 끝내 찍히지 않았다)
+    if (!live) {
+      setGuide('사람이 화면에 잡히지 않았습니다. 카메라 앞에 서 주세요.');
       return null;
     }
+    const partialBody = !bodyOk(live);
     const steps = selectedStepsRef.current;
     const stepKey = activeViewKeyRef.current;
     const step = steps.find((s) => s.key === stepKey) || VIEW_STEPS.find((s) => s.key === stepKey);
@@ -326,6 +329,7 @@ export default function PostureMeasure({ member, onSave, onBack, onViewInReport 
         landmarks,
         analysis,
         snapshotUrl,
+        needsReview: partialBody || !analysis, // 일부 관절 미검출·분석 불가 → 기록은 남기되 확인 필요
         capturedAt: new Date().toISOString(),
       },
     };
@@ -373,8 +377,8 @@ export default function PostureMeasure({ member, onSave, onBack, onViewInReport 
     autoBusyRef.current = false;
     holdStartRef.current = 0;
     const live = latestLandmarksRef.current;
-    if (!live || !isFullBodyVisible(live)) {
-      setGuide('전신(어깨·골반·무릎·발목)이 모두 보여야 강제 촬영할 수 있습니다.');
+    if (!live) {
+      setGuide('사람이 화면에 잡히지 않았습니다. 카메라 앞에 서 주세요.');
       return;
     }
     primeAudio();
@@ -419,14 +423,18 @@ export default function PostureMeasure({ member, onSave, onBack, onViewInReport 
       const stillStable = lockViewRef.current
         ? true
         : viewVoterRef.current.isStable(target, { minRatio: 0.6, minFrames: 6 });
-      if (!live || !isFullBodyVisible(live) || !stillStable) {
-        setGuide('자세가 흐트러졌습니다 — 다시 맞춰주세요.');
+      // [일단 기록 2026-11-16] 카운트다운이 끝나면 무조건 촬영한다. 예전엔 여기서 '양쪽 관절 모두 보임'을
+      //  다시 요구해, 옆모습(반대쪽이 가려짐)은 인식돼도 '자세가 흐트러졌습니다'만 반복되고 찍히지 않았다.
+      if (!live) {
+        setGuide('사람이 화면에 잡히지 않았습니다 — 다시 맞춰주세요.');
         viewVoterRef.current.reset();
         autoBusyRef.current = false;
         return;
       }
+      void stillStable;
       beepGo();
       const more = performCapture();
+      if (more === null) { autoBusyRef.current = false; return; }
       beepSuccess();
       // 다음 면이 있으면 잠깐 텀을 두고 자동 진행 재개(자세 변경 시간 확보)
       if (more) {
@@ -852,6 +860,8 @@ function buildReport({ member, bodyInfo, captures, selectedSteps }) {
     imageUrl: '',
     image_urls: { front: '', side_left: '', side_right: '', back: '', current: { front: '', side_left: '', side_right: '', back: '' }, before: {} },
     rawLandmarks: primaryCapture?.landmarks || [],
+    needsReview: selectedSteps.some((step) => captures[step.key]?.needsReview) || undefined,
+    reviewViews: selectedSteps.filter((step) => captures[step.key]?.needsReview).map((step) => step.key),
     viewLandmarks: Object.fromEntries(Object.entries(perView).map(([key, value]) => [key, value.landmarks])),
     perViewAnalysis: perViewAnalysisMap,
     perViewSnapshots, // 화면 전용 (저장 시 제외)

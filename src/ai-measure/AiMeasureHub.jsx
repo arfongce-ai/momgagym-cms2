@@ -241,7 +241,7 @@ export default function AiMeasureHub() {
       }
       // [2026-10-25] 1RM/VBT/스탠스/스쿼트도 undefined·Blob 을 걸러 저장한다.
       //  (Firestore setDoc 은 undefined 필드를 거부 → 저장 실패)
-      const storableData = (measurementKind || isLifting || isStance || isSquat || isCardio)
+      let storableData = (measurementKind || isLifting || isStance || isSquat || isCardio)
         ? sanitizeReportPayload(enrichedData) : enrichedData;
       const saveUnifiedCopy = async (savedReport, reportType) => {
         try {
@@ -259,15 +259,16 @@ export default function AiMeasureHub() {
 
       // [2026-10] 무효 점프(valid !== true)는 세션도 전용 리포트도 저장하지 않는다.
       //  이전에는 세션만 저장되고 전용 리포트는 빠진 채 아래 alert 로 떨어졌다(이력 불일치).
+      // [2026-11-16 변경] 대표님 요청: 이상 데이터여도 일단 기록은 남긴다. 차단 대신 '확인 필요' 표시만 붙인다.
       if (isJump && storableData?.valid !== true) {
-        throw new Error('무효 측정은 저장되지 않습니다.');
+        storableData = { ...storableData, needsReview: true };
       }
       // [2026-10] 보행·스프린트도 같은 원칙: 무효(보행 metrics.valid) / 불가능한 값(반응 50ms 미만·2초 초과)은 저장하지 않는다.
       if (isGait && !isGaitStorable(storableData)) {
-        throw new Error('무효 측정은 저장되지 않습니다. 다시 측정해 주세요.');
+        storableData = { ...storableData, needsReview: true };
       }
       if (isSprint && !isSprintStorable(storableData)) {
-        throw new Error('측정값이 비정상이라 저장되지 않습니다. 다시 측정해 주세요.');
+        storableData = { ...storableData, needsReview: true };
       }
 
       // 측정이력(ai): 실제 회원은 회원 id, 미등록회원은 개별 guest id 로 저장.
@@ -297,7 +298,7 @@ export default function AiMeasureHub() {
         await saveUnifiedCopy(saved, 'gait');
         return saved;
       }
-      if (isJump && storableData?.valid === true) {
+      if (isJump) {
         const saved = await withRollback(() => aiStore.addGaitReport({ ...virtualBody, ...storableData, kind: 'jump', member: memberRef, linkedSessionId: savedSession.id }));
         await saveUnifiedCopy(saved, 'jump');
         return saved;
