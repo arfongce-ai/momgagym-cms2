@@ -58,7 +58,9 @@ export default function GaitAnalysisHub({ member, onBack, saveToFirebase, onSave
     const withRecord = { ...reportData, note: record.note || reportData.note || '' };
     let saved = withRecord;
     setSaveState('saving');
-    if (withRecord.valid === true && typeof save === 'function') {
+    // [2026-11-16] 이상 데이터여도 일단 기록 — 무효면 needsReview 표시만 붙여 저장
+    if (typeof save === 'function') {
+      if (withRecord.valid !== true) withRecord.needsReview = true;
       try {
         const res = await save(withRecord);
         if (res && typeof res === 'object') saved = { ...withRecord, ...res };

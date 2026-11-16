@@ -96,7 +96,9 @@ export default function SquatAnalysisHub({ member, onBack, onSave, onSaveToFireb
     setSaveState('saving');
     // 영상 Blob/blob-URL은 Firestore에 못 넣으므로 저장 페이로드에서 제외(ROM과 동일 패턴).
     const { videoBlob, previewVideoUrl, ...persistable } = withRecord;
-    if (withRecord.valid === true && typeof save === 'function') {
+    // [2026-11-16] 이상 데이터여도 일단 기록 — 무효면 needsReview 표시만 붙여 저장
+    if (typeof save === 'function') {
+      if (withRecord.valid !== true) withRecord.needsReview = true;
       try {
         const res = await save(persistable);
         if (res && typeof res === 'object') saved = { ...withRecord, ...res };

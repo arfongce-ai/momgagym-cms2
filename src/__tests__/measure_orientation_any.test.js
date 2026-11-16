@@ -21,11 +21,12 @@ describe('registry.js — 메뉴별 화면 방향', () => {
   it.each(['body', 'compare', 'imaging', 'record', 'timer'])('%s 는 any(세로·가로 모두)', (id) => {
     expect(orientationOf(id)).toBe('any');
   });
-  it.each(['posture', 'rom', 'gait', 'jump', 'broadjump', 'lifting', 'stance', 'squat'])('%s 는 세로 고정(표시 없음)', (id) => {
+  it.each(['posture', 'rom', 'gait', 'jump', 'lifting', 'stance', 'squat'])('%s 는 세로 고정(표시 없음)', (id) => {
     expect(orientationOf(id)).toBeNull();
   });
-  it('sprint 는 기존 가로 유지', () => {
+  it('sprint·broadjump(제자리멀리뛰기) 는 가로', () => {
     expect(orientationOf('sprint')).toBe('landscape');
+    expect(orientationOf('broadjump')).toBe('landscape');
   });
 });
 

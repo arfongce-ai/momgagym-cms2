@@ -132,6 +132,7 @@ export const MEASURE_MENUS = [
     no: 7,
     group: 'power',
     title: '제자리멀리뛰기',
+    orientation: 'landscape', // [2026-11-16] 도약 거리는 가로 촬영
     desc: '수평 이동거리(SBJ · 한발멀리뛰기 정면/안쪽/바깥쪽), 실시간/고속영상 분석',
     icon: 'SBJ',
     status: 'ready',

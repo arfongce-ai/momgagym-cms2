@@ -685,14 +685,14 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
   // - 실패하면 saveState='error' 가 되어 수동 재시도 버튼이 노출된다.
   useEffect(() => {
     if (view !== 'preview' || !reportData) return;
-    if (reportData.valid !== true) return; // 무효 측정은 자동 저장 안 함
+    // [2026-11-16] 무효여도 기록은 남긴다 (needsReview 표시)
     if (typeof saveToFirebase !== 'function') return;
     if (autoSavedRef.current === reportData.measuredAt) return; // 이미 저장(시도)함
     autoSavedRef.current = reportData.measuredAt;
     (async () => {
       setSaveState('saving');
       try {
-        await saveToFirebase(reportData);
+        await saveToFirebase(reportData.valid === true ? reportData : { ...reportData, needsReview: true });
         setSaveState('saved');
       } catch (e) {
         setSaveState('error'); // 실패 시 수동 버튼으로 재시도 가능
@@ -915,7 +915,7 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
               </button>
               {shareMsg && <p className="text-center text-xs text-emerald-700 dark:text-emerald-400">{shareMsg}</p>}
               {reportData?.valid !== true && (
-                <p className="text-center text-xs text-amber-700 dark:text-amber-400">측정이 무효하여 저장되지 않았습니다. 다시 측정해 주세요.</p>
+                <p className="text-center text-xs text-amber-700 dark:text-amber-400">인식이 불안정해 ‘확인 필요’ 표시로 저장되었습니다. 필요하면 다시 측정해 주세요.</p>
               )}
               <p className="text-center text-[11px] text-slate-500">영상은 기기에, 회차 기록(정량 데이터)은 서버에 자동 저장됩니다.</p>
             </div>

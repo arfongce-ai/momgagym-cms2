@@ -373,6 +373,7 @@ export default function SprintLiveAnalysis({ member, onBack, onSaveToFirebase, o
       drawMeasurementOverlay(ctx, canvas.width, canvas.height, {
         title: TEST_TYPES[testKey].label,
         elapsedMs: last ? last.tMs : 0,
+        bigTimeMs: last ? last.tMs : 0, // 녹화 화면에 시간(0.00 s) 크게 표시
         metrics: [
           { label: '속도', value: last ? `${last.velocityMs.toFixed(1)} m/s` : '--' },
           { label: '거리', value: last ? `${last.distanceM.toFixed(1)} m` : '--' },

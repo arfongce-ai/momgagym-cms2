@@ -11,7 +11,7 @@ export function formatRecordTime(sec = 0) {
   return `${String(Math.floor(safe / 60)).padStart(2, '0')}:${String(safe % 60).padStart(2, '0')}`;
 }
 export function drawMeasurementOverlay(ctx, width, height, opts = {}) {
-  const { title = '', elapsedMs = null, metrics = [], accent = '#fbbf24' } = opts;
+  const { title = '', elapsedMs = null, metrics = [], accent = '#fbbf24', bigTimeMs = null } = opts;
   const items = (metrics || []).filter(m => m && m.value != null && m.value !== '');
   if (!title && !items.length && elapsedMs == null) return;
 
@@ -41,6 +41,22 @@ export function drawMeasurementOverlay(ctx, width, height, opts = {}) {
   ctx.fillStyle = '#f1f5f9';
   ctx.textBaseline = 'middle';
   ctx.fillText(titleStr, pad + 24 * scale, pad + chipH / 2);
+
+  // [2026-11-16] 스프린트 녹화: 화면 위쪽 가운데에 소수 둘째 자리 시간(0.00 s)을 크게 표시.
+  if (bigTimeMs != null && Number.isFinite(Number(bigTimeMs))) {
+    const bu = Math.max(0.8, Math.min(2.4, Math.min(width / 720, height / 405)));
+    const txt = `${(Math.max(0, Number(bigTimeMs)) / 1000).toFixed(2)} s`;
+    ctx.font = `900 ${34 * bu}px ui-monospace, Menlo, monospace`;
+    const bw = measureW(txt) + 36 * bu;
+    const bh = 52 * bu;
+    ctx.fillStyle = 'rgba(0,0,0,0.6)';
+    ctx.fillRect((width - bw) / 2, pad, bw, bh);
+    ctx.fillStyle = accent;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(txt, width / 2, pad + bh / 2);
+    ctx.textAlign = 'left';
+  }
 
   if (elapsedMs != null) {
     const time = formatRecordTime(Math.floor(elapsedMs / 1000));
@@ -95,7 +111,7 @@ export function drawGaugeHud(ctx, width, height, opts = {}) {
   } = opts;
   if (!title && !gauge && (!stats || !stats.length) && elapsedSec == null) return;
 
-  const u = Math.max(0.6, Math.min(2.4, width / 720));
+  const u = Math.max(0.6, Math.min(2.4, Math.min(width / 720, height / 540))); // 가로 화면에서도 높이에 맞춰 축소
   const pad = Math.round(18 * u);
   const measureW = (s) => {
     try { return ctx.measureText ? ctx.measureText(s).width : String(s).length * 8 * u; }

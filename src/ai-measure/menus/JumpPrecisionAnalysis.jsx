@@ -52,6 +52,7 @@ function resolveWeight(member, fallback = null) {
 
 const RECORD_FPS = 30;
 const REC_SIZE = { width: 720, height: 960 }; // 3:4 세로
+const REC_SIZE_LANDSCAPE = { width: 960, height: 540 }; // 제자리멀리뛰기(수평) 16:9 가로
 const LAND_WINDOW = 10; // 착지 직후 생체역학 지표를 누적할 프레임 수
 const RSI_REQUIRED_JUMPS = 3;
 
@@ -96,7 +97,7 @@ function buildRsiCyclePreview(flights = []) {
 // 저장값(BroadJumpTracker.summary)과 똑같은 함수라 화면값과 저장값이 항상 일치한다.
 function distanceCmOf(f, horizontalScale) {
   if (!horizontalScale) return null;
-  return broadJumpDistanceCm(f.landingX, horizontalScale.baselineFeetX, horizontalScale.scaleCmPerY);
+  return broadJumpDistanceCm(f.landingX, horizontalScale.baselineFeetX, horizontalScale.scaleCmPerY, horizontalScale.frameAspect);
 }
 
 function flightRows(flights = [], cycles = [], horizontalScale = null) {
@@ -529,7 +530,8 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
   const createRecordedStream = () => {
     const video = videoRef.current;
     const canvas = recordCanvasRef.current || document.createElement('canvas');
-    canvas.width = REC_SIZE.width; canvas.height = REC_SIZE.height;
+    const recSize = jumpType === 'horizontal' ? REC_SIZE_LANDSCAPE : REC_SIZE;
+    canvas.width = recSize.width; canvas.height = recSize.height;
     recordCanvasRef.current = canvas;
     const ctx = canvas.getContext('2d', { alpha: false });
     const draw = () => {
@@ -702,6 +704,10 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
               ? new BroadJumpTracker(calib.result)
               : new JumpFlightTracker(calib.result);
             trackerRef.current.calibHeightCm = heightRef.current;
+            if (jumpType === 'horizontal') {
+              const vv = videoRef.current;
+              if (vv?.videoWidth && vv?.videoHeight) trackerRef.current.frameAspect = vv.videoWidth / vv.videoHeight;
+            }
             orientRef.current = jumpType === 'reactive' ? new OrientationVoter() : null;
             prevInAirRef.current = false;
             landFramesLeftRef.current = 0;
@@ -787,7 +793,7 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
               let nextCycles = [];
               let nextRows = [];
               const horizontalScale = isHorizontal
-                ? { baselineFeetX: tracker.baselineFeetX, scaleCmPerY: tracker.calib?.scaleCmPerY }
+                ? { baselineFeetX: tracker.baselineFeetX, scaleCmPerY: tracker.calib?.scaleCmPerY, frameAspect: tracker.frameAspect }
                 : null;
               if (jumpType === 'reactive') {
                 const cyclePreview = buildRsiCyclePreview(tracker.flights);
@@ -939,7 +945,8 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
     setReportData(report);
     setView('preview');
     // 유효 측정만 자동 저장 (gait 와 동일 철학) — videoBlob 은 저장 페이로드에서 제외
-    if (report.valid === true && saveToFirebase && autoSavedRef.current !== report.measuredAt) {
+    if (saveToFirebase && autoSavedRef.current !== report.measuredAt) {
+      if (report.valid !== true) report.needsReview = true;
       autoSavedRef.current = report.measuredAt;
       const { videoBlob: _vb, ...dataOnly } = report;
       autoSave(dataOnly);
@@ -957,7 +964,7 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
   };
 
   const handleManualSave = async () => {
-    if (!reportData || reportData.valid !== true || !saveToFirebase) return;
+    if (!reportData || !saveToFirebase) return;
     // 자동 저장과 동일하게 videoBlob 은 저장 페이로드에서 제외(Firestore 오염 방지).
     const { videoBlob: _vb, ...dataOnly } = reportData;
     autoSavedRef.current = reportData.measuredAt;   // 중복 저장 방지 마킹
@@ -1298,7 +1305,7 @@ function JumpReport({ report, saveState, onSave, onRetry, onBack, onOpenSavedRep
           baseName={`${report.member?.name || '회원'}_점프`} onMessage={() => {}}
           simpleSummary={report.valid === true ? buildSummaryData(report, { reportType: 'jump' }) : null}
           simpleMember={report.member} />
-        {report.valid === true && saveState !== 'saved' && (
+        {saveState !== 'saved' && (
           <button onClick={onSave}
             disabled={saveState === 'saving' || saveState === 'saved'}
             className="w-full rounded-xl bg-slate-200 dark:bg-slate-700 text-white font-bold py-3 disabled:opacity-60 flex items-center justify-center gap-2">
@@ -1310,7 +1317,7 @@ function JumpReport({ report, saveState, onSave, onRetry, onBack, onOpenSavedRep
           다시 측정
         </button>
         {saveState === 'error' && <p className="text-center text-xs text-red-700 dark:text-red-400">자동 저장 실패 — 위 버튼으로 다시 시도하세요</p>}
-        {report.valid !== true && <p className="text-center text-xs text-amber-700 dark:text-amber-400">무효 측정은 저장되지 않습니다.</p>}
+        {report.valid !== true && <p className="text-center text-xs text-amber-700 dark:text-amber-400">참고용 기록입니다 — 인식이 불안정해 ‘확인 필요’ 표시로 저장됩니다.</p>}
       </div>
     </div>
   );

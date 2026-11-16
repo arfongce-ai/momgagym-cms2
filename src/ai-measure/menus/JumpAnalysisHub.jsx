@@ -113,7 +113,9 @@ export default function JumpAnalysisHub({ member, onBack, onSave, onSaveToFireba
     };
     let saved = withRecord;
     setSaveState('saving');
-    if (withRecord.valid === true && typeof save === 'function') {
+    // [2026-11-16] 이상 데이터여도 일단 기록 — 무효면 needsReview 표시만 붙여 저장
+    if (typeof save === 'function') {
+      if (withRecord.valid !== true) withRecord.needsReview = true;
       try {
         // [SLJ 다리 자동전환 2026-08-19] 라이브 측정 결과에는 녹화 오버레이
         // videoBlob이 실려올 수 있다(JumpPrecisionAnalysis.jsx — 이제 onComplete로
