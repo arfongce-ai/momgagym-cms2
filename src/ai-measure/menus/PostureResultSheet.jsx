@@ -6,7 +6,7 @@
 // 계산은 core/postureResultSheet.js(기존 값·기존 기준 재사용)에서만 한다.
 // 참고 업체 화면의 장기·신경·림프 표시, '악화 시뮬레이션', 3D 모델은 카메라로
 // 측정되지 않는 정보라 넣지 않는다(센터 원칙: 느낌이 아니라 숫자).
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { POSE_LANDMARKS } from '../core/postureMath';
 import MuscleAnatomyFigure from './MuscleAnatomyFigure.jsx';
 import {
@@ -73,7 +73,8 @@ function visible(p) {
   return p && Number.isFinite(p.x) && Number.isFinite(p.y) && (p.visibility ?? 1) >= 0.3;
 }
 
-function useFigure(landmarks) {
+// aspect = 사진 가로/세로 비율. 사진이 있으면 실제 비율로 그려야 사진과 뼈대가 겹친다.
+function useFigure(landmarks, aspect = 1) {
   return useMemo(() => {
     const pts = landmarks.filter(visible);
     if (pts.length < 8) return null;
@@ -84,9 +85,26 @@ function useFigure(landmarks) {
     const W = 100; const H = 160; const pad = 14;
     const s = (H - pad * 2) / h;
     const cx = (minX + maxX) / 2;
-    const map = (p) => ({ x: W / 2 + (p.x - cx) * s, y: pad + (p.y - minY) * s });
-    return { map, W, H };
-  }, [landmarks]);
+    const map = (p) => ({ x: W / 2 + (p.x - cx) * s * aspect, y: pad + (p.y - minY) * s });
+    // 사진 전체(정규화 0~1)를 같은 변환으로 놓을 위치
+    const photo = { x: W / 2 - cx * s * aspect, y: pad - minY * s, w: s * aspect, h: s };
+    return { map, W, H, photo };
+  }, [landmarks, aspect]);
+}
+
+// [스켈레톤+사진 2026-11-16] 촬영 사진의 가로/세로 비율 읽기
+function usePhotoAspect(url) {
+  const [aspect, setAspect] = useState(null);
+  useEffect(() => {
+    if (!url) { setAspect(null); return undefined; }
+    let alive = true;
+    const img = new Image();
+    img.onload = () => { if (alive && img.naturalWidth && img.naturalHeight) setAspect(img.naturalWidth / img.naturalHeight); };
+    img.onerror = () => { if (alive) setAspect(null); };
+    img.src = url;
+    return () => { alive = false; };
+  }, [url]);
+  return aspect;
 }
 
 function Badge({ x, y, text, level, anchor = 'start' }) {
@@ -101,8 +119,10 @@ function Badge({ x, y, text, level, anchor = 'start' }) {
   );
 }
 
-function SkeletonFigure({ viewKey, label, landmarks, itemsByKey }) {
-  const fig = useFigure(landmarks);
+function SkeletonFigure({ viewKey, label, landmarks, itemsByKey, photoUrl, showPhoto }) {
+  const aspect = usePhotoAspect(showPhoto ? photoUrl : null);
+  const withPhoto = !!(showPhoto && photoUrl && aspect);
+  const fig = useFigure(landmarks, withPhoto ? aspect : 1);
   if (!fig) {
     return (
       <div className="flex aspect-[5/8] items-center justify-center rounded-lg bg-slate-50 text-[11px] text-slate-500 dark:bg-slate-950">
@@ -110,7 +130,7 @@ function SkeletonFigure({ viewKey, label, landmarks, itemsByKey }) {
       </div>
     );
   }
-  const { map, W, H } = fig;
+  const { map, W, H, photo } = fig;
   const P = (i) => (visible(landmarks[i]) ? map(landmarks[i]) : null);
   const isSide = viewKey === 'left' || viewKey === 'right';
   const la = P(LM.LEFT_ANKLE); const ra = P(LM.RIGHT_ANKLE);
@@ -139,40 +159,59 @@ function SkeletonFigure({ viewKey, label, landmarks, itemsByKey }) {
     if (pelvisItem && (pelvisItem.source || 'front') === viewKey) add('pelvis_height', rightMost(lh, rh), 'start');
   }
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="w-full rounded-lg bg-slate-50 dark:bg-slate-950" role="img" aria-label={`${label} 스켈레톤`}>
-      {[20, 40, 60, 80].map((x) => <line key={`v${x}`} x1={x} y1="0" x2={x} y2={H} stroke="currentColor" className="text-slate-200 dark:text-slate-800" strokeWidth="0.4" />)}
-      {[40, 80, 120].map((y) => <line key={`h${y}`} x1="0" y1={y} x2={W} y2={y} stroke="currentColor" className="text-slate-200 dark:text-slate-800" strokeWidth="0.4" />)}
+    <svg viewBox={`0 0 ${W} ${H}`} className="w-full overflow-hidden rounded-lg bg-slate-50 dark:bg-slate-950" role="img" aria-label={`${label} 스켈레톤${withPhoto ? ' (촬영 사진)' : ''}`}>
+      {withPhoto && (
+        <>
+          <image href={photoUrl} x={photo.x} y={photo.y} width={photo.w} height={photo.h} preserveAspectRatio="none" />
+          <rect x="0" y="0" width={W} height={H} fill="#000" fillOpacity="0.18" />
+        </>
+      )}
+      {!withPhoto && [20, 40, 60, 80].map((x) => <line key={`v${x}`} x1={x} y1="0" x2={x} y2={H} stroke="currentColor" className="text-slate-200 dark:text-slate-800" strokeWidth="0.4" />)}
+      {!withPhoto && [40, 80, 120].map((y) => <line key={`h${y}`} x1="0" y1={y} x2={W} y2={y} stroke="currentColor" className="text-slate-200 dark:text-slate-800" strokeWidth="0.4" />)}
       <line x1={plumbX} y1="4" x2={plumbX} y2={H - 4} stroke="#3b82f6" strokeWidth="0.8" strokeDasharray="2 2" />
       {!isSide && ls && rs && <line x1={ls.x} y1={ls.y} x2={rs.x} y2={rs.y} stroke="#3b82f6" strokeWidth="0.6" />}
       {!isSide && lh && rh && <line x1={lh.x} y1={lh.y} x2={rh.x} y2={rh.y} stroke="#3b82f6" strokeWidth="0.6" />}
-      <g stroke="currentColor" className="text-slate-500 dark:text-slate-400" strokeWidth="2.2" strokeLinecap="round">
+      <g stroke={withPhoto ? '#22d3ee' : 'currentColor'} className={withPhoto ? '' : 'text-slate-500 dark:text-slate-400'} strokeWidth={withPhoto ? 1.6 : 2.2} strokeLinecap="round">
         {BONES.map(([a, b]) => {
           const A = P(a); const B = P(b);
           return A && B ? <line key={`${a}-${b}`} x1={A.x} y1={A.y} x2={B.x} y2={B.y} /> : null;
         })}
         {isSide && ear && (ls || rs) && <line x1={ear.x} y1={ear.y} x2={(ls || rs).x} y2={(ls || rs).y} strokeDasharray="1.5 1.5" strokeWidth="1.2" />}
       </g>
-      {head && <circle cx={head.x} cy={head.y - 2} r="7" fill="none" stroke="currentColor" className="text-slate-500 dark:text-slate-400" strokeWidth="1.8" />}
+      {head && !withPhoto && <circle cx={head.x} cy={head.y - 2} r="7" fill="none" stroke="currentColor" className="text-slate-500 dark:text-slate-400" strokeWidth="1.8" />}
+      {withPhoto && BONES.flat().filter((v, i, a) => a.indexOf(v) === i).map((i) => {
+        const pt = P(i);
+        return pt ? <circle key={`j${i}`} cx={pt.x} cy={pt.y} r="1.6" fill="#fff" stroke="#0891b2" strokeWidth="0.6" /> : null;
+      })}
       {badges}
     </svg>
   );
 }
 
-function SkeletonSheet({ viewMap, items }) {
+function SkeletonSheet({ viewMap, items, photoMap = {} }) {
   const itemsByKey = useMemo(() => Object.fromEntries(items.map((it) => [it.key, it])), [items]);
+  const hasPhotos = Object.values(photoMap).some(Boolean);
+  const [showPhoto, setShowPhoto] = useState(true);
   const views = VIEW_ORDER.filter((v) => viewMap[v.key]);
   if (!views.length) return null;
   return (
     <Card>
-      <SectionTitle aside={<span className="text-[10px] text-slate-500">파란 점선 = 발목 기준 수직선</span>}>스켈레톤 결과 시트</SectionTitle>
+      <SectionTitle aside={hasPhotos ? (
+        <button type="button" onClick={() => setShowPhoto((v) => !v)}
+          className="rounded-md border border-slate-300 px-2 py-0.5 text-[11px] font-bold text-slate-700 dark:border-slate-600 dark:text-slate-200">
+          {showPhoto ? '뼈대만 보기' : '사진과 함께 보기'}
+        </button>
+      ) : <span className="text-[10px] text-slate-500">파란 점선 = 발목 기준 수직선</span>}>스켈레톤 결과 시트</SectionTitle>
       <div className={`grid gap-2 ${views.length >= 4 ? 'grid-cols-2 sm:grid-cols-4' : views.length === 3 ? 'grid-cols-3' : 'grid-cols-2'}`}>
         {views.map((v) => (
           <div key={v.key} className="mx-auto w-full max-w-[170px]">
-            <SkeletonFigure viewKey={v.key} label={v.label} landmarks={viewMap[v.key]} itemsByKey={itemsByKey} />
+            <SkeletonFigure viewKey={v.key} label={v.label} landmarks={viewMap[v.key]} itemsByKey={itemsByKey}
+              photoUrl={photoMap[v.key]} showPhoto={showPhoto} />
             <p className="mt-1 text-center text-[11px] font-bold text-slate-500">{v.label}</p>
           </div>
         ))}
       </div>
+      {hasPhotos && <p className="mt-2 text-[10px] text-slate-500">파란 점선 = 발목 기준 수직선 · 촬영 사진은 이 화면과 저장한 A4 리포트 이미지에만 쓰이고 서버에는 올라가지 않습니다.</p>}
     </Card>
   );
 }
@@ -250,6 +289,12 @@ export default function PostureResultSheet({ report, analysis, score, member, pr
     perViewAnalysis: report?.perViewAnalysis, analysis, presentKeys: items.map((i) => i.key),
   }), [report, analysis, items]);
   const regions = useMemo(() => activeRegions(items), [items]);
+  // 측정 직후 화면에만 있는 촬영 사진(로컬 ObjectURL) — 저장된 기록을 다시 열면 뼈대만 보인다.
+  const photoMap = useMemo(() => {
+    const out = {};
+    (perViewSnapshots || []).forEach((sn) => { if (sn?.key && sn.snapshotUrl) out[sn.key] = sn.snapshotUrl; });
+    return out;
+  }, [perViewSnapshots]);
   const viewMap = useMemo(() => collectViewLandmarks({
     viewLandmarks: report?.viewLandmarks,
     perViewSnapshots: perViewSnapshots || report?.perViewSnapshots,
@@ -264,7 +309,7 @@ export default function PostureResultSheet({ report, analysis, score, member, pr
         items={quickItems}
         missing={missing}
         anchorPrefix="posture-item"
-        before={<SkeletonSheet viewMap={viewMap} items={items} />}
+        before={<SkeletonSheet viewMap={viewMap} items={items} photoMap={photoMap} />}
         after={<MuscleBodyMap regions={regions} items={items} />}
       />
     </div>

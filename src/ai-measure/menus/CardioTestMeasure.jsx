@@ -117,7 +117,7 @@ const parseClock = (s) => {
   return Number.isFinite(n) && n > 0 ? n : null;
 };
 
-export default function CardioTestMeasure({ onBack, member = null, onSave = null }) {
+export default function CardioTestMeasure({ onBack, member = null, onSave = null, onViewInReport = null }) {
   const supported = isHeartRateBleSupported();
   const [machineId, setMachineId] = useState('rower');
   const [protocolId, setProtocolId] = useState('rower_2k');
@@ -655,7 +655,20 @@ export default function CardioTestMeasure({ onBack, member = null, onSave = null
           </div>
 
           {!member && <p className="text-[11px] text-slate-500 dark:text-slate-400">회원을 고르지 않아 저장하지 않습니다. 측정 화면에서 회원을 먼저 고른 뒤 다시 측정해 주세요.</p>}
-          {saveState.state === 'saved' && <p className="text-xs font-bold text-emerald-700 dark:text-emerald-400">✓ {memberLabel} 측정 이력에 저장했습니다(1초 단위 원본 포함).</p>}
+          {saveState.state === 'saved' && (
+            <div className="space-y-1.5">
+              <p className="text-xs font-bold text-emerald-700 dark:text-emerald-400">✓ {memberLabel} 측정 이력에 저장했습니다(1초 단위 원본 포함).</p>
+              <p className="text-[11px] font-semibold text-slate-600 dark:text-slate-300">
+                저장 위치: 결과리포트 → {memberLabel} 선택 → AI 측정 이력 → 심폐지구력(VO2max)
+              </p>
+              {onViewInReport && !member?.isVirtual && (
+                <button type="button" onClick={onViewInReport} data-testid="cardio-view-report"
+                  className="w-full rounded-xl border-2 border-amber-400 bg-amber-50 py-2.5 text-sm font-black text-amber-700 dark:bg-amber-500/10 dark:text-amber-300">
+                  결과리포트에서 저장된 기록 보기 →
+                </button>
+              )}
+            </div>
+          )}
           {saveState.error && <p className="text-xs font-bold text-red-600 dark:text-red-400">{saveState.error}</p>}
           <div className="grid grid-cols-2 gap-2">
             <button onClick={reset} disabled={saveState.state === 'saving'} className="rounded-xl border-2 border-slate-300 dark:border-slate-600 py-3 text-sm font-bold text-slate-700 dark:text-slate-200 disabled:opacity-50">

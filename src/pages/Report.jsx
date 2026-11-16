@@ -37,6 +37,7 @@ import CardioReportSheet from '../components/report/CardioReportSheet';
 // StanceReportDashboard.jsx와 같은 컴포넌트를 재사용, 재구현 아님).
 const StanceReportDashboard = lazy(() => import('../ai-measure/menus/StanceReportDashboard'));
 const SquatReportDashboard = lazy(() => import('../ai-measure/menus/SquatReportDashboard'));
+const SessionDataSheet = lazy(() => import('../components/report/SessionDataSheet'));
 
 const COLORS = { weight:'#f59e0b', systolic:'#ef4444', diastolic:'#3b82f6', height:'#22d3ee' };
 const DETAIL_SESSION_MENUS = new Set(['jump', 'gait', 'posture', 'rom', 'lifting']);
@@ -157,7 +158,7 @@ function MeasureCalendar({ pivot, onPivotChange, dailyMap, selectedDate, onSelec
     <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden">
       <div className="flex items-center justify-between px-3 py-2.5 border-b border-slate-200 dark:border-slate-800">
         <button type="button" onClick={() => shiftMonth(-1)} className="px-2 py-1 text-sm font-bold text-slate-500 dark:text-slate-400 active:text-white">◀</button>
-        <p className="text-sm font-black text-white">{y}년 {mo + 1}월</p>
+        <p className="text-sm font-black text-slate-900 dark:text-white">{y}년 {mo + 1}월</p>
         <button type="button" onClick={() => shiftMonth(1)} className="px-2 py-1 text-sm font-bold text-slate-500 dark:text-slate-400 active:text-white">▶</button>
       </div>
       <div className="grid grid-cols-7 border-b border-slate-200 dark:border-slate-800 text-center text-[11px] font-bold text-slate-500">
@@ -369,7 +370,7 @@ function ComprehensiveReportSection({ member, dataReady, onRecordsChanged }) {
           {selected && (
             <div className="space-y-2">
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3">
-                <p className="text-sm font-black text-white">{selected.label}</p>
+                <p className="text-sm font-black text-slate-900 dark:text-white">{selected.label}</p>
                 <p className="text-xs text-slate-500 dark:text-slate-400">측정 {selected.stats.total}회 · 유형 {selected.stats.typeCount}종</p>
                 {selected.stats.score && (
                   <p className="text-xs text-slate-500 dark:text-slate-400">
@@ -885,7 +886,7 @@ function UnifiedResultCard({ item, onOpen, onShare, onShareSimple, sharing, shar
               </span>
               <span className="text-[11px] font-bold text-slate-500">{formatDateOnly(item.date)}</span>
             </div>
-            <p className="mt-2 break-keep text-base font-black leading-tight text-white">
+            <p className="mt-2 break-keep text-base font-black leading-tight text-slate-900 dark:text-white">
               {item.summary.title || item.meta.title}
             </p>
             <p className="mt-1 break-keep text-[12px] font-semibold leading-tight text-slate-500">
@@ -1140,6 +1141,7 @@ export default function Report() {
   const [liftingViewerIdx, setLiftingViewerIdx] = useState(null); // 바벨 리프팅 리포트 열람 인덱스
   const [romViewerIdx, setRomViewerIdx] = useState(null); // ROM 리포트 열람 인덱스
   const [stanceViewerIdx, setStanceViewerIdx] = useState(null); // SLST 리포트 열람 인덱스
+  const [sessionViewer, setSessionViewer] = useState(null); // 전용 화면 없는 측정의 저장 결과 열람 {session, previous}
   const [squatViewerIdx, setSquatViewerIdx] = useState(null); // 오버헤드 딥 스쿼트 리포트 열람 인덱스
   const [expandedMenu, setExpandedMenu] = useState(null); // 펼친 측정 메뉴
 
@@ -1197,6 +1199,18 @@ export default function Report() {
     setStanceViewerIdx(0);
     setPendingOpenKind(null);
   }, [pendingOpenKind, savedStanceSessions]);
+
+  useEffect(() => {
+    if (!pendingOpenKind || ['stance', 'squat'].includes(pendingOpenKind) || DETAIL_SESSION_MENUS.has(pendingOpenKind)) return;
+    if (!member) return;
+    const latest = (aiStore.getSessions(member.id) || [])
+      .filter((x) => x.menu === pendingOpenKind)
+      .sort((a, b) => String(b.recordedAtFull || b.recordedAt).localeCompare(String(a.recordedAtFull || a.recordedAt)))[0];
+    if (!latest) return;
+    openSessionResult(latest);
+    setPendingOpenKind(null);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingOpenKind, member, dataReady]);
 
   useEffect(() => {
     if (pendingOpenKind !== 'squat') return;
@@ -1338,10 +1352,25 @@ export default function Report() {
       return;
     }
     if (item.session?.menu) {
-      setExpandedMenu(menuGroupKey(item.session));
-      setMsg('아래 AI 측정 이력에서 해당 결과를 확인할 수 있습니다.');
-      setTimeout(() => setMsg(null), 1800);
+      openSessionResult(item.session);
     }
+  };
+
+  // [결과 열람 2026-11-16] 공유만 있고 결과 데이터를 볼 수 없던 측정(스탠스·스쿼트·심폐·1RM·VBT·RSI·스프린트 등):
+  //  전용 화면이 있으면 그것을, 없으면 저장된 숫자 결과 시트를 연다.
+  const openSessionResult = (session) => {
+    if (!session) return;
+    if (session.menu === 'stance') {
+      const i = savedStanceSessions.findIndex((x) => x.id === session.id);
+      if (i >= 0) { setStanceViewerIdx(i); return; }
+    }
+    if (session.menu === 'squat') {
+      const i = savedSquatSessions.findIndex((x) => x.id === session.id);
+      if (i >= 0) { setSquatViewerIdx(i); return; }
+    }
+    const same = (sessionsByMenu[menuGroupKey(session)] || []);
+    const idx = same.findIndex((x) => x.id === session.id);
+    setSessionViewer({ session, previous: idx >= 0 ? (same[idx + 1] || null) : null });
   };
 
   // simple=true(쉬운 버전)는 buildSummaryData 결과(item.summary)만 있으면
@@ -1539,7 +1568,7 @@ export default function Report() {
             <div className="mt-3">
               <div className="mb-2 flex items-end justify-between gap-3 px-1">
                 <div>
-                  <p className="text-sm font-black text-white">{formatDateOnly(selectedGroup.date)}</p>
+                  <p className="text-sm font-black text-slate-900 dark:text-white">{formatDateOnly(selectedGroup.date)}</p>
                   {selectedGroup.avgScore != null && (
                     <p className="text-[12px] font-semibold text-slate-500">
                       이날 평균 <span className={`font-black ${scoreTone(selectedGroup.avgScore)}`}>{selectedGroup.avgScore}점</span>
@@ -1664,12 +1693,13 @@ export default function Report() {
                                 // (measuredAt 문자열 비교보다 정확 — 같은 세션 목록에서 그대로 찾는 것이므로).
                                 const liftIdx = m.menu === 'lifting' && r.s?.id
                                   ? savedLiftingSessions.findIndex(sr => sr.id === r.s.id) : -1;
-                                const openable = gIdx >= 0 || pIdx >= 0 || romIdx >= 0 || liftIdx >= 0;
+                                const openable = true; // 전용 화면이 없으면 저장된 결과 시트로 연다(2026-11-16)
                                 const openDetail = () => {
                                   if (gIdx >= 0) setViewerIdx(gIdx);
                                   else if (pIdx >= 0) setPostureViewerIdx(pIdx);
                                   else if (liftIdx >= 0) setLiftingViewerIdx(liftIdx);
                                   else if (romIdx >= 0) setRomViewerIdx(romIdx);
+                                  else openSessionResult(r.s);
                                 };
                                 const linkedReport = gIdx >= 0 ? { source: 'gait_reports', id: savedReports[gIdx].id }
                                   : pIdx >= 0 ? { source: 'posture_reports', id: savedPostureReports[pIdx].id }
@@ -1686,7 +1716,7 @@ export default function Report() {
                                     </div>
                                     <div className="flex shrink-0 items-center gap-3">
                                       {openable && (
-                                        <button onClick={openDetail} className="text-amber-700 dark:text-amber-400 text-[11px] font-bold">리포트 →</button>
+                                        <button onClick={openDetail} className="text-amber-700 dark:text-amber-400 text-[11px] font-bold">{gIdx >= 0 || pIdx >= 0 || romIdx >= 0 || liftIdx >= 0 ? '리포트 →' : '결과 보기 →'}</button>
                                       )}
                                       <button
                                         type="button"
@@ -1760,7 +1790,7 @@ export default function Report() {
         <div className="fixed inset-0 z-[90] bg-slate-50 dark:bg-slate-950 overflow-y-auto" style={{ height: '100dvh' }}>
           <div className="sticky top-0 z-10 flex items-center justify-between px-4 py-2.5 bg-white dark:bg-slate-900/95 backdrop-blur border-b border-slate-200 dark:border-slate-800">
             <button onClick={() => setViewerIdx(null)} className="text-slate-600 dark:text-slate-300 font-bold text-sm">✕ 닫기</button>
-            <span className="text-white text-xs font-bold">{viewerIdx + 1} / {savedReports.length}</span>
+            <span className="text-slate-900 dark:text-white text-xs font-bold">{viewerIdx + 1} / {savedReports.length}</span>
             <div className="flex gap-2">
               <button onClick={() => setViewerIdx(i => Math.min(savedReports.length - 1, i + 1))}
                 disabled={viewerIdx >= savedReports.length - 1}
@@ -1802,7 +1832,7 @@ export default function Report() {
         <div className="fixed inset-0 z-[90] bg-slate-50 dark:bg-slate-950 overflow-y-auto" style={{ height: '100dvh' }}>
           <div className="sticky top-0 z-10 flex items-center justify-between px-4 py-2.5 bg-white dark:bg-slate-900/95 backdrop-blur border-b border-slate-200 dark:border-slate-800">
             <button onClick={() => setRomViewerIdx(null)} className="text-slate-600 dark:text-slate-300 font-bold text-sm">✕ 닫기</button>
-            <span className="text-white text-xs font-bold">{romViewerIdx + 1} / {savedRomReports.length}</span>
+            <span className="text-slate-900 dark:text-white text-xs font-bold">{romViewerIdx + 1} / {savedRomReports.length}</span>
             <div className="flex gap-2">
               <button onClick={() => setRomViewerIdx(i => Math.min(savedRomReports.length - 1, i + 1))}
                 disabled={romViewerIdx >= savedRomReports.length - 1}
@@ -1831,7 +1861,7 @@ export default function Report() {
         <div className="fixed inset-0 z-[90] bg-slate-50 dark:bg-slate-950 overflow-y-auto" style={{ height: '100dvh' }}>
           <div className="sticky top-0 z-10 flex items-center justify-between px-4 py-2.5 bg-white dark:bg-slate-900/95 backdrop-blur border-b border-slate-200 dark:border-slate-800">
             <button onClick={() => setPostureViewerIdx(null)} className="text-slate-600 dark:text-slate-300 font-bold text-sm">✕ 닫기</button>
-            <span className="text-white text-xs font-bold">{postureViewerIdx + 1} / {savedPostureReports.length}</span>
+            <span className="text-slate-900 dark:text-white text-xs font-bold">{postureViewerIdx + 1} / {savedPostureReports.length}</span>
             <div className="flex gap-2">
               <button onClick={() => setPostureViewerIdx(i => Math.min(savedPostureReports.length - 1, i + 1))}
                 disabled={postureViewerIdx >= savedPostureReports.length - 1}
@@ -1861,7 +1891,7 @@ export default function Report() {
         <div className="fixed inset-0 z-[90] bg-slate-50 dark:bg-slate-950 overflow-y-auto" style={{ height: '100dvh' }}>
           <div className="sticky top-0 z-10 flex items-center justify-between px-4 py-2.5 bg-white dark:bg-slate-900/95 backdrop-blur border-b border-slate-200 dark:border-slate-800">
             <button onClick={() => setLiftingViewerIdx(null)} className="text-slate-600 dark:text-slate-300 font-bold text-sm">✕ 닫기</button>
-            <span className="text-white text-xs font-bold">{liftingViewerIdx + 1} / {savedLiftingSessions.length}</span>
+            <span className="text-slate-900 dark:text-white text-xs font-bold">{liftingViewerIdx + 1} / {savedLiftingSessions.length}</span>
             <div className="flex gap-2">
               <button onClick={() => setLiftingViewerIdx(i => Math.min(savedLiftingSessions.length - 1, i + 1))}
                 disabled={liftingViewerIdx >= savedLiftingSessions.length - 1}
@@ -1900,7 +1930,7 @@ export default function Report() {
         <div className="fixed inset-0 z-[90] bg-slate-50 dark:bg-slate-950 overflow-y-auto" style={{ height: '100dvh' }}>
           <div className="sticky top-0 z-10 flex items-center justify-between px-4 py-2.5 bg-white dark:bg-slate-900/95 backdrop-blur border-b border-slate-200 dark:border-slate-800">
             <button onClick={() => setStanceViewerIdx(null)} className="text-slate-600 dark:text-slate-300 font-bold text-sm">✕ 닫기</button>
-            <span className="text-white text-xs font-bold">{stanceViewerIdx + 1} / {savedStanceSessions.length}</span>
+            <span className="text-slate-900 dark:text-white text-xs font-bold">{stanceViewerIdx + 1} / {savedStanceSessions.length}</span>
             <div className="flex gap-2">
               <button onClick={() => setStanceViewerIdx(i => Math.min(savedStanceSessions.length - 1, i + 1))}
                 disabled={stanceViewerIdx >= savedStanceSessions.length - 1}
@@ -1932,7 +1962,7 @@ export default function Report() {
         <div className="fixed inset-0 z-[90] bg-slate-50 dark:bg-slate-950 overflow-y-auto" style={{ height: '100dvh' }}>
           <div className="sticky top-0 z-10 flex items-center justify-between px-4 py-2.5 bg-white dark:bg-slate-900/95 backdrop-blur border-b border-slate-200 dark:border-slate-800">
             <button onClick={() => setSquatViewerIdx(null)} className="text-slate-600 dark:text-slate-300 font-bold text-sm">✕ 닫기</button>
-            <span className="text-white text-xs font-bold">{squatViewerIdx + 1} / {savedSquatSessions.length}</span>
+            <span className="text-slate-900 dark:text-white text-xs font-bold">{squatViewerIdx + 1} / {savedSquatSessions.length}</span>
             <div className="flex gap-2">
               <button onClick={() => setSquatViewerIdx(i => Math.min(savedSquatSessions.length - 1, i + 1))}
                 disabled={squatViewerIdx >= savedSquatSessions.length - 1}
@@ -1955,6 +1985,23 @@ export default function Report() {
               // menu==='squat'만 담긴 단일 종류 목록 — 바로 다음 인덱스가 직전 회차.
               previousReport={savedSquatSessions[squatViewerIdx + 1]?.data || null}
             />
+          </Suspense>
+        </div>
+      )}
+      {sessionViewer && (
+        <div className="fixed inset-0 z-[90] overflow-y-auto bg-slate-50 dark:bg-slate-950" style={{ height: '100dvh', overscrollBehavior: 'contain' }}>
+          <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-200 bg-white px-4 py-2.5 dark:border-slate-800 dark:bg-slate-900/95">
+            <button onClick={() => setSessionViewer(null)} className="text-sm font-bold text-slate-600 dark:text-slate-300">✕ 닫기</button>
+            <span className="text-xs font-bold text-slate-900 dark:text-white">{sessionViewer.session.menuTitle || sessionViewer.session.menu}</span>
+            <span className="w-10" />
+          </div>
+          <Suspense fallback={<div className="p-10 text-center text-slate-500 dark:text-slate-400">불러오는 중…</div>}>
+            {sessionViewer.session.menu === 'cardio' && sessionViewer.session.data?.kind === 'cardio_test' && (
+              <div className="mx-auto w-full max-w-[794px] p-4">
+                <CardioReportSheet report={sessionViewer.session.data} member={member} onMessage={setMsg} />
+              </div>
+            )}
+            <SessionDataSheet session={sessionViewer.session} previous={sessionViewer.previous} member={member} onClose={() => setSessionViewer(null)} />
           </Suspense>
         </div>
       )}

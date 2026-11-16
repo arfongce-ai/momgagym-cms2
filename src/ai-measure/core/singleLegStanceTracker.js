@@ -73,6 +73,9 @@ export const SLST_TRACK_TUNING = {
   filterMinCutoff: 1.0,
   filterBeta: 0.01,
   balanceLossVelocityThreshold: 0.35, // 골반(정규화좌표) 속도(단위/초) 이 이상이면 균형상실 추정
+  // [2026-11-16] 발을 드는 순간 체중이 지지발로 옮겨가며 골반이 빠르게 옆으로 이동한다 —
+  //  이걸 균형 상실로 오판하지 않도록 들어올린 직후 이 시간 동안은 속도·회전·기울기 판정을 쉰다.
+  liftSettleMs: 700,
   // [측정 기준 일관성 수정 2026-09-22] "어쩔때는 조금만 움직여도 끝나고, 어쩔때는
   // 흔들리고 돌아도 계속 됨" 현장 피드백 대응 — 원인은 종료 판정 두 경로가 서로
   // 비대칭이었기 때문: 발내림(foot_down)은 필터링 없는 단일 프레임 잡음에도 즉시
@@ -80,7 +83,7 @@ export const SLST_TRACK_TUNING = {
   // 끝내지 않았으며(둔감), 회전/제자리돌기를 감지하는 신호 자체가 없었다.
   releaseHysteresisMs: 150,   // 발내림 판정도 이 시간만큼 연속으로 문턱 아래여야 확정(단일 프레임 잡음 방지)
   rotationYawDeltaDeg: 18,    // 시행 시작 시점 대비 이만큼 회전하면 "돌았다"로 간주
-  rotationHysteresisMs: 200,  // 회전 판정도 이 시간만큼 연속 유지돼야 확정
+  rotationHysteresisMs: 500,  // 회전 판정도 이 시간만큼 연속 유지돼야 확정(2026-11-16: 200→500ms, 깊이(z) 잡음 오판 감소)
 };
 
 const HIP_L = 23;
@@ -96,12 +99,17 @@ function ankleY(lm, side) {
   const idx = side === 'left' ? ANK_L : ANK_R;
   return lm?.[idx]?.y ?? null;
 }
-function pelvicTiltDegOf(lm) {
+// [버그 수정 2026-11-16] 예전 공식 |atan2(dy, dx)| 은 정면 촬영(회원 왼쪽 골반이 화면 오른쪽 → dx<0)에서
+//  수평 골반을 180°로 계산해, 골반 기울기 '위험(10°↑)'이 모든 측정에 찍혔다("내용과 상관없이 다 위험").
+//  골반선이 수평선과 이루는 각(0~90°)만 본다 — 좌우 순서와 무관.
+export function pelvicTiltDegOf(lm) {
   if (!lm || !lm[HIP_L] || !lm[HIP_R]) return null;
-  const dy = lm[HIP_R].y - lm[HIP_L].y;
-  const dx = lm[HIP_R].x - lm[HIP_L].x;
+  const dy = Math.abs(lm[HIP_R].y - lm[HIP_L].y);
+  const dx = Math.abs(lm[HIP_R].x - lm[HIP_L].x);
   if (!dx && !dy) return 0;
-  return Math.abs((Math.atan2(dy, dx) * 180) / Math.PI);
+  // 측면처럼 좌우 골반이 거의 겹치면(가로 간격 2% 미만) 각도를 믿을 수 없어 집계하지 않는다.
+  if (dx < 0.02) return null;
+  return (Math.atan2(dy, dx) * 180) / Math.PI;
 }
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
@@ -184,6 +192,7 @@ export class SingleLegStanceTracker {
     this._belowReleaseSinceMs = null;
     this._rotatedSinceMs = null;
     this._baselineYawDeg = null;
+    this._yawRebased = false;
   }
 
   // 라이브 측정에서 트레이너가 육안으로 균형 상실을 봤을 때 직접 호출 가능.
@@ -252,6 +261,7 @@ export class SingleLegStanceTracker {
     }
 
     // phase === 'holding'
+    const settling = tMs - this._liftStartMs < this.tuning.liftSettleMs;
     const hip = hipMid(lm);
     if (hip) {
       const fx = this._filtHipX.filter(hip.x, tMs / 1000);
@@ -261,7 +271,7 @@ export class SingleLegStanceTracker {
         const dist = Math.hypot(fx - this._prevHip.x, fy - this._prevHip.y);
         // [2026-08-02] 흔들림 누적 경로는 더는 판정에 안 쓰므로 저장하지 않는다.
         // 순간 이동 속도(dist/dt)만 균형 상실 추정에 계속 쓴다.
-        if (dt > 0 && dist / dt >= this.tuning.balanceLossVelocityThreshold) {
+        if (!settling && dt > 0 && dist / dt >= this.tuning.balanceLossVelocityThreshold) {
           this._balanceLoss = true;
         }
       }
@@ -269,7 +279,7 @@ export class SingleLegStanceTracker {
       this._prevT = tMs;
     }
 
-    const tilt = pelvicTiltDegOf(lm);
+    const tilt = settling ? null : pelvicTiltDegOf(lm);
     if (tilt != null) this._maxPelvicTiltDeg = Math.max(this._maxPelvicTiltDeg, tilt);
 
     // [측정 기준 일관성 수정 2026-09-22] 균형 상실이 감지되면(위 속도 휴리스틱 또는
@@ -284,7 +294,9 @@ export class SingleLegStanceTracker {
     // 제자리 회전/돌기 감지 — 힙 이동 속도(위)만으로는 몸을 축으로 도는 동작을 못
     // 잡는다(회전 중엔 골반 중심 자체는 거의 안 움직인다). 시행 시작 대비 골반
     // yaw 변화가 rotationYawDeltaDeg 이상 rotationHysteresisMs 이상 지속되면 종료.
-    const yawNow = hipYawProxyDeg(lm);
+    const yawNow = settling ? null : hipYawProxyDeg(lm);
+    // 회전 기준선은 자세가 안정된 뒤(들어올린 직후 흔들림 제외) 처음 잡힌 값으로 다시 잡는다.
+    if (yawNow != null && this._yawRebased !== true) { this._baselineYawDeg = yawNow; this._yawRebased = true; }
     if (yawNow != null && this._baselineYawDeg != null) {
       const yawDelta = Math.abs(yawNow - this._baselineYawDeg);
       if (yawDelta >= this.tuning.rotationYawDeltaDeg) {

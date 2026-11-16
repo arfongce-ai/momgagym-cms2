@@ -14,6 +14,7 @@ import { isSkeletonEnabled } from '../core/skeletonPref';
 import { useCameraRotation } from '../core/useCameraRotation';
 import { rotateLandmarksNormalized, drawVideoCover } from '../core/recordAspect';
 import { aiStore } from '../../demoData';
+import { AUTO_CAPTURE, isBodyStill, createHoldTimer } from '../core/postureAutoCapture';
 
 const VIEW_STEPS = [
   { key: 'front', label: '정면', short: '앞' },
@@ -103,6 +104,11 @@ export default function PostureMeasure({ member, onSave, onBack, onViewInReport 
   const lockViewRef = useRef(false);
   useEffect(() => { lockViewRef.current = lockView; }, [lockView]);
   const holdStartRef = useRef(0); // 면 고정 시 '멈춤 유지' 시작 시각
+  // [자동측정 카운트 늦추기 2026-11-16] 멈춤 확인용 1.2초 움직임 버퍼 · 목표 면 2초 연속 유지 타이머 ·
+  //  면 촬영 후 돌아서는 시간(이 시각 전까지 판정 쉼)
+  const motionBufRef = useRef([]);
+  const viewHoldRef = useRef(createHoldTimer(AUTO_CAPTURE.stableHoldMs));
+  const turnUntilRef = useRef(0);
 
   const selectedSteps = useMemo(
     () => VIEW_STEPS.filter((step) => selectedViews[step.key]),
@@ -155,8 +161,13 @@ export default function PostureMeasure({ member, onSave, onBack, onViewInReport 
       frameBufferRef.current = [];
       viewVoterRef.current.reset();
       holdStartRef.current = 0; // 면 고정 hold 타이머 리셋
+      motionBufRef.current = [];
+      viewHoldRef.current.reset();
       return;
     }
+    const mbuf = motionBufRef.current;
+    mbuf.push({ landmarks: corrected, ts });
+    while (mbuf.length && mbuf[0].ts < ts - 1200) mbuf.shift();
     // 안정적으로 전신이 잡힌 프레임만 시간순 버퍼에 누적(슬라이딩 윈도우).
     const buf = frameBufferRef.current;
     buf.push({ landmarks: corrected, ts });
@@ -172,13 +183,23 @@ export default function PostureMeasure({ member, onSave, onBack, onViewInReport 
       if (ts % 120 < 18) setDetectedView(det.view);
       if (autoBusyRef.current) return; // 카운트다운/캡처 중이면 가이드 유지
       const targetLabel = VIEW_STEPS.find((s) => s.key === target)?.label || target;
+      // 면 촬영 직후: 돌아설 시간 동안 판정하지 않는다(돌아서는 도중 카운트 방지)
+      if (ts < turnUntilRef.current) {
+        setGuide(`다음은 ${targetLabel} — 천천히 돌아서 주세요 (${Math.ceil((turnUntilRef.current - ts) / 1000)}초)`);
+        viewVoterRef.current.reset();
+        viewHoldRef.current.reset();
+        holdStartRef.current = 0;
+        return;
+      }
+      const still = isBodyStill(motionBufRef.current, ts);
 
       // ▸ 수동 면 고정(view lock): 자동 판정을 신뢰하지 않고, 선택한 면으로 강제 진행.
       //   전신이 보이는 상태로 0.8초 멈춰 있으면 촬영(흔들림 방지용 hold-still만 검사).
       if (lockViewRef.current) {
+        if (!still) { holdStartRef.current = 0; setGuide(`${targetLabel} 면 고정 — 움직임을 멈춰 주세요`); return; }
         if (!holdStartRef.current) holdStartRef.current = ts;
         const heldMs = ts - holdStartRef.current;
-        const HOLD_MS = 1500; // 면 고정 유지 시간(0.8→1.5s): 촬영이 너무 빨리 시작되던 문제 완화
+        const HOLD_MS = AUTO_CAPTURE.lockHoldMs; // 1.5→2.5s + 멈춤 확인(2026-11-16)
         if (heldMs >= HOLD_MS) {
           setGuide(`${targetLabel} (면 고정) — 측정을 시작합니다.`);
           holdStartRef.current = 0;
@@ -196,9 +217,17 @@ export default function PostureMeasure({ member, onSave, onBack, onViewInReport 
       const stableOpts = isSideTarget
         ? { minRatio: 0.62, minFrames: 12 }
         : { minRatio: 0.7, minFrames: 14 };
-      if (viewVoterRef.current.isStable(target, stableOpts)) {
-        setGuide(`${targetLabel} 인식됨 — 측정을 시작합니다.`);
+      const viewOk = viewVoterRef.current.isStable(target, stableOpts);
+      // 목표 면 + 멈춤이 2초 연속 유지될 때만 카운트 시작
+      const hold = viewHoldRef.current.update(viewOk && still, ts);
+      if (hold.ready) {
+        viewHoldRef.current.reset();
+        setGuide(`${targetLabel} 확인 완료 — 측정을 시작합니다.`);
         startAutoCountdown();
+      } else if (viewOk && !still) {
+        setGuide(`${targetLabel} 인식됨 — 움직임을 멈춰 주세요`);
+      } else if (viewOk) {
+        setGuide(`${targetLabel} 확인 중 — 자세를 유지하세요 (${(hold.remainMs / 1000).toFixed(1)}초)`);
       } else {
         const seen = VIEW_STEPS.find((s) => s.key === det.view)?.label || '자세 확인 중';
         setGuide(`${targetLabel}으로 서 주세요. (현재 인식: ${seen})`);
@@ -333,8 +362,10 @@ export default function PostureMeasure({ member, onSave, onBack, onViewInReport 
     if (more !== null) beepSuccess();
     // 다음 면이 있으면 자동 진행이 곧바로 재트리거되지 않도록 잠깐 텀을 둔다.
     if (more) {
-      autoBusyRef.current = true;
-      setTimeout(() => { autoBusyRef.current = false; }, 1500);
+      turnUntilRef.current = performance.now() + AUTO_CAPTURE.turnPauseMs;
+      viewVoterRef.current.reset();
+      viewHoldRef.current.reset();
+      motionBufRef.current = [];
     }
   };
 
@@ -378,7 +409,12 @@ export default function PostureMeasure({ member, onSave, onBack, onViewInReport 
       beepSuccess();
       // 다음 면이 있으면 잠깐 텀을 두고 자동 진행 재개(자세 변경 시간 확보)
       if (more) {
-        setTimeout(() => { autoBusyRef.current = false; }, 1500);
+        // 다음 면으로 돌아설 시간 확보(1.5s 고정 텀 → 3초 판정 쉼 + 2초 연속 확인)
+        turnUntilRef.current = performance.now() + AUTO_CAPTURE.turnPauseMs;
+        viewVoterRef.current.reset();
+        viewHoldRef.current.reset();
+        motionBufRef.current = [];
+        autoBusyRef.current = false;
       } else {
         autoBusyRef.current = false;
       }
