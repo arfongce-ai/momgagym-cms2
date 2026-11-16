@@ -137,7 +137,12 @@ export default function SquatReportDashboard({ report, member, onClose, onRemeas
         />
 
         <div className="grid gap-3">
-          {report.valid !== false && <QuickResultSheet report={report} reportType="squat" score={reportScore} previousReport={previousReport} />}
+          {report.valid === false && (
+            <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3" data-testid="review-banner">
+              <p className="text-xs font-bold text-amber-800 dark:text-amber-300">참고용 기록 — 인식이 불안정했던 측정입니다. 값은 그대로 저장되어 있으니 확인 후 필요하면 다시 측정해 주세요.</p>
+            </div>
+          )}
+          <QuickResultSheet report={report} reportType="squat" score={reportScore} previousReport={previousReport} />
           <ProblemFocusPanel focus={focus} context={report.cross_measure_context} />
           {/* [Axis3 확장 2026-08-08] MomiAutoNote — PostureReport.jsx와 동일 패턴.
               스쿼트도 세션(ai) 저장 방식이라 updateSession을 쓴다. */}
