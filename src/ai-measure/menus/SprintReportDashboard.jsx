@@ -7,7 +7,7 @@ import MomiAutoNote from '../../components/report/MomiAutoNote.jsx';
 import MomiInsightPanel from '../../components/report/MomiInsightPanel.jsx';
 import { aiStore } from '../../demoData';
 import ReportActions from '../../components/report/ReportActions';
-import { MetricCard, UnifiedReportCanvas, UnifiedReportHeader, UnifiedReportPage } from '../../components/report/UnifiedReportPrimitives';
+import { MetricCard, UnifiedReportCanvas, UnifiedReportHeader, UnifiedReportPage, UnifiedEmptyState } from '../../components/report/UnifiedReportPrimitives';
 import { buildSummaryData } from '../core/unifiedReport';
 import { computeChangeRow, summarizeChanges, reportDateOnly } from '../core/measurementComparison';
 import ChangeSummaryPanel from '../../components/report/ChangeSummaryPanel.jsx';
@@ -70,7 +70,7 @@ function buildSprintChangeSummary(report, previousReport) {
   return summarizeChanges(rows, reportDateOnly(previousReport));
 }
 
-export default function SprintReportDashboard({ report, previousReport, onComment, onClose, videoBlob, member }) {
+function SprintReportDashboardInner({ report, previousReport, onComment, onClose, videoBlob, member }) {
   const kind = report?.kind === 'agility' ? 'agility' : 'sprint';
   const summary = useMemo(() => buildSummaryData(report, { reportType: 'sprint' }), [report]);
   const [comment, setComment] = useState(report?.trainerComment || '');
@@ -279,4 +279,11 @@ function StatRow({ label, value }) {
       <span className="text-[11px] font-black tabular-nums text-slate-800 dark:text-slate-100">{value}</span>
     </div>
   );
+}
+
+// [안전장치 2026-11-16] 리포트 데이터가 아직 없거나(null) 불러오기 실패한 상태로 열려도
+// 화면 전체가 죽지 않고 안내 문구를 보여준다. (훅 규칙 때문에 바깥 껍데기에서 먼저 걸러낸다)
+export default function SprintReportDashboard(props) {
+  if (!props?.report) return <UnifiedEmptyState onClose={props?.onClose}>리포트 데이터가 없습니다.</UnifiedEmptyState>;
+  return <SprintReportDashboardInner {...props} />;
 }

@@ -32,7 +32,7 @@ describe('postureAutoCapture (카운트 늦추기 2026-11-16)', () => {
 
 // [2026-11-16] 최소 촬영 거리 · 측면 인식
 import { assessFraming, fillMinForDistanceMm, MIN_CAMERA_DISTANCE_MM } from '../ai-measure/core/framingGuide';
-import { detectPostureView, aspectCorrectLandmarks } from '../ai-measure/core/postureMath';
+import { detectPostureView, aspectCorrectLandmarks, isSideLikePose } from '../ai-measure/core/postureMath';
 describe('최소 촬영 거리', () => {
   it('자세·한발서기 1,800mm / 바벨 3,200mm', () => {
     expect(MIN_CAMERA_DISTANCE_MM.posture).toBe(1800);
@@ -81,5 +81,31 @@ describe('가로 웹캠(PC 키오스크) 옆모습 인식', () => {
   it('폰 세로(9:16)는 보정 없음', () => {
     const lm = side(1);
     expect(aspectCorrectLandmarks(lm, 9 / 16)).toBe(lm);
+  });
+});
+
+describe('측면 너그러운 판정(isSideLikePose)', () => {
+  // 실제 길이 기준으로 만든 자세를 화면(폭/높이=aspect) 좌표로 옮긴다. trunk = 화면 높이의 20%
+  const pose = (rotDegFromFront, aspect) => {
+    const lm = Array.from({ length: 33 }, () => ({ x: 0.5, y: 0.5, z: 0, visibility: 1 }));
+    const half = (0.68 * 0.2 * Math.cos((rotDegFromFront * Math.PI) / 180)) / 2 / aspect; // 어깨폭 = 몸통의 68%
+    lm[11] = { x: 0.5 + half, y: 0.4, z: 0, visibility: 1 }; lm[12] = { x: 0.5 - half, y: 0.4, z: 0, visibility: 1 };
+    lm[23] = { x: 0.5 + half * 0.5, y: 0.6, z: 0, visibility: 1 }; lm[24] = { x: 0.5 - half * 0.5, y: 0.6, z: 0, visibility: 1 };
+    return lm;
+  };
+  it('폰 세로·PC 가로 모두: 옆모습에서 20° 덜 돌아도 측면, 정면·45°는 측면 아님', () => {
+    [9 / 16, 16 / 9, 4 / 3].forEach((a) => {
+      expect(isSideLikePose(pose(90, a), a)).toBe(true);
+      expect(isSideLikePose(pose(70, a), a)).toBe(true);
+      expect(isSideLikePose(pose(45, a), a)).toBe(false);
+      expect(isSideLikePose(pose(0, a), a)).toBe(false);
+    });
+  });
+  it('예전 기준은 70°(옆에서 20° 덜 돈 자세)를 정면으로 봤다 — 회귀 확인용', () => {
+    expect(['front', 'back', 'unknown']).toContain(detectPostureView(pose(70, 9 / 16)).view);
+  });
+  it('반대쪽 어깨가 가려져도 측면', () => {
+    const lm = pose(0, 9 / 16); lm[12] = { ...lm[12], visibility: 0.05 };
+    expect(isSideLikePose(lm, 9 / 16)).toBe(true);
   });
 });
