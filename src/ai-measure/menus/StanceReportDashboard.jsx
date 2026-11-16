@@ -28,6 +28,8 @@ import { aiStore } from '../../demoData';
 import { computeChangeRow, summarizeChanges, reportDateOnly } from '../core/measurementComparison';
 import ChangeSummaryPanel from '../../components/report/ChangeSummaryPanel.jsx';
 import VideoCompareUpload from '../../components/report/VideoCompareUpload.jsx';
+// [측정 결과시트 공용화 2026-11-15] 점수 막대·먼저 볼 것·항목별 눈금(extractKeyMetrics 단일 소스)
+import QuickResultSheet from '../../components/report/QuickResultSheet.jsx';
 
 // [전/후 변화 요약 2026-08-31] previousReport는 StanceAnalysisHub.jsx(라이브
 // 직후)/Report.jsx(이력 뷰어)가 이미 같은 종류(menu==='stance')로 걸러 넘겨준
@@ -168,6 +170,7 @@ export default function StanceReportDashboard({ report, member, onClose, onRemea
         />
 
         <div className="grid gap-3">
+          {report.valid !== false && <QuickResultSheet report={report} reportType="stance" score={reportScore} previousReport={previousReport} />}
           <ProblemFocusPanel focus={focus} context={report.cross_measure_context} />
           {/* [Axis3 확장 2026-08-08] MomiAutoNote — PostureReport.jsx와 동일 패턴.
               SLST도 리프팅처럼 전용 컬렉션 없이 세션(ai)에 저장되므로 updateSession을 쓴다. */}
@@ -247,7 +250,7 @@ export default function StanceReportDashboard({ report, member, onClose, onRemea
               ].map(([label, leg]) => (
                 <div key={label} className="rounded-xl bg-slate-100/70 dark:bg-slate-800/70 border border-slate-300/60 dark:border-slate-700/60 p-3">
                   <p className="text-[10px] text-slate-500">{label}</p>
-                  <p className="text-white font-black text-sm">{STATUS_KO[leg?.status] || '-'}</p>
+                  <p className="text-slate-900 dark:text-white font-black text-sm">{STATUS_KO[leg?.status] || '-'}</p>
                   <p className="text-[10px] text-slate-500 mt-1">{BASIS_KO_STANCE[leg?.basis] || '-'}</p>
                   {(leg?.trials || []).filter((t) => t.valid).map((t, i) => (
                     <p key={i} className="text-[10px] text-slate-500">
@@ -281,7 +284,7 @@ export default function StanceReportDashboard({ report, member, onClose, onRemea
                     <p className="text-[10px] text-slate-500">{label}</p>
                     <video src={url} controls playsInline className="w-full rounded-lg bg-black aspect-[3/4] object-contain" />
                     <button onClick={() => shareVideo(blob, label)}
-                      className="w-full rounded-lg bg-slate-200 dark:bg-slate-700 text-white font-bold text-xs py-2 active:scale-95">
+                      className="w-full rounded-lg bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-white font-bold text-xs py-2 active:scale-95">
                       📹 저장/공유
                     </button>
                   </div>
@@ -305,7 +308,7 @@ export default function StanceReportDashboard({ report, member, onClose, onRemea
           </button>
         )}
         {typeof onRemeasure === 'function' && (
-          <button onClick={onRemeasure} className="w-full rounded-lg bg-slate-100 dark:bg-slate-800 text-white font-bold text-sm py-2.5">← 다시 측정</button>
+          <button onClick={onRemeasure} className="w-full rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white font-bold text-sm py-2.5">← 다시 측정</button>
         )}
       </div>
     </UnifiedReportCanvas>

@@ -82,7 +82,7 @@ export default function VideoCompareUpload({
   return (
     <section className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-        <p className="text-sm font-black text-white">{title}</p>
+        <p className="text-sm font-black text-slate-900 dark:text-white">{title}</p>
         {hasBoth && (
           <div className="flex items-center gap-2">
             <button onClick={() => playBoth('play')} className="rounded-md border border-slate-300 dark:border-slate-700 px-2 py-1 text-[11px] font-bold text-amber-700 dark:text-amber-300 hover:border-amber-500">▶ 동시 재생</button>

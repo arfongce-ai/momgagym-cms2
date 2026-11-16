@@ -6,6 +6,10 @@ import { isGaitStorable, isSprintStorable } from './core/saveGuards';
 import { useNavigate } from 'react-router-dom';
 import { MEASURE_MENUS, groupMeasureMenus } from './registry';
 import { getRecognitionSnapshot, resetRecognition } from './core/recognitionStats';
+// [측정 오류 줄이기 2026-11-16] 촬영 품질 신호등·저장 직전 품질 등급·촬영 기준 안내
+import { getCaptureSummary, resetCaptureQuality, assessMeasureQuality, QUALITY_KO } from './core/captureQuality';
+import CaptureReadinessBar from './CaptureReadinessBar.jsx';
+import CaptureGuideStrip, { CAMERA_MEASURE_IDS, TIMING_MEASURE_IDS } from './CaptureGuideStrip.jsx';
 import { store, aiStore, makeGuestId } from '../demoData';
 import { todayYMD } from '../utils/dates';
 import { useAuth } from '../contexts/AuthContext';
@@ -38,9 +42,19 @@ export default function AiMeasureHub() {
   //  (네이티브 confirm 은 카메라 오버레이 위에서 화면을 멈추므로 화면 안 팝업을 쓴다.)
   const [savePrompt, setSavePrompt] = useState(false);
   const savePromptResolve = useRef(null);
+  // [측정 품질 2026-11-16] 저장을 묻는 순간의 품질 등급(카메라 측정만). 낮으면 '다시 측정 권장'을 함께 띄운다.
+  const [saveQuality, setSaveQuality] = useState(null);
+  const currentQuality = () => (CAMERA_MEASURE_IDS.has(active?.id)
+    ? assessMeasureQuality({
+      recognition: getRecognitionSnapshot(),
+      capture: getCaptureSummary(),
+      timing: TIMING_MEASURE_IDS.has(active?.id),
+    })
+    : null);
   const askSaveConfirm = () => new Promise((resolve) => {
     savePromptResolve.current?.(false);
     savePromptResolve.current = resolve;
+    setSaveQuality(currentQuality());
     setSavePrompt(true);
   });
   const answerSavePrompt = (yes) => {
@@ -218,6 +232,13 @@ export default function AiMeasureHub() {
       if (recognition && enrichedData && typeof enrichedData === 'object' && !Array.isArray(enrichedData)) {
         enrichedData = { ...enrichedData, recognition };
       }
+      // [측정 품질 2026-11-16] 촬영 조건 요약(전신 비율·프레임 속도·화질·CPU/GPU)과 품질 등급을 함께 저장 —
+      //  리포트 상단에 '측정 품질'로 표시해, 값이 틀어졌을 때 촬영 문제인지 바로 알 수 있게 한다.
+      const capture = CAMERA_MEASURE_IDS.has(active.id) ? getCaptureSummary() : null;
+      const quality = currentQuality();
+      if ((capture || quality) && enrichedData && typeof enrichedData === 'object' && !Array.isArray(enrichedData)) {
+        enrichedData = { ...enrichedData, ...(capture ? { capture } : {}), ...(quality ? { quality } : {}) };
+      }
       // [2026-10-25] 1RM/VBT/스탠스/스쿼트도 undefined·Blob 을 걸러 저장한다.
       //  (Firestore setDoc 은 undefined 필드를 거부 → 저장 실패)
       const storableData = (measurementKind || isLifting || isStance || isSquat || isCardio)
@@ -357,7 +378,7 @@ export default function AiMeasureHub() {
       alert('저장에 실패했습니다. 네트워크 확인 후 다시 시도하세요.\n' + (e?.message || ''));
     } finally {
       // 저장에 성공했을 때만 인식률 집계를 비운다(실패 후 재시도하면 같은 측정 값을 다시 쓴다).
-      if (!saveFailed) resetRecognition();
+      if (!saveFailed) { resetRecognition(); resetCaptureQuality(); }
     }
   };
 
@@ -416,7 +437,7 @@ export default function AiMeasureHub() {
   // 회원을 고르면 전용 리포트 + AI 세션을 함께 읽어 다음 측정 상위 3개를 계산한다.
   // 추천 순서와 안전 제한은 순수 규칙 엔진이 결정하며, 네트워크/모미 응답에 의존하지 않는다.
   // 메뉴를 바꾸면 이전 메뉴의 인식률 집계를 버린다.
-  useEffect(() => { resetRecognition(); }, [active?.id]);
+  useEffect(() => { resetRecognition(); resetCaptureQuality(); }, [active?.id]);
 
   useEffect(() => {
     let cancelled = false;
@@ -527,6 +548,8 @@ export default function AiMeasureHub() {
       // [가로 허용 2026-11-12] 초시계(15번)는 가로일 때 도구 | 심박 2열로 넓힌다.
       <div className={`${wideMeasure ? 'max-w-6xl' : active.id === 'timer' ? 'max-w-md landscape:max-w-4xl' : 'max-w-md'} mx-auto`}>
         {isPortraitBlocked && <RotateHint />}
+        {CAMERA_MEASURE_IDS.has(active.id) && <CaptureReadinessBar />}
+        {CAMERA_MEASURE_IDS.has(active.id) && <CaptureGuideStrip menuId={active.id} />}
         <Suspense fallback={<div className="text-center text-slate-500 dark:text-slate-400 py-10 text-sm">모듈 로딩 중…</div>}>
           <Comp
             member={member}
@@ -551,6 +574,16 @@ export default function AiMeasureHub() {
               <p className="mt-1 text-center text-xs font-semibold text-slate-500 dark:text-slate-400">
                 {member?.isVirtual ? '미등록회원 측정 결과가 저장됩니다.' : `${member?.name || '회원'} 회원의 측정이력과 리포트에 저장됩니다.`}
               </p>
+              {saveQuality && (
+                <div data-testid="save-quality" className={`mt-3 rounded-xl px-3 py-2 text-left ${saveQuality.grade === 'good' ? 'bg-emerald-50 dark:bg-emerald-500/10' : saveQuality.grade === 'fair' ? 'bg-amber-50 dark:bg-amber-500/10' : 'bg-red-50 dark:bg-red-500/10'}`}>
+                  <p className={`text-xs font-black ${saveQuality.grade === 'good' ? 'text-emerald-800 dark:text-emerald-200' : saveQuality.grade === 'fair' ? 'text-amber-800 dark:text-amber-200' : 'text-red-800 dark:text-red-200'}`}>
+                    측정 품질 {QUALITY_KO[saveQuality.grade]} ({saveQuality.score}점){saveQuality.remeasure ? ' · 다시 측정 권장' : ''}
+                  </p>
+                  {saveQuality.reasons.slice(0, 3).map((r) => (
+                    <p key={r} className="mt-0.5 text-[11px] leading-snug text-slate-600 dark:text-slate-300">· {r}</p>
+                  ))}
+                </div>
+              )}
               <div className="mt-4 grid grid-cols-2 gap-2">
                 <button onClick={() => answerSavePrompt(false)} className="rounded-xl border-2 border-slate-300 dark:border-slate-600 py-3 text-sm font-bold text-slate-700 dark:text-slate-200" data-testid="save-confirm-no">저장 안 함</button>
                 <button onClick={() => answerSavePrompt(true)} className="rounded-xl bg-amber-500 py-3 text-sm font-black text-slate-950" data-testid="save-confirm-yes">저장</button>

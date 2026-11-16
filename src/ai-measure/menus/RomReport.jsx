@@ -20,6 +20,8 @@ import { ROM_SYMMETRY_RANGE } from '../core/romThresholds';
 import { computeChangeRow, summarizeChanges, reportDateOnly } from '../core/measurementComparison';
 import ChangeSummaryPanel from '../../components/report/ChangeSummaryPanel.jsx';
 import VideoCompareUpload from '../../components/report/VideoCompareUpload.jsx';
+// [측정 결과시트 공용화 2026-11-15] 점수 막대·먼저 볼 것·항목별 눈금(extractKeyMetrics 단일 소스)
+import QuickResultSheet from '../../components/report/QuickResultSheet.jsx';
 
 // [전/후 변화 요약 2026-08-31] 같은 관절(joint)·자세(poseMode)의 직전 ROM 측정
 // 대비 핵심 지표 변화. 관절·자세가 다르면 비교 의미가 없으므로, previousReport는
@@ -90,6 +92,7 @@ export default function RomReport({ id = 'rom-report-sheet', report, previousRep
           compact
           member={member}
         />
+        <div className="mt-4"><QuickResultSheet report={report} reportType="rom" score={gradeScore(diagnosis?.grade)} previousReport={previousReport} /></div>
 
       {/* 종합 등급 + 헤드라인 */}
       {diagnosis && (

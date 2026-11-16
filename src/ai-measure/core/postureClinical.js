@@ -73,14 +73,14 @@ function normalizeSex(sex) {
   return 'neutral';
 }
 
-function genderThreshold(metric, sex) {
+export function genderThreshold(metric, sex) {
   const table = GENDER_NORMS[metric];
   if (!table) return null;
   return table[normalizeSex(sex)] || table.neutral;
 }
 
 // Q각 프록시(고관절-무릎-발목, 직선이면 180°)에서 좌우 중 큰 편위 절대값.
-function qAngleDeviation(qProxy) {
+export function qAngleDeviation(qProxy) {
   if (!qProxy) return null;
   const devs = ['left', 'right']
     .map((side) => (qProxy[side] == null ? null : Math.abs(180 - qProxy[side])))
@@ -116,7 +116,7 @@ export function buildMetadata(bodyInfo = {}, camera = {}) {
 //    뷰의 방향 라벨을 섞지 않는다 — "더 크게 벗어난 쪽 뷰"의 라벨만 그대로 쓴다.
 // 두 뷰 다 있으면 보수적으로 "더 크게 벗어난 쪽" 값을 채택한다(과소평가보다
 // 과대평가 쪽으로 스크리닝하는 게 안전 — 기존 임계값 설계 원칙과 동일).
-function worseAbsMm(frontMm, backMm) {
+export function worseAbsMm(frontMm, backMm) {
   const fa = frontMm == null ? null : Math.abs(frontMm);
   const ba = backMm == null ? null : Math.abs(backMm);
   if (fa == null && ba == null) return { value: null, source: null };

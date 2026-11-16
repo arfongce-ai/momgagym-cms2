@@ -22,6 +22,8 @@ import { scoreToStatus } from '../core/unifiedReport';
 // 이 부분은 데이터 구조를 새로 만들어야 하는 별도 작업이라 사장님 확인 후 진행하려고
 // 일부러 남겨뒀다.
 import MomiInsightPanel from '../../components/report/MomiInsightPanel.jsx';
+// [측정 결과시트 공용화 2026-11-15] 점수 막대·먼저 볼 것·항목별 눈금(extractKeyMetrics 단일 소스)
+import QuickResultSheet from '../../components/report/QuickResultSheet.jsx';
 
 // grade('good'/'warn'/'bad') -> 다른 리포트와 같은 신호등 배지 색/라벨(scoreToStatus 대표 점수 공유).
 function gradeToken(grade) {
@@ -66,11 +68,26 @@ export default function BodyInfoReport({ id = 'body-report-sheet', member, resul
           status={worstGrade(items)}
           onClose={onClose}
         />
+        {items.length > 0 && (
+          <div className="mb-4">
+            <QuickResultSheet
+              report={result}
+              reportType="body"
+              anchorPrefix="body-item"
+              metrics={items.map((item) => ({
+                key: item.key, label: item.label, description: item.description,
+                value: Number.isFinite(Number(item.value)) ? Number(item.value) : null,
+                displayValue: item.value, unit: item.unit, status: gradeToken(item.grade),
+              }))}
+            />
+          </div>
+        )}
 
         {/* [Axis4 확장 2026-08-11] 다른 7종 리포트와 동일 위치(헤더 직후) —
             "🤖 모미에게 물어보기". report엔 result를 그대로 넘긴다(신체정보는
             .id가 있는 개별 문서가 아니라 이 result 자체가 곧 리포트 데이터). */}
         <MomiInsightPanel kind="body" report={result} member={member} />
+
 
         {/* 현재 측정값 · 등급 */}
         <UnifiedReportSection title="측정값 및 평가" className="mb-4">

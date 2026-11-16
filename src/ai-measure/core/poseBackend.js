@@ -1,4 +1,5 @@
 import { recordRecognitionFrame } from './recognitionStats';
+import { recordCaptureFrame, setCaptureDelegate } from './captureQuality';
 // ai-measure/core/poseBackend.js
 // MediaPipe PoseLandmarker(Tasks Vision)를 CDN에서 런타임 로드해 1회 초기화한다.
 // xlsx(loadXlsx.js)와 동일한 전략: package.json 의존성으로 넣지 않아 Cloudflare
@@ -77,9 +78,11 @@ export async function loadPoseLandmarker(opts = {}) {
     }
     try {
       _landmarker = await _createWithDelegate(PoseLandmarker, FilesetResolver, numPoses, 'GPU');
+      setCaptureDelegate('GPU');
     } catch (gpuErr) {
-      // 일부 모바일/브라우저는 GPU delegate 실패 → CPU 폴백
+      // 일부 모바일/브라우저는 GPU delegate 실패 → CPU 폴백(이제 화면 신호등에 '느린 모드'로 표시)
       _landmarker = await _createWithDelegate(PoseLandmarker, FilesetResolver, numPoses, 'CPU');
+      setCaptureDelegate('CPU');
     }
     return _landmarker;
   })();
@@ -107,6 +110,8 @@ export function detectPoseFrame(video, timestampMs) {
   const lm = result?.landmarks?.[0];
   // 측정 인식률 집계(2026-10): 검출 성공/실패를 프레임마다 센다. 판정 로직에는 영향 없음.
   try { recordRecognitionFrame(lm && lm.length ? lm : null); } catch (e) { /* 집계 실패는 무시 */ }
+  // [촬영 품질 2026-11-16] 전신·거리·화질·프레임 속도 집계(화면 신호등·저장 품질 등급용). 판정 로직 영향 없음.
+  try { recordCaptureFrame(lm && lm.length ? lm : null, video); } catch (e) { /* 집계 실패는 무시 */ }
   if (!lm || !lm.length) return null;
   return { landmarks: lm };
 }

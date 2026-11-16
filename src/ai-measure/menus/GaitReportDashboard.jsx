@@ -18,6 +18,8 @@ import { computeChangeRow, summarizeChanges, reportDateOnly } from '../core/meas
 import ChangeSummaryPanel from '../../components/report/ChangeSummaryPanel.jsx';
 import VideoCompareUpload from '../../components/report/VideoCompareUpload.jsx';
 import ClinicalFlagCard, { buildClinicalFlags } from './ClinicalFlagCard.jsx';
+// [측정 결과시트 공용화 2026-11-15] 점수 막대·먼저 볼 것·항목별 눈금(extractKeyMetrics 단일 소스)
+import QuickResultSheet from '../../components/report/QuickResultSheet.jsx';
 
 const rangeCenter = (r) => (r.good[0] + r.good[1]) / 2;
 
@@ -225,6 +227,7 @@ export default function GaitReportDashboard({ report, onComment, onClose, videoB
           compact
           member={resolvedMember}
         />
+        <QuickResultSheet report={report} reportType="gait" score={score} previousReport={previousReport} />
 
         {/* ── 본문: 4분할 ── */}
         <div className="grid gap-3">

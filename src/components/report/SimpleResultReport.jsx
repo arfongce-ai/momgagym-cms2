@@ -113,7 +113,7 @@ export default function SimpleResultReport({ summary, member, id }) {
       <UnifiedReportPage id={id || 'simple-result-report'} className="mx-auto flex flex-col items-center gap-5 py-8 text-center">
         <div>
           <p className="text-sm font-bold text-slate-500">{memberName}님의</p>
-          <h1 className="mt-1 break-keep text-2xl font-black leading-snug text-white sm:text-3xl">{title} 결과예요</h1>
+          <h1 className="mt-1 break-keep text-2xl font-black leading-snug text-slate-900 dark:text-white sm:text-3xl">{title} 결과예요</h1>
           {measuredAt && <p className="mt-1 text-[11px] font-semibold text-slate-500">{measuredAt} 측정</p>}
         </div>
 
@@ -131,7 +131,7 @@ export default function SimpleResultReport({ summary, member, id }) {
                 <div key={metric.key} className={`rounded-2xl border ${s.border} ${s.bg} p-3`}>
                   <div className="flex items-start gap-2">
                     <span className="text-xl leading-none">{s.emoji}</span>
-                    <p className="break-keep text-[12.5px] font-black leading-tight text-white">{metric.label}</p>
+                    <p className="break-keep text-[12.5px] font-black leading-tight text-slate-900 dark:text-white">{metric.label}</p>
                   </div>
                   <p className={`mt-2 text-[12px] font-bold ${s.tone}`}>{simpleMetricLine(metric)}</p>
                   {metric.displayValue != null && metric.displayValue !== '' && metric.displayValue !== '-' && (

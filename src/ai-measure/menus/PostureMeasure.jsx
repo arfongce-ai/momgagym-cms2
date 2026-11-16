@@ -209,7 +209,7 @@ export default function PostureMeasure({ member, onSave, onBack, onViewInReport 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const { videoRef, start, stop, status, error } = usePoseEngine({ onResult: handlePose, modelTier: 'full' });
+  const { videoRef, start, stop, status, error } = usePoseEngine({ onResult: handlePose, modelTier: 'heavy' }); // [정밀 모델 2026-11-16] 정지·느린 동작 측정은 heavy(GPU 전용, CPU면 full 자동)
 
   useEffect(() => {
     if (!started) return undefined;

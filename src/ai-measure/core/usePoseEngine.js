@@ -19,6 +19,8 @@
 // 재사용하거나, MediaPipe 쪽 재사용 지원 여부를 먼저 확인)으로 다시 시도한다.
 import { useRef, useCallback, useState } from 'react';
 import { openMainCameraStream, lockCameraCapture, unlockCameraCapture } from './cameraSelect';
+import { recordRecognitionFrame } from './recognitionStats';
+import { recordCaptureFrame, setCaptureDelegate } from './captureQuality';
 
 const VISION_CDN =
   'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14';
@@ -54,9 +56,8 @@ export function usePoseEngine({ onResult, modelTier = 'full' } = {}) {
       const vision = await import(/* @vite-ignore */ `${VISION_CDN}`);
       const { FilesetResolver, PoseLandmarker } = vision;
       const fileset = await FilesetResolver.forVisionTasks(`${VISION_CDN}/wasm`);
-      const modelUrl = MODEL_URLS[modelTier] || MODEL_URLS.full;
-      const buildOpts = (delegate) => ({
-        baseOptions: { modelAssetPath: modelUrl, delegate },
+      const buildOpts = (delegate, tier = modelTier) => ({
+        baseOptions: { modelAssetPath: MODEL_URLS[tier] || MODEL_URLS.full, delegate },
         runningMode: 'VIDEO',
         numPoses: 1,
         minPoseDetectionConfidence: 0.5,
@@ -64,10 +65,15 @@ export function usePoseEngine({ onResult, modelTier = 'full' } = {}) {
         minTrackingConfidence: 0.5,
       });
       // GPU 우선, 실패 시 CPU 폴백(일부 기기/브라우저에서 GPU delegate 미지원)
+      // [정밀 모델 2026-11-16] heavy(정밀) 모델은 GPU 에서만 쓴다 — CPU 로 떨어지면 너무 느려
+      //  오히려 프레임이 빠지므로 full 로 내려 쓴다. 모델 다운로드 실패 시에도 full 로 재시도.
       try {
         landmarkerRef.current = await PoseLandmarker.createFromOptions(fileset, buildOpts('GPU'));
+        setCaptureDelegate('GPU');
       } catch (gpuErr) {
-        landmarkerRef.current = await PoseLandmarker.createFromOptions(fileset, buildOpts('CPU'));
+        const cpuTier = modelTier === 'heavy' ? 'full' : modelTier;
+        landmarkerRef.current = await PoseLandmarker.createFromOptions(fileset, buildOpts('CPU', cpuTier));
+        setCaptureDelegate('CPU');
       }
 
       // 2) 카메라 시작 — 후면 "메인(광각)" 렌즈를 명시 선택해 초광각 왜곡 방지.
@@ -115,6 +121,10 @@ export function usePoseEngine({ onResult, modelTier = 'full' } = {}) {
         try {
           const res = landmarkerRef.current.detectForVideo(video, ts);
           const lms = res?.landmarks?.[0] || null;
+          // [인식률·촬영 품질 2026-11-16] 이 엔진은 그동안 인식률을 집계하지 않아 자세·ROM·스쿼트·
+          //  한다리서기·바벨 기록에 측정 인식률이 비어 있었다. poseBackend 와 같은 집계로 보고한다.
+          try { recordRecognitionFrame(lms && lms.length ? lms : null); } catch (e) { /* 집계 실패 무시 */ }
+          try { recordCaptureFrame(lms, video); } catch (e) { /* 집계 실패 무시 */ }
           onResultRef.current?.(lms, ts, video);
         } catch (e) { /* 단일 프레임 오류는 무시하고 계속 */ }
         if ('requestVideoFrameCallback' in HTMLVideoElement.prototype) {

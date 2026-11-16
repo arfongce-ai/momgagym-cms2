@@ -120,7 +120,7 @@ export default function CombinedAssessmentPanel({ member, recommendation, onStar
               : result.severity === 'caution' ? 'border-amber-500/40 bg-amber-500/10'
               : 'border-emerald-500/40 bg-emerald-500/10'}`}>
             <p className="text-[11px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400">종합 평가</p>
-            <p className="text-white font-black text-lg">{STATUS_KO[result.severity] || result.severity}</p>
+            <p className="text-slate-900 dark:text-white font-black text-lg">{STATUS_KO[result.severity] || result.severity}</p>
             <p className="text-slate-600 dark:text-slate-300 text-sm mt-1">{result.evaluation.text}</p>
             <p className="text-[10px] text-slate-500 mt-1">신뢰도 {result.coverageScore}점 ({result.combinedKinds.length}개 측정 결합)</p>
           </div>

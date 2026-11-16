@@ -45,6 +45,12 @@
 
 ## 작업 로그
 
+### 2026-11-16 · Claude Code · 금~일 측정 작업(33개 파일) main 반영
+- 다른 채팅에서 만든 변경(zip, 기준 277fa29)을 최신 main(고니오메타 수정 포함) 위에 3방향 병합. 겹친 파일은 `RomMeasure.jsx` 하나, 충돌 없음(고니오메타 글자색 보정 유지).
+- 내용: 자세체형 결과지(`PostureResultSheet`·근육 해부도), 측정별 간단 결과지(`QuickResultSheet`), 결과리포트 공통 UI 정리, 측정 준비 신호등(`CaptureReadinessBar`·`captureQuality.js`), 촬영 기준 안내(`CaptureGuideStrip`), 저장 전 품질 등급, 계산 안 된 항목 이유 표시, 자세·ROM 정밀 모델(CPU면 full로 하향), `usePoseEngine` 인식률 집계.
+- 테스트 3487/3488(실패 1개는 기존 `momi_voice.test.js:119`), 빌드 통과.
+- 미확인: 갤럭시 S23 실기기(신호등 위치, 정밀 모델 속도, 품질 등급 표시).
+
 ### 2026-11-14 · Claude Code · 고니오메타 화면이 안 뜨던 오류 수정 + 원형 다이얼
 - 원인: `RomSensorGoniometer.jsx`에서 `autoMode`를 선언보다 앞줄의 `useEffect(..., [autoMode])`에서 읽어, ROM(3번) → 고니오메타를 누르는 즉시 렌더 예외("Cannot access 'autoMode' before initialization")로 화면이 죽었다. 기존 테스트는 소스 문자열만 검사해 못 잡았다.
 - 수정: 해당 `useEffect`를 `autoMode`·`autoModeRef` 선언 뒤로 이동. 측정 화면을 큰 원형 다이얼로 변경(다이얼을 눌러 0점 잡기 / 측정완료, 바깥 초록 링 = 자동 확정 진행). 센서 계산·0점·자동 확정·저장 흐름은 그대로. 밝은 화면에서 안 보이던 글자색 보정(`RomMeasure.jsx` 측정 방식 버튼의 '영상 업로드'·'고니오메타' 제목 포함).

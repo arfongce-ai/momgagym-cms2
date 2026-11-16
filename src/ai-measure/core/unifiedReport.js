@@ -548,6 +548,9 @@ export function toLaymanMetric(metricKey, value, options = {}) {
     unit: options.unit || '',
     status,
     score: status.score,
+    // [결과시트 UI 2026-11-15] 눈금 막대를 그리기 위해 판정에 쓴 범위·좋은 방향을 함께 넘긴다(판정 자체는 그대로).
+    range: options.range || null,
+    better: options.better || null,
   };
 }
 
@@ -827,6 +830,7 @@ export function extractKeyMetrics(report = {}, reportType = inferReportType(repo
         unit: definition.unit,
         range,
         abs: definition.abs,
+        better: definition.better,
       });
     })
     .filter(Boolean);
