@@ -122,26 +122,92 @@ function resolveNodeBg(node, fallback) {
   return fallback;
 }
 
+// 복제본(clone)을 항상 같은 폭(A4 794px)으로 고정하고, 카드 경계(자르기 좋은 위치)를 모아 돌려준다.
+//  · 기기(폰/PC) 화면 폭과 상관없이 같은 레이아웃·같은 해상도로 캡처된다.
+//  · 글자는 html2canvas 가 DOM 보다 살짝 아래에 그리므로 위로 보정한다.
+function prepareCloneForA4(clonedDoc, clonedEl, width, breaks) {
+  try {
+    const st = clonedEl.style;
+    st.width = `${width}px`; st.maxWidth = `${width}px`; st.minWidth = `${width}px`;
+    st.margin = '0'; st.boxSizing = 'border-box'; st.transform = 'none';
+    const fix = clonedDoc.createElement('style');
+    fix.textContent = '.report-a4-page *{letter-spacing:normal !important}.report-a4-page img{max-width:100%}';
+    clonedDoc.head.appendChild(fix);
+    // 글자만 든 말단 요소(칩·배지·숫자 등)를 위로 살짝 올려 DOM 화면과 같은 높이로 맞춘다.
+    clonedEl.querySelectorAll('*').forEach((el) => {
+      const hasOwnText = Array.from(el.childNodes).some((n) => n.nodeType === 3 && n.textContent.trim());
+      if (!hasOwnText) return;
+      if (el.parentElement && el.parentElement.closest('[data-a4-shifted]')) return; // 부모가 이미 올렸으면 건너뜀(이중 이동 방지)
+      const cs = clonedDoc.defaultView.getComputedStyle(el);
+      if (cs.position !== 'static') return;
+      el.style.position = 'relative';
+      el.style.top = '-0.2em';
+      el.setAttribute('data-a4-shifted', '1');
+    });
+    const top = clonedEl.getBoundingClientRect().top;
+    clonedEl.querySelectorAll('*').forEach((el) => {
+      const r = el.getBoundingClientRect();
+      if (r.height < 36 || r.width < width * 0.3) return;
+      breaks.push(Math.round(r.bottom - top));
+    });
+    breaks.sort((x, y) => x - y);
+  } catch (e) { /* 보정 실패해도 캡처는 계속 */ }
+}
+
+// 한 장(pageH)을 넘기면 '카드 경계' 중 페이지 끝에 가장 가까운(60% 이상 채운) 위치에서 자른다.
+export function planCutPoints(totalH, pageH, breaks) {
+  const cuts = [0];
+  let start = 0;
+  while (totalH - start > pageH * 1.02) {
+    const limit = start + pageH;
+    let cut = limit;
+    for (let i = breaks.length - 1; i >= 0; i -= 1) {
+      if (breaks[i] <= limit && breaks[i] >= start + pageH * 0.6) { cut = breaks[i]; break; }
+    }
+    cuts.push(cut);
+    start = cut;
+  }
+  cuts.push(totalH);
+  return cuts;
+}
+
 export async function captureNodeToA4Files(node, baseName, { scale = 2, width = 794, bg } = {}) {
   const html2canvas = await loadHtml2Canvas();
   const pageBg = bg || resolveNodeBg(node, '#ffffff');
-  const canvas = await html2canvas(node, { backgroundColor: pageBg, scale, useCORS: true, logging: false, windowWidth: width });
-  const plan = planA4Pages(canvas.width, canvas.height);
+  const breaks = [];
+  // html2canvas 는 '원본' 노드 크기로 캔버스를 만들므로, 캡처하는 동안만 원본도 A4 폭으로 고정한다.
+  const prev = node.getAttribute('style');
+  node.style.width = `${width}px`; node.style.maxWidth = `${width}px`; node.style.minWidth = `${width}px`;
+  let canvas;
+  try {
+    canvas = await html2canvas(node, {
+      backgroundColor: pageBg, scale, useCORS: true, logging: false, windowWidth: width,
+      onclone: (doc, el) => prepareCloneForA4(doc, el, width, breaks),
+    });
+  } finally {
+    if (prev === null) node.removeAttribute('style'); else node.setAttribute('style', prev);
+  }
+  const k = canvas.width / width; // css px → canvas px
+  const pageH = Math.round(canvas.width * A4_RATIO);
+  const total = canvas.height;
+  let cuts;
+  if (total <= pageH * 1.06) cuts = [0, total];
+  else cuts = planCutPoints(total, pageH, breaks.map((y) => Math.round(y * k)));
   const pageCanvases = [];
-  for (let i = 0; i < plan.pages; i += 1) {
+  for (let i = 0; i < cuts.length - 1; i += 1) {
+    const sy = cuts[i];
+    const sh = cuts[i + 1] - sy;
     const page = document.createElement('canvas');
     page.width = canvas.width;
-    page.height = plan.pageH;
+    page.height = pageH;
     const ctx = page.getContext('2d');
     ctx.fillStyle = pageBg;
     ctx.fillRect(0, 0, page.width, page.height);
-    if (plan.mode === 'fit') {
-      const k = plan.pageH / canvas.height;
-      const w = canvas.width * k;
-      ctx.drawImage(canvas, (page.width - w) / 2, 0, w, plan.pageH);
+    if (sh > pageH) { // 6% 이내로 긴 한 장 → 한 장에 맞춤
+      const f = pageH / sh;
+      const w = canvas.width * f;
+      ctx.drawImage(canvas, 0, sy, canvas.width, sh, (page.width - w) / 2, 0, w, pageH);
     } else {
-      const sy = i * plan.pageH;
-      const sh = Math.min(plan.pageH, canvas.height - sy);
       ctx.drawImage(canvas, 0, sy, canvas.width, sh, 0, 0, canvas.width, sh);
     }
     pageCanvases.push(page);

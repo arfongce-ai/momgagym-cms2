@@ -34,7 +34,10 @@ export function UnifiedReportPage({ id, children, className = '', minHeight = 11
 export function UnifiedReportFooter() {
   return (
     <footer className="mt-8 flex items-center justify-center border-t border-slate-200 dark:border-slate-800 pt-4">
-      <img src={MOMGAGYM_LOGO_DATA_URI} alt="몸가짐 운동센터" className="h-11 w-auto opacity-90" />
+      {/* 로고 PNG는 투명 배경+검정 글씨라 다크 테마에선 글자가 안 보인다(박스만 보임) → 흰 바탕 위에 올린다. */}
+      <span className="inline-flex rounded-lg bg-white px-3 py-1.5">
+        <img src={MOMGAGYM_LOGO_DATA_URI} alt="몸가짐 운동센터" className="h-9 w-auto" />
+      </span>
     </footer>
   );
 }

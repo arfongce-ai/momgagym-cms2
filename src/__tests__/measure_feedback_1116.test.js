@@ -45,7 +45,11 @@ describe('최소 촬영 거리', () => {
     lm[0] = { x: 0.5, y: 0.3, visibility: 1 }; lm[27] = { x: 0.48, y: 0.68, visibility: 1 }; lm[28] = { x: 0.52, y: 0.68, visibility: 1 };
     lm[11] = { x: 0.45, y: 0.4, visibility: 1 }; lm[12] = { x: 0.55, y: 0.4, visibility: 1 };
     expect(assessFraming(lm, { minDistanceMm: 3200 }).message).not.toContain('멉니다'); // 사람 38% 차지
-    expect(assessFraming(lm, { minDistanceMm: 1800 }).message).toContain('멉니다');
+    // 1.8m 기준에서도 사람 38%(≈2.4m 거리)는 홍보용으로 허용 — 최소거리는 하한일 뿐
+    expect(assessFraming(lm, { minDistanceMm: 1800 }).message).not.toContain('멀어');
+    // 사람이 아주 작아지면(약 4m 이상) 그때만 멀다고 알린다
+    const far = lm.map((p) => ({ ...p, x: 0.5 + (p.x - 0.5) * 0.4, y: 0.5 + (p.y - 0.5) * 0.4 }));
+    expect(assessFraming(far, { minDistanceMm: 1800 }).message).toContain('멀어');
   });
 });
 describe('옆모습 인식', () => {

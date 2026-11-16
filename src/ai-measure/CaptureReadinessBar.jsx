@@ -33,8 +33,8 @@ export default function CaptureReadinessBar() {
   if (!live) return null;
   const t = TONE[live.level] || TONE.warn;
   return (
-    <div className="pointer-events-none fixed inset-x-0 top-2 z-[9000] flex justify-center px-2" data-testid="capture-readiness">
-      <div className={`max-w-full rounded-2xl px-3 py-2 text-white shadow-lg ${t.box}`}>
+    <div className="mb-2 flex justify-center" data-testid="capture-readiness"> {/* [2026-11-16] 화면 위에 떠서 측정종목 글자를 가리던 fixed 배치 → 일반 흐름(내용을 밀어냄)으로 변경 */}
+      <div className={`w-full rounded-2xl px-3 py-2 text-white shadow-sm ${t.box}`}>
         <p className="text-center text-[13px] font-black leading-tight">
           {t.label}{live.level !== 'good' && live.frame.level !== 'good' ? ` · ${live.frame.text}` : ''}
         </p>
