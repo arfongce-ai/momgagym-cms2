@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { todayYMD } from '../../utils/dates';
 import { usePoseEngine } from '../core/usePoseEngine';
 import { createSmoother } from '../core/smoothing';
-import { analyzePostureFromLandmarks, classifyPostureAgeGroup, medianLandmarks, detectPostureView, PostureViewVoter, sanitizeBackLandmarks, mergePostureViews } from '../core/postureMath';
+import { analyzePostureFromLandmarks, classifyPostureAgeGroup, medianLandmarks, detectPostureView, aspectCorrectLandmarks, PostureViewVoter, sanitizeBackLandmarks, mergePostureViews } from '../core/postureMath';
 import { beepTick, beepGo, beepSuccess, primeAudio } from '../core/audioCue';
 import CameraStage from './CameraStage.jsx';
 import PostureReport from './PostureReport.jsx';
@@ -178,7 +178,12 @@ export default function PostureMeasure({ member, onSave, onBack, onViewInReport 
     // ── 자동 촬영 모드: 목표 면 인식 → 안정되면 카운트다운 트리거 ──
     if (captureModeRef.current === 'auto') {
       const target = activeViewKeyRef.current;
-      const det = detectPostureView(corrected);
+      // 회전 후 화면 비율(폭/높이) — 가로 웹캠(PC 키오스크)은 x 편차를 폰 기준으로 환산해 판정
+      const vid = latestVideoRef.current;
+      const rotQ = ((rotationDegRef.current % 360) + 360) % 360;
+      const rawAspect = vid?.videoWidth && vid?.videoHeight ? vid.videoWidth / vid.videoHeight : null;
+      const frameAspect = rawAspect ? ((rotQ === 90 || rotQ === 270) ? 1 / rawAspect : rawAspect) : null;
+      const det = detectPostureView(aspectCorrectLandmarks(corrected, frameAspect));
       // [측면 인식 2026-11-16] 좌/우측면은 '코가 어느 쪽을 보느냐'로만 갈려 사용자가 어느 방향을 보고 서든
       //  목표(예: 좌측면)와 어긋나 영원히 인식 안 되던 문제. 목표가 측면이면 좌/우 어느 쪽이든 '측면'으로 센다.
       const isSideTarget = target === 'left' || target === 'right';

@@ -32,7 +32,7 @@ describe('postureAutoCapture (카운트 늦추기 2026-11-16)', () => {
 
 // [2026-11-16] 최소 촬영 거리 · 측면 인식
 import { assessFraming, fillMinForDistanceMm, MIN_CAMERA_DISTANCE_MM } from '../ai-measure/core/framingGuide';
-import { detectPostureView } from '../ai-measure/core/postureMath';
+import { detectPostureView, aspectCorrectLandmarks } from '../ai-measure/core/postureMath';
 describe('최소 촬영 거리', () => {
   it('자세·한발서기 1,800mm / 바벨 3,200mm', () => {
     expect(MIN_CAMERA_DISTANCE_MM.posture).toBe(1800);
@@ -60,5 +60,26 @@ describe('옆모습 인식', () => {
     lm[0] = { x: 0.56, y: 0.30, z: -0.1, visibility: 1 }; // 코가 몸통높이의 약 20% 앞
     const r = detectPostureView(lm);
     expect(['left', 'right']).toContain(r.view);
+  });
+});
+
+describe('가로 웹캠(PC 키오스크) 옆모습 인식', () => {
+  // 폰 세로 기준 코 이탈 0.20 인 옆모습을 16:9 가로 프레임에선 x 가 0.5625배로 줄어든 값으로 본다.
+  const side = (k) => {
+    const lm = Array.from({ length: 33 }, () => ({ x: 0.5, y: 0.5, z: 0, visibility: 1 }));
+    const x = (v) => 0.5 + (v - 0.5) * k;
+    lm[11] = { x: x(0.50), y: 0.40, z: -0.1, visibility: 1 }; lm[12] = { x: x(0.52), y: 0.40, z: 0.1, visibility: 1 };
+    lm[23] = { x: x(0.50), y: 0.65, z: -0.05, visibility: 1 }; lm[24] = { x: x(0.52), y: 0.65, z: 0.05, visibility: 1 };
+    lm[0] = { x: x(0.56), y: 0.30, z: -0.1, visibility: 1 };
+    return lm;
+  };
+  it('보정 없이는 정면으로 오판, 보정하면 측면', () => {
+    const wide = side(0.5625 / 1);
+    expect(['front', 'back']).toContain(detectPostureView(wide).view);
+    expect(['left', 'right']).toContain(detectPostureView(aspectCorrectLandmarks(wide, 16 / 9)).view);
+  });
+  it('폰 세로(9:16)는 보정 없음', () => {
+    const lm = side(1);
+    expect(aspectCorrectLandmarks(lm, 9 / 16)).toBe(lm);
   });
 });

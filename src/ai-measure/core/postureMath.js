@@ -1095,6 +1095,18 @@ export const POSTURE_VIEW_TUNING = Object.freeze({
                                  // faceClearlyFrontal 우회를 걸지 않는다.
 });
 
+// [PC 키오스크 측면 인식 2026-11-16] 면 판별 임계값은 세로 폰(9:16) 화면 기준으로 맞춰져 있다.
+//  랜드마크 x 는 '화면 폭', y 는 '화면 높이'로 각각 정규화돼, 가로 웹캠(16:9)에선 같은 실제 길이도
+//  x 변화가 폰의 약 1/3 로 작게 나온다 → 코 이탈·어깨폭이 줄어 옆모습이 정면으로 오판되던 문제.
+//  frameAspect(폭/높이)로 x 편차를 폰 기준으로 환산해 준다. (폰 세로 = 1배, 변화 없음)
+const PHONE_PORTRAIT_ASPECT = 9 / 16;
+export function aspectCorrectLandmarks(landmarks, frameAspect) {
+  if (!Array.isArray(landmarks) || !Number.isFinite(frameAspect) || frameAspect <= 0) return landmarks;
+  const k = frameAspect / PHONE_PORTRAIT_ASPECT;
+  if (Math.abs(k - 1) < 0.02) return landmarks;
+  return landmarks.map((p) => (p && Number.isFinite(p.x) ? { ...p, x: 0.5 + (p.x - 0.5) * k } : p));
+}
+
 export function detectPostureView(landmarks, tuning = POSTURE_VIEW_TUNING) {
   const empty = { view: 'unknown', confidence: 0, shoulderRatio: null, faceVis: null };
   if (!Array.isArray(landmarks)) return empty;
