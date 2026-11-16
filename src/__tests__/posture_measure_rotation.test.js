@@ -36,7 +36,7 @@ describe('PostureMeasure.jsx — 카메라 회전 보정 배선', () => {
     const body = src.slice(start, end);
     expect(body).toMatch(/const corrected = smoothed \? rotateLandmarksNormalized\(smoothed, rotationDegRef\.current\) : null;/);
     expect(body).toMatch(/buf\.push\(\{ landmarks: corrected, ts \}\)/);
-    expect(body).toMatch(/detectPostureView\(corrected\)/);
+    expect(body).toMatch(/detectPostureView\(aspectCorrectLandmarks\(corrected, frameAspect\)\)/); // 회전 보정된 corrected + 화면 비율 보정
   });
 
   it('captureVideoSnapshot이 rotationDeg를 받아 drawVideoCover로 사진을 그린다(캔버스 크기도 회전 시 가로/세로 반전)', () => {
