@@ -22,6 +22,8 @@ import { aiStore } from '../../demoData';
 import { computeChangeRow, summarizeChanges, reportDateOnly } from '../core/measurementComparison';
 import ChangeSummaryPanel from '../../components/report/ChangeSummaryPanel.jsx';
 import VideoCompareUpload from '../../components/report/VideoCompareUpload.jsx';
+// [측정 결과시트 공용화 2026-11-15] 점수 막대·먼저 볼 것·항목별 눈금(extractKeyMetrics 단일 소스)
+import QuickResultSheet from '../../components/report/QuickResultSheet.jsx';
 
 // [전/후 변화 요약 2026-08-31] previousReport는 SquatAnalysisHub.jsx(라이브
 // 직후)/Report.jsx(이력 뷰어)가 이미 같은 종류(menu==='squat')로 걸러 넘겨준
@@ -135,6 +137,7 @@ export default function SquatReportDashboard({ report, member, onClose, onRemeas
         />
 
         <div className="grid gap-3">
+          {report.valid !== false && <QuickResultSheet report={report} reportType="squat" score={reportScore} previousReport={previousReport} />}
           <ProblemFocusPanel focus={focus} context={report.cross_measure_context} />
           {/* [Axis3 확장 2026-08-08] MomiAutoNote — PostureReport.jsx와 동일 패턴.
               스쿼트도 세션(ai) 저장 방식이라 updateSession을 쓴다. */}
@@ -194,7 +197,7 @@ export default function SquatReportDashboard({ report, member, onClose, onRemeas
                 {report.trials.map((t, i) => (
                   <div key={i} className="rounded-xl bg-slate-100/70 dark:bg-slate-800/70 border border-slate-300/60 dark:border-slate-700/60 p-3">
                     <p className="text-[10px] text-slate-500">{i < report.trials.length / 2 ? '정면' : '측면'} {i % (report.trials.length / 2) + 1}회</p>
-                    <p className="text-white font-black text-sm">{STATUS_KO[t.status] || '-'}</p>
+                    <p className="text-slate-900 dark:text-white font-black text-sm">{STATUS_KO[t.status] || '-'}</p>
                     {t.thighInclineDeg != null && <p className="text-[10px] text-slate-500 mt-1">깊이 잔여 {t.thighInclineDeg}°</p>}
                     {t.torsoLeanDeg != null && <p className="text-[10px] text-slate-500">상체 {t.torsoLeanDeg}°</p>}
                     {t.kneeValgusDeg != null && <p className="text-[10px] text-slate-500">무릎 {t.kneeValgusDeg}°</p>}
@@ -243,7 +246,7 @@ export default function SquatReportDashboard({ report, member, onClose, onRemeas
           </button>
         )}
         {typeof onRemeasure === 'function' && (
-          <button onClick={onRemeasure} className="w-full rounded-lg bg-slate-100 dark:bg-slate-800 text-white font-bold text-sm py-2.5">← 다시 측정</button>
+          <button onClick={onRemeasure} className="w-full rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white font-bold text-sm py-2.5">← 다시 측정</button>
         )}
       </div>
     </UnifiedReportCanvas>

@@ -28,6 +28,8 @@ import { scoreToStatus } from '../core/unifiedReport';
 // 결과(화면 표시)는 100% 동일하게 유지하는 순수 리팩터링.
 import { computeChangeRow, summarizeChanges, reportDateOnly } from '../core/measurementComparison';
 import ChangeSummaryPanel from '../../components/report/ChangeSummaryPanel.jsx';
+// [자세 결과시트 UI 2026-11-15] motiphysio·exbody 결과지 구성을 참고한 상단 요약 영역.
+import PostureResultSheet from './PostureResultSheet.jsx';
 
 // 'risk'|'caution'|'normal' 문자열 판정을 공용 MetricCard가 쓰는 상태 토큰으로 변환.
 //  · scoreToStatus 임계값(>=80 정상/>=60 주의/그 외 위험)과 동일한 대표 점수를 사용해
@@ -178,6 +180,15 @@ export default function PostureReport({
           member={member}
         />
 
+        <PostureResultSheet
+          report={report}
+          analysis={analysis}
+          score={score}
+          member={member}
+          previousReport={previousReport}
+          perViewSnapshots={perViewSnapshots}
+          currentPose={currentPose}
+        />
         <MetadataStrip metadata={clinical.metadata} viewsMeasured={report?.viewsMeasured} />
         <ProblemFocusPanel focus={problemFocus} context={report?.cross_measure_context} />
 <PatternInsightPanel measure="posture" report={report} />
@@ -187,8 +198,7 @@ export default function PostureReport({
             트레이너가 직접 물어보고 후속 질문까지 이어갈 수 있는 대화창. */}
         <MomiInsightPanel kind="posture" report={report} member={member} />
 
-        <section className="grid gap-3 sm:grid-cols-[240px_1fr_1fr]">
-          <ScoreDial score={score} status={analysis.status} />
+        <section className="grid gap-3 sm:grid-cols-2">
           <MetricPanel title="체형 나이" value={bodyAge ?? '-'} unit={bodyAge ? '세' : ''} status={analysis.status}>
             <p className="text-sm leading-relaxed text-slate-500 dark:text-slate-400">
               실제 나이 대비 자세 편차, 비대칭, 위험 규칙을 반영한 기능적 체형 나이입니다.
@@ -251,7 +261,7 @@ export default function PostureReport({
                 {findings.length ? findings.map((item) => (
                   <FindingRow key={item.key} finding={item} />
                 )) : (
-                  <div className="rounded-md border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-200">
+                  <div className="rounded-md border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-800 dark:text-emerald-200">
                     주요 위험 규칙에 해당하는 항목이 없습니다.
                   </div>
                 )}
@@ -269,7 +279,6 @@ export default function PostureReport({
         <RegionDiagnoses regions={clinical.regions} />
         <AxialRotationSection rotation={axialRotation} />
         <RiskTop3 items={clinical.riskTop3} />
-        <MuscleBalanceMap muscleMap={clinical.muscleMap} />
 
         <PostureSnapshotGallery snapshots={perViewSnapshots || report?.perViewSnapshots} />
 
@@ -335,14 +344,14 @@ function RegionDiagnoses({ regions }) {
   if (!Array.isArray(regions) || !regions.length) return null;
   return (
     <section className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
-      <p className="mb-3 text-sm font-black text-white">부위별 원인 진단</p>
+      <p className="mb-3 text-sm font-black text-slate-900 dark:text-white">부위별 원인 진단</p>
       <div className="grid gap-2 sm:grid-cols-2">
         {regions.map((r) => {
           const st = LEVEL_STYLE[r.level] || LEVEL_STYLE.insufficient;
           return (
             <div key={r.key} className={`rounded-lg border p-3 ${st.bg} ${st.border}`}>
               <div className="flex items-center justify-between">
-                <p className="text-sm font-black text-white">{r.title}</p>
+                <p className="text-sm font-black text-slate-900 dark:text-white">{r.title}</p>
                 <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${st.text}`}>{st.ko}</span>
               </div>
               {r.measured.length > 0 && (
@@ -370,7 +379,7 @@ function AxialRotationSection({ rotation }) {
   if (!rotation || !rotation.available) {
     return (
       <section className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
-        <p className="mb-1 text-sm font-black text-white">전신 회전(축 정렬) 분석</p>
+        <p className="mb-1 text-sm font-black text-slate-900 dark:text-white">전신 회전(축 정렬) 분석</p>
         <p className="text-xs text-slate-500">회전을 추정할 측정값이 부족합니다.</p>
       </section>
     );
@@ -405,7 +414,7 @@ function AxialRotationSection({ rotation }) {
   return (
     <section className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
       <div className="mb-1 flex items-center gap-2">
-        <p className="text-sm font-black text-white">전신 회전(축 정렬) 분석</p>
+        <p className="text-sm font-black text-slate-900 dark:text-white">전신 회전(축 정렬) 분석</p>
         <span className="rounded-full bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-[10px] font-bold text-amber-700 dark:text-amber-300">4면 종합 · 추정</span>
       </div>
       <p className="mb-3 text-[11px] leading-relaxed text-slate-500">
@@ -443,10 +452,10 @@ function AxialRotationSection({ rotation }) {
 function RiskTop3({ items }) {
   return (
     <section className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
-      <p className="mb-1 text-sm font-black text-white">통증·부상 위험 예측 Top 3</p>
+      <p className="mb-1 text-sm font-black text-slate-900 dark:text-white">통증·부상 위험 예측 Top 3</p>
       <p className="mb-3 text-[11px] text-slate-500">현재 불균형을 방치할 경우 통증 발생 가능성이 높은 순서입니다. (예측 참고용)</p>
       {(!items || !items.length) ? (
-        <div className="rounded-md border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-200">
+        <div className="rounded-md border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-800 dark:text-emerald-200">
           현재 측정값에서 두드러진 위험 부위가 없습니다.
         </div>
       ) : (
@@ -457,51 +466,12 @@ function RiskTop3({ items }) {
               <div key={it.key} className={`flex items-start gap-3 rounded-lg border p-2.5 ${st.bg} ${st.border}`}>
                 <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-50/60 dark:bg-slate-950/60 text-sm font-black ${st.text}`}>{it.rank}</span>
                 <div>
-                  <p className="text-sm font-black text-white">{it.area} <span className={`text-[10px] font-bold ${st.text}`}>· {st.ko}</span></p>
+                  <p className="text-sm font-black text-slate-900 dark:text-white">{it.area} <span className={`text-[10px] font-bold ${st.text}`}>· {st.ko}</span></p>
                   <p className="text-xs leading-relaxed text-slate-600 dark:text-slate-300">{it.outcome}</p>
                 </div>
               </div>
             );
           })}
-        </div>
-      )}
-    </section>
-  );
-}
-
-function MuscleBalanceMap({ muscleMap }) {
-  if (!muscleMap) return null;
-  const { tight = [], weak = [], note } = muscleMap;
-  const empty = tight.length === 0 && weak.length === 0;
-  return (
-    <section className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
-      <div className="mb-1 flex items-center gap-2">
-        <p className="text-sm font-black text-white">근육 밸런스 맵</p>
-        <span className="rounded-full bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-[10px] font-bold text-amber-700 dark:text-amber-300">추정 · 측정값 아님</span>
-      </div>
-      <p className="mb-3 text-[11px] leading-relaxed text-slate-500">{note}</p>
-      {empty ? (
-        <div className="rounded-md border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-200">
-          두드러진 자세 불균형이 없어 특이 근육 경향이 추정되지 않았습니다.
-        </div>
-      ) : (
-        <div className="grid gap-3 sm:grid-cols-2">
-          <div className="rounded-lg border border-red-500/30 bg-red-500/5 p-3">
-            <p className="mb-2 text-xs font-black text-red-700 dark:text-red-300">🔴 긴장·단축 (풀어주기)</p>
-            <ul className="space-y-1.5">
-              {tight.length ? tight.map((m, i) => (
-                <li key={i} className="text-xs text-slate-600 dark:text-slate-300"><span className="font-bold text-white">{m.name}</span> — {m.reason}</li>
-              )) : <li className="text-xs text-slate-500">해당 없음</li>}
-            </ul>
-          </div>
-          <div className="rounded-lg border border-sky-500/30 bg-sky-500/5 p-3">
-            <p className="mb-2 text-xs font-black text-sky-700 dark:text-sky-300">🔵 약화·이완 (강화하기)</p>
-            <ul className="space-y-1.5">
-              {weak.length ? weak.map((m, i) => (
-                <li key={i} className="text-xs text-slate-600 dark:text-slate-300"><span className="font-bold text-white">{m.name}</span> — {m.reason}</li>
-              )) : <li className="text-xs text-slate-500">해당 없음</li>}
-            </ul>
-          </div>
         </div>
       )}
     </section>
@@ -514,7 +484,7 @@ function PostureSnapshotGallery({ snapshots }) {
   return (
     <section className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
       <div className="mb-3 flex items-center justify-between">
-        <p className="text-sm font-black text-white">측정 장면 ({items.length}면)</p>
+        <p className="text-sm font-black text-slate-900 dark:text-white">측정 장면 ({items.length}면)</p>
         <p className="text-xs text-slate-500">스켈레톤 인식 상태를 확인하세요</p>
       </div>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -784,38 +754,6 @@ function SnapshotCard({ item }) {
   );
 }
 
-function ScoreDial({ score, status }) {
-  const style = STATUS_STYLE[status] || STATUS_STYLE.caution;
-  const radius = 45;
-  const circumference = 2 * Math.PI * radius;
-  const offset = circumference * (1 - Math.max(0, Math.min(100, score)) / 100);
-  return (
-    <div className={`flex min-h-[190px] flex-col items-center justify-center rounded-lg border bg-white dark:bg-slate-900 p-4 ring-1 ${style.border} ${style.ring}`}>
-      <div className="relative h-36 w-36">
-        <svg viewBox="0 0 120 120" className="h-full w-full -rotate-90">
-          <circle cx="60" cy="60" r={radius} fill="none" stroke="#1e293b" strokeWidth="12" />
-          <circle
-            cx="60"
-            cy="60"
-            r={radius}
-            fill="none"
-            stroke={style.stroke}
-            strokeLinecap="round"
-            strokeWidth="12"
-            strokeDasharray={circumference}
-            strokeDashoffset={offset}
-          />
-        </svg>
-        <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <span className={`text-4xl font-black ${style.text}`}>{score}</span>
-          <span className="text-xs font-bold text-slate-500">/ 100</span>
-        </div>
-      </div>
-      <p className="mt-1 text-sm font-bold text-slate-600 dark:text-slate-300">통합 체형 점수</p>
-    </div>
-  );
-}
-
 function MetricPanel({ title, value, unit, status = 'caution', children }) {
   const style = STATUS_STYLE[status] || STATUS_STYLE.caution;
   return (
@@ -832,7 +770,7 @@ function MetricPanel({ title, value, unit, status = 'caution', children }) {
 function Panel({ title, children }) {
   return (
     <section className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
-      <h2 className="mb-3 text-sm font-black text-white">{title}</h2>
+      <h2 className="mb-3 text-sm font-black text-slate-900 dark:text-white">{title}</h2>
       {children}
     </section>
   );
@@ -954,7 +892,7 @@ function GhostingViewer({
     <section className="overflow-hidden rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 dark:border-slate-800 px-4 py-3">
         <div>
-          <h2 className="text-sm font-black text-white">Before & After Ghosting</h2>
+          <h2 className="text-sm font-black text-slate-900 dark:text-white">Before & After Ghosting</h2>
           <p className="text-xs text-slate-500">과거 스켈레톤은 점선, 현재 스켈레톤은 실선으로 표시됩니다.</p>
         </div>
         <div className="flex items-center gap-3 text-xs font-bold text-slate-500 dark:text-slate-400">

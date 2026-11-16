@@ -13,6 +13,8 @@ import { computeChangeRow, summarizeChanges, reportDateOnly } from '../core/meas
 import ChangeSummaryPanel from '../../components/report/ChangeSummaryPanel.jsx';
 import VideoCompareUpload from '../../components/report/VideoCompareUpload.jsx';
 import ClinicalFlagCard, { buildClinicalFlags } from './ClinicalFlagCard.jsx';
+// [측정 결과시트 공용화 2026-11-15] 점수 막대·먼저 볼 것·항목별 눈금(extractKeyMetrics 단일 소스)
+import QuickResultSheet from '../../components/report/QuickResultSheet.jsx';
 
 /*
  * SprintReportDashboard — 스프린트 & 아질리티 종합 리포트 (1장 대시보드)
@@ -117,6 +119,7 @@ export default function SprintReportDashboard({ report, previousReport, onCommen
           compact
           member={resolvedMember}
         />
+        <QuickResultSheet report={report} reportType="sprint" score={summary.overallScore} previousReport={previousReport} />
 
         <div className="grid gap-3">
           <ProblemFocusPanel focus={problemFocus} context={report?.cross_measure_context} />

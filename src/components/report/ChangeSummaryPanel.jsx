@@ -7,7 +7,7 @@ export default function ChangeSummaryPanel({ summary, title = '이전 측정 대
   return (
     <section className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
       <div className="mb-2 flex items-center justify-between">
-        <p className="text-sm font-black text-white">{title}</p>
+        <p className="text-sm font-black text-slate-900 dark:text-white">{title}</p>
         {summary.previousDate && <span className="text-[11px] text-slate-500">{summary.previousDate} → 오늘</span>}
       </div>
       <p className="mb-3 text-xs leading-relaxed text-slate-600 dark:text-slate-300">{summary.narrative}</p>
@@ -26,7 +26,7 @@ export default function ChangeSummaryPanel({ summary, title = '이전 측정 대
           return (
             <div key={r.key} className={`rounded-md border px-2.5 py-2 ${tone}`}>
               <p className="text-[10px] font-bold text-slate-500">{r.label}</p>
-              <p className="text-sm font-black text-white">
+              <p className="text-sm font-black text-slate-900 dark:text-white">
                 {r.curVal}{r.unit}
                 <span className={`ml-1 text-[11px] font-bold ${arrowTone}`}>
                   {r.diff > 0 ? '▲' : r.diff < 0 ? '▼' : '–'}{Math.abs(r.diff)}{r.unit}

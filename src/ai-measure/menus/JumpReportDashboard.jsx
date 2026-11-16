@@ -25,6 +25,8 @@ import TrendChart from '../../components/report/TrendChart';
 import { computeChangeRow, summarizeChanges, reportDateOnly } from '../core/measurementComparison';
 import ChangeSummaryPanel from '../../components/report/ChangeSummaryPanel.jsx';
 import VideoCompareUpload from '../../components/report/VideoCompareUpload.jsx';
+// [측정 결과시트 공용화 2026-11-15] 점수 막대·먼저 볼 것·항목별 눈금(extractKeyMetrics 단일 소스)
+import QuickResultSheet from '../../components/report/QuickResultSheet.jsx';
 
 const rangeCenter = (r) => (r.good[0] + r.good[1]) / 2;
 
@@ -247,6 +249,7 @@ export default function JumpReportDashboard({ report, onClose, onComment, member
             invalid={report.valid === false}
             member={resolvedMember}
           />
+          {report.valid !== false && <QuickResultSheet report={report} reportType="jump" score={score} previousReport={previousReport} />}
 
           <ProblemFocusPanel focus={problemFocus} context={report.cross_measure_context} />
 <PatternInsightPanel measure="jump" report={report} />
@@ -399,7 +402,7 @@ export default function JumpReportDashboard({ report, onClose, onComment, member
                 className="w-full h-20 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 resize-none focus:outline-none focus:border-amber-400"
                 placeholder="회원에게 전달할 코멘트를 입력하세요."
               />
-              <button onClick={saveComment} className="mt-2 rounded-lg bg-slate-200 dark:bg-slate-700 px-4 py-2 text-xs font-bold text-white">
+              <button onClick={saveComment} className="mt-2 rounded-lg bg-slate-200 dark:bg-slate-700 px-4 py-2 text-xs font-bold text-slate-900 dark:text-white">
                 코멘트 저장
               </button>
             </Section>

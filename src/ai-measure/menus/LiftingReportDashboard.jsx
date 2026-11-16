@@ -23,6 +23,8 @@ import { aiStore } from '../../demoData';
 import { computeChangeRow, summarizeChanges, reportDateOnly } from '../core/measurementComparison';
 import ChangeSummaryPanel from '../../components/report/ChangeSummaryPanel.jsx';
 import VideoCompareUpload from '../../components/report/VideoCompareUpload.jsx';
+// [측정 결과시트 공용화 2026-11-15] 점수 막대·먼저 볼 것·항목별 눈금(extractKeyMetrics 단일 소스)
+import QuickResultSheet from '../../components/report/QuickResultSheet.jsx';
 
 // [전/후 변화 요약 2026-08-31] previousReport는 BarbellLiftingHub.jsx(라이브
 // 직후)/Report.jsx(이력 뷰어)가 이미 같은 종목·같은 모드(mode+exerciseType)로
@@ -124,7 +126,7 @@ export default function LiftingReportDashboard({ report, onClose, member, previo
           simpleSummary={buildSummaryData(report)}
           simpleMember={member}
         />
-        <button onClick={onClose} className="rounded-lg bg-slate-200 dark:bg-slate-700 text-white font-bold text-sm px-4 py-2">닫기</button>
+        <button onClick={onClose} className="rounded-lg bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-white font-bold text-sm px-4 py-2">닫기</button>
       </div>
       <UnifiedReportPage id="lifting-report" className="mx-auto">
           <UnifiedReportHeader
@@ -133,6 +135,7 @@ export default function LiftingReportDashboard({ report, onClose, member, previo
             measuredAt={report.recordedAt}
             member={resolvedMember}
           />
+          <QuickResultSheet report={report} previousReport={previousReport} />
 
           {/* [Axis3 확장 2026-08-08] MomiAutoNote — PostureReport.jsx와 동일 패턴.
               VBT/1RM은 전용 컬렉션 없이 세션(ai)에 저장되므로 updateSession을 쓴다. */}
