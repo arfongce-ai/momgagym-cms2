@@ -4,6 +4,7 @@
 // O다리 판정을 그대로 재사용한다 — postureMath.js는 의존성이 없는 leaf 모듈이라
 // 순환참조 위험 없이 가져다 쓸 수 있다. 새로 만들지 않고 재사용(사용자 확인).
 import { classifyLegAlignment, POSTURE_STATUS } from './postureMath.js';
+import { getFrameAspect } from './geometry.js';
 
 // ───────── 현장 튜닝 설정 (한 곳에 모음) ─────────
 // 측정 데이터가 쌓이면 이 값들만 조정해 정확도를 올릴 수 있다.
@@ -83,8 +84,9 @@ export const GAIT_TUNING = {
 export const angleAt = (a, b, c) => {
   const v = GAIT_TUNING.minVisibility;
   if (!a || !b || !c || a.visibility < v || b.visibility < v || c.visibility < v) return null;
-  const ba = { x: a.x - b.x, y: a.y - b.y };
-  const bc = { x: c.x - b.x, y: c.y - b.y };
+  const A = getFrameAspect();
+  const ba = { x: (a.x - b.x) * A, y: a.y - b.y };
+  const bc = { x: (c.x - b.x) * A, y: c.y - b.y };
   const dot = ba.x * bc.x + ba.y * bc.y;
   const magBA = Math.sqrt(ba.x * ba.x + ba.y * ba.y);
   const magBC = Math.sqrt(bc.x * bc.x + bc.y * bc.y);
@@ -523,7 +525,7 @@ const trunkForwardLean = (lm) => {
   const sh = { x: (lm[11].x + lm[12].x) / 2, y: (lm[11].y + lm[12].y) / 2 };
   const hip = { x: (lm[23].x + lm[24].x) / 2, y: (lm[23].y + lm[24].y) / 2 };
   // 몸통 벡터 (골반→어깨). 수직(0,-1) 기준 각.
-  const vx = sh.x - hip.x;
+  const vx = (sh.x - hip.x) * getFrameAspect();
   const vy = sh.y - hip.y; // 위로 갈수록 음수
   const len = Math.sqrt(vx * vx + vy * vy);
   if (len < 1e-6) return null;

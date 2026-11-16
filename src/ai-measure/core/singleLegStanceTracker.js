@@ -49,6 +49,7 @@
 
 import { OneEuroFilter } from './gaitBiomechanics';
 import { StandingCalibrator } from './jumpBiomechanics';
+import { getFrameAspect } from './geometry';
 
 // 화면(UI)에서 캘리브레이션도 이 파일 하나만 import 하도록 재노출.
 export { StandingCalibrator };
@@ -105,10 +106,10 @@ function ankleY(lm, side) {
 export function pelvicTiltDegOf(lm) {
   if (!lm || !lm[HIP_L] || !lm[HIP_R]) return null;
   const dy = Math.abs(lm[HIP_R].y - lm[HIP_L].y);
-  const dx = Math.abs(lm[HIP_R].x - lm[HIP_L].x);
+  const dx = Math.abs(lm[HIP_R].x - lm[HIP_L].x) * getFrameAspect();
   if (!dx && !dy) return 0;
   // 측면처럼 좌우 골반이 거의 겹치면(가로 간격 2% 미만) 각도를 믿을 수 없어 집계하지 않는다.
-  if (dx < 0.02) return null;
+  if (dx < 0.02 * getFrameAspect()) return null;
   return (Math.atan2(dy, dx) * 180) / Math.PI;
 }
 function clamp(value, min, max) {

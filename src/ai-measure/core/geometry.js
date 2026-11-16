@@ -2,11 +2,22 @@
 // 자세·관절 측정 공통 기하 계산. 모든 측정 메뉴가 공유한다.
 // MediaPipe Pose 랜드마크는 {x, y, z, visibility} (x,y는 0~1 정규화 좌표).
 
+// [가로세로비 보정 2026-11-16] MediaPipe 랜드마크는 x 를 영상 폭, y 를 영상 높이로 따로 정규화한다.
+//  그대로 atan2/내적에 쓰면 폰 세로(9:16)는 각도가 작게, 가로 웹캠(16:9)은 크게 왜곡된다.
+//  x 차이에 (폭/높이)를 곱하면 같은 길이 단위가 되어 실제 각도가 나온다.
+//  포즈 엔진이 프레임마다 setFrameAspect 로 현재 영상 비율을 알린다(기본 1 = 보정 없음, 기존 동작).
+let _frameAspect = 1;
+export function setFrameAspect(w, h) {
+  const a = Number(w) / Number(h);
+  _frameAspect = Number.isFinite(a) && a > 0.2 && a < 5 ? a : 1;
+}
+export function getFrameAspect() { return _frameAspect; }
+
 /** 두 점을 잇는 선의 '수평 대비 기울기'(도). 0=완전 수평. 양수=오른쪽이 내려감. */
 export function tiltAngleDeg(a, b) {
   if (!a || !b) return null;
   // 화면 y는 아래로 갈수록 커지므로 부호 보정
-  const dx = b.x - a.x;
+  const dx = (b.x - a.x) * _frameAspect;
   const dy = b.y - a.y;
   if (dx === 0 && dy === 0) return null;
   return (Math.atan2(dy, dx) * 180) / Math.PI;
@@ -24,7 +35,7 @@ export function symmetryTilt(p1, p2) {
   // 화면 왼쪽 점(L), 오른쪽 점(R)으로 정렬
   const L = p1.x <= p2.x ? p1 : p2;
   const R = p1.x <= p2.x ? p2 : p1;
-  const dx = R.x - L.x;
+  const dx = (R.x - L.x) * _frameAspect;
   const dy = R.y - L.y;          // y는 아래로 갈수록 큼
   if (dx === 0 && dy === 0) return null;
   // 수평선 대비 기울기(절대). dx가 0에 가까우면(거의 수직) 큰 각.
@@ -38,8 +49,8 @@ export function symmetryTilt(p1, p2) {
 /** 세 점 a-b-c 의 b 꼭짓점 내각(도). 관절 각도용. */
 export function jointAngleDeg(a, b, c) {
   if (!a || !b || !c) return null;
-  const v1x = a.x - b.x, v1y = a.y - b.y;
-  const v2x = c.x - b.x, v2y = c.y - b.y;
+  const v1x = (a.x - b.x) * _frameAspect, v1y = a.y - b.y;
+  const v2x = (c.x - b.x) * _frameAspect, v2y = c.y - b.y;
   const dot = v1x * v2x + v1y * v2y;
   const mag = Math.hypot(v1x, v1y) * Math.hypot(v2x, v2y);
   if (mag === 0) return null;
@@ -50,7 +61,7 @@ export function jointAngleDeg(a, b, c) {
 /** 한 점이 수직선(중심선)에서 벗어난 기울기(도). top 기준 bottom 의 좌우 치우침. */
 export function verticalDeviationDeg(top, bottom) {
   if (!top || !bottom) return null;
-  const dx = bottom.x - top.x;
+  const dx = (bottom.x - top.x) * _frameAspect;
   const dy = bottom.y - top.y;
   if (dy === 0) return null;
   // 수직(dy축) 대비 좌우(dx) 기울기

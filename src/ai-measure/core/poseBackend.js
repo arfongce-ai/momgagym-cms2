@@ -1,5 +1,6 @@
 import { recordRecognitionFrame } from './recognitionStats';
 import { recordCaptureFrame, setCaptureDelegate } from './captureQuality';
+import { setFrameAspect } from './geometry';
 // ai-measure/core/poseBackend.js
 // MediaPipe PoseLandmarker(Tasks Vision)를 CDN에서 런타임 로드해 1회 초기화한다.
 // xlsx(loadXlsx.js)와 동일한 전략: package.json 의존성으로 넣지 않아 Cloudflare
@@ -112,6 +113,7 @@ export function detectPoseFrame(video, timestampMs) {
   try { recordRecognitionFrame(lm && lm.length ? lm : null); } catch (e) { /* 집계 실패는 무시 */ }
   // [촬영 품질 2026-11-16] 전신·거리·화질·프레임 속도 집계(화면 신호등·저장 품질 등급용). 판정 로직 영향 없음.
   try { recordCaptureFrame(lm && lm.length ? lm : null, video); } catch (e) { /* 집계 실패는 무시 */ }
+  try { setFrameAspect(video.videoWidth || video.width, video.videoHeight || video.height); } catch (e) { /* 무시 */ }
   if (!lm || !lm.length) return null;
   return { landmarks: lm };
 }

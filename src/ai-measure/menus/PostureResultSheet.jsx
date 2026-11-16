@@ -8,7 +8,8 @@
 // 측정되지 않는 정보라 넣지 않는다(센터 원칙: 느낌이 아니라 숫자).
 import React, { useEffect, useMemo, useState } from 'react';
 import { POSE_LANDMARKS } from '../core/postureMath';
-import MuscleAnatomyFigure from './MuscleAnatomyFigure.jsx';
+import MuscleAtlas from './MuscleAtlas.jsx';
+import { atlasForRegions, muscleById, muscleImageSrc } from '../core/muscleAtlas';
 import {
   buildPostureSheetItems,
   buildPostureMissing,
@@ -216,11 +217,22 @@ function SkeletonSheet({ viewMap, items, photoMap = {} }) {
   );
 }
 
-// ── ⑤ 근육 경향 해부도 (추정) ── 그림은 MuscleAnatomyFigure.jsx
+// ── ⑤ 근육 경향 해부도 (추정) ── 그림은 public/muscles (근육 도감 PNG), 목록·연결은 core/muscleAtlas.js
 function MuscleBodyMap({ regions, items }) {
   const tight = [...new Set(items.flatMap((it) => it.tight))];
   const weak = [...new Set(items.flatMap((it) => it.weak))];
-  const figure = (view, label) => <MuscleAnatomyFigure view={view} regions={regions} label={label} />;
+  const atlas = atlasForRegions(regions);
+  const [atlasOpen, setAtlasOpen] = React.useState(false);
+  const tile = (no, kind) => {
+    const m = muscleById(no);
+    if (!m) return null;
+    return (
+      <figure key={`${kind}${no}`} className="m-0 rounded-lg bg-white p-1 text-center ring-1 ring-slate-200 dark:ring-slate-300">
+        <img src={muscleImageSrc(no, kind)} alt={`${m.name} ${kind === 'weak' ? '약화' : '긴장'}`} className="mx-auto block h-24 w-full object-contain" crossOrigin="anonymous" />
+        <figcaption className={`text-[10px] font-black ${kind === 'weak' ? 'text-blue-700' : 'text-red-700'}`}>{m.name}</figcaption>
+      </figure>
+    );
+  };
   return (
     <Card>
       <SectionTitle aside={<span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-800 dark:bg-amber-500/15 dark:text-amber-200">추정 · 측정값 아님</span>}>
@@ -229,10 +241,12 @@ function MuscleBodyMap({ regions, items }) {
       {!regions.length ? (
         <p className="rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-200">두드러진 자세 불균형이 없어 표시할 근육 경향이 없습니다.</p>
       ) : (
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-[1fr_1fr_1.3fr]">
-          {figure('front', '앞')}
-          {figure('back', '뒤')}
-          <div className="col-span-2 space-y-3 sm:col-span-1">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-[1.6fr_1fr]">
+          <div className="grid grid-cols-3 gap-1.5">
+            {atlas.tight.map((n) => tile(n, 'tight'))}
+            {atlas.weak.map((n) => tile(n, 'weak'))}
+          </div>
+          <div className="space-y-3">
             <div>
               <p className="mb-1 text-xs font-black text-red-700 dark:text-red-300">빨강 · 긴장 쪽 (풀어주기)</p>
               <p className="text-xs leading-relaxed text-slate-700 dark:text-slate-200">{tight.join(', ') || '해당 없음'}</p>
@@ -242,9 +256,12 @@ function MuscleBodyMap({ regions, items }) {
               <p className="text-xs leading-relaxed text-slate-700 dark:text-slate-200">{weak.join(', ') || '해당 없음'}</p>
             </div>
             <p className="text-[10px] leading-relaxed text-slate-500">자세 패턴에서 흔히 함께 나타나는 경향입니다. 실제 근긴장은 트레이너 촉진으로 확인하세요.</p>
+            <button type="button" onClick={() => setAtlasOpen(true)} data-html2canvas-ignore="true"
+              className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-bold text-slate-700 dark:border-slate-600 dark:text-slate-200">근육 도감 열기</button>
           </div>
         </div>
       )}
+      {atlasOpen && <MuscleAtlas onClose={() => setAtlasOpen(false)} />}
     </Card>
   );
 }

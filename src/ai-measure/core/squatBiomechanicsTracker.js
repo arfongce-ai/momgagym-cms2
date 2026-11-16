@@ -34,6 +34,7 @@ import { OneEuroFilter } from './gaitBiomechanics';
 import { StandingCalibrator } from './jumpBiomechanics';
 import { shankAngleDeg, shankThighRatio, barOffsetDeg, kneeOverFootPct, bodyMidlineDeg, kneeHeightDiffPct } from './squatJointAngles';
 
+import { getFrameAspect } from './geometry';
 // 화면(UI)에서 캘리브레이션도 이 파일 하나만 import 하도록 재노출.
 export { StandingCalibrator };
 
@@ -71,7 +72,7 @@ function mid(lm, a, b) {
 export function pelvicTiltDegOf(lm) {
   if (!lm || !lm[HIP_L] || !lm[HIP_R]) return null;
   const dy = lm[HIP_R].y - lm[HIP_L].y;
-  const dx = lm[HIP_R].x - lm[HIP_L].x;
+  const dx = (lm[HIP_R].x - lm[HIP_L].x) * getFrameAspect();
   if (!dx && !dy) return 0;
   return Math.abs((Math.atan2(dy, dx) * 180) / Math.PI);
 }
@@ -80,7 +81,7 @@ function torsoLeanDegOf(lm) {
   const hip = mid(lm, HIP_L, HIP_R);
   const sho = mid(lm, SHO_L, SHO_R);
   if (!hip || !sho) return null;
-  const dx = sho.x - hip.x;
+  const dx = (sho.x - hip.x) * getFrameAspect();
   const dy = hip.y - sho.y; // 위로 갈수록 y가 작아지므로 부호 반전
   if (!dx && !dy) return 0;
   return Math.abs((Math.atan2(dx, dy) * 180) / Math.PI); // 수직축(dy) 기준 편차
@@ -91,8 +92,9 @@ function torsoLeanDegOf(lm) {
 export function kneeValgusDegOf(lm) {
   const oneLeg = (hipI, kneeI, ankI) => {
     if (!lm?.[hipI] || !lm?.[kneeI] || !lm?.[ankI]) return null;
-    const v1 = { x: lm[hipI].x - lm[kneeI].x, y: lm[hipI].y - lm[kneeI].y };
-    const v2 = { x: lm[ankI].x - lm[kneeI].x, y: lm[ankI].y - lm[kneeI].y };
+    const A = getFrameAspect();
+    const v1 = { x: (lm[hipI].x - lm[kneeI].x) * A, y: lm[hipI].y - lm[kneeI].y };
+    const v2 = { x: (lm[ankI].x - lm[kneeI].x) * A, y: lm[ankI].y - lm[kneeI].y };
     const dot = v1.x * v2.x + v1.y * v2.y;
     const mag = Math.hypot(v1.x, v1.y) * Math.hypot(v2.x, v2.y);
     if (!mag) return null;
@@ -116,7 +118,7 @@ export function armDropDegOf(lm) {
   const oneArm = (shoI, wriI) => {
     const sho = lm?.[shoI], wri = lm?.[wriI];
     if (!sho || !wri) return null;
-    const dx = wri.x - sho.x;
+    const dx = (wri.x - sho.x) * getFrameAspect();
     const dy = sho.y - wri.y; // 위로 갈수록 y가 작아지므로 부호 반전(손목이 어깨보다 위면 양수)
     if (!dx && !dy) return 0;
     return Math.abs((Math.atan2(dx, dy) * 180) / Math.PI);
@@ -143,7 +145,7 @@ export function cogOverAnkleDegOf(lm, side) {
   const ank = lm?.[side === 'left' ? ANK_L : ANK_R];
   if (!sho || !hip || !ank) return null;
   const cog = { x: (sho.x + hip.x) / 2, y: (sho.y + hip.y) / 2 };
-  const dx = cog.x - ank.x, dy = cog.y - ank.y;
+  const dx = (cog.x - ank.x) * getFrameAspect(), dy = cog.y - ank.y;
   if (!dx && !dy) return 0;
   return Math.abs((Math.atan2(dx, -dy) * 180) / Math.PI);
 }
@@ -154,7 +156,7 @@ export function cogTiltDegOf(lm) {
   const shoMid = mid(lm, SHO_L, SHO_R), hipMid = mid(lm, HIP_L, HIP_R), ankMid = mid(lm, ANK_L, ANK_R);
   if (!shoMid || !hipMid || !ankMid) return null;
   const cog = { x: (shoMid.x + hipMid.x) / 2, y: (shoMid.y + hipMid.y) / 2 };
-  const dx = cog.x - ankMid.x, dy = cog.y - ankMid.y;
+  const dx = (cog.x - ankMid.x) * getFrameAspect(), dy = cog.y - ankMid.y;
   if (!dx && !dy) return 0;
   return Math.abs((Math.atan2(dx, -dy) * 180) / Math.PI);
 }
@@ -171,7 +173,7 @@ export function headTiltDegOf(lm) {
   const shoMid = mid(lm, SHO_L, SHO_R);
   if (!l || !r || !shoMid) return null;
   const earMid = { x: (l.x + r.x) / 2, y: (l.y + r.y) / 2 };
-  const dx = earMid.x - shoMid.x, dy = earMid.y - shoMid.y;
+  const dx = (earMid.x - shoMid.x) * getFrameAspect(), dy = earMid.y - shoMid.y;
   if (!dx && !dy) return 0;
   return Math.abs((Math.atan2(dx, -dy) * 180) / Math.PI);
 }
@@ -183,8 +185,9 @@ export function elbowExtensionOf(lm) {
   const oneArm = (shoI, elbI, wriI) => {
     const sho = lm?.[shoI], elb = lm?.[elbI], wri = lm?.[wriI];
     if (!sho || !elb || !wri) return null;
-    const v1 = { x: sho.x - elb.x, y: sho.y - elb.y };
-    const v2 = { x: wri.x - elb.x, y: wri.y - elb.y };
+    const A = getFrameAspect();
+    const v1 = { x: (sho.x - elb.x) * A, y: sho.y - elb.y };
+    const v2 = { x: (wri.x - elb.x) * A, y: wri.y - elb.y };
     const dot = v1.x * v2.x + v1.y * v2.y;
     const mag = Math.hypot(v1.x, v1.y) * Math.hypot(v2.x, v2.y);
     if (!mag) return null;

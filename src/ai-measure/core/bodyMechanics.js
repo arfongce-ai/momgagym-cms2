@@ -29,6 +29,7 @@ export const LM = Object.freeze({
   LEFT_FOOT_INDEX: 31, RIGHT_FOOT_INDEX: 32,
 });
 
+import { getFrameAspect } from './geometry';
 const EPS = 1e-7;
 const MIN_VIS = 0.4;
 
@@ -94,8 +95,9 @@ export function midpoint(a, b) {
 // ────────────────────────────────────────────────────────────────────────
 export function angleBetween(a, b, c, use3d = true) {
   if (!a || !b || !c) return null;
-  const ab = { x: a.x - b.x, y: a.y - b.y, z: (a.z ?? 0) - (b.z ?? 0) };
-  const cb = { x: c.x - b.x, y: c.y - b.y, z: (c.z ?? 0) - (b.z ?? 0) };
+  const A = getFrameAspect();
+  const ab = { x: (a.x - b.x) * A, y: a.y - b.y, z: ((a.z ?? 0) - (b.z ?? 0)) * A };
+  const cb = { x: (c.x - b.x) * A, y: c.y - b.y, z: ((c.z ?? 0) - (b.z ?? 0)) * A };
   const dot = ab.x * cb.x + ab.y * cb.y + (use3d ? ab.z * cb.z : 0);
   const magA = Math.hypot(ab.x, ab.y, use3d ? ab.z : 0);
   const magC = Math.hypot(cb.x, cb.y, use3d ? cb.z : 0);
@@ -296,7 +298,7 @@ export function trunkLeanCompensation(landmarks) {
   const sMid = midpoint(getLandmark(landmarks, LM.LEFT_SHOULDER, 0.3), getLandmark(landmarks, LM.RIGHT_SHOULDER, 0.3));
   const hMid = midpoint(getLandmark(landmarks, LM.LEFT_HIP, 0.3), getLandmark(landmarks, LM.RIGHT_HIP, 0.3));
   if (!sMid || !hMid) return null;
-  const dx = sMid.x - hMid.x;
+  const dx = (sMid.x - hMid.x) * getFrameAspect();
   const dy = hMid.y - sMid.y; // 위로 갈수록 작아지므로 보정
   if (Math.abs(dy) < EPS) return null;
   return round((Math.atan2(dx, dy) * 180) / Math.PI, 1);
