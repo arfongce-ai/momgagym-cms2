@@ -7,7 +7,7 @@ import { useNavigate } from 'react-router-dom';
 import { MEASURE_MENUS, groupMeasureMenus } from './registry';
 import { getRecognitionSnapshot, resetRecognition } from './core/recognitionStats';
 // [측정 오류 줄이기 2026-11-16] 촬영 품질 신호등·저장 직전 품질 등급·촬영 기준 안내
-import { getCaptureSummary, resetCaptureQuality, assessMeasureQuality, QUALITY_KO } from './core/captureQuality';
+import { getCaptureSummary, resetCaptureQuality, setCaptureMenu, assessMeasureQuality, QUALITY_KO } from './core/captureQuality';
 import CaptureReadinessBar from './CaptureReadinessBar.jsx';
 import CaptureGuideStrip, { CAMERA_MEASURE_IDS, TIMING_MEASURE_IDS } from './CaptureGuideStrip.jsx';
 import { store, aiStore, makeGuestId } from '../demoData';
@@ -437,7 +437,7 @@ export default function AiMeasureHub() {
   // 회원을 고르면 전용 리포트 + AI 세션을 함께 읽어 다음 측정 상위 3개를 계산한다.
   // 추천 순서와 안전 제한은 순수 규칙 엔진이 결정하며, 네트워크/모미 응답에 의존하지 않는다.
   // 메뉴를 바꾸면 이전 메뉴의 인식률 집계를 버린다.
-  useEffect(() => { resetRecognition(); resetCaptureQuality(); }, [active?.id]);
+  useEffect(() => { resetRecognition(); resetCaptureQuality(); setCaptureMenu(active?.id); }, [active?.id]);
 
   useEffect(() => {
     let cancelled = false;

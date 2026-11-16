@@ -18,7 +18,7 @@ import {
   appendAttempt, summarizeAttempts, WEIGHT_STEP_KG,
 } from '../core/lifting';
 import { usePoseEngine } from '../core/usePoseEngine';
-import { assessFraming, FRAMING_PRESETS } from '../core/framingGuide';
+import { assessFraming, FRAMING_PRESETS, MIN_CAMERA_DISTANCE_MM } from '../core/framingGuide';
 import { personHeightRatio, barbellPoint } from '../core/barbell';
 import { BarbellAccumulator, estimateOneRmFromMeanVelocity } from '../core/barbellBiomechanics';
 import { beepRep } from '../core/audioCue';
@@ -177,7 +177,7 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
     const lms = rotateLandmarksNormalized(rawLms, rotationDegRef.current);
 
     const want = (FRAMING_PRESETS[liftRef.current] || FRAMING_PRESETS.squat).want;
-    const fr = assessFraming(lms, { want });
+    const fr = assessFraming(lms, { want, minDistanceMm: MIN_CAMERA_DISTANCE_MM.onerm });
     if (fr.level !== framingRef.current.level || fr.message !== framingRef.current.message) {
       framingRef.current = fr;
       setFraming({ level: fr.level, message: fr.message });

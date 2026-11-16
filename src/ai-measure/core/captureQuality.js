@@ -4,7 +4,7 @@
 // 화질 낮음, 프레임 부족, 느린 CPU 모드). 두 인식 엔진(poseBackend·usePoseEngine)이
 // 프레임마다 여기로 보고하고, 화면 상단 준비 신호등과 저장 직전 품질 등급이 이 값을 쓴다.
 // 측정값 계산에는 개입하지 않는다(표시·경고·기록 전용). 순수 로직 + 작은 구독 스토어.
-import { assessFraming } from './framingGuide';
+import { assessFraming, MIN_CAMERA_DISTANCE_MM, fillMinForDistanceMm } from './framingGuide';
 
 const FPS_WINDOW_MS = 2000;
 const NOTIFY_MS = 250;
@@ -43,6 +43,7 @@ export function judgeDelegate(delegate) {
 }
 
 export function createCaptureTracker(now = () => Date.now()) {
+  let minDistanceMm = null; // 메뉴별 최소 촬영 거리(mm) — setMenu 로 지정
   let times = [];
   let last = null; // { framing, w, h, at }
   let delegate = null;
@@ -54,17 +55,18 @@ export function createCaptureTracker(now = () => Date.now()) {
 
   return {
     setDelegate(d) { delegate = d; },
+    setMenu(menuId) { minDistanceMm = MIN_CAMERA_DISTANCE_MM[menuId] || null; },
     record(landmarks, video) {
       const t = now();
       times.push(t);
       while (times.length && t - times[0] > FPS_WINDOW_MS) times.shift();
-      const framing = assessFraming(landmarks, { want: 'any' });
+      const framing = assessFraming(landmarks, { want: 'any', minDistanceMm });
       last = { framing, w: video?.videoWidth || 0, h: video?.videoHeight || 0, at: t };
       total += 1;
       if (framing.ok) fullBody += 1;
       else if (!landmarks || !landmarks.length) reasons.noPerson += 1;
       else if (!framing.fullBody) reasons.notFull += 1;
-      else if (framing.fillRatio != null && framing.fillRatio < 0.55) reasons.tooFar += 1;
+      else if (framing.fillRatio != null && framing.fillRatio < (minDistanceMm ? fillMinForDistanceMm(minDistanceMm) : 0.55)) reasons.tooFar += 1;
       else reasons.tooClose += 1;
       const fps = this.fps();
       if (fps != null && times.length >= 10) { fpsSum += fps; fpsN += 1; }
@@ -122,6 +124,7 @@ export function recordCaptureFrame(landmarks, video) {
   notify();
 }
 export function setCaptureDelegate(d) { _tracker.setDelegate(d); }
+export function setCaptureMenu(menuId) { _tracker.setMenu(menuId); }
 export function getCaptureLive() { return _tracker.live(); }
 export function getCaptureSummary() { return _tracker.summary(); }
 export function resetCaptureQuality() { _tracker.reset(); notify(true); }

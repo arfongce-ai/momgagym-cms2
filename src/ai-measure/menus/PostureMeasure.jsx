@@ -179,7 +179,10 @@ export default function PostureMeasure({ member, onSave, onBack, onViewInReport 
     if (captureModeRef.current === 'auto') {
       const target = activeViewKeyRef.current;
       const det = detectPostureView(corrected);
-      viewVoterRef.current.push(det.view);
+      // [측면 인식 2026-11-16] 좌/우측면은 '코가 어느 쪽을 보느냐'로만 갈려 사용자가 어느 방향을 보고 서든
+      //  목표(예: 좌측면)와 어긋나 영원히 인식 안 되던 문제. 목표가 측면이면 좌/우 어느 쪽이든 '측면'으로 센다.
+      const isSideTarget = target === 'left' || target === 'right';
+      viewVoterRef.current.push(isSideTarget && (det.view === 'left' || det.view === 'right') ? target : det.view);
       if (ts % 120 < 18) setDetectedView(det.view);
       if (autoBusyRef.current) return; // 카운트다운/캡처 중이면 가이드 유지
       const targetLabel = VIEW_STEPS.find((s) => s.key === target)?.label || target;
@@ -213,7 +216,6 @@ export default function PostureMeasure({ member, onSave, onBack, onViewInReport 
       // [항목 3] 측면(left/right)은 판정이 더 자주 흔들리므로 안정 요건을 살짝 완화해
       // '측면 인식이 잘 안 되어 촬영이 안 넘어가는' 문제를 줄이되, 촬영이 너무 빨리
       // 시작되지 않도록 최소 프레임 수를 늘려 '멈춤 확인' 시간을 확보한다.
-      const isSideTarget = target === 'left' || target === 'right';
       const stableOpts = isSideTarget
         ? { minRatio: 0.62, minFrames: 12 }
         : { minRatio: 0.7, minFrames: 14 };

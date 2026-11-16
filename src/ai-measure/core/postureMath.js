@@ -1090,7 +1090,7 @@ export const POSTURE_VIEW_TUNING = Object.freeze({
   shoulderSideMax: 0.12,  // 이하 → 측면 후보 (사이 구간은 약한 신뢰도)
   faceVisFront: 0.55,     // 코·눈 가시성 이상 → 정면 확정
   faceVisBack: 0.30,      // 코·눈 가시성 이하 → 후면 확정 (그 사이는 어깨 부호로 보조)
-  sideNoseOffsetOverride: 0.28, // 얼굴이 또렷해도, 코가 어깨중심에서 이만큼(=sideStrength
+  sideNoseOffsetOverride: 0.12, // 얼굴이 또렷해도, 코가 어깨중심에서 이만큼(=sideStrength
                                  // 코항 포화점과 동일) 벗어나 있으면 '진짜 측면'으로 보고
                                  // faceClearlyFrontal 우회를 걸지 않는다.
 });
@@ -1219,6 +1219,8 @@ export function detectPostureView(landmarks, tuning = POSTURE_VIEW_TUNING) {
   //  2차 수정). noseOffset은 z와 무관한 2D 신호라 정면 자세에서 훨씬 안정적이다.
   //  (원래 목적은 그대로 유지: 양팔을 머리 뒤로 올리는 자세는 코가 어깨중심에 그대로
   //  남아 noseOffset이 낮으므로 이 우회가 여전히 정상 동작해 정면으로 확정된다).
+  //  [측면 인식 2026-11-16] 옆모습은 코가 몸통 높이의 15~20% 정도만 벗어나 예전 0.28 기준에선 정면으로 오판돼
+  //  좌·우측면이 안 잡혔다 → 우회 기준을 0.12 로 낮춤(양팔 머리 뒤 케이스는 코 이탈≈0 이라 여전히 정면).
   const faceClearlyFrontal = faceVis >= 0.85 && noseOffset < tuning.sideNoseOffsetOverride;
   if (faceClearlyFrontal && faceFacing) {
     const voteConf = totalVotes > 0 ? clamp(facingMargin / totalVotes, 0, 1) : 0;

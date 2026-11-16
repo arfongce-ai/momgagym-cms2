@@ -16,7 +16,7 @@ import { pickRecorderMime } from '../core/recordSink';
 import { drawLiftingDataHud } from '../core/recordingOverlay';
 import { DEFAULT_ASPECT, outputSize, aspectLabel, drawVideoCover, rotateLandmarksNormalized } from '../core/recordAspect';
 import { useCameraRotation } from '../core/useCameraRotation';
-import { assessFraming, FRAMING_PRESETS } from '../core/framingGuide';
+import { assessFraming, FRAMING_PRESETS, MIN_CAMERA_DISTANCE_MM } from '../core/framingGuide';
 import {
   CALIBRATION_PRESETS, buildReferenceScale, ratioToCm,
   resolveDistanceScale, serializeDistanceScale,
@@ -111,7 +111,7 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
       if (recordingRef.current) phSamplesRef.current.push(ph);
     }
 
-    const fr = assessFraming(lms, { want: FRAMING_PRESETS.vbt.want });
+    const fr = assessFraming(lms, { want: FRAMING_PRESETS.vbt.want, minDistanceMm: MIN_CAMERA_DISTANCE_MM.vbt });
     if (fr.level !== framingRef.current.level || fr.message !== framingRef.current.message) {
       framingRef.current = fr;
       setFraming({ level: fr.level, message: fr.message });
