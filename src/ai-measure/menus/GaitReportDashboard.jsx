@@ -10,7 +10,7 @@ import MomiAutoNote from '../../components/report/MomiAutoNote.jsx';
 import MomiInsightPanel from '../../components/report/MomiInsightPanel.jsx';
 import { aiStore } from '../../demoData';
 import ReportActions from '../../components/report/ReportActions';
-import { MetricCard, UnifiedReportCanvas, UnifiedReportHeader, UnifiedReportPage } from '../../components/report/UnifiedReportPrimitives';
+import { MetricCard, UnifiedReportCanvas, UnifiedReportHeader, UnifiedReportPage, UnifiedEmptyState } from '../../components/report/UnifiedReportPrimitives';
 import { rangeToStatus } from '../core/unifiedReport';
 import { cadenceRangeFor, stanceRangeFor, verticalOscRangeFor, classifyGaitMode, GAIT_MODE_LABEL } from '../core/gaitMode';
 import { buildSummaryData } from '../core/unifiedReport';
@@ -156,7 +156,7 @@ function normalizeMetrics(report) {
   };
 }
 
-export default function GaitReportDashboard({ report, onComment, onClose, videoBlob, member, previousReport }) {
+function GaitReportDashboardInner({ report, onComment, onClose, videoBlob, member, previousReport }) {
   const m = useMemo(() => normalizeMetrics(report), [report]);
   const score = useMemo(() => computeScore(m, report?.orientation), [m, report?.orientation]);
   const [comment, setComment] = useState(report?.trainerComment || '');
@@ -414,4 +414,11 @@ function GaugeRow({ name, value, unit, range, max }) {
       </p>
     </div>
   );
+}
+
+// [안전장치 2026-11-16] 리포트 데이터가 아직 없거나(null) 불러오기 실패한 상태로 열려도
+// 화면 전체가 죽지 않고 안내 문구를 보여준다. (훅 규칙 때문에 바깥 껍데기에서 먼저 걸러낸다)
+export default function GaitReportDashboard(props) {
+  if (!props?.report) return <UnifiedEmptyState onClose={props?.onClose}>리포트 데이터가 없습니다.</UnifiedEmptyState>;
+  return <GaitReportDashboardInner {...props} />;
 }

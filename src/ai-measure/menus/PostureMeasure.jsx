@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { todayYMD } from '../../utils/dates';
 import { usePoseEngine } from '../core/usePoseEngine';
 import { createSmoother } from '../core/smoothing';
-import { analyzePostureFromLandmarks, classifyPostureAgeGroup, medianLandmarks, detectPostureView, aspectCorrectLandmarks, PostureViewVoter, sanitizeBackLandmarks, mergePostureViews } from '../core/postureMath';
+import { analyzePostureFromLandmarks, classifyPostureAgeGroup, medianLandmarks, detectPostureView, aspectCorrectLandmarks, isSideLikePose, PostureViewVoter, sanitizeBackLandmarks, mergePostureViews } from '../core/postureMath';
 import { beepTick, beepGo, beepSuccess, primeAudio } from '../core/audioCue';
 import CameraStage from './CameraStage.jsx';
 import PostureReport from './PostureReport.jsx';
@@ -156,7 +156,9 @@ export default function PostureMeasure({ member, onSave, onBack, onViewInReport 
       viewVoterRef.current.reset();
       return;
     }
-    if (!isFullBodyVisible(corrected)) {
+    // 옆모습은 반대쪽 어깨·골반·무릎·발목이 몸에 가려지는 게 정상 → 측면 목표일 땐 한쪽만 보여도 통과
+    const sideTargetNow = activeViewKeyRef.current === 'left' || activeViewKeyRef.current === 'right';
+    if (!(sideTargetNow ? isOneSideBodyVisible(corrected) : isFullBodyVisible(corrected))) {
       setGuide('어깨, 골반, 무릎, 발목이 모두 보이게 화면을 맞춰주세요.');
       frameBufferRef.current = [];
       viewVoterRef.current.reset();
@@ -187,8 +189,11 @@ export default function PostureMeasure({ member, onSave, onBack, onViewInReport 
       // [측면 인식 2026-11-16] 좌/우측면은 '코가 어느 쪽을 보느냐'로만 갈려 사용자가 어느 방향을 보고 서든
       //  목표(예: 좌측면)와 어긋나 영원히 인식 안 되던 문제. 목표가 측면이면 좌/우 어느 쪽이든 '측면'으로 센다.
       const isSideTarget = target === 'left' || target === 'right';
-      viewVoterRef.current.push(isSideTarget && (det.view === 'left' || det.view === 'right') ? target : det.view);
-      if (ts % 120 < 18) setDetectedView(det.view);
+      // [3차] 측면 목표는 너그러운 실제 비율 판정(isSideLikePose)도 함께 인정한다.
+      const sideSeen = det.view === 'left' || det.view === 'right' || (isSideTarget && isSideLikePose(corrected, frameAspect));
+      const seenView = isSideTarget && sideSeen ? target : det.view;
+      viewVoterRef.current.push(seenView);
+      if (ts % 120 < 18) setDetectedView(seenView);
       if (autoBusyRef.current) return; // 카운트다운/캡처 중이면 가이드 유지
       const targetLabel = VIEW_STEPS.find((s) => s.key === target)?.label || target;
       // 면 촬영 직후: 돌아설 시간 동안 판정하지 않는다(돌아서는 도중 카운트 방지)
@@ -236,7 +241,7 @@ export default function PostureMeasure({ member, onSave, onBack, onViewInReport 
       } else if (viewOk) {
         setGuide(`${targetLabel} 확인 중 — 자세를 유지하세요 (${(hold.remainMs / 1000).toFixed(1)}초)`);
       } else {
-        const seen = VIEW_STEPS.find((s) => s.key === det.view)?.label || '자세 확인 중';
+        const seen = VIEW_STEPS.find((s) => s.key === seenView)?.label || '자세 확인 중';
         setGuide(`${targetLabel}으로 서 주세요. (현재 인식: ${seen})`);
       }
     } else {
@@ -278,7 +283,10 @@ export default function PostureMeasure({ member, onSave, onBack, onViewInReport 
   // 반환: true=다음 면 남음, false=마지막 면(리포트 생성됨), null=캡처 실패
   const performCapture = useCallback(() => {
     const live = latestLandmarksRef.current;
-    if (!live || !isFullBodyVisible(live)) {
+    // 측면 촬영은 반대쪽 관절이 가려지는 게 정상 → 한쪽만 보여도 촬영 허용(수동 촬영 포함)
+    const sideStepNow = activeViewKeyRef.current === 'left' || activeViewKeyRef.current === 'right';
+    const bodyOk = (lm) => (sideStepNow ? isOneSideBodyVisible(lm) : isFullBodyVisible(lm));
+    if (!live || !bodyOk(live)) {
       setGuide('측정 가능한 전신 자세가 아직 안정적으로 인식되지 않았습니다.');
       return null;
     }
@@ -292,7 +300,7 @@ export default function PostureMeasure({ member, onSave, onBack, onViewInReport 
     const buffered = frameBufferRef.current.map((f) => f.landmarks);
     const combined =
       buffered.length >= CAPTURE_MIN_FRAMES ? medianLandmarks(buffered) : live;
-    const rawLandmarks = combined && isFullBodyVisible(combined) ? combined : live;
+    const rawLandmarks = combined && bodyOk(combined) ? combined : live;
     // 후면 측정: 코·눈은 추정값이라 제거하고 분석/저장 (귀만 유지)
     const landmarks = step.key === 'back' ? sanitizeBackLandmarks(rawLandmarks) : rawLandmarks;
 
@@ -1262,6 +1270,11 @@ function captureVideoSnapshot(video, rotationDeg = 0) {
 function isFullBodyVisible(landmarks) {
   if (!Array.isArray(landmarks)) return false;
   return [11, 12, 23, 24, 25, 26, 27, 28].every((index) => isVisible(landmarks[index], 0.35));
+}
+
+function isOneSideBodyVisible(landmarks) {
+  if (!Array.isArray(landmarks)) return false;
+  return [[11, 12], [23, 24], [25, 26], [27, 28]].every(([l, r]) => isVisible(landmarks[l], 0.35) || isVisible(landmarks[r], 0.35));
 }
 
 function isVisible(point, threshold = 0.3) {

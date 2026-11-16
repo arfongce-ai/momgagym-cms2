@@ -1095,6 +1095,32 @@ export const POSTURE_VIEW_TUNING = Object.freeze({
                                  // faceClearlyFrontal 우회를 걸지 않는다.
 });
 
+// [측면 인식 2026-11-16 3차] 옆으로 섰는지를 '실제 길이 비율'로 너그럽게 판정한다.
+//  기존 detectPostureView 는 어깨폭/몸통높이(화면 좌표) ≤ 0.12~0.16 을 요구했는데, 세로 폰 화면에선
+//  이 값이 '완전 옆모습에서 ±7° 이내'일 때만 나온다. 포즈 모델은 가려진 반대쪽 어깨를 조금 옆에 찍기 때문에
+//  실제로는 거의 통과하지 못했다(좌·우측면이 계속 안 잡히던 진짜 원인).
+//  여기서는 화면 비율을 반영한 실제 비율(정면 ≈ 0.7)로 보고 0.36 이하(옆모습 ±30° 정도)면 측면으로 본다.
+//  한쪽 어깨·골반이 가려져 안 보여도(옆모습에서 흔함) 측면으로 인정한다.
+export const SIDE_LIKE_MAX_RATIO = 0.36;
+export function isSideLikePose(landmarks, frameAspect) {
+  if (!Array.isArray(landmarks)) return false;
+  const vis = (i) => {
+    const p = landmarks[i];
+    return p && Number.isFinite(p.x) && Number.isFinite(p.y) && (p.visibility == null || p.visibility >= 0.2) ? p : null;
+  };
+  const lS = vis(LM.LEFT_SHOULDER); const rS = vis(LM.RIGHT_SHOULDER);
+  const lH = vis(LM.LEFT_HIP); const rH = vis(LM.RIGHT_HIP);
+  if ((!lS && !rS) || (!lH && !rH)) return false;
+  const sY = lS && rS ? (lS.y + rS.y) / 2 : (lS || rS).y;
+  const hY = lH && rH ? (lH.y + rH.y) / 2 : (lH || rH).y;
+  const trunkH = Math.abs(hY - sY);
+  if (trunkH < 0.03) return false;
+  if (!lS || !rS) return true; // 반대쪽 어깨가 가려짐 → 옆모습
+  const aspect = Number.isFinite(frameAspect) && frameAspect > 0 ? frameAspect : 9 / 16;
+  const ratio = (Math.abs(lS.x - rS.x) * aspect) / trunkH; // 화면 폭/높이 차이를 없앤 실제 비율
+  return ratio <= SIDE_LIKE_MAX_RATIO;
+}
+
 // [PC 키오스크 측면 인식 2026-11-16] 면 판별 임계값은 세로 폰(9:16) 화면 기준으로 맞춰져 있다.
 //  랜드마크 x 는 '화면 폭', y 는 '화면 높이'로 각각 정규화돼, 가로 웹캠(16:9)에선 같은 실제 길이도
 //  x 변화가 폰의 약 1/3 로 작게 나온다 → 코 이탈·어깨폭이 줄어 옆모습이 정면으로 오판되던 문제.

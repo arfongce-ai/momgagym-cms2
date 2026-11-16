@@ -127,7 +127,7 @@ function normalizeBiomech(report) {
   };
 }
 
-export default function JumpReportDashboard({ report, onClose, onComment, member, previousReport }) {
+function JumpReportDashboardInner({ report, onClose, onComment, member, previousReport }) {
   const [message, setMessage] = useState('');
   const [comment, setComment] = useState(report?.trainerComment || '');
   const biomech = useMemo(() => normalizeBiomech(report), [report]);
@@ -752,4 +752,11 @@ function InvalidBlock({ report }) {
       </div>
     </Section>
   );
+}
+
+// [안전장치 2026-11-16] 리포트 데이터가 아직 없거나(null) 불러오기 실패한 상태로 열려도
+// 화면 전체가 죽지 않고 안내 문구를 보여준다. (훅 규칙 때문에 바깥 껍데기에서 먼저 걸러낸다)
+export default function JumpReportDashboard(props) {
+  if (!props?.report) return <UnifiedEmptyState onClose={props?.onClose}>리포트 데이터가 없습니다.</UnifiedEmptyState>;
+  return <JumpReportDashboardInner {...props} />;
 }
