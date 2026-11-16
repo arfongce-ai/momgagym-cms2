@@ -1102,23 +1102,50 @@ export const POSTURE_VIEW_TUNING = Object.freeze({
 //  여기서는 화면 비율을 반영한 실제 비율(정면 ≈ 0.7)로 보고 0.36 이하(옆모습 ±30° 정도)면 측면으로 본다.
 //  한쪽 어깨·골반이 가려져 안 보여도(옆모습에서 흔함) 측면으로 인정한다.
 export const SIDE_LIKE_MAX_RATIO = 0.36;
-export function isSideLikePose(landmarks, frameAspect) {
-  if (!Array.isArray(landmarks)) return false;
+// [4차 2026-11-16] 어깨폭 한 가지만 보면 포즈 모델이 옆모습에서도 어깨를 벌려 찍는 경우 계속 '정면'이 된다.
+//  서로 다른 신호 3가지 중 하나만 맞아도 측면으로 본다.
+//   ① 어깨폭(실제 비율) ≤ 0.36
+//   ② 정면 촬영 때의 어깨폭 대비 60% 이하로 좁아짐(사람·카메라마다 다른 절대값 문제 회피)
+//   ③ 얼굴이 옆을 봄: 정면이면 코가 두 귀 '사이'에 있고, 옆얼굴이면 코가 두 귀 '바깥'으로 나간다
+//  반환값의 ratio·noseOut 은 화면 안내에 그대로 보여 현장에서 원인 확인에 쓴다.
+export function shoulderTrunkRatio(landmarks, frameAspect) {
+  if (!Array.isArray(landmarks)) return null;
   const vis = (i) => {
     const p = landmarks[i];
     return p && Number.isFinite(p.x) && Number.isFinite(p.y) && (p.visibility == null || p.visibility >= 0.2) ? p : null;
   };
   const lS = vis(LM.LEFT_SHOULDER); const rS = vis(LM.RIGHT_SHOULDER);
   const lH = vis(LM.LEFT_HIP); const rH = vis(LM.RIGHT_HIP);
-  if ((!lS && !rS) || (!lH && !rH)) return false;
+  if ((!lS && !rS) || (!lH && !rH)) return null;
   const sY = lS && rS ? (lS.y + rS.y) / 2 : (lS || rS).y;
   const hY = lH && rH ? (lH.y + rH.y) / 2 : (lH || rH).y;
   const trunkH = Math.abs(hY - sY);
-  if (trunkH < 0.03) return false;
-  if (!lS || !rS) return true; // 반대쪽 어깨가 가려짐 → 옆모습
+  if (trunkH < 0.03) return null;
+  if (!lS || !rS) return 0; // 반대쪽 어깨가 가려짐 → 폭 0 으로 취급
   const aspect = Number.isFinite(frameAspect) && frameAspect > 0 ? frameAspect : 9 / 16;
-  const ratio = (Math.abs(lS.x - rS.x) * aspect) / trunkH; // 화면 폭/높이 차이를 없앤 실제 비율
-  return ratio <= SIDE_LIKE_MAX_RATIO;
+  return (Math.abs(lS.x - rS.x) * aspect) / trunkH;
+}
+
+export function sidePoseInfo(landmarks, frameAspect, frontRatio = null) {
+  const ratio = shoulderTrunkRatio(landmarks, frameAspect);
+  if (ratio == null) return { side: false, ratio: null, noseOut: false, reason: null };
+  const nose = landmarks[LM.NOSE]; const lE = landmarks[LM.LEFT_EAR]; const rE = landmarks[LM.RIGHT_EAR];
+  let noseOut = false;
+  if (nose && lE && rE && [nose, lE, rE].every((p) => Number.isFinite(p.x) && (p.visibility == null || p.visibility >= 0.3))) {
+    const lo = Math.min(lE.x, rE.x); const hi = Math.max(lE.x, rE.x);
+    const earSpan = hi - lo;
+    const out = nose.x < lo ? lo - nose.x : nose.x > hi ? nose.x - hi : 0;
+    // 귀 사이 간격의 15% 이상 바깥이거나, 귀가 거의 겹쳐 보이는데(옆얼굴) 코가 바깥
+    noseOut = out > Math.max(earSpan * 0.15, 0.004);
+  }
+  const narrow = ratio <= SIDE_LIKE_MAX_RATIO;
+  const relNarrow = Number.isFinite(frontRatio) && frontRatio > 0.3 && ratio <= frontRatio * 0.6;
+  const reason = narrow ? 'narrow' : relNarrow ? 'relative' : noseOut ? 'face' : null;
+  return { side: !!reason, ratio: Math.round(ratio * 100) / 100, noseOut, reason };
+}
+
+export function isSideLikePose(landmarks, frameAspect, frontRatio = null) {
+  return sidePoseInfo(landmarks, frameAspect, frontRatio).side;
 }
 
 // [PC 키오스크 측면 인식 2026-11-16] 면 판별 임계값은 세로 폰(9:16) 화면 기준으로 맞춰져 있다.

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { todayYMD } from '../../utils/dates';
 import { usePoseEngine } from '../core/usePoseEngine';
 import { createSmoother } from '../core/smoothing';
-import { analyzePostureFromLandmarks, classifyPostureAgeGroup, medianLandmarks, detectPostureView, aspectCorrectLandmarks, isSideLikePose, PostureViewVoter, sanitizeBackLandmarks, mergePostureViews } from '../core/postureMath';
+import { analyzePostureFromLandmarks, classifyPostureAgeGroup, medianLandmarks, detectPostureView, aspectCorrectLandmarks, sidePoseInfo, shoulderTrunkRatio, PostureViewVoter, sanitizeBackLandmarks, mergePostureViews } from '../core/postureMath';
 import { beepTick, beepGo, beepSuccess, primeAudio } from '../core/audioCue';
 import CameraStage from './CameraStage.jsx';
 import PostureReport from './PostureReport.jsx';
@@ -190,7 +190,11 @@ export default function PostureMeasure({ member, onSave, onBack, onViewInReport 
       //  목표(예: 좌측면)와 어긋나 영원히 인식 안 되던 문제. 목표가 측면이면 좌/우 어느 쪽이든 '측면'으로 센다.
       const isSideTarget = target === 'left' || target === 'right';
       // [3차] 측면 목표는 너그러운 실제 비율 판정(isSideLikePose)도 함께 인정한다.
-      const sideSeen = det.view === 'left' || det.view === 'right' || (isSideTarget && isSideLikePose(corrected, frameAspect));
+      // [4차] 정면(또는 후면)을 이미 찍었으면 그때 어깨폭을 기준으로 '얼마나 좁아졌나'도 본다.
+      const baseCap = capturesRef.current?.front || capturesRef.current?.back;
+      const frontRatio = baseCap?.landmarks ? shoulderTrunkRatio(baseCap.landmarks, frameAspect) : null;
+      const sideInfo = isSideTarget ? sidePoseInfo(corrected, frameAspect, frontRatio) : null;
+      const sideSeen = det.view === 'left' || det.view === 'right' || !!sideInfo?.side;
       const seenView = isSideTarget && sideSeen ? target : det.view;
       viewVoterRef.current.push(seenView);
       if (ts % 120 < 18) setDetectedView(seenView);
@@ -242,7 +246,9 @@ export default function PostureMeasure({ member, onSave, onBack, onViewInReport 
         setGuide(`${targetLabel} 확인 중 — 자세를 유지하세요 (${(hold.remainMs / 1000).toFixed(1)}초)`);
       } else {
         const seen = VIEW_STEPS.find((s) => s.key === seenView)?.label || '자세 확인 중';
-        setGuide(`${targetLabel}으로 서 주세요. (현재 인식: ${seen})`);
+        // 측면이 안 잡힐 때는 판정 수치를 같이 보여 준다(현장 원인 확인용): 어깨폭 비율 / 정면 때 비율 / 화면 비율
+        const dbg = sideInfo ? ` · 어깨폭 ${sideInfo.ratio ?? '-'}${frontRatio ? `/정면 ${Math.round(frontRatio * 100) / 100}` : ''} · 화면 ${frameAspect ? Math.round(frameAspect * 100) / 100 : '-'}` : '';
+        setGuide(`${targetLabel}으로 서 주세요. (현재 인식: ${seen}${dbg})`);
       }
     } else {
       setGuide(`${activeStepLabelRef.current} 자세가 인식되었습니다. 2초간 멈춘 뒤 측정하세요.`);

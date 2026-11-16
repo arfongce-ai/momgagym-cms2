@@ -32,7 +32,7 @@ describe('postureAutoCapture (카운트 늦추기 2026-11-16)', () => {
 
 // [2026-11-16] 최소 촬영 거리 · 측면 인식
 import { assessFraming, fillMinForDistanceMm, MIN_CAMERA_DISTANCE_MM } from '../ai-measure/core/framingGuide';
-import { detectPostureView, aspectCorrectLandmarks, isSideLikePose } from '../ai-measure/core/postureMath';
+import { detectPostureView, aspectCorrectLandmarks, isSideLikePose, sidePoseInfo } from '../ai-measure/core/postureMath';
 describe('최소 촬영 거리', () => {
   it('자세·한발서기 1,800mm / 바벨 3,200mm', () => {
     expect(MIN_CAMERA_DISTANCE_MM.posture).toBe(1800);
@@ -107,5 +107,30 @@ describe('측면 너그러운 판정(isSideLikePose)', () => {
   it('반대쪽 어깨가 가려져도 측면', () => {
     const lm = pose(0, 9 / 16); lm[12] = { ...lm[12], visibility: 0.05 };
     expect(isSideLikePose(lm, 9 / 16)).toBe(true);
+  });
+});
+
+describe('측면 다중 신호(4차)', () => {
+  const base = (halfW) => {
+    const lm = Array.from({ length: 33 }, () => ({ x: 0.5, y: 0.5, z: 0, visibility: 1 }));
+    lm[11] = { x: 0.5 + halfW, y: 0.4, visibility: 1 }; lm[12] = { x: 0.5 - halfW, y: 0.4, visibility: 1 };
+    lm[23] = { x: 0.52, y: 0.6, visibility: 1 }; lm[24] = { x: 0.48, y: 0.6, visibility: 1 };
+    lm[0] = { x: 0.5, y: 0.3, visibility: 1 }; lm[7] = { x: 0.53, y: 0.3, visibility: 1 }; lm[8] = { x: 0.47, y: 0.3, visibility: 1 };
+    return lm;
+  };
+  const A = 9 / 16;
+  it('어깨가 넓게 찍혀도(비율 0.5) 코가 두 귀 바깥이면 측면', () => {
+    const lm = base((0.5 * 0.2) / A / 2);
+    expect(sidePoseInfo(lm, A).side).toBe(false);          // 정면 얼굴 → 측면 아님
+    lm[0] = { x: 0.56, y: 0.3, visibility: 1 }; lm[7] = { x: 0.51, y: 0.3, visibility: 1 }; lm[8] = { x: 0.5, y: 0.3, visibility: 1 };
+    expect(sidePoseInfo(lm, A).reason).toBe('face');
+  });
+  it('정면 때 어깨폭의 60% 이하로 좁아지면 측면', () => {
+    const lm = base((0.42 * 0.2) / A / 2);
+    expect(sidePoseInfo(lm, A).side).toBe(false);
+    expect(sidePoseInfo(lm, A, 0.75).reason).toBe('relative');
+  });
+  it('정면(비율 0.7, 코가 귀 사이)은 정면 기준이 있어도 측면 아님', () => {
+    expect(isSideLikePose(base((0.7 * 0.2) / A / 2), A, 0.72)).toBe(false);
   });
 });
