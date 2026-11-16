@@ -91,7 +91,7 @@ export default function BodyInfoReport({ id = 'body-report-sheet', member, resul
 
         {/* 현재 측정값 · 등급 */}
         <UnifiedReportSection title="측정값 및 평가" className="mb-4">
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <div className={`grid grid-cols-2 gap-2 ${items.length === 3 ? 'sm:grid-cols-3' : items.length === 4 || items.length > 4 ? 'sm:grid-cols-4' : ''}`}>
             {items.length === 0 && <p className="text-sm text-slate-500">측정값이 없습니다.</p>}
             {items.map(item => (
               <MetricCard key={item.key} metric={{
