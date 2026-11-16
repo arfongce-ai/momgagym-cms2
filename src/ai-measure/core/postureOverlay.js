@@ -8,6 +8,7 @@
 //  • 측면/정면 등 해당 면에서 의미 있는 항목만 표시한다.
 
 import { POSE_LANDMARKS as LM, POSTURE_THRESHOLDS } from './postureMath';
+import { getFrameAspect } from './geometry';
 
 // 임계값: postureMath.js의 POSTURE_THRESHOLDS(단일 소스)를 그대로 쓴다.
 // ⚠ 이전엔 여기 별도 TH 객체("주의값×2 = 위험값")가 있어 지표 패널·부위별
@@ -89,7 +90,7 @@ export function buildPostureMarkers(analysis, landmarks, viewKey) {
     }
     // 머리 기울기(정면): 좌우 귀의 y 차이로 추정
     if (lEar && rEar && head) {
-      const tiltDeg = Math.atan2((rEar.y - lEar.y), Math.abs(rEar.x - lEar.x) || 1e-6) * 180 / Math.PI;
+      const tiltDeg = Math.atan2((rEar.y - lEar.y), Math.abs(rEar.x - lEar.x) * getFrameAspect() || 1e-6) * 180 / Math.PI;
       const tSev = sev(tiltDeg, POSTURE_THRESHOLDS.headTiltDeg);
       if (tSev) {
         markers.push({ x: head.x, y: head.y, severity: tSev, type: 'arrow',
@@ -136,7 +137,7 @@ export function buildPostureMarkers(analysis, landmarks, viewKey) {
     const earForNeck = lEar || rEar;
     const shoulderForNeck = mid(lS, rS) || lS || rS;
     if (earForNeck && shoulderForNeck) {
-      const dx = earForNeck.x - shoulderForNeck.x;
+      const dx = (earForNeck.x - shoulderForNeck.x) * getFrameAspect();
       const dy = earForNeck.y - shoulderForNeck.y; // 귀가 어깨보다 위 → dy<0
       // 수직선(위쪽) 대비 기울기 각. |dx|가 클수록(머리 전방) 각 커짐.
       const neckTiltDeg = Math.abs(Math.atan2(dx, -dy) * 180 / Math.PI);

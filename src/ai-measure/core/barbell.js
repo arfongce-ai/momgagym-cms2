@@ -6,7 +6,7 @@
 //  - 수직 변위(ROM): 한 세트 동안의 y 최저점~최고점 폭
 //  - 화면비율 → cm 변환은 사람 키 스케일 사용(geometry.offsetToCm 와 동일 원리)
 
-import { LM } from './geometry';
+import { LM, getFrameAspect } from './geometry';
 
 /** 양 손목 중점(정규화 0~1). 손목이 안 보이면 null. */
 export function barbellPoint(lms) {
@@ -30,7 +30,7 @@ export function barTiltDeg(lms) {
   const lw = lms[LM.LEFT_WRIST], rw = lms[LM.RIGHT_WRIST];
   const vis = (p) => p && (p.visibility == null || p.visibility >= 0.3);
   if (!vis(lw) || !vis(rw)) return null;
-  const dx = rw.x - lw.x, dy = rw.y - lw.y;
+  const dx = (rw.x - lw.x) * getFrameAspect(), dy = rw.y - lw.y;
   if (!dx && !dy) return null;
   // 미러링 없는 정면 영상은 왼손목이 화면 오른쪽이므로 dx 부호를 맞춰 수평 기준으로 환산.
   const deg = (Math.atan2(dy, dx) * 180) / Math.PI;

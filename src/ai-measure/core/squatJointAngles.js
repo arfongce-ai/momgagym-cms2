@@ -1,4 +1,5 @@
-// ai-measure/core/squatJointAngles.js
+
+import { getFrameAspect } from './geometry';// ai-measure/core/squatJointAngles.js
 // ════════════════════════════════════════════════════════════════════════
 //  오버헤드 딥 스쿼트 실시간 화면에 표시할 관절 각도 계산(2026-07-30 신규).
 //  운영자 요청 스펙:
@@ -42,8 +43,9 @@ function pt(lm, i) {
 // 세 점(a-b-c)이 이룰 때 꼭짓점 b에서의 각도(0~180°). 벡터 내적 → acos.
 function angleAtVertex(a, b, c) {
   if (!a || !b || !c) return null;
-  const v1 = { x: a.x - b.x, y: a.y - b.y };
-  const v2 = { x: c.x - b.x, y: c.y - b.y };
+  const A = getFrameAspect(); // 가로세로비 보정(geometry.js 참고)
+  const v1 = { x: (a.x - b.x) * A, y: a.y - b.y };
+  const v2 = { x: (c.x - b.x) * A, y: c.y - b.y };
   const mag = Math.hypot(v1.x, v1.y) * Math.hypot(v2.x, v2.y);
   if (!mag) return null;
   const dot = v1.x * v2.x + v1.y * v2.y;
@@ -53,7 +55,7 @@ function angleAtVertex(a, b, c) {
 // 벡터가 수직(위 방향)에서 벗어난 각도. dx>0 이면 오른쪽으로 기움.
 function angleFromVertical(dx, dy) {
   if (!dx && !dy) return 0;
-  return (Math.atan2(dx, -dy) * 180) / Math.PI; // -dy: 위로 갈수록 y 작아짐 보정
+  return (Math.atan2(dx * getFrameAspect(), -dy) * 180) / Math.PI; // -dy: 위로 갈수록 y 작아짐 보정
 }
 
 function pickSide(lm, sideKey, side) {
@@ -132,7 +134,7 @@ export function headTiltDeg(lm) {
   if (!lEar || !rEar) return null;
   // 미러링 없는 카메라 정면 기준 L.x > R.x 가 "수평(안 기움)" 상태이므로
   // L→R이 아니라 R→L 방향을 기준(양의 dx)으로 잡는다.
-  const dx = lEar.x - rEar.x, dy = lEar.y - rEar.y;
+  const dx = (lEar.x - rEar.x) * getFrameAspect(), dy = lEar.y - rEar.y;
   if (!dx && !dy) return 0;
   return (Math.atan2(dy, dx) * 180) / Math.PI;
 }

@@ -22,6 +22,7 @@ import { OneEuroFilter, angleAt, detectOrientation } from './gaitBiomechanics';
 // [SLJ 좌우 비대칭 2026-08-11] findSljAsymmetry가 저장된 리포트에서 세부
 // 종류를 판정하는 데 쓴다(jumpSubType 필드가 없는 과거 데이터도 안전하게 처리).
 import { resolveJumpSubType } from './jumpTypes';
+import { getFrameAspect } from './geometry';
 
 const G = 9.81;
 
@@ -628,7 +629,7 @@ const _trunkLean = (lm) => {
   if (!lm || !_v(lm[11]) || !_v(lm[12]) || !_v(lm[23]) || !_v(lm[24])) return null;
   const sh = { x: (lm[11].x + lm[12].x) / 2, y: (lm[11].y + lm[12].y) / 2 };
   const hip = { x: (lm[23].x + lm[24].x) / 2, y: (lm[23].y + lm[24].y) / 2 };
-  const vx = sh.x - hip.x, vy = sh.y - hip.y;
+  const vx = (sh.x - hip.x) * getFrameAspect(), vy = sh.y - hip.y;
   if (Math.sqrt(vx * vx + vy * vy) < 1e-6) return null;
   return Math.round(Math.atan2(Math.abs(vx), Math.abs(vy)) * (180 / Math.PI) * 10) / 10;
 };

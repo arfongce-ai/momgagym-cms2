@@ -22,6 +22,7 @@ import { openMainCameraStream, lockCameraCapture, unlockCameraCapture } from './
 import { recordRecognitionFrame } from './recognitionStats';
 import { recordCaptureFrame, setCaptureDelegate } from './captureQuality';
 
+import { setFrameAspect } from './geometry';
 const VISION_CDN =
   'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14';
 // 모델 등급별 URL. 정확도: lite < full < heavy. 발목/발 등 말단 관절은
@@ -125,6 +126,7 @@ export function usePoseEngine({ onResult, modelTier = 'full' } = {}) {
           //  한다리서기·바벨 기록에 측정 인식률이 비어 있었다. poseBackend 와 같은 집계로 보고한다.
           try { recordRecognitionFrame(lms && lms.length ? lms : null); } catch (e) { /* 집계 실패 무시 */ }
           try { recordCaptureFrame(lms, video); } catch (e) { /* 집계 실패 무시 */ }
+          try { setFrameAspect(video.videoWidth, video.videoHeight); } catch (e) { /* 비율 설정 실패 무시 */ }
           onResultRef.current?.(lms, ts, video);
         } catch (e) { /* 단일 프레임 오류는 무시하고 계속 */ }
         if ('requestVideoFrameCallback' in HTMLVideoElement.prototype) {

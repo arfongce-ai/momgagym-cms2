@@ -40,6 +40,7 @@ export const POSE_LANDMARKS = Object.freeze({
 
 const LM = POSE_LANDMARKS;
 const MIN_VISIBILITY = 0.45;
+import { getFrameAspect } from './geometry';
 const EPS = 1e-7;
 const COG_NORMAL_TOLERANCE_PCT = 5;
 
@@ -221,8 +222,9 @@ export function distance3d(a, b) {
 
 export function angleDeg(a, b, c, use3d = true) {
   if (!a || !b || !c) return null;
-  const ab = { x: a.x - b.x, y: a.y - b.y, z: (a.z ?? 0) - (b.z ?? 0) };
-  const cb = { x: c.x - b.x, y: c.y - b.y, z: (c.z ?? 0) - (b.z ?? 0) };
+  const A = getFrameAspect(); // x·z 는 폭 기준 정규화 → 높이 기준으로 환산
+  const ab = { x: (a.x - b.x) * A, y: a.y - b.y, z: ((a.z ?? 0) - (b.z ?? 0)) * A };
+  const cb = { x: (c.x - b.x) * A, y: c.y - b.y, z: ((c.z ?? 0) - (b.z ?? 0)) * A };
   const dot = ab.x * cb.x + ab.y * cb.y + (use3d ? ab.z * cb.z : 0);
   const magA = Math.hypot(ab.x, ab.y, use3d ? ab.z : 0);
   const magC = Math.hypot(cb.x, cb.y, use3d ? cb.z : 0);
@@ -235,8 +237,9 @@ export const angleAt = angleDeg;
 
 export function signedAngle2d(a, b, c) {
   if (!a || !b || !c) return null;
-  const ab = { x: a.x - b.x, y: a.y - b.y };
-  const cb = { x: c.x - b.x, y: c.y - b.y };
+  const A = getFrameAspect();
+  const ab = { x: (a.x - b.x) * A, y: a.y - b.y };
+  const cb = { x: (c.x - b.x) * A, y: c.y - b.y };
   const dot = ab.x * cb.x + ab.y * cb.y;
   const cross = ab.x * cb.y - ab.y * cb.x;
   return round((Math.atan2(cross, dot) * 180) / Math.PI, 1);
@@ -303,7 +306,7 @@ export function asymmetryIndex(leftValue, rightValue) {
 
 function pairTiltDegrees(left, right) {
   if (!left || !right) return null;
-  const dx = right.x - left.x;
+  const dx = (right.x - left.x) * getFrameAspect();
   const dy = right.y - left.y;
   if (Math.hypot(dx, dy) < EPS) return null;
   return round((Math.atan2(dy, dx) * 180) / Math.PI, 1);
