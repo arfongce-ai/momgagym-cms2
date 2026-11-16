@@ -13,6 +13,17 @@ import { LM } from './geometry';
 
 const VIS = 0.3; // 이 값 이상이면 "보인다"
 
+// [촬영 거리 2026-11-16] 메뉴별 최소 촬영 거리(mm) — 현장 요청값.
+//  자세·한발서기: 1,800mm 이상 / 바벨 리프팅(역도·VBT·1RM): 3,200mm 이상.
+//  '너무 멀다' 판정(사람 키가 화면에서 차지하는 비율 하한)은 이 최소 거리에서 촬영해도 통과하도록
+//  거리별로 낮춘다. 폰 세로 화면(수직 시야각 약 70°) 기준으로 키 170cm 인 사람이 화면에서 차지하는 비율 ≈
+//  1.7 / (2·거리·tan35°) → 1.8m 약 0.67, 3.2m 약 0.38. 하한은 그 값의 약 70%(측정 오차·카메라 높이 여유).
+export const MIN_CAMERA_DISTANCE_MM = Object.freeze({ posture: 1800, stance: 1800, lifting: 3200, vbt: 3200, onerm: 3200 });
+export function fillMinForDistanceMm(mm) {
+  const fill = 1.7 / (2 * (mm / 1000) * Math.tan((35 * Math.PI) / 180));
+  return Math.round(fill * 0.7 * 100) / 100;
+}
+
 function vis(p) { return p && (p.visibility == null || p.visibility >= VIS); }
 
 /**
@@ -27,7 +38,7 @@ function vis(p) { return p && (p.visibility == null || p.visibility >= VIS); }
  */
 export function assessFraming(lms, opt = {}) {
   const want = opt.want || 'any';
-  const fillMin = opt.fillMin ?? 0.55;  // 사람 키가 화면 세로의 최소 55%
+  const fillMin = opt.fillMin ?? (opt.minDistanceMm ? fillMinForDistanceMm(opt.minDistanceMm) : 0.55);
   const fillMax = opt.fillMax ?? 0.95;  // 최대 95%(잘림 방지)
 
   if (!lms || !lms.length) {
@@ -72,7 +83,7 @@ export function assessFraming(lms, opt = {}) {
     else if (!headOK) message = '머리가 안 보입니다 · 카메라를 위로';
     else message = '전신이 화면에 다 들어오게 조정하세요';
   } else if (fillRatio != null && fillRatio < fillMin) {
-    level = 'warn'; ok = false; message = '너무 멉니다 · 카메라에 더 가까이';
+    level = 'warn'; ok = false; message = opt.minDistanceMm ? `너무 멉니다 · 카메라와 ${(opt.minDistanceMm / 1000).toFixed(1)}m 이상은 유지하되 조금만 가까이` : '너무 멉니다 · 카메라에 더 가까이';
   } else if (fillRatio != null && fillRatio > fillMax) {
     level = 'warn'; ok = false; message = '너무 가깝습니다 · 조금 뒤로';
   } else if (want !== 'any' && orientation !== 'unknown' && orientation !== want) {
@@ -92,7 +103,7 @@ export const FRAMING_PRESETS = {
     title: '측정 전 준비 (역도)',
     tips: [
       '카메라를 옆에 두고, 바벨이 위아래로 움직이는 게 잘 보이게 하세요.',
-      '머리부터 발끝까지 전신이 화면에 들어오게 2~3m 거리에서 촬영하세요.',
+      '카메라와 최소 3.2m(3,200mm) 이상 떨어져, 바벨 양 끝(원판)과 전신이 화면에 다 들어오게 촬영하세요.',
       '폰을 세로로 고정(삼각대·선반)하면 흔들림이 줄어 정확해집니다.',
     ],
   },
@@ -101,7 +112,7 @@ export const FRAMING_PRESETS = {
     title: '측정 전 준비 (VBT)',
     tips: [
       '옆에서 촬영해야 바벨의 수직 속도가 정확히 잡힙니다.',
-      '전신이 보이도록 2~3m 거리에서, 폰을 고정하세요.',
+      '카메라와 최소 3.2m(3,200mm) 이상 떨어져 전신과 바벨이 다 보이게, 폰을 고정하세요.',
       '한 번에 1렙(한 번 들어올리기)만 측정하면 속도가 더 정확합니다.',
     ],
   },

@@ -29,3 +29,32 @@ describe('postureAutoCapture (카운트 늦추기 2026-11-16)', () => {
     expect(t.update(true, 4200).ready).toBe(true);
   });
 });
+
+// [2026-11-16] 최소 촬영 거리 · 측면 인식
+import { assessFraming, fillMinForDistanceMm, MIN_CAMERA_DISTANCE_MM } from '../ai-measure/core/framingGuide';
+import { detectPostureView } from '../ai-measure/core/postureMath';
+describe('최소 촬영 거리', () => {
+  it('자세·한발서기 1,800mm / 바벨 3,200mm', () => {
+    expect(MIN_CAMERA_DISTANCE_MM.posture).toBe(1800);
+    expect(MIN_CAMERA_DISTANCE_MM.stance).toBe(1800);
+    expect(MIN_CAMERA_DISTANCE_MM.lifting).toBe(3200);
+  });
+  it('가까운 최소거리일수록 요구 비율이 높고, 3.2m는 낮아 바벨 거리에서 멀다고 안 나온다', () => {
+    expect(fillMinForDistanceMm(1800)).toBeGreaterThan(fillMinForDistanceMm(3200));
+    const lm = Array.from({ length: 33 }, () => ({ x: 0.5, y: 0.5, visibility: 1 }));
+    lm[0] = { x: 0.5, y: 0.3, visibility: 1 }; lm[27] = { x: 0.48, y: 0.68, visibility: 1 }; lm[28] = { x: 0.52, y: 0.68, visibility: 1 };
+    lm[11] = { x: 0.45, y: 0.4, visibility: 1 }; lm[12] = { x: 0.55, y: 0.4, visibility: 1 };
+    expect(assessFraming(lm, { minDistanceMm: 3200 }).message).not.toContain('멉니다'); // 사람 38% 차지
+    expect(assessFraming(lm, { minDistanceMm: 1800 }).message).toContain('멉니다');
+  });
+});
+describe('옆모습 인식', () => {
+  it('어깨폭이 좁고 얼굴이 또렷해도(코 이탈 20%) 측면으로 본다', () => {
+    const lm = Array.from({ length: 33 }, () => ({ x: 0.5, y: 0.5, z: 0, visibility: 1 }));
+    lm[11] = { x: 0.50, y: 0.40, z: -0.1, visibility: 1 }; lm[12] = { x: 0.52, y: 0.40, z: 0.1, visibility: 1 };
+    lm[23] = { x: 0.50, y: 0.65, z: -0.05, visibility: 1 }; lm[24] = { x: 0.52, y: 0.65, z: 0.05, visibility: 1 };
+    lm[0] = { x: 0.56, y: 0.30, z: -0.1, visibility: 1 }; // 코가 몸통높이의 약 20% 앞
+    const r = detectPostureView(lm);
+    expect(['left', 'right']).toContain(r.view);
+  });
+});

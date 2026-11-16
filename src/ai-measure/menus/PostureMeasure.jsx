@@ -179,7 +179,10 @@ export default function PostureMeasure({ member, onSave, onBack, onViewInReport 
     if (captureModeRef.current === 'auto') {
       const target = activeViewKeyRef.current;
       const det = detectPostureView(corrected);
-      viewVoterRef.current.push(det.view);
+      // [측면 인식 2026-11-16] 좌/우측면은 '코가 어느 쪽을 보느냐'로만 갈려 사용자가 어느 방향을 보고 서든
+      //  목표(예: 좌측면)와 어긋나 영원히 인식 안 되던 문제. 목표가 측면이면 좌/우 어느 쪽이든 '측면'으로 센다.
+      const isSideTarget = target === 'left' || target === 'right';
+      viewVoterRef.current.push(isSideTarget && (det.view === 'left' || det.view === 'right') ? target : det.view);
       if (ts % 120 < 18) setDetectedView(det.view);
       if (autoBusyRef.current) return; // 카운트다운/캡처 중이면 가이드 유지
       const targetLabel = VIEW_STEPS.find((s) => s.key === target)?.label || target;

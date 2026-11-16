@@ -8,7 +8,7 @@ import { useRef, useState, useEffect, useCallback } from 'react';
 import { usePoseEngine } from '../core/usePoseEngine';
 import { personHeightRatio, barbellPoint, barTiltDeg, summarizeBarTilt } from '../core/barbell';
 import { createMultiTracker } from '../core/endcapTracker';
-import { assessFraming, FRAMING_PRESETS } from '../core/framingGuide';
+import { assessFraming, FRAMING_PRESETS, MIN_CAMERA_DISTANCE_MM } from '../core/framingGuide';
 import {
   detectPlatesFromVideo, suggestSidePlates, totalWeight, createPlateBlobTracker,
   plateCmPerRatio, PLATE_CALIBRATION_TAGS,
@@ -125,7 +125,7 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
       if (recordingRef.current) phSamplesRef.current.push(ph);
     }
 
-    const fr = assessFraming(lms, { want: FRAMING_PRESETS.lifting.want });
+    const fr = assessFraming(lms, { want: FRAMING_PRESETS.lifting.want, minDistanceMm: MIN_CAMERA_DISTANCE_MM.lifting });
     if (fr.level !== framingRef.current.level || fr.message !== framingRef.current.message) {
       framingRef.current = fr;
       setFraming({ level: fr.level, message: fr.message });
@@ -144,7 +144,7 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
     // 두고(융합 로직 내부 일관성 유지), 판정에 들어가기 직전(최종 융합 지점·
     // COG)에서만 보정한다.
     const correctedLms = rotateLandmarksNormalized(lms, rotationDeg);
-    const correctedFr = assessFraming(correctedLms, { want: FRAMING_PRESETS.lifting.want });
+    const correctedFr = assessFraming(correctedLms, { want: FRAMING_PRESETS.lifting.want, minDistanceMm: MIN_CAMERA_DISTANCE_MM.lifting });
     const correctedCog = estimateBodyCOG(correctedLms, correctedFr.orientation);
 
     const r = roiRef.current;
