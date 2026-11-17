@@ -72,3 +72,24 @@ export function summarizeChanges(rows, previousDate) {
 export function reportDateOnly(report) {
   return String(report?.measuredAt || report?.createdAt || report?.recordedAt || '').slice(0, 10);
 }
+
+/**
+ * [2026-11-17] "직전 측정" 선정 공용 함수.
+ *  예전엔 화면마다 '목록에서 가장 최신 것'을 골랐다 — ① 자동 저장 직후엔 방금 저장한 기록 자신이 뽑혀 '변화 없음'으로 비교되고
+ *  (자세·ROM은 자기 자신 제외도 없었다), ② 지난 기록을 열어 볼 때는 그보다 '나중' 기록이 '지난번'으로 뽑혔다.
+ *  이제: 현재 기록보다 '시각이 이른' 기록만, 같은 조건(match)끼리, 가장 최근 하나를 고른다.
+ * @param {Array} list 같은 회원의 기록 목록
+ * @param {object} current 지금 보는 기록(measuredAt/createdAt/recordedAt, id)
+ * @param {{match?: (r:object)=>boolean}} [opt] 같은 조건 판정(종목·관절·측정 부위 등)
+ */
+export function pickPreviousReport(list, current, { match } = {}) {
+  const timeOf = (r) => String(r?.measuredAt || r?.createdAt || r?.recordedAt || '');
+  const curTime = timeOf(current);
+  const out = (list || []).filter((r) => r
+    && r !== current
+    && !(current?.id && r.id === current.id)
+    && (!match || match(r))
+    && (!curTime || (timeOf(r) && timeOf(r) < curTime)));
+  out.sort((a, b) => timeOf(b).localeCompare(timeOf(a)));
+  return out[0] || null;
+}

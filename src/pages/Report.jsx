@@ -110,7 +110,8 @@ function makeUnifiedResult({ report, reportType, source, index, member, session 
     measuredAt: getReportDate(report || session) || new Date().toISOString(),
   };
   const summary = buildSummaryData(data, { reportType });
-  const status = scoreToStatus(summary.overallScore);
+  // [2026-11-17] 점수 근거가 없으면(status unknown) 0점=위험으로 보이지 않게 '확인 필요'로 둔다.
+  const status = summary.status === 'unknown' ? scoreToStatus(null) : scoreToStatus(summary.overallScore);
   const meta = getReportTypeMeta(reportType, data);
   return {
     id: `${source}:${data.id || session?.id || index}`,
@@ -900,7 +901,7 @@ function UnifiedResultCard({ item, onOpen, onShare, onShareSimple, sharing, shar
           </div>
           <div className="shrink-0 text-right">
             <p className={`font-mono text-3xl font-black leading-none ${statusStyle.text}`}>
-              {item.summary.overallScore ?? 0}
+              {item.summary.status === 'unknown' ? '—' : (item.summary.overallScore ?? 0)}
             </p>
             <span className={`mt-1 inline-flex rounded-full border px-2 py-0.5 text-[10px] font-black ${statusStyle.bg} ${statusStyle.border} ${statusStyle.text}`}>
               {item.summary.statusLabel || '확인 필요'}

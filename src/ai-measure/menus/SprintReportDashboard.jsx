@@ -73,6 +73,8 @@ function buildSprintChangeSummary(report, previousReport) {
 function SprintReportDashboardInner({ report, previousReport, onComment, onClose, videoBlob, member }) {
   const kind = report?.kind === 'agility' ? 'agility' : 'sprint';
   const summary = useMemo(() => buildSummaryData(report, { reportType: 'sprint' }), [report]);
+  // [2026-11-17] 판정 근거 부족(status unknown)이면 0점(위험색) 대신 '점수 없음'
+  const hasScore = summary.status !== 'unknown';
   const [comment, setComment] = useState(report?.trainerComment || '');
   const [saved, setSaved] = useState(false);
   const changeSummary = useMemo(() => buildSprintChangeSummary(report, previousReport), [report, previousReport]);
@@ -114,12 +116,12 @@ function SprintReportDashboardInner({ report, previousReport, onComment, onClose
           badge="SPD"
           title={memberName}
           subtitle={`${dateStr} · ${report?.testLabel || ''}`}
-          score={summary.overallScore}
+          score={hasScore ? summary.overallScore : null}
           onClose={onClose}
           compact
           member={resolvedMember}
         />
-        <QuickResultSheet report={report} reportType="sprint" score={summary.overallScore} previousReport={previousReport} />
+        <QuickResultSheet report={report} reportType="sprint" score={hasScore ? summary.overallScore : null} previousReport={previousReport} />
 
         <div className="grid gap-3">
           <ProblemFocusPanel focus={problemFocus} context={report?.cross_measure_context} />
@@ -133,7 +135,7 @@ function SprintReportDashboardInner({ report, previousReport, onComment, onClose
           {/* ① 상단 요약 — buildSummaryData가 만든 keyMetrics(반응속도·기록·속도·감속) 그대로 카드화 */}
           <section className="grid grid-cols-4 gap-2.5">
             {summary.keyMetrics.slice(0, 3).map((m) => <MetricCard key={m.key} metric={m} />)}
-            <ScoreStat score={summary.overallScore} />
+            <ScoreStat score={hasScore ? summary.overallScore : null} />
           </section>
 
           {/* ②③ 중단: 좌 구간기록 차트 / 우 방향전환·감속 요약 */}
@@ -260,7 +262,16 @@ function Panel({ title, subtitle, children }) {
 }
 
 function ScoreStat({ score }) {
-  const s = score ?? 0;
+  if (score == null) {
+    return (
+      <div className="rounded-xl px-3 py-2.5 flex flex-col items-center justify-center border-2 border-slate-500/40" style={{ background: 'rgba(15,23,42,0.7)' }}>
+        <p className="text-[10px] text-slate-500 dark:text-slate-400 font-bold">종합 점수</p>
+        <p className="text-lg font-black leading-none mt-1 text-slate-400">점수 없음</p>
+        <p className="text-[9px] text-slate-500 mt-0.5">판정 지표 부족</p>
+      </div>
+    );
+  }
+  const s = score;
   const color = s >= 80 ? '#34d399' : s >= 60 ? '#fbbf24' : '#f87171';
   return (
     <div className="rounded-xl px-3 py-2.5 flex flex-col items-center justify-center border-2"

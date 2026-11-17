@@ -1,3 +1,4 @@
+import { capScoreByStatus } from './scoreCap';
 // ai-measure/core/squatBiomechanics.js
 // ════════════════════════════════════════════════════════════════════════
 //  오버헤드 딥 스쿼트(Overhead Deep Squat) 판정 — 순수 함수/상수.
@@ -551,5 +552,6 @@ export function computeSquatScore(report, m) {
     const st = squatMetricStatus(report, prefix);
     scores.push(st === 'normal' ? 100 : st === 'risk' ? 35 : 65);
   });
-  return scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0;
+  const avg = scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0;
+  return scores.length ? capScoreByStatus(avg, report?.status) : 0;
 }

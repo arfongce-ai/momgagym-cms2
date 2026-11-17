@@ -10,6 +10,7 @@
 //  측정 정직성: 동작은 '한 번 천천히 끝까지' 수행하라고 안내하고, 정상치 범위를
 //  벗어난 값은 대표값 산출에서 제외하며, 데이터가 부족하면 진단을 보류한다.
 // ════════════════════════════════════════════════════════════════════════
+import { pickPreviousReport } from '../core/measurementComparison';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { todayYMD } from '../../utils/dates';
 import { usePoseEngine } from '../core/usePoseEngine';
@@ -153,10 +154,7 @@ export default function RomMeasure({ member, onSave, onBack, onViewInReport }) {
       try {
         const list = await aiStore.ensureRomReports(member.id);
         if (cancelled) return;
-        const matching = (list || []).filter((r) => r.joint === report.joint && r.poseMode === report.poseMode);
-        const sorted = matching.sort((a, b) => String(b.createdAt || b.measuredAt || b.recordedAt || '')
-          .localeCompare(String(a.createdAt || a.measuredAt || a.recordedAt || '')));
-        setPreviousReport(sorted[0] || null);
+        setPreviousReport(pickPreviousReport(list, report, { match: (r) => r.joint === report.joint && r.poseMode === report.poseMode }));
       } catch (e) {
         if (!cancelled) setPreviousReport(null);
       }

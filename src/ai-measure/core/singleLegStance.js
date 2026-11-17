@@ -1,3 +1,4 @@
+import { capScoreByStatus } from './scoreCap';
 // ai-measure/core/singleLegStance.js
 // ════════════════════════════════════════════════════════════════════════
 //  한다리서기 검사(SLST, Single Leg Stance Test) 판정 — 순수 함수/상수.
@@ -353,7 +354,8 @@ export function computeStanceScore(report) {
       scores.push(leg.status === 'normal' ? 100 : leg.status === 'risk' ? 35 : 65);
     });
   });
-  return scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0;
+  const avg = scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0;
+  return scores.length ? capScoreByStatus(avg, report?.status) : 0;
 }
 
 // [판정 이유 표시 2026-11-16] 리포트에 "왜 이 판정인지"를 쉬운 말로 보여주기 위한 변환.

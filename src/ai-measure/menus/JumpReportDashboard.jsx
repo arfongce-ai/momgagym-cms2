@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import ReportActions from '../../components/report/ReportActions';
 import { buildSummaryData } from '../core/unifiedReport';
+import { computeJumpScore } from '../core/scoring';
 import {
   UnifiedEmptyState,
   UnifiedReportCanvas,
@@ -90,27 +91,7 @@ function status(value, range) {
   return { text: '개선 필요', color: 'text-red-700 dark:text-red-300', bar: 'bg-red-400' };
 }
 
-function scoreReport(report, biomech) {
-  if (report?.valid === false) return 0;
-  const values = [];
-  const add = (value, range) => {
-    if (value == null || Number.isNaN(Number(value))) return;
-    const s = status(value, range).text;
-    values.push(s === '정상' ? 100 : s === '주의' ? 65 : 35);
-  };
-  // [2026-10] 점프 높이·이동 거리는 연령/성별 규준이 확인되지 않아 점수·등급에 넣지 않는다(값과 회차 변화만).
-  // [제자리멀리뛰기 추가 2026-09-16] SBJ 리포트는 heightCm이 없고 distanceCm만
-  // 있다 — 다른 종류는 distanceCm이 없으므로 add()가 조용히 건너뛴다(무해).
-  add(biomech.trunkLeanChange, RANGE.trunk);
-  add(biomech.pelvicImbalance, RANGE.pelvis);
-  add(biomech.extensionAlignment?.alignmentScore, RANGE.align);
-
-  if (isRsiReport(report) && report?.rsi?.rsi != null) {
-    const rsi = Number(report.rsi.rsi);
-    values.push(rsi >= 2 ? 100 : rsi >= 1.5 ? 80 : rsi >= 1 ? 60 : 35);
-  }
-  return values.length ? Math.round(values.reduce((a, b) => a + b, 0) / values.length) : 0;
-}
+function scoreReport(report) { return computeJumpScore(report); }
 
 function normalizeBiomech(report) {
   const biomech = report?.biomech || {};
@@ -131,7 +112,7 @@ function JumpReportDashboardInner({ report, onClose, onComment, member, previous
   const [message, setMessage] = useState('');
   const [comment, setComment] = useState(report?.trainerComment || '');
   const biomech = useMemo(() => normalizeBiomech(report), [report]);
-  const score = useMemo(() => scoreReport(report, biomech), [report, biomech]);
+  const score = useMemo(() => scoreReport(report), [report, biomech]);
   const isRsi = isRsiReport(report);
   // [제자리멀리뛰기 추가 2026-09-16]
   const isHorizontal = isHorizontalReport(report);

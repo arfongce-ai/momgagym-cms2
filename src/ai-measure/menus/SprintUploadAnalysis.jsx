@@ -12,6 +12,7 @@
 // [범위 안내] 슬로모 프리셋(GaitUploadAnalysis와 동일)을 지원해 케이던스性
 // 지표는 없지만 구간기록·속도가 실제 시간 기준으로 정확히 보정되도록 한다.
 
+import { pickPreviousReport } from '../core/measurementComparison';
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { SprintTracker, calibrateTrack, TRACK_POINTS, DEFAULT_TRACK_POINT } from '../core/sprintAgility';
 import { analyzeUploadedVideo, CAPTURE_PRESETS } from '../core/videoAnalyzer';
@@ -206,10 +207,10 @@ export default function SprintUploadAnalysis({ member, onBack, onSaveToFirebase,
       try {
         const list = await aiStore.ensureGaitReports(member.id);
         if (cancelled) return;
-        const matching = (list || []).filter((r) => r.testKey === reportData.testKey && r.id !== reportData.id);
-        const sorted = matching.sort((a, b) => String(b.createdAt || b.measuredAt || '')
-          .localeCompare(String(a.createdAt || a.measuredAt || '')));
-        setPreviousReport(sorted[0] || null);
+        // [2026-11-17] 같은 종목 + 같은 추적 부위(골반 기본)끼리만 비교, 지금보다 이른 기록만.
+        setPreviousReport(pickPreviousReport(list, reportData, {
+          match: (r) => r.testKey === reportData.testKey && (r.trackPoint || 'hip') === (reportData.trackPoint || 'hip'),
+        }));
       } catch (e) {
         if (!cancelled) setPreviousReport(null);
       }

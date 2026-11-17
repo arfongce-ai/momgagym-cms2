@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useEffect } from 'react';
+import { pickPreviousReport } from '../core/measurementComparison';
 import { useHardwareBack } from '../core/useHardwareBack';
 import GaitRunningAnalysis from './GaitRunningAnalysis';
 import GaitUploadAnalysis from './GaitUploadAnalysis';
@@ -42,10 +43,7 @@ export default function GaitAnalysisHub({ member, onBack, saveToFirebase, onSave
       try {
         const list = await aiStore.ensureGaitReports(member.id);
         if (cancelled) return;
-        const matching = (list || []).filter((r) => (r.kind || 'gait') === 'gait' && r.id !== report.id);
-        const sorted = matching.sort((a, b) => String(b.createdAt || b.measuredAt || '')
-          .localeCompare(String(a.createdAt || a.measuredAt || '')));
-        setPreviousReport(sorted[0] || null);
+        setPreviousReport(pickPreviousReport(list, report, { match: (r) => (r.kind || 'gait') === 'gait' }));
       } catch (e) {
         if (!cancelled) setPreviousReport(null);
       }

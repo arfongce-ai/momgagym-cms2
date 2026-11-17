@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { pickPreviousReport } from '../core/measurementComparison';
 import { todayYMD } from '../../utils/dates';
 import { usePoseEngine } from '../core/usePoseEngine';
 import { createSmoother } from '../core/smoothing';
@@ -86,9 +87,7 @@ export default function PostureMeasure({ member, onSave, onBack, onViewInReport 
       try {
         const list = await aiStore.ensurePostureReports(member.id);
         if (cancelled) return;
-        const sorted = [...(list || [])].sort((a, b) => String(b.createdAt || b.measuredAt || b.recordedAt || '')
-          .localeCompare(String(a.createdAt || a.measuredAt || a.recordedAt || '')));
-        setPreviousReport(sorted[0] || null);
+        setPreviousReport(pickPreviousReport(list, report));
       } catch (e) {
         if (!cancelled) setPreviousReport(null);
       }

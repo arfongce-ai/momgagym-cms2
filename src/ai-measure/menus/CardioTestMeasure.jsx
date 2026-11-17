@@ -40,6 +40,7 @@ import {
   recordTick,
   windowAvg,
 } from '../core/cardioTest';
+import { vo2maxRating } from '../core/norms';
 import CardioReportSheet from '../../components/report/CardioReportSheet';
 
 const FRESH_MS = 5000; // 이 시간 안에 온 값만 '현재 값'으로 쓴다
@@ -607,6 +608,12 @@ export default function CardioTestMeasure({ onBack, member = null, onSave = null
                   {computed.estimates.vo2max.grade ? ` · 신뢰 ${computed.estimates.vo2max.grade}` : ''}
                 </p>
                 <p className="text-[11px] text-slate-600 dark:text-slate-300">{computed.estimates.vo2max.reason}</p>
+                {(() => {
+                  const r = vo2maxRating(computed.estimates.vo2max.calibratedValue ?? computed.estimates.vo2max.value, subject.age, normalizeSex(subject.sex));
+                  return r
+                    ? <p className="text-[11px] font-bold text-slate-800 dark:text-slate-100" data-testid="cardio-norm-rating">같은 나이({r.band}세)·성별 기준 참고 등급: {r.label} <span className="font-normal text-slate-500">(Cooper Institute 표)</span></p>
+                    : <p className="text-[11px] text-slate-500" data-testid="cardio-norm-missing">회원관리에 생년월일·성별이 없거나 20~79세 밖이라 등급은 표시하지 않습니다.</p>;
+                })()}
               </div>
             )}
             {computed.estimates.maxPower && (
