@@ -62,3 +62,30 @@ describe('moveSessionAdds — 양도 시 등록횟수 이동', () => {
     expect(sumRemaining(r.t2)).toBe(7);
   });
 });
+
+import { findSessionAddsMismatches } from '../services/sessionExpiry';
+describe('findSessionAddsMismatches — 전체 회원 양도 불일치 점검 [2026-11-17]', () => {
+  const pay = (id, adds) => ({ id, paidAt: '2026-01-05', sessionAdds: adds });
+  it('초과분과 받은 쪽(부족한 트레이너)을 찾고, 한 명이면 정리 가능으로 본다', () => {
+    const members = [{ id: 'm1', name: '가', trainerSessions: { t1: { total: 5, remaining: 0 }, t2: { total: 5, remaining: 3 } } }];
+    const rows = findSessionAddsMismatches({ members, getPayments: () => [pay('p1', [{ trainerId: 't1', count: 10 }])] });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ trainerId: 't1', addsSum: 10, total: 5, excess: 5, repairable: true });
+    expect(rows[0].receivers).toEqual([{ trainerId: 't2', deficit: 5 }]);
+  });
+  it('받은 쪽이 없거나 여럿이면 정리 불가(직접 확인)', () => {
+    const none = [{ id: 'm1', name: '가', trainerSessions: { t1: { total: 5, remaining: 0 } } }];
+    expect(findSessionAddsMismatches({ members: none, getPayments: () => [pay('p1', [{ trainerId: 't1', count: 10 }])] })[0].repairable).toBe(false);
+    const many = [{ id: 'm1', name: '가', trainerSessions: { t1: { total: 5, remaining: 0 }, t2: { total: 3, remaining: 3 }, t3: { total: 3, remaining: 3 } } }];
+    expect(findSessionAddsMismatches({ members: many, getPayments: () => [pay('p1', [{ trainerId: 't1', count: 10 }])] })[0].repairable).toBe(false);
+  });
+  it('정상 회원(합계 = total)과 월정액은 나오지 않는다', () => {
+    const members = [{ id: 'm1', name: '가', trainerSessions: { t1: { total: 10, remaining: 4 } } }];
+    expect(findSessionAddsMismatches({ members, getPayments: () => [pay('p1', [{ trainerId: 't1', count: 10 }])] })).toEqual([]);
+  });
+  it('양도로 슬롯이 통째로 사라진 경우(total 없음)도 잡는다', () => {
+    const members = [{ id: 'm1', name: '가', trainerSessions: { t2: { total: 5, remaining: 5 } } }];
+    const rows = findSessionAddsMismatches({ members, getPayments: () => [pay('p1', [{ trainerId: 't1', count: 5 }])] });
+    expect(rows[0]).toMatchObject({ trainerId: 't1', total: 0, excess: 5, repairable: true });
+  });
+});

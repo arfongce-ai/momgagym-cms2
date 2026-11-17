@@ -5,7 +5,7 @@
 // ✅ 트레이너별 세션 개별 카드
 import { useState, useEffect } from 'react';
 import { store } from '../../demoData';
-import { todayYMD, addMonthsYMD } from '../../utils/dates';
+import { todayYMD, addMonthsYMD, addDaysYMD } from '../../utils/dates';
 import { useAuth } from '../../contexts/AuthContext';
 import MemberRegister, { ClassTypeCheckbox, SEGMENT_OPTIONS, segmentLabel } from './MemberRegister';
 import MemberPicker from '../common/MemberPicker';
@@ -726,6 +726,34 @@ export default function MemberDetail({ member:initMember, trainers, members=[], 
     } catch (e) { alert('만료 정산 처리에 실패했습니다. 네트워크 확인 후 다시 시도하세요.'); }
   };
 
+  // [2026-11-17] 만료일 수동 변경(관리자) — 양도받은 등록분처럼 자동 계산(회차 비례)이 실제와 다를 때 쓴다.
+  //  기본 만료일(시작일+회차 비례 일수) 이후 날짜로 정하면 그 차이를 '연장'으로 기록한다. 비우면 연장 해제(기본 만료일로 복귀).
+  //  기본 만료일보다 앞당기는 것은 지원하지 않는다(연장 기록은 양수 일수만).
+  const handleChangeExpiry = async (lot) => {
+    const base = lot.startDate ? addDaysYMD(lot.baseDays, lot.startDate) : '';
+    if (!base) { alert('시작일 정보가 없어 만료일을 바꿀 수 없습니다.'); return; }
+    const input = window.prompt(
+      `만료일 변경 — ${trainerMap[lot.trainerId]?.name || '트레이너'} ${lot.count}회 등록분\n` +
+      `현재 만료일 ${lot.expiresAt}  (기본 ${base}${lot.extensionDays ? ` + 연장 ${lot.extensionDays}일` : ''})\n\n` +
+      `새 만료일을 YYYY-MM-DD 로 입력하세요. (기본 만료일 이후만 가능, 비우면 연장 해제)`, lot.expiresAt || '');
+    if (input === null) return;
+    const ymd = input.trim();
+    const ref = { trainerId: lot.trainerId, lotId: lot.id, paymentId: lot.paymentId, legacy: !!lot.legacy };
+    try {
+      if (!ymd) {
+        if (lot.extension) await store.cancelExpiryExtension(member.id, ref);
+      } else {
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd) || Number.isNaN(new Date(`${ymd}T00:00:00`).getTime())) { alert('날짜 형식이 올바르지 않습니다. 예: 2026-12-31'); return; }
+        const days = Math.round((new Date(`${ymd}T00:00:00`) - new Date(`${base}T00:00:00`)) / 86400000);
+        if (days <= 0) { alert(`기본 만료일(${base})보다 뒤 날짜만 지정할 수 있습니다.`); return; }
+        if (lot.extension) await store.cancelExpiryExtension(member.id, ref);
+        const res = await store.registerExpiryExtension(member.id, { ...ref, days });
+        if (!res) { alert('만료일 변경에 실패했습니다.'); return; }
+      }
+      refresh();
+    } catch (e) { alert('만료일 변경에 실패했습니다. 네트워크 확인 후 다시 시도하세요.'); }
+  };
+
   // 기존 재등록 결제의 '세션 시작일' 지정/변경 — 매출(결제일)은 그대로, 회차 소진 순서만 조정.
   const handleSetSessionStart = async (p) => {
     const cur = p.sessionStartDate || '';
@@ -1233,11 +1261,19 @@ export default function MemberDetail({ member:initMember, trainers, members=[], 
                           </span>
                           <p className="text-[11px] text-slate-500 mt-0.5">만료일 {l.expiresAt || '-'}</p>
                         </div>
-                        {user?.role==='admin' && l.status==='expired' && (
-                          <button onClick={()=>handleExpirySettlement(l)}
-                            className="text-[10px] px-2 py-1 rounded bg-red-600 hover:bg-red-500 text-white font-bold flex-shrink-0">
-                            정산 처리
-                          </button>
+                        {user?.role==='admin' && (
+                          <div className="flex gap-1 flex-shrink-0">
+                            <button onClick={()=>handleChangeExpiry(l)}
+                              className="text-[10px] px-2 py-1 rounded bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold">
+                              만료일 변경
+                            </button>
+                            {l.status==='expired' && (
+                              <button onClick={()=>handleExpirySettlement(l)}
+                                className="text-[10px] px-2 py-1 rounded bg-red-600 hover:bg-red-500 text-white font-bold">
+                                정산 처리
+                              </button>
+                            )}
+                          </div>
                         )}
                       </div>
                     ))}

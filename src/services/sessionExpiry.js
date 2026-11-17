@@ -203,3 +203,39 @@ export function moveSessionAdds(payments = [], fromTid, toTid, n) {
   }
   return out;
 }
+
+// [2026-11-17] 양도 불일치 점검 — 슬롯 total 보다 결제 sessionAdds(등록횟수) 합이 큰 (회원·트레이너)를 찾는다.
+//  예전 양도는 슬롯만 옮기고 sessionAdds 는 그대로 둬서 '유령 잔여'를 만들었다(화면 표시는 이미 보정됨).
+//  반환 행: { memberId, memberName, trainerId, addsSum, total, excess,
+//             receivers: [{ trainerId, deficit }],  // total 이 sessionAdds 합보다 큰 다른 트레이너(양도받은 쪽 추정)
+//             repairable: boolean }                 // 받은 쪽이 딱 한 명이고 deficit ≥ excess 일 때만 true
+export function findSessionAddsMismatches({ members = [], getPayments = () => [] } = {}) {
+  const rows = [];
+  (members || []).forEach(m => {
+    const ts = m?.trainerSessions || {};
+    const pays = (getPayments(m.id) || []).filter(p => p && !p.isUnpaid && !p.isMonthly && Array.isArray(p.sessionAdds));
+    const addsBy = {};
+    pays.forEach(p => p.sessionAdds.forEach(sa => {
+      const c = Number(sa.count) || 0;
+      if (sa.trainerId && c > 0) addsBy[sa.trainerId] = (addsBy[sa.trainerId] || 0) + c;
+    }));
+    const tids = new Set([...Object.keys(addsBy), ...Object.keys(ts)]);
+    const state = {};
+    tids.forEach(tid => {
+      const slot = ts[tid];
+      state[tid] = { total: slot && !slot.monthly ? (Number(slot.total) || 0) : 0, adds: addsBy[tid] || 0 };
+    });
+    Object.entries(state).forEach(([tid, st]) => {
+      const excess = st.adds - st.total;
+      if (excess <= 0) return;
+      const receivers = Object.entries(state)
+        .filter(([otherTid, o]) => otherTid !== tid && o.total - o.adds > 0)
+        .map(([otherTid, o]) => ({ trainerId: otherTid, deficit: o.total - o.adds }));
+      rows.push({
+        memberId: m.id, memberName: m.name || '', trainerId: tid, addsSum: st.adds, total: st.total, excess, receivers,
+        repairable: receivers.length === 1 && receivers[0].deficit >= excess,
+      });
+    });
+  });
+  return rows;
+}
