@@ -544,6 +544,8 @@ export default function GlobalVoiceCommand() {
     // 무대를 띄워(빨간 오류 상태) 이유를 보여주고, 표시 시간이 끝나면 닫는다.
     // 권한 거부·네트워크 끊김처럼 재시작할 때마다 같은 오류가 반복되는 경우, 매번
     // 화면 전체를 덮으면 키오스크를 못 쓴다 — 같은 오류는 1분에 한 번만 띄운다.
+    // [2026-11-17] 불렀을 때만 열린다 — 일시적 오류(network 등)로는 무대를 열지 않는다.
+    if (!['not-allowed', 'audio-capture', 'restart-failed'].includes(errorCode)) return;
     const now = Date.now();
     const last = lastShownErrorRef.current;
     if (last.code === errorCode && now - last.at < 60000) return;
