@@ -23,7 +23,7 @@ describe('멀리뛰기 측정 부위', () => {
     expect(measurePointX(lm, 'toe')).toBeCloseTo(0.48, 5);
     expect(measurePointX(lm, 'hip')).toBeCloseTo(0.43, 5);
     expect(measurePointX(lm, 'shoulder')).toBeCloseTo(0.42, 5);
-    expect(Object.keys(MEASURE_POINTS)).toEqual(['feet', 'heel', 'toe', 'hip', 'shoulder']);
+    expect(Object.keys(MEASURE_POINTS)).toEqual(['toeheel', 'feet', 'heel', 'toe', 'hip', 'shoulder']);
   });
   it('좌우 중 보이는 쪽만 쓴다', () => {
     const l2 = lm.map((p) => ({ ...p }));

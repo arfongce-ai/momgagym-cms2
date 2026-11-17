@@ -110,7 +110,9 @@ export const feetCenterX = (lm) => {
 
 // [2026-11-17] 제자리멀리뛰기 측정 부위 선택(대표님 요청). 'feet'(발목, 기본)은 기존 feetCenterX 와 동일.
 export const MEASURE_POINTS = {
-  feet: { label: '발목(기본)', ids: [27, 28] },
+  // 표준 기록법: 출발은 발끝(31·32)을 선에 맞추고, 착지는 뒤꿈치(29·30) 기준 — 출발선·착지선 기준 점이 서로 다르다.
+  toeheel: { label: '발끝→뒤꿈치(표준)', ids: [29, 30], startIds: [31, 32] },
+  feet: { label: '발목', ids: [27, 28] },
   heel: { label: '뒤꿈치', ids: [29, 30] },
   toe: { label: '발끝', ids: [31, 32] },
   hip: { label: '골반', ids: [23, 24] },
@@ -118,6 +120,20 @@ export const MEASURE_POINTS = {
 };
 export const DEFAULT_MEASURE_POINT = 'feet';
 /** 선택 부위의 x(정규화). 보이는 쪽만 평균(좌우 중 하나만 보여도 사용). 'feet'는 기존 함수 그대로. */
+const pointXByIds = (lm, ids) => {
+  if (!lm) return null;
+  const v = JUMP_TUNING.minVisibility;
+  const xs = ids
+    .map((i) => lm[i])
+    .filter((p) => p && (p.visibility == null || p.visibility >= v))
+    .map((p) => p.x);
+  return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
+};
+/** 출발선(정지 자세) 기준 점의 x. 출발·착지 점이 다른 부위('toeheel')는 startIds, 나머지는 착지 점과 같다. */
+export const measureStartX = (lm, key = DEFAULT_MEASURE_POINT) => {
+  const def = MEASURE_POINTS[key];
+  return def?.startIds ? pointXByIds(lm, def.startIds) : measurePointX(lm, key);
+};
 export const measurePointX = (lm, key = DEFAULT_MEASURE_POINT) => {
   if (key === 'feet' || !MEASURE_POINTS[key]) return feetCenterX(lm);
   if (!lm) return null;
@@ -267,7 +283,7 @@ export class StandingCalibrator {
     // 수만으로 신뢰도를 판단한다(_finalizeLock의 5개 임계 참고).
     const fX = feetCenterX(lm);
     if (fX != null) this._feetX.push(fX);
-    const mX = measurePointX(lm, this.measurePoint);
+    const mX = measureStartX(lm, this.measurePoint); // 출발선 기준 점(표준 기록법은 발끝)
     if (mX != null) this._measureX.push(mX);
     // 좌/우 개별 가시성 카운트 + 값(위 fY 병합 로직과 무관하게 독립적으로 집계).
     // 캘리브레이션 중엔 두 배열 다 짧게 유지되므로(calibMinFrames 근처) 계속

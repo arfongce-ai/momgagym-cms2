@@ -777,6 +777,8 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
                   const distanceCm = distanceCmOf(latest, {
                     baselineFeetX: tracker.baselineFeetX,
                     scaleCmPerY: tracker.calib?.scaleCmPerY,
+                    // [2026-11-17] frameAspect 누락 → 화면 HUD가 최종 저장값보다 가로세로비(16:9면 1.78배)만큼 작게 나오던 버그
+                    frameAspect: tracker.frameAspect,
                   });
                   nextLiveJump = {
                     flightMs: Math.round(latest.flightMs),
@@ -891,7 +893,7 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
     // heightCm 대신 distanceCm을 채운다(perJump는 현재 화면엔 안 쓰이지만
     // 저장되는 리포트 데이터라 잘못된 값을 남기지 않는다).
     const horizontalScale = jumpType === 'horizontal'
-      ? { baselineFeetX: tracker.baselineFeetX, scaleCmPerY: tracker.calib?.scaleCmPerY }
+      ? { baselineFeetX: tracker.baselineFeetX, scaleCmPerY: tracker.calib?.scaleCmPerY, frameAspect: tracker.frameAspect }
       : null;
     const perJump = allFlightRows(tracker.flights, rsiResult?.perCycleByIndex || liveCyclePreview, horizontalScale);
 
