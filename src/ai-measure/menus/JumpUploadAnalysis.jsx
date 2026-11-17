@@ -43,7 +43,7 @@ import { analyzeUploadedVideo, CAPTURE_PRESETS } from '../core/videoAnalyzer';
 // 프레임 신뢰도(가시성) 하한 — 이하 구간은 '주의 구간'으로 집계
 const FRAME_CONF_MIN = 0.8;
 
-export default function JumpUploadAnalysis({ member, onBack, onComplete, onMemberHeightChange, jumpType = 'power', jumpSubType = 'cmj', leg = null }) {
+export default function JumpUploadAnalysis({ member, onBack, onComplete, onMemberHeightChange, jumpType = 'power', jumpSubType = 'cmj', leg = null, measurePoint = 'feet' }) {
   const [phase, setPhase] = useState('idle'); // idle | ready | analyzing | done | error
   const [progress, setProgress] = useState(0);
   const [errorMsg, setErrorMsg] = useState('');
@@ -55,6 +55,13 @@ export default function JumpUploadAnalysis({ member, onBack, onComplete, onMembe
   const [heightInput, setHeightInput] = useState('');
   const [weightInput, setWeightInput] = useState(member?.weight ? String(member.weight) : '');
 
+  // [2026-11-17] 바닥 거리 마크 보정(제자리멀리뛰기): 바닥에 알려진 거리(cm)를 둔 두 선을 영상 위에 맞추면
+  //  키 환산 대신 실제 거리 스케일을 쓴다. x 는 영상 가로(0~1) 기준.
+  const [floorOn, setFloorOn] = useState(false);
+  const [floorX, setFloorX] = useState([0.3, 0.7]);
+  const [floorKnownCm, setFloorKnownCm] = useState('100');
+  const wrapRef = useRef(null);
+  const floorDragRef = useRef(null);
   const videoRef = useRef(null);
   const fileUrlRef = useRef(null);
   const abortRef = useRef(null);
@@ -71,6 +78,34 @@ export default function JumpUploadAnalysis({ member, onBack, onComplete, onMembe
     if (v) { v.src = url; v.onloadedmetadata = () => setPhase('ready'); }
   };
 
+  // object-contain 으로 그려진 영상의 실제 표시 영역(좌측 오프셋·폭, px) — 마크 위치를 영상 좌표로 환산하는 데 쓴다.
+  const contentRect = () => {
+    const wrap = wrapRef.current; const v = videoRef.current;
+    if (!wrap || !v?.videoWidth || !v?.videoHeight) return null;
+    const r = wrap.getBoundingClientRect();
+    const a = v.videoWidth / v.videoHeight;
+    const dw = Math.min(r.width, r.height * a);
+    return { left: r.left, ox: (r.width - dw) / 2, dw, width: r.width };
+  };
+  const onFloorMove = (e) => {
+    const idx = floorDragRef.current; const c = contentRect();
+    if (idx == null || !c) return;
+    const x = Math.min(1, Math.max(0, (e.clientX - c.left - c.ox) / c.dw));
+    setFloorX((prev) => { const n = [...prev]; n[idx] = x; return n; });
+  };
+  const onFloorUp = () => {
+    floorDragRef.current = null;
+    window.removeEventListener('pointermove', onFloorMove);
+    window.removeEventListener('pointerup', onFloorUp);
+  };
+  const onFloorDown = (idx) => (e) => {
+    e.preventDefault();
+    floorDragRef.current = idx;
+    window.addEventListener('pointermove', onFloorMove);
+    window.addEventListener('pointerup', onFloorUp);
+  };
+  useEffect(() => () => onFloorUp(), []);
+
   const runAnalysis = useCallback(async () => {
     const video = videoRef.current;
     if (!video) return;
@@ -82,7 +117,7 @@ export default function JumpUploadAnalysis({ member, onBack, onComplete, onMembe
     const effHeightCm = resolved.height ?? heightCm;
     const effWeight = resolved.weight;
 
-    const calib = new StandingCalibrator({ heightCm: effHeightCm, forcedAnkleSide: leg });
+    const calib = new StandingCalibrator({ heightCm: effHeightCm, forcedAnkleSide: leg, measurePoint: jumpType === 'horizontal' ? measurePoint : 'feet' });
     let tracker = null;
     const biomechAcc = new JumpBiomechAccumulator({ heightCm: effHeightCm });
     let prevInAir = false;
@@ -121,6 +156,11 @@ export default function JumpUploadAnalysis({ member, onBack, onComplete, onMembe
                 : new JumpFlightTracker(calib.result);
               tracker.calibHeightCm = effHeightCm;
               if (jumpType === 'horizontal' && video?.videoWidth && video?.videoHeight) tracker.frameAspect = video.videoWidth / video.videoHeight;
+              // 바닥 마크 보정값: 정규화 X 1.0 = 몇 cm. 마크 간격이 너무 좁으면(0.02 미만) 쓰지 않는다.
+              if (jumpType === 'horizontal' && floorOn) {
+                const known = Number(floorKnownCm); const gap = Math.abs(floorX[1] - floorX[0]);
+                if (known > 0 && gap >= 0.02) tracker.floorCmPerX = known / gap;
+              }
             }
           } else if (tracker) {
             tracker.push(landmarks, tMs); // tMs = 슬로모 보정된 실제 시간축
@@ -224,7 +264,7 @@ export default function JumpUploadAnalysis({ member, onBack, onComplete, onMembe
     } finally {
       abortRef.current = null;
     }
-  }, [member, onComplete, capture, heightCm, bodyWeight, jumpSubType, leg]);
+  }, [member, onComplete, capture, heightCm, bodyWeight, jumpSubType, leg, measurePoint, floorOn, floorX, floorKnownCm]);
 
   const cancelAnalysis = () => { abortRef.current?.abort(); };
 
@@ -299,9 +339,22 @@ export default function JumpUploadAnalysis({ member, onBack, onComplete, onMembe
       </div>
 
       <div className="flex-1 overflow-y-auto p-5 flex flex-col items-center justify-center gap-5">
-        <div className="relative w-full max-w-md overflow-hidden rounded-xl bg-black aspect-[3/4]">
+        <div ref={wrapRef} className="relative w-full max-w-md overflow-hidden rounded-xl bg-black aspect-[3/4]">
           <video ref={videoRef} className="h-full w-full object-contain"
             playsInline muted controls={phase === 'ready' || phase === 'done'} />
+          {jumpType === 'horizontal' && floorOn && phase === 'ready' && (() => {
+            const c = contentRect();
+            if (!c) return null;
+            return [0, 1].map((i) => (
+              <div key={i} onPointerDown={onFloorDown(i)}
+                style={{ position: 'absolute', top: 0, bottom: 0, left: c.ox + floorX[i] * c.dw - 14, width: 28, touchAction: 'none', cursor: 'ew-resize', display: 'flex', justifyContent: 'center' }}>
+                <div style={{ width: 3, height: '100%', background: i === 0 ? '#22d3ee' : '#f97316' }} />
+                <span style={{ position: 'absolute', top: 6, fontSize: 11, fontWeight: 800, color: '#fff', background: 'rgba(0,0,0,0.6)', padding: '1px 6px', borderRadius: 8 }}>
+                  {i === 0 ? '0' : `${floorKnownCm || '?'}cm`}
+                </span>
+              </div>
+            ));
+          })()}
           {phase === 'analyzing' && (
             <div className="absolute left-3 top-3 rounded-full border border-white/15 bg-black/70 px-3 py-1 text-xs font-black text-amber-700 dark:text-amber-300 backdrop-blur">
               {JUMP_SUBTYPES[jumpSubType].code} 분석 중
@@ -327,6 +380,24 @@ export default function JumpUploadAnalysis({ member, onBack, onComplete, onMembe
             <p className="text-sm text-slate-600 dark:text-slate-300 text-center">
               {JUMP_SUBTYPES[jumpSubType].code} — {JUMP_SUBTYPES[jumpSubType].tip}. 고속촬영(120/240fps) 영상을 사용하세요.
             </p>
+            {jumpType === 'horizontal' && (
+              <div className="w-full rounded-lg border border-slate-200 dark:border-slate-700 p-2.5">
+                <label className="flex items-center gap-2 text-[12px] font-bold text-slate-600 dark:text-slate-300">
+                  <input type="checkbox" checked={floorOn} onChange={(e) => setFloorOn(e.target.checked)} />
+                  바닥 거리 마크로 보정 (끄면 키로 환산)
+                </label>
+                {floorOn && (
+                  <div className="mt-2 text-[11px] text-slate-500 dark:text-slate-400">
+                    <p>영상을 출발 자세 장면에 두고, 바닥에 놓은 두 표시(예: 줄자 0점과 끝점)에 파란선·주황선을 맞추세요. 두 표시 사이 실제 거리를 아래에 입력합니다. 마크는 점프하는 바닥 라인과 같은 깊이에 두세요.</p>
+                    <div className="mt-1.5 flex items-center gap-1.5">
+                      <input type="number" inputMode="decimal" value={floorKnownCm} onChange={(e) => setFloorKnownCm(e.target.value)}
+                        className="w-24 rounded-lg border border-slate-300 dark:border-slate-600 bg-transparent px-2 py-1 text-sm text-slate-800 dark:text-slate-100" />
+                      <span>cm</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
             <div className="w-full">
               <p className="text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-1.5">촬영 모드</p>
               <div className="grid grid-cols-3 gap-1.5">

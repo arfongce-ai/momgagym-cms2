@@ -23,7 +23,7 @@
 // 원본 스트림으로 자동 폴백(HUD 없이라도 다시보기 영상 자체는 남도록).
 
 import React, { useState, useEffect, useRef } from 'react';
-import { SprintTracker, calibrateTrack } from '../core/sprintAgility';
+import { SprintTracker, calibrateTrack, TRACK_POINTS, DEFAULT_TRACK_POINT } from '../core/sprintAgility';
 import { BiomechAccumulator, DynamicKneeAlignmentTracker } from '../core/gaitBiomechanics';
 import { beepTickLoud, starterShot, primeAudio } from '../core/audioCue';
 import { loadPoseLandmarker, detectPoseFrame, isPoseReady, closePoseLandmarker } from '../core/poseBackend';
@@ -122,6 +122,8 @@ export default function SprintLiveAnalysis({ member, onBack, onSaveToFirebase, o
 
   const [view, setView] = useState('camera');
   const [testKey, setTestKey] = useState('sprint10');
+  // [2026-11-17] 거리 추적 기준 부위(골반 기본·어깨·몸통) — 대표님 요청.
+  const [trackPoint, setTrackPoint] = useState(DEFAULT_TRACK_POINT);
   const [camAngle, setCamAngle] = useState(DEFAULT_CAM_ANGLE); // 기본: 측면(가로) 기준 — 콘 두 개로 화면 가로 길이를 정한다
   // [임상 플래그 추가 2026-09-14] depth 모드에서만 쓰는 정면/후면 수동 선택 —
   // DEPTH_ORIENTATIONS 주석 참고. 기본값은 후면(현장에서 가장 흔한 설치: 카메라를
@@ -343,7 +345,7 @@ export default function SprintLiveAnalysis({ member, onBack, onSaveToFirebase, o
       setWarningMsg('캘리브레이션에 실패했습니다. 두 핸들 간격을 넓혀주세요.');
       return;
     }
-    trackerRef.current = new SprintTracker({ calibration, splitDistancesM: cfg.splitDistancesM, mode: cfg.mode, trackDistanceM: cfg.trackDistanceM });
+    trackerRef.current = new SprintTracker({ calibration, splitDistancesM: cfg.splitDistancesM, mode: cfg.mode, trackDistanceM: cfg.trackDistanceM, trackPoint });
     pelvicAccRef.current = new BiomechAccumulator();
     kneeAlignAccRef.current = new DynamicKneeAlignmentTracker();
     primeAudio();
@@ -630,6 +632,13 @@ export default function SprintLiveAnalysis({ member, onBack, onSaveToFirebase, o
               {SPRINT_TEST_ORDER.map((key) => [key, TEST_TYPES[key]]).map(([key, cfg]) => (
                 <button key={key} onClick={() => setTestKey(key)} style={{ ...styles.testBtn, ...(testKey === key ? styles.testBtnActive : {}) }}>
                   {cfg.label}
+                </button>
+              ))}
+            </div>
+            <div style={styles.testPicker}>
+              {Object.entries(TRACK_POINTS).map(([key, def]) => (
+                <button key={key} onClick={() => setTrackPoint(key)} style={{ ...styles.testBtn, ...(trackPoint === key ? styles.testBtnActive : {}) }}>
+                  추적: {def.label}
                 </button>
               ))}
             </div>
