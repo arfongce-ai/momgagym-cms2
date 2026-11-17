@@ -7,6 +7,7 @@
 //  저장은 Hub 가 단일 책임으로 처리(중복 저장 방지).
 //  상단 ⓘ 버튼으로 측정 방법 안내(가이드)를 띄운다.
 // ════════════════════════════════════════════════════════════════════════
+import { pickPreviousReport } from '../core/measurementComparison';
 import React, { useState, useCallback, useEffect } from 'react';
 import JumpPrecisionAnalysis from './JumpPrecisionAnalysis';
 import JumpUploadAnalysis from './JumpUploadAnalysis';
@@ -77,13 +78,14 @@ export default function JumpAnalysisHub({ member, onBack, onSave, onSaveToFireba
         // 같은 다리끼리만 "직전 기록"으로 비교해야 의미가 있다(왼발 기록을
         // 오른발과 비교하면 변화 요약이 왜곡됨).
         const isSingleLegSubType = Boolean(JUMP_SUBTYPES[reportSubType]?.singleLeg);
-        const matching = (list || []).filter((r) => r.kind === 'jump'
-          && r.id !== report.id
-          && (r.jumpSubType || 'cmj') === reportSubType
-          && (!isSingleLegSubType || r.leg === report.leg));
-        const sorted = matching.sort((a, b) => String(b.createdAt || b.measuredAt || '')
-          .localeCompare(String(a.createdAt || a.measuredAt || '')));
-        setPreviousReport(sorted[0] || null);
+        // [2026-11-17] 멀리뛰기는 측정 부위·거리 기준(바닥 마크/키 환산)이 같은 기록끼리만 비교한다.
+        setPreviousReport(pickPreviousReport(list, report, {
+          match: (r) => r.kind === 'jump'
+            && (r.jumpSubType || 'cmj') === reportSubType
+            && (!isSingleLegSubType || r.leg === report.leg)
+            && (r.measurePoint || 'feet') === (report.measurePoint || 'feet')
+            && (r.distanceBasis || 'height') === (report.distanceBasis || 'height'),
+        }));
       } catch (e) {
         if (!cancelled) setPreviousReport(null);
       }

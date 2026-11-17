@@ -119,7 +119,8 @@ function computeScore(m, orientation) {
     else if (v >= r.warn[0] && v <= r.warn[1]) score += 65;
     else score += 30;
   }
-  return n ? Math.round(score / n) : 0;
+  // [2026-11-17] 판정 지표가 2개 미만이면 점수 없음(단일 지표가 곧 종합 점수가 되는 것 방지).
+  return n >= 2 ? Math.round(score / n) : null;
 }
 
 // 구버전 데이터(metrics 없음) 폴백 — 최상위 필드에서 끌어온다.
@@ -375,6 +376,15 @@ function Panel({ title, subtitle, children }) {
 }
 
 function ScoreStat({ score }) {
+  if (score == null) {
+    return (
+      <div className="rounded-xl px-3 py-2.5 flex flex-col items-center justify-center border-2 border-slate-500/40" style={{ background: 'rgba(15,23,42,0.7)' }}>
+        <p className="text-[10px] text-slate-500 dark:text-slate-400 font-bold">종합 점수</p>
+        <p className="text-lg font-black leading-none mt-1 text-slate-400">점수 없음</p>
+        <p className="text-[9px] text-slate-500 mt-0.5">판정 지표 부족</p>
+      </div>
+    );
+  }
   const color = score >= 80 ? '#34d399' : score >= 60 ? '#fbbf24' : '#f87171';
   return (
     <div className="rounded-xl px-3 py-2.5 flex flex-col items-center justify-center border-2"

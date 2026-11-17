@@ -22,6 +22,7 @@
 // 번인한다 — createRecordedStream() 참고. captureStream() 미지원 환경에서는
 // 원본 스트림으로 자동 폴백(HUD 없이라도 다시보기 영상 자체는 남도록).
 
+import { pickPreviousReport } from '../core/measurementComparison';
 import React, { useState, useEffect, useRef } from 'react';
 import { SprintTracker, calibrateTrack, TRACK_POINTS, DEFAULT_TRACK_POINT } from '../core/sprintAgility';
 import { BiomechAccumulator, DynamicKneeAlignmentTracker } from '../core/gaitBiomechanics';
@@ -520,10 +521,10 @@ export default function SprintLiveAnalysis({ member, onBack, onSaveToFirebase, o
       try {
         const list = await aiStore.ensureGaitReports(member.id);
         if (cancelled) return;
-        const matching = (list || []).filter((r) => r.testKey === reportData.testKey && r.id !== reportData.id);
-        const sorted = matching.sort((a, b) => String(b.createdAt || b.measuredAt || '')
-          .localeCompare(String(a.createdAt || a.measuredAt || '')));
-        setPreviousReport(sorted[0] || null);
+        // [2026-11-17] 같은 종목 + 같은 추적 부위(골반 기본)끼리만 비교, 지금보다 이른 기록만.
+        setPreviousReport(pickPreviousReport(list, reportData, {
+          match: (r) => r.testKey === reportData.testKey && (r.trackPoint || 'hip') === (reportData.trackPoint || 'hip'),
+        }));
       } catch (e) {
         if (!cancelled) setPreviousReport(null);
       }

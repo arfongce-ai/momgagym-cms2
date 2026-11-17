@@ -964,10 +964,14 @@ export function defaultRecommendation(reportType, status) {
   return '핵심 지표를 다음 측정과 비교해 변화 추이를 확인하세요.';
 }
 
+const MIN_SCORED_METRICS = 2;
 function computeScoreFromMetrics(report, reportType) {
   const metrics = extractKeyMetrics(report, reportType);
   const scored = metrics.filter((metric) => metric.status?.key !== 'unknown');
-  if (!scored.length) return null;
+  // [2026-11-17] 판정 지표가 1개뿐이면 종합 점수를 만들지 않는다. 점프(골반 불균형 1개)·스프린트(감속 1개)·ROM(좌우차 1개)·
+  //  VBT(속도 손실 1개)는 그 한 지표가 정상이면 높이·속도·가동범위와 무관하게 '100점 정상'이 나와 점수를 믿을 수 없었다.
+  //  점수 없음 → 화면은 값과 회차 변화만 보여주고 '확인 필요'로 표시한다(측정 정직성).
+  if (scored.length < MIN_SCORED_METRICS) return null;
   return Math.round(scored.reduce((sum, metric) => sum + metric.status.score, 0) / scored.length);
 }
 

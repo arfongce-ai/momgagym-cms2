@@ -91,7 +91,7 @@ function status(value, range) {
 }
 
 function scoreReport(report, biomech) {
-  if (report?.valid === false) return 0;
+  if (report?.valid === false) return null;
   const values = [];
   const add = (value, range) => {
     if (value == null || Number.isNaN(Number(value))) return;
@@ -109,7 +109,8 @@ function scoreReport(report, biomech) {
     const rsi = Number(report.rsi.rsi);
     values.push(rsi >= 2 ? 100 : rsi >= 1.5 ? 80 : rsi >= 1 ? 60 : 35);
   }
-  return values.length ? Math.round(values.reduce((a, b) => a + b, 0) / values.length) : 0;
+  // [2026-11-17] 판정 근거가 1개뿐이면(예: 골반 불균형만) 그 한 값이 곧 종합 점수가 돼 '100점 정상'처럼 보인다 → 점수 없음.
+  return values.length >= 2 ? Math.round(values.reduce((a, b) => a + b, 0) / values.length) : null;
 }
 
 function normalizeBiomech(report) {
