@@ -1142,6 +1142,34 @@ export const store = {
     __touchSnapshot();
     return { record };
   },
+  // [2026-11-17] 옛 양도로 남은 sessionAdds 불일치 정리 — 출발→대상으로 n회만 옮긴다(결제 금액·회원 슬롯은 손대지 않음:
+  //  옛 양도가 이미 금액·슬롯은 옮겼고, 등록횟수만 남아 있었다). 옮길 수 있는 횟수가 n 에 못 미치면 아무것도 안 하고 null.
+  repairSessionAdds: async (mid, { fromTid, toTid, n } = {}) => {
+    const pays = cache.payments[mid] || [];
+    const moves = moveSessionAdds(pays, fromTid, toTid, n);
+    const movedTotal = moves.reduce((sum, mv) => {
+      const before = pays.find(p => p.id === mv.pid)?.sessionAdds || [];
+      const sumOf = (arr, tid) => arr.filter(x => x.trainerId === tid).reduce((a, x) => a + (Number(x.count) || 0), 0);
+      return sum + (sumOf(before, fromTid) - sumOf(mv.sessionAdds, fromTid));
+    }, 0);
+    if (!moves.length || movedTotal < Math.floor(Number(n) || 0)) return null;
+    const prevPayments = cache.payments[mid];
+    const batch = createStampedBatch();
+    moves.forEach(({ pid, sessionAdds }) => {
+      const cur = pays.find(p => p.id === pid);
+      if (cur) batch.set('payments', pid, { ...cur, sessionAdds, __mid: mid });
+    });
+    try {
+      await batch.commit();
+      cache.payments[mid] = pays.map(p => { const h = moves.find(x => x.pid === p.id); return h ? { ...p, sessionAdds: h.sessionAdds } : p; });
+      __touchSnapshot();
+      return { moved: movedTotal };
+    } catch (e) {
+      cache.payments[mid] = prevPayments;
+      __touchSnapshot();
+      throw e;
+    }
+  },
   // 연장 등록(수동) — 약관 3항 유효기간이 지났거나 임박한 lot에 한해, 관리자가 건별로
   // 남기는 기록. 세션 잔여는 건드리지 않는다(정산이 아니라 유효기간만 뒤로 미는 것).
   // lot당 1건만 허용 — 이미 등록돼 있으면 null(재등록하려면 먼저 취소해야 함).

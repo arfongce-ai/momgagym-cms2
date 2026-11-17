@@ -8,6 +8,7 @@ import { useAuth } from '../contexts/AuthContext';
 import MemberRegister from '../components/members/MemberRegister';
 import MemberDetail   from '../components/members/MemberDetail';
 import MemberImport   from '../components/members/MemberImport';
+import SessionAddsAudit from '../components/members/SessionAddsAudit';
 import TrainerBadge   from '../components/common/TrainerBadge';
 import { downloadCSV } from '../services/finance';
 import { sortExpiredLast, getUserTrainerId, isSessionExhausted, isMemberInactive } from '../utils/memberList';
@@ -33,6 +34,7 @@ export default function Members() {
   const [exhaustedFilter, setExhaustedFilter] = useState(false);
   const [showRegister,  setShowRegister]  = useState(false);
   const [showImport,    setShowImport]    = useState(false);
+  const [showAudit,     setShowAudit]     = useState(false); // [2026-11-17] 양도 불일치 점검
   const [selected,      setSelected]      = useState(null);
   const [selectedInitialTab, setSelectedInitialTab] = useState(null);
   const [refreshing,    setRefreshing]    = useState(false);
@@ -170,6 +172,12 @@ export default function Members() {
             </button>
           )}
           {user?.role==='admin' && (
+            <button onClick={() => setShowAudit(v => !v)}
+              className="text-xs font-bold px-3 py-2 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:border-amber-500/40 transition-colors">
+              🔎 양도 점검
+            </button>
+          )}
+          {user?.role==='admin' && (
             <button onClick={exportMembers}
               className="text-xs font-bold px-3 py-2 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:border-amber-500/40 hover:text-amber-600 dark:hover:text-amber-400 transition-colors">
               📄 다운로드
@@ -187,6 +195,12 @@ export default function Members() {
           </button>
         </div>
       </div>
+
+      {showAudit && user?.role==='admin' && (
+        <SessionAddsAudit trainers={trainers} onClose={() => setShowAudit(false)}
+          onOpenMember={(id) => { const mm = members.find(x => x.id === id); if (mm) setSelected(mm); }}
+          onChanged={() => setMembers(store.getMembers())} />
+      )}
 
       {/* 필터 */}
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 space-y-3">
