@@ -109,7 +109,7 @@ function SprintReportDashboardInner({ report, previousReport, onComment, onClose
 
   return (
     <UnifiedReportCanvas>
-      <UnifiedReportPage id="sprint-report-sheet" className="mx-auto">
+      <UnifiedReportPage id="sprint-report-sheet" className="mx-auto" interpretationSummary={summary} interpretationType="sprint">
         {/* ── 헤더 ── */}
         <UnifiedReportHeader
           eyebrow={kind === 'agility' ? 'AGILITY REPORT' : 'SPRINT REPORT'}

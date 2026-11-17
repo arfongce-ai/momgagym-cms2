@@ -20,7 +20,7 @@ import {
   UnifiedReportHeader,
   UnifiedReportPage,
 } from '../../components/report/UnifiedReportPrimitives';
-import { scoreToStatus } from '../core/unifiedReport';
+import { scoreToStatus, buildSummaryData } from '../core/unifiedReport';
 // [전/후 변화 요약 공통모듈화 2026-08-31] 자세측정은 이 기능이 가장 먼저
 // 구현되어(measurementComparison.js/ChangeSummaryPanel.jsx 도입 전) 계산·표시
 // 로직을 자체적으로 갖고 있었다 — 이후 ROM·보행·점프·리프팅·SLST·스쿼트가
@@ -168,7 +168,7 @@ export default function PostureReport({
 
   return (
     <UnifiedReportCanvas>
-      <UnifiedReportPage id={id} className="mx-auto flex flex-col gap-4">
+      <UnifiedReportPage id={id} className="mx-auto flex flex-col gap-4" interpretationSummary={buildSummaryData(report, { reportType: 'posture' })} interpretationType="posture">
         <UnifiedReportHeader
           eyebrow="POSTURE & ALIGNMENT REPORT"
           badge="POSTURE"

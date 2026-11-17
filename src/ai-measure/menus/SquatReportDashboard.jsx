@@ -125,7 +125,7 @@ export default function SquatReportDashboard({ report, member, onClose, onRemeas
       <div className="mx-auto w-full max-w-[794px] flex items-center justify-between pb-2">
         <button onClick={onClose} className="text-slate-600 dark:text-slate-300 font-bold text-sm">← 닫기</button>
       </div>
-      <UnifiedReportPage id="squat-report-sheet" className="mx-auto">
+      <UnifiedReportPage id="squat-report-sheet" className="mx-auto" interpretationSummary={buildSummaryData(report, { reportType: 'squat' })} interpretationType="squat">
         <UnifiedReportHeader
           eyebrow="OVERHEAD DEEP SQUAT REPORT"
           badge="SQUAT"

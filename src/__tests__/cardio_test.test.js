@@ -247,7 +247,7 @@ describe('저장 페이로드·이력', () => {
   });
   it('장비별 테스트 목록', () => {
     expect(protocolsForMachine('rower').map((p) => p.id)).toEqual(['rower_2k', 'step', 'free']);
-    expect(protocolsForMachine('treadmill').map((p) => p.id)).toEqual(['free']);
+    expect(protocolsForMachine('treadmill').map((p) => p.id)).toEqual(['curved_2400', 'curved_12min', 'free']); // [2026-11-17] 커브드 2.4km·12분 추가
   });
 });
 

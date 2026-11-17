@@ -23,6 +23,7 @@ import TrendChart from '../components/report/TrendChart';
 import MemberPicker from '../components/common/MemberPicker';
 import { withTrainerSelfSubjects } from '../utils/trainerSelf';
 import CombinedAssessmentPanel from '../components/report/CombinedAssessmentPanel';
+import ResearchExportPanel from '../components/report/ResearchExportPanel';
 import MemberTestRecommendationPanel from '../components/ai/MemberTestRecommendationPanel';
 import { buildMemberTestRecommendations } from '../ai-measure/core/memberTestRecommendation';
 import { consumePendingVoiceTarget, setPendingVoiceTarget } from '../voice/pendingVoiceTarget';
@@ -1485,6 +1486,8 @@ export default function Report() {
           )}
         </div>
       )}
+
+      {member && <ResearchExportPanel member={member} allMembers={members} isAdmin={user?.role === 'admin'} />}
 
       {member && testRecommendation && (
         <MemberTestRecommendationPanel

@@ -2,6 +2,7 @@ import React from 'react';
 import { scoreToStatus } from '../../ai-measure/core/unifiedReport';
 import { store } from '../../demoData';
 import { getLatestBodyInfoSnapshot } from '../../services/reportService';
+import InterpretationSection from './InterpretationSection';
 
 // 몸가짐운동센터 로고 원본(사용자 제공 파일, public/brand/momgagym-logo.png)을 그대로 쓰되
 // 다크 리포트 배경에 맞춰 색만 반전(검정 선/텍스트 → 흰색, 흰 배경 → 투명)했다.
@@ -20,10 +21,12 @@ export function UnifiedReportCanvas({ children, className = '' }) {
   );
 }
 
-export function UnifiedReportPage({ id, children, className = '', minHeight = 1123 }) {
+export function UnifiedReportPage({ id, children, className = '', minHeight = 1123, interpretationSummary = null, interpretationType }) {
   return (
     <div id={id} className={`${UNIFIED_REPORT_PAGE_CLASS} ${className}`} style={{ minHeight }}>
       {children}
+      {/* [2026-11-17] 모든 측정 상세 리포트 공통 '결과 해석' — summary를 넘긴 화면에만 나온다 */}
+      {interpretationSummary && <InterpretationSection summary={interpretationSummary} reportType={interpretationType} />}
       <UnifiedReportFooter />
     </div>
   );

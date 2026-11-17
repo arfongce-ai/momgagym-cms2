@@ -128,7 +128,7 @@ export default function LiftingReportDashboard({ report, onClose, member, previo
         />
         <button onClick={onClose} className="rounded-lg bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-white font-bold text-sm px-4 py-2">닫기</button>
       </div>
-      <UnifiedReportPage id="lifting-report" className="mx-auto">
+      <UnifiedReportPage id="lifting-report" className="mx-auto" interpretationSummary={buildSummaryData(report)}>
           <UnifiedReportHeader
             title={`${MODE_TITLE[mode] || '바벨 리프팅'} · ${exLabel}`}
             subtitle={interp.headline}

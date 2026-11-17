@@ -161,7 +161,7 @@ export default function StanceReportDashboard({ report, member, onClose, onRemea
       <div className="mx-auto w-full max-w-[794px] flex items-center justify-between pb-2">
         <button onClick={onClose} className="text-slate-600 dark:text-slate-300 font-bold text-sm">← 닫기</button>
       </div>
-      <UnifiedReportPage id="stance-report-sheet" className="mx-auto">
+      <UnifiedReportPage id="stance-report-sheet" className="mx-auto" interpretationSummary={buildSummaryData(report, { reportType: 'stance' })} interpretationType="stance">
         <UnifiedReportHeader
           eyebrow="SINGLE LEG STANCE TEST"
           badge="SLST"
