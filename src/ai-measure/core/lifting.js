@@ -31,6 +31,8 @@
  *
  *  - 확장: 메디신볼 등은 { key:'medicine_ball', modes:['lifting','vbt'] } 식으로 추가.
  */
+import { trainingPrescription } from './oneRMTables';
+
 export const EXERCISE_TYPES = [
   // 파워리프트 — 1RM 추정 대상.
   { key: 'squat',         label: '스쿼트',     modes: ['vbt', 'onerm'], lift1rm: 'squat' },
@@ -311,7 +313,9 @@ export function buildLiftingInterpretation(report = {}) {
       lines.push({ label: '강도', text: `이번 세트 ${w}kg×${reps || '?'}회는 추정 1RM의 약 ${pct}% 강도입니다.` });
     }
     if (oneRM) {
-      lines.push({ label: '훈련 무게(참고)', text: `근비대 75~80%(${Math.round(oneRM * 0.77 / 2.5) * 2.5}kg), 근력 85~90%(${Math.round(oneRM * 0.87 / 2.5) * 2.5}kg) 부근.` });
+      // [2026-11-17] 교재(NSCA-CPT·CSCS 대비 트레이닝의 정수 표 17.9) 기준 — 목표별 부하·반복
+      const rx = trainingPrescription(oneRM).filter((g) => ['strength', 'hypertrophy', 'endurance'].includes(g.key));
+      lines.push({ label: '훈련 무게(참고)', text: rx.map((g) => `${g.label} ${g.pctText}·${g.repsText}(${g.kgText})`).join(', ') + '.' });
     }
     if (estimateRange?.low != null && estimateRange?.high != null) {
       lines.push({ label: '추정 범위', text: `공식 간 분산 기준 참고 범위 ${estimateRange.low}~${estimateRange.high}kg.` });
