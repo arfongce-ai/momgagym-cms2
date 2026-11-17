@@ -87,7 +87,10 @@ export function buildMemberSessionExpiry({ member, payments = [], settings, toda
     const paymentById = Object.fromEntries((payments || []).filter(p => p.id).map(p => [p.id, p]));
     // FIFO 소진 배분: 이미 소진된 수(total-remaining)를 등록 순서대로 앞 lot부터 채운다.
     // (buildTrainerLots가 이미 legacy → 시간순 explicit 순으로 정렬해 반환한다.)
-    let consumedBudget = Math.max(0, total - (Number(slot.remaining) || 0));
+    // [2026-11-17] 양도 후 유령 잔여 방지: 등록분(lot) 횟수 합이 슬롯 total 보다 크면(이미 다른 트레이너에게
+    //  양도한 횟수가 결제의 sessionAdds 에 그대로 남은 옛 데이터) 초과분은 소진된 것으로 본다 → 등록분 잔여 합 = 실제 잔여.
+    const lotCountSum = rawLots.reduce((sum, lot) => sum + (Number(lot.count) || 0), 0);
+    let consumedBudget = Math.max(0, total - (Number(slot.remaining) || 0)) + Math.max(0, lotCountSum - total);
     result[tid] = rawLots.map(lot => {
       const count = Number(lot.count) || 0;
       const consumedHere = Math.min(count, consumedBudget);
@@ -166,4 +169,37 @@ export function computeExpirySettlement(lot, settings) {
   const rate = expirySettlementRate(lot, settings);
   const amount = Math.round(unit * sessions * (rate / 100));
   return { sessions, unit, rate, amount };
+}
+
+// [2026-11-17] 같은 회원 내 트레이너→트레이너 양도 시 결제의 등록횟수(sessionAdds)도 함께 옮긴다.
+//  · 출발 트레이너 줄을 최근 결제부터 n회까지 차감(배열 순번 유지 — 만료 연장·정산 기록이 lot id(순번)에 걸려 있다).
+//  · 대상 트레이너 줄이 같은 결제에 있으면 합산, 없으면 배열 뒤에 추가.
+//  반환: [{ pid, sessionAdds }] — 바뀐 결제만. 입력은 바꾸지 않는다(순수 함수).
+export function moveSessionAdds(payments = [], fromTid, toTid, n) {
+  let left = Math.floor(Number(n) || 0);
+  if (!fromTid || !toTid || fromTid === toTid || left <= 0) return [];
+  const dateOf = (p) => String((p.sessionStartDate) || p.paidAt || '');
+  const ordered = (payments || [])
+    .filter(p => p && p.id && !p.isUnpaid && !p.isRefunded && !p.isMonthly && Array.isArray(p.sessionAdds))
+    .sort((a, b) => dateOf(b).localeCompare(dateOf(a))); // 최근 등록분부터
+  const out = [];
+  for (const p of ordered) {
+    if (left <= 0) break;
+    const adds = p.sessionAdds.map(sa => ({ ...sa }));
+    let moved = 0;
+    for (let i = adds.length - 1; i >= 0 && left > 0; i--) {
+      if (adds[i].trainerId !== fromTid) continue;
+      const have = Number(adds[i].count) || 0;
+      if (have <= 0) continue;
+      const take = Math.min(have, left);
+      adds[i].count = have - take;
+      left -= take; moved += take;
+    }
+    if (!moved) continue;
+    const tgt = adds.find(sa => sa.trainerId === toTid);
+    if (tgt) tgt.count = (Number(tgt.count) || 0) + moved;
+    else adds.push({ trainerId: toTid, count: moved });
+    out.push({ pid: p.id, sessionAdds: adds });
+  }
+  return out;
 }

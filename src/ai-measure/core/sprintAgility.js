@@ -88,6 +88,28 @@ export function hipCenter(lm) {
   return { x: (l.x + r.x) / 2, y: (l.y + r.y) / 2 };
 }
 
+// [2026-11-17] 대표님 요청 — 거리 추적 기준 부위 선택. 기본은 골반(기존 동작 그대로).
+export const TRACK_POINTS = {
+  hip: { label: '골반', ids: [LM.LEFT_HIP, LM.RIGHT_HIP] },
+  shoulder: { label: '어깨', ids: [LM.LEFT_SHOULDER, LM.RIGHT_SHOULDER] },
+  trunk: { label: '몸통(어깨·골반 중간)', ids: [LM.LEFT_SHOULDER, LM.RIGHT_SHOULDER, LM.LEFT_HIP, LM.RIGHT_HIP] },
+};
+export const DEFAULT_TRACK_POINT = 'hip';
+
+/** 선택한 부위의 중심 좌표(해당 랜드마크 평균). 하나라도 안 보이면 null. */
+export function trackPointCenter(lm, key = DEFAULT_TRACK_POINT) {
+  const def = TRACK_POINTS[key] || TRACK_POINTS[DEFAULT_TRACK_POINT];
+  const v = SPRINT_TUNING.minVisibility;
+  if (!lm) return null;
+  let x = 0; let y = 0;
+  for (const id of def.ids) {
+    const p = lm[id];
+    if (!p || (p.visibility ?? 1) < v) return null;
+    x += p.x; y += p.y;
+  }
+  return { x: x / def.ids.length, y: y / def.ids.length };
+}
+
 /**
  * 스프린트/아질리티 실시간 트래커.
  * 매 프레임 push(lm, tsMs) 호출 → 위치·속도·구간기록(split)·턴·반응속도를 누적.
@@ -100,8 +122,9 @@ export class SprintTracker {
    * @param {number[]} opt.splitDistancesM  구간기록을 찍을 거리(m) 목록. 기본 [5, 10]
    * @param {'sprint'|'agility'} opt.mode
    */
-  constructor({ calibration, splitDistancesM = [5, 10], mode = 'sprint', tuning = {}, trackDistanceM = 0 } = {}) {
+  constructor({ calibration, splitDistancesM = [5, 10], mode = 'sprint', tuning = {}, trackDistanceM = 0, trackPoint = DEFAULT_TRACK_POINT } = {}) {
     this.trackDistanceM = trackDistanceM;
+    this.trackPoint = TRACK_POINTS[trackPoint] ? trackPoint : DEFAULT_TRACK_POINT;
     this.tuning = { ...SPRINT_TUNING, ...tuning };
     this.calibration = calibration;
     this.splitDistancesM = splitDistancesM;
@@ -142,7 +165,7 @@ export class SprintTracker {
    * @returns {{elapsedMs:number, distanceM:number, velocityMs:number}|null}
    */
   push(lm, tsMs) {
-    const hip = hipCenter(lm);
+    const hip = trackPointCenter(lm, this.trackPoint);
     if (!hip || !this.calibration) return null;
 
     const rawDistanceM = this.calibration.project(hip);
@@ -223,6 +246,8 @@ export class SprintTracker {
 
     return {
       kind: this.mode === 'agility' ? 'agility' : 'sprint',
+      trackPoint: this.trackPoint,
+      trackPointLabel: TRACK_POINTS[this.trackPoint].label,
       totalTimeMs,
       totalDistanceM,
       avgVelocityMs,

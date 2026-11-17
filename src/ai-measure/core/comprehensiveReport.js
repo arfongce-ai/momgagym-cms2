@@ -101,8 +101,13 @@ function bodyInfoMetrics(raw) {
 
 /** 원본 1건 → 종합리포트 공통 레코드. 실패해도 throw 하지 않고 최소 형태를 반환. */
 export function normalizeRecord(source, raw) {
+  // [2026-11-17] 측정 이력(ai 세션)은 { menu, data: 측정값 } 래퍼로 저장된다. 요약기의 지표 경로
+  // (metrics.cadence 등)는 data 안쪽을 보지 못해, 값이 멀쩡히 있어도 '빈 결과'로 오판했다.
+  // 래퍼를 한 겹 펼친 사본으로 요약한다(inferReportType 과 같은 방식, 원본 raw 는 그대로 보존).
+  const flat = (raw && typeof raw.data === 'object' && raw.data && !Array.isArray(raw.data))
+    ? { ...raw.data, ...raw } : (raw || {});
   let summary;
-  try { summary = buildSummaryData(raw || {}); }
+  try { summary = buildSummaryData(flat); }
   catch (e) { summary = { reportType: 'general', title: '', measuredAt: null, overallScore: null, keyMetrics: [] }; }
 
   // 측정일은 '원본 필드'에서만 취한다. buildSummaryData 의 measuredAt 은 값이 없을 때
@@ -153,8 +158,10 @@ export function normalizeRecord(source, raw) {
 
 /** 회원 1명의 모든 측정 소스 → 정규화 레코드 목록(최신순). */
 export function collectMeasureRecords({ sessions = [], gaitReports = [], postureReports = [], romReports = [] } = {}) {
+  // 전용 리포트(보행·자세·ROM)가 linkedSessionId 로 이미 연결한 세션은 같은 측정이라 한 번만 센다.
+  const linked = new Set([...gaitReports, ...postureReports, ...romReports].map(r => r?.linkedSessionId).filter(Boolean));
   const records = [
-    ...sessions.map(r => normalizeRecord('ai', r)),
+    ...sessions.filter(r => !(r?.id && linked.has(r.id))).map(r => normalizeRecord('ai', r)),
     ...gaitReports.map(r => normalizeRecord('gait_reports', r)),
     ...postureReports.map(r => normalizeRecord('posture_reports', r)),
     ...romReports.map(r => normalizeRecord('rom_reports', r)),

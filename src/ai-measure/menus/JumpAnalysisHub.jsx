@@ -10,6 +10,7 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import JumpPrecisionAnalysis from './JumpPrecisionAnalysis';
 import JumpUploadAnalysis from './JumpUploadAnalysis';
+import { MEASURE_POINTS, DEFAULT_MEASURE_POINT } from '../core/jumpBiomechanics';
 import JumpReportDashboard from './JumpReportDashboard';
 import { calcJump } from '../core/performance';
 import { combineJumpTrials, MULTI_TRIAL_JUMP_SUBTYPES, MAX_JUMP_TRIALS } from '../core/jumpBiomechanics';
@@ -37,6 +38,8 @@ export default function JumpAnalysisHub({ member, onBack, onSave, onSaveToFireba
   const jumpType = engineOf(jumpSubType); // 파생값 — 'power' | 'reactive'
   // SLJ(한발 점프) 전용 — 테스트할 다리. 다른 종류에서는 쓰이지 않는다.
   const [leg, setLeg] = useState('left');
+  // [2026-11-17] 제자리멀리뛰기 측정 부위(발목 기본·뒤꿈치·발끝·골반·어깨) — 대표님 요청.
+  const [measurePoint, setMeasurePoint] = useState(DEFAULT_MEASURE_POINT);
   // [DJ 박스높이 수동입력 2026-08-11] DJ 전용 — 카메라로는 박스 높이 자체를
   // 잴 수 없어서(위 jumpTypes.js dj.guideBody 참고) 트레이너가 직접 입력한다.
   // leg와 동일한 패턴: measure 단계가 아니라 확인(record) 단계에서 물어보고
@@ -383,6 +386,18 @@ export default function JumpAnalysisHub({ member, onBack, onSave, onSaveToFireba
                 ))}
               </div>
             )}
+            {/* [2026-11-17] 멀리뛰기 측정 부위 선택 — 어느 부위의 이동거리를 잴지 */}
+            {jumpType === 'horizontal' && (
+              <div className="pointer-events-auto flex flex-wrap justify-center gap-1 rounded-full bg-black/55 backdrop-blur p-1 border border-white/10 shadow-lg">
+                {Object.entries(MEASURE_POINTS).map(([k, def]) => (
+                  <button key={k} onClick={() => setMeasurePoint(k)}
+                    className={`rounded-full px-2.5 py-1 text-xs font-black transition-colors ${
+                      measurePoint === k ? 'bg-sky-500 text-slate-950' : 'text-slate-600 dark:text-slate-300'}`}>
+                    {def.label}
+                  </button>
+                ))}
+              </div>
+            )}
             {/* 측정 방식 + 도움말 */}
             <div className="flex items-center gap-2">
               <div className="pointer-events-auto flex gap-1 rounded-full bg-black/55 backdrop-blur p-1 border border-white/10 shadow-lg">
@@ -423,6 +438,7 @@ export default function JumpAnalysisHub({ member, onBack, onSave, onSaveToFireba
           jumpType={jumpType}
           jumpSubType={jumpSubType}
           leg={JUMP_SUBTYPES[jumpSubType].singleLeg ? leg : null}
+          measurePoint={measurePoint}
           onOpenSavedReport={openLiveReport}
           onManualComplete={handleComplete}
           // [SLJ 다리 자동전환 2026-08-19] 라이브 카메라로 감지된 점프도 이제
@@ -438,6 +454,7 @@ export default function JumpAnalysisHub({ member, onBack, onSave, onSaveToFireba
           jumpType={jumpType}
           jumpSubType={jumpSubType}
           leg={JUMP_SUBTYPES[jumpSubType].singleLeg ? leg : null}
+          measurePoint={measurePoint}
           onMemberHeightChange={onMemberHeightChange} />
       )}
     </div>

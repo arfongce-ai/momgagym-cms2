@@ -108,6 +108,27 @@ export const feetCenterX = (lm) => {
   return okL ? lm[27].x : lm[28].x;
 };
 
+// [2026-11-17] 제자리멀리뛰기 측정 부위 선택(대표님 요청). 'feet'(발목, 기본)은 기존 feetCenterX 와 동일.
+export const MEASURE_POINTS = {
+  feet: { label: '발목(기본)', ids: [27, 28] },
+  heel: { label: '뒤꿈치', ids: [29, 30] },
+  toe: { label: '발끝', ids: [31, 32] },
+  hip: { label: '골반', ids: [23, 24] },
+  shoulder: { label: '어깨', ids: [11, 12] },
+};
+export const DEFAULT_MEASURE_POINT = 'feet';
+/** 선택 부위의 x(정규화). 보이는 쪽만 평균(좌우 중 하나만 보여도 사용). 'feet'는 기존 함수 그대로. */
+export const measurePointX = (lm, key = DEFAULT_MEASURE_POINT) => {
+  if (key === 'feet' || !MEASURE_POINTS[key]) return feetCenterX(lm);
+  if (!lm) return null;
+  const v = JUMP_TUNING.minVisibility;
+  const xs = MEASURE_POINTS[key].ids
+    .map((i) => lm[i])
+    .filter((p) => p && (p.visibility == null || p.visibility >= v))
+    .map((p) => p.x);
+  return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
+};
+
 // [2026-07-31] 한쪽 발목(27 또는 28)만 고정으로 추적 — "이번 프레임엔 평균,
 // 다음 프레임엔 한쪽만" 식으로 계속 모드가 바뀌면(feetCenterY 특성) 평균값과
 // 단일값 사이의 미세한 차이가 프레임마다 튀어 흔들림으로 오인될 수 있다.
@@ -187,7 +208,9 @@ export class StandingCalibrator {
   // (undefined/null, 기존 모든 호출부) 아래 _finalizeLock의 자동 선택 로직이
   // 전과 100% 동일하게 동작한다 — 새 옵션은 명시적으로 줄 때만 개입하는
   // 순수 추가(additive) 변경이라 기존 CMJ/RSI 측정엔 영향이 없다.
-  constructor({ heightCm = null, forcedAnkleSide = null } = {}) {
+  constructor({ heightCm = null, forcedAnkleSide = null, measurePoint = DEFAULT_MEASURE_POINT } = {}) {
+    this.measurePoint = MEASURE_POINTS[measurePoint] ? measurePoint : DEFAULT_MEASURE_POINT;
+    this._measureX = [];
     this.heightCm = heightCm && heightCm > 0 ? Number(heightCm) : null;
     this.forcedAnkleSide = (forcedAnkleSide === 'left' || forcedAnkleSide === 'right') ? forcedAnkleSide : null;
     this._feetY = [];
@@ -244,6 +267,8 @@ export class StandingCalibrator {
     // 수만으로 신뢰도를 판단한다(_finalizeLock의 5개 임계 참고).
     const fX = feetCenterX(lm);
     if (fX != null) this._feetX.push(fX);
+    const mX = measurePointX(lm, this.measurePoint);
+    if (mX != null) this._measureX.push(mX);
     // 좌/우 개별 가시성 카운트 + 값(위 fY 병합 로직과 무관하게 독립적으로 집계).
     // 캘리브레이션 중엔 두 배열 다 짧게 유지되므로(calibMinFrames 근처) 계속
     // 쌓아도 무리 없다 — 잠금 시점의 두 배열 길이/평균으로 승자를 정한다.
@@ -326,10 +351,13 @@ export class StandingCalibrator {
     // 적으면(코 기준 bPx와 같은 이유로 각도가 안 좋은 카메라 등) null —
     // BroadJumpTracker가 null-safe하게 처리한다(SBJ 이외 종류는 아예 안 씀).
     const baselineFeetX = this._feetX.length >= 5 ? mean(this._feetX) : null;
+    // 선택 부위의 출발선 x — 'feet'면 baselineFeetX 와 같은 값.
+    const baselineMeasureX = this.measurePoint === 'feet' ? baselineFeetX : (this._measureX.length >= 5 ? mean(this._measureX) : null);
     this.result = {
       baselineFeetY, baselinePelvisY, bodyPx, scaleCmPerY, feetStd: std(feetArr), visRatio,
       baselineKneeY, baselineHeelY, basis, ankleSide, baselineAnkleY,
       baselineAnkleYL, baselineAnkleYR, baselineFeetX,
+      measurePoint: this.measurePoint, baselineMeasureX,
     };
     this.locked = true;
   }
@@ -520,7 +548,12 @@ export class JumpFlightTracker {
  * 한쪽만 고치면 "측정 중 화면에 보인 값"과 "저장된 값"이 조용히 달라질 수 있었다.
  * @returns {number|null} 소수 첫째자리까지 반올림한 cm. 입력이 비면 null.
  */
-export function broadJumpDistanceCm(landingX, baselineFeetX, scaleCmPerY, frameAspect = 1) {
+export function broadJumpDistanceCm(landingX, baselineFeetX, scaleCmPerY, frameAspect = 1, floorCmPerX = null) {
+  // [2026-11-17] 바닥 거리 마크 보정: 바닥에 알려진 거리(cm) 두 점을 찍으면 정규화 X 1.0 = 몇 cm 가 직접 나온다.
+  //  이 경우 키 환산·가로세로비 보정이 필요 없다(같은 가로축에서 잰 실측 스케일).
+  if (landingX != null && baselineFeetX != null && Number.isFinite(floorCmPerX) && floorCmPerX > 0) {
+    return Math.round(Math.abs(landingX - baselineFeetX) * floorCmPerX * 10) / 10;
+  }
   if (landingX == null || baselineFeetX == null || scaleCmPerY == null) return null;
   // [2026-11-16] scaleCmPerY 는 '정규화 Y 1.0 = 몇 cm'. 정규화 X 1.0 은 화면 가로 전체라 가로세로비(W/H)만큼 더 길다.
   //  가로 촬영(16:9)에서 보정하지 않으면 거리가 약 44% 작게 나온다. frameAspect 를 안 주면(=1) 예전 값 그대로.
@@ -542,7 +575,11 @@ export class BroadJumpTracker {
     this.flights = []; // [{ takeoffMs, landingMs, flightMs, landingX }]
     this.ankleSide = calib?.ankleSide ?? null;
     this.baselineAnkleY = calib?.baselineAnkleY ?? calib?.baselineFeetY ?? null;
-    this.baselineFeetX = calib?.baselineFeetX ?? null;
+    // 선택 부위(기본 발목)의 출발선 x. 옛 보정 결과엔 없으므로 baselineFeetX 로 폴백.
+    this.measurePoint = calib?.measurePoint ?? DEFAULT_MEASURE_POINT;
+    // 'feet'(기본)는 예전 그대로 baselineFeetX, 다른 부위만 그 부위의 출발선(baselineMeasureX)을 쓴다.
+    this.baselineFeetX = this.measurePoint === 'feet' ? (calib?.baselineFeetX ?? null) : (calib?.baselineMeasureX ?? null);
+    this.floorCmPerX = null; // 바닥 거리 마크 보정값(생성한 쪽이 설정, 없으면 키 환산)
   }
 
   push(lm, tMs) {
@@ -561,7 +598,7 @@ export class BroadJumpTracker {
       const landingMs = tMs;
       const flightMs = landingMs - this.takeoffMs;
       // 착지 순간의 발목 x — 출발선(baselineFeetX) 대비 얼마나 이동했는지의 종점.
-      const landingX = feetCenterX(lm);
+      const landingX = measurePointX(lm, this.measurePoint);
       if (flightMs >= JUMP_TUNING.minFlightMs && flightMs <= JUMP_TUNING.maxFlightMs && landingX != null) {
         this.flights.push({ takeoffMs: this.takeoffMs, landingMs, flightMs, landingX });
       }
@@ -588,7 +625,7 @@ export class BroadJumpTracker {
     // [환산식 단일화 2026-09-17] 아래 broadJumpDistanceCm 하나만 쓴다 — 라이브
     // HUD·녹화 오버레이(JumpPrecisionAnalysis.jsx)도 같은 함수를 import해서
     // 쓰므로, 환산식을 고칠 일이 생겨도 화면값과 저장값이 갈라지지 않는다.
-    const distanceCm = broadJumpDistanceCm(best.landingX, this.baselineFeetX, scale, this.frameAspect);
+    const distanceCm = broadJumpDistanceCm(best.landingX, this.baselineFeetX, scale, this.frameAspect, this.floorCmPerX);
 
     const bodyCm = heightCm || this.calibHeightCm || null;
     let sanityOk = true;
@@ -597,6 +634,9 @@ export class BroadJumpTracker {
     const valid = distanceCm != null && sanityOk;
 
     return {
+      measurePoint: this.measurePoint,
+      measurePointLabel: (MEASURE_POINTS[this.measurePoint] || MEASURE_POINTS.feet).label,
+      distanceBasis: Number.isFinite(this.floorCmPerX) && this.floorCmPerX > 0 ? 'floor_mark' : 'height',
       valid,
       reason: distanceCm == null ? 'no_scale' : (!sanityOk ? 'sanity_fail' : 'ok'),
       jumps: this.flights.length,

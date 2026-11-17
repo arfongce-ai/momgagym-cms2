@@ -225,3 +225,23 @@ describe('findAnomalies — 이상 데이터 감지(삭제 후보 제안)', () =
     expect(findAnomalies(records, { today })).toEqual([]);
   });
 });
+
+describe('측정 이력 세션(래퍼) — 빈 결과 오판 방지 [2026-11-17]', () => {
+  it('{menu, data:{metrics}} 래퍼 세션도 지표를 읽는다(빈 결과로 판정하지 않는다)', () => {
+    const session = {
+      id: 's1', menu: 'gait', menuTitle: '보행', recordedAt: '2026-07-06',
+      recordedAtFull: '2026-07-06T09:00:00.000Z',
+      data: { kind: 'gait', metrics: { cadence: 170 } },
+    };
+    const r = normalizeRecord('ai', session);
+    expect(r.keyMetrics.length).toBeGreaterThan(0);
+    expect(findAnomalies([r], { today: '2026-12-01' }).some(a => a.reasons.includes('빈 결과(점수·지표 없음)'))).toBe(false);
+  });
+
+  it('전용 리포트가 linkedSessionId 로 연결한 세션은 한 번만 센다', () => {
+    const session = { id: 's9', menu: 'gait', recordedAt: '2026-07-06', recordedAtFull: '2026-07-06T09:00:00.000Z', data: { kind: 'gait', metrics: { cadence: 170 } } };
+    const g = { ...gait('g9', '2026-07-06', 80), linkedSessionId: 's9' };
+    const recs = collectMeasureRecords({ sessions: [session], gaitReports: [g] });
+    expect(recs).toHaveLength(1);
+  });
+});
