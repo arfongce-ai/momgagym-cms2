@@ -248,6 +248,43 @@ export const pelvisRelativeFeet = (lm) => {
 // IC(Initial Contact) = 발 전후 상대위치가 최대(가장 앞으로 뻗음)인 봉우리.
 // 이산 신호의 정점이 두 샘플에 걸쳐 같은 값이 되는 경우를 위해
 // '상승 후 하강' 전환(기울기 부호 +→-)을 추적해 평탄 정점도 1회만 카운트한다.
+// 좌-우 차분 신호의 지배 주기(자기상관)로 분당 걸음수를 구한다. 차분 신호는 2걸음(1 stride)에 한 번 진동한다.
+// 반환 { spm, strength } | null. strength(0~1)가 낮으면 주기가 뚜렷하지 않은 것이라 쓰지 않는다.
+export function dominantCadenceSpm(series, { minSpm = 60, maxSpm = 260, hz = 30 } = {}) {
+  if (!Array.isArray(series) || series.length < hz * 3) return null;
+  const t0 = series[0][0];
+  const t1 = series[series.length - 1][0];
+  const n = Math.floor(((t1 - t0) / 1000) * hz);
+  if (n < hz * 3) return null;
+  const y = new Array(n);
+  let j = 0;
+  for (let i = 0; i < n; i++) {
+    const t = t0 + (i / hz) * 1000;
+    while (j < series.length - 2 && series[j + 1][0] < t) j++;
+    const [ta, va] = series[j]; const [tb, vb] = series[j + 1];
+    y[i] = tb > ta ? va + ((vb - va) * (t - ta)) / (tb - ta) : va;
+  }
+  const mean = y.reduce((a, b) => a + b, 0) / n;
+  for (let i = 0; i < n; i++) y[i] -= mean;
+  const ac = (lag) => { let sum = 0; for (let i = 0; i + lag < n; i++) sum += y[i] * y[i + lag]; return sum; };
+  const r0 = ac(0);
+  if (!(r0 > 0)) return null;
+  const minLag = Math.max(2, Math.floor((120 / maxSpm) * hz));
+  const maxLag = Math.min(n - 1, Math.ceil((120 / minSpm) * hz));
+  const r = [];
+  for (let lag = minLag; lag <= maxLag; lag++) r[lag] = ac(lag) / r0;
+  let best = -Infinity;
+  for (let lag = minLag + 1; lag < maxLag; lag++) if (r[lag] > r[lag - 1] && r[lag] >= r[lag + 1] && r[lag] > best) best = r[lag];
+  if (!(best > 0)) return null;
+  // 배수(부조화) 주기를 피하려고 최댓값의 90% 이상인 첫 봉우리를 쓴다.
+  for (let lag = minLag + 1; lag < maxLag; lag++) {
+    if (r[lag] > r[lag - 1] && r[lag] >= r[lag + 1] && r[lag] >= best * 0.9) {
+      return { spm: Math.round((120 * hz) / lag), strength: Math.round(best * 100) / 100 };
+    }
+  }
+  return null;
+}
+
 export class GaitCycleTracker {
   constructor({
     minStepIntervalMs = GAIT_TUNING.minStepIntervalMs,
@@ -349,6 +386,9 @@ export class GaitCycleTracker {
 
     // 1-Euro 평활: 검출 떨림(노이즈) 제거. 보행 같은 큰 저주파 움직임은 보존.
     const v = this._filt.filter(vRaw, ts / 1000);
+    // [2026-11-17] 케이던스 교차검증용 좌-우 차분 신호 기록(스텝 봉우리 수가 발의 2차 봉우리로 부풀어도 주기로 바로잡는다)
+    if (!this._series) this._series = [];
+    if (this._series.length < 9000) this._series.push([ts, v]);
 
     // 절대 진폭 추적 (전체 측정 구간의 흔들림 크기)
     this._absLo = Math.min(this._absLo, v);
@@ -379,7 +419,17 @@ export class GaitCycleTracker {
     //  이제 첫 스텝~마지막 스텝 사이에 (스텝 수 - 1)개의 간격이 있다고 보고 계산한다.
     //  스텝이 2개 미만이거나 간격이 0이면 계산할 수 없으므로 0(미측정)으로 둔다.
     const stepSpanMs = (this._firstStepTs != null && this._lastStepTs != null) ? this._lastStepTs - this._firstStepTs : 0;
-    const spm = (this.steps >= 2 && stepSpanMs > 0) ? ((this.steps - 1) / (stepSpanMs / 60000)) : 0;
+    const peakSpm = (this.steps >= 2 && stepSpanMs > 0) ? ((this.steps - 1) / (stepSpanMs / 60000)) : 0;
+    // [2026-11-17] 발의 2차 봉우리·검출 떨림으로 스텝이 부풀면(예: 118→199spm) 주기 기반 값과 비교해 바로잡는다.
+    //  주기가 뚜렷하고(자기상관 0.4 이상) 스텝 수 값이 주기 값보다 12% 넘게 클 때만(=과다 계수) 주기 값을 쓴다.
+    //  주기 값이 더 큰 경우는 2차 고조파를 잡았을 수 있어 쓰지 않는다.
+    const freq = dominantCadenceSpm(this._series);
+    let spm = peakSpm;
+    let cadenceSource = 'steps';
+    if (freq && freq.strength >= 0.4 && freq.spm > 0 && peakSpm > freq.spm && (peakSpm - freq.spm) / freq.spm > 0.12) {
+      spm = freq.spm;
+      cadenceSource = 'frequency';
+    }
 
     // [2026-10 정확성 수정] 프레임이 없으면 '정상값 60%'로 채우지 않고 null(미측정)로 둔다.
     //  40~70% 강제 클램프도 제거 — 범위를 벗어난 값이 정상처럼 보이는 것을 막는다.
@@ -408,10 +458,13 @@ export class GaitCycleTracker {
       : null;
 
     return {
-      totalSteps: this.steps,
+      // 주기 값으로 바로잡았다면 총 스텝도 같은 기준(첫~마지막 스텝 구간 × 분당 걸음수)으로 맞춘다.
+      totalSteps: cadenceSource === 'frequency' ? Math.max(1, Math.round((spm * stepSpanMs) / 60000) + 1) : this.steps,
       stancePct: stance,
       swingPct: stance == null ? null : 100 - stance,
       averageCadenceSpm: Math.round(spm),
+      cadenceSource,
+      stepCountCadenceSpm: Math.round(peakSpm),
       signalAmp: Math.round(signalAmp * 100) / 100,
       valid,
       // [보폭 비대칭 판정 2026-09-14] 측면뷰 전용 — 후면/정면뷰에서는 이 발별
