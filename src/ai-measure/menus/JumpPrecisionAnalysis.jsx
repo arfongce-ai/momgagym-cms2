@@ -11,6 +11,7 @@
 //   [2] 상단에 "회원 키(000cm)로 자동 보정 중..." 표시 / 키 없으면 입력 팝업
 //   [3] 서 있는 자세 불안정(가시성↓·흔들림↑)이면 "올바르게 서 주세요" → 측정 차단
 // ════════════════════════════════════════════════════════════════════════
+import FloorMarkOverlay from './FloorMarkOverlay.jsx';
 import React, { useState, useEffect, useRef } from 'react';
 import {
   StandingCalibrator, JumpFlightTracker, BroadJumpTracker, broadJumpDistanceCm,
@@ -97,7 +98,7 @@ function buildRsiCyclePreview(flights = []) {
 // 저장값(BroadJumpTracker.summary)과 똑같은 함수라 화면값과 저장값이 항상 일치한다.
 function distanceCmOf(f, horizontalScale) {
   if (!horizontalScale) return null;
-  return broadJumpDistanceCm(f.landingX, horizontalScale.baselineFeetX, horizontalScale.scaleCmPerY, horizontalScale.frameAspect);
+  return broadJumpDistanceCm(f.landingX, horizontalScale.baselineFeetX, horizontalScale.scaleCmPerY, horizontalScale.frameAspect, horizontalScale.floorCmPerX);
 }
 
 function flightRows(flights = [], cycles = [], horizontalScale = null) {
@@ -347,6 +348,12 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
   const [weightInput, setWeightInput] = useState(initialWeight ? String(initialWeight) : '');
 
   const videoRef = useRef(null);
+  // 바닥 거리 마크 보정(제자리멀리뛰기, 스프린트 기준선 조정과 같은 방식)
+  const [floorOn, setFloorOn] = useState(false);
+  const [floorX, setFloorX] = useState([0.3, 0.7]);
+  const [floorKnownCm, setFloorKnownCm] = useState('100');
+  const floorRef = useRef({ on: false, x: [0.3, 0.7], known: '100' });
+  floorRef.current = { on: floorOn, x: floorX, known: floorKnownCm };
   const skeletonCanvasRef = useRef(null);
   const streamRef = useRef(null);
   const reqFrameRef = useRef(null);
@@ -717,6 +724,12 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
             prevFrameTsRef.current = 0;
           }
           tracker = trackerRef.current; // 위에서 방금 생성됐을 수 있으니 다시 읽는다
+          if (jumpType === 'horizontal') {
+            // 바닥 거리 마크 보정(켠 경우): 두 세로선 간격(정규화 x)과 실제 거리로 cm/x 를 정한다. 끄면 키 환산.
+            const f = floorRef.current;
+            const gap = Math.abs(f.x[1] - f.x[0]); const known = Number(f.known);
+            tracker.floorCmPerX = (f.on && known > 0 && gap >= 0.02) ? known / gap : null;
+          }
           // 프레임 간격(ms) 수집 — RSI 접지시간 정확도(fps) 판정용
           tracker.push(corrected, ts);
           const curInAir = tracker.inAir;
@@ -779,6 +792,7 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
                     scaleCmPerY: tracker.calib?.scaleCmPerY,
                     // [2026-11-17] frameAspect 누락 → 화면 HUD가 최종 저장값보다 가로세로비(16:9면 1.78배)만큼 작게 나오던 버그
                     frameAspect: tracker.frameAspect,
+                    floorCmPerX: tracker.floorCmPerX,
                   });
                   nextLiveJump = {
                     flightMs: Math.round(latest.flightMs),
@@ -797,7 +811,7 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
               let nextCycles = [];
               let nextRows = [];
               const horizontalScale = isHorizontal
-                ? { baselineFeetX: tracker.baselineFeetX, scaleCmPerY: tracker.calib?.scaleCmPerY, frameAspect: tracker.frameAspect }
+                ? { baselineFeetX: tracker.baselineFeetX, scaleCmPerY: tracker.calib?.scaleCmPerY, frameAspect: tracker.frameAspect, floorCmPerX: tracker.floorCmPerX }
                 : null;
               if (jumpType === 'reactive') {
                 const cyclePreview = buildRsiCyclePreview(tracker.flights);
@@ -893,7 +907,7 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
     // heightCm 대신 distanceCm을 채운다(perJump는 현재 화면엔 안 쓰이지만
     // 저장되는 리포트 데이터라 잘못된 값을 남기지 않는다).
     const horizontalScale = jumpType === 'horizontal'
-      ? { baselineFeetX: tracker.baselineFeetX, scaleCmPerY: tracker.calib?.scaleCmPerY, frameAspect: tracker.frameAspect }
+      ? { baselineFeetX: tracker.baselineFeetX, scaleCmPerY: tracker.calib?.scaleCmPerY, frameAspect: tracker.frameAspect, floorCmPerX: tracker.floorCmPerX }
       : null;
     const perJump = allFlightRows(tracker.flights, rsiResult?.perCycleByIndex || liveCyclePreview, horizontalScale);
 
@@ -1060,6 +1074,9 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
           } : undefined}>
             <video ref={videoRef} className="absolute inset-0 w-full h-full object-contain" playsInline muted />
             <canvas ref={skeletonCanvasRef} className="absolute inset-0 w-full h-full pointer-events-none" />
+            {jumpType === 'horizontal' && floorOn && !rotationDeg && (
+              <FloorMarkOverlay videoRef={videoRef} x={floorX} onChange={setFloorX} knownCm={floorKnownCm} />
+            )}
           </div>
 
           {/* 헤더 — [2026-08-05] safe-area-inset-top을 안 챙기고 있었다. 노치·
@@ -1155,6 +1172,25 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
                     className="rounded-full bg-black/50 border border-white/15 px-3 py-1 text-[11px] font-bold text-white/80 backdrop-blur active:scale-95">
                     ↻ 기준 다시 잡기
                   </button>
+                  {jumpType === 'horizontal' && (
+                    <div className="flex items-center gap-1.5">
+                      <button onClick={() => setFloorOn((v) => !v)} data-testid="floor-mark-toggle"
+                        className={`rounded-full border px-3 py-1 text-[11px] font-bold backdrop-blur active:scale-95 ${floorOn ? 'bg-sky-500 text-slate-950 border-sky-300' : 'bg-black/50 text-white/80 border-white/15'}`}>
+                        📏 바닥 거리 마크 {floorOn ? 'ON' : 'OFF'}
+                      </button>
+                      {floorOn && (
+                        <span className="flex items-center gap-1 rounded-full bg-black/60 px-2 py-0.5 text-[11px] text-white">
+                          <input type="number" inputMode="decimal" value={floorKnownCm} onChange={(e) => setFloorKnownCm(e.target.value)}
+                            className="w-16 rounded bg-white/10 px-1 text-center text-white" />cm
+                        </span>
+                      )}
+                    </div>
+                  )}
+                  {jumpType === 'horizontal' && floorOn && (
+                    <p className="max-w-xs text-center text-[10px] text-white/70">
+                      {rotationDeg ? '화면 회전 상태에서는 마크를 맞출 수 없습니다. 회전을 끄세요.' : '파란선을 줄자 0점, 주황선을 입력한 거리 지점에 맞추세요(점프하는 바닥 라인과 같은 깊이). 끄면 키로 환산합니다.'}
+                    </p>
+                  )}
                 </div>
               </>
             ) : (

@@ -27,3 +27,16 @@ describe('화면 HUD 거리 = 저장 거리', () => {
     expect((src.match(/frameAspect: tracker\.frameAspect/g) || []).length).toBeGreaterThanOrEqual(3);
   });
 });
+
+describe('라이브 멀리뛰기 바닥 마크 보정 연결', () => {
+  const src = fs.readFileSync('src/ai-measure/menus/JumpPrecisionAnalysis.jsx', 'utf8');
+  it('매 프레임 floorCmPerX를 트래커에 반영하고 화면·저장 환산이 같은 값을 쓴다', () => {
+    expect(src).toContain('tracker.floorCmPerX = (f.on && known > 0 && gap >= 0.02)');
+    expect((src.match(/floorCmPerX: tracker\.floorCmPerX/g) || []).length).toBeGreaterThanOrEqual(3);
+    expect(src).toContain('horizontalScale.floorCmPerX');
+  });
+  it('토글·오버레이가 있고 회전 상태에서는 오버레이를 그리지 않는다', () => {
+    expect(src).toContain('data-testid="floor-mark-toggle"');
+    expect(src).toContain("floorOn && !rotationDeg");
+  });
+});
