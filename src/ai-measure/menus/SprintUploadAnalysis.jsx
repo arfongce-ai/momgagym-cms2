@@ -13,7 +13,7 @@
 // 지표는 없지만 구간기록·속도가 실제 시간 기준으로 정확히 보정되도록 한다.
 
 import React, { useState, useRef, useCallback, useEffect } from 'react';
-import { SprintTracker, calibrateTrack } from '../core/sprintAgility';
+import { SprintTracker, calibrateTrack, TRACK_POINTS, DEFAULT_TRACK_POINT } from '../core/sprintAgility';
 import { analyzeUploadedVideo, CAPTURE_PRESETS } from '../core/videoAnalyzer';
 import { aiStore } from '../../demoData';
 import MeasureRecordConfirm from '../components/MeasureRecordConfirm.jsx';
@@ -40,6 +40,7 @@ export default function SprintUploadAnalysis({ member, onBack, onSaveToFirebase,
   // 2026-09-07 추가) → done(저장된 결과) | error
   const [phase, setPhase] = useState('idle');
   const [testKey, setTestKey] = useState('sprint10');
+  const [trackPoint, setTrackPoint] = useState(DEFAULT_TRACK_POINT); // [2026-11-17] 거리 추적 기준 부위
   const [camAngle, setCamAngle] = useState(DEFAULT_CAM_ANGLE); // 기본: 측면(가로) 기준
   const [capture, setCapture] = useState('normal');
   const [calibPoints, setCalibPoints] = useState(CAM_ANGLES.depth.points);
@@ -128,7 +129,7 @@ export default function SprintUploadAnalysis({ member, onBack, onSaveToFirebase,
     setProgress(0);
     setErrorMsg('');
 
-    const tracker = new SprintTracker({ calibration, splitDistancesM: cfg.splitDistancesM, mode: cfg.mode, trackDistanceM: cfg.trackDistanceM });
+    const tracker = new SprintTracker({ calibration, splitDistancesM: cfg.splitDistancesM, mode: cfg.mode, trackDistanceM: cfg.trackDistanceM, trackPoint });
     const abort = new AbortController();
     abortRef.current = abort;
     const preset = CAPTURE_PRESETS[capture] || CAPTURE_PRESETS.normal;
@@ -165,7 +166,7 @@ export default function SprintUploadAnalysis({ member, onBack, onSaveToFirebase,
     } finally {
       abortRef.current = null;
     }
-  }, [member, testKey, capture, calibPoints]);
+  }, [member, testKey, capture, calibPoints, trackPoint]);
 
   const cancelAnalysis = () => { abortRef.current?.abort(); };
 
@@ -336,6 +337,18 @@ export default function SprintUploadAnalysis({ member, onBack, onSaveToFirebase,
                   <button key={k} onClick={() => setTestKey(k)}
                     style={{ ...styles.testBtn, ...(testKey === k ? styles.testBtnActive : {}) }}>
                     {c.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <p style={styles.smallLabel}>거리 추적 기준 부위</p>
+              <div style={styles.pickerRow}>
+                {Object.entries(TRACK_POINTS).map(([k, d]) => (
+                  <button key={k} onClick={() => setTrackPoint(k)}
+                    style={{ ...styles.testBtn, ...(trackPoint === k ? styles.testBtnActive : {}) }}>
+                    {d.label}
                   </button>
                 ))}
               </div>
