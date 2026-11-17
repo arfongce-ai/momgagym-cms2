@@ -17,6 +17,7 @@ import {
 } from '../../components/report/UnifiedReportPrimitives';
 import { buildLiftingInterpretation, exerciseLabel, VBT_ZONE_PURPOSE, vbtZonePurpose } from '../core/lifting';
 import { generateLiftingDiagnosis, GRADE_LABEL } from '../core/barbellClinical';
+import { trainingPrescription, weightByRepsTable, loadIncreaseText } from '../core/oneRMTables';
 import MomiAutoNote from '../../components/report/MomiAutoNote.jsx';
 import MomiInsightPanel from '../../components/report/MomiInsightPanel.jsx';
 import { aiStore } from '../../demoData';
@@ -180,6 +181,36 @@ export default function LiftingReportDashboard({ report, onClose, member, previo
                   </div>
                 ))}
               </div>
+            </UnifiedReportSection>
+          )}
+
+          {/* [2026-11-17] 1RM 훈련 부하 처방 — 교재 표 17.7(반복↔%1RM)·17.9(목표별 부하)·17.10(증량 폭) */}
+          {mode === 'onerm' && Number(m.oneRM) > 0 && (
+            <UnifiedReportSection title="훈련 부하 처방" subtitle={`추정 1RM ${m.oneRM}kg 기준 · 교재 표 17.7·17.9`}>
+              <div className="space-y-1.5" data-testid="onerm-prescription">
+                {trainingPrescription(m.oneRM).map((g) => (
+                  <div key={g.key} className="rounded-xl bg-slate-100/50 dark:bg-slate-800/50 p-2.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[11px] font-black text-slate-800 dark:text-slate-100">{g.label}</span>
+                      <span className="font-mono text-[12px] font-black text-amber-700 dark:text-amber-300">{g.kgText}</span>
+                    </div>
+                    <p className="text-[10px] text-slate-500 dark:text-slate-400">{g.pctText} · {g.repsText}{g.note ? ` · ${g.note}` : ''}</p>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-2 grid grid-cols-4 gap-1 text-center text-[10px]">
+                {weightByRepsTable(m.oneRM).filter((r) => [1, 3, 5, 6, 8, 10, 12, 15].includes(r.reps)).map((r) => (
+                  <div key={r.reps} className="rounded-lg bg-slate-100/50 dark:bg-slate-800/50 py-1">
+                    <p className="text-slate-500">{r.reps}회 ({r.pct}%)</p>
+                    <p className="font-mono font-bold text-slate-700 dark:text-slate-200">{r.kg}kg</p>
+                  </div>
+                ))}
+              </div>
+              <p className="mt-2 text-[10px] leading-relaxed text-slate-500 dark:text-slate-400">
+                무게를 올릴 때는 5~10회×3세트 기준으로 상체 {loadIncreaseText('weak', 'upper')}·하체 {loadIncreaseText('weak', 'lower')}(훈련이 부족한 경우),
+                상체 {loadIncreaseText('strong', 'upper')}·하체 {loadIncreaseText('strong', 'lower')}(잘 훈련된 경우)씩 늘리고, 목표 반복 횟수는 유지합니다.
+                추정 1RM은 공식 추정값이라 실제 최대 시도와 다를 수 있습니다.
+              </p>
             </UnifiedReportSection>
           )}
 
