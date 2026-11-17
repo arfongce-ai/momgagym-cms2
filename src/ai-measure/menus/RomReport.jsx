@@ -15,7 +15,7 @@ import {
   UnifiedReportHeader,
   UnifiedReportPage,
 } from '../../components/report/UnifiedReportPrimitives';
-import { scoreToStatus, rangeToStatus } from '../core/unifiedReport';
+import { scoreToStatus, rangeToStatus, buildSummaryData } from '../core/unifiedReport';
 import { ROM_SYMMETRY_RANGE } from '../core/romThresholds';
 import { computeChangeRow, summarizeChanges, reportDateOnly } from '../core/measurementComparison';
 import ChangeSummaryPanel from '../../components/report/ChangeSummaryPanel.jsx';
@@ -82,7 +82,7 @@ export default function RomReport({ id = 'rom-report-sheet', report, previousRep
 
   return (
     <UnifiedReportCanvas>
-      <UnifiedReportPage className="mx-auto" id={id}>
+      <UnifiedReportPage className="mx-auto" id={id} interpretationSummary={buildSummaryData(report, { reportType: 'rom' })} interpretationType="rom">
         <UnifiedReportHeader
           eyebrow="ROM RANGE OF MOTION REPORT"
           badge="ROM"

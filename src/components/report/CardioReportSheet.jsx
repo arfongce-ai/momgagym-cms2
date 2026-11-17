@@ -9,7 +9,8 @@ import {
   UnifiedReportCanvas, UnifiedReportHeader, UnifiedReportPage, UnifiedReportSection,
 } from './UnifiedReportPrimitives';
 import ReportActions from './ReportActions';
-import { cardioHistoryMetrics, formatClock, formatPace } from '../../ai-measure/core/cardioTest';
+import { cardioHistoryMetrics, curvedComparison, formatClock, formatPace } from '../../ai-measure/core/cardioTest';
+import { buildSummaryData } from '../../ai-measure/core/unifiedReport';
 
 const SEX_LABEL = { male: '남', female: '여', m: '남', f: '여' };
 
@@ -68,7 +69,7 @@ function Tile({ label, value, unit, accent = false }) {
   );
 }
 
-export default function CardioReportSheet({ report, member, onMessage, showActions = true, reportNodeId = 'cardio-report-sheet' }) {
+export default function CardioReportSheet({ report, member, previous = null, onMessage, showActions = true, reportNodeId = 'cardio-report-sheet' }) {
   const p = report && typeof report === 'object' ? report : {};
   const memberName = member?.name || p.member?.name || '회원';
   const vo2 = p.estimates?.vo2max;
@@ -81,11 +82,13 @@ export default function CardioReportSheet({ report, member, onMessage, showActio
   const subject = p.subject || {};
   const notes = [...(p.notes || []), vo2 && !vo2.value ? vo2.reason : null, vo2?.value ? vo2.reason : null, p.estimates?.maxPower?.reason].filter(Boolean);
   const dateText = fmtDate(p.startedAt || p.endedAt || p.measuredAt);
+  const isCurved = p.basis === 'curved';
+  const cmp = isCurved ? curvedComparison(p, previous) : null;
 
   return (
     <div>
       <UnifiedReportCanvas>
-        <UnifiedReportPage id={reportNodeId} className="mx-auto">
+        <UnifiedReportPage id={reportNodeId} className="mx-auto" interpretationSummary={buildSummaryData(p, { reportType: 'cardio' })} interpretationType="cardio">
           <UnifiedReportHeader
             badge="VO2max"
             title={`심폐지구력 · ${p.machineLabel || ''} ${p.protocolLabel || ''}`.trim()}
@@ -94,6 +97,24 @@ export default function CardioReportSheet({ report, member, onMessage, showActio
             member={member || p.member || null}
           />
 
+          {isCurved && (
+            <UnifiedReportSection title="커브드 트레드밀 기록" subtitle="회차 비교" className="mb-4">
+              <div className="grid grid-cols-2 gap-2">
+                {p.protocolId === 'curved_2400'
+                  ? <Tile label="2.4km 기록" value={formatClock(result.durationSec)} unit="" accent />
+                  : <Tile label="12분 거리" value={result.distanceM ?? '-'} unit="m" accent />}
+                {cmp && <Tile label={cmp.kind === 'time' ? '직전 대비 시간' : '직전 대비 거리'} value={`${cmp.diff > 0 ? '+' : cmp.diff < 0 ? '-' : ''}${cmp.kind === 'time' ? formatClock(Math.abs(cmp.diff)) : Math.abs(cmp.diff)}`} unit={cmp.kind === 'time' ? '' : 'm'} />}
+              </div>
+              <p className="mt-2 break-keep text-[12px] font-semibold text-slate-600 dark:text-slate-300">
+                {cmp
+                  ? `${cmp.previousDate || '직전'} 기록과 같은 테스트로 비교했습니다. ${cmp.direction === 'improved' ? '좋아졌습니다.' : cmp.direction === 'worsened' ? '기록이 나빠졌습니다.' : '같은 기록입니다.'}`
+                  : '이 회원의 첫 커브드 기록입니다. 다음 측정부터 변화를 비교합니다.'}
+                {' '}커브드 트레드밀은 평지보다 힘들어 일반 달리기 표와 비교하지 않고, 같은 회원의 같은 테스트끼리 변화로 봅니다.
+              </p>
+            </UnifiedReportSection>
+          )}
+
+          {!isCurved && (
           <UnifiedReportSection title="최대산소섭취량(VO2max) 추정" subtitle="참고값" className="mb-4">
             {Number.isFinite(shownVo2) ? (
               <div className="grid grid-cols-2 gap-2">
@@ -106,6 +127,7 @@ export default function CardioReportSheet({ report, member, onMessage, showActio
               </p>
             )}
           </UnifiedReportSection>
+          )}
 
           {tiles.length > 0 && (
             <UnifiedReportSection title="측정 값" subtitle="핵심 지표" className="mb-4">

@@ -32,8 +32,10 @@ import {
   formatClock,
   formatPace,
   getProtocol,
+  curvedComparison,
   lastDistance,
   normalizeSex,
+  parseDistanceM,
   pastCardioRecords,
   personalMaxHr,
   protocolsForMachine,
@@ -311,7 +313,7 @@ export default function CardioTestMeasure({ onBack, member = null, onSave = null
   const manual = useMemo(() => {
     const m = {
       timeSec: parseClock(resultInputs.time),
-      distanceM: Number(resultInputs.distance) || null,
+      distanceM: parseDistanceM(resultInputs.distance),
       avgPowerW: Number(resultInputs.power) || null,
     };
     return m.timeSec || m.distanceM || m.avgPowerW ? m : null;
@@ -389,7 +391,19 @@ export default function CardioTestMeasure({ onBack, member = null, onSave = null
   const stage = protocolId === 'step' ? Math.floor(elapsed / STEP_STAGE_SEC) + 1 : 0;
   const stageTargetW = protocolId === 'step' ? stepPlan.startW + (stage - 1) * stepPlan.incW : null;
   const kindMismatch = machineInfo?.machineKind && machineId === 'bike' && machineInfo.machineKind !== 'bike';
-  const needsManual = computed && (computed.result.powerCoveragePct < 50 || computed.result.distanceM == null);
+  const isCurved = protocol?.basis === 'curved';
+  const needsManual = computed && (isCurved
+    ? (protocol.target?.durationSec ? !(computed.result.distanceM > 0) : !computed.result.manualTime)
+    : (computed.result.powerCoveragePct < 50 || computed.result.distanceM == null));
+  // [2026-11-17 커브드] 같은 회원·같은 테스트의 직전 기록과 비교(교재 표 대비 등급은 보여주지 않는다 — 연구용으로만 저장)
+  const prevCurved = useMemo(() => {
+    if (!isCurved) return null;
+    const list = past.filter((d) => d.protocolId === protocolId).sort((a, b) => String(b.startedAt || '').localeCompare(String(a.startedAt || '')));
+    return list[0] || null;
+  }, [isCurved, past, protocolId]);
+  const curvedCmp = useMemo(() => (isCurved && computed && prevCurved
+    ? curvedComparison({ protocolId, machineId, result: computed.result }, prevCurved)
+    : null), [isCurved, computed, prevCurved, protocolId, machineId]);
 
   const pickMachine = (id) => {
     setMachineId(id);
@@ -543,7 +557,9 @@ export default function CardioTestMeasure({ onBack, member = null, onSave = null
                   <p className="font-mono text-5xl font-black text-slate-900 dark:text-slate-100">
                     {protocol?.target?.durationSec ? formatClock(Math.max(0, protocol.target.durationSec - elapsed)) : formatClock(elapsed)}
                   </p>
-                  {protocol?.target?.distanceM && <p className="text-sm font-bold text-slate-700 dark:text-slate-200">남은 거리 {dist != null ? Math.max(0, protocol.target.distanceM - dist) : protocol.target.distanceM}m</p>}
+                  {protocol?.target?.distanceM && protocol.basis !== 'curved' && <p className="text-sm font-bold text-slate-700 dark:text-slate-200">남은 거리 {dist != null ? Math.max(0, protocol.target.distanceM - dist) : protocol.target.distanceM}m</p>}
+                  {protocol?.basis === 'curved' && protocol.target?.distanceM && <p className="text-sm font-bold text-red-700 dark:text-red-300" data-testid="cardio-curved-hint">콘솔 DIS.가 2.40이 되면 "운동 끝"을 누르세요</p>}
+                  {protocol?.basis === 'curved' && protocol.target?.durationSec && <p className="text-sm font-bold text-slate-700 dark:text-slate-200" data-testid="cardio-curved-hint">12분이 되면 자동으로 끝납니다 · 끝난 뒤 콘솔 DIS.를 확인하세요</p>}
                   {protocolId === 'step' && <p className="text-sm font-bold text-slate-700 dark:text-slate-200">{stage}단계 · 목표 {stageTargetW}W · 다음 단계까지 {formatClock(STEP_STAGE_SEC - (elapsed % STEP_STAGE_SEC))}</p>}
                   {protocolId === 'bike_astrand' && (
                     <p className={`text-sm font-bold ${live.hr >= 125 && live.hr <= 170 ? 'text-emerald-700 dark:text-emerald-300' : 'text-red-600 dark:text-red-400'}`}>
@@ -600,6 +616,25 @@ export default function CardioTestMeasure({ onBack, member = null, onSave = null
               <Tile label="최고 심박" value={computed.result.peakHr ?? '-'} />
               <Tile label="1분 회복" value={computed.recovery.drop60 ?? '-'} unit="bpm" />
             </div>
+            {isCurved && (
+              <div className="rounded-lg bg-slate-100 dark:bg-slate-800 p-2" data-testid="cardio-curved-result">
+                <p className="text-sm font-black text-slate-900 dark:text-slate-100">
+                  {protocol.target?.distanceM ? `2.4km 기록 ${formatClock(computed.result.durationSec)}` : `12분 거리 ${computed.result.distanceM ?? '-'}m`}
+                  <span className="ml-1 text-[11px] font-bold text-slate-500">커브드 기준</span>
+                </p>
+                {curvedCmp ? (
+                  <p className={`text-[12px] font-bold ${curvedCmp.direction === 'improved' ? 'text-emerald-700 dark:text-emerald-300' : curvedCmp.direction === 'worsened' ? 'text-amber-700 dark:text-amber-300' : 'text-slate-600 dark:text-slate-300'}`} data-testid="cardio-curved-compare">
+                    {curvedCmp.previousDate ? `${curvedCmp.previousDate} ` : '직전 '}기록 {curvedCmp.kind === 'time' ? formatClock(curvedCmp.previous) : `${curvedCmp.previous}m`} 대비{' '}
+                    {curvedCmp.direction === 'same' ? '같습니다.' : curvedCmp.kind === 'time'
+                      ? `${formatClock(Math.abs(curvedCmp.diff))} ${curvedCmp.diff < 0 ? '빨라졌습니다.' : '느려졌습니다.'}`
+                      : `${Math.abs(curvedCmp.diff)}m ${curvedCmp.diff > 0 ? '늘었습니다.' : '줄었습니다.'}`}
+                  </p>
+                ) : (
+                  <p className="text-[11px] text-slate-600 dark:text-slate-300">이 회원의 첫 커브드 기록입니다. 다음 측정부터 변화를 비교합니다.</p>
+                )}
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">커브드는 평지보다 힘들어 일반 달리기 표와 비교하지 않습니다. 같은 회원의 같은 테스트끼리 변화로 봅니다.</p>
+              </div>
+            )}
             {computed.estimates.vo2max && (
               <div className="rounded-lg bg-amber-50 dark:bg-amber-900/30 p-2">
                 <p className="text-sm font-black text-slate-900 dark:text-slate-100">
@@ -653,8 +688,8 @@ export default function CardioTestMeasure({ onBack, member = null, onSave = null
               <label className="text-[11px] font-bold text-slate-500 dark:text-slate-400">시간(분:초)
                 <input value={resultInputs.time} onChange={(e) => setResultInputs((s) => ({ ...s, time: e.target.value }))} placeholder="7:30" className={inputCls} />
               </label>
-              <label className="text-[11px] font-bold text-slate-500 dark:text-slate-400">거리(m)
-                <input inputMode="numeric" value={resultInputs.distance} onChange={(e) => setResultInputs((s) => ({ ...s, distance: e.target.value.replace(/\D+/g, '') }))} className={inputCls} />
+              <label className="text-[11px] font-bold text-slate-500 dark:text-slate-400">{protocol?.basis === 'curved' ? '콘솔 DIS.(km 또는 m)' : '거리(m)'}
+                <input inputMode="decimal" value={resultInputs.distance} onChange={(e) => setResultInputs((s) => ({ ...s, distance: e.target.value.replace(/[^\d.,]/g, '').slice(0, 7) }))} placeholder={protocol?.basis === 'curved' ? '2.43 또는 2430' : ''} className={inputCls} data-testid="cardio-distance-input" />
               </label>
               <label className="text-[11px] font-bold text-slate-500 dark:text-slate-400">평균 와트
                 <input inputMode="numeric" value={resultInputs.power} onChange={(e) => setResultInputs((s) => ({ ...s, power: e.target.value.replace(/\D+/g, '') }))} className={inputCls} />
@@ -705,7 +740,7 @@ export default function CardioTestMeasure({ onBack, member = null, onSave = null
           </div>
           {saveState.state === 'saved' && savedRecord && (
             <div className="pt-2">
-              <CardioReportSheet report={savedRecord} member={member} onMessage={setReportMsg} />
+              <CardioReportSheet report={savedRecord} member={member} previous={prevCurved} onMessage={setReportMsg} />
               {reportMsg && <p className="mt-2 text-center text-[11px] font-bold text-slate-500">{reportMsg}</p>}
             </div>
           )}

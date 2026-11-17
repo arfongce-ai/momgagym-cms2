@@ -25,6 +25,7 @@
 //  1~2개로 절제했다 — "쉬운 말"이지 "아이용 말투"가 아니다.
 // ════════════════════════════════════════════════════════════════════════
 import { UnifiedReportCanvas, UnifiedReportPage } from './UnifiedReportPrimitives';
+import { buildInterpretation } from '../../ai-measure/core/interpretation';
 
 const SIMPLE_STATUS = {
   normal: {
@@ -107,6 +108,9 @@ export default function SimpleResultReport({ summary, member, id }) {
   const measuredAt = formatDateOnly(summary.measuredAt);
   const metrics = (summary.keyMetrics || []).slice(0, 6);
   const recommendation = (summary.recommendations || []).filter(Boolean)[0];
+  // [2026-11-17] 쉬운 해석 — 항목마다 '무엇을 보는지' 한 문장 + 잘한 점/신경 쓸 점 요약
+  const easy = buildInterpretation(summary)?.easy;
+  const easyByKey = Object.fromEntries((easy?.metrics || []).map((e) => [e.key, e]));
 
   return (
     <UnifiedReportCanvas>
@@ -134,6 +138,9 @@ export default function SimpleResultReport({ summary, member, id }) {
                     <p className="break-keep text-[12.5px] font-black leading-tight text-slate-900 dark:text-white">{metric.label}</p>
                   </div>
                   <p className={`mt-2 text-[12px] font-bold ${s.tone}`}>{simpleMetricLine(metric)}</p>
+                  {easyByKey[metric.key]?.text && (
+                    <p className="mt-1 break-keep text-[11px] font-semibold leading-snug text-slate-600 dark:text-slate-300">{easyByKey[metric.key].text}</p>
+                  )}
                   {metric.displayValue != null && metric.displayValue !== '' && metric.displayValue !== '-' && (
                     <p className="mt-1 text-[10px] font-semibold text-slate-500">
                       참고 수치 {metric.displayValue}{metric.unit || ''}
@@ -142,6 +149,17 @@ export default function SimpleResultReport({ summary, member, id }) {
                 </div>
               );
             })}
+          </div>
+        )}
+
+        {easy && (
+          <div data-testid="simple-easy-summary" className="w-full rounded-2xl border border-slate-200 dark:border-slate-700 p-4 text-left">
+            <p className="mb-1 text-[11px] font-black uppercase tracking-widest text-slate-500">쉽게 정리하면</p>
+            <ul className="space-y-1">
+              {easy.lines.map((line, i) => (
+                <li key={i} className="break-keep text-[13px] font-semibold leading-relaxed text-slate-700 dark:text-slate-200">{line}</li>
+              ))}
+            </ul>
           </div>
         )}
 

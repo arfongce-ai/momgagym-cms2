@@ -12,6 +12,7 @@
 //  순수 함수만 둔다(화면·블루투스 없음) — 테스트에서 직접 실행해 검증한다.
 // ════════════════════════════════════════════════════════════════════════
 import { maxHeartRateFromAge } from './heartRateBle';
+import { run12Reference, run2400Reference } from './norms';
 
 export const CARDIO_RECORD_KIND = 'cardio_test';
 export const CARDIO_SERIES_MAX_SEC = 3600; // 1초 단위 원본 저장 상한(1시간)
@@ -84,6 +85,33 @@ export const CARDIO_PROTOCOLS = [
       care: '재활·고령 회원에게 권장하는 방식입니다. 단계마다 와트를 목표에 최대한 맞춰야 정확합니다.',
     },
   },
+  // [2026-11-17 커브드 트레드밀] 시어드 커브드 트레드밀 전용 — 콘솔에 거리(DIS., 10m 단위)·시간이 나온다. 블루투스 연결은 없다.
+  //  커브드는 같은 속도에서도 평지보다 훨씬 힘들어 교재 표(평지 기준)로 등급을 내지 않는다.
+  //  같은 회원의 같은 테스트끼리 회차 변화로 본다. 교재 표 대비 위치는 연구용으로만 저장한다(researchData.js).
+  {
+    id: 'curved_2400', machines: ['treadmill'], label: '2.4km 달리기(커브드)', short: '2.4km', basis: 'curved',
+    target: { distanceM: 2400 }, maximal: true, estimate: null,
+    guide: '커브드 트레드밀에서 2.4km를 최대한 빠르게. 콘솔 DIS.가 2.40이 되는 순간 "운동 끝"을 누르고 콘솔 TIME을 입력합니다.',
+    caution: '전력 테스트입니다. 재활·고령 회원에게는 권하지 않습니다.',
+    info: {
+      what: '2.4km(1.5마일)를 얼마나 빨리 달리는지로 심폐지구력을 봅니다. 시간이 줄면 좋아진 것입니다.',
+      how: ['3~5분 가볍게 걷거나 뛰며 몸을 풉니다.', '벨트를 돌리기 시작하는 순간 "시작"을 누릅니다.', '콘솔 DIS.가 2.40이 되면 바로 "운동 끝"을 누릅니다.', '결과 화면에 콘솔 TIME(분:초)을 입력해 정확한 시간을 남깁니다.'],
+      read: '같은 회원이 같은 커브드 트레드밀에서 반복했을 때의 시간 변화로 봅니다. 평지 달리기 표와 직접 비교하지 않습니다.',
+      care: '전력 테스트입니다. 가슴 통증·어지럼이 있으면 즉시 멈추세요. 커브드는 몸무게와 달리는 방식에 따라 힘든 정도가 달라집니다.',
+    },
+  },
+  {
+    id: 'curved_12min', machines: ['treadmill'], label: '12분 달리기(커브드)', short: '12분', basis: 'curved',
+    target: { durationSec: 720 }, maximal: true, estimate: null,
+    guide: '커브드 트레드밀에서 12분 동안 최대한 멀리. 12분이 되면 자동으로 끝나고, 콘솔 DIS. 값을 입력합니다.',
+    caution: '전력 테스트입니다. 재활·고령 회원에게는 권하지 않습니다.',
+    info: {
+      what: '12분 동안 얼마나 멀리 달리는지로 심폐지구력을 봅니다. 거리가 늘면 좋아진 것입니다.',
+      how: ['3~5분 가볍게 걷거나 뛰며 몸을 풉니다.', '벨트를 돌리기 시작하는 순간 "시작"을 누릅니다.', '12분이 되면 앱이 알려 주고, 곧바로 콘솔 DIS.를 확인합니다(예: 2.43 → 2430m).', '결과 화면에 콘솔 DIS. 값을 입력합니다.'],
+      read: '같은 회원이 같은 커브드 트레드밀에서 반복했을 때의 거리 변화로 봅니다. 콘솔 거리는 10m 단위입니다.',
+      care: '전력 테스트입니다. 속도를 일정하게 유지하는 것이 중요합니다.',
+    },
+  },
   {
     id: 'free', machines: ['rower', 'bike', 'ski', 'treadmill', 'climber'], label: '자유 기록', short: '자유',
     target: {}, maximal: false, estimate: null,
@@ -112,6 +140,32 @@ export function protocolsForMachine(machineId) {
 }
 export function getProtocol(id) {
   return CARDIO_PROTOCOLS.find((p) => p.id === id) || null;
+}
+
+// 콘솔 거리 입력: 'DIS. 2.43'(km) 또는 2430(m) 모두 받는다. 50 이하이거나 소수점이 있으면 km 로 본다.
+export function parseDistanceM(raw) {
+  const t = String(raw ?? '').replace(',', '.').replace(/[^\d.]/g, '');
+  if (!t || t === '.') return null;
+  const n = Number(t);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  const m = t.includes('.') || n <= 50 ? n * 1000 : n;
+  return Math.round(m / 10) * 10; // 콘솔 단위(10m)
+}
+
+// 커브드 테스트: 같은 회원·같은 장비·같은 테스트끼리의 직전 기록과 비교(시간은 짧을수록, 거리는 길수록 좋음)
+export function curvedComparison(current, previous) {
+  const c = current && typeof current === 'object' ? current : null;
+  const p = previous && typeof previous === 'object' ? previous : null;
+  if (!c || !p || c.protocolId !== p.protocolId || c.machineId !== p.machineId) return null;
+  const proto = getProtocol(c.protocolId);
+  if (proto?.basis !== 'curved') return null;
+  const isTime = Boolean(proto.target?.distanceM);
+  const cur = isTime ? c.result?.durationSec : c.result?.distanceM;
+  const prev = isTime ? p.result?.durationSec : p.result?.distanceM;
+  if (!Number.isFinite(cur) || !Number.isFinite(prev)) return null;
+  const diff = cur - prev;
+  const better = isTime ? diff < 0 : diff > 0;
+  return { kind: isTime ? 'time' : 'distance', current: cur, previous: prev, diff, direction: diff === 0 ? 'same' : (better ? 'improved' : 'worsened'), previousDate: String(p.startedAt || p.endedAt || '').slice(0, 10) };
 }
 
 export function normalizeSex(v) {
@@ -350,6 +404,11 @@ export function computeCardioResult({ protocolId, machineId, rec, workEndSec, su
     if (Number.isFinite(manual.avgPowerW) && manual.avgPowerW > 0) { result.avgPowerW = Math.round(manual.avgPowerW); result.manualPower = true; }
     if (result.distanceM && result.durationSec) result.paceSec500 = r1(result.durationSec / (result.distanceM / 500));
   }
+  // [2026-11-17] 커브드 2.4km: 끝낼 때 DIS.=2.40 이라 거리는 2400m 로 본다(입력이 없을 때). 12분: 시간은 720초.
+  if (protocol?.basis === 'curved') {
+    if (protocol.target?.distanceM && !(result.distanceM > 0)) { result.distanceM = protocol.target.distanceM; result.distanceAssumed = true; }
+    if (protocol.target?.durationSec && !result.manualTime && Math.abs(result.durationSec - protocol.target.durationSec) <= 5) result.durationSec = protocol.target.durationSec;
+  }
   const recovery = summarizeRecovery(rec, workEndSec);
   const hrMax = personalMaxHr({ age: subject.age, sessions: allSessions, currentPeak: result.peakHr });
   const sex = normalizeSex(subject.sex);
@@ -421,6 +480,11 @@ export function computeCardioResult({ protocolId, machineId, rec, workEndSec, su
     if (!stages.some((s) => s.complete)) notes.push('완료한 단계가 없습니다.');
   }
 
+  if (protocol?.basis === 'curved') {
+    if (protocol.target?.durationSec && !(result.distanceM > 0)) notes.push('콘솔 DIS. 거리를 입력하지 않아 12분 기록이 비어 있습니다.');
+    notes.push('커브드 트레드밀 기록입니다. 평지·모터 트레드밀과 직접 비교하지 말고, 같은 회원의 같은 테스트끼리 변화로 보세요.');
+  }
+
   // 기준값 보정(트레이너가 넣은 실측 VO2max 가 과거에 있으면)
   if (estimates.vo2max?.value) {
     const cal = calibrationFactor(past, estimates.vo2max.method);
@@ -430,11 +494,21 @@ export function computeCardioResult({ protocolId, machineId, rec, workEndSec, su
     }
   }
 
+  // 연구용 저장 전용: 교재 표(평지 기준) 대비 위치. 화면에는 보여주지 않는다(대표님 결정 2026-11-17).
+  let flatReference = null;
+  if (protocol?.basis === 'curved') {
+    flatReference = protocol.target?.distanceM
+      ? run2400Reference(sex, subject.age, result.durationSec)
+      : run12Reference(sex, subject.age, result.distanceM);
+    if (flatReference) flatReference = { ...flatReference, test: protocol.target?.distanceM ? 'run2400' : 'run12min', note: '평지 기준표 — 커브드와 직접 비교 불가, 연구용' };
+  }
+
   return {
     result,
     recovery,
     stages,
     estimates,
+    flatReference,
     hrMax,
     subject: { age: Number(subject.age) || null, sex, weightKg },
     notes,
@@ -450,6 +524,7 @@ export function buildCardioRecord({ protocolId, machineId, machine = null, start
     version: 1,
     protocolId,
     protocolLabel: protocol?.label || '',
+    basis: protocol?.basis || 'standard',
     machineId,
     machineLabel: CARDIO_MACHINES[machineId]?.label || machineId,
     machine: machine ? { name: String(machine.name || '').slice(0, 40), protocol: machine.protocol || null, reportedKind: machine.machineKind || null, services: (machine.services || []).slice(0, 12), characteristics: (machine.characteristics || []).slice(0, 6), detectedKind: machine.detectedKind || null } : null,
@@ -463,6 +538,7 @@ export function buildCardioRecord({ protocolId, machineId, machine = null, start
     stages: computed.stages,
     stepPlan: stepPlan || null,
     estimates: computed.estimates,
+    flatReference: computed.flatReference || null,
     notes: computed.notes,
     manual: manual || null,
     trainerNote: String(trainerNote || '').slice(0, 300),

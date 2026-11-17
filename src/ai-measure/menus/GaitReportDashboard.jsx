@@ -145,7 +145,7 @@ function GaitReportDashboardInner({ report, onComment, onClose, videoBlob, membe
 
   return (
     <UnifiedReportCanvas>
-      <UnifiedReportPage id="gait-report-sheet" className="mx-auto">
+      <UnifiedReportPage id="gait-report-sheet" className="mx-auto" interpretationSummary={buildSummaryData(report, { reportType: 'gait' })} interpretationType="gait">
         {/* ── 헤더 ── */}
         <UnifiedReportHeader
           eyebrow="GAIT & RUNNING REPORT"

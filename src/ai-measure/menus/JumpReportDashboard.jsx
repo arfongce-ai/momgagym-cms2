@@ -289,7 +289,7 @@ function JumpReportDashboardInner({ report, onClose, onComment, member, previous
           )}
         </ReportPage>
 
-        <ReportPage>
+        <ReportPage interpretationSummary={buildSummaryData(report, { reportType: 'jump' })}>
           <ReportHeader
             code={reportCode}
             type={isRsi ? 'RSI' : isHorizontal ? 'DISTANCE' : 'POWER'}
@@ -405,9 +405,9 @@ function JumpReportDashboardInner({ report, onClose, onComment, member, previous
   );
 }
 
-function ReportPage({ children }) {
+function ReportPage({ children, interpretationSummary = null }) {
   return (
-    <UnifiedReportPage className="mx-auto overflow-hidden">
+    <UnifiedReportPage className="mx-auto overflow-hidden" interpretationSummary={interpretationSummary} interpretationType="jump">
       {children}
     </UnifiedReportPage>
   );
