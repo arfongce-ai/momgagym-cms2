@@ -645,10 +645,16 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
       videoBlob: videoBlobRef.current || videoBlob || null,
     });
   };
+  // [2026-11-17] 녹화 영상(Blob)은 stop() 뒤 onstop에서 조금 늦게 만들어진다. 결과가 나오자마자 저장하면 영상 없이 저장되므로
+  //  녹화 중이었다면 영상이 준비될 때까지 기다렸다가 저장한다(최대 4초, 그래도 기록은 남김).
   useEffect(() => {
-    if (result && onSave) save();
+    if (!result || !onSave) return undefined;
+    const waitingForVideo = Boolean(mediaRecorderRef.current) && !videoBlobRef.current && !videoBlob;
+    if (!waitingForVideo) { save(); return undefined; }
+    const t = setTimeout(() => save(), 4000);
+    return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [result]);
+  }, [result, videoBlob]);
 
   // ────────── 풀스크린 카메라(측정 중) ──────────
   if (status !== 'idle') {

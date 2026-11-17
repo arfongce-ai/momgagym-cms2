@@ -692,8 +692,11 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
     (async () => {
       setSaveState('saving');
       try {
-        await saveToFirebase(reportData.valid === true ? reportData : { ...reportData, needsReview: true });
+        const res = await saveToFirebase(reportData.valid === true ? reportData : { ...reportData, needsReview: true });
         setSaveState('saved');
+        // [2026-11-17] 저장이 끝나면 '측정 리포트' 패널에서 멈추지 않고 바로 기록·확인 → 결과 리포트로 넘어간다
+        //  (다른 측정과 동일 흐름). 저장에 실패하면 이 패널에 남아 재시도할 수 있다. 저장된 id를 같이 넘겨 중복 저장을 막는다.
+        onOpenSavedReport?.(res && typeof res === 'object' ? { ...reportData, ...res } : reportData, recordedBlobRef.current || null);
       } catch (e) {
         setSaveState('error'); // 실패 시 수동 버튼으로 재시도 가능
       }

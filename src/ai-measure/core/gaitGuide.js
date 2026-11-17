@@ -44,22 +44,13 @@ export function drawGaitGuides(ctx, w, h, { view = 'side', locked = false, armin
   corner(bx, by, 1, 1); corner(bx + bw, by, -1, 1);
   corner(bx, by + bh, 1, -1); corner(bx + bw, by + bh, -1, -1);
 
-  // 하체 정렬 기준선 (Hip/Knee/Ankle) — 세이프존 내부, 아주 얇게
-  ctx.setLineDash([3, 8]);
-  ctx.lineWidth = 1;
-  const rows = [
-    { f: 0.08, label: 'Hip' },
-    { f: 0.5, label: 'Knee' },
-    { f: 0.92, label: 'Ankle' },
-  ];
+  // [2026-11-17] 예전 Hip/Knee/Ankle 가로선은 박스 높이의 고정 비율(8%·50%·92%)일 뿐 사람의 실제 위치와 무관해 의미가 없었다.
+  //  대신 박스 위·아래 변이 곧 기준이다: 윗변=머리 끝, 아랫변=발바닥(트레드밀 바닥). 전신이 두 변 사이에 들어오게 맞춘다.
+  ctx.setLineDash([]);
   ctx.font = `${Math.round(h * 0.016)}px system-ui, sans-serif`;
-  for (const r of rows) {
-    const y = by + bh * r.f;
-    ctx.strokeStyle = locked ? 'rgba(52,211,153,0.4)' : 'rgba(255,255,255,0.22)';
-    ctx.beginPath(); ctx.moveTo(bx, y); ctx.lineTo(bx + bw, y); ctx.stroke();
-    ctx.fillStyle = locked ? 'rgba(52,211,153,0.7)' : 'rgba(255,255,255,0.5)';
-    ctx.fillText(r.label, bx + 5, y - 4);
-  }
+  ctx.fillStyle = locked ? 'rgba(52,211,153,0.8)' : 'rgba(255,255,255,0.65)';
+  ctx.fillText('머리 끝', bx + 6, by + Math.round(h * 0.022));
+  ctx.fillText('발바닥', bx + 6, by + bh - 6);
 
   // 정렬 수직선: 측면=시상면 중앙, 후면/정면=정중선
   ctx.setLineDash([6, 9]);

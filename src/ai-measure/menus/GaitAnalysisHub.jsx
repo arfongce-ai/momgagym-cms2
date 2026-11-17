@@ -57,7 +57,12 @@ export default function GaitAnalysisHub({ member, onBack, saveToFirebase, onSave
     let saved = withRecord;
     setSaveState('saving');
     // [2026-11-16] 이상 데이터여도 일단 기록 — 무효면 needsReview 표시만 붙여 저장
-    if (typeof save === 'function') {
+    if (reportData.id && member?.id && !member.isVirtual) {
+      // [2026-11-17] 라이브 측정은 측정 직후 이미 저장됨(id 있음) — 다시 저장하면 같은 기록이 2건 생겨
+      //  '지난 측정'이 방금 측정 자신이 된다. 메모만 기존 기록에 반영한다.
+      try { if (record.note) await aiStore.updateGaitReport(member.id, reportData.id, { note: record.note }); } catch (e) { /* 메모 저장 실패는 기록 자체에 영향 없음 */ }
+      setSaveState('saved');
+    } else if (typeof save === 'function') {
       if (withRecord.valid !== true) withRecord.needsReview = true;
       try {
         const res = await save(withRecord);
