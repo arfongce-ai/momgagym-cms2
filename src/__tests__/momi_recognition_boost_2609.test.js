@@ -86,7 +86,7 @@ describe('온디바이스 한국어 음성 인식', () => {
       expect(component).toContain('onClick={installLocalRecognition}');
       expect(component).toContain('한국어 음성팩 설치');
       expect(component).toContain('setLocalInstallOffered(true)');
-      expect(component).toContain('const showLocalInstall = speechRecognitionIssue || localInstallOffered;');
+      expect(component).toContain('const showLocalInstall = Boolean(stagePhase) && (speechRecognitionIssue || localInstallOffered);');
       expect(component).toContain("recognitionStatus !== 'awaiting-reply'");
     }
   });
@@ -131,7 +131,7 @@ describe('로컬 마이크 입력 진단', () => {
     (file) => {
       const component = read(file);
       expect(component).toContain("status === 'no-speech' || status === 'speech-without-result'");
-      expect(component).toContain('const showMicDiagnostic = noSpeechDetected || speechRecognitionIssue');
+      expect(component).toContain('const showMicDiagnostic = Boolean(stagePhase) && (noSpeechDetected || speechRecognitionIssue');
       expect(component).toContain('onClick={async () => {');
       expect(component).toContain('마이크 입력 진단');
     }
