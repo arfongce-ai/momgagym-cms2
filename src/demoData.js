@@ -10,6 +10,7 @@ import {
 import { toYMD, todayYMD } from './utils/dates';
 import { buildUnifiedReportDocument, inferReportType } from './ai-measure/core/unifiedReport';
 import { computeTransferBasis, mergeTransferBasis } from './services/finance';
+import { moveSessionAdds } from './services/sessionExpiry';
 
 // v6.3: 로그인 권한 복구 배포 후 모바일의 오래된 스냅샷을 한 번 폐기한다.
 // v6.2: 델타 동기화 도입 직후, 원자 배치(예약+차감 등)가 updatedAt 도장 없이
@@ -895,6 +896,14 @@ export const store = {
       if (splitMap[fromTid] == null) delete newRate[fromTid];
 
       touchedPays.push({ pid: p.id, patch: { trainerIds: finalTids, split: newSplit, splitRateAtPay: newRate } });
+    });
+
+    // [2026-11-17] 결제의 등록횟수(sessionAdds)도 양도 횟수만큼 출발→대상으로 옮긴다. 안 옮기면 출발 트레이너 등록분이
+    //  계속 원래 횟수로 계산돼 '만료·잔여' 유령 카드가 뜨고, 정산 처리 시 이미 넘긴 횟수가 한 번 더 잡힌다.
+    moveSessionAdds(memberPays, fromTid, toTid, n).forEach(({ pid, sessionAdds }) => {
+      const hit = touchedPays.find(tp => tp.pid === pid);
+      if (hit) hit.patch.sessionAdds = sessionAdds;
+      else touchedPays.push({ pid, patch: { sessionAdds } });
     });
 
     // ── 원자적 저장: 회원 + 영향받은 결제들을 한 배치로 ──
