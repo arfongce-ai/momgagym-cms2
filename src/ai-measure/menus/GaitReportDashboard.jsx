@@ -14,6 +14,7 @@ import { MetricCard, UnifiedReportCanvas, UnifiedReportHeader, UnifiedReportPage
 import { rangeToStatus } from '../core/unifiedReport';
 import { cadenceRangeFor, stanceRangeFor, verticalOscRangeFor, classifyGaitMode, GAIT_MODE_LABEL } from '../core/gaitMode';
 import { buildSummaryData } from '../core/unifiedReport';
+import { GAIT_RANGES, normalizeGaitMetrics as normalizeMetrics, computeGaitScore as computeScore } from '../core/scoring';
 import { computeChangeRow, summarizeChanges, reportDateOnly } from '../core/measurementComparison';
 import ChangeSummaryPanel from '../../components/report/ChangeSummaryPanel.jsx';
 import VideoCompareUpload from '../../components/report/VideoCompareUpload.jsx';
@@ -70,14 +71,7 @@ function buildGaitChangeSummary(m, previousReport, orientation) {
  */
 
 // 정상범위 정의 — 색/판정에 공통 사용
-const RANGES = {
-  cadence: { good: [160, 180], warn: [150, 190], unit: 'SPM', label: '케이던스' },
-  stance: { good: [55, 65], warn: [50, 70], unit: '%', label: '입각기' },
-  trunkLean: { good: [4, 12], warn: [0, 18], unit: '°', label: '몸통 기울기' },
-  pelvicDrop: { good: [0, 4], warn: [0, 7], unit: '%', label: '골반 드롭' },
-  kneeSym: { good: [92, 100], warn: [85, 100], unit: '%', label: '무릎 대칭' },
-  stride: { good: [0.7, 1.1], warn: [0.5, 1.4], unit: '×', label: '보폭/신장' },
-};
+const RANGES = GAIT_RANGES;
 
 // 값이 정상/주의/이상 중 어디인지 → 색
 const statusColor = (v, r) => {
@@ -92,71 +86,6 @@ const statusText = (v, r) => {
   if (v >= r.warn[0] && v <= r.warn[1]) return '주의';
   return '이상';
 };
-
-// 종합 점수: 핵심 지표가 정상범위에 들면 가점 (0~100)
-// [2026-09-22 버그수정] trunkLean·pelvicDrop은 gaitBiomechanics.js 원문 주석대로
-// 특정 촬영각(각각 측면뷰/후면뷰)에서만 의미가 있고, 그 외 각도에서는 노이즈다
-// (예: 정면뷰에서 trunkLean은 거의 0에 수렴 → RANGES.trunkLean 기준 "주의"로
-// 잘못 표시됨). orientation을 알 때는 맞는 각도의 값만 점수에 반영하고, 구버전
-// 리포트처럼 orientation이 없어 알 수 없을 때만 기존처럼 그대로 반영한다.
-function computeScore(m, orientation) {
-  const pelvicDropOk = !orientation || orientation === 'back';
-  const trunkLeanOk = !orientation || orientation === 'side';
-  const checks = [
-    [m.cadence, cadenceRangeFor(m.cadence)],
-    [m.stancePct, stanceRangeFor(m.cadence)],
-    [trunkLeanOk ? m.trunkLean?.avg : null, RANGES.trunkLean],
-    [pelvicDropOk ? m.pelvicDropAbs : null, RANGES.pelvicDrop],
-    [m.verticalOscillation, verticalOscRangeFor(m.cadence)],
-    [m.kneeSymmetry, RANGES.kneeSym],
-    [m.strideToHeight, RANGES.stride],
-  ];
-  let score = 0, n = 0;
-  for (const [v, r] of checks) {
-    if (v == null || Number.isNaN(v) || !r) continue;
-    n++;
-    if (v >= r.good[0] && v <= r.good[1]) score += 100;
-    else if (v >= r.warn[0] && v <= r.warn[1]) score += 65;
-    else score += 30;
-  }
-  // [2026-11-17] 판정 지표가 2개 미만이면 점수 없음(단일 지표가 곧 종합 점수가 되는 것 방지).
-  return n >= 2 ? Math.round(score / n) : null;
-}
-
-// 구버전 데이터(metrics 없음) 폴백 — 최상위 필드에서 끌어온다.
-function normalizeMetrics(report) {
-  const m = report?.metrics || {};
-  const top = report || {};
-  return {
-    cadence: m.cadence ?? top.cadence ?? 0,
-    stancePct: m.stancePct ?? top.stancePct ?? null,
-    swingPct: m.swingPct ?? top.swingPct ?? null,
-    totalSteps: m.totalSteps ?? top.totalSteps ?? 0,
-    valid: m.valid ?? top.valid,
-    angles: m.angles ?? top.angles ?? { hip: {}, knee: {}, ankle: {} },
-    trunkLean: m.trunkLean ?? { avg: null, max: null, min: null },
-    kneeFlexion: m.kneeFlexion ?? { left: {}, right: {} },
-    pelvicDrop: m.pelvicDrop ?? { avg: null, max: null, min: null },
-    pelvicDropAbs: m.pelvicDropAbs ?? null,
-    verticalOscillation: m.verticalOscillation ?? null,
-    kneeSymmetry: m.kneeSymmetry ?? null,
-    strideToHeight: m.strideToHeight ?? null,
-    // [임상 플래그 추가 2026-09-14] 후면뷰 전용(Trendelenburg)/정면뷰 전용(외반·내반) —
-    // ClinicalFlagCard.jsx의 buildClinicalFlag가 report.orientation과 함께 읽는다.
-    pelvicDropAssessment: m.pelvicDropAssessment ?? null,
-    kneeAlignment: m.kneeAlignment ?? null,
-    stepWidthAssessment: m.stepWidthAssessment ?? null,
-    scissoringAssessment: m.scissoringAssessment ?? null,
-    crossoverAssessment: m.crossoverAssessment ?? null,
-    armCrossAssessment: m.armCrossAssessment ?? null,
-    toeAngleAssessment: m.toeAngleAssessment ?? null,
-    // [체간 시상면 기울기 2026-09-14] 측면뷰 전용 — 보행(Gait)에만 적용, 스프린트는
-    // 가속기/최고속기 구간별 기준 분리가 필요해 보류(사용자 확인, ways-of-working 참고).
-    trunkLeanAssessment: m.trunkLeanAssessment ?? null,
-    strideLengthAssessment: m.strideLengthAssessment ?? null,
-  };
-}
-
 function GaitReportDashboardInner({ report, onComment, onClose, videoBlob, member, previousReport }) {
   const m = useMemo(() => normalizeMetrics(report), [report]);
   const score = useMemo(() => computeScore(m, report?.orientation), [m, report?.orientation]);

@@ -2,8 +2,9 @@
 // extractKeyMetrics()에서 이 두 core 모듈의 판정 함수를 직접 재사용한다(자세한
 // 이유는 extractKeyMetrics 안의 주석 참고 — range 기반 재채점이 아니라 이미
 // 확정된 판정을 그대로 신뢰한다).
-import { extractSquatMetrics, squatMetricStatus } from './squatBiomechanics';
-import { legMetrics, stanceMetricStatus } from './singleLegStance';
+import { extractSquatMetrics, squatMetricStatus, computeSquatScore } from './squatBiomechanics';
+import { legMetrics, stanceMetricStatus, computeStanceScore } from './singleLegStance';
+import { computeGaitScore, normalizeGaitMetrics, computeJumpScore } from './scoring';
 import { cadenceRangeFor, stanceRangeFor, verticalOscRangeFor } from './gaitMode';
 import { ROM_SYMMETRY_RANGE } from './romThresholds';
 import { POSTURE_THRESHOLDS } from './postureMath';
@@ -600,12 +601,36 @@ export function sanitizeReportPayload(value, options = {}) {
 // 이미 확정된 report.status를 점수로 직접 환산해 우선 사용한다.
 const JUDGED_STATUS_REPORT_TYPES = new Set(['stance', 'squat']);
 
+// 상세 화면이 쓰는 점수 계산을 그대로 호출한다. undefined=전용 계산 없음(기존 경로), null=점수 없음.
+function dedicatedDetailScore(report, reportType) {
+  const r = (report && typeof report.data === 'object' && report.data && !Array.isArray(report.data))
+    ? { ...report.data, ...report } : (report || {});
+  if (reportType === 'stance') {
+    if (r.valid === false) return null;
+    const v = computeStanceScore(r);
+    return v > 0 ? v : undefined; // 세부 판정이 없으면 확정 status 환산으로
+  }
+  if (reportType === 'squat') {
+    if (r.valid === false) return null;
+    const v = computeSquatScore(r, extractSquatMetrics(r));
+    return v > 0 ? v : undefined;
+  }
+  // 원본 지표(metrics/biomech)가 없는 요약 전용 기록은 저장된 점수 필드를 쓰는 기존 경로로 둔다.
+  if (reportType === 'gait') return (r.metrics || r.cadence != null) ? computeGaitScore(normalizeGaitMetrics(r), r.orientation) : undefined;
+  if (reportType === 'jump') return r.biomech ? computeJumpScore(r) : undefined;
+  return undefined;
+}
+
 export function buildSummaryData(report = {}, options = {}) {
   const reportType = options.reportType || inferReportType(report);
-  const judgedStatusScore = JUDGED_STATUS_REPORT_TYPES.has(reportType) && STATUS[report.status]
+  const detailScore = dedicatedDetailScore(report, reportType);
+  const judgedStatusScore = detailScore === undefined && JUDGED_STATUS_REPORT_TYPES.has(reportType) && STATUS[report.status]
     ? STATUS[report.status].score
     : null;
-  const rawScore = judgedStatusScore ?? firstDefinedPath(report, SCORE_PATHS) ?? computeScoreFromMetrics(report, reportType);
+  // [2026-11-17] 스탠스·스쿼트·보행·점프는 상세 화면과 같은 계산(core/scoring.js 등)을 쓴다 — 목록·종합·회차 비교 점수 불일치 방지.
+  const rawScore = detailScore !== undefined
+    ? detailScore
+    : (judgedStatusScore ?? firstDefinedPath(report, SCORE_PATHS) ?? computeScoreFromMetrics(report, reportType));
   const score = rawScore == null ? 0 : normalizeScore(rawScore);
   const status = rawScore == null ? STATUS.unknown : scoreToStatus(score);
   const keyMetrics = extractKeyMetrics(report, reportType);
