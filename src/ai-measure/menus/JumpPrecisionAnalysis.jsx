@@ -294,7 +294,9 @@ function drawBaseline(canvas, video, baselineFeetY, rotationDeg = 0) {
   ctx.setLineDash([]);
 }
 
-export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase, onSave, onMemberHeightChange, onManualComplete, onComplete, onOpenSavedReport, jumpType = 'power', jumpSubType = 'cmj', leg = null }) {
+export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase, onSave, onMemberHeightChange, onManualComplete, onComplete, onOpenSavedReport, jumpType = 'power', jumpSubType = 'cmj', leg = null, measurePoint = 'feet' }) {
+  const measurePointRef = useRef(measurePoint); // [2026-11-17] 멀리뛰기 측정 부위(보정 시작 때 읽는다)
+  useEffect(() => { measurePointRef.current = measurePoint; }, [measurePoint]);
   const saveToFirebase = onSaveToFirebase || onSave;
   // [2026-08-10 추가] 세부 종류(CMJ/SJ/DJ/SLJ/RSI)에 따른 파생값. jumpType은
   // 기존 그대로 'power'|'reactive' 엔진 분기용으로 계속 쓰고, 아래 두 값만
@@ -442,7 +444,7 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
   useEffect(() => { lockZoom(); return () => unlockZoom(); }, []);
 
   const resetPipeline = () => {
-    calibRef.current = new StandingCalibrator({ heightCm: heightRef.current, forcedAnkleSide: legRef.current });
+    calibRef.current = new StandingCalibrator({ heightCm: heightRef.current, forcedAnkleSide: legRef.current, measurePoint: jumpType === 'horizontal' ? measurePointRef.current : 'feet' });
     trackerRef.current = null;
     biomechAccRef.current = new JumpBiomechAccumulator({ heightCm: heightRef.current });
     prevInAirRef.current = false;
