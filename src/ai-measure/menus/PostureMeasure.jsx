@@ -315,10 +315,12 @@ export default function PostureMeasure({ member, onSave, onBack, onViewInReport 
 
     const snapshotUrl = captureVideoSnapshot(latestVideoRef.current, rotationDegRef.current);
     const bi = bodyInfoRef.current;
-    const analysis = analyzePostureFromLandmarks(landmarks, {
-      heightCm: bi.heightCm,
-      actualAge: bi.actualAge,
-    });
+    let analysis = null;
+    try {
+      analysis = analyzePostureFromLandmarks(landmarks, { heightCm: bi.heightCm, actualAge: bi.actualAge });
+    } catch (err) {
+      console.error('[posture] 분석 실패(기록은 남김)', err); // 분석이 실패해도 촬영·기록은 진행(확인 필요 표시)
+    }
     const prevCaptures = capturesRef.current;
     if (prevCaptures[step.key]?.snapshotUrl) URL.revokeObjectURL(prevCaptures[step.key].snapshotUrl);
     const nextCaptures = {
@@ -414,37 +416,48 @@ export default function PostureMeasure({ member, onSave, onBack, onViewInReport 
       clearInterval(autoCountdownRef.current);
       autoCountdownRef.current = null;
       setAutoCountdown(null);
-      // 카운트다운 동안 자세가 흐트러졌으면 재시도(측정 정직성: 잘못된 캡처 방지)
-      // 단일 프레임 대신 '안정 다수결(voter)'로 판정 — 측면 임계 구간에서 한 프레임만
-      // 튀어도 촬영이 거부되던 문제 방지.
-      const live = latestLandmarksRef.current;
-      const target = activeViewKeyRef.current;
-      // 면 고정 시에는 자동 면 판정을 검사하지 않고, 전신이 보이는지만 확인.
-      const stillStable = lockViewRef.current
-        ? true
-        : viewVoterRef.current.isStable(target, { minRatio: 0.6, minFrames: 6 });
-      // [일단 기록 2026-11-16] 카운트다운이 끝나면 무조건 촬영한다. 예전엔 여기서 '양쪽 관절 모두 보임'을
-      //  다시 요구해, 옆모습(반대쪽이 가려짐)은 인식돼도 '자세가 흐트러졌습니다'만 반복되고 찍히지 않았다.
-      if (!live) {
-        setGuide('사람이 화면에 잡히지 않았습니다 — 다시 맞춰주세요.');
-        viewVoterRef.current.reset();
-        autoBusyRef.current = false;
-        return;
-      }
-      void stillStable;
-      beepGo();
-      const more = performCapture();
-      if (more === null) { autoBusyRef.current = false; return; }
-      beepSuccess();
-      // 다음 면이 있으면 잠깐 텀을 두고 자동 진행 재개(자세 변경 시간 확보)
-      if (more) {
-        // 다음 면으로 돌아설 시간 확보(1.5s 고정 텀 → 3초 판정 쉼 + 2초 연속 확인)
-        turnUntilRef.current = performance.now() + AUTO_CAPTURE.turnPauseMs;
+      try {
+        // 카운트다운 동안 자세가 흐트러졌으면 재시도(측정 정직성: 잘못된 캡처 방지)
+        // 단일 프레임 대신 '안정 다수결(voter)'로 판정 — 측면 임계 구간에서 한 프레임만
+        // 튀어도 촬영이 거부되던 문제 방지.
+        const live = latestLandmarksRef.current;
+        const target = activeViewKeyRef.current;
+        // 면 고정 시에는 자동 면 판정을 검사하지 않고, 전신이 보이는지만 확인.
+        const stillStable = lockViewRef.current
+          ? true
+          : viewVoterRef.current.isStable(target, { minRatio: 0.6, minFrames: 6 });
+        // [일단 기록 2026-11-16] 카운트다운이 끝나면 무조건 촬영한다. 예전엔 여기서 '양쪽 관절 모두 보임'을
+        //  다시 요구해, 옆모습(반대쪽이 가려짐)은 인식돼도 '자세가 흐트러졌습니다'만 반복되고 찍히지 않았다.
+        if (!live) {
+          setGuide('사람이 화면에 잡히지 않았습니다 — 다시 맞춰주세요.');
+          viewVoterRef.current.reset();
+          autoBusyRef.current = false;
+          return;
+        }
+        void stillStable;
+        beepGo();
+        const more = performCapture();
+        if (more === null) { autoBusyRef.current = false; return; }
+        beepSuccess();
+        // 다음 면이 있으면 잠깐 텀을 두고 자동 진행 재개(자세 변경 시간 확보)
+        if (more) {
+          // 다음 면으로 돌아설 시간 확보(1.5s 고정 텀 → 3초 판정 쉼 + 2초 연속 확인)
+          turnUntilRef.current = performance.now() + AUTO_CAPTURE.turnPauseMs;
+          viewVoterRef.current.reset();
+          viewHoldRef.current.reset();
+          motionBufRef.current = [];
+          autoBusyRef.current = false;
+        } else {
+          autoBusyRef.current = false;
+        }
+      } catch (err) {
+        // [2026-11-17] 촬영 처리 중 예외가 나면 카운트다운 뒤 아무 일도 안 일어나던(우측면) 문제 방지:
+        //  상태를 풀고 안내를 보여 주며 같은 면에서 다시 인식·촬영할 수 있게 한다.
+        console.error('[posture] 자동 촬영 처리 실패', err);
+        setGuide('촬영 처리 중 오류가 났습니다 — 자세를 유지하면 다시 시도합니다. (계속되면 아래 강제 촬영)');
         viewVoterRef.current.reset();
         viewHoldRef.current.reset();
-        motionBufRef.current = [];
-        autoBusyRef.current = false;
-      } else {
+        holdStartRef.current = 0;
         autoBusyRef.current = false;
       }
     }, 1200); // 카운트다운 간격(1.0→1.2s): 숫자가 너무 빨리 지나가던 문제 완화
@@ -514,6 +527,17 @@ export default function PostureMeasure({ member, onSave, onBack, onViewInReport 
       setSaveState('error');
     }
   };
+
+  // [자동 저장 2026-11-17] 결과 리포트가 나오면 회원 기록에 한 번 자동 저장(버튼을 안 눌러 기록이 사라지던 문제).
+  //  실패하면 saveState='error' 로 남아 기존 저장 버튼으로 다시 저장할 수 있다.
+  const autoSavedReportRef = useRef(null);
+  useEffect(() => {
+    if (!report) { autoSavedReportRef.current = null; return; }
+    if (!member || !onSave || autoSavedReportRef.current === report.measuredAt) return;
+    autoSavedReportRef.current = report.measuredAt;
+    handleSave();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [report]);
 
   if (report) {
     const snapSnapshots = (report.perViewSnapshots || []).filter((s) => s.snapshotUrl);

@@ -444,8 +444,12 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
     }
   };
 
+  // [자동 저장 2026-11-17] 결과가 나오면 한 번 자동 저장. 같은 결과는 버튼을 또 눌러도 중복 저장하지 않는다.
+  const savedResultRef = useRef(null);
   const save = () => {
     if (!result) return;
+    if (savedResultRef.current === result) return;
+    savedResultRef.current = result;
     const weight = snapWeight(dialWeight) || totalWeight(plate.sidePlates, plate.barKg).total;
     onSave?.({
       type: 'vbt',
@@ -475,6 +479,10 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
       videoBlob: videoBlobRef.current || videoBlob || null,
     });
   };
+  useEffect(() => {
+    if (result && onSave) save();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [result]);
 
   // ───────── 풀스크린 카메라(측정 중) ─────────
   if (status !== 'idle') {

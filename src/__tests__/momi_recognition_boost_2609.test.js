@@ -30,15 +30,12 @@ describe('웨이크워드 오인식 제어', () => {
     expect(matchWakeWord(heard)).toBeNull();
   });
 
-  // [2026-11-13] 대표님 요청 — 비슷한 발음 추가 + 앞에 군소리가 붙어도 인정.
-  it.each(['모니야', '모미여', '오미야', '모비야', '노미야', '모미요', '뭐미야'])('추가된 비슷한 발음 "%s"도 호출어로 분리한다', (wake) => {
-    const heard = `${wake} 회원 관리 열어줘`;
-    const m = matchWakeWord(heard);
-    expect(m).not.toBeNull();
-    expect(heard.slice(m.index + m.length).trim()).toBe('회원 관리 열어줘');
+  // [2026-11-17] 대표님 요청 — "시도 때도 없이 열지 마, 불렀을 때만". 11-13에 넓혔던 변형은 철회.
+  it.each(['모니야', '모미여', '오미야', '모비야', '노미야', '모미요', '뭐미야'])('넓혔던 변형 "%s"는 더 이상 호출어가 아니다', (wake) => {
+    expect(matchWakeWord(`${wake} 회원 관리 열어줘`)).toBeNull();
   });
 
-  it.each(['어 모미야 타이머 켜줘', '자 내려가고 모미야 타이머 켜줘', '오늘 모니야 타이머 켜줘'])('앞에 다른 말이 붙은 "%s"에서도 호출어 뒤를 명령으로 자른다', (heard) => {
+  it.each(['어 모미야 타이머 켜줘', '자 내려가고 모미야 타이머 켜줘'])('앞에 다른 말이 붙은 "%s"에서도 호출어 뒤를 명령으로 자른다', (heard) => {
     const m = matchWakeWord(heard);
     expect(m).not.toBeNull();
     expect(heard.slice(m.index + m.length).trim()).toBe('타이머 켜줘');
@@ -62,8 +59,7 @@ describe('웨이크워드 오인식 제어', () => {
     expect(isSafeWakeOnly('어 모미야', matchWakeWord('어 모미야'))).toBe(true);
     expect(isSafeWakeOnly('몸이야', matchWakeWord('몸이야'))).toBe(true);
     expect(isSafeWakeOnly('모미아', matchWakeWord('모미아'))).toBe(true);
-    expect(isSafeWakeOnly('모니야?', matchWakeWord('모니야?'))).toBe(true);
-    expect(isSafeWakeOnly('오늘 모니야', matchWakeWord('오늘 모니야'))).toBe(false);
+    expect(matchWakeWord('모니야?')).toBeNull();
   });
 });
 
@@ -90,7 +86,7 @@ describe('온디바이스 한국어 음성 인식', () => {
       expect(component).toContain('onClick={installLocalRecognition}');
       expect(component).toContain('한국어 음성팩 설치');
       expect(component).toContain('setLocalInstallOffered(true)');
-      expect(component).toContain('const showLocalInstall = speechRecognitionIssue || localInstallOffered;');
+      expect(component).toContain('const showLocalInstall = Boolean(stagePhase) && (speechRecognitionIssue || localInstallOffered);');
       expect(component).toContain("recognitionStatus !== 'awaiting-reply'");
     }
   });
@@ -135,7 +131,7 @@ describe('로컬 마이크 입력 진단', () => {
     (file) => {
       const component = read(file);
       expect(component).toContain("status === 'no-speech' || status === 'speech-without-result'");
-      expect(component).toContain('const showMicDiagnostic = noSpeechDetected || speechRecognitionIssue');
+      expect(component).toContain('const showMicDiagnostic = Boolean(stagePhase) && (noSpeechDetected || speechRecognitionIssue');
       expect(component).toContain('onClick={async () => {');
       expect(component).toContain('마이크 입력 진단');
     }

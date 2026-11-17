@@ -503,6 +503,12 @@ export default function SprintLiveAnalysis({ member, onBack, onSaveToFirebase, o
     }
   };
 
+  // [자동 저장 2026-11-17] 결과가 나와 '기록' 단계에 들어오면 확인 버튼을 기다리지 않고 바로 저장한다.
+  useEffect(() => {
+    if (view === 'record' && reportData && saveState === 'idle' && saveToFirebase) handleConfirmRecord({ note: '' });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view, reportData, saveState]);
+
   // [직전 측정 비교 2026-09-07] 저장 성공 후 같은 회원·같은 testKey의 직전 기록을
   // 하나 불러온다(GaitAnalysisHub.jsx:38-54, SprintUploadAnalysis.jsx와 동일 패턴).
   useEffect(() => {

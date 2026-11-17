@@ -544,6 +544,8 @@ export default function GlobalVoiceCommand() {
     // 무대를 띄워(빨간 오류 상태) 이유를 보여주고, 표시 시간이 끝나면 닫는다.
     // 권한 거부·네트워크 끊김처럼 재시작할 때마다 같은 오류가 반복되는 경우, 매번
     // 화면 전체를 덮으면 키오스크를 못 쓴다 — 같은 오류는 1분에 한 번만 띄운다.
+    // [2026-11-17] 오류가 나도 모미가 스스로 고치지 못하므로 화면을 띄우지 않는다(불렀을 때만 열림).
+    return;
     const now = Date.now();
     const last = lastShownErrorRef.current;
     if (last.code === errorCode && now - last.at < 60000) return;
@@ -674,8 +676,9 @@ export default function GlobalVoiceCommand() {
   // 오브(마이크 버튼)도, 코너 HUD도 없다. "모미야"로 불렀을 때만 전체화면
   // 음성인식 그래프가 그라데이션으로 떠오르고, 명령이 끝나면 다시 사라진다.
   // 측정 카메라 화면이 떠 있는 동안에는 위 effect가 무대를 내려둔다.
-  const showLocalInstall = speechRecognitionIssue || localInstallOffered;
-  const showMicDiagnostic = noSpeechDetected || speechRecognitionIssue || ['mic-diagnostic-running', 'mic-signal-detected', 'mic-signal-low', 'mic-diagnostic-failed', 'mic-diagnostic-unsupported'].includes(recognitionStatus);
+  // [2026-11-17] 불렀을 때(무대가 열려 있을 때)만 보인다 — 평소 작업 화면 위에 진단 패널이 떠 방해하던 문제.
+  const showLocalInstall = Boolean(stagePhase) && (speechRecognitionIssue || localInstallOffered);
+  const showMicDiagnostic = Boolean(stagePhase) && (noSpeechDetected || speechRecognitionIssue || ['mic-diagnostic-running', 'mic-signal-detected', 'mic-signal-low', 'mic-diagnostic-failed', 'mic-diagnostic-unsupported'].includes(recognitionStatus));
   const localInstallText = localInstallFailure
     ? describeLocalInstallFailure(localInstallFailure.reason, localInstallFailure.detail)
     : speechRecognitionIssue
