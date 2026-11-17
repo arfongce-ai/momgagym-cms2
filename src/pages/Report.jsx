@@ -446,6 +446,11 @@ function ComprehensiveReportSection({ member, dataReady, onRecordsChanged }) {
                     <span className="text-xs text-slate-500 font-normal ml-1.5">{a.record.sourceLabel} · {a.record.dateYMD || '날짜 없음'}</span>
                   </div>
                   <div className="text-[11px] text-red-700 dark:text-red-400">{a.reasons.join(' · ')}</div>
+                  {/* [2026-11-17] 빈 결과가 '측정 실패'인지 '요약기가 못 읽는 종류'인지 구분할 단서 —
+                      측정 이름과 원본에 실제로 담긴 값 개수를 보여준다(삭제 전 확인용). */}
+                  <div className="text-[11px] text-slate-500">
+                    {a.record.title || '측정 이름 없음'} · 원본 값 {Object.values(a.record.raw || {}).filter(v => v != null && v !== '' && !(typeof v === 'object' && Object.keys(v).length === 0)).length}개
+                  </div>
                 </div>
                 <button onClick={() => handleDelete(a.record, a.reasons.join(', '))} disabled={deleting === a.record.id}
                   className="text-[11px] font-bold text-red-700 dark:text-red-400 border border-red-500/30 rounded-lg px-2.5 py-1.5 active:scale-95 transition-transform disabled:opacity-40">
