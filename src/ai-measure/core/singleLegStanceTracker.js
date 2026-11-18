@@ -83,6 +83,7 @@ export const SLST_TRACK_TUNING = {
   // 종료됐고(과민), 균형상실(balanceLoss)은 감지는 해도 플래그만 세울 뿐 시행을
   // 끝내지 않았으며(둔감), 회전/제자리돌기를 감지하는 신호 자체가 없었다.
   releaseHysteresisMs: 150,   // 발내림 판정도 이 시간만큼 연속으로 문턱 아래여야 확정(단일 프레임 잡음 방지)
+  altLiftConfirmMs: 300,      // 반대발(지지다리 표기 쪽)이 들린 경우 이 시간 지속돼야 시행 시작
   rotationYawDeltaDeg: 18,    // 시행 시작 시점 대비 이만큼 회전하면 "돌았다"로 간주
   rotationHysteresisMs: 500,  // 회전 판정도 이 시간만큼 연속 유지돼야 확정(2026-11-16: 200→500ms, 깊이(z) 잡음 오판 감소)
 };
@@ -185,6 +186,8 @@ export class SingleLegStanceTracker {
     this._filtHipX = new OneEuroFilter({ minCutoff: this.tuning.filterMinCutoff, beta: this.tuning.filterBeta, dCutoff: 1.0 });
     this._filtHipY = new OneEuroFilter({ minCutoff: this.tuning.filterMinCutoff, beta: this.tuning.filterBeta, dCutoff: 1.0 });
     this._liftStartMs = null;
+    this._activeSide = null; // 이번 시행에서 실제로 들린 발(기본은 liftedSide, 반대발이 들리면 stanceLeg)
+    this._altSinceMs = null; // 반대발 들림 지속 확인용
     this._maxPelvicTiltDeg = 0;
     this._balanceLoss = false;
     this._prevHip = null;
@@ -233,6 +236,8 @@ export class SingleLegStanceTracker {
         pelvicTiltDeg: Math.round(this._maxPelvicTiltDeg * 10) / 10,
         balanceLoss: this._balanceLoss,
         stepOut: endReason === 'foot_down',
+        // [2026-11-18] 선택한 지지다리와 반대발(=지지발)이 들려서 잡힌 시행이면 true.
+        sideMismatch: this._activeSide != null && this._activeSide !== this.liftedSide,
       });
     }
     // minHoldForValidMs 미만이면 잡음으로 간주해 조용히 버리고 계속 대기.
@@ -248,18 +253,36 @@ export class SingleLegStanceTracker {
     // 들린 양 = 그 발목 "자기 자신"의 기준선 대비 떠오른 정규화 y 거리.
     // (양발 평균이 아니라 발목별 기준선을 쓰므로 좌우 발목 높이차가 문턱에
     //  더해지지 않는다.)
-    const lift = this._liftAmount(lm, this.liftedSide);
-    if (lift == null) return;
-
+    // [2026-11-18] "오른쪽만 촬영이 안 됨" 대응 — 기대한 발(liftedSide)만 보면, 카메라 좌우 라벨이
+    // 뒤집혔거나 회원이 반대발을 들었을 때 시행이 영영 시작되지 않는다. 기대 발이 안 들리고
+    // 반대발(지지다리 표기 쪽)이 liftBand 이상으로 altHoldMs 동안 지속되면 그 발로 시행을 시작하고
+    // 결과에 sideMismatch 표시를 남긴다(트레이너가 확인).
+    const expected = this._liftAmount(lm, this.liftedSide);
     if (this.phase === 'waiting') {
-      if (lift >= this.liftBand) {
+      let side = this.liftedSide;
+      let lift = expected;
+      if (expected == null || expected < this.liftBand) {
+        const alt = this._liftAmount(lm, this.stanceLeg);
+        if (alt != null && alt >= this.liftBand) {
+          if (this._altSinceMs == null) this._altSinceMs = tMs;
+          if (tMs - this._altSinceMs >= this.tuning.altLiftConfirmMs) { side = this.stanceLeg; lift = alt; }
+          else lift = null;
+        } else {
+          this._altSinceMs = null;
+        }
+      }
+      if (lift != null && lift >= this.liftBand) {
         this.phase = 'holding';
+        this._activeSide = side;
         this._liftStartMs = tMs;
+        this._altSinceMs = null;
         // 회전 감지 기준선 — 시행 시작 시점의 골반 yaw를 "정면"으로 삼는다.
         this._baselineYawDeg = hipYawProxyDeg(lm);
       }
       return;
     }
+    const lift = this._liftAmount(lm, this._activeSide || this.liftedSide);
+    if (lift == null) return;
 
     // phase === 'holding'
     const settling = tMs - this._liftStartMs < this.tuning.liftSettleMs;
@@ -340,6 +363,7 @@ export class SingleLegStanceTracker {
         pelvicTiltDeg: t.pelvicTiltDeg,
         balanceLoss: t.balanceLoss,
         stepOut: t.stepOut,
+        sideMismatch: !!t.sideMismatch,
       };
     };
     return {

@@ -19,7 +19,7 @@
 //  동일한 mode 토글 자리(실시간/업로드). 두 방식 모두 singleLegStanceTracker.js
 //  하나를 공유하므로 판정 결과는 방식과 무관하게 동일한 로직으로 나온다.
 // ════════════════════════════════════════════════════════════════════════
-import React, { useState, useCallback, useMemo, useEffect } from 'react';
+import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import StanceLiveAnalysis from './StanceLiveAnalysis';
 import StanceUploadAnalysis from './StanceUploadAnalysis';
 import StanceReportDashboard from './StanceReportDashboard';
@@ -187,6 +187,17 @@ export default function StanceAnalysisHub({ member, onBack, onSave, onSaveToFire
   const confirmRecord = useCallback((record) => {
     if (pending) persist(pending, record);
   }, [pending, persist]);
+
+  // [2026-11-18] 촬영(좌/우 전 구간) 완료 → 자동 저장 → 결과지. 예전엔 기록 확인 화면에서
+  // 버튼을 눌러야만 저장돼 오른쪽까지 끝내고도 저장·결과지가 안 나오는 경우가 있었다.
+  // 같은 측정(measuredAt)은 1회만 시도하고, 실패하면 확인 화면에 남아 재시도 버튼을 쓴다.
+  const autoSavedRef = useRef(null);
+  useEffect(() => {
+    if (view !== 'record' || !pending) return;
+    if (autoSavedRef.current === pending.measuredAt) return;
+    autoSavedRef.current = pending.measuredAt;
+    persist(pending, { note: '' });
+  }, [view, pending, persist]);
 
   const backToMeasure = () => {
     setView('measure'); setReport(null); setPending(null); setSaveState('idle');

@@ -291,7 +291,7 @@ export default function StanceLiveAnalysis({ member, stanceLeg, eyesClosed, onBa
       setHoldMs(tracker.elapsedHoldMs(ts));
     } else if (tracker.trials.length > beforeCount) {
       const t = tracker.trials[tracker.trials.length - 1];
-      setLastTrialNote(t.stepOut ? '조기 종료(스텝아웃)로 기록됨' : '정상 종료로 기록됨');
+      setLastTrialNote((t.stepOut ? '조기 종료(스텝아웃)로 기록됨' : '정상 종료로 기록됨') + (t.sideMismatch ? ' · 선택한 쪽과 반대 발이 들려 있었어요(확인 필요)' : ''));
       setTrialsFound(tracker.trials.length);
       setUiPhase(tracker.trials.length >= tracker.maxTrials ? 'finished' : 'trial_done');
     } else {
@@ -330,7 +330,7 @@ export default function StanceLiveAnalysis({ member, stanceLeg, eyesClosed, onBa
     const tracker = trackerRef.current;
     if (tracker) {
       const t = tracker.trials[tracker.trials.length - 1];
-      setLastTrialNote(t?.stepOut ? '조기 종료(스텝아웃)로 기록됨' : '정상 종료로 기록됨');
+      setLastTrialNote((t?.stepOut ? '조기 종료(스텝아웃)로 기록됨' : '정상 종료로 기록됨') + (t?.sideMismatch ? ' · 선택한 쪽과 반대 발이 들려 있었어요(확인 필요)' : ''));
       setTrialsFound(tracker.trials.length);
       setUiPhase(tracker.trials.length >= tracker.maxTrials ? 'finished' : 'trial_done');
     }
