@@ -29,7 +29,7 @@ import MemberTestRecommendationPanel from '../components/ai/MemberTestRecommenda
 // 회원 수가 많아지면 드롭다운 스크롤보다 이름/초성/전화 뒤4자리 검색이 훨씬 빠르다.
 import MemberPicker from '../components/common/MemberPicker';
 // [한발멀리뛰기 추가 2026-09-16] '제자리멀리뛰기' 탭의 세부종류 선택 제한에 사용.
-import { BROAD_JUMP_SUBTYPES } from './core/jumpTypes';
+import { BROAD_JUMP_SUBTYPES, VERTICAL_JUMP_SUBTYPES } from './core/jumpTypes';
 
 export default function AiMeasureHub() {
   const { user } = useAuth();
@@ -565,7 +565,7 @@ export default function AiMeasureHub() {
             // 수평(horizontal) 엔진 4종(SBJ+한발멀리뛰기 3방향)으로 제한한다
             // (JumpAnalysisHub.jsx allowedSubTypes 참고) — 'jump' 탭은 이 prop
             // 자체를 안 받아 기존 9종 전체 선택 그대로.
-            {...(active.id === 'broadjump' ? { allowedSubTypes: BROAD_JUMP_SUBTYPES } : {})}
+            {...(active.id === 'broadjump' ? { allowedSubTypes: BROAD_JUMP_SUBTYPES } : active.id === 'jump' ? { allowedSubTypes: VERTICAL_JUMP_SUBTYPES } : {})}
           />
         </Suspense>
         {savePrompt && createPortal(

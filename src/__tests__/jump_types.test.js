@@ -3,7 +3,7 @@
 // 메타데이터/판정 함수 검증.
 import { describe, it, expect } from 'vitest';
 import {
-  JUMP_SUBTYPES, JUMP_SUBTYPE_ORDER, BROAD_JUMP_SUBTYPES,
+  JUMP_SUBTYPES, JUMP_SUBTYPE_ORDER, BROAD_JUMP_SUBTYPES, VERTICAL_JUMP_SUBTYPES,
   resolveJumpSubType, engineOf, requiredJumpsFor, minCyclesOverrideFor, labelOf,
 } from '../ai-measure/core/jumpTypes.js';
 
@@ -23,6 +23,11 @@ describe('JUMP_SUBTYPES — 9종 메타데이터 무결성', () => {
     expect(JUMP_SUBTYPES.shjf.singleLeg).toBe(true);
     expect(JUMP_SUBTYPES.shjm.singleLeg).toBe(true);
     expect(JUMP_SUBTYPES.shjl.singleLeg).toBe(true);
+  });
+
+  // [2026-11-23] 6번(점프 & RSI)에서 수평점프 탭 제거
+  it('VERTICAL_JUMP_SUBTYPES는 수직 5종만 담고 수평(sbj·shj*)은 없다', () => {
+    expect(VERTICAL_JUMP_SUBTYPES).toEqual(['cmj', 'sj', 'dj', 'slj', 'rsi']);
   });
 
   it('각 종류는 code/label/engine/guideTitle/guideBody/tip을 갖는다', () => {
