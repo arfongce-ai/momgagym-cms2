@@ -45,6 +45,9 @@
 
 ## 작업 로그
 
+### 2026-11-23 · Claude Code · RPE 필드는 종료 직후 1번만 (브랜치 feat/rpe-field-end-only-1123)
+- 필드 테스트(`field_*`)는 뛰는 중 입력이 불가해 3분 알림·버튼을 끄고 운동 끝 직후 1번만 받음(`rpeCheckpoints`가 빈 배열). 실내는 그대로 3분마다. 실기기 확인 못 함.
+
 ### 2026-11-23 · Claude Code · 11번 심폐지구력에 교재 필드 테스트 추가 (브랜치 feat/cardio-field-tests-1123)
 - 새 장비 '트랙·평지(필드)'에 테스트 4개: 쿠퍼 1.5마일(남녀 식 + 표 8.2 백분위), 쿠퍼 12분(Cooper 1968 식), 록포트 1마일 걷기(18~29/30~79세 식, 종료 직후 심박 입력·밴드 자동), 브루스(모터 트레드밀, 총 시간 → VO2max, 단계 안내). `core/cardioTest.js`, `core/norms.js`(표 8.2), `menus/CardioTestMeasure.jsx`, `components/report/CardioReportSheet.jsx`.
 - 추정값마다 오차 범위(SEE)·설명력(r²) 표시, 최대심박 Tanaka(208−0.7×나이) 값 병기 저장(기본 최대심박은 220−나이 그대로), 용어에 중단 기준 추가.
