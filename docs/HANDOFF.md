@@ -45,6 +45,16 @@
 
 ## 작업 로그
 
+### 2026-11-23 · Claude Code · AI분석 현장 점검 7건 중 6건 수정 (브랜치 fix/ai-measure-1123, 미푸시)
+- 2번(점프): 6번 탭 칩에서 수평(SBJ·한발멀리뛰기) 제거 → `jumpTypes.js` `VERTICAL_JUMP_SUBTYPES`, `AiMeasureHub.jsx`에서 'jump' 탭에 `allowedSubTypes` 전달. 수평은 7번 탭 전용.
+- 3번(RUN 녹화): `GaitRunningAnalysis.jsx` 자동 종료 15초 → 60초(`GAIT_MAX_RECORD_SEC`), 진행바 연동.
+- 1번(벤치 카운팅): 원인 = 렙 카운팅이 `fullBody`(머리+발목 보임)일 때만 쌓였는데 누운 벤치에선 발목이 안 보임. `framingGuide.js` `assessFraming({upperOnly})` 추가, `OneRMEstimate.jsx`(lift==='bench')·`VbtMeasure.jsx`(bench_press)에서 어깨+손목 기준 사용. 카메라 안내 문구도 수정(옆 90°, 바 높이, 수평, 2~3m).
+- 5번(사진): `captureQuality.js` 트래커가 2초마다 240px JPEG 썸네일을 모아 저장 시 `snapshots`(시작·중간 2장)로 리포트에 포함, `QuickResultSheet`에 표시. 영상은 로컬 보관 원칙 그대로. 업로드(고속영상) 모드는 카메라 프레임이 없어 해당 없음.
+- 6번(전후 비교): 심폐지구력 일반 테스트에 `cardioChangeSummary`(직전 같은 장비·테스트 대비) + `ChangeSummaryPanel`. 저장 직후 자기 자신이 직전으로 뽑히지 않게 시각으로 거름.
+- 4번(RUN 분석): `core/runMechanics.js`(접지·체공 시간, 오버스트라이드·팔 스윙은 측면 전용, 쉬운 말 피드백) + `menus/RunMechanicsCard.jsx`, 라이브·업로드 모두 `metrics.runMechanics` 저장. 기준값은 현장 보정용 시작값. 합성 데이터 테스트만 했고 **실제 영상 검증은 안 함**(접지 시간은 프레임 간격만큼 오차).
+- 7번(한발 들기 위험/점수 불일치): 원인 미확정 — 직후 화면과 결과가 같은 판정 함수를 씀. 대표님이 직후·결과 캡처를 주시면 이어서.
+- 테스트: 전체 통과, 실패 1개는 기존 `momi_voice.test.js:119`. 빌드 통과. 실기기(갤럭시 S23) 확인 못 함.
+
 ### 2026-11-16 · Claude Code · 금~일 측정 작업(33개 파일) main 반영
 - 다른 채팅에서 만든 변경(zip, 기준 277fa29)을 최신 main(고니오메타 수정 포함) 위에 3방향 병합. 겹친 파일은 `RomMeasure.jsx` 하나, 충돌 없음(고니오메타 글자색 보정 유지).
 - 내용: 자세체형 결과지(`PostureResultSheet`·근육 해부도), 측정별 간단 결과지(`QuickResultSheet`), 결과리포트 공통 UI 정리, 측정 준비 신호등(`CaptureReadinessBar`·`captureQuality.js`), 촬영 기준 안내(`CaptureGuideStrip`), 저장 전 품질 등급, 계산 안 된 항목 이유 표시, 자세·ROM 정밀 모델(CPU면 full로 하향), `usePoseEngine` 인식률 집계.

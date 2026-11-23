@@ -1,3 +1,4 @@
+import { RunMechanicsTracker } from '../core/runMechanics';
 import React, { useState, useEffect, useRef } from 'react';
 import {
   GaitCycleTracker, jointAnglesFromPose, AngleAccumulator,
@@ -222,6 +223,7 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
   // 겹쳐 보여 폭 계산 자체가 신뢰 불가하므로 녹화 루프에서 orientation
   // === 'front'일 때만 push한다(아래 startVisionPipeline 참고).
   const kneeAlignAccRef = useRef(new DynamicKneeAlignmentTracker());
+  const runMechRef = useRef(new RunMechanicsTracker()); // [2026-11-23] 접지·체공·오버스트라이드·팔 스윙
 
   useEffect(() => { viewRef.current = view; }, [view]);
   useEffect(() => { aspectRef.current = aspect; }, [aspect]);
@@ -395,6 +397,7 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
           trackerRef.current.push(pelvisRelativeFeet(corrected), ts);
           angleAccRef.current.push(jointAnglesFromPose(corrected));
           biomechAccRef.current.push(corrected);
+          runMechRef.current.push(corrected, ts);
           // 정면뷰로 촬영 중일 때만 동적 무릎 정렬(외반/내반)을 누적한다 —
           // 측면/후면은 좌우 무릎이 겹쳐 보여 폭 기반 판정이 무의미하다.
           if (orientationRef.current === 'front') kneeAlignAccRef.current.push(corrected);
@@ -515,6 +518,7 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
     angleAccRef.current = new AngleAccumulator();
     biomechAccRef.current = new BiomechAccumulator();
     kneeAlignAccRef.current = new DynamicKneeAlignmentTracker();
+    runMechRef.current = new RunMechanicsTracker();
     armingSinceRef.current = null;
     recordingStartedAtRef.current = performance.now();
     // 이전 측정의 저장/공유 상태 리셋 (재녹화 시 저장 버튼이 막히지 않도록)
@@ -615,6 +619,8 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
         verticalOscillation: biomech.verticalOscillation,
         kneeSymmetry: biomech.kneeSymmetry,
         strideToHeight: biomech.strideToHeight,
+        // [2026-11-23] 달리기 분석 보강 — 접지·체공 시간, 오버스트라이드(측면), 팔 스윙(측면)
+        runMechanics: runMechRef.current.summary({ orientation: orientationRef.current || null }),
       };
 
       setReportData({
