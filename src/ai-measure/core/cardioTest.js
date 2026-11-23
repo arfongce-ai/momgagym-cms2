@@ -251,6 +251,28 @@ export function cardioChangeSummary(current, previous) {
   return summarizeChanges(rows, String(p.startedAt || p.endedAt || p.measuredAt || '').slice(0, 10));
 }
 
+
+// [2026-11-23 실내·필드·장비별 비교] 결과리포트에서 실내(장비)/필드(트랙·평지)와 장비(로잉·바이크·스키·커브드·필드)·테스트를 섞지 않고
+//  같은 묶음끼리만 비교한다. 묶음 키 = 실내|필드 + 장비 + 테스트.
+export const cardioContextLabel = (machineId) => (cardioContext(machineId) === 'field' ? '필드' : '실내');
+export const cardioGroupKey = (d) => `${cardioContext(d?.machineId)}|${d?.machineId || ''}|${d?.protocolId || ''}`;
+const recDate = (d) => String(d?.startedAt || d?.endedAt || d?.measuredAt || '');
+/** 같은 묶음의 이전 기록(최신 → 과거) + 한 줄 요약 행. records 는 저장된 cardio_test payload 배열(아무 장비나 섞여 있어도 됨). */
+export function cardioGroupHistory(current, records = [], limit = 6) {
+  if (!current || typeof current !== 'object') return { rows: [], oldest: null, total: 0 };
+  const key = cardioGroupKey(current);
+  const cur = recDate(current);
+  const same = (Array.isArray(records) ? records : [])
+    .filter((d) => d && d.kind === CARDIO_RECORD_KIND && cardioGroupKey(d) === key && d !== current && (!cur || recDate(d) < cur))
+    .sort((a, b) => recDate(b).localeCompare(recDate(a)));
+  const v = (r) => (Number.isFinite(r?.confirmedVo2max) ? r.confirmedVo2max : (r?.estimates?.vo2max?.calibratedValue ?? r?.estimates?.vo2max?.value));
+  const rows = same.slice(0, limit).map((d) => ({
+    date: recDate(d).slice(0, 10), vo2: v(d) ?? null, timeSec: d.result?.durationSec ?? null, distanceM: d.result?.distanceM ?? null,
+    avgPowerW: d.result?.avgPowerW ?? null, avgHr: d.result?.avgHr ?? null, drop60: d.recovery?.drop60 ?? null,
+  }));
+  return { rows, oldest: same.length > 1 ? same[same.length - 1] : null, total: same.length };
+}
+
 export function normalizeSex(v) {
   const s = String(v || '').toLowerCase();
   if (!s) return null;
@@ -712,7 +734,52 @@ export function computeCardioResult({ protocolId, machineId, rec, workEndSec, su
 
 // 저장 페이로드. 필드 이름은 다른 측정 유형 판정(unifiedReport.inferReportType)에 걸리지 않게
 // 고른다(summary·analysis·mode·type·heightCm·rsi·diagnosis 사용 금지).
-export function buildCardioRecord({ protocolId, machineId, machine = null, startedAt, endedAt, rec, computed, hrSource = 'none', manual = null, trainerNote = '', confirmedVo2max = null, referenceVo2max = null, stepPlan = null }) {
+
+// ── RPE(Borg 6~20) — 저장 전용 입력. 추정식에 넣지 않고 기록·리포트 참고로만 쓴다(2026-11-23).
+export const RPE_MIN = 6;
+export const RPE_MAX = 20;
+export const RPE_PEAK_OK = 17; // 최대 노력 판단 참고선(보통 17 이상)
+export const RPE_INTERVAL_SEC = 180; // 운동 중 기록 간격(3분)
+export function rpeLabel(n) {
+  const v = Math.round(Number(n));
+  if (!Number.isFinite(v) || v < RPE_MIN || v > RPE_MAX) return '';
+  if (v <= 7) return '아주 편함';
+  if (v <= 9) return '편함';
+  if (v <= 11) return '약간 편함';
+  if (v <= 13) return '약간 힘듦';
+  if (v <= 15) return '힘듦';
+  if (v <= 17) return '매우 힘듦';
+  if (v <= 19) return '극도로 힘듦';
+  return '최대';
+}
+// 운동 중 RPE를 적을 시점(초). 목표 시간이 있으면 3분 간격(마지막 시점 직전은 제외), 없으면 3분 간격을 계속 제안한다.
+export function rpeCheckpoints(protocolId, maxSec = 1800) {
+  const p = getProtocol(protocolId);
+  const total = p?.target?.durationSec || maxSec;
+  const out = [];
+  for (let t = RPE_INTERVAL_SEC; t < total - 30; t += RPE_INTERVAL_SEC) out.push(t);
+  return out;
+}
+// 지금 적어야 하는 시점(없으면 null). logged: [{tSec,kind}]
+export function rpeDue(protocolId, elapsedSec, logged = []) {
+  const cps = rpeCheckpoints(protocolId);
+  const done = (logged || []).filter((x) => x.kind === 'during').map((x) => x.tSec);
+  for (const cp of cps) {
+    if (elapsedSec >= cp && elapsedSec < cp + 45 && !done.some((d) => d >= cp - 15 && d < cp + 45)) return cp;
+  }
+  return null;
+}
+export function normalizeRpe(list) {
+  const rows = (Array.isArray(list) ? list : [])
+    .map((x) => ({ tSec: Math.max(0, Math.round(Number(x?.tSec) || 0)), value: Math.round(Number(x?.value)), kind: x?.kind === 'end' ? 'end' : 'during' }))
+    .filter((x) => x.value >= RPE_MIN && x.value <= RPE_MAX);
+  if (!rows.length) return null;
+  const end = [...rows].reverse().find((x) => x.kind === 'end');
+  const peak = end ? end.value : Math.max(...rows.map((x) => x.value));
+  return { scale: 'borg6-20', entries: rows, peak, hasEnd: Boolean(end), maxEffort: peak >= RPE_PEAK_OK };
+}
+
+export function buildCardioRecord({ protocolId, machineId, machine = null, startedAt, endedAt, rec, computed, hrSource = 'none', manual = null, trainerNote = '', confirmedVo2max = null, referenceVo2max = null, stepPlan = null, rpe = null }) {
   const protocol = getProtocol(protocolId);
   return {
     kind: CARDIO_RECORD_KIND,
@@ -735,6 +802,7 @@ export function buildCardioRecord({ protocolId, machineId, machine = null, start
     estimates: computed.estimates,
     flatReference: computed.flatReference || null,
     fieldRank: computed.fieldRank || null,
+    rpe: normalizeRpe(rpe),
     notes: computed.notes,
     manual: manual || null,
     trainerNote: String(trainerNote || '').slice(0, 300),

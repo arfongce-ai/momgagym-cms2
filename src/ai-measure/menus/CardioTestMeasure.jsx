@@ -40,7 +40,7 @@ import {
   personalMaxHr,
   cardioContext,
   protocolsForMachine,
-  bruceStageAt,
+  rpeLabel, rpeDue, rpeCheckpoints, RPE_MIN, RPE_MAX, bruceStageAt,
   recordTick,
   windowAvg,
 } from '../core/cardioTest';
@@ -121,6 +121,37 @@ const parseClock = (s) => {
   const n = Number(s);
   return Number.isFinite(n) && n > 0 ? n : null;
 };
+
+// RPE(Borg 6~20) 기록 패널 — 언제 적을지 안내(운동 중 3분마다, 운동 끝 직후 피크 1회)
+function RpePanel({ phase, protocolId, elapsed, workEndSec, log, onAdd }) {
+  const due = phase === 'running' ? rpeDue(protocolId, elapsed, log) : null;
+  const endDone = log.some((x) => x.kind === 'end');
+  const needEnd = phase === 'recovery' && !endDone;
+  const next = phase === 'running' ? rpeCheckpoints(protocolId).find((cp) => cp > elapsed) : null;
+  const kind = phase === 'recovery' ? 'end' : 'during';
+  const show = due != null || needEnd;
+  const last = log.length ? log[log.length - 1] : null;
+  return (
+    <div className={`rounded-xl border-2 p-2 ${show ? 'border-red-400 bg-red-50 dark:bg-red-900/30' : 'border-slate-200 dark:border-slate-700'}`} data-testid="cardio-rpe-panel">
+      <p className="text-xs font-black text-slate-800 dark:text-slate-100">
+        {needEnd ? '지금! 운동 끝 직후 RPE(가장 힘들었던 정도)를 눌러 주세요'
+          : due != null ? `RPE 기록 시간(${formatClock(due)} 지점) — 지금 힘든 정도를 눌러 주세요`
+            : phase === 'recovery' ? 'RPE 기록 완료'
+              : next != null ? `다음 RPE 기록: ${formatClock(next)} (운동 끝 직후에도 1번 기록)` : '운동 끝을 누른 직후 RPE를 1번 기록합니다'}
+      </p>
+      {(show || phase === 'running') && (
+        <div className="mt-1.5 grid grid-cols-5 gap-1">
+          {Array.from({ length: RPE_MAX - RPE_MIN + 1 }, (_, i) => RPE_MIN + i).map((v) => (
+            <button key={v} onClick={() => onAdd(v, kind)} className={`rounded-lg py-1.5 text-sm font-black ${last && last.value === v && last.kind === kind ? 'bg-red-500 text-white' : 'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-100'}`} data-testid={`cardio-rpe-${v}`}>{v}</button>
+          ))}
+        </div>
+      )}
+      <p className="mt-1 text-[10px] text-slate-500 dark:text-slate-400">
+        {last ? `마지막 기록: ${last.value} (${rpeLabel(last.value)}) · ${formatClock(last.tSec)}` : '6 아주 편함 ~ 13 약간 힘듦 ~ 17 매우 힘듦 ~ 20 최대'} · 기록만 저장하고 VO2max 계산에는 쓰지 않습니다.
+      </p>
+    </div>
+  );
+}
 
 export default function CardioTestMeasure({ onBack, member = null, onSave = null, onViewInReport = null }) {
   const supported = isHeartRateBleSupported();
@@ -233,6 +264,17 @@ export default function CardioTestMeasure({ onBack, member = null, onSave = null
 
   const hrMaxNow = personalMaxHr({ age: subject.age, sessions: allSessions, context: cardioContext(machineId) }).value;
 
+  // RPE(Borg 6~20) 기록 — 운동 중 3분마다 + 운동 끝 직후(피크). 저장 전용(추정식에 안 씀).
+  const [rpeLog, setRpeLog] = useState([]);
+  const addRpe = (value, kind) => {
+    const run = runRef.current;
+    if (!run) return;
+    const tSec = Math.round((performance.now() - run.startPerf) / 1000);
+    const next = [...(run.rpe || []).filter((x) => !(kind === 'end' && x.kind === 'end')), { tSec, value, kind }];
+    run.rpe = next;
+    setRpeLog(next);
+  };
+
   const finishWork = useCallback((sec) => {
     const run = runRef.current;
     if (!run || run.workEndSec != null) return;
@@ -290,9 +332,10 @@ export default function CardioTestMeasure({ onBack, member = null, onSave = null
     recRef.current = createRecorder();
     runRef.current = {
       protocolId, machineId, startPerf: performance.now(), startedAt: new Date().toISOString(),
-      workEndSec: null, endedAt: null, hrSources: new Set(), hrMax: hrMaxNow,
+      workEndSec: null, endedAt: null, hrSources: new Set(), hrMax: hrMaxNow, rpe: [],
     };
     setResultInputs({ time: '', distance: '', power: '', hrAfter: '', confirmed: '', reference: '', note: '' });
+    setRpeLog([]);
     setSaveState({ state: 'idle', error: '' });
     setSavedRecord(null);
     setPhase('running');
@@ -361,6 +404,7 @@ export default function CardioTestMeasure({ onBack, member = null, onSave = null
       trainerNote: resultInputs.note,
       confirmedVo2max: Number(resultInputs.confirmed) || null,
       referenceVo2max: Number(resultInputs.reference) || null,
+      rpe: run.rpe,
       stepPlan: run.protocolId === 'step' ? stepPlan : null,
     });
     try {
@@ -600,6 +644,7 @@ export default function CardioTestMeasure({ onBack, member = null, onSave = null
                 : <Tile label="페이스/500m" value={formatPace(live.paceSec500)} />}
               <Tile label="강도" value={zone ? `${zone.pct}%` : '--'} unit={zone ? HEART_RATE_ZONE_LABELS[zone.zone] : ''} />
             </div>
+            <RpePanel phase={phase} protocolId={protocolId} elapsed={elapsed} workEndSec={run.workEndSec} log={rpeLog} onAdd={addRpe} />
           </div>
           <div className="space-y-3">
             <LiveChart rec={rec} version={tick} />

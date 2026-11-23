@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   personalMaxHr, cardioContext, CARDIO_RECORD_KIND, CARDIO_MACHINES, protocolsForMachine, getProtocol, cooper15Vo2max, rockportVo2max,
-  computeCardioResult, createRecorder, buildCardioRecord, bruceVo2max, bruceStageAt, hrMaxTanaka, estimateAccuracy,
+  computeCardioResult, createRecorder, buildCardioRecord, bruceVo2max, bruceStageAt, hrMaxTanaka, estimateAccuracy, cardioGroupKey, cardioGroupHistory, cardioContextLabel, cardioChangeSummary, rpeCheckpoints, rpeDue, normalizeRpe, rpeLabel,
 } from '../ai-measure/core/cardioTest';
 import { run15Percentile, vo2maxFromRun12 } from '../ai-measure/core/norms';
 
@@ -102,5 +102,40 @@ describe('11번 심폐지구력 — 교재 8장 필드 테스트(2026-11-23)', (
     expect(a.range95[1]).toBeGreaterThan(a.range68[1]);
     expect(estimateAccuracy('astrand', 40)).toBeNull();
     expect(estimateAccuracy('bruce', 40, { sex: 'male' }).r2).toBe(96);
+  });
+  it('실내·필드·장비·테스트가 다른 기록은 섞지 않고 같은 묶음만 추이로 모은다', () => {
+    const mk = (machineId, protocolId, date, vo2, t) => ({ kind: CARDIO_RECORD_KIND, machineId, protocolId, startedAt: date, estimates: { vo2max: { value: vo2 } }, result: { durationSec: t, distanceM: 2414 }, recovery: { drop60: 20 } });
+    const cur = mk('field', 'field_cooper15', '2026-11-23T10:00:00Z', 45, 780);
+    const all = [
+      mk('field', 'field_cooper15', '2026-10-01T10:00:00Z', 40, 840),
+      mk('field', 'field_cooper15', '2026-11-01T10:00:00Z', 42, 810),
+      mk('field', 'field_cooper12', '2026-11-05T10:00:00Z', 44, 720),
+      mk('rower', 'rower_2k', '2026-11-10T10:00:00Z', 50, 480),
+      mk('treadmill', 'curved_2400', '2026-11-12T10:00:00Z', null, 900),
+      mk('field', 'field_cooper15', '2026-12-01T10:00:00Z', 47, 760), // 미래(이후) 기록은 제외
+    ];
+    expect(cardioGroupKey(cur)).toBe('field|field|field_cooper15');
+    expect(cardioContextLabel('field')).toBe('필드');
+    expect(cardioContextLabel('rower')).toBe('실내');
+    const h = cardioGroupHistory(cur, all);
+    expect(h.total).toBe(2);
+    expect(h.rows.map((r) => r.date)).toEqual(['2026-11-01', '2026-10-01']);
+    expect(h.oldest.startedAt).toBe('2026-10-01T10:00:00Z');
+    expect(cardioChangeSummary(cur, h.oldest)).toBeTruthy();
+    expect(cardioChangeSummary(cur, all[3])).toBeNull(); // 다른 장비는 비교 안 함
+    expect(cardioGroupHistory(all[3], all).total).toBe(0); // 로잉은 로잉끼리만
+  });
+  it('RPE: 기록 시점 안내·정규화(저장 전용)', () => {
+    expect(rpeCheckpoints('field_cooper12')).toEqual([180, 360, 540]);
+    expect(rpeDue('field_cooper12', 185, [])).toBe(180);
+    expect(rpeDue('field_cooper12', 185, [{ tSec: 182, kind: 'during', value: 11 }])).toBeNull();
+    expect(rpeDue('field_cooper12', 100, [])).toBeNull();
+    expect(rpeLabel(13)).toBe('약간 힘듦');
+    expect(normalizeRpe([])).toBeNull();
+    const r = normalizeRpe([{ tSec: 180, value: 11, kind: 'during' }, { tSec: 700, value: 18, kind: 'end' }, { tSec: 5, value: 99, kind: 'during' }]);
+    expect(r.entries).toHaveLength(2);
+    expect(r.peak).toBe(18);
+    expect(r.maxEffort).toBe(true);
+    expect(normalizeRpe([{ tSec: 100, value: 12, kind: 'during' }]).maxEffort).toBe(false);
   });
 });
