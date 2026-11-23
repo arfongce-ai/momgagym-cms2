@@ -13,6 +13,7 @@
 // ════════════════════════════════════════════════════════════════════════
 import { maxHeartRateFromAge } from './heartRateBle';
 import { run12Reference, run2400Reference } from './norms';
+import { computeChangeRow, summarizeChanges } from './measurementComparison';
 
 export const CARDIO_RECORD_KIND = 'cardio_test';
 export const CARDIO_SERIES_MAX_SEC = 3600; // 1초 단위 원본 저장 상한(1시간)
@@ -166,6 +167,27 @@ export function curvedComparison(current, previous) {
   const diff = cur - prev;
   const better = isTime ? diff < 0 : diff > 0;
   return { kind: isTime ? 'time' : 'distance', current: cur, previous: prev, diff, direction: diff === 0 ? 'same' : (better ? 'improved' : 'worsened'), previousDate: String(p.startedAt || p.endedAt || '').slice(0, 10) };
+}
+
+// [전·후 비교 2026-11-23] 일반(비 커브드) 심폐지구력 측정도 같은 장비·같은 테스트의 직전 기록과 비교한다.
+//  VO2max 추정·최대파워·거리·평균와트·1분 회복은 클수록 좋고, 정해진 거리 테스트의 시간은 짧을수록 좋다.
+//  평균 심박은 같은 부하일 때만 의미가 있어 '자유 측정'이 아닌 정해진 테스트에서만 비교한다(낮을수록 좋음).
+export function cardioChangeSummary(current, previous) {
+  const c = current && typeof current === 'object' ? current : null;
+  const p = previous && typeof previous === 'object' ? previous : null;
+  if (!c || !p || c.protocolId !== p.protocolId || c.machineId !== p.machineId) return null;
+  const proto = getProtocol(c.protocolId);
+  const v = (r) => (Number.isFinite(r?.confirmedVo2max) ? r.confirmedVo2max : (r?.estimates?.vo2max?.calibratedValue ?? r?.estimates?.vo2max?.value));
+  const rows = [
+    computeChangeRow('VO2max(참고)', v(p), v(c), '', 'higherBetter'),
+    computeChangeRow('추정 최대파워', p.estimates?.maxPower?.value, c.estimates?.maxPower?.value, 'W', 'higherBetter'),
+    computeChangeRow('거리', p.result?.distanceM, c.result?.distanceM, 'm', 'higherBetter'),
+    proto?.target?.distanceM ? computeChangeRow('기록 시간', p.result?.durationSec, c.result?.durationSec, '초', 'lowerBetter') : null,
+    computeChangeRow('평균 와트', p.result?.avgPowerW, c.result?.avgPowerW, 'W', 'higherBetter'),
+    c.protocolId !== 'free' ? computeChangeRow('평균 심박', p.result?.avgHr, c.result?.avgHr, 'bpm', 'lowerBetter') : null,
+    computeChangeRow('1분 회복', p.recovery?.drop60, c.recovery?.drop60, 'bpm', 'higherBetter'),
+  ];
+  return summarizeChanges(rows, String(p.startedAt || p.endedAt || p.measuredAt || '').slice(0, 10));
 }
 
 export function normalizeSex(v) {
