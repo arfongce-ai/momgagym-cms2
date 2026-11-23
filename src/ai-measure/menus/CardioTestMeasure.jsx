@@ -503,14 +503,14 @@ export default function CardioTestMeasure({ onBack, member = null, onSave = null
 
       {phase === 'setup' && (
         <div className="space-y-4">
-          <div className="grid grid-cols-2 gap-2" data-testid="cardio-venue-tabs">
+          {!venue && (<div className="grid grid-cols-2 gap-2" data-testid="cardio-venue-tabs">
             {[['indoor', '실내용', '로잉·바이크·스키·트레드밀'], ['field', '필드용', '트랙·평지 달리기/걷기']].map(([v, label, sub]) => (
               <button key={v} onClick={() => { if (cardioContext(machineId) !== v) pickMachine(v === 'field' ? 'field' : 'rower'); }} className={`rounded-xl border-2 py-3 text-center ${cardioContext(machineId) === v ? 'border-amber-500 bg-amber-500/20 text-amber-800 dark:text-amber-200' : 'border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300'}`} data-testid={`cardio-venue-${v}`}>
                 <span className="block text-base font-black">{label}</span>
                 <span className="block text-[10px] font-normal opacity-70">{sub}</span>
               </button>
             ))}
-          </div>
+          </div>)}
 
           {cardioContext(machineId) === 'indoor' && (
           <div>
