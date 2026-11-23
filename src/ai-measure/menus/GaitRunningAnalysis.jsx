@@ -137,6 +137,8 @@ function isInSafeZone(lm) {
   return seen >= 3 && inside >= 3;
 }
 
+const GAIT_MAX_RECORD_SEC = 60;
+
 export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, onSave, onOpenSavedReport }) {
   const saveToFirebase = onSaveToFirebase || onSave;
 
@@ -465,9 +467,10 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
     return () => clearInterval(timer);
   }, [view]);
 
-  // 15초 자동 종료 (메모리 오버플로우 방지) — updater 부수효과 대신 별도 effect
+  // [2026-11-23] 15초 → 60초 (분석 표본 부족 — 대표님 요청). 다른 측정(스쿼트·한발서기·ROM)의 최대 녹화와 동일.
+  // 자동 종료는 메모리 오버플로우 방지 — updater 부수효과 대신 별도 effect
   useEffect(() => {
-    if (view === 'recording' && recordingTime >= 15) stopRecording();
+    if (view === 'recording' && recordingTime >= GAIT_MAX_RECORD_SEC) stopRecording();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recordingTime, view]);
 
@@ -846,7 +849,7 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
               <div className="w-full max-w-md h-2 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
                 <div
                   className={`h-full transition-all duration-1000 ${recordingTime >= 5 ? 'bg-green-500' : 'bg-orange-500'}`}
-                  style={{ width: `${(recordingTime / 15) * 100}%` }}
+                  style={{ width: `${Math.min(100, (recordingTime / GAIT_MAX_RECORD_SEC) * 100)}%` }}
                 />
               </div>
             )}
