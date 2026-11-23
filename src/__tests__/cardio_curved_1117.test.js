@@ -77,8 +77,10 @@ describe('커브드 트레드밀 테스트(2.4km·12분)', () => {
   it('화면은 책 표 등급(백분위)을 보여주지 않는다', () => {
     const measure = src('ai-measure/menus/CardioTestMeasure.jsx');
     const sheet = src('components/report/CardioReportSheet.jsx');
-    expect(measure).not.toMatch(/flatReference|percentile|백분위/);
-    expect(sheet).not.toMatch(/flatReference|percentile|백분위/);
+    // [2026-11-23] 평지 필드 테스트(fieldRank, 교재 표 8.2)만 백분위를 보여 준다. 커브드·flatReference 는 계속 비표시.
+    const strip = (t) => t.split('\n').filter((l) => !/fieldRank|cardio-flat-rank/.test(l)).join('\n');
+    expect(strip(measure)).not.toMatch(/flatReference|percentile|백분위/);
+    expect(strip(sheet)).not.toMatch(/flatReference|percentile|백분위/);
     expect(measure).toContain('cardio-curved-compare');
   });
 });

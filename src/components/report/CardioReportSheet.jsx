@@ -128,6 +128,11 @@ export default function CardioReportSheet({ report, member, previous = null, onM
                 이번 측정은 VO2max를 계산하지 않았습니다. {vo2?.reason || '조건을 채우지 못했습니다.'}
               </p>
             )}
+            {p.fieldRank && (
+              <p className="mt-2 break-keep text-[12px] font-semibold text-slate-600 dark:text-slate-300" data-testid="cardio-report-fieldrank">
+                1.5마일 {formatClock(p.fieldRank.timeSec)} · 같은 나이·성별 백분위 {p.fieldRank.band || `약 ${p.fieldRank.percentile}`} (교재 표 8.2, Cooper Institute)
+              </p>
+            )}
           </UnifiedReportSection>
           )}
 

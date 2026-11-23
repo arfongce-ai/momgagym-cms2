@@ -39,6 +39,7 @@ import {
   pastCardioRecords,
   personalMaxHr,
   protocolsForMachine,
+  bruceStageAt,
   recordTick,
   windowAvg,
 } from '../core/cardioTest';
@@ -46,7 +47,7 @@ import { vo2maxRating } from '../core/norms';
 import CardioReportSheet from '../../components/report/CardioReportSheet';
 
 const FRESH_MS = 5000; // 이 시간 안에 온 값만 '현재 값'으로 쓴다
-const MACHINE_ORDER = ['rower', 'bike', 'ski', 'treadmill', 'climber'];
+const MACHINE_ORDER = ['rower', 'bike', 'ski', 'treadmill', 'climber', 'field'];
 
 function machineError(err) {
   if (err?.name === 'NotFoundError') return '';
@@ -290,7 +291,7 @@ export default function CardioTestMeasure({ onBack, member = null, onSave = null
       protocolId, machineId, startPerf: performance.now(), startedAt: new Date().toISOString(),
       workEndSec: null, endedAt: null, hrSources: new Set(), hrMax: hrMaxNow,
     };
-    setResultInputs({ time: '', distance: '', power: '', confirmed: '', reference: '', note: '' });
+    setResultInputs({ time: '', distance: '', power: '', hrAfter: '', confirmed: '', reference: '', note: '' });
     setSaveState({ state: 'idle', error: '' });
     setSavedRecord(null);
     setPhase('running');
@@ -304,7 +305,7 @@ export default function CardioTestMeasure({ onBack, member = null, onSave = null
   };
 
   // 결과 화면 입력
-  const [resultInputs, setResultInputs] = useState({ time: '', distance: '', power: '', confirmed: '', reference: '', note: '' });
+  const [resultInputs, setResultInputs] = useState({ time: '', distance: '', power: '', hrAfter: '', confirmed: '', reference: '', note: '' });
   const [saveState, setSaveState] = useState({ state: 'idle', error: '' });
   const [savedRecord, setSavedRecord] = useState(null); // 저장 직후 A4 결과 리포트로 보여줄 기록
   const [reportMsg, setReportMsg] = useState('');
@@ -315,9 +316,10 @@ export default function CardioTestMeasure({ onBack, member = null, onSave = null
       timeSec: parseClock(resultInputs.time),
       distanceM: parseDistanceM(resultInputs.distance),
       avgPowerW: Number(resultInputs.power) || null,
+      hrAfter: Number(resultInputs.hrAfter) || null,
     };
-    return m.timeSec || m.distanceM || m.avgPowerW ? m : null;
-  }, [resultInputs.time, resultInputs.distance, resultInputs.power]);
+    return m.timeSec || m.distanceM || m.avgPowerW || m.hrAfter ? m : null;
+  }, [resultInputs.time, resultInputs.distance, resultInputs.power, resultInputs.hrAfter]);
 
   const computed = useMemo(() => {
     if (phase !== 'result' || !runRef.current) return null;
@@ -566,8 +568,11 @@ export default function CardioTestMeasure({ onBack, member = null, onSave = null
                   <p className="font-mono text-5xl font-black text-slate-900 dark:text-slate-100">
                     {protocol?.target?.durationSec ? formatClock(Math.max(0, protocol.target.durationSec - elapsed)) : formatClock(elapsed)}
                   </p>
-                  {protocol?.target?.distanceM && protocol.basis !== 'curved' && <p className="text-sm font-bold text-slate-700 dark:text-slate-200">남은 거리 {dist != null ? Math.max(0, protocol.target.distanceM - dist) : protocol.target.distanceM}m</p>}
+                  {protocol?.target?.distanceM && protocol.basis !== 'curved' && protocol.basis !== 'flat' && <p className="text-sm font-bold text-slate-700 dark:text-slate-200">남은 거리 {dist != null ? Math.max(0, protocol.target.distanceM - dist) : protocol.target.distanceM}m</p>}
                   {protocol?.basis === 'curved' && protocol.target?.distanceM && <p className="text-sm font-bold text-red-700 dark:text-red-300" data-testid="cardio-curved-hint">콘솔 DIS.가 2.40이 되면 "운동 끝"을 누르세요</p>}
+                  {protocol?.basis === 'flat' && protocol.target?.distanceM && <p className="text-sm font-bold text-red-700 dark:text-red-300" data-testid="cardio-flat-hint">{protocol.target.distanceM}m 지점에 도착하면 "운동 끝"을 누르세요(400m 트랙 {protocolId === 'field_rockport' ? '4바퀴+9m' : '6바퀴+14m'})</p>}
+                  {protocolId === 'field_bruce' && (() => { const b = bruceStageAt(elapsed); return <p className="text-sm font-bold text-slate-700 dark:text-slate-200" data-testid="cardio-bruce-stage">{b.stage}단계 · {b.mph}mph{b.nextInSec != null ? ` · 다음 단계까지 ${formatClock(b.nextInSec)}` : ' · 마지막 단계'} (경사도 함께 올리세요)</p>; })()}
+                  {protocol?.basis === 'flat' && protocol.target?.durationSec && <p className="text-sm font-bold text-slate-700 dark:text-slate-200" data-testid="cardio-flat-hint">12분이 되면 자동으로 끝납니다 · 간 거리(m)를 확인하세요(400m 트랙: 바퀴 수×400m)</p>}
                   {protocol?.basis === 'curved' && protocol.target?.durationSec && <p className="text-sm font-bold text-slate-700 dark:text-slate-200" data-testid="cardio-curved-hint">12분이 되면 자동으로 끝납니다 · 끝난 뒤 콘솔 DIS.를 확인하세요</p>}
                   {protocolId === 'step' && <p className="text-sm font-bold text-slate-700 dark:text-slate-200">{stage}단계 · 목표 {stageTargetW}W · 다음 단계까지 {formatClock(STEP_STAGE_SEC - (elapsed % STEP_STAGE_SEC))}</p>}
                   {protocolId === 'bike_astrand' && (
@@ -644,6 +649,21 @@ export default function CardioTestMeasure({ onBack, member = null, onSave = null
                 <p className="text-[11px] text-slate-500 dark:text-slate-400">커브드는 평지보다 힘들어 일반 달리기 표와 비교하지 않습니다. 같은 회원의 같은 테스트끼리 변화로 봅니다.</p>
               </div>
             )}
+            {protocol?.basis === 'flat' && (
+              <div className="rounded-lg bg-slate-100 dark:bg-slate-800 p-2 space-y-0.5" data-testid="cardio-flat-result">
+                <p className="text-sm font-black text-slate-900 dark:text-slate-100">
+                  {protocolId === 'field_cooper12' ? `12분 거리 ${computed.result.manualDistance ? computed.result.distanceM : '-'}m` : `${protocolId === 'field_rockport' ? '1마일 걷기' : protocolId === 'field_bruce' ? '브루스 총 시간' : '1.5마일'} 기록 ${formatClock(computed.result.durationSec)}`}
+                  {protocolId === 'field_rockport' && <span className="ml-1 text-[11px] font-bold text-slate-500">종료 직후 심박 {computed.estimates.vo2max?.hrAfter ?? '-'}</span>}
+                </p>
+                {computed.fieldRank && (
+                  <p className="text-[12px] font-bold text-slate-800 dark:text-slate-100" data-testid="cardio-flat-rank">
+                    같은 나이·성별({computed.fieldRank.group.replace('male-', '남 ').replace('female-', '여 ').replace(/^(남|여) /, '$1 ')}세) 백분위 {computed.fieldRank.band || `약 ${computed.fieldRank.percentile}`} <span className="font-normal text-slate-500">(교재 표 8.2, Cooper Institute)</span>
+                  </p>
+                )}
+                {protocolId === 'field_cooper15' && computed.fieldRank == null && <p className="text-[11px] text-slate-500">20~69세 남·여가 아니면 백분위는 표시하지 않습니다.</p>}
+                {computed.estimates.vo2max?.altValue != null && <p className="text-[11px] text-slate-500">교재 '다른 방법' 식 값 {computed.estimates.vo2max.altValue}(비교용, 저장만)</p>}
+              </div>
+            )}
             {computed.estimates.vo2max && (
               <div className="rounded-lg bg-amber-50 dark:bg-amber-900/30 p-2">
                 <p className="text-sm font-black text-slate-900 dark:text-slate-100">
@@ -652,6 +672,12 @@ export default function CardioTestMeasure({ onBack, member = null, onSave = null
                   {computed.estimates.vo2max.grade ? ` · 신뢰 ${computed.estimates.vo2max.grade}` : ''}
                 </p>
                 <p className="text-[11px] text-slate-600 dark:text-slate-300">{computed.estimates.vo2max.reason}</p>
+                {computed.estimates.vo2max.accuracy && (
+                  <p className="text-[11px] text-slate-600 dark:text-slate-300" data-testid="cardio-accuracy">
+                    {computed.estimates.vo2max.accuracy.range68 && `오차 범위: 약 68% 확률로 ${computed.estimates.vo2max.accuracy.range68[0]}~${computed.estimates.vo2max.accuracy.range68[1]}(±${computed.estimates.vo2max.accuracy.seeHigh})`}
+                    {computed.estimates.vo2max.accuracy.r2 != null && ` · 설명력 r²=${computed.estimates.vo2max.accuracy.r2}%`}
+                  </p>
+                )}
                 {(() => {
                   const r = vo2maxRating(computed.estimates.vo2max.calibratedValue ?? computed.estimates.vo2max.value, subject.age, normalizeSex(subject.sex));
                   return r
@@ -698,12 +724,17 @@ export default function CardioTestMeasure({ onBack, member = null, onSave = null
                 <input value={resultInputs.time} onChange={(e) => setResultInputs((s) => ({ ...s, time: e.target.value }))} placeholder="7:30" className={inputCls} />
               </label>
               <label className="text-[11px] font-bold text-slate-500 dark:text-slate-400">{protocol?.basis === 'curved' ? '콘솔 DIS.(km 또는 m)' : '거리(m)'}
-                <input inputMode="decimal" value={resultInputs.distance} onChange={(e) => setResultInputs((s) => ({ ...s, distance: e.target.value.replace(/[^\d.,]/g, '').slice(0, 7) }))} placeholder={protocol?.basis === 'curved' ? '2.43 또는 2430' : ''} className={inputCls} data-testid="cardio-distance-input" />
+                <input inputMode="decimal" value={resultInputs.distance} onChange={(e) => setResultInputs((s) => ({ ...s, distance: e.target.value.replace(/[^\d.,]/g, '').slice(0, 7) }))} placeholder={protocol?.basis === 'curved' ? '2.43 또는 2430' : protocolId === 'field_cooper12' ? '예: 2400' : ''} className={inputCls} data-testid="cardio-distance-input" />
               </label>
               <label className="text-[11px] font-bold text-slate-500 dark:text-slate-400">평균 와트
                 <input inputMode="numeric" value={resultInputs.power} onChange={(e) => setResultInputs((s) => ({ ...s, power: e.target.value.replace(/\D+/g, '') }))} className={inputCls} />
               </label>
             </div>
+            {protocol?.needsHrAfter && (
+              <label className="block text-[11px] font-bold text-slate-500 dark:text-slate-400">종료 직후 심박(15초 맥박×4, bpm) — 밴드가 있으면 비워 둬도 자동 사용
+                <input inputMode="numeric" value={resultInputs.hrAfter} onChange={(e) => setResultInputs((s) => ({ ...s, hrAfter: e.target.value.replace(/\D+/g, '').slice(0, 3) }))} placeholder="예: 128" className={inputCls} data-testid="cardio-hrafter-input" />
+              </label>
+            )}
             <div className="grid grid-cols-2 gap-2">
               <label className="text-[11px] font-bold text-slate-500 dark:text-slate-400">트레이너 확인 VO2max(선택)
                 <input inputMode="decimal" value={resultInputs.confirmed} onChange={(e) => setResultInputs((s) => ({ ...s, confirmed: e.target.value.replace(/[^\d.]/g, '') }))} className={inputCls} />
