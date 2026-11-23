@@ -42,7 +42,7 @@ describe('AiMeasureHub.jsx — viewInReport (결과리포트로 이동)', () => 
   });
 
   it('측정 컴포넌트에 onViewInReport를 넘긴다(active.id로 종류를 알려줌)', () => {
-    expect(src).toContain('onViewInReport={() => viewInReport(active.id)}');
+    expect(src).toContain("onViewInReport={() => viewInReport(active.id === 'cardio_field' ? 'cardio' : active.id)}");
   });
 });
 
@@ -344,7 +344,7 @@ describe('AiMeasureHub.jsx — onViewInReport를 모든 측정 컴포넌트에 �
   const src = readSrc('src', 'ai-measure', 'AiMeasureHub.jsx');
 
   it('제네릭 렌더 블록(<Comp>)에서 한 곳에만 배선한다 — 측정 종류마다 따로 안 함', () => {
-    expect(src).toContain('onViewInReport={() => viewInReport(active.id)}');
+    expect(src).toContain("onViewInReport={() => viewInReport(active.id === 'cardio_field' ? 'cardio' : active.id)}");
     // 이 한 줄이 gait/jump/posture/rom/lifting/stance/squat/body 전부를 커버한다
     // (active.id가 종류를 결정) — 종류별 분기 코드가 여기 새로 생기지 않았는지.
     const occurrences = (src.match(/onViewInReport=\{/g) || []).length;

@@ -270,10 +270,12 @@ describe('화면·허브 배선', () => {
   it('11번 메뉴가 등록되고 가로·세로 모두 허용', () => {
     expect(registry).toContain("id: 'cardio'");
     expect(registry).toContain('no: 11');
+    expect(registry).toContain("id: 'cardio_field'"); // 12번 필드용(같은 화면, 기록은 'cardio'로 저장)
+    expect(hub).toContain("active.id === 'cardio_field' ? 'cardio' : active.id");
     expect(registry).toContain("import('./menus/CardioTestMeasure.jsx')");
   });
   it('허브는 15번 기록을 alert 없이 세션으로 돌려주고 실패는 전파', () => {
-    expect(hub).toContain("const isCardio = active.id === 'cardio' && data?.kind === 'cardio_test';");
+    expect(hub).toContain("const isCardio = (active.id === 'cardio' || active.id === 'cardio_field') && data?.kind === 'cardio_test';");
     expect(hub).toContain('if (isHeartRate || isCardio) {');
     expect(hub).toContain('if (isHeartRate || isCardio) throw e;');
   });

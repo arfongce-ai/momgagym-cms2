@@ -153,10 +153,10 @@ function RpePanel({ phase, protocolId, elapsed, workEndSec, log, onAdd }) {
   );
 }
 
-export default function CardioTestMeasure({ onBack, member = null, onSave = null, onViewInReport = null }) {
+export default function CardioTestMeasure({ onBack, member = null, onSave = null, onViewInReport = null, venue = null }) {
   const supported = isHeartRateBleSupported();
-  const [machineId, setMachineId] = useState('rower');
-  const [protocolId, setProtocolId] = useState('rower_2k');
+  const [machineId, setMachineId] = useState(venue === 'field' ? 'field' : 'rower');
+  const [protocolId, setProtocolId] = useState(venue === 'field' ? (protocolsForMachine('field')[0]?.id || 'field_cooper15') : 'rower_2k');
   const protocol = getProtocol(protocolId);
   const machineMeta = CARDIO_MACHINES[machineId];
 
@@ -470,7 +470,7 @@ export default function CardioTestMeasure({ onBack, member = null, onSave = null
 
   // 장비가 보내는 신호 종류로 장비 카드를 자동으로 맞춘다(준비 화면에서만).
   useEffect(() => {
-    if (phase !== 'setup' || !detectedKind) return;
+    if (phase !== 'setup' || !detectedKind || venue === 'field') return; // 필드용에서는 장비 자동 전환 안 함
     if (detectedKind === 'bike' && machineId !== 'bike') {
       pickMachine('bike');
       setNotice('바이크 신호가 들어와서 장비를 "에어바이크"로 바꿨습니다.');
@@ -479,7 +479,7 @@ export default function CardioTestMeasure({ onBack, member = null, onSave = null
       setNotice('로잉 계열 신호가 들어와서 장비를 "로잉머신"으로 바꿨습니다. 스키라면 "스키에르고미터"를 눌러 주세요.');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [detectedKind, phase]);
+  }, [detectedKind, phase, venue]);
 
   const machineSilent = Boolean(machineInfo && machineInfo.status === 'connected'
     && Date.now() - connectedAtRef.current > 8000
@@ -503,14 +503,14 @@ export default function CardioTestMeasure({ onBack, member = null, onSave = null
 
       {phase === 'setup' && (
         <div className="space-y-4">
-          <div className="grid grid-cols-2 gap-2" data-testid="cardio-venue-tabs">
+          {!venue && (<div className="grid grid-cols-2 gap-2" data-testid="cardio-venue-tabs">
             {[['indoor', '실내용', '로잉·바이크·스키·트레드밀'], ['field', '필드용', '트랙·평지 달리기/걷기']].map(([v, label, sub]) => (
               <button key={v} onClick={() => { if (cardioContext(machineId) !== v) pickMachine(v === 'field' ? 'field' : 'rower'); }} className={`rounded-xl border-2 py-3 text-center ${cardioContext(machineId) === v ? 'border-amber-500 bg-amber-500/20 text-amber-800 dark:text-amber-200' : 'border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300'}`} data-testid={`cardio-venue-${v}`}>
                 <span className="block text-base font-black">{label}</span>
                 <span className="block text-[10px] font-normal opacity-70">{sub}</span>
               </button>
             ))}
-          </div>
+          </div>)}
 
           {cardioContext(machineId) === 'indoor' && (
           <div>
