@@ -197,6 +197,25 @@ function QualityBanner({ quality }) {
   );
 }
 
+// [측정 사진 2026-11-23] 저장 시 남긴 작은 사진(시작·중간) — 전·후 비교 때 같은 자세·위치인지 확인용
+export function resolveSnapshots(report) {
+  const s = report?.snapshots || report?.data?.snapshots;
+  return Array.isArray(s) ? s.filter((x) => x && typeof x.dataUrl === 'string' && x.dataUrl.startsWith('data:image/')) : [];
+}
+function SnapshotStrip({ snapshots }) {
+  if (!snapshots.length) return null;
+  return (
+    <div className="flex gap-2" data-testid="report-snapshots">
+      {snapshots.map((sn, i) => (
+        <figure key={i} className="m-0 flex-1 max-w-[160px]">
+          <img src={sn.dataUrl} alt={`측정 사진 ${sn.label || i + 1}`} className="w-full rounded-lg border border-slate-200 dark:border-slate-700" />
+          <figcaption className="mt-0.5 text-center text-[10px] text-slate-500">{sn.label || `사진 ${i + 1}`}</figcaption>
+        </figure>
+      ))}
+    </div>
+  );
+}
+
 // [빠진 항목 2026-11-16] 계산 안 된 핵심 항목을 숨기지 않고 이유와 함께 보여준다
 function MissingList({ missing }) {
   if (!missing?.length) return null;
@@ -257,12 +276,14 @@ export default function QuickResultSheet({
     }
   }, [anchorPrefix]);
 
-  if (!items.length && score == null && !before && !after && !missing.length && !quality) return null;
+  const snapshots = useMemo(() => resolveSnapshots(report), [report]);
+  if (!items.length && score == null && !before && !after && !missing.length && !quality && !snapshots.length) return null;
   const hasScore = score != null && Number.isFinite(Number(score));
 
   return (
     <section className="flex flex-col gap-3" data-testid="quick-result-sheet">
       <QualityBanner quality={quality} />
+      <SnapshotStrip snapshots={snapshots} />
       {/* [A4 유지 2026-11-15] A4 폭(794px)에서도 옆으로 나란히 놓아 장수가 늘지 않게 한다(md 기준). */}
       {before ? (
         <div className="grid gap-3 md:grid-cols-[1.25fr_1fr]">

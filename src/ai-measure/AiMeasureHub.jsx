@@ -7,7 +7,7 @@ import { useNavigate } from 'react-router-dom';
 import { MEASURE_MENUS, groupMeasureMenus } from './registry';
 import { getRecognitionSnapshot, resetRecognition } from './core/recognitionStats';
 // [측정 오류 줄이기 2026-11-16] 촬영 품질 신호등·저장 직전 품질 등급·촬영 기준 안내
-import { getCaptureSummary, resetCaptureQuality, setCaptureMenu, assessMeasureQuality, QUALITY_KO } from './core/captureQuality';
+import { getCaptureSummary, getCaptureSnapshots, resetCaptureQuality, setCaptureMenu, assessMeasureQuality, QUALITY_KO } from './core/captureQuality';
 import CaptureReadinessBar from './CaptureReadinessBar.jsx';
 import CaptureGuideStrip, { CAMERA_MEASURE_IDS, TIMING_MEASURE_IDS } from './CaptureGuideStrip.jsx';
 import { store, aiStore, makeGuestId } from '../demoData';
@@ -238,6 +238,11 @@ export default function AiMeasureHub() {
       const quality = currentQuality();
       if ((capture || quality) && enrichedData && typeof enrichedData === 'object' && !Array.isArray(enrichedData)) {
         enrichedData = { ...enrichedData, ...(capture ? { capture } : {}), ...(quality ? { quality } : {}) };
+      }
+      // [측정 사진 2026-11-23] 전·후 비교 확인용 작은 사진 최대 2장(시작·중간, 240px). 영상은 로컬 보관이라 이것만 리포트에 남긴다.
+      const snapshots = CAMERA_MEASURE_IDS.has(active.id) ? getCaptureSnapshots() : [];
+      if (snapshots.length && enrichedData && typeof enrichedData === 'object' && !Array.isArray(enrichedData)) {
+        enrichedData = { ...enrichedData, snapshots };
       }
       // [2026-10-25] 1RM/VBT/스탠스/스쿼트도 undefined·Blob 을 걸러 저장한다.
       //  (Firestore setDoc 은 undefined 필드를 거부 → 저장 실패)

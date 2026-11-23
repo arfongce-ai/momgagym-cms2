@@ -7,7 +7,7 @@ import React, { useMemo } from 'react';
 
 const SKIP_KEYS = new Set([
   'landmarks', 'frames', 'series', 'raw', 'samples', 'timeline', 'video', 'videoBlob', 'snapshotUrl', 'localPreviewUrl',
-  'perViewSnapshots', 'momiNote', 'member', 'cross_measure_context', 'capture', 'recognition', 'trials', 'rawSeconds', 'seconds',
+  'perViewSnapshots', 'momiNote', 'member', 'cross_measure_context', 'capture', 'snapshots', 'recognition', 'trials', 'rawSeconds', 'seconds',
 ]);
 
 const LABELS = {

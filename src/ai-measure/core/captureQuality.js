@@ -42,6 +42,22 @@ export function judgeDelegate(delegate) {
   return { level: 'good', text: '' };
 }
 
+const SNAP_EVERY_MS = 2000;
+const SNAP_MAX = 12;
+const SNAP_W = 240;
+// 비디오 한 장을 작은 JPEG(data URL)로. 비디오가 아직 준비 안 됐거나 실패하면 null(측정·저장에 영향 없음).
+function grabThumb(video) {
+  try {
+    if (typeof document === 'undefined' || !video || !video.videoWidth || !video.videoHeight) return null;
+    const w = SNAP_W;
+    const h = Math.round((video.videoHeight / video.videoWidth) * w);
+    const c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    c.getContext('2d').drawImage(video, 0, 0, w, h);
+    return c.toDataURL('image/jpeg', 0.55);
+  } catch (e) { return null; }
+}
+
 export function createCaptureTracker(now = () => Date.now()) {
   let minDistanceMm = null; // 메뉴별 최소 촬영 거리(mm) — setMenu 로 지정
   let times = [];
@@ -52,6 +68,9 @@ export function createCaptureTracker(now = () => Date.now()) {
   let fpsSum = 0;
   let fpsN = 0;
   const reasons = { noPerson: 0, notFull: 0, tooFar: 0, tooClose: 0 };
+  // [측정 사진 2026-11-23] 전·후 비교용 작은 썸네일 — 2초마다 1장, 사람이 보일 때만, 최대 SNAP_MAX장 보관.
+  let snaps = [];
+  let lastSnapAt = 0;
 
   return {
     setDelegate(d) { delegate = d; },
@@ -68,6 +87,11 @@ export function createCaptureTracker(now = () => Date.now()) {
       else if (!framing.fullBody) reasons.notFull += 1;
       else if (framing.fillRatio != null && framing.fillRatio < (minDistanceMm ? fillMinForDistanceMm(minDistanceMm * FAR_LIMIT_FACTOR) : 0.55)) reasons.tooFar += 1;
       else reasons.tooClose += 1;
+      if (landmarks && landmarks.length && t - lastSnapAt >= SNAP_EVERY_MS) {
+        lastSnapAt = t;
+        const url = grabThumb(video);
+        if (url) { snaps.push({ at: t, dataUrl: url }); if (snaps.length > SNAP_MAX) snaps.splice(1, 1); }
+      }
       const fps = this.fps();
       if (fps != null && times.length >= 10) { fpsSum += fps; fpsN += 1; }
     },
@@ -99,7 +123,14 @@ export function createCaptureTracker(now = () => Date.now()) {
         reasons: { ...reasons },
       };
     },
+    /** 저장용 사진 최대 2장(처음·중간). 없으면 []. */
+    snapshots() {
+      if (!snaps.length) return [];
+      const picks = snaps.length === 1 ? [snaps[0]] : [snaps[0], snaps[Math.floor(snaps.length / 2)]];
+      return picks.map((p, i) => ({ label: i === 0 ? '시작' : '중간', dataUrl: p.dataUrl }));
+    },
     reset() {
+      snaps = []; lastSnapAt = 0;
       times = []; last = null; total = 0; fullBody = 0; fpsSum = 0; fpsN = 0;
       Object.keys(reasons).forEach((k) => { reasons[k] = 0; });
     },
@@ -127,6 +158,7 @@ export function setCaptureDelegate(d) { _tracker.setDelegate(d); }
 export function setCaptureMenu(menuId) { _tracker.setMenu(menuId); }
 export function getCaptureLive() { return _tracker.live(); }
 export function getCaptureSummary() { return _tracker.summary(); }
+export function getCaptureSnapshots() { return _tracker.snapshots(); }
 export function resetCaptureQuality() { _tracker.reset(); notify(true); }
 export function subscribeCapture(fn) {
   _subs.add(fn);
