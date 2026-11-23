@@ -183,7 +183,7 @@ export const CARDIO_PROTOCOLS = [
 ];
 
 // 결과 화면 '용어 설명'
-// Tanaka(2001): 208 − 0.7×나이. 220−나이는 표준편차 ±12로 오차가 커서 비교·연구용으로 함께 저장한다(기본 최대심박은 그대로).
+// Tanaka(2001): 208 − 0.7×나이 — 이제 기본 최대심박 식이다(heartRateBle.maxHeartRateFromAge 와 같은 값).
 export const hrMaxTanaka = (age) => (Number(age) > 0 ? Math.round(208 - 0.7 * Number(age)) : null);
 
 export const CARDIO_GLOSSARY = [
@@ -192,7 +192,7 @@ export const CARDIO_GLOSSARY = [
   ['중단 기준', '가슴 통증·협심증 느낌 / 운동을 늘려도 심박이 오르지 않음 / 어지럼·창백·구역·식은땀·혼동 / 숨참·쌕쌕거림·다리 경련 / 심장박동 이상 / 본인이 멈추길 원함 / 장비 고장 — 하나라도 있으면 바로 멈춥니다(ACSM).'],
   ['VO2max', '1분에 몸 1kg이 쓸 수 있는 최대 산소량(mL/kg/min). 클수록 심폐지구력이 좋습니다. 여기 값은 호흡가스 검사가 아닌 참고 추정치입니다.'],
   ['1분 회복 심박', '운동이 끝난 직후 심박에서 1분 뒤 심박을 뺀 값. 클수록 회복이 빠릅니다.'],
-  ['최대심박', '처음엔 220-나이로 계산하고, 실제로 그보다 높게 찍힌 기록이 생기면 그 값으로 바뀝니다.'],
+  ['최대심박', '처음엔 208−0.7×나이(Tanaka)로 계산하고, 실제로 그보다 높게 찍힌 기록이 생기면 그 값으로 바뀝니다.'],
   ['신뢰 등급', 'A: 3회차 이상·점 6개 이상이 직선에 잘 맞음 / B: 점 3개 이상이 잘 맞음 / C: 기록이 적거나 공식이 장비와 다름(참고만).'],
   ['보정', '다른 곳에서 잰 실측 VO2max를 넣어 두면, 그 회원의 다음 추정값을 실측/추정 비율로 맞춥니다.'],
 ];
@@ -505,11 +505,15 @@ export function pastCardioRecords(sessions = [], machineId, { now = Date.now(), 
 }
 
 // 개인 최대심박: 220-나이 와 실제 기록된 최고 심박(전력 테스트 포함 전체) 중 큰 값.
-export function personalMaxHr({ age, sessions = [], currentPeak = null }) {
+// [2026-11-23] 기본값은 Tanaka 208−0.7×나이. 실제 기록 최고 심박은 '실내(장비)'와 '필드(트랙·평지)'를 나눠 모은다 —
+// 로잉·스키 등 장비는 달리기보다 최고 심박이 낮게 찍혀서 섞으면 한쪽 최대심박이 틀어진다. context 를 주면 같은 쪽 기록만 쓴다.
+export const cardioContext = (machineId) => (machineId === 'field' ? 'field' : 'indoor');
+export function personalMaxHr({ age, sessions = [], currentPeak = null, context = null }) {
   const byAge = maxHeartRateFromAge(age);
   let observed = Number.isFinite(currentPeak) ? currentPeak : null;
   for (const s of Array.isArray(sessions) ? sessions : []) {
     const d = s?.data;
+    if (context && d?.machineId && cardioContext(d.machineId) !== context) continue;
     if (d?.kind === CARDIO_RECORD_KIND && Number.isFinite(d?.result?.peakHr)) {
       observed = observed == null ? d.result.peakHr : Math.max(observed, d.result.peakHr);
     }
@@ -553,7 +557,7 @@ export function computeCardioResult({ protocolId, machineId, rec, workEndSec, su
     if (protocol.target?.durationSec && !result.manualTime && Math.abs(result.durationSec - protocol.target.durationSec) <= 5) result.durationSec = protocol.target.durationSec;
   }
   const recovery = summarizeRecovery(rec, workEndSec);
-  const hrMax = personalMaxHr({ age: subject.age, sessions: allSessions, currentPeak: result.peakHr });
+  const hrMax = personalMaxHr({ age: subject.age, sessions: allSessions, currentPeak: result.peakHr, context: cardioContext(machineId) });
   const sex = normalizeSex(subject.sex);
   const weightKg = Number(subject.weightKg) || null;
   const estimates = { vo2max: null, maxPower: null };
@@ -700,7 +704,7 @@ export function computeCardioResult({ protocolId, machineId, rec, workEndSec, su
     estimates,
     flatReference,
     fieldRank,
-    hrMax: { ...hrMax, tanaka: hrMaxTanaka(subject.age) },
+    hrMax: { ...hrMax, formula: 'tanaka', context: cardioContext(machineId) },
     subject: { age: Number(subject.age) || null, sex, weightKg },
     notes,
   };

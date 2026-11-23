@@ -35,11 +35,12 @@ export function parseHeartRateMeasurement(view) {
   return { bpm, contact };
 }
 
-// 나이 → 추정 최대심박(220 - 나이). 나이가 없거나 이상하면 null.
+// 나이 → 추정 최대심박. [2026-11-23] 교재 7장: 220−나이는 표준편차 ±12로 오차가 커서 Tanaka(2001) 208−0.7×나이를 기본값으로 쓴다.
+// 나이가 없거나 이상하면 null.
 export function maxHeartRateFromAge(age) {
   const n = Number(age);
   if (!Number.isFinite(n) || n < 5 || n > 100) return null;
-  return 220 - Math.round(n);
+  return Math.round(208 - 0.7 * Math.round(n));
 }
 
 // [회원 연계 준비] 생년월일(YYYY-MM-DD) → 만 나이. 측정 허브에서 회원을 골라 두면

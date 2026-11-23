@@ -38,6 +38,7 @@ import {
   parseDistanceM,
   pastCardioRecords,
   personalMaxHr,
+  cardioContext,
   protocolsForMachine,
   bruceStageAt,
   recordTick,
@@ -230,7 +231,7 @@ export default function CardioTestMeasure({ onBack, member = null, onSave = null
   const [live, setLive] = useState(readNow());
   const wakeRef = useRef(null);
 
-  const hrMaxNow = personalMaxHr({ age: subject.age, sessions: allSessions }).value;
+  const hrMaxNow = personalMaxHr({ age: subject.age, sessions: allSessions, context: cardioContext(machineId) }).value;
 
   const finishWork = useCallback((sec) => {
     const run = runRef.current;
@@ -510,7 +511,7 @@ export default function CardioTestMeasure({ onBack, member = null, onSave = null
               </label>
             </div>
             <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
-              최대심박 {hrMaxNow || '-'}{hrMaxNow ? (personalMaxHr({ age: subject.age, sessions: allSessions }).source === 'observed' ? ' (이 회원의 실제 기록 기준)' : ' (220-나이)') : ' — 나이를 넣어 주세요'}
+              최대심박 {hrMaxNow || '-'}{hrMaxNow ? (personalMaxHr({ age: subject.age, sessions: allSessions, context: cardioContext(machineId) }).source === 'observed' ? ` (이 회원의 ${machineId === 'field' ? '필드' : '실내'} 실제 기록 기준)` : ' (208−0.7×나이)') : ' — 나이를 넣어 주세요'}
             </p>
           </div>
 
@@ -701,7 +702,7 @@ export default function CardioTestMeasure({ onBack, member = null, onSave = null
               </p>
             )}
             <p className="text-[11px] text-slate-500 dark:text-slate-400">
-              최대심박 {computed.hrMax.value ?? '-'}({computed.hrMax.source === 'observed' ? '실제 기록' : computed.hrMax.source === 'age' ? '220-나이' : '없음'}) · 심박 출처 {hrSourceLabel()} · 와트 기록률 {computed.result.powerCoveragePct}% · 심박 기록률 {computed.result.hrCoveragePct}%
+              최대심박 {computed.hrMax.value ?? '-'}({computed.hrMax.source === 'observed' ? '실제 기록' : computed.hrMax.source === 'age' ? '208−0.7×나이' : '없음'}) · 심박 출처 {hrSourceLabel()} · 와트 기록률 {computed.result.powerCoveragePct}% · 심박 기록률 {computed.result.hrCoveragePct}%
             </p>
             <LiveChart rec={rec} windowSec={CARDIO_SERIES_MAX_SEC_FOR_VIEW} version={rec.t.length} />
             <ProtocolInfo info={protocol?.info} compact />

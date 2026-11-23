@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  CARDIO_MACHINES, protocolsForMachine, getProtocol, cooper15Vo2max, rockportVo2max,
+  personalMaxHr, cardioContext, CARDIO_RECORD_KIND, CARDIO_MACHINES, protocolsForMachine, getProtocol, cooper15Vo2max, rockportVo2max,
   computeCardioResult, createRecorder, buildCardioRecord, bruceVo2max, bruceStageAt, hrMaxTanaka, estimateAccuracy,
 } from '../ai-measure/core/cardioTest';
 import { run15Percentile, vo2maxFromRun12 } from '../ai-measure/core/norms';
@@ -78,11 +78,20 @@ describe('11번 심폐지구력 — 교재 8장 필드 테스트(2026-11-23)', (
     const r = calc('field_bruce', { age: 30, sex: 'female', weightKg: 55 }, { timeSec: 600 });
     expect(r.estimates.vo2max.value).toBe(39.9);
   });
-  it('최대심박 Tanaka 값을 함께 저장(기본 최대심박은 그대로)', () => {
+  it('최대심박 기본값 Tanaka, 실내·필드 실제 기록은 따로 모은다', () => {
     expect(hrMaxTanaka(40)).toBe(180);
+    expect(personalMaxHr({ age: 20 }).value).toBe(194);
+    const sessions = [
+      { data: { kind: CARDIO_RECORD_KIND, machineId: 'rower', result: { peakHr: 190 } } },
+      { data: { kind: CARDIO_RECORD_KIND, machineId: 'field', result: { peakHr: 186 } } },
+    ];
+    expect(cardioContext('field')).toBe('field');
+    expect(cardioContext('bike')).toBe('indoor');
+    expect(personalMaxHr({ age: 40, sessions, context: 'indoor' })).toEqual({ value: 190, source: 'observed' });
+    expect(personalMaxHr({ age: 40, sessions, context: 'field' })).toEqual({ value: 186, source: 'observed' });
+    expect(personalMaxHr({ age: 40, sessions })).toEqual({ value: 190, source: 'observed' });
     const r = calc('field_cooper15', { age: 40, sex: 'male', weightKg: 70 }, { timeSec: 720 });
-    expect(r.hrMax.tanaka).toBe(180);
-    expect(r.hrMax.value).toBe(180);
+    expect(r.hrMax).toMatchObject({ value: 180, formula: 'tanaka', context: 'field' });
   });
   it('오차 범위·설명력(교재 4장): 쿠퍼 1.5마일 r=0.90 → r²=81%, ±6%', () => {
     const r = calc('field_cooper15', { age: 28, sex: 'female', weightKg: 55 }, { timeSec: 805 });
