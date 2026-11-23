@@ -163,7 +163,7 @@ export default function AiMeasureHub() {
     //  (저장 중/✓/실패)를 직접 보여주므로 lifting·stance 처럼 alert 없이 세션을 돌려준다.
     const isHeartRate = active.id === 'timer' && data?.kind === 'heart_rate';
     // [11번 심폐지구력 2026-11-12] 화면이 저장 상태를 직접 보여주므로 alert 없이 세션을 돌려준다.
-    const isCardio = active.id === 'cardio' && data?.kind === 'cardio_test';
+    const isCardio = (active.id === 'cardio' || active.id === 'cardio_field') && data?.kind === 'cardio_test';
 
     // 측정 정직성: 미등록회원인데 guest id 가 아직 없으면 저장 직전 확정 발급
     // (null __mid 로 저장되어 데이터가 유실/혼합되는 것을 방지). 같은 측정 묶음은
@@ -278,7 +278,7 @@ export default function AiMeasureHub() {
 
       // 측정이력(ai): 실제 회원은 회원 id, 미등록회원은 개별 guest id 로 저장.
       const savedSession = await aiStore.addSession(saveMid, {
-        menu: active.id,
+        menu: active.id === 'cardio_field' ? 'cardio' : active.id, // 필드용(12번)도 11번과 같은 'cardio' 기록으로 저장
         menuTitle: active.title,
         recordedAt: todayYMD(), // CV-A: 로컬 날짜
         recordedAtFull: new Date().toISOString(),
@@ -564,12 +564,13 @@ export default function AiMeasureHub() {
             onBack={closeActiveMenu}
             onMemberHeightChange={rememberMemberHeight}
             onGuestBodyInfoChange={member?.isVirtual ? applyGuestBodyInfo : undefined}
-            onViewInReport={() => viewInReport(active.id)}
+            onViewInReport={() => viewInReport(active.id === 'cardio_field' ? 'cardio' : active.id)}
             // [제자리멀리뛰기(SBJ) 탭 분리 2026-09-16, 한발멀리뛰기 추가로 일반화]
             // 'jump' 탭과 컴포넌트를 재사용하되, 이 탭에서만 세부종류 선택을
             // 수평(horizontal) 엔진 4종(SBJ+한발멀리뛰기 3방향)으로 제한한다
             // (JumpAnalysisHub.jsx allowedSubTypes 참고) — 'jump' 탭은 이 prop
             // 자체를 안 받아 기존 9종 전체 선택 그대로.
+            {...(active.id === 'cardio' ? { venue: 'indoor' } : active.id === 'cardio_field' ? { venue: 'field' } : {})}
             {...(active.id === 'broadjump' ? { allowedSubTypes: BROAD_JUMP_SUBTYPES } : active.id === 'jump' ? { allowedSubTypes: VERTICAL_JUMP_SUBTYPES } : {})}
           />
         </Suspense>

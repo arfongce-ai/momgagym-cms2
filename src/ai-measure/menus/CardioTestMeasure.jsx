@@ -153,10 +153,10 @@ function RpePanel({ phase, protocolId, elapsed, workEndSec, log, onAdd }) {
   );
 }
 
-export default function CardioTestMeasure({ onBack, member = null, onSave = null, onViewInReport = null }) {
+export default function CardioTestMeasure({ onBack, member = null, onSave = null, onViewInReport = null, venue = null }) {
   const supported = isHeartRateBleSupported();
-  const [machineId, setMachineId] = useState('rower');
-  const [protocolId, setProtocolId] = useState('rower_2k');
+  const [machineId, setMachineId] = useState(venue === 'field' ? 'field' : 'rower');
+  const [protocolId, setProtocolId] = useState(venue === 'field' ? (protocolsForMachine('field')[0]?.id || 'field_cooper15') : 'rower_2k');
   const protocol = getProtocol(protocolId);
   const machineMeta = CARDIO_MACHINES[machineId];
 
@@ -470,7 +470,7 @@ export default function CardioTestMeasure({ onBack, member = null, onSave = null
 
   // 장비가 보내는 신호 종류로 장비 카드를 자동으로 맞춘다(준비 화면에서만).
   useEffect(() => {
-    if (phase !== 'setup' || !detectedKind) return;
+    if (phase !== 'setup' || !detectedKind || venue === 'field') return; // 필드용에서는 장비 자동 전환 안 함
     if (detectedKind === 'bike' && machineId !== 'bike') {
       pickMachine('bike');
       setNotice('바이크 신호가 들어와서 장비를 "에어바이크"로 바꿨습니다.');
@@ -479,7 +479,7 @@ export default function CardioTestMeasure({ onBack, member = null, onSave = null
       setNotice('로잉 계열 신호가 들어와서 장비를 "로잉머신"으로 바꿨습니다. 스키라면 "스키에르고미터"를 눌러 주세요.');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [detectedKind, phase]);
+  }, [detectedKind, phase, venue]);
 
   const machineSilent = Boolean(machineInfo && machineInfo.status === 'connected'
     && Date.now() - connectedAtRef.current > 8000
