@@ -48,7 +48,7 @@ import { vo2maxRating } from '../core/norms';
 import CardioReportSheet from '../../components/report/CardioReportSheet';
 
 const FRESH_MS = 5000; // 이 시간 안에 온 값만 '현재 값'으로 쓴다
-const FIELD_TAB_LABELS = { field_cooper15: ['쿠퍼 1.5마일', '2.4km 달리기·걷기'], field_cooper12: ['쿠퍼 12분', '12분 달리기·걷기'], field_rockport: ['록포트 1마일', '1.6km 걷기'], field_bruce: ['브루스', '모터 트레드밀'] };
+const FIELD_TAB_LABELS = { field_cooper15: ['쿠퍼 1.5마일', '2.4km'], field_cooper12: ['쿠퍼 12분', '12분'], field_rockport: ['록포트 1마일', '걷기'], field_bruce: ['브루스', '트레드밀'] };
 const MACHINE_ORDER = ['rower', 'bike', 'ski', 'treadmill', 'climber', 'field'];
 
 function machineError(err) {
@@ -531,11 +531,11 @@ export default function CardioTestMeasure({ onBack, member = null, onSave = null
             <p className="mb-1 text-xs font-bold text-slate-600 dark:text-slate-300">{cardioContext(machineId) === 'indoor' ? '② 테스트' : '테스트 선택'}</p>
             {cardioContext(machineId) === 'field' ? (
               <div className="space-y-2" data-testid="cardio-field-tabs">
-                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                <div className="grid grid-cols-4 gap-2">
                   {protocolsForMachine(machineId).map((p) => {
                     const [name, sub] = FIELD_TAB_LABELS[p.id] || [p.label, ''];
                     return (
-                      <button key={p.id} onClick={() => setProtocolId(p.id)} className={`rounded-xl border-2 py-2 text-xs font-bold ${protocolId === p.id ? 'border-amber-500 bg-amber-500/15 text-amber-800 dark:text-amber-200' : 'border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300'}`} data-testid={`cardio-field-tab-${p.id}`}>
+                      <button key={p.id} onClick={() => setProtocolId(p.id)} className={`rounded-xl border-2 px-1 py-2 text-xs font-bold ${protocolId === p.id ? 'border-amber-500 bg-amber-500/15 text-amber-800 dark:text-amber-200' : 'border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300'}`} data-testid={`cardio-field-tab-${p.id}`}>
                         {name}
                         <span className="block text-[10px] font-normal opacity-70">{sub || ' '}</span>
                       </button>
