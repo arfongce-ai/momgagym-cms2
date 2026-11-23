@@ -48,6 +48,7 @@ import { vo2maxRating } from '../core/norms';
 import CardioReportSheet from '../../components/report/CardioReportSheet';
 
 const FRESH_MS = 5000; // 이 시간 안에 온 값만 '현재 값'으로 쓴다
+const FIELD_TAB_LABELS = { field_cooper15: ['쿠퍼 1.5마일', '2.4km 달리기·걷기'], field_cooper12: ['쿠퍼 12분', '12분 달리기·걷기'], field_rockport: ['록포트 1마일', '1.6km 걷기'], field_bruce: ['브루스', '모터 트레드밀'] };
 const MACHINE_ORDER = ['rower', 'bike', 'ski', 'treadmill', 'climber', 'field'];
 
 function machineError(err) {
@@ -527,7 +528,30 @@ export default function CardioTestMeasure({ onBack, member = null, onSave = null
           )}
 
           <div>
-            <p className="mb-1 text-xs font-bold text-slate-600 dark:text-slate-300">{cardioContext(machineId) === 'indoor' ? '② 테스트' : '테스트'}</p>
+            <p className="mb-1 text-xs font-bold text-slate-600 dark:text-slate-300">{cardioContext(machineId) === 'indoor' ? '② 테스트' : '테스트 선택'}</p>
+            {cardioContext(machineId) === 'field' ? (
+              <div className="space-y-2" data-testid="cardio-field-tabs">
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  {protocolsForMachine(machineId).map((p) => {
+                    const [name, sub] = FIELD_TAB_LABELS[p.id] || [p.label, ''];
+                    return (
+                      <button key={p.id} onClick={() => setProtocolId(p.id)} className={`rounded-xl border-2 py-2 text-xs font-bold ${protocolId === p.id ? 'border-amber-500 bg-amber-500/15 text-amber-800 dark:text-amber-200' : 'border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300'}`} data-testid={`cardio-field-tab-${p.id}`}>
+                        {name}
+                        <span className="block text-[10px] font-normal opacity-70">{sub || ' '}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+                {protocol && (
+                  <div className="rounded-xl border-2 border-amber-500 bg-amber-500/10 px-3 py-2">
+                    <p className="text-sm font-bold text-slate-800 dark:text-slate-100">{protocol.label}{protocol.estimate ? ' · 참고 추정' : ''}</p>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400">{protocol.guide}</p>
+                    {protocol.caution && <p className="text-[11px] font-bold text-red-600 dark:text-red-400">{protocol.caution}</p>}
+                    <ProtocolInfo info={protocol.info} />
+                  </div>
+                )}
+              </div>
+            ) : (
             <div className="space-y-2">
               {protocolsForMachine(machineId).map((p) => (
                 <button key={p.id} onClick={() => setProtocolId(p.id)} className={`w-full rounded-xl border-2 px-3 py-2 text-left ${protocolId === p.id ? 'border-amber-500 bg-amber-500/10' : 'border-slate-300 dark:border-slate-600'}`}>
@@ -537,6 +561,7 @@ export default function CardioTestMeasure({ onBack, member = null, onSave = null
                 </button>
               ))}
             </div>
+            )}
             {protocolId === 'step' && (
               <div className="mt-2 grid grid-cols-2 gap-2">
                 <label className="text-[11px] font-bold text-slate-500 dark:text-slate-400">시작 와트
