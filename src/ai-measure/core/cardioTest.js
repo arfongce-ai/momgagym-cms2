@@ -755,6 +755,7 @@ export function rpeLabel(n) {
 // 운동 중 RPE를 적을 시점(초). 목표 시간이 있으면 3분 간격(마지막 시점 직전은 제외), 없으면 3분 간격을 계속 제안한다.
 export function rpeCheckpoints(protocolId, maxSec = 1800) {
   const p = getProtocol(protocolId);
+  if (p?.machine === 'field' || String(protocolId).startsWith('field_')) return []; // 필드는 뛰는 중 입력 불가 → 종료 직후 1번만
   const total = p?.target?.durationSec || maxSec;
   const out = [];
   for (let t = RPE_INTERVAL_SEC; t < total - 30; t += RPE_INTERVAL_SEC) out.push(t);

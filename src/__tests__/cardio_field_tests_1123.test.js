@@ -126,10 +126,14 @@ describe('11번 심폐지구력 — 교재 8장 필드 테스트(2026-11-23)', (
     expect(cardioGroupHistory(all[3], all).total).toBe(0); // 로잉은 로잉끼리만
   });
   it('RPE: 기록 시점 안내·정규화(저장 전용)', () => {
-    expect(rpeCheckpoints('field_cooper12')).toEqual([180, 360, 540]);
-    expect(rpeDue('field_cooper12', 185, [])).toBe(180);
-    expect(rpeDue('field_cooper12', 185, [{ tSec: 182, kind: 'during', value: 11 }])).toBeNull();
-    expect(rpeDue('field_cooper12', 100, [])).toBeNull();
+    expect(rpeCheckpoints('field_cooper12')).toEqual([]); // 필드: 운동 중 알림 없음
+    expect(rpeDue('field_cooper12', 185, [])).toBeNull();
+    expect(rpeCheckpoints('step').length).toBeGreaterThan(0);
+    expect(rpeCheckpoints('bike_astrand')).toEqual([180, 360, 540].slice(0, rpeCheckpoints('bike_astrand').length));
+    const ind = rpeCheckpoints('bike_astrand')[0];
+    expect(rpeDue('bike_astrand', ind + 5, [])).toBe(ind);
+    expect(rpeDue('bike_astrand', ind + 5, [{ tSec: ind + 2, kind: 'during', value: 11 }])).toBeNull();
+    expect(rpeDue('bike_astrand', 100, [])).toBeNull();
     expect(rpeLabel(13)).toBe('약간 힘듦');
     expect(normalizeRpe([])).toBeNull();
     const r = normalizeRpe([{ tSec: 180, value: 11, kind: 'during' }, { tSec: 700, value: 18, kind: 'end' }, { tSec: 5, value: 99, kind: 'during' }]);

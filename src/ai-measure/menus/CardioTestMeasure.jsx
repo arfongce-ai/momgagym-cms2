@@ -139,7 +139,7 @@ function RpePanel({ phase, protocolId, elapsed, workEndSec, log, onAdd }) {
             : phase === 'recovery' ? 'RPE 기록 완료'
               : next != null ? `다음 RPE 기록: ${formatClock(next)} (운동 끝 직후에도 1번 기록)` : '운동 끝을 누른 직후 RPE를 1번 기록합니다'}
       </p>
-      {(show || phase === 'running') && (
+      {(show || (phase === 'running' && rpeCheckpoints(protocolId).length > 0)) && (
         <div className="mt-1.5 grid grid-cols-5 gap-1">
           {Array.from({ length: RPE_MAX - RPE_MIN + 1 }, (_, i) => RPE_MIN + i).map((v) => (
             <button key={v} onClick={() => onAdd(v, kind)} className={`rounded-lg py-1.5 text-sm font-black ${last && last.value === v && last.kind === kind ? 'bg-red-500 text-white' : 'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-100'}`} data-testid={`cardio-rpe-${v}`}>{v}</button>
