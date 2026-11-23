@@ -10,7 +10,7 @@ import {
 } from './UnifiedReportPrimitives';
 import ReportActions from './ReportActions';
 import ChangeSummaryPanel from './ChangeSummaryPanel';
-import { cardioHistoryMetrics, curvedComparison, cardioChangeSummary, formatClock, formatPace } from '../../ai-measure/core/cardioTest';
+import { cardioHistoryMetrics, curvedComparison, cardioChangeSummary, cardioContextLabel, cardioGroupHistory, rpeLabel, formatClock, formatPace } from '../../ai-measure/core/cardioTest';
 import { buildSummaryData } from '../../ai-measure/core/unifiedReport';
 
 const SEX_LABEL = { male: '남', female: '여', m: '남', f: '여' };
@@ -70,7 +70,7 @@ function Tile({ label, value, unit, accent = false }) {
   );
 }
 
-export default function CardioReportSheet({ report, member, previous = null, onMessage, showActions = true, reportNodeId = 'cardio-report-sheet' }) {
+export default function CardioReportSheet({ report, member, previous = null, history = [], onMessage, showActions = true, reportNodeId = 'cardio-report-sheet' }) {
   const p = report && typeof report === 'object' ? report : {};
   const memberName = member?.name || p.member?.name || '회원';
   const vo2 = p.estimates?.vo2max;
@@ -86,6 +86,10 @@ export default function CardioReportSheet({ report, member, previous = null, onM
   const isCurved = p.basis === 'curved';
   const cmp = isCurved ? curvedComparison(p, previous) : null;
   const changeSummary = !isCurved ? cardioChangeSummary(p, previous) : null;
+  // 같은 묶음(실내/필드 + 장비 + 테스트)끼리만 모은 과거 기록
+  const ctxLabel = cardioContextLabel(p.machineId);
+  const groupHist = cardioGroupHistory(p, [...(history || []), previous].filter(Boolean));
+  const sinceFirst = groupHist.oldest ? cardioChangeSummary(p, groupHist.oldest) : null;
 
   return (
     <div>
@@ -93,7 +97,7 @@ export default function CardioReportSheet({ report, member, previous = null, onM
         <UnifiedReportPage id={reportNodeId} className="mx-auto" interpretationSummary={buildSummaryData(p, { reportType: 'cardio' })} interpretationType="cardio">
           <UnifiedReportHeader
             badge="VO2max"
-            title={`심폐지구력 · ${p.machineLabel || ''} ${p.protocolLabel || ''}`.trim()}
+            title={`심폐지구력 · ${ctxLabel} · ${p.machineLabel || ''} ${p.protocolLabel || ''}`.trim()}
             subtitle={`${memberName} · ${dateText}`}
             score={null}
             member={member || p.member || null}
@@ -128,12 +132,38 @@ export default function CardioReportSheet({ report, member, previous = null, onM
                 이번 측정은 VO2max를 계산하지 않았습니다. {vo2?.reason || '조건을 채우지 못했습니다.'}
               </p>
             )}
+            {p.fieldRank && (
+              <p className="mt-2 break-keep text-[12px] font-semibold text-slate-600 dark:text-slate-300" data-testid="cardio-report-fieldrank">
+                1.5마일 {formatClock(p.fieldRank.timeSec)} · 같은 나이·성별 백분위 {p.fieldRank.band || `약 ${p.fieldRank.percentile}`} (교재 표 8.2, Cooper Institute)
+              </p>
+            )}
           </UnifiedReportSection>
           )}
 
           {!isCurved && (changeSummary
             ? <div className="mb-4"><ChangeSummaryPanel summary={changeSummary} /></div>
             : <p className="mb-4 break-keep text-[12px] font-semibold text-slate-500">이 회원의 같은 장비·같은 테스트 첫 기록입니다. 다음 측정부터 이전 대비 변화를 보여드립니다.</p>)}
+
+          {groupHist.rows.length > 0 && (
+            <UnifiedReportSection title={`${ctxLabel} · ${p.machineLabel || ''} 추이`} subtitle={`같은 장비·같은 테스트(${p.protocolLabel || ''}) 기록만 비교`} className="mb-4">
+              <table className="w-full text-[12px]" data-testid="cardio-group-history">
+                <thead><tr className="text-left text-slate-500"><th className="py-1">날짜</th><th>VO2max</th><th>기록</th><th>평균 심박</th><th>1분 회복</th></tr></thead>
+                <tbody>
+                  {groupHist.rows.map((r) => (
+                    <tr key={r.date + String(r.timeSec) + String(r.distanceM)} className="border-t border-slate-200 dark:border-slate-700">
+                      <td className="py-1 font-mono">{r.date}</td>
+                      <td className="font-mono">{r.vo2 ?? '-'}</td>
+                      <td className="font-mono">{r.distanceM && !r.timeSec ? `${r.distanceM}m` : r.timeSec ? `${formatClock(r.timeSec)}${r.distanceM ? ` · ${r.distanceM}m` : ''}` : '-'}</td>
+                      <td className="font-mono">{r.avgHr ?? '-'}</td>
+                      <td className="font-mono">{r.drop60 ?? '-'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <p className="mt-1 text-[11px] font-semibold text-slate-500">실내·필드, 다른 장비의 기록은 섞지 않습니다(총 {groupHist.total}회 이전 기록).</p>
+              {sinceFirst && <div className="mt-2"><ChangeSummaryPanel summary={sinceFirst} /><p className="text-[11px] text-slate-500">위는 가장 처음 기록 대비 변화입니다.</p></div>}
+            </UnifiedReportSection>
+          )}
 
           {tiles.length > 0 && (
             <UnifiedReportSection title="측정 값" subtitle="핵심 지표" className="mb-4">
@@ -143,7 +173,17 @@ export default function CardioReportSheet({ report, member, previous = null, onM
                 {Number.isFinite(result.peakHr) && <Tile label="최고 심박" value={result.peakHr} unit="bpm" />}
                 {Number.isFinite(result.paceSec500) && <Tile label="500m 페이스" value={formatPace(result.paceSec500)} unit="" />}
                 {Number.isFinite(p.hrMax?.value) && <Tile label="최대심박 기준" value={p.hrMax.value} unit="bpm" />}
+                {p.rpe?.peak != null && <Tile label={`RPE 피크${p.rpe.hasEnd ? '' : '(운동 중)'}`} value={p.rpe.peak} unit={rpeLabel(p.rpe.peak)} />}
               </div>
+            </UnifiedReportSection>
+          )}
+
+          {p.rpe?.entries?.length > 0 && (
+            <UnifiedReportSection title="운동 강도 체감(RPE)" subtitle="Borg 6~20 · 기록용(VO2max 계산에는 미사용)" className="mb-4">
+              <p className="text-[12px] font-bold text-slate-700 dark:text-slate-200" data-testid="cardio-report-rpe">
+                {p.rpe.entries.map((x) => `${x.kind === 'end' ? '끝 직후' : formatClock(x.tSec)} ${x.value}`).join(' → ')}
+              </p>
+              {!p.rpe.maxEffort && <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">피크 RPE가 17 미만입니다. 최대 노력이 아니었다면 추정 VO2max가 실제보다 낮게 나올 수 있습니다.</p>}
             </UnifiedReportSection>
           )}
 

@@ -8,6 +8,7 @@ import { scopeMembersToTrainer, sortByName } from '../utils/memberList';
 import { store, aiStore } from '../demoData';
 import { buildFullReport, buildAnalysisTrend, buildPostureTrend, groupResultsByDate, buildInterpretationGuide, GUIDE_STATUS_LEGEND, menuGroupKey, plausibleVelocity } from '../services/reportService';
 import { JUMP_SUBTYPES, resolveJumpSubType } from '../ai-measure/core/jumpTypes';
+import { cardioGroupKey } from '../ai-measure/core/cardioTest';
 import { buildSummaryData, scoreToStatus, defaultRecommendation } from '../ai-measure/core/unifiedReport';
 import { buildComprehensiveReport } from '../ai-measure/core/comprehensiveReport';
 import { loadAllMeasureRecords, deleteMeasureRound, deleteMeasureType, deleteMeasureRecord } from '../services/comprehensiveReportService';
@@ -1377,6 +1378,13 @@ export default function Report() {
     }
     const same = (sessionsByMenu[menuGroupKey(session)] || []);
     const idx = same.findIndex((x) => x.id === session.id);
+    // [2026-11-23] 심폐지구력은 실내·필드·장비·테스트가 같은 기록끼리만 비교한다(섞인 목록의 바로 다음 기록이 아니라 같은 묶음의 직전 기록).
+    if (session.menu === 'cardio' && session.data?.kind === 'cardio_test' && idx >= 0) {
+      const older = same.slice(idx + 1);
+      const key = cardioGroupKey(session.data);
+      setSessionViewer({ session, previous: older.find((x) => cardioGroupKey(x.data) === key) || null, history: older.map((x) => x.data).filter(Boolean) });
+      return;
+    }
     setSessionViewer({ session, previous: idx >= 0 ? (same[idx + 1] || null) : null });
   };
 
@@ -2007,7 +2015,7 @@ export default function Report() {
           <Suspense fallback={<div className="p-10 text-center text-slate-500 dark:text-slate-400">불러오는 중…</div>}>
             {sessionViewer.session.menu === 'cardio' && sessionViewer.session.data?.kind === 'cardio_test' && (
               <div className="mx-auto w-full max-w-[794px] p-4">
-                <CardioReportSheet report={sessionViewer.session.data} member={member} previous={sessionViewer.previous?.data || null} onMessage={setMsg} />
+                <CardioReportSheet report={sessionViewer.session.data} member={member} previous={sessionViewer.previous?.data || null} history={sessionViewer.history || []} onMessage={setMsg} />
               </div>
             )}
             <SessionDataSheet session={sessionViewer.session} previous={sessionViewer.previous} member={member} onClose={() => setSessionViewer(null)} />

@@ -197,7 +197,7 @@ describe('전체 계산', () => {
     expect(pooled.estimates.maxPower.sessionsUsed).toBe(3);
     expect(pooled.estimates.maxPower.grade).toBe('A');
   });
-  it('개인 최대심박: 실제 기록이 220-나이보다 높으면 교체', () => {
+  it('개인 최대심박: 실제 기록이 208−0.7×나이보다 높으면 교체', () => {
     expect(personalMaxHr({ age: 40 }).value).toBe(180);
     const sessions = [{ data: { kind: CARDIO_RECORD_KIND, result: { peakHr: 188 } } }];
     expect(personalMaxHr({ age: 40, sessions })).toEqual({ value: 188, source: 'observed' });

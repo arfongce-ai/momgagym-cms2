@@ -42,8 +42,10 @@ describe('parseHeartRateMeasurement — 0x2A37 값 해석', () => {
 });
 
 describe('구간 계산', () => {
-  it('나이 → 최대심박(220-나이), 이상한 값은 null', () => {
+  it('나이 → 최대심박(208−0.7×나이), 이상한 값은 null', () => {
     expect(maxHeartRateFromAge(40)).toBe(180);
+    expect(maxHeartRateFromAge(20)).toBe(194);
+    expect(maxHeartRateFromAge(60)).toBe(166);
     expect(maxHeartRateFromAge('')).toBeNull();
     expect(maxHeartRateFromAge(0)).toBeNull();
     expect(maxHeartRateFromAge(150)).toBeNull();

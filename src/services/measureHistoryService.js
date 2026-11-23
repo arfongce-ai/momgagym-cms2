@@ -10,7 +10,7 @@ import { extractKeyMetrics, inferReportType, METRIC_DEFINITIONS } from '../ai-me
 // [심박 기록 2026-11-11] 초시계 화면에서 저장한 심박 기록을 이력에 '심박 측정'으로 보여준다.
 import { HEART_RATE_RECORD_KIND, heartRateHistoryMetrics } from '../ai-measure/core/heartRateBle';
 // [11번 심폐지구력 2026-11-12] 장비 테스트 기록을 '심폐지구력'으로 보여준다.
-import { CARDIO_RECORD_KIND, cardioHistoryMetrics } from '../ai-measure/core/cardioTest';
+import { CARDIO_RECORD_KIND, cardioHistoryMetrics, cardioContextLabel } from '../ai-measure/core/cardioTest';
 
 export const TYPE_LABEL = Object.freeze({
   body: '신체정보',
@@ -144,7 +144,7 @@ export function mergeMeasureEntries({ sessions = [], gait = [], posture = [], ro
       reportCollection: linked[0]?.col || '',
       source: main ? 'session+report' : 'session',
       type,
-      title: isHeartRate ? TYPE_LABEL.heart_rate : isCardio ? `${TYPE_LABEL.cardio_test} · ${s.data.machineLabel || ''} ${s.data.protocolLabel || ''}`.trim() : (s.menuTitle || TYPE_LABEL[type] || '측정'),
+      title: isHeartRate ? TYPE_LABEL.heart_rate : isCardio ? `${TYPE_LABEL.cardio_test} · ${cardioContextLabel(s.data.machineId)} · ${s.data.machineLabel || ''} ${s.data.protocolLabel || ''}`.trim() : (s.menuTitle || TYPE_LABEL[type] || '측정'),
       date: s.recordedAt || dateOnly(isoOf(s)),
       at: isoOf(s) || isoOf(main),
       memo: s.memo || '',

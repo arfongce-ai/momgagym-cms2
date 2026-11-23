@@ -146,3 +146,43 @@ export function run12Reference(sex, age, distanceM) {
 
 // 검산·테스트용으로 표 원본을 내보낸다.
 export const RUN_BOOK_TABLES = { run2400: BOOK_2400, run12minKm: BOOK_12MIN_KM };
+
+// ════════════════════════════════════════════════════════════════════════
+//  [2026-11-23] 교재 표 8.2 — 1.5마일(2.4km) 달리기/걷기 시간 백분위(Cooper Institute, 평지·트랙 기준)
+//  행 순서: 백분위 90→10. 값은 분:초. 필드(트랙·평지) 테스트에만 화면에 보여 준다(커브드는 제외 — 위 주석 참고).
+// ════════════════════════════════════════════════════════════════════════
+export const TABLE_8_2_PERCENTILES = [90, 80, 70, 60, 50, 40, 30, 20, 10];
+const TABLE_8_2 = {
+  'male-20-29': ['9:34', '10:08', '10:49', '11:27', '11:58', '12:29', '13:08', '13:58', '15:14'],
+  'female-20-29': ['10:59', '11:56', '12:51', '13:25', '14:15', '15:05', '15:56', '17:11', '18:39'],
+  'male-30-39': ['9:52', '10:38', '11:09', '11:49', '12:25', '12:53', '13:48', '14:33', '15:56'],
+  'female-30-39': ['11:43', '12:53', '13:41', '14:33', '15:14', '15:56', '16:46', '18:18', '20:13'],
+  'male-40-49': ['10:09', '11:09', '11:52', '12:25', '13:05', '13:50', '14:33', '15:32', '17:04'],
+  'female-40-49': ['12:25', '13:38', '14:33', '15:17', '16:13', '17:11', '18:26', '19:43', '21:52'],
+  'male-50-59': ['11:09', '12:08', '12:53', '13:53', '14:33', '15:14', '16:16', '17:30', '19:24'],
+  'female-50-59': ['13:58', '15:14', '16:26', '17:19', '18:05', '19:10', '20:17', '21:57', '23:55'],
+  'male-60-69': ['12:10', '13:25', '14:33', '15:20', '16:19', '17:19', '18:39', '20:13', '23:27'],
+  'female-60-69': ['15:32', '16:46', '18:05', '18:52', '20:08', '20:55', '22:34', '23:55', '26:32'],
+};
+export const TABLE_8_2_BOOK = TABLE_8_2;
+
+/** 1.5마일 시간(초)의 교재 표 8.2 백분위. 20~69세·남/여만. → { percentile, band?, group, source } | null */
+export function run15Percentile(sex, age, timeSec) {
+  const a = Number(age);
+  const t = Number(timeSec);
+  if (!(sex === 'male' || sex === 'female') || !Number.isFinite(a) || a < 20 || a >= 70 || !(t > 0)) return null;
+  const decade = Math.floor(a / 10) * 10;
+  const group = `${sex}-${decade}-${decade + 9}`;
+  const row = TABLE_8_2[group]?.map(parseClockSec);
+  if (!row) return null;
+  const base = { group, source: 'table8.2' };
+  if (t <= row[0]) return { ...base, percentile: 90, band: '90이상' };
+  if (t >= row[row.length - 1]) return { ...base, percentile: 10, band: '10이하' };
+  for (let i = 1; i < row.length; i += 1) {
+    if (t <= row[i]) {
+      const f = (t - row[i - 1]) / (row[i] - row[i - 1]);
+      return { ...base, percentile: Math.round(TABLE_8_2_PERCENTILES[i - 1] - 10 * f) };
+    }
+  }
+  return null;
+}

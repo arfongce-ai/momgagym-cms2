@@ -45,6 +45,17 @@
 
 ## 작업 로그
 
+### 2026-11-23 · Claude Code · 11번 심폐지구력에 교재 필드 테스트 추가 (브랜치 feat/cardio-field-tests-1123)
+- 새 장비 '트랙·평지(필드)'에 테스트 4개: 쿠퍼 1.5마일(남녀 식 + 표 8.2 백분위), 쿠퍼 12분(Cooper 1968 식), 록포트 1마일 걷기(18~29/30~79세 식, 종료 직후 심박 입력·밴드 자동), 브루스(모터 트레드밀, 총 시간 → VO2max, 단계 안내). `core/cardioTest.js`, `core/norms.js`(표 8.2), `menus/CardioTestMeasure.jsx`, `components/report/CardioReportSheet.jsx`.
+- 추정값마다 오차 범위(SEE)·설명력(r²) 표시, 최대심박 Tanaka(208−0.7×나이) 값 병기 저장(기본 최대심박은 220−나이 그대로), 용어에 중단 기준 추가.
+- ⚠ 교재 인쇄 오류 2곳 교정: ①12분 식 계수 0.0268 → Cooper 1968 (m−504.9)/44.73 유지 ②록포트 30~79세 체중 계수 0.1692 는 kg 기준(교재는 lbs로 표기) → kg에 곱함.
+- 커브드는 기존 방침 그대로(평지 표 비교 안 함). `cardio_curved_1117` 테스트는 평지(fieldRank)만 예외로 허용하도록 범위 조정.
+- 대표님 결정(2026-11-23): 기본 최대심박을 208−0.7×나이로 변경(`heartRateBle.js maxHeartRateFromAge`, 15번 초시계 구간에도 적용). 실제 기록 최고 심박은 실내(장비)·필드를 나눠 모음(`cardioTest.js cardioContext`, `personalMaxHr({context})`). 40세는 180으로 같고 나이가 어릴수록 높아짐(20세 194).
+- 테스트: 3719/3720 통과, 실패 1개는 기존 `momi_voice.test.js:119`. 빌드 통과. 실기기 확인 못 함. 브루스 경사(%) 값은 교재 그림이 불명확해 화면에 넣지 않음.
+
+- 추가(같은 브랜치): 결과리포트 비교를 실내/필드·장비·테스트 묶음별로 분리(`cardioGroupKey`/`cardioGroupHistory`, CardioReportSheet 추이 표·"가장 처음 기록 대비", Report.jsx 같은 묶음 이전기록, 이력 제목에 실내/필드 표기). 다른 묶음끼리는 비교하지 않음.
+- 추가: RPE(Borg 6~20) 기록 — 운동 중 3분마다 + 운동 끝 직후(피크) 버튼 입력(`RpePanel`), `record.rpe`에 저장, 리포트에 표시. **저장 전용, VO2max 계산 미사용.** 피크 17 미만이면 "최대 노력 아닐 수 있음" 안내. 실기기 확인 못 함. 기존 실패 `momi_voice.test.js:119` 외 신규 실패 없음.
+
 ### 2026-11-23 · Claude Code · AI분석 현장 점검 7건 중 6건 수정 (브랜치 fix/ai-measure-1123, 미푸시)
 - 2번(점프): 6번 탭 칩에서 수평(SBJ·한발멀리뛰기) 제거 → `jumpTypes.js` `VERTICAL_JUMP_SUBTYPES`, `AiMeasureHub.jsx`에서 'jump' 탭에 `allowedSubTypes` 전달. 수평은 7번 탭 전용.
 - 3번(RUN 녹화): `GaitRunningAnalysis.jsx` 자동 종료 15초 → 60초(`GAIT_MAX_RECORD_SEC`), 진행바 연동.
