@@ -401,6 +401,15 @@ export default function CardioTestMeasure({ onBack, member = null, onSave = null
     const list = past.filter((d) => d.protocolId === protocolId).sort((a, b) => String(b.startedAt || '').localeCompare(String(a.startedAt || '')));
     return list[0] || null;
   }, [isCurved, past, protocolId]);
+  // [전·후 비교 2026-11-23] 저장된 기록보다 '이른' 같은 테스트(같은 장비·프로토콜) 중 가장 최근 것 — 저장 직후 자기 자신이 뽑히지 않게 시각으로 거른다.
+  const prevForSaved = useMemo(() => {
+    if (!savedRecord) return prevCurved;
+    const t = String(savedRecord.startedAt || '');
+    return past
+      .filter((d) => d.protocolId === savedRecord.protocolId && d.machineId === savedRecord.machineId
+        && (!t || String(d.startedAt || '') < t))
+      .sort((x, y) => String(y.startedAt || '').localeCompare(String(x.startedAt || '')))[0] || null;
+  }, [savedRecord, past, prevCurved]);
   const curvedCmp = useMemo(() => (isCurved && computed && prevCurved
     ? curvedComparison({ protocolId, machineId, result: computed.result }, prevCurved)
     : null), [isCurved, computed, prevCurved, protocolId, machineId]);
@@ -740,7 +749,7 @@ export default function CardioTestMeasure({ onBack, member = null, onSave = null
           </div>
           {saveState.state === 'saved' && savedRecord && (
             <div className="pt-2">
-              <CardioReportSheet report={savedRecord} member={member} previous={prevCurved} onMessage={setReportMsg} />
+              <CardioReportSheet report={savedRecord} member={member} previous={prevForSaved} onMessage={setReportMsg} />
               {reportMsg && <p className="mt-2 text-center text-[11px] font-bold text-slate-500">{reportMsg}</p>}
             </div>
           )}

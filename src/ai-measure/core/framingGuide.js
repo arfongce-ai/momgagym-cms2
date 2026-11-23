@@ -42,6 +42,9 @@ function vis(p) { return p && (p.visibility == null || p.visibility >= VIS); }
  */
 export function assessFraming(lms, opt = {}) {
   const want = opt.want || 'any';
+  // [2026-11-23] upperOnly: 벤치프레스처럼 누워서 하는 종목 — 발목이 화면 밖이어도 어깨+바(손목)가
+  // 보이면 '몸이 보임'으로 인정한다(전신 기준이면 렙 카운팅이 아예 안 쌓였다).
+  const upperOnly = !!opt.upperOnly;
   const fillMin = opt.fillMin ?? (opt.minDistanceMm ? fillMinForDistanceMm(opt.minDistanceMm * FAR_LIMIT_FACTOR) : 0.55);
   const fillMax = opt.fillMax ?? 0.95;  // 최대 95%(잘림 방지)
 
@@ -61,7 +64,9 @@ export function assessFraming(lms, opt = {}) {
   const headOK = !!top;
   const ankleOK = ankles.length > 0;
   const inFrame = (p) => p && p.x > 0.02 && p.x < 0.98 && p.y > 0.02 && p.y < 0.98;
-  const fullBody = headOK && ankleOK && inFrame(top) && ankles.some(inFrame);
+  const wrists = [lms[LM.LEFT_WRIST], lms[LM.RIGHT_WRIST]].filter(vis);
+  const upperOK = [lSh, rSh].filter(vis).some(inFrame) && wrists.length > 0;
+  const fullBody = upperOnly ? upperOK : (headOK && ankleOK && inFrame(top) && ankles.some(inFrame));
 
   // 2) 방향 — 어깨 가로 간격(정규화). 좁으면 측면, 넓으면 정면.
   let orientation = 'unknown';
@@ -73,7 +78,7 @@ export function assessFraming(lms, opt = {}) {
 
   // 3) 거리 — 머리~발목 세로 비율
   let fillRatio = null;
-  if (top && ankles.length) {
+  if (!upperOnly && top && ankles.length) {
     const botY = Math.max(...ankles.map(a => a.y));
     fillRatio = Math.abs(botY - top.y);
   }
@@ -83,7 +88,8 @@ export function assessFraming(lms, opt = {}) {
 
   if (!fullBody) {
     level = 'warn'; ok = false;
-    if (!ankleOK) message = '발이 안 보입니다 · 뒤로 물러서거나 카메라를 아래로';
+    if (upperOnly) message = '어깨와 바(손목)가 화면에 보이게 조정하세요';
+    else if (!ankleOK) message = '발이 안 보입니다 · 뒤로 물러서거나 카메라를 아래로';
     else if (!headOK) message = '머리가 안 보입니다 · 카메라를 위로';
     else message = '전신이 화면에 다 들어오게 조정하세요';
   } else if (fillRatio != null && fillRatio < fillMin) {
@@ -140,8 +146,8 @@ export const FRAMING_PRESETS = {
     want: 'any',
     title: '측정 전 준비 (벤치프레스)',
     tips: [
-      '벤치 옆 약간 위쪽에서, 바가 내려오고 올라가는 게 보이게 촬영하세요.',
-      '바벨과 상체가 화면에 들어오게 거리를 맞추고 폰을 고정하세요.',
+      '벤치 바로 옆(90°)에서, 폰을 바 높이쯤(벤치 위 50~80cm)에 수평으로 세워 고정하세요 — 비스듬하거나 위에서 찍으면 바 이동거리가 줄어 보입니다.',
+      '어깨와 양 손목(바)이 항상 화면에 들어오게 2~3m 거리를 맞추세요. 발은 안 보여도 됩니다.',
     ],
   },
 };

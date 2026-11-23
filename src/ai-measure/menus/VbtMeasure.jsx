@@ -46,6 +46,8 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
   const framingRef = useRef({ level: 'bad', message: '' });
   const consumedAutoStartRef = useRef(0);
   const camOpenedOnceRef = useRef(false); // 최초 카메라 오픈 여부(첫 진입 로더용)
+  const exerciseTypeRef = useRef(exerciseType); // [2026-11-23] 벤치는 상체 기준 인식(framingGuide upperOnly)
+  exerciseTypeRef.current = exerciseType;
   const roiRef = useRef({ x: 0.06, y: 0.42, w: 0.30, h: 0.40 });
   const calibrationPointsRef = useRef([]);
   const countdownTimerRef = useRef(null);
@@ -111,7 +113,7 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
       if (recordingRef.current) phSamplesRef.current.push(ph);
     }
 
-    const fr = assessFraming(lms, { want: FRAMING_PRESETS.vbt.want, minDistanceMm: MIN_CAMERA_DISTANCE_MM.vbt });
+    const fr = assessFraming(lms, { want: FRAMING_PRESETS.vbt.want, minDistanceMm: MIN_CAMERA_DISTANCE_MM.vbt, upperOnly: exerciseTypeRef.current === 'bench_press' });
     if (fr.level !== framingRef.current.level || fr.message !== framingRef.current.message) {
       framingRef.current = fr;
       setFraming({ level: fr.level, message: fr.message });

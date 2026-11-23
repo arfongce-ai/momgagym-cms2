@@ -9,7 +9,8 @@ import {
   UnifiedReportCanvas, UnifiedReportHeader, UnifiedReportPage, UnifiedReportSection,
 } from './UnifiedReportPrimitives';
 import ReportActions from './ReportActions';
-import { cardioHistoryMetrics, curvedComparison, formatClock, formatPace } from '../../ai-measure/core/cardioTest';
+import ChangeSummaryPanel from './ChangeSummaryPanel';
+import { cardioHistoryMetrics, curvedComparison, cardioChangeSummary, formatClock, formatPace } from '../../ai-measure/core/cardioTest';
 import { buildSummaryData } from '../../ai-measure/core/unifiedReport';
 
 const SEX_LABEL = { male: '남', female: '여', m: '남', f: '여' };
@@ -84,6 +85,7 @@ export default function CardioReportSheet({ report, member, previous = null, onM
   const dateText = fmtDate(p.startedAt || p.endedAt || p.measuredAt);
   const isCurved = p.basis === 'curved';
   const cmp = isCurved ? curvedComparison(p, previous) : null;
+  const changeSummary = !isCurved ? cardioChangeSummary(p, previous) : null;
 
   return (
     <div>
@@ -128,6 +130,10 @@ export default function CardioReportSheet({ report, member, previous = null, onM
             )}
           </UnifiedReportSection>
           )}
+
+          {!isCurved && (changeSummary
+            ? <div className="mb-4"><ChangeSummaryPanel summary={changeSummary} /></div>
+            : <p className="mb-4 break-keep text-[12px] font-semibold text-slate-500">이 회원의 같은 장비·같은 테스트 첫 기록입니다. 다음 측정부터 이전 대비 변화를 보여드립니다.</p>)}
 
           {tiles.length > 0 && (
             <UnifiedReportSection title="측정 값" subtitle="핵심 지표" className="mb-4">

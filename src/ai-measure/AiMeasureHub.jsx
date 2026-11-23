@@ -7,7 +7,7 @@ import { useNavigate } from 'react-router-dom';
 import { MEASURE_MENUS, groupMeasureMenus } from './registry';
 import { getRecognitionSnapshot, resetRecognition } from './core/recognitionStats';
 // [측정 오류 줄이기 2026-11-16] 촬영 품질 신호등·저장 직전 품질 등급·촬영 기준 안내
-import { getCaptureSummary, resetCaptureQuality, setCaptureMenu, assessMeasureQuality, QUALITY_KO } from './core/captureQuality';
+import { getCaptureSummary, getCaptureSnapshots, resetCaptureQuality, setCaptureMenu, assessMeasureQuality, QUALITY_KO } from './core/captureQuality';
 import CaptureReadinessBar from './CaptureReadinessBar.jsx';
 import CaptureGuideStrip, { CAMERA_MEASURE_IDS, TIMING_MEASURE_IDS } from './CaptureGuideStrip.jsx';
 import { store, aiStore, makeGuestId } from '../demoData';
@@ -29,7 +29,7 @@ import MemberTestRecommendationPanel from '../components/ai/MemberTestRecommenda
 // 회원 수가 많아지면 드롭다운 스크롤보다 이름/초성/전화 뒤4자리 검색이 훨씬 빠르다.
 import MemberPicker from '../components/common/MemberPicker';
 // [한발멀리뛰기 추가 2026-09-16] '제자리멀리뛰기' 탭의 세부종류 선택 제한에 사용.
-import { BROAD_JUMP_SUBTYPES } from './core/jumpTypes';
+import { BROAD_JUMP_SUBTYPES, VERTICAL_JUMP_SUBTYPES } from './core/jumpTypes';
 
 export default function AiMeasureHub() {
   const { user } = useAuth();
@@ -238,6 +238,11 @@ export default function AiMeasureHub() {
       const quality = currentQuality();
       if ((capture || quality) && enrichedData && typeof enrichedData === 'object' && !Array.isArray(enrichedData)) {
         enrichedData = { ...enrichedData, ...(capture ? { capture } : {}), ...(quality ? { quality } : {}) };
+      }
+      // [측정 사진 2026-11-23] 전·후 비교 확인용 작은 사진 최대 2장(시작·중간, 240px). 영상은 로컬 보관이라 이것만 리포트에 남긴다.
+      const snapshots = CAMERA_MEASURE_IDS.has(active.id) ? getCaptureSnapshots() : [];
+      if (snapshots.length && enrichedData && typeof enrichedData === 'object' && !Array.isArray(enrichedData)) {
+        enrichedData = { ...enrichedData, snapshots };
       }
       // [2026-10-25] 1RM/VBT/스탠스/스쿼트도 undefined·Blob 을 걸러 저장한다.
       //  (Firestore setDoc 은 undefined 필드를 거부 → 저장 실패)
@@ -565,7 +570,7 @@ export default function AiMeasureHub() {
             // 수평(horizontal) 엔진 4종(SBJ+한발멀리뛰기 3방향)으로 제한한다
             // (JumpAnalysisHub.jsx allowedSubTypes 참고) — 'jump' 탭은 이 prop
             // 자체를 안 받아 기존 9종 전체 선택 그대로.
-            {...(active.id === 'broadjump' ? { allowedSubTypes: BROAD_JUMP_SUBTYPES } : {})}
+            {...(active.id === 'broadjump' ? { allowedSubTypes: BROAD_JUMP_SUBTYPES } : active.id === 'jump' ? { allowedSubTypes: VERTICAL_JUMP_SUBTYPES } : {})}
           />
         </Suspense>
         {savePrompt && createPortal(

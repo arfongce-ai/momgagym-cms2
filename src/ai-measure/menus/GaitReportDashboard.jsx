@@ -19,6 +19,7 @@ import { computeChangeRow, summarizeChanges, reportDateOnly } from '../core/meas
 import ChangeSummaryPanel from '../../components/report/ChangeSummaryPanel.jsx';
 import VideoCompareUpload from '../../components/report/VideoCompareUpload.jsx';
 import ClinicalFlagCard, { buildClinicalFlags } from './ClinicalFlagCard.jsx';
+import RunMechanicsCard from './RunMechanicsCard.jsx';
 // [측정 결과시트 공용화 2026-11-15] 점수 막대·먼저 볼 것·항목별 눈금(extractKeyMetrics 단일 소스)
 import QuickResultSheet from '../../components/report/QuickResultSheet.jsx';
 
@@ -50,6 +51,9 @@ function buildGaitChangeSummary(m, previousReport, orientation) {
     computeChangeRow('수직 진폭', sameMode ? pm.verticalOscillation : null, sameMode ? m.verticalOscillation : null, '%', 'closerTargetBetter', rangeCenter(verticalOscRangeFor(m.cadence))),
     computeChangeRow('무릎 대칭', pm.kneeSymmetry, m.kneeSymmetry, '%', 'higherBetter'),
     computeChangeRow('보폭 비율', pm.strideToHeight, m.strideToHeight, '×', 'closerTargetBetter', rangeCenter(RANGES.stride)),
+    // [2026-11-23] 접지 시간(짧을수록 가벼움)·오버스트라이드(낮을수록 좋음) — 같은 걷기/달리기 모드일 때만 비교
+    computeChangeRow('접지 시간', sameMode ? pm.runMechanics?.contact?.avgMs : null, sameMode ? m.runMechanics?.contact?.avgMs : null, 'ms', 'lowerBetter'),
+    computeChangeRow('발 닿는 위치(앞)', pm.runMechanics?.overstride?.avgPct, m.runMechanics?.overstride?.avgPct, '%', 'lowerBetter'),
   ];
   return summarizeChanges(rows, reportDateOnly(previousReport));
 }
@@ -164,6 +168,8 @@ function GaitReportDashboardInner({ report, onComment, onClose, videoBlob, membe
           <ProblemFocusPanel focus={problemFocus} context={report?.cross_measure_context} />
 <PatternInsightPanel measure="gait" report={report} />
           {clinicalFlags.map((f) => <ClinicalFlagCard key={f.key} flag={f} />)}
+          {/* [2026-11-23] 접지·체공·오버스트라이드·팔 스윙 + 쉬운 말 피드백 */}
+          <RunMechanicsCard metrics={m} orientation={report?.orientation || null} />
           {/* [Axis3 확장 2026-08-08] MomiAutoNote — PostureReport.jsx와 동일 패턴.
               gait_reports 컬렉션을 jump와 공유하므로 updateGaitReport를 그대로 쓴다. */}
           <MomiAutoNote kind="gait" report={report} member={resolvedMember}

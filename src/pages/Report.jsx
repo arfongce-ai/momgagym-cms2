@@ -2007,7 +2007,7 @@ export default function Report() {
           <Suspense fallback={<div className="p-10 text-center text-slate-500 dark:text-slate-400">불러오는 중…</div>}>
             {sessionViewer.session.menu === 'cardio' && sessionViewer.session.data?.kind === 'cardio_test' && (
               <div className="mx-auto w-full max-w-[794px] p-4">
-                <CardioReportSheet report={sessionViewer.session.data} member={member} onMessage={setMsg} />
+                <CardioReportSheet report={sessionViewer.session.data} member={member} previous={sessionViewer.previous?.data || null} onMessage={setMsg} />
               </div>
             )}
             <SessionDataSheet session={sessionViewer.session} previous={sessionViewer.previous} member={member} onClose={() => setSessionViewer(null)} />

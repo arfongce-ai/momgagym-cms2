@@ -90,8 +90,10 @@ describe('AiMeasureHub.jsx — broadjump 탭 배선', () => {
   const src = readSrc('src', 'ai-measure', 'AiMeasureHub.jsx');
 
   it('broadjump 탭에 allowedSubTypes=BROAD_JUMP_SUBTYPES prop을 넘긴다', () => {
-    expect(src).toContain("import { BROAD_JUMP_SUBTYPES } from './core/jumpTypes';");
+    expect(src).toContain("import { BROAD_JUMP_SUBTYPES, VERTICAL_JUMP_SUBTYPES } from './core/jumpTypes';");
     expect(src).toContain("active.id === 'broadjump' ? { allowedSubTypes: BROAD_JUMP_SUBTYPES }");
+    // [2026-11-23] 6번 점프 탭은 수직 5종만
+    expect(src).toContain("active.id === 'jump' ? { allowedSubTypes: VERTICAL_JUMP_SUBTYPES }");
   });
 
   it('broadjump도 wideMeasure(넓은 레이아웃) 대상이다', () => {

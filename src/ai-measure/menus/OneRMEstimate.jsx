@@ -177,7 +177,7 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
     const lms = rotateLandmarksNormalized(rawLms, rotationDegRef.current);
 
     const want = (FRAMING_PRESETS[liftRef.current] || FRAMING_PRESETS.squat).want;
-    const fr = assessFraming(lms, { want, minDistanceMm: MIN_CAMERA_DISTANCE_MM.onerm });
+    const fr = assessFraming(lms, { want, minDistanceMm: MIN_CAMERA_DISTANCE_MM.onerm, upperOnly: liftRef.current === 'bench' });
     if (fr.level !== framingRef.current.level || fr.message !== framingRef.current.message) {
       framingRef.current = fr;
       setFraming({ level: fr.level, message: fr.message });

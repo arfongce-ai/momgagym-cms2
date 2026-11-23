@@ -1,3 +1,4 @@
+import { RunMechanicsTracker } from '../core/runMechanics';
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   GaitCycleTracker, jointAnglesFromPose, AngleAccumulator,
@@ -59,6 +60,7 @@ export default function GaitUploadAnalysis({ member, onBack, onComplete }) {
     const tracker = new GaitCycleTracker();
     const angleAcc = new AngleAccumulator();
     const biomechAcc = new BiomechAccumulator();
+    const runMech = new RunMechanicsTracker(); // [2026-11-23] 접지·체공 시간(촬영 방향을 모르는 업로드는 측면 전용 지표 제외)
 
     const abort = new AbortController();
     abortRef.current = abort;
@@ -76,6 +78,7 @@ export default function GaitUploadAnalysis({ member, onBack, onComplete }) {
           tracker.push(pelvisRelativeFeet(landmarks), tMs);
           angleAcc.push(jointAnglesFromPose(landmarks));
           biomechAcc.push(landmarks);
+          runMech.push(landmarks, tMs);
         },
       });
 
@@ -101,6 +104,7 @@ export default function GaitUploadAnalysis({ member, onBack, onComplete }) {
         verticalOscillation: biomech.verticalOscillation,
         kneeSymmetry: biomech.kneeSymmetry,
         strideToHeight: biomech.strideToHeight,
+        runMechanics: runMech.summary({ orientation: null }),
       };
 
       const reportData = {

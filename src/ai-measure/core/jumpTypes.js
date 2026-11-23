@@ -106,6 +106,9 @@ export const JUMP_SUBTYPE_ORDER = ['cmj', 'sj', 'dj', 'slj', 'rsi', 'sbj', 'shjf
 // engine이 전부 'horizontal'인 것과 정확히 일치한다(JUMP_SUBTYPE_ORDER 순서 유지).
 export const BROAD_JUMP_SUBTYPES = JUMP_SUBTYPE_ORDER.filter((k) => JUMP_SUBTYPES[k].engine === 'horizontal');
 
+// [2026-11-23] '점프 & RSI' 탭(6번)에는 수직 점프만 둔다 — 수평(SBJ·한발멀리뛰기)은 7번 탭 전용.
+export const VERTICAL_JUMP_SUBTYPES = JUMP_SUBTYPE_ORDER.filter((k) => JUMP_SUBTYPES[k].engine !== 'horizontal');
+
 // [SLJ 좌우 비대칭 2026-08-11] 다리 코드('left'|'right') → 표시 라벨.
 // JumpAnalysisHub.jsx(다리 선택 버튼)와 JumpReportDashboard.jsx(리포트 표시·
 // 비대칭 비교)가 같이 쓴다 — 라벨을 두 곳에 따로 적어두면 나중에 하나만
