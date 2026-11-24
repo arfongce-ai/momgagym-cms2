@@ -34,6 +34,7 @@ const PostureReport = lazy(() => import('../ai-measure/menus/PostureReport'));
 const RomReport = lazy(() => import('../ai-measure/menus/RomReport'));
 const LiftingReportDashboard = lazy(() => import('../ai-measure/menus/LiftingReportDashboard'));
 import CardioReportSheet from '../components/report/CardioReportSheet';
+import SeniorReportSheet from '../components/report/SeniorReportSheet';
 // [리포트 통합 2026-08-09] SLST 저장된 리포트 열람 신설 — 다른 5개 측정 종류와
 // 마찬가지로 이제 이 화면에서도 볼 수 있다(StanceAnalysisHub.jsx/
 // StanceReportDashboard.jsx와 같은 컴포넌트를 재사용, 재구현 아님).
@@ -53,6 +54,7 @@ const REPORT_TYPE_META = {
   one_rm: { title: '최대 근력', badge: '1RM', accent: 'text-violet-700 dark:text-violet-300', bg: 'bg-violet-500/15', border: 'border-violet-500/25' },
   vbt: { title: '운동 속도 근력', badge: 'VBT', accent: 'text-fuchsia-700 dark:text-fuchsia-300', bg: 'bg-fuchsia-500/15', border: 'border-fuchsia-500/25' },
   cardio: { title: '심폐지구력', badge: 'VO2', accent: 'text-rose-700 dark:text-rose-300', bg: 'bg-rose-500/15', border: 'border-rose-500/25' },
+  senior: { title: '시니어 기능', badge: 'SNR', accent: 'text-teal-700 dark:text-teal-300', bg: 'bg-teal-500/15', border: 'border-teal-500/25' },
   general: { title: '측정 결과', badge: 'AI', accent: 'text-slate-600 dark:text-slate-300', bg: 'bg-slate-200 dark:bg-slate-700', border: 'border-slate-300 dark:border-slate-700' },
 };
 
@@ -796,6 +798,8 @@ function ShareCaptureReport({ item, member, simple, previousReport }) {
           ? <LiftingReportDashboard report={report} member={reportMember} />
           : item.session?.data?.kind === 'cardio_test'
             ? <CardioReportSheet report={{ ...item.session.data, measuredAt: item.date }} member={reportMember} showActions={false} reportNodeId={`cardio-report-${item.id || 'x'}`} />
+            : item.session?.data?.kind === 'senior_test'
+              ? <SeniorReportSheet report={{ ...item.session.data, measuredAt: item.date }} member={reportMember} showActions={false} reportNodeId={`senior-report-${item.id || 'x'}`} />
             : <SessionShareReport item={item} member={reportMember} />}
       </div>
     );
@@ -834,6 +838,7 @@ export function extractSessionMetric(session) {
       const shown = Number.isFinite(d.confirmedVo2max) ? d.confirmedVo2max : (v?.calibratedValue ?? v?.value);
       return { value: Number.isFinite(shown) ? shown : null, unit: 'mL/kg/min', label: `VO2max (${d.machineLabel ?? ''} ${d.protocolLabel ?? ''})`.trim() };
     }
+    case 'senior':  return { value: Number.isFinite(d.value) ? d.value : null, unit: d.unit || '', label: `${d.testLabel || '시니어 테스트'}${d.statusLabel ? ` (${d.statusLabel})` : ''}` };
     case 'rsi':     return { value: d.rsi, unit: '', label: `RSI · 높이 ${d.heightCm ?? '-'}cm` };
     case 'vbt':     return { value: plausibleVelocity(d.meanVelocity), unit: 'm/s', label: `평균속도 (${d.zone ?? ''})` };
     case 'jump': {
@@ -1383,6 +1388,12 @@ export default function Report() {
       const older = same.slice(idx + 1);
       const key = cardioGroupKey(session.data);
       setSessionViewer({ session, previous: older.find((x) => cardioGroupKey(x.data) === key) || null, history: older.map((x) => x.data).filter(Boolean) });
+      return;
+    }
+    // [시니어 2026-11-24] 같은 테스트(30초 의자·5회·TUG)끼리만 직전·추이를 비교한다.
+    if (session.menu === 'senior' && session.data?.kind === 'senior_test' && idx >= 0) {
+      const older = same.slice(idx + 1).filter((x) => x.data?.testId === session.data.testId);
+      setSessionViewer({ session, previous: older[0] || null, history: older.map((x) => x.data).filter(Boolean) });
       return;
     }
     setSessionViewer({ session, previous: idx >= 0 ? (same[idx + 1] || null) : null });
@@ -2016,6 +2027,11 @@ export default function Report() {
             {sessionViewer.session.menu === 'cardio' && sessionViewer.session.data?.kind === 'cardio_test' && (
               <div className="mx-auto w-full max-w-[794px] p-4">
                 <CardioReportSheet report={sessionViewer.session.data} member={member} previous={sessionViewer.previous?.data || null} history={sessionViewer.history || []} onMessage={setMsg} />
+              </div>
+            )}
+            {sessionViewer.session.menu === 'senior' && sessionViewer.session.data?.kind === 'senior_test' && (
+              <div className="mx-auto w-full max-w-[794px] p-4">
+                <SeniorReportSheet report={sessionViewer.session.data} member={member} previous={sessionViewer.previous?.data || null} history={sessionViewer.history || []} onMessage={setMsg} />
               </div>
             )}
             <SessionDataSheet session={sessionViewer.session} previous={sessionViewer.previous} member={member} onClose={() => setSessionViewer(null)} />

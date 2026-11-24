@@ -44,7 +44,7 @@ export default function BodyInfoReport({ id = 'body-report-sheet', member, resul
   // [모미 신규] 체중·혈압이 없는 컨디션 전용 기록도 포함(이전엔 필터에서 통째로 빠져
   // 추이에 반영되지 않았다). 체중/혈압 차트 자체는 그대로 null-skip 되므로 영향 없음.
   const series = (history || [])
-    .filter(r => r && (r.weight != null || r.systolic != null || r.fatigue != null || r.painNrs != null))
+    .filter(r => r && (r.weight != null || r.systolic != null || r.fatigue != null || r.painNrs != null || r.prs != null))
     .map(r => ({
       date: (r.recordedAt || '').slice(5) || '',
       weight: r.weight != null ? Number(r.weight) : null,
@@ -52,10 +52,11 @@ export default function BodyInfoReport({ id = 'body-report-sheet', member, resul
       diastolic: r.diastolic != null ? Number(r.diastolic) : null,
       fatigue: r.fatigue != null ? Number(r.fatigue) : null,
       painNrs: r.painNrs != null ? Number(r.painNrs) : null,
+      prs: r.prs != null ? Number(r.prs) : null,
     }));
   const hasWeightTrend = series.filter(s => s.weight != null).length >= 2;
   const hasBpTrend = series.filter(s => s.systolic != null).length >= 2;
-  const hasConditionTrend = series.filter(s => s.fatigue != null || s.painNrs != null).length >= 2;
+  const hasConditionTrend = series.filter(s => s.fatigue != null || s.painNrs != null || s.prs != null).length >= 2;
 
   return (
     <UnifiedReportCanvas>
@@ -145,7 +146,7 @@ export default function BodyInfoReport({ id = 'body-report-sheet', member, resul
           {/* [모미 신규] 컨디션(피로도·통증) 추이 — 체중·혈압과 같은 패턴, 2회 이상일 때만 표시 */}
           {hasConditionTrend && (
             <div>
-              <p className="mb-1 text-xs font-bold text-slate-500 dark:text-slate-400">컨디션 (피로도 1~5 · 통증 NRS 0~10)</p>
+              <p className="mb-1 text-xs font-bold text-slate-500 dark:text-slate-400">컨디션 (피로도 1~5 · 통증 NRS 0~10 · 회복 느낌 PRS 0~10)</p>
               <div style={{ width: '100%', height: 160 }}>
                 <ResponsiveContainer>
                   <LineChart data={series} margin={{ top: 8, right: 12, bottom: 4, left: -8 }}>
@@ -155,6 +156,7 @@ export default function BodyInfoReport({ id = 'body-report-sheet', member, resul
                     <Tooltip contentStyle={{ background: '#0f172a', border: '1px solid #334155', borderRadius: 8, color: '#e2e8f0' }} />
                     <Line type="monotone" dataKey="fatigue" stroke="#a78bfa" strokeWidth={2.5} dot={{ r: 3 }} name="피로도" connectNulls />
                     <Line type="monotone" dataKey="painNrs" stroke="#fb7185" strokeWidth={2.5} dot={{ r: 3 }} name="통증" connectNulls />
+                    <Line type="monotone" dataKey="prs" stroke="#34d399" strokeWidth={2.5} dot={{ r: 3 }} name="회복 느낌(PRS)" connectNulls />
                   </LineChart>
                 </ResponsiveContainer>
               </div>

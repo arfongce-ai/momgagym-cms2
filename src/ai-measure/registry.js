@@ -35,13 +35,14 @@ import { lazy } from 'react';
 //  자세한 설명은 ImagingMeasure.jsx 상단 주석 참고). 회원 촬영 흐름과는
 //  성격이 달라 개별 측정 항목들과 도구(녹화/초시계) 사이에 둔다.
 // [메뉴 묶음 2026-11-13] 비슷한 측정끼리 홈 화면에서 묶어 보여준다. 번호(no)는 그대로라
-//  번호는 이 묶음 순서대로 다시 매겼다(15번 초시계가 항상 맨 끝). 음성 명령은 번호가 아니라 이름으로 찾는다.
+//  번호는 이 묶음 순서대로 다시 매겼다(17번 초시계가 항상 맨 끝). 음성 명령은 번호가 아니라 이름으로 찾는다.
 export const MEASURE_GROUPS = [
   { id: 'basic', title: '기본 정보 · 자세', hint: '신체 정보, 정적 자세, 관절 가동범위' },
   { id: 'move', title: '이동 · 달리기', hint: '트레드밀 보행·러닝, 필드 스프린트' },
   { id: 'power', title: '파워 · 점프', hint: '수직 점프·RSI, 제자리멀리뛰기' },
   { id: 'strength', title: '근력 · 균형', hint: '바벨, 한다리서기, 오버헤드 딥 스쿼트' },
   { id: 'cardio', title: '심폐지구력', hint: '장비 자동 기록, 심박·회복, VO2max' },
+  { id: 'senior', title: '시니어 · 기능', hint: '30초 의자 일어서기, 5회 일어서기, TUG' },
   { id: 'tool', title: '비교 · 영상 · 도구', hint: '전/후 비교, 영상 확인, 녹화, 초시계' },
 ];
 
@@ -194,8 +195,21 @@ export const MEASURE_MENUS = [
     orientation: 'any',
   },
   {
-    id: 'compare',
+    // [시니어 기능 테스트 2026-11-24] 30초 의자 일어서기·5회 일어서기·TUG. 측정자 입력(횟수 탭·카운트다운·초시계)이 기본이고
+    //  카메라 자동 카운트는 선택. 심박 밴드·메트로놈을 같이 쓴다. 기록은 menu:'senior'(kind:'senior_test')로 저장.
+    id: 'senior',
     no: 13,
+    group: 'senior',
+    title: '시니어 기능 테스트',
+    desc: '30초 의자 일어서기·5회 일어서기·TUG — 나이·성별 규준, 심박 밴드·메트로놈, 카메라 자동 카운트(선택)',
+    icon: 'SNR',
+    status: 'ready',
+    component: lazy(() => import('./menus/SeniorTestMeasure.jsx')),
+    orientation: 'any',
+  },
+  {
+    id: 'compare',
+    no: 14,
     group: 'tool',
     title: '전/후 비교 (오버레이)',
     desc: '사진·영상 오버레이 · 어니언 스킨 비교, 발목 기준 자동 정렬',
@@ -207,7 +221,7 @@ export const MEASURE_MENUS = [
   },
   {
     id: 'imaging',
-    no: 14,
+    no: 15,
     group: 'tool',
     title: '근골격계 영상 확인',
     desc: 'X-ray·CT·초음파·MRI 업로드 — 각도/거리 측정, 소견 태그(내부 참고용)',
@@ -219,7 +233,7 @@ export const MEASURE_MENUS = [
   },
   {
     id: 'record',
-    no: 15,
+    no: 16,
     group: 'tool',
     title: '일반 영상 녹화',
     desc: '카메라 녹화 및 저장',
@@ -231,7 +245,7 @@ export const MEASURE_MENUS = [
   },
   {
     id: 'timer',
-    no: 16,
+    no: 17,
     group: 'tool',
     title: '초시계·메트로놈',
     desc: '초시계, 타이머, 인터벌, 메트로놈',

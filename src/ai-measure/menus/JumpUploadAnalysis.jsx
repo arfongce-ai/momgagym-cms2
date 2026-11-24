@@ -17,7 +17,7 @@ import {
 import { calcJump } from '../core/performance';
 import { computeRSIFromFlights } from '../core/reactiveJump';
 import { store } from '../../demoData';
-import { JUMP_SUBTYPES, minCyclesOverrideFor } from '../core/jumpTypes';
+import { JUMP_SUBTYPES, minCyclesOverrideFor, hopsFor } from '../core/jumpTypes';
 
 // 회원 신체기록(body)에서 최신 체중·키를 가져온다. (Sayers 파워 계산에 체중 필요)
 // member 객체에 직접 없을 수 있으므로 store.getBodyRecords 로 최신 기록을 조회한다.
@@ -156,7 +156,7 @@ export default function JumpUploadAnalysis({ member, onBack, onComplete, onMembe
               // BroadJumpTracker — 이착지 검출은 JumpFlightTracker와 동일, 결과만
               // 수평거리(distanceCm)로 다르다(jumpBiomechanics.js 참고).
               tracker = jumpType === 'horizontal'
-                ? new BroadJumpTracker(calib.result)
+                ? new BroadJumpTracker(calib.result, { hops: hopsFor(jumpSubType) })
                 : new JumpFlightTracker(calib.result);
               tracker.calibHeightCm = effHeightCm;
               if (jumpType === 'horizontal' && video?.videoWidth && video?.videoHeight) tracker.frameAspect = video.videoWidth / video.videoHeight;

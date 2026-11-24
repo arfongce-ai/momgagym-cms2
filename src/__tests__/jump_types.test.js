@@ -7,15 +7,15 @@ import {
   resolveJumpSubType, engineOf, requiredJumpsFor, minCyclesOverrideFor, labelOf,
 } from '../ai-measure/core/jumpTypes.js';
 
-describe('JUMP_SUBTYPES — 10종 메타데이터 무결성', () => {
-  it('cmj/sj/dj/slj/rsi/bosco/sbj/shjf/shjm/shjl 10종이 모두 있고 순서(JUMP_SUBTYPE_ORDER)와 일치한다', () => {
-    expect(JUMP_SUBTYPE_ORDER).toEqual(['cmj', 'sj', 'dj', 'slj', 'rsi', 'bosco', 'sbj', 'shjf', 'shjm', 'shjl']);
+describe('JUMP_SUBTYPES — 12종 메타데이터 무결성', () => {
+  it('cmj/sj/dj/slj/rsi/bosco/sbj/shjf/shjm/shjl/thop/chop 12종이 모두 있고 순서(JUMP_SUBTYPE_ORDER)와 일치한다', () => {
+    expect(JUMP_SUBTYPE_ORDER).toEqual(['cmj', 'sj', 'dj', 'slj', 'rsi', 'bosco', 'sbj', 'shjf', 'shjm', 'shjl', 'thop', 'chop']);
     JUMP_SUBTYPE_ORDER.forEach(k => expect(JUMP_SUBTYPES[k]).toBeTruthy());
   });
 
   // [한발멀리뛰기 추가 2026-09-16]
-  it('BROAD_JUMP_SUBTYPES는 engine이 horizontal인 4종(SBJ+한발멀리뛰기 3방향)만 담는다', () => {
-    expect(BROAD_JUMP_SUBTYPES).toEqual(['sbj', 'shjf', 'shjm', 'shjl']);
+  it('BROAD_JUMP_SUBTYPES는 engine이 horizontal인 6종(SBJ+한발멀리뛰기 3방향+트리플·크로스오버 홉)만 담는다', () => {
+    expect(BROAD_JUMP_SUBTYPES).toEqual(['sbj', 'shjf', 'shjm', 'shjl', 'thop', 'chop']);
     BROAD_JUMP_SUBTYPES.forEach(k => expect(JUMP_SUBTYPES[k].engine).toBe('horizontal'));
   });
 

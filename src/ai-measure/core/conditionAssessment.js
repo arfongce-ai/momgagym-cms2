@@ -29,6 +29,11 @@ export const CONDITION_TUNING = {
   // 단독으로는 risk 를 확정하지 않는다(운동 후 흔한 경미한 피로와 구분하기 위함).
   // 통증과 동반될 때만 worse() 로 risk 까지 올라갈 수 있다.
   fatigueCautionAt: 4,
+
+  // ── PRS(Perceived Recovery Status, 0~10, 자가 보고) — [2026-11-24] 운동 전 "몸이 얼마나 회복됐다고 느끼는지".
+  //  0 = 전혀 회복 안 됨(매우 피곤), 10 = 완전히 회복·활력 넘침. 점수가 낮을수록 나쁘다(피로도와 방향이 반대).
+  //  피로도와 마찬가지로 단독으로 risk 를 확정하지 않는다. 기준값은 참고용 시작 기본값이며 데이터가 쌓이면 조정한다.
+  prsCautionAt: 4,    // 4 이하 → 주의
 };
 
 const STATUS_RANK = { normal: 0, caution: 1, risk: 2, unknown: 3 };
@@ -47,15 +52,18 @@ function numOrNull(v) {
  * @param {object} input
  * @param {number|string} [input.fatigue]  피로도 1~5
  * @param {number|string} [input.painNrs]  통증 NRS 0~10
+ * @param {number|string} [input.prs]      PRS(운동 전 회복 느낌) 0~10 — 낮을수록 회복이 덜 된 상태
  * @param {string} [input.memo]            한줄메모
  * @returns {object} 결과(valid 플래그 포함)
  */
 export function evaluateCondition(input = {}) {
   const fatigue = numOrNull(input.fatigue);
   const painNrs = numOrNull(input.painNrs);
+  const prsRaw = numOrNull(input.prs);
+  const prs = prsRaw == null ? null : Math.min(10, Math.max(0, prsRaw));
   const memo = typeof input.memo === 'string' ? input.memo.trim() : '';
 
-  if (fatigue == null && painNrs == null && !memo) {
+  if (fatigue == null && painNrs == null && prs == null && !memo) {
     return {
       valid: false,
       status: 'unknown',
@@ -63,6 +71,7 @@ export function evaluateCondition(input = {}) {
       message: '오늘 컨디션이 아직 기록되지 않았습니다.',
       fatigue: null,
       painNrs: null,
+      prs: null,
       memo: null,
       flags: [],
       painFlag: false,
@@ -87,6 +96,11 @@ export function evaluateCondition(input = {}) {
     status = worse(status, 'caution');
   }
 
+  if (prs != null && prs <= CONDITION_TUNING.prsCautionAt) {
+    flags.push('prs_low');
+    status = worse(status, 'caution');
+  }
+
   return {
     valid: true,
     status,
@@ -94,6 +108,7 @@ export function evaluateCondition(input = {}) {
     flags,
     fatigue,
     painNrs,
+    prs,
     memo: memo || null,
     // 통증이 주의 이상이면 true — Momi 시스템 프롬프트의 기존 안전 홀드(레드플래그)
     // 워크플로우로 그대로 흘려보내는 트리거 플래그(momiPrompt.js PART A 섹션 2/5-1 참고).

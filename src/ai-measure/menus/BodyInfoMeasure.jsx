@@ -70,6 +70,7 @@ export default function BodyInfoMeasure({ member, onSave, onConfirmSave, onBack,
     // [모미 신규] 오늘의 컨디션 — 신체정보와 같은 화면·같은 저장 흐름에 통합.
     fatigue: '',
     painNrs: '',
+    prs: '', // [2026-11-24] 운동 전 컨디션(PRS 0~10). 문자열로 두어 '0'도 입력된 값으로 본다.
     memo: '',
   });
   const [result, setResult] = useState(null);
@@ -93,7 +94,7 @@ export default function BodyInfoMeasure({ member, onSave, onConfirmSave, onBack,
   // 아니라 "체중 또는 컨디션 항목 중 하나는 필수"로 완화한다. 체중이 없으면 체성분/혈압
   // 분석(analyzeBody)은 건너뛰고 컨디션만 저장한다.
   const hasBodyInput = !!form.weight;
-  const hasConditionInput = !!(form.fatigue || form.painNrs || form.memo.trim());
+  const hasConditionInput = !!(form.fatigue || form.painNrs || form.prs !== '' || form.memo.trim());
 
   const analyze = async () => {
     if (!hasBodyInput && !hasConditionInput) {
@@ -121,6 +122,7 @@ export default function BodyInfoMeasure({ member, onSave, onConfirmSave, onBack,
     const condition = evaluateCondition({
       fatigue: form.fatigue,
       painNrs: form.painNrs,
+      prs: form.prs,
       memo: form.memo,
     });
     const payload = {
@@ -130,6 +132,7 @@ export default function BodyInfoMeasure({ member, onSave, onConfirmSave, onBack,
       diastolic: form.diastolic ? Number(form.diastolic) : null,
       fatigue: condition.fatigue,
       painNrs: condition.painNrs,
+      prs: condition.prs,
       conditionMemo: condition.memo,
       conditionStatus: condition.valid ? condition.status : null,
     };
@@ -155,6 +158,7 @@ export default function BodyInfoMeasure({ member, onSave, onConfirmSave, onBack,
         diastolic: form.diastolic ? Number(form.diastolic) : null,
         fatigue: condition.fatigue,
         painNrs: condition.painNrs,
+        prs: condition.prs,
         conditionMemo: condition.memo,
         conditionStatus: condition.valid ? condition.status : null,
         note: 'AI 측정 입력',
@@ -205,6 +209,22 @@ export default function BodyInfoMeasure({ member, onSave, onConfirmSave, onBack,
           입력해도 저장할 수 있다(analyze()의 hasBodyInput/hasConditionInput 참고). */}
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 space-y-3">
         <p className="text-xs font-bold text-amber-700 dark:text-amber-400 uppercase tracking-widest">오늘의 컨디션</p>
+        {/* [PRS 2026-11-24] 운동 전 "몸이 얼마나 회복된 느낌인지" 0~10. 탭 한 번으로 고른다(다시 누르면 해제). */}
+        <div>
+          <label className={LBL}>회복 느낌 PRS (0~10) <span className="font-normal normal-case text-slate-500">— 0 전혀 회복 안 됨 · 10 완전히 회복·활력 넘침</span></label>
+          <div className="mt-1 grid grid-cols-11 gap-1" role="group" aria-label="PRS 0~10">
+            {Array.from({ length: 11 }, (_, n) => {
+              const on = form.prs === String(n);
+              return (
+                <button key={n} type="button" aria-pressed={on}
+                  onClick={() => setForm((f) => ({ ...f, prs: on ? '' : String(n) }))}
+                  className={`rounded-lg py-2 text-xs font-black border ${on ? 'bg-amber-500 text-slate-950 border-amber-500' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-300 dark:border-slate-700'}`}>
+                  {n}
+                </button>
+              );
+            })}
+          </div>
+        </div>
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className={LBL}>피로도 (1~5)</label>

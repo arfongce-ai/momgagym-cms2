@@ -16,6 +16,7 @@ import { exerciseLabel, normalizeExerciseType } from './lifting';
 import { SPRINT_TEST_TYPES } from './sprintTests';
 import { CARDIO_MACHINES, CARDIO_PROTOCOLS } from './cardioTest';
 import { classifyGaitMode, GAIT_MODE_LABEL } from './gaitMode';
+import { SENIOR_TESTS } from './seniorTests';
 
 const JOINT_KO = { HIP: '고관절', KNEE: '슬관절', SHOULDER: '견관절', ANKLE: '족관절', ELBOW: '주관절' };
 const POSE_KO = { STANDING: '서서', SUPINE: '누워서', PRONE: '엎드려', SEATED: '앉아서' };
@@ -70,6 +71,12 @@ export function subtypeOf(kind, report) {
       if (!m && !p) return NONE;
       const pl = CARDIO_PROTOCOLS.find((x) => x.id === p)?.label || p;
       return { key: `${m}:${p}`, label: [CARDIO_MACHINES[m]?.label || m, pl].filter(Boolean).join(' · ') };
+    }
+    case 'senior': {
+      // [시니어 2026-11-24] 30초 의자·5회 의자·TUG 는 서로 다른 테스트라 값을 섞지 않는다.
+      const id = r.testId || '';
+      if (!id) return NONE;
+      return { key: id, label: SENIOR_TESTS[id]?.label || r.testLabel || id };
     }
     default:
       return NONE;

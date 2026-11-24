@@ -20,7 +20,7 @@ import {
 } from '../core/jumpBiomechanics';
 import { calcJump, calcRSI } from '../core/performance';
 import { computeRSIFromFlights, rsiGrade, RSI_TUNING } from '../core/reactiveJump';
-import { requiredJumpsFor, minCyclesOverrideFor } from '../core/jumpTypes';
+import { requiredJumpsFor, minCyclesOverrideFor, hopsFor } from '../core/jumpTypes';
 import { buildBoscoSummary } from '../core/boscoTest';
 import { normalizeSex } from '../core/cardioTest';
 import { applyRepFreeze } from '../core/repFreeze';
@@ -717,7 +717,7 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
             // [제자리멀리뛰기 추가 2026-09-16] engine='horizontal'(SBJ)만
             // BroadJumpTracker — 이착지 검출은 동일, 결과만 수평거리로 다르다.
             trackerRef.current = jumpType === 'horizontal'
-              ? new BroadJumpTracker(calib.result)
+              ? new BroadJumpTracker(calib.result, { hops: hopsFor(jumpSubType) })
               : new JumpFlightTracker(calib.result);
             trackerRef.current.calibHeightCm = heightRef.current;
             if (jumpType === 'horizontal') {

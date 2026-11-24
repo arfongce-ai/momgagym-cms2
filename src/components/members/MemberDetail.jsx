@@ -1680,7 +1680,7 @@ export default function MemberDetail({ member:initMember, trainers, members=[], 
                           {r.note&&<span className="text-xs text-slate-500">{r.note}</span>}
                         </div>
                         {/* [모미 신규] 컨디션 필드가 있을 때만 표시(체중만 기록한 기존 데이터는 그대로) */}
-                        {(r.fatigue!=null || r.painNrs!=null || r.conditionMemo) && (
+                        {(r.fatigue!=null || r.painNrs!=null || r.prs!=null || r.conditionMemo) && (
                           <div className="flex items-center gap-2 mb-2 flex-wrap">
                             {r.conditionStatus && (
                               <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
@@ -1691,6 +1691,7 @@ export default function MemberDetail({ member:initMember, trainers, members=[], 
                             )}
                             {r.fatigue!=null && <span className="text-xs text-slate-500 dark:text-slate-400">피로도 {r.fatigue}/5</span>}
                             {r.painNrs!=null && <span className="text-xs text-slate-500 dark:text-slate-400">통증 {r.painNrs}/10</span>}
+                            {r.prs!=null && <span className="text-xs text-slate-500 dark:text-slate-400">회복 느낌(PRS) {r.prs}/10</span>}
                             {r.conditionMemo && <span className="text-xs text-slate-500">“{r.conditionMemo}”</span>}
                           </div>
                         )}

@@ -597,7 +597,9 @@ export class BroadJumpTracker {
   constructor(calib, {
     minCutoff = JUMP_TUNING.feetFilterMinCutoff,
     beta = JUMP_TUNING.feetFilterBeta,
+    hops = 1, // [트리플·크로스오버 홉 2026-11-24] 한 시도에서 연속으로 뛰는 횟수(기본 1 = 기존 동작 그대로)
   } = {}) {
+    this.hops = Number.isFinite(hops) && hops >= 1 ? Math.floor(hops) : 1;
     this.calib = calib;
     this.frameAspect = 1; // 영상 W/H — 생성한 쪽이 설정(가로 촬영 거리 보정)
     this.band = JUMP_TUNING.liftoffBandFrac;
@@ -649,6 +651,7 @@ export class BroadJumpTracker {
     if (this.baselineFeetX == null) {
       return { valid: false, reason: 'no_x_calibration', jumps: this.flights.length };
     }
+    if (this.hops > 1) return this._multiHopSummary({ heightCm });
     const scored = this.flights.map((f) => ({ ...f, dxNorm: Math.abs(f.landingX - this.baselineFeetX) }));
     const best = scored.reduce((a, b) => (b.dxNorm > a.dxNorm ? b : a));
     const t = best.flightMs / 1000;
@@ -675,6 +678,51 @@ export class BroadJumpTracker {
       flightTimeMs: Math.round(best.flightMs),
       flightTimeSec: Math.round(t * 1000) / 1000,
       distanceCm,           // 주 결과 — 수평 이동거리(cm)
+      sanityOk,
+    };
+  }
+
+  // [트리플·크로스오버 홉 2026-11-24] 한 시도 안의 연속 도약(hops회)을 순서대로 모아
+  //  출발선 → 마지막 착지까지를 총거리로 본다. 도약마다 구간 거리(hopSplitsCm)도 남긴다.
+  //  측정이 모자라도(도약 수 부족·방향 어긋남) 값은 그대로 기록하고 valid:false + reason 만 달아 둔다
+  //  (저장 차단 금지 방침 — 측정자가 보고 판단).
+  _multiHopSummary({ heightCm = null } = {}) {
+    const used = this.flights.slice(0, this.hops);
+    const scale = this.calib?.scaleCmPerY ?? null;
+    const cum = used.map((f) => broadJumpDistanceCm(f.landingX, this.baselineFeetX, scale, this.frameAspect, this.floorCmPerX));
+    if (cum.some((d) => d == null)) {
+      return { valid: false, reason: 'no_scale', jumps: this.flights.length, hops: this.hops, hopsDetected: used.length };
+    }
+    const splits = cum.map((d, i) => Math.round((d - (i === 0 ? 0 : cum[i - 1])) * 10) / 10);
+    // 앞으로 계속 나아가야 한다 — 어느 도약이든 직전 누적보다 5cm 넘게 뒤로 가면 방향 이상.
+    const forward = splits.every((d) => d >= -5);
+    const totalCm = cum[cum.length - 1];
+    const best = used.reduce((a, b) => (b.flightMs > a.flightMs ? b : a));
+
+    const bodyCm = heightCm || this.calibHeightCm || null;
+    let sanityOk = true;
+    if (bodyCm) sanityOk = totalCm <= bodyCm * JUMP_TUNING.maxBroadJumpToBodyRatio * this.hops;
+
+    const enough = used.length >= this.hops;
+    let reason = 'ok';
+    if (!enough) reason = 'few_hops';
+    else if (!forward) reason = 'not_forward';
+    else if (!sanityOk) reason = 'sanity_fail';
+
+    return {
+      measurePoint: this.measurePoint,
+      measurePointLabel: (MEASURE_POINTS[this.measurePoint] || MEASURE_POINTS.feet).label,
+      distanceBasis: Number.isFinite(this.floorCmPerX) && this.floorCmPerX > 0 ? 'floor_mark' : 'height',
+      valid: enough && forward && sanityOk,
+      reason,
+      jumps: this.flights.length,
+      hops: this.hops,
+      hopsDetected: used.length,
+      extraJumps: Math.max(0, this.flights.length - this.hops),
+      flightTimeMs: Math.round(best.flightMs),
+      flightTimeSec: Math.round(best.flightMs) / 1000,
+      distanceCm: totalCm,         // 주 결과 — 출발선에서 마지막 착지까지 총거리(cm)
+      hopSplitsCm: splits,         // 도약별 구간 거리(cm)
       sanityOk,
     };
   }
@@ -1112,7 +1160,7 @@ export function computeExtensionAlignment(hipSeq, kneeSeq, ankleSeq = []) {
 // ════════════════════════════════════════════════════════════════════════
 
 /** CMJ·SJ·SLJ·SBJ·한발멀리뛰기(3방향)에서 이 종류가 다회차 평균 대상인지. */
-export const MULTI_TRIAL_JUMP_SUBTYPES = ['cmj', 'sj', 'dj', 'slj', 'sbj', 'shjf', 'shjm', 'shjl'];
+export const MULTI_TRIAL_JUMP_SUBTYPES = ['cmj', 'sj', 'dj', 'slj', 'sbj', 'shjf', 'shjm', 'shjl', 'thop', 'chop'];
 export const MAX_JUMP_TRIALS = 3;
 
 /**
@@ -1135,11 +1183,19 @@ export function combineJumpTrials(trials, engine) {
   const base = trials[trials.length - 1];
 
   if (engine === 'horizontal') {
+    // [트리플·크로스오버 홉 2026-11-24] 도약별 구간 거리도 회차 평균으로(길이가 같은 회차끼리만).
+    const splitLen = Array.isArray(base.hopSplitsCm) ? base.hopSplitsCm.length : 0;
+    const splitTrials = splitLen ? trials.filter((t) => Array.isArray(t.hopSplitsCm) && t.hopSplitsCm.length === splitLen) : [];
+    const hopSplitsCm = splitTrials.length
+      ? base.hopSplitsCm.map((_, i) => Math.round((splitTrials.reduce((a, t) => a + Number(t.hopSplitsCm[i] || 0), 0) / splitTrials.length) * 10) / 10)
+      : undefined;
     return {
       ...base,
       distanceCm: avgNum((t) => t.distanceCm),
+      ...(hopSplitsCm ? { hopSplitsCm } : {}),
       trials: trials.map((t) => ({
         distanceCm: t.distanceCm, measuredAt: t.measuredAt || null,
+        ...(Array.isArray(t.hopSplitsCm) ? { hopSplitsCm: t.hopSplitsCm } : {}),
       })),
     };
   }
