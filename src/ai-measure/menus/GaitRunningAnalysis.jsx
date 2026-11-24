@@ -306,7 +306,7 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
     try {
       // 단발성 getUserMedia 대신 공통 헬퍼 사용: exact deviceId → environment
       // 1080p → 720p → 단순 environment → 임의 카메라 순으로 재시도한다.
-      const stream = await openMainCameraStream({ audio: false });
+      const stream = await openMainCameraStream({ audio: false, preferFps: 60 });
       streamRef.current = stream;
       // ref.current 를 지역 변수로 한 번만 캡처(언마운트 중 null 대비, usePoseEngine 동일).
       const video = videoRef.current;

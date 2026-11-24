@@ -260,7 +260,7 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
     }
   };
 
-  const { videoRef, start, stop, status, error } = usePoseEngine({ onResult: handleResult });
+  const { videoRef, start, stop, status, error } = usePoseEngine({ onResult: handleResult, preferFps: 60 });
 
   const stopCompose = () => {
     if (composeRafRef.current) { cancelAnimationFrame(composeRafRef.current); composeRafRef.current = null; }

@@ -102,7 +102,7 @@ describe('보행&런닝 실시간 화면 — 동일한 카메라 획득 강화',
   it('단발성 getUserMedia가 남아있지 않고, 공통 폴백 헬퍼를 사용한다', () => {
     expect(src.match(/navigator\.mediaDevices\.getUserMedia/g)).toBeNull();
     expect(src).toContain("import { openMainCameraStream, describeCameraError } from '../core/cameraSelect';");
-    expect(src).toContain('await openMainCameraStream({ audio: false })');
+    expect(src).toContain('await openMainCameraStream({ audio: false, preferFps: 60 })');
   });
 
   it('실패 원인을 describeCameraError로 분류하고, 재시도 버튼을 노출한다', () => {

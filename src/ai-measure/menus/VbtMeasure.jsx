@@ -155,7 +155,7 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
     }
   }, [heightCm, referenceScale, rotationDeg]);
 
-  const { videoRef, start, stop, status, error, lockCapture, unlockCapture } = usePoseEngine({ onResult: handleResult });
+  const { videoRef, start, stop, status, error, lockCapture, unlockCapture } = usePoseEngine({ onResult: handleResult, preferFps: 60 });
 
   const clearCountdown = useCallback(() => {
     if (countdownTimerRef.current) {

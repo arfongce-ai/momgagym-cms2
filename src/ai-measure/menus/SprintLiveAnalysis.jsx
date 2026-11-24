@@ -204,7 +204,7 @@ export default function SprintLiveAnalysis({ member, onBack, onSaveToFirebase, o
     setCameraFailed(false);
     tryLockLandscape();
     try {
-      const stream = await openMainCameraStream({ audio: false });
+      const stream = await openMainCameraStream({ audio: false, preferFps: 60 });
       streamRef.current = stream;
       const video = videoRef.current;
       if (video) {

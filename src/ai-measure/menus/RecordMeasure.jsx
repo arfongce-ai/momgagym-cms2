@@ -727,7 +727,7 @@ export default function RecordMeasure({ member: _member, onBack }) {
       stopStream();
       // 사용자 확정: 저장되는 영상에 음성을 녹음하지 않는다(마이크 자체를
       // 요청하지 않음 — momi 음성 어시스턴트와는 무관, 이 화면만의 정책).
-      const stream = await openMainCameraStream({ audio: false, preferExactDevice: true });
+      const stream = await openMainCameraStream({ audio: false, preferExactDevice: true, preferFps: 60 });
       streamRef.current = stream;
       await attachPreview();
       const ready = await waitForVideoReady(videoRef.current);
@@ -748,7 +748,7 @@ export default function RecordMeasure({ member: _member, onBack }) {
     if (ready) return true;
 
     stopStream();
-    const stream = await openMainCameraStream({ audio: false, preferExactDevice: true });
+    const stream = await openMainCameraStream({ audio: false, preferExactDevice: true, preferFps: 60 });
     streamRef.current = stream;
     await attachPreview();
     ready = await waitForVideoReady(videoRef.current, 7000);
