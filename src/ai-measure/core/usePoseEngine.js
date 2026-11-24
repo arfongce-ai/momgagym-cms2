@@ -33,7 +33,7 @@ const MODEL_URLS = {
   heavy: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_heavy/float16/1/pose_landmarker_heavy.task',
 };
 
-export function usePoseEngine({ onResult, modelTier = 'full' } = {}) {
+export function usePoseEngine({ onResult, modelTier = 'full', preferFps = 0 } = {}) {
   const videoRef = useRef(null);
   const landmarkerRef = useRef(null);
   const streamRef = useRef(null);
@@ -78,7 +78,7 @@ export function usePoseEngine({ onResult, modelTier = 'full' } = {}) {
       }
 
       // 2) 카메라 시작 — 후면 "메인(광각)" 렌즈를 명시 선택해 초광각 왜곡 방지.
-      const stream = await openMainCameraStream({ audio: false });
+      const stream = await openMainCameraStream({ audio: false, preferFps });
 
       streamRef.current = stream;
       // video 요소를 다시 취득(풀스크린 오버레이가 status 변경 후 렌더되는 경우 대비).

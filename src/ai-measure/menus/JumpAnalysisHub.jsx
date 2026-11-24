@@ -14,6 +14,7 @@ import JumpUploadAnalysis from './JumpUploadAnalysis';
 import { MEASURE_POINTS } from '../core/jumpBiomechanics';
 import JumpReportDashboard from './JumpReportDashboard';
 import { calcJump } from '../core/performance';
+import { attachEur } from '../core/eurPairing';
 import { combineJumpTrials, MULTI_TRIAL_JUMP_SUBTYPES, MAX_JUMP_TRIALS } from '../core/jumpBiomechanics';
 import { useHardwareBack } from '../core/useHardwareBack';
 import MeasureRecordConfirm from '../components/MeasureRecordConfirm.jsx';
@@ -116,6 +117,16 @@ export default function JumpAnalysisHub({ member, onBack, onSave, onSaveToFireba
         : {}),
       note: record.note || reportData.note || '',
     };
+    // [2026-11-24] 영상 이륙속도(골반 기반) 참고값은 CMJ 연구 근거만 있어 CMJ에서만 남긴다.
+    if (withRecord.jumpSubType !== 'cmj' && 'comTakeoff' in withRecord) delete withRecord.comTakeoff;
+    // [2026-11-24] 같은 날 CMJ·SJ 짝이 있으면 EUR(높이 기준)을 리포트에 같이 저장한다(통합 분석·연구 내보내기에서 쓴다).
+    //  짝을 못 찾거나 조회가 실패해도 저장은 그대로 진행한다.
+    if ((withRecord.jumpSubType === 'cmj' || withRecord.jumpSubType === 'sj') && member?.id && !member?.isVirtual) {
+      try {
+        const list = await aiStore.ensureGaitReports(member.id);
+        Object.assign(withRecord, attachEur(withRecord, list));
+      } catch (e) { /* EUR 은 부가 정보 — 조회 실패는 무시 */ }
+    }
     let saved = withRecord;
     setSaveState('saving');
     // [2026-11-16] 이상 데이터여도 일단 기록 — 무효면 needsReview 표시만 붙여 저장

@@ -52,6 +52,16 @@ export const JUMP_SUBTYPES = {
     guideBody: '제자리에서 연속 3회 이상 빠르게 점프하세요(포고 점프). 착지 후 지면에 닿는 시간을 최대한 짧게, 곧바로 다시 높이 뛰는 게 핵심입니다. RSI = 체공시간 ÷ 접지시간(무단위)으로, 접지가 짧고 높이 뛸수록 값이 높습니다.',
     tip: '측면 촬영 추천 · 연속 3회 이상 · 접지 짧게 · 고속영상(240fps) 권장',
   },
+  // [보스코 연속점프 추가 2026-11-24] 60초 동안 반동점프를 최대한 많이·높이 반복(Haff & Dumke 실습 12.4).
+  //  계산 엔진은 'power'(체공시간→높이)와 동일한 검출을 쓰되, 한 번이 아니라 연속 점프를 모두 모아
+  //  점프 수·총 체공시간으로 기계적 파워(W/kg)를 구한다(core/boscoTest.js). minJumps: 측정 완료 버튼을 켜는 최소 점프 수.
+  bosco: {
+    code: 'BOSCO', label: '연속점프 60초 (파워지구력)', chipLabel: '⏱ 60초',
+    engine: 'power', view: 'front', singleLeg: false, minJumps: 10,
+    guideTitle: '연속점프 60초(파워지구력)란?',
+    guideBody: '손을 허리에 올리고 무릎을 약 90°까지 굽히는 반동점프를 1분 동안 최대한 많이, 최대한 높이 반복합니다. 매번 같은 깊이로, 높이 뛰는 것이 핵심입니다. 15초·30초·60초 시점의 점프 수와 총 체공시간으로 체중당 파워(W/kg)를 계산합니다. 점프를 시작한 때부터 60초가 지난 뒤에 측정 완료를 누르세요.',
+    tip: '정면 촬영 · 60초 내내 전신이 화면 안에 · 폰 영상 체공시간으로 계산한 참고값',
+  },
   // [제자리멀리뛰기 추가 2026-09-16] 기존 5종은 전부 '수직' 점프(체공시간→높이)라
   // engine이 power|reactive 둘뿐이었다. SBJ(Standing Broad Jump)는 수평 이동거리를
   // 재는 완전히 다른 측정이라 engine='horizontal' 세 번째 계산 파이프라인을 새로
@@ -99,7 +109,7 @@ export const JUMP_SUBTYPES = {
 };
 
 // 화면에 보여줄 순서(선택 칩·가이드 카드 등에서 공통으로 사용).
-export const JUMP_SUBTYPE_ORDER = ['cmj', 'sj', 'dj', 'slj', 'rsi', 'sbj', 'shjf', 'shjm', 'shjl'];
+export const JUMP_SUBTYPE_ORDER = ['cmj', 'sj', 'dj', 'slj', 'rsi', 'bosco', 'sbj', 'shjf', 'shjm', 'shjl'];
 
 // [한발멀리뛰기 추가 2026-09-16] '제자리멀리뛰기' 탭(registry.js의 broadjump)에서
 // 고를 수 있는 세부 종류만 모은 부분집합 — SBJ(양발) + 한발멀리뛰기 3방향.
@@ -140,6 +150,7 @@ export function engineOf(subType) {
 export function requiredJumpsFor(subType) {
   const meta = JUMP_SUBTYPES[subType];
   if (!meta) return 1;
+  if (meta.minJumps) return meta.minJumps; // [2026-11-24] 연속점프(보스코)는 power 엔진이지만 여러 번 뛰어야 한다
   if (meta.engine !== 'reactive') return 1;
   return meta.minCycles || DEFAULT_REACTIVE_MIN_CYCLES;
 }

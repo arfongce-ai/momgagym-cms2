@@ -20,10 +20,12 @@ import {
 import { calcJump, calcRSI } from '../core/performance';
 import { computeRSIFromFlights, rsiGrade, RSI_TUNING } from '../core/reactiveJump';
 import { requiredJumpsFor, minCyclesOverrideFor } from '../core/jumpTypes';
+import { buildBoscoSummary } from '../core/boscoTest';
+import { normalizeSex } from '../core/cardioTest';
 import { applyRepFreeze } from '../core/repFreeze';
 import { OrientationVoter } from '../core/gaitBiomechanics';
 import { loadPoseLandmarker, detectPoseFrame, isPoseReady, closePoseLandmarker } from '../core/poseBackend';
-import { openMainCameraStream, describeCameraError } from '../core/cameraSelect';
+import { openMainCameraStream, describeCameraError, readStreamFps } from '../core/cameraSelect';
 import { pickRecorderMime } from '../core/recordSink';
 import { beepTick, beepGo, primeAudio } from '../core/audioCue';
 import { lockZoom, unlockZoom } from '../../utils/viewportLock';
@@ -306,6 +308,7 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
   const requiredJumps = requiredJumpsFor(jumpSubType);
   const minCyclesOverride = minCyclesOverrideFor(jumpSubType);
 
+  const [captureFps, setCaptureFps] = useState(null); // 실제 수신 프레임레이트(참고값 정확도 안내용)
   const [view, setView] = useState('camera');     // camera | preview
   const [showManual, setShowManual] = useState(false);
   const [phase, setPhase] = useState('arming');    // arming | low_visibility | ready | air
@@ -489,8 +492,9 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
       // 단발성 getUserMedia 대신 공통 헬퍼 사용: exact deviceId → environment
       // 1080p → 720p → 단순 environment → 임의 카메라 순으로 재시도해
       // 특정 제약 조건 실패(OverconstrainedError 등)로 통째 실패하지 않는다.
-      const stream = await openMainCameraStream({ audio: false });
+      const stream = await openMainCameraStream({ audio: false, preferFps: 60 });
       streamRef.current = stream;
+      setCaptureFps(readStreamFps(stream));
       // ref.current 를 지역 변수로 한 번만 캡처 — await 도중 컴포넌트가
       // 언마운트돼 videoRef.current 가 null 로 바뀌어도(예: 초기화 중 화면
       // 이탈) 아래 play() 호출이 null 참조로 죽지 않는다(usePoseEngine 동일).
@@ -916,6 +920,8 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
       heightCm: sum.heightCm,
       takeoffVelocity: sum.takeoffVelocity,
       peakPower: power?.peakPower ?? null,
+      // [연속점프 2026-11-24] 60초 연속점프(보스코)는 모든 점프를 모아 파워지구력을 따로 요약한다.
+      ...(jumpSubType === 'bosco' ? { bosco: buildBoscoSummary(tracker.flights, { sex: normalizeSex(member?.sex || member?.gender) }) } : {}),
       bodyWeight: resolveWeight(member, weightRef.current),
       calibHeightCm: heightRef.current,
       jumpType,                       // 'power' | 'reactive' (엔진 — 하위호환 유지)
@@ -931,6 +937,7 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
       videoMetrics: {
         overlayRecorded: Boolean(videoBlob),
         recordingFps: RECORD_FPS,
+        captureFps: captureFps ?? null,
         // [제자리멀리뛰기 추가 2026-09-16] SBJ(horizontal)도 DJ/RSI(reactive)처럼
         // 측면 촬영이 기준이다(jumpTypes.js sbj.view: 'side').
         recommendedView: (jumpType === 'reactive' || jumpType === 'horizontal') ? 'side' : 'front',
@@ -1078,6 +1085,14 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
               <FloorMarkOverlay videoRef={videoRef} x={floorX} onChange={setFloorX} knownCm={floorKnownCm} />
             )}
           </div>
+
+          {captureFps != null && captureFps < 50 && (
+            <div data-testid="low-fps-notice"
+              className="absolute z-20 left-1/2 -translate-x-1/2 rounded-full bg-black/60 text-amber-200 text-[10px] font-bold px-3 py-1 whitespace-nowrap"
+              style={{ top: 'calc(env(safe-area-inset-top) + 56px)' }}>
+              촬영 {captureFps}fps · 이륙속도 참고값 정확도 낮음 (슬로모션 촬영 후 업로드 권장)
+            </div>
+          )}
 
           {/* 헤더 — [2026-08-05] safe-area-inset-top을 안 챙기고 있었다. 노치·
               다이내믹 아일랜드가 있는 폰에서는 이 줄 전체가 시스템 상태바 밑에

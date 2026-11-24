@@ -19,6 +19,7 @@
 // ════════════════════════════════════════════════════════════════════════
 
 import { OneEuroFilter, angleAt, detectOrientation } from './gaitBiomechanics';
+import { buildComTakeoff } from './comTakeoff';
 // [SLJ 좌우 비대칭 2026-08-11] findSljAsymmetry가 저장된 리포트에서 세부
 // 종류를 판정하는 데 쓴다(jumpSubType 필드가 없는 과거 데이터도 안전하게 처리).
 import { resolveJumpSubType } from './jumpTypes';
@@ -448,7 +449,10 @@ export class JumpFlightTracker {
     // 공중 구간 골반 최고점(가장 작은 y = 가장 높이) 추적 → 변위 교차검증
     this._pelvisPeakY = Infinity;
     this._pelvisBaseY = calib?.baselinePelvisY ?? null;
-    this.flights = []; // [{ takeoffMs, landingMs, flightMs, pelvisRiseY }]
+    this.flights = []; // [{ takeoffMs, landingMs, flightMs, pelvisRiseY, preSamples }]
+    // [2026-11-24] 이륙 직전 골반 높이 기록(CMJ 이륙속도 참고값용) — 지면에 있는 동안 최근 0.4초만 유지
+    this._pre = [];
+    this._takeoffPre = null;
     // [2026-07-31] 캘리브레이션이 고른 발목 한쪽(ankleSide)을 점프 끝까지
     // 그대로 쓴다 — 평균/단일 모드가 프레임마다 바뀌던 걸 없애서, 기준선을
     // 잡을 때와 같은 신호로 이착지를 판정한다. ankleSide가 없으면(옛 결과·
@@ -465,11 +469,18 @@ export class JumpFlightTracker {
     const liftThreshold = this.baselineAnkleY - this.band; // 위로 뜨면 y 감소
 
     if (!this.inAir) {
+      const pYg = pelvisCenterY(lm);
+      if (pYg != null) {
+        this._pre.push({ tMs, y: pYg });
+        while (this._pre.length && tMs - this._pre[0].tMs > 400) this._pre.shift();
+      }
       // 지면 → 공중 전환 (발이 기준선보다 band 이상 위로)
       if (fY < liftThreshold) {
         this.inAir = true;
         this.takeoffMs = tMs;
         this._pelvisPeakY = Infinity;
+        this._takeoffPre = this._pre.slice();
+        this._pre = [];
       }
     } else {
       // 공중 중: 골반 최고점 추적
@@ -484,7 +495,7 @@ export class JumpFlightTracker {
         const pelvisRiseY = (this._pelvisBaseY != null && this._pelvisPeakY < Infinity)
           ? Math.max(0, this._pelvisBaseY - this._pelvisPeakY) : null;
         if (flightMs >= JUMP_TUNING.minFlightMs && flightMs <= JUMP_TUNING.maxFlightMs) {
-          this.flights.push({ takeoffMs: this.takeoffMs, landingMs: this.landingMs, flightMs, pelvisRiseY });
+          this.flights.push({ takeoffMs: this.takeoffMs, landingMs: this.landingMs, flightMs, pelvisRiseY, preSamples: this._takeoffPre });
         }
         this.inAir = false;
         this.takeoffMs = null;
@@ -504,6 +515,10 @@ export class JumpFlightTracker {
     const heightFlight = (G * t * t) / 8;          // m (주측정)
     const heightFlightCm = Math.round(heightFlight * 1000) / 10;
     const takeoffVel = (G * t) / 2;
+    // [2026-11-24] CMJ 이륙속도 참고값(골반 기반) — 체공시간 속도와 비교. 판정(valid)에는 관여하지 않는다.
+    const comTakeoff = calib?.scaleCmPerY
+      ? buildComTakeoff(best.preSamples, calib.scaleCmPerY, takeoffVel, best.takeoffMs)
+      : null;
 
     // 교차검증: 골반 변위(정규화 y) × px↔cm 스케일
     let heightCrossCm = null, crossDeltaPct = null, crossOk = null;
@@ -535,6 +550,7 @@ export class JumpFlightTracker {
       flightTimeSec: Math.round(t * 1000) / 1000,
       heightCm: heightFlightCm,              // 주 결과(비행시간 기반)
       takeoffVelocity: Math.round(takeoffVel * 100) / 100,
+      comTakeoff,                            // 참고값(null 가능) — 판정에 쓰지 않는다
       crossCheck: {
         heightCrossCm,                       // 골반 변위 기반 추정
         deltaPct: crossDeltaPct,             // 두 방식 불일치(%)
@@ -1145,15 +1161,46 @@ export function combineJumpTrials(trials, engine) {
     };
   }
 
+  // [이륙속도 참고값 중앙값 2026-11-24] comTakeoff 는 한 번의 점프에서 뽑은
+  // 값이라 흔들림이 크다. 회차가 여럿이면 마지막 회차 값 대신 신뢰 가능한
+  // ('ok') 회차들의 중앙값으로 대표하고, 없으면 전체 중앙값(신뢰 낮음 유지).
+  const comTakeoff = medianComTakeoff(trials);
   return {
     ...base,
     heightCm: avgNum((t) => t.heightCm),
     takeoffVelocity: avgNum((t) => t.takeoffVelocity, 2),
     peakPower: avgNum((t) => t.peakPower, 0),
+    ...(comTakeoff !== undefined ? { comTakeoff } : {}),
     trials: trials.map((t) => ({
       heightCm: t.heightCm, takeoffVelocity: t.takeoffVelocity,
       peakPower: t.peakPower, measuredAt: t.measuredAt || null,
+      ...(t.comTakeoff?.velocity != null ? { comVelocity: t.comTakeoff.velocity } : {}),
     })),
+  };
+}
+
+/** 회차별 comTakeoff 의 중앙값 대표. comTakeoff 가 한 번도 없으면 undefined. */
+export function medianComTakeoff(trials) {
+  const list = (trials || []).map((t) => t?.comTakeoff).filter((c) => c && Number.isFinite(c.velocity));
+  if (!list.length) return undefined;
+  const ok = list.filter((c) => c.confidence === 'ok');
+  const pool = ok.length ? ok : list;
+  const med = (arr) => {
+    const v = arr.filter(Number.isFinite).sort((a, b) => a - b);
+    if (!v.length) return null;
+    const m = Math.floor(v.length / 2);
+    return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2;
+  };
+  const r2 = (x) => (x == null ? null : Math.round(x * 100) / 100);
+  const last = pool[pool.length - 1];
+  return {
+    ...last,
+    velocity: r2(med(pool.map((c) => c.velocity))),
+    flightVelocity: r2(med(pool.map((c) => c.flightVelocity))),
+    gapPct: r2(med(pool.map((c) => c.gapPct))),
+    confidence: ok.length ? 'ok' : 'low',
+    trialsUsed: pool.length,
+    trialsTotal: trials.length,
   };
 }
 
