@@ -176,6 +176,9 @@ function SprintReportDashboardInner({ report, previousReport, onComment, onClose
                       <>
                         <StatRow label="0~5m / 5~10m" value={report.analysis.firstHalfMs != null && report.analysis.secondHalfMs != null ? `${report.analysis.firstHalfMs} / ${report.analysis.secondHalfMs} ms` : '—'} />
                         <StatRow label="속도 유지율(마지막 2m)" value={report.analysis.speedMaintenancePct != null ? `${report.analysis.speedMaintenancePct}%` : '—'} />
+                        {report.horizontalPower && (
+                          <StatRow label="수평 파워 0~5m / 0~10m (참고)" value={`${report.horizontalPower.p5 ?? '—'} / ${report.horizontalPower.p10 ?? '—'} kg·m/s (체중 ${report.horizontalPower.massKg}kg)`} />
+                        )}
                       </>
                     )}
                     {kind === 'agility' && report.analysis.legs?.length > 0 && (

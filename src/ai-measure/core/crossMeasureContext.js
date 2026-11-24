@@ -5,6 +5,7 @@
 import { cadenceRangeFor, classifyGaitMode } from './gaitMode';
 import { ROM_SYMMETRY_CAUTION_MAX_PCT } from './romThresholds';
 import { generateLiftingDiagnosis } from './barbellClinical';
+import { subtypeOf, latestPerSubtype } from './measureSubtype';
 
 const OUTPUT_POLICY = Object.freeze({
   posture: 'photo',
@@ -14,6 +15,7 @@ const OUTPUT_POLICY = Object.freeze({
   stance: 'video',
   squat: 'video',
   sprint: 'video',
+  cardio: 'report',
 });
 
 const KIND_KO = Object.freeze({
@@ -25,7 +27,8 @@ const KIND_KO = Object.freeze({
   squat: '오버헤드 스쿼트',
   sprint: '스프린트 & 아질리티',
   daily: '오늘의 컨디션',
-  lifting: '바벨 리프팅(VBT)',
+  lifting: '바벨 리프팅',
+  cardio: '심폐지구력',
   body: '신체 정보',
 });
 
@@ -113,6 +116,13 @@ export function buildProblemFocus(kind, report = {}) {
     if (biomech.trunkLeanChange != null && biomech.trunkLeanChange > 20) addIssue('caution', `착지 시 상체 기울기 변화가 큽니다(${biomech.trunkLeanChange}도).`);
     if (biomech.pelvicImbalance != null && biomech.pelvicImbalance > 7) addIssue('caution', `착지 골반 불균형이 큽니다(${biomech.pelvicImbalance}%).`);
     // [2026-10] 착지 대칭(두 발 위치 차이 기반 자체 점수)은 검증된 기준이 없어 주의 판정에서 뺐다.
+    // [참고 지표 연결 2026-11-24] 등급이 없는 참고값은 위험/주의로 올리지 않고 사실만 옮긴다(힘판 실측이 아님).
+    if (report.eur != null && Number.isFinite(Number(report.eur))) addStrength(`반동 활용 비율(EUR) ${report.eur} — 같은 날 반동점프÷스쿼트점프 높이 참고값입니다.`);
+    if (report.comTakeoff?.confidence === 'low') addIssue('normal', '영상 이륙 속도 참고값은 신뢰가 낮습니다(체공 시간 값과 차이가 크거나 프레임이 낮음) — 체공 시간 기준 값을 우선 보세요.');
+    if (report.bosco) {
+      if (report.bosco.complete === false) addIssue('caution', '연속점프가 60초를 채우지 못해 연속점프 파워를 계산하지 않았습니다.');
+      else if (report.bosco.powerWPerKg != null) addStrength(`연속점프 60초 파워 ${report.bosco.powerWPerKg} W/kg(${report.bosco.jumps}회)${report.bosco.percentile != null ? `, 교재 규준 ${report.bosco.percentile}백분위 구간` : ''} — 영상 체공 시간 기반 참고값입니다.`);
+    }
     if (!issues.length && report.valid !== false) addStrength('점프 높이와 착지 기술 지표가 큰 위험 신호 없이 측정되었습니다.');
   } else if (kind === 'gait') {
     const m = report.metrics || report || {};
@@ -190,6 +200,7 @@ export function buildProblemFocus(kind, report = {}) {
       if (report.splits?.['10m']) {
         addStrength(`10m 구간기록 ${(report.splits['10m'] / 1000).toFixed(2)}초.`);
       }
+      if (report.horizontalPower?.p10 != null) addStrength(`수평 파워(0~10m) ${report.horizontalPower.p10} kg·m/s${report.horizontalPower.p5 != null ? `, 0~5m ${report.horizontalPower.p5}` : ''} — 체중×거리÷시간 교재 공식 참고값입니다.`);
       if (!issues.length) addStrength('스프린트 지표에서 큰 위험 신호가 없습니다.');
     }
   } else if (kind === 'lifting') {
@@ -209,6 +220,20 @@ export function buildProblemFocus(kind, report = {}) {
       });
       if (!issues.length) addStrength('바벨 리프팅(VBT) 지표에서 큰 문제 신호가 없습니다.');
     }
+    // [역도 구간·각도 연결 2026-11-24] 스내치·클린&저크 구간 분석(참고값) — 판정하지 않고 사실과 신뢰만 옮긴다.
+    const oly = report.oly || report.metadata?.oly;
+    if (oly?.kind === 'olympic') {
+      if (oly.confidence?.level === 'low') addIssue('normal', `동작 구간·자세 각도는 신뢰가 낮습니다(${(oly.confidence.reasons || []).join(', ') || '촬영 조건'}) — 측면에서 다시 촬영하면 더 믿을 수 있습니다.`);
+      const l0 = oly.lifts?.[0];
+      if (l0?.peakVelocity != null) addStrength(`${l0.name} 바 최고속도 ${l0.peakVelocity} m/s${l0.catchDepthCm != null ? `, 캐치 깊이 ${l0.catchDepthCm}cm` : ''} — 구간 분석 참고값입니다.`);
+    }
+  } else if (kind === 'cardio') {
+    // [심폐지구력 연결 2026-11-24] 추정값이라 정상/위험 판정을 하지 않는다 — 값과 회복 정보만 옮긴다.
+    const est = report.estimates?.vo2max;
+    const shown = Number.isFinite(report.confirmedVo2max) ? report.confirmedVo2max : (est?.calibratedValue ?? est?.value);
+    if (Number.isFinite(shown)) addStrength(`VO2max ${Number.isFinite(report.confirmedVo2max) ? '(확인값)' : '(추정 참고값)'} ${shown} mL/kg/min.`);
+    if (Number.isFinite(report.recovery?.drop60)) addStrength(`운동 후 1분 심박 회복 ${report.recovery.drop60}bpm.`);
+    if (!Number.isFinite(shown) && !Number.isFinite(report.recovery?.drop60)) addIssue('caution', '심폐지구력 측정에서 추정값을 얻지 못했습니다 — 입력값을 확인하고 다시 측정해 주세요.');
   } else if (kind === 'daily') {
     // [모미 신규] 컨디션 체크인(conditionAssessment.js evaluateCondition() 결과)을 해석한다.
     // report.valid===false: 오늘 체크인이 아직 없음. 그 외엔 painNrs/fatigue 순으로 확인해
@@ -266,14 +291,21 @@ export function buildCrossMeasureIntegration({
 
   const jumpReports = gaitReports.filter((item) => item?.kind === 'jump');
   const runningReports = gaitReports.filter((item) => item?.kind === 'gait' || item?.metrics || item?.cadence);
+  // [세부 테스트별 2026-11-24] 종류별 최신 1건만 쓰면 같은 측정 안의 다른 세부 테스트
+  //  (예: 1RM 벤치 vs VBT 스내치, CMJ vs SJ, 관절별 ROM)가 사라진다 → 세부 테스트별 최신 1건씩.
+  //  현재 측정과 같은 종류라도 세부 테스트가 다르면 참고 자료로 넣는다(같은 세부 테스트만 제외).
+  const curSub = subtypeOf(kind, report).key;
+  const group = (k, list, relation) => latestPerSubtype(k, list)
+    .filter((r) => !(k === kind && subtypeOf(k, r).key === curSub))
+    .map((r) => sourceOf(k, r, relation));
   const sources = [
-    kind !== 'posture' && sourceOf('posture', latestReport(postureReports), '정적 정렬과 보상 패턴을 기준점으로 사용'),
-    kind !== 'rom' && sourceOf('rom', latestReport(romReports), '관절별 제한과 좌우차를 원인 후보로 사용'),
-    kind !== 'jump' && sourceOf('jump', latestReport(jumpReports), '착지 대칭성과 파워 생산을 기능 검증으로 사용'),
-    kind !== 'gait' && sourceOf('gait', latestReport(runningReports), '반복 동작 패턴으로 정적 결과를 재검증'),
-    kind !== 'lifting' && sourceOf('lifting', latestReport(liftingReports), '근력·운동 속도 데이터를 기능적 배경으로 사용'),
-    kind !== 'stance' && sourceOf('stance', latestReport(stanceReports), '좌우 균형 능력을 안정성 배경으로 사용'),
-    kind !== 'squat' && sourceOf('squat', latestReport(squatReports), '동적 정렬·보상 패턴을 기능 검증으로 사용'),
+    ...group('posture', postureReports, '정적 정렬과 보상 패턴을 기준점으로 사용'),
+    ...group('rom', romReports, '관절별 제한과 좌우차를 원인 후보로 사용'),
+    ...group('jump', jumpReports, '착지 대칭성과 파워 생산을 기능 검증으로 사용'),
+    ...group('gait', runningReports, '반복 동작 패턴으로 정적 결과를 재검증'),
+    ...group('lifting', liftingReports, '근력·운동 속도 데이터를 기능적 배경으로 사용'),
+    ...group('stance', stanceReports, '좌우 균형 능력을 안정성 배경으로 사용'),
+    ...group('squat', squatReports, '동적 정렬·보상 패턴을 기능 검증으로 사용'),
   ].filter(Boolean);
 
   const problemFocus = buildProblemFocus(kind, report);
@@ -344,11 +376,17 @@ export function buildCombinedAssessment(items = []) {
   const valid = (items || []).filter((it) => it?.kind && it?.report);
   if (!valid.length) return null;
 
-  const perKind = valid.map(({ kind, report }) => ({
-    kind,
-    label: KIND_KO[kind] || kind,
-    focus: buildProblemFocus(kind, report),
-  }));
+  // [세부 테스트별 2026-11-24] 같은 종류의 세부 테스트(예: 1RM 벤치·VBT 스내치)를 각각 따로 평가하고
+  //  라벨에 세부 테스트 이름을 붙여 종합 해설에서도 구분되게 한다.
+  const perKind = valid.map(({ kind, report, label }) => {
+    const sub = label || subtypeOf(kind, report).label;
+    return {
+      kind,
+      subtypeKey: subtypeOf(kind, report).key,
+      label: sub ? `${KIND_KO[kind] || kind} · ${sub}` : (KIND_KO[kind] || kind),
+      focus: buildProblemFocus(kind, report),
+    };
+  });
 
   const severity = perKind.reduce((acc, p) => worseSeverity(acc, p.focus.severity), 'normal');
   const severityRank = { normal: 0, caution: 1, risk: 2 };
@@ -367,13 +405,14 @@ export function buildCombinedAssessment(items = []) {
   const coverageScore = Math.round(Math.min(95, 45 + valid.length * 5 + (evidenceQuality / valid.length) * 20));
 
   const evaluationText = severity === 'risk'
-    ? `${valid.length}개 측정(${perKind.map((p) => p.label).join('·')})을 종합했을 때 우선 확인이 필요한 위험 신호가 있습니다.`
+    ? `${valid.length}개 측정(${perKind.map((p) => p.label).join(', ')})을 종합했을 때 우선 확인이 필요한 위험 신호가 있습니다.`
     : severity === 'caution'
-      ? `${valid.length}개 측정(${perKind.map((p) => p.label).join('·')})을 종합했을 때 주의가 필요한 패턴이 있습니다.`
-      : `${valid.length}개 측정(${perKind.map((p) => p.label).join('·')})을 종합한 결과 큰 위험 신호는 확인되지 않았습니다.`;
+      ? `${valid.length}개 측정(${perKind.map((p) => p.label).join(', ')})을 종합했을 때 주의가 필요한 패턴이 있습니다.`
+      : `${valid.length}개 측정(${perKind.map((p) => p.label).join(', ')})을 종합한 결과 큰 위험 신호는 확인되지 않았습니다.`;
 
   return {
-    combinedKinds: valid.map((v) => v.kind),
+    combinedKinds: unique(valid.map((v) => v.kind)),
+    combinedItems: perKind.map((p) => ({ kind: p.kind, subtypeKey: p.subtypeKey, label: p.label, severity: p.focus.severity, primaryFinding: p.focus.primaryFinding })),
     generatedAt: new Date().toISOString(),
     coverageScore,
     coverageLevel: confidenceLevel(coverageScore),
@@ -388,21 +427,15 @@ export function buildCombinedAssessment(items = []) {
   };
 }
 
-function latestReport(list) {
-  return [...(list || [])].filter(Boolean).sort((a, b) => {
-    const ad = Date.parse(a.createdAt || a.measuredAt || a.recordedAt || 0) || 0;
-    const bd = Date.parse(b.createdAt || b.measuredAt || b.recordedAt || 0) || 0;
-    return bd - ad;
-  })[0] || null;
-}
-
 function sourceOf(kind, report, relation) {
   if (!report) return null;
   const createdAt = reportDate(report);
   const focus = buildProblemFocus(kind, report);
+  const sub = subtypeOf(kind, report);
   return {
     kind,
-    label: KIND_KO[kind] || kind,
+    subtypeKey: sub.key,
+    label: sub.label ? `${KIND_KO[kind] || kind} · ${sub.label}` : (KIND_KO[kind] || kind),
     id: report.id || report.reportId || '',
     createdAt,
     relation,

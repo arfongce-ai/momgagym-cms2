@@ -19,6 +19,8 @@ import { analyzeUploadedVideo, CAPTURE_PRESETS } from '../core/videoAnalyzer';
 import { aiStore } from '../../demoData';
 import MeasureRecordConfirm from '../components/MeasureRecordConfirm.jsx';
 import SprintReportDashboard from './SprintReportDashboard.jsx';
+import { sprintHorizontalPower } from '../core/sprintMetrics';
+import { resolveBodyMetrics } from '../../services/bodyMetrics';
 import { SPRINT_TEST_TYPES, SPRINT_TEST_ORDER, DEFAULT_CAM_ANGLE } from '../core/sprintTests';
 
 // 종목 정의는 core/sprintTests.js 한 곳에서 관리(라이브·업로드 공용)
@@ -156,6 +158,8 @@ export default function SprintUploadAnalysis({ member, onBack, onSaveToFirebase,
         captureMode: capture,
         playbackRate: result.playbackRate,
         member: { id: member?.id || null, name: member?.name || null },
+        // [수평 파워 2026-11-24] 신체정보(회원 신체기록 포함)의 체중으로 계산. 체중이 없으면 null.
+        horizontalPower: sprintHorizontalPower({ mode: cfg.mode, splits: summary.splits, massKg: resolveBodyMetrics(member).weight }),
         measuredAt: new Date().toISOString(),
       };
       setReportData(data);

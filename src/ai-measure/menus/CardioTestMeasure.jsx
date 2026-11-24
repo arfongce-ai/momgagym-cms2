@@ -8,6 +8,7 @@
 //  · 15번 초시계와 같은 심박 밴드 연결 코드(core/heartRateBle.js)를 쓴다.
 //  · 화면을 나가면 장비·밴드 연결을 모두 끊는다.
 // ════════════════════════════════════════════════════════════════════════
+import { resolveBodyMetrics } from '../../services/bodyMetrics';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { aiStore } from '../../demoData';
 import {
@@ -165,7 +166,7 @@ export default function CardioTestMeasure({ onBack, member = null, onSave = null
   const [subject, setSubject] = useState(() => ({
     age: member ? (ageFromBirthDate(member.birthDate) || Number(member.age) || '') : '',
     sex: member ? (normalizeSex(member.sex || member.gender) || '') : '',
-    weightKg: member?.weight ? String(member.weight) : '',
+    weightKg: resolveBodyMetrics(member).weight ? String(resolveBodyMetrics(member).weight) : '',
   }));
   const [allSessions, setAllSessions] = useState([]);
   useEffect(() => {

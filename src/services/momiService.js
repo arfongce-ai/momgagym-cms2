@@ -2,6 +2,7 @@
 // 리포트 화면의 "🤖 모미에게 물어보기" 버튼이 사용하는 서비스.
 // 기존 crossMeasureContext.js의 buildProblemFocus()로 요청 데이터를 만들어 /api/momi를 호출한다.
 
+import { latestPerSubtype, subtypeEntryKey, kindOfEntryKey } from '../ai-measure/core/measureSubtype';
 import { buildProblemFocus, buildCombinedAssessment, buildCrossMeasureIntegration } from '../ai-measure/core/crossMeasureContext.js';
 import { buildMemberBusinessContext } from '../ai-measure/core/memberBusinessContext.js';
 import { store, aiStore } from '../demoData';
@@ -76,7 +77,7 @@ async function postMomi(payload) {
 // 전용 컬렉션 없이 세션 목록(aiStore.getSessions)에서 menu 필드로 걸러 쓰는 게 이 프로젝트의
 // 공식 설계이므로, 그 패턴을 그대로 따라 세 종류를 마저 채운다.
 async function loadCrossReports(memberId) {
-  if (!memberId) return { postureReports: [], romReports: [], gaitReports: [], liftingReports: [], stanceReports: [], squatReports: [] };
+  if (!memberId) return { postureReports: [], romReports: [], gaitReports: [], liftingReports: [], stanceReports: [], squatReports: [], cardioReports: [] };
   const [postureReports, romReports, gaitReports, sessions] = await Promise.all([
     aiStore.ensurePostureReports(memberId),
     aiStore.ensureRomReports(memberId),
@@ -93,6 +94,7 @@ async function loadCrossReports(memberId) {
     liftingReports: byMenu('lifting'),
     stanceReports: byMenu('stance'),
     squatReports: byMenu('squat'),
+    cardioReports: byMenu('cardio'),
   };
 }
 
@@ -131,23 +133,27 @@ export async function askMomi({ kind, report, member, question, history } = {}) 
 // [모미 신규] 여러 측정을 트레이너가 직접 골라 하나로 묶어 보는 "측정 종합 분석" 화면
 // (CombinedAssessmentPanel.jsx)이 쓰는 데이터 로더. loadCrossReports와 같은 소스를 쓰되,
 // kind 하나로 좁히지 않고 종류별 최신 1건씩만 뽑아 트레이너가 선택할 수 있게 돌려준다.
+// [세부 테스트별 2026-11-24] 측정 안의 세부 테스트(1RM 벤치·VBT 스내치, CMJ·SJ, 관절별 ROM, 스프린트 종목,
+//  심폐 장비·테스트, 걷기/달리기·촬영 방향)마다 최신 1건씩 돌려준다. 키는 'kind' 또는 'kind|세부키'.
 export async function loadLatestReportsByKind(memberId) {
   if (!memberId) return {};
-  const { postureReports, romReports, gaitReports, liftingReports, stanceReports, squatReports } = await loadCrossReports(memberId);
-  const latest = (list, filter) => {
-    const f = filter ? (list || []).filter(filter) : (list || []);
-    return [...f].sort((a, b) => Date.parse(b.createdAt || b.measuredAt || 0) - Date.parse(a.createdAt || a.measuredAt || 0))[0] || null;
+  const { postureReports, romReports, gaitReports, liftingReports, stanceReports, squatReports, cardioReports } = await loadCrossReports(memberId);
+  const lists = {
+    posture: postureReports,
+    rom: romReports,
+    jump: (gaitReports || []).filter((r) => r?.kind === 'jump'),
+    gait: (gaitReports || []).filter((r) => r?.kind !== 'sprint' && r?.kind !== 'agility' && r?.kind !== 'jump' && (r?.kind === 'gait' || r?.metrics || r?.cadence)),
+    sprint: (gaitReports || []).filter((r) => r?.kind === 'sprint' || r?.kind === 'agility'),
+    lifting: liftingReports,
+    stance: stanceReports,
+    squat: squatReports,
+    cardio: (cardioReports || []).filter((r) => r?.kind === 'cardio_test'),
   };
-  const byKind = {
-    posture: latest(postureReports),
-    rom: latest(romReports),
-    jump: latest(gaitReports, (r) => r?.kind === 'jump'),
-    gait: latest(gaitReports, (r) => r?.kind === 'gait' || r?.metrics || r?.cadence),
-    lifting: latest(liftingReports),
-    stance: latest(stanceReports),
-    squat: latest(squatReports),
-  };
-  return Object.fromEntries(Object.entries(byKind).filter(([, v]) => v));
+  const out = {};
+  Object.entries(lists).forEach(([kind, list]) => {
+    latestPerSubtype(kind, list).forEach((r) => { out[subtypeEntryKey(kind, r)] = r; });
+  });
+  return out;
 }
 
 // [모미 신규] 여러 측정을 트레이너가 고른 대로 결합해 종합 분석·평가를 만든다.
@@ -155,7 +161,7 @@ export async function loadLatestReportsByKind(memberId) {
 export function buildMemberCombinedAssessment(byKind, selectedKinds) {
   const items = (selectedKinds || Object.keys(byKind || {}))
     .filter((k) => byKind?.[k])
-    .map((kind) => ({ kind, report: byKind[kind] }));
+    .map((key) => ({ kind: kindOfEntryKey(key), report: byKind[key] }));
   return buildCombinedAssessment(items);
 }
 

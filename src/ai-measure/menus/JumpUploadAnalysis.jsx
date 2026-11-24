@@ -51,11 +51,13 @@ export default function JumpUploadAnalysis({ member, onBack, onComplete, onMembe
   const [errorMsg, setErrorMsg] = useState('');
   const [fileName, setFileName] = useState('');
   const [capture, setCapture] = useState('slowmo240');
-  const [heightCm, setHeightCm] = useState(member?.height ? Number(member.height) : null);
-  const [bodyWeight, setBodyWeight] = useState(member?.weight ? Number(member.weight) : null);
-  const [needHeight, setNeedHeight] = useState(!member?.height || (!member?.id && !member?.weight));
+  // [신체정보 연동 2026-11-24] 회원 신체기록(body 탭)의 키·체중도 인정한다.
+  const bodyInit = resolveBodyMetrics(member);
+  const [heightCm, setHeightCm] = useState(bodyInit.height ? Number(bodyInit.height) : null);
+  const [bodyWeight, setBodyWeight] = useState(bodyInit.weight ? Number(bodyInit.weight) : null);
+  const [needHeight, setNeedHeight] = useState(!bodyInit.height || (!member?.id && !bodyInit.weight));
   const [heightInput, setHeightInput] = useState('');
-  const [weightInput, setWeightInput] = useState(member?.weight ? String(member.weight) : '');
+  const [weightInput, setWeightInput] = useState(bodyInit.weight ? String(bodyInit.weight) : '');
 
   // [2026-11-17] 바닥 거리 마크 보정(제자리멀리뛰기): 바닥에 알려진 거리(cm)를 둔 두 선을 영상 위에 맞추면
   //  키 환산 대신 실제 거리 스케일을 쓴다. x 는 영상 가로(0~1) 기준.

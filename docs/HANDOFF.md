@@ -45,6 +45,23 @@
 
 ## 작업 로그
 
+### 2026-11-24 · Claude Code · 측정 안의 세부 테스트별 개별 평가·종합 해설 (브랜치 feat/comprehensive-link-1124, #79 포함)
+- 문제: 종합 분석·교차 참고·기간 종합이 측정 종류(kind/reportType)별 최신 1건만 써서, 같은 측정 안 세부 테스트(1RM 벤치·VBT 스내치, CMJ·SJ, 관절별 ROM, 스프린트 종목, 심폐 장비·테스트, 걷기/달리기·방향)가 사라지거나 값이 한 평균에 섞임.
+- `core/measureSubtype.js`(단일 소스): `subtypeOf(kind, report)` → {key,label}, `latestPerSubtype`, `subtypeEntryKey`('kind|세부키').
+- 적용: `momiService.loadLatestReportsByKind`(세부 테스트별 최신 1건씩), `buildCombinedAssessment`(세부 테스트마다 따로 평가, `combinedItems`), `buildCrossMeasureIntegration`(세부 테스트별 참고, 같은 종류의 다른 세부 테스트도 참고), `comprehensiveReport`(기간 통계를 세부 테스트별로, typeLabel에 세부 이름), `CombinedAssessmentPanel`(칩 라벨·"테스트별 평가"), `GaitAnalysisHub` 직전 비교(걷기/달리기·방향 일치).
+- 개별 리포트 직전 비교는 이미 세부 테스트 기준이었음(바벨 mode+종목, 점프 subType·발, 스프린트 testKey, ROM 관절+자세, 심폐 장비+테스트). 보행만 보완.
+- 테스트: 3815/3816(기존 `momi_voice.test.js:119`), 빌드 통과. 실데이터 확인 못 함.
+
+### 2026-11-24 · Claude Code · 새 지표를 결과리포트 종합·종합 해설에 연결 (브랜치 feat/comprehensive-link-1124)
+- 점검 결과 빠져 있던 곳: ①스프린트 수평 파워·역도 구간 분석이 요약 지표(`METRIC_DEFINITIONS`)·해설(GUIDE)에 없음 ②종합 해설(`buildProblemFocus`)에 점프 EUR·연속점프·영상 이륙속도, 스프린트 수평 파워, 역도 구간 분석, 심폐지구력 분기 없음 ③종합 분석 화면 불러오기(`loadLatestReportsByKind`)에 스프린트·심폐지구력이 없고 스프린트가 보행으로 섞일 수 있었음 ④기간 종합 유형 이름에 스프린트·심폐·한다리서기·스쿼트 없어 '신체 정보·기타'로 표시.
+- 연결: 위 4곳 모두 수정. 등급 없는 참고값은 위험/주의로 올리지 않고 사실로만 옮김(신뢰 낮음은 normal 안내, 연속점프 60초 미달은 caution). 심폐지구력은 판정 없이 VO2max·회복만.
+- ⚠ 스프린트 수평 파워 값(`report.horizontalPower`)을 만드는 코드는 PR #79에 있음 — #79 병합 전에는 이 브랜치의 스프린트 연결이 빈 값.
+- 테스트: 기존 실패 `momi_voice.test.js:119` 외 신규 실패 없음. 실기기·실데이터 확인 못 함.
+### 2026-11-24 · Claude Code · 5번 스프린트 수평 파워 + 신체정보(체중·키) 연동 확대 (브랜치 feat/sprint-horizontal-power-1124)
+- 수평 파워(책 p.307, 체중×거리÷시간, kg·m/s): `sprintMetrics.js sprintHorizontalPower` — 직선 스프린트만, 0~5m·0~10m 누적 시간 기준. 라이브·업로드가 `report.horizontalPower`로 저장, `SprintReportDashboard`에 표시. 체중 없으면 안 보임. 체중×평균속도와 같은 값이라 새 정보는 아니고 회원 간 비교용. 영상 시간에는 책의 스톱워치 환산식 미적용. 7번 제자리멀리뛰기는 시간 개념이 없어 제외.
+- 신체정보 연동: 회원 신체기록(body 탭)의 키·체중을 `resolveBodyMetrics`로 읽도록 확대 — 스프린트(라이브·업로드), 점프 실시간·업로드 키 게이트, 리프팅 업로드, VBT 키, 자세 키, 심폐지구력 체중. 이전에는 member.height/weight만 봐서 재입력을 요구함.
+- 테스트: 3795/3796(실패 1개는 기존 `momi_voice.test.js:119`), 빌드 통과. 실기기 확인 못 함.
+
 ### 2026-11-24 · Claude Code · VBT 바 궤적선 + 스내치·클린&저크 구간/자세 각도 (브랜치 feat/vbt-trail-olylift-1124)
 - 1) `VbtMeasure.jsx`: 측정 중 화면과 녹화 영상에 바 궤적 잔상(`drawFadingBarPath`) 표시, [✨ 궤적] 토글. 표시 전용 raw 궤적(`trailRef`)을 따로 둠 — 판정·속도 계산은 그대로.
 - 3) `core/olyLiftAnalysis.js`(순수 함수): 스내치/클린은 출발→무릎 통과→최고속도→캐치, 클린&저크는 랙 정지로 클린/저크 분리. 시점별 무릎·고관절·몸통 기울기 각도(좌/우 중 인식 좋은 쪽, 2D). 판정하지 않고 참고값+신뢰도(정면 촬영·인식 낮음·저fps·구간 분리 실패 이유 표시). `components/report/OlyLiftSection.jsx`로 리포트 표시, `report.oly`로 저장(`BarbellLiftingHub.jsx` extra).
