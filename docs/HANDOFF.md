@@ -50,6 +50,10 @@
 - 연결: 위 4곳 모두 수정. 등급 없는 참고값은 위험/주의로 올리지 않고 사실로만 옮김(신뢰 낮음은 normal 안내, 연속점프 60초 미달은 caution). 심폐지구력은 판정 없이 VO2max·회복만.
 - ⚠ 스프린트 수평 파워 값(`report.horizontalPower`)을 만드는 코드는 PR #79에 있음 — #79 병합 전에는 이 브랜치의 스프린트 연결이 빈 값.
 - 테스트: 기존 실패 `momi_voice.test.js:119` 외 신규 실패 없음. 실기기·실데이터 확인 못 함.
+### 2026-11-24 · Claude Code · 5번 스프린트 수평 파워 + 신체정보(체중·키) 연동 확대 (브랜치 feat/sprint-horizontal-power-1124)
+- 수평 파워(책 p.307, 체중×거리÷시간, kg·m/s): `sprintMetrics.js sprintHorizontalPower` — 직선 스프린트만, 0~5m·0~10m 누적 시간 기준. 라이브·업로드가 `report.horizontalPower`로 저장, `SprintReportDashboard`에 표시. 체중 없으면 안 보임. 체중×평균속도와 같은 값이라 새 정보는 아니고 회원 간 비교용. 영상 시간에는 책의 스톱워치 환산식 미적용. 7번 제자리멀리뛰기는 시간 개념이 없어 제외.
+- 신체정보 연동: 회원 신체기록(body 탭)의 키·체중을 `resolveBodyMetrics`로 읽도록 확대 — 스프린트(라이브·업로드), 점프 실시간·업로드 키 게이트, 리프팅 업로드, VBT 키, 자세 키, 심폐지구력 체중. 이전에는 member.height/weight만 봐서 재입력을 요구함.
+- 테스트: 3795/3796(실패 1개는 기존 `momi_voice.test.js:119`), 빌드 통과. 실기기 확인 못 함.
 
 ### 2026-11-24 · Claude Code · VBT 바 궤적선 + 스내치·클린&저크 구간/자세 각도 (브랜치 feat/vbt-trail-olylift-1124)
 - 1) `VbtMeasure.jsx`: 측정 중 화면과 녹화 영상에 바 궤적 잔상(`drawFadingBarPath`) 표시, [✨ 궤적] 토글. 표시 전용 raw 궤적(`trailRef`)을 따로 둠 — 판정·속도 계산은 그대로.

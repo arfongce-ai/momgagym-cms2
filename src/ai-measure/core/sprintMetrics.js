@@ -51,6 +51,25 @@ export function intervalTable(splits = {}) {
   return rows;
 }
 
+/**
+ * 스프린트 수평 파워(참고값) — 책 p.307: 체중(kg) × 거리(m) ÷ 시간(s)  [kg·m/s]
+ *  · 직선 스프린트(mode 'sprint')만. 왕복(agility)은 방향 전환이 섞여 정의되지 않는다.
+ *  · 출발선(0m)부터 5m / 10m 까지의 누적 시간을 쓴다. 체중 × 평균속도와 같은 값이라
+ *    새 정보는 아니고, 체중이 다른 회원끼리 비교할 때 쓰는 값이다.
+ *  · 영상 시간에는 책의 스톱워치→전자타이머 환산식을 적용하지 않는다.
+ */
+export function sprintHorizontalPower({ mode, splits, massKg } = {}) {
+  const m = Number(massKg);
+  if (mode !== 'sprint' || !(m > 0) || !splits) return null;
+  const at = (d) => {
+    const ms = Number(splits[`${d}m`]);
+    return Number.isFinite(ms) && ms > 0 ? Math.round((m * d / (ms / 1000)) * 10) / 10 : null;
+  };
+  const p5 = at(5), p10 = at(10);
+  if (p5 == null && p10 == null) return null;
+  return { massKg: m, p5, p10, unit: 'kg·m/s', basis: 'book-formula-p307' };
+}
+
 function timeBetween(splits, fromM, toM) {
   const t = (d) => (d === 0 ? 0 : splits?.[`${d}m`]);
   const a = t(fromM), b = t(toM);

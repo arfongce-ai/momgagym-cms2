@@ -3,6 +3,7 @@
 //  - [재설계] 카메라를 켜면 화면 전체를 덮는 풀스크린 오버레이로 전환.
 //  - 화면에서 엔드캡을 한 번 누르면 그 색을 학습해 따라간다.
 //  - 측정 시작 → 한 렙 동작 → 종료 시: 수직 이동거리(키 환산 m) ÷ 시간 = 평균속도.
+import { resolveBodyMetrics } from '../../services/bodyMetrics';
 import { useRef, useState, useEffect, useCallback } from 'react';
 import { usePoseEngine } from '../core/usePoseEngine';
 import { personHeightRatio, barbellPoint } from '../core/barbell';
@@ -82,7 +83,7 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
   const [countdown, setCountdown] = useState(null);
   useEffect(() => { aspectRef.current = aspect; }, [aspect]);
   const [result, setResult] = useState(null);
-  const [heightCm, setHeightCm] = useState(member?.height || '');
+  const [heightCm, setHeightCm] = useState(resolveBodyMetrics(member).height || '');
   const [plate, setPlate] = useState({ barKg: 20, sidePlates: [] });
   const [dialWeight, setDialWeight] = useState(20);
   const [weightSource, setWeightSource] = useState('dial');

@@ -11,6 +11,7 @@
 //   [2] 상단에 "회원 키(000cm)로 자동 보정 중..." 표시 / 키 없으면 입력 팝업
 //   [3] 서 있는 자세 불안정(가시성↓·흔들림↑)이면 "올바르게 서 주세요" → 측정 차단
 // ════════════════════════════════════════════════════════════════════════
+import { resolveBodyMetrics } from '../../services/bodyMetrics';
 import FloorMarkOverlay from './FloorMarkOverlay.jsx';
 import React, { useState, useEffect, useRef } from 'react';
 import {
@@ -344,9 +345,11 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
 
   // 키/체중 입력 팝업 (회원 미정 또는 신체정보 부족 시)
   const initialWeight = resolveWeight(member);
-  const [heightCm, setHeightCm] = useState(member?.height ? Number(member.height) : null);
+  // [신체정보 연동 2026-11-24] 회원 신체기록(body 탭)의 키도 인정한다(member.height 만 보면 재입력을 요구함).
+  const resolvedHeight = resolveBodyMetrics(member).height;
+  const [heightCm, setHeightCm] = useState(resolvedHeight ? Number(resolvedHeight) : null);
   const [bodyWeight, setBodyWeight] = useState(initialWeight);
-  const [needHeight, setNeedHeight] = useState(!member?.height || (!member?.id && initialWeight == null));
+  const [needHeight, setNeedHeight] = useState(!resolvedHeight || (!member?.id && initialWeight == null));
   const [heightInput, setHeightInput] = useState('');
   const [weightInput, setWeightInput] = useState(initialWeight ? String(initialWeight) : '');
 
