@@ -15,6 +15,7 @@ import PatternInsightPanel from './PatternInsightPanel.jsx';
 import MomiAutoNote from '../../components/report/MomiAutoNote.jsx';
 import MomiInsightPanel from '../../components/report/MomiInsightPanel.jsx';
 import { aiStore } from '../../demoData';
+import { estimateVerticalPowers } from '../core/jumpPower';
 import { JUMP_SUBTYPES, LEG_LABEL, resolveJumpSubType } from '../core/jumpTypes';
 // [SLJ 좌우 비대칭 2026-08-11] 순수 계산은 core/jumpBiomechanics.js에 —
 // 여기(리포트 화면)는 aiStore에서 회원의 다른 리포트를 가져와 넘기기만 한다.
@@ -511,6 +512,9 @@ function AsymmetrySection({ asymmetry, report, subTypeCode = 'SLJ' }) {
 function PowerSection({ report }) {
   const relativePower = report.bodyWeight && report.peakPower ? (report.peakPower / report.bodyWeight).toFixed(1) : null;
   const heightRatio = report.calibHeightCm && report.heightCm ? ((report.heightCm / report.calibHeightCm) * 100).toFixed(1) : null;
+  // [2026-11-24] 추정식별 참고 파워(Haff & Dumke 12장). 힘판 실측이 아니라 점프 높이·체중(·신장)으로 계산한 추정값.
+  const est = estimateVerticalPowers({ heightCm: report.heightCm, massKg: report.bodyWeight, bodyHeightCm: report.calibHeightCm });
+  const hasEst = est.sayerPeak != null || est.johnsonPeak != null;
   // [다회차 측정 2026-08-11] report.trials는 2회 이상 측정했을 때만 존재한다
   // (jumpBiomechanics.js combineJumpTrials — 1회만 하면 아예 안 붙임). 그래서
   // 이 블록은 예전에 1회만 측정해 저장된 리포트에는 자연스럽게 안 보인다.
@@ -522,6 +526,18 @@ function PowerSection({ report }) {
         <SmallInfo label="신장 대비 점프" value={heightRatio ? `${heightRatio}%` : '-'} />
         <SmallInfo label="권장 촬영" value="정면" />
       </div>
+      {hasEst && (
+        <div className="mt-3 grid grid-cols-3 gap-2">
+          <SmallInfo label="최대 파워(Sayer)" value={est.sayerPeak != null ? `${est.sayerPeak} W` : '-'} />
+          <SmallInfo label="최대 파워(Johnson)" value={est.johnsonPeak != null ? `${est.johnsonPeak} W` : '-'} />
+          <SmallInfo label="평균 파워(Johnson)" value={est.johnsonAverage != null ? `${est.johnsonAverage} W` : '-'} />
+        </div>
+      )}
+      {hasEst && (
+        <p className="mt-2 text-[11px] leading-relaxed text-slate-500 dark:text-slate-400">
+          점프 높이와 체중(·신장)으로 계산한 참고 추정값이며, 힘판으로 잰 실측 파워가 아닙니다. 식마다 값이 달라 같은 식끼리만 비교하세요.
+        </p>
+      )}
       <p className="mt-3 text-[12px] leading-relaxed text-slate-500 dark:text-slate-400">
         파워 점프는 최고 점프 높이, 도약 속도, 최대 파워를 중심으로 폭발적인 힘 생산 능력을 평가합니다.
         정면 촬영에서는 좌우 착지 대칭과 점프 높이 추적이 더 안정적입니다.
