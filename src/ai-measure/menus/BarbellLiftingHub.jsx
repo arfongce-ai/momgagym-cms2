@@ -275,6 +275,7 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
         cogGap: raw?.cogGap ?? null,                       // 바-COG 이격(측면시)
         barTilt: raw?.barTilt ?? null,                     // 바 기울기(표시·데이터 축적용)
         barPath: raw?.barPath ?? null,                     // 궤적 드리프트/효율(엔진)
+        oly: raw?.oly ?? null,                             // 스내치·클린&저크 구간/자세 각도(참고값)
         consistencyCvPct: raw?.consistencyCvPct ?? null,   // 렙 일관성(CV%)
       },
     });

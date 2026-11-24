@@ -26,6 +26,7 @@ import ChangeSummaryPanel from '../../components/report/ChangeSummaryPanel.jsx';
 import VideoCompareUpload from '../../components/report/VideoCompareUpload.jsx';
 // [측정 결과시트 공용화 2026-11-15] 점수 막대·먼저 볼 것·항목별 눈금(extractKeyMetrics 단일 소스)
 import QuickResultSheet from '../../components/report/QuickResultSheet.jsx';
+import OlyLiftSection from '../../components/report/OlyLiftSection.jsx';
 
 // [전/후 변화 요약 2026-08-31] previousReport는 BarbellLiftingHub.jsx(라이브
 // 직후)/Report.jsx(이력 뷰어)가 이미 같은 종목·같은 모드(mode+exerciseType)로
@@ -157,6 +158,9 @@ export default function LiftingReportDashboard({ report, onClose, member, previo
               ))}
             </div>
           </UnifiedReportSection>
+
+          {/* 스내치·클린&저크 구간/자세 각도(참고값) — 올림픽 리프트만 값이 있다 */}
+          <OlyLiftSection oly={report.oly || meta.oly || null} />
 
           {/* AI 자동 평가 */}
           {diag && diag.grade !== 'insufficient' && (
