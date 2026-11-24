@@ -27,6 +27,7 @@ import {
 } from '../core/lifting';
 import { buildLoadVelocityPoint } from '../core/loadVelocityProfile';
 import { aiStore } from '../../demoData';
+import { resolveBodyMetrics } from '../../services/bodyMetrics';
 
 const MODES = [
   ['vbt',     '⚡ VBT'],
@@ -101,12 +102,32 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
   // ── 회원 신체정보 연동(요구사항 4) ──
   //  키·몸무게는 회원 신체정보에서 자동 연동. 미등록(키 없음)이면 점프&RSI 처럼
   //  첫 화면에서 키·몸무게를 먼저 받고, 이후 카메라/측정으로 진입한다.
-  const [bodyHeight, setBodyHeight] = useState(member?.height ? Number(member.height) : null);
-  const [bodyWeight, setBodyWeight] = useState(member?.weight ? Number(member.weight) : null);
+  // [신체정보 연동 수정 2026-11-24] member.height/weight 만 보면 회원 신체기록(body 탭)에
+  //  있는 최신 키·체중을 놓쳐 측정 탭마다 재입력을 요구했다 → 공용 resolveBodyMetrics 사용.
+  const initBody = resolveBodyMetrics(member);
+  const [bodyHeight, setBodyHeight] = useState(initBody.height);
+  const [bodyWeight, setBodyWeight] = useState(initBody.weight);
   // 등록 회원이고 키가 있으면 게이트 통과. 미등록이거나 키 없으면 선등록 화면.
-  const [needBody, setNeedBody] = useState(!member?.height);
-  const [heightInput, setHeightInput] = useState(member?.height ? String(member.height) : '');
-  const [weightInput, setWeightInput] = useState(member?.weight ? String(member.weight) : '');
+  const [needBody, setNeedBody] = useState(!initBody.height);
+  const [heightInput, setHeightInput] = useState(initBody.height ? String(initBody.height) : '');
+  const [weightInput, setWeightInput] = useState(initBody.weight ? String(initBody.weight) : '');
+  // 회원이 바뀌거나 신체정보가 뒤늦게 채워지면(회원 지정 후 진입) 다시 연동한다.
+  //  사용자가 이 화면에서 직접 입력·적용한 값은 같은 회원인 동안 덮어쓰지 않는다.
+  const bodyOwnerRef = useRef(member?.id ?? null);
+  useEffect(() => {
+    const ownerChanged = bodyOwnerRef.current !== (member?.id ?? null);
+    bodyOwnerRef.current = member?.id ?? null;
+    const r = resolveBodyMetrics(member);
+    if (ownerChanged) {
+      setBodyHeight(r.height); setBodyWeight(r.weight);
+      setHeightInput(r.height ? String(r.height) : ''); setWeightInput(r.weight ? String(r.weight) : '');
+      setNeedBody(!r.height);
+    } else {
+      setBodyHeight((h) => h ?? r.height);
+      setBodyWeight((w) => w ?? r.weight);
+      if (r.height) { setNeedBody(false); setHeightInput((v) => v || String(r.height)); setWeightInput((v) => v || (r.weight ? String(r.weight) : '')); }
+    }
+  }, [member?.id, member?.height, member?.weight]);
   const [bodyError, setBodyError] = useState('');
 
   // 각 측정 모듈에 내려줄, 신체정보가 보강된 member 객체.
