@@ -18,12 +18,47 @@ export const RM_FORMULAS = [
   { key: 'mayhew',   label: 'Mayhew',    fn: (w, r) => w / (0.522 + 0.419 * Math.exp(-0.055 * r)) },
   { key: 'oconner',  label: "O'Conner",  fn: (w, r) => 0.025 * (w * r) + w },
   { key: 'reynolds', label: 'Reynolds',  fn: (w, r) => w / (0.551 * Math.exp(-0.0723 * r) + 0.4847) },
+  // [교재 8.x 추가 2026-11-24] 교재(Haff & Dumke) 벤치·레그프레스 표의 나머지 두 식. 평균에는 넣지 않고(refOnly) 비교용으로만 보여 준다.
+  //  · Berger: 교재 표기 그대로(1/(1.0261−0.00262×r)). 10회 미만에서는 든 무게보다 작게 나와 '제외'가 뜬다 — 인쇄 오류 가능성이 있어 평균에서 뺐다(원문 확인 못 함).
+  //  · Cummings&Finn: 교재 본문(단계 23)엔 1.175 계수가 없고 자료 기록지엔 있다 → 기록지 쪽(1.175×든 무게)을 썼다.
+  { key: 'berger',   label: 'Berger',    refOnly: true, fn: (w, r) => w / (1.0261 - 0.00262 * r) },
+  { key: 'cummings', label: 'Cummings·Finn', refOnly: true, fn: (w, r) => 1.175 * w + 0.839 * r - 4.29787 },
 ];
+
+// ───────── 교재 반복최대(RM) 테스트 계획 ─────────
+//  Haff & Dumke 실험 11.6/11.7: 테스트 세트 = 1RM의 87%. 준비 세트 3개는 테스트 세트 무게의 50%·70%·90%로 6회씩, 세트 사이 3분 휴식.
+//  테스트 세트는 가능한 만큼(실패까지) 반복. 10회 미만이면 종료·기록, 10회를 넘으면 2.5~5% 올려 3분 쉰 뒤 다시.
+export const RM_TEST_PCT = 87;
+export const RM_WARMUP_PCTS = [50, 70, 90];
+export const RM_WARMUP_REPS = 6;
+export const RM_REST_SEC = 180;
+const roundTo = (x, step = 2.5) => Math.round(x / step) * step;
+export function rmTestPlan(oneRm) {
+  const base = Number(oneRm);
+  if (!Number.isFinite(base) || base <= 0) return null;
+  const testKg = roundTo(base * RM_TEST_PCT / 100);
+  return {
+    oneRm: base,
+    testKg,
+    sets: [
+      ...RM_WARMUP_PCTS.map((pct, i) => ({ key: `w${i + 1}`, label: `준비 ${i + 1}세트`, pct, kg: roundTo(testKg * pct / 100), reps: RM_WARMUP_REPS, restSec: RM_REST_SEC })),
+      { key: 'test', label: '테스트 세트', pct: RM_TEST_PCT, kg: testKg, reps: null, restSec: RM_REST_SEC },
+    ],
+  };
+}
+// 테스트 세트 결과 → 다음 행동. 10회 미만(10회 포함)이면 종료, 초과면 2.5~5% 증량 후 재시도.
+export function rmNextStep(weightKg, reps) {
+  const w = Number(weightKg), r = Number(reps);
+  if (!Number.isFinite(w) || w <= 0 || !Number.isFinite(r) || r < 1) return null;
+  if (r <= 10) return { done: true, note: `${r}회 — 10회 이내라 이 기록으로 1RM을 예측합니다.` };
+  return { done: false, lowKg: roundTo(w * 1.025, 0.5), highKg: roundTo(w * 1.05, 0.5), note: `${r}회 — 10회를 넘었습니다. 3분 쉬고 2.5~5% 올려 다시 하세요.` };
+}
 
 const r1 = (x) => Math.round(x * 10) / 10;
 
 function summarizeFormulaStats(formulas, average) {
   const values = (Array.isArray(formulas) ? formulas : [])
+    .filter(f => !f.refOnly)
     .map(f => Number(f.value))
     .filter(v => Number.isFinite(v));
   const n = values.length;
@@ -83,7 +118,7 @@ function summarizeFormulaStats(formulas, average) {
 export function estimate1RM(weight, reps) {
   const w = Number(weight), r = Number(reps);
   if (r === 1) {
-    const formulas = RM_FORMULAS.map(f => ({ key: f.key, label: f.label, value: w }));
+    const formulas = RM_FORMULAS.map(f => ({ key: f.key, label: f.label, value: w, ...(f.refOnly ? { refOnly: true } : {}) }));
     const average = r1(w);
     const stats = summarizeFormulaStats(formulas, average);
     return {
@@ -102,9 +137,9 @@ export function estimate1RM(weight, reps) {
     // 1RM 추정치는 반드시 든 무게(w) 이상이어야 한다. 분모 0/음수 등으로
     // 비물리적 값이 나오면(예: Brzycki 의 r≥37) 평균을 왜곡하지 않도록 제외 표시.
     const ok = isFinite(v) && v >= w;
-    return { key: f.key, label: f.label, value: ok ? r1(v) : null, excluded: !ok };
+    return { key: f.key, label: f.label, value: ok ? r1(v) : null, excluded: !ok, ...(f.refOnly ? { refOnly: true } : {}) };
   });
-  const used = formulas.filter(f => f.value != null);
+  const used = formulas.filter(f => f.value != null && !f.refOnly);
   const avg = used.length
     ? used.reduce((s, f) => s + f.value, 0) / used.length
     : w;
