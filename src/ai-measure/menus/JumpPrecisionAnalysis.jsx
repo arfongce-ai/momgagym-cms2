@@ -20,6 +20,8 @@ import {
 import { calcJump, calcRSI } from '../core/performance';
 import { computeRSIFromFlights, rsiGrade, RSI_TUNING } from '../core/reactiveJump';
 import { requiredJumpsFor, minCyclesOverrideFor } from '../core/jumpTypes';
+import { buildBoscoSummary } from '../core/boscoTest';
+import { normalizeSex } from '../core/cardioTest';
 import { applyRepFreeze } from '../core/repFreeze';
 import { OrientationVoter } from '../core/gaitBiomechanics';
 import { loadPoseLandmarker, detectPoseFrame, isPoseReady, closePoseLandmarker } from '../core/poseBackend';
@@ -916,6 +918,8 @@ export default function JumpPrecisionAnalysis({ member, onBack, onSaveToFirebase
       heightCm: sum.heightCm,
       takeoffVelocity: sum.takeoffVelocity,
       peakPower: power?.peakPower ?? null,
+      // [연속점프 2026-11-24] 60초 연속점프(보스코)는 모든 점프를 모아 파워지구력을 따로 요약한다.
+      ...(jumpSubType === 'bosco' ? { bosco: buildBoscoSummary(tracker.flights, { sex: normalizeSex(member?.sex || member?.gender) }) } : {}),
       bodyWeight: resolveWeight(member, weightRef.current),
       calibHeightCm: heightRef.current,
       jumpType,                       // 'power' | 'reactive' (엔진 — 하위호환 유지)

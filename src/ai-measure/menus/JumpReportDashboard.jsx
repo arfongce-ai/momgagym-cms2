@@ -15,7 +15,8 @@ import PatternInsightPanel from './PatternInsightPanel.jsx';
 import MomiAutoNote from '../../components/report/MomiAutoNote.jsx';
 import MomiInsightPanel from '../../components/report/MomiInsightPanel.jsx';
 import { aiStore } from '../../demoData';
-import { estimateVerticalPowers } from '../core/jumpPower';
+import { estimateVerticalPowers, EUR_NORMS, BOSCO_GROUP_NORMS } from '../core/jumpPower';
+import { COM_REASON_KO } from '../core/comTakeoff';
 import { JUMP_SUBTYPES, LEG_LABEL, resolveJumpSubType } from '../core/jumpTypes';
 // [SLJ 좌우 비대칭 2026-08-11] 순수 계산은 core/jumpBiomechanics.js에 —
 // 여기(리포트 화면)는 aiStore에서 회원의 다른 리포트를 가져와 넘기기만 한다.
@@ -285,7 +286,7 @@ function JumpReportDashboardInner({ report, onClose, onComment, member, previous
                 <AsymmetrySection asymmetry={hopAsymmetry} report={report} subTypeCode={subMeta.code} />
               )}
 
-              {isRsi ? <RsiSection report={report} /> : isHorizontal ? <DistanceSection report={report} subMeta={subMeta} /> : <PowerSection report={report} />}
+              {isRsi ? <RsiSection report={report} /> : isHorizontal ? <DistanceSection report={report} subMeta={subMeta} /> : report.jumpSubType === 'bosco' ? <BoscoSection report={report} /> : <PowerSection report={report} />}
             </>
           )}
         </ReportPage>
@@ -538,6 +539,45 @@ function PowerSection({ report }) {
           점프 높이와 체중(·신장)으로 계산한 참고 추정값이며, 힘판으로 잰 실측 파워가 아닙니다. 식마다 값이 달라 같은 식끼리만 비교하세요.
         </p>
       )}
+      {report.jumpSubType === 'cmj' && report.comTakeoff && (
+        <div className="mt-3 rounded-xl border border-violet-500/25 bg-white dark:bg-slate-900/55 p-3" data-testid="com-takeoff-block">
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-black text-violet-700 dark:text-violet-300">도약 속도 교차 확인 · 참고</p>
+            <span className={`rounded-full px-2 py-0.5 text-[10px] font-black ${report.comTakeoff.confidence === 'ok' ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300' : 'bg-amber-500/20 text-amber-800 dark:text-amber-200'}`}>
+              {report.comTakeoff.confidence === 'ok' ? '두 방식 일치' : '신뢰 낮음'}
+            </span>
+          </div>
+          <div className="mt-2 grid grid-cols-3 gap-2">
+            <SmallInfo label="영상 속도" value={`${report.comTakeoff.velocity} m/s`} />
+            <SmallInfo label="체공시간 속도" value={`${report.comTakeoff.flightVelocity} m/s`} />
+            <SmallInfo label="차이" value={`${report.comTakeoff.gapPct}%`} />
+          </div>
+          {(report.comTakeoff.reasons || []).map((r) => (
+            <p key={r} className="mt-1 text-[11px] leading-snug text-amber-800 dark:text-amber-200">· {COM_REASON_KO[r] || r}</p>
+          ))}
+          <p className="mt-2 text-[11px] leading-relaxed text-slate-500 dark:text-slate-400">
+            점프 높이의 기준은 체공 시간입니다. 영상 속도는 이륙 직전 골반 움직임으로 구한 참고값이며, 단일 폰 영상 연구에서 실제보다 약간 높게 나오는 경향이 보고되었습니다. 힘판 실측이 아닙니다.
+          </p>
+        </div>
+      )}
+      {report.eur != null ? (
+        <div className="mt-3 rounded-xl border border-sky-500/25 bg-white dark:bg-slate-900/55 p-3" data-testid="eur-block">
+          <p className="text-xs font-black text-sky-700 dark:text-sky-300">반동 활용 비율(EUR) · 참고</p>
+          <div className="mt-2 grid grid-cols-3 gap-2">
+            <SmallInfo label="EUR" value={`${report.eur}`} />
+            <SmallInfo label="CMJ 높이" value={report.eurRef?.cmjHeightCm != null ? `${report.eurRef.cmjHeightCm} cm` : '-'} />
+            <SmallInfo label="SJ 높이" value={report.eurRef?.sjHeightCm != null ? `${report.eurRef.sjHeightCm} cm` : '-'} />
+          </div>
+          <p className="mt-2 text-[11px] leading-relaxed text-slate-500 dark:text-slate-400">
+            같은 날 측정한 반동점프(CMJ) 높이 ÷ 스쿼트점프(SJ) 높이입니다. 교재 규준은 종목별 선수 집단(예: 비훈련자 남자 평균 {EUR_NORMS.find((n) => n.sport === '비훈련자')?.men?.mean})이라
+            일반 회원은 등급 없이 같은 회원의 회차 변화로 보세요. 힘판 실측이 아니라 높이 비율입니다.
+          </p>
+        </div>
+      ) : (report.jumpSubType === 'cmj' || report.jumpSubType === 'sj') ? (
+        <p className="mt-3 text-[11px] leading-relaxed text-slate-500 dark:text-slate-400" data-testid="eur-hint">
+          같은 날 {report.jumpSubType === 'cmj' ? 'SJ(스쿼트점프)' : 'CMJ(반동점프)'}도 측정해 저장하면 반동 활용 비율(EUR)이 계산됩니다.
+        </p>
+      ) : null}
       <p className="mt-3 text-[12px] leading-relaxed text-slate-500 dark:text-slate-400">
         파워 점프는 최고 점프 높이, 도약 속도, 최대 파워를 중심으로 폭발적인 힘 생산 능력을 평가합니다.
         정면 촬영에서는 좌우 착지 대칭과 점프 높이 추적이 더 안정적입니다.
@@ -557,6 +597,72 @@ function PowerSection({ report }) {
           </div>
         </div>
       )}
+    </Section>
+  );
+}
+
+// [연속점프 추가 2026-11-24] 60초 연속 반동점프(보스코 파워지구력). 폰 영상 체공시간 합계로 계산한 참고값이다.
+function BoscoSection({ report }) {
+  const b = report.bosco;
+  if (!b) {
+    return (
+      <Section title="연속점프 60초" subtitle="파워지구력">
+        <Notice tone="warn" text="연속점프 요약이 저장되지 않았습니다. 다시 측정해 주세요." />
+      </Section>
+    );
+  }
+  return (
+    <Section title="연속점프 60초" subtitle="파워지구력 · 체중당 기계적 파워">
+      <div className="grid grid-cols-3 gap-2" data-testid="bosco-main">
+        <SmallInfo label="파워(60초)" value={b.powerWPerKg != null ? `${b.powerWPerKg} W/kg` : '-'} />
+        <SmallInfo label="점프 수" value={`${b.jumps}회`} />
+        <SmallInfo label="총 체공시간" value={`${b.flightTotalSec}초`} />
+      </div>
+      {!b.complete && (
+        <p className="mt-2 text-[11px] leading-relaxed text-amber-800 dark:text-amber-200" data-testid="bosco-incomplete">
+          측정 시간이 60초에 못 미쳐(약 {b.elapsedSec}초) 60초 파워는 계산하지 않았습니다. 15초·30초 구간 값만 아래에 표시합니다.
+        </p>
+      )}
+      {b.powerWPerKg != null && b.percentile != null && (
+        <p className="mt-2 text-xs font-bold text-slate-700 dark:text-slate-200">
+          교재 규준(Maud &amp; Foster 2005) {b.sexUsed === 'female' ? '여자' : '남자'} 기준 약 {b.percentile}백분위 구간 · 참고
+        </p>
+      )}
+      {b.powerWPerKg != null && b.percentileBelow && (
+        <p className="mt-2 text-xs font-bold text-slate-700 dark:text-slate-200">교재 규준의 5백분위 값보다 낮은 구간입니다 · 참고</p>
+      )}
+      {b.powerWPerKg != null && b.percentile == null && !b.percentileBelow && (
+        <p className="mt-2 text-[11px] text-slate-500 dark:text-slate-400">회원 성별 정보가 없어 규준 비교는 표시하지 않았습니다.</p>
+      )}
+      <div className="mt-3 overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700">
+        <table className="w-full text-center text-xs" data-testid="bosco-intervals">
+          <thead className="bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+            <tr><th className="py-1.5">구간</th><th>점프 수</th><th>총 체공(초)</th><th>파워(W/kg)</th></tr>
+          </thead>
+          <tbody>
+            {(b.intervals || []).map((it) => (
+              <tr key={it.sec} className="border-t border-slate-200 dark:border-slate-700">
+                <td className="py-1.5 font-bold">{it.sec}초</td>
+                <td>{it.jumps}</td>
+                <td>{it.flightTotalSec}</td>
+                <td>{it.powerWPerKg != null ? it.powerWPerKg : '-'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <details className="mt-3 text-[11px] text-slate-500 dark:text-slate-400">
+        <summary className="cursor-pointer font-bold">교재 집단 평균(표 12.8) 보기</summary>
+        <ul className="mt-1 space-y-0.5">
+          {BOSCO_GROUP_NORMS.map((g) => (
+            <li key={g.group}>{g.group}: 파워 {g.power.mean}±{g.power.sd} W/kg{g.jumps ? ` · 60초 ${g.jumps.mean}±${g.jumps.sd}회` : ''}</li>
+          ))}
+        </ul>
+      </details>
+      <p className="mt-2 text-[11px] leading-relaxed text-slate-500 dark:text-slate-400">
+        체공시간 합계로 계산한 교재 공식 값(g²·Tf·60 ÷ [4·n·(60−Tf)])입니다. 폰 영상으로 60초 연속 점프의 체공시간을 얼마나 정확히 재는지는 검증된 자료를 확인하지 못해 참고값으로만 보세요.
+        규준은 선수·청소년 집단이라 일반 회원은 같은 회원의 회차 변화로 읽는 것이 좋습니다.
+      </p>
     </Section>
   );
 }

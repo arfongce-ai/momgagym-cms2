@@ -10,6 +10,7 @@ import { getRecognitionSnapshot, resetRecognition } from './core/recognitionStat
 import { getCaptureSummary, getCaptureSnapshots, resetCaptureQuality, setCaptureMenu, assessMeasureQuality, QUALITY_KO } from './core/captureQuality';
 import CaptureReadinessBar from './CaptureReadinessBar.jsx';
 import CaptureGuideStrip, { CAMERA_MEASURE_IDS, TIMING_MEASURE_IDS } from './CaptureGuideStrip.jsx';
+import MeasureHowToPopup from './menus/MeasureHowToPopup';
 import { store, aiStore, makeGuestId } from '../demoData';
 import { todayYMD } from '../utils/dates';
 import { useAuth } from '../contexts/AuthContext';
@@ -556,6 +557,7 @@ export default function AiMeasureHub() {
         {isPortraitBlocked && <RotateHint />}
         {CAMERA_MEASURE_IDS.has(active.id) && <CaptureReadinessBar />}
         {CAMERA_MEASURE_IDS.has(active.id) && <CaptureGuideStrip menuId={active.id} />}
+        <MeasureHowToPopup menuId={active.id} />
         <Suspense fallback={<div className="text-center text-slate-500 dark:text-slate-400 py-10 text-sm">모듈 로딩 중…</div>}>
           <Comp
             member={member}

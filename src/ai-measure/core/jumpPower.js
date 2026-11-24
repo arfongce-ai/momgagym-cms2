@@ -82,6 +82,41 @@ export function boscoMechanicalPower(totalFlightSec, jumps, totalSec = 60) {
   return r2((G * G * tf * tt) / (4 * n * (tt - tf)));
 }
 
+// 표 12.8 — 60초 파워지구력 점프 규준(평균 ± 표준편차). Bosco 외·Hespanhol 외·Sands 외. 선수·청소년 집단이며 일반 회원 규준이 아니다.
+export const BOSCO_GROUP_NORMS = [
+  { group: '남자 농구선수', jumps: { mean: 56.8, sd: 4.3 }, power: { mean: 19.8, sd: 2.2 } },
+  { group: '남자 배구선수', jumps: { mean: 50.8, sd: 2.7 }, power: { mean: 19.6, sd: 2.6 } },
+  { group: '청소년 남자', jumps: { mean: 63.2, sd: 5.8 }, power: { mean: 22.2, sd: 1.8 } },
+  { group: '여자 선수', jumps: null, power: { mean: 12.2, sd: 2.4 } },
+  { group: '남자 선수', jumps: null, power: { mean: 17.8, sd: 2.7 } },
+];
+
+// 표 12.9 — 60초 파워지구력 점프 백분위 규준(Maud & Foster 2005, p.229). 절대(W)·상대(W/kg). 백분위 95→5 순서.
+// 인쇄본 확인(2026-11-24): 5·10·평균 행까지 단조 감소로 읽힘. 남자 95백분위 상대값 29.85는 90백분위(19.90)와 격차가 커 이상치일 수 있으나 인쇄 그대로 둔다.
+const BOSCO_PCT_RANKS = [95, 90, 85, 80, 75, 70, 65, 60, 55, 50, 45, 40, 35, 30, 25, 20, 15, 10, 5];
+export const BOSCO_PERCENTILES = {
+  male: {
+    absolute: [2385, 1556, 1481, 1464, 1395, 1367, 1309, 1267, 1249, 1223, 1203, 1172, 1140, 1120, 1101, 1083, 1060, 986, 922],
+    relative: [29.85, 19.90, 18.80, 17.80, 17.35, 17.30, 16.35, 16.10, 16.05, 15.90, 15.55, 15.30, 15.30, 15.10, 14.70, 14.70, 14.45, 14.10, 12.50],
+    mean: { absolute: 1289, relative: 16.69 },
+  },
+  female: {
+    absolute: [961, 885, 848, 810, 746, 740, 730, 723, 705, 703, 698, 667, 639, 623, 619, 594, 583, 547, 470],
+    relative: [15.32, 13.46, 13.34, 13.26, 12.80, 12.52, 11.94, 11.80, 11.60, 11.60, 11.42, 11.04, 10.76, 10.08, 9.70, 9.52, 9.40, 9.20, 8.48],
+    mean: { absolute: 700, relative: 11.47 },
+  },
+};
+
+// 상대 파워(W/kg)가 표 12.9의 어느 백분위 구간인지. 값 이상인 가장 높은 백분위를 돌려주고, 5백분위 값보다 낮으면 { below: true }.
+// 규준표이므로 "참고"로만 쓴다 — 인원·측정 방식이 다른 집단 자료다.
+export function boscoPercentile(sex, relativeWPerKg) {
+  const v = num(relativeWPerKg);
+  const t = BOSCO_PERCENTILES[sex === 'F' || sex === 'female' ? 'female' : sex === 'M' || sex === 'male' ? 'male' : ''];
+  if (v == null || !t) return null;
+  const i = t.relative.findIndex((x) => v >= x);
+  return i === -1 ? { below: true, percentile: null } : { below: false, percentile: BOSCO_PCT_RANKS[i] };
+}
+
 // 스톱워치 → 전자 타이머 환산 (책 p.307): 전자 = 1.0113 × 스톱워치 + 0.2252
 export function stopwatchToElectronic(stopwatchSec) {
   const t = pos(stopwatchSec);

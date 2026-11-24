@@ -147,6 +147,48 @@ export const REPORT_TERM_MAP = Object.freeze({
     description: '바닥을 밀고 올라가는 속도입니다.',
     category: 'power',
   },
+  eur: {
+    expert: 'Eccentric Utilization Ratio',
+    label: '반동 활용 비율',
+    description: '반동점프(CMJ) 높이를 스쿼트점프(SJ) 높이로 나눈 값입니다. 반동(빠른 하강)이 점프에 얼마나 보태졌는지 보는 참고값입니다.',
+    category: 'power',
+  },
+  comTakeoffVelocity: {
+    expert: 'CoM Takeoff Velocity (reference)',
+    label: '도약 속도(움직임측정 참고)',
+    description: '영상 속 몸 중심의 움직임으로 구한 이륙 속도입니다. 체공 시간으로 구한 값과 함께 보는 참고값입니다.',
+    category: 'power',
+  },
+  comVelocityGap: {
+    expert: 'CoM vs Flight-time Gap',
+    label: '두 방식 속도 차이',
+    description: '움직임측정 이륙 속도와 체공 시간 이륙 속도의 차이(%)입니다. 클수록 영상 측정의 신뢰가 낮습니다.',
+    category: 'power',
+  },
+  boscoPower: {
+    expert: 'Bosco Power Endurance (mechanical power)',
+    label: '연속점프 파워',
+    description: '60초 동안 반동점프를 반복했을 때의 체중당 기계적 파워(W/kg)입니다.',
+    category: 'power',
+  },
+  boscoJumps: {
+    expert: 'Bosco Jump Count',
+    label: '연속점프 횟수',
+    description: '정해진 시간 동안 완료한 점프 횟수입니다.',
+    category: 'power',
+  },
+  boscoPercentile: {
+    expert: 'Bosco Percentile (book norm)',
+    label: '연속점프 백분위(교재 기준)',
+    description: '교재 규준표에서 같은 성별 집단의 어느 구간에 해당하는지 보는 참고값입니다.',
+    category: 'power',
+  },
+  horizontalPower: {
+    expert: 'Horizontal Power (book formula)',
+    label: '수평 파워(교재 공식)',
+    description: '체중 × 이동거리 ÷ 시간으로 구한 교재 공식 값(kg·m/s)입니다. 힘판으로 잰 실측이 아닙니다.',
+    category: 'power',
+  },
   contactTime: {
     expert: 'Contact Time',
     label: '접지 시간',
@@ -417,6 +459,14 @@ export const METRIC_DEFINITIONS = Object.freeze({
     { key: 'jumpHeight', paths: ['heightCm'], unit: 'cm', better: 'higher' },
     { key: 'peakPower', paths: ['peakPower'], unit: 'W' },
     { key: 'takeoffVelocity', paths: ['takeoffVelocity'], unit: 'm/s' },
+    // [2026-11-24] 아래 지표는 모두 '참고값'이다(힘판 실측 아님). 검증된 판정 범위가 없어 등급 없이 값·회차 변화로만 본다.
+    { key: 'eur', paths: ['eur', 'eurRef.eur'], unit: '' },
+    { key: 'comTakeoffVelocity', paths: ['comTakeoff.velocity'], unit: 'm/s' },
+    { key: 'comVelocityGap', paths: ['comTakeoff.gapPct'], unit: '%' },
+    { key: 'boscoPower', paths: ['bosco.powerWPerKg'], unit: 'W/kg', better: 'higher' },
+    { key: 'boscoJumps', paths: ['bosco.jumps'], unit: '회', better: 'higher' },
+    { key: 'boscoPercentile', paths: ['bosco.percentile'], unit: '백분위' },
+    { key: 'horizontalPower', paths: ['horizontalPower.value'], unit: 'kg·m/s', better: 'higher' },
     // [2026-10] 착지 무릎 각도는 검증된 정상범위가 없어 판정 범위를 두지 않는다(값·회차 변화만 표시).
     //  근거: Krosshaug 2016(AJSM) — 최대 무릎 굴곡이 작을수록 ACL 손상 위험이 높았지만(10°↑당 HR 0.55)
     //  개인 선별에는 쓸 수 없음(AUC 0.6), 절단값 없음. 평균 최대 굴곡은 부상 81.5°/비부상 84.6°(3D, 30cm 드롭점프).

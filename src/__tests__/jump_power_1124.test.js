@@ -29,6 +29,25 @@ describe('jumpPower — Haff & Dumke 12장', () => {
     expect(P.EUR_NORMS).toHaveLength(7);
     expect(P.EUR_NORMS.find((r) => r.sport === '비훈련자').men.mean).toBe(1.17);
   });
+  it('Bosco 연속점프: 책 공식, 표 12.8·12.9 규준', () => {
+    // n=50, Tf=25s → 9.81²×25×60 / (4×50×35) = 20.62 W/kg
+    expect(P.boscoMechanicalPower(25, 50)).toBeCloseTo(20.62, 1);
+    expect(P.boscoMechanicalPower(60, 50)).toBeNull();
+    expect(P.BOSCO_GROUP_NORMS).toHaveLength(5);
+    expect(P.BOSCO_GROUP_NORMS[0].power.mean).toBe(19.8);
+    for (const sx of ['male', 'female']) {
+      const t = P.BOSCO_PERCENTILES[sx];
+      expect(t.absolute).toHaveLength(19);
+      expect(t.relative).toHaveLength(19);
+      for (let i = 1; i < 19; i++) {
+        expect(t.absolute[i]).toBeLessThanOrEqual(t.absolute[i - 1]);
+        expect(t.relative[i]).toBeLessThanOrEqual(t.relative[i - 1]);
+      }
+    }
+    expect(P.boscoPercentile('M', 15.9)).toEqual({ below: false, percentile: 50 });
+    expect(P.boscoPercentile('F', 8)).toEqual({ below: true, percentile: null });
+    expect(P.boscoPercentile('X', 15)).toBeNull();
+  });
   it('보조 공식: 스톱워치 환산, 수평 파워(책 예시 909.1), Margaria-Kalamen', () => {
     expect(P.stopwatchToElectronic(5)).toBeCloseTo(5.28, 2);
     expect(P.horizontalPower(100, 200, 22)).toBeCloseTo(909.09, 1);

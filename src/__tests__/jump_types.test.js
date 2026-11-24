@@ -7,9 +7,9 @@ import {
   resolveJumpSubType, engineOf, requiredJumpsFor, minCyclesOverrideFor, labelOf,
 } from '../ai-measure/core/jumpTypes.js';
 
-describe('JUMP_SUBTYPES — 9종 메타데이터 무결성', () => {
-  it('cmj/sj/dj/slj/rsi/sbj/shjf/shjm/shjl 9종이 모두 있고 순서(JUMP_SUBTYPE_ORDER)와 일치한다', () => {
-    expect(JUMP_SUBTYPE_ORDER).toEqual(['cmj', 'sj', 'dj', 'slj', 'rsi', 'sbj', 'shjf', 'shjm', 'shjl']);
+describe('JUMP_SUBTYPES — 10종 메타데이터 무결성', () => {
+  it('cmj/sj/dj/slj/rsi/bosco/sbj/shjf/shjm/shjl 10종이 모두 있고 순서(JUMP_SUBTYPE_ORDER)와 일치한다', () => {
+    expect(JUMP_SUBTYPE_ORDER).toEqual(['cmj', 'sj', 'dj', 'slj', 'rsi', 'bosco', 'sbj', 'shjf', 'shjm', 'shjl']);
     JUMP_SUBTYPE_ORDER.forEach(k => expect(JUMP_SUBTYPES[k]).toBeTruthy());
   });
 
@@ -26,8 +26,8 @@ describe('JUMP_SUBTYPES — 9종 메타데이터 무결성', () => {
   });
 
   // [2026-11-23] 6번(점프 & RSI)에서 수평점프 탭 제거
-  it('VERTICAL_JUMP_SUBTYPES는 수직 5종만 담고 수평(sbj·shj*)은 없다', () => {
-    expect(VERTICAL_JUMP_SUBTYPES).toEqual(['cmj', 'sj', 'dj', 'slj', 'rsi']);
+  it('VERTICAL_JUMP_SUBTYPES는 수직 6종(연속점프 포함)만 담고 수평(sbj·shj*)은 없다', () => {
+    expect(VERTICAL_JUMP_SUBTYPES).toEqual(['cmj', 'sj', 'dj', 'slj', 'rsi', 'bosco']);
   });
 
   it('각 종류는 code/label/engine/guideTitle/guideBody/tip을 갖는다', () => {

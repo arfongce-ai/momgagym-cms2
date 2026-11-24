@@ -8,6 +8,8 @@
 //   · 분석 프레임 수 / 평균 fps / 저신뢰 구간 수를 정밀도 리포트로 표시
 // ════════════════════════════════════════════════════════════════════════
 import React, { useState, useRef, useCallback, useEffect } from 'react';
+import { buildBoscoSummary } from '../core/boscoTest';
+import { normalizeSex } from '../core/cardioTest';
 import {
   StandingCalibrator, JumpFlightTracker, BroadJumpTracker,
   JumpBiomechAccumulator, jumpPhaseOf,
@@ -236,6 +238,8 @@ export default function JumpUploadAnalysis({ member, onBack, onComplete, onMembe
         ...sum,
         peakPower: power?.peakPower ?? null,
         takeoffVelocity: sum.takeoffVelocity ?? power?.takeoffVelocity ?? null,
+        // [연속점프 2026-11-24] 60초 연속점프(보스코) 요약 — 영상 안의 모든 점프를 모아 계산한다.
+        ...(jumpSubType === 'bosco' && tracker ? { bosco: buildBoscoSummary(tracker.flights, { sex: normalizeSex(member?.sex || member?.gender) }) } : {}),
         calibHeightCm: effHeightCm,
         jumpType,
         jumpSubType,
