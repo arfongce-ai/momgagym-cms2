@@ -44,9 +44,9 @@ describe('registry.js — broadjump(제자리멀리뛰기) 탭 등록', () => {
 });
 
 // [한발멀리뛰기 추가 2026-09-16]
-describe('jumpTypes.js — BROAD_JUMP_SUBTYPES(제자리멀리뛰기 탭의 세부종류 4종)', () => {
-  it('SBJ + 한발멀리뛰기 3방향(정면/안쪽/바깥쪽) 순서대로 정확히 4종이다', () => {
-    expect(BROAD_JUMP_SUBTYPES).toEqual(['sbj', 'shjf', 'shjm', 'shjl']);
+describe('jumpTypes.js — BROAD_JUMP_SUBTYPES(제자리멀리뛰기 탭의 세부종류 6종)', () => {
+  it('SBJ + 한발멀리뛰기 3방향(정면/안쪽/바깥쪽) + 트리플·크로스오버 홉 순서대로 정확히 6종이다', () => {
+    expect(BROAD_JUMP_SUBTYPES).toEqual(['sbj', 'shjf', 'shjm', 'shjl', 'thop', 'chop']);
   });
 
   it('전부 engine이 horizontal이다(같은 계산 엔진 재사용 — 새로 안 만듦)', () => {

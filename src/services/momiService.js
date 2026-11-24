@@ -207,7 +207,7 @@ export function buildConditionTrend(member, { days = 7, now = new Date() } = {})
   cutoff.setHours(0, 0, 0, 0);
   cutoff.setDate(cutoff.getDate() - Math.max(0, days - 1));
   const entries = records
-    .filter((r) => r && (r.fatigue != null || r.painNrs != null))
+    .filter((r) => r && (r.fatigue != null || r.painNrs != null || r.prs != null))
     .filter((r) => {
       const date = new Date(r.recordedAt);
       return !Number.isNaN(date.getTime()) && date >= cutoff && date <= now;
@@ -217,6 +217,7 @@ export function buildConditionTrend(member, { days = 7, now = new Date() } = {})
       date: r.recordedAt,
       fatigue: r.fatigue ?? null,
       painNrs: r.painNrs ?? null,
+      prs: r.prs ?? null,
       status: r.conditionStatus ?? null,
     }));
   const flagged = entries.filter((e) => e.status === 'caution' || e.status === 'risk').length;

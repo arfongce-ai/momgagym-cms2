@@ -106,10 +106,27 @@ export const JUMP_SUBTYPES = {
     guideBody: '한쪽 다리로 서서 몸 바깥쪽(반대쪽 다리와 먼 방향)으로 최대한 멀리 뛰어 같은 다리로 착지합니다. 좌우 이동을 재는 측정이라 정면(카메라를 마주보고 서는 방향)에서 촬영해야 합니다. 균형·고관절 안정성을 보는 측정이라 무리하지 말고 편한 범위에서 진행하세요.',
     tip: '정면 촬영 필수 · 테스트할 다리를 먼저 선택 · 바깥쪽으로 도약',
   },
+  // [트리플 홉·크로스오버 홉 추가 2026-11-24] 한발로 앞으로 3번 연속 뛰는 재활·복귀 검사.
+  //  계산 엔진은 한발멀리뛰기와 같은 'horizontal'(BroadJumpTracker) — 한 시도 안에서 이착지를 3번 모아
+  //  출발선에서 마지막 착지까지를 총거리로 본다(hops:3). 좌우 비대칭(LSI)은 한발멀리뛰기와 같은 방식으로 비교한다.
+  thop: {
+    code: 'THOP', label: '트리플 홉 (한발 3연속)', chipLabel: '🦶🦶🦶 트리플',
+    engine: 'horizontal', view: 'side', singleLeg: true, hops: 3,
+    guideTitle: '트리플 홉(Triple Hop)이란?',
+    guideBody: '한쪽 다리로만 서서 같은 다리로 앞으로 3번 연속 최대한 멀리 뛰고, 마지막 착지에서 2초 동안 버팁니다. 출발선에서 마지막 착지까지의 총거리를 재고, 좌우 다리를 각각 측정해 차이(LSI)를 봅니다. 반대 발이 닿거나 손을 짚으면 그 기록은 참고로만 봅니다. 연습 1회 후 측정하세요.',
+    tip: '측면 촬영 필수 · 테스트할 다리를 먼저 선택 · 3번 뛰고 마지막에 2초 버티기 · 출발선부터 마지막 착지까지 전부 화면에 들어와야 함',
+  },
+  chop: {
+    code: 'CHOP', label: '크로스오버 홉 (한발 지그재그 3연속)', chipLabel: '🦶↔ 크로스오버',
+    engine: 'horizontal', view: 'side', singleLeg: true, hops: 3,
+    guideTitle: '크로스오버 홉(Crossover Hop)이란?',
+    guideBody: '바닥에 길게 붙인 중앙선을 따라, 한쪽 다리로 선을 좌우로 넘나들며 앞으로 3번 연속 뛰고 마지막 착지에서 2초 버팁니다. 앞으로 나간 총거리만 카메라로 재며, 선을 정확히 넘었는지는 측정자가 직접 확인해 주세요(카메라는 좌우 폭을 못 잽니다).',
+    tip: '측면 촬영 필수 · 바닥에 중앙선 테이프 · 테스트할 다리를 먼저 선택 · 선 넘었는지는 측정자가 확인',
+  },
 };
 
 // 화면에 보여줄 순서(선택 칩·가이드 카드 등에서 공통으로 사용).
-export const JUMP_SUBTYPE_ORDER = ['cmj', 'sj', 'dj', 'slj', 'rsi', 'bosco', 'sbj', 'shjf', 'shjm', 'shjl'];
+export const JUMP_SUBTYPE_ORDER = ['cmj', 'sj', 'dj', 'slj', 'rsi', 'bosco', 'sbj', 'shjf', 'shjm', 'shjl', 'thop', 'chop'];
 
 // [한발멀리뛰기 추가 2026-09-16] '제자리멀리뛰기' 탭(registry.js의 broadjump)에서
 // 고를 수 있는 세부 종류만 모은 부분집합 — SBJ(양발) + 한발멀리뛰기 3방향.
@@ -151,6 +168,7 @@ export function requiredJumpsFor(subType) {
   const meta = JUMP_SUBTYPES[subType];
   if (!meta) return 1;
   if (meta.minJumps) return meta.minJumps; // [2026-11-24] 연속점프(보스코)는 power 엔진이지만 여러 번 뛰어야 한다
+  if (meta.hops) return meta.hops; // [2026-11-24] 트리플·크로스오버 홉은 한 시도에 3번 뛴다
   if (meta.engine !== 'reactive') return 1;
   return meta.minCycles || DEFAULT_REACTIVE_MIN_CYCLES;
 }
@@ -165,4 +183,10 @@ export function minCyclesOverrideFor(subType) {
 /** 세부 종류 표시 라벨(모르는 값·미지정이면 CMJ로 안전 폴백). */
 export function labelOf(subType) {
   return JUMP_SUBTYPES[subType]?.label || JUMP_SUBTYPES.cmj.label;
+}
+
+/** 세부 종류 → 한 시도에서 연속으로 뛰는 횟수(트리플·크로스오버 홉은 3, 그 외는 1). BroadJumpTracker 의 hops 옵션에 넘긴다. */
+export function hopsFor(subType) {
+  const n = Number(JUMP_SUBTYPES[subType]?.hops);
+  return Number.isFinite(n) && n >= 1 ? Math.floor(n) : 1;
 }

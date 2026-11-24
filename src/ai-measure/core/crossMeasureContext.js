@@ -248,6 +248,10 @@ export function buildProblemFocus(kind, report = {}) {
       if (report.fatigue != null && report.fatigue >= 4) {
         addIssue('caution', `오늘 피로도가 ${report.fatigue}/5로 높게 보고되었습니다.`);
       }
+      // [PRS 2026-11-24] 운동 전 회복 느낌(0~10). 낮을수록 회복이 덜 된 상태.
+      if (report.prs != null && report.prs <= 4) {
+        addIssue('caution', `운동 전 회복 느낌(PRS)이 ${report.prs}/10로 낮게 보고되었습니다.`);
+      }
       if (report.memo) addIssue('normal', `회원 메모: ${report.memo}`);
       if (!issues.length) addStrength('오늘 컨디션에 특이 신호가 없습니다.');
     }

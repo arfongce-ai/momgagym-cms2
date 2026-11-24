@@ -679,7 +679,11 @@ function DistanceSection({ report, subMeta = null }) {
   const isSingleLeg = Boolean(subMeta?.singleLeg);
   const viewLabel = subMeta?.view === 'front' ? '정면' : '측면';
   const title = isSingleLeg ? `${subMeta.label} 해석` : '제자리멀리뛰기 해석';
-  const desc = isSingleLeg
+  const hops = Number(subMeta?.hops) > 1 ? Number(subMeta.hops) : 0;
+  const splits = Array.isArray(report.hopSplitsCm) && report.hopSplitsCm.length > 1 ? report.hopSplitsCm : null;
+  const desc = hops
+    ? `${subMeta.label}은 한쪽 다리로 ${hops}번 연속 도약해 출발선에서 마지막 착지까지의 총거리를 봅니다. 좌우 다리의 총거리 차이(LSI)로 재활 복귀·좌우 균형을 확인하고, 도약마다의 구간 거리로 후반 힘 유지력을 봅니다. 출발선부터 마지막 착지까지 화면에 모두 들어와야 정확합니다.`
+    : isSingleLeg
     ? `한발멀리뛰기는 한쪽 다리로만 도약·착지해 하체의 좌우 개별 순발력과 착지 안정성을 평가합니다. ${viewLabel} 촬영에서 출발선과 착지 지점이 화면에 모두 들어와야 정확하게 측정됩니다.`
     : '제자리멀리뛰기는 출발선에서 착지 지점까지의 수평 이동거리로 하체의 순발력·폭발적 파워를 평가합니다. 측면 촬영에서 출발선과 착지 지점이 화면에 모두 들어와야 정확하게 측정됩니다.';
   return (
@@ -691,6 +695,19 @@ function DistanceSection({ report, subMeta = null }) {
       <p className="mt-3 text-[12px] leading-relaxed text-slate-500 dark:text-slate-400">
         {desc}
       </p>
+      {splits && (
+        <div className="mt-3 rounded-xl border border-amber-500/20 bg-white dark:bg-slate-900/55 p-3">
+          <p className="mb-2 text-xs font-black text-amber-700 dark:text-amber-300">도약별 구간 거리</p>
+          <div className="grid gap-1" style={{ gridTemplateColumns: `repeat(${splits.length}, minmax(0, 1fr))` }}>
+            {splits.map((d, i) => (
+              <div key={i} className="rounded-lg bg-slate-100/70 dark:bg-slate-800/70 px-2 py-2 text-center">
+                <p className="text-[10px] font-bold text-slate-500">{i + 1}번째</p>
+                <p className="text-sm font-mono font-black text-slate-900 dark:text-slate-100">{metric(d)}cm</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       {trials && trials.length > 1 && (
         <div className="mt-3 rounded-xl border border-amber-500/20 bg-white dark:bg-slate-900/55 p-3">
           <div className="mb-2 flex items-center justify-between">

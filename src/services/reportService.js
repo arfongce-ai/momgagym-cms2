@@ -163,6 +163,8 @@ export function menuGroupKey(session) {
     if (d.jumpSubType === 'shjf') return 'jump_shjf';
     if (d.jumpSubType === 'shjm') return 'jump_shjm';
     if (d.jumpSubType === 'shjl') return 'jump_shjl';
+    if (d.jumpSubType === 'thop') return 'jump_thop';
+    if (d.jumpSubType === 'chop') return 'jump_chop';
     return (d.jumpType === 'reactive' || d.rsi) ? 'jump_rsi' : 'jump_power';
   }
   if (session?.menu === 'lifting') {
