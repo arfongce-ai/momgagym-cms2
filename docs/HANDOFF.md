@@ -770,3 +770,12 @@
 - 원인: FTMS Indoor Bike Data는 페이스가 아니라 속도(km/h)를 보냄. 화면은 /500m 페이스만 읽었음.
 - 수정: `CardioTestMeasure.jsx` 바이크일 때 속도로 /1km 페이스(3600/km/h) 표시(콘솔과 같은 단위).
 - 테스트 276 파일 / 3,410 통과, 빌드 통과.
+
+## 2026-11-24 — 트리플/크로스오버 홉 · PRS · 시니어 기능 테스트 (feat/hop-senior-prs-1124, Claude)
+- 점프 6번: `thop`(트리플 홉)·`chop`(크로스오버 홉) 추가(수평 엔진 3연속, 도약별 거리·무효 사유 저장, 저장 차단 없음).
+- 신체정보 1번: 회복 느낌 PRS(0~10) 입력(4 이하 주의, 오늘 컨디션 연동). RPE는 적용 안 함. MemberDetail 입력폼은 미변경(표시만).
+- 시니어 13번 신설(그룹 `senior`; 비교·영상·녹화·초시계는 14~17번으로 이동): 30초 의자 일어서기(CDC STEADI)·5회 일어서기(Bohannon 2006)·TUG(12초). 규준은 등록정보 나이·성별, 혈압은 최근 신체기록.
+  - 측정자 입력형(횟수 탭·카운트다운·초시계)이 기본, 카메라 자동 카운트는 선택(`seniorAutoCounter.js`). 심박 밴드·메트로놈 연결. 자동값은 측정자가 확인·수정, 원본은 `auto`에 함께 저장.
+  - 기록 kind `senior_test`(menu `senior`), 종합분석 분류 `measureSubtype`(테스트별), momiService·crossMeasureContext·unifiedReport·researchData·measureHistory·Report.jsx·음성 키워드 등록.
+- 미확인: 혈압 보류 기준 180/110은 센터 보수적 기본값(공인 규준 아님), 카메라 자동 카운트 실기기(S23·키오스크) 검증, 5회 일어서기 자동 시작 시점(측정 시작 버튼 기준).
+- 테스트: 기존 실패 `momi_voice.test.js:119` 1건 외 신규 실패 없음(허브 분기 정규식 테스트 2건은 isSenior 허용으로 갱신), 빌드 통과.

@@ -152,6 +152,8 @@ export function buildBodyReport(bodyRecords = []) {
 // 옮겨가 "회차가 사라진 것처럼" 보이는 일이 없게).
 export function menuGroupKey(session) {
   const d = session?.data || {};
+  // [시니어 2026-11-24] 30초 의자·5회 의자·TUG 는 각각 별도 추이.
+  if (session?.menu === 'senior' && d.testId) return `senior_${d.testId}`;
   if (session?.menu === 'jump') {
     if (d.jumpSubType === 'sj') return 'jump_sj';
     if (d.jumpSubType === 'dj') return 'jump_dj';

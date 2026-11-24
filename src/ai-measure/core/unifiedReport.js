@@ -9,6 +9,7 @@ import { cadenceRangeFor, stanceRangeFor, verticalOscRangeFor } from './gaitMode
 import { ROM_SYMMETRY_RANGE } from './romThresholds';
 import { POSTURE_THRESHOLDS } from './postureMath';
 import { cardioHistoryMetrics } from './cardioTest';
+import { seniorHistoryMetrics } from './seniorTests';
 
 export const MOMGAGYM_BLOG_URL = 'https://blog.naver.com/posture_gym';
 export const MOMGAGYM_PUBLIC_URL = 'https://momgagym-cms2.pages.dev';
@@ -652,6 +653,8 @@ export function inferReportType(report = {}) {
   const kind = String(r.kind || r.menu || r.reportType || '').toLowerCase();
   // [11번 심폐지구력 2026-11-13] 저장 기록(kind:'cardio_test')을 통합 리포트로도 쌓는다.
   if (kind.includes('cardio')) return 'cardio';
+  // [시니어 2026-11-24] 저장 기록(kind:'senior_test')
+  if (kind.includes('senior')) return 'senior';
   if (kind.includes('posture')) return 'posture';
   if (kind.includes('rom')) return 'rom';
   if (kind.includes('gait') || kind.includes('running')) return 'gait';
@@ -921,6 +924,9 @@ export function extractKeyMetrics(report = {}, reportType = inferReportType(repo
   if (reportType === 'cardio') {
     return cardioHistoryMetrics(report).map((m) => ({ key: m.key, label: m.label, value: m.value, displayValue: m.displayValue, unit: m.unit, status: STATUS.unknown }));
   }
+  if (reportType === 'senior') {
+    return seniorHistoryMetrics(report).map((m) => ({ key: m.key, label: m.label, value: m.value, displayValue: m.displayValue, unit: m.unit, status: m.key === 'value' && report.status ? (STATUS[report.status] || STATUS.unknown) : STATUS.unknown }));
+  }
   if (reportType === 'squat') return extractSquatKeyMetrics(report);
   if (reportType === 'stance') return extractStanceKeyMetrics(report);
 
@@ -1154,6 +1160,7 @@ function reportTitle(reportType) {
     one_rm: '최대 근력 평가',
     vbt: '운동 속도 기반 근력 평가',
     cardio: '심폐지구력(VO2max) 평가',
+    senior: '시니어 기능 테스트 평가',
     general: '측정 결과 평가',
   };
   return titles[reportType] || titles.general;

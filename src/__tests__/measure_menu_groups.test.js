@@ -16,20 +16,21 @@ describe('측정 메뉴 묶음', () => {
       const nos = menus.map((m) => m.no);
       expect([...nos].sort((a, b) => a - b)).toEqual(nos);
     });
-    expect(MEASURE_MENUS.map((m) => m.no).sort((a, b) => a - b)).toEqual(Array.from({ length: 16 }, (_, i) => i + 1));
+    expect(MEASURE_MENUS.map((m) => m.no).sort((a, b) => a - b)).toEqual(Array.from({ length: 17 }, (_, i) => i + 1));
     // 번호는 묶음 순서대로 다시 매겼다(2026-11-13).
     const idsByNo = [...MEASURE_MENUS].sort((a, b) => a.no - b.no).map((m) => m.id);
-    expect(idsByNo).toEqual(['body', 'posture', 'rom', 'gait', 'sprint', 'jump', 'broadjump', 'lifting', 'stance', 'squat', 'cardio', 'cardio_field', 'compare', 'imaging', 'record', 'timer']);
+    expect(idsByNo).toEqual(['body', 'posture', 'rom', 'gait', 'sprint', 'jump', 'broadjump', 'lifting', 'stance', 'squat', 'cardio', 'cardio_field', 'senior', 'compare', 'imaging', 'record', 'timer']);
   });
-  it('화면에 보이는 번호가 묶음 순서와 같다(1부터 16까지 끊김 없이)', () => {
+  it('화면에 보이는 번호가 묶음 순서와 같다(1부터 17까지 끊김 없이)', () => {
     const shown = groupMeasureMenus().flatMap((e) => e.menus.map((m) => m.no));
-    expect(shown).toEqual(Array.from({ length: 16 }, (_, i) => i + 1));
+    expect(shown).toEqual(Array.from({ length: 17 }, (_, i) => i + 1));
   });
   it('비슷한 측정끼리 묶였다', () => {
     const idsOf = (gid) => groupMeasureMenus().find((e) => e.group.id === gid).menus.map((m) => m.id);
     expect(idsOf('move')).toEqual(['gait', 'sprint']);
     expect(idsOf('power')).toEqual(['jump', 'broadjump']);
     expect(idsOf('strength')).toEqual(['lifting', 'stance', 'squat']);
+    expect(idsOf('senior')).toEqual(['senior']);
     expect(idsOf('tool')).toEqual(['compare', 'imaging', 'record', 'timer']);
   });
   it('홈 화면이 묶음별로 그린다', () => {

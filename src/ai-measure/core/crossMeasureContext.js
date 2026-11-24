@@ -16,6 +16,7 @@ const OUTPUT_POLICY = Object.freeze({
   squat: 'video',
   sprint: 'video',
   cardio: 'report',
+  senior: 'report',
 });
 
 const KIND_KO = Object.freeze({
@@ -29,6 +30,7 @@ const KIND_KO = Object.freeze({
   daily: '오늘의 컨디션',
   lifting: '바벨 리프팅',
   cardio: '심폐지구력',
+  senior: '시니어 기능',
   body: '신체 정보',
 });
 
@@ -234,6 +236,15 @@ export function buildProblemFocus(kind, report = {}) {
     if (Number.isFinite(shown)) addStrength(`VO2max ${Number.isFinite(report.confirmedVo2max) ? '(확인값)' : '(추정 참고값)'} ${shown} mL/kg/min.`);
     if (Number.isFinite(report.recovery?.drop60)) addStrength(`운동 후 1분 심박 회복 ${report.recovery.drop60}bpm.`);
     if (!Number.isFinite(shown) && !Number.isFinite(report.recovery?.drop60)) addIssue('caution', '심폐지구력 측정에서 추정값을 얻지 못했습니다 — 입력값을 확인하고 다시 측정해 주세요.');
+  } else if (kind === 'senior') {
+    // [시니어 2026-11-24] 규준표 기준 평균 미만/12초 이상은 '참고 신호'로만 옮긴다(자동 위험 판정 없음).
+    if (report.valid === false) addIssue('caution', `${report.testLabel || '시니어 테스트'} 기록이 무효입니다(${report.invalidReason || '확인 필요'}) — 트레이너 확인 후 다시 측정해 주세요.`);
+    else if (Number.isFinite(report.value)) {
+      const txt = `${report.testLabel || '시니어 테스트'} ${report.value}${report.unit || ''} (${report.statusLabel || '판정 없음'}).`;
+      if (report.status === 'caution') addIssue('caution', `${txt} ${report.reference?.text || ''}`.trim());
+      else addStrength(txt);
+    }
+    if (Number.isFinite(report.hr?.maxBpm)) addStrength(`테스트 중 최고 심박 ${report.hr.maxBpm}bpm.`);
   } else if (kind === 'daily') {
     // [모미 신규] 컨디션 체크인(conditionAssessment.js evaluateCondition() 결과)을 해석한다.
     // report.valid===false: 오늘 체크인이 아직 없음. 그 외엔 painNrs/fatigue 순으로 확인해

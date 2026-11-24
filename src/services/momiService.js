@@ -77,7 +77,7 @@ async function postMomi(payload) {
 // 전용 컬렉션 없이 세션 목록(aiStore.getSessions)에서 menu 필드로 걸러 쓰는 게 이 프로젝트의
 // 공식 설계이므로, 그 패턴을 그대로 따라 세 종류를 마저 채운다.
 async function loadCrossReports(memberId) {
-  if (!memberId) return { postureReports: [], romReports: [], gaitReports: [], liftingReports: [], stanceReports: [], squatReports: [], cardioReports: [] };
+  if (!memberId) return { postureReports: [], romReports: [], gaitReports: [], liftingReports: [], stanceReports: [], squatReports: [], cardioReports: [], seniorReports: [] };
   const [postureReports, romReports, gaitReports, sessions] = await Promise.all([
     aiStore.ensurePostureReports(memberId),
     aiStore.ensureRomReports(memberId),
@@ -95,6 +95,7 @@ async function loadCrossReports(memberId) {
     stanceReports: byMenu('stance'),
     squatReports: byMenu('squat'),
     cardioReports: byMenu('cardio'),
+    seniorReports: byMenu('senior'),
   };
 }
 
@@ -137,7 +138,7 @@ export async function askMomi({ kind, report, member, question, history } = {}) 
 //  심폐 장비·테스트, 걷기/달리기·촬영 방향)마다 최신 1건씩 돌려준다. 키는 'kind' 또는 'kind|세부키'.
 export async function loadLatestReportsByKind(memberId) {
   if (!memberId) return {};
-  const { postureReports, romReports, gaitReports, liftingReports, stanceReports, squatReports, cardioReports } = await loadCrossReports(memberId);
+  const { postureReports, romReports, gaitReports, liftingReports, stanceReports, squatReports, cardioReports, seniorReports } = await loadCrossReports(memberId);
   const lists = {
     posture: postureReports,
     rom: romReports,
@@ -148,6 +149,7 @@ export async function loadLatestReportsByKind(memberId) {
     stance: stanceReports,
     squat: squatReports,
     cardio: (cardioReports || []).filter((r) => r?.kind === 'cardio_test'),
+    senior: (seniorReports || []).filter((r) => r?.kind === 'senior_test'),
   };
   const out = {};
   Object.entries(lists).forEach(([kind, list]) => {
