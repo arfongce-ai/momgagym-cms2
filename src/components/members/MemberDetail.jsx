@@ -162,7 +162,7 @@ export default function MemberDetail({ member:initMember, trainers, members=[], 
   const [showAiModal,  setShowAiModal]  = useState(false);
   const [aiRefreshKey, setAiRefreshKey] = useState(0);
   const [refundDraft,  setRefundDraft]  = useState(null); // 환불 수정 모달: {payment, amount, penalty, usedAmount, cardFee, vat} | null
-  const [bodyForm,     setBodyForm]    = useState({ recordedAt: todayYMD(), height:'', weight:'', systolic:'', diastolic:'', note:'', fatigue:'', painNrs:'', conditionMemo:'' });
+  const [bodyForm,     setBodyForm]    = useState({ recordedAt: todayYMD(), height:'', weight:'', systolic:'', diastolic:'', note:'', fatigue:'', painNrs:'', prs:'', conditionMemo:'' });
 
   const refresh = () => {
     const fresh = store.getMembers().find(m => m.id === member.id);
@@ -775,11 +775,12 @@ export default function MemberDetail({ member:initMember, trainers, members=[], 
   // ── 신체정보 등록 ─────────────────────────────────────
   // [모미 신규] 체중이 없어도 컨디션(피로도/통증/메모) 중 하나만 있으면 저장 가능하도록 완화.
   const handleAddBody = async () => {
-    const hasCondition = !!(bodyForm.fatigue || bodyForm.painNrs || bodyForm.conditionMemo.trim());
+    const hasCondition = !!(bodyForm.fatigue || bodyForm.painNrs || bodyForm.prs !== '' || bodyForm.conditionMemo.trim());
     if (!bodyForm.weight && !hasCondition) { alert('체중 또는 오늘의 컨디션 중 하나는 입력해 주세요.'); return; }
     const condition = evaluateCondition({
       fatigue: bodyForm.fatigue,
       painNrs: bodyForm.painNrs,
+      prs: bodyForm.prs,
       memo: bodyForm.conditionMemo,
     });
     try {
@@ -791,11 +792,12 @@ export default function MemberDetail({ member:initMember, trainers, members=[], 
         diastolic: bodyForm.diastolic ? Number(bodyForm.diastolic) : null,
         fatigue: condition.fatigue,
         painNrs: condition.painNrs,
+        prs: condition.prs,
         conditionMemo: condition.memo,
         conditionStatus: condition.valid ? condition.status : null,
       });
       refresh(); setShowAddBody(false);
-      setBodyForm({ recordedAt:todayYMD(), height:'', weight:'', systolic:'', diastolic:'', note:'', fatigue:'', painNrs:'', conditionMemo:'' });
+      setBodyForm({ recordedAt:todayYMD(), height:'', weight:'', systolic:'', diastolic:'', note:'', fatigue:'', painNrs:'', prs:'', conditionMemo:'' });
     } catch (e) { alert('신체정보 저장에 실패했습니다. 네트워크 확인 후 다시 시도하세요.'); }
   };
 
@@ -1738,9 +1740,50 @@ export default function MemberDetail({ member:initMember, trainers, members=[], 
                   </div>
                   <div><label className={LBL}>메모</label><input value={bodyForm.note} onChange={pbf('note')} placeholder="최초 측정" className={INP}/></div>
                   {/* [모미 신규] 오늘의 컨디션 — 트레이너가 대신 입력할 때도 같은 폼에서 처리 */}
-                  <div className="grid grid-cols-2 gap-2">
-                    <div><label className={LBL}>피로도(1~5)</label><input type="number" min="1" max="5" value={bodyForm.fatigue} onChange={pbf('fatigue')} placeholder="1~5" className={INP+" font-mono"}/></div>
-                    <div><label className={LBL}>통증 NRS(0~10)</label><input type="number" min="0" max="10" value={bodyForm.painNrs} onChange={pbf('painNrs')} placeholder="0~10" className={INP+" font-mono"}/></div>
+                  <div>
+                    <label className={LBL}>회복 느낌 PRS(0~10) <span className="font-normal normal-case text-slate-500">— 0 전혀 회복 안 됨 · 10 완전히 회복</span></label>
+                    <div className="mt-1 grid grid-cols-11 gap-1" role="group" aria-label="회복 느낌 PRS(0~10)">
+                      {Array.from({ length: 11 }, (_, i) => i).map((n) => {
+                        const on = bodyForm.prs === String(n);
+                        return (
+                          <button key={n} type="button" aria-pressed={on} data-testid={`member-prs-${n}`}
+                            onClick={() => setBodyForm((p) => ({ ...p, prs: on ? '' : String(n) }))}
+                            className={`rounded-lg py-2 text-xs font-black border ${on ? 'bg-amber-500 text-slate-950 border-amber-500' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-300 dark:border-slate-700'}`}>
+                            {n}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <div>
+                    <label className={LBL}>피로도(1~5) <span className="font-normal normal-case text-slate-500">— 1 안 피곤 · 5 매우 피곤</span></label>
+                    <div className="mt-1 grid grid-cols-5 gap-1" role="group" aria-label="피로도(1~5)">
+                      {[1, 2, 3, 4, 5].map((n) => {
+                        const on = bodyForm.fatigue === String(n);
+                        return (
+                          <button key={n} type="button" aria-pressed={on} data-testid={`member-fatigue-${n}`}
+                            onClick={() => setBodyForm((p) => ({ ...p, fatigue: on ? '' : String(n) }))}
+                            className={`rounded-lg py-2 text-xs font-black border ${on ? 'bg-amber-500 text-slate-950 border-amber-500' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-300 dark:border-slate-700'}`}>
+                            {n}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <div>
+                    <label className={LBL}>통증 NRS(0~10) <span className="font-normal normal-case text-slate-500">— 0 없음 · 10 최악</span></label>
+                    <div className="mt-1 grid grid-cols-11 gap-1" role="group" aria-label="통증 NRS(0~10)">
+                      {Array.from({ length: 11 }, (_, i) => i).map((n) => {
+                        const on = bodyForm.painNrs === String(n);
+                        return (
+                          <button key={n} type="button" aria-pressed={on} data-testid={`member-painNrs-${n}`}
+                            onClick={() => setBodyForm((p) => ({ ...p, painNrs: on ? '' : String(n) }))}
+                            className={`rounded-lg py-2 text-xs font-black border ${on ? 'bg-amber-500 text-slate-950 border-amber-500' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-300 dark:border-slate-700'}`}>
+                            {n}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
                   <div><label className={LBL}>컨디션 메모</label><input value={bodyForm.conditionMemo} onChange={pbf('conditionMemo')} placeholder="예) 어제 스쿼트 후 무릎이 뻐근해요" maxLength={200} className={INP}/></div>
                   <div className="flex gap-2">
