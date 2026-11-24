@@ -225,14 +225,35 @@ export default function BodyInfoMeasure({ member, onSave, onConfirmSave, onBack,
             })}
           </div>
         </div>
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className={LBL}>피로도 (1~5)</label>
-            <input type="number" min="1" max="5" value={form.fatigue} onChange={pf('fatigue')} placeholder="1~5" className={INP} />
+        {/* [2026-11-25] 피로도·통증 NRS 도 PRS 처럼 버튼 한 번으로 고른다(다시 누르면 해제). */}
+        <div>
+          <label className={LBL}>피로도 (1~5) <span className="font-normal normal-case text-slate-500">— 1 전혀 안 피곤 · 5 매우 피곤</span></label>
+          <div className="mt-1 grid grid-cols-5 gap-1" role="group" aria-label="피로도 1~5">
+            {[1, 2, 3, 4, 5].map((n) => {
+              const on = form.fatigue === String(n);
+              return (
+                <button key={n} type="button" aria-pressed={on} data-testid={`fatigue-${n}`}
+                  onClick={() => setForm((f) => ({ ...f, fatigue: on ? '' : String(n) }))}
+                  className={`rounded-lg py-2 text-xs font-black border ${on ? 'bg-amber-500 text-slate-950 border-amber-500' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-300 dark:border-slate-700'}`}>
+                  {n}
+                </button>
+              );
+            })}
           </div>
-          <div>
-            <label className={LBL}>통증 NRS (0~10)</label>
-            <input type="number" min="0" max="10" value={form.painNrs} onChange={pf('painNrs')} placeholder="0=없음, 10=최악" className={INP} />
+        </div>
+        <div>
+          <label className={LBL}>통증 NRS (0~10) <span className="font-normal normal-case text-slate-500">— 0 없음 · 10 최악</span></label>
+          <div className="mt-1 grid grid-cols-11 gap-1" role="group" aria-label="통증 NRS 0~10">
+            {Array.from({ length: 11 }, (_, n) => {
+              const on = form.painNrs === String(n);
+              return (
+                <button key={n} type="button" aria-pressed={on} data-testid={`pain-${n}`}
+                  onClick={() => setForm((f) => ({ ...f, painNrs: on ? '' : String(n) }))}
+                  className={`rounded-lg py-2 text-xs font-black border ${on ? 'bg-amber-500 text-slate-950 border-amber-500' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-300 dark:border-slate-700'}`}>
+                  {n}
+                </button>
+              );
+            })}
           </div>
         </div>
         <div>

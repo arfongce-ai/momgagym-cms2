@@ -19,6 +19,8 @@ import { usePoseEngine } from '../core/usePoseEngine';
 import { useCameraRotation } from '../core/useCameraRotation';
 import { rotateLandmarksNormalized } from '../core/recordAspect';
 import { createSeniorAutoCounter } from '../core/seniorAutoCounter';
+import { isSkeletonEnabled } from '../core/skeletonPref';
+import CameraStage from './CameraStage.jsx';
 import {
   SENIOR_TESTS, SENIOR_TEST_ORDER, buildSeniorRecord, evaluateSeniorTest, seniorPrecheck,
 } from '../core/seniorTests';
@@ -27,6 +29,37 @@ import SeniorReportSheet from '../../components/report/SeniorReportSheet';
 const Metronome = lazy(() => import('./TimerTool.jsx').then((m) => ({ default: m.Metronome })));
 
 const FRESH_MS = 5000;
+
+// 스켈레톤(어깨·엉덩이·무릎·다리). 기존 측정 화면과 같은 object-contain 좌표계로 그린다.
+// 스켈레톤 OFF 여도 인식·카운트는 계속된다(화면에 그리는 것만 끈다).
+const BONES = [[11, 12], [11, 23], [12, 24], [23, 24], [23, 25], [25, 27], [24, 26], [26, 28]];
+const DOTS = [11, 12, 23, 24, 25, 26, 27, 28];
+const visOk = (p) => !!p && (p.visibility == null || p.visibility >= 0.3);
+function drawPoseSkeleton(canvas, video, landmarks, tracked) {
+  if (!canvas || !video) return;
+  const cw = canvas.clientWidth || canvas.width; const ch = canvas.clientHeight || canvas.height;
+  if (canvas.width !== cw || canvas.height !== ch) { canvas.width = cw; canvas.height = ch; }
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, cw, ch);
+  if (!landmarks || !isSkeletonEnabled()) return;
+  const vw = video.videoWidth || cw; const vh = video.videoHeight || ch;
+  const scale = Math.min(cw / vw, ch / vh);
+  const dw = vw * scale; const dh = vh * scale; const ox = (cw - dw) / 2; const oy = (ch - dh) / 2;
+  const X = (p) => ox + p.x * dw; const Y = (p) => oy + p.y * dh;
+  ctx.strokeStyle = tracked ? 'rgba(52,211,153,0.95)' : 'rgba(251,191,36,0.95)';
+  ctx.lineWidth = 3; ctx.lineCap = 'round';
+  BONES.forEach(([a, b]) => {
+    const pa = landmarks[a]; const pb = landmarks[b];
+    if (!visOk(pa) || !visOk(pb)) return;
+    ctx.beginPath(); ctx.moveTo(X(pa), Y(pa)); ctx.lineTo(X(pb), Y(pb)); ctx.stroke();
+  });
+  ctx.fillStyle = 'rgba(255,255,255,0.95)';
+  DOTS.forEach((i) => {
+    const p = landmarks[i];
+    if (!visOk(p)) return;
+    ctx.beginPath(); ctx.arc(X(p), Y(p), 5, 0, Math.PI * 2); ctx.fill();
+  });
+}
 
 function latestBp(member) {
   try {
@@ -112,10 +145,14 @@ export default function SeniorTestMeasure({ onBack, member = null, onSave = null
   const [rotationDeg] = useCameraRotation();
   const rotationRef = useRef(rotationDeg);
   rotationRef.current = rotationDeg;
-  const handlePose = useCallback((landmarks) => {
+  const canvasRef = useRef(null);
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const handlePose = useCallback((landmarks, ts, video) => {
     if (!counterRef.current) return;
     const lm = landmarks ? rotateLandmarksNormalized(landmarks, rotationRef.current) : null;
     const snap = counterRef.current.push(lm, performance.now());
+    // 화면 스켈레톤은 원본 좌표 그대로(CameraStage 가 같은 회전 래퍼를 쓴다) — 이중 회전 방지.
+    drawPoseSkeleton(canvasRef.current, video || null, landmarks, snap.tracked);
     setAutoSnap(snap);
     const run = runRef.current;
     if (phaseRef.current !== 'running' || !run) return;
@@ -133,17 +170,19 @@ export default function SeniorTestMeasure({ onBack, member = null, onSave = null
   const pose = usePoseEngine({ onResult: handlePose });
   const poseStartRef = useRef(false);
   useEffect(() => {
-    if (mode === 'auto' && phase !== 'result' && !poseStartRef.current) {
+    if (mode === 'auto' && cameraOpen && phase !== 'result' && !poseStartRef.current) {
       poseStartRef.current = true;
       counterRef.current = createSeniorAutoCounter({ testId, targetReps: SENIOR_TESTS.sts5.reps });
       pose.start();
     }
-    if ((mode !== 'auto' || phase === 'result') && poseStartRef.current) {
+    if ((mode !== 'auto' || !cameraOpen || phase === 'result') && poseStartRef.current) {
       poseStartRef.current = false;
       pose.stop();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, phase]);
+  }, [mode, phase, cameraOpen]);
+  // 결과 화면으로 넘어가면 카메라를 닫는다.
+  useEffect(() => { if (phase === 'result') setCameraOpen(false); }, [phase]);
   useEffect(() => { if (counterRef.current) counterRef.current = createSeniorAutoCounter({ testId, targetReps: SENIOR_TESTS.sts5.reps }); }, [testId]);
   useEffect(() => () => { pose.stop(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -272,15 +311,6 @@ export default function SeniorTestMeasure({ onBack, member = null, onSave = null
         {memberLabel && <span className="ml-auto text-xs font-bold text-slate-500">{memberLabel}</span>}
       </div>
 
-      {mode === 'auto' && phase !== 'result' && (
-        <div className="relative overflow-hidden rounded-xl bg-black" data-testid="senior-preview-video">
-          <video ref={pose.videoRef} playsInline muted className="h-56 w-full object-contain" />
-          <p className="absolute left-2 top-2 rounded bg-black/60 px-2 py-0.5 text-[11px] font-bold text-white">
-            {pose.status === 'loading' ? '카메라·인식 준비 중…' : pose.status === 'error' ? '카메라를 쓸 수 없어요(수동으로 전환하세요)' : autoSnap?.tracked ? `인식됨 · ${autoSnap.state === 'stand' ? '서 있음' : autoSnap.state === 'sit' ? '앉음' : '확인 중'} · ${autoSnap.count}회` : '몸이 안 잡혀요 — 어깨·엉덩이·무릎이 보이게'}
-          </p>
-        </div>
-      )}
-
       {phase === 'setup' && (
         <div className="space-y-3">
           <div className="grid grid-cols-3 gap-1.5">
@@ -352,14 +382,14 @@ export default function SeniorTestMeasure({ onBack, member = null, onSave = null
             </details>
           </div>
 
-          <button type="button" onClick={() => setPhase('ready')} data-testid="senior-start"
+          <button type="button" onClick={() => (mode === 'auto' ? setCameraOpen(true) : setPhase('ready'))} data-testid="senior-start"
             className="w-full rounded-xl bg-amber-500 py-3 text-base font-black text-slate-950">
-            {precheck.ok ? '측정 시작 (3초 뒤)' : '확인했습니다 — 그래도 시작'}
+            {mode === 'auto' ? (precheck.ok ? '카메라 열기' : '확인했습니다 — 카메라 열기') : (precheck.ok ? '측정 시작 (3초 뒤)' : '확인했습니다 — 그래도 시작')}
           </button>
         </div>
       )}
 
-      {phase === 'ready' && (
+      {mode !== 'auto' && phase === 'ready' && (
         <div className="rounded-2xl border-2 border-amber-400 p-8 text-center">
           <p className="text-sm font-bold">준비하세요</p>
           <p className="font-mono text-7xl font-black" data-testid="senior-lead">{lead}</p>
@@ -367,7 +397,7 @@ export default function SeniorTestMeasure({ onBack, member = null, onSave = null
         </div>
       )}
 
-      {phase === 'running' && (
+      {mode !== 'auto' && phase === 'running' && (
         <div className="space-y-3">
           <div className="rounded-2xl border-2 border-slate-300 p-3 text-center dark:border-slate-600">
             <p className="text-xs font-bold text-slate-500">{meta.label}</p>
@@ -441,6 +471,37 @@ export default function SeniorTestMeasure({ onBack, member = null, onSave = null
             <div className="pt-2"><SeniorReportSheet report={savedRecord} member={member} /></div>
           )}
         </div>
+      )}
+
+      {mode === 'auto' && cameraOpen && phase !== 'result' && (
+        <CameraStage
+          videoRef={pose.videoRef} canvasRef={canvasRef} status={pose.status} error={pose.error}
+          onClose={() => { if (phase === 'running') finish(); setCameraOpen(false); if (phase !== 'running') resetRun(); }}
+          tappable={false} showSkeletonToggle
+          countdown={phase === 'ready' ? lead : null}
+          recording={phase === 'running'} recordingLabel={testId === 'chair30' ? `${secText(remain * 1000)}초 · ${count}회` : testId === 'sts5' ? `${secText(elapsedMs)}초 · ${count}/${meta.reps}회` : `${secText(elapsedMs)}초`}
+          topBar={(
+            <>
+              <span className="rounded-full bg-black/65 px-2.5 py-1 text-[11px] font-bold text-white">{meta.short} · 카메라 자동</span>
+              <span className={`rounded-full px-3 py-1 text-[11px] font-bold ${autoSnap?.tracked ? 'bg-emerald-500/85 text-slate-950' : 'bg-red-500/85 text-white'}`} data-testid="senior-track-status">
+                {autoSnap?.tracked ? `✓ 인식됨 · ${autoSnap.state === 'stand' ? '서 있음' : autoSnap.state === 'sit' ? '앉음' : '확인 중'}` : '⚠ 몸이 안 잡혀요 — 옆모습, 어깨·엉덩이·무릎이 보이게'}
+              </span>
+              {bpm != null && <span className="rounded-full bg-black/65 px-2.5 py-1 text-[11px] font-bold text-white">심박 {bpm} bpm</span>}
+            </>
+          )}
+          controls={phase === 'running' ? (
+            <div className="flex items-center gap-2">
+              {testId !== 'tug' && <button type="button" onClick={undoRep} className="h-12 w-14 rounded-full bg-slate-200 text-lg font-black text-slate-800 active:scale-95">−1</button>}
+              {testId !== 'tug' && <button type="button" onClick={tapRep} data-testid="senior-tap" className="h-12 rounded-full bg-amber-500 px-5 text-sm font-black text-slate-950 active:scale-95">+1 보정</button>}
+              <button type="button" onClick={() => finish()} data-testid="senior-stop" className="h-12 rounded-full bg-red-500 px-5 text-sm font-black text-white active:scale-95">■ 종료</button>
+            </div>
+          ) : phase === 'ready' ? (
+            <button type="button" onClick={resetRun} className="h-12 rounded-full bg-slate-200 px-5 text-sm font-black text-slate-800 active:scale-95">취소</button>
+          ) : (
+            <button type="button" onClick={() => setPhase('ready')} disabled={pose.status !== 'running'} data-testid="senior-stage-start"
+              className="h-12 rounded-full bg-amber-500 px-6 text-sm font-black text-slate-950 active:scale-95 disabled:opacity-50">● 측정 시작 (3초 뒤)</button>
+          )}
+        />
       )}
     </div>
   );
