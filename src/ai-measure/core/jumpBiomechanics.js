@@ -1161,15 +1161,46 @@ export function combineJumpTrials(trials, engine) {
     };
   }
 
+  // [이륙속도 참고값 중앙값 2026-11-24] comTakeoff 는 한 번의 점프에서 뽑은
+  // 값이라 흔들림이 크다. 회차가 여럿이면 마지막 회차 값 대신 신뢰 가능한
+  // ('ok') 회차들의 중앙값으로 대표하고, 없으면 전체 중앙값(신뢰 낮음 유지).
+  const comTakeoff = medianComTakeoff(trials);
   return {
     ...base,
     heightCm: avgNum((t) => t.heightCm),
     takeoffVelocity: avgNum((t) => t.takeoffVelocity, 2),
     peakPower: avgNum((t) => t.peakPower, 0),
+    ...(comTakeoff !== undefined ? { comTakeoff } : {}),
     trials: trials.map((t) => ({
       heightCm: t.heightCm, takeoffVelocity: t.takeoffVelocity,
       peakPower: t.peakPower, measuredAt: t.measuredAt || null,
+      ...(t.comTakeoff?.velocity != null ? { comVelocity: t.comTakeoff.velocity } : {}),
     })),
+  };
+}
+
+/** 회차별 comTakeoff 의 중앙값 대표. comTakeoff 가 한 번도 없으면 undefined. */
+export function medianComTakeoff(trials) {
+  const list = (trials || []).map((t) => t?.comTakeoff).filter((c) => c && Number.isFinite(c.velocity));
+  if (!list.length) return undefined;
+  const ok = list.filter((c) => c.confidence === 'ok');
+  const pool = ok.length ? ok : list;
+  const med = (arr) => {
+    const v = arr.filter(Number.isFinite).sort((a, b) => a - b);
+    if (!v.length) return null;
+    const m = Math.floor(v.length / 2);
+    return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2;
+  };
+  const r2 = (x) => (x == null ? null : Math.round(x * 100) / 100);
+  const last = pool[pool.length - 1];
+  return {
+    ...last,
+    velocity: r2(med(pool.map((c) => c.velocity))),
+    flightVelocity: r2(med(pool.map((c) => c.flightVelocity))),
+    gapPct: r2(med(pool.map((c) => c.gapPct))),
+    confidence: ok.length ? 'ok' : 'low',
+    trialsUsed: pool.length,
+    trialsTotal: trials.length,
   };
 }
 

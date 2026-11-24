@@ -126,8 +126,8 @@ export async function findMainBackCameraId() {
   }
 }
 
-function baseVideoConstraints(deviceId) {
-  return [
+function baseVideoConstraints(deviceId, preferFps = 0) {
+  const base = [
     deviceId ? { deviceId: { exact: deviceId }, width: { ideal: 1920 }, height: { ideal: 1080 } } : null,
     { facingMode: { exact: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } },
     { facingMode: { exact: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
@@ -137,6 +137,24 @@ function baseVideoConstraints(deviceId) {
     { facingMode: 'environment' },
     true,
   ].filter(Boolean);
+  // [고프레임 요청 2026-11-24] preferFps 가 있으면 해상도 제약이 있는 후보에만
+  // frameRate ideal 을 얹은 변형을 앞에 둔다. ideal 이라 미지원 기기는 가까운
+  // 값(보통 30fps)으로 열리고, 그래도 실패하면 기존 후보로 그대로 폴백한다.
+  if (!(preferFps > 0)) return base;
+  const withFps = base
+    .filter((c) => c && typeof c === 'object' && c.width)
+    .map((c) => ({ ...c, frameRate: { ideal: preferFps } }));
+  return [...withFps, ...base];
+}
+
+/** 열린 스트림의 실제 프레임레이트(없으면 null). */
+export function readStreamFps(stream) {
+  try {
+    const fps = stream?.getVideoTracks?.()[0]?.getSettings?.().frameRate;
+    return Number.isFinite(fps) && fps > 0 ? Math.round(fps) : null;
+  } catch (e) {
+    return null;
+  }
 }
 
 // 세션 내 후면 카메라 deviceId 캐시. 라벨(카메라 이름)은 getUserMedia 로 권한을
@@ -160,10 +178,10 @@ export function resetCameraSelectionCache() {
 
 /**
  * Open the rear/main camera stream.
- * @param {{audio?: boolean, preferExactDevice?: boolean}} opt
+ * @param {{audio?: boolean, preferExactDevice?: boolean, preferFps?: number}} opt
  * @returns {Promise<MediaStream>}
  */
-export async function openMainCameraStream({ audio = false, preferExactDevice = true } = {}) {
+export async function openMainCameraStream({ audio = false, preferExactDevice = true, preferFps = 0 } = {}) {
   assertMediaDevices();
 
   let deviceId = cachedBackCameraId;
@@ -191,7 +209,7 @@ export async function openMainCameraStream({ audio = false, preferExactDevice = 
     }
   }
 
-  const videoChoices = baseVideoConstraints(deviceId);
+  const videoChoices = baseVideoConstraints(deviceId, preferFps);
   const audioChoices = audio ? [true, false] : [false];
   let lastError = null;
 

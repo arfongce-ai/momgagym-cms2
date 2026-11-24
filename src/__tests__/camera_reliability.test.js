@@ -66,8 +66,9 @@ describe('점프·RSI 실시간 화면 — 카메라 획득 강화(이미지1 �
 
   it('단발성 getUserMedia가 남아있지 않고, 공통 폴백 헬퍼를 사용한다', () => {
     expect(src.match(/navigator\.mediaDevices\.getUserMedia/g)).toBeNull();
-    expect(src).toContain("import { openMainCameraStream, describeCameraError } from '../core/cameraSelect';");
-    expect(src).toContain('await openMainCameraStream({ audio: false })');
+    expect(src).toContain("import { openMainCameraStream, describeCameraError, readStreamFps } from '../core/cameraSelect';");
+    // [2026-11-24] 점프 라이브만 60fps 를 ideal 로 요청(미지원 기기는 기존 후보로 폴백)
+    expect(src).toContain('await openMainCameraStream({ audio: false, preferFps: 60 })');
   });
 
   it('실패 원인을 describeCameraError로 분류해 보여준다(모든 실패를 권한 문제로 뭉뚱그리지 않음)', () => {
