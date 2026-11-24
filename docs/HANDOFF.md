@@ -45,6 +45,11 @@
 
 ## 작업 로그
 
+### 2026-11-24 · Claude Code · 5번 스프린트 수평 파워 + 신체정보(체중·키) 연동 확대 (브랜치 feat/sprint-horizontal-power-1124)
+- 수평 파워(책 p.307, 체중×거리÷시간, kg·m/s): `sprintMetrics.js sprintHorizontalPower` — 직선 스프린트만, 0~5m·0~10m 누적 시간 기준. 라이브·업로드가 `report.horizontalPower`로 저장, `SprintReportDashboard`에 표시. 체중 없으면 안 보임. 체중×평균속도와 같은 값이라 새 정보는 아니고 회원 간 비교용. 영상 시간에는 책의 스톱워치 환산식 미적용. 7번 제자리멀리뛰기는 시간 개념이 없어 제외.
+- 신체정보 연동: 회원 신체기록(body 탭)의 키·체중을 `resolveBodyMetrics`로 읽도록 확대 — 스프린트(라이브·업로드), 점프 실시간·업로드 키 게이트, 리프팅 업로드, VBT 키, 자세 키, 심폐지구력 체중. 이전에는 member.height/weight만 봐서 재입력을 요구함.
+- 테스트: 3795/3796(실패 1개는 기존 `momi_voice.test.js:119`), 빌드 통과. 실기기 확인 못 함.
+
 ### 2026-11-24 · Claude Code · VBT 바 궤적선 + 스내치·클린&저크 구간/자세 각도 (브랜치 feat/vbt-trail-olylift-1124)
 - 1) `VbtMeasure.jsx`: 측정 중 화면과 녹화 영상에 바 궤적 잔상(`drawFadingBarPath`) 표시, [✨ 궤적] 토글. 표시 전용 raw 궤적(`trailRef`)을 따로 둠 — 판정·속도 계산은 그대로.
 - 3) `core/olyLiftAnalysis.js`(순수 함수): 스내치/클린은 출발→무릎 통과→최고속도→캐치, 클린&저크는 랙 정지로 클린/저크 분리. 시점별 무릎·고관절·몸통 기울기 각도(좌/우 중 인식 좋은 쪽, 2D). 판정하지 않고 참고값+신뢰도(정면 촬영·인식 낮음·저fps·구간 분리 실패 이유 표시). `components/report/OlyLiftSection.jsx`로 리포트 표시, `report.oly`로 저장(`BarbellLiftingHub.jsx` extra).

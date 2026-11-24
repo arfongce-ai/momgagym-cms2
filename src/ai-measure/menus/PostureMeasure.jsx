@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { resolveBodyMetrics } from '../../services/bodyMetrics';
 import { pickPreviousReport } from '../core/measurementComparison';
 import { todayYMD } from '../../utils/dates';
 import { usePoseEngine } from '../core/usePoseEngine';
@@ -122,7 +123,7 @@ export default function PostureMeasure({ member, onSave, onBack, onViewInReport 
   useEffect(() => { captureModeRef.current = captureMode; }, [captureMode]);
 
   const bodyInfo = useMemo(() => ({
-    heightCm: Number(member?.height || member?.heightCm) || null,
+    heightCm: Number(member?.height || member?.heightCm || resolveBodyMetrics(member).height) || null,
     actualAge: getAge(member?.birthDate) || Number(member?.age) || null,
   }), [member]);
   const bodyInfoRef = useRef(bodyInfo);

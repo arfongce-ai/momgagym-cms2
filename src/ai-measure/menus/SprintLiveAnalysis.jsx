@@ -37,7 +37,8 @@ import { aiStore } from '../../demoData';
 import MeasureRecordConfirm from '../components/MeasureRecordConfirm.jsx';
 import SprintReportDashboard from './SprintReportDashboard.jsx';
 import { SPRINT_TEST_TYPES, SPRINT_TEST_ORDER, DEFAULT_CAM_ANGLE } from '../core/sprintTests';
-import { isRunComplete } from '../core/sprintMetrics';
+import { isRunComplete, sprintHorizontalPower } from '../core/sprintMetrics';
+import { resolveBodyMetrics } from '../../services/bodyMetrics';
 
 // 종목 정의는 core/sprintTests.js 한 곳에서 관리(라이브·업로드 공용)
 const TEST_TYPES = SPRINT_TEST_TYPES;
@@ -480,6 +481,8 @@ export default function SprintLiveAnalysis({ member, onBack, onSaveToFirebase, o
       orientation: camAngle === 'lateral' ? 'side' : depthOrientation,
       metrics: { pelvicDropAssessment, kneeAlignment, stepWidthAssessment, scissoringAssessment, crossoverAssessment, armCrossAssessment, toeAngleAssessment },
       member: { id: member?.id || null, name: member?.name || null },
+      // [수평 파워 2026-11-24] 신체정보(회원 신체기록 포함)의 체중으로 계산. 체중이 없으면 null.
+      horizontalPower: sprintHorizontalPower({ mode: TEST_TYPES[testKey].mode, splits: summary.splits, massKg: resolveBodyMetrics(member).weight }),
       measuredAt: new Date().toISOString(),
     });
     // [기록·확인 단계 2026-09-07] 측정 직후 바로 결과+저장 버튼을 보여주던 것을
