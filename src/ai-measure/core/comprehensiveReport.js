@@ -22,6 +22,11 @@ export const REPORT_TYPE_LABEL = {
   jump: '점프·RSI',
   vbt: '바벨 VBT',
   one_rm: '1RM 추정',
+  sprint: '스프린트',
+  agility: '아질리티',
+  cardio: '심폐지구력',
+  stance: '한다리서기',
+  squat: '오버헤드 스쿼트',
   general: '신체 정보·기타',
 };
 export const SOURCE_LABEL = {

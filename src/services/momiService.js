@@ -76,7 +76,7 @@ async function postMomi(payload) {
 // 전용 컬렉션 없이 세션 목록(aiStore.getSessions)에서 menu 필드로 걸러 쓰는 게 이 프로젝트의
 // 공식 설계이므로, 그 패턴을 그대로 따라 세 종류를 마저 채운다.
 async function loadCrossReports(memberId) {
-  if (!memberId) return { postureReports: [], romReports: [], gaitReports: [], liftingReports: [], stanceReports: [], squatReports: [] };
+  if (!memberId) return { postureReports: [], romReports: [], gaitReports: [], liftingReports: [], stanceReports: [], squatReports: [], cardioReports: [] };
   const [postureReports, romReports, gaitReports, sessions] = await Promise.all([
     aiStore.ensurePostureReports(memberId),
     aiStore.ensureRomReports(memberId),
@@ -93,6 +93,7 @@ async function loadCrossReports(memberId) {
     liftingReports: byMenu('lifting'),
     stanceReports: byMenu('stance'),
     squatReports: byMenu('squat'),
+    cardioReports: byMenu('cardio'),
   };
 }
 
@@ -133,7 +134,7 @@ export async function askMomi({ kind, report, member, question, history } = {}) 
 // kind 하나로 좁히지 않고 종류별 최신 1건씩만 뽑아 트레이너가 선택할 수 있게 돌려준다.
 export async function loadLatestReportsByKind(memberId) {
   if (!memberId) return {};
-  const { postureReports, romReports, gaitReports, liftingReports, stanceReports, squatReports } = await loadCrossReports(memberId);
+  const { postureReports, romReports, gaitReports, liftingReports, stanceReports, squatReports, cardioReports } = await loadCrossReports(memberId);
   const latest = (list, filter) => {
     const f = filter ? (list || []).filter(filter) : (list || []);
     return [...f].sort((a, b) => Date.parse(b.createdAt || b.measuredAt || 0) - Date.parse(a.createdAt || a.measuredAt || 0))[0] || null;
@@ -142,7 +143,10 @@ export async function loadLatestReportsByKind(memberId) {
     posture: latest(postureReports),
     rom: latest(romReports),
     jump: latest(gaitReports, (r) => r?.kind === 'jump'),
-    gait: latest(gaitReports, (r) => r?.kind === 'gait' || r?.metrics || r?.cadence),
+    // 스프린트/아질리티 리포트도 metrics 를 가질 수 있어 보행으로 잘못 묶이지 않게 제외한다.
+    gait: latest(gaitReports, (r) => r?.kind !== 'sprint' && r?.kind !== 'agility' && r?.kind !== 'jump' && (r?.kind === 'gait' || r?.metrics || r?.cadence)),
+    sprint: latest(gaitReports, (r) => r?.kind === 'sprint' || r?.kind === 'agility'),
+    cardio: latest(cardioReports, (r) => r?.kind === 'cardio_test'),
     lifting: latest(liftingReports),
     stance: latest(stanceReports),
     squat: latest(squatReports),

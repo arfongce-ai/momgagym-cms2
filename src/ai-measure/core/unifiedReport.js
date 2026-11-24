@@ -183,6 +183,36 @@ export const REPORT_TERM_MAP = Object.freeze({
     description: '교재 규준표에서 같은 성별 집단의 어느 구간에 해당하는지 보는 참고값입니다.',
     category: 'power',
   },
+  horizontalPower5: {
+    expert: 'Horizontal Power 0-5m (book formula)',
+    label: '수평 파워 0~5m(교재 공식)',
+    description: '체중 × 5m ÷ 5m 통과 시간(kg·m/s)입니다. 출발 가속 구간의 값이며 참고값입니다.',
+    category: 'power',
+  },
+  horizontalPower10: {
+    expert: 'Horizontal Power 0-10m (book formula)',
+    label: '수평 파워 0~10m(교재 공식)',
+    description: '체중 × 10m ÷ 10m 통과 시간(kg·m/s)입니다. 체중이 다른 회원끼리 비교할 때 쓰는 참고값입니다.',
+    category: 'power',
+  },
+  olyPeakVelocity: {
+    expert: 'Olympic Lift Peak Bar Velocity',
+    label: '바 최고속도(역도 동작)',
+    description: '스내치·클린&저크 한 동작에서 바가 가장 빠르게 올라간 속도(m/s)입니다. 양 손목 중점 기준 참고값입니다.',
+    category: 'power',
+  },
+  olyBarTop: {
+    expert: 'Olympic Lift Bar Top Height',
+    label: '바 최고 높이(역도 동작)',
+    description: '출발 대비 바가 올라간 최고 높이(cm)입니다. 참고값입니다.',
+    category: 'power',
+  },
+  olyCatchDepth: {
+    expert: 'Olympic Lift Catch Depth',
+    label: '캐치 깊이(고관절)',
+    description: '캐치 순간 고관절이 일어선 자세보다 얼마나 낮아졌는지(cm)입니다. 참고값입니다.',
+    category: 'mobility',
+  },
   horizontalPower: {
     expert: 'Horizontal Power (book formula)',
     label: '수평 파워(교재 공식)',
@@ -516,6 +546,9 @@ export const METRIC_DEFINITIONS = Object.freeze({
     { key: 'firstHalf', paths: ['analysis.firstHalfMs'], unit: 'ms', better: 'lower' },
     { key: 'secondHalf', paths: ['analysis.secondHalfMs'], unit: 'ms', better: 'lower' },
     { key: 'speedMaintenance', paths: ['analysis.speedMaintenancePct'], unit: '%', better: 'higher' },
+    // [2026-11-24] 직선 스프린트 수평 파워(교재 p.307) — 참고값, 등급 없음
+    { key: 'horizontalPower5', paths: ['horizontalPower.p5'], unit: 'kg·m/s', better: 'higher' },
+    { key: 'horizontalPower10', paths: ['horizontalPower.p10'], unit: 'kg·m/s', better: 'higher' },
   ],
   rom: [
     { key: 'rom', paths: ['summary.max_rom', 'summary.left_max_rom', 'summary.right_max_rom', 'summary.max_angle', 'maxAngle', 'angle', 'rom'], unit: '도' },
@@ -533,6 +566,10 @@ export const METRIC_DEFINITIONS = Object.freeze({
     { key: 'peakVelocity', paths: ['metrics.peakVelocity', 'peakVelocity', 'vbt.peakVelocity'], unit: 'm/s' },
     { key: 'peakPower', paths: ['metrics.peakPower', 'metrics.meanPower', 'peakPower', 'vbt.peakPower'], unit: 'W' },
     { key: 'rom', paths: ['metrics.rangeOfMotion'], unit: 'cm' },
+    // [2026-11-24] 스내치·클린&저크 구간 분석(core/olyLiftAnalysis.js) — 참고값, 등급 없음. 첫 동작(스내치·클린) 기준.
+    { key: 'olyPeakVelocity', paths: ['oly.lifts.0.peakVelocity'], unit: 'm/s', better: 'higher' },
+    { key: 'olyBarTop', paths: ['oly.lifts.0.barTopHeightCm'], unit: 'cm' },
+    { key: 'olyCatchDepth', paths: ['oly.lifts.0.catchDepthCm'], unit: 'cm' },
     { key: 'velocityLoss', paths: ['metrics.velocityLoss', 'velocityLoss', 'vbt.velocityLoss'], unit: '%', range: { good: [0, 20], warn: [0, 40] } }, // Pareja-Blanco 2017: 20%·40% 비교 연구 기준(15/30은 출처 미확인이어서 교체)
   ],
   // stance/squat는 이미 CMS 판정 모듈(singleLegStance.js/squatBiomechanics.js)이

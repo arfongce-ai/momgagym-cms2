@@ -13,6 +13,7 @@ import { loadLatestReportsByKind, buildMemberCombinedAssessment, askMomiCombined
 const KIND_KO = {
   posture: '자세·체형', rom: 'ROM', jump: '점프', gait: '보행·러닝',
   lifting: '바벨 리프팅(VBT)', stance: '한다리서기', squat: '오버헤드 스쿼트',
+  sprint: '스프린트 & 아질리티', cardio: '심폐지구력',
 };
 const STATUS_KO = { normal: '정상', caution: '주의', risk: '위험' };
 

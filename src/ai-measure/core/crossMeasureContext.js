@@ -14,6 +14,7 @@ const OUTPUT_POLICY = Object.freeze({
   stance: 'video',
   squat: 'video',
   sprint: 'video',
+  cardio: 'report',
 });
 
 const KIND_KO = Object.freeze({
@@ -26,6 +27,7 @@ const KIND_KO = Object.freeze({
   sprint: '스프린트 & 아질리티',
   daily: '오늘의 컨디션',
   lifting: '바벨 리프팅(VBT)',
+  cardio: '심폐지구력',
   body: '신체 정보',
 });
 
@@ -113,6 +115,13 @@ export function buildProblemFocus(kind, report = {}) {
     if (biomech.trunkLeanChange != null && biomech.trunkLeanChange > 20) addIssue('caution', `착지 시 상체 기울기 변화가 큽니다(${biomech.trunkLeanChange}도).`);
     if (biomech.pelvicImbalance != null && biomech.pelvicImbalance > 7) addIssue('caution', `착지 골반 불균형이 큽니다(${biomech.pelvicImbalance}%).`);
     // [2026-10] 착지 대칭(두 발 위치 차이 기반 자체 점수)은 검증된 기준이 없어 주의 판정에서 뺐다.
+    // [참고 지표 연결 2026-11-24] 등급이 없는 참고값은 위험/주의로 올리지 않고 사실만 옮긴다(힘판 실측이 아님).
+    if (report.eur != null && Number.isFinite(Number(report.eur))) addStrength(`반동 활용 비율(EUR) ${report.eur} — 같은 날 반동점프÷스쿼트점프 높이 참고값입니다.`);
+    if (report.comTakeoff?.confidence === 'low') addIssue('normal', '영상 이륙 속도 참고값은 신뢰가 낮습니다(체공 시간 값과 차이가 크거나 프레임이 낮음) — 체공 시간 기준 값을 우선 보세요.');
+    if (report.bosco) {
+      if (report.bosco.complete === false) addIssue('caution', '연속점프가 60초를 채우지 못해 연속점프 파워를 계산하지 않았습니다.');
+      else if (report.bosco.powerWPerKg != null) addStrength(`연속점프 60초 파워 ${report.bosco.powerWPerKg} W/kg(${report.bosco.jumps}회)${report.bosco.percentile != null ? `, 교재 규준 ${report.bosco.percentile}백분위 구간` : ''} — 영상 체공 시간 기반 참고값입니다.`);
+    }
     if (!issues.length && report.valid !== false) addStrength('점프 높이와 착지 기술 지표가 큰 위험 신호 없이 측정되었습니다.');
   } else if (kind === 'gait') {
     const m = report.metrics || report || {};
@@ -190,6 +199,7 @@ export function buildProblemFocus(kind, report = {}) {
       if (report.splits?.['10m']) {
         addStrength(`10m 구간기록 ${(report.splits['10m'] / 1000).toFixed(2)}초.`);
       }
+      if (report.horizontalPower?.p10 != null) addStrength(`수평 파워(0~10m) ${report.horizontalPower.p10} kg·m/s${report.horizontalPower.p5 != null ? `, 0~5m ${report.horizontalPower.p5}` : ''} — 체중×거리÷시간 교재 공식 참고값입니다.`);
       if (!issues.length) addStrength('스프린트 지표에서 큰 위험 신호가 없습니다.');
     }
   } else if (kind === 'lifting') {
@@ -209,6 +219,20 @@ export function buildProblemFocus(kind, report = {}) {
       });
       if (!issues.length) addStrength('바벨 리프팅(VBT) 지표에서 큰 문제 신호가 없습니다.');
     }
+    // [역도 구간·각도 연결 2026-11-24] 스내치·클린&저크 구간 분석(참고값) — 판정하지 않고 사실과 신뢰만 옮긴다.
+    const oly = report.oly || report.metadata?.oly;
+    if (oly?.kind === 'olympic') {
+      if (oly.confidence?.level === 'low') addIssue('normal', `동작 구간·자세 각도는 신뢰가 낮습니다(${(oly.confidence.reasons || []).join(', ') || '촬영 조건'}) — 측면에서 다시 촬영하면 더 믿을 수 있습니다.`);
+      const l0 = oly.lifts?.[0];
+      if (l0?.peakVelocity != null) addStrength(`${l0.name} 바 최고속도 ${l0.peakVelocity} m/s${l0.catchDepthCm != null ? `, 캐치 깊이 ${l0.catchDepthCm}cm` : ''} — 구간 분석 참고값입니다.`);
+    }
+  } else if (kind === 'cardio') {
+    // [심폐지구력 연결 2026-11-24] 추정값이라 정상/위험 판정을 하지 않는다 — 값과 회복 정보만 옮긴다.
+    const est = report.estimates?.vo2max;
+    const shown = Number.isFinite(report.confirmedVo2max) ? report.confirmedVo2max : (est?.calibratedValue ?? est?.value);
+    if (Number.isFinite(shown)) addStrength(`VO2max ${Number.isFinite(report.confirmedVo2max) ? '(확인값)' : '(추정 참고값)'} ${shown} mL/kg/min.`);
+    if (Number.isFinite(report.recovery?.drop60)) addStrength(`운동 후 1분 심박 회복 ${report.recovery.drop60}bpm.`);
+    if (!Number.isFinite(shown) && !Number.isFinite(report.recovery?.drop60)) addIssue('caution', '심폐지구력 측정에서 추정값을 얻지 못했습니다 — 입력값을 확인하고 다시 측정해 주세요.');
   } else if (kind === 'daily') {
     // [모미 신규] 컨디션 체크인(conditionAssessment.js evaluateCondition() 결과)을 해석한다.
     // report.valid===false: 오늘 체크인이 아직 없음. 그 외엔 painNrs/fatigue 순으로 확인해
