@@ -1,5 +1,6 @@
 // 2026-11-24 시니어 기능 테스트(30초 의자·5회 의자·TUG) — 규준·무효·저장 레코드·자동 카운터·종합분석 분류
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
 import {
   chair30Cutoff, sts5Cutoff, evaluateSeniorTest, seniorPrecheck, buildSeniorRecord, seniorChange, seniorHistoryMetrics,
 } from '../ai-measure/core/seniorTests';
@@ -131,5 +132,23 @@ describe('종합분석 분류·등록', () => {
   it('음성 키워드', () => {
     expect(matchRuleBasedSubKind('ai_measure', '시니어 테스트 열어줘')).toBe('senior');
     expect(matchRuleBasedSubKind('ai_measure', '의자 일어서기 측정')).toBe('senior');
+  });
+});
+
+describe('2026-11-25 시니어 카메라 화면·컨디션 버튼', () => {
+  const read = (p) => readFileSync(p, 'utf8');
+  it('자동 카운트는 기존 방식과 같은 CameraStage 전체화면 + 스켈레톤 토글을 쓴다', () => {
+    const src = read('src/ai-measure/menus/SeniorTestMeasure.jsx');
+    expect(src).toContain("import CameraStage from './CameraStage.jsx'");
+    expect(src).toContain('showSkeletonToggle');
+    expect(src).toContain('isSkeletonEnabled');
+    expect(src).toContain('senior-track-status');
+    expect(src).not.toContain('senior-preview-video');
+  });
+  it('신체정보 피로도·통증 NRS 도 PRS 처럼 버튼으로 고른다', () => {
+    const src = read('src/ai-measure/menus/BodyInfoMeasure.jsx');
+    expect(src).toContain('data-testid={`fatigue-${n}`}');
+    expect(src).toContain('data-testid={`pain-${n}`}');
+    expect(src).not.toContain('placeholder="1~5"');
   });
 });
