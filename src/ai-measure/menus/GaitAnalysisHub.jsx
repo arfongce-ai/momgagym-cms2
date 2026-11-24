@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useEffect } from 'react';
+import { sameSubtype } from '../core/measureSubtype';
 import { pickPreviousReport } from '../core/measurementComparison';
 import { useHardwareBack } from '../core/useHardwareBack';
 import GaitRunningAnalysis from './GaitRunningAnalysis';
@@ -43,7 +44,8 @@ export default function GaitAnalysisHub({ member, onBack, saveToFirebase, onSave
       try {
         const list = await aiStore.ensureGaitReports(member.id);
         if (cancelled) return;
-        setPreviousReport(pickPreviousReport(list, report, { match: (r) => (r.kind || 'gait') === 'gait' }));
+        // [세부 테스트별 2026-11-24] 걷기/달리기·촬영 방향이 같은 기록끼리만 비교한다.
+        setPreviousReport(pickPreviousReport(list, report, { match: (r) => (r.kind || 'gait') === 'gait' && sameSubtype('gait', r, report) }));
       } catch (e) {
         if (!cancelled) setPreviousReport(null);
       }

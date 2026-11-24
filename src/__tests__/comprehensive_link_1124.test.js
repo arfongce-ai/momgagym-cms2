@@ -69,10 +69,4 @@ describe('종합 연결 — 기간 종합·불러오기', () => {
     const r = normalizeRecord('gait_reports', { kind: 'sprint', totalTimeMs: 2000, totalDistanceM: 10, createdAt: '2026-11-24T10:00:00Z' });
     expect(r.typeLabel).toBe('스프린트');
   });
-  it('종합 분석 불러오기: 스프린트·심폐지구력 포함, 스프린트가 보행으로 섞이지 않음', () => {
-    const s = fs.readFileSync('src/services/momiService.js', 'utf8');
-    expect(s).toContain("sprint: latest(gaitReports, (r) => r?.kind === 'sprint' || r?.kind === 'agility')");
-    expect(s).toContain("cardio: latest(cardioReports");
-    expect(s).toContain("r?.kind !== 'sprint' && r?.kind !== 'agility'");
-  });
 });

@@ -12,6 +12,7 @@
 //    사용자가 화면에서 확인 후 수행한다(측정 정직성 — 자동 삭제 금지).
 // ════════════════════════════════════════════════════════════════════════
 import { buildSummaryData } from './unifiedReport';
+import { subtypeOf } from './measureSubtype';
 import { toYMD, todayYMD } from '../../utils/dates';
 
 // ── 측정 유형 라벨(표시용) ─────────────────────────────────
@@ -143,12 +144,17 @@ export function normalizeRecord(source, raw) {
   keyMetrics = keyMetrics.filter(k => k && k.label != null && Number.isFinite(Number(k.value)))
     .map(k => ({ label: String(k.label), value: Number(k.value), unit: k.unit || '' }));
 
+  // [세부 테스트별 2026-11-24] 같은 유형 안의 세부 테스트(1RM 벤치·VBT 스내치, CMJ·SJ, 관절별 ROM 등)를 구분한다.
+  const sub = subtypeOf(summary.reportType || 'general', flat);
+  const baseLabel = REPORT_TYPE_LABEL[summary.reportType] || REPORT_TYPE_LABEL.general;
   return {
     id: raw?.id || null,
-    source,                                   // 'ai' | 'gait_reports' | 'posture_reports' | 'rom_reports'
+    source,
+    subtypeKey: sub.key,
+    subtypeLabel: sub.label,                                   // 'ai' | 'gait_reports' | 'posture_reports' | 'rom_reports'
     sourceLabel: SOURCE_LABEL[source] || source,
     reportType: summary.reportType || 'general',
-    typeLabel: REPORT_TYPE_LABEL[summary.reportType] || REPORT_TYPE_LABEL.general,
+    typeLabel: sub.label ? `${baseLabel} · ${sub.label}` : baseLabel,
     title: raw?.menuTitle || summary.title || '',
     measuredAt,
     dateYMD,
@@ -214,8 +220,9 @@ function numStats(values) {
 export function buildPeriodStats(records = []) {
   const byType = {};
   const statusCounts = {};
+  // 세부 테스트가 다르면 다른 묶음 — 벤치 1RM 과 스쿼트 1RM 값이 한 평균·추이에 섞이지 않게.
   records.forEach(r => {
-    (byType[r.reportType] ||= []).push(r);
+    (byType[r.subtypeKey ? `${r.reportType}|${r.subtypeKey}` : r.reportType] ||= []).push(r);
     statusCounts[r.statusKey] = (statusCounts[r.statusKey] || 0) + 1;
   });
 
@@ -232,7 +239,9 @@ export function buildPeriodStats(records = []) {
 
     return {
       type,
-      typeLabel: REPORT_TYPE_LABEL[type] || type,
+      reportType: list[0]?.reportType || type,
+      subtypeKey: list[0]?.subtypeKey || '',
+      typeLabel: list[0]?.typeLabel || REPORT_TYPE_LABEL[type] || type,
       count: list.length,
       score: numStats(list.map(r => r.score)),
       metrics,

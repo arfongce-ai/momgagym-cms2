@@ -9,10 +9,11 @@
 // ════════════════════════════════════════════════════════════════════════
 import React, { useState, useEffect } from 'react';
 import { loadLatestReportsByKind, buildMemberCombinedAssessment, askMomiCombined } from '../../services/momiService';
+import { subtypeOf, kindOfEntryKey } from '../../ai-measure/core/measureSubtype';
 
 const KIND_KO = {
   posture: '자세·체형', rom: 'ROM', jump: '점프', gait: '보행·러닝',
-  lifting: '바벨 리프팅(VBT)', stance: '한다리서기', squat: '오버헤드 스쿼트',
+  lifting: '바벨 리프팅', stance: '한다리서기', squat: '오버헤드 스쿼트',
   sprint: '스프린트 & 아질리티', cardio: '심폐지구력',
 };
 const STATUS_KO = { normal: '정상', caution: '주의', risk: '위험' };
@@ -69,7 +70,13 @@ export default function CombinedAssessmentPanel({ member, recommendation, onStar
     }
   };
 
-  const availableKinds = Object.keys(available);
+  // [세부 테스트별 2026-11-24] 키는 'kind' 또는 'kind|세부키' — 세부 테스트마다 따로 고르고 따로 평가한다.
+  const availableKinds = Object.keys(available).sort();
+  const entryLabel = (key) => {
+    const kind = kindOfEntryKey(key);
+    const sub = subtypeOf(kind, available[key]).label;
+    return sub ? `${KIND_KO[kind] || kind} · ${sub}` : (KIND_KO[kind] || kind);
+  };
 
   return (
     <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 space-y-4">
@@ -99,7 +106,7 @@ export default function CombinedAssessmentPanel({ member, recommendation, onStar
                     ? 'bg-amber-500 border-amber-500 text-slate-950'
                     : 'bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-500 dark:text-slate-400'}`}
               >
-                {selected.has(kind) ? '✓ ' : ''}{KIND_KO[kind] || kind}
+                {selected.has(kind) ? '✓ ' : ''}{entryLabel(kind)}
               </button>
             ))}
           </div>
@@ -123,8 +130,20 @@ export default function CombinedAssessmentPanel({ member, recommendation, onStar
             <p className="text-[11px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400">종합 평가</p>
             <p className="text-slate-900 dark:text-white font-black text-lg">{STATUS_KO[result.severity] || result.severity}</p>
             <p className="text-slate-600 dark:text-slate-300 text-sm mt-1">{result.evaluation.text}</p>
-            <p className="text-[10px] text-slate-500 mt-1">신뢰도 {result.coverageScore}점 ({result.combinedKinds.length}개 측정 결합)</p>
+            <p className="text-[10px] text-slate-500 mt-1">신뢰도 {result.coverageScore}점 ({result.combinedItems?.length ?? result.combinedKinds.length}개 테스트 결합)</p>
           </div>
+
+          {result.combinedItems?.length > 0 && (
+            <div className="space-y-1" data-testid="combined-per-test">
+              <p className="text-xs font-black text-slate-600 dark:text-slate-300">테스트별 평가</p>
+              {result.combinedItems.map((it, i) => (
+                <div key={i} className="flex items-start gap-2 text-sm">
+                  <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-black ${it.severity === 'risk' ? 'bg-red-500/15 text-red-700 dark:text-red-300' : it.severity === 'caution' ? 'bg-amber-500/15 text-amber-700 dark:text-amber-300' : 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'}`}>{STATUS_KO[it.severity] || it.severity}</span>
+                  <span className="text-slate-700 dark:text-slate-200"><b>{it.label}</b> — {it.primaryFinding}</span>
+                </div>
+              ))}
+            </div>
+          )}
 
           {result.issues.length > 0 && (
             <div className="space-y-1.5">

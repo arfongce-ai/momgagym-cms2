@@ -5,6 +5,7 @@
 import { cadenceRangeFor, classifyGaitMode } from './gaitMode';
 import { ROM_SYMMETRY_CAUTION_MAX_PCT } from './romThresholds';
 import { generateLiftingDiagnosis } from './barbellClinical';
+import { subtypeOf, latestPerSubtype } from './measureSubtype';
 
 const OUTPUT_POLICY = Object.freeze({
   posture: 'photo',
@@ -26,7 +27,7 @@ const KIND_KO = Object.freeze({
   squat: '오버헤드 스쿼트',
   sprint: '스프린트 & 아질리티',
   daily: '오늘의 컨디션',
-  lifting: '바벨 리프팅(VBT)',
+  lifting: '바벨 리프팅',
   cardio: '심폐지구력',
   body: '신체 정보',
 });
@@ -290,14 +291,21 @@ export function buildCrossMeasureIntegration({
 
   const jumpReports = gaitReports.filter((item) => item?.kind === 'jump');
   const runningReports = gaitReports.filter((item) => item?.kind === 'gait' || item?.metrics || item?.cadence);
+  // [세부 테스트별 2026-11-24] 종류별 최신 1건만 쓰면 같은 측정 안의 다른 세부 테스트
+  //  (예: 1RM 벤치 vs VBT 스내치, CMJ vs SJ, 관절별 ROM)가 사라진다 → 세부 테스트별 최신 1건씩.
+  //  현재 측정과 같은 종류라도 세부 테스트가 다르면 참고 자료로 넣는다(같은 세부 테스트만 제외).
+  const curSub = subtypeOf(kind, report).key;
+  const group = (k, list, relation) => latestPerSubtype(k, list)
+    .filter((r) => !(k === kind && subtypeOf(k, r).key === curSub))
+    .map((r) => sourceOf(k, r, relation));
   const sources = [
-    kind !== 'posture' && sourceOf('posture', latestReport(postureReports), '정적 정렬과 보상 패턴을 기준점으로 사용'),
-    kind !== 'rom' && sourceOf('rom', latestReport(romReports), '관절별 제한과 좌우차를 원인 후보로 사용'),
-    kind !== 'jump' && sourceOf('jump', latestReport(jumpReports), '착지 대칭성과 파워 생산을 기능 검증으로 사용'),
-    kind !== 'gait' && sourceOf('gait', latestReport(runningReports), '반복 동작 패턴으로 정적 결과를 재검증'),
-    kind !== 'lifting' && sourceOf('lifting', latestReport(liftingReports), '근력·운동 속도 데이터를 기능적 배경으로 사용'),
-    kind !== 'stance' && sourceOf('stance', latestReport(stanceReports), '좌우 균형 능력을 안정성 배경으로 사용'),
-    kind !== 'squat' && sourceOf('squat', latestReport(squatReports), '동적 정렬·보상 패턴을 기능 검증으로 사용'),
+    ...group('posture', postureReports, '정적 정렬과 보상 패턴을 기준점으로 사용'),
+    ...group('rom', romReports, '관절별 제한과 좌우차를 원인 후보로 사용'),
+    ...group('jump', jumpReports, '착지 대칭성과 파워 생산을 기능 검증으로 사용'),
+    ...group('gait', runningReports, '반복 동작 패턴으로 정적 결과를 재검증'),
+    ...group('lifting', liftingReports, '근력·운동 속도 데이터를 기능적 배경으로 사용'),
+    ...group('stance', stanceReports, '좌우 균형 능력을 안정성 배경으로 사용'),
+    ...group('squat', squatReports, '동적 정렬·보상 패턴을 기능 검증으로 사용'),
   ].filter(Boolean);
 
   const problemFocus = buildProblemFocus(kind, report);
@@ -368,11 +376,17 @@ export function buildCombinedAssessment(items = []) {
   const valid = (items || []).filter((it) => it?.kind && it?.report);
   if (!valid.length) return null;
 
-  const perKind = valid.map(({ kind, report }) => ({
-    kind,
-    label: KIND_KO[kind] || kind,
-    focus: buildProblemFocus(kind, report),
-  }));
+  // [세부 테스트별 2026-11-24] 같은 종류의 세부 테스트(예: 1RM 벤치·VBT 스내치)를 각각 따로 평가하고
+  //  라벨에 세부 테스트 이름을 붙여 종합 해설에서도 구분되게 한다.
+  const perKind = valid.map(({ kind, report, label }) => {
+    const sub = label || subtypeOf(kind, report).label;
+    return {
+      kind,
+      subtypeKey: subtypeOf(kind, report).key,
+      label: sub ? `${KIND_KO[kind] || kind} · ${sub}` : (KIND_KO[kind] || kind),
+      focus: buildProblemFocus(kind, report),
+    };
+  });
 
   const severity = perKind.reduce((acc, p) => worseSeverity(acc, p.focus.severity), 'normal');
   const severityRank = { normal: 0, caution: 1, risk: 2 };
@@ -391,13 +405,14 @@ export function buildCombinedAssessment(items = []) {
   const coverageScore = Math.round(Math.min(95, 45 + valid.length * 5 + (evidenceQuality / valid.length) * 20));
 
   const evaluationText = severity === 'risk'
-    ? `${valid.length}개 측정(${perKind.map((p) => p.label).join('·')})을 종합했을 때 우선 확인이 필요한 위험 신호가 있습니다.`
+    ? `${valid.length}개 측정(${perKind.map((p) => p.label).join(', ')})을 종합했을 때 우선 확인이 필요한 위험 신호가 있습니다.`
     : severity === 'caution'
-      ? `${valid.length}개 측정(${perKind.map((p) => p.label).join('·')})을 종합했을 때 주의가 필요한 패턴이 있습니다.`
-      : `${valid.length}개 측정(${perKind.map((p) => p.label).join('·')})을 종합한 결과 큰 위험 신호는 확인되지 않았습니다.`;
+      ? `${valid.length}개 측정(${perKind.map((p) => p.label).join(', ')})을 종합했을 때 주의가 필요한 패턴이 있습니다.`
+      : `${valid.length}개 측정(${perKind.map((p) => p.label).join(', ')})을 종합한 결과 큰 위험 신호는 확인되지 않았습니다.`;
 
   return {
-    combinedKinds: valid.map((v) => v.kind),
+    combinedKinds: unique(valid.map((v) => v.kind)),
+    combinedItems: perKind.map((p) => ({ kind: p.kind, subtypeKey: p.subtypeKey, label: p.label, severity: p.focus.severity, primaryFinding: p.focus.primaryFinding })),
     generatedAt: new Date().toISOString(),
     coverageScore,
     coverageLevel: confidenceLevel(coverageScore),
@@ -412,21 +427,15 @@ export function buildCombinedAssessment(items = []) {
   };
 }
 
-function latestReport(list) {
-  return [...(list || [])].filter(Boolean).sort((a, b) => {
-    const ad = Date.parse(a.createdAt || a.measuredAt || a.recordedAt || 0) || 0;
-    const bd = Date.parse(b.createdAt || b.measuredAt || b.recordedAt || 0) || 0;
-    return bd - ad;
-  })[0] || null;
-}
-
 function sourceOf(kind, report, relation) {
   if (!report) return null;
   const createdAt = reportDate(report);
   const focus = buildProblemFocus(kind, report);
+  const sub = subtypeOf(kind, report);
   return {
     kind,
-    label: KIND_KO[kind] || kind,
+    subtypeKey: sub.key,
+    label: sub.label ? `${KIND_KO[kind] || kind} · ${sub.label}` : (KIND_KO[kind] || kind),
     id: report.id || report.reportId || '',
     createdAt,
     relation,
