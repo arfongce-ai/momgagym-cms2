@@ -51,6 +51,11 @@
 - 한계: 바 위치는 양 손목 중점 근사. 합성 데이터 테스트만 했고 **실제 영상 검증 안 함**(구간 기준값은 시작값). 업로드(고속영상) 모드(`LiftingUploadAnalysis`)에는 아직 미적용. 실기기 확인 못 함.
 - 테스트: 3787/3788(실패 1개는 기존 `momi_voice.test.js:119`), 빌드 통과.
 
+### 2026-11-24 · Claude Code · 8번 바벨 리프팅 1RM에 교재 RM 테스트 적용 (브랜치 feat/1rm-textbook-rm-test-1124)
+- 교재(Haff & Dumke 실험 11.6·11.7) 반영: `strength.js`에 `rmTestPlan`(테스트 세트=1RM 87%, 준비 3세트=50/70/90%×6회, 3분 휴식)·`rmNextStep`(10회 이내 종료, 초과 시 2.5~5% 증량), 화면 `RmTestGuide`(접이식)·결과 아래 다음 행동 안내.
+- 식 비교: 기존 Epley·Brzycki·Adams·Brown·Mayhew·O'Conner·Reynolds에 Berger·Cummings&Finn을 `refOnly`(참고·평균 제외)로 추가 → 저장되는 평균 1RM은 기존과 동일.
+- 교재 인쇄 불일치: Brown 기록지 9.849(→본문 0.9849, 기존 코드 그대로), Cummings&Finn 본문엔 1.175 계수 없음·기록지엔 있음(기록지 사용), Berger 표기대로면 10회 미만에서 든 무게보다 작아 '제외'(원문 확인 못 함). 실기기 확인 못 함.
+
 ### 2026-11-23 · Claude Code · 11번 준비 화면 실내용/필드용 탭 분리 (브랜치 feat/cardio-indoor-field-tabs-1123)
 - 준비 화면 맨 위에 [실내용|필드용] 탭. 실내용=장비 5종+테스트, 필드용=장비 선택 없이 필드 테스트만. 메뉴 번호는 그대로. 실기기 확인 못 함.
 

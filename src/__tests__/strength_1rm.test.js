@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { estimate1RM, RM_FORMULAS, workingWeight, repPercent } from '../ai-measure/core/strength.js';
+import { estimate1RM, RM_FORMULAS, workingWeight, repPercent, rmTestPlan, rmNextStep } from '../ai-measure/core/strength.js';
 
 describe('estimate1RM · 7공식 평균', () => {
   it('1회는 든 무게가 곧 1RM', () => {
@@ -13,7 +13,7 @@ describe('estimate1RM · 7공식 평균', () => {
     expect(r.average).toBeGreaterThan(100);
     // 모든 공식이 물리적으로 유효(>= w)해야 평균에 포함
     expect(r.formulas.every(f => f.value == null || f.value >= 100)).toBe(true);
-    expect(r.formulas.filter(f => f.value != null).length).toBe(RM_FORMULAS.length);
+    expect(r.formulas.filter(f => f.value != null && !f.refOnly).length).toBe(RM_FORMULAS.filter(f => !f.refOnly).length);
   });
 
   it('Brzycki 정의역 밖(r≥37)은 평균에서 제외되어 왜곡 없음', () => {
@@ -37,5 +37,33 @@ describe('estimate1RM · 7공식 평균', () => {
   it('workingWeight: 2.5kg 단위 반올림', () => {
     expect(workingWeight(100, 80)).toBe(80);    // 80.0 → 80
     expect(workingWeight(102, 80)).toBe(82.5);  // 81.6 → 82.5
+  });
+});
+
+describe('교재 RM 테스트 계획·참고식(2026-11-24)', () => {
+  it('계획: 테스트 세트 87%, 준비 50/70/90% × 6회, 3분 휴식', () => {
+    const p = rmTestPlan(100);
+    expect(p.testKg).toBe(87.5);
+    expect(p.sets.map(s => s.pct)).toEqual([50, 70, 90, 87]);
+    expect(p.sets.slice(0, 3).every(s => s.reps === 6 && s.restSec === 180)).toBe(true);
+    expect(p.sets[0].kg).toBe(45);
+    expect(rmTestPlan(0)).toBeNull();
+  });
+  it('다음 행동: 10회 이내 종료, 초과 시 2.5~5% 증량', () => {
+    expect(rmNextStep(87.5, 8).done).toBe(true);
+    expect(rmNextStep(87.5, 10).done).toBe(true);
+    const n = rmNextStep(100, 12);
+    expect(n.done).toBe(false);
+    expect(n.lowKg).toBe(102.5);
+    expect(n.highKg).toBe(105);
+  });
+  it('Berger·Cummings&Finn은 참고만(평균에서 제외)하고 평균은 기존과 같다', () => {
+    const r = estimate1RM(100, 5);
+    const cf = r.formulas.find(f => f.key === 'cummings');
+    expect(cf.refOnly).toBe(true);
+    expect(cf.value).toBeCloseTo(1.175 * 100 + 0.839 * 5 - 4.29787, 1);
+    expect(r.formulas.find(f => f.key === 'berger').value).toBeNull(); // 교재 표기대로면 든 무게보다 작아 제외
+    const usedAvg = r.formulas.filter(f => f.value != null && !f.refOnly).reduce((s, f) => s + f.value, 0) / r.formulas.filter(f => f.value != null && !f.refOnly).length;
+    expect(r.average).toBeCloseTo(usedAvg, 0);
   });
 });

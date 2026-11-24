@@ -7,7 +7,7 @@
 //      · 인식이 안 되면 그냥 직접 입력으로 진행(폴백).
 //  - 1RM = Epley·Brzycki 등 검증된 공식 평균.
 import { useRef, useState, useEffect, useCallback } from 'react';
-import { estimate1RM, LIFTS } from '../core/strength';
+import { estimate1RM, LIFTS, rmTestPlan, rmNextStep } from '../core/strength';
 import {
   IWF_PLATES, BAR_WEIGHTS, detectPlatesFromVideo,
   suggestSidePlates, totalWeight,
@@ -40,6 +40,38 @@ const WEIGHT_MODES = [
 ];
 
 const MAX_RECORDING_MS = 60000;
+
+// 교재 반복최대(RM) 테스트 순서 — 1RM(실측 또는 추정)을 넣으면 준비 3세트+테스트 세트 무게를 계산해 준다.
+function RmTestGuide({ defaultOneRm }) {
+  const [base, setBase] = useState('');
+  const plan = rmTestPlan(Number(base) || defaultOneRm || 0);
+  return (
+    <details className="rounded-xl bg-slate-100 dark:bg-slate-800 p-3" data-testid="rm-test-guide">
+      <summary className="cursor-pointer text-xs font-bold text-slate-700 dark:text-slate-200">📋 교재 RM 테스트 순서 (1RM의 87%로 10회 이내)</summary>
+      <div className="mt-2 space-y-2">
+        <label className="block text-[11px] font-bold text-slate-500 dark:text-slate-400">알고 있는 1RM(kg) — 실측값이나 이전 추정값
+          <input inputMode="decimal" value={base} onChange={(e) => setBase(e.target.value.replace(/[^\d.]/g, '').slice(0, 6))} placeholder={defaultOneRm ? String(defaultOneRm) : '예: 100'} className="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-2 py-1.5 text-sm text-slate-800 dark:text-slate-100" data-testid="rm-guide-input" />
+        </label>
+        {plan ? (
+          <table className="w-full text-[12px]" data-testid="rm-guide-table">
+            <thead><tr className="text-left text-slate-500"><th className="py-1">세트</th><th>무게</th><th>횟수</th><th>휴식</th></tr></thead>
+            <tbody>
+              {plan.sets.map((st) => (
+                <tr key={st.key} className="border-t border-slate-200 dark:border-slate-700">
+                  <td className="py-1 font-bold">{st.label}</td>
+                  <td className="font-mono">{st.kg}kg <span className="text-[10px] text-slate-500">({st.pct}%)</span></td>
+                  <td>{st.reps ? `${st.reps}회` : '최대한(실패까지)'}</td>
+                  <td>3분</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : <p className="text-[11px] text-slate-500">1RM을 넣으면 세트별 무게가 나옵니다.</p>}
+        <p className="text-[10px] text-slate-500 dark:text-slate-400">준비 세트는 테스트 세트 무게의 50·70·90%입니다. 테스트 세트가 10회 이내면 끝, 10회를 넘으면 3분 쉬고 2.5~5% 올려 다시 합니다. 10회 이내 기록일수록 예측이 정확합니다.</p>
+      </div>
+    </details>
+  );
+}
 
 export default function OneRMEstimate({ member, onSave, onBack, exerciseType, embedded = false, autoStartSignal = 0, topOffset = 0 }) {
   // 허브 종목(exerciseType, 예 'bench_press') → 내부 lift 키('bench') 매핑.
@@ -783,6 +815,8 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
         </button>
       </div>
 
+      <RmTestGuide defaultOneRm={result?.average || null} />
+
       <button onClick={calc}
         className="w-full h-14 rounded-2xl bg-gradient-to-r from-amber-400 to-orange-500 text-slate-950 font-black text-base active:scale-[0.98] shadow-xl shadow-amber-500/25">
         1RM 계산 →
@@ -825,7 +859,8 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
               <p className="text-xs font-black text-slate-500 mt-1">kg</p>
             </div>
           </div>
-          <p className="text-center text-[10px] text-slate-500">검증된 {result.formulas.filter(f => f.value != null).length}개 공식 평균</p>
+          <p className="text-center text-[10px] text-slate-500">검증된 {result.formulas.filter(f => f.value != null && !f.refOnly).length}개 공식 평균</p>
+          {(() => { const n = rmNextStep(result.usedWeight, result.usedReps); return n ? <p className={`text-center text-[11px] font-bold ${n.done ? 'text-emerald-700 dark:text-emerald-400' : 'text-amber-700 dark:text-amber-400'}`} data-testid="rm-next-step">{n.note}{!n.done ? ` (${n.lowKg}~${n.highKg}kg)` : ''}</p> : null; })()}
           {result.stats && (
             <div className="grid grid-cols-3 gap-2 text-center">
               <div className="rounded-xl bg-slate-100 dark:bg-slate-800 p-2">
@@ -868,7 +903,7 @@ export default function OneRMEstimate({ member, onSave, onBack, exerciseType, em
             <div className="grid grid-cols-2 gap-1.5 text-center text-[11px]">
               {result.formulas.map(f => (
                 <div key={f.key} className="flex justify-between bg-white dark:bg-slate-900/60 rounded px-2 py-1">
-                  <span className="text-slate-500">{f.label}</span>
+                  <span className="text-slate-500">{f.label}{f.refOnly ? <span className="ml-1 text-[9px] text-slate-400">(참고·평균 제외)</span> : null}</span>
                   <span className="font-mono font-bold text-slate-700 dark:text-slate-200">
                     {f.value != null ? f.value : <span className="text-slate-600">제외</span>}
                   </span>
