@@ -45,6 +45,12 @@
 
 ## 작업 로그
 
+### 2026-11-24 · Claude Code · VBT 바 궤적선 + 스내치·클린&저크 구간/자세 각도 (브랜치 feat/vbt-trail-olylift-1124)
+- 1) `VbtMeasure.jsx`: 측정 중 화면과 녹화 영상에 바 궤적 잔상(`drawFadingBarPath`) 표시, [✨ 궤적] 토글. 표시 전용 raw 궤적(`trailRef`)을 따로 둠 — 판정·속도 계산은 그대로.
+- 3) `core/olyLiftAnalysis.js`(순수 함수): 스내치/클린은 출발→무릎 통과→최고속도→캐치, 클린&저크는 랙 정지로 클린/저크 분리. 시점별 무릎·고관절·몸통 기울기 각도(좌/우 중 인식 좋은 쪽, 2D). 판정하지 않고 참고값+신뢰도(정면 촬영·인식 낮음·저fps·구간 분리 실패 이유 표시). `components/report/OlyLiftSection.jsx`로 리포트 표시, `report.oly`로 저장(`BarbellLiftingHub.jsx` extra).
+- 한계: 바 위치는 양 손목 중점 근사. 합성 데이터 테스트만 했고 **실제 영상 검증 안 함**(구간 기준값은 시작값). 업로드(고속영상) 모드(`LiftingUploadAnalysis`)에는 아직 미적용. 실기기 확인 못 함.
+- 테스트: 3787/3788(실패 1개는 기존 `momi_voice.test.js:119`), 빌드 통과.
+
 ### 2026-11-23 · Claude Code · 11번 준비 화면 실내용/필드용 탭 분리 (브랜치 feat/cardio-indoor-field-tabs-1123)
 - 준비 화면 맨 위에 [실내용|필드용] 탭. 실내용=장비 5종+테스트, 필드용=장비 선택 없이 필드 테스트만. 메뉴 번호는 그대로. 실기기 확인 못 함.
 

@@ -13,8 +13,9 @@ import {
 } from '../core/plates';
 import { exerciseLabel as exerciseLabelLocal, snapWeight, stepWeight } from '../core/lifting';
 import { pickRecorderMime } from '../core/recordSink';
-import { drawLiftingDataHud } from '../core/recordingOverlay';
-import { DEFAULT_ASPECT, outputSize, aspectLabel, drawVideoCover, rotateLandmarksNormalized } from '../core/recordAspect';
+import { drawLiftingDataHud, drawFadingBarPath } from '../core/recordingOverlay';
+import { isOlyType, analyzeOlyLift, pickSideJoints, betterSide, frontalRatio } from '../core/olyLiftAnalysis';
+import { DEFAULT_ASPECT, outputSize, aspectLabel, drawVideoCover, coverMapPath, rotateLandmarksNormalized } from '../core/recordAspect';
 import { useCameraRotation } from '../core/useCameraRotation';
 import { assessFraming, FRAMING_PRESETS, MIN_CAMERA_DISTANCE_MM } from '../core/framingGuide';
 import {
@@ -38,6 +39,15 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
   //  fusedRef        = color/skeleton/plate 세 신호를 매 프레임 융합한 최종 궤적
   //                    (ROM·시간·속도는 전부 이 융합 궤적에서 산출 → 가려져도 안 끊김)
   const fusedRef = useRef(new BarbellAccumulator()); // 실시간 렙 분절·속도·궤적 엔진
+  // [궤적 잔상 2026-11-24] 화면·녹화 영상에 그리는 바 궤적은 카메라 원본(raw) 좌표여야
+  //  coverMapPath(회전 보정 포함)와 라이브 캔버스가 맞는다. fusedRef 는 회전 보정된 좌표라
+  //  표시 전용 raw 궤적을 따로 둔다(판정·속도 계산에는 관여하지 않음).
+  const trailRef = useRef([]);
+  const olySamplesRef = useRef([]);   // 스내치·클린&저크 구간/각도 분석용 프레임 샘플
+  const olySideRef = useRef(null);
+  const olyAspectRef = useRef(1);
+  const trailOnRef = useRef(true);
+  const [trailOn, setTrailOn] = useState(true);
   const phRef = useRef(null);
   const phSamplesRef = useRef([]);
   const phHistoryRef = useRef([]); // 최근 N프레임 원시값 — 실시간 스케일용 중앙값 평활(단일 프레임 튐 방지)
@@ -91,6 +101,9 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
     if (canvas) {
       const ctx = canvas.getContext('2d');
       ctx.clearRect(0, 0, canvas.width, canvas.height);
+      if (trailOnRef.current && recordingRef.current) {
+        drawFadingBarPath(ctx, trailRef.current, canvas.width, canvas.height, ts, { fadeMs: 900, minWidthDivisor: canvas.width / 6 });
+      }
     }
 
     // [2026-08-02] 카메라 원본이 회전된 채로 들어오는 기종(키오스크) 보정 —
@@ -136,6 +149,22 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
 
     if (recordingRef.current) {
       fusedRef.current.push(bar, ts);
+      if (isOlyType(exerciseTypeRef.current)) {
+        // [구간·각도 2026-11-24] 회전 보정된 좌표(lms)로 한쪽 관절을 샘플링한다.
+        const vw = _video?.videoWidth, vh = _video?.videoHeight;
+        const swapped = rotationDeg === 90 || rotationDeg === 270;
+        const aspect = vw && vh ? (swapped ? vh / vw : vw / vh) : 1;
+        olyAspectRef.current = aspect;
+        if (!olySideRef.current) olySideRef.current = betterSide(lms);
+        const j = pickSideJoints(lms, olySideRef.current);
+        if (j) olySamplesRef.current.push({ ts, bar: { x: bar.x, y: bar.y }, j, frontal: frontalRatio(lms, aspect) });
+      }
+      const rawBar = barbellPoint(rawLms);
+      if (rawBar) {
+        const tr = trailRef.current;
+        tr.push({ x: rawBar.x, y: rawBar.y, ts });
+        while (tr.length && ts - tr[0].ts > 1200) tr.shift();
+      }
       frameStatsRef.current.total += 1;
       // 실시간 렙 카운트 + 렙 속도/저하 — 엔진이 프레임마다 갱신.
       const H = Number(heightCm) || null;
@@ -213,6 +242,9 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
   const startCam = useCallback(() => {
     setResult(null);
     fusedRef.current.reset();
+    trailRef.current = [];
+    olySamplesRef.current = [];
+    olySideRef.current = null;
     calibrationPointsRef.current = [];
     setCalibrationPointCount(0);
     setCalibrating(false);
@@ -242,6 +274,11 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
       ctx.fillStyle = '#000';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       drawVideoCover(ctx, video, canvas.width, canvas.height, rotationDeg); // 검은 여백 없이 중앙 크롭(+회전 보정)
+      if (trailOnRef.current && recordingRef.current && trailRef.current.length > 1) {
+        const mapped = coverMapPath(trailRef.current, video, canvas.width, canvas.height, rotationDeg)
+          .map((p, i) => ({ x: p.x, y: p.y, ts: trailRef.current[i]?.ts }));
+        drawFadingBarPath(ctx, mapped, canvas.width, canvas.height, performance.now(), { fadeMs: 900 });
+      }
       const elapsedSec = recordingRef.current ? (performance.now() - recordStartRef.current) / 1000 : null;
       drawLiftingDataHud(ctx, canvas.width, canvas.height, {
         title: 'VBT',
@@ -354,13 +391,16 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
       peakVelocity: sum.peakVelocity,          // 실시간 평활 추정
       peakReason: sum.peakReason,
       barPath: sum.barPath,
+      oly: isOlyType(exerciseType)
+        ? analyzeOlyLift(olySamplesRef.current, { exerciseType, cmPerRatio: scale.cmPerRatio, aspect: olyAspectRef.current })
+        : null,
       consistencyCvPct: sum.consistencyCvPct,
       calibration: serializeDistanceScale(scale),
       calibrationSource: scale.source,
       isCalibrated: scale.isCalibrated,
       lostRatio,
     };
-  }, [heightCm, referenceScale]);
+  }, [heightCm, referenceScale, exerciseType]);
 
   const finishRecord = (autoLimited = false) => {
     if (!recordingRef.current) return;
@@ -389,6 +429,9 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
     if (!recording) {
       runStartCountdown(() => {
         fusedRef.current.reset();
+    trailRef.current = [];
+    olySamplesRef.current = [];
+    olySideRef.current = null;
         phSamplesRef.current = [];
         phHistoryRef.current = [];
         frameStatsRef.current = { total: 0, lost: 0 };
@@ -465,6 +508,7 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
       peakVelocity: result.peakVelocity ?? null,   // 실시간 평활 추정(sg_ok일 때만)
       peakReason: result.peakReason ?? null,
       barPath: result.barPath ?? null,
+      oly: result.oly ?? null,
       consistencyCvPct: result.consistencyCvPct ?? null,
       reps: result.reps ?? null,
       repVelocity: result.repVelocity ?? null,
@@ -542,6 +586,11 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
           disabled={recording || countdown != null}
           className={`h-14 px-3 rounded-2xl text-[11px] font-black active:scale-95 disabled:opacity-50 backdrop-blur ${calibrating ? 'bg-cyan-400 text-slate-950' : 'bg-white/[0.08] border border-white/15 text-white'}`}>
           📐<span className="block text-[9px] mt-0.5">{calibrating ? '보정점' : '거리 보정'}</span>
+        </button>
+        <button
+          onClick={() => { trailOnRef.current = !trailOnRef.current; setTrailOn(trailOnRef.current); }}
+          className={`h-14 px-3 rounded-2xl text-[11px] font-black active:scale-95 backdrop-blur ${trailOn ? 'bg-cyan-400 text-slate-950' : 'bg-white/[0.08] border border-white/15 text-white'}`}>
+          ✨<span className="block text-[9px] mt-0.5">{trailOn ? '궤적 켜짐' : '궤적 꺼짐'}</span>
         </button>
       </div>
     );
