@@ -317,7 +317,7 @@ export default function SeniorTestMeasure({ onBack, member = null, onSave = null
               <label className="flex items-center gap-1"><input type="checkbox" checked={check.painNow} onChange={(e) => setCheck({ ...check, painNow: e.target.checked })} />지금 통증 있음</label>
               <label className="flex items-center gap-1"><input type="checkbox" checked={check.dizzy} onChange={(e) => setCheck({ ...check, dizzy: e.target.checked })} />어지럼 있음</label>
             </div>
-            {!precheck.ok && <p className="mt-2 rounded-lg bg-red-50 p-2 text-xs font-bold text-red-700 dark:bg-red-900/30 dark:text-red-300" data-testid="senior-hold">{precheck.message}</p>}
+            {precheck.message && <p className={`mt-2 rounded-lg p-2 text-xs font-bold ${precheck.ok ? 'bg-amber-50 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300' : 'bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-300'}`} data-testid={precheck.ok ? 'senior-notice' : 'senior-hold'}>{precheck.message}</p>}
             {!subject.age || !subject.sex ? <p className="mt-1 text-[11px] font-semibold text-slate-500">나이·성별이 없으면 값은 저장되지만 평균 비교는 하지 않습니다.</p> : null}
           </div>
 

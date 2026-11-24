@@ -108,20 +108,33 @@ export function sts5Cutoff(age) {
 }
 
 // ── 측정 전 안전 확인 ────────────────────────────────────────────────
-// 혈압 기준(180/110)은 센터 운영용 보수적 기본값이며 공인 규준이 아니다. 트레이너가 판단한다.
-export const BP_HOLD = { systolic: 180, diastolic: 110 };
+// 혈압 기준(출처 확인 2026-11-25)
+//  · 보류: 안정시 수축기 > 200 또는 이완기 > 110 mmHg — ACSM 운동검사 안전 기준(상대적 금기, ACC/AHA 운동부하검사 지침과 동일).
+//    "초과"다(200·110 정확히는 보류 아님). 상대적 금기라 의사 확인 후 이득이 크면 진행할 수 있다는 뜻이다.
+//  · 알림: 수축기 ≥ 180 또는 이완기 ≥ 120 mmHg — Mayo Clinic·MSD 매뉴얼의 '고혈압 위기' 수치.
+//    보류 기준 미만이어도 안내를 띄운다(진행은 트레이너 판단, 의사 상담 권고).
+//  통증·어지럼은 센터 운영 안전 확인이며 공인 수치 기준이 아니다.
+export const BP_HOLD = { systolicOver: 200, diastolicOver: 110 };
+export const BP_NOTICE = { systolicAtLeast: 180, diastolicAtLeast: 120 };
 
 export function seniorPrecheck({ systolic = null, diastolic = null, painNow = false, dizzy = false } = {}) {
   const sys = Number(systolic);
   const dia = Number(diastolic);
+  const hasSys = systolic !== '' && systolic != null && Number.isFinite(sys);
+  const hasDia = diastolic !== '' && diastolic != null && Number.isFinite(dia);
   const reasons = [];
-  if (Number.isFinite(sys) && sys >= BP_HOLD.systolic) reasons.push(`수축기 혈압 ${sys}`);
-  if (Number.isFinite(dia) && dia >= BP_HOLD.diastolic) reasons.push(`이완기 혈압 ${dia}`);
+  if (hasSys && sys > BP_HOLD.systolicOver) reasons.push(`안정시 수축기 혈압 ${sys}(200 초과)`);
+  if (hasDia && dia > BP_HOLD.diastolicOver) reasons.push(`안정시 이완기 혈압 ${dia}(110 초과)`);
   if (painNow) reasons.push('지금 통증이 있음');
   if (dizzy) reasons.push('어지럼이 있음');
-  return reasons.length
-    ? { ok: false, level: 'hold', reasons, message: `측정 보류 권장: ${reasons.join(', ')}. 트레이너가 확인한 뒤 진행하세요.` }
-    : { ok: true, level: 'ok', reasons: [], message: '' };
+  if (reasons.length) {
+    return { ok: false, level: 'hold', reasons, message: `측정 보류 권장: ${reasons.join(', ')}. 트레이너가 확인한 뒤 진행하세요(혈압은 ACSM 운동검사 기준 — 의사 확인 권장).` };
+  }
+  const high = (hasSys && sys >= BP_NOTICE.systolicAtLeast) || (hasDia && dia >= BP_NOTICE.diastolicAtLeast);
+  if (high) {
+    return { ok: true, level: 'notice', reasons: [], message: `혈압이 높은 편입니다(${hasSys ? sys : '-'}/${hasDia ? dia : '-'}). 180/120 이상은 고혈압 위기 수치라 의사 상담을 권하며, 진행은 트레이너가 판단하세요.` };
+  }
+  return { ok: true, level: 'ok', reasons: [], message: '' };
 }
 
 // ── 평가 ─────────────────────────────────────────────────────────────

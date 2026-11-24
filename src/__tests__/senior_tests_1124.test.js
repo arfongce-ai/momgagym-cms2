@@ -44,7 +44,14 @@ describe('시니어 규준', () => {
   });
   it('측정 전 안전 확인(혈압·통증·어지럼)', () => {
     expect(seniorPrecheck({ systolic: 130, diastolic: 80 }).ok).toBe(true);
-    expect(seniorPrecheck({ systolic: 185, diastolic: 80 }).ok).toBe(false);
+    // ACSM 운동검사 기준: 수축기 200 초과 또는 이완기 110 초과일 때만 보류(정확히 200/110은 보류 아님)
+    expect(seniorPrecheck({ systolic: 200, diastolic: 110 }).ok).toBe(true);
+    expect(seniorPrecheck({ systolic: 201, diastolic: 80 }).ok).toBe(false);
+    expect(seniorPrecheck({ systolic: 130, diastolic: 111 }).ok).toBe(false);
+    // 180/120(고혈압 위기 수치) 이상이면 보류는 아니고 알림
+    const n = seniorPrecheck({ systolic: 185, diastolic: 80 });
+    expect(n.ok).toBe(true); expect(n.level).toBe('notice');
+    expect(seniorPrecheck({ systolic: '', diastolic: '' }).level).toBe('ok');
     expect(seniorPrecheck({ dizzy: true }).ok).toBe(false);
   });
   it('직전 대비 변화: 같은 테스트·유효 기록만', () => {
