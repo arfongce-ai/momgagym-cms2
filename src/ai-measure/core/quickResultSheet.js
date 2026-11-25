@@ -119,7 +119,7 @@ export function pickTopItems(items = [], n = 3) {
 // 값이 없는 항목을 조용히 빼면 "데이터가 안 나왔다"로만 보인다. 판정 기준이 있는 핵심 지표가
 // 빠졌으면 이름과 이유를 남겨 다시 찍을 때 무엇을 고칠지 알 수 있게 한다.
 // 스프린트는 테스트 종류(5m/10m/505)마다 나오는 지표가 달라 '빠짐'으로 보지 않는다.
-const MISSING_SKIP_TYPES = new Set(['sprint', 'squat', 'stance', 'cardio', 'senior', 'body', 'general']);
+const MISSING_SKIP_TYPES = new Set(['sprint', 'squat', 'stance', 'cardio', 'senior', 'paps', 'body', 'general']);
 const MISSING_REASON = {
   gait: '발·골반 관절이 충분히 잡히지 않았거나 촬영 방향(측면/후면)이 맞지 않음',
   jump: '골반·무릎이 잡히지 않았거나 정면에서 찍지 않음',
