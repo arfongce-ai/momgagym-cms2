@@ -45,6 +45,10 @@
 
 ## 작업 로그
 
+### 2026-11-25 · Claude Code · 리포트 이력 1RM 종목 분리 (fix/lifting-group-by-exercise-1125)
+- 문제: 리포트 'AI 측정 이력'이 1RM을 종목 구분 없이 한 묶음(`lifting_onerm`)으로 묶어 스쿼트·데드리프트 회차·추이 그래프가 섞임.
+- 수정: `reportService.menuGroupKey`가 `exerciseType`이 있으면 `lifting_onerm:squat`처럼 종목별 그룹 키, 제목은 '1RM · 스쿼트'. 종목 정보 없는 과거 기록은 예전 키 유지. VBT도 동일.
+
 ### 2026-11-25 · Claude Code · 모미 토큰 절감 (main)
 - 원인: `MomiAutoNote`가 리포트를 열 때마다 자동으로 유료 호출했고, 빈 응답 버그 때문에 노트가 저장되지 않아 열 때마다 반복 호출 + 빈 응답 재시도 이중 과금.
 - 조치: ①자동 호출 끔(`MOMI_AUTO_NOTE_ON_OPEN=false`, 버튼 '모미 노트 만들기'로만 생성, 저장 노트 재사용) ②`askMomi` 첫 답변 localStorage 캐시(60건·30일, `fresh:true`면 새로 호출, 패널 버튼은 '다시 분석') ③후속 질문(history 있음)은 `functions/api/momi.js`에서 Haiku(`MOMI_FOLLOWUP_MODEL`로 변경 가능) ④후속 질문 근거 데이터 압축은 '두 번째 질문부터 수치 소실' 이력이 있어 하지 않음.

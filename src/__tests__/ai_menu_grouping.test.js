@@ -193,3 +193,17 @@ describe('findLinkedReportIndex — 세션↔전용리포트 매칭(측정이력
     expect(findLinkedReportIndex(null, [])).toBe(-1);
   });
 });
+
+describe('바벨 리프팅 1RM은 종목별로 따로 묶는다 (2026-11-25)', () => {
+  const sq = { menu: 'lifting', recordedAt: '2026-11-17', data: { mode: 'onerm', exerciseType: 'squat', metrics: { oneRM: 101.7 } } };
+  const dl = { menu: 'lifting', recordedAt: '2026-11-17', data: { mode: 'onerm', exerciseType: 'deadlift', metrics: { oneRM: 114.6 } } };
+  it('스쿼트와 데드리프트는 다른 그룹 키', () => {
+    expect(menuGroupKey(sq)).toBe('lifting_onerm:squat');
+    expect(menuGroupKey(dl)).toBe('lifting_onerm:deadlift');
+  });
+  it('이력 요약도 종목별 제목·횟수로 나뉜다', () => {
+    const { menuSummaries } = buildAiReport([sq, dl]);
+    expect(menuSummaries.map((m) => m.title).sort()).toEqual(['1RM · 데드리프트', '1RM · 스쿼트']);
+    menuSummaries.forEach((m) => expect(m.count).toBe(1));
+  });
+});

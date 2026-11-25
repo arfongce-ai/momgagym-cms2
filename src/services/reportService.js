@@ -7,6 +7,7 @@
 //  - 회차별 누적(시계열) 데이터 생성
 //  - 키/몸무게/혈압 포함
 
+import { exerciseLabel, normalizeExerciseType } from '../ai-measure/core/lifting';
 import { METRIC_DEFINITIONS, REPORT_TERM_MAP, defaultRecommendation } from '../ai-measure/core/unifiedReport';
 
 // 바벨/신체 속도의 물리적 상한 방어 — 실제 리프팅에서 5m/s를 넘는 값은 나올 수 없으므로
@@ -173,7 +174,11 @@ export function menuGroupKey(session) {
   }
   if (session?.menu === 'lifting') {
     const m = d.metrics || {};
-    return (d.mode === 'onerm' || m.oneRM != null) ? 'lifting_onerm' : 'lifting_vbt';
+    const base = (d.mode === 'onerm' || m.oneRM != null) ? 'lifting_onerm' : 'lifting_vbt';
+    // [종목 분리 2026-11-25] 스쿼트·데드리프트·벤치 등 종목이 다르면 따로 묶는다(1RM·추이가 섞이지 않게).
+    // 종목 정보가 없는 과거 기록은 예전 그룹 키 그대로.
+    const exRaw = d.exerciseType || d.metadata?.exerciseType || '';
+    return exRaw ? `${base}:${normalizeExerciseType(exRaw)}` : base;
   }
   return session?.menu || 'etc';
 }
@@ -216,7 +221,11 @@ export function buildAiReport(aiSessions = []) {
   for (const [groupKey, rows] of Object.entries(byMenu)) {
     const latest = rows[rows.length - 1];
     const d = latest.data || {};
-    const title = GROUP_TITLE[groupKey] || latest.menuTitle || latest.menu || '기타';
+    let title = GROUP_TITLE[groupKey] || latest.menuTitle || latest.menu || '기타';
+    if (!GROUP_TITLE[groupKey] && groupKey.startsWith('lifting_') && groupKey.includes(':')) {
+      const [baseKey, ex] = groupKey.split(':');
+      title = `${GROUP_TITLE[baseKey] || 'VBT'} · ${exerciseLabel(ex)}`.replace('1RM · 역도 · ', '1RM · ');
+    }
     let metric = '';
     switch (latest.menu) {
       case 'onerm':   metric = `1RM ${d.oneRM ?? '-'}kg (${d.liftLabel ?? ''} ${d.weight}kg×${d.reps})`; break;
@@ -229,7 +238,7 @@ export function buildAiReport(aiSessions = []) {
         break;
       case 'lifting': {
         const lm = d.metrics || {};
-        metric = groupKey === 'lifting_onerm'
+        metric = groupKey.startsWith('lifting_onerm')
           ? `1RM 추정 ${lm.oneRM ?? '-'}kg`
           : `평균속도 ${plausibleVelocity(lm.meanVelocity) ?? '-'}m/s`;
         break;
