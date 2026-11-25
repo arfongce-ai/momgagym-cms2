@@ -210,7 +210,7 @@ export const MEASURE_MENUS = [
   },
   {
     // [PAPS 탭 2026-11-25] 유소년·청소년 체력평가(PAPS 계열). 측정자 입력형(횟수 탭·카운트다운·초시계·메트로놈).
-    //  등급 판정은 기준표 확인 후 추가 — 지금은 값 저장·회차 비교. 기록은 menu:'paps'(kind:'paps_test')로 저장.
+    //  등급은 학교건강검사규칙 별표 4 공식 표가 있는 종목만(core/papsNorms.js), 나머지는 값 저장·회차 비교. 기록은 menu:'paps'(kind:'paps_test')로 저장.
     id: 'paps',
     no: 14,
     group: 'paps',

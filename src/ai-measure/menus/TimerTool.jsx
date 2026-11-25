@@ -227,11 +227,11 @@ export function Metronome({ compact = false, command = null, onBeat = null, onSt
   useEffect(() => {
     if (!command) return;
     if (command.action === 'start') {
-      if (typeof command.bpm === 'number' && command.bpm >= 40 && command.bpm <= 220) setBpm(command.bpm);
+      if (typeof command.bpm === 'number' && command.bpm >= 20 && command.bpm <= 220) setBpm(command.bpm);
       setPlaying(true);
     } else if (command.action === 'setBpm') {
       // [2026-11-25] 다른 측정(스텝테스트 등)이 박자만 맞춰 두고 소리는 켜지 않는다.
-      if (typeof command.bpm === 'number' && command.bpm >= 40 && command.bpm <= 220) setBpm(command.bpm);
+      if (typeof command.bpm === 'number' && command.bpm >= 20 && command.bpm <= 220) setBpm(command.bpm);
     } else if (command.action === 'pause' || command.action === 'stop') {
       stop();
     } else if (command.action === 'reset') {
@@ -252,9 +252,9 @@ export function Metronome({ compact = false, command = null, onBeat = null, onSt
           <div ref={ballRef} className="metro-ball" aria-hidden="true" />
         </div>
       </div>
-      <input type="range" min="40" max="220" value={bpm} onChange={(e) => setBpm(Number(e.target.value))} className="w-full accent-amber-500" />
+      <input type="range" min="20" max="220" value={bpm} onChange={(e) => setBpm(Number(e.target.value))} className="w-full accent-amber-500" />
       <div className="grid grid-cols-4 gap-2">
-        <button onClick={() => setBpm((b) => Math.max(40, b - 5))} className="rounded-xl border-2 border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-200 font-bold py-2">-5</button>
+        <button onClick={() => setBpm((b) => Math.max(20, b - 5))} className="rounded-xl border-2 border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-200 font-bold py-2">-5</button>
         <button onClick={() => setBpm((b) => Math.min(220, b + 5))} className="rounded-xl border-2 border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-200 font-bold py-2">+5</button>
         <button
           onClick={playing ? stop : start}
@@ -264,9 +264,9 @@ export function Metronome({ compact = false, command = null, onBeat = null, onSt
         </button>
       </div>
       <div className="flex gap-2 justify-center flex-wrap">
-        {[60, 80, 100, 120, 140].map((p) => (
+        {[20, 60, 80, 100, 120, 140].map((p) => (
           <button key={p} onClick={() => setBpm(p)} className={`px-3 py-1 rounded-lg text-xs font-bold ${bpm === p ? 'bg-amber-500 text-slate-950' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'}`}>
-            {p}
+            {p}{p === 20 ? ' (3초에 1회)' : ''}
           </button>
         ))}
       </div>

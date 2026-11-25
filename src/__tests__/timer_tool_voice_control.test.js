@@ -76,8 +76,8 @@ describe('TimerTool.jsx — Metronome: 기존 bpm/playing 이펙트를 재사용
     expect(cmdEffectBody).not.toContain('start();'); // 직접 start()를 부르지 않는다 — 자기수정 effect에 위임.
   });
 
-  it('bpm 범위(40~220) 밖의 값은 무시한다', () => {
-    expect(body).toContain('command.bpm >= 40 && command.bpm <= 220');
+  it('bpm 범위(20~220) 밖의 값은 무시한다', () => {
+    expect(body).toContain('command.bpm >= 20 && command.bpm <= 220');
   });
 });
 
