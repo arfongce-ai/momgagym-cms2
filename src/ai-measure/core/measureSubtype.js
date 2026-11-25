@@ -15,7 +15,7 @@ import { JUMP_SUBTYPES } from './jumpTypes';
 import { exerciseLabel, normalizeExerciseType } from './lifting';
 import { SPRINT_TEST_TYPES } from './sprintTests';
 import { CARDIO_MACHINES, CARDIO_PROTOCOLS } from './cardioTest';
-import { classifyGaitMode, GAIT_MODE_LABEL } from './gaitMode';
+import { resolveGaitMode, GAIT_MODE_LABEL } from './gaitMode';
 import { SENIOR_TESTS } from './seniorTests';
 import { PAPS_TESTS, papsGroupKey } from './papsTests';
 
@@ -61,7 +61,7 @@ export function subtypeOf(kind, report) {
       return { key: `${joint}:${pose}`, label: [JOINT_KO[joint] || joint, POSE_KO[pose] || pose].filter(Boolean).join(' · ') };
     }
     case 'gait': {
-      const mode = classifyGaitMode(r.metrics?.cadence ?? r.cadence) || '';
+      const mode = resolveGaitMode(r.metrics?.cadence ?? r.cadence, r.metrics?.gaitMode) || '';
       const ori = r.orientation || '';
       if (!mode && !ori) return NONE;
       return { key: `${mode}:${ori}`, label: [GAIT_MODE_LABEL[mode], ORIENT_KO[ori] || ori].filter(Boolean).join(' · ') };

@@ -876,3 +876,7 @@
 - 원인: `Report.jsx` DETAIL_SESSION_MENUS에 'sprint' 누락 → 5번 측정 1회가 저장 리포트 + 세션(키 나열 화면) 2건으로 표시. 스프린트 기록이 GaitReportDashboard로 열리던 것도 수정(SprintReportDashboard 연결, 같은 testKey의 직전 기록과 비교).
 - gait 분류(`Report.jsx`, `AiMeasureHub.jsx`, `crossMeasureContext.js`)에서 sprint/agility/jump 제외. 카드 제목에 종목명(5m 왕복 달리기 평가) 표시.
 - 이미 저장된 과거 기록은 그대로 두고 표시만 바뀜. 실기기 검증 못 함.
+
+### 2026-11-25 (추가10) 측정 전 걷기/달리기 구분
+- `gaitMode.js` resolveGaitMode(cadence, explicit): 명시 선택(walk|run) 우선, '자동'이면 기존 케이던스 구분. 기준범위 함수·점수·비교·세부분류가 `metrics.gaitMode`를 따름.
+- 선택 UI: 보행&런닝(트레드밀) 카메라 화면 '자동/걷기/달리기', 5번 설정 줄. 기본 '자동'(기존 동작 유지). 실기기 검증 못 함.

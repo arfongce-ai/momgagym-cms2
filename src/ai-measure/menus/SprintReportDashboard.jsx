@@ -12,6 +12,7 @@ import { buildSummaryData } from '../core/unifiedReport';
 import { computeChangeRow, summarizeChanges, reportDateOnly } from '../core/measurementComparison';
 import ChangeSummaryPanel from '../../components/report/ChangeSummaryPanel.jsx';
 import VideoCompareUpload from '../../components/report/VideoCompareUpload.jsx';
+import { resolveGaitMode, GAIT_MODE_LABEL } from '../core/gaitMode';
 import RunMechanicsCard from './RunMechanicsCard.jsx';
 import ClinicalFlagCard, { buildClinicalFlags } from './ClinicalFlagCard.jsx';
 // [측정 결과시트 공용화 2026-11-15] 점수 막대·먼저 볼 것·항목별 눈금(extractKeyMetrics 단일 소스)
@@ -209,7 +210,7 @@ function SprintReportDashboardInner({ report, previousReport, onComment, onClose
 
           {hasGaitMetrics(report) && (
             <div className="grid gap-3">
-              <Panel title="보행 지표 (참고)" subtitle="왕복 구간 포함">
+              <Panel title="보행 지표 (참고)" subtitle={`${GAIT_MODE_LABEL[resolveGaitMode(report.metrics.cadence, report.metrics.gaitMode)] || '구분 없음'} 기준 · 왕복 포함`}>
                 <div className="flex flex-col gap-1.5 px-3 py-2">
                   <StatRow label="케이던스" value={fmt(report.metrics.cadence, ' SPM')} />
                   <StatRow label="입각 / 유각" value={`${fmt(report.metrics.stancePct, '%')} / ${fmt(report.metrics.swingPct, '%')}`} />

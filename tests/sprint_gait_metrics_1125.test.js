@@ -54,3 +54,17 @@ describe('리포트 목록 중복·뷰어 연결', () => {
     expect(rep).toMatch(/gait: savedReports\.filter\(\(item\) => !isSprintKind\(item\)/);
   });
 });
+
+import { resolveGaitMode, cadenceRangeFor } from '../src/ai-measure/core/gaitMode';
+describe('측정 전 걷기/달리기 구분', () => {
+  it('명시 선택이 케이던스 자동 구분보다 우선', () => {
+    expect(resolveGaitMode(170, 'walk')).toBe('walk');
+    expect(resolveGaitMode(110, 'run')).toBe('run');
+    expect(resolveGaitMode(110, null)).toBe('walk');
+    expect(cadenceRangeFor(110, 'run').good).toEqual([160, 180]);
+  });
+  it('트레드밀·5번 화면에 선택 UI와 저장', () => {
+    expect(read('src/ai-measure/menus/GaitRunningAnalysis.jsx')).toMatch(/\['walk', '걷기'\], \['run', '달리기'\]/);
+    expect(read('src/ai-measure/menus/SprintLiveAnalysis.jsx')).toMatch(/gaitMode: gaitModeSel === 'auto'/);
+  });
+});

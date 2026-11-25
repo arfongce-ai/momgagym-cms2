@@ -32,6 +32,8 @@ export function normalizeGaitMetrics(report) {
     verticalOscillation: m.verticalOscillation ?? null,
     kneeSymmetry: m.kneeSymmetry ?? null,
     strideToHeight: m.strideToHeight ?? null,
+    // [2026-11-25] 측정 전 트레이너가 고른 걷기/달리기('walk'|'run'). 없으면 케이던스로 자동 구분.
+    gaitMode: m.gaitMode ?? null,
     // [임상 플래그 추가 2026-09-14] 후면뷰 전용(Trendelenburg)/정면뷰 전용(외반·내반) —
     // ClinicalFlagCard.jsx의 buildClinicalFlag가 report.orientation과 함께 읽는다.
     pelvicDropAssessment: m.pelvicDropAssessment ?? null,
@@ -62,11 +64,11 @@ export function computeGaitScore(m, orientation) {
   const pelvicDropOk = !orientation || orientation === 'back';
   const trunkLeanOk = !orientation || orientation === 'side';
   const checks = [
-    [m.cadence, cadenceRangeFor(m.cadence)],
-    [m.stancePct, stanceRangeFor(m.cadence)],
+    [m.cadence, cadenceRangeFor(m.cadence, m.gaitMode)],
+    [m.stancePct, stanceRangeFor(m.cadence, m.gaitMode)],
     [trunkLeanOk ? m.trunkLean?.avg : null, GAIT_RANGES.trunkLean],
     [pelvicDropOk ? m.pelvicDropAbs : null, GAIT_RANGES.pelvicDrop],
-    [m.verticalOscillation, verticalOscRangeFor(m.cadence)],
+    [m.verticalOscillation, verticalOscRangeFor(m.cadence, m.gaitMode)],
     [m.kneeSymmetry, GAIT_RANGES.kneeSym],
     [m.strideToHeight, GAIT_RANGES.stride],
   ];

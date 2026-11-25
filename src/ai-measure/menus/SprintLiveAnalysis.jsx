@@ -159,6 +159,8 @@ export default function SprintLiveAnalysis({ member, onBack, onSaveToFirebase, o
   // [임상 플래그 추가 2026-09-14] GaitRunningAnalysis.jsx와 동일하게 gaitBiomechanics.js의
   // 기존 누적기를 그대로 재사용 — 새 계산 로직을 만들지 않는다. depth 모드일 때만
   // (아래 loop() 참고) 매 프레임 밀어 넣는다.
+  // [2026-11-25] 측정 전 걷기/달리기 구분 — auto(케이던스로 자동) | walk | run
+  const [gaitModeSel, setGaitModeSel] = useState('auto');
   const pelvicAccRef = useRef(new BiomechAccumulator());
   const kneeAlignAccRef = useRef(new DynamicKneeAlignmentTracker());
   // [보행 지표 2026-11-25] 보행&런닝(트레드밀)과 같은 누적기를 재사용 — 케이던스·입각/유각·관절각·접지/체공.
@@ -498,6 +500,7 @@ export default function SprintLiveAnalysis({ member, onBack, onSaveToFirebase, o
         pelvicDrop: pelvicSummary.pelvicDrop, pelvicDropAbs: pelvicSummary.pelvicDropAbs,
         verticalOscillation: pelvicSummary.verticalOscillation, kneeSymmetry: pelvicSummary.kneeSymmetry,
         strideToHeight: pelvicSummary.strideToHeight,
+        gaitMode: gaitModeSel === 'auto' ? null : gaitModeSel,
         strideLengthAssessment: ori === 'side' ? cyc.strideLengthAssessment : null,
         trunkLeanAssessment: ori === 'side' ? pelvicSummary.trunkLeanAssessment : null,
         runMechanics: runMechRef.current.summary({ orientation: ori || null }),
@@ -685,6 +688,13 @@ export default function SprintLiveAnalysis({ member, onBack, onSaveToFirebase, o
               {Object.entries(CAM_ANGLES).map(([key, cfg]) => (
                 <button key={key} onClick={() => setCamAngle(key)} style={{ ...styles.testBtn, ...(camAngle === key ? styles.testBtnActive : {}) }}>
                   {cfg.label}
+                </button>
+              ))}
+            </div>
+            <div style={styles.testPicker}>
+              {[['auto', '보행·달리기 자동'], ['walk', '걷기'], ['run', '달리기']].map(([key, label]) => (
+                <button key={key} onClick={() => setGaitModeSel(key)} style={{ ...styles.testBtn, ...(gaitModeSel === key ? styles.testBtnActive : {}) }}>
+                  {label}
                 </button>
               ))}
             </div>

@@ -948,9 +948,10 @@ export function extractKeyMetrics(report = {}, reportType = inferReportType(repo
       let range = definition.range;
       if (reportType === 'gait' && (definition.key === 'cadence' || definition.key === 'stancePct' || definition.key === 'verticalOscillation')) {
         const cad = firstDefinedPath(report, ['metrics.cadence', 'cadence']);
-        range = definition.key === 'cadence' ? cadenceRangeFor(cad)
-          : definition.key === 'verticalOscillation' ? verticalOscRangeFor(cad)
-          : (stanceRangeFor(cad) || undefined);
+        const gm = firstDefinedPath(report, ['metrics.gaitMode']);
+        range = definition.key === 'cadence' ? cadenceRangeFor(cad, gm)
+          : definition.key === 'verticalOscillation' ? verticalOscRangeFor(cad, gm)
+          : (stanceRangeFor(cad, gm) || undefined);
       }
       return toLaymanMetric(definition.key, value, {
         unit: definition.unit,

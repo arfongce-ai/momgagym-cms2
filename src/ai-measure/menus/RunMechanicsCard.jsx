@@ -3,7 +3,7 @@
 // 계산은 core/runMechanics.js. 여기서는 저장된 값만 그린다(없으면 '측정 안 됨'과 이유).
 import React, { useMemo } from 'react';
 import { buildRunningFeedback } from '../core/runMechanics';
-import { classifyGaitMode } from '../core/gaitMode';
+import { resolveGaitMode } from '../core/gaitMode';
 
 const LEVEL_TONE = {
   risk: 'border-red-500/35 bg-red-500/10 text-red-900 dark:text-red-100',
@@ -27,7 +27,7 @@ function Tile({ label, value, unit, note, level }) {
 }
 
 export default function RunMechanicsCard({ metrics, orientation }) {
-  const mode = classifyGaitMode(metrics?.cadence);
+  const mode = resolveGaitMode(metrics?.cadence, metrics?.gaitMode);
   const feedback = useMemo(() => buildRunningFeedback(metrics, { orientation, mode }), [metrics, orientation, mode]);
   const rm = metrics?.runMechanics || null;
   if (!rm && !feedback.length) return null;
