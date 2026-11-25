@@ -230,7 +230,7 @@ export default function PapsTestMeasure({ onBack, member = null, onSave = null, 
   const hrZone = bpm && maxHr ? heartRateZone(bpm, maxHr) : null;
   const titleSuffix = variant === 'knee' && testId === 'pushup' ? ' (무릎)' : '';
 
-  const preview = evaluatePapsTest(testId, result.value, { invalid: result.invalid });
+  const preview = evaluatePapsTest(testId, result.value, { invalid: result.invalid, subject });
   const memberLabel = member ? (member.isVirtual ? '미등록회원' : `${member.name || '회원'} 회원`) : '';
   const secText = (ms) => (ms / 1000).toFixed(1);
   const remain = meta.kind === 'reps_timed' ? Math.max(0, meta.durationSec - elapsedMs / 1000) : null;
@@ -285,7 +285,7 @@ export default function PapsTestMeasure({ onBack, member = null, onSave = null, 
             <p><b>무엇을 보나</b> {meta.what}</p>
             <ol className="ml-4 list-decimal">{meta.how.map((h) => <li key={h}>{h}</li>)}</ol>
             <p className="font-bold text-red-600 dark:text-red-400">주의 {meta.care}</p>
-            <p className="font-semibold text-slate-500">PAPS 등급 판정은 기준표 확인 후 추가됩니다. 지금은 값을 저장하고 회차별로 비교합니다. 달리기·제자리멀리뛰기는 5번·7번 탭을 쓰세요.</p>
+            <p className="font-semibold text-slate-500">초4~6 학년·성별이 있으면 윗몸말아올리기·앉아윗몸앞으로굽히기·악력은 1~5등급이 자동으로 나옵니다. 그 외는 값을 저장하고 회차별로 비교합니다. 달리기·제자리멀리뛰기는 5번·7번 탭을 쓰세요.</p>
           </div>
 
           <div className="rounded-xl border-2 border-slate-200 p-2 dark:border-slate-700">
@@ -402,6 +402,7 @@ export default function PapsTestMeasure({ onBack, member = null, onSave = null, 
             <p className="text-xs font-black">{meta.label}{titleSuffix}</p>
             <p className="font-mono text-4xl font-black">{result.value || '-'}<span className="ml-1 text-base">{meta.unit}</span></p>
             <p className="text-sm font-black">{preview.label}</p>
+            {preview.reference && <p className="text-[11px] font-semibold text-slate-500">{preview.reference}</p>}
             {preview.reason && <p className="text-[11px] font-semibold">{preview.reason}</p>}
             {preview.easy && <p className="mt-1 text-xs font-bold">{preview.easy}</p>}
           </div>

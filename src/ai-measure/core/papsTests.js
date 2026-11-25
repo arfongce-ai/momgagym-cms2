@@ -3,17 +3,24 @@
 //  [PAPS 탭 2026-11-25] 유소년·청소년 체력평가(PAPS 계열) 측정 — 측정자 입력형 1차 버전.
 //  · 팔굽혀펴기 · 윗몸말아올리기 · 윗몸일으키기(1분) · 사이드스텝(20초) · 오래매달리기 · 턱걸이
 //    · 앉아윗몸앞으로굽히기 · 악력.  (제자리멀리뛰기=7번, 달리기=5번, 신체정보=1번은 기존 탭을 쓴다)
-//  · 등급(1~5등급 등) 판정은 하지 않는다 — 학년·성별 기준표를 확인하기 전에는 숫자를 만들어 넣지 않는다.
+//  · 등급(1~5등급)은 core/papsNorms.js 표가 있는 테스트(윗몸말아올리기·앉아윗몸앞으로굽히기·악력)만, 초4~6+성별이 있을 때 낸다.
+//    그 외 테스트·학년은 숫자를 지어 넣지 않고 값만 저장한다.
 //    값·무효 여부·측정 조건을 그대로 저장하고, 같은 테스트끼리 회차별 변화만 비교한다(status 는 항상 'unknown').
 //  · 기준표가 확인되면 evaluatePapsTest 안에서만 판정을 추가한다(나머지 화면은 status 를 그대로 쓴다).
 //  · 이상·무효 값도 저장을 막지 않는다. 무효는 valid:false + 사유로 남긴다.
 // ════════════════════════════════════════════════════════════════════════
+import { PAPS_GRADE_WORD, PAPS_NORM_SOURCE, papsGradeOf, papsNormText } from './papsNorms';
+
 export const PAPS_KIND = 'paps_test';
 
 /** 종합분석·모미에 넘기는 기준 설명. 등급표는 확인 전이라 값·회차 비교만 한다고 분명히 적는다. */
 export function papsCriteriaText(report = {}) {
   const label = `${report.testLabel || 'PAPS 테스트'}${report.variant === 'knee' ? '(무릎 대고)' : ''}`;
-  return `${label}: PAPS 학년·성별 등급(1~5등급) 기준표를 아직 적용하지 않아 등급 판정은 하지 않고, 같은 방법으로 잰 이전 기록과의 변화만 비교합니다. 값이 늘면 좋아진 것, 무효 기록은 비교에서 뺍니다.`;
+  if (report.grade) {
+    const norm = papsNormText(report.testId, report.subject?.sex, report.subject?.grade, report.unit || '');
+    return `${label}: PAPS ${report.subject?.grade || ''} ${report.subject?.sex === 'male' ? '남' : '여'} 기준 ${report.grade}등급(${PAPS_GRADE_WORD[report.grade]}). 기준(${norm}). 기준표는 대표님 제공본이라 공식 원문과 대조 전입니다. 이전 기록과의 변화도 함께 봅니다.`;
+  }
+  return `${label}: 초4~6 학년·성별이 모두 있을 때만 PAPS 1~5등급을 냅니다(윗몸말아올리기·앉아윗몸앞으로굽히기·악력). 이 기록은 등급 기준이 없어 값과 이전 기록과의 변화만 비교합니다. 값이 늘면 좋아진 것, 무효 기록은 비교에서 뺍니다.`;
 }
 
 // kind: reps_free(최대 횟수, 끝낼 때까지) · reps_timed(제한시간 안의 횟수) · hold(버틴 시간) · value(자로 잰 값)
@@ -150,9 +157,20 @@ export function evaluatePapsTest(testId, value, opts = {}) {
   }
   if (v == null) return { status: 'unknown', label: '값 없음', valid: false, reason: '값 없음', reference: null, easy: '' };
   if (v < 0 && testId !== 'sitreach') return { status: 'unknown', label: '확인 필요', valid: false, reason: '0보다 작은 값', reference: null, easy: '' };
+  const sg = opts.subject || {};
+  const g = papsGradeOf(testId, v, { sex: sg.sex, grade: sg.grade });
+  if (g) {
+    const norm = papsNormText(testId, sg.sex, sg.grade, meta.unit);
+    return {
+      status: 'unknown', grade: g, label: `${g}등급 (${PAPS_GRADE_WORD[g]})`, valid: true, reason: '', reference: norm,
+      source: PAPS_NORM_SOURCE.label,
+      easy: `${meta.easy(v)} ${sg.grade} ${sg.sex === 'male' ? '남' : '여'} 기준으로 ${g}등급(${PAPS_GRADE_WORD[g]})이에요.`,
+    };
+  }
+  const hasTable = ['curlup', 'sitreach', 'grip'].includes(testId);
   return {
-    status: 'unknown', label: '기록(등급 판정 전)', valid: true, reason: '', reference: null,
-    easy: meta.easy(v),
+    status: 'unknown', grade: null, label: hasTable ? '기록(학년·성별 확인 시 등급)' : '기록(등급표 없음)', valid: true,
+    reason: '', reference: null, easy: meta.easy(v),
   };
 }
 
@@ -169,7 +187,7 @@ export function buildPapsRecord({
   startedAt = null, endedAt = null, trainerNote = '', repLog = [], hr = null, auto = null,
 } = {}) {
   const meta = PAPS_TESTS[testId];
-  const ev = evaluatePapsTest(testId, value, { invalid });
+  const ev = evaluatePapsTest(testId, value, { invalid, subject });
   return {
     kind: PAPS_KIND,
     testId,
@@ -182,7 +200,9 @@ export function buildPapsRecord({
     statusLabel: ev.label,
     valid: ev.valid,
     invalidReason: ev.reason || '',
-    reference: null,
+    reference: ev.reference || null,
+    grade: ev.grade || null,
+    gradeSource: ev.grade ? PAPS_NORM_SOURCE.label : null,
     easySummary: ev.easy,
     trials: Array.isArray(trials) ? trials.slice(0, 8).map((t) => ({ label: String(t.label || ''), value: num(t.value) })) : [],
     subject: {
@@ -207,6 +227,7 @@ export function papsHistoryMetrics(payload = {}) {
     const label = `${p.testLabel || '기록'}${p.variant === 'knee' ? '(무릎)' : ''}`;
     out.push({ key: 'value', label, displayValue: String(p.value), unit: p.unit || '', value: p.value });
   }
+  if (p.grade) out.push({ key: 'grade', label: `${p.testLabel || ''} 등급`, displayValue: `${p.grade}등급`, unit: '', value: p.grade });
   if (p.statusLabel && p.valid === false) out.push({ key: 'status', label: '판정', displayValue: p.statusLabel, unit: '', value: null });
   return out;
 }

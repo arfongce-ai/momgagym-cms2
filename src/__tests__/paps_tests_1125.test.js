@@ -15,7 +15,7 @@ describe('PAPS 탭 (2026-11-25)', () => {
       expect(typeof t.easy(5)).toBe('string');
     });
   });
-  it('등급 판정은 하지 않는다 — status 는 항상 unknown', () => {
+  it('등급표 없는 테스트는 판정하지 않는다 — status 는 항상 unknown', () => {
     expect(evaluatePapsTest('pushup', 20).status).toBe('unknown');
     expect(evaluatePapsTest('pushup', 20).valid).toBe(true);
   });

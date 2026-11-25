@@ -19,8 +19,8 @@ export default function PapsReportSheet({ report, member, previous = null, histo
   const memberName = member?.name || p.member?.name || '회원';
   const subject = p.subject || {};
   const ev = p.statusLabel
-    ? { label: p.statusLabel, reason: p.invalidReason, easy: p.easySummary, valid: p.valid }
-    : evaluatePapsTest(p.testId, p.value, { invalid: p.invalid });
+    ? { label: p.statusLabel, reason: p.invalidReason, easy: p.easySummary, valid: p.valid, reference: p.reference, grade: p.grade }
+    : evaluatePapsTest(p.testId, p.value, { invalid: p.invalid, subject });
   const sameKey = papsGroupKey(p);
   const rows = (history || []).filter((x) => x && papsGroupKey(x) === sameKey).slice(0, 8);
   const prev = previous && papsGroupKey(previous) === sameKey ? previous : rows[0] || null;
@@ -39,10 +39,11 @@ export default function PapsReportSheet({ report, member, previous = null, histo
             member={member || p.member || null}
           />
 
-          <UnifiedReportSection title="측정 결과" subtitle="등급 판정은 기준표 확인 후 추가" className="mb-4">
+          <UnifiedReportSection title="측정 결과" subtitle="초4~6 학년·성별 기준 등급" className="mb-4">
             <div className="rounded-xl border-2 border-slate-300 bg-slate-100/60 p-3 text-slate-800 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-100" data-testid="paps-report-result">
               <p className="font-mono text-4xl font-black">{Number.isFinite(p.value) ? p.value : '-'}<span className="ml-1 text-base">{p.unit}</span></p>
               <p className="mt-1 text-sm font-black">{ev.label}</p>
+              {ev.reference && <p className="mt-0.5 text-[11px] font-semibold">기준 {ev.reference} (대표님 제공 등급표)</p>}
               {ev.reason && <p className="mt-0.5 text-[11px] font-bold">확인 필요: {ev.reason}</p>}
             </div>
             {change && (
