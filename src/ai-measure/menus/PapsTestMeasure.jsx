@@ -109,7 +109,9 @@ export default function PapsTestMeasure({ onBack, member = null, onSave = null, 
   const [videoState, setVideoState] = useState({ state: 'none', fileName: '', method: '' });
   const recogFinalRef = useRef(null);
   const metroUsedRef = useRef(null);
-  const sendMetro = (action) => setMetroCmd({ id: `${Date.now()}-${Math.random()}`, action });
+  const sendMetro = (action, bpmArg) => setMetroCmd({ id: `${Date.now()}-${Math.random()}`, action, ...(bpmArg ? { bpm: bpmArg } : {}) });
+  // 윗몸말아올리기는 공식 박자(분당 20회=3초에 1번)를 기본으로 맞춰 둔다(소리는 켜지 않음).
+  useEffect(() => { const b = PAPS_TESTS[testId]?.metronomeBpm; if (b) sendMetro('setBpm', b); }, [testId]); // eslint-disable-line react-hooks/exhaustive-deps
   const effCamRef = useRef(false);
   effCamRef.current = effCam;
   const phaseRef = useRef('setup');

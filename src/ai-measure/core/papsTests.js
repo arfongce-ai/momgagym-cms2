@@ -11,14 +11,22 @@
 //  · 이상·무효 값도 저장을 막지 않는다. 무효는 valid:false + 사유로 남긴다.
 // ════════════════════════════════════════════════════════════════════════
 import { PAPS_GRADE_WORD, PAPS_NORM_SOURCE, papsGradeOf, papsNormText } from './papsNorms';
+import { ADULT_NORM_SOURCE, adultBandIndex, adultItemLevel, relativeGripPct } from './adultNorms';
 
 export const PAPS_KIND = 'paps_test';
 
 /** 종합분석·모미에 넘기는 기준 설명. 등급표는 확인 전이라 값·회차 비교만 한다고 분명히 적는다. */
+// 등급표 키: 팔굽혀펴기는 남=pushup(봉), 여=pushupKnee(무릎대고). 방식이 안 맞으면 null(임의 준용 금지).
+export function papsNormId(testId, sex, variant) {
+  if (testId !== 'pushup') return testId;
+  const knee = variant === 'knee';
+  return sex === 'female' ? (knee ? 'pushupKnee' : null) : (knee ? null : 'pushup');
+}
+
 export function papsCriteriaText(report = {}) {
   const label = `${report.testLabel || 'PAPS 테스트'}${report.variant === 'knee' ? '(무릎 대고)' : ''}`;
   if (report.grade) {
-    const norm = papsNormText(report.testId, report.subject?.sex, report.subject?.grade, report.unit || '');
+    const norm = papsNormText(papsNormId(report.testId, report.subject?.sex, report.variant), report.subject?.sex, report.subject?.grade, report.unit || '');
     return `${label}: PAPS ${report.subject?.grade || ''} ${report.subject?.sex === 'male' ? '남' : '여'} 기준 ${report.grade}등급(${PAPS_GRADE_WORD[report.grade]}). 기준(${norm}). 기준표는 학교건강검사규칙 별표 4(2025.3.10 개정)입니다. 이전 기록과의 변화도 함께 봅니다.`;
   }
   return `${label}: 초3~고3 학년·성별이 모두 있을 때만 PAPS 1~5등급을 냅니다(윗몸말아올리기·팔굽혀펴기(중·고, 여는 무릎대고)·앉아윗몸앞으로굽히기·악력). 이 기록은 공식 등급 기준이 없어(성인·표에 없는 조합 포함) 값·영상·인식률·이전 기록과의 변화로 평가합니다. 값이 늘면 좋아진 것, 무효 기록은 비교에서 뺍니다.`;
@@ -33,30 +41,30 @@ export const PAPS_TESTS = {
     countRule: '팔꿈치 각도가 접힘(약 100° 이하)까지 내려갔다가 다시 펴지면(약 150° 이상) 1회. 문턱값은 앱 시작값이라 실기기에서 조정합니다.',
     what: '팔 힘과 몸통 버티는 힘(상체 근지구력)을 최대 횟수로 봅니다.',
     how: [
-      '손을 어깨너비로 짚고 몸을 일직선으로 만듭니다(무릎 대고 하는 방식이면 "무릎 대고"를 선택).',
-      '팔을 굽혔다가 완전히 펴는 것을 1회로 셉니다.',
-      '메트로놈을 쓰면 같은 박자로 하게 도와줍니다. 박자·방식은 매번 같게 해야 비교가 됩니다.',
-      '허리가 꺾이거나 엉덩이가 들리면 측정자가 -1 하거나 거기서 종료합니다.',
+      '(남) 30cm 높이 봉을 어깨너비로 잡고 양발을 모아, 머리부터 어깨·등·허리·발끝까지 일직선을 만듭니다. 내려갔을 때 가슴과 봉 사이는 10cm 이하, 팔꿈치 90°입니다.',
+      '(여) 무릎을 꿇고 발끝을 세워 발등이 바닥에 닿지 않게 하고, 상체는 곧게 합니다. 내려갔을 때 가슴과 바닥 사이는 15cm 이하, 팔꿈치 90°입니다.',
+      '팔을 굽혔다가 펴는 것을 1회로 하며, 더 이상 반복하지 못할 때까지의 횟수를 잽니다.',
+      '허리가 꺾이거나 엉덩이가 들리면 측정자가 거기서 종료합니다.',
     ],
-    verified: ['몸을 머리~발끝 일직선·더 이상 반복하지 못할 때까지의 횟수·내려갔을 때 팔꿈치 90°·가슴과 바닥(무릎대고) 15cm 이하, 남 봉 방식은 가슴과 봉 10cm 이하(경기도교육청 2025 체력증진 계획·PAPS 교재 PDF)'],
-    unverified: ['박자(회/분) 규정은 확인 못 함. 앱의 팔꿈치 접힘 문턱(100°)은 90° 기준에 여유를 둔 시작값입니다. 초등은 팔굽혀펴기를 하지 않고 중·고에서 남=봉, 여=무릎대고입니다.'],
+    verified: ['남 팔굽혀펴기: 봉 높이 30cm·넓이 110cm 이상, 양발 모으고 양손 어깨너비로 봉을 잡음, 머리~발끝 일직선, 내려간 동작에서 가슴-봉 10cm 이하·팔꿈치 90°, 더 이상 반복하지 못할 때까지의 횟수 (별표 3 6-1).', '여 무릎대고 팔굽혀펴기: 무릎 꿇고 발끝 세워 발등이 지면에 안 닿게, 상체 반듯, 손 간격 조정, 내려간 동작에서 가슴-지면 15cm 이하·팔꿈치 90°, 더 이상 반복하지 못할 때까지의 횟수 (별표 3 6-2).'],
+    unverified: ['법령(별표 3)에 박자(회/분) 규정은 없습니다 — 메트로놈은 선택 보조입니다. 앱의 팔꿈치 접힘 문턱(100°)·가슴-봉/지면 거리(10·15cm)는 카메라로 재지 못해 측정자가 확인해야 합니다. 초등은 하지 않고 중·고에서 남=봉, 여=무릎대고입니다.'],
     care: '손목·어깨 통증이 있으면 중단합니다.',
     easy: (v) => `팔굽혀펴기를 ${v}회 했어요. 같은 방법으로 다시 재서 숫자가 늘어나는지 비교해요.`,
   },
   curlup: {
     id: 'curlup', label: '윗몸말아올리기', short: '윗몸말아올리기', kind: 'reps_free', unit: '회', higherBetter: true,
-    metronome: true, video: 'primary', range: [0, 200], rangeInt: true,
+    metronome: true, metronomeBpm: 20, video: 'primary', range: [0, 200], rangeInt: true,
     camera: '옆모습(측면)에서 어깨·엉덩이·무릎이 보이게 눕습니다.',
-    countRule: '몸통 기울기가 약 20° 이상 올라왔다가 다시 눕혀지면 1회(앱 시작값). 메트로놈 박자는 기록과 영상에 함께 남깁니다.',
-    what: '배 근육(복근)의 지구력을 정해진 박자로 최대 횟수까지 봅니다.',
+    countRule: '몸통 기울기가 약 20° 이상 올라왔다가 다시 눕혀지면 1회(앱 시작값, 실기기에서 조정). 공식 규칙은 3초에 1번 신호음에 맞춰 손바닥으로 무릎을 감싸는 것이며, 간격 이탈 판정은 측정자가 합니다. 메트로놈 박자는 기록과 영상에 함께 남깁니다.',
+    what: '배 근육(복근)의 근지구력을 3초에 1번 신호음에 맞춰 반복 가능한 횟수로 봅니다.',
     how: [
-      '누워 무릎을 세우고 팔은 몸 옆에 펴 둡니다.',
-      '메트로놈 박자에 맞춰 어깨뼈가 바닥에서 뜨게 말아 올렸다 내려옵니다.',
-      '박자를 놓치거나 반동을 쓰면 측정자가 거기서 종료합니다.',
-      '박자(BPM)는 매번 같게 해서 기록과 함께 남깁니다.',
+      '매트에 머리와 등을 대고 눕고, 무릎을 약 90°로 굽혀 세웁니다. 발바닥은 바닥에 평평하게, 발과 무릎 사이는 주먹 하나 간격입니다.',
+      '팔은 곧게 뻗어 손바닥을 넓적다리 위에 올려 둡니다.',
+      '3초에 1번 울리는 신호음(메트로놈 20BPM)에 맞춰 손이 넓적다리를 타고 올라가 손바닥으로 무릎을 감쌀 때까지 상체를 말아 올립니다.',
+      '무릎을 감싼 뒤 바로 준비 자세로 돌아옵니다.',
     ],
-    verified: ['매트에 머리·등을 대고 누워 무릎 약 90°로 세움·3초에 1번 울리는 신호음(분당 20회)에 맞춰 손이 넓적다리 위를 타고 올라가 측정자 손끝에 닿게 말아 올림(경기도교육청 2025 체력증진 계획·PAPS 교재 PDF)'],
-    unverified: ['메트로놈 최저 박자가 40BPM이라 "3초에 1회"는 40BPM에서 2박마다 1회로 맞추거나 20BPM 신호음을 따로 씁니다. 실패 1회 허용·연속 2회 실패 종료는 2차 자료(블로그)라 공식 확인 못 함.'],
+    verified: ['자세·측정 방법 전부: 학교건강검사규칙 별표 3(7. 윗몸말아올리기) — 머리·등을 대고 누움, 무릎 약 90°, 발-무릎 주먹 하나 간격, 팔 곧게 뻗어 손바닥을 넓적다리 위, 3초에 1번 신호음에 맞춰 손바닥으로 무릎을 감싸게 말아 올림, 감싼 뒤 바로 준비 자세.', '1회/3초 간격을 처음 한 번 못 지키면 그 한 번만 계수하지 않고 계속, 두 번째로 못 지키면 계수를 종료하고 그때까지의 총 횟수를 기록(별표 3).'],
+    unverified: ['앱은 신호음 간격 준수(첫 번째 이탈 1회 제외·두 번째 이탈 종료)를 자동 판정하지 못합니다 — 측정자가 영상·메트로놈으로 확인해 종료 시점의 횟수를 입력하세요. 손바닥이 무릎에 닿는지는 카메라로 판정하지 못하고, 몸통 기울기 20° 문턱은 앱 시작값입니다.'],
     care: '목·허리 통증이 있으면 중단합니다.',
     easy: (v) => `윗몸말아올리기를 ${v}회 했어요. 같은 박자로 다시 재서 늘어나는지 비교해요.`,
   },
@@ -115,13 +123,13 @@ export const PAPS_TESTS = {
     countRule: '횟수 없음 — 영상 녹화와 스켈레톤으로 자세(무릎 펴짐)를 남기고, 거리(cm)는 측정기 눈금을 측정자가 읽어 입력합니다.',
     what: '허벅지 뒤쪽과 허리의 유연성을 앞으로 뻗은 거리(cm)로 봅니다.',
     how: [
-      '신을 벗고 양 발바닥을 측정기구의 수직면에 완전히 대고 무릎을 펴고 바르게 앉습니다.',
-      '양발 사이는 5cm를 넘지 않게 합니다.',
-      '두 손바닥을 곧게 펴 왼손을 오른손 등 위에 겹치고 천천히 앞으로 뻗어 거리를 읽습니다.',
-      '앞으로 굽힐 때 무릎이 굽혀지면 재검사합니다.',
+      '신발을 벗고 두 발 사이 5cm 이내로, 양 발바닥을 측정기 전면에 완전히 대고 무릎을 펴고 앉습니다.',
+      '한 손을 다른 손 위에 겹쳐 올리고, 고개를 숙이며 윗몸을 앞으로 굽혀 눈금 쪽으로 뻗습니다.',
+      '무릎이 올라오지 않게 굽힌 자세를 2초 이상 유지하고, 양 손 손가락 끝이 멈춘 지점의 눈금을 읽습니다.',
+      '2회 실시하여 0.1cm 단위로 기록하고, 평가는 높은 기록으로 합니다.',
     ],
-    verified: ['발바닥 수직면 밀착·무릎 펴기·양발 5cm 이내·손바닥 겹치기·무릎 굽히면 재검사·단위 cm (법령 첨부 측정방법)', '입력 범위 −40.0~50.0cm, 소수 첫째자리 (나이스 PAPS 매뉴얼 v1.11)'],
-    unverified: ['측정 횟수·기록 선택(좋은 값)·뻗은 뒤 유지 시간은 이번 검색에서 원문 확인 못 함 — 앱은 1·2차를 입력받아 높은 값을 기록합니다.'],
+    verified: ['발 사이 5cm 이내·발바닥 측정기 전면 밀착·무릎 펴고 앉음·한 손을 다른 손 위에 겹침·고개 숙이고 눈금 쪽으로 뻗음(별표 3 4-가)', '무릎이 올라오지 않게 굽힌 자세 2초 이상 유지·손가락 끝이 멈춘 지점 눈금·2회 실시 0.1cm 단위·평가는 높은 기록(별표 3 4-나)', '입력 범위 −40.0~50.0cm, 소수 첫째자리 (나이스 PAPS 매뉴얼 v1.11)'],
+    unverified: ['앱은 무릎 펴짐·2초 유지를 카메라로 판정하지 못합니다 — 영상으로 남기고 측정자가 확인합니다. 무릎이 굽혀진 시도의 처리(재검사)는 별표 3에 명시가 없어 확인 못 함.'],
     care: '반동을 주지 말고 천천히 뻗습니다. 허리 통증이 있으면 중단합니다.',
     easy: (v) => `앞으로 ${v}cm 뻗었어요. 같은 방법으로 다시 재서 늘어나는지 비교해요.`,
   },
@@ -143,15 +151,17 @@ export const PAPS_TESTS = {
   },
   grip: {
     id: 'grip', label: '악력', short: '악력', kind: 'value', unit: 'kg', higherBetter: true,
-    fields: ['왼손 1차', '왼손 2차', '오른손 1차', '오른손 2차'], decimals: 1, video: 'optional', range: [0, 200],
+    fields: ['오른손 1차', '왼손 1차', '오른손 2차', '왼손 2차'], decimals: 1, video: 'optional', range: [0, 200],
     camera: '선택 — 악력계를 잡은 팔 전체가 보이게 하는 모습만 녹화합니다(횟수·스켈레톤 판정 없음).',
     countRule: '횟수 없음 — 숫자는 악력계에서 읽어 입력합니다.',
     what: '손으로 쥐는 힘(kg)으로 전신 근력의 지표를 봅니다.',
     how: [
-      '악력계를 손가락 둘째마디에 맞추고 팔을 몸 옆에 내린 채 선 자세로 잡습니다.',
-      '몸에 닿지 않게 힘껏 3초 쥐고 값을 읽습니다.',
-      '양손을 번갈아 2번씩 재고, 화면의 기록은 가장 높은 값입니다(손별 값은 모두 저장).',
+      '발을 바닥에 평평하게 붙이고 두 다리를 어깨너비로 벌려 바로 섭니다.',
+      '악력계 폭을 자기 손에 맞게 조절하고, 손가락 제2관절이 직각이 되도록 잡습니다.',
+      '오른손 → 왼손 → 오른손 → 왼손 순서로 각 2회 측정합니다.',
+      '0.1kg 단위로 기록하되 0.01kg 단위에서 올림하며, 평가는 가장 높은 기록입니다.',
     ],
+    verified: ['측정 자세·순서(오른-왼-오른-왼 각 2회)·0.1kg 단위(0.01 올림)·평가는 최고 기록 (별표 3 8. 악력)'],
     care: '손목 통증이 있으면 중단합니다.',
     easy: (v) => `손으로 쥐는 힘이 최고 ${v}kg이에요. 같은 방법으로 다시 재서 늘어나는지 비교해요.`,
   },
@@ -205,11 +215,7 @@ export function evaluatePapsTest(testId, value, opts = {}) {
   }
   const sg = opts.subject || {};
   // 팔굽혀펴기: 공식 표는 남=팔굽혀펴기(봉), 여=무릎대고팔굽혀펴기(중·고). 방식이 다르면 표 없음(임의 준용 금지).
-  let normId = testId;
-  if (testId === 'pushup') {
-    const knee = opts.variant === 'knee';
-    normId = sg.sex === 'female' ? (knee ? 'pushupKnee' : null) : (knee ? null : 'pushup');
-  }
+  const normId = papsNormId(testId, sg.sex, opts.variant);
   const g = normId ? papsGradeOf(normId, v, { sex: sg.sex, grade: sg.grade }) : null;
   if (g) {
     const norm = papsNormText(normId, sg.sex, sg.grade, meta.unit);
@@ -218,6 +224,22 @@ export function evaluatePapsTest(testId, value, opts = {}) {
       source: PAPS_NORM_SOURCE.label,
       easy: `${meta.easy(v)} ${sg.grade} ${sg.sex === 'male' ? '남' : '여'} 기준으로 ${g}등급(${PAPS_GRADE_WORD[g]})이에요.`,
     };
+  }
+  // 성인(19~64세): 국민체력100 항목별 기준(앉아윗몸앞으로굽히기·상대악력). 종합 1~6등급은 전 종목을 재야 나오므로 내지 않는다.
+  const adultKey = { sitreach: 'sitreach', grip: 'relgrip' }[testId];
+  if (adultKey && sg.sex && adultBandIndex(sg.age) >= 0 && !sg.grade) {
+    const rel = adultKey === 'relgrip' ? relativeGripPct(v, sg.weightKg) : v;
+    const a = adultItemLevel(adultKey, rel, { sex: sg.sex, age: sg.age });
+    if (a) {
+      const word = a.level ? `국민체력100 ${a.level}등급 기준 이상` : '국민체력100 3등급 기준 미만';
+      const what = adultKey === 'relgrip' ? `상대악력 ${rel}%(악력 ${v}kg ÷ 체중 ${sg.weightKg}kg)` : `${v}cm`;
+      return {
+        status: 'unknown', grade: null, adultLevel: a.level, label: word, valid: true, reason: '', reference: `${a.band} 기준 ${a.reference}${adultKey === 'relgrip' ? '%' : 'cm'} 이상`,
+        source: ADULT_NORM_SOURCE.label,
+        easy: `${meta.easy(v)} ${a.band} 국민체력100 항목 기준으로 ${what}는 ${word}이에요(최종 등급은 전 종목을 재야 정해져요).`,
+      };
+    }
+    if (adultKey === 'relgrip') return { status: 'unknown', grade: null, label: '기록(체중 입력 시 국민체력100 항목 기준)', valid: true, reason: '', reference: null, easy: meta.easy(v) };
   }
   const hasTable = ['pushup', 'curlup', 'sitreach', 'grip'].includes(testId);
   return {
@@ -255,7 +277,8 @@ export function buildPapsRecord({
     invalidReason: ev.reason || '',
     reference: ev.reference || null,
     grade: ev.grade || null,
-    gradeSource: ev.grade ? PAPS_NORM_SOURCE.label : null,
+    gradeSource: ev.grade ? PAPS_NORM_SOURCE.label : ev.adultLevel != null ? ADULT_NORM_SOURCE.label : null,
+    adultLevel: ev.adultLevel ?? null,
     easySummary: ev.easy,
     trials: Array.isArray(trials) ? trials.slice(0, 8).map((t) => ({ label: String(t.label || ''), value: num(t.value) })) : [],
     subject: {
@@ -272,7 +295,7 @@ export function buildPapsRecord({
     conditions: conditions ? {
       distanceCm: num(conditions.distanceCm), metronomeBpm: num(conditions.metronomeBpm), cameraUsed: Boolean(conditions.cameraUsed),
     } : null,
-    evaluationText: papsEvaluationText({ testId, value: num(value), unit: meta?.unit || '', variant, valid: ev.valid, grade: ev.grade, reference: ev.reference, subject, recognition, hr }, previous),
+    evaluationText: papsEvaluationText({ testId, value: num(value), unit: meta?.unit || '', variant, valid: ev.valid, grade: ev.grade, adultLabel: ev.adultLevel != null ? ev.label : '', adultReference: ev.adultLevel != null ? ev.reference : '', reference: ev.reference, subject, recognition, hr }, previous),
     repLog: Array.isArray(repLog) ? repLog.slice(0, 120) : [],
     trainerNote: String(trainerNote || '').slice(0, 500),
     startedAt, endedAt,
@@ -305,7 +328,7 @@ export function papsChange(current, previous) {
 
 /**
  * 측정·평가 문장(학생·성인 공통). 등급은 PAPS 공식 기준표가 있는 초3~고3 학생에게만 붙이고,
- * 그 외(성인 포함)는 값·직전 대비 변화·인식률로 평가한다. 없는 기준을 만들어 내지 않는다.
+ * 성인(19~64세)은 국민체력100 항목별 기준(앉아윗몸앞으로굽히기·상대악력)을 붙이고, 그 외는 값·직전 대비 변화·인식률로 평가한다. 없는 기준을 만들어 내지 않는다.
  */
 export function papsEvaluationText(p = {}, previous = null) {
   const meta = PAPS_TESTS[p.testId];
@@ -314,6 +337,7 @@ export function papsEvaluationText(p = {}, previous = null) {
   if (!Number.isFinite(p.value)) return `${label}: 값이 없어 평가하지 않았습니다.`;
   const parts = [`${label} ${p.value}${p.unit || meta?.unit || ''}`];
   if (p.grade) parts.push(`PAPS ${p.subject?.grade || ''} ${p.subject?.sex === 'male' ? '남' : '여'} 기준 ${p.grade}등급(${PAPS_GRADE_WORD[p.grade]})`);
+  else if (p.adultLabel) parts.push(`${p.adultReference} → ${p.adultLabel}(국민체력100 항목별 기준, 종합 등급은 전 종목 측정 후)`);
   else parts.push('PAPS 등급은 초3~고3 학생·공식 기준표가 있는 종목에만 붙여서, 이 기록은 값과 변화로 평가합니다');
   const ch = previous ? papsChange({ ...p, valid: true }, previous) : null;
   if (ch) parts.push(`직전 대비 ${ch.diff > 0 ? '+' : ''}${ch.diff}${ch.unit} (${ch.direction === 'improved' ? '좋아짐' : ch.direction === 'worsened' ? '줄어듦' : '동일'})`);
