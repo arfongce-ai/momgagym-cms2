@@ -47,6 +47,7 @@
 
 ### 2026-11-25 · Claude Code · 리포트 이력 1RM 종목 분리 (fix/lifting-group-by-exercise-1125)
 - 문제: 리포트 'AI 측정 이력'이 1RM을 종목 구분 없이 한 묶음(`lifting_onerm`)으로 묶어 스쿼트·데드리프트 회차·추이 그래프가 섞임.
+- 확장(같은 PR): ROM(관절·자세)·보행(걷기/달리기·방향)·스프린트(종목)·심폐(장비·테스트)도 `measureSubtype.subtypeOf` 기준으로 그룹 분리(`rom:SHOULDER:STANDING` 형태, 제목에 세부 이름). 점프·보행 다지표 추세 그래프는 전체가 아니라 해당 묶음 회차만으로 계산(`Report.jsx`). 세부 정보 없는 과거 기록은 예전 키. 자세·신체정보·한다리서기·스쿼트는 세부 테스트가 없어 그대로.
 - 수정: `reportService.menuGroupKey`가 `exerciseType`이 있으면 `lifting_onerm:squat`처럼 종목별 그룹 키, 제목은 '1RM · 스쿼트'. 종목 정보 없는 과거 기록은 예전 키 유지. VBT도 동일.
 
 ### 2026-11-25 · Claude Code · 모미 토큰 절감 (main)

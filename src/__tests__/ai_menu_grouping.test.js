@@ -207,3 +207,27 @@ describe('바벨 리프팅 1RM은 종목별로 따로 묶는다 (2026-11-25)', (
     menuSummaries.forEach((m) => expect(m.count).toBe(1));
   });
 });
+
+describe('세부 테스트별 이력 분리 — ROM·보행·스프린트·심폐 (2026-11-25)', () => {
+  it('ROM은 관절·자세별로 다른 그룹', () => {
+    const a = menuGroupKey({ menu: 'rom', data: { joint: 'SHOULDER', poseMode: 'STANDING' } });
+    const b = menuGroupKey({ menu: 'rom', data: { joint: 'HIP', poseMode: 'SUPINE' } });
+    expect(a).not.toBe(b);
+    expect(a.startsWith('rom:')).toBe(true);
+  });
+  it('스프린트는 종목(testKey)별로 다른 그룹, 정보 없으면 예전 키', () => {
+    expect(menuGroupKey({ menu: 'sprint', data: { testKey: 'sprint_5m' } })).not.toBe(menuGroupKey({ menu: 'sprint', data: { testKey: 'agility_505' } }));
+    expect(menuGroupKey({ menu: 'sprint', data: {} })).toBe('sprint');
+  });
+  it('심폐는 장비·테스트별로 분리', () => {
+    expect(menuGroupKey({ menu: 'cardio', data: { machineId: 'a', protocolId: 'p1' } })).not.toBe(menuGroupKey({ menu: 'cardio', data: { machineId: 'b', protocolId: 'p1' } }));
+  });
+  it('이력 요약 제목에 세부 이름이 붙는다', () => {
+    const { menuSummaries } = buildAiReport([
+      { menu: 'rom', menuTitle: '관절 가동범위', recordedAt: '2026-11-01', data: { joint: 'SHOULDER', poseMode: 'STANDING' } },
+      { menu: 'rom', menuTitle: '관절 가동범위', recordedAt: '2026-11-02', data: { joint: 'HIP', poseMode: 'SUPINE' } },
+    ]);
+    expect(menuSummaries).toHaveLength(2);
+    expect(menuSummaries.map((m) => m.title).sort()).toEqual(['관절 가동범위 · 견관절 · 서서', '관절 가동범위 · 고관절 · 누워서']);
+  });
+});
