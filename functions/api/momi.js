@@ -6,7 +6,7 @@
 import { MOMI_SYSTEM_PROMPT } from '../_shared/momiPrompt.js';
 import { resolveVerifiedRole } from '../_shared/verifyFirebaseToken.js';
 import {
-  applyMomiSafetyGuard,
+  applyMomiSafetyGuard, MOMI_EMPTY_TEXT,
   clampText,
   enforceMomiRateLimit,
   jsonResponse,
@@ -170,13 +170,30 @@ export async function onRequestPost(context) {
       return jsonResponse({ error: `모미 분석 호출 실패 — ${reason}`, code: `ANTHROPIC_${anthropicRes.status}` }, anthropicRes.status);
     }
 
-    const data = await anthropicRes.json();
-    await recordPaidAiCost(env, budgetReservation, usedModel, data.usage);
-    const modelText = (data.content || [])
+    const textOf = (d) => (d.content || [])
       .map((block) => (block.type === 'text' ? block.text : ''))
       .filter(Boolean)
       .join('\n');
-    const text = applyMomiSafetyGuard({ kind, report, question: safeQuestion, text: modelText });
+    let data = await anthropicRes.json();
+    await recordPaidAiCost(env, budgetReservation, usedModel, data.usage);
+    let modelText = textOf(data);
+    // [2026-11-25] 호출은 성공(200)인데 글이 비어 오는 경우(모델이 빈 응답·거절 등) — 대체 모델로 1번 다시 시도한다.
+    if (!modelText.trim() && usedModel !== FALLBACK_MODEL) {
+      console.warn('[momi] 빈 응답 — 대체 모델로 재시도:', usedModel, data.stop_reason);
+      usedModel = FALLBACK_MODEL;
+      const retry = await callAnthropic(usedModel);
+      if (retry.ok) {
+        data = await retry.json();
+        await recordPaidAiCost(env, budgetReservation, usedModel, data.usage);
+        modelText = textOf(data);
+      }
+    }
+    let text = applyMomiSafetyGuard({ kind, report, question: safeQuestion, text: modelText });
+    // 안전 문구가 아니라 "빈 응답 기본문구"가 나가는 상황이면 오류로 돌려 화면이 규칙 기반 가이드를 보여 주게 한다.
+    if (!modelText.trim() && text === MOMI_EMPTY_TEXT) {
+      const blocks = (data.content || []).map((b) => b.type).join(',') || '없음';
+      return jsonResponse({ error: `모미 응답이 비어 있음(종료 사유: ${data.stop_reason || '알 수 없음'}, 응답 블록: ${blocks}, 모델: ${usedModel})`, code: 'MOMI_EMPTY' }, 502);
+    }
 
     return jsonResponse({ text, model: usedModel, promptVersion: PROMPT_VERSION });
   } catch (err) {

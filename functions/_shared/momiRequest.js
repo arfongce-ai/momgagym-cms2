@@ -113,6 +113,8 @@ function severityOf(report) {
  * 모델 지침 누락 시에도 최소 안전 문구를 보장한다. 일반적인 동작 위험(risk)은
  * 답변을 유지하되 트레이너 확인을 붙이고, 통증/응급 레드플래그는 처방을 보류한다.
  */
+export const MOMI_EMPTY_TEXT = '분석 결과를 만들지 못했습니다. 잠시 후 다시 시도해주세요.';
+
 export function applyMomiSafetyGuard({ kind, report, question, text }) {
   const input = searchableInput({ report, question });
   const emergency = EMERGENCY_TERMS.some((term) => input.includes(term));
@@ -128,7 +130,7 @@ export function applyMomiSafetyGuard({ kind, report, question, text }) {
 
   const cleanText = typeof text === 'string' && text.trim()
     ? text.trim()
-    : '분석 결과를 만들지 못했습니다. 잠시 후 다시 시도해주세요.';
+    : MOMI_EMPTY_TEXT;
   if (severityOf(report) === 'risk' && !cleanText.includes('트레이너')) {
     return `${cleanText}\n\n※ 위험 판정이 포함되어 있으므로 실행 전 담당 트레이너가 측정 품질과 현재 증상을 함께 확인해야 합니다.`;
   }
