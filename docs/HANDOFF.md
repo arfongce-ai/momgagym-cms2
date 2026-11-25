@@ -45,6 +45,9 @@
 
 ## 작업 로그
 
+### 2026-11-25 · Claude Code · 배포 게이트 메모 (chore/deploy-release-1125)
+- Cloudflare Production 배포는 "완료된 PR의 병합 커밋"만 허용한다(`Deploy to Cloudflare Pages`의 Require a merged pull request 단계). `main`에 직접 push한 `1efe1d6`·`e52e2e6`은 배포가 거부돼(실패) 화면에 반영되지 않았다. 이 PR 병합으로 두 커밋 내용이 함께 배포된다. 앞으로는 브랜치 → PR → 병합으로 올릴 것.
+
 ### 2026-11-25 · Claude Code · 모미 토큰 절감 (main)
 - 원인: `MomiAutoNote`가 리포트를 열 때마다 자동으로 유료 호출했고, 빈 응답 버그 때문에 노트가 저장되지 않아 열 때마다 반복 호출 + 빈 응답 재시도 이중 과금.
 - 조치: ①자동 호출 끔(`MOMI_AUTO_NOTE_ON_OPEN=false`, 버튼 '모미 노트 만들기'로만 생성, 저장 노트 재사용) ②`askMomi` 첫 답변 localStorage 캐시(60건·30일, `fresh:true`면 새로 호출, 패널 버튼은 '다시 분석') ③후속 질문(history 있음)은 `functions/api/momi.js`에서 Haiku(`MOMI_FOLLOWUP_MODEL`로 변경 가능) ④후속 질문 근거 데이터 압축은 '두 번째 질문부터 수치 소실' 이력이 있어 하지 않음.
