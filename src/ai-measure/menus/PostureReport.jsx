@@ -228,7 +228,7 @@ export default function PostureReport({
 
         <section className="grid gap-4 sm:grid-cols-[1.3fr_0.9fr]">
           <GhostingViewer
-            currentImageUrl={currentImageUrl || report?.imageUrl || report?.image_urls?.front || report?.image_urls?.current?.front}
+            currentImageUrl={currentImageUrl || report?.imageUrl || report?.image_urls?.front || report?.image_urls?.current?.front || report?.viewThumbs?.front || Object.values(report?.viewThumbs || {})[0]}
             previousImageUrl={previousImageUrl || report?.comparison?.previousImageUrl || report?.comparison?.image_urls?.front || report?.image_urls?.before?.front}
             currentLandmarks={currentPose}
             previousLandmarks={previousPose}

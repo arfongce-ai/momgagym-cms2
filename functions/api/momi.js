@@ -120,7 +120,7 @@ export async function onRequestPost(context) {
       userMessageContent = `아래는 회원의 측정 리포트 데이터입니다. 시스템 프롬프트의 4단계 출력 프로세스(또는 예외 규정 해당 시 그 규칙)를 따라 응답해주세요.\n\n${userContent}`;
     }
 
-    const callAnthropic = (model) => fetch('https://api.anthropic.com/v1/messages', {
+    const callAnthropic = (model, { thinkingOff = true, maxTokens = 4096 } = {}) => fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -129,7 +129,10 @@ export async function onRequestPost(context) {
       },
       body: JSON.stringify({
         model,
-        max_tokens: 1024,
+        // [빈 응답 수정 2026-11-25] 새 모델이 생각(thinking)에 토큰을 다 써서 글이 비어 오던 문제(종료 사유 max_tokens, 응답 블록 thinking).
+        // 생각을 끄고 출력 한도도 넉넉히 둔다.
+        max_tokens: maxTokens,
+        ...(thinkingOff ? { thinking: { type: 'disabled' } } : {}),
         // [비용 절감 2026-08-11] MOMI_SYSTEM_PROMPT+roleSuffix는 같은 role이면
         // 호출마다 글자 하나 안 틀리고 똑같다(회원 리포트·질문 내용은 전부
         // 아래 messages 쪽에 따로 들어가지 여기 안 섞임) — 그래서 통째로
@@ -147,11 +150,17 @@ export async function onRequestPost(context) {
 
     let usedModel = String(env.MOMI_MODEL || '').trim() || DEFAULT_MODEL;
     let anthropicRes = await callAnthropic(usedModel);
+    // thinking 끄기 옵션을 모델이 받아주지 않으면(400) 그 옵션만 빼고 1번 다시 시도한다.
+    let thinkingOff = true;
+    if (anthropicRes.status === 400) {
+      thinkingOff = false;
+      anthropicRes = await callAnthropic(usedModel, { thinkingOff });
+    }
     // 모델명이 서버에서 인식되지 않으면(404) 대체 모델로 1번만 다시 시도한다.
     if (anthropicRes.status === 404 && usedModel !== FALLBACK_MODEL) {
       console.warn('[momi] 모델을 찾지 못해 대체 모델로 재시도:', usedModel, '->', FALLBACK_MODEL);
       usedModel = FALLBACK_MODEL;
-      anthropicRes = await callAnthropic(usedModel);
+      anthropicRes = await callAnthropic(usedModel, { thinkingOff });
     }
 
     if (!anthropicRes.ok) {
@@ -178,10 +187,10 @@ export async function onRequestPost(context) {
     await recordPaidAiCost(env, budgetReservation, usedModel, data.usage);
     let modelText = textOf(data);
     // [2026-11-25] 호출은 성공(200)인데 글이 비어 오는 경우(모델이 빈 응답·거절 등) — 대체 모델로 1번 다시 시도한다.
-    if (!modelText.trim() && usedModel !== FALLBACK_MODEL) {
-      console.warn('[momi] 빈 응답 — 대체 모델로 재시도:', usedModel, data.stop_reason);
+    if (!modelText.trim() && (usedModel !== FALLBACK_MODEL || data.stop_reason === 'max_tokens')) {
+      console.warn('[momi] 빈 응답 — 재시도:', usedModel, data.stop_reason);
       usedModel = FALLBACK_MODEL;
-      const retry = await callAnthropic(usedModel);
+      const retry = await callAnthropic(usedModel, { thinkingOff, maxTokens: 8192 });
       if (retry.ok) {
         data = await retry.json();
         await recordPaidAiCost(env, budgetReservation, usedModel, data.usage);

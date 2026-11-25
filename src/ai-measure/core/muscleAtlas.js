@@ -95,6 +95,34 @@ export function atlasForItems(items = []) {
   return { tight, weak: sorted(acc.weak).filter((w) => !tightNos.has(w.no)) };
 }
 
+// 항목(자세)별 부위 이름 — 화면에서 '부위 · 자세' 묶음 제목에 쓴다.
+export const ITEM_REGION_LABEL = {
+  forward_head: '머리·목',
+  shoulder_height: '어깨',
+  pelvis_height: '골반·허리',
+};
+
+/**
+ * 판정 항목별로 따로 묶은 근육 경향 — [{ key, region, label, value, unit, side, level, tight:[no], weak:[no] }]
+ * 위험 > 주의 순. atlasForItems(합산)와 같은 연결표(ITEM_ATLAS)를 쓰되, 항목마다 분리해서 보여준다.
+ */
+export function atlasByItem(items = []) {
+  return items
+    .filter((it) => LEVEL_RANK[it.level] && ITEM_ATLAS[it.key])
+    .map((it) => ({
+      key: it.key,
+      region: ITEM_REGION_LABEL[it.key] || '',
+      label: it.label,
+      value: it.value,
+      unit: it.unit,
+      side: it.side || null,
+      level: it.level,
+      tight: [...ITEM_ATLAS[it.key].tight],
+      weak: [...ITEM_ATLAS[it.key].weak],
+    }))
+    .sort((a, b) => LEVEL_RANK[b.level] - LEVEL_RANK[a.level]);
+}
+
 // ── 근막경선(Anatomy Trains, Thomas Myers) ── 근육 하나가 아니라 '이어진 선'으로 보는 설명용 이론.
 // 판정된 항목에만 붙인다. 이론이며 측정값이 아니다 — 같은 선 위의 다른 부위를 함께 확인하라는 안내로만 쓴다.
 export const FASCIA_LINES = {

@@ -8,7 +8,10 @@ const src = readFileSync(join(process.cwd(), 'functions', 'api', 'momi.js'), 'ut
 
 describe('모미 빈 응답 처리', () => {
   it('빈 글이면 대체 모델로 1번 재시도하고, 그래도 비면 MOMI_EMPTY 오류(502)로 돌려준다', () => {
-    expect(src).toContain("if (!modelText.trim() && usedModel !== FALLBACK_MODEL)");
+    expect(src).toContain("if (!modelText.trim() && (usedModel !== FALLBACK_MODEL || data.stop_reason === 'max_tokens'))");
+    // 생각(thinking)이 출력 토큰을 다 쓰지 않게 끄고, 한도를 넉넉히 둔다
+    expect(src).toContain("thinking: { type: 'disabled' }");
+    expect(src).toContain('maxTokens = 4096');
     expect(src).toContain("code: 'MOMI_EMPTY' }, 502");
     expect(src).toContain('종료 사유');
   });

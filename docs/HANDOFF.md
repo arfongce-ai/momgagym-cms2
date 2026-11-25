@@ -45,6 +45,14 @@
 
 ## 작업 로그
 
+### 2026-11-25 · Claude Code · 리포트 사진 누움·썸네일·근육도·모미 빈 응답·사진 비교 (main)
+- 사진 누움: `captureQuality.js grabThumb`이 카메라 회전 보정(localStorage `momi.cameraRotationDeg`)을 적용(한다리서기 등 시작/중간 썸네일).
+- 자세 스켈레톤 시트·Before&After: `PostureMeasure.jsx`가 면별 작은 사진(`thumbUrl`, 240px)을 `report.viewThumbs`로 저장 → `PostureResultSheet`(photoMap)·`PostureReport`(GhostingViewer)가 저장 기록을 다시 열어도 사진 표시. 예전 기록은 viewThumbs가 없어 뼈대만 보임.
+- 근육 해부도: `muscleAtlas.atlasByItem`으로 부위·자세(항목)별 묶음 표시, '근육 도감 열기' 버튼 제거(MuscleAtlas.jsx는 미사용으로 남김).
+- 모미 빈 응답: `functions/api/momi.js` thinking 비활성(`thinking:{type:'disabled'}`, 400이면 옵션 빼고 재시도) + max_tokens 4096, 빈 응답(max_tokens) 시 8192로 재시도.
+- 사진 비교: `capture.deviceKey`(브라우저·해상도 지문)를 저장 → 같은 기기면 `QuickResultSheet`가 직전 기록 사진과 자동 나란히 표시. `VideoCompareUpload`는 기본 접힘(영상은 클라우드 저장 안 하므로 자동 불러오기 불가, 썸네일로 대체).
+- 테스트 3913 예상(신규 `report_photo_compare_1125.test.js`), 빌드 통과. 실기기 확인 못 함.
+
 ### 2026-11-24 · Claude Code · 측정 안의 세부 테스트별 개별 평가·종합 해설 (브랜치 feat/comprehensive-link-1124, #79 포함)
 - 문제: 종합 분석·교차 참고·기간 종합이 측정 종류(kind/reportType)별 최신 1건만 써서, 같은 측정 안 세부 테스트(1RM 벤치·VBT 스내치, CMJ·SJ, 관절별 ROM, 스프린트 종목, 심폐 장비·테스트, 걷기/달리기·방향)가 사라지거나 값이 한 평균에 섞임.
 - `core/measureSubtype.js`(단일 소스): `subtypeOf(kind, report)` → {key,label}, `latestPerSubtype`, `subtypeEntryKey`('kind|세부키').

@@ -314,6 +314,8 @@ export default function PostureMeasure({ member, onSave, onBack, onViewInReport 
     const landmarks = step.key === 'back' ? sanitizeBackLandmarks(rawLandmarks) : rawLandmarks;
 
     const snapshotUrl = captureVideoSnapshot(latestVideoRef.current, rotationDegRef.current);
+    // [썸네일 저장 2026-11-25] 기록에 남길 작은 사진(저장 후 다시 열어도 스켈레톤 시트·Before/After에 사진이 보이게).
+    const thumbUrl = captureVideoSnapshot(latestVideoRef.current, rotationDegRef.current, 240, 0.55);
     const bi = bodyInfoRef.current;
     let analysis = null;
     try {
@@ -331,6 +333,7 @@ export default function PostureMeasure({ member, onSave, onBack, onViewInReport 
         landmarks,
         analysis,
         snapshotUrl,
+        thumbUrl,
         needsReview: partialBody || !analysis, // 일부 관절 미검출·분석 불가 → 기록은 남기되 확인 필요
         capturedAt: new Date().toISOString(),
       },
@@ -844,6 +847,7 @@ function buildReport({ member, bodyInfo, captures, selectedSteps }) {
       landmarks: capture.landmarks,
       analysis: capture.analysis,
       snapshotUrl: capture.snapshotUrl || '',
+      thumbUrl: capture.thumbUrl || '',
     };
   });
 
@@ -853,7 +857,7 @@ function buildReport({ member, bodyInfo, captures, selectedSteps }) {
     .map((step) => {
       const capture = captures[step.key];
       if (!capture) return null;
-      return { key: step.key, label: step.label, snapshotUrl: capture.snapshotUrl || '', landmarks: capture.landmarks, analysis: capture.analysis };
+      return { key: step.key, label: step.label, snapshotUrl: capture.snapshotUrl || '', thumbUrl: capture.thumbUrl || '', landmarks: capture.landmarks, analysis: capture.analysis };
     })
     .filter(Boolean);
 
@@ -888,6 +892,7 @@ function buildReport({ member, bodyInfo, captures, selectedSteps }) {
     reviewViews: selectedSteps.filter((step) => captures[step.key]?.needsReview).map((step) => step.key),
     viewLandmarks: Object.fromEntries(Object.entries(perView).map(([key, value]) => [key, value.landmarks])),
     perViewAnalysis: perViewAnalysisMap,
+    viewThumbs: Object.fromEntries(Object.entries(perView).filter(([, v]) => v.thumbUrl).map(([k, v]) => [k, v.thumbUrl])),
     perViewSnapshots, // 화면 전용 (저장 시 제외)
     analysis: mergedAnalysis,
     postureScore: mergedAnalysis?.score ?? null,
@@ -1291,20 +1296,23 @@ async function createPostureSnapshotFile(item, filename) {
   return new File([blob], filename, { type: 'image/jpeg' });
 }
 
-function captureVideoSnapshot(video, rotationDeg = 0) {
+function captureVideoSnapshot(video, rotationDeg = 0, maxWidth = 0, quality = 0.82) {
   if (!video?.videoWidth || !video?.videoHeight) return '';
   const swapped = rotationDeg === 90 || rotationDeg === 270;
   const canvas = document.createElement('canvas');
   // [2026-08-02] 회전 보정: 90/270에서는 실제 저장될 사진의 가로/세로가 원본
   // 비디오와 반대가 된다(세로로 서 있는 사람 → 원본은 가로로 눕게 들어옴).
-  canvas.width = swapped ? video.videoHeight : video.videoWidth;
-  canvas.height = swapped ? video.videoWidth : video.videoHeight;
+  let cw = swapped ? video.videoHeight : video.videoWidth;
+  let ch = swapped ? video.videoWidth : video.videoHeight;
+  if (maxWidth && cw > maxWidth) { ch = Math.round((ch / cw) * maxWidth); cw = maxWidth; }
+  canvas.width = cw;
+  canvas.height = ch;
   const ctx = canvas.getContext('2d');
   // drawVideoCover가 recordAspect.js의 rotateLandmarksNormalized와 동일한 회전
   // 방향 규약을 쓰므로, 이 사진 위에 (역시 회전 보정된) 랜드마크를 그대로
   // x*width, y*height 로 겹쳐도 어긋나지 않는다.
   if (!drawVideoCover(ctx, video, canvas.width, canvas.height, rotationDeg)) return '';
-  return canvas.toDataURL('image/jpeg', 0.82);
+  return canvas.toDataURL('image/jpeg', quality);
 }
 
 function isFullBodyVisible(landmarks) {

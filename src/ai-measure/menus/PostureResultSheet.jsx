@@ -8,8 +8,7 @@
 // 측정되지 않는 정보라 넣지 않는다(센터 원칙: 느낌이 아니라 숫자).
 import React, { useEffect, useMemo, useState } from 'react';
 import { POSE_LANDMARKS } from '../core/postureMath';
-import MuscleAtlas from './MuscleAtlas.jsx';
-import { atlasForItems, fasciaForItems, FASCIA_NOTE, muscleById, muscleImageSrc } from '../core/muscleAtlas';
+import { atlasByItem, fasciaForItems, FASCIA_NOTE, muscleById, muscleImageSrc } from '../core/muscleAtlas';
 import {
   buildPostureSheetItems,
   buildPostureMissing,
@@ -218,22 +217,22 @@ function SkeletonSheet({ viewMap, items, photoMap = {} }) {
 
 // ── ⑤ 근육 경향 해부도 (추정) ── 그림은 public/muscles (근육 도감 PNG), 목록·연결은 core/muscleAtlas.js
 function MuscleBodyMap({ items }) {
-  const atlas = atlasForItems(items);
-  const has = atlas.tight.length + atlas.weak.length > 0;
+  const groups = atlasByItem(items);
+  const has = groups.length > 0;
   const fascia = fasciaForItems(items);
-  const [atlasOpen, setAtlasOpen] = React.useState(false);
-  const tile = ({ no, causes }, kind) => {
+  // 부위·자세(항목)별로 묶어서 보여준다 — 한 항목의 긴장(빨강)·약화(파랑) 근육이 그 항목 아래에 같이 나온다.
+  const tile = (no, kind, gk) => {
     const m = muscleById(no);
     if (!m) return null;
     return (
-      <figure key={`${kind}${no}`} className="m-0 rounded-lg bg-white p-1 text-center ring-1 ring-slate-200 dark:ring-slate-300">
+      <figure key={`${gk}${kind}${no}`} className="m-0 rounded-lg bg-white p-1 text-center ring-1 ring-slate-200 dark:ring-slate-300">
         <img src={muscleImageSrc(no, kind)} alt={`${m.name} ${kind === 'weak' ? '약화' : '긴장'}`} className="mx-auto block h-24 w-full object-contain" crossOrigin="anonymous" />
         <figcaption className={`text-[10px] font-black ${kind === 'weak' ? 'text-blue-700' : 'text-red-700'}`}>{m.name}</figcaption>
-        <p className="px-0.5 text-[9px] leading-tight text-slate-500">{causes.join(' / ')}</p>
+        <p className="px-0.5 text-[9px] leading-tight text-slate-500">{kind === 'weak' ? '강화하기' : '풀어주기'}</p>
       </figure>
     );
   };
-  const names = (list) => list.map((x) => muscleById(x.no)?.name).filter(Boolean).join(', ');
+  const names = (list) => list.map((no) => muscleById(no)?.name).filter(Boolean).join(', ');
   return (
     <Card>
       <SectionTitle aside={<span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-800 dark:bg-amber-500/15 dark:text-amber-200">추정 · 측정값 아님</span>}>
@@ -242,24 +241,32 @@ function MuscleBodyMap({ items }) {
       {!has ? (
         <p className="rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-200">기준이 있는 항목에서 주의·위험으로 나온 것이 없어 표시할 근육 경향이 없습니다.</p>
       ) : (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-[1.6fr_1fr]">
-          <div className="grid grid-cols-3 gap-1.5">
-            {atlas.tight.map((t) => tile(t, 'tight'))}
-            {atlas.weak.map((w) => tile(w, 'weak'))}
-          </div>
-          <div className="space-y-3">
-            <div>
-              <p className="mb-1 text-xs font-black text-red-700 dark:text-red-300">빨강 · 긴장 쪽 (풀어주기)</p>
-              <p className="text-xs leading-relaxed text-slate-700 dark:text-slate-200">{names(atlas.tight) || '해당 없음'}</p>
+        <div className="space-y-4" data-testid="muscle-groups">
+          {groups.map((g) => (
+            <div key={g.key} className="rounded-lg border border-slate-200 p-2.5 dark:border-slate-700" data-testid={`muscle-group-${g.key}`}>
+              <p className="mb-2 text-xs font-black text-slate-800 dark:text-slate-100">
+                {g.region} · {g.label} {fmt(g.value)}{g.unit}{g.side ? `(${g.side} 높음)` : ''}
+                <span className={`ml-1.5 ${g.level === 'risk' ? 'text-red-700' : 'text-amber-700'}`}>{g.level === 'risk' ? '위험' : '주의'}</span>
+              </p>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1.6fr_1fr]">
+                <div className="grid grid-cols-3 gap-1.5">
+                  {g.tight.map((no) => tile(no, 'tight', g.key))}
+                  {g.weak.map((no) => tile(no, 'weak', g.key))}
+                </div>
+                <div className="space-y-2">
+                  <div>
+                    <p className="mb-0.5 text-xs font-black text-red-700 dark:text-red-300">빨강 · 긴장 쪽 (풀어주기)</p>
+                    <p className="text-xs leading-relaxed text-slate-700 dark:text-slate-200">{names(g.tight) || '해당 없음'}</p>
+                  </div>
+                  <div>
+                    <p className="mb-0.5 text-xs font-black text-sky-700 dark:text-sky-300">파랑 · 약해지기 쉬운 쪽 (강화하기)</p>
+                    <p className="text-xs leading-relaxed text-slate-700 dark:text-slate-200">{names(g.weak) || '해당 없음'}</p>
+                  </div>
+                </div>
+              </div>
             </div>
-            <div>
-              <p className="mb-1 text-xs font-black text-sky-700 dark:text-sky-300">파랑 · 약해지기 쉬운 쪽 (강화하기)</p>
-              <p className="text-xs leading-relaxed text-slate-700 dark:text-slate-200">{names(atlas.weak) || '해당 없음'}</p>
-            </div>
-            <p className="text-[10px] leading-relaxed text-slate-500">이 분의 주의·위험 항목(위 근거)에서만 뽑은 경향입니다. 기준이 없는 항목은 근육에 연결하지 않습니다. 실제 근긴장은 트레이너 촉진으로 확인하세요.</p>
-            <button type="button" onClick={() => setAtlasOpen(true)} data-html2canvas-ignore="true"
-              className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-bold text-slate-700 dark:border-slate-600 dark:text-slate-200">근육 도감 열기</button>
-          </div>
+          ))}
+          <p className="text-[10px] leading-relaxed text-slate-500">이 분의 주의·위험 항목(위 근거)에서만 뽑은 경향입니다. 기준이 없는 항목은 근육에 연결하지 않습니다. 실제 근긴장은 트레이너 촉진으로 확인하세요.</p>
         </div>
       )}
       {fascia.length > 0 && (
@@ -278,7 +285,6 @@ function MuscleBodyMap({ items }) {
           <p className="mt-2 text-[10px] leading-relaxed text-slate-500">{FASCIA_NOTE}</p>
         </div>
       )}
-      {atlasOpen && <MuscleAtlas onClose={() => setAtlasOpen(false)} />}
     </Card>
   );
 }
@@ -325,9 +331,11 @@ export default function PostureResultSheet({ report, analysis, score, member, pr
   // 측정 직후 화면에만 있는 촬영 사진(로컬 ObjectURL) — 저장된 기록을 다시 열면 뼈대만 보인다.
   const photoMap = useMemo(() => {
     const out = {};
-    (perViewSnapshots || []).forEach((sn) => { if (sn?.key && sn.snapshotUrl) out[sn.key] = sn.snapshotUrl; });
+    // 저장된 기록을 다시 열 때는 report.viewThumbs(작은 사진)로 대신한다.
+    Object.entries(report?.viewThumbs || {}).forEach(([k, url]) => { if (url) out[k] = url; });
+    (perViewSnapshots || []).forEach((sn) => { const u = sn?.snapshotUrl || sn?.thumbUrl; if (sn?.key && u) out[sn.key] = u; });
     return out;
-  }, [perViewSnapshots]);
+  }, [perViewSnapshots, report?.viewThumbs]);
   const viewMap = useMemo(() => collectViewLandmarks({
     viewLandmarks: report?.viewLandmarks,
     perViewSnapshots: perViewSnapshots || report?.perViewSnapshots,
@@ -338,6 +346,7 @@ export default function PostureResultSheet({ report, analysis, score, member, pr
     <div data-testid="posture-result-sheet">
       <QuickResultSheet
         report={report}
+        previousReport={previousReport}
         score={score}
         items={quickItems}
         missing={missing}

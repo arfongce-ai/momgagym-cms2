@@ -18,7 +18,7 @@ const STEPS = [0, 90, 180, 270];
 // 버튼을 누른 즉시 다른 인스턴스도 같이 갱신되도록 커스텀 이벤트로 동기화한다.
 const SYNC_EVENT = 'momi:camera-rotation-changed';
 
-function readStoredRotation() {
+export function readStoredRotation() {
   try {
     const raw = Number(window.localStorage.getItem(STORAGE_KEY));
     return STEPS.includes(raw) ? raw : 0;
