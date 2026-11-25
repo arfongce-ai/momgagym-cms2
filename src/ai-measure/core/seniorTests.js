@@ -14,6 +14,20 @@ import { normalizeSex } from './cardioTest';
 
 export const SENIOR_KIND = 'senior_test';
 
+/** 종합분석·모미에 넘기는 "이 테스트를 어떤 기준으로 봤는지" 한 줄(저장된 기준이 있으면 그대로, 없으면 고정 출처). */
+export function seniorCriteriaText(report = {}) {
+  const label = report.testLabel || '시니어 테스트';
+  const ref = report.reference?.text;
+  const src = report.reference?.source;
+  if (ref) return `${label}: ${ref}${src ? ` (출처 ${src})` : ''} — 나이·성별 규준 참고, 진단 아님.`;
+  const fixed = {
+    chair30: '30초 의자 일어서기: 나이·성별 평균 미만이면 다리 힘이 약한 신호(CDC STEADI 기준표, 60~94세).',
+    sts5: '5회 일어서기: 나이대 평균보다 오래 걸리면 느린 신호(Bohannon 2006, 60~89세).',
+    tug: 'TUG: 12초 이상이면 낙상 위험 신호(CDC STEADI).',
+  }[report.testId];
+  return `${fixed || `${label}: 기준표 없음`} 나이·성별이 없거나 범위 밖이면 판정하지 않고 기록만 비교합니다.`;
+}
+
 export const SENIOR_TESTS = {
   chair30: {
     id: 'chair30',

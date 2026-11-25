@@ -192,6 +192,7 @@ export async function askMomiCombined({ member, result, question } = {}) {
         evaluationText: result.evaluation?.text || null,
         combinedKinds: result.combinedKinds || [],
         coverageScore: result.coverageScore ?? null,
+        criteria: result.criteria || [],
       },
       member: { name: member.name, category: member.category || null },
       crossContext: null,
@@ -252,4 +253,31 @@ export async function askMomiDaily({ member, condition, question } = {}) {
       history: null,
   });
   return data.text;
+}
+
+// [2026-11-25] 모미(유료 AI) 연결이 안 될 때도 "일을 하도록" 만드는 무료 규칙 기반 통합 설명.
+// 종합분석 결과(buildMemberCombinedAssessment)와 시니어·PAPS 적용 기준을 그대로 문장으로 풀어 준다.
+export function buildLocalCombinedGuide(result) {
+  if (!result) return '';
+  const SEV = { risk: '우선 확인이 필요한 위험 신호가 있습니다', caution: '주의가 필요한 패턴이 있습니다', normal: '큰 위험 신호는 확인되지 않았습니다' };
+  const lines = [];
+  lines.push(`① 종합: ${result.evaluation?.text || SEV[result.severity] || ''}`);
+  if (result.issues?.length) {
+    lines.push('', '② 확인된 사항');
+    result.issues.slice(0, 6).forEach((i) => lines.push(`- ${i.text}`));
+  }
+  if (result.strengths?.length) {
+    lines.push('', '③ 좋은 점');
+    result.strengths.slice(0, 4).forEach((s) => lines.push(`- ${s}`));
+  }
+  if (result.criteria?.length) {
+    lines.push('', '④ 적용한 기준');
+    result.criteria.forEach((c) => lines.push(`- ${c}`));
+  }
+  if (result.recommendations?.length) {
+    lines.push('', '⑤ 다음에 확인할 것');
+    result.recommendations.slice(0, 4).forEach((r) => lines.push(`- ${r}`));
+  }
+  lines.push('', '※ 이 설명은 모미(AI) 없이 측정 결과를 규칙대로 풀어 쓴 것입니다. 진단이 아니며 담당 트레이너가 함께 확인합니다.');
+  return lines.join('\n');
 }

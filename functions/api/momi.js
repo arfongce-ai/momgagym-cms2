@@ -15,7 +15,9 @@ import {
 } from '../_shared/momiRequest.js';
 import { recordPaidAiCost, reservePaidAiCall } from '../_shared/aiBudget.js';
 
-const MODEL = 'claude-sonnet-5';
+// 모델명은 환경변수 MOMI_MODEL 로 바꿀 수 있다. 기본 모델 호출이 404(모델 없음)이면 아래 대체 모델로 1번 다시 시도한다.
+const DEFAULT_MODEL = 'claude-sonnet-5';
+const FALLBACK_MODEL = 'claude-sonnet-5-5';
 const PROMPT_VERSION = '2.2';
 
 // [역할별 응답 범위 2026-08-08] "관리자·트레이너 접근 구분을 모미에도 적용" 요청 대응.
@@ -71,7 +73,7 @@ export async function onRequestPost(context) {
     }
     await enforceMomiRateLimit(env, `momi:${uid}`);
     if (!env.ANTHROPIC_API_KEY) {
-      return jsonResponse({ error: 'MOMI 서버 설정이 완료되지 않았습니다.' }, 503);
+      return jsonResponse({ error: 'MOMI 서버 설정이 완료되지 않았습니다(ANTHROPIC_API_KEY 미등록).', code: 'MOMI_NO_KEY' }, 503);
     }
     const budgetReservation = await reservePaidAiCall(env);
     const roleSuffix = effectiveRole === 'admin' ? ADMIN_ROLE_SUFFIX : TRAINER_ROLE_SUFFIX;
@@ -118,7 +120,7 @@ export async function onRequestPost(context) {
       userMessageContent = `아래는 회원의 측정 리포트 데이터입니다. 시스템 프롬프트의 4단계 출력 프로세스(또는 예외 규정 해당 시 그 규칙)를 따라 응답해주세요.\n\n${userContent}`;
     }
 
-    const anthropicRes = await fetch('https://api.anthropic.com/v1/messages', {
+    const callAnthropic = (model) => fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -126,7 +128,7 @@ export async function onRequestPost(context) {
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({
-        model: MODEL,
+        model,
         max_tokens: 1024,
         // [비용 절감 2026-08-11] MOMI_SYSTEM_PROMPT+roleSuffix는 같은 role이면
         // 호출마다 글자 하나 안 틀리고 똑같다(회원 리포트·질문 내용은 전부
@@ -143,21 +145,40 @@ export async function onRequestPost(context) {
       }),
     });
 
+    let usedModel = String(env.MOMI_MODEL || '').trim() || DEFAULT_MODEL;
+    let anthropicRes = await callAnthropic(usedModel);
+    // 모델명이 서버에서 인식되지 않으면(404) 대체 모델로 1번만 다시 시도한다.
+    if (anthropicRes.status === 404 && usedModel !== FALLBACK_MODEL) {
+      console.warn('[momi] 모델을 찾지 못해 대체 모델로 재시도:', usedModel, '->', FALLBACK_MODEL);
+      usedModel = FALLBACK_MODEL;
+      anthropicRes = await callAnthropic(usedModel);
+    }
+
     if (!anthropicRes.ok) {
       const errText = await anthropicRes.text();
       console.warn('[momi] Anthropic API 호출 실패:', anthropicRes.status, errText.slice(0, 500));
-      return jsonResponse({ error: 'MOMI 분석 서비스 호출에 실패했습니다.' }, anthropicRes.status);
+      // 화면에서 원인을 바로 알 수 있게 상태별로 구체적으로 알린다(키·내부 응답은 노출하지 않음).
+      const reason = {
+        400: '요청 형식 오류(내용이 너무 길거나 형식이 맞지 않음)',
+        401: 'AI 서비스 인증 실패(서버의 API 키 확인 필요)',
+        402: 'AI 서비스 결제·크레딧 문제(서버 계정 확인 필요)',
+        403: 'AI 서비스 접근 거부(서버의 API 키 권한 확인 필요)',
+        404: '사용하는 AI 모델을 찾지 못함(서버 모델 설정 확인 필요)',
+        429: 'AI 서비스 요청이 몰림(잠시 후 다시 시도)',
+        529: 'AI 서비스가 일시적으로 과부하(잠시 후 다시 시도)',
+      }[anthropicRes.status] || `AI 서비스 오류(${anthropicRes.status})`;
+      return jsonResponse({ error: `모미 분석 호출 실패 — ${reason}`, code: `ANTHROPIC_${anthropicRes.status}` }, anthropicRes.status);
     }
 
     const data = await anthropicRes.json();
-    await recordPaidAiCost(env, budgetReservation, MODEL, data.usage);
+    await recordPaidAiCost(env, budgetReservation, usedModel, data.usage);
     const modelText = (data.content || [])
       .map((block) => (block.type === 'text' ? block.text : ''))
       .filter(Boolean)
       .join('\n');
     const text = applyMomiSafetyGuard({ kind, report, question: safeQuestion, text: modelText });
 
-    return jsonResponse({ text, model: MODEL, promptVersion: PROMPT_VERSION });
+    return jsonResponse({ text, model: usedModel, promptVersion: PROMPT_VERSION });
   } catch (err) {
     const status = Number(err?.status) || 500;
     if (status >= 500) console.error('[momi] 서버 오류:', err);

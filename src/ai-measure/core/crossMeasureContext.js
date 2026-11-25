@@ -6,6 +6,8 @@ import { cadenceRangeFor, classifyGaitMode } from './gaitMode';
 import { ROM_SYMMETRY_CAUTION_MAX_PCT } from './romThresholds';
 import { generateLiftingDiagnosis } from './barbellClinical';
 import { subtypeOf, latestPerSubtype } from './measureSubtype';
+import { seniorCriteriaText } from './seniorTests';
+import { papsCriteriaText } from './papsTests';
 
 const OUTPUT_POLICY = Object.freeze({
   posture: 'photo',
@@ -442,6 +444,12 @@ export function buildCombinedAssessment(items = []) {
       perKind: perKind.map((p) => ({ kind: p.kind, label: p.label, severity: p.focus.severity, primaryFinding: p.focus.primaryFinding })),
     },
     evaluation: { severity, text: evaluationText },
+    // [2026-11-25] 시니어·PAPS 는 "어떤 기준으로 봤는지"를 함께 낸다(화면 설명·모미 통합 가이드에 쓴다).
+    criteria: unique(valid.flatMap(({ kind, report }) => {
+      if (kind === 'senior') return [seniorCriteriaText(report)];
+      if (kind === 'paps') return [papsCriteriaText(report)];
+      return [];
+    })),
     issues,
     strengths,
     recommendations: unique(perKind.map((p) => p.focus.recommendedNextCheck)),

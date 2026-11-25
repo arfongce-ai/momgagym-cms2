@@ -61,3 +61,32 @@ describe('PAPS 탭 (2026-11-25)', () => {
     expect(readFileSync('functions/api/voice-command.js', 'utf8')).toContain("'paps'");
   });
 });
+
+import { buildCombinedAssessment } from '../ai-measure/core/crossMeasureContext';
+import { buildSeniorRecord } from '../ai-measure/core/seniorTests';
+import { buildLocalCombinedGuide } from '../services/momiService';
+
+describe('종합분석: 시니어·PAPS 기준 설명과 모미 폴백 (2026-11-25)', () => {
+  const senior = buildSeniorRecord({ testId: 'chair30', value: 8, subject: { age: 70, sex: 'male' } });
+  const paps = buildPapsRecord({ testId: 'pushup', value: 12, subject: { age: 13, sex: 'male', grade: '중1' } });
+  it('시니어·PAPS 가 결합되면 적용 기준(criteria)이 함께 나온다', () => {
+    const r = buildCombinedAssessment([{ kind: 'senior', report: senior }, { kind: 'paps', report: paps }]);
+    expect(r.criteria.length).toBe(2);
+    expect(r.criteria.join(' ')).toContain('CDC STEADI');
+    expect(r.criteria.join(' ')).toContain('등급');
+    expect(r.combinedItems.map((i) => i.kind)).toEqual(['senior', 'paps']);
+  });
+  it('모미가 안 돼도 규칙 기반 통합 설명이 나온다(기준 포함)', () => {
+    const r = buildCombinedAssessment([{ kind: 'senior', report: senior }, { kind: 'paps', report: paps }]);
+    const text = buildLocalCombinedGuide(r);
+    expect(text).toContain('① 종합');
+    expect(text).toContain('④ 적용한 기준');
+    expect(text).toContain('모미(AI) 없이');
+  });
+  it('서버: 오류 사유를 구체적으로 알리고 모델 404 는 대체 모델로 재시도한다', () => {
+    const src = readFileSync('functions/api/momi.js', 'utf8');
+    expect(src).toContain('FALLBACK_MODEL');
+    expect(src).toContain('ANTHROPIC_API_KEY 미등록');
+    expect(src).toContain('MOMI_MODEL');
+  });
+});

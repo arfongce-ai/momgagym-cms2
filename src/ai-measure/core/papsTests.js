@@ -10,6 +10,12 @@
 // ════════════════════════════════════════════════════════════════════════
 export const PAPS_KIND = 'paps_test';
 
+/** 종합분석·모미에 넘기는 기준 설명. 등급표는 확인 전이라 값·회차 비교만 한다고 분명히 적는다. */
+export function papsCriteriaText(report = {}) {
+  const label = `${report.testLabel || 'PAPS 테스트'}${report.variant === 'knee' ? '(무릎 대고)' : ''}`;
+  return `${label}: PAPS 학년·성별 등급(1~5등급) 기준표를 아직 적용하지 않아 등급 판정은 하지 않고, 같은 방법으로 잰 이전 기록과의 변화만 비교합니다. 값이 늘면 좋아진 것, 무효 기록은 비교에서 뺍니다.`;
+}
+
 // kind: reps_free(최대 횟수, 끝낼 때까지) · reps_timed(제한시간 안의 횟수) · hold(버틴 시간) · value(자로 잰 값)
 export const PAPS_TESTS = {
   pushup: {
@@ -160,7 +166,7 @@ export function papsGroupKey(p = {}) {
 // 필드 이름은 inferReportType 에 걸리지 않게 고른다(heightCm·mode·type·summary·analysis 금지).
 export function buildPapsRecord({
   testId, value, subject = {}, variant = '', invalid = false, trials = [], metronomeBpm = null,
-  startedAt = null, endedAt = null, trainerNote = '', repLog = [],
+  startedAt = null, endedAt = null, trainerNote = '', repLog = [], hr = null, auto = null,
 } = {}) {
   const meta = PAPS_TESTS[testId];
   const ev = evaluatePapsTest(testId, value, { invalid });
@@ -185,6 +191,8 @@ export function buildPapsRecord({
       weightKg: num(subject.weightKg), heightCm: num(subject.heightCm),
     },
     metronomeBpm: num(metronomeBpm),
+    hr: hr || null,
+    auto: auto && auto.used ? { used: true, autoValue: num(auto.autoValue), autoCount: num(auto.autoCount), offset: num(auto.offset) || 0 } : null,
     repLog: Array.isArray(repLog) ? repLog.slice(0, 120) : [],
     trainerNote: String(trainerNote || '').slice(0, 500),
     startedAt, endedAt,

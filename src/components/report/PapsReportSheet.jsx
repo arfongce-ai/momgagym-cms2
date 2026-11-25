@@ -7,6 +7,7 @@ import {
   UnifiedReportCanvas, UnifiedReportHeader, UnifiedReportPage, UnifiedReportSection,
 } from './UnifiedReportPrimitives';
 import ReportActions from './ReportActions';
+import { HrChart, Tile } from './SeniorReportSheet';
 import { PAPS_TESTS, evaluatePapsTest, papsChange, papsGroupKey } from '../../ai-measure/core/papsTests';
 
 const SEX_LABEL = { male: '남', female: '여' };
@@ -64,6 +65,17 @@ export default function PapsReportSheet({ report, member, previous = null, histo
             </UnifiedReportSection>
           )}
 
+          {p.hr && (
+            <UnifiedReportSection title="심박" subtitle="심박 밴드 기록" className="mb-4">
+              <div className="mb-2 grid grid-cols-3 gap-2">
+                <Tile label="평균 심박" value={p.hr.avgBpm ?? '-'} unit="bpm" />
+                <Tile label="최고 심박" value={p.hr.maxBpm ?? '-'} unit="bpm" accent />
+                <Tile label="최대심박 대비" value={p.hr.avgPctOfMax ?? '-'} unit="%" />
+              </div>
+              <HrChart series={p.hr.bpmSeries} stepSec={p.hr.seriesStepSec || 5} />
+            </UnifiedReportSection>
+          )}
+
           {p.trials?.length > 0 && (
             <UnifiedReportSection title="측정 상세" subtitle="가장 좋은 값을 기록으로 사용" className="mb-4">
               <p className="text-[12px] font-semibold text-slate-600 dark:text-slate-300">
@@ -93,7 +105,11 @@ export default function PapsReportSheet({ report, member, previous = null, histo
             <p className="text-[12px] font-semibold text-slate-600 dark:text-slate-300">
               학년 {subject.grade || '-'} · 나이 {subject.age ?? '-'}세 · 성별 {SEX_LABEL[subject.sex] || '-'} · 키 {subject.heightCm ?? '-'}cm · 체중 {subject.weightKg ?? '-'}kg
               {Number.isFinite(p.metronomeBpm) ? ` · 박자 ${p.metronomeBpm}BPM` : ''}
+              {p.auto?.used ? ' · 횟수: 카메라 자동 카운트 + 측정자 확인' : ' · 횟수: 측정자 직접 입력'}
             </p>
+            {p.auto?.used && Number.isFinite(p.auto.autoValue ?? p.auto.autoCount) && (
+              <p className="mt-1 text-[11px] font-semibold text-slate-500">자동 인식값 {p.auto.autoValue ?? p.auto.autoCount}{p.unit}{p.auto.offset ? ` (측정자 보정 ${p.auto.offset > 0 ? '+' : ''}${p.auto.offset})` : ''} — 측정자가 확인한 값을 기록으로 씁니다.</p>
+            )}
           </UnifiedReportSection>
 
           {p.trainerNote && (
