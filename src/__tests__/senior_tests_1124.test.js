@@ -125,9 +125,9 @@ describe('종합분석 분류·등록', () => {
     expect(inferReportType({ menu: 'senior', data: { kind: 'senior_test', testId: 'tug' } })).toBe('senior');
     expect(menuGroupKey({ menu: 'senior', data: { testId: 'sts5' } })).toBe('senior_sts5');
   });
-  it('메뉴 등록: senior 13번, 도구는 14~17번', () => {
+  it('메뉴 등록: senior 13번, paps 14번, 도구는 15~18번', () => {
     const m = Object.fromEntries(MEASURE_MENUS.map((x) => [x.id, x.no]));
-    expect(m.senior).toBe(13); expect(m.compare).toBe(14); expect(m.timer).toBe(17);
+    expect(m.senior).toBe(13); expect(m.paps).toBe(14); expect(m.compare).toBe(15); expect(m.timer).toBe(18);
   });
   it('음성 키워드', () => {
     expect(matchRuleBasedSubKind('ai_measure', '시니어 테스트 열어줘')).toBe('senior');

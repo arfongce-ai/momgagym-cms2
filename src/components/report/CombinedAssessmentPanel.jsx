@@ -8,13 +8,14 @@
 //  Report.jsx에는 진입 버튼 하나만 추가하고, 나머지는 이 파일 안에서 독립 처리한다.
 // ════════════════════════════════════════════════════════════════════════
 import React, { useState, useEffect } from 'react';
-import { loadLatestReportsByKind, buildMemberCombinedAssessment, askMomiCombined } from '../../services/momiService';
+import { loadLatestReportsByKind, buildMemberCombinedAssessment, askMomiCombined, buildLocalCombinedGuide } from '../../services/momiService';
 import { subtypeOf, kindOfEntryKey } from '../../ai-measure/core/measureSubtype';
 
 const KIND_KO = {
   posture: '자세·체형', rom: 'ROM', jump: '점프', gait: '보행·러닝',
   lifting: '바벨 리프팅', stance: '한다리서기', squat: '오버헤드 스쿼트',
   sprint: '스프린트 & 아질리티', cardio: '심폐지구력',
+  senior: '시니어 기능', paps: 'PAPS 체력평가',
 };
 const STATUS_KO = { normal: '정상', caution: '주의', risk: '위험' };
 
@@ -26,6 +27,7 @@ export default function CombinedAssessmentPanel({ member, recommendation, onStar
   const [momiLoading, setMomiLoading] = useState(false);
   const [momiAnswer, setMomiAnswer] = useState(null);
   const [momiError, setMomiError] = useState(null);
+  const [localGuide, setLocalGuide] = useState('');
 
   useEffect(() => {
     let alive = true;
@@ -49,12 +51,14 @@ export default function CombinedAssessmentPanel({ member, recommendation, onStar
     setResult(null); // 선택이 바뀌면 이전 결과는 무효화(오래된 결과 오인 방지)
     setMomiAnswer(null);
     setMomiError(null);
+    setLocalGuide('');
   };
 
   const runAnalysis = () => {
     setResult(buildMemberCombinedAssessment(available, [...selected]));
     setMomiAnswer(null);
     setMomiError(null);
+    setLocalGuide('');
   };
 
   const askMomiGuide = async () => {
@@ -63,8 +67,11 @@ export default function CombinedAssessmentPanel({ member, recommendation, onStar
     try {
       const text = await askMomiCombined({ member, result });
       setMomiAnswer(text);
+      setLocalGuide('');
     } catch (e) {
-      setMomiError(e.message || '모미에게 물어보는 중 문제가 생겼어요.');
+      // 모미 연결이 안 돼도 규칙 기반 통합 설명은 항상 보여준다(사유는 그대로 표시).
+      setMomiError(`모미 연결 실패: ${e.message || '알 수 없는 문제'}`);
+      setLocalGuide(buildLocalCombinedGuide(result));
     } finally {
       setMomiLoading(false);
     }
@@ -178,6 +185,13 @@ export default function CombinedAssessmentPanel({ member, recommendation, onStar
             </div>
           )}
 
+          {result.criteria?.length > 0 && (
+            <div className="rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 p-3" data-testid="combined-criteria">
+              <p className="text-xs font-black text-slate-600 dark:text-slate-300">적용한 기준 (시니어·PAPS)</p>
+              {result.criteria.map((c, i) => <p key={i} className="mt-1 text-[12px] leading-relaxed text-slate-600 dark:text-slate-300">• {c}</p>)}
+            </div>
+          )}
+
           <button
             onClick={askMomiGuide}
             disabled={momiLoading}
@@ -186,7 +200,12 @@ export default function CombinedAssessmentPanel({ member, recommendation, onStar
             {momiLoading ? '모미가 통합 가이드 만드는 중…' : '🤖 모미에게 통합 가이드 요청'}
           </button>
 
-          {momiError && <p className="text-sm text-red-700 dark:text-red-400">{momiError}</p>}
+          {momiError && <p className="text-sm text-red-700 dark:text-red-400" data-testid="combined-momi-error">{momiError}</p>}
+          {localGuide && (
+            <div className="rounded-xl bg-amber-50/60 dark:bg-amber-500/10 border border-amber-300/60 dark:border-amber-500/30 p-3 text-sm text-slate-700 dark:text-slate-200 whitespace-pre-wrap leading-relaxed" data-testid="combined-local-guide">
+              {localGuide}
+            </div>
+          )}
 
           {momiAnswer && (
             <div className="rounded-xl bg-slate-100/50 dark:bg-slate-800/50 border border-slate-300 dark:border-slate-700 p-3 text-sm text-slate-700 dark:text-slate-200 whitespace-pre-wrap leading-relaxed">

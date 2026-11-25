@@ -154,6 +154,8 @@ export function menuGroupKey(session) {
   const d = session?.data || {};
   // [시니어 2026-11-24] 30초 의자·5회 의자·TUG 는 각각 별도 추이.
   if (session?.menu === 'senior' && d.testId) return `senior_${d.testId}`;
+  // [PAPS 2026-11-25] 테스트(·무릎 방식)마다 별도 추이.
+  if (session?.menu === 'paps' && d.testId) return `paps_${d.testId}${d.variant ? `_${d.variant}` : ''}`;
   if (session?.menu === 'jump') {
     if (d.jumpSubType === 'sj') return 'jump_sj';
     if (d.jumpSubType === 'dj') return 'jump_dj';

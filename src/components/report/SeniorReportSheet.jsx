@@ -20,7 +20,7 @@ const TONE = {
 
 const fmtDate = (v) => String(v || '').slice(0, 10) || '-';
 
-function Tile({ label, value, unit, accent = false }) {
+export function Tile({ label, value, unit, accent = false }) {
   return (
     <div className={`rounded-xl border p-3 ${accent ? 'border-amber-500/35 bg-amber-500/10' : 'border-slate-300 dark:border-slate-700 bg-slate-100/60 dark:bg-slate-800/60'}`}>
       <p className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">{label}</p>
@@ -32,7 +32,7 @@ function Tile({ label, value, unit, accent = false }) {
 }
 
 // 심박 꺾은선(저장된 bpmSeries, 0=신호 없음)
-function HrChart({ series = [], stepSec = 5 }) {
+export function HrChart({ series = [], stepSec = 5 }) {
   const pts = series.map((v, i) => ({ v, i })).filter((p) => p.v > 0);
   if (pts.length < 2) return null;
   const W = 700; const H = 130; const padL = 30; const padR = 10; const padT = 10; const padB = 18;

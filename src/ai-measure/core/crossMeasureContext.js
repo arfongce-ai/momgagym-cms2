@@ -6,6 +6,8 @@ import { cadenceRangeFor, classifyGaitMode } from './gaitMode';
 import { ROM_SYMMETRY_CAUTION_MAX_PCT } from './romThresholds';
 import { generateLiftingDiagnosis } from './barbellClinical';
 import { subtypeOf, latestPerSubtype } from './measureSubtype';
+import { seniorCriteriaText } from './seniorTests';
+import { papsCriteriaText } from './papsTests';
 
 const OUTPUT_POLICY = Object.freeze({
   posture: 'photo',
@@ -17,6 +19,7 @@ const OUTPUT_POLICY = Object.freeze({
   sprint: 'video',
   cardio: 'report',
   senior: 'report',
+  paps: 'report',
 });
 
 const KIND_KO = Object.freeze({
@@ -31,6 +34,7 @@ const KIND_KO = Object.freeze({
   lifting: '바벨 리프팅',
   cardio: '심폐지구력',
   senior: '시니어 기능',
+  paps: 'PAPS 체력평가',
   body: '신체 정보',
 });
 
@@ -245,6 +249,10 @@ export function buildProblemFocus(kind, report = {}) {
       else addStrength(txt);
     }
     if (Number.isFinite(report.hr?.maxBpm)) addStrength(`테스트 중 최고 심박 ${report.hr.maxBpm}bpm.`);
+  } else if (kind === 'paps') {
+    // [PAPS 2026-11-25] 등급 기준표가 없어 값은 '기록'으로만 옮기고 위험 신호를 만들지 않는다. 무효는 확인 요청.
+    if (report.valid === false) addIssue('caution', `${report.testLabel || 'PAPS 테스트'} 기록이 무효입니다(${report.invalidReason || '확인 필요'}) — 트레이너 확인 후 다시 측정해 주세요.`);
+    else if (Number.isFinite(report.value)) addStrength(`${report.testLabel || 'PAPS 테스트'} ${report.value}${report.unit || ''} (같은 방법으로 회차별 비교).`);
   } else if (kind === 'daily') {
     // [모미 신규] 컨디션 체크인(conditionAssessment.js evaluateCondition() 결과)을 해석한다.
     // report.valid===false: 오늘 체크인이 아직 없음. 그 외엔 painNrs/fatigue 순으로 확인해
@@ -440,6 +448,12 @@ export function buildCombinedAssessment(items = []) {
       perKind: perKind.map((p) => ({ kind: p.kind, label: p.label, severity: p.focus.severity, primaryFinding: p.focus.primaryFinding })),
     },
     evaluation: { severity, text: evaluationText },
+    // [2026-11-25] 시니어·PAPS 는 "어떤 기준으로 봤는지"를 함께 낸다(화면 설명·모미 통합 가이드에 쓴다).
+    criteria: unique(valid.flatMap(({ kind, report }) => {
+      if (kind === 'senior') return [seniorCriteriaText(report)];
+      if (kind === 'paps') return [papsCriteriaText(report)];
+      return [];
+    })),
     issues,
     strengths,
     recommendations: unique(perKind.map((p) => p.focus.recommendedNextCheck)),
