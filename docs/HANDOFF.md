@@ -806,3 +806,4 @@
 - 제자리멀리뛰기(SBJ) 리포트에 PAPS 초4~6 등급 카드(JumpReportDashboard `PapsLongJumpGrade`, 표는 papsNorms.js `standlong`). 학년은 회원 grade, 없으면 카드에서 선택(화면 표시만).
 - 12번(필드) 심폐에 스텝테스트(퀸스칼리지, McArdle 1972)·6분 걷기(ATS 2002 절차, Enright&Sherrill 1998 예측거리 %) 추가(core/cardioTest.js `field_step`·`field_6mwt`). 출처 확인한 식만 사용, 6MWT 정상 하한(LLN)·등급 컷오프는 확인 못 해 넣지 않음. 6MWT 는 키(statureCm) 입력 필요, 40~80세만 예측거리.
 - 모미 통합가이드 "분석 결과를 만들지 못했습니다"만 뜨던 문제: 모델 호출은 200인데 글이 빈 경우였음 → 대체 모델 1회 재시도, 그래도 비면 502(MOMI_EMPTY, 종료 사유·모델 표시)로 돌려 화면이 규칙 기반 가이드를 보여 줌(functions/api/momi.js).
+- 스텝테스트에 18번 메트로놈(TimerTool `Metronome`) 연결: 성별로 박자 자동(여 88·남 96), 측정 시작 시 자동 재생·종료 시 정지(`setBpm` 명령 추가). 6분 걷기에 30m 편도 카운터 추가 → 끝나면 거리 칸 자동 채움. PAPS·시니어는 이미 18번 메트로놈·심박 밴드 사용 중. 실기기 소리·자동 재생 확인 필요.
