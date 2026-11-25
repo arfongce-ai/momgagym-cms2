@@ -3,13 +3,13 @@
 //  [PAPS 자동 카운트 2026-11-25] 카메라 자세(33점)로 PAPS 계열 반복 횟수를 세는 순수 로직.
 //  seniorAutoCounter.js 와 같은 방식: 신호 1개 + 문턱 2개(히스테리시스) + 최소 반복 간격.
 //  · 팔굽혀펴기·턱걸이: 팔꿈치 각도(어깨-팔꿈치-손목). 접힘(≤ bendAt)에 들어갈 때 1회, 다시 펴져야(≥ extendAt) 다음 회.
-//  · 윗몸일으키기·윗몸말아올리기: 몸통 기울기(엉덩이→어깨가 수평과 이루는 각, 0~90°). 올라옴(≥ upAt)에서 1회, 다시 눕혀야 다음 회.
+//  · 윗몸말아올리기: 몸통 기울기(엉덩이→어깨가 수평과 이루는 각, 0~90°). 올라옴(≥ upAt)에서 1회, 다시 눕혀야 다음 회.
 //  · 사이드스텝: 골반 좌우 위치(처음 1초 평균을 중심으로, 골반 너비 단위). 반대편 끝에 닿을 때마다 1회.
 //  · 값은 "자동 추정"이다. 문턱값은 시작값(참고용)이며 실기기에서 조정한다. 몸이 안 잡히면 세지 않는다.
 //  · 측정자가 확인·수정한 값을 저장하고, 자동값은 원본으로 함께 남긴다(시니어 탭과 동일).
 // ════════════════════════════════════════════════════════════════════════
 const MIN_VIS = 0.5;
-const MIN_REP_GAP_MS = { pushup: 500, pullup: 900, situp1m: 700, curlup: 700, sidestep20: 250 };
+const MIN_REP_GAP_MS = { pushup: 500, pullup: 900, curlup: 700, sidestep20: 250 };
 
 const L = { sh: [11, 12], el: [13, 14], wr: [15, 16], hip: [23, 24], knee: [25, 26] };
 
@@ -17,7 +17,6 @@ const L = { sh: [11, 12], el: [13, 14], wr: [15, 16], hip: [23, 24], knee: [25, 
 export const PAPS_AUTO_CONFIG = {
   pushup:     { signal: 'elbow',   rest: 150, active: 100, activeIs: 'low'  },
   pullup:     { signal: 'elbow',   rest: 150, active: 75,  activeIs: 'low'  },
-  situp1m:    { signal: 'incline', rest: 20,  active: 55,  activeIs: 'high' },
   curlup:     { signal: 'incline', rest: 8,   active: 20,  activeIs: 'high' },
   sidestep20: { signal: 'lateral', amp: 1.0 },
 };

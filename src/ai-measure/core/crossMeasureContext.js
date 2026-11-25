@@ -252,7 +252,7 @@ export function buildProblemFocus(kind, report = {}) {
   } else if (kind === 'paps') {
     // [PAPS 2026-11-25] 등급 기준표가 없어 값은 '기록'으로만 옮기고 위험 신호를 만들지 않는다. 무효는 확인 요청.
     if (report.valid === false) addIssue('caution', `${report.testLabel || 'PAPS 테스트'} 기록이 무효입니다(${report.invalidReason || '확인 필요'}) — 트레이너 확인 후 다시 측정해 주세요.`);
-    else if (Number.isFinite(report.value)) addStrength(`${report.testLabel || 'PAPS 테스트'} ${report.value}${report.unit || ''} (같은 방법으로 회차별 비교).`);
+    else if (Number.isFinite(report.value)) addStrength(report.evaluationText || `${report.testLabel || 'PAPS 테스트'} ${report.value}${report.unit || ''} (같은 방법으로 회차별 비교).`);
   } else if (kind === 'daily') {
     // [모미 신규] 컨디션 체크인(conditionAssessment.js evaluateCondition() 결과)을 해석한다.
     // report.valid===false: 오늘 체크인이 아직 없음. 그 외엔 painNrs/fatigue 순으로 확인해

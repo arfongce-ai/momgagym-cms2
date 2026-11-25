@@ -1,10 +1,11 @@
 // ai-measure/menus/PapsTestMeasure.jsx
 // ════════════════════════════════════════════════════════════════════════
 //  [PAPS 탭 2026-11-25] 유소년·청소년 체력평가(PAPS 계열) 측정자 입력형 도구.
-//  횟수 탭 · 카운트다운 · 초시계 · 메트로놈 · 자로 잰 값 입력 + 심박 밴드 + 카메라 자동 카운트(선택).
+//  [2026-11-25 개편] 영상촬영이 기본: 카메라로 동작 카운트 + 스켈레톤 + 인식률 + 초시계(+선택 메트로놈)를 영상에 같이 찍어 폰에 저장.
+//  악력만 선택 녹화. 카메라 없이 수동(탭·초시계)으로도 잴 수 있다.
 //  · 자동 카운트·심박 밴드·카메라 화면은 시니어 탭(SeniorTestMeasure)과 같은 부품을 쓴다.
 //  · 학년·성별·나이·키·몸무게는 회원 등록정보에서 가져온다(없으면 입력).
-//  · 등급 판정은 하지 않는다(core/papsTests.js 머리 주석 참고). 값·무효 여부만 저장하고 회차별 비교.
+//  · 등급은 기준표가 있는 초4~6 종목에만(core/papsNorms.js). 그 외(성인 포함)는 값·변화·인식률로 평가(papsEvaluationText).
 //  · 이상·무효 값도 저장한다(저장 차단 금지).
 // ════════════════════════════════════════════════════════════════════════
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
@@ -18,6 +19,9 @@ import { useCameraRotation } from '../core/useCameraRotation';
 import { rotateLandmarksNormalized } from '../core/recordAspect';
 import { ARM_BONES, ARM_DOTS, LEG_BONES, LEG_DOTS, drawPoseSkeleton } from '../core/drawPoseSkeleton';
 import { createPapsAutoCounter, supportsPapsAuto } from '../core/papsAutoCounter';
+import { createRecognitionTracker, frameKeyVisibility } from '../core/recognitionStats';
+import { createMeasureRecorder } from '../core/measureRecorder';
+import { saveVideoToPhone } from '../core/recordSink';
 import CameraStage from './CameraStage.jsx';
 import { normalizeSex } from '../core/cardioTest';
 import {
@@ -83,51 +87,80 @@ export default function PapsTestMeasure({ onBack, member = null, onSave = null, 
   const [saveState, setSaveState] = useState({ state: 'idle', error: '' });
   const [savedRecord, setSavedRecord] = useState(null);
 
-  const [mode, setMode] = useState('manual'); // manual | auto
+  // 영상촬영 기본: primary 종목은 카메라가 기본값, 악력(optional)은 꺼둔 채 선택. 끄면 수동(탭·초시계).
+  const [useCam, setUseCam] = useState(true);
   const [autoSnap, setAutoSnap] = useState(null);
   const [cameraOpen, setCameraOpen] = useState(false);
+  const [distanceCm, setDistanceCm] = useState('');
+  const effCam = Boolean(meta.video) && useCam;
   const autoOk = supportsPapsAuto(testId);
-  const effAuto = mode === 'auto' && autoOk;
+  const effAuto = effCam && autoOk; // 카메라로 횟수까지 자동 카운트하는 종목
+  useEffect(() => { setUseCam(meta.video === 'primary'); }, [testId]); // eslint-disable-line react-hooks/exhaustive-deps
+  // 녹화·인식률·메트로놈 HUD
+  const recogRef = useRef(createRecognitionTracker());
+  const latestLmRef = useRef(null);
+  const recorderRef = useRef(null);
+  const blobRef = useRef(null);
+  const trackedRef = useRef(false);
+  const hudFnRef = useRef(() => ({}));
+  const [metroCmd, setMetroCmd] = useState(null);
+  const metroRef = useRef({ bpm: null, playing: false, beatAt: 0 });
+  const [metroUi, setMetroUi] = useState({ bpm: 100, playing: false });
+  const [videoState, setVideoState] = useState({ state: 'none', fileName: '', method: '' });
+  const recogFinalRef = useRef(null);
+  const metroUsedRef = useRef(null);
+  const sendMetro = (action) => setMetroCmd({ id: `${Date.now()}-${Math.random()}`, action });
+  const effCamRef = useRef(false);
+  effCamRef.current = effCam;
   const phaseRef = useRef('setup');
   phaseRef.current = phase;
   const [rotationDeg] = useCameraRotation();
   const rotationRef = useRef(rotationDeg);
   rotationRef.current = rotationDeg;
-  const useArms = testId === 'pushup' || testId === 'pullup';
   const handlePose = useCallback((landmarks, ts, video) => {
-    if (!counterRef.current) return;
-    const lm = landmarks ? rotateLandmarksNormalized(landmarks, rotationRef.current) : null;
-    const snap = counterRef.current.push(lm, performance.now());
+    latestLmRef.current = landmarks || null;
+    const ph = phaseRef.current;
+    if (ph === 'ready' || ph === 'running') recogRef.current.record(landmarks || null);
+    const vis = landmarks ? frameKeyVisibility(landmarks) : null;
+    let snap;
+    if (counterRef.current) {
+      const lm = landmarks ? rotateLandmarksNormalized(landmarks, rotationRef.current) : null;
+      snap = counterRef.current.push(lm, performance.now());
+    } else {
+      snap = { tracked: vis != null && vis >= 0.5, count: null, events: [], calibrating: false };
+    }
+    trackedRef.current = Boolean(snap.tracked);
     // 화면 스켈레톤은 원본 좌표 그대로(CameraStage 가 같은 회전 래퍼를 쓴다) — 이중 회전 방지.
     drawPoseSkeleton(canvasRef.current, video || null, landmarks, snap.tracked, {
-      bones: useArms ? [...LEG_BONES, ...ARM_BONES] : LEG_BONES,
-      dots: useArms ? [...LEG_DOTS, ...ARM_DOTS] : LEG_DOTS,
+      bones: [...LEG_BONES, ...ARM_BONES], dots: [...LEG_DOTS, ...ARM_DOTS],
     });
     setAutoSnap(snap);
     const run = runRef.current;
-    if (phaseRef.current !== 'running' || !run) return;
+    if (ph !== 'running' || !run || snap.count == null) return;
     const total = snap.count + (run.offset || 0);
     if (total !== run.count) { run.count = total; run.repLog = snap.events.slice(); setCount(total); }
-  }, [useArms]);
+  }, []);
   const pose = usePoseEngine({ onResult: handlePose });
   const poseStartRef = useRef(false);
   useEffect(() => {
-    if (effAuto && cameraOpen && phase !== 'result' && !poseStartRef.current) {
+    if (effCam && cameraOpen && phase !== 'result' && !poseStartRef.current) {
       poseStartRef.current = true;
-      counterRef.current = createPapsAutoCounter({ testId });
+      counterRef.current = effAuto ? createPapsAutoCounter({ testId }) : null;
       pose.start();
     }
-    if ((!effAuto || !cameraOpen || phase === 'result') && poseStartRef.current) {
+    if ((!effCam || !cameraOpen || phase === 'result') && poseStartRef.current) {
       poseStartRef.current = false;
       pose.stop();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [effAuto, phase, cameraOpen]);
+  }, [effCam, effAuto, phase, cameraOpen]);
   useEffect(() => { if (phase === 'result') setCameraOpen(false); }, [phase]);
-  useEffect(() => () => { pose.stop(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => () => { pose.stop(); recorderRef.current?.abort(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const resetRun = () => {
     counterRef.current?.reset(); setAutoSnap(null); setCameraOpen(false);
+    recorderRef.current?.abort(); recorderRef.current = null; blobRef.current = null; recogRef.current.reset(); recogFinalRef.current = null;
+    setVideoState({ state: 'none', fileName: '', method: '' }); sendMetro('stop'); metroUsedRef.current = null;
     runRef.current = null; samplesRef.current = [];
     setCount(0); setElapsedMs(0); setLead(3); setPhase('setup');
     setResult({ value: '', invalid: false, note: '', trials: [] });
@@ -140,6 +173,17 @@ export default function PapsTestMeasure({ onBack, member = null, onSave = null, 
     const ms = performance.now() - run.startPerf;
     run.finalMs = ms;
     endedAtRef.current = new Date().toISOString();
+    recogFinalRef.current = recogRef.current.snapshot();
+    metroUsedRef.current = metroRef.current.playing ? metroRef.current.bpm : null;
+    sendMetro('stop');
+    const rec = recorderRef.current;
+    recorderRef.current = null;
+    if (rec) rec.stop().then((blob) => { blobRef.current = blob; setVideoState({ state: blob ? 'ready' : 'none', fileName: '', method: '' }); });
+    if (meta.kind === 'value') {
+      setResult({ value: '', invalid: false, note: '', trials: meta.fields.map((label) => ({ label, value: '' })) });
+      setPhase('result');
+      return;
+    }
     let value = valueOverride;
     if (value == null) value = meta.kind === 'hold' ? Math.round(ms / 100) / 10 : run.count;
     setResult((r) => ({ ...r, value: String(value) }));
@@ -156,6 +200,15 @@ export default function PapsTestMeasure({ onBack, member = null, onSave = null, 
           clearInterval(id);
           runRef.current = { startPerf: performance.now(), startedAt: new Date().toISOString(), repLog: [], count: 0, offset: 0 };
           counterRef.current?.reset(); samplesRef.current = [];
+          recogRef.current.reset(); recogFinalRef.current = null; blobRef.current = null;
+          if (effCamRef.current && !recorderRef.current) {
+            const r = createMeasureRecorder({
+              getVideo: () => pose.videoRef.current, getLandmarks: () => latestLmRef.current,
+              getRotation: () => rotationRef.current, getHud: () => hudFnRef.current(), getTracked: () => trackedRef.current,
+              bones: [...LEG_BONES, ...ARM_BONES], dots: [...LEG_DOTS, ...ARM_DOTS],
+            });
+            if (r.start()) recorderRef.current = r;
+          }
           setCount(0); setElapsedMs(0); setPhase('running');
           return 0;
         }
@@ -233,6 +286,26 @@ export default function PapsTestMeasure({ onBack, member = null, onSave = null, 
   const preview = evaluatePapsTest(testId, result.value, { invalid: result.invalid, subject });
   const memberLabel = member ? (member.isVirtual ? '미등록회원' : `${member.name || '회원'} 회원`) : '';
   const secText = (ms) => (ms / 1000).toFixed(1);
+  const hasCountTest = meta.kind === 'reps_free' || meta.kind === 'reps_timed';
+  hudFnRef.current = () => {
+    const run = runRef.current;
+    const ms = run ? performance.now() - run.startPerf : 0;
+    const timed = meta.kind === 'reps_timed';
+    const b = bandLive.current;
+    const m = metroRef.current;
+    return {
+      title: `${meta.short}${titleSuffix}`,
+      elapsedMs: timed ? null : ms,
+      remainMs: timed ? Math.max(0, meta.durationSec * 1000 - ms) : null,
+      count: meta.kind === 'reps_free' || timed ? (run?.count ?? 0) : null,
+      unit: meta.unit,
+      bpm: m.playing ? m.bpm : null,
+      beat: performance.now() - m.beatAt < 130,
+      recognition: recogRef.current.snapshot(),
+      hr: b.at && Date.now() - b.at < FRESH_MS ? b.bpm : null,
+      note: meta.needsDistance && distanceCm ? `거리 ${distanceCm}cm` : '',
+    };
+  };
   const remain = meta.kind === 'reps_timed' ? Math.max(0, meta.durationSec - elapsedMs / 1000) : null;
 
   const save = async () => {
@@ -241,9 +314,12 @@ export default function PapsTestMeasure({ onBack, member = null, onSave = null, 
     const run = runRef.current || {};
     const record = buildPapsRecord({
       testId, value: result.value, subject, variant: testId === 'pushup' ? variant : '', invalid: result.invalid,
-      trials: result.trials, metronomeBpm: bpmNote, startedAt: run.startedAt || null, endedAt: endedAtRef.current,
+      trials: result.trials, metronomeBpm: metroUsedRef.current ?? bpmNote, startedAt: run.startedAt || null, endedAt: endedAtRef.current,
       trainerNote: result.note, repLog: run.repLog || [], hr: hrSummary(),
       auto: effAuto ? { used: true, autoValue: autoSnap?.count ?? null, autoCount: autoSnap?.count ?? null, offset: run.offset || 0 } : null,
+      recognition: effCam ? recogFinalRef.current : null,
+      video: effCam ? { recorded: Boolean(blobRef.current), fileName: videoState.fileName, method: videoState.method } : null,
+      conditions: { distanceCm: meta.needsDistance ? distanceCm : null, metronomeBpm: metroUsedRef.current ?? (bpmNote || null), cameraUsed: effCam },
     });
     try {
       await onSave(record);
@@ -255,12 +331,16 @@ export default function PapsTestMeasure({ onBack, member = null, onSave = null, 
   };
 
   const startClick = () => {
+    if (meta.needsDistance && !(Number(distanceCm) > 0)) { setError('사이드스텝은 선 사이 거리(cm)를 먼저 입력해 주세요.'); return; }
+    if (effCam) { setCameraOpen(true); return; }
     if (meta.kind === 'value') { startValueEntry(); return; }
-    if (effAuto) { setCameraOpen(true); return; }
     setPhase('ready');
   };
-  const startLabel = meta.kind === 'value' ? '값 입력하기' : effAuto ? '카메라 열기' : '측정 시작 (3초 뒤)';
-  const liveLabel = meta.kind === 'reps_timed' ? `${secText(remain * 1000)}초 · ${count}회` : `${secText(elapsedMs)}초 · ${count}회`;
+  const startLabel = effCam ? '카메라 열고 촬영 준비' : meta.kind === 'value' ? '값 입력하기' : '측정 시작 (3초 뒤)';
+  const recogSnap = recogRef.current.snapshot();
+  const recogText = recogSnap && recogSnap.frames ? `인식률 ${Math.round(recogSnap.ratio * 100)}%` : '인식률 --';
+  const hasCount = meta.kind === 'reps_free' || meta.kind === 'reps_timed';
+  const liveLabel = `${secText(meta.kind === 'reps_timed' ? remain * 1000 : elapsedMs)}초${hasCount ? ` · ${count}회` : ''} · ${recogText}`;
 
   return (
     <div className="mx-auto max-w-lg space-y-3 p-3 text-slate-900 dark:text-slate-100" data-testid="paps-measure">
@@ -281,11 +361,15 @@ export default function PapsTestMeasure({ onBack, member = null, onSave = null, 
             ))}
           </div>
 
-          <div className="space-y-1 rounded-lg bg-slate-50 p-2 text-[11px] leading-relaxed dark:bg-slate-800/70" data-testid="paps-howto">
+          <div className="space-y-1.5 rounded-lg bg-slate-50 p-2 text-[11px] leading-relaxed dark:bg-slate-800/70" data-testid="paps-howto">
             <p><b>무엇을 보나</b> {meta.what}</p>
-            <ol className="ml-4 list-decimal">{meta.how.map((h) => <li key={h}>{h}</li>)}</ol>
+            <div><b>하는 방법</b><ol className="ml-4 list-decimal">{meta.how.map((h) => <li key={h}>{h}</li>)}</ol></div>
+            {meta.camera && <p data-testid="paps-camera-guide"><b>촬영 위치</b> {meta.camera}</p>}
+            {meta.countRule && <p data-testid="paps-count-rule"><b>카운트·기록 기준</b> {meta.countRule}</p>}
+            {meta.verified?.length > 0 && <p className="text-emerald-700 dark:text-emerald-400"><b>확인된 기준</b> {meta.verified.join(' / ')}</p>}
+            {meta.unverified?.length > 0 && <p className="font-bold text-amber-700 dark:text-amber-400" data-testid="paps-unverified"><b>확인 못 함</b> {meta.unverified.join(' / ')}</p>}
             <p className="font-bold text-red-600 dark:text-red-400">주의 {meta.care}</p>
-            <p className="font-semibold text-slate-500">초4~6 학년·성별이 있으면 윗몸말아올리기·앉아윗몸앞으로굽히기·악력은 1~5등급이 자동으로 나옵니다. 그 외는 값을 저장하고 회차별로 비교합니다. 달리기·제자리멀리뛰기는 5번·7번 탭을 쓰세요.</p>
+            <p className="font-semibold text-slate-500">초4~6 학년·성별이 있으면 윗몸말아올리기·앉아윗몸앞으로굽히기·악력은 1~5등급이 나옵니다(대표님 제공 등급표). 성인·그 외는 등급 없이 값·영상·인식률·이전 기록과의 변화로 평가하고 결과리포트에 같은 형식으로 나옵니다. 달리기·제자리멀리뛰기는 5번·7번 탭을 쓰세요.</p>
           </div>
 
           <div className="rounded-xl border-2 border-slate-200 p-2 dark:border-slate-700">
@@ -312,36 +396,31 @@ export default function PapsTestMeasure({ onBack, member = null, onSave = null, 
                 무릎 대고 하는 방식(별도 추이로 비교)
               </label>
             )}
-            {meta.metronome && (
-              <label className="mt-2 block text-xs font-bold">쓴 박자(BPM, 기록용)
-                <input className={INP} type="number" value={bpmNote} onChange={(e) => setBpmNote(e.target.value)} placeholder="예) 60" />
+            {meta.needsDistance && (
+              <label className="mt-2 block text-xs font-bold">선 사이 거리(cm) — 필수, 매번 같게
+                <input className={INP} type="number" value={distanceCm} onChange={(e) => setDistanceCm(e.target.value)} placeholder="예) 100" data-testid="paps-distance" />
               </label>
             )}
+            <label className="mt-2 block text-xs font-bold">메트로놈 박자 메모(BPM, 아래 메트로놈을 켜면 자동 기록)
+              <input className={INP} type="number" value={bpmNote} onChange={(e) => setBpmNote(e.target.value)} placeholder="예) 60" />
+            </label>
           </div>
 
-          {meta.kind !== 'value' && (
-            <div className="rounded-xl border-2 border-slate-200 p-2 dark:border-slate-700" data-testid="paps-mode">
-              <p className="mb-1 text-xs font-black">횟수·시간 재는 방법</p>
-              <div className="grid grid-cols-2 gap-1.5">
-                {[['manual', '수동 (측정자가 탭)'], ['auto', '카메라 자동 카운트']].map(([k, label]) => {
-                  const disabled = k === 'auto' && !autoOk;
-                  return (
-                    <button key={k} type="button" disabled={disabled} onClick={() => setMode(k)} data-testid={`paps-mode-${k}`}
-                      className={`rounded-xl border-2 px-1 py-2 text-xs font-black disabled:opacity-40 ${(k === 'auto' ? effAuto : !effAuto) ? 'border-amber-500 bg-amber-50 text-amber-800 dark:bg-amber-500/10 dark:text-amber-300' : 'border-slate-300 dark:border-slate-600'}`}>{label}</button>
-                  );
-                })}
-              </div>
-              {!autoOk && <p className="mt-1 text-[11px] font-semibold text-slate-500">이 테스트는 시간 재기라 수동(초시계)으로 합니다.</p>}
-              {effAuto && (
-                <p className="mt-2 text-[11px] font-semibold text-slate-600 dark:text-slate-300">
-                  {testId === 'sidestep20' ? '몸 전체가 보이게 정면 또는 후면에서, 처음 1초는 가운데에 서 있어 주세요(중심을 잡습니다).'
-                    : useArms ? '옆모습(측면)에서 어깨·팔꿈치·손목이 보이게 세워 주세요.'
-                      : '옆모습(측면)에서 어깨·엉덩이가 보이게 세워 주세요.'}
-                  {' '}자동값은 참고용이라 끝나고 측정자가 확인·수정합니다. 안 잡히면 +1/−1로 보정하세요.
-                </p>
-              )}
+          <div className="rounded-xl border-2 border-slate-200 p-2 dark:border-slate-700" data-testid="paps-mode">
+            <p className="mb-1 text-xs font-black">영상촬영 {meta.video === 'primary' ? '(기본)' : '(선택)'}</p>
+            <div className="grid grid-cols-2 gap-1.5">
+              {[[true, meta.video === 'optional' ? '하는 모습 녹화' : '카메라 촬영'], [false, meta.kind === 'value' ? '촬영 없이 값만 입력' : '촬영 없이 수동(탭·초시계)']].map(([k, label]) => (
+                <button key={String(k)} type="button" onClick={() => setUseCam(k)} data-testid={k ? 'paps-mode-cam' : 'paps-mode-manual'}
+                  className={`rounded-xl border-2 px-1 py-2 text-xs font-black ${(k ? useCam : !useCam) ? 'border-amber-500 bg-amber-50 text-amber-800 dark:bg-amber-500/10 dark:text-amber-300' : 'border-slate-300 dark:border-slate-600'}`}>{label}</button>
+              ))}
             </div>
-          )}
+            {effCam && (
+              <p className="mt-2 text-[11px] font-semibold text-slate-600 dark:text-slate-300">
+                화면에 <b>초시계{hasCountTest ? '·횟수' : ''}·인식률{'(스켈레톤 인식 비율)'}·메트로놈 박자</b>가 같이 찍힌 영상이 만들어지고, 끝나면 폰에 저장합니다(서버 업로드 없음).
+                {effAuto ? ' 자동값은 참고용이라 끝나고 측정자가 확인·수정합니다. 안 잡히면 +1/−1로 보정하세요.' : ''}
+              </p>
+            )}
+          </div>
 
           <div className="rounded-xl border-2 border-slate-200 p-2 dark:border-slate-700">
             <div className="flex items-center gap-2">
@@ -352,12 +431,6 @@ export default function PapsTestMeasure({ onBack, member = null, onSave = null, 
             </div>
             {bandInfo && <p className="mt-1 text-xs font-bold text-emerald-700 dark:text-emerald-400">연결됨: {bandInfo.name || '심박 밴드'} · 현재 {bpm ?? '-'} bpm</p>}
             {error && <p className="mt-1 text-xs font-bold text-red-600 dark:text-red-400">{error}</p>}
-            {meta.metronome && (
-              <details className="mt-2">
-                <summary className="cursor-pointer text-xs font-bold text-slate-600 dark:text-slate-300">메트로놈 (박자 맞출 때)</summary>
-                <div className="mt-2"><Suspense fallback={null}><Metronome compact /></Suspense></div>
-              </details>
-            )}
           </div>
 
           <button type="button" onClick={startClick} data-testid="paps-start"
@@ -365,7 +438,20 @@ export default function PapsTestMeasure({ onBack, member = null, onSave = null, 
         </div>
       )}
 
-      {!effAuto && phase === 'ready' && (
+      <div className={phase === 'setup' && !cameraOpen ? 'rounded-xl border-2 border-slate-200 p-2 dark:border-slate-700' : 'hidden'} data-testid="paps-metronome">
+        <details>
+          <summary className="cursor-pointer text-xs font-black text-slate-700 dark:text-slate-200">메트로놈 (선택 — 켜면 박자가 영상에도 표시)</summary>
+          <div className="mt-2">
+            <Suspense fallback={null}>
+              <Metronome compact command={metroCmd}
+                onBeat={({ bpm: b }) => { metroRef.current = { ...metroRef.current, bpm: b, beatAt: performance.now() }; }}
+                onState={({ bpm: b, playing }) => { metroRef.current = { ...metroRef.current, bpm: b, playing }; setMetroUi({ bpm: b, playing }); }} />
+            </Suspense>
+          </div>
+        </details>
+      </div>
+
+      {!effCam && phase === 'ready' && (
         <div className="rounded-2xl border-2 border-amber-400 p-8 text-center">
           <p className="text-sm font-bold">준비하세요</p>
           <p className="font-mono text-7xl font-black" data-testid="paps-lead">{lead}</p>
@@ -373,17 +459,17 @@ export default function PapsTestMeasure({ onBack, member = null, onSave = null, 
         </div>
       )}
 
-      {!effAuto && phase === 'running' && (
+      {!effCam && phase === 'running' && (
         <div className="space-y-3">
           <div className="rounded-2xl border-2 border-slate-300 p-3 text-center dark:border-slate-600">
             <p className="text-xs font-bold text-slate-500">{meta.label}{titleSuffix}</p>
             <p className="font-mono text-6xl font-black tabular-nums" data-testid="paps-clock">
               {meta.kind === 'reps_timed' ? secText(remain * 1000) : secText(elapsedMs)}<span className="text-lg">초</span>
             </p>
-            {meta.kind !== 'hold' && <p className="font-mono text-4xl font-black text-amber-600" data-testid="paps-count">{count}<span className="text-base">회</span></p>}
+            {hasCountTest && <p className="font-mono text-4xl font-black text-amber-600" data-testid="paps-count">{count}<span className="text-base">회</span></p>}
             <p className="mt-1 text-xs font-bold text-slate-500">심박 {bpm ?? '-'} bpm{hrZone ? ` · ${hrZone.label || `${hrZone.zone}구간`}` : ''}</p>
           </div>
-          {meta.kind !== 'hold' && (
+          {hasCountTest && (
             <div className="grid grid-cols-3 gap-2">
               <button type="button" onClick={undoRep} className="rounded-xl border-2 border-slate-300 py-6 text-sm font-black dark:border-slate-600">−1</button>
               <button type="button" onClick={tapRep} data-testid="paps-tap" className="col-span-2 rounded-xl bg-amber-500 py-6 text-2xl font-black text-slate-950 active:scale-95">+1</button>
@@ -406,6 +492,25 @@ export default function PapsTestMeasure({ onBack, member = null, onSave = null, 
             {preview.reason && <p className="text-[11px] font-semibold">{preview.reason}</p>}
             {preview.easy && <p className="mt-1 text-xs font-bold">{preview.easy}</p>}
           </div>
+
+          {effCam && (
+            <div className="rounded-xl border-2 border-slate-200 p-2 text-xs font-bold dark:border-slate-700" data-testid="paps-video-box">
+              <p>동작 인식률 {recogFinalRef.current && recogFinalRef.current.frames ? `${Math.round(recogFinalRef.current.ratio * 100)}%` : '--'}
+                <span className="ml-1 font-semibold text-slate-500">(몸 주요 관절이 또렷하게 잡힌 프레임 비율 — 낮으면 카운트는 측정자 확인값을 믿으세요)</span></p>
+              {videoState.state === 'none' && <p className="mt-1 font-semibold text-slate-500">녹화된 영상이 없습니다(이 브라우저가 녹화를 지원하지 않거나 촬영 전에 끝남). 측정값은 그대로 저장할 수 있습니다.</p>}
+              {videoState.state !== 'none' && (
+                <button type="button" data-testid="paps-video-save"
+                  onClick={async () => {
+                    if (!blobRef.current) return;
+                    const r = await saveVideoToPhone(blobRef.current, { measure: `paps_${testId}`, member });
+                    if (r.saved) setVideoState({ state: 'saved', fileName: r.fileName, method: r.method });
+                  }}
+                  className="mt-1.5 w-full rounded-lg border-2 border-amber-400 bg-amber-50 py-2 text-xs font-black text-amber-800 dark:bg-amber-500/10 dark:text-amber-300">
+                  {videoState.state === 'saved' ? `✓ 폰에 저장됨 (${videoState.fileName})` : '영상 폰에 저장 (초시계·횟수·박자·인식률 포함)'}
+                </button>
+              )}
+            </div>
+          )}
 
           <div className="rounded-xl border-2 border-slate-200 p-2 text-xs font-bold dark:border-slate-700">
             {meta.kind === 'value' ? (
@@ -454,7 +559,7 @@ export default function PapsTestMeasure({ onBack, member = null, onSave = null, 
         </div>
       )}
 
-      {effAuto && cameraOpen && phase !== 'result' && (
+      {effCam && cameraOpen && phase !== 'result' && (
         <CameraStage
           videoRef={pose.videoRef} canvasRef={canvasRef} status={pose.status} error={pose.error}
           onClose={() => { if (phase === 'running') finish(); setCameraOpen(false); if (phase !== 'running') resetRun(); }}
@@ -463,7 +568,8 @@ export default function PapsTestMeasure({ onBack, member = null, onSave = null, 
           recording={phase === 'running'} recordingLabel={liveLabel}
           topBar={(
             <>
-              <span className="rounded-full bg-black/65 px-2.5 py-1 text-[11px] font-bold text-white">{meta.short}{titleSuffix} · 카메라 자동</span>
+              <span className="rounded-full bg-black/65 px-2.5 py-1 text-[11px] font-bold text-white">{meta.short}{titleSuffix} · {effAuto ? '카메라 자동' : '영상 기록'}</span>
+              <span className="rounded-full bg-black/65 px-2.5 py-1 text-[11px] font-bold text-emerald-300" data-testid="paps-recog">{recogText}</span>
               <span className={`rounded-full px-3 py-1 text-[11px] font-bold ${autoSnap?.tracked ? 'bg-emerald-500/85 text-slate-950' : 'bg-red-500/85 text-white'}`} data-testid="paps-track-status">
                 {autoSnap?.calibrating ? '중심 잡는 중 — 가운데 서 주세요' : autoSnap?.tracked ? '✓ 인식됨' : '⚠ 몸이 안 잡혀요 — 필요한 관절이 보이게 세워 주세요'}
               </span>
@@ -472,9 +578,10 @@ export default function PapsTestMeasure({ onBack, member = null, onSave = null, 
           )}
           controls={phase === 'running' ? (
             <div className="flex items-center gap-2">
-              <button type="button" onClick={undoRep} className="h-12 w-14 rounded-full bg-slate-200 text-lg font-black text-slate-800 active:scale-95">−1</button>
-              <button type="button" onClick={tapRep} data-testid="paps-tap" className="h-12 rounded-full bg-amber-500 px-5 text-sm font-black text-slate-950 active:scale-95">+1 보정</button>
-              <button type="button" onClick={() => finish()} data-testid="paps-stop" className="h-12 rounded-full bg-red-500 px-5 text-sm font-black text-white active:scale-95">■ 종료</button>
+              {hasCountTest && <button type="button" onClick={undoRep} className="h-12 w-14 rounded-full bg-slate-200 text-lg font-black text-slate-800 active:scale-95">−1</button>}
+              {hasCountTest && <button type="button" onClick={tapRep} data-testid="paps-tap" className="h-12 rounded-full bg-amber-500 px-5 text-sm font-black text-slate-950 active:scale-95">+1 {effAuto ? '보정' : ''}</button>}
+              <button type="button" onClick={() => sendMetro(metroUi.playing ? 'stop' : 'start')} data-testid="paps-stage-metro" className={`h-12 rounded-full px-4 text-xs font-black active:scale-95 ${metroUi.playing ? 'bg-amber-300 text-slate-950' : 'bg-slate-200 text-slate-800'}`}>♪ {metroUi.playing ? `${metroUi.bpm}` : '박자'}</button>
+              <button type="button" onClick={() => finish()} data-testid="paps-stop" className="h-12 rounded-full bg-red-500 px-5 text-sm font-black text-white active:scale-95">{meta.kind === 'value' ? '■ 촬영 끝 → 값 입력' : '■ 종료'}</button>
             </div>
           ) : phase === 'ready' ? (
             <button type="button" onClick={resetRun} className="h-12 rounded-full bg-slate-200 px-5 text-sm font-black text-slate-800 active:scale-95">취소</button>

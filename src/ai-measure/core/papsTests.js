@@ -1,8 +1,9 @@
 // ai-measure/core/papsTests.js
 // ════════════════════════════════════════════════════════════════════════
 //  [PAPS 탭 2026-11-25] 유소년·청소년 체력평가(PAPS 계열) 측정 — 측정자 입력형 1차 버전.
-//  · 팔굽혀펴기 · 윗몸말아올리기 · 윗몸일으키기(1분) · 사이드스텝(20초) · 오래매달리기 · 턱걸이
-//    · 앉아윗몸앞으로굽히기 · 악력.  (제자리멀리뛰기=7번, 달리기=5번, 신체정보=1번은 기존 탭을 쓴다)
+//  · 팔굽혀펴기 · 윗몸말아올리기 · 턱걸이 · 오래매달리기 · 사이드스텝(20초) · 앉아윗몸앞으로굽히기(좌전굴)
+//    · 서서윗몸앞으로굽히기(체전굴) · 악력.  (윗몸일으키기 1분은 2026-11-25 대표님 결정으로 뺌 — 윗몸말아올리기 하나만)
+//  · 영상촬영(video): primary=카메라 기본(영상+스켈레톤+인식률+HUD 저장) · optional=선택(악력은 하는 모습만 녹화).  (제자리멀리뛰기=7번, 달리기=5번, 신체정보=1번은 기존 탭을 쓴다)
 //  · 등급(1~5등급)은 core/papsNorms.js 표가 있는 테스트(윗몸말아올리기·앉아윗몸앞으로굽히기·악력)만, 초4~6+성별이 있을 때 낸다.
 //    그 외 테스트·학년은 숫자를 지어 넣지 않고 값만 저장한다.
 //    값·무효 여부·측정 조건을 그대로 저장하고, 같은 테스트끼리 회차별 변화만 비교한다(status 는 항상 'unknown').
@@ -20,27 +21,33 @@ export function papsCriteriaText(report = {}) {
     const norm = papsNormText(report.testId, report.subject?.sex, report.subject?.grade, report.unit || '');
     return `${label}: PAPS ${report.subject?.grade || ''} ${report.subject?.sex === 'male' ? '남' : '여'} 기준 ${report.grade}등급(${PAPS_GRADE_WORD[report.grade]}). 기준(${norm}). 기준표는 대표님 제공본이라 공식 원문과 대조 전입니다. 이전 기록과의 변화도 함께 봅니다.`;
   }
-  return `${label}: 초4~6 학년·성별이 모두 있을 때만 PAPS 1~5등급을 냅니다(윗몸말아올리기·앉아윗몸앞으로굽히기·악력). 이 기록은 등급 기준이 없어 값과 이전 기록과의 변화만 비교합니다. 값이 늘면 좋아진 것, 무효 기록은 비교에서 뺍니다.`;
+  return `${label}: 초4~6 학년·성별이 모두 있을 때만 PAPS 1~5등급을 냅니다(윗몸말아올리기·앉아윗몸앞으로굽히기·악력). 이 기록은 등급 기준이 없어(성인·초4~6 외 포함) 값·영상·인식률·이전 기록과의 변화로 평가합니다. 값이 늘면 좋아진 것, 무효 기록은 비교에서 뺍니다.`;
 }
 
 // kind: reps_free(최대 횟수, 끝낼 때까지) · reps_timed(제한시간 안의 횟수) · hold(버틴 시간) · value(자로 잰 값)
 export const PAPS_TESTS = {
   pushup: {
     id: 'pushup', label: '팔굽혀펴기', short: '팔굽혀펴기', kind: 'reps_free', unit: '회', higherBetter: true,
-    hasKneeVariant: true, metronome: true,
+    hasKneeVariant: true, metronome: true, video: 'primary', range: [0, 150], rangeInt: true,
+    camera: '옆모습(측면) 전신이 보이게. 어깨·팔꿈치·손목이 가려지지 않게 세웁니다.',
+    countRule: '팔꿈치 각도가 접힘(약 100° 이하)까지 내려갔다가 다시 펴지면(약 150° 이상) 1회. 문턱값은 앱 시작값이라 실기기에서 조정합니다.',
     what: '팔 힘과 몸통 버티는 힘(상체 근지구력)을 최대 횟수로 봅니다.',
     how: [
       '손을 어깨너비로 짚고 몸을 일직선으로 만듭니다(무릎 대고 하는 방식이면 "무릎 대고"를 선택).',
-      '가슴이 바닥에서 주먹 하나 높이까지 내려갔다 팔을 완전히 펴는 것을 1회로 셉니다.',
+      '팔을 굽혔다가 완전히 펴는 것을 1회로 셉니다.',
       '메트로놈을 쓰면 같은 박자로 하게 도와줍니다. 박자·방식은 매번 같게 해야 비교가 됩니다.',
       '허리가 꺾이거나 엉덩이가 들리면 측정자가 -1 하거나 거기서 종료합니다.',
     ],
+    verified: ['몸을 머리~발끝 일직선·더 이상 반복하지 못할 때까지의 횟수·내려갔을 때 팔꿈치 90°·가슴과 바닥(무릎대고) 15cm 이하, 남 봉 방식은 가슴과 봉 10cm 이하(경기도교육청 2025 체력증진 계획·PAPS 교재 PDF)'],
+    unverified: ['박자(회/분) 규정은 확인 못 함. 앱의 팔꿈치 접힘 문턱(100°)은 90° 기준에 여유를 둔 시작값입니다. 초등은 팔굽혀펴기를 하지 않고 중·고에서 남=봉, 여=무릎대고입니다.'],
     care: '손목·어깨 통증이 있으면 중단합니다.',
     easy: (v) => `팔굽혀펴기를 ${v}회 했어요. 같은 방법으로 다시 재서 숫자가 늘어나는지 비교해요.`,
   },
   curlup: {
     id: 'curlup', label: '윗몸말아올리기', short: '윗몸말아올리기', kind: 'reps_free', unit: '회', higherBetter: true,
-    metronome: true,
+    metronome: true, video: 'primary', range: [0, 200], rangeInt: true,
+    camera: '옆모습(측면)에서 어깨·엉덩이·무릎이 보이게 눕습니다.',
+    countRule: '몸통 기울기가 약 20° 이상 올라왔다가 다시 눕혀지면 1회(앱 시작값). 메트로놈 박자는 기록과 영상에 함께 남깁니다.',
     what: '배 근육(복근)의 지구력을 정해진 박자로 최대 횟수까지 봅니다.',
     how: [
       '누워 무릎을 세우고 팔은 몸 옆에 펴 둡니다.',
@@ -48,22 +55,18 @@ export const PAPS_TESTS = {
       '박자를 놓치거나 반동을 쓰면 측정자가 거기서 종료합니다.',
       '박자(BPM)는 매번 같게 해서 기록과 함께 남깁니다.',
     ],
+    verified: ['매트에 머리·등을 대고 누워 무릎 약 90°로 세움·3초에 1번 울리는 신호음(분당 20회)에 맞춰 손이 넓적다리 위를 타고 올라가 측정자 손끝에 닿게 말아 올림(경기도교육청 2025 체력증진 계획·PAPS 교재 PDF)'],
+    unverified: ['메트로놈 최저 박자가 40BPM이라 "3초에 1회"는 40BPM에서 2박마다 1회로 맞추거나 20BPM 신호음을 따로 씁니다. 실패 1회 허용·연속 2회 실패 종료는 2차 자료(블로그)라 공식 확인 못 함.'],
     care: '목·허리 통증이 있으면 중단합니다.',
     easy: (v) => `윗몸말아올리기를 ${v}회 했어요. 같은 박자로 다시 재서 늘어나는지 비교해요.`,
   },
-  situp1m: {
-    id: 'situp1m', label: '윗몸일으키기(1분)', short: '윗몸일으키기 1분', kind: 'reps_timed', unit: '회', higherBetter: true, durationSec: 60,
-    what: '1분 동안 배 근육으로 몸을 몇 번 일으키는지 봅니다.',
-    how: [
-      '누워 무릎을 굽히고 발은 고정(파트너가 잡아 줌), 팔은 가슴 앞에 모읍니다.',
-      '"시작"에서 팔꿈치가 무릎에 닿게 일어났다 등이 바닥에 닿게 눕는 것을 1회로 셉니다.',
-      '1분이 되면 자동으로 끝납니다.',
-    ],
-    care: '목·허리 통증이 있으면 중단합니다.',
-    easy: (v) => `1분 동안 윗몸일으키기를 ${v}회 했어요. 같은 방법으로 다시 재서 늘어나는지 비교해요.`,
-  },
   sidestep20: {
     id: 'sidestep20', label: '사이드스텝(20초)', short: '사이드스텝 20초', kind: 'reps_timed', unit: '회', higherBetter: true, durationSec: 20,
+    video: 'primary', needsDistance: true,
+    camera: '정면 또는 후면 전신. 시작 1초는 가운데 선 위에 서서 중심을 잡습니다.',
+    countRule: '골반이 중심에서 한쪽 끝까지 갔다가 반대쪽 끝에 닿을 때마다 1회(골반 너비 단위). 거리는 측정자가 cm로 지정해 기록에 남깁니다.',
+    official: false,
+    unverified: ['나이스 PAPS 매뉴얼의 필수평가 종목에 없는 종목이라 공식 기준·등급표가 없습니다(보조 측정). 공식 사이드스텝의 선 간격(거리) 원문은 확인 못 함 — 측정자가 매번 같은 거리를 cm로 입력합니다. 5번(보행·스프린터) 탭의 거리 지정 측정과 병행하지 않고 여기서 함께 저장합니다.'],
     what: '20초 동안 좌우로 빠르게 옆걸음을 몇 번 하는지 봅니다(민첩성).',
     how: [
       '바닥에 가운데 선을 긋고 양옆 선을 일정 간격으로 붙입니다(간격은 매번 같게, 메모에 적기).',
@@ -75,6 +78,11 @@ export const PAPS_TESTS = {
   },
   hang: {
     id: 'hang', label: '오래매달리기', short: '오래매달리기', kind: 'hold', unit: '초', higherBetter: true,
+    video: 'primary',
+    camera: '정면 또는 측면에서 머리·팔·철봉이 한 화면에 보이게. 초시계가 영상에 같이 찍힙니다.',
+    countRule: '횟수가 아니라 버틴 시간입니다. 측정자가 시작·멈춤을 누르는 초시계 방식입니다(카메라는 영상·스켈레톤 기록용).',
+    official: false,
+    unverified: ['나이스 PAPS 매뉴얼의 필수평가 종목에 없는 종목이라 공식 기준·등급표가 없습니다(보조 측정). 공식 오래매달리기의 시작 자세(턱 위치·팔 각도) 원문은 확인 못 함 — 측정자가 같은 기준으로 판단합니다.'],
     what: '철봉에 매달려 버티는 시간으로 팔·어깨 근지구력을 봅니다.',
     how: [
       '철봉을 잡고 턱이 봉 위로 올라간 자세에서 시작합니다(받침 사용 가능).',
@@ -86,6 +94,11 @@ export const PAPS_TESTS = {
   },
   pullup: {
     id: 'pullup', label: '턱걸이', short: '턱걸이', kind: 'reps_free', unit: '회', higherBetter: true,
+    video: 'primary',
+    camera: '옆모습(측면)에서 어깨·팔꿈치·손목이 보이게. 철봉 높이 전체가 화면에 들어오게 합니다.',
+    countRule: '팔꿈치 각도가 접힘(약 75° 이하)까지 올라왔다가 다시 펴지면(약 150° 이상) 1회(앱 시작값).',
+    official: false,
+    unverified: ['나이스 PAPS 매뉴얼의 필수평가 종목에 없는 종목이라 공식 기준·등급표가 없습니다(보조 측정). 공식 턱걸이의 인정 기준(턱 위치·반동) 원문은 확인 못 함 — 측정자가 -1/+1로 보정합니다.'],
     what: '팔·등 힘을 최대 횟수로 봅니다.',
     how: [
       '철봉을 잡고 팔을 완전히 편 상태에서 시작합니다.',
@@ -96,20 +109,43 @@ export const PAPS_TESTS = {
     easy: (v) => `턱걸이를 ${v}회 했어요. 같은 방법으로 다시 재서 늘어나는지 비교해요.`,
   },
   sitreach: {
-    id: 'sitreach', label: '앉아윗몸앞으로굽히기', short: '앉아윗몸앞으로굽히기', kind: 'value', unit: 'cm', higherBetter: true,
-    fields: ['1차', '2차'], decimals: 1,
+    id: 'sitreach', label: '앉아윗몸앞으로굽히기(좌전굴)', short: '앉아윗몸앞으로굽히기', kind: 'value', unit: 'cm', higherBetter: true,
+    fields: ['1차', '2차'], decimals: 1, video: 'primary', range: [-40, 50],
+    camera: '옆모습(측면)에서 발·무릎·엉덩이·손끝이 보이게. 무릎이 펴져 있는지 영상으로 확인합니다.',
+    countRule: '횟수 없음 — 영상 녹화와 스켈레톤으로 자세(무릎 펴짐)를 남기고, 거리(cm)는 측정기 눈금을 측정자가 읽어 입력합니다.',
     what: '허벅지 뒤쪽과 허리의 유연성을 앞으로 뻗은 거리(cm)로 봅니다.',
     how: [
-      '발바닥을 측정기에 대고 무릎을 편 채 앉습니다.',
-      '두 손을 모아 천천히 앞으로 밀어 최대한 멀리 뻗고 2초 유지한 거리를 읽습니다.',
-      '2번 재서 더 좋은 값을 기록합니다. 발끝보다 못 가면 마이너스(−)로 적습니다.',
+      '신을 벗고 양 발바닥을 측정기구의 수직면에 완전히 대고 무릎을 펴고 바르게 앉습니다.',
+      '양발 사이는 5cm를 넘지 않게 합니다.',
+      '두 손바닥을 곧게 펴 왼손을 오른손 등 위에 겹치고 천천히 앞으로 뻗어 거리를 읽습니다.',
+      '앞으로 굽힐 때 무릎이 굽혀지면 재검사합니다.',
     ],
+    verified: ['발바닥 수직면 밀착·무릎 펴기·양발 5cm 이내·손바닥 겹치기·무릎 굽히면 재검사·단위 cm (법령 첨부 측정방법)', '입력 범위 −40.0~50.0cm, 소수 첫째자리 (나이스 PAPS 매뉴얼 v1.11)'],
+    unverified: ['측정 횟수·기록 선택(좋은 값)·뻗은 뒤 유지 시간은 이번 검색에서 원문 확인 못 함 — 앱은 1·2차를 입력받아 높은 값을 기록합니다.'],
     care: '반동을 주지 말고 천천히 뻗습니다. 허리 통증이 있으면 중단합니다.',
     easy: (v) => `앞으로 ${v}cm 뻗었어요. 같은 방법으로 다시 재서 늘어나는지 비교해요.`,
   },
+  standbend: {
+    id: 'standbend', label: '서서윗몸앞으로굽히기(체전굴)', short: '서서윗몸앞으로굽히기', kind: 'value', unit: 'cm', higherBetter: true,
+    fields: ['1차', '2차'], decimals: 1, video: 'primary',
+    camera: '옆모습(측면) 전신. 무릎이 펴져 있는지, 손끝이 어디까지 내려가는지 보이게 합니다.',
+    countRule: '횟수 없음 — 영상 녹화와 스켈레톤으로 자세(무릎 펴짐)를 남기고, 거리(cm)는 측정자가 읽어 입력합니다. 발바닥 기준선보다 아래로 내려가면 +, 못 닿으면 −.',
+    what: '서서 앞으로 숙일 때 허벅지 뒤쪽·허리·엉덩이의 유연성을 손끝 거리(cm)로 봅니다.',
+    how: [
+      '측정대(또는 단) 위에 발을 모으고 서서 무릎을 편 채로 둡니다.',
+      '두 손을 모아 천천히 아래로 숙여 손끝이 내려간 거리를 읽습니다.',
+      '무릎이 굽혀지거나 반동을 쓰면 다시 잽니다.',
+    ],
+    official: false,
+    unverified: ['나이스 PAPS 매뉴얼의 필수평가 종목에 없는 종목이라 공식 기준·등급표가 없습니다(보조 측정). 서서윗몸앞으로굽히기의 공식 절차(측정대·횟수·유지 시간)는 이번 검색에서 원문 확인 못 함 — 측정자가 매번 같은 방식으로 재고, 등급표 없이 값과 변화만 봅니다.'],
+    care: '반동을 주지 말고 천천히 숙입니다. 허리 통증이 있으면 중단합니다.',
+    easy: (v) => `서서 숙였을 때 손끝이 ${v}cm 였어요. 같은 방법으로 다시 재서 늘어나는지 비교해요.`,
+  },
   grip: {
     id: 'grip', label: '악력', short: '악력', kind: 'value', unit: 'kg', higherBetter: true,
-    fields: ['왼손 1차', '왼손 2차', '오른손 1차', '오른손 2차'], decimals: 1,
+    fields: ['왼손 1차', '왼손 2차', '오른손 1차', '오른손 2차'], decimals: 1, video: 'optional', range: [0, 200],
+    camera: '선택 — 악력계를 잡은 팔 전체가 보이게 하는 모습만 녹화합니다(횟수·스켈레톤 판정 없음).',
+    countRule: '횟수 없음 — 숫자는 악력계에서 읽어 입력합니다.',
     what: '손으로 쥐는 힘(kg)으로 전신 근력의 지표를 봅니다.',
     how: [
       '악력계를 손가락 둘째마디에 맞추고 팔을 몸 옆에 내린 채 선 자세로 잡습니다.',
@@ -121,7 +157,10 @@ export const PAPS_TESTS = {
   },
 };
 
-export const PAPS_TEST_ORDER = ['pushup', 'curlup', 'situp1m', 'sidestep20', 'hang', 'pullup', 'sitreach', 'grip'];
+export const PAPS_TEST_ORDER = ['pushup', 'curlup', 'pullup', 'hang', 'sidestep20', 'sitreach', 'standbend', 'grip'];
+
+/** 영상촬영이 기본(primary)·선택(optional)인 테스트인지. */
+export const papsVideoMode = (testId) => PAPS_TESTS[testId]?.video || null;
 
 export const PAPS_GRADE_OPTIONS = ['초1', '초2', '초3', '초4', '초5', '초6', '중1', '중2', '중3', '고1', '고2', '고3'];
 
@@ -156,7 +195,14 @@ export function evaluatePapsTest(testId, value, opts = {}) {
     return { status: 'unknown', label: '무효', valid: false, reason: '측정자가 무효로 표시(자세 불량·중단 등)', reference: null, easy: '자세가 맞지 않거나 중간에 멈춰서 기록으로 쓰지 않았어요.' };
   }
   if (v == null) return { status: 'unknown', label: '값 없음', valid: false, reason: '값 없음', reference: null, easy: '' };
-  if (v < 0 && testId !== 'sitreach') return { status: 'unknown', label: '확인 필요', valid: false, reason: '0보다 작은 값', reference: null, easy: '' };
+  if (v < 0 && !(meta.range && meta.range[0] < 0)) return { status: 'unknown', label: '확인 필요', valid: false, reason: '0보다 작은 값', reference: null, easy: '' };
+  if (meta.range && (v < meta.range[0] || v > meta.range[1] || (meta.rangeInt && !Number.isInteger(v)))) {
+    return {
+      status: 'unknown', label: '확인 필요', valid: false, reference: null,
+      reason: `나이스 입력 범위(${meta.range[0]}~${meta.range[1]}${meta.unit}${meta.rangeInt ? ', 정수' : ''})를 벗어난 값`,
+      easy: '입력 가능한 범위를 벗어난 값이라 기록으로 쓰지 않았어요. 값은 그대로 저장돼요.',
+    };
+  }
   const sg = opts.subject || {};
   const g = papsGradeOf(testId, v, { sex: sg.sex, grade: sg.grade });
   if (g) {
@@ -185,6 +231,7 @@ export function papsGroupKey(p = {}) {
 export function buildPapsRecord({
   testId, value, subject = {}, variant = '', invalid = false, trials = [], metronomeBpm = null,
   startedAt = null, endedAt = null, trainerNote = '', repLog = [], hr = null, auto = null,
+  recognition = null, video = null, conditions = null, previous = null,
 } = {}) {
   const meta = PAPS_TESTS[testId];
   const ev = evaluatePapsTest(testId, value, { invalid, subject });
@@ -213,6 +260,13 @@ export function buildPapsRecord({
     metronomeBpm: num(metronomeBpm),
     hr: hr || null,
     auto: auto && auto.used ? { used: true, autoValue: num(auto.autoValue), autoCount: num(auto.autoCount), offset: num(auto.offset) || 0 } : null,
+    recognition: recognition && Number.isFinite(recognition.ratio)
+      ? { ratio: recognition.ratio, frames: num(recognition.frames), goodFrames: num(recognition.goodFrames) } : null,
+    video: video ? { recorded: Boolean(video.recorded), fileName: String(video.fileName || ''), method: String(video.method || '') } : null,
+    conditions: conditions ? {
+      distanceCm: num(conditions.distanceCm), metronomeBpm: num(conditions.metronomeBpm), cameraUsed: Boolean(conditions.cameraUsed),
+    } : null,
+    evaluationText: papsEvaluationText({ testId, value: num(value), unit: meta?.unit || '', variant, valid: ev.valid, grade: ev.grade, reference: ev.reference, subject, recognition, hr }, previous),
     repLog: Array.isArray(repLog) ? repLog.slice(0, 120) : [],
     trainerNote: String(trainerNote || '').slice(0, 500),
     startedAt, endedAt,
@@ -241,4 +295,22 @@ export function papsChange(current, previous) {
   const improved = meta?.higherBetter === false ? diff < 0 : diff > 0;
   const direction = diff === 0 ? 'same' : improved ? 'improved' : 'worsened';
   return { diff, direction, unit: meta?.unit || '', previousValue: previous.value };
+}
+
+/**
+ * 측정·평가 문장(학생·성인 공통). 등급은 PAPS 기준표가 있는 초4~6 학생에게만 붙이고,
+ * 그 외(성인 포함)는 값·직전 대비 변화·인식률로 평가한다. 없는 기준을 만들어 내지 않는다.
+ */
+export function papsEvaluationText(p = {}, previous = null) {
+  const meta = PAPS_TESTS[p.testId];
+  const label = `${meta?.label || p.testLabel || '기록'}${p.variant === 'knee' ? '(무릎 대고)' : ''}`;
+  if (p.valid === false) return `${label}: 무효 또는 확인 필요 기록이라 평가에서 뺍니다.`;
+  if (!Number.isFinite(p.value)) return `${label}: 값이 없어 평가하지 않았습니다.`;
+  const parts = [`${label} ${p.value}${p.unit || meta?.unit || ''}`];
+  if (p.grade) parts.push(`PAPS ${p.subject?.grade || ''} ${p.subject?.sex === 'male' ? '남' : '여'} 기준 ${p.grade}등급(${PAPS_GRADE_WORD[p.grade]})`);
+  else parts.push('PAPS 등급은 초4~6 학생·기준표가 있는 종목에만 붙여서, 이 기록은 값과 변화로 평가합니다');
+  const ch = previous ? papsChange({ ...p, valid: true }, previous) : null;
+  if (ch) parts.push(`직전 대비 ${ch.diff > 0 ? '+' : ''}${ch.diff}${ch.unit} (${ch.direction === 'improved' ? '좋아짐' : ch.direction === 'worsened' ? '줄어듦' : '동일'})`);
+  if (p.recognition && Number.isFinite(p.recognition.ratio)) parts.push(`동작 인식률 ${Math.round(p.recognition.ratio * 100)}%${p.recognition.ratio < 0.7 ? '(낮음 — 카운트는 측정자 확인값 기준)' : ''}`);
+  return `${parts.join(' · ')}.`;
 }
