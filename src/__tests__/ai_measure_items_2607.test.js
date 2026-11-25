@@ -248,7 +248,7 @@ describe('[항목 4-센서] RomMeasure 배선 + Firestore 스키마', () => {
     // { memberId, measureType: 'sensor_goniometer', jointName, side, angle, recordedAt, confidenceScore }
     expect(rom).toMatch(/measureType: 'sensor_goniometer'/);
     expect(rom).toMatch(/jointName: joint\.toLowerCase\(\)/);
-    expect(rom).toMatch(/confidenceScore: 1\.0/);
+    expect(rom).toMatch(/confidenceScore: sensorConf/); // 고정 1.0 → 측정 품질 기반(2611)
     expect(rom).toMatch(/sensor_records/);
   });
 
@@ -305,12 +305,12 @@ describe('[항목 4-센서 보완] 예민도 완화 수학', () => {
     expect(src).toMatch(/meanDeg\(samples\)/);
   });
 
-  it('표시각은 스로틀·데드밴드·스텝 반올림을 거치고, 최대각은 3표본 중앙값으로 갱신', () => {
+  it('표시각은 스로틀·데드밴드·스텝 반올림을 거치고, 최대각은 0.3초 창 중앙값으로 갱신', () => {
     const src = read('../ai-measure/menus/RomSensorGoniometer.jsx');
     expect(src).toMatch(/UI_UPDATE_MS/);
     expect(src).toMatch(/UI_DEADBAND/);
     expect(src).toMatch(/roundToStep\(shown, DISPLAY_STEP\)/);
-    expect(src).toMatch(/med3/);
+    expect(src).toMatch(/PEAK_WINDOW_MS/);
     expect(src).toMatch(/SETTLE_AFTER_ZERO_MS/);
   });
 });

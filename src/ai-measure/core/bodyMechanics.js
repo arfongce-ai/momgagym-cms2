@@ -326,6 +326,95 @@ export function torsoSeparationSignal(landmarks) {
 }
 
 // ────────────────────────────────────────────────────────────────────────
+//  [2611 ROM 안정화] 견고한 대표값(피크)·반복 검출·가시성·옆모습 정렬
+//   AROM 결과가 "프레임 하나가 튄 값"이 되지 않고 반복해도 일정하게 나오도록 한다.
+//   임계값(5프레임·15°·0.5·0.4)은 설계값이며 실측 데이터로 검증 전이다.
+// ────────────────────────────────────────────────────────────────────────
+export const ROM_CONFIDENT_VIS = 0.5;   // 이 이상 보이는 프레임을 우선 사용
+export const ROM_MIN_GOOD_FRAMES = 8;   // 우선 사용할 프레임이 이보다 적으면 전체 사용 + 경고
+export const ROM_REP_SPREAD_WARN = 5;   // 반복 간 최대각 편차(°) 경고 기준(교재 28쪽: 팔 5°·다리 6° 이내는 오차 범위)
+export const ROM_VIEW_RATIO_MAX = 0.4;  // 옆모습 판정: 어깨폭/몸통길이 비율 상한(정면≈0.8, 완전 측면≈0)
+
+// 연속 k 프레임의 중앙값 중 최대(또는 최소). 1~2프레임 튄 값은 결과가 되지 않는다.
+export function sustainedExtreme(values, kind = 'max', k = 5) {
+  const v = (values || []).filter((x) => typeof x === 'number' && Number.isFinite(x));
+  if (!v.length) return null;
+  const pick = kind === 'min' ? Math.min : Math.max;
+  if (v.length < k) return pick(...v);
+  let best = null;
+  for (let i = 0; i + k <= v.length; i++) {
+    const m = median(v.slice(i, i + k));
+    if (best == null || (kind === 'min' ? m < best : m > best)) best = m;
+  }
+  return best;
+}
+
+// 굴곡 지표(클수록 많이 움직임) 시계열에서 반복(rep)별 피크를 찾는다.
+//  기준선 = 하위 10% 값, 진입 = 범위의 60%, 이탈 = 40%(히스테리시스로 떨림 분리 방지).
+//  범위가 minRangeDeg 미만이면 "움직임 없음"으로 보고 반복 0.
+export function detectRepPeaks(flex, { minRangeDeg = 15, minFrames = 3 } = {}) {
+  const v = (flex || []).filter((x) => typeof x === 'number' && Number.isFinite(x));
+  if (v.length < minFrames * 2) return { peaks: [], count: 0, rangeDeg: 0 };
+  const sorted = [...v].sort((a, b) => a - b);
+  const lo = sorted[Math.floor(sorted.length * 0.1)];
+  const hi = sustainedExtreme(v, 'max');
+  const rangeDeg = hi - lo;
+  if (!(rangeDeg >= minRangeDeg)) return { peaks: [], count: 0, rangeDeg };
+  const up = lo + 0.6 * rangeDeg;
+  const down = lo + 0.4 * rangeDeg;
+  const peaks = [];
+  let run = null;
+  const close = () => {
+    if (run && run.length >= minFrames) peaks.push(sustainedExtreme(run, 'max', Math.min(5, run.length)));
+    run = null;
+  };
+  for (const x of v) {
+    if (run == null) { if (x >= up) run = [x]; }
+    else if (x < down) close();
+    else run.push(x);
+  }
+  close();
+  return { peaks, count: peaks.length, rangeDeg };
+}
+
+// 관절각 산출에 실제로 쓰이는 랜드마크 중 가장 낮은 visibility(없으면 null).
+export function jointMinVisibility(landmarks, joint, side, poseMode) {
+  const S = side === 'left' ? 'LEFT' : 'RIGHT';
+  let names;
+  if (joint === 'HIP') names = poseMode === 'STANDING' ? ['HIP', 'KNEE'] : ['SHOULDER', 'HIP', 'KNEE'];
+  else if (joint === 'KNEE') names = ['HIP', 'KNEE', 'ANKLE'];
+  else if (joint === 'SHOULDER') names = (poseMode === 'STANDING' || poseMode === 'SEATED') ? ['SHOULDER', 'ELBOW'] : ['HIP', 'SHOULDER', 'ELBOW'];
+  else if (joint === 'ANKLE') names = ['KNEE', 'ANKLE', 'FOOT_INDEX'];
+  else if (joint === 'ELBOW') names = ['SHOULDER', 'ELBOW', 'WRIST'];
+  else return null;
+  let min = 1;
+  for (const n of names) {
+    const p = landmarks?.[LM[`${S}_${n}`]];
+    if (!p) return null;
+    min = Math.min(min, p.visibility == null ? 1 : p.visibility);
+  }
+  return min;
+}
+
+// 옆모습 정렬 신호: 어깨폭 / 몸통길이(어깨중점↔골반중점). 완전 측면이면 두 어깨가 겹쳐
+// 0에 가깝고 정면이면 약 0.8. 2D 각도는 카메라가 동작면과 수직일 때만 정확하므로
+// 이 값이 크면(몸이 정면 쪽으로 돌아감) 각도가 실제보다 작게 나온다. 계산 불가면 null.
+// ※ 어깨폭≈몸통길이×0.8 은 평균 체형 가정이다.
+export function viewSeparationRatio(landmarks) {
+  const ls = getLandmark(landmarks, LM.LEFT_SHOULDER, 0.3);
+  const rs = getLandmark(landmarks, LM.RIGHT_SHOULDER, 0.3);
+  const lh = getLandmark(landmarks, LM.LEFT_HIP, 0.3);
+  const rh = getLandmark(landmarks, LM.RIGHT_HIP, 0.3);
+  if (!ls || !rs || !lh || !rh) return null;
+  const A = getFrameAspect();
+  const sMid = midpoint(ls, rs);
+  const hMid = midpoint(lh, rh);
+  const trunk = Math.hypot((sMid.x - hMid.x) * A, sMid.y - hMid.y);
+  if (trunk < EPS) return null;
+  return Math.hypot((ls.x - rs.x) * A, ls.y - rs.y) / trunk;
+}
+
+// ────────────────────────────────────────────────────────────────────────
 //  시계열 누적기 — 비동기 프레임이 들어올 때마다 push, 끝나면 summary().
 //  좌/우 각도, 보상값, 타임스탬프를 시간순으로 쌓고, 스무딩 후 대표값을 낸다.
 // ────────────────────────────────────────────────────────────────────────
@@ -347,6 +436,9 @@ export class RomAccumulator {
     const sep = torsoSeparationSignal(norm);
     this.samples.push({
       t: tMs,
+      visL: jointMinVisibility(norm, this.joint, 'left', this.poseMode),
+      visR: jointMinVisibility(norm, this.joint, 'right', this.poseMode),
+      viewRatio: viewSeparationRatio(norm),
       left: L.angle,
       right: R.angle,
       compL: L.compensatory,
@@ -383,16 +475,75 @@ export class RomAccumulator {
 
     // 굴곡 ROM 은 '최대 굴곡각'이 핵심 지표. HIP/SHOULDER 기준벡터각은 클수록 굴곡↑.
     // KNEE·ELBOW 내각은 굴곡 시 작아지므로(폄=180), maxFlexion = 180 - min(내각).
-    const repMax = (arr) => {
-      if (!arr.length) return null;
-      if (this.joint === 'KNEE' || this.joint === 'ELBOW') {
-        const minInner = Math.min(...arr);
-        return round(180 - minInner, 1);
-      }
-      return round(Math.max(...arr), 1);
+    // [2611] 전체 프레임의 단순 최댓값 대신 ① 잘 보이는 프레임(visibility≥0.5) 우선,
+    //  ② 연속 5프레임 중앙값 기준 피크(순간 튐 제거), ③ 반복이 3회 이상 검출되면
+    //  반복별 피크의 중앙값을 대표값으로 쓴다.
+    const inner = this.joint === 'KNEE' || this.joint === 'ELBOW';
+    const prep = (raw, vis) => {
+      const sm = movingAverage(raw, this.smoothWindow);
+      const all = [];
+      sm.forEach((a, i) => { if (a != null) all.push({ a, v: vis[i], ok: a >= lo && a <= hi }); });
+      const good = all.filter((it) => it.v != null && it.v >= ROM_CONFIDENT_VIS);
+      const useGood = good.length >= ROM_MIN_GOOD_FRAMES;
+      const src = useGood ? good : all;
+      return {
+        values: src.filter((it) => it.ok).map((it) => it.a), // 정상 범위 안 프레임(대표값용)
+        series: src.map((it) => it.a),                        // 범위 필터 전 전체(반복 검출용 — 골짜기 필요)
+        lowVisibility: all.length > 0 && !useGood,
+        goodFramePct: all.length ? Math.round((good.length / all.length) * 100) : null,
+      };
     };
-    const leftMax = repMax(smL);
-    const rightMax = repMax(smR);
+    const repStats = (p) => {
+      if (!p.values.length) return { max: null, sustained: null, reps: { peaks: [], count: 0, rangeDeg: 0 } };
+      const ext = sustainedExtreme(p.values, inner ? 'min' : 'max');
+      const sustained = round(inner ? 180 - ext : ext, 1);
+      // 반복 검출은 범위 필터 전 시계열로(굽힘/폄 골짜기가 있어야 반복이 분리된다).
+      const flex = inner ? p.series.map((x) => 180 - x) : p.series;
+      const det = detectRepPeaks(flex);
+      const peaks = det.peaks.filter((pk) => { const raw = inner ? 180 - pk : pk; return raw >= lo && raw <= hi; });
+      const reps = { peaks, count: peaks.length, rangeDeg: det.rangeDeg };
+      const max = reps.count >= 3 ? round(median(reps.peaks), 1) : sustained;
+      return { max, sustained, reps };
+    };
+    const pickL = prep(rawL, this.samples.map((x) => x.visL));
+    const pickR = prep(rawR, this.samples.map((x) => x.visR));
+    const statL = repStats(pickL);
+    const statR = repStats(pickR);
+    const leftMax = statL.max;
+    const rightMax = statR.max;
+
+    // 안정성 요약(반복 일관성·가시성·옆모습 정렬) — 리포트에서 재측정 권고에 사용.
+    const spreadOf = (peaks) => (peaks.length >= 2 ? round(Math.max(...peaks) - Math.min(...peaks), 1) : null);
+    const sideStab = (pick, st) => ({
+      rep_count: st.reps.count,
+      rep_peaks: st.reps.peaks.map((x) => round(x, 1)),
+      rep_spread_deg: spreadOf(st.reps.peaks),
+      moved: st.reps.rangeDeg >= 15,
+      sustained_peak_deg: st.sustained,
+      peak_method: st.reps.count >= 3 ? 'rep_median' : 'sustained_peak',
+      low_visibility: pick.lowVisibility,
+      good_frame_pct: pick.goodFramePct,
+    });
+    const viewRatios = this.samples.map((x) => x.viewRatio).filter((x) => x != null);
+    const viewBadPct = viewRatios.length
+      ? Math.round((viewRatios.filter((x) => x > ROM_VIEW_RATIO_MAX).length / viewRatios.length) * 100) : null;
+    const stability = {
+      left: sideStab(pickL, statL),
+      right: sideStab(pickR, statR),
+      view: {
+        shoulder_ratio_median: viewRatios.length ? round(median(viewRatios), 2) : null,
+        bad_frame_pct: viewBadPct,
+        ok: viewRatios.length >= 10 ? (median(viewRatios) <= ROM_VIEW_RATIO_MAX && viewBadPct <= 30) : null,
+      },
+      warnings: [],
+    };
+    for (const [k, st] of [['left', stability.left], ['right', stability.right]]) {
+      if (!st.moved) continue; // 움직이지 않은 쪽(편측 측정)은 평가하지 않는다
+      if (st.rep_count < 3) stability.warnings.push(`${k}_few_reps`);
+      if (st.rep_spread_deg != null && st.rep_spread_deg >= ROM_REP_SPREAD_WARN) stability.warnings.push(`${k}_rep_spread`);
+      if (st.low_visibility) stability.warnings.push(`${k}_low_visibility`);
+    }
+    if (stability.view.ok === false) stability.warnings.push('view_not_side');
 
     // 끝범위 안정성: 최대각 근처(상위 15%) 구간의 표준편차가 작을수록 안정(점수↑).
     const endRangeStability = (arr, side) => {
@@ -471,6 +622,7 @@ export class RomAccumulator {
       },
       compensation: { left: compL, right: compR },
       compensation_profile,
+      stability,
       // 정제된 시계열(저장·차트용). 슬로모 보정된 t(ms) 포함.
       timeSeries: this.samples.map((s, i) => ({
         timestamp: round(s.t, 0),

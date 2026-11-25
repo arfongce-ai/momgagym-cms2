@@ -52,6 +52,43 @@ export function offPlaneRatio(gx, gy, gz) {
   return Math.abs(gx) / mag;
 }
 
+// 중앙값(홀수/짝수 모두). 빈 배열이면 null.
+export function median(arr) {
+  if (!Array.isArray(arr)) return null;
+  const v = arr.filter((x) => x != null && Number.isFinite(x)).sort((a, b) => a - b);
+  if (!v.length) return null;
+  const m = v.length >> 1;
+  return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2;
+}
+
+// 폰 비틀림으로 예상되는 각도 오차(°). 폰이 측정면(회전축=기기 x축)에서 틀어지면
+// 측정각이 실제보다 작거나 크게 나온다.
+//  · 폰이 굴러 x축이 들린 경우(y축 회전 φ): g=(sinθ·sinφ, cosθ, sinθ·cosφ)
+//      → 측정 tanθm = tanθ·cosφ (과소). 실제각 = atan2(√(gx²+gz²), gy).
+//  · 폰이 화면 평면에서 돈 경우(z축 회전 φ): g=(−sinφ·cosθ, cosφ·cosθ, sinθ)
+//      → 측정 tanθm = tanθ/cosφ (과대). 실제각 = atan2(gz, √(gx²+gy²)).
+//  gx 는 두 경우를 구분하지 못하므로 둘 중 큰 오차를 돌려준다(보수적).
+//  y축 가설은 gz 가 충분할 때만 쓴다 — 시작 자세(θ≈0)에선 gx 만으로 구르는지
+//  알 수 없어 오경보가 나기 때문. 입력은 평활한 중력벡터. 계산 불가면 null.
+// ※ 위 기하식은 이 코드의 이론 계산이며 실기기 검증 전이다.
+export function estimateTiltErrorDeg(gx, gy, gz) {
+  const mag = Math.hypot(gx, gy, gz);
+  if (!Number.isFinite(mag) || mag < 0.5) return null;
+  const thetaM = Math.atan2(gz, gy);
+  const diff = (theta) => {
+    let d = Math.abs((theta - thetaM) * RAD2DEG);
+    if (d > 180) d = 360 - d;
+    return d;
+  };
+  const gyzSigned = Math.hypot(gx, gy) * (gy < 0 ? -1 : 1);
+  let err = diff(Math.atan2(gz, gyzSigned));
+  if (Math.abs(gz) / mag >= 0.3) {
+    const gxzSigned = Math.hypot(gx, gz) * (gz < 0 ? -1 : 1);
+    err = Math.max(err, diff(Math.atan2(gxzSigned, gy)));
+  }
+  return err;
+}
+
 // 위상 언랩: 직전 언랩각(prevUnwrapped)과 새 원시각(rawDeg, −180..180)을
 // 받아 ±180 경계를 잇는 연속각을 반환. (경계 통과 시 ±360 보정)
 export function unwrapDeg(prevUnwrapped, rawDeg) {
@@ -123,48 +160,96 @@ export function roundToStep(v, step = 0.5) {
 
 // ── 자동 측정(끝범위 유지 감지) ─────────────────────────────────────────
 //  끝범위에서 "각도 변화 없이 holdMs 동안 유지"되면 자동으로 확정하기 위한
-//  안정 감지기. 민감도를 낮춘다 = 허용 변동폭(band)을 넓게 잡아 잔떨림으로
-//  타이머가 리셋되지 않게 한다(끝자세에서 손이 미세하게 흔들려도 유지로 인정).
+//  안정 감지기.
 //
-//  createHoldDetector({ band, holdMs, minAbsDeg })
-//   · push(deg, nowMs) 를 매 표본마다 호출. band(°) 를 벗어나면 창을 리셋한다.
-//   · 창 안에서 (now - windowStart) >= holdMs 이고 |중앙값| >= minAbsDeg 이면
-//     { fired:true, angle } 을 반환(한 번만). 그 외에는 { fired:false, ... }.
-//   · reset() 으로 상태 초기화(0점 재설정·다시측정 시).
-export function createHoldDetector({ band = 2.5, holdMs = 800, minAbsDeg = 5 } = {}) {
-  let anchor = null;     // 현재 유지 창의 기준각
-  let startMs = 0;       // 유지 시작 시각
-  let firedOnce = false; // 중복 발화 방지
-  let lastDeg = null;
+//  createHoldDetector({ band, holdMs, minAbsDeg, minSamples })
+//   · push(deg, nowMs) 를 매 표본마다 호출(시간은 ms, 표본 수와 무관).
+//   · 최근 표본 창의 (최대−최소) 가 2×band 를 넘으면 가장 오래된 표본부터 버려
+//     창을 줄인다. 기준점이 값을 따라 움직이지 않으므로 천천히 움직이는 중에는
+//     창이 길어지지 않는다(이전 구현은 기준점이 따라가 느린 동작에서 오발화).
+//   · 창 길이 ≥ holdMs, 표본 ≥ minSamples, 앞/뒤 절반 평균 차(드리프트) ≤ 0.6×band,
+//     |중앙값| ≥ minAbsDeg 이면 { fired:true, angle: 창 중앙값 } 을 한 번 반환.
+//     확정값은 "움직이다 찍힌 최고값"이 아니라 "유지한 구간의 중앙값"이다.
+//   · deg 가 null 이면 창을 비운다(측정면 이탈·신호 끊김).
+export function createHoldDetector({ band = 2.5, holdMs = 800, minAbsDeg = 5, minSamples = 6 } = {}) {
+  let win = [];          // { t, deg }
+  let firedOnce = false;
+  const maxRange = band * 2;
+  const driftMax = band * 0.6;
+  const keepMs = holdMs * 1.5;
+
+  const rangeOf = () => {
+    let lo = Infinity, hi = -Infinity;
+    for (const w of win) { if (w.deg < lo) lo = w.deg; if (w.deg > hi) hi = w.deg; }
+    return hi - lo;
+  };
+  const meanOf = (a) => a.reduce((s, w) => s + w.deg, 0) / a.length;
+  const driftOf = () => {
+    const n = win.length;
+    if (n < 4) return Infinity;
+    const h = n >> 1;
+    return Math.abs(meanOf(win.slice(n - h)) - meanOf(win.slice(0, h)));
+  };
 
   return {
     push(deg, nowMs) {
       if (deg == null || !Number.isFinite(deg)) {
-        anchor = null; startMs = 0;
-        return { fired: false, heldMs: 0, angle: null };
+        win = [];
+        return { fired: false, heldMs: 0, angle: null, spread: 0 };
       }
-      lastDeg = deg;
-      if (anchor == null || Math.abs(deg - anchor) > band) {
-        // 창 밖으로 벗어남 → 새 창 시작(민감도 낮춤: band 가 넓어 잔떨림엔 안 걸림)
-        anchor = deg;
-        startMs = nowMs;
-        return { fired: false, heldMs: 0, angle: deg };
-      }
-      // 창 안에서 유지 중 — 기준각을 완만히 따라가 드리프트 흡수
-      anchor = anchor + 0.15 * (deg - anchor);
-      const heldMs = nowMs - startMs;
-      if (!firedOnce && heldMs >= holdMs && Math.abs(deg) >= minAbsDeg) {
+      win.push({ t: nowMs, deg });
+      while (win.length && nowMs - win[0].t > keepMs) win.shift();
+      while (win.length > 1 && rangeOf() > maxRange) win.shift();
+      const heldMs = win.length ? nowMs - win[0].t : 0;
+      const angle = median(win.map((w) => w.deg));
+      const spread = win.length ? rangeOf() : 0;
+      if (!firedOnce && heldMs >= holdMs && win.length >= minSamples
+        && driftOf() <= driftMax && Math.abs(angle) >= minAbsDeg) {
         firedOnce = true;
-        return { fired: true, heldMs, angle: deg };
+        return { fired: true, heldMs, angle, spread };
       }
-      return { fired: false, heldMs, angle: deg };
+      return { fired: false, heldMs, angle, spread };
     },
-    heldMs(nowMs) { return anchor == null ? 0 : Math.max(0, nowMs - startMs); },
+    heldMs(nowMs) { return win.length ? Math.max(0, nowMs - win[0].t) : 0; },
     hasFired() { return firedOnce; },
-    reset() { anchor = null; startMs = 0; firedOnce = false; lastDeg = null; },
+    reset() { win = []; firedOnce = false; },
     // 자동 발화 후에도 사용자가 계속 움직이면 다시 무장할 수 있게 한다.
-    rearm() { firedOnce = false; anchor = lastDeg; },
+    rearm() { firedOnce = false; win = win.slice(-1); },
   };
+}
+
+// ── 최대각(피크) 추적 ───────────────────────────────────────────────────
+//  최근 windowMs 구간의 중앙값을 최대각 후보로 쓴다. 순간 튐(창의 절반 미만)은
+//  중앙값이 걸러 낸다. 표본이 minSamples 미만이면 갱신하지 않는다. null 표본은
+//  창을 비운다(신뢰할 수 없는 구간은 최대각에 반영하지 않는다).
+export function createPeakTracker({ windowMs = 300, minSamples = 5 } = {}) {
+  let win = [];
+  let peak = 0;
+  return {
+    push(deg, nowMs) {
+      if (deg == null || !Number.isFinite(deg)) { win = []; return peak; }
+      win.push({ t: nowMs, deg });
+      while (win.length && nowMs - win[0].t > windowMs) win.shift();
+      if (win.length >= minSamples) {
+        const m = Math.abs(median(win.map((w) => w.deg)));
+        if (m > peak) peak = m;
+      }
+      return peak;
+    },
+    peak() { return peak; },
+    reset() { win = []; peak = 0; },
+  };
+}
+
+// 센서 측정 신뢰도(0.3~0.95). 하드웨어 기울기라도 0점 흔들림·유지 구간 편차·폰 비틀림·
+// 수동 확정(유지 확인 없음)이면 낮춘다. 가중치는 경험적 설정값이며 실측 검증 전이다.
+export function sensorConfidence({ zeroRange = 0, spread = 0, tiltErr = 0, manual = false, zeroMax = 2 } = {}) {
+  const pz = Math.min(0.1, (Math.max(0, zeroRange) / zeroMax) * 0.1);
+  const ps = Math.min(0.2, Math.max(0, spread) * 0.04);
+  const pt = Math.min(0.3, Math.max(0, tiltErr) * 0.06);
+  const pm = manual ? 0.1 : 0;
+  const c = 0.95 - pz - ps - pt - pm;
+  return Math.round(Math.min(0.95, Math.max(0.3, c)) * 100) / 100;
 }
 
 // 평균(0점 캘리브레이션용). 언랩각은 연속값이라 단순 산술평균이 안전하다.
@@ -177,37 +262,63 @@ export function meanDeg(arr) {
 
 // ── 실시간 트래커 ────────────────────────────────────────────────────────
 //  start() 후 onSample({ angleDeg(평활·언랩, 0점 전), rawDeg(비평활 언랩),
-//  offPlane, source }) 콜백. 0점/최대각 관리는 UI(컴포넌트) 책임.
+//  offPlane, tiltErrDeg(폰 비틀림 예상 오차°, motion 경로만), accMag(순간 가속도
+//  크기), source }) 콜백. 0점/최대각 관리는 UI(컴포넌트) 책임.
 //  · gravityAlpha: 중력벡터 EMA(1차 평활). 낮을수록 둔감·안정.
 //  · angleAlpha:   각도 EMA(2차 평활). 손떨림 제거용.
+//  두 알파는 표본 간격 NOMINAL_DT_MS(≈60Hz)일 때의 값이다. 센서 속도가 기기마다
+//  달라도 같은 시간상수가 되도록 실제 간격(dt)에 맞춰 환산해 적용한다.
+const NOMINAL_DT_MS = 16.7;
+export function alphaForDt(nominalAlpha, dtMs, nominalDtMs = NOMINAL_DT_MS) {
+  const dt = Math.min(100, Math.max(1, Number.isFinite(dtMs) ? dtMs : nominalDtMs));
+  return 1 - Math.pow(1 - nominalAlpha, dt / nominalDtMs);
+}
+
 export function createTiltTracker({ onSample, gravityAlpha = 0.08, angleAlpha = 0.3 } = {}) {
   let g = null;              // EMA 중력벡터 {x,y,z}
   let unwrapped = null;      // 언랩 누적각(비평활)
   let smoothed = null;       // 언랩 누적각(평활)
   let motionSeen = false;    // devicemotion 수신 여부(폴백 판단)
   let running = false;
+  let lastT = null;          // 직전 표본 시각(ms) — 간격 환산용
+  let dtMs = NOMINAL_DT_MS;
 
-  const emit = (rawDeg, offPlane, source) => {
-    if (rawDeg == null) { onSample?.({ angleDeg: null, rawDeg: null, offPlane, source }); return; }
+  const nowOf = (e) => (typeof e?.timeStamp === 'number' && e.timeStamp > 0
+    ? e.timeStamp
+    : (typeof performance !== 'undefined' ? performance.now() : Date.now()));
+  const tick = (e) => {
+    const t = nowOf(e);
+    dtMs = lastT == null ? NOMINAL_DT_MS : t - lastT;
+    lastT = t;
+  };
+
+  const emit = (rawDeg, offPlane, source, extra = {}) => {
+    if (rawDeg == null) { onSample?.({ angleDeg: null, rawDeg: null, offPlane, source, ...extra }); return; }
     unwrapped = unwrapDeg(unwrapped, rawDeg);
-    smoothed = smoothAngle(smoothed, unwrapped, angleAlpha);
-    onSample?.({ angleDeg: smoothed, rawDeg: unwrapped, offPlane, source });
+    smoothed = smoothAngle(smoothed, unwrapped, alphaForDt(angleAlpha, dtMs));
+    onSample?.({ angleDeg: smoothed, rawDeg: unwrapped, offPlane, source, ...extra });
   };
 
   const onMotion = (e) => {
     const a = e.accelerationIncludingGravity;
     if (!a || a.x == null) return;
     motionSeen = true;
+    tick(e);
+    const ga = alphaForDt(gravityAlpha, dtMs);
     // EMA 저역통과 — 손동작 가속 제거, 중력 방향만 추출
     g = g
-      ? { x: g.x + gravityAlpha * (a.x - g.x), y: g.y + gravityAlpha * (a.y - g.y), z: g.z + gravityAlpha * (a.z - g.z) }
+      ? { x: g.x + ga * (a.x - g.x), y: g.y + ga * (a.y - g.y), z: g.z + ga * (a.z - g.z) }
       : { x: a.x, y: a.y, z: a.z };
-    emit(gravityPlaneAngleDeg(g.y, g.z, g.x), offPlaneRatio(g.x, g.y, g.z), 'motion');
+    emit(gravityPlaneAngleDeg(g.y, g.z, g.x), offPlaneRatio(g.x, g.y, g.z), 'motion', {
+      tiltErrDeg: estimateTiltErrorDeg(g.x, g.y, g.z),
+      accMag: Math.hypot(a.x, a.y, a.z),
+    });
   };
 
   const onOrientation = (e) => {
     if (motionSeen) return; // devicemotion 이 살아 있으면 폴백 무시
     if (e.beta == null) return;
+    tick(e);
     // beta = x축 회전각(−180..180) — 같은 축의 폴백 신호.
     const off = e.gamma == null ? 0 : Math.min(1, Math.abs(e.gamma) / 90);
     emit(e.beta, off, 'orientation');
@@ -217,7 +328,7 @@ export function createTiltTracker({ onSample, gravityAlpha = 0.08, angleAlpha = 
     start() {
       if (running || typeof window === 'undefined') return;
       running = true;
-      g = null; unwrapped = null; smoothed = null; motionSeen = false;
+      g = null; unwrapped = null; smoothed = null; motionSeen = false; lastT = null;
       window.addEventListener('devicemotion', onMotion);
       window.addEventListener('deviceorientation', onOrientation);
     },
