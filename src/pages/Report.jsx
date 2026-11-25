@@ -30,6 +30,7 @@ import { buildMemberTestRecommendations } from '../ai-measure/core/memberTestRec
 import { consumePendingVoiceTarget, setPendingVoiceTarget } from '../voice/pendingVoiceTarget';
 const JumpReportDashboard = lazy(() => import('../ai-measure/menus/JumpReportDashboard'));
 const GaitReportDashboard = lazy(() => import('../ai-measure/menus/GaitReportDashboard'));
+const SprintReportDashboard = lazy(() => import('../ai-measure/menus/SprintReportDashboard'));
 const PostureReport = lazy(() => import('../ai-measure/menus/PostureReport'));
 const RomReport = lazy(() => import('../ai-measure/menus/RomReport'));
 const LiftingReportDashboard = lazy(() => import('../ai-measure/menus/LiftingReportDashboard'));
@@ -45,7 +46,14 @@ const SquatReportDashboard = lazy(() => import('../ai-measure/menus/SquatReportD
 const SessionDataSheet = lazy(() => import('../components/report/SessionDataSheet'));
 
 const COLORS = { weight:'#f59e0b', systolic:'#ef4444', diastolic:'#3b82f6', height:'#22d3ee' };
-const DETAIL_SESSION_MENUS = new Set(['jump', 'gait', 'posture', 'rom', 'lifting']);
+// [2026-11-25] sprint(5번) 추가 — 전용 리포트가 있는데 세션 기록이 한 번 더 목록에 떠서 측정 1회가 2건으로 보였다.
+const DETAIL_SESSION_MENUS = new Set(['jump', 'gait', 'sprint', 'posture', 'rom', 'lifting']);
+const isSprintKind = (r) => r?.kind === 'sprint' || r?.kind === 'agility';
+// 같은 종목(testKey)의 직전 스프린트 기록
+const findPrevSprint = (list, idx) => {
+  const cur = list[idx];
+  return list.slice(idx + 1).find((r) => isSprintKind(r) && (r.testKey || '') === (cur?.testKey || '')) || null;
+};
 
 const REPORT_TYPE_META = {
   posture: { title: '자세·체형', badge: 'POSTURE', accent: 'text-emerald-700 dark:text-emerald-300', bg: 'bg-emerald-500/15', border: 'border-emerald-500/25' },
@@ -641,7 +649,9 @@ async function preloadReportChunk(item) {
     if (item?.source === 'saved-report') {
       await (report.kind === 'jump'
         ? import('../ai-measure/menus/JumpReportDashboard')
-        : import('../ai-measure/menus/GaitReportDashboard'));
+        : isSprintKind(report)
+          ? import('../ai-measure/menus/SprintReportDashboard')
+          : import('../ai-measure/menus/GaitReportDashboard'));
     } else if (item?.source === 'posture') {
       await import('../ai-measure/menus/PostureReport');
     } else if (item?.source === 'rom') {
@@ -756,7 +766,9 @@ function ShareCaptureReport({ item, member, simple, previousReport }) {
       <div data-share-report-ready="true" className="w-full bg-slate-50 dark:bg-slate-950">
         {report.kind === 'jump'
           ? <JumpReportDashboard report={report} member={reportMember} previousReport={previousReport} />
-          : <GaitReportDashboard report={report} member={reportMember} previousReport={previousReport} />}
+          : isSprintKind(report)
+            ? <SprintReportDashboard report={report} member={reportMember} previousReport={previousReport} />
+            : <GaitReportDashboard report={report} member={reportMember} previousReport={previousReport} />}
       </div>
     );
   }
@@ -1150,6 +1162,7 @@ export default function Report() {
           && (r.jumpSubType || 'cmj') === curSubType
           && (curSubType !== 'slj' || r.leg === cur.leg)) || null;
       }
+      if (isSprintKind(cur)) return findPrevSprint(savedReports, item.index);
       return savedReports.slice(item.index + 1).find((r) => (r.kind || 'gait') === 'gait') || null;
     }
     return null;
@@ -1191,7 +1204,15 @@ export default function Report() {
   // 직후라면 사실상 항상 0번이지만, 안전하게 kind로 찾는다).
   useEffect(() => {
     if (pendingOpenKind !== 'gait') return;
-    const idx = savedReports.findIndex((r) => r.kind !== 'jump');
+    const idx = savedReports.findIndex((r) => r.kind !== 'jump' && !isSprintKind(r));
+    if (idx === -1) return;
+    setViewerIdx(idx);
+    setPendingOpenKind(null);
+  }, [pendingOpenKind, savedReports]);
+
+  useEffect(() => {
+    if (pendingOpenKind !== 'sprint') return;
+    const idx = savedReports.findIndex((r) => isSprintKind(r));
     if (idx === -1) return;
     setViewerIdx(idx);
     setPendingOpenKind(null);
@@ -1287,7 +1308,7 @@ export default function Report() {
         body: bodyRecords,
         posture: savedPostureReports,
         rom: savedRomReports,
-        gait: savedReports.filter((item) => item?.kind === 'gait' || item?.metrics || item?.cadence),
+        gait: savedReports.filter((item) => !isSprintKind(item) && item?.kind !== 'jump' && (item?.kind === 'gait' || item?.metrics || item?.cadence)),
         jump: savedReports.filter((item) => item?.kind === 'jump'),
         // [트레드밀/필드 구분 2026-09-05] sprint(5m/10m)·agility(5-0-5) — gait_reports를
         // 공유하지만 여기 분기가 없어 추천 엔진(memberTestRecommendation.js)에서
@@ -1861,6 +1882,13 @@ export default function Report() {
                       && (r.jumpSubType || 'cmj') === curSubType
                       && (curSubType !== 'slj' || r.leg === cur.leg);
                   }) || null}
+                />
+              : isSprintKind(savedReports[viewerIdx])
+              ? <SprintReportDashboard
+                  report={savedReports[viewerIdx]}
+                  onClose={() => setViewerIdx(null)}
+                  member={member}
+                  previousReport={findPrevSprint(savedReports, viewerIdx)}
                 />
               : <GaitReportDashboard
                   report={savedReports[viewerIdx]}

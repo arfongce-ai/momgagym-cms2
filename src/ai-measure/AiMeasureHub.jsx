@@ -485,7 +485,7 @@ export default function AiMeasureHub() {
           body: bodyRecords,
           posture: postureReports,
           rom: romReports,
-          gait: (gaitReports || []).filter((report) => report?.kind === 'gait' || report?.metrics || report?.cadence),
+          gait: (gaitReports || []).filter((report) => report?.kind !== 'sprint' && report?.kind !== 'agility' && report?.kind !== 'jump' && (report?.kind === 'gait' || report?.metrics || report?.cadence)),
           jump: (gaitReports || []).filter((report) => report?.kind === 'jump'),
           lifting: sessionReports('lifting'),
           stance: sessionReports('stance'),

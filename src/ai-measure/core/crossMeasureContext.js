@@ -2,7 +2,7 @@
 // 정교한 자동평가(등급·flags)를 그대로 재사용하도록 — 계산 로직을 여기 새로
 // 만들지 않는다(squat이 squatBiomechanics.js의 repeatedFlags를 재사용하는
 // 것과 동일한 원칙 — "판단 로직은 한 곳에만").
-import { cadenceRangeFor, classifyGaitMode } from './gaitMode';
+import { cadenceRangeFor, resolveGaitMode } from './gaitMode';
 import { ROM_SYMMETRY_CAUTION_MAX_PCT } from './romThresholds';
 import { generateLiftingDiagnosis } from './barbellClinical';
 import { subtypeOf, latestPerSubtype } from './measureSubtype';
@@ -132,7 +132,7 @@ export function buildProblemFocus(kind, report = {}) {
     if (!issues.length && report.valid !== false) addStrength('점프 높이와 착지 기술 지표가 큰 위험 신호 없이 측정되었습니다.');
   } else if (kind === 'gait') {
     const m = report.metrics || report || {};
-    if (m.cadence != null) { const cr = cadenceRangeFor(m.cadence).warn; if (m.cadence < cr[0] || m.cadence > cr[1]) addIssue('caution', `케이던스가 ${classifyGaitMode(m.cadence) === 'walk' ? '걷기' : '달리기'} 권장 범위를 벗어납니다(${m.cadence} SPM).`); }
+    if (m.cadence != null) { const cr = cadenceRangeFor(m.cadence, m.gaitMode).warn; if (m.cadence < cr[0] || m.cadence > cr[1]) addIssue('caution', `케이던스가 ${resolveGaitMode(m.cadence, m.gaitMode) === 'walk' ? '걷기' : '달리기'} 권장 범위를 벗어납니다(${m.cadence} SPM).`); }
     const pelvicDrop = m.pelvicDropAbs ?? m.pelvicDrop?.avg;
     if (pelvicDrop != null && pelvicDrop > 7) addIssue('caution', `골반 드롭이 큽니다(${pelvicDrop}%).`);
     if (m.kneeSymmetry != null && m.kneeSymmetry < 85) addIssue('caution', `무릎 움직임 좌우 대칭성이 낮습니다(${m.kneeSymmetry}%).`);
@@ -318,7 +318,7 @@ export function buildCrossMeasureIntegration({
   if (!kind) return null;
 
   const jumpReports = gaitReports.filter((item) => item?.kind === 'jump');
-  const runningReports = gaitReports.filter((item) => item?.kind === 'gait' || item?.metrics || item?.cadence);
+  const runningReports = gaitReports.filter((item) => item?.kind !== 'sprint' && item?.kind !== 'agility' && item?.kind !== 'jump' && (item?.kind === 'gait' || item?.metrics || item?.cadence));
   // [세부 테스트별 2026-11-24] 종류별 최신 1건만 쓰면 같은 측정 안의 다른 세부 테스트
   //  (예: 1RM 벤치 vs VBT 스내치, CMJ vs SJ, 관절별 ROM)가 사라진다 → 세부 테스트별 최신 1건씩.
   //  현재 측정과 같은 종류라도 세부 테스트가 다르면 참고 자료로 넣는다(같은 세부 테스트만 제외).

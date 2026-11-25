@@ -41,3 +41,30 @@ describe('5번 스프린트·왕복달리기 보행 지표', () => {
     expect(read('src/ai-measure/menus/SprintReportDashboard.jsx')).toMatch(/보행 지표 \(참고\)/);
   });
 });
+
+describe('리포트 목록 중복·뷰어 연결', () => {
+  const rep = read('src/pages/Report.jsx');
+  it('sprint 세션은 상세 세션 메뉴로 취급(중복 카드 방지)', () => {
+    expect(rep).toMatch(/DETAIL_SESSION_MENUS = new Set\(\[[^\]]*'sprint'/);
+  });
+  it('스프린트 기록은 SprintReportDashboard로 연다', () => {
+    expect(rep).toMatch(/isSprintKind\(savedReports\[viewerIdx\]\)\s*\?\s*<SprintReportDashboard/);
+  });
+  it('gait 분류에서 스프린트·점프 제외', () => {
+    expect(rep).toMatch(/gait: savedReports\.filter\(\(item\) => !isSprintKind\(item\)/);
+  });
+});
+
+import { resolveGaitMode, cadenceRangeFor } from '../src/ai-measure/core/gaitMode';
+describe('측정 전 걷기/달리기 구분', () => {
+  it('명시 선택이 케이던스 자동 구분보다 우선', () => {
+    expect(resolveGaitMode(170, 'walk')).toBe('walk');
+    expect(resolveGaitMode(110, 'run')).toBe('run');
+    expect(resolveGaitMode(110, null)).toBe('walk');
+    expect(cadenceRangeFor(110, 'run').good).toEqual([160, 180]);
+  });
+  it('트레드밀·5번 화면에 선택 UI와 저장', () => {
+    expect(read('src/ai-measure/menus/GaitRunningAnalysis.jsx')).toMatch(/\['walk', '걷기'\], \['run', '달리기'\]/);
+    expect(read('src/ai-measure/menus/SprintLiveAnalysis.jsx')).toMatch(/gaitMode: gaitModeSel === 'auto'/);
+  });
+});

@@ -30,14 +30,22 @@ export function classifyGaitMode(cadence) {
   return n < GAIT_MODE_SPLIT_SPM ? 'walk' : 'run';
 }
 
+/**
+ * [2026-11-25] 측정 전에 트레이너가 고른 구분('walk'|'run')이 있으면 그걸 우선, 없으면(자동) 케이던스로 구분.
+ * 저장된 기록의 metrics.gaitMode 를 두 번째 인자로 넘긴다.
+ */
+export function resolveGaitMode(cadence, explicit) {
+  return (explicit === 'walk' || explicit === 'run') ? explicit : classifyGaitMode(cadence);
+}
+
 /** 케이던스 기준범위. 구분 못 하면 달리기 기준(기존 동작)을 쓴다. */
-export function cadenceRangeFor(cadence) {
-  return GAIT_CADENCE_RANGES[classifyGaitMode(cadence) || 'run'];
+export function cadenceRangeFor(cadence, explicit) {
+  return GAIT_CADENCE_RANGES[resolveGaitMode(cadence, explicit) || 'run'];
 }
 
 /** 입각기 기준범위. 걷기만 있고, 달리기는 null(판정하지 않음). */
-export function stanceRangeFor(cadence) {
-  return classifyGaitMode(cadence) === 'run' ? null : GAIT_STANCE_RANGE_WALK;
+export function stanceRangeFor(cadence, explicit) {
+  return resolveGaitMode(cadence, explicit) === 'run' ? null : GAIT_STANCE_RANGE_WALK;
 }
 
 // ── 수직 진폭(골반 높이 위아래 움직임) 기준 (2026-10) ──
@@ -53,6 +61,6 @@ export const GAIT_VERTICAL_OSC_RANGES = Object.freeze({
   run: Object.freeze({ good: [4.5, 7.5], warn: [3.0, 9.5] }),
 });
 
-export function verticalOscRangeFor(cadence) {
-  return GAIT_VERTICAL_OSC_RANGES[classifyGaitMode(cadence) || 'run'];
+export function verticalOscRangeFor(cadence, explicit) {
+  return GAIT_VERTICAL_OSC_RANGES[resolveGaitMode(cadence, explicit) || 'run'];
 }
