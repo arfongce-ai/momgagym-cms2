@@ -7,7 +7,7 @@ import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import {
-  LM, RomAccumulator, sustainedExtreme, detectRepPeaks, jointMinVisibility,
+  LM, ROM_NORMS, jointAngleByMode, RomAccumulator, sustainedExtreme, detectRepPeaks, jointMinVisibility,
   viewSeparationRatio, ROM_VIEW_RATIO_MAX,
 } from '../ai-measure/core/bodyMechanics';
 import { generateRomDiagnosis } from '../ai-measure/core/romClinical';
@@ -221,5 +221,45 @@ describe('RomMeasure 배선 (소스 확인)', () => {
     expect(src).toMatch(/viewSeparationRatio/);
     expect(src).toMatch(/옆모습 정렬 확인됨/);
     expect(src).not.toMatch(/disabled=\{[^}]*viewState/);
+  });
+});
+
+// ── 어깨 벌림(ABDUCTION, 정면 촬영) ──
+describe('어깨 벌림(ABDUCTION) 추가', () => {
+  const mk = (armDeg) => {
+    // 정면: 어깨 (±0.1, 0.3), 골반 (±0.08, 0.6). 오른팔을 수직 아래(0°)에서 armDeg만큼 옆으로 든다.
+    const lm = Array.from({ length: 33 }, () => ({ x: 0.5, y: 0.5, z: 0, visibility: 0.99 }));
+    lm[LM.LEFT_SHOULDER] = { x: 0.4, y: 0.3, z: 0, visibility: 0.99 };
+    lm[LM.RIGHT_SHOULDER] = { x: 0.6, y: 0.3, z: 0, visibility: 0.99 };
+    lm[LM.LEFT_HIP] = { x: 0.42, y: 0.6, z: 0, visibility: 0.99 };
+    lm[LM.RIGHT_HIP] = { x: 0.58, y: 0.6, z: 0, visibility: 0.99 };
+    const r = (armDeg * Math.PI) / 180;
+    lm[LM.RIGHT_ELBOW] = { x: 0.6 + 0.2 * Math.sin(r), y: 0.3 + 0.2 * Math.cos(r), z: 0, visibility: 0.99 };
+    lm[LM.LEFT_ELBOW] = { x: 0.4 - 0.2 * Math.sin(r), y: 0.3 + 0.2 * Math.cos(r), z: 0, visibility: 0.99 };
+    return lm;
+  };
+  it('팔 내림=0°, 수평=90°, 머리 위=180°', () => {
+    for (const a of [0, 90, 170]) {
+      const got = jointAngleByMode(mk(a), 'SHOULDER', 'right', 'ABDUCTION').angle;
+      expect(Math.abs(got - a)).toBeLessThan(1);
+    }
+  });
+  it('ROM_NORMS에 벌림 기준이 있고 sanity 범위가 적용된다', () => {
+    expect(ROM_NORMS.SHOULDER.ABDUCTION.abduction.normal).toBe(170);
+  });
+  it('정면이면 정렬 OK, 옆으로 돌면 view_not_front 경고', () => {
+    const front = new RomAccumulator({ joint: 'SHOULDER', poseMode: 'ABDUCTION' });
+    const side = new RomAccumulator({ joint: 'SHOULDER', poseMode: 'ABDUCTION' });
+    for (let i = 0; i < 40; i++) {
+      const a = 90 + 80 * Math.sin(i / 4);
+      front.push(mk(a), i * 100);
+      const s = mk(a);
+      s[LM.LEFT_SHOULDER] = { x: 0.49, y: 0.3, z: 0, visibility: 0.99 };
+      s[LM.RIGHT_SHOULDER] = { x: 0.51, y: 0.3, z: 0, visibility: 0.99 };
+      side.push(s, i * 100);
+    }
+    expect(front.summary().stability.view.ok).toBe(true);
+    expect(side.summary().stability.warnings).toContain('view_not_front');
+    expect(side.summary().stability.warnings).not.toContain('view_not_side');
   });
 });

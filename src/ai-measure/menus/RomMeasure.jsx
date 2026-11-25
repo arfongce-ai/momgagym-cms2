@@ -15,7 +15,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { todayYMD } from '../../utils/dates';
 import { usePoseEngine } from '../core/usePoseEngine';
 import { createSmoother } from '../core/smoothing';
-import { RomAccumulator, jointAngleByMode, normalizePose, LM, symmetryIndex, viewSeparationRatio, ROM_VIEW_RATIO_MAX } from '../core/bodyMechanics';
+import { RomAccumulator, jointAngleByMode, normalizePose, LM, symmetryIndex, viewSeparationRatio, ROM_VIEW_RATIO_MAX, ROM_VIEW_RATIO_MIN_FRONT } from '../core/bodyMechanics';
 import { generateRomDiagnosis } from '../core/romClinical';
 import { pickRecorderMime } from '../core/recordSink';
 import { beepGo, beepSuccess, primeAudio } from '../core/audioCue';
@@ -39,7 +39,7 @@ const MAX_RECORD_MS = 60000;
 const JOINTS = [
   { key: 'HIP', label: '고관절', short: '고관절' },
   { key: 'KNEE', label: '슬관절(무릎)', short: '무릎' },
-  { key: 'SHOULDER', label: '견관절(어깨)', short: '어깨' },
+  { key: 'SHOULDER', label: '견관절(어깨 올림)', short: '어깨' },
   { key: 'ANKLE', label: '족관절(발목)', short: '발목' },
   { key: 'ELBOW', label: '주관절(팔꿈치)', short: '팔꿈치' },
 ];
@@ -57,8 +57,9 @@ const POSE_MODES_BY_JOINT = {
     { key: 'PRONE', label: '엎드려', desc: '무릎 굴곡(prone)' },
   ],
   SHOULDER: [
-    { key: 'STANDING', label: '서서', desc: '팔 들어올림(굴곡)' },
-    { key: 'SEATED', label: '앉아서', desc: '체간 안정 상태 굴곡' },
+    { key: 'STANDING', label: '서서', desc: '팔 앞으로 들어올림(어깨 올림·굴곡, 옆모습 촬영)' },
+    { key: 'SEATED', label: '앉아서', desc: '체간 안정 상태 굴곡(어깨 올림, 옆모습 촬영)' },
+    { key: 'ABDUCTION', label: '서서 벌림', desc: '팔 옆으로 들어올림(어깨 올림·벌림, 정면 촬영)' },
   ],
   ANKLE: [
     { key: 'STANDING', label: '서서', desc: '배측굴곡' },
@@ -220,9 +221,14 @@ export default function RomMeasure({ member, onSave, onBack, onViewInReport }) {
         viewEmaRef.current = viewEmaRef.current == null ? vr : 0.8 * viewEmaRef.current + 0.2 * vr;
         const e = viewEmaRef.current;
         // 히스테리시스 ±0.05 — 경계에서 안내가 깜빡이지 않게
-        const next = viewStateRef.current === 'bad'
-          ? (e < ROM_VIEW_RATIO_MAX - 0.05 ? 'ok' : 'bad')
-          : (e > ROM_VIEW_RATIO_MAX + 0.05 ? 'bad' : 'ok');
+        const front = poseMode === 'ABDUCTION'; // 벌림은 정면 촬영 — 판정 방향 반대
+        const next = front
+          ? (viewStateRef.current === 'bad'
+              ? (e > ROM_VIEW_RATIO_MIN_FRONT + 0.05 ? 'ok' : 'bad')
+              : (e < ROM_VIEW_RATIO_MIN_FRONT - 0.05 ? 'bad' : 'ok'))
+          : (viewStateRef.current === 'bad'
+              ? (e < ROM_VIEW_RATIO_MAX - 0.05 ? 'ok' : 'bad')
+              : (e > ROM_VIEW_RATIO_MAX + 0.05 ? 'bad' : 'ok'));
         if (next !== viewStateRef.current) { viewStateRef.current = next; setViewState(next); }
       }
     }
@@ -322,6 +328,7 @@ export default function RomMeasure({ member, onSave, onBack, onViewInReport }) {
     setPoseMode(nextPose);
     setLiveAngle({ left: null, right: null });
     accRef.current = null;
+    viewEmaRef.current = null; viewStateRef.current = 'unknown'; setViewState('unknown'); // 정렬 판정 방향이 달라지므로 초기화
   };
 
   // SLST(StanceLiveAnalysis.jsx)와 동일한 "버튼 → 3-2-1 → 시작" 패턴(UI 통일성).
@@ -497,7 +504,7 @@ export default function RomMeasure({ member, onSave, onBack, onViewInReport }) {
       joint,
       poseMode,
       side,
-      viewAngle: poseMode === 'STANDING' ? 'SIDE' : 'SIDE',
+      viewAngle: poseMode === 'ABDUCTION' ? 'FRONT' : 'SIDE',
       captureMode,
       // evaluation_result + raw_time_series_data (스키마)
       summary,
@@ -784,12 +791,14 @@ export default function RomMeasure({ member, onSave, onBack, onViewInReport }) {
           {/* [2026-08-18 요청] 스켈레톤 OFF면 ROM 인식도 함께 멈춘다는 걸 명확히 안내 */}
           {viewState === 'bad' && (
             <div className="rounded-xl border border-amber-400/40 bg-amber-500/15 px-3 py-2 text-center text-xs font-bold text-amber-700 dark:text-amber-300">
-              몸이 정면 쪽으로 돌아 있어요 — 카메라를 향해 옆으로 서 주세요 (각도가 실제보다 작게 나올 수 있습니다)
+              {poseMode === 'ABDUCTION'
+                ? '몸이 옆으로 돌아 있어요 — 카메라를 정면으로 보고 서 주세요 (각도가 실제보다 작게 나올 수 있습니다)'
+                : '몸이 정면 쪽으로 돌아 있어요 — 카메라를 향해 옆으로 서 주세요 (각도가 실제보다 작게 나올 수 있습니다)'}
             </div>
           )}
           {viewState === 'ok' && !recording && (
             <div className="rounded-xl border border-emerald-400/40 bg-emerald-500/15 px-3 py-1.5 text-center text-[11px] font-bold text-emerald-700 dark:text-emerald-300">
-              옆모습 정렬 확인됨
+              {poseMode === 'ABDUCTION' ? '정면 정렬 확인됨' : '옆모습 정렬 확인됨'}
             </div>
           )}
           {recording && !skeletonOn && (
@@ -893,7 +902,9 @@ export default function RomMeasure({ member, onSave, onBack, onViewInReport }) {
         </button>
         <p className="text-[11px] text-slate-500 leading-relaxed">
           ※ {POSE_LABEL[poseMode]} 자세에서는{' '}
-          {poseMode === 'STANDING'
+          {poseMode === 'ABDUCTION'
+            ? '카메라를 정면으로 보고 서서 팔을 옆으로 머리 위까지 들어올립니다(어깨 올림·벌림). 체간 기울기 보상도 함께 봅니다.'
+            : poseMode === 'STANDING'
             ? '체중지지 상태의 기능적 가동성과 골반 보상 작용을 함께 평가합니다.'
             : '지면 지지로 보상을 통제한 순수 구조적 가동범위를 평가합니다.'}
         </p>
@@ -902,7 +913,7 @@ export default function RomMeasure({ member, onSave, onBack, onViewInReport }) {
   );
 }
 
-const POSE_LABEL = { STANDING: '서서', SUPINE: '누워서', PRONE: '엎드려', SEATED: '앉아서' };
+const POSE_LABEL = { STANDING: '서서', SUPINE: '누워서', PRONE: '엎드려', SEATED: '앉아서', ABDUCTION: '서서 벌림(정면)' };
 
 // ── 스켈레톤 드로잉 (측정 측 강조) ──
 function drawSkeleton(canvas, video, landmarks, side, joint, poseMode) {
@@ -1055,7 +1066,7 @@ function romOverlayGeometry(landmarks, side, joint, poseMode, mapper, width, hei
   // (2026-08-01: 각도 계산을 몸통 축 기준으로 바꾼 것과 오버레이 표시를 통일).
   const refPoint = (v, trunkRef) => {
     if (!v) return null;
-    if (poseMode === 'STANDING' || poseMode === 'SEATED') return { x: v.x, y: v.y - refLen };
+    if (poseMode === 'STANDING' || poseMode === 'SEATED' || poseMode === 'ABDUCTION') return { x: v.x, y: v.y - refLen };
     if (trunkRef) {
       const dx = v.x - trunkRef.x;
       const dy = v.y - trunkRef.y;
