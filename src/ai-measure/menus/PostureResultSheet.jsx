@@ -9,11 +9,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { POSE_LANDMARKS } from '../core/postureMath';
 import MuscleAtlas from './MuscleAtlas.jsx';
-import { atlasForRegions, muscleById, muscleImageSrc } from '../core/muscleAtlas';
+import { atlasForItems, muscleById, muscleImageSrc } from '../core/muscleAtlas';
 import {
   buildPostureSheetItems,
   buildPostureMissing,
-  activeRegions,
   collectViewLandmarks,
   SHEET_LEVEL,
 } from '../core/postureResultSheet';
@@ -218,44 +217,45 @@ function SkeletonSheet({ viewMap, items, photoMap = {} }) {
 }
 
 // ── ⑤ 근육 경향 해부도 (추정) ── 그림은 public/muscles (근육 도감 PNG), 목록·연결은 core/muscleAtlas.js
-function MuscleBodyMap({ regions, items }) {
-  const tight = [...new Set(items.flatMap((it) => it.tight))];
-  const weak = [...new Set(items.flatMap((it) => it.weak))];
-  const atlas = atlasForRegions(regions);
+function MuscleBodyMap({ items }) {
+  const atlas = atlasForItems(items);
+  const has = atlas.tight.length + atlas.weak.length > 0;
   const [atlasOpen, setAtlasOpen] = React.useState(false);
-  const tile = (no, kind) => {
+  const tile = ({ no, causes }, kind) => {
     const m = muscleById(no);
     if (!m) return null;
     return (
       <figure key={`${kind}${no}`} className="m-0 rounded-lg bg-white p-1 text-center ring-1 ring-slate-200 dark:ring-slate-300">
         <img src={muscleImageSrc(no, kind)} alt={`${m.name} ${kind === 'weak' ? '약화' : '긴장'}`} className="mx-auto block h-24 w-full object-contain" crossOrigin="anonymous" />
         <figcaption className={`text-[10px] font-black ${kind === 'weak' ? 'text-blue-700' : 'text-red-700'}`}>{m.name}</figcaption>
+        <p className="px-0.5 text-[9px] leading-tight text-slate-500">{causes.join(' / ')}</p>
       </figure>
     );
   };
+  const names = (list) => list.map((x) => muscleById(x.no)?.name).filter(Boolean).join(', ');
   return (
     <Card>
       <SectionTitle aside={<span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-800 dark:bg-amber-500/15 dark:text-amber-200">추정 · 측정값 아님</span>}>
         근육 경향 해부도
       </SectionTitle>
-      {!regions.length ? (
-        <p className="rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-200">두드러진 자세 불균형이 없어 표시할 근육 경향이 없습니다.</p>
+      {!has ? (
+        <p className="rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-200">기준이 있는 항목에서 주의·위험으로 나온 것이 없어 표시할 근육 경향이 없습니다.</p>
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-[1.6fr_1fr]">
           <div className="grid grid-cols-3 gap-1.5">
-            {atlas.tight.map((n) => tile(n, 'tight'))}
-            {atlas.weak.map((n) => tile(n, 'weak'))}
+            {atlas.tight.map((t) => tile(t, 'tight'))}
+            {atlas.weak.map((w) => tile(w, 'weak'))}
           </div>
           <div className="space-y-3">
             <div>
               <p className="mb-1 text-xs font-black text-red-700 dark:text-red-300">빨강 · 긴장 쪽 (풀어주기)</p>
-              <p className="text-xs leading-relaxed text-slate-700 dark:text-slate-200">{tight.join(', ') || '해당 없음'}</p>
+              <p className="text-xs leading-relaxed text-slate-700 dark:text-slate-200">{names(atlas.tight) || '해당 없음'}</p>
             </div>
             <div>
               <p className="mb-1 text-xs font-black text-sky-700 dark:text-sky-300">파랑 · 약해지기 쉬운 쪽 (강화하기)</p>
-              <p className="text-xs leading-relaxed text-slate-700 dark:text-slate-200">{weak.join(', ') || '해당 없음'}</p>
+              <p className="text-xs leading-relaxed text-slate-700 dark:text-slate-200">{names(atlas.weak) || '해당 없음'}</p>
             </div>
-            <p className="text-[10px] leading-relaxed text-slate-500">자세 패턴에서 흔히 함께 나타나는 경향입니다. 실제 근긴장은 트레이너 촉진으로 확인하세요.</p>
+            <p className="text-[10px] leading-relaxed text-slate-500">이 분의 주의·위험 항목(위 근거)에서만 뽑은 경향입니다. 기준이 없는 항목은 근육에 연결하지 않습니다. 실제 근긴장은 트레이너 촉진으로 확인하세요.</p>
             <button type="button" onClick={() => setAtlasOpen(true)} data-html2canvas-ignore="true"
               className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-bold text-slate-700 dark:border-slate-600 dark:text-slate-200">근육 도감 열기</button>
           </div>
@@ -305,7 +305,6 @@ export default function PostureResultSheet({ report, analysis, score, member, pr
   const missing = useMemo(() => buildPostureMissing({
     perViewAnalysis: report?.perViewAnalysis, analysis, presentKeys: items.map((i) => i.key),
   }), [report, analysis, items]);
-  const regions = useMemo(() => activeRegions(items), [items]);
   // 측정 직후 화면에만 있는 촬영 사진(로컬 ObjectURL) — 저장된 기록을 다시 열면 뼈대만 보인다.
   const photoMap = useMemo(() => {
     const out = {};
@@ -327,7 +326,7 @@ export default function PostureResultSheet({ report, analysis, score, member, pr
         missing={missing}
         anchorPrefix="posture-item"
         before={<SkeletonSheet viewMap={viewMap} items={items} photoMap={photoMap} />}
-        after={<MuscleBodyMap regions={regions} items={items} />}
+        after={<MuscleBodyMap items={items} />}
       />
     </div>
   );
