@@ -9,7 +9,7 @@
 //  · 화면을 나가면 장비·밴드 연결을 모두 끊는다.
 // ════════════════════════════════════════════════════════════════════════
 import { resolveBodyMetrics } from '../../services/bodyMetrics';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { aiStore } from '../../demoData';
 import {
   ageFromBirthDate,
@@ -48,6 +48,9 @@ import {
 } from '../core/cardioTest';
 import { vo2maxRating } from '../core/norms';
 import CardioReportSheet from '../../components/report/CardioReportSheet';
+
+// [2026-11-25] 18번(초시계·타이머)의 메트로놈을 스텝테스트에 그대로 연결한다(박자는 성별로 자동: 여 88·남 96).
+const Metronome = lazy(() => import('./TimerTool.jsx').then((m) => ({ default: m.Metronome })));
 
 const FRESH_MS = 5000; // 이 시간 안에 온 값만 '현재 값'으로 쓴다
 const FIELD_TAB_LABELS = { field_cooper15: ['쿠퍼 1.5마일', '2.4km'], field_cooper12: ['쿠퍼 12분', '12분'], field_rockport: ['록포트 1마일', '걷기'], field_bruce: ['브루스', '트레드밀'], field_step: ['스텝테스트', '3분'], field_6mwt: ['6분 걷기', '6MWT'] };
@@ -437,6 +440,27 @@ export default function CardioTestMeasure({ onBack, member = null, onSave = null
   const rec = recRef.current;
   const elapsed = run ? (performance.now() - run.startPerf) / 1000 : 0;
   const dist = lastDistance(rec);
+  // 6분 걷기: 30m 코스 편도 횟수를 세면 끝난 뒤 거리 칸이 자동으로 채워진다(마지막 남은 구간은 m를 더해 고친다).
+  const isWalk6 = protocolId === 'field_6mwt';
+  const [laps, setLaps] = useState(0);
+  useEffect(() => { if (phase === 'running') setLaps(0); }, [phase]);
+  useEffect(() => {
+    if (isWalk6 && phase === 'result' && laps > 0) setResultInputs((x) => (x.distance ? x : { ...x, distance: String(laps * 30) }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase]);
+  // 스텝테스트: 성별을 알면 메트로놈 박자를 맞춰 두고, 측정이 시작되면 자동으로 켜고 끝나면 끈다.
+  const isStep = protocolId === 'field_step';
+  const stepBpm = QUEENS_METRONOME_BPM[subject.sex] || null;
+  const [metroCmd, setMetroCmd] = useState(null);
+  const metroSeq = useRef(0);
+  const sendMetro = useCallback((action, bpm) => { metroSeq.current += 1; setMetroCmd({ id: metroSeq.current, action, bpm }); }, []);
+  useEffect(() => {
+    if (!isStep) return;
+    if (phase === 'setup' && stepBpm) sendMetro('setBpm', stepBpm);
+    else if (phase === 'running') sendMetro('start', stepBpm || undefined);
+    else sendMetro('stop');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isStep, phase, stepBpm]);
   const zone = live.hr && hrMaxNow ? heartRateZone(live.hr, hrMaxNow) : null;
   const memberLabel = member ? (member.isVirtual ? '미등록회원' : `${member.name || '회원'} 회원`) : '';
   const stage = protocolId === 'step' ? Math.floor(elapsed / STEP_STAGE_SEC) + 1 : 0;
@@ -503,6 +527,15 @@ export default function CardioTestMeasure({ onBack, member = null, onSave = null
         <p className="rounded-xl bg-amber-100 dark:bg-amber-900/40 p-3 text-xs font-bold text-amber-800 dark:text-amber-200">
           이 기기·브라우저는 블루투스 연결을 지원하지 않습니다. 안드로이드 폰·태블릿이나 PC 크롬에서 열어 주세요. 연결 없이도 결과 숫자를 직접 넣어 저장할 수 있습니다.
         </p>
+      )}
+
+      {isStep && (phase === 'setup' || phase === 'running') && (
+        <div className="rounded-xl border-2 border-slate-300 dark:border-slate-600 p-2" data-testid="cardio-step-metronome">
+          <p className="mb-1 text-xs font-bold text-slate-600 dark:text-slate-300">
+            메트로놈 {stepBpm ? `${stepBpm}bpm (${subject.sex === 'male' ? '남 24회/분' : '여 22회/분'}) — 올-올-내-내 4박` : '— 성별을 고르면 박자가 자동으로 맞춰집니다'} · 18번 메트로놈과 같은 기능
+          </p>
+          <Suspense fallback={null}><Metronome compact command={metroCmd} /></Suspense>
+        </div>
       )}
 
       {phase === 'setup' && (
@@ -677,6 +710,15 @@ export default function CardioTestMeasure({ onBack, member = null, onSave = null
               <p className="rounded-lg bg-amber-100 dark:bg-amber-900/40 p-2 text-[11px] font-bold text-amber-800 dark:text-amber-200">
                 장비 숫자가 안 들어오고 있습니다(심박만 기록 중). 끝난 뒤 결과 화면에 장비 화면 숫자를 입력하면 저장됩니다.
               </p>
+            )}
+            {isWalk6 && phase === 'running' && (
+              <div className="rounded-xl border-2 border-amber-400 p-2" data-testid="cardio-6mwt-laps">
+                <p className="text-center text-xs font-bold text-slate-600 dark:text-slate-300">30m 끝에 닿을 때마다 +1 · 지금 {laps * 30}m</p>
+                <div className="mt-1 grid grid-cols-3 gap-2">
+                  <button type="button" onClick={() => setLaps((n) => Math.max(0, n - 1))} className="rounded-xl border-2 border-slate-300 py-4 text-sm font-black dark:border-slate-600">−1</button>
+                  <button type="button" onClick={() => setLaps((n) => n + 1)} data-testid="cardio-6mwt-lap" className="col-span-2 rounded-xl bg-amber-500 py-4 text-xl font-black text-slate-950 active:scale-95">+1 편도 ({laps}회)</button>
+                </div>
+              </div>
             )}
             <div className="grid grid-cols-3 gap-2">
               <Tile big label="심박" value={live.hr || '--'} tone={zone ? 'border-red-400 bg-red-50 dark:bg-red-900/30' : ''} />

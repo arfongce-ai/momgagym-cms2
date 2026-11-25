@@ -223,6 +223,9 @@ export function Metronome({ compact = false, command = null }) {
     if (command.action === 'start') {
       if (typeof command.bpm === 'number' && command.bpm >= 40 && command.bpm <= 220) setBpm(command.bpm);
       setPlaying(true);
+    } else if (command.action === 'setBpm') {
+      // [2026-11-25] 다른 측정(스텝테스트 등)이 박자만 맞춰 두고 소리는 켜지 않는다.
+      if (typeof command.bpm === 'number' && command.bpm >= 40 && command.bpm <= 220) setBpm(command.bpm);
     } else if (command.action === 'pause' || command.action === 'stop') {
       stop();
     } else if (command.action === 'reset') {

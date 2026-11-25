@@ -51,3 +51,16 @@ describe('스텝테스트·6분 걷기 (출처 확인된 식만)', () => {
     expect(computeCardioResult(base).walk6.distanceM).toBeNull();
   });
 });
+
+describe('스텝·6분 걷기 ↔ 18번 메트로놈·편도 카운터 연결(정적 확인)', () => {
+  it('Metronome 이 setBpm 명령을 받고, 스텝테스트가 18번 메트로놈 컴포넌트를 쓴다', async () => {
+    const { readFileSync } = await import('node:fs');
+    const timer = readFileSync('src/ai-measure/menus/TimerTool.jsx', 'utf8');
+    const cardio = readFileSync('src/ai-measure/menus/CardioTestMeasure.jsx', 'utf8');
+    expect(timer).toContain("command.action === 'setBpm'");
+    expect(cardio).toContain("import('./TimerTool.jsx').then((m) => ({ default: m.Metronome }))");
+    expect(cardio).toContain("sendMetro('start'");
+    expect(cardio).toContain('cardio-6mwt-lap');
+    expect(cardio).toContain('laps * 30');
+  });
+});
