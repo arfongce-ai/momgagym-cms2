@@ -38,7 +38,7 @@ describe('MomiInsightPanel.jsx — 후속 질문(양방향 소통) 배선', () =
   it('askMomi의 기존 반환 타입(string)을 바꾸지 않는다(다른 호출부 안 깨짐)', () => {
     // await askMomi(...) 결과를 바로 text로 쓰고 있어야 한다(구조분해 없이) —
     // { text, ... } 같은 객체로 바뀌었다면 이 패턴이 깨진다.
-    expect(src).toContain('const text = await askMomi({ kind, report, member });');
+    expect(src).toContain('const text = await askMomi({ kind, report, member, fresh: history.length > 0 });');
     expect(src).toContain('const text = await askMomi({ kind, report, member, question: q, history });');
   });
 
@@ -59,6 +59,6 @@ describe('momiService.js — askMomi는 기존과 동일하게 string을 반환�
   });
 
   it('MomiAutoNote.jsx 등 기존 호출부가 기대하는 시그니처(kind,report,member)는 그대로 지원한다', () => {
-    expect(src).toContain('export async function askMomi({ kind, report, member, question, history } = {}) {');
+    expect(src).toContain('export async function askMomi({ kind, report, member, question, history, fresh = false } = {}) {');
   });
 });

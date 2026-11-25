@@ -100,15 +100,53 @@ async function loadCrossReports(memberId) {
   };
 }
 
-export async function askMomi({ kind, report, member, question, history } = {}) {
+// [토큰 절감 2026-11-25] 첫 답변 캐시 — 같은 리포트(같은 내용·같은 프롬프트 버전)를 다시 물으면 저장된 답을 돌려준다.
+// 브라우저 localStorage, 최대 60건·30일. 후속 질문(question/history)은 캐시하지 않는다. { fresh: true }면 새로 묻는다.
+const ANSWER_CACHE_KEY = 'momi.answerCache.v1';
+const ANSWER_CACHE_MAX = 60;
+const ANSWER_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
+function hashString(str) {
+  let h = 0;
+  for (let i = 0; i < str.length; i += 1) h = ((h << 5) - h + str.charCodeAt(i)) | 0;
+  return (h >>> 0).toString(36);
+}
+export function momiAnswerCacheKey({ kind, report, member }) {
+  let body = '';
+  try { body = JSON.stringify(compactReportForMomi(report)); } catch (e) { body = ''; }
+  return `${MOMI_PROMPT_VERSION}|${kind}|${member?.id || ''}|${report?.id || ''}|${body.length}:${hashString(body)}`;
+}
+function readAnswerCache() {
+  try { return JSON.parse(window.localStorage.getItem(ANSWER_CACHE_KEY) || '{}') || {}; } catch (e) { return {}; }
+}
+function getCachedAnswer(key) {
+  const hit = readAnswerCache()[key];
+  return hit && typeof hit.text === 'string' && Date.now() - hit.at < ANSWER_CACHE_TTL_MS ? hit.text : null;
+}
+function putCachedAnswer(key, text) {
+  try {
+    const all = readAnswerCache();
+    all[key] = { text, at: Date.now() };
+    const entries = Object.entries(all).sort((a, b) => b[1].at - a[1].at).slice(0, ANSWER_CACHE_MAX);
+    window.localStorage.setItem(ANSWER_CACHE_KEY, JSON.stringify(Object.fromEntries(entries)));
+  } catch (e) { /* 저장 공간 부족 등은 무시 — 캐시는 부가 기능 */ }
+}
+
+export async function askMomi({ kind, report, member, question, history, fresh = false } = {}) {
   if (!report || !member) {
     throw new Error('report와 member 정보가 필요합니다.');
   }
 
-  // 후속 질문에도 현재 측정 근거를 다시 붙인다. ensure* 호출은 첫 로드 뒤 캐시를
-  // 사용하므로 네트워크 중복보다 "두 번째 질문부터 원본 수치를 잃는 문제"를 막는
-  // 편이 중요하다.
   const isFollowUp = Array.isArray(history) && history.length > 0;
+  const canCache = !isFollowUp && !question;
+  const cacheKey = canCache ? momiAnswerCacheKey({ kind, report, member }) : null;
+  if (canCache && !fresh) {
+    const cached = getCachedAnswer(cacheKey);
+    if (cached) return cached;
+  }
+
+  // 후속 질문에도 현재 측정 근거를 다시 붙인다(두 번째 질문부터 원본 수치를 잃는 문제 방지).
+  // 후속 질문은 서버에서 저렴한 모델로 처리하므로 비용은 그쪽에서 줄인다.
   const problemFocus = buildProblemFocus(kind, report);
   const reportPayload = {
     summary: problemFocus,
@@ -129,6 +167,7 @@ export async function askMomi({ kind, report, member, question, history } = {}) 
     question: question || null,
     history: isFollowUp ? history : null,
   });
+  if (canCache) putCachedAnswer(cacheKey, data.text);
   return data.text;
 }
 

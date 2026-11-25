@@ -18,6 +18,8 @@ import { recordPaidAiCost, reservePaidAiCall } from '../_shared/aiBudget.js';
 // 모델명은 환경변수 MOMI_MODEL 로 바꿀 수 있다. 기본 모델 호출이 404(모델 없음)이면 아래 대체 모델로 1번 다시 시도한다.
 const DEFAULT_MODEL = 'claude-sonnet-5';
 const FALLBACK_MODEL = 'claude-sonnet-5-5';
+// [토큰 절감 2026-11-25] 후속 질문(이전 답변 history가 있는 호출)은 저렴한 모델로. 환경변수 MOMI_FOLLOWUP_MODEL 로 바꿀 수 있다.
+const FOLLOWUP_MODEL = 'claude-haiku-4-5-20251001';
 const PROMPT_VERSION = '2.2';
 
 // [역할별 응답 범위 2026-08-08] "관리자·트레이너 접근 구분을 모미에도 적용" 요청 대응.
@@ -148,7 +150,9 @@ export async function onRequestPost(context) {
       }),
     });
 
-    let usedModel = String(env.MOMI_MODEL || '').trim() || DEFAULT_MODEL;
+    let usedModel = validHistory.length > 0
+      ? (String(env.MOMI_FOLLOWUP_MODEL || '').trim() || FOLLOWUP_MODEL)
+      : (String(env.MOMI_MODEL || '').trim() || DEFAULT_MODEL);
     let anthropicRes = await callAnthropic(usedModel);
     // thinking 끄기 옵션을 모델이 받아주지 않으면(400) 그 옵션만 빼고 1번 다시 시도한다.
     let thinkingOff = true;

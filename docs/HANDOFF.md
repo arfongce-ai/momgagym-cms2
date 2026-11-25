@@ -45,6 +45,12 @@
 
 ## 작업 로그
 
+### 2026-11-25 · Claude Code · 모미 토큰 절감 (main)
+- 원인: `MomiAutoNote`가 리포트를 열 때마다 자동으로 유료 호출했고, 빈 응답 버그 때문에 노트가 저장되지 않아 열 때마다 반복 호출 + 빈 응답 재시도 이중 과금.
+- 조치: ①자동 호출 끔(`MOMI_AUTO_NOTE_ON_OPEN=false`, 버튼 '모미 노트 만들기'로만 생성, 저장 노트 재사용) ②`askMomi` 첫 답변 localStorage 캐시(60건·30일, `fresh:true`면 새로 호출, 패널 버튼은 '다시 분석') ③후속 질문(history 있음)은 `functions/api/momi.js`에서 Haiku(`MOMI_FOLLOWUP_MODEL`로 변경 가능) ④후속 질문 근거 데이터 압축은 '두 번째 질문부터 수치 소실' 이력이 있어 하지 않음.
+- 음성 모미(`voice-command.js`)는 이미 Haiku·256토큰·캐싱·무료 분류 사용 중이라 변경 없음.
+- 일일 상한은 Cloudflare 환경변수 `MOMI_DAILY_CLAUDE_CALL_LIMIT`(기본 100)·`MOMI_DAILY_CLAUDE_BUDGET_USD`(기본 1)로 조정(사용자 액션).
+
 ### 2026-11-25 · Claude Code · 리포트 사진 누움·썸네일·근육도·모미 빈 응답·사진 비교 (main)
 - 사진 누움: `captureQuality.js grabThumb`이 카메라 회전 보정(localStorage `momi.cameraRotationDeg`)을 적용(한다리서기 등 시작/중간 썸네일).
 - 자세 스켈레톤 시트·Before&After: `PostureMeasure.jsx`가 면별 작은 사진(`thumbUrl`, 240px)을 `report.viewThumbs`로 저장 → `PostureResultSheet`(photoMap)·`PostureReport`(GhostingViewer)가 저장 기록을 다시 열어도 사진 표시. 예전 기록은 viewThumbs가 없어 뼈대만 보임.

@@ -18,6 +18,10 @@
 import { useState, useEffect, useRef } from 'react';
 import { askMomi, MOMI_PROMPT_VERSION } from '../../services/momiService';
 
+// [토큰 절감 2026-11-25] 리포트를 열 때마다 자동으로 유료 호출하던 것을 끈다.
+// 노트가 저장돼 있으면 그대로 보여주고, 없으면 버튼을 눌렀을 때만 만든다(true로 바꾸면 예전처럼 열자마자 자동).
+const MOMI_AUTO_NOTE_ON_OPEN = false;
+
 /**
  * @param {string} kind        buildProblemFocus가 아는 kind('posture'|'rom'|'jump'|'gait'|'stance'|'squat')
  * @param {object} report      해당 리포트 원본 객체(반드시 .id 포함)
@@ -29,6 +33,7 @@ export default function MomiAutoNote({ kind, report, member, onSaved }) {
   const [note, setNote] = useState(report?.momiNote || null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [requested, setRequested] = useState(false);
   const attemptedKeyRef = useRef(null);
   const activeKeyRef = useRef(null);
 
@@ -51,6 +56,7 @@ export default function MomiAutoNote({ kind, report, member, onSaved }) {
       attemptedKeyRef.current = requestKey;
       return;
     }
+    if (!requested && !MOMI_AUTO_NOTE_ON_OPEN) return; // 버튼을 누르기 전에는 호출하지 않는다
     if (attemptedKeyRef.current === requestKey) return;
     attemptedKeyRef.current = requestKey;
     setNote(null);
@@ -79,10 +85,19 @@ export default function MomiAutoNote({ kind, report, member, onSaved }) {
       });
     // 리포트 식별자·원본 갱신 시각·저장 노트가 바뀔 때 최신성 재검사.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [report?.id, member?.id, report?.analysisUpdatedAt, report?.updatedAt, report?.measuredAt, report?.createdAt, report?.recordedAt, report?.momiNote]);
+  }, [report?.id, member?.id, report?.analysisUpdatedAt, report?.updatedAt, report?.measuredAt, report?.createdAt, report?.recordedAt, report?.momiNote, requested]);
 
   if (!report?.id || !member?.id) return null;
-  if (!loading && !error && !note) return null; // 아직 아무 것도 할 게 없으면 자리 안 차지함
+  if (!loading && !error && !note) {
+    if (MOMI_AUTO_NOTE_ON_OPEN) return null;
+    return (
+      <div className="rounded-xl bg-slate-100/50 dark:bg-slate-800/50 border border-slate-300 dark:border-slate-700 p-3 text-sm" data-html2canvas-ignore="true">
+        <button type="button" onClick={() => setRequested(true)}
+          className="rounded-lg border border-slate-300 dark:border-slate-600 px-3 py-1.5 text-xs font-bold text-slate-700 dark:text-slate-200">🤖 모미 노트 만들기</button>
+        <p className="mt-1 text-[10px] text-slate-500">누를 때만 만들고, 한 번 만든 노트는 저장해서 다시 열어도 재사용합니다.</p>
+      </div>
+    );
+  }
 
   return (
     <div className="rounded-xl bg-slate-100/50 dark:bg-slate-800/50 border border-slate-300 dark:border-slate-700 p-3 text-sm">

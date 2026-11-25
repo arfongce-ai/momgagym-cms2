@@ -52,7 +52,7 @@ describe('MomiInsightPanel.jsx — 라이트모드 대응(인라인 style 제거
   it('버튼 클릭·질문 전송 등 실제 동작 로직(handleAsk/handleFollowUp)은 그대로다(색만 바꿨고 기능은 안 건드림)', () => {
     expect(src).toContain('const handleAsk = async () => {');
     expect(src).toContain('const handleFollowUp = async () => {');
-    expect(src).toContain("askMomi({ kind, report, member })");
+    expect(src).toContain("askMomi({ kind, report, member, fresh: history.length > 0 })");
     expect(src).toContain('askMomi({ kind, report, member, question: q, history })');
   });
 });
