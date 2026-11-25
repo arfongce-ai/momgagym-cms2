@@ -324,6 +324,7 @@ const LEVEL_STYLE = {
   normal: { text: 'text-emerald-700 dark:text-emerald-300', bg: 'bg-emerald-500/10', border: 'border-emerald-500/30', ko: '정상' },
   caution: { text: 'text-amber-700 dark:text-amber-300', bg: 'bg-amber-500/10', border: 'border-amber-500/30', ko: '주의' },
   risk: { text: 'text-red-700 dark:text-red-300', bg: 'bg-red-500/10', border: 'border-red-500/30', ko: '위험' },
+  reference: { text: 'text-slate-500 dark:text-slate-400', bg: 'bg-slate-100/40 dark:bg-slate-800/40', border: 'border-slate-300 dark:border-slate-700', ko: '참고(기준 없음)' },
   insufficient: { text: 'text-slate-500 dark:text-slate-400', bg: 'bg-slate-100/40 dark:bg-slate-800/40', border: 'border-slate-300 dark:border-slate-700', ko: '측정 부족' },
 };
 
@@ -383,7 +384,7 @@ function RegionDiagnoses({ regions }) {
                 <div className="mt-1.5 flex flex-wrap gap-1.5">
                   {r.measured.map((m, i) => (
                     <span key={i} className="rounded bg-slate-50/60 dark:bg-slate-950/60 px-1.5 py-0.5 text-[11px] font-bold text-slate-600 dark:text-slate-300">
-                      {m.label} {m.value}{m.unit}
+                      {m.label} {m.value}{m.unit}{m.reference ? ' (참고)' : ''}
                     </span>
                   ))}
                 </div>

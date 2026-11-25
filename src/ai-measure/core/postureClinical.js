@@ -28,7 +28,9 @@ const pick = (perView, keys) => {
 };
 
 // 단계 라벨/색
-const LEVEL = { normal: 'normal', caution: 'caution', risk: 'risk', insufficient: 'insufficient' };
+const LEVEL = { normal: 'normal', caution: 'caution', risk: 'risk', insufficient: 'insufficient', reference: 'reference' };
+// [단계 기준 통일 2026-11-25] 결과시트·결과 해석과 같은 원칙: 검증된 기준이 있는 값(거북목·어깨/골반 높이차)만 단계에 넣는다.
+//  굽은 등·무게중심·플럼라인·무릎 신전각·하지 정렬 라벨·Q각은 값만 보여 주고(measured[].reference=true) 단계에는 넣지 않는다.
 
 function levelFromMm(mm, cautionAt, riskAt) {
   if (mm == null) return LEVEL.insufficient;
@@ -173,9 +175,9 @@ export function buildRegionDiagnoses(perViewAnalysis = {}, { sex = null } = {}) 
     const shPick = worseAbsMm(front?.frontal?.shoulderHeightDiffMm ?? null, back?.frontal?.shoulderHeightDiffMm ?? null);
     const shDiff = shPick.value;
     const shLevel = levelFromMm(shDiff, ...POSTURE_THRESHOLDS.shoulderDiffMm);
-    const level = worst([kyphLevel, shLevel]);
+    const level = shLevel;
     const measured = [];
-    if (kyphDev != null) measured.push({ label: '굽은 등(흉추후만) 편차', value: Math.round(kyphDev), unit: '°' });
+    if (kyphDev != null) measured.push({ label: '굽은 등(흉추후만) 편차', value: Math.round(kyphDev), unit: '°', reference: true });
     if (shDiff != null) measured.push({ label: `어깨 높이차${shPick.source ? `(${shPick.source === 'back' ? '후면' : '정면'})` : ''}`, value: Math.round(Math.abs(shDiff)), unit: 'mm' });
     regions.push({
       key: 'shoulder_back',
@@ -187,7 +189,7 @@ export function buildRegionDiagnoses(perViewAnalysis = {}, { sex = null } = {}) 
           ? '어깨·등 정렬을 판정할 측정값이 부족합니다.'
           : level === LEVEL.normal
             ? '어깨 높이와 등 굴곡이 정상 범위입니다.'
-            : `${kyphLevel !== LEVEL.normal && kyphDev != null ? '굽은 등(흉추 후만) 경향과 ' : ''}좌우 어깨 높이 비대칭이 관찰됩니다. 라운드 숄더가 동반되면 어깨 관절 충돌 증후군 위험과 호흡 효율 저하를 유발할 수 있습니다.`,
+            : `좌우 어깨 높이 비대칭이 관찰됩니다. 라운드 숄더가 동반되면 어깨 관절 충돌 증후군 위험과 호흡 효율 저하를 유발할 수 있습니다.`,
       recommendation: level === LEVEL.normal || level === LEVEL.insufficient ? null : '흉추 모빌리티, 견갑골 후인·하강 강화, 가슴 근육 이완 권장.',
       estimated: false,
     });
@@ -210,12 +212,12 @@ export function buildRegionDiagnoses(perViewAnalysis = {}, { sex = null } = {}) 
     // 어디에도 쓰이지 않고 버려지고 있었다 — 골반 시상면 정렬 소견으로 반영.
     const hipPlumbMm = side?.sagittal?.anklePlumbHipDeviationMm ?? null;
     const hipPlumbLevel = levelFromMm(hipPlumbMm, ...POSTURE_THRESHOLDS.ankleHipPlumbMm);
-    const level = worst([pelvisLevel, cogLevel, hipPlumbLevel]);
+    const level = pelvisLevel;
     const pattern = pelvisPick.source === 'back' ? back?.frontal?.pelvisPattern : front?.frontal?.pelvisPattern;
     const measured = [];
     if (pelvisDiff != null) measured.push({ label: `골반 높이차${pelvisPick.source ? `(${pelvisPick.source === 'back' ? '후면' : '정면'})` : ''}`, value: Math.round(Math.abs(pelvisDiff)), unit: 'mm' });
-    if (cogOffset != null) measured.push({ label: '무게중심 좌우 편향', value: Math.round(cogOffset), unit: '%' });
-    if (hipPlumbMm != null) measured.push({ label: '발목 수직선 대비 고관절 편차', value: Math.round(Math.abs(hipPlumbMm)), unit: 'mm' });
+    if (cogOffset != null) measured.push({ label: '무게중심 좌우 편향', value: Math.round(cogOffset), unit: '%', reference: true });
+    if (hipPlumbMm != null) measured.push({ label: '발목 수직선 대비 고관절 편차', value: Math.round(Math.abs(hipPlumbMm)), unit: 'mm', reference: true });
     const patternKo =
       pattern === 'structural_leg_length_pattern' ? '구조적 다리 길이차 가능성' :
       pattern === 'functional_lumbopelvic_pattern' ? '기능적 요추-골반 비대칭 가능성' :
@@ -261,13 +263,13 @@ export function buildRegionDiagnoses(perViewAnalysis = {}, { sex = null } = {}) 
     // 고관절 편차와 동일하게 지금까지 버려지고 있었다 — 하지 시상면 정렬 소견으로 반영.
     const kneePlumbMm = side?.sagittal?.anklePlumbKneeDeviationMm ?? null;
     const kneePlumbLevel = levelFromMm(kneePlumbMm, ...POSTURE_THRESHOLDS.ankleKneePlumbMm);
-    const level = worst([kneeLevel, legLevel, qLevel, kneePlumbLevel]);
+    const level = LEVEL.reference;
     const measured = [];
-    if (knee != null) measured.push({ label: '무릎 신전각', value: Math.round(knee), unit: '°' });
-    if (qDev != null) measured.push({ label: 'Q각 편위(프록시)', value: Math.round(qDev), unit: '°' });
-    if (kneePlumbMm != null) measured.push({ label: '발목 수직선 대비 무릎 편차', value: Math.round(Math.abs(kneePlumbMm)), unit: 'mm' });
+    if (knee != null) measured.push({ label: '무릎 신전각', value: Math.round(knee), unit: '°', reference: true });
+    if (qDev != null) measured.push({ label: 'Q각 편위(프록시)', value: Math.round(qDev), unit: '°', reference: true });
+    if (kneePlumbMm != null) measured.push({ label: '발목 수직선 대비 무릎 편차', value: Math.round(Math.abs(kneePlumbMm)), unit: 'mm', reference: true });
     if (leg && leg.key && leg.key !== 'leg_alignment') {
-      measured.push({ label: leg.label || '하지 정렬', value: leg.value ?? '', unit: leg.unit === 'index' ? '' : (leg.unit || '') });
+      measured.push({ label: leg.label || '하지 정렬', value: leg.value ?? '', unit: leg.unit === 'index' ? '' : (leg.unit || ''), reference: true });
     }
     const sexLabel = normalizeSex(sex);
     const qNote = qDev != null && qLevel !== LEVEL.normal && qLevel !== LEVEL.insufficient
@@ -283,12 +285,14 @@ export function buildRegionDiagnoses(perViewAnalysis = {}, { sex = null } = {}) 
       level,
       measured,
       problem:
-        level === LEVEL.insufficient
+        level === LEVEL.reference
+          ? '이 부위는 검증된 기준이 없어 단계를 내지 않고 값만 참고로 보여 드립니다. 같은 조건으로 반복 촬영한 변화로 읽으세요.'
+          : level === LEVEL.insufficient
           ? '하지 정렬을 판정할 측정값이 부족합니다.'
           : level === LEVEL.normal
             ? '하지 정렬과 무릎 신전각, 전후 정렬이 정상 범위입니다.'
             : `${leg?.message ? leg.message + ' ' : ''}하지 정렬 또는 무릎 과신전 경향이 관찰됩니다.${kneePlumbLevel !== LEVEL.normal && kneePlumbLevel !== LEVEL.insufficient && kneePlumbMm != null ? ' 무릎이 발목 수직선보다 앞/뒤로 벗어나 있어 무릎 과신전 또는 굴곡 보상 경향도 함께 관찰됩니다.' : ''} 방치 시 팔자/안짱걸음과 무릎 관절 부담 증가를 유발할 수 있습니다.${qNote}`,
-      recommendation: level === LEVEL.normal || level === LEVEL.insufficient ? null : '발목·고관절 정렬 운동, 무릎 잠금 습관 교정 권장.',
+      recommendation: level === LEVEL.normal || level === LEVEL.insufficient || level === LEVEL.reference ? null : '발목·고관절 정렬 운동, 무릎 잠금 습관 교정 권장.',
       estimated: false,
     });
   }
@@ -342,7 +346,7 @@ export function buildRiskTop3(regions = []) {
   const scored = regions
     .filter((r) => SEVERITY[r.level] > 0)
     .map((r) => {
-      const devMax = r.measured.reduce((m, x) => Math.max(m, Math.abs(x.value || 0)), 0);
+      const devMax = r.measured.filter((x) => !x.reference).reduce((m, x) => Math.max(m, Math.abs(x.value || 0)), 0);
       return {
         key: r.key,
         area: RISK_TEMPLATE[r.key]?.area || r.title,

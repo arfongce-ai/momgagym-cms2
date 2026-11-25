@@ -840,3 +840,7 @@
 - `muscleAtlas.js` `ITEM_ATLAS`/`atlasForItems`: 부위 고정 12근육 대신 판정된 항목별로 근육·원인·좌우를 뽑음. `PostureResultSheet.jsx MuscleBodyMap`이 사용.
 - `PostureReport.jsx` '현재 상태': 결과시트와 같은 판정 항목의 최고 단계 + 근거 목록 + '참고(기준 없음)'. 기존 규칙엔진 `analysis.status`는 표시에 쓰지 않음.
 - 미정리: `postureClinical.js` 부위별 진단·Top3는 기존 보수적 기준(굽은 등 15/25° 등) 그대로라 '어깨·등 위험'이 남을 수 있음 — 대표님 결정 대기.
+
+### 2026-11-25 (추가7) 부위별 진단·Top3 단계 통일 + 근막경선 설명
+- `postureClinical.js`: 단계는 검증 기준 있는 값(거북목·어깨/골반 높이차)만. 굽은 등·무게중심·플럼라인·무릎 신전각·하지 정렬·Q각은 `measured[].reference=true`로 값만 표시, 발·다리 부위는 `LEVEL.reference`('참고(기준 없음)'). 관련 테스트 6개를 새 동작으로 수정.
+- `muscleAtlas.js` `FASCIA_LINES`/`fasciaForItems`: 판정 항목별 근막경선(Myers) '같이 확인할 곳' 설명 + 근거 한계 문구(Wilke 2016, Krause 2016). `PostureResultSheet.jsx`에 표시.

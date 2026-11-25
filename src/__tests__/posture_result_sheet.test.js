@@ -163,3 +163,18 @@ describe('판정 기준이 있는 항목만 단계·근육에 반영 (2026-11-25
     expect(atlasForItems([{ key: 'kyphosis', label: '굽은 등', value: 64, unit: '°', level: null }]).tight).toEqual([]);
   });
 });
+
+describe('근막경선 설명', () => {
+  it('판정된 항목에만 붙고 근거 문구를 포함한다', async () => {
+    const { fasciaForItems, FASCIA_NOTE } = await import('../ai-measure/core/muscleAtlas');
+    const f = fasciaForItems([
+      { key: 'shoulder_height', label: '어깨 높이 차이', value: 9.5, unit: 'mm', level: 'caution', side: '왼쪽' },
+      { key: 'kyphosis', label: '굽은 등', value: 64, unit: '°', level: null },
+      { key: 'pelvis_height', label: '골반 높이 차이', value: 2, unit: 'mm', level: 'normal' },
+    ]);
+    expect(f).toHaveLength(1);
+    expect(f[0].line).toContain('SBAL');
+    expect(f[0].trigger).toContain('왼쪽 높음');
+    expect(FASCIA_NOTE).toContain('Wilke 2016');
+  });
+});
