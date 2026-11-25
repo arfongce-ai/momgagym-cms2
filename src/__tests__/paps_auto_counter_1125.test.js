@@ -40,13 +40,13 @@ describe('PAPS 자동 카운터', () => {
     const c2 = createPapsAutoCounter({ testId: 'pushup', smoothing: 1 });
     expect(run(c2, [170, 130, 120, 130, 170, 130, 120].map(armPose), 300).count).toBe(0);
   });
-  it('윗몸일으키기: 눕힘→일으킴 2번 = 2회', () => {
-    const c = createPapsAutoCounter({ testId: 'situp1m', smoothing: 1 });
+  it('윗몸말아올리기: 눕힘→일으킴 2번 = 2회', () => {
+    const c = createPapsAutoCounter({ testId: 'curlup', smoothing: 1 });
     const frames = [5, 5, 70, 70, 5, 5, 70, 70].map(trunkPose);
     expect(run(c, frames, 500).count).toBe(2);
   });
   it('쉬는 자세에서 시작하지 않으면 첫 동작은 세지 않는다', () => {
-    const c = createPapsAutoCounter({ testId: 'situp1m', smoothing: 1 });
+    const c = createPapsAutoCounter({ testId: 'curlup', smoothing: 1 });
     expect(run(c, [70, 70, 5, 5].map(trunkPose), 500).count).toBe(0);
   });
   it('몸이 안 잡히면 tracked=false 이고 세지 않는다', () => {
@@ -63,7 +63,7 @@ describe('PAPS 자동 카운터', () => {
     expect(run(c, frames, 150).count).toBe(3);
   });
   it('지원 테스트 목록', () => {
-    ['pushup', 'pullup', 'situp1m', 'curlup', 'sidestep20'].forEach((id) => expect(supportsPapsAuto(id)).toBe(true));
-    ['hang', 'sitreach', 'grip'].forEach((id) => expect(supportsPapsAuto(id)).toBe(false));
+    ['pushup', 'pullup', 'curlup', 'sidestep20'].forEach((id) => expect(supportsPapsAuto(id)).toBe(true));
+    ['hang', 'sitreach', 'standbend', 'grip'].forEach((id) => expect(supportsPapsAuto(id)).toBe(false));
   });
 });

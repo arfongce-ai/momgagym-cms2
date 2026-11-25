@@ -48,9 +48,13 @@ import {
 } from '../core/cardioTest';
 import { vo2maxRating } from '../core/norms';
 import CardioReportSheet from '../../components/report/CardioReportSheet';
+import { saveVideoToPhone } from '../core/recordSink';
 
 // [2026-11-25] 18번(초시계·타이머)의 메트로놈을 스텝테스트에 그대로 연결한다(박자는 성별로 자동: 여 88·남 96).
 const Metronome = lazy(() => import('./TimerTool.jsx').then((m) => ({ default: m.Metronome })));
+
+// [2026-11-25] 스텝테스트 카메라(올라서기 사이클 자동 카운트·스켈레톤·인식률·영상 녹화) — 카메라를 켤 때만 불러온다.
+const StepCameraStage = lazy(() => import('./StepCameraStage.jsx'));
 
 const FRESH_MS = 5000; // 이 시간 안에 온 값만 '현재 값'으로 쓴다
 const FIELD_TAB_LABELS = { field_cooper15: ['쿠퍼 1.5마일', '2.4km'], field_cooper12: ['쿠퍼 12분', '12분'], field_rockport: ['록포트 1마일', '걷기'], field_bruce: ['브루스', '트레드밀'], field_step: ['스텝테스트', '3분'], field_6mwt: ['6분 걷기', '6MWT'] };
@@ -414,6 +418,15 @@ export default function CardioTestMeasure({ onBack, member = null, onSave = null
       rpe: run.rpe,
       stepPlan: run.protocolId === 'step' ? stepPlan : null,
     });
+    // [2026-11-25] 스텝테스트 카메라 요약(참고용 — 점수 계산에는 쓰이지 않는다).
+    if (run.protocolId === 'field_step' && stepSummaryRef.current) {
+      const sm = stepSummaryRef.current;
+      record.stepCounter = {
+        cycles: sm.cycles, expectedPerMin: sm.expectedPerMin ?? null,
+        recognitionRatio: sm.recognition?.frames ? sm.recognition.ratio : null, recognitionFrames: sm.recognition?.frames ?? null,
+        videoRecorded: stepVideo.state !== 'none',
+      };
+    }
     try {
       await onSave(record);
       setSavedRecord(record);
@@ -461,6 +474,18 @@ export default function CardioTestMeasure({ onBack, member = null, onSave = null
     else sendMetro('stop');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isStep, phase, stepBpm]);
+  // 스텝테스트 카메라: 켜 두면 측정이 시작될 때 카메라가 열리고 사이클 수·인식률·영상이 같이 기록된다.
+  const [stepCamOn, setStepCamOn] = useState(true);
+  const [stepCamOpen, setStepCamOpen] = useState(false);
+  const stepSummaryRef = useRef(null);
+  const stepBlobRef = useRef(null);
+  const stepBeatRef = useRef({ at: 0 });
+  const [stepVideo, setStepVideo] = useState({ state: 'none', fileName: '' });
+  useEffect(() => {
+    if (isStep && phase === 'running' && stepCamOn) { stepSummaryRef.current = null; stepBlobRef.current = null; setStepVideo({ state: 'none', fileName: '' }); setStepCamOpen(true); }
+    else if (phase !== 'running') setStepCamOpen(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, isStep]);
   const zone = live.hr && hrMaxNow ? heartRateZone(live.hr, hrMaxNow) : null;
   const memberLabel = member ? (member.isVirtual ? '미등록회원' : `${member.name || '회원'} 회원`) : '';
   const stage = protocolId === 'step' ? Math.floor(elapsed / STEP_STAGE_SEC) + 1 : 0;
@@ -534,7 +559,42 @@ export default function CardioTestMeasure({ onBack, member = null, onSave = null
           <p className="mb-1 text-xs font-bold text-slate-600 dark:text-slate-300">
             메트로놈 {stepBpm ? `${stepBpm}bpm (${subject.sex === 'male' ? '남 24회/분' : '여 22회/분'}) — 올-올-내-내 4박` : '— 성별을 고르면 박자가 자동으로 맞춰집니다'} · 18번 메트로놈과 같은 기능
           </p>
-          <Suspense fallback={null}><Metronome compact command={metroCmd} /></Suspense>
+          <Suspense fallback={null}><Metronome compact command={metroCmd} onBeat={() => { stepBeatRef.current = { at: performance.now() }; }} /></Suspense>
+          {phase === 'setup' && (
+            <label className="mt-2 flex items-center gap-1 text-xs font-bold text-slate-700 dark:text-slate-200">
+              <input type="checkbox" checked={stepCamOn} onChange={(e) => setStepCamOn(e.target.checked)} data-testid="cardio-step-cam" />
+              카메라 촬영(옆모습 전신) — 사이클 자동 카운트·스켈레톤·인식률·영상(초시계·박자 포함) 저장
+            </label>
+          )}
+        </div>
+      )}
+
+      {isStep && stepCamOn && (
+        <Suspense fallback={null}>
+          <StepCameraStage
+            active={stepCamOpen && phase === 'running'}
+            startPerf={run?.startPerf || performance.now()}
+            durationSec={180}
+            bpm={stepBpm}
+            expectedPerMin={stepBpm ? stepBpm / 4 : null}
+            beatRef={stepBeatRef} summaryRef={stepSummaryRef} blobRef={stepBlobRef}
+            onBlob={(blob) => setStepVideo({ state: blob ? 'ready' : 'none', fileName: '' })}
+            onClose={() => setStepCamOpen(false)}
+          />
+        </Suspense>
+      )}
+
+      {isStep && phase === 'result' && stepSummaryRef.current && (
+        <div className="rounded-xl border-2 border-slate-300 dark:border-slate-600 p-2 text-xs font-bold" data-testid="cardio-step-camera-result">
+          <p>카메라 사이클 {stepSummaryRef.current.cycles}회{stepBpm ? ` (기준 ${stepBpm / 4}회/분 × 3분 = ${(stepBpm / 4) * 3}회)` : ''} · 인식률 {stepSummaryRef.current.recognition?.frames ? `${Math.round(stepSummaryRef.current.recognition.ratio * 100)}%` : '--'}</p>
+          <p className="mt-0.5 font-semibold text-slate-500">자동 카운트는 참고용입니다(문턱은 시작값). 인식률이 낮으면 값을 믿지 마세요. 스텝 점수는 박자를 맞춘 3분과 종료 후 맥박으로 계산되며 이 카운트는 점수에 쓰이지 않습니다.</p>
+          {stepVideo.state !== 'none' && (
+            <button type="button" data-testid="cardio-step-video-save"
+              onClick={async () => { if (!stepBlobRef.current) return; const r = await saveVideoToPhone(stepBlobRef.current, { measure: 'cardio_step', member }); if (r.saved) setStepVideo({ state: 'saved', fileName: r.fileName }); }}
+              className="mt-1.5 w-full rounded-lg border-2 border-amber-400 bg-amber-50 py-2 text-xs font-black text-amber-800 dark:bg-amber-500/10 dark:text-amber-300">
+              {stepVideo.state === 'saved' ? `✓ 폰에 저장됨 (${stepVideo.fileName})` : '영상 폰에 저장 (초시계·박자·사이클·인식률 포함)'}
+            </button>
+          )}
         </div>
       )}
 

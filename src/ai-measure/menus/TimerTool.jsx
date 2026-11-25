@@ -116,9 +116,15 @@ export function Stopwatch({ compact = false, command = null }) {
   );
 }
 
-export function Metronome({ compact = false, command = null }) {
+export function Metronome({ compact = false, command = null, onBeat = null, onState = null }) {
   const [bpm, setBpm] = useState(100);
   const [playing, setPlaying] = useState(false);
+  // [2026-11-25] PAPS 녹화 HUD 등 바깥에서 박자·상태를 볼 수 있게 콜백만 노출(소리·화면 동작은 그대로).
+  const onBeatRef = useRef(onBeat);
+  onBeatRef.current = onBeat;
+  const onStateRef = useRef(onState);
+  onStateRef.current = onState;
+  useEffect(() => { onStateRef.current?.({ bpm, playing }); }, [bpm, playing]);
   const ctxRef = useRef(null);
   const nextNoteRef = useRef(0);
   const timerRef = useRef(null);
@@ -190,7 +196,7 @@ export function Metronome({ compact = false, command = null }) {
 
         // 오디오 클럭 기준으로 공의 스윙도 정확히 같은 시점에 맞춘다.
         const delayMs = Math.max(0, (nextNoteRef.current - ctx.currentTime) * 1000);
-        visualTimersRef.current.push(setTimeout(() => swingBall(isDownBeat), delayMs));
+        visualTimersRef.current.push(setTimeout(() => { swingBall(isDownBeat); onBeatRef.current?.({ bpm, down: isDownBeat, at: performance.now() }); }, delayMs));
 
         nextNoteRef.current += secPerBeat;
         beatRef.current += 1;

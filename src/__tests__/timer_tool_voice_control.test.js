@@ -20,7 +20,7 @@ describe('TimerTool.jsx — 4개 하위 도구가 전부 command prop을 받는�
   it('Stopwatch/Countdown/Metronome/IntervalTimer 시그니처에 command = null이 있다', () => {
     expect(src).toContain('export function Stopwatch({ compact = false, command = null }) {');
     expect(src).toContain('export function Countdown({ compact = false, command = null }) {');
-    expect(src).toContain('export function Metronome({ compact = false, command = null }) {');
+    expect(src).toContain('export function Metronome({ compact = false, command = null, onBeat = null, onState = null }) {');
     expect(src).toContain('export function IntervalTimer({ compact = false, command = null }) {');
   });
 });

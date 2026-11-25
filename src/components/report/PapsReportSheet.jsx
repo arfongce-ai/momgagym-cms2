@@ -1,14 +1,14 @@
 // components/report/PapsReportSheet.jsx
 // ════════════════════════════════════════════════════════════════════════
 //  PAPS 계열 체력평가 결과 리포트 — A4 한 장. 측정 직후와 결과리포트 화면에서 같은 모양.
-//  등급 판정은 없다(기준표 확인 전). 값 + 쉬운 설명 + 같은 테스트 직전 대비 변화 + 추이.
+//  측정·평가 통합 리포트: 값 + 평가 문장(성인·학생 공통) + 초4~6 기준표 종목은 등급 + 직전 대비 변화 + 인식률·촬영 조건.
 // ════════════════════════════════════════════════════════════════════════
 import {
   UnifiedReportCanvas, UnifiedReportHeader, UnifiedReportPage, UnifiedReportSection,
 } from './UnifiedReportPrimitives';
 import ReportActions from './ReportActions';
 import { HrChart, Tile } from './SeniorReportSheet';
-import { PAPS_TESTS, evaluatePapsTest, papsChange, papsGroupKey } from '../../ai-measure/core/papsTests';
+import { PAPS_TESTS, evaluatePapsTest, papsChange, papsEvaluationText, papsGroupKey } from '../../ai-measure/core/papsTests';
 
 const SEX_LABEL = { male: '남', female: '여' };
 const fmtDate = (v) => String(v || '').slice(0, 10) || '-';
@@ -25,6 +25,7 @@ export default function PapsReportSheet({ report, member, previous = null, histo
   const rows = (history || []).filter((x) => x && papsGroupKey(x) === sameKey).slice(0, 8);
   const prev = previous && papsGroupKey(previous) === sameKey ? previous : rows[0] || null;
   const change = papsChange(p, prev);
+  const evalText = papsEvaluationText({ ...p, grade: p.grade || ev.grade || null, valid: p.valid !== false, subject }, prev);
   const title = `${p.testLabel || meta?.label || ''}${p.variant === 'knee' ? ' (무릎 대고)' : ''}`;
 
   return (
@@ -39,13 +40,22 @@ export default function PapsReportSheet({ report, member, previous = null, histo
             member={member || p.member || null}
           />
 
-          <UnifiedReportSection title="측정 결과" subtitle="초4~6 학년·성별 기준 등급" className="mb-4">
+          <UnifiedReportSection title="측정 결과" subtitle="값과 평가 (등급은 초4~6 기준표 종목만)" className="mb-4">
             <div className="rounded-xl border-2 border-slate-300 bg-slate-100/60 p-3 text-slate-800 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-100" data-testid="paps-report-result">
               <p className="font-mono text-4xl font-black">{Number.isFinite(p.value) ? p.value : '-'}<span className="ml-1 text-base">{p.unit}</span></p>
               <p className="mt-1 text-sm font-black">{ev.label}</p>
               {ev.reference && <p className="mt-0.5 text-[11px] font-semibold">기준 {ev.reference} (대표님 제공 등급표)</p>}
               {ev.reason && <p className="mt-0.5 text-[11px] font-bold">확인 필요: {ev.reason}</p>}
             </div>
+            <p className="mt-2 break-keep text-[12px] font-bold leading-relaxed text-slate-700 dark:text-slate-100" data-testid="paps-report-eval">{evalText}</p>
+            {(p.recognition || p.video || p.conditions) && (
+              <p className="mt-1 break-keep text-[11px] font-semibold text-slate-500" data-testid="paps-report-capture">
+                {p.recognition ? `동작 인식률 ${Math.round(p.recognition.ratio * 100)}%` : ''}
+                {p.video?.recorded ? ` · 영상 ${p.video.fileName ? `저장(${p.video.fileName})` : '녹화됨'}` : ''}
+                {p.conditions?.distanceCm ? ` · 선 사이 거리 ${p.conditions.distanceCm}cm` : ''}
+                {p.conditions?.metronomeBpm ? ` · 메트로놈 ${p.conditions.metronomeBpm}BPM` : ''}
+              </p>
+            )}
             {change && (
               <p className="mt-2 break-keep text-[12px] font-semibold text-slate-600 dark:text-slate-300" data-testid="paps-report-change">
                 직전 같은 테스트({fmtDate(prev?.startedAt || prev?.measuredAt)}) 대비 {change.diff > 0 ? '+' : ''}{change.diff}{change.unit} — {change.direction === 'improved' ? '좋아졌습니다.' : change.direction === 'worsened' ? '기록이 줄었습니다.' : '같은 기록입니다.'}
