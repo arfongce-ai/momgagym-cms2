@@ -11,6 +11,7 @@
 //  · 이상·무효 값도 저장을 막지 않는다. 무효는 valid:false + 사유로 남긴다.
 // ════════════════════════════════════════════════════════════════════════
 import { PAPS_GRADE_WORD, PAPS_NORM_SOURCE, papsGradeOf, papsNormText } from './papsNorms';
+import { ADULT_NORM_SOURCE, adultBandIndex, adultItemLevel, relativeGripPct } from './adultNorms';
 
 export const PAPS_KIND = 'paps_test';
 
@@ -224,6 +225,22 @@ export function evaluatePapsTest(testId, value, opts = {}) {
       easy: `${meta.easy(v)} ${sg.grade} ${sg.sex === 'male' ? '남' : '여'} 기준으로 ${g}등급(${PAPS_GRADE_WORD[g]})이에요.`,
     };
   }
+  // 성인(19~64세): 국민체력100 항목별 기준(앉아윗몸앞으로굽히기·상대악력). 종합 1~6등급은 전 종목을 재야 나오므로 내지 않는다.
+  const adultKey = { sitreach: 'sitreach', grip: 'relgrip' }[testId];
+  if (adultKey && sg.sex && adultBandIndex(sg.age) >= 0 && !sg.grade) {
+    const rel = adultKey === 'relgrip' ? relativeGripPct(v, sg.weightKg) : v;
+    const a = adultItemLevel(adultKey, rel, { sex: sg.sex, age: sg.age });
+    if (a) {
+      const word = a.level ? `국민체력100 ${a.level}등급 기준 이상` : '국민체력100 3등급 기준 미만';
+      const what = adultKey === 'relgrip' ? `상대악력 ${rel}%(악력 ${v}kg ÷ 체중 ${sg.weightKg}kg)` : `${v}cm`;
+      return {
+        status: 'unknown', grade: null, adultLevel: a.level, label: word, valid: true, reason: '', reference: `${a.band} 기준 ${a.reference}${adultKey === 'relgrip' ? '%' : 'cm'} 이상`,
+        source: ADULT_NORM_SOURCE.label,
+        easy: `${meta.easy(v)} ${a.band} 국민체력100 항목 기준으로 ${what}는 ${word}이에요(최종 등급은 전 종목을 재야 정해져요).`,
+      };
+    }
+    if (adultKey === 'relgrip') return { status: 'unknown', grade: null, label: '기록(체중 입력 시 국민체력100 항목 기준)', valid: true, reason: '', reference: null, easy: meta.easy(v) };
+  }
   const hasTable = ['pushup', 'curlup', 'sitreach', 'grip'].includes(testId);
   return {
     status: 'unknown', grade: null, label: hasTable ? '기록(학년·성별 확인 시 등급)' : '기록(등급표 없음)', valid: true,
@@ -260,7 +277,8 @@ export function buildPapsRecord({
     invalidReason: ev.reason || '',
     reference: ev.reference || null,
     grade: ev.grade || null,
-    gradeSource: ev.grade ? PAPS_NORM_SOURCE.label : null,
+    gradeSource: ev.grade ? PAPS_NORM_SOURCE.label : ev.adultLevel != null ? ADULT_NORM_SOURCE.label : null,
+    adultLevel: ev.adultLevel ?? null,
     easySummary: ev.easy,
     trials: Array.isArray(trials) ? trials.slice(0, 8).map((t) => ({ label: String(t.label || ''), value: num(t.value) })) : [],
     subject: {
@@ -277,7 +295,7 @@ export function buildPapsRecord({
     conditions: conditions ? {
       distanceCm: num(conditions.distanceCm), metronomeBpm: num(conditions.metronomeBpm), cameraUsed: Boolean(conditions.cameraUsed),
     } : null,
-    evaluationText: papsEvaluationText({ testId, value: num(value), unit: meta?.unit || '', variant, valid: ev.valid, grade: ev.grade, reference: ev.reference, subject, recognition, hr }, previous),
+    evaluationText: papsEvaluationText({ testId, value: num(value), unit: meta?.unit || '', variant, valid: ev.valid, grade: ev.grade, adultLabel: ev.adultLevel != null ? ev.label : '', adultReference: ev.adultLevel != null ? ev.reference : '', reference: ev.reference, subject, recognition, hr }, previous),
     repLog: Array.isArray(repLog) ? repLog.slice(0, 120) : [],
     trainerNote: String(trainerNote || '').slice(0, 500),
     startedAt, endedAt,
@@ -310,7 +328,7 @@ export function papsChange(current, previous) {
 
 /**
  * 측정·평가 문장(학생·성인 공통). 등급은 PAPS 공식 기준표가 있는 초3~고3 학생에게만 붙이고,
- * 그 외(성인 포함)는 값·직전 대비 변화·인식률로 평가한다. 없는 기준을 만들어 내지 않는다.
+ * 성인(19~64세)은 국민체력100 항목별 기준(앉아윗몸앞으로굽히기·상대악력)을 붙이고, 그 외는 값·직전 대비 변화·인식률로 평가한다. 없는 기준을 만들어 내지 않는다.
  */
 export function papsEvaluationText(p = {}, previous = null) {
   const meta = PAPS_TESTS[p.testId];
@@ -319,6 +337,7 @@ export function papsEvaluationText(p = {}, previous = null) {
   if (!Number.isFinite(p.value)) return `${label}: 값이 없어 평가하지 않았습니다.`;
   const parts = [`${label} ${p.value}${p.unit || meta?.unit || ''}`];
   if (p.grade) parts.push(`PAPS ${p.subject?.grade || ''} ${p.subject?.sex === 'male' ? '남' : '여'} 기준 ${p.grade}등급(${PAPS_GRADE_WORD[p.grade]})`);
+  else if (p.adultLabel) parts.push(`${p.adultReference} → ${p.adultLabel}(국민체력100 항목별 기준, 종합 등급은 전 종목 측정 후)`);
   else parts.push('PAPS 등급은 초3~고3 학생·공식 기준표가 있는 종목에만 붙여서, 이 기록은 값과 변화로 평가합니다');
   const ch = previous ? papsChange({ ...p, valid: true }, previous) : null;
   if (ch) parts.push(`직전 대비 ${ch.diff > 0 ? '+' : ''}${ch.diff}${ch.unit} (${ch.direction === 'improved' ? '좋아짐' : ch.direction === 'worsened' ? '줄어듦' : '동일'})`);
