@@ -250,8 +250,9 @@ export function buildProblemFocus(kind, report = {}) {
     }
     if (Number.isFinite(report.hr?.maxBpm)) addStrength(`테스트 중 최고 심박 ${report.hr.maxBpm}bpm.`);
   } else if (kind === 'paps') {
-    // [PAPS 2026-11-25] 등급 기준표가 없어 값은 '기록'으로만 옮기고 위험 신호를 만들지 않는다. 무효는 확인 요청.
+    // [PAPS 2026-11-25] 공식 등급(별표 4)이 있으면 4~5등급은 확인 신호, 그 외는 기록으로만 옮긴다. 무효는 확인 요청.
     if (report.valid === false) addIssue('caution', `${report.testLabel || 'PAPS 테스트'} 기록이 무효입니다(${report.invalidReason || '확인 필요'}) — 트레이너 확인 후 다시 측정해 주세요.`);
+    else if (report.grade >= 4) addIssue('caution', report.evaluationText || `${report.testLabel || 'PAPS 테스트'} ${report.grade}등급 — 트레이너 확인이 필요합니다.`);
     else if (Number.isFinite(report.value)) addStrength(report.evaluationText || `${report.testLabel || 'PAPS 테스트'} ${report.value}${report.unit || ''} (같은 방법으로 회차별 비교).`);
   } else if (kind === 'daily') {
     // [모미 신규] 컨디션 체크인(conditionAssessment.js evaluateCondition() 결과)을 해석한다.

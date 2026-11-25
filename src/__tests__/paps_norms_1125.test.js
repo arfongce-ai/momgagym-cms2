@@ -70,3 +70,12 @@ describe('PAPS 제자리멀리뛰기(SBJ) 등급', () => {
     expect(papsGradeOf('standlong', 150, { sex: 'male', grade: '중1' })).toBe(4);
   });
 });
+
+describe('PAPS 기준 문구·종합분석 연결', () => {
+  it('여 무릎대고 팔굽혀펴기 기준 문구가 비지 않는다', async () => {
+    const { papsCriteriaText } = await import('../ai-measure/core/papsTests');
+    const rec = buildPapsRecord({ testId: 'pushup', value: 45, variant: 'knee', subject: { sex: 'female', grade: '중1' } });
+    expect(rec.grade).toBe(1);
+    expect(papsCriteriaText(rec)).toContain('1등급 45회 이상');
+  });
+});
