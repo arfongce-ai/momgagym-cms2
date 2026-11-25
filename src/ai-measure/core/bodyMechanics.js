@@ -50,6 +50,9 @@ export const ROM_NORMS = Object.freeze({
   SHOULDER: {
     STANDING:  { flexion: { normal: 170, min: 150, max: 185 } },
     SEATED:    { flexion: { normal: 170, min: 150, max: 185 } },
+    // [2611] 어깨 벌림(외전, 정면 촬영). 교재 3장(92쪽): 벌림동안 어깨 올림 180°.
+    //  굴곡과 같은 sanity 범위(팔 내림=0°, 머리 위=180°)를 쓴다.
+    ABDUCTION: { abduction: { normal: 170, min: 150, max: 185 } },
   },
   ANKLE: {
     STANDING:  { dorsiflexion: { normal: 20, min: 10, max: 30 } },
@@ -249,7 +252,8 @@ export function jointAngleByMode(landmarks, joint, side, poseMode) {
     angle = angleBetween(hip, knee, ankle, false);
     if (poseMode === 'STANDING') compensatory = pelvicDrop(landmarks, side);
   } else if (joint === 'SHOULDER') {
-    if (poseMode === 'STANDING' || poseMode === 'SEATED') {
+    if (poseMode === 'STANDING' || poseMode === 'SEATED' || poseMode === 'ABDUCTION') {
+      // [2611] ABDUCTION(벌림)은 정면 촬영 — 같은 식(팔 내림=0°, 머리 위=180°)을 화면 면(정면)에서 잰다.
       // 상완(shoulder→elbow)과 수직축 사이각. 견관절 굴곡 정의는 '팔 내림=0°,
       // 팔 위로 들어올림=180°'. 위쪽축 기준 각도를 (180 - 각도)로 보정한다.
       const raw = vectorToAxisAngle(shoulder, elbow, VERTICAL_UP, false);
@@ -333,6 +337,7 @@ export function torsoSeparationSignal(landmarks) {
 export const ROM_CONFIDENT_VIS = 0.5;   // 이 이상 보이는 프레임을 우선 사용
 export const ROM_MIN_GOOD_FRAMES = 8;   // 우선 사용할 프레임이 이보다 적으면 전체 사용 + 경고
 export const ROM_REP_SPREAD_WARN = 5;   // 반복 간 최대각 편차(°) 경고 기준(교재 28쪽: 팔 5°·다리 6° 이내는 오차 범위)
+export const ROM_VIEW_RATIO_MIN_FRONT = 0.5; // 정면 촬영(벌림) 판정: 어깨폭/몸통길이 비율 하한(정면≈0.8)
 export const ROM_VIEW_RATIO_MAX = 0.4;  // 옆모습 판정: 어깨폭/몸통길이 비율 상한(정면≈0.8, 완전 측면≈0)
 
 // 연속 k 프레임의 중앙값 중 최대(또는 최소). 1~2프레임 튄 값은 결과가 되지 않는다.
@@ -383,7 +388,7 @@ export function jointMinVisibility(landmarks, joint, side, poseMode) {
   let names;
   if (joint === 'HIP') names = poseMode === 'STANDING' ? ['HIP', 'KNEE'] : ['SHOULDER', 'HIP', 'KNEE'];
   else if (joint === 'KNEE') names = ['HIP', 'KNEE', 'ANKLE'];
-  else if (joint === 'SHOULDER') names = (poseMode === 'STANDING' || poseMode === 'SEATED') ? ['SHOULDER', 'ELBOW'] : ['HIP', 'SHOULDER', 'ELBOW'];
+  else if (joint === 'SHOULDER') names = (poseMode === 'STANDING' || poseMode === 'SEATED' || poseMode === 'ABDUCTION') ? ['SHOULDER', 'ELBOW'] : ['HIP', 'SHOULDER', 'ELBOW'];
   else if (joint === 'ANKLE') names = ['KNEE', 'ANKLE', 'FOOT_INDEX'];
   else if (joint === 'ELBOW') names = ['SHOULDER', 'ELBOW', 'WRIST'];
   else return null;
@@ -525,15 +530,18 @@ export class RomAccumulator {
       good_frame_pct: pick.goodFramePct,
     });
     const viewRatios = this.samples.map((x) => x.viewRatio).filter((x) => x != null);
+    // 벌림(ABDUCTION)은 정면 촬영이라 판정 방향이 반대(비율이 작으면 몸이 옆으로 돌아선 것).
+    const frontView = this.poseMode === 'ABDUCTION';
+    const viewBad = (x) => (frontView ? x < ROM_VIEW_RATIO_MIN_FRONT : x > ROM_VIEW_RATIO_MAX);
     const viewBadPct = viewRatios.length
-      ? Math.round((viewRatios.filter((x) => x > ROM_VIEW_RATIO_MAX).length / viewRatios.length) * 100) : null;
+      ? Math.round((viewRatios.filter(viewBad).length / viewRatios.length) * 100) : null;
     const stability = {
       left: sideStab(pickL, statL),
       right: sideStab(pickR, statR),
       view: {
         shoulder_ratio_median: viewRatios.length ? round(median(viewRatios), 2) : null,
         bad_frame_pct: viewBadPct,
-        ok: viewRatios.length >= 10 ? (median(viewRatios) <= ROM_VIEW_RATIO_MAX && viewBadPct <= 30) : null,
+        ok: viewRatios.length >= 10 ? (!viewBad(median(viewRatios)) && viewBadPct <= 30) : null,
       },
       warnings: [],
     };
@@ -543,7 +551,7 @@ export class RomAccumulator {
       if (st.rep_spread_deg != null && st.rep_spread_deg >= ROM_REP_SPREAD_WARN) stability.warnings.push(`${k}_rep_spread`);
       if (st.low_visibility) stability.warnings.push(`${k}_low_visibility`);
     }
-    if (stability.view.ok === false) stability.warnings.push('view_not_side');
+    if (stability.view.ok === false) stability.warnings.push(frontView ? 'view_not_front' : 'view_not_side');
 
     // 끝범위 안정성: 최대각 근처(상위 15%) 구간의 표준편차가 작을수록 안정(점수↑).
     const endRangeStability = (arr, side) => {
