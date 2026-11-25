@@ -79,3 +79,33 @@ describe('PAPS 기준 문구·종합분석 연결', () => {
     expect(papsCriteriaText(rec)).toContain('1등급 45회 이상');
   });
 });
+
+describe('국민체력100 성인 항목별 기준 (체력컷 기준표)', () => {
+  it('앉아윗몸앞으로굽히기 경계: 25~29 남 14.9/10.1/5.3', async () => {
+    const { adultItemLevel } = await import('../ai-measure/core/adultNorms');
+    const o = { sex: 'male', age: 27 };
+    expect(adultItemLevel('sitreach', 14.9, o).level).toBe(1);
+    expect(adultItemLevel('sitreach', 14.8, o).level).toBe(2);
+    expect(adultItemLevel('sitreach', 5.3, o).level).toBe(3);
+    expect(adultItemLevel('sitreach', 5.2, o).level).toBe(0);
+    expect(adultItemLevel('sitreach', 10, { sex: 'male', age: 65 })).toBeNull();
+  });
+  it('상대악력 = 악력÷체중×100, 체중 없으면 판정 없음', async () => {
+    const { relativeGripPct } = await import('../ai-measure/core/adultNorms');
+    expect(relativeGripPct(45, 70)).toBe(64.3);
+    expect(relativeGripPct(45, '')).toBeNull();
+    const subject = { sex: 'male', age: 22, weightKg: 70 }; // 19~24 남 62.6/57.2/51.8
+    const ev = evaluatePapsTest('grip', 45, { subject });
+    expect(ev.adultLevel).toBe(1);
+    expect(ev.grade).toBeNull();
+    expect(evaluatePapsTest('grip', 41, { subject }).adultLevel).toBe(2); // 58.6
+    expect(evaluatePapsTest('grip', 45, { subject: { sex: 'male', age: 22 } }).adultLevel).toBeUndefined();
+  });
+  it('학생(학년 있음)은 PAPS 표를 쓰고 성인 기준을 쓰지 않는다; 기록에 출처가 남는다', () => {
+    expect(evaluatePapsTest('sitreach', 12, { subject: { sex: 'male', age: 15, grade: '중3' } }).adultLevel).toBeUndefined();
+    const rec = buildPapsRecord({ testId: 'sitreach', value: 20, subject: { sex: 'female', age: 30 } });
+    expect(rec.adultLevel).toBe(1);
+    expect(rec.gradeSource).toContain('국민체력100');
+    expect(rec.evaluationText).toContain('국민체력100');
+  });
+});
