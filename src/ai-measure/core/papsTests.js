@@ -4,7 +4,7 @@
 //  · 팔굽혀펴기 · 윗몸말아올리기 · 턱걸이 · 오래매달리기 · 사이드스텝(20초) · 앉아윗몸앞으로굽히기(좌전굴)
 //    · 서서윗몸앞으로굽히기(체전굴) · 악력.  (윗몸일으키기 1분은 2026-11-25 대표님 결정으로 뺌 — 윗몸말아올리기 하나만)
 //  · 영상촬영(video): primary=카메라 기본(영상+스켈레톤+인식률+HUD 저장) · optional=선택(악력은 하는 모습만 녹화).  (제자리멀리뛰기=7번, 달리기=5번, 신체정보=1번은 기존 탭을 쓴다)
-//  · 등급(1~5등급)은 core/papsNorms.js 표가 있는 테스트(윗몸말아올리기·앉아윗몸앞으로굽히기·악력)만, 초4~6+성별이 있을 때 낸다.
+//  · 등급(1~5등급)은 core/papsNorms.js 표가 있는 테스트(윗몸말아올리기·앉아윗몸앞으로굽히기·악력)만, 초3~고3+성별이 있을 때 낸다.
 //    그 외 테스트·학년은 숫자를 지어 넣지 않고 값만 저장한다.
 //    값·무효 여부·측정 조건을 그대로 저장하고, 같은 테스트끼리 회차별 변화만 비교한다(status 는 항상 'unknown').
 //  · 기준표가 확인되면 evaluatePapsTest 안에서만 판정을 추가한다(나머지 화면은 status 를 그대로 쓴다).
@@ -19,9 +19,9 @@ export function papsCriteriaText(report = {}) {
   const label = `${report.testLabel || 'PAPS 테스트'}${report.variant === 'knee' ? '(무릎 대고)' : ''}`;
   if (report.grade) {
     const norm = papsNormText(report.testId, report.subject?.sex, report.subject?.grade, report.unit || '');
-    return `${label}: PAPS ${report.subject?.grade || ''} ${report.subject?.sex === 'male' ? '남' : '여'} 기준 ${report.grade}등급(${PAPS_GRADE_WORD[report.grade]}). 기준(${norm}). 기준표는 대표님 제공본이라 공식 원문과 대조 전입니다. 이전 기록과의 변화도 함께 봅니다.`;
+    return `${label}: PAPS ${report.subject?.grade || ''} ${report.subject?.sex === 'male' ? '남' : '여'} 기준 ${report.grade}등급(${PAPS_GRADE_WORD[report.grade]}). 기준(${norm}). 기준표는 학교건강검사규칙 별표 4(2025.3.10 개정)입니다. 이전 기록과의 변화도 함께 봅니다.`;
   }
-  return `${label}: 초4~6 학년·성별이 모두 있을 때만 PAPS 1~5등급을 냅니다(윗몸말아올리기·앉아윗몸앞으로굽히기·악력). 이 기록은 등급 기준이 없어(성인·초4~6 외 포함) 값·영상·인식률·이전 기록과의 변화로 평가합니다. 값이 늘면 좋아진 것, 무효 기록은 비교에서 뺍니다.`;
+  return `${label}: 초3~고3 학년·성별이 모두 있을 때만 PAPS 1~5등급을 냅니다(윗몸말아올리기·팔굽혀펴기(중·고, 여는 무릎대고)·앉아윗몸앞으로굽히기·악력). 이 기록은 공식 등급 기준이 없어(성인·표에 없는 조합 포함) 값·영상·인식률·이전 기록과의 변화로 평가합니다. 값이 늘면 좋아진 것, 무효 기록은 비교에서 뺍니다.`;
 }
 
 // kind: reps_free(최대 횟수, 끝낼 때까지) · reps_timed(제한시간 안의 횟수) · hold(버틴 시간) · value(자로 잰 값)
@@ -204,16 +204,22 @@ export function evaluatePapsTest(testId, value, opts = {}) {
     };
   }
   const sg = opts.subject || {};
-  const g = papsGradeOf(testId, v, { sex: sg.sex, grade: sg.grade });
+  // 팔굽혀펴기: 공식 표는 남=팔굽혀펴기(봉), 여=무릎대고팔굽혀펴기(중·고). 방식이 다르면 표 없음(임의 준용 금지).
+  let normId = testId;
+  if (testId === 'pushup') {
+    const knee = opts.variant === 'knee';
+    normId = sg.sex === 'female' ? (knee ? 'pushupKnee' : null) : (knee ? null : 'pushup');
+  }
+  const g = normId ? papsGradeOf(normId, v, { sex: sg.sex, grade: sg.grade }) : null;
   if (g) {
-    const norm = papsNormText(testId, sg.sex, sg.grade, meta.unit);
+    const norm = papsNormText(normId, sg.sex, sg.grade, meta.unit);
     return {
       status: 'unknown', grade: g, label: `${g}등급 (${PAPS_GRADE_WORD[g]})`, valid: true, reason: '', reference: norm,
       source: PAPS_NORM_SOURCE.label,
       easy: `${meta.easy(v)} ${sg.grade} ${sg.sex === 'male' ? '남' : '여'} 기준으로 ${g}등급(${PAPS_GRADE_WORD[g]})이에요.`,
     };
   }
-  const hasTable = ['curlup', 'sitreach', 'grip'].includes(testId);
+  const hasTable = ['pushup', 'curlup', 'sitreach', 'grip'].includes(testId);
   return {
     status: 'unknown', grade: null, label: hasTable ? '기록(학년·성별 확인 시 등급)' : '기록(등급표 없음)', valid: true,
     reason: '', reference: null, easy: meta.easy(v),
@@ -234,7 +240,7 @@ export function buildPapsRecord({
   recognition = null, video = null, conditions = null, previous = null,
 } = {}) {
   const meta = PAPS_TESTS[testId];
-  const ev = evaluatePapsTest(testId, value, { invalid, subject });
+  const ev = evaluatePapsTest(testId, value, { invalid, subject, variant });
   return {
     kind: PAPS_KIND,
     testId,
@@ -298,7 +304,7 @@ export function papsChange(current, previous) {
 }
 
 /**
- * 측정·평가 문장(학생·성인 공통). 등급은 PAPS 기준표가 있는 초4~6 학생에게만 붙이고,
+ * 측정·평가 문장(학생·성인 공통). 등급은 PAPS 공식 기준표가 있는 초3~고3 학생에게만 붙이고,
  * 그 외(성인 포함)는 값·직전 대비 변화·인식률로 평가한다. 없는 기준을 만들어 내지 않는다.
  */
 export function papsEvaluationText(p = {}, previous = null) {
@@ -308,7 +314,7 @@ export function papsEvaluationText(p = {}, previous = null) {
   if (!Number.isFinite(p.value)) return `${label}: 값이 없어 평가하지 않았습니다.`;
   const parts = [`${label} ${p.value}${p.unit || meta?.unit || ''}`];
   if (p.grade) parts.push(`PAPS ${p.subject?.grade || ''} ${p.subject?.sex === 'male' ? '남' : '여'} 기준 ${p.grade}등급(${PAPS_GRADE_WORD[p.grade]})`);
-  else parts.push('PAPS 등급은 초4~6 학생·기준표가 있는 종목에만 붙여서, 이 기록은 값과 변화로 평가합니다');
+  else parts.push('PAPS 등급은 초3~고3 학생·공식 기준표가 있는 종목에만 붙여서, 이 기록은 값과 변화로 평가합니다');
   const ch = previous ? papsChange({ ...p, valid: true }, previous) : null;
   if (ch) parts.push(`직전 대비 ${ch.diff > 0 ? '+' : ''}${ch.diff}${ch.unit} (${ch.direction === 'improved' ? '좋아짐' : ch.direction === 'worsened' ? '줄어듦' : '동일'})`);
   if (p.recognition && Number.isFinite(p.recognition.ratio)) parts.push(`동작 인식률 ${Math.round(p.recognition.ratio * 100)}%${p.recognition.ratio < 0.7 ? '(낮음 — 카운트는 측정자 확인값 기준)' : ''}`);

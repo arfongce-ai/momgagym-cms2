@@ -114,7 +114,7 @@ describe('PAPS 영상촬영 개편(2026-11-25)', () => {
       conditions: { distanceCm: null, metronomeBpm: 60, cameraUsed: true },
     });
     expect(rec.grade).toBe(null);
-    expect(rec.evaluationText).toContain('등급은 초4~6');
+    expect(rec.evaluationText).toContain('등급은 초3~고3');
     expect(rec.evaluationText).toContain('인식률 62%');
     expect(rec.evaluationText).toContain('낮음');
     expect(rec.video.recorded).toBe(true);

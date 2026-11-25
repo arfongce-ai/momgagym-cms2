@@ -5,7 +5,7 @@
 //  악력만 선택 녹화. 카메라 없이 수동(탭·초시계)으로도 잴 수 있다.
 //  · 자동 카운트·심박 밴드·카메라 화면은 시니어 탭(SeniorTestMeasure)과 같은 부품을 쓴다.
 //  · 학년·성별·나이·키·몸무게는 회원 등록정보에서 가져온다(없으면 입력).
-//  · 등급은 기준표가 있는 초4~6 종목에만(core/papsNorms.js). 그 외(성인 포함)는 값·변화·인식률로 평가(papsEvaluationText).
+//  · 등급은 공식 기준표(초3~고3) 종목에만(core/papsNorms.js). 그 외(성인 포함)는 값·변화·인식률로 평가(papsEvaluationText).
 //  · 이상·무효 값도 저장한다(저장 차단 금지).
 // ════════════════════════════════════════════════════════════════════════
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
@@ -369,7 +369,7 @@ export default function PapsTestMeasure({ onBack, member = null, onSave = null, 
             {meta.verified?.length > 0 && <p className="text-emerald-700 dark:text-emerald-400"><b>확인된 기준</b> {meta.verified.join(' / ')}</p>}
             {meta.unverified?.length > 0 && <p className="font-bold text-amber-700 dark:text-amber-400" data-testid="paps-unverified"><b>확인 못 함</b> {meta.unverified.join(' / ')}</p>}
             <p className="font-bold text-red-600 dark:text-red-400">주의 {meta.care}</p>
-            <p className="font-semibold text-slate-500">초4~6 학년·성별이 있으면 윗몸말아올리기·앉아윗몸앞으로굽히기·악력은 1~5등급이 나옵니다(대표님 제공 등급표). 성인·그 외는 등급 없이 값·영상·인식률·이전 기록과의 변화로 평가하고 결과리포트에 같은 형식으로 나옵니다. 달리기·제자리멀리뛰기는 5번·7번 탭을 쓰세요.</p>
+            <p className="font-semibold text-slate-500">초3~고3 학년·성별이 있으면 윗몸말아올리기·앉아윗몸앞으로굽히기·악력·팔굽혀펴기(중·고)는 1~5등급이 나옵니다(학교건강검사규칙 별표 4). 성인·그 외는 등급 없이 값·영상·인식률·이전 기록과의 변화로 평가하고 결과리포트에 같은 형식으로 나옵니다. 달리기·제자리멀리뛰기는 5번·7번 탭을 쓰세요.</p>
           </div>
 
           <div className="rounded-xl border-2 border-slate-200 p-2 dark:border-slate-700">

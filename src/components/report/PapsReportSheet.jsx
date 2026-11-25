@@ -40,11 +40,11 @@ export default function PapsReportSheet({ report, member, previous = null, histo
             member={member || p.member || null}
           />
 
-          <UnifiedReportSection title="측정 결과" subtitle="값과 평가 (등급은 초4~6 기준표 종목만)" className="mb-4">
+          <UnifiedReportSection title="측정 결과" subtitle="값과 평가 (등급은 공식 기준표 종목만)" className="mb-4">
             <div className="rounded-xl border-2 border-slate-300 bg-slate-100/60 p-3 text-slate-800 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-100" data-testid="paps-report-result">
               <p className="font-mono text-4xl font-black">{Number.isFinite(p.value) ? p.value : '-'}<span className="ml-1 text-base">{p.unit}</span></p>
               <p className="mt-1 text-sm font-black">{ev.label}</p>
-              {ev.reference && <p className="mt-0.5 text-[11px] font-semibold">기준 {ev.reference} (대표님 제공 등급표)</p>}
+              {ev.reference && <p className="mt-0.5 text-[11px] font-semibold">기준 {ev.reference} (학교건강검사규칙 별표 4)</p>}
               {ev.reason && <p className="mt-0.5 text-[11px] font-bold">확인 필요: {ev.reason}</p>}
             </div>
             <p className="mt-2 break-keep text-[12px] font-bold leading-relaxed text-slate-700 dark:text-slate-100" data-testid="paps-report-eval">{evalText}</p>
