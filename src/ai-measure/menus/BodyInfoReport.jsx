@@ -44,7 +44,7 @@ export default function BodyInfoReport({ id = 'body-report-sheet', member, resul
   // [모미 신규] 체중·혈압이 없는 컨디션 전용 기록도 포함(이전엔 필터에서 통째로 빠져
   // 추이에 반영되지 않았다). 체중/혈압 차트 자체는 그대로 null-skip 되므로 영향 없음.
   const series = (history || [])
-    .filter(r => r && (r.weight != null || r.systolic != null || r.fatigue != null || r.painNrs != null || r.prs != null))
+    .filter(r => r && (r.weight != null || r.systolic != null || r.fatigue != null || r.painNrs != null || r.prs != null || r.sleepQuality != null))
     .map(r => ({
       date: (r.recordedAt || '').slice(5) || '',
       weight: r.weight != null ? Number(r.weight) : null,
@@ -53,10 +53,11 @@ export default function BodyInfoReport({ id = 'body-report-sheet', member, resul
       fatigue: r.fatigue != null ? Number(r.fatigue) : null,
       painNrs: r.painNrs != null ? Number(r.painNrs) : null,
       prs: r.prs != null ? Number(r.prs) : null,
+      sleepQuality: r.sleepQuality != null ? Number(r.sleepQuality) : null,
     }));
   const hasWeightTrend = series.filter(s => s.weight != null).length >= 2;
   const hasBpTrend = series.filter(s => s.systolic != null).length >= 2;
-  const hasConditionTrend = series.filter(s => s.fatigue != null || s.painNrs != null || s.prs != null).length >= 2;
+  const hasConditionTrend = series.filter(s => s.fatigue != null || s.painNrs != null || s.prs != null || s.sleepQuality != null).length >= 2;
 
   return (
     <UnifiedReportCanvas>
@@ -157,6 +158,7 @@ export default function BodyInfoReport({ id = 'body-report-sheet', member, resul
                     <Line type="monotone" dataKey="fatigue" stroke="#a78bfa" strokeWidth={2.5} dot={{ r: 3 }} name="피로도" connectNulls />
                     <Line type="monotone" dataKey="painNrs" stroke="#fb7185" strokeWidth={2.5} dot={{ r: 3 }} name="통증" connectNulls />
                     <Line type="monotone" dataKey="prs" stroke="#34d399" strokeWidth={2.5} dot={{ r: 3 }} name="회복 느낌(PRS)" connectNulls />
+                    <Line type="monotone" dataKey="sleepQuality" stroke="#38bdf8" strokeWidth={2.5} dot={{ r: 3 }} name="수면(1~5)" connectNulls />
                   </LineChart>
                 </ResponsiveContainer>
               </div>

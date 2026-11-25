@@ -263,6 +263,10 @@ export function buildProblemFocus(kind, report = {}) {
       if (report.prs != null && report.prs <= 4) {
         addIssue('caution', `운동 전 회복 느낌(PRS)이 ${report.prs}/10로 낮게 보고되었습니다.`);
       }
+      // [수면 2026-11-25] 수면 컨디션(1~5). 낮을수록 잠을 못 잔 상태(참고용 기준).
+      if (report.sleepQuality != null && report.sleepQuality <= 2) {
+        addIssue('caution', `간밤 수면 컨디션이 ${report.sleepQuality}/5로 낮게 보고되었습니다.`);
+      }
       if (report.memo) addIssue('normal', `회원 메모: ${report.memo}`);
       if (!issues.length) addStrength('오늘 컨디션에 특이 신호가 없습니다.');
     }

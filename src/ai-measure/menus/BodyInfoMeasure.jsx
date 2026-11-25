@@ -70,6 +70,8 @@ export default function BodyInfoMeasure({ member, onSave, onConfirmSave, onBack,
     // [모미 신규] 오늘의 컨디션 — 신체정보와 같은 화면·같은 저장 흐름에 통합.
     fatigue: '',
     painNrs: '',
+    sleepQuality: '', // [2026-11-25] 수면 컨디션 1~5
+    sleepHours: '',   // 수면 시간(시간) — 기록 전용
     prs: '', // [2026-11-24] 운동 전 컨디션(PRS 0~10). 문자열로 두어 '0'도 입력된 값으로 본다.
     memo: '',
   });
@@ -94,7 +96,7 @@ export default function BodyInfoMeasure({ member, onSave, onConfirmSave, onBack,
   // 아니라 "체중 또는 컨디션 항목 중 하나는 필수"로 완화한다. 체중이 없으면 체성분/혈압
   // 분석(analyzeBody)은 건너뛰고 컨디션만 저장한다.
   const hasBodyInput = !!form.weight;
-  const hasConditionInput = !!(form.fatigue || form.painNrs || form.prs !== '' || form.memo.trim());
+  const hasConditionInput = !!(form.fatigue || form.painNrs || form.prs !== '' || form.sleepQuality || form.sleepHours !== '' || form.memo.trim());
 
   const analyze = async () => {
     if (!hasBodyInput && !hasConditionInput) {
@@ -123,6 +125,8 @@ export default function BodyInfoMeasure({ member, onSave, onConfirmSave, onBack,
       fatigue: form.fatigue,
       painNrs: form.painNrs,
       prs: form.prs,
+      sleepQuality: form.sleepQuality,
+      sleepHours: form.sleepHours,
       memo: form.memo,
     });
     const payload = {
@@ -133,6 +137,8 @@ export default function BodyInfoMeasure({ member, onSave, onConfirmSave, onBack,
       fatigue: condition.fatigue,
       painNrs: condition.painNrs,
       prs: condition.prs,
+      sleepQuality: condition.sleepQuality,
+      sleepHours: condition.sleepHours,
       conditionMemo: condition.memo,
       conditionStatus: condition.valid ? condition.status : null,
     };
@@ -159,6 +165,8 @@ export default function BodyInfoMeasure({ member, onSave, onConfirmSave, onBack,
         fatigue: condition.fatigue,
         painNrs: condition.painNrs,
         prs: condition.prs,
+        sleepQuality: condition.sleepQuality,
+        sleepHours: condition.sleepHours,
         conditionMemo: condition.memo,
         conditionStatus: condition.valid ? condition.status : null,
         note: 'AI 측정 입력',
@@ -255,6 +263,23 @@ export default function BodyInfoMeasure({ member, onSave, onConfirmSave, onBack,
               );
             })}
           </div>
+        </div>
+        {/* [2026-11-25] 수면 컨디션 — 간밤 잠이 어땠는지(1~5) + 수면 시간. 다시 누르면 해제. */}
+        <div>
+          <label className={LBL}>수면 컨디션 (1~5) <span className="font-normal normal-case text-slate-500">— 1 매우 나쁨 · 5 매우 좋음</span></label>
+          <div className="mt-1 grid grid-cols-5 gap-1" role="group" aria-label="수면 컨디션 1~5">
+            {[1, 2, 3, 4, 5].map((n) => {
+              const on = form.sleepQuality === String(n);
+              return (
+                <button key={n} type="button" aria-pressed={on} data-testid={`sleep-${n}`}
+                  onClick={() => setForm((f) => ({ ...f, sleepQuality: on ? '' : String(n) }))}
+                  className={`rounded-lg py-2 text-xs font-black border ${on ? 'bg-amber-500 text-slate-950 border-amber-500' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-300 dark:border-slate-700'}`}>
+                  {n}
+                </button>
+              );
+            })}
+          </div>
+          <input type="number" min="0" max="24" step="0.5" value={form.sleepHours} onChange={pf('sleepHours')} placeholder="수면 시간(시간) 예) 6.5" className={INP + ' mt-2'} />
         </div>
         <div>
           <label className={LBL}>한줄메모</label>
