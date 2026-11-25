@@ -43,3 +43,13 @@ describe('PAPS 등급표 (초4~6, 제공 표 기준)', () => {
     expect(buildPapsRecord({ testId: 'grip', value: 21, subject: { sex: 'female', grade: '중1' } }).grade).toBeNull();
   });
 });
+
+describe('PAPS 제자리멀리뛰기(SBJ) 등급', () => {
+  it('경계값과 성별·학년 분기', () => {
+    expect(papsGradeOf('standlong', 173, { sex: 'male', grade: '초5' })).toBe(1);
+    expect(papsGradeOf('standlong', 172, { sex: 'male', grade: '초5' })).toBe(2);
+    expect(papsGradeOf('standlong', 124, { sex: 'male', grade: '초5' })).toBe(5);
+    expect(papsGradeOf('standlong', 148, { sex: 'female', grade: '초6' })).toBe(2);
+    expect(papsGradeOf('standlong', 150, { sex: 'male', grade: '중1' })).toBeNull();
+  });
+});

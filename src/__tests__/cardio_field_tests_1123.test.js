@@ -12,7 +12,7 @@ const calc = (protocolId, subject, manual) => computeCardioResult({
 describe('11번 심폐지구력 — 교재 8장 필드 테스트(2026-11-23)', () => {
   it('필드 장비에 3개 테스트가 있고 기존 5개 장비는 그대로', () => {
     expect(CARDIO_MACHINES.field).toBeTruthy();
-    expect(protocolsForMachine('field').map((p) => p.id)).toEqual(['field_cooper15', 'field_cooper12', 'field_rockport', 'field_bruce']);
+    expect(protocolsForMachine('field').map((p) => p.id)).toEqual(['field_cooper15', 'field_cooper12', 'field_rockport', 'field_bruce', 'field_step', 'field_6mwt']);
     expect(protocolsForMachine('treadmill').map((p) => p.id)).toEqual(['curved_2400', 'curved_12min', 'free']);
     expect(getProtocol('field_cooper15').basis).toBe('flat');
   });

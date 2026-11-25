@@ -44,12 +44,13 @@ import {
   rpeLabel, rpeDue, rpeCheckpoints, RPE_MIN, RPE_MAX, bruceStageAt,
   recordTick,
   windowAvg,
+  QUEENS_METRONOME_BPM,
 } from '../core/cardioTest';
 import { vo2maxRating } from '../core/norms';
 import CardioReportSheet from '../../components/report/CardioReportSheet';
 
 const FRESH_MS = 5000; // 이 시간 안에 온 값만 '현재 값'으로 쓴다
-const FIELD_TAB_LABELS = { field_cooper15: ['쿠퍼 1.5마일', '2.4km'], field_cooper12: ['쿠퍼 12분', '12분'], field_rockport: ['록포트 1마일', '걷기'], field_bruce: ['브루스', '트레드밀'] };
+const FIELD_TAB_LABELS = { field_cooper15: ['쿠퍼 1.5마일', '2.4km'], field_cooper12: ['쿠퍼 12분', '12분'], field_rockport: ['록포트 1마일', '걷기'], field_bruce: ['브루스', '트레드밀'], field_step: ['스텝테스트', '3분'], field_6mwt: ['6분 걷기', '6MWT'] };
 const MACHINE_ORDER = ['rower', 'bike', 'ski', 'treadmill', 'climber', 'field'];
 
 function machineError(err) {
@@ -167,6 +168,7 @@ export default function CardioTestMeasure({ onBack, member = null, onSave = null
     age: member ? (ageFromBirthDate(member.birthDate) || Number(member.age) || '') : '',
     sex: member ? (normalizeSex(member.sex || member.gender) || '') : '',
     weightKg: resolveBodyMetrics(member).weight ? String(resolveBodyMetrics(member).weight) : '',
+    statureCm: resolveBodyMetrics(member).height ? String(resolveBodyMetrics(member).height) : '',
   }));
   const [allSessions, setAllSessions] = useState([]);
   useEffect(() => {
@@ -374,12 +376,12 @@ export default function CardioTestMeasure({ onBack, member = null, onSave = null
       machineId: runRef.current.machineId,
       rec: recRef.current,
       workEndSec: runRef.current.workEndSec,
-      subject: { age: Number(subject.age) || null, sex: subject.sex, weightKg: Number(subject.weightKg) || null },
+      subject: { age: Number(subject.age) || null, sex: subject.sex, weightKg: Number(subject.weightKg) || null, statureCm: Number(subject.statureCm) || null },
       past,
       allSessions,
       manual,
     });
-  }, [phase, subject.age, subject.sex, subject.weightKg, past, allSessions, manual]);
+  }, [phase, subject.age, subject.sex, subject.weightKg, subject.statureCm, past, allSessions, manual]);
 
   const hrSourceLabel = () => {
     const s = runRef.current?.hrSources || new Set();
@@ -591,6 +593,12 @@ export default function CardioTestMeasure({ onBack, member = null, onSave = null
                 <input inputMode="decimal" value={subject.weightKg} onChange={(e) => setSubject((s) => ({ ...s, weightKg: e.target.value.replace(/[^\d.]/g, '').slice(0, 5) }))} className={inputCls} />
               </label>
             </div>
+            {protocolId === 'field_6mwt' && (
+              <label className="mt-2 block text-[11px] font-bold text-slate-500 dark:text-slate-400">키(cm) — 6분 걷기 예측거리 계산에 필요
+                <input inputMode="decimal" value={subject.statureCm} onChange={(e) => setSubject((s) => ({ ...s, statureCm: e.target.value.replace(/[^\d.]/g, '').slice(0, 5) }))} className={inputCls} data-testid="cardio-stature-input" />
+              </label>
+            )}
+            {protocolId === 'field_step' && subject.sex && <p className="mt-1 text-[11px] font-bold text-slate-700 dark:text-slate-200" data-testid="cardio-step-bpm">메트로놈 {QUEENS_METRONOME_BPM[subject.sex] || '-'}bpm · 41.3cm 단 · 3분</p>}
             <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
               최대심박 {hrMaxNow || '-'}{hrMaxNow ? (personalMaxHr({ age: subject.age, sessions: allSessions, context: cardioContext(machineId) }).source === 'observed' ? ` (이 회원의 ${machineId === 'field' ? '필드' : '실내'} 실제 기록 기준)` : ' (208−0.7×나이)') : ' — 나이를 넣어 주세요'}
             </p>
@@ -654,7 +662,7 @@ export default function CardioTestMeasure({ onBack, member = null, onSave = null
                   {protocol?.basis === 'curved' && protocol.target?.distanceM && <p className="text-sm font-bold text-red-700 dark:text-red-300" data-testid="cardio-curved-hint">콘솔 DIS.가 2.40이 되면 "운동 끝"을 누르세요</p>}
                   {protocol?.basis === 'flat' && protocol.target?.distanceM && <p className="text-sm font-bold text-red-700 dark:text-red-300" data-testid="cardio-flat-hint">{protocol.target.distanceM}m 지점에 도착하면 "운동 끝"을 누르세요(400m 트랙 {protocolId === 'field_rockport' ? '4바퀴+9m' : '6바퀴+14m'})</p>}
                   {protocolId === 'field_bruce' && (() => { const b = bruceStageAt(elapsed); return <p className="text-sm font-bold text-slate-700 dark:text-slate-200" data-testid="cardio-bruce-stage">{b.stage}단계 · {b.mph}mph{b.nextInSec != null ? ` · 다음 단계까지 ${formatClock(b.nextInSec)}` : ' · 마지막 단계'} (경사도 함께 올리세요)</p>; })()}
-                  {protocol?.basis === 'flat' && protocol.target?.durationSec && <p className="text-sm font-bold text-slate-700 dark:text-slate-200" data-testid="cardio-flat-hint">12분이 되면 자동으로 끝납니다 · 간 거리(m)를 확인하세요(400m 트랙: 바퀴 수×400m)</p>}
+                  {protocol?.basis === 'flat' && protocol.target?.durationSec && <p className="text-sm font-bold text-slate-700 dark:text-slate-200" data-testid="cardio-flat-hint">{protocolId === 'field_step' ? '3분이 되면 자동으로 끝납니다 · 서서 5초 쉰 뒤 15초 맥박을 세세요' : protocolId === 'field_6mwt' ? '6분이 되면 자동으로 끝납니다 · 걸은 총 거리(m)를 확인하세요(30m 코스)' : '12분이 되면 자동으로 끝납니다 · 간 거리(m)를 확인하세요(400m 트랙: 바퀴 수×400m)'}</p>}
                   {protocol?.basis === 'curved' && protocol.target?.durationSec && <p className="text-sm font-bold text-slate-700 dark:text-slate-200" data-testid="cardio-curved-hint">12분이 되면 자동으로 끝납니다 · 끝난 뒤 콘솔 DIS.를 확인하세요</p>}
                   {protocolId === 'step' && <p className="text-sm font-bold text-slate-700 dark:text-slate-200">{stage}단계 · 목표 {stageTargetW}W · 다음 단계까지 {formatClock(STEP_STAGE_SEC - (elapsed % STEP_STAGE_SEC))}</p>}
                   {protocolId === 'bike_astrand' && (
@@ -735,8 +743,13 @@ export default function CardioTestMeasure({ onBack, member = null, onSave = null
             {protocol?.basis === 'flat' && (
               <div className="rounded-lg bg-slate-100 dark:bg-slate-800 p-2 space-y-0.5" data-testid="cardio-flat-result">
                 <p className="text-sm font-black text-slate-900 dark:text-slate-100">
-                  {protocolId === 'field_cooper12' ? `12분 거리 ${computed.result.manualDistance ? computed.result.distanceM : '-'}m` : `${protocolId === 'field_rockport' ? '1마일 걷기' : protocolId === 'field_bruce' ? '브루스 총 시간' : '1.5마일'} 기록 ${formatClock(computed.result.durationSec)}`}
-                  {protocolId === 'field_rockport' && <span className="ml-1 text-[11px] font-bold text-slate-500">종료 직후 심박 {computed.estimates.vo2max?.hrAfter ?? '-'}</span>}
+                  {protocolId === 'field_cooper12' ? `12분 거리 ${computed.result.manualDistance ? computed.result.distanceM : '-'}m` : protocolId === 'field_6mwt' ? `6분 걷기 거리 ${computed.result.manualDistance ? computed.result.distanceM : '-'}m` : protocolId === 'field_step' ? '퀸스칼리지 스텝 3분' : `${protocolId === 'field_rockport' ? '1마일 걷기' : protocolId === 'field_bruce' ? '브루스 총 시간' : '1.5마일'} 기록 ${formatClock(computed.result.durationSec)}`}
+                  {protocolId === 'field_6mwt' && computed.walk6 && (
+                    <span className="ml-1 block text-[11px] font-bold text-slate-600 dark:text-slate-300" data-testid="cardio-6mwt-result">
+                      {computed.walk6.pctPredicted != null ? `예측거리 ${computed.walk6.predictedM}m 대비 ${computed.walk6.pctPredicted}% (Enright & Sherrill 1998)` : computed.walk6.reason}
+                    </span>
+                  )}
+                  {(protocolId === 'field_rockport' || protocolId === 'field_step') && <span className="ml-1 text-[11px] font-bold text-slate-500">종료 직후 심박 {computed.estimates.vo2max?.hrAfter ?? '-'}</span>}
                 </p>
                 {computed.fieldRank && (
                   <p className="text-[12px] font-bold text-slate-800 dark:text-slate-100" data-testid="cardio-flat-rank">
@@ -807,14 +820,14 @@ export default function CardioTestMeasure({ onBack, member = null, onSave = null
                 <input value={resultInputs.time} onChange={(e) => setResultInputs((s) => ({ ...s, time: e.target.value }))} placeholder="7:30" className={inputCls} />
               </label>
               <label className="text-[11px] font-bold text-slate-500 dark:text-slate-400">{protocol?.basis === 'curved' ? '콘솔 DIS.(km 또는 m)' : '거리(m)'}
-                <input inputMode="decimal" value={resultInputs.distance} onChange={(e) => setResultInputs((s) => ({ ...s, distance: e.target.value.replace(/[^\d.,]/g, '').slice(0, 7) }))} placeholder={protocol?.basis === 'curved' ? '2.43 또는 2430' : protocolId === 'field_cooper12' ? '예: 2400' : ''} className={inputCls} data-testid="cardio-distance-input" />
+                <input inputMode="decimal" value={resultInputs.distance} onChange={(e) => setResultInputs((s) => ({ ...s, distance: e.target.value.replace(/[^\d.,]/g, '').slice(0, 7) }))} placeholder={protocol?.basis === 'curved' ? '2.43 또는 2430' : protocolId === 'field_cooper12' ? '예: 2400' : protocolId === 'field_6mwt' ? '예: 480' : ''} className={inputCls} data-testid="cardio-distance-input" />
               </label>
               <label className="text-[11px] font-bold text-slate-500 dark:text-slate-400">평균 와트
                 <input inputMode="numeric" value={resultInputs.power} onChange={(e) => setResultInputs((s) => ({ ...s, power: e.target.value.replace(/\D+/g, '') }))} className={inputCls} />
               </label>
             </div>
             {protocol?.needsHrAfter && (
-              <label className="block text-[11px] font-bold text-slate-500 dark:text-slate-400">종료 직후 심박(15초 맥박×4, bpm) — 밴드가 있으면 비워 둬도 자동 사용
+              <label className="block text-[11px] font-bold text-slate-500 dark:text-slate-400">{protocolId === 'field_step' ? '종료 5초 뒤 15초 맥박×4(bpm)' : '종료 직후 심박(15초 맥박×4, bpm)'} — 밴드가 있으면 비워 둬도 자동 사용
                 <input inputMode="numeric" value={resultInputs.hrAfter} onChange={(e) => setResultInputs((s) => ({ ...s, hrAfter: e.target.value.replace(/\D+/g, '').slice(0, 3) }))} placeholder="예: 128" className={inputCls} data-testid="cardio-hrafter-input" />
               </label>
             )}

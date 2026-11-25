@@ -803,3 +803,5 @@
 - PAPS 학년·성별 등급표는 확인 못 함(이미지/PDF) → 판정 미적용. 실기기 임계값 검증 필요.
 - 테스트 3871 통과, 빌드 통과.
 - PAPS 등급 자동 산출: core/papsNorms.js(초4~6·남녀, 윗몸말아올리기·앉아윗몸앞으로굽히기·악력). 표는 대표님 제공본이라 공식 원문 대조 전(unverified) — 틀린 칸은 이 파일 숫자만 수정. 초1~3·중고·그 외 종목·BMI는 판정 안 함. 레코드에 grade/gradeSource 저장.
+- 제자리멀리뛰기(SBJ) 리포트에 PAPS 초4~6 등급 카드(JumpReportDashboard `PapsLongJumpGrade`, 표는 papsNorms.js `standlong`). 학년은 회원 grade, 없으면 카드에서 선택(화면 표시만).
+- 12번(필드) 심폐에 스텝테스트(퀸스칼리지, McArdle 1972)·6분 걷기(ATS 2002 절차, Enright&Sherrill 1998 예측거리 %) 추가(core/cardioTest.js `field_step`·`field_6mwt`). 출처 확인한 식만 사용, 6MWT 정상 하한(LLN)·등급 컷오프는 확인 못 해 넣지 않음. 6MWT 는 키(statureCm) 입력 필요, 40~80세만 예측거리.

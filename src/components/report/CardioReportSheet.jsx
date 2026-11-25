@@ -132,6 +132,11 @@ export default function CardioReportSheet({ report, member, previous = null, his
                 이번 측정은 VO2max를 계산하지 않았습니다. {vo2?.reason || '조건을 채우지 못했습니다.'}
               </p>
             )}
+            {p.walk6 && (
+              <p className="mt-2 break-keep text-[12px] font-semibold text-slate-600 dark:text-slate-300" data-testid="cardio-report-walk6">
+                6분 걷기 {p.walk6.distanceM ?? '-'}m{p.walk6.pctPredicted != null ? ` · 예측거리 ${p.walk6.predictedM}m 대비 ${p.walk6.pctPredicted}% (Enright & Sherrill 1998, 건강한 40~80세 기준)` : ` · ${p.walk6.reason}`}
+              </p>
+            )}
             {p.fieldRank && (
               <p className="mt-2 break-keep text-[12px] font-semibold text-slate-600 dark:text-slate-300" data-testid="cardio-report-fieldrank">
                 1.5마일 {formatClock(p.fieldRank.timeSec)} · 같은 나이·성별 백분위 {p.fieldRank.band || `약 ${p.fieldRank.percentile}`} (교재 표 8.2, Cooper Institute)
