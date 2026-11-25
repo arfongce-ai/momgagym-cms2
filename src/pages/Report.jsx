@@ -1695,7 +1695,11 @@ export default function Report() {
                       {open && (() => {
                         // 점프·보행·자세는 여러 지표를 함께 추세로 보여준다(구 점프추세/보행추세/자세체형추세 섹션 흡수).
                         // 그 외 메뉴는 기존처럼 핵심 지표 1개만 추세로 보여준다.
-                        const extraCharts = extraMenuTrendCharts(m.menu, trend, postureTrend);
+                        // [세부 테스트 분리 2026-11-25] 점프·보행 다지표 추세는 전체 리포트가 아니라 '이 묶음(세부 테스트)'의 회차만으로 만든다.
+                        const groupTrend = (m.menu === 'jump' || m.menu === 'gait')
+                          ? buildAnalysisTrend(sessions.map((x) => ({ ...(x.data || {}), kind: x.menu, createdAt: x.recordedAtFull || x.recordedAt })))
+                          : trend;
+                        const extraCharts = extraMenuTrendCharts(m.menu, groupTrend, postureTrend);
                         return (
                           <div className="border-t border-slate-200 dark:border-slate-800 p-3 space-y-3">
                             {/* 회차별 비교 차트 */}

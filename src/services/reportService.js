@@ -7,6 +7,8 @@
 //  - 회차별 누적(시계열) 데이터 생성
 //  - 키/몸무게/혈압 포함
 
+import { exerciseLabel, normalizeExerciseType } from '../ai-measure/core/lifting';
+import { subtypeOf } from '../ai-measure/core/measureSubtype';
 import { METRIC_DEFINITIONS, REPORT_TERM_MAP, defaultRecommendation } from '../ai-measure/core/unifiedReport';
 
 // 바벨/신체 속도의 물리적 상한 방어 — 실제 리프팅에서 5m/s를 넘는 값은 나올 수 없으므로
@@ -150,6 +152,8 @@ export function buildBodyReport(bodyRecords = []) {
 // jumpSubType이 없는 과거 데이터·cmj·rsi(연속)는 기존 jump_power/jump_rsi
 // 그룹 그대로 유지한다(하위호환 — 기존 리포트 이력이 갑자기 새 그룹으로
 // 옮겨가 "회차가 사라진 것처럼" 보이는 일이 없게).
+const SPLIT_BY_SUBTYPE_MENUS = new Set(['rom', 'gait', 'sprint', 'cardio']);
+
 export function menuGroupKey(session) {
   const d = session?.data || {};
   // [시니어 2026-11-24] 30초 의자·5회 의자·TUG 는 각각 별도 추이.
@@ -173,7 +177,18 @@ export function menuGroupKey(session) {
   }
   if (session?.menu === 'lifting') {
     const m = d.metrics || {};
-    return (d.mode === 'onerm' || m.oneRM != null) ? 'lifting_onerm' : 'lifting_vbt';
+    const base = (d.mode === 'onerm' || m.oneRM != null) ? 'lifting_onerm' : 'lifting_vbt';
+    // [종목 분리 2026-11-25] 스쿼트·데드리프트·벤치 등 종목이 다르면 따로 묶는다(1RM·추이가 섞이지 않게).
+    // 종목 정보가 없는 과거 기록은 예전 그룹 키 그대로.
+    const exRaw = d.exerciseType || d.metadata?.exerciseType || '';
+    return exRaw ? `${base}:${normalizeExerciseType(exRaw)}` : base;
+  }
+  // [세부 테스트 분리 2026-11-25] 관절·자세별 ROM, 걷기/달리기·촬영 방향별 보행, 스프린트·아질리티 종목별,
+  // 심폐 장비·테스트별은 서로 다른 테스트라 이력·추이를 따로 묶는다(세부 구분은 core/measureSubtype.js 단일 소스).
+  // 세부 정보가 없는 과거 기록은 예전 그룹 키(원본 menu) 그대로.
+  if (SPLIT_BY_SUBTYPE_MENUS.has(session?.menu)) {
+    const st = subtypeOf(session.menu, session);
+    if (st.key) return `${session.menu}:${st.key}`;
   }
   return session?.menu || 'etc';
 }
@@ -216,7 +231,15 @@ export function buildAiReport(aiSessions = []) {
   for (const [groupKey, rows] of Object.entries(byMenu)) {
     const latest = rows[rows.length - 1];
     const d = latest.data || {};
-    const title = GROUP_TITLE[groupKey] || latest.menuTitle || latest.menu || '기타';
+    let title = GROUP_TITLE[groupKey] || latest.menuTitle || latest.menu || '기타';
+    if (!GROUP_TITLE[groupKey] && SPLIT_BY_SUBTYPE_MENUS.has(latest.menu) && groupKey.includes(':')) {
+      const label = subtypeOf(latest.menu, latest).label;
+      if (label) title = `${title} · ${label}`;
+    }
+    if (!GROUP_TITLE[groupKey] && groupKey.startsWith('lifting_') && groupKey.includes(':')) {
+      const [baseKey, ex] = groupKey.split(':');
+      title = `${GROUP_TITLE[baseKey] || 'VBT'} · ${exerciseLabel(ex)}`.replace('1RM · 역도 · ', '1RM · ');
+    }
     let metric = '';
     switch (latest.menu) {
       case 'onerm':   metric = `1RM ${d.oneRM ?? '-'}kg (${d.liftLabel ?? ''} ${d.weight}kg×${d.reps})`; break;
@@ -229,7 +252,7 @@ export function buildAiReport(aiSessions = []) {
         break;
       case 'lifting': {
         const lm = d.metrics || {};
-        metric = groupKey === 'lifting_onerm'
+        metric = groupKey.startsWith('lifting_onerm')
           ? `1RM 추정 ${lm.oneRM ?? '-'}kg`
           : `평균속도 ${plausibleVelocity(lm.meanVelocity) ?? '-'}m/s`;
         break;
