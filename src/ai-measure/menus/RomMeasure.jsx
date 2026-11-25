@@ -15,7 +15,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { todayYMD } from '../../utils/dates';
 import { usePoseEngine } from '../core/usePoseEngine';
 import { createSmoother } from '../core/smoothing';
-import { RomAccumulator, jointAngleByMode, normalizePose, LM, symmetryIndex } from '../core/bodyMechanics';
+import { RomAccumulator, jointAngleByMode, normalizePose, LM, symmetryIndex, viewSeparationRatio, ROM_VIEW_RATIO_MAX } from '../core/bodyMechanics';
 import { generateRomDiagnosis } from '../core/romClinical';
 import { pickRecorderMime } from '../core/recordSink';
 import { beepGo, beepSuccess, primeAudio } from '../core/audioCue';
@@ -105,7 +105,12 @@ export default function RomMeasure({ member, onSave, onBack, onViewInReport }) {
   useEffect(() => { aspectRef.current = aspect; }, [aspect]);
   const [liveAngle, setLiveAngle] = useState({ left: null, right: null });
   const [elapsed, setElapsed] = useState(0);
-  const [guide, setGuide] = useState('관절이 보이게 서서, 녹화 버튼을 누른 뒤 동작을 한 번 천천히 끝까지 수행하세요.');
+  const [guide, setGuide] = useState('관절이 보이게 서서, 녹화 버튼을 누른 뒤 같은 동작을 3회 천천히 끝까지 수행하세요.');
+  // [2611] 옆모습 정렬 — 2D 각도는 카메라가 동작면과 수직일 때만 정확하다.
+  //  어깨폭/몸통길이 비율(EMA)로 정면 쪽으로 돌아섰는지 실시간 안내한다(경고만, 촬영은 막지 않음).
+  const [viewState, setViewState] = useState('unknown'); // unknown | ok | bad
+  const viewEmaRef = useRef(null);
+  const viewStateRef = useRef('unknown');
 
   // ── [2026-08-18 요청] 촬영 3-2-1 카운트다운 + 양쪽(건측→환측) 방향전환 ──
   //  · SLST(StanceLiveAnalysis.jsx)와 동일한 "버튼 → 3-2-1 → 시작" 패턴을 그대로
@@ -209,6 +214,18 @@ export default function RomMeasure({ member, onSave, onBack, onViewInReport }) {
     // 각도 판정(accRef 누적·라이브 각도 표시)은 "위/아래" 기준 계산이 섞여
     // 있어 회전 보정된 좌표를 써야 한다.
     const corrected = rotateLandmarksNormalized(smoothed, rotationDeg);
+    {
+      const vr = viewSeparationRatio(normalizePose(corrected) || corrected);
+      if (vr != null) {
+        viewEmaRef.current = viewEmaRef.current == null ? vr : 0.8 * viewEmaRef.current + 0.2 * vr;
+        const e = viewEmaRef.current;
+        // 히스테리시스 ±0.05 — 경계에서 안내가 깜빡이지 않게
+        const next = viewStateRef.current === 'bad'
+          ? (e < ROM_VIEW_RATIO_MAX - 0.05 ? 'ok' : 'bad')
+          : (e > ROM_VIEW_RATIO_MAX + 0.05 ? 'bad' : 'ok');
+        if (next !== viewStateRef.current) { viewStateRef.current = next; setViewState(next); }
+      }
+    }
     if (recordingRef.current && accRef.current) {
       const tMs = ts - startTsRef.current;
       setElapsed(Math.round(tMs / 100) / 10); // 경과시간은 스켈레톤/방향전환과 무관하게 계속 표시.
@@ -349,7 +366,7 @@ export default function RomMeasure({ member, onSave, onBack, onViewInReport }) {
       directionPausedRef.current = false;
       setSwitching(false);
       setDirection('second');
-      setGuide('이어서 환측 동작을 한 번 천천히 끝까지 수행한 뒤 "측정 종료"를 눌러주세요.');
+      setGuide('이어서 환측 동작을 3회 천천히 끝까지 수행한 뒤 "측정 종료"를 눌러주세요.');
       beepGo();
     });
   };
@@ -412,8 +429,8 @@ export default function RomMeasure({ member, onSave, onBack, onViewInReport }) {
       if (recordingRef.current) finishRecord();
     }, MAX_RECORD_MS);
     setGuide(side === 'both'
-      ? '① 건측(먼저 측정할 쪽) 동작을 천천히 수행하세요. 방향을 바꾸려면 "방향 전환"을 눌러주세요.'
-      : '동작을 한 번 천천히 최대 지점까지 수행한 뒤 돌아오세요.');
+      ? '① 건측(먼저 측정할 쪽) 동작을 3회 천천히 수행하세요. 방향을 바꾸려면 "방향 전환"을 눌러주세요.'
+      : '동작을 3회, 천천히 최대 지점까지 수행하고 돌아오세요. (반복하면 결과가 더 일정합니다)');
     beepGo();
   };
 
@@ -522,6 +539,9 @@ export default function RomMeasure({ member, onSave, onBack, onViewInReport }) {
     const A = results?.single?.angle ?? null;
     const recordedAtIso = results?.single?.recordedAt || new Date().toISOString();
     const movement = meta.movement || '';
+    // 신뢰도: 0점 흔들림·유지 편차·폰 비틀림·수동 확정 여부로 산출(고정 1.0 아님). 값이 없으면 보수적 0.8.
+    const sensorConf = typeof meta.quality?.confidence === 'number' ? meta.quality.confidence : 0.8;
+    const sensorQuality = meta.quality ? { ...meta.quality } : null;
     const summary = {
       valid: A != null,
       joint,
@@ -541,7 +561,8 @@ export default function RomMeasure({ member, onSave, onBack, onViewInReport }) {
       movement,
       angle: A,
       recordedAt: recordedAtIso,
-      confidenceScore: 1.0, // 센서(하드웨어) 기울기 — 카메라 추정 대비 고신뢰 표시
+      confidenceScore: sensorConf, // 하드웨어 기울기 + 측정 품질(0점 흔들림·비틀림·유지 편차) 반영
+      quality: sensorQuality,
     }];
     // 회차 비교 키: 같은 관절·자세·움직임끼리 묶는다(수기 움직임 라벨 반영).
     const movementSlug = movement ? `_${movement.replace(/\s+/g, '').slice(0, 24)}` : '';
@@ -552,7 +573,7 @@ export default function RomMeasure({ member, onSave, onBack, onViewInReport }) {
       measureType: 'sensor_goniometer',
       movement,
       sensor_records: sensorRecords,
-      confidenceScore: 1.0,
+      confidenceScore: sensorConf,
       pairKey,
       // 허브가 저장 성공 후 회원 신체기록에 ROM 요약을 남기도록 하는 힌트
       romBodySummary: {
@@ -562,7 +583,7 @@ export default function RomMeasure({ member, onSave, onBack, onViewInReport }) {
         angle: A,
         unit: 'deg',
         measureType: 'sensor_goniometer',
-        confidenceScore: 1.0,
+        confidenceScore: sensorConf,
       },
     });
     // 확인 즉시 데이터 자동 저장(회원 측정이력·ROM리포트·신체기록 요약).
@@ -761,6 +782,16 @@ export default function RomMeasure({ member, onSave, onBack, onViewInReport }) {
           {/* [2026-09-10] 관절·자세 구성 버튼은 촬영 전 설정 화면으로 이동 —
               촬영 화면에는 스켈레톤·궤적·게이지 HUD만 남긴다. */}
           {/* [2026-08-18 요청] 스켈레톤 OFF면 ROM 인식도 함께 멈춘다는 걸 명확히 안내 */}
+          {viewState === 'bad' && (
+            <div className="rounded-xl border border-amber-400/40 bg-amber-500/15 px-3 py-2 text-center text-xs font-bold text-amber-700 dark:text-amber-300">
+              몸이 정면 쪽으로 돌아 있어요 — 카메라를 향해 옆으로 서 주세요 (각도가 실제보다 작게 나올 수 있습니다)
+            </div>
+          )}
+          {viewState === 'ok' && !recording && (
+            <div className="rounded-xl border border-emerald-400/40 bg-emerald-500/15 px-3 py-1.5 text-center text-[11px] font-bold text-emerald-700 dark:text-emerald-300">
+              옆모습 정렬 확인됨
+            </div>
+          )}
           {recording && !skeletonOn && (
             <div className="rounded-xl border border-red-400/40 bg-red-500/15 px-3 py-2 text-center text-xs font-bold text-red-700 dark:text-red-300">
               스켈레톤이 꺼져 있어 ROM 인식이 일시 중지됐어요. 스켈레톤을 켜면 다시 측정됩니다.

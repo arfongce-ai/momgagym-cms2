@@ -116,6 +116,33 @@ export function generateRomDiagnosis(summary, { joint, poseMode } = {}) {
     }
   }
 
+  // ── 4-c) [2611] 측정 안정성 — 반복 일관성·관절 가시성·옆모습 정렬 ──
+  //  결과 수치를 믿어도 되는지(재측정이 필요한지)를 알려 준다. 등급(grade)은 바꾸지 않는다.
+  //  반복 편차 기준 5°: 교재(28쪽) 기준 팔 5°·다리 6° 이내 변화는 측정 오차 범위.
+  const stab = summary?.stability || null;
+  if (stab && Array.isArray(stab.warnings) && stab.warnings.length) {
+    const W = new Set(stab.warnings);
+    for (const [key, ko] of [['left', '좌'], ['right', '우']]) {
+      const st = stab[key] || {};
+      if (W.has(`${key}_few_reps`)) {
+        details.push(`${ko}측 동작이 ${st.rep_count ?? 0}회만 확인되었습니다 — 같은 동작을 3회 천천히 반복하면 결과가 더 일정해집니다.`);
+        flags.push('few_reps');
+      }
+      if (W.has(`${key}_rep_spread`)) {
+        details.push(`${ko}측 반복 간 최대각 차이가 ${st.rep_spread_deg}°입니다(${(st.rep_peaks || []).join('·')}°) — 측정 오차 범위(5° 안팎)를 넘어 재측정을 권장합니다.`);
+        flags.push('rep_unstable', 'retest_recommended');
+      }
+      if (W.has(`${key}_low_visibility`)) {
+        details.push(`${ko}측 관절이 화면에서 선명하게 잡힌 구간이 부족합니다 — 조명·가림(옷·기구)을 확인하고 다시 촬영하면 정확도가 올라갑니다.`);
+        flags.push('low_visibility');
+      }
+    }
+    if (W.has('view_not_side')) {
+      details.push('촬영 중 몸이 옆모습에서 벗어나(정면 쪽으로 돌아) 각도가 실제보다 작게 나왔을 수 있습니다 — 카메라를 향해 옆으로 서서 재측정해 주세요.');
+      flags.push('view_not_side', 'retest_recommended');
+    }
+  }
+
   // ── 종합 등급 ──
   let grade = 'good';
   if (
