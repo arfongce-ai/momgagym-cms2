@@ -34,6 +34,10 @@ export const CONDITION_TUNING = {
   //  0 = 전혀 회복 안 됨(매우 피곤), 10 = 완전히 회복·활력 넘침. 점수가 낮을수록 나쁘다(피로도와 방향이 반대).
   //  피로도와 마찬가지로 단독으로 risk 를 확정하지 않는다. 기준값은 참고용 시작 기본값이며 데이터가 쌓이면 조정한다.
   prsCautionAt: 4,    // 4 이하 → 주의
+
+  // ── 수면 컨디션(1~5, 자가 보고) — [2026-11-25] 간밤 잠이 어땠는지. 1 매우 나쁨 · 5 매우 좋음.
+  //  PRS 와 마찬가지로 단독으로 risk 를 확정하지 않는 참고용 시작 기본값(공인 기준 아님). 수면 시간(시간)은 기록만 하고 판정하지 않는다.
+  sleepCautionAt: 2,  // 2 이하 → 주의
 };
 
 const STATUS_RANK = { normal: 0, caution: 1, risk: 2, unknown: 3 };
@@ -53,6 +57,8 @@ function numOrNull(v) {
  * @param {number|string} [input.fatigue]  피로도 1~5
  * @param {number|string} [input.painNrs]  통증 NRS 0~10
  * @param {number|string} [input.prs]      PRS(운동 전 회복 느낌) 0~10 — 낮을수록 회복이 덜 된 상태
+ * @param {number|string} [input.sleepQuality] 수면 컨디션 1~5 — 낮을수록 잠을 못 잔 상태
+ * @param {number|string} [input.sleepHours]   수면 시간(시간, 0~24) — 기록 전용
  * @param {string} [input.memo]            한줄메모
  * @returns {object} 결과(valid 플래그 포함)
  */
@@ -61,9 +67,13 @@ export function evaluateCondition(input = {}) {
   const painNrs = numOrNull(input.painNrs);
   const prsRaw = numOrNull(input.prs);
   const prs = prsRaw == null ? null : Math.min(10, Math.max(0, prsRaw));
+  const sleepRaw = numOrNull(input.sleepQuality);
+  const sleepQuality = sleepRaw == null ? null : Math.min(5, Math.max(1, sleepRaw));
+  const hoursRaw = numOrNull(input.sleepHours);
+  const sleepHours = hoursRaw == null ? null : Math.min(24, Math.max(0, hoursRaw));
   const memo = typeof input.memo === 'string' ? input.memo.trim() : '';
 
-  if (fatigue == null && painNrs == null && prs == null && !memo) {
+  if (fatigue == null && painNrs == null && prs == null && sleepQuality == null && sleepHours == null && !memo) {
     return {
       valid: false,
       status: 'unknown',
@@ -72,6 +82,8 @@ export function evaluateCondition(input = {}) {
       fatigue: null,
       painNrs: null,
       prs: null,
+      sleepQuality: null,
+      sleepHours: null,
       memo: null,
       flags: [],
       painFlag: false,
@@ -101,6 +113,11 @@ export function evaluateCondition(input = {}) {
     status = worse(status, 'caution');
   }
 
+  if (sleepQuality != null && sleepQuality <= CONDITION_TUNING.sleepCautionAt) {
+    flags.push('sleep_poor');
+    status = worse(status, 'caution');
+  }
+
   return {
     valid: true,
     status,
@@ -109,6 +126,8 @@ export function evaluateCondition(input = {}) {
     fatigue,
     painNrs,
     prs,
+    sleepQuality,
+    sleepHours,
     memo: memo || null,
     // 통증이 주의 이상이면 true — Momi 시스템 프롬프트의 기존 안전 홀드(레드플래그)
     // 워크플로우로 그대로 흘려보내는 트리거 플래그(momiPrompt.js PART A 섹션 2/5-1 참고).

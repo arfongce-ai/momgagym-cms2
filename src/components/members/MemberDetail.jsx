@@ -162,7 +162,7 @@ export default function MemberDetail({ member:initMember, trainers, members=[], 
   const [showAiModal,  setShowAiModal]  = useState(false);
   const [aiRefreshKey, setAiRefreshKey] = useState(0);
   const [refundDraft,  setRefundDraft]  = useState(null); // 환불 수정 모달: {payment, amount, penalty, usedAmount, cardFee, vat} | null
-  const [bodyForm,     setBodyForm]    = useState({ recordedAt: todayYMD(), height:'', weight:'', systolic:'', diastolic:'', note:'', fatigue:'', painNrs:'', prs:'', conditionMemo:'' });
+  const [bodyForm,     setBodyForm]    = useState({ recordedAt: todayYMD(), height:'', weight:'', systolic:'', diastolic:'', note:'', fatigue:'', painNrs:'', prs:'', sleepQuality:'', sleepHours:'', conditionMemo:'' });
 
   const refresh = () => {
     const fresh = store.getMembers().find(m => m.id === member.id);
@@ -775,12 +775,14 @@ export default function MemberDetail({ member:initMember, trainers, members=[], 
   // ── 신체정보 등록 ─────────────────────────────────────
   // [모미 신규] 체중이 없어도 컨디션(피로도/통증/메모) 중 하나만 있으면 저장 가능하도록 완화.
   const handleAddBody = async () => {
-    const hasCondition = !!(bodyForm.fatigue || bodyForm.painNrs || bodyForm.prs !== '' || bodyForm.conditionMemo.trim());
+    const hasCondition = !!(bodyForm.fatigue || bodyForm.painNrs || bodyForm.prs !== '' || bodyForm.sleepQuality || bodyForm.sleepHours !== '' || bodyForm.conditionMemo.trim());
     if (!bodyForm.weight && !hasCondition) { alert('체중 또는 오늘의 컨디션 중 하나는 입력해 주세요.'); return; }
     const condition = evaluateCondition({
       fatigue: bodyForm.fatigue,
       painNrs: bodyForm.painNrs,
       prs: bodyForm.prs,
+      sleepQuality: bodyForm.sleepQuality,
+      sleepHours: bodyForm.sleepHours,
       memo: bodyForm.conditionMemo,
     });
     try {
@@ -793,11 +795,13 @@ export default function MemberDetail({ member:initMember, trainers, members=[], 
         fatigue: condition.fatigue,
         painNrs: condition.painNrs,
         prs: condition.prs,
+        sleepQuality: condition.sleepQuality,
+        sleepHours: condition.sleepHours,
         conditionMemo: condition.memo,
         conditionStatus: condition.valid ? condition.status : null,
       });
       refresh(); setShowAddBody(false);
-      setBodyForm({ recordedAt:todayYMD(), height:'', weight:'', systolic:'', diastolic:'', note:'', fatigue:'', painNrs:'', prs:'', conditionMemo:'' });
+      setBodyForm({ recordedAt:todayYMD(), height:'', weight:'', systolic:'', diastolic:'', note:'', fatigue:'', painNrs:'', prs:'', sleepQuality:'', sleepHours:'', conditionMemo:'' });
     } catch (e) { alert('신체정보 저장에 실패했습니다. 네트워크 확인 후 다시 시도하세요.'); }
   };
 
@@ -1682,7 +1686,7 @@ export default function MemberDetail({ member:initMember, trainers, members=[], 
                           {r.note&&<span className="text-xs text-slate-500">{r.note}</span>}
                         </div>
                         {/* [모미 신규] 컨디션 필드가 있을 때만 표시(체중만 기록한 기존 데이터는 그대로) */}
-                        {(r.fatigue!=null || r.painNrs!=null || r.prs!=null || r.conditionMemo) && (
+                        {(r.fatigue!=null || r.painNrs!=null || r.prs!=null || r.sleepQuality!=null || r.sleepHours!=null || r.conditionMemo) && (
                           <div className="flex items-center gap-2 mb-2 flex-wrap">
                             {r.conditionStatus && (
                               <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
@@ -1694,6 +1698,8 @@ export default function MemberDetail({ member:initMember, trainers, members=[], 
                             {r.fatigue!=null && <span className="text-xs text-slate-500 dark:text-slate-400">피로도 {r.fatigue}/5</span>}
                             {r.painNrs!=null && <span className="text-xs text-slate-500 dark:text-slate-400">통증 {r.painNrs}/10</span>}
                             {r.prs!=null && <span className="text-xs text-slate-500 dark:text-slate-400">회복 느낌(PRS) {r.prs}/10</span>}
+                            {r.sleepQuality!=null && <span className="text-xs text-slate-500 dark:text-slate-400">수면 {r.sleepQuality}/5{r.sleepHours!=null ? ` · ${r.sleepHours}시간` : ''}</span>}
+                            {r.sleepQuality==null && r.sleepHours!=null && <span className="text-xs text-slate-500 dark:text-slate-400">수면 {r.sleepHours}시간</span>}
                             {r.conditionMemo && <span className="text-xs text-slate-500">“{r.conditionMemo}”</span>}
                           </div>
                         )}
@@ -1784,6 +1790,22 @@ export default function MemberDetail({ member:initMember, trainers, members=[], 
                         );
                       })}
                     </div>
+                  </div>
+                  <div>
+                    <label className={LBL}>수면 컨디션(1~5) <span className="font-normal normal-case text-slate-500">— 1 매우 나쁨 · 5 매우 좋음</span></label>
+                    <div className="mt-1 grid grid-cols-5 gap-1" role="group" aria-label="수면 컨디션">
+                      {[1, 2, 3, 4, 5].map((n) => {
+                        const on = bodyForm.sleepQuality === String(n);
+                        return (
+                          <button key={n} type="button" aria-pressed={on} data-testid={`member-sleepQuality-${n}`}
+                            onClick={() => setBodyForm((p) => ({ ...p, sleepQuality: on ? '' : String(n) }))}
+                            className={`rounded-lg py-2 text-xs font-black border ${on ? 'bg-amber-500 text-slate-950 border-amber-500' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-300 dark:border-slate-700'}`}>
+                            {n}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <input type="number" min="0" max="24" step="0.5" value={bodyForm.sleepHours} onChange={pbf('sleepHours')} placeholder="수면 시간(시간) 예) 6.5" className={INP+" font-mono mt-2"}/>
                   </div>
                   <div><label className={LBL}>컨디션 메모</label><input value={bodyForm.conditionMemo} onChange={pbf('conditionMemo')} placeholder="예) 어제 스쿼트 후 무릎이 뻐근해요" maxLength={200} className={INP}/></div>
                   <div className="flex gap-2">
