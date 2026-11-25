@@ -49,6 +49,8 @@
 - 문제: 리포트 'AI 측정 이력'이 1RM을 종목 구분 없이 한 묶음(`lifting_onerm`)으로 묶어 스쿼트·데드리프트 회차·추이 그래프가 섞임.
 - 확장(같은 PR): ROM(관절·자세)·보행(걷기/달리기·방향)·스프린트(종목)·심폐(장비·테스트)도 `measureSubtype.subtypeOf` 기준으로 그룹 분리(`rom:SHOULDER:STANDING` 형태, 제목에 세부 이름). 점프·보행 다지표 추세 그래프는 전체가 아니라 해당 묶음 회차만으로 계산(`Report.jsx`). 세부 정보 없는 과거 기록은 예전 키. 자세·신체정보·한다리서기·스쿼트는 세부 테스트가 없어 그대로.
 - 수정: `reportService.menuGroupKey`가 `exerciseType`이 있으면 `lifting_onerm:squat`처럼 종목별 그룹 키, 제목은 '1RM · 스쿼트'. 종목 정보 없는 과거 기록은 예전 키 유지. VBT도 동일.
+### 2026-11-25 · Claude Code · 배포 게이트 메모 (chore/deploy-release-1125)
+- Cloudflare Production 배포는 "완료된 PR의 병합 커밋"만 허용한다(`Deploy to Cloudflare Pages`의 Require a merged pull request 단계). `main`에 직접 push한 `1efe1d6`·`e52e2e6`은 배포가 거부돼(실패) 화면에 반영되지 않았다. 이 PR 병합으로 두 커밋 내용이 함께 배포된다. 앞으로는 브랜치 → PR → 병합으로 올릴 것.
 
 ### 2026-11-25 · Claude Code · 모미 토큰 절감 (main)
 - 원인: `MomiAutoNote`가 리포트를 열 때마다 자동으로 유료 호출했고, 빈 응답 버그 때문에 노트가 저장되지 않아 열 때마다 반복 호출 + 빈 응답 재시도 이중 과금.
