@@ -60,6 +60,41 @@ export function atlasForRegions(regions = []) {
   return { tight, weak: weak.filter((n) => !tight.includes(n)) };
 }
 
+// ── 항목별 근육 경향(개인별) ── 부위 전체를 한꺼번에 칠하지 않고, '주의·위험으로 판정된 항목'마다 연결한다.
+// 판정 기준이 없는 항목(굽은 등·몸통 기울기 등)은 근육에 연결하지 않는다. 자세 패턴에서 흔히 동반되는 경향일 뿐 측정값이 아니다.
+export const ITEM_ATLAS = {
+  forward_head: { tight: [1, 4, 41], weak: [38, 37] },
+  shoulder_height: { tight: [1, 4], weak: [5] },
+  pelvis_height: { tight: [40], weak: [19] },
+};
+
+const LEVEL_RANK = { risk: 2, caution: 1 };
+
+/**
+ * 판정 항목 → { tight:[{no, causes[], rank}], weak:[...] } — 단계(위험>주의) 높은 순, 같은 근육은 원인을 합친다.
+ * 이 사람의 값에 따라 목록·원인·좌우가 달라진다.
+ */
+export function atlasForItems(items = []) {
+  const acc = { tight: new Map(), weak: new Map() };
+  items.forEach((it) => {
+    const rank = LEVEL_RANK[it.level];
+    const map = ITEM_ATLAS[it.key];
+    if (!rank || !map) return;
+    const cause = `${it.label} ${it.value}${it.unit}${it.side ? `(${it.side} 높음)` : ''} · ${it.level === 'risk' ? '위험' : '주의'}`;
+    ['tight', 'weak'].forEach((kind) => {
+      map[kind].forEach((no) => {
+        const cur = acc[kind].get(no) || { no, causes: [], rank: 0 };
+        cur.causes.push(cause); cur.rank = Math.max(cur.rank, rank);
+        acc[kind].set(no, cur);
+      });
+    });
+  });
+  const sorted = (m) => [...m.values()].sort((a, b) => b.rank - a.rank || b.causes.length - a.causes.length || a.no - b.no);
+  const tight = sorted(acc.tight);
+  const tightNos = new Set(tight.map((t) => t.no));
+  return { tight, weak: sorted(acc.weak).filter((w) => !tightNos.has(w.no)) };
+}
+
 // 움직임 영상(인체자료집에서 480p·12초·무음으로 줄인 것) — 도감 상세 화면에서 재생. 있는 근육만.
 export const ANIM_MUSCLES = [18, 19, 23, 31];
 export function muscleAnimSrc(no) { return ANIM_MUSCLES.includes(no) ? `/muscles/anim/m${pad(no)}.mp4` : null; }

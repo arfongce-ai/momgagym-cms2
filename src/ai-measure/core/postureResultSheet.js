@@ -27,9 +27,17 @@ export function levelOf(value, caution, risk) {
 
 // 지표 정의 — region 은 postureClinical.buildRegionDiagnoses 의 key 와 같다
 // (근육 경향은 buildMuscleMap 을 그대로 재사용해 문구를 한 곳에서만 관리).
+// 좌우 높이차(= 왼쪽 y − 오른쪽 y, y는 아래로 증가)의 부호로 높은 쪽을 읽는다. 후면 촬영은 좌우 라벨이
+// 뒤바뀔 수 있어 정면 값일 때만 방향을 말한다(아니면 null).
+function sideOfHigher(p) {
+  if (!p || p.source !== 'front' || !Number.isFinite(p.value) || p.value === 0) return null;
+  return p.value < 0 ? '왼쪽' : '오른쪽';
+}
+
+// judged=false 인 지표는 '검증된 기준이 없어' 단계를 매기지 않는다(기록으로만 표시) — 결과 해석(interpretation.js)과 같은 원칙.
 const DEFS = [
   {
-    key: 'forward_head', label: '거북목', view: '측면', unit: 'mm', region: 'head_neck',
+    judged: true, key: 'forward_head', label: '거북목', view: '측면', unit: 'mm', region: 'head_neck',
     plain: '귀가 어깨선보다 앞으로 나온 거리',
     read: (pv) => {
       const side = pickView(pv, ['left', 'right']);
@@ -39,7 +47,7 @@ const DEFS = [
     thresholds: () => POSTURE_THRESHOLDS.forwardHeadMm,
   },
   {
-    key: 'kyphosis', label: '굽은 등', view: '측면', unit: '°', region: 'shoulder_back',
+    judged: false, key: 'kyphosis', label: '굽은 등', view: '측면', unit: '°', region: 'shoulder_back',
     plain: '귀-어깨-골반을 이은 선이 곧은 선(180°)에서 굽은 정도',
     read: (pv) => {
       const side = pickView(pv, ['left', 'right']);
@@ -49,25 +57,25 @@ const DEFS = [
     thresholds: () => POSTURE_THRESHOLDS.kyphosisDevDeg,
   },
   {
-    key: 'shoulder_height', label: '어깨 높이 차이', view: '정면·후면', unit: 'mm', region: 'shoulder_back',
+    judged: true, key: 'shoulder_height', label: '어깨 높이 차이', view: '정면·후면', unit: 'mm', region: 'shoulder_back',
     plain: '좌우 어깨 높이 차이',
     read: (pv) => {
       const p = worseAbsMm(num(pv.front?.frontal?.shoulderHeightDiffMm), num(pv.back?.frontal?.shoulderHeightDiffMm));
-      return p.value == null ? null : { value: Math.abs(p.value), source: p.source };
+      return p.value == null ? null : { value: Math.abs(p.value), source: p.source, side: sideOfHigher(p) };
     },
     thresholds: () => POSTURE_THRESHOLDS.shoulderDiffMm,
   },
   {
-    key: 'pelvis_height', label: '골반 높이 차이', view: '정면·후면', unit: 'mm', region: 'pelvis_spine',
+    judged: true, key: 'pelvis_height', label: '골반 높이 차이', view: '정면·후면', unit: 'mm', region: 'pelvis_spine',
     plain: '좌우 골반 높이 차이',
     read: (pv) => {
       const p = worseAbsMm(num(pv.front?.frontal?.pelvisHeightDiffMm), num(pv.back?.frontal?.pelvisHeightDiffMm));
-      return p.value == null ? null : { value: Math.abs(p.value), source: p.source };
+      return p.value == null ? null : { value: Math.abs(p.value), source: p.source, side: sideOfHigher(p) };
     },
     thresholds: (sex) => genderThreshold('pelvisDiffMm', sex),
   },
   {
-    key: 'trunk_pitch', label: '몸통 앞뒤 기울기', view: '측면', unit: '°', region: 'pelvis_spine',
+    judged: false, key: 'trunk_pitch', label: '몸통 앞뒤 기울기', view: '측면', unit: '°', region: 'pelvis_spine',
     plain: '몸통이 수직선에서 앞뒤로 기운 정도',
     read: (pv) => {
       const side = pickView(pv, ['left', 'right']);
@@ -77,7 +85,7 @@ const DEFS = [
     thresholds: () => [POSTURE_THRESHOLDS.trunkPitchDeg.cautionAbove, POSTURE_THRESHOLDS.trunkPitchDeg.riskAbove],
   },
   {
-    key: 'hip_plumb', label: '골반 앞뒤 위치', view: '측면', unit: 'mm', region: 'pelvis_spine',
+    judged: false, key: 'hip_plumb', label: '골반 앞뒤 위치', view: '측면', unit: 'mm', region: 'pelvis_spine',
     plain: '발목 수직선보다 고관절이 앞뒤로 벗어난 거리',
     read: (pv) => {
       const side = pickView(pv, ['left', 'right']);
@@ -87,7 +95,7 @@ const DEFS = [
     thresholds: () => POSTURE_THRESHOLDS.ankleHipPlumbMm,
   },
   {
-    key: 'knee_plumb', label: '무릎 앞뒤 위치', view: '측면', unit: 'mm', region: 'foot_leg',
+    judged: false, key: 'knee_plumb', label: '무릎 앞뒤 위치', view: '측면', unit: 'mm', region: 'foot_leg',
     plain: '발목 수직선보다 무릎이 앞뒤로 벗어난 거리',
     read: (pv) => {
       const side = pickView(pv, ['left', 'right']);
@@ -97,7 +105,7 @@ const DEFS = [
     thresholds: () => POSTURE_THRESHOLDS.ankleKneePlumbMm,
   },
   {
-    key: 'q_angle', label: '무릎 안쪽·바깥쪽 휨', view: '정면·후면', unit: '°', region: 'foot_leg',
+    judged: false, key: 'q_angle', label: '무릎 안쪽·바깥쪽 휨', view: '정면·후면', unit: '°', region: 'foot_leg',
     plain: '고관절-무릎-발목 선이 곧은 선에서 휜 정도(Q각 참고값)',
     read: (pv) => {
       const f = qAngleDeviation(pv.front?.frontal?.qAngleProxyDeg);
@@ -143,10 +151,10 @@ export function buildPostureSheetItems({ perViewAnalysis, analysis, sex = null, 
     if (!got) continue;
     const [caution, risk] = def.thresholds(sex);
     const value = round1(got.value);
-    const level = levelOf(value, caution, risk);
-    const muscles = level === SHEET_LEVEL.normal
-      ? { tight: [], weak: [] }
-      : buildMuscleMap([{ key: def.region, level }]);
+    const level = def.judged ? levelOf(value, caution, risk) : null;
+    const muscles = level === SHEET_LEVEL.risk || level === SHEET_LEVEL.caution
+      ? buildMuscleMap([{ key: def.region, level }])
+      : { tight: [], weak: [] };
     const prevGot = prevPv ? def.read(prevPv) : null;
     const prevValue = prevGot ? round1(prevGot.value) : null;
     items.push({
@@ -162,6 +170,8 @@ export function buildPostureSheetItems({ perViewAnalysis, analysis, sex = null, 
       max: scaleMax(caution, risk),
       level,
       source: got.source || null,
+      side: got.side || null,
+      judged: def.judged,
       tight: muscles.tight.map((m) => m.name),
       weak: muscles.weak.map((m) => m.name),
       previous: prevValue,
@@ -225,4 +235,11 @@ export function buildPostureMissing({ perViewAnalysis, analysis, presentKeys = [
     else reason = hasFront ? `${FRONT_JOINTS[d.key]}이(가) 충분히 잡히지 않음` : '정면·후면을 찍지 않음';
     return { key: d.key, label: d.label, reason };
   });
+}
+
+/** 판정된(검증 기준 있는) 항목 중 가장 높은 단계. 판정 항목이 없으면 null. */
+export function overallSheetLevel(items = []) {
+  const judged = items.filter((it) => it.level);
+  if (!judged.length) return null;
+  return judged.reduce((w, it) => (RANK[it.level] > RANK[w] ? it.level : w), SHEET_LEVEL.normal);
 }
