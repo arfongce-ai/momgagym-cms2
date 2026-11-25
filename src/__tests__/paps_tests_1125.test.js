@@ -123,3 +123,19 @@ describe('PAPS 영상촬영 개편(2026-11-25)', () => {
     expect(papsEvaluationText(rec, prev)).toContain('+3회');
   });
 });
+
+describe('나이스 PAPS 매뉴얼 입력 범위(2026-11-25)', () => {
+  it('범위 밖 값은 저장은 되지만 무효(확인 필요)로 표시한다', async () => {
+    const { evaluatePapsTest, buildPapsRecord } = await import('../ai-measure/core/papsTests');
+    expect(evaluatePapsTest('curlup', 201).valid).toBe(false);
+    expect(evaluatePapsTest('curlup', 30).valid).toBe(true);
+    expect(evaluatePapsTest('pushup', 12.5).valid).toBe(false);
+    expect(evaluatePapsTest('sitreach', -41).valid).toBe(false);
+    expect(evaluatePapsTest('sitreach', -12.3).valid).toBe(true);
+    expect(buildPapsRecord({ testId: 'grip', value: 250 }).value).toBe(250);
+  });
+  it('필수평가에 없는 종목은 공식 기준 없음으로 표시', async () => {
+    const { PAPS_TESTS } = await import('../ai-measure/core/papsTests');
+    ['hang', 'pullup', 'sidestep20', 'standbend'].forEach((id) => expect(PAPS_TESTS[id].official).toBe(false));
+  });
+});
