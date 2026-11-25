@@ -865,3 +865,9 @@
 ### 2026-11-25 (추가7) 부위별 진단·Top3 단계 통일 + 근막경선 설명
 - `postureClinical.js`: 단계는 검증 기준 있는 값(거북목·어깨/골반 높이차)만. 굽은 등·무게중심·플럼라인·무릎 신전각·하지 정렬·Q각은 `measured[].reference=true`로 값만 표시, 발·다리 부위는 `LEVEL.reference`('참고(기준 없음)'). 관련 테스트 6개를 새 동작으로 수정.
 - `muscleAtlas.js` `FASCIA_LINES`/`fasciaForItems`: 판정 항목별 근막경선(Myers) '같이 확인할 곳' 설명 + 근거 한계 문구(Wilke 2016, Krause 2016). `PostureResultSheet.jsx`에 표시.
+
+### 2026-11-25 (추가8) 보폭 비율 오류 수정 + 5번 왕복달리기 보행 지표
+- `gaitBiomechanics.js` strideToHeight: 부동소수 잡음 제거(toFixed(2)), 3배 초과·비정상은 null. stepWidthPct도 300% 초과 null. `GaitReportDashboard.jsx`는 toFixed(2) 표시.
+- `SprintLiveAnalysis.jsx`: 측면 포함 모든 촬영에서 GaitCycleTracker/AngleAccumulator/BiomechAccumulator/RunMechanicsTracker 누적 → `metrics`에 케이던스·입각/유각·몸통기울기·무릎·보폭·접지/체공 저장. 임상 플래그(후면/정면)는 기존대로 depth에서만.
+- `SprintReportDashboard.jsx`: '보행 지표(참고)' 패널 + RunMechanicsCard(구버전 기록은 숨김).
+- 실기기 검증 못 함(왕복 구간 방향전환이 케이던스·입각 비율에 섞임 → 참고용).

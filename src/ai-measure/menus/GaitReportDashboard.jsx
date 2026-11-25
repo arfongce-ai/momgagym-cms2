@@ -244,7 +244,7 @@ function GaitReportDashboardInner({ report, onComment, onClose, videoBlob, membe
               <div className="flex flex-col items-center justify-center h-full py-2">
                 <div className="text-4xl font-black"
                   style={{ color: statusColor(m.strideToHeight, RANGES.stride) }}>
-                  {m.strideToHeight ?? '—'}<span className="text-base text-slate-500 dark:text-slate-400 ml-1">×</span>
+                  {m.strideToHeight != null && Number.isFinite(Number(m.strideToHeight)) ? Number(m.strideToHeight).toFixed(2) : '—'}<span className="text-base text-slate-500 dark:text-slate-400 ml-1">×</span>
                 </div>
                 <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">보폭 / 신장 비율</p>
                 <p className="text-[10px] mt-0.5"

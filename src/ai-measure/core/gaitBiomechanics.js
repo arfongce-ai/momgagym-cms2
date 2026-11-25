@@ -750,7 +750,11 @@ export class BiomechAccumulator {
     // 추정 보폭 비율(Stride to Height Ratio): 발목 최대 거리 / 신장.
     let strideToHeight = null; // [2026-10] 계산 못 하면 0이 아니라 null(미측정)
     if (this.ankleSpread.length && meanScale) {
-      strideToHeight = round1((Math.max(...this.ankleSpread) / meanScale) * 100) / 100; // 0~ (배수)
+      // [2026-11-25] round1(x*100)/100 은 부동소수 잡음(1.0999999…)이 남아 화면에 길게 찍혔다.
+      // 소수 둘째 자리 정수 반올림 후 Number 로 확정하고, 비현실적 값(>3배)은 미측정(null)으로 둔다.
+      const ratio = Math.max(...this.ankleSpread) / meanScale;
+      strideToHeight = Number.isFinite(ratio) && ratio > 0 && ratio <= 3
+        ? Number(ratio.toFixed(2)) : null; // 0~ (배수)
     }
 
     const kL = stat(this.kneeL);
@@ -781,9 +785,10 @@ export class BiomechAccumulator {
     // 같은 원시값)을 신장 대비 %로 환산 — 후면·정면뷰에서만 "보폭 너비" 의미를
     // 갖는다(측면뷰에서는 보폭 길이라 stepWidthWarnPct 기준을 적용하면 안 된다.
     // 호출부에서 orientation별로 골라 쓸 것).
-    const stepWidthPct = (this.ankleSpread.length && meanScale)
-      ? round1((Math.max(...this.ankleSpread) / meanScale) * 100)
-      : null;
+    const _swRaw = (this.ankleSpread.length && meanScale)
+      ? (Math.max(...this.ankleSpread) / meanScale) * 100 : null;
+    const stepWidthPct = (_swRaw != null && Number.isFinite(_swRaw) && _swRaw <= 300)
+      ? round1(_swRaw) : null;
     const stepWidthLevel = stepWidthPct == null ? POSTURE_STATUS.NORMAL
       : stepWidthPct >= T.stepWidthFlagPct ? POSTURE_STATUS.RISK
       : stepWidthPct >= T.stepWidthWarnPct ? POSTURE_STATUS.CAUTION
