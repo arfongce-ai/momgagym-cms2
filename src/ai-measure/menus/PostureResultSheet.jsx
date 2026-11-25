@@ -9,7 +9,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { POSE_LANDMARKS } from '../core/postureMath';
 import MuscleAtlas from './MuscleAtlas.jsx';
-import { atlasForItems, muscleById, muscleImageSrc } from '../core/muscleAtlas';
+import { atlasForItems, fasciaForItems, FASCIA_NOTE, muscleById, muscleImageSrc } from '../core/muscleAtlas';
 import {
   buildPostureSheetItems,
   buildPostureMissing,
@@ -220,6 +220,7 @@ function SkeletonSheet({ viewMap, items, photoMap = {} }) {
 function MuscleBodyMap({ items }) {
   const atlas = atlasForItems(items);
   const has = atlas.tight.length + atlas.weak.length > 0;
+  const fascia = fasciaForItems(items);
   const [atlasOpen, setAtlasOpen] = React.useState(false);
   const tile = ({ no, causes }, kind) => {
     const m = muscleById(no);
@@ -259,6 +260,22 @@ function MuscleBodyMap({ items }) {
             <button type="button" onClick={() => setAtlasOpen(true)} data-html2canvas-ignore="true"
               className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-bold text-slate-700 dark:border-slate-600 dark:text-slate-200">근육 도감 열기</button>
           </div>
+        </div>
+      )}
+      {fascia.length > 0 && (
+        <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800/40" data-testid="fascia-lines">
+          <p className="mb-1.5 text-xs font-black text-slate-800 dark:text-slate-100">근막경선으로 보면 (같이 확인할 곳)</p>
+          <ul className="space-y-2">
+            {fascia.map((f) => (
+              <li key={f.key} className="text-[11px] leading-relaxed text-slate-700 dark:text-slate-200">
+                <p className="font-bold">{f.trigger} → {f.line}</p>
+                <p className="text-slate-500">{f.path}</p>
+                <p>{f.why}</p>
+                <p className="font-semibold text-sky-700 dark:text-sky-300">→ {f.check}</p>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2 text-[10px] leading-relaxed text-slate-500">{FASCIA_NOTE}</p>
         </div>
       )}
       {atlasOpen && <MuscleAtlas onClose={() => setAtlasOpen(false)} />}
