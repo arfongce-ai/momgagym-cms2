@@ -871,3 +871,8 @@
 - `SprintLiveAnalysis.jsx`: 측면 포함 모든 촬영에서 GaitCycleTracker/AngleAccumulator/BiomechAccumulator/RunMechanicsTracker 누적 → `metrics`에 케이던스·입각/유각·몸통기울기·무릎·보폭·접지/체공 저장. 임상 플래그(후면/정면)는 기존대로 depth에서만.
 - `SprintReportDashboard.jsx`: '보행 지표(참고)' 패널 + RunMechanicsCard(구버전 기록은 숨김).
 - 실기기 검증 못 함(왕복 구간 방향전환이 케이던스·입각 비율에 섞임 → 참고용).
+
+### 2026-11-25 (추가9) 리포트 목록 중복·스프린트 상세 연결
+- 원인: `Report.jsx` DETAIL_SESSION_MENUS에 'sprint' 누락 → 5번 측정 1회가 저장 리포트 + 세션(키 나열 화면) 2건으로 표시. 스프린트 기록이 GaitReportDashboard로 열리던 것도 수정(SprintReportDashboard 연결, 같은 testKey의 직전 기록과 비교).
+- gait 분류(`Report.jsx`, `AiMeasureHub.jsx`, `crossMeasureContext.js`)에서 sprint/agility/jump 제외. 카드 제목에 종목명(5m 왕복 달리기 평가) 표시.
+- 이미 저장된 과거 기록은 그대로 두고 표시만 바뀜. 실기기 검증 못 함.

@@ -318,7 +318,7 @@ export function buildCrossMeasureIntegration({
   if (!kind) return null;
 
   const jumpReports = gaitReports.filter((item) => item?.kind === 'jump');
-  const runningReports = gaitReports.filter((item) => item?.kind === 'gait' || item?.metrics || item?.cadence);
+  const runningReports = gaitReports.filter((item) => item?.kind !== 'sprint' && item?.kind !== 'agility' && item?.kind !== 'jump' && (item?.kind === 'gait' || item?.metrics || item?.cadence));
   // [세부 테스트별 2026-11-24] 종류별 최신 1건만 쓰면 같은 측정 안의 다른 세부 테스트
   //  (예: 1RM 벤치 vs VBT 스내치, CMJ vs SJ, 관절별 ROM)가 사라진다 → 세부 테스트별 최신 1건씩.
   //  현재 측정과 같은 종류라도 세부 테스트가 다르면 참고 자료로 넣는다(같은 세부 테스트만 제외).

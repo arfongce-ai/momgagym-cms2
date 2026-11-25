@@ -110,7 +110,7 @@ describe('Report.jsx — 도착 시 pendingOpenKind로 자동 리포트 열기',
     const gaitEnd = src.indexOf('}, [pendingOpenKind, savedReports]);', gaitStart);
     const gaitBody = src.slice(gaitStart, gaitEnd);
     expect(gaitStart).toBeGreaterThan(-1);
-    expect(gaitBody).toContain("savedReports.findIndex((r) => r.kind !== 'jump')");
+    expect(gaitBody).toContain("savedReports.findIndex((r) => r.kind !== 'jump' && !isSprintKind(r))");
     expect(gaitBody).toContain('setViewerIdx(idx);');
 
     const jumpStart = src.indexOf("if (pendingOpenKind !== 'jump') return;");

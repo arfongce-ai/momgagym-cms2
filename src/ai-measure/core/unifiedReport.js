@@ -727,7 +727,10 @@ export function buildSummaryData(report = {}, options = {}) {
   const status = rawScore == null ? STATUS.unknown : scoreToStatus(score);
   const keyMetrics = extractKeyMetrics(report, reportType);
   const topFindings = extractTopFindings(report, { reportType, keyMetrics, limit: options.limit || 3 });
-  const title = options.title || reportTitle(reportType);
+  // [2026-11-25] 스프린트는 종목명(5m 왕복 달리기 등)을 제목에 붙여 같은 날 여러 번 측정해도 구분되게 한다.
+  const title = options.title || ((reportType === 'sprint' && report?.testLabel)
+    ? `${report.testLabel} 평가`
+    : reportTitle(reportType));
   const measuredAt = normalizeDate(firstDefinedPath(report, MEASURED_AT_PATHS)) || new Date().toISOString();
 
   return {
