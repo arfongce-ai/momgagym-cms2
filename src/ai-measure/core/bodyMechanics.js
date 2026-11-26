@@ -41,6 +41,9 @@ export const ROM_NORMS = Object.freeze({
     STANDING:  { flexion: { normal: 120, min: 90,  max: 145 } }, // 기능적 굴곡
     SUPINE:    { flexion: { normal: 120, min: 90,  max: 150 } }, // SLR 포함 구조적
     PRONE:     { extension: { normal: 20, min: 10, max: 35 } },
+    // [2611] 고관절 벌림(서서, 정면 촬영). 교재 6장(276쪽): 벌림 45° 제한까지.
+    //  교재 정상치: 굴곡 120° · 폄 30° · 벌림 45° · 모음 30° · 안/바깥 돌림 45°.
+    ABDUCTION: { abduction: { normal: 45, min: 30, max: 60 } },
   },
   KNEE: {
     STANDING:  { flexion: { normal: 135, min: 110, max: 150 } },
@@ -227,7 +230,20 @@ export function jointAngleByMode(landmarks, joint, side, poseMode) {
   let compensatory = null;
   let base = poseMode === 'STANDING' ? 'vertical_gravity_line' : 'trunk_axis_line';
 
-  if (joint === 'HIP') {
+  if (joint === 'HIP' && poseMode === 'ABDUCTION') {
+    // [2611] 서서 벌림(정면): 대퇴(hip→knee)와 수직 아래선 사이각. 다리 내림=0°.
+    //  모음(다리가 몸 안쪽으로)은 음수로 구분 — 반대쪽 골반 기준 '바깥쪽'이면 벌림(+).
+    //  반대쪽 골반이 안 보이면 방향을 알 수 없어 각도를 내지 않는다(측정 정직성).
+    const oppHip = get(`${OPP}_HIP`);
+    const raw = vectorToAxisAngle(hip, knee, VERTICAL_UP, false);
+    if (raw != null && hip && knee && oppHip) {
+      const mag = round(180 - raw, 1);
+      const out = Math.sign(hip.x - oppHip.x) || 1;
+      angle = (knee.x - hip.x) * out >= 0 ? mag : -mag;
+    }
+    compensatory = pelvicDrop(landmarks, side); // 골반 올림(hiking)·내려앉음 보상
+    base = 'vertical_gravity_line';
+  } else if (joint === 'HIP') {
     if (poseMode === 'STANDING') {
       // 대퇴골(hip→knee) 벡터와 수직선 사이각. 굴곡각 정의는 '다리 내림=0°,
       // 다리 위로 들어올림=180°'. vectorToAxisAngle 은 위쪽축 기준이라 내릴수록 180°가
@@ -386,7 +402,7 @@ export function detectRepPeaks(flex, { minRangeDeg = 15, minFrames = 3 } = {}) {
 export function jointMinVisibility(landmarks, joint, side, poseMode) {
   const S = side === 'left' ? 'LEFT' : 'RIGHT';
   let names;
-  if (joint === 'HIP') names = poseMode === 'STANDING' ? ['HIP', 'KNEE'] : ['SHOULDER', 'HIP', 'KNEE'];
+  if (joint === 'HIP') names = (poseMode === 'STANDING' || poseMode === 'ABDUCTION') ? ['HIP', 'KNEE'] : ['SHOULDER', 'HIP', 'KNEE'];
   else if (joint === 'KNEE') names = ['HIP', 'KNEE', 'ANKLE'];
   else if (joint === 'SHOULDER') names = (poseMode === 'STANDING' || poseMode === 'SEATED' || poseMode === 'ABDUCTION') ? ['SHOULDER', 'ELBOW'] : ['HIP', 'SHOULDER', 'ELBOW'];
   else if (joint === 'ANKLE') names = ['KNEE', 'ANKLE', 'FOOT_INDEX'];
@@ -612,7 +628,7 @@ export class RomAccumulator {
       rotation_hip_pct: rotHipPct,
       rotation_max_pct: rotationMaxPct,
       // 축 3: 골반 하강 — 기존 STANDING 전용 보상값(%)을 그대로 노출
-      pelvic_drop_pct: this.poseMode === 'STANDING' ? (compL ?? compR ?? null) : null,
+      pelvic_drop_pct: (this.poseMode === 'STANDING' || (this.poseMode === 'ABDUCTION' && this.joint === 'HIP')) ? (compL ?? compR ?? null) : null,
       baseline_samples: Math.min(BASELINE_N, this.samples.length),
     };
 

@@ -50,6 +50,7 @@ const POSE_MODES_BY_JOINT = {
     { key: 'STANDING', label: '서서 (기능적)', desc: '체중지지 상태의 기능적 굴곡' },
     { key: 'SUPINE', label: '누워서 (구조적)', desc: '보상 통제, 순수 고관절 굴곡' },
     { key: 'PRONE', label: '엎드려 (신전)', desc: '고관절 신전 가동범위' },
+    { key: 'ABDUCTION', label: '서서 벌림', desc: '다리 옆으로 들어올림(고관절 벌림, 정면 촬영, 45° 안팎)' },
   ],
   KNEE: [
     { key: 'STANDING', label: '서서', desc: '체중지지 굴곡' },
