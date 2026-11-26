@@ -37,5 +37,5 @@ describe('몸통 스켈레톤 측정', () => {
     expect(jointMinVisibility(lm, 'TRUNK', 'right', 'T_FLEXION')).toBeNull();
     expect(ROM_NORMS.TRUNK).toBeUndefined();
   });
-  it('센서 안내', () => { expect(getSensorJointTip('TRUNK').blocks.length).toBe(2); });
+  it('센서 안내', () => { expect(getSensorJointTip('TRUNK').blocks.length).toBe(3); });
 });

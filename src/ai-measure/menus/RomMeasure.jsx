@@ -69,6 +69,7 @@ const POSE_MODES_BY_JOINT = {
     { key: 'T_FLEXION', label: '몸통 숙이기', desc: '옆모습 촬영 · 서서 상체를 앞으로 숙임(무릎 펴기, 기준값 없음 — 각도만 기록)' },
     { key: 'T_EXTENSION', label: '몸통 젖히기', desc: '옆모습 촬영 · 손을 허리에 대고 뒤로 젖힘' },
     { key: 'T_LATERAL', label: '몸통 옆으로', desc: '정면 촬영 · 발 벌리고 서서 몸통을 옆으로 기울임(손은 허벅지 옆면 따라)' },
+    { key: 'T_ROTATION', label: '몸통 돌리기', desc: '정면 촬영 · 시작 때 정면 1초 후 골반은 고정하고 어깨만 좌우로 돌림(근사값)' },
   ],
   NECK: [
     { key: 'FLEXION', label: '목 숙이기', desc: '옆모습 촬영 · 시작 때 정면 응시 1초 후 턱을 가슴 쪽으로(굴곡)' },
@@ -236,7 +237,7 @@ export default function RomMeasure({ member, onSave, onBack, onViewInReport }) {
         viewEmaRef.current = viewEmaRef.current == null ? vr : 0.8 * viewEmaRef.current + 0.2 * vr;
         const e = viewEmaRef.current;
         // 히스테리시스 ±0.05 — 경계에서 안내가 깜빡이지 않게
-        const front = poseMode === 'ABDUCTION' || poseMode === 'SUPINE_ABD' || poseMode === 'LATERAL' || poseMode === 'ROTATION' || poseMode === 'T_LATERAL'; // 벌림은 정면/위에서 촬영 — 판정 방향 반대
+        const front = poseMode === 'ABDUCTION' || poseMode === 'SUPINE_ABD' || poseMode === 'LATERAL' || poseMode === 'ROTATION' || poseMode === 'T_LATERAL' || poseMode === 'T_ROTATION'; // 벌림은 정면/위에서 촬영 — 판정 방향 반대
         const next = front
           ? (viewStateRef.current === 'bad'
               ? (e > ROM_VIEW_RATIO_MIN_FRONT + 0.05 ? 'ok' : 'bad')
@@ -519,7 +520,7 @@ export default function RomMeasure({ member, onSave, onBack, onViewInReport }) {
       joint,
       poseMode,
       side,
-      viewAngle: (poseMode === 'ABDUCTION' || poseMode === 'LATERAL' || poseMode === 'ROTATION' || poseMode === 'T_LATERAL') ? 'FRONT' : poseMode === 'SUPINE_ABD' ? 'TOP' : 'SIDE',
+      viewAngle: (poseMode === 'ABDUCTION' || poseMode === 'LATERAL' || poseMode === 'ROTATION' || poseMode === 'T_LATERAL' || poseMode === 'T_ROTATION') ? 'FRONT' : poseMode === 'SUPINE_ABD' ? 'TOP' : 'SIDE',
       captureMode,
       // evaluation_result + raw_time_series_data (스키마)
       summary,
@@ -717,6 +718,7 @@ export default function RomMeasure({ member, onSave, onBack, onViewInReport }) {
       <RomSensorGoniometer
         jointName={jointName}
         jointKey={joint}
+        poseMode={poseMode}
         onBack={() => setMode('select')}
         onComplete={handleSensorComplete}
       />
@@ -808,14 +810,14 @@ export default function RomMeasure({ member, onSave, onBack, onViewInReport }) {
             <div className="rounded-xl border border-amber-400/40 bg-amber-500/15 px-3 py-2 text-center text-xs font-bold text-amber-700 dark:text-amber-300">
               {poseMode === 'SUPINE_ABD'
                 ? '카메라가 몸 바로 위를 향하지 않아요 — 폰을 몸 위에서 아래로 곧게 향하게 고정해 주세요 (각도가 실제보다 작게 나올 수 있습니다)'
-                : (poseMode === 'ABDUCTION' || poseMode === 'LATERAL' || poseMode === 'ROTATION' || poseMode === 'T_LATERAL')
+                : (poseMode === 'ABDUCTION' || poseMode === 'LATERAL' || poseMode === 'ROTATION' || poseMode === 'T_LATERAL' || poseMode === 'T_ROTATION')
                 ? '몸이 옆으로 돌아 있어요 — 카메라를 정면으로 보고 서 주세요 (각도가 실제보다 작게 나올 수 있습니다)'
                 : '몸이 정면 쪽으로 돌아 있어요 — 카메라를 향해 옆으로 서 주세요 (각도가 실제보다 작게 나올 수 있습니다)'}
             </div>
           )}
           {viewState === 'ok' && !recording && (
             <div className="rounded-xl border border-emerald-400/40 bg-emerald-500/15 px-3 py-1.5 text-center text-[11px] font-bold text-emerald-700 dark:text-emerald-300">
-              {poseMode === 'SUPINE_ABD' ? '위에서 촬영 정렬 확인됨' : (poseMode === 'ABDUCTION' || poseMode === 'LATERAL' || poseMode === 'ROTATION' || poseMode === 'T_LATERAL') ? '정면 정렬 확인됨' : '옆모습 정렬 확인됨'}
+              {poseMode === 'SUPINE_ABD' ? '위에서 촬영 정렬 확인됨' : (poseMode === 'ABDUCTION' || poseMode === 'LATERAL' || poseMode === 'ROTATION' || poseMode === 'T_LATERAL' || poseMode === 'T_ROTATION') ? '정면 정렬 확인됨' : '옆모습 정렬 확인됨'}
             </div>
           )}
           {recording && !skeletonOn && (
@@ -923,6 +925,8 @@ export default function RomMeasure({ member, onSave, onBack, onViewInReport }) {
             ? '바로 누운 몸 위에서 폰을 아래로 향하게 고정하고, 다리를 곧게 편 채 옆으로 벌립니다. 반대쪽 다리와 골반은 움직이지 않게 합니다.'
             : poseMode === 'T_FLEXION' || poseMode === 'T_EXTENSION'
             ? '옆으로 서서 무릎을 편 채 상체를 천천히 끝까지 숙이거나(굽힘) 젖힙니다(폄). 코·어깨·고관절이 보이게 서 주세요. 몸통 전체 기울기(골반 굽힘 포함)입니다.'
+            : poseMode === 'T_ROTATION'
+            ? '카메라를 정면으로 보고 서서(또는 앉아서) 시작 때 1초간 정면으로 가만히 있어 주세요(0점). 그다음 골반·발은 고정하고 어깨만 좌우로 돌립니다. 양 어깨와 고관절이 보여야 합니다. 깊이 추정 기반 근사값입니다.'
             : poseMode === 'T_LATERAL'
             ? '카메라를 정면으로 보고 발을 어깨너비로 벌려 서서, 어깨는 으쓱하지 말고 몸통을 옆으로 기울입니다.'
             : poseMode === 'LATERAL' || poseMode === 'ROTATION'
@@ -940,7 +944,7 @@ export default function RomMeasure({ member, onSave, onBack, onViewInReport }) {
   );
 }
 
-const POSE_LABEL = { STANDING: '서서', SUPINE: '누워서', PRONE: '엎드려', SEATED: '앉아서', ABDUCTION: '서서 벌림(정면)', SUPINE_ABD: '누워서 벌림(위에서 촬영)', FLEXION: '목 숙이기(옆모습)', EXTENSION: '목 젖히기(옆모습)', LATERAL: '목 옆으로(정면)', ROTATION: '목 돌리기(정면)', T_FLEXION: '몸통 숙이기(옆모습)', T_EXTENSION: '몸통 젖히기(옆모습)', T_LATERAL: '몸통 옆으로(정면)' };
+const POSE_LABEL = { STANDING: '서서', SUPINE: '누워서', PRONE: '엎드려', SEATED: '앉아서', ABDUCTION: '서서 벌림(정면)', SUPINE_ABD: '누워서 벌림(위에서 촬영)', FLEXION: '목 숙이기(옆모습)', EXTENSION: '목 젖히기(옆모습)', LATERAL: '목 옆으로(정면)', ROTATION: '목 돌리기(정면)', T_FLEXION: '몸통 숙이기(옆모습)', T_EXTENSION: '몸통 젖히기(옆모습)', T_LATERAL: '몸통 옆으로(정면)', T_ROTATION: '몸통 돌리기(정면)' };
 
 // ── 스켈레톤 드로잉 (측정 측 강조) ──
 function drawSkeleton(canvas, video, landmarks, side, joint, poseMode) {

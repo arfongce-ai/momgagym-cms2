@@ -248,7 +248,19 @@ export function jointAngleByMode(landmarks, joint, side, poseMode) {
     //    (골반 굽힘이 섞인 '몸통 전체' 굽힘각 — 등허리/허리 분절 각이 아님)
     //  · T_LATERAL(정면): 양 어깨 중점이 양 고관절 중점에서 수직으로부터 기운 각. 왼쪽 값 = 사람의 왼쪽으로 기울임.
     const deg = (r) => (r * 180) / Math.PI;
-    if (poseMode === 'T_LATERAL') {
+    if (poseMode === 'T_ROTATION') {
+      // [2611] 몸통 돌림(정면): 어깨선의 깊이(z) 기울기에서 골반선의 깊이 기울기를 뺀 '골반 대비 상체 돌림'.
+      //  카메라가 정면에서 조금 비껴 있어도 골반선이 같이 돌아 보이므로 상쇄된다. 0점은 누적기가 시작 구간에서 보정.
+      //  왼쪽 값 = 사람의 왼쪽으로 돌림(왼 어깨가 뒤로). BlazePose z는 거칠어 '근사값'이다.
+      const lS = get('LEFT_SHOULDER'), rS = get('RIGHT_SHOULDER'), lH = get('LEFT_HIP'), rH = get('RIGHT_HIP');
+      if (lS && rS && lH && rH) {
+        const yawOf = (l, r) => Math.atan2((l.z ?? 0) - (r.z ?? 0), l.x - r.x);
+        let d = deg(yawOf(lS, rS) - yawOf(lH, rH));
+        d = ((d + 540) % 360) - 180; // -180~180
+        angle = round(side === 'left' ? d : -d, 1);
+      }
+      base = 'pelvis_line';
+    } else if (poseMode === 'T_LATERAL') {
       const lS = get('LEFT_SHOULDER'), rS = get('RIGHT_SHOULDER'), lH = get('LEFT_HIP'), rH = get('RIGHT_HIP');
       if (lS && rS && lH && rH) {
         const sm = { x: (lS.x + rS.x) / 2, y: (lS.y + rS.y) / 2 };
@@ -513,7 +525,7 @@ export function jointMinVisibility(landmarks, joint, side, poseMode) {
   else if (joint === 'ELBOW') names = ['SHOULDER', 'ELBOW', 'WRIST'];
   else if (joint === 'TRUNK') {
     const g = (n) => landmarks?.[LM[n]];
-    const need = poseMode === 'T_LATERAL'
+    const need = (poseMode === 'T_LATERAL' || poseMode === 'T_ROTATION')
       ? ['LEFT_SHOULDER', 'RIGHT_SHOULDER', 'LEFT_HIP', 'RIGHT_HIP']
       : [`${S}_SHOULDER`, `${S}_HIP`, 'NOSE'];
     let m = 1;
@@ -568,7 +580,7 @@ export function viewSeparationRatio(landmarks) {
 //  시계열 누적기 — 비동기 프레임이 들어올 때마다 push, 끝나면 summary().
 //  좌/우 각도, 보상값, 타임스탬프를 시간순으로 쌓고, 스무딩 후 대표값을 낸다.
 // ────────────────────────────────────────────────────────────────────────
-export const NECK_NEUTRAL_N = 10; // 목 굽힘·폄 0점 산출에 쓰는 시작 프레임 수
+export const NECK_NEUTRAL_N = 10; // 목 굽힘·폄·몸통 돌림 0점 산출에 쓰는 시작 프레임 수
 
 export class RomAccumulator {
   constructor({ joint = 'HIP', poseMode = 'STANDING', smoothWindow = 5 } = {}) {
@@ -586,7 +598,8 @@ export class RomAccumulator {
     // [보상 프로파일] 모든 자세모드에서 체간 기울기·몸통 회전 신호를 함께 수집.
     // [2611] 목 굽힘·폄은 귀→코 선의 절대 기울기라 중립에서도 0이 아니다 — 시작 구간(처음 10프레임) 중앙값을 0점으로 삼는다.
     //  (그래서 녹화는 목을 중립(정면 응시)으로 1초 두고 시작)
-    if (this.joint === 'NECK' && (this.poseMode === 'FLEXION' || this.poseMode === 'EXTENSION')) {
+    if ((this.joint === 'NECK' && (this.poseMode === 'FLEXION' || this.poseMode === 'EXTENSION'))
+      || (this.joint === 'TRUNK' && this.poseMode === 'T_ROTATION')) {
       const nb = this._nb || (this._nb = { left: [], right: [] });
       for (const k of ['left', 'right']) {
         const o = k === 'left' ? L : R;
@@ -689,7 +702,7 @@ export class RomAccumulator {
     });
     const viewRatios = this.samples.map((x) => x.viewRatio).filter((x) => x != null);
     // 벌림(ABDUCTION)은 정면 촬영이라 판정 방향이 반대(비율이 작으면 몸이 옆으로 돌아선 것).
-    const frontView = this.poseMode === 'ABDUCTION' || this.poseMode === 'SUPINE_ABD' || this.poseMode === 'LATERAL' || this.poseMode === 'ROTATION' || this.poseMode === 'T_LATERAL'; // 정면/위에서 내려다보는 촬영
+    const frontView = this.poseMode === 'ABDUCTION' || this.poseMode === 'SUPINE_ABD' || this.poseMode === 'LATERAL' || this.poseMode === 'ROTATION' || this.poseMode === 'T_LATERAL' || this.poseMode === 'T_ROTATION'; // 정면/위에서 내려다보는 촬영
     const viewBad = (x) => (frontView ? x < ROM_VIEW_RATIO_MIN_FRONT : x > ROM_VIEW_RATIO_MAX);
     const viewBadPct = viewRatios.length
       ? Math.round((viewRatios.filter(viewBad).length / viewRatios.length) * 100) : null;

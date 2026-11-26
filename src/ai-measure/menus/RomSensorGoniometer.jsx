@@ -18,10 +18,12 @@ import { useEffect, useRef, useState } from 'react';
 import {
   createTiltTracker, requestSensorPermission, isSensorSupported,
   applyZero, isStill, hapticFeedback, roundToStep, meanDeg, createHoldDetector,
-  createPeakTracker, median, sensorConfidence,
+  createPeakTracker, median, sensorConfidence, defaultPlaneFor,
 } from '../core/sensorTilt';
 import { getSensorJointTip } from '../core/sensorJointTips';
 import { assessPlacement, accDeviation } from '../core/sensorPlacementCheck';
+import { getSweepPreset } from '../core/sensorSweep';
+import RomSensorSweep from './RomSensorSweep.jsx';
 
 const OFF_PLANE_WARN = 0.45; // (방향센서 폴백 경로 전용) |gx|/|g| 이 이 비율 이상이면 측정면 이탈 경고
 // 중력 센서 경로는 폰 비틀림으로 "예상되는 각도 오차"로 판정한다(각도가 클수록 같은 비틀림도
@@ -50,7 +52,7 @@ const DIAL_C = 2 * Math.PI * DIAL_R;
 const DIAL_C_OUT = 2 * Math.PI * (DIAL_R + 8);
 
 
-export default function RomSensorGoniometer({ jointName, jointKey, onBack, onComplete }) {
+export default function RomSensorGoniometer({ jointName, jointKey, poseMode, onBack, onComplete }) {
   // 좌/우 구분 없이 한 번 측정하고 '측정완료'로 끝낸다(단일 측정).
 
   // [수기 기록] 어느 움직임을 쟀는지 트레이너가 직접 라벨링(신체 움직임 최대 적용).
@@ -99,6 +101,17 @@ export default function RomSensorGoniometer({ jointName, jointKey, onBack, onCom
     checkBufRef.current = []; checkAccRef.current = null;
     setCheck(null); setShowCheck(next);
   };
+
+  // [측정 방향] 폰을 세로로 댈 때 움직임별 회전축이 다르다 — 몸통·목만 선택지를 보여준다(기본 앞뒤).
+  const PLANE_OPTIONS = {
+    TRUNK: [{ key: 'yz', label: '앞뒤(굽힘·폄)' }, { key: 'yx', label: '옆(가쪽 굽힘)' }, { key: 'xz', label: '돌림(숙인 자세)' }],
+    NECK: [{ key: 'yz', label: '앞뒤(굽힘·폄)' }, { key: 'yx', label: '옆(가쪽 굽힘)' }],
+  };
+  const planeOptions = PLANE_OPTIONS[jointKey] || null;
+  const [plane, setPlane] = useState(() => defaultPlaneFor(jointKey, poseMode)); // 선택한 움직임에서 자동 결정
+  const [showPlanePick, setShowPlanePick] = useState(false);
+  const [sweepOn, setSweepOn] = useState(false);
+  const sweepPreset = getSweepPreset(jointKey, plane);
 
   const [phase, setPhase] = useState('permission'); // permission | measure | record
   const [permErr, setPermErr] = useState('');
@@ -274,7 +287,7 @@ export default function RomSensorGoniometer({ jointName, jointKey, onBack, onCom
 
   // 측정 화면 진입 시 트래커 시작, 이탈 시 정지(+0점 수집 타이머 정리)
   useEffect(() => {
-    if (phase !== 'measure') return undefined;
+    if (phase !== 'measure' || sweepOn) return undefined; // 쓸기 화면은 자체 트래커를 쓴다(이중 구독 방지)
     // 자동 유지 감지기 준비(측정 진입마다 새로) — 민감도 낮춤(AUTO_BAND 넓음)
     holdRef.current = createHoldDetector({ band: AUTO_BAND, holdMs: AUTO_HOLD_MS, minAbsDeg: AUTO_MIN_DEG });
     setHoldPct(0);
@@ -282,7 +295,7 @@ export default function RomSensorGoniometer({ jointName, jointKey, onBack, onCom
     maxRef.current = 0; setMaxDeg(0);
     peakRef.current.reset();
     plateauRef.current = null;
-    const tracker = createTiltTracker({ onSample: handleSample });
+    const tracker = createTiltTracker({ onSample: handleSample, plane });
     trackerRef.current = tracker;
     tracker.start();
     return () => {
@@ -292,7 +305,7 @@ export default function RomSensorGoniometer({ jointName, jointKey, onBack, onCom
       zeroBufRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase]);
+  }, [phase, plane, sweepOn]);
 
   const activate = async () => {
     setPermErr('');
@@ -350,6 +363,9 @@ export default function RomSensorGoniometer({ jointName, jointKey, onBack, onCom
     setHoldPct(0);
   };
 
+  // 측정 방향을 바꾸면 각도 축이 달라지므로 0점·최대각을 비운다(이전 방향 값이 섞이지 않게).
+  const changePlane = (p) => { if (p === plane) return; resetSide(); setPlane(p); };
+
   // 측정완료(촬영완료) → 진동 알림 → '움직임 기록' 단계로.
   //  auto=true 면 자동 측정(끝범위 유지)으로 확정된 경우 — 진동 패턴을 다르게 준다.
   //  자동: 유지 구간의 중앙값(plateauRef) / 수동: 신뢰 구간에서 얻은 최대각(창 중앙값 최고치).
@@ -367,6 +383,7 @@ export default function RomSensorGoniometer({ jointName, jointKey, onBack, onCom
       holdSpread: pl ? Math.round(spread * 10) / 10 : null,
       tiltErrDeg: Math.round(tiltErr * 10) / 10,
       method: pl ? 'hold_median' : 'peak_window_median',
+      ...(planeOptions ? { plane } : {}), // 몸통·목: 어느 방향(앞뒤·옆·돌림)으로 쟀는지 함께 저장
     });
     // 측정완료 후 '움직임 기록' 화면으로 (자동저장은 확인 버튼에서)
     setPhase('record');
@@ -485,6 +502,11 @@ export default function RomSensorGoniometer({ jointName, jointKey, onBack, onCom
     if (zero == null) calibrateZero();
     else if (canFinish) finishMeasurement(false);
   };
+  // 쓸기 모드(몸통): 같은 센서 권한·방향 선택을 이어 쓴다. 저장은 일반 측정과 같은 onComplete 로.
+  if (sweepOn && sweepPreset) {
+    return <RomSensorSweep jointName={jointName} jointKey={jointKey} plane={plane} onBack={() => setSweepOn(false)} onComplete={onComplete} />;
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -507,6 +529,40 @@ export default function RomSensorGoniometer({ jointName, jointKey, onBack, onCom
               {b.note && <p className="text-[11px] leading-relaxed text-slate-500 dark:text-slate-400">※ {b.note}</p>}
             </div>
           ))}
+        </div>
+      )}
+
+      {planeOptions && (
+        <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-2 space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-xs font-black text-slate-700 dark:text-slate-200">
+              측정 방향: <span className="text-amber-700 dark:text-amber-300">{(planeOptions.find((o) => o.key === plane) || planeOptions[0]).label}</span>
+              <span className="ml-1 font-bold text-slate-500">· 폰은 세로로</span>
+            </p>
+            <button type="button" onClick={() => setShowPlanePick((v) => !v)}
+              className="shrink-0 text-[11px] font-black text-slate-500 underline">{showPlanePick ? '닫기' : '바꾸기'}</button>
+          </div>
+          {showPlanePick && (
+            <div className="flex gap-1.5">
+              {planeOptions.map((o) => (
+                <button key={o.key} type="button" onClick={() => changePlane(o.key)} aria-pressed={plane === o.key}
+                  className={`flex-1 rounded-lg border px-2 py-2 text-[11px] font-black ${plane === o.key
+                    ? 'border-amber-500/70 bg-amber-500/20 text-amber-800 dark:text-amber-200'
+                    : 'border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'}`}>
+                  {o.label}
+                </button>
+              ))}
+            </div>
+          )}
+          {jointKey === 'NECK' && poseMode === 'ROTATION' && (
+            <p className="text-[11px] font-bold text-rose-600">⚠ 서서·앉아서 하는 목 돌림은 축이 수직이라 센서로 잴 수 없습니다. 카메라(목 돌리기)를 쓰세요.</p>
+          )}
+          {sweepPreset && (
+            <button type="button" onClick={() => setSweepOn(true)}
+              className="w-full rounded-lg border border-emerald-500/50 bg-emerald-500/10 px-2 py-2 text-[11px] font-black text-emerald-800 dark:text-emerald-200">
+              구간별로 보기 (허리·등) — 폰을 멈추면 자동 기록
+            </button>
+          )}
         </div>
       )}
 

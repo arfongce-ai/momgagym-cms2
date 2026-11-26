@@ -117,6 +117,26 @@ export function isStill(recentDegs, { maxRange = 1.5, minSamples = 8 } = {}) {
   return hi - lo <= maxRange;
 }
 
+// ── 측정 방향(평면) 선택 ────────────────────────────────────────────────
+//  폰을 세로로(긴 변=y축이 척추·뼈 방향) 몸에 대면, 움직임마다 회전축이 다르다.
+//   · 'yz' : 짧은 변(x축)이 회전축 — 앞뒤로 숙임·젖힘(굽힘·폄). 기본값(기존 동작).
+//   · 'yx' : 화면에 수직인 z축이 회전축 — 옆으로 기울임(가쪽 굽힘). 폰 긴 변이 화면 평면에서 기운다.
+//   · 'xz' : 긴 변(y축)이 회전축 — 몸통을 바닥과 평행하게 숙인 자세의 돌림(폰 긴 변이 척추 방향).
+//  기존 함수(gravityPlaneAngleDeg(gy, gz, gx) 등)는 그대로 쓰고, 중력벡터 성분의 자리만 바꿔 넣는다.
+export const SENSOR_PLANES = ['yz', 'yx', 'xz'];
+// 선택한 움직임으로 측정 방향을 자동 결정(사용자가 따로 고르지 않아도 되게).
+//  몸통: 옆으로→'yx', 돌리기→'xz', 그 외(숙이기·젖히기)→'yz'. 목: 옆으로→'yx', 그 외→'yz'.
+export function defaultPlaneFor(jointKey, poseMode) {
+  if (jointKey === 'TRUNK') return poseMode === 'T_LATERAL' ? 'yx' : poseMode === 'T_ROTATION' ? 'xz' : 'yz';
+  if (jointKey === 'NECK') return poseMode === 'LATERAL' ? 'yx' : 'yz';
+  return 'yz';
+}
+export function planeComponents(plane, g) {
+  if (plane === 'yx') return { gy: g.y, gz: g.x, gx: g.z };
+  if (plane === 'xz') return { gy: g.z, gz: g.x, gx: g.y };
+  return { gy: g.y, gz: g.z, gx: g.x };
+}
+
 // ── 센서 지원/권한 ───────────────────────────────────────────────────────
 
 export function isSensorSupported() {
@@ -274,7 +294,7 @@ export function alphaForDt(nominalAlpha, dtMs, nominalDtMs = NOMINAL_DT_MS) {
   return 1 - Math.pow(1 - nominalAlpha, dt / nominalDtMs);
 }
 
-export function createTiltTracker({ onSample, gravityAlpha = 0.08, angleAlpha = 0.3 } = {}) {
+export function createTiltTracker({ onSample, gravityAlpha = 0.08, angleAlpha = 0.3, plane = 'yz' } = {}) {
   let g = null;              // EMA 중력벡터 {x,y,z}
   let unwrapped = null;      // 언랩 누적각(비평활)
   let smoothed = null;       // 언랩 누적각(평활)
@@ -309,14 +329,16 @@ export function createTiltTracker({ onSample, gravityAlpha = 0.08, angleAlpha = 
     g = g
       ? { x: g.x + ga * (a.x - g.x), y: g.y + ga * (a.y - g.y), z: g.z + ga * (a.z - g.z) }
       : { x: a.x, y: a.y, z: a.z };
-    emit(gravityPlaneAngleDeg(g.y, g.z, g.x), offPlaneRatio(g.x, g.y, g.z), 'motion', {
-      tiltErrDeg: estimateTiltErrorDeg(g.x, g.y, g.z),
+    const c = planeComponents(plane, g); // 측정 방향에 맞게 성분 자리를 바꿔 같은 수학을 쓴다
+    emit(gravityPlaneAngleDeg(c.gy, c.gz, c.gx), offPlaneRatio(c.gx, c.gy, c.gz), 'motion', {
+      tiltErrDeg: estimateTiltErrorDeg(c.gx, c.gy, c.gz),
       accMag: Math.hypot(a.x, a.y, a.z),
     });
   };
 
   const onOrientation = (e) => {
     if (motionSeen) return; // devicemotion 이 살아 있으면 폴백 무시
+    if (plane !== 'yz') return; // 방향센서 폴백(beta)은 짧은 변 회전축 전용 — 다른 방향은 중력 센서만 쓴다
     if (e.beta == null) return;
     tick(e);
     // beta = x축 회전각(−180..180) — 같은 축의 폴백 신호.

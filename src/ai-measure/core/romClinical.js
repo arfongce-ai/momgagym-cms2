@@ -11,7 +11,7 @@
 import { ROM_NORMS } from './bodyMechanics';
 
 const JOINT_KO = { HIP: '고관절', KNEE: '슬관절', SHOULDER: '견관절(어깨 올림)', ANKLE: '족관절', ELBOW: '주관절', NECK: '경추(목)', TRUNK: '몸통(등허리)' };
-const POSE_KO = { STANDING: '서서(체중지지)', SUPINE: '누워서(앙와위)', PRONE: '엎드려(복와위)', SEATED: '앉아서', ABDUCTION: '서서 벌림(정면)', SUPINE_ABD: '누워서 벌림(위에서 촬영)', FLEXION: '목 숙이기(옆모습)', EXTENSION: '목 젖히기(옆모습)', LATERAL: '목 옆으로(정면)', ROTATION: '목 돌리기(정면)', T_FLEXION: '몸통 숙이기(옆모습)', T_EXTENSION: '몸통 젖히기(옆모습)', T_LATERAL: '몸통 옆으로(정면)' };
+const POSE_KO = { STANDING: '서서(체중지지)', SUPINE: '누워서(앙와위)', PRONE: '엎드려(복와위)', SEATED: '앉아서', ABDUCTION: '서서 벌림(정면)', SUPINE_ABD: '누워서 벌림(위에서 촬영)', FLEXION: '목 숙이기(옆모습)', EXTENSION: '목 젖히기(옆모습)', LATERAL: '목 옆으로(정면)', ROTATION: '목 돌리기(정면)', T_FLEXION: '몸통 숙이기(옆모습)', T_EXTENSION: '몸통 젖히기(옆모습)', T_LATERAL: '몸통 옆으로(정면)', T_ROTATION: '몸통 돌리기(정면)' };
 
 // 자세·관절 정상치(평균)에서 핵심 동작(첫 키)의 normal/min/max 를 꺼낸다.
 function normFor(joint, poseMode) {
