@@ -216,8 +216,8 @@ describe('generateRomDiagnosis — 안정성 경고 문구', () => {
 
 describe('RomMeasure 배선 (소스 확인)', () => {
   const src = read('ai-measure/menus/RomMeasure.jsx');
-  it('안내 문구가 3회 반복이고, 옆모습 정렬을 실시간으로 알린다(촬영은 막지 않음)', () => {
-    expect(src).toMatch(/3회/);
+  it('안내 문구가 3~5회 반복이고, 옆모습 정렬을 실시간으로 알린다(촬영은 막지 않음)', () => {
+    expect(src).toMatch(/3~5회/);
     expect(src).toMatch(/viewSeparationRatio/);
     expect(src).toMatch(/옆모습 정렬 확인됨/);
     expect(src).not.toMatch(/disabled=\{[^}]*viewState/);

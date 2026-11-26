@@ -400,7 +400,10 @@ export function jointAngleByMode(landmarks, joint, side, poseMode) {
     }
   } else if (joint === 'ANKLE') {
     // 발목 배측굴곡 근사: 정강이(knee→ankle) 와 발(ankle→foot) 사잇각.
-    angle = angleBetween(knee, ankle, foot, false);
+    // 정강이-발 사잇각은 중립(90°)에서 발등을 들수록 작아진다 → 배측굴곡 = 90 - 사잇각.
+    // (이전에는 사잇각을 그대로 ROM 으로 기록해 20° 굽혀도 70°로 나왔다.)
+    const shinFoot = angleBetween(knee, ankle, foot, false);
+    angle = shinFoot == null ? null : round(90 - shinFoot, 1);
   } else if (joint === 'ELBOW') {
     // 주관절(팔꿈치) — 무릎과 동일한 단순 경첩 관절. 상완(shoulder→elbow)과
     // 전완(elbow→wrist) 사잇각을 그대로 쓴다(축 기준 보정 불필요). 펴면 180에
@@ -636,10 +639,13 @@ export class RomAccumulator {
     const spec = ROM_NORMS[this.joint]?.[this.poseMode] || null;
     if (!spec) return { lo: -30, hi: 200 };
     const first = Object.values(spec)[0];
+    // 대표값은 '가장 많이 움직인 쪽'(최대 굴곡)이라 가동범위가 작은 쪽 값은 걸러낼 필요가 없다.
+    // 예전엔 정상 하한(min-40)보다 작은 값을 모두 버려, 가동범위가 제한된 회원(예: 어깨 100°)은
+    // 결과가 통째로 '없음'이 되었다. 지나치게 큰 튀는 값만 상한으로 거른다.
     if (this.joint === 'KNEE' || this.joint === 'ELBOW') {
-      return { lo: Math.max(-30, 180 - first.max - 40), hi: 180 - first.min + 40 };
+      return { lo: Math.max(-30, 180 - first.max - 40), hi: 200 };
     }
-    return { lo: Math.max(-30, first.min - 40), hi: first.max + 40 };
+    return { lo: -30, hi: first.max + 40 };
   }
 
   summary() {
