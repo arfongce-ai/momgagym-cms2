@@ -51,6 +51,7 @@ const POSE_MODES_BY_JOINT = {
     { key: 'SUPINE', label: '누워서 (구조적)', desc: '보상 통제, 순수 고관절 굴곡' },
     { key: 'PRONE', label: '엎드려 (신전)', desc: '고관절 신전 가동범위' },
     { key: 'ABDUCTION', label: '서서 벌림', desc: '다리 옆으로 들어올림(고관절 벌림, 정면 촬영, 45° 안팎)' },
+    { key: 'SUPINE_ABD', label: '누워서 벌림', desc: '교재 자세 — 바로 누워 다리를 옆으로(카메라를 몸 바로 위에서 아래로 향하게 고정, 45° 안팎)' },
   ],
   KNEE: [
     { key: 'STANDING', label: '서서', desc: '체중지지 굴곡' },
@@ -222,7 +223,7 @@ export default function RomMeasure({ member, onSave, onBack, onViewInReport }) {
         viewEmaRef.current = viewEmaRef.current == null ? vr : 0.8 * viewEmaRef.current + 0.2 * vr;
         const e = viewEmaRef.current;
         // 히스테리시스 ±0.05 — 경계에서 안내가 깜빡이지 않게
-        const front = poseMode === 'ABDUCTION'; // 벌림은 정면 촬영 — 판정 방향 반대
+        const front = poseMode === 'ABDUCTION' || poseMode === 'SUPINE_ABD'; // 벌림은 정면/위에서 촬영 — 판정 방향 반대
         const next = front
           ? (viewStateRef.current === 'bad'
               ? (e > ROM_VIEW_RATIO_MIN_FRONT + 0.05 ? 'ok' : 'bad')
@@ -505,7 +506,7 @@ export default function RomMeasure({ member, onSave, onBack, onViewInReport }) {
       joint,
       poseMode,
       side,
-      viewAngle: poseMode === 'ABDUCTION' ? 'FRONT' : 'SIDE',
+      viewAngle: poseMode === 'ABDUCTION' ? 'FRONT' : poseMode === 'SUPINE_ABD' ? 'TOP' : 'SIDE',
       captureMode,
       // evaluation_result + raw_time_series_data (스키마)
       summary,
@@ -792,14 +793,16 @@ export default function RomMeasure({ member, onSave, onBack, onViewInReport }) {
           {/* [2026-08-18 요청] 스켈레톤 OFF면 ROM 인식도 함께 멈춘다는 걸 명확히 안내 */}
           {viewState === 'bad' && (
             <div className="rounded-xl border border-amber-400/40 bg-amber-500/15 px-3 py-2 text-center text-xs font-bold text-amber-700 dark:text-amber-300">
-              {poseMode === 'ABDUCTION'
+              {poseMode === 'SUPINE_ABD'
+                ? '카메라가 몸 바로 위를 향하지 않아요 — 폰을 몸 위에서 아래로 곧게 향하게 고정해 주세요 (각도가 실제보다 작게 나올 수 있습니다)'
+                : poseMode === 'ABDUCTION'
                 ? '몸이 옆으로 돌아 있어요 — 카메라를 정면으로 보고 서 주세요 (각도가 실제보다 작게 나올 수 있습니다)'
                 : '몸이 정면 쪽으로 돌아 있어요 — 카메라를 향해 옆으로 서 주세요 (각도가 실제보다 작게 나올 수 있습니다)'}
             </div>
           )}
           {viewState === 'ok' && !recording && (
             <div className="rounded-xl border border-emerald-400/40 bg-emerald-500/15 px-3 py-1.5 text-center text-[11px] font-bold text-emerald-700 dark:text-emerald-300">
-              {poseMode === 'ABDUCTION' ? '정면 정렬 확인됨' : '옆모습 정렬 확인됨'}
+              {poseMode === 'SUPINE_ABD' ? '위에서 촬영 정렬 확인됨' : poseMode === 'ABDUCTION' ? '정면 정렬 확인됨' : '옆모습 정렬 확인됨'}
             </div>
           )}
           {recording && !skeletonOn && (
@@ -903,7 +906,9 @@ export default function RomMeasure({ member, onSave, onBack, onViewInReport }) {
         </button>
         <p className="text-[11px] text-slate-500 leading-relaxed">
           ※ {POSE_LABEL[poseMode]} 자세에서는{' '}
-          {poseMode === 'ABDUCTION'
+          {poseMode === 'SUPINE_ABD'
+            ? '바로 누운 몸 위에서 폰을 아래로 향하게 고정하고, 다리를 곧게 편 채 옆으로 벌립니다. 반대쪽 다리와 골반은 움직이지 않게 합니다.'
+            : poseMode === 'ABDUCTION'
             ? '카메라를 정면으로 보고 서서 팔을 옆으로 머리 위까지 들어올립니다(어깨 올림·벌림). 체간 기울기 보상도 함께 봅니다.'
             : poseMode === 'STANDING'
             ? '체중지지 상태의 기능적 가동성과 골반 보상 작용을 함께 평가합니다.'
@@ -914,7 +919,7 @@ export default function RomMeasure({ member, onSave, onBack, onViewInReport }) {
   );
 }
 
-const POSE_LABEL = { STANDING: '서서', SUPINE: '누워서', PRONE: '엎드려', SEATED: '앉아서', ABDUCTION: '서서 벌림(정면)' };
+const POSE_LABEL = { STANDING: '서서', SUPINE: '누워서', PRONE: '엎드려', SEATED: '앉아서', ABDUCTION: '서서 벌림(정면)', SUPINE_ABD: '누워서 벌림(위에서 촬영)' };
 
 // ── 스켈레톤 드로잉 (측정 측 강조) ──
 function drawSkeleton(canvas, video, landmarks, side, joint, poseMode) {

@@ -44,6 +44,8 @@ export const ROM_NORMS = Object.freeze({
     // [2611] 고관절 벌림(서서, 정면 촬영). 교재 6장(276쪽): 벌림 45° 제한까지.
     //  교재 정상치: 굴곡 120° · 폄 30° · 벌림 45° · 모음 30° · 안/바깥 돌림 45°.
     ABDUCTION: { abduction: { normal: 45, min: 30, max: 60 } },
+    // [2611] 누워서 벌림(교재 자세, 위에서 내려다보며 촬영). 같은 45° 기준.
+    SUPINE_ABD: { abduction: { normal: 45, min: 30, max: 60 } },
   },
   KNEE: {
     STANDING:  { flexion: { normal: 135, min: 110, max: 150 } },
@@ -230,7 +232,24 @@ export function jointAngleByMode(landmarks, joint, side, poseMode) {
   let compensatory = null;
   let base = poseMode === 'STANDING' ? 'vertical_gravity_line' : 'trunk_axis_line';
 
-  if (joint === 'HIP' && poseMode === 'ABDUCTION') {
+  if (joint === 'HIP' && poseMode === 'SUPINE_ABD') {
+    // [2611] 누워서 벌림 — 카메라가 몸 바로 위에서 내려다본다(다리가 움직이는 면과 화면이 평행).
+    //  몸통 축(어깨→골반)을 연장한 선과 대퇴(hip→knee) 사이각. 다리를 곧게 뻗으면 0°.
+    //  화면 절대 좌표가 아니라 몸통 기준이라 머리 방향이 어느 쪽이어도 같다.
+    //  벌림/모음은 반대쪽 골반과 같은 쪽이면 모음(−), 반대쪽이면 벌림(+)으로 구분한다.
+    //  어깨·골반·무릎·반대쪽 골반 중 하나라도 안 보이면 각도를 내지 않는다(측정 정직성).
+    const oppHip = get(`${OPP}_HIP`);
+    const tk = angleBetween(shoulder, hip, knee, false);
+    if (tk != null && shoulder && hip && knee && oppHip) {
+      const mag = round(180 - tk, 1);
+      const t = { x: hip.x - shoulder.x, y: hip.y - shoulder.y };
+      const cross = (u, w) => u.x * w.y - u.y * w.x;
+      const cl = cross(t, { x: knee.x - hip.x, y: knee.y - hip.y });
+      const co = cross(t, { x: oppHip.x - hip.x, y: oppHip.y - hip.y });
+      angle = (cl * co <= 0) ? mag : -mag; // 반대 부호 = 반대쪽 골반에서 멀어짐 = 벌림
+    }
+    base = 'trunk_axis_line';
+  } else if (joint === 'HIP' && poseMode === 'ABDUCTION') {
     // [2611] 서서 벌림(정면): 대퇴(hip→knee)와 수직 아래선 사이각. 다리 내림=0°.
     //  모음(다리가 몸 안쪽으로)은 음수로 구분 — 반대쪽 골반 기준 '바깥쪽'이면 벌림(+).
     //  반대쪽 골반이 안 보이면 방향을 알 수 없어 각도를 내지 않는다(측정 정직성).
@@ -547,7 +566,7 @@ export class RomAccumulator {
     });
     const viewRatios = this.samples.map((x) => x.viewRatio).filter((x) => x != null);
     // 벌림(ABDUCTION)은 정면 촬영이라 판정 방향이 반대(비율이 작으면 몸이 옆으로 돌아선 것).
-    const frontView = this.poseMode === 'ABDUCTION';
+    const frontView = this.poseMode === 'ABDUCTION' || this.poseMode === 'SUPINE_ABD'; // 정면/위에서 내려다보는 촬영
     const viewBad = (x) => (frontView ? x < ROM_VIEW_RATIO_MIN_FRONT : x > ROM_VIEW_RATIO_MAX);
     const viewBadPct = viewRatios.length
       ? Math.round((viewRatios.filter(viewBad).length / viewRatios.length) * 100) : null;
