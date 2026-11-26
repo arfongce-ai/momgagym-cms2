@@ -6,7 +6,7 @@
 import { resolveBodyMetrics } from '../../services/bodyMetrics';
 import { useRef, useState, useEffect, useCallback } from 'react';
 import { usePoseEngine } from '../core/usePoseEngine';
-import { personHeightRatio, barbellPoint } from '../core/barbell';
+import { personHeightRatio, barbellPoint, pushTrailPoint } from '../core/barbell';
 import { velocityZone } from '../core/performance';
 import {
   detectPlatesFromVideo, suggestSidePlates, totalWeight,
@@ -18,6 +18,8 @@ import { drawLiftingDataHud, drawFadingBarPath } from '../core/recordingOverlay'
 import { isOlyType, analyzeOlyLift, pickSideJoints, betterSide, frontalRatio } from '../core/olyLiftAnalysis';
 import { DEFAULT_ASPECT, outputSize, aspectLabel, drawVideoCover, coverMapPath, rotateLandmarksNormalized } from '../core/recordAspect';
 import { useCameraRotation } from '../core/useCameraRotation';
+import CameraViewPicker from './CameraViewPicker.jsx';
+import { wantForView, defaultView } from '../core/cameraViewGuide';
 import { assessFraming, FRAMING_PRESETS, MIN_CAMERA_DISTANCE_MM } from '../core/framingGuide';
 import {
   CALIBRATION_PRESETS, buildReferenceScale, ratioToCm,
@@ -44,6 +46,12 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
   //  coverMapPath(회전 보정 포함)와 라이브 캔버스가 맞는다. fusedRef 는 회전 보정된 좌표라
   //  표시 전용 raw 궤적을 따로 둔다(판정·속도 계산에는 관여하지 않음).
   const trailRef = useRef([]);
+  const trailStateRef = useRef({ skipped: 0 });
+  const [cameraView, setCameraView] = useState(() => defaultView(exerciseType));
+  const viewWantRef = useRef(wantForView(defaultView(exerciseType)));
+  useEffect(() => { setCameraView(defaultView(exerciseType)); }, [exerciseType]);
+  useEffect(() => { viewWantRef.current = wantForView(cameraView); }, [cameraView]);
+  const trailFadeMs = () => (isOlyType(exerciseTypeRef.current) ? 5000 : 900);
   const olySamplesRef = useRef([]);   // 스내치·클린&저크 구간/각도 분석용 프레임 샘플
   const olySideRef = useRef(null);
   const olyAspectRef = useRef(1);
@@ -103,7 +111,7 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
       const ctx = canvas.getContext('2d');
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       if (trailOnRef.current && recordingRef.current) {
-        drawFadingBarPath(ctx, trailRef.current, canvas.width, canvas.height, ts, { fadeMs: 900, minWidthDivisor: canvas.width / 6 });
+        drawFadingBarPath(ctx, trailRef.current, canvas.width, canvas.height, ts, { fadeMs: trailFadeMs(), minWidthDivisor: canvas.width / 6 });
       }
     }
 
@@ -127,7 +135,7 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
       if (recordingRef.current) phSamplesRef.current.push(ph);
     }
 
-    const fr = assessFraming(lms, { want: FRAMING_PRESETS.vbt.want, minDistanceMm: MIN_CAMERA_DISTANCE_MM.vbt, upperOnly: exerciseTypeRef.current === 'bench_press' });
+    const fr = assessFraming(lms, { want: viewWantRef.current, minDistanceMm: MIN_CAMERA_DISTANCE_MM.vbt, upperOnly: exerciseTypeRef.current === 'bench_press' });
     if (fr.level !== framingRef.current.level || fr.message !== framingRef.current.message) {
       framingRef.current = fr;
       setFraming({ level: fr.level, message: fr.message });
@@ -162,9 +170,9 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
       }
       const rawBar = barbellPoint(rawLms);
       if (rawBar) {
-        const tr = trailRef.current;
-        tr.push({ x: rawBar.x, y: rawBar.y, ts });
-        while (tr.length && ts - tr[0].ts > 1200) tr.shift();
+        // 클린·스내치는 당기기→캐치→일어서기 전체 경로가 보여야 해서 오래 남기고(5초),
+        // 손목이 튀는 구간(랙·캐치)은 걸러서 선이 어지럽지 않게 한다.
+        pushTrailPoint(trailRef.current, trailStateRef.current, rawBar, ts, { keepMs: trailFadeMs() + 300 });
       }
       frameStatsRef.current.total += 1;
       // 실시간 렙 카운트 + 렙 속도/저하 — 엔진이 프레임마다 갱신.
@@ -278,7 +286,7 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
       if (trailOnRef.current && recordingRef.current && trailRef.current.length > 1) {
         const mapped = coverMapPath(trailRef.current, video, canvas.width, canvas.height, rotationDeg)
           .map((p, i) => ({ x: p.x, y: p.y, ts: trailRef.current[i]?.ts }));
-        drawFadingBarPath(ctx, mapped, canvas.width, canvas.height, performance.now(), { fadeMs: 900 });
+        drawFadingBarPath(ctx, mapped, canvas.width, canvas.height, performance.now(), { fadeMs: trailFadeMs() });
       }
       const elapsedSec = recordingRef.current ? (performance.now() - recordStartRef.current) / 1000 : null;
       drawLiftingDataHud(ctx, canvas.width, canvas.height, {
@@ -500,6 +508,7 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
     onSave?.({
       type: 'vbt',
       exerciseType: exerciseType || null,
+      cameraView,
       source: 'live',
       lostRatio: result.lostRatio ?? null,
       distance: result.distanceM,
@@ -720,6 +729,7 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
           hint="거리·속도 환산에 사용" />
       )}
 
+      <CameraViewPicker exerciseType={exerciseType} value={cameraView} onChange={setCameraView} />
       <FramingIntro preset={FRAMING_PRESETS.vbt} onStart={startCam} startLabel="📷 카메라 시작 (전체화면)" />
 
       <details className="rounded-xl bg-white dark:bg-slate-900/60 border border-slate-300 dark:border-slate-700">

@@ -38,7 +38,7 @@ describe('PAPS 자동 카운터', () => {
     const frames = [...cycle, ...cycle, ...cycle].map(armPose);
     expect(run(c, frames, 300).count).toBe(3);
     const c2 = createPapsAutoCounter({ testId: 'pushup', smoothing: 1 });
-    expect(run(c2, [170, 130, 120, 130, 170, 130, 120].map(armPose), 300).count).toBe(0);
+    expect(run(c2, [170, 150, 145, 150, 170, 150, 145].map(armPose), 300).count).toBe(0);
   });
   it('윗몸말아올리기: 눕힘→일으킴 2번 = 2회', () => {
     const c = createPapsAutoCounter({ testId: 'curlup', smoothing: 1 });
@@ -65,5 +65,30 @@ describe('PAPS 자동 카운터', () => {
   it('지원 테스트 목록', () => {
     ['pushup', 'pullup', 'curlup', 'sidestep20'].forEach((id) => expect(supportsPapsAuto(id)).toBe(true));
     ['hang', 'sitreach', 'standbend', 'grip'].forEach((id) => expect(supportsPapsAuto(id)).toBe(false));
+  });
+});
+
+describe('푸시업 극점 폭 방식 (실제 영상 6~7회가 4회로 나오던 문제)', () => {
+  const sim = (seq, step = 120) => {
+    const c = createPapsAutoCounter({ testId: 'pushup', smoothing: 0.5 });
+    return run(c, seq.map(armPose), step).count;
+  };
+  const wave = (hi, lo, reps, n = 8) => {
+    const out = [];
+    for (let r = 0; r < reps; r++) for (let i = 0; i < n; i++) out.push(lo + ((hi - lo) * (1 + Math.cos((2 * Math.PI * i) / n))) / 2);
+    return out;
+  };
+  it('끝까지 못 펴는 푸시업(140°↔85°)도 센다', () => { expect(sim(wave(140, 85, 6))).toBe(6); });
+  it('깊이가 얕은 푸시업(165°↔115°)도 센다', () => { expect(sim(wave(165, 115, 6))).toBe(6); });
+  it('정상 푸시업(170°↔80°) 7회 = 7회', () => { expect(sim(wave(170, 80, 7))).toBe(7); });
+  it('떨림(±5°)만 있는 정지 자세는 세지 않는다', () => {
+    const still = Array.from({ length: 60 }, (_, i) => 165 + (i % 2 ? 5 : -5));
+    expect(sim(still)).toBe(0);
+  });
+  it('두 팔 각도를 평균한다', () => {
+    const lm = armPose(150);
+    lm[12] = { x: 0.5, y: 0.3, visibility: 1 }; lm[14] = { x: 0.5, y: 0.5, visibility: 1 };
+    const rad = (140 * Math.PI) / 180; lm[16] = { x: 0.5 + 0.2 * Math.sin(rad), y: 0.5 - 0.2 * Math.cos(rad), visibility: 1 };
+    expect(Math.round(elbowAngleSignal(lm))).toBe(145);
   });
 });

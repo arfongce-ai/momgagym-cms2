@@ -8,6 +8,8 @@ import { useRef, useState, useEffect, useCallback } from 'react';
 import { usePoseEngine } from '../core/usePoseEngine';
 import { personHeightRatio, barbellPoint, barTiltDeg, summarizeBarTilt } from '../core/barbell';
 import { createMultiTracker } from '../core/endcapTracker';
+import CameraViewPicker from './CameraViewPicker.jsx';
+import { wantForView, defaultView } from '../core/cameraViewGuide';
 import { assessFraming, FRAMING_PRESETS, MIN_CAMERA_DISTANCE_MM } from '../core/framingGuide';
 import {
   detectPlatesFromVideo, suggestSidePlates, totalWeight, createPlateBlobTracker,
@@ -35,6 +37,10 @@ import LiftingResultSheet from './LiftingResultSheet';
 const MAX_RECORDING_MS = 60000;
 
 export default function LiftingMeasure({ member, onSave, onBack, exerciseType, embedded = false, autoStartSignal = 0, topOffset = 0 }) {
+  const [cameraView, setCameraView] = useState(() => defaultView(exerciseType));
+  const viewWantRef = useRef(wantForView(defaultView(exerciseType)));
+  useEffect(() => { setCameraView(defaultView(exerciseType)); }, [exerciseType]);
+  useEffect(() => { viewWantRef.current = wantForView(cameraView); }, [cameraView]);
   const canvasRef = useRef(null);
   const capRef = useRef(createMultiTracker());
   // ── 다중 신호 융합 ──
@@ -125,7 +131,7 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
       if (recordingRef.current) phSamplesRef.current.push(ph);
     }
 
-    const fr = assessFraming(lms, { want: FRAMING_PRESETS.lifting.want, minDistanceMm: MIN_CAMERA_DISTANCE_MM.lifting });
+    const fr = assessFraming(lms, { want: viewWantRef.current, minDistanceMm: MIN_CAMERA_DISTANCE_MM.lifting });
     if (fr.level !== framingRef.current.level || fr.message !== framingRef.current.message) {
       framingRef.current = fr;
       setFraming({ level: fr.level, message: fr.message });
@@ -144,7 +150,7 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
     // 두고(융합 로직 내부 일관성 유지), 판정에 들어가기 직전(최종 융합 지점·
     // COG)에서만 보정한다.
     const correctedLms = rotateLandmarksNormalized(lms, rotationDeg);
-    const correctedFr = assessFraming(correctedLms, { want: FRAMING_PRESETS.lifting.want, minDistanceMm: MIN_CAMERA_DISTANCE_MM.lifting });
+    const correctedFr = assessFraming(correctedLms, { want: viewWantRef.current, minDistanceMm: MIN_CAMERA_DISTANCE_MM.lifting });
     const correctedCog = estimateBodyCOG(correctedLms, correctedFr.orientation);
 
     const r = roiRef.current;
@@ -837,6 +843,7 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
       )}
 
       {/* 카메라 시작을 최상단으로(요구사항: 카메라 우선) */}
+      <CameraViewPicker exerciseType={exerciseType} value={cameraView} onChange={setCameraView} />
       <FramingIntro preset={FRAMING_PRESETS.lifting} onStart={startCam} startLabel="📷 카메라 시작 (전체화면)" />
 
       <p className="text-[11px] text-slate-500 leading-relaxed">
