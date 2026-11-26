@@ -240,20 +240,14 @@ describe('회차 비교 대체 지표 — VO2max 등 대표값이 없는 테스�
     expect(r.unit).toBe('초');
     expect(r.lowerBetter).toBe(true);
   });
-  it('커브드 12분: 이동 거리, 출력만 있으면 평균 출력', async () => {
+  it('커브드 12분은 이동 거리로 비교', async () => {
     const { extractSessionMetric } = await import('../pages/Report.jsx');
     expect(extractSessionMetric({ menu: 'cardio', data: { protocolId: 'curved_12min', result: { distanceM: 2100, durationSec: 720 } } }).value).toBe(2100);
-    expect(extractSessionMetric({ menu: 'cardio', data: { protocolId: 'x', result: { avgPowerW: 180 } } }).unit).toBe('W');
   });
-  it('VO2max 가 있으면 기존대로 VO2max', async () => {
+  it('VO2max 를 내는 테스트는 VO2max 만 — 값이 없으면 거리 등으로 바꿔 단위를 섞지 않는다', async () => {
     const { extractSessionMetric } = await import('../pages/Report.jsx');
     expect(extractSessionMetric({ menu: 'cardio', data: { confirmedVo2max: 42 } }).value).toBe(42);
-  });
-  it('스프린트·한다리서기·스쿼트도 값이 잡힌다', async () => {
-    const { extractSessionMetric } = await import('../pages/Report.jsx');
-    expect(extractSessionMetric({ menu: 'sprint', data: { totalTimeMs: 2340 } }).value).toBe(2.34);
-    expect(extractSessionMetric({ menu: 'stance', data: { eyesOpen: { left: { trials: [{ holdTimeMs: 12000 }, { holdTimeMs: 15000 }] }, right: { trials: [{ holdTimeMs: 9000 }] } } } }).value).toBe(15);
-    expect(extractSessionMetric({ menu: 'squat', data: { fmsScore: 2 } }).value).toBe(2);
+    expect(extractSessionMetric({ menu: 'cardio', data: { protocolId: 'field_cooper12', result: { distanceM: 2358 } } }).value).toBeNull();
   });
   it('요약 줄: 커브드 심폐는 "N회 측정"이 아니라 기록을 보여준다', () => {
     const { menuSummaries } = buildAiReport([

@@ -45,6 +45,10 @@
 
 ## 작업 로그
 
+### 2026-11-26 · Claude Code · 회차비교 범위 축소 (fix/history-compare-scope-1126)
+- PR #107 보정: 에어바이크 Åstrand 등 VO2max 를 내는 테스트에서 VO2max 없는 회차가 거리(m)로 바뀌어 한 그래프에 단위가 섞임 → **커브드 트레드밀(basis curved)만** 시간/거리로 비교, 나머지 심폐는 VO2max 만.
+- 스프린트·한다리서기·스쿼트 이력 값 추출은 원복(각자 전용 리포트의 전/후 비교가 있어 그대로 유지).
+
 ### 2026-11-26 · Claude Code · 리포트 이력 회차비교 대체 지표 (fix/history-compare-cardio-1126)
 - 원인: `Report.jsx extractSessionMetric` 이 심폐를 VO2max 로만 뽑아, VO2max 없는 커브드 트레드밀은 값이 null → "회차 비교는 2회차부터" 표시.
 - 수정: 심폐는 VO2max → (거리목표) 기록 시간 → (시간목표) 이동 거리 → 평균 출력 순 대체. 시간은 낮을수록 좋음(`lowerBetter`, 변화 색상 반전). 스프린트(총 시간)·한다리서기(눈뜸 최고 유지)·스쿼트(FMS 점수)도 값 추출 추가. `reportService menuSummaries` 에 cardio·sprint 요약 줄 추가.

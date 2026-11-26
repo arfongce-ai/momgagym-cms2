@@ -851,32 +851,20 @@ export function extractSessionMetric(session) {
       return { value: plausibleVelocity(m.meanVelocity), unit: 'm/s', label: d.mode === 'lifting' ? '역도 평균속도' : 'VBT 평균속도' };
     }
     case 'cardio': {
-      // [회차비교 2026-11-26] VO2max가 없는 테스트(커브드 트레드밀 등)도 회차별 비교가 되도록
-      // 프로토콜 목표(거리/시간)에 맞춰 시간·거리·평균출력 중 하나를 대표값으로 쓴다.
       const v = d.estimates?.vo2max;
       const shown = Number.isFinite(d.confirmedVo2max) ? d.confirmedVo2max : (v?.calibratedValue ?? v?.value);
       const name = `${d.machineLabel ?? ''} ${d.protocolLabel ?? ''}`.trim();
       if (Number.isFinite(shown)) return { value: shown, unit: 'mL/kg/min', label: `VO2max (${name})`.trim() };
+      // VO2max 를 내는 테스트(에어바이크·쿠퍼 등)는 VO2max 만 비교한다(단위가 섞이면 그래프가 깨진다).
+      // VO2max 를 일부러 안 내는 커브드 트레드밀만 기록 시간/이동 거리로 비교한다.
+      const proto = getProtocol(d.protocolId);
+      if (proto?.basis !== 'curved') return { value: null, unit: 'mL/kg/min', label: `VO2max (${name})`.trim() };
       const r = d.result || {};
-      const tgt = getProtocol(d.protocolId)?.target || {};
+      const tgt = proto.target || {};
       if (tgt.distanceM && Number.isFinite(r.durationSec)) return { value: r.durationSec, unit: '초', label: `기록 시간 (${name})`.trim(), lowerBetter: true };
       if (tgt.durationSec && Number.isFinite(r.distanceM)) return { value: r.distanceM, unit: 'm', label: `이동 거리 (${name})`.trim() };
-      if (Number.isFinite(r.avgPowerW)) return { value: r.avgPowerW, unit: 'W', label: `평균 출력 (${name})`.trim() };
-      if (Number.isFinite(r.durationSec)) return { value: r.durationSec, unit: '초', label: `기록 시간 (${name})`.trim(), lowerBetter: true };
-      if (Number.isFinite(r.distanceM)) return { value: r.distanceM, unit: 'm', label: `이동 거리 (${name})`.trim() };
       return { value: null, unit: '', label: `심폐지구력 (${name})`.trim() };
     }
-    case 'sprint': {
-      const t = d.totalTimeMs ?? d.metrics?.totalTimeMs;
-      if (Number.isFinite(t)) return { value: Math.round(t) / 1000, unit: '초', label: '총 소요시간', lowerBetter: true };
-      const pv = d.peakVelocityMs ?? d.avgVelocityMs;
-      return { value: Number.isFinite(pv) ? pv : null, unit: 'm/s', label: '속도' };
-    }
-    case 'stance': {
-      const holds = ['left', 'right'].flatMap((k) => (d.eyesOpen?.[k]?.trials || d[k]?.trials || []).map((t) => t?.holdTimeMs)).filter(Number.isFinite);
-      return { value: holds.length ? Math.round(Math.max(...holds)) / 1000 : null, unit: '초', label: '한다리서기 최고 유지(눈뜸)' };
-    }
-    case 'squat':   return { value: Number.isFinite(d.fmsScore) ? d.fmsScore : null, unit: '점', label: '딥 스쿼트 FMS 점수' };
     case 'paps':    return { value: Number.isFinite(d.value) ? d.value : null, unit: d.unit || '', label: `${d.testLabel || 'PAPS 테스트'}${d.variant === 'knee' ? ' (무릎)' : ''}` };
     case 'senior':  return { value: Number.isFinite(d.value) ? d.value : null, unit: d.unit || '', label: `${d.testLabel || '시니어 테스트'}${d.statusLabel ? ` (${d.statusLabel})` : ''}` };
     case 'rsi':     return { value: d.rsi, unit: '', label: `RSI · 높이 ${d.heightCm ?? '-'}cm` };

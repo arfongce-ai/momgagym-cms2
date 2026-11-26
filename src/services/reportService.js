@@ -274,10 +274,9 @@ export function buildAiReport(aiSessions = []) {
         const cr = d.result || {};
         metric = Number.isFinite(cv) ? `VO2max ${cv}mL/kg/min`
           : Number.isFinite(cr.durationSec) ? `기록 ${cr.durationSec}초${Number.isFinite(cr.distanceM) ? ` · ${cr.distanceM}m` : ''}`
-          : Number.isFinite(cr.distanceM) ? `이동 ${cr.distanceM}m` : `${rows.length}회 측정`;
+          : `${rows.length}회 측정`;
         break;
       }
-      case 'sprint': metric = Number.isFinite(d.totalTimeMs) ? `총 ${(d.totalTimeMs / 1000).toFixed(2)}초` : `${rows.length}회 측정`; break;
       case 'body':    metric = `${d.weight ?? '-'}kg${d.systolic ? ` · ${d.systolic}/${d.diastolic}` : ''}`; break;
       default:        metric = `${rows.length}회 측정`;
     }
