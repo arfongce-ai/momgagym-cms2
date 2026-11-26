@@ -15,7 +15,8 @@ const L = { sh: [11, 12], el: [13, 14], wr: [15, 16], hip: [23, 24], knee: [25, 
 
 // 테스트별 문턱(시작값). 사람·카메라 위치에 따라 달라질 수 있어 실기기에서 조정한다.
 export const PAPS_AUTO_CONFIG = {
-  pushup:     { signal: 'elbow',   rest: 150, active: 100, activeIs: 'low'  },
+  // pushup: 문턱 고정 대신 '내려갔다 올라오는 폭(swing)'으로 센다. 팔을 끝까지 못 펴거나 비스듬히 찍혀도 센다.
+  pushup:     { signal: 'elbow',   rest: 150, active: 100, activeIs: 'low', swing: 22, minTop: 105, maxBottom: 125 },
   pullup:     { signal: 'elbow',   rest: 150, active: 75,  activeIs: 'low'  },
   curlup:     { signal: 'incline', rest: 8,   active: 20,  activeIs: 'high' },
   sidestep20: { signal: 'lateral', amp: 1.0 },
@@ -41,17 +42,19 @@ function angleAt(a, b, c) {
   return (Math.acos(cos) * 180) / Math.PI;
 }
 
-/** 팔꿈치 각도(도). 어깨·팔꿈치·손목이 더 잘 보이는 쪽 팔을 쓴다. 안 잡히면 null. */
+/** 팔꿈치 각도(도). 두 팔이 다 보이면 평균(좌우 팔이 번갈아 선택되며 값이 튀는 것 방지), 하나만 보이면 그 팔. 안 잡히면 null. */
 export function elbowAngleSignal(lm) {
   if (!Array.isArray(lm) && !lm?.length) return null;
-  let best = null;
+  const arms = [];
   [0, 1].forEach((i) => {
     const s = lm[L.sh[i]]; const e = lm[L.el[i]]; const w = lm[L.wr[i]];
     if (!ok(s) || !ok(e) || !ok(w)) return;
-    const vis = (s.visibility ?? 1) + (e.visibility ?? 1) + (w.visibility ?? 1);
-    if (!best || vis > best.vis) best = { vis, ang: angleAt(s, e, w) };
+    const ang = angleAt(s, e, w);
+    if (ang != null) arms.push({ vis: (s.visibility ?? 1) + (e.visibility ?? 1) + (w.visibility ?? 1), ang });
   });
-  return best && best.ang != null ? best.ang : null;
+  if (!arms.length) return null;
+  if (arms.length === 2 && Math.abs(arms[0].ang - arms[1].ang) <= 35) return (arms[0].ang + arms[1].ang) / 2;
+  return arms.sort((a, b) => b.vis - a.vis)[0].ang;
 }
 
 /** 몸통 기울기(도, 0=수평·90=수직). 어깨·엉덩이가 안 잡히면 null. */
@@ -105,6 +108,23 @@ export function createPapsAutoCounter({ testId = 'pushup', smoothing = 0.5, cali
     return true;
   }
 
+  // 푸시업: 극점 추적(지그재그). 위(펴짐) 극점에서 swing 이상 내려가면 1회, 바닥 극점에서 swing 이상 올라와야 다음 회 준비.
+  let top = null; let bottom = null; let zz = 'up';
+  function pushSwing(sig, tMs) {
+    if (sig == null) return false;
+    ema = ema == null ? sig : ema + smoothing * (sig - ema);
+    if (top == null) { top = ema; bottom = ema; return true; }
+    if (zz === 'up') {
+      if (ema > top) top = ema;
+      if (top - ema >= cfg.swing && top >= cfg.minTop && ema <= cfg.maxBottom) { zz = 'down'; bottom = ema; countRep(tMs); }
+    } else {
+      if (ema < bottom) bottom = ema;
+      if (ema - bottom >= cfg.swing) { zz = 'up'; top = ema; }
+    }
+    state = zz === 'down' ? 'active' : 'rest';
+    return true;
+  }
+
   function pushLateral(sig, tMs) {
     if (!sig) return false;
     if (calibStart == null) calibStart = tMs;
@@ -127,7 +147,7 @@ export function createPapsAutoCounter({ testId = 'pushup', smoothing = 0.5, cali
 
   function push(landmarks, tMs) {
     let tracked = false;
-    if (cfg.signal === 'elbow') tracked = pushAngle(elbowAngleSignal(landmarks), tMs);
+    if (cfg.signal === 'elbow') tracked = cfg.swing ? pushSwing(elbowAngleSignal(landmarks), tMs) : pushAngle(elbowAngleSignal(landmarks), tMs);
     else if (cfg.signal === 'incline') tracked = pushAngle(trunkInclineSignal(landmarks), tMs);
     else if (cfg.signal === 'lateral') tracked = pushLateral(lateralSignal(landmarks), tMs);
     if (tracked) lastSignalAt = tMs;
@@ -146,6 +166,7 @@ export function createPapsAutoCounter({ testId = 'pushup', smoothing = 0.5, cali
     push,
     snapshot: () => snapshot(ema != null),
     reset() {
+      top = null; bottom = null; zz = 'up';
       ema = null; state = 'unknown'; reps = 0; lastRepAt = -Infinity; startedAtMs = null; lastSignalAt = null;
       centerSum = 0; centerN = 0; center = null; calibStart = null; events.length = 0;
     },

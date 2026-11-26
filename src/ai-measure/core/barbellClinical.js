@@ -55,7 +55,7 @@ export function velocityLossInterpretation(lossPct) {
 const gradeRank = { excellent: 4, good: 3, fair: 2, needs_work: 1 };
 const worse = (a, b) => (gradeRank[a] <= gradeRank[b] ? a : b);
 
-function pickMetrics(report = {}) {
+export function pickMetrics(report = {}) {
   // 표준 페이로드({metrics,metadata})와 측정 직후 결과(flat)를 모두 수용.
   const m = report.metrics || {};
   const meta = report.metadata || {};

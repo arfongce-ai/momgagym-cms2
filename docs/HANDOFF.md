@@ -45,6 +45,12 @@
 
 ## 작업 로그
 
+### 2026-11-26 · Claude Code · VBT 궤적·푸시업 카운터·쉬운 해석·촬영 위치 (fix/vbt-trail-pushup-1126)
+- 궤적(`VbtMeasure.jsx`, `barbell.js pushTrailPoint`): 클린·스내치는 5초간 경로 유지, 손목 튐(랙·캐치) 프레임 건너뛰기+평활. 일반 종목은 기존 0.9초.
+- 푸시업 카운터(`papsAutoCounter.js`): 고정 문턱(펴짐≥150/접힘≤100) → 극점 폭(22°) 방식, 두 팔 평균. 영상(6~7회)이 4회로 세어지던 것 대응. 깊이 상한 125°(기존 테스트 '120°는 안 센다'는 145°로 수정). 턱걸이·윗몸·사이드스텝은 그대로.
+- VBT 쉬운 해석(`vbtPlainSummary.js`, `LiftingReportDashboard.jsx`): 결론/숫자의 뜻/잘한 점/부족한 점/다음에 할 일.
+- 촬영 위치: 선택 없이 자동 인식(`cameraViewGuide.js detectView`: 측면/대각선/정면/후면, 5프레임 연속 일치). 화면 안내 문구에 '촬영 위치 …' 표시, 저장에 cameraView 포함(VBT·역도). 종목 선택 시 허브(`BarbellLiftingHub.jsx`)에서 권장 위치 팝업.
+- 테스트 4069 통과·빌드 성공. 실기기·실영상 재검증은 못 함(영상은 프레임 육안 확인만).
 ### 2026-11-26 · Claude Code · ROM 측정 후 저장 팝업·횟수별 각도·종합 기준 (fix/rom-save-reps-1126)
 - 라이브 측정 종료 시 `persistReport` 자동 호출 → 허브 공통 '저장하시겠습니까?' 팝업(`RomMeasure.jsx` finalizeReport). 센서 경로는 기존부터 자동.
 - 촬영 중 횟수별 최고각을 0.6초마다 갱신(`liveRepsRef`) → 라이브 칩(`RomRepChips.jsx`)·영상 HUD 카드(`recordingOverlay.js` tone max=황금/min=분홍).

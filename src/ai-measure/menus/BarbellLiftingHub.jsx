@@ -29,6 +29,7 @@ import {
 import { buildLoadVelocityPoint } from '../core/loadVelocityProfile';
 import { aiStore } from '../../demoData';
 import { resolveBodyMetrics } from '../../services/bodyMetrics';
+import { recommendedViews } from '../core/cameraViewGuide';
 
 const MODES = [
   ['vbt',     '⚡ VBT'],
@@ -171,8 +172,10 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
     }
   }, [exerciseType]);
 
+  const [viewTip, setViewTip] = useState(null); // 종목을 고르면 권장 촬영 위치 팝업
   const selectExercise = useCallback((nextExercise) => {
     setExerciseType(nextExercise);
+    setViewTip(nextExercise);
   }, []);
 
   // 측정완료 → 기록·확인 단계로 스테이징(즉시 저장하지 않음). 확인 시 실제 저장.
@@ -511,6 +514,29 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
       </div>
 
       {showGuide && <LiftingGuide mode={mode} onClose={() => setShowGuide(false)} />}
+      {viewTip && (() => {
+        const { views, why } = recommendedViews(viewTip);
+        const label = modeExercises.find((e) => e.key === viewTip)?.label || '';
+        return (
+          <div className="fixed inset-0 z-[100001] flex items-center justify-center bg-black/60 p-4" role="dialog" aria-modal="true" data-testid="view-tip">
+            <div className="w-full max-w-sm rounded-2xl bg-white dark:bg-slate-900 p-5 shadow-2xl ring-1 ring-slate-300 dark:ring-slate-700 space-y-3">
+              <p className="text-center text-base font-black text-slate-900 dark:text-slate-100">📷 {label} 촬영 위치</p>
+              <p className="text-[12px] text-slate-600 dark:text-slate-300 leading-snug">{why}</p>
+              <ul className="space-y-1.5">
+                {views.slice(0, 2).map((v) => (
+                  <li key={v.key} className="rounded-xl bg-slate-100 dark:bg-slate-800 p-2.5 text-[12px] text-slate-700 dark:text-slate-200 leading-snug">
+                    <b>{v.icon} {v.label}{v.recommended ? ' (권장)' : ''}</b>
+                    <br />{v.sees}
+                    <br /><span className="text-slate-500">📍 {v.place}</span>
+                  </li>
+                ))}
+              </ul>
+              <p className="text-[11px] text-slate-500">위치는 고르지 않아도 카메라가 자동으로 알아보고 화면 위에 알려 줍니다.</p>
+              <button type="button" onClick={() => setViewTip(null)} className="w-full rounded-xl bg-amber-500 py-3 text-sm font-black text-slate-950" data-testid="view-tip-ok">확인</button>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ── 측정 모드 본체 ── */}
       {mode === 'vbt' && captureMode === 'live' && (
