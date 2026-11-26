@@ -639,10 +639,13 @@ export class RomAccumulator {
     const spec = ROM_NORMS[this.joint]?.[this.poseMode] || null;
     if (!spec) return { lo: -30, hi: 200 };
     const first = Object.values(spec)[0];
+    // 대표값은 '가장 많이 움직인 쪽'(최대 굴곡)이라 가동범위가 작은 쪽 값은 걸러낼 필요가 없다.
+    // 예전엔 정상 하한(min-40)보다 작은 값을 모두 버려, 가동범위가 제한된 회원(예: 어깨 100°)은
+    // 결과가 통째로 '없음'이 되었다. 지나치게 큰 튀는 값만 상한으로 거른다.
     if (this.joint === 'KNEE' || this.joint === 'ELBOW') {
-      return { lo: Math.max(-30, 180 - first.max - 40), hi: 180 - first.min + 40 };
+      return { lo: Math.max(-30, 180 - first.max - 40), hi: 200 };
     }
-    return { lo: Math.max(-30, first.min - 40), hi: first.max + 40 };
+    return { lo: -30, hi: first.max + 40 };
   }
 
   summary() {
