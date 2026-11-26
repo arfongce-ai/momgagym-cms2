@@ -45,6 +45,12 @@
 
 ## 작업 로그
 
+### 2026-11-26 · Claude Code · ROM 측정 후 저장 팝업·횟수별 각도·종합 기준 (fix/rom-save-reps-1126)
+- 라이브 측정 종료 시 `persistReport` 자동 호출 → 허브 공통 '저장하시겠습니까?' 팝업(`RomMeasure.jsx` finalizeReport). 센서 경로는 기존부터 자동.
+- 촬영 중 횟수별 최고각을 0.6초마다 갱신(`liveRepsRef`) → 라이브 칩(`RomRepChips.jsx`)·영상 HUD 카드(`recordingOverlay.js` tone max=황금/min=분홍).
+- 리포트(`RomReport.jsx`): 좌·우 횟수별 각도+평균+대표값, 종합 점수 기준(90/65/35)·정상범위·좌우차 기준 표시. 헬퍼 `romMovementGuide.js` repSummary/repCards/GRADE_RULES.
+- PAPS 저장 팝업은 손대지 않음(저장 버튼 → 허브 팝업은 기존 동작). 테스트 4061 통과·빌드 성공. 실기기 확인 못 함.
+
 ### 2026-11-26 · Claude Code · ROM 선택 화면 움직임 중심 개편 + 발목 계산 수정 (feat/rom-movement-select-1126)
 - 선택 화면: ①관절 ②움직임(탭 이름=움직임) ③측정 쪽 ④방식. 움직임별 설명 카드(무엇을 재나/촬영 방향/자세/단계/2~3회/참고 정상치) — `src/ai-measure/core/romMovementGuide.js`, `RomMeasure.jsx` 선택 화면.
 - 팔꿈치·발목은 서서/앉아서가 계산 동일 → 탭 1개로 통합, 어깨 앉아서도 숨김. poseMode 키는 그대로(리포트 pairKey 호환).

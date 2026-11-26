@@ -93,3 +93,37 @@ export function romRefRange(joint, poseMode) {
   const f = Object.values(spec)[0];
   return { normal: f.normal, min: f.min, max: f.max };
 }
+
+// 횟수별 각도 요약: 최고·최저 위치와 평균(소수 1자리). 반복이 없으면 null.
+export function repSummary(peaks) {
+  const v = (peaks || []).filter((x) => typeof x === 'number' && Number.isFinite(x));
+  if (!v.length) return null;
+  const max = Math.max(...v), min = Math.min(...v);
+  return {
+    peaks: v,
+    max, min,
+    maxIdx: v.indexOf(max), minIdx: v.indexOf(min),
+    avg: Math.round((v.reduce((a, b) => a + b, 0) / v.length) * 10) / 10,
+    spread: Math.round((max - min) * 10) / 10,
+    hasRange: v.length >= 2 && max !== min, // 2회 이상이고 값이 다를 때만 최고/최저 강조
+  };
+}
+
+// 영상 HUD 카드용: 최근 6회. tone 'max'(최고)/'min'(최저).
+export function repCards(peaks) {
+  const s = repSummary(peaks);
+  if (!s) return [];
+  const all = s.peaks.map((p, i) => ({
+    top: `${i + 1}회`, main: `${Math.round(p)}°`,
+    tone: s.hasRange && i === s.maxIdx ? 'max' : s.hasRange && i === s.minIdx ? 'min' : '',
+    latest: i === s.peaks.length - 1,
+  }));
+  return all.slice(-6);
+}
+
+// 종합 평가 기준(리포트 표시용). 실제 판정은 romClinical.generateRomDiagnosis 와 동일한 값.
+export const GRADE_RULES = [
+  { grade: '양호', score: 90, rule: '아래 항목에 걸리는 것이 없음' },
+  { grade: '관리 필요', score: 65, rule: '한쪽이 정상 하한보다 작음 · 좌우 차이 15% 이상 · 몸통 보상이 큼' },
+  { grade: '집중 관리', score: 35, rule: '양쪽 모두 정상 하한보다 작음' },
+];

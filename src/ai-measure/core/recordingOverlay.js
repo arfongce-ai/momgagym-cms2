@@ -174,11 +174,15 @@ export function drawGaugeHud(ctx, width, height, opts = {}) {
     list.forEach((c, i) => {
       const x0 = pad + i * (cW + gap);
       const latest = !!c.latest;
-      ctx.fillStyle = latest ? 'rgba(34,211,238,0.92)' : 'rgba(0,0,0,0.5)';
+      // tone: 'max'(최고값·황금색) / 'min'(최저값·분홍색) 강조. 없으면 기존 색.
+      const hi = c.tone === 'max' || c.tone === 'min';
+      ctx.fillStyle = c.tone === 'max' ? 'rgba(250,204,21,0.95)' : c.tone === 'min' ? 'rgba(251,113,133,0.95)'
+        : (latest ? 'rgba(34,211,238,0.92)' : 'rgba(0,0,0,0.5)');
       roundRectPath(ctx, x0, y0, cW, cH, Math.round(cardFs * 0.35));
       ctx.fill();
-      const textMain = latest ? 'rgba(2,6,23,0.95)' : 'rgba(248,250,252,0.97)';
-      const textSub = latest ? 'rgba(2,6,23,0.6)' : 'rgba(203,213,225,0.7)';
+      const dark = latest || hi;
+      const textMain = dark ? 'rgba(2,6,23,0.95)' : 'rgba(248,250,252,0.97)';
+      const textSub = dark ? 'rgba(2,6,23,0.6)' : 'rgba(203,213,225,0.7)';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'top';
       ctx.font = `700 ${Math.round(cardFs * 0.6)}px system-ui, sans-serif`;

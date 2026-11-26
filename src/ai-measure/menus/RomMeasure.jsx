@@ -34,8 +34,9 @@ import { drawGaugeHud } from '../core/recordingOverlay';
 import { DEFAULT_ASPECT, outputSize, aspectLabel, drawVideoCover, coverTransform, rotateLandmarksNormalized } from '../core/recordAspect';
 import { useCameraRotation } from '../core/useCameraRotation';
 
-import { getMovementGuide, visibleMovements, displayPoseKey, romDisplayAngle, romRefRange } from '../core/romMovementGuide';
+import { getMovementGuide, visibleMovements, displayPoseKey, romDisplayAngle, romRefRange, repCards } from '../core/romMovementGuide';
 import RomAngleBar from './RomAngleBar.jsx';
+import RomRepChips from './RomRepChips.jsx';
 
 const MAX_RECORD_MS = 60000;
 
@@ -124,6 +125,10 @@ export default function RomMeasure({ member, onSave, onBack, onViewInReport }) {
   const aspectRef = useRef(DEFAULT_ASPECT);
   useEffect(() => { aspectRef.current = aspect; }, [aspect]);
   const [liveAngle, setLiveAngle] = useState({ left: null, right: null });
+  // 촬영 중 횟수별 최고각(실시간). 영상 HUD·라이브 화면이 같이 쓴다. 0.6초마다 갱신.
+  const liveRepsRef = useRef({ left: [], right: [] });
+  const liveRepsAtRef = useRef(0);
+  const [liveReps, setLiveReps] = useState({ left: [], right: [] });
   const [elapsed, setElapsed] = useState(0);
   const [guide, setGuide] = useState('관절이 보이게 서서, 녹화 버튼을 누른 뒤 같은 동작을 3~5회 천천히 끝까지 수행하세요.');
   // [2611] 옆모습 정렬 — 2D 각도는 카메라가 동작면과 수직일 때만 정확하다.
@@ -264,6 +269,14 @@ export default function RomMeasure({ member, onSave, onBack, onViewInReport }) {
         setLiveAngle({ left: null, right: null });
       } else {
         accRef.current.push(corrected, tMs);
+        if (ts - liveRepsAtRef.current > 600) {
+          liveRepsAtRef.current = ts;
+          try {
+            const st = accRef.current.summary()?.stability;
+            const next = { left: st?.left?.rep_peaks || [], right: st?.right?.rep_peaks || [] };
+            liveRepsRef.current = next; setLiveReps(next);
+          } catch (e) { /* 표시용 — 실패해도 측정은 계속 */ }
+        }
         // 라이브 각도 표시(정규화 후 현재 프레임)
         const norm = normalizePose(corrected) || corrected;
         const L = jointAngleByMode(norm, joint, 'left', poseMode).angle;
@@ -324,7 +337,7 @@ export default function RomMeasure({ member, onSave, onBack, onViewInReport }) {
       // 스켈레톤(측정 측 강조) + 좌우 각도 HUD 를 영상 위에 베이크.
       drawSkeletonToRecord(ctx, latestLandmarksRef.current, side, joint, poseMode, canvas.width, canvas.height, cover);
       drawRomHud(ctx, latestLandmarksRef.current, joint, poseMode, canvas.width, canvas.height,
-        (performance.now() - startTsRef.current) / 1000, side);
+        (performance.now() - startTsRef.current) / 1000, side, liveRepsRef.current);
     };
     const rafLoop = () => { draw(); composeRafRef.current = requestAnimationFrame(rafLoop); };
     if (composeRafRef.current) cancelAnimationFrame(composeRafRef.current);
@@ -408,6 +421,7 @@ export default function RomMeasure({ member, onSave, onBack, onViewInReport }) {
   const beginRecord = () => {
     primeAudio();
     accRef.current = new RomAccumulator({ joint, poseMode });
+    liveRepsRef.current = { left: [], right: [] }; liveRepsAtRef.current = 0; setLiveReps({ left: [], right: [] });
     startTsRef.current = performance.now();
     chunksRef.current = [];
     recordedBlobRef.current = null;
@@ -506,7 +520,10 @@ export default function RomMeasure({ member, onSave, onBack, onViewInReport }) {
   const finalizeReport = (videoUrl) => {
     const summary = pendingSummaryRef.current;
     if (!summary) return;
-    buildAndSetReport(summary, 'live', pendingSnapRef.current, videoUrl);
+    const r = buildAndSetReport(summary, 'live', pendingSnapRef.current, videoUrl);
+    // 측정이 끝나면 '저장하시겠습니까?' 팝업(허브 공통)이 바로 뜨도록 저장을 시도한다.
+    // '저장 안 함'을 고르면 리포트 화면의 저장 버튼으로 나중에 저장할 수 있다.
+    if (r && member) persistReport(r);
   };
 
   // ── 업로드 ──
@@ -852,6 +869,7 @@ export default function RomMeasure({ member, onSave, onBack, onViewInReport }) {
                     { label: '우측', value: R == null ? null : Math.round(R), unit: '°', tone: side === 'left' ? 'text-slate-500' : 'text-white' },
                   ]}
                 />
+                {recording && <RomRepChips peaks={pickRepSide(liveReps, side)} />}
                 <RomAngleBar value={primary} refRange={romRefRange(joint, poseMode)} label="" />
               </>
             );
@@ -1187,7 +1205,7 @@ function roundRect(ctx, x, y, width, height, radius) {
 // ── 녹화 합성용 HUD: 좌/우 현재 각도를 대형 카드로, 경과시간을 칩으로 베이크. ──
 //  · 피사체(중앙)를 가리지 않도록 상단 좌/우 가장자리 배치, 수치는 크게(시인성).
 //  · 측정하지 않는 쪽은 강조 해제(라벨만 회색) — 핵심 정보 위주.
-function drawRomHud(ctx, landmarks, joint, poseMode, width, height, elapsedSec, side = 'both') {
+function drawRomHud(ctx, landmarks, joint, poseMode, width, height, elapsedSec, side = 'both', reps = null) {
   const norm = normalizePose(landmarks) || landmarks;
   const L = norm ? romDisplayAngle(joint, jointAngleByMode(norm, joint, 'left', poseMode).angle) : null;
   const R = norm ? romDisplayAngle(joint, jointAngleByMode(norm, joint, 'right', poseMode).angle) : null;
@@ -1200,11 +1218,20 @@ function drawRomHud(ctx, landmarks, joint, poseMode, width, height, elapsedSec, 
     elapsedSec: Number.isFinite(elapsedSec) ? elapsedSec : 0,
     accent: '#38bdf8',
     gauge: { label: '가동범위', value: primary == null ? null : Math.round(primary), unit: '°' },
+    cards: repCards(pickRepSide(reps, side)),
     stats: [
       { label: '좌측', value: L == null ? null : Math.round(L), unit: '°' },
       { label: '우측', value: R == null ? null : Math.round(R), unit: '°' },
     ],
   });
+}
+
+// 표시할 쪽의 횟수별 최고각 목록(양쪽이면 반복이 더 많이 잡힌 쪽).
+function pickRepSide(reps, side) {
+  if (!reps) return [];
+  if (side === 'left') return reps.left || [];
+  if (side === 'right') return reps.right || [];
+  return (reps.right || []).length > (reps.left || []).length ? reps.right : (reps.left || []);
 }
 
 const RECORD_BONES = [
