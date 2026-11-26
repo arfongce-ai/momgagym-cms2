@@ -400,7 +400,10 @@ export function jointAngleByMode(landmarks, joint, side, poseMode) {
     }
   } else if (joint === 'ANKLE') {
     // 발목 배측굴곡 근사: 정강이(knee→ankle) 와 발(ankle→foot) 사잇각.
-    angle = angleBetween(knee, ankle, foot, false);
+    // 정강이-발 사잇각은 중립(90°)에서 발등을 들수록 작아진다 → 배측굴곡 = 90 - 사잇각.
+    // (이전에는 사잇각을 그대로 ROM 으로 기록해 20° 굽혀도 70°로 나왔다.)
+    const shinFoot = angleBetween(knee, ankle, foot, false);
+    angle = shinFoot == null ? null : round(90 - shinFoot, 1);
   } else if (joint === 'ELBOW') {
     // 주관절(팔꿈치) — 무릎과 동일한 단순 경첩 관절. 상완(shoulder→elbow)과
     // 전완(elbow→wrist) 사잇각을 그대로 쓴다(축 기준 보정 불필요). 펴면 180에
