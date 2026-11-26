@@ -43,8 +43,8 @@ function buildRomChangeSummary(summary, previousReport) {
   return summarizeChanges(rows, reportDateOnly(previousReport));
 }
 
-const JOINT_KO = { HIP: '고관절', KNEE: '슬관절', SHOULDER: '견관절', ANKLE: '족관절', ELBOW: '주관절', NECK: '경추(목)' };
-const POSE_KO = { STANDING: '서서(체중지지)', SUPINE: '앙와위(누워서)', PRONE: '복와위(엎드려)', SEATED: '앉아서', ABDUCTION: '서서 벌림(정면)', SUPINE_ABD: '누워서 벌림(위에서 촬영)', FLEXION: '목 숙이기(옆모습)', EXTENSION: '목 젖히기(옆모습)', LATERAL: '목 옆으로(정면)', ROTATION: '목 돌리기(정면)' };
+const JOINT_KO = { HIP: '고관절', KNEE: '슬관절', SHOULDER: '견관절', ANKLE: '족관절', ELBOW: '주관절', NECK: '경추(목)', TRUNK: '몸통(등허리)' };
+const POSE_KO = { STANDING: '서서(체중지지)', SUPINE: '앙와위(누워서)', PRONE: '복와위(엎드려)', SEATED: '앉아서', ABDUCTION: '서서 벌림(정면)', SUPINE_ABD: '누워서 벌림(위에서 촬영)', FLEXION: '목 숙이기(옆모습)', EXTENSION: '목 젖히기(옆모습)', LATERAL: '목 옆으로(정면)', ROTATION: '목 돌리기(정면)', T_FLEXION: '몸통 숙이기(옆모습)', T_EXTENSION: '몸통 젖히기(옆모습)', T_LATERAL: '몸통 옆으로(정면)' };
 const GRADE_KO = { good: '양호', attention: '관리 필요', focus: '집중 관리', insufficient: '측정 보완' };
 const GRADE_TONE = {
   good: 'text-emerald-200 bg-emerald-500/10 border-emerald-500/30',

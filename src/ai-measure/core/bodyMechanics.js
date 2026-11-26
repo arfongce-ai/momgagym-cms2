@@ -216,7 +216,7 @@ function stdDev(values) {
 //       아닌 몸 기준). 카메라에 대해 어느 방향으로 눕든 결과가 같다. 보상을
 //       통제한 '순수 구조적 ROM'. 동작 끝범위의 잔떨림(등척성 안정성)을 별도로 추출.
 //
-//   joint: 'HIP' | 'KNEE' | 'SHOULDER' | 'ANKLE' | 'ELBOW' | 'NECK'
+//   joint: 'HIP' | 'KNEE' | 'SHOULDER' | 'ANKLE' | 'ELBOW' | 'NECK' | 'TRUNK'
 //   side:  'left' | 'right'
 //   poseMode: 'STANDING' | 'SUPINE' | 'PRONE' | 'SEATED'
 //  반환: { angle, compensatory, base } — angle=관절각, compensatory=보상값(STANDING).
@@ -241,6 +241,34 @@ export function jointAngleByMode(landmarks, joint, side, poseMode) {
   let angle = null;
   let compensatory = null;
   let base = poseMode === 'STANDING' ? 'vertical_gravity_line' : 'trunk_axis_line';
+
+  if (joint === 'TRUNK') {
+    // [2611] 몸통(등허리·허리) — 어깨·고관절 랜드마크만으로 몸통 축의 기울기를 잰다. 중력 수직이 기준이라 0점 보정 불필요.
+    //  · T_FLEXION/T_EXTENSION(옆모습): 고관절→어깨 선이 수직에서 앞(굽힘)·뒤(폄)로 기운 각. 앞쪽 = 코가 향한 쪽.
+    //    (골반 굽힘이 섞인 '몸통 전체' 굽힘각 — 등허리/허리 분절 각이 아님)
+    //  · T_LATERAL(정면): 양 어깨 중점이 양 고관절 중점에서 수직으로부터 기운 각. 왼쪽 값 = 사람의 왼쪽으로 기울임.
+    const deg = (r) => (r * 180) / Math.PI;
+    if (poseMode === 'T_LATERAL') {
+      const lS = get('LEFT_SHOULDER'), rS = get('RIGHT_SHOULDER'), lH = get('LEFT_HIP'), rH = get('RIGHT_HIP');
+      if (lS && rS && lH && rH) {
+        const sm = { x: (lS.x + rS.x) / 2, y: (lS.y + rS.y) / 2 };
+        const hm = { x: (lH.x + rH.x) / 2, y: (lH.y + rH.y) / 2 };
+        // 정면에서 사람의 왼쪽은 화면 오른쪽
+        const lean = deg(Math.atan2(sm.x - hm.x, hm.y - sm.y));
+        angle = round(side === 'left' ? lean : -lean, 1);
+      }
+      base = 'vertical_gravity_line';
+    } else {
+      const nose = get('NOSE');
+      if (shoulder && hip && nose) {
+        const fwd = Math.sign(nose.x - shoulder.x) || 1; // 얼굴이 향한 방향(앞)
+        const lean = deg(Math.atan2((shoulder.x - hip.x) * fwd, hip.y - shoulder.y)); // 앞으로 기울면 +
+        angle = round(poseMode === 'T_EXTENSION' ? -lean : lean, 1);
+      }
+      base = 'vertical_gravity_line';
+    }
+    return { angle, compensatory, base };
+  }
 
   if (joint === 'NECK') {
     // [2611] 목 — 머리 랜드마크(귀·코)와 어깨선만으로 잰다(별도 장비 없음).
@@ -483,6 +511,15 @@ export function jointMinVisibility(landmarks, joint, side, poseMode) {
   else if (joint === 'SHOULDER') names = (poseMode === 'STANDING' || poseMode === 'SEATED' || poseMode === 'ABDUCTION') ? ['SHOULDER', 'ELBOW'] : ['HIP', 'SHOULDER', 'ELBOW'];
   else if (joint === 'ANKLE') names = ['KNEE', 'ANKLE', 'FOOT_INDEX'];
   else if (joint === 'ELBOW') names = ['SHOULDER', 'ELBOW', 'WRIST'];
+  else if (joint === 'TRUNK') {
+    const g = (n) => landmarks?.[LM[n]];
+    const need = poseMode === 'T_LATERAL'
+      ? ['LEFT_SHOULDER', 'RIGHT_SHOULDER', 'LEFT_HIP', 'RIGHT_HIP']
+      : [`${S}_SHOULDER`, `${S}_HIP`, 'NOSE'];
+    let m = 1;
+    for (const n of need) { const p = g(n); if (!p) return null; m = Math.min(m, p.visibility == null ? 1 : p.visibility); }
+    return m;
+  }
   else if (joint === 'NECK') {
     names = (poseMode === 'LATERAL') ? ['EAR', 'SHOULDER'] : ['EAR'];
     const g = (n) => landmarks?.[LM[`${S}_${n}`]];
@@ -652,7 +689,7 @@ export class RomAccumulator {
     });
     const viewRatios = this.samples.map((x) => x.viewRatio).filter((x) => x != null);
     // 벌림(ABDUCTION)은 정면 촬영이라 판정 방향이 반대(비율이 작으면 몸이 옆으로 돌아선 것).
-    const frontView = this.poseMode === 'ABDUCTION' || this.poseMode === 'SUPINE_ABD' || this.poseMode === 'LATERAL' || this.poseMode === 'ROTATION'; // 정면/위에서 내려다보는 촬영
+    const frontView = this.poseMode === 'ABDUCTION' || this.poseMode === 'SUPINE_ABD' || this.poseMode === 'LATERAL' || this.poseMode === 'ROTATION' || this.poseMode === 'T_LATERAL'; // 정면/위에서 내려다보는 촬영
     const viewBad = (x) => (frontView ? x < ROM_VIEW_RATIO_MIN_FRONT : x > ROM_VIEW_RATIO_MAX);
     const viewBadPct = viewRatios.length
       ? Math.round((viewRatios.filter(viewBad).length / viewRatios.length) * 100) : null;
