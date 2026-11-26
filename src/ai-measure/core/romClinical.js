@@ -11,7 +11,7 @@
 import { ROM_NORMS } from './bodyMechanics';
 
 const JOINT_KO = { HIP: '고관절', KNEE: '슬관절', SHOULDER: '견관절(어깨 올림)', ANKLE: '족관절', ELBOW: '주관절' };
-const POSE_KO = { STANDING: '서서(체중지지)', SUPINE: '누워서(앙와위)', PRONE: '엎드려(복와위)', SEATED: '앉아서', ABDUCTION: '서서 벌림(정면)' };
+const POSE_KO = { STANDING: '서서(체중지지)', SUPINE: '누워서(앙와위)', PRONE: '엎드려(복와위)', SEATED: '앉아서', ABDUCTION: '서서 벌림(정면)', SUPINE_ABD: '누워서 벌림(위에서 촬영)' };
 
 // 자세·관절 정상치(평균)에서 핵심 동작(첫 키)의 normal/min/max 를 꺼낸다.
 function normFor(joint, poseMode) {
@@ -138,7 +138,7 @@ export function generateRomDiagnosis(summary, { joint, poseMode } = {}) {
       }
     }
     if (W.has('view_not_front')) {
-      details.push('촬영 중 몸이 옆으로 돌아서(정면에서 벗어나) 벌림 각도가 실제보다 작게 나왔을 수 있습니다 — 카메라를 정면으로 보고 서서 재측정해 주세요.');
+      details.push('촬영 각도가 정면(누운 자세는 몸 바로 위)에서 벗어나 벌림 각도가 실제보다 작게 나왔을 수 있습니다 — 카메라를 정면(누운 자세는 위에서 아래로)으로 맞춰 재측정해 주세요.');
       flags.push('view_not_front', 'retest_recommended');
     }
     if (W.has('view_not_side')) {

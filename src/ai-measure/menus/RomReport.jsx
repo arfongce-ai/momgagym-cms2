@@ -44,7 +44,7 @@ function buildRomChangeSummary(summary, previousReport) {
 }
 
 const JOINT_KO = { HIP: '고관절', KNEE: '슬관절', SHOULDER: '견관절', ANKLE: '족관절', ELBOW: '주관절' };
-const POSE_KO = { STANDING: '서서(체중지지)', SUPINE: '앙와위(누워서)', PRONE: '복와위(엎드려)', SEATED: '앉아서', ABDUCTION: '서서 벌림(정면)' };
+const POSE_KO = { STANDING: '서서(체중지지)', SUPINE: '앙와위(누워서)', PRONE: '복와위(엎드려)', SEATED: '앉아서', ABDUCTION: '서서 벌림(정면)', SUPINE_ABD: '누워서 벌림(위에서 촬영)' };
 const GRADE_KO = { good: '양호', attention: '관리 필요', focus: '집중 관리', insufficient: '측정 보완' };
 const GRADE_TONE = {
   good: 'text-emerald-200 bg-emerald-500/10 border-emerald-500/30',
