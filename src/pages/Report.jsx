@@ -8,7 +8,7 @@ import { scopeMembersToTrainer, sortByName } from '../utils/memberList';
 import { store, aiStore } from '../demoData';
 import { buildFullReport, buildAnalysisTrend, buildPostureTrend, groupResultsByDate, buildInterpretationGuide, GUIDE_STATUS_LEGEND, menuGroupKey, plausibleVelocity } from '../services/reportService';
 import { JUMP_SUBTYPES, resolveJumpSubType } from '../ai-measure/core/jumpTypes';
-import { cardioGroupKey } from '../ai-measure/core/cardioTest';
+import { cardioGroupKey, getProtocol } from '../ai-measure/core/cardioTest';
 import { buildSummaryData, scoreToStatus, defaultRecommendation } from '../ai-measure/core/unifiedReport';
 import { buildComprehensiveReport } from '../ai-measure/core/comprehensiveReport';
 import { loadAllMeasureRecords, deleteMeasureRound, deleteMeasureType, deleteMeasureRecord } from '../services/comprehensiveReportService';
@@ -851,10 +851,32 @@ export function extractSessionMetric(session) {
       return { value: plausibleVelocity(m.meanVelocity), unit: 'm/s', label: d.mode === 'lifting' ? '역도 평균속도' : 'VBT 평균속도' };
     }
     case 'cardio': {
+      // [회차비교 2026-11-26] VO2max가 없는 테스트(커브드 트레드밀 등)도 회차별 비교가 되도록
+      // 프로토콜 목표(거리/시간)에 맞춰 시간·거리·평균출력 중 하나를 대표값으로 쓴다.
       const v = d.estimates?.vo2max;
       const shown = Number.isFinite(d.confirmedVo2max) ? d.confirmedVo2max : (v?.calibratedValue ?? v?.value);
-      return { value: Number.isFinite(shown) ? shown : null, unit: 'mL/kg/min', label: `VO2max (${d.machineLabel ?? ''} ${d.protocolLabel ?? ''})`.trim() };
+      const name = `${d.machineLabel ?? ''} ${d.protocolLabel ?? ''}`.trim();
+      if (Number.isFinite(shown)) return { value: shown, unit: 'mL/kg/min', label: `VO2max (${name})`.trim() };
+      const r = d.result || {};
+      const tgt = getProtocol(d.protocolId)?.target || {};
+      if (tgt.distanceM && Number.isFinite(r.durationSec)) return { value: r.durationSec, unit: '초', label: `기록 시간 (${name})`.trim(), lowerBetter: true };
+      if (tgt.durationSec && Number.isFinite(r.distanceM)) return { value: r.distanceM, unit: 'm', label: `이동 거리 (${name})`.trim() };
+      if (Number.isFinite(r.avgPowerW)) return { value: r.avgPowerW, unit: 'W', label: `평균 출력 (${name})`.trim() };
+      if (Number.isFinite(r.durationSec)) return { value: r.durationSec, unit: '초', label: `기록 시간 (${name})`.trim(), lowerBetter: true };
+      if (Number.isFinite(r.distanceM)) return { value: r.distanceM, unit: 'm', label: `이동 거리 (${name})`.trim() };
+      return { value: null, unit: '', label: `심폐지구력 (${name})`.trim() };
     }
+    case 'sprint': {
+      const t = d.totalTimeMs ?? d.metrics?.totalTimeMs;
+      if (Number.isFinite(t)) return { value: Math.round(t) / 1000, unit: '초', label: '총 소요시간', lowerBetter: true };
+      const pv = d.peakVelocityMs ?? d.avgVelocityMs;
+      return { value: Number.isFinite(pv) ? pv : null, unit: 'm/s', label: '속도' };
+    }
+    case 'stance': {
+      const holds = ['left', 'right'].flatMap((k) => (d.eyesOpen?.[k]?.trials || d[k]?.trials || []).map((t) => t?.holdTimeMs)).filter(Number.isFinite);
+      return { value: holds.length ? Math.round(Math.max(...holds)) / 1000 : null, unit: '초', label: '한다리서기 최고 유지(눈뜸)' };
+    }
+    case 'squat':   return { value: Number.isFinite(d.fmsScore) ? d.fmsScore : null, unit: '점', label: '딥 스쿼트 FMS 점수' };
     case 'paps':    return { value: Number.isFinite(d.value) ? d.value : null, unit: d.unit || '', label: `${d.testLabel || 'PAPS 테스트'}${d.variant === 'knee' ? ' (무릎)' : ''}` };
     case 'senior':  return { value: Number.isFinite(d.value) ? d.value : null, unit: d.unit || '', label: `${d.testLabel || '시니어 테스트'}${d.statusLabel ? ` (${d.statusLabel})` : ''}` };
     case 'rsi':     return { value: d.rsi, unit: '', label: `RSI · 높이 ${d.heightCm ?? '-'}cm` };
@@ -1736,7 +1758,7 @@ export default function Report() {
                             ) : points.length > 1 ? (
                               <div>
                                 <p className="text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-1">회차별 비교 {delta != null && (
-                                  <span className={delta === 0 ? 'text-slate-500' : delta > 0 ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-700 dark:text-red-400'}>
+                                  <span className={delta === 0 ? 'text-slate-500' : ((delta > 0) !== !!numeric[0]?.lowerBetter) ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-700 dark:text-red-400'}>
                                     (최초 대비 {delta > 0 ? '▲' : delta < 0 ? '▼' : '–'}{Math.abs(delta)}{unit})
                                   </span>
                                 )}</p>
