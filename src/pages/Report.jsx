@@ -2081,7 +2081,12 @@ export default function Report() {
           <Suspense fallback={<div className="p-10 text-center text-slate-500 dark:text-slate-400">불러오는 중…</div>}>
             {sessionViewer.session.menu === 'cardio' && sessionViewer.session.data?.kind === 'cardio_test' && (
               <div className="mx-auto w-full max-w-[794px] p-4">
-                <CardioReportSheet report={sessionViewer.session.data} member={member} previous={sessionViewer.previous?.data || null} history={sessionViewer.history || []} onMessage={setMsg} />
+                <CardioReportSheet report={sessionViewer.session.data} member={member} previous={sessionViewer.previous?.data || null} history={sessionViewer.history || []} onMessage={setMsg}
+                  onRecalc={async (patch) => {
+                    // [재계산 2026-11-26] 체중·성별을 채워 다시 계산한 결과를 같은 세션에 덮어 저장(원본 series 유지).
+                    await aiStore.updateSession(member.id, sessionViewer.session.id, patch);
+                    setSessionViewer((v) => (v ? { ...v, session: { ...v.session, data: { ...v.session.data, ...patch, analysisUpdatedAt: new Date().toISOString() } } } : v));
+                  }} />
               </div>
             )}
             {sessionViewer.session.menu === 'paps' && sessionViewer.session.data?.kind === 'paps_test' && (
