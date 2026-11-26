@@ -21,6 +21,7 @@ import {
   createPeakTracker, median, sensorConfidence,
 } from '../core/sensorTilt';
 import { getSensorJointTip } from '../core/sensorJointTips';
+import { assessPlacement, accDeviation } from '../core/sensorPlacementCheck';
 
 const OFF_PLANE_WARN = 0.45; // (방향센서 폴백 경로 전용) |gx|/|g| 이 이 비율 이상이면 측정면 이탈 경고
 // 중력 센서 경로는 폰 비틀림으로 "예상되는 각도 오차"로 판정한다(각도가 클수록 같은 비틀림도
@@ -85,6 +86,19 @@ export default function RomSensorGoniometer({ jointName, jointKey, onBack, onCom
   // [관절별 부착 안내] 교재 확인된 관절만 데이터가 있다(현재 팔꿈치). 없으면 패널 자체가 안 보인다.
   const jointTip = getSensorJointTip(jointKey);
   const [showTip, setShowTip] = useState(false);
+  // 위치·민감도 확인(대략 점검용) — 켜져 있을 때만 갱신
+  const [showCheck, setShowCheck] = useState(false);
+  const [check, setCheck] = useState(null);
+  const showCheckRef = useRef(false);
+  const checkBufRef = useRef([]);
+  const checkAccRef = useRef(null);
+  const checkAtRef = useRef(0);
+  const toggleCheck = () => {
+    const next = !showCheckRef.current;
+    showCheckRef.current = next;
+    checkBufRef.current = []; checkAccRef.current = null;
+    setCheck(null); setShowCheck(next);
+  };
 
   const [phase, setPhase] = useState('permission'); // permission | measure | record
   const [permErr, setPermErr] = useState('');
@@ -169,6 +183,20 @@ export default function RomSensorGoniometer({ jointName, jointKey, onBack, onCom
   const handleSample = ({ angleDeg, offPlane: off, tiltErrDeg, accMag }) => {
     if (angleDeg == null) { setLiveDeg(null); return; }
     lastSmoothedRef.current = angleDeg;
+
+    // ── 위치·민감도 확인(켜진 경우): 0점 없이도 최근 흔들림·비틀림·움직임을 대략 평가 ──
+    if (showCheckRef.current) {
+      const cb = checkBufRef.current;
+      cb.push(angleDeg);
+      if (cb.length > 30) cb.shift();
+      const ad = accDeviation(accMag);
+      if (ad != null) checkAccRef.current = checkAccRef.current == null ? ad : 0.7 * checkAccRef.current + 0.3 * ad;
+      const t = Date.now();
+      if (t - checkAtRef.current > 250) {
+        checkAtRef.current = t;
+        setCheck(assessPlacement({ recentDegs: cb, tiltErrDeg, accDev: checkAccRef.current }));
+      }
+    }
 
     // ── 0점 표본 수집 중이면 버퍼에 쌓고 시간이 차면 확정 ──
     const zb = zeroBufRef.current;
@@ -495,6 +523,33 @@ export default function RomSensorGoniometer({ jointName, jointKey, onBack, onCom
           }`}>
           <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-all ${autoMode ? 'left-6' : 'left-0.5'}`} />
         </button>
+      </div>
+
+      {/* 위치·민감도 확인 — 대략 점검용(정확도 보증 아님) */}
+      <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-2">
+        <button type="button" onClick={toggleCheck} aria-pressed={showCheck}
+          className="flex w-full items-center justify-between text-left">
+          <span className="text-xs font-black text-slate-700 dark:text-slate-200">📍 위치·민감도 확인</span>
+          <span className="text-[10px] text-slate-500">{showCheck ? '닫기' : '폰을 댄 뒤 눌러 확인'}</span>
+        </button>
+        {showCheck && (
+          <div className="mt-2 space-y-1 text-[11px]">
+            {check ? (
+              <>
+                <p className={`font-black ${check.level === 'good' ? 'text-emerald-600' : check.level === 'warn' ? 'text-amber-600' : check.level === 'bad' ? 'text-rose-600' : 'text-slate-500'}`}>
+                  {check.level === 'good' ? '🟢 대략 양호' : check.level === 'warn' ? '🟡 조금 불안정' : check.level === 'bad' ? '🔴 위치·고정 조정 필요' : '⏳ 확인 중'}
+                </p>
+                {check.jitter != null && (
+                  <p className="text-slate-600 dark:text-slate-300">
+                    떨림 ±{(check.jitter / 2).toFixed(1)}° · 비틀림 오차 {check.tiltErrDeg != null ? `${check.tiltErrDeg.toFixed(1)}°` : '–'} · 움직임 {check.accDev != null ? `${Math.round(check.accDev * 100)}%` : '–'}
+                  </p>
+                )}
+                {check.hints.map((h) => <p key={h} className="text-slate-500">· {h}</p>)}
+                <p className="text-[10px] text-slate-400">대략적인 확인용입니다. 폰을 가만히 대고 2~3초 지켜보세요.</p>
+              </>
+            ) : <p className="text-slate-500">센서 신호를 기다리는 중…</p>}
+          </div>
+        )}
       </div>
 
       {/* 실시간 각도 — 원형 다이얼. 다이얼 자체가 큰 버튼:
