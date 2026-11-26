@@ -805,6 +805,31 @@ export function computeCardioResult({ protocolId, machineId, rec, workEndSec, su
   };
 }
 
+// [재계산 2026-11-26] 저장된 기록의 1초 단위 심박·출력(series)으로 VO2max 등을 다시 계산한다.
+// 체중·성별·나이 입력이 빠져 계산이 안 된 기록을 나중에 채워 넣을 때 쓴다. 원본 series·RPE·메모·확인값은 그대로 두고
+// 계산 결과 필드만 새로 돌려준다(저장 시 patch 로 병합). series 가 없으면 null.
+export function recomputeCardioRecord(payload, { subject = {}, allSessions = [] } = {}) {
+  const p = payload && typeof payload === 'object' ? payload : null;
+  const sr = p?.series;
+  if (!p || p.kind !== CARDIO_RECORD_KIND || !sr || !Array.isArray(sr.t) || sr.t.length === 0) return null;
+  const rec = { t: sr.t, hr: sr.hr || [], w: sr.w || [], cad: sr.cad || [], dist: sr.dist || [], startDist: null };
+  const workEndSec = Number(p.result?.durationSec);
+  if (!(workEndSec > 0)) return null;
+  const merged = { ...(p.subject || {}) };
+  for (const [k, v] of Object.entries(subject || {})) if (v != null && v !== '') merged[k] = v;
+  const others = (Array.isArray(allSessions) ? allSessions : []).filter((x) => x?.data !== p);
+  const computed = computeCardioResult({
+    protocolId: p.protocolId, machineId: p.machineId, rec, workEndSec,
+    subject: merged, past: pastCardioRecords(others, p.machineId), allSessions: others, manual: p.manual || null,
+  });
+  return {
+    subject: computed.subject, hrMax: computed.hrMax, result: computed.result, recovery: computed.recovery,
+    stages: computed.stages, estimates: computed.estimates, flatReference: computed.flatReference || null,
+    fieldRank: computed.fieldRank || null, walk6: computed.walk6 || null, notes: computed.notes,
+    recalculatedAt: new Date().toISOString(),
+  };
+}
+
 // 저장 페이로드. 필드 이름은 다른 측정 유형 판정(unifiedReport.inferReportType)에 걸리지 않게
 // 고른다(summary·analysis·mode·type·heightCm·rsi·diagnosis 사용 금지).
 
