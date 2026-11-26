@@ -59,7 +59,7 @@ describe('센서 안내 — 고관절(교재 6장)', () => {
     expect(b.mount).toContain('수직');
   });
   it('안내가 없는 관절은 null(기존 화면과 동일)', () => {
-    expect(getSensorJointTip('KNEE')).toBeNull();
+    expect(getSensorJointTip('ANKLE')).toBeNull();
   });
 });
 
