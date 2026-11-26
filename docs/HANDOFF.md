@@ -45,6 +45,11 @@
 
 ## 작업 로그
 
+### 2026-11-26 · Claude Code · 리포트 이력 회차비교 대체 지표 (fix/history-compare-cardio-1126)
+- 원인: `Report.jsx extractSessionMetric` 이 심폐를 VO2max 로만 뽑아, VO2max 없는 커브드 트레드밀은 값이 null → "회차 비교는 2회차부터" 표시.
+- 수정: 심폐는 VO2max → (거리목표) 기록 시간 → (시간목표) 이동 거리 → 평균 출력 순 대체. 시간은 낮을수록 좋음(`lowerBetter`, 변화 색상 반전). 스프린트(총 시간)·한다리서기(눈뜸 최고 유지)·스쿼트(FMS 점수)도 값 추출 추가. `reportService menuSummaries` 에 cardio·sprint 요약 줄 추가.
+- 테스트: `ai_menu_grouping.test.js` 5건 추가. 전체 통과 + 빌드 성공. 실기기·배포 화면은 확인 못 함.
+
 ### 2026-11-25 · Claude Code · 리포트 이력 1RM 종목 분리 (fix/lifting-group-by-exercise-1125)
 - 문제: 리포트 'AI 측정 이력'이 1RM을 종목 구분 없이 한 묶음(`lifting_onerm`)으로 묶어 스쿼트·데드리프트 회차·추이 그래프가 섞임.
 - 확장(같은 PR): ROM(관절·자세)·보행(걷기/달리기·방향)·스프린트(종목)·심폐(장비·테스트)도 `measureSubtype.subtypeOf` 기준으로 그룹 분리(`rom:SHOULDER:STANDING` 형태, 제목에 세부 이름). 점프·보행 다지표 추세 그래프는 전체가 아니라 해당 묶음 회차만으로 계산(`Report.jsx`). 세부 정보 없는 과거 기록은 예전 키. 자세·신체정보·한다리서기·스쿼트는 세부 테스트가 없어 그대로.

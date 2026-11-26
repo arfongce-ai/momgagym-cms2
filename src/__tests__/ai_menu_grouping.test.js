@@ -231,3 +231,35 @@ describe('세부 테스트별 이력 분리 — ROM·보행·스프린트·심�
     expect(menuSummaries.map((m) => m.title).sort()).toEqual(['관절 가동범위 · 견관절 · 서서', '관절 가동범위 · 고관절 · 누워서']);
   });
 });
+
+describe('회차 비교 대체 지표 — VO2max 등 대표값이 없는 테스트 (2026-11-26)', () => {
+  it('커브드 트레드밀 2.4km: VO2max 없이도 기록 시간이 값으로 잡힌다', async () => {
+    const { extractSessionMetric } = await import('../pages/Report.jsx');
+    const r = extractSessionMetric({ menu: 'cardio', data: { machineId: 'treadmill', protocolId: 'curved_2400', result: { durationSec: 840, distanceM: 2400 } } });
+    expect(r.value).toBe(840);
+    expect(r.unit).toBe('초');
+    expect(r.lowerBetter).toBe(true);
+  });
+  it('커브드 12분: 이동 거리, 출력만 있으면 평균 출력', async () => {
+    const { extractSessionMetric } = await import('../pages/Report.jsx');
+    expect(extractSessionMetric({ menu: 'cardio', data: { protocolId: 'curved_12min', result: { distanceM: 2100, durationSec: 720 } } }).value).toBe(2100);
+    expect(extractSessionMetric({ menu: 'cardio', data: { protocolId: 'x', result: { avgPowerW: 180 } } }).unit).toBe('W');
+  });
+  it('VO2max 가 있으면 기존대로 VO2max', async () => {
+    const { extractSessionMetric } = await import('../pages/Report.jsx');
+    expect(extractSessionMetric({ menu: 'cardio', data: { confirmedVo2max: 42 } }).value).toBe(42);
+  });
+  it('스프린트·한다리서기·스쿼트도 값이 잡힌다', async () => {
+    const { extractSessionMetric } = await import('../pages/Report.jsx');
+    expect(extractSessionMetric({ menu: 'sprint', data: { totalTimeMs: 2340 } }).value).toBe(2.34);
+    expect(extractSessionMetric({ menu: 'stance', data: { eyesOpen: { left: { trials: [{ holdTimeMs: 12000 }, { holdTimeMs: 15000 }] }, right: { trials: [{ holdTimeMs: 9000 }] } } } }).value).toBe(15);
+    expect(extractSessionMetric({ menu: 'squat', data: { fmsScore: 2 } }).value).toBe(2);
+  });
+  it('요약 줄: 커브드 심폐는 "N회 측정"이 아니라 기록을 보여준다', () => {
+    const { menuSummaries } = buildAiReport([
+      { id: 'a', menu: 'cardio', recordedAt: '2026-11-20', data: { machineId: 'treadmill', protocolId: 'curved_2400', result: { durationSec: 850, distanceM: 2400 } } },
+      { id: 'b', menu: 'cardio', recordedAt: '2026-11-26', data: { machineId: 'treadmill', protocolId: 'curved_2400', result: { durationSec: 820, distanceM: 2400 } } },
+    ]);
+    expect(menuSummaries[0].metric).toContain('820');
+  });
+});
