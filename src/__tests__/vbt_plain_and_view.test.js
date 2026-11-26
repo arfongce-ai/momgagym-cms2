@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { buildVbtPlainSummary } from '../ai-measure/core/vbtPlainSummary';
-import { recommendedViews, wantForView, defaultView, VIEWS } from '../ai-measure/core/cameraViewGuide';
+import { recommendedViews, wantForView, defaultView, VIEWS, detectView, viewStatusText } from '../ai-measure/core/cameraViewGuide';
 import { pushTrailPoint } from '../ai-measure/core/barbell';
 
 describe('VBT 쉬운 해석', () => {
@@ -50,5 +50,26 @@ describe('궤적 점 필터', () => {
     pushTrailPoint(tr, st, { x: 0.5, y: 0.5 }, 0, { keepMs: 1000 });
     pushTrailPoint(tr, st, { x: 0.5, y: 0.51 }, 2000, { keepMs: 1000 });
     expect(tr.length).toBe(1);
+  });
+});
+
+describe('촬영 위치 자동 인식', () => {
+  const pose = (sx, hipx, noseVis = 0.9) => {
+    const l = Array.from({ length: 33 }, () => ({ x: 0.5, y: 0.5, visibility: 0.9 }));
+    l[11] = { x: 0.5 - sx / 2, y: 0.3, visibility: 0.9 }; l[12] = { x: 0.5 + sx / 2, y: 0.3, visibility: 0.9 };
+    l[23] = { x: 0.5 - hipx / 2, y: 0.6, visibility: 0.9 }; l[24] = { x: 0.5 + hipx / 2, y: 0.6, visibility: 0.9 };
+    l[0] = { x: 0.5, y: 0.2, visibility: noseVis };
+    return l;
+  };
+  it('측면·대각선·정면·후면', () => {
+    expect(detectView(pose(0.03, 0.03))).toBe('side');
+    expect(detectView(pose(0.12, 0.1))).toBe('diagonal');
+    expect(detectView(pose(0.25, 0.18))).toBe('front');
+    expect(detectView(pose(0.25, 0.18, 0.1))).toBe('back');
+    expect(detectView(null)).toBeNull();
+  });
+  it('측면이 아니면 한계를 짧게 알려 준다', () => {
+    expect(viewStatusText('side')).toBe('촬영 위치 측면');
+    expect(viewStatusText('front')).toContain('속도');
   });
 });

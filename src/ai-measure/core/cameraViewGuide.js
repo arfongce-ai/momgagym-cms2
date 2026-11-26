@@ -47,3 +47,31 @@ export function wantForView(viewKey) {
   return VIEWS[viewKey]?.want || 'side';
 }
 export const defaultView = (exerciseType) => (REC[exerciseType] || FALLBACK).views[0];
+
+/**
+ * 촬영 위치 자동 인식(선택 불필요). 어깨 가로 간격을 몸통 길이로 나눈 비율로 판정:
+ *  측면(<0.25) · 대각선(<0.65) · 정면/후면(그 이상, 코가 안 보이고 귀만 보이면 후면). 못 잡으면 null.
+ * lms: 33점 정규화 좌표. aspect 는 영상 가로/세로(없으면 1) — 정규화 x 를 세로 기준 길이로 맞춘다.
+ */
+export function detectView(lms, aspect = 1) {
+  if (!lms || lms.length < 25) return null;
+  const v = (p) => p && (p.visibility == null || p.visibility >= 0.4);
+  const ls = lms[11], rs = lms[12], lh = lms[23], rh = lms[24];
+  if (!v(ls) || !v(rs) || !v(lh) || !v(rh)) return null;
+  const gap = Math.abs(ls.x - rs.x) * aspect;
+  const torso = Math.hypot(((ls.x + rs.x) / 2 - (lh.x + rh.x) / 2) * aspect, (ls.y + rs.y) / 2 - (lh.y + rh.y) / 2);
+  if (torso < 0.05) return null;
+  const r = gap / torso;
+  if (r < 0.25) return 'side';
+  if (r < 0.65) return 'diagonal';
+  const nose = lms[0];
+  const earsSeen = v(lms[7]) && v(lms[8]);
+  return !v(nose) && earsSeen ? 'back' : 'front';
+}
+
+/** 화면 안내 문구에 붙일 한 줄. 측면이 아니면 무엇이 부정확한지 짧게 알려 준다. */
+export function viewStatusText(viewKey) {
+  const v = VIEWS[viewKey];
+  if (!v) return '';
+  return viewKey === 'side' ? `촬영 위치 ${v.label}` : `촬영 위치 ${v.label} · ${v.blind}`;
+}

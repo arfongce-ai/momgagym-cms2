@@ -18,8 +18,7 @@ import { drawLiftingDataHud, drawFadingBarPath } from '../core/recordingOverlay'
 import { isOlyType, analyzeOlyLift, pickSideJoints, betterSide, frontalRatio } from '../core/olyLiftAnalysis';
 import { DEFAULT_ASPECT, outputSize, aspectLabel, drawVideoCover, coverMapPath, rotateLandmarksNormalized } from '../core/recordAspect';
 import { useCameraRotation } from '../core/useCameraRotation';
-import CameraViewPicker from './CameraViewPicker.jsx';
-import { wantForView, defaultView } from '../core/cameraViewGuide';
+import { detectView, viewStatusText } from '../core/cameraViewGuide';
 import { assessFraming, FRAMING_PRESETS, MIN_CAMERA_DISTANCE_MM } from '../core/framingGuide';
 import {
   CALIBRATION_PRESETS, buildReferenceScale, ratioToCm,
@@ -47,10 +46,11 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
   //  표시 전용 raw 궤적을 따로 둔다(판정·속도 계산에는 관여하지 않음).
   const trailRef = useRef([]);
   const trailStateRef = useRef({ skipped: 0 });
-  const [cameraView, setCameraView] = useState(() => defaultView(exerciseType));
-  const viewWantRef = useRef(wantForView(defaultView(exerciseType)));
-  useEffect(() => { setCameraView(defaultView(exerciseType)); }, [exerciseType]);
-  useEffect(() => { viewWantRef.current = wantForView(cameraView); }, [cameraView]);
+  // 촬영 위치는 고르지 않고 자동 인식한다(5프레임 연속 같을 때만 바뀜). 저장 기록에도 인식값이 들어간다.
+  const [viewText, setViewText] = useState('');
+  const cameraViewRef = useRef(null);
+  const viewVoteRef = useRef({ key: null, n: 0 });
+  const viewWantRef = useRef('any');
   const trailFadeMs = () => (isOlyType(exerciseTypeRef.current) ? 5000 : 900);
   const olySamplesRef = useRef([]);   // 스내치·클린&저크 구간/각도 분석용 프레임 샘플
   const olySideRef = useRef(null);
@@ -139,6 +139,15 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
     if (fr.level !== framingRef.current.level || fr.message !== framingRef.current.message) {
       framingRef.current = fr;
       setFraming({ level: fr.level, message: fr.message });
+    }
+    {
+      const dv = detectView(lms, _video?.videoWidth && _video?.videoHeight ? _video.videoWidth / _video.videoHeight : 1);
+      const vote = viewVoteRef.current;
+      if (dv && dv === vote.key) vote.n += 1; else { vote.key = dv; vote.n = 1; }
+      if (vote.key && vote.n >= 5 && cameraViewRef.current !== vote.key) {
+        cameraViewRef.current = vote.key;
+        setViewText(viewStatusText(vote.key));
+      }
     }
 
     // 바 위치 = 양 손목 중점(스켈레톤). 별도 추적점 지정 없이 자동으로 잡는다.
@@ -508,7 +517,7 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
     onSave?.({
       type: 'vbt',
       exerciseType: exerciseType || null,
-      cameraView,
+      cameraView: cameraViewRef.current,
       source: 'live',
       lostRatio: result.lostRatio ?? null,
       distance: result.distanceM,
@@ -552,7 +561,7 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
       <>
 
         <span className={`rounded-full px-3 py-1 text-[11px] font-bold ${framing.level === 'good' ? 'bg-emerald-500/85 text-slate-950' : framing.level === 'warn' ? 'bg-amber-500/85 text-slate-950' : 'bg-red-500/85 text-white'}`}>
-          {framing.level === 'good' ? '✓ ' : '⚠ '}{framing.message}
+          {framing.level === 'good' ? '✓ ' : '⚠ '}{framing.message}{viewText ? ` · ${viewText}` : ''}
         </span>
         {!heightCm && (
           <span className="rounded-full px-2.5 py-1 text-[10px] font-bold bg-amber-500/85 text-slate-950">
@@ -729,7 +738,6 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
           hint="거리·속도 환산에 사용" />
       )}
 
-      <CameraViewPicker exerciseType={exerciseType} value={cameraView} onChange={setCameraView} />
       <FramingIntro preset={FRAMING_PRESETS.vbt} onStart={startCam} startLabel="📷 카메라 시작 (전체화면)" />
 
       <details className="rounded-xl bg-white dark:bg-slate-900/60 border border-slate-300 dark:border-slate-700">
