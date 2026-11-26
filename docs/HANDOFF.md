@@ -50,6 +50,8 @@
 - 팔꿈치·발목은 서서/앉아서가 계산 동일 → 탭 1개로 통합, 어깨 앉아서도 숨김. poseMode 키는 그대로(리포트 pairKey 호환).
 - 버그 수정: 발목 카메라 각도가 정강이-발 사잇각(중립 90°) 그대로 기록되던 것 → 배측굴곡 = 90 − 사잇각 (`bodyMechanics.js` ANKLE). 테스트 `ankle_camera_dorsiflexion.test.js`.
 - 추가 수정: 최대값 정상범위 필터가 하한(정상 min−40) 미만을 버려, 가동범위가 작은 회원(어깨 100° 등)은 결과가 null 이 되던 것 → 하한 제거(`_sanityRange`). 테스트 `rom_limited_range_kept.test.js`.
+- 라이브 화면: 촬영 시작 전부터 각도 표시, 측정각(하늘색) vs 기준 정상각(초록) 비교 막대 `RomAngleBar.jsx`; 무릎·팔꿈치는 내각 대신 굽힘각으로 표시(`romDisplayAngle`). 반복 안내 3~5회.
+- PAPS(`PapsTestMeasure.jsx`): 촬영 중 횟수를 화면 가운데 크게 표시 + 횟수 증가 시 `beepRep` 소리. 영상에 굽는 HUD는 기존 그대로.
 - 한계: 반복 대표값(rep_median)은 반복 3회 이상일 때만 적용, 2회면 지속 피크 + 경고.
 - 테스트 4052 통과·빌드 성공. 실기기 화면 확인은 못 함.
 

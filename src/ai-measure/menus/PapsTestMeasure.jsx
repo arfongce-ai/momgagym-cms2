@@ -23,6 +23,7 @@ import { createRecognitionTracker, frameKeyVisibility } from '../core/recognitio
 import { createMeasureRecorder } from '../core/measureRecorder';
 import { saveVideoToPhone } from '../core/recordSink';
 import CameraStage from './CameraStage.jsx';
+import { beepRep } from '../core/audioCue';
 import { normalizeSex } from '../core/cardioTest';
 import {
   PAPS_GRADE_OPTIONS, PAPS_TESTS, PAPS_TEST_ORDER, bestOfTrials, buildPapsRecord, evaluatePapsTest,
@@ -144,6 +145,12 @@ export default function PapsTestMeasure({ onBack, member = null, onSave = null, 
   }, []);
   const pose = usePoseEngine({ onResult: handlePose });
   const poseStartRef = useRef(false);
+  // 횟수가 올라갈 때마다(자동 카운트·+1 모두) 짧은 소리. 되돌리기(−1)나 초기화에는 울리지 않는다.
+  const prevCountRef = useRef(0);
+  useEffect(() => {
+    if (phase === 'running' && count > prevCountRef.current) beepRep();
+    prevCountRef.current = count;
+  }, [count, phase]);
   useEffect(() => {
     if (effCam && cameraOpen && phase !== 'result' && !poseStartRef.current) {
       poseStartRef.current = true;
@@ -578,6 +585,14 @@ export default function PapsTestMeasure({ onBack, member = null, onSave = null, 
               {bpm != null && <span className="rounded-full bg-black/65 px-2.5 py-1 text-[11px] font-bold text-white">심박 {bpm} bpm</span>}
             </>
           )}
+          children={hasCountTest && phase === 'running' ? (
+            <div className="pointer-events-none fixed inset-0 z-30 flex items-center justify-center" data-testid="paps-center-count">
+              <div key={count} className="flex h-40 w-40 flex-col items-center justify-center rounded-full border-4 border-amber-300/80 bg-black/55 shadow-2xl backdrop-blur animate-pulse-once">
+                <span className="font-mono text-7xl font-black leading-none text-white">{count}</span>
+                <span className="mt-1 text-sm font-bold text-amber-200">회</span>
+              </div>
+            </div>
+          ) : null}
           controls={phase === 'running' ? (
             <div className="flex items-center gap-2">
               {hasCountTest && <button type="button" onClick={undoRep} className="h-12 w-14 rounded-full bg-slate-200 text-lg font-black text-slate-800 active:scale-95">−1</button>}

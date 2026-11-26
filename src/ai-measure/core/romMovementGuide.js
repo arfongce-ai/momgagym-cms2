@@ -2,7 +2,7 @@
 // 화면에는 '자세'가 아니라 '무슨 움직임을 재는가'를 보여준다. (표시용 데이터만 — 계산과 무관)
 import { ROM_NORMS } from './bodyMechanics';
 
-export const REPS_TEXT = '같은 동작을 2~3회 반복 (3회면 가장 안정적)';
+export const REPS_TEXT = '같은 동작을 3~5회 반복';
 
 const VIEW_LABEL = { SIDE: '옆모습 촬영', FRONT: '정면 촬영', TOP: '몸 위에서 아래로 촬영' };
 
@@ -78,4 +78,18 @@ export function getMovementGuide(joint, poseMode) {
     reps: REPS_TEXT,
     norm: normNote(joint, poseMode),
   };
+}
+
+// 라이브 각도(원본)를 '가동범위' 값으로 바꾼다. 무릎·팔꿈치는 내각(펴면 180)이라 굽힘 = 180 - 내각.
+export function romDisplayAngle(joint, raw) {
+  if (raw == null || !Number.isFinite(raw)) return null;
+  return joint === 'KNEE' || joint === 'ELBOW' ? Math.max(0, 180 - raw) : raw;
+}
+
+// 오버레이용 기준(정상) 범위. 기준값이 없는 관절(몸통 등)은 null.
+export function romRefRange(joint, poseMode) {
+  const spec = ROM_NORMS[joint]?.[poseMode] || ROM_NORMS[joint]?.[displayPoseKey(joint, poseMode)];
+  if (!spec) return null;
+  const f = Object.values(spec)[0];
+  return { normal: f.normal, min: f.min, max: f.max };
 }

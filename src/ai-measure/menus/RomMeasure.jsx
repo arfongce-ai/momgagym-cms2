@@ -34,7 +34,8 @@ import { drawGaugeHud } from '../core/recordingOverlay';
 import { DEFAULT_ASPECT, outputSize, aspectLabel, drawVideoCover, coverTransform, rotateLandmarksNormalized } from '../core/recordAspect';
 import { useCameraRotation } from '../core/useCameraRotation';
 
-import { getMovementGuide, visibleMovements, displayPoseKey } from '../core/romMovementGuide';
+import { getMovementGuide, visibleMovements, displayPoseKey, romDisplayAngle, romRefRange } from '../core/romMovementGuide';
+import RomAngleBar from './RomAngleBar.jsx';
 
 const MAX_RECORD_MS = 60000;
 
@@ -124,7 +125,7 @@ export default function RomMeasure({ member, onSave, onBack, onViewInReport }) {
   useEffect(() => { aspectRef.current = aspect; }, [aspect]);
   const [liveAngle, setLiveAngle] = useState({ left: null, right: null });
   const [elapsed, setElapsed] = useState(0);
-  const [guide, setGuide] = useState('관절이 보이게 서서, 녹화 버튼을 누른 뒤 같은 동작을 2~3회 천천히 끝까지 수행하세요.');
+  const [guide, setGuide] = useState('관절이 보이게 서서, 녹화 버튼을 누른 뒤 같은 동작을 3~5회 천천히 끝까지 수행하세요.');
   // [2611] 옆모습 정렬 — 2D 각도는 카메라가 동작면과 수직일 때만 정확하다.
   //  어깨폭/몸통길이 비율(EMA)로 정면 쪽으로 돌아섰는지 실시간 안내한다(경고만, 촬영은 막지 않음).
   const [viewState, setViewState] = useState('unknown'); // unknown | ok | bad
@@ -270,6 +271,14 @@ export default function RomMeasure({ member, onSave, onBack, onViewInReport }) {
         setLiveAngle({ left: L, right: R });
       }
     }
+    else if (!recordingRef.current && corrected) {
+      // 촬영 시작 전에도 현재 각도를 보여준다(자세 잡기·기준 비교용). 누적·저장은 하지 않는다.
+      const norm = normalizePose(corrected) || corrected;
+      setLiveAngle({
+        left: jointAngleByMode(norm, joint, 'left', poseMode).angle,
+        right: jointAngleByMode(norm, joint, 'right', poseMode).angle,
+      });
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [joint, poseMode, side, rotationDeg]);
 
@@ -391,7 +400,7 @@ export default function RomMeasure({ member, onSave, onBack, onViewInReport }) {
       directionPausedRef.current = false;
       setSwitching(false);
       setDirection('second');
-      setGuide('이어서 환측 동작을 2~3회 천천히 끝까지 수행한 뒤 "측정 종료"를 눌러주세요.');
+      setGuide('이어서 환측 동작을 3~5회 천천히 끝까지 수행한 뒤 "측정 종료"를 눌러주세요.');
       beepGo();
     });
   };
@@ -454,8 +463,8 @@ export default function RomMeasure({ member, onSave, onBack, onViewInReport }) {
       if (recordingRef.current) finishRecord();
     }, MAX_RECORD_MS);
     setGuide(side === 'both'
-      ? '① 건측(먼저 측정할 쪽) 동작을 2~3회 천천히 수행하세요. 방향을 바꾸려면 "방향 전환"을 눌러주세요.'
-      : '동작을 2~3회, 천천히 최대 지점까지 수행하고 돌아오세요. (반복하면 결과가 더 일정합니다)');
+      ? '① 건측(먼저 측정할 쪽) 동작을 3~5회 천천히 수행하세요. 방향을 바꾸려면 "방향 전환"을 눌러주세요.'
+      : '동작을 3~5회, 천천히 최대 지점까지 수행하고 돌아오세요. (반복하면 결과가 더 일정합니다)');
     beepGo();
   };
 
@@ -827,21 +836,24 @@ export default function RomMeasure({ member, onSave, onBack, onViewInReport }) {
               스켈레톤이 꺼져 있어 ROM 인식이 일시 중지됐어요. 스켈레톤을 켜면 다시 측정됩니다.
             </div>
           )}
-          {recording && (() => {
-            const L = liveAngle.left, R = liveAngle.right;
+          {(() => {
+            const L = romDisplayAngle(joint, liveAngle.left), R = romDisplayAngle(joint, liveAngle.right);
             const primary = side === 'left' ? L : side === 'right' ? R
               : (L != null && R != null ? Math.max(L, R) : (L ?? R));
             return (
-              <GaugeHud
-                label="가동범위"
-                value={primary == null ? null : Math.round(primary)}
-                unit="°"
-                accent="#38bdf8"
-                stats={[
-                  { label: '좌측', value: L == null ? null : Math.round(L), unit: '°', tone: side === 'right' ? 'text-slate-500' : 'text-white' },
-                  { label: '우측', value: R == null ? null : Math.round(R), unit: '°', tone: side === 'left' ? 'text-slate-500' : 'text-white' },
-                ]}
-              />
+              <>
+                <GaugeHud
+                  label="가동범위"
+                  value={primary == null ? null : Math.round(primary)}
+                  unit="°"
+                  accent="#38bdf8"
+                  stats={[
+                    { label: '좌측', value: L == null ? null : Math.round(L), unit: '°', tone: side === 'right' ? 'text-slate-500' : 'text-white' },
+                    { label: '우측', value: R == null ? null : Math.round(R), unit: '°', tone: side === 'left' ? 'text-slate-500' : 'text-white' },
+                  ]}
+                />
+                <RomAngleBar value={primary} refRange={romRefRange(joint, poseMode)} label="" />
+              </>
             );
           })()}
           <div className="rounded-2xl border border-white/10 bg-black/55 px-4 py-3 text-center text-sm font-bold text-white backdrop-blur">
@@ -924,7 +936,7 @@ export default function RomMeasure({ member, onSave, onBack, onViewInReport }) {
         <button onClick={() => setMode('live')}
           className="w-full rounded-xl bg-amber-500 px-4 py-4 text-left active:scale-[0.99] transition">
           <p className="text-base font-black text-slate-950">라이브 측정 (권장) <span className="text-[10px] font-bold text-slate-900/60 align-middle">카메라 분석</span></p>
-          <p className="mt-0.5 text-xs font-bold text-slate-900/80">카메라 앞에서 같은 동작을 2~3회 천천히 반복 → 최대 가동범위 자동 산출.</p>
+          <p className="mt-0.5 text-xs font-bold text-slate-900/80">카메라 앞에서 같은 동작을 3~5회 천천히 반복 → 최대 가동범위 자동 산출.</p>
         </button>
         <button onClick={() => setMode('upload')}
           className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-4 py-4 text-left active:scale-[0.99] transition">
@@ -1177,8 +1189,8 @@ function roundRect(ctx, x, y, width, height, radius) {
 //  · 측정하지 않는 쪽은 강조 해제(라벨만 회색) — 핵심 정보 위주.
 function drawRomHud(ctx, landmarks, joint, poseMode, width, height, elapsedSec, side = 'both') {
   const norm = normalizePose(landmarks) || landmarks;
-  const L = norm ? jointAngleByMode(norm, joint, 'left', poseMode).angle : null;
-  const R = norm ? jointAngleByMode(norm, joint, 'right', poseMode).angle : null;
+  const L = norm ? romDisplayAngle(joint, jointAngleByMode(norm, joint, 'left', poseMode).angle) : null;
+  const R = norm ? romDisplayAngle(joint, jointAngleByMode(norm, joint, 'right', poseMode).angle) : null;
   // 게이지 주값 = 측정 측(좌/우/양쪽이면 큰 각도). 각도 게이지는 0~180°.
   const primary = side === 'left' ? L : side === 'right' ? R
     : (L != null && R != null ? Math.max(L, R) : (L ?? R));
