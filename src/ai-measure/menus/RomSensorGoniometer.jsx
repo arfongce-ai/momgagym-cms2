@@ -20,6 +20,7 @@ import {
   applyZero, isStill, hapticFeedback, roundToStep, meanDeg, createHoldDetector,
   createPeakTracker, median, sensorConfidence,
 } from '../core/sensorTilt';
+import { getSensorJointTip } from '../core/sensorJointTips';
 
 const OFF_PLANE_WARN = 0.45; // (방향센서 폴백 경로 전용) |gx|/|g| 이 이 비율 이상이면 측정면 이탈 경고
 // 중력 센서 경로는 폰 비틀림으로 "예상되는 각도 오차"로 판정한다(각도가 클수록 같은 비틀림도
@@ -80,6 +81,10 @@ export default function RomSensorGoniometer({ jointName, jointKey, onBack, onCom
   const [movement, setMovement] = useState('');
   const [movementCustom, setMovementCustom] = useState('');
   const effMovement = movement === '__custom' ? movementCustom.trim() : movement;
+
+  // [관절별 부착 안내] 교재 확인된 관절만 데이터가 있다(현재 팔꿈치). 없으면 패널 자체가 안 보인다.
+  const jointTip = getSensorJointTip(jointKey);
+  const [showTip, setShowTip] = useState(false);
 
   const [phase, setPhase] = useState('permission'); // permission | measure | record
   const [permErr, setPermErr] = useState('');
@@ -410,6 +415,22 @@ export default function RomSensorGoniometer({ jointName, jointKey, onBack, onCom
             <li>시작 자세에서 <span className="font-black text-amber-700 dark:text-amber-300">0점</span>을 누르고 0.7초간 그대로 유지하면 평균값으로 0점이 잡힙니다.</li>
             <li>끝범위에서 각도 변화 없이 <span className="font-black text-amber-700 dark:text-amber-300">0.8초 유지</span>하면 <span className="font-black text-amber-700 dark:text-amber-300">자동 측정</span>됩니다. (수동 완료도 가능)</li>
           </ol>
+
+          {jointTip && (
+            <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 space-y-2">
+              <p className="text-[11px] font-black text-amber-800 dark:text-amber-200">📎 {jointName || jointKey} 측정 안내 ({jointTip.source})</p>
+              {jointTip.blocks.map((b) => (
+                <div key={b.title} className="space-y-0.5">
+                  <p className="text-[11px] font-black text-slate-700 dark:text-slate-200">· {b.title}</p>
+                  <p className="text-[11px] leading-relaxed text-slate-600 dark:text-slate-300">부착: {b.mount}</p>
+                  <p className="text-[11px] leading-relaxed text-slate-600 dark:text-slate-300">{b.start}</p>
+                  <p className="text-[11px] leading-relaxed text-slate-500 dark:text-slate-400">정상치: {b.norms}</p>
+                  {b.note && <p className="text-[11px] leading-relaxed text-slate-500 dark:text-slate-400">※ {b.note}</p>}
+                </div>
+              ))}
+            </div>
+          )}
+
           <button onClick={activate}
             className="w-full rounded-xl bg-amber-500 px-4 py-4 text-base font-black text-slate-950 active:scale-[0.99] transition">
             센서 활성화 후 측정 시작
@@ -441,8 +462,25 @@ export default function RomSensorGoniometer({ jointName, jointKey, onBack, onCom
       <div className="flex items-center justify-between">
         <button onClick={onBack} className="measure-back">← 뒤로</button>
         <h2 className="measure-title">고니오메타 · {jointName || '측정'}</h2>
-        <span className="w-12" />
+        {jointTip ? (
+          <button type="button" onClick={() => setShowTip((v) => !v)}
+            className="w-12 text-right text-xs font-black text-amber-700 dark:text-amber-300">ℹ 안내</button>
+        ) : <span className="w-12" />}
       </div>
+
+      {jointTip && showTip && (
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 space-y-2">
+          {jointTip.blocks.map((b) => (
+            <div key={b.title} className="space-y-0.5">
+              <p className="text-[11px] font-black text-slate-700 dark:text-slate-200">· {b.title}</p>
+              <p className="text-[11px] leading-relaxed text-slate-600 dark:text-slate-300">부착: {b.mount}</p>
+              <p className="text-[11px] leading-relaxed text-slate-600 dark:text-slate-300">{b.start}</p>
+              <p className="text-[11px] leading-relaxed text-slate-500 dark:text-slate-400">정상치: {b.norms}</p>
+              {b.note && <p className="text-[11px] leading-relaxed text-slate-500 dark:text-slate-400">※ {b.note}</p>}
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* [항목 5] 자동/수동 측정 토글 */}
       <div className="flex items-center justify-between rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-2">
