@@ -42,6 +42,7 @@ const JOINTS = [
   { key: 'SHOULDER', label: '견관절(어깨 올림)', short: '어깨' },
   { key: 'ANKLE', label: '족관절(발목)', short: '발목' },
   { key: 'ELBOW', label: '주관절(팔꿈치)', short: '팔꿈치' },
+  { key: 'NECK', label: '경추(목)', short: '목' },
 ];
 
 // 관절별 허용 자세모드 (해부학적으로 의미 있는 조합만 노출).
@@ -62,6 +63,12 @@ const POSE_MODES_BY_JOINT = {
     { key: 'STANDING', label: '서서', desc: '팔 앞으로 들어올림(어깨 올림·굴곡, 옆모습 촬영)' },
     { key: 'SEATED', label: '앉아서', desc: '체간 안정 상태 굴곡(어깨 올림, 옆모습 촬영)' },
     { key: 'ABDUCTION', label: '서서 벌림', desc: '팔 옆으로 들어올림(어깨 올림·벌림, 정면 촬영)' },
+  ],
+  NECK: [
+    { key: 'FLEXION', label: '목 숙이기', desc: '옆모습 촬영 · 시작 때 정면 응시 1초 후 턱을 가슴 쪽으로(굴곡)' },
+    { key: 'EXTENSION', label: '목 젖히기', desc: '옆모습 촬영 · 시작 때 정면 응시 1초 후 뒤로 젖힘(폄)' },
+    { key: 'LATERAL', label: '목 옆으로', desc: '정면 촬영 · 귀를 어깨 쪽으로 기울임(어깨는 올리지 않기)' },
+    { key: 'ROTATION', label: '목 돌리기', desc: '정면 촬영 · 몸통은 고정, 고개만 좌우로 돌림' },
   ],
   ANKLE: [
     { key: 'STANDING', label: '서서', desc: '배측굴곡' },
@@ -223,7 +230,7 @@ export default function RomMeasure({ member, onSave, onBack, onViewInReport }) {
         viewEmaRef.current = viewEmaRef.current == null ? vr : 0.8 * viewEmaRef.current + 0.2 * vr;
         const e = viewEmaRef.current;
         // 히스테리시스 ±0.05 — 경계에서 안내가 깜빡이지 않게
-        const front = poseMode === 'ABDUCTION' || poseMode === 'SUPINE_ABD'; // 벌림은 정면/위에서 촬영 — 판정 방향 반대
+        const front = poseMode === 'ABDUCTION' || poseMode === 'SUPINE_ABD' || poseMode === 'LATERAL' || poseMode === 'ROTATION'; // 벌림은 정면/위에서 촬영 — 판정 방향 반대
         const next = front
           ? (viewStateRef.current === 'bad'
               ? (e > ROM_VIEW_RATIO_MIN_FRONT + 0.05 ? 'ok' : 'bad')
@@ -506,7 +513,7 @@ export default function RomMeasure({ member, onSave, onBack, onViewInReport }) {
       joint,
       poseMode,
       side,
-      viewAngle: poseMode === 'ABDUCTION' ? 'FRONT' : poseMode === 'SUPINE_ABD' ? 'TOP' : 'SIDE',
+      viewAngle: (poseMode === 'ABDUCTION' || poseMode === 'LATERAL' || poseMode === 'ROTATION') ? 'FRONT' : poseMode === 'SUPINE_ABD' ? 'TOP' : 'SIDE',
       captureMode,
       // evaluation_result + raw_time_series_data (스키마)
       summary,
@@ -795,14 +802,14 @@ export default function RomMeasure({ member, onSave, onBack, onViewInReport }) {
             <div className="rounded-xl border border-amber-400/40 bg-amber-500/15 px-3 py-2 text-center text-xs font-bold text-amber-700 dark:text-amber-300">
               {poseMode === 'SUPINE_ABD'
                 ? '카메라가 몸 바로 위를 향하지 않아요 — 폰을 몸 위에서 아래로 곧게 향하게 고정해 주세요 (각도가 실제보다 작게 나올 수 있습니다)'
-                : poseMode === 'ABDUCTION'
+                : (poseMode === 'ABDUCTION' || poseMode === 'LATERAL' || poseMode === 'ROTATION')
                 ? '몸이 옆으로 돌아 있어요 — 카메라를 정면으로 보고 서 주세요 (각도가 실제보다 작게 나올 수 있습니다)'
                 : '몸이 정면 쪽으로 돌아 있어요 — 카메라를 향해 옆으로 서 주세요 (각도가 실제보다 작게 나올 수 있습니다)'}
             </div>
           )}
           {viewState === 'ok' && !recording && (
             <div className="rounded-xl border border-emerald-400/40 bg-emerald-500/15 px-3 py-1.5 text-center text-[11px] font-bold text-emerald-700 dark:text-emerald-300">
-              {poseMode === 'SUPINE_ABD' ? '위에서 촬영 정렬 확인됨' : poseMode === 'ABDUCTION' ? '정면 정렬 확인됨' : '옆모습 정렬 확인됨'}
+              {poseMode === 'SUPINE_ABD' ? '위에서 촬영 정렬 확인됨' : (poseMode === 'ABDUCTION' || poseMode === 'LATERAL' || poseMode === 'ROTATION') ? '정면 정렬 확인됨' : '옆모습 정렬 확인됨'}
             </div>
           )}
           {recording && !skeletonOn && (
@@ -908,6 +915,10 @@ export default function RomMeasure({ member, onSave, onBack, onViewInReport }) {
           ※ {POSE_LABEL[poseMode]} 자세에서는{' '}
           {poseMode === 'SUPINE_ABD'
             ? '바로 누운 몸 위에서 폰을 아래로 향하게 고정하고, 다리를 곧게 편 채 옆으로 벌립니다. 반대쪽 다리와 골반은 움직이지 않게 합니다.'
+            : poseMode === 'LATERAL' || poseMode === 'ROTATION'
+            ? '카메라를 정면으로 보고 앉거나 서서, 어깨는 움직이지 말고 고개만 움직입니다. 귀와 코가 보이게 머리카락을 넘겨 주세요.'
+            : poseMode === 'FLEXION' || poseMode === 'EXTENSION'
+            ? '옆으로 서서 시작 때 1초간 정면을 보고 가만히 있어 주세요(0점). 그다음 천천히 끝까지 숙이거나 젖힙니다. 귀와 코가 보여야 합니다.'
             : poseMode === 'ABDUCTION'
             ? '카메라를 정면으로 보고 서서 팔을 옆으로 머리 위까지 들어올립니다(어깨 올림·벌림). 체간 기울기 보상도 함께 봅니다.'
             : poseMode === 'STANDING'
@@ -919,7 +930,7 @@ export default function RomMeasure({ member, onSave, onBack, onViewInReport }) {
   );
 }
 
-const POSE_LABEL = { STANDING: '서서', SUPINE: '누워서', PRONE: '엎드려', SEATED: '앉아서', ABDUCTION: '서서 벌림(정면)', SUPINE_ABD: '누워서 벌림(위에서 촬영)' };
+const POSE_LABEL = { STANDING: '서서', SUPINE: '누워서', PRONE: '엎드려', SEATED: '앉아서', ABDUCTION: '서서 벌림(정면)', SUPINE_ABD: '누워서 벌림(위에서 촬영)', FLEXION: '목 숙이기(옆모습)', EXTENSION: '목 젖히기(옆모습)', LATERAL: '목 옆으로(정면)', ROTATION: '목 돌리기(정면)' };
 
 // ── 스켈레톤 드로잉 (측정 측 강조) ──
 function drawSkeleton(canvas, video, landmarks, side, joint, poseMode) {
@@ -1086,6 +1097,11 @@ function romOverlayGeometry(landmarks, side, joint, poseMode, mapper, width, hei
   if (joint === 'SHOULDER' && shoulder && elbow) return { a: refPoint(shoulder, hip), b: shoulder, c: elbow };
   if (joint === 'ANKLE' && knee && ankle && foot) return { a: knee, b: ankle, c: foot };
   if (joint === 'ELBOW' && shoulder && elbow && wrist) return { a: shoulder, b: elbow, c: wrist };
+  if (joint === 'NECK') {
+    const ear = p('EAR'); const nose = landmarks?.[LM.NOSE];
+    const n = vis(nose) ? { x: mapper.x(nose), y: mapper.y(nose) } : null;
+    if (ear && n) return { a: { x: ear.x + refLen, y: ear.y }, b: ear, c: n };
+  }
   return null;
 }
 
