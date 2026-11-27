@@ -139,16 +139,10 @@ describe('[항목 4] ROM 전자 각도기(수동)', () => {
     expect(angleAt(null, { x: 0, y: 0 }, { x: 100, y: 0 })).toBeNull();
   });
 
-  it('사진 각도기(3점 탭)는 영상 캡처 후 기능으로 연결된다(항목 4-3)', () => {
+  it('[2026-11-27] 영상 각도 재기는 ROM 에서 빠지고 영상 분석/비교가 같은 각도 계산을 쓴다', () => {
     const rom = read('../ai-measure/menus/RomMeasure.jsx');
-    const video = read('../ai-measure/menus/RomVideoAngle.jsx');
-    // RomMeasure 는 영상 업로드 모드를 RomVideoAngle 로 위임
-    expect(rom).toMatch(/RomVideoAngle/);
-    expect(rom).toMatch(/setMode\('upload'\)/);
-    // RomVideoAngle 은 캡처 프레임을 RomGoniometer(사진 각도기)에 넘긴다
-    expect(video).toMatch(/RomGoniometer/);
-    expect(video).toMatch(/initialImageUrl=\{captureUrl\}/);
-    expect(video).toMatch(/전자 각도기|각도 측정|사진 각도기|angleAt|onUseAngle/);
+    expect(rom).not.toMatch(/RomVideoAngle|setMode\('upload'\)|영상 업로드 <span/);
+    expect(read('../ai-measure/menus/CompareAnalysis.jsx')).toMatch(/import \{ angleAt \} from '\.\/RomGoniometer\.jsx'/);
   });
 });
 
@@ -464,7 +458,6 @@ describe('[보상 프로파일] 다축 보상 측정', () => {
 describe('[고니오메타 개편] 명칭/움직임/영상 각도', () => {
   const sensor = read('../ai-measure/menus/RomSensorGoniometer.jsx');
   const rom = read('../ai-measure/menus/RomMeasure.jsx');
-  const video = read('../ai-measure/menus/RomVideoAngle.jsx');
   const gonio = read('../ai-measure/menus/RomGoniometer.jsx');
 
   it('[1] 센서 측정 명칭이 "고니오메타"로 변경되었다', () => {
@@ -492,29 +485,11 @@ describe('[고니오메타 개편] 명칭/움직임/영상 각도', () => {
     expect(sensor).toMatch(/Circumduction/);
   });
 
-  it('[4] 영상 업로드는 특정 관절 자동 ROM 이 아니라 수행 각도 확인이다', () => {
-    expect(video).toMatch(/특정 관절 자동 ROM 측정이 아닙니다|특정 관절 측정이 아/);
-    expect(video).toMatch(/수행 각도/);
-    // 자동 분석(analyzeUploadedVideo) 을 더 이상 호출하지 않는다
+  it('[4] 자동 영상 분석(analyzeUploadedVideo)을 호출하지 않는다', () => {
     expect(rom).not.toMatch(/analyzeUploadedVideo/);
   });
 
-  it('[4-1] 영상 재생 속도 조절 기능이 있다', () => {
-    expect(video).toMatch(/const SPEEDS = \[/);
-    expect(video).toMatch(/playbackRate = speed/);
-    expect(video).toMatch(/재생 속도/);
-  });
-
-  it('[4-2] 영상 프레임 캡처 기능이 있다', () => {
-    expect(video).toMatch(/captureFrame/);
-    expect(video).toMatch(/이 장면 캡처/);
-    expect(video).toMatch(/toDataURL/);
-  });
-
-  it('[4-3] 캡처 프레임에서 사진 각도기(3점 탭)로 각도를 잰다', () => {
-    expect(video).toMatch(/initialImageUrl=\{captureUrl\}/);
-    expect(video).toMatch(/onUseAngle=\{handleAngle\}/);
-    // RomGoniometer 는 초기 이미지가 있으면 곧바로 주석 단계로 시작
+  it('[4-3] 사진 각도기는 초기 이미지가 있으면 곧바로 주석 단계로 시작한다', () => {
     expect(gonio).toMatch(/initialImageUrl \? 'annotate' : 'capture'/);
   });
 });

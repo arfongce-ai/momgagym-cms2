@@ -28,8 +28,10 @@ async function _createWithDelegate(PoseLandmarker, FilesetResolver, delegate) {
     baseOptions: { modelAssetPath: MODEL_URL, delegate },
     runningMode: 'IMAGE',
     numPoses: 1,
-    minPoseDetectionConfidence: 0.5,
-    minPosePresenceConfidence: 0.5,
+    // [2026-11-27] 비교 화면 인식률: 0.5 → 0.3. 잘못 잡은 점은 가시성 확인(overlayAlign)과
+    //  동작 분석의 점 직접 수정으로 걸러낸다.
+    minPoseDetectionConfidence: 0.3,
+    minPosePresenceConfidence: 0.3,
   });
 }
 

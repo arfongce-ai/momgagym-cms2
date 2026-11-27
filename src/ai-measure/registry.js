@@ -44,7 +44,7 @@ export const MEASURE_GROUPS = [
   { id: 'cardio', title: '심폐지구력', hint: '장비 자동 기록, 심박·회복, VO2max' },
   { id: 'senior', title: '시니어 · 기능', hint: '30초 의자 일어서기, 5회 일어서기, TUG' },
   { id: 'paps', title: 'PAPS · 청소년 체력', hint: '팔굽혀펴기, 윗몸, 사이드스텝, 매달리기, 유연성, 악력' },
-  { id: 'tool', title: '비교 · 영상 · 도구', hint: '전/후 비교, 영상 확인, 녹화, 초시계' },
+  { id: 'tool', title: '비교 · 영상 · 도구', hint: '영상 분석/비교, 영상 확인, 녹화, 초시계' },
 ];
 
 // 묶음 순서대로, 묶음 안에서는 번호 순으로 정렬한 [{ group, menus }] (빈 묶음은 뺀다).
@@ -225,8 +225,8 @@ export const MEASURE_MENUS = [
     id: 'compare',
     no: 15,
     group: 'tool',
-    title: '전/후 비교 (오버레이)',
-    desc: '사진·영상 오버레이 · 어니언 스킨 비교, 발목 기준 자동 정렬',
+    title: '영상 분석/비교',
+    desc: '전·후 겹쳐보기, 뼈대·각도 분석, 사진·영상 저장',
     icon: 'CMP',
     status: 'ready',
     component: lazy(() => import('./menus/OverlayCompare.jsx')),

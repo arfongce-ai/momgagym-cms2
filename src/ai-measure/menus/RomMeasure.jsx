@@ -28,7 +28,6 @@ import { aiStore } from '../../demoData';
 import { dataUrlToFile } from '../core/reportShare';
 import { useHardwareBack } from '../core/useHardwareBack';
 import RomSensorGoniometer from './RomSensorGoniometer.jsx';
-import RomVideoAngle from './RomVideoAngle.jsx';
 import { isSkeletonEnabled, useSkeletonOverlay } from '../core/skeletonPref';
 import { drawGaugeHud } from '../core/recordingOverlay';
 import { DEFAULT_ASPECT, outputSize, aspectLabel, drawVideoCover, coverTransform, rotateLandmarksNormalized } from '../core/recordAspect';
@@ -753,18 +752,6 @@ export default function RomMeasure({ member, onSave, onBack, onViewInReport }) {
     );
   }
 
-  // ════════════════ [항목 4] 영상 업로드 — 스포츠 수행 각도 확인 ════════════════
-  //  특정 관절 자동 ROM 이 아니라, 수행 영상에서 원하는 장면의 각도를 직접 측정.
-  //  [4-1] 속도조절 · [4-2] 캡처 · [4-3] 캡처 프레임에서 사진 각도기(3점 탭).
-  if (mode === 'upload') {
-    return (
-      <RomVideoAngle
-        member={member}
-        onBack={() => setMode('select')}
-      />
-    );
-  }
-
   // ════════════════ 라이브 화면 ════════════════
   if (mode === 'live') {
     return (
@@ -955,11 +942,6 @@ export default function RomMeasure({ member, onSave, onBack, onViewInReport }) {
           className="w-full rounded-xl bg-amber-500 px-4 py-4 text-left active:scale-[0.99] transition">
           <p className="text-base font-black text-slate-950">라이브 측정 (권장) <span className="text-[10px] font-bold text-slate-900/60 align-middle">카메라 분석</span></p>
           <p className="mt-0.5 text-xs font-bold text-slate-900/80">카메라 앞에서 같은 동작을 3~5회 천천히 반복 → 최대 가동범위 자동 산출.</p>
-        </button>
-        <button onClick={() => setMode('upload')}
-          className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-4 py-4 text-left active:scale-[0.99] transition">
-          <p className="text-base font-black text-slate-900 dark:text-white">영상 업로드 <span className="text-[10px] font-bold text-slate-500 align-middle">수행 각도 확인</span></p>
-          <p className="mt-0.5 text-xs font-bold text-slate-500 dark:text-slate-400">스포츠 수행 영상 → 속도 조절·프레임 캡처 후, 그 장면에서 각도 직접 측정.</p>
         </button>
         <button onClick={() => setMode('sensor')}
           className="w-full rounded-xl border border-emerald-500/50 bg-emerald-500/10 px-4 py-4 text-left active:scale-[0.99] transition">

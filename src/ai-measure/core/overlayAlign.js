@@ -77,3 +77,40 @@ export function extractAnkleData(result) {
   else ref = { x: ankle.x, y: Math.max(0, ankle.y - 0.4) };
   return { ankle, ref };
 }
+
+// ── [2026-11-27] 정렬 기준점 대체 ───────────────────────────────────────
+//  MediaPipe 는 화면 밖·가려진 관절도 추측 좌표를 돌려주므로 가시성을 확인한다.
+//  발목이 안 보이면 무릎 → 골반 순으로 대신하되, 전/후 두 장이 '같은 부위'를 써야 한다.
+export const ALIGN_MIN_VIS = 0.5;
+const ALIGN_BASES = [
+  { key: 'ankle', label: '발목', ids: [27, 28] },
+  { key: 'knee', label: '무릎', ids: [25, 26] },
+  { key: 'hip', label: '골반', ids: [23, 24] },
+];
+
+function visibleMid(lm, ids, minVis) {
+  const pts = ids.map((i) => lm?.[i]).filter((p) => p
+    && (p.visibility == null || p.visibility >= minVis)
+    && p.x >= -0.02 && p.x <= 1.02 && p.y >= -0.02 && p.y <= 1.02);
+  if (!pts.length) return null;
+  return {
+    x: pts.reduce((s, p) => s + p.x, 0) / pts.length,
+    y: pts.reduce((s, p) => s + p.y, 0) / pts.length,
+  };
+}
+
+/** 두 검출 결과에서 공통으로 보이는 기준점 쌍. 없으면 null. */
+export function extractAlignPair(resultA, resultB, minVis = ALIGN_MIN_VIS) {
+  const a = resultA?.landmarks;
+  const b = resultB?.landmarks;
+  if (!a?.length || !b?.length) return null;
+  const refA = visibleMid(a, [11, 12], minVis);
+  const refB = visibleMid(b, [11, 12], minVis);
+  if (!refA || !refB) return null;
+  for (const base of ALIGN_BASES) {
+    const ankleA = visibleMid(a, base.ids, minVis);
+    const ankleB = visibleMid(b, base.ids, minVis);
+    if (ankleA && ankleB) return { basis: base.key, label: base.label, ankleA, ankleB, refA, refB };
+  }
+  return null;
+}
