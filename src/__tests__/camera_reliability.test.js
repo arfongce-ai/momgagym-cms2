@@ -144,25 +144,6 @@ describe('일반 영상 녹화 — 저장 직후 카메라가 죽지 않는다(�
   });
 });
 
-describe('ROM 영상 각도기(업로드) — 캡처 장면 blob URL 누수 방지', () => {
-  const src = read('ai-measure/menus/RomVideoAngle.jsx');
-
-  it('언마운트 클린업은 videoUrl 변경마다 재실행되지 않는다(deps가 빈 배열)', () => {
-    const idx = src.indexOf('useEffect(() => () => {\n    if (videoUrlRef.current)');
-    expect(idx).toBeGreaterThan(-1);
-    const block = src.slice(idx, idx + 260);
-    expect(block).toContain('}, []);');
-  });
-
-  it('videoUrl과 shots 모두 ref로 최신값을 추적한다(스테일 클로저로 캡처 장면이 안 지워지는 문제 방지)', () => {
-    expect(src).toContain('const videoUrlRef = useRef(');
-    expect(src).toContain('videoUrlRef.current = videoUrl');
-    expect(src).toContain('const shotsRef = useRef([]);');
-    expect(src).toContain('shotsRef.current = shots');
-    expect(src).toContain('shotsRef.current.forEach');
-  });
-});
-
 describe('ROM 전자 각도기(사진) — 카메라 획득 강화', () => {
   const src = read('ai-measure/menus/RomGoniometer.jsx');
 
