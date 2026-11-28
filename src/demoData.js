@@ -28,6 +28,11 @@ if (typeof window !== 'undefined') window.__fsReads = __readStats;
 
 async function countedGetDocs(name, q) {
   const snap = await getDocs(q);
+  // 연결이 끊기면 getDocs 는 에러 대신 기기 캐시(비었거나 일부)를 돌려줄 수 있다.
+  // 이를 성공으로 저장하면 회원 일부만·트레이너 '??' 화면이 굳으므로 실패로 처리한다.
+  if (snap?.metadata?.fromCache) {
+    throw Object.assign(new Error(`${name}: 서버에 연결되지 않았습니다.`), { code: 'unavailable' });
+  }
   const n = Number.isFinite(snap?.size) ? snap.size : (snap?.docs?.length || 0);
   __readStats.total += n;
   __readStats.byCollection[name] = (__readStats.byCollection[name] || 0) + n;
@@ -387,11 +392,14 @@ async function __deltaSync() {
 export async function initStore({ force = false } = {}) {
   if (!force && __loadPromise) return __loadPromise; // 이미 로딩(중)이면 그대로 재사용
   __loadPromise = (async () => {
+    let restored = false; // 쓸 수 있는 저장본(회원·트레이너가 있음)을 복원했는지
     try {
       // 1) 스냅샷 복원(읽기 0) → 델타 동기화(변경분만).
       if (!force) {
         const snap = __readSnapshot();
-        if (snap?.data) {
+        // 회원이나 트레이너가 0명인 저장본은 깨진 것으로 보고 전체를 다시 받는다.
+        if (snap?.data?.members?.length && snap.data.trainers?.length) {
+          restored = true;
           const d = snap.data;
           cache.members=d.members||[]; cache.trainers=d.trainers||[];
           cache.schedules=d.schedules||[]; cache.notices=d.notices||[];
@@ -456,6 +464,11 @@ export async function initStore({ force = false } = {}) {
       console.log(`[FitCMS] Firebase 로딩 완료 — 이번 세션 총 읽기 ${__readStats.total}건`);
     } catch (e) {
       __loadPromise = null; // 실패 시 다음 호출에서 재시도 가능하도록 가드 해제
+      // 연결 문제뿐이면 기존 저장본으로 연다(저장본·동기화 시각은 건드리지 않음).
+      if (restored && e?.code === 'unavailable') {
+        console.warn('[FitCMS] 서버 연결 실패 — 저장된 데이터로 엽니다.');
+        return;
+      }
       console.error('[FitCMS] Firebase 로딩 실패:', e);
       throw e;
     }
@@ -1107,13 +1120,22 @@ export const store = {
   // 위해 null을 반환하고 아무것도 바꾸지 않는다.
   processExpirySettlement: async (mid, params = {}) => {
     const { trainerId, lotId, paymentId, legacy, sessions, unit, rate, amount } = params;
-    if (!(Number(sessions) > 0) || !(Number(amount) > 0)) return null;
+    // disposition: 'trainer'(트레이너 지급) | 'center'(센터 귀속 — 트레이너 지급 0원)
+    const disposition = params.disposition === 'center' ? 'center' : 'trainer';
+    const toCenter = disposition === 'center';
+    if (!(Number(sessions) > 0) || (!toCenter && !(Number(amount) > 0))) return null;
     const member = cache.members.find(m => m.id === mid);
     if (!member) return null;
     const ts = member.trainerSessions || {};
     if (!ts[trainerId]) return null;
 
-    const record = { trainerId, sessions: Number(sessions), unit: Number(unit) || 0, rate: Number(rate) || 0, amount: Number(amount), settledAt: todayYMD() };
+    const record = {
+      trainerId, disposition, sessions: Number(sessions), unit: Number(unit) || 0,
+      rate: toCenter ? 0 : (Number(rate) || 0),
+      amount: toCenter ? 0 : Number(amount),
+      ...(toCenter ? { centerAmount: Math.round((Number(unit) || 0) * Number(sessions)) } : {}),
+      settledAt: todayYMD(),
+    };
 
     let updatedPayment = null;
     if (legacy) {

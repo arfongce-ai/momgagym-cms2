@@ -11,7 +11,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { consumePendingVoiceTarget } from '../voice/pendingVoiceTarget';
 import {
   METHOD_LBL, METHOD_CLR, won, monthKey, yearKey,
-  calcNet, downloadCSV, computeSessionSettlement, computeSessionSettlementWithExpiry,
+  calcNet, downloadCSV, computeSessionSettlement, computeSessionSettlementWithExpiry, listCenterExpiryByMonth,
   buildRefreezePlan, buildRefreezeAllPlan, planRateFreeze, planConsumedIndexBackfill,
   autoRefundUsedAmount, computeRefundEstimate, refundUnitPriceBasisLabel,
   computeMonthRates,
@@ -984,6 +984,12 @@ function SettleTab({ settings, trainers, trainerMap, scopeTid=null, readOnly=fal
     },
   }), [trainers, members, schedules, allPaymentsGrouped, records, settings, ym, refreshKey, savedOverrides]);
 
+  // 센터 귀속으로 처리한 만료분(관리자 화면에만 표시)
+  const centerExpiry = useMemo(
+    () => listCenterExpiryByMonth({ members, payments: allPaymentsGrouped, ym }),
+    [members, allPaymentsGrouped, ym]
+  );
+
   const handleSettleOverrideSaved = (trainerId, month, override) => {
     setSavedOverrides(prev => ({ ...prev, [`${trainerId}_${month}`]: override || null }));
     setRefreshKey(k=>k+1);
@@ -1189,6 +1195,22 @@ function SettleTab({ settings, trainers, trainerMap, scopeTid=null, readOnly=fal
 
       <RecordManager trainers={trainers} period={ym} mode="month" onChange={()=>setRefreshKey(k=>k+1)}
         scopeTid={scopeTid} readOnly={readOnly}/>
+
+      {!readOnly && centerExpiry.items.length > 0 && (
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3">
+          <div className="flex justify-between text-sm font-bold text-amber-700 dark:text-amber-400">
+            <span>센터 귀속 (만료 {centerExpiry.items.length}건)</span>
+            <span className="font-mono">{centerExpiry.total.toLocaleString()}원</span>
+          </div>
+          {centerExpiry.items.map((x, n) => (
+            <div key={n} className="flex justify-between text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+              <span>{x.memberName} · {trainerMap[x.trainerId]?.name || '?'} · {x.sessions}회 · {x.settledAt}</span>
+              <span className="font-mono">{x.centerAmount.toLocaleString()}원</span>
+            </div>
+          ))}
+          <p className="text-[11px] text-slate-500 mt-2">트레이너 지급액에 포함되지 않습니다. 이미 입금된 돈이라 매출에 다시 더하지 않습니다.</p>
+        </div>
+      )}
 
       {blocks.length===0
         ? <p className="text-slate-600 text-sm text-center py-6 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl">해당 월 정산 내역이 없습니다</p>
