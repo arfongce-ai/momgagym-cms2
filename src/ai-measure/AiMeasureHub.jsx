@@ -165,6 +165,10 @@ export default function AiMeasureHub() {
     const isHeartRate = active.id === 'timer' && data?.kind === 'heart_rate';
     // [11번 심폐지구력 2026-11-12] 화면이 저장 상태를 직접 보여주므로 alert 없이 세션을 돌려준다.
     const isCardio = (active.id === 'cardio' || active.id === 'cardio_field') && data?.kind === 'cardio_test';
+    // [시니어 테스트 2026-11-24] 화면이 저장 상태를 직접 보여주므로 cardio 와 같이 alert 없이 세션을 돌려준다.
+    const isSenior = active.id === 'senior' && data?.kind === 'senior_test';
+    // [PAPS 2026-11-25] 시니어와 같은 저장 흐름(화면이 저장 상태를 직접 표시).
+    const isPaps = active.id === 'paps' && data?.kind === 'paps_test';
 
     // 측정 정직성: 미등록회원인데 guest id 가 아직 없으면 저장 직전 확정 발급
     // (null __mid 로 저장되어 데이터가 유실/혼합되는 것을 방지). 같은 측정 묶음은
@@ -247,7 +251,7 @@ export default function AiMeasureHub() {
       }
       // [2026-10-25] 1RM/VBT/스탠스/스쿼트도 undefined·Blob 을 걸러 저장한다.
       //  (Firestore setDoc 은 undefined 필드를 거부 → 저장 실패)
-      let storableData = (measurementKind || isLifting || isStance || isSquat || isCardio)
+      let storableData = (measurementKind || isLifting || isStance || isSquat || isCardio || isSenior || isPaps)
         ? sanitizeReportPayload(enrichedData) : enrichedData;
       const saveUnifiedCopy = async (savedReport, reportType) => {
         try {
@@ -372,7 +376,7 @@ export default function AiMeasureHub() {
       if (isStance || isSquat) {
         return savedSession;
       }
-      if (isHeartRate || isCardio) {
+      if (isHeartRate || isCardio || isSenior || isPaps) {
         return savedSession;
       }
       alert(member.isVirtual ? '미등록회원 측정이 저장되었습니다.' : '측정이 저장되었습니다.');
@@ -381,7 +385,7 @@ export default function AiMeasureHub() {
       // [2026-10-25] 바벨·스탠스·스쿼트도 전파한다. 예전엔 alert 후 undefined 를 반환해
       //  호출부가 '저장 성공'으로 오인하고 리포트로 넘어가 기록이 유실됐다.
       if (isGait || isJump || isPosture || isRom || isSprint || isLifting || isStance || isSquat) throw e; // 컴포넌트 saveState='error' 로 표시되게 전파
-      if (isHeartRate || isCardio) throw e; // 심박 패널·15번 화면이 '저장 실패'를 직접 표시
+      if (isHeartRate || isCardio || isSenior || isPaps) throw e; // 심박 패널·15번 화면이 '저장 실패'를 직접 표시
       alert('저장에 실패했습니다. 네트워크 확인 후 다시 시도하세요.\n' + (e?.message || ''));
     } finally {
       // 저장에 성공했을 때만 인식률 집계를 비운다(실패 후 재시도하면 같은 측정 값을 다시 쓴다).
@@ -481,7 +485,7 @@ export default function AiMeasureHub() {
           body: bodyRecords,
           posture: postureReports,
           rom: romReports,
-          gait: (gaitReports || []).filter((report) => report?.kind === 'gait' || report?.metrics || report?.cadence),
+          gait: (gaitReports || []).filter((report) => report?.kind !== 'sprint' && report?.kind !== 'agility' && report?.kind !== 'jump' && (report?.kind === 'gait' || report?.metrics || report?.cadence)),
           jump: (gaitReports || []).filter((report) => report?.kind === 'jump'),
           lifting: sessionReports('lifting'),
           stance: sessionReports('stance'),

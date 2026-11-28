@@ -8,6 +8,7 @@ import { useRef, useState, useEffect, useCallback } from 'react';
 import { usePoseEngine } from '../core/usePoseEngine';
 import { personHeightRatio, barbellPoint, barTiltDeg, summarizeBarTilt } from '../core/barbell';
 import { createMultiTracker } from '../core/endcapTracker';
+import { detectView, viewStatusText } from '../core/cameraViewGuide';
 import { assessFraming, FRAMING_PRESETS, MIN_CAMERA_DISTANCE_MM } from '../core/framingGuide';
 import {
   detectPlatesFromVideo, suggestSidePlates, totalWeight, createPlateBlobTracker,
@@ -35,6 +36,11 @@ import LiftingResultSheet from './LiftingResultSheet';
 const MAX_RECORDING_MS = 60000;
 
 export default function LiftingMeasure({ member, onSave, onBack, exerciseType, embedded = false, autoStartSignal = 0, topOffset = 0 }) {
+  // 촬영 위치는 고르지 않고 자동 인식한다(5프레임 연속 같을 때만 바뀜). 저장 기록에도 인식값이 들어간다.
+  const [viewText, setViewText] = useState('');
+  const cameraViewRef = useRef(null);
+  const viewVoteRef = useRef({ key: null, n: 0 });
+  const viewWantRef = useRef('any');
   const canvasRef = useRef(null);
   const capRef = useRef(createMultiTracker());
   // ── 다중 신호 융합 ──
@@ -125,10 +131,19 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
       if (recordingRef.current) phSamplesRef.current.push(ph);
     }
 
-    const fr = assessFraming(lms, { want: FRAMING_PRESETS.lifting.want, minDistanceMm: MIN_CAMERA_DISTANCE_MM.lifting });
+    const fr = assessFraming(lms, { want: viewWantRef.current, minDistanceMm: MIN_CAMERA_DISTANCE_MM.lifting });
     if (fr.level !== framingRef.current.level || fr.message !== framingRef.current.message) {
       framingRef.current = fr;
       setFraming({ level: fr.level, message: fr.message });
+    }
+    {
+      const dv = detectView(lms, video?.videoWidth && video?.videoHeight ? video.videoWidth / video.videoHeight : 1);
+      const vote = viewVoteRef.current;
+      if (dv && dv === vote.key) vote.n += 1; else { vote.key = dv; vote.n = 1; }
+      if (vote.key && vote.n >= 5 && cameraViewRef.current !== vote.key) {
+        cameraViewRef.current = vote.key;
+        setViewText(viewStatusText(vote.key));
+      }
     }
 
     // ── 전신 무게중심(COG) 자동 인식 — 측면 촬영일 때만 ──
@@ -144,7 +159,7 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
     // 두고(융합 로직 내부 일관성 유지), 판정에 들어가기 직전(최종 융합 지점·
     // COG)에서만 보정한다.
     const correctedLms = rotateLandmarksNormalized(lms, rotationDeg);
-    const correctedFr = assessFraming(correctedLms, { want: FRAMING_PRESETS.lifting.want, minDistanceMm: MIN_CAMERA_DISTANCE_MM.lifting });
+    const correctedFr = assessFraming(correctedLms, { want: viewWantRef.current, minDistanceMm: MIN_CAMERA_DISTANCE_MM.lifting });
     const correctedCog = estimateBodyCOG(correctedLms, correctedFr.orientation);
 
     const r = roiRef.current;
@@ -676,7 +691,7 @@ export default function LiftingMeasure({ member, onSave, onBack, exerciseType, e
           )}
         </div>
         <span className={`rounded-full px-3 py-1 text-[11px] font-bold ${framing.level === 'good' ? 'bg-emerald-500/85 text-slate-950' : framing.level === 'warn' ? 'bg-amber-500/85 text-slate-950' : 'bg-red-500/85 text-white'}`}>
-          {framing.level === 'good' ? '✓ ' : '⚠ '}{framing.message}
+          {framing.level === 'good' ? '✓ ' : '⚠ '}{framing.message}{viewText ? ` · ${viewText}` : ''}
         </span>
         {cogActive && (
           <span className="rounded-full px-2.5 py-1 text-[10px] font-bold bg-fuchsia-500/85 text-white">

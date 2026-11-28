@@ -8,7 +8,7 @@ import { scopeMembersToTrainer, sortByName } from '../utils/memberList';
 import { store, aiStore } from '../demoData';
 import { buildFullReport, buildAnalysisTrend, buildPostureTrend, groupResultsByDate, buildInterpretationGuide, GUIDE_STATUS_LEGEND, menuGroupKey, plausibleVelocity } from '../services/reportService';
 import { JUMP_SUBTYPES, resolveJumpSubType } from '../ai-measure/core/jumpTypes';
-import { cardioGroupKey } from '../ai-measure/core/cardioTest';
+import { cardioGroupKey, getProtocol } from '../ai-measure/core/cardioTest';
 import { buildSummaryData, scoreToStatus, defaultRecommendation } from '../ai-measure/core/unifiedReport';
 import { buildComprehensiveReport } from '../ai-measure/core/comprehensiveReport';
 import { loadAllMeasureRecords, deleteMeasureRound, deleteMeasureType, deleteMeasureRecord } from '../services/comprehensiveReportService';
@@ -30,10 +30,14 @@ import { buildMemberTestRecommendations } from '../ai-measure/core/memberTestRec
 import { consumePendingVoiceTarget, setPendingVoiceTarget } from '../voice/pendingVoiceTarget';
 const JumpReportDashboard = lazy(() => import('../ai-measure/menus/JumpReportDashboard'));
 const GaitReportDashboard = lazy(() => import('../ai-measure/menus/GaitReportDashboard'));
+const SprintReportDashboard = lazy(() => import('../ai-measure/menus/SprintReportDashboard'));
 const PostureReport = lazy(() => import('../ai-measure/menus/PostureReport'));
 const RomReport = lazy(() => import('../ai-measure/menus/RomReport'));
 const LiftingReportDashboard = lazy(() => import('../ai-measure/menus/LiftingReportDashboard'));
 import CardioReportSheet from '../components/report/CardioReportSheet';
+import SeniorReportSheet from '../components/report/SeniorReportSheet';
+import PapsReportSheet from '../components/report/PapsReportSheet';
+import { papsGroupKey } from '../ai-measure/core/papsTests';
 // [리포트 통합 2026-08-09] SLST 저장된 리포트 열람 신설 — 다른 5개 측정 종류와
 // 마찬가지로 이제 이 화면에서도 볼 수 있다(StanceAnalysisHub.jsx/
 // StanceReportDashboard.jsx와 같은 컴포넌트를 재사용, 재구현 아님).
@@ -42,7 +46,14 @@ const SquatReportDashboard = lazy(() => import('../ai-measure/menus/SquatReportD
 const SessionDataSheet = lazy(() => import('../components/report/SessionDataSheet'));
 
 const COLORS = { weight:'#f59e0b', systolic:'#ef4444', diastolic:'#3b82f6', height:'#22d3ee' };
-const DETAIL_SESSION_MENUS = new Set(['jump', 'gait', 'posture', 'rom', 'lifting']);
+// [2026-11-25] sprint(5번) 추가 — 전용 리포트가 있는데 세션 기록이 한 번 더 목록에 떠서 측정 1회가 2건으로 보였다.
+const DETAIL_SESSION_MENUS = new Set(['jump', 'gait', 'sprint', 'posture', 'rom', 'lifting']);
+const isSprintKind = (r) => r?.kind === 'sprint' || r?.kind === 'agility';
+// 같은 종목(testKey)의 직전 스프린트 기록
+const findPrevSprint = (list, idx) => {
+  const cur = list[idx];
+  return list.slice(idx + 1).find((r) => isSprintKind(r) && (r.testKey || '') === (cur?.testKey || '')) || null;
+};
 
 const REPORT_TYPE_META = {
   posture: { title: '자세·체형', badge: 'POSTURE', accent: 'text-emerald-700 dark:text-emerald-300', bg: 'bg-emerald-500/15', border: 'border-emerald-500/25' },
@@ -53,6 +64,8 @@ const REPORT_TYPE_META = {
   one_rm: { title: '최대 근력', badge: '1RM', accent: 'text-violet-700 dark:text-violet-300', bg: 'bg-violet-500/15', border: 'border-violet-500/25' },
   vbt: { title: '운동 속도 근력', badge: 'VBT', accent: 'text-fuchsia-700 dark:text-fuchsia-300', bg: 'bg-fuchsia-500/15', border: 'border-fuchsia-500/25' },
   cardio: { title: '심폐지구력', badge: 'VO2', accent: 'text-rose-700 dark:text-rose-300', bg: 'bg-rose-500/15', border: 'border-rose-500/25' },
+  paps: { title: 'PAPS 체력평가', badge: 'PAP', accent: 'text-lime-700 dark:text-lime-300', bg: 'bg-lime-500/15', border: 'border-lime-500/25' },
+  senior: { title: '시니어 기능', badge: 'SNR', accent: 'text-teal-700 dark:text-teal-300', bg: 'bg-teal-500/15', border: 'border-teal-500/25' },
   general: { title: '측정 결과', badge: 'AI', accent: 'text-slate-600 dark:text-slate-300', bg: 'bg-slate-200 dark:bg-slate-700', border: 'border-slate-300 dark:border-slate-700' },
 };
 
@@ -636,7 +649,9 @@ async function preloadReportChunk(item) {
     if (item?.source === 'saved-report') {
       await (report.kind === 'jump'
         ? import('../ai-measure/menus/JumpReportDashboard')
-        : import('../ai-measure/menus/GaitReportDashboard'));
+        : isSprintKind(report)
+          ? import('../ai-measure/menus/SprintReportDashboard')
+          : import('../ai-measure/menus/GaitReportDashboard'));
     } else if (item?.source === 'posture') {
       await import('../ai-measure/menus/PostureReport');
     } else if (item?.source === 'rom') {
@@ -751,7 +766,9 @@ function ShareCaptureReport({ item, member, simple, previousReport }) {
       <div data-share-report-ready="true" className="w-full bg-slate-50 dark:bg-slate-950">
         {report.kind === 'jump'
           ? <JumpReportDashboard report={report} member={reportMember} previousReport={previousReport} />
-          : <GaitReportDashboard report={report} member={reportMember} previousReport={previousReport} />}
+          : isSprintKind(report)
+            ? <SprintReportDashboard report={report} member={reportMember} previousReport={previousReport} />
+            : <GaitReportDashboard report={report} member={reportMember} previousReport={previousReport} />}
       </div>
     );
   }
@@ -796,6 +813,10 @@ function ShareCaptureReport({ item, member, simple, previousReport }) {
           ? <LiftingReportDashboard report={report} member={reportMember} />
           : item.session?.data?.kind === 'cardio_test'
             ? <CardioReportSheet report={{ ...item.session.data, measuredAt: item.date }} member={reportMember} showActions={false} reportNodeId={`cardio-report-${item.id || 'x'}`} />
+            : item.session?.data?.kind === 'paps_test'
+              ? <PapsReportSheet report={{ ...item.session.data, measuredAt: item.date }} member={reportMember} showActions={false} reportNodeId={`paps-report-${item.id || 'x'}`} />
+            : item.session?.data?.kind === 'senior_test'
+              ? <SeniorReportSheet report={{ ...item.session.data, measuredAt: item.date }} member={reportMember} showActions={false} reportNodeId={`senior-report-${item.id || 'x'}`} />
             : <SessionShareReport item={item} member={reportMember} />}
       </div>
     );
@@ -832,8 +853,20 @@ export function extractSessionMetric(session) {
     case 'cardio': {
       const v = d.estimates?.vo2max;
       const shown = Number.isFinite(d.confirmedVo2max) ? d.confirmedVo2max : (v?.calibratedValue ?? v?.value);
-      return { value: Number.isFinite(shown) ? shown : null, unit: 'mL/kg/min', label: `VO2max (${d.machineLabel ?? ''} ${d.protocolLabel ?? ''})`.trim() };
+      const name = `${d.machineLabel ?? ''} ${d.protocolLabel ?? ''}`.trim();
+      if (Number.isFinite(shown)) return { value: shown, unit: 'mL/kg/min', label: `VO2max (${name})`.trim() };
+      // VO2max 를 내는 테스트(에어바이크·쿠퍼 등)는 VO2max 만 비교한다(단위가 섞이면 그래프가 깨진다).
+      // VO2max 를 일부러 안 내는 커브드 트레드밀만 기록 시간/이동 거리로 비교한다.
+      const proto = getProtocol(d.protocolId);
+      if (proto?.basis !== 'curved') return { value: null, unit: 'mL/kg/min', label: `VO2max (${name})`.trim() };
+      const r = d.result || {};
+      const tgt = proto.target || {};
+      if (tgt.distanceM && Number.isFinite(r.durationSec)) return { value: r.durationSec, unit: '초', label: `기록 시간 (${name})`.trim(), lowerBetter: true };
+      if (tgt.durationSec && Number.isFinite(r.distanceM)) return { value: r.distanceM, unit: 'm', label: `이동 거리 (${name})`.trim() };
+      return { value: null, unit: '', label: `심폐지구력 (${name})`.trim() };
     }
+    case 'paps':    return { value: Number.isFinite(d.value) ? d.value : null, unit: d.unit || '', label: `${d.testLabel || 'PAPS 테스트'}${d.variant === 'knee' ? ' (무릎)' : ''}` };
+    case 'senior':  return { value: Number.isFinite(d.value) ? d.value : null, unit: d.unit || '', label: `${d.testLabel || '시니어 테스트'}${d.statusLabel ? ` (${d.statusLabel})` : ''}` };
     case 'rsi':     return { value: d.rsi, unit: '', label: `RSI · 높이 ${d.heightCm ?? '-'}cm` };
     case 'vbt':     return { value: plausibleVelocity(d.meanVelocity), unit: 'm/s', label: `평균속도 (${d.zone ?? ''})` };
     case 'jump': {
@@ -1139,6 +1172,7 @@ export default function Report() {
           && (r.jumpSubType || 'cmj') === curSubType
           && (curSubType !== 'slj' || r.leg === cur.leg)) || null;
       }
+      if (isSprintKind(cur)) return findPrevSprint(savedReports, item.index);
       return savedReports.slice(item.index + 1).find((r) => (r.kind || 'gait') === 'gait') || null;
     }
     return null;
@@ -1180,7 +1214,15 @@ export default function Report() {
   // 직후라면 사실상 항상 0번이지만, 안전하게 kind로 찾는다).
   useEffect(() => {
     if (pendingOpenKind !== 'gait') return;
-    const idx = savedReports.findIndex((r) => r.kind !== 'jump');
+    const idx = savedReports.findIndex((r) => r.kind !== 'jump' && !isSprintKind(r));
+    if (idx === -1) return;
+    setViewerIdx(idx);
+    setPendingOpenKind(null);
+  }, [pendingOpenKind, savedReports]);
+
+  useEffect(() => {
+    if (pendingOpenKind !== 'sprint') return;
+    const idx = savedReports.findIndex((r) => isSprintKind(r));
     if (idx === -1) return;
     setViewerIdx(idx);
     setPendingOpenKind(null);
@@ -1276,7 +1318,7 @@ export default function Report() {
         body: bodyRecords,
         posture: savedPostureReports,
         rom: savedRomReports,
-        gait: savedReports.filter((item) => item?.kind === 'gait' || item?.metrics || item?.cadence),
+        gait: savedReports.filter((item) => !isSprintKind(item) && item?.kind !== 'jump' && (item?.kind === 'gait' || item?.metrics || item?.cadence)),
         jump: savedReports.filter((item) => item?.kind === 'jump'),
         // [트레드밀/필드 구분 2026-09-05] sprint(5m/10m)·agility(5-0-5) — gait_reports를
         // 공유하지만 여기 분기가 없어 추천 엔진(memberTestRecommendation.js)에서
@@ -1383,6 +1425,19 @@ export default function Report() {
       const older = same.slice(idx + 1);
       const key = cardioGroupKey(session.data);
       setSessionViewer({ session, previous: older.find((x) => cardioGroupKey(x.data) === key) || null, history: older.map((x) => x.data).filter(Boolean) });
+      return;
+    }
+    // [시니어 2026-11-24] 같은 테스트(30초 의자·5회·TUG)끼리만 직전·추이를 비교한다.
+    // [PAPS 2026-11-25] 같은 테스트(·같은 방식)끼리만 직전·추이를 비교한다.
+    if (session.menu === 'paps' && session.data?.kind === 'paps_test' && idx >= 0) {
+      const key = papsGroupKey(session.data);
+      const older = same.slice(idx + 1).filter((x) => papsGroupKey(x.data) === key);
+      setSessionViewer({ session, previous: older[0] || null, history: older.map((x) => x.data).filter(Boolean) });
+      return;
+    }
+    if (session.menu === 'senior' && session.data?.kind === 'senior_test' && idx >= 0) {
+      const older = same.slice(idx + 1).filter((x) => x.data?.testId === session.data.testId);
+      setSessionViewer({ session, previous: older[0] || null, history: older.map((x) => x.data).filter(Boolean) });
       return;
     }
     setSessionViewer({ session, previous: idx >= 0 ? (same[idx + 1] || null) : null });
@@ -1671,7 +1726,11 @@ export default function Report() {
                       {open && (() => {
                         // 점프·보행·자세는 여러 지표를 함께 추세로 보여준다(구 점프추세/보행추세/자세체형추세 섹션 흡수).
                         // 그 외 메뉴는 기존처럼 핵심 지표 1개만 추세로 보여준다.
-                        const extraCharts = extraMenuTrendCharts(m.menu, trend, postureTrend);
+                        // [세부 테스트 분리 2026-11-25] 점프·보행 다지표 추세는 전체 리포트가 아니라 '이 묶음(세부 테스트)'의 회차만으로 만든다.
+                        const groupTrend = (m.menu === 'jump' || m.menu === 'gait')
+                          ? buildAnalysisTrend(sessions.map((x) => ({ ...(x.data || {}), kind: x.menu, createdAt: x.recordedAtFull || x.recordedAt })))
+                          : trend;
+                        const extraCharts = extraMenuTrendCharts(m.menu, groupTrend, postureTrend);
                         return (
                           <div className="border-t border-slate-200 dark:border-slate-800 p-3 space-y-3">
                             {/* 회차별 비교 차트 */}
@@ -1687,7 +1746,7 @@ export default function Report() {
                             ) : points.length > 1 ? (
                               <div>
                                 <p className="text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-1">회차별 비교 {delta != null && (
-                                  <span className={delta === 0 ? 'text-slate-500' : delta > 0 ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-700 dark:text-red-400'}>
+                                  <span className={delta === 0 ? 'text-slate-500' : ((delta > 0) !== !!numeric[0]?.lowerBetter) ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-700 dark:text-red-400'}>
                                     (최초 대비 {delta > 0 ? '▲' : delta < 0 ? '▼' : '–'}{Math.abs(delta)}{unit})
                                   </span>
                                 )}</p>
@@ -1833,6 +1892,13 @@ export default function Report() {
                       && (r.jumpSubType || 'cmj') === curSubType
                       && (curSubType !== 'slj' || r.leg === cur.leg);
                   }) || null}
+                />
+              : isSprintKind(savedReports[viewerIdx])
+              ? <SprintReportDashboard
+                  report={savedReports[viewerIdx]}
+                  onClose={() => setViewerIdx(null)}
+                  member={member}
+                  previousReport={findPrevSprint(savedReports, viewerIdx)}
                 />
               : <GaitReportDashboard
                   report={savedReports[viewerIdx]}
@@ -2015,7 +2081,22 @@ export default function Report() {
           <Suspense fallback={<div className="p-10 text-center text-slate-500 dark:text-slate-400">불러오는 중…</div>}>
             {sessionViewer.session.menu === 'cardio' && sessionViewer.session.data?.kind === 'cardio_test' && (
               <div className="mx-auto w-full max-w-[794px] p-4">
-                <CardioReportSheet report={sessionViewer.session.data} member={member} previous={sessionViewer.previous?.data || null} history={sessionViewer.history || []} onMessage={setMsg} />
+                <CardioReportSheet report={sessionViewer.session.data} member={member} previous={sessionViewer.previous?.data || null} history={sessionViewer.history || []} onMessage={setMsg}
+                  onRecalc={async (patch) => {
+                    // [재계산 2026-11-26] 체중·성별을 채워 다시 계산한 결과를 같은 세션에 덮어 저장(원본 series 유지).
+                    await aiStore.updateSession(member.id, sessionViewer.session.id, patch);
+                    setSessionViewer((v) => (v ? { ...v, session: { ...v.session, data: { ...v.session.data, ...patch, analysisUpdatedAt: new Date().toISOString() } } } : v));
+                  }} />
+              </div>
+            )}
+            {sessionViewer.session.menu === 'paps' && sessionViewer.session.data?.kind === 'paps_test' && (
+              <div className="mx-auto w-full max-w-[794px] p-4">
+                <PapsReportSheet report={sessionViewer.session.data} member={member} previous={sessionViewer.previous?.data || null} history={sessionViewer.history || []} onMessage={setMsg} />
+              </div>
+            )}
+            {sessionViewer.session.menu === 'senior' && sessionViewer.session.data?.kind === 'senior_test' && (
+              <div className="mx-auto w-full max-w-[794px] p-4">
+                <SeniorReportSheet report={sessionViewer.session.data} member={member} previous={sessionViewer.previous?.data || null} history={sessionViewer.history || []} onMessage={setMsg} />
               </div>
             )}
             <SessionDataSheet session={sessionViewer.session} previous={sessionViewer.previous} member={member} onClose={() => setSessionViewer(null)} />

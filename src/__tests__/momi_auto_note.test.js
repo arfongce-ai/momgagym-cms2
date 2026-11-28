@@ -17,7 +17,7 @@ describe('MomiAutoNote.jsx — 축3 자동 트리거 배선', () => {
 
   it('useEffect 안에서 버튼 클릭 없이 askMomi를 자동 호출한다', () => {
     const effectStart = src.indexOf('useEffect(() => {');
-    const effectEnd = src.indexOf('}, [report?.id, member?.id]);');
+    const effectEnd = src.indexOf('  if (!report?.id || !member?.id) return null;');
     const effectBody = src.slice(effectStart, effectEnd);
     expect(effectBody).toContain('askMomi(');
     expect(effectBody).not.toMatch(/onClick/); // 버튼 트리거가 아니라 마운트 시 자동 트리거여야 함

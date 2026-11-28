@@ -12,8 +12,10 @@
 //    (하단 "외부 연동 API" 섹션 참고).
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { useHardwareBack } from '../core/useHardwareBack';
-import { loadImagePoseLandmarker, detectPoseImage } from '../core/poseImageBackend';
-import { clamp, computeContainRect, solveAutoAlign, extractAnkleData } from '../core/overlayAlign';
+import { loadImagePoseLandmarker } from '../core/poseImageBackend';
+import { detectPoseRobust } from '../core/poseRobust';
+import CompareAnalysis from './CompareAnalysis.jsx';
+import { clamp, computeContainRect, solveAutoAlign, extractAlignPair } from '../core/overlayAlign';
 
 const BLEND_OPTIONS = [
   { value: 'normal', label: '기본(Normal)' },
@@ -52,7 +54,7 @@ function wait(ms) {
 
 const ALIGN_PROGRESS_STEPS = [
   { key: 'confirm', label: '레이어 A 위치 확인' },
-  { key: 'autoAlign', label: '레이어 B 자동 정렬 (A 기준 · 발목)' },
+  { key: 'autoAlign', label: '레이어 B 자동 정렬 (A 기준)' },
   { key: 'apply', label: '오버레이 적용' },
 ];
 
@@ -149,7 +151,19 @@ export default function OverlayCompare({ onBack }) {
   const isVideoB = layerB.type === 'video';
   const showVideoPanel = isVideoA || isVideoB;
 
-  useHardwareBack(step > 1, () => setStep(1));
+  // [2026-11-27] 동작 분석(나란히·뼈대·각도). 열 때의 장면 시각을 넘긴다.
+  const [analysis, setAnalysis] = useState(null);
+  const openAnalysis = () => {
+    videoARef.current?.pause();
+    videoBRef.current?.pause();
+    setPlaying(false);
+    setAnalysis([
+      { key: 'A', label: '전', ...layerA, time: videoARef.current?.currentTime || 0 },
+      { key: 'B', label: '후', ...layerB, time: videoBRef.current?.currentTime || 0 },
+    ].filter((l) => l.type));
+  };
+
+  useHardwareBack(step > 1 || !!analysis, () => (analysis ? setAnalysis(null) : setStep(1)));
 
   // ---------------------------------------------------------------
   // 파일 업로드 (또는 외부 postMessage 연동에서의 Blob/URL 주입)
@@ -208,7 +222,7 @@ export default function OverlayCompare({ onBack }) {
     });
   }
 
-  async function captureFrameCanvas(slot) {
+  async function captureFrameCanvas(slot, offsetSec = 0) {
     const layer = (slot === 'A' ? layerARef : layerBRef).current;
     if (!layer.type) return null;
     if (layer.type === 'image') {
@@ -222,7 +236,8 @@ export default function OverlayCompare({ onBack }) {
     }
     const video = slot === 'A' ? videoARef.current : videoBRef.current;
     if (!video || !video.videoWidth) return null;
-    await seekVideoTo(video, 0);
+    // [2026-11-27] 첫 장면이 아니라 '지금 멈춘 장면'(+재시도 시 앞뒤 장면)을 본다.
+    if (offsetSec) await seekVideoTo(video, clamp(video.currentTime + offsetSec, 0, video.duration || 0));
     const canvas = document.createElement('canvas');
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
@@ -245,26 +260,36 @@ export default function OverlayCompare({ onBack }) {
       setAlignStatusSafe('AI 모델을 불러오지 못했습니다. 인터넷 연결을 확인해 주세요. (수동 슬라이더는 계속 사용할 수 있어요)', 'danger');
       return false;
     }
-    setAlignStatusSafe('발목 위치를 분석하는 중…', 'dim');
-    const frameA = await captureFrameCanvas('A');
-    const frameB = await captureFrameCanvas('B');
-    if (!frameA || !frameB) {
-      setAlignStatusSafe('이미지를 불러오지 못했습니다.', 'danger');
-      return false;
-    }
-    let resA;
-    let resB;
+    setAlignStatusSafe('몸 위치를 분석하는 중…', 'dim');
+    const videos = [videoARef.current, videoBRef.current];
+    videos.forEach((v) => v?.pause());
+    setPlaying(false);
+    const startTimes = videos.map((v) => v?.currentTime);
+    let frameA;
+    let frameB;
+    let pair = null;
     try {
-      resA = detectPoseImage(frameA.canvas);
-      resB = detectPoseImage(frameB.canvas);
+      // 지금 장면에서 실패하면 영상은 앞뒤 장면도 본다. 끝나면 원래 장면으로 되돌린다.
+      const hasVideo = layerARef.current.type === 'video' || layerBRef.current.type === 'video';
+      for (const offset of hasVideo ? [0, 0.3, 0.8, 1.5] : [0]) {
+        videos.forEach((v, k) => { if (v) v.currentTime = startTimes[k]; });
+        frameA = await captureFrameCanvas('A', offset);
+        frameB = await captureFrameCanvas('B', offset);
+        if (!frameA || !frameB) {
+          setAlignStatusSafe('이미지를 불러오지 못했습니다.', 'danger');
+          return false;
+        }
+        pair = extractAlignPair(detectPoseRobust(frameA.canvas), detectPoseRobust(frameB.canvas));
+        if (pair) break;
+      }
     } catch (e) {
       setAlignStatusSafe('포즈 분석 중 오류가 발생했습니다.', 'danger');
       return false;
+    } finally {
+      videos.forEach((v, k) => { if (v) v.currentTime = startTimes[k]; });
     }
-    const dataA = extractAnkleData(resA);
-    const dataB = extractAnkleData(resB);
-    if (!dataA || !dataB) {
-      setAlignStatusSafe('사람을 인식하지 못했습니다. 전신이 잘 보이는 사진/영상으로 시도해 주세요.', 'danger');
+    if (!pair) {
+      setAlignStatusSafe('두 화면에서 같은 부위를 찾지 못했습니다. "동작 분석"에서 점을 직접 맞추거나 슬라이더로 조정해 주세요.', 'danger');
       return false;
     }
     const stage = stageRef.current;
@@ -280,10 +305,10 @@ export default function OverlayCompare({ onBack }) {
       stageH: stageRect.height,
       rectA,
       rectB,
-      ankleA: dataA.ankle,
-      ankleB: dataB.ankle,
-      refA: dataA.ref,
-      refB: dataB.ref,
+      ankleA: pair.ankleA,
+      ankleB: pair.ankleB,
+      refA: pair.refA,
+      refB: pair.refB,
       flip: alignRef.current.flip,
       scaleMin: SCALE_MIN,
       scaleMax: SCALE_MAX,
@@ -291,7 +316,7 @@ export default function OverlayCompare({ onBack }) {
       offsetMax: OFFSET_MAX,
     });
     setAlign((prev) => ({ ...prev, x: result.x, y: result.y, scale: result.scale }));
-    setAlignStatusSafe('자동 정렬 완료 ✓ (발목 기준)', 'success');
+    setAlignStatusSafe(`자동 정렬 완료 ✓ (${pair.label} 기준)`, 'success');
     return true;
   }, [setAlignStatusSafe]);
 
@@ -761,13 +786,13 @@ export default function OverlayCompare({ onBack }) {
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <button onClick={onBack} className="measure-back">← 메뉴</button>
-          <h2 className="measure-title">전/후 비교 (오버레이)</h2>
+          <h2 className="measure-title">영상 분석/비교</h2>
           <span className="w-12" />
         </div>
 
         <div className="card p-4 space-y-3 text-center">
           <p className="text-sm font-bold text-slate-700 dark:text-slate-200">두 장의 사진 또는 영상을 업로드하세요</p>
-          <p className="text-xs text-slate-500 dark:text-slate-400">업로드가 끝나면 AI가 자동으로 발목 위치를 인식해 정렬하고, 비교 화면으로 이동합니다.</p>
+          <p className="text-xs text-slate-500 dark:text-slate-400">업로드가 끝나면 자동으로 몸 위치를 맞춰 비교 화면으로 이동합니다.</p>
 
           <div className="grid grid-cols-2 gap-3 pt-1">
             {[['A', '기준(전)'], ['B', '비교(후)']].map(([slot, label]) => {
@@ -787,75 +812,84 @@ export default function OverlayCompare({ onBack }) {
           <button
             onClick={() => {
               if (!bothReady) { alert('두 파일을 모두 업로드해 주세요.'); return; }
+              // [2026-11-27] 사진·영상은 비교 화면에 올라온 뒤에야 읽을 수 있다. 준비 표시를
+              //  되돌리고 화면을 먼저 띄우면, 두 파일이 다 읽힌 시점에 아래 effect 가 정렬을 시작한다.
+              setAlignProgress({ confirm: 'active', autoAlign: 'pending', apply: 'pending' });
+              setAlignPipelineError('');
+              setLayerA((p) => ({ ...p, ready: false }));
+              setLayerB((p) => ({ ...p, ready: false }));
               setStep(2);
-              requestAnimationFrame(() => requestAnimationFrame(() => runAlignSequence()));
             }}
             disabled={!bothReady}
             className="btn btn-primary w-full disabled:opacity-40"
           >
             2. 비교 시작하기 →
           </button>
+          <button onClick={openAnalysis} disabled={!layerA.type && !layerB.type}
+            className="btn btn-ghost w-full justify-center disabled:opacity-40">
+            📐 바로 동작 분석 (파일 1개도 가능)
+          </button>
         </div>
+        {analysis && <CompareAnalysis layers={analysis} onClose={() => setAnalysis(null)} />}
       </div>
     );
   }
 
-  if (step === 2) {
-    return (
-      <div className="space-y-4">
-        <div className="card p-6 max-w-xl mx-auto space-y-4 text-center">
-          <div>
-            <h2 className="measure-title">레이어 위치를 자동으로 맞추는 중입니다</h2>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-              레이어 A를 기준으로, 발목 위치를 인식해 레이어 B를 자동으로 정렬해요.
-            </p>
-          </div>
+  // 정렬 진행 화면은 비교 화면 '위에' 덮는다(뒤에서 사진·영상과 스테이지 크기가 준비돼야 한다).
+  const alignPanel = step === 2 && (
+    <div className="fixed inset-0 z-40 overflow-y-auto bg-slate-50 dark:bg-slate-950 p-4">
+      <div className="card p-6 max-w-xl mx-auto space-y-4 text-center">
+        <div>
+          <h2 className="measure-title">레이어 위치를 자동으로 맞추는 중입니다</h2>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+            레이어 A를 기준으로, 발목(안 보이면 무릎·골반)을 찾아 레이어 B를 자동으로 정렬해요.
+          </p>
+        </div>
 
-          <ul className="space-y-2 text-left">
-            {ALIGN_PROGRESS_STEPS.map(({ key, label }) => {
-              const state = alignProgress[key];
-              const rowClass =
-                state === 'done' ? 'border-emerald-500 text-emerald-600 dark:text-emerald-400' :
-                state === 'failed' ? 'border-red-500 text-red-600 dark:text-red-400' :
-                state === 'active' ? 'border-amber-500 text-slate-700 dark:text-slate-200' :
-                'border-slate-200 dark:border-slate-800 text-slate-400 dark:text-slate-500';
-              const iconClass =
-                state === 'done' ? 'bg-emerald-500 border-emerald-500' :
-                state === 'failed' ? 'bg-red-500 border-red-500' :
-                state === 'active' ? 'border-amber-500 border-t-transparent animate-spin' :
-                'border-slate-300 dark:border-slate-700';
-              return (
-                <li key={key} className={`flex items-center gap-3 rounded-xl border px-3.5 py-2.5 text-sm font-bold transition-colors ${rowClass}`}>
-                  <span className={`relative w-5 h-5 flex-none rounded-full border-2 ${iconClass}`}>
-                    {state === 'done' && <span className="absolute inset-0 flex items-center justify-center text-[10px] text-white">✓</span>}
-                    {state === 'failed' && <span className="absolute inset-0 flex items-center justify-center text-[10px] font-black text-white">!</span>}
-                  </span>
-                  <span>{label}</span>
-                </li>
-              );
-            })}
-          </ul>
+        <ul className="space-y-2 text-left">
+          {ALIGN_PROGRESS_STEPS.map(({ key, label }) => {
+            const state = alignProgress[key];
+            const rowClass =
+              state === 'done' ? 'border-emerald-500 text-emerald-600 dark:text-emerald-400' :
+              state === 'failed' ? 'border-red-500 text-red-600 dark:text-red-400' :
+              state === 'active' ? 'border-amber-500 text-slate-700 dark:text-slate-200' :
+              'border-slate-200 dark:border-slate-800 text-slate-400 dark:text-slate-500';
+            const iconClass =
+              state === 'done' ? 'bg-emerald-500 border-emerald-500' :
+              state === 'failed' ? 'bg-red-500 border-red-500' :
+              state === 'active' ? 'border-amber-500 border-t-transparent animate-spin' :
+              'border-slate-300 dark:border-slate-700';
+            return (
+              <li key={key} className={`flex items-center gap-3 rounded-xl border px-3.5 py-2.5 text-sm font-bold transition-colors ${rowClass}`}>
+                <span className={`relative w-5 h-5 flex-none rounded-full border-2 ${iconClass}`}>
+                  {state === 'done' && <span className="absolute inset-0 flex items-center justify-center text-[10px] text-white">✓</span>}
+                  {state === 'failed' && <span className="absolute inset-0 flex items-center justify-center text-[10px] font-black text-white">!</span>}
+                </span>
+                <span>{label}</span>
+              </li>
+            );
+          })}
+        </ul>
 
+        {alignPipelineError && (
+          <p className="text-[11px] font-bold text-red-600 dark:text-red-400">{alignPipelineError}</p>
+        )}
+
+        <div className="flex items-center justify-center gap-2 flex-wrap">
+          <button onClick={() => setStep(3)} className="btn btn-ghost btn-sm">지금 건너뛰기 →</button>
           {alignPipelineError && (
-            <p className="text-[11px] font-bold text-red-600 dark:text-red-400">{alignPipelineError}</p>
+            <button onClick={() => setStep(3)} className="btn btn-primary btn-sm">비교 화면으로 계속하기 →</button>
           )}
-
-          <div className="flex items-center justify-center gap-2 flex-wrap">
-            <button onClick={() => setStep(3)} className="btn btn-ghost btn-sm">지금 건너뛰기 →</button>
-            {alignPipelineError && (
-              <button onClick={() => setStep(3)} className="btn btn-primary btn-sm">비교 화면으로 계속하기 →</button>
-            )}
-          </div>
         </div>
       </div>
-    );
-  }
+    </div>
+  );
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <button onClick={() => { if (isRecording) stopRecording(); setStep(1); }} className="measure-back">← 업로드 수정</button>
-        <h2 className="measure-title">전/후 비교</h2>
+        <h2 className="measure-title">영상 분석/비교</h2>
         <button onClick={swapLayers} className="measure-back">⇄ A/B 교체</button>
       </div>
 
@@ -928,6 +962,7 @@ export default function OverlayCompare({ onBack }) {
               <input type="checkbox" checked={checker} onChange={(e) => setChecker(e.target.checked)} /> 체커 배경
             </label>
             <div className="flex-1" />
+            <button onClick={openAnalysis} className="btn btn-primary btn-sm">📐 동작 분석 (각도)</button>
             <button onClick={takeSnapshot} className="btn btn-primary btn-sm">📸 스냅샷 저장(PNG)</button>
             {showVideoPanel && (
               <button
@@ -1020,7 +1055,7 @@ export default function OverlayCompare({ onBack }) {
 
               <div className="card p-3 space-y-3">
                 <p className="label">정렬 조정 (레이어 B)</p>
-                <button onClick={runAutoAlign} className="btn btn-primary btn-sm w-full">🦶 자동 정렬 다시 실행 (발목 기준)</button>
+                <button onClick={runAutoAlign} className="btn btn-primary btn-sm w-full">🦶 지금 장면으로 자동 정렬 다시 실행</button>
                 <p className={`text-[11px] font-bold ${alignStatus.kind === 'success' ? 'text-emerald-600 dark:text-emerald-400' : alignStatus.kind === 'danger' ? 'text-red-600 dark:text-red-400' : 'text-slate-500 dark:text-slate-400'}`}>
                   {alignStatus.text}
                 </p>
@@ -1114,6 +1149,8 @@ export default function OverlayCompare({ onBack }) {
           )}
         </div>
       </div>
+      {alignPanel}
+      {analysis && <CompareAnalysis layers={analysis} onClose={() => setAnalysis(null)} />}
     </div>
   );
 }

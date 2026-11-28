@@ -116,7 +116,8 @@ describe('useMomiVoice.js — iOS 대응 + 진단 로그', () => {
     const errorStart = src.indexOf('recognition.onerror = (event) => {');
     expect(src.slice(errorStart, errorStart + 120)).toContain('= callbacksRef.current;');
     const endStart = src.indexOf('recognition.onend = () => {');
-    expect(src.slice(endStart, endStart + 120)).toContain('= callbacksRef.current;');
+    // onend 맨 앞에 진단 로그(momiLog) 한 줄이 들어가 있어 창을 넉넉히 잡는다(동작은 동일).
+    expect(src.slice(endStart, endStart + 300)).toContain('= callbacksRef.current;');
   });
 
   it('인식기가 어떤 이유로든 새로 만들어지면, 듣던 중이었을 경우 즉시 다시 켠다(조용히 먹통 방지)', () => {

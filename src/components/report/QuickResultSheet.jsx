@@ -202,16 +202,46 @@ export function resolveSnapshots(report) {
   const s = report?.snapshots || report?.data?.snapshots;
   return Array.isArray(s) ? s.filter((x) => x && typeof x.dataUrl === 'string' && x.dataUrl.startsWith('data:image/')) : [];
 }
-function SnapshotStrip({ snapshots }) {
+function deviceKeyOfReport(r) {
+  return r?.capture?.deviceKey || r?.data?.capture?.deviceKey || null;
+}
+/** 전/후 측정 기기가 같으면 true, 다르면 false, 한쪽이라도 기록이 없으면 null(모름). */
+export function sameCaptureDevice(report, previousReport) {
+  const a = deviceKeyOfReport(report); const b = deviceKeyOfReport(previousReport);
+  if (!a || !b) return null;
+  return a === b;
+}
+// 결과리포트는 영상 비교보다 사진(썸네일) 비교를 기본으로 한다(2026-11-25).
+// 촬영 기기가 같으면 직전 기록의 사진을 자동으로 불러와 나란히 놓는다. 기기가 다르거나 모르면 현재 사진만 보여준다.
+function SnapshotStrip({ snapshots, previousSnapshots = [], sameDevice = null }) {
   if (!snapshots.length) return null;
-  return (
-    <div className="flex gap-2" data-testid="report-snapshots">
-      {snapshots.map((sn, i) => (
+  const compare = sameDevice === true && previousSnapshots.length > 0;
+  const row = (list, title) => (
+    <div className="flex items-start gap-2">
+      <span className="w-8 shrink-0 pt-1 text-[10px] font-black text-slate-500">{title}</span>
+      {list.map((sn, i) => (
         <figure key={i} className="m-0 flex-1 max-w-[160px]">
-          <img src={sn.dataUrl} alt={`측정 사진 ${sn.label || i + 1}`} className="w-full rounded-lg border border-slate-200 dark:border-slate-700" />
+          <img src={sn.dataUrl} alt={`${title} 측정 사진 ${sn.label || i + 1}`} className="w-full rounded-lg border border-slate-200 dark:border-slate-700" />
           <figcaption className="mt-0.5 text-center text-[10px] text-slate-500">{sn.label || `사진 ${i + 1}`}</figcaption>
         </figure>
       ))}
+    </div>
+  );
+  if (compare) {
+    return (
+      <div className="flex flex-col gap-2" data-testid="report-snapshots">
+        <p className="text-[11px] font-black text-slate-700 dark:text-slate-200">전/후 사진 비교 <span className="font-normal text-slate-500">(같은 기기로 촬영)</span></p>
+        {row(previousSnapshots, '이전')}
+        {row(snapshots, '현재')}
+      </div>
+    );
+  }
+  return (
+    <div className="flex flex-col gap-1" data-testid="report-snapshots">
+      {row(snapshots, '현재')}
+      {sameDevice === false && previousSnapshots.length > 0 && (
+        <p className="text-[10px] text-slate-500">이전 측정과 촬영 기기가 달라 자동 비교는 하지 않았습니다.</p>
+      )}
     </div>
   );
 }
@@ -277,13 +307,15 @@ export default function QuickResultSheet({
   }, [anchorPrefix]);
 
   const snapshots = useMemo(() => resolveSnapshots(report), [report]);
+  const previousSnapshots = useMemo(() => resolveSnapshots(previousReport), [previousReport]);
+  const sameDevice = useMemo(() => sameCaptureDevice(report, previousReport), [report, previousReport]);
   if (!items.length && score == null && !before && !after && !missing.length && !quality && !snapshots.length) return null;
   const hasScore = score != null && Number.isFinite(Number(score));
 
   return (
     <section className="flex flex-col gap-3" data-testid="quick-result-sheet">
       <QualityBanner quality={quality} />
-      <SnapshotStrip snapshots={snapshots} />
+      <SnapshotStrip snapshots={snapshots} previousSnapshots={previousSnapshots} sameDevice={sameDevice} />
       {/* [A4 유지 2026-11-15] A4 폭(794px)에서도 옆으로 나란히 놓아 장수가 늘지 않게 한다(md 기준). */}
       {before ? (
         <div className="grid gap-3 md:grid-cols-[1.25fr_1fr]">

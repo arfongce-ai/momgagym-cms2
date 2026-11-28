@@ -11,6 +11,7 @@
 //
 //  결과는 onComplete(report) 로 상위(Hub)에 전달 → 통합 리포트로 저장·표시.
 // ════════════════════════════════════════════════════════════════════════
+import { resolveBodyMetrics } from '../../services/bodyMetrics';
 import React, { useState, useRef, useCallback } from 'react';
 import { analyzeUploadedVideo, CAPTURE_PRESETS } from '../core/videoAnalyzer';
 import { createMultiTracker } from '../core/endcapTracker';
@@ -47,8 +48,9 @@ export default function LiftingUploadAnalysis({
   const trackerRef = useRef(createMultiTracker());
   const calibrationPointsRef = useRef([]);
   const abortRef = useRef(null);
-  const heightCm = member?.height ? Number(member.height) : null;
-  const weightKg = member?.weight ? Number(member.weight) : null;
+  const bodyRes = resolveBodyMetrics(member); // 회원 신체기록(body 탭) 포함
+  const heightCm = bodyRes.height ? Number(bodyRes.height) : null;
+  const weightKg = bodyRes.weight ? Number(bodyRes.weight) : null;
 
   const handleFile = (e) => {
     const f = e.target.files?.[0];

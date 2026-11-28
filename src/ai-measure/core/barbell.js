@@ -160,3 +160,24 @@ export function personHeightRatio(lms) {
   const botY = Math.max(...ankles.map(a => a.y));
   return Math.abs(botY - top.y);
 }
+
+/**
+ * 궤적(trail) 점 추가 — 손목 랜드마크가 튀는 구간(랙 포지션·캐치에서 손이 가려질 때)을 걸러 선이 어지럽지 않게 한다.
+ *  · 한 프레임에 maxJump(정규화) 넘게 움직인 점은 건너뛴다. 단, 연속 maxSkip 번 건너뛰면 실제 이동으로 보고 받아들인다.
+ *  · 받아들인 점은 살짝 평활(ema)한다. keepMs 보다 오래된 점은 버린다.
+ * trail 은 배열(변경됨), state 는 { skipped } 객체. 점이 추가되면 true.
+ */
+export function pushTrailPoint(trail, state, p, ts, { maxJump = 0.12, maxSkip = 3, ema = 0.6, keepMs = 1200 } = {}) {
+  if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) return false;
+  const last = trail[trail.length - 1];
+  let pt = { x: p.x, y: p.y, ts };
+  if (last) {
+    const jump = Math.hypot(p.x - last.x, p.y - last.y);
+    if (jump > maxJump && (state.skipped || 0) < maxSkip) { state.skipped = (state.skipped || 0) + 1; return false; }
+    state.skipped = 0;
+    pt = { x: last.x + ema * (p.x - last.x), y: last.y + ema * (p.y - last.y), ts };
+  }
+  trail.push(pt);
+  while (trail.length && ts - trail[0].ts > keepMs) trail.shift();
+  return true;
+}

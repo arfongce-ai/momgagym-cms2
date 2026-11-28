@@ -18,11 +18,22 @@ import { useEffect, useRef, useState } from 'react';
 import {
   createTiltTracker, requestSensorPermission, isSensorSupported,
   applyZero, isStill, hapticFeedback, roundToStep, meanDeg, createHoldDetector,
+  createPeakTracker, median, sensorConfidence, defaultPlaneFor,
 } from '../core/sensorTilt';
+import { getSensorJointTip } from '../core/sensorJointTips';
+import { assessPlacement, accDeviation } from '../core/sensorPlacementCheck';
+import { getSweepPreset } from '../core/sensorSweep';
+import RomSensorSweep from './RomSensorSweep.jsx';
 
-const OFF_PLANE_WARN = 0.45; // |gx|/|g| 이 비율 이상이면 측정면 이탈 경고
+const OFF_PLANE_WARN = 0.45; // (방향센서 폴백 경로 전용) |gx|/|g| 이 이 비율 이상이면 측정면 이탈 경고
+// 중력 센서 경로는 폰 비틀림으로 "예상되는 각도 오차"로 판정한다(각도가 클수록 같은 비틀림도
+// 오차가 커지므로 고정 비율보다 정확). 교재 28쪽: 3~4° 이내는 측정 잡음 수준 → 4°부터 경고.
+const TILT_ERR_WARN = 4;      // 예상 오차(°) 이상이면 경고(최대각 갱신·자동확정 중단)
+const TILT_ERR_CLEAR = 2.5;   // 이 값 미만으로 내려가야 경고 해제(깜빡임 방지 히스테리시스)
+const ACC_DEV_MAX = 0.08;     // 0점 때 중력 크기 대비 가속도 편차 비율 — 넘으면 동작 가속으로 각도 신뢰 불가
+const PEAK_WINDOW_MS = 300;   // 최대각 = 최근 0.3초 중앙값의 최고치(순간 튐 제거)
 const ZERO_SAMPLE_MS = 700;   // 0점 캘리브레이션 표본 수집 시간
-const ZERO_MAX_WOBBLE = 5;    // 0점 수집 중 허용 흔들림(°) — 초과 시 재시도 요구
+const ZERO_MAX_WOBBLE = 2;    // 0점 수집 중 허용 흔들림(최대−최소, °) — 초과 시 재시도 요구
 const UI_UPDATE_MS = 90;      // 표시 갱신 최소 간격(스로틀)
 const UI_DEADBAND = 0.25;     // 표시 데드밴드(°) — 이하 변화는 갱신 안 함
 const DISPLAY_STEP = 0.5;     // 표시 스텝(°)
@@ -41,7 +52,7 @@ const DIAL_C = 2 * Math.PI * DIAL_R;
 const DIAL_C_OUT = 2 * Math.PI * (DIAL_R + 8);
 
 
-export default function RomSensorGoniometer({ jointName, jointKey, onBack, onComplete }) {
+export default function RomSensorGoniometer({ jointName, jointKey, poseMode, onBack, onComplete }) {
   // 좌/우 구분 없이 한 번 측정하고 '측정완료'로 끝낸다(단일 측정).
 
   // [수기 기록] 어느 움직임을 쟀는지 트레이너가 직접 라벨링(신체 움직임 최대 적용).
@@ -74,6 +85,34 @@ export default function RomSensorGoniometer({ jointName, jointKey, onBack, onCom
   const [movementCustom, setMovementCustom] = useState('');
   const effMovement = movement === '__custom' ? movementCustom.trim() : movement;
 
+  // [관절별 부착 안내] 교재 확인된 관절만 데이터가 있다(현재 팔꿈치). 없으면 패널 자체가 안 보인다.
+  const jointTip = getSensorJointTip(jointKey);
+  const [showTip, setShowTip] = useState(false);
+  // 위치·민감도 확인(대략 점검용) — 켜져 있을 때만 갱신
+  const [showCheck, setShowCheck] = useState(false);
+  const [check, setCheck] = useState(null);
+  const showCheckRef = useRef(false);
+  const checkBufRef = useRef([]);
+  const checkAccRef = useRef(null);
+  const checkAtRef = useRef(0);
+  const toggleCheck = () => {
+    const next = !showCheckRef.current;
+    showCheckRef.current = next;
+    checkBufRef.current = []; checkAccRef.current = null;
+    setCheck(null); setShowCheck(next);
+  };
+
+  // [측정 방향] 폰을 세로로 댈 때 움직임별 회전축이 다르다 — 몸통·목만 선택지를 보여준다(기본 앞뒤).
+  const PLANE_OPTIONS = {
+    TRUNK: [{ key: 'yz', label: '앞뒤(굽힘·폄)' }, { key: 'yx', label: '옆(가쪽 굽힘)' }, { key: 'xz', label: '돌림(숙인 자세)' }],
+    NECK: [{ key: 'yz', label: '앞뒤(굽힘·폄)' }, { key: 'yx', label: '옆(가쪽 굽힘)' }],
+  };
+  const planeOptions = PLANE_OPTIONS[jointKey] || null;
+  const [plane, setPlane] = useState(() => defaultPlaneFor(jointKey, poseMode)); // 선택한 움직임에서 자동 결정
+  const [showPlanePick, setShowPlanePick] = useState(false);
+  const [sweepOn, setSweepOn] = useState(false);
+  const sweepPreset = getSweepPreset(jointKey, plane);
+
   const [phase, setPhase] = useState('permission'); // permission | measure | record
   const [permErr, setPermErr] = useState('');
   const [zero, setZero] = useState(null);          // 0점(평활 언랩각 기준)
@@ -81,7 +120,9 @@ export default function RomSensorGoniometer({ jointName, jointKey, onBack, onCom
   const [zeroMsg, setZeroMsg] = useState('');      // 0점 안내/재시도 메시지
   const [liveDeg, setLiveDeg] = useState(null);    // 표시각(0점 반영, 스텝 반올림)
   const [maxDeg, setMaxDeg] = useState(0);         // 최대 |가동각|
-  const [offPlane, setOffPlane] = useState(0);
+  const [tiltWarn, setTiltWarn] = useState(false);   // 폰 비틀림 경고
+  const [unstable, setUnstable] = useState(false);    // 동작 가속으로 값이 불안정
+  const [qualityInfo, setQualityInfo] = useState(null); // 확정 시점 품질 지표(신뢰도 산출용)
   const [still, setStill] = useState(false);
   const [measuredAngle, setMeasuredAngle] = useState(null); // 확정된 측정각
   const [autoMode, setAutoMode] = useState(true);  // [항목 5] 자동 측정 on/off (기본 on)
@@ -99,7 +140,15 @@ export default function RomSensorGoniometer({ jointName, jointKey, onBack, onCom
   const lastSmoothedRef = useRef(null); // 최신 평활각(0점 전)
   const lastUiAtRef = useRef(0);     // 표시 스로틀 타임스탬프
   const lastShownRef = useRef(null); // 데드밴드 비교용 직전 표시값
-  const recent3Ref = useRef([]);     // 최대각 스파이크 방지용 최근 3표본
+  const peakRef = useRef(null);      // 최대각 추적기(0.3초 창 중앙값)
+  if (!peakRef.current) peakRef.current = createPeakTracker({ windowMs: PEAK_WINDOW_MS });
+  const plateauRef = useRef(null);   // 자동 확정 시 유지 구간 { angle, spread }
+  const accBaseRef = useRef(null);   // 0점 때 측정한 중력 크기(정지 기준)
+  const accDevRef = useRef(0);       // 가속도 편차 EMA
+  const tiltBadRef = useRef(false);  // 비틀림 경고 상태(히스테리시스)
+  const unstableRef = useRef(false);
+  const zeroRangeRef = useRef(0);    // 0점 수집 중 흔들림 폭
+  const tiltErrAtPeakRef = useRef(0);// 최대각 갱신 시점의 예상 비틀림 오차
   const zeroBufRef = useRef(null);   // 0점 수집 버퍼 { samples: [], t0 }
   const zeroTimerRef = useRef(null); // 0점 수집 안전 타이머
   const zeroDoneAtRef = useRef(0);   // 0점 확정 시각(정착 유예용)
@@ -122,13 +171,18 @@ export default function RomSensorGoniometer({ jointName, jointKey, onBack, onCom
       return;
     }
     const z = meanDeg(samples);
+    zeroRangeRef.current = hi - lo;
+    // 정지 상태의 중력 크기를 기준으로 삼아 기기별 단위(m/s²·g) 차이를 흡수
+    const accs = buf?.acc || [];
+    accBaseRef.current = accs.length >= 5 ? median(accs) : null;
+    accDevRef.current = 0;
     zeroRef.current = z;
     setZero(z);
     zeroDoneAtRef.current = Date.now();
     maxRef.current = 0;
     setMaxDeg(0);
     recentRef.current = [];
-    recent3Ref.current = [];
+    peakRef.current.reset();
     lastShownRef.current = null;
     if (holdRef.current) holdRef.current.reset(); // 자동 유지 감지 초기화
     setHoldPct(0);
@@ -136,55 +190,88 @@ export default function RomSensorGoniometer({ jointName, jointKey, onBack, onCom
     hapticFeedback([30]);
   };
 
-  // 센서 샘플 수신 → 0점 수집 / 표시각(스로틀·데드밴드) / 최대각(중앙값) 갱신
-  const handleSample = ({ angleDeg, offPlane: off }) => {
-    setOffPlane(off ?? 0);
+  // 센서 샘플 수신 → 0점 수집 / 표시각(스로틀·데드밴드) / 최대각(창 중앙값) 갱신
+  //  최대각·자동확정은 "신뢰 가능한 표본"일 때만 반영한다:
+  //   ① 0점 직후 정착 ② 폰 비틀림 예상 오차 < TILT_ERR_WARN ③ 동작 가속 없음(중력만 측정)
+  const handleSample = ({ angleDeg, offPlane: off, tiltErrDeg, accMag }) => {
     if (angleDeg == null) { setLiveDeg(null); return; }
     lastSmoothedRef.current = angleDeg;
+
+    // ── 위치·민감도 확인(켜진 경우): 0점 없이도 최근 흔들림·비틀림·움직임을 대략 평가 ──
+    if (showCheckRef.current) {
+      const cb = checkBufRef.current;
+      cb.push(angleDeg);
+      if (cb.length > 30) cb.shift();
+      const ad = accDeviation(accMag);
+      if (ad != null) checkAccRef.current = checkAccRef.current == null ? ad : 0.7 * checkAccRef.current + 0.3 * ad;
+      const t = Date.now();
+      if (t - checkAtRef.current > 250) {
+        checkAtRef.current = t;
+        setCheck(assessPlacement({ recentDegs: cb, tiltErrDeg, accDev: checkAccRef.current }));
+      }
+    }
 
     // ── 0점 표본 수집 중이면 버퍼에 쌓고 시간이 차면 확정 ──
     const zb = zeroBufRef.current;
     if (zb) {
       zb.samples.push(angleDeg);
+      if (accMag != null) zb.acc.push(accMag);
       if (Date.now() - zb.t0 >= ZERO_SAMPLE_MS) finishZeroing();
       return; // 수집 중에는 표시각·최대각 갱신 중단(수집 안내 표시)
     }
 
     if (zeroRef.current == null) { setLiveDeg(null); return; }
+    const now = Date.now();
     const shown = applyZero(angleDeg, zeroRef.current);
 
-    // ── 최대각: 최근 3표본 중앙값으로 순간 스파이크 제거, 0점 직후 유예 ──
-    const buf3 = recent3Ref.current;
-    buf3.push(shown);
-    if (buf3.length > 3) buf3.shift();
-    const med3 = [...buf3].sort((a, b) => a - b)[Math.floor(buf3.length / 2)];
-    const settled = Date.now() - zeroDoneAtRef.current > SETTLE_AFTER_ZERO_MS;
-    const inPlane = (off ?? 0) < OFF_PLANE_WARN;
-    if (settled && inPlane && buf3.length === 3 && Math.abs(med3) > maxRef.current) {
-      maxRef.current = Math.round(Math.abs(med3) * 10) / 10;
-      setMaxDeg(maxRef.current);
+    // ── 폰 비틀림: 예상 오차 기반(히스테리시스). 방향센서 폴백은 기존 비율 기준 ──
+    const prevBad = tiltBadRef.current;
+    const bad = tiltErrDeg != null
+      ? (prevBad ? tiltErrDeg >= TILT_ERR_CLEAR : tiltErrDeg >= TILT_ERR_WARN)
+      : (off ?? 0) >= OFF_PLANE_WARN;
+    if (bad !== prevBad) { tiltBadRef.current = bad; setTiltWarn(bad); }
+
+    // ── 동작 가속: 0점 때 중력 크기 대비 편차(EMA). 가속이 크면 중력 방향 추정이 틀어진다 ──
+    const base = accBaseRef.current;
+    if (accMag != null && base) {
+      accDevRef.current = 0.7 * accDevRef.current + 0.3 * (Math.abs(accMag - base) / base);
+    }
+    const moving = accDevRef.current > ACC_DEV_MAX;
+    if (moving !== unstableRef.current) { unstableRef.current = moving; setUnstable(moving); }
+
+    const settled = now - zeroDoneAtRef.current > SETTLE_AFTER_ZERO_MS;
+    const reliable = settled && !bad && !moving;
+
+    // ── 최대각: 최근 PEAK_WINDOW_MS 중앙값의 최고치(순간 스파이크는 창 중앙값이 걸러냄) ──
+    if (reliable) {
+      const before = peakRef.current.peak();
+      const p = peakRef.current.push(shown, now);
+      if (p > before) {
+        maxRef.current = Math.round(p * 10) / 10;
+        tiltErrAtPeakRef.current = tiltErrDeg ?? 0;
+        setMaxDeg(maxRef.current);
+      }
+    } else {
+      peakRef.current.push(null, now);
     }
 
-    // ── [항목 5] 자동 측정: 끝범위에서 각도 변화 없이 0.8초 유지 시 자동 확정 ──
-    //  민감도 낮춤(AUTO_BAND 넓음) → 잔떨림으로 타이머가 리셋되지 않는다.
-    //  측정면 이탈 중이거나 표본 정착 전에는 유지 판정을 하지 않는다(정직성).
+    // ── 자동 측정: 끝범위에서 각도 변화 없이 0.8초 유지 시 확정(확정값 = 유지 구간 중앙값) ──
+    //  측정면 이탈·가속 중·정착 전에는 유지 창을 끊는다(끝범위 아닌데 확정되는 것 방지)
     if (autoModeRef.current && holdRef.current) {
-      if (settled && inPlane && buf3.length === 3) {
-        const r = holdRef.current.push(med3, Date.now());
-        setHoldPct(Math.min(1, r.heldMs / AUTO_HOLD_MS));
+      if (reliable) {
+        const r = holdRef.current.push(shown, now);
+        setHoldPct(r.fired ? 1 : Math.min(0.99, r.heldMs / AUTO_HOLD_MS));
         if (r.fired) {
-          setHoldPct(1);
+          plateauRef.current = { angle: r.angle, spread: r.spread };
           autoFinishRef.current?.();
         }
       } else {
-        // 이탈/미정착 구간은 유지 창을 끊는다(끝범위 아닌데 확정되는 것 방지)
-        holdRef.current.push(null, Date.now());
+        holdRef.current.push(null, now);
         setHoldPct(0);
       }
     }
 
     // ── 표시각: 스로틀 + 데드밴드 + 0.5° 스텝 (예민한 잔떨림 숫자 제거) ──
-    const now = Date.now();
     if (now - lastUiAtRef.current < UI_UPDATE_MS) return;
     const stepped = roundToStep(shown, DISPLAY_STEP);
     if (lastShownRef.current != null && Math.abs(shown - lastShownRef.current) < UI_DEADBAND) return;
@@ -200,11 +287,15 @@ export default function RomSensorGoniometer({ jointName, jointKey, onBack, onCom
 
   // 측정 화면 진입 시 트래커 시작, 이탈 시 정지(+0점 수집 타이머 정리)
   useEffect(() => {
-    if (phase !== 'measure') return undefined;
+    if (phase !== 'measure' || sweepOn) return undefined; // 쓸기 화면은 자체 트래커를 쓴다(이중 구독 방지)
     // 자동 유지 감지기 준비(측정 진입마다 새로) — 민감도 낮춤(AUTO_BAND 넓음)
     holdRef.current = createHoldDetector({ band: AUTO_BAND, holdMs: AUTO_HOLD_MS, minAbsDeg: AUTO_MIN_DEG });
     setHoldPct(0);
-    const tracker = createTiltTracker({ onSample: handleSample });
+    // '다시 측정'으로 돌아온 경우 이전 최대각이 새 측정에 섞이지 않게 비운다(0점은 유지)
+    maxRef.current = 0; setMaxDeg(0);
+    peakRef.current.reset();
+    plateauRef.current = null;
+    const tracker = createTiltTracker({ onSample: handleSample, plane });
     trackerRef.current = tracker;
     tracker.start();
     return () => {
@@ -214,7 +305,7 @@ export default function RomSensorGoniometer({ jointName, jointKey, onBack, onCom
       zeroBufRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase]);
+  }, [phase, plane, sweepOn]);
 
   const activate = async () => {
     setPermErr('');
@@ -242,7 +333,7 @@ export default function RomSensorGoniometer({ jointName, jointKey, onBack, onCom
     }
     setZeroMsg('');
     setZeroing(true);
-    zeroBufRef.current = { samples: [], t0: Date.now() };
+    zeroBufRef.current = { samples: [], acc: [], t0: Date.now() };
     // 표본이 끊겨도(폰이 완전 정지 등) 시간이 지나면 확정 시도
     if (zeroTimerRef.current) clearTimeout(zeroTimerRef.current);
     zeroTimerRef.current = setTimeout(() => {
@@ -262,18 +353,38 @@ export default function RomSensorGoniometer({ jointName, jointKey, onBack, onCom
     maxRef.current = 0;
     setMaxDeg(0);
     recentRef.current = [];
-    recent3Ref.current = [];
+    peakRef.current.reset();
+    plateauRef.current = null;
+    accDevRef.current = 0;
+    tiltBadRef.current = false; setTiltWarn(false);
+    unstableRef.current = false; setUnstable(false);
     lastShownRef.current = null;
     if (holdRef.current) holdRef.current.reset();
     setHoldPct(0);
   };
 
+  // 측정 방향을 바꾸면 각도 축이 달라지므로 0점·최대각을 비운다(이전 방향 값이 섞이지 않게).
+  const changePlane = (p) => { if (p === plane) return; resetSide(); setPlane(p); };
+
   // 측정완료(촬영완료) → 진동 알림 → '움직임 기록' 단계로.
   //  auto=true 면 자동 측정(끝범위 유지)으로 확정된 경우 — 진동 패턴을 다르게 준다.
+  //  자동: 유지 구간의 중앙값(plateauRef) / 수동: 신뢰 구간에서 얻은 최대각(창 중앙값 최고치).
   const finishMeasurement = (auto = false) => {
-    if (zero == null || maxRef.current <= 0) return;
+    const pl = auto ? plateauRef.current : null;
+    if (zero == null || (!pl && maxRef.current <= 0)) return;
+    const value = pl ? Math.round(Math.abs(pl.angle) * 10) / 10 : maxRef.current;
     hapticFeedback(auto ? [40, 30, 40, 30, 60] : [60, 40, 60]);
-    setMeasuredAngle(maxRef.current);
+    setMeasuredAngle(value);
+    const tiltErr = tiltErrAtPeakRef.current || 0;
+    const spread = pl ? pl.spread : 0;
+    setQualityInfo({
+      confidence: sensorConfidence({ zeroRange: zeroRangeRef.current, spread, tiltErr, manual: !pl, zeroMax: ZERO_MAX_WOBBLE }),
+      zeroRange: Math.round(zeroRangeRef.current * 10) / 10,
+      holdSpread: pl ? Math.round(spread * 10) / 10 : null,
+      tiltErrDeg: Math.round(tiltErr * 10) / 10,
+      method: pl ? 'hold_median' : 'peak_window_median',
+      ...(planeOptions ? { plane } : {}), // 몸통·목: 어느 방향(앞뒤·옆·돌림)으로 쟀는지 함께 저장
+    });
     // 측정완료 후 '움직임 기록' 화면으로 (자동저장은 확인 버튼에서)
     setPhase('record');
   };
@@ -285,7 +396,7 @@ export default function RomSensorGoniometer({ jointName, jointKey, onBack, onCom
   const confirmAndSave = () => {
     hapticFeedback([40]);
     const rec = { angle: measuredAngle, recordedAt: new Date().toISOString() };
-    onComplete?.({ single: rec }, { movement: effMovement, jointKey, jointName });
+    onComplete?.({ single: rec }, { movement: effMovement, jointKey, jointName, quality: qualityInfo });
   };
 
   // ════════════════ 움직임 기록 화면 (측정완료 후) ════════════════
@@ -349,6 +460,22 @@ export default function RomSensorGoniometer({ jointName, jointKey, onBack, onCom
             <li>시작 자세에서 <span className="font-black text-amber-700 dark:text-amber-300">0점</span>을 누르고 0.7초간 그대로 유지하면 평균값으로 0점이 잡힙니다.</li>
             <li>끝범위에서 각도 변화 없이 <span className="font-black text-amber-700 dark:text-amber-300">0.8초 유지</span>하면 <span className="font-black text-amber-700 dark:text-amber-300">자동 측정</span>됩니다. (수동 완료도 가능)</li>
           </ol>
+
+          {jointTip && (
+            <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 space-y-2">
+              <p className="text-[11px] font-black text-amber-800 dark:text-amber-200">📎 {jointName || jointKey} 측정 안내 ({jointTip.source})</p>
+              {jointTip.blocks.map((b) => (
+                <div key={b.title} className="space-y-0.5">
+                  <p className="text-[11px] font-black text-slate-700 dark:text-slate-200">· {b.title}</p>
+                  <p className="text-[11px] leading-relaxed text-slate-600 dark:text-slate-300">부착: {b.mount}</p>
+                  <p className="text-[11px] leading-relaxed text-slate-600 dark:text-slate-300">{b.start}</p>
+                  <p className="text-[11px] leading-relaxed text-slate-500 dark:text-slate-400">정상치: {b.norms}</p>
+                  {b.note && <p className="text-[11px] leading-relaxed text-slate-500 dark:text-slate-400">※ {b.note}</p>}
+                </div>
+              ))}
+            </div>
+          )}
+
           <button onClick={activate}
             className="w-full rounded-xl bg-amber-500 px-4 py-4 text-base font-black text-slate-950 active:scale-[0.99] transition">
             센서 활성화 후 측정 시작
@@ -364,7 +491,7 @@ export default function RomSensorGoniometer({ jointName, jointKey, onBack, onCom
   }
 
   // ════════════════ 측정 화면 ════════════════
-  const offPlaneWarn = offPlane >= OFF_PLANE_WARN;
+  const offPlaneWarn = tiltWarn;
   const dialArc = liveDeg == null ? 0 : (Math.min(360, Math.abs(liveDeg)) / 360) * DIAL_C;
   const canFinish = zero != null && maxDeg > 0;
   const dialHint = zeroing ? '0점 측정 중 — 그대로 유지'
@@ -375,13 +502,69 @@ export default function RomSensorGoniometer({ jointName, jointKey, onBack, onCom
     if (zero == null) calibrateZero();
     else if (canFinish) finishMeasurement(false);
   };
+  // 쓸기 모드(몸통): 같은 센서 권한·방향 선택을 이어 쓴다. 저장은 일반 측정과 같은 onComplete 로.
+  if (sweepOn && sweepPreset) {
+    return <RomSensorSweep jointName={jointName} jointKey={jointKey} plane={plane} onBack={() => setSweepOn(false)} onComplete={onComplete} />;
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <button onClick={onBack} className="measure-back">← 뒤로</button>
         <h2 className="measure-title">고니오메타 · {jointName || '측정'}</h2>
-        <span className="w-12" />
+        {jointTip ? (
+          <button type="button" onClick={() => setShowTip((v) => !v)}
+            className="w-12 text-right text-xs font-black text-amber-700 dark:text-amber-300">ℹ 안내</button>
+        ) : <span className="w-12" />}
       </div>
+
+      {jointTip && showTip && (
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 space-y-2">
+          {jointTip.blocks.map((b) => (
+            <div key={b.title} className="space-y-0.5">
+              <p className="text-[11px] font-black text-slate-700 dark:text-slate-200">· {b.title}</p>
+              <p className="text-[11px] leading-relaxed text-slate-600 dark:text-slate-300">부착: {b.mount}</p>
+              <p className="text-[11px] leading-relaxed text-slate-600 dark:text-slate-300">{b.start}</p>
+              <p className="text-[11px] leading-relaxed text-slate-500 dark:text-slate-400">정상치: {b.norms}</p>
+              {b.note && <p className="text-[11px] leading-relaxed text-slate-500 dark:text-slate-400">※ {b.note}</p>}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {planeOptions && (
+        <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-2 space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-xs font-black text-slate-700 dark:text-slate-200">
+              측정 방향: <span className="text-amber-700 dark:text-amber-300">{(planeOptions.find((o) => o.key === plane) || planeOptions[0]).label}</span>
+              <span className="ml-1 font-bold text-slate-500">· 폰은 세로로</span>
+            </p>
+            <button type="button" onClick={() => setShowPlanePick((v) => !v)}
+              className="shrink-0 text-[11px] font-black text-slate-500 underline">{showPlanePick ? '닫기' : '바꾸기'}</button>
+          </div>
+          {showPlanePick && (
+            <div className="flex gap-1.5">
+              {planeOptions.map((o) => (
+                <button key={o.key} type="button" onClick={() => changePlane(o.key)} aria-pressed={plane === o.key}
+                  className={`flex-1 rounded-lg border px-2 py-2 text-[11px] font-black ${plane === o.key
+                    ? 'border-amber-500/70 bg-amber-500/20 text-amber-800 dark:text-amber-200'
+                    : 'border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'}`}>
+                  {o.label}
+                </button>
+              ))}
+            </div>
+          )}
+          {jointKey === 'NECK' && poseMode === 'ROTATION' && (
+            <p className="text-[11px] font-bold text-rose-600">⚠ 서서·앉아서 하는 목 돌림은 축이 수직이라 센서로 잴 수 없습니다. 카메라(목 돌리기)를 쓰세요.</p>
+          )}
+          {sweepPreset && (
+            <button type="button" onClick={() => setSweepOn(true)}
+              className="w-full rounded-lg border border-emerald-500/50 bg-emerald-500/10 px-2 py-2 text-[11px] font-black text-emerald-800 dark:text-emerald-200">
+              구간별로 보기 (허리·등) — 폰을 멈추면 자동 기록
+            </button>
+          )}
+        </div>
+      )}
 
       {/* [항목 5] 자동/수동 측정 토글 */}
       <div className="flex items-center justify-between rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-2">
@@ -396,6 +579,33 @@ export default function RomSensorGoniometer({ jointName, jointKey, onBack, onCom
           }`}>
           <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-all ${autoMode ? 'left-6' : 'left-0.5'}`} />
         </button>
+      </div>
+
+      {/* 위치·민감도 확인 — 대략 점검용(정확도 보증 아님) */}
+      <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-2">
+        <button type="button" onClick={toggleCheck} aria-pressed={showCheck}
+          className="flex w-full items-center justify-between text-left">
+          <span className="text-xs font-black text-slate-700 dark:text-slate-200">📍 위치·민감도 확인</span>
+          <span className="text-[10px] text-slate-500">{showCheck ? '닫기' : '폰을 댄 뒤 눌러 확인'}</span>
+        </button>
+        {showCheck && (
+          <div className="mt-2 space-y-1 text-[11px]">
+            {check ? (
+              <>
+                <p className={`font-black ${check.level === 'good' ? 'text-emerald-600' : check.level === 'warn' ? 'text-amber-600' : check.level === 'bad' ? 'text-rose-600' : 'text-slate-500'}`}>
+                  {check.level === 'good' ? '🟢 대략 양호' : check.level === 'warn' ? '🟡 조금 불안정' : check.level === 'bad' ? '🔴 위치·고정 조정 필요' : '⏳ 확인 중'}
+                </p>
+                {check.jitter != null && (
+                  <p className="text-slate-600 dark:text-slate-300">
+                    떨림 ±{(check.jitter / 2).toFixed(1)}° · 비틀림 오차 {check.tiltErrDeg != null ? `${check.tiltErrDeg.toFixed(1)}°` : '–'} · 움직임 {check.accDev != null ? `${Math.round(check.accDev * 100)}%` : '–'}
+                  </p>
+                )}
+                {check.hints.map((h) => <p key={h} className="text-slate-500">· {h}</p>)}
+                <p className="text-[10px] text-slate-400">대략적인 확인용입니다. 폰을 가만히 대고 2~3초 지켜보세요.</p>
+              </>
+            ) : <p className="text-slate-500">센서 신호를 기다리는 중…</p>}
+          </div>
+        )}
       </div>
 
       {/* 실시간 각도 — 원형 다이얼. 다이얼 자체가 큰 버튼:
@@ -435,7 +645,12 @@ export default function RomSensorGoniometer({ jointName, jointKey, onBack, onCom
 
         {offPlaneWarn && (
           <p className="mt-1 text-center text-xs font-bold text-red-700 dark:text-red-300">
-            ⚠ 폰이 측정면에서 비틀렸습니다 — 부위에 평평하게 다시 밀착해 주세요 (이 동안 최대각은 갱신되지 않음)
+            ⚠ 폰이 측정면에서 비틀려 각도가 틀리게 나올 수 있습니다 — 부위에 평평하게 다시 밀착해 주세요 (이 동안 최대각은 갱신되지 않음)
+          </p>
+        )}
+        {!offPlaneWarn && zero != null && unstable && (
+          <p className="mt-1 text-center text-xs font-bold text-amber-700 dark:text-amber-300">
+            움직임이 빨라 값이 불안정합니다 — 천천히 움직이고 끝 자세에서 잠시 멈춰 주세요
           </p>
         )}
       </div>

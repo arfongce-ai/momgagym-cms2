@@ -39,7 +39,7 @@ describe('자세 결과시트 — 항목 계산', () => {
 
   it('굽은 등은 180° 편위로 변환한다', () => {
     expect(by.kyphosis.value).toBe(10);
-    expect(by.kyphosis.level).toBe('normal');
+    expect(by.kyphosis.level).toBeNull(); // 검증된 기준이 없어 단계를 내지 않는다
   });
 
   it('부위별 진단(buildRegionDiagnoses)과 단계가 어긋나지 않는다', () => {
@@ -135,5 +135,46 @@ describe('근육 경향 해부도', async () => {
     expect(s['front.pec']).toBe('tight');
     expect(s['back.rhomboid']).toBe('weak');
     expect(s['back.calf']).toBeUndefined();
+  });
+});
+
+describe('판정 기준이 있는 항목만 단계·근육에 반영 (2026-11-25)', () => {
+  it('기준 없는 항목(굽은 등·플럼라인 등)은 level null, 근육 연결 없음', async () => {
+    const { buildPostureSheetItems, overallSheetLevel } = await import('../ai-measure/core/postureResultSheet');
+    const items = buildPostureSheetItems({ perViewAnalysis: {
+      left: { sagittal: { kyphosisProxyDeg: 115.7, anklePlumbKneeDeviationMm: 60, forwardHeadMm: 10 } },
+      front: { frontal: { shoulderHeightDiffMm: -9.5, pelvisHeightDiffMm: 3 } },
+    } });
+    const by = Object.fromEntries(items.map((i) => [i.key, i]));
+    expect(by.kyphosis.level).toBeNull();
+    expect(by.kyphosis.tight).toEqual([]);
+    expect(by.knee_plumb.level).toBeNull();
+    expect(by.shoulder_height.level).toBe('caution');
+    expect(by.shoulder_height.side).toBe('왼쪽');
+    expect(overallSheetLevel(items)).toBe('caution');
+  });
+  it('근육 경향은 판정된 항목마다 달라지고 원인이 붙는다', async () => {
+    const { atlasForItems } = await import('../ai-measure/core/muscleAtlas');
+    const a = atlasForItems([{ key: 'shoulder_height', label: '어깨 높이 차이', value: 9.5, unit: 'mm', level: 'caution', side: '오른쪽' }]);
+    expect(a.tight.map((t) => t.no)).toEqual([1, 4]);
+    expect(a.tight[0].causes[0]).toContain('오른쪽 높음');
+    const b = atlasForItems([{ key: 'pelvis_height', label: '골반 높이 차이', value: 20, unit: 'mm', level: 'risk', side: null }]);
+    expect(b.tight.map((t) => t.no)).toEqual([40]);
+    expect(atlasForItems([{ key: 'kyphosis', label: '굽은 등', value: 64, unit: '°', level: null }]).tight).toEqual([]);
+  });
+});
+
+describe('근막경선 설명', () => {
+  it('판정된 항목에만 붙고 근거 문구를 포함한다', async () => {
+    const { fasciaForItems, FASCIA_NOTE } = await import('../ai-measure/core/muscleAtlas');
+    const f = fasciaForItems([
+      { key: 'shoulder_height', label: '어깨 높이 차이', value: 9.5, unit: 'mm', level: 'caution', side: '왼쪽' },
+      { key: 'kyphosis', label: '굽은 등', value: 64, unit: '°', level: null },
+      { key: 'pelvis_height', label: '골반 높이 차이', value: 2, unit: 'mm', level: 'normal' },
+    ]);
+    expect(f).toHaveLength(1);
+    expect(f[0].line).toContain('SBAL');
+    expect(f[0].trigger).toContain('왼쪽 높음');
+    expect(FASCIA_NOTE).toContain('Wilke 2016');
   });
 });

@@ -281,7 +281,7 @@ describe('만료 정산 UI 배선 확인', () => {
   });
 
   it('MemberDetail.jsx의 만료 정산 처리는 store.processExpirySettlement로 원자 저장하고, 관리자 권한 블록 안에서만 버튼을 노출한다', () => {
-    const start = memberDetailSrc.indexOf('const handleExpirySettlement = async (lot) => {');
+    const start = memberDetailSrc.indexOf('const confirmExpirySettlement = async (rows) => {');
     expect(start).toBeGreaterThan(-1);
     const end = memberDetailSrc.indexOf('\n  };', start);
     const fn = memberDetailSrc.slice(start, end);

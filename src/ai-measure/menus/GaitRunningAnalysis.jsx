@@ -163,6 +163,10 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
   // 촬영 전에 직접 고르는 수동 선택지로 추가한다. 'auto'면 기존 측면/후면
   // 자동판별을 그대로 쓰고, 'side'/'back'/'front'를 고르면 그 값으로 고정한다.
   const [viewMode, setViewMode] = useState('auto'); // auto | side | back | front
+  // [2026-11-25] 측정 전 걷기/달리기 구분 — auto(케이던스로 자동) | walk | run. 고르면 기준·비교가 그 구분을 따른다.
+  const [gaitModeSel, setGaitModeSel] = useState('auto');
+  const gaitModeSelRef = useRef('auto');
+  useEffect(() => { gaitModeSelRef.current = gaitModeSel; }, [gaitModeSel]);
   const viewModeRef = useRef('auto');
   useEffect(() => { viewModeRef.current = viewMode; }, [viewMode]);
   // 컴팩트 도구 (초시계/메트로놈)
@@ -619,6 +623,7 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
         verticalOscillation: biomech.verticalOscillation,
         kneeSymmetry: biomech.kneeSymmetry,
         strideToHeight: biomech.strideToHeight,
+        gaitMode: gaitModeSelRef.current === 'auto' ? null : gaitModeSelRef.current,
         // [2026-11-23] 달리기 분석 보강 — 접지·체공 시간, 오버스트라이드(측면), 팔 스윙(측면)
         runMechanics: runMechRef.current.summary({ orientation: orientationRef.current || null }),
       };
@@ -775,6 +780,18 @@ export default function GaitRunningAnalysis({ member, onBack, onSaveToFirebase, 
               {/* [정면뷰 선택 2026-09-14] 측면/후면 자동판별 + 정면 수동선택.
                   녹화 전(camera 화면)에만 노출 — 녹화 중 전환은 지표 기준이
                   바뀌어 혼란을 주므로 막는다. */}
+              {view === 'camera' && (
+                <div className="flex gap-0.5 rounded-full bg-black/55 backdrop-blur p-1 border border-white/10">
+                  {[['auto', '자동'], ['walk', '걷기'], ['run', '달리기']].map(([k, label]) => (
+                    <button key={k} onClick={() => setGaitModeSel(k)}
+                      className={`rounded-full px-2 py-0.5 text-[10px] font-black transition-colors ${
+                        gaitModeSel === k ? 'bg-cyan-400 text-slate-950' : 'text-slate-300'
+                      }`}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              )}
               {view === 'camera' && (
                 <div className="flex gap-0.5 rounded-full bg-black/55 backdrop-blur p-1 border border-white/10">
                   {[['auto', '자동'], ['side', '측면'], ['back', '후면'], ['front', '정면']].map(([k, label]) => (

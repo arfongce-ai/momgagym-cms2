@@ -30,6 +30,7 @@ import { computeChangeRow, summarizeChanges, reportDateOnly } from '../core/meas
 import ChangeSummaryPanel from '../../components/report/ChangeSummaryPanel.jsx';
 // [자세 결과시트 UI 2026-11-15] motiphysio·exbody 결과지 구성을 참고한 상단 요약 영역.
 import PostureResultSheet from './PostureResultSheet.jsx';
+import { buildPostureSheetItems, overallSheetLevel } from '../core/postureResultSheet';
 
 // 'risk'|'caution'|'normal' 문자열 판정을 공용 MetricCard가 쓰는 상태 토큰으로 변환.
 //  · scoreToStatus 임계값(>=80 정상/>=60 주의/그 외 위험)과 동일한 대표 점수를 사용해
@@ -152,13 +153,25 @@ export default function PostureReport({
     return buildPostureChangeSummary(analysis, report, previousReport);
   }, [analysis, report, previousReport]);
 
+  // [현재 상태 통일 2026-11-25] 결과시트와 같은 '검증된 기준이 있는 항목'만으로 상태를 정하고, 근거를 함께 보여준다.
+  //  기존 규칙 엔진(analysis.status)의 위험·주의는 기준이 검증되지 않은 값이 섞여 있어 상태에 반영하지 않고 '참고'로만 적는다.
+  const sheetItems = useMemo(() => (analysis ? buildPostureSheetItems({
+    perViewAnalysis: report?.perViewAnalysis, analysis, sex: member?.sex || member?.gender || report?.sex || null,
+  }) : []), [report, analysis, member]);
+
   if (!analysis) {
     return (
       <UnifiedEmptyState onClose={onClose}>분석 가능한 BlazePose 랜드마크가 없습니다.</UnifiedEmptyState>
     );
   }
 
-  const statusStyle = STATUS_STYLE[analysis.status] || STATUS_STYLE.caution;
+  const unifiedLevel = overallSheetLevel(sheetItems);
+  const statusStyle = STATUS_STYLE[unifiedLevel || 'caution'] || STATUS_STYLE.caution;
+  const statusBasis = sheetItems.filter((it) => it.level === 'risk' || it.level === 'caution');
+  const statusRef = [
+    ...sheetItems.filter((it) => !it.level && it.value != null).map((it) => `${it.label} ${it.value}${it.unit}`),
+    ...((analysis.rules?.findings || []).filter((f) => f.status === 'risk' || f.status === 'caution').map((f) => f.label)),
+  ].filter((v, i, a) => v && a.indexOf(v) === i);
   const memberName = member?.name || report?.memberName || '회원';
   const measuredAt = (report?.measuredAt || report?.createdAt || new Date().toISOString()).slice(0, 10);
   const bodyAge = analysis.bodyAge ?? report?.bodyAge;
@@ -215,7 +228,7 @@ export default function PostureReport({
 
         <section className="grid gap-4 sm:grid-cols-[1.3fr_0.9fr]">
           <GhostingViewer
-            currentImageUrl={currentImageUrl || report?.imageUrl || report?.image_urls?.front || report?.image_urls?.current?.front}
+            currentImageUrl={currentImageUrl || report?.imageUrl || report?.image_urls?.front || report?.image_urls?.current?.front || report?.viewThumbs?.front || Object.values(report?.viewThumbs || {})[0]}
             previousImageUrl={previousImageUrl || report?.comparison?.previousImageUrl || report?.comparison?.image_urls?.front || report?.image_urls?.before?.front}
             currentLandmarks={currentPose}
             previousLandmarks={previousPose}
@@ -284,8 +297,20 @@ export default function PostureReport({
 
         <section className={`rounded-lg border px-4 py-3 ${statusStyle.bg} ${statusStyle.border}`}>
           <p className={`text-sm font-bold ${statusStyle.text}`}>
-            현재 상태: {POSTURE_STATUS_KO[analysis.status] || '주의'}
+            현재 상태: {unifiedLevel ? POSTURE_STATUS_KO[unifiedLevel] : '판정 항목 없음'}
           </p>
+          {statusBasis.length > 0 ? (
+            <ul className="mt-1 list-disc pl-5 text-xs text-slate-600 dark:text-slate-300" data-testid="posture-status-basis">
+              {statusBasis.map((it) => (
+                <li key={it.key}>{it.label} {it.value}{it.unit}{it.side ? `(${it.side} 높음)` : ''} — {it.level === 'risk' ? '위험' : '주의'} (주의 {it.caution}{it.unit} 이상 · 위험 {it.risk}{it.unit} 이상)</li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">{unifiedLevel ? '기준이 있는 항목이 모두 양호 범위입니다.' : '기준이 있는 항목의 측정값이 없습니다.'}</p>
+          )}
+          {statusRef.length > 0 && (
+            <p className="mt-1 text-[11px] leading-relaxed text-slate-500" data-testid="posture-status-ref">참고(검증된 기준이 없어 상태에 넣지 않음): {statusRef.join(' · ')}</p>
+          )}
           <p className="mt-1 text-xs leading-relaxed text-slate-500 dark:text-slate-400">
             본 리포트는 BlazePose 기반 스크리닝 자료이며, 통증 또는 신경학적 증상이 있는 경우 전문 의료진 평가가 우선입니다.
           </p>
@@ -299,6 +324,7 @@ const LEVEL_STYLE = {
   normal: { text: 'text-emerald-700 dark:text-emerald-300', bg: 'bg-emerald-500/10', border: 'border-emerald-500/30', ko: '정상' },
   caution: { text: 'text-amber-700 dark:text-amber-300', bg: 'bg-amber-500/10', border: 'border-amber-500/30', ko: '주의' },
   risk: { text: 'text-red-700 dark:text-red-300', bg: 'bg-red-500/10', border: 'border-red-500/30', ko: '위험' },
+  reference: { text: 'text-slate-500 dark:text-slate-400', bg: 'bg-slate-100/40 dark:bg-slate-800/40', border: 'border-slate-300 dark:border-slate-700', ko: '참고(기준 없음)' },
   insufficient: { text: 'text-slate-500 dark:text-slate-400', bg: 'bg-slate-100/40 dark:bg-slate-800/40', border: 'border-slate-300 dark:border-slate-700', ko: '측정 부족' },
 };
 
@@ -358,7 +384,7 @@ function RegionDiagnoses({ regions }) {
                 <div className="mt-1.5 flex flex-wrap gap-1.5">
                   {r.measured.map((m, i) => (
                     <span key={i} className="rounded bg-slate-50/60 dark:bg-slate-950/60 px-1.5 py-0.5 text-[11px] font-bold text-slate-600 dark:text-slate-300">
-                      {m.label} {m.value}{m.unit}
+                      {m.label} {m.value}{m.unit}{m.reference ? ' (참고)' : ''}
                     </span>
                   ))}
                 </div>

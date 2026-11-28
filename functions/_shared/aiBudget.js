@@ -53,6 +53,8 @@ export async function reservePaidAiCall(env) {
 const PRICE_PER_MILLION = {
   'claude-haiku-4-5-20251001': { input: 1, output: 5, cacheWrite: 1.25, cacheRead: 0.1 },
   'claude-sonnet-5': { input: 2, output: 10, cacheWrite: 2.5, cacheRead: 0.2 },
+  // 대체 모델(momi.js 404 재시도용). 단가는 sonnet-5 와 같다고 가정한 예산 추정치(확인 필요).
+  'claude-sonnet-5-5': { input: 2, output: 10, cacheWrite: 2.5, cacheRead: 0.2 },
 };
 
 export function estimateAnthropicCostUsd(model, usage = {}) {

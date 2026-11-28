@@ -18,8 +18,10 @@ export default {
       animation: {
         'fade-in': 'fadeIn 0.18s ease forwards',
         'spin-slow': 'spin 1.2s linear infinite',
+        'pulse-once': 'pulseOnce 0.25s ease-out',
       },
       keyframes: {
+        pulseOnce: { from: { transform: 'scale(1.18)' }, to: { transform: 'scale(1)' } },
         fadeIn: {
           from: { opacity: 0, transform: 'translateY(6px)' },
           to:   { opacity: 1, transform: 'translateY(0)' },

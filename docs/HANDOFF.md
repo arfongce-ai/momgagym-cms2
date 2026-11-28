@@ -45,6 +45,81 @@
 
 ## 작업 로그
 
+### 2026-11-26 · Claude Code · VBT 궤적·푸시업 카운터·쉬운 해석·촬영 위치 (fix/vbt-trail-pushup-1126)
+- 궤적(`VbtMeasure.jsx`, `barbell.js pushTrailPoint`): 클린·스내치는 5초간 경로 유지, 손목 튐(랙·캐치) 프레임 건너뛰기+평활. 일반 종목은 기존 0.9초.
+- 푸시업 카운터(`papsAutoCounter.js`): 고정 문턱(펴짐≥150/접힘≤100) → 극점 폭(22°) 방식, 두 팔 평균. 영상(6~7회)이 4회로 세어지던 것 대응. 깊이 상한 125°(기존 테스트 '120°는 안 센다'는 145°로 수정). 턱걸이·윗몸·사이드스텝은 그대로.
+- VBT 쉬운 해석(`vbtPlainSummary.js`, `LiftingReportDashboard.jsx`): 결론/숫자의 뜻/잘한 점/부족한 점/다음에 할 일.
+- 촬영 위치: 선택 없이 자동 인식(`cameraViewGuide.js detectView`: 측면/대각선/정면/후면, 5프레임 연속 일치). 화면 안내 문구에 '촬영 위치 …' 표시, 저장에 cameraView 포함(VBT·역도). 종목 선택 시 허브(`BarbellLiftingHub.jsx`)에서 권장 위치 팝업.
+- 테스트 4069 통과·빌드 성공. 실기기·실영상 재검증은 못 함(영상은 프레임 육안 확인만).
+### 2026-11-26 · Claude Code · ROM 측정 후 저장 팝업·횟수별 각도·종합 기준 (fix/rom-save-reps-1126)
+- 라이브 측정 종료 시 `persistReport` 자동 호출 → 허브 공통 '저장하시겠습니까?' 팝업(`RomMeasure.jsx` finalizeReport). 센서 경로는 기존부터 자동.
+- 촬영 중 횟수별 최고각을 0.6초마다 갱신(`liveRepsRef`) → 라이브 칩(`RomRepChips.jsx`)·영상 HUD 카드(`recordingOverlay.js` tone max=황금/min=분홍).
+- 리포트(`RomReport.jsx`): 좌·우 횟수별 각도+평균+대표값, 종합 점수 기준(90/65/35)·정상범위·좌우차 기준 표시. 헬퍼 `romMovementGuide.js` repSummary/repCards/GRADE_RULES.
+- PAPS 저장 팝업은 손대지 않음(저장 버튼 → 허브 팝업은 기존 동작). 테스트 4061 통과·빌드 성공. 실기기 확인 못 함.
+
+### 2026-11-26 · Claude Code · ROM 선택 화면 움직임 중심 개편 + 발목 계산 수정 (feat/rom-movement-select-1126)
+- 선택 화면: ①관절 ②움직임(탭 이름=움직임) ③측정 쪽 ④방식. 움직임별 설명 카드(무엇을 재나/촬영 방향/자세/단계/2~3회/참고 정상치) — `src/ai-measure/core/romMovementGuide.js`, `RomMeasure.jsx` 선택 화면.
+- 팔꿈치·발목은 서서/앉아서가 계산 동일 → 탭 1개로 통합, 어깨 앉아서도 숨김. poseMode 키는 그대로(리포트 pairKey 호환).
+- 버그 수정: 발목 카메라 각도가 정강이-발 사잇각(중립 90°) 그대로 기록되던 것 → 배측굴곡 = 90 − 사잇각 (`bodyMechanics.js` ANKLE). 테스트 `ankle_camera_dorsiflexion.test.js`.
+- 추가 수정: 최대값 정상범위 필터가 하한(정상 min−40) 미만을 버려, 가동범위가 작은 회원(어깨 100° 등)은 결과가 null 이 되던 것 → 하한 제거(`_sanityRange`). 테스트 `rom_limited_range_kept.test.js`.
+- 라이브 화면: 촬영 시작 전부터 각도 표시, 측정각(하늘색) vs 기준 정상각(초록) 비교 막대 `RomAngleBar.jsx`; 무릎·팔꿈치는 내각 대신 굽힘각으로 표시(`romDisplayAngle`). 반복 안내 3~5회.
+- PAPS(`PapsTestMeasure.jsx`): 촬영 중 횟수를 화면 가운데 크게 표시 + 횟수 증가 시 `beepRep` 소리. 영상에 굽는 HUD는 기존 그대로.
+- 한계: 반복 대표값(rep_median)은 반복 3회 이상일 때만 적용, 2회면 지속 피크 + 경고.
+- 테스트 4052 통과·빌드 성공. 실기기 화면 확인은 못 함.
+
+### 2026-11-26 · Claude Code · 심폐 기록 VO2max 재계산 (feat/cardio-vo2max-recalc-1126)
+- `cardioTest.js recomputeCardioRecord(payload,{subject,allSessions})`: 저장된 1초 series 로 `computeCardioResult` 재실행 → 계산 필드만 patch 로 반환(series·RPE·메모·확인값 유지, `recalculatedAt` 기록).
+- `CardioReportSheet` 에 `onRecalc` prop + `RecalcPanel`(성별·체중·나이 입력 → "다시 계산해서 저장"). VO2max 가 비고 체중/성별이 빠진 기록에만, 저장 후 리포트 열람(`Report.jsx` sessionViewer) 화면에서 표시. `aiStore.updateSession` 으로 같은 세션에 병합 저장.
+- 한계: workEndSec 는 저장돼 있지 않아 `result.durationSec` 을 사용. 실기기 확인 못 함.
+- 테스트 `cardio_recalc_1126.test.js` 3건, 전체 4047 통과·빌드 성공.
+
+### 2026-11-26 · Claude Code · 회차비교 범위 축소 (fix/history-compare-scope-1126)
+- PR #107 보정: 에어바이크 Åstrand 등 VO2max 를 내는 테스트에서 VO2max 없는 회차가 거리(m)로 바뀌어 한 그래프에 단위가 섞임 → **커브드 트레드밀(basis curved)만** 시간/거리로 비교, 나머지 심폐는 VO2max 만.
+- 스프린트·한다리서기·스쿼트 이력 값 추출은 원복(각자 전용 리포트의 전/후 비교가 있어 그대로 유지).
+
+### 2026-11-26 · Claude Code · 리포트 이력 회차비교 대체 지표 (fix/history-compare-cardio-1126)
+- 원인: `Report.jsx extractSessionMetric` 이 심폐를 VO2max 로만 뽑아, VO2max 없는 커브드 트레드밀은 값이 null → "회차 비교는 2회차부터" 표시.
+- 수정: 심폐는 VO2max → (거리목표) 기록 시간 → (시간목표) 이동 거리 → 평균 출력 순 대체. 시간은 낮을수록 좋음(`lowerBetter`, 변화 색상 반전). 스프린트(총 시간)·한다리서기(눈뜸 최고 유지)·스쿼트(FMS 점수)도 값 추출 추가. `reportService menuSummaries` 에 cardio·sprint 요약 줄 추가.
+- 테스트: `ai_menu_grouping.test.js` 5건 추가. 전체 통과 + 빌드 성공. 실기기·배포 화면은 확인 못 함.
+
+### 2026-11-25 · Claude Code · 리포트 이력 1RM 종목 분리 (fix/lifting-group-by-exercise-1125)
+- 문제: 리포트 'AI 측정 이력'이 1RM을 종목 구분 없이 한 묶음(`lifting_onerm`)으로 묶어 스쿼트·데드리프트 회차·추이 그래프가 섞임.
+- 확장(같은 PR): ROM(관절·자세)·보행(걷기/달리기·방향)·스프린트(종목)·심폐(장비·테스트)도 `measureSubtype.subtypeOf` 기준으로 그룹 분리(`rom:SHOULDER:STANDING` 형태, 제목에 세부 이름). 점프·보행 다지표 추세 그래프는 전체가 아니라 해당 묶음 회차만으로 계산(`Report.jsx`). 세부 정보 없는 과거 기록은 예전 키. 자세·신체정보·한다리서기·스쿼트는 세부 테스트가 없어 그대로.
+- 수정: `reportService.menuGroupKey`가 `exerciseType`이 있으면 `lifting_onerm:squat`처럼 종목별 그룹 키, 제목은 '1RM · 스쿼트'. 종목 정보 없는 과거 기록은 예전 키 유지. VBT도 동일.
+### 2026-11-25 · Claude Code · 배포 게이트 메모 (chore/deploy-release-1125)
+- Cloudflare Production 배포는 "완료된 PR의 병합 커밋"만 허용한다(`Deploy to Cloudflare Pages`의 Require a merged pull request 단계). `main`에 직접 push한 `1efe1d6`·`e52e2e6`은 배포가 거부돼(실패) 화면에 반영되지 않았다. 이 PR 병합으로 두 커밋 내용이 함께 배포된다. 앞으로는 브랜치 → PR → 병합으로 올릴 것.
+
+### 2026-11-25 · Claude Code · 모미 토큰 절감 (main)
+- 원인: `MomiAutoNote`가 리포트를 열 때마다 자동으로 유료 호출했고, 빈 응답 버그 때문에 노트가 저장되지 않아 열 때마다 반복 호출 + 빈 응답 재시도 이중 과금.
+- 조치: ①자동 호출 끔(`MOMI_AUTO_NOTE_ON_OPEN=false`, 버튼 '모미 노트 만들기'로만 생성, 저장 노트 재사용) ②`askMomi` 첫 답변 localStorage 캐시(60건·30일, `fresh:true`면 새로 호출, 패널 버튼은 '다시 분석') ③후속 질문(history 있음)은 `functions/api/momi.js`에서 Haiku(`MOMI_FOLLOWUP_MODEL`로 변경 가능) ④후속 질문 근거 데이터 압축은 '두 번째 질문부터 수치 소실' 이력이 있어 하지 않음.
+- 음성 모미(`voice-command.js`)는 이미 Haiku·256토큰·캐싱·무료 분류 사용 중이라 변경 없음.
+- 일일 상한은 Cloudflare 환경변수 `MOMI_DAILY_CLAUDE_CALL_LIMIT`(기본 100)·`MOMI_DAILY_CLAUDE_BUDGET_USD`(기본 1)로 조정(사용자 액션).
+
+### 2026-11-25 · Claude Code · 리포트 사진 누움·썸네일·근육도·모미 빈 응답·사진 비교 (main)
+- 사진 누움: `captureQuality.js grabThumb`이 카메라 회전 보정(localStorage `momi.cameraRotationDeg`)을 적용(한다리서기 등 시작/중간 썸네일).
+- 자세 스켈레톤 시트·Before&After: `PostureMeasure.jsx`가 면별 작은 사진(`thumbUrl`, 240px)을 `report.viewThumbs`로 저장 → `PostureResultSheet`(photoMap)·`PostureReport`(GhostingViewer)가 저장 기록을 다시 열어도 사진 표시. 예전 기록은 viewThumbs가 없어 뼈대만 보임.
+- 근육 해부도: `muscleAtlas.atlasByItem`으로 부위·자세(항목)별 묶음 표시, '근육 도감 열기' 버튼 제거(MuscleAtlas.jsx는 미사용으로 남김).
+- 모미 빈 응답: `functions/api/momi.js` thinking 비활성(`thinking:{type:'disabled'}`, 400이면 옵션 빼고 재시도) + max_tokens 4096, 빈 응답(max_tokens) 시 8192로 재시도.
+- 사진 비교: `capture.deviceKey`(브라우저·해상도 지문)를 저장 → 같은 기기면 `QuickResultSheet`가 직전 기록 사진과 자동 나란히 표시. `VideoCompareUpload`는 기본 접힘(영상은 클라우드 저장 안 하므로 자동 불러오기 불가, 썸네일로 대체).
+- 테스트 3913 예상(신규 `report_photo_compare_1125.test.js`), 빌드 통과. 실기기 확인 못 함.
+
+### 2026-11-24 · Claude Code · 측정 안의 세부 테스트별 개별 평가·종합 해설 (브랜치 feat/comprehensive-link-1124, #79 포함)
+- 문제: 종합 분석·교차 참고·기간 종합이 측정 종류(kind/reportType)별 최신 1건만 써서, 같은 측정 안 세부 테스트(1RM 벤치·VBT 스내치, CMJ·SJ, 관절별 ROM, 스프린트 종목, 심폐 장비·테스트, 걷기/달리기·방향)가 사라지거나 값이 한 평균에 섞임.
+- `core/measureSubtype.js`(단일 소스): `subtypeOf(kind, report)` → {key,label}, `latestPerSubtype`, `subtypeEntryKey`('kind|세부키').
+- 적용: `momiService.loadLatestReportsByKind`(세부 테스트별 최신 1건씩), `buildCombinedAssessment`(세부 테스트마다 따로 평가, `combinedItems`), `buildCrossMeasureIntegration`(세부 테스트별 참고, 같은 종류의 다른 세부 테스트도 참고), `comprehensiveReport`(기간 통계를 세부 테스트별로, typeLabel에 세부 이름), `CombinedAssessmentPanel`(칩 라벨·"테스트별 평가"), `GaitAnalysisHub` 직전 비교(걷기/달리기·방향 일치).
+- 개별 리포트 직전 비교는 이미 세부 테스트 기준이었음(바벨 mode+종목, 점프 subType·발, 스프린트 testKey, ROM 관절+자세, 심폐 장비+테스트). 보행만 보완.
+- 테스트: 3815/3816(기존 `momi_voice.test.js:119`), 빌드 통과. 실데이터 확인 못 함.
+
+### 2026-11-24 · Claude Code · 새 지표를 결과리포트 종합·종합 해설에 연결 (브랜치 feat/comprehensive-link-1124)
+- 점검 결과 빠져 있던 곳: ①스프린트 수평 파워·역도 구간 분석이 요약 지표(`METRIC_DEFINITIONS`)·해설(GUIDE)에 없음 ②종합 해설(`buildProblemFocus`)에 점프 EUR·연속점프·영상 이륙속도, 스프린트 수평 파워, 역도 구간 분석, 심폐지구력 분기 없음 ③종합 분석 화면 불러오기(`loadLatestReportsByKind`)에 스프린트·심폐지구력이 없고 스프린트가 보행으로 섞일 수 있었음 ④기간 종합 유형 이름에 스프린트·심폐·한다리서기·스쿼트 없어 '신체 정보·기타'로 표시.
+- 연결: 위 4곳 모두 수정. 등급 없는 참고값은 위험/주의로 올리지 않고 사실로만 옮김(신뢰 낮음은 normal 안내, 연속점프 60초 미달은 caution). 심폐지구력은 판정 없이 VO2max·회복만.
+- ⚠ 스프린트 수평 파워 값(`report.horizontalPower`)을 만드는 코드는 PR #79에 있음 — #79 병합 전에는 이 브랜치의 스프린트 연결이 빈 값.
+- 테스트: 기존 실패 `momi_voice.test.js:119` 외 신규 실패 없음. 실기기·실데이터 확인 못 함.
+### 2026-11-24 · Claude Code · 5번 스프린트 수평 파워 + 신체정보(체중·키) 연동 확대 (브랜치 feat/sprint-horizontal-power-1124)
+- 수평 파워(책 p.307, 체중×거리÷시간, kg·m/s): `sprintMetrics.js sprintHorizontalPower` — 직선 스프린트만, 0~5m·0~10m 누적 시간 기준. 라이브·업로드가 `report.horizontalPower`로 저장, `SprintReportDashboard`에 표시. 체중 없으면 안 보임. 체중×평균속도와 같은 값이라 새 정보는 아니고 회원 간 비교용. 영상 시간에는 책의 스톱워치 환산식 미적용. 7번 제자리멀리뛰기는 시간 개념이 없어 제외.
+- 신체정보 연동: 회원 신체기록(body 탭)의 키·체중을 `resolveBodyMetrics`로 읽도록 확대 — 스프린트(라이브·업로드), 점프 실시간·업로드 키 게이트, 리프팅 업로드, VBT 키, 자세 키, 심폐지구력 체중. 이전에는 member.height/weight만 봐서 재입력을 요구함.
+- 테스트: 3795/3796(실패 1개는 기존 `momi_voice.test.js:119`), 빌드 통과. 실기기 확인 못 함.
+
 ### 2026-11-24 · Claude Code · VBT 바 궤적선 + 스내치·클린&저크 구간/자세 각도 (브랜치 feat/vbt-trail-olylift-1124)
 - 1) `VbtMeasure.jsx`: 측정 중 화면과 녹화 영상에 바 궤적 잔상(`drawFadingBarPath`) 표시, [✨ 궤적] 토글. 표시 전용 raw 궤적(`trailRef`)을 따로 둠 — 판정·속도 계산은 그대로.
 - 3) `core/olyLiftAnalysis.js`(순수 함수): 스내치/클린은 출발→무릎 통과→최고속도→캐치, 클린&저크는 랙 정지로 클린/저크 분리. 시점별 무릎·고관절·몸통 기울기 각도(좌/우 중 인식 좋은 쪽, 2D). 판정하지 않고 참고값+신뢰도(정면 촬영·인식 낮음·저fps·구간 분리 실패 이유 표시). `components/report/OlyLiftSection.jsx`로 리포트 표시, `report.oly`로 저장(`BarbellLiftingHub.jsx` extra).
@@ -753,6 +828,111 @@
 - 원인: FTMS Indoor Bike Data는 페이스가 아니라 속도(km/h)를 보냄. 화면은 /500m 페이스만 읽었음.
 - 수정: `CardioTestMeasure.jsx` 바이크일 때 속도로 /1km 페이스(3600/km/h) 표시(콘솔과 같은 단위).
 - 테스트 276 파일 / 3,410 통과, 빌드 통과.
+
+## 2026-11-24 — 트리플/크로스오버 홉 · PRS · 시니어 기능 테스트 (feat/hop-senior-prs-1124, Claude)
+- 점프 6번: `thop`(트리플 홉)·`chop`(크로스오버 홉) 추가(수평 엔진 3연속, 도약별 거리·무효 사유 저장, 저장 차단 없음).
+- 신체정보 1번: 회복 느낌 PRS(0~10) 입력(4 이하 주의, 오늘 컨디션 연동). RPE는 적용 안 함. MemberDetail 입력폼은 미변경(표시만).
+- 시니어 13번 신설(그룹 `senior`; 비교·영상·녹화·초시계는 14~17번으로 이동): 30초 의자 일어서기(CDC STEADI)·5회 일어서기(Bohannon 2006)·TUG(12초). 규준은 등록정보 나이·성별, 혈압은 최근 신체기록.
+  - 측정자 입력형(횟수 탭·카운트다운·초시계)이 기본, 카메라 자동 카운트는 선택(`seniorAutoCounter.js`). 심박 밴드·메트로놈 연결. 자동값은 측정자가 확인·수정, 원본은 `auto`에 함께 저장.
+  - 기록 kind `senior_test`(menu `senior`), 종합분석 분류 `measureSubtype`(테스트별), momiService·crossMeasureContext·unifiedReport·researchData·measureHistory·Report.jsx·음성 키워드 등록.
+- 혈압(2026-11-25 출처 확인): 보류=안정시 수축기 >200 또는 이완기 >110(ACSM 운동검사 기준·ACC/AHA 운동부하검사 지침, 상대적 금기), 알림=수축기 ≥180 또는 이완기 ≥120(Mayo/MSD 고혈압 위기 수치). 통증·어지럼은 센터 안전 확인.
+- 1RM(2026-11-25): 영상측정 후 기록 확인 단계(BarbellLiftingHub)에서 반복 횟수 ±수정 → 1RM·도전기록 재계산, 자동값은 `repsAuto`·`repsAdjusted`로 함께 저장(`core/oneRmRepAdjust.js`).
+- 미확인: 카메라 자동 카운트 실기기(S23·키오스크) 검증, 5회 일어서기 자동 시작 시점(측정 시작 버튼 기준).
+- 테스트: 기존 실패였던 `momi_voice.test.js:119`는 onend 앞에 진단 로그 한 줄이 생겨 120자 검사창을 넘긴 것(동작 문제 아님) → 창을 300자로 넓혀 해결. 허브 분기 정규식 테스트 2건은 isSenior 허용으로 갱신. 전체 통과, 빌드 통과.
+
+## 2026-11-25 — 시니어 카메라 전체화면화·컨디션 버튼 (feat/senior-camera-stage-1125, Claude)
+- 실기기(S23) 확인: 자동 카운트 화면이 작은 박스+레터박스로 보이고 바닥만 비쳐 쓸 수 없었음 → 기존 측정과 같은 `CameraStage` 전체화면으로 교체, 스켈레톤 ON/OFF 토글·인식 상태(✓ 인식됨/⚠ 몸이 안 잡혀요)·화면 회전 포함. OFF 여도 카운트는 계속.
+- 신체정보 1번: 피로도(1~5)·통증 NRS(0~10)도 PRS처럼 버튼 선택(다시 누르면 해제).
+- 카메라 자동 카운트의 실제 인식 정확도는 아직 실기기에서 못 봄(앉음/섬 문턱 0.35/0.7).
+
+## 2026-11-25 — 회원상세 컨디션·수면·PAPS 탭 (Claude)
+- #83: 회원상세 신체정보 폼에 PRS 추가, 피로도·통증 버튼식.
+- #84(feat/sleep-condition-1125): 수면 컨디션 1~5 + 수면시간(기록 전용). 2 이하 주의는 참고용 시작값(공인 기준 아님). 신체정보·회원상세·추이·모미·종합분석 반영.
+- 싱글 홉은 이미 7번 한발멀리뛰기(SHJ-F)와 같은 검사이고 좌우비(LSI)도 있음 → 이름만 병기(`jumpTypes.js` shjf).
+- PAPS 14번 신설(그룹 `paps`; 비교·영상·녹화·초시계는 15~18번으로 이동): 팔굽혀펴기(무릎 방식 별도 추이)·윗몸말아올리기·윗몸일으키기 1분·사이드스텝 20초·오래매달리기·턱걸이·앉아윗몸앞으로굽히기·악력.
+  - 측정자 입력형(횟수 탭·카운트다운·초시계·메트로놈). **등급 판정 없음**(학년·성별 기준표 미확인) — 값 저장·회차 비교만. 기준표 확인 시 `papsTests.js evaluatePapsTest` 에만 추가.
+  - 기록 kind `paps_test`(menu `paps`), 종합분석·이력·Report.jsx·음성('PAPS','팝스')·researchData 등록.
+  - 미구현: 카메라 자동 카운트(2차), PAPS 등급표, 심박 연동.
+- 테스트: 전체 통과, 빌드 통과(허브 분기·메뉴 번호 테스트 기대값 갱신).
+
+### 2026-11-25 — 모미 통합가이드 보완 + PAPS 자동카운트·심박 (Claude)
+- 모미: 오류 사유 구체화(키 없음/한도/모델), 모델 404 시 대체 모델 재시도, 모델 미응답에도 규칙 기반 통합가이드 항상 표시, 시니어·PAPS 기준 설명(criteria) 전달. 실제 원인은 화면 오류문 확인 필요(ANTHROPIC_API_KEY·일일 AI 한도·MOMI_MODEL).
+- PAPS: 시니어 탭과 같은 카메라(CameraStage)·심박 밴드 연결. 자동 카운트(core/papsAutoCounter.js: 팔굽·턱걸이·윗몸·옆으로뛰기), 자동값은 참고용·측정자 확인값 저장. 나이·성별·학년·키·몸무게는 회원정보에서 자동.
+- PAPS 학년·성별 등급표는 확인 못 함(이미지/PDF) → 판정 미적용. 실기기 임계값 검증 필요.
+- 테스트 3871 통과, 빌드 통과.
+- PAPS 등급 자동 산출: core/papsNorms.js(초4~6·남녀, 윗몸말아올리기·앉아윗몸앞으로굽히기·악력). 표는 대표님 제공본이라 공식 원문 대조 전(unverified) — 틀린 칸은 이 파일 숫자만 수정. 초1~3·중고·그 외 종목·BMI는 판정 안 함. 레코드에 grade/gradeSource 저장.
+- 제자리멀리뛰기(SBJ) 리포트에 PAPS 초4~6 등급 카드(JumpReportDashboard `PapsLongJumpGrade`, 표는 papsNorms.js `standlong`). 학년은 회원 grade, 없으면 카드에서 선택(화면 표시만).
+- 12번(필드) 심폐에 스텝테스트(퀸스칼리지, McArdle 1972)·6분 걷기(ATS 2002 절차, Enright&Sherrill 1998 예측거리 %) 추가(core/cardioTest.js `field_step`·`field_6mwt`). 출처 확인한 식만 사용, 6MWT 정상 하한(LLN)·등급 컷오프는 확인 못 해 넣지 않음. 6MWT 는 키(statureCm) 입력 필요, 40~80세만 예측거리.
+- 모미 통합가이드 "분석 결과를 만들지 못했습니다"만 뜨던 문제: 모델 호출은 200인데 글이 빈 경우였음 → 대체 모델 1회 재시도, 그래도 비면 502(MOMI_EMPTY, 종료 사유·모델 표시)로 돌려 화면이 규칙 기반 가이드를 보여 줌(functions/api/momi.js).
+- 스텝테스트에 18번 메트로놈(TimerTool `Metronome`) 연결: 성별로 박자 자동(여 88·남 96), 측정 시작 시 자동 재생·종료 시 정지(`setBpm` 명령 추가). 6분 걷기에 30m 편도 카운터 추가 → 끝나면 거리 칸 자동 채움. PAPS·시니어는 이미 18번 메트로놈·심박 밴드 사용 중. 실기기 소리·자동 재생 확인 필요.
+
+### 2026-11-25 — PAPS 영상촬영 개편 + 스텝테스트 카메라 (Claude, 브랜치 feat/paps-video-1125)
+- PAPS: 영상촬영이 기본(팔굽·윗몸말아올리기·턱걸이·오래매달리기·사이드스텝·좌전굴·체전굴), 악력은 선택 녹화. 카메라 영상에 스켈레톤·초시계·횟수·메트로놈 박자·인식률(HUD)을 합성해 폰에 저장(`core/measureRecorder.js`, `saveVideoToPhone`). 서버 업로드 없음.
+- 1분 윗몸일으키기 삭제(윗몸말아올리기만). 체전굴 `standbend` 추가(등급표 없음, 값·변화만). 사이드스텝은 PAPS 안에 두고 선 사이 거리(cm) 필수 입력(5번으로 옮기지 않음 — 대표님 확인 필요).
+- 설명 보강: 종목마다 촬영 위치·카운트 기준·"확인된 기준"/"확인 못 함"을 화면에 표시(`PAPS_TESTS[id].camera/countRule/verified/unverified`). 확인된 것은 앉아윗몸앞으로굽히기 자세(발바닥 밀착·무릎 펴기·양발 5cm 이내·무릎 굽히면 재검사·cm)뿐. 팔굽 각도·윗몸말아올리기 박자·오래매달리기 자세·체전굴 절차는 원문 확인 못 함.
+- 리포트: 등급은 초4~6 표 종목만, 그 외(성인 포함)도 같은 리포트에 평가 문장(`papsEvaluationText`)·직전 대비 변화·인식률·영상·조건(거리·박자)이 나옴. 종합분석(crossMeasureContext)은 `evaluationText` 사용.
+- 메트로놈(18번 `Metronome`)에 `onBeat`/`onState` 콜백 추가. PAPS는 선택 사용, 박자가 영상 HUD에 표시.
+- 스텝테스트(12번 필드 `field_step`): 옆모습 카메라로 골반 높이 사이클 카운트(`core/stepCycleCounter.js`)·스켈레톤·인식률·영상 녹화(`menus/StepCameraStage.jsx`). 카운트는 참고용이며 스텝 점수 계산에는 쓰지 않음. 기록에 `stepCounter` 저장.
+- 테스트 3900 통과, 빌드 통과. 미검증: 실기기 카메라 인식·문턱값(팔굽 100/150°, 턱걸이 75°, 말아올리기 20°, 스텝 폭 0.12), 녹화 영상 재생, PAPS 등급표 원문 대조.
+- (추가) 나이스 PAPS 사용자매뉴얼 v1.11 반영: 입력 범위(팔굽 0~150 정수·윗몸말아올리기 0~200 정수·악력 0~200·좌전굴 −40~50cm)를 벗어나면 저장은 하되 '확인 필요(무효)'로 표시. 오래매달리기·턱걸이·사이드스텝·체전굴은 필수평가 종목에 없어 공식 기준·등급 없음(보조 측정)으로 표시. 노션 PDF(실시 안내)는 이 환경에서 받지 못해 미반영 — 파일을 직접 올리면 박자·자세 기준 반영 예정. 테스트 3902.
+- (추가2) 경기도교육청 2025 체력증진 계획 PDF·kacep PAPS 교재에서 확인: 윗몸말아올리기 3초에 1회 신호음·무릎 90°, 팔굽혀펴기 팔꿈치 90°·가슴-바닥 15cm(남 봉 10cm). papsTests verified/unverified 갱신.
+
+### 2026-11-25 (추가3) PAPS 등급표를 공식 값으로 교체
+- `src/ai-measure/core/papsNorms.js`: 학교건강검사규칙 별표 4(2025.3.10 개정) 초3~고3 남·여. 종목 curlup·pushup(중고 남)·pushupKnee(중고 여)·sitreach·grip·standlong. 이전 '대표님 제공 표'는 공식 값과 달라 전부 교체(예: 초4 남 윗몸말아올리기 1등급 40→80회).
+- `papsTests.js` evaluatePapsTest: 팔굽혀펴기는 남=pushup, 여=무릎대고(variant 'knee')=pushupKnee. 방식이 안 맞으면 등급 없음. `buildPapsRecord`가 variant 전달.
+- 원본: .hwp/.hwpx 2종(초3~6은 서로 일치 확인). 중·고 값은 .hwp 파싱 — 원문 대조 권장. 성인(국민체력100) 등급은 미적용(웹 전사 값이라 미검증).
+
+### 2026-11-25 (추가4) PAPS 재점검
+- 메트로놈 최저 20BPM(슬라이더·±5·음성명령·프리셋 20). 윗몸말아올리기 선택 시 20BPM 자동 설정(PapsTestMeasure, papsTests.metronomeBpm).
+- 별표 3 원문(8b26286c.hwp)으로 윗몸말아올리기(3초 1회, 손바닥으로 무릎 감쌈, 간격 이탈 첫 1회 제외·2회째 종료)·팔굽혀펴기(봉 30cm, 가슴 10cm/15cm)·앉아윗몸(2초 유지, 2회 중 높은 값)·악력(오른-왼 각 2회, 0.01 올림) 설명을 공식 문구로 교체.
+- 악력 입력 순서를 오른-왼-오른-왼으로 변경. 여 무릎대고 팔굽혀펴기 기준 문구 버그(papsNormId)·종합분석에 4~5등급 확인 신호 추가.
+- 미확인: 실기기 카메라 임계값, 신호음 간격 이탈 자동 판정(측정자 판단), 성인(국민체력100) 등급 — 외부 사이트 열람 승인 필요.
+
+### 2026-11-25 (추가5) 성인 국민체력100 항목별 기준
+- `core/adultNorms.js`: 체력컷(pregrade.kr) 연령·성별 18페이지(확인일 2026-11-14)에서 앉아윗몸앞으로굽히기·상대악력·제자리멀리뛰기 1~3등급 값. 3등급 값은 사이트 '3등급 기준표'와 대조 일치. 누리집 원본과 직접 대조는 못 함.
+- PAPS 탭: 학년이 없고 19~64세·성별이 있으면 앉아윗몸·악력(상대악력=악력÷체중×100, 체중 필요)을 항목별 기준으로 판정(`adultLevel`). 종합 1~6등급은 전 종목 측정이 필요해 내지 않음. 제자리멀리뛰기(7번 탭) 성인 카드는 아직 미연결.
+- 상대악력 산식(최고값 vs 좌우 평균)은 확인 못 함 — 앱은 최고 기록÷체중.
+
+### 2026-11-25 (추가6) 자세 리포트: 현재 상태 통일 + 근육 경향 개인화
+- `postureResultSheet.js`: 항목에 `judged`(검증 기준 유무). 거북목·어깨/골반 높이차만 단계 판정, 굽은 등·몸통기울기·플럼라인·Q각은 level null(기록). `side`(정면 값일 때만 높은 쪽), `overallSheetLevel`.
+- `muscleAtlas.js` `ITEM_ATLAS`/`atlasForItems`: 부위 고정 12근육 대신 판정된 항목별로 근육·원인·좌우를 뽑음. `PostureResultSheet.jsx MuscleBodyMap`이 사용.
+- `PostureReport.jsx` '현재 상태': 결과시트와 같은 판정 항목의 최고 단계 + 근거 목록 + '참고(기준 없음)'. 기존 규칙엔진 `analysis.status`는 표시에 쓰지 않음.
+- 미정리: `postureClinical.js` 부위별 진단·Top3는 기존 보수적 기준(굽은 등 15/25° 등) 그대로라 '어깨·등 위험'이 남을 수 있음 — 대표님 결정 대기.
+
+### 2026-11-25 (추가7) 부위별 진단·Top3 단계 통일 + 근막경선 설명
+- `postureClinical.js`: 단계는 검증 기준 있는 값(거북목·어깨/골반 높이차)만. 굽은 등·무게중심·플럼라인·무릎 신전각·하지 정렬·Q각은 `measured[].reference=true`로 값만 표시, 발·다리 부위는 `LEVEL.reference`('참고(기준 없음)'). 관련 테스트 6개를 새 동작으로 수정.
+- `muscleAtlas.js` `FASCIA_LINES`/`fasciaForItems`: 판정 항목별 근막경선(Myers) '같이 확인할 곳' 설명 + 근거 한계 문구(Wilke 2016, Krause 2016). `PostureResultSheet.jsx`에 표시.
+
+### 2026-11-25 (추가8) 보폭 비율 오류 수정 + 5번 왕복달리기 보행 지표
+- `gaitBiomechanics.js` strideToHeight: 부동소수 잡음 제거(toFixed(2)), 3배 초과·비정상은 null. stepWidthPct도 300% 초과 null. `GaitReportDashboard.jsx`는 toFixed(2) 표시.
+- `SprintLiveAnalysis.jsx`: 측면 포함 모든 촬영에서 GaitCycleTracker/AngleAccumulator/BiomechAccumulator/RunMechanicsTracker 누적 → `metrics`에 케이던스·입각/유각·몸통기울기·무릎·보폭·접지/체공 저장. 임상 플래그(후면/정면)는 기존대로 depth에서만.
+- `SprintReportDashboard.jsx`: '보행 지표(참고)' 패널 + RunMechanicsCard(구버전 기록은 숨김).
+- 실기기 검증 못 함(왕복 구간 방향전환이 케이던스·입각 비율에 섞임 → 참고용).
+
+### 2026-11-25 (추가9) 리포트 목록 중복·스프린트 상세 연결
+- 원인: `Report.jsx` DETAIL_SESSION_MENUS에 'sprint' 누락 → 5번 측정 1회가 저장 리포트 + 세션(키 나열 화면) 2건으로 표시. 스프린트 기록이 GaitReportDashboard로 열리던 것도 수정(SprintReportDashboard 연결, 같은 testKey의 직전 기록과 비교).
+- gait 분류(`Report.jsx`, `AiMeasureHub.jsx`, `crossMeasureContext.js`)에서 sprint/agility/jump 제외. 카드 제목에 종목명(5m 왕복 달리기 평가) 표시.
+- 이미 저장된 과거 기록은 그대로 두고 표시만 바뀜. 실기기 검증 못 함.
+
+### 2026-11-25 (추가10) 측정 전 걷기/달리기 구분
+- `gaitMode.js` resolveGaitMode(cadence, explicit): 명시 선택(walk|run) 우선, '자동'이면 기존 케이던스 구분. 기준범위 함수·점수·비교·세부분류가 `metrics.gaitMode`를 따름.
+- 선택 UI: 보행&런닝(트레드밀) 카메라 화면 '자동/걷기/달리기', 5번 설정 줄. 기본 '자동'(기존 동작 유지). 실기기 검증 못 함.
+
+### 2026-11-26 (추가) 몸통 카메라 돌림 + 고니오메타 측정 방향·쓸기 모드
+- 카메라: `TRUNK`에 `T_ROTATION`(몸통 돌리기, 정면) 추가 — 어깨선 깊이(z) 기울기 − 골반선 깊이 기울기, 시작 10프레임 0점 보정(`bodyMechanics.js`). BlazePose z는 거칠어 근사값. 카메라가 비껴 있어도 골반선과 상쇄. 기준값 없음(각도만).
+- 센서: `sensorTilt.js`에 측정 방향 `plane`('yz' 앞뒤 / 'yx' 옆 / 'xz' 돌림) 추가 — 중력 성분 자리만 바꿔 기존 수학 재사용. 기존 고정 공식은 폰을 세로로 댄 상태의 가쪽 굽힘·돌림을 못 쟀음(앞서 TRUNK 안내의 "가쪽 굽힘 센서 가능"은 이전 코드와 안 맞았음). 몸통·목에서 방향 선택 UI(`RomSensorGoniometer.jsx`), 방향 변경 시 0점 초기화, 저장 quality에 plane 포함.
+- 쓸기 모드: `core/sensorSweep.js`(순수 계산) + `menus/RomSensorSweep.jsx`. 지점(S2·S2위15cm·T12·C7 / 돌림은 T12·T1)에서 '표시' → 구간 각도 = 위 − 아래(교재 경사계법 방식, 0점 불필요). 흔들림·가속 크면 '참고용'. 부호 뒤집기 버튼.
+- 정정: 카메라 점만으로는 허리와 골반을 못 나눈다(몸통각−허벅지각 = 고관절 굽힘). 구간 분리는 쓸기 모드가 맡음.
+- 교재 재확인(사진 9장): 경사계 위치 = 등허리 C7·S2 / 허리 S2위15cm·S2 / 가쪽 T1·S2 / 돌림 T1·T12(앉아 몸통을 바닥과 평행하게 숙임). 각도 정상치는 사진에 없음.
+- 단순화(같은 날): 측정 방향은 선택한 움직임에서 자동(`defaultPlaneFor`, 몸통 옆→yx·돌리기→xz, 목 옆→yx), '바꾸기'로만 수동 변경. 쓸기 지점은 폰을 움직였다 1초 멈추면 자동 기록(`createAutoMarker`, 시작·취소 직후엔 움직임이 먼저 있어야 함), '직접 기록' 버튼은 보조. 목 돌림은 센서 불가 경고 표시. 쓸기 화면 중엔 일반 트래커 정지.
+- 검증: `npm test` 4040/4040(347파일), `vite build` 성공. 신규 테스트 `trunk_rotation_camera`, `sensor_plane_sweep`.
+- 미확인: 실기기·실카메라 검증 없음. 쓸기 정확도·부호 방향·z 기반 돌림 오차는 실측 필요. 부착 위치는 교재 경사계 위치를 폰에 옮긴 추정.
+
+### 2026-11-28 Claude Code · 만료 정산 선택 + 빈 캐시 방어
+- 만료 정산: `ExpirySettleModal.jsx`에서 '트레이너 정산' / '센터 귀속' 선택. 센터 귀속은 지급 0원·`centerAmount` 기록, 매출관리 정산 탭(관리자)에 표시. 되돌리기 기능 없음.
+- `demoData.js`: `fromCache` 결과는 실패 처리, 회원·트레이너 0명 저장본은 전체 재로딩, 연결 실패 시 정상 저장본 유지.
+- 검증: `npm test` 4091/4091(357파일), `npm run build` 성공. 실기기·실데이터 확인 못 함.
+
 ## 2026-11-28 — VBT 바벨 궤적 개선 (fix/vbt-trail-sleeve-1128, Claude)
 - 요청: 궤적이 사라지지 않게 / 손목이 아니라 슬리브에 맞춤 / 떨림 최소화.
 - `core/barTrail.js` 신규: One-Euro 필터(떨림), 슬리브 앵커(추적 끊기면 손목+오프셋), 렙 단위 궤적(렙 완료 후 유지·다음 움직임에서 새로 시작), 곡선 렌더 `drawSolidBarTrail`.

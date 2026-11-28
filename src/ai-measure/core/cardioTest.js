@@ -141,6 +141,34 @@ export const CARDIO_PROTOCOLS = [
       care: '손잡이를 잡고 버티면 시간이 늘어 과대추정됩니다. 뒤에서 한 명이 받쳐 주세요.',
     },
   },
+  // [2026-11-25] 스텝테스트·6분 걷기 — 출처가 확인된 식·절차만 쓴다.
+  //  · 퀸스칼리지 스텝(McArdle 1972): 41.3cm(16.25인치) 단, 3분, 여 22회/분(메트로놈 88)·남 24회/분(96), 끝난 뒤 5초 쉬고 15초 맥박×4.
+  //    VO2max 남 111.33−0.42×HR, 여 65.81−0.1847×HR.
+  //  · 6분 걷기(ATS 2002 지침): 30m 직선 코스, 6분 동안 가능한 한 멀리 걸은 거리(m). 기준값은 Enright&Sherrill(1998) 40~80세 건강 성인 식의 %.
+  {
+    id: 'field_step', machines: ['field'], label: '퀸스칼리지 스텝테스트(최대하)', short: '스텝', basis: 'flat',
+    target: { durationSec: 180 }, maximal: false, estimate: 'queens', needsHrAfter: true,
+    guide: '41.3cm 단을 3분 동안 오르내립니다(여 22회/분=메트로놈 88, 남 24회/분=96). 끝나면 서서 5초 쉰 뒤 15초 맥박×4를 입력합니다.',
+    caution: '단 높이 41.3cm(16.25인치)는 낮지 않습니다. 무릎·균형 문제가 있거나 고령·재활 회원은 단을 낮추지 말고 이 테스트를 쓰지 마세요(식이 41.3cm 기준).',
+    info: {
+      what: '3분 스텝 직후 심박으로 VO2max를 추정하는 최대하 테스트입니다(McArdle 1972). 같은 심박이면 체력이 좋을수록 낮게 나옵니다.',
+      how: ['41.3cm 단과 메트로놈을 준비합니다(여 88bpm·남 96bpm, 4박 = 올-올-내-내).', '"시작"과 동시에 3분 동안 박자에 맞춰 오르내립니다(앞발은 바꿔도 됩니다).', '3분이 되면 앱이 알려 줍니다. 그 자리에 서서 5초 쉬고, 15초 동안 맥박을 세어 ×4 합니다.', '결과 화면에 종료 직후 심박(bpm)을 입력합니다(밴드를 쓰면 종료 5~20초 평균이 자동으로 쓰입니다).'],
+      read: '같은 회원이 같은 방법으로 반복할 때 종료 직후 심박이 낮아지면 좋아진 것입니다. VO2max 숫자는 참고용입니다(실측과 상관 약 0.75).',
+      care: '박자를 놓치면 심박이 달라집니다. 어지럼·가슴 통증이 있으면 즉시 멈추세요. 대학생 대상 연구로 만든 식이라 고령·재활 회원에게는 참고용입니다.',
+    },
+  },
+  {
+    id: 'field_6mwt', machines: ['field'], label: '6분 걷기 테스트(6MWT)', short: '6분 걷기', basis: 'flat',
+    target: { durationSec: 360 }, maximal: false, estimate: 'sixmwt',
+    guide: '30m 직선 코스를 6분 동안 가능한 한 멀리 걷습니다(달리지 않습니다). 6분이 되면 멈춰 총 걸은 거리(m)를 입력합니다.',
+    caution: '쉬어도 되지만 시간은 계속 갑니다. 가슴 통증·참기 힘든 숨참·다리 경련·휘청임·식은땀·창백함이 있으면 즉시 중단합니다(ATS).',
+    info: {
+      what: '6분 동안 걸은 거리로 일상 활동 수준의 심폐 기능을 봅니다. 최대 강도가 아니라 본인 속도로 걷는 테스트라 고령·재활 회원에게 맞습니다.',
+      how: ['30m 코스 양 끝에 콘을 놓고 3m 간격으로 표시합니다. 10분 쉰 뒤 시작합니다.', '"시작"과 동시에 걷기 시작합니다. 콘에서 망설임 없이 돌아섭니다.', '1분마다 "잘하고 계십니다, 5분 남았습니다"처럼 같은 격려 문구만 씁니다(ATS 표준 문구).', '6분이 되면 "멈추세요" 하고, 선 자리까지 걸은 총 거리(m)를 결과에 입력합니다.'],
+      read: '거리가 늘면 좋아진 것입니다. 건강한 40~80세는 Enright & Sherrill(1998) 식의 예측거리 대비 %를 같이 보여 줍니다. 같은 코스·같은 격려·같은 시간대로 재야 비교가 됩니다.',
+      care: '진단용이 아닙니다. 중단 기준에 해당하면 걸음을 멈추고 앉게 합니다. 첫 측정은 익숙해지는 효과로 기록이 낮을 수 있습니다.',
+    },
+  },
   // [2026-11-17 커브드 트레드밀] 시어드 커브드 트레드밀 전용 — 콘솔에 거리(DIS., 10m 단위)·시간이 나온다. 블루투스 연결은 없다.
   //  커브드는 같은 속도에서도 평지보다 훨씬 힘들어 교재 표(평지 기준)로 등급을 내지 않는다.
   //  같은 회원의 같은 테스트끼리 회차 변화로 본다. 교재 표 대비 위치는 연구용으로만 저장한다(researchData.js).
@@ -438,6 +466,22 @@ export function rockportVo2max({ sex, age, weightKg, timeSec, hr }) {
   return r1(v);
 }
 
+// 퀸스칼리지 스텝테스트(McArdle 1972): 종료 5초 뒤 15초 맥박×4(bpm)로 추정. 남 111.33−0.42×HR, 여 65.81−0.1847×HR.
+export function queensVo2max({ sex, hr }) {
+  const h = Number(hr);
+  if (!(sex === 'male' || sex === 'female') || !(h >= 60 && h <= 220)) return null;
+  return r1(sex === 'male' ? 111.33 - 0.42 * h : 65.81 - 0.1847 * h);
+}
+export const QUEENS_METRONOME_BPM = { male: 96, female: 88 };
+
+// 6분 걷기 예측거리(Enright & Sherrill 1998, 건강한 40~80세): 남 7.57×키cm−5.02×나이−1.76×체중kg−309, 여 2.11×키cm−2.29×체중kg−5.78×나이+667.
+export function sixMinPredictedM({ sex, age, statureCm, weightKg }) {
+  const a = Number(age); const h = Number(statureCm); const w = Number(weightKg);
+  if (!(sex === 'male' || sex === 'female') || !(a >= 40 && a <= 80) || !(h > 100 && h < 230) || !(w > 20 && w < 300)) return null;
+  const v = sex === 'male' ? 7.57 * h - 5.02 * a - 1.76 * w - 309 : 2.11 * h - 2.29 * w - 5.78 * a + 667;
+  return v > 0 ? Math.round(v) : null;
+}
+
 // [2026-11-23 교재 4장 상관·예측] 추정값에 오차 범위(SEE)와 설명력(r²)을 붙인다. 교재: 오차는 정규분포라 ±1 SEE 안에 약 68%, ±2 SEE 안에 약 95%.
 // 값은 교재 8·9장에 적힌 것만 쓴다(없으면 null): 쿠퍼 1.5마일 r=0.90·SEE 약 6%, 록포트 SEE 범위(연령·성별별), 브루스 r=0.98(남)/0.91(여).
 export function estimateAccuracy(method, value, { sex, age } = {}) {
@@ -692,6 +736,34 @@ export function computeCardioResult({ protocolId, machineId, rec, workEndSec, su
     };
   }
 
+  if (protocol?.estimate === 'queens') {
+    // 입력이 없으면 밴드의 종료 5~20초 평균(= 5초 쉰 뒤 15초 맥박과 같은 구간)을 쓴다.
+    const bandHr = windowAvg(rec, 'hr', workEndSec + 5, workEndSec + 20);
+    const hrAfter = Number(manual?.hrAfter) > 0 ? Number(manual.hrAfter) : (bandHr > 0 ? Math.round(bandHr) : null);
+    const value = queensVo2max({ sex, hr: hrAfter });
+    estimates.vo2max = {
+      value, method: 'queens', unit: 'mL/kg/min', grade: value ? 'C' : null, valid: Boolean(value), hrAfter: hrAfter || null,
+      reason: !hrAfter ? '끝난 직후 심박(5초 쉰 뒤 15초×4)을 입력해야 계산됩니다.'
+        : !sex ? '성별이 없어 계산하지 않았습니다.'
+          : !value ? '심박(60~220) 범위를 벗어나 계산하지 않았습니다.'
+            : 'McArdle(1972) 퀸스칼리지 식(41.3cm 단·3분·박자 준수 조건). 대학생 대상 연구라 참고용입니다.',
+    };
+    notes.push(`단 높이 41.3cm, 박자 ${QUEENS_METRONOME_BPM[sex] || '여 88 · 남 96'}bpm 조건이 맞아야 식이 맞습니다.`);
+  }
+  let walk6 = null;
+  if (protocol?.estimate === 'sixmwt') {
+    const d = result.manualDistance ? result.distanceM : null;
+    const statureCm = Number(subject.statureCm) || null;
+    const predictedM = d ? sixMinPredictedM({ sex, age: subject.age, statureCm, weightKg }) : null;
+    walk6 = {
+      distanceM: d, predictedM, pctPredicted: d && predictedM ? Math.round((d / predictedM) * 100) : null, equation: 'Enright1998',
+      reason: !d ? '6분 동안 걸은 거리(m)를 입력하지 않았습니다.'
+        : predictedM ? '예측거리는 건강한 40~80세 기준 식입니다. %는 참고용이며 진단이 아닙니다.'
+          : '나이(40~80세)·성별·키·체중이 모두 있어야 예측거리를 냅니다. 거리만 기록합니다.',
+    };
+    notes.push('6분 걷기: 30m 코스·표준 격려 문구·같은 조건으로 반복해야 비교됩니다(ATS 2002).');
+  }
+
   if (protocol?.basis === 'curved') {
     if (protocol.target?.durationSec && !(result.distanceM > 0)) notes.push('콘솔 DIS. 거리를 입력하지 않아 12분 기록이 비어 있습니다.');
     notes.push('커브드 트레드밀 기록입니다. 평지·모터 트레드밀과 직접 비교하지 말고, 같은 회원의 같은 테스트끼리 변화로 보세요.');
@@ -726,9 +798,35 @@ export function computeCardioResult({ protocolId, machineId, rec, workEndSec, su
     estimates,
     flatReference,
     fieldRank,
+    walk6,
     hrMax: { ...hrMax, formula: 'tanaka', context: cardioContext(machineId) },
-    subject: { age: Number(subject.age) || null, sex, weightKg },
+    subject: { age: Number(subject.age) || null, sex, weightKg, statureCm: Number(subject.statureCm) || null },
     notes,
+  };
+}
+
+// [재계산 2026-11-26] 저장된 기록의 1초 단위 심박·출력(series)으로 VO2max 등을 다시 계산한다.
+// 체중·성별·나이 입력이 빠져 계산이 안 된 기록을 나중에 채워 넣을 때 쓴다. 원본 series·RPE·메모·확인값은 그대로 두고
+// 계산 결과 필드만 새로 돌려준다(저장 시 patch 로 병합). series 가 없으면 null.
+export function recomputeCardioRecord(payload, { subject = {}, allSessions = [] } = {}) {
+  const p = payload && typeof payload === 'object' ? payload : null;
+  const sr = p?.series;
+  if (!p || p.kind !== CARDIO_RECORD_KIND || !sr || !Array.isArray(sr.t) || sr.t.length === 0) return null;
+  const rec = { t: sr.t, hr: sr.hr || [], w: sr.w || [], cad: sr.cad || [], dist: sr.dist || [], startDist: null };
+  const workEndSec = Number(p.result?.durationSec);
+  if (!(workEndSec > 0)) return null;
+  const merged = { ...(p.subject || {}) };
+  for (const [k, v] of Object.entries(subject || {})) if (v != null && v !== '') merged[k] = v;
+  const others = (Array.isArray(allSessions) ? allSessions : []).filter((x) => x?.data !== p);
+  const computed = computeCardioResult({
+    protocolId: p.protocolId, machineId: p.machineId, rec, workEndSec,
+    subject: merged, past: pastCardioRecords(others, p.machineId), allSessions: others, manual: p.manual || null,
+  });
+  return {
+    subject: computed.subject, hrMax: computed.hrMax, result: computed.result, recovery: computed.recovery,
+    stages: computed.stages, estimates: computed.estimates, flatReference: computed.flatReference || null,
+    fieldRank: computed.fieldRank || null, walk6: computed.walk6 || null, notes: computed.notes,
+    recalculatedAt: new Date().toISOString(),
   };
 }
 
@@ -803,6 +901,7 @@ export function buildCardioRecord({ protocolId, machineId, machine = null, start
     estimates: computed.estimates,
     flatReference: computed.flatReference || null,
     fieldRank: computed.fieldRank || null,
+    walk6: computed.walk6 || null,
     rpe: normalizeRpe(rpe),
     notes: computed.notes,
     manual: manual || null,
@@ -836,6 +935,7 @@ export function cardioHistoryMetrics(payload = {}) {
   if (Number.isFinite(p.result?.distanceM) && p.result.distanceM > 0) out.push({ key: 'distanceM', label: '거리', displayValue: String(p.result.distanceM), unit: 'm', value: p.result.distanceM });
   if (Number.isFinite(p.result?.durationSec)) out.push({ key: 'durationSec', label: '시간', displayValue: formatClock(p.result.durationSec), unit: '', value: p.result.durationSec });
   if (Number.isFinite(p.result?.avgPowerW)) out.push({ key: 'avgPowerW', label: '평균 와트', displayValue: String(p.result.avgPowerW), unit: 'W', value: p.result.avgPowerW });
+  if (Number.isFinite(p.walk6?.pctPredicted)) out.push({ key: 'walk6pct', label: '6분 걷기 예측 대비', displayValue: String(p.walk6.pctPredicted), unit: '%', value: p.walk6.pctPredicted });
   if (Number.isFinite(p.recovery?.drop60)) out.push({ key: 'drop60', label: '1분 회복', displayValue: String(p.recovery.drop60), unit: 'bpm', value: p.recovery.drop60 });
   return out;
 }

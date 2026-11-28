@@ -1,3 +1,5 @@
+import { normalizeSex } from '../core/cardioTest';
+import { PAPS_GRADE_WORD, papsGradeOf, papsNormText } from '../core/papsNorms';
 import { useEffect, useMemo, useState } from 'react';
 import ReportActions from '../../components/report/ReportActions';
 import { buildSummaryData } from '../core/unifiedReport';
@@ -286,6 +288,7 @@ function JumpReportDashboardInner({ report, onClose, onComment, member, previous
                 <AsymmetrySection asymmetry={hopAsymmetry} report={report} subTypeCode={subMeta.code} />
               )}
 
+              {isHorizontal && jumpSubType === 'sbj' && <PapsLongJumpGrade report={report} member={resolvedMember} />}
               {isRsi ? <RsiSection report={report} /> : isHorizontal ? <DistanceSection report={report} subMeta={subMeta} /> : report.jumpSubType === 'bosco' ? <BoscoSection report={report} /> : <PowerSection report={report} />}
             </>
           )}
@@ -679,7 +682,11 @@ function DistanceSection({ report, subMeta = null }) {
   const isSingleLeg = Boolean(subMeta?.singleLeg);
   const viewLabel = subMeta?.view === 'front' ? '정면' : '측면';
   const title = isSingleLeg ? `${subMeta.label} 해석` : '제자리멀리뛰기 해석';
-  const desc = isSingleLeg
+  const hops = Number(subMeta?.hops) > 1 ? Number(subMeta.hops) : 0;
+  const splits = Array.isArray(report.hopSplitsCm) && report.hopSplitsCm.length > 1 ? report.hopSplitsCm : null;
+  const desc = hops
+    ? `${subMeta.label}은 한쪽 다리로 ${hops}번 연속 도약해 출발선에서 마지막 착지까지의 총거리를 봅니다. 좌우 다리의 총거리 차이(LSI)로 재활 복귀·좌우 균형을 확인하고, 도약마다의 구간 거리로 후반 힘 유지력을 봅니다. 출발선부터 마지막 착지까지 화면에 모두 들어와야 정확합니다.`
+    : isSingleLeg
     ? `한발멀리뛰기는 한쪽 다리로만 도약·착지해 하체의 좌우 개별 순발력과 착지 안정성을 평가합니다. ${viewLabel} 촬영에서 출발선과 착지 지점이 화면에 모두 들어와야 정확하게 측정됩니다.`
     : '제자리멀리뛰기는 출발선에서 착지 지점까지의 수평 이동거리로 하체의 순발력·폭발적 파워를 평가합니다. 측면 촬영에서 출발선과 착지 지점이 화면에 모두 들어와야 정확하게 측정됩니다.';
   return (
@@ -691,6 +698,19 @@ function DistanceSection({ report, subMeta = null }) {
       <p className="mt-3 text-[12px] leading-relaxed text-slate-500 dark:text-slate-400">
         {desc}
       </p>
+      {splits && (
+        <div className="mt-3 rounded-xl border border-amber-500/20 bg-white dark:bg-slate-900/55 p-3">
+          <p className="mb-2 text-xs font-black text-amber-700 dark:text-amber-300">도약별 구간 거리</p>
+          <div className="grid gap-1" style={{ gridTemplateColumns: `repeat(${splits.length}, minmax(0, 1fr))` }}>
+            {splits.map((d, i) => (
+              <div key={i} className="rounded-lg bg-slate-100/70 dark:bg-slate-800/70 px-2 py-2 text-center">
+                <p className="text-[10px] font-bold text-slate-500">{i + 1}번째</p>
+                <p className="text-sm font-mono font-black text-slate-900 dark:text-slate-100">{metric(d)}cm</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       {trials && trials.length > 1 && (
         <div className="mt-3 rounded-xl border border-amber-500/20 bg-white dark:bg-slate-900/55 p-3">
           <div className="mb-2 flex items-center justify-between">
@@ -862,4 +882,41 @@ function InvalidBlock({ report }) {
 export default function JumpReportDashboard(props) {
   if (!props?.report) return <UnifiedEmptyState onClose={props?.onClose}>리포트 데이터가 없습니다.</UnifiedEmptyState>;
   return <JumpReportDashboardInner {...props} />;
+}
+
+// [PAPS 제자리멀리뛰기 등급 2026-11-25] SBJ 이동거리를 초3~고3 학년·성별 기준(core/papsNorms.js)으로 1~5등급 환산.
+// 학년은 회원 등록정보(grade)에서 가져오고 없으면 이 카드에서 고른다(저장은 하지 않고 화면 표시만).
+// 무효 기록·한발멀리뛰기 등 다른 종류에는 쓰지 않는다. 기준표는 학교건강검사규칙 별표 4.
+function PapsLongJumpGrade({ report, member }) {
+  const [pick, setPick] = useState('');
+  const sex = normalizeSex(member?.sex || member?.gender);
+  const grade = member?.grade || pick;
+  const dist = report?.valid === false ? null : report?.distanceCm;
+  const g = papsGradeOf('standlong', dist, { sex, grade });
+  const norm = papsNormText('standlong', sex, grade, 'cm');
+  return (
+    <div className="mt-3 rounded-xl border-2 border-slate-300 bg-slate-50 p-3 text-slate-800 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-100" data-testid="paps-longjump-grade">
+      <p className="text-xs font-black">PAPS 제자리멀리뛰기 등급</p>
+      {g ? (
+        <>
+          <p className="mt-1 text-lg font-black">{grade} {sex === 'male' ? '남' : '여'} · {g}등급 ({PAPS_GRADE_WORD[g]})</p>
+          <p className="mt-0.5 text-[11px] font-semibold text-slate-500">{norm} · 학교건강검사규칙 별표 4</p>
+        </>
+      ) : (
+        <>
+          <p className="mt-1 text-[12px] font-semibold text-slate-600 dark:text-slate-300">
+            {dist == null ? '유효한 이동거리가 있어야 등급을 냅니다.'
+              : !sex ? '회원 등록정보에 성별이 있어야 등급을 냅니다.'
+                : !['초3', '초4', '초5', '초6', '중1', '중2', '중3', '고1', '고2', '고3'].includes(grade) ? '등급표는 초3~고3만 있습니다. 해당 학년이면 아래에서 고르세요.' : ''}
+          </p>
+          {!member?.grade && (
+            <select className="mt-1 rounded-lg border-2 border-slate-300 bg-white px-2 py-1 text-xs font-bold dark:border-slate-600 dark:bg-slate-900" value={pick} onChange={(e) => setPick(e.target.value)}>
+              <option value="">학년 선택</option>
+              {['초3', '초4', '초5', '초6', '중1', '중2', '중3', '고1', '고2', '고3'].map((x) => <option key={x} value={x}>{x}</option>)}
+            </select>
+          )}
+        </>
+      )}
+    </div>
+  );
 }

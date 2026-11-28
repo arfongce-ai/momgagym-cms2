@@ -9,6 +9,7 @@ import MemberRegister from '../components/members/MemberRegister';
 import MemberDetail   from '../components/members/MemberDetail';
 import MemberImport   from '../components/members/MemberImport';
 import SessionAddsAudit from '../components/members/SessionAddsAudit';
+import ExpirySettleModal from '../components/members/ExpirySettleModal';
 import TrainerBadge   from '../components/common/TrainerBadge';
 import { downloadCSV } from '../services/finance';
 import { sortExpiredLast, getUserTrainerId, isSessionExhausted, isMemberInactive } from '../utils/memberList';
@@ -125,27 +126,35 @@ export default function Members() {
   // 이제는 lot 단위로 실제 만료(status==='expired')된 것만 골라 정산 처리한다 —
   // 미만료 lot·트레이너는 그대로 둔다. expiry_settlement_e2e.test.js '종단 검증 2'와
   // 동일한 알고리즘.
+  const [expiryTargets, setExpiryTargets] = useState(null);
   const handleSettleExpiredSessions = async () => {
-    if (!window.confirm('만료된 등록분을 정산 처리하시겠습니까?\n(각 등록분의 정산비율로 트레이너에게 지급되고, 그만큼 잔여가 정리됩니다)')) return;
     const settings = store.getSettings();
     const targets = [];
     store.getMembers().forEach(m => {
       const lotsByTrainer = buildMemberSessionExpiry({ member: m, payments: store.getPayments(m.id), settings });
       Object.values(lotsByTrainer).flat().forEach(lot => {
-        if (lot.remaining > 0 && lot.status === 'expired') targets.push({ member: m, lot });
+        if (lot.remaining > 0 && lot.status === 'expired') targets.push({
+          key: `${m.id}:${lot.id}`, member: m, lot, est: computeExpirySettlement(lot, settings),
+          trainerName: store.getTrainers().find(t => t.id === lot.trainerId)?.name || '트레이너',
+        });
       });
     });
     if (!targets.length) { alert('정산 처리할 만료 등록분이 없습니다.'); return; }
+    setExpiryTargets(targets);
+  };
+
+  // 선택 창에서 고른 건만 처리한다('나중에'로 남긴 건은 넘어오지 않는다).
+  const confirmExpirySettlements = async (rows) => {
     try {
-      for (const { member: m, lot } of targets) {
-        const est = computeExpirySettlement(lot, settings);
+      for (const { member: m, lot, est, disposition } of rows) {
         await store.processExpirySettlement(m.id, {
           trainerId: lot.trainerId, lotId: lot.id, paymentId: lot.paymentId, legacy: !!lot.legacy,
-          remaining: lot.remaining, sessions: est.sessions, unit: est.unit, rate: est.rate, amount: est.amount,
+          remaining: lot.remaining, sessions: est.sessions, unit: est.unit, rate: est.rate, amount: est.amount, disposition,
         });
       }
-      load();
-    } catch (e) { alert('일부 등록분 처리에 실패했습니다. 네트워크 확인 후 다시 시도하세요.'); load(); }
+    } catch (e) { alert('일부 등록분 처리에 실패했습니다. 네트워크 확인 후 다시 시도하세요.'); }
+    setExpiryTargets(null);
+    load();
   };
 
   const handleServerRefresh = async () => {
@@ -162,6 +171,9 @@ export default function Members() {
 
   return (
     <div className="space-y-4">
+      {expiryTargets && (
+        <ExpirySettleModal targets={expiryTargets} onConfirm={confirmExpirySettlements} onClose={() => setExpiryTargets(null)} />
+      )}
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-black tracking-tight">회원 관리</h1>
         <div className="flex gap-2">

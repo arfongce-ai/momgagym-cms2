@@ -9,6 +9,8 @@ import { cadenceRangeFor, stanceRangeFor, verticalOscRangeFor } from './gaitMode
 import { ROM_SYMMETRY_RANGE } from './romThresholds';
 import { POSTURE_THRESHOLDS } from './postureMath';
 import { cardioHistoryMetrics } from './cardioTest';
+import { seniorHistoryMetrics } from './seniorTests';
+import { papsHistoryMetrics } from './papsTests';
 
 export const MOMGAGYM_BLOG_URL = 'https://blog.naver.com/posture_gym';
 export const MOMGAGYM_PUBLIC_URL = 'https://momgagym-cms2.pages.dev';
@@ -182,6 +184,36 @@ export const REPORT_TERM_MAP = Object.freeze({
     label: '연속점프 백분위(교재 기준)',
     description: '교재 규준표에서 같은 성별 집단의 어느 구간에 해당하는지 보는 참고값입니다.',
     category: 'power',
+  },
+  horizontalPower5: {
+    expert: 'Horizontal Power 0-5m (book formula)',
+    label: '수평 파워 0~5m(교재 공식)',
+    description: '체중 × 5m ÷ 5m 통과 시간(kg·m/s)입니다. 출발 가속 구간의 값이며 참고값입니다.',
+    category: 'power',
+  },
+  horizontalPower10: {
+    expert: 'Horizontal Power 0-10m (book formula)',
+    label: '수평 파워 0~10m(교재 공식)',
+    description: '체중 × 10m ÷ 10m 통과 시간(kg·m/s)입니다. 체중이 다른 회원끼리 비교할 때 쓰는 참고값입니다.',
+    category: 'power',
+  },
+  olyPeakVelocity: {
+    expert: 'Olympic Lift Peak Bar Velocity',
+    label: '바 최고속도(역도 동작)',
+    description: '스내치·클린&저크 한 동작에서 바가 가장 빠르게 올라간 속도(m/s)입니다. 양 손목 중점 기준 참고값입니다.',
+    category: 'power',
+  },
+  olyBarTop: {
+    expert: 'Olympic Lift Bar Top Height',
+    label: '바 최고 높이(역도 동작)',
+    description: '출발 대비 바가 올라간 최고 높이(cm)입니다. 참고값입니다.',
+    category: 'power',
+  },
+  olyCatchDepth: {
+    expert: 'Olympic Lift Catch Depth',
+    label: '캐치 깊이(고관절)',
+    description: '캐치 순간 고관절이 일어선 자세보다 얼마나 낮아졌는지(cm)입니다. 참고값입니다.',
+    category: 'mobility',
   },
   horizontalPower: {
     expert: 'Horizontal Power (book formula)',
@@ -516,6 +548,9 @@ export const METRIC_DEFINITIONS = Object.freeze({
     { key: 'firstHalf', paths: ['analysis.firstHalfMs'], unit: 'ms', better: 'lower' },
     { key: 'secondHalf', paths: ['analysis.secondHalfMs'], unit: 'ms', better: 'lower' },
     { key: 'speedMaintenance', paths: ['analysis.speedMaintenancePct'], unit: '%', better: 'higher' },
+    // [2026-11-24] 직선 스프린트 수평 파워(교재 p.307) — 참고값, 등급 없음
+    { key: 'horizontalPower5', paths: ['horizontalPower.p5'], unit: 'kg·m/s', better: 'higher' },
+    { key: 'horizontalPower10', paths: ['horizontalPower.p10'], unit: 'kg·m/s', better: 'higher' },
   ],
   rom: [
     { key: 'rom', paths: ['summary.max_rom', 'summary.left_max_rom', 'summary.right_max_rom', 'summary.max_angle', 'maxAngle', 'angle', 'rom'], unit: '도' },
@@ -533,6 +568,10 @@ export const METRIC_DEFINITIONS = Object.freeze({
     { key: 'peakVelocity', paths: ['metrics.peakVelocity', 'peakVelocity', 'vbt.peakVelocity'], unit: 'm/s' },
     { key: 'peakPower', paths: ['metrics.peakPower', 'metrics.meanPower', 'peakPower', 'vbt.peakPower'], unit: 'W' },
     { key: 'rom', paths: ['metrics.rangeOfMotion'], unit: 'cm' },
+    // [2026-11-24] 스내치·클린&저크 구간 분석(core/olyLiftAnalysis.js) — 참고값, 등급 없음. 첫 동작(스내치·클린) 기준.
+    { key: 'olyPeakVelocity', paths: ['oly.lifts.0.peakVelocity'], unit: 'm/s', better: 'higher' },
+    { key: 'olyBarTop', paths: ['oly.lifts.0.barTopHeightCm'], unit: 'cm' },
+    { key: 'olyCatchDepth', paths: ['oly.lifts.0.catchDepthCm'], unit: 'cm' },
     { key: 'velocityLoss', paths: ['metrics.velocityLoss', 'velocityLoss', 'vbt.velocityLoss'], unit: '%', range: { good: [0, 20], warn: [0, 40] } }, // Pareja-Blanco 2017: 20%·40% 비교 연구 기준(15/30은 출처 미확인이어서 교체)
   ],
   // stance/squat는 이미 CMS 판정 모듈(singleLegStance.js/squatBiomechanics.js)이
@@ -615,6 +654,9 @@ export function inferReportType(report = {}) {
   const kind = String(r.kind || r.menu || r.reportType || '').toLowerCase();
   // [11번 심폐지구력 2026-11-13] 저장 기록(kind:'cardio_test')을 통합 리포트로도 쌓는다.
   if (kind.includes('cardio')) return 'cardio';
+  // [시니어 2026-11-24] 저장 기록(kind:'senior_test')
+  if (kind.includes('senior')) return 'senior';
+  if (kind.includes('paps')) return 'paps';
   if (kind.includes('posture')) return 'posture';
   if (kind.includes('rom')) return 'rom';
   if (kind.includes('gait') || kind.includes('running')) return 'gait';
@@ -685,7 +727,10 @@ export function buildSummaryData(report = {}, options = {}) {
   const status = rawScore == null ? STATUS.unknown : scoreToStatus(score);
   const keyMetrics = extractKeyMetrics(report, reportType);
   const topFindings = extractTopFindings(report, { reportType, keyMetrics, limit: options.limit || 3 });
-  const title = options.title || reportTitle(reportType);
+  // [2026-11-25] 스프린트는 종목명(5m 왕복 달리기 등)을 제목에 붙여 같은 날 여러 번 측정해도 구분되게 한다.
+  const title = options.title || ((reportType === 'sprint' && report?.testLabel)
+    ? `${report.testLabel} 평가`
+    : reportTitle(reportType));
   const measuredAt = normalizeDate(firstDefinedPath(report, MEASURED_AT_PATHS)) || new Date().toISOString();
 
   return {
@@ -884,6 +929,12 @@ export function extractKeyMetrics(report = {}, reportType = inferReportType(repo
   if (reportType === 'cardio') {
     return cardioHistoryMetrics(report).map((m) => ({ key: m.key, label: m.label, value: m.value, displayValue: m.displayValue, unit: m.unit, status: STATUS.unknown }));
   }
+  if (reportType === 'senior') {
+    return seniorHistoryMetrics(report).map((m) => ({ key: m.key, label: m.label, value: m.value, displayValue: m.displayValue, unit: m.unit, status: m.key === 'value' && report.status ? (STATUS[report.status] || STATUS.unknown) : STATUS.unknown }));
+  }
+  if (reportType === 'paps') {
+    return papsHistoryMetrics(report).map((m) => ({ key: m.key, label: m.label, value: m.value, displayValue: m.displayValue, unit: m.unit, status: STATUS.unknown }));
+  }
   if (reportType === 'squat') return extractSquatKeyMetrics(report);
   if (reportType === 'stance') return extractStanceKeyMetrics(report);
 
@@ -897,9 +948,10 @@ export function extractKeyMetrics(report = {}, reportType = inferReportType(repo
       let range = definition.range;
       if (reportType === 'gait' && (definition.key === 'cadence' || definition.key === 'stancePct' || definition.key === 'verticalOscillation')) {
         const cad = firstDefinedPath(report, ['metrics.cadence', 'cadence']);
-        range = definition.key === 'cadence' ? cadenceRangeFor(cad)
-          : definition.key === 'verticalOscillation' ? verticalOscRangeFor(cad)
-          : (stanceRangeFor(cad) || undefined);
+        const gm = firstDefinedPath(report, ['metrics.gaitMode']);
+        range = definition.key === 'cadence' ? cadenceRangeFor(cad, gm)
+          : definition.key === 'verticalOscillation' ? verticalOscRangeFor(cad, gm)
+          : (stanceRangeFor(cad, gm) || undefined);
       }
       return toLaymanMetric(definition.key, value, {
         unit: definition.unit,
@@ -1117,6 +1169,8 @@ function reportTitle(reportType) {
     one_rm: '최대 근력 평가',
     vbt: '운동 속도 기반 근력 평가',
     cardio: '심폐지구력(VO2max) 평가',
+    senior: '시니어 기능 테스트 평가',
+    paps: 'PAPS 체력평가',
     general: '측정 결과 평가',
   };
   return titles[reportType] || titles.general;

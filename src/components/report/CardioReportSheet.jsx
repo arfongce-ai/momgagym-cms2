@@ -5,12 +5,13 @@
 //   · 저장된 값만 그린다. 계산 못 한 값은 '계산하지 않음'과 이유를 보여준다(측정 정직성).
 //   · 공통 ReportActions 로 A4 리포트 이미지(JPG) 저장을 제공한다.
 // ════════════════════════════════════════════════════════════════════════
+import { useState } from 'react';
 import {
   UnifiedReportCanvas, UnifiedReportHeader, UnifiedReportPage, UnifiedReportSection,
 } from './UnifiedReportPrimitives';
 import ReportActions from './ReportActions';
 import ChangeSummaryPanel from './ChangeSummaryPanel';
-import { cardioHistoryMetrics, curvedComparison, cardioChangeSummary, cardioContextLabel, cardioGroupHistory, rpeLabel, formatClock, formatPace } from '../../ai-measure/core/cardioTest';
+import { recomputeCardioRecord, normalizeSex, cardioHistoryMetrics, curvedComparison, cardioChangeSummary, cardioContextLabel, cardioGroupHistory, rpeLabel, formatClock, formatPace } from '../../ai-measure/core/cardioTest';
 import { buildSummaryData } from '../../ai-measure/core/unifiedReport';
 
 const SEX_LABEL = { male: '남', female: '여', m: '남', f: '여' };
@@ -70,7 +71,45 @@ function Tile({ label, value, unit, accent = false }) {
   );
 }
 
-export default function CardioReportSheet({ report, member, previous = null, history = [], onMessage, showActions = true, reportNodeId = 'cardio-report-sheet' }) {
+function RecalcPanel({ p, onRecalc }) {
+  const subject = p.subject || {};
+  const [sex, setSex] = useState(normalizeSex(subject.sex) || '');
+  const [weight, setWeight] = useState(subject.weightKg ? String(subject.weightKg) : '');
+  const [age, setAge] = useState(subject.age ? String(subject.age) : '');
+  const [state, setState] = useState({ s: 'idle', msg: '' });
+  const inputCls = 'w-full rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm font-bold text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-white';
+  const run = async () => {
+    const patch = recomputeCardioRecord(p, { subject: { sex: sex || null, weightKg: Number(weight) || null, age: Number(age) || null } });
+    if (!patch) { setState({ s: 'err', msg: '1초 단위 원본 기록이 없어 다시 계산할 수 없습니다.' }); return; }
+    setState({ s: 'saving', msg: '' });
+    try {
+      await onRecalc(patch);
+      const v = patch.estimates?.vo2max;
+      setState({ s: 'ok', msg: v?.value ? `다시 계산했습니다 · VO2max ${v.value}` : `다시 계산했지만 VO2max는 여전히 비어 있습니다 — ${v?.reason || '조건 부족'}` });
+    } catch (e) { setState({ s: 'err', msg: '저장하지 못했습니다. 잠시 뒤 다시 시도해 주세요.' }); }
+  };
+  return (
+    <div className="mb-4 rounded-xl border border-amber-500/40 bg-amber-500/10 p-3" data-testid="cardio-recalc">
+      <p className="text-[12px] font-black text-amber-800 dark:text-amber-300">입력 정보 보완 후 다시 계산</p>
+      <p className="mt-1 text-[11px] font-semibold text-slate-600 dark:text-slate-300">성별·체중·나이를 채우면 저장된 심박·출력 기록으로 VO2max 등을 다시 계산해 저장합니다. 원본 기록은 바뀌지 않습니다.</p>
+      <div className="mt-2 grid grid-cols-3 gap-2">
+        <label className="text-[10px] font-bold text-slate-500">성별
+          <select value={sex} onChange={(e) => setSex(e.target.value)} className={inputCls}><option value="">선택</option><option value="male">남</option><option value="female">여</option></select>
+        </label>
+        <label className="text-[10px] font-bold text-slate-500">체중(kg)
+          <input inputMode="decimal" value={weight} onChange={(e) => setWeight(e.target.value.replace(/[^\d.]/g, '').slice(0, 5))} className={inputCls} />
+        </label>
+        <label className="text-[10px] font-bold text-slate-500">나이
+          <input inputMode="numeric" value={age} onChange={(e) => setAge(e.target.value.replace(/\D/g, '').slice(0, 3))} className={inputCls} />
+        </label>
+      </div>
+      <button type="button" onClick={run} disabled={state.s === 'saving'} className="mt-2 w-full rounded-lg bg-amber-500 py-2 text-sm font-black text-black disabled:opacity-60">{state.s === 'saving' ? '계산 중…' : '다시 계산해서 저장'}</button>
+      {state.msg && <p className={`mt-1.5 text-[11px] font-bold ${state.s === 'err' ? 'text-red-600' : 'text-emerald-700 dark:text-emerald-400'}`}>{state.msg}</p>}
+    </div>
+  );
+}
+
+export default function CardioReportSheet({ report, member, previous = null, history = [], onMessage, showActions = true, reportNodeId = 'cardio-report-sheet', onRecalc = null }) {
   const p = report && typeof report === 'object' ? report : {};
   const memberName = member?.name || p.member?.name || '회원';
   const vo2 = p.estimates?.vo2max;
@@ -130,6 +169,11 @@ export default function CardioReportSheet({ report, member, previous = null, his
             ) : (
               <p className="rounded-lg border border-slate-300/60 dark:border-slate-700/60 px-3 py-2.5 text-[13px] font-semibold text-slate-600 dark:text-slate-300">
                 이번 측정은 VO2max를 계산하지 않았습니다. {vo2?.reason || '조건을 채우지 못했습니다.'}
+              </p>
+            )}
+            {p.walk6 && (
+              <p className="mt-2 break-keep text-[12px] font-semibold text-slate-600 dark:text-slate-300" data-testid="cardio-report-walk6">
+                6분 걷기 {p.walk6.distanceM ?? '-'}m{p.walk6.pctPredicted != null ? ` · 예측거리 ${p.walk6.predictedM}m 대비 ${p.walk6.pctPredicted}% (Enright & Sherrill 1998, 건강한 40~80세 기준)` : ` · ${p.walk6.reason}`}
               </p>
             )}
             {p.fieldRank && (
@@ -218,6 +262,10 @@ export default function CardioReportSheet({ report, member, previous = null, his
                 <Tile label="1분 회복" value={recovery.drop60 ?? '-'} unit="bpm" accent />
               </div>
             </UnifiedReportSection>
+          )}
+
+          {onRecalc && showActions && vo2 && !vo2.value && p.series?.t?.length > 0 && !(Number(subject.weightKg) > 0 && normalizeSex(subject.sex)) && (
+            <RecalcPanel key={p.endedAt || p.startedAt || 'r'} p={p} onRecalc={onRecalc} />
           )}
 
           <UnifiedReportSection title="대상·조건" subtitle="입력 정보" className="mb-4">

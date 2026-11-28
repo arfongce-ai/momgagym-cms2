@@ -11,6 +11,8 @@ import { extractKeyMetrics, inferReportType, METRIC_DEFINITIONS } from '../ai-me
 import { HEART_RATE_RECORD_KIND, heartRateHistoryMetrics } from '../ai-measure/core/heartRateBle';
 // [11번 심폐지구력 2026-11-12] 장비 테스트 기록을 '심폐지구력'으로 보여준다.
 import { CARDIO_RECORD_KIND, cardioHistoryMetrics, cardioContextLabel } from '../ai-measure/core/cardioTest';
+import { SENIOR_KIND, seniorHistoryMetrics } from '../ai-measure/core/seniorTests';
+import { PAPS_KIND, papsHistoryMetrics } from '../ai-measure/core/papsTests';
 
 export const TYPE_LABEL = Object.freeze({
   body: '신체정보',
@@ -26,6 +28,8 @@ export const TYPE_LABEL = Object.freeze({
   one_rm: '1RM',
   heart_rate: '심박 측정',
   cardio_test: '심폐지구력',
+  senior_test: '시니어 기능',
+  paps_test: 'PAPS 체력평가',
   general: '측정',
 });
 
@@ -137,6 +141,10 @@ export function mergeMeasureEntries({ sessions = [], gait = [], posture = [], ro
     if (isHeartRate) type = HEART_RATE_RECORD_KIND;
     const isCardio = !main && s.data?.kind === CARDIO_RECORD_KIND;
     if (isCardio) type = CARDIO_RECORD_KIND;
+    const isSenior = !main && s.data?.kind === SENIOR_KIND;
+    if (isSenior) type = SENIOR_KIND;
+    const isPaps = !main && s.data?.kind === PAPS_KIND;
+    if (isPaps) type = PAPS_KIND;
     entries.push({
       id: s.id,
       sessionId: s.id,
@@ -144,7 +152,7 @@ export function mergeMeasureEntries({ sessions = [], gait = [], posture = [], ro
       reportCollection: linked[0]?.col || '',
       source: main ? 'session+report' : 'session',
       type,
-      title: isHeartRate ? TYPE_LABEL.heart_rate : isCardio ? `${TYPE_LABEL.cardio_test} · ${cardioContextLabel(s.data.machineId)} · ${s.data.machineLabel || ''} ${s.data.protocolLabel || ''}`.trim() : (s.menuTitle || TYPE_LABEL[type] || '측정'),
+      title: isHeartRate ? TYPE_LABEL.heart_rate : isPaps ? `${TYPE_LABEL.paps_test} · ${s.data.testLabel || ''}`.trim() : isSenior ? `${TYPE_LABEL.senior_test} · ${s.data.testLabel || ''}`.trim() : isCardio ? `${TYPE_LABEL.cardio_test} · ${cardioContextLabel(s.data.machineId)} · ${s.data.machineLabel || ''} ${s.data.protocolLabel || ''}`.trim() : (s.menuTitle || TYPE_LABEL[type] || '측정'),
       date: s.recordedAt || dateOnly(isoOf(s)),
       at: isoOf(s) || isoOf(main),
       memo: s.memo || '',
@@ -182,6 +190,12 @@ export function describeEntry(entry, limit = 4) {
   // 심박 기록: 평균·최고·시간만 값으로 보여준다(판정·신뢰도 없음).
   if (entry.type === HEART_RATE_RECORD_KIND) {
     return { metrics: heartRateHistoryMetrics(entry.payload).slice(0, limit), confidence: { pct: null, source: '' } };
+  }
+  if (entry.type === PAPS_KIND) {
+    return { metrics: papsHistoryMetrics(entry.payload).slice(0, limit), confidence: { pct: null, source: '' } };
+  }
+  if (entry.type === SENIOR_KIND) {
+    return { metrics: seniorHistoryMetrics(entry.payload).slice(0, limit), confidence: { pct: null, source: '' } };
   }
   if (entry.type === CARDIO_RECORD_KIND) {
     return { metrics: cardioHistoryMetrics(entry.payload).slice(0, limit), confidence: { pct: null, source: '' } };

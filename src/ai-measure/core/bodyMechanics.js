@@ -19,6 +19,8 @@
 
 export const LM = Object.freeze({
   NOSE: 0,
+  LEFT_EYE: 2, RIGHT_EYE: 5,
+  LEFT_EAR: 7, RIGHT_EAR: 8,
   LEFT_SHOULDER: 11, RIGHT_SHOULDER: 12,
   LEFT_ELBOW: 13, RIGHT_ELBOW: 14,
   LEFT_WRIST: 15, RIGHT_WRIST: 16,
@@ -41,6 +43,11 @@ export const ROM_NORMS = Object.freeze({
     STANDING:  { flexion: { normal: 120, min: 90,  max: 145 } }, // 기능적 굴곡
     SUPINE:    { flexion: { normal: 120, min: 90,  max: 150 } }, // SLR 포함 구조적
     PRONE:     { extension: { normal: 20, min: 10, max: 35 } },
+    // [2611] 고관절 벌림(서서, 정면 촬영). 교재 6장(276쪽): 벌림 45° 제한까지.
+    //  교재 정상치: 굴곡 120° · 폄 30° · 벌림 45° · 모음 30° · 안/바깥 돌림 45°.
+    ABDUCTION: { abduction: { normal: 45, min: 30, max: 60 } },
+    // [2611] 누워서 벌림(교재 자세, 위에서 내려다보며 촬영). 같은 45° 기준.
+    SUPINE_ABD: { abduction: { normal: 45, min: 30, max: 60 } },
   },
   KNEE: {
     STANDING:  { flexion: { normal: 135, min: 110, max: 150 } },
@@ -50,6 +57,17 @@ export const ROM_NORMS = Object.freeze({
   SHOULDER: {
     STANDING:  { flexion: { normal: 170, min: 150, max: 185 } },
     SEATED:    { flexion: { normal: 170, min: 150, max: 185 } },
+    // [2611] 어깨 벌림(외전, 정면 촬영). 교재 3장(92쪽): 벌림동안 어깨 올림 180°.
+    //  굴곡과 같은 sanity 범위(팔 내림=0°, 머리 위=180°)를 쓴다.
+    ABDUCTION: { abduction: { normal: 170, min: 150, max: 185 } },
+  },
+  // [2611] 목(경추) — 교재 9장(422~427쪽). 기구마다 정상치가 달라 중간값을 쓴다:
+  //  굴곡 45~50 · 폄 60~65 · 가쪽 굽힘 35~45 · 돌림 60~80. 값은 "시작 자세(중립) 대비 변화량".
+  NECK: {
+    FLEXION:   { flexion: { normal: 50, min: 35, max: 70 } },
+    EXTENSION: { extension: { normal: 60, min: 40, max: 80 } },
+    LATERAL:   { lateral_flexion: { normal: 45, min: 30, max: 60 } },
+    ROTATION:  { rotation: { normal: 70, min: 45, max: 95 } },
   },
   ANKLE: {
     STANDING:  { dorsiflexion: { normal: 20, min: 10, max: 30 } },
@@ -198,7 +216,7 @@ function stdDev(values) {
 //       아닌 몸 기준). 카메라에 대해 어느 방향으로 눕든 결과가 같다. 보상을
 //       통제한 '순수 구조적 ROM'. 동작 끝범위의 잔떨림(등척성 안정성)을 별도로 추출.
 //
-//   joint: 'HIP' | 'KNEE' | 'SHOULDER' | 'ANKLE' | 'ELBOW'
+//   joint: 'HIP' | 'KNEE' | 'SHOULDER' | 'ANKLE' | 'ELBOW' | 'NECK' | 'TRUNK'
 //   side:  'left' | 'right'
 //   poseMode: 'STANDING' | 'SUPINE' | 'PRONE' | 'SEATED'
 //  반환: { angle, compensatory, base } — angle=관절각, compensatory=보상값(STANDING).
@@ -224,7 +242,124 @@ export function jointAngleByMode(landmarks, joint, side, poseMode) {
   let compensatory = null;
   let base = poseMode === 'STANDING' ? 'vertical_gravity_line' : 'trunk_axis_line';
 
-  if (joint === 'HIP') {
+  if (joint === 'TRUNK') {
+    // [2611] 몸통(등허리·허리) — 어깨·고관절 랜드마크만으로 몸통 축의 기울기를 잰다. 중력 수직이 기준이라 0점 보정 불필요.
+    //  · T_FLEXION/T_EXTENSION(옆모습): 고관절→어깨 선이 수직에서 앞(굽힘)·뒤(폄)로 기운 각. 앞쪽 = 코가 향한 쪽.
+    //    (골반 굽힘이 섞인 '몸통 전체' 굽힘각 — 등허리/허리 분절 각이 아님)
+    //  · T_LATERAL(정면): 양 어깨 중점이 양 고관절 중점에서 수직으로부터 기운 각. 왼쪽 값 = 사람의 왼쪽으로 기울임.
+    const deg = (r) => (r * 180) / Math.PI;
+    if (poseMode === 'T_ROTATION') {
+      // [2611] 몸통 돌림(정면): 어깨선의 깊이(z) 기울기에서 골반선의 깊이 기울기를 뺀 '골반 대비 상체 돌림'.
+      //  카메라가 정면에서 조금 비껴 있어도 골반선이 같이 돌아 보이므로 상쇄된다. 0점은 누적기가 시작 구간에서 보정.
+      //  왼쪽 값 = 사람의 왼쪽으로 돌림(왼 어깨가 뒤로). BlazePose z는 거칠어 '근사값'이다.
+      const lS = get('LEFT_SHOULDER'), rS = get('RIGHT_SHOULDER'), lH = get('LEFT_HIP'), rH = get('RIGHT_HIP');
+      if (lS && rS && lH && rH) {
+        const yawOf = (l, r) => Math.atan2((l.z ?? 0) - (r.z ?? 0), l.x - r.x);
+        let d = deg(yawOf(lS, rS) - yawOf(lH, rH));
+        d = ((d + 540) % 360) - 180; // -180~180
+        angle = round(side === 'left' ? d : -d, 1);
+      }
+      base = 'pelvis_line';
+    } else if (poseMode === 'T_LATERAL') {
+      const lS = get('LEFT_SHOULDER'), rS = get('RIGHT_SHOULDER'), lH = get('LEFT_HIP'), rH = get('RIGHT_HIP');
+      if (lS && rS && lH && rH) {
+        const sm = { x: (lS.x + rS.x) / 2, y: (lS.y + rS.y) / 2 };
+        const hm = { x: (lH.x + rH.x) / 2, y: (lH.y + rH.y) / 2 };
+        // 정면에서 사람의 왼쪽은 화면 오른쪽
+        const lean = deg(Math.atan2(sm.x - hm.x, hm.y - sm.y));
+        angle = round(side === 'left' ? lean : -lean, 1);
+      }
+      base = 'vertical_gravity_line';
+    } else {
+      const nose = get('NOSE');
+      if (shoulder && hip && nose) {
+        const fwd = Math.sign(nose.x - shoulder.x) || 1; // 얼굴이 향한 방향(앞)
+        const lean = deg(Math.atan2((shoulder.x - hip.x) * fwd, hip.y - shoulder.y)); // 앞으로 기울면 +
+        angle = round(poseMode === 'T_EXTENSION' ? -lean : lean, 1);
+      }
+      base = 'vertical_gravity_line';
+    }
+    return { angle, compensatory, base };
+  }
+
+  if (joint === 'NECK') {
+    // [2611] 목 — 머리 랜드마크(귀·코)와 어깨선만으로 잰다(별도 장비 없음).
+    //  · LATERAL(정면): 두 귀를 잇는 선이 어깨선에서 기운 각. 중립에서 0°라 기준 보정이 필요 없다.
+    //    왼쪽 값 = 머리를 왼쪽 어깨 쪽으로 기울임, 오른쪽 값 = 오른쪽.
+    //  · ROTATION(정면): 코가 두 귀 중점에서 벗어난 비율로 돌림 각을 근사(asin). 왼쪽/오른쪽은 화면 기준.
+    //  · FLEXION/EXTENSION(옆모습): 귀→코 선의 수평 대비 기울기(고개 숙임 +). 중립 값은 누적기가 시작 구간에서 빼 준다.
+    const lEar = get('LEFT_EAR'), rEar = get('RIGHT_EAR');
+    const lSh = get('LEFT_SHOULDER'), rSh = get('RIGHT_SHOULDER');
+    const nose = get('NOSE');
+    const deg = (r) => (r * 180) / Math.PI;
+    if (poseMode === 'LATERAL') {
+      if (lEar && rEar && lSh && rSh) {
+        // 화면에서 사람의 왼쪽 귀가 화면 오른쪽에 온다(정면). 각 선의 기울기를 비교.
+        const ang = (a, b) => Math.atan2(b.y - a.y, b.x - a.x);
+        let d = deg(ang(rEar, lEar) - ang(rSh, lSh));
+        d = ((d + 540) % 360) - 180; // -180~180
+        // d>0: 사람의 왼쪽 귀가 왼쪽 어깨 쪽(아래)으로 → 왼쪽 가쪽 굽힘
+        angle = round(side === 'left' ? d : -d, 1);
+      }
+      base = 'shoulder_line';
+    } else if (poseMode === 'ROTATION') {
+      if (lEar && rEar && nose) {
+        const mid = { x: (lEar.x + rEar.x) / 2, y: (lEar.y + rEar.y) / 2 };
+        const half = Math.hypot(lEar.x - rEar.x, lEar.y - rEar.y) / 2;
+        if (half > EPS) {
+          // 사람의 왼쪽 귀가 화면 오른쪽 → 코가 화면 오른쪽으로 가면 사람 왼쪽으로 돌린 것
+          const off = (nose.x - mid.x) / half; // 정면=0
+          const t = Math.max(-1, Math.min(1, off));
+          const yaw = deg(Math.asin(t));
+          angle = round(side === 'left' ? yaw : -yaw, 1);
+        }
+      }
+      base = 'ear_midline';
+    } else {
+      // FLEXION / EXTENSION — 보이는 쪽 귀 하나와 코 사용(옆모습)
+      const ear = side === 'left' ? lEar : rEar;
+      if (ear && nose) {
+        const dir = Math.sign(nose.x - ear.x) || 1; // 얼굴이 향한 방향
+        const pitch = deg(Math.atan2(nose.y - ear.y, Math.abs(nose.x - ear.x))); // 코가 아래면 +
+        angle = round(poseMode === 'EXTENSION' ? -pitch : pitch, 1);
+        void dir;
+      }
+      base = 'ear_nose_line';
+    }
+    return { angle, compensatory, base };
+  }
+
+  if (joint === 'HIP' && poseMode === 'SUPINE_ABD') {
+    // [2611] 누워서 벌림 — 카메라가 몸 바로 위에서 내려다본다(다리가 움직이는 면과 화면이 평행).
+    //  몸통 축(어깨→골반)을 연장한 선과 대퇴(hip→knee) 사이각. 다리를 곧게 뻗으면 0°.
+    //  화면 절대 좌표가 아니라 몸통 기준이라 머리 방향이 어느 쪽이어도 같다.
+    //  벌림/모음은 반대쪽 골반과 같은 쪽이면 모음(−), 반대쪽이면 벌림(+)으로 구분한다.
+    //  어깨·골반·무릎·반대쪽 골반 중 하나라도 안 보이면 각도를 내지 않는다(측정 정직성).
+    const oppHip = get(`${OPP}_HIP`);
+    const tk = angleBetween(shoulder, hip, knee, false);
+    if (tk != null && shoulder && hip && knee && oppHip) {
+      const mag = round(180 - tk, 1);
+      const t = { x: hip.x - shoulder.x, y: hip.y - shoulder.y };
+      const cross = (u, w) => u.x * w.y - u.y * w.x;
+      const cl = cross(t, { x: knee.x - hip.x, y: knee.y - hip.y });
+      const co = cross(t, { x: oppHip.x - hip.x, y: oppHip.y - hip.y });
+      angle = (cl * co <= 0) ? mag : -mag; // 반대 부호 = 반대쪽 골반에서 멀어짐 = 벌림
+    }
+    base = 'trunk_axis_line';
+  } else if (joint === 'HIP' && poseMode === 'ABDUCTION') {
+    // [2611] 서서 벌림(정면): 대퇴(hip→knee)와 수직 아래선 사이각. 다리 내림=0°.
+    //  모음(다리가 몸 안쪽으로)은 음수로 구분 — 반대쪽 골반 기준 '바깥쪽'이면 벌림(+).
+    //  반대쪽 골반이 안 보이면 방향을 알 수 없어 각도를 내지 않는다(측정 정직성).
+    const oppHip = get(`${OPP}_HIP`);
+    const raw = vectorToAxisAngle(hip, knee, VERTICAL_UP, false);
+    if (raw != null && hip && knee && oppHip) {
+      const mag = round(180 - raw, 1);
+      const out = Math.sign(hip.x - oppHip.x) || 1;
+      angle = (knee.x - hip.x) * out >= 0 ? mag : -mag;
+    }
+    compensatory = pelvicDrop(landmarks, side); // 골반 올림(hiking)·내려앉음 보상
+    base = 'vertical_gravity_line';
+  } else if (joint === 'HIP') {
     if (poseMode === 'STANDING') {
       // 대퇴골(hip→knee) 벡터와 수직선 사이각. 굴곡각 정의는 '다리 내림=0°,
       // 다리 위로 들어올림=180°'. vectorToAxisAngle 은 위쪽축 기준이라 내릴수록 180°가
@@ -249,7 +384,8 @@ export function jointAngleByMode(landmarks, joint, side, poseMode) {
     angle = angleBetween(hip, knee, ankle, false);
     if (poseMode === 'STANDING') compensatory = pelvicDrop(landmarks, side);
   } else if (joint === 'SHOULDER') {
-    if (poseMode === 'STANDING' || poseMode === 'SEATED') {
+    if (poseMode === 'STANDING' || poseMode === 'SEATED' || poseMode === 'ABDUCTION') {
+      // [2611] ABDUCTION(벌림)은 정면 촬영 — 같은 식(팔 내림=0°, 머리 위=180°)을 화면 면(정면)에서 잰다.
       // 상완(shoulder→elbow)과 수직축 사이각. 견관절 굴곡 정의는 '팔 내림=0°,
       // 팔 위로 들어올림=180°'. 위쪽축 기준 각도를 (180 - 각도)로 보정한다.
       const raw = vectorToAxisAngle(shoulder, elbow, VERTICAL_UP, false);
@@ -264,7 +400,10 @@ export function jointAngleByMode(landmarks, joint, side, poseMode) {
     }
   } else if (joint === 'ANKLE') {
     // 발목 배측굴곡 근사: 정강이(knee→ankle) 와 발(ankle→foot) 사잇각.
-    angle = angleBetween(knee, ankle, foot, false);
+    // 정강이-발 사잇각은 중립(90°)에서 발등을 들수록 작아진다 → 배측굴곡 = 90 - 사잇각.
+    // (이전에는 사잇각을 그대로 ROM 으로 기록해 20° 굽혀도 70°로 나왔다.)
+    const shinFoot = angleBetween(knee, ankle, foot, false);
+    angle = shinFoot == null ? null : round(90 - shinFoot, 1);
   } else if (joint === 'ELBOW') {
     // 주관절(팔꿈치) — 무릎과 동일한 단순 경첩 관절. 상완(shoulder→elbow)과
     // 전완(elbow→wrist) 사잇각을 그대로 쓴다(축 기준 보정 불필요). 펴면 180에
@@ -326,9 +465,126 @@ export function torsoSeparationSignal(landmarks) {
 }
 
 // ────────────────────────────────────────────────────────────────────────
+//  [2611 ROM 안정화] 견고한 대표값(피크)·반복 검출·가시성·옆모습 정렬
+//   AROM 결과가 "프레임 하나가 튄 값"이 되지 않고 반복해도 일정하게 나오도록 한다.
+//   임계값(5프레임·15°·0.5·0.4)은 설계값이며 실측 데이터로 검증 전이다.
+// ────────────────────────────────────────────────────────────────────────
+export const ROM_CONFIDENT_VIS = 0.5;   // 이 이상 보이는 프레임을 우선 사용
+export const ROM_MIN_GOOD_FRAMES = 8;   // 우선 사용할 프레임이 이보다 적으면 전체 사용 + 경고
+export const ROM_REP_SPREAD_WARN = 5;   // 반복 간 최대각 편차(°) 경고 기준(교재 28쪽: 팔 5°·다리 6° 이내는 오차 범위)
+export const ROM_VIEW_RATIO_MIN_FRONT = 0.5; // 정면 촬영(벌림) 판정: 어깨폭/몸통길이 비율 하한(정면≈0.8)
+export const ROM_VIEW_RATIO_MAX = 0.4;  // 옆모습 판정: 어깨폭/몸통길이 비율 상한(정면≈0.8, 완전 측면≈0)
+
+// 연속 k 프레임의 중앙값 중 최대(또는 최소). 1~2프레임 튄 값은 결과가 되지 않는다.
+export function sustainedExtreme(values, kind = 'max', k = 5) {
+  const v = (values || []).filter((x) => typeof x === 'number' && Number.isFinite(x));
+  if (!v.length) return null;
+  const pick = kind === 'min' ? Math.min : Math.max;
+  if (v.length < k) return pick(...v);
+  let best = null;
+  for (let i = 0; i + k <= v.length; i++) {
+    const m = median(v.slice(i, i + k));
+    if (best == null || (kind === 'min' ? m < best : m > best)) best = m;
+  }
+  return best;
+}
+
+// 굴곡 지표(클수록 많이 움직임) 시계열에서 반복(rep)별 피크를 찾는다.
+//  기준선 = 하위 10% 값, 진입 = 범위의 60%, 이탈 = 40%(히스테리시스로 떨림 분리 방지).
+//  범위가 minRangeDeg 미만이면 "움직임 없음"으로 보고 반복 0.
+export function detectRepPeaks(flex, { minRangeDeg = 15, minFrames = 3 } = {}) {
+  const v = (flex || []).filter((x) => typeof x === 'number' && Number.isFinite(x));
+  if (v.length < minFrames * 2) return { peaks: [], count: 0, rangeDeg: 0 };
+  const sorted = [...v].sort((a, b) => a - b);
+  const lo = sorted[Math.floor(sorted.length * 0.1)];
+  const hi = sustainedExtreme(v, 'max');
+  const rangeDeg = hi - lo;
+  if (!(rangeDeg >= minRangeDeg)) return { peaks: [], count: 0, rangeDeg };
+  const up = lo + 0.6 * rangeDeg;
+  const down = lo + 0.4 * rangeDeg;
+  const peaks = [];
+  let run = null;
+  const close = () => {
+    if (run && run.length >= minFrames) peaks.push(sustainedExtreme(run, 'max', Math.min(5, run.length)));
+    run = null;
+  };
+  for (const x of v) {
+    if (run == null) { if (x >= up) run = [x]; }
+    else if (x < down) close();
+    else run.push(x);
+  }
+  close();
+  return { peaks, count: peaks.length, rangeDeg };
+}
+
+// 관절각 산출에 실제로 쓰이는 랜드마크 중 가장 낮은 visibility(없으면 null).
+export function jointMinVisibility(landmarks, joint, side, poseMode) {
+  const S = side === 'left' ? 'LEFT' : 'RIGHT';
+  let names;
+  if (joint === 'HIP') names = (poseMode === 'STANDING' || poseMode === 'ABDUCTION') ? ['HIP', 'KNEE'] : ['SHOULDER', 'HIP', 'KNEE'];
+  else if (joint === 'KNEE') names = ['HIP', 'KNEE', 'ANKLE'];
+  else if (joint === 'SHOULDER') names = (poseMode === 'STANDING' || poseMode === 'SEATED' || poseMode === 'ABDUCTION') ? ['SHOULDER', 'ELBOW'] : ['HIP', 'SHOULDER', 'ELBOW'];
+  else if (joint === 'ANKLE') names = ['KNEE', 'ANKLE', 'FOOT_INDEX'];
+  else if (joint === 'ELBOW') names = ['SHOULDER', 'ELBOW', 'WRIST'];
+  else if (joint === 'TRUNK') {
+    const g = (n) => landmarks?.[LM[n]];
+    const need = (poseMode === 'T_LATERAL' || poseMode === 'T_ROTATION')
+      ? ['LEFT_SHOULDER', 'RIGHT_SHOULDER', 'LEFT_HIP', 'RIGHT_HIP']
+      : [`${S}_SHOULDER`, `${S}_HIP`, 'NOSE'];
+    let m = 1;
+    for (const n of need) { const p = g(n); if (!p) return null; m = Math.min(m, p.visibility == null ? 1 : p.visibility); }
+    return m;
+  }
+  else if (joint === 'NECK') {
+    names = (poseMode === 'LATERAL') ? ['EAR', 'SHOULDER'] : ['EAR'];
+    const g = (n) => landmarks?.[LM[`${S}_${n}`]];
+    const other = side === 'left' ? 'RIGHT' : 'LEFT';
+    const vals = [];
+    for (const n of names) {
+      const a = g(n); const b = landmarks?.[LM[`${other}_${n}`]];
+      if (!a || (poseMode === 'LATERAL' && !b)) return null;
+      vals.push(a.visibility == null ? 1 : a.visibility);
+      if (poseMode === 'LATERAL') vals.push(b.visibility == null ? 1 : b.visibility);
+    }
+    const nz = landmarks?.[LM.NOSE];
+    if (!nz) return null;
+    vals.push(nz.visibility == null ? 1 : nz.visibility);
+    return Math.min(...vals);
+  }
+  else return null;
+  let min = 1;
+  for (const n of names) {
+    const p = landmarks?.[LM[`${S}_${n}`]];
+    if (!p) return null;
+    min = Math.min(min, p.visibility == null ? 1 : p.visibility);
+  }
+  return min;
+}
+
+// 옆모습 정렬 신호: 어깨폭 / 몸통길이(어깨중점↔골반중점). 완전 측면이면 두 어깨가 겹쳐
+// 0에 가깝고 정면이면 약 0.8. 2D 각도는 카메라가 동작면과 수직일 때만 정확하므로
+// 이 값이 크면(몸이 정면 쪽으로 돌아감) 각도가 실제보다 작게 나온다. 계산 불가면 null.
+// ※ 어깨폭≈몸통길이×0.8 은 평균 체형 가정이다.
+export function viewSeparationRatio(landmarks) {
+  const ls = getLandmark(landmarks, LM.LEFT_SHOULDER, 0.3);
+  const rs = getLandmark(landmarks, LM.RIGHT_SHOULDER, 0.3);
+  const lh = getLandmark(landmarks, LM.LEFT_HIP, 0.3);
+  const rh = getLandmark(landmarks, LM.RIGHT_HIP, 0.3);
+  if (!ls || !rs || !lh || !rh) return null;
+  const A = getFrameAspect();
+  const sMid = midpoint(ls, rs);
+  const hMid = midpoint(lh, rh);
+  const trunk = Math.hypot((sMid.x - hMid.x) * A, sMid.y - hMid.y);
+  if (trunk < EPS) return null;
+  return Math.hypot((ls.x - rs.x) * A, ls.y - rs.y) / trunk;
+}
+
+// ────────────────────────────────────────────────────────────────────────
 //  시계열 누적기 — 비동기 프레임이 들어올 때마다 push, 끝나면 summary().
 //  좌/우 각도, 보상값, 타임스탬프를 시간순으로 쌓고, 스무딩 후 대표값을 낸다.
 // ────────────────────────────────────────────────────────────────────────
+export const NECK_NEUTRAL_N = 10; // 목 굽힘·폄·몸통 돌림 0점 산출에 쓰는 시작 프레임 수
+
 export class RomAccumulator {
   constructor({ joint = 'HIP', poseMode = 'STANDING', smoothWindow = 5 } = {}) {
     this.joint = joint;
@@ -343,10 +599,25 @@ export class RomAccumulator {
     const L = jointAngleByMode(norm, this.joint, 'left', this.poseMode);
     const R = jointAngleByMode(norm, this.joint, 'right', this.poseMode);
     // [보상 프로파일] 모든 자세모드에서 체간 기울기·몸통 회전 신호를 함께 수집.
+    // [2611] 목 굽힘·폄은 귀→코 선의 절대 기울기라 중립에서도 0이 아니다 — 시작 구간(처음 10프레임) 중앙값을 0점으로 삼는다.
+    //  (그래서 녹화는 목을 중립(정면 응시)으로 1초 두고 시작)
+    if ((this.joint === 'NECK' && (this.poseMode === 'FLEXION' || this.poseMode === 'EXTENSION'))
+      || (this.joint === 'TRUNK' && this.poseMode === 'T_ROTATION')) {
+      const nb = this._nb || (this._nb = { left: [], right: [] });
+      for (const k of ['left', 'right']) {
+        const o = k === 'left' ? L : R;
+        if (o.angle == null) continue;
+        if (nb[k].length < NECK_NEUTRAL_N) nb[k].push(o.angle);
+        o.angle = round(o.angle - median(nb[k]), 1);
+      }
+    }
     const lean = trunkLeanCompensation(norm);
     const sep = torsoSeparationSignal(norm);
     this.samples.push({
       t: tMs,
+      visL: jointMinVisibility(norm, this.joint, 'left', this.poseMode),
+      visR: jointMinVisibility(norm, this.joint, 'right', this.poseMode),
+      viewRatio: viewSeparationRatio(norm),
       left: L.angle,
       right: R.angle,
       compL: L.compensatory,
@@ -368,10 +639,13 @@ export class RomAccumulator {
     const spec = ROM_NORMS[this.joint]?.[this.poseMode] || null;
     if (!spec) return { lo: -30, hi: 200 };
     const first = Object.values(spec)[0];
+    // 대표값은 '가장 많이 움직인 쪽'(최대 굴곡)이라 가동범위가 작은 쪽 값은 걸러낼 필요가 없다.
+    // 예전엔 정상 하한(min-40)보다 작은 값을 모두 버려, 가동범위가 제한된 회원(예: 어깨 100°)은
+    // 결과가 통째로 '없음'이 되었다. 지나치게 큰 튀는 값만 상한으로 거른다.
     if (this.joint === 'KNEE' || this.joint === 'ELBOW') {
-      return { lo: Math.max(-30, 180 - first.max - 40), hi: 180 - first.min + 40 };
+      return { lo: Math.max(-30, 180 - first.max - 40), hi: 200 };
     }
-    return { lo: Math.max(-30, first.min - 40), hi: first.max + 40 };
+    return { lo: -30, hi: first.max + 40 };
   }
 
   summary() {
@@ -383,16 +657,78 @@ export class RomAccumulator {
 
     // 굴곡 ROM 은 '최대 굴곡각'이 핵심 지표. HIP/SHOULDER 기준벡터각은 클수록 굴곡↑.
     // KNEE·ELBOW 내각은 굴곡 시 작아지므로(폄=180), maxFlexion = 180 - min(내각).
-    const repMax = (arr) => {
-      if (!arr.length) return null;
-      if (this.joint === 'KNEE' || this.joint === 'ELBOW') {
-        const minInner = Math.min(...arr);
-        return round(180 - minInner, 1);
-      }
-      return round(Math.max(...arr), 1);
+    // [2611] 전체 프레임의 단순 최댓값 대신 ① 잘 보이는 프레임(visibility≥0.5) 우선,
+    //  ② 연속 5프레임 중앙값 기준 피크(순간 튐 제거), ③ 반복이 3회 이상 검출되면
+    //  반복별 피크의 중앙값을 대표값으로 쓴다.
+    const inner = this.joint === 'KNEE' || this.joint === 'ELBOW';
+    const prep = (raw, vis) => {
+      const sm = movingAverage(raw, this.smoothWindow);
+      const all = [];
+      sm.forEach((a, i) => { if (a != null) all.push({ a, v: vis[i], ok: a >= lo && a <= hi }); });
+      const good = all.filter((it) => it.v != null && it.v >= ROM_CONFIDENT_VIS);
+      const useGood = good.length >= ROM_MIN_GOOD_FRAMES;
+      const src = useGood ? good : all;
+      return {
+        values: src.filter((it) => it.ok).map((it) => it.a), // 정상 범위 안 프레임(대표값용)
+        series: src.map((it) => it.a),                        // 범위 필터 전 전체(반복 검출용 — 골짜기 필요)
+        lowVisibility: all.length > 0 && !useGood,
+        goodFramePct: all.length ? Math.round((good.length / all.length) * 100) : null,
+      };
     };
-    const leftMax = repMax(smL);
-    const rightMax = repMax(smR);
+    const repStats = (p) => {
+      if (!p.values.length) return { max: null, sustained: null, reps: { peaks: [], count: 0, rangeDeg: 0 } };
+      const ext = sustainedExtreme(p.values, inner ? 'min' : 'max');
+      const sustained = round(inner ? 180 - ext : ext, 1);
+      // 반복 검출은 범위 필터 전 시계열로(굽힘/폄 골짜기가 있어야 반복이 분리된다).
+      const flex = inner ? p.series.map((x) => 180 - x) : p.series;
+      const det = detectRepPeaks(flex);
+      const peaks = det.peaks.filter((pk) => { const raw = inner ? 180 - pk : pk; return raw >= lo && raw <= hi; });
+      const reps = { peaks, count: peaks.length, rangeDeg: det.rangeDeg };
+      const max = reps.count >= 3 ? round(median(reps.peaks), 1) : sustained;
+      return { max, sustained, reps };
+    };
+    const pickL = prep(rawL, this.samples.map((x) => x.visL));
+    const pickR = prep(rawR, this.samples.map((x) => x.visR));
+    const statL = repStats(pickL);
+    const statR = repStats(pickR);
+    const leftMax = statL.max;
+    const rightMax = statR.max;
+
+    // 안정성 요약(반복 일관성·가시성·옆모습 정렬) — 리포트에서 재측정 권고에 사용.
+    const spreadOf = (peaks) => (peaks.length >= 2 ? round(Math.max(...peaks) - Math.min(...peaks), 1) : null);
+    const sideStab = (pick, st) => ({
+      rep_count: st.reps.count,
+      rep_peaks: st.reps.peaks.map((x) => round(x, 1)),
+      rep_spread_deg: spreadOf(st.reps.peaks),
+      moved: st.reps.rangeDeg >= 15,
+      sustained_peak_deg: st.sustained,
+      peak_method: st.reps.count >= 3 ? 'rep_median' : 'sustained_peak',
+      low_visibility: pick.lowVisibility,
+      good_frame_pct: pick.goodFramePct,
+    });
+    const viewRatios = this.samples.map((x) => x.viewRatio).filter((x) => x != null);
+    // 벌림(ABDUCTION)은 정면 촬영이라 판정 방향이 반대(비율이 작으면 몸이 옆으로 돌아선 것).
+    const frontView = this.poseMode === 'ABDUCTION' || this.poseMode === 'SUPINE_ABD' || this.poseMode === 'LATERAL' || this.poseMode === 'ROTATION' || this.poseMode === 'T_LATERAL' || this.poseMode === 'T_ROTATION'; // 정면/위에서 내려다보는 촬영
+    const viewBad = (x) => (frontView ? x < ROM_VIEW_RATIO_MIN_FRONT : x > ROM_VIEW_RATIO_MAX);
+    const viewBadPct = viewRatios.length
+      ? Math.round((viewRatios.filter(viewBad).length / viewRatios.length) * 100) : null;
+    const stability = {
+      left: sideStab(pickL, statL),
+      right: sideStab(pickR, statR),
+      view: {
+        shoulder_ratio_median: viewRatios.length ? round(median(viewRatios), 2) : null,
+        bad_frame_pct: viewBadPct,
+        ok: viewRatios.length >= 10 ? (!viewBad(median(viewRatios)) && viewBadPct <= 30) : null,
+      },
+      warnings: [],
+    };
+    for (const [k, st] of [['left', stability.left], ['right', stability.right]]) {
+      if (!st.moved) continue; // 움직이지 않은 쪽(편측 측정)은 평가하지 않는다
+      if (st.rep_count < 3) stability.warnings.push(`${k}_few_reps`);
+      if (st.rep_spread_deg != null && st.rep_spread_deg >= ROM_REP_SPREAD_WARN) stability.warnings.push(`${k}_rep_spread`);
+      if (st.low_visibility) stability.warnings.push(`${k}_low_visibility`);
+    }
+    if (stability.view.ok === false) stability.warnings.push(frontView ? 'view_not_front' : 'view_not_side');
 
     // 끝범위 안정성: 최대각 근처(상위 15%) 구간의 표준편차가 작을수록 안정(점수↑).
     const endRangeStability = (arr, side) => {
@@ -453,7 +789,7 @@ export class RomAccumulator {
       rotation_hip_pct: rotHipPct,
       rotation_max_pct: rotationMaxPct,
       // 축 3: 골반 하강 — 기존 STANDING 전용 보상값(%)을 그대로 노출
-      pelvic_drop_pct: this.poseMode === 'STANDING' ? (compL ?? compR ?? null) : null,
+      pelvic_drop_pct: (this.poseMode === 'STANDING' || (this.poseMode === 'ABDUCTION' && this.joint === 'HIP')) ? (compL ?? compR ?? null) : null,
       baseline_samples: Math.min(BASELINE_N, this.samples.length),
     };
 
@@ -471,6 +807,7 @@ export class RomAccumulator {
       },
       compensation: { left: compL, right: compR },
       compensation_profile,
+      stability,
       // 정제된 시계열(저장·차트용). 슬로모 보정된 t(ms) 포함.
       timeSeries: this.samples.map((s, i) => ({
         timestamp: round(s.t, 0),

@@ -45,7 +45,7 @@ export default function MomiInsightPanel({ kind, report, member }) {
     setLoading(true);
     setError(null);
     try {
-      const text = await askMomi({ kind, report, member });
+      const text = await askMomi({ kind, report, member, fresh: history.length > 0 });
       if (requestSeq !== requestSeqRef.current) return;
       setAnswer(text);
       setHistory([INITIAL_USER_TURN, { role: 'assistant', content: text }]);
@@ -87,7 +87,7 @@ export default function MomiInsightPanel({ kind, report, member }) {
         disabled={loading || !report || !member}
         className="px-4 py-2.5 rounded-lg font-semibold text-white bg-slate-900 dark:bg-slate-700 disabled:opacity-60 disabled:cursor-default active:scale-[0.98] transition-transform"
       >
-        {loading && history.length === 0 ? '모미가 분석 중이에요...' : '🤖 모미에게 물어보기'}
+        {loading && history.length === 0 ? '모미가 분석 중이에요...' : (answer ? '🤖 다시 분석 (새로 호출)' : '🤖 모미에게 물어보기')}
       </button>
 
       {error && <p className="mt-3 text-red-600 dark:text-red-400">{error}</p>}

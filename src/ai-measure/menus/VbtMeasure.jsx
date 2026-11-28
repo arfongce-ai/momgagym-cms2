@@ -3,9 +3,10 @@
 //  - [재설계] 카메라를 켜면 화면 전체를 덮는 풀스크린 오버레이로 전환.
 //  - 화면에서 엔드캡을 한 번 누르면 그 색을 학습해 따라간다.
 //  - 측정 시작 → 한 렙 동작 → 종료 시: 수직 이동거리(키 환산 m) ÷ 시간 = 평균속도.
+import { resolveBodyMetrics } from '../../services/bodyMetrics';
 import { useRef, useState, useEffect, useCallback } from 'react';
 import { usePoseEngine } from '../core/usePoseEngine';
-import { personHeightRatio, barbellPoint } from '../core/barbell';
+import { personHeightRatio, barbellPoint, pushTrailPoint } from '../core/barbell';
 import { velocityZone } from '../core/performance';
 import {
   detectPlatesFromVideo, suggestSidePlates, totalWeight,
@@ -19,6 +20,7 @@ import { createOneEuro, createSleeveAnchor, createRepTrail, drawSolidBarTrail } 
 import { isOlyType, analyzeOlyLift, pickSideJoints, betterSide, frontalRatio } from '../core/olyLiftAnalysis';
 import { DEFAULT_ASPECT, outputSize, aspectLabel, drawVideoCover, coverMapPath, rotateLandmarksNormalized } from '../core/recordAspect';
 import { useCameraRotation } from '../core/useCameraRotation';
+import { detectView, viewStatusText } from '../core/cameraViewGuide';
 import { assessFraming, FRAMING_PRESETS, MIN_CAMERA_DISTANCE_MM } from '../core/framingGuide';
 import {
   CALIBRATION_PRESETS, buildReferenceScale, ratioToCm,
@@ -51,7 +53,14 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
   const euroRef = useRef(createOneEuro());          // 속도 적응형 떨림 제거
   const repTrailRef = useRef(createRepTrail());     // 렙이 끝날 때까지 궤적 유지
   const [sleeveSet, setSleeveSet] = useState(false);
-  const resetTrail = () => { repTrailRef.current.reset(); euroRef.current.reset(); anchorRef.current.reset(); trailRef.current = []; };
+  const resetTrail = () => { trailStateRef.current = { skipped: 0 }; trailGateRef.current = []; repTrailRef.current.reset(); euroRef.current.reset(); anchorRef.current.reset(); trailRef.current = []; };
+  const trailStateRef = useRef({ skipped: 0 });   // 손목 튐 걸러내는 게이트(pushTrailPoint)
+  const trailGateRef = useRef([]);
+  // 촬영 위치는 고르지 않고 자동 인식한다(5프레임 연속 같을 때만 바뀜). 저장 기록에도 인식값이 들어간다.
+  const [viewText, setViewText] = useState('');
+  const cameraViewRef = useRef(null);
+  const viewVoteRef = useRef({ key: null, n: 0 });
+  const viewWantRef = useRef('any');
   const olySamplesRef = useRef([]);   // 스내치·클린&저크 구간/각도 분석용 프레임 샘플
   const olySideRef = useRef(null);
   const olyAspectRef = useRef(1);
@@ -91,7 +100,7 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
   const [countdown, setCountdown] = useState(null);
   useEffect(() => { aspectRef.current = aspect; }, [aspect]);
   const [result, setResult] = useState(null);
-  const [heightCm, setHeightCm] = useState(member?.height || '');
+  const [heightCm, setHeightCm] = useState(resolveBodyMetrics(member).height || '');
   const [plate, setPlate] = useState({ barKg: 20, sidePlates: [] });
   const [dialWeight, setDialWeight] = useState(20);
   const [weightSource, setWeightSource] = useState('dial');
@@ -135,10 +144,19 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
       if (recordingRef.current) phSamplesRef.current.push(ph);
     }
 
-    const fr = assessFraming(lms, { want: FRAMING_PRESETS.vbt.want, minDistanceMm: MIN_CAMERA_DISTANCE_MM.vbt, upperOnly: exerciseTypeRef.current === 'bench_press' });
+    const fr = assessFraming(lms, { want: viewWantRef.current, minDistanceMm: MIN_CAMERA_DISTANCE_MM.vbt, upperOnly: exerciseTypeRef.current === 'bench_press' });
     if (fr.level !== framingRef.current.level || fr.message !== framingRef.current.message) {
       framingRef.current = fr;
       setFraming({ level: fr.level, message: fr.message });
+    }
+    {
+      const dv = detectView(lms, _video?.videoWidth && _video?.videoHeight ? _video.videoWidth / _video.videoHeight : 1);
+      const vote = viewVoteRef.current;
+      if (dv && dv === vote.key) vote.n += 1; else { vote.key = dv; vote.n = 1; }
+      if (vote.key && vote.n >= 5 && cameraViewRef.current !== vote.key) {
+        cameraViewRef.current = vote.key;
+        setViewText(viewStatusText(vote.key));
+      }
     }
 
     // 바 위치 = 양 손목 중점(스켈레톤). 별도 추적점 지정 없이 자동으로 잡는다.
@@ -179,7 +197,8 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
         const cap = capRef.current;
         const sleevePt = cap.isSeeded() && _video ? cap.update(_video) : null;
         const pt = anchorRef.current.resolve({ sleeve: sleevePt, active: cap.activeCount() > 0, wrist: rawBar });
-        if (pt) {
+        // 튄 점(랙·캐치 구간의 손목 순간이동)은 main 의 pushTrailPoint 게이트로 거른다
+        if (pt && pushTrailPoint(trailGateRef.current, trailStateRef.current, pt, ts, { keepMs: 1000 })) {
           const sm = euroRef.current.filter(pt, ts);
           if (sm) trailRef.current = repTrailRef.current.push(sm, ts, lv.reps);
         }
@@ -518,6 +537,7 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
     onSave?.({
       type: 'vbt',
       exerciseType: exerciseType || null,
+      cameraView: cameraViewRef.current,
       source: 'live',
       lostRatio: result.lostRatio ?? null,
       distance: result.distanceM,
@@ -561,7 +581,7 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
       <>
 
         <span className={`rounded-full px-3 py-1 text-[11px] font-bold ${framing.level === 'good' ? 'bg-emerald-500/85 text-slate-950' : framing.level === 'warn' ? 'bg-amber-500/85 text-slate-950' : 'bg-red-500/85 text-white'}`}>
-          {framing.level === 'good' ? '✓ ' : '⚠ '}{framing.message}
+          {framing.level === 'good' ? '✓ ' : '⚠ '}{framing.message}{viewText ? ` · ${viewText}` : ''}
         </span>
         {!heightCm && (
           <span className="rounded-full px-2.5 py-1 text-[10px] font-bold bg-amber-500/85 text-slate-950">

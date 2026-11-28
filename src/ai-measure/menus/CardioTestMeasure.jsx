@@ -8,7 +8,8 @@
 //  · 15번 초시계와 같은 심박 밴드 연결 코드(core/heartRateBle.js)를 쓴다.
 //  · 화면을 나가면 장비·밴드 연결을 모두 끊는다.
 // ════════════════════════════════════════════════════════════════════════
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { resolveBodyMetrics } from '../../services/bodyMetrics';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { aiStore } from '../../demoData';
 import {
   ageFromBirthDate,
@@ -43,12 +44,20 @@ import {
   rpeLabel, rpeDue, rpeCheckpoints, RPE_MIN, RPE_MAX, bruceStageAt,
   recordTick,
   windowAvg,
+  QUEENS_METRONOME_BPM,
 } from '../core/cardioTest';
 import { vo2maxRating } from '../core/norms';
 import CardioReportSheet from '../../components/report/CardioReportSheet';
+import { saveVideoToPhone } from '../core/recordSink';
+
+// [2026-11-25] 18번(초시계·타이머)의 메트로놈을 스텝테스트에 그대로 연결한다(박자는 성별로 자동: 여 88·남 96).
+const Metronome = lazy(() => import('./TimerTool.jsx').then((m) => ({ default: m.Metronome })));
+
+// [2026-11-25] 스텝테스트 카메라(올라서기 사이클 자동 카운트·스켈레톤·인식률·영상 녹화) — 카메라를 켤 때만 불러온다.
+const StepCameraStage = lazy(() => import('./StepCameraStage.jsx'));
 
 const FRESH_MS = 5000; // 이 시간 안에 온 값만 '현재 값'으로 쓴다
-const FIELD_TAB_LABELS = { field_cooper15: ['쿠퍼 1.5마일', '2.4km'], field_cooper12: ['쿠퍼 12분', '12분'], field_rockport: ['록포트 1마일', '걷기'], field_bruce: ['브루스', '트레드밀'] };
+const FIELD_TAB_LABELS = { field_cooper15: ['쿠퍼 1.5마일', '2.4km'], field_cooper12: ['쿠퍼 12분', '12분'], field_rockport: ['록포트 1마일', '걷기'], field_bruce: ['브루스', '트레드밀'], field_step: ['스텝테스트', '3분'], field_6mwt: ['6분 걷기', '6MWT'] };
 const MACHINE_ORDER = ['rower', 'bike', 'ski', 'treadmill', 'climber', 'field'];
 
 function machineError(err) {
@@ -165,7 +174,8 @@ export default function CardioTestMeasure({ onBack, member = null, onSave = null
   const [subject, setSubject] = useState(() => ({
     age: member ? (ageFromBirthDate(member.birthDate) || Number(member.age) || '') : '',
     sex: member ? (normalizeSex(member.sex || member.gender) || '') : '',
-    weightKg: member?.weight ? String(member.weight) : '',
+    weightKg: resolveBodyMetrics(member).weight ? String(resolveBodyMetrics(member).weight) : '',
+    statureCm: resolveBodyMetrics(member).height ? String(resolveBodyMetrics(member).height) : '',
   }));
   const [allSessions, setAllSessions] = useState([]);
   useEffect(() => {
@@ -373,12 +383,12 @@ export default function CardioTestMeasure({ onBack, member = null, onSave = null
       machineId: runRef.current.machineId,
       rec: recRef.current,
       workEndSec: runRef.current.workEndSec,
-      subject: { age: Number(subject.age) || null, sex: subject.sex, weightKg: Number(subject.weightKg) || null },
+      subject: { age: Number(subject.age) || null, sex: subject.sex, weightKg: Number(subject.weightKg) || null, statureCm: Number(subject.statureCm) || null },
       past,
       allSessions,
       manual,
     });
-  }, [phase, subject.age, subject.sex, subject.weightKg, past, allSessions, manual]);
+  }, [phase, subject.age, subject.sex, subject.weightKg, subject.statureCm, past, allSessions, manual]);
 
   const hrSourceLabel = () => {
     const s = runRef.current?.hrSources || new Set();
@@ -408,6 +418,15 @@ export default function CardioTestMeasure({ onBack, member = null, onSave = null
       rpe: run.rpe,
       stepPlan: run.protocolId === 'step' ? stepPlan : null,
     });
+    // [2026-11-25] 스텝테스트 카메라 요약(참고용 — 점수 계산에는 쓰이지 않는다).
+    if (run.protocolId === 'field_step' && stepSummaryRef.current) {
+      const sm = stepSummaryRef.current;
+      record.stepCounter = {
+        cycles: sm.cycles, expectedPerMin: sm.expectedPerMin ?? null,
+        recognitionRatio: sm.recognition?.frames ? sm.recognition.ratio : null, recognitionFrames: sm.recognition?.frames ?? null,
+        videoRecorded: stepVideo.state !== 'none',
+      };
+    }
     try {
       await onSave(record);
       setSavedRecord(record);
@@ -434,6 +453,39 @@ export default function CardioTestMeasure({ onBack, member = null, onSave = null
   const rec = recRef.current;
   const elapsed = run ? (performance.now() - run.startPerf) / 1000 : 0;
   const dist = lastDistance(rec);
+  // 6분 걷기: 30m 코스 편도 횟수를 세면 끝난 뒤 거리 칸이 자동으로 채워진다(마지막 남은 구간은 m를 더해 고친다).
+  const isWalk6 = protocolId === 'field_6mwt';
+  const [laps, setLaps] = useState(0);
+  useEffect(() => { if (phase === 'running') setLaps(0); }, [phase]);
+  useEffect(() => {
+    if (isWalk6 && phase === 'result' && laps > 0) setResultInputs((x) => (x.distance ? x : { ...x, distance: String(laps * 30) }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase]);
+  // 스텝테스트: 성별을 알면 메트로놈 박자를 맞춰 두고, 측정이 시작되면 자동으로 켜고 끝나면 끈다.
+  const isStep = protocolId === 'field_step';
+  const stepBpm = QUEENS_METRONOME_BPM[subject.sex] || null;
+  const [metroCmd, setMetroCmd] = useState(null);
+  const metroSeq = useRef(0);
+  const sendMetro = useCallback((action, bpm) => { metroSeq.current += 1; setMetroCmd({ id: metroSeq.current, action, bpm }); }, []);
+  useEffect(() => {
+    if (!isStep) return;
+    if (phase === 'setup' && stepBpm) sendMetro('setBpm', stepBpm);
+    else if (phase === 'running') sendMetro('start', stepBpm || undefined);
+    else sendMetro('stop');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isStep, phase, stepBpm]);
+  // 스텝테스트 카메라: 켜 두면 측정이 시작될 때 카메라가 열리고 사이클 수·인식률·영상이 같이 기록된다.
+  const [stepCamOn, setStepCamOn] = useState(true);
+  const [stepCamOpen, setStepCamOpen] = useState(false);
+  const stepSummaryRef = useRef(null);
+  const stepBlobRef = useRef(null);
+  const stepBeatRef = useRef({ at: 0 });
+  const [stepVideo, setStepVideo] = useState({ state: 'none', fileName: '' });
+  useEffect(() => {
+    if (isStep && phase === 'running' && stepCamOn) { stepSummaryRef.current = null; stepBlobRef.current = null; setStepVideo({ state: 'none', fileName: '' }); setStepCamOpen(true); }
+    else if (phase !== 'running') setStepCamOpen(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, isStep]);
   const zone = live.hr && hrMaxNow ? heartRateZone(live.hr, hrMaxNow) : null;
   const memberLabel = member ? (member.isVirtual ? '미등록회원' : `${member.name || '회원'} 회원`) : '';
   const stage = protocolId === 'step' ? Math.floor(elapsed / STEP_STAGE_SEC) + 1 : 0;
@@ -500,6 +552,50 @@ export default function CardioTestMeasure({ onBack, member = null, onSave = null
         <p className="rounded-xl bg-amber-100 dark:bg-amber-900/40 p-3 text-xs font-bold text-amber-800 dark:text-amber-200">
           이 기기·브라우저는 블루투스 연결을 지원하지 않습니다. 안드로이드 폰·태블릿이나 PC 크롬에서 열어 주세요. 연결 없이도 결과 숫자를 직접 넣어 저장할 수 있습니다.
         </p>
+      )}
+
+      {isStep && (phase === 'setup' || phase === 'running') && (
+        <div className="rounded-xl border-2 border-slate-300 dark:border-slate-600 p-2" data-testid="cardio-step-metronome">
+          <p className="mb-1 text-xs font-bold text-slate-600 dark:text-slate-300">
+            메트로놈 {stepBpm ? `${stepBpm}bpm (${subject.sex === 'male' ? '남 24회/분' : '여 22회/분'}) — 올-올-내-내 4박` : '— 성별을 고르면 박자가 자동으로 맞춰집니다'} · 18번 메트로놈과 같은 기능
+          </p>
+          <Suspense fallback={null}><Metronome compact command={metroCmd} onBeat={() => { stepBeatRef.current = { at: performance.now() }; }} /></Suspense>
+          {phase === 'setup' && (
+            <label className="mt-2 flex items-center gap-1 text-xs font-bold text-slate-700 dark:text-slate-200">
+              <input type="checkbox" checked={stepCamOn} onChange={(e) => setStepCamOn(e.target.checked)} data-testid="cardio-step-cam" />
+              카메라 촬영(옆모습 전신) — 사이클 자동 카운트·스켈레톤·인식률·영상(초시계·박자 포함) 저장
+            </label>
+          )}
+        </div>
+      )}
+
+      {isStep && stepCamOn && (
+        <Suspense fallback={null}>
+          <StepCameraStage
+            active={stepCamOpen && phase === 'running'}
+            startPerf={run?.startPerf || performance.now()}
+            durationSec={180}
+            bpm={stepBpm}
+            expectedPerMin={stepBpm ? stepBpm / 4 : null}
+            beatRef={stepBeatRef} summaryRef={stepSummaryRef} blobRef={stepBlobRef}
+            onBlob={(blob) => setStepVideo({ state: blob ? 'ready' : 'none', fileName: '' })}
+            onClose={() => setStepCamOpen(false)}
+          />
+        </Suspense>
+      )}
+
+      {isStep && phase === 'result' && stepSummaryRef.current && (
+        <div className="rounded-xl border-2 border-slate-300 dark:border-slate-600 p-2 text-xs font-bold" data-testid="cardio-step-camera-result">
+          <p>카메라 사이클 {stepSummaryRef.current.cycles}회{stepBpm ? ` (기준 ${stepBpm / 4}회/분 × 3분 = ${(stepBpm / 4) * 3}회)` : ''} · 인식률 {stepSummaryRef.current.recognition?.frames ? `${Math.round(stepSummaryRef.current.recognition.ratio * 100)}%` : '--'}</p>
+          <p className="mt-0.5 font-semibold text-slate-500">자동 카운트는 참고용입니다(문턱은 시작값). 인식률이 낮으면 값을 믿지 마세요. 스텝 점수는 박자를 맞춘 3분과 종료 후 맥박으로 계산되며 이 카운트는 점수에 쓰이지 않습니다.</p>
+          {stepVideo.state !== 'none' && (
+            <button type="button" data-testid="cardio-step-video-save"
+              onClick={async () => { if (!stepBlobRef.current) return; const r = await saveVideoToPhone(stepBlobRef.current, { measure: 'cardio_step', member }); if (r.saved) setStepVideo({ state: 'saved', fileName: r.fileName }); }}
+              className="mt-1.5 w-full rounded-lg border-2 border-amber-400 bg-amber-50 py-2 text-xs font-black text-amber-800 dark:bg-amber-500/10 dark:text-amber-300">
+              {stepVideo.state === 'saved' ? `✓ 폰에 저장됨 (${stepVideo.fileName})` : '영상 폰에 저장 (초시계·박자·사이클·인식률 포함)'}
+            </button>
+          )}
+        </div>
       )}
 
       {phase === 'setup' && (
@@ -590,6 +686,12 @@ export default function CardioTestMeasure({ onBack, member = null, onSave = null
                 <input inputMode="decimal" value={subject.weightKg} onChange={(e) => setSubject((s) => ({ ...s, weightKg: e.target.value.replace(/[^\d.]/g, '').slice(0, 5) }))} className={inputCls} />
               </label>
             </div>
+            {protocolId === 'field_6mwt' && (
+              <label className="mt-2 block text-[11px] font-bold text-slate-500 dark:text-slate-400">키(cm) — 6분 걷기 예측거리 계산에 필요
+                <input inputMode="decimal" value={subject.statureCm} onChange={(e) => setSubject((s) => ({ ...s, statureCm: e.target.value.replace(/[^\d.]/g, '').slice(0, 5) }))} className={inputCls} data-testid="cardio-stature-input" />
+              </label>
+            )}
+            {protocolId === 'field_step' && subject.sex && <p className="mt-1 text-[11px] font-bold text-slate-700 dark:text-slate-200" data-testid="cardio-step-bpm">메트로놈 {QUEENS_METRONOME_BPM[subject.sex] || '-'}bpm · 41.3cm 단 · 3분</p>}
             <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
               최대심박 {hrMaxNow || '-'}{hrMaxNow ? (personalMaxHr({ age: subject.age, sessions: allSessions, context: cardioContext(machineId) }).source === 'observed' ? ` (이 회원의 ${machineId === 'field' ? '필드' : '실내'} 실제 기록 기준)` : ' (208−0.7×나이)') : ' — 나이를 넣어 주세요'}
             </p>
@@ -653,7 +755,7 @@ export default function CardioTestMeasure({ onBack, member = null, onSave = null
                   {protocol?.basis === 'curved' && protocol.target?.distanceM && <p className="text-sm font-bold text-red-700 dark:text-red-300" data-testid="cardio-curved-hint">콘솔 DIS.가 2.40이 되면 "운동 끝"을 누르세요</p>}
                   {protocol?.basis === 'flat' && protocol.target?.distanceM && <p className="text-sm font-bold text-red-700 dark:text-red-300" data-testid="cardio-flat-hint">{protocol.target.distanceM}m 지점에 도착하면 "운동 끝"을 누르세요(400m 트랙 {protocolId === 'field_rockport' ? '4바퀴+9m' : '6바퀴+14m'})</p>}
                   {protocolId === 'field_bruce' && (() => { const b = bruceStageAt(elapsed); return <p className="text-sm font-bold text-slate-700 dark:text-slate-200" data-testid="cardio-bruce-stage">{b.stage}단계 · {b.mph}mph{b.nextInSec != null ? ` · 다음 단계까지 ${formatClock(b.nextInSec)}` : ' · 마지막 단계'} (경사도 함께 올리세요)</p>; })()}
-                  {protocol?.basis === 'flat' && protocol.target?.durationSec && <p className="text-sm font-bold text-slate-700 dark:text-slate-200" data-testid="cardio-flat-hint">12분이 되면 자동으로 끝납니다 · 간 거리(m)를 확인하세요(400m 트랙: 바퀴 수×400m)</p>}
+                  {protocol?.basis === 'flat' && protocol.target?.durationSec && <p className="text-sm font-bold text-slate-700 dark:text-slate-200" data-testid="cardio-flat-hint">{protocolId === 'field_step' ? '3분이 되면 자동으로 끝납니다 · 서서 5초 쉰 뒤 15초 맥박을 세세요' : protocolId === 'field_6mwt' ? '6분이 되면 자동으로 끝납니다 · 걸은 총 거리(m)를 확인하세요(30m 코스)' : '12분이 되면 자동으로 끝납니다 · 간 거리(m)를 확인하세요(400m 트랙: 바퀴 수×400m)'}</p>}
                   {protocol?.basis === 'curved' && protocol.target?.durationSec && <p className="text-sm font-bold text-slate-700 dark:text-slate-200" data-testid="cardio-curved-hint">12분이 되면 자동으로 끝납니다 · 끝난 뒤 콘솔 DIS.를 확인하세요</p>}
                   {protocolId === 'step' && <p className="text-sm font-bold text-slate-700 dark:text-slate-200">{stage}단계 · 목표 {stageTargetW}W · 다음 단계까지 {formatClock(STEP_STAGE_SEC - (elapsed % STEP_STAGE_SEC))}</p>}
                   {protocolId === 'bike_astrand' && (
@@ -668,6 +770,15 @@ export default function CardioTestMeasure({ onBack, member = null, onSave = null
               <p className="rounded-lg bg-amber-100 dark:bg-amber-900/40 p-2 text-[11px] font-bold text-amber-800 dark:text-amber-200">
                 장비 숫자가 안 들어오고 있습니다(심박만 기록 중). 끝난 뒤 결과 화면에 장비 화면 숫자를 입력하면 저장됩니다.
               </p>
+            )}
+            {isWalk6 && phase === 'running' && (
+              <div className="rounded-xl border-2 border-amber-400 p-2" data-testid="cardio-6mwt-laps">
+                <p className="text-center text-xs font-bold text-slate-600 dark:text-slate-300">30m 끝에 닿을 때마다 +1 · 지금 {laps * 30}m</p>
+                <div className="mt-1 grid grid-cols-3 gap-2">
+                  <button type="button" onClick={() => setLaps((n) => Math.max(0, n - 1))} className="rounded-xl border-2 border-slate-300 py-4 text-sm font-black dark:border-slate-600">−1</button>
+                  <button type="button" onClick={() => setLaps((n) => n + 1)} data-testid="cardio-6mwt-lap" className="col-span-2 rounded-xl bg-amber-500 py-4 text-xl font-black text-slate-950 active:scale-95">+1 편도 ({laps}회)</button>
+                </div>
+              </div>
             )}
             <div className="grid grid-cols-3 gap-2">
               <Tile big label="심박" value={live.hr || '--'} tone={zone ? 'border-red-400 bg-red-50 dark:bg-red-900/30' : ''} />
@@ -734,8 +845,13 @@ export default function CardioTestMeasure({ onBack, member = null, onSave = null
             {protocol?.basis === 'flat' && (
               <div className="rounded-lg bg-slate-100 dark:bg-slate-800 p-2 space-y-0.5" data-testid="cardio-flat-result">
                 <p className="text-sm font-black text-slate-900 dark:text-slate-100">
-                  {protocolId === 'field_cooper12' ? `12분 거리 ${computed.result.manualDistance ? computed.result.distanceM : '-'}m` : `${protocolId === 'field_rockport' ? '1마일 걷기' : protocolId === 'field_bruce' ? '브루스 총 시간' : '1.5마일'} 기록 ${formatClock(computed.result.durationSec)}`}
-                  {protocolId === 'field_rockport' && <span className="ml-1 text-[11px] font-bold text-slate-500">종료 직후 심박 {computed.estimates.vo2max?.hrAfter ?? '-'}</span>}
+                  {protocolId === 'field_cooper12' ? `12분 거리 ${computed.result.manualDistance ? computed.result.distanceM : '-'}m` : protocolId === 'field_6mwt' ? `6분 걷기 거리 ${computed.result.manualDistance ? computed.result.distanceM : '-'}m` : protocolId === 'field_step' ? '퀸스칼리지 스텝 3분' : `${protocolId === 'field_rockport' ? '1마일 걷기' : protocolId === 'field_bruce' ? '브루스 총 시간' : '1.5마일'} 기록 ${formatClock(computed.result.durationSec)}`}
+                  {protocolId === 'field_6mwt' && computed.walk6 && (
+                    <span className="ml-1 block text-[11px] font-bold text-slate-600 dark:text-slate-300" data-testid="cardio-6mwt-result">
+                      {computed.walk6.pctPredicted != null ? `예측거리 ${computed.walk6.predictedM}m 대비 ${computed.walk6.pctPredicted}% (Enright & Sherrill 1998)` : computed.walk6.reason}
+                    </span>
+                  )}
+                  {(protocolId === 'field_rockport' || protocolId === 'field_step') && <span className="ml-1 text-[11px] font-bold text-slate-500">종료 직후 심박 {computed.estimates.vo2max?.hrAfter ?? '-'}</span>}
                 </p>
                 {computed.fieldRank && (
                   <p className="text-[12px] font-bold text-slate-800 dark:text-slate-100" data-testid="cardio-flat-rank">
@@ -806,14 +922,14 @@ export default function CardioTestMeasure({ onBack, member = null, onSave = null
                 <input value={resultInputs.time} onChange={(e) => setResultInputs((s) => ({ ...s, time: e.target.value }))} placeholder="7:30" className={inputCls} />
               </label>
               <label className="text-[11px] font-bold text-slate-500 dark:text-slate-400">{protocol?.basis === 'curved' ? '콘솔 DIS.(km 또는 m)' : '거리(m)'}
-                <input inputMode="decimal" value={resultInputs.distance} onChange={(e) => setResultInputs((s) => ({ ...s, distance: e.target.value.replace(/[^\d.,]/g, '').slice(0, 7) }))} placeholder={protocol?.basis === 'curved' ? '2.43 또는 2430' : protocolId === 'field_cooper12' ? '예: 2400' : ''} className={inputCls} data-testid="cardio-distance-input" />
+                <input inputMode="decimal" value={resultInputs.distance} onChange={(e) => setResultInputs((s) => ({ ...s, distance: e.target.value.replace(/[^\d.,]/g, '').slice(0, 7) }))} placeholder={protocol?.basis === 'curved' ? '2.43 또는 2430' : protocolId === 'field_cooper12' ? '예: 2400' : protocolId === 'field_6mwt' ? '예: 480' : ''} className={inputCls} data-testid="cardio-distance-input" />
               </label>
               <label className="text-[11px] font-bold text-slate-500 dark:text-slate-400">평균 와트
                 <input inputMode="numeric" value={resultInputs.power} onChange={(e) => setResultInputs((s) => ({ ...s, power: e.target.value.replace(/\D+/g, '') }))} className={inputCls} />
               </label>
             </div>
             {protocol?.needsHrAfter && (
-              <label className="block text-[11px] font-bold text-slate-500 dark:text-slate-400">종료 직후 심박(15초 맥박×4, bpm) — 밴드가 있으면 비워 둬도 자동 사용
+              <label className="block text-[11px] font-bold text-slate-500 dark:text-slate-400">{protocolId === 'field_step' ? '종료 5초 뒤 15초 맥박×4(bpm)' : '종료 직후 심박(15초 맥박×4, bpm)'} — 밴드가 있으면 비워 둬도 자동 사용
                 <input inputMode="numeric" value={resultInputs.hrAfter} onChange={(e) => setResultInputs((s) => ({ ...s, hrAfter: e.target.value.replace(/\D+/g, '').slice(0, 3) }))} placeholder="예: 128" className={inputCls} data-testid="cardio-hrafter-input" />
               </label>
             )}

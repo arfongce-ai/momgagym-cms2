@@ -12,7 +12,7 @@ import { aiStore } from '../../demoData';
 import ReportActions from '../../components/report/ReportActions';
 import { MetricCard, UnifiedReportCanvas, UnifiedReportHeader, UnifiedReportPage, UnifiedEmptyState } from '../../components/report/UnifiedReportPrimitives';
 import { rangeToStatus } from '../core/unifiedReport';
-import { cadenceRangeFor, stanceRangeFor, verticalOscRangeFor, classifyGaitMode, GAIT_MODE_LABEL } from '../core/gaitMode';
+import { cadenceRangeFor, stanceRangeFor, verticalOscRangeFor, resolveGaitMode, GAIT_MODE_LABEL } from '../core/gaitMode';
 import { buildSummaryData } from '../core/unifiedReport';
 import { GAIT_RANGES, normalizeGaitMetrics as normalizeMetrics, computeGaitScore as computeScore } from '../core/scoring';
 import { computeChangeRow, summarizeChanges, reportDateOnly } from '../core/measurementComparison';
@@ -41,14 +41,14 @@ function buildGaitChangeSummary(m, previousReport, orientation) {
   const trunkLeanOk = (!orientation || orientation === 'side') && (!prevOrientation || prevOrientation === 'side');
   // computeChangeRow는 값이 숫자가 아니면 null을 돌려주고 summarizeChanges가
   // null을 걸러내므로, 각도가 안 맞을 때는 값 대신 null을 넘기기만 하면 된다.
-  const sameMode = classifyGaitMode(pm.cadence) === classifyGaitMode(m.cadence);
+  const sameMode = resolveGaitMode(pm.cadence, pm.gaitMode) === resolveGaitMode(m.cadence, m.gaitMode);
   const rows = [
     // [2026-10] 걷기/달리기가 서로 다르면 케이던스·입각기 비교는 의미가 없어 제외한다.
-    computeChangeRow('케이던스', sameMode ? pm.cadence : null, sameMode ? m.cadence : null, 'spm', 'closerTargetBetter', rangeCenter(cadenceRangeFor(m.cadence))),
-    computeChangeRow('입각기 비율', sameMode && stanceRangeFor(m.cadence) ? pm.stancePct : null, sameMode && stanceRangeFor(m.cadence) ? m.stancePct : null, '%', 'closerTargetBetter', stanceRangeFor(m.cadence) ? rangeCenter(stanceRangeFor(m.cadence)) : undefined),
+    computeChangeRow('케이던스', sameMode ? pm.cadence : null, sameMode ? m.cadence : null, 'spm', 'closerTargetBetter', rangeCenter(cadenceRangeFor(m.cadence, m.gaitMode))),
+    computeChangeRow('입각기 비율', sameMode && stanceRangeFor(m.cadence, m.gaitMode) ? pm.stancePct : null, sameMode && stanceRangeFor(m.cadence, m.gaitMode) ? m.stancePct : null, '%', 'closerTargetBetter', stanceRangeFor(m.cadence, m.gaitMode) ? rangeCenter(stanceRangeFor(m.cadence, m.gaitMode)) : undefined),
     computeChangeRow('몸통 기울기', trunkLeanOk ? pm.trunkLean?.avg : null, trunkLeanOk ? m.trunkLean?.avg : null, '°', 'closerTargetBetter', rangeCenter(RANGES.trunkLean)),
     computeChangeRow('골반 드롭', pelvicDropOk ? pm.pelvicDropAbs : null, pelvicDropOk ? m.pelvicDropAbs : null, '%', 'lowerBetter'),
-    computeChangeRow('수직 진폭', sameMode ? pm.verticalOscillation : null, sameMode ? m.verticalOscillation : null, '%', 'closerTargetBetter', rangeCenter(verticalOscRangeFor(m.cadence))),
+    computeChangeRow('수직 진폭', sameMode ? pm.verticalOscillation : null, sameMode ? m.verticalOscillation : null, '%', 'closerTargetBetter', rangeCenter(verticalOscRangeFor(m.cadence, m.gaitMode))),
     computeChangeRow('무릎 대칭', pm.kneeSymmetry, m.kneeSymmetry, '%', 'higherBetter'),
     computeChangeRow('보폭 비율', pm.strideToHeight, m.strideToHeight, '×', 'closerTargetBetter', rangeCenter(RANGES.stride)),
     // [2026-11-23] 접지 시간(짧을수록 가벼움)·오버스트라이드(낮을수록 좋음) — 같은 걷기/달리기 모드일 때만 비교
@@ -137,7 +137,7 @@ function GaitReportDashboardInner({ report, onComment, onClose, videoBlob, membe
   // 중단 우측: Symmetry 게이지용
   const symBars = [
     { key: 'pelvicDrop', name: '골반 드롭', value: pelvicDropDisplayOk ? m.pelvicDropAbs : null, range: RANGES.pelvicDrop, max: 12 },
-    { key: 'verticalOsc', name: '수직 진폭', value: m.verticalOscillation, range: verticalOscRangeFor(m.cadence), max: 12 },
+    { key: 'verticalOsc', name: '수직 진폭', value: m.verticalOscillation, range: verticalOscRangeFor(m.cadence, m.gaitMode), max: 12 },
     { key: 'kneeSym', name: '무릎 대칭', value: m.kneeSymmetry, range: RANGES.kneeSym, max: 100 },
   ];
 
@@ -181,11 +181,11 @@ function GaitReportDashboardInner({ report, onComment, onClose, videoBlob, membe
           {/* ① 상단 요약 */}
           <section className="grid grid-cols-4 gap-2.5">
             <MetricCard metric={{ key:'cadence', label:'분당 걸음수', displayValue:m.cadence, unit:'spm',
-              description:`${GAIT_MODE_LABEL[classifyGaitMode(m.cadence)] || '달리기'} 기준 ${cadenceRangeFor(m.cadence).good[0]}~${cadenceRangeFor(m.cadence).good[1]}`,
-              status: rangeToStatus(m.cadence, cadenceRangeFor(m.cadence)) }} />
+              description:`${GAIT_MODE_LABEL[resolveGaitMode(m.cadence, m.gaitMode)] || '달리기'} 기준 ${cadenceRangeFor(m.cadence, m.gaitMode).good[0]}~${cadenceRangeFor(m.cadence, m.gaitMode).good[1]}`,
+              status: rangeToStatus(m.cadence, cadenceRangeFor(m.cadence, m.gaitMode)) }} />
             <MetricCard metric={{ key:'stance', label:'땅 딛는 · 뜨는 비율', displayValue: m.stancePct != null ? `${m.stancePct}/${m.swingPct}` : '—', unit:'%',
-              description: stanceRangeFor(m.cadence) ? `걷기 기준 ${stanceRangeFor(m.cadence).good[0]}~${stanceRangeFor(m.cadence).good[1]}%` : '달리기는 기준 없음(참고값)',
-              status: rangeToStatus(m.stancePct, stanceRangeFor(m.cadence)) }} />
+              description: stanceRangeFor(m.cadence, m.gaitMode) ? `걷기 기준 ${stanceRangeFor(m.cadence, m.gaitMode).good[0]}~${stanceRangeFor(m.cadence, m.gaitMode).good[1]}%` : '달리기는 기준 없음(참고값)',
+              status: rangeToStatus(m.stancePct, stanceRangeFor(m.cadence, m.gaitMode)) }} />
             <MetricCard metric={{ key:'steps', label:'총 스텝', displayValue:m.totalSteps, unit:'회',
               description:'측정 구간 누적' }} />
             <ScoreStat score={score} />
@@ -244,7 +244,7 @@ function GaitReportDashboardInner({ report, onComment, onClose, videoBlob, membe
               <div className="flex flex-col items-center justify-center h-full py-2">
                 <div className="text-4xl font-black"
                   style={{ color: statusColor(m.strideToHeight, RANGES.stride) }}>
-                  {m.strideToHeight ?? '—'}<span className="text-base text-slate-500 dark:text-slate-400 ml-1">×</span>
+                  {m.strideToHeight != null && Number.isFinite(Number(m.strideToHeight)) ? Number(m.strideToHeight).toFixed(2) : '—'}<span className="text-base text-slate-500 dark:text-slate-400 ml-1">×</span>
                 </div>
                 <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">보폭 / 신장 비율</p>
                 <p className="text-[10px] mt-0.5"

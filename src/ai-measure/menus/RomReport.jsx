@@ -17,6 +17,9 @@ import {
 } from '../../components/report/UnifiedReportPrimitives';
 import { scoreToStatus, rangeToStatus, buildSummaryData } from '../core/unifiedReport';
 import { ROM_SYMMETRY_RANGE } from '../core/romThresholds';
+import { ROM_NORMS } from '../core/bodyMechanics';
+import { repSummary, GRADE_RULES } from '../core/romMovementGuide';
+import RomRepChips from './RomRepChips.jsx';
 import { computeChangeRow, summarizeChanges, reportDateOnly } from '../core/measurementComparison';
 import ChangeSummaryPanel from '../../components/report/ChangeSummaryPanel.jsx';
 import VideoCompareUpload from '../../components/report/VideoCompareUpload.jsx';
@@ -43,8 +46,8 @@ function buildRomChangeSummary(summary, previousReport) {
   return summarizeChanges(rows, reportDateOnly(previousReport));
 }
 
-const JOINT_KO = { HIP: '고관절', KNEE: '슬관절', SHOULDER: '견관절', ANKLE: '족관절', ELBOW: '주관절' };
-const POSE_KO = { STANDING: '서서(체중지지)', SUPINE: '앙와위(누워서)', PRONE: '복와위(엎드려)', SEATED: '앉아서' };
+const JOINT_KO = { HIP: '고관절', KNEE: '슬관절', SHOULDER: '견관절', ANKLE: '족관절', ELBOW: '주관절', NECK: '경추(목)', TRUNK: '몸통(등허리)' };
+const POSE_KO = { STANDING: '서서(체중지지)', SUPINE: '앙와위(누워서)', PRONE: '복와위(엎드려)', SEATED: '앉아서', ABDUCTION: '서서 벌림(정면)', SUPINE_ABD: '누워서 벌림(위에서 촬영)', FLEXION: '목 숙이기(옆모습)', EXTENSION: '목 젖히기(옆모습)', LATERAL: '목 옆으로(정면)', ROTATION: '목 돌리기(정면)', T_FLEXION: '몸통 숙이기(옆모습)', T_EXTENSION: '몸통 젖히기(옆모습)', T_LATERAL: '몸통 옆으로(정면)', T_ROTATION: '몸통 돌리기(정면)' };
 const GRADE_KO = { good: '양호', attention: '관리 필요', focus: '집중 관리', insufficient: '측정 보완' };
 const GRADE_TONE = {
   good: 'text-emerald-200 bg-emerald-500/10 border-emerald-500/30',
@@ -105,6 +108,37 @@ export default function RomReport({ id = 'rom-report-sheet', report, previousRep
           </div>
         </div>
       )}
+
+      {/* 횟수별 각도 · 평균 (카메라 측정에서 반복이 잡힌 경우) */}
+      {['left', 'right'].map((k) => {
+        const st = s.stability?.[k];
+        const rs = repSummary(st?.rep_peaks);
+        if (!rs || !st?.moved) return null;
+        return (
+          <div key={k} className="mt-3 rounded-xl border border-slate-300 dark:border-slate-700 px-4 py-3" data-testid={`rom-reps-${k}`}>
+            <p className="mb-2 text-xs font-black text-slate-700 dark:text-slate-200">{k === 'left' ? '좌측' : '우측'} 횟수별 각도 · 평균 {rs.avg}° · 대표값 {s[`${k}_max_rom`] ?? '—'}°</p>
+            <RomRepChips peaks={st.rep_peaks} title={`${rs.peaks.length}회`} dark={false} />
+            {rs.peaks.length < 3 && <p className="mt-1 text-[11px] text-amber-700">반복이 3회 미만이라 대표값은 가장 크게 움직인 지점입니다(3~5회 권장).</p>}
+          </div>
+        );
+      })}
+
+      {/* 종합 점수 기준 */}
+      <div className="mt-3 rounded-xl border border-slate-300 dark:border-slate-700 px-4 py-3" data-testid="rom-score-basis">
+        <p className="mb-1 text-xs font-black text-slate-700 dark:text-slate-200">종합 점수 기준</p>
+        <ul className="space-y-0.5 text-[11px] text-slate-600 dark:text-slate-300">
+          {GRADE_RULES.map((g) => (
+            <li key={g.grade} className={diagnosis && GRADE_KO[diagnosis.grade] === g.grade ? 'font-black text-slate-900 dark:text-white' : ''}>
+              {diagnosis && GRADE_KO[diagnosis.grade] === g.grade ? '▶ ' : '· '}{g.grade} {g.score}점 — {g.rule}
+            </li>
+          ))}
+        </ul>
+        {(() => {
+          const sp = ROM_NORMS[joint]?.[poseMode];
+          const f = sp ? Object.values(sp)[0] : null;
+          return <p className="mt-1 text-[11px] text-slate-500">이 동작의 정상 범위: {f ? `${f.min}~${f.max}° (기준 ${f.normal}°)` : '기준값 없음 — 각도만 기록'} · 좌우 차이 8% 이상은 경미, 15% 이상은 비대칭으로 봅니다.</p>;
+        })()}
+      </div>
 
       {/* 센서 측정 출처 표시 — 카메라 추정치와 구분(측정 정직성) */}
       {report.measureType === 'sensor_goniometer' && (

@@ -24,7 +24,7 @@ export const RESEARCH_COLUMNS = [
   ['measured_date', '측정일(YYYY-MM-DD)'],
   ['record_id', '기록 ID(무작위 문서 ID)'],
   ['source', '저장 위치(session/posture/rom/saved-report)'],
-  ['report_type', '측정 종류(posture/rom/gait/jump/sprint/squat/stance/vbt/one_rm/cardio/body/general)'],
+  ['report_type', '측정 종류(posture/rom/gait/jump/sprint/squat/stance/vbt/one_rm/cardio/senior/paps/body/general)'],
   ['test_id', '세부 테스트·종목(점프 종류, 심폐 테스트 등)'],
   ['device_basis', '측정 조건 구분(standard=일반, curved=커브드 트레드밀)'],
   ['machine', '장비(심폐 장비 이름 등)'],

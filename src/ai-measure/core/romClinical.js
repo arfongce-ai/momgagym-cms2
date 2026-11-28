@@ -10,8 +10,8 @@
 
 import { ROM_NORMS } from './bodyMechanics';
 
-const JOINT_KO = { HIP: '고관절', KNEE: '슬관절', SHOULDER: '견관절', ANKLE: '족관절', ELBOW: '주관절' };
-const POSE_KO = { STANDING: '서서(체중지지)', SUPINE: '누워서(앙와위)', PRONE: '엎드려(복와위)', SEATED: '앉아서' };
+const JOINT_KO = { HIP: '고관절', KNEE: '슬관절', SHOULDER: '견관절(어깨 올림)', ANKLE: '족관절', ELBOW: '주관절', NECK: '경추(목)', TRUNK: '몸통(등허리)' };
+const POSE_KO = { STANDING: '서서(체중지지)', SUPINE: '누워서(앙와위)', PRONE: '엎드려(복와위)', SEATED: '앉아서', ABDUCTION: '서서 벌림(정면)', SUPINE_ABD: '누워서 벌림(위에서 촬영)', FLEXION: '목 숙이기(옆모습)', EXTENSION: '목 젖히기(옆모습)', LATERAL: '목 옆으로(정면)', ROTATION: '목 돌리기(정면)', T_FLEXION: '몸통 숙이기(옆모습)', T_EXTENSION: '몸통 젖히기(옆모습)', T_LATERAL: '몸통 옆으로(정면)', T_ROTATION: '몸통 돌리기(정면)' };
 
 // 자세·관절 정상치(평균)에서 핵심 동작(첫 키)의 normal/min/max 를 꺼낸다.
 function normFor(joint, poseMode) {
@@ -79,7 +79,7 @@ export function generateRomDiagnosis(summary, { joint, poseMode } = {}) {
   //    (2D 추정 좌표의 종말 잔떨림은 신뢰도가 낮아, 그럴듯한 오진을 만들 수 있음)
 
   // ── 4) 보상 작용 (STANDING 의 골반 불균형 / 체간 기울기) ──
-  if (poseMode === 'STANDING') {
+  if (poseMode === 'STANDING' || poseMode === 'ABDUCTION') {
     const compMax = Math.max(Math.abs(comp.left ?? 0), Math.abs(comp.right ?? 0));
     if (joint === 'HIP' || joint === 'KNEE') {
       if (compMax >= 8) {
@@ -113,6 +113,37 @@ export function generateRomDiagnosis(summary, { joint, poseMode } = {}) {
       const severe = rot >= 25;
       details.push(`몸통 회전(비틀기) 보상이 감지되었습니다(측정면 이탈 ${rot}%) — ${severe ? '측정면을 크게 벗어나 각도 신뢰도가 낮습니다. 몸통을 고정하고 재측정을 권장합니다.' : '동작 중 몸통이 살짝 돌아갑니다. 회전을 억제하면 좌우 비교가 더 정확해집니다.'}`);
       flags.push(severe ? 'trunk_rotation_severe' : 'trunk_rotation_compensation');
+    }
+  }
+
+  // ── 4-c) [2611] 측정 안정성 — 반복 일관성·관절 가시성·옆모습 정렬 ──
+  //  결과 수치를 믿어도 되는지(재측정이 필요한지)를 알려 준다. 등급(grade)은 바꾸지 않는다.
+  //  반복 편차 기준 5°: 교재(28쪽) 기준 팔 5°·다리 6° 이내 변화는 측정 오차 범위.
+  const stab = summary?.stability || null;
+  if (stab && Array.isArray(stab.warnings) && stab.warnings.length) {
+    const W = new Set(stab.warnings);
+    for (const [key, ko] of [['left', '좌'], ['right', '우']]) {
+      const st = stab[key] || {};
+      if (W.has(`${key}_few_reps`)) {
+        details.push(`${ko}측 동작이 ${st.rep_count ?? 0}회만 확인되었습니다 — 같은 동작을 3회 천천히 반복하면 결과가 더 일정해집니다.`);
+        flags.push('few_reps');
+      }
+      if (W.has(`${key}_rep_spread`)) {
+        details.push(`${ko}측 반복 간 최대각 차이가 ${st.rep_spread_deg}°입니다(${(st.rep_peaks || []).join('·')}°) — 측정 오차 범위(5° 안팎)를 넘어 재측정을 권장합니다.`);
+        flags.push('rep_unstable', 'retest_recommended');
+      }
+      if (W.has(`${key}_low_visibility`)) {
+        details.push(`${ko}측 관절이 화면에서 선명하게 잡힌 구간이 부족합니다 — 조명·가림(옷·기구)을 확인하고 다시 촬영하면 정확도가 올라갑니다.`);
+        flags.push('low_visibility');
+      }
+    }
+    if (W.has('view_not_front')) {
+      details.push('촬영 각도가 정면(누운 자세는 몸 바로 위)에서 벗어나 벌림 각도가 실제보다 작게 나왔을 수 있습니다 — 카메라를 정면(누운 자세는 위에서 아래로)으로 맞춰 재측정해 주세요.');
+      flags.push('view_not_front', 'retest_recommended');
+    }
+    if (W.has('view_not_side')) {
+      details.push('촬영 중 몸이 옆모습에서 벗어나(정면 쪽으로 돌아) 각도가 실제보다 작게 나왔을 수 있습니다 — 카메라를 향해 옆으로 서서 재측정해 주세요.');
+      flags.push('view_not_side', 'retest_recommended');
     }
   }
 

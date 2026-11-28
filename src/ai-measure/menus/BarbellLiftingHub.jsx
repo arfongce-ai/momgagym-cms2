@@ -20,14 +20,16 @@ import OneRMEstimate from './OneRMEstimate';
 import LiftingUploadAnalysis from './LiftingUploadAnalysis';
 import LiftingReportDashboard from './LiftingReportDashboard';
 import MeasureRecordConfirm from '../components/MeasureRecordConfirm.jsx';
+import { adjustOneRmReps } from '../core/oneRmRepAdjust';
 import { useHardwareBack } from '../core/useHardwareBack';
 import {
   exercisesForMode, lift1rmToExercise,
-  vbtConfidence, estimateMeanPower, buildLiftingPayload, detectMeasurementOutlier,
+  vbtConfidence, estimateMeanPower, buildLiftingPayload, detectMeasurementOutlier, repEstimateConfidence,
 } from '../core/lifting';
 import { buildLoadVelocityPoint } from '../core/loadVelocityProfile';
 import { aiStore } from '../../demoData';
 import { resolveBodyMetrics } from '../../services/bodyMetrics';
+import { recommendedViews } from '../core/cameraViewGuide';
 
 const MODES = [
   ['vbt',     '⚡ VBT'],
@@ -170,13 +172,15 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
     }
   }, [exerciseType]);
 
+  const [viewTip, setViewTip] = useState(null); // 종목을 고르면 권장 촬영 위치 팝업
   const selectExercise = useCallback((nextExercise) => {
     setExerciseType(nextExercise);
+    setViewTip(nextExercise);
   }, []);
 
   // 측정완료 → 기록·확인 단계로 스테이징(즉시 저장하지 않음). 확인 시 실제 저장.
-  const saveAndReport = useCallback((payload, reportExtras = {}) => {
-    setPending({ payload, reportExtras });
+  const saveAndReport = useCallback((payload, reportExtras = {}, rawOneRm = null) => {
+    setPending({ payload, reportExtras, rawOneRm });
     setSaveState('idle');
     setView('record');
     return payload;
@@ -282,7 +286,7 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
     return saveAndReport(payload, { videoBlob: raw?.videoBlob ?? null });
   }, [exerciseType, saveAndReport]);
 
-  const handleSaveOneRm = useCallback(async (raw) => {
+  const buildOneRmPayload = useCallback((raw) => {
     // OneRMEstimate raw: { lift, liftLabel, weight, reps, oneRM, epley, brzycki,
     //   formulas, estimateStats, barKg, sidePlates, weightSource, attemptNo, attempts, bestOneRM }
     // 1RM은 내부 lift('bench')를 표준 exerciseType('bench_press')로 매핑해 저장.
@@ -305,6 +309,8 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
         weight: raw?.weight ?? null,
         isCalibrated: raw?.weightSource === 'manual' || raw?.weightSource === 'dial',
         reps: raw?.reps ?? null,
+        repsAuto: raw?.repsAuto ?? null,            // 카메라가 처음 센 횟수(원본)
+        repsAdjusted: raw?.repsAdjusted === true,   // 측정자가 횟수를 고쳤는지
         weightSource: raw?.weightSource ?? null,
         estimateStats: raw?.estimateStats ?? null,
         confidenceInterval: raw?.confidenceInterval ?? null,
@@ -325,8 +331,22 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
         attempts: raw?.attempts ?? null,          // 전체 도전 기록(리포트용)
       },
     });
-    return saveAndReport(payload, { videoBlob: raw?.videoBlob ?? null });
-  }, [exerciseType, saveAndReport]);
+    return payload;
+  }, [exerciseType]);
+
+  const handleSaveOneRm = useCallback(async (raw) => {
+    const withAuto = { ...raw, repsAuto: raw?.repsAuto ?? raw?.reps ?? null };
+    return saveAndReport(buildOneRmPayload(withAuto), { videoBlob: raw?.videoBlob ?? null }, withAuto);
+  }, [buildOneRmPayload, saveAndReport]);
+
+  // [1RM 반복 횟수 보정 2026-11-25] 기록 확인 단계에서 횟수를 고치면 1RM·도전 기록을 다시 계산한다.
+  const adjustPendingReps = useCallback((nextReps) => {
+    setPending((cur) => {
+      if (!cur?.rawOneRm) return cur;
+      const adj = adjustOneRmReps(cur.rawOneRm, nextReps);
+      return { ...cur, rawOneRm: adj, payload: buildOneRmPayload(adj) };
+    });
+  }, [buildOneRmPayload]);
 
   // ── 신체정보 선등록 게이트(미등록·키 없음) — 점프&RSI 패턴 ──
   if (needBody) {
@@ -389,6 +409,23 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
     return (
       <div className="fixed inset-0 z-[80] bg-slate-50 dark:bg-slate-950 overflow-y-auto" style={{ height: '100dvh' }}>
         <div className="max-w-md mx-auto p-4">
+          {pending.rawOneRm && (
+            <div className="mb-3 rounded-2xl border border-amber-500/40 bg-amber-500/10 p-3" data-testid="onerm-rep-adjust">
+              <p className="text-xs font-black text-amber-800 dark:text-amber-300">반복 횟수 확인 · 수정</p>
+              <p className="mt-0.5 text-[11px] font-semibold text-slate-600 dark:text-slate-300">카메라가 마지막 횟수를 잘못 셌다면 여기서 고치세요. 1RM이 다시 계산됩니다.</p>
+              <div className="mt-2 flex items-center gap-3">
+                <button type="button" onClick={() => adjustPendingReps((Number(pending.rawOneRm.reps) || 1) - 1)} data-testid="onerm-rep-minus"
+                  className="h-12 w-12 rounded-xl bg-slate-200 text-xl font-black text-slate-700 active:scale-90 dark:bg-slate-700 dark:text-slate-200">−</button>
+                <p className="flex-1 text-center font-mono text-3xl font-black text-slate-800 dark:text-slate-100" data-testid="onerm-rep-value">{pending.rawOneRm.reps}<span className="text-base text-slate-500"> 회</span></p>
+                <button type="button" onClick={() => adjustPendingReps((Number(pending.rawOneRm.reps) || 0) + 1)} data-testid="onerm-rep-plus"
+                  className="h-12 w-12 rounded-xl bg-amber-500 text-xl font-black text-slate-950 active:scale-90">+</button>
+              </div>
+              {pending.rawOneRm.repsAdjusted && (
+                <p className="mt-1 text-[11px] font-bold text-amber-700 dark:text-amber-300">자동 카운트 {pending.rawOneRm.repsAuto}회 → 수정 {pending.rawOneRm.reps}회 (두 값 모두 저장)</p>
+              )}
+              <p className="mt-1 text-[11px] font-bold text-slate-500">{repEstimateConfidence(pending.rawOneRm.reps).note}</p>
+            </div>
+          )}
           <MeasureRecordConfirm
             title="바벨 리프팅"
             summaryRows={rows}
@@ -477,6 +514,29 @@ export default function BarbellLiftingHub({ member, onBack, onSave, onSaveToFire
       </div>
 
       {showGuide && <LiftingGuide mode={mode} onClose={() => setShowGuide(false)} />}
+      {viewTip && (() => {
+        const { views, why } = recommendedViews(viewTip);
+        const label = modeExercises.find((e) => e.key === viewTip)?.label || '';
+        return (
+          <div className="fixed inset-0 z-[100001] flex items-center justify-center bg-black/60 p-4" role="dialog" aria-modal="true" data-testid="view-tip">
+            <div className="w-full max-w-sm rounded-2xl bg-white dark:bg-slate-900 p-5 shadow-2xl ring-1 ring-slate-300 dark:ring-slate-700 space-y-3">
+              <p className="text-center text-base font-black text-slate-900 dark:text-slate-100">📷 {label} 촬영 위치</p>
+              <p className="text-[12px] text-slate-600 dark:text-slate-300 leading-snug">{why}</p>
+              <ul className="space-y-1.5">
+                {views.slice(0, 2).map((v) => (
+                  <li key={v.key} className="rounded-xl bg-slate-100 dark:bg-slate-800 p-2.5 text-[12px] text-slate-700 dark:text-slate-200 leading-snug">
+                    <b>{v.icon} {v.label}{v.recommended ? ' (권장)' : ''}</b>
+                    <br />{v.sees}
+                    <br /><span className="text-slate-500">📍 {v.place}</span>
+                  </li>
+                ))}
+              </ul>
+              <p className="text-[11px] text-slate-500">위치는 고르지 않아도 카메라가 자동으로 알아보고 화면 위에 알려 줍니다.</p>
+              <button type="button" onClick={() => setViewTip(null)} className="w-full rounded-xl bg-amber-500 py-3 text-sm font-black text-slate-950" data-testid="view-tip-ok">확인</button>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ── 측정 모드 본체 ── */}
       {mode === 'vbt' && captureMode === 'live' && (

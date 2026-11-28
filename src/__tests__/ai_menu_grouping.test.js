@@ -193,3 +193,67 @@ describe('findLinkedReportIndex — 세션↔전용리포트 매칭(측정이력
     expect(findLinkedReportIndex(null, [])).toBe(-1);
   });
 });
+
+describe('바벨 리프팅 1RM은 종목별로 따로 묶는다 (2026-11-25)', () => {
+  const sq = { menu: 'lifting', recordedAt: '2026-11-17', data: { mode: 'onerm', exerciseType: 'squat', metrics: { oneRM: 101.7 } } };
+  const dl = { menu: 'lifting', recordedAt: '2026-11-17', data: { mode: 'onerm', exerciseType: 'deadlift', metrics: { oneRM: 114.6 } } };
+  it('스쿼트와 데드리프트는 다른 그룹 키', () => {
+    expect(menuGroupKey(sq)).toBe('lifting_onerm:squat');
+    expect(menuGroupKey(dl)).toBe('lifting_onerm:deadlift');
+  });
+  it('이력 요약도 종목별 제목·횟수로 나뉜다', () => {
+    const { menuSummaries } = buildAiReport([sq, dl]);
+    expect(menuSummaries.map((m) => m.title).sort()).toEqual(['1RM · 데드리프트', '1RM · 스쿼트']);
+    menuSummaries.forEach((m) => expect(m.count).toBe(1));
+  });
+});
+
+describe('세부 테스트별 이력 분리 — ROM·보행·스프린트·심폐 (2026-11-25)', () => {
+  it('ROM은 관절·자세별로 다른 그룹', () => {
+    const a = menuGroupKey({ menu: 'rom', data: { joint: 'SHOULDER', poseMode: 'STANDING' } });
+    const b = menuGroupKey({ menu: 'rom', data: { joint: 'HIP', poseMode: 'SUPINE' } });
+    expect(a).not.toBe(b);
+    expect(a.startsWith('rom:')).toBe(true);
+  });
+  it('스프린트는 종목(testKey)별로 다른 그룹, 정보 없으면 예전 키', () => {
+    expect(menuGroupKey({ menu: 'sprint', data: { testKey: 'sprint_5m' } })).not.toBe(menuGroupKey({ menu: 'sprint', data: { testKey: 'agility_505' } }));
+    expect(menuGroupKey({ menu: 'sprint', data: {} })).toBe('sprint');
+  });
+  it('심폐는 장비·테스트별로 분리', () => {
+    expect(menuGroupKey({ menu: 'cardio', data: { machineId: 'a', protocolId: 'p1' } })).not.toBe(menuGroupKey({ menu: 'cardio', data: { machineId: 'b', protocolId: 'p1' } }));
+  });
+  it('이력 요약 제목에 세부 이름이 붙는다', () => {
+    const { menuSummaries } = buildAiReport([
+      { menu: 'rom', menuTitle: '관절 가동범위', recordedAt: '2026-11-01', data: { joint: 'SHOULDER', poseMode: 'STANDING' } },
+      { menu: 'rom', menuTitle: '관절 가동범위', recordedAt: '2026-11-02', data: { joint: 'HIP', poseMode: 'SUPINE' } },
+    ]);
+    expect(menuSummaries).toHaveLength(2);
+    expect(menuSummaries.map((m) => m.title).sort()).toEqual(['관절 가동범위 · 견관절 · 서서', '관절 가동범위 · 고관절 · 누워서']);
+  });
+});
+
+describe('회차 비교 대체 지표 — VO2max 등 대표값이 없는 테스트 (2026-11-26)', () => {
+  it('커브드 트레드밀 2.4km: VO2max 없이도 기록 시간이 값으로 잡힌다', async () => {
+    const { extractSessionMetric } = await import('../pages/Report.jsx');
+    const r = extractSessionMetric({ menu: 'cardio', data: { machineId: 'treadmill', protocolId: 'curved_2400', result: { durationSec: 840, distanceM: 2400 } } });
+    expect(r.value).toBe(840);
+    expect(r.unit).toBe('초');
+    expect(r.lowerBetter).toBe(true);
+  });
+  it('커브드 12분은 이동 거리로 비교', async () => {
+    const { extractSessionMetric } = await import('../pages/Report.jsx');
+    expect(extractSessionMetric({ menu: 'cardio', data: { protocolId: 'curved_12min', result: { distanceM: 2100, durationSec: 720 } } }).value).toBe(2100);
+  });
+  it('VO2max 를 내는 테스트는 VO2max 만 — 값이 없으면 거리 등으로 바꿔 단위를 섞지 않는다', async () => {
+    const { extractSessionMetric } = await import('../pages/Report.jsx');
+    expect(extractSessionMetric({ menu: 'cardio', data: { confirmedVo2max: 42 } }).value).toBe(42);
+    expect(extractSessionMetric({ menu: 'cardio', data: { protocolId: 'field_cooper12', result: { distanceM: 2358 } } }).value).toBeNull();
+  });
+  it('요약 줄: 커브드 심폐는 "N회 측정"이 아니라 기록을 보여준다', () => {
+    const { menuSummaries } = buildAiReport([
+      { id: 'a', menu: 'cardio', recordedAt: '2026-11-20', data: { machineId: 'treadmill', protocolId: 'curved_2400', result: { durationSec: 850, distanceM: 2400 } } },
+      { id: 'b', menu: 'cardio', recordedAt: '2026-11-26', data: { machineId: 'treadmill', protocolId: 'curved_2400', result: { durationSec: 820, distanceM: 2400 } } },
+    ]);
+    expect(menuSummaries[0].metric).toContain('820');
+  });
+});

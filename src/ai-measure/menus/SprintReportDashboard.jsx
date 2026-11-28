@@ -12,6 +12,8 @@ import { buildSummaryData } from '../core/unifiedReport';
 import { computeChangeRow, summarizeChanges, reportDateOnly } from '../core/measurementComparison';
 import ChangeSummaryPanel from '../../components/report/ChangeSummaryPanel.jsx';
 import VideoCompareUpload from '../../components/report/VideoCompareUpload.jsx';
+import { resolveGaitMode, GAIT_MODE_LABEL } from '../core/gaitMode';
+import RunMechanicsCard from './RunMechanicsCard.jsx';
 import ClinicalFlagCard, { buildClinicalFlags } from './ClinicalFlagCard.jsx';
 // [측정 결과시트 공용화 2026-11-15] 점수 막대·먼저 볼 것·항목별 눈금(extractKeyMetrics 단일 소스)
 import QuickResultSheet from '../../components/report/QuickResultSheet.jsx';
@@ -53,6 +55,13 @@ function normalizeClinicalMetrics(report) {
     toeAngleAssessment: m.toeAngleAssessment ?? null,
   };
 }
+
+// [보행 지표 2026-11-25] 왕복달리기에서 쌓은 보행 지표(케이던스 등)가 있는지 — 없으면 카드 숨김(구버전 기록).
+const hasGaitMetrics = (r) => {
+  const m = r?.metrics || {};
+  return m.cadence != null || m.runMechanics != null || m.trunkLean?.avg != null || m.stancePct != null;
+};
+const fmt = (v, u = '') => (v == null || !Number.isFinite(Number(v)) ? '—' : `${Math.round(Number(v) * 10) / 10}${u}`);
 
 function buildSprintChangeSummary(report, previousReport) {
   if (!previousReport) return null;
@@ -176,6 +185,9 @@ function SprintReportDashboardInner({ report, previousReport, onComment, onClose
                       <>
                         <StatRow label="0~5m / 5~10m" value={report.analysis.firstHalfMs != null && report.analysis.secondHalfMs != null ? `${report.analysis.firstHalfMs} / ${report.analysis.secondHalfMs} ms` : '—'} />
                         <StatRow label="속도 유지율(마지막 2m)" value={report.analysis.speedMaintenancePct != null ? `${report.analysis.speedMaintenancePct}%` : '—'} />
+                        {report.horizontalPower && (
+                          <StatRow label="수평 파워 0~5m / 0~10m (참고)" value={`${report.horizontalPower.p5 ?? '—'} / ${report.horizontalPower.p10 ?? '—'} kg·m/s (체중 ${report.horizontalPower.massKg}kg)`} />
+                        )}
                       </>
                     )}
                     {kind === 'agility' && report.analysis.legs?.length > 0 && (
@@ -195,6 +207,23 @@ function SprintReportDashboardInner({ report, previousReport, onComment, onClose
           </section>
 
           {changeSummary && <ChangeSummaryPanel summary={changeSummary} />}
+
+          {hasGaitMetrics(report) && (
+            <div className="grid gap-3">
+              <Panel title="보행 지표 (참고)" subtitle={`${GAIT_MODE_LABEL[resolveGaitMode(report.metrics.cadence, report.metrics.gaitMode)] || '구분 없음'} 기준 · 왕복 포함`}>
+                <div className="flex flex-col gap-1.5 px-3 py-2">
+                  <StatRow label="케이던스" value={fmt(report.metrics.cadence, ' SPM')} />
+                  <StatRow label="입각 / 유각" value={`${fmt(report.metrics.stancePct, '%')} / ${fmt(report.metrics.swingPct, '%')}`} />
+                  <StatRow label="몸통 기울기(평균)" value={fmt(report.metrics.trunkLean?.avg, '°')} />
+                  <StatRow label="무릎 최대 굽힘 좌 / 우" value={`${fmt(report.metrics.kneeFlexion?.leftMaxFlex, '°')} / ${fmt(report.metrics.kneeFlexion?.rightMaxFlex, '°')}`} />
+                  <StatRow label="좌우 무릎 대칭" value={fmt(report.metrics.kneeSymmetry, '%')} />
+                  <StatRow label="보폭/신장" value={report.metrics.strideToHeight != null ? `${Number(report.metrics.strideToHeight).toFixed(2)}×` : '—'} />
+                  <p className="text-[10px] text-slate-500">방향전환·감속 구간이 섞여 있어 트레드밀 보행보다 오차가 큽니다. 같은 촬영 각도로 회차끼리 비교해 주세요.</p>
+                </div>
+              </Panel>
+              {report.metrics.runMechanics && <RunMechanicsCard metrics={report.metrics} orientation={report?.orientation || null} />}
+            </div>
+          )}
 
           <VideoCompareUpload currentVideoUrl={currentVideoUrl} title="측정 영상" />
 

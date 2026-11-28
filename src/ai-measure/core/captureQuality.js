@@ -42,6 +42,16 @@ export function judgeDelegate(delegate) {
   return { level: 'good', text: '' };
 }
 
+// [전/후 기기 확인 2026-11-25] 같은 측정 기기인지 알아보는 간단한 지문(브라우저·기기 종류 + 카메라 해상도).
+function deviceKeyOf(w, h) {
+  try {
+    const ua = (typeof navigator !== 'undefined' && navigator.userAgent) || '';
+    let hsh = 0;
+    for (let i = 0; i < ua.length; i += 1) hsh = ((hsh << 5) - hsh + ua.charCodeAt(i)) | 0;
+    return `${(hsh >>> 0).toString(36)}|${w || 0}x${h || 0}`;
+  } catch (e) { return null; }
+}
+
 const SNAP_EVERY_MS = 2000;
 const SNAP_MAX = 12;
 const SNAP_W = 240;
@@ -50,10 +60,26 @@ function grabThumb(video) {
   try {
     if (typeof document === 'undefined' || !video || !video.videoWidth || !video.videoHeight) return null;
     const w = SNAP_W;
-    const h = Math.round((video.videoHeight / video.videoWidth) * w);
+    // [사진 누움 수정 2026-11-25] 카메라 화면 회전 보정(localStorage)을 썸네일에도 적용한다.
+    let rot = 0;
+    try {
+      const raw = Number(window.localStorage.getItem('momi.cameraRotationDeg'));
+      rot = [90, 180, 270].includes(raw) ? raw : 0;
+    } catch (e) { rot = 0; }
+    const swapped = rot === 90 || rot === 270;
+    const base = Math.round((video.videoHeight / video.videoWidth) * w); // 회전 전 높이
+    const cw = swapped ? base : w;
+    const ch = swapped ? w : base;
     const c = document.createElement('canvas');
-    c.width = w; c.height = h;
-    c.getContext('2d').drawImage(video, 0, 0, w, h);
+    c.width = cw; c.height = ch;
+    const ctx = c.getContext('2d');
+    if (rot) {
+      ctx.translate(cw / 2, ch / 2);
+      ctx.rotate((rot * Math.PI) / 180);
+      ctx.drawImage(video, -w / 2, -base / 2, w, base);
+    } else {
+      ctx.drawImage(video, 0, 0, w, base);
+    }
     return c.toDataURL('image/jpeg', 0.55);
   } catch (e) { return null; }
 }
@@ -119,6 +145,7 @@ export function createCaptureTracker(now = () => Date.now()) {
         fullBodyRatio: r3(fullBody / total),
         avgFps: fpsN ? Math.round((fpsSum / fpsN) * 10) / 10 : null,
         resolution: last ? { w: last.w, h: last.h } : null,
+        deviceKey: last ? deviceKeyOf(last.w, last.h) : null,
         delegate: delegate || null,
         reasons: { ...reasons },
       };

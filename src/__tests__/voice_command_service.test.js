@@ -178,6 +178,7 @@ describe('matchRuleBasedSubKind() — 무료 규칙 기반 세부 탭/측정 종
     expect(matchRuleBasedSubKind('ai_measure', '영상판독 열어줘')).toBe('imaging');
     expect(matchRuleBasedSubKind('ai_measure', '엑스레이 측정하게 해줘')).toBe('imaging');
     expect(matchRuleBasedSubKind('ai_measure', '전후비교 열어줘')).toBe('compare');
+    expect(matchRuleBasedSubKind('ai_measure', '영상분석 열어줘')).toBe('compare');
     expect(matchRuleBasedSubKind('ai_measure', '녹화 열어줘')).toBe('record');
   });
 

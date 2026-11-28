@@ -82,10 +82,12 @@ function conditionSafety(bodyRecords, now) {
   }));
   const pain = recent?.painNrs === '' || recent?.painNrs == null ? null : Number(recent.painNrs);
   const fatigue = recent?.fatigue === '' || recent?.fatigue == null ? null : Number(recent.fatigue);
+  const prs = recent?.prs === '' || recent?.prs == null ? null : Number(recent.prs);
   return {
     record: recent,
     pain: Number.isFinite(pain) ? pain : null,
     fatigue: Number.isFinite(fatigue) ? fatigue : null,
+    prs: Number.isFinite(prs) ? prs : null,
   };
 }
 
@@ -177,6 +179,13 @@ export function buildMemberTestRecommendations({
       candidates[id].safetyReasons.push(`최근 피로도 ${safety.fatigue}/5: 고강도 측정 전 회복 상태를 확인하세요.`);
     });
   }
+  // [PRS 2026-11-24] 운동 전 회복 느낌이 낮으면(4 이하) 고강도 측정 전에 회복 상태를 확인하도록 안내한다.
+  if (safety.prs != null && safety.prs <= 4) {
+    ['jump', 'lifting', 'sprint'].forEach((id) => {
+      if (candidates[id].safety === 'allowed') candidates[id].safety = 'review';
+      candidates[id].safetyReasons.push(`최근 회복 느낌(PRS) ${safety.prs}/10: 고강도 측정 전 회복 상태를 확인하세요.`);
+    });
+  }
 
   Object.values(candidates).forEach((candidate) => {
     candidate.score = Math.max(0, Math.min(100, Math.round(candidate.score)));
@@ -197,6 +206,7 @@ export function buildMemberTestRecommendations({
     safetySummary: {
       latestPainNrs: safety.pain,
       latestFatigue: safety.fatigue,
+      latestPrs: safety.prs,
       conditionRecordedAt: safety.record ? new Date(reportDate(safety.record)).toISOString() : null,
     },
   };

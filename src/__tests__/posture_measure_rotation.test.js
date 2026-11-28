@@ -43,7 +43,7 @@ describe('PostureMeasure.jsx — 카메라 회전 보정 배선', () => {
     const start = src.indexOf('function captureVideoSnapshot(');
     const end = src.indexOf('\n}', start);
     const body = src.slice(start, end);
-    expect(body).toMatch(/function captureVideoSnapshot\(video, rotationDeg = 0\)/);
+    expect(body).toMatch(/function captureVideoSnapshot\(video, rotationDeg = 0, maxWidth = 0, quality = 0\.82\)/);
     expect(body).toMatch(/const swapped = rotationDeg === 90 \|\| rotationDeg === 270;/);
     expect(body).toMatch(/drawVideoCover\(ctx, video, canvas\.width, canvas\.height, rotationDeg\)/);
   });

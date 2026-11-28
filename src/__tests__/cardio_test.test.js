@@ -276,8 +276,8 @@ describe('화면·허브 배선', () => {
   });
   it('허브는 15번 기록을 alert 없이 세션으로 돌려주고 실패는 전파', () => {
     expect(hub).toContain("const isCardio = (active.id === 'cardio' || active.id === 'cardio_field') && data?.kind === 'cardio_test';");
-    expect(hub).toContain('if (isHeartRate || isCardio) {');
-    expect(hub).toContain('if (isHeartRate || isCardio) throw e;');
+    expect(hub).toContain('if (isHeartRate || isCardio || isSenior || isPaps) {');
+    expect(hub).toContain('if (isHeartRate || isCardio || isSenior || isPaps) throw e;');
   });
   it('화면을 나가면 장비·밴드 연결을 끊는다', () => {
     expect(screen).toMatch(/machineRef\.current\?\.disconnect\(\);\s*bandRef\.current\?\.disconnect\(\);/);

@@ -245,7 +245,11 @@ export default function JumpAnalysisHub({ member, onBack, onSave, onSaveToFireba
     const rows = [];
     if (j.heightCm != null) rows.push({ label: '점프 높이', value: `${j.heightCm}cm` });
     // [제자리멀리뛰기 추가 2026-09-16] SBJ는 heightCm이 아니라 distanceCm.
-    if (j.distanceCm != null) rows.push({ label: '이동 거리', value: `${j.distanceCm}cm` });
+    if (j.distanceCm != null) rows.push({ label: j.hops > 1 ? `총 거리 (${j.hops}연속)` : '이동 거리', value: `${j.distanceCm}cm` });
+    // [트리플·크로스오버 홉 2026-11-24] 도약마다의 구간 거리와, 도약 수가 모자랄 때의 안내.
+    if (Array.isArray(j.hopSplitsCm) && j.hopSplitsCm.length > 1) rows.push({ label: '도약별 거리', value: `${j.hopSplitsCm.join(' / ')}cm` });
+    if (j.hops > 1 && j.reason === 'few_hops') rows.push({ label: '확인 필요', value: `${j.hops}번 중 ${j.hopsDetected ?? 0}번만 인식됨` });
+    if (j.hops > 1 && j.reason === 'not_forward') rows.push({ label: '확인 필요', value: '앞으로 나아가지 않은 도약이 있음' });
     if (j.rsi?.rsi != null) rows.push({ label: 'RSI', value: j.rsi.rsi });
     if (j.flightTimeMs != null) rows.push({ label: '체공시간', value: `${j.flightTimeMs}ms` });
     if (j.rsi?.contactTimeMs != null) rows.push({ label: '접지시간', value: `${j.rsi.contactTimeMs}ms` });

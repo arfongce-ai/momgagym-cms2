@@ -25,7 +25,8 @@
 import { pickPreviousReport } from '../core/measurementComparison';
 import React, { useState, useEffect, useRef } from 'react';
 import { SprintTracker, calibrateTrack, TRACK_POINTS, DEFAULT_TRACK_POINT } from '../core/sprintAgility';
-import { BiomechAccumulator, DynamicKneeAlignmentTracker } from '../core/gaitBiomechanics';
+import { BiomechAccumulator, DynamicKneeAlignmentTracker, GaitCycleTracker, AngleAccumulator, jointAnglesFromPose, pelvisRelativeFeet } from '../core/gaitBiomechanics';
+import { RunMechanicsTracker } from '../core/runMechanics';
 import { beepTickLoud, starterShot, primeAudio } from '../core/audioCue';
 import { loadPoseLandmarker, detectPoseFrame, isPoseReady, closePoseLandmarker } from '../core/poseBackend';
 import { openMainCameraStream, describeCameraError } from '../core/cameraSelect';
@@ -37,7 +38,8 @@ import { aiStore } from '../../demoData';
 import MeasureRecordConfirm from '../components/MeasureRecordConfirm.jsx';
 import SprintReportDashboard from './SprintReportDashboard.jsx';
 import { SPRINT_TEST_TYPES, SPRINT_TEST_ORDER, DEFAULT_CAM_ANGLE } from '../core/sprintTests';
-import { isRunComplete } from '../core/sprintMetrics';
+import { isRunComplete, sprintHorizontalPower } from '../core/sprintMetrics';
+import { resolveBodyMetrics } from '../../services/bodyMetrics';
 
 // 종목 정의는 core/sprintTests.js 한 곳에서 관리(라이브·업로드 공용)
 const TEST_TYPES = SPRINT_TEST_TYPES;
@@ -157,8 +159,14 @@ export default function SprintLiveAnalysis({ member, onBack, onSaveToFirebase, o
   // [임상 플래그 추가 2026-09-14] GaitRunningAnalysis.jsx와 동일하게 gaitBiomechanics.js의
   // 기존 누적기를 그대로 재사용 — 새 계산 로직을 만들지 않는다. depth 모드일 때만
   // (아래 loop() 참고) 매 프레임 밀어 넣는다.
+  // [2026-11-25] 측정 전 걷기/달리기 구분 — auto(케이던스로 자동) | walk | run
+  const [gaitModeSel, setGaitModeSel] = useState('auto');
   const pelvicAccRef = useRef(new BiomechAccumulator());
   const kneeAlignAccRef = useRef(new DynamicKneeAlignmentTracker());
+  // [보행 지표 2026-11-25] 보행&런닝(트레드밀)과 같은 누적기를 재사용 — 케이던스·입각/유각·관절각·접지/체공.
+  const gaitCycleRef = useRef(new GaitCycleTracker());
+  const gaitAngleRef = useRef(new AngleAccumulator());
+  const runMechRef = useRef(new RunMechanicsTracker());
   const cueTimerRef = useRef(null);
   const draggingIndexRef = useRef(null);
   // [영상 다시보기 2026-09-07] GaitRunningAnalysis.jsx의 mediaRecorderRef/chunksRef/
@@ -260,10 +268,15 @@ export default function SprintLiveAnalysis({ member, onBack, onSaveToFirebase, o
         // 골반 낙하(후면 전용)뿐 아니라 광각 보행 스크리닝(stepWidthAssessment,
         // 후면·정면 둘 다 유효)에도 쓰여서 정면/후면 모두에서 채운다 — kneeAlignAccRef는
         // 무릎 정렬이 정면에서만 의미 있어 정면일 때만 채운다.
-        if (camAngleRef.current === 'depth') {
-          pelvicAccRef.current.push(landmarks);
-          if (depthOrientationRef.current === 'front') kneeAlignAccRef.current.push(landmarks);
-        }
+        // [보행 지표 2026-11-25] 측면(lateral)에서도 몸통 기울기·무릎 굽힘·접지 등 보행 지표를 쌓는다.
+        // 임상 플래그(후면/정면 전용)는 finishRun 에서 camAngle 로 계속 걸러낸다.
+        pelvicAccRef.current.push(landmarks);
+        try {
+          gaitCycleRef.current.push(pelvisRelativeFeet(landmarks), ts);
+          gaitAngleRef.current.push(jointAnglesFromPose(landmarks));
+          runMechRef.current.push(landmarks, ts);
+        } catch (e) { /* 보행 지표 누적 실패는 기록 측정에 영향 주지 않음 */ }
+        if (camAngleRef.current === 'depth' && depthOrientationRef.current === 'front') kneeAlignAccRef.current.push(landmarks);
       }
       if (viewRef.current === 'running' && landmarks && trackerRef.current) {
         trackerRef.current.push(landmarks, ts);
@@ -349,6 +362,9 @@ export default function SprintLiveAnalysis({ member, onBack, onSaveToFirebase, o
     trackerRef.current = new SprintTracker({ calibration, splitDistancesM: cfg.splitDistancesM, mode: cfg.mode, trackDistanceM: cfg.trackDistanceM, trackPoint });
     pelvicAccRef.current = new BiomechAccumulator();
     kneeAlignAccRef.current = new DynamicKneeAlignmentTracker();
+    gaitCycleRef.current = new GaitCycleTracker();
+    gaitAngleRef.current = new AngleAccumulator();
+    runMechRef.current = new RunMechanicsTracker();
     primeAudio();
     setView('countdown');
     setCountdown(COUNTDOWN_SEC);
@@ -470,6 +486,26 @@ export default function SprintLiveAnalysis({ member, onBack, onSaveToFirebase, o
     const armCrossAssessment = camAngle === 'depth' ? pelvicSummary.armCrossAssessment : null;
     // [발 진행각(Toe-out/Toe-in) 2026-09-14] armCrossAssessment와 동일한 게이팅(depth 모드면 OK).
     const toeAngleAssessment = camAngle === 'depth' ? pelvicSummary.toeAngleAssessment : null;
+    // [보행 지표 2026-11-25] 트레드밀 보행 리포트와 같은 키로 저장 → 같은 카드/점수 로직 재사용.
+    // 방향전환(왕복)·가속 구간이 섞이므로 '참고용'이며, 판정은 측면/후면 촬영 기준.
+    const ori = camAngle === 'lateral' ? 'side' : depthOrientation;
+    let gaitPart = {};
+    try {
+      const cyc = gaitCycleRef.current.summary();
+      const ang = gaitAngleRef.current.summary();
+      gaitPart = {
+        cadence: cyc.averageCadenceSpm, stancePct: cyc.stancePct, swingPct: cyc.swingPct,
+        totalSteps: cyc.totalSteps, valid: cyc.valid, angles: ang,
+        trunkLean: pelvicSummary.trunkLean, kneeFlexion: pelvicSummary.kneeFlexion,
+        pelvicDrop: pelvicSummary.pelvicDrop, pelvicDropAbs: pelvicSummary.pelvicDropAbs,
+        verticalOscillation: pelvicSummary.verticalOscillation, kneeSymmetry: pelvicSummary.kneeSymmetry,
+        strideToHeight: pelvicSummary.strideToHeight,
+        gaitMode: gaitModeSel === 'auto' ? null : gaitModeSel,
+        strideLengthAssessment: ori === 'side' ? cyc.strideLengthAssessment : null,
+        trunkLeanAssessment: ori === 'side' ? pelvicSummary.trunkLeanAssessment : null,
+        runMechanics: runMechRef.current.summary({ orientation: ori || null }),
+      };
+    } catch (e) { gaitPart = {}; }
     setReportData({
       ...summary,
       testKey,
@@ -478,8 +514,10 @@ export default function SprintLiveAnalysis({ member, onBack, onSaveToFirebase, o
       // [임상 플래그 표시용 2026-09-14] GaitReportDashboard.jsx와 동일한 orientation
       // 필드 — camAngle==='lateral'이면 'side', depth면 트레이너가 고른 front/back 그대로.
       orientation: camAngle === 'lateral' ? 'side' : depthOrientation,
-      metrics: { pelvicDropAssessment, kneeAlignment, stepWidthAssessment, scissoringAssessment, crossoverAssessment, armCrossAssessment, toeAngleAssessment },
+      metrics: { ...gaitPart, pelvicDropAssessment, kneeAlignment, stepWidthAssessment, scissoringAssessment, crossoverAssessment, armCrossAssessment, toeAngleAssessment },
       member: { id: member?.id || null, name: member?.name || null },
+      // [수평 파워 2026-11-24] 신체정보(회원 신체기록 포함)의 체중으로 계산. 체중이 없으면 null.
+      horizontalPower: sprintHorizontalPower({ mode: TEST_TYPES[testKey].mode, splits: summary.splits, massKg: resolveBodyMetrics(member).weight }),
       measuredAt: new Date().toISOString(),
     });
     // [기록·확인 단계 2026-09-07] 측정 직후 바로 결과+저장 버튼을 보여주던 것을
@@ -650,6 +688,13 @@ export default function SprintLiveAnalysis({ member, onBack, onSaveToFirebase, o
               {Object.entries(CAM_ANGLES).map(([key, cfg]) => (
                 <button key={key} onClick={() => setCamAngle(key)} style={{ ...styles.testBtn, ...(camAngle === key ? styles.testBtnActive : {}) }}>
                   {cfg.label}
+                </button>
+              ))}
+            </div>
+            <div style={styles.testPicker}>
+              {[['auto', '보행·달리기 자동'], ['walk', '걷기'], ['run', '달리기']].map(([key, label]) => (
+                <button key={key} onClick={() => setGaitModeSel(key)} style={{ ...styles.testBtn, ...(gaitModeSel === key ? styles.testBtnActive : {}) }}>
+                  {label}
                 </button>
               ))}
             </div>

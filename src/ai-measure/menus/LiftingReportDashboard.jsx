@@ -17,6 +17,7 @@ import {
 } from '../../components/report/UnifiedReportPrimitives';
 import { buildLiftingInterpretation, exerciseLabel, VBT_ZONE_PURPOSE, vbtZonePurpose } from '../core/lifting';
 import { generateLiftingDiagnosis, GRADE_LABEL } from '../core/barbellClinical';
+import { buildVbtPlainSummary } from '../core/vbtPlainSummary';
 import { trainingPrescription, weightByRepsTable, loadIncreaseText } from '../core/oneRMTables';
 import MomiAutoNote from '../../components/report/MomiAutoNote.jsx';
 import MomiInsightPanel from '../../components/report/MomiInsightPanel.jsx';
@@ -56,6 +57,7 @@ const MODE_TITLE = { lifting: '역도 궤적 분석', vbt: 'VBT 속도 분석', 
 export default function LiftingReportDashboard({ report, onClose, member, previousReport }) {
   const interp = useMemo(() => buildLiftingInterpretation(report || {}), [report]);
   const diag = useMemo(() => generateLiftingDiagnosis(report || {}, {}), [report]);
+  const plain = useMemo(() => ((report?.mode || '') === 'vbt' || (report?.mode || '') === 'lifting' ? buildVbtPlainSummary(report || {}) : null), [report]);
   const changeSummary = useMemo(() => buildLiftingChangeSummary(report || {}, previousReport), [report, previousReport]);
   // [전/후 변화 요약 2026-08-31] 영상은 저장하지 않는 정책 그대로 — 라이브
   // 측정 직후라면 report.videoBlob(메모리 전용)을 "현재" 영상으로 쓰고,
@@ -161,6 +163,19 @@ export default function LiftingReportDashboard({ report, onClose, member, previo
 
           {/* 스내치·클린&저크 구간/자세 각도(참고값) — 올림픽 리프트만 값이 있다 */}
           <OlyLiftSection oly={report.oly || meta.oly || null} />
+
+          {/* 쉬운 해석: 그래서 뭐가 어떻고, 뭘 하면 되는지 */}
+          {plain && (plain.meaning || plain.good.length > 0 || plain.lack.length > 0) && (
+            <UnifiedReportSection title="쉬운 해석" subtitle="그래서 어떻게 하라는 거야?">
+              <div className="space-y-2 rounded-xl bg-amber-50 dark:bg-amber-500/10 p-3" data-testid="vbt-plain">
+                <p className="text-[13px] font-black text-slate-900 dark:text-slate-50">{plain.headline}</p>
+                {plain.meaning && <p className="text-[12px] text-slate-700 dark:text-slate-200 leading-snug"><b>이 숫자의 뜻</b> · {plain.meaning}</p>}
+                {plain.good.length > 0 && <div><p className="text-[11px] font-black text-emerald-700 dark:text-emerald-300">잘한 점</p>{plain.good.map((t, i) => <p key={i} className="text-[11px] text-slate-700 dark:text-slate-200 leading-snug">✔ {t}</p>)}</div>}
+                {plain.lack.length > 0 && <div><p className="text-[11px] font-black text-red-700 dark:text-red-300">부족한 점</p>{plain.lack.map((t, i) => <p key={i} className="text-[11px] text-slate-700 dark:text-slate-200 leading-snug">⚠ {t}</p>)}</div>}
+                {plain.todo.length > 0 && <div><p className="text-[11px] font-black text-sky-700 dark:text-sky-300">다음에 할 일</p>{plain.todo.map((t, i) => <p key={i} className="text-[11px] text-slate-700 dark:text-slate-200 leading-snug">{i + 1}. {t}</p>)}</div>}
+              </div>
+            </UnifiedReportSection>
+          )}
 
           {/* AI 자동 평가 */}
           {diag && diag.grade !== 'insufficient' && (

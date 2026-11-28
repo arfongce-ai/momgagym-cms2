@@ -15,7 +15,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { todayYMD } from '../../utils/dates';
 import { usePoseEngine } from '../core/usePoseEngine';
 import { createSmoother } from '../core/smoothing';
-import { RomAccumulator, jointAngleByMode, normalizePose, LM, symmetryIndex } from '../core/bodyMechanics';
+import { RomAccumulator, jointAngleByMode, normalizePose, LM, symmetryIndex, viewSeparationRatio, ROM_VIEW_RATIO_MAX, ROM_VIEW_RATIO_MIN_FRONT } from '../core/bodyMechanics';
 import { generateRomDiagnosis } from '../core/romClinical';
 import { pickRecorderMime } from '../core/recordSink';
 import { beepGo, beepSuccess, primeAudio } from '../core/audioCue';
@@ -28,20 +28,25 @@ import { aiStore } from '../../demoData';
 import { dataUrlToFile } from '../core/reportShare';
 import { useHardwareBack } from '../core/useHardwareBack';
 import RomSensorGoniometer from './RomSensorGoniometer.jsx';
-import RomVideoAngle from './RomVideoAngle.jsx';
 import { isSkeletonEnabled, useSkeletonOverlay } from '../core/skeletonPref';
 import { drawGaugeHud } from '../core/recordingOverlay';
 import { DEFAULT_ASPECT, outputSize, aspectLabel, drawVideoCover, coverTransform, rotateLandmarksNormalized } from '../core/recordAspect';
 import { useCameraRotation } from '../core/useCameraRotation';
+
+import { getMovementGuide, visibleMovements, displayPoseKey, romDisplayAngle, romRefRange, repCards } from '../core/romMovementGuide';
+import RomAngleBar from './RomAngleBar.jsx';
+import RomRepChips from './RomRepChips.jsx';
 
 const MAX_RECORD_MS = 60000;
 
 const JOINTS = [
   { key: 'HIP', label: '고관절', short: '고관절' },
   { key: 'KNEE', label: '슬관절(무릎)', short: '무릎' },
-  { key: 'SHOULDER', label: '견관절(어깨)', short: '어깨' },
+  { key: 'SHOULDER', label: '견관절(어깨 올림)', short: '어깨' },
   { key: 'ANKLE', label: '족관절(발목)', short: '발목' },
   { key: 'ELBOW', label: '주관절(팔꿈치)', short: '팔꿈치' },
+  { key: 'NECK', label: '경추(목)', short: '목' },
+  { key: 'TRUNK', label: '몸통(등허리)', short: '몸통' },
 ];
 
 // 관절별 허용 자세모드 (해부학적으로 의미 있는 조합만 노출).
@@ -50,6 +55,8 @@ const POSE_MODES_BY_JOINT = {
     { key: 'STANDING', label: '서서 (기능적)', desc: '체중지지 상태의 기능적 굴곡' },
     { key: 'SUPINE', label: '누워서 (구조적)', desc: '보상 통제, 순수 고관절 굴곡' },
     { key: 'PRONE', label: '엎드려 (신전)', desc: '고관절 신전 가동범위' },
+    { key: 'ABDUCTION', label: '서서 벌림', desc: '다리 옆으로 들어올림(고관절 벌림, 정면 촬영, 45° 안팎)' },
+    { key: 'SUPINE_ABD', label: '누워서 벌림', desc: '교재 자세 — 바로 누워 다리를 옆으로(카메라를 몸 바로 위에서 아래로 향하게 고정, 45° 안팎)' },
   ],
   KNEE: [
     { key: 'STANDING', label: '서서', desc: '체중지지 굴곡' },
@@ -57,8 +64,21 @@ const POSE_MODES_BY_JOINT = {
     { key: 'PRONE', label: '엎드려', desc: '무릎 굴곡(prone)' },
   ],
   SHOULDER: [
-    { key: 'STANDING', label: '서서', desc: '팔 들어올림(굴곡)' },
-    { key: 'SEATED', label: '앉아서', desc: '체간 안정 상태 굴곡' },
+    { key: 'STANDING', label: '서서', desc: '팔 앞으로 들어올림(어깨 올림·굴곡, 옆모습 촬영)' },
+    { key: 'SEATED', label: '앉아서', desc: '체간 안정 상태 굴곡(어깨 올림, 옆모습 촬영)' },
+    { key: 'ABDUCTION', label: '서서 벌림', desc: '팔 옆으로 들어올림(어깨 올림·벌림, 정면 촬영)' },
+  ],
+  TRUNK: [
+    { key: 'T_FLEXION', label: '몸통 숙이기', desc: '옆모습 촬영 · 서서 상체를 앞으로 숙임(무릎 펴기, 기준값 없음 — 각도만 기록)' },
+    { key: 'T_EXTENSION', label: '몸통 젖히기', desc: '옆모습 촬영 · 손을 허리에 대고 뒤로 젖힘' },
+    { key: 'T_LATERAL', label: '몸통 옆으로', desc: '정면 촬영 · 발 벌리고 서서 몸통을 옆으로 기울임(손은 허벅지 옆면 따라)' },
+    { key: 'T_ROTATION', label: '몸통 돌리기', desc: '정면 촬영 · 시작 때 정면 1초 후 골반은 고정하고 어깨만 좌우로 돌림(근사값)' },
+  ],
+  NECK: [
+    { key: 'FLEXION', label: '목 숙이기', desc: '옆모습 촬영 · 시작 때 정면 응시 1초 후 턱을 가슴 쪽으로(굴곡)' },
+    { key: 'EXTENSION', label: '목 젖히기', desc: '옆모습 촬영 · 시작 때 정면 응시 1초 후 뒤로 젖힘(폄)' },
+    { key: 'LATERAL', label: '목 옆으로', desc: '정면 촬영 · 귀를 어깨 쪽으로 기울임(어깨는 올리지 않기)' },
+    { key: 'ROTATION', label: '목 돌리기', desc: '정면 촬영 · 몸통은 고정, 고개만 좌우로 돌림' },
   ],
   ANKLE: [
     { key: 'STANDING', label: '서서', desc: '배측굴곡' },
@@ -104,8 +124,17 @@ export default function RomMeasure({ member, onSave, onBack, onViewInReport }) {
   const aspectRef = useRef(DEFAULT_ASPECT);
   useEffect(() => { aspectRef.current = aspect; }, [aspect]);
   const [liveAngle, setLiveAngle] = useState({ left: null, right: null });
+  // 촬영 중 횟수별 최고각(실시간). 영상 HUD·라이브 화면이 같이 쓴다. 0.6초마다 갱신.
+  const liveRepsRef = useRef({ left: [], right: [] });
+  const liveRepsAtRef = useRef(0);
+  const [liveReps, setLiveReps] = useState({ left: [], right: [] });
   const [elapsed, setElapsed] = useState(0);
-  const [guide, setGuide] = useState('관절이 보이게 서서, 녹화 버튼을 누른 뒤 동작을 한 번 천천히 끝까지 수행하세요.');
+  const [guide, setGuide] = useState('관절이 보이게 서서, 녹화 버튼을 누른 뒤 같은 동작을 3~5회 천천히 끝까지 수행하세요.');
+  // [2611] 옆모습 정렬 — 2D 각도는 카메라가 동작면과 수직일 때만 정확하다.
+  //  어깨폭/몸통길이 비율(EMA)로 정면 쪽으로 돌아섰는지 실시간 안내한다(경고만, 촬영은 막지 않음).
+  const [viewState, setViewState] = useState('unknown'); // unknown | ok | bad
+  const viewEmaRef = useRef(null);
+  const viewStateRef = useRef('unknown');
 
   // ── [2026-08-18 요청] 촬영 3-2-1 카운트다운 + 양쪽(건측→환측) 방향전환 ──
   //  · SLST(StanceLiveAnalysis.jsx)와 동일한 "버튼 → 3-2-1 → 시작" 패턴을 그대로
@@ -209,6 +238,23 @@ export default function RomMeasure({ member, onSave, onBack, onViewInReport }) {
     // 각도 판정(accRef 누적·라이브 각도 표시)은 "위/아래" 기준 계산이 섞여
     // 있어 회전 보정된 좌표를 써야 한다.
     const corrected = rotateLandmarksNormalized(smoothed, rotationDeg);
+    {
+      const vr = viewSeparationRatio(normalizePose(corrected) || corrected);
+      if (vr != null) {
+        viewEmaRef.current = viewEmaRef.current == null ? vr : 0.8 * viewEmaRef.current + 0.2 * vr;
+        const e = viewEmaRef.current;
+        // 히스테리시스 ±0.05 — 경계에서 안내가 깜빡이지 않게
+        const front = poseMode === 'ABDUCTION' || poseMode === 'SUPINE_ABD' || poseMode === 'LATERAL' || poseMode === 'ROTATION' || poseMode === 'T_LATERAL' || poseMode === 'T_ROTATION'; // 벌림은 정면/위에서 촬영 — 판정 방향 반대
+        const next = front
+          ? (viewStateRef.current === 'bad'
+              ? (e > ROM_VIEW_RATIO_MIN_FRONT + 0.05 ? 'ok' : 'bad')
+              : (e < ROM_VIEW_RATIO_MIN_FRONT - 0.05 ? 'bad' : 'ok'))
+          : (viewStateRef.current === 'bad'
+              ? (e < ROM_VIEW_RATIO_MAX - 0.05 ? 'ok' : 'bad')
+              : (e > ROM_VIEW_RATIO_MAX + 0.05 ? 'bad' : 'ok'));
+        if (next !== viewStateRef.current) { viewStateRef.current = next; setViewState(next); }
+      }
+    }
     if (recordingRef.current && accRef.current) {
       const tMs = ts - startTsRef.current;
       setElapsed(Math.round(tMs / 100) / 10); // 경과시간은 스켈레톤/방향전환과 무관하게 계속 표시.
@@ -222,12 +268,28 @@ export default function RomMeasure({ member, onSave, onBack, onViewInReport }) {
         setLiveAngle({ left: null, right: null });
       } else {
         accRef.current.push(corrected, tMs);
+        if (ts - liveRepsAtRef.current > 600) {
+          liveRepsAtRef.current = ts;
+          try {
+            const st = accRef.current.summary()?.stability;
+            const next = { left: st?.left?.rep_peaks || [], right: st?.right?.rep_peaks || [] };
+            liveRepsRef.current = next; setLiveReps(next);
+          } catch (e) { /* 표시용 — 실패해도 측정은 계속 */ }
+        }
         // 라이브 각도 표시(정규화 후 현재 프레임)
         const norm = normalizePose(corrected) || corrected;
         const L = jointAngleByMode(norm, joint, 'left', poseMode).angle;
         const R = jointAngleByMode(norm, joint, 'right', poseMode).angle;
         setLiveAngle({ left: L, right: R });
       }
+    }
+    else if (!recordingRef.current && corrected) {
+      // 촬영 시작 전에도 현재 각도를 보여준다(자세 잡기·기준 비교용). 누적·저장은 하지 않는다.
+      const norm = normalizePose(corrected) || corrected;
+      setLiveAngle({
+        left: jointAngleByMode(norm, joint, 'left', poseMode).angle,
+        right: jointAngleByMode(norm, joint, 'right', poseMode).angle,
+      });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [joint, poseMode, side, rotationDeg]);
@@ -274,7 +336,7 @@ export default function RomMeasure({ member, onSave, onBack, onViewInReport }) {
       // 스켈레톤(측정 측 강조) + 좌우 각도 HUD 를 영상 위에 베이크.
       drawSkeletonToRecord(ctx, latestLandmarksRef.current, side, joint, poseMode, canvas.width, canvas.height, cover);
       drawRomHud(ctx, latestLandmarksRef.current, joint, poseMode, canvas.width, canvas.height,
-        (performance.now() - startTsRef.current) / 1000, side);
+        (performance.now() - startTsRef.current) / 1000, side, liveRepsRef.current);
     };
     const rafLoop = () => { draw(); composeRafRef.current = requestAnimationFrame(rafLoop); };
     if (composeRafRef.current) cancelAnimationFrame(composeRafRef.current);
@@ -305,6 +367,7 @@ export default function RomMeasure({ member, onSave, onBack, onViewInReport }) {
     setPoseMode(nextPose);
     setLiveAngle({ left: null, right: null });
     accRef.current = null;
+    viewEmaRef.current = null; viewStateRef.current = 'unknown'; setViewState('unknown'); // 정렬 판정 방향이 달라지므로 초기화
   };
 
   // SLST(StanceLiveAnalysis.jsx)와 동일한 "버튼 → 3-2-1 → 시작" 패턴(UI 통일성).
@@ -349,7 +412,7 @@ export default function RomMeasure({ member, onSave, onBack, onViewInReport }) {
       directionPausedRef.current = false;
       setSwitching(false);
       setDirection('second');
-      setGuide('이어서 환측 동작을 한 번 천천히 끝까지 수행한 뒤 "측정 종료"를 눌러주세요.');
+      setGuide('이어서 환측 동작을 3~5회 천천히 끝까지 수행한 뒤 "측정 종료"를 눌러주세요.');
       beepGo();
     });
   };
@@ -357,6 +420,7 @@ export default function RomMeasure({ member, onSave, onBack, onViewInReport }) {
   const beginRecord = () => {
     primeAudio();
     accRef.current = new RomAccumulator({ joint, poseMode });
+    liveRepsRef.current = { left: [], right: [] }; liveRepsAtRef.current = 0; setLiveReps({ left: [], right: [] });
     startTsRef.current = performance.now();
     chunksRef.current = [];
     recordedBlobRef.current = null;
@@ -412,8 +476,8 @@ export default function RomMeasure({ member, onSave, onBack, onViewInReport }) {
       if (recordingRef.current) finishRecord();
     }, MAX_RECORD_MS);
     setGuide(side === 'both'
-      ? '① 건측(먼저 측정할 쪽) 동작을 천천히 수행하세요. 방향을 바꾸려면 "방향 전환"을 눌러주세요.'
-      : '동작을 한 번 천천히 최대 지점까지 수행한 뒤 돌아오세요.');
+      ? '① 건측(먼저 측정할 쪽) 동작을 3~5회 천천히 수행하세요. 방향을 바꾸려면 "방향 전환"을 눌러주세요.'
+      : '동작을 3~5회, 천천히 최대 지점까지 수행하고 돌아오세요. (반복하면 결과가 더 일정합니다)');
     beepGo();
   };
 
@@ -455,7 +519,10 @@ export default function RomMeasure({ member, onSave, onBack, onViewInReport }) {
   const finalizeReport = (videoUrl) => {
     const summary = pendingSummaryRef.current;
     if (!summary) return;
-    buildAndSetReport(summary, 'live', pendingSnapRef.current, videoUrl);
+    const r = buildAndSetReport(summary, 'live', pendingSnapRef.current, videoUrl);
+    // 측정이 끝나면 '저장하시겠습니까?' 팝업(허브 공통)이 바로 뜨도록 저장을 시도한다.
+    // '저장 안 함'을 고르면 리포트 화면의 저장 버튼으로 나중에 저장할 수 있다.
+    if (r && member) persistReport(r);
   };
 
   // ── 업로드 ──
@@ -480,7 +547,7 @@ export default function RomMeasure({ member, onSave, onBack, onViewInReport }) {
       joint,
       poseMode,
       side,
-      viewAngle: poseMode === 'STANDING' ? 'SIDE' : 'SIDE',
+      viewAngle: (poseMode === 'ABDUCTION' || poseMode === 'LATERAL' || poseMode === 'ROTATION' || poseMode === 'T_LATERAL' || poseMode === 'T_ROTATION') ? 'FRONT' : poseMode === 'SUPINE_ABD' ? 'TOP' : 'SIDE',
       captureMode,
       // evaluation_result + raw_time_series_data (스키마)
       summary,
@@ -522,6 +589,9 @@ export default function RomMeasure({ member, onSave, onBack, onViewInReport }) {
     const A = results?.single?.angle ?? null;
     const recordedAtIso = results?.single?.recordedAt || new Date().toISOString();
     const movement = meta.movement || '';
+    // 신뢰도: 0점 흔들림·유지 편차·폰 비틀림·수동 확정 여부로 산출(고정 1.0 아님). 값이 없으면 보수적 0.8.
+    const sensorConf = typeof meta.quality?.confidence === 'number' ? meta.quality.confidence : 0.8;
+    const sensorQuality = meta.quality ? { ...meta.quality } : null;
     const summary = {
       valid: A != null,
       joint,
@@ -541,7 +611,8 @@ export default function RomMeasure({ member, onSave, onBack, onViewInReport }) {
       movement,
       angle: A,
       recordedAt: recordedAtIso,
-      confidenceScore: 1.0, // 센서(하드웨어) 기울기 — 카메라 추정 대비 고신뢰 표시
+      confidenceScore: sensorConf, // 하드웨어 기울기 + 측정 품질(0점 흔들림·비틀림·유지 편차) 반영
+      quality: sensorQuality,
     }];
     // 회차 비교 키: 같은 관절·자세·움직임끼리 묶는다(수기 움직임 라벨 반영).
     const movementSlug = movement ? `_${movement.replace(/\s+/g, '').slice(0, 24)}` : '';
@@ -552,7 +623,7 @@ export default function RomMeasure({ member, onSave, onBack, onViewInReport }) {
       measureType: 'sensor_goniometer',
       movement,
       sensor_records: sensorRecords,
-      confidenceScore: 1.0,
+      confidenceScore: sensorConf,
       pairKey,
       // 허브가 저장 성공 후 회원 신체기록에 ROM 요약을 남기도록 하는 힌트
       romBodySummary: {
@@ -562,7 +633,7 @@ export default function RomMeasure({ member, onSave, onBack, onViewInReport }) {
         angle: A,
         unit: 'deg',
         measureType: 'sensor_goniometer',
-        confidenceScore: 1.0,
+        confidenceScore: sensorConf,
       },
     });
     // 확인 즉시 데이터 자동 저장(회원 측정이력·ROM리포트·신체기록 요약).
@@ -674,20 +745,9 @@ export default function RomMeasure({ member, onSave, onBack, onViewInReport }) {
       <RomSensorGoniometer
         jointName={jointName}
         jointKey={joint}
+        poseMode={poseMode}
         onBack={() => setMode('select')}
         onComplete={handleSensorComplete}
-      />
-    );
-  }
-
-  // ════════════════ [항목 4] 영상 업로드 — 스포츠 수행 각도 확인 ════════════════
-  //  특정 관절 자동 ROM 이 아니라, 수행 영상에서 원하는 장면의 각도를 직접 측정.
-  //  [4-1] 속도조절 · [4-2] 캡처 · [4-3] 캡처 프레임에서 사진 각도기(3점 탭).
-  if (mode === 'upload') {
-    return (
-      <RomVideoAngle
-        member={member}
-        onBack={() => setMode('select')}
       />
     );
   }
@@ -761,26 +821,44 @@ export default function RomMeasure({ member, onSave, onBack, onViewInReport }) {
           {/* [2026-09-10] 관절·자세 구성 버튼은 촬영 전 설정 화면으로 이동 —
               촬영 화면에는 스켈레톤·궤적·게이지 HUD만 남긴다. */}
           {/* [2026-08-18 요청] 스켈레톤 OFF면 ROM 인식도 함께 멈춘다는 걸 명확히 안내 */}
+          {viewState === 'bad' && (
+            <div className="rounded-xl border border-amber-400/40 bg-amber-500/15 px-3 py-2 text-center text-xs font-bold text-amber-700 dark:text-amber-300">
+              {poseMode === 'SUPINE_ABD'
+                ? '카메라가 몸 바로 위를 향하지 않아요 — 폰을 몸 위에서 아래로 곧게 향하게 고정해 주세요 (각도가 실제보다 작게 나올 수 있습니다)'
+                : (poseMode === 'ABDUCTION' || poseMode === 'LATERAL' || poseMode === 'ROTATION' || poseMode === 'T_LATERAL' || poseMode === 'T_ROTATION')
+                ? '몸이 옆으로 돌아 있어요 — 카메라를 정면으로 보고 서 주세요 (각도가 실제보다 작게 나올 수 있습니다)'
+                : '몸이 정면 쪽으로 돌아 있어요 — 카메라를 향해 옆으로 서 주세요 (각도가 실제보다 작게 나올 수 있습니다)'}
+            </div>
+          )}
+          {viewState === 'ok' && !recording && (
+            <div className="rounded-xl border border-emerald-400/40 bg-emerald-500/15 px-3 py-1.5 text-center text-[11px] font-bold text-emerald-700 dark:text-emerald-300">
+              {poseMode === 'SUPINE_ABD' ? '위에서 촬영 정렬 확인됨' : (poseMode === 'ABDUCTION' || poseMode === 'LATERAL' || poseMode === 'ROTATION' || poseMode === 'T_LATERAL' || poseMode === 'T_ROTATION') ? '정면 정렬 확인됨' : '옆모습 정렬 확인됨'}
+            </div>
+          )}
           {recording && !skeletonOn && (
             <div className="rounded-xl border border-red-400/40 bg-red-500/15 px-3 py-2 text-center text-xs font-bold text-red-700 dark:text-red-300">
               스켈레톤이 꺼져 있어 ROM 인식이 일시 중지됐어요. 스켈레톤을 켜면 다시 측정됩니다.
             </div>
           )}
-          {recording && (() => {
-            const L = liveAngle.left, R = liveAngle.right;
+          {(() => {
+            const L = romDisplayAngle(joint, liveAngle.left), R = romDisplayAngle(joint, liveAngle.right);
             const primary = side === 'left' ? L : side === 'right' ? R
               : (L != null && R != null ? Math.max(L, R) : (L ?? R));
             return (
-              <GaugeHud
-                label="가동범위"
-                value={primary == null ? null : Math.round(primary)}
-                unit="°"
-                accent="#38bdf8"
-                stats={[
-                  { label: '좌측', value: L == null ? null : Math.round(L), unit: '°', tone: side === 'right' ? 'text-slate-500' : 'text-white' },
-                  { label: '우측', value: R == null ? null : Math.round(R), unit: '°', tone: side === 'left' ? 'text-slate-500' : 'text-white' },
-                ]}
-              />
+              <>
+                <GaugeHud
+                  label="가동범위"
+                  value={primary == null ? null : Math.round(primary)}
+                  unit="°"
+                  accent="#38bdf8"
+                  stats={[
+                    { label: '좌측', value: L == null ? null : Math.round(L), unit: '°', tone: side === 'right' ? 'text-slate-500' : 'text-white' },
+                    { label: '우측', value: R == null ? null : Math.round(R), unit: '°', tone: side === 'left' ? 'text-slate-500' : 'text-white' },
+                  ]}
+                />
+                {recording && <RomRepChips peaks={pickRepSide(liveReps, side)} />}
+                <RomAngleBar value={primary} refRange={romRefRange(joint, poseMode)} label="" />
+              </>
             );
           })()}
           <div className="rounded-2xl border border-white/10 bg-black/55 px-4 py-3 text-center text-sm font-bold text-white backdrop-blur">
@@ -803,7 +881,7 @@ export default function RomMeasure({ member, onSave, onBack, onViewInReport }) {
       {/* [2026-09-10] 관절·자세 구성은 촬영 전 이 화면에서 고른다 — 촬영
           화면은 스켈레톤·궤적·게이지 HUD만 남기고 구성 버튼은 여기로 이동. */}
       <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
-        <p className="mb-2 text-xs font-bold text-slate-500 dark:text-slate-400">측정 관절</p>
+        <p className="mb-2 text-xs font-bold text-slate-500 dark:text-slate-400">① 어느 관절을 잴까요?</p>
         <div className="flex flex-wrap gap-1.5">
           {JOINTS.map((j) => (
             <button key={j.key} type="button" onClick={() => chooseJoint(j.key)}
@@ -814,22 +892,37 @@ export default function RomMeasure({ member, onSave, onBack, onViewInReport }) {
             </button>
           ))}
         </div>
-        <p className="mt-3 mb-2 text-xs font-bold text-slate-500 dark:text-slate-400">자세</p>
+        <p className="mt-3 mb-2 text-xs font-bold text-slate-500 dark:text-slate-400">② 어떤 움직임을 잴까요?</p>
         <div className="flex flex-wrap gap-1.5">
-          {(POSE_MODES_BY_JOINT[joint] || []).map((m) => (
-            <button key={m.key} type="button" onClick={() => choosePose(m.key)}
+          {visibleMovements(joint, (POSE_MODES_BY_JOINT[joint] || []).map((m) => m.key)).map((k) => (
+            <button key={k} type="button" onClick={() => choosePose(k)}
               className={`rounded-full border px-3 py-1.5 text-xs font-bold transition ${
-                poseMode === m.key ? 'border-emerald-400 bg-emerald-400 text-slate-950' : 'border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'
+                displayPoseKey(joint, poseMode) === k ? 'border-emerald-400 bg-emerald-400 text-slate-950' : 'border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'
               }`}>
-              {m.label}
+              {getMovementGuide(joint, k)?.tab || k}
             </button>
           ))}
         </div>
+        {(() => {
+          const g = getMovementGuide(joint, displayPoseKey(joint, poseMode));
+          if (!g) return null;
+          return (
+            <div className="mt-3 rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-3 space-y-2" data-testid="rom-movement-card">
+              <p className="text-sm font-black text-emerald-800 dark:text-emerald-200">{g.measures}</p>
+              <p className="text-[11px] font-bold text-slate-600 dark:text-slate-300">📷 {g.view} · 자세: {g.posture}{g.why ? ` (${g.why})` : ''}</p>
+              <ol className="list-decimal pl-5 text-xs text-slate-700 dark:text-slate-200 space-y-0.5">
+                {g.steps.map((t, i) => <li key={i}>{t}</li>)}
+                <li>{g.reps}</li>
+              </ol>
+              <p className="text-[11px] text-slate-500">{g.norm}</p>
+            </div>
+          );
+        })()}
       </div>
 
       {/* 측정 측 */}
       <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
-        <p className="mb-2 text-xs font-bold text-slate-500 dark:text-slate-400">측정 측</p>
+        <p className="mb-2 text-xs font-bold text-slate-500 dark:text-slate-400">③ 어느 쪽을 잴까요?</p>
         <div className="flex gap-2">
           {SIDES.map((s) => (
             <button key={s.key} type="button" onClick={() => setSide(s.key)}
@@ -844,34 +937,23 @@ export default function RomMeasure({ member, onSave, onBack, onViewInReport }) {
 
       {/* 측정 방식 시작 */}
       <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 space-y-3">
-        <p className="text-sm font-bold text-slate-700 dark:text-slate-200">측정 방식을 선택하세요</p>
+        <p className="text-sm font-bold text-slate-700 dark:text-slate-200">④ 측정 방식을 선택하세요</p>
         <button onClick={() => setMode('live')}
           className="w-full rounded-xl bg-amber-500 px-4 py-4 text-left active:scale-[0.99] transition">
           <p className="text-base font-black text-slate-950">라이브 측정 (권장) <span className="text-[10px] font-bold text-slate-900/60 align-middle">카메라 분석</span></p>
-          <p className="mt-0.5 text-xs font-bold text-slate-900/80">카메라 앞에서 동작을 한 번 천천히 수행 → 최대 가동범위 자동 산출.</p>
-        </button>
-        <button onClick={() => setMode('upload')}
-          className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-4 py-4 text-left active:scale-[0.99] transition">
-          <p className="text-base font-black text-slate-900 dark:text-white">영상 업로드 <span className="text-[10px] font-bold text-slate-500 align-middle">수행 각도 확인</span></p>
-          <p className="mt-0.5 text-xs font-bold text-slate-500 dark:text-slate-400">스포츠 수행 영상 → 속도 조절·프레임 캡처 후, 그 장면에서 각도 직접 측정.</p>
+          <p className="mt-0.5 text-xs font-bold text-slate-900/80">카메라 앞에서 같은 동작을 3~5회 천천히 반복 → 최대 가동범위 자동 산출.</p>
         </button>
         <button onClick={() => setMode('sensor')}
           className="w-full rounded-xl border border-emerald-500/50 bg-emerald-500/10 px-4 py-4 text-left active:scale-[0.99] transition">
           <p className="text-base font-black text-emerald-800 dark:text-emerald-200">고니오메타 <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400/70 align-middle">카메라 불필요 · 폰 밀착 센서</span></p>
           <p className="mt-0.5 text-xs font-bold text-emerald-700 dark:text-emerald-300/80">폰을 관절 부위에 밀착 → 기울기 센서로 가동각 측정 · 좌우 비대칭 자동 산출.</p>
         </button>
-        <p className="text-[11px] text-slate-500 leading-relaxed">
-          ※ {POSE_LABEL[poseMode]} 자세에서는{' '}
-          {poseMode === 'STANDING'
-            ? '체중지지 상태의 기능적 가동성과 골반 보상 작용을 함께 평가합니다.'
-            : '지면 지지로 보상을 통제한 순수 구조적 가동범위를 평가합니다.'}
-        </p>
       </div>
     </div>
   );
 }
 
-const POSE_LABEL = { STANDING: '서서', SUPINE: '누워서', PRONE: '엎드려', SEATED: '앉아서' };
+const POSE_LABEL = { STANDING: '서서', SUPINE: '누워서', PRONE: '엎드려', SEATED: '앉아서', ABDUCTION: '서서 벌림(정면)', SUPINE_ABD: '누워서 벌림(위에서 촬영)', FLEXION: '목 숙이기(옆모습)', EXTENSION: '목 젖히기(옆모습)', LATERAL: '목 옆으로(정면)', ROTATION: '목 돌리기(정면)', T_FLEXION: '몸통 숙이기(옆모습)', T_EXTENSION: '몸통 젖히기(옆모습)', T_LATERAL: '몸통 옆으로(정면)', T_ROTATION: '몸통 돌리기(정면)' };
 
 // ── 스켈레톤 드로잉 (측정 측 강조) ──
 function drawSkeleton(canvas, video, landmarks, side, joint, poseMode) {
@@ -1024,7 +1106,7 @@ function romOverlayGeometry(landmarks, side, joint, poseMode, mapper, width, hei
   // (2026-08-01: 각도 계산을 몸통 축 기준으로 바꾼 것과 오버레이 표시를 통일).
   const refPoint = (v, trunkRef) => {
     if (!v) return null;
-    if (poseMode === 'STANDING' || poseMode === 'SEATED') return { x: v.x, y: v.y - refLen };
+    if (poseMode === 'STANDING' || poseMode === 'SEATED' || poseMode === 'ABDUCTION') return { x: v.x, y: v.y - refLen };
     if (trunkRef) {
       const dx = v.x - trunkRef.x;
       const dy = v.y - trunkRef.y;
@@ -1038,6 +1120,12 @@ function romOverlayGeometry(landmarks, side, joint, poseMode, mapper, width, hei
   if (joint === 'SHOULDER' && shoulder && elbow) return { a: refPoint(shoulder, hip), b: shoulder, c: elbow };
   if (joint === 'ANKLE' && knee && ankle && foot) return { a: knee, b: ankle, c: foot };
   if (joint === 'ELBOW' && shoulder && elbow && wrist) return { a: shoulder, b: elbow, c: wrist };
+  if (joint === 'TRUNK' && hip && shoulder) return { a: { x: hip.x, y: hip.y - refLen }, b: hip, c: shoulder };
+  if (joint === 'NECK') {
+    const ear = p('EAR'); const nose = landmarks?.[LM.NOSE];
+    const n = vis(nose) ? { x: mapper.x(nose), y: mapper.y(nose) } : null;
+    if (ear && n) return { a: { x: ear.x + refLen, y: ear.y }, b: ear, c: n };
+  }
   return null;
 }
 
@@ -1099,10 +1187,10 @@ function roundRect(ctx, x, y, width, height, radius) {
 // ── 녹화 합성용 HUD: 좌/우 현재 각도를 대형 카드로, 경과시간을 칩으로 베이크. ──
 //  · 피사체(중앙)를 가리지 않도록 상단 좌/우 가장자리 배치, 수치는 크게(시인성).
 //  · 측정하지 않는 쪽은 강조 해제(라벨만 회색) — 핵심 정보 위주.
-function drawRomHud(ctx, landmarks, joint, poseMode, width, height, elapsedSec, side = 'both') {
+function drawRomHud(ctx, landmarks, joint, poseMode, width, height, elapsedSec, side = 'both', reps = null) {
   const norm = normalizePose(landmarks) || landmarks;
-  const L = norm ? jointAngleByMode(norm, joint, 'left', poseMode).angle : null;
-  const R = norm ? jointAngleByMode(norm, joint, 'right', poseMode).angle : null;
+  const L = norm ? romDisplayAngle(joint, jointAngleByMode(norm, joint, 'left', poseMode).angle) : null;
+  const R = norm ? romDisplayAngle(joint, jointAngleByMode(norm, joint, 'right', poseMode).angle) : null;
   // 게이지 주값 = 측정 측(좌/우/양쪽이면 큰 각도). 각도 게이지는 0~180°.
   const primary = side === 'left' ? L : side === 'right' ? R
     : (L != null && R != null ? Math.max(L, R) : (L ?? R));
@@ -1112,11 +1200,20 @@ function drawRomHud(ctx, landmarks, joint, poseMode, width, height, elapsedSec, 
     elapsedSec: Number.isFinite(elapsedSec) ? elapsedSec : 0,
     accent: '#38bdf8',
     gauge: { label: '가동범위', value: primary == null ? null : Math.round(primary), unit: '°' },
+    cards: repCards(pickRepSide(reps, side)),
     stats: [
       { label: '좌측', value: L == null ? null : Math.round(L), unit: '°' },
       { label: '우측', value: R == null ? null : Math.round(R), unit: '°' },
     ],
   });
+}
+
+// 표시할 쪽의 횟수별 최고각 목록(양쪽이면 반복이 더 많이 잡힌 쪽).
+function pickRepSide(reps, side) {
+  if (!reps) return [];
+  if (side === 'left') return reps.left || [];
+  if (side === 'right') return reps.right || [];
+  return (reps.right || []).length > (reps.left || []).length ? reps.right : (reps.left || []);
 }
 
 const RECORD_BONES = [

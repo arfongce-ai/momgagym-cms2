@@ -81,7 +81,9 @@ describe('buildRegionDiagnoses — 후면뷰 반영', () => {
     expect(shoulder.measured.find((m) => m.label.includes('어깨 높이차')).label).toContain('후면');
     expect(pelvis.level).toBe(CLINICAL_LEVEL.risk);
     expect(pelvis.measured.find((m) => m.label.includes('골반 높이차')).label).toContain('후면');
-    expect(leg.level).toBe(CLINICAL_LEVEL.risk);
+    // 하지 정렬 라벨은 검증된 기준이 없어 단계를 내지 않고 값만 참고로 보인다(2026-11-25 통일)
+    expect(leg.level).toBe(CLINICAL_LEVEL.reference);
+    expect(leg.measured.some((m) => m.reference)).toBe(true);
   });
 
   it('정면이 후면보다 더 심하면 정면 값이 채택되고 라벨도 정면으로 표기된다', () => {
@@ -129,41 +131,45 @@ describe('buildRegionDiagnoses — 후면뷰 반영', () => {
 // 반환하던 anklePlumbKneeDeviationMm/anklePlumbHipDeviationMm이 어디에도
 // 쓰이지 않고 버려지던 버그를 고친 뒤의 회귀 테스트.
 describe('buildRegionDiagnoses — 플럼라인(발목 수직선) 반영', () => {
-  it('무릎 플럼라인 편차가 크면 발·다리 부위가 risk로 판정되고 측정값에 포함된다', () => {
+  it('무릎 플럼라인 편차는 단계 없이 참고 값으로만 포함된다', () => {
     const pv = {
       front: normalPerView.front,
       left: { sagittal: { forwardHeadMm: 10, kyphosisProxyDeg: 178, kneeExtensionProxyDeg: 178, anklePlumbKneeDeviationMm: 40 } },
     };
     const regions = buildRegionDiagnoses(pv);
     const leg = regions.find((r) => r.key === 'foot_leg');
-    expect(leg.level).toBe(CLINICAL_LEVEL.risk);
-    expect(leg.measured.find((m) => m.label.includes('무릎 편차')).value).toBe(40);
+    expect(leg.level).toBe(CLINICAL_LEVEL.reference);
+    const m = leg.measured.find((x) => x.label.includes('무릎 편차'));
+    expect(m.value).toBe(40);
+    expect(m.reference).toBe(true);
   });
 
-  it('고관절 플럼라인 편차가 크면 골반·척추 부위가 risk로 판정되고 측정값에 포함된다', () => {
+  it('고관절 플럼라인 편차는 골반·척추 단계에 넣지 않고 참고 값으로 포함된다', () => {
     const pv = {
       front: normalPerView.front,
       left: { sagittal: { forwardHeadMm: 10, kyphosisProxyDeg: 178, kneeExtensionProxyDeg: 178, anklePlumbHipDeviationMm: 65 } },
     };
     const regions = buildRegionDiagnoses(pv);
     const pelvis = regions.find((r) => r.key === 'pelvis_spine');
-    expect(pelvis.level).toBe(CLINICAL_LEVEL.risk);
-    expect(pelvis.measured.find((m) => m.label.includes('고관절 편차')).value).toBe(65);
+    expect(pelvis.level).toBe(CLINICAL_LEVEL.normal);
+    const m = pelvis.measured.find((x) => x.label.includes('고관절 편차'));
+    expect(m.value).toBe(65);
+    expect(m.reference).toBe(true);
   });
 
-  it('플럼라인 편차가 정상 범위면 정상으로 판정된다', () => {
+  it('플럼라인 편차가 정상 범위여도 발·다리는 단계 없이 참고, 골반·척추는 정상', () => {
     const pv = {
       front: normalPerView.front,
       left: { sagittal: { forwardHeadMm: 10, kyphosisProxyDeg: 178, kneeExtensionProxyDeg: 178, anklePlumbKneeDeviationMm: 5, anklePlumbHipDeviationMm: 10 } },
     };
     const regions = buildRegionDiagnoses(pv);
-    expect(regions.find((r) => r.key === 'foot_leg').level).toBe(CLINICAL_LEVEL.normal);
+    expect(regions.find((r) => r.key === 'foot_leg').level).toBe(CLINICAL_LEVEL.reference);
     expect(regions.find((r) => r.key === 'pelvis_spine').level).toBe(CLINICAL_LEVEL.normal);
   });
 
   it('플럼라인 측정값이 없어도 다른 지표만으로 정상 판정이 가능하다(insufficient로 전체를 막지 않음)', () => {
     const regions = buildRegionDiagnoses(normalPerView);
-    expect(regions.find((r) => r.key === 'foot_leg').level).toBe(CLINICAL_LEVEL.normal);
+    expect(regions.find((r) => r.key === 'foot_leg').level).toBe(CLINICAL_LEVEL.reference);
     expect(regions.find((r) => r.key === 'pelvis_spine').level).toBe(CLINICAL_LEVEL.normal);
   });
 });
@@ -240,7 +246,7 @@ describe('성별 기준 적용', () => {
   it('성별 미입력 시 성중립(=남성 13mm) 기준', () => {
     expect(pelvisRegion(buildRegionDiagnoses(borderlinePelvis, {})).level).toBe(CLINICAL_LEVEL.caution);
   });
-  it('Q각 프록시 편위 8°: 남성=주의, 여성=정상', () => {
+  it('Q각 프록시 편위는 성별과 관계없이 참고 값(단계 없음)으로만 보인다', () => {
     const pv = {
       front: {
         frontal: { pelvisHeightDiffMm: 2, shoulderHeightDiffMm: 2, pelvisPattern: 'within_error', legAlignment: { status: 'normal' }, qAngleProxyDeg: { left: 172, right: 178 } },
@@ -249,8 +255,8 @@ describe('성별 기준 적용', () => {
       left: { sagittal: { forwardHeadMm: 10, kyphosisProxyDeg: 178, kneeExtensionProxyDeg: 178 } },
     };
     const leg = (r) => r.find((x) => x.key === 'foot_leg');
-    expect(leg(buildRegionDiagnoses(pv, { sex: 'male' })).level).toBe(CLINICAL_LEVEL.caution);
-    expect(leg(buildRegionDiagnoses(pv, { sex: 'female' })).level).toBe(CLINICAL_LEVEL.normal);
+    expect(leg(buildRegionDiagnoses(pv, { sex: 'male' })).level).toBe(CLINICAL_LEVEL.reference);
+    expect(leg(buildRegionDiagnoses(pv, { sex: 'female' })).level).toBe(CLINICAL_LEVEL.reference);
     expect(leg(buildRegionDiagnoses(pv, { sex: 'male' })).measured.some((m) => m.label.includes('Q각'))).toBe(true);
   });
   it('한글 성별(여)도 정규화 적용', () => {
