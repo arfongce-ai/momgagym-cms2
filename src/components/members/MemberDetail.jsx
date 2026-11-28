@@ -13,6 +13,7 @@ import AiMeasureReport     from '../ai/AiMeasureReport';
 import MemberMeasureHistory from '../ai/MemberMeasureHistory';
 import { METHOD_LBL, METHOD_CLR, computeMonthRates, autoRefundUsedAmount, computeRefundEstimate, refundUnitPriceBasisLabel } from '../../services/finance';
 import { buildMemberSessionExpiry, computeExpirySettlement, EXPIRY_STATUS_LABEL } from '../../services/sessionExpiry';
+import ExpirySettleModal from './ExpirySettleModal';
 import { evaluateCondition } from '../../ai-measure/core/conditionAssessment';
 import { issueNutritionLinkCode } from '../../services/nutritionLinkService';
 import { fetchNutritionSummaries, fetchNutritionFeedback, sendNutritionFeedback } from '../../services/teacherNutritionService';
@@ -706,24 +707,26 @@ export default function MemberDetail({ member:initMember, trainers, members=[], 
   };
 
   // 만료 정산 — sessionExpiry.js가 계산한 lot(만료된 등록분)을 실제로 정산 처리한다.
+  // 선택 창에서 '트레이너 정산' / '센터 귀속'을 고른 뒤에만 저장한다.
   // 정산비율은 lot에 박제된 값(hasFrozen) → 트레이너 수동 지정 → 하한(lowSplitRate)
   // 순으로 이미 computeExpirySettlement 안에서 결정된다(회원상세는 계산하지 않고 그대로 씀).
+  const [expiryTarget, setExpiryTarget] = useState(null);
   const handleExpirySettlement = async (lot) => {
-    const settings = store.getSettings();
-    const est = computeExpirySettlement(lot, settings);
-    if (!window.confirm(
-      `만료 정산 — ${trainerMap[lot.trainerId]?.name || '트레이너'}\n` +
-      `미소진 ${est.sessions}회 × ${est.unit.toLocaleString()}원 × 정산비율 ${est.rate}%\n` +
-      `= 지급액 ${est.amount.toLocaleString()}원\n\n` +
-      `정산 처리하면 이 등록분의 잔여가 정리되고, 트레이너 이번 달 지급액에 반영됩니다. 진행할까요?`
-    )) return;
+    const est = computeExpirySettlement(lot, store.getSettings());
+    setExpiryTarget({ key: lot.id, member, lot, est, trainerName: trainerMap[lot.trainerId]?.name || '트레이너' });
+  };
+
+  const confirmExpirySettlement = async (rows) => {
     try {
-      await store.processExpirySettlement(member.id, {
-        trainerId: lot.trainerId, lotId: lot.id, paymentId: lot.paymentId, legacy: !!lot.legacy,
-        remaining: lot.remaining, sessions: est.sessions, unit: est.unit, rate: est.rate, amount: est.amount,
-      });
+      for (const { lot, est, disposition } of rows) {
+        await store.processExpirySettlement(member.id, {
+          trainerId: lot.trainerId, lotId: lot.id, paymentId: lot.paymentId, legacy: !!lot.legacy,
+          remaining: lot.remaining, sessions: est.sessions, unit: est.unit, rate: est.rate, amount: est.amount, disposition,
+        });
+      }
       refresh();
     } catch (e) { alert('만료 정산 처리에 실패했습니다. 네트워크 확인 후 다시 시도하세요.'); }
+    setExpiryTarget(null);
   };
 
   // [2026-11-17] 만료일 수동 변경(관리자) — 양도받은 등록분처럼 자동 계산(회차 비례)이 실제와 다를 때 쓴다.
@@ -1840,6 +1843,9 @@ export default function MemberDetail({ member:initMember, trainers, members=[], 
         </div>
 
         {/* AI 측정 모달 */}
+        {expiryTarget && (
+          <ExpirySettleModal targets={[expiryTarget]} onConfirm={confirmExpirySettlement} onClose={() => setExpiryTarget(null)} />
+        )}
         {showAiModal && (
           <AiMeasureReport
             member={member}

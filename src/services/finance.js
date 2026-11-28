@@ -1072,8 +1072,8 @@ export function computeSessionSettlement({ trainers, members, schedules, payment
 export function sumExpirySettlementsByMonth({ members = [], payments = {}, ym }) {
   const result = {};
   const memberName = (mid) => members.find((m) => m.id === mid)?.name || '';
-  const add = (trainerId, item) => {
-    if (!trainerId) return;
+  const add = (trainerId, item, rec) => {
+    if (!trainerId || rec?.disposition === 'center') return; // 센터 귀속은 트레이너 지급 대상 아님
     if (!result[trainerId]) result[trainerId] = { total: 0, items: [] };
     result[trainerId].total += Number(item.amount) || 0;
     result[trainerId].items.push(item);
@@ -1086,7 +1086,7 @@ export function sumExpirySettlementsByMonth({ members = [], payments = {}, ym })
         add(rec.trainerId, {
           memberId: mid, memberName: memberName(mid), amount: Number(rec.amount) || 0,
           sessions: rec.sessions, unit: rec.unit, rate: rec.rate, settledAt: rec.settledAt, source: 'lot',
-        });
+        }, rec);
       });
     });
   });
@@ -1097,11 +1097,28 @@ export function sumExpirySettlementsByMonth({ members = [], payments = {}, ym })
       add(rec.trainerId, {
         memberId: m.id, memberName: m.name || '', amount: Number(rec.amount) || 0,
         sessions: rec.sessions, unit: rec.unit, rate: rec.rate, settledAt: rec.settledAt, source: 'legacy',
-      });
+      }, rec);
     });
   });
 
   return result;
+}
+
+// 센터 귀속으로 처리한 만료분 — 처리월 기준 명세(트레이너 지급액에는 포함되지 않는다).
+export function listCenterExpiryByMonth({ members = [], payments = {}, ym }) {
+  const items = [];
+  const push = (m, rec) => {
+    if (rec?.disposition !== 'center' || !String(rec.settledAt || '').startsWith(ym)) return;
+    items.push({
+      memberId: m.id, memberName: m.name || '', trainerId: rec.trainerId, sessions: Number(rec.sessions) || 0,
+      centerAmount: Number(rec.centerAmount) || 0, settledAt: rec.settledAt,
+    });
+  };
+  (members || []).forEach((m) => {
+    (payments?.[m.id] || []).forEach((p) => Object.values(p?.expirySettlements || {}).forEach((rec) => push(m, rec)));
+    Object.values(m?.legacyExpirySettlements || {}).forEach((rec) => push(m, rec));
+  });
+  return { total: items.reduce((a, x) => a + x.centerAmount, 0), items };
 }
 
 // computeSessionSettlement 래퍼 — 그 달 처리된 만료 정산액을 트레이너 지급액에

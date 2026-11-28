@@ -1107,13 +1107,22 @@ export const store = {
   // 위해 null을 반환하고 아무것도 바꾸지 않는다.
   processExpirySettlement: async (mid, params = {}) => {
     const { trainerId, lotId, paymentId, legacy, sessions, unit, rate, amount } = params;
-    if (!(Number(sessions) > 0) || !(Number(amount) > 0)) return null;
+    // disposition: 'trainer'(트레이너 지급) | 'center'(센터 귀속 — 트레이너 지급 0원)
+    const disposition = params.disposition === 'center' ? 'center' : 'trainer';
+    const toCenter = disposition === 'center';
+    if (!(Number(sessions) > 0) || (!toCenter && !(Number(amount) > 0))) return null;
     const member = cache.members.find(m => m.id === mid);
     if (!member) return null;
     const ts = member.trainerSessions || {};
     if (!ts[trainerId]) return null;
 
-    const record = { trainerId, sessions: Number(sessions), unit: Number(unit) || 0, rate: Number(rate) || 0, amount: Number(amount), settledAt: todayYMD() };
+    const record = {
+      trainerId, disposition, sessions: Number(sessions), unit: Number(unit) || 0,
+      rate: toCenter ? 0 : (Number(rate) || 0),
+      amount: toCenter ? 0 : Number(amount),
+      ...(toCenter ? { centerAmount: Math.round((Number(unit) || 0) * Number(sessions)) } : {}),
+      settledAt: todayYMD(),
+    };
 
     let updatedPayment = null;
     if (legacy) {
