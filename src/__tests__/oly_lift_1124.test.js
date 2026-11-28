@@ -140,7 +140,7 @@ describe('관절 선택·정면도', () => {
 describe('화면 연결', () => {
   const vbt = fs.readFileSync('src/ai-measure/menus/VbtMeasure.jsx', 'utf8');
   it('VBT 가 궤적선·구간분석을 연결하고 저장 경로에 oly 를 싣는다', () => {
-    expect(vbt).toContain('drawFadingBarPath');
+    expect(vbt).toContain('drawSolidBarTrail');
     expect(vbt).toContain('궤적 켜짐');
     expect(vbt).toContain('analyzeOlyLift(olySamplesRef.current');
     expect(vbt).toContain('oly: result.oly ?? null');

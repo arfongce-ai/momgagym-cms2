@@ -14,7 +14,9 @@ import {
 } from '../core/plates';
 import { exerciseLabel as exerciseLabelLocal, snapWeight, stepWeight } from '../core/lifting';
 import { pickRecorderMime } from '../core/recordSink';
-import { drawLiftingDataHud, drawFadingBarPath } from '../core/recordingOverlay';
+import { drawLiftingDataHud } from '../core/recordingOverlay';
+import { createMultiTracker } from '../core/endcapTracker';
+import { createOneEuro, createSleeveAnchor, createRepTrail, drawSolidBarTrail } from '../core/barTrail';
 import { isOlyType, analyzeOlyLift, pickSideJoints, betterSide, frontalRatio } from '../core/olyLiftAnalysis';
 import { DEFAULT_ASPECT, outputSize, aspectLabel, drawVideoCover, coverMapPath, rotateLandmarksNormalized } from '../core/recordAspect';
 import { useCameraRotation } from '../core/useCameraRotation';
@@ -45,13 +47,20 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
   //  coverMapPath(회전 보정 포함)와 라이브 캔버스가 맞는다. fusedRef 는 회전 보정된 좌표라
   //  표시 전용 raw 궤적을 따로 둔다(판정·속도 계산에는 관여하지 않음).
   const trailRef = useRef([]);
-  const trailStateRef = useRef({ skipped: 0 });
+  // [궤적 개선 2026-11-28] 슬리브 지정 추적 + 떨림 필터 + 렙 끝까지 유지 (표시 전용, 판정·속도 불변)
+  const capRef = useRef(createMultiTracker());      // 탭한 슬리브(봉 끝) 색 추적
+  const anchorRef = useRef(createSleeveAnchor());   // 추적 끊김 시 손목+오프셋으로 이어붙임
+  const euroRef = useRef(createOneEuro());          // 속도 적응형 떨림 제거
+  const repTrailRef = useRef(createRepTrail());     // 렙이 끝날 때까지 궤적 유지
+  const [sleeveSet, setSleeveSet] = useState(false);
+  const resetTrail = () => { trailStateRef.current = { skipped: 0 }; trailGateRef.current = []; repTrailRef.current.reset(); euroRef.current.reset(); anchorRef.current.reset(); trailRef.current = []; };
+  const trailStateRef = useRef({ skipped: 0 });   // 손목 튐 걸러내는 게이트(pushTrailPoint)
+  const trailGateRef = useRef([]);
   // 촬영 위치는 고르지 않고 자동 인식한다(5프레임 연속 같을 때만 바뀜). 저장 기록에도 인식값이 들어간다.
   const [viewText, setViewText] = useState('');
   const cameraViewRef = useRef(null);
   const viewVoteRef = useRef({ key: null, n: 0 });
   const viewWantRef = useRef('any');
-  const trailFadeMs = () => (isOlyType(exerciseTypeRef.current) ? 5000 : 900);
   const olySamplesRef = useRef([]);   // 스내치·클린&저크 구간/각도 분석용 프레임 샘플
   const olySideRef = useRef(null);
   const olyAspectRef = useRef(1);
@@ -111,7 +120,7 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
       const ctx = canvas.getContext('2d');
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       if (trailOnRef.current && recordingRef.current) {
-        drawFadingBarPath(ctx, trailRef.current, canvas.width, canvas.height, ts, { fadeMs: trailFadeMs(), minWidthDivisor: canvas.width / 6 });
+        drawSolidBarTrail(ctx, trailRef.current, canvas.width, canvas.height, { minWidthDivisor: canvas.width / 6 });
       }
     }
 
@@ -177,17 +186,23 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
         const j = pickSideJoints(lms, olySideRef.current);
         if (j) olySamplesRef.current.push({ ts, bar: { x: bar.x, y: bar.y }, j, frontal: frontalRatio(lms, aspect) });
       }
-      const rawBar = barbellPoint(rawLms);
-      if (rawBar) {
-        // 클린·스내치는 당기기→캐치→일어서기 전체 경로가 보여야 해서 오래 남기고(5초),
-        // 손목이 튀는 구간(랙·캐치)은 걸러서 선이 어지럽지 않게 한다.
-        pushTrailPoint(trailRef.current, trailStateRef.current, rawBar, ts, { keepMs: trailFadeMs() + 300 });
-      }
       frameStatsRef.current.total += 1;
       // 실시간 렙 카운트 + 렙 속도/저하 — 엔진이 프레임마다 갱신.
       const H = Number(heightCm) || null;
       const scale = resolveDistanceScale({ referenceScale, personHeightRatio: phRef.current, heightCm: H });
       const lv = fusedRef.current.live(scale.cmPerRatio);
+      {
+        // 표시용 궤적점: 슬리브 지정 시 슬리브, 아니면 손목 → 필터 → 렙 단위 유지
+        const rawBar = barbellPoint(rawLms);
+        const cap = capRef.current;
+        const sleevePt = cap.isSeeded() && _video ? cap.update(_video) : null;
+        const pt = anchorRef.current.resolve({ sleeve: sleevePt, active: cap.activeCount() > 0, wrist: rawBar });
+        // 튄 점(랙·캐치 구간의 손목 순간이동)은 main 의 pushTrailPoint 게이트로 거른다
+        if (pt && pushTrailPoint(trailGateRef.current, trailStateRef.current, pt, ts, { keepMs: 1000 })) {
+          const sm = euroRef.current.filter(pt, ts);
+          if (sm) trailRef.current = repTrailRef.current.push(sm, ts, lv.reps);
+        }
+      }
       setLiveReps(prev => { if (lv.reps > prev) beepRep(); return prev !== lv.reps ? lv.reps : prev; });
       setLiveHud(prev => {
         if (prev && prev.reps === lv.reps && prev.lastRepVelocity === lv.lastRepVelocity
@@ -260,7 +275,7 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
   const startCam = useCallback(() => {
     setResult(null);
     fusedRef.current.reset();
-    trailRef.current = [];
+    resetTrail();
     olySamplesRef.current = [];
     olySideRef.current = null;
     calibrationPointsRef.current = [];
@@ -293,9 +308,8 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       drawVideoCover(ctx, video, canvas.width, canvas.height, rotationDeg); // 검은 여백 없이 중앙 크롭(+회전 보정)
       if (trailOnRef.current && recordingRef.current && trailRef.current.length > 1) {
-        const mapped = coverMapPath(trailRef.current, video, canvas.width, canvas.height, rotationDeg)
-          .map((p, i) => ({ x: p.x, y: p.y, ts: trailRef.current[i]?.ts }));
-        drawFadingBarPath(ctx, mapped, canvas.width, canvas.height, performance.now(), { fadeMs: trailFadeMs() });
+        const mapped = coverMapPath(trailRef.current, video, canvas.width, canvas.height, rotationDeg);
+        drawSolidBarTrail(ctx, mapped, canvas.width, canvas.height);
       }
       const elapsedSec = recordingRef.current ? (performance.now() - recordStartRef.current) / 1000 : null;
       drawLiftingDataHud(ctx, canvas.width, canvas.height, {
@@ -375,7 +389,13 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
     if (nx < 0 || nx > 1 || ny < 0 || ny > 1) return;
     if (calibrating) {
       addCalibrationPoint({ x: nx, y: ny });
+      return;
     }
+    // 거리 보정 중이 아니면: 누른 곳을 슬리브(봉 끝)로 지정 — 궤적이 손목 대신 여기에 붙는다.
+    capRef.current.clear();
+    anchorRef.current.reset();
+    euroRef.current.reset();
+    if (capRef.current.seed(v, nx, ny)) setSleeveSet(true);
   };
 
   // 세트 종료 시 융합 궤적·교차검증·COG 이격을 한 번에 계산하는 공통 헬퍼(LiftingMeasure와 동일 패턴).
@@ -447,7 +467,7 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
     if (!recording) {
       runStartCountdown(() => {
         fusedRef.current.reset();
-    trailRef.current = [];
+    resetTrail();
     olySamplesRef.current = [];
     olySideRef.current = null;
         phSamplesRef.current = [];
@@ -606,6 +626,18 @@ export default function VbtMeasure({ member, onSave, onBack, exerciseType, embed
           className={`h-14 px-3 rounded-2xl text-[11px] font-black active:scale-95 disabled:opacity-50 backdrop-blur ${calibrating ? 'bg-cyan-400 text-slate-950' : 'bg-white/[0.08] border border-white/15 text-white'}`}>
           📐<span className="block text-[9px] mt-0.5">{calibrating ? '보정점' : '거리 보정'}</span>
         </button>
+        {!sleeveSet && !recording && (
+          <div className="h-14 px-2 rounded-2xl text-[10px] font-bold leading-tight text-white/90 bg-white/[0.08] border border-white/15 backdrop-blur flex items-center text-center">
+            슬리브(봉 끝)를<br />눌러 지정
+          </div>
+        )}
+        {sleeveSet && (
+          <button
+            onClick={() => { capRef.current.clear(); anchorRef.current.reset(); euroRef.current.reset(); setSleeveSet(false); }}
+            className="h-14 px-3 rounded-2xl text-[11px] font-black active:scale-95 backdrop-blur bg-amber-400 text-slate-950">
+            🎯<span className="block text-[9px] mt-0.5">슬리브 해제</span>
+          </button>
+        )}
         <button
           onClick={() => { trailOnRef.current = !trailOnRef.current; setTrailOn(trailOnRef.current); }}
           className={`h-14 px-3 rounded-2xl text-[11px] font-black active:scale-95 backdrop-blur ${trailOn ? 'bg-cyan-400 text-slate-950' : 'bg-white/[0.08] border border-white/15 text-white'}`}>

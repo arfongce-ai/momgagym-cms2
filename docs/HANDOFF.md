@@ -933,3 +933,9 @@
 - `demoData.js`: `fromCache` 결과는 실패 처리, 회원·트레이너 0명 저장본은 전체 재로딩, 연결 실패 시 정상 저장본 유지.
 - 검증: `npm test` 4091/4091(357파일), `npm run build` 성공. 실기기·실데이터 확인 못 함.
 
+## 2026-11-28 — VBT 바벨 궤적 개선 (fix/vbt-trail-sleeve-1128, Claude)
+- 요청: 궤적이 사라지지 않게 / 손목이 아니라 슬리브에 맞춤 / 떨림 최소화.
+- `core/barTrail.js` 신규: One-Euro 필터(떨림), 슬리브 앵커(추적 끊기면 손목+오프셋), 렙 단위 궤적(렙 완료 후 유지·다음 움직임에서 새로 시작), 곡선 렌더 `drawSolidBarTrail`.
+- `VbtMeasure.jsx`: 화면을 누르면 그 지점(슬리브)을 `createMultiTracker`로 추적, [슬리브 해제] 버튼. 미지정 시 기존 손목. 표시(화면·녹화) 전용 — `fusedRef.push(bar, ts)` 판정·속도는 손목 그대로.
+- 이전 결정(탭 색추적 제거, "현장에서 바벨 놓침") 때문에 판정에는 쓰지 않음. 가드 테스트 `barbell_tracking_plates`를 "표시 전용"으로 조정, `oly_lift_1124` 문자열 갱신.
+- 테스트 +5(`bar_trail_1128`). 기존 실패 `momi_voice.test.js:119` 외 통과, 빌드 통과. 실기기 미확인.

@@ -26,6 +26,12 @@ describe('barbell tracking robustness', () => {
     expect(trackerSource).toMatch(/anchorRef/);
   });
 
+  it('VBT 슬리브 지정 추적은 표시(궤적) 전용 — 속도·렙 판정은 여전히 손목 중점', () => {
+    // [2026-11-28] 대표님 요청으로 궤적선만 슬리브에 붙인다. 판정 입력(fusedRef)은 손목 그대로.
+    expect(vbtSource).toContain('fusedRef.current.push(bar, ts)');
+    expect(vbtSource).not.toMatch(/fusedRef\.current\.push\((sleevePt|pt|sm)/);
+  });
+
   it('VBT/1RM은 스켈레톤(손목 중점) 기반 자동 렙 인식 — 추적선·오버레이 없음(RSI 방식)', () => {
     // 사용자가 추적점을 탭해서 만드는 색 추적선은 현장에서 바벨을 놓치는 문제가
     // 확인되어 제거됐다. 바 위치는 barbellPoint(양 손목 중점)로 항상 자동 산출되고,
@@ -33,7 +39,7 @@ describe('barbell tracking robustness', () => {
     for (const src of [vbtSource, oneRmSource]) {
       expect(src).toContain('barbellPoint(lms)');
       expect(src).not.toContain('fuseTrackingCandidates');
-      expect(src).not.toContain('cap.update(');           // 탭 색 추적 사용 금지
+      if (src === oneRmSource) expect(src).not.toContain('cap.update('); // 1RM: 탭 색 추적 사용 금지
       expect(src).not.toContain('drawBarPathToRecord');   // 녹화 영상에도 궤적선 없음
     }
     // 원판 색 인식(무게 자동 제안)은 유지하되, ROI 박스 오버레이는 그리지 않는다.
